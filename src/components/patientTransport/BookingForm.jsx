@@ -1,12 +1,37 @@
-import { useRef, useState } from 'react'
-import { RETURN_MODES, MOBILITY, inputClass, buttonClass, primaryClass, thaiDay, bangkokISO } from '../../lib/patientBooking'
+import { useEffect, useRef, useState } from 'react'
+import { supabase } from '../../lib/supabase'
+import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, primaryClass, thaiDay, bangkokISO, clockTime, journeyWindow } from '../../lib/patientBooking'
 
-export default function BookingForm({ initial = {}, info, profileName, profilePhone, staffEntry, onSubmit, onBack, busy }) {
+const shiftDay = days => thaiDay(Date.now() + days * 86400000)
+const dayClock = value => clockTime(((value % 1440) + 1440) % 1440)
+
+export default function BookingForm({ tenantId, initial = {}, info, profileName, profilePhone, staffEntry, onSubmit, onBack, busy }) {
   const [step, setStep] = useState(1)
   const [form, setForm] = useState({ requester_name: staffEntry ? '' : profileName || '', phone: staffEntry ? '' : profilePhone || '', patient_name: '', relation: 'self', pickup: '', in_area: false,
-    day: thaiDay(), time: '', route_id: info.routes?.[0]?.id || '', mobility: 'walk', companions: 1, share: false,
+    day: thaiDay(), time: '', route_id: info.routes?.[0]?.id || '', mobility: 'walk', companions: 0, share: false,
     return_mode: 'wait', back: '', is_emergency: true, consent: false, representative_authorized: false, ...initial })
   const id = useRef(crypto.randomUUID()) // Stable on uncertain response; retry the same operation.
+  // The public calendar already knows holidays, lead time, unchecked calendar days and open incidents.
+  // Asking it here keeps those requests out of the queue instead of leaving staff to phone people back.
+  const [dayState, setDayState] = useState(null)
+  useEffect(() => {
+    if (!tenantId || !form.day) { setDayState(null); return }
+    let active = true
+    supabase.rpc('patient_booking_calendar', { p_muni: tenantId, p_from: form.day, p_to: form.day }).then(({ data, error }) => {
+      if (!active) return
+      setDayState(error ? { day: form.day, failed: true } : { day: form.day, status: data?.days?.[0]?.status })
+    })
+    return () => { active = false }
+  }, [tenantId, form.day])
+  const leadDays = staffEntry ? 0 : Number(info.min_lead_days) || 0
+  const day = dayState?.day === form.day ? dayState : null
+  const dayBlocked = form.day < shiftDay(leadDays) ? (leadDays ? `ต้องจองล่วงหน้าอย่างน้อย ${leadDays} วัน คือตั้งแต่ ${shiftDay(leadDays)} เป็นต้นไป` : 'วันที่เลือกผ่านมาแล้ว กรุณาเลือกวันถัดไป')
+    : form.day > shiftDay(180) ? 'จองล่วงหน้าได้ไม่เกิน 180 วัน'
+    : day?.status && day.status !== 'open' ? DAY_BLOCKED[day.status] : ''
+  const span = journeyWindow(form, info)
+  const outsideHours = span && (span.start < info.office_start || (span.end !== null && span.end > info.office_end))
+    ? `เวลานัดนี้รถต้องออกจากพื้นที่ประมาณ ${dayClock(span.start)}${span.end === null ? '' : ` และกลับถึงประมาณ ${dayClock(span.end)}`} ซึ่งอยู่นอกเวลาบริการ ${clockTime(info.office_start)}–${clockTime(info.office_end)} กรุณาเลือกเวลานัดอื่นหรือติดต่อเจ้าหน้าที่เพื่อประสานล่วงหน้า` : ''
+  const stop = !staffEntry && (dayBlocked || outsideHours)
   const change = key => e => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
   const field = (key, label, type = 'text', extra = {}) => <label className="block">{label}<input className={inputClass} type={type} value={form[key]} onChange={change(key)} {...extra} /></label>
   const select = (key, label, values) => <label className="block">{label}<select aria-label={label} className={inputClass} value={form[key]} onChange={change(key)}>{Object.entries(values).map(([v, text]) => <option key={v} value={v}>{text}</option>)}</select></label>
@@ -20,11 +45,12 @@ export default function BookingForm({ initial = {}, info, profileName, profilePh
     {initial.requested_trip_id && <p className="rounded-xl bg-sky-50 p-3">ขอร่วมเที่ยวที่เลือก กรุณาระบุเวลานัดจริง ระบบจะตรวจเวลาและที่นั่งอีกครั้งก่อนส่ง เจ้าหน้าที่ต้องยืนยันก่อนเดินทาง</p>}
     {staffEntry && <p className="rounded-xl bg-sky-50 p-3">รับเรื่องแทนทางโทรศัพท์/หน้าเคาน์เตอร์ ใช้ข้อมูลชุดเดียวกับการจองออนไลน์</p>}
     {step === 1 && <>
-      <div className="grid gap-4 sm:grid-cols-2">{field('day', 'วันที่นัดแพทย์', 'date', { required: true, min: thaiDay() })}{field('time', 'เวลานัดแพทย์', 'time', { required: true })}
+      <div className="grid gap-4 sm:grid-cols-2">{field('day', 'วันที่นัดแพทย์', 'date', { required: true, min: shiftDay(leadDays), max: shiftDay(180) })}{field('time', 'เวลานัดแพทย์', 'time', { required: true })}
         <label>โรงพยาบาลและพื้นที่จุดรับ<select className={inputClass} value={form.route_id} onChange={change('route_id')} required><option value="">เลือกเส้นทาง</option>{info.routes?.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}</select></label>
         {select('return_mode', 'ขากลับ', RETURN_MODES)}{form.return_mode !== 'one_way' && field('back', 'คาดว่าพร้อมรับกลับ (ยังไม่ทราบเว้นว่างได้)', 'time')}
       </div>
-      <p className="text-sm text-slate-600">เวลารถมารับจะแจ้งหลังยืนยันคิว {staffEntry ? '' : `กรุณาจองล่วงหน้าอย่างน้อย ${info.min_lead_days} วัน`}</p>
+      <p className="text-sm text-slate-600">เวลารถมารับจะแจ้งหลังยืนยันคิว {staffEntry ? 'เจ้าหน้าที่รับเรื่องแทนได้ทุกวันที่ประสานแล้ว' : `จองได้ตั้งแต่ ${shiftDay(leadDays)} เป็นต้นไป${leadDays ? ` (ล่วงหน้าอย่างน้อย ${leadDays} วัน)` : ''} เว้นวันหยุดของหน่วยงาน`}</p>
+      {day?.status === 'open' && !outsideHours && <p role="status" className="rounded-xl bg-emerald-50 p-3">วันนี้เปิดรับจอง เจ้าหน้าที่จะตรวจคิวและแจ้งเวลารถมารับอีกครั้ง</p>}
       <label className="flex min-h-11 items-start gap-3"><input className="mt-1 size-5 shrink-0" type="checkbox" required checked={!form.is_emergency} onChange={e => setForm(f => ({ ...f, is_emergency: !e.target.checked }))} />เป็นการเดินทางตามนัด ไม่ใช่เหตุฉุกเฉิน</label>
       <p className="rounded-xl bg-amber-50 p-3">เจ็บป่วยฉุกเฉิน <a className="font-bold underline" href="tel:1669">โทร 1669</a> อย่ารอคิวจองรถ</p>
     </>}
@@ -46,6 +72,12 @@ export default function BookingForm({ initial = {}, info, profileName, profilePh
       <label className="flex min-h-11 gap-3"><input className="mt-1 size-5 shrink-0" type="checkbox" required checked={form.consent} onChange={change('consent')} />ยืนยันการใช้ข้อมูลตามข้อความข้างต้น และข้อมูลจองถูกต้อง</label>
       <p className="text-sm text-slate-600">ส่งคำขอแล้วต้องรอเจ้าหน้าที่ อบต. ยืนยันรถและเวลารับ</p>
     </>}
-    <button className={primaryClass} disabled={busy}>{busy ? 'กำลังส่ง…' : step < 3 ? 'ต่อไป' : 'ส่งคำขอจองรถ'}</button>
+    {(dayBlocked || outsideHours) && <div role="alert" className={`space-y-2 rounded-xl p-3 ${staffEntry ? 'bg-amber-50' : 'bg-red-50 text-red-900'}`}>
+      {dayBlocked && <p>{dayBlocked}</p>}{outsideHours && <p>{outsideHours}</p>}
+      {staffEntry ? <p className="text-sm">รับเรื่องแทนต่อได้ แต่ต้องประสานวันเวลากับผู้จองและคนขับก่อนยืนยันคิว</p>
+        : <p className="text-sm">กรุณาแก้วันหรือเวลานัด หรือดูวันว่างจาก “ดูตารางรถ”{info.contact_phone && <> · ติดต่อเจ้าหน้าที่ <a className="font-semibold underline" href={`tel:${info.contact_phone}`}>{info.contact_phone}</a></>}</p>}
+    </div>}
+    {day?.failed && <p role="status" className="rounded-xl bg-amber-50 p-3">ตรวจวันว่างไม่สำเร็จ ระบบจะตรวจอีกครั้งตอนส่งคำขอ</p>}
+    <button className={primaryClass} disabled={busy || !!stop}>{busy ? 'กำลังส่ง…' : step < 3 ? 'ต่อไป' : 'ส่งคำขอจองรถ'}</button>
   </form>
 }

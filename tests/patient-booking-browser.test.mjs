@@ -60,6 +60,22 @@ try{
  if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(`${calendarDay.slice(0,7)}-01`);await page.getByLabel('ถึงวันที่',{exact:true}).fill(`${calendarDay.slice(0,7)}-28`);await page.locator('summary').filter({hasText:'กรองวันที่และเส้นทาง'}).click();for(const [mode,file] of [['ปฏิทิน','calendar'],['ตาราง','table']]){await page.getByRole('button',{name:mode,exact:true}).click();if(mode==='ปฏิทิน') { await page.locator('[aria-label="ปฏิทินรายเดือน"] button').filter({hasText:new RegExp(`^${Number(calendarDay.slice(-2))}\\D`)}).click() } await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-${file}-390.png`,fullPage:true})}}
  console.log('PASS anonymous aggregate calendar, remembered view, table join request -> existing-trip confirmation -> full seats; calendar/table at 320/390/768/1024px')
 
+ // Intake guards seen by a citizen: the form refuses days and appointment times the queue could never confirm.
+ await page.setViewportSize({width:390,height:900});await visit('citizen');await page.getByRole('button',{name:'ขอจองรถรับส่ง',exact:true}).click()
+ const weekendDate=new Date();weekendDate.setUTCDate(weekendDate.getUTCDate()+1);while(weekendDate.getUTCDay()!==6)weekendDate.setUTCDate(weekendDate.getUTCDate()+1)
+ await page.getByLabel('วันที่นัดแพทย์',{exact:true}).fill(weekendDate.toISOString().slice(0,10))
+ await page.getByRole('alert').filter({hasText:'ตรงวันหยุดให้บริการ'}).waitFor()
+ assert.equal(await page.getByRole('button',{name:'ต่อไป',exact:true}).isDisabled(),true,'Weekend must block the step')
+ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-blocked-day-390.png`,fullPage:true})}
+ await page.getByLabel('วันที่นัดแพทย์',{exact:true}).fill(day);await page.getByLabel('เวลานัดแพทย์',{exact:true}).fill('08:45')
+ await page.getByRole('alert').filter({hasText:'นอกเวลาบริการ'}).waitFor()
+ assert.equal(await page.getByRole('button',{name:'ต่อไป',exact:true}).isDisabled(),true,'Pickup before office hours must block the step')
+ if(process.env.PATIENT_PREVIEW_SHOTS){await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-early-appointment-390.png`,fullPage:true})}
+ await page.getByLabel('เวลานัดแพทย์',{exact:true}).fill('10:00')
+ await page.getByRole('status').filter({hasText:'วันนี้เปิดรับจอง'}).waitFor()
+ assert.equal(await page.getByRole('button',{name:'ต่อไป',exact:true}).isDisabled(),false,'A serviceable day and time must pass')
+ console.log('PASS booking form blocks closed days and appointments outside office hours before the request is sent')
+
  for(const width of [320,390,768,1024]){await page.setViewportSize({width,height:900});for(const as of ['citizen','coordinator','driver','admin']){await visit(as);const tab={citizen:'หน้าบริการ',coordinator:'จัดคิว',driver:'งานคนขับ',admin:'ตั้งค่า'}[as];await page.getByRole('button',{name:tab,exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${as} overflow`)}console.log(`PASS rendered ${width}px four roles`)}
  if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await visit('citizen');await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-live-ui-390.png`,fullPage:true});await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-queue-390.png`,fullPage:true})}
  assert.deepEqual(errors,[])

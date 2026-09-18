@@ -8,11 +8,14 @@ export default function BookingSettings({ workspace, busy, onSave }) {
   const set = key => e => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
   const input = (key, label, props = {}) => <label>{label}<input className={inputClass} value={form[key] ?? ''} onChange={set(key)} {...props} /></label>
   function changeRoute(index, key, value) { setForm(f => ({ ...f, routes: f.routes.map((r, i) => i === index ? { ...r, [key]: value } : r) })) }
+  const partner = workspace.partners?.find(p => p.id === form.partner_id)
   return <form className="space-y-5" onSubmit={e => { e.preventDefault(); onSave(workspace.settings?.revision ?? 1, form) }}>
     <h2 className="text-xl font-bold">ตั้งค่าครั้งเดียว · กองทุนเป็นเจ้าของรถ อบต. จัดคิว</h2>
     <p className="rounded-xl bg-amber-50 p-3 text-sm">ยืนยันความจุจากรถจริง ช่วงเวลาบริการ ปฏิทินวันหยุด และขอบเขตมอบหมายก่อนเปิดรับจอง ไม่ต้องเปิดบริการยืนยันใหม่ทุกวัน</p>
     <div className="grid gap-4 sm:grid-cols-2">
-      <label>กองทุน/หน่วยงานเจ้าของรถ<select className={inputClass} value={form.partner_id || ''} onChange={set('partner_id')}><option value="">เลือกเจ้าของรถจากทะเบียนหน่วยงาน</option>{workspace.partners?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <label>กองทุน/หน่วยงานเจ้าของรถ<select className={inputClass} value={form.partner_id || ''} onChange={set('partner_id')}><option value="">เลือกเจ้าของรถจากทะเบียนหน่วยงาน</option>{workspace.partners?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        {/* min_lead_days lives on referral_partners; without this pointer an admin cannot find where to change it. */}
+        <span className="mt-1 block text-sm text-slate-600">{partner?.min_lead_days === undefined ? 'เลือกเจ้าของรถเพื่อดูจำนวนวันจองล่วงหน้า' : `ประชาชนต้องจองล่วงหน้าอย่างน้อย ${partner.min_lead_days} วัน`} · แก้จำนวนวันได้ที่หน้าผู้ดูแล เมนู “ประเภทคำขอเอกสาร” → ทะเบียนหน่วยงานรับเรื่องต่อ</span></label>
       <label>บัญชีคนขับ<select className={inputClass} value={form.driver_id || ''} onChange={e => setForm(f => ({ ...f, driver_id: e.target.value, coordinator_ids: f.coordinator_ids.filter(id => id !== e.target.value) }))}><option value="">เลือกบัญชีเจ้าหน้าที่ของคนขับ</option>{workspace.people?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       {['office_start', 'office_end'].map((key, i) => <label key={key}>{i ? 'สิ้นสุดบริการ' : 'เริ่มบริการ'}<input className={inputClass} type="time" required value={clockTime(form[key])} onChange={e => setForm(f => ({ ...f, [key]: minutes(e.target.value) }))} /></label>)}
       {input('seats', 'ที่นั่งผู้โดยสาร ไม่รวมคนขับ', { type: 'number', min: 1, max: 15 })}{input('wheelchairs', 'ที่ยึดรถเข็น', { type: 'number', min: 0, max: 4 })}{input('stretchers', 'ที่ยึดเปล', { type: 'number', min: 0, max: 2 })}

@@ -25,7 +25,7 @@ INSERT INTO public.profiles VALUES
 INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST',true,ARRAY['patient_transport_request'],0);
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170000_patient_booking_day_guards.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -155,6 +155,25 @@ await db.exec('RESET ROLE');await db.query('UPDATE public.patient_bookings SET s
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,4,{...settings,holidays:[calendarDay]}]);await actor(null);cal=await rpc('patient_booking_calendar',[tenant,calendarDay,calendarDay]);assert.equal(cal.days[0].status,'closed');assert.deepEqual(cal.days[0].free,[]);assert.equal(cal.days[0].trips[0].joinable,false)
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,5,settings])
 console.log('PASS public calendar free intervals, privacy, bounds, holidays; join validation, atomic rollback, existing-trip confirmation and retry')
+// Day guards at intake: requests the queue could never confirm are refused here, staff intake is not.
+await actor(null);const svc=await rpc('patient_booking_info',[tenant]);assert.equal(svc.buffer_minutes,15);assert.equal(svc.boarding_minutes,15)
+const weekend=new Date();weekend.setUTCDate(weekend.getUTCDate()+1);while(weekend.getUTCDay()!==6)weekend.setUTCDate(weekend.getUTCDate()+1)
+const satDay=weekend.toISOString().slice(0,10),satAt=time=>`${satDay}T${time}:00+07:00`
+const weekendBooking={...base,patient_name:'TEST weekend',phone:'0800000500',appointment_at:satAt('10:00'),return_at:satAt('12:00')}
+await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(500),weekendBooking]),/วันหยุด/)
+await actor(coordinator);assert.equal(await rpc('patient_booking_submit',[tenant,id(500),weekendBooking]),id(500))
+const holiday=new Date();holiday.setUTCDate(holiday.getUTCDate()+20);while([0,6].includes(holiday.getUTCDay()))holiday.setUTCDate(holiday.getUTCDate()+1)
+const holidayDay=holiday.toISOString().slice(0,10),holidayAt=time=>`${holidayDay}T${time}:00+07:00`
+await actor(admin);await rpc('patient_booking_save_settings',[tenant,6,{...settings,holidays:[holidayDay]}])
+await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(501),{...base,patient_name:'TEST holiday',phone:'0800000501',appointment_at:holidayAt('10:00'),return_at:holidayAt('12:00')}]),/วันหยุด/)
+const checked=new Date();checked.setUTCDate(checked.getUTCDate()+5);
+await actor(admin);await rpc('patient_booking_save_settings',[tenant,7,{...settings,calendar_checked_through:checked.toISOString().slice(0,10)}])
+await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(502),{...base,patient_name:'TEST unchecked',phone:'0800000502',appointment_at:holidayAt('10:00'),return_at:holidayAt('12:00')}]),/ปฏิทิน/)
+await actor(admin);await rpc('patient_booking_save_settings',[tenant,8,{...settings,unavailable:true}])
+await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(503),{...base,patient_name:'TEST unavailable',phone:'0800000503'}]),/งดรับจอง/)
+await actor(coordinator);assert.equal(await rpc('patient_booking_submit',[tenant,id(503),{...base,patient_name:'TEST unavailable',phone:'0800000503'}]),id(503))
+await actor(admin);await rpc('patient_booking_save_settings',[tenant,9,settings])
+console.log('PASS intake guards for weekends, holidays, unchecked calendar and unavailable vehicle; staff intake still accepted')
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
 export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay }

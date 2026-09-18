@@ -17,6 +17,30 @@ export function clockTime(minutes) { return `${String(Math.floor(minutes / 60)).
 export function minutes(value) { const [h, m] = value.split(':').map(Number); return h * 60 + m }
 export function bangkokISO(day, time) { return day && time ? new Date(`${day}T${time}:00+07:00`).toISOString() : null }
 
+// Reasons shown while booking; keyed by the same day_status the public calendar RPC returns.
+export const DAY_BLOCKED = {
+  past: 'วันที่ผ่านมาแล้ว กรุณาเลือกวันถัดไป',
+  unavailable: 'รถหรือคนขับยังไม่พร้อมให้บริการในช่วงนี้',
+  unverified: 'ยังไม่ได้ตรวจปฏิทินวันหยุดถึงวันนี้ กรุณาเลือกวันที่ใกล้กว่านี้หรือติดต่อเจ้าหน้าที่',
+  closed: 'ตรงวันหยุดให้บริการ (เสาร์–อาทิตย์และวันหยุดของหน่วยงาน)',
+  lead_time: 'พ้นกำหนดจองล่วงหน้าแล้ว กรุณาเลือกวันที่ไกลกว่านี้',
+  issue: 'วันนี้มีเหตุขัดข้องที่ยังไม่คลี่คลาย กรุณาเลือกวันอื่นหรือติดต่อเจ้าหน้าที่',
+}
+
+// Mirrors ptb_plan for a single booking so the form warns before the request reaches the queue.
+// PostgreSQL still recomputes the whole plan under the resource lock before any confirmation.
+export function journeyWindow({ time, back, return_mode: returnMode, route_id: routeId }, info) {
+  const route = info?.routes?.find(r => r.id === routeId)
+  if (!route || !time || !Number.isFinite(info?.buffer_minutes) || !Number.isFinite(info?.boarding_minutes)) return null
+  const travel = Number(route.minutes)
+  const appointment = minutes(time)
+  const start = appointment - (travel + info.buffer_minutes + info.boarding_minutes)
+  const outbound = appointment + info.boarding_minutes + travel
+  if (returnMode === 'one_way') return { start, end: outbound }
+  if (!back) return { start, end: null }
+  return { start, end: minutes(back) + info.boarding_minutes + travel + info.buffer_minutes }
+}
+
 export function suggestGroups(bookings, settings) {
   const pending = bookings.filter(r => r.status === 'submitted').sort((a, b) => a.appointment_at.localeCompare(b.appointment_at) || a.id.localeCompare(b.id))
   const groups = []
