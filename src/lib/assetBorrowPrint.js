@@ -12,7 +12,7 @@ function esc(value) {
 }
 
 // ช่องกรอกในแบบฟอร์ม — กติกาเดียวกับใบขออนุญาตใช้น้ำประปาและใบคำร้องช่วยเหลือ
-//   มีค่า : ข้อความธรรมดา display:inline เท่านั้น ห้าม inline-block ในย่อหน้าที่ไหลต่อเนื่อง
+//   มีค่า : ข้อความธรรมดา display:inline ไม่มีเส้นประใต้ ห้าม inline-block ในย่อหน้าที่ไหลต่อเนื่อง
 //   ว่าง  : กล่องเส้นประกว้างตาม width ให้เขียนด้วยปากกาได้
 function line(value, width = '40mm') {
   const content = String(value ?? '').trim()
@@ -261,7 +261,9 @@ ${GOV_FONT_LINK}
   .indent { display: inline-block; width: 20mm; }
   /* ค่าที่กรอกแล้ว: ต้องเป็น inline ธรรมดา ไม่งั้นย่อหน้าที่ไหลต่อเนื่องจะแตกบรรทัด */
   /* padding 2mm: ค่าที่กรอกต้องมีที่หายใจทั้งสองข้าง ไม่งั้นชนคำว่า "ตำแหน่ง" ที่ตามมาทันที */
-  .fill-value { border-bottom: 1px dotted #000; padding: 0 2mm; }
+  /* ไม่มีเส้นประใต้ค่าที่พิมพ์แล้ว — เส้นประมีไว้ให้เขียนมือ เหลือเฉพาะ .fill-blank ที่ว่างจริง
+     (เจ้าของระบบสั่ง 2569-09-18 ให้ทุกใบเหมือนใบประปา/ใบรถรับ-ส่งผู้ป่วย) */
+  .fill-value { padding: 0 2mm; }
   .fill-blank { display: inline-block; border-bottom: 1px dotted #000; }
   .field-blank { white-space: nowrap; }
   .nb { white-space: nowrap; }
