@@ -846,7 +846,7 @@ export default function TechnicianDashboard() {
         <div className="flex-1 min-w-0 space-y-4">
           <OdorReportPanel tenantId={tenant?.id} staffId={staffId} />
 
-          {/* สรุปงานวันนี้ — ใช้ due_date/priority ที่ระบบมีอยู่แล้ว ยังไม่เคยถูกโชว์ที่หน้าช่างมาก่อน */}
+          {/* สรุปงานวันนี้ — ใช้ due_date ที่ระบบมีอยู่แล้ว ยังไม่เคยถูกโชว์ที่หน้าช่างมาก่อน */}
           {!loading && complaints.length > 0 && (
             <div className="md:hidden grid grid-cols-3 gap-2">
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
