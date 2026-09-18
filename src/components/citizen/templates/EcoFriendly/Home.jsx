@@ -37,6 +37,9 @@ const BASE_DOC_TYPES = [
 // ⚠️ ต้องกรองออกจากอาร์เรย์ตอนปิดโมดูล ห้ามพึ่ง ModuleLink คืน null — จำนวนคอลัมน์คิดจาก
 // ความยาวอาร์เรย์ ถ้าปล่อยไว้ในอาร์เรย์จะได้ช่องว่างโบ๋หนึ่งช่องบนหน้าแรก
 const WASTE_SCHEDULE_SHORTCUT = { value: 'waste_schedule', label: 'ตารางวันเก็บขยะ', emoji: '📅', href: '/waste' }
+// วางต่อจากตารางเก็บขยะด้วยเหตุผลเดียวกัน — เป็นข้อมูลที่คนเปิดดูเองตามฤดูกาล ไม่สร้างคำร้องให้เจ้าหน้าที่
+// ถ้าไม่ขึ้นหน้าแรก ประชาชนต้องเข้าเมนูเพิ่มเติมแล้วกางหมวด "บริการอื่นๆ" ก่อนถึงจะเจอ (บนมือถือหมวดยุบไว้)
+const WATER_SITUATION_SHORTCUT = { value: 'water_situation', label: 'สถานการณ์น้ำ-ฝน', emoji: '🌧️', href: '/water-situation' }
 
 function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) {
   const [idx, setIdx] = useState(0)
@@ -168,6 +171,7 @@ export default function HomePage() {
   const { tenant, isModuleEnabled } = useTenant()
   const layout = tenant?.layout_theme || 'classic'
   const wasteScheduleOn = isModuleEnabled('waste')
+  const waterSituationOn = isModuleEnabled('water-situation')
 
   const docTypes = useMemo(() => {
     const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({
@@ -175,10 +179,11 @@ export default function HomePage() {
     }))
     return [
       ...(wasteScheduleOn ? [WASTE_SCHEDULE_SHORTCUT] : []),
+      ...(waterSituationOn ? [WATER_SITUATION_SHORTCUT] : []),
       ...withoutRemovedTypes(BASE_DOC_TYPES, tenant),
       ...extras,
     ]
-  }, [tenant, wasteScheduleOn])
+  }, [tenant, wasteScheduleOn, waterSituationOn])
 
   const [sidebarNews, setSidebarNews] = useState([])
   const [sidebarActivities, setSidebarActivities] = useState([])

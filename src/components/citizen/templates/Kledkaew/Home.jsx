@@ -36,6 +36,8 @@ const DEFAULT_CATS = [
 // ไม่ต้องกรองอาร์เรย์เหมือนธีม eco_friendly ที่เป็น grid
 const POPULAR = [
   { label: 'ตารางวัน\nเก็บขยะ',  emoji: '📅', path: '/waste' },
+  // ModuleLink ซ่อนช่องนี้เองเมื่อปิดโมดูล water-situation เหมือนช่องตารางเก็บขยะ
+  { label: 'สถานการณ์\nน้ำ-ฝน',  emoji: '🌧️', path: '/water-situation' },
   { label: 'แจ้งเหตุ\nแจ้งซ่อม', emoji: '🙋', path: '/complaint' },
   { label: 'E-Service',           emoji: '🌐', path: '/doc-request' },
   { label: 'ติดตาม\nคำร้อง',     emoji: '🔎', path: '/my-complaints' },

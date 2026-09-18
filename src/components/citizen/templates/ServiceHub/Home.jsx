@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
-import { Wifi, Users, MapPinned, Compass, Phone, BookUser, ChevronRight, Ambulance, CalendarDays, Droplets } from 'lucide-react'
+import { Wifi, Users, MapPinned, Compass, Phone, BookUser, ChevronRight, Ambulance, CalendarDays, Droplets, CloudRain } from 'lucide-react'
 import { supabase } from '../../../../lib/supabase'
 import { PATIENT_TRANSPORT_TYPE } from '../../../../lib/patientTransport'
 import { removedDocumentTypes } from '../../../../lib/documentTypes'
@@ -53,6 +53,7 @@ function FeaturedServices() {
   const transportEnabled = (!isModuleEnabled || isModuleEnabled('inbox'))
     && !removedDocumentTypes(tenant).includes(PATIENT_TRANSPORT_TYPE)
   const wasteEnabled = !isModuleEnabled || isModuleEnabled('waste')
+  const waterSituationEnabled = !isModuleEnabled || isModuleEnabled('water-situation')
 
   useEffect(() => {
     if (!tenant?.id || !transportEnabled) return undefined
@@ -84,13 +85,23 @@ function FeaturedServices() {
     icon: CalendarDays,
     background: 'linear-gradient(135deg, #059669 0%, #047857 55%, #065f46 100%)',
   })
+  if (waterSituationEnabled) services.push({
+    href: '/water-situation',
+    label: 'สถานการณ์น้ำ-ฝน',
+    description: 'ปริมาณฝนและระดับน้ำใกล้พื้นที่',
+    icon: CloudRain,
+    background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 55%, #075985 100%)',
+  })
   if (!services.length) return null
 
+  // ตั้งแต่มี 3 การ์ด (ผู้ป่วย + ขยะ + น้ำ-ฝน) ต้องไม่ตกไป grid-cols-1 ไม่งั้นการ์ดจะเรียงเต็มความกว้าง
+  // ซ้อนกันสามชั้นจนดันเนื้อหาอื่นหลุดจอแรกบนมือถือ
   return (
-    <div className={`relative z-10 mt-2 grid ${services.length === 2 ? 'grid-cols-2' : 'grid-cols-1'} items-stretch gap-2`}>
-      {services.map(({ href, label, description, icon: Icon, background }) => (
+    <div className={`relative z-10 mt-2 grid ${services.length >= 2 ? 'grid-cols-2' : 'grid-cols-1'} items-stretch gap-2`}>
+      {services.map(({ href, label, description, icon: Icon, background }, i) => (
         <Link key={href} to={href} aria-label={label}
-          className="flex min-h-[60px] min-w-0 items-center gap-2 rounded-xl border border-white/40 px-2.5 py-2.5 shadow-md shadow-blue-950/25 transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
+          // ใบสุดท้ายของจำนวนคี่ยืดเต็มแถว ไม่งั้นเหลือช่องว่างโบ๋ครึ่งแถวข้างการ์ดใบเดียว
+          className={`flex min-h-[60px] min-w-0 items-center gap-2 rounded-xl border border-white/40 px-2.5 py-2.5 shadow-md shadow-blue-950/25 transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] ${services.length % 2 === 1 && i === services.length - 1 ? 'col-span-2' : ''}`}
           style={{ background }}>
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/20 ring-2 ring-white/45">
             <Icon size={17} className="text-white" aria-hidden="true" />
