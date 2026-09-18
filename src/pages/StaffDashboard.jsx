@@ -44,7 +44,7 @@ const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectRe
 const EventsManager = lazy(() => import('../components/admin/EventsManager'))
 const ComplaintsManager = lazy(() => import('../components/admin/ComplaintsManager'))
 // ใช้ modal ตัวเดียวกับหน้าจัดการคำร้องของแอดมิน ไม่ทำของตัวเองซ้ำ — มันคุมทุก action ด้วย
-// currentUserRole อยู่แล้ว (ลบ/มอบหมาย/เปลี่ยนความเร่งด่วน/แก้สถานะ โผล่เฉพาะ admin,
+// currentUserRole อยู่แล้ว (ลบ/มอบหมาย/แก้สถานะ โผล่เฉพาะ admin,
 // จัดการเอกสารเฉพาะ admin กับ staff) เจ้าหน้าที่จึงได้หน้าตาเดียวกันโดยไม่ได้สิทธิ์เพิ่ม
 const ComplaintDetailModal = lazy(() =>
   import('../components/admin/ComplaintsManager').then(m => ({ default: m.ComplaintDetailModal })))

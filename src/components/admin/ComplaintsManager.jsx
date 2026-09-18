@@ -130,12 +130,6 @@ function SlaBadge({ dueDate, status }) {
 const FILTER_TABS = ['ทั้งหมด', ...STATUS_MAIN.map((k) => STATUS[k].label)]
 const FILTER_KEYS = [null, ...STATUS_MAIN]
 
-const PRIORITY = {
-  urgent: { label: '🔴 เร่งด่วน', short: 'เร่งด่วน', color: '#ef4444', bg: '#fee2e2', text: '#991b1b', order: 0 },
-  normal: { label: '🟡 ปกติ',     short: 'ปกติ',     color: '#f59e0b', bg: '#fef3c7', text: '#92400e', order: 1 },
-  low:    { label: '🟢 ต่ำ',      short: 'ต่ำ',      color: '#10b981', bg: '#d1fae5', text: '#065f46', order: 2 },
-}
-
 // ODOR_TIME_RANGES/odorTimeRangeOf ย้ายไปอยู่กับตารางร่วม src/components/complaints/OdorComplaintTable.jsx
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -200,18 +194,6 @@ function OdorReassignBlock({ complaint: c, canBulkDelete, technicianGroups, onRe
         ))}
       </select>
     </div>
-  )
-}
-
-function PriorityBadge({ priority }) {
-  if (!priority || priority === 'normal') return null
-  const p = PRIORITY[priority]
-  if (!p) return null
-  return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
-          style={{ backgroundColor: p.bg, color: p.text }}>
-      {p.short}
-    </span>
   )
 }
 
@@ -584,7 +566,7 @@ function ReporterCard({ c }) {
   )
 }
 
-export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate, categoryMeta, onReturned, onFinished, onTextSaved }) {
+export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate, categoryMeta, onReturned, onFinished, onTextSaved }) {
   const { tenant, terminology } = useTenant()
   const isAdminRole = ['admin', 'superadmin'].includes(currentUserRole)
   const isTechAssigned = currentUserRole === 'technician' && c.assigned_to === currentUserId
@@ -615,7 +597,6 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
   const [savingPin, setSavingPin] = useState(false)
   const [pinError, setPinError] = useState('')
   const [pendingAssign, setPendingAssign] = useState(null)
-  const [pendingPriority, setPendingPriority] = useState(null)
   const [extraWorkPhotos, setExtraWorkPhotos] = useState([])
   const [wpUploading, setWpUploading] = useState(false)
   const [docBusy, setDocBusy] = useState(false)
@@ -1035,27 +1016,6 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
                   )}
                 </div>
 
-                {/* Priority selector */}
-                <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-orange-100">
-                  <p className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
-                    ⚡ ความเร่งด่วน
-                  </p>
-                  <div className="flex gap-1.5">
-                    {Object.entries(PRIORITY).map(([k, p]) => {
-                      const active = (c.priority ?? 'normal') === k
-                      return (
-                        <button key={k} type="button"
-                          onClick={() => { if ((c.priority ?? 'normal') !== k) setPendingPriority(k) }}
-                          className="px-2.5 py-1 rounded-xl text-[13px] font-bold transition-all border"
-                          style={active
-                            ? { backgroundColor: p.bg, color: p.text, borderColor: p.color }
-                            : { backgroundColor: '#f9fafb', color: '#9ca3af', borderColor: '#e5e7eb' }}>
-                          {p.short}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
               </div>
             </div>
           )}
@@ -1427,29 +1387,6 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
         </div>
       )}
 
-      {pendingPriority && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={() => setPendingPriority(null)}>
-          <div className="bg-white rounded-2xl p-5 shadow-xl w-72 mx-4" onClick={(e) => e.stopPropagation()}>
-            <p className="text-sm font-semibold text-gray-800 mb-1">ยืนยันการเปลี่ยนความเร่งด่วน</p>
-            <p className="text-xs text-gray-500 mb-4">
-              เปลี่ยนเป็น <span className="font-medium" style={{ color: PRIORITY[pendingPriority]?.text }}>
-                {PRIORITY[pendingPriority]?.label}
-              </span> ใช่หรือไม่?
-            </p>
-            <div className="flex gap-2">
-              <button onClick={() => { onPriority(c.id, pendingPriority); setPendingPriority(null) }}
-                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
-                style={{ backgroundColor: 'var(--color-primary)' }}>
-                ยืนยัน
-              </button>
-              <button onClick={() => setPendingPriority(null)}
-                className="flex-1 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
-                ยกเลิก
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -1490,7 +1427,6 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const [filterCategory, setFilterCategory]       = useState('')
   const [filterVillage, setFilterVillage]         = useState('')
   const [filterTechnician, setFilterTechnician]   = useState('')
-  const [filterPriority, setFilterPriority]       = useState('')
   const [filterDepartment, setFilterDepartment]   = useState('')
   const [selectedComplaint, setSelectedComplaint] = useState(null)
   const [showOssIntake, setShowOssIntake]         = useState(false)
@@ -1718,12 +1654,6 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
 
   function handleDeleteComplaint(id) {
     setComplaints((prev) => prev.filter((c) => c.id !== id))
-  }
-
-  async function updatePriority(complaintId, priority) {
-    await supabase.from('complaints').update({ priority }).eq('id', complaintId)
-    setComplaints(prev => prev.map(c => c.id === complaintId ? { ...c, priority } : c))
-    if (selectedComplaint?.id === complaintId) setSelectedComplaint(prev => ({ ...prev, priority }))
   }
 
   async function updateStatus(id, nextStatus, workPhotos = [], techNote = null) {
@@ -2031,14 +1961,9 @@ ${summaryHtml}
     const matchVillage    = filterVillage === '' || (c.village || c.location_name || '') === filterVillage
     const matchTech       = filterTechnician === '' ||
       (filterTechnician === '__none__' ? !c.assigned_to : c.assigned_to === filterTechnician)
-    const matchPriority   = filterPriority === '' || (c.priority ?? 'normal') === filterPriority
     const matchDepartment = filterDepartment === '' || (c.department ?? '') === filterDepartment
-    return matchStatus && matchSearch && matchCategory && matchVillage && matchTech && matchPriority && matchDepartment
-  }).sort((a, b) => {
-    const pa = PRIORITY[a.priority ?? 'normal']?.order ?? 1
-    const pb = PRIORITY[b.priority ?? 'normal']?.order ?? 1
-    return pa !== pb ? pa - pb : new Date(b.created_at) - new Date(a.created_at)
-  })
+    return matchStatus && matchSearch && matchCategory && matchVillage && matchTech && matchDepartment
+  }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 
   const baseFiltered = nonOdorComplaints.filter((c) => {
     const matchStatus = FILTER_KEYS[filterTab] ? normalizeStatus(c.status) === FILTER_KEYS[filterTab] : true
@@ -2078,7 +2003,7 @@ ${summaryHtml}
   const complaintStartIdx   = (complaintPage - 1) * perPage
   const paginatedFiltered   = complaintsPerPage === 'all' ? filtered : filtered.slice(complaintStartIdx, complaintStartIdx + perPage)
 
-  useEffect(() => { setComplaintPage(1) }, [filterTab, search, complaintsPerPage, filterCategory, filterVillage, filterTechnician, filterPriority])
+  useEffect(() => { setComplaintPage(1) }, [filterTab, search, complaintsPerPage, filterCategory, filterVillage, filterTechnician])
 
   const counts = STATUS_MAIN.reduce((acc, k) => {
     acc[k] = nonOdorComplaints.filter((c) => normalizeStatus(c.status) === k).length
@@ -2263,23 +2188,11 @@ ${summaryHtml}
                 </select>
               </div>
 
-              <div className="relative">
-                <AlertTriangle size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)}
-                  className="w-full appearance-none pl-7 pr-7 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
-                  style={{ '--tw-ring-color': 'var(--color-primary)' }}>
-                  <option value="">ความเร่งด่วนทั้งหมด</option>
-                  {Object.entries(PRIORITY).map(([k, p]) => (
-                    <option key={k} value={k}>{p.short} ({nonOdorComplaints.filter(c => (c.priority ?? 'normal') === k).length})</option>
-                  ))}
-                </select>
-              </div>
             </div>
 
-            {(filterCategory || filterVillage || filterTechnician || filterPriority || filterDepartment || filterTab !== 0 || search) && (
+            {(filterCategory || filterVillage || filterTechnician || filterDepartment || filterTab !== 0 || search) && (
               <button
-                onClick={() => { setFilterCategory(''); setFilterVillage(''); setFilterTechnician(''); setFilterPriority(''); setFilterDepartment(''); setFilterTab(0); setSearch('') }}
+                onClick={() => { setFilterCategory(''); setFilterVillage(''); setFilterTechnician(''); setFilterDepartment(''); setFilterTab(0); setSearch('') }}
                 className="mt-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-500 bg-red-50 hover:bg-red-100 transition-colors flex items-center gap-1 w-fit">
                 <X size={12} />
                 ล้างตัวกรองทั้งหมด
@@ -2395,7 +2308,6 @@ ${summaryHtml}
                       )}
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <PriorityBadge priority={c.priority} />
                       <StatusBadge status={c.status} />
                     </div>
                   </div>
@@ -2452,9 +2364,11 @@ ${summaryHtml}
                   <col style={{ width: 76 }} />
                   <col style={{ width: 124 }} />
                   <col style={{ width: 108 }} />
-                  <col style={{ width: 68 }} />
-                  <col style={{ width: 94 }} />
-                  <col style={{ width: 134 }} />
+                  {/* เจ้าของระบบเลิกใช้ความเร่งด่วนทั้งระบบแล้ว (คอลัมน์ complaints.priority ยังอยู่ใน DB
+                      แต่ไม่มี UI อ่าน/เขียนอีก) พื้นที่ 68px ของคอลัมน์เดิมแบ่งให้สถานะกับปุ่มดำเนินการ
+                      ซึ่งเคยถูกตัด ("กำลังดำเนิน…" / ปุ่มปฏิเสธล้นขอบ) — ความกว้างรวมคงเดิม ไม่ดันตารางให้ล้น */}
+                  <col style={{ width: 120 }} />
+                  <col style={{ width: 176 }} />
                 </colgroup>
                 <thead>
                   <tr style={{ backgroundColor: '#2c5282' }}>
@@ -2473,7 +2387,6 @@ ${summaryHtml}
                     <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วันที่ยื่น</th>
                     <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ผู้แจ้ง</th>
                     <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ผู้รับผิดชอบ</th>
-                    <th className="px-2 py-2.5 text-left text-[11px] leading-tight font-bold text-white border-r border-white/10">ความเร่งด่วน</th>
                     <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานะ</th>
                     <th className="px-2 py-2.5 text-center text-[11px] font-bold text-white">การดำเนินการ</th>
                   </tr>
@@ -2537,14 +2450,6 @@ ${summaryHtml}
                         {c.assigned_to
                           ? <span className="flex min-w-0 items-center gap-1 text-blue-700 font-medium" title={technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}><Wrench size={10} className="shrink-0" /><span className="truncate">{technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}</span></span>
                           : <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-2 py-2 border-r border-gray-200 overflow-hidden">
-                        {c.priority && c.priority !== 'normal'
-                          ? <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap border"
-                              style={{ backgroundColor: PRIORITY[c.priority]?.bg, color: PRIORITY[c.priority]?.text, borderColor: PRIORITY[c.priority]?.color + '40' }}>
-                              {PRIORITY[c.priority]?.short}
-                            </span>
-                          : <span className="text-gray-300 text-xs">ปกติ</span>}
                       </td>
                       <td className="px-2 py-2 border-r border-gray-200 overflow-hidden">
                         <StatusBadge status={c.status} />
@@ -2659,7 +2564,6 @@ ${summaryHtml}
           updating={updating}
           technicians={technicians}
           onAssign={assignTechnician}
-          onPriority={updatePriority}
           currentUserRole={currentUserRole ?? 'staff'}
           currentUserId={currentUserId}
           onDelete={handleDeleteComplaint}
