@@ -157,6 +157,26 @@ const checks = [
     },
   },
   {
+    // เจ้าของระบบสั่ง 2569-09-18 ให้ทุกใบเหมือนกัน: เส้นประมีไว้ให้เขียนมือ ค่าที่พิมพ์แล้วไม่ต้องมี
+    name: 'filled-fields-have-no-dotted-line',
+    reason: 'ช่องที่ระบบพิมพ์ค่าแล้วต้องไม่มีเส้นประ ส่วนช่องว่างต้องยังมีเส้นประให้เขียน',
+    async run(browser) {
+      const filled = await render(browser, { header: typicalHeader(), items: items(7) })
+      try {
+        const dotted = await filled.evaluate(() => [...document.querySelectorAll('.fill-value')]
+          .filter(el => getComputedStyle(el).borderBottomStyle !== 'none').map(el => el.textContent.trim()))
+        assert.deepEqual(dotted, [], `ช่องที่มีค่ายังมีเส้นประ: ${dotted.join(', ')}`)
+      } finally { await filled.close() }
+      // เว้นช่อง "เพื่อ" ว่างไว้ช่องเดียว — ต้องออกมาเป็นเส้นประให้เขียนมือ
+      const blank = await render(browser, { header: { ...typicalHeader(), purpose: '' }, items: items(7) })
+      try {
+        const blanks = await blank.evaluate(() => [...document.querySelectorAll('.fill-blank')]
+          .filter(el => getComputedStyle(el).borderBottomStyle === 'dotted').length)
+        assert.ok(blanks > 0, 'ใบเปล่าไม่มีเส้นประให้เขียนมือแล้ว')
+      } finally { await blank.close() }
+    },
+  },
+  {
     // เจ้าของระบบเทียบใบพิมพ์จริงกับต้นฉบับ 2569-09-12: ของเดิมไล่ความกว้างเส้นลงนามรายจุด
     // (42 / 40 / 36 / 34mm) คำต่อท้ายจึงไปจบคนละตำแหน่งทุกบรรทัด
     // ต้นฉบับกระดาษเว้นเส้นยาวเท่ากันหมด คำต่อท้ายจึงเรียงตรงกันเป็นแนวเดียว
