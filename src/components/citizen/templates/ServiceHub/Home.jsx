@@ -1,7 +1,10 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
-import { Wifi, Users, MapPinned, Compass, Phone, BookUser, ChevronRight } from 'lucide-react'
+import { Wifi, Users, MapPinned, Compass, Phone, BookUser, ChevronRight, Ambulance, CalendarDays } from 'lucide-react'
+import { supabase } from '../../../../lib/supabase'
+import { PATIENT_TRANSPORT_TYPE } from '../../../../lib/patientTransport'
+import { removedDocumentTypes } from '../../../../lib/documentTypes'
 import BannerSlider from '../../../../components/home/BannerSlider'
 // ComplaintBand นำออกจากหน้าแรกตามคำขอ (เข้าใช้งานผ่านปุ่ม ร้องเรียน/ร้องทุกข์ ด้านบน)
 import ComplaintStatsWidget from '../../../../components/home/ComplaintStatsWidget'
@@ -42,13 +45,64 @@ const MANUAL_SERVICE = {
   external: true,
 }
 
-// ทางลัดตารางวันเก็บขยะ — วางช่องแรก (เจ้าของระบบเลือก 2569-09-14: ไอคอนกดเข้าไปดู ไม่เปลือง
-// พื้นที่หน้าแรก) ต้องกรองออกจากอาร์เรย์ตอนปิดโมดูล waste เพราะจำนวนคอลัมน์คิดจากความยาวอาร์เรย์
-const WASTE_SCHEDULE_SERVICE = {
-  value: 'waste_schedule',
-  label: 'ตารางวันเก็บขยะ',
-  emoji: '📅',
-  href: '/waste',
+// การ์ดทางลัดแยกใต้เมนูเล็ก เฉพาะ ServiceHub ใช้สถานะเปิดบริการเดิมอัตโนมัติ
+function FeaturedServices() {
+  const { tenant, isModuleEnabled } = useTenant()
+  const [transportTenantId, setTransportTenantId] = useState(null)
+  const transportEnabled = (!isModuleEnabled || isModuleEnabled('inbox'))
+    && !removedDocumentTypes(tenant).includes(PATIENT_TRANSPORT_TYPE)
+  const wasteEnabled = !isModuleEnabled || isModuleEnabled('waste')
+
+  useEffect(() => {
+    if (!tenant?.id || !transportEnabled) return undefined
+    let cancelled = false
+    // เงื่อนไขเดียวกับ CitizenDocRequest: RPC คืน boolean ไม่อ่านข้อมูลผู้ป่วย
+    supabase.rpc('has_active_referral_partner', {
+      _municipality_id: tenant.id,
+      _document_type: PATIENT_TRANSPORT_TYPE,
+    }).then(({ data, error }) => {
+      if (!cancelled) setTransportTenantId(!error && data === true ? tenant.id : null)
+    }).catch(() => {
+      if (!cancelled) setTransportTenantId(null)
+    })
+    return () => { cancelled = true }
+  }, [tenant?.id, transportEnabled])
+
+  const services = []
+  if (transportEnabled && tenant?.id && transportTenantId === tenant.id) services.push({
+    href: `/doc-request?type=${PATIENT_TRANSPORT_TYPE}`,
+    label: 'ขออนุเคราะห์รถรับ-ส่งผู้ป่วย',
+    description: 'ยื่นคำขอรับบริการ',
+    icon: Ambulance,
+    background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 55%, #075985 100%)',
+  })
+  if (wasteEnabled) services.push({
+    href: '/waste',
+    label: 'ตารางวันเก็บขยะ',
+    description: 'ตรวจสอบวันเก็บขยะในพื้นที่',
+    icon: CalendarDays,
+    background: 'linear-gradient(135deg, #059669 0%, #047857 55%, #065f46 100%)',
+  })
+  if (!services.length) return null
+
+  return (
+    <div className={`relative z-10 mt-2 grid ${services.length === 2 ? 'grid-cols-2' : 'grid-cols-1'} items-stretch gap-2`}>
+      {services.map(({ href, label, description, icon: Icon, background }) => (
+        <Link key={href} to={href} aria-label={label}
+          className="flex min-h-[60px] min-w-0 items-center gap-2 rounded-xl border border-white/40 px-2.5 py-2.5 shadow-md shadow-blue-950/25 transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
+          style={{ background }}>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/20 ring-2 ring-white/45">
+            <Icon size={17} className="text-white" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+            <span className="block text-[11px] font-black leading-tight text-white drop-shadow-sm sm:text-[13px]">{label}</span>
+            <span className="mt-0.5 block text-[9px] font-semibold leading-tight text-white/85 sm:text-[10px]">{description}</span>
+          </span>
+          <ChevronRight size={13} className="shrink-0 text-white/90" aria-hidden="true" />
+        </Link>
+      ))}
+    </div>
+  )
 }
 
 // 3 บริการเอกสารเดิม (ขยะ/ภาษี/ขอสร้างบ้าน) เข้าถึงผ่านหน้า /doc-request
@@ -108,8 +162,7 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
   const { tenant } = useTenant()
   const displayItems = docTypes.slice(0, 6)
   const isPair = displayItems.length === 2
-  // 5 ช่องเรียงแถวเดียว — เดิมตกไปกฎ "3 แล้วขึ้นแถวใหม่" ทำให้กล่องสูงขึ้นอีกแถวบนมือถือ
-  // ค่าเริ่มต้นของธีมนี้กลายเป็น 5 ช่องตั้งแต่เพิ่มทางลัดตารางวันเก็บขยะ (2569-09-14)
+  // เมนูหลัก 4 ช่อง; รองรับบริการเพิ่มเติมที่หน่วยงานตั้งไว้ด้วย
   const gridCols = isPair
     ? 'grid-cols-2'
     : displayItems.length === 4
@@ -196,7 +249,7 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
           // 5 ช่องแถวเดียวบนมือถือ การ์ดแคบลงเหลือ 61-67px — วัดจริง 2 บรรทัดไม่พอ "ประเมินความพึงพอใจ"
           // ถูกตัดที่จอ 360/390px และ "คู่มือสำหรับประชาชน" ที่ 360px ให้ขึ้นได้ 3 บรรทัด การ์ดสูง
           // เพิ่มจาก 67 เป็น 80px แต่ยังแถวเดียว ไม่เปลี่ยนชื่อบริการเดิมเพื่อให้สั้นลง
-          const lineClamp = displayItems.length >= 5 ? 'line-clamp-3' : 'line-clamp-2'
+          const lineClamp = 'line-clamp-3'
           const cardContent = (
             <>
               <CategoryIcon emoji={emoji} size={isPair ? 26 : 22} style={tenant?.category_icon_style} />
@@ -218,6 +271,7 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
           )
         })}
       </div>
+      <FeaturedServices />
     </div>
   )
 }
@@ -231,9 +285,7 @@ export default function ServiceHubHome() {
     }))
     const complaintsEnabled = !isModuleEnabled || isModuleEnabled('complaints')
     const inboxEnabled = !isModuleEnabled || isModuleEnabled('inbox')
-    const wasteScheduleEnabled = !isModuleEnabled || isModuleEnabled('waste')
     const base = []
-    if (wasteScheduleEnabled) base.push(WASTE_SCHEDULE_SERVICE)
     if (complaintsEnabled) base.push(COMPLAINT_SERVICE)
     if (inboxEnabled) base.push(CITIZEN_SERVICE)
     if (complaintsEnabled) base.push(SATISFACTION_SERVICE)
