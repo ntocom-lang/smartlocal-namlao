@@ -1,6 +1,6 @@
 # Patient transport booking — implementation handoff (2026-09-18)
 
-สถานะ: พัฒนาและตรวจในเครื่องแล้ว ยังไม่ apply migration / commit / push / deploy ไม่ใช่บริการ production ที่เปิดใช้แล้ว
+สถานะ ณ 2026-09-18: ผู้ใช้สั่ง deploy แล้ว โค้ด commit/push ในสาขา codex/patient-transport-booking-20260918, PR #211; apply migrations ครบ 5 ชุดแล้ว กำลัง release ผ่าน CI ทุก tenant ยังปิดรับจองใหม่ (0 settings ที่ enabled, 0 booking records)
 
 ## ขอบเขตที่ทำ
 
@@ -64,11 +64,11 @@ node tests/patient-booking-browser.test.mjs
 
 ## Release gates ที่ยังค้าง
 
-1. `node scripts/lint-blocking.mjs` ไม่ผ่านที่ `vite.config.js:16:9` — `'process' is not defined` (`no-undef`) เป็นไฟล์เดิมที่ตรงกับ `origin/master` ไม่ได้แก้ในงานนี้ ให้เจ้าของงาน build/config แก้หรืออนุมัติขอบเขตก่อนแตะ
-2. ตรวจ schema จริงก่อน apply เพราะ local fixture จำลองเฉพาะ dependency tables/functions ไม่ใช่ทั้ง production schema; ทดสอบ Demo ด้วยบัญชีแต่ละบทบาท รวม two-connection race และเน็ตมือถือขาดกลางคำสั่ง
+1. แก้ missing `node:process` import ที่ vite.config.js ในรอบ release แล้ว `node scripts/lint-blocking.mjs` ผ่านหลังรวม master ล่าสุด
+2. ตรวจ dependency columns กับ schema จริงและ apply ครบแล้ว; ก่อนเปิดรับจองยังต้องทดสอบ Demo ด้วยบัญชีแต่ละบทบาท รวม two-connection race และเน็ตมือถือขาดกลางคำสั่ง
 3. ทดสอบจอและการใช้งานบนโทรศัพท์จริงของคนขับ; viewport simulation ไม่ใช่ผลรับรองอุปกรณ์จริง
 4. ผู้รับผิดชอบตรวจขอบเขตมอบหมาย/การใช้ข้อมูล/อายุเก็บและกระบวนการลบข้อมูลกับฉบับปัจจุบันก่อนเปิดรับข้อมูลสุขภาพ ไม่มีการสร้าง cron ลบข้อมูลหรือเดาระยะ retention อัตโนมัติในงานนี้
-5. ต้องได้รับอนุญาต commit/push/apply/deploy แยกตามกติกา repo; ยังไม่ได้ทำขั้นใดเหล่านี้
+5. ผู้ใช้สั่ง deploy ในบทสนทนาแล้ว กำลังดำเนิน release ตามคำสั่งนั้น; การเปิดรับข้อมูลจริงยังต้องตั้งค่าและตรวจรับข้างต้น
 
 ## ข้อจำกัดเมื่อขยาย
 
@@ -90,3 +90,8 @@ node tests/patient-booking-browser.test.mjs
 ตรวจเพิ่มผ่าน: PostgreSQL ตรวจ public projection, วันหยุด, free intervals ของขากลับภายหลัง, ช่วงวันที่เกินกำหนด, request rollback เมื่อร่วมไม่ได้, การแข่งขันแย่งที่นั่งด้วยแผนเก่า, ยืนยันเข้าเที่ยวเดิมและ retry; Browser ทดสอบผู้ไม่เข้าสู่ระบบ, จำมุมมอง, ขอร่วมจากตารางจนเจ้าหน้าที่รับเข้าเที่ยวเดิมและเต็ม, สองมุมมองที่ 320/390/768/1024px ไม่มี overflow. PGlite ยังเป็น single connection ไม่แทน two-connection race test บน Demo
 
 ค่า license/service เพิ่ม 0 บาท ไม่มี dependency production ใหม่ เพิ่มดัชนีตาม tenant/วันและ trip_id เพื่อลดการอ่านประวัติซ้ำ จำกัด public query ครั้งละ 62 วันและล่วงหน้า 180 วัน การเปิดเผยแม้เป็นจำนวนรวมกับเส้นทางอาจทำให้คาดเดาตัวบุคคลในชุมชนเล็กได้ ผู้รับผิดชอบต้องตรวจข้อความแจ้งการใช้ข้อมูลและนโยบายเผยแพร่ตารางก่อนเปิดจริง ห้ามใส่ชื่อ/ที่อยู่ผู้ป่วยในชื่อเส้นทาง
+
+
+## ผลตรวจฐานข้อมูลหลังติดตั้ง
+
+RLS เปิดครบ 6 ตาราง, anon/authenticated ไม่มี direct table grants และเรียก private planning helper ไม่ได้ Public calendar ของ Demo ตอบ enabled=false และ days=[] ตามค่าตั้งต้น Security advisors เพิ่ม INFO เรื่อง RLS ไม่มี policy 6 ตาราง (จงใจใช้ RPC-only) และ WARN เรื่อง SECURITY DEFINER callable: anonymous 2 endpoints / authenticated 12 endpoints ซึ่งจำกัด grants, search_path และตรวจ tenant/role ในฟังก์ชันแล้ว ไม่มี ERROR ใหม่ แต่ไม่ได้อ้างว่าทั้งโปรเจกต์ไม่มี advisory เดิม
