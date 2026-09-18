@@ -276,6 +276,23 @@ const checks = [
     },
   },
   {
+    name: 'filled-fields-have-no-dotted-line',
+    reason: 'เส้นประมีไว้ให้เขียนมือ ช่องที่ระบบพิมพ์ค่าแล้วต้องไม่มีเส้นประ ส่วนช่องว่างต้องยังมีให้เขียน',
+    async run(browser) {
+      const page = await render(browser, buildPatientTransportPacketHtml(args()))
+      try {
+        const result = await page.evaluate(() => ({
+          filled: [...document.querySelectorAll('.fill-value')]
+            .filter(el => getComputedStyle(el).borderBottomStyle !== 'none').map(el => el.textContent.trim()),
+          blanks: [...document.querySelectorAll('.fill-blank')]
+            .filter(el => getComputedStyle(el).borderBottomStyle === 'dotted').length,
+        }))
+        assert.deepEqual(result.filled, [], `ช่องที่มีค่ายังมีเส้นประ: ${result.filled.join(', ')}`)
+        assert.ok(result.blanks > 0, 'ช่องว่างสำหรับเขียนมือไม่มีเส้นประแล้ว')
+      } finally { await page.close() }
+    },
+  },
+  {
     name: 'fund-committee-fields-blank',
     reason: 'คณะกรรมการกองทุนไม่ได้อยู่ในระบบนี้ ระบบต้องไม่กรอกความเห็นหรือชื่อผู้ลงนามให้',
     async run(browser) {
