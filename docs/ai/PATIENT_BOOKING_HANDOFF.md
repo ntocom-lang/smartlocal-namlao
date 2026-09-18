@@ -118,10 +118,15 @@ RLS เปิดครบ 6 ตาราง, anon/authenticated ไม่มี 
 - หน้าตั้งค่าชี้ทางไปแก้ `min_lead_days` ที่ทะเบียนหน่วยงานรับเรื่องต่อ (เมนู "ประเภทคำขอ
   เอกสาร") และแสดงค่าปัจจุบันของเจ้าของรถที่เลือกไว้ ค่านี้ไม่ได้อยู่ในตารางตั้งค่าโมดูลนี้
 
-Migration: `20260918170000_patient_booking_day_guards.sql` (CREATE OR REPLACE 3 ฟังก์ชัน
+Migration: `20260918170100_patient_booking_day_guards.sql` (CREATE OR REPLACE 3 ฟังก์ชัน
 ยกมาทั้งตัวจากของเดิมแล้วแก้เฉพาะจุด ไม่มี placeholder) ถ้ายังไม่ apply หน้าเว็บจะไม่พัง
 แต่จะไม่เตือนเรื่องเวลานัดนอกเวลาบริการ เพราะ `journeyWindow()` คืน null เมื่อไม่มีค่าเวลา
 
 ทดสอบ: `node tests/patient-booking-db.test.mjs` เพิ่มชุดวันหยุด/ปฏิทินยังไม่ตรวจ/รถไม่พร้อม
 และยืนยันว่าเจ้าหน้าที่ยังรับเรื่องแทนได้ · `node tests/patient-booking-browser.test.mjs`
 เพิ่มเคสประชาชนเลือกวันเสาร์และเวลานัด 08:45 แล้วปุ่ม "ต่อไป" ถูกปิดพร้อมเหตุผล
+
+หมายเหตุ: ไฟล์นี้เดิมชื่อ `20260918170000_...` แต่ชนกับ `20260918170000_water_sync_watchdog_cron.sql`
+(#216) ที่ merge และ apply ไปก่อน จึงย้ายเป็น `20260918170100` ก่อน apply ครั้งแรก ถ้าปล่อยไว้
+`db push` จะเห็น version นี้ใน history แล้วข้ามไฟล์นี้ไปเงียบๆ ตั้ง prefix ใหม่ต้องเช็ค
+`git ls-tree origin/master supabase/migrations/` และ `schema_migrations` ก่อนทุกครั้ง
