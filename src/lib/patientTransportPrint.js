@@ -37,7 +37,7 @@ function esc(value) {
   })[character])
 }
 
-// ช่องกรอก — กติกาเดียวกับใบยืมพัสดุ/ใบน้ำประปา: มีค่าเป็นข้อความ inline ธรรมดา
+// ช่องกรอก — มีค่าเป็นข้อความ inline ธรรมดา ไม่มีเส้นประใต้ (ต่างจากใบยืมพัสดุ/ใบน้ำประปา)
 // ว่างเป็นเส้นประให้เขียนด้วยปากกา (ห้าม inline-block ในย่อหน้าที่ไหลต่อเนื่อง)
 function line(value, width = '40mm') {
   const content = String(value ?? '').trim()
@@ -131,7 +131,9 @@ function sharedCss() {
   p { margin: 0; }
   .para { text-align: left; }
   .indent { display: inline-block; width: 2.5cm; }
-  .fill-value { border-bottom: 1px dotted #000; padding: 0 1mm; }
+  /* ช่องที่ระบบกรอกค่าให้แล้วไม่ต้องมีเส้นประ — เส้นประมีไว้ให้เขียนมือ ค่าที่พิมพ์แล้วไม่ต้องเขียนทับ
+     (เจ้าของระบบสั่ง 2569-09-18) เส้นประเหลือเฉพาะ .fill-blank ที่ว่างจริง */
+  .fill-value { padding: 0 1mm; }
   .fill-blank { display: inline-block; border-bottom: 1px dotted #000; }
   .field-blank { white-space: nowrap; }
   .nb { white-space: nowrap; }
