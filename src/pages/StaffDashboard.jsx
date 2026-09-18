@@ -122,6 +122,21 @@ const INBOX_ACTION_LABELS = {
   rejected:   'ดูรายละเอียด',
 }
 
+// สีปุ่มแยกตามสถานะ — เดิมทุกแถวเป็นกรอบน้ำเงินเหมือนกันหมด ไล่ตารางแล้วแยกไม่ออกว่าแถวไหน
+// ยังต้องทำงาน แถวไหนปิดแล้ว
+// ปุ่มทึบ = ยังมีงานค้าง ใช้สีของสถานะ "ปลายทาง" ที่งานแถวนั้นจะเดินไป หลักเดียวกับปุ่มตาราง
+// คำร้อง (NEXT_ACTION ใน ComplaintsManager.jsx) เจ้าหน้าที่ใช้สองตารางสลับกันจะได้อ่านสีแบบเดียว
+//   รอดำเนินการ → กำลังดำเนินการ = น้ำเงิน · กำลังดำเนินการ → เสร็จสิ้น = เขียว #047857 (ตรงกับ
+//   ปุ่ม "ดำเนินการแล้ว" ของคำร้อง)
+// ปุ่มกรอบเทา = ปิดงานแล้ว แค่เปิดดู ให้จมลงไปไม่แย่งสายตาจากแถวที่ยังค้าง
+// ใช้เฉด 700 เพราะตัวอักษรขาว 12px บนสีป้าย (#3b82f6/#10b981) contrast ไม่ถึง 4.5:1
+const INBOX_ACTION_CLASSES = {
+  pending:    'border-blue-700 bg-blue-700 text-white hover:bg-blue-800 hover:border-blue-800',
+  // ค่าสีตรงตัวแทน emerald-700 เพราะ Tailwind v4 เป็น oklch ไม่ได้ออกมาเป็น #047857 เป๊ะ
+  processing: 'border-[#047857] bg-[#047857] text-white hover:bg-[#065f46] hover:border-[#065f46]',
+  done:       'border-slate-300 bg-white text-slate-600 hover:bg-slate-100',
+}
+
 // ใครลบคำขอถาวรได้ — ต้องตรงกับ RLS policy ของ document_requests เป๊ะ
 // (`superadmin delete document_requests` + `admin delete own municipality document_requests`)
 // ฝั่ง UI เป็นแค่การซ่อนปุ่มให้ไม่ต้องกดแล้วเจอ error ตัวบังคับจริงอยู่ที่ฐานข้อมูล —
@@ -785,12 +800,15 @@ function TaskDetailSheet({
             </button>
           </div>
         )}
-        {/* ⚠️ ปุ่มนี้พิมพ์ "หนังสือรับรอง" ตัวกลางจาก buildDocHTML() — คำขอรถรับ-ส่งผู้ป่วย
-            ไม่มีหนังสือรับรอง และ DOC_TITLES ไม่มีประเภทนี้ จึงตกไปใช้ค่ากลาง 'หนังสือรับรอง'
-            ได้เอกสารที่ไม่มีความหมายกับเรื่องนี้ พร้อมข้อมูลผู้ป่วยติดไปด้วย
-            ใบพิมพ์จริงของโมดูล (หนังสือนำส่ง + ใบคำขอ) อยู่ในแผงด้านล่าง
-            หมายเหตุ: asset_borrow_request มีอาการเดียวกัน แต่เป็นของโมดูลพัสดุ ไม่แตะในสาขานี้ */}
-        {req.status === 'completed' && req.document_type !== 'patient_transport_request' && (
+        {/* ⚠️ ปุ่มนี้พิมพ์ "หนังสือรับรอง" ตัวกลางจาก buildDocHTML() — ประเภทที่มีแผงเฉพาะ
+            (PANEL_DOC_TYPES) ไม่มีหนังสือรับรอง และ DOC_TITLES ไม่มีประเภทเหล่านี้ จึงตกไปใช้
+            ค่ากลาง 'หนังสือรับรอง' ได้เอกสารผิดประเภทที่ไม่มีความหมายกับเรื่องนั้นเลย
+              รถรับ-ส่งผู้ป่วย — ข้อมูลผู้ป่วยติดไปด้วย ใบจริง (หนังสือนำส่ง + ใบคำขอ) อยู่ในแผง
+              ยืมพัสดุ        — เจ้าของระบบเจอจากใช้งานจริง 2569-09-18 ใบจริงคือ ใบ บย.
+                                ซึ่งแผงพิมพ์ให้ได้ทุกสถานะอยู่แล้ว (รวมหลังปิดงาน)
+            ใช้ลิสต์เดียวกับที่ซ่อนปุ่มเปลี่ยนสถานะ — เพิ่มประเภทที่มีแผงใหม่เมื่อไหร่ ปุ่มนี้ซ่อนตามเอง
+            ไม่ต้องจำมาแก้ที่นี่อีก (ของเดิมเขียนชื่อประเภทตรงๆ ประเภทที่สองจึงหลุดไป) */}
+        {req.status === 'completed' && !PANEL_DOC_TYPES.includes(req.document_type) && (
           <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
             <button onClick={() => {
               const html = buildDocHTML({ req, tenant, docDate: new Date().toISOString().slice(0, 10) })
@@ -1351,7 +1369,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => setSelected(req)}
-                            className="whitespace-nowrap text-xs font-bold px-3 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors">
+                            className={`whitespace-nowrap text-xs font-bold px-3 py-1 rounded border transition-colors ${INBOX_ACTION_CLASSES[req.status] ?? INBOX_ACTION_CLASSES.done}`}>
                             {INBOX_ACTION_LABELS[req.status] ?? 'ดูรายละเอียด'}
                           </button>
                           {canDeleteRequests(currentUserRole) && (

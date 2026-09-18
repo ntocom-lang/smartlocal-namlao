@@ -7,6 +7,7 @@
 // รันด้วย: npm run test:asset-borrow
 
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import process from 'node:process'
 import { buildAssetBorrowHtml } from '../src/lib/assetBorrowPrint.js'
 
@@ -270,6 +271,31 @@ check('ไม่มี undefined หรือ null หลุดลงใบ', ()
   })
   assert.doesNotMatch(html, /undefined/)
   assert.doesNotMatch(html, />null</)
+})
+
+// ⚠️ ข้อนี้ไม่ได้ตรวจใบ บย. แต่ตรวจว่าหน้าเจ้าหน้าที่ "ไม่พิมพ์ใบอื่นแทนใบ บย." —
+// เจ้าของระบบเจอจากใช้งานจริง 2569-09-18: คำขอยืมพัสดุที่ปิดงานแล้วมีปุ่ม
+// "พิมพ์ / บันทึกเป็น PDF" ตัวกลาง ซึ่งพิมพ์ "หนังสือรับรอง" (ค่ากลางของ DOC_TITLES)
+// ของเดิมเขียนยกเว้นไว้เฉพาะรถรับ-ส่งผู้ป่วย ประเภทที่สองที่มีแผงเฉพาะจึงหลุดไป
+check('ปุ่มพิมพ์ตัวกลางของหน้าเจ้าหน้าที่ซ่อนสำหรับทุกประเภทที่มีแผงเฉพาะ (รวมยืมพัสดุ)', () => {
+  // ไฟล์ต้นทางเป็น CRLF บนเครื่อง Windows แต่เป็น LF บน CI — ปรับให้เหมือนกันก่อนจับรูปแบบ
+  const source = readFileSync(new URL('../src/pages/StaffDashboard.jsx', import.meta.url), 'utf8')
+    .replace(/\r\n/g, '\n')
+  const panelTypes = source.match(/const PANEL_DOC_TYPES = \[([^\]]*)\]/)
+  assert.ok(panelTypes, 'หา PANEL_DOC_TYPES ไม่เจอ — โครงไฟล์เปลี่ยนไป ต้องตรวจเงื่อนไขปุ่มพิมพ์ใหม่')
+  assert.match(panelTypes[1], /'asset_borrow_request'/)
+  // ปุ่มพิมพ์ตัวกลางต้องกรองด้วยลิสต์เดียวกัน ไม่ใช่ไล่ชื่อประเภทเองทีละตัว
+  // หาจุดเรียก buildDocHTML ของปุ่มพิมพ์ แล้วย้อนหาเงื่อนไข {req.status === 'completed' && …}
+  // ที่ครอบมันอยู่ใกล้ที่สุด (จุดเรียกอีกที่ใน handleUpdate ใช้ตัวแปร completedRequest ไม่ใช่ req)
+  const call = source.indexOf('buildDocHTML({ req, tenant')
+  assert.ok(call > 0, 'หาจุดเรียก buildDocHTML ของปุ่มพิมพ์ตัวกลางไม่เจอ')
+  const guardStart = source.lastIndexOf("{req.status === 'completed' && ", call)
+  assert.ok(guardStart > 0 && call - guardStart < 600, 'หาเงื่อนไขที่ครอบปุ่มพิมพ์ตัวกลางไม่เจอ')
+  const guardLine = source.slice(guardStart, source.indexOf('\n', guardStart))
+  const printGuard = guardLine.match(/^\{req\.status === 'completed' && (.*) && \($/)
+  assert.ok(printGuard, `รูปแบบเงื่อนไขของปุ่มพิมพ์ตัวกลางเปลี่ยนไป: ${guardLine}`)
+  assert.equal(printGuard[1], '!PANEL_DOC_TYPES.includes(req.document_type)',
+    'ปุ่มพิมพ์ตัวกลางต้องซ่อนด้วย PANEL_DOC_TYPES — ไม่งั้นประเภทที่มีแผงเฉพาะได้ "หนังสือรับรอง" ผิดประเภท')
 })
 
 let failed = 0
