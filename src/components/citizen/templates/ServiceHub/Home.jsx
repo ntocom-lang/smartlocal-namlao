@@ -71,7 +71,7 @@ function FeaturedServices() {
   const services = []
   if (transportEnabled && tenant?.id && transportTenantId === tenant.id) services.push({
     href: `/doc-request?type=${PATIENT_TRANSPORT_TYPE}`,
-    label: 'ขออนุเคราะห์รถรับ-ส่งผู้ป่วย',
+    label: 'รถรับ-ส่งผู้ป่วย',
     description: 'ยื่นคำขอรับบริการ',
     icon: Ambulance,
     background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 55%, #075985 100%)',
