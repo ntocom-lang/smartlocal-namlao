@@ -122,6 +122,17 @@ const INBOX_ACTION_LABELS = {
   rejected:   'ดูรายละเอียด',
 }
 
+// สีปุ่มแยกตามสถานะ — เดิมทุกแถวเป็นกรอบน้ำเงินเหมือนกันหมด ไล่ตารางแล้วแยกไม่ออกว่าแถวไหน
+// ยังต้องทำงาน แถวไหนปิดแล้ว
+// ปุ่มทึบ = ยังมีงานค้าง ใช้ตระกูลสีเดียวกับป้ายสถานะ (STATUS) คนจะได้จำคู่สีชุดเดียว
+// ปุ่มกรอบเทา = ปิดงานแล้ว แค่เปิดดู ให้จมลงไปไม่แย่งสายตาจากแถวที่ยังค้าง
+// ใช้เฉด 700 เพราะตัวอักษรขาว 12px บนสีป้าย (#f59e0b/#3b82f6) contrast ไม่ถึง 4.5:1
+const INBOX_ACTION_CLASSES = {
+  pending:    'border-amber-700 bg-amber-700 text-white hover:bg-amber-800 hover:border-amber-800',
+  processing: 'border-blue-700 bg-blue-700 text-white hover:bg-blue-800 hover:border-blue-800',
+  done:       'border-slate-300 bg-white text-slate-600 hover:bg-slate-100',
+}
+
 // ใครลบคำขอถาวรได้ — ต้องตรงกับ RLS policy ของ document_requests เป๊ะ
 // (`superadmin delete document_requests` + `admin delete own municipality document_requests`)
 // ฝั่ง UI เป็นแค่การซ่อนปุ่มให้ไม่ต้องกดแล้วเจอ error ตัวบังคับจริงอยู่ที่ฐานข้อมูล —
@@ -1354,7 +1365,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => setSelected(req)}
-                            className="whitespace-nowrap text-xs font-bold px-3 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors">
+                            className={`whitespace-nowrap text-xs font-bold px-3 py-1 rounded border transition-colors ${INBOX_ACTION_CLASSES[req.status] ?? INBOX_ACTION_CLASSES.done}`}>
                             {INBOX_ACTION_LABELS[req.status] ?? 'ดูรายละเอียด'}
                           </button>
                           {canDeleteRequests(currentUserRole) && (
