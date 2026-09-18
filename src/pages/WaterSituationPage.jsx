@@ -259,7 +259,14 @@ function WaterLevelCard({ station: s, homeAmphoe, now }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           {s.river_name && <p className="text-xs font-bold text-cyan-700">{s.river_name}</p>}
-          <p className="text-base font-bold leading-tight text-gray-900">สถานี{s.station_name}</p>
+          <p className="text-base font-bold leading-tight text-gray-900">
+            สถานี{s.station_name}
+            {s.is_primary && (
+              <span className="ml-1.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-bold text-emerald-700">
+                ในตำบล
+              </span>
+            )}
+          </p>
           <p className="mt-0.5 text-xs text-gray-500">{meta}</p>
           {s.note && <p className="mt-0.5 text-xs text-amber-700">{s.note}</p>}
         </div>

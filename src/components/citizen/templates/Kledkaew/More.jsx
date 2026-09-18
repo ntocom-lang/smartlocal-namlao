@@ -6,7 +6,7 @@ import {
   Phone, AlertTriangle, Cloud, BookUser,
   Store, FileText, CalendarDays, Luggage, Info,
   UserCircle, LogOut, Globe, UserCog, Settings, RefreshCw, ChevronDown,
-  Database, BookOpen, Monitor, Check, UploadIcon, Wrench, Trash2,
+  Database, BookOpen, Monitor, Check, UploadIcon, Wrench, Trash2, CloudRain,
 } from 'lucide-react'
 import { useAuth } from '../../../../contexts/AuthContext'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
@@ -92,6 +92,8 @@ export default function KledkaewMore() {
         { label: 'ตารางวันเก็บขยะ', icon: Trash2, href: '/waste', color: 'text-emerald-600' },
         { label: 'ปฏิทินกิจกรรม', icon: CalendarDays, href: '/events', color: 'text-[var(--color-primary)]' },
         { label: 'สภาพอากาศ', icon: Cloud, href: '/weather', color: 'text-[var(--color-primary)]' },
+        // ซ่อนเองเมื่อ อปท. ไม่ได้เปิดโมดูล water-situation (ตัวกรอง moduleForPath ด้านล่าง)
+        { label: 'สถานการณ์น้ำ-ฝน', icon: CloudRain, href: '/water-situation', color: 'text-sky-600' },
       ],
     },
     {
