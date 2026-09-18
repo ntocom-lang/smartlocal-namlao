@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, CloudRain, ExternalLink,
+  AlertTriangle, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, CloudRain, Dam, ExternalLink,
   MapPin, RefreshCw, Waves,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import {
-  STATION_STALE_HOURS, SYNC_STALE_HOURS, bankText, distanceText, formatMm, isStale, mapUrl,
-  measuredAtText, rainLevel, safeColor, stationPlace, toNum, waterTrend,
+  DAM_LEVELS, DAM_STALE_HOURS, STATION_STALE_HOURS, SYNC_STALE_HOURS, bankText, damLevel, damTrend,
+  dataDayText, distanceText, formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainLevel, safeColor,
+  stationPlace, toNum, waterTrend,
 } from '../lib/waterSituation'
 
 // ข้อมูลในฐานเปลี่ยนชั่วโมงละครั้ง (thaiwater-sync) — ถามซ้ำถี่กว่านี้ก็ไม่ได้ของใหม่ เปลืองโควตาฟรีเปล่า
@@ -66,6 +67,7 @@ export default function WaterSituationPage() {
   const stations = data?.stations ?? []
   const rain = stations.filter(s => s.station_type === 'rain')
   const levels = stations.filter(s => s.station_type === 'waterlevel')
+  const dams = stations.filter(s => s.station_type === 'dam')
   const loading = tenantLoading || Boolean(tenantId && data === null && !loadError)
 
   return (
@@ -117,6 +119,7 @@ export default function WaterSituationPage() {
             <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} />
             {rain.length > 0 && <RainSection stations={rain} homeAmphoe={tenant?.district} now={checkedAt} />}
             {levels.length > 0 && <WaterLevelSection stations={levels} homeAmphoe={tenant?.district} now={checkedAt} />}
+            {dams.length > 0 && <DamSection stations={dams} homeAmphoe={tenant?.district} now={checkedAt} />}
             <SourceNote tenantName={tenant?.name} />
           </>
         )}
@@ -305,6 +308,133 @@ function WaterLevelCard({ station: s, homeAmphoe, now }) {
           <a href={mapHref} target="_blank" rel="noopener noreferrer"
             className="inline-flex min-h-[32px] items-center gap-1 font-semibold text-cyan-700">
             <MapPin size={13} /> ตำแหน่งสถานี
+          </a>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DamSection({ stations, homeAmphoe, now }) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-start gap-2.5 px-1">
+        <Dam size={19} className="mt-0.5 shrink-0 text-blue-700" />
+        <div>
+          <h2 className="text-sm font-bold text-gray-800">อ่างเก็บน้ำใกล้พื้นที่</h2>
+          {/* ภาษาไทยไม่มีเว้นวรรคระหว่างคำ เบราว์เซอร์ตัดบรรทัดกลางวลีได้ ("ใกล้ไป / ไกล" บนจอ 390px)
+              ล็อกแต่ละวลีไว้ ให้ตัดได้เฉพาะช่องว่างระหว่างวลี */}
+          <p className="text-xs text-gray-500">
+            อ่างเก็บน้ำขนาดกลางของกรมชลประทาน{' '}
+            <span className="whitespace-nowrap">เรียงจากใกล้ไปไกล</span> ·{' '}
+            <span className="whitespace-nowrap">ข้อมูลรายวัน</span>
+          </p>
+        </div>
+      </div>
+      {stations.map(s => <DamCard key={s.station_code} station={s} homeAmphoe={homeAmphoe} now={now} />)}
+      <div className="rounded-xl border border-gray-100 bg-white px-3 py-2.5 text-[11px] leading-relaxed text-gray-500">
+        <p>ป้ายเทียบเกณฑ์ % ของความจุที่ระดับเก็บกัก ตามรายงานของ สสน. และกรมชลประทาน:</p>
+        <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+          {DAM_LEVELS.map(l => (
+            <li key={l.key} className="inline-flex items-center gap-1">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: l.color }} />
+              {l.label} {l.range}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )
+}
+
+function DamCard({ station: s, homeAmphoe, now }) {
+  const storage = toNum(s.dam_storage_mcm)
+  const capacity = toNum(s.dam_capacity_mcm)
+  const percent = toNum(s.storage_percent)
+  const inflow = toNum(s.dam_inflow_mcm)
+  const released = toNum(s.dam_released_mcm)
+  const hasValue = Boolean(s.recorded_at) && storage !== null
+  const stale = Boolean(s.recorded_at) && isStale(s.recorded_at, now, DAM_STALE_HOURS)
+  const level = damLevel(percent)
+  const color = safeColor(level?.color)
+  const trend = damTrend(s.dam_storage_mcm, s.prev_dam_storage_mcm)
+  const TrendIcon = trend ? TREND_STYLE[trend.dir].Icon : null
+  const day = dataDayText(s.recorded_at, now)
+  const mapHref = mapUrl(s.latitude, s.longitude)
+  const meta = [stationPlace(s, homeAmphoe), distanceText(s.distance_km)].filter(Boolean).join(' · ')
+  // แถบยาวได้สุด 100% — เกินความจุเก็บกักให้เต็มแถบ ตัวเลขกับป้ายบอกส่วนที่เกินเอง
+  const barWidth = percent !== null ? Math.max(0, Math.min(percent, 100)) : 0
+
+  return (
+    <div className="rounded-2xl border bg-white p-4 shadow-sm" style={{ borderColor: hasValue && !stale ? `${color}66` : '#f3f4f6' }}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-base font-bold leading-tight text-gray-900">
+            {s.station_name}
+            {s.is_primary && (
+              <span className="ml-1.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-bold text-emerald-700">
+                ในตำบล
+              </span>
+            )}
+          </p>
+          <p className="mt-0.5 text-xs text-gray-500">{meta}</p>
+          {s.note && <p className="mt-0.5 text-xs text-amber-700">{s.note}</p>}
+        </div>
+        {hasValue && level && (
+          <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold text-gray-800 ${stale ? 'opacity-50' : ''}`}
+            style={{ borderColor: color }}>
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+            {level.label}
+          </span>
+        )}
+      </div>
+
+      {hasValue ? (
+        <div className={`mt-3 ${stale ? 'opacity-50' : ''}`}>
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-xs text-gray-600">
+              <span className="text-lg font-bold text-gray-900">{formatMcm(storage)}</span>
+              {capacity !== null && <> จาก {formatMcm(capacity)}</>} ล้าน ลบ.ม.
+            </p>
+            {percent !== null && (
+              <p className="text-lg font-bold text-gray-900">
+                {percent.toLocaleString('th-TH', { maximumFractionDigits: 1 })}%
+              </p>
+            )}
+          </div>
+          {percent !== null && (
+            <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-gray-100"
+              role="img" aria-label={`ปริมาณน้ำในอ่าง ${percent.toFixed(1)}% ของความจุที่ระดับเก็บกัก`}>
+              <div className="h-full rounded-full" style={{ width: `${barWidth}%`, backgroundColor: color }} />
+            </div>
+          )}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Metric label="น้ำไหลลงอ่าง/วัน" value={inflow !== null ? `${formatMcm(inflow)} ล้าน ลบ.ม.` : '–'} />
+            <Metric label="น้ำระบาย/วัน" value={released !== null ? `${formatMcm(released)} ล้าน ลบ.ม.` : '–'} />
+            <div className="col-span-2">
+              <Metric label="ปริมาตรเทียบกับเมื่อวาน" value={trend ? (
+                <span className={`inline-flex items-center gap-1 ${TREND_STYLE[trend.dir].className}`}>
+                  <TrendIcon size={15} /> {trend.label}
+                </span>
+              ) : 'รอข้อมูลวันถัดไป'}
+                hint={trend && s.prev_recorded_at ? `เทียบกับข้อมูลวันที่ ${dataDayText(s.prev_recorded_at, now)}` : null} />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-gray-400">ไม่มีข้อมูลล่าสุด</p>
+      )}
+
+      <div className="mt-3 flex items-center justify-between gap-2 text-xs">
+        {hasValue ? (
+          stale
+            ? <span className="text-amber-700">ไม่มีข้อมูลใหม่ตั้งแต่ {day}</span>
+            : <span className="text-gray-500">{day === 'วันนี้' ? 'ข้อมูลของวันนี้' : `ข้อมูลวันที่ ${day}`}</span>
+        ) : <span />}
+        {mapHref && (
+          <a href={mapHref} target="_blank" rel="noopener noreferrer"
+            className="inline-flex min-h-[32px] items-center gap-1 font-semibold text-blue-700">
+            <MapPin size={13} /> ตำแหน่งอ่าง
           </a>
         )}
       </div>

@@ -3,8 +3,8 @@
 // รันด้วย: node tests/water-situation.test.mjs
 import assert from 'node:assert/strict'
 import {
-  bankText, distanceText, formatMm, isStale, mapUrl, measuredAtText, rainLevel, safeColor,
-  stationPlace, waterTrend,
+  DAM_LEVELS, DAM_STALE_HOURS, bankText, damLevel, damTrend, dataDayText, distanceText, formatMcm,
+  formatMm, isStale, mapUrl, measuredAtText, rainLevel, safeColor, stationPlace, waterTrend,
 } from '../src/lib/waterSituation.js'
 
 // ── เกณฑ์ปริมาณฝนของกรมอุตุนิยมวิทยา (ขอบช่วงทุกจุด) ──
@@ -80,5 +80,62 @@ assert.equal(mapUrl(95, 100), null)
 assert.equal(safeColor('#00B050'), '#00B050')
 assert.equal(safeColor('red'), '#9ca3af')
 assert.equal(safeColor('url(javascript:alert(1))'), '#9ca3af')
+
+// ── เกณฑ์ปริมาณน้ำในอ่าง (% รนก.) ต้องตรงรายงาน สสน. / กรมชลประทาน ทุกขอบช่วง ──
+// ≤30 วิกฤติ · >30–50 น้ำน้อย · >50–80 ปานกลาง · >80–100 น้ำมาก · >100 เกินความจุเก็บกัก
+{
+  const key = (p) => damLevel(p)?.key ?? null
+  assert.equal(key(0), 'critical')
+  assert.equal(key(30), 'critical', '30% พอดียังเป็นน้ำน้อยวิกฤติ (≤30)')
+  assert.equal(key(30.01), 'low')
+  assert.equal(key(50), 'low')
+  assert.equal(key(50.01), 'moderate')
+  assert.equal(key(51.86), 'moderate', 'แม่ถาง 2569-09-18')
+  assert.equal(key(80), 'moderate')
+  assert.equal(key(80.01), 'high')
+  assert.equal(key(88.55), 'high', 'แม่คำปอง 2569-09-18')
+  assert.equal(key(100), 'high', '100% พอดียังไม่เกินความจุเก็บกัก')
+  assert.equal(key(100.01), 'over')
+  assert.equal(key(137), 'over')
+  assert.equal(key('88.55'), 'high', 'ต้นทางส่งตัวเลขเป็นสตริงได้')
+  // ไม่มีค่า ต้องไม่เดาเป็น "น้ำน้อยวิกฤติ" — คนละความหมายกับอ่างแห้ง
+  assert.equal(key(null), null)
+  assert.equal(key(''), null)
+  assert.equal(key(-1), null)
+}
+
+// สีต้องตรงต้นฉบับทุกระดับ — กันคน "แก้สีให้ดูเข้าใจง่าย" จนไม่ตรงเว็บของหน่วยงาน
+assert.deepEqual(
+  DAM_LEVELS.map(l => [l.label, l.color]),
+  [
+    ['น้ำน้อยวิกฤติ', '#FFC000'],
+    ['น้ำน้อย', '#00B050'],
+    ['น้ำปานกลาง', '#003CFA'],
+    ['น้ำมาก', '#FF0000'],
+    ['เกินความจุเก็บกัก', '#C70000'],
+  ],
+)
+
+// ── ปริมาตรอ่าง + แนวโน้มเทียบเมื่อวาน ──
+assert.equal(formatMcm(5.99), '5.99')
+assert.equal(formatMcm(30.62), '30.62')
+assert.equal(formatMcm(0.4), '0.4')
+assert.equal(formatMcm(null), '–')
+assert.deepEqual(damTrend(5.99, 5.87), { dir: 'up', diff: 0.12, label: 'เพิ่ม 0.12 ล้าน ลบ.ม.' })
+assert.deepEqual(damTrend(15.88, 16.1), { dir: 'down', diff: -0.22, label: 'ลด 0.22 ล้าน ลบ.ม.' })
+assert.equal(damTrend(5.99, 5.99).dir, 'flat')
+assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อมูลเมื่อวาน ต้องไม่เดาแนวโน้ม')
+
+// ── ข้อมูลรายวัน: ไม่ขึ้นเตือนค้างทุกเช้า และไม่โชว์ "00:00 น." ──
+{
+  const today = '2026-09-18T17:00:00.000Z'      // เที่ยงคืนเวลาไทยของ 19 ก.ย.
+  const yesterday = '2026-09-17T17:00:00.000Z'  // เที่ยงคืนเวลาไทยของ 18 ก.ย.
+  const morning = new Date('2026-09-19T01:00:00Z') // 08:00 น. 19 ก.ย. ค่าของวันนี้ยังไม่ออก
+  assert.equal(isStale(yesterday, morning, DAM_STALE_HOURS), false, 'ค่าของเมื่อวานตอนเช้าต้องไม่ถือว่าค้าง')
+  assert.equal(isStale(yesterday, new Date('2026-09-19T17:01:00Z'), DAM_STALE_HOURS), true, 'หมดวันแล้วยังไม่มีค่าใหม่ = ค้าง')
+  assert.equal(dataDayText(today, morning), 'วันนี้')
+  assert.equal(dataDayText(yesterday, morning), '18 ก.ย.')
+  assert.equal(dataDayText(null, morning), '')
+}
 
 console.log('✅ water-situation: ผ่านทุกข้อ')
