@@ -2590,6 +2590,10 @@ export default function StaffDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
+              <button type="button" onClick={() => navigate('/patient-transport')}
+                className="min-h-11 rounded-xl border border-white/40 px-3 py-2 text-xs font-bold text-white">
+                รถรับส่งผู้ป่วย
+              </button>
               <UserProfileBadge tone="onDark" />
               <PortalSwitcher className="flex" />
               <button onClick={handleLogout}
