@@ -64,7 +64,32 @@ function ChoiceGroup({ options, value, onChange }) {
  * ⚠️ ห้ามเขียนข้อความใดที่ทำให้เข้าใจว่ายื่นแล้วได้รถแน่นอน — หน่วยงานปลายทางพิจารณาตาม
  * ระเบียบของตัวเอง (กองทุนสวัสดิการชุมชนโดยทั่วไปให้สิทธิ์เฉพาะสมาชิก)
  */
-export default function PatientTransportWizard({ tenant, session, onBack, staffId, onDone }) {
+export default function PatientTransportWizard(props) {
+  const navigate = useNavigate()
+  const tenantId = props.tenant?.id
+  const [availability, setAvailability] = useState(null)
+  const [retry, setRetry] = useState(0)
+  useEffect(() => {
+    if (!tenantId) return undefined
+    let active = true
+    supabase.rpc('patient_booking_info', { p_muni: tenantId }).then(({ data, error }) => {
+      if (!active) return
+      if (error && !['PGRST202', '42883'].includes(error.code)) {
+        setAvailability({ tenantId, error: 'ตรวจสอบช่องทางจองรถไม่สำเร็จ กรุณาลองใหม่' })
+      } else if (data?.booking_mode) {
+        navigate('/patient-transport', { replace: true })
+      } else {
+        setAvailability({ tenantId, legacy: true })
+      }
+    }).catch(() => { if (active) setAvailability({ tenantId, error: 'เครือข่ายขัดข้อง กรุณาลองใหม่' }) })
+    return () => { active = false }
+  }, [tenantId, retry, navigate])
+  if (availability?.tenantId !== tenantId) return <p role="status" className="p-4">กำลังตรวจช่องทางรับจองรถ…</p>
+  if (availability?.error) return <div className="p-4"><p role="alert">{availability.error}</p><button className="mt-3 min-h-11 rounded-xl border px-4" type="button" onClick={() => setRetry(n => n + 1)}>ลองใหม่</button></div>
+  return <LegacyPatientTransportWizard {...props} />
+}
+
+function LegacyPatientTransportWizard({ tenant, session, onBack, staffId, onDone }) {
   const navigate = useNavigate()
   const canUse = Boolean(session || staffId)
   const [partners, setPartners] = useState(null)
