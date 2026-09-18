@@ -124,12 +124,16 @@ const INBOX_ACTION_LABELS = {
 
 // สีปุ่มแยกตามสถานะ — เดิมทุกแถวเป็นกรอบน้ำเงินเหมือนกันหมด ไล่ตารางแล้วแยกไม่ออกว่าแถวไหน
 // ยังต้องทำงาน แถวไหนปิดแล้ว
-// ปุ่มทึบ = ยังมีงานค้าง ใช้ตระกูลสีเดียวกับป้ายสถานะ (STATUS) คนจะได้จำคู่สีชุดเดียว
+// ปุ่มทึบ = ยังมีงานค้าง ใช้สีของสถานะ "ปลายทาง" ที่งานแถวนั้นจะเดินไป หลักเดียวกับปุ่มตาราง
+// คำร้อง (NEXT_ACTION ใน ComplaintsManager.jsx) เจ้าหน้าที่ใช้สองตารางสลับกันจะได้อ่านสีแบบเดียว
+//   รอดำเนินการ → กำลังดำเนินการ = น้ำเงิน · กำลังดำเนินการ → เสร็จสิ้น = เขียว #047857 (ตรงกับ
+//   ปุ่ม "ดำเนินการแล้ว" ของคำร้อง)
 // ปุ่มกรอบเทา = ปิดงานแล้ว แค่เปิดดู ให้จมลงไปไม่แย่งสายตาจากแถวที่ยังค้าง
-// ใช้เฉด 700 เพราะตัวอักษรขาว 12px บนสีป้าย (#f59e0b/#3b82f6) contrast ไม่ถึง 4.5:1
+// ใช้เฉด 700 เพราะตัวอักษรขาว 12px บนสีป้าย (#3b82f6/#10b981) contrast ไม่ถึง 4.5:1
 const INBOX_ACTION_CLASSES = {
-  pending:    'border-amber-700 bg-amber-700 text-white hover:bg-amber-800 hover:border-amber-800',
-  processing: 'border-blue-700 bg-blue-700 text-white hover:bg-blue-800 hover:border-blue-800',
+  pending:    'border-blue-700 bg-blue-700 text-white hover:bg-blue-800 hover:border-blue-800',
+  // ค่าสีตรงตัวแทน emerald-700 เพราะ Tailwind v4 เป็น oklch ไม่ได้ออกมาเป็น #047857 เป๊ะ
+  processing: 'border-[#047857] bg-[#047857] text-white hover:bg-[#065f46] hover:border-[#065f46]',
   done:       'border-slate-300 bg-white text-slate-600 hover:bg-slate-100',
 }
 
