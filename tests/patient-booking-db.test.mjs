@@ -25,7 +25,7 @@ INSERT INTO public.profiles VALUES
 INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST',true,ARRAY['patient_transport_request'],0);
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -280,6 +280,20 @@ await actor(coordinator);const closedSchedule=(await rpc('patient_booking_worksp
 await db.exec('RESET ROLE');await db.query("UPDATE public.patient_booking_trips SET state='confirmed' WHERE id=$1",[id(410)])
 console.log('PASS schedule role/tenant guards, stale edits, retry, estimated time validation, private-trip secrecy, own-booking updates, reserved blocks unchanged and estimates cleared on replan')
 
+await actor(admin);const dualRevision=(await rpc('patient_booking_workspace',[tenant])).settings.revision
+await fails(()=>rpc('patient_booking_save_settings',[tenant,dualRevision,{...settings,coordinator_ids:[citizen]}]),/เจ้าหน้าที่หน่วยงานนี้/)
+await fails(()=>rpc('patient_booking_save_settings',[tenant,dualRevision,{...settings,coordinator_ids:[outsider]}]),/เจ้าหน้าที่หน่วยงานนี้/)
+await rpc('patient_booking_save_settings',[tenant,dualRevision,{...settings,coordinator_ids:[driver]}])
+await actor(driver);assert.equal((await rpc('patient_booking_workspace',[tenant])).role,'coordinator')
+await fails(()=>rpc('patient_booking_save_settings',[tenant,dualRevision+1,settings]),/เฉพาะผู้ดูแล/)
+await fails(()=>rpc('patient_booking_workspace',[otherTenant]),/ไม่มีสิทธิ์/)
+await db.exec('RESET ROLE');await db.query("UPDATE public.profiles SET role='citizen' WHERE id=$1",[driver]);await actor(driver)
+assert.equal((await rpc('patient_booking_workspace',[tenant])).role,'citizen')
+await fails(()=>rpc('patient_booking_preview',[tenant,[id(400)],'']),/ไม่มีสิทธิ์/)
+await db.exec('RESET ROLE');await db.query("UPDATE public.profiles SET role='staff' WHERE id=$1",[driver]);await actor(admin)
+await rpc('patient_booking_save_settings',[tenant,dualRevision+1,settings])
+await actor(driver);assert.equal((await rpc('patient_booking_workspace',[tenant])).role,'driver')
+console.log('PASS explicit dual assignment, admin-only changes, tenant/staff checks and removal of coordinator permission')
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
 export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay }
