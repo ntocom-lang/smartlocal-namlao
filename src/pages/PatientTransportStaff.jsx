@@ -21,7 +21,7 @@ import { buttonClass, primaryClass } from '../lib/patientBooking'
  * route นี้อยู่ใต้ RequireAuth staffOnly แล้ว และยังตรวจบทบาทจาก patient_booking_workspace ซ้ำที่นี่
  * เพราะสิทธิ์ของโมดูลนี้ (ผู้จัดคิว/คนขับ) มาจากทะเบียนของระบบจอง ไม่ใช่จาก role ของบัญชีอย่างเดียว
  */
-export default function PatientTransportStaff() {
+export default function PatientTransportStaff({ onBack } = {}) {
   const { tenant } = useTenant()
   const { session, profileName } = useAuth()
   const uid = session?.user?.id
@@ -35,6 +35,9 @@ export default function PatientTransportStaff() {
   const isDriver = workspace?.role === 'driver' || (isCoordinator && !!uid && workspace?.settings?.driver_id === uid) || workspace?.trips?.some(t => t.driver_id === uid)
   const allowed = isCoordinator || isDriver
   const view = selectedView ?? (isCoordinator ? 'schedule' : 'driver')
+  // ฝังในแดชบอร์ดเจ้าหน้าที่ (เมนูบน/ซ้ายของหน้าเจ้าหน้าที่ครอบอยู่แล้ว) — กติกาเดียวกับ FleetPage
+  // หัวโมดูลและปุ่มย้อนกลับมาจากโครงหน้าเจ้าหน้าที่ หน้านี้จึงไม่วาดซ้ำเมื่อ embedded
+  const embedded = !!onBack
   function go(next) { setView(next); setPreview(null) }
   function run(name, args, success, after) { setPreview(null); return mutate(name, args, success, after) }
   function action(entity, name, note = '') {
@@ -82,9 +85,9 @@ export default function PatientTransportStaff() {
     } catch (e) { setError(e.message) }
     finally { lockRef.current = false; setBusy(false) }
   }
-  return <div className="mx-auto min-h-screen max-w-5xl bg-white px-4 py-6 text-slate-900">
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2"><Link to="/staff" className={`${buttonClass} inline-flex items-center`}>← หน้าเจ้าหน้าที่</Link><Link to="/patient-transport" className={`${buttonClass} inline-flex items-center gap-2`}><Users size={16} />หน้าประชาชน</Link></div><button className={`${buttonClass} inline-flex items-center gap-2`} onClick={reload} disabled={busy}><RefreshCw size={16} />โหลดข้อมูลล่าสุด</button></div>
-    <header className="mb-5"><p className="text-sm font-semibold text-sky-800">{tenant?.name} · งานเจ้าหน้าที่</p><h1 className="mt-1 text-2xl font-bold">รถรับส่งผู้ป่วย — จัดคิวและเดินรถ</h1></header>
+  return <div className={embedded ? 'text-slate-900' : 'mx-auto min-h-screen max-w-5xl bg-white px-4 py-6 text-slate-900'}>
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2">{!embedded && <Link to="/staff" className={`${buttonClass} inline-flex items-center`}>← หน้าเจ้าหน้าที่</Link>}<Link to="/patient-transport" className={`${buttonClass} inline-flex items-center gap-2`}><Users size={16} />หน้าประชาชน</Link></div><button className={`${buttonClass} inline-flex items-center gap-2`} onClick={reload} disabled={busy}><RefreshCw size={16} />โหลดข้อมูลล่าสุด</button></div>
+    {!embedded && <header className="mb-5"><p className="text-sm font-semibold text-sky-800">{tenant?.name} · งานเจ้าหน้าที่</p><h1 className="mt-1 text-2xl font-bold">รถรับส่งผู้ป่วย — จัดคิวและเดินรถ</h1></header>}
     {error && <div role="alert" className="mb-4 rounded-xl bg-red-50 p-4 text-red-800">{error}</div>}
     {notice && <p role="status" className="mb-4 rounded-xl bg-emerald-50 p-4">{notice}</p>}
     {!current && !error && <p role="status">กำลังโหลดข้อมูลงาน…</p>}

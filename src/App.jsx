@@ -6,6 +6,7 @@ import { NotificationsProvider } from './contexts/NotificationsContext'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import ModuleGuard from './components/common/ModuleGuard'
+import { PATIENT_TRANSPORT_MODULE_KEY } from './lib/patientTransport'
 import NotFound from './components/common/NotFound'
 import BottomNav from './components/layout/BottomNav'
 import CitizenSidebar from './components/layout/CitizenSidebar'
@@ -54,7 +55,6 @@ const ReportsHub = lazyWithRetry(() => import('./pages/ReportsHub'))
 const PostsPage = lazyWithRetry(() => import('./pages/PostsPage'))
 const FleetPage = lazyWithRetry(() => import('./pages/FleetPage'))
 const PatientTransportBooking = lazyWithRetry(() => import('./pages/PatientTransportBooking'))
-const PatientTransportStaff = lazyWithRetry(() => import('./pages/PatientTransportStaff'))
 
 // required = บัญชีนี้ไม่มีอีเมลเลย เบอร์โทรจึงเป็นตัวระบุตัวตนชิ้นเดียวที่เหลือ ข้ามไม่ได้
 // (เหตุผลเต็มอยู่ที่จุดเรียก setPhoneReminderRequired ใน checkAndFixProfile)
@@ -679,12 +679,9 @@ function AppShell() {
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/doc-request" element={<CitizenDocRequest />} />
           <Route path="/patient-transport" element={<PatientTransportBooking />} />
-          {/* งานเจ้าหน้าที่ของบริการนี้อยู่คนละเส้นกับหน้าประชาชน ประชาชนเปิดเส้นนี้ตรงๆ ไม่ได้ */}
-          <Route path="/staff/patient-transport" element={
-            <RequireAuth staffOnly>
-              <PatientTransportStaff />
-            </RequireAuth>
-          } />
+          {/* ทางลัด/ลิงก์เก่าของหน้าเจ้าหน้าที่ — เปิดโมดูลในโครงหน้าเจ้าหน้าที่ (เมนูบน/ซ้ายครบ)
+              ไม่ใช่หน้าลอยแยก · สิทธิ์ยังคุมที่ /staff ซึ่งเป็น RequireAuth staffOnly */}
+          <Route path="/staff/patient-transport" element={<Navigate to="/staff" state={{ module: PATIENT_TRANSPORT_MODULE_KEY }} replace />} />
           <Route path="/my-docs" element={<MyDocRequests />} />
           <Route path="/doc-stats" element={<LpaDocStats />} />
           <Route path="/reports/complaints" element={<ComplaintStats />} />
