@@ -74,6 +74,7 @@ try{
  await page.getByLabel('เวลานัดแพทย์',{exact:true}).fill('10:00')
  await page.getByRole('status').filter({hasText:'วันนี้เปิดรับจอง'}).waitFor()
  assert.equal(await page.getByRole('button',{name:'ต่อไป',exact:true}).isDisabled(),false,'A serviceable day and time must pass')
+ if(process.env.PATIENT_PREVIEW_SHOTS){await page.getByLabel('เป็นการเดินทางตามนัด ไม่ใช่เหตุฉุกเฉิน',{exact:true}).check();await page.getByRole('button',{name:'ต่อไป',exact:true}).click();await page.getByText('ปักหมุดจุดรับ (ถ้าสะดวก)',{exact:true}).waitFor();await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-pickup-pin-390.png`,fullPage:true})}
  console.log('PASS booking form blocks closed days and appointments outside office hours before the request is sent')
 
  for(const width of [320,390,768,1024]){await page.setViewportSize({width,height:900});for(const as of ['citizen','coordinator','driver','admin']){await visit(as);const tab={citizen:'หน้าบริการ',coordinator:'จัดคิว',driver:'งานคนขับ',admin:'ตั้งค่า'}[as];await page.getByRole('button',{name:tab,exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${as} overflow`)}console.log(`PASS rendered ${width}px four roles`)}

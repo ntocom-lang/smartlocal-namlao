@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useTenant } from '../../contexts/TenantContext'
+import MapPicker from '../MapPicker'
 import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, primaryClass, thaiDay, bangkokISO, clockTime, journeyWindow } from '../../lib/patientBooking'
 
 const shiftDay = days => thaiDay(Date.now() + days * 86400000)
 const dayClock = value => clockTime(((value % 1440) + 1440) % 1440)
 
 export default function BookingForm({ tenantId, initial = {}, info, profileName, profilePhone, staffEntry, onSubmit, onBack, busy }) {
+  const { tenant } = useTenant()
+  const [showMap, setShowMap] = useState(false)
   const [step, setStep] = useState(1)
   const [form, setForm] = useState({ requester_name: staffEntry ? '' : profileName || '', phone: staffEntry ? '' : profilePhone || '', patient_name: '', relation: 'self', pickup: '', in_area: false,
     day: thaiDay(), time: '', route_id: info.routes?.[0]?.id || '', mobility: 'walk', companions: 0, share: false,
-    return_mode: 'wait', back: '', is_emergency: true, consent: false, representative_authorized: false, ...initial })
+    return_mode: 'wait', back: '', is_emergency: true, consent: false, representative_authorized: false,
+    pickup_lat: null, pickup_lng: null, ...initial })
   const id = useRef(crypto.randomUUID()) // Stable on uncertain response; retry the same operation.
   // The public calendar already knows holidays, lead time, unchecked calendar days and open incidents.
   // Asking it here keeps those requests out of the queue instead of leaving staff to phone people back.
@@ -36,6 +41,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   const field = (key, label, type = 'text', extra = {}) => <label className="block">{label}<input className={inputClass} type={type} value={form[key]} onChange={change(key)} {...extra} /></label>
   const select = (key, label, values) => <label className="block">{label}<select aria-label={label} className={inputClass} value={form[key]} onChange={change(key)}>{Object.entries(values).map(([v, text]) => <option key={v} value={v}>{text}</option>)}</select></label>
   const payload = () => ({ ...form, patient_name: form.relation === 'self' ? form.requester_name : form.patient_name,
+    pickup_lat: form.pickup_lat ?? '', pickup_lng: form.pickup_lng ?? '',
     companions: Number(form.companions), appointment_at: bangkokISO(form.day, form.time),
     return_at: form.return_mode === 'one_way' ? null : bangkokISO(form.day, form.back),
     privacy_notice: info.privacy_notice, owner_name: info.owner_name, consent_version: info.consent_version })
@@ -62,6 +68,27 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
         {field('pickup', 'จุดรับและจุดสังเกต', 'text', { required: true, maxLength: 500 })}{select('mobility', 'การเคลื่อนไหว', MOBILITY)}
         {select('companions', 'ผู้ติดตาม', { 0: 'ไม่มี', 1: '1 คน', 2: '2 คน', 3: '3 คน', 4: '4 คน', 5: '5 คน' })}
       </div>
+      {/* หมุดเป็นทางเลือก — ผู้สูงอายุที่ปักหมุดไม่เป็นยังจองได้ด้วยข้อความอย่างเดียว (เจ้าของระบบสั่ง 2569-09-19) */}
+      <div className="rounded-xl border border-slate-200 p-3">
+        <p className="font-semibold">ปักหมุดจุดรับ (ถ้าสะดวก)</p>
+        <p className="text-sm text-slate-600">ปักหมุดแล้วคนขับกดนำทางไปที่บ้านได้เลย ไม่ปักก็จองได้ เจ้าหน้าที่จะโทรถามเส้นทางแทน</p>
+        {form.pickup_lat === null
+          ? <button type="button" className={`${buttonClass} mt-3`} onClick={() => setShowMap(true)}>ปักหมุดจากแผนที่</button>
+          : <div className="mt-3 flex flex-wrap items-center gap-3">
+              <span className="rounded-lg bg-emerald-50 px-3 py-2 text-sm">ปักหมุดแล้ว · {form.pickup_lat.toFixed(5)}, {form.pickup_lng.toFixed(5)}</span>
+              <button type="button" className={buttonClass} onClick={() => setShowMap(true)}>แก้หมุด</button>
+              <button type="button" className={buttonClass} onClick={() => setForm(f => ({ ...f, pickup_lat: null, pickup_lng: null }))}>เอาหมุดออก</button>
+            </div>}
+      </div>
+      {showMap && <MapPicker
+        initialPos={form.pickup_lat === null ? null : { lat: form.pickup_lat, lng: form.pickup_lng }}
+        fallbackPos={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
+        onConfirm={({ lat, lng, address }) => {
+          // เติมที่อยู่จากแผนที่ให้เฉพาะตอนช่องยังว่าง ไม่ทับสิ่งที่ผู้จองพิมพ์เอง
+          setForm(f => ({ ...f, pickup_lat: lat, pickup_lng: lng, pickup: f.pickup || address || '' }))
+          setShowMap(false)
+        }}
+        onClose={() => setShowMap(false)} />}
       <label className="flex min-h-11 gap-3"><input className="mt-1 size-5 shrink-0" type="checkbox" checked={form.in_area} onChange={change('in_area')} />ผู้เดินทางอยู่ในเขตพื้นที่ (หากไม่แน่ใจให้เจ้าหน้าที่ตรวจสอบ)</label>
       <label className="flex min-h-11 gap-3"><input className="mt-1 size-5 shrink-0" type="checkbox" checked={form.share} onChange={change('share')} />สะดวกร่วมเที่ยว หากเวลาและเส้นทางเหมาะสม</label>
     </>}
