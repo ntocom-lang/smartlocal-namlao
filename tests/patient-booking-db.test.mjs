@@ -327,4 +327,4 @@ console.log('PASS citizen-page projection: own bookings only, no staff data, ten
 
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
-export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay }
+export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay, base as baseBooking }

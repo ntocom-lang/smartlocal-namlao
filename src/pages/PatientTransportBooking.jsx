@@ -25,12 +25,15 @@ export default function PatientTransportBooking() {
   const [helpTarget, setHelpTarget] = useState(null)
   const [bookingSeed, setBookingSeed] = useState({})
   // หน้านี้โหลดเฉพาะข้อมูลสาธารณะกับคำขอของผู้ใช้เอง ไม่ว่าผู้เปิดจะมีบทบาทอะไร
-  const { current, info, workspace, error, notice, busy, reload, mutate } = usePatientBooking(tenant?.id, uid, 'patient_booking_mine')
+  const { current, info, workspace, error, notice, busy, reload, mutate, op } = usePatientBooking(tenant?.id, uid, 'patient_booking_mine')
   const tenantId = tenant?.id
   const isStaff = ['admin', 'coordinator', 'driver'].includes(workspace?.role)
   const view = selectedView ?? (info?.enabled ? 'calendar' : 'home')
+  // ⚠️ p_op ต้องส่งทุกครั้ง — patient_booking_action บังคับ operation id ไว้กันเน็ตหลุดแล้วยิงซ้ำ
+  // (ขาดไปแล้ว PostgREST ตอบ PGRST202 "Could not find the function" ปุ่มยกเลิก/พร้อมกลับใช้ไม่ได้)
   function action(entity, name, note = '') {
-    return mutate('patient_booking_action', { p_entity: entity.id, p_revision: entity.revision, p_action: name, p_note: note },
+    const args = { p_entity: entity.id, p_revision: entity.revision, p_action: name, p_note: note }
+    return mutate('patient_booking_action', { ...args, p_op: op(JSON.stringify(args)) },
       'บันทึกแล้ว และแจ้งสถานะในระบบให้ผู้เกี่ยวข้อง')
   }
   return <div className="mx-auto min-h-screen max-w-5xl bg-white px-4 py-6 text-slate-900">
