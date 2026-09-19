@@ -76,7 +76,9 @@ export default function WaterSituationPage() {
   const loading = tenantLoading || Boolean(tenantId && data === null && !loadError)
 
   return (
-    <div className="max-w-lg mx-auto pb-28 md:pb-8">
+    // จอกว้าง (lg ขึ้นไป) ขยายเป็น 2 คอลัมน์ — คอลัมน์เดียวกว้าง 512px ทิ้งพื้นที่ว่างสองข้างเกินครึ่งจอ
+    // และหน้ายาวราว 3,000px บนจอ 1440 · ต่ำกว่า lg คงคอลัมน์เดียวเหมือนมือถือ
+    <div className="max-w-lg lg:max-w-6xl mx-auto pb-28 md:pb-8">
       {/* Mobile header */}
       <div className="md:hidden sticky top-0 z-30 px-4 pt-3 pb-2 bg-gray-50/95 backdrop-blur-md">
         <div className="flex items-center gap-2">
@@ -124,11 +126,18 @@ export default function WaterSituationPage() {
             <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} />
             <AlertBanner rain={rain} ews={ews} warnings={data.warnings} homeAmphoe={tenant?.district} now={checkedAt}
               tenantName={tenant?.name} />
-            {rain.length > 0 && (
-              <RainSection stations={rain} ewsByCode={ewsByCode} homeAmphoe={tenant?.district} now={checkedAt} />
-            )}
-            {dams.length > 0 && <DamSection stations={dams} homeAmphoe={tenant?.district} now={checkedAt} />}
-            {levels.length > 0 && <WaterLevelSection stations={levels} homeAmphoe={tenant?.district} now={checkedAt} />}
+            {/* ซ้าย: ฝน · ขวา: อ่างเก็บน้ำ แล้วระดับน้ำ — มือถือเรียงตามลำดับเดิม ฝน → อ่าง → ระดับน้ำ */}
+            <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0">
+              {rain.length > 0 && (
+                <RainSection stations={rain} ewsByCode={ewsByCode} homeAmphoe={tenant?.district} now={checkedAt} />
+              )}
+              {(dams.length > 0 || levels.length > 0) && (
+                <div className="space-y-4">
+                  {dams.length > 0 && <DamSection stations={dams} homeAmphoe={tenant?.district} now={checkedAt} />}
+                  {levels.length > 0 && <WaterLevelSection stations={levels} homeAmphoe={tenant?.district} now={checkedAt} />}
+                </div>
+              )}
+            </div>
             <SourceNote tenantName={tenant?.name} />
           </>
         )}
