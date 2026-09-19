@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { Wifi, Users, MapPinned, Compass, Phone, BookUser, ChevronRight, Ambulance, CalendarDays, Droplets, CloudRain } from 'lucide-react'
 import { supabase } from '../../../../lib/supabase'
-import { PATIENT_TRANSPORT_TYPE } from '../../../../lib/patientTransport'
+import { PATIENT_TRANSPORT_TYPE, PATIENT_TRANSPORT_MODULE_KEY } from '../../../../lib/patientTransport'
 import { removedDocumentTypes } from '../../../../lib/documentTypes'
 import BannerSlider from '../../../../components/home/BannerSlider'
 // ComplaintBand นำออกจากหน้าแรกตามคำขอ (เข้าใช้งานผ่านปุ่ม ร้องเรียน/ร้องทุกข์ ด้านบน)
@@ -50,7 +50,7 @@ const MANUAL_SERVICE = {
 function FeaturedServices() {
   const { tenant, isModuleEnabled } = useTenant()
   const [transportTenantId, setTransportTenantId] = useState(null)
-  const transportEnabled = (!isModuleEnabled || isModuleEnabled('inbox'))
+  const transportEnabled = (!isModuleEnabled || isModuleEnabled(PATIENT_TRANSPORT_MODULE_KEY))
     && !removedDocumentTypes(tenant).includes(PATIENT_TRANSPORT_TYPE)
   const wasteEnabled = !isModuleEnabled || isModuleEnabled('waste')
   const waterSituationEnabled = !isModuleEnabled || isModuleEnabled('water-situation')

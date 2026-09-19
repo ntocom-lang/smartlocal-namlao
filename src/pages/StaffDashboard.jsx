@@ -10,6 +10,7 @@ import {
 import { supabase, signOutSafely } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
 import { useTenant } from '../contexts/TenantContext'
+import { PATIENT_TRANSPORT_MODULE_KEY } from '../lib/patientTransport'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import FinishComplaintDialog from '../components/complaints/FinishComplaintDialog'
@@ -2342,7 +2343,7 @@ function StaffReportWrapper({ tenant }) {
 export default function StaffDashboard() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { tenant } = useTenant()
+  const { tenant, isModuleEnabled } = useTenant()
   const { unreadCount } = useNotifications()
   const [activeModule, setActiveModule] = useState(location.state?.module ?? 'home')
   const [mapOpenComplaintId] = useState(location.state?.openComplaintId ?? null)
@@ -2608,10 +2609,12 @@ export default function StaffDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
-              <button type="button" onClick={() => navigate('/patient-transport')}
-                className="min-h-11 rounded-xl border border-white/40 px-3 py-2 text-xs font-bold text-white">
-                รถรับส่งผู้ป่วย
-              </button>
+              {isModuleEnabled(PATIENT_TRANSPORT_MODULE_KEY) && (
+                <button type="button" onClick={() => navigate('/patient-transport')}
+                  className="min-h-11 rounded-xl border border-white/40 px-3 py-2 text-xs font-bold text-white">
+                  รถรับส่งผู้ป่วย
+                </button>
+              )}
               <UserProfileBadge tone="onDark" />
               <PortalSwitcher className="flex" />
               <button onClick={handleLogout}

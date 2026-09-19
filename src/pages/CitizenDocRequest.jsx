@@ -13,7 +13,7 @@ import PublicAssistanceWizard from './PublicAssistanceWizard'
 import AssetBorrowRequestWizard from './AssetBorrowRequestWizard'
 import PatientTransportWizard from './PatientTransportWizard'
 import { WATERWORKS_DOCUMENT_TYPES, WATERWORKS_MODULE_KEY, withoutRemovedTypes } from '../lib/documentTypes'
-import { PATIENT_TRANSPORT_TYPE } from '../lib/patientTransport'
+import { PATIENT_TRANSPORT_TYPE, PATIENT_TRANSPORT_MODULE_KEY } from '../lib/patientTransport'
 
 // ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
 // เลยไม่ต้องให้ประชาชนพิมพ์ตำบล/อำเภอ/จังหวัดเอง ให้กรอกแค่บ้านเลขที่ แล้วต่อท้ายด้วย
@@ -173,6 +173,7 @@ export default function CitizenDocRequest() {
   const [searchParams] = useSearchParams()
   const { tenant, terminology, isModuleEnabled } = useTenant()
   const waterworksEnabled = isModuleEnabled(WATERWORKS_MODULE_KEY)
+  const transportEnabled = isModuleEnabled(PATIENT_TRANSPORT_MODULE_KEY)
   // การ์ดรถรับ-ส่งผู้ป่วยแสดงเฉพาะ อปท. ที่มีหน่วยงานรับเรื่องต่อเปิดอยู่ — ถามผ่าน RPC ที่คืน
   // boolean อย่างเดียว เพราะผู้ไม่ล็อกอินอ่าน referral_partners ตรงไม่ได้ (RLS)
   // เรียกไม่สำเร็จ = ซ่อนการ์ดไว้ ปลอดภัยกว่าโชว์บริการที่ อปท. ยังไม่ได้เปิด
@@ -199,12 +200,13 @@ export default function CitizenDocRequest() {
       border: '#c7d2fe',
     }))
     const base = withoutRemovedTypes(BASE_DOC_TYPES, tenant)
-      .filter(d => d.value !== PATIENT_TRANSPORT_TYPE || hasTransportPartner)
+      // ปิดโมดูลรถรับ-ส่งผู้ป่วย = ชนิดคำขอนี้หายจากตัวเลือก และลิงก์เก่าเปิดฟอร์มไม่ได้
+      .filter(d => d.value !== PATIENT_TRANSPORT_TYPE || (hasTransportPartner && transportEnabled))
       // อปท. ที่ปิดโมดูลงานประปา ซ่อนคำขอประปาทั้งชุด — ลิงก์เก่า ?type=water_... ก็เปิดไม่ได้
       // เพราะ selected ด้านล่างกรองด้วยลิสต์นี้ (ฐานข้อมูลปฏิเสธซ้ำอีกชั้นที่ trigger)
       .filter(d => !WATERWORKS_DOCUMENT_TYPES.includes(d.value) || waterworksEnabled)
     return [...base, ...extras]
-  }, [tenant, hasTransportPartner, waterworksEnabled])
+  }, [tenant, hasTransportPartner, waterworksEnabled, transportEnabled])
   const [session, setSession]     = useState(undefined)
   const [selectedRaw, setSelected] = useState(() => {
     const t = searchParams.get('type')
