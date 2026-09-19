@@ -475,7 +475,9 @@ export default function CitizenDocRequest() {
 
           {/* Mobile: vertical list | PC: 2-column grid */}
           <div className="space-y-2.5 md:space-y-0 md:grid md:grid-cols-2 md:gap-3">
-            {allDocTypes.map(d => (
+            {/* รถรับ-ส่งผู้ป่วยมีทางเข้าของตัวเองที่ /patient-transport แล้ว ไม่โชว์ซ้ำในรายการนี้
+                (เคยทำให้ผู้ใช้งงว่ามี 2 ระบบ) แต่ยังอยู่ใน allDocTypes ให้ลิงก์ ?type= เปิดฟอร์มได้ */}
+            {allDocTypes.filter(d => d.value !== PATIENT_TRANSPORT_TYPE).map(d => (
               <button key={d.value} onClick={() => setSelected(d)}
                 className="w-full bg-white rounded-2xl border shadow-sm p-4 text-left flex items-center gap-4 active:scale-[0.98] hover:shadow-md transition-all"
                 style={{ borderColor: d.border }}>
@@ -543,7 +545,8 @@ export default function CitizenDocRequest() {
   // คำขอรถรับ-ส่งผู้ป่วยต้องคัดกรองเหตุฉุกเฉินก่อนเห็นฟอร์ม เลือกหน่วยงานผู้จัดรถจากทะเบียน
   // และติ๊กยินยอมส่งต่อข้อมูลสุขภาพ แล้วเขียน 2 ตารางในธุรกรรมเดียวผ่าน RPC — ฟอร์มทั่วไปทำไม่ได้
   if (isPatientTransportRequest) {
-    return <PatientTransportWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
+    // ย้อนกลับไปหน้าบริการของตัวเอง ไม่ใช่รายการคำขอเอกสารที่ไม่มีบริการนี้แล้ว
+    return <PatientTransportWizard tenant={tenant} session={session} onBack={() => navigate('/patient-transport')} />
   }
 
   // ─── Step 2: Form ──────────────────────────────────────────────────────────
