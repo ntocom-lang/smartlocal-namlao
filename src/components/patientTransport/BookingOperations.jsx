@@ -11,7 +11,7 @@ export function BookingCards({ bookings, trips, onAction, busy }) {
       <p>{b.route_label} · นัด {dateTime(b.appointment_at)}</p>
       {b.requested_trip_id && b.status === 'submitted' && <p className="font-semibold text-sky-800">ขอร่วมเที่ยว รอเจ้าหน้าที่ตรวจยืนยัน</p>}
       <p>{RETURN_MODES[b.return_mode]} · {MOBILITY[b.mobility]}</p>
-      {trip && <div className="my-3 rounded-xl bg-sky-50 p-3"><strong>{TRIP_STATUS[trip.state]}</strong><p>เริ่มรับโดยประมาณ {dateTime(trip.plan.pickup_at)}</p><p className="text-sm">เจ้าหน้าที่ประสานเวลารับแต่ละจุดตามแผน</p></div>}
+      {trip && <div className="my-3 rounded-xl bg-sky-50 p-3"><strong>{TRIP_STATUS[trip.state]}</strong><p>เริ่มรับโดยประมาณ {dateTime(trip.plan.pickup_at)}</p>{trip.public_notice === 'delayed' && <p className="font-semibold text-amber-800">รถล่าช้า · กรุณาตรวจเวลาล่าสุด</p>}{trip.public_notice === 'contact' && <p className="font-semibold text-amber-800">กรุณาติดต่อเจ้าหน้าที่ก่อนเดินทาง</p>}{trip.estimated_pickup_at && <p>แจ้งเริ่มรับล่าสุด {dateTime(trip.estimated_pickup_at)} (ประมาณการ)</p>}{trip.estimated_return_at && <p>แจ้งรับกลับล่าสุด {dateTime(trip.estimated_return_at)} (ประมาณการ)</p>}<p className="text-sm">เจ้าหน้าที่ประสานเวลารับแต่ละจุดตามแผน</p></div>}
       {b.cancel_requested && <p className="my-2 rounded-xl bg-amber-50 p-3">ขอยกเลิกแล้ว รอเจ้าหน้าที่ประสานก่อนเปลี่ยนเที่ยว</p>}
       {b.return_ready && <p className="my-2 rounded-xl bg-sky-50 p-3">แจ้งพร้อมกลับแล้ว ไม่ได้หมายความว่ารถจะมาถึงทันที</p>}
       <div className="mt-3 flex flex-wrap gap-2">

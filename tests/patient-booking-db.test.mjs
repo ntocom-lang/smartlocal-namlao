@@ -25,7 +25,7 @@ INSERT INTO public.profiles VALUES
 INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST',true,ARRAY['patient_transport_request'],0);
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -247,6 +247,39 @@ await db.exec('RESET ROLE');await db.query("UPDATE public.profiles SET role='cit
 await fails(()=>rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,1,2,true,'กรอกผิด']),/ยังเป็นเจ้าหน้าที่/)
 await db.exec('RESET ROLE');await db.query("UPDATE public.profiles SET role='staff' WHERE id=$1",[driver])
 console.log('PASS flexible odometer corrections require reason, revoked driver denied, stale and legacy writes guarded, anomaly excluded from report, repair restored')
+// Schedule communication: isolated CAS, strict public projection, authorized roles only.
+await actor(coordinator)
+const scheduleBefore=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===id(410))
+const scheduleArgs=[tenant,id(410),scheduleBefore.schedule_revision,'delayed',calendarAt('10:00'),calendarAt('14:30')]
+const scheduleRevision=await rpc('patient_booking_update_schedule',scheduleArgs)
+assert.equal(await rpc('patient_booking_update_schedule',scheduleArgs),scheduleRevision)
+await fails(()=>rpc('patient_booking_update_schedule',[...scheduleArgs.slice(0,3),'contact',null,null]),/เปลี่ยนแล้ว/)
+await fails(()=>rpc('patient_booking_update_schedule',[tenant,id(410),scheduleRevision,'TEST private note',null,null]),/ข้อความ/)
+await fails(()=>rpc('patient_booking_update_schedule',[tenant,id(410),scheduleRevision,'normal',at('10:00'),null]),/วันเดินทาง/)
+await fails(()=>rpc('patient_booking_update_schedule',[tenant,id(410),scheduleRevision,'normal',calendarAt('15:00'),null]),/ไม่เกินเวลารับกลับ/)
+const scheduleAfter=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===id(410))
+assert.deepEqual(scheduleAfter.plan,scheduleBefore.plan);assert.equal(scheduleAfter.revision,scheduleBefore.revision);assert.equal(scheduleAfter.docs_revision,scheduleBefore.docs_revision)
+assert.equal(scheduleAfter.driver_name,'Driver TEST')
+await actor(null);let published=(await rpc('patient_booking_calendar',[tenant,calendarDay,calendarDay])).days[0].trips[0]
+assert.equal(published.public_notice,'delayed');assert.equal(published.state,'confirmed');assert(published.estimated_pickup_at)
+assert(!('driver_name' in published));assert(!('issue_note' in published))
+for(const user of [null,citizen,driver,outsider]) { await actor(user);await fails(()=>rpc('patient_booking_update_schedule',[tenant,id(410),scheduleRevision,'normal',null,null]),/permission denied|เจ้าหน้าที่จัดคิว/) }
+await actor(coordinator);await fails(()=>rpc('patient_booking_update_schedule',[otherTenant,id(410),scheduleRevision,'normal',null,null]),/เจ้าหน้าที่จัดคิว/)
+await fails(()=>rpc('patient_booking_update_schedule',[tenant,trip1,1,'normal',null,null]),/จบหรือยกเลิก/)
+await db.exec('RESET ROLE');await db.query('UPDATE public.patient_bookings SET share=false WHERE id=$1',[id(400)])
+await actor(null);published=(await rpc('patient_booking_calendar',[tenant,calendarDay,calendarDay])).days[0].trips[0]
+for(const key of ['route_id','people','state','public_notice','estimated_pickup_at','estimated_return_at']) assert.equal(published[key],null,`private trip leaked ${key}`)
+await actor(citizen);const myTrip=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===id(410));assert.equal(myTrip.public_notice,'delayed');assert(myTrip.estimated_pickup_at);assert(!('driver_name' in myTrip))
+await db.exec('RESET ROLE');await db.query('UPDATE public.patient_bookings SET share=true WHERE id=$1',[id(400)])
+await db.query("UPDATE public.patient_booking_trips SET plan=plan||'{\"test_replan\":true}'::jsonb WHERE id=$1",[id(410)])
+await actor(coordinator);const replanned=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===id(410));assert.equal(replanned.estimated_pickup_at,null);assert.equal(replanned.public_notice,'normal');assert.equal(replanned.schedule_revision,scheduleRevision+1)
+await fails(()=>rpc('patient_booking_update_schedule',[tenant,id(410),scheduleRevision,'contact',null,null]),/เปลี่ยนแล้ว/)
+await rpc('patient_booking_update_schedule',[tenant,id(410),replanned.schedule_revision,'delayed',calendarAt('10:10'),null])
+await db.exec('RESET ROLE');await db.query("UPDATE public.patient_booking_trips SET state='completed' WHERE id=$1",[id(410)])
+await actor(coordinator);const closedSchedule=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===id(410));assert.equal(closedSchedule.public_notice,'normal');assert.equal(closedSchedule.estimated_pickup_at,null)
+await db.exec('RESET ROLE');await db.query("UPDATE public.patient_booking_trips SET state='confirmed' WHERE id=$1",[id(410)])
+console.log('PASS schedule role/tenant guards, stale edits, retry, estimated time validation, private-trip secrecy, own-booking updates, reserved blocks unchanged and estimates cleared on replan')
+
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
 export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay }
