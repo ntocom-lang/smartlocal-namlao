@@ -5,7 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, Users, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
-  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen,
+  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance,
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -158,6 +158,9 @@ const STANDALONE_GROUPS = [
     items: [
       { key: 'complaints', label: 'คำร้อง',     Icon: MessageSquareWarning, color: '#ef4444', bg: '#fee2e2', desc: 'รับเรื่อง ตรวจสอบ มอบหมาย และติดตามผล' },
       { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', Icon: FileText,       color: '#8b5cf6', bg: '#ede9fe', desc: 'รับคำขอเอกสารจากประชาชน ออกเลข และติดตามสถานะ' },
+      // externalUrl เพราะเป็นหน้าแยกที่ route /patient-transport (ModuleGuard คุมด้วยคีย์เดียวกัน)
+      // คีย์อยู่ใน MANAGED_MODULE_KEYS จึงโผล่เฉพาะ อปท. ที่เปิดโมดูลนี้ — เดิมเป็นปุ่มฝังบนหัวหน้าจอ
+      { key: PATIENT_TRANSPORT_MODULE_KEY, label: 'รถรับ-ส่งผู้ป่วย', Icon: Ambulance, color: '#0284c7', bg: '#e0f2fe', desc: 'รับเรื่อง จัดคิวรถ และออกหนังสือนำส่งกองทุน', externalUrl: '/patient-transport' },
     ],
   },
   {
@@ -2343,7 +2346,7 @@ function StaffReportWrapper({ tenant }) {
 export default function StaffDashboard() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { tenant, isModuleEnabled } = useTenant()
+  const { tenant } = useTenant()
   const { unreadCount } = useNotifications()
   const [activeModule, setActiveModule] = useState(location.state?.module ?? 'home')
   const [mapOpenComplaintId] = useState(location.state?.openComplaintId ?? null)
@@ -2609,12 +2612,6 @@ export default function StaffDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
-              {isModuleEnabled(PATIENT_TRANSPORT_MODULE_KEY) && (
-                <button type="button" onClick={() => navigate('/patient-transport')}
-                  className="min-h-11 rounded-xl border border-white/40 px-3 py-2 text-xs font-bold text-white">
-                  รถรับส่งผู้ป่วย
-                </button>
-              )}
               <UserProfileBadge tone="onDark" />
               <PortalSwitcher className="flex" />
               <button onClick={handleLogout}
