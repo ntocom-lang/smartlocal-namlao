@@ -9,13 +9,14 @@ import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import {
   DAM_LEVELS, DAM_STALE_HOURS, STATION_STALE_HOURS, SYNC_STALE_HOURS, bankText, damLevel, damTrend,
-  dataDayText, distanceText, formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainLevel, safeColor,
-  stationPlace, toNum, waterTrend,
+  buildAlerts, dataDayText, distanceText, ewsAlert, formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainLevel,
+  safeColor, stationPlace, toNum, waterTrend,
 } from '../lib/waterSituation'
 
 // ข้อมูลในฐานเปลี่ยนชั่วโมงละครั้ง (thaiwater-sync) — ถามซ้ำถี่กว่านี้ก็ไม่ได้ของใหม่ เปลืองโควตาฟรีเปล่า
 const REFRESH_MS = 5 * 60 * 1000
 const THAIWATER_URL = 'https://www.thaiwater.net'
+const EWS_URL = 'https://ews.dwr.go.th/'
 
 function fetchSituation(municipalityId) {
   return supabase.rpc('get_public_water_situation', { _municipality_id: municipalityId })
@@ -68,6 +69,10 @@ export default function WaterSituationPage() {
   const rain = stations.filter(s => s.station_type === 'rain')
   const levels = stations.filter(s => s.station_type === 'waterlevel')
   const dams = stations.filter(s => s.station_type === 'dam')
+  // สถานะสถานีเตือนภัยของกรมทรัพยากรน้ำ ไม่มีแถวของตัวเองบนหน้า — ติดเป็นป้ายบนแถวฝนรหัสเดียวกัน
+  // (สถานีเตือนภัยในรัศมี 10 กม. ทุกแห่งเป็นสถานีฝนที่แสดงอยู่แล้ว ตรวจ 2569-09-19) + แถบเตือนบนสุด
+  const ews = stations.filter(s => s.station_type === 'ews')
+  const ewsByCode = new Map(ews.map(s => [s.station_code, s]))
   const loading = tenantLoading || Boolean(tenantId && data === null && !loadError)
 
   return (
@@ -117,7 +122,11 @@ export default function WaterSituationPage() {
         ) : (
           <>
             <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} />
-            {rain.length > 0 && <RainSection stations={rain} homeAmphoe={tenant?.district} now={checkedAt} />}
+            <AlertBanner rain={rain} ews={ews} warnings={data.warnings} homeAmphoe={tenant?.district} now={checkedAt}
+              tenantName={tenant?.name} />
+            {rain.length > 0 && (
+              <RainSection stations={rain} ewsByCode={ewsByCode} homeAmphoe={tenant?.district} now={checkedAt} />
+            )}
             {levels.length > 0 && <WaterLevelSection stations={levels} homeAmphoe={tenant?.district} now={checkedAt} />}
             {dams.length > 0 && <DamSection stations={dams} homeAmphoe={tenant?.district} now={checkedAt} />}
             <SourceNote tenantName={tenant?.name} />
@@ -158,7 +167,94 @@ function SyncStatus({ syncedAt, now, refreshFailed }) {
   )
 }
 
-function RainSection({ stations, homeAmphoe, now }) {
+// แถบเตือนบนสุดของหน้า — กติกาเดียวกับ Telegram (buildAlerts ↔ water-alert-notify)
+// ขึ้นเฉพาะเมื่อมีเรื่องเข้าเกณฑ์ ไม่มีข้อความ "ปกติ" ให้วางใจ — ไม่มีแถบแปลว่าไม่มีเรื่องที่เข้าเกณฑ์
+// ไม่ได้แปลว่าปลอดภัย · แต่ละส่วนบอกที่มาของตัวเอง และย้ำว่าไม่ใช่ประกาศของ อปท.
+function AlertBanner({ rain, ews, warnings, homeAmphoe, now, tenantName }) {
+  const alerts = buildAlerts({ rain, ews, warnings, now })
+  if (!alerts.any) return null
+
+  return (
+    <div role="alert" className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
+      <div className="flex items-start gap-2.5">
+        <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-600" />
+        <div className="min-w-0 flex-1 space-y-3">
+          <p className="text-sm font-bold leading-snug text-gray-900">แจ้งเตือนสถานการณ์น้ำ-ฝนใกล้พื้นที่</p>
+
+          {alerts.heavyRain.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-gray-700">ฝนหนักมาก (ตั้งแต่ 90.1 มม. ใน 24 ชม. ตามเกณฑ์กรมอุตุนิยมวิทยา)</p>
+              <ul className="mt-1 space-y-1.5">
+                {alerts.heavyRain.map(s => (
+                  <li key={s.station_code} className="text-sm text-gray-800">
+                    <span className="font-semibold">{s.station_name}</span> {formatMm(s.rain_24h_mm)} มม.
+                    <span className="block text-xs text-gray-600">
+                      {[stationPlace(s, homeAmphoe), distanceText(s.distance_km), `วัดเมื่อ ${measuredAtText(s.recorded_at, now)}`]
+                        .filter(Boolean).join(' · ')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {alerts.warnings.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-gray-700">
+                ข้อความเตือนจาก สสน.{homeAmphoe ? ` ใน อ.${homeAmphoe}` : ''} (ตามต้นฉบับ)
+              </p>
+              <ul className="mt-1 space-y-1.5">
+                {alerts.warnings.map(w => (
+                  <li key={`${w.issued_at}|${w.message}`} className="text-sm leading-snug text-gray-800">
+                    {w.message}
+                    <span className="block text-xs text-gray-600">{measuredAtText(w.issued_at, now)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {alerts.ews.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-gray-700">สถานีเตือนภัยน้ำหลาก-ดินถล่ม (กรมทรัพยากรน้ำ)</p>
+              <ul className="mt-1 space-y-1.5">
+                {alerts.ews.map(({ station: s, alert }) => (
+                  <li key={s.station_code} className="flex items-start gap-1.5 text-sm text-gray-800">
+                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: alert.color }} />
+                    <span>
+                      <span className="font-semibold">{s.station_name}</span> · {alert.text}
+                      <span className="block text-xs text-gray-600">
+                        {[stationPlace(s, homeAmphoe), distanceText(s.distance_km), `รายงานเมื่อ ${measuredAtText(s.recorded_at, now)}`]
+                          .filter(Boolean).join(' · ')}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <p className="text-xs leading-relaxed text-gray-700">
+            ข้อมูลจากหน่วยงานที่ระบุไว้ ไม่ใช่ประกาศของ{tenantName || 'หน่วยงาน'} — โปรดติดตามประกาศจากหน่วยงานในพื้นที่
+          </p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold">
+            <a href={THAIWATER_URL} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[32px] items-center gap-1 text-gray-800 underline">
+              thaiwater.net <ExternalLink size={12} />
+            </a>
+            {alerts.ews.length > 0 && (
+              <a href={EWS_URL} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[32px] items-center gap-1 text-gray-800 underline">
+                ระบบเตือนภัยของกรมทรัพยากรน้ำ <ExternalLink size={12} />
+              </a>
+            )}
+            <Link to="/emergency" className="inline-flex min-h-[32px] items-center text-gray-800 underline">สายด่วนฉุกเฉิน</Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RainSection({ stations, ewsByCode, homeAmphoe, now }) {
   return (
     <section className="rounded-2xl border border-gray-100 bg-white shadow-sm">
       <div className="flex items-start gap-2.5 border-b border-gray-50 px-4 py-3">
@@ -169,21 +265,32 @@ function RainSection({ stations, homeAmphoe, now }) {
         </div>
       </div>
       <ul className="divide-y divide-gray-50">
-        {stations.map(s => <RainRow key={s.station_code} station={s} homeAmphoe={homeAmphoe} now={now} />)}
+        {stations.map(s => (
+          <RainRow key={s.station_code} station={s} ews={ewsByCode.get(s.station_code)} homeAmphoe={homeAmphoe} now={now} />
+        ))}
       </ul>
-      <p className="border-t border-gray-50 px-4 py-3 text-[11px] leading-relaxed text-gray-400">
-        ป้ายเทียบเกณฑ์ปริมาณฝนของกรมอุตุนิยมวิทยา: ฝนเล็กน้อย 0.1–10 · ฝนปานกลาง 10.1–35 · ฝนหนัก 35.1–90 ·
-        ฝนหนักมาก 90.1 มม. ขึ้นไป
-      </p>
+      <div className="space-y-1 border-t border-gray-50 px-4 py-3 text-[11px] leading-relaxed text-gray-400">
+        <p>
+          ป้ายเทียบเกณฑ์ปริมาณฝนของกรมอุตุนิยมวิทยา: ฝนเล็กน้อย 0.1–10 · ฝนปานกลาง 10.1–35 · ฝนหนัก 35.1–90 ·
+          ฝนหนักมาก 90.1 มม. ขึ้นไป
+        </p>
+        {ewsByCode.size > 0 && (
+          <p>
+            ป้าย &quot;น้ำหลาก-ดินถล่ม&quot; คือสถานะจากระบบเตือนภัยล่วงหน้าของกรมทรัพยากรน้ำ (เฝ้าระวัง · เตรียมพร้อม ·
+            วิกฤติ) ขึ้นเฉพาะเมื่อสถานีอยู่ในระดับเตือน
+          </p>
+        )}
+      </div>
     </section>
   )
 }
 
-function RainRow({ station: s, homeAmphoe, now }) {
+function RainRow({ station: s, ews, homeAmphoe, now }) {
   const level = rainLevel(s.rain_24h_mm)
   const stale = Boolean(s.recorded_at) && isStale(s.recorded_at, now, STATION_STALE_HOURS)
   const rain1h = toNum(s.rain_1h_mm)
   const meta = [stationPlace(s, homeAmphoe), distanceText(s.distance_km)].filter(Boolean).join(' · ')
+  const warning = ewsAlert(ews, now)
 
   return (
     <li className="flex items-center gap-3 px-4 py-3">
@@ -198,6 +305,14 @@ function RainRow({ station: s, homeAmphoe, now }) {
         </p>
         <p className="mt-0.5 text-xs text-gray-500">{meta}</p>
         {s.note && <p className="mt-0.5 text-xs text-amber-700">{s.note}</p>}
+        {warning && (
+          <p className={`mt-1 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold text-gray-800 ${warning.stale ? 'opacity-60' : ''}`}
+            style={{ borderColor: warning.color }}>
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: warning.color }} />
+            น้ำหลาก-ดินถล่ม: {warning.text} ·{' '}
+            {warning.stale ? `ไม่มีรายงานใหม่ตั้งแต่ ${measuredAtText(ews.recorded_at, now)}` : measuredAtText(ews.recorded_at, now)}
+          </p>
+        )}
         {stale ? (
           <p className="mt-0.5 text-xs text-amber-700">ไม่มีค่าใหม่ตั้งแต่ {measuredAtText(s.recorded_at, now)}</p>
         ) : level && rain1h > 0 ? (
