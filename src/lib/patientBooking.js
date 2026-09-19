@@ -79,7 +79,7 @@ export function nextPassengerAction(booking, trip) {
 export function previousOdometer(trip, trips) {
   const at = trip?.plan?.pickup_at
   const before = trips
-    .filter(t => t.id !== trip.id && t.state !== 'cancelled' && Number.isFinite(t.odometer_end) && at && t.plan?.pickup_at && t.plan.pickup_at < at)
+    .filter(t => t.id !== trip.id && t.state === 'completed' && !t.odometer_issue && Number.isFinite(t.odometer_end) && at && t.plan?.pickup_at && t.plan.pickup_at < at)
     .sort((a, b) => String(b.plan.pickup_at).localeCompare(String(a.plan.pickup_at)))
   return before.length ? before[0].odometer_end : ''
 }

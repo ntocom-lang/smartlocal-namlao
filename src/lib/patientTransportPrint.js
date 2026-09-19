@@ -665,7 +665,7 @@ export function buildTripMonthReportHtml({ tenant, report, partner }) {
   const pending = all.filter(t => t.state !== 'completed' && t.state !== 'cancelled')
   const totalPeople = trips.reduce((sum, t) => sum + Number(t.passengers || 0), 0)
   const totalCompanions = trips.reduce((sum, t) => sum + Number(t.companions || 0), 0)
-  const measured = trips.filter(t => t.distance != null)
+  const measured = trips.filter(t => !t.odometer_issue && t.distance != null)
   const totalKm = measured.reduce((sum, t) => sum + Number(t.distance), 0)
   const rows = trips.map((t, i) => `<tr>
       <td class="num">${i + 1}</td>
@@ -675,7 +675,7 @@ export function buildTripMonthReportHtml({ tenant, report, partner }) {
       <td class="num">${Number(t.companions || 0)}</td>
       <td class="num">${esc(t.odometer_start ?? '')}</td>
       <td class="num">${esc(t.odometer_end ?? '')}</td>
-      <td class="num">${esc(t.distance ?? '')}</td>
+      <td class="num">${t.odometer_issue ? 'รอตรวจสอบ' : esc(t.distance ?? '')}</td>
       <td>${esc(t.driver_name ?? '')}</td>
       <td class="num">${esc(t.letter_no ?? '')}</td>
     </tr>`).join('\n')
@@ -723,7 +723,7 @@ ${rows || '<tr><td colspan="10" class="num">ยังไม่มีเที่
 ${pending.map(t => `<tr><td class="num">${esc(letterDateText(t.date))}</td><td>${esc(t.route_label ?? '')}</td><td>${esc(TRIP_STATUS[t.state] ?? t.state ?? '')}</td><td class="num">${Number(t.passengers || 0)}</td></tr>`).join('\n')}
     </tbody>
   </table>` : ''}
-  ${measured.length < trips.length ? `<p class="note">หมายเหตุ: มี ${trips.length - measured.length} เที่ยวที่ยังไม่ได้บันทึกเลขไมล์ครบ ระยะทางรวมนับเฉพาะเที่ยวที่บันทึกครบ</p>` : ''}
+  ${measured.length < trips.length ? `<p class="note">หมายเหตุ: มี ${trips.length - measured.length} เที่ยวที่เลขไมล์ยังไม่ครบหรือระยะทางรอตรวจสอบ ระยะทางรวมนับเฉพาะเที่ยวที่ตรวจสอบได้</p>` : ''}
   ${sign}
   <div class="origin">${esc(govEServiceOriginText(tenant?.name || 'หน่วยงาน'))}</div>
 </div>`,

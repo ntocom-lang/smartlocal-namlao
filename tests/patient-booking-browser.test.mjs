@@ -17,7 +17,7 @@ const order = {
  patient_booking_confirm:['p_muni','p_id','p_ids','p_expected','p_helper'],patient_booking_action:['p_muni','p_op','p_entity','p_revision','p_action','p_note'],
  patient_booking_calendar:['p_muni','p_from','p_to'],patient_booking_submit_join:['p_muni','p_id','p_trip','p_data'],patient_booking_preview_join:['p_muni','p_booking'],patient_booking_confirm_join:['p_muni','p_op','p_booking','p_expected'],
  patient_booking_amend:['p_muni','p_op','p_id','p_revision','p_data','p_note'],
- patient_booking_record_letter:['p_muni','p_trip','p_docs_revision','p_letter_no','p_letter_date'],patient_booking_record_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end'],patient_booking_month_report:['p_muni','p_month'],
+ patient_booking_save_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end','p_issue','p_note'],patient_booking_record_letter:['p_muni','p_trip','p_docs_revision','p_letter_no','p_letter_date'],patient_booking_record_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end'],patient_booking_month_report:['p_muni','p_month'],
 }
 const plugin = {
  name:'isolated-patient-booking-browser',enforce:'pre',
@@ -82,7 +82,7 @@ try{
  // เอกสารถึงกองทุนผ่านหน้าจอจริง: เจ้าหน้าที่บันทึกเลขหนังสือ คนขับบันทึกเลขไมล์ ค่าถึงฐานข้อมูลจริง
  await page.setViewportSize({width:390,height:900});await visit('driver');await page.getByRole('button',{name:'งานคนขับ',exact:true}).click()
  const driverTrip=page.getByRole('article').first();await driverTrip.getByLabel('เลขไมล์ออก',{exact:true}).fill('15000');await driverTrip.getByLabel('เลขไมล์กลับ',{exact:true}).fill('15033')
- await driverTrip.getByText('ระยะทาง 33 กม.',{exact:true}).waitFor();await driverTrip.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขไมล์แล้ว'}).waitFor()
+ if(await driverTrip.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).count()) await driverTrip.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).selectOption('กรอกผิด');await driverTrip.getByText('ระยะทาง 33 กม.',{exact:true}).waitFor();await driverTrip.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขไมล์แล้ว'}).waitFor()
  await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.getByRole('button',{name:'เที่ยวที่ยืนยันแล้ว',exact:true}).click()
  const odoTrip=page.locator('article:has(input[name="odometer_end"][value="15033"])')
  // เลขไมล์ออก = เลขไมล์กลับของเที่ยวก่อนหน้าตามเวลา ไม่ใช่ค่าสูงสุดของทุกเที่ยว (ผลตรวจ #227 ข้อ 5)
@@ -101,9 +101,31 @@ try{
  await visit('driver');await page.getByRole('button',{name:'งานคนขับ',exact:true}).click()
  const waiting=page.getByRole('region',{name:'จบแล้ว รอเติมเลขไมล์'});await waiting.getByRole('heading',{name:/^จบแล้ว รอเติมเลขไมล์/}).waitFor()
  const late=waiting.getByRole('article').first();await late.locator('input[name="odometer_start"]').fill('14000');await late.locator('input[name="odometer_end"]').fill('14020')
- await late.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขไมล์แล้ว'}).waitFor()
+ if(await late.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).count()) await late.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).selectOption('กรอกผิด');await late.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขไมล์แล้ว'}).waitFor()
  await actor(coordinator);assert((await rpc('patient_booking_workspace',[tenant])).trips.some(t=>t.state==='completed'&&t.odometer_end===14020),'เลขไมล์ของเที่ยวที่จบแล้วไม่ถึงฐานข้อมูล')
  console.log('PASS fund documents through the real UI: driver odometer + coordinator letter number reach PostgreSQL')
+ await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.getByRole('button',{name:'เที่ยวที่ยืนยันแล้ว',exact:true}).click()
+ const editingIndex=await page.getByRole('article').evaluateAll(nodes=>nodes.findIndex(n=>n.textContent.includes('พร 72301/77')));const editing=page.getByRole('article').nth(editingIndex);await editing.waitFor()
+ await editing.getByLabel('เลขไมล์กลับ',{exact:true}).fill('15040');await editing.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).selectOption('กรอกผิด')
+ await actor(coordinator);let v=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===saved.id)
+ await rpc('patient_booking_save_odometer',[tenant,saved.id,v.docs_revision,16000,16044,false,'กรอกผิด'])
+ await page.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click();await editing.getByText(/ค่าล่าสุด: เลขไมล์ออก 16000/).waitFor()
+ assert.equal(await editing.getByLabel('เลขไมล์กลับ',{exact:true}).inputValue(),'15040')
+ assert.equal(await editing.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).isDisabled(),true)
+ await editing.getByRole('button',{name:'ยืนยันใช้ค่าที่ฉันแก้',exact:true}).click();await editing.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขไมล์แล้ว'}).waitFor()
+ await actor(coordinator);v=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===saved.id);assert.equal(v.odometer_end,15040)
+ // Clean fields follow new server values; edited letter keeps its baseline revision.
+ await editing.getByRole('button',{name:'แก้เลขหนังสือ',exact:true}).click();await editing.getByLabel('เลขที่หนังสือ',{exact:true}).fill('TEST draft')
+ await rpc('patient_booking_record_letter',[tenant,saved.id,v.docs_revision,'TEST newest',saved.forward_letter_date])
+ await page.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click();await editing.getByText(/ค่าล่าสุด: เลขหนังสือ TEST newest/).waitFor()
+ assert.equal(await editing.getByRole('button',{name:'บันทึกเลขหนังสือ',exact:true}).isDisabled(),true)
+ await editing.getByRole('button',{name:'ใช้ค่าล่าสุด',exact:true}).click();assert.equal(await editing.getByLabel('เลขที่หนังสือ',{exact:true}).inputValue(),'TEST newest')
+ // Abnormal meter readings are accepted but excluded from report distance.
+ await editing.getByLabel('เลขไมล์กลับ',{exact:true}).fill('5');await editing.getByLabel('มาตรวัดมีปัญหา / ระยะทางรอตรวจสอบ',{exact:true}).check();await editing.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).selectOption('เปลี่ยนมาตรวัด')
+ await editing.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขไมล์แล้ว'}).waitFor()
+ await actor(coordinator);const actualReport=await rpc('patient_booking_month_report',[tenant,saved.plan.date]);assert.equal(actualReport.trips.find(t=>t.trip_id===saved.id).distance,null)
+ console.log('PASS dirty draft survives refresh, stale save blocked, explicit overwrite succeeds, letter accepts latest, abnormal meter saves without distance')
+
 
  for(const width of [320,390,768,1024]){await page.setViewportSize({width,height:900});for(const as of ['citizen','coordinator','driver','admin']){await visit(as);const tab={citizen:'หน้าบริการ',coordinator:'จัดคิว',driver:'งานคนขับ',admin:'ตั้งค่า'}[as];await page.getByRole('button',{name:tab,exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${as} overflow`)}console.log(`PASS rendered ${width}px four roles`)}
  if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await visit('citizen');await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-live-ui-390.png`,fullPage:true});await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-queue-390.png`,fullPage:true})}

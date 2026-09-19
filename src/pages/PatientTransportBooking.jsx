@@ -70,7 +70,7 @@ export default function PatientTransportBooking() {
       if (after) after(result.data)
       await reload()
       return true
-    } catch (e) { setError(`ยังไม่ยืนยันผลสำเร็จ: ${e.message || 'เครือข่ายขัดข้อง กรุณาลองใหม่ด้วยรายการเดิม'}`); return false }
+    } catch (e) { if (e.message?.includes('เปลี่ยนแล้ว')) await reload(); setError(`ยังไม่ยืนยันผลสำเร็จ: ${e.message || 'เครือข่ายขัดข้อง กรุณาลองใหม่ด้วยรายการเดิม'}`); return false }
     finally { lock.current = false; setBusy(false) }
   }
   function action(entity, name, note = '') {
@@ -105,7 +105,7 @@ export default function PatientTransportBooking() {
     if (failure) throw failure
     return buildTripMonthReportHtml({ tenant, report: data, partner: context.partner })
   }, 'เตรียมสรุปรายเดือนไม่สำเร็จ')
-  const recordOdometer = (trip, start, end) => mutate('patient_booking_record_odometer', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_start: start, p_end: end }, 'บันทึกเลขไมล์แล้ว')
+  const recordOdometer = (trip, start, end, issue, reason) => mutate('patient_booking_save_odometer', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_start: start, p_end: end, p_issue: issue, p_note: reason }, 'บันทึกเลขไมล์แล้ว')
   async function inspect(ids, helper) {
     if (lock.current) return
     lock.current = true; setBusy(true); setError('')
