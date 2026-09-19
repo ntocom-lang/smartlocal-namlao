@@ -39,7 +39,13 @@ export default function WaterSituationPage() {
   const tenantId = tenant?.id
   const [data, setData] = useState(null)        // null = ยังไม่เคยโหลดสำเร็จ
   const [loadError, setLoadError] = useState(false)
-  const [checkedAt, setCheckedAt] = useState(null)
+  const [checkedAt, setCheckedAt] = useState(Date.now)
+
+  // อายุข้อมูลต้องเดินต่อแม้ request ค้าง/ออฟไลน์ ไม่ผูกการหมดอายุกับการโหลดสำเร็จ
+  useEffect(() => {
+    const timer = setInterval(() => setCheckedAt(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
 
   // รอบที่โหลดพลาดแต่เคยมีข้อมูลแล้ว ให้แสดงของเดิมต่อ — ตัวเตือน "ข้อมูลไม่เป็นปัจจุบัน" ทำงานเองถ้าค้างนาน
   const applyResult = useCallback((result, error) => {
@@ -84,7 +90,7 @@ export default function WaterSituationPage() {
       <div className="md:hidden sticky top-0 z-30 px-4 pt-3 pb-2 bg-gray-50/95 backdrop-blur-md">
         <div className="flex items-center gap-2">
           <button onClick={() => navigate(-1)} aria-label="ย้อนกลับ"
-            className="p-2 -ml-1 rounded-xl hover:bg-gray-200/60 text-gray-500 transition-colors">
+            className="min-h-[44px] min-w-[44px] p-2 -ml-1 rounded-xl hover:bg-gray-200/60 text-gray-500 transition-colors">
             <ArrowLeft size={20} />
           </button>
           <h1 className="text-base font-bold text-gray-800">สถานการณ์น้ำ-ฝน</h1>
@@ -118,7 +124,7 @@ export default function WaterSituationPage() {
             <CloudRain size={32} className="mx-auto text-gray-300" />
             <p className="mt-2 text-sm font-semibold text-gray-700">ยังไม่ได้ตั้งค่าสถานีตรวจวัดของหน่วยงานนี้</p>
             <a href={THAIWATER_URL} target="_blank" rel="noopener noreferrer"
-              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-sky-700">
+              className="mt-2 inline-flex min-h-[44px] items-center gap-1 text-xs font-semibold text-sky-700">
               ดูสถานการณ์น้ำทั่วประเทศที่ thaiwater.net <ExternalLink size={12} />
             </a>
           </div>
@@ -166,7 +172,7 @@ function SyncStatus({ syncedAt, now, refreshFailed }) {
         <p>
           ระบบดึงข้อมูลได้ล่าสุดเมื่อ <span className="font-semibold">{measuredAtText(syncedAt, now)}</span>{' '}
           ตัวเลขด้านล่างอาจไม่เป็นปัจจุบัน ตรวจสอบค่าล่าสุดได้ที่{' '}
-          <a href={THAIWATER_URL} target="_blank" rel="noopener noreferrer" className="font-semibold underline">thaiwater.net</a>
+          <a href={THAIWATER_URL} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center font-semibold underline">thaiwater.net</a>
         </p>
       </div>
     )
@@ -218,7 +224,7 @@ function HeroStats({ rain, dams, levels, now }) {
       key: 'bank', Icon: Waves, label: 'ระดับน้ำใกล้ตลิ่งที่สุด',
       value: Math.abs(stats.bank.diff).toFixed(2), unit: 'ม.',
       color: safeColor(stats.bank.station.situation_color),
-      badge: above ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง',
+      badge: Math.abs(stats.bank.diff) < 0.005 ? 'เสมอตลิ่ง' : above ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง',
       caption: `สถานี${stats.bank.station.station_name}`,
     })
   }
@@ -319,15 +325,15 @@ function AlertBanner({ rain, ews, warnings, homeAmphoe, now, tenantName }) {
             ข้อมูลจากหน่วยงานที่ระบุไว้ ไม่ใช่ประกาศของ{tenantName || 'หน่วยงาน'} — โปรดติดตามประกาศจากหน่วยงานในพื้นที่
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold">
-            <a href={THAIWATER_URL} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[32px] items-center gap-1 text-gray-800 underline">
+            <a href={THAIWATER_URL} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center gap-1 text-gray-800 underline">
               thaiwater.net <ExternalLink size={12} />
             </a>
             {alerts.ews.length > 0 && (
-              <a href={EWS_URL} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[32px] items-center gap-1 text-gray-800 underline">
+              <a href={EWS_URL} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center gap-1 text-gray-800 underline">
                 ระบบเตือนภัยของกรมทรัพยากรน้ำ <ExternalLink size={12} />
               </a>
             )}
-            <Link to="/emergency" className="inline-flex min-h-[32px] items-center text-gray-800 underline">สายด่วนฉุกเฉิน</Link>
+            <Link to="/emergency" className="inline-flex min-h-[44px] items-center text-gray-800 underline">สายด่วนฉุกเฉิน</Link>
           </div>
         </div>
       </div>
@@ -533,7 +539,7 @@ function WaterLevelCard({ station: s, homeAmphoe, now }) {
         ) : <span />}
         {mapHref && (
           <a href={mapHref} target="_blank" rel="noopener noreferrer"
-            className="inline-flex min-h-[32px] items-center gap-1 font-semibold text-cyan-700">
+            className="inline-flex min-h-[44px] items-center gap-1 font-semibold text-cyan-700">
             <MapPin size={13} /> ตำแหน่งสถานี
           </a>
         )}
@@ -550,46 +556,55 @@ const CH = { bankY: 16, bedY: 66, leftTop: 36, rightTop: 284, slope: 1.12 }
 //    (ต้นทางไม่ได้ให้รูปตัด) ตัวเลขจริงจึงต้องกำกับอยู่บนภาพทุกจุด ห้ามให้เหลือแต่รูป
 function ChannelCrossSection({ fill, percent, bankLabel, color, stationName }) {
   const gradientId = useId()
-  const surfaceY = CH.bedY - fill * (CH.bedY - CH.bankY)
-  const inset = (surfaceY - CH.bankY) * CH.slope
+  const overCapacity = percent > 100
+  // ส่วนเกินวาดเป็นสัญลักษณ์เหนือตลิ่ง ไม่คำนวณความสูงจริงจากเปอร์เซ็นต์ความจุลำน้ำ
+  const surfaceY = overCapacity ? 8 : CH.bedY - fill * (CH.bedY - CH.bankY)
+  const inset = Math.max(0, surfaceY - CH.bankY) * CH.slope
   const left = CH.leftTop + inset
   const right = CH.rightTop - inset
   const percentText = percent === null ? null : `${Math.round(percent)}%`
 
   return (
-    <div className="relative overflow-hidden rounded-xl bg-gray-50">
-      <svg viewBox="0 0 320 84" className="block w-full" role="img"
-        aria-label={`ภาพตัดขวางลำน้ำที่สถานี${stationName} น้ำอยู่ที่ ${percentText ?? '–'} ของความจุลำน้ำ${bankLabel ? ` ${bankLabel}` : ''}`}>
-        <defs>
-          {/* เนื้อน้ำเป็นสีน้ำเงินคงที่ให้ดูออกว่าเป็นน้ำ — สีสถานการณ์จากต้นทาง (เขียว/เหลือง/แดง)
-              ไปอยู่ที่เส้นผิวน้ำกับกรอบการ์ดแทน ถ้าย้อมทั้งก้อนตามสถานะ ภาพจะอ่านเป็นตะไคร่/ดินแทนน้ำ */}
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="#0369a1" stopOpacity="0.9" />
-          </linearGradient>
-        </defs>
-        {/* ตลิ่งสองฝั่ง */}
-        <path d={`M0 ${CH.bankY} L${CH.leftTop} ${CH.bankY} L92 ${CH.bedY} L228 ${CH.bedY} L${CH.rightTop} ${CH.bankY} L320 ${CH.bankY} L320 84 L0 84 Z`}
-          fill="#e7e5e4" />
-        <path d={`M${CH.leftTop} ${CH.bankY} L92 ${CH.bedY} L228 ${CH.bedY} L${CH.rightTop} ${CH.bankY}`}
-          fill="none" stroke="#a8a29e" strokeWidth="1.5" strokeLinejoin="round" />
-        {/* ผิวน้ำ */}
-        <path d={`M${left} ${surfaceY} L92 ${CH.bedY} L228 ${CH.bedY} L${right} ${surfaceY} Z`} fill={`url(#${gradientId})`} />
-        <line x1={left} y1={surfaceY} x2={right} y2={surfaceY} stroke={color} strokeWidth="2.5" strokeLinecap="round" />
-        {/* เส้นระดับตลิ่ง */}
-        <line x1="8" y1={CH.bankY} x2="312" y2={CH.bankY} stroke="#78716c" strokeWidth="1" strokeDasharray="5 4" />
-      </svg>
-      <span className="absolute left-2 top-1 text-[10px] font-semibold text-gray-500">ระดับตลิ่ง</span>
-      {bankLabel && (
-        <span className="absolute right-2 top-1 rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">
-          {bankLabel}
-        </span>
-      )}
-      {percentText && (
-        <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">
-          ความจุลำน้ำ {percentText}
-        </span>
-      )}
+    <div className="overflow-hidden rounded-xl bg-gray-50">
+      <div className="relative">
+        <svg viewBox="0 0 320 84" className="block w-full" role="img"
+          aria-label={`ภาพตัดขวางลำน้ำที่สถานี${stationName} น้ำอยู่ที่ ${percentText ?? '–'} ของความจุลำน้ำ${bankLabel ? ` ${bankLabel}` : ''}`}>
+          <defs>
+            {/* เนื้อน้ำเป็นสีน้ำเงินคงที่ให้ดูออกว่าเป็นน้ำ — สีสถานการณ์จากต้นทาง (เขียว/เหลือง/แดง)
+                ไปอยู่ที่เส้นผิวน้ำกับกรอบการ์ดแทน ถ้าย้อมทั้งก้อนตามสถานะ ภาพจะอ่านเป็นตะไคร่/ดินแทนน้ำ */}
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.95" />
+              <stop offset="100%" stopColor="#0369a1" stopOpacity="0.9" />
+            </linearGradient>
+          </defs>
+          {/* ตลิ่งสองฝั่ง */}
+          <path d={`M0 ${CH.bankY} L${CH.leftTop} ${CH.bankY} L92 ${CH.bedY} L228 ${CH.bedY} L${CH.rightTop} ${CH.bankY} L320 ${CH.bankY} L320 84 L0 84 Z`}
+            fill="#e7e5e4" />
+          <path d={`M${CH.leftTop} ${CH.bankY} L92 ${CH.bedY} L228 ${CH.bedY} L${CH.rightTop} ${CH.bankY}`}
+            fill="none" stroke="#a8a29e" strokeWidth="1.5" strokeLinejoin="round" />
+          {/* ผิวน้ำ */}
+          {overCapacity && <rect x="8" y={surfaceY} width="304" height={CH.bankY - surfaceY} fill={`url(#${gradientId})`} />}
+          <path d={`M${left} ${surfaceY} L92 ${CH.bedY} L228 ${CH.bedY} L${right} ${surfaceY} Z`} fill={`url(#${gradientId})`} />
+          <line x1={left} y1={surfaceY} x2={right} y2={surfaceY} stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+          {/* เส้นระดับตลิ่ง */}
+          <line x1="8" y1={CH.bankY} x2="312" y2={CH.bankY} stroke="#78716c" strokeWidth="1" strokeDasharray="5 4" />
+        </svg>
+        <span className="absolute left-2 top-1 text-[10px] font-semibold text-gray-500">ระดับตลิ่ง</span>
+        {bankLabel && (
+          <span className="absolute right-2 top-1 rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">
+            {bankLabel}
+          </span>
+        )}
+        {percentText && (
+          <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">
+            ความจุลำน้ำ {percentText}
+          </span>
+        )}
+      </div>
+      <p className="px-2 pb-1.5 text-[10px] text-gray-500">
+        {overCapacity && <span className="font-bold text-rose-700">เกินความจุลำน้ำ · </span>}
+        ภาพประกอบสัดส่วน ไม่ใช่หน้าตัดจริง
+      </p>
     </div>
   )
 }
@@ -703,12 +718,11 @@ function DamCard({ station: s, homeAmphoe, now }) {
           <div className="mt-2 space-y-2">
             <FlowBars inflow={inflow} released={released} />
             <div>
-              <Metric label="ปริมาตรเทียบกับเมื่อวาน" value={trend ? (
+              <Metric label={s.prev_recorded_at ? `ปริมาตรเทียบกับข้อมูลวันที่ ${dataDayText(s.prev_recorded_at, now)}` : 'ปริมาตรเทียบกับข้อมูลก่อนหน้า'} value={trend ? (
                 <span className={`inline-flex items-center gap-1 ${TREND_STYLE[trend.dir].className}`}>
                   <TrendIcon size={15} /> {trend.label}
                 </span>
-              ) : 'รอข้อมูลวันถัดไป'}
-                hint={trend && s.prev_recorded_at ? `เทียบกับข้อมูลวันที่ ${dataDayText(s.prev_recorded_at, now)}` : null} />
+              ) : 'ยังไม่มีข้อมูลก่อนหน้าให้เปรียบเทียบ'} />
             </div>
           </div>
         </div>
@@ -724,7 +738,7 @@ function DamCard({ station: s, homeAmphoe, now }) {
         ) : <span />}
         {mapHref && (
           <a href={mapHref} target="_blank" rel="noopener noreferrer"
-            className="inline-flex min-h-[32px] items-center gap-1 font-semibold text-blue-700">
+            className="inline-flex min-h-[44px] items-center gap-1 font-semibold text-blue-700">
             <MapPin size={13} /> ตำแหน่งอ่าง
           </a>
         )}
@@ -783,10 +797,10 @@ function SourceNote({ tenantName }) {
       <p>
         เป็นค่าตรวจวัดจากสถานี <span className="font-semibold text-gray-700">ไม่ใช่ประกาศเตือนภัยของ{tenantName || 'หน่วยงาน'}</span>
         {' '}หากเกิดเหตุฉุกเฉินดูเบอร์ติดต่อได้ที่{' '}
-        <Link to="/emergency" className="font-semibold text-sky-700 underline">สายด่วนฉุกเฉิน</Link>
+        <Link to="/emergency" className="inline-flex min-h-[44px] items-center font-semibold text-sky-700 underline">สายด่วนฉุกเฉิน</Link>
       </p>
       <a href={THAIWATER_URL} target="_blank" rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 font-semibold text-sky-700">
+        className="inline-flex min-h-[44px] items-center gap-1 font-semibold text-sky-700">
         ดูข้อมูลทั้งหมดที่ thaiwater.net <ExternalLink size={12} />
       </a>
     </div>

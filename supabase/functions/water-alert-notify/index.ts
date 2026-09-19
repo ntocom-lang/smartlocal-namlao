@@ -20,7 +20,7 @@
 // - ส่งไม่เกินวันละครั้งต่อเรื่อง (คีย์กันซ้ำรวมวันที่ไทย): ฝน = ต่อสถานี · สสน. = ต่อสถานีต่อประเภท
 //   ข้อความ (ล้นตลิ่ง/ฝนตกหนัก/เสี่ยงน้ำท่วมฉับพลัน …) · ews = ต่อสถานีต่อระดับ — ข้อความเปลี่ยน
 //   ประเภทหรือระดับขึ้น คีย์เปลี่ยน จึงได้ข้อความใหม่ทันที
-// - ทุกเรื่องของ อปท. เดียวกันในรอบเดียว รวมเป็นข้อความเดียว
+// - รวมเรื่องของ อปท. เดียวกันเป็นชุดไม่เกิน 3,800 ตัวอักษร โดยไม่ตัดรายการหรือ HTML
 // - ส่งไม่สำเร็จ (Telegram ล่ม) รอบถัดไปพยายามใหม่ ไม่ถูกคีย์กันซ้ำกลืน — แบบเดียวกับ thaiwater-watchdog
 // - ข้อความเป็นข้อมูลประกอบการตัดสินใจ ไม่สั่งอพยพและไม่ประกาศแทนผู้บริหาร (ดุลพินิจทางปกครอง)
 
@@ -123,6 +123,49 @@ function warningCategory(message: string): string {
   if (message.includes('ฝนตกหนักมาก')) return 'rain_very_heavy'
   if (message.includes('ฝนตกหนัก')) return 'rain_heavy'
   return 'other'
+}
+
+// นับ HTML ก่อน parse แบบเผื่อเหลือ: ไม่ตัดกลาง tag/entity หรือกลืนรายการท้าย
+function renderAlertMessage(items: Item[], tenant: Tenant, isTest: boolean): string {
+  const section = (name: Item['section'], title: string) => {
+    const lines = items.filter(i => i.section === name).sort((a, b) => a.sortKey - b.sortKey).map(i => i.line)
+    return lines.length ? ['', title, ...lines] : []
+  }
+  const area = [tenant.district && `อ.${escapeHtml(tenant.district, 40)}`, tenant.province && `จ.${escapeHtml(tenant.province, 40)}`].filter(Boolean).join(' ')
+  const sources = ['คลังข้อมูลน้ำแห่งชาติ (ThaiWater) สสน.']
+  if (items.some(i => i.section === 'rain')) sources.push('เกณฑ์ฝนของกรมอุตุนิยมวิทยา')
+  if (items.some(i => i.section === 'ews')) sources.push('ระบบเตือนภัยล่วงหน้า กรมทรัพยากรน้ำ')
+
+  return [
+    `⚠️ <b>${isTest ? '[ทดสอบ] ' : ''}แจ้งเตือนสถานการณ์น้ำ-ฝนใกล้พื้นที่</b>`,
+    ...section('rain', `🌧️ <b>ฝนหนักมาก</b> (${HEAVY_RAIN_MM} มม. ขึ้นไปใน 24 ชม. ตามเกณฑ์กรมอุตุนิยมวิทยา)`),
+    ...section('thaiwater', `📢 <b>ข้อความเตือนจาก สสน.</b>${area ? ` (${area})` : ''}`),
+    ...section('ews', '🚨 <b>สถานีเตือนภัยน้ำหลาก-ดินถล่ม</b> (กรมทรัพยากรน้ำ)'),
+    '',
+    `ที่มา: ${sources.join(' · ')}`,
+    'ข้อมูลนี้ใช้ประกอบการตัดสินใจของเจ้าหน้าที่ — การประกาศแจ้งเตือนในพื้นที่เป็นการตัดสินใจของผู้บริหาร',
+  ].join('\n')
+
+}
+
+export function buildAlertBatches(items: Item[], tenant: Tenant, isTest: boolean) {
+  const batches: { items: Item[]; text: string }[] = []
+  let current: Item[] = []
+  for (const item of items) {
+    const candidate = [...current, item]
+    if (renderAlertMessage(candidate, tenant, isTest).length <= 3800) {
+      current = candidate
+      continue
+    }
+    if (current.length) batches.push({ items: current, text: renderAlertMessage(current, tenant, isTest) })
+    // ค่าจากต้นทางถูกจำกัดก่อน escapeHtml แล้ว ป้องกันอนาคตที่เพิ่มความยาวโดยไม่แก้ตัวแบ่ง
+    if (renderAlertMessage([item], tenant, isTest).length > 3800) {
+      throw new Error('water alert item exceeds message limit')
+    }
+    current = [item]
+  }
+  if (current.length) batches.push({ items: current, text: renderAlertMessage(current, tenant, isTest) })
+  return batches
 }
 
 serve(async (req) => {
@@ -269,66 +312,53 @@ serve(async (req) => {
     const items = itemsByTenant.get(tenant.id) ?? []
     if (!items.length) continue
 
-    // claim คีย์ผ่าน unique constraint ของ notification_deliveries — ชน = ส่งเรื่องนี้ไปแล้ววันนี้
-    // ยกเว้นแถวเดิมเป็น failed ให้ส่งใหม่ได้ (เหตุผลเดียวกับ thaiwater-watchdog)
-    const claimed: Item[] = []
-    for (const item of items) {
-      const { error } = await admin.from('notification_deliveries').insert({
-        municipality_id: tenant.id,
-        channel: 'telegram',
-        notification_type: item.notificationType,
-        resource_type: item.resourceType,
-        resource_id: item.resourceId,
-        idempotency_key: item.key,
-        status: 'pending',
-      })
-      if (!error) { claimed.push(item); continue }
-      if (error.code !== '23505') {
-        console.error('[water-alert-notify] claim ไม่สำเร็จ:', tenant.slug, error.code, error.message)
-        continue
-      }
-      const { data: existing } = await admin.from('notification_deliveries')
-        .select('status').eq('municipality_id', tenant.id).eq('channel', 'telegram')
-        .eq('idempotency_key', item.key).maybeSingle()
-      if (existing?.status === 'failed') claimed.push(item)
-    }
-    if (!claimed.length) continue
-
-    const section = (name: Item['section'], title: string) => {
-      const lines = claimed.filter(i => i.section === name).sort((a, b) => a.sortKey - b.sortKey).map(i => i.line)
-      return lines.length ? ['', title, ...lines] : []
-    }
-    const area = [tenant.district && `อ.${escapeHtml(tenant.district, 40)}`, tenant.province && `จ.${escapeHtml(tenant.province, 40)}`].filter(Boolean).join(' ')
-    const sources = ['คลังข้อมูลน้ำแห่งชาติ (ThaiWater) สสน.']
-    if (claimed.some(i => i.section === 'rain')) sources.push('เกณฑ์ฝนของกรมอุตุนิยมวิทยา')
-    if (claimed.some(i => i.section === 'ews')) sources.push('ระบบเตือนภัยล่วงหน้า กรมทรัพยากรน้ำ')
-
-    const text = [
-      `⚠️ <b>${isTest ? '[ทดสอบ] ' : ''}แจ้งเตือนสถานการณ์น้ำ-ฝนใกล้พื้นที่</b>`,
-      ...section('rain', `🌧️ <b>ฝนหนักมาก</b> (${HEAVY_RAIN_MM} มม. ขึ้นไปใน 24 ชม. ตามเกณฑ์กรมอุตุนิยมวิทยา)`),
-      ...section('thaiwater', `📢 <b>ข้อความเตือนจาก สสน.</b>${area ? ` (${area})` : ''}`),
-      ...section('ews', '🚨 <b>สถานีเตือนภัยน้ำหลาก-ดินถล่ม</b> (กรมทรัพยากรน้ำ)'),
-      '',
-      `ที่มา: ${sources.join(' · ')}`,
-      'ข้อมูลนี้ใช้ประกอบการตัดสินใจของเจ้าหน้าที่ — การประกาศแจ้งเตือนในพื้นที่เป็นการตัดสินใจของผู้บริหาร',
-    ].join('\n').slice(0, 3800)
-
-    const result = await sendTelegramMessage(String(tenant.telegram_group_id), text, BOT_TOKEN)
-    for (const item of claimed) {
-      await admin.from('notification_deliveries')
-        .update({
-          status: result.ok ? 'sent' : 'failed',
-          attempt_count: result.attempts,
-          sent_at: result.ok ? new Date().toISOString() : null,
-          provider_message_id: result.ok ? String(result.messageId ?? '') : null,
-          last_error: result.ok ? null : result.error,
-          updated_at: new Date().toISOString(),
+    // แบ่งก่อน claim: รายการของชุดถัดไปยังไม่ติด pending ถ้าฟังก์ชันหยุดกลางทาง
+    const batches = buildAlertBatches(items, tenant, isTest)
+    for (const batch of batches) {
+      // claim คีย์ผ่าน unique constraint ของ notification_deliveries — ชน = ส่งเรื่องนี้ไปแล้ววันนี้
+      // ยกเว้นแถวเดิมเป็น failed ให้ส่งใหม่ได้ (เหตุผลเดียวกับ thaiwater-watchdog)
+      const claimed: Item[] = []
+      for (const item of batch.items) {
+        const { error } = await admin.from('notification_deliveries').insert({
+          municipality_id: tenant.id,
+          channel: 'telegram',
+          notification_type: item.notificationType,
+          resource_type: item.resourceType,
+          resource_id: item.resourceId,
+          idempotency_key: item.key,
+          status: 'pending',
         })
-        .eq('municipality_id', tenant.id)
-        .eq('channel', 'telegram')
-        .eq('idempotency_key', item.key)
+        if (!error) { claimed.push(item); continue }
+        if (error.code !== '23505') {
+          console.error('[water-alert-notify] claim ไม่สำเร็จ:', tenant.slug, error.code, error.message)
+          continue
+        }
+        const { data: existing } = await admin.from('notification_deliveries')
+          .select('status').eq('municipality_id', tenant.id).eq('channel', 'telegram')
+          .eq('idempotency_key', item.key).maybeSingle()
+        if (existing?.status === 'failed') claimed.push(item)
+      }
+      if (!claimed.length) continue
+
+      const text = renderAlertMessage(claimed, tenant, isTest)
+
+      const result = await sendTelegramMessage(String(tenant.telegram_group_id), text, BOT_TOKEN)
+      for (const item of claimed) {
+        await admin.from('notification_deliveries')
+          .update({
+            status: result.ok ? 'sent' : 'failed',
+            attempt_count: result.attempts,
+            sent_at: result.ok ? new Date().toISOString() : null,
+            provider_message_id: result.ok ? String(result.messageId ?? '') : null,
+            last_error: result.ok ? null : result.error,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('municipality_id', tenant.id)
+          .eq('channel', 'telegram')
+          .eq('idempotency_key', item.key)
+      }
+      sent.push({ slug: tenant.slug, items: claimed.length, ok: result.ok })
     }
-    sent.push({ slug: tenant.slug, items: claimed.length, ok: result.ok })
   }
 
   return json({
