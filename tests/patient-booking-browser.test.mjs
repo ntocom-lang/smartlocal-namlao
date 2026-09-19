@@ -16,6 +16,7 @@ const order = {
  patient_booking_confirm:['p_muni','p_id','p_ids','p_expected','p_helper'],patient_booking_action:['p_muni','p_op','p_entity','p_revision','p_action','p_note'],
  patient_booking_calendar:['p_muni','p_from','p_to'],patient_booking_submit_join:['p_muni','p_id','p_trip','p_data'],patient_booking_preview_join:['p_muni','p_booking'],patient_booking_confirm_join:['p_muni','p_op','p_booking','p_expected'],
  patient_booking_amend:['p_muni','p_op','p_id','p_revision','p_data','p_note'],
+ patient_booking_record_letter:['p_muni','p_trip','p_letter_no','p_letter_date'],patient_booking_record_odometer:['p_muni','p_trip','p_start','p_end'],patient_booking_month_report:['p_muni','p_month'],
 }
 const plugin = {
  name:'isolated-patient-booking-browser',enforce:'pre',
@@ -76,6 +77,20 @@ try{
  assert.equal(await page.getByRole('button',{name:'ต่อไป',exact:true}).isDisabled(),false,'A serviceable day and time must pass')
  if(process.env.PATIENT_PREVIEW_SHOTS){await page.getByLabel('เป็นการเดินทางตามนัด ไม่ใช่เหตุฉุกเฉิน',{exact:true}).check();await page.getByRole('button',{name:'ต่อไป',exact:true}).click();await page.getByText('ปักหมุดจุดรับ (ถ้าสะดวก)',{exact:true}).waitFor();await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-pickup-pin-390.png`,fullPage:true})}
  console.log('PASS booking form blocks closed days and appointments outside office hours before the request is sent')
+
+ // เอกสารถึงกองทุนผ่านหน้าจอจริง: เจ้าหน้าที่บันทึกเลขหนังสือ คนขับบันทึกเลขไมล์ ค่าถึงฐานข้อมูลจริง
+ await page.setViewportSize({width:390,height:900});await visit('driver');await page.getByRole('button',{name:'งานคนขับ',exact:true}).click()
+ const driverTrip=page.getByRole('article').first();await driverTrip.getByLabel('เลขไมล์ออก',{exact:true}).fill('15000');await driverTrip.getByLabel('เลขไมล์กลับ',{exact:true}).fill('15033')
+ await driverTrip.getByText('ระยะทาง 33 กม.',{exact:true}).waitFor();await driverTrip.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขไมล์แล้ว'}).waitFor()
+ await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.getByRole('button',{name:'เที่ยวที่ยืนยันแล้ว',exact:true}).click()
+ const odoTrip=page.locator('article:has(input[name="odometer_end"][value="15033"])')
+ assert.ok(await page.locator('input[name="odometer_start"][value="15033"]').count()>=1,'เลขไมล์ออกของเที่ยวถัดไปต้องเติมจากเลขไมล์กลับล่าสุดให้เอง');await odoTrip.getByRole('button',{name:/^(กรอก|แก้)เลขหนังสือ$/}).click()
+ await odoTrip.getByLabel('เลขที่หนังสือ',{exact:true}).fill('พร 72301/77');await odoTrip.getByRole('button',{name:'บันทึกเลขหนังสือ',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขหนังสือนำส่งแล้ว'}).waitFor()
+ await odoTrip.getByText(/^ที่ พร 72301\/77 ลงวันที่/).waitFor()
+ if(process.env.PATIENT_PREVIEW_SHOTS){await odoTrip.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-fund-docs-390.png`})}
+ await actor(coordinator);const saved=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.forward_letter_no==='พร 72301/77')
+ assert(saved,'เลขหนังสือไม่ถึงฐานข้อมูล');assert.equal(saved.odometer_end,15033,'เลขไมล์ไม่ถึงฐานข้อมูล')
+ console.log('PASS fund documents through the real UI: driver odometer + coordinator letter number reach PostgreSQL')
 
  for(const width of [320,390,768,1024]){await page.setViewportSize({width,height:900});for(const as of ['citizen','coordinator','driver','admin']){await visit(as);const tab={citizen:'หน้าบริการ',coordinator:'จัดคิว',driver:'งานคนขับ',admin:'ตั้งค่า'}[as];await page.getByRole('button',{name:tab,exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${as} overflow`)}console.log(`PASS rendered ${width}px four roles`)}
  if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await visit('citizen');await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-live-ui-390.png`,fullPage:true});await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-queue-390.png`,fullPage:true})}

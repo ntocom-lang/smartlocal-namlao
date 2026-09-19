@@ -16,6 +16,7 @@ import process from 'node:process'
 import { chromium } from 'playwright'
 import {
   buildPatientTransportFormHtml, buildPatientTransportPacketHtml,
+  buildTripForwardLetterHtml, buildTripMonthReportHtml,
 } from '../src/lib/patientTransportPrint.js'
 import { assertSignBlockStandard, assertSignLinesAligned } from './lib/signBlockChecks.mjs'
 
@@ -94,6 +95,47 @@ function args(overrides = {}) {
     ...overrides,
   }
 }
+
+// --- ข้อมูลตัวอย่างของระบบจองคิวรถ — ค่ายาวที่สุดที่คาดได้จริง (เที่ยวเต็มคัน 8 คน) -------------
+const PARTNER = {
+  name: 'กองทุนสวัสดิการชุมชนตำบลทุ่งแค้ว อำเภอหนองม่วงไข่ จังหวัดแพร่',
+  recipient_title: 'ประธานคณะกรรมการกองทุนสวัสดิการชุมชนตำบลทุ่งแค้ว',
+}
+const TRIP = {
+  id: 'trip-1',
+  plan: {
+    date: '2026-10-05', pickup_at: '2026-10-05T06:45:00+07:00',
+    route_label: 'โรงพยาบาลแพร่ — รับจากหมู่ 1 ถึงหมู่ 12 ตำบลทุ่งแค้ว (เส้นทางหลักผ่านตลาดสด)',
+  },
+  helper_name: 'นางสาวอาสาสมัคร ช่วยเคลื่อนย้ายดี',
+  forward_letter_no: 'พร 72301/88',
+  forward_letter_date: '2026-10-01',
+}
+const TRIP_BOOKINGS = Array.from({ length: 8 }, (_, i) => ({
+  id: `b-${i}`, trip_id: 'trip-1', status: 'confirmed',
+  patient_name: `นางทดสอบ ศรีวิชัยเลิศสกุลวงศ์${i + 1}`,
+  appointment_at: `2026-10-05T0${8 + (i % 2)}:${i % 2 ? '30' : '00'}:00+07:00`,
+  mobility: i === 0 ? 'wheelchair' : 'walk', companions: i % 3,
+  return_mode: 'wait', return_at: '2026-10-05T12:00:00+07:00',
+  // ค่าด้านล่างต้อง "ไม่" โผล่ในเอกสารถึงกองทุน — เทสต์ data minimization ตรวจอยู่
+  phone: '0891234567', pickup: 'บ้านเลขที่ 88 หมู่ 3', pickup_lat: 18.1234, pickup_lng: 100.1234,
+}))
+const tripArgs = () => ({
+  tenant: TENANT, trip: TRIP, bookings: TRIP_BOOKINGS, partner: PARTNER, mayor: MAYOR,
+  departmentName: 'สำนักปลัด', emblemUrl: '',
+})
+const monthArgs = () => ({
+  tenant: TENANT, partner: PARTNER,
+  report: {
+    month: '2026-10-01',
+    trips: Array.from({ length: 22 }, (_, i) => ({
+      trip_id: `t-${i}`, date: `2026-10-${String(i + 1).padStart(2, '0')}`,
+      route_label: 'โรงพยาบาลแพร่ — หมู่ 1 ถึงหมู่ 12', passengers: 4, companions: 3,
+      odometer_start: 12000 + i * 80, odometer_end: i === 21 ? null : 12000 + i * 80 + 76,
+      distance: i === 21 ? null : 76, driver_name: 'นายขับดี ปลอดภัยยิ่ง', letter_no: `พร 72301/${100 + i}`,
+    })),
+  },
+})
 
 async function render(browser, html) {
   const page = await browser.newPage({ viewport: { width: 794, height: 1123 } })
@@ -348,6 +390,83 @@ const checks = [
         assert.ok(note.includes('A1B2C3D4'), 'บรรทัดกำกับไม่มีเลขอ้างอิง')
         assert.ok(!/บันทึกคำขอแทนที่เคาน์เตอร์/.test(note), 'ใบที่ยื่นออนไลน์ติดข้อความของโหมดเคาน์เตอร์มาด้วย')
       } finally { await page.close() }
+    },
+  },
+  // --- ระบบจองคิวรถ: หนังสือนำส่งต่อเที่ยว + สรุปรายเดือน ------------------------------------
+  {
+    name: 'trip-letter-one-page-each',
+    reason: 'หนังสือนำส่งต่อเที่ยวและบัญชีแนบต้องจบแผ่นละ 1 หน้า — เที่ยวเต็มคันคือ 8 คน (ค่ายาวสุดที่คาดได้)',
+    async run(browser) {
+      const page = await render(browser, buildTripForwardLetterHtml(tripArgs()))
+      try {
+        for (const [index, label] of [[0, 'หนังสือนำส่ง'], [1, 'บัญชีรายชื่อ']]) {
+          const mm = await sheetContentMm(page, index)
+          assert.ok(mm <= ONE_PAGE_BUDGET_MM, `${label}สูง ${mm.toFixed(1)}mm เกินงบ ${ONE_PAGE_BUDGET_MM}mm`)
+        }
+      } finally { await page.close() }
+    },
+  },
+  {
+    name: 'trip-letter-data-minimization',
+    reason: 'บัญชีแนบถึงกองทุนมีได้แค่ข้อมูลที่ใช้จัดรถ ห้ามมีเบอร์โทร ที่อยู่จุดรับ หรือพิกัด (PDPA)',
+    async run(browser) {
+      const page = await render(browser, buildTripForwardLetterHtml(tripArgs()))
+      try {
+        const text = await page.evaluate(() => document.body.innerText)
+        for (const leaked of ['0891234567', 'บ้านเลขที่ 88', '18.1234']) {
+          assert.ok(!text.includes(leaked), `เอกสารถึงกองทุนมีข้อมูลเกินจำเป็น: ${leaked}`)
+        }
+        assert.ok(text.includes('ยินยอมให้ส่งข้อมูลเท่าที่จำเป็น'), 'ไม่มีย่อหน้าฐานความยินยอม')
+        assert.ok(text.includes('จึงเรียนมาเพื่อโปรดทราบ'), 'หนังสือต้องเป็นการแจ้ง ไม่ใช่ขออนุมัติรายเที่ยว')
+        assert.ok(text.includes('พร 72301/88'), 'เลขที่หนังสือจากทะเบียนหนังสือส่งไม่ได้พิมพ์ลงหนังสือ')
+      } finally { await page.close() }
+    },
+  },
+  {
+    name: 'month-report-landscape-sign-standard',
+    reason: 'สรุปรายเดือนแนวนอน 22 เที่ยว: ไม่ล้นขวา หัวตารางซ้ำเมื่อขึ้นหน้าใหม่ ช่องลงนามได้มาตรฐานกลาง และไม่มีชื่อผู้เดินทาง',
+    async run(browser) {
+      // แนวนอน 297mm = 1123px — วัดที่ viewport แนวตั้ง 794px จะได้ตารางแคบเกินจริงแล้วสูงผิดความจริง
+      const page = await browser.newPage({ viewport: { width: 1123, height: 794 } })
+      try {
+        await page.setContent(buildTripMonthReportHtml(monthArgs()), { waitUntil: 'load' })
+        await page.evaluate(() => document.fonts.ready)
+        await page.emulateMedia({ media: 'print' })
+        await page.waitForTimeout(300)
+        const info = await page.evaluate(() => ({
+          overflow: document.documentElement.scrollWidth > innerWidth,
+          headerGroup: getComputedStyle(document.querySelector('thead')).display,
+          rowBreak: getComputedStyle(document.querySelector('tbody tr')).breakInside,
+          signBreak: getComputedStyle(document.querySelector('.report-sign')).breakInside,
+          text: document.body.innerText,
+        }))
+        assert.equal(info.overflow, false, 'ตารางล้นขอบขวาของกระดาษแนวนอน')
+        assert.equal(info.headerGroup, 'table-header-group', 'หัวตารางไม่ซ้ำเมื่อขึ้นหน้าใหม่')
+        assert.equal(info.rowBreak, 'avoid', 'แถวขาดกลางระหว่างหน้าได้')
+        assert.equal(info.signBreak, 'avoid', 'ช่องลงนามแยกไปคนละหน้าได้')
+        assert.ok(!info.text.includes('นางทดสอบ'), 'สรุปรายเดือนห้ามมีชื่อผู้เดินทาง')
+        assert.ok(info.text.includes('รวม 22 เที่ยว') && info.text.includes('1596'), 'ยอดรวมเที่ยว/ระยะทางไม่ถูก')
+        await assertSignBlockStandard(page, { minRows: 2, minBelow: 4 })
+        await assertSignLinesAligned(page, '.report-sign .sign-row')
+      } finally { await page.close() }
+    },
+  },
+  {
+    name: 'fund-documents-gov-font',
+    reason: 'เอกสารถึงกองทุนทั้งสองแบบต้องใช้ THSarabunPSK 14pt + font-size-adjust 0.45 เหมือนทุกใบ',
+    async run(browser) {
+      for (const html of [buildTripForwardLetterHtml(tripArgs()), buildTripMonthReportHtml(monthArgs())]) {
+        const page = await render(browser, html)
+        try {
+          const style = await page.evaluate(() => {
+            const computed = getComputedStyle(document.body)
+            return { family: computed.fontFamily, sizePx: parseFloat(computed.fontSize), adjust: computed.fontSizeAdjust }
+          })
+          assert.match(style.family, /THSarabunPSK/)
+          assert.ok(style.sizePx > 18.5 && style.sizePx < 19, `ขนาดตัวอักษร ${style.sizePx}px ไม่ใช่ 14pt`)
+          assert.equal(style.adjust, '0.45')
+        } finally { await page.close() }
+      }
     },
   },
 ]
