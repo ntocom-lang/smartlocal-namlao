@@ -104,7 +104,7 @@ export const MODULE_ROUTES = {
   'water-situation': ['/water-situation'],
   // /doc-request ยังอยู่ใต้ inbox — ชนิดคำขอ patient_transport_request ถูกซ่อนด้วย
   // DOCUMENT_TYPE_MODULES ใน documentTypes.js แทน (ปิดทั้ง /doc-request ไม่ได้ เพราะมีคำขออื่นอยู่)
-  'patient-transport': ['/patient-transport'],
+  'patient-transport': ['/patient-transport', '/staff/patient-transport'],
 }
 
 // path → คีย์โมดูลที่คุมมัน (null = หน้าพื้นฐาน ไม่ผูกกับโมดูลไหน เปิดเสมอ)
