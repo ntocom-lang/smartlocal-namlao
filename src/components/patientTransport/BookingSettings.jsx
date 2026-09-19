@@ -4,7 +4,10 @@ import { buttonClass, primaryClass, inputClass, minutes, clockTime, orgAbbr } fr
 export default function BookingSettings({ workspace, busy, onSave }) {
   const [form, setForm] = useState(() => ({ enabled: false, partner_id: '', driver_id: '', coordinator_ids: [], office_start: 510, office_end: 990,
     seats: '', wheelchairs: '', stretchers: '', buffer_minutes: 15, boarding_minutes: 15, routes: [], holidays: [], calendar_checked_through: '',
-    unavailable: false, delegation_reference: '', privacy_notice: '', contact_phone: '', ...workspace.settings }))
+    unavailable: false, delegation_reference: '', privacy_notice: '', contact_phone: '',
+    // อปท. ที่ยังไม่เคยบันทึกตั้งค่า workspace ส่ง settings มาเป็นอ็อบเจกต์ที่ทุกช่องเป็น null (to_jsonb ของแถวว่างใน plpgsql)
+    // ถ้ากระจายทับตรงๆ coordinator_ids/routes/holidays กลายเป็น null แล้วหน้าตั้งค่าพังตั้งแต่เปิดครั้งแรก
+    ...Object.fromEntries(Object.entries(workspace.settings || {}).filter(([, v]) => v !== null)) }))
   const set = key => e => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
   const input = (key, label, props = {}) => <label>{label}<input className={inputClass} value={form[key] ?? ''} onChange={set(key)} {...props} /></label>
   function changeRoute(index, key, value) { setForm(f => ({ ...f, routes: f.routes.map((r, i) => i === index ? { ...r, [key]: value } : r) })) }
