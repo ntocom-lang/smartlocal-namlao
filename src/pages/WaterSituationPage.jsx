@@ -4,6 +4,7 @@ import {
   AlertTriangle, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, CloudRain, Dam, ExternalLink,
   MapPin, RefreshCw, Waves,
 } from 'lucide-react'
+import './WaterSituationPage.css'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
@@ -85,26 +86,19 @@ export default function WaterSituationPage() {
   return (
     // จอกว้าง (lg ขึ้นไป) ขยายเป็น 2 คอลัมน์ — คอลัมน์เดียวกว้าง 512px ทิ้งพื้นที่ว่างสองข้างเกินครึ่งจอ
     // และหน้ายาวราว 3,000px บนจอ 1440 · ต่ำกว่า lg คงคอลัมน์เดียวเหมือนมือถือ
-    <div className="max-w-lg lg:max-w-6xl mx-auto pb-28 md:pb-8">
-      {/* Mobile header */}
-      <div className="md:hidden sticky top-0 z-30 px-4 pt-3 pb-2 bg-gray-50/95 backdrop-blur-md">
-        <div className="flex items-center gap-2">
-          <button onClick={() => navigate(-1)} aria-label="ย้อนกลับ"
-            className="min-h-[44px] min-w-[44px] p-2 -ml-1 rounded-xl hover:bg-gray-200/60 text-gray-500 transition-colors">
-            <ArrowLeft size={20} />
+    <div className="water-page max-w-lg lg:max-w-6xl mx-auto pb-28 md:pb-8">
+      <header className="water-cover">
+        <div className="water-cover-copy">
+          <button onClick={() => navigate(-1)} aria-label="ย้อนกลับ" className="water-back md:hidden">
+            <ArrowLeft size={20} /> <span>กลับ</span>
           </button>
-          <h1 className="text-base font-bold text-gray-800">สถานการณ์น้ำ-ฝน</h1>
+          <p className="water-eyebrow"><Waves size={16} /> ข้อมูลน้ำใกล้คุณ</p>
+          <h1>สถานการณ์น้ำ–ฝน</h1>
+          <p className="water-cover-description">ติดตามฝน อ่างเก็บน้ำ และระดับน้ำ<br />จากสถานีตรวจวัดใกล้พื้นที่</p>
+          <span className="water-area"><MapPin size={14} /> {tenant?.name || 'สถานีตรวจวัดใกล้พื้นที่'}</span>
         </div>
-      </div>
-
-      {/* PC header */}
-      <div className="hidden md:flex items-center gap-3 px-4 pt-8 pb-5 border-b border-gray-100 mb-2">
-        <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl shrink-0 bg-sky-100">🌧️</div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">สถานการณ์น้ำ-ฝน</h1>
-          <p className="text-sm text-gray-500 mt-0.5">ปริมาณฝนและระดับน้ำจากสถานีตรวจวัดใกล้พื้นที่</p>
-        </div>
-      </div>
+        <WaterLandscape />
+      </header>
 
       <div className="px-4 pt-1 md:pt-4 space-y-4">
         {loading ? (
@@ -134,6 +128,11 @@ export default function WaterSituationPage() {
             <AlertBanner rain={rain} ews={ews} warnings={data.warnings} homeAmphoe={tenant?.district} now={checkedAt}
               tenantName={tenant?.name} />
             <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
+            <nav className="water-section-nav" aria-label="หมวดข้อมูลน้ำ–ฝน">
+              {rain.length > 0 && <a href="#water-rain"><CloudRain size={18} /><span>ฝน</span><small>{rain.length} สถานี</small></a>}
+              {dams.length > 0 && <a href="#water-dams"><Dam size={18} /><span>อ่างเก็บน้ำ</span><small>{dams.length} แห่ง</small></a>}
+              {levels.length > 0 && <a href="#water-levels"><Waves size={18} /><span>ระดับน้ำ</span><small>{levels.length} สถานี</small></a>}
+            </nav>
             {/* ซ้าย: ฝน · ขวา: อ่างเก็บน้ำ แล้วระดับน้ำ — มือถือเรียงตามลำดับเดิม ฝน → อ่าง → ระดับน้ำ
                 จอ xl ขึ้นไปแยกเป็น 3 คอลัมน์ (xl:contents ปล่อยลูกของกล่องขวาไปเป็นช่องของกริดเอง)
                 เพราะพอใส่ภาพตัดขวางแล้วคอลัมน์ขวายาวกว่าซ้ายราว 660px เหลือขาวครึ่งจอ */}
@@ -178,7 +177,7 @@ function SyncStatus({ syncedAt, now, refreshFailed }) {
     )
   }
   return (
-    <p className="flex items-center gap-1.5 px-1 text-xs text-gray-500">
+    <p className="water-sync flex items-center gap-1.5 px-1 text-xs text-gray-500">
       <RefreshCw size={13} className="shrink-0" />
       อัปเดตล่าสุด {measuredAtText(syncedAt, now)} · ระบบดึงข้อมูลเองทุกชั่วโมง
       {refreshFailed && <span className="text-amber-700">· รอบล่าสุดโหลดไม่สำเร็จ แสดงข้อมูลเดิม</span>}
@@ -232,10 +231,10 @@ function HeroStats({ rain, dams, levels, now }) {
   return (
     <div className={`grid gap-2 md:gap-3 ${HERO_COLS[cards.length] ?? 'grid-cols-3'}`}>
       {cards.map(c => (
-        <div key={c.key} className="relative overflow-hidden rounded-2xl border border-gray-100 bg-white px-3 py-3 shadow-sm md:px-4">
+        <div key={c.key} className={`water-summary water-summary--${c.key} relative overflow-hidden rounded-2xl border border-gray-100 bg-white px-3 py-3 shadow-sm md:px-4`}>
           <span className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: c.color }} aria-hidden="true" />
           <p className="flex items-center gap-1.5 text-[11px] font-semibold leading-tight text-gray-500 md:text-xs">
-            <c.Icon size={14} className="shrink-0" style={{ color: c.color }} />
+            <span className="water-summary-icon"><c.Icon size={19} /></span>
             {c.label}
           </p>
           <p className="mt-1.5 flex items-baseline gap-1 leading-none">
@@ -244,11 +243,11 @@ function HeroStats({ rain, dams, levels, now }) {
           </p>
           {c.badge && (
             <span className="mt-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold md:text-[11px]"
-              style={{ backgroundColor: `${c.color}1a`, color: c.color }}>
-              {c.badge}
+              style={{ backgroundColor: `${c.color}1a`, color: '#1e293b' }}>
+              <span className="water-status-dot" style={{ backgroundColor: c.color }} />{c.badge}
             </span>
           )}
-          <p className="mt-1 truncate text-[11px] text-gray-500 md:text-xs">
+          <p className="mt-1 text-[11px] leading-relaxed text-gray-600 md:text-xs">
             {c.caption}{c.detail && <span className="hidden md:inline"> · {c.detail}</span>}
           </p>
         </div>
@@ -345,8 +344,8 @@ function RainSection({ stations, ewsByCode, homeAmphoe, now }) {
   // สเกลร่วมของทั้งลิสต์ — คิดครั้งเดียวที่นี่ ไม่ให้แต่ละแถวคิดสเกลของตัวเอง (จะเทียบกันไม่ได้)
   const barMax = rainBarMax(stations)
   return (
-    <section className="rounded-2xl border border-gray-100 bg-white shadow-sm">
-      <div className="flex items-start gap-2.5 border-b border-gray-50 px-4 py-3">
+    <section id="water-rain" className="water-rain-panel rounded-2xl border border-gray-100 bg-white shadow-sm">
+      <div className="water-section-heading flex items-start gap-2.5 border-b border-gray-50 px-4 py-3">
         <CloudRain size={19} className="mt-0.5 shrink-0 text-sky-600" />
         <div>
           <h2 className="text-sm font-bold text-gray-800">ปริมาณฝนสะสม 24 ชั่วโมง</h2>
@@ -449,8 +448,8 @@ function RainBar({ mm, max, color, dim }) {
 
 function WaterLevelSection({ stations, homeAmphoe, now }) {
   return (
-    <section className="space-y-3">
-      <div className="flex items-start gap-2.5 px-1">
+    <section id="water-levels" className="water-level-panel space-y-3">
+      <div className="water-section-heading flex items-start gap-2.5 px-1">
         <Waves size={19} className="mt-0.5 shrink-0 text-cyan-600" />
         <div>
           <h2 className="text-sm font-bold text-gray-800">ระดับน้ำในลำน้ำ</h2>
@@ -484,7 +483,7 @@ function WaterLevelCard({ station: s, homeAmphoe, now }) {
   const meta = [stationPlace(s, homeAmphoe), distanceText(s.distance_km)].filter(Boolean).join(' · ')
 
   return (
-    <div className="rounded-2xl border bg-white p-4 shadow-sm" style={{ borderColor: hasValue && !stale ? `${color}66` : '#f3f4f6' }}>
+    <div className="water-station-card rounded-2xl border bg-white p-4 shadow-sm" style={{ borderColor: hasValue && !stale ? `${color}66` : '#f3f4f6' }}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           {s.river_name && <p className="text-xs font-bold text-cyan-700">{s.river_name}</p>}
@@ -611,8 +610,8 @@ function ChannelCrossSection({ fill, percent, bankLabel, color, stationName }) {
 
 function DamSection({ stations, homeAmphoe, now }) {
   return (
-    <section className="space-y-3">
-      <div className="flex items-start gap-2.5 px-1">
+    <section id="water-dams" className="water-dam-panel space-y-3">
+      <div className="water-section-heading flex items-start gap-2.5 px-1">
         <Dam size={19} className="mt-0.5 shrink-0 text-blue-700" />
         <div>
           <h2 className="text-sm font-bold text-gray-800">อ่างเก็บน้ำใกล้พื้นที่</h2>
@@ -660,7 +659,7 @@ function DamCard({ station: s, homeAmphoe, now }) {
   const barWidth = percent !== null ? Math.max(0, Math.min(percent, 100)) : 0
 
   return (
-    <div className="rounded-2xl border bg-white p-4 shadow-sm" style={{ borderColor: hasValue && !stale ? `${color}66` : '#f3f4f6' }}>
+    <div className="water-station-card rounded-2xl border bg-white p-4 shadow-sm" style={{ borderColor: hasValue && !stale ? `${color}66` : '#f3f4f6' }}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-base font-bold leading-tight text-gray-900">
@@ -685,16 +684,16 @@ function DamCard({ station: s, homeAmphoe, now }) {
 
       {hasValue ? (
         <div className={`mt-3 ${stale ? 'opacity-50' : ''}`}>
-          <div className="flex items-baseline justify-between gap-2">
+          <div className="water-dam-volume">
+            {percent !== null && <ReservoirGauge percent={percent} color={color} />}
+            <div className="min-w-0">
+            <p className="text-xs font-semibold text-gray-500 mb-1">ปริมาตรน้ำในอ่าง</p>
             <p className="text-xs text-gray-600">
               <span className="text-lg font-bold text-gray-900">{formatMcm(storage)}</span>
               {capacity !== null && <> จาก {formatMcm(capacity)}</>} ล้าน ลบ.ม.
             </p>
-            {percent !== null && (
-              <p className="text-lg font-bold text-gray-900">
-                {percent.toLocaleString('th-TH', { maximumFractionDigits: 1 })}%
-              </p>
-            )}
+            <p className="mt-1 text-[11px] text-gray-500">เทียบความจุที่ระดับเก็บกัก</p>
+            </div>
           </div>
           {percent !== null && (
             <div className="mt-1.5">
@@ -757,7 +756,7 @@ function FlowBars({ inflow, released }) {
     { key: 'out', label: 'ระบายออก', value: flow.released, percent: flow.releasedPct, color: '#d97706' },
   ]
   return (
-    <div className="rounded-xl bg-gray-50 px-3 py-2">
+    <div className="water-metric rounded-xl bg-gray-50 px-3 py-2">
       <p className="text-[11px] font-semibold text-gray-500">น้ำเข้า-ออกต่อวัน (ล้าน ลบ.ม.)</p>
       <div className="mt-1.5 space-y-1.5">
         {rows.map(r => (
@@ -779,7 +778,7 @@ function FlowBars({ inflow, released }) {
 
 function Metric({ label, value, hint }) {
   return (
-    <div className="rounded-xl bg-gray-50 px-3 py-2">
+    <div className="water-metric rounded-xl bg-gray-50 px-3 py-2">
       <p className="text-[11px] font-semibold text-gray-500">{label}</p>
       <p className="text-sm font-bold text-gray-800">{value}</p>
       {hint && <p className="text-[11px] text-gray-400">{hint}</p>}
@@ -789,7 +788,7 @@ function Metric({ label, value, hint }) {
 
 function SourceNote({ tenantName }) {
   return (
-    <div className="space-y-2 rounded-2xl border border-gray-100 bg-gray-50 p-4 text-xs leading-relaxed text-gray-600">
+    <div className="water-source space-y-2 rounded-2xl border border-gray-100 bg-gray-50 p-4 text-xs leading-relaxed text-gray-600">
       <p>
         <span className="font-semibold text-gray-700">ที่มา:</span> คลังข้อมูลน้ำแห่งชาติ (ThaiWater)
         สถาบันสารสนเทศทรัพยากรน้ำ (องค์การมหาชน) และหน่วยงานเจ้าของสถานี
@@ -803,6 +802,45 @@ function SourceNote({ tenantName }) {
         className="inline-flex min-h-[44px] items-center gap-1 font-semibold text-sky-700">
         ดูข้อมูลทั้งหมดที่ thaiwater.net <ExternalLink size={12} />
       </a>
+    </div>
+  )
+}
+
+// ภาพหัวหน้าเป็นภาพตกแต่ง ไม่ใช้แทนสภาพอากาศหรือภูมิประเทศจริง
+function WaterLandscape() {
+  return (
+    <svg className="water-landscape" viewBox="0 0 480 240" fill="none" aria-hidden="true">
+      <circle cx="335" cy="65" r="37" fill="#a5f3fc" opacity=".6" />
+      <circle cx="335" cy="65" r="50" stroke="#a5f3fc" opacity=".15" />
+      <path d="M0 190L90 72L170 147L258 37L430 192Z" fill="#277994" />
+      <path d="M126 200L258 37L283 125L345 167L405 115L480 193V240H126Z" fill="#369eaa" />
+      <path d="M218 88L258 37L283 125L256 104L248 78Z" fill="#c1eeee" opacity=".7" />
+      <path d="M0 172Q89 139 177 193T350 181T480 169V240H0Z" fill="#14677f" />
+      <path d="M0 201Q88 174 164 208T328 199T480 207V240H0Z" fill="#064d69" />
+      <path d="M299 171C193 183 383 197 259 215S181 234 208 240H360C284 225 388 214 327 196S268 181 322 171Z" fill="#67e8f9" opacity=".8" />
+      <path d="M320 185C289 185 351 197 309 205" stroke="#e0faff" strokeWidth="2" strokeLinecap="round" />
+      <path d="M74 61H131C148 61 147 42 135 40C134 23 110 21 104 36C88 28 73 40 78 49C62 48 62 61 74 61Z" fill="#d7f5ff" opacity=".9" />
+      <path d="M85 76L80 88M107 76L102 88M129 76L124 88" stroke="#7dd3fc" strokeWidth="3" strokeLinecap="round" />
+      <path d="M377 121V97L392 111V142M407 142V116L422 130V165" stroke="#7edac6" strokeWidth="5" strokeLinecap="round" />
+      <path d="M62 195V159M48 177L62 153L76 177Z" fill="#62c6b1" stroke="#62c6b1" strokeWidth="3" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ReservoirGauge({ percent, color }) {
+  const id = useId()
+  const fill = barPercent(percent, 100)
+  return (
+    <div className="water-gauge" role="img" aria-label={`น้ำในอ่าง ${formatMm(percent)}% ของความจุที่ระดับเก็บกัก`}>
+      <svg viewBox="0 0 112 112" aria-hidden="true">
+        <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop stopColor="#e0f2fe" /><stop offset="1" stopColor="#bae6fd" /></linearGradient></defs>
+        <circle cx="56" cy="56" r="42" fill={`url(#${id})`} />
+        <circle cx="56" cy="56" r="49" fill="none" stroke="#e2e8f0" strokeWidth="6" />
+        <circle cx="56" cy="56" r="49" fill="none" stroke={color} strokeWidth="6" pathLength="100"
+          strokeDasharray={`${fill} 100`} transform="rotate(-90 56 56)" />
+        <path d="M25 76Q40 69 56 76T87 76" stroke="#38bdf8" strokeWidth="2" fill="none" />
+      </svg>
+      <strong>{formatMm(percent)}<small>%</small></strong>
     </div>
   )
 }
