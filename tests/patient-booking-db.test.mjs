@@ -25,7 +25,7 @@ INSERT INTO public.profiles VALUES
 INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST',true,ARRAY['patient_transport_request'],0);
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -174,6 +174,24 @@ await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(503
 await actor(coordinator);assert.equal(await rpc('patient_booking_submit',[tenant,id(503),{...base,patient_name:'TEST unavailable',phone:'0800000503'}]),id(503))
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,9,settings])
 console.log('PASS intake guards for weekends, holidays, unchecked calendar and unavailable vehicle; staff intake still accepted')
+// หมุดจุดรับ: เป็นทางเลือก แต่ถ้าส่งมาต้องครบคู่ อยู่ในพื้นที่ และห้ามหลุดไปหน้าสาธารณะ
+const pinned={...base,patient_name:'TEST pinned',phone:'0800000600',pickup_lat:18.1234,pickup_lng:100.1234}
+await actor(citizen);await rpc('patient_booking_submit',[tenant,id(600),pinned])
+const mine=(await rpc('patient_booking_workspace',[tenant])).bookings.find(b=>b.id===id(600))
+assert.equal(Number(mine.pickup_lat),18.1234);assert.equal(Number(mine.pickup_lng),100.1234)
+await fails(()=>rpc('patient_booking_submit',[tenant,id(601),{...base,patient_name:'TEST half pin',phone:'0800000601',pickup_lat:18.1}]),/หมุดจุดรับไม่สมบูรณ์/)
+await fails(()=>rpc('patient_booking_submit',[tenant,id(602),{...base,patient_name:'TEST far pin',phone:'0800000602',pickup_lat:48.85,pickup_lng:2.35}]),/นอกพื้นที่/)
+assert.equal(await rpc('patient_booking_submit',[tenant,id(603),{...base,patient_name:'TEST no pin',phone:'0800000603'}]),id(603))
+const noPin=(await rpc('patient_booking_workspace',[tenant])).bookings.find(b=>b.id===id(603))
+assert.equal(noPin.pickup_lat,null,'ไม่ปักหมุดต้องจองได้และค่าว่าง')
+await actor(coordinator);const queue=(await rpc('patient_booking_workspace',[tenant])).bookings.find(b=>b.id===id(600))
+assert.equal(Number(queue.pickup_lat),18.1234,'เจ้าหน้าที่จัดคิวต้องเห็นหมุด')
+await actor(null);const publicCal=await rpc('patient_booking_calendar',[tenant,day,day])
+assert(!JSON.stringify(publicCal).includes('pickup_lat'),'ตารางรถสาธารณะห้ามมีพิกัดจุดรับ')
+assert(!JSON.stringify(publicCal).includes('18.1234'),'ตารางรถสาธารณะห้ามมีพิกัดจุดรับ')
+await actor(citizen);for(const gone of [id(600),id(603)]){await rpc('patient_booking_action',[tenant,randomUUID(),gone,1,'cancel',''])}
+console.log('PASS optional pickup pin: stored for staff/driver, pair+bounds validated, never in the public calendar')
+
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
 export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay }
