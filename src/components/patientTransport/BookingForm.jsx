@@ -65,7 +65,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
         {field('phone', 'เบอร์ติดต่อกลับ', 'tel', { required: true, pattern: '0[0-9]{8,9}', maxLength: 10 })}
         {select('relation', 'ผู้จองเป็น', { self: 'ผู้ป่วยจองเอง', relative: 'ญาติจองแทน', caregiver: 'ผู้ดูแลจองแทน' })}
         {form.relation !== 'self' && field('patient_name', 'ชื่อ–สกุลผู้เดินทาง', 'text', { required: true, maxLength: 200 })}
-        {field('pickup', 'จุดรับและจุดสังเกต', 'text', { required: true, maxLength: 500 })}{select('mobility', 'การเคลื่อนไหว', MOBILITY)}
+        {select('mobility', 'การเคลื่อนไหว', MOBILITY)}
         {select('companions', 'ผู้ติดตาม', { 0: 'ไม่มี', 1: '1 คน', 2: '2 คน', 3: '3 คน', 4: '4 คน', 5: '5 คน' })}
       </div>
       {/* หมุดเป็นทางเลือก — ผู้สูงอายุที่ปักหมุดไม่เป็นยังจองได้ด้วยข้อความอย่างเดียว (เจ้าของระบบสั่ง 2569-09-19) */}
@@ -80,6 +80,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
               <button type="button" className={buttonClass} onClick={() => setForm(f => ({ ...f, pickup_lat: null, pickup_lng: null }))}>เอาหมุดออก</button>
             </div>}
       </div>
+      <div>{field('pickup', 'จุดรับและจุดสังเกต', 'text', { required: true, maxLength: 500 })}</div>
       {showMap && <MapPicker
         initialPos={form.pickup_lat === null ? null : { lat: form.pickup_lat, lng: form.pickup_lng }}
         fallbackPos={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
