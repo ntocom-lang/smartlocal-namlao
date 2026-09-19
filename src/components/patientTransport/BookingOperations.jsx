@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
-import { BOOKING_STATUS, TRIP_STATUS, RETURN_MODES, MOBILITY, suggestGroups, dateTime, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, nextTripAction, nextPassengerAction, previousOdometer } from '../../lib/patientBooking'
+import { BOOKING_STATUS, TRIP_STATUS, RETURN_MODES, MOBILITY, suggestGroups, dateTime, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, nextTripAction, nextPassengerAction, previousOdometer, bookingPlanGuidance } from '../../lib/patientBooking'
 
 export function BookingCards({ bookings, trips, onAction, busy }) {
   if (!bookings.length) return <p className="py-8 text-slate-600">ยังไม่มีการจอง</p>
@@ -41,7 +41,10 @@ export function CoordinatorQueue({ workspace, onPreview, onConfirm, onAction, on
         {preview.join_trip_id && <p className="mb-2 font-semibold">เพิ่มในเที่ยวเดิม: ประสานเวลารับใหม่กับผู้เดินทางเดิมก่อนยืนยัน ระบบจะแจ้งแผนล่าสุดให้ทุกคน</p>}
         <h3 className="font-bold">ผลตรวจจากระบบ · {preview.booking_ids.length} ผู้เดินทาง</h3><p>{preview.route_label} · {RETURN_MODES[preview.return_mode]}</p><p>เริ่มรับ {dateTime(preview.pickup_at)}</p>
         {preview.blocks.map((b, i) => <p key={i}>กันรถ {dateTime(b.start)} – {dateTime(b.end)}</p>)}
-        {preview.errors.length ? <ul className="my-3 list-inside list-disc text-red-800">{preview.errors.map(e => <li key={e}>{e}</li>)}</ul> : <p className="my-3">ไม่พบคิวทับซ้อน กรุณาตรวจจุดรับและความเหมาะสมก่อนยืนยัน</p>}
+        {preview.errors.length ? <div className="my-3 space-y-3"><p className="font-semibold text-red-800">ยังยืนยันไม่ได้ · แก้รายการด้านล่างแล้วกดตรวจแผนอีกครั้ง</p><ul className="space-y-3">{preview.errors.map(e => {
+          const issue = bookingPlanGuidance(e, preview, workspace)
+          return <li key={e} className="rounded-xl border border-red-200 bg-white p-3 [overflow-wrap:anywhere]"><p className="font-semibold text-red-800">{issue.message}</p>{issue.detail && <p className="mt-1 text-sm text-slate-800">{issue.detail}</p>}<p className="mt-2 text-sm text-slate-800"><strong>วิธีแก้: </strong>{issue.advice}</p></li>
+        })}</ul></div> : <p className="my-3">ไม่พบคิวทับซ้อน กรุณาตรวจจุดรับและความเหมาะสมก่อนยืนยัน</p>}
         <button className={primaryClass} disabled={busy || preview.errors.length > 0} onClick={() => onConfirm(selected, preview, helper)}>ตรวจแล้ว ยืนยันเที่ยวนี้</button>
       </section>}
       {!groups.length && <p className="py-6 text-slate-500">ไม่มีคำขอรอจัดคิว</p>}
