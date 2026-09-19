@@ -4,6 +4,7 @@ import { CalendarDays, Home, Hospital, RefreshCw } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import BookingDaySchedule from '../components/patientTransport/BookingDaySchedule'
 import BookingCalendar from '../components/patientTransport/BookingCalendar'
 import BookingForm from '../components/patientTransport/BookingForm'
 import BookingSettings from '../components/patientTransport/BookingSettings'
@@ -16,7 +17,7 @@ export default function PatientTransportBooking() {
   const { tenant } = useTenant()
   const { session, profileName } = useAuth()
   const uid = session?.user?.id
-  const [view, setView] = useState('home')
+  const [selectedView, setView] = useState(null)
   const [bookingSeed, setBookingSeed] = useState({})
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -59,6 +60,7 @@ export default function PatientTransportBooking() {
   const isCoordinator = ['admin', 'coordinator'].includes(workspace?.role)
   const isAdmin = workspace?.role === 'admin'
   const isDriver = workspace?.role === 'driver' || workspace?.trips?.some(t => t.driver_id === uid)
+  const view = selectedView ?? (isCoordinator ? 'schedule' : isDriver ? 'driver' : info?.enabled ? 'calendar' : 'home')
   function op(key) { if (!operations.current.has(key)) operations.current.set(key, crypto.randomUUID()); return operations.current.get(key) }
   async function mutate(name, args, success, after) {
     if (lock.current) return false
@@ -124,7 +126,7 @@ export default function PatientTransportBooking() {
     {!current && !error && <p role="status">กำลังโหลดบริการ…</p>}
     {current && <>
       <nav className="mb-5 flex flex-wrap gap-2" aria-label="งานรถรับส่งผู้ป่วย">
-        {[['home', 'หน้าบริการ', true], ['calendar', 'ดูตารางรถ', !!info?.enabled], ['mine', 'การจองของฉัน', !!uid], ['queue', 'จัดคิว', isCoordinator], ['driver', 'งานคนขับ', isDriver], ['settings', 'ตั้งค่า', isAdmin]].filter(([, , allowed]) => allowed).map(([key, label]) => <button key={key} className={view === key ? primaryClass : buttonClass} onClick={() => { setView(key); setPreview(null) }} disabled={busy}>{label}</button>)}
+        {[['home', 'หน้าบริการ', true], ['calendar', 'ดูตารางรถ', !!info?.enabled], ['mine', 'การจองของฉัน', !!uid], ['schedule', 'ตารางออกรถ', isCoordinator], ['queue', 'จัดคิว', isCoordinator], ['driver', 'งานคนขับ', isDriver], ['settings', 'ตั้งค่า', isAdmin]].filter(([, , allowed]) => allowed).map(([key, label]) => <button key={key} className={view === key ? primaryClass : buttonClass} onClick={() => { setView(key); setPreview(null) }} disabled={busy}>{label}</button>)}
       </nav>
       {view === 'home' && <>
         <section className="grid gap-6 rounded-2xl bg-sky-50 p-5 sm:grid-cols-2 sm:p-8"><div><p className="text-sm font-semibold text-sky-800">บริการสำหรับทุกคนในเขตพื้นที่</p><h2 className="my-3 text-3xl font-bold leading-snug">ถึงวันนัด<br />ให้เราช่วยพาไป</h2><p>จองไปโรงพยาบาลใกล้เคียง ญาติหรือผู้ดูแลจองแทนได้ ไม่ต้องใช้เลขสมาชิกกองทุน</p>
@@ -132,6 +134,7 @@ export default function PatientTransportBooking() {
         </div><div className="space-y-5 rounded-2xl bg-white p-5">{[[Home, 'รับจากจุดที่แจ้ง', 'ระบุบ้านและจุดสังเกต'], [Hospital, 'ไปโรงพยาบาลตามนัด', 'รองรับรถเข็น/เปลตามความพร้อมของรถ'], [CalendarDays, 'มีแผนรับกลับ', 'รอรับกลับ หรือกลับมารับภายหลัง']].map(([Icon, title, detail]) => <div key={title} className="flex gap-3"><Icon className="shrink-0 text-sky-800" size={25} /><div><h3 className="font-bold">{title}</h3><p className="text-sm text-slate-600">{detail}</p></div></div>)}</div></section>
         <p className="mt-4 rounded-xl bg-amber-50 p-4">เจ็บป่วยฉุกเฉิน <a href="tel:1669" className="font-bold underline">โทร 1669</a> อย่ารอคิวจองรถ</p>
       </>}
+      {view === 'schedule' && isCoordinator && <BookingDaySchedule workspace={workspace} busy={busy} onQueue={() => setView('queue')} onUpdate={(trip, revision, notice, pickup, back) => mutate('patient_booking_update_schedule', { p_trip: trip, p_revision: revision, p_notice: notice, p_pickup: pickup, p_return: back }, 'บันทึกประกาศและเวลาประมาณการแล้ว')} />}
       {view === 'calendar' && info?.enabled && <BookingCalendar tenantId={tenantId} info={info} uid={uid} onBook={seed => { setBookingSeed(seed); setView('book') }} />}
       {view === 'book' && uid && info?.enabled && <BookingForm tenantId={tenantId} initial={bookingSeed} info={info} profileName={profileName} profilePhone={workspace?.my_profile?.phone} staffEntry={isCoordinator} busy={busy} onBack={() => setView('home')} onSubmit={(id, payload) => mutate(bookingSeed.requested_trip_id ? 'patient_booking_submit_join' : 'patient_booking_submit', { p_id: id, p_data: payload, ...(bookingSeed.requested_trip_id ? { p_trip: bookingSeed.requested_trip_id } : {}) }, 'รับคำขอแล้ว รอเจ้าหน้าที่ยืนยันรถ', () => setView('mine'))} />}
       {view === 'mine' && (uid ? <BookingCards bookings={workspace?.bookings.filter(b => b.created_by === uid) || []} trips={workspace?.trips || []} busy={busy} onAction={action} /> : <Link to="/auth" className={primaryClass}>เข้าสู่ระบบเพื่อติดตามการจอง</Link>)}
