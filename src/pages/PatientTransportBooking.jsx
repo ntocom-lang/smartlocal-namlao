@@ -4,6 +4,7 @@ import { CalendarDays, Home, Hospital, RefreshCw } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import BookingHelp from '../components/patientTransport/BookingHelp'
 import BookingDaySchedule from '../components/patientTransport/BookingDaySchedule'
 import BookingCalendar from '../components/patientTransport/BookingCalendar'
 import BookingForm from '../components/patientTransport/BookingForm'
@@ -18,6 +19,7 @@ export default function PatientTransportBooking() {
   const { session, profileName } = useAuth()
   const uid = session?.user?.id
   const [selectedView, setView] = useState(null)
+  const [helpTarget, setHelpTarget] = useState(null)
   const [bookingSeed, setBookingSeed] = useState({})
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -125,8 +127,9 @@ export default function PatientTransportBooking() {
     {notice && <p role="status" className="mb-4 rounded-xl bg-emerald-50 p-4">{notice}</p>}
     {!current && !error && <p role="status">กำลังโหลดบริการ…</p>}
     {current && <>
+      <BookingHelp key={`${tenantId}/${uid || 'anonymous'}/${workspace?.role || 'citizen'}/${!!info?.enabled}`} enabled={!!info?.enabled} coordinator={isCoordinator} driver={isDriver} admin={isAdmin} signedIn={!!uid} busy={busy} onHighlight={setHelpTarget} />
       <nav className="mb-5 flex flex-wrap gap-2" aria-label="งานรถรับส่งผู้ป่วย">
-        {[['home', 'หน้าบริการ', true], ['calendar', 'ดูตารางรถ', !!info?.enabled], ['mine', 'การจองของฉัน', !!uid], ['schedule', 'ตารางออกรถ', isCoordinator], ['queue', 'จัดคิว', isCoordinator], ['driver', 'งานคนขับ', isDriver], ['settings', 'ตั้งค่า', isAdmin]].filter(([, , allowed]) => allowed).map(([key, label]) => <button key={key} className={view === key ? primaryClass : buttonClass} onClick={() => { setView(key); setPreview(null) }} disabled={busy}>{label}</button>)}
+        {[['home', 'หน้าบริการ', true], ['calendar', 'ดูตารางรถ', !!info?.enabled], ['mine', 'การจองของฉัน', !!uid], ['schedule', 'ตารางออกรถ', isCoordinator], ['queue', 'จัดคิว', isCoordinator], ['driver', 'งานคนขับ', isDriver], ['settings', 'ตั้งค่า', isAdmin]].filter(([, , allowed]) => allowed).map(([key, label]) => <button key={key} className={`${view === key ? primaryClass : buttonClass} ${helpTarget === key ? 'ring-4 ring-amber-400 ring-offset-2' : ''}`} data-help-highlight={helpTarget === key ? 'true' : undefined} onClick={() => { setView(key); setPreview(null) }} disabled={busy}>{label}</button>)}
       </nav>
       {view === 'home' && <>
         <section className="grid gap-6 rounded-2xl bg-sky-50 p-5 sm:grid-cols-2 sm:p-8"><div><p className="text-sm font-semibold text-sky-800">บริการสำหรับทุกคนในเขตพื้นที่</p><h2 className="my-3 text-3xl font-bold leading-snug">ถึงวันนัด<br />ให้เราช่วยพาไป</h2><p>จองไปโรงพยาบาลใกล้เคียง ญาติหรือผู้ดูแลจองแทนได้ ไม่ต้องใช้เลขสมาชิกกองทุน</p>
