@@ -4,12 +4,12 @@ import { Ambulance } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { removedDocumentTypes } from '../../lib/documentTypes'
-import { PATIENT_TRANSPORT_TYPE } from '../../lib/patientTransport'
+import { PATIENT_TRANSPORT_TYPE, PATIENT_TRANSPORT_MODULE_KEY } from '../../lib/patientTransport'
 
 export default function BookingHighlight() {
   const { tenant, isModuleEnabled } = useTenant()
   const [activeTenant, setActiveTenant] = useState(null)
-  const enabled = isModuleEnabled('inbox') && !removedDocumentTypes(tenant).includes(PATIENT_TRANSPORT_TYPE)
+  const enabled = isModuleEnabled(PATIENT_TRANSPORT_MODULE_KEY) && !removedDocumentTypes(tenant).includes(PATIENT_TRANSPORT_TYPE)
   useEffect(() => {
     if (!tenant?.id || !enabled) return undefined
     let alive = true

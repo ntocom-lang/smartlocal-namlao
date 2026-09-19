@@ -4,6 +4,11 @@
 
 export const PATIENT_TRANSPORT_TYPE = 'patient_transport_request'
 
+// คีย์โมดูลเปิด-ปิดรายหน่วยงาน (แยกออกจาก 'inbox' เมื่อ 2569-09-19) — ปิดแล้วต้องหายทุกจุด:
+// การ์ดหน้าแรก แบนเนอร์จองรถ ชนิดคำขอในฟอร์มเดิม ปุ่มฝั่งเจ้าหน้าที่ ลิงก์ในทะเบียนหน่วยงาน
+// และหน้า /patient-transport เอง (ผูกไว้ที่ MODULE_ROUTES ใน staffModules.js)
+export const PATIENT_TRANSPORT_MODULE_KEY = 'patient-transport'
+
 // เปลี่ยนข้อความยินยอมเมื่อไหร่ต้องเปลี่ยนรุ่นด้วยเสมอ — consent_version ในแต่ละคำขอคือหลักฐานว่า
 // ประชาชนติ๊กยินยอมกับข้อความรุ่นไหน ถ้าแก้ข้อความแต่ไม่แก้รุ่น จะพิสูจน์ย้อนหลังไม่ได้
 export const PATIENT_TRANSPORT_CONSENT_VERSION = 'ptr-consent-v1'

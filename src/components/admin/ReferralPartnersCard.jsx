@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, CheckCircle2, Loader2, Plus, Save } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { PATIENT_TRANSPORT_TYPE } from '../../lib/patientTransport'
+import { PATIENT_TRANSPORT_TYPE, PATIENT_TRANSPORT_MODULE_KEY } from '../../lib/patientTransport'
 import { Link } from 'react-router-dom'
+import { useTenant } from '../../contexts/TenantContext'
 
 const inputCls = 'w-full rounded-xl border border-gray-200 px-3 py-2 text-sm'
 const EMPTY = { name: '', recipient_title: '', address: '', phone: '', min_lead_days: '3', is_active: true }
@@ -17,6 +18,8 @@ const EMPTY = { name: '', recipient_title: '', address: '', phone: '', min_lead_
  * ไม่มีปุ่มลบ — คำขอเก่าอ้าง partner_id อยู่ (FK RESTRICT) เลิกใช้ให้ปิดสวิตช์ "เปิดรับเรื่อง"
  */
 export default function ReferralPartnersCard({ tenant }) {
+  // ปิดโมดูลรถรับ-ส่งผู้ป่วยแล้ว ลิงก์ไปหน้าจองรถต้องหายด้วย ไม่งั้นกดแล้วถูกเด้งออกทันที
+  const { isModuleEnabled } = useTenant()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -97,7 +100,9 @@ export default function ReferralPartnersCard({ tenant }) {
 
   return (
     <div className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4">
-      <Link to="/patient-transport" className="inline-flex min-h-11 items-center rounded-xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800">ตั้งค่าระบบจองรถ / จัดคิวแทนกองทุน</Link>
+      {isModuleEnabled(PATIENT_TRANSPORT_MODULE_KEY) && (
+  <Link to="/patient-transport" className="inline-flex min-h-11 items-center rounded-xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800">ตั้งค่าระบบจองรถ / จัดคิวแทนกองทุน</Link>
+      )}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-bold text-gray-800">🚑 หน่วยงานรับเรื่องต่อ — รถรับ-ส่งผู้ป่วย</p>
