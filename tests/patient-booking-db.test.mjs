@@ -25,7 +25,7 @@ INSERT INTO public.profiles VALUES
 INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST',true,ARRAY['patient_transport_request'],0);
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -168,12 +168,14 @@ await actor(admin);await rpc('patient_booking_save_settings',[tenant,6,{...setti
 await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(501),{...base,patient_name:'TEST holiday',phone:'0800000501',appointment_at:holidayAt('10:00'),return_at:holidayAt('12:00')}]),/วันหยุด/)
 const checked=new Date();checked.setUTCDate(checked.getUTCDate()+5);
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,7,{...settings,calendar_checked_through:checked.toISOString().slice(0,10)}])
-await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(502),{...base,patient_name:'TEST unchecked',phone:'0800000502',appointment_at:holidayAt('10:00'),return_at:holidayAt('12:00')}]),/ปฏิทิน/)
+await actor(citizen);assert.equal(await rpc('patient_booking_submit',[tenant,id(502),{...base,patient_name:'TEST unchecked',phone:'0800000502',appointment_at:holidayAt('10:00'),return_at:holidayAt('12:00')}]),id(502))
+await actor(coordinator);assert(!(await rpc('patient_booking_preview',[tenant,[id(502)],''])).errors.some(e=>e.includes('ปฏิทิน')))
+await actor(null);assert.notEqual((await rpc('patient_booking_calendar',[tenant,holidayDay,holidayDay])).days[0].status,'unverified')
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,8,{...settings,unavailable:true}])
 await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(503),{...base,patient_name:'TEST unavailable',phone:'0800000503'}]),/งดรับจอง/)
 await actor(coordinator);assert.equal(await rpc('patient_booking_submit',[tenant,id(503),{...base,patient_name:'TEST unavailable',phone:'0800000503'}]),id(503))
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,9,settings])
-console.log('PASS intake guards for weekends, holidays, unchecked calendar and unavailable vehicle; staff intake still accepted')
+console.log('PASS intake guards for weekends, holidays and unavailable vehicle; expired calendar does not block intake or planning; staff intake still accepted')
 // หมุดจุดรับ: เป็นทางเลือก แต่ถ้าส่งมาต้องครบคู่ อยู่ในพื้นที่ และห้ามหลุดไปหน้าสาธารณะ
 const pinned={...base,patient_name:'TEST pinned',phone:'0800000600',pickup_lat:18.1234,pickup_lng:100.1234}
 await actor(citizen);await rpc('patient_booking_submit',[tenant,id(600),pinned])

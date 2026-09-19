@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { buttonClass, primaryClass, inputClass, minutes, clockTime, orgAbbr, thaiDay } from '../../lib/patientBooking'
+import { buttonClass, primaryClass, inputClass, minutes, clockTime } from '../../lib/patientBooking'
 
 export default function BookingSettings({ workspace, busy, onSave }) {
   const [form, setForm] = useState(() => ({ enabled: false, partner_id: '', driver_id: '', coordinator_ids: [], office_start: 510, office_end: 990,
@@ -19,9 +19,6 @@ export default function BookingSettings({ workspace, busy, onSave }) {
     ['seats', 'wheelchairs', 'stretchers'].some(key => form[key] === '' || form[key] == null) && 'ระบุความจุรถจริง ช่องที่ไม่มีให้ใส่ 0',
     !form.routes.length && 'เพิ่มโรงพยาบาลและเวลาเดินทางอย่างน้อย 1 เส้นทาง',
     !/^0[0-9]{8,9}$/.test(form.contact_phone) && 'ระบุเบอร์ติดต่อหน่วยงาน',
-    (!form.calendar_checked_through || form.calendar_checked_through < thaiDay()) && 'ตรวจวันหยุดในส่วนข้อมูลก่อนเปิดบริการ',
-    !form.delegation_reference.trim() && 'ระบุข้อมูลการมอบหมายในส่วนข้อมูลก่อนเปิดบริการ',
-    !form.privacy_notice.trim() && 'ตรวจข้อความใช้ข้อมูลในส่วนข้อมูลก่อนเปิดบริการ',
   ].filter(Boolean)
   return <form className="space-y-5" onInvalidCapture={e => { const section = e.target.closest('details'); if (section) section.open = true }} onSubmit={e => {
     e.preventDefault()
@@ -31,7 +28,9 @@ export default function BookingSettings({ workspace, busy, onSave }) {
       return
     }
     setAttemptedOpen(false)
-    onSave(workspace.settings?.revision ?? 1, form)
+    // Keep retired setup fields out of writes; the server preserves existing values and supplies the notice.
+    const payload = Object.fromEntries(Object.entries(form).filter(([key]) => !['calendar_checked_through', 'delegation_reference', 'holidays', 'privacy_notice'].includes(key)))
+    onSave(workspace.settings?.revision ?? 1, payload)
   }}>
     <h2 className="text-xl font-bold">ตั้งค่ารถรับส่งผู้ป่วย</h2>
     {attemptedOpen && form.enabled && missing.length > 0 && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800"><p className="font-semibold">ยังเปิดรับจองไม่ได้ กรุณาเติมข้อมูลที่ขาด</p><ul className="mt-2 list-disc pl-5">{missing.map(item => <li key={item}>{item}</li>)}</ul></div>}
@@ -57,12 +56,6 @@ export default function BookingSettings({ workspace, busy, onSave }) {
     <details className="rounded-xl border border-slate-200 p-3"><summary className="flex min-h-11 cursor-pointer items-center font-semibold">ปรับเวลาเผื่อ · ปกติไม่ต้องแก้</summary><p className="my-2 text-sm">ระบบเผื่อก่อนนัด/หลังเที่ยว {form.buffer_minutes} นาที และขึ้นลงรถ {form.boarding_minutes} นาทีต่อคน เปลี่ยนเฉพาะเมื่อไม่ตรงกับการปฏิบัติงาน</p><div className="grid gap-4 sm:grid-cols-2">
       {input('buffer_minutes', 'เวลาเผื่อก่อนนัด/หลังเที่ยว (นาที)', { type: 'number', min: 5, max: 90, required: true })}
       {input('boarding_minutes', 'เวลาขึ้นลงต่อผู้เดินทาง (นาที)', { type: 'number', min: 5, max: 60, required: true })}
-    </div></details>
-    <details className="rounded-xl border border-slate-200 p-3"><summary className="flex min-h-11 cursor-pointer items-center font-semibold">ข้อมูลก่อนเปิดบริการ · ตรวจครั้งแรกและเมื่อมีการเปลี่ยนแปลง</summary><div className="mt-3 space-y-4">
-      <p className="text-sm text-slate-600">เก็บค่าที่เคยบันทึกไว้ให้ ไม่ต้องกรอกใหม่ทุกครั้ง ส่วนวันหยุดกลับมาตรวจเมื่อพ้นช่วงที่ระบุ</p>
-      {input('calendar_checked_through', 'ตรวจปฏิทินวันหยุดครอบคลุมถึง', { type: 'date' })}
-      {input('delegation_reference', `อ้างอิงหนังสือที่กองทุนมอบให้ ${orgAbbr()} จัดคิว`, { maxLength: 500 })}    <label className="block">วันหยุดเพิ่มเติม (วันละบรรทัด รูปแบบ YYYY-MM-DD)<textarea className={inputClass} rows={4} value={form.holidays.join('\n')} onChange={e => setForm(f => ({ ...f, holidays: e.target.value.split('\n') }))} /><span className="text-sm text-slate-600">เสาร์–อาทิตย์หยุดอัตโนมัติ ตรวจรายการวันหยุดราชการและวันหยุดท้องถิ่นครั้งเดียวต่อปฏิทิน</span></label>
-    <label className="block">ข้อความแจ้งการใช้ข้อมูลที่ผู้รับผิดชอบตรวจรับแล้ว<textarea className={inputClass} required={form.enabled} rows={6} value={form.privacy_notice} onChange={set('privacy_notice')} maxLength={6000} /><span className="text-sm text-slate-600">ระบุวัตถุประสงค์ ผู้รับข้อมูล ข้อมูลที่จำเป็น อายุเก็บข้อมูล และช่องทางใช้สิทธิให้ตรงการปฏิบัติงานจริง</span></label>
     </div></details>
     {missing.length > 0 && <div className="rounded-xl bg-amber-50 p-3"><p className="font-semibold">ข้อมูลที่ต้องเติมก่อนเปิดรับจอง</p><p className="text-sm">หากยังกรอกไม่ครบ ให้เว้น “เปิดรับจองรถออนไลน์” ไว้ก่อนแล้วบันทึกการตั้งค่า</p><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{missing.map(item => <li key={item}>{item}</li>)}</ul></div>}
     <label className="flex min-h-11 items-center gap-3"><input className="size-5" type="checkbox" checked={form.unavailable} onChange={set('unavailable')} />รถหรือคนขับไม่พร้อม · หยุดยืนยันเที่ยวใหม่</label>
