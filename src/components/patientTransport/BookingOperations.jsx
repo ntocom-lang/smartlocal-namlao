@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { BOOKING_STATUS, TRIP_STATUS, RETURN_MODES, MOBILITY, suggestGroups, dateTime, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, nextTripAction, nextPassengerAction } from '../../lib/patientBooking'
+import { thaiDateFromDateInput } from '../../lib/thaiDate'
+import { BOOKING_STATUS, TRIP_STATUS, RETURN_MODES, MOBILITY, suggestGroups, dateTime, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, nextTripAction, nextPassengerAction, previousOdometer } from '../../lib/patientBooking'
 
 export function BookingCards({ bookings, trips, onAction, busy }) {
   if (!bookings.length) return <p className="py-8 text-slate-600">ยังไม่มีการจอง</p>
@@ -21,7 +22,7 @@ export function BookingCards({ bookings, trips, onAction, busy }) {
   })}</div>
 }
 
-export function CoordinatorQueue({ workspace, onPreview, onConfirm, onAction, onAmend, busy, preview, clearPreview }) {
+export function CoordinatorQueue({ workspace, onPreview, onConfirm, onAction, onAmend, onRecordLetter, onPrintLetter, onOdometer, onMonthReport, busy, preview, clearPreview }) {
   const [tab, setTab] = useState('pending')
   const [helper, setHelper] = useState('')
   const [selected, setSelected] = useState([])
@@ -56,9 +57,12 @@ export function CoordinatorQueue({ workspace, onPreview, onConfirm, onAction, on
         {t.issue_note && <p className="my-2 rounded-xl bg-amber-50 p-3">{t.issue_note}</p>}
         <div className="mt-3 flex flex-wrap gap-2">{t.state === 'issue' && <button className={primaryClass} disabled={busy || !note.trim()} onClick={() => onAction(t, 'resolve', note)}>ประสานแก้ไขแล้ว กลับดำเนินงาน</button>}
           {(t.state === 'confirmed' || (t.state === 'issue' && t.state_before_issue === 'confirmed')) && <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(t, 'release', note)}>คืนคิวเพื่อจัดแผนใหม่</button>}
-        </div></article>)}
+        </div>
+        {t.state !== 'cancelled' && <TripFundDocs trip={t} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />}
+        {t.state !== 'cancelled' && <OdometerForm trip={t} trips={workspace.trips} busy={busy} onSave={onOdometer} />}
+      </article>)}
     </>}
-    {tab === 'report' && <><p>จบแล้ว {workspace.trips.filter(t => t.state === 'completed').length} เที่ยว · รอดำเนินการ {workspace.trips.filter(t => !['completed', 'cancelled'].includes(t.state)).length} เที่ยว (เที่ยวปิดใน 30 วันล่าสุด)</p>
+    {tab === 'report' && <><MonthReport busy={busy} onPrint={onMonthReport} /><p>จบแล้ว {workspace.trips.filter(t => t.state === 'completed').length} เที่ยว · รอดำเนินการ {workspace.trips.filter(t => !['completed', 'cancelled'].includes(t.state)).length} เที่ยว (เที่ยวปิดใน 30 วันล่าสุด)</p>
       {workspace.events.map((e, i) => <div key={`${e.created_at}-${i}`} className="border-b border-slate-200 py-3"><strong>{e.action}</strong> · {dateTime(e.created_at)}<p className="text-sm">{e.detail?.note || `รายการ ${e.entity_id.slice(0, 8)}`}</p></div>)}
     </>}
   </div>
@@ -81,9 +85,11 @@ function AmendBooking({ booking, routes, busy, onBack, onSave }) {
   </form>
 }
 
-export function DriverTrips({ workspace, uid, onAction, busy }) {
+export function DriverTrips({ workspace, uid, onAction, onOdometer, busy }) {
   const [note, setNote] = useState('')
   const trips = workspace.trips.filter(t => t.driver_id === uid && !['completed', 'cancelled'].includes(t.state))
+  // จบเที่ยวแล้วแต่ยังไม่มีเลขไมล์กลับ — เดิมหายจากหน้าคนขับทันทีที่กดจบ ต้องให้เจ้าหน้าที่กรอกแทน (ผลตรวจ #227 ข้อ 4)
+  const awaitingOdometer = workspace.trips.filter(t => t.driver_id === uid && t.state === 'completed' && !Number.isFinite(t.odometer_end))
   return <div className="space-y-4"><h2 className="text-xl font-bold">เที่ยวของคนขับ</h2><p className="rounded-xl bg-amber-50 p-3">กดบันทึกเมื่อจอดรถในที่ปลอดภัย</p>
     {!trips.length && <p>ยังไม่มีเที่ยวที่ได้รับมอบหมาย</p>}
     <label className="block">เหตุขัดข้อง/ล่าช้า<input className={inputClass} value={note} maxLength={500} onChange={e => setNote(e.target.value)} /></label>
@@ -96,6 +102,58 @@ export function DriverTrips({ workspace, uid, onAction, busy }) {
       {nextTripAction(t) && <button className={`${primaryClass} w-full`} disabled={busy} onClick={() => onAction(t, 'trip_next')}>{nextTripAction(t)}</button>}
       {t.state !== 'issue' && <button className={`${buttonClass} mt-3 w-full`} disabled={busy || !note.trim()} onClick={() => onAction(t, 'issue', note)}>แจ้งเหตุขัดข้องให้เจ้าหน้าที่</button>}
       {t.state === 'issue' && <p className="rounded-xl bg-amber-50 p-3">รอเจ้าหน้าที่ประสานแผน ก่อนดำเนินการต่อ</p>}
+      <OdometerForm trip={t} trips={workspace.trips} busy={busy} onSave={onOdometer} />
     </article>)}
+    {awaitingOdometer.length > 0 && <section className="space-y-3" aria-label="จบแล้ว รอเติมเลขไมล์">
+      <h3 className="font-bold">จบแล้ว รอเติมเลขไมล์ ({awaitingOdometer.length})</h3>
+      {awaitingOdometer.map(t => <article key={t.id} className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="font-semibold">{t.plan.route_label}</p><p>เริ่มรับ {dateTime(t.plan.pickup_at)}</p>
+        <OdometerForm trip={t} trips={workspace.trips} busy={busy} onSave={onOdometer} /></article>)}
+    </section>}
   </div>
+}
+
+// หนังสือนำส่งถึงกองทุน 1 ฉบับต่อเที่ยว — เลขที่/วันที่มาจากทะเบียนหนังสือส่งของสารบรรณ ระบบออกเลขเองไม่ได้
+// พิมพ์ได้ก่อนมีเลข (ช่อง "ที่" เว้นเส้นประให้เขียนมือ) เพราะบางแห่งลงเลขหลังผู้บริหารลงนาม
+function TripFundDocs({ trip, busy, onRecordLetter, onPrintLetter }) {
+  const [letterNo, setLetterNo] = useState(trip.forward_letter_no || '')
+  const [letterDate, setLetterDate] = useState(trip.forward_letter_date || thaiDay())
+  const [open, setOpen] = useState(false)
+  return <div className="mt-4 rounded-xl border border-slate-200 p-3">
+    <p className="font-semibold">หนังสือนำส่งกองทุน</p>
+    {trip.forward_letter_no && !open
+      ? <p className="text-sm">ที่ {trip.forward_letter_no} ลงวันที่ {thaiDateFromDateInput(trip.forward_letter_date)}</p>
+      : <p className="text-sm text-slate-600">ยังไม่ได้บันทึกเลขที่หนังสือ พิมพ์ได้ก่อนแล้วเขียนเลขด้วยมือ</p>}
+    {open && <form className="mt-3 grid gap-3 sm:grid-cols-[1fr_180px_auto]" onSubmit={async e => { e.preventDefault(); if (await onRecordLetter(trip, letterNo, letterDate)) setOpen(false) }}>
+      <label>เลขที่หนังสือ<input className={inputClass} required maxLength={60} value={letterNo} onChange={e => setLetterNo(e.target.value)} placeholder="เช่น พร 72301/123" /></label>
+      <label>ลงวันที่<input className={inputClass} type="date" required value={letterDate} onChange={e => setLetterDate(e.target.value)} /></label>
+      <button className={`${primaryClass} self-end`} disabled={busy}>บันทึกเลขหนังสือ</button>
+    </form>}
+    <div className="mt-3 flex flex-wrap gap-2">
+      <button type="button" className={buttonClass} disabled={busy} onClick={() => onPrintLetter(trip)}>พิมพ์หนังสือนำส่ง + บัญชีรายชื่อ</button>
+      {!open && <button type="button" className={buttonClass} disabled={busy} onClick={() => setOpen(true)}>{trip.forward_letter_no ? 'แก้เลขหนังสือ' : 'กรอกเลขหนังสือ'}</button>}
+    </div>
+  </div>
+}
+
+// เลขไมล์ต่อเที่ยว — ระบบเติมเลขไมล์ออกจากเลขไมล์กลับของเที่ยวก่อนหน้าให้เอง คนขับกรอกแค่ตอนกลับ
+// ไม่บังคับก่อนจบเที่ยว เจ้าหน้าที่จัดคิวแก้แทนได้ภายหลัง (ไม่เพิ่มขั้นตอนบังคับให้คนขับ)
+function OdometerForm({ trip, trips, busy, onSave }) {
+  const [start, setStart] = useState(trip.odometer_start ?? previousOdometer(trip, trips))
+  const [end, setEnd] = useState(trip.odometer_end ?? '')
+  const distance = start !== '' && end !== '' ? Number(end) - Number(start) : null
+  return <form className="mt-3 grid gap-3 rounded-xl bg-slate-50 p-3 sm:grid-cols-[1fr_1fr_auto]" onSubmit={e => { e.preventDefault(); onSave(trip, Number(start), end === '' ? null : Number(end)) }}>
+    <label>เลขไมล์ออก<input className={inputClass} name="odometer_start" type="number" inputMode="numeric" min={0} required value={start} onChange={e => setStart(e.target.value)} /></label>
+    <label>เลขไมล์กลับ<input className={inputClass} name="odometer_end" type="number" inputMode="numeric" min={0} value={end} onChange={e => setEnd(e.target.value)} placeholder="กรอกเมื่อกลับถึงพื้นที่" /></label>
+    <button className={`${buttonClass} self-end`} disabled={busy}>บันทึกเลขไมล์</button>
+    {distance !== null && <p className={`text-sm sm:col-span-3 ${distance < 0 ? 'text-red-700' : 'text-slate-600'}`}>{distance < 0 ? 'เลขไมล์กลับน้อยกว่าตอนออก กรุณาตรวจอีกครั้ง' : `ระยะทาง ${distance} กม.`}</p>}
+  </form>
+}
+
+// สรุปรายเดือนไว้แนบเบิกกับกองทุน — จำนวนผู้เดินทางเท่านั้น ไม่มีชื่อ
+function MonthReport({ busy, onPrint }) {
+  const [month, setMonth] = useState(thaiDay().slice(0, 7))
+  return <form className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 p-3" onSubmit={e => { e.preventDefault(); onPrint(`${month}-01`) }}>
+    <label className="min-w-0">สรุปการใช้รถประจำเดือน<input className={inputClass} type="month" required value={month} onChange={e => setMonth(e.target.value)} /></label>
+    <button className={primaryClass} disabled={busy || !month}>พิมพ์สรุปรายเดือน</button>
+  </form>
 }

@@ -25,7 +25,7 @@ INSERT INTO public.profiles VALUES
 INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST',true,ARRAY['patient_transport_request'],0);
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -191,6 +191,44 @@ assert(!JSON.stringify(publicCal).includes('pickup_lat'),'ตารางรถ�
 assert(!JSON.stringify(publicCal).includes('18.1234'),'ตารางรถสาธารณะห้ามมีพิกัดจุดรับ')
 await actor(citizen);for(const gone of [id(600),id(603)]){await rpc('patient_booking_action',[tenant,randomUUID(),gone,1,'cancel',''])}
 console.log('PASS optional pickup pin: stored for staff/driver, pair+bounds validated, never in the public calendar')
+
+// เอกสารถึงกองทุน: เลขหนังสือนำส่งต่อเที่ยว + เลขไมล์ + สรุปรายเดือน (ไม่มีชื่อผู้ป่วย)
+await actor(coordinator)
+const liveTrip=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.state!=='cancelled')
+assert(liveTrip,'ต้องมีเที่ยวที่ยังไม่ยกเลิกให้ทดสอบ')
+const tripRevision=liveTrip.revision
+const today=new Date().toISOString().slice(0,10)
+let docRev=liveTrip.docs_revision
+docRev=await rpc('patient_booking_record_letter',[tenant,liveTrip.id,docRev,' พร 72301/55 ',today])
+// ยิงคำสั่งเดิมซ้ำ (revision เก่า ค่าเดิม) = เน็ตหลุดแล้วลองใหม่ ต้องสำเร็จโดยไม่เขียนซ้ำ
+assert.equal(await rpc('patient_booking_record_letter',[tenant,liveTrip.id,docRev-1,'พร 72301/55',today]),docRev,'คำสั่งซ้ำต้องตอบ revision ปัจจุบัน')
+// คำสั่งเก่าที่ค่าต่างจากปัจจุบัน = ข้อมูลเก่าจะทับข้อมูลใหม่ ต้องถูกปฏิเสธ (ผลตรวจ #227 ข้อ 2)
+await fails(()=>rpc('patient_booking_record_letter',[tenant,liveTrip.id,docRev-1,'พร 72301/54',today]),/เปลี่ยนแล้ว/)
+await fails(()=>rpc('patient_booking_record_letter',[tenant,liveTrip.id,docRev,'',today]),/เลขที่หนังสือ/)
+await fails(()=>rpc('patient_booking_record_letter',[tenant,liveTrip.id,docRev,'x','2600-01-01']),/วันที่หนังสือ/)
+await actor(driver);await fails(()=>rpc('patient_booking_record_letter',[tenant,liveTrip.id,docRev,'y',today]),/เจ้าหน้าที่จัดคิว/)
+await actor(citizen);await fails(()=>rpc('patient_booking_record_letter',[tenant,liveTrip.id,docRev,'y',today]),/เจ้าหน้าที่จัดคิว/)
+await actor(outsider);await fails(()=>rpc('patient_booking_record_letter',[tenant,liveTrip.id,docRev,'y',today]),/เจ้าหน้าที่จัดคิว/)
+await actor(driver);docRev=await rpc('patient_booking_record_odometer',[tenant,liveTrip.id,docRev,12000,12042])
+await fails(()=>rpc('patient_booking_record_odometer',[tenant,liveTrip.id,docRev,12000,11999]),/ไม่น้อยกว่า/)
+await fails(()=>rpc('patient_booking_record_odometer',[tenant,liveTrip.id,docRev,12000,15000]),/2,000/)
+await actor(citizen);await fails(()=>rpc('patient_booking_record_odometer',[tenant,liveTrip.id,docRev,1,2]),/คนขับของเที่ยวนี้/)
+// คนขับที่ถูกลดสิทธิ์เป็นประชาชนแล้วต้องแก้เลขไมล์เที่ยวเดิมไม่ได้ (ผลตรวจ #227 ข้อ 1)
+await db.exec('RESET ROLE');await db.query("UPDATE public.profiles SET role='citizen' WHERE id=$1",[driver])
+await actor(driver);await fails(()=>rpc('patient_booking_record_odometer',[tenant,liveTrip.id,docRev,12000,12050]),/ยังเป็นเจ้าหน้าที่/)
+await db.exec('RESET ROLE');await db.query("UPDATE public.profiles SET role='staff' WHERE id=$1",[driver])
+await actor(coordinator);await fails(()=>rpc('patient_booking_record_odometer',[tenant,liveTrip.id,docRev-1,11000,11010]),/เปลี่ยนแล้ว/)
+const after=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===liveTrip.id)
+assert.equal(after.forward_letter_no,'พร 72301/55','ตัดช่องว่างหัวท้ายเลขหนังสือ');assert.equal(after.odometer_end,12042,'ค่าเก่าต้องไม่ทับค่าใหม่')
+assert.equal(after.revision,tripRevision,'เลขหนังสือ/เลขไมล์ต้องไม่เพิ่ม revision สถานะของเที่ยว');assert.equal(after.docs_revision,docRev)
+const events=(await rpc('patient_booking_workspace',[tenant])).events.map(e=>e.action)
+assert(events.includes('letter_recorded')&&events.includes('odometer_recorded'),'ต้องมีบันทึกย้อนตรวจ')
+const report=await rpc('patient_booking_month_report',[tenant,liveTrip.plan.date])
+const row=report.trips.find(r=>r.trip_id===liveTrip.id)
+assert.equal(row.distance,42);assert.equal(row.letter_no,'พร 72301/55');assert(row.passengers>=1);assert.equal(row.state,after.state,'รายงานต้องส่งสถานะเที่ยวให้ใบพิมพ์แยกยอด')
+assert(!/"(patient_name|requester_name|phone|pickup|pickup_lat|pickup_lng)":/.test(JSON.stringify(report)),'สรุปรายเดือนห้ามมีชื่อ เบอร์ หรือจุดรับ (pickup_at คือเวลาเริ่มรับของเที่ยว ไม่ใช่ข้อมูลส่วนบุคคล)')
+await actor(driver);await fails(()=>rpc('patient_booking_month_report',[tenant,today]),/เจ้าหน้าที่จัดคิว/)
+console.log('PASS fund documents: letter no per trip, odometer by current staff driver only, stale writes rejected, retries idempotent, month report without personal data, audit')
 
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
