@@ -30,7 +30,7 @@ import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
 import {
   APPOINTMENT_KINDS, MOBILITY_LEVELS, REQUESTER_RELATIONS, TRIP_TYPES, optionLabel,
 } from './patientTransport.js'
-import { MOBILITY as BOOKING_MOBILITY, RETURN_MODES as BOOKING_RETURN_MODES, TRIP_STATUS } from './patientBooking.js'
+import { RETURN_MODES as BOOKING_RETURN_MODES, TRIP_STATUS, thaiDay } from './patientBooking.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -220,6 +220,7 @@ function letterCss() {
 function letterSheet({
   header, form = {}, parent = {}, tenant,
   mayor = null, departmentName = '', referenceNo = '', emblemUrl = '',
+  passengerSummary = '', attachmentCount = 1,
 }) {
   const orgName = tenant?.name?.trim() || 'หน่วยงาน'
   const mayorTitle = mayor?.title?.trim() || orgHeadTitle(tenant)
@@ -241,7 +242,7 @@ function letterSheet({
 
   // ย่อหน้าแรกให้ข้อมูลเท่าที่ผู้รับต้องใช้ตัดสินใจจัดรถ รายละเอียดที่เหลืออยู่ในใบแนบ
   // (หลัก data minimization — ไม่ยกทุกช่องมาไว้ในหนังสือที่เวียนผ่านหลายมือ)
-  const para1 = `ด้วย ${textOr(parent?.requester_name, 'ผู้ยื่นคำขอ')} ได้ยื่นคำขอต่อ${orgName} `
+  const para1 = passengerSummary || `ด้วย ${textOr(parent?.requester_name, 'ผู้ยื่นคำขอ')} ได้ยื่นคำขอต่อ${orgName} `
     + `ผ่านระบบบริการอิเล็กทรอนิกส์ ตามเลขอ้างอิง ${referenceNo || '-'} `
     + `เพื่อขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย สำหรับ ${patientName || '-'}${patientAge} `
     + `ไปยัง ${destination || '-'} ในวันที่ ${appointmentText(header?.appointment_at) || '-'} `
@@ -281,7 +282,7 @@ ${senderAddress.map(part => `      <p>${esc(part)}</p>`).join('\n')}
 
   <p class="kv"><span class="bold">เรื่อง</span>&nbsp;&nbsp;ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย</p>
   <p class="kv"><span class="bold">เรียน</span>&nbsp;&nbsp;${esc(header?.recipient_title_snapshot ?? '')}</p>
-  <p class="kv kv--wide"><span class="bold">สิ่งที่ส่งมาด้วย</span>&nbsp;&nbsp;ใบคำขอรับสวัสดิการ (รถรับ-ส่งผู้ป่วย)&nbsp;&nbsp;จำนวน 1 ฉบับ</p>
+  <p class="kv kv--wide"><span class="bold">สิ่งที่ส่งมาด้วย</span>&nbsp;&nbsp;ใบคำขอรับสวัสดิการ (รถรับ-ส่งผู้ป่วย)&nbsp;&nbsp;จำนวน ${attachmentCount} ฉบับ</p>
 
   <p class="body-para">${esc(para1)}</p>
   <p class="body-para">${esc(para2)}</p>
@@ -445,7 +446,9 @@ ${rows.map(([label, value]) => `    <tr><th>${label}</th><td>${value ? esc(value
       signed: requesterName ? esc(requesterName) : '',
       below: [signatureName(requesterName, REQUESTER_LINE_W)],
     })}
-    ${signedOnline
+    ${form?.signed_by?.channel === 'booking'
+      ? `<p class="signed-note">จัดทำจากข้อมูลการจองรถ${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}<br>ผู้ยื่นคำขอโปรดลงลายมือชื่อรับรองทับชื่อข้างต้น</p>`
+      : signedOnline
       ? `<p class="signed-note">ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service${
           signedStamp ? ` เมื่อ ${esc(signedStamp)}` : ''}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`
       // ⚠️ ห้ามเปลี่ยนเป็นข้อความของโหมด online — ผู้ยื่นไม่ได้ยืนยันตัวตนในระบบ การเขียนว่า
@@ -517,142 +520,59 @@ export function buildPatientTransportFormHtml(args) {
 }
 
 // ---------------------------------------------------------------------------
-// ระบบจองคิวรถ (patient_bookings) — เอกสารถึงกองทุนเจ้าของรถ
-//
-// กระบวนการที่เจ้าของระบบยืนยัน 2569-09-19: รถเป็นของกองทุน อปท. รับเรื่อง + จัดคิว คนขับเป็น
-// เจ้าหน้าที่ อปท. แล้วออกหนังสือนำส่งถึงกองทุน 1 ฉบับต่อ 1 เที่ยว (บัญชีรายชื่อแนบ) เป็น "การแจ้ง"
-// ไม่ใช่การขออนุมัติรายเที่ยว จึงลงท้ายว่า "เพื่อโปรดทราบ"
-//
-// ⚠️ ถ้อยคำในหนังสือเป็นร่างของระบบ ยังไม่ได้เทียบกับหนังสือจริงที่ อปท. ใช้กับกองทุน ต้องให้
-// เจ้าหน้าที่สารบรรณตรวจก่อนใช้ออกจริง (รูปแบบหัวหนังสือภายนอกยกมาจากใบเดิมข้างบนทั้งชุด)
-// ⚠️ บัญชีแนบใส่เฉพาะข้อมูลที่กองทุนต้องใช้ ห้ามเติมเบอร์โทร ที่อยู่จุดรับ หรือพิกัด (data minimization)
-// ---------------------------------------------------------------------------
-function clockText(value) {
-  if (!value) return ''
-  const at = new Date(value)
-  if (Number.isNaN(at.getTime())) return ''
-  return `${String(at.getHours()).padStart(2, '0')}.${String(at.getMinutes()).padStart(2, '0')} น.`
-}
-
+// ระบบจองคิวรถ: หนังสือนำส่งหนึ่งฉบับต่อเที่ยว + ใบคำขอรายผู้ป่วยตามแบบที่เจ้าของระบบเลือก
+// ใช้เลขหนังสือของเที่ยวเพียงครั้งเดียว แม้ร่วมเที่ยวหลายคน ไม่ออกหลายหนังสือด้วยเลขเดียวกัน
+// ข้อมูลที่การจองไม่ได้เก็บ (อายุ/สมาชิก/ประเภทนัด/ที่อยู่ผู้ยื่น) เว้นว่าง ห้ามเดาจากจุดรับ
+// ไม่ระบุว่าผู้ยื่นลงชื่อออนไลน์ เพราะการจองอาจเป็นเจ้าหน้าที่บันทึกแทน
 function tripPassengers(bookings, trip) {
   return (bookings ?? [])
     .filter(b => b.trip_id === trip?.id && ['confirmed', 'completed'].includes(b.status))
     .sort((a, b) => String(a.appointment_at).localeCompare(String(b.appointment_at)))
 }
 
-function tripLetterCss() {
-  return `
-  .list-title { text-align: center; font-weight: 700; font-size: 1.1em; margin: 0 0 1mm; }
-  .list-sub { text-align: center; margin: 0 0 3mm; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { border: 1px solid #000; padding: 1mm 1.5mm; vertical-align: top; text-align: left; }
-  th { font-weight: 700; text-align: center; }
-  td.num { text-align: center; white-space: nowrap; }
-  .helper-line { margin-top: 2mm; }`
-}
-
-function tripLetterSheet({ tenant, trip, bookings, partner, mayor, departmentName = '', emblemUrl = '' }) {
-  const orgName = tenant?.name?.trim() || 'หน่วยงาน'
-  const mayorTitle = mayor?.title?.trim() || orgHeadTitle(tenant)
-  const partnerName = textOr(partner?.name, 'กองทุนเจ้าของรถ')
-  const senderAddress = [
-    tenant?.address,
-    [tenant?.district && `อำเภอ${tenant.district}`, tenant?.province && `จังหวัด${tenant.province}`]
-      .filter(Boolean).join(' '),
-  ].map(part => String(part ?? '').trim()).filter(Boolean)
-  const people = tripPassengers(bookings, trip)
-  const companions = people.reduce((sum, b) => sum + Number(b.companions || 0), 0)
-
-  const para1 = `ด้วย${orgName}ได้รับคำขอใช้บริการรถรับ-ส่งผู้ป่วยจากประชาชนในพื้นที่ `
-    + `และได้จัดคิวเดินทางโดยใช้รถของ${partnerName} ในวันที่ ${letterDateText(trip?.plan?.date) || '-'} `
-    + `ไปยัง ${textOr(trip?.plan?.route_label, '-')} เริ่มรับเวลา ${clockText(trip?.plan?.pickup_at) || '-'} `
-    + `จำนวนผู้เดินทาง ${people.length} ราย${companions ? ` ผู้ติดตาม ${companions} คน` : ''} `
-    + 'รายละเอียดปรากฏตามสิ่งที่ส่งมาด้วย'
-  // ⚠️ ย่อหน้าความยินยอมห้ามตัดออก — เหตุผลเดียวกับหนังสือนำส่งของระบบเดิมข้างบน
-  const para2 = 'ทั้งนี้ ผู้ขอใช้บริการได้รับทราบข้อความแจ้งการใช้ข้อมูล และยินยอมให้ส่งข้อมูลเท่าที่จำเป็น'
-    + `แก่${partnerName}ในฐานะเจ้าของรถแล้ว จึงขอความร่วมมือใช้ข้อมูลตามบัญชีรายชื่อเพื่อการนี้เท่านั้น `
-    + 'และไม่เปิดเผยต่อบุคคลอื่น'
-
-  return `<div class="sheet">
-  <div class="emblem">${emblemUrl ? `<img src="${esc(emblemUrl)}" alt="" onerror="this.style.display='none'">` : ''}</div>
-  <div class="letter-head">
-    <p class="letter-no">${field('ที่', trip?.forward_letter_no, '45mm')}</p>
-    <div class="sender">
-      <p>${orgNameHtml(orgOfficeName(tenant))}</p>
-${senderAddress.map(part => `      <p>${esc(part)}</p>`).join('\n')}
-    </div>
-  </div>
-  <p class="letter-date">${trip?.forward_letter_date
-    ? esc(thaiDateFromDateInput(trip.forward_letter_date))
-    : `${line('', '18mm')} ${line('', '32mm')} ${line('', '22mm')}`}</p>
-  <p class="kv"><span class="bold">เรื่อง</span>&nbsp;&nbsp;นำส่งบัญชีรายชื่อผู้ใช้บริการรถรับ-ส่งผู้ป่วย</p>
-  <p class="kv"><span class="bold">เรียน</span>&nbsp;&nbsp;${esc(textOr(partner?.recipient_title, `ประธาน${partnerName}`))}</p>
-  <p class="kv kv--wide"><span class="bold">สิ่งที่ส่งมาด้วย</span>&nbsp;&nbsp;บัญชีรายชื่อผู้ใช้บริการรถรับ-ส่งผู้ป่วย จำนวน 1 ฉบับ</p>
-  <p class="body-para">${esc(para1)}</p>
-  <p class="body-para">${esc(para2)}</p>
-  <p class="closing">จึงเรียนมาเพื่อโปรดทราบ</p>
-  <p class="regards">ขอแสดงความนับถือ</p>
-  <div class="letter-sign sign-block">
-    <p>${signatureName(mayor?.name)}</p>
-    <p>${esc(mayorTitle)}</p>
-  </div>
-  <div class="owner">
-    <p>${esc(textOr(departmentName, 'สำนักปลัด'))}</p>
-    ${tenant?.phone ? `<p>โทร. ${esc(tenant.phone)}</p>` : '<p>โทร. ......................................</p>'}
-    ${tenant?.fax ? `<p>โทรสาร ${esc(tenant.fax)}</p>` : ''}
-  </div>
-  <div class="origin">${esc(govEServiceOriginText(orgName))}</div>
-</div>`
-}
-
-function tripListSheet({ tenant, trip, bookings }) {
-  const people = tripPassengers(bookings, trip)
-  const letterRef = trip?.forward_letter_no
-    ? `แนบหนังสือที่ ${esc(trip.forward_letter_no)}${trip.forward_letter_date ? ` ลงวันที่ ${esc(thaiDateFromDateInput(trip.forward_letter_date))}` : ''} · `
-    : ''
-  const rows = people.map((b, i) => `<tr>
-      <td class="num">${i + 1}</td>
-      <td>${esc(b.patient_name)}</td>
-      <td class="num">${esc(clockText(b.appointment_at))}</td>
-      <td>${esc(BOOKING_MOBILITY[b.mobility] ?? b.mobility ?? '')}</td>
-      <td class="num">${Number(b.companions || 0)}</td>
-      <td>${esc(BOOKING_RETURN_MODES[b.return_mode] ?? '')}${b.return_at ? ` ${esc(clockText(b.return_at))}` : ''}</td>
-    </tr>`).join('\n')
-  return `<div class="sheet">
-  <p class="list-title">บัญชีรายชื่อผู้ใช้บริการรถรับ-ส่งผู้ป่วย</p>
-  <p class="list-sub">${letterRef}เที่ยววันที่ ${esc(letterDateText(trip?.plan?.date) || '-')} · ${esc(textOr(trip?.plan?.route_label, '-'))} · เริ่มรับ ${esc(clockText(trip?.plan?.pickup_at) || '-')}</p>
-  <table>
-    <thead><tr><th>ลำดับ</th><th>ชื่อ–สกุลผู้เดินทาง</th><th>เวลานัด</th><th>การเคลื่อนไหว</th><th>ผู้ติดตาม</th><th>ขากลับ</th></tr></thead>
-    <tbody>
-${rows || '<tr><td colspan="6" class="num">ไม่มีผู้เดินทางในเที่ยวนี้</td></tr>'}
-    </tbody>
-  </table>
-  ${trip?.helper_name ? `<p class="helper-line">ผู้ช่วยเคลื่อนย้ายประจำเที่ยว: ${esc(trip.helper_name)}</p>` : ''}
-  <div class="origin">${esc(govEServiceOriginText(tenant?.name || 'หน่วยงาน'))}</div>
-</div>`
-}
-
-/**
- * หนังสือนำส่งถึงกองทุน 1 ฉบับต่อ 1 เที่ยว + บัญชีรายชื่อแนบ (2 แผ่น)
- * @param {object} args
- * @param {object} args.tenant
- * @param {object} args.trip      แถว patient_booking_trips (รวม forward_letter_no/date)
- * @param {object[]} args.bookings การจองทั้งหมดใน workspace — กรองเฉพาะของเที่ยวนี้ให้เอง
- * @param {{name?: string, recipient_title?: string}} [args.partner] กองทุนจากทะเบียนหน่วยงาน
- * @param {{name?: string, title?: string}} [args.mayor] ผู้ลงนามบทบาท mayor จากทะเบียนกลาง
- */
 export function buildTripForwardLetterHtml(args) {
+  const { trip, bookings, partner } = args
+  const people = tripPassengers(bookings, trip)
+  if (!people.length) throw new Error('ไม่มีคำขอที่ยืนยันแล้วสำหรับพิมพ์ในเที่ยวนี้')
+  const packets = people.map(b => ({
+    ...args,
+    referenceNo: String(b.id).slice(0, 8).toUpperCase(),
+    docDate: b.created_at ? thaiDay(b.created_at) : '',
+    header: {
+      forward_letter_no: trip.forward_letter_no, forward_letter_date: trip.forward_letter_date,
+      partner_name_snapshot: textOr(partner?.name, 'กองทุนเจ้าของรถ'),
+      recipient_title_snapshot: textOr(partner?.recipient_title, `ประธาน${textOr(partner?.name, 'กองทุนเจ้าของรถ')}`),
+      appointment_at: b.appointment_at, mobility: b.mobility,
+      consent_at: b.consent_at, consent_version: b.consent_version,
+    },
+    parent: { requester_name: b.requester_name, requester_phone: b.phone },
+    form: {
+      patient_name: b.patient_name, pickup_address: b.pickup,
+      destination: b.route_label || trip.plan?.route_label,
+      requester_relation: b.relation, companions: b.companions,
+      trip_type: b.return_mode === 'one_way' ? 'one_way' : 'round_trip',
+      return_note: BOOKING_RETURN_MODES[b.return_mode], signed_by: { channel: 'booking' },
+    },
+  }))
+  const letter = { ...packets[0], attachmentCount: people.length }
+  if (people.length > 1) {
+    letter.referenceNo = ''
+    letter.header = { ...letter.header, consent_at: null, consent_version: null }
+    letter.passengerSummary = `ด้วย ${args.tenant?.name || 'หน่วยงาน'} ได้รับคำขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย จำนวน ${people.length} ราย `
+      + `เพื่อเดินทางไปยัง ${trip.plan?.route_label || '-'} ในวันที่ ${letterDateText(trip.plan?.date) || '-'} `
+      + 'รายละเอียดผู้ยื่นคำขอ ผู้ป่วย และวันเวลานัด ปรากฏตามใบคำขอรับสวัสดิการที่แนบมาครบทุกฉบับ'
+  }
   return page(
-    'หนังสือนำส่งบัญชีรายชื่อผู้ใช้บริการรถรับ-ส่งผู้ป่วย',
-    `${letterCss()}${tripLetterCss()}`,
-    `${tripLetterSheet(args)}\n${tripListSheet(args)}`,
+    'หนังสือนำส่งและใบคำขอรับสวัสดิการ (รถรับ-ส่งผู้ป่วย)',
+    `${letterCss()}${formCss()}`,
+    [letterSheet(letter), ...packets.map(formSheet)].join('\n'),
   )
 }
 
 // ---------------------------------------------------------------------------
 // สรุปการใช้รถรายเดือน — A4 แนวนอนเพราะมี 10 คอลัมน์ (แนวตั้งเหลือ 160 มม. ไม่พอที่ 14pt)
 // ⚠️ เป็น "แบบสรุปกลาง" ของระบบ ยังไม่ใช่แบบเบิกของกองทุนใด ถ้ากองทุนมีแบบของตัวเองต้องใช้แบบนั้น
-// จำนวนผู้เดินทางเท่านั้น ไม่มีชื่อ (รายชื่อไปถึงกองทุนแล้วทางบัญชีแนบหนังสือรายเที่ยว)
+// สรุปรายเดือนมีจำนวนผู้เดินทางเท่านั้น ไม่มีชื่อ (รายละเอียดอยู่ในใบคำขอแนบหนังสือรายเที่ยว)
 // ---------------------------------------------------------------------------
 export function buildTripMonthReportHtml({ tenant, report, partner }) {
   const month = String(report?.month ?? '').slice(0, 7)
