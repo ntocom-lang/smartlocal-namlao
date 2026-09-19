@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, CloudRain, Dam, ExternalLink,
@@ -8,9 +8,10 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import {
-  DAM_LEVELS, DAM_STALE_HOURS, STATION_STALE_HOURS, SYNC_STALE_HOURS, bankText, damLevel, damTrend,
-  buildAlerts, dataDayText, distanceText, ewsAlert, formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainLevel,
-  safeColor, stationPlace, toNum, waterTrend,
+  DAM_LEVELS, DAM_STALE_HOURS, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS, SYNC_STALE_HOURS, bankText, barPercent,
+  channelFill, damLevel, damTicks, damTrend, buildAlerts, dataDayText, distanceText, ewsAlert, flowCompare,
+  formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainBarMax, rainLevel, safeColor, stationPlace,
+  summaryStats, toNum, waterTrend,
 } from '../lib/waterSituation'
 
 // ข้อมูลในฐานเปลี่ยนชั่วโมงละครั้ง (thaiwater-sync) — ถามซ้ำถี่กว่านี้ก็ไม่ได้ของใหม่ เปลืองโควตาฟรีเปล่า
@@ -126,13 +127,16 @@ export default function WaterSituationPage() {
             <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} />
             <AlertBanner rain={rain} ews={ews} warnings={data.warnings} homeAmphoe={tenant?.district} now={checkedAt}
               tenantName={tenant?.name} />
-            {/* ซ้าย: ฝน · ขวา: อ่างเก็บน้ำ แล้วระดับน้ำ — มือถือเรียงตามลำดับเดิม ฝน → อ่าง → ระดับน้ำ */}
-            <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0">
+            <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
+            {/* ซ้าย: ฝน · ขวา: อ่างเก็บน้ำ แล้วระดับน้ำ — มือถือเรียงตามลำดับเดิม ฝน → อ่าง → ระดับน้ำ
+                จอ xl ขึ้นไปแยกเป็น 3 คอลัมน์ (xl:contents ปล่อยลูกของกล่องขวาไปเป็นช่องของกริดเอง)
+                เพราะพอใส่ภาพตัดขวางแล้วคอลัมน์ขวายาวกว่าซ้ายราว 660px เหลือขาวครึ่งจอ */}
+            <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0 xl:grid-cols-3">
               {rain.length > 0 && (
                 <RainSection stations={rain} ewsByCode={ewsByCode} homeAmphoe={tenant?.district} now={checkedAt} />
               )}
               {(dams.length > 0 || levels.length > 0) && (
-                <div className="space-y-4">
+                <div className="space-y-4 xl:contents xl:space-y-0">
                   {dams.length > 0 && <DamSection stations={dams} homeAmphoe={tenant?.district} now={checkedAt} />}
                   {levels.length > 0 && <WaterLevelSection stations={levels} homeAmphoe={tenant?.district} now={checkedAt} />}
                 </div>
@@ -179,6 +183,74 @@ function SyncStatus({ syncedAt, now, refreshFailed }) {
 // แถบเตือนบนสุดของหน้า — กติกาเดียวกับ Telegram (buildAlerts ↔ water-alert-notify)
 // ขึ้นเฉพาะเมื่อมีเรื่องเข้าเกณฑ์ ไม่มีข้อความ "ปกติ" ให้วางใจ — ไม่มีแถบแปลว่าไม่มีเรื่องที่เข้าเกณฑ์
 // ไม่ได้แปลว่าปลอดภัย · แต่ละส่วนบอกที่มาของตัวเอง และย้ำว่าไม่ใช่ประกาศของ อปท.
+const HERO_COLS = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' }
+
+// สรุป 3 ตัวเลขที่คนเปิดหน้านี้อยากรู้ก่อน — เห็นจบโดยไม่ต้องไล่อ่านทั้งลิสต์
+// เป็นการหยิบค่าที่แสดงอยู่ข้างล่างขึ้นมาเน้น ไม่ได้ประเมินสถานการณ์เพิ่ม (summaryStats คุมกติกาไว้ที่เดียว)
+function HeroStats({ rain, dams, levels, now }) {
+  const stats = summaryStats({ rain, dams, levels, now })
+  if (!stats.any) return null
+
+  const cards = []
+  if (stats.rain) {
+    cards.push({
+      key: 'rain', Icon: CloudRain, label: 'ฝนสูงสุด 24 ชม.',
+      value: formatMm(stats.rain.mm), unit: 'มม.',
+      color: stats.rain.level?.bar ?? '#9ca3af',
+      badge: stats.rain.level?.label, caption: stats.rain.station.station_name,
+    })
+  }
+  if (stats.dam) {
+    cards.push({
+      key: 'dam', Icon: Dam, label: 'น้ำในอ่างเก็บน้ำ',
+      value: stats.dam.percent.toLocaleString('th-TH', { maximumFractionDigits: 1 }), unit: '%',
+      color: safeColor(stats.dam.level?.color),
+      badge: stats.dam.level?.label,
+      caption: `${stats.dam.count} อ่างรวมกัน`,
+      // ปริมาตรเต็มยาวเกินการ์ดบนมือถือ (กว้างการ์ดละ ~118px) โชว์เฉพาะจอที่กว้างพอ
+      detail: `${formatMcm(stats.dam.storage)} จาก ${formatMcm(stats.dam.capacity)} ล้าน ลบ.ม.`,
+    })
+  }
+  if (stats.bank) {
+    // ค่าลบ = น้ำสูงกว่าตลิ่ง ป้ายต้องบอกทิศทางเอง เพราะตัวเลขใหญ่โชว์ค่าสัมบูรณ์
+    const above = stats.bank.diff < 0
+    cards.push({
+      key: 'bank', Icon: Waves, label: 'ระดับน้ำใกล้ตลิ่งที่สุด',
+      value: Math.abs(stats.bank.diff).toFixed(2), unit: 'ม.',
+      color: safeColor(stats.bank.station.situation_color),
+      badge: above ? 'สูงกว่าตลิ่ง' : 'ต่ำกว่าตลิ่ง',
+      caption: `สถานี${stats.bank.station.station_name}`,
+    })
+  }
+
+  return (
+    <div className={`grid gap-2 md:gap-3 ${HERO_COLS[cards.length] ?? 'grid-cols-3'}`}>
+      {cards.map(c => (
+        <div key={c.key} className="relative overflow-hidden rounded-2xl border border-gray-100 bg-white px-3 py-3 shadow-sm md:px-4">
+          <span className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: c.color }} aria-hidden="true" />
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold leading-tight text-gray-500 md:text-xs">
+            <c.Icon size={14} className="shrink-0" style={{ color: c.color }} />
+            {c.label}
+          </p>
+          <p className="mt-1.5 flex items-baseline gap-1 leading-none">
+            <span className="text-2xl font-extrabold tracking-tight text-gray-900 md:text-3xl">{c.value}</span>
+            <span className="text-xs font-bold text-gray-500 md:text-sm">{c.unit}</span>
+          </p>
+          {c.badge && (
+            <span className="mt-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold md:text-[11px]"
+              style={{ backgroundColor: `${c.color}1a`, color: c.color }}>
+              {c.badge}
+            </span>
+          )}
+          <p className="mt-1 truncate text-[11px] text-gray-500 md:text-xs">
+            {c.caption}{c.detail && <span className="hidden md:inline"> · {c.detail}</span>}
+          </p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function AlertBanner({ rain, ews, warnings, homeAmphoe, now, tenantName }) {
   const alerts = buildAlerts({ rain, ews, warnings, now })
   if (!alerts.any) return null
@@ -264,6 +336,8 @@ function AlertBanner({ rain, ews, warnings, homeAmphoe, now, tenantName }) {
 }
 
 function RainSection({ stations, ewsByCode, homeAmphoe, now }) {
+  // สเกลร่วมของทั้งลิสต์ — คิดครั้งเดียวที่นี่ ไม่ให้แต่ละแถวคิดสเกลของตัวเอง (จะเทียบกันไม่ได้)
+  const barMax = rainBarMax(stations)
   return (
     <section className="rounded-2xl border border-gray-100 bg-white shadow-sm">
       <div className="flex items-start gap-2.5 border-b border-gray-50 px-4 py-3">
@@ -275,10 +349,15 @@ function RainSection({ stations, ewsByCode, homeAmphoe, now }) {
       </div>
       <ul className="divide-y divide-gray-50">
         {stations.map(s => (
-          <RainRow key={s.station_code} station={s} ews={ewsByCode.get(s.station_code)} homeAmphoe={homeAmphoe} now={now} />
+          <RainRow key={s.station_code} station={s} ews={ewsByCode.get(s.station_code)} homeAmphoe={homeAmphoe}
+            now={now} barMax={barMax} />
         ))}
       </ul>
       <div className="space-y-1 border-t border-gray-50 px-4 py-3 text-[11px] leading-relaxed text-gray-400">
+        <p>
+          แท่งเทียบใช้สเกลเดียวกันทุกสถานี <span className="whitespace-nowrap">(0–{barMax} มม.)</span> ·{' '}
+          <span className="whitespace-nowrap">เส้นแนวตั้งคือเกณฑ์ฝนหนักมาก {RAIN_VERY_HEAVY_MM} มม.</span>
+        </p>
         <p>
           ป้ายเทียบเกณฑ์ปริมาณฝนของกรมอุตุนิยมวิทยา: ฝนเล็กน้อย 0.1–10 · ฝนปานกลาง 10.1–35 · ฝนหนัก 35.1–90 ·
           ฝนหนักมาก 90.1 มม. ขึ้นไป
@@ -294,7 +373,7 @@ function RainSection({ stations, ewsByCode, homeAmphoe, now }) {
   )
 }
 
-function RainRow({ station: s, ews, homeAmphoe, now }) {
+function RainRow({ station: s, ews, homeAmphoe, now, barMax }) {
   const level = rainLevel(s.rain_24h_mm)
   const stale = Boolean(s.recorded_at) && isStale(s.recorded_at, now, STATION_STALE_HOURS)
   const rain1h = toNum(s.rain_1h_mm)
@@ -302,7 +381,7 @@ function RainRow({ station: s, ews, homeAmphoe, now }) {
   const warning = ewsAlert(ews, now)
 
   return (
-    <li className="flex items-center gap-3 px-4 py-3">
+    <li className="flex items-start gap-3 px-4 py-3">
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold leading-tight text-gray-800">
           {s.station_name}
@@ -329,8 +408,10 @@ function RainRow({ station: s, ews, homeAmphoe, now }) {
         ) : level ? (
           <p className="mt-0.5 text-xs text-gray-400">วัดเมื่อ {measuredAtText(s.recorded_at, now)}</p>
         ) : null}
+        {level && <RainBar mm={s.rain_24h_mm} max={barMax} color={level.bar} dim={stale} />}
       </div>
-      <div className={`shrink-0 text-right ${stale ? 'opacity-50' : ''}`}>
+      {/* คอลัมน์ตัวเลขกว้างคงที่ ไม่งั้นแท่งของแต่ละแถวยาวไม่เท่ากันตามจำนวนหลัก แล้วเทียบด้วยตาไม่ได้ */}
+      <div className={`w-20 shrink-0 text-right ${stale ? 'opacity-50' : ''}`}>
         {level ? (
           <>
             <p className="text-lg font-bold leading-none text-gray-900">
@@ -343,6 +424,20 @@ function RainRow({ station: s, ews, homeAmphoe, now }) {
         )}
       </div>
     </li>
+  )
+}
+
+// แท่งเทียบฝนของสถานีเดียว — สเกลร่วมมาจาก RainSection · ขีดแนวตั้งคือเกณฑ์ฝนหนักมากของกรมอุตุฯ
+// ค่าเป็น 0 ก็ยังวาดรางเปล่าไว้ ให้ทุกแถวมีเส้นฐานเดียวกันเทียบกันได้
+function RainBar({ mm, max, color, dim }) {
+  const width = barPercent(mm, max)
+  const threshold = barPercent(RAIN_VERY_HEAVY_MM, max)
+  return (
+    <div className={`relative mt-2 h-2 overflow-hidden rounded-full bg-gray-100 ${dim ? 'opacity-40' : ''}`}
+      role="img" aria-label={`${formatMm(mm)} มิลลิเมตร จากสเกล ${max} มิลลิเมตร`}>
+      <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${width}%`, backgroundColor: color }} />
+      <span className="absolute inset-y-0 w-px bg-gray-400" style={{ left: `${threshold}%` }} aria-hidden="true" />
+    </div>
   )
 }
 
@@ -376,6 +471,7 @@ function WaterLevelCard({ station: s, homeAmphoe, now }) {
   const trend = waterTrend(s.waterlevel_msl, s.prev_waterlevel_msl)
   const TrendIcon = trend ? TREND_STYLE[trend.dir].Icon : null
   const percent = toNum(s.storage_percent)
+  const fill = channelFill(percent)
   const level = toNum(s.waterlevel_msl)
   const bank = bankText(s.bank_diff_m)
   const mapHref = mapUrl(s.latitude, s.longitude)
@@ -407,16 +503,23 @@ function WaterLevelCard({ station: s, homeAmphoe, now }) {
       </div>
 
       {hasValue ? (
-        <div className={`mt-3 grid grid-cols-2 gap-2 ${stale ? 'opacity-50' : ''}`}>
-          <Metric label="เทียบตลิ่ง" value={bank ?? '–'} />
-          <Metric label="ความจุลำน้ำ" value={percent !== null ? `${Math.round(percent)}%` : '–'} />
-          <Metric label="แนวโน้ม" value={trend ? (
-            <span className={`inline-flex items-center gap-1 ${TREND_STYLE[trend.dir].className}`}>
-              <TrendIcon size={15} /> {trend.label}
-            </span>
-          ) : 'รอข้อมูลรอบถัดไป'}
-            hint={trend && s.prev_recorded_at ? `เทียบกับ ${measuredAtText(s.prev_recorded_at, now)}` : null} />
-          <Metric label="ระดับน้ำ" value={level !== null ? `${level.toFixed(2)} ม.รทก.` : '–'} />
+        <div className={`mt-3 ${stale ? 'opacity-50' : ''}`}>
+          {/* ต้องมี % ความจุลำน้ำถึงจะวาดภาพตัดขวางได้ ไม่มีก็กลับไปใช้กล่องตัวเลขเหมือนเดิม */}
+          {fill !== null && (
+            <ChannelCrossSection fill={fill} percent={percent} bankLabel={bank} color={color}
+              stationName={s.station_name} />
+          )}
+          <div className={`grid grid-cols-2 gap-2 ${fill !== null ? 'mt-3' : ''}`}>
+            {fill === null && <Metric label="เทียบตลิ่ง" value={bank ?? '–'} />}
+            {fill === null && <Metric label="ความจุลำน้ำ" value="–" />}
+            <Metric label="แนวโน้ม" value={trend ? (
+              <span className={`inline-flex items-center gap-1 ${TREND_STYLE[trend.dir].className}`}>
+                <TrendIcon size={15} /> {trend.label}
+              </span>
+            ) : 'รอข้อมูลรอบถัดไป'}
+              hint={trend && s.prev_recorded_at ? `เทียบกับ ${measuredAtText(s.prev_recorded_at, now)}` : null} />
+            <Metric label="ระดับน้ำ" value={level !== null ? `${level.toFixed(2)} ม.รทก.` : '–'} />
+          </div>
         </div>
       ) : (
         <p className="mt-3 text-sm text-gray-400">ไม่มีข้อมูลล่าสุด</p>
@@ -435,6 +538,58 @@ function WaterLevelCard({ station: s, homeAmphoe, now }) {
           </a>
         )}
       </div>
+    </div>
+  )
+}
+
+// พิกัดในภาพตัดขวาง (viewBox 320×84) — ตลิ่งอยู่ y=16 ท้องน้ำ y=66 ตลิ่งลาดเอียง 1.12 หน่วยนอนต่อ 1 หน่วยตั้ง
+const CH = { bankY: 16, bedY: 66, leftTop: 36, rightTop: 284, slope: 1.12 }
+
+// ภาพตัดขวางลำน้ำ — ความสูงของน้ำมาจาก "ความจุลำน้ำ (%)" ที่ต้นทางส่งมาเท่านั้น
+// ⚠️ รูปทรงลำน้ำเป็นภาพประกอบให้เทียบสัดส่วนน้ำกับตลิ่งด้วยตา ไม่ใช่หน้าตัดจริงของสถานี
+//    (ต้นทางไม่ได้ให้รูปตัด) ตัวเลขจริงจึงต้องกำกับอยู่บนภาพทุกจุด ห้ามให้เหลือแต่รูป
+function ChannelCrossSection({ fill, percent, bankLabel, color, stationName }) {
+  const gradientId = useId()
+  const surfaceY = CH.bedY - fill * (CH.bedY - CH.bankY)
+  const inset = (surfaceY - CH.bankY) * CH.slope
+  const left = CH.leftTop + inset
+  const right = CH.rightTop - inset
+  const percentText = percent === null ? null : `${Math.round(percent)}%`
+
+  return (
+    <div className="relative overflow-hidden rounded-xl bg-gray-50">
+      <svg viewBox="0 0 320 84" className="block w-full" role="img"
+        aria-label={`ภาพตัดขวางลำน้ำที่สถานี${stationName} น้ำอยู่ที่ ${percentText ?? '–'} ของความจุลำน้ำ${bankLabel ? ` ${bankLabel}` : ''}`}>
+        <defs>
+          {/* เนื้อน้ำเป็นสีน้ำเงินคงที่ให้ดูออกว่าเป็นน้ำ — สีสถานการณ์จากต้นทาง (เขียว/เหลือง/แดง)
+              ไปอยู่ที่เส้นผิวน้ำกับกรอบการ์ดแทน ถ้าย้อมทั้งก้อนตามสถานะ ภาพจะอ่านเป็นตะไคร่/ดินแทนน้ำ */}
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.95" />
+            <stop offset="100%" stopColor="#0369a1" stopOpacity="0.9" />
+          </linearGradient>
+        </defs>
+        {/* ตลิ่งสองฝั่ง */}
+        <path d={`M0 ${CH.bankY} L${CH.leftTop} ${CH.bankY} L92 ${CH.bedY} L228 ${CH.bedY} L${CH.rightTop} ${CH.bankY} L320 ${CH.bankY} L320 84 L0 84 Z`}
+          fill="#e7e5e4" />
+        <path d={`M${CH.leftTop} ${CH.bankY} L92 ${CH.bedY} L228 ${CH.bedY} L${CH.rightTop} ${CH.bankY}`}
+          fill="none" stroke="#a8a29e" strokeWidth="1.5" strokeLinejoin="round" />
+        {/* ผิวน้ำ */}
+        <path d={`M${left} ${surfaceY} L92 ${CH.bedY} L228 ${CH.bedY} L${right} ${surfaceY} Z`} fill={`url(#${gradientId})`} />
+        <line x1={left} y1={surfaceY} x2={right} y2={surfaceY} stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+        {/* เส้นระดับตลิ่ง */}
+        <line x1="8" y1={CH.bankY} x2="312" y2={CH.bankY} stroke="#78716c" strokeWidth="1" strokeDasharray="5 4" />
+      </svg>
+      <span className="absolute left-2 top-1 text-[10px] font-semibold text-gray-500">ระดับตลิ่ง</span>
+      {bankLabel && (
+        <span className="absolute right-2 top-1 rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">
+          {bankLabel}
+        </span>
+      )}
+      {percentText && (
+        <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">
+          ความจุลำน้ำ {percentText}
+        </span>
+      )}
     </div>
   )
 }
@@ -527,15 +682,27 @@ function DamCard({ station: s, homeAmphoe, now }) {
             )}
           </div>
           {percent !== null && (
-            <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-gray-100"
-              role="img" aria-label={`ปริมาณน้ำในอ่าง ${percent.toFixed(1)}% ของความจุที่ระดับเก็บกัก`}>
-              <div className="h-full rounded-full" style={{ width: `${barWidth}%`, backgroundColor: color }} />
+            <div className="mt-1.5">
+              <div className="relative h-3 overflow-hidden rounded-full bg-gray-100"
+                role="img" aria-label={`ปริมาณน้ำในอ่าง ${percent.toFixed(1)}% ของความจุที่ระดับเก็บกัก`}>
+                <div className="h-full rounded-full" style={{ width: `${barWidth}%`, backgroundColor: color }} />
+                {/* หมุดเกณฑ์ — อยู่บนแถบสีต้องเป็นเส้นขาว อยู่บนรางว่างต้องเป็นเส้นเทา ไม่งั้นมองไม่เห็นข้างใดข้างหนึ่ง */}
+                {damTicks().map(tick => (
+                  <span key={tick} className="absolute inset-y-0 w-px" aria-hidden="true"
+                    style={{ left: `${tick}%`, backgroundColor: tick <= barWidth ? 'rgba(255,255,255,0.8)' : 'rgba(120,113,108,0.35)' }} />
+                ))}
+              </div>
+              <div className="relative mt-1 h-3.5 text-[10px] font-semibold text-gray-400" aria-hidden="true">
+                {damTicks().map(tick => (
+                  <span key={tick} className="absolute -translate-x-1/2" style={{ left: `${tick}%` }}>{tick}</span>
+                ))}
+                <span className="absolute right-0">100%</span>
+              </div>
             </div>
           )}
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <Metric label="น้ำไหลลงอ่าง/วัน" value={inflow !== null ? `${formatMcm(inflow)} ล้าน ลบ.ม.` : '–'} />
-            <Metric label="น้ำระบาย/วัน" value={released !== null ? `${formatMcm(released)} ล้าน ลบ.ม.` : '–'} />
-            <div className="col-span-2">
+          <div className="mt-2 space-y-2">
+            <FlowBars inflow={inflow} released={released} />
+            <div>
               <Metric label="ปริมาตรเทียบกับเมื่อวาน" value={trend ? (
                 <span className={`inline-flex items-center gap-1 ${TREND_STYLE[trend.dir].className}`}>
                   <TrendIcon size={15} /> {trend.label}
@@ -562,6 +729,36 @@ function DamCard({ station: s, homeAmphoe, now }) {
           </a>
         )}
       </div>
+    </div>
+  )
+}
+
+// เทียบน้ำไหลลงอ่างกับน้ำที่ระบายออกในวันเดียวกัน — แท่งยาวกว่าคือฝั่งที่มากกว่า อ่านทิศทางได้โดยไม่ต้องลบเลขเอง
+// สเกลเป็นของการ์ดนี้เอง (อ่างคนละขนาดเทียบข้ามการ์ดไม่ได้) ตัวเลขจริงจึงอยู่ท้ายแท่งเสมอ
+function FlowBars({ inflow, released }) {
+  const flow = flowCompare(inflow, released)
+  if (!flow) return null
+  const rows = [
+    { key: 'in', label: 'ไหลลงอ่าง', value: flow.inflow, percent: flow.inflowPct, color: '#0284c7' },
+    { key: 'out', label: 'ระบายออก', value: flow.released, percent: flow.releasedPct, color: '#d97706' },
+  ]
+  return (
+    <div className="rounded-xl bg-gray-50 px-3 py-2">
+      <p className="text-[11px] font-semibold text-gray-500">น้ำเข้า-ออกต่อวัน (ล้าน ลบ.ม.)</p>
+      <div className="mt-1.5 space-y-1.5">
+        {rows.map(r => (
+          <div key={r.key} className="flex items-center gap-2">
+            <span className="w-16 shrink-0 text-[11px] text-gray-500">{r.label}</span>
+            <span className="h-2 flex-1 overflow-hidden rounded-full bg-gray-200">
+              <span className="block h-full rounded-full" style={{ width: `${r.percent}%`, backgroundColor: r.color }} />
+            </span>
+            <span className="w-11 shrink-0 text-right text-[11px] font-bold text-gray-800">
+              {r.value === null ? '–' : formatMcm(r.value)}
+            </span>
+          </div>
+        ))}
+      </div>
+      {flow.netLabel && <p className="mt-1.5 text-[11px] text-gray-500">{flow.netLabel}</p>}
     </div>
   )
 }

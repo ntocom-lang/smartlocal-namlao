@@ -30,13 +30,17 @@ const EWS_FALLBACK_TEXT = { 1: 'เฝ้าระวัง', 2: 'เตรี�
 // ต่ำกว่า 0.1 มม. ไม่อยู่ในเกณฑ์ จึงแสดงว่า "ไม่มีฝน"
 // ค่าของสถานีเป็นฝนสะสม 24 ชั่วโมงล่าสุด ไม่ใช่ช่วง 07.00–07.00 น. แบบรายงานประจำวันของกรมอุตุฯ
 // ใช้เกณฑ์นี้เป็นแนวเทียบให้อ่านตัวเลขง่ายขึ้น ไม่ใช่การประกาศสภาพอากาศ
+// bar = สีแท่งเทียบฝน ไล่เข้มตามเกณฑ์เดียวกับป้าย (chip) — คนละชุดกับสีอ่างเก็บน้ำที่ลอกมาจากต้นฉบับ
 export const RAIN_LEVELS = [
-  { key: 'none',      label: 'ไม่มีฝน',     below: 0.1,      chip: 'bg-gray-100 text-gray-500' },
-  { key: 'light',     label: 'ฝนเล็กน้อย',  upTo: 10.0,      chip: 'bg-sky-50 text-sky-700' },
-  { key: 'moderate',  label: 'ฝนปานกลาง',  upTo: 35.0,      chip: 'bg-blue-100 text-blue-800' },
-  { key: 'heavy',     label: 'ฝนหนัก',      upTo: 90.0,      chip: 'bg-amber-100 text-amber-800' },
-  { key: 'veryHeavy', label: 'ฝนหนักมาก',   upTo: Infinity,  chip: 'bg-rose-100 text-rose-700' },
+  { key: 'none',      label: 'ไม่มีฝน',     below: 0.1,      chip: 'bg-gray-100 text-gray-500',   bar: '#d1d5db' },
+  { key: 'light',     label: 'ฝนเล็กน้อย',  upTo: 10.0,      chip: 'bg-sky-50 text-sky-700',      bar: '#7dd3fc' },
+  { key: 'moderate',  label: 'ฝนปานกลาง',  upTo: 35.0,      chip: 'bg-blue-100 text-blue-800',   bar: '#3b82f6' },
+  { key: 'heavy',     label: 'ฝนหนัก',      upTo: 90.0,      chip: 'bg-amber-100 text-amber-800', bar: '#f59e0b' },
+  { key: 'veryHeavy', label: 'ฝนหนักมาก',   upTo: Infinity,  chip: 'bg-rose-100 text-rose-700',   bar: '#e11d48' },
 ]
+
+// ขอบล่างของเกณฑ์ "ฝนหนักมาก" — หมุดอ้างอิงบนแท่งเทียบฝน (ต่อจากขอบบนของเกณฑ์ฝนหนัก 90.0)
+export const RAIN_VERY_HEAVY_MM = 90.1
 
 // เกณฑ์ปริมาณน้ำในอ่างเก็บน้ำ — % ของความจุที่ระดับเก็บกักปกติ (รนก.) ซึ่งเป็นฐานเดียวกับ storage_percent
 //   ป้าย + สี: รายงานสถานภาพน้ำเขื่อนของ สสน. หัวข้อ "สีระดับเกณฑ์ (%รนก.)"
@@ -219,4 +223,84 @@ export function mapUrl(lat, lon) {
 // สีจากต้นทางใช้ได้เฉพาะรูปแบบ #RRGGBB — กันค่าแปลกหลุดเข้า style
 export function safeColor(color, fallback = '#9ca3af') {
   return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : fallback
+}
+
+/* ───────── อินโฟกราฟิก ─────────
+   ตัวเลขทั้งหมดในหมวดนี้เป็นแค่การ "วาดค่าที่ต้นทางส่งมา" ให้เทียบด้วยตาได้
+   ห้ามคำนวณค่าใหม่ที่ต้นทางไม่ได้ให้ (เช่น เดาระดับตลิ่งจากระดับน้ำ) — ภาพต้องตรงกับตัวเลขบนการ์ดเสมอ */
+
+// ความกว้างแท่ง (%) ของค่า value บนสเกล 0..max — กันค่าติดลบ/เกินสเกลไม่ให้ล้นกรอบ
+export function barPercent(value, max) {
+  const v = toNum(value)
+  const m = toNum(max)
+  if (v === null || m === null || m <= 0 || v <= 0) return 0
+  return Math.min(100, (v / m) * 100)
+}
+
+// สเกลร่วมของแท่งเทียบฝน — ทุกสถานีใช้สเกลเดียวกันถึงจะเทียบกันได้
+// เริ่มที่ 100 มม. เพื่อให้หมุด "ฝนหนักมาก" (90.1) อยู่ในแถบเสมอ วันที่ฝนแรงกว่านั้นค่อยขยายทีละ 10
+export function rainBarMax(stations = []) {
+  const top = stations.reduce((max, s) => Math.max(max, toNum(s?.rain_24h_mm) ?? 0), 0)
+  return Math.max(100, Math.ceil(top / 10) * 10)
+}
+
+// หมุดเกณฑ์บนแท่งอ่างเก็บน้ำ — ขอบบนของแต่ละช่วงใน DAM_LEVELS ที่ยังอยู่ในแถบ (100% คือปลายแถบ ไม่ต้องขีด)
+// อ่านจาก DAM_LEVELS จุดเดียว เปลี่ยนเกณฑ์ที่นั่นแล้วหมุดขยับตาม
+export function damTicks() {
+  return DAM_LEVELS.map(l => l.upTo).filter(v => Number.isFinite(v) && v < 100)
+}
+
+// เทียบน้ำไหลลงอ่างกับน้ำระบายในวันเดียวกัน — สเกลของการ์ดนี้เอง (อ่างคนละขนาดเทียบข้ามกันไม่ได้)
+export function flowCompare(inflow, released) {
+  const a = toNum(inflow)
+  const b = toNum(released)
+  if (a === null && b === null) return null
+  const max = Math.max(a ?? 0, b ?? 0)
+  const net = a !== null && b !== null ? Math.round((a - b) * 100) / 100 : null
+  return {
+    inflow: a,
+    released: b,
+    inflowPct: barPercent(a, max),
+    releasedPct: barPercent(b, max),
+    net,
+    netLabel: net === null ? null
+      : Math.abs(net) < DAM_TREND_FLAT_MCM ? 'เข้า-ออกพอๆ กัน'
+      : net > 0 ? `เข้ามากกว่าออก ${formatMcm(net)} ล้าน ลบ.ม.`
+      : `ออกมากกว่าเข้า ${formatMcm(Math.abs(net))} ล้าน ลบ.ม.`,
+  }
+}
+
+// สัดส่วนน้ำในภาพตัดขวางลำน้ำ (0–1) จาก storage_percent = ความจุลำน้ำที่ต้นทางส่งมา
+// ไม่มีค่านี้ = วาดภาพไม่ได้ ห้ามเดาจาก bank_diff_m เพราะไม่รู้ความลึกของลำน้ำ
+export function channelFill(percent) {
+  const v = toNum(percent)
+  if (v === null || v < 0) return null
+  return Math.min(1, v / 100)
+}
+
+// 3 ตัวเลขสรุปบนสุดของหน้า — ใช้เฉพาะสถานีที่ค่ายังเป็นปัจจุบัน หมวดไหนไม่มีข้อมูลก็ไม่ต้องขึ้นการ์ด
+// อ่างเก็บน้ำรวมเป็นก้อนเดียวด้วยปริมาตรรวม ÷ ความจุรวม (ไม่ใช่เฉลี่ย % รายอ่าง ซึ่งให้น้ำหนัก
+// อ่างเล็กเท่าอ่างใหญ่) · ระดับน้ำเลือกสถานีที่ "ใกล้ตลิ่งที่สุด" = bank_diff_m น้อยที่สุด
+export function summaryStats({ rain = [], dams = [], levels = [], now }) {
+  const fresh = (list, hours) => list.filter(s => s?.recorded_at && !isStale(s.recorded_at, now, hours))
+
+  const rainRows = fresh(rain, STATION_STALE_HOURS).filter(s => toNum(s.rain_24h_mm) !== null)
+  const topRain = rainRows.slice().sort((a, b) => toNum(b.rain_24h_mm) - toNum(a.rain_24h_mm))[0] ?? null
+
+  const damRows = fresh(dams, DAM_STALE_HOURS)
+    .filter(s => toNum(s.dam_storage_mcm) !== null && (toNum(s.dam_capacity_mcm) ?? 0) > 0)
+  const storage = damRows.reduce((sum, s) => sum + toNum(s.dam_storage_mcm), 0)
+  const capacity = damRows.reduce((sum, s) => sum + toNum(s.dam_capacity_mcm), 0)
+  const damPercent = capacity > 0 ? (storage / capacity) * 100 : null
+
+  const levelRows = fresh(levels, STATION_STALE_HOURS).filter(s => toNum(s.bank_diff_m) !== null)
+  const nearest = levelRows.slice().sort((a, b) => toNum(a.bank_diff_m) - toNum(b.bank_diff_m))[0] ?? null
+
+  return {
+    rain: topRain ? { station: topRain, mm: toNum(topRain.rain_24h_mm), level: rainLevel(topRain.rain_24h_mm) } : null,
+    dam: damPercent === null ? null
+      : { percent: damPercent, count: damRows.length, storage, capacity, level: damLevel(damPercent) },
+    bank: nearest ? { station: nearest, diff: toNum(nearest.bank_diff_m), text: bankText(nearest.bank_diff_m) } : null,
+    any: Boolean(topRain) || damPercent !== null || Boolean(nearest),
+  }
 }

@@ -4,8 +4,10 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
-  DAM_LEVELS, DAM_STALE_HOURS, EWS_FRESH_HOURS, RAIN_LEVELS, STATION_STALE_HOURS, bankText, buildAlerts, damLevel,
-  damTrend, dataDayText, distanceText, ewsAlert, formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainLevel, safeColor, stationPlace, waterTrend,
+  DAM_LEVELS, DAM_STALE_HOURS, EWS_FRESH_HOURS, RAIN_LEVELS, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS, bankText,
+  barPercent, buildAlerts, channelFill, damLevel, damTicks, damTrend, dataDayText, distanceText, ewsAlert,
+  flowCompare, formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainBarMax, rainLevel, safeColor,
+  stationPlace, summaryStats, waterTrend,
 } from '../src/lib/waterSituation.js'
 
 // ── เกณฑ์ปริมาณฝนของกรมอุตุนิยมวิทยา (ขอบช่วงทุกจุด) ──
@@ -209,6 +211,94 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
   })
   assert.deepEqual(ewsOnly.ews.map(x => x.station.station_code), ['E3'], 'เฝ้าระวังไม่ขึ้นแถบ · สถานะเก่ากว่า 12 ชม. ไม่ขึ้นแถบ')
   assert.equal(buildAlerts({ now }).any, false, 'ไม่มีข้อมูล = ไม่มีแถบ')
+}
+
+// ── อินโฟกราฟิก: แท่ง/ภาพต้องตรงกับตัวเลขที่พิมพ์อยู่ข้างๆ เสมอ ──
+{
+  // ความกว้างแท่ง
+  assert.equal(barPercent(50, 100), 50)
+  assert.equal(barPercent(0, 100), 0)
+  assert.equal(barPercent(-5, 100), 0, 'ค่าติดลบต้องไม่วาดแท่งกลับด้าน')
+  assert.equal(barPercent(150, 100), 100, 'ค่าเกินสเกลต้องเต็มแท่ง ไม่ล้นกรอบ')
+  assert.equal(barPercent(null, 100), 0)
+  assert.equal(barPercent(10, 0), 0, 'สเกล 0 ต้องไม่หารศูนย์')
+
+  // สเกลร่วมของแท่งฝน — หมุด "ฝนหนักมาก" ต้องอยู่ในแถบเสมอ
+  const st = mm => ({ rain_24h_mm: mm })
+  assert.equal(rainBarMax([]), 100)
+  assert.equal(rainBarMax([st(2), st(45.2)]), 100, 'ฝนน้อยก็ยังใช้สเกล 100 เพื่อให้เทียบข้ามวันได้')
+  assert.equal(rainBarMax([st(96)]), 100)
+  assert.equal(rainBarMax([st(132.5)]), 140)
+  assert.equal(rainBarMax([st(null), st('88')]), 100)
+  assert.ok(barPercent(RAIN_VERY_HEAVY_MM, rainBarMax([st(132.5)])) < 100, 'หมุดต้องไม่ถูกดันไปติดขอบขวา')
+
+  // หมุดเกณฑ์อ่าง — อ่านจาก DAM_LEVELS จุดเดียว ถ้าเกณฑ์เปลี่ยนต้องเปลี่ยนตาม
+  assert.deepEqual(damTicks(), [30, 50, 80])
+  assert.deepEqual(damTicks(), DAM_LEVELS.map(l => l.upTo).filter(v => Number.isFinite(v) && v < 100))
+
+  // น้ำเข้า-ออกของอ่าง
+  assert.equal(flowCompare(null, null), null, 'ไม่มีทั้งสองค่า = ไม่ต้องวาด')
+  const flow = flowCompare(0.29, 0.37)
+  assert.equal(Math.round(flow.inflowPct), 78, 'แท่งเล็กคิดเทียบแท่งใหญ่ในการ์ดเดียวกัน')
+  assert.equal(flow.releasedPct, 100)
+  assert.equal(flow.netLabel, 'ออกมากกว่าเข้า 0.08 ล้าน ลบ.ม.')
+  assert.equal(flowCompare(0.5, 0.2).netLabel, 'เข้ามากกว่าออก 0.3 ล้าน ลบ.ม.')
+  assert.equal(flowCompare(0.2, 0.2).netLabel, 'เข้า-ออกพอๆ กัน')
+  const oneSide = flowCompare(null, 0.12)
+  assert.equal(oneSide.inflowPct, 0)
+  assert.equal(oneSide.releasedPct, 100)
+  assert.equal(oneSide.netLabel, null, 'ขาดค่าฝั่งหนึ่งต้องไม่สรุปว่าเข้ามากหรือออกมาก')
+
+  // สัดส่วนน้ำในภาพตัดขวาง
+  assert.equal(channelFill(32), 0.32)
+  assert.equal(channelFill(0), 0)
+  assert.equal(channelFill(120), 1, 'เกินความจุลำน้ำให้เต็มภาพ ตัวเลขกับป้ายบอกส่วนที่เกินเอง')
+  assert.equal(channelFill(null), null, 'ไม่มีค่า = ไม่วาดภาพ ห้ามเดาจากระดับตลิ่ง')
+  assert.equal(channelFill(-1), null)
+}
+
+// ── 3 ตัวเลขสรุปบนสุด ──
+{
+  const now = Date.now()
+  const ago = h => new Date(now - h * 3600_000).toISOString()
+  const rain = [
+    { station_code: 'R1', station_name: 'บ้านบุญแจ่ม', rain_24h_mm: 1, recorded_at: ago(1) },
+    { station_code: 'R2', station_name: 'บ้านผาราง', rain_24h_mm: 96, recorded_at: ago(2) },
+    { station_code: 'R3', station_name: 'สถานีเก่า', rain_24h_mm: 200, recorded_at: ago(5) },
+  ]
+  const dams = [
+    { station_code: 'D1', dam_storage_mcm: 5.99, dam_capacity_mcm: 6.76, recorded_at: ago(10) },
+    { station_code: 'D2', dam_storage_mcm: 15.88, dam_capacity_mcm: 30.62, recorded_at: ago(10) },
+    { station_code: 'D3', dam_storage_mcm: 99, dam_capacity_mcm: 99, recorded_at: ago(60) },
+  ]
+  const levels = [
+    { station_code: 'L1', station_name: 'บ้านแม่คำมีตำหนักธรรม', bank_diff_m: 3.28, recorded_at: ago(1) },
+    { station_code: 'L2', station_name: 'หนองม่วงไข่', bank_diff_m: 3.65, recorded_at: ago(1) },
+  ]
+
+  const s = summaryStats({ rain, dams, levels, now })
+  assert.equal(s.rain.station.station_code, 'R2', 'ค่าสูงสุดที่ยังเป็นปัจจุบัน — สถานีค้าง 5 ชม. ไม่นับ')
+  assert.equal(s.rain.mm, 96)
+  assert.equal(s.rain.level.key, 'veryHeavy')
+
+  assert.equal(s.dam.count, 2, 'อ่างที่ข้อมูลค้างเกิน 48 ชม. ไม่เอามารวม')
+  assert.equal(Number(s.dam.percent.toFixed(1)), 58.5, 'รวมปริมาตร ÷ รวมความจุ (21.87/37.38)')
+  assert.notEqual(Number(s.dam.percent.toFixed(1)), 70.3, 'ห้ามเฉลี่ย % รายอ่าง อ่างเล็กจะมีน้ำหนักเท่าอ่างใหญ่')
+
+  assert.equal(s.bank.station.station_code, 'L1', 'ใกล้ตลิ่งที่สุด = bank_diff_m น้อยที่สุด')
+  assert.equal(s.bank.text, 'ต่ำกว่าตลิ่ง 3.28 ม.')
+  assert.equal(s.any, true)
+
+  // น้ำล้นตลิ่ง (ค่าติดลบ) ต้องมาก่อนสถานีที่ยังต่ำกว่าตลิ่งเสมอ
+  const over = summaryStats({ levels: [...levels, { station_code: 'L3', station_name: 'ล้น', bank_diff_m: -0.2, recorded_at: ago(1) }], now })
+  assert.equal(over.bank.station.station_code, 'L3')
+  assert.equal(over.bank.text, 'สูงกว่าตลิ่ง 0.20 ม.')
+
+  // ไม่มีข้อมูล / มีแต่ของค้าง = ไม่ขึ้นแถบสรุป
+  assert.equal(summaryStats({ now }).any, false)
+  assert.equal(summaryStats({ rain: [rain[2]], dams: [dams[2]], now }).any, false)
+  // อ่างที่ต้นทางยังไม่ลงตัวเลขของวันใหม่ (ปริมาตร null) ต้องไม่ทำให้ % เพี้ยน
+  assert.equal(summaryStats({ dams: [{ dam_storage_mcm: null, dam_capacity_mcm: 6.76, recorded_at: ago(1) }], now }).dam, null)
 }
 
 console.log('✅ water-situation: ผ่านทุกข้อ')
