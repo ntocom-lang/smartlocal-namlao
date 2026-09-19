@@ -9,8 +9,13 @@ import { previousOdometer, thaiDay } from '../src/lib/patientBooking.js'
 process.env.PATIENT_UI_QA = '1'
 const { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, day, calendarDay } = await import('./patient-booking-db.test.mjs')
 await actor(admin); await rpc('patient_booking_save_settings',[tenant,(await rpc('patient_booking_workspace',[tenant])).settings.revision,settings])
+const setupTenant='00000000-0000-4000-8000-000000009001',setupAdmin='00000000-0000-4000-8000-000000009002',setupPartner='00000000-0000-4000-8000-000000009003'
+await db.exec('RESET ROLE')
+await db.query('INSERT INTO public.municipalities(id) VALUES($1)',[setupTenant])
+await db.query("INSERT INTO public.profiles(id,municipality_id,role,full_name) VALUES($1,$2,'admin','TEST ผู้รับผิดชอบรถ')",[setupAdmin,setupTenant])
+await db.query("INSERT INTO public.referral_partners(id,municipality_id,name,is_active,document_types,min_lead_days) VALUES($1,$2,'TEST กองทุนรถรับส่ง',true,ARRAY['patient_transport_request'],0)",[setupPartner,setupTenant])
 let chain = Promise.resolve()
-const users = { citizen, coordinator, driver, admin, anonymous: null }
+const users = { setupadmin:setupAdmin, citizen, coordinator, driver, admin, anonymous: null }
 const order = {
  patient_booking_update_schedule:['p_muni','p_trip','p_revision','p_notice','p_pickup','p_return'],
  patient_booking_info:['p_muni'],patient_booking_workspace:['p_muni'],patient_booking_submit:['p_muni','p_id','p_data'],
@@ -26,7 +31,7 @@ const plugin = {
  load(id){
   const normalized=id.replaceAll('\\','/')
   if(id==='\0patient-entry.js')return `import React from 'react';import {createRoot} from 'react-dom/client';import {BrowserRouter} from 'react-router-dom';import Page from '/src/pages/PatientTransportBooking.jsx';import '/src/index.css';createRoot(document.getElementById('root')).render(React.createElement(BrowserRouter,null,React.createElement(Page)));`
-  if(normalized.endsWith('/contexts/TenantContext.jsx'))return `export const useTenant=()=>({tenant:{id:'${tenant}',name:'อบต. TEST'},isModuleEnabled:()=>true})`
+  if(normalized.endsWith('/contexts/TenantContext.jsx'))return `export const useTenant=()=>({tenant:{id:new URLSearchParams(location.search).get('as')==='setupadmin'?'${setupTenant}':'${tenant}',name:'อบต. TEST'},isModuleEnabled:()=>true})`
   if(normalized.endsWith('/contexts/AuthContext.jsx'))return `const role=new URLSearchParams(location.search).get('as')||'citizen';const ids=${JSON.stringify(users)};export const useAuth=()=>({session:{user:{id:ids[role]}},profileName:'TEST Browser Requester'});`
   if(normalized.endsWith('/lib/supabase.js'))return `export const supabase={rpc:async(name,args)=>{const user=new URLSearchParams(location.search).get('as')||'citizen';return (await fetch('/__patient_rpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,args,user})})).json()}};`
  },
@@ -47,6 +52,26 @@ page.on('pageerror',e=>errors.push(e.message))
 await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort())
 const visit=async (as, home=true)=>{await page.goto(`${base}/__patient?as=${as}`);await page.getByRole('button',{name:'หน้าบริการ',exact:true}).waitFor();if(home)await page.getByRole('button',{name:'หน้าบริการ',exact:true}).click()}
 try{
+ await visit('setupadmin');await page.getByRole('button',{name:'ตั้งค่ารถและเปิดบริการ',exact:true}).click()
+ await page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกค่าตั้งต้นแล้ว'}).waitFor()
+ await actor(setupAdmin);assert.equal((await rpc('patient_booking_workspace',[setupTenant])).settings.enabled,false)
+ console.log('PASS first-time empty draft settings saved without enabling booking')
+ await page.locator('select').filter({has:page.locator(`option[value="${setupPartner}"]`)}).selectOption(setupPartner)
+ await page.getByLabel('บัญชีคนขับ',{exact:true}).selectOption(setupAdmin)
+ await page.getByRole('group',{name:'เจ้าหน้าที่ผู้ยืนยันคิว',exact:true}).getByRole('checkbox').check()
+ await page.getByLabel('ที่นั่งผู้โดยสาร ไม่รวมคนขับ',{exact:true}).fill('4');await page.getByLabel('ที่ยึดรถเข็น',{exact:true}).fill('1');await page.getByLabel('ที่ยึดเปล',{exact:true}).fill('1');await page.getByLabel('เบอร์ติดต่อหน่วยงาน',{exact:true}).fill('0800000000')
+ await page.getByRole('button',{name:'เพิ่มเส้นทาง',exact:true}).click();await page.getByLabel('ชื่อโรงพยาบาล — พื้นที่รับ',{exact:true}).fill('TEST โรงพยาบาลใกล้เคียง');await page.getByLabel('นาทีต่อขา',{exact:true}).fill('30')
+ await page.locator('summary').filter({hasText:'ข้อมูลก่อนเปิดบริการ'}).click()
+ await page.getByLabel('ข้อความแจ้งการใช้ข้อมูลที่ผู้รับผิดชอบตรวจรับแล้ว').fill('TEST ข้อความจำลองเท่านั้น ไม่ใช่ข้อความอนุมัติสำหรับใช้งานจริง')
+ await page.getByRole('checkbox',{name:'เปิดรับจองรถออนไลน์',exact:true}).check();await page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true}).click()
+ await page.getByRole('alert').filter({hasText:'ยังเปิดรับจองไม่ได้'}).waitFor();assert.match(await page.getByRole('alert').textContent(),/ตรวจวันหยุด/);assert.match(await page.getByRole('alert').textContent(),/ข้อมูลการมอบหมาย/)
+ console.log('PASS incomplete first-time setup names the exact missing calendar and delegation fields')
+ await page.getByLabel('ตรวจปฏิทินวันหยุดครอบคลุมถึง',{exact:true}).fill(day)
+ await page.getByLabel(/อ้างอิงหนังสือที่กองทุนมอบให้/).fill('TEST การมอบหมายจำลอง')
+ await page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกค่าตั้งต้นแล้ว'}).waitFor()
+ await actor(setupAdmin);const initialSettings=(await rpc('patient_booking_workspace',[setupTenant])).settings;assert.equal(initialSettings.enabled,true);assert.equal(initialSettings.driver_id,setupAdmin);assert.deepEqual(initialSettings.coordinator_ids,[setupAdmin]);assert.equal((await rpc('patient_booking_info',[setupTenant])).enabled,true)
+ await page.getByRole('button',{name:'หน้าบริการ',exact:true}).click();await page.getByRole('button',{name:'ขอจองรถรับส่ง',exact:true}).waitFor()
+ console.log('PASS first-time setup completed through actual UI and booking opens; one account serves both duties')
  for(const [as, role] of [['anonymous','citizen'],['citizen','citizen'],['coordinator','coordinator'],['driver','driver'],['admin','admin']]) {
   await visit(as,false);await page.getByRole('button',{name:'คู่มือและแนะนำการใช้งาน',exact:true}).click()
   const help=page.getByRole('region',{name:'คู่มือรถรับส่งผู้ป่วย'});assert.equal(await help.getByLabel('คู่มือสำหรับ',{exact:true}).inputValue(),role)
