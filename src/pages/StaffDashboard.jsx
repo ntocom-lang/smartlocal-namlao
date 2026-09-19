@@ -66,6 +66,7 @@ const PublicAssistanceWizard = lazy(() => import('./PublicAssistanceWizard'))
 const AssetBorrowRequestWizard = lazy(() => import('./AssetBorrowRequestWizard'))
 const AssetBorrowRequestPanel = lazy(() => import('../components/staff/AssetBorrowRequestPanel'))
 const PatientTransportPanel = lazy(() => import('../components/staff/PatientTransportPanel'))
+const PatientTransportStaff = lazy(() => import('./PatientTransportStaff'))
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -157,9 +158,10 @@ const STANDALONE_GROUPS = [
     items: [
       { key: 'complaints', label: 'คำร้อง',     Icon: MessageSquareWarning, color: '#ef4444', bg: '#fee2e2', desc: 'รับเรื่อง ตรวจสอบ มอบหมาย และติดตามผล' },
       { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', Icon: FileText,       color: '#8b5cf6', bg: '#ede9fe', desc: 'รับคำขอเอกสารจากประชาชน ออกเลข และติดตามสถานะ' },
-      // externalUrl เพราะเป็นหน้าแยกที่ route /staff/patient-transport (ModuleGuard คุมด้วยคีย์เดียวกัน)
+      // โมดูลในโครงหน้าเจ้าหน้าที่ (เมนูบน/ซ้ายครบเหมือนโมดูลอื่น) · route /staff/patient-transport
+      // ยังใช้ได้ แต่เป็นทางลัดที่พามาเปิดโมดูลนี้ในโครงเดิม ไม่ใช่หน้าลอยแยก
       // คีย์อยู่ใน MANAGED_MODULE_KEYS จึงโผล่เฉพาะ อปท. ที่เปิดโมดูลนี้ — เดิมเป็นปุ่มฝังบนหัวหน้าจอ
-      { key: PATIENT_TRANSPORT_MODULE_KEY, label: 'รถรับ-ส่งผู้ป่วย', Icon: Ambulance, color: '#0284c7', bg: '#e0f2fe', desc: 'รับเรื่อง จัดคิวรถ และออกหนังสือนำส่งกองทุน', externalUrl: '/staff/patient-transport' },
+      { key: PATIENT_TRANSPORT_MODULE_KEY, label: 'รถรับ-ส่งผู้ป่วย', Icon: Ambulance, color: '#0284c7', bg: '#e0f2fe', desc: 'รับเรื่อง จัดคิวรถ และออกหนังสือนำส่งกองทุน' },
     ],
   },
   {
@@ -2731,6 +2733,7 @@ export default function StaffDashboard() {
             {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
             {activeModule === 'waste' && <WasteScheduleManager tenant={tenant} />}
+            {activeModule === PATIENT_TRANSPORT_MODULE_KEY && <PatientTransportStaff onBack={() => setActiveModule('home')} />}
             {activeModule === 'borrowable-assets' && (
               <BorrowableAssetsManager tenant={tenant}
                 assetRole={role === 'admin' || role === 'superadmin' ? 'asset_admin' : profile?.asset_role}

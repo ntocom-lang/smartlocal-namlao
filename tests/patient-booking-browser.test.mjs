@@ -243,6 +243,11 @@ try{
  await visit('admin');await page.getByRole('button',{name:'ตั้งค่า',exact:true}).click();await page.getByRole('heading',{name:'ตั้งค่ารถและการให้บริการ'}).or(page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true})).first().waitFor()
  const citizenSource=await readFile(new URL('../src/pages/CitizenDocRequest.jsx',import.meta.url),'utf8');const staffSource=await readFile(new URL('../src/pages/StaffDashboard.jsx',import.meta.url),'utf8')
  assert(citizenSource.indexOf('<Navigate to="/patient-transport" replace />') < citizenSource.indexOf('if (needsIdCard)'));assert(!citizenSource.includes('PatientTransportWizard'));assert(!staffSource.includes('PatientTransportWizard'));assert(citizenSource.includes('<Navigate to="/patient-transport" replace />'));assert(staffSource.includes("onSelectPatientTransport={() => { setShowAdd(false); navigate('/staff/patient-transport') }}"));assert(staffSource.includes('<PatientTransportPanel'))
+ // หน้าเจ้าหน้าที่ต้องอยู่ในโครงเดิม (เมนูบน/ซ้าย) ไม่ใช่หน้าลอยแยก — เรนเดอร์เป็นโมดูลของแดชบอร์ด
+ assert(staffSource.includes('activeModule === PATIENT_TRANSPORT_MODULE_KEY && <PatientTransportStaff'),'แดชบอร์ดเจ้าหน้าที่ต้องเรนเดอร์โมดูลนี้เอง')
+ assert(!staffSource.includes("externalUrl: '/staff/patient-transport'"),'เมนูต้องไม่พาออกไปหน้าลอยแยก')
+ const appSource=await readFile(new URL('../src/App.jsx',import.meta.url),'utf8')
+ assert(appSource.includes('<Route path="/staff/patient-transport" element={<Navigate to="/staff" state={{ module: PATIENT_TRANSPORT_MODULE_KEY }} replace />} />'),'ลิงก์เดิมต้องพาเข้าโมดูลในโครงหน้าเจ้าหน้าที่')
  const citizenPage=await readFile(new URL('../src/pages/PatientTransportBooking.jsx',import.meta.url),'utf8')
  const staffPage=await readFile(new URL('../src/pages/PatientTransportStaff.jsx',import.meta.url),'utf8')
  assert(citizenPage.includes("'patient_booking_mine'")&&!citizenPage.includes('patient_booking_workspace'),'หน้าประชาชนต้องไม่ดึงคิวทั้งหน่วยงาน')
