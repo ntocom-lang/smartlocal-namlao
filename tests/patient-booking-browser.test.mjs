@@ -4,7 +4,7 @@ import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwind from '@tailwindcss/vite'
 import { chromium } from 'playwright'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { previousOdometer, thaiDay } from '../src/lib/patientBooking.js'
 process.env.PATIENT_UI_QA = '1'
 const { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, day, calendarDay } = await import('./patient-booking-db.test.mjs')
@@ -186,5 +186,16 @@ try{
 
  for(const width of [320,390,768,1024]){await page.setViewportSize({width,height:900});for(const as of ['citizen','coordinator','driver','admin']){await visit(as);const tab={citizen:'หน้าบริการ',coordinator:'จัดคิว',driver:'งานคนขับ',admin:'ตั้งค่า'}[as];await page.getByRole('button',{name:tab,exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${as} overflow`)}console.log(`PASS rendered ${width}px four roles`)}
  if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await visit('citizen');await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-live-ui-390.png`,fullPage:true});await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-queue-390.png`,fullPage:true})}
+ // Disabled booking has no second intake form; administrators retain setup access.
+ await actor(admin);const currentSettings=(await rpc('patient_booking_workspace',[tenant])).settings
+ await rpc('patient_booking_save_settings',[tenant,currentSettings.revision,{...settings,enabled:false}])
+ await visit('citizen',false);await page.getByText('หน่วยงานยังไม่เปิดรับจองรถออนไลน์ กรุณาติดต่อเจ้าหน้าที่เพื่อสอบถามบริการ',{exact:true}).waitFor()
+ assert.equal(await page.locator('a[href*="type=patient_transport_request"]').count(),0)
+ await page.getByRole('link',{name:'ติดตามคำขอที่เคยยื่นไว้',exact:true}).waitFor()
+ await page.getByRole('button',{name:'คู่มือและแนะนำการใช้งาน',exact:true}).click();await page.getByRole('button',{name:'แนะนำทีละขั้น',exact:true}).click();await page.getByRole('button',{name:'จบคำแนะนำ',exact:true}).waitFor()
+ await visit('admin');await page.getByRole('button',{name:'ตั้งค่ารถและเปิดบริการ',exact:true}).click();await page.getByRole('button',{name:'ตั้งค่า',exact:true}).waitFor()
+ const citizenSource=await readFile(new URL('../src/pages/CitizenDocRequest.jsx',import.meta.url),'utf8');const staffSource=await readFile(new URL('../src/pages/StaffDashboard.jsx',import.meta.url),'utf8')
+ assert(!citizenSource.includes('PatientTransportWizard'));assert(!staffSource.includes('PatientTransportWizard'));assert(citizenSource.includes('<Navigate to="/patient-transport" replace />'));assert(staffSource.includes("onSelectPatientTransport={() => { setShowAdd(false); navigate('/patient-transport') }}"));assert(staffSource.includes('<PatientTransportPanel'))
+ console.log('PASS unified entry routes, no fallback intake, disabled service/admin setup, history retained')
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS)await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-schedule-failure.png`,fullPage:true});throw error }finally{await browser.close();await server.close();await db.close()}

@@ -12,7 +12,7 @@ import BookingSettings from '../components/patientTransport/BookingSettings'
 import { BookingCards, CoordinatorQueue, DriverTrips } from '../components/patientTransport/BookingOperations'
 import { buildTripForwardLetterHtml, buildTripMonthReportHtml } from '../lib/patientTransportPrint'
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
-import { buttonClass, primaryClass, clockTime, orgAbbr } from '../lib/patientBooking'
+import { buttonClass, primaryClass, clockTime } from '../lib/patientBooking'
 
 export default function PatientTransportBooking() {
   const { tenant } = useTenant()
@@ -44,7 +44,7 @@ export default function PatientTransportBooking() {
     }).catch(e => {
       if (generation !== sequence.current) return
       setData(null)
-      setError(['PGRST202', '42883'].includes(e.code) ? 'ระบบจองรถยังไม่ได้เปิดติดตั้ง กรุณาใช้ช่องทางรับเรื่องเดิมหรือติดต่อเจ้าหน้าที่' : `โหลดข้อมูลไม่สำเร็จ: ${e.message || 'กรุณาลองใหม่'}`)
+      setError(['PGRST202', '42883'].includes(e.code) ? 'ระบบจองรถยังไม่พร้อมใช้งาน กรุณาติดต่อเจ้าหน้าที่' : `โหลดข้อมูลไม่สำเร็จ: ${e.message || 'กรุณาลองใหม่'}`)
     })
   }, [tenantId, uid])
   useEffect(() => {
@@ -133,7 +133,7 @@ export default function PatientTransportBooking() {
       </nav>
       {view === 'home' && <>
         <section className="grid gap-6 rounded-2xl bg-sky-50 p-5 sm:grid-cols-2 sm:p-8"><div><p className="text-sm font-semibold text-sky-800">บริการสำหรับทุกคนในเขตพื้นที่</p><h2 className="my-3 text-3xl font-bold leading-snug">ถึงวันนัด<br />ให้เราช่วยพาไป</h2><p>จองไปโรงพยาบาลใกล้เคียง ญาติหรือผู้ดูแลจองแทนได้ ไม่ต้องใช้เลขสมาชิกกองทุน</p>
-          {info?.enabled ? <><p className="mt-3 text-sm">วันราชการ {clockTime(info.office_start)}–{clockTime(info.office_end)} · ตามปฏิทินหน่วยงาน</p><div className="mt-5 flex flex-wrap gap-3">{uid ? <button className={primaryClass} onClick={() => { setBookingSeed({}); setView('book') }}>ขอจองรถรับส่ง</button> : <Link to="/auth" state={{ from: '/patient-transport' }} className={`${primaryClass} inline-flex items-center`}>เข้าสู่ระบบเพื่อจองรถ</Link>}<button className={buttonClass} onClick={() => setView('calendar')}>ดูวันว่าง / ขอร่วมเที่ยว</button><button className={buttonClass} onClick={() => setView('mine')}>ติดตามการจอง</button></div></> : <><p className="mt-3 text-sm">ยื่นคำขอได้ทางนี้ เจ้าหน้าที่ {orgAbbr()} ตรวจคำขอ ประสานรถของกองทุน แล้วแจ้งผลให้ทราบ</p><div className="mt-5 flex flex-wrap gap-3"><Link to="/doc-request?type=patient_transport_request" className={`${primaryClass} inline-flex items-center`}>ยื่นคำขอรถรับ-ส่งผู้ป่วย</Link><Link to="/my-docs" className={`${buttonClass} inline-flex items-center`}>ติดตามคำขอ</Link></div></>}
+          {info?.enabled ? <><p className="mt-3 text-sm">วันราชการ {clockTime(info.office_start)}–{clockTime(info.office_end)} · ตามปฏิทินหน่วยงาน</p><div className="mt-5 flex flex-wrap gap-3">{uid ? <button className={primaryClass} onClick={() => { setBookingSeed({}); setView('book') }}>ขอจองรถรับส่ง</button> : <Link to="/auth" state={{ from: '/patient-transport' }} className={`${primaryClass} inline-flex items-center`}>เข้าสู่ระบบเพื่อจองรถ</Link>}<button className={buttonClass} onClick={() => setView('calendar')}>ดูวันว่าง / ขอร่วมเที่ยว</button><button className={buttonClass} onClick={() => setView('mine')}>ติดตามการจอง</button></div></> : <><p className="mt-3 text-sm">หน่วยงานยังไม่เปิดรับจองรถออนไลน์ กรุณาติดต่อเจ้าหน้าที่เพื่อสอบถามบริการ</p>{isAdmin && <div className="mt-5"><button className={primaryClass} onClick={() => setView('settings')}>ตั้งค่ารถและเปิดบริการ</button></div>}{isCoordinator && !isAdmin && <p className="mt-3 text-sm">ให้ผู้ดูแลตั้งค่ารถ คนขับ เจ้าหน้าที่จัดคิว เส้นทางและเวลาให้บริการก่อนเปิดรับจอง</p>}</>}
         </div><div className="space-y-5 rounded-2xl bg-white p-5">{[[Home, 'รับจากจุดที่แจ้ง', 'ระบุบ้านและจุดสังเกต'], [Hospital, 'ไปโรงพยาบาลตามนัด', 'รองรับรถเข็น/เปลตามความพร้อมของรถ'], [CalendarDays, 'มีแผนรับกลับ', 'รอรับกลับ หรือกลับมารับภายหลัง']].map(([Icon, title, detail]) => <div key={title} className="flex gap-3"><Icon className="shrink-0 text-sky-800" size={25} /><div><h3 className="font-bold">{title}</h3><p className="text-sm text-slate-600">{detail}</p></div></div>)}</div></section>
         <p className="mt-4 rounded-xl bg-amber-50 p-4">เจ็บป่วยฉุกเฉิน <a href="tel:1669" className="font-bold underline">โทร 1669</a> อย่ารอคิวจองรถ</p>
       </>}
@@ -152,6 +152,6 @@ export default function PatientTransportBooking() {
       {workspace?.limited && <p className="mt-4 rounded-xl bg-amber-50 p-3">รายการเกินขอบเขตหน้าจอ กรุณาติดต่อผู้ดูแลก่อนจัดคิวเพิ่มเติม</p>}
       {workspace?.notices?.length > 0 && <details className="mt-6 rounded-xl border border-slate-200 p-4"><summary className="min-h-11 cursor-pointer font-semibold">แจ้งเตือนการเดินทาง ({workspace.notices.length})</summary>{workspace.notices.map(n => <p key={n.id} className="border-t border-slate-100 py-3">{n.message}</p>)}</details>}
     </>}
-    <footer className="mt-6 flex flex-wrap gap-4 border-t border-slate-200 pt-4 text-sm"><Link to="/my-docs" className="inline-flex min-h-11 items-center text-sky-800 underline">ประวัติคำขอที่ยื่นผ่านเอกสารของฉัน</Link>{info?.contact_phone && <a className="inline-flex min-h-11 items-center text-sky-800 underline" href={`tel:${info.contact_phone}`}>ติดต่อเจ้าหน้าที่ {info.contact_phone}</a>}</footer>
+    <footer className="mt-6 flex flex-wrap gap-4 border-t border-slate-200 pt-4 text-sm"><Link to="/my-docs" className="inline-flex min-h-11 items-center text-sky-800 underline">ติดตามคำขอที่เคยยื่นไว้</Link>{info?.contact_phone && <a className="inline-flex min-h-11 items-center text-sky-800 underline" href={`tel:${info.contact_phone}`}>ติดต่อเจ้าหน้าที่ {info.contact_phone}</a>}</footer>
   </div>
 }

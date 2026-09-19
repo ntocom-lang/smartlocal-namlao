@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate, Link, useSearchParams } from 'react-router-dom'
+import { useNavigate, Link, Navigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, FileText, CheckCircle2, Loader2, Copy, Check, ChevronRight, ShieldCheck } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -11,7 +11,6 @@ import WasteCollectionCancelWizard from './WasteCollectionCancelWizard'
 import WaterSupplyRequestWizard from './WaterSupplyRequestWizard'
 import PublicAssistanceWizard from './PublicAssistanceWizard'
 import AssetBorrowRequestWizard from './AssetBorrowRequestWizard'
-import PatientTransportWizard from './PatientTransportWizard'
 import { WATERWORKS_DOCUMENT_TYPES, WATERWORKS_MODULE_KEY, withoutRemovedTypes } from '../lib/documentTypes'
 import { PATIENT_TRANSPORT_TYPE, PATIENT_TRANSPORT_MODULE_KEY } from '../lib/patientTransport'
 
@@ -423,6 +422,9 @@ export default function CitizenDocRequest() {
   }
 
   // ─── Step 1: Doc type picker ───────────────────────────────────────────────
+  // All patient transport entry links resolve to the same booking service.
+  if (searchParams.get('type') === PATIENT_TRANSPORT_TYPE || isPatientTransportRequest) return <Navigate to="/patient-transport" replace />
+
   if (!selected) {
     return (
       <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
@@ -540,13 +542,6 @@ export default function CitizenDocRequest() {
   // จำนวนว่างตามช่วงวันที่ที่ขอ และเขียน 3 ตารางในธุรกรรมเดียวผ่าน RPC — ฟอร์มทั่วไปทำไม่ได้
   if (isAssetBorrowRequest) {
     return <AssetBorrowRequestWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
-  }
-
-  // คำขอรถรับ-ส่งผู้ป่วยต้องคัดกรองเหตุฉุกเฉินก่อนเห็นฟอร์ม เลือกหน่วยงานผู้จัดรถจากทะเบียน
-  // และติ๊กยินยอมส่งต่อข้อมูลสุขภาพ แล้วเขียน 2 ตารางในธุรกรรมเดียวผ่าน RPC — ฟอร์มทั่วไปทำไม่ได้
-  if (isPatientTransportRequest) {
-    // ย้อนกลับไปหน้าบริการของตัวเอง ไม่ใช่รายการคำขอเอกสารที่ไม่มีบริการนี้แล้ว
-    return <PatientTransportWizard tenant={tenant} session={session} onBack={() => navigate('/patient-transport')} />
   }
 
   // ─── Step 2: Form ──────────────────────────────────────────────────────────
