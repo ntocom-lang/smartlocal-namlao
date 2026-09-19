@@ -1,4 +1,9 @@
 // Suggestions only. PostgreSQL recomputes the complete plan under the resource lock.
+import { activeOrgTerms } from './orgTerms.js'
+
+// คำเรียกหน่วยงานสั้นตามประเภทจริง (อบต./ทต./ทม./ทน./อบจ.) — เดิมฝัง "อบต." ตายตัว
+// ทำให้เทศบาลเห็นข้อความผิดประเภท · org_type ที่ไม่มีตัวย่อ (เช่น 'เทศบาล' เฉยๆ) ใช้คำกลาง
+export function orgAbbr() { return activeOrgTerms().abbr || 'หน่วยงาน' }
 export const BOOKING_STATUS = { submitted: 'รับคำขอแล้ว รอยืนยันรถ', confirmed: 'ยืนยันรถแล้ว', completed: 'จบเที่ยวแล้ว', cancelled: 'ยกเลิกแล้ว' }
 export const TRIP_STATUS = { confirmed: 'ยืนยันรถแล้ว', outbound: 'กำลังรับ–ส่งขาไป', hospital: 'ถึงโรงพยาบาล รอรับกลับ', returning: 'กำลังรับ–ส่งขากลับ', completed: 'จบเที่ยวแล้ว', issue: 'ต้องประสานเหตุขัดข้อง', cancelled: 'ยกเลิกแผนเที่ยว' }
 export const RETURN_MODES = { wait: 'รอรับกลับ', later: 'กลับมารับภายหลัง', one_way: 'ขาไปอย่างเดียว' }

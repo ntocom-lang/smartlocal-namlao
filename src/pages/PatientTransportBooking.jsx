@@ -10,7 +10,7 @@ import BookingSettings from '../components/patientTransport/BookingSettings'
 import { BookingCards, CoordinatorQueue, DriverTrips } from '../components/patientTransport/BookingOperations'
 import { buildTripForwardLetterHtml, buildTripMonthReportHtml } from '../lib/patientTransportPrint'
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
-import { buttonClass, primaryClass, clockTime } from '../lib/patientBooking'
+import { buttonClass, primaryClass, clockTime, orgAbbr } from '../lib/patientBooking'
 
 export default function PatientTransportBooking() {
   const { tenant } = useTenant()
@@ -118,7 +118,7 @@ export default function PatientTransportBooking() {
   }
   return <div className="mx-auto min-h-screen max-w-5xl bg-white px-4 py-6 text-slate-900">
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><Link to="/" className={`${buttonClass} inline-flex items-center`}>← หน้าหลัก</Link><button className={`${buttonClass} inline-flex items-center gap-2`} onClick={reload} disabled={busy}><RefreshCw size={16} />โหลดข้อมูลล่าสุด</button></div>
-    <header className="mb-5"><p className="text-sm font-semibold text-sky-800">{tenant?.name} · ดูแลใกล้บ้าน</p><h1 className="mt-1 text-2xl font-bold">รถรับส่งผู้ป่วย</h1><p className="mt-2 text-sm text-slate-600">รถของ{info?.owner_name || 'กองทุน'} · เจ้าหน้าที่ อบต. รับจองและยืนยันคิว</p></header>
+    <header className="mb-5"><p className="text-sm font-semibold text-sky-800">{tenant?.name} · ดูแลใกล้บ้าน</p><h1 className="mt-1 text-2xl font-bold">รถรับส่งผู้ป่วย</h1><p className="mt-2 text-sm text-slate-600">รถของ{info?.owner_name || 'กองทุน'} · เจ้าหน้าที่ {orgAbbr()} รับเรื่องและจัดคิว</p></header>
     {error && <div role="alert" className="mb-4 rounded-xl bg-red-50 p-4 text-red-800">{error}</div>}
     {notice && <p role="status" className="mb-4 rounded-xl bg-emerald-50 p-4">{notice}</p>}
     {!current && !error && <p role="status">กำลังโหลดบริการ…</p>}
@@ -128,7 +128,7 @@ export default function PatientTransportBooking() {
       </nav>
       {view === 'home' && <>
         <section className="grid gap-6 rounded-2xl bg-sky-50 p-5 sm:grid-cols-2 sm:p-8"><div><p className="text-sm font-semibold text-sky-800">บริการสำหรับทุกคนในเขตพื้นที่</p><h2 className="my-3 text-3xl font-bold leading-snug">ถึงวันนัด<br />ให้เราช่วยพาไป</h2><p>จองไปโรงพยาบาลใกล้เคียง ญาติหรือผู้ดูแลจองแทนได้ ไม่ต้องใช้เลขสมาชิกกองทุน</p>
-          {info?.enabled ? <><p className="mt-3 text-sm">วันราชการ {clockTime(info.office_start)}–{clockTime(info.office_end)} · ตามปฏิทินหน่วยงาน</p><div className="mt-5 flex flex-wrap gap-3">{uid ? <button className={primaryClass} onClick={() => { setBookingSeed({}); setView('book') }}>ขอจองรถรับส่ง</button> : <Link to="/auth" state={{ from: '/patient-transport' }} className={`${primaryClass} inline-flex items-center`}>เข้าสู่ระบบเพื่อจองรถ</Link>}<button className={buttonClass} onClick={() => setView('calendar')}>ดูวันว่าง / ขอร่วมเที่ยว</button><button className={buttonClass} onClick={() => setView('mine')}>ติดตามการจอง</button></div></> : <p className="mt-5 rounded-xl bg-white p-4">ยังไม่เปิดรับจองผ่านตารางรถ ติดต่อเจ้าหน้าที่หรือใช้ช่องทางรับเรื่องเดิมด้านล่าง</p>}
+          {info?.enabled ? <><p className="mt-3 text-sm">วันราชการ {clockTime(info.office_start)}–{clockTime(info.office_end)} · ตามปฏิทินหน่วยงาน</p><div className="mt-5 flex flex-wrap gap-3">{uid ? <button className={primaryClass} onClick={() => { setBookingSeed({}); setView('book') }}>ขอจองรถรับส่ง</button> : <Link to="/auth" state={{ from: '/patient-transport' }} className={`${primaryClass} inline-flex items-center`}>เข้าสู่ระบบเพื่อจองรถ</Link>}<button className={buttonClass} onClick={() => setView('calendar')}>ดูวันว่าง / ขอร่วมเที่ยว</button><button className={buttonClass} onClick={() => setView('mine')}>ติดตามการจอง</button></div></> : <><p className="mt-3 text-sm">ยื่นคำขอได้ทางนี้ เจ้าหน้าที่ {orgAbbr()} ตรวจคำขอ ประสานรถของกองทุน แล้วแจ้งผลให้ทราบ</p><div className="mt-5 flex flex-wrap gap-3"><Link to="/doc-request?type=patient_transport_request" className={`${primaryClass} inline-flex items-center`}>ยื่นคำขอรถรับ-ส่งผู้ป่วย</Link><Link to="/my-docs" className={`${buttonClass} inline-flex items-center`}>ติดตามคำขอ</Link></div></>}
         </div><div className="space-y-5 rounded-2xl bg-white p-5">{[[Home, 'รับจากจุดที่แจ้ง', 'ระบุบ้านและจุดสังเกต'], [Hospital, 'ไปโรงพยาบาลตามนัด', 'รองรับรถเข็น/เปลตามความพร้อมของรถ'], [CalendarDays, 'มีแผนรับกลับ', 'รอรับกลับ หรือกลับมารับภายหลัง']].map(([Icon, title, detail]) => <div key={title} className="flex gap-3"><Icon className="shrink-0 text-sky-800" size={25} /><div><h3 className="font-bold">{title}</h3><p className="text-sm text-slate-600">{detail}</p></div></div>)}</div></section>
         <p className="mt-4 rounded-xl bg-amber-50 p-4">เจ็บป่วยฉุกเฉิน <a href="tel:1669" className="font-bold underline">โทร 1669</a> อย่ารอคิวจองรถ</p>
       </>}
@@ -146,6 +146,6 @@ export default function PatientTransportBooking() {
       {workspace?.limited && <p className="mt-4 rounded-xl bg-amber-50 p-3">รายการเกินขอบเขตหน้าจอ กรุณาติดต่อผู้ดูแลก่อนจัดคิวเพิ่มเติม</p>}
       {workspace?.notices?.length > 0 && <details className="mt-6 rounded-xl border border-slate-200 p-4"><summary className="min-h-11 cursor-pointer font-semibold">แจ้งเตือนการเดินทาง ({workspace.notices.length})</summary>{workspace.notices.map(n => <p key={n.id} className="border-t border-slate-100 py-3">{n.message}</p>)}</details>}
     </>}
-    <footer className="mt-6 flex flex-wrap gap-4 border-t border-slate-200 pt-4 text-sm">{!info?.booking_mode && <Link to="/doc-request?type=patient_transport_request" className="inline-flex min-h-11 items-center text-sky-800 underline">ช่องทางรับเรื่องเดิม</Link>}<Link to="/my-docs" className="inline-flex min-h-11 items-center text-sky-800 underline">ประวัติคำขอส่งต่อเดิม</Link>{info?.contact_phone && <a className="inline-flex min-h-11 items-center text-sky-800 underline" href={`tel:${info.contact_phone}`}>ติดต่อเจ้าหน้าที่ {info.contact_phone}</a>}</footer>
+    <footer className="mt-6 flex flex-wrap gap-4 border-t border-slate-200 pt-4 text-sm"><Link to="/my-docs" className="inline-flex min-h-11 items-center text-sky-800 underline">ประวัติคำขอที่ยื่นผ่านเอกสารของฉัน</Link>{info?.contact_phone && <a className="inline-flex min-h-11 items-center text-sky-800 underline" href={`tel:${info.contact_phone}`}>ติดต่อเจ้าหน้าที่ {info.contact_phone}</a>}</footer>
   </div>
 }

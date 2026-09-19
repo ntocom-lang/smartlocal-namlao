@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { buttonClass, primaryClass, inputClass, minutes, clockTime } from '../../lib/patientBooking'
+import { buttonClass, primaryClass, inputClass, minutes, clockTime, orgAbbr } from '../../lib/patientBooking'
 
 export default function BookingSettings({ workspace, busy, onSave }) {
   const [form, setForm] = useState(() => ({ enabled: false, partner_id: '', driver_id: '', coordinator_ids: [], office_start: 510, office_end: 990,
@@ -10,7 +10,7 @@ export default function BookingSettings({ workspace, busy, onSave }) {
   function changeRoute(index, key, value) { setForm(f => ({ ...f, routes: f.routes.map((r, i) => i === index ? { ...r, [key]: value } : r) })) }
   const partner = workspace.partners?.find(p => p.id === form.partner_id)
   return <form className="space-y-5" onSubmit={e => { e.preventDefault(); onSave(workspace.settings?.revision ?? 1, form) }}>
-    <h2 className="text-xl font-bold">ตั้งค่าครั้งเดียว · กองทุนเป็นเจ้าของรถ อบต. จัดคิว</h2>
+    <h2 className="text-xl font-bold">ตั้งค่าครั้งเดียว · กองทุนเป็นเจ้าของรถ {orgAbbr()} จัดคิว</h2>
     <p className="rounded-xl bg-amber-50 p-3 text-sm">ยืนยันความจุจากรถจริง ช่วงเวลาบริการ ปฏิทินวันหยุด และขอบเขตมอบหมายก่อนเปิดรับจอง ไม่ต้องเปิดบริการยืนยันใหม่ทุกวัน</p>
     <div className="grid gap-4 sm:grid-cols-2">
       <label>กองทุน/หน่วยงานเจ้าของรถ<select className={inputClass} value={form.partner_id || ''} onChange={set('partner_id')}><option value="">เลือกเจ้าของรถจากทะเบียนหน่วยงาน</option>{workspace.partners?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
@@ -22,7 +22,7 @@ export default function BookingSettings({ workspace, busy, onSave }) {
       {input('buffer_minutes', 'เวลาเผื่อก่อนนัด/หลังเที่ยว (นาที)', { type: 'number', min: 5, max: 90, required: true })}
       {input('boarding_minutes', 'เวลาขึ้นลงต่อผู้เดินทาง (นาที)', { type: 'number', min: 5, max: 60, required: true })}
       {input('contact_phone', 'เบอร์ติดต่อหน่วยงาน', { type: 'tel', maxLength: 10 })}{input('calendar_checked_through', 'ตรวจปฏิทินวันหยุดครอบคลุมถึง', { type: 'date' })}
-      {input('delegation_reference', 'อ้างอิงขอบเขตมอบหมาย อบต. ให้จัดคิว', { maxLength: 500 })}
+      {input('delegation_reference', `อ้างอิงหนังสือที่กองทุนมอบให้ ${orgAbbr()} จัดคิว`, { maxLength: 500 })}
     </div>
     <fieldset><legend className="font-semibold">เจ้าหน้าที่ผู้ยืนยันคิว</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{workspace.people?.filter(p => p.id !== form.driver_id).map(p => <label key={p.id} className="flex min-h-11 items-center gap-3"><input className="size-5" type="checkbox" checked={form.coordinator_ids.includes(p.id)} onChange={e => setForm(f => ({ ...f, coordinator_ids: e.target.checked ? [...f.coordinator_ids, p.id] : f.coordinator_ids.filter(id => id !== p.id) }))} />{p.name}</label>)}</div></fieldset>
     <fieldset><legend className="font-semibold">เส้นทางโรงพยาบาลและพื้นที่รับ · เวลาเดินทางรวมระหว่างจุดรับ</legend>

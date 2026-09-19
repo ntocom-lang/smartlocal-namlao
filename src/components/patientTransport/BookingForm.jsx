@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import MapPicker from '../MapPicker'
-import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, primaryClass, thaiDay, bangkokISO, clockTime, journeyWindow } from '../../lib/patientBooking'
+import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, primaryClass, thaiDay, bangkokISO, clockTime, journeyWindow, orgAbbr } from '../../lib/patientBooking'
 
 const shiftDay = days => thaiDay(Date.now() + days * 86400000)
 const dayClock = value => clockTime(((value % 1440) + 1440) % 1440)
@@ -97,7 +97,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       <div className="whitespace-pre-wrap rounded-xl border border-slate-200 p-4 text-sm">{info.privacy_notice}<p className="mt-3 font-bold">เจ้าของรถและผู้รับข้อมูล: {info.owner_name}</p></div>
       {form.relation !== 'self' && <label className="flex min-h-11 gap-3"><input className="mt-1 size-5 shrink-0" type="checkbox" required checked={form.representative_authorized} onChange={change('representative_authorized')} />ได้รับอนุญาตจากผู้ป่วย หรือมีอำนาจกระทำการแทนผู้ป่วยแล้ว</label>}
       <label className="flex min-h-11 gap-3"><input className="mt-1 size-5 shrink-0" type="checkbox" required checked={form.consent} onChange={change('consent')} />ยืนยันการใช้ข้อมูลตามข้อความข้างต้น และข้อมูลจองถูกต้อง</label>
-      <p className="text-sm text-slate-600">ส่งคำขอแล้วต้องรอเจ้าหน้าที่ อบต. ยืนยันรถและเวลารับ</p>
+      <p className="text-sm text-slate-600">ส่งคำขอแล้วต้องรอเจ้าหน้าที่ {orgAbbr()} ยืนยันรถและเวลารับ</p>
     </>}
     {(dayBlocked || outsideHours) && <div role="alert" className={`space-y-2 rounded-xl p-3 ${staffEntry ? 'bg-amber-50' : 'bg-red-50 text-red-900'}`}>
       {dayBlocked && <p>{dayBlocked}</p>}{outsideHours && <p>{outsideHours}</p>}
