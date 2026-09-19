@@ -17,6 +17,14 @@ export const SYNC_STALE_HOURS = 2
 // ระดับน้ำต่างกันน้อยกว่านี้ถือว่าทรงตัว — ค่าวัดแกว่งระดับเซนติเมตรเป็นปกติ
 export const TREND_FLAT_M = 0.02
 
+// สถานะสถานีเตือนภัยน้ำหลาก-ดินถล่มของกรมทรัพยากรน้ำ (แถวชนิด ews) เก่ากว่านี้ถือว่าไม่เป็นปัจจุบัน
+// สถานะของต้นทางค้างได้นาน และเกณฑ์ฝนของระบบนี้ใช้ฝนสะสม 12 ชม. (สมมติฐาน — ต้องตรงกับ FRESH_HOURS
+// ใน supabase/functions/ews-warning-notify ไม่งั้นเว็บกับ Telegram จะบอกคนละอย่าง)
+export const EWS_FRESH_HOURS = 12
+
+// ป้ายสำรองเผื่อแถวไม่มีข้อความ — ปกติ thaiwater-sync ใส่ป้าย/สีตามหน้าเว็บ ews.dwr.go.th ให้แล้ว
+const EWS_FALLBACK_TEXT = { 1: 'เฝ้าระวัง', 2: 'เตรียมพร้อม', 3: 'วิกฤติ' }
+
 // เกณฑ์ปริมาณฝนของกรมอุตุนิยมวิทยา (https://www.tmd.go.th/info/เกณฑ์อากาศ ตรวจ 2569-09-18)
 //   ฝนเล็กน้อย 0.1–10.0 · ฝนปานกลาง 10.1–35.0 · ฝนหนัก 35.1–90.0 · ฝนหนักมาก 90.1 มม. ขึ้นไป
 // ต่ำกว่า 0.1 มม. ไม่อยู่ในเกณฑ์ จึงแสดงว่า "ไม่มีฝน"
@@ -113,6 +121,42 @@ export function damTrend(current, previous) {
   return diff > 0
     ? { dir: 'up', diff, label: `เพิ่ม ${formatMcm(diff)} ล้าน ลบ.ม.` }
     : { dir: 'down', diff, label: `ลด ${formatMcm(Math.abs(diff))} ล้าน ลบ.ม.` }
+}
+
+// ป้ายเตือนภัยของสถานีหนึ่ง — คืน null เมื่อไม่ต้องแสดง
+// แสดงเฉพาะระดับ 1–3: ค่าอื่นของต้นทาง (0, 9, ติดลบ) เว็บของเขาเองแสดงเป็น "ปกติ" แต่ไม่มีเอกสาร
+// อธิบาย 9 ที่สถานีครึ่งประเทศเป็นอยู่ จึงไม่แปลความให้ประชาชนวางใจว่า "ปกติ"
+export function ewsAlert(station, now) {
+  const level = toNum(station?.situation_level)
+  if (level === null || !Number.isInteger(level) || level < 1 || level > 3) return null
+  if (!station.recorded_at) return null
+  return {
+    level,
+    text: station.situation_text || EWS_FALLBACK_TEXT[level],
+    color: safeColor(station.situation_color),
+    stale: isStale(station.recorded_at, now, EWS_FRESH_HOURS),
+  }
+}
+
+// เรื่องที่ต้องขึ้นแถบเตือนบนสุดของหน้า — ใช้กติกาเดียวกับ Telegram (water-alert-notify)
+//   ฝนหนักมาก: สถานีฝนของ อปท. ระดับ veryHeavy ตาม RAIN_LEVELS (กรมอุตุฯ) ที่ค่ายังเป็นปัจจุบัน
+//   สสน.: ข้อความเตือนของอำเภอตัวเองที่ RPC คัดมาแล้ว (24 ชม. ล่าสุดของแต่ละสถานี) — แสดงตามต้นฉบับ
+//   สถานีเตือนภัย ทน.: ระดับ "เตรียมพร้อม" ขึ้นไปที่สถานะยังเป็นปัจจุบัน (ปิดอยู่ ไม่มีแถวส่งมา)
+export function buildAlerts({ rain = [], ews = [], warnings = [], now }) {
+  const heavyRain = rain
+    .filter(s => rainLevel(s.rain_24h_mm)?.key === 'veryHeavy' && s.recorded_at && !isStale(s.recorded_at, now, STATION_STALE_HOURS))
+    .sort((a, b) => toNum(b.rain_24h_mm) - toNum(a.rain_24h_mm))
+  const ewsActive = ews
+    .map(s => ({ station: s, alert: ewsAlert(s, now) }))
+    .filter(x => x.alert && !x.alert.stale && x.alert.level >= 2)
+    .sort((a, b) => b.alert.level - a.alert.level || (toNum(a.station.distance_km) ?? 99) - (toNum(b.station.distance_km) ?? 99))
+  const official = (Array.isArray(warnings) ? warnings : []).filter(w => typeof w?.message === 'string' && w.message.trim())
+  return {
+    heavyRain,
+    warnings: official,
+    ews: ewsActive,
+    any: heavyRain.length > 0 || official.length > 0 || ewsActive.length > 0,
+  }
 }
 
 export function isStale(iso, now, hours) {

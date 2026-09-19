@@ -2,9 +2,10 @@
 // ประชาชนเข้าใจผิดว่าสถานีนอกพื้นที่วัดในหมู่บ้าน
 // รันด้วย: node tests/water-situation.test.mjs
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
-  DAM_LEVELS, DAM_STALE_HOURS, bankText, damLevel, damTrend, dataDayText, distanceText, formatMcm,
-  formatMm, isStale, mapUrl, measuredAtText, rainLevel, safeColor, stationPlace, waterTrend,
+  DAM_LEVELS, DAM_STALE_HOURS, EWS_FRESH_HOURS, RAIN_LEVELS, STATION_STALE_HOURS, bankText, buildAlerts, damLevel,
+  damTrend, dataDayText, distanceText, ewsAlert, formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainLevel, safeColor, stationPlace, waterTrend,
 } from '../src/lib/waterSituation.js'
 
 // ── เกณฑ์ปริมาณฝนของกรมอุตุนิยมวิทยา (ขอบช่วงทุกจุด) ──
@@ -136,6 +137,78 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
   assert.equal(dataDayText(today, morning), 'วันนี้')
   assert.equal(dataDayText(yesterday, morning), '18 ก.ย.')
   assert.equal(dataDayText(null, morning), '')
+}
+
+// ── สถานะสถานีเตือนภัยน้ำหลาก-ดินถล่ม (กรมทรัพยากรน้ำ) ──
+{
+  const now = new Date('2026-09-19T07:00:00Z') // 14:00 น.
+  const at = (hoursAgo) => new Date(now.getTime() - hoursAgo * 3600_000).toISOString()
+  const st = (level, hoursAgo = 1, extra = {}) => ({
+    situation_level: level, situation_text: null, situation_color: '#f9a73e', recorded_at: at(hoursAgo), ...extra,
+  })
+
+  // แสดงเฉพาะ 1–3 — 0 / 9 / ติดลบ ต้นทางไม่มีเอกสารอธิบาย ต้องไม่ขึ้นป้ายใดๆ (รวมถึงคำว่า "ปกติ")
+  for (const quiet of [0, 9, -999, null, '9', 4, 1.5]) {
+    assert.equal(ewsAlert(st(quiet), now), null, `สถานะ ${quiet} ต้องไม่แสดง`)
+  }
+  assert.equal(ewsAlert(null, now), null, 'สถานีฝนที่ไม่มีสถานีเตือนภัยคู่กัน')
+  assert.equal(ewsAlert(st(2, 1, { recorded_at: null }), now), null)
+
+  assert.deepEqual(ewsAlert(st(2, 1, { situation_text: 'เตรียมพร้อม' }), now),
+    { level: 2, text: 'เตรียมพร้อม', color: '#f9a73e', stale: false })
+  assert.equal(ewsAlert(st('3'), now).level, 3, 'ต้นทางส่งสถานะเป็นข้อความได้')
+  // ไม่มีข้อความจากแถว → ใช้ป้ายสำรองชุดเดียวกับหน้าเว็บกรมทรัพยากรน้ำ
+  assert.equal(ewsAlert(st(1), now).text, 'เฝ้าระวัง')
+  assert.equal(ewsAlert(st(3), now).text, 'วิกฤติ')
+  assert.equal(ewsAlert(st(2, 1, { situation_color: 'red' }), now).color, '#9ca3af', 'สีผิดรูปต้องไม่หลุดเข้า style')
+
+  assert.equal(EWS_FRESH_HOURS, 12)
+  assert.equal(ewsAlert(st(3, 11.9), now).stale, false)
+  assert.equal(ewsAlert(st(3, 12.1), now).stale, true, 'สถานะที่ค้างเกิน 12 ชม. ต้องถูกทำเป็นไม่เป็นปัจจุบัน')
+}
+
+// ── เกณฑ์ของแถบเตือนบนหน้า ต้องตรงกับ Telegram (water-alert-notify) ทุกค่า ──
+// อ่านจากซอร์สของฟังก์ชันตรงๆ กันคนแก้ฝั่งเดียว แล้วเว็บขึ้นแถบแต่ Telegram เงียบ (หรือกลับกัน)
+{
+  const src = readFileSync(new URL('../supabase/functions/water-alert-notify/index.ts', import.meta.url), 'utf8')
+  const constant = (name) => Number(src.match(new RegExp(`const ${name} = ([\\d.]+)`))?.[1])
+  // ฝนหนักมากของกรมอุตุฯ = มากกว่าเพดาน "ฝนหนัก" (90.0) → Telegram ใช้ 90.1
+  const heavyCeiling = RAIN_LEVELS.find(l => l.key === 'heavy').upTo
+  assert.equal(constant('HEAVY_RAIN_MM'), Math.round((heavyCeiling + 0.1) * 10) / 10)
+  assert.equal(constant('RAIN_FRESH_HOURS'), STATION_STALE_HOURS)
+  assert.equal(constant('EWS_FRESH_HOURS'), EWS_FRESH_HOURS)
+}
+
+// ── ตัวตัดสินใจแถบเตือน ──
+{
+  const now = new Date('2026-09-19T07:00:00Z')
+  const ago = (h) => new Date(now.getTime() - h * 3600_000).toISOString()
+  const r = (code, mm, h = 1) => ({ station_code: code, station_name: code, rain_24h_mm: mm, recorded_at: ago(h), distance_km: 5 })
+
+  const quiet = buildAlerts({ rain: [r('A', 90.0), r('B', 35)], ews: [], warnings: [], now })
+  assert.equal(quiet.any, false, '90.0 มม. ยังเป็นฝนหนัก ไม่ใช่ฝนหนักมาก')
+
+  const hit = buildAlerts({ rain: [r('A', 90.1), r('B', 132.5), r('C', 200, 4)], now })
+  assert.deepEqual(hit.heavyRain.map(s => s.station_code), ['B', 'A'], 'เรียงมากไปน้อย และตัดค่าที่เก่ากว่า 3 ชม. ทิ้ง')
+  assert.equal(hit.any, true)
+
+  const official = buildAlerts({
+    rain: [], now,
+    warnings: [{ issued_at: ago(2), message: 'สถานีX ต.น้ำเลา อ.ร้องกวาง จ.แพร่ ล้นตลิ่งแล้ว 10 ซม.' }, { message: '  ' }, null],
+  })
+  assert.equal(official.warnings.length, 1, 'ข้อความว่าง/ผิดรูปต้องไม่ขึ้นแถบ')
+  assert.equal(official.any, true)
+
+  const ewsOnly = buildAlerts({
+    now,
+    ews: [
+      { station_code: 'E1', situation_level: 1, recorded_at: ago(1) },
+      { station_code: 'E2', situation_level: 3, recorded_at: ago(13) },
+      { station_code: 'E3', situation_level: 2, recorded_at: ago(1), distance_km: 8 },
+    ],
+  })
+  assert.deepEqual(ewsOnly.ews.map(x => x.station.station_code), ['E3'], 'เฝ้าระวังไม่ขึ้นแถบ · สถานะเก่ากว่า 12 ชม. ไม่ขึ้นแถบ')
+  assert.equal(buildAlerts({ now }).any, false, 'ไม่มีข้อมูล = ไม่มีแถบ')
 }
 
 console.log('✅ water-situation: ผ่านทุกข้อ')

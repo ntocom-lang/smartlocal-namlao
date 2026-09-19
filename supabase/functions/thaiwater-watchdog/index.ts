@@ -36,13 +36,19 @@ const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')
 const ALERT_TENANT_SLUG = 'demo'
 
 const STALE_MINUTES = 125
-// อ่างเก็บน้ำเป็นข้อมูลรายวัน แต่ตัดสินด้วยเกณฑ์เดียวกันได้ เพราะดูเวลาที่ "ระบบดึงสำเร็จ" (fetched_at)
-// ไม่ใช่วันที่ของข้อมูล — รอบดึงรายชั่วโมงขยับ fetched_at ของแถววันนั้นทุกรอบที่ต้นทางยังตอบได้
-const STATION_TYPES = ['rain', 'waterlevel', 'dam'] as const
+// อ่างเก็บน้ำเป็นข้อมูลรายวัน — ช่วงเช้าต้นทางขึ้นแถวของวันใหม่ก่อนแต่ยังไม่มีตัวเลข (ปริมาตร null)
+// จนกรมชลประทานลงข้อมูลช่วงสาย (เจอจริง 2569-09-19: ดึงสำเร็จล่าสุด 08:10 น. แล้วว่างตั้งแต่ 09:00 น.)
+// ใช้ 125 นาทีจะเตือนผิดทุกเช้า → ให้อ่างใช้ 30 ชม. = ต้นทางไม่ลงข้อมูลเลยทั้งวันถึงเตือน
+// ถ้าเครื่อง API ของ ThaiWater ล่มทั้งเครื่อง สถานีฝน/ระดับน้ำ (เครื่องเดียวกัน) จับได้ในเกณฑ์ 125 นาทีอยู่แล้ว
+const STALE_MINUTES_BY_TYPE: Record<string, number> = { dam: 30 * 60 }
+// สถานีเตือนภัย (ews) มาจากเว็บกรมทรัพยากรน้ำ คนละแหล่งกับ ThaiWater — ถ้าเว็บนั้นล่ม แจ้งเตือนน้ำป่า
+// ถึง อปท. จะเงียบไปด้วย จึงต้องเฝ้าแยกชนิด
+const STATION_TYPES = ['rain', 'waterlevel', 'dam', 'ews'] as const
 const TYPE_LABEL: Record<string, string> = {
   rain: 'ข้อมูลฝน',
   waterlevel: 'ข้อมูลระดับน้ำ',
   dam: 'ข้อมูลอ่างเก็บน้ำ',
+  ews: 'สถานะสถานีเตือนภัย (กรมทรัพยากรน้ำ)',
 }
 
 type StationType = typeof STATION_TYPES[number]
@@ -130,12 +136,13 @@ serve(async (req) => {
   if (!stations?.length) return json({ ok: true, checked: 0, stale: [], sent: null })
 
   const now = Date.now()
-  const staleMs = staleMinutes * 60_000
   const feeds: StaleFeed[] = []
 
   for (const type of STATION_TYPES) {
     const ids = stations.filter((s) => s.station_type === type).map((s) => s.id)
     if (!ids.length) continue
+    // โหมดทดสอบบังคับทุกชนิดด้วยค่าที่ส่งมา · รอบจริงใช้เกณฑ์รายชนิด (ถ้ามี)
+    const staleMs = (isTest ? staleMinutes : (STALE_MINUTES_BY_TYPE[type] ?? staleMinutes)) * 60_000
     const { data: latest, error: latestError } = await admin
       .from('water_readings')
       .select('fetched_at')

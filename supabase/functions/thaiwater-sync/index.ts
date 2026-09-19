@@ -14,6 +14,10 @@
 // จึงดึงแค่ชั่วโมงละครั้ง และขอเฉพาะ endpoint ที่มีสถานีต้องใช้จริง
 // ⚠️ ห้ามเปลี่ยนไปใช้ twa-api-public.thaiwater.net (API ของหน้าแผนที่ใหม่) — ต้องแนบ x-api-key ที่
 //    สสน. ฝังไว้ในเว็บตัวเอง การเอากุญแจนั้นมาใช้ไม่ใช่การเรียก API สาธารณะ
+//
+// สถานะสถานีเตือนภัยน้ำหลาก-ดินถล่ม (ชนิด ews) มาจากอีกหน่วยงาน — ระบบเตือนภัยล่วงหน้าของกรมทรัพยากรน้ำ
+// (ews.dwr.go.th) ไม่ต้องใช้ key เช่นกัน แต่เป็น web-service ที่หน้าเว็บของเขาเรียกเอง ไม่ใช่ API
+// ที่ประกาศเปิด — ความเสี่ยงเรื่องเงื่อนไขการใช้งานแบบเดียวกับ ThaiWater (เจ้าของระบบรับทราบ 2569-09-19)
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -25,9 +29,24 @@ const CRON_SECRET = Deno.env.get('THAIWATER_CRON_SECRET')
 const API_BASE = 'https://api-v3.thaiwater.net/api/v1/thaiwater30/public'
 const RAIN_URL = `${API_BASE}/rain_24h`               // ~4.7 MB ทั้งประเทศ
 const WATERLEVEL_URL = `${API_BASE}/waterlevel_load`  // ~1.9 MB ทั้งประเทศ
+// ข้อความเตือนของ สสน. ทั้งประเทศ (ไม่กี่ KB) — เก็บลง water_warnings ไม่ผูกกับสถานีที่ตั้งค่าไว้
+const WARNING_URL = `${API_BASE}/warning`
 // อ่างเก็บน้ำอยู่นอก /public (ไม่มีชุดอ่างใน /public — ไล่ลองแล้ว 404 ทุกชื่อ) ~1 MB
 // ใช้เฉพาะก้อน dam_medium (อ่างขนาดกลาง ข้อมูลรายวันของกรมชลประทาน)
 const DAM_URL = 'https://api-v3.thaiwater.net/api/v1/thaiwater30/analyst/dam'
+// สถานะสถานีเตือนภัยทั้งประเทศ ~3 MB (2,275 สถานี) — POST แบบฟอร์ม action=LoadStation แบบเดียวกับ
+// ที่หน้าเว็บของกรมทรัพยากรน้ำเรียก (ews.dwr.go.th/ews/assets/js/stations.js)
+const EWS_URL = 'https://ews.dwr.go.th/ews/web-service/stn'
+
+// ป้ายและสีระดับเตือนภัยตามหน้าเว็บของกรมทรัพยากรน้ำเอง (stations.js ตรวจ 2569-09-19):
+// ข้อความจาก popup ของสถานี · สีจาก getStatusColor() ที่ใช้วาดวงบนแผนที่
+// ค่าอื่น (0, 9, ค่าติดลบ) หน้าเว็บของเขาแสดงเป็น "สถานะปกติ" แต่ไม่มีเอกสารอธิบายความหมายของ 9
+// (สถานีราวครึ่งประเทศเป็น 9) จึงเก็บค่าดิบไว้เฉยๆ ไม่ใส่ป้าย — หน้าเว็บ/แจ้งเตือนใช้เฉพาะ 1–3
+const EWS_LEVELS: Record<number, { text: string; color: string }> = {
+  1: { text: 'เฝ้าระวัง', color: '#27b376' },
+  2: { text: 'เตรียมพร้อม', color: '#f9a73e' },
+  3: { text: 'วิกฤติ', color: '#bf212f' },
+}
 
 // งบเวลารวมต้องจบก่อน pg_net ตัดสาย (timeout_milliseconds 60000 ใน cron)
 // 15 วิ × 3 ครั้ง + พัก 1+2 วิ = 48 วิ ต่อ endpoint (ทุก endpoint ยิงขนานกัน)
@@ -39,7 +58,7 @@ const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 // เวลาในอนาคตเกินนี้ถือว่าข้อมูลผิด (นาฬิกาสถานีเพี้ยน)
 const MAX_FUTURE_MS = 2 * 60 * 60 * 1000
 
-type StationConfig = { id: string; station_type: 'rain' | 'waterlevel' | 'dam'; station_code: string }
+type StationConfig = { id: string; station_type: 'rain' | 'waterlevel' | 'dam' | 'ews'; station_code: string }
 type FetchResult = { ok: true; data: unknown } | { ok: false; error: string }
 type Json = Record<string, unknown>
 
@@ -97,7 +116,21 @@ function parseBangkokDate(value: unknown, now: number): string | null {
   return at.toISOString()
 }
 
-async function fetchWithRetry(url: string, startedAt: number): Promise<FetchResult> {
+// เวลาของกรมทรัพยากรน้ำเป็น "19/09/69 00:00 น." — วัน/เดือน/ปี พ.ศ. 2 หลัก เวลาไทย
+// ตรวจทั้งชุด 2,275 สถานี (2569-09-19) รูปแบบเดียวกันหมด · 69 = พ.ศ. 2569 = ค.ศ. 2026
+// สูตร 2500 + ปี − 543 ใช้ได้ถึง พ.ศ. 2599 (ค.ศ. 2056)
+function parseEwsDate(value: unknown, now: number): string | null {
+  const m = String(value ?? '').trim().match(/^(\d{2})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})(?: น\.)?$/)
+  if (!m) return null
+  const year = 2500 + Number(m[3]) - 543
+  const at = new Date(`${year}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:00+07:00`)
+  const t = at.getTime()
+  if (Number.isNaN(t) || t > now + MAX_FUTURE_MS || t < now - MAX_AGE_MS) return null
+  return at.toISOString()
+}
+
+// init ใช้กับ endpoint ที่ต้อง POST (สถานีเตือนภัย) — body แบบ FormData ส่งซ้ำตอน retry ได้
+async function fetchWithRetry(url: string, startedAt: number, init: RequestInit = {}): Promise<FetchResult> {
   let lastError = 'fetch failed'
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     if (Date.now() - startedAt > DEADLINE_MS) return { ok: false, error: `deadline exceeded (${lastError})` }
@@ -105,6 +138,7 @@ async function fetchWithRetry(url: string, startedAt: number): Promise<FetchResu
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
     try {
       const res = await fetch(url, {
+        ...init,
         signal: controller.signal,
         headers: { Accept: 'application/json', 'User-Agent': 'SmartLocal-WaterSituation/1.0' },
       })
@@ -181,6 +215,60 @@ function indexByCode(rows: unknown, wanted: Set<string>) {
   return map
 }
 
+// สถานีเตือนภัยของกรมทรัพยากรน้ำใช้ช่อง stn (รหัสชุดเดียวกับ ThaiWater) และส่งมาเป็นอาร์เรย์ชั้นเดียว
+// ข้อความเตือนของ สสน.: 1 รายการ { datetime, message } รวมหลายสถานีคั่นด้วยบรรทัดว่าง
+// แต่ละสถานีเขียน "…สถานี<ชื่อ> ต.<ตำบล> อ.<อำเภอ> จ.<จังหวัด> …" (ตรวจ 2569-09-19 แยกได้ 25/25)
+// เก็บข้อความตามต้นฉบับ (ยุบช่องว่างซ้ำอย่างเดียว) แยกชื่อพื้นที่ไว้จับคู่กับ อปท. เท่านั้น
+// สถานีที่แยกชื่ออำเภอไม่ได้ ไม่เก็บ — ไม่เดาว่าอยู่พื้นที่ไหน
+const WARNING_PLACE = /สถานี(.+?)\s+ต\.(\S+)\s+อ\.(\S+)\s+จ\.(\S+)/
+const thaiOnly = (s: string) => s.replace(/[^฀-๿]+$/u, '').trim()
+
+function splitWarnings(payload: unknown, now: number, fetchedAt: string) {
+  const rows: Json[] = []
+  const seen = new Set<string>()
+  let unparsed = 0
+  const items = asObject(payload)?.data
+  if (!Array.isArray(items)) return { rows, unparsed }
+  for (const item of items) {
+    const issuedAt = parseBangkokDatetime(asObject(item)?.datetime, now)
+    if (!issuedAt) { unparsed += 1; continue }
+    const chunks = String(asObject(item)?.message ?? '').split(/\n\s*\n/)
+    for (const chunk of chunks) {
+      const message = chunk.replace(/\s+/g, ' ').trim().slice(0, 500)
+      if (!message) continue
+      const m = message.match(WARNING_PLACE)
+      const amphoe = m ? thaiOnly(m[3]) : ''
+      const province = m ? thaiOnly(m[4]) : ''
+      if (!amphoe || !province) { unparsed += 1; continue }
+      // upsert ก้อนเดียวห้ามมีคีย์ซ้ำกัน (ON CONFLICT แตะแถวเดิมสองครั้งไม่ได้)
+      const key = `${issuedAt}|${message}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      rows.push({
+        source: 'thaiwater',
+        issued_at: issuedAt,
+        message,
+        station_name: m![1].trim().slice(0, 200),
+        tambon_name: thaiOnly(m![2]) || null,
+        amphoe_name: amphoe,
+        province_name: province,
+        fetched_at: fetchedAt,
+      })
+    }
+  }
+  return { rows, unparsed }
+}
+
+function indexEwsByCode(rows: unknown, wanted: Set<string>) {
+  const map = new Map<string, Json>()
+  if (!Array.isArray(rows)) return map
+  for (const row of rows) {
+    const code = asObject(row)?.stn
+    if (typeof code === 'string' && wanted.has(code.trim())) map.set(code.trim(), row as Json)
+  }
+  return map
+}
+
 // อ่างใช้ dam.id ของต้นทางเป็นตัวชี้ (ไม่มี tele_station_oldcode) — ต้นทางส่งเป็นตัวเลข เทียบเป็นข้อความ
 function indexDamsById(rows: unknown, wanted: Set<string>) {
   const map = new Map<string, Json>()
@@ -226,13 +314,19 @@ serve(async (req) => {
   const rainCodes = new Set(stations.filter(s => s.station_type === 'rain').map(s => s.station_code))
   const levelCodes = new Set(stations.filter(s => s.station_type === 'waterlevel').map(s => s.station_code))
   const damCodes = new Set(stations.filter(s => s.station_type === 'dam').map(s => s.station_code))
+  const ewsCodes = new Set(stations.filter(s => s.station_type === 'ews').map(s => s.station_code))
+
+  const ewsForm = new FormData()
+  ewsForm.append('action', 'LoadStation')
 
   // ขอเฉพาะ endpoint ที่มีสถานีต้องใช้จริง — ไม่ดึงก้อนใหญ่ทิ้งเปล่า
   const skipped: FetchResult = { ok: true, data: null }
-  const [rainResult, levelResult, damResult] = await Promise.all([
+  const [rainResult, levelResult, damResult, ewsResult, warningResult] = await Promise.all([
     rainCodes.size ? fetchWithRetry(RAIN_URL, startedAt) : Promise.resolve(skipped),
     levelCodes.size ? fetchWithRetry(WATERLEVEL_URL, startedAt) : Promise.resolve(skipped),
     damCodes.size ? fetchWithRetry(DAM_URL, startedAt) : Promise.resolve(skipped),
+    ewsCodes.size ? fetchWithRetry(EWS_URL, startedAt, { method: 'POST', body: ewsForm }) : Promise.resolve(skipped),
+    fetchWithRetry(WARNING_URL, startedAt),
   ])
 
   const rainPayload = rainResult.ok ? asObject(rainResult.data) : null
@@ -241,6 +335,7 @@ serve(async (req) => {
   const rainByCode = indexByCode(rainPayload?.data, rainCodes)
   const levelByCode = indexByCode(asObject(levelPayload?.waterlevel_data)?.data, levelCodes)
   const damById = indexDamsById(asObject(damPayload?.data)?.dam_medium, damCodes)
+  const ewsByCode = indexEwsByCode(ewsResult.ok ? ewsResult.data : null, ewsCodes)
   const situationOf = buildSituationLookup(levelPayload)
 
   const now = Date.now()
@@ -261,6 +356,27 @@ serve(async (req) => {
         fetched_at: fetchedAt,
         rain_24h_mm: rain24,
         rain_1h_mm: rain1 !== null && rain1 >= 0 ? rain1 : null,
+      })
+      continue
+    }
+
+    if (station.station_type === 'ews') {
+      const e = ewsByCode.get(station.station_code)
+      const recordedAt = e ? parseEwsDate(e.date, now) : null
+      // ต้นทางส่งสถานะปนกันทั้งข้อความ "9" และตัวเลข 0
+      const status = e ? num(e.status) : null
+      if (!recordedAt || status === null || !Number.isInteger(status)) {
+        unmatched.push(`ews:${station.station_code}`)
+        continue
+      }
+      const label = EWS_LEVELS[status]
+      rows.push({
+        station_config_id: station.id,
+        recorded_at: recordedAt,
+        fetched_at: fetchedAt,
+        situation_level: status,
+        situation_text: label?.text ?? null,
+        situation_color: label?.color ?? null,
       })
       continue
     }
@@ -327,6 +443,19 @@ serve(async (req) => {
     upserted = rows.length
   }
 
+  // ข้อความเตือนเป็นส่วนเสริม — บันทึกไม่สำเร็จไม่ทำให้รอบนี้ล้ม (ค่าสถานีบันทึกไปแล้วด้านบน)
+  const warningParsed = warningResult.ok ? splitWarnings(warningResult.data, now, fetchedAt) : { rows: [], unparsed: 0 }
+  let warningError: string | null = warningResult.ok ? null : warningResult.error
+  if (warningParsed.rows.length) {
+    const { error } = await admin
+      .from('water_warnings')
+      .upsert(warningParsed.rows, { onConflict: 'source,issued_at,message' })
+    if (error) {
+      console.error('[thaiwater-sync] warning upsert failed:', error.message)
+      warningError = 'upsert failed'
+    }
+  }
+
   const summary = {
     configured: stations.length,
     upserted,
@@ -334,6 +463,9 @@ serve(async (req) => {
     rainFetch: rainCodes.size ? (rainResult.ok ? 'ok' : rainResult.error) : 'skipped',
     waterlevelFetch: levelCodes.size ? (levelResult.ok ? 'ok' : levelResult.error) : 'skipped',
     damFetch: damCodes.size ? (damResult.ok ? 'ok' : damResult.error) : 'skipped',
+    ewsFetch: ewsCodes.size ? (ewsResult.ok ? 'ok' : ewsResult.error) : 'skipped',
+    warnings: warningError ?? warningParsed.rows.length,
+    warningsUnparsed: warningParsed.unparsed,
     elapsedMs: Date.now() - startedAt,
   }
   console.log('[thaiwater-sync]', JSON.stringify(summary))
@@ -342,5 +474,6 @@ serve(async (req) => {
   const anyFetchOk = (rainCodes.size > 0 && rainResult.ok)
     || (levelCodes.size > 0 && levelResult.ok)
     || (damCodes.size > 0 && damResult.ok)
+    || (ewsCodes.size > 0 && ewsResult.ok)
   return json({ ok: anyFetchOk, summary }, anyFetchOk ? 200 : 502)
 })
