@@ -120,7 +120,7 @@ function TripFundDocs({ trip, busy, onRecordLetter, onPrintLetter }) {
   const { letterNo, letterDate } = edit.values
   const [open, setOpen] = useState(false)
   return <div className="mt-4 rounded-xl border border-slate-200 p-3">
-    <p className="font-semibold">หนังสือนำส่งกองทุน</p>
+    <p className="font-semibold">เอกสารส่งกองทุน</p><p className="text-sm text-slate-600">หนังสือนำส่ง 1 ใบ พร้อมใบคำขอรับสวัสดิการคนละ 1 ใบ · ผู้ป่วย 1 คนได้ครบ 2 ใบ</p>
     {trip.forward_letter_no && !open
       ? <p className="text-sm">ที่ {trip.forward_letter_no} ลงวันที่ {thaiDateFromDateInput(trip.forward_letter_date)}</p>
       : <p className="text-sm text-slate-600">ยังไม่ได้บันทึกเลขที่หนังสือ พิมพ์ได้ก่อนแล้วเขียนเลขด้วยมือ</p>}
@@ -130,7 +130,7 @@ function TripFundDocs({ trip, busy, onRecordLetter, onPrintLetter }) {
       <DraftConflict edit={edit} busy={busy} latest={`เลขหนังสือ ${trip.forward_letter_no || "—"} · ${trip.forward_letter_date || "—"}`} /><button className={`${primaryClass} self-end`} disabled={busy || edit.conflict}>บันทึกเลขหนังสือ</button>
     </form>}
     <div className="mt-3 flex flex-wrap gap-2">
-      <button type="button" className={buttonClass} disabled={busy} onClick={() => onPrintLetter(trip)}>พิมพ์หนังสือนำส่ง + บัญชีรายชื่อ</button>
+      <button type="button" className={buttonClass} disabled={busy} onClick={() => onPrintLetter(trip)}>พิมพ์หนังสือนำส่ง + ใบคำขอรับสวัสดิการ</button>
       {!open && <button type="button" className={buttonClass} disabled={busy} onClick={() => setOpen(true)}>{trip.forward_letter_no ? 'แก้เลขหนังสือ' : 'กรอกเลขหนังสือ'}</button>}
     </div>
   </div>

@@ -13,6 +13,7 @@
 
 import assert from 'node:assert/strict'
 import process from 'node:process'
+import { readFileSync } from 'node:fs'
 import { chromium } from 'playwright'
 import {
   buildPatientTransportFormHtml, buildPatientTransportPacketHtml,
@@ -117,12 +118,14 @@ const TRIP_BOOKINGS = Array.from({ length: 8 }, (_, i) => ({
   appointment_at: `2026-10-05T0${8 + (i % 2)}:${i % 2 ? '30' : '00'}:00+07:00`,
   mobility: i === 0 ? 'wheelchair' : 'walk', companions: i % 3,
   return_mode: 'wait', return_at: '2026-10-05T12:00:00+07:00',
-  // ค่าด้านล่างต้อง "ไม่" โผล่ในเอกสารถึงกองทุน — เทสต์ data minimization ตรวจอยู่
+  requester_name: `นายผู้ยื่น ทดสอบ${i + 1}`, relation: 'relative', created_at: '2026-10-01T08:00:00+07:00',
+  consent_at: '2026-10-01T08:00:00+07:00', consent_version: 'patient-booking-v1',
+  // ข้อมูลติดต่อพิมพ์เฉพาะใบคำขอ พิกัดไม่พิมพ์
   phone: '0891234567', pickup: 'บ้านเลขที่ 88 หมู่ 3', pickup_lat: 18.1234, pickup_lng: 100.1234,
 }))
 const tripArgs = () => ({
   tenant: TENANT, trip: TRIP, bookings: TRIP_BOOKINGS, partner: PARTNER, mayor: MAYOR,
-  departmentName: 'สำนักปลัด', emblemUrl: '',
+  departmentName: 'สำนักปลัด', emblemUrl: `data:image/svg+xml;base64,${readFileSync(new URL('../public/images/garuda.svg', import.meta.url)).toString('base64')}`,
 })
 const monthArgs = () => ({
   tenant: TENANT, partner: PARTNER,
@@ -396,30 +399,53 @@ const checks = [
   // --- ระบบจองคิวรถ: หนังสือนำส่งต่อเที่ยว + สรุปรายเดือน ------------------------------------
   {
     name: 'trip-letter-one-page-each',
-    reason: 'หนังสือนำส่งต่อเที่ยวและบัญชีแนบต้องจบแผ่นละ 1 หน้า — เที่ยวเต็มคันคือ 8 คน (ค่ายาวสุดที่คาดได้)',
+    reason: 'ผู้ป่วยหนึ่งคนได้ 2 ใบ; ร่วมเที่ยวใช้หนังสือเดียวแนบใบคำขอครบทุกคน ไม่มีเลขหนังสือซ้ำหลายฉบับ',
     async run(browser) {
-      const page = await render(browser, buildTripForwardLetterHtml(tripArgs()))
-      try {
-        for (const [index, label] of [[0, 'หนังสือนำส่ง'], [1, 'บัญชีรายชื่อ']]) {
-          const mm = await sheetContentMm(page, index)
-          assert.ok(mm <= ONE_PAGE_BUDGET_MM, `${label}สูง ${mm.toFixed(1)}mm เกินงบ ${ONE_PAGE_BUDGET_MM}mm`)
-        }
-      } finally { await page.close() }
+      for (const count of [1, 8]) {
+        const input = tripArgs()
+        input.bookings = input.bookings.slice(0, count)
+        input.bookings.push({ ...TRIP_BOOKINGS[0], id: 'cancelled', status: 'cancelled', patient_name: 'CANCELLED_PATIENT' })
+        input.bookings.push({ ...TRIP_BOOKINGS[0], id: 'other', trip_id: 'other-trip', patient_name: 'OTHER_TRIP_PATIENT' })
+        const page = await render(browser, buildTripForwardLetterHtml(input))
+        try {
+          assert.equal(await page.locator('.sheet').count(), count + 1)
+          assert.equal(await page.locator('.committee').count(), count)
+          const text = await page.locator('body').innerText()
+          assert.ok(!text.includes('CANCELLED_PATIENT') && !text.includes('OTHER_TRIP_PATIENT'))
+          assert.ok(text.includes(`จำนวน ${count} ฉบับ`))
+          for (let i = 0; i <= count; i++) {
+            const mm = await sheetContentMm(page, i)
+            assert.ok(mm <= ONE_PAGE_BUDGET_MM, `แผ่น ${i + 1} สูง ${mm.toFixed(1)}mm เกิน ${ONE_PAGE_BUDGET_MM}mm`)
+          }
+          await assertSignBlockStandard(page, { minRows: count * 3, minBelow: count * 5 })
+          if (count === 1 && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
+            for (let i = 0; i < 2; i++) await page.locator('.sheet').nth(i).screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/patient-document-${i + 1}.png` })
+          }
+        } finally { await page.close() }
+      }
+      assert.throws(() => buildTripForwardLetterHtml({ ...tripArgs(), bookings: [] }), /ไม่มีคำขอ/)
     },
   },
   {
     name: 'trip-letter-data-minimization',
-    reason: 'บัญชีแนบถึงกองทุนมีได้แค่ข้อมูลที่ใช้จัดรถ ห้ามมีเบอร์โทร ที่อยู่จุดรับ หรือพิกัด (PDPA)',
+    reason: 'หนังสือไม่ใส่เบอร์/จุดรับ ใบคำขอมีข้อมูลตามแบบ ไม่พิมพ์พิกัดและไม่อ้างว่าลงชื่อออนไลน์',
     async run(browser) {
-      const page = await render(browser, buildTripForwardLetterHtml(tripArgs()))
+      const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings: TRIP_BOOKINGS.slice(0, 1) }))
       try {
-        const text = await page.evaluate(() => document.body.innerText)
-        for (const leaked of ['0891234567', 'บ้านเลขที่ 88', '18.1234']) {
-          assert.ok(!text.includes(leaked), `เอกสารถึงกองทุนมีข้อมูลเกินจำเป็น: ${leaked}`)
+        const letter = await page.locator('.sheet').nth(0).innerText()
+        const form = await page.locator('.sheet').nth(1).innerText()
+        for (const value of ['0891234567', 'บ้านเลขที่ 88']) {
+          assert.ok(!letter.includes(value))
+          assert.ok(form.includes(value))
         }
-        assert.ok(text.includes('ยินยอมให้ส่งข้อมูลเท่าที่จำเป็น'), 'ไม่มีย่อหน้าฐานความยินยอม')
-        assert.ok(text.includes('จึงเรียนมาเพื่อโปรดทราบ'), 'หนังสือต้องเป็นการแจ้ง ไม่ใช่ขออนุมัติรายเที่ยว')
-        assert.ok(text.includes('พร 72301/88'), 'เลขที่หนังสือจากทะเบียนหนังสือส่งไม่ได้พิมพ์ลงหนังสือ')
+        assert.ok(!(letter + form).includes('18.1234'))
+        assert.ok(letter.includes('ให้ความยินยอมเป็นการเฉพาะ'))
+        assert.ok(letter.includes('พร 72301/88'))
+        assert.ok(form.includes('ใบคำขอรับสวัสดิการ'))
+        assert.ok(form.includes('โปรดลงลายมือชื่อรับรอง'))
+        assert.ok(!form.includes('ลงชื่อโดยการยืนยันตัวตน'))
+        assert.ok(!form.includes('เจ้าหน้าที่บันทึกคำขอแทนที่เคาน์เตอร์'))
+        assert.equal(await page.locator('.committee .box--on').count(), 0)
       } finally { await page.close() }
     },
   },
