@@ -65,7 +65,6 @@ const WaterSupplyRequestWizard = lazy(() => import('./WaterSupplyRequestWizard')
 const PublicAssistanceWizard = lazy(() => import('./PublicAssistanceWizard'))
 const AssetBorrowRequestWizard = lazy(() => import('./AssetBorrowRequestWizard'))
 const AssetBorrowRequestPanel = lazy(() => import('../components/staff/AssetBorrowRequestPanel'))
-const PatientTransportWizard = lazy(() => import('./PatientTransportWizard'))
 const PatientTransportPanel = lazy(() => import('../components/staff/PatientTransportPanel'))
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -1007,6 +1006,7 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuilding
 // ─── Inbox Module ─────────────────────────────────────────────────────────────
 
 export function InboxModule({ tenant, staffId, currentUserRole }) {
+  const navigate = useNavigate()
   const [requests, setRequests]   = useState([])
   const [loading, setLoading]     = useState(true)
   const [activeTab, setActiveTab] = useState('all')
@@ -1020,7 +1020,6 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
   const [showWaterSupplyWizard, setShowWaterSupplyWizard] = useState(false)
   const [showPublicAssistanceWizard, setShowPublicAssistanceWizard] = useState(false)
   const [showAssetBorrowWizard, setShowAssetBorrowWizard] = useState(false)
-  const [showPatientTransportWizard, setShowPatientTransportWizard] = useState(false)
   const [search, setSearch]       = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const [assignees, setAssignees] = useState([])
@@ -1424,7 +1423,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           onSelectWaterSupply={type => { setShowAdd(false); setShowWaterSupplyWizard(type) }}
           onSelectPublicAssistance={() => { setShowAdd(false); setShowPublicAssistanceWizard(true) }}
           onSelectAssetBorrow={() => { setShowAdd(false); setShowAssetBorrowWizard(true) }}
-          onSelectPatientTransport={() => { setShowAdd(false); setShowPatientTransportWizard(true) }} />
+          onSelectPatientTransport={() => { setShowAdd(false); navigate('/patient-transport') }} />
       )}
       {/* ขออนุญาตก่อสร้างบ้าน — ใช้ wizard เต็มรูปแบบเดียวกับฝั่งประชาชน (แบบ ข.๑ จริง)
           แทนฟอร์มสั้นทั่วไปใน NewRequestSheet เพราะฟิลด์ไม่พอสำหรับพิมพ์แบบร่างที่ถูกต้อง */}
@@ -1488,21 +1487,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           </Suspense>
         </div>
       )}
-      {/* รับเรื่องแทนหน้าเคาน์เตอร์ — staffId ทำให้ยกเว้นเงื่อนไขยื่นล่วงหน้า min_lead_days
-          (ประชาชนเดินมายื่นวันนัดพอดีก็ต้องรับเรื่องไว้ก่อน) และทำให้ใบคำขอที่พิมพ์ออกมา
-          เว้นเส้นลงนามไว้ให้เซ็นด้วยปากกา ไม่พิมพ์ชื่อประชาชนแทนลายมือชื่อ
-          ⚠️ ความยินยอมยังต้องติ๊กในวิซาร์ดเหมือนเดิม เจ้าหน้าที่ติ๊กแทนโดยที่ประชาชนไม่รู้ไม่ได้ */}
-      {showPatientTransportWizard && (
-        <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
-          <Suspense fallback={
-            <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
-          }>
-            <PatientTransportWizard tenant={tenant} session={null} staffId={staffId}
-              onBack={() => setShowPatientTransportWizard(false)}
-              onDone={() => { setShowPatientTransportWizard(false); setRefreshKey(k => k + 1) }} />
-          </Suspense>
-        </div>
-      )}
+
     </div>
   )
 }
