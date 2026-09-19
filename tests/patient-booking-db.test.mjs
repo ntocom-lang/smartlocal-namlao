@@ -25,7 +25,7 @@ INSERT INTO public.profiles VALUES
 INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST',true,ARRAY['patient_transport_request'],0);
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -230,6 +230,23 @@ assert(!/"(patient_name|requester_name|phone|pickup|pickup_lat|pickup_lng)":/.te
 await actor(driver);await fails(()=>rpc('patient_booking_month_report',[tenant,today]),/เจ้าหน้าที่จัดคิว/)
 console.log('PASS fund documents: letter no per trip, odometer by current staff driver only, stale writes rejected, retries idempotent, month report without personal data, audit')
 
+await actor(coordinator)
+let flexTrip=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===liveTrip.id)
+await fails(()=>rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexTrip.docs_revision,13000,13033,false,'']),/เหตุผล/)
+let flexRev=await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexTrip.docs_revision,13000,13033,false,'กรอกผิด'])
+assert.equal(await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexTrip.docs_revision,13000,13033,false,'กรอกผิด']),flexRev)
+await fails(()=>rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev-1,12000,12042,false,'กรอกผิด']),/เปลี่ยนแล้ว/)
+await fails(()=>rpc('patient_booking_record_odometer',[tenant,liveTrip.id,flexRev,14000,14033]),/เหตุผล/)
+flexRev=await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,13000,50,true,'เปลี่ยนมาตรวัด'])
+let flexReport=await rpc('patient_booking_month_report',[tenant,liveTrip.plan.date]);assert.equal(flexReport.trips.find(t=>t.trip_id===liveTrip.id).distance,null)
+flexRev=await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,null,null,true,'มาตรวัดมีปัญหา'])
+await fails(()=>rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,13000,13044,false,'']),/เหตุผล/)
+await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,13000,13044,false,'ตรวจสอบแก้ไขแล้ว'])
+await actor(citizen);await fails(()=>rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,1,2,true,'กรอกผิด']),/คนขับ/)
+await db.exec('RESET ROLE');await db.query("UPDATE public.profiles SET role='citizen' WHERE id=$1",[driver]);await actor(driver)
+await fails(()=>rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,1,2,true,'กรอกผิด']),/ยังเป็นเจ้าหน้าที่/)
+await db.exec('RESET ROLE');await db.query("UPDATE public.profiles SET role='staff' WHERE id=$1",[driver])
+console.log('PASS flexible odometer corrections require reason, revoked driver denied, stale and legacy writes guarded, anomaly excluded from report, repair restored')
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
 export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay }

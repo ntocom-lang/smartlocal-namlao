@@ -1,0 +1,53 @@
+BEGIN;
+CREATE FUNCTION public.patient_booking_save_odometer(p_muni uuid,p_trip uuid,p_docs_revision integer,p_start integer,p_end integer,p_issue boolean,p_note text) RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE t public.patient_booking_trips; role_name text:=public.ptb_role(p_muni); note text:=btrim(coalesce(p_note,''));
+BEGIN
+ IF role_name IN ('anonymous','outside') THEN RAISE EXCEPTION 'ไม่มีสิทธิ์เข้าถึงหน่วยงานนี้'; END IF;
+ SELECT * INTO t FROM public.patient_booking_trips WHERE id=p_trip AND municipality_id=p_muni FOR UPDATE;
+ IF t.id IS NULL OR t.state='cancelled' THEN RAISE EXCEPTION 'ไม่พบเที่ยวนี้ หรือเที่ยวถูกยกเลิกแล้ว'; END IF;
+ -- คนขับของเที่ยวนั้นบันทึกเองได้แม้ภายหลังเปลี่ยนคนขับประจำไปแล้ว แต่ต้องยังเป็นเจ้าหน้าที่ของหน่วยงานนี้อยู่
+ IF role_name NOT IN ('admin','coordinator') AND (t.driver_id IS DISTINCT FROM auth.uid() OR NOT EXISTS(
+   SELECT 1 FROM public.profiles WHERE id=auth.uid() AND municipality_id=p_muni AND role IN ('admin','officer','staff'))) THEN
+  RAISE EXCEPTION 'เฉพาะคนขับของเที่ยวนี้ที่ยังเป็นเจ้าหน้าที่ หรือเจ้าหน้าที่จัดคิว';
+ END IF;
+ IF p_issue IS NULL OR char_length(note)>300 THEN RAISE EXCEPTION 'ข้อมูลเหตุผลไม่ถูกต้อง'; END IF;
+ IF p_start<0 OR p_end<0 OR (p_start IS NULL AND NOT p_issue) THEN RAISE EXCEPTION 'กรุณาระบุเลขไมล์ตอนออกรถ'; END IF;
+ IF NOT p_issue AND p_end IS NOT NULL AND (p_end<p_start OR p_end::bigint-p_start::bigint>2000) THEN RAISE EXCEPTION 'เลขไมล์ตอนกลับต้องไม่น้อยกว่าตอนออก และระยะทางต่อเที่ยวไม่เกิน 2,000 กม.'; END IF;
+ IF t.odometer_start IS NOT DISTINCT FROM p_start AND t.odometer_end IS NOT DISTINCT FROM p_end AND t.odometer_issue=p_issue AND t.odometer_note=note THEN RETURN t.docs_revision; END IF;
+ IF p_docs_revision IS DISTINCT FROM t.docs_revision THEN RAISE EXCEPTION 'ข้อมูลเอกสารของเที่ยวนี้เปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุดก่อนแก้'; END IF;
+ IF note='' AND (p_issue OR t.odometer_issue OR (t.odometer_start IS NOT NULL AND t.odometer_start IS DISTINCT FROM p_start) OR (t.odometer_end IS NOT NULL AND t.odometer_end IS DISTINCT FROM p_end)) THEN RAISE EXCEPTION 'กรุณาเลือกเหตุผลที่แก้เลขไมล์หรือแจ้งมาตรวัดผิดปกติ'; END IF;
+ UPDATE public.patient_booking_trips SET odometer_issue=p_issue,odometer_note=note,odometer_start=p_start, odometer_end=p_end, docs_revision=docs_revision+1, updated_at=now() WHERE id=p_trip;
+ PERFORM public.ptb_audit(p_muni,p_trip,'odometer_recorded',jsonb_build_object('start',p_start,'end',p_end,
+  'previous_start',t.odometer_start,'previous_end',t.odometer_end,'issue',p_issue,'note',note,'previous_issue',t.odometer_issue,'previous_note',t.odometer_note));
+ RETURN t.docs_revision+1;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.patient_booking_record_odometer(p_muni uuid,p_trip uuid,p_docs_revision integer,p_start integer,p_end integer) RETURNS integer
+LANGUAGE sql SECURITY DEFINER SET search_path='' AS $$
+ SELECT public.patient_booking_save_odometer(p_muni,p_trip,p_docs_revision,p_start,p_end,false,'');
+$$;
+CREATE OR REPLACE FUNCTION public.patient_booking_month_report(p_muni uuid,p_month date) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
+DECLARE first_day date:=date_trunc('month',coalesce(p_month,current_date))::date; rows jsonb;
+BEGIN
+ IF public.ptb_role(p_muni) NOT IN ('admin','coordinator') THEN RAISE EXCEPTION 'เฉพาะเจ้าหน้าที่จัดคิวเรียกดูสรุปได้'; END IF;
+ SELECT coalesce(jsonb_agg(x ORDER BY x->>'date',x->>'pickup_at'),'[]') INTO rows FROM (
+  SELECT jsonb_build_object('trip_id',t.id,'date',t.plan->>'date','pickup_at',t.plan->>'pickup_at','route_label',t.plan->>'route_label',
+   'state',t.state,'helper_name',t.helper_name,
+   'passengers',(SELECT count(*) FROM public.patient_bookings b WHERE b.trip_id=t.id AND b.status IN ('confirmed','completed')),
+   'companions',(SELECT coalesce(sum(b.companions),0) FROM public.patient_bookings b WHERE b.trip_id=t.id AND b.status IN ('confirmed','completed')),
+   'odometer_start',t.odometer_start,'odometer_end',t.odometer_end,
+   'odometer_issue',t.odometer_issue,'distance',CASE WHEN NOT t.odometer_issue AND t.odometer_start IS NOT NULL AND t.odometer_end IS NOT NULL THEN t.odometer_end-t.odometer_start END,
+   'driver_name',(SELECT full_name FROM public.profiles WHERE id=t.driver_id),
+   'letter_no',t.forward_letter_no,'letter_date',t.forward_letter_date) x
+  FROM public.patient_booking_trips t
+  WHERE t.municipality_id=p_muni AND t.state<>'cancelled'
+   AND (t.plan->>'date')::date>=first_day AND (t.plan->>'date')::date<(first_day+interval '1 month')::date
+ ) q;
+ RETURN jsonb_build_object('month',first_day,'trips',rows);
+END $$;
+
+REVOKE ALL ON FUNCTION public.patient_booking_save_odometer(uuid,uuid,integer,integer,integer,boolean,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.patient_booking_save_odometer(uuid,uuid,integer,integer,integer,boolean,text) TO authenticated;
+COMMIT;

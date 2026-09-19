@@ -89,7 +89,7 @@ export function DriverTrips({ workspace, uid, onAction, onOdometer, busy }) {
   const [note, setNote] = useState('')
   const trips = workspace.trips.filter(t => t.driver_id === uid && !['completed', 'cancelled'].includes(t.state))
   // จบเที่ยวแล้วแต่ยังไม่มีเลขไมล์กลับ — เดิมหายจากหน้าคนขับทันทีที่กดจบ ต้องให้เจ้าหน้าที่กรอกแทน (ผลตรวจ #227 ข้อ 4)
-  const awaitingOdometer = workspace.trips.filter(t => t.driver_id === uid && t.state === 'completed' && !Number.isFinite(t.odometer_end))
+  const awaitingOdometer = workspace.trips.filter(t => t.driver_id === uid && t.state === 'completed' && (!Number.isFinite(t.odometer_end) || t.odometer_issue))
   return <div className="space-y-4"><h2 className="text-xl font-bold">เที่ยวของคนขับ</h2><p className="rounded-xl bg-amber-50 p-3">กดบันทึกเมื่อจอดรถในที่ปลอดภัย</p>
     {!trips.length && <p>ยังไม่มีเที่ยวที่ได้รับมอบหมาย</p>}
     <label className="block">เหตุขัดข้อง/ล่าช้า<input className={inputClass} value={note} maxLength={500} onChange={e => setNote(e.target.value)} /></label>
@@ -104,6 +104,7 @@ export function DriverTrips({ workspace, uid, onAction, onOdometer, busy }) {
       {t.state === 'issue' && <p className="rounded-xl bg-amber-50 p-3">รอเจ้าหน้าที่ประสานแผน ก่อนดำเนินการต่อ</p>}
       <OdometerForm trip={t} trips={workspace.trips} busy={busy} onSave={onOdometer} />
     </article>)}
+    <details className="rounded-xl border border-slate-200 p-3"><summary className="min-h-11 cursor-pointer font-semibold">แก้เลขไมล์เที่ยวที่จบแล้ว (30 วันล่าสุด)</summary>{workspace.trips.filter(t => t.driver_id === uid && t.state === 'completed' && Number.isFinite(t.odometer_end) && !t.odometer_issue).map(t => <article key={t.id} className="my-3 border-t p-3"><p>{t.plan.route_label} · {dateTime(t.plan.pickup_at)}</p><OdometerForm trip={t} trips={workspace.trips} busy={busy} onSave={onOdometer} /></article>)}</details>
     {awaitingOdometer.length > 0 && <section className="space-y-3" aria-label="จบแล้ว รอเติมเลขไมล์">
       <h3 className="font-bold">จบแล้ว รอเติมเลขไมล์ ({awaitingOdometer.length})</h3>
       {awaitingOdometer.map(t => <article key={t.id} className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="font-semibold">{t.plan.route_label}</p><p>เริ่มรับ {dateTime(t.plan.pickup_at)}</p>
@@ -115,18 +116,18 @@ export function DriverTrips({ workspace, uid, onAction, onOdometer, busy }) {
 // หนังสือนำส่งถึงกองทุน 1 ฉบับต่อเที่ยว — เลขที่/วันที่มาจากทะเบียนหนังสือส่งของสารบรรณ ระบบออกเลขเองไม่ได้
 // พิมพ์ได้ก่อนมีเลข (ช่อง "ที่" เว้นเส้นประให้เขียนมือ) เพราะบางแห่งลงเลขหลังผู้บริหารลงนาม
 function TripFundDocs({ trip, busy, onRecordLetter, onPrintLetter }) {
-  const [letterNo, setLetterNo] = useState(trip.forward_letter_no || '')
-  const [letterDate, setLetterDate] = useState(trip.forward_letter_date || thaiDay())
+  const edit = useTripDraft(trip, { letterNo: trip.forward_letter_no || '', letterDate: trip.forward_letter_date || thaiDay() })
+  const { letterNo, letterDate } = edit.values
   const [open, setOpen] = useState(false)
   return <div className="mt-4 rounded-xl border border-slate-200 p-3">
     <p className="font-semibold">หนังสือนำส่งกองทุน</p>
     {trip.forward_letter_no && !open
       ? <p className="text-sm">ที่ {trip.forward_letter_no} ลงวันที่ {thaiDateFromDateInput(trip.forward_letter_date)}</p>
       : <p className="text-sm text-slate-600">ยังไม่ได้บันทึกเลขที่หนังสือ พิมพ์ได้ก่อนแล้วเขียนเลขด้วยมือ</p>}
-    {open && <form className="mt-3 grid gap-3 sm:grid-cols-[1fr_180px_auto]" onSubmit={async e => { e.preventDefault(); if (await onRecordLetter(trip, letterNo, letterDate)) setOpen(false) }}>
-      <label>เลขที่หนังสือ<input className={inputClass} required maxLength={60} value={letterNo} onChange={e => setLetterNo(e.target.value)} placeholder="เช่น พร 72301/123" /></label>
-      <label>ลงวันที่<input className={inputClass} type="date" required value={letterDate} onChange={e => setLetterDate(e.target.value)} /></label>
-      <button className={`${primaryClass} self-end`} disabled={busy}>บันทึกเลขหนังสือ</button>
+    {open && <form className="mt-3 grid gap-3 sm:grid-cols-[1fr_180px_auto]" onSubmit={async e => { e.preventDefault(); if (!edit.conflict && await onRecordLetter(edit.snapshot, letterNo, letterDate)) { edit.reset(); setOpen(false) } }}>
+      <label>เลขที่หนังสือ<input className={inputClass} required maxLength={60} value={letterNo} onChange={e => edit.change("letterNo", e.target.value)} placeholder="เช่น พร 72301/123" /></label>
+      <label>ลงวันที่<input className={inputClass} type="date" required value={letterDate} onChange={e => edit.change("letterDate", e.target.value)} /></label>
+      <DraftConflict edit={edit} busy={busy} latest={`เลขหนังสือ ${trip.forward_letter_no || "—"} · ${trip.forward_letter_date || "—"}`} /><button className={`${primaryClass} self-end`} disabled={busy || edit.conflict}>บันทึกเลขหนังสือ</button>
     </form>}
     <div className="mt-3 flex flex-wrap gap-2">
       <button type="button" className={buttonClass} disabled={busy} onClick={() => onPrintLetter(trip)}>พิมพ์หนังสือนำส่ง + บัญชีรายชื่อ</button>
@@ -137,15 +138,40 @@ function TripFundDocs({ trip, busy, onRecordLetter, onPrintLetter }) {
 
 // เลขไมล์ต่อเที่ยว — ระบบเติมเลขไมล์ออกจากเลขไมล์กลับของเที่ยวก่อนหน้าให้เอง คนขับกรอกแค่ตอนกลับ
 // ไม่บังคับก่อนจบเที่ยว เจ้าหน้าที่จัดคิวแก้แทนได้ภายหลัง (ไม่เพิ่มขั้นตอนบังคับให้คนขับ)
+// Freeze the revision with the user's draft. Polling must never bless old inputs with a new revision.
+function useTripDraft(trip, latest) {
+  const [draft, setDraft] = useState(null)
+  const conflict = !!draft && draft.revision !== trip.docs_revision
+  return { values: draft?.values || latest, conflict,
+    snapshot: { ...trip, docs_revision: draft?.revision ?? trip.docs_revision },
+    change: (key, value) => setDraft(d => ({ revision: d?.revision ?? trip.docs_revision, values: { ...(d?.values || latest), [key]: value } })),
+    reset: () => setDraft(null),
+    accept: () => setDraft(d => d ? { ...d, revision: trip.docs_revision } : d),
+  }
+}
+function DraftConflict({ edit, busy, latest }) {
+  if (!edit.conflict) return null
+  return <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 sm:col-span-3">
+    <p className="font-semibold">มีข้อมูลใหม่ระหว่างที่คุณกรอก</p><p>ค่าล่าสุด: {latest}</p><p>ค่าที่คุณกรอกยังอยู่ในช่องด้านบน กรุณาตรวจเทียบก่อนบันทึก</p>
+    <div className="mt-2 flex flex-wrap gap-2"><button type="button" className={buttonClass} disabled={busy} onClick={edit.reset}>ใช้ค่าล่าสุด</button><button type="button" className={buttonClass} disabled={busy} onClick={edit.accept}>ยืนยันใช้ค่าที่ฉันแก้</button></div>
+  </div>
+}
 function OdometerForm({ trip, trips, busy, onSave }) {
-  const [start, setStart] = useState(trip.odometer_start ?? previousOdometer(trip, trips))
-  const [end, setEnd] = useState(trip.odometer_end ?? '')
+  const edit = useTripDraft(trip, { start: trip.odometer_start ?? previousOdometer(trip, trips), end: trip.odometer_end ?? '', issue: trip.odometer_issue || false, reason: '' })
+  const { start, end, issue, reason } = edit.values
   const distance = start !== '' && end !== '' ? Number(end) - Number(start) : null
-  return <form className="mt-3 grid gap-3 rounded-xl bg-slate-50 p-3 sm:grid-cols-[1fr_1fr_auto]" onSubmit={e => { e.preventDefault(); onSave(trip, Number(start), end === '' ? null : Number(end)) }}>
-    <label>เลขไมล์ออก<input className={inputClass} name="odometer_start" type="number" inputMode="numeric" min={0} required value={start} onChange={e => setStart(e.target.value)} /></label>
-    <label>เลขไมล์กลับ<input className={inputClass} name="odometer_end" type="number" inputMode="numeric" min={0} value={end} onChange={e => setEnd(e.target.value)} placeholder="กรอกเมื่อกลับถึงพื้นที่" /></label>
-    <button className={`${buttonClass} self-end`} disabled={busy}>บันทึกเลขไมล์</button>
-    {distance !== null && <p className={`text-sm sm:col-span-3 ${distance < 0 ? 'text-red-700' : 'text-slate-600'}`}>{distance < 0 ? 'เลขไมล์กลับน้อยกว่าตอนออก กรุณาตรวจอีกครั้ง' : `ระยะทาง ${distance} กม.`}</p>}
+  const abnormal = distance !== null && (distance < 0 || distance > 2000)
+  const correction = (trip.odometer_start != null && Number(start) !== trip.odometer_start) || (trip.odometer_end != null && (end === '' || Number(end) !== trip.odometer_end)) || trip.odometer_issue
+  const needsReason = correction || issue
+  return <form className="mt-3 grid gap-3 rounded-xl bg-slate-50 p-3 sm:grid-cols-[1fr_1fr_auto]" onSubmit={async e => { e.preventDefault(); if (!edit.conflict && await onSave(edit.snapshot, start === '' ? null : Number(start), end === '' ? null : Number(end), issue, reason)) edit.reset() }}>
+    <label>เลขไมล์ออก<input className={inputClass} name="odometer_start" type="number" inputMode="numeric" min={0} max={2147483647} required={!issue} value={start} onChange={e => edit.change('start', e.target.value)} /></label>
+    <label>เลขไมล์กลับ<input className={inputClass} name="odometer_end" type="number" inputMode="numeric" min={0} max={2147483647} value={end} onChange={e => edit.change('end', e.target.value)} placeholder="กรอกเมื่อกลับถึงพื้นที่" /></label>
+    <button className={`${buttonClass} self-end`} disabled={busy || edit.conflict || (abnormal && !issue)}>บันทึกเลขไมล์</button>
+    <label className="flex min-h-11 items-center gap-2 sm:col-span-3"><input className="size-5" type="checkbox" checked={issue} onChange={e => edit.change('issue', e.target.checked)} />มาตรวัดมีปัญหา / ระยะทางรอตรวจสอบ</label>
+    {needsReason && <label className="sm:col-span-3">เหตุผลที่แก้เลขไมล์<select aria-label="เหตุผลที่แก้เลขไมล์" className={inputClass} required value={reason} onChange={e => edit.change('reason', e.target.value)}><option value="">เลือกเหตุผล</option>{['กรอกผิด', 'ตรวจเลขจากมาตรวัดแล้ว', 'เปลี่ยนมาตรวัด', 'มาตรวัดมีปัญหา', 'ตรวจสอบแก้ไขแล้ว'].map(r => <option key={r}>{r}</option>)}</select></label>}
+    {(issue || abnormal) ? <p className="text-sm text-amber-900 sm:col-span-3">{issue ? 'บันทึกได้ ระยะทางรอตรวจสอบและยังไม่นับในยอดรวม' : 'เลขไมล์ผิดปกติ หากมาตรวัดมีปัญหาให้เลือกช่องด้านบนและระบุเหตุผล'}</p> : distance !== null && <p className="text-sm sm:col-span-3">ระยะทาง {distance} กม.</p>}
+    {trip.odometer_note && <p className="text-sm sm:col-span-3">เหตุผลที่บันทึกไว้: {trip.odometer_note}</p>}
+    <DraftConflict edit={edit} busy={busy} latest={`เลขไมล์ออก ${trip.odometer_start ?? '—'} · กลับ ${trip.odometer_end ?? '—'}${trip.odometer_issue ? ' · รอตรวจสอบ' : ''}`} />
   </form>
 }
 
