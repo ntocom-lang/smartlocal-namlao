@@ -47,6 +47,24 @@ page.on('pageerror',e=>errors.push(e.message))
 await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort())
 const visit=async (as, home=true)=>{await page.goto(`${base}/__patient?as=${as}`);await page.getByRole('button',{name:'หน้าบริการ',exact:true}).waitFor();if(home)await page.getByRole('button',{name:'หน้าบริการ',exact:true}).click()}
 try{
+ for(const [as, role] of [['anonymous','citizen'],['citizen','citizen'],['coordinator','coordinator'],['driver','driver'],['admin','admin']]) {
+  await visit(as,false);await page.getByRole('button',{name:'คู่มือและแนะนำการใช้งาน',exact:true}).click()
+  const help=page.getByRole('region',{name:'คู่มือรถรับส่งผู้ป่วย'});assert.equal(await help.getByLabel('คู่มือสำหรับ',{exact:true}).inputValue(),role)
+  if(role==='citizen')assert.equal(await help.locator('option').count(),1)
+  await help.locator('summary').first().click();await help.getByRole('button',{name:'แนะนำทีละขั้น',exact:true}).click()
+  assert.equal(await help.getByRole('button',{name:'ขั้นก่อนหน้า',exact:true}).isDisabled(),true)
+  assert.equal(await page.locator('nav [data-help-highlight="true"]').count(),1)
+  await help.getByRole('button',{name:'ขั้นถัดไป',exact:true}).click();await help.getByRole('button',{name:'ขั้นก่อนหน้า',exact:true}).click()
+  for(const width of [320,390,768]) {await page.setViewportSize({width,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`help ${as} ${width}px overflow`)}
+  if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-help-${as}.png`,fullPage:true})}
+  await help.getByRole('button',{name:'ปิดคำแนะนำ',exact:true}).focus();await page.keyboard.press('Escape');assert.equal(await help.count(),0);assert.equal(await page.locator('nav [data-help-highlight="true"]').count(),0)
+  assert.equal(await page.getByRole('button',{name:'คู่มือและแนะนำการใช้งาน',exact:true}).evaluate(el=>el===document.activeElement),true)
+ }
+ await visit('citizen');await page.getByRole('button',{name:'ขอจองรถรับส่ง',exact:true}).click();await page.getByLabel('วันที่นัดแพทย์',{exact:true}).fill(day)
+ await page.getByRole('button',{name:'คู่มือและแนะนำการใช้งาน',exact:true}).click();await page.getByRole('button',{name:'แนะนำทีละขั้น',exact:true}).click()
+ while(await page.getByRole('button',{name:'ขั้นถัดไป',exact:true}).count())await page.getByRole('button',{name:'ขั้นถัดไป',exact:true}).click()
+ await page.getByRole('button',{name:'จบคำแนะนำ',exact:true}).click();assert.equal(await page.getByLabel('วันที่นัดแพทย์',{exact:true}).inputValue(),day)
+ console.log('PASS role-aware manual, step guide, menu highlight, keyboard close/focus, responsive layout and unsaved booking preserved')
  await visit('anonymous',false);await page.getByRole('region',{name:'ตารางรถสำหรับประชาชน'}).waitFor()
  assert.equal(await page.getByRole('button',{name:'ตาราง',exact:true}).getAttribute('aria-pressed'),'true')
  assert.equal(await page.getByLabel('ตั้งแต่วันที่',{exact:true}).inputValue(),thaiDay())
