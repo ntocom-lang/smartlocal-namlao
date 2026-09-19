@@ -72,7 +72,8 @@ function FeaturedServices() {
 
   const services = []
   if (transportEnabled && tenant?.id && transportTenantId === tenant.id) services.push({
-    href: `/doc-request?type=${PATIENT_TRANSPORT_TYPE}`,
+    // ทางเข้าเดียวของบริการนี้ — หน้า /patient-transport ตัดสินเองว่าจะเป็นจองคิวรถหรือยื่นคำขอ
+    href: '/patient-transport',
     label: 'รถรับ-ส่งผู้ป่วย',
     description: 'ยื่นคำขอรับบริการ',
     icon: Ambulance,
