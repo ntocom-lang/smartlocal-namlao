@@ -61,7 +61,7 @@ export default function PatientTransportBooking() {
   const workspace = current?.workspace
   const isCoordinator = ['admin', 'coordinator'].includes(workspace?.role)
   const isAdmin = workspace?.role === 'admin'
-  const isDriver = workspace?.role === 'driver' || workspace?.trips?.some(t => t.driver_id === uid)
+  const isDriver = workspace?.role === 'driver' || (isCoordinator && !!uid && workspace?.settings?.driver_id === uid) || workspace?.trips?.some(t => t.driver_id === uid)
   const view = selectedView ?? (isCoordinator ? 'schedule' : isDriver ? 'driver' : info?.enabled ? 'calendar' : 'home')
   function op(key) { if (!operations.current.has(key)) operations.current.set(key, crypto.randomUUID()); return operations.current.get(key) }
   async function mutate(name, args, success, after) {
