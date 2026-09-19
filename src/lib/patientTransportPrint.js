@@ -30,7 +30,7 @@ import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
 import {
   APPOINTMENT_KINDS, MOBILITY_LEVELS, REQUESTER_RELATIONS, TRIP_TYPES, optionLabel,
 } from './patientTransport.js'
-import { MOBILITY as BOOKING_MOBILITY, RETURN_MODES as BOOKING_RETURN_MODES } from './patientBooking.js'
+import { MOBILITY as BOOKING_MOBILITY, RETURN_MODES as BOOKING_RETURN_MODES, TRIP_STATUS } from './patientBooking.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -658,7 +658,11 @@ export function buildTripMonthReportHtml({ tenant, report, partner }) {
   const month = String(report?.month ?? '').slice(0, 7)
   const [year, mm] = month.split('-').map(Number)
   const monthText = year && mm ? `${MONTHS_TH[mm - 1]} ${year + 543}` : '-'
-  const trips = report?.trips ?? []
+  // ยอดรวมนับเฉพาะเที่ยวที่จบแล้ว — เที่ยวที่ยังไม่ได้วิ่ง/ยังวิ่งไม่จบแยกไปตารางท้ายใบ ไม่งั้นใบนี้
+  // ถูกอ่านเป็นผลงานจริงทั้งที่รถยังไม่ได้ออก (ผลตรวจ #227 ข้อ 3)
+  const all = report?.trips ?? []
+  const trips = all.filter(t => t.state === 'completed')
+  const pending = all.filter(t => t.state !== 'completed' && t.state !== 'cancelled')
   const totalPeople = trips.reduce((sum, t) => sum + Number(t.passengers || 0), 0)
   const totalCompanions = trips.reduce((sum, t) => sum + Number(t.companions || 0), 0)
   const measured = trips.filter(t => t.distance != null)
@@ -692,7 +696,8 @@ export function buildTripMonthReportHtml({ tenant, report, partner }) {
   thead { display: table-header-group; }
   tr { break-inside: avoid; page-break-inside: avoid; }
   .report-sign { margin-top: 8mm; break-inside: avoid; page-break-inside: avoid; }
-  .note { margin-top: 2mm; }`
+  .note { margin-top: 2mm; }
+  table.pending { margin-top: 1mm; }`
   // ช่องลงนามของกลาง บล็อกเดียว 2 คอลัมน์ — เส้นยาวเท่ากันด้วย GOV_SIGN_LINE_W (ไม่ส่ง width เอง)
   const sign = `<div class="two-col report-sign">
     <div>${govSignRow({ role: 'ผู้จัดทำ', below: [govNameBlank(), 'ตำแหน่ง ....................'] })}</div>
@@ -707,10 +712,17 @@ export function buildTripMonthReportHtml({ tenant, report, partner }) {
   <table>
     <thead><tr><th>ลำดับ</th><th>วันที่</th><th>เส้นทาง</th><th>ผู้เดินทาง</th><th>ผู้ติดตาม</th><th>เลขไมล์ออก</th><th>เลขไมล์กลับ</th><th>ระยะทาง (กม.)</th><th>คนขับ</th><th>หนังสือนำส่งที่</th></tr></thead>
     <tbody>
-${rows || '<tr><td colspan="10" class="num">ไม่มีเที่ยวรถในเดือนนี้</td></tr>'}
+${rows || '<tr><td colspan="10" class="num">ยังไม่มีเที่ยวที่จบในเดือนนี้</td></tr>'}
     </tbody>
-    <tfoot><tr><td colspan="3">รวม ${trips.length} เที่ยว</td><td class="num">${totalPeople}</td><td class="num">${totalCompanions}</td><td colspan="2"></td><td class="num">${totalKm}</td><td colspan="2"></td></tr></tfoot>
+    <tfoot><tr><td colspan="3">รวมเที่ยวที่จบแล้ว ${trips.length} เที่ยว</td><td class="num">${totalPeople}</td><td class="num">${totalCompanions}</td><td colspan="2"></td><td class="num">${totalKm}</td><td colspan="2"></td></tr></tfoot>
   </table>
+  ${pending.length ? `<p class="note bold">เที่ยวที่ยังไม่จบในเดือนนี้ ${pending.length} เที่ยว — ไม่นับรวมในยอดข้างบน</p>
+  <table class="pending">
+    <thead><tr><th>วันที่</th><th>เส้นทาง</th><th>สถานะ</th><th>ผู้เดินทางตามแผน</th></tr></thead>
+    <tbody>
+${pending.map(t => `<tr><td class="num">${esc(letterDateText(t.date))}</td><td>${esc(t.route_label ?? '')}</td><td>${esc(TRIP_STATUS[t.state] ?? t.state ?? '')}</td><td class="num">${Number(t.passengers || 0)}</td></tr>`).join('\n')}
+    </tbody>
+  </table>` : ''}
   ${measured.length < trips.length ? `<p class="note">หมายเหตุ: มี ${trips.length - measured.length} เที่ยวที่ยังไม่ได้บันทึกเลขไมล์ครบ ระยะทางรวมนับเฉพาะเที่ยวที่บันทึกครบ</p>` : ''}
   ${sign}
   <div class="origin">${esc(govEServiceOriginText(tenant?.name || 'หน่วยงาน'))}</div>

@@ -105,7 +105,7 @@ export default function PatientTransportBooking() {
     if (failure) throw failure
     return buildTripMonthReportHtml({ tenant, report: data, partner: context.partner })
   }, 'เตรียมสรุปรายเดือนไม่สำเร็จ')
-  const recordOdometer = (trip, start, end) => mutate('patient_booking_record_odometer', { p_trip: trip.id, p_start: start, p_end: end }, 'บันทึกเลขไมล์แล้ว')
+  const recordOdometer = (trip, start, end) => mutate('patient_booking_record_odometer', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_start: start, p_end: end }, 'บันทึกเลขไมล์แล้ว')
   async function inspect(ids, helper) {
     if (lock.current) return
     lock.current = true; setBusy(true); setError('')
@@ -137,7 +137,7 @@ export default function PatientTransportBooking() {
       {view === 'mine' && (uid ? <BookingCards bookings={workspace?.bookings.filter(b => b.created_by === uid) || []} trips={workspace?.trips || []} busy={busy} onAction={action} /> : <Link to="/auth" className={primaryClass}>เข้าสู่ระบบเพื่อติดตามการจอง</Link>)}
       {view === 'queue' && isCoordinator && <><button className={`${buttonClass} mb-4`} disabled={busy || !info?.enabled} onClick={() => { setBookingSeed({}); setView('book') }}>รับจองแทนทางโทรศัพท์/หน้าเคาน์เตอร์</button>
         <CoordinatorQueue workspace={workspace} busy={busy} preview={preview} clearPreview={() => setPreview(null)} onAction={action} onPreview={inspect}
-          onRecordLetter={(trip, letterNo, letterDate) => mutate('patient_booking_record_letter', { p_trip: trip.id, p_letter_no: letterNo, p_letter_date: letterDate }, 'บันทึกเลขหนังสือนำส่งแล้ว')}
+          onRecordLetter={(trip, letterNo, letterDate) => mutate('patient_booking_record_letter', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_letter_no: letterNo, p_letter_date: letterDate }, 'บันทึกเลขหนังสือนำส่งแล้ว')}
           onPrintLetter={printLetter} onOdometer={recordOdometer} onMonthReport={printMonth}
           onAmend={(booking, values, reason) => { const args = { p_id: booking.id, p_revision: booking.revision, p_data: values, p_note: reason }; return mutate('patient_booking_amend', { ...args, p_op: op(JSON.stringify(args)) }, 'แก้ข้อมูลตามที่ประสานแล้ว พร้อมเก็บประวัติ') }}
           onConfirm={(ids, plan, helper) => plan.join_trip_id ? mutate('patient_booking_confirm_join', { p_op: op(JSON.stringify(plan)), p_booking: plan.join_booking_id, p_expected: plan }, 'ยืนยันร่วมเที่ยวแล้ว แจ้งแผนล่าสุดให้ผู้เดินทางและคนขับ') : mutate('patient_booking_confirm', { p_id: op(JSON.stringify({ ids, plan, helper })), p_ids: ids, p_expected: plan, p_helper: helper }, 'ยืนยันเที่ยวแล้ว ผู้จองและคนขับเห็นข้อมูลในระบบ')} /></>}

@@ -72,3 +72,14 @@ export function nextPassengerAction(booking, trip) {
   if (trip.state === 'returning') return { 2: 'รับกลับแล้ว', 3: 'ส่งถึงจุดหมายแล้ว' }[booking.passenger_step]
   return null
 }
+
+// เลขไมล์กลับของเที่ยวก่อนหน้า "ตามเวลาเริ่มรับ" ที่ไม่ถูกยกเลิกและบันทึกเลขไมล์กลับแล้ว
+// ⚠️ เดิมใช้ค่าสูงสุดของทุกเที่ยวที่โหลดมา ซึ่งหยิบเที่ยวที่วิ่งทีหลังมาได้เมื่อกรอกย้อนหลัง (ผลตรวจ #227 ข้อ 5)
+// ไม่มีเที่ยวก่อนหน้าในข้อมูลที่โหลดมา (หน้าจอเห็นย้อนหลัง 30 วัน) = เว้นว่างให้กรอกเอง ดีกว่าเดาผิด
+export function previousOdometer(trip, trips) {
+  const at = trip?.plan?.pickup_at
+  const before = trips
+    .filter(t => t.id !== trip.id && t.state !== 'cancelled' && Number.isFinite(t.odometer_end) && at && t.plan?.pickup_at && t.plan.pickup_at < at)
+    .sort((a, b) => String(b.plan.pickup_at).localeCompare(String(a.plan.pickup_at)))
+  return before.length ? before[0].odometer_end : ''
+}

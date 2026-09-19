@@ -128,11 +128,12 @@ const monthArgs = () => ({
   tenant: TENANT, partner: PARTNER,
   report: {
     month: '2026-10-01',
+    // 20 เที่ยวจบแล้ว + 2 เที่ยวยังไม่ได้วิ่ง — ยอดรวมต้องนับเฉพาะ 20 เที่ยวแรก (ผลตรวจ #227 ข้อ 3)
     trips: Array.from({ length: 22 }, (_, i) => ({
-      trip_id: `t-${i}`, date: `2026-10-${String(i + 1).padStart(2, '0')}`,
+      trip_id: `t-${i}`, date: `2026-10-${String(i + 1).padStart(2, '0')}`, state: i < 20 ? 'completed' : 'confirmed',
       route_label: 'โรงพยาบาลแพร่ — หมู่ 1 ถึงหมู่ 12', passengers: 4, companions: 3,
-      odometer_start: 12000 + i * 80, odometer_end: i === 21 ? null : 12000 + i * 80 + 76,
-      distance: i === 21 ? null : 76, driver_name: 'นายขับดี ปลอดภัยยิ่ง', letter_no: `พร 72301/${100 + i}`,
+      odometer_start: i < 20 ? 12000 + i * 80 : null, odometer_end: i < 20 ? 12000 + i * 80 + 76 : null,
+      distance: i < 20 ? 76 : null, driver_name: 'นายขับดี ปลอดภัยยิ่ง', letter_no: `พร 72301/${100 + i}`,
     })),
   },
 })
@@ -445,7 +446,8 @@ const checks = [
         assert.equal(info.rowBreak, 'avoid', 'แถวขาดกลางระหว่างหน้าได้')
         assert.equal(info.signBreak, 'avoid', 'ช่องลงนามแยกไปคนละหน้าได้')
         assert.ok(!info.text.includes('นางทดสอบ'), 'สรุปรายเดือนห้ามมีชื่อผู้เดินทาง')
-        assert.ok(info.text.includes('รวม 22 เที่ยว') && info.text.includes('1596'), 'ยอดรวมเที่ยว/ระยะทางไม่ถูก')
+        assert.ok(info.text.includes('รวมเที่ยวที่จบแล้ว 20 เที่ยว') && info.text.includes('1520'), 'ยอดรวมต้องนับเฉพาะเที่ยวที่จบแล้ว')
+        assert.ok(info.text.includes('เที่ยวที่ยังไม่จบในเดือนนี้ 2 เที่ยว'), 'เที่ยวที่ยังไม่ได้วิ่งต้องแยกแสดง ไม่หายไปเงียบๆ')
         await assertSignBlockStandard(page, { minRows: 2, minBelow: 4 })
         await assertSignLinesAligned(page, '.report-sign .sign-row')
       } finally { await page.close() }

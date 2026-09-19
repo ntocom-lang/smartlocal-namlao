@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
-import { BOOKING_STATUS, TRIP_STATUS, RETURN_MODES, MOBILITY, suggestGroups, dateTime, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, nextTripAction, nextPassengerAction } from '../../lib/patientBooking'
+import { BOOKING_STATUS, TRIP_STATUS, RETURN_MODES, MOBILITY, suggestGroups, dateTime, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, nextTripAction, nextPassengerAction, previousOdometer } from '../../lib/patientBooking'
 
 export function BookingCards({ bookings, trips, onAction, busy }) {
   if (!bookings.length) return <p className="py-8 text-slate-600">ยังไม่มีการจอง</p>
@@ -88,6 +88,8 @@ function AmendBooking({ booking, routes, busy, onBack, onSave }) {
 export function DriverTrips({ workspace, uid, onAction, onOdometer, busy }) {
   const [note, setNote] = useState('')
   const trips = workspace.trips.filter(t => t.driver_id === uid && !['completed', 'cancelled'].includes(t.state))
+  // จบเที่ยวแล้วแต่ยังไม่มีเลขไมล์กลับ — เดิมหายจากหน้าคนขับทันทีที่กดจบ ต้องให้เจ้าหน้าที่กรอกแทน (ผลตรวจ #227 ข้อ 4)
+  const awaitingOdometer = workspace.trips.filter(t => t.driver_id === uid && t.state === 'completed' && !Number.isFinite(t.odometer_end))
   return <div className="space-y-4"><h2 className="text-xl font-bold">เที่ยวของคนขับ</h2><p className="rounded-xl bg-amber-50 p-3">กดบันทึกเมื่อจอดรถในที่ปลอดภัย</p>
     {!trips.length && <p>ยังไม่มีเที่ยวที่ได้รับมอบหมาย</p>}
     <label className="block">เหตุขัดข้อง/ล่าช้า<input className={inputClass} value={note} maxLength={500} onChange={e => setNote(e.target.value)} /></label>
@@ -102,6 +104,11 @@ export function DriverTrips({ workspace, uid, onAction, onOdometer, busy }) {
       {t.state === 'issue' && <p className="rounded-xl bg-amber-50 p-3">รอเจ้าหน้าที่ประสานแผน ก่อนดำเนินการต่อ</p>}
       <OdometerForm trip={t} trips={workspace.trips} busy={busy} onSave={onOdometer} />
     </article>)}
+    {awaitingOdometer.length > 0 && <section className="space-y-3" aria-label="จบแล้ว รอเติมเลขไมล์">
+      <h3 className="font-bold">จบแล้ว รอเติมเลขไมล์ ({awaitingOdometer.length})</h3>
+      {awaitingOdometer.map(t => <article key={t.id} className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="font-semibold">{t.plan.route_label}</p><p>เริ่มรับ {dateTime(t.plan.pickup_at)}</p>
+        <OdometerForm trip={t} trips={workspace.trips} busy={busy} onSave={onOdometer} /></article>)}
+    </section>}
   </div>
 }
 
@@ -128,11 +135,10 @@ function TripFundDocs({ trip, busy, onRecordLetter, onPrintLetter }) {
   </div>
 }
 
-// เลขไมล์ต่อเที่ยว — ระบบเติมเลขไมล์ออกจากเลขไมล์กลับของเที่ยวล่าสุดให้เอง คนขับกรอกแค่ตอนกลับ
+// เลขไมล์ต่อเที่ยว — ระบบเติมเลขไมล์ออกจากเลขไมล์กลับของเที่ยวก่อนหน้าให้เอง คนขับกรอกแค่ตอนกลับ
 // ไม่บังคับก่อนจบเที่ยว เจ้าหน้าที่จัดคิวแก้แทนได้ภายหลัง (ไม่เพิ่มขั้นตอนบังคับให้คนขับ)
 function OdometerForm({ trip, trips, busy, onSave }) {
-  const lastEnd = Math.max(0, ...trips.filter(t => t.id !== trip.id && Number.isFinite(t.odometer_end)).map(t => t.odometer_end))
-  const [start, setStart] = useState(trip.odometer_start ?? (lastEnd || ''))
+  const [start, setStart] = useState(trip.odometer_start ?? previousOdometer(trip, trips))
   const [end, setEnd] = useState(trip.odometer_end ?? '')
   const distance = start !== '' && end !== '' ? Number(end) - Number(start) : null
   return <form className="mt-3 grid gap-3 rounded-xl bg-slate-50 p-3 sm:grid-cols-[1fr_1fr_auto]" onSubmit={e => { e.preventDefault(); onSave(trip, Number(start), end === '' ? null : Number(end)) }}>

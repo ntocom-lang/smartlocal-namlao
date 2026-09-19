@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react'
 import tailwind from '@tailwindcss/vite'
 import { chromium } from 'playwright'
 import { mkdir } from 'node:fs/promises'
+import { previousOdometer } from '../src/lib/patientBooking.js'
 process.env.PATIENT_UI_QA = '1'
 const { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, day, calendarDay } = await import('./patient-booking-db.test.mjs')
 await actor(admin); await rpc('patient_booking_save_settings',[tenant,(await rpc('patient_booking_workspace',[tenant])).settings.revision,settings])
@@ -16,7 +17,7 @@ const order = {
  patient_booking_confirm:['p_muni','p_id','p_ids','p_expected','p_helper'],patient_booking_action:['p_muni','p_op','p_entity','p_revision','p_action','p_note'],
  patient_booking_calendar:['p_muni','p_from','p_to'],patient_booking_submit_join:['p_muni','p_id','p_trip','p_data'],patient_booking_preview_join:['p_muni','p_booking'],patient_booking_confirm_join:['p_muni','p_op','p_booking','p_expected'],
  patient_booking_amend:['p_muni','p_op','p_id','p_revision','p_data','p_note'],
- patient_booking_record_letter:['p_muni','p_trip','p_letter_no','p_letter_date'],patient_booking_record_odometer:['p_muni','p_trip','p_start','p_end'],patient_booking_month_report:['p_muni','p_month'],
+ patient_booking_record_letter:['p_muni','p_trip','p_docs_revision','p_letter_no','p_letter_date'],patient_booking_record_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end'],patient_booking_month_report:['p_muni','p_month'],
 }
 const plugin = {
  name:'isolated-patient-booking-browser',enforce:'pre',
@@ -84,12 +85,24 @@ try{
  await driverTrip.getByText('ระยะทาง 33 กม.',{exact:true}).waitFor();await driverTrip.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขไมล์แล้ว'}).waitFor()
  await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.getByRole('button',{name:'เที่ยวที่ยืนยันแล้ว',exact:true}).click()
  const odoTrip=page.locator('article:has(input[name="odometer_end"][value="15033"])')
- assert.ok(await page.locator('input[name="odometer_start"][value="15033"]').count()>=1,'เลขไมล์ออกของเที่ยวถัดไปต้องเติมจากเลขไมล์กลับล่าสุดให้เอง');await odoTrip.getByRole('button',{name:/^(กรอก|แก้)เลขหนังสือ$/}).click()
+ // เลขไมล์ออก = เลขไมล์กลับของเที่ยวก่อนหน้าตามเวลา ไม่ใช่ค่าสูงสุดของทุกเที่ยว (ผลตรวจ #227 ข้อ 5)
+ {
+  const trip=(id,at,end,state='completed')=>({id,state,odometer_end:end,plan:{pickup_at:`2026-10-05T${at}:00+07:00`}})
+  const loaded=[trip('a','08:00',100),trip('late','11:00',200),trip('void','09:00',150,'cancelled'),trip('open','08:30',null,'confirmed')]
+  assert.equal(previousOdometer(trip('now','09:30',null,'confirmed'),loaded),100,'ต้องหยิบเที่ยวก่อนหน้า ไม่ใช่เที่ยวที่วิ่งทีหลังหรือที่ยกเลิก')
+  assert.equal(previousOdometer(trip('first','07:00',null,'confirmed'),loaded),'','ไม่มีเที่ยวก่อนหน้าต้องเว้นว่าง ไม่เดา')
+ };await odoTrip.getByRole('button',{name:/^(กรอก|แก้)เลขหนังสือ$/}).click()
  await odoTrip.getByLabel('เลขที่หนังสือ',{exact:true}).fill('พร 72301/77');await odoTrip.getByRole('button',{name:'บันทึกเลขหนังสือ',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขหนังสือนำส่งแล้ว'}).waitFor()
  await odoTrip.getByText(/^ที่ พร 72301\/77 ลงวันที่/).waitFor()
  if(process.env.PATIENT_PREVIEW_SHOTS){await odoTrip.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-fund-docs-390.png`})}
  await actor(coordinator);const saved=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.forward_letter_no==='พร 72301/77')
  assert(saved,'เลขหนังสือไม่ถึงฐานข้อมูล');assert.equal(saved.odometer_end,15033,'เลขไมล์ไม่ถึงฐานข้อมูล')
+ // จบเที่ยวแล้วแต่ยังไม่มีเลขไมล์กลับ ต้องยังอยู่ในหน้าคนขับให้เติมเองได้ (ผลตรวจ #227 ข้อ 4)
+ await visit('driver');await page.getByRole('button',{name:'งานคนขับ',exact:true}).click()
+ const waiting=page.getByRole('region',{name:'จบแล้ว รอเติมเลขไมล์'});await waiting.getByRole('heading',{name:/^จบแล้ว รอเติมเลขไมล์/}).waitFor()
+ const late=waiting.getByRole('article').first();await late.locator('input[name="odometer_start"]').fill('14000');await late.locator('input[name="odometer_end"]').fill('14020')
+ await late.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขไมล์แล้ว'}).waitFor()
+ await actor(coordinator);assert((await rpc('patient_booking_workspace',[tenant])).trips.some(t=>t.state==='completed'&&t.odometer_end===14020),'เลขไมล์ของเที่ยวที่จบแล้วไม่ถึงฐานข้อมูล')
  console.log('PASS fund documents through the real UI: driver odometer + coordinator letter number reach PostgreSQL')
 
  for(const width of [320,390,768,1024]){await page.setViewportSize({width,height:900});for(const as of ['citizen','coordinator','driver','admin']){await visit(as);const tab={citizen:'หน้าบริการ',coordinator:'จัดคิว',driver:'งานคนขับ',admin:'ตั้งค่า'}[as];await page.getByRole('button',{name:tab,exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${as} overflow`)}console.log(`PASS rendered ${width}px four roles`)}
