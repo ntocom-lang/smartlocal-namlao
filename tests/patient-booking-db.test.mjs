@@ -25,7 +25,7 @@ INSERT INTO public.profiles VALUES
 INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST',true,ARRAY['patient_transport_request'],0);
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -161,7 +161,8 @@ const weekend=new Date();weekend.setUTCDate(weekend.getUTCDate()+1);while(weeken
 const satDay=weekend.toISOString().slice(0,10),satAt=time=>`${satDay}T${time}:00+07:00`
 const weekendBooking={...base,patient_name:'TEST weekend',phone:'0800000500',appointment_at:satAt('10:00'),return_at:satAt('12:00')}
 await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(500),weekendBooking]),/วันหยุด/)
-await actor(coordinator);assert.equal(await rpc('patient_booking_submit',[tenant,id(500),weekendBooking]),id(500))
+await actor(coordinator);await fails(()=>rpc('patient_booking_submit',[tenant,id(500),weekendBooking]),/วันหยุด/)
+assert.equal(await rpc('patient_booking_submit',[tenant,id(500),weekendBooking,true]),id(500))
 const holiday=new Date();holiday.setUTCDate(holiday.getUTCDate()+20);while([0,6].includes(holiday.getUTCDay()))holiday.setUTCDate(holiday.getUTCDate()+1)
 const holidayDay=holiday.toISOString().slice(0,10),holidayAt=time=>`${holidayDay}T${time}:00+07:00`
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,6,{...settings,holidays:[holidayDay]}])
@@ -173,7 +174,8 @@ await actor(coordinator);assert(!(await rpc('patient_booking_preview',[tenant,[i
 await actor(null);assert.notEqual((await rpc('patient_booking_calendar',[tenant,holidayDay,holidayDay])).days[0].status,'unverified')
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,8,{...settings,unavailable:true}])
 await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(503),{...base,patient_name:'TEST unavailable',phone:'0800000503'}]),/งดรับจอง/)
-await actor(coordinator);assert.equal(await rpc('patient_booking_submit',[tenant,id(503),{...base,patient_name:'TEST unavailable',phone:'0800000503'}]),id(503))
+await actor(coordinator);await fails(()=>rpc('patient_booking_submit',[tenant,id(503),{...base,patient_name:'TEST unavailable',phone:'0800000503'}]),/งดรับจอง/)
+assert.equal(await rpc('patient_booking_submit',[tenant,id(503),{...base,patient_name:'TEST unavailable',phone:'0800000503'},true]),id(503))
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,9,settings])
 console.log('PASS intake guards for weekends, holidays and unavailable vehicle; expired calendar does not block intake or planning; staff intake still accepted')
 // หมุดจุดรับ: เป็นทางเลือก แต่ถ้าส่งมาต้องครบคู่ อยู่ในพื้นที่ และห้ามหลุดไปหน้าสาธารณะ
@@ -296,6 +298,17 @@ await db.exec('RESET ROLE');await db.query("UPDATE public.profiles SET role='sta
 await rpc('patient_booking_save_settings',[tenant,dualRevision+1,settings])
 await actor(driver);assert.equal((await rpc('patient_booking_workspace',[tenant])).role,'driver')
 console.log('PASS explicit dual assignment, admin-only changes, tenant/staff checks and removal of coordinator permission')
+// ธงรับจองแทนเป็นคำสั่งของหน้าทำงาน ไม่ใช่สิทธิ์ที่ติดมากับบัญชี และต้องเหลือร่องรอยไว้ตรวจ
+await actor(citizen)
+await fails(()=>rpc('patient_booking_submit',[tenant,id(510),{...base,patient_name:'TEST channel',phone:'0800000510'},true]),/ไม่มีสิทธิ์รับจองแทน/)
+await db.exec('RESET ROLE')
+const channels=Object.fromEntries((await db.query('SELECT id,entry_channel FROM public.patient_bookings WHERE id IN ($1,$2)',[booking1,id(500)])).rows.map(r=>[r.id,r.entry_channel]))
+assert.equal(channels[booking1],'online')
+assert.equal(channels[id(500)],'staff')
+const staffEvent=(await db.query("SELECT detail FROM public.patient_booking_events WHERE entity_id=$1 AND action='submitted'",[id(500)])).rows[0]
+assert.equal(staffEvent.detail.entry_channel,'staff')
+console.log('PASS staff intake is an explicit command, citizens cannot claim it, and the channel is recorded')
+
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
 export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay }
