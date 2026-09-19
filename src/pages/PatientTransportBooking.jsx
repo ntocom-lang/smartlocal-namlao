@@ -120,7 +120,7 @@ export default function PatientTransportBooking() {
   }
   return <div className="mx-auto min-h-screen max-w-5xl bg-white px-4 py-6 text-slate-900">
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><Link to="/" className={`${buttonClass} inline-flex items-center`}>← หน้าหลัก</Link><button className={`${buttonClass} inline-flex items-center gap-2`} onClick={reload} disabled={busy}><RefreshCw size={16} />โหลดข้อมูลล่าสุด</button></div>
-    <header className="mb-5"><p className="text-sm font-semibold text-sky-800">{tenant?.name} · ดูแลใกล้บ้าน</p><h1 className="mt-1 text-2xl font-bold">รถรับส่งผู้ป่วย</h1><p className="mt-2 text-sm text-slate-600">รถของ{info?.owner_name || 'กองทุน'} · เจ้าหน้าที่ {orgAbbr()} รับเรื่องและจัดคิว</p></header>
+    <header className="mb-5"><p className="text-sm font-semibold text-sky-800">{tenant?.name} · ดูแลใกล้บ้าน</p><h1 className="mt-1 text-2xl font-bold">รถรับส่งผู้ป่วย</h1></header>
     {error && <div role="alert" className="mb-4 rounded-xl bg-red-50 p-4 text-red-800">{error}</div>}
     {notice && <p role="status" className="mb-4 rounded-xl bg-emerald-50 p-4">{notice}</p>}
     {!current && !error && <p role="status">กำลังโหลดบริการ…</p>}
