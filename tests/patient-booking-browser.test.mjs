@@ -18,10 +18,10 @@ let chain = Promise.resolve()
 const users = { setupadmin:setupAdmin, citizen, coordinator, driver, admin, anonymous: null }
 const order = {
  patient_booking_update_schedule:['p_muni','p_trip','p_revision','p_notice','p_pickup','p_return'],
- patient_booking_info:['p_muni'],patient_booking_workspace:['p_muni'],patient_booking_submit:['p_muni','p_id','p_data'],
+ patient_booking_info:['p_muni'],patient_booking_workspace:['p_muni'],patient_booking_submit:['p_muni','p_id','p_data','p_staff_entry'],
  patient_booking_save_settings:['p_muni','p_revision','p_data'],patient_booking_preview:['p_muni','p_ids','p_helper'],
  patient_booking_confirm:['p_muni','p_id','p_ids','p_expected','p_helper'],patient_booking_action:['p_muni','p_op','p_entity','p_revision','p_action','p_note'],
- patient_booking_calendar:['p_muni','p_from','p_to'],patient_booking_submit_join:['p_muni','p_id','p_trip','p_data'],patient_booking_preview_join:['p_muni','p_booking'],patient_booking_confirm_join:['p_muni','p_op','p_booking','p_expected'],
+ patient_booking_calendar:['p_muni','p_from','p_to'],patient_booking_submit_join:['p_muni','p_id','p_trip','p_data','p_staff_entry'],patient_booking_preview_join:['p_muni','p_booking'],patient_booking_confirm_join:['p_muni','p_op','p_booking','p_expected'],
  patient_booking_amend:['p_muni','p_op','p_id','p_revision','p_data','p_note'],
  patient_booking_save_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end','p_issue','p_note'],patient_booking_record_letter:['p_muni','p_trip','p_docs_revision','p_letter_no','p_letter_date'],patient_booking_record_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end'],patient_booking_month_report:['p_muni','p_month'],
 }
