@@ -25,7 +25,7 @@ INSERT INTO public.profiles VALUES
 INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST',true,ARRAY['patient_transport_request'],0);
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -308,6 +308,22 @@ assert.equal(channels[id(500)],'staff')
 const staffEvent=(await db.query("SELECT detail FROM public.patient_booking_events WHERE entity_id=$1 AND action='submitted'",[id(500)])).rows[0]
 assert.equal(staffEvent.detail.entry_channel,'staff')
 console.log('PASS staff intake is an explicit command, citizens cannot claim it, and the channel is recorded')
+
+// หน้าประชาชนใช้ patient_booking_mine ซึ่งคืนเฉพาะของตัวเองไม่ว่าบทบาทจะเป็นอะไร
+await actor(coordinator)
+const coordinatorMine = await rpc('patient_booking_mine',[tenant])
+const coordinatorQueue = await rpc('patient_booking_workspace',[tenant])
+assert.equal(coordinatorMine.role,'coordinator')
+assert(coordinatorQueue.bookings.length>coordinatorMine.bookings.length,'ผู้จัดคิวต้องเห็นคิวทั้งหน่วยงานเฉพาะในหน้าทำงาน')
+assert(coordinatorMine.bookings.every(b=>b.created_by===coordinator),'patient_booking_mine ต้องคืนเฉพาะคำขอของผู้เรียก')
+for (const key of ['settings','events','partners','people']) assert(!(key in coordinatorMine),`patient_booking_mine ต้องไม่ส่ง ${key} มาที่หน้าประชาชน`)
+assert(coordinatorMine.trips.every(t=>!('driver_id' in t) && !('booking_ids' in (t.plan||{}))),'เที่ยวในหน้าประชาชนต้องไม่มีข้อมูลภายใน')
+await actor(citizen)
+const citizenMine = await rpc('patient_booking_mine',[tenant])
+assert(citizenMine.bookings.every(b=>b.created_by===citizen))
+await actor(outsider); await fails(()=>rpc('patient_booking_mine',[tenant]),/ไม่มีสิทธิ์/)
+await actor(null); await fails(()=>rpc('patient_booking_mine',[tenant]),/permission denied/)
+console.log('PASS citizen-page projection: own bookings only, no staff data, tenant and anonymous denied')
 
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')

@@ -54,6 +54,7 @@ const ReportsHub = lazyWithRetry(() => import('./pages/ReportsHub'))
 const PostsPage = lazyWithRetry(() => import('./pages/PostsPage'))
 const FleetPage = lazyWithRetry(() => import('./pages/FleetPage'))
 const PatientTransportBooking = lazyWithRetry(() => import('./pages/PatientTransportBooking'))
+const PatientTransportStaff = lazyWithRetry(() => import('./pages/PatientTransportStaff'))
 
 // required = บัญชีนี้ไม่มีอีเมลเลย เบอร์โทรจึงเป็นตัวระบุตัวตนชิ้นเดียวที่เหลือ ข้ามไม่ได้
 // (เหตุผลเต็มอยู่ที่จุดเรียก setPhoneReminderRequired ใน checkAndFixProfile)
@@ -678,6 +679,12 @@ function AppShell() {
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/doc-request" element={<CitizenDocRequest />} />
           <Route path="/patient-transport" element={<PatientTransportBooking />} />
+          {/* งานเจ้าหน้าที่ของบริการนี้อยู่คนละเส้นกับหน้าประชาชน ประชาชนเปิดเส้นนี้ตรงๆ ไม่ได้ */}
+          <Route path="/staff/patient-transport" element={
+            <RequireAuth staffOnly>
+              <PatientTransportStaff />
+            </RequireAuth>
+          } />
           <Route path="/my-docs" element={<MyDocRequests />} />
           <Route path="/doc-stats" element={<LpaDocStats />} />
           <Route path="/reports/complaints" element={<ComplaintStats />} />

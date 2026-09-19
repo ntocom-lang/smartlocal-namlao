@@ -18,7 +18,7 @@ let chain = Promise.resolve()
 const users = { setupadmin:setupAdmin, citizen, coordinator, driver, admin, anonymous: null }
 const order = {
  patient_booking_update_schedule:['p_muni','p_trip','p_revision','p_notice','p_pickup','p_return'],
- patient_booking_info:['p_muni'],patient_booking_workspace:['p_muni'],patient_booking_submit:['p_muni','p_id','p_data','p_staff_entry'],
+ patient_booking_info:['p_muni'],patient_booking_workspace:['p_muni'],patient_booking_mine:['p_muni'],patient_booking_submit:['p_muni','p_id','p_data','p_staff_entry'],
  patient_booking_save_settings:['p_muni','p_revision','p_data'],patient_booking_preview:['p_muni','p_ids','p_helper'],
  patient_booking_confirm:['p_muni','p_id','p_ids','p_expected','p_helper'],patient_booking_action:['p_muni','p_op','p_entity','p_revision','p_action','p_note'],
  patient_booking_calendar:['p_muni','p_from','p_to'],patient_booking_submit_join:['p_muni','p_id','p_trip','p_data','p_staff_entry'],patient_booking_preview_join:['p_muni','p_booking'],patient_booking_confirm_join:['p_muni','p_op','p_booking','p_expected'],
@@ -30,7 +30,7 @@ const plugin = {
  resolveId(id){ if(id==='/__patient_entry.js')return '\0patient-entry.js' },
  load(id){
   const normalized=id.replaceAll('\\','/')
-  if(id==='\0patient-entry.js')return `import React from 'react';import {createRoot} from 'react-dom/client';import {BrowserRouter} from 'react-router-dom';import Page from '/src/pages/PatientTransportBooking.jsx';import '/src/index.css';createRoot(document.getElementById('root')).render(React.createElement(BrowserRouter,null,React.createElement(Page)));`
+  if(id==='\0patient-entry.js')return `import React from 'react';import {createRoot} from 'react-dom/client';import {BrowserRouter} from 'react-router-dom';import Citizen from '/src/pages/PatientTransportBooking.jsx';import Staff from '/src/pages/PatientTransportStaff.jsx';const Page=new URLSearchParams(location.search).get('page')==='staff'?Staff:Citizen;import '/src/index.css';createRoot(document.getElementById('root')).render(React.createElement(BrowserRouter,null,React.createElement(Page)));`
   if(normalized.endsWith('/contexts/TenantContext.jsx'))return `export const useTenant=()=>({tenant:{id:new URLSearchParams(location.search).get('as')==='setupadmin'?'${setupTenant}':'${tenant}',name:'อบต. TEST'},isModuleEnabled:()=>true})`
   if(normalized.endsWith('/contexts/AuthContext.jsx'))return `const role=new URLSearchParams(location.search).get('as')||'citizen';const ids=${JSON.stringify(users)};export const useAuth=()=>({session:{user:{id:ids[role]}},profileName:'TEST Browser Requester'});`
   if(normalized.endsWith('/lib/supabase.js'))return `export const supabase={rpc:async(name,args)=>{const user=new URLSearchParams(location.search).get('as')||'citizen';return (await fetch('/__patient_rpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,args,user})})).json()}};`
@@ -50,9 +50,14 @@ const browser=await chromium.launch({channel:'msedge',headless:true})
 const page=await browser.newPage({viewport:{width:390,height:900}});const errors=[]
 page.on('pageerror',e=>errors.push(e.message))
 await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort())
-const visit=async (as, home=true)=>{await page.goto(`${base}/__patient?as=${as}`);await page.getByRole('button',{name:'หน้าบริการ',exact:true}).waitFor();if(home)await page.getByRole('button',{name:'หน้าบริการ',exact:true}).click()}
+const STAFF_ROLES=['setupadmin','coordinator','driver','admin']
+// หน้าประชาชนกับหน้าทำงานเป็นคนละหน้าแล้ว visit() จึงพาไปหน้าที่บทบาทนั้นใช้จริง
+const visit=async (as, home=true)=>{
+ if(STAFF_ROLES.includes(as)){await page.goto(`${base}/__patient?as=${as}&page=staff`);await page.getByRole('navigation',{name:'งานรถรับส่งผู้ป่วย'}).waitFor();return}
+ await page.goto(`${base}/__patient?as=${as}`);await page.getByRole('button',{name:'หน้าบริการ',exact:true}).waitFor();if(home)await page.getByRole('button',{name:'หน้าบริการ',exact:true}).click()}
+const visitCitizenPage=async as=>{await page.goto(`${base}/__patient?as=${as}`);await page.getByRole('button',{name:'หน้าบริการ',exact:true}).waitFor()}
 try{
- await visit('setupadmin');await page.getByRole('button',{name:'ตั้งค่ารถและเปิดบริการ',exact:true}).click()
+ await visit('setupadmin');await page.getByRole('button',{name:'ตั้งค่า',exact:true}).click()
  await page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกค่าตั้งต้นแล้ว'}).waitFor()
  await actor(setupAdmin);assert.equal((await rpc('patient_booking_workspace',[setupTenant])).settings.enabled,false)
  console.log('PASS first-time empty draft settings saved without enabling booking')
@@ -64,7 +69,7 @@ try{
  for(const label of ['ตรวจปฏิทินวันหยุดครอบคลุมถึง','ข้อความแจ้งการใช้ข้อมูลที่ผู้รับผิดชอบตรวจรับแล้ว'])assert.equal(await page.getByLabel(label,{exact:true}).count(),0)
  await page.getByRole('checkbox',{name:'เปิดรับจองรถออนไลน์',exact:true}).check();await page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกค่าตั้งต้นแล้ว'}).waitFor()
  await actor(setupAdmin);const initialSettings=(await rpc('patient_booking_workspace',[setupTenant])).settings;assert.equal(initialSettings.enabled,true);assert.equal(initialSettings.calendar_checked_through,null);assert.equal(initialSettings.delegation_reference,'');assert(initialSettings.privacy_notice.includes('บริการรถรับส่งผู้ป่วย'));assert.equal(initialSettings.driver_id,setupAdmin);assert.deepEqual(initialSettings.coordinator_ids,[setupAdmin]);assert.equal((await rpc('patient_booking_info',[setupTenant])).enabled,true)
- await page.getByRole('button',{name:'หน้าบริการ',exact:true}).click();await page.getByRole('button',{name:'ขอจองรถรับส่ง',exact:true}).waitFor()
+ await visitCitizenPage('setupadmin');await page.getByRole('button',{name:'หน้าบริการ',exact:true}).click();await page.getByRole('button',{name:'ขอจองรถรับส่ง',exact:true}).waitFor()
  console.log('PASS first-time setup completed through actual UI and booking opens; one account serves both duties')
  for(const [as, role] of [['anonymous','citizen'],['citizen','citizen'],['coordinator','coordinator'],['driver','driver'],['admin','admin']]) {
   await visit(as,false);await page.getByRole('button',{name:'คู่มือและแนะนำการใช้งาน',exact:true}).click()
@@ -225,9 +230,19 @@ try{
  assert.equal(await page.locator('a[href*="type=patient_transport_request"]').count(),0)
  await page.getByRole('link',{name:'ติดตามคำขอที่เคยยื่นไว้',exact:true}).waitFor()
  await page.getByRole('button',{name:'คู่มือและแนะนำการใช้งาน',exact:true}).click();await page.getByRole('button',{name:'แนะนำทีละขั้น',exact:true}).click();await page.getByRole('button',{name:'จบคำแนะนำ',exact:true}).waitFor()
- await visit('admin');await page.getByRole('button',{name:'ตั้งค่ารถและเปิดบริการ',exact:true}).click();await page.getByRole('button',{name:'ตั้งค่า',exact:true}).waitFor()
+ await visit('admin');await page.getByRole('button',{name:'ตั้งค่า',exact:true}).click();await page.getByRole('heading',{name:'ตั้งค่ารถและการให้บริการ'}).or(page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true})).first().waitFor()
  const citizenSource=await readFile(new URL('../src/pages/CitizenDocRequest.jsx',import.meta.url),'utf8');const staffSource=await readFile(new URL('../src/pages/StaffDashboard.jsx',import.meta.url),'utf8')
- assert(citizenSource.indexOf('<Navigate to="/patient-transport" replace />') < citizenSource.indexOf('if (needsIdCard)'));assert(!citizenSource.includes('PatientTransportWizard'));assert(!staffSource.includes('PatientTransportWizard'));assert(citizenSource.includes('<Navigate to="/patient-transport" replace />'));assert(staffSource.includes("onSelectPatientTransport={() => { setShowAdd(false); navigate('/patient-transport') }}"));assert(staffSource.includes('<PatientTransportPanel'))
- console.log('PASS unified entry routes, no fallback intake, disabled service/admin setup, history retained')
+ assert(citizenSource.indexOf('<Navigate to="/patient-transport" replace />') < citizenSource.indexOf('if (needsIdCard)'));assert(!citizenSource.includes('PatientTransportWizard'));assert(!staffSource.includes('PatientTransportWizard'));assert(citizenSource.includes('<Navigate to="/patient-transport" replace />'));assert(staffSource.includes("onSelectPatientTransport={() => { setShowAdd(false); navigate('/staff/patient-transport') }}"));assert(staffSource.includes('<PatientTransportPanel'))
+ const citizenPage=await readFile(new URL('../src/pages/PatientTransportBooking.jsx',import.meta.url),'utf8')
+ const staffPage=await readFile(new URL('../src/pages/PatientTransportStaff.jsx',import.meta.url),'utf8')
+ assert(citizenPage.includes("'patient_booking_mine'")&&!citizenPage.includes('patient_booking_workspace'),'หน้าประชาชนต้องไม่ดึงคิวทั้งหน่วยงาน')
+ for(const staffOnly of ['BookingSettings','CoordinatorQueue','DriverTrips','BookingDaySchedule'])assert(!citizenPage.includes(staffOnly),`หน้าประชาชนไม่ควร import ${staffOnly}`)
+ assert(staffPage.includes("'patient_booking_workspace'")&&staffPage.includes('p_staff_entry: true'))
+ // ข้อ 4: บัญชีเจ้าหน้าที่เปิดหน้าประชาชนต้องได้หน้าประชาชนปกติ + ลิงก์ไปหน้าทำงาน
+ await visitCitizenPage('coordinator')
+ await page.getByRole('link',{name:'ไปหน้าทำงานเจ้าหน้าที่',exact:true}).waitFor()
+ for(const staffTab of ['จัดคิว','ตารางออกรถ','ตั้งค่า'])assert.equal(await page.getByRole('button',{name:staffTab,exact:true}).count(),0,`หน้าประชาชนไม่ควรมีแท็บ ${staffTab}`)
+ await page.getByRole('button',{name:'หน้าบริการ',exact:true}).click();await page.getByText('หน่วยงานยังไม่เปิดรับจองรถออนไลน์ กรุณาติดต่อเจ้าหน้าที่เพื่อสอบถามบริการ',{exact:true}).waitFor();await page.getByRole('link',{name:'หน้าทำงานเจ้าหน้าที่',exact:true}).waitFor()
+ console.log('PASS split citizen/staff pages, staff links, citizen page loads only its own data, no fallback intake, history retained')
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS)await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-schedule-failure.png`,fullPage:true});throw error }finally{await browser.close();await server.close();await db.close()}

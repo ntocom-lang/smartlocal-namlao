@@ -157,9 +157,9 @@ const STANDALONE_GROUPS = [
     items: [
       { key: 'complaints', label: 'คำร้อง',     Icon: MessageSquareWarning, color: '#ef4444', bg: '#fee2e2', desc: 'รับเรื่อง ตรวจสอบ มอบหมาย และติดตามผล' },
       { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', Icon: FileText,       color: '#8b5cf6', bg: '#ede9fe', desc: 'รับคำขอเอกสารจากประชาชน ออกเลข และติดตามสถานะ' },
-      // externalUrl เพราะเป็นหน้าแยกที่ route /patient-transport (ModuleGuard คุมด้วยคีย์เดียวกัน)
+      // externalUrl เพราะเป็นหน้าแยกที่ route /staff/patient-transport (ModuleGuard คุมด้วยคีย์เดียวกัน)
       // คีย์อยู่ใน MANAGED_MODULE_KEYS จึงโผล่เฉพาะ อปท. ที่เปิดโมดูลนี้ — เดิมเป็นปุ่มฝังบนหัวหน้าจอ
-      { key: PATIENT_TRANSPORT_MODULE_KEY, label: 'รถรับ-ส่งผู้ป่วย', Icon: Ambulance, color: '#0284c7', bg: '#e0f2fe', desc: 'รับเรื่อง จัดคิวรถ และออกหนังสือนำส่งกองทุน', externalUrl: '/patient-transport' },
+      { key: PATIENT_TRANSPORT_MODULE_KEY, label: 'รถรับ-ส่งผู้ป่วย', Icon: Ambulance, color: '#0284c7', bg: '#e0f2fe', desc: 'รับเรื่อง จัดคิวรถ และออกหนังสือนำส่งกองทุน', externalUrl: '/staff/patient-transport' },
     ],
   },
   {
@@ -1423,7 +1423,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           onSelectWaterSupply={type => { setShowAdd(false); setShowWaterSupplyWizard(type) }}
           onSelectPublicAssistance={() => { setShowAdd(false); setShowPublicAssistanceWizard(true) }}
           onSelectAssetBorrow={() => { setShowAdd(false); setShowAssetBorrowWizard(true) }}
-          onSelectPatientTransport={() => { setShowAdd(false); navigate('/patient-transport') }} />
+          onSelectPatientTransport={() => { setShowAdd(false); navigate('/staff/patient-transport') }} />
       )}
       {/* ขออนุญาตก่อสร้างบ้าน — ใช้ wizard เต็มรูปแบบเดียวกับฝั่งประชาชน (แบบ ข.๑ จริง)
           แทนฟอร์มสั้นทั่วไปใน NewRequestSheet เพราะฟิลด์ไม่พอสำหรับพิมพ์แบบร่างที่ถูกต้อง */}
