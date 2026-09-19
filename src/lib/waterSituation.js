@@ -154,7 +154,12 @@ export function buildAlerts({ rain = [], ews = [], warnings = [], now }) {
     .map(s => ({ station: s, alert: ewsAlert(s, now) }))
     .filter(x => x.alert && !x.alert.stale && x.alert.level >= 2)
     .sort((a, b) => b.alert.level - a.alert.level || (toNum(a.station.distance_km) ?? 99) - (toNum(b.station.distance_km) ?? 99))
-  const official = (Array.isArray(warnings) ? warnings : []).filter(w => typeof w?.message === 'string' && w.message.trim())
+  // RPC ตัดที่ 24 ชม. แล้ว แต่เมื่อเน็ตขาดหน้าเว็บจะเก็บคำตอบเดิมไว้ จึงต้องตรวจซ้ำตามเวลาปัจจุบัน
+  const official = (Array.isArray(warnings) ? warnings : []).filter(w => {
+    if (typeof w?.message !== 'string' || !w.message.trim() || !w.issued_at) return false
+    const age = toMillis(now) - new Date(w.issued_at).getTime()
+    return Number.isFinite(age) && age >= 0 && age < 24 * 60 * 60 * 1000
+  })
   return {
     heavyRain,
     warnings: official,
