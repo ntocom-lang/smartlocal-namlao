@@ -333,6 +333,9 @@ export default function CitizenDocRequest() {
     setDone({ ref: id.slice(0, 8).toUpperCase() })
   }
 
+  // All patient transport entry links resolve to the same booking service.
+  if (searchParams.get('type') === PATIENT_TRANSPORT_TYPE || isPatientTransportRequest) return <Navigate to="/patient-transport" replace />
+
   if (session === undefined || needsIdCard === null) return null
 
   // ─── Identity Verification Gate ───────────────────────────────────────────
@@ -422,9 +425,6 @@ export default function CitizenDocRequest() {
   }
 
   // ─── Step 1: Doc type picker ───────────────────────────────────────────────
-  // All patient transport entry links resolve to the same booking service.
-  if (searchParams.get('type') === PATIENT_TRANSPORT_TYPE || isPatientTransportRequest) return <Navigate to="/patient-transport" replace />
-
   if (!selected) {
     return (
       <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
