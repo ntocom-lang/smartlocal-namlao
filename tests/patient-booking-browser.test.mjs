@@ -258,6 +258,15 @@ try{
  await page.getByRole('link',{name:'ไปหน้าทำงานเจ้าหน้าที่',exact:true}).waitFor()
  for(const staffTab of ['จัดคิว','ตารางออกรถ','ตั้งค่า'])assert.equal(await page.getByRole('button',{name:staffTab,exact:true}).count(),0,`หน้าประชาชนไม่ควรมีแท็บ ${staffTab}`)
  await page.getByRole('button',{name:'หน้าบริการ',exact:true}).click();await page.getByText('หน่วยงานยังไม่เปิดรับจองรถออนไลน์ กรุณาติดต่อเจ้าหน้าที่เพื่อสอบถามบริการ',{exact:true}).waitFor();await page.getByRole('link',{name:'หน้าทำงานเจ้าหน้าที่',exact:true}).waitFor()
+ // จอ PC: หน้าจัดคิวต้องเป็นตาราง อ่านหลายคำขอพร้อมกันได้ และปุ่มดำเนินการต้องไม่ถูกตัดนอกกรอบ
+ // (กติกาเดียวกับกล่องงาน: คอลัมน์ดำเนินการปักขวา ตารางที่กว้างเกินพื้นที่จะตัดปุ่มหลักทิ้งเงียบๆ)
+ await page.setViewportSize({width:1440,height:950});await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click()
+ const queueTable=page.locator('table').filter({hasText:'ผู้เดินทาง'}).first();await queueTable.waitFor()
+ assert.deepEqual(await queueTable.locator('thead th').allTextContents(),['ผู้เดินทาง','วันเวลานัด','จุดรับ','รับกลับ','ดำเนินการ'])
+ assert.equal(await page.evaluate(()=>{const table=[...document.querySelectorAll('table')].find(t=>t.innerText.includes('ตรวจแผนและเวลาว่าง'));if(!table)return 'ไม่พบตารางจัดคิว';const right=Math.min(table.parentElement.getBoundingClientRect().right,innerWidth);const clipped=[...table.querySelectorAll('button')].filter(b=>b.getBoundingClientRect().right>right+1);return clipped.length?`ปุ่มถูกตัด ${clipped.length}`:'ok'}),'ok')
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'จัดคิว 1440px overflow')
+ await page.setViewportSize({width:390,height:900});assert.equal(await page.locator('table').filter({hasText:'วันเวลานัด'}).locator('visible=true').count(),0,'จอเล็กต้องใช้การ์ด ไม่ใช่ตาราง')
+ console.log('PASS coordinator queue renders a desktop table at 1440px with actions visible, cards on small screens')
  console.log('PASS split citizen/staff pages, staff links, citizen page loads only its own data, no fallback intake, history retained')
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS)await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-schedule-failure.png`,fullPage:true});throw error }finally{await browser.close();await server.close();await db.close()}
