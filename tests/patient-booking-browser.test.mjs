@@ -7,7 +7,7 @@ import { chromium } from 'playwright'
 import { mkdir, readFile } from 'node:fs/promises'
 import { previousOdometer, thaiDay } from '../src/lib/patientBooking.js'
 process.env.PATIENT_UI_QA = '1'
-const { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, day, calendarDay } = await import('./patient-booking-db.test.mjs')
+const { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, day, calendarDay, baseBooking } = await import('./patient-booking-db.test.mjs')
 await actor(admin); await rpc('patient_booking_save_settings',[tenant,(await rpc('patient_booking_workspace',[tenant])).settings.revision,settings])
 const setupTenant='00000000-0000-4000-8000-000000009001',setupAdmin='00000000-0000-4000-8000-000000009002',setupPartner='00000000-0000-4000-8000-000000009003'
 await db.exec('RESET ROLE')
@@ -113,6 +113,16 @@ try{
  await visit('driver');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();const proposal=page.getByRole('article').filter({hasText:'TEST Browser Requester'});await proposal.getByRole('button',{name:'ตรวจแผนและเวลาว่าง',exact:true}).click();await page.getByRole('button',{name:'ตรวจแล้ว ยืนยันเที่ยวนี้',exact:true}).click();await page.getByRole('status').filter({hasText:'ยืนยันเที่ยวแล้ว'}).waitFor();
  await visit('driver');await page.getByRole('button',{name:'งานคนขับ',exact:true}).click();const trip=page.getByRole('article').filter({hasText:'TEST Browser Requester'});for(const label of ['ออกไปรับ','รับผู้เดินทางแล้ว','ส่งถึงโรงพยาบาลแล้ว','ส่งถึงครบ · รอรับกลับ','ออกไปรับขากลับ','รับกลับแล้ว','ส่งถึงจุดหมายแล้ว','ส่งกลับครบ · จบเที่ยว']){await trip.getByRole('button',{name:label,exact:true}).click();await page.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).waitFor();}
  await visit('citizen');await page.getByRole('button',{name:'การจองของฉัน',exact:true}).click();assert.match(await page.getByRole('article').filter({hasText:'TEST Browser Requester'}).textContent(),/จบเที่ยวแล้ว/)
+ // ปุ่มของหน้าประชาชนต้องเรียก patient_booking_action ได้จริง — เคยตกหล่น p_op แล้ว PostgREST ตอบ
+ // PGRST202 ปุ่ม "ยกเลิกคำขอ"/"พร้อมให้มารับกลับ" ใช้ไม่ได้ทั้งที่หน้าจอดูปกติ (เจอบน production)
+ await actor(citizen);const cancelId=crypto.randomUUID()
+ await rpc('patient_booking_submit',[tenant,cancelId,{...JSON.parse(JSON.stringify(baseBooking)),patient_name:'TEST cancel button',phone:'0800000911'},false])
+ await visit('citizen');await page.getByRole('button',{name:'การจองของฉัน',exact:true}).click()
+ const cancelCard=page.getByRole('article').filter({hasText:'TEST cancel button'})
+ await cancelCard.getByRole('button',{name:'ยกเลิกคำขอ',exact:true}).click()
+ await page.getByRole('status').filter({hasText:'บันทึกแล้ว'}).waitFor()
+ await actor(citizen);assert.equal((await rpc('patient_booking_mine',[tenant])).bookings.find(b=>b.id===cancelId).status,'cancelled')
+ console.log('PASS citizen action buttons reach PostgreSQL (operation id included)')
  console.log('PASS actual React booking -> coordinator confirmation -> driver individual return -> citizen completed, backed by local PostgreSQL')
  await actor(driver);const sameActorTrip=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.state==='completed'&&t.confirmed_by===driver);assert(sameActorTrip);assert.equal(sameActorTrip.driver_id,driver)
  await actor(admin);await rpc('patient_booking_save_settings',[tenant,(await rpc('patient_booking_workspace',[tenant])).settings.revision,settings])
