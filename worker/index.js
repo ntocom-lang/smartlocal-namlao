@@ -11,6 +11,7 @@
 // วิ่งผ่านที่นี่ เผาโควตา 100,000 ครั้ง/วันทิ้งโดยไม่ได้อะไรกลับมา
 
 import { buildIcons } from './manifestIcons.js'
+import { airQualityResponse } from './airQuality.js'
 
 const SHELL_PATH = '/_template.html'
 
@@ -184,6 +185,7 @@ function normalizeHexColor(value) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
+    if (url.pathname === '/api/air-quality') return airQualityResponse(request)
 
     // manifest ต่อ อปท. — ต้องเช็คก่อน isFileRequest() ซึ่งตอบ 404 ให้ทุกนามสกุลไฟล์
     //

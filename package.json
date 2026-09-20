@@ -48,6 +48,7 @@
     "test:waste-request": "node tests/waste-request-print.test.mjs",
     "test:waste-schedule": "node tests/waste-schedule.test.mjs && node tests/waste-schedule-poster.test.mjs",
     "test:water-situation": "node tests/water-situation.test.mjs",
+    "test:pm25": "node --test tests/pm25.test.mjs",
     "test:water-supply": "node tests/water-supply-print.test.mjs && node tests/water-supply-layout.test.mjs",
     "test:public-assistance": "node tests/public-assistance-print.test.mjs && node tests/public-assistance-layout.test.mjs",
     "test:council": "node tests/complaint-print-routing.test.mjs && node tests/council-form-layout.test.mjs",
