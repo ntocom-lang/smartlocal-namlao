@@ -13,7 +13,6 @@ import TourismSection from '../../../../components/home/TourismSection'
 import SmartCityBanner from '../../../../components/home/SmartCityBanner'
 import { CategoryIcon } from '../../../../lib/categoryIcon'
 import WaterworksDialog from './WaterworksDialog'
-import BookingHighlight from '../../../patientTransport/BookingHighlight'
 
 // รายการ "งานบริการประชาชน" จริง — ใช้ชุดข้อมูลเดียวกับ EServiceBlock ของธีมอื่นๆ (EcoFriendly ฯลฯ)
 // คือประเภทคำร้องขอเอกสาร ไม่ใช่เรื่องร้องเรียน (นั่นเป็นของ ComplaintBand คนละส่วนกัน) ผูกกับ
@@ -328,7 +327,6 @@ export default function ServiceHubHome() {
       </div>
 
       <div className="px-3 sm:px-4 lg:px-6 pt-3 pb-4 max-w-[1440px] mx-auto space-y-3">
-        <BookingHighlight />
         <BannerSlider />
         <ComplaintStatsWidget />
         <PostsHighlight />
