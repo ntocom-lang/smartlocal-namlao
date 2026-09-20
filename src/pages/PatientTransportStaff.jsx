@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { RefreshCw, Users } from 'lucide-react'
+import { BarChart2, CalendarDays, Car, Inbox, RefreshCw, Route, Settings, Users } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -8,18 +8,22 @@ import BookingHelp from '../components/patientTransport/BookingHelp'
 import BookingDaySchedule from '../components/patientTransport/BookingDaySchedule'
 import BookingForm from '../components/patientTransport/BookingForm'
 import BookingSettings from '../components/patientTransport/BookingSettings'
-import { CoordinatorQueue, DriverTrips } from '../components/patientTransport/BookingOperations'
+import { TabBar } from '../components/patientTransport/StaffShell'
+import { PendingQueue, QueueReport, TripBoard, DriverTrips } from '../components/patientTransport/BookingOperations'
 import { buildTripForwardLetterHtml, buildTripMonthReportHtml } from '../lib/patientTransportPrint'
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
 import { buttonClass, primaryClass } from '../lib/patientBooking'
 
 /**
- * หน้าทำงานของเจ้าหน้าที่ — ตารางออกรถ จัดคิว งานคนขับ และตั้งค่า
+ * หน้าทำงานของเจ้าหน้าที่ — ตารางออกรถ คิวรอจัดแผน เที่ยวเดินรถ งานคนขับ รายงาน และตั้งค่า
  *
  * แยกจากหน้าประชาชน (/patient-transport) ที่ใช้ component และ RPC ชุดเดียวกัน ไม่ใช่ระบบจองคนละชุด
  * route นี้อยู่ใต้ RequireAuth staffOnly แล้ว และยังตรวจบทบาทจาก patient_booking_workspace ซ้ำที่นี่
  * เพราะสิทธิ์ของโมดูลนี้ (ผู้จัดคิว/คนขับ) มาจากทะเบียนของระบบจอง ไม่ใช่จาก role ของบัญชีอย่างเดียว
+ *
+ * เมนูเป็นแถบแท็บชั้นเดียวแบบโมดูลยานพาหนะ และทุกหน้ารายการใช้กล่องเดียวกับ "คำร้อง"
+ * (ค้นหา ป้ายกรองพร้อมจำนวน ตารางราชการ แล้วเปิดเรื่องเป็นแผ่นลอยทับ) — ดู StaffShell.jsx
  */
 export default function PatientTransportStaff({ onBack } = {}) {
   const { tenant } = useTenant()
@@ -35,6 +39,14 @@ export default function PatientTransportStaff({ onBack } = {}) {
   const isDriver = workspace?.role === 'driver' || (isCoordinator && !!uid && workspace?.settings?.driver_id === uid) || workspace?.trips?.some(t => t.driver_id === uid)
   const allowed = isCoordinator || isDriver
   const view = selectedView ?? (isCoordinator ? 'schedule' : 'driver')
+  const tabs = [
+    { id: 'schedule', label: 'ตารางออกรถ', Icon: CalendarDays, show: isCoordinator },
+    { id: 'queue', label: 'คิวรอจัดแผน', Icon: Inbox, show: isCoordinator },
+    { id: 'trips', label: 'เที่ยวเดินรถ', Icon: Route, show: isCoordinator },
+    { id: 'driver', label: 'งานคนขับ', Icon: Car, show: isDriver },
+    { id: 'report', label: 'รายงาน', Icon: BarChart2, show: isCoordinator },
+    { id: 'settings', label: 'ตั้งค่า', Icon: Settings, show: isAdmin },
+  ].filter(t => t.show)
   // ฝังในแดชบอร์ดเจ้าหน้าที่ (เมนูบน/ซ้ายของหน้าเจ้าหน้าที่ครอบอยู่แล้ว) — กติกาเดียวกับ FleetPage
   // หัวโมดูลและปุ่มย้อนกลับมาจากโครงหน้าเจ้าหน้าที่ หน้านี้จึงไม่วาดซ้ำเมื่อ embedded
   const embedded = !!onBack
@@ -85,9 +97,11 @@ export default function PatientTransportStaff({ onBack } = {}) {
     } catch (e) { setError(e.message) }
     finally { lockRef.current = false; setBusy(false) }
   }
+  // ปุ่มหลักของกล่องคิว อยู่ในแถบเครื่องมือที่เดียวกับปุ่ม "รับแจ้งที่เคาน์เตอร์" ของคำร้อง
+  const intakeButton = <button className={primaryClass} disabled={busy || !info?.enabled} onClick={() => go('book')}>รับจองแทนทางโทรศัพท์/หน้าเคาน์เตอร์</button>
   return <div className={embedded ? 'text-slate-900' : 'mx-auto min-h-screen max-w-5xl bg-white px-4 py-6 text-slate-900'}>
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2">{!embedded && <Link to="/staff" className={`${buttonClass} inline-flex items-center`}>← หน้าเจ้าหน้าที่</Link>}<Link to="/patient-transport" className={`${buttonClass} inline-flex items-center gap-2`}><Users size={16} />หน้าประชาชน</Link></div><button className={`${buttonClass} inline-flex items-center gap-2`} onClick={reload} disabled={busy}><RefreshCw size={16} />โหลดข้อมูลล่าสุด</button></div>
-    {!embedded && <header className="mb-5"><p className="text-sm font-semibold text-sky-800">{tenant?.name} · งานเจ้าหน้าที่</p><h1 className="mt-1 text-2xl font-bold">รถรับส่งผู้ป่วย — จัดคิวและเดินรถ</h1></header>}
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2">{!embedded && <Link to="/staff" className={`${buttonClass} inline-flex items-center`}>← หน้าเจ้าหน้าที่</Link>}<Link to="/patient-transport" className={`${buttonClass} inline-flex items-center gap-2`}><Users size={16} />หน้าประชาชน</Link></div><button className={`${buttonClass} inline-flex items-center gap-2`} onClick={reload} disabled={busy}><RefreshCw size={16} />โหลดข้อมูลล่าสุด</button></div>
+    {!embedded && <header className="mb-4"><p className="text-sm font-semibold text-sky-800">{tenant?.name} · งานเจ้าหน้าที่</p><h1 className="mt-1 text-2xl font-bold">รถรับส่งผู้ป่วย — จัดคิวและเดินรถ</h1></header>}
     {error && <div role="alert" className="mb-4 rounded-xl bg-red-50 p-4 text-red-800">{error}</div>}
     {notice && <p role="status" className="mb-4 rounded-xl bg-emerald-50 p-4">{notice}</p>}
     {!current && !error && <p role="status">กำลังโหลดข้อมูลงาน…</p>}
@@ -97,17 +111,16 @@ export default function PatientTransportStaff({ onBack } = {}) {
       <Link to="/patient-transport" className={`${primaryClass} mt-4 inline-flex items-center`}>ไปหน้าประชาชน</Link></div>}
     {current && allowed && <>
       <BookingHelp key={`${tenantId}/${uid}/${workspace?.role}/${!!info?.enabled}`} enabled={!!info?.enabled} coordinator={isCoordinator} driver={isDriver} admin={isAdmin} signedIn busy={busy} onHighlight={setHelpTarget} />
-      <nav className="mb-5 flex flex-wrap gap-2" aria-label="งานรถรับส่งผู้ป่วย">
-        {[['schedule', 'ตารางออกรถ', isCoordinator], ['queue', 'จัดคิว', isCoordinator], ['driver', 'งานคนขับ', isDriver], ['settings', 'ตั้งค่า', isAdmin]].filter(([, , show]) => show).map(([key, label]) => <button key={key} className={`${view === key ? primaryClass : buttonClass} ${helpTarget === key ? 'ring-4 ring-amber-400 ring-offset-2' : ''}`} data-help-highlight={helpTarget === key ? 'true' : undefined} onClick={() => go(key)} disabled={busy}>{label}</button>)}
-      </nav>
+      <TabBar tab={view} setTab={go} tabs={tabs} highlight={helpTarget} busy={busy} />
       {!info?.enabled && <p className="mb-4 rounded-xl bg-amber-50 p-4">{isAdmin ? 'ยังไม่เปิดรับจองออนไลน์ ตั้งค่ารถ คนขับ ผู้จัดคิว เส้นทางและเวลาให้บริการในแท็บ “ตั้งค่า” ก่อนเปิดบริการ' : 'ยังไม่เปิดรับจองออนไลน์ ให้ผู้ดูแลตั้งค่ารถและเปิดบริการก่อน'}</p>}
       {view === 'schedule' && isCoordinator && <BookingDaySchedule workspace={workspace} busy={busy} onQueue={() => go('queue')} onUpdate={(trip, revision, notice2, pickup, back) => run('patient_booking_update_schedule', { p_trip: trip, p_revision: revision, p_notice: notice2, p_pickup: pickup, p_return: back }, 'บันทึกประกาศและเวลาประมาณการแล้ว')} />}
-      {view === 'queue' && isCoordinator && <><button className={`${buttonClass} mb-4`} disabled={busy || !info?.enabled} onClick={() => go('book')}>รับจองแทนทางโทรศัพท์/หน้าเคาน์เตอร์</button>
-        <CoordinatorQueue workspace={workspace} busy={busy} preview={preview} clearPreview={() => setPreview(null)} onAction={action} onPreview={inspect}
-          onRecordLetter={(trip, letterNo, letterDate) => run('patient_booking_record_letter', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_letter_no: letterNo, p_letter_date: letterDate }, 'บันทึกเลขหนังสือนำส่งแล้ว')}
-          onPrintLetter={printLetter} onOdometer={recordOdometer} onMonthReport={printMonth}
-          onAmend={(booking, values, reason) => { const args = { p_id: booking.id, p_revision: booking.revision, p_data: values, p_note: reason }; return run('patient_booking_amend', { ...args, p_op: op(JSON.stringify(args)) }, 'แก้ข้อมูลตามที่ประสานแล้ว พร้อมเก็บประวัติ') }}
-          onConfirm={(ids, plan, helper) => plan.join_trip_id ? run('patient_booking_confirm_join', { p_op: op(JSON.stringify(plan)), p_booking: plan.join_booking_id, p_expected: plan }, 'ยืนยันร่วมเที่ยวแล้ว แจ้งแผนล่าสุดให้ผู้เดินทางและคนขับ') : run('patient_booking_confirm', { p_id: op(JSON.stringify({ ids, plan, helper })), p_ids: ids, p_expected: plan, p_helper: helper }, 'ยืนยันเที่ยวแล้ว ผู้จองและคนขับเห็นข้อมูลในระบบ')} /></>}
+      {view === 'queue' && isCoordinator && <PendingQueue workspace={workspace} busy={busy} preview={preview} clearPreview={() => setPreview(null)} onPreview={inspect} action={intakeButton} onAction={action}
+        onAmend={(booking, values, reason) => { const args = { p_id: booking.id, p_revision: booking.revision, p_data: values, p_note: reason }; return run('patient_booking_amend', { ...args, p_op: op(JSON.stringify(args)) }, 'แก้ข้อมูลตามที่ประสานแล้ว พร้อมเก็บประวัติ') }}
+        onConfirm={(ids, plan, helper) => plan.join_trip_id ? run('patient_booking_confirm_join', { p_op: op(JSON.stringify(plan)), p_booking: plan.join_booking_id, p_expected: plan }, 'ยืนยันร่วมเที่ยวแล้ว แจ้งแผนล่าสุดให้ผู้เดินทางและคนขับ') : run('patient_booking_confirm', { p_id: op(JSON.stringify({ ids, plan, helper })), p_ids: ids, p_expected: plan, p_helper: helper }, 'ยืนยันเที่ยวแล้ว ผู้จองและคนขับเห็นข้อมูลในระบบ')} />}
+      {view === 'trips' && isCoordinator && <TripBoard workspace={workspace} busy={busy} onAction={action} onReload={reload}
+        onRecordLetter={(trip, letterNo, letterDate) => run('patient_booking_record_letter', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_letter_no: letterNo, p_letter_date: letterDate }, 'บันทึกเลขหนังสือนำส่งแล้ว')}
+        onPrintLetter={printLetter} onOdometer={recordOdometer} />}
+      {view === 'report' && isCoordinator && <QueueReport workspace={workspace} busy={busy} onMonthReport={printMonth} />}
       {/* รับจองแทนมีที่นี่ที่เดียว และส่ง p_staff_entry ให้ฐานข้อมูลบันทึกว่าเป็นการรับเรื่องแทน */}
       {view === 'book' && isCoordinator && info?.enabled && <BookingForm submitError={error} tenantId={tenantId} initial={{}} info={info} profileName={profileName} profilePhone={workspace?.my_profile?.phone} staffEntry busy={busy} onBack={() => go('queue')} onSubmit={(id, payload) => run('patient_booking_submit', { p_id: id, p_data: payload, p_staff_entry: true }, 'รับคำขอแทนแล้ว รอตรวจแผนและยืนยันรถ', () => go('queue'))} />}
       {view === 'driver' && isDriver && <DriverTrips workspace={workspace} uid={uid} busy={busy} onAction={action} onOdometer={recordOdometer} />}
