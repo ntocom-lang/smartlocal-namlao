@@ -48,36 +48,46 @@ export function CoordinatorQueue({ workspace, onPreview, onConfirm, onAction, on
         <button className={primaryClass} disabled={busy || preview.errors.length > 0} onClick={() => onConfirm(selected, preview, helper)}>ตรวจแล้ว ยืนยันเที่ยวนี้</button>
       </section>}
       {!groups.length && <p className="py-6 text-slate-500">ไม่มีคำขอรอจัดคิว</p>}
-      {/* จอ PC ใช้ตาราง (อ่านหลายคำขอพร้อมกันได้) · จอเล็กใช้การ์ดเดิม ข้อมูลและปุ่มชุดเดียวกัน
-          คอลัมน์ "ดำเนินการ" ปักขวาแบบเดียวกับกล่องงาน — ตารางกว้างกว่าพื้นที่เมื่อชื่อยาว
-          ดู [[project-staff-inbox-sticky-actions]] ในบันทึก: ถอด sticky แล้วปุ่มหลักถูกตัดทุกจอ */}
-      {groups.length > 0 && <div className="hidden overflow-x-auto lg:block">
-        <table className="w-full border-collapse text-sm">
-          <thead><tr className="bg-slate-100 text-left text-slate-700">
-            <th className="px-2 py-2 font-semibold">ผู้เดินทาง</th>
-            <th className="px-2 py-2 font-semibold">วันเวลานัด</th>
-            <th className="px-2 py-2 font-semibold">จุดรับ</th>
-            <th className="px-2 py-2 font-semibold">รับกลับ</th>
-            <th className="sticky right-0 z-10 px-2 py-2 font-semibold shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>ดำเนินการ</th>
+      {/* ตารางแบบเดียวกับกล่องงาน "คำขอบริการ/เอกสาร" — หัวสีกรมท่า แถวสลับสี เส้นคั่นทุกช่อง
+          และคอลัมน์ "ดำเนินการ" ปักขวา (ห้ามถอด — เคยทำปุ่มหลักถูกตัดทุกจอใน #134)
+          จอเล็กใช้การ์ดเดิม ข้อมูลและปุ่มชุดเดียวกัน */}
+      {groups.length > 0 && <div className="hidden overflow-x-auto border border-gray-300 shadow-sm md:block" style={{ borderRadius: 4 }}>
+        <table className="w-full min-w-[920px] border-collapse text-sm">
+          <thead><tr style={{ backgroundColor: '#1a3a5c' }}>
+            <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap w-10 text-center">ที่</th>
+            <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap text-left">ผู้เดินทาง</th>
+            <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap text-center">วันเวลานัด</th>
+            <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap text-left">จุดรับ</th>
+            <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap text-center">รับกลับ</th>
+            <th className="sticky right-0 z-10 px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap min-w-[130px] border-r-0 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>ดำเนินการ</th>
           </tr></thead>
-          {groups.map(g => <tbody key={g[0].id} className="border-t-4 border-slate-100">
-            <tr className="bg-sky-50 align-middle">
-              <th colSpan={4} className="px-2 py-2 text-left font-bold text-sky-900">{g[0].requested_trip_id ? 'ขอร่วมเที่ยวที่ยืนยันแล้ว' : g.length > 1 ? 'เสนอร่วมเที่ยว' : 'เที่ยวเดี่ยว'} · {g[0].route_label}</th>
-              <td className="sticky right-0 z-10 px-2 py-2 shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}><button className={primaryClass} disabled={busy} onClick={() => inspect(g.map(b => b.id))}>ตรวจแผนและเวลาว่าง</button></td>
+          {groups.map((g, groupIndex) => <tbody key={g[0].id} className="divide-y divide-gray-200 border-t-4 border-gray-200">
+            {/* หัวกลุ่มแผน: บอกว่าแถวถัดไปถูกเสนอให้ไปด้วยกัน พร้อมปุ่มตรวจแผนของทั้งกลุ่ม */}
+            <tr style={{ backgroundColor: '#e8f0fa' }}>
+              <th colSpan={5} className="border-r border-gray-200 px-2 py-2 text-left text-xs font-bold text-[#1a3a5c]">
+                แผนที่ {groupIndex + 1} · {g[0].requested_trip_id ? 'ขอร่วมเที่ยวที่ยืนยันแล้ว' : g.length > 1 ? 'เสนอร่วมเที่ยว' : 'เที่ยวเดี่ยว'} · {g[0].route_label}
+              </th>
+              <td className="sticky right-0 z-10 px-2 py-2 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>
+                <button className={primaryClass} disabled={busy} onClick={() => inspect(g.map(b => b.id))}>ตรวจแผนและเวลาว่าง</button>
+              </td>
             </tr>
-            {g.map(b => <tr key={b.id} className="border-t border-slate-100 bg-white align-top">
-              <td className="px-2 py-2"><span className="font-semibold">{b.patient_name}</span><span className="block text-xs text-slate-600">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span></td>
-              <td className="px-2 py-2 whitespace-nowrap">{dateTime(b.appointment_at)}</td>
-              <td className="px-2 py-2"><span className="block max-w-[260px] truncate" title={b.pickup}>{b.pickup}</span></td>
-              <td className="px-2 py-2 whitespace-nowrap">{RETURN_MODES[b.return_mode]}<span className="block text-xs text-slate-600">{b.return_mode === 'one_way' ? 'ไม่มีขากลับ' : dateTime(b.return_at)}</span></td>
-              <td className="sticky right-0 z-10 px-2 py-2 shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>
-                <div className="flex flex-wrap gap-2">{g.length > 1 && <button className={buttonClass} disabled={busy} onClick={() => inspect([b.id])}>ตรวจเป็นเที่ยวเดี่ยว</button>}<button className={buttonClass} disabled={busy} onClick={() => { setEditing(b); clearPreview() }}>แก้ข้อมูลหลังประสาน</button><button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(b, 'cancel', note)}>ยกเลิกตามคำขอผู้จอง</button></div>
+            {g.map((b, index) => <tr key={b.id} className="align-top transition-colors"
+              style={{ backgroundColor: index % 2 === 0 ? '#fff' : '#f5f8fc' }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = index % 2 === 0 ? '#fff' : '#f5f8fc'}>
+              <td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500">{index + 1}</td>
+              <td className="border-r border-gray-200 px-2 py-2.5 whitespace-nowrap"><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span></td>
+              <td className="border-r border-gray-200 px-2 py-2.5 text-center whitespace-nowrap">{dateTime(b.appointment_at)}</td>
+              <td className="border-r border-gray-200 px-2 py-2.5"><span className="block max-w-[240px] truncate" title={b.pickup}>{b.pickup}</span></td>
+              <td className="border-r border-gray-200 px-2 py-2.5 text-center whitespace-nowrap">{RETURN_MODES[b.return_mode]}<span className="block text-[11px] text-gray-500">{b.return_mode === 'one_way' ? 'ไม่มีขากลับ' : dateTime(b.return_at)}</span></td>
+              <td className="sticky right-0 z-10 px-2 py-2.5 shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>
+                <div className="flex flex-wrap justify-center gap-1.5">{g.length > 1 && <button className={buttonClass} disabled={busy} onClick={() => inspect([b.id])}>ตรวจเป็นเที่ยวเดี่ยว</button>}<button className={buttonClass} disabled={busy} onClick={() => { setEditing(b); clearPreview() }}>แก้ข้อมูลหลังประสาน</button><button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(b, 'cancel', note)}>ยกเลิกตามคำขอผู้จอง</button></div>
               </td>
             </tr>)}
           </tbody>)}
         </table>
       </div>}
-      <div className="space-y-4 lg:hidden">
+      <div className="space-y-4 md:hidden">
         {groups.map(g => <article key={g[0].id} className="rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">{g[0].requested_trip_id ? 'ขอร่วมเที่ยวที่ยืนยันแล้ว' : g.length > 1 ? 'เสนอร่วมเที่ยว' : 'เที่ยวเดี่ยว'} · {g[0].route_label}</h3>
           {g.map(b => <div key={b.id} className="border-b border-slate-100 py-3"><strong>{b.patient_name}</strong><p>{dateTime(b.appointment_at)} · {b.pickup}</p><p className="text-sm text-slate-600">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน · กลับ {dateTime(b.return_at)}</p>
             <div className="mt-2 flex flex-wrap gap-2">{g.length > 1 && <button className={buttonClass} disabled={busy} onClick={() => inspect([b.id])}>ตรวจเป็นเที่ยวเดี่ยว</button>}<button className={buttonClass} disabled={busy} onClick={() => { setEditing(b); clearPreview() }}>แก้ข้อมูลหลังประสาน</button><button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(b, 'cancel', note)}>ยกเลิกตามคำขอผู้จอง</button></div>
@@ -87,8 +97,8 @@ export function CoordinatorQueue({ workspace, onPreview, onConfirm, onAction, on
     </>}
     {tab === 'trips' && <><label className="block">เหตุผลประสาน/แก้ไขเที่ยว<input className={inputClass} value={note} maxLength={500} onChange={e => setNote(e.target.value)} /></label>
       {workspace.trips.map(t => <article key={t.id} className="rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">{TRIP_STATUS[t.state]} · {t.plan.route_label}</h3><p>เริ่มรับ {dateTime(t.plan.pickup_at)} · {RETURN_MODES[t.plan.return_mode]}</p>
-        <div className="my-2 hidden overflow-x-auto lg:block"><table className="w-full border-collapse text-sm"><thead><tr className="bg-slate-100 text-left text-slate-700"><th className="px-2 py-2 font-semibold">ผู้เดินทาง</th><th className="px-2 py-2 font-semibold">สถานะ</th><th className="px-2 py-2 font-semibold">จุดรับ</th><th className="sticky right-0 z-10 px-2 py-2 font-semibold shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>ดำเนินการ</th></tr></thead><tbody>{workspace.bookings.filter(b => b.trip_id === t.id).map(b => <tr key={b.id} className="border-t border-slate-100 bg-white align-top"><td className="px-2 py-2"><span className="font-semibold">{b.patient_name}</span><span className="block text-xs text-slate-600">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span></td><td className="px-2 py-2">{BOOKING_STATUS[b.status]}{b.cancel_requested && <span className="block text-xs font-semibold text-amber-800">ขอยกเลิก</span>}{b.return_ready && <span className="block text-xs font-semibold text-sky-800">พร้อมกลับ</span>}</td><td className="px-2 py-2"><span className="block max-w-[260px] truncate" title={b.pickup}>{b.pickup}</span></td><td className="sticky right-0 z-10 px-2 py-2 shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>{b.status === 'confirmed' && [0, 2].includes(b.passenger_step) && <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(b, 'cancel_passenger', note)}>ประสานแผนดูแลต่อแล้ว นำรายนี้ออกจากเที่ยว</button>}</td></tr>)}</tbody></table></div>
-        <div className="lg:hidden">{workspace.bookings.filter(b => b.trip_id === t.id).map(b => <div key={b.id} className="my-2"><p>{b.patient_name} · {BOOKING_STATUS[b.status]} {b.cancel_requested && '· ขอยกเลิก'} {b.return_ready && '· พร้อมกลับ'}</p>{b.status === 'confirmed' && [0, 2].includes(b.passenger_step) && <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(b, 'cancel_passenger', note)}>ประสานแผนดูแลต่อแล้ว นำรายนี้ออกจากเที่ยว</button>}</div>)}</div>
+        <div className="my-3 hidden overflow-x-auto border border-gray-300 shadow-sm md:block" style={{ borderRadius: 4 }}><table className="w-full border-collapse text-sm"><thead><tr style={{ backgroundColor: '#1a3a5c' }}><th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap w-10 text-center">ที่</th><th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap text-left">ผู้เดินทาง</th><th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap text-center">สถานะ</th><th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap text-left">จุดรับ</th><th className="sticky right-0 z-10 px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap min-w-[130px] border-r-0 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>ดำเนินการ</th></tr></thead><tbody className="divide-y divide-gray-200">{workspace.bookings.filter(b => b.trip_id === t.id).map((b, index) => <tr key={b.id} className="align-top transition-colors" style={{ backgroundColor: index % 2 === 0 ? '#fff' : '#f5f8fc' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = index % 2 === 0 ? '#fff' : '#f5f8fc'}><td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500">{index + 1}</td><td className="border-r border-gray-200 px-2 py-2.5 whitespace-nowrap"><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span></td><td className="border-r border-gray-200 px-2 py-2.5 text-center">{BOOKING_STATUS[b.status]}{b.cancel_requested && <span className="block text-[11px] font-semibold text-amber-800">ขอยกเลิก</span>}{b.return_ready && <span className="block text-[11px] font-semibold text-sky-800">พร้อมกลับ</span>}</td><td className="border-r border-gray-200 px-2 py-2.5"><span className="block max-w-[240px] truncate" title={b.pickup}>{b.pickup}</span></td><td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>{b.status === 'confirmed' && [0, 2].includes(b.passenger_step) && <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(b, 'cancel_passenger', note)}>นำรายนี้ออกจากเที่ยว</button>}</td></tr>)}</tbody></table></div>
+        <div className="md:hidden">{workspace.bookings.filter(b => b.trip_id === t.id).map(b => <div key={b.id} className="my-2"><p>{b.patient_name} · {BOOKING_STATUS[b.status]} {b.cancel_requested && '· ขอยกเลิก'} {b.return_ready && '· พร้อมกลับ'}</p>{b.status === 'confirmed' && [0, 2].includes(b.passenger_step) && <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(b, 'cancel_passenger', note)}>ประสานแผนดูแลต่อแล้ว นำรายนี้ออกจากเที่ยว</button>}</div>)}</div>
         {t.issue_note && <p className="my-2 rounded-xl bg-amber-50 p-3">{t.issue_note}</p>}
         <div className="mt-3 flex flex-wrap gap-2">{t.state === 'issue' && <button className={primaryClass} disabled={busy || !note.trim()} onClick={() => onAction(t, 'resolve', note)}>ประสานแก้ไขแล้ว กลับดำเนินงาน</button>}
           {(t.state === 'confirmed' || (t.state === 'issue' && t.state_before_issue === 'confirmed')) && <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(t, 'release', note)}>คืนคิวเพื่อจัดแผนใหม่</button>}
