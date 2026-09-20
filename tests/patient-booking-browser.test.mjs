@@ -105,12 +105,12 @@ try{
  await actor(driver);const dualWorkspace=await rpc('patient_booking_workspace',[tenant]);assert.equal(dualWorkspace.role,'coordinator');assert(dualWorkspace.settings.coordinator_ids.includes(driver));assert.equal(dualWorkspace.settings.driver_id,driver)
  // An empty trip list must not hide the assigned driver's menu.
  await page.route('**/__patient_rpc',async route=>{const request=route.request().postDataJSON();if(request.name==='patient_booking_workspace'&&request.user==='driver'){const response=await route.fetch();const body=await response.json();body.data.trips=[];await route.fulfill({response,json:body})}else await route.fallback()})
- await visit('driver',false);await page.getByRole('button',{name:'จัดคิว',exact:true}).waitFor();await page.getByRole('button',{name:'งานคนขับ',exact:true}).click();await page.unroute('**/__patient_rpc')
+ await visit('driver',false);await page.getByRole('button',{name:'คิวรอจัดแผน',exact:true}).waitFor();await page.getByRole('button',{name:'งานคนขับ',exact:true}).click();await page.unroute('**/__patient_rpc')
 
  await visit('citizen');await page.getByRole('button',{name:'ขอจองรถรับส่ง',exact:true}).click()
  await page.getByLabel('วันที่นัดแพทย์',{exact:true}).fill(day);await page.getByLabel('เวลานัดแพทย์',{exact:true}).fill('14:30');await page.getByLabel('คาดว่าพร้อมรับกลับ (ยังไม่ทราบเว้นว่างได้)',{exact:true}).fill('15:00');await page.getByLabel('เป็นการเดินทางตามนัด ไม่ใช่เหตุฉุกเฉิน',{exact:true}).check();await page.getByRole('button',{name:'ต่อไป',exact:true}).click()
  await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill('0800000099');await page.getByLabel('จุดรับและจุดสังเกต',{exact:true}).fill('TEST Browser pickup');await page.getByLabel('ผู้เดินทางอยู่ในเขตพื้นที่ (หากไม่แน่ใจให้เจ้าหน้าที่ตรวจสอบ)',{exact:true}).check();await page.getByRole('button',{name:'ต่อไป',exact:true}).click();await page.getByLabel('ยืนยันการใช้ข้อมูลตามข้อความข้างต้น และข้อมูลจองถูกต้อง',{exact:true}).check();await page.getByRole('button',{name:'ส่งคำขอจองรถ',exact:true}).click();await page.getByRole('article').filter({hasText:'TEST Browser Requester'}).waitFor()
- await visit('driver');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();const proposal=page.locator('tbody, article').filter({hasText:'TEST Browser Requester'}).filter({has:page.getByRole('button',{name:'ตรวจแผนและเวลาว่าง',exact:true})}).first();await proposal.getByRole('button',{name:'ตรวจแผนและเวลาว่าง',exact:true}).click();await page.getByRole('button',{name:'ตรวจแล้ว ยืนยันเที่ยวนี้',exact:true}).click();await page.getByRole('status').filter({hasText:'ยืนยันเที่ยวแล้ว'}).waitFor();
+ await visit('driver');await page.getByRole('button',{name:'คิวรอจัดแผน',exact:true}).click();const proposal=page.locator('tbody, article').filter({hasText:'TEST Browser Requester'}).filter({has:page.getByRole('button',{name:'ตรวจแผนและเวลาว่าง',exact:true})}).first();await proposal.getByRole('button',{name:'ตรวจแผนและเวลาว่าง',exact:true}).click();await page.getByRole('button',{name:'ตรวจแล้ว ยืนยันเที่ยวนี้',exact:true}).click();await page.getByRole('status').filter({hasText:'ยืนยันเที่ยวแล้ว'}).waitFor();
  await visit('driver');await page.getByRole('button',{name:'งานคนขับ',exact:true}).click();const trip=page.getByRole('article').filter({hasText:'TEST Browser Requester'});for(const label of ['ออกไปรับ','รับผู้เดินทางแล้ว','ส่งถึงโรงพยาบาลแล้ว','ส่งถึงครบ · รอรับกลับ','ออกไปรับขากลับ','รับกลับแล้ว','ส่งถึงจุดหมายแล้ว','ส่งกลับครบ · จบเที่ยว']){await trip.getByRole('button',{name:label,exact:true}).click();await page.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).waitFor();}
  await visit('citizen');await page.getByRole('button',{name:'การจองของฉัน',exact:true}).click();assert.match(await page.getByRole('article').filter({hasText:'TEST Browser Requester'}).textContent(),/จบเที่ยวแล้ว/)
  // ปุ่มของหน้าประชาชนต้องเรียก patient_booking_action ได้จริง — เคยตกหล่น p_op แล้ว PostgREST ตอบ
@@ -131,7 +131,7 @@ try{
  await visit('anonymous');await page.getByRole('button',{name:'ดูตารางรถ',exact:true}).click();await page.getByLabel('เดือน',{exact:true}).fill(calendarDay.slice(0,7));await page.locator('summary').filter({hasText:'กรองวันที่และเส้นทาง'}).click();await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(calendarDay);await page.getByLabel('ถึงวันที่',{exact:true}).fill(calendarDay);await page.getByRole('button',{name:'ตาราง',exact:true}).click();await page.getByText('ผู้เดินทางรวมผู้ติดตาม 3 คน · เหลือ 1 ที่นั่ง',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'ขอร่วมเที่ยวนี้',exact:true}).count(),0)
  await visit('citizen');await page.getByRole('button',{name:'ดูตารางรถ',exact:true}).click();assert.equal(await page.getByRole('button',{name:'ตาราง',exact:true}).getAttribute('aria-pressed'),'true');await page.getByLabel('เดือน',{exact:true}).fill(calendarDay.slice(0,7));await page.locator('summary').filter({hasText:'กรองวันที่และเส้นทาง'}).click();await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(calendarDay);await page.getByLabel('ถึงวันที่',{exact:true}).fill(calendarDay);await page.getByLabel('เฉพาะเที่ยวที่ร่วมได้',{exact:true}).check();await page.getByRole('button',{name:'ขอร่วมเที่ยวนี้',exact:true}).click()
  assert.equal(await page.getByLabel('วันที่นัดแพทย์',{exact:true}).inputValue(),calendarDay);await page.getByLabel('เวลานัดแพทย์',{exact:true}).fill('10:30');await page.getByLabel('เป็นการเดินทางตามนัด ไม่ใช่เหตุฉุกเฉิน',{exact:true}).check();await page.getByRole('button',{name:'ต่อไป',exact:true}).click();await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill('0800000500');await page.getByLabel('จุดรับและจุดสังเกต',{exact:true}).fill('TEST calendar browser pickup');await page.getByLabel('ผู้ติดตาม',{exact:true}).selectOption('0');await page.getByLabel('ผู้เดินทางอยู่ในเขตพื้นที่ (หากไม่แน่ใจให้เจ้าหน้าที่ตรวจสอบ)',{exact:true}).check();await page.getByRole('button',{name:'ต่อไป',exact:true}).click();await page.getByLabel('ยืนยันการใช้ข้อมูลตามข้อความข้างต้น และข้อมูลจองถูกต้อง',{exact:true}).check();await page.getByRole('button',{name:'ส่งคำขอจองรถ',exact:true}).click();await page.getByText('ขอร่วมเที่ยว รอเจ้าหน้าที่ตรวจยืนยัน',{exact:true}).waitFor()
- await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.locator('tbody, article').filter({hasText:'ขอร่วมเที่ยวที่ยืนยันแล้ว'}).first().getByRole('button',{name:'ตรวจแผนและเวลาว่าง',exact:true}).click();await page.getByRole('button',{name:'ตรวจแล้ว ยืนยันเที่ยวนี้',exact:true}).click();await page.getByRole('status').filter({hasText:'ยืนยันร่วมเที่ยวแล้ว'}).waitFor()
+ await visit('coordinator');await page.getByRole('button',{name:'คิวรอจัดแผน',exact:true}).click();await page.locator('tbody, article').filter({hasText:'ขอร่วมเที่ยวที่ยืนยันแล้ว'}).first().getByRole('button',{name:'ตรวจแผนและเวลาว่าง',exact:true}).click();await page.getByRole('button',{name:'ตรวจแล้ว ยืนยันเที่ยวนี้',exact:true}).click();await page.getByRole('status').filter({hasText:'ยืนยันร่วมเที่ยวแล้ว'}).waitFor()
  await visit('citizen');await page.getByRole('button',{name:'ดูตารางรถ',exact:true}).click();await page.getByLabel('เดือน',{exact:true}).fill(calendarDay.slice(0,7));await page.locator('summary').filter({hasText:'กรองวันที่และเส้นทาง'}).click();await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(calendarDay);await page.getByLabel('ถึงวันที่',{exact:true}).fill(calendarDay);await page.getByText('ผู้เดินทางรวมผู้ติดตาม 4 คน · เหลือ 0 ที่นั่ง',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'ขอร่วมเที่ยวนี้',exact:true}).count(),0)
  for(const width of [320,390,768,1024]){await page.setViewportSize({width,height:900});for(const mode of ['ปฏิทิน','ตาราง']){await page.getByRole('button',{name:mode,exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${mode} overflow`)} }
  if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(`${calendarDay.slice(0,7)}-01`);await page.getByLabel('ถึงวันที่',{exact:true}).fill(`${calendarDay.slice(0,7)}-28`);await page.locator('summary').filter({hasText:'กรองวันที่และเส้นทาง'}).click();for(const [mode,file] of [['ปฏิทิน','calendar'],['ตาราง','table']]){await page.getByRole('button',{name:mode,exact:true}).click();if(mode==='ปฏิทิน') { await page.locator('[aria-label="ปฏิทินรายเดือน"] button').filter({hasText:new RegExp(`^${Number(calendarDay.slice(-2))}\\D`)}).click() } await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-${file}-390.png`,fullPage:true})}}
@@ -158,8 +158,12 @@ try{
  await page.setViewportSize({width:390,height:900});await visit('driver');await page.getByRole('button',{name:'งานคนขับ',exact:true}).click()
  const driverTrip=page.getByRole('article').first();await driverTrip.getByLabel('เลขไมล์ออก',{exact:true}).fill('15000');await driverTrip.getByLabel('เลขไมล์กลับ',{exact:true}).fill('15033')
  if(await driverTrip.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).count()) await driverTrip.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).selectOption('กรอกผิด');await driverTrip.getByText('ระยะทาง 33 กม.',{exact:true}).waitFor();await driverTrip.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขไมล์แล้ว'}).waitFor()
- await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.getByRole('button',{name:'เที่ยวที่ยืนยันแล้ว',exact:true}).click()
- const odoTrip=page.locator('article:has(input[name="odometer_end"][value="15033"])')
+ await visit('coordinator');await page.getByRole('button',{name:'เที่ยวเดินรถ',exact:true}).click()
+ // แท็บเที่ยวเป็นตารางเดียว 1 เที่ยว 1 แถว แล้วเปิดแผ่นจัดการทีละเที่ยว จึงต้องรู้ก่อนว่าเที่ยวไหนคือเที่ยวที่คนขับเพิ่งกรอก
+ await actor(coordinator);const board=await rpc('patient_booking_workspace',[tenant])
+ const doneTrip=board.trips.find(t=>t.odometer_end===15033);assert(doneTrip,'ไม่พบเที่ยวที่คนขับบันทึกเลขไมล์ไว้')
+ const openTripPanel=async id=>{await page.getByRole('button',{name:/^ทั้งหมด \d+$/}).click();await page.locator(`[data-trip="${id}"]:visible`).getByRole('button',{name:'เปิดจัดการเที่ยว',exact:true}).click();const panel=page.getByRole('dialog');await panel.waitFor();return panel}
+ const odoTrip=await openTripPanel(doneTrip.id)
  // เลขไมล์ออก = เลขไมล์กลับของเที่ยวก่อนหน้าตามเวลา ไม่ใช่ค่าสูงสุดของทุกเที่ยว (ผลตรวจ #227 ข้อ 5)
  {
   const trip=(id,at,end,state='completed')=>({id,state,odometer_end:end,plan:{pickup_at:`2026-10-05T${at}:00+07:00`}})
@@ -179,12 +183,12 @@ try{
  if(await late.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).count()) await late.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).selectOption('กรอกผิด');await late.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขไมล์แล้ว'}).waitFor()
  await actor(coordinator);assert((await rpc('patient_booking_workspace',[tenant])).trips.some(t=>t.state==='completed'&&t.odometer_end===14020),'เลขไมล์ของเที่ยวที่จบแล้วไม่ถึงฐานข้อมูล')
  console.log('PASS fund documents through the real UI: driver odometer + coordinator letter number reach PostgreSQL')
- await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.getByRole('button',{name:'เที่ยวที่ยืนยันแล้ว',exact:true}).click()
- const editingIndex=await page.getByRole('article').evaluateAll(nodes=>nodes.findIndex(n=>n.textContent.includes('พร 72301/77')));const editing=page.getByRole('article').nth(editingIndex);await editing.waitFor()
+ await visit('coordinator');await page.getByRole('button',{name:'เที่ยวเดินรถ',exact:true}).click()
+ const editing=await openTripPanel(saved.id)
  await editing.getByLabel('เลขไมล์กลับ',{exact:true}).fill('15040');await editing.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).selectOption('กรอกผิด')
  await actor(coordinator);let v=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===saved.id)
  await rpc('patient_booking_save_odometer',[tenant,saved.id,v.docs_revision,16000,16044,false,'กรอกผิด'])
- await page.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click();await editing.getByText(/ค่าล่าสุด: เลขไมล์ออก 16000/).waitFor()
+ await editing.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click();await editing.getByText(/ค่าล่าสุด: เลขไมล์ออก 16000/).waitFor()
  assert.equal(await editing.getByLabel('เลขไมล์กลับ',{exact:true}).inputValue(),'15040')
  assert.equal(await editing.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).isDisabled(),true)
  await editing.getByRole('button',{name:'ยืนยันใช้ค่าที่ฉันแก้',exact:true}).click();await editing.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขไมล์แล้ว'}).waitFor()
@@ -192,7 +196,7 @@ try{
  // Clean fields follow new server values; edited letter keeps its baseline revision.
  await editing.getByRole('button',{name:'แก้เลขหนังสือ',exact:true}).click();await editing.getByLabel('เลขที่หนังสือ',{exact:true}).fill('TEST draft')
  await rpc('patient_booking_record_letter',[tenant,saved.id,v.docs_revision,'TEST newest',saved.forward_letter_date])
- await page.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click();await editing.getByText(/ค่าล่าสุด: เลขหนังสือ TEST newest/).waitFor()
+ await editing.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click();await editing.getByText(/ค่าล่าสุด: เลขหนังสือ TEST newest/).waitFor()
  assert.equal(await editing.getByRole('button',{name:'บันทึกเลขหนังสือ',exact:true}).isDisabled(),true)
  await editing.getByRole('button',{name:'ใช้ค่าล่าสุด',exact:true}).click();assert.equal(await editing.getByLabel('เลขที่หนังสือ',{exact:true}).inputValue(),'TEST newest')
  // Abnormal meter readings are accepted but excluded from report distance.
@@ -231,8 +235,8 @@ try{
  await visit('citizen',false);await page.getByRole('button',{name:'การจองของฉัน',exact:true}).click();await page.getByText(/แจ้งเริ่มรับล่าสุด.*10:10/).first().waitFor()
  console.log('PASS daily blocks, private roster, schedule update reaches public and own booking, stale draft preserved/blocked, responsive 320/390/768/1024px')
 
- for(const width of [320,390,768,1024]){await page.setViewportSize({width,height:900});for(const as of ['citizen','coordinator','driver','admin']){await visit(as);const tab={citizen:'หน้าบริการ',coordinator:'จัดคิว',driver:'งานคนขับ',admin:'ตั้งค่า'}[as];await page.getByRole('button',{name:tab,exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${as} overflow`)}console.log(`PASS rendered ${width}px four roles`)}
- if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await visit('citizen');await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-live-ui-390.png`,fullPage:true});await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-queue-390.png`,fullPage:true})}
+ for(const width of [320,390,768,1024]){await page.setViewportSize({width,height:900});for(const as of ['citizen','coordinator','driver','admin']){await visit(as);const tab={citizen:'หน้าบริการ',coordinator:'คิวรอจัดแผน',driver:'งานคนขับ',admin:'ตั้งค่า'}[as];await page.getByRole('button',{name:tab,exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${as} overflow`)}console.log(`PASS rendered ${width}px four roles`)}
+ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await visit('citizen');await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-live-ui-390.png`,fullPage:true});await visit('coordinator');await page.getByRole('button',{name:'คิวรอจัดแผน',exact:true}).click();await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-queue-390.png`,fullPage:true})}
  // Disabled booking has no second intake form; administrators retain setup access.
  await actor(admin);const currentSettings=(await rpc('patient_booking_workspace',[tenant])).settings
  await rpc('patient_booking_save_settings',[tenant,currentSettings.revision,{...settings,enabled:false}])
@@ -256,17 +260,46 @@ try{
  // ข้อ 4: บัญชีเจ้าหน้าที่เปิดหน้าประชาชนต้องได้หน้าประชาชนปกติ + ลิงก์ไปหน้าทำงาน
  await visitCitizenPage('coordinator')
  await page.getByRole('link',{name:'ไปหน้าทำงานเจ้าหน้าที่',exact:true}).waitFor()
- for(const staffTab of ['จัดคิว','ตารางออกรถ','ตั้งค่า'])assert.equal(await page.getByRole('button',{name:staffTab,exact:true}).count(),0,`หน้าประชาชนไม่ควรมีแท็บ ${staffTab}`)
+ for(const staffTab of ['คิวรอจัดแผน','เที่ยวเดินรถ','ตารางออกรถ','ตั้งค่า'])assert.equal(await page.getByRole('button',{name:staffTab,exact:true}).count(),0,`หน้าประชาชนไม่ควรมีแท็บ ${staffTab}`)
  await page.getByRole('button',{name:'หน้าบริการ',exact:true}).click();await page.getByText('หน่วยงานยังไม่เปิดรับจองรถออนไลน์ กรุณาติดต่อเจ้าหน้าที่เพื่อสอบถามบริการ',{exact:true}).waitFor();await page.getByRole('link',{name:'หน้าทำงานเจ้าหน้าที่',exact:true}).waitFor()
  // จอ PC: หน้าจัดคิวต้องเป็นตาราง อ่านหลายคำขอพร้อมกันได้ และปุ่มดำเนินการต้องไม่ถูกตัดนอกกรอบ
  // (กติกาเดียวกับกล่องงาน: คอลัมน์ดำเนินการปักขวา ตารางที่กว้างเกินพื้นที่จะตัดปุ่มหลักทิ้งเงียบๆ)
- await page.setViewportSize({width:1440,height:950});await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click()
+ await page.setViewportSize({width:1440,height:950});await visit('coordinator');await page.getByRole('button',{name:'คิวรอจัดแผน',exact:true}).click()
  const queueTable=page.locator('table').filter({hasText:'ผู้เดินทาง'}).first();await queueTable.waitFor()
  assert.deepEqual(await queueTable.locator('thead th').allTextContents(),['ที่','ผู้เดินทาง','วันเวลานัด','จุดรับ','รับกลับ','ดำเนินการ'])
  assert.equal(await page.evaluate(()=>{const table=[...document.querySelectorAll('table')].find(t=>t.innerText.includes('ตรวจแผนและเวลาว่าง'));if(!table)return 'ไม่พบตารางจัดคิว';const right=Math.min(table.parentElement.getBoundingClientRect().right,innerWidth);const clipped=[...table.querySelectorAll('button')].filter(b=>b.getBoundingClientRect().right>right+1);return clipped.length?`ปุ่มถูกตัด ${clipped.length}`:'ok'}),'ok')
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'จัดคิว 1440px overflow')
  await page.setViewportSize({width:390,height:900});assert.equal(await page.locator('table').filter({hasText:'วันเวลานัด'}).locator('visible=true').count(),0,'จอเล็กต้องใช้การ์ด ไม่ใช่ตาราง')
  console.log('PASS coordinator queue renders a desktop table at 1440px with actions visible, cards on small screens')
+ // เที่ยวที่ยืนยันแล้ว: ตารางเดียวทั้งหน้า ไม่ใช่การ์ดเต็มใบเรียงต่อกันทีละเที่ยว
+ // (ของเดิมสูงราว 600px ต่อเที่ยว 50 เที่ยว = เลื่อนจอราว 30 หน้าจอ หางานค้างไม่เจอ)
+ await page.setViewportSize({width:1440,height:950});await visit('coordinator');await page.getByRole('button',{name:'เที่ยวเดินรถ',exact:true}).click()
+ await page.getByRole('button',{name:/^ทั้งหมด \d+$/}).click()
+ const tripTable=page.locator('table:visible');assert.equal(await tripTable.count(),1,'แท็บเที่ยวต้องมีตารางเดียว')
+ assert.deepEqual(await tripTable.locator('thead th').allTextContents(),['ที่','สถานะ','เริ่มรับ','เส้นทาง','ผู้เดินทาง','งานค้าง','ดำเนินการ'])
+ assert(await tripTable.locator('tbody tr').count()>=2,'หลายเที่ยวต้องอยู่ในตารางเดียวกัน')
+ assert.equal(await page.getByRole('dialog').count(),0,'ยังไม่กดเปิด ต้องไม่กางรายละเอียดเที่ยว')
+ await tripTable.locator('tbody tr').first().getByRole('button',{name:'เปิดจัดการเที่ยว',exact:true}).click()
+ const tripPanel=page.getByRole('dialog');await tripPanel.locator('table').first().waitFor()
+ await tripPanel.getByRole('button',{name:'ปิด',exact:true}).click();assert.equal(await page.getByRole('dialog').count(),0,'ปิดแผ่นแล้วต้องกลับมาที่รายการ')
+ console.log('PASS confirmed trips are one table with a per-trip panel, not a full card per trip')
+ // โครงหน้าเดียวกับกล่องงาน "คำร้อง": แถบแท็บชั้นเดียว กล่องรายการบอกจำนวน ค้นหาได้ และเปิดเรื่องเป็นแผ่นลอยทับ
+ const menu=page.getByRole('navigation',{name:'งานรถรับส่งผู้ป่วย'})
+ for(const label of ['ตารางออกรถ','คิวรอจัดแผน','เที่ยวเดินรถ','รายงาน'])await menu.getByRole('button',{name:label,exact:true}).waitFor()
+ await page.getByRole('button',{name:'คิวรอจัดแผน',exact:true}).click()
+ await page.getByText(/^\d+ รายการ$/).first().waitFor()
+ const queueSearch=page.getByLabel('ค้นหาชื่อผู้เดินทาง จุดรับ เส้นทาง',{exact:true})
+ await queueSearch.fill('ไม่มีชื่อนี้ในระบบ');await page.getByText('ไม่พบคำขอที่ค้นหา',{exact:true}).waitFor()
+ assert.equal(await page.locator('table:visible').count(),0,'ค้นไม่เจอต้องไม่เหลือตารางค้างไว้')
+ await queueSearch.fill('');const queueRow=page.locator('tbody tr:visible').filter({has:page.getByRole('button',{name:'เปิดคำขอ',exact:true})}).first()
+ const queueName=(await queueRow.locator('td').nth(1).innerText()).split('\n')[0]
+ await queueSearch.fill(queueName);await queueRow.waitFor()
+ await queueRow.getByRole('button',{name:'เปิดคำขอ',exact:true}).click()
+ const queueSheet=page.getByRole('dialog');await queueSheet.getByText('วันเวลานัด',{exact:true}).waitFor()
+ for(const label of ['ตรวจแผนและเวลาว่าง','แก้ข้อมูลหลังประสาน','ยกเลิกตามคำขอผู้จอง'])assert.equal(await queueSheet.getByRole('button',{name:label,exact:true}).count(),1,`ปุ่ม ${label} ต้องอยู่ในแผ่นคำขอ`)
+ await page.keyboard.press('Escape');assert.equal(await page.getByRole('dialog').count(),0,'กด Escape ต้องปิดแผ่นและกลับมาที่รายการ')
+ await queueSearch.fill('')
+ console.log('PASS staff workspace uses the complaint-style shell: one tab bar, counted list card, search and a floating detail sheet')
  console.log('PASS split citizen/staff pages, staff links, citizen page loads only its own data, no fallback intake, history retained')
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS)await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-schedule-failure.png`,fullPage:true});throw error }finally{await browser.close();await server.close();await db.close()}
