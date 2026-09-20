@@ -67,12 +67,14 @@ export default function Pm25Page() {
         <Link to="/more" className="pm25-back"><ArrowLeft size={18} />เมนูบริการ</Link>
         <p className="pm25-eyebrow"><Wind size={17} /> สิ่งแวดล้อมใกล้คุณ</p>
         <h1>สถานการณ์ PM2.5</h1>
-        <p>ติดตามค่าฝุ่นและคุณภาพอากาศ<br />จากสถานีตรวจวัดใกล้พื้นที่</p>
+        <p>รู้ค่าฝุ่นในตำบลของคุณ<br />เชื่อมข้อมูลพื้นที่กับสถานีตรวจวัด</p>
         <span className="pm25-area"><MapPin size={15} />{tenant?.name || 'กำลังระบุพื้นที่'}</span>
       </div>
       <div className="pm25-landscape" aria-hidden="true"><CloudSun className="pm25-sun" /><Wind className="pm25-breeze" /><div className="pm25-city"><Trees /><Building2 /><Building2 /><Trees /></div></div>
     </header>
     <main className="pm25-content">
+      <Pm25Details mode="area" tenant={tenant} now={now} />
+      <div className="pm25-section-divider"><span>02</span><div><h2>ตรวจสอบกับสถานีใกล้พื้นที่</h2><p>ค่าตรวจวัดจริง · เรียงสถานีในพื้นที่อ้างอิงจากใกล้ไปไกล</p></div></div>
       <div className="pm25-sync"><p><RadioTower size={16} />Air4Thai · กรมควบคุมมลพิษ</p><button type="button" onClick={refresh} disabled={busy}><RefreshCw size={16} className={busy ? 'pm25-spin' : ''} />{busy ? 'กำลังโหลด' : 'ตรวจข้อมูลล่าสุด'}</button></div>
       {failed && <div role="status" className="pm25-notice">{feed ? 'รอบล่าสุดดึงข้อมูลไม่สำเร็จ กำลังแสดงข้อมูลที่รับได้ก่อนหน้า กรุณาตรวจสอบเวลาตรวจวัด' : 'โหลดข้อมูลฝุ่นไม่สำเร็จ กรุณาลองอีกครั้ง หรือเปิด Air4Thai ด้านล่าง'}</div>}
       {tenantLoading || (!feed && busy) ? <section className="pm25-panel pm25-loading" role="status"><Wind size={36} /><p>กำลังโหลดข้อมูลจากสถานีตรวจวัด…</p></section> : !station ? <section className="pm25-panel pm25-empty"><RadioTower size={36} /><h2>{feed ? 'ยังไม่มีสถานีอ้างอิงในพื้นที่ที่ระบุ' : 'ยังแสดงค่าฝุ่นไม่ได้'}</h2><p>ระบบค้นสถานีในจังหวัดก่อน แล้วจึงค้นสถานีในระยะ 150 กม. จากพิกัดหน่วยงาน</p><p>ข้อมูลที่ขาดจะไม่ถูกแทนด้วยศูนย์</p><SourceLink /></section> : <>
@@ -114,7 +116,6 @@ export default function Pm25Page() {
           })}</div>
         </section>
       </>}
-      <Pm25Details mode="area" tenant={tenant} now={now} />
       <div>
         <section className="pm25-panel"><div className="pm25-section-heading"><Info size={20} /><h2>อ่านค่าฝุ่นให้เข้าใจ</h2></div><details><summary>PM2.5 กับ AQI ต่างกันอย่างไร</summary><p>PM2.5 คือความเข้มข้นของฝุ่น หน่วย µg/m³ ส่วน AQI เป็นดัชนีที่ประเมินจากสารมลพิษหลายชนิด จึงเป็นคนละตัวเลขและใช้แทนกันไม่ได้</p></details><details><summary>ทำไมค่าฝุ่นจึงไม่ตรงกับบางแอป</summary><p>หน้านี้ใช้ค่าเฉลี่ย 24 ชั่วโมงจากสถานี Air4Thai ค่ารายชั่วโมง ค่าจากแบบจำลอง และค่าจากสถานีคนละแห่งอาจแตกต่างกัน ควรเทียบช่วงเฉลี่ยและเวลาก่อนเสมอ</p></details><details><summary>เมื่อข้อมูลเก่าหรือไม่มีสถานี</summary><p>เมื่อค่ามีอายุ 3 ชั่วโมงขึ้นไปหรือเวลาไม่ถูกต้อง ระบบจะแสดงสีเทาและแจ้งข้อมูลเก่า หากจังหวัดไม่มีสถานีจะค้นจากพิกัด อปท. ในระยะ 150 กม. เจ้าหน้าที่แก้จังหวัดและพิกัดได้ในข้อมูลหน่วยงาน</p></details></section>
       </div>
