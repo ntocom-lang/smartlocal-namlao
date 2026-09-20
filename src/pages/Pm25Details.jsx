@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowDownRight, ArrowUpRight, ChartNoAxesCombined, MapPinned, RefreshCw } from 'lucide-react'
-import { formatMeasuredAt, isFresh, pm25Level } from '../lib/pm25'
+import { ArrowDownRight, ArrowUpRight, ChartNoAxesCombined, MapPinned, RefreshCw, Wind, MapPin, Clock3, Satellite } from 'lucide-react'
+import { PM25_LEVELS, formatMeasuredAt, isFresh, pm25Level } from '../lib/pm25'
 import { historySummary, validCoordinates } from '../lib/pm25Details'
 
 const valueText = n => n === null || n === undefined ? '—' : Number(n).toLocaleString('th-TH', { maximumFractionDigits: 1 })
@@ -76,19 +76,28 @@ function Subdistricts({ tenant, now }) {
   const tambons = request.data?.tambons || []
   const own = tambons.find(t => t.id === area?.subdistrictId)
   const fresh = isFresh(own, now)
-  const rows = [...tambons].sort((a, b) => Number(b.id === area?.subdistrictId) - Number(a.id === area?.subdistrictId))
-  return <section className="pm25-panel pm25-subdistricts" id="pm25-subdistricts">
+  const localLevel = fresh ? pm25Level(own?.average24) : null
+  const tone = localLevel || { color: '#687986', fill: '#edf1f4' }
+  const rows = [...tambons].sort((a, b) => Number(b.id === area?.subdistrictId) - Number(a.id === area?.subdistrictId) || a.name.localeCompare(b.name, 'th'))
+  return <section className="pm25-panel pm25-subdistricts" id="pm25-subdistricts" style={{ '--local-color': tone.color, '--local-fill': tone.fill }}>
+    <p className="pm25-local-eyebrow"><span>01</span> พื้นที่ของคุณมาก่อน</p>
     <div className="pm25-section-heading"><MapPinned size={20} /><h2>ฝุ่นระดับตำบล</h2><span className="pm25-estimate-tag">ค่าประมาณการ</span></div>
-    <p className="pm25-muted">GISTDA วิเคราะห์ข้อมูลดาวเทียมร่วมกับสถานีภาคพื้นดิน · แยกจากค่าตรวจวัด Air4Thai</p>
+    <p className="pm25-muted">GISTDA · วิเคราะห์ดาวเทียมร่วมกับสถานีภาคพื้นดิน</p>
     {!hasLocation ? <p className="pm25-notice">ยังไม่มีพิกัดหน่วยงานที่ใช้ค้นตำบลได้ เจ้าหน้าที่สามารถตรวจพิกัดในข้อมูลหน่วยงาน</p> : !request.data ? request.error ? <Failure retry={request.retry}>โหลดข้อมูลตำบลไม่ได้ กรุณาลองใหม่หรือดูที่ GISTDA</Failure> : <p role="status" className="pm25-details-loading">กำลังค้นข้อมูลตำบลจากพิกัด อปท.…</p> : <>
       {request.error && <p className="pm25-notice">รอบล่าสุดโหลดไม่สำเร็จ ข้อมูลด้านล่างเป็นชุดก่อนหน้า</p>}
-      <div className="pm25-area-summary"><div><span>ตำบลตามพิกัดหน่วยงาน</span><h3>{area.subdistrict}</h3><p className="pm25-muted">อ.{area.district} จ.{area.province}</p><p className="pm25-muted">{formatMeasuredAt(own?.measuredAt)}</p></div><div><strong style={{ color: fresh ? pm25Level(own?.average24)?.color : '#687986' }}>{valueText(own?.average24)}</strong><span>µg/m³ · เฉลี่ย 24 ชั่วโมง</span></div></div>
+      <div className="pm25-local-hero">
+        <div className="pm25-local-place"><span className="pm25-local-location"><MapPin size={16} />ตำบลตามพิกัด อปท.</span><h3>{area.subdistrict}</h3><p>อ.{area.district} จ.{area.province}</p><span className="pm25-local-status">{fresh ? localLevel?.label || 'ยังไม่มีค่าเฉลี่ย' : 'ข้อมูลไม่เป็นปัจจุบัน'}</span><p className="pm25-local-time"><Clock3 size={15} />{formatMeasuredAt(own?.measuredAt)}</p></div>
+        <div className="pm25-local-orbit"><div className="pm25-local-reading"><Wind size={26} /><span>PM2.5</span><strong>{valueText(own?.average24)}</strong><span>µg/m³ · เฉลี่ย 24 ชั่วโมง</span><small>ค่าประมาณระดับตำบล</small></div></div>
+        <div className="pm25-local-metrics"><div><Clock3 size={19} /><span>ค่ารายชั่วโมง</span><strong>{valueText(own?.hourly)} <small>µg/m³</small></strong></div><div><Satellite size={19} /><span>แหล่งข้อมูล</span><strong>GISTDA</strong><small>แบบจำลองระดับพื้นที่</small></div><div><MapPinned size={19} /><span>ครอบคลุมในอำเภอ</span><strong>{tambons.length} <small>ตำบล</small></strong></div></div>
+      </div>
+      <div className="pm25-local-scale" aria-label="ระดับ PM2.5 เฉลี่ย 24 ชั่วโมง">{PM25_LEVELS.map(l => <div key={l.label} className={localLevel === l ? 'is-current' : ''}><i style={{ backgroundColor: l.color }} /><b>{l.label}</b><small>{l.range}</small>{localLevel === l && <span>ระดับพื้นที่นี้</span>}</div>)}</div>
+      <p className="pm25-muted pm25-local-caption">หน่วย µg/m³ · สีอ้างอิงค่าเฉลี่ย 24 ชั่วโมง · ค่าประมาณอาจต่างจากค่าที่ตรวจวัด ณ จุดจริง</p>
       {!fresh && <p className="pm25-notice">ข้อมูลตำบลไม่เป็นปัจจุบัน หรือไม่มีเวลายืนยัน ไม่ใช้สรุปสถานการณ์ขณะนี้</p>}
-      <p className="pm25-muted">เปรียบเทียบตำบลในอำเภอเดียวกัน · ไม่ใช่ค่าตรวจวัดทุกจุดในตำบล</p>
+      <div className="pm25-local-list-heading"><h3>มองรอบพื้นที่ในอำเภอเดียวกัน</h3><p className="pm25-muted">ตำบลของ อปท. ขึ้นก่อน ตามด้วยชื่อเรียง ก–ฮ · ไม่ใช่ลำดับระยะห่าง</p></div>
       <div className="pm25-tambon-list">{(expanded ? rows : rows.slice(0, 6)).map(t => {
         const current = isFresh(t, now)
         const level = current ? pm25Level(t.average24) : null
-        return <div className="pm25-tambon-row" key={t.id}><div><b>{t.name}{t.id === area.subdistrictId && <small>พื้นที่ตามพิกัด อปท.</small>}</b><span>{current ? level?.label || 'ไม่มีค่าเฉลี่ย' : 'ข้อมูลเก่า / ไม่ทราบเวลา'} · {formatMeasuredAt(t.measuredAt)}</span></div><div><strong style={{ color: level?.color || '#687986' }}>{valueText(t.average24)}</strong><small>เฉลี่ย 24 ชม. · µg/m³</small><small>รายชั่วโมง {valueText(t.hourly)} µg/m³</small></div></div>
+        return <div className={`pm25-tambon-row${t.id === area.subdistrictId ? ' is-own' : ''}`} key={t.id}><div><b>{t.name}{t.id === area.subdistrictId && <small>พื้นที่ตามพิกัด อปท.</small>}</b><span>{current ? level?.label || 'ไม่มีค่าเฉลี่ย' : 'ข้อมูลเก่า / ไม่ทราบเวลา'} · {formatMeasuredAt(t.measuredAt)}</span></div><div><strong style={{ color: level?.color || '#687986' }}>{valueText(t.average24)}</strong><small>เฉลี่ย 24 ชม. · µg/m³</small><small>รายชั่วโมง {valueText(t.hourly)} µg/m³</small></div></div>
       })}</div>
       {rows.length > 6 && <button className="pm25-expand" onClick={() => setExpanded(!expanded)}>{expanded ? 'ย่อรายการ' : `ดูครบ ${rows.length} ตำบล`}</button>}
       <p className="pm25-muted">หากตำบลไม่ตรงพื้นที่ ให้เจ้าหน้าที่ตรวจพิกัดหน่วยงาน ระบบไม่ได้ใช้ตำแหน่งส่วนตัวของผู้เข้าชม</p>
