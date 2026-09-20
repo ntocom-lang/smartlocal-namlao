@@ -22,7 +22,7 @@ const server = await createServer({ configFile: false, envDir: false, server: { 
   load(id) {
     const file = id.replaceAll('\\', '/')
     if (id === '\0guidance.js') return `import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import Form from '/src/components/patientTransport/BookingForm.jsx'; import '/src/index.css'; function App(){const [error,setError]=useState(''); return React.createElement(Form,{tenantId:"test",initial:{day:${JSON.stringify(day)}},info:${JSON.stringify(info)},onBack:()=>{},onSubmit:()=>{setError('เครือข่ายขัดข้อง');return false},submitError:error})};createRoot(document.getElementById('root')).render(React.createElement(App));`
-    if (file.endsWith('/lib/supabase.js')) return `export const supabase={rpc:async()=>({data:{days:[{status:'open'}]}})}`
+    if (file.endsWith('/lib/supabase.js')) return `export const supabase={rpc:async(name,args)=>{const days=[];const to=new Date(args.p_to+'T12:00:00+07:00').getTime();for(let t=new Date(args.p_from+'T12:00:00+07:00').getTime();t<=to&&days.length<60;t+=86400000){days.push({date:new Date(t+7*3600000).toISOString().slice(0,10),status:'open',free:[],trips:[]})}return {data:{days}}}}`
     if (file.endsWith('/contexts/TenantContext.jsx')) return 'export const useTenant=()=>({tenant:{}})'
     if (file.endsWith('/components/MapPicker.jsx')) return 'export default function MapPicker(){return null}'
   },
@@ -39,28 +39,29 @@ try {
     await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__guidance`)
     await page.getByText('ระบบช่วยคำนวณการเดินทาง',{exact:true}).waitFor()
     assert((await page.getByRole('region',{name:'คำแนะนำจากข้อมูลการเดินทาง'}).innerText()).includes('10:00–15:00'))
-    await page.getByRole('button',{name:'ต่อไป',exact:true}).click()
-    await page.getByText('กรอกเวลานัดตามใบนัดแพทย์ ไม่ใช่เวลาที่ต้องการให้รถมารับ',{exact:false}).waitFor()
-    await page.getByLabel('เวลานัดแพทย์',{exact:true}).fill('08:30')
-    await page.getByText('เวลารถรับ–ส่งเกินช่วงให้บริการ',{exact:true}).waitFor()
-    assert(await page.getByRole('button',{name:'ต่อไป',exact:true}).isDisabled())
-    await page.getByLabel('เวลานัดแพทย์',{exact:true}).fill('10:00')
-    await page.getByLabel('คาดว่าพร้อมรับกลับ (ยังไม่ทราบเว้นว่างได้)',{exact:true}).fill('09:00')
-    await page.getByText('เวลาพร้อมรับกลับ 09:00 อยู่ก่อนเวลานัด 10:00',{exact:true}).waitFor()
-    assert(await page.getByRole('button',{name:'ต่อไป',exact:true}).isDisabled())
-    await page.getByLabel('คาดว่าพร้อมรับกลับ (ยังไม่ทราบเว้นว่างได้)',{exact:true}).fill('')
+    // ปุ่มส่งกดได้เสมอ ความไม่ครบต้องบอกเป็นรายการภาษาไทย ไม่ใช่ปุ่มสีเทา
+    await page.getByRole('button',{name:'ส่งคำขอจองรถ',exact:true}).click()
+    await page.getByText('เลือกเวลานัดตามใบนัดแพทย์ ไม่ใช่เวลาที่ต้องการให้รถมารับ',{exact:true}).waitFor()
+    // เวลาที่รถไปส่งไม่ทันต้องไม่อยู่ในรายการให้เลือกตั้งแต่แรก
+    const offered=await page.getByLabel('เวลานัดแพทย์',{exact:true}).locator('option').allInnerTexts()
+    assert.equal(offered.includes('08:30 น.'),false)
+    assert.equal(offered[1],'10:00 น.');assert.equal(offered.at(-1),'15:00 น.')
+    await page.getByLabel('เวลานัดแพทย์',{exact:true}).selectOption('15:00')
+    await page.getByLabel('คาดว่าพร้อมรับกลับ (ยังไม่ทราบเว้นว่างได้)',{exact:true}).selectOption('10:00')
+    await page.getByText('เวลาพร้อมรับกลับ 10:00 อยู่ก่อนเวลานัด 15:00',{exact:true}).waitFor()
+    await page.getByLabel('คาดว่าพร้อมรับกลับ (ยังไม่ทราบเว้นว่างได้)',{exact:true}).selectOption('')
+    await page.getByLabel('เวลานัดแพทย์',{exact:true}).selectOption('10:00')
     await page.getByLabel('เป็นการเดินทางตามนัด ไม่ใช่เหตุฉุกเฉิน').check()
-    await page.getByRole('button',{name:'ต่อไป',exact:true}).click()
     await page.getByLabel('ชื่อ–สกุลผู้จอง',{exact:true}).fill('TEST ผู้จอง')
     await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill('123')
-    await page.getByRole('button',{name:'ต่อไป',exact:true}).click()
+    await page.getByRole('button',{name:'ส่งคำขอจองรถ',exact:true}).click()
     await page.getByText('กรอกเบอร์โทรที่ขึ้นต้นด้วย 0 จำนวน 9–10 หลัก ใช้ตัวเลขติดกัน ไม่เว้นวรรคหรือใส่ขีด',{exact:false}).waitFor()
     await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill('+66 89-000-0000')
     await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).blur()
     assert.equal(await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).inputValue(),'0890000000')
     await page.getByText('จัดรูปแบบเบอร์โทรเป็น 0890000000 แล้ว กรุณาตรวจว่าถูกต้อง',{exact:true}).waitFor()
     await page.getByLabel('จุดรับและจุดสังเกต',{exact:true}).fill('TEST จุดรับ')
-    await page.getByRole('button',{name:'ต่อไป',exact:true}).click()
+    await page.getByLabel('จุดรับอยู่ในเขตพื้นที่ให้บริการ',{exact:true}).check()
     await page.getByRole('button',{name:'ส่งคำขอจองรถ',exact:true}).click()
     await page.getByText('อ่านข้อความข้างช่องแล้วติ๊กยืนยันเฉพาะเมื่อเป็นจริง หากยังยืนยันไม่ได้ ให้ติดต่อเจ้าหน้าที่ก่อนส่งคำขอ',{exact:false}).waitFor()
     await page.getByLabel('ยืนยันการใช้ข้อมูลตามข้อความข้างต้น และข้อมูลจองถูกต้อง').check()

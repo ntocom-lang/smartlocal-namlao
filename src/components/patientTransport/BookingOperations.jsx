@@ -5,12 +5,16 @@ import { BOOKING_STATUS, TRIP_STATUS, RETURN_MODES, MOBILITY, suggestGroups, dat
 
 const GROUP_KINDS = { join: 'ขอร่วมเที่ยวที่ยืนยันแล้ว', share: 'เสนอร่วมเที่ยว', single: 'เที่ยวเดี่ยว' }
 
+// ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
+const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
+
 export function BookingCards({ bookings, trips, onAction, busy }) {
-  if (!bookings.length) return <p className="py-8 text-slate-600">ยังไม่มีการจอง</p>
+  if (!bookings.length) return <p className="rounded-xl border border-slate-200 p-4 text-slate-600">ยังไม่มีการจอง</p>
   return <div className="space-y-4">{bookings.map(b => {
     const trip = b.status === 'cancelled' ? null : trips.find(t => t.id === b.trip_id)
     return <article key={b.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-      <p className="text-xs text-slate-500">รหัส {b.id.slice(0, 8)}</p><h3 className="font-bold">{b.patient_name} · {BOOKING_STATUS[b.status]}</h3>
+      <div className="mb-1 flex flex-wrap items-center gap-2"><h3 className="font-bold">{b.patient_name}</h3><span className={`rounded-full px-3 py-1 text-xs font-bold ${BOOKING_CHIP[b.status] || 'bg-slate-100'}`}>{BOOKING_STATUS[b.status]}</span></div>
+      <p className="text-xs text-slate-500">รหัส {b.id.slice(0, 8)}</p>
       <p>{b.route_label} · นัด {dateTime(b.appointment_at)}</p>
       {b.requested_trip_id && b.status === 'submitted' && <p className="font-semibold text-sky-800">ขอร่วมเที่ยว รอเจ้าหน้าที่ตรวจยืนยัน</p>}
       <p>{RETURN_MODES[b.return_mode]} · {MOBILITY[b.mobility]}</p>
@@ -28,6 +32,8 @@ export function BookingCards({ bookings, trips, onAction, busy }) {
 // คิวรอจัดแผน — กล่องรายการชุดเดียวกับ "คำร้อง": ค้นหาได้ ป้ายกรองบอกจำนวน เปิดคำขอเป็นแผ่นลอยทับ
 // ปุ่มรายคำขอย้ายเข้าแผ่นทั้งหมด ตารางจึงเหลือคอลัมน์เดียวที่เป็นปุ่ม เหมือนกล่องงานคำขอบริการ/เอกสาร
 export function PendingQueue({ workspace, busy, preview, clearPreview, onPreview, onConfirm, onAction, onAmend, action }) {
+  // ยืนยันเขตพื้นที่เป็นการตรวจสิทธิ์ ทำได้เฉพาะผู้ประสานงาน (ฐานข้อมูลกันไว้อีกชั้น)
+  const canVerifyArea = ['admin', 'coordinator'].includes(workspace.role)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [helper, setHelper] = useState('')
@@ -116,6 +122,13 @@ export function PendingQueue({ workspace, busy, preview, clearPreview, onPreview
               <dt className="whitespace-nowrap font-semibold text-slate-600">{label}</dt><dd className="[overflow-wrap:anywhere]">{value}</dd>
             </Fragment>)}
           </dl>
+          {/* ประชาชนไม่ได้รับรองเรื่องเขตพื้นที่เองแล้ว (เป็นการตรวจสิทธิ์ที่ต้องใช้ดุลพินิจเจ้าหน้าที่)
+              ตรวจแผนจะไม่ผ่านจนกว่าจะยืนยัน จึงวางปุ่มยืนยันไว้ตรงนี้ให้จบในคลิกเดียว ไม่ต้องเข้าฟอร์มแก้ข้อมูล */}
+          {!openBooking.in_area && canVerifyArea && <div className="space-y-2 rounded-xl bg-amber-50 p-3">
+            <p className="font-semibold">ยังไม่ได้ตรวจว่าจุดรับอยู่ในเขตพื้นที่</p>
+            <p className="text-sm">ตรวจจากจุดรับข้างบนแล้วกดยืนยัน ระบบจึงจะตรวจแผนและยืนยันเที่ยวให้ได้</p>
+            <button className={buttonClass} disabled={busy} onClick={() => onAmend(openBooking, { appointment_at: openBooking.appointment_at, return_at: openBooking.return_at, route_id: openBooking.route_id, pickup: openBooking.pickup, in_area: true, return_mode: openBooking.return_mode }, 'เจ้าหน้าที่ตรวจแล้วว่าจุดรับอยู่ในเขตพื้นที่')}>ตรวจแล้ว อยู่ในเขตพื้นที่</button>
+          </div>}
           <div className="flex flex-wrap gap-2">
             <button className={primaryClass} disabled={busy} onClick={() => inspect(openGroup.length > 1 ? openGroup.map(b => b.id) : [openBooking.id])}>{openGroup.length > 1 ? 'ตรวจแผนทั้งกลุ่ม' : 'ตรวจแผนและเวลาว่าง'}</button>
             {openGroup.length > 1 && <button className={buttonClass} disabled={busy} onClick={() => inspect([openBooking.id])}>ตรวจเป็นเที่ยวเดี่ยว</button>}
@@ -131,7 +144,14 @@ export function PendingQueue({ workspace, busy, preview, clearPreview, onPreview
       {preview.blocks.map((b, i) => <p key={i}>กันรถ {dateTime(b.start)} – {dateTime(b.end)}</p>)}
       {preview.errors.length ? <div className="space-y-3"><p className="font-semibold text-red-800">ยังยืนยันไม่ได้ · แก้รายการด้านล่างแล้วกดตรวจแผนอีกครั้ง</p><ul className="space-y-3">{preview.errors.map(e => {
         const issue = bookingPlanGuidance(e, preview, workspace)
-        return <li key={e} className="rounded-xl border border-red-200 bg-white p-3 [overflow-wrap:anywhere]"><p className="font-semibold text-red-800">{issue.message}</p>{issue.detail && <p className="mt-1 text-sm text-slate-800">{issue.detail}</p>}<p className="mt-2 text-sm text-slate-800"><strong>วิธีแก้: </strong>{issue.advice}</p></li>
+        // ยืนยันเขตพื้นที่ได้จากตรงนี้เลย เพราะเป็นข้อเดียวที่ระบบรู้ว่าต้องทำอะไรต่อแบบไม่ต้องประสานใคร
+        const areaFix = e.includes('พื้นที่รับบริการ') && canVerifyArea && <button className={`${buttonClass} mt-2`} disabled={busy} onClick={async () => {
+          for (const b of workspace.bookings.filter(row => preview.booking_ids.includes(row.id) && !row.in_area)) {
+            if (!await onAmend(b, { appointment_at: b.appointment_at, return_at: b.return_at, route_id: b.route_id, pickup: b.pickup, in_area: true, return_mode: b.return_mode }, 'เจ้าหน้าที่ตรวจแล้วว่าจุดรับอยู่ในเขตพื้นที่')) return
+          }
+          await inspect(preview.booking_ids)
+        }}>ตรวจแล้ว อยู่ในเขตพื้นที่</button>
+        return <li key={e} className="rounded-xl border border-red-200 bg-white p-3 [overflow-wrap:anywhere]"><p className="font-semibold text-red-800">{issue.message}</p>{issue.detail && <p className="mt-1 text-sm text-slate-800">{issue.detail}</p>}<p className="mt-2 text-sm text-slate-800"><strong>วิธีแก้: </strong>{issue.advice}</p>{areaFix}</li>
       })}</ul></div> : <p>ไม่พบคิวทับซ้อน กรุณาตรวจจุดรับและความเหมาะสมก่อนยืนยัน</p>}
       <button className={primaryClass} disabled={busy || preview.errors.length > 0} onClick={() => onConfirm(selected, preview, helper)}>ตรวจแล้ว ยืนยันเที่ยวนี้</button>
     </Sheet>}

@@ -54,8 +54,12 @@ const STAFF_ROLES=['setupadmin','coordinator','driver','admin']
 // หน้าประชาชนกับหน้าทำงานเป็นคนละหน้าแล้ว visit() จึงพาไปหน้าที่บทบาทนั้นใช้จริง
 const visit=async (as, home=true)=>{
  if(STAFF_ROLES.includes(as)){await page.goto(`${base}/__patient?as=${as}&page=staff`);await page.getByRole('navigation',{name:'งานรถรับส่งผู้ป่วย'}).waitFor();return}
- await page.goto(`${base}/__patient?as=${as}`);await page.getByRole('button',{name:'หน้าบริการ',exact:true}).waitFor();if(home)await page.getByRole('button',{name:'หน้าบริการ',exact:true}).click()}
-const visitCitizenPage=async as=>{await page.goto(`${base}/__patient?as=${as}`);await page.getByRole('button',{name:'หน้าบริการ',exact:true}).waitFor()}
+ await page.goto(`${base}/__patient?as=${as}`);await page.getByRole('region',{name:'บริการรถรับส่งผู้ป่วย'}).waitFor();if(!home)await page.getByRole('button',{name:'ดูวันว่าง',exact:true}).click()}
+const visitCitizenPage=async as=>{await page.goto(`${base}/__patient?as=${as}`);await page.getByRole('region',{name:'บริการรถรับส่งผู้ป่วย'}).waitFor()}
+// ฟอร์มจองเป็นหน้าเดียวแล้ว: วันเลือกจากปุ่มวันที่ว่าง ช่องวันที่ของเบราว์เซอร์ย้ายไปอยู่ใต้ "เลือกวันอื่น"
+// ประชาชนไม่ได้ติ๊ก “อยู่ในเขตพื้นที่” เองแล้ว เจ้าหน้าที่ยืนยันจากในแผ่นผลตรวจแผนได้ในคลิกเดียว
+const clearAreaCheck=async()=>{const fix=page.getByRole('button',{name:'ตรวจแล้ว อยู่ในเขตพื้นที่',exact:true});if(await fix.count())await fix.first().click()}
+const setDay=async value=>{await page.locator('summary').filter({hasText:'เลือกวันอื่น'}).first().evaluate(node=>{node.parentElement.open=true});await page.getByLabel('วันที่นัดแพทย์',{exact:true}).fill(value)}
 try{
  await visit('setupadmin');await page.getByRole('button',{name:'ตั้งค่า',exact:true}).click()
  await page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกค่าตั้งต้นแล้ว'}).waitFor()
@@ -69,32 +73,44 @@ try{
  for(const label of ['ตรวจปฏิทินวันหยุดครอบคลุมถึง','ข้อความแจ้งการใช้ข้อมูลที่ผู้รับผิดชอบตรวจรับแล้ว'])assert.equal(await page.getByLabel(label,{exact:true}).count(),0)
  await page.getByRole('checkbox',{name:'เปิดรับจองรถออนไลน์',exact:true}).check();await page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกค่าตั้งต้นแล้ว'}).waitFor()
  await actor(setupAdmin);const initialSettings=(await rpc('patient_booking_workspace',[setupTenant])).settings;assert.equal(initialSettings.enabled,true);assert.equal(initialSettings.calendar_checked_through,null);assert.equal(initialSettings.delegation_reference,'');assert(initialSettings.privacy_notice.includes('บริการรถรับส่งผู้ป่วย'));assert.equal(initialSettings.driver_id,setupAdmin);assert.deepEqual(initialSettings.coordinator_ids,[setupAdmin]);assert.equal((await rpc('patient_booking_info',[setupTenant])).enabled,true)
- await visitCitizenPage('setupadmin');await page.getByRole('button',{name:'หน้าบริการ',exact:true}).click();await page.getByRole('button',{name:'ขอจองรถรับส่ง',exact:true}).waitFor()
+ await visitCitizenPage('setupadmin');await page.getByRole('button',{name:'ขอจองรถรับส่ง',exact:true}).waitFor()
  console.log('PASS first-time setup completed through actual UI and booking opens; one account serves both duties')
  for(const [as, role] of [['anonymous','citizen'],['citizen','citizen'],['coordinator','coordinator'],['driver','driver'],['admin','admin']]) {
-  await visit(as,false);await page.getByRole('button',{name:'คู่มือและแนะนำการใช้งาน',exact:true}).click()
+  await visit(as);await page.getByRole('button',{name:'คู่มือและแนะนำการใช้งาน',exact:true}).click()
   const help=page.getByRole('region',{name:'คู่มือรถรับส่งผู้ป่วย'});assert.equal(await help.getByLabel('คู่มือสำหรับ',{exact:true}).inputValue(),role)
   if(role==='citizen')assert.equal(await help.locator('option').count(),1)
   await help.locator('summary').first().click();await help.getByRole('button',{name:'แนะนำทีละขั้น',exact:true}).click()
   assert.equal(await help.getByRole('button',{name:'ขั้นก่อนหน้า',exact:true}).isDisabled(),true)
-  assert.equal(await page.locator('nav [data-help-highlight="true"]').count(),1)
+  assert.equal(await page.locator('[data-help-highlight="true"]').count(),1)
   await help.getByRole('button',{name:'ขั้นถัดไป',exact:true}).click();await help.getByRole('button',{name:'ขั้นก่อนหน้า',exact:true}).click()
   for(const width of [320,390,768]) {await page.setViewportSize({width,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`help ${as} ${width}px overflow`)}
-  if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-help-${as}.png`,fullPage:true})}
-  await help.getByRole('button',{name:'ปิดคำแนะนำ',exact:true}).focus();await page.keyboard.press('Escape');assert.equal(await help.count(),0);assert.equal(await page.locator('nav [data-help-highlight="true"]').count(),0)
+  if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-help-${as}.png`,fullPage:true});await page.setViewportSize({width:768,height:900})}
+  await help.getByRole('button',{name:'ปิดคำแนะนำ',exact:true}).focus();await page.keyboard.press('Escape');assert.equal(await help.count(),0);assert.equal(await page.locator('[data-help-highlight="true"]').count(),0)
   assert.equal(await page.getByRole('button',{name:'คู่มือและแนะนำการใช้งาน',exact:true}).evaluate(el=>el===document.activeElement),true)
  }
- await visit('citizen');await page.getByRole('button',{name:'ขอจองรถรับส่ง',exact:true}).click();await page.getByLabel('วันที่นัดแพทย์',{exact:true}).fill(day)
+ await visit('citizen');await page.getByRole('button',{name:'ขอจองรถรับส่ง',exact:true}).click();await setDay(day)
  await page.getByRole('button',{name:'คู่มือและแนะนำการใช้งาน',exact:true}).click();await page.getByRole('button',{name:'แนะนำทีละขั้น',exact:true}).click()
  while(await page.getByRole('button',{name:'ขั้นถัดไป',exact:true}).count())await page.getByRole('button',{name:'ขั้นถัดไป',exact:true}).click()
  await page.getByRole('button',{name:'จบคำแนะนำ',exact:true}).click();assert.equal(await page.getByLabel('วันที่นัดแพทย์',{exact:true}).inputValue(),day)
  console.log('PASS role-aware manual, step guide, menu highlight, keyboard close/focus, responsive layout and unsaved booking preserved')
  await visit('anonymous',false);await page.getByRole('region',{name:'ตารางรถสำหรับประชาชน'}).waitFor()
+ // ตัวควบคุมทั้งหมดย้ายไปอยู่ใต้ "ดูวันอื่น / เลือกโรงพยาบาล" แล้ว สั่งเปิด/ปิดกล่องตรงๆ ไม่ใช่กดสลับ
+ const setTravelControls=async open=>await page.locator('summary').filter({hasText:'ดูวันอื่น / เลือกโรงพยาบาล'}).first().evaluate((node,value)=>{node.parentElement.open=value},open)
+ // ชาวบ้านต้องเห็นคำตอบก่อนตัวควบคุม ของเดิมต้องเลื่อนผ่านปุ่มกรอง 790px กว่าจะเจอข้อมูลบรรทัดแรก
+ const answerBox=await page.getByText('จองรถได้เร็วที่สุด',{exact:true}).or(page.getByText('ช่วงวันที่กำลังดูอยู่นี้ ยังไม่มีวันที่จองได้',{exact:true})).first().boundingBox()
+ const controlsBox=await page.locator('summary').filter({hasText:'ดูวันอื่น / เลือกโรงพยาบาล'}).first().boundingBox()
+ assert(answerBox.y<controlsBox.y,'กล่องคำตอบต้องอยู่เหนือตัวควบคุม')
+ // รายการหลักต้องมีแต่วันที่ทำอะไรได้จริง วันหยุด/จองไม่ทันไปอยู่ในกล่องพับ
+ for(const card of await page.locator('section[aria-label="ตารางรถสำหรับประชาชน"] > ul > li').all()){
+  assert(await card.locator('article').count()||await card.getByText(/รถว่าง/).count(),'รายการหลักต้องไม่มีการ์ดวันที่จองไม่ได้')
+ }
+ await setTravelControls(true)
  assert.equal(await page.getByRole('button',{name:'ตาราง',exact:true}).getAttribute('aria-pressed'),'true')
  assert.equal(await page.getByLabel('ตั้งแต่วันที่',{exact:true}).inputValue(),thaiDay())
  await page.getByRole('button',{name:'ปฏิทิน',exact:true}).click();await visit('anonymous',false)
+ await setTravelControls(true)
  assert.equal(await page.getByRole('button',{name:'ปฏิทิน',exact:true}).getAttribute('aria-pressed'),'true')
- await page.getByRole('button',{name:'ตั้งแต่วันนี้ 14 วัน',exact:true}).click()
+ await page.getByRole('button',{name:'ตาราง',exact:true}).click()
  await visit('coordinator',false);await page.getByRole('region',{name:'ตารางออกรถเจ้าหน้าที่'}).waitFor()
  assert.equal(await page.getByLabel('วันออกรถ',{exact:true}).inputValue(),thaiDay())
  console.log('PASS role defaults: citizen upcoming table, calendar preference retained, coordinator daily schedule')
@@ -108,16 +124,23 @@ try{
  await visit('driver',false);await page.getByRole('button',{name:'คิวรอจัดแผน',exact:true}).waitFor();await page.getByRole('button',{name:'งานคนขับ',exact:true}).click();await page.unroute('**/__patient_rpc')
 
  await visit('citizen');await page.getByRole('button',{name:'ขอจองรถรับส่ง',exact:true}).click()
- await page.getByLabel('วันที่นัดแพทย์',{exact:true}).fill(day);await page.getByLabel('เวลานัดแพทย์',{exact:true}).fill('14:30');await page.getByLabel('คาดว่าพร้อมรับกลับ (ยังไม่ทราบเว้นว่างได้)',{exact:true}).fill('15:00');await page.getByLabel('เป็นการเดินทางตามนัด ไม่ใช่เหตุฉุกเฉิน',{exact:true}).check();await page.getByRole('button',{name:'ต่อไป',exact:true}).click()
- await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill('0800000099');await page.getByLabel('จุดรับและจุดสังเกต',{exact:true}).fill('TEST Browser pickup');await page.getByLabel('ผู้เดินทางอยู่ในเขตพื้นที่ (หากไม่แน่ใจให้เจ้าหน้าที่ตรวจสอบ)',{exact:true}).check();await page.getByRole('button',{name:'ต่อไป',exact:true}).click();await page.getByLabel('ยืนยันการใช้ข้อมูลตามข้อความข้างต้น และข้อมูลจองถูกต้อง',{exact:true}).check();await page.getByRole('button',{name:'ส่งคำขอจองรถ',exact:true}).click();await page.getByRole('article').filter({hasText:'TEST Browser Requester'}).waitFor()
- await visit('driver');await page.getByRole('button',{name:'คิวรอจัดแผน',exact:true}).click();const proposal=page.locator('tbody, article').filter({hasText:'TEST Browser Requester'}).filter({has:page.getByRole('button',{name:'ตรวจแผนและเวลาว่าง',exact:true})}).first();await proposal.getByRole('button',{name:'ตรวจแผนและเวลาว่าง',exact:true}).click();await page.getByRole('button',{name:'ตรวจแล้ว ยืนยันเที่ยวนี้',exact:true}).click();await page.getByRole('status').filter({hasText:'ยืนยันเที่ยวแล้ว'}).waitFor();
+ await setDay(day);await page.getByLabel('เวลานัดแพทย์',{exact:true}).selectOption('14:30');await page.getByLabel('คาดว่าพร้อมรับกลับ (ยังไม่ทราบเว้นว่างได้)',{exact:true}).selectOption('15:00')
+ await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill('0800000099');await page.getByLabel('จุดรับและจุดสังเกต',{exact:true}).fill('TEST Browser pickup')
+ await page.getByRole('button',{name:'ส่งคำขอจองรถ',exact:true}).click()
+ // ปุ่มส่งกดได้เสมอ ความไม่ครบต้องขึ้นเป็นรายการภาษาไทยว่าขาดอะไร ไม่ใช่ปุ่มสีเทาที่ไม่บอกเหตุผล
+ await page.getByRole('alert').filter({hasText:'ยังส่งคำขอไม่ได้ เพราะยังไม่ได้กรอก'}).waitFor()
+ await page.getByText('ยืนยันว่าจุดรับอยู่ในเขตพื้นที่ให้บริการ',{exact:true}).waitFor()
+ await page.getByLabel('จุดรับอยู่ในเขตพื้นที่ให้บริการ',{exact:true}).check()
+ await page.getByLabel('เป็นการเดินทางตามนัด ไม่ใช่เหตุฉุกเฉิน',{exact:true}).check();await page.getByLabel('ยืนยันการใช้ข้อมูลตามข้อความข้างต้น และข้อมูลจองถูกต้อง',{exact:true}).check()
+ await page.getByRole('button',{name:'ส่งคำขอจองรถ',exact:true}).click();await page.getByRole('article').filter({hasText:'TEST Browser Requester'}).waitFor()
+ await visit('driver');await page.getByRole('button',{name:'คิวรอจัดแผน',exact:true}).click();const proposal=page.locator('tbody, article').filter({hasText:'TEST Browser Requester'}).filter({has:page.getByRole('button',{name:'ตรวจแผนและเวลาว่าง',exact:true})}).first();await proposal.getByRole('button',{name:'ตรวจแผนและเวลาว่าง',exact:true}).click();await clearAreaCheck();await page.getByRole('button',{name:'ตรวจแล้ว ยืนยันเที่ยวนี้',exact:true}).click();await page.getByRole('status').filter({hasText:'ยืนยันเที่ยวแล้ว'}).waitFor();
  await visit('driver');await page.getByRole('button',{name:'งานคนขับ',exact:true}).click();const trip=page.getByRole('article').filter({hasText:'TEST Browser Requester'});for(const label of ['ออกไปรับ','รับผู้เดินทางแล้ว','ส่งถึงโรงพยาบาลแล้ว','ส่งถึงครบ · รอรับกลับ','ออกไปรับขากลับ','รับกลับแล้ว','ส่งถึงจุดหมายแล้ว','ส่งกลับครบ · จบเที่ยว']){await trip.getByRole('button',{name:label,exact:true}).click();await page.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).waitFor();}
- await visit('citizen');await page.getByRole('button',{name:'การจองของฉัน',exact:true}).click();assert.match(await page.getByRole('article').filter({hasText:'TEST Browser Requester'}).textContent(),/จบเที่ยวแล้ว/)
+ await visit('citizen');assert.match(await page.getByRole('article').filter({hasText:'TEST Browser Requester'}).textContent(),/จบเที่ยวแล้ว/)
  // ปุ่มของหน้าประชาชนต้องเรียก patient_booking_action ได้จริง — เคยตกหล่น p_op แล้ว PostgREST ตอบ
  // PGRST202 ปุ่ม "ยกเลิกคำขอ"/"พร้อมให้มารับกลับ" ใช้ไม่ได้ทั้งที่หน้าจอดูปกติ (เจอบน production)
  await actor(citizen);const cancelId=crypto.randomUUID()
  await rpc('patient_booking_submit',[tenant,cancelId,{...JSON.parse(JSON.stringify(baseBooking)),patient_name:'TEST cancel button',phone:'0800000911'},false])
- await visit('citizen');await page.getByRole('button',{name:'การจองของฉัน',exact:true}).click()
+ await visit('citizen')
  const cancelCard=page.getByRole('article').filter({hasText:'TEST cancel button'})
  await cancelCard.getByRole('button',{name:'ยกเลิกคำขอ',exact:true}).click()
  await page.getByRole('status').filter({hasText:'บันทึกแล้ว'}).waitFor()
@@ -128,30 +151,32 @@ try{
  await actor(admin);await rpc('patient_booking_save_settings',[tenant,(await rpc('patient_booking_workspace',[tenant])).settings.revision,settings])
  console.log('PASS same account saves both roles, retains coordinator checkbox on driver selection, sees empty driver menu, confirms and completes its own assigned trip')
 
- await visit('anonymous');await page.getByRole('button',{name:'ดูตารางรถ',exact:true}).click();await page.getByLabel('เดือน',{exact:true}).fill(calendarDay.slice(0,7));await page.locator('summary').filter({hasText:'กรองวันที่และเส้นทาง'}).click();await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(calendarDay);await page.getByLabel('ถึงวันที่',{exact:true}).fill(calendarDay);await page.getByRole('button',{name:'ตาราง',exact:true}).click();await page.getByText('ผู้เดินทางรวมผู้ติดตาม 3 คน · เหลือ 1 ที่นั่ง',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'ขอร่วมเที่ยวนี้',exact:true}).count(),0)
- await visit('citizen');await page.getByRole('button',{name:'ดูตารางรถ',exact:true}).click();assert.equal(await page.getByRole('button',{name:'ตาราง',exact:true}).getAttribute('aria-pressed'),'true');await page.getByLabel('เดือน',{exact:true}).fill(calendarDay.slice(0,7));await page.locator('summary').filter({hasText:'กรองวันที่และเส้นทาง'}).click();await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(calendarDay);await page.getByLabel('ถึงวันที่',{exact:true}).fill(calendarDay);await page.getByLabel('เฉพาะเที่ยวที่ร่วมได้',{exact:true}).check();await page.getByRole('button',{name:'ขอร่วมเที่ยวนี้',exact:true}).click()
- assert.equal(await page.getByLabel('วันที่นัดแพทย์',{exact:true}).inputValue(),calendarDay);await page.getByLabel('เวลานัดแพทย์',{exact:true}).fill('10:30');await page.getByLabel('เป็นการเดินทางตามนัด ไม่ใช่เหตุฉุกเฉิน',{exact:true}).check();await page.getByRole('button',{name:'ต่อไป',exact:true}).click();await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill('0800000500');await page.getByLabel('จุดรับและจุดสังเกต',{exact:true}).fill('TEST calendar browser pickup');await page.getByLabel('ผู้ติดตาม',{exact:true}).selectOption('0');await page.getByLabel('ผู้เดินทางอยู่ในเขตพื้นที่ (หากไม่แน่ใจให้เจ้าหน้าที่ตรวจสอบ)',{exact:true}).check();await page.getByRole('button',{name:'ต่อไป',exact:true}).click();await page.getByLabel('ยืนยันการใช้ข้อมูลตามข้อความข้างต้น และข้อมูลจองถูกต้อง',{exact:true}).check();await page.getByRole('button',{name:'ส่งคำขอจองรถ',exact:true}).click();await page.getByText('ขอร่วมเที่ยว รอเจ้าหน้าที่ตรวจยืนยัน',{exact:true}).waitFor()
- await visit('coordinator');await page.getByRole('button',{name:'คิวรอจัดแผน',exact:true}).click();await page.locator('tbody, article').filter({hasText:'ขอร่วมเที่ยวที่ยืนยันแล้ว'}).first().getByRole('button',{name:'ตรวจแผนและเวลาว่าง',exact:true}).click();await page.getByRole('button',{name:'ตรวจแล้ว ยืนยันเที่ยวนี้',exact:true}).click();await page.getByRole('status').filter({hasText:'ยืนยันร่วมเที่ยวแล้ว'}).waitFor()
- await visit('citizen');await page.getByRole('button',{name:'ดูตารางรถ',exact:true}).click();await page.getByLabel('เดือน',{exact:true}).fill(calendarDay.slice(0,7));await page.locator('summary').filter({hasText:'กรองวันที่และเส้นทาง'}).click();await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(calendarDay);await page.getByLabel('ถึงวันที่',{exact:true}).fill(calendarDay);await page.getByText('ผู้เดินทางรวมผู้ติดตาม 4 คน · เหลือ 0 ที่นั่ง',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'ขอร่วมเที่ยวนี้',exact:true}).count(),0)
- for(const width of [320,390,768,1024]){await page.setViewportSize({width,height:900});for(const mode of ['ปฏิทิน','ตาราง']){await page.getByRole('button',{name:mode,exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${mode} overflow`)} }
- if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(`${calendarDay.slice(0,7)}-01`);await page.getByLabel('ถึงวันที่',{exact:true}).fill(`${calendarDay.slice(0,7)}-28`);await page.locator('summary').filter({hasText:'กรองวันที่และเส้นทาง'}).click();for(const [mode,file] of [['ปฏิทิน','calendar'],['ตาราง','table']]){await page.getByRole('button',{name:mode,exact:true}).click();if(mode==='ปฏิทิน') { await page.locator('[aria-label="ปฏิทินรายเดือน"] button').filter({hasText:new RegExp(`^${Number(calendarDay.slice(-2))}\\D`)}).click() } await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-${file}-390.png`,fullPage:true})}}
- console.log('PASS anonymous aggregate calendar, remembered view, table join request -> existing-trip confirmation -> full seats; calendar/table at 320/390/768/1024px')
+ await visit('anonymous');await page.getByRole('button',{name:'ดูวันว่าง',exact:true}).click();await setTravelControls(true);await page.getByRole('button',{name:'ตาราง',exact:true}).click();await setTravelControls(true);await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(calendarDay);await page.getByLabel('ถึงวันที่',{exact:true}).fill(calendarDay);await page.getByText('เหลือ 1 ที่นั่ง',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'ขอนั่งรถคันนี้ไปด้วย',exact:true}).count(),0)
+ await visit('citizen');await page.getByRole('button',{name:'ดูวันว่าง',exact:true}).click();await setTravelControls(true);assert.equal(await page.getByRole('button',{name:'ตาราง',exact:true}).getAttribute('aria-pressed'),'true');await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(calendarDay);await page.getByLabel('ถึงวันที่',{exact:true}).fill(calendarDay);await page.getByLabel('เฉพาะเที่ยวที่ร่วมได้',{exact:true}).check();await page.getByRole('button',{name:'ขอนั่งรถคันนี้ไปด้วย',exact:true}).click()
+ assert.equal(await page.getByLabel('วันที่นัดแพทย์',{exact:true}).inputValue(),calendarDay);await page.getByLabel('เวลานัดแพทย์',{exact:true}).selectOption('10:30');await page.getByLabel('เป็นการเดินทางตามนัด ไม่ใช่เหตุฉุกเฉิน',{exact:true}).check();await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill('0800000500');await page.getByLabel('จุดรับและจุดสังเกต',{exact:true}).fill('TEST calendar browser pickup');await page.getByLabel('จุดรับอยู่ในเขตพื้นที่ให้บริการ',{exact:true}).check();await page.getByLabel('ยืนยันการใช้ข้อมูลตามข้อความข้างต้น และข้อมูลจองถูกต้อง',{exact:true}).check();await page.getByRole('button',{name:'ส่งคำขอจองรถ',exact:true}).click();await page.getByText('ขอร่วมเที่ยว รอเจ้าหน้าที่ตรวจยืนยัน',{exact:true}).waitFor()
+ await visit('coordinator');await page.getByRole('button',{name:'คิวรอจัดแผน',exact:true}).click();await page.locator('tbody, article').filter({hasText:'ขอร่วมเที่ยวที่ยืนยันแล้ว'}).first().getByRole('button',{name:'ตรวจแผนและเวลาว่าง',exact:true}).click();await clearAreaCheck();await page.getByRole('button',{name:'ตรวจแล้ว ยืนยันเที่ยวนี้',exact:true}).click();await page.getByRole('status').filter({hasText:'ยืนยันร่วมเที่ยวแล้ว'}).waitFor()
+ await visit('citizen');await page.getByRole('button',{name:'ดูวันว่าง',exact:true}).click();await setTravelControls(true);await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(calendarDay);await page.getByLabel('ถึงวันที่',{exact:true}).fill(calendarDay);await page.getByText('เหลือ 0 ที่นั่ง',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'ขอนั่งรถคันนี้ไปด้วย',exact:true}).count(),0)
+ for(const width of [320,390,768,1024]){await page.setViewportSize({width,height:900});for(const mode of ['ปฏิทิน','ตาราง']){await setTravelControls(true);await page.getByRole('button',{name:mode,exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${mode} overflow`)} }
+ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await setTravelControls(true);await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(`${calendarDay.slice(0,7)}-01`);await page.getByLabel('ถึงวันที่',{exact:true}).fill(`${calendarDay.slice(0,7)}-28`);for(const [mode,file] of [['ปฏิทิน','calendar'],['ตาราง','table']]){await setTravelControls(true);await page.getByRole('button',{name:mode,exact:true}).click();await setTravelControls(false);if(mode==='ปฏิทิน') { await page.locator('[aria-label="ปฏิทินรายเดือน"] button').filter({hasText:new RegExp(`^${Number(calendarDay.slice(-2))}\\D`)}).click() } await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-${file}-390.png`,fullPage:true})}}
+ console.log('PASS anonymous aggregate calendar, answer-first layout with collapsed controls, remembered view, table join request -> existing-trip confirmation -> full seats; calendar/table at 320/390/768/1024px')
 
  // Intake guards seen by a citizen: the form refuses days and appointment times the queue could never confirm.
  await page.setViewportSize({width:390,height:900});await visit('citizen');await page.getByRole('button',{name:'ขอจองรถรับส่ง',exact:true}).click()
  const weekendDate=new Date();weekendDate.setUTCDate(weekendDate.getUTCDate()+1);while(weekendDate.getUTCDay()!==6)weekendDate.setUTCDate(weekendDate.getUTCDate()+1)
- await page.getByLabel('วันที่นัดแพทย์',{exact:true}).fill(weekendDate.toISOString().slice(0,10))
+ await setDay(weekendDate.toISOString().slice(0,10))
  await page.getByRole('alert').filter({hasText:'ตรงวันหยุดให้บริการ'}).waitFor()
- assert.equal(await page.getByRole('button',{name:'ต่อไป',exact:true}).isDisabled(),true,'Weekend must block the step')
+ await page.getByRole('button',{name:'ส่งคำขอจองรถ',exact:true}).click()
+ await page.getByRole('alert').filter({hasText:'ตรงวันหยุดให้บริการ'}).waitFor()
+ assert.equal(await page.getByRole('article').filter({hasText:'TEST Browser Requester'}).count(),0,'Weekend must block the request')
  if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-blocked-day-390.png`,fullPage:true})}
- await page.getByLabel('วันที่นัดแพทย์',{exact:true}).fill(day);await page.getByLabel('เวลานัดแพทย์',{exact:true}).fill('08:45')
- await page.getByRole('alert').filter({hasText:'นอกเวลาบริการ'}).waitFor()
- assert.equal(await page.getByRole('button',{name:'ต่อไป',exact:true}).isDisabled(),true,'Pickup before office hours must block the step')
- if(process.env.PATIENT_PREVIEW_SHOTS){await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-early-appointment-390.png`,fullPage:true})}
- await page.getByLabel('เวลานัดแพทย์',{exact:true}).fill('10:00')
+ await setDay(day)
+ // เวลาที่รถไปส่งไม่ทันต้องไม่ถูกเสนอให้เลือกตั้งแต่แรก ดีกว่าปล่อยให้เลือกแล้วค่อยขึ้นเตือน
+ const offered=await page.getByLabel('เวลานัดแพทย์',{exact:true}).locator('option').allInnerTexts()
+ assert.equal(offered.includes('08:45 น.'),false,'Times the vehicle cannot serve must not be offered')
+ assert.equal(offered[1],'09:30 น.','First offered time must respect travel and buffer minutes')
+ await page.getByLabel('เวลานัดแพทย์',{exact:true}).selectOption('10:00')
  await page.getByRole('status').filter({hasText:'วันนี้เปิดรับจอง'}).waitFor()
- assert.equal(await page.getByRole('button',{name:'ต่อไป',exact:true}).isDisabled(),false,'A serviceable day and time must pass')
- if(process.env.PATIENT_PREVIEW_SHOTS){await page.getByLabel('เป็นการเดินทางตามนัด ไม่ใช่เหตุฉุกเฉิน',{exact:true}).check();await page.getByRole('button',{name:'ต่อไป',exact:true}).click();await page.getByText('ปักหมุดจุดรับ (ถ้าสะดวก)',{exact:true}).waitFor();await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-pickup-pin-390.png`,fullPage:true})}
+ if(process.env.PATIENT_PREVIEW_SHOTS){await page.getByLabel('เป็นการเดินทางตามนัด ไม่ใช่เหตุฉุกเฉิน',{exact:true}).check();await page.locator('summary').filter({hasText:'ตัวเลือกเพิ่มเติม'}).first().evaluate(node=>{node.parentElement.open=true});await page.getByText('ปักหมุดจุดรับ',{exact:true}).waitFor();await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-pickup-pin-390.png`,fullPage:true})}
  console.log('PASS booking form blocks closed days and appointments outside office hours before the request is sent')
 
  // เอกสารถึงกองทุนผ่านหน้าจอจริง: เจ้าหน้าที่บันทึกเลขหนังสือ คนขับบันทึกเลขไมล์ ค่าถึงฐานข้อมูลจริง
@@ -228,19 +253,19 @@ try{
  assert.equal(await firstBlock.getByLabel('เริ่มรับประมาณการใหม่',{exact:true}).inputValue(),'10:10')
  for(const width of [320,390,768,1024]) {await page.setViewportSize({width,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`schedule ${width}px overflow`)}
  if(process.env.PATIENT_PREVIEW_SHOTS){await page.setViewportSize({width:390,height:900});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-schedule-staff-390.png`,fullPage:true})}
- await visit('anonymous',false);await page.getByLabel('เดือน',{exact:true}).fill(calendarDay.slice(0,7));await page.locator('summary').filter({hasText:'กรองวันที่และเส้นทาง'}).click();await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(calendarDay);await page.getByLabel('ถึงวันที่',{exact:true}).fill(calendarDay)
- await page.getByText(/แจ้งเวลาล่าสุด: เริ่มรับ 10:10/).waitFor();await page.getByText('รถล่าช้า · กรุณาดูเวลาประมาณการล่าสุด',{exact:true}).waitFor()
+ await visit('anonymous',false);await setTravelControls(true);await page.getByLabel('ตั้งแต่วันที่',{exact:true}).fill(calendarDay);await page.getByLabel('ถึงวันที่',{exact:true}).fill(calendarDay)
+ await page.getByText(/เวลาล่าสุด: ออกรับ 10:10 น./).waitFor();await page.getByText('รถล่าช้า · ดูเวลาล่าสุดด้านล่าง',{exact:true}).waitFor()
  assert(!await page.getByRole('region',{name:'ตารางรถสำหรับประชาชน'}).textContent().then(text=>/TEST patient|TEST pickup|Driver TEST/.test(text)))
- if(process.env.PATIENT_PREVIEW_SHOTS){await page.locator('summary').filter({hasText:'กรองวันที่และเส้นทาง'}).click();await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-schedule-public-390.png`,fullPage:true})}
- await visit('citizen',false);await page.getByRole('button',{name:'การจองของฉัน',exact:true}).click();await page.getByText(/แจ้งเริ่มรับล่าสุด.*10:10/).first().waitFor()
+ if(process.env.PATIENT_PREVIEW_SHOTS){await setTravelControls(false);await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-schedule-public-390.png`,fullPage:true})}
+ await visit('citizen');await page.getByText(/แจ้งเริ่มรับล่าสุด.*10:10/).first().waitFor()
  console.log('PASS daily blocks, private roster, schedule update reaches public and own booking, stale draft preserved/blocked, responsive 320/390/768/1024px')
 
- for(const width of [320,390,768,1024]){await page.setViewportSize({width,height:900});for(const as of ['citizen','coordinator','driver','admin']){await visit(as);const tab={citizen:'หน้าบริการ',coordinator:'คิวรอจัดแผน',driver:'งานคนขับ',admin:'ตั้งค่า'}[as];await page.getByRole('button',{name:tab,exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${as} overflow`)}console.log(`PASS rendered ${width}px four roles`)}
+ for(const width of [320,390,768,1024]){await page.setViewportSize({width,height:900});for(const as of ['citizen','coordinator','driver','admin']){await visit(as);const tab={citizen:'ดูวันว่าง',coordinator:'คิวรอจัดแผน',driver:'งานคนขับ',admin:'ตั้งค่า'}[as];await page.getByRole('button',{name:tab,exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${as} overflow`)}console.log(`PASS rendered ${width}px four roles`)}
  if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.setViewportSize({width:390,height:900});await visit('citizen');await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-live-ui-390.png`,fullPage:true});await visit('coordinator');await page.getByRole('button',{name:'คิวรอจัดแผน',exact:true}).click();await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-booking-queue-390.png`,fullPage:true})}
  // Disabled booking has no second intake form; administrators retain setup access.
  await actor(admin);const currentSettings=(await rpc('patient_booking_workspace',[tenant])).settings
  await rpc('patient_booking_save_settings',[tenant,currentSettings.revision,{...settings,enabled:false}])
- await visit('citizen',false);await page.getByText('หน่วยงานยังไม่เปิดรับจองรถออนไลน์ กรุณาติดต่อเจ้าหน้าที่เพื่อสอบถามบริการ',{exact:true}).waitFor()
+ await visit('citizen');await page.getByText('หน่วยงานยังไม่เปิดรับจองรถออนไลน์ กรุณาติดต่อเจ้าหน้าที่เพื่อสอบถามบริการ',{exact:true}).waitFor()
  assert.equal(await page.locator('a[href*="type=patient_transport_request"]').count(),0)
  await page.getByRole('link',{name:'ติดตามคำขอที่เคยยื่นไว้',exact:true}).waitFor()
  await page.getByRole('button',{name:'คู่มือและแนะนำการใช้งาน',exact:true}).click();await page.getByRole('button',{name:'แนะนำทีละขั้น',exact:true}).click();await page.getByRole('button',{name:'จบคำแนะนำ',exact:true}).waitFor()
@@ -261,7 +286,7 @@ try{
  await visitCitizenPage('coordinator')
  await page.getByRole('link',{name:'ไปหน้าทำงานเจ้าหน้าที่',exact:true}).waitFor()
  for(const staffTab of ['คิวรอจัดแผน','เที่ยวเดินรถ','ตารางออกรถ','ตั้งค่า'])assert.equal(await page.getByRole('button',{name:staffTab,exact:true}).count(),0,`หน้าประชาชนไม่ควรมีแท็บ ${staffTab}`)
- await page.getByRole('button',{name:'หน้าบริการ',exact:true}).click();await page.getByText('หน่วยงานยังไม่เปิดรับจองรถออนไลน์ กรุณาติดต่อเจ้าหน้าที่เพื่อสอบถามบริการ',{exact:true}).waitFor();await page.getByRole('link',{name:'หน้าทำงานเจ้าหน้าที่',exact:true}).waitFor()
+ await page.getByText('หน่วยงานยังไม่เปิดรับจองรถออนไลน์ กรุณาติดต่อเจ้าหน้าที่เพื่อสอบถามบริการ',{exact:true}).waitFor();await page.getByRole('link',{name:'หน้าทำงานเจ้าหน้าที่',exact:true}).waitFor()
  // จอ PC: หน้าจัดคิวต้องเป็นตาราง อ่านหลายคำขอพร้อมกันได้ และปุ่มดำเนินการต้องไม่ถูกตัดนอกกรอบ
  // (กติกาเดียวกับกล่องงาน: คอลัมน์ดำเนินการปักขวา ตารางที่กว้างเกินพื้นที่จะตัดปุ่มหลักทิ้งเงียบๆ)
  await page.setViewportSize({width:1440,height:950});await visit('coordinator');await page.getByRole('button',{name:'คิวรอจัดแผน',exact:true}).click()
