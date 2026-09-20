@@ -39,6 +39,7 @@ const MorePage = lazyWithRetry(() => import('./pages/MorePage'))
 const NotificationsPage = lazyWithRetry(() => import('./pages/NotificationsPage'))
 const WeatherPage = lazyWithRetry(() => import('./pages/WeatherPage'))
 const WaterSituationPage = lazyWithRetry(() => import('./pages/WaterSituationPage'))
+const Pm25Page = lazyWithRetry(() => import('./pages/Pm25Page'))
 const EventsPage = lazyWithRetry(() => import('./pages/EventsPage'))
 const EventsManager = lazyWithRetry(() => import('./components/admin/EventsManager'))
 const EmergencyPage = lazyWithRetry(() => import('./pages/EmergencyPage'))
@@ -664,6 +665,7 @@ function AppShell() {
           <Route path="/weather" element={<WeatherPage />} />
           {/* ไม่ต้องล็อกอิน — ข้อมูลสาธารณะจากสถานี ThaiWater ที่ตั้งค่าไว้ต่อ อปท. (โมดูล water-situation) */}
           <Route path="/water-situation" element={<WaterSituationPage />} />
+          <Route path="/pm25" element={<Pm25Page />} />
           <Route path="/events/manage" element={
             <RequireAuth eventManagerOnly>
               <EventManagementPage />
