@@ -23,9 +23,10 @@ INSERT INTO public.profiles VALUES
  ('${driver}','${tenant}','staff','Driver TEST'),('${citizen}','${tenant}','citizen','Citizen TEST'),
  ('${citizen2}','${tenant}','citizen','Citizen2 TEST'),('${outsider}','${otherTenant}','admin','Outside TEST');
 INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST',true,ARRAY['patient_transport_request'],0);
+CREATE TABLE public.audit_logs(id bigserial PRIMARY KEY,municipality_id uuid,actor_id uuid,actor_name text,actor_role text,action text,resource_type text,resource_id uuid,resource_label text,metadata jsonb,created_at timestamptz NOT NULL DEFAULT now());
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -324,6 +325,45 @@ assert(citizenMine.bookings.every(b=>b.created_by===citizen))
 await actor(outsider); await fails(()=>rpc('patient_booking_mine',[tenant]),/ไม่มีสิทธิ์/)
 await actor(null); await fails(()=>rpc('patient_booking_mine',[tenant]),/permission denied/)
 console.log('PASS citizen-page projection: own bookings only, no staff data, tenant and anonymous denied')
+
+// ระยะเวลาเก็บข้อมูล: ลบเฉพาะคำขอที่ปิดแล้วและครบกำหนด ไม่แตะงานที่ยังค้างในคิว และเรียกผ่าน API ไม่ได้
+await db.exec('RESET ROLE')
+const retentionRow = async (n, status, monthsAgo) => {
+ await db.query(`INSERT INTO public.patient_bookings(id,municipality_id,created_by,requester_name,phone,patient_name,relation,pickup,in_area,route_id,route_label,appointment_at,mobility,companions,share,return_mode,return_at,status,consent_text,pickup_lat,pickup_lng)
+  VALUES($1,$2,$3,'TEST เก็บรักษา','0800000777','TEST ผู้ป่วยเก็บรักษา','self','TEST จุดรับเก็บรักษา',true,'a','TEST route',now()-($4||' months')::interval,'walk',0,false,'wait',now()-($4||' months')::interval + interval '3 hours',$5,'TEST consent',18.1,99.9)`,
+  [id(n), tenant, citizen, String(monthsAgo), status])
+ return id(n)
+}
+const doneOld = await retentionRow(900, 'completed', 72)      // ปิดแล้ว 6 ปี → ต้องลบ
+const cancelledOld = await retentionRow(901, 'cancelled', 70) // ยกเลิกแล้ว ~5 ปีครึ่ง → ต้องลบ
+const doneRecent = await retentionRow(902, 'completed', 6)    // ปิดแล้วแต่ยังไม่ครบ → ห้ามแตะ
+const openOld = await retentionRow(903, 'submitted', 80)      // ครบกำหนดแต่ยังค้างในคิว → ห้ามแตะ แต่ต้องรายงาน
+const preview = (await db.query("SELECT public.purge_expired_patient_booking_contacts('5 years',true) AS v")).rows[0].v
+assert.equal(preview.dry_run, true)
+assert.equal(preview.would_purge, 2, 'ต้องนับเฉพาะคำขอที่ปิดแล้วและครบกำหนด')
+assert.equal(preview.skipped_still_open, 1, 'คำขอที่ยังค้างในคิวต้องถูกรายงาน ไม่ใช่ลบเงียบ')
+assert.equal((await db.query('SELECT count(*)::int AS n FROM public.patient_bookings WHERE contact_purged_at IS NOT NULL')).rows[0].n, 0, 'dry run ต้องไม่แก้ข้อมูล')
+const purged = (await db.query("SELECT public.purge_expired_patient_booking_contacts('5 years') AS v")).rows[0].v
+assert.equal(purged.purged, 2)
+const cleaned = (await db.query('SELECT patient_name,requester_name,phone,pickup,pickup_lat,mobility,status,contact_purged_at FROM public.patient_bookings WHERE id=$1', [doneOld])).rows[0]
+assert.equal(cleaned.patient_name, 'ลบตามระยะเวลาเก็บรักษา'); assert.equal(cleaned.requester_name, 'ลบตามระยะเวลาเก็บรักษา')
+assert.equal(cleaned.phone, ''); assert.equal(cleaned.pickup, 'ลบตามระยะเวลาเก็บรักษา'); assert.equal(cleaned.pickup_lat, null)
+assert.equal(cleaned.mobility, 'walk', 'ข้อมูลเชิงสถิติที่ไม่ระบุตัวบุคคลต้องอยู่ครบ'); assert.equal(cleaned.status, 'completed')
+assert(cleaned.contact_purged_at, 'ต้องบันทึกว่าลบเมื่อไร')
+for (const [key, keep] of [[doneRecent, 'TEST ผู้ป่วยเก็บรักษา'], [openOld, 'TEST ผู้ป่วยเก็บรักษา']]) {
+ assert.equal((await db.query('SELECT patient_name FROM public.patient_bookings WHERE id=$1', [key])).rows[0].patient_name, keep, 'ยังไม่ครบกำหนดหรือยังไม่ปิดงาน ต้องไม่ถูกลบ')
+}
+const logged = (await db.query("SELECT actor_role,resource_type,metadata FROM public.audit_logs WHERE action='purge_contact_pii'")).rows
+assert.equal(logged.length, 1); assert.equal(logged[0].resource_type, 'patient_booking'); assert.equal(logged[0].metadata.bookings, 2)
+assert.equal((await db.query("SELECT public.purge_expired_patient_booking_contacts('5 years') AS v")).rows[0].v.purged, 0, 'รันซ้ำต้องไม่ลบซ้ำ')
+assert.equal((await db.query('SELECT count(*)::int AS n FROM public.patient_bookings WHERE id=$1', [cancelledOld])).rows[0].n, 1, 'ลบข้อมูลติดต่อ ไม่ใช่ลบทั้งแถว')
+await assert.rejects(db.query("UPDATE public.patient_bookings SET phone='12345' WHERE id=$1", [doneRecent]), /patient_bookings_phone_check/, 'ยังต้องกันเบอร์รูปแบบผิดเหมือนเดิม')
+for (const user of [citizen, coordinator, admin, null]) {
+ await actor(user)
+ await fails(() => rpc('purge_expired_patient_booking_contacts', []), /permission denied/)
+}
+await db.exec('RESET ROLE')
+console.log('PASS retention: closed and expired bookings lose identifying fields only, open queue untouched, audited, idempotent, API-denied')
 
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
