@@ -28,7 +28,9 @@ export async function airQualityResponse(request, { cache = globalThis.caches?.d
   try {
     if (!pending) {
       pending = (async () => {
-        const response = await fetcher(SOURCE, { signal: AbortSignal.timeout(12000), redirect: 'error', headers: { Accept: 'application/json' } })
+        // Workers accepts only follow/manual. Reject redirects via !response.ok below
+        // so upstream cannot redirect this fixed-source proxy to an arbitrary host.
+        const response = await fetcher(SOURCE, { signal: AbortSignal.timeout(12000), redirect: 'manual', headers: { Accept: 'application/json' } })
         if (!response.ok) throw new Error('Air4Thai unavailable')
         if (Number(response.headers.get('content-length')) > 2_000_000) throw new Error('Response too large')
         const text = await response.text()
@@ -41,7 +43,8 @@ export async function airQualityResponse(request, { cache = globalThis.caches?.d
       })()
     }
     return json({ ...await pending, refreshFailed: false })
-  } catch {
+  } catch (error) {
+    console.error('Air4Thai fetch failed:', error.name, error.message)
     if (cached && age >= 0 && age < RETAIN_MS) return json({ ...cached, refreshFailed: true })
     return json({ error: 'AIR4THAI_UNAVAILABLE' }, 503)
   } finally { pending = null }
