@@ -31,7 +31,7 @@ import {
 import { uploadFile } from '../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
 import {
-  BASE_DOCUMENT_TYPES, removedDocumentTypes,
+  BASE_DOCUMENT_TYPES, removedDocumentTypes, displayDocStatus,
   WATERWORKS_DOCUMENT_TYPES, WATERWORKS_MODULE_KEY,
 } from '../lib/documentTypes'
 import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
@@ -108,7 +108,13 @@ const STATUS = {
   processing: { label: 'กำลังดำเนินการ', color: '#3b82f6', bg: '#dbeafe', Icon: RefreshCw },
   completed:  { label: 'เสร็จสิ้น',      color: '#10b981', bg: '#d1fae5', Icon: CheckCircle2 },
   rejected:   { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', Icon: XCircle },
+  // ประชาชนถอนคำขอเอง ไม่ใช่ อปท. ปฏิเสธ — document_requests.status มีแค่ 4 ค่า ไม่มี 'cancelled'
+  // การยกเลิกจึงถูกบันทึกเป็น 'rejected' เหมือนกัน ความต่างอยู่ที่ตารางลูกของเรื่องนั้น
+  // (patient_transport_requests.workflow_status = 'cancelled') ดู docStatus() ด้านล่าง
+  cancelled:  { label: 'ยกเลิกโดยผู้ยื่น', color: '#64748b', bg: '#f1f5f9', Icon: XCircle },
 }
+
+// สถานะที่ใช้แสดงผลอยู่ใน documentTypes.js (displayDocStatus) เพื่อให้เทสต์เรียกตรงได้
 
 // ป้ายปุ่มในคอลัมน์ "ดำเนินการ" ของตารางคำขอ — ต้องเปลี่ยนตามสถานะ ห้ามใช้คำว่า
 // "ดำเนินการ" คำเดียวทุกแถว เพราะแถวที่ปิดงานแล้วจะขึ้น "เสร็จสิ้น" คู่กับปุ่ม "ดำเนินการ"
@@ -335,7 +341,7 @@ function TaskCard({ req, onClick }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2 mb-0.5">
           <p className="text-sm font-bold text-gray-800 truncate">{req.requester_name}</p>
-          <StatusBadge status={req.status} />
+          <StatusBadge status={displayDocStatus(req)} />
         </div>
         <p className="text-xs text-gray-500 truncate">{docLabel}</p>
         {req.purpose && (
@@ -415,7 +421,7 @@ function TaskDetailSheet({
             <p className="font-bold text-gray-800 truncate">{req.requester_name}</p>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-xs text-gray-400 truncate">{docType?.label ?? req.document_type}</span>
-              <StatusBadge status={req.status} />
+              <StatusBadge status={displayDocStatus(req)} />
             </div>
           </div>
         </div>
@@ -1052,7 +1058,9 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
     if (!tenant?.id) return
     let cancelled = false
     supabase.from('document_requests')
-      .select('*')
+      // ดึง workflow_status ของคำขอรถรับ-ส่งผู้ป่วยมาด้วย เพื่อแยก "ยกเลิกโดยผู้ยื่น" ออกจาก "ปฏิเสธ"
+      // แถวที่มาจาก realtime ไม่มีคีย์นี้ติดมา จึง merge แบบ { ...r, ...row } ไว้เหมือนเดิม
+      .select('*, patient_transport_requests(workflow_status)')
       .eq('municipality_id', tenant.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
@@ -1358,7 +1366,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
                       </td>
                       <td className="px-2 py-2.5 text-center border-r border-gray-200 whitespace-nowrap">
                         <div className="inline-flex flex-col items-center gap-1">
-                          <StatusBadge status={req.status} />
+                          <StatusBadge status={displayDocStatus(req)} />
                           {isOverdue(req) && (
                             <span className="whitespace-nowrap rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600 border border-red-200/60">
                               เกินกำหนด

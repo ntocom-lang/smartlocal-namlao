@@ -132,3 +132,16 @@ export const FALLBACK_SLA_DAYS = 3
 export function defaultSlaDays(documentType) {
   return DEFAULT_SLA_DAYS[documentType] ?? FALLBACK_SLA_DAYS
 }
+
+// สถานะที่ใช้ "แสดงผล" ของคำขอ — ต่างจาก document_requests.status เฉพาะเรื่องที่ผู้ยื่นถอนเอง
+// document_requests.status มีแค่ pending/processing/completed/rejected การยกเลิกโดยประชาชน
+// จึงถูกบันทึกเป็น 'rejected' เหมือนการปฏิเสธของ อปท. ความต่างอยู่ที่ตารางลูกของเรื่องนั้น
+// (ตอนนี้มีเฉพาะ patient_transport_requests.workflow_status = 'cancelled')
+// ⚠️ ป้าย "ปฏิเสธ" บนเรื่องที่ประชาชนยกเลิกเองเป็นข้อมูลที่ผิดต่อคนอ่านรายงาน และทำให้สถิติ
+// การปฏิเสธของ อปท. สูงเกินจริง — ใบยืมพัสดุยังแยกไม่ได้เพราะตารางลูกเขียน 'rejected' ทับเหมือนกัน
+export function displayDocStatus(req) {
+  const child = Array.isArray(req?.patient_transport_requests)
+    ? req.patient_transport_requests[0]
+    : req?.patient_transport_requests
+  return child?.workflow_status === 'cancelled' ? 'cancelled' : req?.status
+}
