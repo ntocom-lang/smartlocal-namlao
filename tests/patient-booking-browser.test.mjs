@@ -159,7 +159,11 @@ try{
  const driverTrip=page.getByRole('article').first();await driverTrip.getByLabel('เลขไมล์ออก',{exact:true}).fill('15000');await driverTrip.getByLabel('เลขไมล์กลับ',{exact:true}).fill('15033')
  if(await driverTrip.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).count()) await driverTrip.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).selectOption('กรอกผิด');await driverTrip.getByText('ระยะทาง 33 กม.',{exact:true}).waitFor();await driverTrip.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await page.getByRole('status').filter({hasText:'บันทึกเลขไมล์แล้ว'}).waitFor()
  await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.getByRole('button',{name:'เที่ยวที่ยืนยันแล้ว',exact:true}).click()
- const odoTrip=page.locator('article:has(input[name="odometer_end"][value="15033"])')
+ // แท็บเที่ยวเป็นตารางเดียว 1 เที่ยว 1 แถว แล้วเปิดแผ่นจัดการทีละเที่ยว จึงต้องรู้ก่อนว่าเที่ยวไหนคือเที่ยวที่คนขับเพิ่งกรอก
+ await actor(coordinator);const board=await rpc('patient_booking_workspace',[tenant])
+ const doneTrip=board.trips.find(t=>t.odometer_end===15033);assert(doneTrip,'ไม่พบเที่ยวที่คนขับบันทึกเลขไมล์ไว้')
+ const openTripPanel=async id=>{await page.getByRole('button',{name:/^ทั้งหมด \(\d+\)$/}).click();await page.locator(`[data-trip="${id}"]:visible`).getByRole('button',{name:'เปิดจัดการเที่ยว',exact:true}).click();const panel=page.getByRole('region',{name:'จัดการเที่ยว'});await panel.waitFor();return panel}
+ const odoTrip=await openTripPanel(doneTrip.id)
  // เลขไมล์ออก = เลขไมล์กลับของเที่ยวก่อนหน้าตามเวลา ไม่ใช่ค่าสูงสุดของทุกเที่ยว (ผลตรวจ #227 ข้อ 5)
  {
   const trip=(id,at,end,state='completed')=>({id,state,odometer_end:end,plan:{pickup_at:`2026-10-05T${at}:00+07:00`}})
@@ -180,7 +184,7 @@ try{
  await actor(coordinator);assert((await rpc('patient_booking_workspace',[tenant])).trips.some(t=>t.state==='completed'&&t.odometer_end===14020),'เลขไมล์ของเที่ยวที่จบแล้วไม่ถึงฐานข้อมูล')
  console.log('PASS fund documents through the real UI: driver odometer + coordinator letter number reach PostgreSQL')
  await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.getByRole('button',{name:'เที่ยวที่ยืนยันแล้ว',exact:true}).click()
- const editingIndex=await page.getByRole('article').evaluateAll(nodes=>nodes.findIndex(n=>n.textContent.includes('พร 72301/77')));const editing=page.getByRole('article').nth(editingIndex);await editing.waitFor()
+ const editing=await openTripPanel(saved.id)
  await editing.getByLabel('เลขไมล์กลับ',{exact:true}).fill('15040');await editing.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).selectOption('กรอกผิด')
  await actor(coordinator);let v=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===saved.id)
  await rpc('patient_booking_save_odometer',[tenant,saved.id,v.docs_revision,16000,16044,false,'กรอกผิด'])
@@ -267,6 +271,18 @@ try{
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'จัดคิว 1440px overflow')
  await page.setViewportSize({width:390,height:900});assert.equal(await page.locator('table').filter({hasText:'วันเวลานัด'}).locator('visible=true').count(),0,'จอเล็กต้องใช้การ์ด ไม่ใช่ตาราง')
  console.log('PASS coordinator queue renders a desktop table at 1440px with actions visible, cards on small screens')
+ // เที่ยวที่ยืนยันแล้ว: ตารางเดียวทั้งหน้า ไม่ใช่การ์ดเต็มใบเรียงต่อกันทีละเที่ยว
+ // (ของเดิมสูงราว 600px ต่อเที่ยว 50 เที่ยว = เลื่อนจอราว 30 หน้าจอ หางานค้างไม่เจอ)
+ await page.setViewportSize({width:1440,height:950});await visit('coordinator');await page.getByRole('button',{name:'จัดคิว',exact:true}).click();await page.getByRole('button',{name:'เที่ยวที่ยืนยันแล้ว',exact:true}).click()
+ await page.getByRole('button',{name:/^ทั้งหมด \(\d+\)$/}).click()
+ const tripTable=page.locator('table:visible');assert.equal(await tripTable.count(),1,'แท็บเที่ยวต้องมีตารางเดียว')
+ assert.deepEqual(await tripTable.locator('thead th').allTextContents(),['ที่','สถานะ','เริ่มรับ','เส้นทาง','ผู้เดินทาง','งานค้าง','ดำเนินการ'])
+ assert(await tripTable.locator('tbody tr').count()>=2,'หลายเที่ยวต้องอยู่ในตารางเดียวกัน')
+ assert.equal(await page.getByRole('region',{name:'จัดการเที่ยว'}).count(),0,'ยังไม่กดเปิด ต้องไม่กางรายละเอียดเที่ยว')
+ await tripTable.locator('tbody tr').first().getByRole('button',{name:'เปิดจัดการเที่ยว',exact:true}).click()
+ const tripPanel=page.getByRole('region',{name:'จัดการเที่ยว'});await tripPanel.locator('table').first().waitFor()
+ await tripPanel.getByRole('button',{name:'กลับรายการเที่ยว',exact:true}).click();await tripTable.first().waitFor()
+ console.log('PASS confirmed trips are one table with a per-trip panel, not a full card per trip')
  console.log('PASS split citizen/staff pages, staff links, citizen page loads only its own data, no fallback intake, history retained')
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS)await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-schedule-failure.png`,fullPage:true});throw error }finally{await browser.close();await server.close();await db.close()}

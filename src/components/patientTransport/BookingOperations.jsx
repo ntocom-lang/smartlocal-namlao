@@ -95,22 +95,114 @@ export function CoordinatorQueue({ workspace, onPreview, onConfirm, onAction, on
         </article>)}
       </div>
     </>}
-    {tab === 'trips' && <><label className="block">เหตุผลประสาน/แก้ไขเที่ยว<input className={inputClass} value={note} maxLength={500} onChange={e => setNote(e.target.value)} /></label>
-      {workspace.trips.map(t => <article key={t.id} className="rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">{TRIP_STATUS[t.state]} · {t.plan.route_label}</h3><p>เริ่มรับ {dateTime(t.plan.pickup_at)} · {RETURN_MODES[t.plan.return_mode]}</p>
-        <div className="my-3 hidden overflow-x-auto border border-gray-300 shadow-sm md:block" style={{ borderRadius: 4 }}><table className="w-full border-collapse text-sm"><thead><tr style={{ backgroundColor: '#1a3a5c' }}><th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap w-10 text-center">ที่</th><th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap text-left">ผู้เดินทาง</th><th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap text-center">สถานะ</th><th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap text-left">จุดรับ</th><th className="sticky right-0 z-10 px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap min-w-[130px] border-r-0 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>ดำเนินการ</th></tr></thead><tbody className="divide-y divide-gray-200">{workspace.bookings.filter(b => b.trip_id === t.id).map((b, index) => <tr key={b.id} className="align-top transition-colors" style={{ backgroundColor: index % 2 === 0 ? '#fff' : '#f5f8fc' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = index % 2 === 0 ? '#fff' : '#f5f8fc'}><td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500">{index + 1}</td><td className="border-r border-gray-200 px-2 py-2.5 whitespace-nowrap"><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span></td><td className="border-r border-gray-200 px-2 py-2.5 text-center">{BOOKING_STATUS[b.status]}{b.cancel_requested && <span className="block text-[11px] font-semibold text-amber-800">ขอยกเลิก</span>}{b.return_ready && <span className="block text-[11px] font-semibold text-sky-800">พร้อมกลับ</span>}</td><td className="border-r border-gray-200 px-2 py-2.5"><span className="block max-w-[240px] truncate" title={b.pickup}>{b.pickup}</span></td><td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>{b.status === 'confirmed' && [0, 2].includes(b.passenger_step) && <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(b, 'cancel_passenger', note)}>นำรายนี้ออกจากเที่ยว</button>}</td></tr>)}</tbody></table></div>
-        <div className="md:hidden">{workspace.bookings.filter(b => b.trip_id === t.id).map(b => <div key={b.id} className="my-2"><p>{b.patient_name} · {BOOKING_STATUS[b.status]} {b.cancel_requested && '· ขอยกเลิก'} {b.return_ready && '· พร้อมกลับ'}</p>{b.status === 'confirmed' && [0, 2].includes(b.passenger_step) && <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(b, 'cancel_passenger', note)}>ประสานแผนดูแลต่อแล้ว นำรายนี้ออกจากเที่ยว</button>}</div>)}</div>
-        {t.issue_note && <p className="my-2 rounded-xl bg-amber-50 p-3">{t.issue_note}</p>}
-        <div className="mt-3 flex flex-wrap gap-2">{t.state === 'issue' && <button className={primaryClass} disabled={busy || !note.trim()} onClick={() => onAction(t, 'resolve', note)}>ประสานแก้ไขแล้ว กลับดำเนินงาน</button>}
-          {(t.state === 'confirmed' || (t.state === 'issue' && t.state_before_issue === 'confirmed')) && <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(t, 'release', note)}>คืนคิวเพื่อจัดแผนใหม่</button>}
-        </div>
-        {t.state !== 'cancelled' && <TripFundDocs trip={t} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />}
-        {t.state !== 'cancelled' && <OdometerForm trip={t} trips={workspace.trips} busy={busy} onSave={onOdometer} />}
-      </article>)}
-    </>}
+    {tab === 'trips' && <TripBoard workspace={workspace} busy={busy} onAction={onAction} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onOdometer={onOdometer} />}
     {tab === 'report' && <><MonthReport busy={busy} onPrint={onMonthReport} /><p>จบแล้ว {workspace.trips.filter(t => t.state === 'completed').length} เที่ยว · รอดำเนินการ {workspace.trips.filter(t => !['completed', 'cancelled'].includes(t.state)).length} เที่ยว (เที่ยวปิดใน 30 วันล่าสุด)</p>
       {workspace.events.map((e, i) => <div key={`${e.created_at}-${i}`} className="border-b border-slate-200 py-3"><strong>{e.action}</strong> · {dateTime(e.created_at)}<p className="text-sm">{e.detail?.note || `รายการ ${e.entity_id.slice(0, 8)}`}</p></div>)}
     </>}
   </div>
+}
+
+// งานค้างของเที่ยว — ให้ระบบชี้เป้าเอง เจ้าหน้าที่จะได้ไม่ต้องเปิดทีละเที่ยวเพื่อดูว่าเหลืออะไร
+// เที่ยวที่ยกเลิกแล้วไม่มีงานค้าง (ไม่ต้องออกหนังสือและไม่ต้องกรอกเลขไมล์)
+function tripTodos(trip, passengers) {
+  if (trip.state === 'cancelled') return []
+  const todos = []
+  if (trip.state === 'issue') todos.push('เหตุขัดข้อง รอประสาน')
+  if (trip.state !== 'completed') {
+    // ธงของผู้เดินทางบอกงานที่ต้องประสานเฉพาะตอนเที่ยวยังเดินอยู่ เที่ยวที่จบแล้วไม่มีอะไรให้ทำต่อ
+    if (passengers.some(b => b.cancel_requested)) todos.push('มีผู้ขอยกเลิก')
+    if (passengers.some(b => b.return_ready)) todos.push('พร้อมรับกลับ')
+  }
+  if (!trip.forward_letter_no) todos.push('ยังไม่บันทึกเลขหนังสือ')
+  if (trip.state === 'completed' && trip.odometer_issue) todos.push('ระยะทางรอตรวจสอบ')
+  else if (trip.state === 'completed' && !Number.isFinite(trip.odometer_end)) todos.push('รอเลขไมล์กลับ')
+  return todos
+}
+
+function passengerSummary(passengers) {
+  const active = passengers.filter(b => b.status !== 'cancelled')
+  if (!active.length) return 'ไม่มีผู้เดินทางในเที่ยวนี้'
+  return active.length > 1 ? `${active[0].patient_name} และอีก ${active.length - 1} คน` : active[0].patient_name
+}
+
+// 1 เที่ยว = 1 แถว แล้วเปิดแผ่นจัดการทีละเที่ยว ตามกติกาเดียวกับกล่องงาน "คำขอบริการ/เอกสาร"
+// เดิมกางทุกเที่ยวเป็นการ์ดเต็มใบพร้อมกล่องเอกสารและกล่องเลขไมล์ (สูงราว 600px ต่อเที่ยว)
+// 50 เที่ยวจึงยาวราว 30 หน้าจอ และไม่มีทางกวาดสายตาหาว่าเที่ยวไหนค้างอะไร
+function TripBoard({ workspace, busy, onAction, onRecordLetter, onPrintLetter, onOdometer }) {
+  const [filter, setFilter] = useState('open')
+  const [openId, setOpenId] = useState(null)
+  const rows = workspace.trips.map(trip => {
+    const passengers = workspace.bookings.filter(b => b.trip_id === trip.id)
+    const todos = tripTodos(trip, passengers)
+    return { trip, passengers, todos, open: todos.length > 0 || !['completed', 'cancelled'].includes(trip.state) }
+  })
+  const current = rows.find(r => r.trip.id === openId)
+  // key ตาม id เพื่อให้ร่างที่กรอกค้างไว้ไม่ข้ามไปเที่ยวอื่นเมื่อเปลี่ยนเที่ยว
+  if (current) return <TripDetail key={current.trip.id} row={current} trips={workspace.trips} busy={busy} onBack={() => setOpenId(null)} onAction={onAction} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onOdometer={onOdometer} />
+  const counts = { open: rows.filter(r => r.open).length, done: rows.filter(r => !r.open).length, all: rows.length }
+  const shown = filter === 'all' ? rows : rows.filter(r => r.open === (filter === 'open'))
+  return <div className="space-y-3">
+    <div className="flex flex-wrap gap-2">{[['open', `ต้องทำต่อ (${counts.open})`], ['done', `จบแล้ว (${counts.done})`], ['all', `ทั้งหมด (${counts.all})`]].map(([id, label]) => <button key={id} className={filter === id ? primaryClass : buttonClass} onClick={() => setFilter(id)}>{label}</button>)}</div>
+    {!shown.length && <p className="py-6 text-slate-500">ไม่มีเที่ยวในกลุ่มนี้</p>}
+    {shown.length > 0 && <div className="hidden overflow-x-auto border border-gray-300 shadow-sm md:block" style={{ borderRadius: 4 }}>
+      <table className="w-full min-w-[920px] border-collapse text-sm">
+        <thead><tr style={{ backgroundColor: '#1a3a5c' }}>
+          <th className="w-10 whitespace-nowrap border-r border-white/10 px-2 py-2.5 text-center text-[11px] font-bold text-white">ที่</th>
+          <th className="whitespace-nowrap border-r border-white/10 px-2 py-2.5 text-center text-[11px] font-bold text-white">สถานะ</th>
+          <th className="whitespace-nowrap border-r border-white/10 px-2 py-2.5 text-center text-[11px] font-bold text-white">เริ่มรับ</th>
+          <th className="whitespace-nowrap border-r border-white/10 px-2 py-2.5 text-left text-[11px] font-bold text-white">เส้นทาง</th>
+          <th className="whitespace-nowrap border-r border-white/10 px-2 py-2.5 text-left text-[11px] font-bold text-white">ผู้เดินทาง</th>
+          <th className="whitespace-nowrap border-r border-white/10 px-2 py-2.5 text-left text-[11px] font-bold text-white">งานค้าง</th>
+          <th className="sticky right-0 z-10 min-w-[130px] whitespace-nowrap px-2 py-2.5 text-center text-[11px] font-bold text-white shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>ดำเนินการ</th>
+        </tr></thead>
+        <tbody className="divide-y divide-gray-200">{shown.map(({ trip, passengers, todos }, index) => <tr key={trip.id} data-trip={trip.id} className="cursor-pointer align-top transition-colors"
+          style={{ backgroundColor: index % 2 === 0 ? '#fff' : '#f5f8fc' }}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
+          onMouseLeave={e => e.currentTarget.style.backgroundColor = index % 2 === 0 ? '#fff' : '#f5f8fc'}
+          onClick={() => setOpenId(trip.id)}>
+          <td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500">{index + 1}</td>
+          <td className="whitespace-nowrap border-r border-gray-200 px-2 py-2.5 text-center">{TRIP_STATUS[trip.state]}</td>
+          <td className="whitespace-nowrap border-r border-gray-200 px-2 py-2.5 text-center">{dateTime(trip.plan.pickup_at)}</td>
+          <td className="border-r border-gray-200 px-2 py-2.5"><span className="block max-w-[220px] truncate" title={trip.plan.route_label}>{trip.plan.route_label}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[trip.plan.return_mode]}</span></td>
+          <td className="whitespace-nowrap border-r border-gray-200 px-2 py-2.5"><span className="block max-w-[220px] truncate font-semibold" title={passengerSummary(passengers)}>{passengerSummary(passengers)}</span><span className="block text-[11px] text-gray-500">{passengers.filter(b => b.status !== 'cancelled').length} คน</span></td>
+          <td className="border-r border-gray-200 px-2 py-2.5">{todos.length ? <span className="flex flex-wrap gap-1">{todos.map(x => <span key={x} className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-900">{x}</span>)}</span> : <span className="text-xs text-gray-400">—</span>}</td>
+          <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>
+            <button className={buttonClass} disabled={busy} onClick={() => setOpenId(trip.id)}>เปิดจัดการเที่ยว</button>
+          </td>
+        </tr>)}</tbody>
+      </table>
+    </div>}
+    <div className="space-y-3 md:hidden">{shown.map(({ trip, passengers, todos }) => <article key={trip.id} data-trip={trip.id} className="rounded-2xl border border-slate-200 p-4">
+      <h3 className="font-bold">{TRIP_STATUS[trip.state]} · {trip.plan.route_label}</h3>
+      <p>เริ่มรับ {dateTime(trip.plan.pickup_at)} · {RETURN_MODES[trip.plan.return_mode]}</p>
+      <p className="text-sm text-slate-600">{passengerSummary(passengers)} · {passengers.filter(b => b.status !== 'cancelled').length} คน</p>
+      {todos.length > 0 && <p className="mt-2 rounded-xl bg-amber-50 p-2 text-sm text-amber-900">งานค้าง: {todos.join(' · ')}</p>}
+      <button className={`${primaryClass} mt-3`} disabled={busy} onClick={() => setOpenId(trip.id)}>เปิดจัดการเที่ยว</button>
+    </article>)}</div>
+  </div>
+}
+
+// แผ่นจัดการรายเที่ยว — ของเดิมอยู่ครบ (ผู้เดินทาง เอกสารส่งกองทุน เลขไมล์ ประสานแผน)
+function TripDetail({ row, trips, busy, onBack, onAction, onRecordLetter, onPrintLetter, onOdometer }) {
+  const { trip: t, passengers, todos } = row
+  const [note, setNote] = useState('')
+  const canRelease = t.state === 'confirmed' || (t.state === 'issue' && t.state_before_issue === 'confirmed')
+  const needsNote = canRelease || t.state === 'issue' || passengers.some(b => b.status === 'confirmed' && [0, 2].includes(b.passenger_step))
+  return <section className="space-y-3" aria-label="จัดการเที่ยว">
+    <button className={buttonClass} onClick={onBack}>กลับรายการเที่ยว</button>
+    <h3 className="text-lg font-bold">{TRIP_STATUS[t.state]} · {t.plan.route_label}</h3>
+    <p>เริ่มรับ {dateTime(t.plan.pickup_at)} · {RETURN_MODES[t.plan.return_mode]}</p>
+    {todos.length > 0 && <p className="rounded-xl bg-amber-50 p-3">งานค้าง: {todos.join(' · ')}</p>}
+    {needsNote && <label className="block">เหตุผลประสาน/แก้ไขเที่ยว<input className={inputClass} value={note} maxLength={500} onChange={e => setNote(e.target.value)} /></label>}
+    <div className="hidden overflow-x-auto border border-gray-300 shadow-sm md:block" style={{ borderRadius: 4 }}><table className="w-full border-collapse text-sm"><thead><tr style={{ backgroundColor: '#1a3a5c' }}><th className="w-10 whitespace-nowrap border-r border-white/10 px-2 py-2.5 text-center text-[11px] font-bold text-white">ที่</th><th className="whitespace-nowrap border-r border-white/10 px-2 py-2.5 text-left text-[11px] font-bold text-white">ผู้เดินทาง</th><th className="whitespace-nowrap border-r border-white/10 px-2 py-2.5 text-center text-[11px] font-bold text-white">สถานะ</th><th className="whitespace-nowrap border-r border-white/10 px-2 py-2.5 text-left text-[11px] font-bold text-white">จุดรับ</th><th className="sticky right-0 z-10 min-w-[130px] whitespace-nowrap px-2 py-2.5 text-center text-[11px] font-bold text-white shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>ดำเนินการ</th></tr></thead><tbody className="divide-y divide-gray-200">{passengers.map((b, index) => <tr key={b.id} className="align-top transition-colors" style={{ backgroundColor: index % 2 === 0 ? '#fff' : '#f5f8fc' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = index % 2 === 0 ? '#fff' : '#f5f8fc'}><td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500">{index + 1}</td><td className="whitespace-nowrap border-r border-gray-200 px-2 py-2.5"><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span></td><td className="border-r border-gray-200 px-2 py-2.5 text-center">{BOOKING_STATUS[b.status]}{b.cancel_requested && <span className="block text-[11px] font-semibold text-amber-800">ขอยกเลิก</span>}{b.return_ready && <span className="block text-[11px] font-semibold text-sky-800">พร้อมกลับ</span>}</td><td className="border-r border-gray-200 px-2 py-2.5"><span className="block max-w-[240px] truncate" title={b.pickup}>{b.pickup}</span></td><td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>{b.status === 'confirmed' && [0, 2].includes(b.passenger_step) && <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(b, 'cancel_passenger', note)}>นำรายนี้ออกจากเที่ยว</button>}</td></tr>)}</tbody></table></div>
+    <div className="md:hidden">{passengers.map(b => <div key={b.id} className="my-2"><p>{b.patient_name} · {BOOKING_STATUS[b.status]} {b.cancel_requested && '· ขอยกเลิก'} {b.return_ready && '· พร้อมกลับ'}</p>{b.status === 'confirmed' && [0, 2].includes(b.passenger_step) && <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(b, 'cancel_passenger', note)}>ประสานแผนดูแลต่อแล้ว นำรายนี้ออกจากเที่ยว</button>}</div>)}</div>
+    {t.issue_note && <p className="rounded-xl bg-amber-50 p-3">{t.issue_note}</p>}
+    <div className="flex flex-wrap gap-2">{t.state === 'issue' && <button className={primaryClass} disabled={busy || !note.trim()} onClick={() => onAction(t, 'resolve', note)}>ประสานแก้ไขแล้ว กลับดำเนินงาน</button>}
+      {canRelease && <button className={buttonClass} disabled={busy || !note.trim()} onClick={() => onAction(t, 'release', note)}>คืนคิวเพื่อจัดแผนใหม่</button>}
+    </div>
+    {t.state !== 'cancelled' && <TripFundDocs trip={t} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />}
+    {t.state !== 'cancelled' && <OdometerForm trip={t} trips={trips} busy={busy} onSave={onOdometer} />}
+  </section>
 }
 
 function AmendBooking({ booking, routes, busy, onBack, onSave }) {
