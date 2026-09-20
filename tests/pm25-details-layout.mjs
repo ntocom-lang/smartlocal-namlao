@@ -63,6 +63,29 @@ try {
     assert.deepEqual(errors, [])
     console.log(`PASS ${width}px: graph periods, station switch, map popup, subdistrict expansion, no overflow`)
   }
+  for (const [width, height] of [[320, 568], [390, 844], [480, 782]]) {
+    await page.setViewportSize({ width, height })
+    await page.getByRole('button', { name: 'บันทึกภาพสรุป', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'ภาพสรุปฝุ่นระดับตำบล' })
+    await dialog.waitFor()
+    assert.equal(await dialog.evaluate(el => el.matches(':modal')), true)
+    const card = page.locator('.pm25-share-card')
+    const bounds = await card.boundingBox()
+    assert(bounds.x >= 0 && bounds.x + bounds.width <= width)
+    assert(bounds.y >= 0 && bounds.y + bounds.height <= height, `complete card at ${width}x${height}`)
+    assert.match(await card.innerText(), /ตำบลทดสอบ 4/)
+    const downloadEvent = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'ดาวน์โหลด PNG', exact: true }).click()
+    const download = await downloadEvent
+    const bytes = await fs.readFile(await download.path())
+    assert.equal(bytes.subarray(1, 4).toString(), 'PNG')
+    assert(bytes.readUInt32BE(16) >= width * 2)
+    if (process.env.PM25_EXPORT_DIR) await download.saveAs(path.join(process.env.PM25_EXPORT_DIR, `pm25-share-${width}.png`))
+    await page.getByRole('button', { name: 'ปิดภาพสรุป' }).click()
+    assert.equal(await page.getByRole('dialog').count(), 0)
+    assert.equal(await page.evaluate(() => document.body.style.overflow), '')
+    console.log(`PASS full card and PNG export ${width}x${height}`)
+  }
   for (mode of ['error', 'stale', 'no-location']) {
     await page.goto(`${origin}/pm25`, { waitUntil: 'domcontentloaded' })
     if (mode === 'error') await page.getByText('โหลดข้อมูลย้อนหลังไม่ได้ ค่าล่าสุดส่วนบนยังดูได้ตามปกติ').waitFor()
