@@ -12,6 +12,7 @@
 
 import { buildIcons } from './manifestIcons.js'
 import { airQualityResponse } from './airQuality.js'
+import { pm25DetailsResponse } from './pm25Details.js'
 
 const SHELL_PATH = '/_template.html'
 
@@ -186,6 +187,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url)
     if (url.pathname === '/api/air-quality') return airQualityResponse(request)
+    if (url.pathname === '/api/pm25-details') return pm25DetailsResponse(request)
 
     // manifest ต่อ อปท. — ต้องเช็คก่อน isFileRequest() ซึ่งตอบ 404 ให้ทุกนามสกุลไฟล์
     //

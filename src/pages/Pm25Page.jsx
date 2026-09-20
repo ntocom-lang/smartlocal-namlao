@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, Wind, MapPin, RadioTower, Clock3, ExternalLink, RefreshCw, Info, ChartNoAxesCombined, Building2, Trees, CloudSun } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import { AIR4THAI_URL, PM25_LEVELS, formatMeasuredAt, isFresh, nearbyStations, pm25Level } from '../lib/pm25'
 import './Pm25Page.css'
+import Pm25Details from './Pm25Details'
+
+const Pm25Map = lazy(() => import('./Pm25Map'))
 
 const NEUTRAL = { color: '#687986', fill: '#edf1f4' }
 const number = value => value === null || value === undefined ? '—' : value.toLocaleString('th-TH', { maximumFractionDigits: 1 })
@@ -93,6 +96,10 @@ export default function Pm25Page() {
             <div className="pm25-actions"><SourceLink />{station.lat !== null && station.lon !== null && <a href={`https://www.openstreetmap.org/?mlat=${station.lat}&mlon=${station.lon}#map=13/${station.lat}/${station.lon}`} target="_blank" rel="noopener noreferrer"><MapPin size={16} />ตำแหน่งสถานี</a>}</div>
           </section>
         </div>
+        <Pm25Details station={station} now={now} />
+        <Suspense fallback={<section className="pm25-panel" role="status">กำลังเตรียมแผนที่สถานี…</section>}>
+          <Pm25Map stations={feed.stations} tenant={tenant} now={now} />
+        </Suspense>
         <section className="pm25-panel">
           <div className="pm25-section-heading"><ChartNoAxesCombined size={20} /><h2>เทียบสถานี{area.inProvince ? 'ในจังหวัด' : 'ใกล้พื้นที่'}</h2><span className="pm25-count">{area.stations.length} สถานี</span></div>
           <p className="pm25-muted">ค่าเฉลี่ย 24 ชั่วโมง · µg/m³ · เวลาตรวจวัดอาจต่างกัน</p>
@@ -107,8 +114,8 @@ export default function Pm25Page() {
           })}</div>
         </section>
       </>}
-      <div className="pm25-bottom-grid">
-        <section className="pm25-panel"><div className="pm25-section-heading"><ChartNoAxesCombined size={20} /><h2>ดูแนวโน้มย้อนหลัง</h2></div><p>ข้อมูลที่เชื่อมในหน้านี้เป็นค่าล่าสุดของสถานี ดูกราฟย้อนหลังได้ที่ Air4Thai</p><a className="pm25-text-link" href="https://air4thai.pcd.go.th/webV3/#/History" target="_blank" rel="noopener noreferrer">เปิดข้อมูลย้อนหลัง<ExternalLink size={16} /></a></section>
+      <Pm25Details mode="area" tenant={tenant} now={now} />
+      <div>
         <section className="pm25-panel"><div className="pm25-section-heading"><Info size={20} /><h2>อ่านค่าฝุ่นให้เข้าใจ</h2></div><details><summary>PM2.5 กับ AQI ต่างกันอย่างไร</summary><p>PM2.5 คือความเข้มข้นของฝุ่น หน่วย µg/m³ ส่วน AQI เป็นดัชนีที่ประเมินจากสารมลพิษหลายชนิด จึงเป็นคนละตัวเลขและใช้แทนกันไม่ได้</p></details><details><summary>ทำไมค่าฝุ่นจึงไม่ตรงกับบางแอป</summary><p>หน้านี้ใช้ค่าเฉลี่ย 24 ชั่วโมงจากสถานี Air4Thai ค่ารายชั่วโมง ค่าจากแบบจำลอง และค่าจากสถานีคนละแห่งอาจแตกต่างกัน ควรเทียบช่วงเฉลี่ยและเวลาก่อนเสมอ</p></details><details><summary>เมื่อข้อมูลเก่าหรือไม่มีสถานี</summary><p>เมื่อค่ามีอายุ 3 ชั่วโมงขึ้นไปหรือเวลาไม่ถูกต้อง ระบบจะแสดงสีเทาและแจ้งข้อมูลเก่า หากจังหวัดไม่มีสถานีจะค้นจากพิกัด อปท. ในระยะ 150 กม. เจ้าหน้าที่แก้จังหวัดและพิกัดได้ในข้อมูลหน่วยงาน</p></details></section>
       </div>
       <footer className="pm25-footer"><p>ข้อมูลตรวจวัด: กรมควบคุมมลพิษ (Air4Thai) · ระบบเลือกสถานีอ้างอิงให้อัตโนมัติ</p><p>ระดับสีใช้เกณฑ์ PM2.5 เฉลี่ย 24 ชั่วโมงของกรมควบคุมมลพิษ ไม่ใช่ประกาศเตือนภัยของ อปท.</p><a href={AIR4THAI_URL} target="_blank" rel="noopener noreferrer">ตรวจสอบข้อมูลและคำแนะนำสุขภาพจากต้นทาง<ExternalLink size={14} /></a></footer>
