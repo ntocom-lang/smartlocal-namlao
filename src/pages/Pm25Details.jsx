@@ -78,7 +78,7 @@ function Subdistricts({ tenant, now }) {
   const fresh = isFresh(own, now)
   const localLevel = fresh ? pm25Level(own?.average24) : null
   const tone = localLevel || { color: '#687986', fill: '#edf1f4' }
-  const rows = [...tambons].sort((a, b) => Number(b.id === area?.subdistrictId) - Number(a.id === area?.subdistrictId) || a.name.localeCompare(b.name, 'th'))
+  const rows = [...tambons].sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity) || a.name.localeCompare(b.name, 'th'))
   return <section className="pm25-panel pm25-subdistricts" id="pm25-subdistricts" style={{ '--local-color': tone.color, '--local-fill': tone.fill }}>
     <p className="pm25-local-eyebrow"><span>01</span> พื้นที่ของคุณมาก่อน</p>
     <div className="pm25-section-heading"><MapPinned size={20} /><h2>ฝุ่นระดับตำบล</h2><span className="pm25-estimate-tag">ค่าประมาณการ</span></div>
@@ -93,11 +93,11 @@ function Subdistricts({ tenant, now }) {
       <div className="pm25-local-scale" aria-label="ระดับ PM2.5 เฉลี่ย 24 ชั่วโมง">{PM25_LEVELS.map(l => <div key={l.label} className={localLevel === l ? 'is-current' : ''}><i style={{ backgroundColor: l.color }} /><b>{l.label}</b><small>{l.range}</small>{localLevel === l && <span>ระดับพื้นที่นี้</span>}</div>)}</div>
       <p className="pm25-muted pm25-local-caption">หน่วย µg/m³ · สีอ้างอิงค่าเฉลี่ย 24 ชั่วโมง · ค่าประมาณอาจต่างจากค่าที่ตรวจวัด ณ จุดจริง</p>
       {!fresh && <p className="pm25-notice">ข้อมูลตำบลไม่เป็นปัจจุบัน หรือไม่มีเวลายืนยัน ไม่ใช้สรุปสถานการณ์ขณะนี้</p>}
-      <div className="pm25-local-list-heading"><h3>มองรอบพื้นที่ในอำเภอเดียวกัน</h3><p className="pm25-muted">ตำบลของ อปท. ขึ้นก่อน ตามด้วยชื่อเรียง ก–ฮ · ไม่ใช่ลำดับระยะห่าง</p></div>
+      <div className="pm25-local-list-heading"><h3>มองรอบพื้นที่ในอำเภอเดียวกัน</h3><p className="pm25-muted">ใกล้ → ไกลจาก อปท. · ระยะเส้นตรงถึงกึ่งกลางกรอบขอบเขตตำบลโดยประมาณ ไม่ใช่ระยะขับรถ</p></div>
       <div className="pm25-tambon-list">{(expanded ? rows : rows.slice(0, 6)).map(t => {
         const current = isFresh(t, now)
         const level = current ? pm25Level(t.average24) : null
-        return <div className={`pm25-tambon-row${t.id === area.subdistrictId ? ' is-own' : ''}`} key={t.id}><div><b>{t.name}{t.id === area.subdistrictId && <small>พื้นที่ตามพิกัด อปท.</small>}</b><span>{current ? level?.label || 'ไม่มีค่าเฉลี่ย' : 'ข้อมูลเก่า / ไม่ทราบเวลา'} · {formatMeasuredAt(t.measuredAt)}</span></div><div><strong style={{ color: level?.color || '#687986' }}>{valueText(t.average24)}</strong><small>เฉลี่ย 24 ชม. · µg/m³</small><small>รายชั่วโมง {valueText(t.hourly)} µg/m³</small></div></div>
+        return <div className={`pm25-tambon-row${t.id === area.subdistrictId ? ' is-own' : ''}`} key={t.id}><div><b>{t.name}{t.id === area.subdistrictId && <small>พื้นที่ตามพิกัด อปท.</small>}</b><small>{Number.isFinite(t.distanceKm) ? `ประมาณ ${valueText(t.distanceKm)} กม. จาก อปท.` : 'ไม่มีพิกัดระยะห่าง · แสดงท้ายรายการ'}</small><span>{current ? level?.label || 'ไม่มีค่าเฉลี่ย' : 'ข้อมูลเก่า / ไม่ทราบเวลา'} · {formatMeasuredAt(t.measuredAt)}</span></div><div><strong style={{ color: level?.color || '#687986' }}>{valueText(t.average24)}</strong><small>เฉลี่ย 24 ชม. · µg/m³</small><small>รายชั่วโมง {valueText(t.hourly)} µg/m³</small></div></div>
       })}</div>
       {rows.length > 6 && <button className="pm25-expand" onClick={() => setExpanded(!expanded)}>{expanded ? 'ย่อรายการ' : `ดูครบ ${rows.length} ตำบล`}</button>}
       <p className="pm25-muted">หากตำบลไม่ตรงพื้นที่ ให้เจ้าหน้าที่ตรวจพิกัดหน่วยงาน ระบบไม่ได้ใช้ตำแหน่งส่วนตัวของผู้เข้าชม</p>

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { gistdaClock, historySummary, normalizeHistory, normalizeLocation, normalizeTambons, validCoordinates } from '../src/lib/pm25Details.js'
-import { pm25DetailsResponse } from '../worker/pm25Details.js'
+import { bboxCenter, pm25DetailsResponse } from '../worker/pm25Details.js'
 
 const now = Date.parse('2026-09-20T03:30:00Z') // 10:30 Thai
 const HOUR = 3600000
@@ -69,11 +69,38 @@ test('public proxy validates parameters before sending requests, rejects redirec
   assert.equal(calls, 1)
   const area = await pm25DetailsResponse(request('kind=area&lat=18.1&lon=100.2'), { fetcher, cache, now })
   assert.equal((await area.json()).tambons[0].average24, 10)
-  assert.equal(calls, 3)
+  assert.equal(calls, 4)
   const failed = async () => new Response(null, { status: 302, headers: { Location: 'https://bad.test/' } })
   const fallback = await pm25DetailsResponse(request('kind=history&station=69t'), { fetcher: failed, cache, now: now + HOUR })
   assert.equal((await fallback.json()).refreshFailed, true)
   assert.equal((await pm25DetailsResponse(request('kind=history&station=69t'), { fetcher: failed, cache, now: now + 25 * HOUR })).status, 503)
   assert.equal((await pm25DetailsResponse(new Request('https://example.test', { method: 'POST' }))).status, 405)
   assert.equal(validCoordinates(null, 100), false)
+})
+
+test('bounding-box centers validate the source axis order and reject invalid coordinates', () => {
+  assert.deepEqual(bboxCenter({ data: [{ minlng: 18, maxlng: 18.2, minlat: 100, maxlat: 100.4 }] }), { lat: 18.1, lon: 100.2 })
+  for (const b of [{ minlng: null }, { minlng: 18.3, maxlng: 18, minlat: 100, maxlat: 100.4 }, { minlng: 100, maxlng: 101, minlat: 18, maxlat: 19 }]) assert.equal(bboxCenter({ data: [b] }), null)
+})
+
+test('area distances use organization coordinates, reuse geometry cache, and tolerate missing boundaries', async () => {
+  let boundsCalls = 0
+  const saved = new Map()
+  const cache = { match: async key => saved.get(key)?.clone(), put: async (key, value) => saved.set(key, value.clone()) }
+  const fetcher = async url => {
+    if (url.includes('getPm25byLocation')) return Response.json(locationPayload)
+    if (url.includes('getPm25byTambon')) return Response.json(tambonPayload)
+    boundsCalls++
+    return Response.json({ data: [{ minlng: 18, maxlng: 18.2, minlat: 100, maxlat: 100.4 }] })
+  }
+  const request = lat => new Request(`https://test/api/pm25-details?kind=area&lat=${lat}&lon=100.2`)
+  const a = await (await pm25DetailsResponse(request(18.1), { fetcher, cache, now })).json()
+  assert.equal(a.tambons[0].distanceKm, 0)
+  const b = await (await pm25DetailsResponse(request(18.2), { fetcher, cache, now })).json()
+  assert(b.tambons[0].distanceKm > 11 && b.tambons[0].distanceKm < 12)
+  assert.equal(boundsCalls, 1)
+  const failedBounds = async url => url.includes('getbbox') ? new Response(null, { status: 503 }) : fetcher(url)
+  const c = await (await pm25DetailsResponse(request(18.1), { fetcher: failedBounds, cache: null, now })).json()
+  assert.equal(c.tambons[0].distanceKm, null)
+  assert.equal(c.tambons[0].average24, 10)
 })
