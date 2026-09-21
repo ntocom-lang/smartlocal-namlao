@@ -8,6 +8,24 @@
 
 const TZ = 'Asia/Bangkok'
 
+// Tenant has no separate tambon field. Only explicit subdistrict organization names
+// can identify one; never guess from a city name, distance, or is_primary flag.
+export function localWaterSituation(data, tenant) {
+  const clean = value => typeof value === 'string' ? value.trim().replace(/\s+/g, '') : ''
+  const name = clean(tenant?.name)
+  const prefix = /^(เทศบาลตำบล|องค์การบริหารส่วนตำบล|อบต\.)/
+  const tambon = prefix.test(name) ? name.replace(prefix, '') : ''
+  const district = clean(tenant?.district).replace(/^(อำเภอ|อ\.)/, '')
+  const province = clean(tenant?.province).replace(/^(จังหวัด|จ\.)/, '')
+  const matchesTambon = value => Boolean(tambon && clean(value).replace(/^(ตำบล|ต\.)/, '') === tambon)
+  const stations = (data?.stations ?? []).filter(s => matchesTambon(s.tambon_name)
+    && district && clean(s.amphoe_name).replace(/^(อำเภอ|อ\.)/, '') === district
+    && province && clean(s.province_name).replace(/^(จังหวัด|จ\.)/, '') === province)
+  // RPC already restricts warnings to this tenant's district AND province.
+  const warnings = district && province ? (data?.warnings ?? []).filter(w => matchesTambon(w.tambon_name)) : []
+  return { ...data, stations, warnings }
+}
+
 // ข้อมูลถือว่า "ไม่เป็นปัจจุบัน" เมื่อเก่ากว่านี้
 // สถานี: บางหน่วยงานส่งค่าช้ากว่าเวลาวัดราว 1.5 ชม. + ระบบดึงชั่วโมงละครั้ง ปกติจึงเก่าได้ถึง ~2.5 ชม.
 // ระบบ: ดึงทุกชั่วโมง พลาดรอบเดียวยังไม่เตือน พลาด 2 รอบติดค่อยเตือน
