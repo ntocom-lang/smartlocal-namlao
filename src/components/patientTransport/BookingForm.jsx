@@ -92,10 +92,13 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   const [allTimes, setAllTimes] = useState(false)
   const [locations, setLocations] = useState(null)
   const last = staffEntry ? null : lastBooking
+  // "นั่งรถคันเดียวกับผู้ป่วยคนอื่นได้" ติ๊กไว้ก่อน — เจ้าของระบบตัดสิน 2569-09-22 ให้คำขอส่วนใหญ่รวมเที่ยวได้
+  // ใช้กับการจองครั้งแรกและที่เจ้าหน้าที่รับแทน · จองครั้งต่อไปคงค่าที่เจ้าตัวเลือกไว้ครั้งก่อน (seedFromLast)
+  // ⚠️ PDPA: ความยินยอมให้ใช้ข้อมูลยังเป็นช่องแยกในหน้าทวนก่อนส่ง และไม่ติ๊กไว้ให้
   const [form, setForm] = useState({
     requester_name: staffEntry ? '' : profileName || '', phone: staffEntry ? '' : profilePhone || '',
     patient_name: '', relation: 'self', place: '', spot: '', pickup_lat: null, pickup_lng: null,
-    day: '', time: '', route_id: info.routes?.[0]?.id || '', mobility: 'walk', companions: 0, share: false,
+    day: '', time: '', route_id: info.routes?.[0]?.id || '', mobility: 'walk', companions: 0, share: true,
     return_mode: 'wait', back: '', ...seedFromLast(last), ...initial,
   })
   const id = useRef(crypto.randomUUID()) // Stable on uncertain response; retry the same operation.

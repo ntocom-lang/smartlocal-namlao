@@ -139,6 +139,11 @@ try{
  await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill('0800000099')
  await click('citizenFirst',page.getByRole('group',{name:'หมู่บ้าน/สถานที่'}).getByRole('button',{name:'TEST บ้านเหนือ'}))
  await page.getByLabel('บ้านเลขที่ / จุดสังเกต',{exact:true}).fill('บ้านเลขที่ 99 ข้างวัด')
+ // "นั่งรถคันเดียวกับผู้ป่วยคนอื่นได้" ติ๊กไว้ก่อน (เจ้าของระบบตัดสิน 2569-09-22)
+ const shareBox=page.getByRole('checkbox',{name:/นั่งรถคันเดียวกับผู้ป่วยคนอื่น/})
+ assert.equal(await shareBox.isChecked(),true,'จองครั้งแรกต้องติ๊กนั่งร่วมไว้ก่อน')
+ // ฉากชนคิวด้านล่างต้องมีผู้จองที่ไม่นั่งร่วม จึงเอาติ๊กออก — ไม่นับเป็นคลิกของเส้นทางปกติ
+ await shareBox.uncheck()
  await click('citizenFirst',page.getByRole('button',{name:'ส่งคำขอ',exact:true}))
  await page.getByText('ตรวจทานก่อนส่ง',{exact:true}).waitFor()
  await click('citizenFirst',page.getByRole('checkbox',{name:'ยินยอมให้ใช้ข้อมูลตามข้อความข้างต้น'}))
@@ -147,7 +152,7 @@ try{
  let mine=(await runAs(newcomer,()=>rpc('patient_booking_mine',[tenant]))).bookings
  assert.equal(mine.length,1);const b1=mine[0].id,b1Day=thaiDay(mine[0].appointment_at)
  await page.getByText(b1.slice(0,8).toUpperCase(),{exact:true}).waitFor()
- assert.equal(mine[0].pickup,'TEST บ้านเหนือ · บ้านเลขที่ 99 ข้างวัด');assert.equal(mine[0].in_area,true);assert.equal(mine[0].share,false,'นั่งร่วมกับผู้อื่นต้องเป็นค่าไม่ติ๊ก (ความเป็นส่วนตัว)')
+ assert.equal(mine[0].pickup,'TEST บ้านเหนือ · บ้านเลขที่ 99 ข้างวัด');assert.equal(mine[0].in_area,true);assert.equal(mine[0].share,false,'เอาติ๊กออกแล้วต้องบันทึกตามที่ผู้จองเลือก')
  await page.getByRole('button',{name:'ดูคำขอของฉัน',exact:true}).click()
  await page.getByRole('article').filter({hasText:b1.slice(0,8).toUpperCase()}).getByText('รอเจ้าหน้าที่ยืนยันรถ',{exact:false}).waitFor()
  assert.equal(clicks.citizenFirst,6,'จองครั้งแรก 6 คลิก + พิมพ์เบอร์และจุดสังเกต')
@@ -157,6 +162,7 @@ try{
  assert.equal(await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).inputValue(),'0800000099')
  assert.equal(await page.getByRole('group',{name:'หมู่บ้าน/สถานที่'}).getByRole('button',{name:'TEST บ้านเหนือ'}).getAttribute('aria-pressed'),'true')
  assert.equal(await page.getByLabel('บ้านเลขที่ / จุดสังเกต',{exact:true}).inputValue(),'บ้านเลขที่ 99 ข้างวัด')
+ assert.equal(await shareBox.isChecked(),false,'จองครั้งต่อไปต้องคงค่าที่เจ้าตัวเลือกไว้ ไม่ติ๊กกลับให้เอง')
  await click('citizenRepeat',timeChips.last())
  await click('citizenRepeat',page.getByRole('button',{name:'ส่งคำขอ',exact:true}))
  await click('citizenRepeat',page.getByRole('checkbox',{name:'ยินยอมให้ใช้ข้อมูลตามข้อความข้างต้น'}))
@@ -223,6 +229,7 @@ try{
  // ── รับจองแทนทางโทรศัพท์ → กลับกล่องพร้อมปุ่ม "ยืนยันรถเลย" ──
  await page.getByRole('button',{name:/รับจองแทน/}).click()
  await page.getByRole('heading',{name:'รับจองแทนทางโทรศัพท์/หน้าเคาน์เตอร์'}).waitFor()
+ assert.equal(await page.getByRole('checkbox',{name:/นั่งรถคันเดียวกับผู้ป่วยคนอื่น/}).isChecked(),true,'เจ้าหน้าที่รับแทนก็ติ๊กนั่งร่วมไว้ก่อน')
  await setDay(intakeDay)
  await page.getByRole('group',{name:'เวลานัดแพทย์'}).getByRole('button',{name:'10:00 น.',exact:true}).click()
  await page.getByLabel('ชื่อ–สกุลผู้จอง',{exact:true}).fill('[TEST] ผู้ป่วยโทรมา');await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill('0810000010')
@@ -233,7 +240,7 @@ try{
  await page.getByText('รับคำขอแทนแล้ว',{exact:true}).waitFor()
  await page.getByRole('button',{name:'ยืนยันรถเลย',exact:true}).click();await toast('ยืนยันรถแล้ว').waitFor()
  const intake=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).bookings.find(b=>b.patient_name==='[TEST] ผู้ป่วยโทรมา')
- assert.equal(intake.status,'confirmed');assert.equal(intake.entry_channel,'staff','ช่องทางต้องบันทึกว่าเจ้าหน้าที่รับแทน')
+ assert.equal(intake.status,'confirmed');assert.equal(intake.entry_channel,'staff','ช่องทางต้องบันทึกว่าเจ้าหน้าที่รับแทน');assert.equal(intake.share,true)
  console.log('PASS staff intake by phone returns to the inbox with a one-click confirm, channel recorded as staff')
 
  // ── ปุ่มของประชาชนถึงฐานข้อมูลจริง (op ครบ — กับดัก #244) + เจ้าหน้าที่ประสานยกเลิก ──
