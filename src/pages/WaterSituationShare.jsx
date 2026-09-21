@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Copy, Download, Globe, MessageCircle, Share2 } from 'lucide-react'
 import { appUrl } from '../lib/basename'
 import { formatMm, isStale, localWaterSituation, summaryStats, SYNC_STALE_HOURS } from '../lib/waterSituation'
@@ -7,98 +7,83 @@ const dateText = value => new Date(value).toLocaleString('th-TH', {
   timeZone: 'Asia/Bangkok', dateStyle: 'medium', timeStyle: 'short',
 })
 
-// Render locally at a fixed social-image resolution. No remote image/CORS dependency.
-async function infographic(tenant, data, now, refreshFailed, url) {
+// // Export the same React cards as the page, preserving their gauges, scales and timestamps.
+async function infographic(node, now) {
   await document.fonts.ready
-  const canvas = document.createElement('canvas')
-  canvas.width = 1080
-  canvas.height = 1480
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Canvas unavailable')
-  const box = (x, y, w, h, fill, radius = 24) => {
-    ctx.fillStyle = fill
-    ctx.beginPath(); ctx.roundRect(x, y, w, h, radius); ctx.fill()
-  }
-  const label = (value, x, y, size = 28, color = '#475569', weight = 400, max = 920) => {
-    ctx.fillStyle = color
-    ctx.font = `${weight} ${size}px Sarabun, sans-serif`
-    ctx.fillText(String(value), x, y, max)
-  }
-  const local = localWaterSituation(data, tenant)
-  const stats = summaryStats({ rain: local.stations.filter(s => s.station_type === 'rain'),
-    dams: local.stations.filter(s => s.station_type === 'dam'),
-    levels: local.stations.filter(s => s.station_type === 'waterlevel'), now })
-  const stale = refreshFailed || !data.synced_at || isStale(data.synced_at, now, SYNC_STALE_HOURS)
-  box(0, 0, 1080, 1480, '#eef5f9', 0)
-  const gradient = ctx.createLinearGradient(0, 0, 1080, 340)
-  gradient.addColorStop(0, '#082f49'); gradient.addColorStop(1, '#0e7490')
-  box(0, 0, 1080, 346, gradient, 0)
-  // Decorative contour lines, deliberately not a chart of measured water levels.
-  ctx.strokeStyle = '#ffffff14'; ctx.lineWidth = 3
-  for (let i = 0; i < 5; i++) {
-    ctx.beginPath(); ctx.moveTo(670, 40 + i * 45)
-    ctx.bezierCurveTo(830, -10 + i * 45, 910, 130 + i * 45, 1100, 65 + i * 45); ctx.stroke()
-  }
-  label('ข้อมูลน้ำในพื้นที่  /  LOCAL WATER REPORT', 56,  60, 23, '#a5f3fc', 600)
-  label('สถานการณ์น้ำ–ฝน', 56, 140,  60, '#ffffff', 700)
-  label(tenant.name, 56, 205, 40, '#ffffff', 600)
-  label(`อ.${tenant.district || 'ไม่ระบุ'}  จ.${tenant.province || 'ไม่ระบุ'} · เฉพาะตำบลของหน่วยงาน`, 56, 255, 26, '#cffafe')
-  label(`สรุป ณ ${dateText(now)} น. (เวลาไทย)`, 56, 307, 26, '#cffafe')
-  box(40, 366, 1000, 64, stale ? '#fff1d6' : '#dcecf5', 16)
-  label(stale ? 'ข้อมูลอาจไม่เป็นปัจจุบัน • ตรวจสอบเวลาวัดก่อนนำไปใช้' : 'เฉพาะสถานีที่ระบุตำบล อำเภอ และจังหวัดตรงกัน',  60, 407, 27, stale ? '#92400e' : '#075985', 600)
-
-  const cards = [
-    { y: 450, color: '#0369a1', pale: '#e0f2fe', title: '01  ฝนสะสม 24 ชั่วโมง',
-      value: stats.rain ? `${formatMm(stats.rain.mm)} มม.` : 'ไม่มีข้อมูลปัจจุบัน',
-      detail: stats.rain ? `สูงสุดในสถานีของตำบล · ${stats.rain.station.station_name}` : 'ไม่มีค่าฝนที่ยืนยันพื้นที่และเวลาวัดได้',
-      time: stats.rain ? `ตรวจวัด ${dateText(stats.rain.station.recorded_at)} น.` : 'ไม่ใช้ค่าจากตำบลข้างเคียงทดแทน',
-      note: stats.rain ? `เกณฑ์ฝน: ${stats.rain.level?.label || 'ดูรายละเอียดในเว็บไซต์'}` : 'ไม่มีข้อมูล ไม่ได้หมายความว่าไม่มีฝน' },
-    { y: 710, color: '#4338ca', pale: '#eef2ff', title: '02  น้ำในอ่างเก็บน้ำ',
-      value: stats.dam ? `${stats.dam.percent.toFixed(1)}%` : 'ไม่มีข้อมูลปัจจุบัน',
-      detail: stats.dam ? `ปริมาตรน้ำรวม ÷ ความจุรวม · ${stats.dam.count} แห่งในตำบล` : 'ไม่มีค่าอ่างเก็บน้ำในตำบลสำหรับสรุป',
-      time: stats.dam ? 'แต่ละอ่างอาจตรวจวัดต่างเวลา · ดูเวลารายอ่างในลิงก์' : 'ไม่รวมอ่างเก็บน้ำนอกตำบล',
-      note: stats.dam ? 'ใช้เฉพาะข้อมูลที่ยังไม่หมดอายุตามเกณฑ์ของระบบ' : 'ไม่มีข้อมูล ไม่ได้หมายความว่าไม่มีน้ำในอ่าง' },
-    { y: 970, color: '#0f766e', pale: '#e6f6f2', title: '03  ระดับน้ำเทียบตลิ่ง',
-      value: stats.bank ? stats.bank.text : 'ไม่มีข้อมูลปัจจุบัน',
-      detail: stats.bank ? `สถานีใกล้ตลิ่งที่สุดในตำบล · ${stats.bank.station.station_name}` : 'ไม่มีค่าระดับน้ำในตำบลสำหรับสรุป',
-      time: stats.bank ? `ตรวจวัด ${dateText(stats.bank.station.recorded_at)} น.` : 'ไม่ใช้สถานีระดับน้ำต่างตำบลทดแทน',
-      note: 'ค่าจากสถานีตรวจวัด ไม่ครอบคลุมทุกจุดในตำบล' },
-  ]
-  for (const card of cards) {
-    box(40, card.y, 1000, 240, '#ffffff')
-    box(40, card.y + 24, 7, 190, card.color, 3)
-    box( 60, card.y + 18, 950, 44, card.pale, 12)
-    label(card.title, 78, card.y + 50, 27, card.color, 700)
-    label(card.value, 70, card.y + 117, card.value.length > 20 ? 40 : 52, '#0f172a', 700)
-    label(card.detail, 70, card.y + 159, 27)
-    label(card.time, 70, card.y + 194, 25)
-    label(card.note, 70, card.y + 225, 23, card.color)
-  }
-  label('แหล่งข้อมูล: คลังข้อมูลน้ำแห่งชาติ ThaiWater (สสน.)', 56, 1266, 27, '#0f172a', 600)
-  label('ภาพสรุป ณ เวลาที่ระบุ • ไม่ใช่ประกาศเตือนภัยของ อปท.', 56, 1309, 26, '#92400e', 600)
-  label('ไม่มีข้อมูล ไม่ได้หมายความว่าสถานการณ์ปกติ', 56, 1348, 26)
-  label('ตรวจสอบข้อมูลและคำเตือนล่าสุด:', 56, 1398, 24, '#075985', 600)
-  label(url, 56, 1438, 24, '#075985')
+  const { default: html2canvas } = await import('html2canvas')
+  const canvas = await html2canvas(node, {
+    scale: 3, backgroundColor: '#eef5f9', logging: false,
+    onclone: doc => {
+      // html2canvas does not parse Tailwind 4 oklch colors. Resolve the cloned
+      // palette to sRGB using the browser; do not change the live page's styles.
+      const pixel = doc.createElement('canvas').getContext('2d', { willReadFrequently: true })
+      const root = doc.documentElement
+      const computed = doc.defaultView.getComputedStyle(root)
+      for (const property of computed) {
+        const value = computed.getPropertyValue(property)
+        if (property.startsWith('--color-') && /oklch|oklab/.test(value)) {
+          pixel.clearRect(0, 0, 1, 1); pixel.fillStyle = value; pixel.fillRect(0, 0, 1, 1)
+          const [r, g, b, a] = pixel.getImageData(0, 0, 1, 1).data
+          root.style.setProperty(property, `rgba(${r},${g},${b},${a / 255})`)
+        }
+      }
+      const capture = doc.querySelector('[data-water-share-capture]')
+      capture.style.position = 'static'
+      capture.style.left = 'auto'
+      capture.querySelectorAll('a').forEach(a => { a.style.display = 'none' })
+      capture.querySelectorAll('*').forEach(el => {
+        el.style.transition = 'none'; el.style.animation = 'none'
+        const styles = doc.defaultView.getComputedStyle(el)
+        for (const property of styles) {
+          if (property.startsWith('--')) continue
+          const value = styles.getPropertyValue(property)
+          if (/oklch|oklab|color-mix/.test(value)) {
+            const rgb = color => {
+              pixel.clearRect(0, 0, 1, 1); pixel.fillStyle = color; pixel.fillRect(0, 0, 1, 1)
+              const [r, g, b, a] = pixel.getImageData(0, 0, 1, 1).data
+              return `rgba(${r},${g},${b},${a / 255})`
+            }
+            el.style.setProperty(property, /color$|^fill$|^stroke$/.test(property)
+              ? rgb(value) : value.replace(/oklch\([^)]*\)|oklab\([^)]*\)/g, rgb))
+          }
+        }
+      })
+      // SVG padding would otherwise be applied twice when html2canvas rasterizes it.
+      capture.querySelectorAll('svg').forEach(svg => {
+        const styles = doc.defaultView.getComputedStyle(svg)
+        const padding = parseFloat(styles.paddingLeft)
+        const width = parseFloat(styles.width)
+        const height = parseFloat(styles.height)
+        const view = svg.viewBox.baseVal
+        if (padding > 0 && width > 0 && height > 0 && view.width > 0) {
+          const extraX = view.width * padding / width
+          const extraY = view.height * padding / height
+          svg.setAttribute('viewBox', `${view.x - extraX} ${view.y - extraY} ${view.width + extraX * 2} ${view.height + extraY * 2}`)
+          svg.style.padding = '0'
+          svg.style.width = `${width + padding * 2}px`
+          svg.style.height = `${height + padding * 2}px`
+        }
+      })
+    },
+  })
   const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
   if (!blob) throw new Error('PNG export failed')
-  return new File([blob], `water-local-${new Date(now).toISOString().slice(0, 10)}.png`, { type: 'image/png' })
+  return { file: new File([blob], `water-local-${new Date(now).toISOString().slice(0, 10)}.png`, { type: 'image/png' }), width: canvas.width, height: canvas.height }
 }
-
-
-
-function ShareInfographic({ tenant, data, now, refreshFailed, url, text, setStatus, buttonClass }) {
+function ShareInfographic({ tenant, data, now, refreshFailed, url, text, setStatus, buttonClass, renderCards: Cards }) {
+  const capture = useRef(null)
   const [result, setImage] = useState(null)
   const [failed, setFailed] = useState(false)
   const image = result?.data === data && result?.now === now && result?.tenant === tenant && result?.refreshFailed === refreshFailed ? result : null
   useEffect(() => {
     let alive = true
     let objectUrl
-    infographic(tenant, data, now, refreshFailed, url).then(file => {
+    infographic(capture.current, now).then(({ file, width, height }) => {
       if (!alive) return
       objectUrl = URL.createObjectURL(file)
       setFailed(false)
-      setImage({ file, url: objectUrl, data, now, tenant, refreshFailed })
-    }).catch(() => { if (alive) setFailed(true) })
+      setImage({ file, width, height, url: objectUrl, data, now, tenant, refreshFailed })
+    }).catch(error => { console.warn('Water infographic export failed', error); if (alive) setFailed(true) })
     return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
   }, [tenant, data, now, refreshFailed, url])
   const canShare = image && typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare({ files: [image.file] })
@@ -107,10 +92,28 @@ function ShareInfographic({ tenant, data, now, refreshFailed, url, text, setStat
     catch (error) { if (error?.name !== 'AbortError') setStatus('แชร์ภาพไม่ได้ กรุณาดาวน์โหลด PNG แล้วแนบในโพสต์หรือกลุ่ม LINE') }
   }
   return <div className="rounded-xl border border-sky-200 bg-white p-3">
+    <div ref={capture} data-water-share-capture className="water-page" aria-hidden="true" inert
+      style={{ position: 'fixed', left: -10000, top: 0, width: 390, padding: 8, background: '#eef5f9', color: '#0f172a', fontFamily: 'Sarabun, sans-serif' }}>
+      <header style={{ padding: '10px 8px 14px' }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700 }}>สถานการณ์น้ำ–ฝน · {tenant.name}</h2>
+        <p style={{ fontSize: 11, color: '#475569', marginTop: 4 }}>เฉพาะข้อมูลในตำบล · สรุป ณ {dateText(now)} น.</p>
+        {(refreshFailed || !data.synced_at || isStale(data.synced_at, now, SYNC_STALE_HOURS)) &&
+          <p style={{ fontSize: 12, color: '#92400e', marginTop: 6 }}>ข้อมูลอาจไม่เป็นปัจจุบัน โปรดตรวจสอบเวลาตรวจวัด</p>}
+      </header>
+      <Cards tenant={tenant} data={data} now={now} />
+      <footer style={{ padding: '14px 8px 8px', fontSize: 10, lineHeight: 1.5, color: '#475569' }}>
+        <p style={{ fontWeight: 700 }}>แหล่งข้อมูล: คลังข้อมูลน้ำแห่งชาติ ThaiWater (สสน.)</p>
+        <p style={{ color: '#92400e', fontWeight: 700 }}>ภาพสรุป ณ เวลาที่ระบุ · ไม่ใช่ประกาศเตือนภัยของ อปท.</p>
+        <p>ไม่มีข้อมูล ไม่ได้หมายความว่าสถานการณ์ปกติ</p>
+        <p>ข้อมูลสถานีไม่ครอบคลุมทุกจุดในตำบล</p>
+        <p style={{ marginTop: 6, color: '#0369a1', fontWeight: 700 }}>ตรวจสอบข้อมูลและคำเตือนล่าสุด:</p>
+        <p style={{ color: '#0369a1', overflowWrap: 'anywhere' }}>{url}</p>
+      </footer>
+    </div>
     <h3 className="text-sm font-bold text-slate-800">ภาพสรุปสำหรับชาวบ้าน</h3>
-    <p className="my-2 text-xs text-slate-600">PNG ความละเอียด 1080 × 1480 · ภาพแสดงข้อมูล ณ เวลาที่สร้าง</p>
+    <p className="my-2 text-xs text-slate-600">PNG ความละเอียด 3 เท่า · ใช้การ์ดเดียวกับหน้าสถานการณ์</p>
     {image ? <>
-      <img src={image.url} alt={`อินโฟกราฟิกสถานการณ์น้ำ–ฝน ${tenant.name} เฉพาะตำบล ข้อความและตัวเลขอยู่ในหัวข้อดูข้อความที่จะแชร์`} className="mx-auto w-full max-w-sm rounded-lg" width="1080" height="1480" />
+      <img src={image.url} alt={`อินโฟกราฟิกสถานการณ์น้ำ–ฝน ${tenant.name} เฉพาะตำบล ข้อความและตัวเลขอยู่ในหัวข้อดูข้อความที่จะแชร์`} className="mx-auto w-full max-w-sm rounded-lg" width={image.width} height={image.height} />
       <div className="mt-3 flex flex-wrap gap-2">
         <a href={image.url} download={image.file.name} className={`${buttonClass} bg-sky-700 text-white`}><Download size={18} /> ดาวน์โหลดภาพ PNG</a>
         {canShare && <button type="button" onClick={shareImage} className={`${buttonClass} border border-sky-200 text-sky-800`}><Share2 size={18} /> แชร์ภาพผ่านแอป</button>}
@@ -140,7 +143,7 @@ function shareText(tenant, data, now, refreshFailed) {
   return lines.join('\n')
 }
 
-export default function WaterSituationShare({ tenant, data, now, refreshFailed }) {
+export default function WaterSituationShare({ tenant, data, now, refreshFailed, renderCards }) {
   const [expanded, setExpanded] = useState(false)
   const [status, setStatus] = useState('')
   const [manualCopy, setManualCopy] = useState(false)
@@ -180,7 +183,7 @@ export default function WaterSituationShare({ tenant, data, now, refreshFailed }
         <Share2 size={18} /> แชร์สถานการณ์ในพื้นที่
       </button>
       {expanded && <div id="water-share-options" className="mt-3 space-y-3">
-        <ShareInfographic tenant={tenant} data={data} now={now} refreshFailed={refreshFailed} url={url} text={text} setStatus={setStatus} buttonClass={buttonClass} />
+        <ShareInfographic tenant={tenant} data={data} now={now} refreshFailed={refreshFailed} url={url} text={text} setStatus={setStatus} buttonClass={buttonClass} renderCards={renderCards} />
         <p className="text-xs leading-relaxed text-slate-600">แชร์เฉพาะข้อมูลในตำบลของ {tenant.name} ไม่รวมสถานีข้างเคียง · ผู้รับเปิดลิงก์เพื่อดูข้อมูลล่าสุด เลือกกลุ่มหรือผู้รับก่อนส่งได้</p>
         <div className="grid grid-cols-2 gap-2">
           <a className={`${buttonClass} bg-blue-700 text-white hover:bg-blue-800`} target="_blank" rel="noopener noreferrer"
