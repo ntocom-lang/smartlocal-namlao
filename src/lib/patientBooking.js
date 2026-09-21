@@ -19,6 +19,18 @@ export function dateTime(value) {
   return value ? new Date(value).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'ยังไม่ทราบ'
 }
 export function clockTime(minutes) { return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}` }
+// เวลาเป็นนาฬิกาไทยจากค่า ISO ที่ฐานข้อมูลส่งมา เช่น "08:45"
+export function clockOf(value) { return value ? new Date(value).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) : '' }
+// "วันนี้ / พรุ่งนี้" ช่วยให้กวาดตาหางานของวันได้เร็ว วันอื่นแสดงชื่อวันกับวันที่สั้น
+// ต่างปีต้องมีปีกำกับ ไม่งั้นคำขอค้างจากปีก่อนดูเหมือนนัดเดือนหน้า
+export function whenLabel(at) {
+  if (!at) return 'ยังไม่ทราบวัน'
+  const day = thaiDay(at)
+  if (day === thaiDay()) return 'วันนี้'
+  if (day === thaiDay(Date.now() + 86400000)) return 'พรุ่งนี้'
+  const sameYear = day.slice(0, 4) === thaiDay().slice(0, 4)
+  return new Date(at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'short', day: 'numeric', month: 'short', ...(sameYear ? {} : { year: '2-digit' }) })
+}
 export function minutes(value) { const [h, m] = value.split(':').map(Number); return h * 60 + m }
 export function bangkokISO(day, time) { return day && time ? new Date(`${day}T${time}:00+07:00`).toISOString() : null }
 
@@ -46,6 +58,56 @@ export function journeyWindow({ time, back, return_mode: returnMode, route_id: r
   return { start, end: minutes(back) + info.boarding_minutes + travel + info.buffer_minutes }
 }
 
+// แถบขั้นตอนที่ประชาชนเห็นในการ์ด "คำขอของฉัน" — 4 ขั้นแบบเดียวกับแถบสถานะของคำขอบริการ/เอกสาร
+// (src/pages/MyDocRequests.jsx) ประชาชนจะได้อ่านสถานะด้วยภาษาชุดเดียวกันทุกบริการ
+export const BOOKING_STEPS = ['ส่งคำขอแล้ว', 'ยืนยันรถแล้ว', 'กำลังเดินทาง', 'เสร็จแล้ว']
+export function bookingStep(booking, trip) {
+  if (booking.status === 'cancelled') return 0
+  if (booking.status === 'completed') return 4
+  if (['outbound', 'hospital', 'returning'].includes(trip?.state)) return 3
+  return booking.status === 'confirmed' ? 2 : 1
+}
+
+// เวลารับกลับที่ระบบกันรถไว้ให้เมื่อผู้จองยังไม่ทราบว่าจะเสร็จกี่โมง
+// = ช้าที่สุดที่รถยังกลับถึงพื้นที่ทันเวลาปิดบริการ (ผู้จองส่วนใหญ่ตอบเวลานี้ไม่ได้ ถามแล้วก็เดา
+// แล้วเจ้าหน้าที่ต้องมาแก้อยู่ดี จึงกันช่วงกว้างไว้ก่อนแล้วให้เจ้าหน้าที่ย่อลงหลังประสาน)
+export function latestReturnClock(form, info) {
+  if (form.return_mode === 'one_way') return ''
+  const advice = bookingTimingAdvice(form, info)
+  if (!advice) return ''
+  const back = Math.floor((info.office_end - advice.after) / 15) * 15
+  return back > 0 ? clockTime(back) : ''
+}
+
+// นาทีของวันนั้นตามเวลาไทย จากเวลาที่ฐานข้อมูลส่งมาเป็น ISO
+function dayMinutes(value, day) {
+  const at = Date.parse(value)
+  return Number.isFinite(at) ? Math.round((at - Date.parse(`${day}T00:00:00+07:00`)) / 60000) : NaN
+}
+
+// เวลานัดที่ "รถว่างจริง" ของวันนั้น — ช่วงกันรถที่ ptb_plan จะคำนวณต้องอยู่ในช่วงว่างช่วงเดียวทั้งช่วง
+// ช่อง free ของ patient_booking_calendar ตัดเวลาที่ผ่านมาแล้วและช่วงของเที่ยวที่ยืนยันแล้วออกให้แล้ว
+// ⚠️ เป็นการกรองเพื่อไม่ให้ประชาชนเลือกเวลาที่ยืนยันไม่ได้ตั้งแต่ต้น ไม่ใช่การจองที่นั่ง
+// ฐานข้อมูลยังคำนวณแผนทั้งก้อนใหม่ใต้ล็อกก่อนยืนยันทุกครั้ง
+export function freeTimeChoices(form, info, dayInfo, step = 15) {
+  if (!dayInfo?.date || dayInfo.status !== 'open' || !Number.isFinite(info?.office_start) || !Number.isFinite(info?.office_end)) return []
+  const windows = (dayInfo.free || [])
+    .map(w => ({ start: dayMinutes(w.start, dayInfo.date), end: dayMinutes(w.end, dayInfo.date) }))
+    .filter(w => Number.isFinite(w.start) && Number.isFinite(w.end))
+  const times = []
+  for (let at = Math.ceil(info.office_start / step) * step; at <= info.office_end; at += step) {
+    const time = clockTime(at)
+    const back = form.return_mode === 'one_way' ? '' : (form.back || latestReturnClock({ ...form, time }, info))
+    if (form.return_mode !== 'one_way' && (!back || minutes(back) < at)) continue
+    const span = journeyWindow({ ...form, time, back }, info)
+    if (!span) continue
+    const end = span.end ?? span.start
+    if (span.start < info.office_start || end > info.office_end) continue
+    if (windows.some(w => span.start >= w.start && end <= w.end)) times.push(time)
+  }
+  return times
+}
+
 export function suggestGroups(bookings, settings) {
   const pending = bookings.filter(r => r.status === 'submitted').sort((a, b) => a.appointment_at.localeCompare(b.appointment_at) || a.id.localeCompare(b.id))
   const groups = []
@@ -64,13 +126,35 @@ export function suggestGroups(bookings, settings) {
   return groups
 }
 
-export function nextTripAction(trip) {
-  return { confirmed: 'ออกไปรับ', outbound: trip.plan?.return_mode === 'one_way' ? 'กลับถึงพื้นที่ · จบเที่ยว' : 'ส่งถึงครบ · รอรับกลับ', hospital: 'ออกไปรับขากลับ', returning: 'ส่งกลับครบ · จบเที่ยว' }[trip.state]
+// ── งานคนขับ: ปุ่มใหญ่ปุ่มเดียวต่อขั้น (เจ้าของระบบสั่ง 2569-09-21) ──
+// ไป-กลับ 4 ครั้ง · ขาเดียว 2 ครั้ง (เดิม 8 และ 4 ครั้ง เพราะต้องกดรับ/ส่งทีละคนแยกจากการเดินเที่ยว)
+// แต่ละปุ่มยิงคำสั่งเดิมของฐานข้อมูลหลายตัวต่อกัน — กติกาของฐานข้อมูลไม่เปลี่ยน
+// ⚠️ ที่เสียไป: เวลารับขึ้นรถรายคนไม่ถูกบันทึกแยก (บันทึกพร้อมกันตอนส่งถึง) สรุปรายเดือนไม่ได้ใช้ค่านี้
+export const DRIVER_STEPS = { round: ['ออกรถ', 'ถึง รพ.', 'ออกรับกลับ', 'ถึงบ้าน'], one_way: ['ออกรถ', 'ถึง รพ.'] }
+export function driverProgress(trip) {
+  const oneWay = trip.plan?.return_mode === 'one_way'
+  return { confirmed: 0, outbound: 1, hospital: 2, returning: 3, completed: oneWay ? 2 : 4 }[trip.state] ?? 0
 }
-export function nextPassengerAction(booking, trip) {
-  if (trip.state === 'outbound') return ['รับผู้เดินทางแล้ว', 'ส่งถึงโรงพยาบาลแล้ว'][booking.passenger_step]
-  if (trip.state === 'returning') return { 2: 'รับกลับแล้ว', 3: 'ส่งถึงจุดหมายแล้ว' }[booking.passenger_step]
-  return null
+const riders = (trip, bookings) => bookings.filter(b => b.trip_id === trip.id && b.status === 'confirmed')
+// ป้ายปุ่มใหญ่ของขั้นถัดไป · '' = ไม่มีปุ่ม (รอเจ้าหน้าที่แก้เหตุขัดข้อง จบแล้ว หรือยกเลิก)
+export function driverNext(trip, bookings) {
+  if (!riders(trip, bookings).length && ['outbound', 'hospital', 'returning'].includes(trip.state)) return 'จบเที่ยว · ไม่มีผู้เดินทางแล้ว'
+  const oneWay = trip.plan?.return_mode === 'one_way'
+  return { confirmed: 'ออกรถไปรับ', outbound: oneWay ? 'ส่งถึงโรงพยาบาลแล้ว · จบงาน' : 'ส่งถึงโรงพยาบาลแล้ว', hospital: 'ออกไปรับกลับ', returning: 'ส่งถึงบ้านแล้ว · จบงาน' }[trip.state] || ''
+}
+// คำสั่งเดิมที่ต้องยิงเพื่อไปถึงขั้นถัดไป คำนวณจากสถานะล่าสุด ขั้นที่บันทึกแล้วจึงถูกข้ามเอง
+// (เน็ตหลุดกลางทาง กดซ้ำแล้วทำต่อจากที่ค้าง) · booking: null = คำสั่งของเที่ยว
+// ส่งถึงโรงพยาบาล = ผู้เดินทางทุกคน 0→1→2 แล้วเดินเที่ยว · ส่งถึงบ้าน = ทุกคน 2→3→4 แล้วจบเที่ยว
+export function driverSteps(trip, bookings) {
+  const people = riders(trip, bookings)
+  const bump = to => people.flatMap(b => Array.from({ length: Math.max(0, to - (Number(b.passenger_step) || 0)) }, () => ({ booking: b.id, action: 'passenger_next' })))
+  const next = { booking: null, action: 'trip_next' }
+  if (trip.state === 'confirmed') return [next]
+  if (trip.state === 'outbound') return [...bump(2), next]
+  // ไม่เหลือผู้เดินทาง (เจ้าหน้าที่นำออกระหว่างรอรับกลับ) = เดินเที่ยว 2 ครั้งจนจบ ไม่ต้องออกไปรับใคร
+  if (trip.state === 'hospital') return people.length ? [next] : [next, next]
+  if (trip.state === 'returning') return [...bump(4), next]
+  return []
 }
 
 // เลขไมล์กลับของเที่ยวก่อนหน้า "ตามเวลาเริ่มรับ" ที่ไม่ถูกยกเลิกและบันทึกเลขไมล์กลับแล้ว
@@ -84,32 +168,93 @@ export function previousOdometer(trip, trips) {
   return before.length ? before[0].odometer_end : ''
 }
 
-// Explain server validation without changing its decision. Unknown errors retain their original text.
-const PLAN_FIXES = {
-  'เวลารับ–ส่งอยู่นอกเวลาบริการ': 'ถ้ารถให้บริการช่วงนี้ได้จริง ให้ผู้ดูแลไป “ตั้งค่า” ปรับ “เริ่มบริการ / สิ้นสุดบริการ” หากให้บริการไม่ได้ ให้ประสานผู้จองแล้วกด “แก้ข้อมูลหลังประสาน” ปรับวันเวลานัดหรือเวลารับกลับตามจริง',
-  'ยังไม่ตั้งเส้นทางโรงพยาบาลและพื้นที่จุดรับ': 'ให้ผู้ดูแลเพิ่มเส้นทางใน “ตั้งค่า” หรือกด “แก้ข้อมูลหลังประสาน” เลือกเส้นทางที่ถูกต้อง',
-  'ยังไม่ยืนยันความจุรถ': 'ให้ผู้ดูแลไป “ตั้งค่า” กรอกที่นั่งผู้โดยสาร ที่ยึดรถเข็น และที่ยึดเปลตามรถจริง ช่องที่ไม่มีให้ใส่ 0',
-  'รถหรือคนขับยังไม่พร้อมให้บริการ': 'ให้ผู้ดูแลตรวจ “ตั้งค่า” ว่าเปิดบริการแล้ว เลือกบัญชีคนขับแล้ว และไม่ได้ระบุรถงดบริการ ถ้ายังไม่พร้อมให้ประสานวันใหม่',
-  'หน่วยงานเจ้าของรถปิดรับเรื่อง': 'ให้ผู้ดูแลตรวจทะเบียนหน่วยงานรับเรื่องต่อ ว่ากองทุนเจ้าของรถยังเปิดรับเรื่อง แล้วตรวจหน่วยงานที่เลือกใน “ตั้งค่า”',
-  'บัญชีคนขับไม่ได้รับสิทธิ์เจ้าหน้าที่แล้ว': 'ให้ผู้ดูแลตรวจสิทธิ์บัญชีคนขับ หรือเลือกบัญชีเจ้าหน้าที่ที่เป็นคนขับจริงใน “ตั้งค่า”',
-  'ตรงวันหยุดให้บริการ': 'ประสานวันเดินทางใหม่ แล้วกด “แก้ข้อมูลหลังประสาน” เปลี่ยนวันนัด ระบบหยุดเสาร์–อาทิตย์และวันหยุดที่หน่วยงานบันทึกไว้',
-  'วันเดินทางผ่านแล้ว': 'ตรวจวันนัดกับผู้จอง แล้วกด “แก้ข้อมูลหลังประสาน” ใส่วันนัดที่ถูกต้อง หากไม่เดินทางแล้วให้ยกเลิกตามคำขอ',
-  'มีคำขอที่ปิดหรือยกเลิกแล้ว': 'โหลดรายการล่าสุด แล้วเลือกเฉพาะคำขอที่ยังรอจัดคิว ไม่รวมคำขอที่จบหรือยกเลิกแล้ว',
-  'ต้องตรวจสอบพื้นที่รับบริการ': 'ตรวจจุดรับกับผู้จอง แล้วกด “แก้ข้อมูลหลังประสาน” ยืนยันว่าอยู่ในพื้นที่เฉพาะเมื่อได้ตรวจแล้ว',
-  'เส้นทาง วันเดินทาง หรือรูปแบบรับกลับไม่ตรงกัน': 'แยกคำขอที่ต่างเส้นทาง ต่างวัน หรือรูปแบบรับกลับไม่ตรงกัน โดยกด “ตรวจเป็นเที่ยวเดี่ยว” หากข้อมูลผิดให้แก้หลังประสาน',
-  'ร่วมเที่ยวได้เฉพาะผู้เดินได้และยินดีร่วมเที่ยว': 'กด “ตรวจเป็นเที่ยวเดี่ยว” สำหรับผู้ใช้รถเข็น เปล หรือไม่ประสงค์ร่วมเที่ยว ไม่เปลี่ยนข้อมูลการเคลื่อนไหวเพื่อให้ผ่าน',
-  'ยังไม่มีเวลาขากลับ': 'ประสานเวลาพร้อมรับกลับ แล้วกด “แก้ข้อมูลหลังประสาน” กรอก “เวลาพร้อมรับกลับ” ถ้าไม่ใช้ขากลับให้เลือกรูปแบบขาไปอย่างเดียวตามจริง',
-  'เวลารับกลับอยู่ก่อนเวลานัด': 'กด “แก้ข้อมูลหลังประสาน” ตรวจเวลานัดและเวลาพร้อมรับกลับ เวลารับกลับต้องไม่ก่อนเวลานัด',
-  'ยังไม่ยืนยันที่ยึดรถเข็น': 'ให้ผู้ดูแลตรวจ “ตั้งค่า → ที่ยึดรถเข็น” ตามอุปกรณ์จริง หากรถไม่รองรับให้ประสานรถที่เหมาะสม',
-  'ยังไม่ยืนยันที่ยึดเปล': 'ให้ผู้ดูแลตรวจ “ตั้งค่า → ที่ยึดเปล” ตามอุปกรณ์จริง หากรถไม่รองรับให้ประสานรถที่เหมาะสม',
-  'ต้องยืนยันผู้ช่วยเคลื่อนย้ายประจำเที่ยว': 'กรอกชื่อผู้ช่วยที่พร้อมเดินทางจริงในช่อง “ผู้ช่วยเคลื่อนย้ายที่พร้อมประจำเที่ยว” เหนือผลตรวจ แล้วตรวจแผนอีกครั้ง',
-  'ที่นั่งไม่พอรวมผู้ติดตามและผู้ช่วยแล้ว': 'ตรวจจำนวนผู้ติดตามและผู้ช่วยกับผู้จอง หากร่วมเที่ยวให้แยกเป็นเที่ยวเดี่ยว ไม่เพิ่มจำนวนที่นั่งในตั้งค่าเกินรถจริง',
-  'เวลานัดห่างเกินช่วงร่วมเที่ยว': 'เที่ยวร่วมต้องมีเวลานัดห่างกันไม่เกิน 30 นาที ให้กด “ตรวจเป็นเที่ยวเดี่ยว” หรือแก้เวลานัดเฉพาะเมื่อข้อมูลเดิมผิด',
-  'เวลารับกลับห่างเกินช่วงร่วมเที่ยว': 'เที่ยวร่วมต้องมีเวลาพร้อมรับกลับห่างกันไม่เกิน 30 นาที ให้แยกเที่ยวหรือประสานเวลารับกลับที่ทำได้จริง',
-  'ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว': 'เปิด “เที่ยวที่ยืนยันแล้ว” หรือ “ตารางออกรถ” ดูช่วงที่ชน แล้วประสานเวลาใหม่ ไม่ยกเลิกเที่ยวเดิมโดยไม่ได้ประสาน',
-  'มีเหตุขัดข้องที่ยังไม่คลี่คลายในวันเดียวกัน': 'เปิด “เที่ยวที่ยืนยันแล้ว” ดูเที่ยวที่ต้องประสานเหตุขัดข้อง แก้เหตุจริงและบันทึกผลก่อนจัดคิวเพิ่ม',
+// ── กล่อง "คำขอรถ" ของเจ้าหน้าที่: 1 แถว = 1 คำขอ แบบกล่องงานคำร้อง (เจ้าของระบบสั่ง 2569-09-21) ──
+
+// ขั้นของแถว — ใช้ทั้งป้ายกรองและป้ายสถานะ เที่ยวที่แจ้งเหตุขัดข้องนับตามขั้นก่อนเกิดเหตุ
+// (เหตุขัดข้องเป็น "งานที่ต้องทำ" ของแถว ไม่ใช่ขั้นใหม่ ปุ่มแดงของแถวบอกอยู่แล้ว)
+export const STAGES = {
+  submitted: { label: 'รอยืนยันรถ', color: '#d97706', chip: 'bg-amber-100 text-amber-900' },
+  confirmed: { label: 'ยืนยันรถแล้ว', color: '#0284c7', chip: 'bg-sky-100 text-sky-900' },
+  running: { label: 'กำลังเดินทาง', color: '#7c3aed', chip: 'bg-violet-100 text-violet-900' },
+  completed: { label: 'เสร็จแล้ว', color: '#059669', chip: 'bg-emerald-100 text-emerald-900' },
+  cancelled: { label: 'ยกเลิกแล้ว', color: '#64748b', chip: 'bg-slate-200 text-slate-700' },
+}
+export function bookingStage(booking, trip) {
+  if (['submitted', 'completed', 'cancelled'].includes(booking.status)) return booking.status
+  const state = trip?.state === 'issue' ? trip.state_before_issue : trip?.state
+  return ['outbound', 'hospital', 'returning'].includes(state) ? 'running' : 'confirmed'
 }
 
+// ปุ่มเดียวของแถว = งานถัดไปที่เจ้าหน้าที่ต้องทำ แบบ NEXT_ACTION ของคำร้อง (ComplaintsManager.jsx)
+// สีปุ่ม = สีของผลที่จะได้ ใช้เฉด 700 ให้ตัวอักษรขาวอ่านออก · rank น้อย = ขึ้นก่อนในกล่อง
+export function staffNextAction(booking, trip) {
+  if (booking.status === 'submitted') return { id: 'confirm', label: 'ยืนยันรถ', color: '#0369a1', rank: 2 }
+  if (booking.status === 'confirmed' && trip?.state === 'issue') return { id: 'issue', label: 'แก้เหตุขัดข้อง', color: '#b91c1c', rank: 0 }
+  if (booking.status === 'confirmed' && booking.cancel_requested) return { id: 'cancel', label: 'ประสานยกเลิก', color: '#b45309', rank: 1 }
+  if (booking.status === 'completed' && trip && trip.state === 'completed'
+    && (!trip.forward_letter_no || trip.odometer_issue || !Number.isFinite(trip.odometer_end))) return { id: 'docs', label: 'บันทึกเอกสาร', color: '#047857', rank: 3 }
+  return { id: 'view', label: 'ดูรายละเอียด', color: '', rank: 9 }
+}
+
+// ยืนยันรถไม่ผ่าน → ประโยคเดียวบอกเหตุ + ปุ่มแก้ที่กดแล้วระบบยืนยันต่อให้เอง
+// ข้อความฝั่งซ้ายต้องตรงกับที่ ptb_plan ส่งมาทุกตัวอักษร (tests/patient-booking-guidance.test.mjs ตรวจครบทุกข้อ)
+// ปุ่มแก้: area ตรวจเขตแล้วยืนยัน · helper ใส่ชื่อผู้ช่วยแล้วยืนยัน · single ยืนยันเฉพาะคำขอนี้ ·
+// amend แก้วันเวลาหลังโทรประสานแล้วยืนยัน · cancel ยกเลิกคำขอพร้อมเหตุผล · call โทรหาผู้จอง ·
+// settings ไปหน้าตั้งค่า · issue ไปแก้เหตุขัดข้องของวันนั้น · reload โหลดข้อมูลล่าสุด
+const SETTINGS_FIX = ['settings']
+const CONFIRM_BLOCKERS = {
+  'ต้องตรวจสอบพื้นที่รับบริการ': ['ยังไม่ได้ตรวจว่าจุดรับอยู่ในเขตพื้นที่ให้บริการ', ['area']],
+  'ต้องยืนยันผู้ช่วยเคลื่อนย้ายประจำเที่ยว': ['ผู้ป่วยใช้รถเข็นหรือเปล ต้องมีผู้ช่วยเคลื่อนย้ายไปด้วย', ['helper']],
+  'ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว': ['รถไม่ว่าง ช่วงเวลานี้ชนกับเที่ยวที่ยืนยันแล้ว', ['call', 'amend', 'cancel']],
+  'มีเหตุขัดข้องที่ยังไม่คลี่คลายในวันเดียวกัน': ['วันนั้นมีเที่ยวที่แจ้งเหตุขัดข้องค้างอยู่ ต้องแก้เหตุนั้นก่อน', ['issue']],
+  'ตรงวันหยุดให้บริการ': ['วันนัดตรงวันหยุดให้บริการ', ['call', 'amend', 'cancel']],
+  'เวลารับ–ส่งอยู่นอกเวลาบริการ': ['เวลารับ–ส่งเกินเวลาให้บริการของรถ', ['call', 'amend', 'cancel']],
+  'วันเดินทางผ่านแล้ว': ['วันนัดผ่านไปแล้ว', ['call', 'amend', 'cancel']],
+  'ยังไม่มีเวลาขากลับ': ['ยังไม่มีเวลารับกลับ', ['call', 'amend']],
+  'เวลารับกลับอยู่ก่อนเวลานัด': ['เวลารับกลับอยู่ก่อนเวลานัด', ['call', 'amend']],
+  'ที่นั่งไม่พอรวมผู้ติดตามและผู้ช่วยแล้ว': ['ที่นั่งไม่พอ (นับผู้ติดตามและผู้ช่วยแล้ว)', ['single', 'call', 'cancel']],
+  'เส้นทาง วันเดินทาง หรือรูปแบบรับกลับไม่ตรงกัน': ['ไปด้วยกันไม่ได้ ปลายทาง วัน หรือขากลับไม่ตรงกัน', ['single']],
+  'ร่วมเที่ยวได้เฉพาะผู้เดินได้และยินดีร่วมเที่ยว': ['ไปด้วยกันไม่ได้ มีผู้ใช้รถเข็น/เปล หรือผู้ไม่ประสงค์นั่งร่วม', ['single']],
+  'เวลานัดห่างเกินช่วงร่วมเที่ยว': ['ไปด้วยกันไม่ได้ เวลานัดห่างกันเกิน 30 นาที', ['single']],
+  'เวลารับกลับห่างเกินช่วงร่วมเที่ยว': ['ไปด้วยกันไม่ได้ เวลารับกลับห่างกันเกิน 30 นาที', ['single']],
+  'มีคำขอที่ปิดหรือยกเลิกแล้ว': ['มีคำขอที่ปิดหรือยกเลิกไปแล้ว ข้อมูลบนจอเก่า', ['reload']],
+  'ยังไม่ตั้งเส้นทางโรงพยาบาลและพื้นที่จุดรับ': ['โรงพยาบาลนี้ไม่อยู่ในรายการที่ตั้งไว้แล้ว', ['amend', 'settings']],
+  'ยังไม่ยืนยันความจุรถ': ['ยังไม่ได้ตั้งจำนวนที่นั่งของรถ', SETTINGS_FIX],
+  'รถหรือคนขับยังไม่พร้อมให้บริการ': ['รถหรือคนขับยังไม่พร้อม (ปิดบริการ งดบริการ หรือยังไม่เลือกคนขับ)', SETTINGS_FIX],
+  'หน่วยงานเจ้าของรถปิดรับเรื่อง': ['หน่วยงานเจ้าของรถปิดรับเรื่องอยู่', SETTINGS_FIX],
+  'บัญชีคนขับไม่ได้รับสิทธิ์เจ้าหน้าที่แล้ว': ['บัญชีคนขับไม่มีสิทธิ์เจ้าหน้าที่แล้ว', SETTINGS_FIX],
+  'ยังไม่ยืนยันที่ยึดรถเข็น': ['รถยังไม่ได้ตั้งว่ามีที่ยึดรถเข็น', SETTINGS_FIX],
+  'ยังไม่ยืนยันที่ยึดเปล': ['รถยังไม่ได้ตั้งว่ามีที่ยึดเปล', SETTINGS_FIX],
+}
+
+// เที่ยวที่ชนเวลากับแผนนี้ — เงื่อนไขเดียวกับที่ ptb_plan ใช้ตัดสิน "ทับช่วงรถ" (ทุกสถานะยกเว้นยกเลิก
+// และไม่นับเที่ยวที่มีคำขอในแผนนี้อยู่แล้ว) ใช้ทั้งบอกว่าชนกับเที่ยวไหน และหาเที่ยวที่ลองไปคันเดียวกัน
+export function overlappingTrips(plan, trips = []) {
+  return trips.filter(t => t.state !== 'cancelled' && !(t.booking_ids || []).some(id => plan?.booking_ids?.includes(id))
+    && (t.plan?.blocks || []).some(old => (plan?.blocks || []).some(b => Date.parse(old.start) < Date.parse(b.end) && Date.parse(b.start) < Date.parse(old.end))))
+}
+// เที่ยวที่ลอง "ให้ไปคันเดียวกัน" ได้ (20260921120000): ยืนยันแล้ว ปลายทาง วัน และขากลับตรงกัน
+// เป็นแค่ตัวกรองไม่ให้ถามฐานข้อมูลเปล่า ๆ — เงื่อนไขจริง (ยินยอมนั่งร่วม ที่นั่ง เวลา) ฐานข้อมูลตัดสินเอง
+export function joinCandidates(plan, trips = []) {
+  return overlappingTrips(plan, trips).filter(t => t.state === 'confirmed' && t.plan?.route_id === plan?.route_id
+    && t.plan?.return_mode === plan?.return_mode && t.plan?.date === plan?.date).slice(0, 3)
+}
+// เหตุที่ไปคันเดียวกันไม่ได้ เป็นภาษาเจ้าหน้าที่ — ข้อความจากฐานข้อมูลเขียนไว้ให้ประชาชน ("กรุณาประสานเจ้าหน้าที่")
+const JOIN_REFUSALS = [
+  ['เที่ยวนี้ไม่เปิดร่วมแล้ว', 'เที่ยวนั้นออกรถแล้ว หรือเปลี่ยนสถานะไปแล้ว'],
+  ['เที่ยวนี้ไม่พร้อมรับผู้ร่วมเพิ่ม', 'ผู้เดินทางเดิมในเที่ยวนั้นไม่ได้เลือกนั่งร่วม ใช้รถเข็น/เปล หรือขอยกเลิกไว้'],
+  ['เวลาเริ่มรับของแผนร่วมเที่ยวผ่านแล้ว', 'เวลารถออกรับของแผนใหม่ผ่านไปแล้ว'],
+  ['คนขับเปลี่ยนแล้ว', 'คนขับของเที่ยวนั้นไม่ใช่คนขับปัจจุบัน ต้องจัดเที่ยวใหม่'],
+]
+export function joinRefusal({ plan, error, code } = {}, workspace = {}) {
+  if (code === 'PGRST202') return 'ระบบยังไม่เปิดใช้การรวมเที่ยว (รอปรับฐานข้อมูล)'
+  if (error) return JOIN_REFUSALS.find(([key]) => error.includes(key))?.[1] || error
+  return (plan?.errors || []).map(message => bookingPlanGuidance(message, plan, workspace).text).join(' · ')
+}
+
+// Explain server validation without changing its decision. Unknown errors retain their original text.
+// คืน { message ต้นฉบับ, text ประโยคเดียว, detail ตัวเลขประกอบ, fixes ปุ่มแก้ }
+// "ยืนยันเฉพาะคำขอนี้" ขึ้นเฉพาะแผนที่มีหลายคน — แผนคนเดียวไม่มีอะไรให้แยก
 export function bookingPlanGuidance(message, plan, workspace = {}) {
   const settings = workspace.settings || {}
   const sameSettings = plan?.settings_revision == null || settings.revision == null || plan.settings_revision === settings.revision
@@ -132,15 +277,14 @@ export function bookingPlanGuidance(message, plan, workspace = {}) {
   } else if (message === 'ที่นั่งไม่พอรวมผู้ติดตามและผู้ช่วยแล้ว' && Number.isFinite(plan?.seats) && Number.isFinite(settings.seats)) {
     detail = `แผนนี้ต้องใช้ ${plan.seats} ที่นั่ง รวมผู้ติดตามและผู้ช่วยแล้ว แต่รถตั้งไว้ ${settings.seats} ที่นั่ง ไม่รวมคนขับ`
   } else if (message === 'ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว') {
-    const conflicts = (workspace.trips || []).filter(t => t.state !== 'cancelled' && !(t.booking_ids || []).some(id => plan?.booking_ids?.includes(id)) && (t.plan?.blocks || []).some(old => (plan?.blocks || []).some(b => Date.parse(old.start) < Date.parse(b.end) && Date.parse(b.start) < Date.parse(old.end))))
-    detail = conflicts.map(t => `${t.plan.route_label || 'เที่ยวเดิม'} · เริ่มรับ ${dateTime(t.plan.pickup_at)}`).join(' / ')
+    detail = overlappingTrips(plan, workspace.trips).map(t => `${t.plan.route_label || 'เที่ยวเดิม'} · เริ่มรับ ${dateTime(t.plan.pickup_at)}`).join(' / ')
   } else if (['เวลานัดห่างเกินช่วงร่วมเที่ยว', 'เวลารับกลับห่างเกินช่วงร่วมเที่ยว', 'ยังไม่มีเวลาขากลับ', 'เวลารับกลับอยู่ก่อนเวลานัด'].includes(message)) {
     detail = selected.map(b => `${b.patient_name} · นัด ${dateTime(b.appointment_at)} · พร้อมรับกลับ ${dateTime(b.return_at)}`).join(' / ')
   }
-  return {
-    message, detail,
-    advice: PLAN_FIXES[message] || 'โหลดรายการล่าสุดแล้วตรวจแผนอีกครั้ง หากยังพบข้อความนี้ ให้แจ้งผู้ดูแลพร้อมข้อความและวันเวลาของเที่ยวนี้',
-  }
+  const known = Object.hasOwn(CONFIRM_BLOCKERS, message)
+  const [text, fixes] = known ? CONFIRM_BLOCKERS[message] : [message, ['reload', 'call']]
+  const group = (plan?.booking_ids?.length || 0) > 1
+  return { message, text, detail, known, fixes: group ? fixes : fixes.filter(fix => fix !== 'single') }
 }
 
 // Advisory only: does not change appointments or reserve the vehicle.

@@ -1,11 +1,13 @@
 import { useState } from 'react'
-import { thaiDay, dateTime, bangkokISO, TRIP_STATUS, RETURN_MODES, MOBILITY, inputClass, buttonClass, primaryClass } from '../../lib/patientBooking'
+import { bangkokISO, inputClass, buttonClass, primaryClass } from '../../lib/patientBooking'
 
 const time = value => value ? new Date(value).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) : ''
 const noticeLabels = { normal: 'ไม่มีประกาศเพิ่มเติม', delayed: 'รถล่าช้า', contact: 'ติดต่อเจ้าหน้าที่ก่อนเดินทาง' }
 const draftFrom = trip => ({ revision: trip.schedule_revision, notice: trip.public_notice || 'normal', pickup: time(trip.estimated_pickup_at), back: time(trip.estimated_return_at) })
 
-function ScheduleUpdate({ trip, busy, onUpdate }) {
+// ฟอร์มแจ้งรถล่าช้า/ปรับเวลาประมาณการ — ใช้ในแผ่นรายละเอียดของกล่องคำขอรถ (BookingInbox.jsx) ใต้ "จัดการเพิ่มเติม"
+// หน้า "ตารางออกรถประจำวัน" ที่เคยอยู่ในไฟล์นี้ถอดออกแล้ว 2569-09-21 (รวมเข้ากล่องคำขอรถ) จึงเหลือฟอร์มนี้ตัวเดียว
+export function ScheduleUpdate({ trip, busy, onUpdate }) {
   // Keep the revision belonging to the visible draft; polling must never silently authorize an overwrite.
   const [draft, setDraft] = useState(() => draftFrom(trip))
   const stale = draft.revision !== trip.schedule_revision
@@ -23,38 +25,4 @@ function ScheduleUpdate({ trip, busy, onUpdate }) {
     {stale && <div role="alert" className="space-y-2 rounded-lg bg-amber-50 p-3"><p>ข้อมูลแจ้งเวลาเปลี่ยนแล้ว: {noticeLabels[trip.public_notice]} · เริ่มรับ {time(trip.estimated_pickup_at) || 'ตามแผน'} · รับกลับ {time(trip.estimated_return_at) || 'ตามแผน'}</p><button type="button" className={buttonClass} onClick={() => setDraft(draftFrom(trip))}>ใช้เวลาแจ้งล่าสุด</button></div>}
     <button className={primaryClass} disabled={busy || stale || !Number.isInteger(draft.revision)}>บันทึกประกาศและเวลา</button>
   </form>
-}
-
-export default function BookingDaySchedule({ workspace, busy, onQueue, onUpdate }) {
-  const [day, setDay] = useState(thaiDay)
-  const [editing, setEditing] = useState(null)
-  const trips = workspace.trips.filter(t => t.plan?.date === day && t.state !== 'cancelled')
-  const pending = workspace.bookings.filter(b => b.status === 'submitted' && thaiDay(b.appointment_at) === day)
-  const blocks = trips.flatMap(trip => (trip.plan.blocks || []).map((block, index) => ({ trip, block, index }))).sort((a, b) => a.block.start.localeCompare(b.block.start))
-  const moveDay = step => { setDay(thaiDay(new Date(`${day}T12:00:00+07:00`).getTime() + step * 86400000)); setEditing(null) }
-  return <section aria-label="ตารางออกรถเจ้าหน้าที่" className="space-y-4">
-    <h2 className="text-xl font-bold">ตารางออกรถประจำวัน</h2>
-    <p className="text-sm text-slate-600">ใช้เที่ยวที่ยืนยันแล้วโดยอัตโนมัติ อัปเดตเมื่อคนขับบันทึกสถานะ และโหลดข้อมูลใหม่ทุก 1 นาทีขณะเปิดหน้านี้</p>
-    <div className="grid grid-cols-3 items-end gap-2 sm:flex sm:flex-wrap"><button className={buttonClass} onClick={() => moveDay(-1)}>วันก่อนหน้า</button><label className="order-first col-span-3 min-w-0 sm:order-none sm:flex-1">วันออกรถ<input type="date" className={inputClass} value={day} onChange={e => { if (e.target.value) { setDay(e.target.value); setEditing(null) } }} /></label><button className={buttonClass} onClick={() => moveDay(1)}>วันถัดไป</button><button className={buttonClass} onClick={() => { setDay(thaiDay()); setEditing(null) }}>วันนี้</button></div>
-    <div className="rounded-xl bg-sky-50 p-3"><strong>{trips.length} เที่ยวที่ยืนยันแล้ว · {pending.length} คำขอรอยืนยัน</strong><p className="text-sm">ช่วงที่ไม่แสดงเที่ยวไม่ได้ยืนยันว่ารถพร้อม ต้องตรวจวันหยุด เวลาให้บริการ และคิวก่อนรับงาน</p></div>
-    <section aria-label="คำขอรอยืนยันของวัน" className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3"><h3 className="font-semibold">คำขอรอยืนยัน · ยังไม่กันรถหรือที่นั่ง</h3>{pending.length ? <><div className="hidden overflow-x-auto border border-gray-300 bg-white shadow-sm md:block" style={{ borderRadius: 4 }}><table className="w-full border-collapse text-sm"><thead><tr style={{ backgroundColor: '#1a3a5c' }}><th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap text-center">เวลานัด</th><th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap text-left">ผู้เดินทาง</th><th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap text-left">ปลายทาง</th><th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap border-r-0 text-left">หมายเหตุ</th></tr></thead><tbody className="divide-y divide-gray-200">{pending.map((b, index) => <tr key={b.id} style={{ backgroundColor: index % 2 === 0 ? '#fff' : '#f5f8fc' }}><td className="border-r border-gray-200 px-2 py-2 text-center whitespace-nowrap">{time(b.appointment_at)} น.</td><td className="border-r border-gray-200 px-2 py-2 whitespace-nowrap">{b.patient_name}</td><td className="border-r border-gray-200 px-2 py-2">{b.route_label}</td><td className="px-2 py-2">{b.requested_trip_id ? 'ขอร่วมเที่ยว' : ''}</td></tr>)}</tbody></table></div><ul className="space-y-2 md:hidden">{pending.map(b => <li key={b.id}>{time(b.appointment_at)} น. นัด · {b.patient_name} · {b.route_label}{b.requested_trip_id ? ' · ขอร่วมเที่ยว' : ''}</li>)}</ul><button className={buttonClass} disabled={busy} onClick={onQueue}>ไปจัดคิวคำขอ</button></> : <p>ไม่มีคำขอรอยืนยันในวันนี้</p>}</section>
-    <section aria-label="เที่ยวที่ยืนยันตามเวลา" className="space-y-3"><h3 className="font-semibold">ช่วงใช้รถตามแผน</h3>{!blocks.length && <p className="rounded-xl border p-4">ยังไม่มีเที่ยวที่ยืนยันในวันนี้</p>}{blocks.map(({ trip, block, index }) => {
-      const passengers = workspace.bookings.filter(b => b.trip_id === trip.id && ['confirmed', 'completed'].includes(b.status))
-      const driver = trip.driver_name || workspace.people?.find(p => p.id === trip.driver_id)?.name
-      return <article key={`${trip.id}/${index}`} className="rounded-xl border border-slate-200 border-l-4 border-l-sky-700 p-4">
-        <p className="font-bold text-sky-900">{time(block.start)}–{time(block.end)} น. · {trip.plan.return_mode === 'later' ? index === 0 ? 'ขาไปและกลับพื้นที่' : 'ไปรับกลับและส่งถึงจุดหมาย' : RETURN_MODES[trip.plan.return_mode]}</p>
-        <h4 className="mt-1 font-bold">{trip.plan.route_label}</h4><p>{TRIP_STATUS[trip.state]} · รหัสเที่ยว {trip.id.slice(0, 8)}</p>
-        <p>ผู้เดินทางรวมผู้ติดตาม {passengers.reduce((sum, b) => sum + 1 + b.companions, 0)} คน · {driver ? `คนขับ ${driver}` : 'มอบหมายคนขับแล้ว'}</p>
-        <p className="text-sm">เริ่มรับตามแผน {time(trip.plan.pickup_at)} น.{trip.plan.return_mode !== 'one_way' && ` · รับกลับ ${time(trip.plan.return_at) || 'รอประสาน'} น.`}</p>
-        {(trip.public_notice !== 'normal' || trip.estimated_pickup_at || trip.estimated_return_at) && trip.public_notice && <p className="my-2 rounded-lg bg-amber-50 p-2">{noticeLabels[trip.public_notice]} · เริ่มรับ {time(trip.estimated_pickup_at) || 'ตามแผน'} · รับกลับ {time(trip.estimated_return_at) || 'ตามแผน'}</p>}
-        {index === 0 && <details className="mt-2"><summary className="flex min-h-11 cursor-pointer items-center font-semibold">ดูผู้เดินทาง จุดรับ และจัดการเที่ยว</summary><div className="space-y-3 pt-2">
-          <ul className="space-y-3">{passengers.map(b => <li key={b.id} className="rounded-lg bg-slate-50 p-3"><strong>{b.patient_name}</strong><p>{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</p><p>จุดรับ: {b.pickup}</p>{Number.isFinite(b.pickup_lat) && Number.isFinite(b.pickup_lng) && Math.abs(b.pickup_lat) <= 90 && Math.abs(b.pickup_lng) <= 180 && <a href={`https://www.google.com/maps/dir/?api=1&destination=${b.pickup_lat},${b.pickup_lng}`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center text-sky-800 underline">นำทางไปจุดรับ</a>}<p>นัด {dateTime(b.appointment_at)}</p>{b.phone && <a className="inline-flex min-h-11 items-center text-sky-800 underline" href={`tel:${b.phone}`}>โทร {b.phone}</a>}{b.cancel_requested && <p className="font-semibold text-amber-800">ขอประสานยกเลิก</p>}{b.return_ready && <p className="font-semibold text-sky-800">แจ้งพร้อมรับกลับแล้ว</p>}</li>)}</ul>
-          {trip.issue_note && <p className="rounded-lg bg-amber-50 p-3">บันทึกภายใน: {trip.issue_note}</p>}
-          <button className={buttonClass} disabled={busy} onClick={onQueue}>ไปจัดการคิวและเที่ยวรถ</button>
-          {!['completed', 'cancelled'].includes(trip.state) && <button className={buttonClass} disabled={busy} onClick={() => setEditing(editing === trip.id ? null : trip.id)}>{editing === trip.id ? 'ปิดการแจ้งเวลา' : 'แจ้งล่าช้า / ปรับเวลาประมาณการ'}</button>}
-          {editing === trip.id && <ScheduleUpdate trip={trip} busy={busy} onUpdate={async (...args) => { const saved = await onUpdate(...args); if (saved) setEditing(null); return saved }} />}
-        </div></details>}
-      </article>
-    })}</section>
-  </section>
 }
