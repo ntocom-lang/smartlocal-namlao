@@ -26,7 +26,7 @@ INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST'
 CREATE TABLE public.audit_logs(id bigserial PRIMARY KEY,municipality_id uuid,actor_id uuid,actor_name text,actor_role text,action text,resource_type text,resource_id uuid,resource_label text,metadata jsonb,created_at timestamptz NOT NULL DEFAULT now());
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -364,6 +364,58 @@ for (const user of [citizen, coordinator, admin, null]) {
 }
 await db.exec('RESET ROLE')
 console.log('PASS retention: closed and expired bookings lose identifying fields only, open queue untouched, audited, idempotent, API-denied')
+
+// เจ้าหน้าที่ให้คำขอที่ชนคิวไปคันเดียวกับเที่ยวที่ยืนยันแล้ว (20260921120000_patient_booking_staff_join)
+const joinDate = new Date(nextDay); joinDate.setUTCDate(joinDate.getUTCDate()+30); while ([0,6].includes(joinDate.getUTCDay())) joinDate.setUTCDate(joinDate.getUTCDate()+1)
+const joinDay = joinDate.toISOString().slice(0,10), joinAt = t => `${joinDay}T${t}:00+07:00`
+const joinBase = {...base, appointment_at: joinAt('10:00'), return_at: joinAt('12:00'), return_mode: 'wait', companions: 0, share: true}
+await actor(citizen); await rpc('patient_booking_submit',[tenant,id(700),{...joinBase,patient_name:'TEST ไปคันเดิม A',phone:'0800000600'}])
+await actor(coordinator); const soloPlan = await rpc('patient_booking_preview',[tenant,[id(700)],'']); assert.deepEqual(soloPlan.errors,[])
+await rpc('patient_booking_confirm',[tenant,id(710),[id(700)],soloPlan,''])
+await actor(citizen2); await rpc('patient_booking_submit',[tenant,id(701),{...joinBase,patient_name:'TEST ไปคันเดิม B',phone:'0800000601',appointment_at:joinAt('10:15')}])
+await actor(coordinator); assert((await rpc('patient_booking_preview',[tenant,[id(701)],''])).errors.includes('ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว'), 'ต้องชนคิวก่อน ถึงจะมีเหตุให้รวมเที่ยว')
+// เฉพาะผู้ดูแล/ผู้จัดคิว · anon เรียกไม่ได้เลย · ตัวคำนวณภายในเรียกตรงไม่ได้
+await actor(citizen2)
+await fails(()=>rpc('patient_booking_preview_into_trip',[tenant,id(701),id(710)]),/ไม่มีสิทธิ์/)
+await fails(()=>rpc('patient_booking_confirm_into_trip',[tenant,randomUUID(),id(701),id(710),{}]),/ไม่มีสิทธิ์/)
+await actor(driver); await fails(()=>rpc('patient_booking_preview_into_trip',[tenant,id(701),id(710)]),/ไม่มีสิทธิ์/)
+await actor(outsider); await fails(()=>rpc('patient_booking_preview_into_trip',[tenant,id(701),id(710)]),/ไม่มีสิทธิ์/)
+await actor(null); await fails(()=>rpc('patient_booking_preview_into_trip',[tenant,id(701),id(710)]),/permission denied/)
+await actor(coordinator); await fails(()=>rpc('ptb_join_plan_to',[tenant,id(701),id(710)]),/permission denied/)
+const into = await rpc('patient_booking_preview_into_trip',[tenant,id(701),id(710)])
+assert.deepEqual(into.errors,[]); assert.equal(into.join_trip_id,id(710)); assert.equal(into.join_booking_id,id(701))
+assert.deepEqual([...into.booking_ids].sort(),[id(700),id(701)].sort())
+assert(Date.parse(into.pickup_at) < Date.parse(soloPlan.pickup_at), 'ขึ้นรถเพิ่ม 1 คน รถต้องออกรับเร็วขึ้น — หน้าจอต้องบอกเวลาใหม่ก่อนกด')
+// แผนที่ส่งมาไม่ตรงของจริง/ไม่ใช่เที่ยวนี้ = ปฏิเสธ และต้องไม่มีอะไรค้าง (requested_trip_id ต้องไม่ถูกตั้ง)
+await fails(()=>rpc('patient_booking_confirm_into_trip',[tenant,randomUUID(),id(701),id(710),{...into,join_trip_revision:99}]),/เปลี่ยนแล้ว/)
+await fails(()=>rpc('patient_booking_confirm_into_trip',[tenant,randomUUID(),id(701),id(711),into]),/เปลี่ยนแล้ว/)
+await fails(()=>rpc('patient_booking_confirm_into_trip',[tenant,randomUUID(),id(700),id(710),into]),/เปลี่ยนแล้ว/)
+await db.exec('RESET ROLE'); assert.equal((await db.query('SELECT requested_trip_id FROM public.patient_bookings WHERE id=$1',[id(701)])).rows[0].requested_trip_id,null,'ยืนยันไม่ผ่านต้องย้อนกลับทั้งก้อน')
+await actor(coordinator); const intoOp = randomUUID()
+assert.equal(await rpc('patient_booking_confirm_into_trip',[tenant,intoOp,id(701),id(710),into]),id(710))
+assert.equal(await rpc('patient_booking_confirm_into_trip',[tenant,intoOp,id(701),id(710),into]),id(710),'กดซ้ำด้วยรายการเดิมต้องได้ผลเดิม')
+await actor(admin); await fails(()=>rpc('patient_booking_confirm_into_trip',[tenant,intoOp,id(701),id(710),into]),/รหัสการทำรายการ/)
+await db.exec('RESET ROLE')
+const joinedTrip = (await db.query('SELECT booking_ids,plan FROM public.patient_booking_trips WHERE id=$1',[id(710)])).rows[0]
+assert.deepEqual([...joinedTrip.booking_ids].sort(),[id(700),id(701)].sort())
+assert.equal(Date.parse(joinedTrip.plan.pickup_at),Date.parse(into.pickup_at)); assert(!('join_trip_id' in joinedTrip.plan))
+const joinedRow = (await db.query('SELECT status,trip_id,requested_trip_id FROM public.patient_bookings WHERE id=$1',[id(701)])).rows[0]
+assert.equal(joinedRow.status,'confirmed'); assert.equal(joinedRow.trip_id,id(710)); assert.equal(joinedRow.requested_trip_id,id(710))
+assert.equal((await db.query("SELECT count(*)::int AS n FROM public.patient_booking_events WHERE entity_id=$1 AND action='staff_join' AND actor_id=$2",[id(701),coordinator])).rows[0].n,1,'บันทึกว่าเจ้าหน้าที่คนไหนรวมเที่ยว ครั้งเดียวแม้กดซ้ำ')
+assert.equal((await db.query("SELECT count(*)::int AS n FROM public.patient_booking_events WHERE entity_id=$1 AND action='confirmed_join'",[id(710)])).rows[0].n,1)
+const toldNewTime = (await db.query("SELECT recipient_id FROM public.patient_booking_notices WHERE entity_id=$1 AND message LIKE 'เพิ่มผู้ร่วมเที่ยว%'",[id(710)])).rows.map(r=>r.recipient_id)
+assert(toldNewTime.includes(citizen) && toldNewTime.includes(citizen2) && toldNewTime.includes(driver), 'ผู้เดินทางเดิม ผู้เดินทางใหม่ และคนขับต้องได้รับแจ้งเวลาใหม่')
+// ไม่ยินยอมนั่งร่วมกับผู้ป่วยอื่น = รวมไม่ได้ แม้เจ้าหน้าที่สั่ง (ความยินยอมของเจ้าของข้อมูล)
+await actor(citizen2); await rpc('patient_booking_submit',[tenant,id(702),{...joinBase,patient_name:'TEST ไม่นั่งร่วม',phone:'0800000602',appointment_at:joinAt('10:20'),share:false}])
+await actor(coordinator); const privateJoin = await rpc('patient_booking_preview_into_trip',[tenant,id(702),id(710)])
+assert(privateJoin.errors.includes('ร่วมเที่ยวได้เฉพาะผู้เดินได้และยินดีร่วมเที่ยว'))
+await fails(()=>rpc('patient_booking_confirm_into_trip',[tenant,randomUUID(),id(702),id(710),privateJoin]),/ร่วมเที่ยว/)
+await db.exec('RESET ROLE'); assert.equal((await db.query('SELECT requested_trip_id,status FROM public.patient_bookings WHERE id=$1',[id(702)])).rows[0].status,'submitted')
+// ของเดิม (ประชาชนขอร่วมเองจากปฏิทิน) ไม่เปลี่ยน: ไม่ได้ขอร่วมเที่ยวใด = ปฏิเสธด้วยข้อความเดิม
+await actor(coordinator); await fails(()=>rpc('patient_booking_preview_join',[tenant,id(702)]),/เที่ยวนี้ไม่เปิดร่วมแล้ว/)
+await fails(()=>rpc('patient_booking_preview_into_trip',[tenant,id(702),null]),/เที่ยวนี้ไม่เปิดร่วมแล้ว/)
+await db.exec('RESET ROLE')
+console.log('PASS staff join into a confirmed trip: coordinator-only, earlier pickup previewed, stale plan rolls back, retry once, consent to share enforced, citizen join unchanged')
 
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')

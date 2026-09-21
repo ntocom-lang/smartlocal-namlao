@@ -44,19 +44,30 @@ export default function usePatientBooking(tenantId, uid, privateRpc) {
     return () => { requestSequence.current++; if (timer) clearInterval(timer); window.removeEventListener('focus', refresh) }
   }, [reload, uid])
   function op(key) { if (!operations.current.has(key)) operations.current.set(key, crypto.randomUUID()); return operations.current.get(key) }
-  async function mutate(name, args, success, after) {
+  // ยิงหลายคำสั่งต่อกันใต้ล็อกเดียว เช่น "ยืนยันรถ" คลิกเดียว = ตรวจแผน แล้วยืนยันต่อทันที
+  // steps(call) ได้ call(name, args) ที่โยน error เมื่อฐานข้อมูลปฏิเสธ · กดซ้ำระหว่างทางไม่ได้
+  // success เป็นข้อความ หรือฟังก์ชันที่รับค่าที่ steps คืน (คืน '' = ไม่ต้องแจ้งอะไร)
+  // คืนค่าที่ steps คืน (ไม่มี = true) หรือ false เมื่อไม่สำเร็จ
+  async function task(steps, success) {
     if (lockRef.current) return false
     lockRef.current = true; setBusy(true); setError(''); setNotice('')
-    try {
+    const call = async (name, args) => {
       const result = await supabase.rpc(name, { p_muni: tenantId, ...args })
       if (result.error) throw result.error
-      setNotice(success)
-      if (after) after(result.data)
+      return result.data
+    }
+    try {
+      const out = await steps(call)
+      const text = typeof success === 'function' ? success(out) : success
+      if (text) setNotice(text)
       await reload()
-      return true
+      return out === undefined ? true : out
     } catch (e) { if (e.message?.includes('เปลี่ยนแล้ว')) await reload(); setError(`ยังไม่ยืนยันผลสำเร็จ: ${e.message || 'เครือข่ายขัดข้อง กรุณาลองใหม่ด้วยรายการเดิม'}`); return false }
     finally { lockRef.current = false; setBusy(false) }
   }
+  function mutate(name, args, success, after) {
+    return task(async call => { const data = await call(name, args); if (after) after(data); return true }, success)
+  }
   const current = data?.tenantId === tenantId && data?.uid === uid ? data : null
-  return { current, info: current?.info, workspace: current?.workspace, error, setError, notice, setNotice, busy, setBusy, lockRef, reload, mutate, op }
+  return { current, info: current?.info, workspace: current?.workspace, error, setError, notice, setNotice, busy, setBusy, lockRef, reload, mutate, task, op }
 }
