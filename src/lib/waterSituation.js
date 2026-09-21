@@ -26,6 +26,25 @@ export function localWaterSituation(data, tenant) {
   return { ...data, stations, warnings }
 }
 
+// Share area = confirmed local stations OR configured stations within 5 km
+// of the municipality office. Unknown/invalid distances never qualify as nearby.
+export function shareWaterSituation(data, tenant) {
+  const local = localWaterSituation(data, tenant)
+  const localStations = new Set(local.stations)
+  const distance = s => typeof s?.distance_km === 'number' || typeof s?.distance_km === 'string'
+    ? (String(s.distance_km).trim() ? toNum(s.distance_km) : null) : null
+  const stations = (data?.stations ?? []).filter(s => {
+    const km = distance(s)
+    return localStations.has(s) || (km !== null && km >= 0 && km <= 5)
+  }).map(s => ({ ...s, is_primary: localStations.has(s) }))
+    .sort((a, b) => {
+      const aKm = distance(a), bKm = distance(b)
+      return (aKm !== null && aKm >= 0 ? aKm : Infinity) - (bKm !== null && bKm >= 0 ? bKm : Infinity)
+    })
+  // Area warnings lack coordinates/distances; retain only confirmed local warnings.
+  return { ...local, stations }
+}
+
 // ข้อมูลถือว่า "ไม่เป็นปัจจุบัน" เมื่อเก่ากว่านี้
 // สถานี: บางหน่วยงานส่งค่าช้ากว่าเวลาวัดราว 1.5 ชม. + ระบบดึงชั่วโมงละครั้ง ปกติจึงเก่าได้ถึง ~2.5 ชม.
 // ระบบ: ดึงทุกชั่วโมง พลาดรอบเดียวยังไม่เตือน พลาด 2 รอบติดค่อยเตือน

@@ -13,7 +13,7 @@ import {
   DAM_LEVELS, DAM_STALE_HOURS, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS, SYNC_STALE_HOURS, bankText, barPercent,
   channelFill, damLevel, damTicks, damTrend, buildAlerts, dataDayText, distanceText, ewsAlert, flowCompare,
   formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainBarMax, rainLevel, safeColor, stationPlace,
-  summaryStats, toNum, waterTrend, localWaterSituation,
+  summaryStats, toNum, waterTrend, localWaterSituation, shareWaterSituation,
 } from '../lib/waterSituation'
 
 // ข้อมูลในฐานเปลี่ยนชั่วโมงละครั้ง (thaiwater-sync) — ถามซ้ำถี่กว่านี้ก็ไม่ได้ของใหม่ เปลืองโควตาฟรีเปล่า
@@ -39,6 +39,7 @@ export default function WaterSituationPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const localOnly = searchParams.get('scope') === 'local'
+  const nearbyOnly = searchParams.get('scope') === 'nearby5'
   const { tenant, loading: tenantLoading } = useTenant()
   const tenantId = tenant?.id
   const [data, setData] = useState(null)        // null = ยังไม่เคยโหลดสำเร็จ
@@ -76,7 +77,7 @@ export default function WaterSituationPage() {
 
   useVisibleRefresh(refresh, { intervalMs: REFRESH_MS, enabled: Boolean(tenantId) })
 
-  const visibleData = localOnly ? localWaterSituation(data, tenant) : data
+  const visibleData = nearbyOnly ? shareWaterSituation(data, tenant) : localOnly ? localWaterSituation(data, tenant) : data
   const stations = visibleData?.stations ?? []
   const rain = stations.filter(s => s.station_type === 'rain')
   const levels = stations.filter(s => s.station_type === 'waterlevel')
@@ -98,7 +99,7 @@ export default function WaterSituationPage() {
           </button>
           <p className="water-eyebrow"><Waves size={16} /> ข้อมูลน้ำใกล้คุณ</p>
           <h1>สถานการณ์น้ำ–ฝน</h1>
-          <p className="water-cover-description">ติดตามฝน อ่างเก็บน้ำ และระดับน้ำ<br />{localOnly ? 'เฉพาะสถานีในตำบล ไม่รวมพื้นที่ข้างเคียง' : 'จากสถานีตรวจวัดใกล้พื้นที่'}</p>
+          <p className="water-cover-description">ติดตามฝน อ่างเก็บน้ำ และระดับน้ำ<br />{nearbyOnly ? 'ในตำบลและใกล้เคียงไม่เกิน 5 กม. จากสำนักงาน' : localOnly ? 'เฉพาะสถานีในตำบล ไม่รวมพื้นที่ข้างเคียง' : 'จากสถานีตรวจวัดใกล้พื้นที่'}</p>
           <span className="water-area"><MapPin size={14} /> {tenant?.name || 'สถานีตรวจวัดใกล้พื้นที่'}</span>
         </div>
         <WaterLandscape />
@@ -120,7 +121,7 @@ export default function WaterSituationPage() {
         ) : stations.length === 0 ? (
           <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center">
             <CloudRain size={32} className="mx-auto text-gray-300" />
-            <p className="mt-2 text-sm font-semibold text-gray-700">{localOnly ? 'ไม่มีสถานีที่ยืนยันตำบล อำเภอ และจังหวัดตรงกับหน่วยงานนี้ ไม่ได้หมายความว่าสถานการณ์ปกติ' : 'ยังไม่ได้ตั้งค่าสถานีตรวจวัดของหน่วยงานนี้'}</p>
+            <p className="mt-2 text-sm font-semibold text-gray-700">{nearbyOnly ? 'ไม่มีสถานีในตำบลหรือที่ยืนยันระยะไม่เกิน 5 กม. จากสำนักงาน ไม่ได้หมายความว่าสถานการณ์ปกติ' : localOnly ? 'ไม่มีสถานีที่ยืนยันตำบล อำเภอ และจังหวัดตรงกับหน่วยงานนี้ ไม่ได้หมายความว่าสถานการณ์ปกติ' : 'ยังไม่ได้ตั้งค่าสถานีตรวจวัดของหน่วยงานนี้'}</p>
             <a href={THAIWATER_URL} target="_blank" rel="noopener noreferrer"
               className="mt-2 inline-flex min-h-[44px] items-center gap-1 text-xs font-semibold text-sky-700">
               ดูสถานการณ์น้ำทั่วประเทศที่ thaiwater.net <ExternalLink size={12} />
@@ -132,7 +133,6 @@ export default function WaterSituationPage() {
             <AlertBanner rain={rain} ews={ews} warnings={visibleData.warnings} homeAmphoe={tenant?.district} now={checkedAt}
               tenantName={tenant?.name} />
             <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
-            <WaterSituationShare tenant={tenant} data={data} now={checkedAt} refreshFailed={loadError} renderCards={WaterShareCards} />
             <nav className="water-section-nav" aria-label="หมวดข้อมูลน้ำ–ฝน">
               {rain.length > 0 && <a href="#water-rain"><CloudRain size={18} /><span>ฝน</span><small>{rain.length} สถานี</small></a>}
               {dams.length > 0 && <a href="#water-dams"><Dam size={18} /><span>อ่างเก็บน้ำ</span><small>{dams.length} แห่ง</small></a>}
@@ -153,6 +153,7 @@ export default function WaterSituationPage() {
               )}
             </div>
             <SourceNote tenantName={tenant?.name} />
+            <WaterSituationShare tenant={tenant} data={data} now={checkedAt} refreshFailed={loadError} renderCards={WaterShareCards} />
           </>
         )}
       </div>
@@ -346,16 +347,16 @@ function AlertBanner({ rain, ews, warnings, homeAmphoe, now, tenantName }) {
 }
 
 function WaterShareCards({ tenant, data, now }) {
-  const { stations } = localWaterSituation(data, tenant)
+  const { stations } = shareWaterSituation(data, tenant)
   const rain = stations.filter(s => s.station_type === 'rain')
   const ews = new Map(stations.filter(s => s.station_type === 'ews').map(s => [s.station_code, s]))
-  const cards = stations.filter(s => s.station_type === 'dam' || s.station_type === 'waterlevel')
+  const dams = stations.filter(s => s.station_type === 'dam')
+  const levels = stations.filter(s => s.station_type === 'waterlevel')
   return <div className="space-y-3">
     {rain.length > 0 && <RainSection stations={rain} ewsByCode={ews} homeAmphoe={tenant.district} now={now} snapshot />}
-    {cards.map(s => s.station_type === 'dam'
-      ? <DamCard key={`dam-${s.station_code}`} station={s} homeAmphoe={tenant.district} now={now} />
-      : <WaterLevelCard key={`level-${s.station_code}`} station={s} homeAmphoe={tenant.district} now={now} />)}
-    {!rain.length && !cards.length && <p className="rounded-xl bg-white p-4 text-sm text-slate-600">ไม่มีสถานีที่ยืนยันพื้นที่ตรงกับตำบลของหน่วยงาน ไม่ใช้ข้อมูลข้างเคียงทดแทน</p>}
+    {dams.length > 0 && <DamSection stations={dams} homeAmphoe={tenant.district} now={now} snapshot />}
+    {levels.map(s => <WaterLevelCard key={s.station_code} station={s} homeAmphoe={tenant.district} now={now} />)}
+    {!rain.length && !dams.length && !levels.length && <p className="rounded-xl bg-white p-4 text-sm text-slate-600">ไม่มีสถานีในตำบลหรือที่ยืนยันระยะไม่เกิน 5 กม. จากสำนักงาน</p>}
   </div>
 }
 
@@ -368,7 +369,7 @@ function RainSection({ stations, ewsByCode, homeAmphoe, now, snapshot = false })
         <CloudRain size={19} className="mt-0.5 shrink-0 text-sky-600" />
         <div>
           <h2 className="text-sm font-bold text-gray-800">ปริมาณฝนสะสม 24 ชั่วโมง</h2>
-          <p className="text-xs text-gray-500">{snapshot ? 'เฉพาะสถานีในตำบล เรียงจากใกล้สำนักงานไปไกล' : 'สถานีวัดฝนใกล้สำนักงาน เรียงจากใกล้ไปไกล'}</p>
+          <p className="text-xs text-gray-500">สถานีวัดฝนใกล้สำนักงาน เรียงจากใกล้ไปไกล</p>
         </div>
       </div>
       <ul className="divide-y divide-gray-50">
@@ -627,9 +628,9 @@ function ChannelCrossSection({ fill, percent, bankLabel, color, stationName }) {
   )
 }
 
-function DamSection({ stations, homeAmphoe, now }) {
+function DamSection({ stations, homeAmphoe, now, snapshot = false }) {
   return (
-    <section id="water-dams" className="water-dam-panel space-y-3">
+    <section id={snapshot ? undefined : 'water-dams'} className="water-dam-panel space-y-3">
       <div className="water-section-heading flex items-start gap-2.5 px-1">
         <Dam size={19} className="mt-0.5 shrink-0 text-blue-700" />
         <div>
