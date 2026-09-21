@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Copy, Download, Globe, MessageCircle, Share2 } from 'lucide-react'
+import { Download, Share2, X } from 'lucide-react'
 import { appUrl } from '../lib/basename'
-import { formatMm, isStale, localWaterSituation, summaryStats, SYNC_STALE_HOURS } from '../lib/waterSituation'
+import { DAM_STALE_HOURS, distanceText, formatMm, isStale, shareWaterSituation, summaryStats, SYNC_STALE_HOURS, toNum } from '../lib/waterSituation'
 
 const dateText = value => new Date(value).toLocaleString('th-TH', {
   timeZone: 'Asia/Bangkok', dateStyle: 'medium', timeStyle: 'short',
@@ -14,6 +14,11 @@ async function infographic(node, now) {
   const canvas = await html2canvas(node, {
     scale: 3, backgroundColor: '#eef5f9', logging: false,
     onclone: doc => {
+      const modal = doc.querySelector('[data-water-share-dialog]')
+      if (modal) {
+        modal.setAttribute('open', '')
+        Object.assign(modal.style, { position: 'static', display: 'block', maxHeight: 'none', overflow: 'visible' })
+      }
       // html2canvas does not parse Tailwind 4 oklch colors. Resolve the cloned
       // palette to sRGB using the browser; do not change the live page's styles.
       const pixel = doc.createElement('canvas').getContext('2d', { willReadFrequently: true })
@@ -96,7 +101,7 @@ function ShareInfographic({ tenant, data, now, refreshFailed, url, text, setStat
       style={{ position: 'fixed', left: -10000, top: 0, width: 390, padding: 8, background: '#eef5f9', color: '#0f172a', fontFamily: 'Sarabun, sans-serif' }}>
       <header style={{ padding: '10px 8px 14px' }}>
         <h2 style={{ fontSize: 18, fontWeight: 700 }}>สถานการณ์น้ำ–ฝน · {tenant.name}</h2>
-        <p style={{ fontSize: 11, color: '#475569', marginTop: 4 }}>เฉพาะข้อมูลในตำบล · สรุป ณ {dateText(now)} น.</p>
+        <p style={{ fontSize: 11, color: '#475569', marginTop: 4 }}>ในตำบล + ใกล้เคียง ≤ 5 กม. จากสำนักงาน · สรุป ณ {dateText(now)} น.</p>
         {(refreshFailed || !data.synced_at || isStale(data.synced_at, now, SYNC_STALE_HOURS)) &&
           <p style={{ fontSize: 12, color: '#92400e', marginTop: 6 }}>ข้อมูลอาจไม่เป็นปัจจุบัน โปรดตรวจสอบเวลาตรวจวัด</p>}
       </header>
@@ -105,7 +110,7 @@ function ShareInfographic({ tenant, data, now, refreshFailed, url, text, setStat
         <p style={{ fontWeight: 700 }}>แหล่งข้อมูล: คลังข้อมูลน้ำแห่งชาติ ThaiWater (สสน.)</p>
         <p style={{ color: '#92400e', fontWeight: 700 }}>ภาพสรุป ณ เวลาที่ระบุ · ไม่ใช่ประกาศเตือนภัยของ อปท.</p>
         <p>ไม่มีข้อมูล ไม่ได้หมายความว่าสถานการณ์ปกติ</p>
-        <p>ข้อมูลสถานีไม่ครอบคลุมทุกจุดในตำบล</p>
+        <p>ข้อมูลสถานีไม่ครอบคลุมทุกจุดในพื้นที่</p>
         <p style={{ marginTop: 6, color: '#0369a1', fontWeight: 700 }}>ตรวจสอบข้อมูลและคำเตือนล่าสุด:</p>
         <p style={{ color: '#0369a1', overflowWrap: 'anywhere' }}>{url}</p>
       </footer>
@@ -113,19 +118,19 @@ function ShareInfographic({ tenant, data, now, refreshFailed, url, text, setStat
     <h3 className="text-sm font-bold text-slate-800">ภาพสรุปสำหรับชาวบ้าน</h3>
     <p className="my-2 text-xs text-slate-600">PNG ความละเอียด 3 เท่า · ใช้การ์ดเดียวกับหน้าสถานการณ์</p>
     {image ? <>
-      <img src={image.url} alt={`อินโฟกราฟิกสถานการณ์น้ำ–ฝน ${tenant.name} เฉพาะตำบล ข้อความและตัวเลขอยู่ในหัวข้อดูข้อความที่จะแชร์`} className="mx-auto w-full max-w-sm rounded-lg" width={image.width} height={image.height} />
+      <img src={image.url} alt={`อินโฟกราฟิกสถานการณ์น้ำ–ฝน ${tenant.name} ในตำบลและใกล้เคียงไม่เกิน 5 กม. ข้อความและตัวเลขอยู่ในหัวข้อดูข้อความที่จะแชร์`} className="mx-auto w-full max-w-sm rounded-lg" width={image.width} height={image.height} />
       <div className="mt-3 flex flex-wrap gap-2">
         <a href={image.url} download={image.file.name} className={`${buttonClass} bg-sky-700 text-white`}><Download size={18} /> ดาวน์โหลดภาพ PNG</a>
         {canShare && <button type="button" onClick={shareImage} className={`${buttonClass} border border-sky-200 text-sky-800`}><Share2 size={18} /> แชร์ภาพผ่านแอป</button>}
       </div>
-    </> : <p role="status" className="py-6 text-sm text-slate-600">{failed ? 'สร้างภาพไม่สำเร็จ ใช้การแชร์ลิงก์หรือคัดลอกข้อความด้านล่างได้' : 'กำลังเตรียมภาพสรุป…'}</p>}
-    <p className="mt-3 text-xs text-slate-600">ดาวน์โหลดภาพแล้วแนบใน Facebook หรือ LINE ได้ ปุ่มแชร์ลิงก์ด้านล่างจะไม่แนบภาพให้อัตโนมัติ</p>
+    </> : <p role="status" className="py-6 text-sm text-slate-600">{failed ? 'สร้างภาพไม่สำเร็จ ลองปิดแล้วเปิดภาพสรุปอีกครั้ง หรือเลือกข้อความด้านล่างไปใช้ได้' : 'กำลังเตรียมภาพสรุป…'}</p>}
+    <p className="mt-3 text-xs text-slate-600">ดาวน์โหลดภาพแล้วแนบใน Facebook หรือ LINE ได้</p>
   </div>
 }
 
 // Share only public readings already visible on this tenant's page; never include session/query tokens.
 function shareText(tenant, data, now, refreshFailed) {
-  const stations = localWaterSituation(data, tenant).stations
+  const stations = shareWaterSituation(data, tenant).stations
   const stats = summaryStats({
     rain: stations.filter(s => s.station_type === 'rain'),
     dams: stations.filter(s => s.station_type === 'dam'),
@@ -136,71 +141,69 @@ function shareText(tenant, data, now, refreshFailed) {
     lines.push('ข้อมูลอาจไม่เป็นปัจจุบัน กรุณาตรวจสอบเวลาตรวจวัดในหน้ารายละเอียด')
   }
   if (stats.rain) lines.push(`ฝนสะสม 24 ชม. สูงสุดในสถานีที่แสดง: ${formatMm(stats.rain.mm)} มม. (${stats.rain.station.station_name}) — ตรวจวัด ${dateText(stats.rain.station.recorded_at)} น.`)
-  if (stats.dam) lines.push(`น้ำในอ่างที่มีข้อมูลปัจจุบัน ${stats.dam.count} แห่ง: ${stats.dam.percent.toFixed(1)}% ของความจุรวม (แต่ละแห่งอาจตรวจวัดต่างเวลา ดูรายละเอียดในลิงก์)`)
+  for (const dam of stations.filter(s => s.station_type === 'dam')) {
+    const place = [dam.tambon_name && `ต.${dam.tambon_name}`, distanceText(dam.distance_km)].filter(Boolean).join(' · ')
+    const title = `${dam.station_name || 'ไม่ระบุชื่ออ่าง'}${place ? ` (${place})` : ''}`
+    if (isStale(dam.recorded_at, now, DAM_STALE_HOURS)) {
+      lines.push(`${title}: ไม่มีข้อมูลปัจจุบัน`)
+      continue
+    }
+    const single = summaryStats({ dams: [dam], now }).dam
+    const percent = toNum(dam.storage_percent) ?? single?.percent
+    lines.push(percent == null ? `${title}: ไม่มีค่าปริมาณน้ำสำหรับสรุป`
+      : `${title}: ${percent.toFixed(1)}% ของความจุ — ตรวจวัด ${dateText(dam.recorded_at)} น.`)
+  }
   if (stats.bank) lines.push(`สถานีใกล้ตลิ่งที่สุดที่มีข้อมูลปัจจุบัน: ${stats.bank.station.station_name} ${stats.bank.text} — ตรวจวัด ${dateText(stats.bank.station.recorded_at)} น.`)
   if (!stats.any) lines.push('ยังไม่มีค่าตรวจวัดปัจจุบันสำหรับสรุป ไม่ได้หมายความว่าสถานการณ์ปกติ')
-  lines.push('เฉพาะสถานีที่ระบุตำบล อำเภอ และจังหวัดตรงกับหน่วยงาน ไม่รวมสถานีข้างเคียง และไม่ครอบคลุมทุกจุดในตำบล', 'แหล่งข้อมูล: ThaiWater (สสน.) · ไม่ใช่ประกาศเตือนภัยของ อปท.', 'ตรวจสอบคำเตือนและข้อมูลล่าสุดในลิงก์:')
+  lines.push('รวมสถานีในตำบล และสถานีข้างเคียงระยะไม่เกิน 5 กม. จากสำนักงาน อปท. ไม่ครอบคลุมทุกจุดในพื้นที่', 'แหล่งข้อมูล: ThaiWater (สสน.) · ไม่ใช่ประกาศเตือนภัยของ อปท.', 'ตรวจสอบคำเตือนและข้อมูลล่าสุดในลิงก์:')
   return lines.join('\n')
 }
 
-export default function WaterSituationShare({ tenant, data, now, refreshFailed, renderCards }) {
-  const [expanded, setExpanded] = useState(false)
+function WaterShareDialog({ tenant, data, now, refreshFailed, renderCards, close, buttonClass }) {
+  const dialog = useRef(null)
   const [status, setStatus] = useState('')
-  const [manualCopy, setManualCopy] = useState(false)
-  if (!tenant?.name) return null
-  const url = appUrl('/water-situation?scope=local')
+  useEffect(() => {
+    const node = dialog.current
+    const previous = document.activeElement
+    const overflow = document.body.style.overflow
+    node.showModal()
+    document.body.style.overflow = 'hidden'
+    return () => {
+      node.close()
+      document.body.style.overflow = overflow
+      previous?.focus({ preventScroll: true })
+    }
+  }, [])
+  const url = appUrl('/water-situation?scope=nearby5')
   const text = shareText(tenant, data, now, refreshFailed)
   const fullText = `${text}\n${url}`
-  const buttonClass = 'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold'
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(fullText)
-      setManualCopy(false)
-      setStatus('คัดลอกแล้ว นำไปวางในโพสต์หรือกลุ่มที่ต้องการได้เลย')
-    } catch {
-      setManualCopy(true)
-      setStatus('คัดลอกอัตโนมัติไม่ได้ กรุณาเลือกข้อความด้านล่างแล้วคัดลอก')
-    }
-  }
-
-  async function nativeShare() {
-    try {
-      await navigator.share({ title: `สถานการณ์น้ำ–ฝน | ${tenant.name}`, text, url })
-      setStatus('')
-    } catch (error) {
-      if (error?.name !== 'AbortError') {
-        setManualCopy(true)
-        setStatus('เปิดเมนูแชร์ไม่ได้ กรุณาใช้ปุ่ม Facebook, LINE หรือคัดลอกข้อความ')
-      }
-    }
-  }
-
-  return (
-    <section className="rounded-2xl border border-sky-200 bg-sky-50 p-4" aria-label="แชร์สถานการณ์ในพื้นที่">
-      <button type="button" aria-expanded={expanded} aria-controls="water-share-options"
-        onClick={() => setExpanded(!expanded)} className={`${buttonClass} w-full bg-sky-700 text-white hover:bg-sky-800`}>
-        <Share2 size={18} /> แชร์สถานการณ์ในพื้นที่
-      </button>
-      {expanded && <div id="water-share-options" className="mt-3 space-y-3">
+  return <dialog ref={dialog} data-water-share-dialog aria-label="แชร์สถานการณ์ในพื้นที่" onCancel={close}
+    className="m-auto rounded-2xl border border-sky-200 bg-sky-50 p-0 text-slate-800 shadow-xl backdrop:bg-slate-950/60"
+    style={{ width: 'min(640px, calc(100vw - 24px))', maxHeight: '90dvh' }}>
+      <header className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-sky-100 bg-white px-4 py-2">
+        <h2 className="text-base font-bold">แชร์สถานการณ์ในพื้นที่</h2>
+        <button type="button" onClick={close} className={`${buttonClass} text-slate-700`} aria-label="ปิดหน้าต่างแชร์"><X size={20} /> ปิด</button>
+      </header>
+      <div className="space-y-3 p-3 sm:p-4">
         <ShareInfographic tenant={tenant} data={data} now={now} refreshFailed={refreshFailed} url={url} text={text} setStatus={setStatus} buttonClass={buttonClass} renderCards={renderCards} />
-        <p className="text-xs leading-relaxed text-slate-600">แชร์เฉพาะข้อมูลในตำบลของ {tenant.name} ไม่รวมสถานีข้างเคียง · ผู้รับเปิดลิงก์เพื่อดูข้อมูลล่าสุด เลือกกลุ่มหรือผู้รับก่อนส่งได้</p>
-        <div className="grid grid-cols-2 gap-2">
-          <a className={`${buttonClass} bg-blue-700 text-white hover:bg-blue-800`} target="_blank" rel="noopener noreferrer"
-            href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`}><Globe size={18} /> Facebook</a>
-          <a className={`${buttonClass} bg-green-700 text-white hover:bg-green-800`} target="_blank" rel="noopener noreferrer"
-            href={`https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`}><MessageCircle size={18} /> LINE / กลุ่ม</a>
-          <button type="button" onClick={copy} className={`${buttonClass} border border-sky-200 bg-white text-sky-800`}><Copy size={18} /> คัดลอกข้อความ</button>
-          {typeof navigator.share === 'function' && <button type="button" onClick={nativeShare} className={`${buttonClass} border border-sky-200 bg-white text-sky-800`}><Share2 size={18} /> แชร์ผ่านแอปอื่น</button>}
-        </div>
-        <p className="text-xs text-slate-600">Facebook แชร์ลิงก์ หากต้องการตัวเลขสรุปในโพสต์ ให้คัดลอกข้อความไปวางเพิ่ม</p>
-        <details open={manualCopy || undefined}>
+        <details>
           <summary className="cursor-pointer py-3 text-sm font-medium text-sky-800">ดูข้อความที่จะแชร์</summary>
           <textarea aria-label="ข้อความสรุปสำหรับแชร์" readOnly value={fullText} onFocus={e => e.target.select()}
             className="min-h-[220px] w-full rounded-xl border border-sky-200 bg-white p-3 text-sm leading-relaxed text-slate-700" />
         </details>
         <p role="status" className="text-xs text-sky-800">{status}</p>
-      </div>}
-    </section>
-  )
+      </div>
+    </dialog>
+}
+
+export default function WaterSituationShare(props) {
+  const [expanded, setExpanded] = useState(false)
+  if (!props.tenant?.name) return null
+  const buttonClass = 'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold'
+  return <section className="rounded-2xl border border-sky-200 bg-sky-50 p-4" aria-label="แชร์สถานการณ์ในพื้นที่">
+    <button type="button" aria-haspopup="dialog" onClick={() => setExpanded(true)} className={`${buttonClass} w-full bg-sky-700 text-white hover:bg-sky-800`}>
+      <Share2 size={18} /> แชร์สถานการณ์ในพื้นที่
+    </button>
+    {expanded && <WaterShareDialog {...props} close={() => setExpanded(false)} buttonClass={buttonClass} />}
+  </section>
 }
