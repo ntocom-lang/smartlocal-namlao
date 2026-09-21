@@ -5,6 +5,7 @@ import {
   MapPin, RefreshCw, Waves,
 } from 'lucide-react'
 import './WaterSituationPage.css'
+import WaterSituationShare from './WaterSituationShare'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
@@ -128,6 +129,7 @@ export default function WaterSituationPage() {
             <AlertBanner rain={rain} ews={ews} warnings={data.warnings} homeAmphoe={tenant?.district} now={checkedAt}
               tenantName={tenant?.name} />
             <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
+            <WaterSituationShare tenant={tenant} data={data} now={checkedAt} refreshFailed={loadError} />
             <nav className="water-section-nav" aria-label="หมวดข้อมูลน้ำ–ฝน">
               {rain.length > 0 && <a href="#water-rain"><CloudRain size={18} /><span>ฝน</span><small>{rain.length} สถานี</small></a>}
               {dams.length > 0 && <a href="#water-dams"><Dam size={18} /><span>อ่างเก็บน้ำ</span><small>{dams.length} แห่ง</small></a>}
