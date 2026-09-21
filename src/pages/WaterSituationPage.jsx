@@ -132,7 +132,7 @@ export default function WaterSituationPage() {
             <AlertBanner rain={rain} ews={ews} warnings={visibleData.warnings} homeAmphoe={tenant?.district} now={checkedAt}
               tenantName={tenant?.name} />
             <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
-            <WaterSituationShare tenant={tenant} data={data} now={checkedAt} refreshFailed={loadError} />
+            <WaterSituationShare tenant={tenant} data={data} now={checkedAt} refreshFailed={loadError} renderCards={WaterShareCards} />
             <nav className="water-section-nav" aria-label="หมวดข้อมูลน้ำ–ฝน">
               {rain.length > 0 && <a href="#water-rain"><CloudRain size={18} /><span>ฝน</span><small>{rain.length} สถานี</small></a>}
               {dams.length > 0 && <a href="#water-dams"><Dam size={18} /><span>อ่างเก็บน้ำ</span><small>{dams.length} แห่ง</small></a>}
@@ -345,16 +345,30 @@ function AlertBanner({ rain, ews, warnings, homeAmphoe, now, tenantName }) {
   )
 }
 
-function RainSection({ stations, ewsByCode, homeAmphoe, now }) {
+function WaterShareCards({ tenant, data, now }) {
+  const { stations } = localWaterSituation(data, tenant)
+  const rain = stations.filter(s => s.station_type === 'rain')
+  const ews = new Map(stations.filter(s => s.station_type === 'ews').map(s => [s.station_code, s]))
+  const cards = stations.filter(s => s.station_type === 'dam' || s.station_type === 'waterlevel')
+  return <div className="space-y-3">
+    {rain.length > 0 && <RainSection stations={rain} ewsByCode={ews} homeAmphoe={tenant.district} now={now} snapshot />}
+    {cards.map(s => s.station_type === 'dam'
+      ? <DamCard key={`dam-${s.station_code}`} station={s} homeAmphoe={tenant.district} now={now} />
+      : <WaterLevelCard key={`level-${s.station_code}`} station={s} homeAmphoe={tenant.district} now={now} />)}
+    {!rain.length && !cards.length && <p className="rounded-xl bg-white p-4 text-sm text-slate-600">ไม่มีสถานีที่ยืนยันพื้นที่ตรงกับตำบลของหน่วยงาน ไม่ใช้ข้อมูลข้างเคียงทดแทน</p>}
+  </div>
+}
+
+function RainSection({ stations, ewsByCode, homeAmphoe, now, snapshot = false }) {
   // สเกลร่วมของทั้งลิสต์ — คิดครั้งเดียวที่นี่ ไม่ให้แต่ละแถวคิดสเกลของตัวเอง (จะเทียบกันไม่ได้)
   const barMax = rainBarMax(stations)
   return (
-    <section id="water-rain" className="water-rain-panel rounded-2xl border border-gray-100 bg-white shadow-sm">
+    <section id={snapshot ? undefined : 'water-rain'} className="water-rain-panel rounded-2xl border border-gray-100 bg-white shadow-sm">
       <div className="water-section-heading flex items-start gap-2.5 border-b border-gray-50 px-4 py-3">
         <CloudRain size={19} className="mt-0.5 shrink-0 text-sky-600" />
         <div>
           <h2 className="text-sm font-bold text-gray-800">ปริมาณฝนสะสม 24 ชั่วโมง</h2>
-          <p className="text-xs text-gray-500">สถานีวัดฝนใกล้สำนักงาน เรียงจากใกล้ไปไกล</p>
+          <p className="text-xs text-gray-500">{snapshot ? 'เฉพาะสถานีในตำบล เรียงจากใกล้สำนักงานไปไกล' : 'สถานีวัดฝนใกล้สำนักงาน เรียงจากใกล้ไปไกล'}</p>
         </div>
       </div>
       <ul className="divide-y divide-gray-50">
@@ -363,7 +377,7 @@ function RainSection({ stations, ewsByCode, homeAmphoe, now }) {
             now={now} barMax={barMax} />
         ))}
       </ul>
-      <div className="space-y-1 border-t border-gray-50 px-4 py-3 text-[11px] leading-relaxed text-gray-400">
+      {snapshot ? <p className="px-4 pb-3 text-[10px] text-gray-500">สเกล 0–{barMax} มม. · เส้นแนวตั้ง: ฝนหนักมาก {RAIN_VERY_HEAVY_MM} มม.</p> : <div className="space-y-1 border-t border-gray-50 px-4 py-3 text-[11px] leading-relaxed text-gray-400">
         <p>
           แท่งเทียบใช้สเกลเดียวกันทุกสถานี <span className="whitespace-nowrap">(0–{barMax} มม.)</span> ·{' '}
           <span className="whitespace-nowrap">เส้นแนวตั้งคือเกณฑ์ฝนหนักมาก {RAIN_VERY_HEAVY_MM} มม.</span>
@@ -378,7 +392,7 @@ function RainSection({ stations, ewsByCode, homeAmphoe, now }) {
             วิกฤติ) ขึ้นเฉพาะเมื่อสถานีอยู่ในระดับเตือน
           </p>
         )}
-      </div>
+      </div>}
     </section>
   )
 }
