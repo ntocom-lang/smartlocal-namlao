@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, CloudRain, Dam, ExternalLink,
   MapPin, RefreshCw, Waves,
@@ -13,7 +13,7 @@ import {
   DAM_LEVELS, DAM_STALE_HOURS, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS, SYNC_STALE_HOURS, bankText, barPercent,
   channelFill, damLevel, damTicks, damTrend, buildAlerts, dataDayText, distanceText, ewsAlert, flowCompare,
   formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainBarMax, rainLevel, safeColor, stationPlace,
-  summaryStats, toNum, waterTrend,
+  summaryStats, toNum, waterTrend, localWaterSituation,
 } from '../lib/waterSituation'
 
 // ข้อมูลในฐานเปลี่ยนชั่วโมงละครั้ง (thaiwater-sync) — ถามซ้ำถี่กว่านี้ก็ไม่ได้ของใหม่ เปลืองโควตาฟรีเปล่า
@@ -37,6 +37,8 @@ function fetchSituation(municipalityId) {
  */
 export default function WaterSituationPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const localOnly = searchParams.get('scope') === 'local'
   const { tenant, loading: tenantLoading } = useTenant()
   const tenantId = tenant?.id
   const [data, setData] = useState(null)        // null = ยังไม่เคยโหลดสำเร็จ
@@ -74,7 +76,8 @@ export default function WaterSituationPage() {
 
   useVisibleRefresh(refresh, { intervalMs: REFRESH_MS, enabled: Boolean(tenantId) })
 
-  const stations = data?.stations ?? []
+  const visibleData = localOnly ? localWaterSituation(data, tenant) : data
+  const stations = visibleData?.stations ?? []
   const rain = stations.filter(s => s.station_type === 'rain')
   const levels = stations.filter(s => s.station_type === 'waterlevel')
   const dams = stations.filter(s => s.station_type === 'dam')
@@ -95,7 +98,7 @@ export default function WaterSituationPage() {
           </button>
           <p className="water-eyebrow"><Waves size={16} /> ข้อมูลน้ำใกล้คุณ</p>
           <h1>สถานการณ์น้ำ–ฝน</h1>
-          <p className="water-cover-description">ติดตามฝน อ่างเก็บน้ำ และระดับน้ำ<br />จากสถานีตรวจวัดใกล้พื้นที่</p>
+          <p className="water-cover-description">ติดตามฝน อ่างเก็บน้ำ และระดับน้ำ<br />{localOnly ? 'เฉพาะสถานีในตำบล ไม่รวมพื้นที่ข้างเคียง' : 'จากสถานีตรวจวัดใกล้พื้นที่'}</p>
           <span className="water-area"><MapPin size={14} /> {tenant?.name || 'สถานีตรวจวัดใกล้พื้นที่'}</span>
         </div>
         <WaterLandscape />
@@ -117,7 +120,7 @@ export default function WaterSituationPage() {
         ) : stations.length === 0 ? (
           <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center">
             <CloudRain size={32} className="mx-auto text-gray-300" />
-            <p className="mt-2 text-sm font-semibold text-gray-700">ยังไม่ได้ตั้งค่าสถานีตรวจวัดของหน่วยงานนี้</p>
+            <p className="mt-2 text-sm font-semibold text-gray-700">{localOnly ? 'ไม่มีสถานีที่ยืนยันตำบล อำเภอ และจังหวัดตรงกับหน่วยงานนี้ ไม่ได้หมายความว่าสถานการณ์ปกติ' : 'ยังไม่ได้ตั้งค่าสถานีตรวจวัดของหน่วยงานนี้'}</p>
             <a href={THAIWATER_URL} target="_blank" rel="noopener noreferrer"
               className="mt-2 inline-flex min-h-[44px] items-center gap-1 text-xs font-semibold text-sky-700">
               ดูสถานการณ์น้ำทั่วประเทศที่ thaiwater.net <ExternalLink size={12} />
@@ -126,7 +129,7 @@ export default function WaterSituationPage() {
         ) : (
           <>
             <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} />
-            <AlertBanner rain={rain} ews={ews} warnings={data.warnings} homeAmphoe={tenant?.district} now={checkedAt}
+            <AlertBanner rain={rain} ews={ews} warnings={visibleData.warnings} homeAmphoe={tenant?.district} now={checkedAt}
               tenantName={tenant?.name} />
             <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
             <WaterSituationShare tenant={tenant} data={data} now={checkedAt} refreshFailed={loadError} />
