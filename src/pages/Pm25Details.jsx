@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowDownRight, ArrowUpRight, ChartNoAxesCombined, MapPinned, RefreshCw, Wind, MapPin, Clock3, Satellite, Download, X } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, ChartNoAxesCombined, MapPinned, RefreshCw, Wind, MapPin, Clock3, Satellite, Download, X, Share2 } from 'lucide-react'
 import { PM25_LEVELS, formatMeasuredAt, isFresh, pm25Level } from '../lib/pm25'
+import { appUrl } from '../lib/basename'
 import { historySummary, validCoordinates } from '../lib/pm25Details'
 
 const valueText = n => n === null || n === undefined ? '—' : Number(n).toLocaleString('th-TH', { maximumFractionDigits: 1 })
@@ -86,7 +87,7 @@ function Subdistricts({ tenant, now }) {
     <p className="pm25-muted">GISTDA · วิเคราะห์ดาวเทียมร่วมกับสถานีภาคพื้นดิน</p>
     {!hasLocation ? <p className="pm25-notice">ยังไม่มีพิกัดหน่วยงานที่ใช้ค้นตำบลได้ เจ้าหน้าที่สามารถตรวจพิกัดในข้อมูลหน่วยงาน</p> : !request.data ? request.error ? <Failure retry={request.retry}>โหลดข้อมูลตำบลไม่ได้ กรุณาลองใหม่หรือดูที่ GISTDA</Failure> : <p role="status" className="pm25-details-loading">กำลังค้นข้อมูลตำบลจากพิกัด อปท.…</p> : <>
       {request.error && <p className="pm25-notice">รอบล่าสุดโหลดไม่สำเร็จ ข้อมูลด้านล่างเป็นชุดก่อนหน้า</p>}
-      <button className="pm25-capture-button" onClick={() => setSnapshot({ tenant: tenant?.name, area: { ...area }, own: { ...own }, fresh, level: localLevel, failed: request.error })}><Download size={18} />บันทึกภาพสรุป</button>
+      <button className="pm25-capture-button" aria-haspopup="dialog" onClick={() => setSnapshot({ tenant: tenant?.name, area: { ...area }, own: { ...own }, fresh, level: localLevel, failed: request.error })}><Share2 size={18} />แชร์สถานการณ์ในพื้นที่</button>
       <div className="pm25-local-hero">
         <div className="pm25-local-place"><span className="pm25-local-location"><MapPin size={16} />ตำบลตามพิกัด อปท.</span><h3>{area.subdistrict}</h3><p>อ.{area.district} จ.{area.province}</p><span className="pm25-local-status">{fresh ? localLevel?.label || 'ยังไม่มีค่าเฉลี่ย' : 'ข้อมูลไม่เป็นปัจจุบัน'}</span><p className="pm25-local-time"><Clock3 size={15} />{formatMeasuredAt(own?.measuredAt)}</p></div>
         <div className="pm25-local-orbit"><div className="pm25-local-reading"><Wind size={26} /><span>PM2.5</span><strong>{valueText(own?.average24)}</strong><span>µg/m³ · เฉลี่ย 24 ชั่วโมง</span><small>ค่าประมาณระดับตำบล</small></div></div>
@@ -109,25 +110,10 @@ function Subdistricts({ tenant, now }) {
   </section>
 }
 
-function Snapshot({ data, close }) {
-  const dialog = useRef(null)
-  const card = useRef(null)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  useEffect(() => {
-    const node = dialog.current
-    const previous = document.activeElement
-    node.showModal()
-    const overflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => { node.close(); document.body.style.overflow = overflow; previous?.focus() }
-  }, [])
-  const save = async () => {
-    setSaving(true); setError('')
-    try {
+async function snapshotFile(element) {
       await document.fonts.ready
       const { default: html2canvas } = await import('html2canvas')
-      const canvas = await html2canvas(card.current, { scale: 3, backgroundColor: '#ffffff', logging: false, onclone: doc => {
+      const canvas = await html2canvas(element, { scale: 3, backgroundColor: '#ffffff', logging: false, onclone: doc => {
         // A cloned modal is not in the browser top layer; open it explicitly for rendering.
         const modal = doc.querySelector('.pm25-snapshot-dialog')
         modal.setAttribute('open', '')
@@ -137,15 +123,64 @@ function Snapshot({ data, close }) {
       } })
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
       if (!blob) throw new Error('No image')
+      return new File([blob], 'pm25-summary.png', { type: 'image/png' })
+}
+
+function Snapshot({ data, close }) {
+  const dialog = useRef(null)
+  const card = useRef(null)
+  const [saving, setSaving] = useState(false)
+  const [file, setFile] = useState(null)
+  const [preparing, setPreparing] = useState(true)
+  const [sharing, setSharing] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    const node = dialog.current
+    const previous = document.activeElement
+    node.showModal()
+    const overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    let alive = true
+    snapshotFile(card.current).then(image => { if (alive) setFile(image) }).catch(() => { if (alive) setError('เตรียมภาพไม่สำเร็จ กดดาวน์โหลด PNG เพื่อลองใหม่') }).finally(() => { if (alive) setPreparing(false) })
+    return () => { alive = false; node.close(); document.body.style.overflow = overflow; previous?.focus() }
+  }, [])
+  const save = async () => {
+    setSaving(true); setError('')
+    try {
+      const blob = file || await snapshotFile(card.current)
+      setFile(blob)
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a'); link.href = url; link.download = 'pm25-summary.png'; link.click()
       setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch { setError('บันทึกภาพไม่สำเร็จ ลองใหม่ หรือจับภาพหน้าจอจากการ์ดนี้ได้') }
     finally { setSaving(false) }
   }
+  const shareText = [
+    `สถานการณ์ฝุ่น PM2.5 | ${data.tenant || 'ข้อมูลสิ่งแวดล้อมในพื้นที่'}`,
+    `【พื้นที่】\nต.${data.area.subdistrict} อ.${data.area.district} จ.${data.area.province}`,
+    `【ค่าฝุ่น】\nค่าเฉลี่ย 24 ชั่วโมง: ${valueText(data.own.average24)} µg/m³\n${data.fresh ? data.level?.label || 'ไม่มีค่าเฉลี่ย' : 'ข้อมูลไม่เป็นปัจจุบัน'}\nข้อมูล ณ ${formatMeasuredAt(data.own.measuredAt)}`,
+    ...(data.failed ? ['⚠️ รอบล่าสุดโหลดไม่สำเร็จ กำลังแสดงข้อมูลก่อนหน้า'] : []),
+    '【แหล่งข้อมูล】\nGISTDA · ค่าประมาณจากดาวเทียมร่วมกับสถานีภาคพื้นดิน\nค่าประมาณอาจต่างจากค่าตรวจวัด ณ จุดจริง · ไม่ใช่ประกาศเตือนภัย',
+    `ตรวจสอบข้อมูลล่าสุด:\n${appUrl('/pm25')}`,
+  ].join('\n\n')
+  const share = async () => {
+    if (!file || sharing) return
+    setError('')
+    try {
+      if (!navigator.share || !navigator.canShare?.({ files: [file] })) {
+        setError('เครื่องนี้ไม่รองรับแชร์ภาพโดยตรง กรุณาดาวน์โหลด PNG แล้วแนบภาพใน LINE หรือ Facebook')
+        return
+      }
+      setSharing(true)
+      // No asynchronous image generation here: preserve the user's tap activation.
+      await navigator.share({ files: [file], title: `สถานการณ์ฝุ่น PM2.5 | ${data.tenant || data.area.subdistrict}`, text: shareText })
+    } catch (cause) {
+      if (cause?.name !== 'AbortError') setError('เปิดเมนูแชร์ไม่สำเร็จ ลองอีกครั้ง หรือดาวน์โหลด PNG แล้วแนบภาพในแอป')
+    } finally { setSharing(false) }
+  }
   const tone = data.level?.color || '#687986'
   return <dialog ref={dialog} className="pm25-snapshot-dialog" aria-label="ภาพสรุปฝุ่นระดับตำบล" onCancel={close}>
-    <div className="pm25-snapshot-toolbar"><button onClick={close} aria-label="ปิดภาพสรุป"><X size={18} />ปิด</button><button onClick={save} disabled={saving}><Download size={18} />{saving ? 'กำลังบันทึก…' : 'ดาวน์โหลด PNG'}</button></div>
+    <div className="pm25-snapshot-toolbar"><button onClick={close} aria-label="ปิดภาพสรุป"><X size={18} />ปิด</button><button onClick={save} disabled={saving || preparing || sharing}><Download size={18} />{saving ? 'กำลังบันทึก…' : 'ดาวน์โหลด PNG'}</button><button className="pm25-share-button" onClick={share} disabled={!file || sharing || saving}><Share2 size={18} />{sharing ? 'กำลังแชร์…' : preparing ? 'เตรียมภาพ…' : 'แชร์ภาพสรุป'}</button></div>
     {error && <p role="alert" className="pm25-notice">{error}</p>}
     <article ref={card} className="pm25-share-card" style={{ '--share-tone': tone }}>
       <header><p>{data.tenant || 'ข้อมูลสิ่งแวดล้อมในพื้นที่'}</p><h2>สถานการณ์ฝุ่น PM2.5</h2><span>ค่าประมาณระดับตำบล · GISTDA</span></header>
@@ -157,6 +192,8 @@ function Snapshot({ data, close }) {
       <div className="pm25-share-scale">{PM25_LEVELS.map(l => <div key={l.label}><i style={{ background: l.color }} /><b>{l.label}</b><span>{l.range}</span></div>)}</div>
       <footer><p>แหล่งข้อมูล: GISTDA · pm25.gistda.or.th</p><p>วิเคราะห์ดาวเทียมร่วมกับสถานีภาคพื้นดิน<br />ค่าประมาณอาจต่างจากค่าตรวจวัด ณ จุดจริง</p><p>ระดับสีอ้างอิง PM2.5 เฉลี่ย 24 ชั่วโมง · ไม่ใช่ประกาศเตือนภัย</p></footer>
     </article>
+    <details className="pm25-share-text"><summary>ดูข้อความที่จะแชร์</summary><textarea aria-label="ข้อความสรุปสำหรับแชร์" readOnly value={shareText} onFocus={e => e.target.select()} /></details>
+    <p className="pm25-share-help">เลือก LINE หรือ Facebook จากเมนูแชร์ของเครื่อง · หากไม่มีแอปที่ต้องการ ให้ดาวน์โหลดภาพแล้วแนบในแอป</p>
   </dialog>
 }
 
