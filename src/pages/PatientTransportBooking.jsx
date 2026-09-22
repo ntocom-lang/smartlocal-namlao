@@ -33,8 +33,11 @@ export default function PatientTransportBooking() {
   const bookings = workspace?.bookings || []
   const active = bookings.filter(b => ['submitted', 'confirmed'].includes(b.status))
   const past = bookings.filter(b => !['submitted', 'confirmed'].includes(b.status))
-  // ค่าที่ใช้เติมฟอร์มให้ = คำขอล่าสุดของผู้จองคนนี้เอง (คนไปตามนัดประจำจะได้ไม่ต้องกรอกซ้ำทุกครั้ง)
-  const lastBooking = bookings.slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0]
+  // ค่าที่ใช้เติมฟอร์มให้ = คำขอล่าสุดที่ผู้ใช้คนนี้จองเอง (คนไปตามนัดประจำจะได้ไม่ต้องกรอกซ้ำทุกครั้ง)
+  // ⚠️ ข้ามคำขอที่เจ้าหน้าที่รับจองแทน (entry_channel 'staff') — ระบบบันทึกเจ้าหน้าที่เป็นผู้สร้าง จึงอยู่ในรายการนี้ด้วย
+  // ถ้าหยิบมาเติม เจ้าหน้าที่ที่จองให้ตัวเองจะได้ชื่อ เบอร์ และจุดรับของคนที่โทรมาแทน (PDPA)
+  const lastBooking = bookings.filter(b => b.entry_channel !== 'staff')
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0]
   // ⚠️ p_op ต้องส่งทุกครั้ง — patient_booking_action บังคับ operation id ไว้กันเน็ตหลุดแล้วยิงซ้ำ
   // (ขาดไปแล้ว PostgREST ตอบ PGRST202 "Could not find the function" ปุ่มยกเลิก/พร้อมกลับใช้ไม่ได้)
   function action(entity, name, note = '') {
