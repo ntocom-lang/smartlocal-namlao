@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ArrowDownRight, ArrowUpRight, ChartNoAxesCombined, MapPinned, RefreshCw, Wind, MapPin, Clock3, Satellite, Download, X, Share2 } from 'lucide-react'
@@ -68,7 +69,7 @@ function History({ station, now }) {
   </section>
 }
 
-function Subdistricts({ tenant, now }) {
+function Subdistricts({ tenant, now, shareTarget }) {
   const hasLocation = validCoordinates(tenant?.latitude, tenant?.longitude)
   const query = hasLocation ? `kind=area&lat=${Number(tenant.latitude).toFixed(4)}&lon=${Number(tenant.longitude).toFixed(4)}` : ''
   const request = useDetails(query, now)
@@ -87,7 +88,7 @@ function Subdistricts({ tenant, now }) {
     <p className="pm25-muted">GISTDA · วิเคราะห์ดาวเทียมร่วมกับสถานีภาคพื้นดิน</p>
     {!hasLocation ? <p className="pm25-notice">ยังไม่มีพิกัดหน่วยงานที่ใช้ค้นตำบลได้ เจ้าหน้าที่สามารถตรวจพิกัดในข้อมูลหน่วยงาน</p> : !request.data ? request.error ? <Failure retry={request.retry}>โหลดข้อมูลตำบลไม่ได้ กรุณาลองใหม่หรือดูที่ GISTDA</Failure> : <p role="status" className="pm25-details-loading">กำลังค้นข้อมูลตำบลจากพิกัด อปท.…</p> : <>
       {request.error && <p className="pm25-notice">รอบล่าสุดโหลดไม่สำเร็จ ข้อมูลด้านล่างเป็นชุดก่อนหน้า</p>}
-      <button className="pm25-capture-button" aria-haspopup="dialog" onClick={() => setSnapshot({ tenant: tenant?.name, area: { ...area }, own: { ...own }, fresh, level: localLevel, failed: request.error })}><Share2 size={18} />แชร์สถานการณ์ในพื้นที่</button>
+
       <div className="pm25-local-hero">
         <div className="pm25-local-place"><span className="pm25-local-location"><MapPin size={16} />ตำบลตามพิกัด อปท.</span><h3>{area.subdistrict}</h3><p>อ.{area.district} จ.{area.province}</p><span className="pm25-local-status">{fresh ? localLevel?.label || 'ยังไม่มีค่าเฉลี่ย' : 'ข้อมูลไม่เป็นปัจจุบัน'}</span><p className="pm25-local-time"><Clock3 size={15} />{formatMeasuredAt(own?.measuredAt)}</p></div>
         <div className="pm25-local-orbit"><div className="pm25-local-reading"><Wind size={26} /><span>PM2.5</span><strong>{valueText(own?.average24)}</strong><span>µg/m³ · เฉลี่ย 24 ชั่วโมง</span><small>ค่าประมาณระดับตำบล</small></div></div>
@@ -105,6 +106,7 @@ function Subdistricts({ tenant, now }) {
       {rows.length > 6 && <button className="pm25-expand" onClick={() => setExpanded(!expanded)}>{expanded ? 'ย่อรายการ' : `ดูครบ ${rows.length} ตำบล`}</button>}
       <p className="pm25-muted">หากตำบลไม่ตรงพื้นที่ ให้เจ้าหน้าที่ตรวจพิกัดหน่วยงาน ระบบไม่ได้ใช้ตำแหน่งส่วนตัวของผู้เข้าชม</p>
     </>}
+    {shareTarget && request.data && createPortal(<button className="pm25-capture-button" aria-haspopup="dialog" onClick={() => setSnapshot({ tenant: tenant?.name, area: { ...area }, own: { ...own }, fresh, level: localLevel, failed: request.error })}><Share2 size={18} />แชร์สถานการณ์ในพื้นที่</button>, shareTarget)}
     {snapshot && <Snapshot data={snapshot} close={() => setSnapshot(null)} />}
     <a className="pm25-text-link" href="https://pm25.gistda.or.th/" target="_blank" rel="noopener noreferrer">ตรวจข้อมูลที่ GISTDA ↗</a>
   </section>
@@ -197,6 +199,6 @@ function Snapshot({ data, close }) {
   </dialog>
 }
 
-export default function Pm25Details({ mode, station, tenant, now }) {
-  return mode === 'area' ? <Subdistricts key={tenant?.id} tenant={tenant} now={now} /> : <History key={station?.id} station={station} now={now} />
+export default function Pm25Details({ mode, station, tenant, now, shareTarget }) {
+  return mode === 'area' ? <Subdistricts key={tenant?.id} tenant={tenant} now={now} shareTarget={shareTarget} /> : <History key={station?.id} station={station} now={now} />
 }
