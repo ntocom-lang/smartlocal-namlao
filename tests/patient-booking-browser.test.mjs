@@ -242,6 +242,18 @@ try{
  const intake=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).bookings.find(b=>b.patient_name==='[TEST] ผู้ป่วยโทรมา')
  assert.equal(intake.status,'confirmed');assert.equal(intake.entry_channel,'staff','ช่องทางต้องบันทึกว่าเจ้าหน้าที่รับแทน');assert.equal(intake.share,true)
  console.log('PASS staff intake by phone returns to the inbox with a one-click confirm, channel recorded as staff')
+ // ── บัญชีเจ้าหน้าที่เปิดหน้าประชาชน: ฟอร์มต้องไม่เติมข้อมูลของคนที่โทรมาให้รับแทน ──
+ // คำขอที่รับแทนบันทึกเจ้าหน้าที่เป็นผู้สร้าง จึงอยู่ใน "การจองของฉัน" ของเจ้าหน้าที่ด้วย (patient_booking_mine)
+ // ถ้าหยิบมาเติม เจ้าหน้าที่ที่จองให้ตัวเองจะส่งคำขอด้วยชื่อ เบอร์ และจุดรับของคนอื่นโดยไม่รู้ตัว
+ await page.setViewportSize({width:390,height:900})
+ await page.goto(`${base}/__patient?as=coordinator`);await page.getByRole('region',{name:'บริการรถรับส่งผู้ป่วย'}).waitFor()
+ await page.getByRole('button',{name:'🚐 ขอรถไปโรงพยาบาล',exact:true}).click()
+ const ownName=page.getByLabel('ชื่อ–สกุลผู้จอง',{exact:true});await ownName.waitFor()
+ assert.equal(await page.getByText('เติมข้อมูลจากการจองครั้งก่อนให้แล้ว',{exact:false}).count(),0,'คำขอที่รับแทนไม่ใช่การจองครั้งก่อนของเจ้าหน้าที่')
+ assert.equal(await ownName.inputValue(),'TEST Browser Requester','ชื่อผู้จองต้องมาจากบัญชีตัวเอง ไม่ใช่คนที่โทรมา')
+ assert.notEqual(await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).inputValue(),'0810000010','ต้องไม่มีเบอร์ของคนที่โทรมา')
+ assert.notEqual(await page.getByRole('group',{name:'หมู่บ้าน/สถานที่'}).getByRole('button',{name:'TEST บ้านใต้'}).getAttribute('aria-pressed'),'true','ต้องไม่มีจุดรับของคนที่โทรมา')
+ console.log('PASS staff account on the citizen page is not prefilled from bookings it took by phone for other people')
 
  // ── ปุ่มของประชาชนถึงฐานข้อมูลจริง (op ครบ — กับดัก #244) + เจ้าหน้าที่ประสานยกเลิก ──
  const cancelId=randomUUID();await submitAs(citizen,cancelId,{patient_name:'TEST cancel button',phone:'0800000911'})
