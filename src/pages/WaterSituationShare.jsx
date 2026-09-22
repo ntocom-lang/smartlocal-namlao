@@ -13,7 +13,7 @@ function canShareFiles(files) {
   catch { return false }
 }
 
-function ShareInfographic({ tenant, data, now, refreshFailed, url, setStatus, buttonClass }) {
+function ShareInfographic({ tenant, data, now, refreshFailed, url, text, setStatus, buttonClass }) {
   const [result, setResult] = useState(null)
   const [failed, setFailed] = useState(false)
   const [active, setActive] = useState(0)
@@ -43,7 +43,7 @@ function ShareInfographic({ tenant, data, now, refreshFailed, url, setStatus, bu
   const files = selected.map(i => images[i]?.file).filter(Boolean)
   async function share(filesToSend) {
     setBusy(true); setStatus('')
-    try { await navigator.share({ files: filesToSend, title: `สถานการณ์น้ำ–ฝน | ${tenant.name}`, text: `สถานการณ์น้ำ–ฝน ${tenant.name}\nสรุป ณ ${dateText(now)} น.\n${url}` }) }
+    try { await navigator.share({ files: filesToSend, title: `สถานการณ์น้ำ–ฝน | ${tenant.name}`, text }) }
     catch (error) { if (error?.name !== 'AbortError') setStatus('แชร์ภาพไม่ได้ กรุณาดาวน์โหลดแต่ละภาพ แล้วแนบในกลุ่ม LINE') }
     finally { setBusy(false) }
   }
@@ -88,25 +88,30 @@ function shareText(tenant, data, now, refreshFailed) {
   })
   const lines = [`สถานการณ์น้ำ–ฝน | ${tenant.name}`, `สรุป ณ ${dateText(now)} น. (เวลาไทย)`]
   if (refreshFailed || !data.synced_at || isStale(data.synced_at, now, SYNC_STALE_HOURS)) {
-    lines.push('ข้อมูลอาจไม่เป็นปัจจุบัน กรุณาตรวจสอบเวลาตรวจวัดในหน้ารายละเอียด')
+    lines.push('⚠️ ข้อมูลอาจไม่เป็นปัจจุบัน กรุณาตรวจสอบเวลาตรวจวัดในหน้ารายละเอียด')
   }
-  if (stats.rain) lines.push(`ฝนสะสม 24 ชม. สูงสุดในสถานีที่แสดง: ${formatMm(stats.rain.mm)} มม. (${stats.rain.station.station_name}) — ตรวจวัด ${dateText(stats.rain.station.recorded_at)} น.`)
+  lines.push('【ฝนในพื้นที่】')
+  if (stats.rain) lines.push(`ฝนสะสม 24 ชม. สูงสุดในสถานีที่แสดง: ${formatMm(stats.rain.mm)} มม.\nสถานี: ${stats.rain.station.station_name}\nตรวจวัด: ${dateText(stats.rain.station.recorded_at)} น.`)
+  else lines.push('ยังไม่มีค่าฝนปัจจุบันสำหรับสรุป\nไม่มีข้อมูล ไม่ได้หมายความว่าไม่มีฝน')
+  lines.push('【อ่างเก็บน้ำ】')
   for (const dam of stations.filter(s => s.station_type === 'dam')) {
     const place = [dam.tambon_name && `ต.${dam.tambon_name}`, distanceText(dam.distance_km)].filter(Boolean).join(' · ')
     const title = `${dam.station_name || 'ไม่ระบุชื่ออ่าง'}${place ? ` (${place})` : ''}`
     if (isStale(dam.recorded_at, now, DAM_STALE_HOURS)) {
-      lines.push(`${title}: ไม่มีข้อมูลปัจจุบัน`)
+      lines.push(`• ${title}\n  ไม่มีข้อมูลปัจจุบัน`)
       continue
     }
     const single = summaryStats({ dams: [dam], now }).dam
     const percent = toNum(dam.storage_percent) ?? single?.percent
-    lines.push(percent == null ? `${title}: ไม่มีค่าปริมาณน้ำสำหรับสรุป`
-      : `${title}: ${percent.toFixed(1)}% ของความจุ — ตรวจวัด ${dateText(dam.recorded_at)} น.`)
+    lines.push(percent == null ? `• ${title}\n  ไม่มีค่าปริมาณน้ำสำหรับสรุป`
+      : `• ${title}\n  น้ำ ${percent.toFixed(1)}% ของความจุ\n  ตรวจวัด: ${dateText(dam.recorded_at)} น.`)
   }
-  if (stats.bank) lines.push(`สถานีใกล้ตลิ่งที่สุดที่มีข้อมูลปัจจุบัน: ${stats.bank.station.station_name} ${stats.bank.text} — ตรวจวัด ${dateText(stats.bank.station.recorded_at)} น.`)
-  if (!stats.any) lines.push('ยังไม่มีค่าตรวจวัดปัจจุบันสำหรับสรุป ไม่ได้หมายความว่าสถานการณ์ปกติ')
-  lines.push('รวมสถานีในตำบล และสถานีข้างเคียงระยะไม่เกิน 5 กม. จากสำนักงาน อปท. ไม่ครอบคลุมทุกจุดในพื้นที่', 'แหล่งข้อมูล: ThaiWater (สสน.) · ไม่ใช่ประกาศเตือนภัยของ อปท.', 'ตรวจสอบคำเตือนและข้อมูลล่าสุดในลิงก์:')
-  return lines.join('\n')
+  if (!stations.some(s => s.station_type === 'dam')) lines.push('ไม่มีอ่างเก็บน้ำในขอบเขตที่กำหนด')
+  lines.push('【ระดับน้ำ】')
+  if (stats.bank) lines.push(`• ${stats.bank.station.station_name}\n  ${stats.bank.text}\n  ตรวจวัด: ${dateText(stats.bank.station.recorded_at)} น.`)
+  else lines.push('ไม่มีค่าระดับน้ำปัจจุบันสำหรับสรุป')
+  lines.push('【ขอบเขตข้อมูล】\nในตำบล และสถานีข้างเคียงระยะไม่เกิน 5 กม. จากสำนักงาน อปท.\nไม่ครอบคลุมทุกจุดในพื้นที่\nไม่มีข้อมูล ไม่ได้หมายความว่าสถานการณ์ปกติ', '【แหล่งข้อมูล】\nThaiWater (สสน.) · ไม่ใช่ประกาศเตือนภัยของ อปท.', `ตรวจสอบข้อมูลล่าสุด:\n${appUrl('/water-situation?scope=nearby5')}`)
+  return lines.join('\n\n')
 }
 
 function WaterShareDialog({ tenant, data, now, refreshFailed, close, buttonClass }) {
@@ -126,7 +131,7 @@ function WaterShareDialog({ tenant, data, now, refreshFailed, close, buttonClass
   }, [])
   const url = appUrl('/water-situation?scope=nearby5')
   const text = shareText(tenant, data, now, refreshFailed)
-  const fullText = `${text}\n${url}`
+  const fullText = text
   return <dialog ref={dialog} data-water-share-dialog aria-label="แชร์สถานการณ์ในพื้นที่" onCancel={close}
     className="m-auto rounded-2xl border border-sky-200 bg-sky-50 p-0 text-slate-800 shadow-xl backdrop:bg-slate-950/60"
     style={{ width: 'min(640px, calc(100vw - 24px))', maxHeight: '90dvh' }}>
@@ -136,7 +141,7 @@ function WaterShareDialog({ tenant, data, now, refreshFailed, close, buttonClass
       </header>
       <div className="space-y-3 p-3 sm:p-4">
         <p className="text-xs text-slate-600">ชุดภาพ ณ เวลาที่เปิดหน้าต่าง หากต้องการข้อมูลใหม่ให้ปิดแล้วเปิดอีกครั้ง</p>
-        <ShareInfographic tenant={tenant} data={data} now={now} refreshFailed={refreshFailed} url={url} setStatus={setStatus} buttonClass={buttonClass} />
+        <ShareInfographic tenant={tenant} data={data} now={now} refreshFailed={refreshFailed} url={url} text={text} setStatus={setStatus} buttonClass={buttonClass} />
         <details>
           <summary className="cursor-pointer py-3 text-sm font-medium text-sky-800">ดูข้อความที่จะแชร์</summary>
           <textarea aria-label="ข้อความสรุปสำหรับแชร์" readOnly value={fullText} onFocus={e => e.target.select()}
