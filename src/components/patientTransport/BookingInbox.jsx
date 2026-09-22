@@ -219,6 +219,8 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, onC
   const act = (entity, name, note) => onAction(entity, name, note).then(ok => { if (ok) onClose(); return ok })
   const remove = note => onRemove(b, trip, note).then(ok => { if (ok) onClose(); return ok })
   const showProblem = problem && b.status === 'submitted'
+  // เงื่อนไขเดียวกับปุ่ม "พร้อมให้มารับกลับ" ฝั่งประชาชน (BookingOperations) และที่ฐานข้อมูลตรวจ
+  const readyReturn = b.status === 'confirmed' && b.passenger_step === 2 && b.return_mode !== 'one_way' && !b.return_ready
   return <Sheet wide title={b.patient_name} subtitle={`${issue ? 'เหตุขัดข้อง' : STAGES[stage].label} · เลขที่ ${ref(b.id)}`} onClose={onClose} onReload={onReload} busy={busy}>
     {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
     {showProblem && <ProblemBox key={JSON.stringify(problem.plan.errors)} row={row} problem={problem} rows={rows} workspace={workspace} busy={busy} isAdmin={isAdmin}
@@ -240,6 +242,12 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, onC
       <TripFundDocs trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />
       <OdometerForm trip={trip} trips={workspace.trips} busy={busy} onSave={onOdometer} />
     </>}
+    {/* ผู้จองโทรมาแจ้งว่าพร้อมกลับ — คำขอที่รับจองทางโทรศัพท์ผู้จองไม่มีบัญชีให้กดเอง ใครรับสายก็กดแทนได้
+        (ฐานข้อมูลให้สิทธิ์ผู้ประสานงานอยู่แล้ว) ระบบแจ้งคนขับให้และบันทึกว่าใครกด */}
+    {readyReturn && <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+      <p className="text-sm text-slate-600">ผู้จองโทรมาแจ้งว่าตรวจเสร็จแล้ว · ระบบแจ้งคนขับให้</p>
+      <button type="button" className={primaryClass} disabled={busy} onClick={() => act(b, 'ready_return')}>แจ้งพร้อมให้มารับกลับแทนผู้จอง</button>
+    </div>}
     <Facts booking={b} trip={trip} others={others} />
     <MoreActions row={row} workspace={workspace} busy={busy} onConfirm={onConfirm} act={act} remove={remove} onAmend={onAmend}
       onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onOdometer={onOdometer} onUpdateSchedule={onUpdateSchedule} />

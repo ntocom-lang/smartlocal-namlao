@@ -243,17 +243,41 @@ try{
  assert.equal(intake.status,'confirmed');assert.equal(intake.entry_channel,'staff','ช่องทางต้องบันทึกว่าเจ้าหน้าที่รับแทน');assert.equal(intake.share,true)
  console.log('PASS staff intake by phone returns to the inbox with a one-click confirm, channel recorded as staff')
  // ── บัญชีเจ้าหน้าที่เปิดหน้าประชาชน: ฟอร์มต้องไม่เติมข้อมูลของคนที่โทรมาให้รับแทน ──
- // คำขอที่รับแทนบันทึกเจ้าหน้าที่เป็นผู้สร้าง จึงอยู่ใน "การจองของฉัน" ของเจ้าหน้าที่ด้วย (patient_booking_mine)
+ // คำขอที่รับแทนบันทึกเจ้าหน้าที่เป็นผู้สร้าง ก่อน 20260922120000 จึงไปอยู่ใน "การจองของฉัน" ของเจ้าหน้าที่ด้วย
  // ถ้าหยิบมาเติม เจ้าหน้าที่ที่จองให้ตัวเองจะส่งคำขอด้วยชื่อ เบอร์ และจุดรับของคนอื่นโดยไม่รู้ตัว
  await page.setViewportSize({width:390,height:900})
  await page.goto(`${base}/__patient?as=coordinator`);await page.getByRole('region',{name:'บริการรถรับส่งผู้ป่วย'}).waitFor()
+ // คำขอที่รับแทนเป็นงานของสำนักงาน (20260922120000) ไม่ขึ้นใน "คำขอของฉัน" ของคนที่รับสาย
+ // ลิงก์ไปหน้าทำงานขึ้นหลังโหลดรายการของฉันเสร็จ ใช้เป็นสัญญาณว่ารายการมาครบแล้วก่อนตรวจว่าไม่มี
+ await page.getByRole('link',{name:'ไปหน้าทำงานเจ้าหน้าที่',exact:true}).waitFor()
+ assert.equal(await page.getByRole('article').filter({hasText:'[TEST] ผู้ป่วยโทรมา'}).count(),0,'คำขอที่รับแทนต้องไม่ขึ้นใน "คำขอของฉัน" ของเจ้าหน้าที่ที่รับสาย')
  await page.getByRole('button',{name:'🚐 ขอรถไปโรงพยาบาล',exact:true}).click()
  const ownName=page.getByLabel('ชื่อ–สกุลผู้จอง',{exact:true});await ownName.waitFor()
  assert.equal(await page.getByText('เติมข้อมูลจากการจองครั้งก่อนให้แล้ว',{exact:false}).count(),0,'คำขอที่รับแทนไม่ใช่การจองครั้งก่อนของเจ้าหน้าที่')
  assert.equal(await ownName.inputValue(),'TEST Browser Requester','ชื่อผู้จองต้องมาจากบัญชีตัวเอง ไม่ใช่คนที่โทรมา')
  assert.notEqual(await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).inputValue(),'0810000010','ต้องไม่มีเบอร์ของคนที่โทรมา')
  assert.notEqual(await page.getByRole('group',{name:'หมู่บ้าน/สถานที่'}).getByRole('button',{name:'TEST บ้านใต้'}).getAttribute('aria-pressed'),'true','ต้องไม่มีจุดรับของคนที่โทรมา')
- console.log('PASS staff account on the citizen page is not prefilled from bookings it took by phone for other people')
+ console.log('PASS staff account on the citizen page neither lists nor is prefilled from bookings it took by phone for other people')
+ // ── ผู้จองทางโทรศัพท์โทรมาแจ้งพร้อมกลับ → ใครรับสายก็กดแทนได้จากแผ่นคำขอ ระบบแจ้งคนขับให้ ──
+ // เดิมปุ่มนี้มีแค่ฝั่งประชาชน คำขอทางโทรศัพท์จึงกดได้เฉพาะคนที่รับสายตอนจอง ผ่านหน้าประชาชนของตัวเอง
+ const intakeTrip=await tripOf(intake.id)
+ await runAs(driver,async()=>{
+  const ws=()=>rpc('patient_booking_workspace',[tenant])
+  const tripStep=async()=>{const t=(await ws()).trips.find(x=>x.id===intakeTrip);await rpc('patient_booking_action',[tenant,randomUUID(),t.id,t.revision,'trip_next',''])}
+  const riderStep=async()=>{const b=(await ws()).bookings.find(x=>x.id===intake.id);await rpc('patient_booking_action',[tenant,randomUUID(),b.id,b.revision,'passenger_next',''])}
+  await tripStep();await riderStep();await riderStep();await tripStep()
+ })
+ assert.equal((await bookingRow(intake.id)).passenger_step,2,'ผู้ป่วยถึงโรงพยาบาลแล้ว')
+ await staffDesk()
+ await click('readyForCaller',row(intake.id).getByRole('button',{name:'ดูรายละเอียด',exact:true}))
+ await click('readyForCaller',sheet.getByRole('button',{name:'แจ้งพร้อมให้มารับกลับแทนผู้จอง',exact:true}))
+ await toast('บันทึกแล้ว').waitFor();assert.equal((await bookingRow(intake.id)).return_ready,true)
+ await row(intake.id).getByText('พร้อมรับกลับ',{exact:true}).waitFor()
+ const readyEvent=await runSql(async()=>(await db.query("SELECT actor_id FROM public.patient_booking_events WHERE entity_id=$1 AND action='ready_return'",[intake.id])).rows[0])
+ assert.equal(readyEvent.actor_id,coordinator,'ประวัติต้องบอกว่าเจ้าหน้าที่คนไหนแจ้งแทน')
+ assert(await runSql(async()=>(await db.query('SELECT count(*)::int AS n FROM public.patient_booking_notices WHERE entity_id=$1 AND recipient_id=$2',[intake.id,driver])).rows[0].n)>0,'คนขับต้องได้รับแจ้ง')
+ assert.equal(clicks.readyForCaller,2,'เปิดแผ่น + กดแจ้ง')
+ console.log('PASS caller phones in ready to return: any coordinator records it from the inbox sheet in 2 clicks, driver notified, actor audited')
 
  // ── ปุ่มของประชาชนถึงฐานข้อมูลจริง (op ครบ — กับดัก #244) + เจ้าหน้าที่ประสานยกเลิก ──
  const cancelId=randomUUID();await submitAs(citizen,cancelId,{patient_name:'TEST cancel button',phone:'0800000911'})

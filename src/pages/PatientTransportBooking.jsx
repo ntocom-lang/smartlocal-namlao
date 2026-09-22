@@ -34,8 +34,8 @@ export default function PatientTransportBooking() {
   const active = bookings.filter(b => ['submitted', 'confirmed'].includes(b.status))
   const past = bookings.filter(b => !['submitted', 'confirmed'].includes(b.status))
   // ค่าที่ใช้เติมฟอร์มให้ = คำขอล่าสุดที่ผู้ใช้คนนี้จองเอง (คนไปตามนัดประจำจะได้ไม่ต้องกรอกซ้ำทุกครั้ง)
-  // ⚠️ ข้ามคำขอที่เจ้าหน้าที่รับจองแทน (entry_channel 'staff') — ระบบบันทึกเจ้าหน้าที่เป็นผู้สร้าง จึงอยู่ในรายการนี้ด้วย
-  // ถ้าหยิบมาเติม เจ้าหน้าที่ที่จองให้ตัวเองจะได้ชื่อ เบอร์ และจุดรับของคนที่โทรมาแทน (PDPA)
+  // ⚠️ ข้ามคำขอที่เจ้าหน้าที่รับจองแทน (entry_channel 'staff') — ถ้าหยิบมาเติม เจ้าหน้าที่ที่จองให้ตัวเองจะได้ชื่อ เบอร์
+  // และจุดรับของคนที่โทรมาแทน (PDPA) · ตั้งแต่ 20260922120000 ฐานข้อมูลไม่ส่งคำขอกลุ่มนี้มาแล้ว กรองซ้ำไว้กันพลาด
   const lastBooking = bookings.filter(b => b.entry_channel !== 'staff')
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0]
   // ⚠️ p_op ต้องส่งทุกครั้ง — patient_booking_action บังคับ operation id ไว้กันเน็ตหลุดแล้วยิงซ้ำ
