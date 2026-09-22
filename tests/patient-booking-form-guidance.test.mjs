@@ -44,7 +44,7 @@ const server = await createServer({ configFile: false, envDir: false, server: { 
     if (id === '\0guidance.js') return `import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import Form from '/src/components/patientTransport/BookingForm.jsx'; import '/src/index.css'; function App(){const [error,setError]=useState(''); return React.createElement(Form,{tenantId:"test",info:${JSON.stringify(info)},onBack:()=>{},onSubmit:()=>{setError('เครือข่ายขัดข้อง');return false},submitError:error})};createRoot(document.getElementById('root')).render(React.createElement(App));`
     // ปฏิทินสาธารณะ: ทุกวันเปิด รถว่างทั้งวัน · ทะเบียนสถานที่ของหน่วยงาน 2 แห่ง
     if (file.endsWith('/lib/supabase.js')) return `export const supabase={
-      rpc:async(name,args)=>{const days=[];const to=new Date(args.p_to+'T12:00:00+07:00').getTime();for(let t=new Date(args.p_from+'T12:00:00+07:00').getTime();t<=to&&days.length<60;t+=86400000){const d=new Date(t+7*3600000).toISOString().slice(0,10);days.push({date:d,status:'open',free:[{start:d+'T08:30:00+07:00',end:d+'T16:30:00+07:00'}],trips:[]})}return {data:{days}}},
+      rpc:async(name,args)=>{const qs=location.hash;if(name==='patient_booking_calendar'&&qs.includes('calfail'))return{data:null,error:{message:'TEST calendar down'}};if(name==='patient_booking_calendar'&&qs.includes('slowcal'))await new Promise(r=>setTimeout(r,1500));const days=[];const to=new Date(args.p_to+'T12:00:00+07:00').getTime();for(let t=new Date(args.p_from+'T12:00:00+07:00').getTime();t<=to&&days.length<60;t+=86400000){const d=new Date(t+7*3600000).toISOString().slice(0,10);days.push({date:d,status:'open',free:[{start:d+'T08:30:00+07:00',end:d+'T16:30:00+07:00'}],trips:[]})}return {data:{days}}},
       from:()=>{const api={select:()=>api,eq:()=>api,order:()=>api,then:resolve=>resolve({data:[{id:'1',name:'TEST บ้านเหนือ'},{id:'2',name:'TEST บ้านใต้'}],error:null})};return api}}`
     if (file.endsWith('/contexts/TenantContext.jsx')) return 'export const useTenant=()=>({tenant:{}})'
     if (file.endsWith('/components/MapPicker.jsx')) return 'export default function MapPicker(){return null}'
@@ -109,4 +109,20 @@ try {
     await page.screenshot({ path: `D:/tmp/booking-guidance-${width}.png`, fullPage: true })
     await page.close(); console.log(`PASS ${width}px: free-time choices only, missing list, phone format, place registry, return time, review + consent, submit failure, no overflow`)
   }
+  // ระหว่างรอปฏิทิน ต้องบอกว่ากำลังดูวันว่าง ไม่ใช่บอกว่าไม่มีวันว่าง (ผู้จองบนเน็ตช้าจะเข้าใจว่าจองไม่ได้แล้วเลิกจอง)
+  const port = server.httpServer.address().port
+  for (const [query, waitText, label] of [['slowcal', 'กำลังดูวันที่รถว่าง', 'ปฏิทินโหลดช้า'], ['calfail', 'ตรวจวันว่างไม่สำเร็จ', 'ปฏิทินโหลดไม่สำเร็จ']]) {
+    const page = await browser.newPage({ viewport: { width: 375, height: 900 } })
+    page.setDefaultTimeout(8000)
+    await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+    await page.goto(`http://127.0.0.1:${port}/__guidance#${query}`)
+    await page.getByText(waitText, { exact: false }).waitFor()
+    assert.equal(await page.getByText('ยังไม่มีวันที่รถว่างในช่วงนี้', { exact: false }).count(), 0, `${label}: ห้ามบอกว่าไม่มีวันว่าง`)
+    if (query === 'slowcal') {
+      await page.getByRole('group', { name: 'วันที่ไปโรงพยาบาล' }).getByRole('button').first().waitFor()
+      assert.equal(await page.getByText('กำลังดูวันที่รถว่าง', { exact: false }).count(), 0, 'ปฏิทินมาแล้วต้องเลิกขึ้นข้อความรอ')
+    }
+    await page.close()
+  }
+  console.log('PASS calendar states: loading says "looking for free days", failure says it failed — neither claims there are no free days')
 } finally { await browser.close(); await server.close() }
