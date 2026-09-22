@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Download, Share2, X } from 'lucide-react'
+import { waterShareSlides, renderWaterShareSlide } from '../lib/waterShareImages'
 import { appUrl } from '../lib/basename'
 import { DAM_STALE_HOURS, distanceText, formatMm, isStale, shareWaterSituation, summaryStats, SYNC_STALE_HOURS, toNum } from '../lib/waterSituation'
 
@@ -7,127 +8,76 @@ const dateText = value => new Date(value).toLocaleString('th-TH', {
   timeZone: 'Asia/Bangkok', dateStyle: 'medium', timeStyle: 'short',
 })
 
-// // Export the same React cards as the page, preserving their gauges, scales and timestamps.
-async function infographic(node, now) {
-  await document.fonts.ready
-  const { default: html2canvas } = await import('html2canvas')
-  const canvas = await html2canvas(node, {
-    scale: 3, backgroundColor: '#eef5f9', logging: false,
-    onclone: doc => {
-      const modal = doc.querySelector('[data-water-share-dialog]')
-      if (modal) {
-        modal.setAttribute('open', '')
-        Object.assign(modal.style, { position: 'static', display: 'block', maxHeight: 'none', overflow: 'visible' })
-      }
-      // html2canvas does not parse Tailwind 4 oklch colors. Resolve the cloned
-      // palette to sRGB using the browser; do not change the live page's styles.
-      const pixel = doc.createElement('canvas').getContext('2d', { willReadFrequently: true })
-      const root = doc.documentElement
-      const computed = doc.defaultView.getComputedStyle(root)
-      for (const property of computed) {
-        const value = computed.getPropertyValue(property)
-        if (property.startsWith('--color-') && /oklch|oklab/.test(value)) {
-          pixel.clearRect(0, 0, 1, 1); pixel.fillStyle = value; pixel.fillRect(0, 0, 1, 1)
-          const [r, g, b, a] = pixel.getImageData(0, 0, 1, 1).data
-          root.style.setProperty(property, `rgba(${r},${g},${b},${a / 255})`)
-        }
-      }
-      const capture = doc.querySelector('[data-water-share-capture]')
-      capture.style.position = 'static'
-      capture.style.left = 'auto'
-      capture.querySelectorAll('a').forEach(a => { a.style.display = 'none' })
-      capture.querySelectorAll('*').forEach(el => {
-        el.style.transition = 'none'; el.style.animation = 'none'
-        const styles = doc.defaultView.getComputedStyle(el)
-        for (const property of styles) {
-          if (property.startsWith('--')) continue
-          const value = styles.getPropertyValue(property)
-          if (/oklch|oklab|color-mix/.test(value)) {
-            const rgb = color => {
-              pixel.clearRect(0, 0, 1, 1); pixel.fillStyle = color; pixel.fillRect(0, 0, 1, 1)
-              const [r, g, b, a] = pixel.getImageData(0, 0, 1, 1).data
-              return `rgba(${r},${g},${b},${a / 255})`
-            }
-            el.style.setProperty(property, /color$|^fill$|^stroke$/.test(property)
-              ? rgb(value) : value.replace(/oklch\([^)]*\)|oklab\([^)]*\)/g, rgb))
-          }
-        }
-      })
-      // SVG padding would otherwise be applied twice when html2canvas rasterizes it.
-      capture.querySelectorAll('svg').forEach(svg => {
-        const styles = doc.defaultView.getComputedStyle(svg)
-        const padding = parseFloat(styles.paddingLeft)
-        const width = parseFloat(styles.width)
-        const height = parseFloat(styles.height)
-        const view = svg.viewBox.baseVal
-        if (padding > 0 && width > 0 && height > 0 && view.width > 0) {
-          const extraX = view.width * padding / width
-          const extraY = view.height * padding / height
-          svg.setAttribute('viewBox', `${view.x - extraX} ${view.y - extraY} ${view.width + extraX * 2} ${view.height + extraY * 2}`)
-          svg.style.padding = '0'
-          svg.style.width = `${width + padding * 2}px`
-          svg.style.height = `${height + padding * 2}px`
-        }
-      })
-    },
-  })
-  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
-  if (!blob) throw new Error('PNG export failed')
-  return { file: new File([blob], `water-local-${new Date(now).toISOString().slice(0, 10)}.png`, { type: 'image/png' }), width: canvas.width, height: canvas.height }
-}
-function ShareInfographic({ tenant, data, now, refreshFailed, url, text, setStatus, buttonClass, renderCards: Cards }) {
-  const capture = useRef(null)
-  const [result, setImage] = useState(null)
-  const [failed, setFailed] = useState(false)
-  const image = result?.data === data && result?.now === now && result?.tenant === tenant && result?.refreshFailed === refreshFailed ? result : null
-  useEffect(() => {
-    let alive = true
-    let objectUrl
-    infographic(capture.current, now).then(({ file, width, height }) => {
-      if (!alive) return
-      objectUrl = URL.createObjectURL(file)
-      setFailed(false)
-      setImage({ file, width, height, url: objectUrl, data, now, tenant, refreshFailed })
-    }).catch(error => { console.warn('Water infographic export failed', error); if (alive) setFailed(true) })
-    return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
-  }, [tenant, data, now, refreshFailed, url])
-  const canShare = image && typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare({ files: [image.file] })
-  async function shareImage() {
-    try { await navigator.share({ files: [image.file], title: `สถานการณ์น้ำ–ฝน | ${tenant.name}`, text: `${text}\n${url}` }) }
-    catch (error) { if (error?.name !== 'AbortError') setStatus('แชร์ภาพไม่ได้ กรุณาดาวน์โหลด PNG แล้วแนบในโพสต์หรือกลุ่ม LINE') }
-  }
-  return <div className="rounded-xl border border-sky-200 bg-white p-3">
-    <div ref={capture} data-water-share-capture className="water-page" aria-hidden="true" inert
-      style={{ position: 'fixed', left: -10000, top: 0, width: 390, padding: 8, background: '#eef5f9', color: '#0f172a', fontFamily: 'Sarabun, sans-serif' }}>
-      <header style={{ padding: '10px 8px 14px' }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700 }}>สถานการณ์น้ำ–ฝน · {tenant.name}</h2>
-        <p style={{ fontSize: 11, color: '#475569', marginTop: 4 }}>ในตำบล + ใกล้เคียง ≤ 5 กม. จากสำนักงาน · สรุป ณ {dateText(now)} น.</p>
-        {(refreshFailed || !data.synced_at || isStale(data.synced_at, now, SYNC_STALE_HOURS)) &&
-          <p style={{ fontSize: 12, color: '#92400e', marginTop: 6 }}>ข้อมูลอาจไม่เป็นปัจจุบัน โปรดตรวจสอบเวลาตรวจวัด</p>}
-      </header>
-      <Cards tenant={tenant} data={data} now={now} />
-      <footer style={{ padding: '14px 8px 8px', fontSize: 10, lineHeight: 1.5, color: '#475569' }}>
-        <p style={{ fontWeight: 700 }}>แหล่งข้อมูล: คลังข้อมูลน้ำแห่งชาติ ThaiWater (สสน.)</p>
-        <p style={{ color: '#92400e', fontWeight: 700 }}>ภาพสรุป ณ เวลาที่ระบุ · ไม่ใช่ประกาศเตือนภัยของ อปท.</p>
-        <p>ไม่มีข้อมูล ไม่ได้หมายความว่าสถานการณ์ปกติ</p>
-        <p>ข้อมูลสถานีไม่ครอบคลุมทุกจุดในพื้นที่</p>
-        <p style={{ marginTop: 6, color: '#0369a1', fontWeight: 700 }}>ตรวจสอบข้อมูลและคำเตือนล่าสุด:</p>
-        <p style={{ color: '#0369a1', overflowWrap: 'anywhere' }}>{url}</p>
-      </footer>
-    </div>
-    <h3 className="text-sm font-bold text-slate-800">ภาพสรุปสำหรับชาวบ้าน</h3>
-    <p className="my-2 text-xs text-slate-600">PNG ความละเอียด 3 เท่า · ใช้การ์ดเดียวกับหน้าสถานการณ์</p>
-    {image ? <>
-      <img src={image.url} alt={`อินโฟกราฟิกสถานการณ์น้ำ–ฝน ${tenant.name} ในตำบลและใกล้เคียงไม่เกิน 5 กม. ข้อความและตัวเลขอยู่ในหัวข้อดูข้อความที่จะแชร์`} className="mx-auto w-full max-w-sm rounded-lg" width={image.width} height={image.height} />
-      <div className="mt-3 flex flex-wrap gap-2">
-        <a href={image.url} download={image.file.name} className={`${buttonClass} bg-sky-700 text-white`}><Download size={18} /> ดาวน์โหลดภาพ PNG</a>
-        {canShare && <button type="button" onClick={shareImage} className={`${buttonClass} border border-sky-200 text-sky-800`}><Share2 size={18} /> แชร์ภาพผ่านแอป</button>}
-      </div>
-    </> : <p role="status" className="py-6 text-sm text-slate-600">{failed ? 'สร้างภาพไม่สำเร็จ ลองปิดแล้วเปิดภาพสรุปอีกครั้ง หรือเลือกข้อความด้านล่างไปใช้ได้' : 'กำลังเตรียมภาพสรุป…'}</p>}
-    <p className="mt-3 text-xs text-slate-600">ดาวน์โหลดภาพแล้วแนบใน Facebook หรือ LINE ได้</p>
-  </div>
+function canShareFiles(files) {
+  try { return files.length > 0 && typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare({ files }) }
+  catch { return false }
 }
 
+function ShareInfographic({ tenant, data, now, refreshFailed, url, setStatus, buttonClass }) {
+  const [result, setResult] = useState(null)
+  const [failed, setFailed] = useState(false)
+  const [active, setActive] = useState(0)
+  const [selected, setSelected] = useState([0])
+  const [busy, setBusy] = useState(false)
+  const images = result?.data === data && result?.now === now ? result.images : []
+  useEffect(() => {
+    let alive = true
+    const urls = []
+    async function generate() {
+      const slides = waterShareSlides(data, tenant)
+      const rendered = []
+      for (const slide of slides) {
+        if (!alive) return
+        const file = await renderWaterShareSlide(slide, { tenant, data, now, refreshFailed, url })
+        if (!alive) return
+        const objectUrl = URL.createObjectURL(file)
+        urls.push(objectUrl)
+        rendered.push({ ...slide, file, url: objectUrl })
+      }
+      if (alive) { setFailed(false); setResult({ data, now, images: rendered }) }
+    }
+    generate().catch(() => { if (alive) setFailed(true) })
+    return () => { alive = false; urls.forEach(value => URL.revokeObjectURL(value)) }
+  }, [tenant, data, now, refreshFailed, url])
+  const current = images[active] || images[0]
+  const files = selected.map(i => images[i]?.file).filter(Boolean)
+  async function share(filesToSend) {
+    setBusy(true); setStatus('')
+    try { await navigator.share({ files: filesToSend, title: `สถานการณ์น้ำ–ฝน | ${tenant.name}`, text: `สถานการณ์น้ำ–ฝน ${tenant.name}\nสรุป ณ ${dateText(now)} น.\n${url}` }) }
+    catch (error) { if (error?.name !== 'AbortError') setStatus('แชร์ภาพไม่ได้ กรุณาดาวน์โหลดแต่ละภาพ แล้วแนบในกลุ่ม LINE') }
+    finally { setBusy(false) }
+  }
+  return <div className="rounded-xl border border-sky-200 bg-white p-3">
+    <h3 className="text-sm font-bold text-slate-800">ภาพสรุปสำหรับชาวบ้าน · 1 ภาพ = 1 เรื่อง</h3>
+    <p className="my-2 text-xs text-slate-600">ภาพจัตุรัส 1080 × 1080 · ส่งภาพสรุปก่อน แล้วเลือกเรื่องที่ต้องการส่งต่อ</p>
+    {current ? <>
+      <div className="mb-3 flex flex-wrap gap-2">
+        {canShareFiles([images[0].file]) && <button type="button" disabled={busy} onClick={() => share([images[0].file])} className={`${buttonClass} bg-sky-700 text-white disabled:opacity-50`}><Share2 size={18} /> แชร์ภาพสรุป</button>}
+        <a href={images[0].url} download={images[0].file.name} className={`${buttonClass} border border-sky-200 text-sky-800`}><Download size={18} /> ดาวน์โหลดภาพสรุป</a>
+      </div>
+      <fieldset className="mb-3 rounded-xl border border-sky-100 p-2">
+        <legend className="px-1 text-sm font-semibold text-slate-700">เลือกภาพที่จะแชร์ ({files.length}/{images.length})</legend>
+        <button type="button" className={`${buttonClass} text-sky-800`} onClick={() => setSelected(selected.length === images.length ? [] : images.map((_, i) => i))}>{selected.length === images.length ? 'ยกเลิกเลือกทั้งหมด' : 'เลือกทั้งชุด'}</button>
+        {images.map((image, i) => <div key={image.index} className="flex items-center gap-2 border-t border-slate-100">
+          <label className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 py-2 text-sm text-slate-700">
+            <input type="checkbox" checked={selected.includes(i)} onChange={() => setSelected(previous => previous.includes(i) ? previous.filter(value => value !== i) : [...previous, i].sort((a, b) => a - b))} />
+            <span>{image.index}/{images.length} · {image.title}</span>
+          </label>
+          <button type="button" onClick={() => setActive(i)} aria-pressed={current === image} aria-label={`ดูภาพ ${image.index} ${image.title}`} className={`${buttonClass} shrink-0 text-sky-800`}>ดูภาพ</button>
+        </div>)}
+        {canShareFiles(files) ? <button type="button" disabled={busy} onClick={() => share(files)} className={`${buttonClass} mt-2 w-full bg-sky-700 text-white disabled:opacity-50`}><Share2 size={18} /> แชร์ภาพที่เลือก ({files.length} ภาพ)</button>
+          : <p className="py-2 text-xs text-slate-600">{files.length ? 'อุปกรณ์นี้ไม่รองรับแชร์ไฟล์ที่เลือกโดยตรง ดาวน์โหลดแยกรูปแล้วแนบใน LINE ได้' : 'เลือกอย่างน้อย 1 ภาพเพื่อแชร์'}</p>}
+      </fieldset>
+      <p className="mb-2 text-sm font-bold text-slate-800">ภาพ {current.index}/{images.length} · {current.title}</p>
+      <img src={current.url} alt={`ภาพ ${current.index} ${current.title} ของ ${tenant.name}`} className="mx-auto w-full max-w-md rounded-lg" width="1080" height="1080" />
+      <div className="mt-3 flex flex-wrap gap-2">
+        <a href={current.url} download={current.file.name} className={`${buttonClass} bg-sky-700 text-white`}><Download size={18} /> ดาวน์โหลดภาพนี้ PNG</a>
+        {canShareFiles([current.file]) && <button type="button" disabled={busy} onClick={() => share([current.file])} className={`${buttonClass} border border-sky-200 text-sky-800 disabled:opacity-50`}><Share2 size={18} /> แชร์ภาพนี้</button>}
+      </div>
+    </> : <p role="status" className="py-6 text-sm text-slate-600">{failed ? 'สร้างภาพไม่สำเร็จ ลองปิดแล้วเปิดหน้าต่างแชร์อีกครั้ง' : 'กำลังแบ่งและเตรียมชุดภาพ…'}</p>}
+    <p className="mt-3 text-xs text-slate-600">แต่ละภาพมีชื่อพื้นที่ เวลา และแหล่งข้อมูลครบ ส่งต่อแยกภาพได้</p>
+  </div>
+}
 // Share only public readings already visible on this tenant's page; never include session/query tokens.
 function shareText(tenant, data, now, refreshFailed) {
   const stations = shareWaterSituation(data, tenant).stations
@@ -159,7 +109,7 @@ function shareText(tenant, data, now, refreshFailed) {
   return lines.join('\n')
 }
 
-function WaterShareDialog({ tenant, data, now, refreshFailed, renderCards, close, buttonClass }) {
+function WaterShareDialog({ tenant, data, now, refreshFailed, close, buttonClass }) {
   const dialog = useRef(null)
   const [status, setStatus] = useState('')
   useEffect(() => {
@@ -185,7 +135,8 @@ function WaterShareDialog({ tenant, data, now, refreshFailed, renderCards, close
         <button type="button" onClick={close} className={`${buttonClass} text-slate-700`} aria-label="ปิดหน้าต่างแชร์"><X size={20} /> ปิด</button>
       </header>
       <div className="space-y-3 p-3 sm:p-4">
-        <ShareInfographic tenant={tenant} data={data} now={now} refreshFailed={refreshFailed} url={url} text={text} setStatus={setStatus} buttonClass={buttonClass} renderCards={renderCards} />
+        <p className="text-xs text-slate-600">ชุดภาพ ณ เวลาที่เปิดหน้าต่าง หากต้องการข้อมูลใหม่ให้ปิดแล้วเปิดอีกครั้ง</p>
+        <ShareInfographic tenant={tenant} data={data} now={now} refreshFailed={refreshFailed} url={url} setStatus={setStatus} buttonClass={buttonClass} />
         <details>
           <summary className="cursor-pointer py-3 text-sm font-medium text-sky-800">ดูข้อความที่จะแชร์</summary>
           <textarea aria-label="ข้อความสรุปสำหรับแชร์" readOnly value={fullText} onFocus={e => e.target.select()}
@@ -197,13 +148,13 @@ function WaterShareDialog({ tenant, data, now, refreshFailed, renderCards, close
 }
 
 export default function WaterSituationShare(props) {
-  const [expanded, setExpanded] = useState(false)
+  const [snapshot, setSnapshot] = useState(null)
   if (!props.tenant?.name) return null
   const buttonClass = 'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold'
   return <section className="rounded-2xl border border-sky-200 bg-sky-50 p-4" aria-label="แชร์สถานการณ์ในพื้นที่">
-    <button type="button" aria-haspopup="dialog" onClick={() => setExpanded(true)} className={`${buttonClass} w-full bg-sky-700 text-white hover:bg-sky-800`}>
+    <button type="button" aria-haspopup="dialog" onClick={() => setSnapshot({ ...props, now: Date.now() })} className={`${buttonClass} w-full bg-sky-700 text-white hover:bg-sky-800`}>
       <Share2 size={18} /> แชร์สถานการณ์ในพื้นที่
     </button>
-    {expanded && <WaterShareDialog {...props} close={() => setExpanded(false)} buttonClass={buttonClass} />}
+    {snapshot && <WaterShareDialog {...snapshot} close={() => setSnapshot(null)} buttonClass={buttonClass} />}
   </section>
 }
