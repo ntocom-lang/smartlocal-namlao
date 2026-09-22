@@ -43,22 +43,25 @@ export async function renderWaterShareSlide(slide, { tenant, now, data, refreshF
 
   if (slide.kind === 'summary') {
     const stats = summaryStats({ rain: slide.stations.filter(s => s.station_type === 'rain'), dams: slide.stations.filter(s => s.station_type === 'dam'), levels: slide.stations.filter(s => s.station_type === 'waterlevel'), now })
-    box(40, 275, 1000, 225, '#ffffff')
-    text('ฝนสะสม 24 ชม. สูงสุดในสถานีที่แสดง', 65, 321,  30, '#0369a1', true)
-    text(stats.rain ? `${formatMm(stats.rain.mm)} มม.` : 'ไม่มีข้อมูลปัจจุบัน', 65, 409, 72, '#0f172a', true)
-    text(stats.rain ? `${stats.rain.station.station_name} · วัด ${shareDate(stats.rain.station.recorded_at)}` : 'ไม่มีข้อมูล ไม่ได้หมายความว่าไม่มีฝน', 65, 464, 27)
+    if (stats.rain) {
+      box(40, 275, 1000, 225, '#ffffff')
+      text('ฝนสะสม 24 ชม. สูงสุดในสถานีที่แสดง', 65, 321, 30, '#0369a1', true)
+      text(`${formatMm(stats.rain.mm)} มม.`, 65, 409, 72, '#0f172a', true)
+      text(`${stats.rain.station.station_name} · วัด ${shareDate(stats.rain.station.recorded_at)}`, 65, 464, 27)
+    }
+    const damTop = stats.rain ? 520 : 275
     const dams = slide.stations.filter(s => s.station_type === 'dam')
-    box(40, 520, 1000, 280, '#ffffff')
-    text(`อ่างเก็บน้ำในขอบเขต ${dams.length} แห่ง`, 65, 568, 32, '#4338ca', true)
+    box(40, damTop, 1000, 280, '#ffffff')
+    text(`อ่างเก็บน้ำในขอบเขต ${dams.length} แห่ง`, 65, damTop + 48, 32, '#4338ca', true)
     dams.slice(0, 3).forEach((s, i) => {
       const p = percent(s), valid = fresh(s, DAM_STALE_HOURS)
-      text(s.station_name, 65, 626 + i * 58, 31, '#0f172a', true, 670)
-      text(valid && p !== null ? `${p.toFixed(1)}%` : 'ไม่มีค่าปัจจุบัน', 765, 626 + i * 58, 34, '#4338ca', true, 235)
+      text(s.station_name, 65, damTop + 106 + i * 58, 31, '#0f172a', true, 670)
+      text(valid && p !== null ? `${p.toFixed(1)}%` : 'ไม่มีค่าปัจจุบัน', 765, damTop + 106 + i * 58, 34, '#4338ca', true, 235)
     })
-    if (!dams.length) text('ไม่มีสถานีอ่างเก็บน้ำในขอบเขตที่กำหนด', 65, 643,  30)
-    if (dams.length > 3) text(`อีก ${dams.length - 3} แห่ง ดูภาพรายละเอียดในชุด`, 65, 782, 23)
-    text('ปริมาณน้ำเทียบความจุ • เวลาวัดและรายละเอียดอยู่ในภาพรายอ่าง',  50, 838, 25)
-    text(stats.bank ? `ระดับน้ำ: ${stats.bank.text} (${stats.bank.station.station_name})` : 'ระดับน้ำ: ไม่มีข้อมูลปัจจุบันสำหรับสรุป',  50, 894, 30, '#0f766e', true)
+    if (!dams.length) text('ไม่มีสถานีอ่างเก็บน้ำในขอบเขตที่กำหนด', 65, damTop + 123,  30)
+    if (dams.length > 3) text(`อีก ${dams.length - 3} แห่ง ดูภาพรายละเอียดในชุด`, 65, damTop + 262, 23)
+    text('ปริมาณน้ำเทียบความจุ • เวลาวัดและรายละเอียดอยู่ในภาพรายอ่าง',  50, damTop + 318, 25)
+    text(stats.bank ? `ระดับน้ำ: ${stats.bank.text} (${stats.bank.station.station_name})` : 'ระดับน้ำ: ไม่มีข้อมูลปัจจุบันสำหรับสรุป',  50, damTop + 374, 30, '#0f766e', true)
   } else if (slide.kind === 'rain') {
     slide.stations.forEach((s, i) => {
       const y = 277 + i * 211, mm = toNum(s.rain_24h_mm), level = rainLevel(mm), valid = fresh(s, STATION_STALE_HOURS)
