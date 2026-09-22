@@ -1967,8 +1967,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           <div className="font-semibold text-gray-700">{dateStr}</div>
           {t.planned_departure && <div className="text-[10px] text-blue-400">📄 คำขอ</div>}
         </td>
+        {/* ทะเบียนบรรทัดที่ 2 แบบเดียวกับตารางเชื้อเพลิง — อปท. ตั้งชื่อรถเป็นชนิดรถ
+            ("รถยนต์นั่งส่วนบุคคลไม่เกิน 7 คน") ซ้ำกันหลายคัน ดูชื่ออย่างเดียวแยกไม่ออกว่าคันไหน */}
         <td className="px-4 py-2.5 text-xs font-semibold text-gray-700 border-r border-gray-200 whitespace-nowrap">
           {t.vehicle?.name}
+          <p className="text-[10px] font-normal text-gray-400">{assetIdentifier(t.vehicle)}</p>
         </td>
         <td className="px-4 py-2.5 text-xs text-gray-600 border-r border-gray-200">{t.destination}</td>
         <td className="px-4 py-2.5 text-xs text-gray-500 border-r border-gray-200">{t.purpose}</td>
