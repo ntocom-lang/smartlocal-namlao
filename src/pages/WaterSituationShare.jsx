@@ -19,6 +19,11 @@ function ShareInfographic({ tenant, data, now, refreshFailed, url, text, setStat
   const [active, setActive] = useState(0)
   const [selected, setSelected] = useState([0])
   const [busy, setBusy] = useState(false)
+  const preview = useRef(null)
+  function showImage(index) {
+    setActive(index)
+    preview.current?.scrollIntoView({ behavior: 'auto', block: 'start' })
+  }
   const images = result?.data === data && result?.now === now ? result.images : []
   useEffect(() => {
     let alive = true
@@ -63,12 +68,24 @@ function ShareInfographic({ tenant, data, now, refreshFailed, url, text, setStat
             <input type="checkbox" checked={selected.includes(i)} onChange={() => setSelected(previous => previous.includes(i) ? previous.filter(value => value !== i) : [...previous, i].sort((a, b) => a - b))} />
             <span>{image.index}/{images.length} · {image.title}</span>
           </label>
-          <button type="button" onClick={() => setActive(i)} aria-pressed={current === image} aria-label={`ดูภาพ ${image.index} ${image.title}`} className={`${buttonClass} shrink-0 text-sky-800`}>ดูภาพ</button>
+          <button type="button" onClick={() => showImage(i)} aria-pressed={current === image} aria-label={`ดูภาพ ${image.index} ${image.title}`} className={`${buttonClass} shrink-0 text-sky-800`}>{current === image ? 'กำลังดู' : 'ดูภาพ'}</button>
         </div>)}
         {canShareFiles(files) ? <button type="button" disabled={busy} onClick={() => share(files)} className={`${buttonClass} mt-2 w-full bg-sky-700 text-white disabled:opacity-50`}><Share2 size={18} /> แชร์ภาพที่เลือก ({files.length} ภาพ)</button>
           : <p className="py-2 text-xs text-slate-600">{files.length ? 'อุปกรณ์นี้ไม่รองรับแชร์ไฟล์ที่เลือกโดยตรง ดาวน์โหลดแยกรูปแล้วแนบใน LINE ได้' : 'เลือกอย่างน้อย 1 ภาพเพื่อแชร์'}</p>}
       </fieldset>
-      <p className="mb-2 text-sm font-bold text-slate-800">ภาพ {current.index}/{images.length} · {current.title}</p>
+      <div ref={preview} style={{ scrollMarginTop: 76 }}>
+        <nav aria-label="เปลี่ยนภาพตัวอย่าง" className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 p-2">
+          <button type="button" disabled={current.index === 1} onClick={() => showImage(current.index - 2)} className={`${buttonClass} bg-white text-sky-800 disabled:opacity-40`}>ก่อนหน้า</button>
+          <span aria-live="polite" className="text-sm font-bold text-slate-800">ภาพ {current.index} / {images.length}</span>
+          <button type="button" disabled={current.index === images.length} onClick={() => showImage(current.index)} className={`${buttonClass} bg-white text-sky-800 disabled:opacity-40`}>ถัดไป</button>
+        </nav>
+        <div className="mb-3 flex flex-wrap gap-2" aria-label="เลือกหน้าตัวอย่าง">
+          {images.map((image, i) => <button key={image.index} type="button" onClick={() => showImage(i)} aria-label={`เปิดภาพที่ ${image.index}`} aria-current={current === image ? 'page' : undefined}
+            className={`${buttonClass} min-w-[44px] border ${current === image ? 'border-sky-700 bg-sky-700 text-white' : 'border-sky-200 bg-white text-sky-800'}`}>{image.index}</button>)}
+        </div>
+        <p className="mb-2 text-xs text-slate-600">เครื่องหมายถูกใช้เลือกภาพที่จะส่ง · ใช้เลขหน้าหรือปุ่มถัดไปเพื่อดูแต่ละภาพ</p>
+        <p className="mb-2 text-sm font-bold text-slate-800">ภาพ {current.index}/{images.length} · {current.title}</p>
+      </div>
       <img src={current.url} alt={`ภาพ ${current.index} ${current.title} ของ ${tenant.name}`} className="mx-auto w-full max-w-md rounded-lg" width="1080" height="1080" />
       <div className="mt-3 flex flex-wrap gap-2">
         <a href={current.url} download={current.file.name} className={`${buttonClass} bg-sky-700 text-white`}><Download size={18} /> ดาวน์โหลดภาพนี้ PNG</a>
