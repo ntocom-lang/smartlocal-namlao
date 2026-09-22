@@ -26,7 +26,7 @@ INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST'
 CREATE TABLE public.audit_logs(id bigserial PRIMARY KEY,municipality_id uuid,actor_id uuid,actor_name text,actor_role text,action text,resource_type text,resource_id uuid,resource_label text,metadata jsonb,created_at timestamptz NOT NULL DEFAULT now());
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -461,6 +461,43 @@ await db.exec('ROLLBACK')
 assert.equal((await db.query("SELECT md5(prosrc) AS m FROM pg_proc WHERE proname='patient_booking_action'")).rows[0].m,actionBefore,'ด่านไม่ผ่านต้องไม่เขียนทับอะไร')
 console.log('PASS phone bookings belong to the office: not in the taker\'s "mine", reason always required, access ends with the role, overwrite guard refuses drifted definitions')
 
+// ผู้จองเห็นเหตุผลที่เจ้าหน้าที่ยกเลิก (20260922130000_patient_booking_cancel_reason)
+// เหตุผลถูกบังคับให้พิมพ์และลงประวัติอยู่แล้ว แต่หน้าประชาชนขึ้นแค่ป้าย "ยกเลิกแล้ว" คนที่รอรถต้องโทรถามเองว่าทำไมไม่ได้รถ
+const reasonDate = new Date(ownerDate); reasonDate.setUTCDate(reasonDate.getUTCDate()+37); while ([0,6].includes(reasonDate.getUTCDay())) reasonDate.setUTCDate(reasonDate.getUTCDate()+1)
+const reasonAt = t => `${reasonDate.toISOString().slice(0,10)}T${t}:00+07:00`
+const declined=id(810), selfCancel=id(811), removed=id(812), stillOpen=id(813)
+await actor(citizen2)
+for (const [bookingId,go,back] of [[declined,'09:00','11:00'],[selfCancel,'10:00','12:00'],[removed,'11:00','13:00'],[stillOpen,'13:00','15:00']])
+ await rpc('patient_booking_submit',[tenant,bookingId,{...base,patient_name:`TEST เหตุผลยกเลิก ${go}`,appointment_at:reasonAt(go),return_at:reasonAt(back)}])
+// เจ้าหน้าที่ยกเลิกคำขอที่ยังไม่ได้จัดรถ (เช่น รถไม่ว่าง) — ต้องมีเหตุผลเสมอ
+let reasonRev = await revisionOf(declined); await actor(coordinator)
+await advance(declined,reasonRev,'cancel','TEST รถไม่ว่างในช่วงเวลาที่ขอ')
+// ผู้จองกดยกเลิกเอง — หน้าประชาชนไม่มีช่องให้พิมพ์เหตุผล
+reasonRev = await revisionOf(selfCancel); await actor(citizen2); await advance(selfCancel,reasonRev,'cancel','')
+// ยืนยันรถแล้วเจ้าหน้าที่นำรายนี้ออกจากเที่ยว (cancel_passenger) ก็ต้องบอกเหตุผลให้ผู้จองเห็นเหมือนกัน
+await actor(coordinator); const removedPlan = await rpc('patient_booking_preview',[tenant,[removed],'']); assert.deepEqual(removedPlan.errors,[])
+await rpc('patient_booking_confirm',[tenant,id(814),[removed],removedPlan,''])
+reasonRev = await revisionOf(removed); await actor(coordinator)
+await advance(removed,reasonRev,'cancel_passenger','TEST ผู้ป่วยแจ้งเลื่อนนัด โรงพยาบาลนัดใหม่')
+await actor(citizen2); const reasonMine = await rpc('patient_booking_mine',[tenant])
+const mineRow = bookingId => reasonMine.bookings.find(b=>b.id===bookingId)
+assert.equal(mineRow(declined).cancel_note,'TEST รถไม่ว่างในช่วงเวลาที่ขอ','ผู้จองต้องเห็นเหตุผลที่เจ้าหน้าที่ไม่ให้บริการ')
+assert.equal(mineRow(removed).cancel_note,'TEST ผู้ป่วยแจ้งเลื่อนนัด โรงพยาบาลนัดใหม่','นำออกจากเที่ยวก็ต้องบอกเหตุผล')
+assert.equal(mineRow(selfCancel).cancel_note,null,'ผู้จองยกเลิกเอง ไม่มีเหตุผลของเจ้าหน้าที่ให้แสดง')
+assert(!('cancel_note' in mineRow(stillOpen)),'คำขอที่ยังไม่ถูกยกเลิกต้องไม่มีคีย์นี้เลย')
+assert(!('consent_text' in mineRow(declined)),'ข้อความยินยอมยังไม่ถูกส่งกลับมาเหมือนเดิม')
+await actor(citizen); assert(!(await rpc('patient_booking_mine',[tenant])).bookings.some(b=>b.id===declined),'เหตุผลไปกับคำขอของเจ้าของเท่านั้น')
+// ด่านกันเขียนทับของไฟล์นี้เอง: นิยามปัจจุบันไม่ใช่ของที่คาดไว้ (apply ซ้ำ) = หยุดทั้งก้อน
+await db.exec('RESET ROLE')
+const reasonMigration = await readFile(new URL('../supabase/migrations/20260922130000_patient_booking_cancel_reason.sql', import.meta.url), 'utf8')
+const mineBefore = (await db.query("SELECT md5(prosrc) AS m FROM pg_proc WHERE proname='patient_booking_mine'")).rows[0].m
+await assert.rejects(db.exec(reasonMigration), /ไม่ตรงกับที่ไฟล์นี้คาดไว้/)
+await db.exec('ROLLBACK')
+assert.equal((await db.query("SELECT md5(prosrc) AS m FROM pg_proc WHERE proname='patient_booking_mine'")).rows[0].m,mineBefore,'ด่านไม่ผ่านต้องไม่เขียนทับอะไร')
+// เก็บกวาด: เทสต์เบราว์เซอร์ใช้ฐานข้อมูลนี้ต่อ ไม่ควรเจอคำขอค้างของฉากนี้ในกล่องงาน
+await db.query('DELETE FROM public.patient_bookings WHERE id=ANY($1)',[[declined,selfCancel,removed,stillOpen]])
+await db.query('DELETE FROM public.patient_booking_trips WHERE id=$1',[id(814)])
+console.log('PASS cancelled bookings carry the reason staff typed: staff cancel and passenger removal both reach the traveller, self-cancel and open bookings carry none')
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
 export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay, base as baseBooking }

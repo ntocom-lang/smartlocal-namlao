@@ -39,6 +39,9 @@ export function BookingCards({ bookings, trips, onAction, busy }) {
       {step === 4 && <p className="rounded-xl bg-emerald-50 p-3">เดินทางเสร็จแล้ว ขอบคุณที่ใช้บริการ</p>}
       {b.requested_trip_id && b.status === 'submitted' && <p className="font-semibold text-sky-800">ขอร่วมเที่ยว รอเจ้าหน้าที่ตรวจยืนยัน</p>}
       {trip && <div className="my-3 rounded-xl bg-sky-50 p-3"><strong>{TRIP_STATUS[trip.state]}</strong><p>รถจะมารับประมาณ {dateTime(trip.estimated_pickup_at || trip.plan.pickup_at)}</p>{trip.public_notice === 'delayed' && <p className="font-semibold text-amber-800">รถล่าช้า · กรุณาตรวจเวลาล่าสุด</p>}{trip.public_notice === 'contact' && <p className="font-semibold text-amber-800">กรุณาติดต่อเจ้าหน้าที่ก่อนเดินทาง</p>}{trip.estimated_return_at && <p>แจ้งรับกลับล่าสุด {dateTime(trip.estimated_return_at)} (ประมาณการ)</p>}<p className="text-sm">{RETURN_MODES[b.return_mode]} · {MOBILITY[b.mobility]}{b.companions ? ` · ผู้ติดตาม ${b.companions} คน` : ''}</p></div>}
+      {/* เหตุผลที่เจ้าหน้าที่บันทึกตอนกดยกเลิก — ของเดิมขึ้นแค่ป้าย “ยกเลิกแล้ว” ผู้จองต้องโทรถามเองว่าทำไมไม่ได้รถ
+          ฐานข้อมูลส่ง cancel_note มาเฉพาะคำขอที่ถูกยกเลิกและมีเหตุผลที่เจ้าหน้าที่เขียนไว้ (20260922130000) */}
+      {b.status === 'cancelled' && b.cancel_note && <p className="my-2 rounded-xl bg-amber-50 p-3"><strong>เจ้าหน้าที่แจ้งเหตุผลที่ยกเลิก</strong><br />{b.cancel_note}</p>}
       {b.cancel_requested && <p className="my-2 rounded-xl bg-amber-50 p-3">ขอยกเลิกแล้ว รอเจ้าหน้าที่ประสานก่อนเปลี่ยนเที่ยว</p>}
       {b.return_ready && <p className="my-2 rounded-xl bg-sky-50 p-3">แจ้งพร้อมกลับแล้ว ไม่ได้หมายความว่ารถจะมาถึงทันที</p>}
       <div className="mt-3 flex flex-wrap gap-2">
