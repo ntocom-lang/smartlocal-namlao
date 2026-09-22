@@ -235,7 +235,10 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       hint={staffEntry ? 'วันที่หน่วยงานเปิดให้บริการ' : 'ขึ้นเฉพาะวันที่รถว่างและจองได้จริง'}>
       <Choice label="วันที่ไปโรงพยาบาล" hideLabel value={day} onChange={value => set('day', value)}
         items={bookable.slice(0, QUICK_DAYS).map(d => ({ value: d.date, label: chipDay(d.date), note: chipDate(d.date) }))} />
-      {!bookable.length && <div role="status" className="rounded-xl bg-amber-50 p-3">ยังไม่มีวันที่รถว่างในช่วงนี้ · เลือกวันอื่นด้านล่างหรือติดต่อเจ้าหน้าที่{contact}</div>}
+      {/* ระหว่างรอปฏิทิน ห้ามบอกว่า "ไม่มีวันว่าง" — บนเน็ตช้าผู้จองเห็นข้อความนี้ก่อนแล้วเข้าใจว่าจองไม่ได้ (เจอบนสนามซ้อม 2026-09-22)
+          ปฏิทินโหลดไม่สำเร็จมีข้อความของตัวเองอยู่แล้วด้านล่าง จึงไม่ให้ขึ้นซ้อนกันสองอัน */}
+      {!calendar && <p role="status" className="rounded-xl bg-slate-100 p-3">กำลังดูวันที่รถว่าง…</p>}
+      {calendar && !calendar.failed && !bookable.length && <div role="status" className="rounded-xl bg-amber-50 p-3">ยังไม่มีวันที่รถว่างในช่วงนี้ · เลือกวันอื่นด้านล่างหรือติดต่อเจ้าหน้าที่{contact}</div>}
       <p className="rounded-xl bg-slate-100 p-3">วันที่เลือก: <strong>{fullDate(day)}</strong></p>
       <details className="rounded-xl border border-slate-200 px-3">
         <summary className="flex min-h-11 cursor-pointer items-center font-semibold">เลือกวันอื่น</summary>
