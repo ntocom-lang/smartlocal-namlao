@@ -6,6 +6,7 @@ import { assetIdentifier, assetOptionLabel } from '../../lib/fleetAssets'
 import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { buildFleetTripRequestHtml, resolveDeptHead, resolveOrderAuthority } from '../../lib/fleetTripPrint'
+import { FLEET_TRIP_KM_CONFIRM, checkTripOdometer, isImplausibleTripDistance } from '../../lib/fleetOdometer'
 import {
   CUSTOM_ROLE, SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, defaultVehicleAuthority,
   organizationSignatories, pickSignatory, signatoryName, signatoryTitle,
@@ -127,6 +128,11 @@ const TRIP_ERROR_TH = {
   FLEET_TRIP_INSERT_STATUS_REQUIRES_MANAGER: 'สร้างรายการที่อนุมัติแล้วได้เฉพาะผู้ดูแลระบบยานพาหนะ — คำขอปกติระบบจะตัดสินคิวให้เอง',
   FLEET_TRIP_INVALID_STATUS_TRANSITION: 'สถานะของรายการนี้เปลี่ยนไปแล้ว กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง',
   FLEET_TRIP_VEHICLE_UNAVAILABLE: 'รถคันนี้ไม่อยู่ในสถานะใช้งานได้ (กำลังซ่อม/ปลดประจำการ) กรุณาเลือกรถคันอื่น',
+  // fleet_correct_trip_odometer (ผู้ดูแลแก้เลขไมล์ย้อนหลัง)
+  FLEET_ODOMETER_FIX_REQUIRES_COMPLETED: 'แก้เลขไมล์ย้อนหลังได้เฉพาะทริปที่เสร็จสิ้นแล้ว — ทริปที่กำลังเดินทางให้แก้ตอนบันทึกกลับ',
+  FLEET_ODOMETER_FIX_INVALID_RANGE: 'เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก และต้องไม่ติดลบ',
+  FLEET_ODOMETER_FIX_REASON_REQUIRED: 'กรุณาระบุเหตุผลที่แก้เลขไมล์ 5–300 ตัวอักษร',
+  FLEET_ODOMETER_FIX_NEGATIVE: 'ปรับตามแล้วเลขไมล์ของทริปถัดไปจะติดลบ — ตรวจเลขที่กรอกอีกครั้ง',
 }
 // UPDATE ที่ถูก RLS ปฏิเสธจะ "ไม่ตรงแถวใดเลย" ไม่ใช่ error — PostgREST คืน 204 และ error เป็น null
 // ถ้าไม่ดักจำนวนแถวเอง ผู้ใช้จะเห็นหน้าต่างปิดเหมือนบันทึกสำเร็จ แต่สถานะไม่ขยับ กดซ้ำกี่ครั้งก็เท่าเดิม
@@ -142,6 +148,13 @@ function tripErrorMessage(error) {
   }
   const hit = Object.keys(TRIP_ERROR_TH).find(code => raw.includes(code))
   return hit ? TRIP_ERROR_TH[hit] : raw
+}
+
+// FLEET_ACCESS_DENIED ใช้ร่วมกับ RPC อื่นของระบบยานพาหนะ จึงแปลเฉพาะที่หน้าแก้เลขไมล์ ไม่ใส่ตารางกลาง
+function odometerFixErrorMessage(error) {
+  const raw = error?.message ?? ''
+  if (raw.includes('FLEET_ACCESS_DENIED')) return 'แก้เลขไมล์ย้อนหลังได้เฉพาะผู้ดูแลระบบยานพาหนะของหน่วยงานนี้'
+  return tripErrorMessage(error)
 }
 
 const pad2 = n => String(n).padStart(2, '0')
@@ -197,6 +210,40 @@ function fmtDate(str) {
 function fmtKm(value) {
   const n = Number(value)
   return Number.isFinite(n) ? `${n.toLocaleString('th-TH', { maximumFractionDigits: 2 })} กม.` : '—'
+}
+
+// เตือนระยะทางที่น่าจะพิมพ์ผิด — ตัวตัดสินอยู่ที่ checkTripOdometer() จุดเดียว (src/lib/fleetOdometer.js)
+// ไม่บล็อก เพราะเดินทางไกลจริงมีได้ แต่ต้องเห็นก่อนกดบันทึก และกดใช้เลขที่ระบบเสนอได้ในแตะเดียว
+// เคสจริง: เลขกลับพิมพ์สลับหลัก 278,715 → 287,715 หน้าจอขึ้นระยะ 9,009 กม. แต่ไม่มีอะไรเตือนเลย
+function OdometerImplausibleHint({ check, start, onUseEnd }) {
+  if (!check?.implausible) return null
+  const startNum = Number(start)
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-[11px] text-red-700 space-y-1.5">
+      <p className="font-bold">⚠️ ระยะทาง {fmtKm(check.distance)} ในทริปเดียว — ผิดปกติ ตรวจเลขหน้าปัดอีกครั้ง</p>
+      {check.suggestedEnd != null && (
+        <button type="button" onClick={() => onUseEnd(check.suggestedEnd)}
+          className="w-full rounded-lg border border-red-300 bg-white px-2 py-2 text-[12px] font-bold text-red-700 hover:bg-red-100">
+          หน้าปัดขึ้น {fmtKm(check.suggestedEnd)} ใช่ไหม? กดใช้เลขนี้
+          {Number.isFinite(startNum) ? ` (ระยะ ${fmtKm(Math.round((check.suggestedEnd - startNum) * 100) / 100)})` : ''}
+        </button>
+      )}
+      <p className="text-red-600">
+        ถ้าเลขที่กรอกถูกต้องจริง (เช่น เดินทางไกลหลายวัน) กดบันทึกได้ ระบบจะให้ยืนยันอีกครั้งและเก็บร่องรอยไว้
+      </p>
+    </div>
+  )
+}
+
+// ด่านสุดท้ายก่อนบันทึกระยะทางเกินเกณฑ์ — ข้อความเดียวกันทุกทางบันทึก (กลับถึง/ย้อนหลัง/ผู้ดูแลแก้)
+// เลขกลับของทริปนี้จะถูกเติมเป็นเลขออกของทริปถัดไป ผิดตรงนี้ = ผิดต่อทั้งชุด
+function confirmImplausibleDistance(check, start, end) {
+  return confirm(
+    `ระยะทาง ${fmtKm(check.distance)} ในทริปเดียว ผิดปกติ (เกิน ${fmtKm(FLEET_TRIP_KM_CONFIRM)})\n\n`
+    + `เลขไมล์ก่อนออก ${fmtKm(start)}\nเลขไมล์หลังกลับ ${fmtKm(end)}\n\n`
+    + (check.suggestedEnd != null ? `ถ้าหน้าปัดขึ้น ${fmtKm(check.suggestedEnd)} ให้กดยกเลิกแล้วแก้เลขก่อน\n\n` : '')
+    + 'ยืนยันว่าเลขที่กรอกถูกต้องจริง? กด OK เพื่อบันทึก ระบบจะเก็บร่องรอยไว้ให้ตรวจสอบ',
+  )
 }
 
 const EMPTY_RESERVE = {
@@ -1069,6 +1116,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       return alert('เลขไมล์หลังกลับต้องเป็น 0 หรือมากกว่า')
     if (startMeter !== null && endMeter !== null && endMeter < startMeter)
       return alert('เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก')
+    const odometerCheck = checkTripOdometer(startMeter, endMeter)
+    if (odometerCheck.implausible && !confirmImplausibleDistance(odometerCheck, startMeter, endMeter))
+      return
     // วันที่เอกสารแบบ 3 — แก้ได้เพื่อให้ตรงกับวันที่เกิดเหตุจริง แต่ต้องไม่ล่วงหน้าถึงวันที่ยังไม่มาถึง
     const documentDate = form.document_date || null
     if (documentDate && documentDate > localDateStr(new Date()))
@@ -1121,6 +1171,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           previous_trip_date: lastOdometer?.trip_date ?? null,
         },
       })
+    }
+    if (odometerCheck.implausible && rows?.[0]?.id) {
+      logImplausibleDistance(rows[0].id, vehicles.find(v => v.id === form.vehicle_id)?.name, odometerCheck, startMeter, endMeter)
     }
     setModal(null)
     loadTrips()
@@ -1227,6 +1280,37 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   // ช่วงเลขไมล์ที่ขาดหายไปในประวัติของรถคันนั้นทั้งหมด (ไม่ใช่แค่ค่าล่าสุด) — เจ้าหน้าที่จะได้
   // เห็นช่องว่างเก่าที่ยังไม่มีใครมาอุดโดยไม่ต้องไล่ดูจากแบบ 4 ที่พิมพ์ออกมาเอง
   const [odometerGaps, setOdometerGaps] = useState([])
+
+  // ผู้ดูแลแก้เลขไมล์ทริปที่เสร็จแล้ว (fleet_correct_trip_odometer) — ต้องเห็นก่อนว่าทริปถัดไป
+  // กี่รายการจะถูกปรับตาม จึงเรียกแบบ dry run ทุกครั้งที่ตัวเลขเปลี่ยน แล้วค่อยให้กดบันทึก
+  // ชุดที่ปรับตามต้องให้ DB ไล่ เพราะ RLS บังทริปกองอื่นบนรถส่วนกลาง และประวัติบนจอแบ่งหน้า
+  const [fixForm, setFixForm] = useState({ start: '', end: '', reason: '', shiftFollowing: true })
+  const [fixPreview, setFixPreview] = useState({ key: '', rows: [], error: '' })
+  useEffect(() => {
+    if (modal !== 'odometerFix' || !selTrip) return
+    const start = fixForm.start === '' ? NaN : Number(fixForm.start)
+    const end = fixForm.end === '' ? NaN : Number(fixForm.end)
+    const origEnd = selTrip.odometer_end == null ? null : Number(selTrip.odometer_end)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start) return
+    if (!fixForm.shiftFollowing || origEnd === null || end === origEnd) return
+    const key = `${fixForm.start}|${fixForm.end}|${fixForm.shiftFollowing}`
+    let cancelled = false
+    // หน่วงไว้ให้พิมพ์เลขจบก่อน ไม่ยิง RPC ทุกตัวอักษร
+    const timer = setTimeout(async () => {
+      const { data, error } = await supabase.rpc('fleet_correct_trip_odometer', {
+        p_trip: selTrip.id, p_start: start, p_end: end, p_reason: null,
+        p_shift_following: true, p_dry_run: true,
+      })
+      if (cancelled) return   // ตัวเลขเปลี่ยนไปแล้วระหว่างรอ ผลนี้เก่า
+      setFixPreview({
+        key,
+        rows: !error && Array.isArray(data) ? data.filter(r => !r.is_target) : [],
+        error: error ? odometerFixErrorMessage(error) : '',
+      })
+    }, 400)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [modal, selTrip, fixForm.start, fixForm.end, fixForm.shiftFollowing])
+
   async function loadLastOdometerForDirect(vehicleId) {
     directVehicleRef.current = vehicleId
     setLastOdometer(null)
@@ -1332,6 +1416,29 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     loadTrips()
   }
 
+  // เก็บเลขไมล์ก่อนออกไว้ในฟอร์มด้วย — เลขนี้ระบบเติมต่อจากทริปก่อน ถ้าทริปก่อนพิมพ์ผิด เลขนี้ก็ผิดตาม
+  // คนขับต้องแก้ได้ตอนกลับ ไม่งั้นเลขหน้าปัดจริงจะโดนด่าน "ต้องไม่น้อยกว่าเลขออก" บล็อก
+  // จนต้องพิมพ์เลขผิดตามไปทุกทริป (เคสจริงน้ำเลา ก.ย. 2569 ผิดต่อกัน 3 ทริป)
+  function openReturn(t) {
+    setSelTrip(t)
+    setForm({
+      returned_at: toLocalDT(new Date()),
+      odometer_start: t.odometer_start == null ? '' : String(Number(t.odometer_start)),
+      odometer_end: '',
+      notes: '',
+    })
+    setModal('return')
+  }
+
+  function logImplausibleDistance(tripId, vehicleName, check, start, end) {
+    logAction({
+      action: 'update', resourceType: 'fleet_trip', resourceId: tripId,
+      resourceLabel: `${vehicleName ?? ''} — ยืนยันระยะทางเกินเกณฑ์`,
+      municipalityId: tenant.id,
+      metadata: { distance_km: check.distance, odometer_start: start, odometer_end: end, threshold_km: FLEET_TRIP_KM_CONFIRM },
+    })
+  }
+
   async function submitReturn() {
     if (!form.returned_at) return alert('กรุณาระบุเวลากลับ')
     if (selTrip.started_at && (parseDateTime(form.returned_at)?.getTime() ?? 0) < (parseDateTime(selTrip.started_at)?.getTime() ?? 0))
@@ -1339,12 +1446,22 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const endMeter = form.odometer_end === '' ? null : Number(form.odometer_end)
     if (endMeter !== null && (!Number.isFinite(endMeter) || endMeter < 0))
       return alert('เลขไมล์หลังกลับต้องเป็น 0 หรือมากกว่า')
-    if (selTrip.odometer_start != null && endMeter !== null && endMeter < Number(selTrip.odometer_start))
-      return alert('เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก')
+    // ทริปที่ออกโดยไม่ได้กรอกเลขออก ไม่มีอะไรให้แก้ — ใช้ตามเดิม
+    const origStart = selTrip.odometer_start == null ? null : Number(selTrip.odometer_start)
+    const startMeter = origStart === null ? null : (form.odometer_start === '' ? NaN : Number(form.odometer_start))
+    if (startMeter !== null && (!Number.isFinite(startMeter) || startMeter < 0))
+      return alert('เลขไมล์ก่อนออกต้องเป็น 0 หรือมากกว่า')
+    if (startMeter !== null && endMeter !== null && endMeter < startMeter)
+      return alert('เลขไมล์หลังกลับยังน้อยกว่าเลขไมล์ก่อนออก — ถ้าเลขหน้าปัดตอนนี้ถูกแล้ว ให้แก้ "เลขไมล์ก่อนออก" ในหน้านี้ให้ตรงกับตอนออกจริง')
+    const odometerCheck = checkTripOdometer(startMeter, endMeter)
+    if (odometerCheck.implausible && !confirmImplausibleDistance(odometerCheck, startMeter, endMeter))
+      return
+    const startChanged = startMeter !== null && startMeter !== origStart
     setSaving(true)
     const { data: rows, error } = await supabase.from('fleet_trips').update({
       status: 'completed',
       returned_at: toISO(form.returned_at),
+      ...(startChanged ? { odometer_start: startMeter } : {}),
       odometer_end: endMeter,
       notes: form.notes || null,
     }).eq('id', selTrip.id).select('id')
@@ -1352,6 +1469,62 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (error) return alert(tripErrorMessage(error))
     if (!rows?.length) return alert(TRIP_NO_ROW_MSG)
     notifyTelegram('fleet_trip_returned', selTrip.id)
+    // แก้เลขออกตอนกลับ = ทริปก่อนหน้าน่าจะบันทึกเลขกลับผิด เก็บร่องรอยไว้ให้ผู้ดูแลตามไปแก้ทริปนั้น
+    if (startChanged) {
+      logAction({
+        action: 'update', resourceType: 'fleet_trip', resourceId: selTrip.id,
+        resourceLabel: `${selTrip.vehicle?.name ?? ''} — แก้เลขไมล์ก่อนออกตอนบันทึกกลับ`,
+        municipalityId: tenant.id,
+        metadata: { odometer_start_before: origStart, odometer_start_after: startMeter, odometer_end: endMeter },
+      })
+    }
+    if (odometerCheck.implausible) {
+      logImplausibleDistance(selTrip.id, selTrip.vehicle?.name, odometerCheck, startMeter, endMeter)
+    }
+    setModal(null); setSelTrip(null)
+    loadTrips()
+  }
+
+  /* ── ผู้ดูแลแก้เลขไมล์ทริปที่เสร็จแล้ว ── */
+  function openOdometerFix(t) {
+    setSelTrip(t)
+    setFixForm({
+      start: t.odometer_start == null ? '' : String(Number(t.odometer_start)),
+      end: t.odometer_end == null ? '' : String(Number(t.odometer_end)),
+      reason: '',
+      shiftFollowing: true,
+    })
+    setFixPreview({ key: '', rows: [], error: '' })
+    setModal('odometerFix')
+  }
+
+  async function submitOdometerFix() {
+    const start = fixForm.start === '' ? NaN : Number(fixForm.start)
+    const end = fixForm.end === '' ? NaN : Number(fixForm.end)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0)
+      return alert('กรุณากรอกเลขไมล์ก่อนออกและหลังกลับให้ครบ (0 หรือมากกว่า)')
+    if (end < start) return alert('เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก')
+    const origStart = selTrip.odometer_start == null ? null : Number(selTrip.odometer_start)
+    const origEnd = selTrip.odometer_end == null ? null : Number(selTrip.odometer_end)
+    if (start === origStart && end === origEnd) return alert('เลขไมล์ยังเหมือนเดิม ไม่มีอะไรให้แก้')
+    const reason = fixForm.reason.trim()
+    if (reason.length < 5) return alert('กรุณาระบุเหตุผลที่แก้เลขไมล์อย่างน้อย 5 ตัวอักษร')
+    if (reason.length > 300) return alert('เหตุผลยาวเกิน 300 ตัวอักษร')
+    // ต้องเห็นรายการที่จะปรับตามก่อนบันทึก — ผลจริงคำนวณที่ DB ด้วยกติกาเดียวกับ dry run
+    const willShift = fixForm.shiftFollowing && origEnd !== null && end !== origEnd
+    if (willShift && fixPreview.key !== `${fixForm.start}|${fixForm.end}|${fixForm.shiftFollowing}`)
+      return alert('ระบบกำลังตรวจทริปถัดไปที่ต่อกัน รอสักครู่แล้วกดบันทึกอีกครั้ง')
+    if (willShift && fixPreview.error) return alert(fixPreview.error)
+    const check = checkTripOdometer(start, end)
+    if (check.implausible && !confirmImplausibleDistance(check, start, end)) return
+    setSaving(true)
+    const { error } = await supabase.rpc('fleet_correct_trip_odometer', {
+      p_trip: selTrip.id, p_start: start, p_end: end, p_reason: reason,
+      p_shift_following: fixForm.shiftFollowing, p_dry_run: false,
+    })
+    setSaving(false)
+    // ร่องรอย (เหตุผล/ค่าเดิม/ค่าใหม่ทั้งชุด/ผู้แก้) ฟังก์ชันใน DB เขียนลง audit_logs เองแล้ว
+    if (error) return alert('แก้เลขไมล์ไม่สำเร็จ: ' + odometerFixErrorMessage(error))
     setModal(null); setSelTrip(null)
     loadTrips()
   }
@@ -1722,7 +1895,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         <div className="border-t border-gray-100 pt-1.5 text-[10px] leading-4 text-gray-500">
           <div className="flex items-center gap-2">
             <span className="min-w-0 flex-1 truncate">ผู้ใช้รถ {t.requester?.full_name || '—'}{t.departments?.short_name ? ` · ${t.departments.short_name}` : ''}</span>
-            {dist != null && <span className="shrink-0 font-bold text-gray-700">📏 {dist.toLocaleString()} กม.</span>}
+            {dist != null && (isImplausibleTripDistance(dist)
+              // ระบบติดป้ายเอง ผู้ดูแลแตะเข้าไปแก้ได้ทันที ไม่ต้องไล่หาจากแบบ 4 (ใช้ป้ายแทนแบนเนอร์
+              // เพราะทริปไกลจริงที่ยืนยันแล้วจะได้ไม่ขึ้นเตือนค้างตลอด)
+              ? <span className="shrink-0 font-bold text-red-600" title="ระยะทางเกินเกณฑ์ — ตรวจเลขไมล์">⚠️ {dist.toLocaleString()} กม.</span>
+              : <span className="shrink-0 font-bold text-gray-700">📏 {dist.toLocaleString()} กม.</span>)}
           </div>
           {t.planned_departure && <div>🗓 {fmtDT(t.planned_departure)} – {fmtDT(t.planned_return)}</div>}
           {t.started_at && <div>🚀 {fmtDT(t.started_at)}{t.odometer_start ? ` · ${Number(t.odometer_start).toLocaleString()} กม.` : ''}</div>}
@@ -1759,11 +1936,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               </button>
             )}
             {canReturn && (
-              <button onClick={() => {
-                setSelTrip(t)
-                setForm({ returned_at: toLocalDT(new Date()), odometer_end: '', notes: '' })
-                setModal('return')
-              }} className="flex-1 py-1.5 rounded-lg text-[11px] font-bold text-white bg-green-600">
+              <button onClick={() => openReturn(t)} className="flex-1 py-1.5 rounded-lg text-[11px] font-bold text-white bg-green-600">
                 🏁 กลับถึง
               </button>
             )}
@@ -1803,7 +1976,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           {t.requester?.full_name || '—'}
         </td>
         <td className="px-4 py-2.5 text-xs text-gray-500 border-r border-gray-200 text-right whitespace-nowrap">
-          {dist != null ? `${dist.toLocaleString()} กม.` : '—'}
+          {dist == null ? '—' : isImplausibleTripDistance(dist) ? (
+            <span className="font-bold text-red-600" title="ระยะทางเกินเกณฑ์ — ตรวจเลขไมล์">
+              ⚠️ {dist.toLocaleString()} กม.
+              <span className="block text-[9px] font-semibold">ตรวจเลขไมล์</span>
+            </span>
+          ) : `${dist.toLocaleString()} กม.`}
         </td>
         <td className="px-4 py-2.5 text-xs border-r border-gray-200">
           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
@@ -1851,11 +2029,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               </button>
             )}
             {canReturn && (
-              <button onClick={() => {
-                setSelTrip(t)
-                setForm({ returned_at: toLocalDT(new Date()), odometer_end: '', notes: '' })
-                setModal('return')
-              }} className="px-2 py-1 rounded-lg bg-green-600 text-white text-[12px] font-bold whitespace-nowrap">
+              <button onClick={() => openReturn(t)} className="px-2 py-1 rounded-lg bg-green-600 text-white text-[12px] font-bold whitespace-nowrap">
                 🏁 กลับ
               </button>
             )}
@@ -2008,6 +2182,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         // ก็เท่ากับเปลี่ยนรถ/เวลาได้โดยไม่มีใครเห็น (DB ยังตรวจคิวชนให้ทุกครั้งที่แก้)
         const canEdit = (AWAITING_DECISION.includes(t.status) && (isRequester(t) || isAdmin))
           || (t.status === 'approved' && isAdmin)
+        // ทริปที่ปิดแล้วแก้เลขไมล์ได้เฉพาะผู้ดูแล (DB ตรวจซ้ำด้วย fleet_is_manager) พร้อมเหตุผลทุกครั้ง
+        // เดิมไม่มีทางแก้เลย เลขที่พิมพ์ผิดครั้งเดียวจึงถูกระบบเติมต่อให้ทริปถัดไปผิดตามทั้งชุด
+        const canFixOdometer = t.status === 'completed' && isAdmin
         return (
           <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-4">
             <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl">
@@ -2045,7 +2222,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                   </>}
                   {t.started_at && <div><p className="text-gray-400">ออกจริง</p><p className="font-semibold text-gray-700">{fmtDT(t.started_at)}{t.odometer_start != null ? ` · ${Number(t.odometer_start).toLocaleString()} กม.` : ''}</p></div>}
                   {t.returned_at && <div><p className="text-gray-400">กลับจริง</p><p className="font-semibold text-gray-700">{fmtDT(t.returned_at)}{t.odometer_end != null ? ` · ${Number(t.odometer_end).toLocaleString()} กม.` : ''}</p></div>}
-                  {t.distance_km != null && <div><p className="text-gray-400">ระยะทาง</p><p className="font-semibold text-gray-700">{Number(t.distance_km).toLocaleString()} กม.</p></div>}
+                  {t.distance_km != null && (isImplausibleTripDistance(t.distance_km) ? (
+                    <div className="col-span-2">
+                      <p className="text-gray-400">ระยะทาง</p>
+                      <p className="font-semibold text-red-600">⚠️ {Number(t.distance_km).toLocaleString()} กม. — เกิน {fmtKm(FLEET_TRIP_KM_CONFIRM)} ต่อทริป ตรวจเลขไมล์ว่าพิมพ์ผิดหรือไม่</p>
+                    </div>
+                  ) : (
+                    <div><p className="text-gray-400">ระยะทาง</p><p className="font-semibold text-gray-700">{Number(t.distance_km).toLocaleString()} กม.</p></div>
+                  ))}
                   {t.approver?.full_name && <div>
                     <p className="text-gray-400">{t.status === 'rejected' ? 'ผู้ปฏิเสธ' : t.status === 'cancelled' ? 'ผู้ดำเนินการ' : 'ผู้อนุมัติ'}</p>
                     <p className="font-semibold text-gray-700">{t.approver.full_name}{t.approved_at ? ` · ${fmtDT(t.approved_at)}` : ''}</p>
@@ -2064,7 +2248,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                   {t.notes && <div className="col-span-2"><p className="text-gray-400">หมายเหตุ</p><p className="font-semibold text-gray-700">{t.notes}</p></div>}
                 </div>
               </div>
-              <div className={`grid grid-cols-1 gap-2 px-5 pb-5 pt-3 border-t border-gray-100 ${canEdit ? 'sm:grid-cols-2' : ''}`}>
+              <div className={`grid grid-cols-1 gap-2 px-5 pb-5 pt-3 border-t border-gray-100 ${canEdit || canFixOdometer ? 'sm:grid-cols-2' : ''}`}>
                 <button onClick={() => printTripRequest(t)}
                   className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50">
                   <Printer size={15} /> พิมพ์ใบขอใช้รถ (แบบ 3)
@@ -2074,6 +2258,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                     className="rounded-xl py-3 text-sm font-bold text-white"
                     style={{ backgroundColor: 'var(--color-primary)' }}>
                     ✏️ แก้ไขคำขอ
+                  </button>
+                )}
+                {canFixOdometer && (
+                  <button onClick={() => openOdometerFix(t)}
+                    className={`rounded-xl py-3 text-sm font-bold ${isImplausibleTripDistance(t.distance_km)
+                      ? 'bg-red-600 text-white hover:bg-red-700'
+                      : 'border border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
+                    ✏️ แก้เลขไมล์
                   </button>
                 )}
               </div>
@@ -2375,11 +2567,19 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                 placeholder="0" className={inp} />
             </div>
           </div>
-          {form.odometer_start && form.odometer_end && Number(form.odometer_end) > Number(form.odometer_start) && (
-            <div className="bg-gray-50 rounded-xl p-2.5 text-xs text-center font-bold text-gray-700">
-              📏 ระยะทาง: {(Number(form.odometer_end) - Number(form.odometer_start)).toLocaleString()} กม.
-            </div>
-          )}
+          {(() => {
+            // บันทึกย้อนหลังเติมเลขก่อนจากทริปล่าสุดให้เหมือนกัน เลขกลับที่พิมพ์ผิดตรงนี้จึงลามต่อได้เท่ากัน
+            const check = checkTripOdometer(form.odometer_start, form.odometer_end)
+            if (check.implausible) {
+              return <OdometerImplausibleHint check={check} start={form.odometer_start}
+                onUseEnd={v => setForm(f => ({ ...f, odometer_end: String(v) }))} />
+            }
+            return check.distance > 0 && (
+              <div className="bg-gray-50 rounded-xl p-2.5 text-xs text-center font-bold text-gray-700">
+                📏 ระยะทาง: {fmtKm(check.distance)}
+              </div>
+            )
+          })()}
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">หมายเหตุ</label>
             <input value={form.notes} onChange={set('notes')} className={inp} />
@@ -2490,7 +2690,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       )}
 
       {/* บันทึกกลับถึง */}
-      {modal === 'return' && selTrip && (
+      {modal === 'return' && selTrip && (() => {
+        const origStart = selTrip.odometer_start == null ? null : Number(selTrip.odometer_start)
+        const startInput = form.odometer_start ?? ''
+        const check = checkTripOdometer(origStart === null ? null : startInput, form.odometer_end)
+        const startChanged = origStart !== null && startInput !== '' && Number(startInput) !== origStart
+        // เปิดช่องแก้เลขออกเมื่อเลขกลับน้อยกว่า และค้างไว้หลังแก้แล้ว ไม่งั้นช่องหายระหว่างพิมพ์
+        const showStartFix = origStart !== null && (check.backwards || startChanged)
+        return (
         <Modal title="🏁 บันทึกกลับถึง"
                onClose={() => { setModal(null); setSelTrip(null) }}
                onSave={submitReturn} saveLabel="ยืนยันกลับถึง" saving={saving}>
@@ -2499,9 +2706,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               {selTrip.vehicle?.name} · {assetIdentifier(selTrip.vehicle)}
             </p>
             <p className="text-xs text-gray-600">{selTrip.destination} — {selTrip.purpose}</p>
-            {selTrip.odometer_start && (
+            {origStart !== null && (
               <p className="text-xs text-green-600 mt-1">
-                เลขไมล์ก่อนออก: {Number(selTrip.odometer_start).toLocaleString()} กม.
+                เลขไมล์ก่อนออก: {fmtKm(origStart)}
               </p>
             )}
           </div>
@@ -2514,9 +2721,39 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <input type="number" value={form.odometer_end} onChange={set('odometer_end')}
               placeholder="เช่น 12400" className={inp} />
           </div>
-          {selTrip.odometer_start && form.odometer_end && Number(form.odometer_end) > Number(selTrip.odometer_start) && (
+          {check.backwards && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-800 space-y-1.5">
+              <p className="font-bold">⚠️ เลขไมล์หลังกลับน้อยกว่าเลขไมล์ก่อนออก ({fmtKm(origStart)})</p>
+              <p>
+                เลขก่อนออกระบบเติมต่อจากทริปก่อน ถ้าหน้าปัดตอนนี้ขึ้น {fmtKm(form.odometer_end)} จริง
+                แปลว่าเลขก่อนออกผิดมาตั้งแต่ทริปก่อน — แก้ในช่องด้านล่างให้ตรงกับตอนออกจริงได้เลย
+              </p>
+              {check.suggestedStart != null && (
+                <button type="button"
+                  onClick={() => setForm(f => ({ ...f, odometer_start: String(check.suggestedStart) }))}
+                  className="w-full rounded-lg border border-amber-300 bg-white px-2 py-2 text-[12px] font-bold text-amber-800 hover:bg-amber-100">
+                  ตอนออกหน้าปัดขึ้น {fmtKm(check.suggestedStart)} ใช่ไหม? กดใช้เลขนี้
+                  {` (ระยะ ${fmtKm(Math.round((Number(form.odometer_end) - check.suggestedStart) * 100) / 100)})`}
+                </button>
+              )}
+            </div>
+          )}
+          {showStartFix && (
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์ก่อนออก (กม.) — แก้ให้ตรงกับตอนออกจริง</label>
+              <input type="number" value={startInput} onChange={set('odometer_start')} className={inp} />
+              {startChanged && (
+                <p className="mt-1 text-[10px] text-gray-500">
+                  เดิม {fmtKm(origStart)} — ระบบเก็บร่องรอยการแก้ไว้ให้ผู้ดูแลตามไปแก้เลขกลับของทริปก่อนหน้า
+                </p>
+              )}
+            </div>
+          )}
+          <OdometerImplausibleHint check={check} start={startInput}
+            onUseEnd={v => setForm(f => ({ ...f, odometer_end: String(v) }))} />
+          {check.distance > 0 && !check.implausible && (
             <div className="bg-gray-50 rounded-xl p-2.5 text-sm text-center font-bold text-gray-700">
-              📏 ระยะทาง: {(Number(form.odometer_end) - Number(selTrip.odometer_start)).toLocaleString()} กม.
+              📏 ระยะทาง: {fmtKm(check.distance)}
             </div>
           )}
           <div>
@@ -2524,7 +2761,98 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <input value={form.notes} onChange={set('notes')} className={inp} />
           </div>
         </Modal>
-      )}
+        )
+      })()}
+
+      {/* ผู้ดูแลแก้เลขไมล์ทริปที่เสร็จแล้ว + ปรับทริปถัดไปที่ต่อกันทั้งชุด */}
+      {modal === 'odometerFix' && selTrip && (() => {
+        const t = selTrip
+        const check = checkTripOdometer(fixForm.start, fixForm.end)
+        const endNum = fixForm.end === '' ? NaN : Number(fixForm.end)
+        const origEnd = t.odometer_end == null ? null : Number(t.odometer_end)
+        const delta = check.distance !== null && !check.backwards && origEnd !== null && Number.isFinite(endNum)
+          ? Math.round((endNum - origEnd) * 100) / 100
+          : 0
+        const previewReady = fixPreview.key === `${fixForm.start}|${fixForm.end}|${fixForm.shiftFollowing}`
+        const setFix = k => e => setFixForm(f => ({ ...f, [k]: e.target.value }))
+        return (
+          <Modal title="✏️ แก้เลขไมล์ย้อนหลัง"
+                 onClose={() => { setModal(null); setSelTrip(null) }}
+                 onSave={submitOdometerFix} saveLabel="บันทึกการแก้ไข" saving={saving}>
+            <div className="bg-amber-50 rounded-xl p-3">
+              <p className="text-sm font-bold text-gray-800">{t.vehicle?.name} · {assetIdentifier(t.vehicle)}</p>
+              <p className="text-xs text-gray-600">{fmtDate(t.started_at || t.trip_date)} · {t.destination}</p>
+              <p className="text-xs text-amber-700 mt-1">
+                เดิม: ออก {fmtKm(t.odometer_start)} · กลับ {fmtKm(t.odometer_end)} · ระยะ {fmtKm(t.distance_km)}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์ก่อนออก (กม.)</label>
+                <input type="number" value={fixForm.start} onChange={setFix('start')} className={inp} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์หลังกลับ (กม.)</label>
+                <input type="number" value={fixForm.end} onChange={setFix('end')} className={inp} />
+              </div>
+            </div>
+            {check.backwards && (
+              <p className="text-[11px] font-semibold text-red-600">⚠️ เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก</p>
+            )}
+            <OdometerImplausibleHint check={check} start={fixForm.start}
+              onUseEnd={v => setFixForm(f => ({ ...f, end: String(v) }))} />
+            {check.distance !== null && !check.backwards && !check.implausible && (
+              <div className="bg-gray-50 rounded-xl p-2.5 text-sm text-center font-bold text-gray-700">
+                📏 ระยะทางใหม่: {fmtKm(check.distance)}
+              </div>
+            )}
+            {delta !== 0 && (
+              <div className="rounded-xl border border-gray-200 p-3 space-y-2">
+                <label className="flex items-start gap-2 text-xs font-semibold text-gray-700">
+                  <input type="checkbox" className="mt-0.5" checked={fixForm.shiftFollowing}
+                    onChange={e => setFixForm(f => ({ ...f, shiftFollowing: e.target.checked }))} />
+                  <span>
+                    ปรับทริปถัดไปที่ใช้เลขต่อจากทริปนี้ด้วย ({delta > 0 ? '+' : '−'}{fmtKm(Math.abs(delta))})
+                    <span className="block font-normal text-[10px] text-gray-400">
+                      เฉพาะทริปที่เลขออกต่อจากเลขกลับเดิมพอดี (ระบบเติมต่อมา) หยุดที่ทริปแรกที่กรอกเลขเองจากหน้าปัด
+                    </span>
+                  </span>
+                </label>
+                {fixForm.shiftFollowing && (
+                  !previewReady ? (
+                    <p className="text-[11px] text-gray-400">กำลังตรวจทริปถัดไปที่ต่อกัน…</p>
+                  ) : fixPreview.error ? (
+                    <p className="text-[11px] font-semibold text-red-600">{fixPreview.error}</p>
+                  ) : fixPreview.rows.length === 0 ? (
+                    <p className="text-[11px] text-gray-500">ไม่มีทริปถัดไปที่ใช้เลขต่อจากทริปนี้</p>
+                  ) : (
+                    <div className="text-[11px] text-gray-600">
+                      <p className="font-semibold text-gray-700">จะปรับตามอีก {fixPreview.rows.length} ทริป</p>
+                      <ul className="mt-1 space-y-0.5">
+                        {fixPreview.rows.map(r => (
+                          <li key={r.trip_id}>
+                            {fmtDate(r.trip_date)} · ออก {fmtKm(r.old_start)} → {fmtKm(r.new_start)}
+                            {r.old_end != null ? ` · กลับ ${fmtKm(r.old_end)} → ${fmtKm(r.new_end)}` : ' · ยังไม่กลับ'}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">เหตุผลที่แก้ *</label>
+              <textarea value={fixForm.reason} onChange={setFix('reason')} rows={2} maxLength={300}
+                placeholder="เช่น เลขไมล์กลับพิมพ์สลับหลัก ตามที่ผู้ขับแจ้ง" className={inp} />
+              <p className="mt-1 text-[10px] text-gray-400">
+                ระบบเก็บค่าเดิม ค่าใหม่ ชื่อผู้แก้ และเหตุผลไว้ในประวัติการใช้งาน ตรวจสอบย้อนหลังได้
+                — ถ้าพิมพ์แบบ 4 ไปแล้ว ต้องพิมพ์ใหม่หรือแก้ฉบับกระดาษให้ตรงกัน
+              </p>
+            </div>
+          </Modal>
+        )
+      })()}
 
     </div>
   )

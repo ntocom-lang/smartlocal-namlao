@@ -31,6 +31,7 @@
     "test:fleet:cleanup": "node tests/fleet-workflow.playwright.mjs --cleanup",
     "test:fleet:form4": "node tests/fleet-form4-print.test.mjs && node tests/fleet-form4-layout.test.mjs",
     "test:fleet:fuel": "node tests/fleet-fuel-invoice-total.test.mjs",
+    "test:fleet:odometer": "node tests/fleet-odometer.test.mjs",
     "test:waste-cancel": "node tests/waste-cancel-print.test.mjs && node tests/waste-cancel-layout.test.mjs",
     "test:doc-status": "node tests/document-status.test.mjs",
     "test:doc-types": "node tests/doc-type-delete.playwright.mjs",
