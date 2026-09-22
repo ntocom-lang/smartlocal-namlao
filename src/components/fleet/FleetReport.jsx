@@ -739,7 +739,7 @@ export default function FleetReport({ tenant }) {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="text-xs font-bold text-gray-800 truncate">{t.vehicle?.name ?? '—'}</p>
-                          <p className="text-[10px] text-gray-400">{thDate(t.trip_date)} · {t.driver?.full_name ?? 'ไม่ระบุผู้ใช้รถ'}</p>
+                          <p className="text-[10px] text-gray-400">{assetIdentifier(t.vehicle)} · {thDate(t.trip_date)} · {t.driver?.full_name ?? 'ไม่ระบุผู้ใช้รถ'}</p>
                         </div>
                         <span className="text-xs font-black text-purple-600 whitespace-nowrap">{km != null ? `${km.toLocaleString()} กม.` : '—'}</span>
                       </div>
@@ -759,7 +759,9 @@ export default function FleetReport({ tenant }) {
                     <tr key={t.id} style={{ backgroundColor: i%2===0?'#fff':'#f5f8fc' }}>
                       <td className="px-3 py-2 text-xs text-gray-400 border-r border-gray-200 text-center">{i+1}</td>
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 whitespace-nowrap">{thDate(t.trip_date)}</td>
-                      <td className="px-3 py-2 text-xs font-semibold text-gray-700 border-r border-gray-200 whitespace-nowrap">{t.vehicle?.name}</td>
+                      {/* ทะเบียนบรรทัดที่ 2 เหมือนตารางน้ำมัน/ซ่อมบำรุง — ชื่อรถหลายคันเป็นชนิดรถ
+                          ("รถยนต์นั่งส่วนบุคคลไม่เกิน 7 คน") แยกคันไม่ได้ถ้าไม่เห็นทะเบียน */}
+                      <td className="px-3 py-2 text-xs font-semibold text-gray-700 border-r border-gray-200 whitespace-nowrap">{t.vehicle?.name}<span className="block text-[10px] text-gray-400">{assetIdentifier(t.vehicle)}</span></td>
                       <td className="px-3 py-2 text-xs text-gray-600 border-r border-gray-200">{t.destination}</td>
                       <td className="px-3 py-2 text-xs text-gray-500 border-r border-gray-200">{t.purpose}</td>
                       <td className="px-3 py-2 text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">{t.driver?.full_name}</td>
