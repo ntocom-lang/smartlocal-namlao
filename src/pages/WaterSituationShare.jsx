@@ -17,7 +17,7 @@ function ShareInfographic({ tenant, data, now, refreshFailed, url, text, setStat
   const [result, setResult] = useState(null)
   const [failed, setFailed] = useState(false)
   const [active, setActive] = useState(0)
-  const [selected, setSelected] = useState([0])
+  const [selected, setSelected] = useState([])
   const [busy, setBusy] = useState(false)
   const preview = useRef(null)
   function showImage(index) {
@@ -39,7 +39,7 @@ function ShareInfographic({ tenant, data, now, refreshFailed, url, text, setStat
         urls.push(objectUrl)
         rendered.push({ ...slide, file, url: objectUrl })
       }
-      if (alive) { setFailed(false); setResult({ data, now, images: rendered }) }
+      if (alive) { setFailed(false); setSelected(rendered.map((_, i) => i)); setActive(0); setResult({ data, now, images: rendered }) }
     }
     generate().catch(() => { if (alive) setFailed(true) })
     return () => { alive = false; urls.forEach(value => URL.revokeObjectURL(value)) }
