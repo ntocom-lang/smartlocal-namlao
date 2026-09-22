@@ -78,12 +78,14 @@ function StatusChips({ row }) {
 
 // งานที่ต้องใส่เหตุผลลงประวัติ (ยกเลิก คืนคิว แก้เหตุขัดข้อง) — กล่องละงาน ปุ่มเดียว
 // เหตุผลที่ระบบรู้อยู่แล้วเติมไว้ให้แก้ได้ งานที่ระบบไม่รู้เหตุผลปล่อยว่างให้เจ้าหน้าที่พิมพ์เอง
-function ReasonAction({ title, hint, defaultReason = '', placeholder = '', button, primary, busy, onRun }) {
+// seenByCitizen = งานที่ยกเลิกคำขอ ผู้จองจะอ่านข้อความนี้ในหน้าของตัวเอง (20260922130000) ป้ายช่องกรอกต้องบอกให้รู้ตัว
+// ก่อนพิมพ์ ไม่ใช่ให้รู้ทีหลังว่าเขียนอะไรไป · งานภายใน (คืนคิว แก้เหตุขัดข้อง) ไม่ตั้งธงนี้ เพราะผู้จองไม่เห็น
+function ReasonAction({ title, hint, defaultReason = '', placeholder = '', button, primary, busy, onRun, seenByCitizen }) {
   const [note, setNote] = useState(defaultReason)
   return <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
     <p className="font-semibold">{title}</p>
     {hint && <p className="text-sm text-slate-600">{hint}</p>}
-    <label className="block text-sm">เหตุผล (บันทึกในประวัติ)
+    <label className="block text-sm">{seenByCitizen ? 'เหตุผล (ผู้จองจะเห็นข้อความนี้)' : 'เหตุผล (บันทึกในประวัติ)'}
       <input className={inputClass} aria-label={`เหตุผล: ${title}`} value={note} maxLength={500} placeholder={placeholder} onChange={e => setNote(e.target.value)} />
     </label>
     <button type="button" className={primary ? primaryClass : buttonClass} disabled={busy || !note.trim()} onClick={() => onRun(note.trim())}>{button}</button>
@@ -167,7 +169,7 @@ function ProblemBox({ row, problem, rows, workspace, busy, isAdmin, onConfirm, o
     {amending && <AmendBooking booking={b} routes={workspace.settings?.routes || []} busy={busy} saveLabel="บันทึกและยืนยันรถ" onBack={() => setAmending(false)}
       onSave={(values, reason) => onConfirm(row, { ids: [b.id], separate: true, amend: { booking: b, values, reason } })} />}
     {fixes.has('cancel') && <ReasonAction busy={busy} title={conflict ? 'รถไม่ว่าง ให้บริการตามเวลานี้ไม่ได้' : 'ให้บริการตามคำขอนี้ไม่ได้'}
-      hint="ผู้จองจะเห็นสถานะ “ยกเลิกแล้ว” ในหน้าของตัวเอง ควรโทรแจ้งก่อนกด" defaultReason={cancelReason}
+      hint="ผู้จองจะเห็น “ยกเลิกแล้ว” พร้อมเหตุผลบรรทัดล่างนี้ในหน้าของตัวเอง ควรโทรแจ้งก่อนกด" defaultReason={cancelReason} seenByCitizen
       button={conflict ? 'แจ้งว่ารถไม่ว่าง และยกเลิกคำขอ' : 'ยกเลิกคำขอ'} onRun={note => act(b, 'cancel', note)} />}
   </section>
 }
@@ -194,7 +196,7 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
           onSave={async (values, reason) => { if (await onAmend(b, values, reason)) setAmending(false) }} />}
         {group.length > 1 && <button type="button" className={buttonClass} disabled={busy} onClick={() => onConfirm(row, { ids: [b.id], separate: true })}>ยืนยันเฉพาะคำขอนี้ (ไม่ไปด้วยกัน)</button>}
         {b.requested_trip_id && <button type="button" className={buttonClass} disabled={busy} onClick={() => onConfirm(row, { ids: [b.id], separate: true })}>ยืนยันเป็นเที่ยวแยก (ไม่ร่วมเที่ยวที่ขอ)</button>}
-        <ReasonAction busy={busy} title="ยกเลิกคำขอ" placeholder="เช่น ผู้จองแจ้งยกเลิกทางโทรศัพท์" button="ยกเลิกคำขอ" onRun={note => act(b, 'cancel', note)} />
+        <ReasonAction busy={busy} title="ยกเลิกคำขอ" placeholder="เช่น ผู้จองแจ้งยกเลิกทางโทรศัพท์" button="ยกเลิกคำขอ" seenByCitizen onRun={note => act(b, 'cancel', note)} />
       </>}
       {/* เปิดเป็นครั้ง ๆ แบบตารางออกรถเดิม — ฟอร์มจำ revision ตอนเปิดไว้เตือนเมื่อมีคนแก้ทับ
           บันทึกแล้วปิดทันที ไม่งั้นฟอร์มจะเตือน "ข้อมูลเปลี่ยน" จากการบันทึกของตัวเอง */}
@@ -202,7 +204,7 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
       {tripOpen && scheduling && <ScheduleUpdate key={trip.id} trip={trip} busy={busy} onUpdate={async (...args) => { const saved = await onUpdateSchedule(...args); if (saved) setScheduling(false); return saved }} />}
       {trip && next.id !== 'docs' && <TripFundDocs trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />}
       {trip?.state === 'completed' && next.id !== 'docs' && <OdometerForm trip={trip} trips={workspace.trips} busy={busy} onSave={onOdometer} />}
-      {removable && <ReasonAction busy={busy} title="นำรายนี้ออกจากเที่ยว" hint="ใช้เมื่อประสานแล้วว่าไม่เดินทาง ผู้เดินทางคนอื่นในเที่ยวไม่เปลี่ยน · ถ้าเป็นคนสุดท้ายและรถยังไม่ออก ระบบคืนช่วงเวลารถให้ด้วย" placeholder="เช่น ผู้ป่วยแจ้งเลื่อนนัด" button="นำออกจากเที่ยว" onRun={remove} />}
+      {removable && <ReasonAction busy={busy} title="นำรายนี้ออกจากเที่ยว" hint="ใช้เมื่อประสานแล้วว่าไม่เดินทาง ผู้เดินทางคนอื่นในเที่ยวไม่เปลี่ยน · ถ้าเป็นคนสุดท้ายและรถยังไม่ออก ระบบคืนช่วงเวลารถให้ด้วย" placeholder="เช่น ผู้ป่วยแจ้งเลื่อนนัด" button="นำออกจากเที่ยว" seenByCitizen onRun={remove} />}
       {releasable && <ReasonAction busy={busy} title="คืนคิวทั้งเที่ยว" hint="ผู้เดินทางทุกคนในเที่ยวนี้กลับไปเป็น “รอยืนยันรถ” เพื่อจัดรถใหม่" placeholder="เช่น รถเสีย ต้องจัดรถใหม่" button="คืนคิวทั้งเที่ยว" onRun={note => act(trip, 'release', note)} />}
     </div>
   </details>
@@ -230,7 +232,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, onC
     {next.id === 'cancel' && (soloRelease
       ? <ReasonAction busy={busy} primary title="ผู้จองขอยกเลิก" hint="เที่ยวนี้มีผู้เดินทางคนเดียว ยกเลิกแล้วช่วงเวลารถว่างให้คนอื่นจองได้ทันที" defaultReason="ผู้จองขอยกเลิก" button="ยกเลิกให้ตามที่ขอ" onRun={note => act(trip, 'release', note)} />
       : removable
-        ? <ReasonAction busy={busy} primary title="ผู้จองขอยกเลิก" hint="นำผู้เดินทางรายนี้ออกจากเที่ยว ผู้เดินทางคนอื่นไม่เปลี่ยน" defaultReason="ผู้จองขอยกเลิก" button="ยกเลิกให้ตามที่ขอ" onRun={remove} />
+        ? <ReasonAction busy={busy} primary title="ผู้จองขอยกเลิก" hint="นำผู้เดินทางรายนี้ออกจากเที่ยว ผู้เดินทางคนอื่นไม่เปลี่ยน" defaultReason="ผู้จองขอยกเลิก" seenByCitizen button="ยกเลิกให้ตามที่ขอ" onRun={remove} />
         : <p className="rounded-xl bg-amber-50 p-3">ผู้เดินทางอยู่บนรถ ยกเลิกระหว่างทางไม่ได้ ให้โทรประสานคนขับ</p>)}
     {next.id === 'issue' && <>
       <p className="rounded-xl bg-red-50 p-3"><strong>เหตุที่แจ้ง:</strong> {trip.issue_note || '—'}</p>

@@ -284,6 +284,10 @@ try{
  await page.setViewportSize({width:390,height:900});await visit('citizen')
  await page.getByRole('article').filter({hasText:'TEST cancel button'}).getByRole('button',{name:'ยกเลิกคำขอ',exact:true}).click()
  await toast('บันทึกแล้ว').waitFor();assert.equal((await bookingRow(cancelId)).status,'cancelled')
+ // ผู้จองกดยกเลิกเอง = ไม่มีเหตุผลของเจ้าหน้าที่ให้อ่าน (กล่องเหตุผลต้องไม่ขึ้นลอย ๆ)
+ const ownCancelCard=page.getByRole('article').filter({hasText:'TEST cancel button'})
+ await ownCancelCard.getByText('ยกเลิกแล้ว',{exact:true}).waitFor()
+ assert.equal(await ownCancelCard.getByText('เจ้าหน้าที่แจ้งเหตุผลที่ยกเลิก').count(),0,'ผู้จองยกเลิกเองไม่ต้องมีเหตุผลของเจ้าหน้าที่')
  await page.getByRole('article').filter({hasText:areaC.slice(0,8).toUpperCase()}).getByRole('button',{name:'ขอประสานยกเลิก',exact:true}).click()
  await toast('บันทึกแล้ว').waitFor();assert.equal((await bookingRow(areaC)).cancel_requested,true)
  const areaTrip=await tripOf(areaC)
@@ -291,7 +295,12 @@ try{
  await sheet.getByRole('button',{name:'ยกเลิกให้ตามที่ขอ',exact:true}).click();await sheet.waitFor({state:'detached'})
  assert.equal((await bookingRow(areaC)).status,'cancelled')
  assert.equal((await runSql(async()=>(await db.query('SELECT state FROM public.patient_booking_trips WHERE id=$1',[areaTrip])).rows[0])).state,'cancelled','ผู้เดินทางคนเดียวขอยกเลิก = คืนช่วงเวลารถทันที')
- console.log('PASS citizen cancel / cancellation request reach PostgreSQL; coordinator completes it and frees the vehicle')
+ // ── ผู้จองอ่านเหตุผลที่เจ้าหน้าที่บันทึกตอนยกเลิก (20260922130000) — b2 ถูกแจ้ง "รถไม่ว่าง" ไปก่อนหน้านี้ ──
+ await page.setViewportSize({width:390,height:900});await visit('newcomer')
+ const declinedCard=page.getByRole('article').filter({hasText:b2.slice(0,8).toUpperCase()})
+ await declinedCard.getByText('เจ้าหน้าที่แจ้งเหตุผลที่ยกเลิก').waitFor()
+ await declinedCard.getByText('รถไม่ว่างในช่วงเวลาที่ขอ').waitFor()
+ console.log('PASS citizen cancel / cancellation request reach PostgreSQL; coordinator completes it and frees the vehicle; the traveller reads why staff cancelled')
 
  // ── คนขับ: ไป-กลับ 4 ปุ่ม · กดซ้ำหลังเน็ตหลุดทำต่อได้ · ผู้ป่วยแจ้งพร้อมกลับ · เลขไมล์ช่องเดียว ──
  const b1Trip=await tripOf(b1),chairTrip=await tripOf(chairD)
