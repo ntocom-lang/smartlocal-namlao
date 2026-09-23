@@ -36,3 +36,14 @@ assert.equal(waterShareSlides(data,{slug:'thungkaew'}).at(-1).kind,'hydro')
 assert.equal(waterShareSlides(data,{slug:'tamnaktham'}).length,1)
 assert.equal(HYDRO_TENANTS.tamnaktham.station,'Y.38')
 console.log('PASS Hydro hourly: timestamp, zero/missing, identity, gaps, stale trends, cache/fallback, method/allowlist, JSONP safety, tenant share scope')
+
+let fallbackCalls = 0
+const officialFallback = await hydroHourlyResponse(req, { now, fetcher: async url => {
+  fallbackCalls++
+  if (new URL(url).hostname === 'hydro1.ddns.net') throw new Error('Host unavailable from edge')
+  assert.equal(new URL(url).hostname, 'www.hydro-1.net')
+  return new Response('hydroReport(' + JSON.stringify([row]) + ')')
+} })
+assert.equal(officialFallback.status, 200)
+assert.equal(fallbackCalls, 2)
+console.log('PASS official-domain fallback when DDNS is unreachable')
