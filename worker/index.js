@@ -1,3 +1,4 @@
+import { hydroHourlyResponse } from './hydroHourly.js'
 // SSR shell บน Cloudflare Workers — ฉีด <title> กับ og: tag ให้ตรงกับ อปท. ที่เจ้าของ
 // subdomain นั้นเป็น พอร์ตมาจาก api/ssr.js (Vercel) ตรรกะเหมือนเดิมทุกข้อ
 // เปลี่ยนแค่ที่มาของไฟล์ shell กับวิธีฉีด tag — ดู docs/hosting-and-domains.md
@@ -186,6 +187,7 @@ function normalizeHexColor(value) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
+    if (url.pathname === '/api/hydro-hourly') return hydroHourlyResponse(request)
     if (url.pathname === '/api/air-quality') return airQualityResponse(request)
     if (url.pathname === '/api/pm25-details') return pm25DetailsResponse(request)
 

@@ -1,3 +1,5 @@
+import { renderHydroShareImage } from './hydroShareImage.js'
+import { HYDRO_TENANTS, HYDRO_STATIONS } from './hydroHourly.js'
 import { shareWaterSituation, summaryStats, toNum, formatMm, formatMcm, rainLevel, damLevel, damTrend, bankText, distanceText, isStale, DAM_STALE_HOURS, STATION_STALE_HOURS, SYNC_STALE_HOURS } from './waterSituation.js'
 
 export const shareDate = value => value && Number.isFinite(new Date(value).getTime())
@@ -11,11 +13,15 @@ export function waterShareSlides(data, tenant) {
   for (const kind of ['dam', 'waterlevel']) {
     for (const station of stations.filter(s => s.station_type === kind)) slides.push({ kind, title: station.station_name || 'สถานีไม่ระบุชื่อ', stations: [station] })
   }
+  for (const report of data?.hydroReports || []) {
+    if (report.station === HYDRO_TENANTS[tenant?.slug]?.station && HYDRO_STATIONS[report.station]) slides.push({ kind: 'hydro', title: `${report.station} · ${HYDRO_STATIONS[report.station].name}`, report })
+  }
   return slides.map((slide, i) => ({ ...slide, index: i + 1, total: slides.length }))
 }
 
 // Fixed square compositions, never shrink an entire long page to fit a chat thumbnail.
 export async function renderWaterShareSlide(slide, { tenant, now, data, refreshFailed, url }) {
+  if (slide.kind === 'hydro') return renderHydroShareImage(slide, { tenant, now, url })
   await document.fonts.ready
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = 1080

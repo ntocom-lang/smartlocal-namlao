@@ -1,3 +1,4 @@
+import { HYDRO_STATIONS, HYDRO_TENANTS, HYDRO_SOURCE, hydroSummary, hydroDate, deltaText } from '../lib/hydroHourly'
 import { useEffect, useRef, useState } from 'react'
 import { Download, Share2, X } from 'lucide-react'
 import { waterShareSlides, renderWaterShareSlide } from '../lib/waterShareImages'
@@ -128,6 +129,12 @@ function shareText(tenant, data, now, refreshFailed) {
   if (stats.bank) lines.push(`• ${stats.bank.station.station_name}\n  ${stats.bank.text}\n  ตรวจวัด: ${dateText(stats.bank.station.recorded_at)} น.`)
   else lines.push('ไม่มีค่าระดับน้ำปัจจุบันสำหรับสรุป')
   lines.push('【ขอบเขตข้อมูล】\nในตำบล และสถานีข้างเคียงระยะไม่เกิน 5 กม. จากสำนักงาน อปท.\nไม่ครอบคลุมทุกจุดในพื้นที่\nไม่มีข้อมูล ไม่ได้หมายความว่าสถานการณ์ปกติ', '【แหล่งข้อมูล】\nThaiWater (สสน.) · ไม่ใช่ประกาศเตือนภัยของ อปท.', `ตรวจสอบข้อมูลล่าสุด:\n${appUrl('/water-situation?scope=nearby5')}`)
+  for (const report of data.hydroReports || []) {
+    if (report.station !== HYDRO_TENANTS[tenant.slug]?.station) continue
+    const station = HYDRO_STATIONS[report.station], { latest, stale, one, three } = hydroSummary(report, now)
+    if (!station) continue
+    lines.push(`【ระดับน้ำรายชั่วโมง · ${report.station}】\n${station.name} · ${station.river}\n${report.profile.scope}\nระดับน้ำ ${latest?.level == null ? 'ไม่มีค่า' : latest.level.toFixed(2) + ' ม.'} · น้ำไหลผ่าน ${latest?.discharge == null ? 'ไม่มีค่า' : latest.discharge.toFixed(2) + ' ลบ.ม./วินาที'}\n${latest ? 'วัด ' + hydroDate(latest.at) + ' น.' : 'ไม่มีเวลาวัด'}${stale ? ' · ข้อมูลอาจไม่เป็นปัจจุบัน' : ''}\nเทียบ 1 ชั่วโมง: ${deltaText(one)}\nเทียบ 3 ชั่วโมง: ${deltaText(three)}\nค่าที่สถานี ไม่ใช่ความลึกน้ำท่วมในหมู่บ้าน\nแหล่งข้อมูล: ศูนย์อุทกวิทยาชลประทานภาคเหนือตอนบน กรมชลประทาน\n${HYDRO_SOURCE}`)
+  }
   return lines.join('\n\n')
 }
 
