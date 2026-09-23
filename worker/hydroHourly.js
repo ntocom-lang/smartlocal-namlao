@@ -30,7 +30,7 @@ export async function hydroHourlyResponse(request, { fetcher = fetch, cache = gl
         if (!candidate.length) throw new Error('Empty report')
         points = candidate
         break
-      } catch { /* Try the fixed official fallback, then the saved report. */ }
+      } catch (error) { console.warn('Hydro upstream unavailable', new URL(base).hostname, error.message) }
     }
     if (!points) throw new Error('No usable report')
     const body = { station: code, points, fetchedAt: new Date(now).toISOString() }
