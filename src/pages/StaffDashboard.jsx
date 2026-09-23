@@ -1013,7 +1013,7 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuilding
 
 // ─── Inbox Module ─────────────────────────────────────────────────────────────
 
-export function InboxModule({ tenant, staffId, currentUserRole }) {
+export function InboxModule({ tenant, staffId, currentUserRole, onRequestDeleted }) {
   const navigate = useNavigate()
   const [requests, setRequests]   = useState([])
   const [loading, setLoading]     = useState(true)
@@ -1190,6 +1190,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
     if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
     setRequests(prev => prev.filter(r => r.id !== id))
     setSelected(null)
+    onRequestDeleted?.()
   }
 
   const TABS = [
@@ -2428,25 +2429,31 @@ export default function StaffDashboard() {
     })
   }, [navigate])
 
+  const pendingTenantId = tenant?.id
+  const refreshPendingBadge = useCallback(() => {
+    if (!pendingTenantId) return
+    // Query นับใหม่จากฐานข้อมูลหลังลบ ไม่เดาว่าแถวที่ลบยังเป็น pending หรือไม่
+    return supabase.from('document_requests').select('id', { count: 'exact', head: true })
+      .eq('municipality_id', pendingTenantId).eq('status', 'pending')
+      .then(({ count, error }) => {
+        if (error) { console.error('document request badge count error:', error.message); return }
+        setPendingCount(count ?? 0)
+      })
+  }, [pendingTenantId])
+
   useEffect(() => {
-    if (!tenant?.id) return
-    // เหตุผลที่ไม่รีเซ็ตเป็น 0 ตอน error — ดูคอมเมนต์ของ refreshComplaintBadge ข้างล่าง
-    const refreshBadge = () =>
-      supabase.from('document_requests').select('id', { count: 'exact', head: true })
-        .eq('municipality_id', tenant.id).eq('status', 'pending')
-        .then(({ count, error }) => {
-          if (error) { console.error('document request badge count error:', error.message); return }
-          setPendingCount(count ?? 0)
-        })
+    if (!pendingTenantId) return
+    refreshPendingBadge()
 
-    refreshBadge()
-
-    const ch = supabase.channel(`pending-badge-${tenant.id}-${crypto.randomUUID()}`)
+    const ch = supabase.channel(`pending-badge-${pendingTenantId}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'document_requests' },
-        ({ new: row }) => { if (row?.municipality_id === tenant.id) refreshBadge() })
+        ({ eventType, new: row }) => {
+          // DELETE ไม่มี payload.new; นับใหม่โดยไม่ต้องอ่านข้อมูลคำขอที่ถูกลบ
+          if (eventType === 'DELETE' || row?.municipality_id === pendingTenantId) refreshPendingBadge()
+        })
       .subscribe()
     return () => supabase.removeChannel(ch)
-  }, [tenant?.id])
+  }, [pendingTenantId, refreshPendingBadge])
 
   // หมวดเฉพาะกิจของเทศบาลนี้ — ใช้ตัดออกจากคิวรับเรื่องของแอดมิน (เหตุผลอยู่ใน badge ข้างล่าง)
   useEffect(() => {
@@ -2717,7 +2724,7 @@ export default function StaffDashboard() {
                 }}
               />
             )}
-            {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} currentUserRole={profile?.role} />}
+            {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} currentUserRole={profile?.role} onRequestDeleted={refreshPendingBadge} />}
             {activeModule === 'complaints' && (
               // 'staff' ตัดออกจากรายชื่อนี้แล้ว — คำอธิบายบทบาท (ดู ROLE_DESCRIPTIONS ใน AdminDashboard.jsx)
               // บอกว่า "ใช้เมนูงานที่ได้รับมอบหมาย" แต่โค้ดเดิมให้ staff เห็น/จัดการคำร้องทั้งหมดเหมือน admin
