@@ -26,7 +26,7 @@ INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST'
 CREATE TABLE public.audit_logs(id bigserial PRIMARY KEY,municipality_id uuid,actor_id uuid,actor_name text,actor_role text,action text,resource_type text,resource_id uuid,resource_label text,metadata jsonb,created_at timestamptz NOT NULL DEFAULT now());
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql','20260923114252_patient_booking_admin_delete.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -498,6 +498,36 @@ assert.equal((await db.query("SELECT md5(prosrc) AS m FROM pg_proc WHERE proname
 await db.query('DELETE FROM public.patient_bookings WHERE id=ANY($1)',[[declined,selfCancel,removed,stillOpen]])
 await db.query('DELETE FROM public.patient_booking_trips WHERE id=$1',[id(814)])
 console.log('PASS cancelled bookings carry the reason staff typed: staff cancel and passenger removal both reach the traveller, self-cancel and open bookings carry none')
+// Permanent removal uses only this in-memory database, never retained Demo samples.
+await db.exec('RESET ROLE')
+const deletionBooking = id(950), deletionOther = id(951), deletionTrip = id(952), deletionOp = id(953)
+await db.query(`INSERT INTO public.patient_booking_trips SELECT (jsonb_populate_record(NULL::public.patient_booking_trips,to_jsonb(t)||jsonb_build_object('id',$1::text,'state','confirmed','booking_ids',jsonb_build_array($2::text,$3::text)))).* FROM public.patient_booking_trips t LIMIT 1`,[deletionTrip,deletionBooking,deletionOther])
+for (const bid of [deletionBooking,deletionOther]) await db.query(`INSERT INTO public.patient_bookings SELECT (jsonb_populate_record(NULL::public.patient_bookings,to_jsonb(b)||jsonb_build_object('id',$1::text,'trip_id',$2::text,'status','confirmed','patient_name',$1::text))).* FROM public.patient_bookings b LIMIT 1`,[bid,deletionTrip])
+const deleteRow = (await db.query('SELECT * FROM public.patient_bookings WHERE id=$1',[deletionBooking])).rows[0]
+const deleteTrip = (await db.query('SELECT * FROM public.patient_booking_trips WHERE id=$1',[deletionTrip])).rows[0]
+const deleteArgs=[tenant,deletionOp,deletionBooking,deleteRow.revision,deleteTrip.revision,deleteTrip.docs_revision,'TEST duplicate']
+for (const who of [null,citizen,coordinator,driver,outsider]) { await actor(who); await fails(()=>rpc('patient_booking_delete',deleteArgs),/permission denied|เฉพาะแอดมิน/) }
+await actor(admin)
+await fails(()=>rpc('patient_booking_delete',[...deleteArgs.slice(0,6),' ']),/ระบุเหตุผล/)
+await fails(()=>rpc('patient_booking_delete',deleteArgs.map((v,i)=>i===3?v+1:v)),/เปลี่ยนแล้ว/)
+await fails(()=>rpc('patient_booking_delete',deleteArgs.map((v,i)=>i===5?v+1:v)),/เปลี่ยนแล้ว/)
+await db.exec('RESET ROLE'); await db.query("UPDATE public.patient_booking_trips SET state='outbound' WHERE id=$1",[deletionTrip]); await actor(admin)
+await fails(()=>rpc('patient_booking_delete',deleteArgs),/ระหว่างรับ/)
+await db.exec('RESET ROLE'); await db.query("UPDATE public.patient_booking_trips SET state='confirmed' WHERE id=$1",[deletionTrip]); await actor(admin)
+await rpc('patient_booking_delete',deleteArgs); await rpc('patient_booking_delete',deleteArgs)
+await fails(()=>rpc('patient_booking_delete',[...deleteArgs.slice(0,6),'changed']),/ไม่ตรง/)
+await db.exec('RESET ROLE')
+assert.equal((await db.query('SELECT * FROM public.patient_bookings WHERE id=$1',[deletionBooking])).rows.length,0)
+const remainingTrip=(await db.query('SELECT * FROM public.patient_booking_trips WHERE id=$1',[deletionTrip])).rows[0]
+assert.equal(remainingTrip.state,'confirmed'); assert.deepEqual(remainingTrip.booking_ids,[deletionOther]); assert.deepEqual(remainingTrip.plan.blocks,deleteTrip.plan.blocks)
+assert.equal((await db.query("SELECT * FROM public.patient_booking_events WHERE entity_id=$1 AND action='delete_booking'",[deletionBooking])).rows.length,1)
+// Completed trips may be corrected, but their report must no longer count removed riders.
+await db.query("UPDATE public.patient_booking_trips SET state='completed' WHERE id=$1",[deletionTrip])
+await db.query("UPDATE public.patient_bookings SET status='completed' WHERE id=$1",[deletionOther])
+const lastRow=(await db.query('SELECT * FROM public.patient_bookings WHERE id=$1',[deletionOther])).rows[0]
+await actor(admin); await rpc('patient_booking_delete',[tenant,id(954),deletionOther,lastRow.revision,remainingTrip.revision,remainingTrip.docs_revision,'TEST last rider'])
+await db.exec('RESET ROLE'); assert.equal((await db.query('SELECT state FROM public.patient_booking_trips WHERE id=$1',[deletionTrip])).rows[0].state,'cancelled')
+console.log('PASS admin deletion: authorization, reason, stale booking/doc guards, active trip block, idempotency, shared riders and last-rider queue release')
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
 export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay, base as baseBooking }

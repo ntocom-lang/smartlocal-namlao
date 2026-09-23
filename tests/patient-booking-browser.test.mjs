@@ -27,6 +27,7 @@ await db.query("INSERT INTO public.locations(municipality_id,name,sort_order) VA
 let chain = Promise.resolve()
 const users = { setupadmin:setupAdmin, citizen, newcomer, coordinator, driver, admin, anonymous: null }
 const order = {
+ patient_booking_delete:['p_muni','p_op','p_booking','p_revision','p_trip_revision','p_docs_revision','p_reason'],
  patient_booking_update_schedule:['p_muni','p_trip','p_revision','p_notice','p_pickup','p_return'],
  patient_booking_info:['p_muni'],patient_booking_workspace:['p_muni'],patient_booking_mine:['p_muni'],patient_booking_submit:['p_muni','p_id','p_data','p_staff_entry'],
  patient_booking_save_settings:['p_muni','p_revision','p_data'],patient_booking_preview:['p_muni','p_ids','p_helper'],
@@ -448,6 +449,32 @@ try{
  for(const staffTab of ['คำขอรถ','งานคนขับ','รายงาน','ตั้งค่า'])assert.equal(await page.getByRole('button',{name:staffTab,exact:true}).count(),0,`หน้าประชาชนไม่ควรมีแท็บ ${staffTab}`)
  await page.getByRole('link',{name:'หน้าทำงานเจ้าหน้าที่',exact:true}).waitFor()
  console.log('PASS split citizen/staff pages, staff links, citizen page loads only its own data, no fallback intake when closed')
+ await page.goto(`${base}/__patient?as=coordinator&page=staff`)
+ await page.getByRole('button',{name:'คำขอรถ',exact:true}).waitFor()
+ assert.equal(await page.getByRole('button',{name:'ลบ',exact:true}).count(),0)
+ await page.goto(`${base}/__patient?as=admin&page=staff`)
+ await page.getByRole('button',{name:'ลบ',exact:true}).first().waitFor()
+ await page.getByRole('button',{name:'ลบ',exact:true}).first().click()
+ const deleteDialog=page.getByRole('dialog',{name:'ลบคำขอรถ'})
+ await deleteDialog.waitFor()
+ assert(await deleteDialog.getByRole('button',{name:'ยืนยันลบถาวร'}).isDisabled())
+ await deleteDialog.getByRole('button',{name:'เก็บคำขอไว้'}).click()
+ await page.setViewportSize({width:390,height:844})
+ await page.locator('article[data-booking]').first().getByRole('button',{name:'ลบ',exact:true}).click()
+ await deleteDialog.waitFor()
+ await deleteDialog.getByRole('button',{name:'เก็บคำขอไว้'}).click()
+ await db.exec('RESET ROLE')
+ const uiDeleteId='00000000-0000-4000-8000-000000000970'
+ await db.query(`INSERT INTO public.patient_bookings SELECT (jsonb_populate_record(NULL::public.patient_bookings,to_jsonb(b)||jsonb_build_object('id',$1::text,'trip_id',NULL,'status','submitted','patient_name','TEST UI DELETE'))).* FROM public.patient_bookings b LIMIT 1`,[uiDeleteId])
+ await page.reload()
+ await page.locator(`article[data-booking="${uiDeleteId}"]`).getByRole('button',{name:'ลบ',exact:true}).click()
+ await deleteDialog.getByLabel('เหตุผลการลบ').fill('TEST UI duplicate')
+ await deleteDialog.getByRole('button',{name:'ยืนยันลบถาวร'}).click()
+ await deleteDialog.waitFor({state:'detached'})
+ assert.equal(await page.locator(`[data-booking="${uiDeleteId}"]`).count(),0)
+ await db.exec('RESET ROLE')
+ assert.equal((await db.query('SELECT id FROM public.patient_bookings WHERE id=$1',[uiDeleteId])).rows.length,0)
+ console.log('PASS admin-only deletion buttons, confirmation, mandatory reason, mobile access and actual deletion through UI')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}
