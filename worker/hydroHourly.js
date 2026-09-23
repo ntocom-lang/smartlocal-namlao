@@ -13,15 +13,26 @@ export async function hydroHourlyResponse(request, { fetcher = fetch, cache = gl
   if (saved && age >= 0 && age < HOUR) return reply({ ...saved, refreshFailed: false })
   try {
     const params = new URLSearchParams({ station01: code, datestart: thaiDay(now - 72 * HOUR), dateend: thaiDay(now), callback: 'hydroReport' })
-    const response = await fetcher(`https://hydro1.ddns.net/main/information_6/water_today_search_json.php?${params}`, { signal: AbortSignal.timeout(10000), redirect: 'error' })
-    if (!response.ok || Number(response.headers.get('content-length')) > 1000000) throw new Error('Upstream unavailable')
-    const raw = await response.text()
-    if (raw.length > 1000000) throw new Error('Report too large')
-    // Parse JSONP as data only. Never execute upstream JavaScript.
-    const match = raw.replace(/^\uFEFF/, '').trim().match(/^hydroReport\(([\s\S]*)\);?$/)
-    if (!match) throw new Error('Invalid wrapper')
-    const points = normalizeHydro(JSON.parse(match[1]), code, now)
-    if (!points.length) throw new Error('Empty report')
+    let points
+    // The DDNS host can be unreachable from Cloudflare even when reachable locally.
+    // The centre's main-domain endpoint is a public same-station fallback; it may
+    // provide only today's samples, so never invent the missing history.
+    for (const base of ['https://hydro1.ddns.net/main/information_6/water_today_search_json.php', 'https://www.hydro-1.net/Data/HD-04/houly/water_today_search_json.php']) {
+      try {
+        const response = await fetcher(`${base}?${params}`, { signal: AbortSignal.timeout(8000), redirect: 'error' })
+        if (!response.ok || Number(response.headers.get('content-length')) > 1000000) throw new Error(`Upstream status ${response.status}`)
+        const raw = await response.text()
+        if (raw.length > 1000000) throw new Error('Report too large')
+        // Parse JSONP as data only. Never execute upstream JavaScript.
+        const match = raw.replace(/^\uFEFF/, '').trim().match(/^hydroReport\(([\s\S]*)\);?$/)
+        if (!match) throw new Error('Invalid wrapper')
+        const candidate = normalizeHydro(JSON.parse(match[1]), code, now)
+        if (!candidate.length) throw new Error('Empty report')
+        points = candidate
+        break
+      } catch { /* Try the fixed official fallback, then the saved report. */ }
+    }
+    if (!points) throw new Error('No usable report')
     const body = { station: code, points, fetchedAt: new Date(now).toISOString() }
     try { await cache?.put(key, Response.json(body, { headers: { 'Cache-Control': 'public, max-age=86400' } })) } catch { /* keep usable response */ }
     return reply({ ...body, refreshFailed: false })
