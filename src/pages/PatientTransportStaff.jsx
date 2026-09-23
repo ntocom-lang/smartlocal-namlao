@@ -54,6 +54,10 @@ export default function PatientTransportStaff({ onBack } = {}) {
   // หัวโมดูลและปุ่มย้อนกลับมาจากโครงหน้าเจ้าหน้าที่ หน้านี้จึงไม่วาดซ้ำเมื่อ embedded
   const embedded = !!onBack
   // ⚠️ p_op ต้องส่งทุกครั้ง — กันเน็ตหลุดแล้วยิงซ้ำ (ขาดไปแล้วปุ่มพังเงียบใน #244)
+  function deleteBooking(row, reason) {
+    const args = { p_booking: row.booking.id, p_revision: row.booking.revision, p_trip_revision: row.trip?.revision ?? null, p_docs_revision: row.trip?.docs_revision ?? null, p_reason: reason.trim() }
+    return mutate('patient_booking_delete', { ...args, p_op: op(`delete:${JSON.stringify(args)}`) }, 'ลบคำขอแล้ว และปรับคิวรถเรียบร้อย')
+  }
   function action(entity, name, note = '') {
     const args = { p_entity: entity.id, p_revision: entity.revision, p_action: name, p_note: note }
     return mutate('patient_booking_action', { ...args, p_op: op(JSON.stringify(args)) }, 'บันทึกแล้ว และแจ้งสถานะในระบบให้ผู้เกี่ยวข้อง')
@@ -193,7 +197,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
       <TabBar tab={view} setTab={setView} tabs={tabs} busy={busy} />
       {!info?.enabled && <p className="mb-4 rounded-xl bg-amber-50 p-4">{isAdmin ? 'ยังไม่เปิดรับจองออนไลน์ ตั้งค่ารถ คนขับ ผู้จัดคิว เส้นทางและเวลาให้บริการในแท็บ “ตั้งค่า” ก่อนเปิดบริการ' : 'ยังไม่เปิดรับจองออนไลน์ ให้ผู้ดูแลตั้งค่ารถและเปิดบริการก่อน'}</p>}
       {view === 'inbox' && isCoordinator && <BookingInbox workspace={workspace} busy={busy} error={error} isAdmin={isAdmin} action={intakeButton}
-        created={created} onClearCreated={() => setCreated(null)} onConfirm={confirm} onJoin={joinIntoTrip} onAction={action} onRemove={removePassenger} onAmend={amend}
+        created={created} onClearCreated={() => setCreated(null)} onDelete={deleteBooking} onConfirm={confirm} onJoin={joinIntoTrip} onAction={action} onRemove={removePassenger} onAmend={amend}
         onRecordLetter={recordLetter} onPrintLetter={printLetter} onOdometer={recordOdometer} onUpdateSchedule={updateSchedule}
         onReload={reload} onSettings={() => setView('settings')} />}
       {view === 'report' && isCoordinator && <QueueReport workspace={workspace} busy={busy} onMonthReport={printMonth} />}

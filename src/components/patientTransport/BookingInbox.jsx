@@ -256,7 +256,10 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, onC
   </Sheet>
 }
 
-export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, onClearCreated, onConfirm, onJoin, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onUpdateSchedule, onReload, onSettings }) {
+export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, onClearCreated, onDelete, onConfirm, onJoin, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onUpdateSchedule, onReload, onSettings }) {
+  const [deleting, setDeleting] = useState(null)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleteAttempted, setDeleteAttempted] = useState(false)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [openId, setOpenId] = useState(null)
@@ -291,6 +294,20 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   }
   const close = () => { setOpenId(null); setProblem(null) }
 
+  const deleteBlocked = deleting?.trip && !['confirmed', 'completed', 'cancelled'].includes(deleting.trip.state)
+  function deleteButton(row) {
+    return isAdmin && <button type="button" className="min-h-11 rounded-xl border border-red-300 px-4 text-sm font-bold text-red-700 hover:bg-red-50 disabled:opacity-50" disabled={busy}
+      onClick={e => { e.stopPropagation(); setOpenId(null); setDeleting(row); setDeleteReason(''); setDeleteAttempted(false) }}>ลบ</button>
+  }
+  async function submitDelete(e) {
+    e.preventDefault()
+    if (busy || deleteBlocked || !deleteReason.trim()) return
+    setDeleteAttempted(true)
+    if (await onDelete(deleting, deleteReason)) {
+      if (created?.id === deleting.booking.id) onClearCreated()
+      setDeleting(null)
+    }
+  }
   const pills = <Pills value={filter} onChange={setFilter} label="กรองคำขอรถ" items={PILLS.map(([id, label, color]) => ({ id, label, color, count: count(id) }))} />
   return <ListCard title="คำขอรถ" count={rows.length} search={search} onSearch={setSearch} searchLabel="ค้นหาชื่อ เบอร์ จุดรับ โรงพยาบาล เลขที่" action={action} pills={pills}>
     <div className="space-y-4 p-4 sm:p-5">
@@ -325,7 +342,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
               <td className="border-r border-gray-200 px-2 py-2.5"><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span>{b.status === 'submitted' && group.length > 1 && <span className="block text-[11px] font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</span>}</td>
               <td className="border-r border-gray-200 px-2 py-2.5"><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={b.pickup}>รับที่ {b.pickup}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[b.return_mode]}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
               <td className="border-r border-gray-200 px-2 py-2.5 text-center"><StatusChips row={row} /></td>
-              <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}><RowButton row={row} busy={busy} onPress={press} /></td>
+              <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}><div className="flex flex-wrap justify-center gap-2"><RowButton row={row} busy={busy} onPress={press} />{deleteButton(row)}</div></td>
             </tr>
           })}</tbody>
         </table>
@@ -339,10 +356,23 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
           <p className="text-sm text-slate-600">จุดรับ: {b.pickup}{Number.isFinite(b.pickup_lat) ? ' · 📍 มีหมุด' : ''}</p>
           <p className="text-sm text-slate-600">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน{pickupAt && b.status !== 'cancelled' ? ` · รถมารับ ${clockOf(pickupAt)} น.` : ''}</p>
           {b.status === 'submitted' && group.length > 1 && <p className="text-sm font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</p>}
-          <RowButton row={row} busy={busy} onPress={press} full />
+          <div className="flex flex-wrap gap-2"><RowButton row={row} busy={busy} onPress={press} full />{deleteButton(row)}</div>
         </article>
       })}</div>
     </div>
+    {deleting && <Sheet title="ลบคำขอรถ" onClose={() => { if (!busy) setDeleting(null) }}>
+      <form onSubmit={submitDelete} className="space-y-4">
+        <p><strong>{deleting.booking.patient_name}</strong> · เลขที่ {ref(deleting.booking.id)}</p>
+        <p className="text-sm text-red-800">ลบคำขอนี้ถาวร กู้คืนจากหน้านี้ไม่ได้ รายการจะหายจากเอกสารและรายงานที่สร้างใหม่ แต่ยังเก็บประวัติผู้ลบ เวลา และเหตุผลไว้ตรวจสอบ เอกสารที่พิมพ์ไปแล้วไม่เปลี่ยนตาม</p>
+        <p className="text-sm">ถ้าเป็นเที่ยวร่วม ระบบจะคงผู้เดินทางคนอื่นไว้ หากไม่เหลือผู้เดินทางจะคืนคิวรถให้เอง</p>
+        {deleteBlocked && <p role="alert" className="text-red-700">เที่ยวรถอยู่ระหว่างรับ–ส่งหรือมีปัญหา ให้จบเที่ยวหรือประสานคืนคิวก่อนลบ</p>}
+        <label className="block">เหตุผลการลบ<textarea autoFocus required maxLength={500} value={deleteReason} onChange={e => setDeleteReason(e.target.value)} disabled={busy} className="mt-1 block min-h-24 w-full rounded-xl border p-3" /></label>
+        <p className="text-xs text-slate-500">ระบุเฉพาะเหตุผล ไม่ต้องใส่ข้อมูลสุขภาพหรือข้อมูลส่วนตัว</p>
+        {deleteAttempted && error && <p role="alert" className="text-red-700">{error}</p>}
+        <div className="flex flex-wrap gap-2"><button type="button" className={buttonClass} disabled={busy} onClick={() => setDeleting(null)}>เก็บคำขอไว้</button>
+          <button type="submit" disabled={busy || deleteBlocked || !deleteReason.trim()} className="min-h-11 rounded-xl bg-red-700 px-4 font-bold text-white disabled:opacity-50">{busy ? 'กำลังลบ…' : 'ยืนยันลบถาวร'}</button></div>
+      </form>
+    </Sheet>}
     {open && <BookingSheet key={open.booking.id} row={open} rows={rows} workspace={workspace} problem={problem?.bookingId === open.booking.id ? problem : null}
       busy={busy} error={error} isAdmin={isAdmin} onClose={close} onReload={onReload} onConfirm={confirmRow} onJoin={joinRow}
       onOpen={id => { setProblem(null); setOpenId(id) }} onAction={onAction} onRemove={onRemove} onAmend={onAmend} onRecordLetter={onRecordLetter}
