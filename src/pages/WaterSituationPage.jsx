@@ -1,3 +1,5 @@
+import HydroHourlyPanel from './HydroHourlyPanel'
+import { HYDRO_TENANTS } from '../lib/hydroHourly'
 import { useCallback, useEffect, useId, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -42,6 +44,33 @@ export default function WaterSituationPage() {
   const nearbyOnly = searchParams.get('scope') === 'nearby5'
   const { tenant, loading: tenantLoading } = useTenant()
   const tenantId = tenant?.id
+  const hydroProfile = HYDRO_TENANTS[tenant?.slug]
+  const [hydroState, setHydroState] = useState(null)
+  const hydroCode = hydroProfile?.station
+  useEffect(() => {
+    if (!hydroCode) return
+    let alive = true
+    const controller = new AbortController()
+    async function load() {
+      if (document.hidden) return
+      try {
+        const response = await fetch(`/api/hydro-hourly?station=${encodeURIComponent(hydroCode)}`, { signal: controller.signal })
+        if (!response.ok) throw new Error('Unavailable')
+        const report = await response.json()
+        if (report.station !== hydroCode || !Array.isArray(report.points)) throw new Error('Invalid report')
+        if (alive) setHydroState({ code: hydroCode, report, failed: false })
+      } catch {
+        if (alive) setHydroState(previous => ({ code: hydroCode, report: previous?.code === hydroCode ? previous.report : null, failed: true }))
+      }
+    }
+    load()
+    const timer = setInterval(load, 5 * 60000)
+    document.addEventListener('visibilitychange', load)
+    return () => { alive = false; controller.abort(); clearInterval(timer); document.removeEventListener('visibilitychange', load) }
+  }, [hydroCode])
+  const hydro = hydroState?.code === hydroCode ? hydroState : null
+  const hydroReports = hydro?.report ? [{ ...hydro.report, refreshFailed: hydro.failed || hydro.report.refreshFailed, profile: hydroProfile }] : []
+
   const [data, setData] = useState(null)        // null = ยังไม่เคยโหลดสำเร็จ
   const [loadError, setLoadError] = useState(false)
   const [checkedAt, setCheckedAt] = useState(Date.now)
@@ -106,6 +135,7 @@ export default function WaterSituationPage() {
       </header>
 
       <div className="px-4 pt-1 md:pt-4 space-y-4">
+        <HydroHourlyPanel key={tenant?.slug} profile={hydroProfile} report={hydroReports[0]} failed={hydro?.failed} now={checkedAt} />
         {loading ? (
           <div className="space-y-3">
             {[0, 1, 2].map(i => <div key={i} className="h-24 rounded-2xl bg-gray-100 animate-pulse" />)}
@@ -153,9 +183,10 @@ export default function WaterSituationPage() {
               )}
             </div>
             <SourceNote tenantName={tenant?.name} />
-            <WaterSituationShare tenant={tenant} data={data} now={checkedAt} refreshFailed={loadError} renderCards={WaterShareCards} />
+
           </>
         )}
+        {(data || hydroReports.length > 0) && <WaterSituationShare tenant={tenant} data={{ ...(data || { stations: [] }), hydroReports }} now={checkedAt} refreshFailed={loadError} renderCards={WaterShareCards} />}
       </div>
     </div>
   )
