@@ -20,7 +20,7 @@ assert.equal(hydroSegments(report.points).length,2)
 assert.equal(hydroSegments([{at:0,level:0},{at:3600000,level:null},{at:7200000,level:1}]).length,2)
 const map=new Map(),cache={match:async k=>map.get(k)?.clone(),put:async(k,v)=>map.set(k,v.clone())}
 let calls=0
-const fetcher=async u=>{calls++;const url=new URL(u);assert.equal(url.searchParams.get('station01'),'Y.20');assert.equal(url.searchParams.get('callback'),'hydroReport');return new Response('hydroReport('+JSON.stringify([row])+');')}
+const fetcher=async (u,options)=>{assert.equal(options.redirect,'manual');calls++;const url=new URL(u);assert.equal(url.searchParams.get('station01'),'Y.20');assert.equal(url.searchParams.get('callback'),'hydroReport');return new Response('hydroReport('+JSON.stringify([row])+');')}
 const req=new Request('https://thungkaew.rk-networks.com/api/hydro-hourly?station=Y.20')
 assert.equal((await hydroHourlyResponse(req,{fetcher,cache,now})).status,200)
 await hydroHourlyResponse(req,{fetcher,cache,now:now+1000});assert.equal(calls,1)
@@ -37,13 +37,5 @@ assert.equal(waterShareSlides(data,{slug:'tamnaktham'}).length,1)
 assert.equal(HYDRO_TENANTS.tamnaktham.station,'Y.38')
 console.log('PASS Hydro hourly: timestamp, zero/missing, identity, gaps, stale trends, cache/fallback, method/allowlist, JSONP safety, tenant share scope')
 
-let fallbackCalls = 0
-const officialFallback = await hydroHourlyResponse(req, { now, fetcher: async url => {
-  fallbackCalls++
-  if (new URL(url).hostname === 'hydro1.ddns.net') throw new Error('Host unavailable from edge')
-  assert.equal(new URL(url).hostname, 'www.hydro-1.net')
-  return new Response('hydroReport(' + JSON.stringify([row]) + ')')
-} })
-assert.equal(officialFallback.status, 200)
-assert.equal(fallbackCalls, 2)
-console.log('PASS official-domain fallback when DDNS is unreachable')
+assert.equal((await hydroHourlyResponse(req,{now,fetcher:async()=>new Response(null,{status:302,headers:{Location:'https://other.test'}})})).status,503)
+console.log('PASS Worker-compatible redirect mode and redirect rejection')
