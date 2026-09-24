@@ -252,8 +252,9 @@ function letterSheet({
     + 'เพื่อจะได้แจ้งผู้ยื่นคำขอทราบต่อไป'
 
   const para3 = 'ทั้งนี้ ผู้ยื่นคำขอได้ให้ความยินยอมเป็นการเฉพาะให้เปิดเผยข้อมูลตามคำขอนี้แก่ท่าน'
-    + `${consentDate ? ` เมื่อวันที่ ${consentDate}` : ''}`
-    + `${header?.consent_version ? ` (ข้อความยินยอมรุ่น ${header.consent_version})` : ''} `
+    // ไม่พิมพ์รหัสรุ่นข้อความยินยอม (เช่น patient-booking-v1) — เป็นรหัสภายใน ผู้รับหนังสืออ่านไม่รู้เรื่อง
+    // เจ้าของระบบสั่งตัด 2026-09-24 · หลักฐานว่ายินยอมกับข้อความรุ่นไหนยังเก็บใน consent_version ของคำขอ
+    + `${consentDate ? ` เมื่อวันที่ ${consentDate}` : ''} `
     + 'จึงขอความร่วมมือให้ใช้ข้อมูลดังกล่าวเพื่อการพิจารณาและจัดรถตามคำขอนี้เท่านั้น '
     + `ไม่เปิดเผยต่อบุคคลอื่น และหยุดใช้ข้อมูลเมื่อเสร็จภารกิจ หากผู้ยื่นคำขอถอนความยินยอม ${orgName}`
     + 'จะแจ้งให้ท่านทราบโดยเร็ว'
@@ -536,7 +537,7 @@ export function buildTripForwardLetterHtml(args) {
       partner_name_snapshot: textOr(partner?.name, 'กองทุนเจ้าของรถ'),
       recipient_title_snapshot: textOr(partner?.recipient_title, `ประธาน${textOr(partner?.name, 'กองทุนเจ้าของรถ')}`),
       appointment_at: b.appointment_at, mobility: b.mobility,
-      consent_at: b.consent_at, consent_version: b.consent_version,
+      consent_at: b.consent_at,
     },
     parent: { requester_name: b.requester_name, requester_phone: b.phone },
     form: {
@@ -550,7 +551,7 @@ export function buildTripForwardLetterHtml(args) {
   const letter = { ...packets[0], attachmentCount: people.length }
   if (people.length > 1) {
     letter.referenceNo = ''
-    letter.header = { ...letter.header, consent_at: null, consent_version: null }
+    letter.header = { ...letter.header, consent_at: null }
     letter.passengerSummary = `ด้วย ${args.tenant?.name || 'หน่วยงาน'} ได้รับคำขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย จำนวน ${people.length} ราย `
       + `เพื่อเดินทางไปยัง ${trip.plan?.route_label || '-'} ในวันที่ ${letterDateText(trip.plan?.date) || '-'} `
       + 'รายละเอียดผู้ยื่นคำขอ ผู้ป่วย และวันเวลานัด ปรากฏตามใบคำขอรับสวัสดิการที่แนบมาครบทุกฉบับ'
