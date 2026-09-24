@@ -76,7 +76,7 @@ function downloadCSV(rows, filename) {
   document.body.appendChild(a); a.click(); document.body.removeChild(a)
 }
 
-function ReportSection({ title, empty, children, mobile }) {
+function ReportSection({ title, empty, children, mobile, pager }) {
   return (
     <div className="space-y-2">
       <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">{title}</p>
@@ -87,7 +87,59 @@ function ReportSection({ title, empty, children, mobile }) {
       ) : <>
         <div className="md:hidden">{mobile}</div>
         <div className="hidden md:block overflow-x-auto rounded-xl border border-gray-300 shadow-sm">{children}</div>
+        {pager}
       </>}
+    </div>
+  )
+}
+
+// แบ่งหน้าตารางรายงาน — ข้อมูลทั้งช่วงโหลดมาครบแล้ว (ยอดรวม/ใบพิมพ์/CSV ต้องใช้ทุกแถว)
+// จึงแบ่งหน้าเฉพาะที่แสดงบนจอ เริ่มต้น 20 รายการ (เจ้าของระบบกำหนด 2026-09-25)
+// ดูรายงานช่วงใหม่ = ข้อมูลชุดใหม่ ต้องกลับหน้า 1 — จำชุดข้อมูลไว้ใน state แทนการ reset ใน effect
+const REPORT_PAGE_SIZES = [10, 20, 50, 100]
+const NO_ROWS = []
+function usePagedRows(rows) {
+  const [st, setSt] = useState({ rows, page: 0, size: 20 })
+  const size = st.size
+  const total = rows.length
+  const pages = size === 'all' ? 1 : Math.max(1, Math.ceil(total / size))
+  const page = Math.min(st.rows === rows ? st.page : 0, pages - 1)
+  const offset = size === 'all' ? 0 : page * size
+  return {
+    view: size === 'all' ? rows : rows.slice(offset, offset + size),
+    offset, page, pages, size, total,
+    paged: size !== 'all' && total > size,
+    setPage: next => setSt({ rows, page: next, size }),
+    setSize: next => setSt({ rows, page: 0, size: next }),
+  }
+}
+
+function ReportPager({ p }) {
+  if (p.total === 0) return null
+  const from = p.offset + 1
+  const to = p.size === 'all' ? p.total : Math.min(p.offset + p.size, p.total)
+  return (
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-1 py-2 text-xs text-gray-500">
+      <div className="flex items-center gap-2">
+        <span>แสดง</span>
+        <select value={p.size}
+          onChange={e => p.setSize(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+          className="bg-white border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-200">
+          {REPORT_PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
+          <option value="all">ทั้งหมด</option>
+        </select>
+        <span>รายการ</span>
+        <span className="text-gray-400">({from}–{to} จาก {p.total})</span>
+      </div>
+      {p.pages > 1 && (
+        <div className="flex items-center gap-2">
+          <button onClick={() => p.setPage(Math.max(0, p.page - 1))} disabled={p.page === 0}
+            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ก่อนหน้า</button>
+          <span>หน้า {p.page + 1} / {p.pages}</span>
+          <button onClick={() => p.setPage(Math.min(p.pages - 1, p.page + 1))} disabled={p.page >= p.pages - 1}
+            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ถัดไป</button>
+        </div>
+      )}
     </div>
   )
 }
@@ -197,6 +249,9 @@ export default function FleetReport({ tenant }) {
   // ที่พิมพ์จากข้อมูลชุดเดียวกัน ไม่งั้นรายงานผู้บริหารจะไม่ตรงกับเอกสารที่ส่งกองคลัง
   const totalFuelCost = data?.fuel.reduce((s, f) => s + (fuelRecordAmount(f) ?? 0), 0) ?? 0
   const totalMaintCost = data?.maint.reduce((s, m) => s + (m.cost ?? 0), 0) ?? 0
+  const tripsPage = usePagedRows(data?.trips ?? NO_ROWS)
+  const fuelPage  = usePagedRows(data?.fuel ?? NO_ROWS)
+  const maintPage = usePagedRows(data?.maint ?? NO_ROWS)
 
   const selVehicleName = selVehicle ? (vehicles.find(v => v.id === selVehicle)?.name ?? '') : 'ทุกทรัพย์สิน'
   // เดิมหัวรายงานพิมพ์ช่วงวันที่เป็น ค.ศ. (2026-08-01) ทั้งที่ทุกแถวในตารางเป็น พ.ศ. (20/8/69)
@@ -730,9 +785,10 @@ export default function FleetReport({ tenant }) {
           <ReportSection
             title={`การใช้รถ (${data.trips.length} รายการ)`}
             empty={data.trips.length === 0}
+            pager={<ReportPager p={tripsPage} />}
             mobile={
               <div className="space-y-1.5">
-                {data.trips.map(t => {
+                {tripsPage.view.map(t => {
                   const km = t.odometer_end && t.odometer_start ? t.odometer_end - t.odometer_start : null
                   return (
                     <div key={t.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
@@ -753,11 +809,11 @@ export default function FleetReport({ tenant }) {
             <table className="w-full text-sm border-collapse">
               <THdr cols={['ที่','วันที่','ยานพาหนะ','ปลายทาง','วัตถุประสงค์','ผู้ใช้รถ','ระยะทาง']} />
               <tbody>
-                {data.trips.map((t, i) => {
+                {tripsPage.view.map((t, i) => {
                   const km = t.odometer_end && t.odometer_start ? t.odometer_end - t.odometer_start : null
                   return (
                     <tr key={t.id} style={{ backgroundColor: i%2===0?'#fff':'#f5f8fc' }}>
-                      <td className="px-3 py-2 text-xs text-gray-400 border-r border-gray-200 text-center">{i+1}</td>
+                      <td className="px-3 py-2 text-xs text-gray-400 border-r border-gray-200 text-center">{tripsPage.offset + i + 1}</td>
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 whitespace-nowrap">{thDate(t.trip_date)}</td>
                       {/* ทะเบียนบรรทัดที่ 2 เหมือนตารางน้ำมัน/ซ่อมบำรุง — ชื่อรถหลายคันเป็นชนิดรถ
                           ("รถยนต์นั่งส่วนบุคคลไม่เกิน 7 คน") แยกคันไม่ได้ถ้าไม่เห็นทะเบียน */}
@@ -773,7 +829,7 @@ export default function FleetReport({ tenant }) {
                 })}
                 {data.trips.length > 0 && (
                   <tr style={{ backgroundColor: '#eef2f7' }}>
-                    <td colSpan={6} className="px-3 py-2 text-xs font-bold text-gray-700 text-right border-r border-gray-200">รวมระยะทาง</td>
+                    <td colSpan={6} className="px-3 py-2 text-xs font-bold text-gray-700 text-right border-r border-gray-200">{tripsPage.paged ? 'รวมระยะทางทั้งหมด' : 'รวมระยะทาง'}</td>
                     <td className="px-3 py-2 text-xs font-bold text-gray-800 text-right">{totalKm.toLocaleString()} กม.</td>
                   </tr>
                 )}
@@ -785,9 +841,10 @@ export default function FleetReport({ tenant }) {
           <ReportSection
             title={`บันทึกน้ำมัน (${data.fuel.length} รายการ)`}
             empty={data.fuel.length === 0}
+            pager={<ReportPager p={fuelPage} />}
             mobile={
               <div className="space-y-1.5">
-                {data.fuel.map(f => {
+                {fuelPage.view.map(f => {
                   const cost = fuelRecordAmount(f) ?? 0
                   return (
                     <div key={f.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
@@ -815,11 +872,11 @@ export default function FleetReport({ tenant }) {
             <table className="w-full text-sm border-collapse">
               <THdr cols={['ที่','วันที่','ทรัพย์สิน','เชื้อเพลิง','ลิตร','ราคา/ล.','รวม (บาท)','ปั๊ม','ตรวจสอบ']} />
               <tbody>
-                {data.fuel.map((f, i) => {
+                {fuelPage.view.map((f, i) => {
                   const cost = fuelRecordAmount(f) ?? 0
                   return (
                     <tr key={f.id} style={{ backgroundColor: i%2===0?'#fff':'#f5f8fc' }}>
-                      <td className="px-3 py-2 text-xs text-gray-400 border-r border-gray-200 text-center">{i+1}</td>
+                      <td className="px-3 py-2 text-xs text-gray-400 border-r border-gray-200 text-center">{fuelPage.offset + i + 1}</td>
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 whitespace-nowrap">{thDate(f.filled_at)}</td>
                       <td className="px-3 py-2 text-xs font-semibold text-gray-700 border-r border-gray-200 whitespace-nowrap">{f.fleet_vehicles?.name}<span className="block text-[10px] text-gray-400">{assetIdentifier(f.fleet_vehicles)}</span></td>
                       <td className="px-3 py-2 text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">{f.fuel_type === 'other' ? f.fuel_other_name || 'อื่นๆ' : FUEL_LABEL[f.fuel_type] || f.fuel_type || '—'}</td>
@@ -839,7 +896,7 @@ export default function FleetReport({ tenant }) {
                 })}
                 {data.fuel.length > 0 && (
                   <tr style={{ backgroundColor: '#eef2f7' }}>
-                    <td colSpan={4} className="px-3 py-2 text-xs font-bold text-gray-700 text-right border-r border-gray-200">รวม</td>
+                    <td colSpan={4} className="px-3 py-2 text-xs font-bold text-gray-700 text-right border-r border-gray-200">{fuelPage.paged ? 'รวมทั้งหมด' : 'รวม'}</td>
                     <td className="px-3 py-2 text-xs font-bold text-gray-800 text-right border-r border-gray-200">{fmt(totalLiters)} ล.</td>
                     <td className="px-3 py-2 border-r border-gray-200" />
                     <td className="px-3 py-2 text-xs font-bold text-gray-800 text-right border-r border-gray-200">{fmtB(totalFuelCost)}</td>
@@ -855,9 +912,10 @@ export default function FleetReport({ tenant }) {
           <ReportSection
             title={`ซ่อมบำรุง (${data.maint.length} รายการ)`}
             empty={data.maint.length === 0}
+            pager={<ReportPager p={maintPage} />}
             mobile={
               <div className="space-y-1.5">
-                {data.maint.map(m => (
+                {maintPage.view.map(m => (
                   <div key={m.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -875,9 +933,9 @@ export default function FleetReport({ tenant }) {
             <table className="w-full text-sm border-collapse">
               <THdr cols={['ที่','วันที่','ทรัพย์สิน','ประเภท','รายละเอียด','ค่าใช้จ่าย','อู่/ผู้รับจ้าง']} />
               <tbody>
-                {data.maint.map((m, i) => (
+                {maintPage.view.map((m, i) => (
                   <tr key={m.id} style={{ backgroundColor: i%2===0?'#fff':'#f5f8fc' }}>
-                    <td className="px-3 py-2 text-xs text-gray-400 border-r border-gray-200 text-center">{i+1}</td>
+                    <td className="px-3 py-2 text-xs text-gray-400 border-r border-gray-200 text-center">{maintPage.offset + i + 1}</td>
                     <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 whitespace-nowrap">{thDate(m.service_date)}</td>
                     <td className="px-3 py-2 text-xs font-semibold text-gray-700 border-r border-gray-200 whitespace-nowrap">{m.fleet_vehicles?.name}<span className="block text-[10px] text-gray-400">{assetIdentifier(m.fleet_vehicles)}</span></td>
                     <td className="px-3 py-2 text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">{MAINT_TH[m.maintenance_type] ?? m.maintenance_type}</td>
@@ -888,7 +946,7 @@ export default function FleetReport({ tenant }) {
                 ))}
                 {data.maint.length > 0 && (
                   <tr style={{ backgroundColor: '#eef2f7' }}>
-                    <td colSpan={5} className="px-3 py-2 text-xs font-bold text-gray-700 text-right border-r border-gray-200">รวม</td>
+                    <td colSpan={5} className="px-3 py-2 text-xs font-bold text-gray-700 text-right border-r border-gray-200">{maintPage.paged ? 'รวมทั้งหมด' : 'รวม'}</td>
                     <td className="px-3 py-2 text-xs font-bold text-gray-800 text-right border-r border-gray-200">{fmtB(totalMaintCost)}</td>
                     <td />
                   </tr>
