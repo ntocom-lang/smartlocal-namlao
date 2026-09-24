@@ -89,7 +89,6 @@ function args(overrides = {}) {
     partner: { address: 'ที่ทำการกองทุนฯ หมู่ที่ 5 ตำบลทุ่งแค้ว', phone: '089-999-8888' },
     tenant: TENANT,
     mayor: MAYOR,
-    departmentName: 'สำนักปลัด',
     referenceNo: 'A1B2C3D4',
     docDate: PARENT.created_at,
     emblemUrl: '',
@@ -125,7 +124,7 @@ const TRIP_BOOKINGS = Array.from({ length: 8 }, (_, i) => ({
 }))
 const tripArgs = () => ({
   tenant: TENANT, trip: TRIP, bookings: TRIP_BOOKINGS, partner: PARTNER, mayor: MAYOR,
-  departmentName: 'สำนักปลัด', emblemUrl: `data:image/svg+xml;base64,${readFileSync(new URL('../public/images/garuda.svg', import.meta.url)).toString('base64')}`,
+  emblemUrl: `data:image/svg+xml;base64,${readFileSync(new URL('../public/images/garuda.svg', import.meta.url)).toString('base64')}`,
 })
 const monthArgs = () => ({
   tenant: TENANT, partner: PARTNER,
@@ -447,6 +446,27 @@ const checks = [
         assert.ok(!form.includes('เจ้าหน้าที่บันทึกคำขอแทนที่เคาน์เตอร์'))
         assert.equal(await page.locator('.committee .box--on').count(), 0)
       } finally { await page.close() }
+    },
+  },
+  {
+    name: 'letter-has-no-owner-block',
+    reason: 'เจ้าของระบบสั่งตัดบล็อก "ส่วนราชการเจ้าของเรื่อง / โทร. / โทรสาร" ท้ายหนังสือนำส่งออก 2026-09-24 ทั้งสองทางที่พิมพ์หนังสือ',
+    async run(browser) {
+      for (const [label, html] of [
+        ['ชุดเอกสารคำขอ', buildPatientTransportPacketHtml(args())],
+        ['หนังสือต่อเที่ยว', buildTripForwardLetterHtml({ ...tripArgs(), bookings: TRIP_BOOKINGS.slice(0, 1) })],
+      ]) {
+        const page = await render(browser, html)
+        try {
+          const letter = page.locator('.sheet').nth(0)
+          const text = await letter.innerText()
+          assert.equal(await letter.locator('.owner').count(), 0, `${label}: ยังมีบล็อกเจ้าของเรื่อง`)
+          for (const value of [TENANT.phone, TENANT.fax, 'โทรสาร']) {
+            assert.ok(!text.includes(value), `${label}: ท้ายหนังสือยังมี "${value}"`)
+          }
+          assert.ok(/ขอแสดงความนับถือ/.test(text), `${label}: คำลงท้ายต้องอยู่ครบ`)
+        } finally { await page.close() }
+      }
     },
   },
   {

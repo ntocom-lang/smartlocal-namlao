@@ -195,9 +195,7 @@ function letterCss() {
      (บันทึกข้อความของระบบใช้ 8mm เป็นค่าต่ำสุด ใบนี้เผื่อขึ้นเพราะเป็นหนังสือที่ส่งออกนอก อปท.)
      ⚠️ ห้ามลดค่านี้เพื่อให้ใบจบหน้าเดียว ต้องไปหาที่จากส่วนอื่นแทน */
   .letter-sign { margin-top: 12mm; padding-left: 40%; }
-  .letter-sign p { text-align: center; }
-  /* ส่วนราชการเจ้าของเรื่อง + เบอร์โทร อยู่ท้ายใบชิดซ้าย ตัวเท่าเนื้อความ */
-  .owner { margin-top: 6mm; }`
+  .letter-sign p { text-align: center; }`
 }
 
 /**
@@ -213,13 +211,12 @@ function letterCss() {
  * @param {object} [args.parent] แถวจาก document_requests (ชื่อ/เบอร์/ที่อยู่ผู้ยื่น)
  * @param {object} args.tenant
  * @param {{name?: string, title?: string}} [args.mayor] ผู้ลงนามบทบาท mayor จากทะเบียนกลาง
- * @param {string} [args.departmentName] กองเจ้าของเรื่อง = บรรทัด "ส่วนราชการเจ้าของเรื่อง"
  * @param {string} [args.referenceNo] เลขอ้างอิงคำขอ (8 ตัวแรกของ request id)
  * @param {string} [args.emblemUrl] URL เต็มของตราครุฑ
  */
 function letterSheet({
   header, form = {}, parent = {}, tenant,
-  mayor = null, departmentName = '', referenceNo = '', emblemUrl = '',
+  mayor = null, referenceNo = '', emblemUrl = '',
   passengerSummary = '', attachmentCount = 1,
 }) {
   const orgName = tenant?.name?.trim() || 'หน่วยงาน'
@@ -295,14 +292,10 @@ ${senderAddress.map(part => `      <p>${esc(part)}</p>`).join('\n')}
     <p>${esc(mayorTitle)}</p>
   </div>
 
-  <!-- ⚠️ บล็อกนี้คือ "ส่วนราชการเจ้าของเรื่อง" ของผู้ส่ง ห้ามเอาเบอร์ของหน่วยงานปลายทางมาใส่
-       (เคยใส่แล้วกินไป 2 บรรทัดจนใบตกหน้า 2 และผิดรูปแบบหนังสือด้วย — เบอร์ของกองทุน
-       อยู่ในทะเบียนหน่วยงานฝั่งเจ้าหน้าที่อยู่แล้ว) -->
-  <div class="owner">
-    <p>${esc(textOr(departmentName, 'สำนักปลัด'))}</p>
-    ${tenant?.phone ? `<p>โทร. ${esc(tenant.phone)}</p>` : '<p>โทร. ......................................</p>'}
-    ${tenant?.fax ? `<p>โทรสาร ${esc(tenant.fax)}</p>` : ''}
-  </div>
+  <!-- ⚠️ ไม่มีบล็อก "ส่วนราชการเจ้าของเรื่อง / โทร. / โทรสาร" ท้ายหนังสือ โดยเจตนา — เจ้าของระบบสั่งตัดออก
+       2026-09-24 หลังรับทราบว่าเป็นองค์ประกอบของหนังสือภายนอกตามระเบียบงานสารบรรณ (ยังไม่ได้เปิดตัวบทยืนยัน)
+       ผู้รับติดต่อกลับได้จากที่อยู่หัวหนังสือ · ห้ามใส่กลับเองโดยไม่ถาม และห้ามเอาเบอร์ของหน่วยงานปลายทาง
+       มาใส่ท้ายหนังสือ (เคยกิน 2 บรรทัดจนใบตกหน้า 2) — เทสต์ letter-has-no-owner-block กันไว้ -->
 
   <div class="origin">${esc(govEServiceOriginText(orgName))}</div>
 </div>`
