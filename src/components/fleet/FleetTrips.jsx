@@ -119,6 +119,10 @@ function driverOptionLabel(driver, currentUserId) {
 
 // error code จาก trigger fleet_guard_trip_write() — Postgres คืนมาเป็นสตริงดิบ
 // ถ้าไม่แปลง เจ้าหน้าที่จะเห็น "FLEET_TRIP_CANCEL_REQUIRES_OWNER" ซึ่งอ่านไม่รู้เรื่อง
+// เบราว์เซอร์บางตัวยอมให้พิมพ์ลูกน้ำในช่องตัวเลข แต่ค่าที่ส่งออกมาเป็นช่องว่าง ทั้งที่หน้าจอยังโชว์ตัวเลขอยู่
+// เดิมระบบบันทึกเป็นช่องว่างเงียบๆ พอบังคับกรอกแล้วต้องบอกวิธีแก้ด้วย ไม่งั้นคนกรอกงงว่ากรอกแล้วทำไมยังเตือน
+const ODOMETER_INPUT_HINT = '(พิมพ์ตัวเลขล้วน ไม่ต้องใส่ลูกน้ำ เช่น 324250)'
+
 const TRIP_ERROR_TH = {
   FLEET_TRIP_CANCEL_REQUIRES_OWNER:   'ยกเลิกได้เฉพาะคำขอของตัวท่านเอง หรือให้ผู้ดูแลระบบยานพาหนะเป็นผู้ยกเลิก',
   FLEET_TRIP_DRIVER_OUTSIDE_TENANT:   'ผู้ขับรถที่เลือกไม่ได้อยู่ในสังกัดนี้ กรุณาเลือกใหม่',
@@ -128,6 +132,9 @@ const TRIP_ERROR_TH = {
   FLEET_TRIP_INSERT_STATUS_REQUIRES_MANAGER: 'สร้างรายการที่อนุมัติแล้วได้เฉพาะผู้ดูแลระบบยานพาหนะ — คำขอปกติระบบจะตัดสินคิวให้เอง',
   FLEET_TRIP_INVALID_STATUS_TRANSITION: 'สถานะของรายการนี้เปลี่ยนไปแล้ว กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง',
   FLEET_TRIP_VEHICLE_UNAVAILABLE: 'รถคันนี้ไม่อยู่ในสถานะใช้งานได้ (กำลังซ่อม/ปลดประจำการ) กรุณาเลือกรถคันอื่น',
+  // trg_fleet_trip_require_odometer — ด่านเดียวกับที่หน้านี้บังคับ เผื่อเครื่องที่ยังเปิดหน้าเว็บรุ่นเก่า
+  FLEET_TRIP_ODOMETER_START_REQUIRED: 'กรุณากรอกเลขไมล์ก่อนออก',
+  FLEET_TRIP_ODOMETER_END_REQUIRED:   'กรุณากรอกเลขไมล์หลังกลับ — ทริปถัดไปของรถคันนี้จะใช้เลขนี้เป็นเลขไมล์ก่อนออก',
   // fleet_correct_trip_odometer (ผู้ดูแลแก้เลขไมล์ย้อนหลัง)
   FLEET_ODOMETER_FIX_REQUIRES_COMPLETED: 'แก้เลขไมล์ย้อนหลังได้เฉพาะทริปที่เสร็จสิ้นแล้ว — ทริปที่กำลังเดินทางให้แก้ตอนบันทึกกลับ',
   FLEET_ODOMETER_FIX_INVALID_RANGE: 'เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก และต้องไม่ติดลบ',
@@ -1108,13 +1115,16 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       return alert('ท้องที่หรือจังหวัดยาวเกินกำหนด')
     if (form.returned_at && (parseDateTime(form.returned_at)?.getTime() ?? 0) < (parseDateTime(form.started_at)?.getTime() ?? 0))
       return alert('เวลากลับต้องไม่ก่อนเวลาออก')
-    const startMeter = form.odometer_start === '' ? null : Number(form.odometer_start)
-    const endMeter = form.odometer_end === '' ? null : Number(form.odometer_end)
-    if (startMeter !== null && (!Number.isFinite(startMeter) || startMeter < 0))
+    // บังคับทั้งคู่ (DB บังคับด้วย) — รายการย้อนหลังที่ไม่มีเลขกลับทำให้ทริปถัดไปเติมเลขต่อผิด
+    if (form.odometer_start === '' || form.odometer_end === '')
+      return alert(`กรุณากรอกเลขไมล์ก่อนออกและหลังกลับให้ครบ\n${ODOMETER_INPUT_HINT}`)
+    const startMeter = Number(form.odometer_start)
+    const endMeter = Number(form.odometer_end)
+    if (!Number.isFinite(startMeter) || startMeter < 0)
       return alert('เลขไมล์ก่อนออกต้องเป็น 0 หรือมากกว่า')
-    if (endMeter !== null && (!Number.isFinite(endMeter) || endMeter < 0))
+    if (!Number.isFinite(endMeter) || endMeter < 0)
       return alert('เลขไมล์หลังกลับต้องเป็น 0 หรือมากกว่า')
-    if (startMeter !== null && endMeter !== null && endMeter < startMeter)
+    if (endMeter < startMeter)
       return alert('เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก')
     const odometerCheck = checkTripOdometer(startMeter, endMeter)
     if (odometerCheck.implausible && !confirmImplausibleDistance(odometerCheck, startMeter, endMeter))
@@ -1273,6 +1283,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   // บนรถส่วนกลาง และประวัติบนหน้าจอแบ่งหน้า เลขล่าสุดจริงอาจไม่อยู่ในหน้าที่โหลดมา
   const departTripRef = useRef(null)
   const [lastOdometer, setLastOdometer] = useState(null) // null | { odometer, returned_at, trip_date }
+  // สถานะการดึงเลขล่าสุดของหน้าต่างออกเดินทาง — เดิมดึงไม่ได้/ยังไม่มาแล้วช่องว่างเงียบๆ
+  // คนกดยืนยันไปทั้งที่ว่าง (น้ำเลา 23 ก.ย. 2569) ต้องบอกให้รู้ว่ากำลังดึง หรือต้องดูหน้าปัดเอง
+  const [departMeterState, setDepartMeterState] = useState('idle') // 'idle'|'loading'|'found'|'none'|'error'
 
   // บันทึกย้อนหลัง = ยังไม่มี trip id ให้กันด้วย (guard ด้วยรถที่เลือกแทน)
   // เจ้าหน้าที่มักพิมพ์ผิดหลัก/ลืมบันทึกจนเลขไม่ต่อกัน จึงต้องเห็นเลขล่าสุดก่อนกรอกเอง
@@ -1352,6 +1365,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     departTripRef.current = t.id
     setSelTrip(t)
     setLastOdometer(null)
+    setDepartMeterState('loading')
     setForm({ started_at: toLocalDT(new Date()), odometer_start: '' })
     setModal('depart')
     const { data, error } = await supabase.rpc('fleet_vehicle_last_odometer', {
@@ -1361,22 +1375,30 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (departTripRef.current !== t.id) return
     if (error) {
       console.error('fleet_vehicle_last_odometer error:', error.message)
+      setDepartMeterState('error')
       return
     }
     const last = Array.isArray(data) ? data[0] : null
-    if (!last || last.odometer == null) return
+    if (!last || last.odometer == null) {
+      setDepartMeterState('none')
+      return
+    }
     setLastOdometer(last)
+    setDepartMeterState('found')
     // เติมเฉพาะเมื่อยังว่าง — ผู้ใช้อาจพิมพ์เลขเองไปแล้วระหว่างรอ ห้ามเขียนทับ
     setForm(f => (f.odometer_start === '' ? { ...f, odometer_start: String(Number(last.odometer)) } : f))
   }
 
   async function submitDepart() {
     if (!form.started_at) return alert('กรุณาระบุเวลาออก')
-    const startMeter = form.odometer_start === '' ? null : Number(form.odometer_start)
-    if (startMeter !== null && (!Number.isFinite(startMeter) || startMeter < 0))
+    // บังคับ (DB บังคับด้วย) — ทริปที่ออกโดยไม่มีเลขออก คิดระยะทางบนแบบ 4 ไม่ได้
+    if (form.odometer_start === '')
+      return alert(`กรุณากรอกเลขไมล์ก่อนออก\n${ODOMETER_INPUT_HINT}`)
+    const startMeter = Number(form.odometer_start)
+    if (!Number.isFinite(startMeter) || startMeter < 0)
       return alert('เลขไมล์ก่อนออกต้องเป็น 0 หรือมากกว่า')
     const lastMeter = lastOdometer?.odometer == null ? null : Number(lastOdometer.odometer)
-    const meterGap = startMeter !== null && lastMeter !== null ? startMeter - lastMeter : 0
+    const meterGap = lastMeter !== null ? startMeter - lastMeter : 0
     // เลขไมล์ถอยหลังเกิดได้จริงแค่กรณีเปลี่ยนหน้าปัดหรือครั้งก่อนพิมพ์ผิด ต้องยืนยันก่อน ไม่งั้นระยะทาง
     // ของทริปก่อน/ทริปนี้บนแบบ 4 จะผิดโดยไม่มีใครรู้ ส่วนเลขกระโดดไปข้างหน้าเตือนบนหน้าจออยู่แล้ว
     if (meterGap < 0 && !confirm(`เลขไมล์ก่อนออก (${fmtKm(startMeter)}) น้อยกว่าเลขไมล์หลังกลับครั้งล่าสุดของรถคันนี้ (${fmtKm(lastMeter)})\n\nเปลี่ยนหน้าปัดไมล์ หรือครั้งก่อนบันทึกผิดใช่ไหม? กด OK เพื่อบันทึกต่อ`))
@@ -1412,6 +1434,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     }
     departTripRef.current = null
     setLastOdometer(null)
+    setDepartMeterState('idle')
     setModal(null); setSelTrip(null)
     loadTrips()
   }
@@ -1443,8 +1466,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (!form.returned_at) return alert('กรุณาระบุเวลากลับ')
     if (selTrip.started_at && (parseDateTime(form.returned_at)?.getTime() ?? 0) < (parseDateTime(selTrip.started_at)?.getTime() ?? 0))
       return alert('เวลากลับต้องไม่ก่อนเวลาออก')
-    const endMeter = form.odometer_end === '' ? null : Number(form.odometer_end)
-    if (endMeter !== null && (!Number.isFinite(endMeter) || endMeter < 0))
+    // บังคับ (DB บังคับด้วย) — เลขนี้คือเลขไมล์ก่อนออกของทริปถัดไป ถ้าว่าง ระบบจะเติมเลขเก่ากว่าให้คนถัดไป
+    // (น้ำเลา 24 ก.ย. 2569: บันทึกกลับถึงโดยไม่มีเลข ทริปรอบบ่ายได้เลขซ้ำกับเลขออกของรอบเช้า)
+    if (form.odometer_end === '')
+      return alert(`กรุณากรอกเลขไมล์หลังกลับ — ทริปถัดไปของรถคันนี้จะใช้เลขนี้เป็นเลขไมล์ก่อนออก\n${ODOMETER_INPUT_HINT}`)
+    const endMeter = Number(form.odometer_end)
+    if (!Number.isFinite(endMeter) || endMeter < 0)
       return alert('เลขไมล์หลังกลับต้องเป็น 0 หรือมากกว่า')
     // ทริปที่ออกโดยไม่ได้กรอกเลขออก ไม่มีอะไรให้แก้ — ใช้ตามเดิม
     const origStart = selTrip.odometer_start == null ? null : Number(selTrip.odometer_start)
@@ -2534,7 +2561,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์ก่อน (กม.)</label>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์ก่อน (กม.) *</label>
               <input type="number" value={form.odometer_start} onChange={set('odometer_start')}
                 placeholder="0" className={inp} />
               {(() => {
@@ -2565,7 +2592,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               })()}
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์หลัง (กม.)</label>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์หลัง (กม.) *</label>
               <input type="number" value={form.odometer_end} onChange={set('odometer_end')}
                 placeholder="0" className={inp} />
             </div>
@@ -2645,7 +2672,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
 
       {modal === 'depart' && selTrip && (
         <Modal title="🚀 บันทึกออกเดินทาง"
-               onClose={() => { departTripRef.current = null; setLastOdometer(null); setModal(null); setSelTrip(null) }}
+               onClose={() => { departTripRef.current = null; setLastOdometer(null); setDepartMeterState('idle'); setModal(null); setSelTrip(null) }}
                onSave={submitDepart} saveLabel="ยืนยันออกเดินทาง" saving={saving}>
           <div className="bg-blue-50 rounded-xl p-3">
             <p className="text-sm font-bold text-gray-800">
@@ -2659,10 +2686,20 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <input type="datetime-local" value={form.started_at} onChange={set('started_at')} className={inp} />
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์ก่อนออก (กม.)</label>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์ก่อนออก (กม.) *</label>
             <input type="number" value={form.odometer_start} onChange={set('odometer_start')}
               placeholder="เช่น 12345" className={inp} />
             {(() => {
+              // ยังดึงไม่เสร็จ/ดึงไม่ได้/ยังไม่เคยมีเลข — ต้องบอก ไม่ปล่อยช่องว่างเงียบๆ ให้กดผ่านไป
+              if (departMeterState === 'loading') return (
+                <p className="mt-1 text-[10px] text-gray-400">กำลังดึงเลขไมล์หลังกลับครั้งล่าสุดของรถคันนี้…</p>
+              )
+              if (departMeterState === 'error') return (
+                <p className="mt-1 text-[11px] font-semibold text-amber-600">⚠️ ดึงเลขไมล์ล่าสุดไม่สำเร็จ — ดูเลขจากหน้าปัดรถแล้วกรอกเอง</p>
+              )
+              if (departMeterState === 'none') return (
+                <p className="mt-1 text-[10px] text-gray-400">ยังไม่มีเลขไมล์หลังกลับของรถคันนี้ในระบบ — ดูเลขจากหน้าปัดรถแล้วกรอก</p>
+              )
               // บอกที่มาของเลขที่เติมให้ และเตือนเมื่อไม่ต่อจากครั้งก่อน — ไม่บล็อก เพราะหน้าปัดจริงอาจต่างได้
               // (มีคนใช้รถโดยไม่บันทึก/เปลี่ยนหน้าปัด) แต่ต้องทำให้คนกดเห็น ระยะที่กระโดดจะไม่อยู่ในแบบ 4
               if (lastOdometer?.odometer == null) return null
@@ -2720,9 +2757,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <input type="datetime-local" value={form.returned_at} onChange={set('returned_at')} className={inp} />
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์หลังกลับ (กม.)</label>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์หลังกลับ (กม.) *</label>
             <input type="number" value={form.odometer_end} onChange={set('odometer_end')}
               placeholder="เช่น 12400" className={inp} />
+            <p className="mt-1 text-[10px] text-gray-400">ทริปถัดไปของรถคันนี้จะใช้เลขนี้เป็นเลขไมล์ก่อนออก</p>
           </div>
           {check.backwards && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-800 space-y-1.5">
