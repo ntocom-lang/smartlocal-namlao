@@ -26,7 +26,7 @@ INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST'
 CREATE TABLE public.audit_logs(id bigserial PRIMARY KEY,municipality_id uuid,actor_id uuid,actor_name text,actor_role text,action text,resource_type text,resource_id uuid,resource_label text,metadata jsonb,created_at timestamptz NOT NULL DEFAULT now());
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql','20260923114252_patient_booking_admin_delete.sql','20260924154340_patient_booking_exact_appointment_hours.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql','20260923114252_patient_booking_admin_delete.sql','20260924154340_patient_booking_exact_appointment_hours.sql','20260924232558_patient_booking_month_calendar.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -151,7 +151,7 @@ await actor(null);cal=await rpc('patient_booking_calendar',[tenant,calendarDay,c
 await actor(citizen);await fails(()=>rpc('patient_booking_submit_join',[tenant,id(401),id(410),{}]),/รหัสคำขอ/)
 await fails(()=>rpc('patient_booking_submit_join',[tenant,id(402),id(410),{...calendarBase,patient_name:'TEST full join',companions:1}]),/ที่นั่ง/)
 await db.exec('RESET ROLE');await db.query('UPDATE public.patient_bookings SET share=false WHERE id=$1',[id(400)])
-await actor(null);cal=await rpc('patient_booking_calendar',[tenant,calendarDay,calendarDay]);assert.equal(cal.days[0].trips[0].people,null);assert.equal(cal.days[0].trips[0].route_id,null);assert.equal(cal.days[0].trips[0].joinable,false)
+await actor(null);cal=await rpc('patient_booking_calendar',[tenant,calendarDay,calendarDay]);assert.equal(cal.days[0].trips[0].people,null);assert.equal(cal.days[0].trips[0].route_id,null);assert.equal(cal.days[0].trips[0].appointment_at,null);assert.equal(cal.days[0].trips[0].joinable,false)
 await db.exec('RESET ROLE');await db.query('UPDATE public.patient_bookings SET share=true WHERE id=$1',[id(400)])
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,4,{...settings,holidays:[calendarDay]}]);await actor(null);cal=await rpc('patient_booking_calendar',[tenant,calendarDay,calendarDay]);assert.equal(cal.days[0].status,'closed');assert.deepEqual(cal.days[0].free,[]);assert.equal(cal.days[0].trips[0].joinable,false)
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,5,settings])
@@ -557,6 +557,33 @@ const boundaryCalendar = (await rpc('patient_booking_calendar',[tenant,boundaryD
 assert.equal(boundaryCalendar.trips.length,2)
 assert(new Date(boundaryCalendar.free[0].start)<new Date(boundaryAt('07:30')))
 console.log('PASS exact configured appointment bounds: early/late confirmation, vehicle travel beyond appointment hours, out-of-range rejection, public calendar')
+// Nine months ahead must support submission, amendment, public visibility and joining.
+const distantDate = new Date(nextDay); distantDate.setUTCDate(distantDate.getUTCDate()+250)
+while ([0,6].includes(distantDate.getUTCDay())) distantDate.setUTCDate(distantDate.getUTCDate()+1)
+const distantDay = distantDate.toISOString().slice(0,10), distantAt = time => `${distantDay}T${time}:00+07:00`
+const distantBooking = randomUUID(), distantTrip = randomUUID()
+await actor(citizen)
+await rpc('patient_booking_submit',[tenant,distantBooking,{...base,patient_name:'TEST distant calendar',appointment_at:distantAt('10:00'),return_at:distantAt('12:00')}])
+await actor(coordinator)
+await rpc('patient_booking_amend',[tenant,randomUUID(),distantBooking,1,{appointment_at:distantAt('10:15'),return_at:distantAt('12:00'),return_mode:'wait',route_id:'a',pickup:'TEST distant pickup',in_area:true},'TEST rescheduled appointment'])
+const distantPlan=await rpc('patient_booking_preview',[tenant,[distantBooking],''])
+assert.deepEqual(distantPlan.errors,[])
+await rpc('patient_booking_confirm',[tenant,distantTrip,[distantBooking],distantPlan,''])
+await actor(null)
+const distantCalendar=(await rpc('patient_booking_calendar',[tenant,distantDay,distantDay])).days[0]
+assert.equal(distantCalendar.trips[0].joinable,true)
+assert.equal(new Date(distantCalendar.trips[0].appointment_at).getTime(),new Date(distantAt('10:15')).getTime())
+assert(!JSON.stringify(distantCalendar).includes('TEST distant calendar'))
+await actor(citizen2)
+await rpc('patient_booking_submit_join',[tenant,randomUUID(),distantTrip,{...base,patient_name:'TEST distant join',phone:'0800000987',companions:0,appointment_at:distantAt('10:15'),return_at:distantAt('12:00')}])
+await db.exec('RESET ROLE')
+const horizon=(await db.query("select ((now() at time zone 'Asia/Bangkok')::date+interval '12 months')::date::text as last, ((now() at time zone 'Asia/Bangkok')::date+interval '12 months'+interval '1 day')::date::text as outside")).rows[0]
+await actor(null)
+assert.equal((await rpc('patient_booking_calendar',[tenant,horizon.last,horizon.last])).days.length,1)
+await fails(()=>rpc('patient_booking_calendar',[tenant,horizon.outside,horizon.outside]),/12 เดือน/)
+await actor(coordinator)
+await fails(()=>rpc('patient_booking_submit',[tenant,randomUUID(),{...base,appointment_at:`${horizon.outside}T10:00:00+07:00`,return_at:null,return_mode:'one_way'},true]),/วันนัดอยู่นอกช่วง/)
+console.log('PASS monthly calendar: nine-month submission/amendment/join, public privacy, exact 12-month limit')
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
 export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay, base as baseBooking }

@@ -14,7 +14,7 @@ import { buttonClass, primaryClass, clockTime } from '../lib/patientBooking'
  * รูปแบบหน้ายกมาจาก "คำร้อง" กับ "คำขอบริการ" ตามที่เจ้าของระบบสั่ง 2569-09-21
  * (ทดลองของจริงหลายรอบแล้วสรุปว่าของเดิมยากและงงทุกฝั่ง): ปุ่มขอรับบริการปุ่มใหญ่ปุ่มเดียวบนสุด
  * ถัดลงมาเป็นคำขอของตัวเองพร้อมแถบขั้นตอน แล้วจึงเป็นประวัติ · ไม่มีแท็บให้เลือกก่อนทำอะไรได้
- * หน้าปฏิทิน "ดูวันว่าง" ถอดออกแล้ว เพราะฟอร์มขึ้นเฉพาะวันและเวลาที่รถว่างจริงอยู่แล้ว
+ * เลือกวันผ่านปฏิทินรายเดือนในฟอร์ม ดูเที่ยวรถและขอร่วมเที่ยวในขั้นเดียว
  *
  * งานของเจ้าหน้าที่ (คำขอรถ งานคนขับ รายงาน ตั้งค่า) อยู่ที่ /staff/patient-transport
  * เจ้าหน้าที่ที่เปิดหน้านี้ต้องเห็นหน้าประชาชนตามปกติ มีเพียงลิงก์เล็กไปหน้าทำงาน เพราะเจ้าหน้าที่
@@ -70,7 +70,7 @@ export default function PatientTransportBooking() {
           {uid
             ? <button disabled={busy} className="min-h-16 w-full rounded-2xl bg-sky-800 px-4 text-lg font-bold text-white disabled:opacity-50" onClick={() => setView('book')}>🚐 ขอรถไปโรงพยาบาล</button>
             : <Link to="/auth" state={{ from: '/patient-transport' }} className="flex min-h-16 w-full items-center justify-center rounded-2xl bg-sky-800 px-4 text-lg font-bold text-white">เข้าสู่ระบบเพื่อขอรถ</Link>}
-          <p className="text-sm text-slate-600">รับ–ส่งไปโรงพยาบาลตามนัด ญาติหรือผู้ดูแลจองแทนได้ ไม่ต้องใช้เลขสมาชิกกองทุน · ให้บริการวันราชการ {clockTime(info.office_start)}–{clockTime(info.office_end)} ตามปฏิทินหน่วยงาน</p>
+          <p className="text-sm text-slate-600">รับ–ส่งไปโรงพยาบาลตามนัด ญาติหรือผู้ดูแลจองแทนได้ ไม่ต้องใช้เลขสมาชิกกองทุน · รับเวลานัดแพทย์วันราชการ {clockTime(info.office_start)}–{clockTime(info.office_end)} ตามปฏิทินหน่วยงาน</p>
         </> : <>
           <p className="rounded-xl bg-slate-50 p-4">หน่วยงานยังไม่เปิดรับจองรถออนไลน์ กรุณาติดต่อเจ้าหน้าที่เพื่อสอบถามบริการ</p>
           {isStaff && <p className="text-sm">เปิดบริการได้ที่ <Link to="/staff/patient-transport" className="font-semibold text-sky-800 underline">หน้าทำงานเจ้าหน้าที่</Link></p>}
@@ -92,7 +92,7 @@ export default function PatientTransportBooking() {
       {view === 'book' && uid && info?.enabled && <BookingForm submitError={error} tenantId={tenantId} info={info}
         profileName={profileName} profilePhone={workspace?.my_profile?.phone} lastBooking={lastBooking} staffEntry={false}
         busy={busy} onBack={() => setView('home')}
-        onSubmit={(id, payload) => mutate('patient_booking_submit', { p_id: id, p_data: payload, p_staff_entry: false }, '',
+        onSubmit={(id, payload, tripId) => mutate(tripId ? 'patient_booking_submit_join' : 'patient_booking_submit', { p_id: id, p_data: payload, p_staff_entry: false, ...(tripId ? { p_trip: tripId } : {}) }, '',
           data => { setDone(String(data || id)); setView('done') })} />}
     </section>}
     <footer className="mt-6 flex flex-wrap gap-4 border-t border-slate-200 pt-4 text-sm"><Link to="/my-docs" className="inline-flex min-h-11 items-center text-sky-800 underline">ติดตามคำขอที่เคยยื่นไว้</Link>{info?.contact_phone && <a className="inline-flex min-h-11 items-center text-sky-800 underline" href={`tel:${info.contact_phone}`}>ติดต่อเจ้าหน้าที่ {info.contact_phone}</a>}</footer>

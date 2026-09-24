@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import MapPicker from '../MapPicker'
+import BookingMonthPicker from './BookingMonthPicker'
 import BookingReviewSheet from './BookingReviewSheet'
-import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, orgAbbr, normalizeBookingPhone } from '../../lib/patientBooking'
+import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, orgAbbr, normalizeBookingPhone, clockOf, bookingLastDay } from '../../lib/patientBooking'
 
 /**
  * ฟอร์มขอจองรถ — หน้าเดียวจบ แล้วจบด้วยหน้าทวนก่อนส่งแบบ "คำร้อง" (BookingReviewSheet)
@@ -22,11 +23,7 @@ import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, 
  */
 const shiftDay = days => thaiDay(Date.now() + days * 86400000)
 const noon = day => new Date(`${day}T12:00:00+07:00`)
-const fullDate = day => day ? noon(day).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : 'ยังไม่ได้เลือก'
-const chipDate = day => noon(day).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
-const chipDay = day => noon(day).toLocaleDateString('th-TH', { weekday: 'long' })
-const QUICK_DAYS = 6
-
+const fullDate = day => day ? noon(day).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' }) : 'ยังไม่ได้เลือก'
 // ปุ่มตัวเลือก 1 ปุ่ม — ตัวโตพอกดด้วยนิ้ว ติ๊กถูกให้เห็นชัดเมื่อเลือกอยู่ และบอกสถานะด้วย aria-pressed
 function Chip({ chosen, onClick, children, disabled, compact }) {
   return <button type="button" aria-pressed={chosen} disabled={disabled} onClick={onClick}
@@ -104,28 +101,28 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   const id = useRef(crypto.randomUUID()) // Stable on uncertain response; retry the same operation.
   const leadDays = staffEntry ? 0 : Number(info.min_lead_days) || 0
   const first = shiftDay(leadDays)
-  const lastDay = shiftDay(leadDays + 44)
+  const lastDay = bookingLastDay()
+  const [month, setMonth] = useState((initial.day || first).slice(0, 7))
+  const [refresh, setRefresh] = useState(0)
+  const [joinTrip, setJoinTrip] = useState(null)
+  const monthFirst = `${month}-01`
+  const monthEnd = `${month}-${new Date(Number(month.slice(0, 4)), Number(month.slice(5)), 0).getDate()}`
+  const from = monthFirst < first ? first : monthFirst
+  const to = monthEnd > lastDay ? lastDay : monthEnd
   // ปฏิทินสาธารณะรู้วันหยุด ระยะจองล่วงหน้า เหตุขัดข้อง และ "ช่วงที่รถว่าง" ของแต่ละวันอยู่แล้ว
   const [calendar, setCalendar] = useState(null)
-  const [farDay, setFarDay] = useState(null)
   useEffect(() => {
     if (!tenantId) return
     let active = true
-    supabase.rpc('patient_booking_calendar', { p_muni: tenantId, p_from: first, p_to: lastDay }).then(({ data, error }) => {
-      if (active) setCalendar({ days: error ? [] : (data?.days || []), failed: !!error })
+    const load = () => supabase.rpc('patient_booking_calendar', { p_muni: tenantId, p_from: from, p_to: to }).then(({ data, error }) => {
+      if (active) setCalendar({ month, days: error ? [] : (data?.days || []), failed: !!error })
     })
-    return () => { active = false }
-  }, [tenantId, first, lastDay])
-  // วันที่อยู่นอกช่วงที่โหลดไว้ (ผู้ใช้กด "เลือกวันอื่น" ไปไกล) ถามปฏิทินเฉพาะวันนั้นเพิ่ม
-  // ค่าเก่าไม่ต้องล้าง เพราะ dayInfo ใช้เฉพาะเมื่อ farDay.date ตรงกับวันที่เลือกอยู่
-  useEffect(() => {
-    if (!tenantId || !form.day || (form.day >= first && form.day <= lastDay)) return
-    let active = true
-    supabase.rpc('patient_booking_calendar', { p_muni: tenantId, p_from: form.day, p_to: form.day }).then(({ data, error }) => {
-      if (active) setFarDay(data?.days?.[0] ? { ...data.days[0], failed: !!error } : { date: form.day, status: undefined, failed: !!error })
-    })
-    return () => { active = false }
-  }, [tenantId, form.day, first, lastDay])
+    load()
+    const timer = setInterval(load, 60000)
+    const focus = () => load()
+    window.addEventListener('focus', focus)
+    return () => { active = false; clearInterval(timer); window.removeEventListener('focus', focus) }
+  }, [tenantId, from, to, month, refresh])
   // ทะเบียนสถานที่ของ อปท. ชุดเดียวกับที่หน้าคำร้องใช้ (ตาราง locations) — เลือกหมู่บ้านแทนพิมพ์เอง
   useEffect(() => {
     if (!tenantId) return
@@ -139,7 +136,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   // ไม่ใช่หายไปเงียบ ๆ ทั้งที่ค่ายังอยู่ในคำขอ
   const placeChoices = useMemo(() => (form.place && !places.includes(form.place) ? [form.place, ...places] : places), [places, form.place])
 
-  const days = useMemo(() => calendar?.days || [], [calendar])
+  const days = useMemo(() => (calendar?.month === month ? calendar.days : []) || [], [calendar, month])
   const { route_id: routeId, return_mode: returnMode, back } = form
   // วันที่จองได้ = วันที่เปิดรับจองและยังมีเวลาที่รถว่างให้เลือกจริง (เจ้าหน้าที่รับเรื่องแทนดูแค่วันเปิด)
   const bookable = useMemo(() => {
@@ -147,8 +144,8 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
     return days.filter(d => staffEntry ? d.status === 'open' : freeTimeChoices(draft, info, d).length > 0)
   }, [days, staffEntry, routeId, returnMode, back, info])
   // วันที่ใช้จริง = วันที่ผู้ใช้เลือก หรือวันแรกที่จองได้ (เติมให้โดยไม่ต้องใช้ effect เขียน state ทับ)
-  const day = form.day || bookable[0]?.date || ''
-  const dayInfo = day >= first && day <= lastDay ? days.find(d => d.date === day) : (farDay?.date === day ? farDay : null)
+  const day = form.day?.startsWith(month) ? form.day : (bookable[0]?.date || '')
+  const dayInfo = days.find(d => d.date === day)
   const step = allTimes || (form.time && minutes(form.time) % 30) ? 15 : 30
   const times = useMemo(() => {
     const draft = { route_id: routeId, return_mode: returnMode, back }
@@ -157,11 +154,11 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       ? { date: day, status: 'open', free: [] }
       : null
     const source = staffEntry ? wholeDay : (dayInfo?.status === 'open' ? dayInfo : null)
-    return source ? freeTimeChoices(draft, info, source, step, staffEntry) : []
-  }, [staffEntry, dayInfo, day, routeId, returnMode, back, info, step])
+    return source ? freeTimeChoices(draft, info, source, step, staffEntry || !!joinTrip).filter(time => !joinTrip || Math.abs(minutes(time) - minutes(clockOf(joinTrip.appointment_at))) <= 30) : []
+  }, [staffEntry, dayInfo, day, routeId, returnMode, back, info, step, joinTrip])
   const dayBlocked = !day ? ''
     : day < first ? (leadDays ? `ต้องจองล่วงหน้าอย่างน้อย ${leadDays} วัน คือตั้งแต่ ${fullDate(first)} เป็นต้นไป` : 'วันที่เลือกผ่านมาแล้ว กรุณาเลือกวันถัดไป')
-    : day > shiftDay(180) ? 'จองล่วงหน้าได้ไม่เกิน 180 วัน'
+    : day > lastDay ? 'จองล่วงหน้าได้ไม่เกิน 12 เดือน'
     : dayInfo?.status && dayInfo.status !== 'open' ? DAY_BLOCKED[dayInfo.status] : ''
   const backLatest = latestReturnClock(form, info)
   // ตัวเลือก "คาดว่าเสร็จประมาณ" ทีละชั่วโมง ใช้เมื่อผู้จองทราบเวลา จะทำให้มีเวลานัดให้เลือกมากขึ้น
@@ -173,7 +170,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
     return out
   }, [form.time, backLatest])
   const noTimes = !!day && !dayBlocked && times.length === 0
-  const timeMissing = !!form.time && times.length > 0 && !times.includes(form.time)
+  const timeMissing = !!form.time && !times.includes(form.time)
   const pickupText = () => [form.place, form.spot.trim()].filter(Boolean).join(' · ')
   const routeLabel = info.routes?.find(r => r.id === form.route_id)?.label || ''
   const change = key => e => { setMissing([]); setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })) }
@@ -199,6 +196,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
     if (!/^0[0-9]{8,9}$/.test(form.phone)) list.push({ key: 'who', label: 'เบอร์ติดต่อกลับ', advice: 'กรอกเบอร์โทรที่ขึ้นต้นด้วย 0 จำนวน 9–10 หลักในข้อ 5' })
     if (form.relation !== 'self' && !String(form.patient_name).trim()) list.push({ key: 'who', label: 'ชื่อ–สกุลผู้เดินทาง', advice: 'กรอกชื่อผู้ป่วยที่จะเดินทางในข้อ 5' })
     if (!pickupText()) list.push({ key: 'pickup', label: 'จุดรับ', advice: places.length ? 'กดเลือกหมู่บ้าน/สถานที่ หรือพิมพ์บ้านเลขที่และจุดสังเกตในข้อ 6' : 'พิมพ์บ้านเลขที่ หมู่บ้าน และจุดสังเกตของจุดรับในข้อ 6' })
+    if (joinTrip && (!dayInfo?.trips.some(t => t.id === joinTrip.id && t.joinable) || form.route_id !== joinTrip.route_id || form.return_mode !== joinTrip.return_mode || form.back !== clockOf(joinTrip.return_at))) list.push({ key: 'day', label: 'เที่ยวที่ขอร่วม', advice: 'ข้อมูลเที่ยวหรือเส้นทางขากลับเปลี่ยน กรุณาเลือกเที่ยวจากปฏิทินอีกครั้ง หรือเลือกจองเที่ยวใหม่' })
     return list
   }
   const payload = () => ({
@@ -220,8 +218,9 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   function submit(event) {
     event.preventDefault()
     const list = incomplete()
+    if (joinTrip && (form.mobility !== 'walk' || !form.share || Number(form.companions) + 1 > joinTrip.remaining)) list.push({ key: 'who', label: 'ร่วมเที่ยวไม่ได้', advice: 'ต้องเดินได้ ยินดีนั่งร่วม และมีที่นั่งพอรวมผู้ติดตาม กรุณาปรับข้อมูลหรือเลือกเที่ยวใหม่' })
     setMissing(list)
-    if (list.length || stop) return
+    if (list.length || stop || noTimes) return
     setReview(true)
   }
   const filledTraveler = !!String(form.requester_name).trim() && /^0[0-9]{8,9}$/.test(form.phone) && (form.relation === 'self' || !!String(form.patient_name).trim())
@@ -233,23 +232,14 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
     {last && <p role="status" className="rounded-xl bg-sky-50 p-3">เติมข้อมูลจากการจองครั้งก่อนให้แล้ว ({last.route_label}) ตรวจแล้วแก้ได้ทุกช่อง</p>}
 
     <Section step={1} title="วันที่ไปโรงพยาบาล" done={!!day && !dayBlocked} warn={warn('day')}
-      hint={staffEntry ? 'วันที่หน่วยงานเปิดให้บริการ' : 'ขึ้นเฉพาะวันที่รถว่างและจองได้จริง'}>
-      <Choice label="วันที่ไปโรงพยาบาล" hideLabel value={day} onChange={value => set('day', value)}
-        items={bookable.slice(0, QUICK_DAYS).map(d => ({ value: d.date, label: chipDay(d.date), note: chipDate(d.date) }))} />
-      {/* ระหว่างรอปฏิทิน ห้ามบอกว่า "ไม่มีวันว่าง" — บนเน็ตช้าผู้จองเห็นข้อความนี้ก่อนแล้วเข้าใจว่าจองไม่ได้ (เจอบนสนามซ้อม 2026-09-22)
-          ปฏิทินโหลดไม่สำเร็จมีข้อความของตัวเองอยู่แล้วด้านล่าง จึงไม่ให้ขึ้นซ้อนกันสองอัน */}
-      {!calendar && <p role="status" className="rounded-xl bg-slate-100 p-3">กำลังดูวันที่รถว่าง…</p>}
-      {calendar && !calendar.failed && !bookable.length && <div role="status" className="rounded-xl bg-amber-50 p-3">ยังไม่มีวันที่รถว่างในช่วงนี้ · เลือกวันอื่นด้านล่างหรือติดต่อเจ้าหน้าที่{contact}</div>}
+      hint="เลือกเดือนและวันเพื่อดูเที่ยวรถ ที่ว่าง และขอร่วมเที่ยว">
+      <BookingMonthPicker month={month} onMonth={value => { if (value < first.slice(0, 7) || value > lastDay.slice(0, 7)) return; setMonth(value); setJoinTrip(null); setForm(f => ({ ...f, day: '', time: '', back: '' })) }}
+        days={days} selected={day} info={info} draft={form} first={first} last={lastDay} staffEntry={staffEntry}
+        loading={calendar?.month !== month} failed={calendar?.month === month && calendar.failed} onReload={() => setRefresh(n => n + 1)}
+        onSelect={value => { setMonth(value.slice(0, 7)); setJoinTrip(null); setForm(f => ({ ...f, day: value, time: '', back: '' })) }}
+        onJoin={trip => { setJoinTrip(trip); setForm(f => ({ ...f, day: trip.date, time: '', route_id: trip.route_id, return_mode: trip.return_mode, back: clockOf(trip.return_at), share: true })) }} />
+      {joinTrip && <p role="status" className="rounded-xl bg-sky-50 p-3">ขอร่วมเที่ยว: {joinTrip.route_label} · ใช้ได้เมื่อผู้เดินทางเดินได้ ยินดีนั่งร่วม และมีที่นั่งพอ กรุณาเลือกเวลานัดตามใบนัดจริง ระบบจะตรวจอีกครั้งก่อนรับคำขอ <button type="button" className={buttonClass} onClick={() => { setJoinTrip(null); set('back', '') }}>เปลี่ยนเป็นจองเที่ยวใหม่</button></p>}
       <p className="rounded-xl bg-slate-100 p-3">วันที่เลือก: <strong>{fullDate(day)}</strong></p>
-      <details className="rounded-xl border border-slate-200 px-3">
-        <summary className="flex min-h-11 cursor-pointer items-center font-semibold">เลือกวันอื่น</summary>
-        <div className="space-y-2 pb-3">
-          <label className="block">วันที่นัดแพทย์<input className={inputClass} type="date" value={day} min={first} max={shiftDay(180)}
-            onChange={e => { if (!e.target.value) return; set('day', e.target.value) }} /></label>
-          <p className="text-sm text-slate-600">{staffEntry ? 'เจ้าหน้าที่รับเรื่องแทนได้ทุกวันที่ประสานแล้ว' : `จองได้ตั้งแต่ ${fullDate(first)} เป็นต้นไป${leadDays ? ` (ล่วงหน้าอย่างน้อย ${leadDays} วัน)` : ''} เว้นวันหยุดของหน่วยงาน`}</p>
-        </div>
-      </details>
-      {calendar?.failed && <p role="status" className="rounded-xl bg-amber-50 p-3">ตรวจวันว่างไม่สำเร็จ อาจเป็นปัญหาการเชื่อมต่อ · ตรวจอินเทอร์เน็ตแล้วลองใหม่ หรือกรอกต่อได้ ระบบจะตรวจอีกครั้งตอนส่งคำขอ</p>}
       {dayBlocked && <div role="alert" className={`rounded-xl p-3 ${staffEntry ? 'bg-amber-50' : 'bg-red-50 text-red-900'}`}>
         <p className="font-semibold">วันที่เลือกจองไม่ได้: {dayBlocked}</p>
         <p className="mt-1 text-sm">{staffEntry ? 'รับเรื่องแทนต่อได้ แต่ต้องประสานวันเวลากับผู้จองและคนขับก่อนยืนยันคิว' : 'กดเลือกวันจากปุ่มวันที่รถว่างด้านบน'}</p>
@@ -362,8 +352,9 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
     {review && <BookingReviewSheet
       privacyNotice={info.privacy_notice} ownerName={info.owner_name} forOther={form.relation !== 'self'} staffEntry={staffEntry}
       // ส่งไม่สำเร็จต้องปิดแผ่นนี้ ไม่งั้นแผ่นบังกล่อง "ส่งคำขอยังไม่สำเร็จ" ที่อยู่ด้านหลัง ผู้จองไม่รู้ว่าต้องทำอะไรต่อ
-      submitting={busy} onBack={() => setReview(false)} onConfirm={async () => { if (!(await onSubmit(id.current, payload()))) setReview(false) }}
+      submitting={busy} onBack={() => setReview(false)} onConfirm={async () => { if (!(await onSubmit(id.current, payload(), joinTrip?.id))) setReview(false) }}
       summary={[
+        ...(joinTrip ? [{ label: 'การจอง', value: `ขอร่วมเที่ยว ${joinTrip.route_label} · รอเจ้าหน้าที่ยืนยัน` }] : []),
         { label: 'วันนัด', value: fullDate(day) },
         { label: 'เวลานัด', value: form.time && `${form.time} น.` },
         { label: 'โรงพยาบาล', value: routeLabel },

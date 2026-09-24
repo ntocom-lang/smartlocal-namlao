@@ -204,7 +204,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
       {/* รับจองแทนมีที่นี่ที่เดียว และส่ง p_staff_entry ให้ฐานข้อมูลบันทึกว่าเป็นการรับเรื่องแทน
           ส่งแล้วกลับกล่องคำขอพร้อมแถบ "ยืนยันรถเลย" — ไม่ต้องไล่หาแถวที่เพิ่งรับเอง */}
       {view === 'book' && isCoordinator && info?.enabled && <BookingForm submitError={error} tenantId={tenantId} info={info} profileName={profileName} profilePhone={workspace?.my_profile?.phone} staffEntry busy={busy} onBack={() => setView('inbox')}
-        onSubmit={(id, payload) => mutate('patient_booking_submit', { p_id: id, p_data: payload, p_staff_entry: true }, '', data => { setCreated({ id: String(data || id), name: payload.patient_name }); setView('inbox') })} />}
+        onSubmit={(id, payload, tripId) => mutate(tripId ? 'patient_booking_submit_join' : 'patient_booking_submit', { p_id: id, p_data: payload, p_staff_entry: true, ...(tripId ? { p_trip: tripId } : {}) }, '', data => { setCreated({ id: String(data || id), name: payload.patient_name }); setView('inbox') })} />}
       {view === 'driver' && isDriver && <DriverTrips workspace={workspace} uid={uid} busy={busy} contactPhone={info?.contact_phone} onAdvance={advanceTrip} onAction={action} onOdometer={recordOdometer} />}
       {view === 'settings' && isAdmin && <BookingSettings key={workspace.settings?.revision || 'new'} workspace={workspace} busy={busy} onSave={(revision, form) => mutate('patient_booking_save_settings', { p_revision: revision, p_data: form }, 'บันทึกค่าตั้งต้นแล้ว')} />}
       {workspace?.limited && <p className="mt-4 rounded-xl bg-amber-50 p-3">รายการเกินขอบเขตหน้าจอ กรุณาติดต่อผู้ดูแลก่อนจัดคิวเพิ่มเติม</p>}

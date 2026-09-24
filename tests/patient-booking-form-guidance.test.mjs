@@ -3,10 +3,12 @@ import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { chromium } from 'playwright'
-import { thaiDay, bookingTimingAdvice, normalizeBookingPhone, freeTimeChoices, latestReturnClock } from '../src/lib/patientBooking.js'
+import { thaiDay, bookingTimingAdvice, normalizeBookingPhone, freeTimeChoices, latestReturnClock, bookingLastDay } from '../src/lib/patientBooking.js'
 
 // ฟอร์มจองแบบปุ่มตัวเลือก (เจ้าของระบบสั่ง 2569-09-21 "ให้ประชาชนพิมพ์น้อยที่สุด")
 // เวลานัดขึ้นเฉพาะเวลาที่รถว่างและไปส่งทัน · ขาดอะไรบอกเป็นรายการภาษาไทย · ทวนก่อนส่ง + ยินยอม 1 ช่อง
+assert.equal(bookingLastDay('2028-02-29'), '2029-02-28')
+assert.equal(bookingLastDay('2026-09-25'), '2027-09-25')
 const day = thaiDay(Date.now() + 10 * 86400000)
 const info = { routes: [{ id: 'r', label: 'โรงพยาบาล TEST', minutes: 60 }], office_start: 510, office_end: 990, buffer_minutes: 15, boarding_minutes: 15, min_lead_days: 0, contact_phone: '050000000', privacy_notice: 'TEST ข้อความใช้ข้อมูล', owner_name: 'TEST กองทุน', consent_version: 'patient-booking-v1' }
 assert.equal(normalizeBookingPhone('+66 89-000-0000'), '0890000000')
@@ -57,7 +59,7 @@ const server = await createServer({ configFile: false, envDir: false, server: { 
 await server.listen()
 const browser = await chromium.launch({ channel: 'chrome' })
 try {
-  for (const width of [375, 1280]) {
+  for (const width of [320, 375, 1280]) {
     const page = await browser.newPage({ viewport: { width, height: 900 } })
     page.setDefaultTimeout(8000)
     const errors = []; page.on('pageerror', e => { errors.push(e.message); console.error(e.message) })
@@ -65,10 +67,12 @@ try {
     await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__guidance`)
     const days = page.getByRole('group', { name: 'วันที่ไปโรงพยาบาล' }).getByRole('button')
     await days.first().waitFor()
-    assert(await days.count() <= 6, 'ปุ่มวันที่ขึ้นไม่เกิน 6 วัน')
-    assert.equal(await days.first().getAttribute('aria-pressed'), 'true', 'วันแรกที่รถว่างต้องเลือกไว้ให้แล้ว')
+    assert(await days.count() >= 28, 'แสดงครบเดือน')
+    assert((await days.first().boundingBox()).width >= 44, 'ปุ่มวันที่ต้องกดได้สะดวกบนมือถือ')
+    await page.locator('[data-calendar-date][aria-pressed="true"]').waitFor()
     // ช่วงเวลานัดตรงตามค่าที่ตั้ง แม้รถออกก่อนเวลาเริ่มที่ตั้งไว้
     const times = page.getByRole('group', { name: 'เวลานัดแพทย์' }).getByRole('button')
+    await times.first().waitFor()
     const offered = await times.allInnerTexts()
     assert.equal(offered[0], '08:30 น.'); assert.equal(offered.at(-1), '16:30 น.')
     // ปุ่มส่งกดได้เสมอ ความไม่ครบต้องบอกเป็นรายการภาษาไทย ไม่ใช่ปุ่มสีเทา
@@ -144,7 +148,7 @@ try {
     await page.getByText(waitText, { exact: false }).waitFor()
     assert.equal(await page.getByText('ยังไม่มีวันที่รถว่างในช่วงนี้', { exact: false }).count(), 0, `${label}: ห้ามบอกว่าไม่มีวันว่าง`)
     if (query === 'slowcal') {
-      await page.getByRole('group', { name: 'วันที่ไปโรงพยาบาล' }).getByRole('button').first().waitFor()
+      await page.locator('[data-calendar-date][aria-pressed="true"]').waitFor()
       assert.equal(await page.getByText('กำลังดูวันที่รถว่าง', { exact: false }).count(), 0, 'ปฏิทินมาแล้วต้องเลิกขึ้นข้อความรอ')
     }
     await page.close()
