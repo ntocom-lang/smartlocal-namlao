@@ -138,7 +138,7 @@ const TRIP_ERROR_TH = {
   // fleet_correct_trip_odometer (ผู้ดูแลแก้เลขไมล์ย้อนหลัง)
   FLEET_ODOMETER_FIX_REQUIRES_COMPLETED: 'แก้เลขไมล์ย้อนหลังได้เฉพาะทริปที่เสร็จสิ้นแล้ว — ทริปที่กำลังเดินทางให้แก้ตอนบันทึกกลับ',
   FLEET_ODOMETER_FIX_INVALID_RANGE: 'เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก และต้องไม่ติดลบ',
-  FLEET_ODOMETER_FIX_REASON_REQUIRED: 'กรุณาระบุเหตุผลที่แก้เลขไมล์ 5–300 ตัวอักษร',
+  FLEET_ODOMETER_FIX_REASON_TOO_LONG: 'เหตุผลที่แก้เลขไมล์ยาวเกิน 300 ตัวอักษร',
   FLEET_ODOMETER_FIX_NEGATIVE: 'ปรับตามแล้วเลขไมล์ของทริปถัดไปจะติดลบ — ตรวจเลขที่กรอกอีกครั้ง',
 }
 // UPDATE ที่ถูก RLS ปฏิเสธจะ "ไม่ตรงแถวใดเลย" ไม่ใช่ error — PostgREST คืน 204 และ error เป็น null
@@ -1534,8 +1534,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const origStart = selTrip.odometer_start == null ? null : Number(selTrip.odometer_start)
     const origEnd = selTrip.odometer_end == null ? null : Number(selTrip.odometer_end)
     if (start === origStart && end === origEnd) return alert('เลขไมล์ยังเหมือนเดิม ไม่มีอะไรให้แก้')
+    // เหตุผลไม่บังคับ (เจ้าของระบบสั่ง 2026-09-24) — ค่าเดิม/ค่าใหม่/ผู้แก้ DB เก็บให้เองทุกครั้ง
     const reason = fixForm.reason.trim()
-    if (reason.length < 5) return alert('กรุณาระบุเหตุผลที่แก้เลขไมล์อย่างน้อย 5 ตัวอักษร')
     if (reason.length > 300) return alert('เหตุผลยาวเกิน 300 ตัวอักษร')
     // ต้องเห็นรายการที่จะปรับตามก่อนบันทึก — ผลจริงคำนวณที่ DB ด้วยกติกาเดียวกับ dry run
     const willShift = fixForm.shiftFollowing && origEnd !== null && end !== origEnd
@@ -1546,7 +1546,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (check.implausible && !confirmImplausibleDistance(check, start, end)) return
     setSaving(true)
     const { error } = await supabase.rpc('fleet_correct_trip_odometer', {
-      p_trip: selTrip.id, p_start: start, p_end: end, p_reason: reason,
+      p_trip: selTrip.id, p_start: start, p_end: end, p_reason: reason || null,
       p_shift_following: fixForm.shiftFollowing, p_dry_run: false,
     })
     setSaving(false)
@@ -2883,11 +2883,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               </div>
             )}
             <div>
-              <label className="text-xs font-semibold text-gray-600 mb-1 block">เหตุผลที่แก้ *</label>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">เหตุผลที่แก้ (ไม่บังคับ)</label>
               <textarea value={fixForm.reason} onChange={setFix('reason')} rows={2} maxLength={300}
                 placeholder="เช่น เลขไมล์กลับพิมพ์สลับหลัก ตามที่ผู้ขับแจ้ง" className={inp} />
               <p className="mt-1 text-[10px] text-gray-400">
-                ระบบเก็บค่าเดิม ค่าใหม่ ชื่อผู้แก้ และเหตุผลไว้ในประวัติการใช้งาน ตรวจสอบย้อนหลังได้
+                ระบบเก็บค่าเดิม ค่าใหม่ และชื่อผู้แก้ไว้ในประวัติการใช้งานทุกครั้ง ตรวจสอบย้อนหลังได้
                 — ถ้าพิมพ์แบบ 4 ไปแล้ว ต้องพิมพ์ใหม่หรือแก้ฉบับกระดาษให้ตรงกัน
               </p>
             </div>
