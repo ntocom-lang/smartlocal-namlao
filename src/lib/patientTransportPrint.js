@@ -198,6 +198,38 @@ function letterCss() {
   .letter-sign p { text-align: center; }`
 }
 
+const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+// ที่อยู่มี "<คำนำหน้า><ชื่อ>" อยู่แล้วหรือยัง — ต้องมีคำนำหน้าด้วย "แพร่" ใน "อำเภอเมืองแพร่" จึงไม่นับเป็นจังหวัด
+const mentions = (text, prefixes, name) =>
+  new RegExp(`(^|\\s)(${prefixes})\\s*${escapeRegExp(name)}(?=\\s|$)`).test(text)
+
+/**
+ * บรรทัดที่อยู่ใต้ชื่อสำนักงานบนหัวหนังสือ
+ *
+ * municipalities.address ของทุก อปท. (ณ 2026-09-24) มีอำเภอ จังหวัด รหัสไปรษณีย์ครบในช่องเดียว
+ * ของเดิมเติม "อำเภอ… จังหวัด…" จากช่องแยกต่อท้ายเสมอ หนังสือทุกใบจึงขึ้นซ้ำ (เจ้าของระบบเห็นบน demo)
+ * หลักเดียวกับ waterSupplyRequestPrint: ไม่แก้ถ้อยคำที่แอดมินพิมพ์ (ไม่ขยายคำย่อ ต./อ./จ. ไม่ย้ายรหัสไปรษณีย์)
+ *  - แอดมินขึ้นบรรทัดเองไว้ → ใช้ตามนั้น
+ *  - บรรทัดเดียว → แบ่งก่อน "อำเภอ"/"อ." เป็น 2 บรรทัดตามรูปหนังสือ (เลขที่ หมู่ ตำบล / อำเภอ จังหวัด)
+ *  - เติมอำเภอ/จังหวัดจากช่องแยกเฉพาะที่ที่อยู่ยังไม่มี
+ */
+function senderAddressLines(tenant) {
+  const district = String(tenant?.district ?? '').trim().replace(/^(อำเภอ|อ\.)\s*/, '')
+  const province = String(tenant?.province ?? '').trim().replace(/^(จังหวัด|จ\.)\s*/, '')
+  let lines = String(tenant?.address ?? '').split('\n').map(part => part.trim()).filter(Boolean)
+  if (lines.length === 1) {
+    const at = lines[0].search(/\s(อำเภอ|อ\.)/)
+    if (at > 0) lines = [lines[0].slice(0, at).trim(), lines[0].slice(at).trim()]
+  }
+  const whole = lines.join(' ')
+  const districtText = district && !mentions(whole, 'อำเภอ|อ\\.', district) ? `อำเภอ${district}` : ''
+  const provinceText = province && !mentions(whole, 'จังหวัด|จ\\.', province) ? `จังหวัด${province}` : ''
+  // ขาดอำเภอ = ที่อยู่จบแค่ตำบล ขึ้นบรรทัดใหม่ · ขาดแค่จังหวัด = ต่อท้ายบรรทัดอำเภอ
+  if (districtText || !lines.length) lines.push([districtText, provinceText].filter(Boolean).join(' '))
+  else if (provinceText) lines[lines.length - 1] = `${lines[lines.length - 1]} ${provinceText}`
+  return lines.filter(Boolean)
+}
+
 /**
  * หนังสือนำส่งจาก อปท. ถึงหน่วยงานผู้จัดรถ
  *
@@ -221,11 +253,7 @@ function letterSheet({
 }) {
   const orgName = tenant?.name?.trim() || 'หน่วยงาน'
   const mayorTitle = mayor?.title?.trim() || orgHeadTitle(tenant)
-  const senderAddress = [
-    tenant?.address,
-    [tenant?.district && `อำเภอ${tenant.district}`, tenant?.province && `จังหวัด${tenant.province}`]
-      .filter(Boolean).join(' '),
-  ].map(part => String(part ?? '').trim()).filter(Boolean)
+  const senderAddress = senderAddressLines(tenant)
 
   const patientName = textOr(form.patient_name, parent?.requester_name)
   const patientAge = form.patient_age != null && form.patient_age !== ''
