@@ -14,26 +14,29 @@ assert.equal(normalizeBookingPhone('๐๘๙ ๐๐๐ ๐๐๐๐'), '0890000
 assert.equal(normalizeBookingPhone('123'), '123')
 assert.equal(normalizeBookingPhone('089abc0000000'), '089abc0000000')
 const advice = bookingTimingAdvice({ route_id: 'r', return_mode: 'wait' }, info)
-assert.equal(advice.earliest, 600); assert.equal(advice.latest, 900)
-assert.equal(bookingTimingAdvice({ route_id: 'r', return_mode: 'one_way' }, info).latest, 915)
+assert.equal(advice.earliest, 510); assert.equal(advice.latest, 990)
+assert.equal(bookingTimingAdvice({ route_id: 'r', return_mode: 'one_way' }, info).latest, 990)
 assert.equal(bookingTimingAdvice({ route_id: 'missing' }, info), null)
-assert.equal(bookingTimingAdvice({ route_id: 'r' }, { ...info, office_end: 550 }).possible, false)
+assert.equal(bookingTimingAdvice({ route_id: 'r' }, { ...info, office_end: 550 }).possible, true)
 
 // เวลาที่ "รถว่างจริง": แผนเดินทางทั้งช่วงต้องอยู่ในช่วงว่างช่วงเดียว (ช่อง free ของ patient_booking_calendar)
 const at = (d, t) => `${d}T${t}:00+07:00`
 const openDay = free => ({ date: day, status: 'open', free: free.map(([start, end]) => ({ start: at(day, start), end: at(day, end) })) })
 const draft = { route_id: 'r', return_mode: 'wait', back: '' }
-// ไม่ทราบเวลากลับ = กันรถถึงเวลาที่ยังกลับทันปิดบริการ (16:30 − 90 นาที)
-assert.equal(latestReturnClock(draft, info), '15:00')
-const wholeDay = freeTimeChoices(draft, info, openDay([['08:30', '16:30']]), 30)
-assert.equal(wholeDay[0], '10:00', 'รถออก 08:30 ไปถึงนัดได้เร็วสุด 10:00'); assert.equal(wholeDay.at(-1), '15:00'); assert(!wholeDay.includes('08:30'))
+// ไม่ทราบเวลากลับ = กันรถอย่างน้อยถึงเวลานัดสุดท้าย; ช่วงรถว่างรวมเวลาเดินทางนอกช่วงนัด
+assert.equal(latestReturnClock(draft, info), '16:30')
+assert.equal(latestReturnClock(draft, { ...info, office_end: 1040 }), '17:30', 'ค่าเผื่อรับกลับต้องไม่ปัดลงก่อนสิ้นสุดช่วงนัด 17:20')
+const wholeDay = freeTimeChoices(draft, info, openDay([['03:30', '21:30']]), 30)
+assert.equal(wholeDay[0], '08:30'); assert.equal(wholeDay.at(-1), '16:30')
+assert.deepEqual(freeTimeChoices({ ...draft, return_mode: 'one_way' }, { ...info, office_start: 460, office_end: 1040 }, openDay([['03:30', '21:30']]), 30).filter(t => ['07:40', '17:20'].includes(t)), ['07:40', '17:20'])
+assert.deepEqual(freeTimeChoices(draft, { ...info, office_start: 460, office_end: 1040 }, openDay([['03:30', '21:30']]), 30).filter(t => ['07:40', '17:20'].includes(t)), ['07:40', '17:20'])
 // มีเที่ยวที่ยืนยันแล้ว 09:00–13:00 → เหลือเวลาที่แผนทั้งช่วงไม่ชนเท่านั้น
-const busyDay = openDay([['08:30', '09:00'], ['13:00', '16:30']])
-assert.deepEqual(freeTimeChoices(draft, info, busyDay, 30), ['14:30', '15:00'])
-assert.deepEqual(freeTimeChoices({ ...draft, return_mode: 'one_way' }, info, busyDay, 15), ['14:30', '14:45', '15:00', '15:15'])
-assert.deepEqual(freeTimeChoices(draft, info, { ...openDay([['08:30', '16:30']]), status: 'closed' }), [], 'วันปิดให้บริการต้องไม่มีเวลาให้เลือก')
+const busyDay = openDay([['03:30', '09:00'], ['13:00', '21:30']])
+assert.deepEqual(freeTimeChoices(draft, info, busyDay, 30), ['14:30', '15:00', '15:30', '16:00', '16:30'])
+assert.deepEqual(freeTimeChoices({ ...draft, return_mode: 'one_way' }, info, busyDay, 15), ['14:30', '14:45', '15:00', '15:15', '15:30', '15:45', '16:00', '16:15', '16:30'])
+assert.deepEqual(freeTimeChoices(draft, info, { ...openDay([['03:30', '21:30']]), status: 'closed' }), [], 'วันปิดให้บริการต้องไม่มีเวลาให้เลือก')
 // ทราบเวลากลับแล้ว ช่วงกันรถสั้นลง เวลานัดที่เลือกได้ต้องไม่เกินเวลากลับ
-assert.equal(freeTimeChoices({ ...draft, back: '12:00' }, info, openDay([['08:30', '16:30']]), 30).at(-1), '12:00')
+assert.equal(freeTimeChoices({ ...draft, back: '12:00' }, info, openDay([['03:30', '21:30']]), 30).at(-1), '12:00')
 
 const server = await createServer({ configFile: false, envDir: false, server: { host: '127.0.0.1', port: 0 }, plugins: [react(), tailwindcss(), {
   name: 'isolated-booking-form-guidance', enforce: 'pre',
@@ -44,7 +47,7 @@ const server = await createServer({ configFile: false, envDir: false, server: { 
     if (id === '\0guidance.js') return `import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import Form from '/src/components/patientTransport/BookingForm.jsx'; import Settings from '/src/components/patientTransport/BookingSettings.jsx'; import '/src/index.css'; function App(){const [error,setError]=useState(''); const info=${JSON.stringify(info)}; if(location.search.includes('extended')||location.search.includes('settings'))Object.assign(info,{office_start:450,office_end:1050,routes:[{id:'r',label:'โรงพยาบาล TEST',minutes:30}]}); if(location.search.includes('settings'))return React.createElement(Settings,{workspace:{settings:{...info,coordinator_ids:[],holidays:[]},partners:[],people:[]},busy:false,onSave:()=>{}}); return React.createElement(Form,{tenantId:"test",info,onBack:()=>{},onSubmit:()=>{setError('เครือข่ายขัดข้อง');return false},submitError:error})};createRoot(document.getElementById('root')).render(React.createElement(App));`
     // ปฏิทินสาธารณะ: ทุกวันเปิด รถว่างทั้งวัน · ทะเบียนสถานที่ของหน่วยงาน 2 แห่ง
     if (file.endsWith('/lib/supabase.js')) return `export const supabase={
-      rpc:async(name,args)=>{const qs=location.hash;if(name==='patient_booking_calendar'&&qs.includes('calfail'))return{data:null,error:{message:'TEST calendar down'}};if(name==='patient_booking_calendar'&&qs.includes('slowcal'))await new Promise(r=>setTimeout(r,1500));const days=[];const to=new Date(args.p_to+'T12:00:00+07:00').getTime();for(let t=new Date(args.p_from+'T12:00:00+07:00').getTime();t<=to&&days.length<60;t+=86400000){const d=new Date(t+7*3600000).toISOString().slice(0,10);const extended=location.search.includes('extended');days.push({date:d,status:'open',free:[{start:d+(extended?'T07:30:00+07:00':'T08:30:00+07:00'),end:d+(extended?'T17:30:00+07:00':'T16:30:00+07:00')}],trips:[]})}return {data:{days}}},
+      rpc:async(name,args)=>{const qs=location.hash;if(name==='patient_booking_calendar'&&qs.includes('calfail'))return{data:null,error:{message:'TEST calendar down'}};if(name==='patient_booking_calendar'&&qs.includes('slowcal'))await new Promise(r=>setTimeout(r,1500));const days=[];const to=new Date(args.p_to+'T12:00:00+07:00').getTime();for(let t=new Date(args.p_from+'T12:00:00+07:00').getTime();t<=to&&days.length<60;t+=86400000){const d=new Date(t+7*3600000).toISOString().slice(0,10);days.push({date:d,status:'open',free:[{start:d+'T03:30:00+07:00',end:d+'T21:30:00+07:00'}],trips:[]})}return {data:{days}}},
       from:()=>{const api={select:()=>api,eq:()=>api,order:()=>api,then:resolve=>resolve({data:[{id:'1',name:'TEST บ้านเหนือ'},{id:'2',name:'TEST บ้านใต้'}],error:null})};return api}}`
     if (file.endsWith('/contexts/TenantContext.jsx')) return 'export const useTenant=()=>({tenant:{}})'
     if (file.endsWith('/components/MapPicker.jsx')) return 'export default function MapPicker(){return null}'
@@ -64,11 +67,10 @@ try {
     await days.first().waitFor()
     assert(await days.count() <= 6, 'ปุ่มวันที่ขึ้นไม่เกิน 6 วัน')
     assert.equal(await days.first().getAttribute('aria-pressed'), 'true', 'วันแรกที่รถว่างต้องเลือกไว้ให้แล้ว')
-    // เวลาที่รถไปส่งไม่ทันต้องไม่อยู่ในปุ่มให้เลือกตั้งแต่แรก
+    // ช่วงเวลานัดตรงตามค่าที่ตั้ง แม้รถออกก่อนเวลาเริ่มที่ตั้งไว้
     const times = page.getByRole('group', { name: 'เวลานัดแพทย์' }).getByRole('button')
     const offered = await times.allInnerTexts()
-    assert.equal(offered.includes('08:30 น.'), false)
-    assert.equal(offered[0], '10:00 น.'); assert.equal(offered.at(-1), '15:00 น.')
+    assert.equal(offered[0], '08:30 น.'); assert.equal(offered.at(-1), '16:30 น.')
     // ปุ่มส่งกดได้เสมอ ความไม่ครบต้องบอกเป็นรายการภาษาไทย ไม่ใช่ปุ่มสีเทา
     await page.getByRole('button', { name: 'ส่งคำขอ', exact: true }).click()
     const missing = page.getByRole('alert').filter({ hasText: 'ยังส่งคำขอไม่ได้' })
@@ -109,31 +111,29 @@ try {
     await page.screenshot({ path: `D:/tmp/booking-guidance-${width}.png`, fullPage: true })
     await page.close(); console.log(`PASS ${width}px: free-time choices only, missing list, phone format, place registry, return time, review + consent, submit failure, no overflow`)
   }
-  // 07:30–17:30 คือเวลารถ ไม่ใช่เวลานัด: โรงพยาบาล 30 นาที + เผื่อ 30 นาทีต่อด้าน
-  // จึงขึ้นปุ่ม 08:30–16:30 พร้อมเหตุผลที่อ่านได้ในหน้าเดียวกัน
+  // 07:30–17:30 คือช่วงเวลานัดแพทย์ตรงตามที่หน่วยงานตั้ง
   const extended = await browser.newPage({ viewport: { width: 390, height: 900 } })
   await extended.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
   await extended.goto(`http://127.0.0.1:${server.httpServer.address().port}/__guidance?extended`)
   const extendedSection = extended.getByRole('region', { name: 'เวลานัดแพทย์' })
   const extendedTimes = extended.getByRole('group', { name: 'เวลานัดแพทย์' }).getByRole('button')
   await extendedTimes.first().waitFor()
-  assert.equal(await extendedTimes.first().innerText(), '08:30 น.')
-  assert.equal(await extendedTimes.last().innerText(), '16:30 น.')
-  assert.match(await extendedSection.innerText(), /รถให้บริการ 07:30–17:30 น./)
-  assert.match(await extendedSection.innerText(), /เลือกเวลานัดได้ประมาณ 08:30–16:30 น./)
+  assert.equal(await extendedTimes.first().innerText(), '07:30 น.')
+  assert.equal(await extendedTimes.last().innerText(), '17:30 น.')
+  assert.match(await extendedSection.innerText(), /07:30–17:30 น./)
   await extended.close()
-  console.log('PASS service hours 07:30–17:30 explain appointment choices 08:30–16:30')
+  console.log('PASS configured appointment hours 07:30–17:30 appear exactly')
   const settingsPage = await browser.newPage({ viewport: { width: 390, height: 900 } })
   await settingsPage.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
   await settingsPage.goto(`http://127.0.0.1:${server.httpServer.address().port}/__guidance?settings`)
-  await settingsPage.getByText('โรงพยาบาล TEST: 08:30–16:30 น.').waitFor()
-  await settingsPage.getByLabel('เริ่มบริการ').fill('08:00')
-  await settingsPage.getByText('โรงพยาบาล TEST: 09:00–16:30 น.').waitFor()
+  await settingsPage.getByText('เวลานัดแพทย์ที่เปิดให้จอง: 07:30–17:30 น.', { exact: false }).waitFor()
+  await settingsPage.getByLabel('เริ่มเวลานัดแพทย์').fill('08:00')
+  await settingsPage.getByText('เวลานัดแพทย์ที่เปิดให้จอง: 08:00–17:30 น.', { exact: false }).waitFor()
   await settingsPage.getByText('ปรับเวลาเผื่อ · ปกติไม่ต้องแก้').click()
   await settingsPage.getByLabel('เวลาเผื่อก่อนนัด/หลังเที่ยว (นาที)').fill('20')
-  await settingsPage.getByText('โรงพยาบาล TEST: 09:30–16:00 น.').waitFor()
+  await settingsPage.getByText('เวลานัดแพทย์ที่เปิดให้จอง: 08:00–17:30 น.', { exact: false }).waitFor()
   await settingsPage.close()
-  console.log('PASS settings preview recalculates appointment times as service hours change')
+  console.log('PASS settings preview keeps appointment hours independent of travel buffer')
   // ระหว่างรอปฏิทิน ต้องบอกว่ากำลังดูวันว่าง ไม่ใช่บอกว่าไม่มีวันว่าง (ผู้จองบนเน็ตช้าจะเข้าใจว่าจองไม่ได้แล้วเลิกจอง)
   const port = server.httpServer.address().port
   for (const [query, waitText, label] of [['slowcal', 'กำลังดูวันที่รถว่าง', 'ปฏิทินโหลดช้า'], ['calfail', 'ตรวจวันว่างไม่สำเร็จ', 'ปฏิทินโหลดไม่สำเร็จ']]) {
