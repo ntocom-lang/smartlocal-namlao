@@ -68,14 +68,14 @@ export function bookingStep(booking, trip) {
   return booking.status === 'confirmed' ? 2 : 1
 }
 
-// เวลารับกลับที่ระบบกันรถไว้ให้เมื่อผู้จองยังไม่ทราบว่าจะเสร็จกี่โมง
-// = ช้าที่สุดที่รถยังกลับถึงพื้นที่ทันเวลาปิดบริการ (ผู้จองส่วนใหญ่ตอบเวลานี้ไม่ได้ ถามแล้วก็เดา
-// แล้วเจ้าหน้าที่ต้องมาแก้อยู่ดี จึงกันช่วงกว้างไว้ก่อนแล้วให้เจ้าหน้าที่ย่อลงหลังประสาน)
+// ไม่ทราบเวลารับกลับ: กันรถอย่างน้อยถึงเวลานัดสุดท้ายของหน่วยงาน
+// นัดช่วงท้ายเผื่ออย่างน้อย 60 นาทีหลังนัด ไม่สร้างแผนที่รับกลับทันทีตอนเริ่มพบแพทย์
+// เป็นเวลาเผื่อจัดคิว ไม่ใช่เวลาที่แพทย์จะตรวจเสร็จ เจ้าหน้าที่ยังปรับได้หลังประสาน
 export function latestReturnClock(form, info) {
   if (form.return_mode === 'one_way') return ''
-  const advice = bookingTimingAdvice(form, info)
-  if (!advice) return ''
-  const back = Math.floor((info.office_end - advice.after) / 15) * 15
+  if (!Number.isFinite(info?.office_end)) return ''
+  const appointment = form.time ? minutes(form.time) : 0
+  const back = Math.min(1439, Math.ceil(Math.max(info.office_end, appointment + 60) / 15) * 15)
   return back > 0 ? clockTime(back) : ''
 }
 
@@ -89,21 +89,23 @@ function dayMinutes(value, day) {
 // ช่อง free ของ patient_booking_calendar ตัดเวลาที่ผ่านมาแล้วและช่วงของเที่ยวที่ยืนยันแล้วออกให้แล้ว
 // ⚠️ เป็นการกรองเพื่อไม่ให้ประชาชนเลือกเวลาที่ยืนยันไม่ได้ตั้งแต่ต้น ไม่ใช่การจองที่นั่ง
 // ฐานข้อมูลยังคำนวณแผนทั้งก้อนใหม่ใต้ล็อกก่อนยืนยันทุกครั้ง
-export function freeTimeChoices(form, info, dayInfo, step = 15) {
+export function freeTimeChoices(form, info, dayInfo, step = 15, ignoreAvailability = false) {
   if (!dayInfo?.date || dayInfo.status !== 'open' || !Number.isFinite(info?.office_start) || !Number.isFinite(info?.office_end)) return []
   const windows = (dayInfo.free || [])
     .map(w => ({ start: dayMinutes(w.start, dayInfo.date), end: dayMinutes(w.end, dayInfo.date) }))
     .filter(w => Number.isFinite(w.start) && Number.isFinite(w.end))
   const times = []
-  for (let at = Math.ceil(info.office_start / step) * step; at <= info.office_end; at += step) {
+  const endOfDay = Math.min(info.office_end, 1439)
+  const choices = new Set([info.office_start, endOfDay])
+  for (let at = Math.ceil(info.office_start / step) * step; at <= endOfDay; at += step) choices.add(at)
+  for (const at of [...choices].sort((a, b) => a - b)) {
     const time = clockTime(at)
     const back = form.return_mode === 'one_way' ? '' : (form.back || latestReturnClock({ ...form, time }, info))
     if (form.return_mode !== 'one_way' && (!back || minutes(back) < at)) continue
     const span = journeyWindow({ ...form, time, back }, info)
     if (!span) continue
     const end = span.end ?? span.start
-    if (span.start < info.office_start || end > info.office_end) continue
-    if (windows.some(w => span.start >= w.start && end <= w.end)) times.push(time)
+    if (ignoreAvailability || windows.some(w => span.start >= w.start && end <= w.end)) times.push(time)
   }
   return times
 }
@@ -209,6 +211,7 @@ const CONFIRM_BLOCKERS = {
   'มีเหตุขัดข้องที่ยังไม่คลี่คลายในวันเดียวกัน': ['วันนั้นมีเที่ยวที่แจ้งเหตุขัดข้องค้างอยู่ ต้องแก้เหตุนั้นก่อน', ['issue']],
   'ตรงวันหยุดให้บริการ': ['วันนัดตรงวันหยุดให้บริการ', ['call', 'amend', 'cancel']],
   'เวลารับ–ส่งอยู่นอกเวลาบริการ': ['เวลารับ–ส่งเกินเวลาให้บริการของรถ', ['call', 'amend', 'cancel']],
+  'เวลานัดแพทย์อยู่นอกช่วงที่เปิดรับจอง': ['เวลานัดแพทย์อยู่นอกช่วงเวลาที่ตั้งไว้สำหรับรับจอง', ['call', 'amend', 'cancel']],
   'วันเดินทางผ่านแล้ว': ['วันนัดผ่านไปแล้ว', ['call', 'amend', 'cancel']],
   'ยังไม่มีเวลาขากลับ': ['ยังไม่มีเวลารับกลับ', ['call', 'amend']],
   'เวลารับกลับอยู่ก่อนเวลานัด': ['เวลารับกลับอยู่ก่อนเวลานัด', ['call', 'amend']],
@@ -261,7 +264,9 @@ export function bookingPlanGuidance(message, plan, workspace = {}) {
   const selected = (workspace.bookings || []).filter(b => plan?.booking_ids?.includes(b.id))
   let detail = ''
   if (!sameSettings) detail = 'ค่าตั้งเปลี่ยนหลังตรวจแผน กรุณาโหลดข้อมูลล่าสุดแล้วตรวจแผนอีกครั้ง'
-  else if (message === 'เวลารับ–ส่งอยู่นอกเวลาบริการ' && Number.isFinite(settings.office_start) && Number.isFinite(settings.office_end) && plan?.date) {
+  else if (message === 'เวลานัดแพทย์อยู่นอกช่วงที่เปิดรับจอง' && Number.isFinite(settings.office_start) && Number.isFinite(settings.office_end)) {
+    detail = `เวลานัดแพทย์ที่เปิดรับจอง ${clockTime(settings.office_start)}–${clockTime(settings.office_end)} น.${selected.length ? ` · ${selected.map(b => `${b.patient_name} นัด ${dateTime(b.appointment_at)}`).join(' / ')}` : ''}`
+  } else if (message === 'เวลารับ–ส่งอยู่นอกเวลาบริการ' && Number.isFinite(settings.office_start) && Number.isFinite(settings.office_end) && plan?.date) {
     const midnight = Date.parse(`${plan.date}T00:00:00+07:00`)
     const open = midnight + settings.office_start * 60000
     const close = midnight + settings.office_end * 60000
@@ -294,8 +299,9 @@ export function bookingTimingAdvice(form, info) {
   if (![travel, info?.buffer_minutes, info?.boarding_minutes, info?.office_start, info?.office_end].every(Number.isFinite) || travel < 0) return null
   const before = travel + info.buffer_minutes + info.boarding_minutes
   const after = form.return_mode === 'one_way' ? travel + info.boarding_minutes : before
-  const earliest = info.office_start + before
-  const latest = info.office_end - after
+  // ช่วงตั้งค่าเป็นเวลานัดแพทย์โดยตรง เวลาเดินทางใช้คำนวณช่วงที่รถถูกจองเท่านั้น
+  const earliest = info.office_start
+  const latest = info.office_end
   return { travel, before, after, earliest, latest, possible: earliest <= latest, span: journeyWindow(form, info) }
 }
 

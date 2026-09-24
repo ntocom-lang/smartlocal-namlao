@@ -7,6 +7,13 @@ const error = 'เวลารับ–ส่งอยู่นอกเวล�
 const plan = { date: '2026-09-21', settings_revision: 3, booking_ids: ['one'], blocks: [{ start: '2026-09-21T00:00:00Z', end: '2026-09-21T09:00:00Z' }] }
 const workspace = { settings: { revision: 3, office_start: 510, office_end: 990, seats: 2 } }
 
+test('explains appointment outside the configured window without treating travel outside it as an error', () => {
+  const issue = bookingPlanGuidance('เวลานัดแพทย์อยู่นอกช่วงที่เปิดรับจอง', plan, workspace)
+  assert.equal(issue.known, true)
+  assert.match(issue.detail, /08:30–16:30/)
+  assert.deepEqual(issue.fixes, ['call', 'amend', 'cancel'])
+})
+
 test('explains 07:00 pickup against actual 08:30 opening, independently of browser timezone', () => {
   const issue = bookingPlanGuidance(error, plan, workspace)
   assert.match(issue.detail, /เริ่มรับ 07:00 ก่อนเวลาเปิดบริการ 08:30/)
@@ -45,7 +52,8 @@ test('shows only overlapping active trips, not cancelled or touching boundaries'
 })
 test('every current server plan error has a one-sentence reason and a fix button, unknown errors retain original message', () => {
   const sql = readFileSync(new URL('../supabase/migrations/20260919180000_patient_booking_minimal_setup.sql', import.meta.url), 'utf8')
-  const errors = [...sql.matchAll(/array_append\(errors,'([^']+)'\)/g)].map(m => m[1])
+  const update = readFileSync(new URL('../supabase/migrations/20260924154340_patient_booking_exact_appointment_hours.sql', import.meta.url), 'utf8')
+  const errors = [...`${sql}\n${update}`.matchAll(/array_append\(errors,'([^']+)'\)/g)].map(m => m[1])
   assert.ok(errors.length >= 20)
   for (const message of errors) {
     const issue = bookingPlanGuidance(message, { ...plan, booking_ids: ['one', 'two'] }, workspace)

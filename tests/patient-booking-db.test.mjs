@@ -26,7 +26,7 @@ INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST'
 CREATE TABLE public.audit_logs(id bigserial PRIMARY KEY,municipality_id uuid,actor_id uuid,actor_name text,actor_role text,action text,resource_type text,resource_id uuid,resource_label text,metadata jsonb,created_at timestamptz NOT NULL DEFAULT now());
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql','20260923114252_patient_booking_admin_delete.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql','20260923114252_patient_booking_admin_delete.sql','20260924154340_patient_booking_exact_appointment_hours.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -528,6 +528,35 @@ const lastRow=(await db.query('SELECT * FROM public.patient_bookings WHERE id=$1
 await actor(admin); await rpc('patient_booking_delete',[tenant,id(954),deletionOther,lastRow.revision,remainingTrip.revision,remainingTrip.docs_revision,'TEST last rider'])
 await db.exec('RESET ROLE'); assert.equal((await db.query('SELECT state FROM public.patient_booking_trips WHERE id=$1',[deletionTrip])).rows[0].state,'cancelled')
 console.log('PASS admin deletion: authorization, reason, stale booking/doc guards, active trip block, idempotency, shared riders and last-rider queue release')
+// Configured bounds are appointment times. The vehicle may operate before/after them, but cannot overlap another trip.
+const boundaryDate = new Date(nextDay); boundaryDate.setUTCDate(boundaryDate.getUTCDate()+45)
+while ([0,6].includes(boundaryDate.getUTCDay())) boundaryDate.setUTCDate(boundaryDate.getUTCDate()+1)
+const boundaryDay = boundaryDate.toISOString().slice(0,10)
+const boundaryAt = time => `${boundaryDay}T${time}:00+07:00`
+await actor(admin)
+const boundaryRevision = (await rpc('patient_booking_workspace',[tenant])).settings.revision
+await rpc('patient_booking_save_settings',[tenant,boundaryRevision,{...settings,office_start:450,office_end:1050}])
+const earlyBooking = randomUUID(), lateBooking = randomUUID(), outsideBooking = randomUUID()
+await actor(citizen)
+await rpc('patient_booking_submit',[tenant,earlyBooking,{...base,patient_name:'TEST early boundary',phone:'0800000990',appointment_at:boundaryAt('07:30'),return_mode:'one_way',return_at:null}])
+await rpc('patient_booking_submit',[tenant,lateBooking,{...base,patient_name:'TEST late boundary',phone:'0800000991',appointment_at:boundaryAt('17:30'),return_at:boundaryAt('18:30')}])
+await rpc('patient_booking_submit',[tenant,outsideBooking,{...base,patient_name:'TEST outside boundary',phone:'0800000992',appointment_at:boundaryAt('07:15'),return_mode:'one_way',return_at:null}])
+await actor(coordinator)
+const earlyPlan = await rpc('patient_booking_preview',[tenant,[earlyBooking],''])
+assert.deepEqual(earlyPlan.errors,[])
+assert(new Date(earlyPlan.pickup_at)<new Date(boundaryAt('07:30')))
+await rpc('patient_booking_confirm',[tenant,randomUUID(),[earlyBooking],earlyPlan,''])
+const latePlan = await rpc('patient_booking_preview',[tenant,[lateBooking],''])
+assert.deepEqual(latePlan.errors,[])
+assert(new Date(latePlan.blocks.at(-1).end)>new Date(boundaryAt('17:30')))
+await rpc('patient_booking_confirm',[tenant,randomUUID(),[lateBooking],latePlan,''])
+const outsidePlan = await rpc('patient_booking_preview',[tenant,[outsideBooking],''])
+assert(outsidePlan.errors.includes('เวลานัดแพทย์อยู่นอกช่วงที่เปิดรับจอง'))
+await actor(null)
+const boundaryCalendar = (await rpc('patient_booking_calendar',[tenant,boundaryDay,boundaryDay])).days[0]
+assert.equal(boundaryCalendar.trips.length,2)
+assert(new Date(boundaryCalendar.free[0].start)<new Date(boundaryAt('07:30')))
+console.log('PASS exact configured appointment bounds: early/late confirmation, vehicle travel beyond appointment hours, out-of-range rejection, public calendar')
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
 export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay, base as baseBooking }
