@@ -223,7 +223,11 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, onC
   const showProblem = problem && b.status === 'submitted'
   // เงื่อนไขเดียวกับปุ่ม "พร้อมให้มารับกลับ" ฝั่งประชาชน (BookingOperations) และที่ฐานข้อมูลตรวจ
   const readyReturn = b.status === 'confirmed' && b.passenger_step === 2 && b.return_mode !== 'one_way' && !b.return_ready
-  return <Sheet wide title={b.patient_name} subtitle={`${issue ? 'เหตุขัดข้อง' : STAGES[stage].label} · เลขที่ ${ref(b.id)}`} onClose={onClose} onReload={onReload} busy={busy}>
+  // พิมพ์หนังสือนำส่ง + ใบคำขอของทั้งเที่ยว (ชุดเดียวกับปุ่มในกล่อง "เอกสารส่งกองทุน") — มีเฉพาะคำขอที่ยืนยันรถแล้ว
+  // ยังไม่ยืนยัน = ยังไม่มีเที่ยว ไม่มีหนังสือให้พิมพ์ · คำขอ/เที่ยวที่ยกเลิกแล้วไม่ต้องส่งเอกสารถึงกองทุน
+  const printable = trip && b.status !== 'cancelled' && trip.state !== 'cancelled'
+  return <Sheet wide title={b.patient_name} subtitle={`${issue ? 'เหตุขัดข้อง' : STAGES[stage].label} · เลขที่ ${ref(b.id)}`} onClose={onClose} onReload={onReload} busy={busy}
+    onPrint={printable ? () => onPrintLetter(trip) : undefined} printLabel="พิมพ์หนังสือนำส่ง">
     {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
     {showProblem && <ProblemBox key={JSON.stringify(problem.plan.errors)} row={row} problem={problem} rows={rows} workspace={workspace} busy={busy} isAdmin={isAdmin}
       onConfirm={onConfirm} onJoin={onJoin} onOpen={onOpen} act={act} onReload={onReload} onSettings={onSettings} />}

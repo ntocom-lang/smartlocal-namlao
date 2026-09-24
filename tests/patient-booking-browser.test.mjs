@@ -46,7 +46,7 @@ const plugin = {
   if(normalized.endsWith('/contexts/TenantContext.jsx'))return `export const useTenant=()=>({tenant:{id:new URLSearchParams(location.search).get('as')==='setupadmin'?'${setupTenant}':'${tenant}',name:'อบต. TEST'},isModuleEnabled:()=>true})`
   if(normalized.endsWith('/contexts/AuthContext.jsx'))return `const role=new URLSearchParams(location.search).get('as')||'citizen';const ids=${JSON.stringify(users)};export const useAuth=()=>({session:{user:{id:ids[role]}},profileName:'TEST Browser Requester'});`
   if(normalized.endsWith('/lib/supabase.js'))return `export const supabase={rpc:async(name,args)=>{const user=new URLSearchParams(location.search).get('as')||'citizen';return (await fetch('/__patient_rpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,args,user})})).json()},
-   from:table=>{const query={table,filters:[]};const api={select:()=>api,order:()=>api,eq:(column,value)=>{query.filters.push([column,value]);return api},
+   from:table=>{const query={table,filters:[]};const api={select:()=>api,order:()=>api,maybeSingle:()=>{query.single=true;return api},eq:(column,value)=>{query.filters.push([column,value]);return api},
     then:(resolve,reject)=>fetch('/__patient_table',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(query)}).then(response=>response.json()).then(resolve,reject)};return api}};`
  },
  configureServer(server){server.middlewares.use(async(req,res,next)=>{
@@ -55,11 +55,15 @@ const plugin = {
    const chunks=[];for await(const chunk of req)chunks.push(chunk)
    const query=JSON.parse(Buffer.concat(chunks).toString())
    const task=async()=>{try{
-    if(query.table!=='locations')throw Error('Test API denied')
     await db.exec('RESET ROLE')
-    const muni=(query.filters||[]).find(([column])=>column==='municipality_id')?.[1]
-    const rows=(await db.query('SELECT id,name FROM public.locations WHERE municipality_id=$1 ORDER BY sort_order',[muni])).rows
-    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:rows,error:null}))
+    const filter=column=>(query.filters||[]).find(([name])=>name===column)?.[1]
+    let rows
+    if(query.table==='locations')rows=(await db.query('SELECT id,name FROM public.locations WHERE municipality_id=$1 ORDER BY sort_order',[filter('municipality_id')])).rows
+    // หนังสือนำส่งอ่านผู้รับจากทะเบียนหน่วยงานรับเรื่องต่อ · ฐานทดสอบไม่มีทะเบียนผู้ลงนาม = ว่าง (หนังสือใช้ตำแหน่งตั้งต้น)
+    else if(query.table==='referral_partners')rows=(await db.query('SELECT name FROM public.referral_partners WHERE id=$1',[filter('id')])).rows
+    else if(query.table==='document_signatories')rows=[]
+    else throw Error('Test API denied')
+    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:query.single?(rows[0]??null):rows,error:null}))
    }catch(e){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:null,error:{message:e.message}}))}}
    chain=chain.then(task,task);return}
   if(req.url!=='/__patient_rpc')return next()
@@ -193,6 +197,7 @@ try{
  await click('conflictDecline',row(b2).getByRole('button',{name:'ยืนยันรถ',exact:true}))
  await problem.waitFor();await problem.getByText('รถไม่ว่าง ช่วงเวลานี้ชนกับเที่ยวที่ยืนยันแล้ว').waitFor()
  await problem.getByText(/ไม่ได้: ผู้เดินทางเดิมในเที่ยวนั้นไม่ได้เลือกนั่งร่วม/).waitFor()
+ assert.equal(await sheet.getByRole('button',{name:'พิมพ์หนังสือนำส่ง',exact:true}).count(),0,'ยังไม่ยืนยันรถ = ยังไม่มีหนังสือให้พิมพ์ ปุ่มพิมพ์บนหัวแผ่นต้องไม่ขึ้น')
  assert.equal(await problem.getByLabel('เหตุผล: รถไม่ว่าง ให้บริการตามเวลานี้ไม่ได้').inputValue(),'รถไม่ว่างในช่วงเวลาที่ขอ')
  await click('conflictDecline',problem.getByRole('button',{name:'แจ้งว่ารถไม่ว่าง และยกเลิกคำขอ',exact:true}))
  await sheet.waitFor({state:'detached'});await row(b2).getByText('ยกเลิกแล้ว').waitFor()
@@ -349,6 +354,15 @@ try{
   assert.equal(previousOdometer(trip('first','07:00',null,'confirmed'),loaded),'','ไม่มีเที่ยวก่อนหน้าต้องเว้นว่าง ไม่เดา')
  }
  await staffDesk();await row(b1).getByRole('button',{name:'บันทึกเอกสาร',exact:true}).click()
+ // ── ปุ่ม "พิมพ์" บนหัวแผ่น (เจ้าของระบบขอ 2026-09-24) — ไม่ต้องเลื่อนหาปุ่มพิมพ์ในกล่องเอกสาร ──
+ {
+  const [letterWin]=await Promise.all([page.waitForEvent('popup'),click('printFromHeader',sheet.getByRole('button',{name:'พิมพ์หนังสือนำส่ง',exact:true}))])
+  await letterWin.waitForFunction(()=>document.body?.innerText.includes('ใบคำขอรับสวัสดิการ'))
+  const printed=await letterWin.evaluate(()=>document.body.innerText)
+  assert.ok(printed.includes('ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย'),'ต้องได้หนังสือนำส่ง')
+  assert.ok(printed.includes(b1.slice(0,8).toUpperCase()),'ต้องเป็นเอกสารของเที่ยวที่เปิดอยู่')
+  assert.equal(clicks.printFromHeader,1);await letterWin.close()
+ }
  await sheet.getByRole('button',{name:'กรอกเลขหนังสือ',exact:true}).click()
  await sheet.getByLabel('เลขที่หนังสือ',{exact:true}).fill('พร 72301/77');await sheet.getByRole('button',{name:'บันทึกเลขหนังสือ',exact:true}).click();await toast('บันทึกเลขหนังสือนำส่งแล้ว').waitFor()
  // เอกสารครบแล้ว = แถวไม่มีงานค้าง ปุ่มแถวกลับเป็น "ดูรายละเอียด" และแบบฟอร์มย้ายไปอยู่ใต้ "จัดการเพิ่มเติม"
