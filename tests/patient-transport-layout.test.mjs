@@ -470,6 +470,26 @@ const checks = [
     },
   },
   {
+    name: 'letter-has-no-consent-version-code',
+    reason: 'รหัสรุ่นข้อความยินยอม (เช่น patient-booking-v1) เป็นรหัสภายในระบบ ผู้รับหนังสืออ่านไม่รู้เรื่อง เจ้าของระบบสั่งตัด 2026-09-24'
+      + ' — ย่อหน้าความยินยอมและวันที่ยินยอมต้องยังอยู่ครบ',
+    async run(browser) {
+      for (const [label, html, version] of [
+        ['ชุดเอกสารคำขอ', buildPatientTransportPacketHtml(args()), HEADER.consent_version],
+        ['หนังสือต่อเที่ยว', buildTripForwardLetterHtml({ ...tripArgs(), bookings: TRIP_BOOKINGS.slice(0, 1) }), TRIP_BOOKINGS[0].consent_version],
+      ]) {
+        const page = await render(browser, html)
+        try {
+          const text = await page.locator('.sheet').nth(0).innerText()
+          assert.ok(!text.includes('ข้อความยินยอมรุ่น'), `${label}: ยังมีคำว่า "ข้อความยินยอมรุ่น"`)
+          assert.ok(!text.includes(version), `${label}: ยังพิมพ์รหัส ${version}`)
+          assert.ok(text.includes('ให้ความยินยอมเป็นการเฉพาะ'), `${label}: ย่อหน้าความยินยอมหายไปด้วย`)
+          assert.match(text, /เมื่อวันที่ \d+ \S+ \d{4}/, `${label}: วันที่ยินยอมหายไปด้วย`)
+        } finally { await page.close() }
+      }
+    },
+  },
+  {
     name: 'month-report-landscape-sign-standard',
     reason: 'สรุปรายเดือนแนวนอน 22 เที่ยว: ไม่ล้นขวา หัวตารางซ้ำเมื่อขึ้นหน้าใหม่ ช่องลงนามได้มาตรฐานกลาง และไม่มีชื่อผู้เดินทาง',
     async run(browser) {
