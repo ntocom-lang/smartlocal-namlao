@@ -106,7 +106,11 @@ export default function WaterSituationPage() {
 
   useVisibleRefresh(refresh, { intervalMs: REFRESH_MS, enabled: Boolean(tenantId) })
 
-  const visibleData = nearbyOnly ? shareWaterSituation(data, tenant) : localOnly ? localWaterSituation(data, tenant) : data
+  // Y.38 measures Mae Kham Mi at Tamnaktham. Its reading does not establish conditions in Namlao.
+  const scopedData = data && tenant?.slug === 'namlao'
+    ? { ...data, stations: (data.stations ?? []).filter(s => !(s.station_type === 'waterlevel' && s.station_code === 'Y.38')) }
+    : data
+  const visibleData = nearbyOnly ? shareWaterSituation(scopedData, tenant) : localOnly ? localWaterSituation(scopedData, tenant) : scopedData
   const stations = visibleData?.stations ?? []
   const rain = stations.filter(s => s.station_type === 'rain')
   const levels = stations.filter(s => s.station_type === 'waterlevel')
@@ -186,7 +190,7 @@ export default function WaterSituationPage() {
 
           </>
         )}
-        {(data || hydroReports.length > 0) && <WaterSituationShare tenant={tenant} data={{ ...(data || { stations: [] }), hydroReports }} now={checkedAt} refreshFailed={loadError} renderCards={WaterShareCards} />}
+        {(scopedData || hydroReports.length > 0) && <WaterSituationShare tenant={tenant} data={{ ...(scopedData || { stations: [] }), hydroReports }} now={checkedAt} refreshFailed={loadError} renderCards={WaterShareCards} />}
       </div>
     </div>
   )
