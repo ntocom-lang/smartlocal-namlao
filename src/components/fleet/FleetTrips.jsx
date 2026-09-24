@@ -219,6 +219,14 @@ function fmtKm(value) {
   return Number.isFinite(n) ? `${n.toLocaleString('th-TH', { maximumFractionDigits: 2 })} กม.` : '—'
 }
 
+// เลขไมล์ใต้ระยะทางในตาราง — ไม่ใส่หน่วยซ้ำ (หน่วยอยู่ที่ระยะทางแล้ว) ว่าง = '—' ให้เห็นว่าเลขขาด
+// เช็ค null ก่อนแปลง เพราะ Number(null) = 0 จะกลายเป็นเลขไมล์ 0 แทนที่จะบอกว่าไม่มีเลข
+function fmtMeter(value) {
+  if (value == null || value === '') return '—'
+  const n = Number(value)
+  return Number.isFinite(n) ? n.toLocaleString('th-TH', { maximumFractionDigits: 2 }) : '—'
+}
+
 // เตือนระยะทางที่น่าจะพิมพ์ผิด — ตัวตัดสินอยู่ที่ checkTripOdometer() จุดเดียว (src/lib/fleetOdometer.js)
 // ไม่บล็อก เพราะเดินทางไกลจริงมีได้ แต่ต้องเห็นก่อนกดบันทึก และกดใช้เลขที่ระบบเสนอได้ในแตะเดียว
 // เคสจริง: เลขกลับพิมพ์สลับหลัก 278,715 → 287,715 หน้าจอขึ้นระยะ 9,009 กม. แต่ไม่มีอะไรเตือนเลย
@@ -1942,8 +1950,13 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               : <span className="shrink-0 font-bold text-gray-700">📏 {dist.toLocaleString()} กม.</span>)}
           </div>
           {t.planned_departure && <div>🗓 {fmtDT(t.planned_departure)} – {fmtDT(t.planned_return)}</div>}
-          {t.started_at && <div>🚀 {fmtDT(t.started_at)}{t.odometer_start ? ` · ${Number(t.odometer_start).toLocaleString()} กม.` : ''}</div>}
-          {t.returned_at && <div>🏁 {fmtDT(t.returned_at)}{t.odometer_end ? ` · ${Number(t.odometer_end).toLocaleString()} กม.` : ''}</div>}
+          {/* เลขไมล์ขาดต้องเห็น ไม่ใช่เงียบหายไป (เคส กค 9700 24 ก.ย. 2569 กลับถึงโดยไม่มีเลขกลับ) */}
+          {t.started_at && <div>🚀 {fmtDT(t.started_at)} · {t.odometer_start != null
+            ? `${Number(t.odometer_start).toLocaleString()} กม.`
+            : <span className="font-semibold text-amber-600">ไม่มีเลขไมล์</span>}</div>}
+          {t.returned_at && <div>🏁 {fmtDT(t.returned_at)} · {t.odometer_end != null
+            ? `${Number(t.odometer_end).toLocaleString()} กม.`
+            : <span className="font-semibold text-amber-600">ไม่มีเลขไมล์</span>}</div>}
         </div>
         {(canApprove || canDepart || canReturn || canCancel || isAdmin) && (
           <div className="flex gap-1.5 pt-0.5">
@@ -2025,6 +2038,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               <span className="block text-[9px] font-semibold">ตรวจเลขไมล์</span>
             </span>
           ) : `${dist.toLocaleString()} กม.`}
+          {/* เลขไมล์ออก/กลับจริงใต้ระยะทาง — ตรวจระยะได้ทันที และเห็นทริปที่เลขขาด (ขึ้น —)
+              แสดงเฉพาะทริปที่ออกเดินทางแล้ว คำขอที่ยังไม่ออกไม่มีเลขอยู่แล้ว ขึ้น — จะรกเปล่าๆ */}
+          {(t.status === 'in_progress' || t.status === 'completed'
+            || t.odometer_start != null || t.odometer_end != null) && (
+            <div className="mt-0.5 text-[10px] leading-4 text-gray-400">
+              <div>ออก {fmtMeter(t.odometer_start)}</div>
+              <div>กลับ {fmtMeter(t.odometer_end)}</div>
+            </div>
+          )}
         </td>
         <td className="px-4 py-2.5 text-xs border-r border-gray-200">
           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
