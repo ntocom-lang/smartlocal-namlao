@@ -581,6 +581,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   const [showCal,   setShowCal]   = useState(false)
   const [historyPage, setHistoryPage] = useState(0)
   const [historyPageSize, setHistoryPageSize] = useState(20)
+  // ตัวกรองประวัติ — กรองที่ DB เพราะประวัติแบ่งหน้าที่ server กรองบนจอจะเห็นแค่หน้าที่เปิดอยู่
+  const EMPTY_HISTORY_FILTER = { vehicle: '', requester: '', driver: '', department: '' }
+  const [historyFilter, setHistoryFilter] = useState(EMPTY_HISTORY_FILTER)
+  const historyFiltered = Object.values(historyFilter).some(Boolean)
+  const setHistoryFilterKey = key => e => {
+    const value = e.target.value
+    setHistoryFilter(f => ({ ...f, [key]: value }))
+    setHistoryPage(0)
+  }
 
   /* ── Load ── */
   // waitlisted ต้องอยู่ชุด active — ถ้าตกหล่น คำขอที่รอจัดสรรรถจะหายไปจากทั้งสองรายการ
@@ -598,11 +607,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   // ประวัติแบ่งหน้าที่ server — เดิมดึงรวมมา .limit(300) แล้วหั่นหน้าฝั่ง client
   // ทำให้ อปท. ที่มีทริปเกิน 300 รายการ "ประวัติการใช้รถ" หายถาวรจากหน้าจอ
   // (นับรวม active ด้วย ยิ่งเหลือประวัติน้อยลงไปอีก)
-  function fetchHistory(page = historyPage, size = historyPageSize) {
+  function fetchHistory(page = historyPage, size = historyPageSize, filter = historyFilter) {
     let q = supabase.from('fleet_trips').select(SELECT, { count: 'exact' })
       .eq('municipality_id', tenant.id)
       .in('status', HISTORY_STATUSES)
       .order('created_at', { ascending: false })
+    if (filter.vehicle)    q = q.eq('vehicle_id', filter.vehicle)
+    if (filter.requester)  q = q.eq('requested_by', filter.requester)
+    if (filter.driver)     q = q.eq('driver_id', filter.driver)
+    if (filter.department) q = q.eq('department_id', filter.department)
     if (size !== 'all') q = q.range(page * size, (page + 1) * size - 1)
     return q
   }
@@ -704,7 +717,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       setHistoryCount(count ?? 0)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenant?.id, historyPage, historyPageSize, refreshKey])
+  }, [tenant?.id, historyPage, historyPageSize, historyFilter, refreshKey])
 
   /* ── Realtime ── */
   useEffect(() => {
@@ -2165,8 +2178,37 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         <p className="text-[11px] md:text-xs font-bold text-gray-500 uppercase tracking-wide">
           ประวัติการใช้รถ <span className="text-gray-400 normal-case">({historyCount})</span>
         </p>
+        {(historyCount > 0 || historyFiltered) && (() => {
+          const sel = 'min-w-0 w-full md:w-auto text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none'
+          return (
+            <div className="grid grid-cols-2 md:flex md:flex-wrap gap-2 items-center">
+              <select value={historyFilter.vehicle} onChange={setHistoryFilterKey('vehicle')} className={sel}>
+                <option value="">ทุกคัน</option>
+                {vehicles.map(v => <option key={v.id} value={v.id}>{assetOptionLabel(v)}</option>)}
+              </select>
+              <select value={historyFilter.requester} onChange={setHistoryFilterKey('requester')} className={sel}>
+                <option value="">ผู้ใช้รถทุกคน</option>
+                {staffList.map(s => <option key={s.id} value={s.id}>{s.full_name || s.email}</option>)}
+              </select>
+              <select value={historyFilter.driver} onChange={setHistoryFilterKey('driver')} className={sel}>
+                <option value="">ผู้ขับรถทุกคน</option>
+                {driverList.map(d => <option key={d.profile_id} value={d.profile_id}>{d.full_name}</option>)}
+              </select>
+              <select value={historyFilter.department} onChange={setHistoryFilterKey('department')} className={sel}>
+                <option value="">ทุกกอง</option>
+                {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              {historyFiltered && (
+                <button onClick={() => { setHistoryFilter(EMPTY_HISTORY_FILTER); setHistoryPage(0) }}
+                  className="col-span-2 md:col-span-1 text-xs font-semibold text-gray-500 hover:text-gray-700 px-2 py-2">
+                  ✕ ล้างตัวกรอง
+                </button>
+              )}
+            </div>
+          )
+        })()}
         {historyCount === 0 ? (
-          <FleetEmptyState icon={History} title="ยังไม่มีประวัติการใช้รถ" />
+          <FleetEmptyState icon={History} title={historyFiltered ? 'ไม่พบรายการตามตัวกรอง' : 'ยังไม่มีประวัติการใช้รถ'} />
         ) : <>
           {renderTripsTable(pagedHistory)}
           <div className="md:hidden space-y-1.5">
