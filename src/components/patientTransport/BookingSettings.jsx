@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { buttonClass, primaryClass, inputClass, minutes, clockTime } from '../../lib/patientBooking'
+import { buttonClass, primaryClass, inputClass, minutes, clockTime, bookingTimingAdvice } from '../../lib/patientBooking'
 
 export default function BookingSettings({ workspace, busy, onSave }) {
   const [form, setForm] = useState(() => ({ enabled: false, partner_id: '', driver_id: '', coordinator_ids: [], office_start: 510, office_end: 990,
@@ -41,11 +41,25 @@ export default function BookingSettings({ workspace, busy, onSave }) {
         <span className="mt-1 block text-sm text-slate-600">{partner?.min_lead_days === undefined ? 'เลือกเจ้าของรถเพื่อดูจำนวนวันจองล่วงหน้า' : `ประชาชนต้องจองล่วงหน้าอย่างน้อย ${partner.min_lead_days} วัน`} · แก้จำนวนวันได้ที่หน้าผู้ดูแล เมนู “ประเภทคำขอเอกสาร” → ทะเบียนหน่วยงานรับเรื่องต่อ</span></label>
       <label>บัญชีคนขับ<select aria-label="บัญชีคนขับ" className={inputClass} value={form.driver_id || ''} onChange={set('driver_id')}><option value="">เลือกบัญชีเจ้าหน้าที่ของคนขับ</option>{workspace.people?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       {['office_start', 'office_end'].map((key, i) => <label key={key}>{i ? 'สิ้นสุดบริการ' : 'เริ่มบริการ'}<input className={inputClass} type="time" required value={clockTime(form[key])} onChange={e => setForm(f => ({ ...f, [key]: minutes(e.target.value) }))} /></label>)}
+      <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950 sm:col-span-2">ช่วงนี้คือเวลาที่รถเริ่มออกและกลับถึงพื้นที่ เวลานัดแพทย์จะสั้นกว่านี้ เพราะระบบเผื่อเวลารับผู้ป่วยและเดินทางให้ทัน</p>
       {input('seats', 'ที่นั่งผู้โดยสาร ไม่รวมคนขับ', { type: 'number', min: 1, max: 15 })}{input('wheelchairs', 'ที่ยึดรถเข็น', { type: 'number', min: 0, max: 4 })}{input('stretchers', 'ที่ยึดเปล', { type: 'number', min: 0, max: 2 })}
       {input('contact_phone', 'เบอร์ติดต่อหน่วยงาน', { type: 'tel', maxLength: 10 })}
     </div>
     <fieldset><legend className="font-semibold">เจ้าหน้าที่ผู้ยืนยันคิว</legend><p className="mt-2 text-sm text-slate-600">เลือกบัญชีเดียวกับคนขับได้ หากมอบหมายให้ทำทั้งสองหน้าที่ ให้เลือกชื่อนั้นเป็นคนขับและติ๊กเป็นผู้ยืนยันคิวด้วย ใช้บัญชีเดียวได้ทั้งจัดคิวและงานคนขับ</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{workspace.people?.map(p => <label key={p.id} className="flex min-h-11 items-center gap-3"><input className="size-5" type="checkbox" checked={form.coordinator_ids.includes(p.id)} onChange={e => setForm(f => ({ ...f, coordinator_ids: e.target.checked ? [...f.coordinator_ids, p.id] : f.coordinator_ids.filter(id => id !== p.id) }))} />{p.name}</label>)}</div></fieldset>
     <fieldset><legend className="font-semibold">เส้นทางโรงพยาบาลและพื้นที่รับ · เวลาเดินทางรวมระหว่างจุดรับ</legend>
+      {form.routes.length > 0 && <div className="mt-2 rounded-xl bg-sky-50 p-3 text-sm text-sky-950">
+        <strong>ตัวอย่างเวลานัดแพทย์จากค่าที่กรอก</strong> (กรณีรอรับกลับ · คิวรถยังว่าง) · มีผลกับหน้าจองหลังบันทึก
+        {form.routes.map(route => {
+          const timing = bookingTimingAdvice({ route_id: route.id, return_mode: 'wait' }, {
+            ...form, buffer_minutes: Number(form.buffer_minutes), boarding_minutes: Number(form.boarding_minutes),
+          })
+          const first = Math.ceil(timing?.earliest / 30) * 30
+          const last = Math.floor(timing?.latest / 30) * 30
+          return <p key={route.id} className="mt-1">{route.label || 'เส้นทางที่ยังไม่ระบุชื่อ'}: {timing?.possible
+            && first <= last ? `${clockTime(first)}–${clockTime(last)} น.`
+            : 'เวลาบริการไม่พอสำหรับเดินทางไปและกลับ'}</p>
+        })}
+      </div>}
       {form.routes.map((r, i) => <div key={r.id} className="my-3 grid gap-3 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1fr_140px_auto]">
         <label>ชื่อโรงพยาบาล — พื้นที่รับ<input className={inputClass} value={r.label} required maxLength={200} onChange={e => changeRoute(i, 'label', e.target.value)} /></label>
         <label>นาทีต่อขา<input className={inputClass} type="number" min={5} max={240} required value={r.minutes} onChange={e => changeRoute(i, 'minutes', Number(e.target.value))} /></label>

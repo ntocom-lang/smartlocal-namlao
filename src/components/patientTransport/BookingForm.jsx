@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import MapPicker from '../MapPicker'
 import BookingReviewSheet from './BookingReviewSheet'
-import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, orgAbbr, normalizeBookingPhone } from '../../lib/patientBooking'
+import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, bookingTimingAdvice, orgAbbr, normalizeBookingPhone } from '../../lib/patientBooking'
 
 /**
  * ฟอร์มขอจองรถ — หน้าเดียวจบ แล้วจบด้วยหน้าทวนก่อนส่งแบบ "คำร้อง" (BookingReviewSheet)
@@ -150,6 +150,12 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   const day = form.day || bookable[0]?.date || ''
   const dayInfo = day >= first && day <= lastDay ? days.find(d => d.date === day) : (farDay?.date === day ? farDay : null)
   const step = allTimes || (form.time && minutes(form.time) % 30) ? 15 : 30
+  const timing = bookingTimingAdvice(form, info)
+  const firstAppointment = Math.ceil(timing?.earliest / step) * step
+  const lastAppointment = Math.floor(timing?.latest / step) * step
+  const appointmentWindow = timing?.possible && firstAppointment <= lastAppointment
+    ? `${clockTime(firstAppointment)}–${clockTime(lastAppointment)} น.`
+    : ''
   const times = useMemo(() => {
     const draft = { route_id: routeId, return_mode: returnMode, back }
     // เจ้าหน้าที่รับเรื่องแทนเห็นทุกเวลาในเวลาบริการ (ประสานกับคนขับเองได้) จึงใช้ช่วงว่างสมมติเต็มวัน
@@ -257,6 +263,12 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
 
     <Section step={2} title="เวลานัดแพทย์" done={!!form.time && !timeMissing} warn={warn('time')}
       hint={staffEntry ? 'ทุกเวลาในช่วงให้บริการ ระบบจะตรวจคิวซ้ำตอนยืนยันรถ' : 'ขึ้นเฉพาะเวลาที่รถว่างและไปส่งทัน'}>
+      <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950">
+        รถให้บริการ {clockTime(info.office_start)}–{clockTime(info.office_end)} น.
+        {appointmentWindow && <> · เส้นทางนี้เลือกเวลานัดได้ประมาณ <strong>{appointmentWindow}</strong></>}
+        {' '}เพราะรถต้องออกไปรับก่อนเวลานัด{timing && `อย่างน้อย ${timing.before} นาที`} และกลับให้ทันเวลาปิดบริการ
+        {!staffEntry && ' โดยเวลาที่รถไม่ว่างจะไม่แสดงเป็นปุ่ม'}
+      </p>
       <Choice label="เวลานัดแพทย์" hideLabel value={form.time} onChange={value => set('time', value)} cols="grid-cols-3 sm:grid-cols-4"
         compact items={times.map(time => ({ value: time, label: `${time} น.` }))} />
       {times.length > 0 && step === 30 && <button type="button" className={buttonClass} onClick={() => setAllTimes(true)}>ดูเวลาทุก 15 นาที</button>}
