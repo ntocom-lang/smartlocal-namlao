@@ -68,7 +68,7 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
   const [events, setEvents] = useState([])
   // ข้อมูลที่ใช้เฉพาะตอนพิมพ์ — โหลดแยกและไม่กันหน้าจอ อ่านไม่ได้ก็ยังทำงานต่อได้
   // (ใบจะพิมพ์ชื่อผู้ลงนามเป็นเส้นจุดให้เขียนมือแทน ซึ่งยังใช้งานได้จริง)
-  const [printData, setPrintData] = useState({ department: '', mayor: null, partner: null })
+  const [printData, setPrintData] = useState({ mayor: null, partner: null })
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [acting, setActing] = useState(false)
@@ -114,21 +114,17 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
       const row = headRes.data
       if (!row?.municipality_id) return
       Promise.all([
-        row.department_id
-          ? supabase.from('departments').select('name').eq('id', row.department_id).maybeSingle()
-          : Promise.resolve({ data: null }),
         supabase.from('document_signatories').select(SIGNATORY_REGISTRY_SELECT)
           .eq('municipality_id', row.municipality_id)
           .eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
         // ที่อยู่/เบอร์ของหน่วยงานปลายทางอยู่ในทะเบียน ไม่ได้ snapshot ไว้ในคำขอ — หนังสือ
         // ที่พิมพ์ซ้ำภายหลังจึงได้ที่อยู่ปัจจุบันเสมอ ซึ่งถูกต้องกว่าที่อยู่เก่าตอนยื่น
         supabase.from('referral_partners').select('address, phone').eq('id', row.partner_id).maybeSingle(),
-      ]).then(([deptRes, signRes, partnerRes]) => {
+      ]).then(([signRes, partnerRes]) => {
         if (cancelled) return
         const registry = signRes.data ?? []
         const mayorRow = pickSignatory(registry, { role: 'mayor' })
         setPrintData({
-          department: deptRes.data?.name ?? '',
           mayor: mayorRow ? { name: signatoryName(mayorRow), title: signatoryTitle(mayorRow) } : null,
           partner: partnerRes.data ?? null,
         })
@@ -227,7 +223,6 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
       partner: printData.partner,
       tenant,
       mayor: printData.mayor,
-      departmentName: printData.department,
       // เลขอ้างอิง 8 ตัวแรกของ request id — รูปแบบเดียวกับที่ Inbox กับหน้าประชาชนแสดง
       referenceNo: String(requestId ?? '').slice(0, 8).toUpperCase(),
       docDate: parent?.created_at,
