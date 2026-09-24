@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { RefreshCw, Search, X } from 'lucide-react'
+import { Printer, RefreshCw, Search, X } from 'lucide-react'
 
 /**
  * โครงหน้าทำงานของโมดูลรถรับ-ส่งผู้ป่วย — ใช้รูปแบบเดียวกับ "คำร้อง" และ "ยานพาหนะ"
@@ -65,7 +65,9 @@ export function Pills({ value, onChange, items, label }) {
 // แผ่นรายละเอียดลอยทับ — ปิดแล้วกลับมาที่แถวเดิมทันที ไม่สลับทั้งหน้า (กติกาเดียวกับคำร้อง)
 // onReload: ปุ่มโหลดข้อมูลล่าสุดของหน้าอยู่หลังแผ่น กดไม่ถึง แผ่นที่มีช่องกรอกจึงต้องมีปุ่มของตัวเอง
 // (ร่างที่กรอกค้างไว้ต้องอยู่รอดเมื่อโหลดข้อมูลใหม่ ระบบถึงจะเตือนได้ว่ามีคนแก้ค่าระหว่างที่กรอก)
-export function Sheet({ title, subtitle, onClose, onReload, busy, wide, children }) {
+// onPrint = ปุ่ม "พิมพ์" บนหัวแผ่น ข้างปุ่มโหลดใหม่ — ส่งมาเฉพาะแผ่นที่มีเอกสารให้พิมพ์จริง
+// มีป้ายคำว่า "พิมพ์" ไม่ใช่ไอคอนเปล่า เพราะเจ้าหน้าที่หลายคนไม่รู้จักรูปเครื่องพิมพ์ (ปุ่มกลมอีก 2 ปุ่มเป็นสัญลักษณ์ที่ใช้กันทั่วไป)
+export function Sheet({ title, subtitle, onClose, onReload, onPrint, printLabel = 'พิมพ์', busy, wide, children }) {
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
@@ -76,6 +78,10 @@ export function Sheet({ title, subtitle, onClose, onReload, busy, wide, children
     <div className={`relative flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-2xl ${wide ? 'sm:max-w-3xl' : 'sm:max-w-xl'}`}>
       <div className="relative shrink-0 px-5 pb-5 pt-6" style={{ background: 'linear-gradient(135deg,#1a3a5c,#2d5f8a)' }}>
         <div className="absolute right-4 top-4 flex items-center gap-2">
+          {onPrint && <button type="button" onClick={onPrint} disabled={busy} aria-label={printLabel} title={printLabel}
+            className="flex h-9 items-center gap-1.5 rounded-full bg-white px-3 text-sm font-bold text-gray-700 shadow-lg transition-transform hover:bg-gray-100 active:scale-95 disabled:opacity-50">
+            <Printer size={17} strokeWidth={2.5} aria-hidden="true" />พิมพ์
+          </button>}
           {onReload && <button type="button" onClick={onReload} disabled={busy} aria-label="โหลดข้อมูลล่าสุด" title="โหลดข้อมูลล่าสุด"
             className="flex size-9 items-center justify-center rounded-full bg-white shadow-lg transition-transform hover:bg-gray-100 active:scale-95 disabled:opacity-50">
             <RefreshCw size={17} className={`text-gray-700 ${busy ? 'animate-spin' : ''}`} strokeWidth={2.5} />
@@ -85,7 +91,7 @@ export function Sheet({ title, subtitle, onClose, onReload, busy, wide, children
             <X size={20} className="text-gray-700" strokeWidth={2.5} />
           </button>
         </div>
-        <div className={onReload ? 'pr-24' : 'pr-12'}>
+        <div className={onPrint ? (onReload ? 'pr-44' : 'pr-32') : onReload ? 'pr-24' : 'pr-12'}>
           {subtitle && <p className="text-xs font-medium text-white/70">{subtitle}</p>}
           <h3 className="mt-0.5 text-base font-bold leading-tight text-white">{title}</h3>
         </div>
