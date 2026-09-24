@@ -41,15 +41,15 @@ const server = await createServer({ configFile: false, envDir: false, server: { 
   load(id) {
     const file = id.replaceAll('\\', '/')
     // onSubmit คืน false = ส่งไม่สำเร็จ (เครือข่ายขัดข้อง) ฟอร์มต้องปิดแผ่นทวนแล้วบอกวิธีแก้
-    if (id === '\0guidance.js') return `import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import Form from '/src/components/patientTransport/BookingForm.jsx'; import '/src/index.css'; function App(){const [error,setError]=useState(''); return React.createElement(Form,{tenantId:"test",info:${JSON.stringify(info)},onBack:()=>{},onSubmit:()=>{setError('เครือข่ายขัดข้อง');return false},submitError:error})};createRoot(document.getElementById('root')).render(React.createElement(App));`
+    if (id === '\0guidance.js') return `import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import Form from '/src/components/patientTransport/BookingForm.jsx'; import Settings from '/src/components/patientTransport/BookingSettings.jsx'; import '/src/index.css'; function App(){const [error,setError]=useState(''); const info=${JSON.stringify(info)}; if(location.search.includes('extended')||location.search.includes('settings'))Object.assign(info,{office_start:450,office_end:1050,routes:[{id:'r',label:'โรงพยาบาล TEST',minutes:30}]}); if(location.search.includes('settings'))return React.createElement(Settings,{workspace:{settings:{...info,coordinator_ids:[],holidays:[]},partners:[],people:[]},busy:false,onSave:()=>{}}); return React.createElement(Form,{tenantId:"test",info,onBack:()=>{},onSubmit:()=>{setError('เครือข่ายขัดข้อง');return false},submitError:error})};createRoot(document.getElementById('root')).render(React.createElement(App));`
     // ปฏิทินสาธารณะ: ทุกวันเปิด รถว่างทั้งวัน · ทะเบียนสถานที่ของหน่วยงาน 2 แห่ง
     if (file.endsWith('/lib/supabase.js')) return `export const supabase={
-      rpc:async(name,args)=>{const qs=location.hash;if(name==='patient_booking_calendar'&&qs.includes('calfail'))return{data:null,error:{message:'TEST calendar down'}};if(name==='patient_booking_calendar'&&qs.includes('slowcal'))await new Promise(r=>setTimeout(r,1500));const days=[];const to=new Date(args.p_to+'T12:00:00+07:00').getTime();for(let t=new Date(args.p_from+'T12:00:00+07:00').getTime();t<=to&&days.length<60;t+=86400000){const d=new Date(t+7*3600000).toISOString().slice(0,10);days.push({date:d,status:'open',free:[{start:d+'T08:30:00+07:00',end:d+'T16:30:00+07:00'}],trips:[]})}return {data:{days}}},
+      rpc:async(name,args)=>{const qs=location.hash;if(name==='patient_booking_calendar'&&qs.includes('calfail'))return{data:null,error:{message:'TEST calendar down'}};if(name==='patient_booking_calendar'&&qs.includes('slowcal'))await new Promise(r=>setTimeout(r,1500));const days=[];const to=new Date(args.p_to+'T12:00:00+07:00').getTime();for(let t=new Date(args.p_from+'T12:00:00+07:00').getTime();t<=to&&days.length<60;t+=86400000){const d=new Date(t+7*3600000).toISOString().slice(0,10);const extended=location.search.includes('extended');days.push({date:d,status:'open',free:[{start:d+(extended?'T07:30:00+07:00':'T08:30:00+07:00'),end:d+(extended?'T17:30:00+07:00':'T16:30:00+07:00')}],trips:[]})}return {data:{days}}},
       from:()=>{const api={select:()=>api,eq:()=>api,order:()=>api,then:resolve=>resolve({data:[{id:'1',name:'TEST บ้านเหนือ'},{id:'2',name:'TEST บ้านใต้'}],error:null})};return api}}`
     if (file.endsWith('/contexts/TenantContext.jsx')) return 'export const useTenant=()=>({tenant:{}})'
     if (file.endsWith('/components/MapPicker.jsx')) return 'export default function MapPicker(){return null}'
   },
-  configureServer(s) { s.middlewares.use(async (req, res, next) => { if (req.url !== '/__guidance') return next(); res.setHeader('Content-Type', 'text/html'); res.end(await s.transformIndexHtml(req.url, '<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div class="min-h-screen bg-white p-4 text-slate-900" id="root"></div><script type="module" src="/__guidance.js"></script></body></html>')) }) },
+  configureServer(s) { s.middlewares.use(async (req, res, next) => { if (new URL(req.url, 'http://localhost').pathname !== '/__guidance') return next(); res.setHeader('Content-Type', 'text/html'); res.end(await s.transformIndexHtml(req.url, '<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div class="min-h-screen bg-white p-4 text-slate-900" id="root"></div><script type="module" src="/__guidance.js"></script></body></html>')) }) },
 }] })
 await server.listen()
 const browser = await chromium.launch({ channel: 'chrome' })
@@ -109,6 +109,31 @@ try {
     await page.screenshot({ path: `D:/tmp/booking-guidance-${width}.png`, fullPage: true })
     await page.close(); console.log(`PASS ${width}px: free-time choices only, missing list, phone format, place registry, return time, review + consent, submit failure, no overflow`)
   }
+  // 07:30–17:30 คือเวลารถ ไม่ใช่เวลานัด: โรงพยาบาล 30 นาที + เผื่อ 30 นาทีต่อด้าน
+  // จึงขึ้นปุ่ม 08:30–16:30 พร้อมเหตุผลที่อ่านได้ในหน้าเดียวกัน
+  const extended = await browser.newPage({ viewport: { width: 390, height: 900 } })
+  await extended.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+  await extended.goto(`http://127.0.0.1:${server.httpServer.address().port}/__guidance?extended`)
+  const extendedSection = extended.getByRole('region', { name: 'เวลานัดแพทย์' })
+  const extendedTimes = extended.getByRole('group', { name: 'เวลานัดแพทย์' }).getByRole('button')
+  await extendedTimes.first().waitFor()
+  assert.equal(await extendedTimes.first().innerText(), '08:30 น.')
+  assert.equal(await extendedTimes.last().innerText(), '16:30 น.')
+  assert.match(await extendedSection.innerText(), /รถให้บริการ 07:30–17:30 น./)
+  assert.match(await extendedSection.innerText(), /เลือกเวลานัดได้ประมาณ 08:30–16:30 น./)
+  await extended.close()
+  console.log('PASS service hours 07:30–17:30 explain appointment choices 08:30–16:30')
+  const settingsPage = await browser.newPage({ viewport: { width: 390, height: 900 } })
+  await settingsPage.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+  await settingsPage.goto(`http://127.0.0.1:${server.httpServer.address().port}/__guidance?settings`)
+  await settingsPage.getByText('โรงพยาบาล TEST: 08:30–16:30 น.').waitFor()
+  await settingsPage.getByLabel('เริ่มบริการ').fill('08:00')
+  await settingsPage.getByText('โรงพยาบาล TEST: 09:00–16:30 น.').waitFor()
+  await settingsPage.getByText('ปรับเวลาเผื่อ · ปกติไม่ต้องแก้').click()
+  await settingsPage.getByLabel('เวลาเผื่อก่อนนัด/หลังเที่ยว (นาที)').fill('20')
+  await settingsPage.getByText('โรงพยาบาล TEST: 09:30–16:00 น.').waitFor()
+  await settingsPage.close()
+  console.log('PASS settings preview recalculates appointment times as service hours change')
   // ระหว่างรอปฏิทิน ต้องบอกว่ากำลังดูวันว่าง ไม่ใช่บอกว่าไม่มีวันว่าง (ผู้จองบนเน็ตช้าจะเข้าใจว่าจองไม่ได้แล้วเลิกจอง)
   const port = server.httpServer.address().port
   for (const [query, waitText, label] of [['slowcal', 'กำลังดูวันที่รถว่าง', 'ปฏิทินโหลดช้า'], ['calfail', 'ตรวจวันว่างไม่สำเร็จ', 'ปฏิทินโหลดไม่สำเร็จ']]) {
