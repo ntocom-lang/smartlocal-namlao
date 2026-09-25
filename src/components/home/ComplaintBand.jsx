@@ -4,8 +4,10 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronRight, Search, Siren } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { CategoryIcon } from '../../lib/categoryIcon'
 import { moduleHiddenCategoryValues, withoutModuleHiddenCategories } from '../../lib/complaintCategoryModules'
+import { withoutOfficialsOnlyCategories } from '../../lib/serviceAudience'
 import AdhocBand from './AdhocBand'
 
 // FALLBACK_EMOJI = ชุดที่แก้ให้ตรงกับไฟล์อื่นๆ ทั้งระบบแล้ว ใช้เฉพาะ clean variant (thungkaew-Theme)
@@ -46,6 +48,7 @@ const DEFAULT_CATEGORIES = [
 // variant="clean" = พื้นขาว/เทาอ่อน ใช้เฉพาะ thungkaew-Theme (ServiceHub) ให้ตรงกับภาพอ้างอิงที่ขอเลียนแบบ
 function ComplaintBand({ variant = 'warm' }) {
   const { tenant, isModuleEnabled } = useTenant()
+  const { role } = useAuth()
   const navigate = useNavigate()
   const [cats, setCats] = useState(DEFAULT_CATEGORIES)
   const clean = variant === 'clean'
@@ -53,7 +56,7 @@ function ComplaintBand({ variant = 'warm' }) {
   useEffect(() => {
     if (!tenant?.id) return
     Promise.all([
-      supabase.from('complaint_categories').select('value, label, emoji, color, is_adhoc, sort_order')
+      supabase.from('complaint_categories').select('value, label, emoji, color, is_adhoc, sort_order, submit_audience')
         .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order'),
       // supabase.rpc() คืน PostgrestFilterBuilder ซึ่งเป็น thenable ที่มีแค่ .then()
       // ต่อ .catch() ตรงๆ = TypeError ทันทีตอน mount ทำหน้าแรกตก error boundary ทั้งหน้า
@@ -91,7 +94,11 @@ function ComplaintBand({ variant = 'warm' }) {
   }, [tenant?.id])
 
   // กรองตอนแสดงผล ไม่ใช่ตอนโหลด — สถานะโมดูลมาจาก tenant ที่อาจโหลดเสร็จทีหลังรายการหมวด
-  const topCats = withoutModuleHiddenCategories(cats, moduleHiddenCategoryValues(isModuleEnabled))
+  // role ก็เช่นกัน (โหลดโปรไฟล์ทีหลัง) — หมวด "เฉพาะผู้มีตำแหน่ง" ไม่โชว์ให้ประชาชน ดู serviceAudience.js
+  const topCats = withoutOfficialsOnlyCategories(
+    withoutModuleHiddenCategories(cats, moduleHiddenCategoryValues(isModuleEnabled)),
+    role,
+  )
   const titleColor = clean ? 'text-gray-800' : 'text-amber-900'
   const footerBtnCls = clean
     ? 'flex items-center justify-center gap-1 text-white text-xs font-bold px-5 py-1.5 rounded-full transition-opacity hover:opacity-90 active:scale-95'

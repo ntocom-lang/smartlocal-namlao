@@ -61,6 +61,7 @@
     "test:complaint-intake": "node tests/complaint-intake.test.mjs",
     "test:complaint-finish": "node tests/complaint-finish.test.mjs",
     "test:complaint-polish": "node tests/complaint-text-polish.test.mjs",
+    "test:service-audience": "node tests/service-audience.test.mjs",
     "test:guard": "node tests/guard-master-tree.test.mjs",
     "test:app-icon": "node tests/app-icon.test.mjs"
   },

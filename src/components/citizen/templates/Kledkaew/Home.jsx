@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import ModuleLink from '../../../common/ModuleLink'
 import { useTenant } from '../../../../contexts/TenantContext'
+import { useAuth } from '../../../../contexts/AuthContext'
 import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import MiniEventCalendar from '../../../../components/MiniEventCalendar'
@@ -11,6 +12,7 @@ import TourismSection from '../../../../components/home/TourismSection'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import { CategoryIcon } from '../../../../lib/categoryIcon'
 import { moduleHiddenCategoryValues, withoutModuleHiddenCategories } from '../../../../lib/complaintCategoryModules'
+import { withoutOfficialsOnlyCategories } from '../../../../lib/serviceAudience'
 
 const CAT_FALLBACK_EMOJI = {
   light: '💡', road: '🛤️', mosquito: '🧴', tree: '🌲',
@@ -46,13 +48,14 @@ const POPULAR = [
 
 export default function Home() {
   const { tenant, isModuleEnabled } = useTenant()
+  const { role } = useAuth()
   const [cats, setCats] = useState(DEFAULT_CATS)
   const showComplaints = isModuleEnabled('complaints')
   const showEvents = isModuleEnabled('events')
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('complaint_categories').select('value, label, emoji, color')
+    supabase.from('complaint_categories').select('value, label, emoji, color, submit_audience')
       .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
       .then(({ data }) => { if (data?.length) setCats(data) })
       .catch((err) => { console.warn('[kledkaew] โหลดประเภทคำร้องไม่สำเร็จ:', err?.message) })
@@ -135,7 +138,11 @@ export default function Home() {
             </div>
 
             <div className="grid grid-cols-3 gap-3 relative z-10">
-              {withoutModuleHiddenCategories(cats, moduleHiddenCategoryValues(isModuleEnabled)).slice(0, 6).map((cat) => {
+              {/* หมวด "เฉพาะผู้มีตำแหน่ง" ไม่โชว์ให้ประชาชน ดู serviceAudience.js — ตัด 6 ช่องหลังกรอง */}
+              {withoutOfficialsOnlyCategories(
+                withoutModuleHiddenCategories(cats, moduleHiddenCategoryValues(isModuleEnabled)),
+                role,
+              ).slice(0, 6).map((cat) => {
                 const emoji = cat.emoji || CAT_FALLBACK_EMOJI[cat.value] || '📋'
                 return (
                   <Link to={`/request?category=${cat.value}`} key={cat.value} className="flex flex-col items-center group">

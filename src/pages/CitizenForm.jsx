@@ -12,8 +12,10 @@ import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import ComplaintReviewSheet from '../components/complaints/ComplaintReviewSheet'
 import { useTenant } from '../contexts/TenantContext'
+import { useAuth } from '../contexts/AuthContext'
 import { CategoryIcon } from '../lib/categoryIcon'
 import { moduleHiddenCategoryValues } from '../lib/complaintCategoryModules'
+import { isOfficialRole, isOfficialsOnlyCategory } from '../lib/serviceAudience'
 import { compressImage } from '../lib/imageUtils'
 import MapPicker from '../components/MapPicker'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
@@ -367,7 +369,10 @@ const FORM_TYPE_CONFIG = {
 }
 
 export default function CitizenForm() {
-  const { tenant, isModuleEnabled } = useTenant()
+  const { tenant, terminology, isModuleEnabled } = useTenant()
+  const { session: authSession, role } = useAuth()
+  // สมาชิกสภาเทศบาล / สมาชิกสภา อบต. ตาม org_type — ใช้บอกช่องทางแจ้งเรื่องของหมวดเฉพาะผู้มีตำแหน่ง
+  const councilTerm = terminology?.council ?? 'สมาชิกสภา'
   const primaryBg = 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)'
   const primaryColor = 'var(--color-primary)'
   const navigate = useNavigate()
@@ -421,6 +426,15 @@ export default function CitizenForm() {
   const disabledCategoryValues = moduleHiddenValues.length
     ? new Set([...dbDisabledCategoryValues, ...moduleHiddenValues])
     : dbDisabledCategoryValues
+  // หมวดที่ตั้ง "เฉพาะผู้มีตำแหน่ง" (ดู serviceAudience.js) ที่ role นี้ยื่นไม่ได้ — ใช้กลไกเดียวกับหมวดที่ปิด
+  // (ซ่อน pill + ลิงก์เก่าขึ้นแถบเตือนและส่งไม่ได้) แต่แยกชุดไว้เพราะความหมายต่างกัน: หมวดยังเปิดรับอยู่
+  // แค่ประชาชนต้องแจ้งผ่านช่องทางอื่น · ด่านจริงอยู่ที่ submit_citizen_complaint_v4 ตรงนี้แค่บอกก่อนกรอกจนจบ
+  const officialsOnlyHiddenValues = isOfficialRole(role)
+    ? new Set()
+    : new Set(dbCategories.filter(isOfficialsOnlyCategory).map((c) => c.value))
+  // role เป็น null ทั้งตอนไม่ล็อกอินและตอนกำลังโหลดโปรไฟล์ — ถ้าขึ้นแถบเตือนตอนยังโหลดอยู่ ผู้มีตำแหน่ง
+  // ที่เปิดลิงก์ตรงจะเห็นแถบ "ยังไม่เปิดให้ประชาชน" แวบหนึ่งก่อนหายไป จึงรอให้รู้ผลก่อน (null = ไม่ล็อกอินแน่นอน)
+  const audienceKnown = authSession === null || role !== null
   const abortCtrlRef = useRef(null)
 
   // ถ้า submitting อยู่แล้วกลับมาจาก background นาน > 5s → abort request ทันที
@@ -478,12 +492,14 @@ export default function CitizenForm() {
     // เพราะ pills ของ FORM_TYPE_CONFIG เป็น list ที่ hardcode ไว้ในโค้ด ไม่ได้มาจากตารางนี้ ต้องรู้ว่า
     // เทศบาลนี้ปิดหมวดไหนไว้ถึงจะซ่อน pill ให้ตรงกันได้ — ไม่งั้นแอดมินปิดหมวดใน DB แล้วประชาชน
     // ยังกดเลือกได้อยู่ผ่านลิงก์ ?form=... (เคสจริง: หมวดเฉพาะกิจ odor ที่ใช้แค่บางเทศบาล)
-    supabase.from('complaint_categories').select('value, label, emoji, color, is_active').eq('municipality_id', tenant.id).order('sort_order')
+    supabase.from('complaint_categories').select('value, label, emoji, color, is_active, submit_audience').eq('municipality_id', tenant.id).order('sort_order')
       .then(({ data }) => {
         if (!data) return
         const active = data.filter((c) => c.is_active)
         if (active.length > 0)
-          setCategories(active.map((c) => ({ value: c.value, label: c.label, emoji: c.emoji, color: c.color })))
+          setCategories(active.map((c) => ({
+            value: c.value, label: c.label, emoji: c.emoji, color: c.color, submit_audience: c.submit_audience,
+          })))
         setDisabledCategoryValues(new Set(data.filter((c) => !c.is_active).map((c) => c.value)))
       })
   }, [tenant?.id])
@@ -579,9 +595,15 @@ export default function CitizenForm() {
   // ลิงก์เก่าแบบ ?category=xxx ยัง set ค่าเข้าฟอร์มได้แม้หมวดนั้นถูกปิดไปแล้วและ pill ถูกซ่อน
   // ถ้าปล่อยผ่าน คำร้องจะถูกบันทึกในหมวดที่เทศบาลไม่ได้เปิดใช้ ไม่มีผู้รับผิดชอบ แล้วตกหล่นเงียบ
   // เรียกทั้ง 2 จุดที่ validate ก่อนส่ง เหมือนแพทเทิร์นของ validateOdorFields()
+  // หมวดเฉพาะผู้มีตำแหน่งต้องบอกช่องทางอื่นแทน ไม่ใช่บอกว่าปิดรับ — เรื่องนี้ยังแจ้งได้ ห้ามเป็นทางตัน
   function validateCategoryEnabled(form) {
-    if (!disabledCategoryValues.has(form.category)) return null
-    return 'ประเภทคำร้องนี้ไม่เปิดให้บริการในหน่วยงานนี้แล้ว กรุณาเลือกประเภทอื่น'
+    if (disabledCategoryValues.has(form.category)) {
+      return 'ประเภทคำร้องนี้ไม่เปิดให้บริการในหน่วยงานนี้แล้ว กรุณาเลือกประเภทอื่น'
+    }
+    if (officialsOnlyHiddenValues.has(form.category)) {
+      return `ประเภทคำร้องนี้ยังไม่เปิดให้ประชาชนแจ้งทางออนไลน์ กรุณาแจ้งผ่าน${councilTerm}ในเขตของท่านหรือติดต่อสำนักงาน`
+    }
+    return null
   }
 
   function handleMapConfirm({ lat, lng, address }) {
@@ -711,7 +733,9 @@ export default function CitizenForm() {
   if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} complaintId={savedComplaintId} photoFiles={savedPhotoFiles} primaryColor={primaryColor} categoryLabel={catLabel} />
 
   // pills ของ ftConfig ต้องเคารพหมวดที่เทศบาลนี้ปิดไว้ เหมือน dropdown หลักที่อ่านจาก DB อยู่แล้ว
-  const visibleFtCategories = (ftConfig?.categories ?? []).filter((c) => !disabledCategoryValues.has(c.value))
+  // และหมวดเฉพาะผู้มีตำแหน่งที่ role นี้ยื่นไม่ได้
+  const visibleFtCategories = (ftConfig?.categories ?? [])
+    .filter((c) => !disabledCategoryValues.has(c.value) && !officialsOnlyHiddenValues.has(c.value))
   const CatIcon = CATEGORY_ICON[form.category] ?? HelpCircle
   const catDbData = dbCategories.find(c => c.value === form.category)
   const catEmoji = catDbData?.emoji ?? FALLBACK_EMOJI[form.category] ?? null
@@ -719,6 +743,7 @@ export default function CitizenForm() {
   const actionCopy = getFormActionCopy(formType, form.category, catLabel)
   // ค่าจาก DB โหลดทีหลัง ระหว่างนั้นเป็น false — แถบเตือนจึงขึ้นหลังรู้ผลจริงเท่านั้น ไม่กะพริบ
   const categoryDisabled = disabledCategoryValues.has(form.category)
+  const categoryOfficialsOnly = audienceKnown && !categoryDisabled && officialsOnlyHiddenValues.has(form.category)
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
@@ -807,6 +832,28 @@ export default function CitizenForm() {
             style={{ backgroundColor: '#d97706' }}>
             เลือกประเภทคำร้องอื่น
           </button>
+        </div>
+      )}
+
+      {/* หมวดที่ตั้ง "เฉพาะผู้มีตำแหน่ง" แต่เปิดมาจากลิงก์เก่า/QR — บอกทางไปต่อตั้งแต่เปิดหน้า ไม่ใช่บอกว่าปิดรับ
+          เพราะเรื่องนี้ยังแจ้งได้ผ่านสมาชิกสภาหรือที่สำนักงาน (จำกัดแค่ช่องทางออนไลน์ ไม่ใช่ตัดสิทธิ์ร้องเรียน) */}
+      {categoryOfficialsOnly && (
+        <div className="mx-3 mt-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+          <p className="text-sm font-bold text-sky-900">ประเภท "{catLabel}" ยังไม่เปิดให้ประชาชนแจ้งทางออนไลน์</p>
+          <p className="text-xs text-sky-800 mt-1 leading-relaxed">
+            กรุณาแจ้งผ่าน{councilTerm}ในเขตของท่าน หรือติดต่อ{tenant?.name ?? 'หน่วยงาน'}โดยตรง
+          </p>
+          <div className="mt-2.5 grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => navigate('/complaint')}
+              className="py-2.5 rounded-xl font-semibold text-white text-sm"
+              style={{ backgroundColor: '#0369a1' }}>
+              เลือกประเภทอื่น
+            </button>
+            <button type="button" onClick={() => navigate('/contact')}
+              className="py-2.5 rounded-xl font-semibold text-sky-800 text-sm bg-white border border-sky-200">
+              ติดต่อหน่วยงาน
+            </button>
+          </div>
         </div>
       )}
 
@@ -1116,7 +1163,7 @@ export default function CitizenForm() {
           if (villageErr) { setError(villageErr); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           setShowConsent(true)
-        }} disabled={submitting || categoryDisabled}
+        }} disabled={submitting || categoryDisabled || categoryOfficialsOnly}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-white text-sm shadow-sm active:scale-95 transition-all disabled:opacity-60"
           style={{ backgroundColor: '#16a34a' }}>
           {submitting
