@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BarChart2, Car, Inbox, RefreshCw, Settings, Users, X } from 'lucide-react'
+import { BarChart2, CalendarDays, Car, Inbox, RefreshCw, Settings, Users, X } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import BookingForm from '../components/patientTransport/BookingForm'
 import BookingInbox from '../components/patientTransport/BookingInbox'
+import StaffBookingCalendar from '../components/patientTransport/StaffBookingCalendar'
 import BookingSettings from '../components/patientTransport/BookingSettings'
 import { TabBar } from '../components/patientTransport/StaffShell'
 import { QueueReport, DriverTrips } from '../components/patientTransport/BookingOperations'
@@ -15,7 +16,7 @@ import usePatientBooking from '../hooks/usePatientBooking'
 import { TRIP_STATUS, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates } from '../lib/patientBooking'
 
 /**
- * หน้าทำงานของเจ้าหน้าที่ — คำขอรถ · งานคนขับ · รายงาน · ตั้งค่า
+ * หน้าทำงานของเจ้าหน้าที่ — คำขอรถ · ปฏิทิน · งานคนขับ · รายงาน · ตั้งค่า
  *
  * เจ้าของระบบสั่ง 2569-09-21 ให้ง่ายแบบกล่องงาน "คำร้อง/คำขอบริการ" (ทดลองของจริงแล้วงงทุกฝั่ง)
  * แท็บ "ตารางออกรถ · คิวรอจัดแผน · เที่ยวเดินรถ" รวมเป็นกล่อง "คำขอรถ" กล่องเดียว (BookingInbox.jsx)
@@ -40,6 +41,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
   const view = selectedView ?? (isCoordinator ? 'inbox' : 'driver')
   const tabs = [
     { id: 'inbox', label: 'คำขอรถ', Icon: Inbox, show: isCoordinator },
+    { id: 'calendar', label: 'ปฏิทิน', Icon: CalendarDays, show: isCoordinator },
     { id: 'driver', label: 'งานคนขับ', Icon: Car, show: isDriver },
     { id: 'report', label: 'รายงาน', Icon: BarChart2, show: isCoordinator },
     { id: 'settings', label: 'ตั้งค่า', Icon: Settings, show: isAdmin },
@@ -194,12 +196,13 @@ export default function PatientTransportStaff({ onBack } = {}) {
       <p className="mt-2 text-sm">ให้ผู้ดูแลเพิ่มบัญชีนี้เป็นผู้จัดคิวหรือคนขับในหน้าตั้งค่าก่อน ระหว่างนี้ใช้หน้าประชาชนเพื่อจองรถได้ตามปกติ</p>
       <Link to="/patient-transport" className={`${primaryClass} mt-4 inline-flex items-center`}>ไปหน้าประชาชน</Link></div>}
     {current && allowed && <>
-      <TabBar tab={view} setTab={setView} tabs={tabs} busy={busy} />
+      <div className="[&>nav]:flex-wrap [&>nav]:overflow-visible [&>nav>button]:min-h-11 [&>nav>button]:px-3 sm:[&>nav>button]:px-4"><TabBar tab={view} setTab={setView} tabs={tabs} busy={busy} /></div>
       {!info?.enabled && <p className="mb-4 rounded-xl bg-amber-50 p-4">{isAdmin ? 'ยังไม่เปิดรับจองออนไลน์ ตั้งค่ารถ คนขับ ผู้จัดคิว เส้นทางและเวลาให้บริการในแท็บ “ตั้งค่า” ก่อนเปิดบริการ' : 'ยังไม่เปิดรับจองออนไลน์ ให้ผู้ดูแลตั้งค่ารถและเปิดบริการก่อน'}</p>}
       {view === 'inbox' && isCoordinator && <BookingInbox workspace={workspace} busy={busy} error={error} isAdmin={isAdmin} action={intakeButton}
         created={created} onClearCreated={() => setCreated(null)} onDelete={deleteBooking} onConfirm={confirm} onJoin={joinIntoTrip} onAction={action} onRemove={removePassenger} onAmend={amend}
         onRecordLetter={recordLetter} onPrintLetter={printLetter} onOdometer={recordOdometer} onUpdateSchedule={updateSchedule}
         onReload={reload} onSettings={() => setView('settings')} />}
+      {view === 'calendar' && isCoordinator && <StaffBookingCalendar workspace={workspace} />}
       {view === 'report' && isCoordinator && <QueueReport workspace={workspace} busy={busy} onMonthReport={printMonth} />}
       {/* รับจองแทนมีที่นี่ที่เดียว และส่ง p_staff_entry ให้ฐานข้อมูลบันทึกว่าเป็นการรับเรื่องแทน
           ส่งแล้วกลับกล่องคำขอพร้อมแถบ "ยืนยันรถเลย" — ไม่ต้องไล่หาแถวที่เพิ่งรับเอง */}
