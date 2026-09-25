@@ -3651,7 +3651,7 @@ function SubmitAudienceChip({ cat, onToggle, className = '' }) {
       title={officialsOnly
         ? 'ประชาชนยังไม่เห็นประเภทนี้ แจ้งได้เฉพาะผู้มีตำแหน่ง (สมาชิกสภา ผู้บริหาร เจ้าหน้าที่) — กดเพื่อเปิดให้ทุกคน'
         : 'ทุกคนแจ้งได้ รวมผู้ไม่ล็อกอิน — กดเพื่อให้แจ้งได้เฉพาะผู้มีตำแหน่ง'}
-      className={`px-2 py-1 rounded-full font-bold whitespace-nowrap transition-colors ${officialsOnly ? 'bg-violet-100 text-violet-700 hover:bg-violet-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'} ${className}`}
+      className={`px-2 py-1 rounded-full font-bold transition-colors ${officialsOnly ? 'bg-violet-100 text-violet-700 hover:bg-violet-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'} ${className}`}
     >
       {officialsOnly ? '🏛️ เฉพาะผู้มีตำแหน่ง' : '🌐 ทุกคนแจ้งได้'}
     </button>
@@ -3670,7 +3670,7 @@ function ManualIntakeChip({ cat, onToggle, className = '' }) {
       title={manual
         ? 'คำร้องใหม่ค้างที่แอดมินจนกว่าจะกดรับเรื่อง — กดเพื่อให้ระบบรับเรื่องเอง'
         : 'ระบบรับเรื่องและส่งถึงผู้รับผิดชอบทันทีเมื่อตั้งกองและผู้รับผิดชอบครบ — กดเพื่อให้แอดมินรับเรื่องเอง'}
-      className={`px-2 py-1 rounded-full font-bold whitespace-nowrap transition-colors ${manual ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : 'bg-sky-100 text-sky-700 hover:bg-sky-200'} ${className}`}
+      className={`px-2 py-1 rounded-full font-bold transition-colors ${manual ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : 'bg-sky-100 text-sky-700 hover:bg-sky-200'} ${className}`}
     >
       {manual ? '🛡️ แอดมินรับเรื่อง' : '⚡ ระบบรับเรื่อง'}
     </button>
@@ -3689,7 +3689,7 @@ function ResolvedPinChip({ cat, onToggle, className = '' }) {
       title={required
         ? 'ก่อนกด "ดำเนินการแล้ว" ต้องปักหมุดจุดที่ดำเนินการ — กดเพื่อยกเว้นหมวดนี้'
         : 'หมวดนี้กด "ดำเนินการแล้ว" ได้โดยไม่ต้องปักหมุด — กดเพื่อบังคับปักหมุด'}
-      className={`px-2 py-1 rounded-full font-bold whitespace-nowrap transition-colors ${required ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'} ${className}`}
+      className={`px-2 py-1 rounded-full font-bold transition-colors ${required ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'} ${className}`}
     >
       {required ? '📍 ต้องปักหมุด' : 'ไม่ต้องปักหมุด'}
     </button>
@@ -3786,9 +3786,9 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
       {/* ใครแจ้งได้ / ใครรับเรื่อง / ปักหมุด — แยกบรรทัดจากแถวหัว ซึ่งแน่นอยู่แล้วบนจอมือถือ
           หมวดเฉพาะกิจเหลือชิปแรกชิปเดียว (อีก 2 ชิปคืน null เองเพราะไม่มีขั้นรับเรื่อง/ปิดงาน) */}
       <div className="flex flex-wrap items-center gap-2 pl-14">
-        <SubmitAudienceChip cat={cat} onToggle={onToggleSubmitAudience} className="text-[12px]" />
-        <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="text-[12px]" />
-        <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="text-[12px]" />
+        <SubmitAudienceChip cat={cat} onToggle={onToggleSubmitAudience} className="whitespace-nowrap text-[12px]" />
+        <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="whitespace-nowrap text-[12px]" />
+        <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="whitespace-nowrap text-[12px]" />
       </div>
 
       {/* assignment row */}
@@ -3953,9 +3953,10 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
           >
             {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
           </button>
-          <SubmitAudienceChip cat={cat} onToggle={onToggleSubmitAudience} className="max-w-full text-[11px]" />
-          <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="max-w-full text-[11px]" />
-          <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="max-w-full text-[11px]" />
+          {/* คอลัมน์นี้ได้ 9% ของตาราง table-fixed แคบกว่าข้อความชิป — ให้ตัดบรรทัดในกรอบ ไม่ล้นออกไปทับไอคอนแก้ไข */}
+          <SubmitAudienceChip cat={cat} onToggle={onToggleSubmitAudience} className="max-w-full text-center text-[11px] leading-tight" />
+          <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="max-w-full text-center text-[11px] leading-tight" />
+          <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="max-w-full text-center text-[11px] leading-tight" />
         </div>
       </td>
       <td className="px-2 py-3">
