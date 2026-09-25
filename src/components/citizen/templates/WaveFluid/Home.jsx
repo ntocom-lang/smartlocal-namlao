@@ -5,7 +5,7 @@ import { useTenant } from '../../../../contexts/TenantContext'
 import { useAuth } from '../../../../contexts/AuthContext'
 import { supabase } from '../../../../lib/supabase'
 // ประเภทที่ อปท. กดลบทิ้งในหน้าตั้งค่าแอดมิน ต้องหายจากหน้าแรกด้วย ไม่ใช่แค่ในฟอร์มยื่นคำขอ
-import { withoutRemovedTypes } from '../../../../lib/documentTypes'
+import { selectableDocumentTypes } from '../../../../lib/documentTypes'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
@@ -367,8 +367,9 @@ export default function HomePage() {
     const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({
       value: t.value, label: t.label, emoji: t.emoji || '📋',
     }))
-    return [...withoutRemovedTypes(BASE_DOC_TYPES, tenant), ...extras]
-  }, [tenant])
+    // ตัดประเภทที่ปิด (รวมที่เพิ่มเองแล้วปิด) และประเภทเฉพาะผู้มีตำแหน่งเมื่อ role นี้ไม่ใช่ผู้มีตำแหน่ง
+    return selectableDocumentTypes([...BASE_DOC_TYPES, ...extras], tenant, role)
+  }, [tenant, role])
 
   const [calEvents, setCalEvents] = useState([])
   useEffect(() => {

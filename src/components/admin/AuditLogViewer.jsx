@@ -29,6 +29,7 @@ const RESOURCE_LABEL = {
   tourism_review:     'รีวิว',
   public_holiday:     'วันหยุดราชการ',
   complaint_category: 'ประเภทคำร้อง',
+  document_type:      'ประเภทคำขอเอกสาร',
 }
 
 const ROLE_LABEL = {

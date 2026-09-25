@@ -9,6 +9,8 @@
 // ไฟล์นี้เก็บเฉพาะ value + label ที่ทุกหน้าจอใช้ตรงกัน ส่วนฟิลด์ตกแต่งเฉพาะหน้า (สี ไอคอน
 // คำอธิบายฝั่งประชาชน) ยังอยู่ที่หน้านั้นตามเดิม ไม่ยกมารวมเพราะคนละบริบทการใช้งาน
 
+import { isOfficialRole } from './serviceAudience.js'
+
 // residence_cert / personal_cert (ใบรับรองการอยู่อาศัย, หนังสือรับรองบุคคล) ตัดออกจากลิสต์
 // 2569-09-09 — ไม่ใช่อำนาจหน้าที่ อปท. ที่จะออกเอกสารรับรองบุคคล/ที่อยู่อาศัยแทนทะเบียนราษฎร
 // (ต้องยืนยันเลขมาตรา/ระเบียบที่ชัดเจนกับตัวบทก่อนอ้างอิงเป็นทางการ) ค่า 2 ตัวนี้ยังต้องคงไว้
@@ -86,6 +88,36 @@ export function allDocumentTypes(tenant) {
     ...withoutRemovedTypes(BASE_DOCUMENT_TYPES, tenant),
     ...customDocumentTypes(tenant),
   ]
+}
+
+/**
+ * ประเภทที่ อปท. ตั้ง "เฉพาะผู้มีตำแหน่ง" (สมาชิกสภา ผู้บริหาร เจ้าหน้าที่) — เก็บใน
+ * municipalities.fee_schedule._officials_only_types ตั้งที่หน้า "ประเภทคำขอเอกสาร" (DocumentTypeAssignments)
+ * ใช้เปิดบริการให้ผู้มีตำแหน่งใช้ก่อน แล้วค่อยเปิดให้ประชาชน · ด่านจริงอยู่ที่ trigger
+ * route_document_request_department (20260925120000) ที่นี่แค่ซ่อนตัวเลือกให้ตรงกับสิทธิ์
+ * @param {{ fee_schedule?: { _officials_only_types?: string[] } } | null} tenant
+ */
+export function officialsOnlyDocumentTypes(tenant) {
+  const list = tenant?.fee_schedule?._officials_only_types
+  return Array.isArray(list) ? list.filter((v) => typeof v === 'string') : []
+}
+
+/**
+ * ตัวเลือกยื่นคำขอใหม่ฝั่งประชาชน — ตัดประเภทที่ปิดใช้งาน และประเภท "เฉพาะผู้มีตำแหน่ง" เมื่อ role นี้
+ * ไม่ใช่ผู้มีตำแหน่ง (role เป็น null ตอนไม่ล็อกอินและตอนโหลดโปรไฟล์ = ซ่อนไว้ก่อน)
+ *
+ * ⚠️ ส่งลิสต์รวม base + ประเภทที่เพิ่มเองเข้ามาเสมอ — เดิมทุกจุดกรอง _removed_types เฉพาะ base
+ * ประเภทที่ อปท. เพิ่มเองแล้วกดปิดจึงยังโผล่ให้ประชาชนเลือก
+ * @template T
+ * @param {T[]} types
+ * @param {object | null} tenant
+ * @param {string | null | undefined} role
+ * @returns {T[]}
+ */
+export function selectableDocumentTypes(types, tenant, role) {
+  const officialsOnly = isOfficialRole(role) ? [] : officialsOnlyDocumentTypes(tenant)
+  return withoutRemovedTypes(types, tenant)
+    .filter((t) => !officialsOnly.includes(typeof t === 'string' ? t : t?.value))
 }
 
 // SLA เริ่มต้นรายประเภท (วันทำการนับจากวันที่ยื่น) ใช้เป็นค่าตั้งต้นตอนแอดมินยังไม่เคยตั้งเอง

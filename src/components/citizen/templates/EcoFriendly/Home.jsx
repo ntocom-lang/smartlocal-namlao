@@ -2,9 +2,10 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import ModuleLink from '../../../common/ModuleLink'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
+import { useAuth } from '../../../../contexts/AuthContext'
 import { supabase } from '../../../../lib/supabase'
 // ประเภทที่ อปท. กดลบทิ้งในหน้าตั้งค่าแอดมิน ต้องหายจากหน้าแรกด้วย ไม่ใช่แค่ในฟอร์มยื่นคำขอ
-import { withoutRemovedTypes } from '../../../../lib/documentTypes'
+import { selectableDocumentTypes } from '../../../../lib/documentTypes'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
@@ -169,6 +170,7 @@ function EServiceBlock({ docTypes }) {
 // ─────────────────────────────────────────────────────────────────────
 export default function HomePage() {
   const { tenant, isModuleEnabled } = useTenant()
+  const { role } = useAuth()
   const layout = tenant?.layout_theme || 'classic'
   const wasteScheduleOn = isModuleEnabled('waste')
   const waterSituationOn = isModuleEnabled('water-situation')
@@ -180,10 +182,10 @@ export default function HomePage() {
     return [
       ...(wasteScheduleOn ? [WASTE_SCHEDULE_SHORTCUT] : []),
       ...(waterSituationOn ? [WATER_SITUATION_SHORTCUT] : []),
-      ...withoutRemovedTypes(BASE_DOC_TYPES, tenant),
-      ...extras,
+      // ตัดประเภทที่ปิด (รวมที่เพิ่มเองแล้วปิด) และประเภทเฉพาะผู้มีตำแหน่งเมื่อ role นี้ไม่ใช่ผู้มีตำแหน่ง
+      ...selectableDocumentTypes([...BASE_DOC_TYPES, ...extras], tenant, role),
     ]
-  }, [tenant, wasteScheduleOn, waterSituationOn])
+  }, [tenant, wasteScheduleOn, waterSituationOn, role])
 
   const [sidebarNews, setSidebarNews] = useState([])
   const [sidebarActivities, setSidebarActivities] = useState([])
