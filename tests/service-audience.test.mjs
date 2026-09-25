@@ -2,6 +2,7 @@
 //   1) กติกาฝั่งหน้าเว็บ src/lib/serviceAudience.js ทุก role × ทุกระดับ
 //   2) ด่านจริงใน DB (submit_citizen_complaint_v4) ใช้ลิสต์ role ชุดเดียวกัน และไม่หลุดผ่านด้วย NULL/ช่องทาง
 //   3) ทุกจุดที่ประชาชนเลือกหมวดคำร้องได้ ต้องกรองด้วย helper ตัวเดียวกัน
+//   4) E-Service (คำขอเอกสาร/บริการ) — helper + ด่านใน trigger route_document_request_department + จุดเลือกประเภท
 import assert from 'node:assert/strict'
 import { readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
@@ -14,6 +15,7 @@ import {
   isOfficialRole,
   withoutOfficialsOnlyCategories,
 } from '../src/lib/serviceAudience.js'
+import { officialsOnlyDocumentTypes, selectableDocumentTypes } from '../src/lib/documentTypes.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const read = async (rel) => (await readFile(path.join(root, rel), 'utf8')).replace(/\r\n/g, '\n')
@@ -147,5 +149,101 @@ const admin = await read('src/pages/AdminDashboard.jsx')
 assert.match(admin, /\.update\(\{ submit_audience: next \}\)\.eq\('id', id\)\.select\('id, submit_audience'\)/)
 assert.match(admin, /action: 'update_submit_audience'/)
 assert.match(await read('src/components/admin/AuditLogViewer.jsx'), /update_submit_audience:/)
+
+// ── 4) E-Service (คำขอเอกสาร/บริการ) ───────────────────────────────────────────────
+const tenantDocs = {
+  fee_schedule: {
+    _removed_types: ['tax_notice', 'custom_2'],
+    _officials_only_types: ['building_permit', 'custom_1'],
+  },
+}
+const docChoices = ['tax_notice', 'building_permit', 'waste_collection_request', 'custom_1', 'custom_2', 'custom_3']
+  .map(value => ({ value }))
+assert.deepEqual(officialsOnlyDocumentTypes(tenantDocs), ['building_permit', 'custom_1'])
+assert.deepEqual(officialsOnlyDocumentTypes({ fee_schedule: { _officials_only_types: 'building_permit' } }), [])
+assert.deepEqual(officialsOnlyDocumentTypes(null), [])
+// ประชาชน/ผู้ไม่ล็อกอิน: ตัดที่ปิด (รวมประเภทที่เพิ่มเองแล้วปิด custom_2 — เดิมหลุด) และที่เฉพาะผู้มีตำแหน่ง
+for (const role of NOT_OFFICIALS) {
+  assert.deepEqual(selectableDocumentTypes(docChoices, tenantDocs, role).map(d => d.value),
+    ['waste_collection_request', 'custom_3'], `ตัวเลือกคำขอของ role ${role}`)
+}
+// ผู้มีตำแหน่ง: ตัดเฉพาะที่ปิด
+for (const role of OFFICIALS) {
+  assert.deepEqual(selectableDocumentTypes(docChoices, tenantDocs, role).map(d => d.value),
+    ['building_permit', 'waste_collection_request', 'custom_1', 'custom_3'], `ตัวเลือกคำขอของ role ${role}`)
+}
+// ยังไม่ตั้งอะไร = เหมือนเดิมทุกอย่าง
+assert.deepEqual(selectableDocumentTypes(docChoices, {}, 'citizen'), docChoices)
+assert.deepEqual(selectableDocumentTypes(['building_permit', 'custom_3'], tenantDocs, null), ['custom_3'])
+
+// ด่านจริงใน trigger ที่คำขอทุกใบผ่าน
+const routeSql = await read('supabase/migrations/20260925120000_document_request_audience_guard.sql')
+const routeFrom = routeSql.indexOf('\n\n  -- ── ใครยื่นประเภทนี้ได้')
+assert.ok(routeFrom > 0, 'ต้องมีด่านใครยื่นได้ใน trigger')
+const routeTo = routeSql.indexOf('  END IF;', routeSql.indexOf("USING ERRCODE = '42501';", routeFrom)) + '  END IF;'.length
+const routeCode = routeSql.slice(routeFrom, routeTo).split('\n').filter(line => !line.trim().startsWith('--')).join('\n')
+const routeRoles = routeCode.match(/actor\.role IN \(([^)]*)\)/)[1].split(',').map(s => s.trim().replace(/'/g, ''))
+assert.deepEqual([...routeRoles, 'superadmin'].sort(), [...OFFICIAL_ROLES].sort(),
+  'ลิสต์ role ในด่าน trigger ต้องตรงกับ OFFICIAL_ROLES')
+assert.match(routeCode, /actor\.role = 'superadmin'/)
+assert.match(routeCode, /actor\.municipality_id = NEW\.municipality_id/)
+assert.match(routeCode, /AND NOT COALESCE\(\(/)
+assert.match(routeCode, /\), false\)\n\s+THEN/)
+assert.match(routeCode, /WHERE actor\.id = auth\.uid\(\)/)
+// ไม่มี JWT (psql/migration) หรือ service_role ต้องผ่าน — trigger ยิงกับทุก insert ไม่ใช่แค่จากหน้าเว็บ
+assert.match(routeCode, /IF auth\.role\(\) IS NOT NULL AND auth\.role\(\) <> 'service_role'/)
+assert.match(routeCode, /jsonb_typeof\(municipality\.fee_schedule -> '_officials_only_types'\) = 'array'/)
+assert.match(routeCode, /\(municipality\.fee_schedule -> '_officials_only_types'\) \? NEW\.document_type/)
+assert.doesNotMatch(routeCode, /channel/)
+assert.match(routeCode, /USING ERRCODE = '42501'/)
+assert.ok(routeFrom > routeSql.indexOf("'หน่วยงานนี้ไม่ได้เปิดใช้งานระบบประปา'"), 'ด่านต้องอยู่หลังด่านโมดูลประปา')
+assert.ok(routeTo < routeSql.indexOf('FROM public.document_type_assignments AS rule'), 'ด่านต้องอยู่ก่อนเลือกผังงาน')
+// ส่วนอื่นของฟังก์ชันต้องเหมือนรุ่นก่อนหน้า — เทียบเนื้อ DECLARE..END; (pg_get_functiondef จัดรูปหัวฟังก์ชันเองต่างจากไฟล์เดิม)
+const routeBody = (sql) => {
+  const start = sql.indexOf('CREATE OR REPLACE FUNCTION public.route_document_request_department()')
+  const from = sql.indexOf('DECLARE', start)
+  return sql.slice(from, sql.indexOf('\nEND;', from) + '\nEND;'.length)
+}
+assert.equal(
+  routeBody(routeSql.slice(0, routeFrom) + routeSql.slice(routeTo)),
+  routeBody(await read('supabase/migrations/20260914120000_waterworks_module_and_routing.sql')),
+  'ต่างจาก 20260914120000 ได้เฉพาะด่านใครยื่นได้เท่านั้น',
+)
+
+// ทุกจุดที่ประชาชนเลือกประเภทคำขอได้ (หน้าแรกทุกธีม + /doc-request) ต้องกรองด้วย selectableDocumentTypes
+// ฝั่งแอดมิน/เจ้าหน้าที่/ประวัติคำขอของตัวเองไม่อยู่ในนี้ — ต้องเห็นครบทุกประเภท (ใช้แปลชื่อคำขอเก่าด้วย)
+const docListing = ['src/pages/CitizenDocRequest.jsx']
+for (const file of await walk('src/components/citizen/templates')) {
+  if ((await read(file)).includes('_custom_types')) docListing.push(file)
+}
+assert.equal(docListing.length, 7, `จุดเลือกประเภทคำขอของประชาชนเปลี่ยน: ${docListing.join(', ')}`)
+for (const file of docListing) {
+  const src = await read(file)
+  assert.match(src, /selectableDocumentTypes\(/, `${file} ต้องกรองตัวเลือกด้วย selectableDocumentTypes`)
+  // เรียก withoutRemovedTypes กับ base อย่างเดียวคือบั๊กเดิม (ประเภทที่เพิ่มเองแล้วปิดยังโผล่)
+  if (file.includes('/templates/')) assert.doesNotMatch(src, /withoutRemovedTypes\(/, `${file} ห้ามกรองแค่ base`)
+}
+
+// ปุ่มลัดที่ฝังรหัสหมวดคำร้องไว้ในโค้ด ไม่ได้ดึงรายการหมวดมาเอง — ต้องถามสิทธิ์รายหมวดก่อนแสดง
+const hardLinks = []
+for (const file of await walk('src')) {
+  if (/\/request\?category=[a-z_]/.test(await read(file))) hardLinks.push(file)
+}
+assert.deepEqual(hardLinks.sort(), [
+  'src/components/citizen/templates/ServiceHub/WaterworksDialog.jsx',
+  'src/pages/WasteSchedulePage.jsx',
+], 'ลิงก์ที่ฝังรหัสหมวดเปลี่ยน — ตรวจว่าใช้ useComplaintCategoryOpen แล้ว')
+for (const file of hardLinks) {
+  assert.match(await read(file), /useComplaintCategoryOpen\('[a-z_]+'\)/, `${file} ต้องถามสิทธิ์รายหมวดก่อนแสดงปุ่ม`)
+}
+assert.match(await read('src/pages/WasteSchedulePage.jsx'), /\{recentMissed && trashComplaintOpen && \(/)
+
+// หน้าแอดมิน: เขียนคีย์ในก้อนเดียวกับ _removed_types, อ่านแถวที่เขียนจริงกลับ, และบันทึก audit log
+const docAdmin = await read('src/components/admin/DocumentTypeAssignments.jsx')
+assert.match(docAdmin, /fee_schedule\._officials_only_types = officialsOnlyTypes/)
+assert.match(docAdmin, /delete fee_schedule\._officials_only_types/)
+assert.match(docAdmin, /\.update\(\{ fee_schedule \}\)\.eq\('id', municipalityId\)\.select\('id'\)/)
+assert.match(docAdmin, /resourceType: 'document_type'/)
+assert.match(await read('src/components/admin/AuditLogViewer.jsx'), /document_type: +'ประเภทคำขอเอกสาร'/)
 
 console.log('service-audience: ผ่านทุกข้อ')

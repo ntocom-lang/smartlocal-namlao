@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
+import { useAuth } from '../../../../contexts/AuthContext'
 import { Wifi, Users, MapPinned, Compass, Phone, BookUser, ChevronRight, Ambulance, CalendarDays, Droplets, CloudRain } from 'lucide-react'
 import { supabase } from '../../../../lib/supabase'
 import { PATIENT_TRANSPORT_TYPE, PATIENT_TRANSPORT_MODULE_KEY } from '../../../../lib/patientTransport'
-import { removedDocumentTypes } from '../../../../lib/documentTypes'
+import { removedDocumentTypes, selectableDocumentTypes } from '../../../../lib/documentTypes'
 import BannerSlider from '../../../../components/home/BannerSlider'
 // ComplaintBand นำออกจากหน้าแรกตามคำขอ (เข้าใช้งานผ่านปุ่ม ร้องเรียน/ร้องทุกข์ ด้านบน)
 import ComplaintStatsWidget from '../../../../components/home/ComplaintStatsWidget'
@@ -302,6 +303,7 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
 
 export default function ServiceHubHome() {
   const { tenant, isModuleEnabled } = useTenant()
+  const { role } = useAuth()
 
   const docTypes = useMemo(() => {
     const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({
@@ -314,8 +316,10 @@ export default function ServiceHubHome() {
     if (inboxEnabled) base.push(CITIZEN_SERVICE)
     if (!isModuleEnabled || isModuleEnabled('waterworks')) base.push(WATERWORKS_SERVICE)
     base.push(MANUAL_SERVICE)
-    return [...base, ...extras]
-  }, [tenant, isModuleEnabled])
+    // การ์ดด้านบนเป็นทางลัดของโมดูล ไม่ใช่ประเภทคำขอ — กรองเฉพาะประเภทที่ อปท. เพิ่มเอง:
+    // ตัดที่ปิดแล้ว และที่ตั้งเฉพาะผู้มีตำแหน่งเมื่อ role นี้ไม่ใช่ผู้มีตำแหน่ง
+    return [...base, ...selectableDocumentTypes(extras, tenant, role)]
+  }, [tenant, isModuleEnabled, role])
 
   return (
     <div className="bg-gray-50">

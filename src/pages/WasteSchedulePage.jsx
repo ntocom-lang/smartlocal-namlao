@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowLeft, CalendarClock, ChevronDown, Info, Share2, Tru
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
+import useComplaintCategoryOpen from '../hooks/useComplaintCategoryOpen'
 import ModuleLink from '../components/common/ModuleLink'
 import { appUrl } from '../lib/basename'
 import { todayStr } from '../lib/thaiDate'
@@ -49,6 +50,8 @@ export default function WasteSchedulePage() {
   const navigate = useNavigate()
   const { tenant, loading: tenantLoading, holidaysVersion } = useTenant()
   const { session } = useAuth()
+  // ปุ่ม "รถไม่มาเก็บ" พาไปแจ้งคำร้องหมวดขยะ — ซ่อนเมื่อหมวดนี้ตั้ง "เฉพาะผู้มีตำแหน่ง" และผู้ใช้ไม่ใช่
+  const trashComplaintOpen = useComplaintCategoryOpen('trash')
   const [data, setData] = useState(null)   // null = ยังไม่โหลด
   const [loadError, setLoadError] = useState(false)
   // หมู่ที่ใช้ = ที่ผู้ใช้เลือกในหน้านี้ > ที่เคยเลือกไว้ในเครื่อง > หมู่ในโปรไฟล์
@@ -282,7 +285,7 @@ export default function WasteSchedulePage() {
                   </div>
                 )}
 
-                {recentMissed && (
+                {recentMissed && trashComplaintOpen && (
                   <ModuleLink
                     to={`/request?category=trash&detail=${encodeURIComponent(missedPickupDetail({ item: recentMissed, mooNo: selectedMoo, villages }))}`}
                     className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 active:bg-gray-50">

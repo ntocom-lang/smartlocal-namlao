@@ -3,7 +3,9 @@ import { AlertCircle, CheckCircle2, Loader2, Plus, Save, Trash2, UserCog } from 
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../../lib/staffRoster'
-import { BASE_DOCUMENT_TYPES, defaultSlaDays, removedDocumentTypes } from '../../lib/documentTypes'
+import { BASE_DOCUMENT_TYPES, defaultSlaDays, officialsOnlyDocumentTypes, removedDocumentTypes } from '../../lib/documentTypes'
+import { PATIENT_TRANSPORT_TYPE } from '../../lib/patientTransport'
+import { logAction } from '../../lib/auditLog'
 import ReferralPartnersCard from './ReferralPartnersCard'
 
 // หน้าตั้ง "ประเภทคำขอเอกสาร/บริการ + ผังงาน" — มีประเภทอะไรบ้าง กองไหนรับ ใครถือ
@@ -21,7 +23,7 @@ import ReferralPartnersCard from './ReferralPartnersCard'
 // ตั้งคนผิด = ส่งเลขบัตรประชาชน/ที่อยู่/เบอร์โทรของประชาชนไปให้คนที่ไม่ควรเห็น (PDPA)
 //
 // ⚠️ นี่คือที่เดียวในระบบที่เขียน municipalities.fee_schedule._custom_types (ประเภทที่เพิ่มเอง)
-// และ ._removed_types (ประเภทที่ปิดใช้งาน) ได้ ถ้าลบทิ้ง อปท. จะเพิ่ม/ปิด/เปิดประเภทคำขอของตัวเอง
+// ._removed_types (ประเภทที่ปิดใช้งาน) และ ._officials_only_types (ประเภทเฉพาะผู้มีตำแหน่ง) ได้ ถ้าลบทิ้ง อปท. จะเพิ่ม/ปิด/เปิดประเภทคำขอของตัวเอง
 // ไม่ได้อีกเลย ทั้งที่หน้าประชาชนทั้ง 6 ธีม, CitizenDocRequest, MyDocRequests, StaffDashboard
 // และตารางในไฟล์นี้เองอ่านค่านั้นอยู่
 //
@@ -68,6 +70,9 @@ export default function DocumentTypeAssignments({ tenant }) {
   // ตรงๆ ไม่ได้เพราะเป็นลิสต์ร่วมของทุก อปท. ในโค้ด จึงเก็บเป็นรายชื่อ "ไม่เปิดที่นี่" รายหน่วยงาน
   // ครอบคลุมทั้งประเภทมาตรฐานและประเภทที่เพิ่มเอง (ปิดชั่วคราวโดยไม่ต้องลบทิ้ง)
   const [disabledTypes, setDisabledTypes] = useState(() => removedDocumentTypes(tenant))
+  // ประเภทที่ตั้ง "เฉพาะผู้มีตำแหน่ง" (fee_schedule._officials_only_types) — ประชาชนยังไม่เห็นเป็นตัวเลือก
+  // ด่านจริงอยู่ที่ trigger route_document_request_department (20260925120000) · ดู src/lib/serviceAudience.js
+  const [officialsOnlyTypes, setOfficialsOnlyTypes] = useState(() => officialsOnlyDocumentTypes(tenant))
   const [showAddForm, setShowAddForm] = useState(false)
   const [newEmoji, setNewEmoji] = useState('📋')
   const [newLabel, setNewLabel] = useState('')
@@ -153,6 +158,7 @@ export default function DocumentTypeAssignments({ tenant }) {
     // ลบถาวรแล้วต้องหลุดจากลิสต์ "ปิดอยู่" ด้วย ไม่งั้นเหลือชื่อค้างใน _removed_types ที่ไม่มี
     // ประเภทรองรับอีกแล้ว สะสมไปเรื่อยๆ ทุกครั้งที่ปิดแล้วลบ
     setDisabledTypes(prev => prev.filter(v => v !== value))
+    setOfficialsOnlyTypes(prev => prev.filter(v => v !== value))
     setDrafts(prev => {
       const next = { ...prev }
       delete next[value]
@@ -170,6 +176,13 @@ export default function DocumentTypeAssignments({ tenant }) {
   // ของแถวนั้นเหมือนโค้ดเดิม — ปิดแล้วเปิดกลับต้องได้ค่าที่ตั้งไว้คืนครบ
   function toggleType(value) {
     setDisabledTypes(prev => (prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]))
+    setCustomDirty(true)
+    setSaved(false)
+  }
+
+  // สลับ "ทุกคนยื่นได้ / เฉพาะผู้มีตำแหน่ง" — เหมือนสวิตช์เปิด/ปิด ยังไม่มีผลจนกว่าจะกดบันทึก
+  function toggleOfficialsOnly(value) {
+    setOfficialsOnlyTypes(prev => (prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]))
     setCustomDirty(true)
     setSaved(false)
   }
@@ -198,10 +211,32 @@ export default function DocumentTypeAssignments({ tenant }) {
         // เขียนทับทั้งชุดเสมอ (ไม่ merge กับค่าที่อ่านมา) เพราะการเปิดกลับคือการเอาชื่อออกจากลิสต์นี้
         if (disabledTypes.length > 0) fee_schedule._removed_types = disabledTypes
         else delete fee_schedule._removed_types
-        const { error: upErr } = await supabase
-          .from('municipalities').update({ fee_schedule }).eq('id', municipalityId)
+        // ใครยื่นได้ — เขียนทับทั้งชุดแบบเดียวกับ _removed_types · จำค่าเดิมไว้บันทึก audit log เฉพาะตัวที่เปลี่ยน
+        const officialsBefore = officialsOnlyDocumentTypes({ fee_schedule: fresh?.fee_schedule })
+        if (officialsOnlyTypes.length > 0) fee_schedule._officials_only_types = officialsOnlyTypes
+        else delete fee_schedule._officials_only_types
+        // อ่านแถวที่เขียนจริงกลับมา — RLS ปัดตกเงียบได้ (ไม่ใช่แอดมินของ อปท. นี้) ต้องไม่บอกว่าบันทึกแล้ว
+        // และไม่ลง audit log ว่าเปิด/ปิดช่องทางของประชาชน ทั้งที่ค่าในฐานข้อมูลไม่ขยับ
+        const { data: written, error: upErr } = await supabase
+          .from('municipalities').update({ fee_schedule }).eq('id', municipalityId).select('id')
         if (upErr) throw upErr
+        if (!written || written.length === 0) throw new Error('ไม่มีสิทธิ์แก้การตั้งค่าของหน่วยงานนี้')
         patchTenant({ fee_schedule })
+
+        // ร่องรอยว่าใครเปิด/ปิดช่องทางยื่นออนไลน์ของประชาชนเมื่อไร — แบบเดียวกับหน้าประเภทคำร้อง
+        for (const value of new Set([...officialsBefore, ...officialsOnlyTypes])) {
+          const was = officialsBefore.includes(value)
+          const now = officialsOnlyTypes.includes(value)
+          if (was === now) continue
+          logAction({
+            action: 'update_submit_audience',
+            resourceType: 'document_type',
+            resourceId: value,
+            resourceLabel: docTypes.find(t => t.value === value)?.label ?? value,
+            municipalityId,
+            metadata: { value, from: was ? 'officials' : 'public', to: now ? 'officials' : 'public' },
+          })
+        }
 
         // ลบแถวผังงานเฉพาะประเภทที่เพิ่มเองแล้วถูกลบถาวร — ประเภทที่แค่ "ปิด" ต้องเก็บแถวไว้
         // เปิดกลับมาแล้วกอง/ผู้รับผิดชอบ/วันแล้วเสร็จเดิมยังอยู่ ไม่ต้องมาตั้งใหม่
@@ -265,6 +300,8 @@ export default function DocumentTypeAssignments({ tenant }) {
         ต้องรอหัวหน้ากองมอบหมายเอง) ประเภทที่เพิ่มเองจะไปแสดงบนหน้าแรกฝั่งประชาชนและหน้ายื่นคำขอทันที
         — สวิตช์ท้ายแถวคือ &ldquo;เปิด/ปิดบริการ&rdquo; ปิดแล้วประชาชนยื่นใหม่ไม่ได้ แต่คำขอเดิมยังอยู่ครบ
         และค่าที่ตั้งไว้ในแถวไม่หาย เปิดกลับเมื่อไรก็ใช้ได้ทันที
+        — ช่อง &ldquo;ใครยื่นได้&rdquo; ใช้เปิดบริการให้ผู้มีตำแหน่ง (สมาชิกสภา ผู้บริหาร เจ้าหน้าที่) ใช้ก่อน
+        ประชาชนจะยังไม่เห็นจนกว่าจะเปิดให้ทุกคน เจ้าหน้าที่ยังรับคำขอแทนที่เคาน์เตอร์ได้ตามปกติ
       </p>
 
       {!loading && departments.length === 0 && (
@@ -298,7 +335,7 @@ export default function DocumentTypeAssignments({ tenant }) {
       ) : (
         <>
           <div className="rounded-xl border border-gray-100 overflow-x-auto">
-            <table className="w-full text-sm min-w-205">
+            <table className="w-full text-sm min-w-237">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   {/* หัวคอลัมน์ลำดับใช้คำว่า "ที่" ตามแบบพิมพ์ราชการ ไม่ใช่ "ลำดับที่"
@@ -308,6 +345,7 @@ export default function DocumentTypeAssignments({ tenant }) {
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 w-44">กองรับผิดชอบ</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 w-52">ผู้รับผิดชอบ</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 w-28">แล้วเสร็จใน</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-32">ใครยื่นได้</th>
                   <th className="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-24">เปิดบริการ</th>
                   <th className="w-8"></th>
                 </tr>
@@ -381,6 +419,26 @@ export default function DocumentTypeAssignments({ tenant }) {
                               + (enabled ? '' : ' opacity-50 bg-gray-50')} />
                           <span className="text-xs text-gray-400 shrink-0">วัน</span>
                         </div>
+                      </td>
+                      {/* ใครยื่นได้ — รถรับ-ส่งผู้ป่วยไม่ผ่านหน้านี้ (ระบบจองรถมีสวิตช์เปิด/ปิดของตัวเองที่หน้าเจ้าหน้าที่)
+                          แถวที่ปิดบริการอยู่ล็อกไว้เหมือนช่องอื่นในแถว ค่าที่ตั้งไว้ไม่หาย */}
+                      <td className="px-3 py-2.5 text-center">
+                        {value === PATIENT_TRANSPORT_TYPE ? (
+                          <span className="text-xs text-gray-400" title="ตั้งค่าที่ระบบจองรถรับ-ส่งผู้ป่วย">—</span>
+                        ) : (
+                          <button type="button" disabled={!enabled}
+                            onClick={() => toggleOfficialsOnly(value)}
+                            title={officialsOnlyTypes.includes(value)
+                              ? 'ประชาชนยังไม่เห็นบริการนี้ ยื่นได้เฉพาะผู้มีตำแหน่ง (สมาชิกสภา ผู้บริหาร เจ้าหน้าที่) — กดเพื่อเปิดให้ทุกคน'
+                              : 'ทุกคนยื่นได้ รวมผู้ไม่ล็อกอิน — กดเพื่อให้ยื่นได้เฉพาะผู้มีตำแหน่ง'}
+                            className={'rounded-full px-2 py-1 text-[11px] font-bold leading-tight transition-colors '
+                              + (officialsOnlyTypes.includes(value)
+                                ? 'bg-violet-100 text-violet-700 hover:bg-violet-200'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
+                              + (enabled ? '' : ' opacity-50')}>
+                            {officialsOnlyTypes.includes(value) ? '🏛️ เฉพาะผู้มีตำแหน่ง' : '🌐 ทุกคนยื่นได้'}
+                          </button>
+                        )}
                       </td>
                       {/* สวิตช์เปิด/ปิดบริการ — ปิดเขียนชื่อลง _removed_types (ทั้งมาตรฐานและที่เพิ่มเอง)
                           ยังไม่มีผลจนกว่าจะกดบันทึก จึงไม่ต้อง confirm ซ้ำ กดพลาดก็กดกลับในแถวเดิมได้ */}

@@ -2,7 +2,10 @@ import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Droplets, Gauge, CircleSlash, Wrench, ChevronRight, X } from 'lucide-react'
 import { useTenant } from '../../../../contexts/TenantContext'
-import { removedDocumentTypes } from '../../../../lib/documentTypes'
+import { useAuth } from '../../../../contexts/AuthContext'
+import { officialsOnlyDocumentTypes, removedDocumentTypes } from '../../../../lib/documentTypes'
+import { isOfficialRole } from '../../../../lib/serviceAudience'
+import useComplaintCategoryOpen from '../../../../hooks/useComplaintCategoryOpen'
 
 const SERVICES = [
   { type: 'water_supply_request', label: 'ขออนุญาตใช้น้ำประปา', description: 'ติดตั้งมาตรและเปิดใช้น้ำประปา', icon: Droplets },
@@ -15,7 +18,13 @@ const SERVICES = [
 export default function WaterworksDialog({ onClose }) {
   const dialogRef = useRef(null)
   const { tenant, isModuleEnabled } = useTenant()
+  const { role } = useAuth()
   const removed = removedDocumentTypes(tenant)
+  // บริการที่ตั้ง "เฉพาะผู้มีตำแหน่ง" — กล่องนี้แสดงครบทุกบริการเสมอ ตัวที่ประชาชนยื่นไม่ได้เป็นการ์ดสีเทา
+  // พร้อมเหตุผลแบบเดียวกับบริการที่ปิด บอกให้ไปยื่นที่สำนักงานแทนการหายไปเฉยๆ
+  // ซ่อมน้ำประปาเป็นหมวดคำร้อง (complaint_categories) ไม่ใช่ประเภทคำขอ จึงต้องถามแยก
+  const officialsOnly = isOfficialRole(role) ? [] : officialsOnlyDocumentTypes(tenant)
+  const repairOpen = useComplaintCategoryOpen('water_repair')
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -47,13 +56,17 @@ export default function WaterworksDialog({ onClose }) {
       </div>
       <div className="space-y-2.5 p-4">
         {SERVICES.map(({ type, label, description, icon: Icon, repair }) => {
-          const enabled = (!isModuleEnabled || isModuleEnabled(repair ? 'complaints' : 'inbox'))
+          const offered = (!isModuleEnabled || isModuleEnabled(repair ? 'complaints' : 'inbox'))
             && (repair || !removed.includes(type))
+          const officialsOnlyHere = offered && (repair ? !repairOpen : officialsOnly.includes(type))
+          const enabled = offered && !officialsOnlyHere
           const content = <>
             <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${enabled ? 'bg-sky-100 text-sky-700' : 'bg-gray-100 text-gray-400'}`}><Icon size={23} aria-hidden="true" /></span>
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-bold leading-relaxed">{label}</span>
-              <span className="mt-0.5 block text-xs leading-relaxed text-gray-500">{enabled ? description : 'ยังไม่เปิดรับบริการนี้'}</span>
+              <span className="mt-0.5 block text-xs leading-relaxed text-gray-500">{enabled ? description
+                : officialsOnlyHere ? 'ยังไม่เปิดให้ประชาชนยื่นทางออนไลน์ — ติดต่อสำนักงาน'
+                : 'ยังไม่เปิดรับบริการนี้'}</span>
             </span>
             {enabled && <ChevronRight size={18} className="shrink-0 text-sky-600" aria-hidden="true" />}
           </>

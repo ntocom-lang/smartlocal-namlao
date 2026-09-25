@@ -3,6 +3,7 @@ import { useNavigate, Link, Navigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, FileText, CheckCircle2, Loader2, Copy, Check, ChevronRight, ShieldCheck } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { useAuth } from '../contexts/AuthContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import BuildingPermitWizard from './BuildingPermitWizard'
@@ -11,7 +12,10 @@ import WasteCollectionCancelWizard from './WasteCollectionCancelWizard'
 import WaterSupplyRequestWizard from './WaterSupplyRequestWizard'
 import PublicAssistanceWizard from './PublicAssistanceWizard'
 import AssetBorrowRequestWizard from './AssetBorrowRequestWizard'
-import { WATERWORKS_DOCUMENT_TYPES, WATERWORKS_MODULE_KEY, withoutRemovedTypes } from '../lib/documentTypes'
+import {
+  WATERWORKS_DOCUMENT_TYPES, WATERWORKS_MODULE_KEY, officialsOnlyDocumentTypes, selectableDocumentTypes, withoutRemovedTypes,
+} from '../lib/documentTypes'
+import { isOfficialRole } from '../lib/serviceAudience'
 import { PATIENT_TRANSPORT_TYPE, PATIENT_TRANSPORT_MODULE_KEY } from '../lib/patientTransport'
 
 // ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
@@ -171,6 +175,7 @@ export default function CitizenDocRequest() {
   const navigate  = useNavigate()
   const [searchParams] = useSearchParams()
   const { tenant, terminology, isModuleEnabled } = useTenant()
+  const { session: authSession, role } = useAuth()
   const waterworksEnabled = isModuleEnabled(WATERWORKS_MODULE_KEY)
   const transportEnabled = isModuleEnabled(PATIENT_TRANSPORT_MODULE_KEY)
   // การ์ดรถรับ-ส่งผู้ป่วยแสดงเฉพาะ อปท. ที่มีหน่วยงานรับเรื่องต่อเปิดอยู่ — ถามผ่าน RPC ที่คืน
@@ -204,8 +209,10 @@ export default function CitizenDocRequest() {
       // อปท. ที่ปิดโมดูลงานประปา ซ่อนคำขอประปาทั้งชุด — ลิงก์เก่า ?type=water_... ก็เปิดไม่ได้
       // เพราะ selected ด้านล่างกรองด้วยลิสต์นี้ (ฐานข้อมูลปฏิเสธซ้ำอีกชั้นที่ trigger)
       .filter(d => !WATERWORKS_DOCUMENT_TYPES.includes(d.value) || waterworksEnabled)
-    return [...base, ...extras]
-  }, [tenant, hasTransportPartner, waterworksEnabled, transportEnabled])
+    // ตัดประเภทที่ปิด (รวมที่เพิ่มเองแล้วปิด — เดิมกรองแค่ base) และประเภท "เฉพาะผู้มีตำแหน่ง" เมื่อ role นี้
+    // ไม่ใช่ผู้มีตำแหน่ง · ด่านจริงอยู่ที่ trigger route_document_request_department (20260925120000)
+    return selectableDocumentTypes([...base, ...extras], tenant, role)
+  }, [tenant, hasTransportPartner, waterworksEnabled, transportEnabled, role])
   const [session, setSession]     = useState(undefined)
   const [selectedRaw, setSelected] = useState(() => {
     const t = searchParams.get('type')
@@ -216,6 +223,13 @@ export default function CitizenDocRequest() {
   const selected = selectedRaw && allDocTypes.some(d => d.value === selectedRaw.value)
     ? selectedRaw
     : null
+  // ลิงก์เก่า/QR ?type= ที่ชี้ประเภท "เฉพาะผู้มีตำแหน่ง" — การ์ดถูกซ่อนและฟอร์มไม่เปิด ต้องบอกเหตุผลกับทางไปต่อ
+  // รอรู้ role ก่อนตัดสิน (null ทั้งตอนไม่ล็อกอินและตอนโหลดโปรไฟล์) กันแถบกะพริบให้ผู้มีตำแหน่ง
+  const typeParam = searchParams.get('type')
+  const typeOfficialsOnly = Boolean(typeParam)
+    && (authSession === null || role !== null)
+    && !isOfficialRole(role)
+    && officialsOnlyDocumentTypes(tenant).includes(typeParam)
   const [form, setForm]           = useState({ name_title: '', name_first: '', name_last: '', requester_id_card: '', requester_phone: '', requester_address: '', purpose: '' })
   const [saving, setSaving]       = useState(false)
   const [done, setDone]           = useState(null)
@@ -470,6 +484,19 @@ export default function CitizenDocRequest() {
                   เข้าสู่ระบบ / สมัครสมาชิก →
                 </Link>
               </div>
+            </div>
+          )}
+
+          {/* จำกัดแค่ช่องทางยื่นออนไลน์ด้วยตนเอง ไม่ใช่ตัดสิทธิ์ — ต้องบอกทางไปต่อ ไม่ใช่ปล่อยให้บริการหายไปเฉยๆ */}
+          {typeOfficialsOnly && (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+              <p className="text-sm font-bold text-sky-900">บริการนี้ยังไม่เปิดให้ประชาชนยื่นทางออนไลน์</p>
+              <p className="mt-1 text-xs leading-relaxed text-sky-800">
+                กรุณายื่นคำขอที่{tenant?.name ?? 'สำนักงาน'}โดยตรง หรือเลือกบริการอื่นด้านล่าง
+              </p>
+              <Link to="/contact" className="mt-1.5 inline-block text-xs font-semibold text-sky-800 underline">
+                ติดต่อหน่วยงาน →
+              </Link>
             </div>
           )}
 
