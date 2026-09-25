@@ -11,7 +11,7 @@ const nextMonth = (month, delta) => {
 }
 const peopleIn = riders => riders.reduce((sum, b) => sum + 1 + Number(b.companions || 0), 0)
 
-export default function StaffBookingCalendar({ workspace }) {
+export default function StaffBookingCalendar({ workspace, onOpenBooking }) {
   const today = thaiDay()
   const firstMonth = today.slice(0, 7)
   const lastMonth = bookingLastDay(today).slice(0, 7)
@@ -53,16 +53,14 @@ export default function StaffBookingCalendar({ workspace }) {
     setSelected(value === firstMonth ? today : `${value}-01`)
   }
   const shortDate = day => date(day).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'short', day: 'numeric', month: 'short' })
-  const rowContent = row => row.kind === 'pending' ? <>
-    <strong>{row.booking.patient_name}</strong><span>เวลานัด {clockOf(row.booking.appointment_at)} น. · {row.booking.route_label}</span>
-    <span>จุดรับ {row.booking.pickup} · {RETURN_MODES[row.booking.return_mode] || row.booking.return_mode}</span>
-  </> : <>
-    <strong>{row.trip.plan?.route_label || row.riders[0]?.route_label || 'เที่ยวรถ'}</strong>
-    <span>เริ่มรับ {clockOf(row.at)} น. · {TRIP_STATUS[row.trip.state] || row.trip.state}</span>
-    <span>{peopleIn(row.riders)} คน · {row.riders.map(b => b.patient_name).join(', ') || 'ยังไม่มีผู้เดินทางในรายการ'}</span>
-  </>
+  const riderButtons = riders => riders.length ? <div className="flex flex-wrap gap-2">
+    {riders.map(b => <button key={b.id} type="button" onClick={() => onOpenBooking(b.id)}
+      className="min-h-11 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-left font-semibold text-sky-900 hover:bg-sky-100 focus-visible:outline-2 focus-visible:outline-sky-700">
+      ดูคำขอ · {b.patient_name}
+    </button>)}
+  </div> : <p className="text-sm">ยังไม่มีผู้เดินทางในรายการ</p>
   return <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-label="ปฏิทินงานรถรับส่งผู้ป่วย">
-    <div><h2 className="text-lg font-bold">ปฏิทินจองรถ</h2><p className="text-sm text-slate-600">ดูคำขอที่รอยืนยันและเที่ยวรถของแต่ละวัน · จัดการคิวในแท็บ “คำขอรถ”</p></div>
+    <div><h2 className="text-lg font-bold">ปฏิทินจองรถ</h2><p className="text-sm text-slate-600">ดูคำขอที่รอยืนยันและเที่ยวรถของแต่ละวัน · กดรายการเพื่อดูรายละเอียดและจัดการคิว</p></div>
     <div className="flex flex-wrap gap-2" role="group" aria-label="รูปแบบปฏิทิน">
       <button type="button" className={buttonClass} aria-pressed={mode === 'calendar'} onClick={() => setMode('calendar')}>ปฏิทินรายเดือน</button>
       <button type="button" className={buttonClass} aria-pressed={mode === 'table'} onClick={() => setMode('table')}>ตารางรายการ</button>
@@ -102,18 +100,29 @@ export default function StaffBookingCalendar({ workspace }) {
       <div role="region" className="space-y-3 rounded-xl bg-slate-50 p-3" aria-label="รายการในวันที่เลือก">
         <h4 className="font-bold">{dayLabel(selected)} · รอยืนยัน {selectedData.pending.length} · เที่ยวรถ {selectedData.trips.length}</h4>
         {!selectedData.pending.length && !selectedData.trips.length && <p>ยังไม่มีคำขอหรือเที่ยวรถในวันนี้</p>}
-        {selectedData.pending.map(booking => <article key={booking.id} className="space-y-1 rounded-lg border bg-white p-3"><p className="font-semibold text-amber-900">รอยืนยันรถ · {booking.patient_name}</p><p>นัด {clockOf(booking.appointment_at)} น. · {booking.route_label}</p><p className="text-sm">จุดรับ {booking.pickup} · {RETURN_MODES[booking.return_mode] || booking.return_mode}</p></article>)}
+        {selectedData.pending.map(booking => <button key={booking.id} type="button" onClick={() => onOpenBooking(booking.id)}
+          className="block min-h-11 w-full space-y-1 rounded-lg border border-slate-300 bg-white p-3 text-left hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-sky-700">
+          <span className="block font-semibold text-amber-900">รอยืนยันรถ · {booking.patient_name}</span><span className="block">นัด {clockOf(booking.appointment_at)} น. · {booking.route_label}</span>
+          <span className="block text-sm">จุดรับ {booking.pickup} · {RETURN_MODES[booking.return_mode] || booking.return_mode}</span>
+        </button>)}
         {selectedData.trips.map(trip => {
           const riders = selectedData.riders.filter(b => b.trip_id === trip.id)
-          return <article key={trip.id} className="space-y-1 rounded-lg border bg-white p-3"><p className="font-semibold text-sky-900">{TRIP_STATUS[trip.state] || trip.state} · {trip.plan?.route_label || riders[0]?.route_label || 'เที่ยวรถ'}</p>
-            <p>เริ่มรับ {clockOf(trip.estimated_pickup_at || trip.plan?.pickup_at)} น. · {peopleIn(riders)} คน</p><p className="text-sm">{riders.map(b => b.patient_name).join(', ') || 'ยังไม่มีผู้เดินทางในรายการ'}</p></article>
+          return <article key={trip.id} className="space-y-2 rounded-lg border bg-white p-3"><p className="font-semibold text-sky-900">{TRIP_STATUS[trip.state] || trip.state} · {trip.plan?.route_label || riders[0]?.route_label || 'เที่ยวรถ'}</p>
+            <p>เริ่มรับ {clockOf(trip.estimated_pickup_at || trip.plan?.pickup_at)} น. · {peopleIn(riders)} คน</p>{riderButtons(riders)}</article>
         })}
       </div>
     </> : <div role="region" className="space-y-2" aria-label="ตารางรายการรายเดือน">
       {!monthlyRows.length && <p className="rounded-lg bg-slate-50 p-4">เดือนนี้ยังไม่มีคำขอหรือเที่ยวรถ</p>}
-      {monthlyRows.map(row => <article key={row.kind === 'pending' ? row.booking.id : row.trip.id} className="grid gap-1 rounded-lg border p-3 sm:grid-cols-[8rem_1fr]">
-        <span className="font-semibold">{shortDate(row.day)}</span><div className="flex min-w-0 flex-col gap-1 text-sm"><span className={row.kind === 'pending' ? 'font-semibold text-amber-900' : 'font-semibold text-sky-900'}>{row.kind === 'pending' ? BOOKING_STATUS.submitted : 'เที่ยวรถ'}</span>{rowContent(row)}</div>
-      </article>)}
+      {monthlyRows.map(row => row.kind === 'pending'
+        ? <button key={row.booking.id} type="button" onClick={() => onOpenBooking(row.booking.id)}
+          className="grid min-h-11 w-full gap-1 rounded-lg border p-3 text-left hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-sky-700 sm:grid-cols-[8rem_1fr]">
+          <span className="font-semibold">{shortDate(row.day)}</span><span className="flex min-w-0 flex-col gap-1 text-sm"><strong className="text-amber-900">{BOOKING_STATUS.submitted} · {row.booking.patient_name}</strong>
+            <span>เวลานัด {clockOf(row.at)} น. · {row.booking.route_label}</span><span>จุดรับ {row.booking.pickup} · {RETURN_MODES[row.booking.return_mode] || row.booking.return_mode}</span></span>
+        </button>
+        : <article key={row.trip.id} className="grid gap-1 rounded-lg border p-3 sm:grid-cols-[8rem_1fr]">
+          <span className="font-semibold">{shortDate(row.day)}</span><div className="flex min-w-0 flex-col gap-1 text-sm"><strong className="text-sky-900">{row.trip.plan?.route_label || row.riders[0]?.route_label || 'เที่ยวรถ'}</strong>
+            <span>เริ่มรับ {clockOf(row.at)} น. · {TRIP_STATUS[row.trip.state] || row.trip.state} · {peopleIn(row.riders)} คน</span>{riderButtons(row.riders)}</div>
+        </article>)}
     </div>}
     <p className="text-xs text-slate-600">แสดงคำขอที่ยังรอยืนยัน เที่ยวที่ยืนยันหรือกำลังดำเนินการ และรายการที่เพิ่งเสร็จใน 30 วันล่าสุด · กด “โหลดข้อมูลล่าสุด” ด้านบนเพื่อตรวจคิวอีกครั้ง</p>
   </section>

@@ -31,6 +31,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
   const { session, profileName } = useAuth()
   const uid = session?.user?.id
   const [selectedView, setView] = useState(null)
+  const [calendarBookingId, setCalendarBookingId] = useState(null)
   const [created, setCreated] = useState(null)
   const { current, info, workspace, error, setError, notice, setNotice, busy, reload, mutate, task, op } = usePatientBooking(tenant?.id, uid, 'patient_booking_workspace')
   const tenantId = tenant?.id
@@ -196,13 +197,14 @@ export default function PatientTransportStaff({ onBack } = {}) {
       <p className="mt-2 text-sm">ให้ผู้ดูแลเพิ่มบัญชีนี้เป็นผู้จัดคิวหรือคนขับในหน้าตั้งค่าก่อน ระหว่างนี้ใช้หน้าประชาชนเพื่อจองรถได้ตามปกติ</p>
       <Link to="/patient-transport" className={`${primaryClass} mt-4 inline-flex items-center`}>ไปหน้าประชาชน</Link></div>}
     {current && allowed && <>
-      <div className="[&>nav]:flex-wrap [&>nav]:overflow-visible [&>nav>button]:min-h-11 [&>nav>button]:px-3 sm:[&>nav>button]:px-4"><TabBar tab={view} setTab={setView} tabs={tabs} busy={busy} /></div>
+      <div className="[&>nav]:flex-wrap [&>nav]:overflow-visible [&>nav>button]:min-h-11 [&>nav>button]:px-3 sm:[&>nav>button]:px-4"><TabBar tab={view} setTab={tab => { setCalendarBookingId(null); setView(tab) }} tabs={tabs} busy={busy} /></div>
       {!info?.enabled && <p className="mb-4 rounded-xl bg-amber-50 p-4">{isAdmin ? 'ยังไม่เปิดรับจองออนไลน์ ตั้งค่ารถ คนขับ ผู้จัดคิว เส้นทางและเวลาให้บริการในแท็บ “ตั้งค่า” ก่อนเปิดบริการ' : 'ยังไม่เปิดรับจองออนไลน์ ให้ผู้ดูแลตั้งค่ารถและเปิดบริการก่อน'}</p>}
-      {view === 'inbox' && isCoordinator && <BookingInbox workspace={workspace} busy={busy} error={error} isAdmin={isAdmin} action={intakeButton}
+      {(view === 'inbox' || (view === 'calendar' && calendarBookingId)) && isCoordinator && <BookingInbox key={calendarBookingId || 'inbox'} workspace={workspace} busy={busy} error={error} isAdmin={isAdmin} action={intakeButton}
+        detailOnly={view === 'calendar'} initialOpenId={calendarBookingId} onCloseBooking={() => setCalendarBookingId(null)}
         created={created} onClearCreated={() => setCreated(null)} onDelete={deleteBooking} onConfirm={confirm} onJoin={joinIntoTrip} onAction={action} onRemove={removePassenger} onAmend={amend}
         onRecordLetter={recordLetter} onPrintLetter={printLetter} onOdometer={recordOdometer} onUpdateSchedule={updateSchedule}
         onReload={reload} onSettings={() => setView('settings')} />}
-      {view === 'calendar' && isCoordinator && <StaffBookingCalendar workspace={workspace} />}
+      {view === 'calendar' && isCoordinator && <StaffBookingCalendar workspace={workspace} onOpenBooking={setCalendarBookingId} />}
       {view === 'report' && isCoordinator && <QueueReport workspace={workspace} busy={busy} onMonthReport={printMonth} />}
       {/* รับจองแทนมีที่นี่ที่เดียว และส่ง p_staff_entry ให้ฐานข้อมูลบันทึกว่าเป็นการรับเรื่องแทน
           ส่งแล้วกลับกล่องคำขอพร้อมแถบ "ยืนยันรถเลย" — ไม่ต้องไล่หาแถวที่เพิ่งรับเอง */}

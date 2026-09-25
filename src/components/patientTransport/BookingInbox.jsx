@@ -260,13 +260,13 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, onC
   </Sheet>
 }
 
-export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, onClearCreated, onDelete, onConfirm, onJoin, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onUpdateSchedule, onReload, onSettings }) {
+export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, detailOnly = false, initialOpenId = null, onCloseBooking, onClearCreated, onDelete, onConfirm, onJoin, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onUpdateSchedule, onReload, onSettings }) {
   const [deleting, setDeleting] = useState(null)
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteAttempted, setDeleteAttempted] = useState(false)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
-  const [openId, setOpenId] = useState(null)
+  const [openId, setOpenId] = useState(initialOpenId)
   const [problem, setProblem] = useState(null)
   const rows = buildRows(workspace)
   const words = search.trim().toLowerCase()
@@ -281,7 +281,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
     const ids = options.ids || (row.booking.requested_trip_id ? [row.booking.id] : row.group.map(b => b.id))
     const out = await onConfirm(ids, options)
     if (out?.confirmed) {
-      setProblem(null); setOpenId(null)
+      close()
       if (created && out.ids.includes(created.id)) onClearCreated()
       return
     }
@@ -290,13 +290,13 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   }
   // ชนคิว → ไปคันเดียวกับเที่ยวที่ยืนยันแล้ว สำเร็จแล้วปิดแผ่น ไม่สำเร็จคงแผ่นไว้ให้เห็นข้อความผิดพลาด
   async function joinRow(row, option) {
-    if (await onJoin(row.booking, option.trip, option.plan)) { setProblem(null); setOpenId(null) }
+    if (await onJoin(row.booking, option.trip, option.plan)) close()
   }
   function press(row) {
     if (row.next.id === 'confirm') return confirmRow(row)
     setProblem(null); setOpenId(row.booking.id)
   }
-  const close = () => { setOpenId(null); setProblem(null) }
+  const close = () => { setOpenId(null); setProblem(null); onCloseBooking?.() }
 
   const deleteBlocked = deleting?.trip && !['confirmed', 'completed', 'cancelled'].includes(deleting.trip.state)
   function deleteButton(row) {
@@ -313,6 +313,11 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
     }
   }
   const pills = <Pills value={filter} onChange={setFilter} label="กรองคำขอรถ" items={PILLS.map(([id, label, color]) => ({ id, label, color, count: count(id) }))} />
+  const sheet = open && <BookingSheet key={open.booking.id} row={open} rows={rows} workspace={workspace} problem={problem?.bookingId === open.booking.id ? problem : null}
+    busy={busy} error={error} isAdmin={isAdmin} onClose={close} onReload={onReload} onConfirm={confirmRow} onJoin={joinRow}
+    onOpen={id => { setProblem(null); setOpenId(id) }} onAction={onAction} onRemove={onRemove} onAmend={onAmend} onRecordLetter={onRecordLetter}
+    onPrintLetter={onPrintLetter} onOdometer={onOdometer} onUpdateSchedule={onUpdateSchedule} onSettings={() => { close(); onSettings() }} />
+  if (detailOnly) return sheet
   return <ListCard title="คำขอรถ" count={rows.length} search={search} onSearch={setSearch} searchLabel="ค้นหาชื่อ เบอร์ จุดรับ โรงพยาบาล เลขที่" action={action} pills={pills}>
     <div className="space-y-4 p-4 sm:p-5">
       {created && <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3">
@@ -377,9 +382,6 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
           <button type="submit" disabled={busy || deleteBlocked || !deleteReason.trim()} className="min-h-11 rounded-xl bg-red-700 px-4 font-bold text-white disabled:opacity-50">{busy ? 'กำลังลบ…' : 'ยืนยันลบถาวร'}</button></div>
       </form>
     </Sheet>}
-    {open && <BookingSheet key={open.booking.id} row={open} rows={rows} workspace={workspace} problem={problem?.bookingId === open.booking.id ? problem : null}
-      busy={busy} error={error} isAdmin={isAdmin} onClose={close} onReload={onReload} onConfirm={confirmRow} onJoin={joinRow}
-      onOpen={id => { setProblem(null); setOpenId(id) }} onAction={onAction} onRemove={onRemove} onAmend={onAmend} onRecordLetter={onRecordLetter}
-      onPrintLetter={onPrintLetter} onOdometer={onOdometer} onUpdateSchedule={onUpdateSchedule} onSettings={() => { close(); onSettings() }} />}
+    {sheet}
   </ListCard>
 }
