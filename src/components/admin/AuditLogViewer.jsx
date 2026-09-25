@@ -14,6 +14,8 @@ const ACTION_INFO = {
   acknowledge_adhoc_complaint: { label: 'รับทราบคำร้องเฉพาะกิจ', bg: '#ecfccb', color: '#4d7c0f', Icon: Shield },
   // งานอัตโนมัติรายวัน (purge_expired_complaint_contacts, 20260902120000) actor เป็น 'ระบบ'
   purge_contact_pii: { label: 'ลบข้อมูลติดต่อครบกำหนด', bg: '#e0e7ff', color: '#3730a3', Icon: Trash2 },
+  // เปิด/ปิดช่องทางยื่นออนไลน์ของประชาชนรายประเภท (ทุกคน / เฉพาะผู้มีตำแหน่ง) — ดู src/lib/serviceAudience.js
+  update_submit_audience: { label: 'เปลี่ยนผู้ที่แจ้ง/ยื่นได้', bg: '#ede9fe', color: '#5b21b6', Icon: Shield },
 }
 
 const RESOURCE_LABEL = {
@@ -26,6 +28,7 @@ const RESOURCE_LABEL = {
   tourism_place:      'สถานที่ท่องเที่ยว',
   tourism_review:     'รีวิว',
   public_holiday:     'วันหยุดราชการ',
+  complaint_category: 'ประเภทคำร้อง',
 }
 
 const ROLE_LABEL = {
@@ -183,6 +186,7 @@ export default function AuditLogViewer({ tenant }) {
           <option value="view_pii">เปิดดูข้อมูลส่วนบุคคล</option>
           <option value="approve">อนุมัติ</option>
           <option value="reject">ปฏิเสธ</option>
+          <option value="update_submit_audience">เปลี่ยนผู้ที่แจ้ง/ยื่นได้</option>
         </select>
         <select value={filterType} onChange={e => setFilterType(e.target.value)}
           className="px-3 py-2 text-xs rounded-xl border border-gray-200 bg-white text-gray-700 focus:outline-none">

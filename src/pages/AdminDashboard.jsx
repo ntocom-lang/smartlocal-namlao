@@ -64,7 +64,9 @@ import PortalSwitcher from '../components/layout/PortalSwitcher'
 import UserProfileBadge from '../components/layout/UserProfileBadge'
 import FleetSetup from '../components/fleet/FleetSetup'
 import { adminUpdateUser } from '../lib/adminUpdateUser'
+import { logAction } from '../lib/auditLog'
 import { CategoryIcon } from '../lib/categoryIcon'
+import { isOfficialsOnlyCategory, SUBMIT_AUDIENCE_OFFICIALS, SUBMIT_AUDIENCE_PUBLIC } from '../lib/serviceAudience'
 
 // ─── หน้า "ประเภทคำร้อง" แบ่งเป็นแท็บ ─────────────────────────────────────────
 // เดิมวาง 3 ส่วนซ้อนกันลงมาจนต้องเลื่อนจอหลายหน้ากว่าจะถึงส่วนล่างสุด แยกเป็นแท็บ 2026-08-31
@@ -3638,6 +3640,24 @@ function CategoryActiveSwitch({ active, onToggle, compact = false }) {
   )
 }
 
+// สวิตช์ "ใครแจ้งได้" รายหมวด (complaint_categories.submit_audience, 20260925100000)
+// ต่างจาก 2 ชิปข้างล่างตรงที่ใช้กับหมวดเฉพาะกิจด้วย — เป็นเรื่องของผู้ยื่น ไม่ใช่ขั้นตอนหลังรับเรื่อง
+function SubmitAudienceChip({ cat, onToggle, className = '' }) {
+  const officialsOnly = isOfficialsOnlyCategory(cat)
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle?.(cat.id, cat.submit_audience ?? SUBMIT_AUDIENCE_PUBLIC)}
+      title={officialsOnly
+        ? 'ประชาชนยังไม่เห็นประเภทนี้ แจ้งได้เฉพาะผู้มีตำแหน่ง (สมาชิกสภา ผู้บริหาร เจ้าหน้าที่) — กดเพื่อเปิดให้ทุกคน'
+        : 'ทุกคนแจ้งได้ รวมผู้ไม่ล็อกอิน — กดเพื่อให้แจ้งได้เฉพาะผู้มีตำแหน่ง'}
+      className={`px-2 py-1 rounded-full font-bold whitespace-nowrap transition-colors ${officialsOnly ? 'bg-violet-100 text-violet-700 hover:bg-violet-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'} ${className}`}
+    >
+      {officialsOnly ? '🏛️ เฉพาะผู้มีตำแหน่ง' : '🌐 ทุกคนแจ้งได้'}
+    </button>
+  )
+}
+
 // สวิตช์ "ใครรับเรื่อง" รายหมวด (complaint_categories.requires_manual_intake, 20260915100000)
 // หมวดเฉพาะกิจไม่ใช้ขั้นตอนรับเรื่องเลย จึงไม่แสดง
 function ManualIntakeChip({ cat, onToggle, className = '' }) {
@@ -3676,7 +3696,7 @@ function ResolvedPinChip({ cat, onToggle, className = '' }) {
   )
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onToggleManualIntake, onToggleResolvedPin, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = 3, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onToggleSubmitAudience, onToggleManualIntake, onToggleResolvedPin, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = 3, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -3763,13 +3783,13 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
         </button>
       </div>
 
-      {/* ใครรับเรื่อง — แยกบรรทัดจากแถวหัว ซึ่งแน่นอยู่แล้วบนจอมือถือ */}
-      {!cat.is_adhoc && (
-        <div className="flex items-center gap-2 pl-14">
-          <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="text-[12px]" />
-          <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="text-[12px]" />
-        </div>
-      )}
+      {/* ใครแจ้งได้ / ใครรับเรื่อง / ปักหมุด — แยกบรรทัดจากแถวหัว ซึ่งแน่นอยู่แล้วบนจอมือถือ
+          หมวดเฉพาะกิจเหลือชิปแรกชิปเดียว (อีก 2 ชิปคืน null เองเพราะไม่มีขั้นรับเรื่อง/ปิดงาน) */}
+      <div className="flex flex-wrap items-center gap-2 pl-14">
+        <SubmitAudienceChip cat={cat} onToggle={onToggleSubmitAudience} className="text-[12px]" />
+        <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="text-[12px]" />
+        <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="text-[12px]" />
+      </div>
 
       {/* assignment row */}
       <div className="flex items-center gap-2 pl-14">
@@ -3816,7 +3836,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
   )
 }
 
-function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [], techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onToggleManualIntake, onToggleResolvedPin, onDeleteCat, onEditEmoji, iconStyle }) {
+function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [], techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onToggleSubmitAudience, onToggleManualIntake, onToggleResolvedPin, onDeleteCat, onEditEmoji, iconStyle }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const editingLabel = !!draft?.editingLabel
   const hasDraft = !!draft && !editingLabel
@@ -3933,6 +3953,7 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
           >
             {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
           </button>
+          <SubmitAudienceChip cat={cat} onToggle={onToggleSubmitAudience} className="max-w-full text-[11px]" />
           <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="max-w-full text-[11px]" />
           <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="max-w-full text-[11px]" />
         </div>
@@ -4313,6 +4334,49 @@ function CategoryManager({ tenant }) {
     setError(null)
   }
 
+  // สลับ "ทุกคนแจ้งได้ / เฉพาะผู้มีตำแหน่ง" — มีผลกับการยื่นครั้งถัดไปทันที (ด่านอยู่ที่ submit_citizen_complaint_v4)
+  // คำร้องที่ยื่นไว้แล้วไม่กระทบ ยังดำเนินการต่อได้และยังนับในสถิติ/แผนที่สาธารณะตามเดิม (เจ้าของระบบเลือก 2569-09-25)
+  async function toggleSubmitAudience(id, current) {
+    const cat = cats.find((c) => c.id === id)
+    const label = cat?.label ?? ''
+    const next = current === SUBMIT_AUDIENCE_OFFICIALS ? SUBMIT_AUDIENCE_PUBLIC : SUBMIT_AUDIENCE_OFFICIALS
+    const message = next === SUBMIT_AUDIENCE_OFFICIALS
+      ? `ให้ "${label}" แจ้งได้เฉพาะผู้มีตำแหน่ง?\n\n`
+        + '• ประชาชนและผู้ไม่ล็อกอินจะไม่เห็นประเภทนี้ในหน้าแจ้งเรื่อง\n'
+        + '• ผู้มีตำแหน่ง (สมาชิกสภา ผู้บริหาร เจ้าหน้าที่) ที่ล็อกอินแล้วแจ้งได้ตามปกติ\n'
+        + '• เจ้าหน้าที่ยังรับเรื่องแทนประชาชนที่เคาน์เตอร์ได้\n'
+        + '• คำร้องเดิมไม่กระทบ ยังแสดงในสถิติและแผนที่สาธารณะตามเดิม\n\n'
+        + '⚠️ ประชาชนต้องยังแจ้งเรื่องนี้ได้ทางอื่น (ผ่านสมาชิกสภาหรือที่สำนักงาน) ยืนยันหรือไม่'
+      : `เปิดให้ทุกคนแจ้ง "${label}" ได้?\n\n`
+        + 'ประชาชนทุกคนรวมผู้ไม่ล็อกอินจะเห็นประเภทนี้ในหน้าแจ้งเรื่องและแจ้งได้ทันที ยืนยันหรือไม่'
+    if (!window.confirm(message)) return
+
+    // RLS ปัดตกเงียบได้ (ไม่ใช่แอดมินของ อปท. นี้) — ต้องอ่านค่ากลับมาเทียบ เหมือน toggleManualIntake
+    const { data, error: err } = await supabase.from('complaint_categories')
+      .update({ submit_audience: next }).eq('id', id).select('id, submit_audience')
+    if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
+    if (!data || data.length === 0) {
+      setError('ไม่มีสิทธิ์เปลี่ยนผู้ที่แจ้งได้ (ต้องเป็นผู้ดูแลระบบของ อปท. นี้)')
+      return
+    }
+    const saved = data[0].submit_audience
+    setCats((prev) => prev.map((c) => c.id === id ? { ...c, submit_audience: saved } : c))
+    if (saved !== next) {
+      setError('ฐานข้อมูลไม่ได้เปลี่ยนผู้ที่แจ้งได้ของหมวดนี้ กรุณาลองใหม่')
+      return
+    }
+    setError(null)
+    // ร่องรอยว่าใครเปิด/ปิดช่องทางออนไลน์ของประชาชนเมื่อไร — กระทบการเข้าถึงบริการ ต้องย้อนตรวจได้
+    logAction({
+      action: 'update_submit_audience',
+      resourceType: 'complaint_category',
+      resourceId: id,
+      resourceLabel: label,
+      municipalityId: tenant.id,
+      metadata: { value: cat?.value ?? null, from: current, to: saved },
+    })
+  }
+
   // สลับ "ระบบรับเรื่อง / แอดมินรับเรื่อง" — มีผลเฉพาะคำร้องที่ยื่นหลังจากนี้ (trigger ทำงานตอน INSERT)
   // ทิศที่อันตรายคือปิดธงของหมวดแจ้งทุจริต/ร้องเรียนเจ้าหน้าที่ เรื่องจะถึงมือผู้รับผิดชอบคนเดียวทันที
   async function toggleManualIntake(id, current) {
@@ -4636,6 +4700,7 @@ function CategoryManager({ tenant }) {
                   <SortableCatItem key={cat.id} cat={cat} idx={idx} total={visibleCats.length}
                     onDelete={deleteCat} onMove={moveCat} onEdit={editCat} onToggleActive={toggleActive}
                     onToggleAdhoc={toggleAdhoc}
+                    onToggleSubmitAudience={toggleSubmitAudience}
                     onToggleManualIntake={toggleManualIntake}
                     onToggleResolvedPin={toggleResolvedPin}
                     onEditEmoji={setIconPickerCat}
@@ -4699,6 +4764,7 @@ function CategoryManager({ tenant }) {
                         onStartLabelEdit={startLabelEdit}
                         onToggleActive={toggleActive}
                         onToggleAdhoc={toggleAdhoc}
+                        onToggleSubmitAudience={toggleSubmitAudience}
                         onToggleManualIntake={toggleManualIntake}
                         onToggleResolvedPin={toggleResolvedPin}
                         onDeleteCat={deleteCat}

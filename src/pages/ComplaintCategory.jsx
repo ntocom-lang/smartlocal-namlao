@@ -8,8 +8,10 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { useAuth } from '../contexts/AuthContext'
 import { CategoryIcon } from '../lib/categoryIcon'
 import { moduleHiddenCategoryValues, withoutModuleHiddenCategories } from '../lib/complaintCategoryModules'
+import { withoutOfficialsOnlyCategories } from '../lib/serviceAudience'
 
 
 const FALLBACK_ICON = {
@@ -69,6 +71,7 @@ const DEFAULT_CATEGORIES = [
 
 export default function ComplaintCategory() {
   const { tenant, isModuleEnabled } = useTenant()
+  const { role } = useAuth()
   const navigate = useNavigate()
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
@@ -77,7 +80,7 @@ export default function ComplaintCategory() {
     if (!tenant?.id) return
     supabase
       .from('complaint_categories')
-      .select('value, label, emoji, color, text_color, is_adhoc')
+      .select('value, label, emoji, color, text_color, is_adhoc, submit_audience')
       .eq('municipality_id', tenant.id)
       .eq('is_active', true)
       .order('sort_order')
@@ -140,7 +143,11 @@ export default function ComplaintCategory() {
           </div>
         ) : (() => {
           // หมวดของโมดูลที่ อปท. ปิด (เช่น ซ่อมน้ำประปา) ต้องหายจากหน้านี้ด้วย ดู complaintCategoryModules.js
-          const visibleCats = withoutModuleHiddenCategories(categories, moduleHiddenCategoryValues(isModuleEnabled))
+          // หมวดที่ตั้ง "เฉพาะผู้มีตำแหน่ง" ไม่โชว์ให้ประชาชน/ผู้ไม่ล็อกอิน ดู serviceAudience.js
+          const visibleCats = withoutOfficialsOnlyCategories(
+            withoutModuleHiddenCategories(categories, moduleHiddenCategoryValues(isModuleEnabled)),
+            role,
+          )
           const adhocCats = visibleCats.filter(c => !!c.is_adhoc)
           const normalCats = visibleCats.filter(c => !c.is_adhoc)
 

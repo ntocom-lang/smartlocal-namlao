@@ -2,25 +2,30 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { CategoryIcon } from '../../lib/categoryIcon'
+import { withoutOfficialsOnlyCategories } from '../../lib/serviceAudience'
 
 // กล่อง "เฉพาะกิจ" แยกจาก ComplaintBand (คำร้องปกติ) — ดึงเฉพาะหมวดที่แอดมินตั้ง is_adhoc = true
 // (เช่นกลิ่นเหม็นรบกวน ที่ส่งตรงผู้รับผิดชอบ ไม่ผ่านแอดมิน) ไม่ hardcode หมวดใดหมวดหนึ่งไว้ เผื่อมีหมวด
 // เฉพาะกิจอื่นเพิ่มในอนาคต — ไม่มีหมวดเฉพาะกิจเลยก็คืน null ไปเลย ไม่โชว์กล่องเปล่า
 export default function AdhocBand() {
   const { tenant } = useTenant()
+  const { role } = useAuth()
   const navigate = useNavigate()
-  const [cats, setCats] = useState([])
+  const [rawCats, setCats] = useState([])
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('complaint_categories').select('value, label, emoji, color')
+    supabase.from('complaint_categories').select('value, label, emoji, color, submit_audience')
       .eq('municipality_id', tenant.id).eq('is_active', true).eq('is_adhoc', true).order('sort_order')
       .then(({ data }) => { setCats(data ?? []); setLoaded(true) })
       .catch(() => setLoaded(true))
   }, [tenant?.id])
 
+  // หมวด "เฉพาะผู้มีตำแหน่ง" ไม่โชว์ให้ประชาชน — กรองตอนแสดงผลเพราะ role มาทีหลังรายการหมวด
+  const cats = withoutOfficialsOnlyCategories(rawCats, role)
   if (!loaded || cats.length === 0) return null
 
   return (

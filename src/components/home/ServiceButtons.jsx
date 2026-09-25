@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { moduleHiddenCategoryValues, withoutModuleHiddenCategories } from '../../lib/complaintCategoryModules'
+import { withoutOfficialsOnlyCategories } from '../../lib/serviceAudience'
 
 const FALLBACK = [
   { value: 'light',            label: 'ไฟฟ้าสาธารณะ',              emoji: '💡', color: '#FEF3C7' },
@@ -17,6 +19,7 @@ const FALLBACK = [
 
 export default function ServiceButtons() {
   const { tenant, isModuleEnabled } = useTenant()
+  const { role } = useAuth()
   const navigate = useNavigate()
   const [cats, setCats] = useState(FALLBACK)
 
@@ -24,11 +27,10 @@ export default function ServiceButtons() {
     if (!tenant?.id) return
     supabase
       .from('complaint_categories')
-      .select('value, label, emoji, color')
+      .select('value, label, emoji, color, submit_audience')
       .eq('municipality_id', tenant.id)
       .eq('is_active', true)
       .order('sort_order')
-      .limit(8)
       .then(({ data }) => {
         if (data && data.length > 0) setCats(data)
       })
@@ -43,7 +45,11 @@ export default function ServiceButtons() {
 
       <div className="bg-white dark:bg-white/10 rounded-2xl border border-gray-100 dark:border-white/10 p-4">
         <div className="grid grid-cols-4 gap-3">
-          {withoutModuleHiddenCategories(cats, moduleHiddenCategoryValues(isModuleEnabled)).map((cat) => (
+          {/* ตัด 8 ช่องหลังกรองหมวดที่ role นี้ยื่นไม่ได้ ไม่ใช่ .limit(8) ตอนดึง — ไม่งั้นประชาชนเหลือไม่ถึง 8 ช่อง */}
+          {withoutOfficialsOnlyCategories(
+            withoutModuleHiddenCategories(cats, moduleHiddenCategoryValues(isModuleEnabled)),
+            role,
+          ).slice(0, 8).map((cat) => (
             <button
               key={cat.value}
               onClick={() => navigate(`/request?category=${cat.value}`)}
