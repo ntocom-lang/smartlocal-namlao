@@ -2351,6 +2351,7 @@ export default function StaffDashboard() {
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
   const [newComplaintCount, setNewComplaintCount] = useState(0)
+  const [patientWorkBadge, setPatientWorkBadge] = useState({ tenantId: null, profileId: null, count: 0 })
   // null = ยังไม่รู้ ใช้กันไม่ให้ badge ของแอดมินโชว์ตัวเลขผิดระหว่างรอผลหมวดเฉพาะกิจ
   const [adhocCategories, setAdhocCategories] = useState(null)
 
@@ -2394,6 +2395,9 @@ export default function StaffDashboard() {
     ...(hasFleetAccess ? [] : ['fleet']),
     ...(hasAssetAccess ? [] : ['borrowable-assets']),
   ].reduce((keys, hidden) => keys.filter(k => k !== hidden), roleScopedKeys)
+  const patientModuleVisible = scopedKeys.includes(PATIENT_TRANSPORT_MODULE_KEY)
+  const patientWorkCount = patientModuleVisible && patientWorkBadge.tenantId === tenant?.id && patientWorkBadge.profileId === profile?.id
+    ? patientWorkBadge.count : 0
   const visibleStandaloneGroups = STANDALONE_GROUPS
     .map(g => ({ ...g, items: g.items.filter(m => scopedKeys.includes(m.key)) }))
     .filter(g => g.items.length > 0)
@@ -2454,6 +2458,35 @@ export default function StaffDashboard() {
       .subscribe()
     return () => supabase.removeChannel(ch)
   }, [pendingTenantId, refreshPendingBadge])
+
+  useEffect(() => {
+    if (!tenant?.id || !profile?.id || !patientModuleVisible) return
+    let cancelled = false
+    let requestSeq = 0
+    const tenantId = tenant.id
+    const profileId = profile.id
+    const refresh = async () => {
+      const seq = ++requestSeq
+      const { data, error } = await supabase.rpc('patient_booking_staff_work_badge', { p_muni: tenantId })
+      if (cancelled || seq !== requestSeq) return
+      if (error) { console.error('patient transport badge count error:', error.message); return }
+      const count = Number(data?.total)
+      if (Number.isFinite(count) && count >= 0) setPatientWorkBadge({ tenantId, profileId, count })
+    }
+    const refreshWhenVisible = () => { if (!document.hidden) refresh() }
+    refreshWhenVisible()
+    // The transport tables are not in the Realtime publication. Refresh on
+    // return/navigation and at a modest interval while the staff page is open.
+    const interval = window.setInterval(refreshWhenVisible, 60_000)
+    window.addEventListener('focus', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [tenant?.id, profile?.id, patientModuleVisible, activeModule])
 
   // หมวดเฉพาะกิจของเทศบาลนี้ — ใช้ตัดออกจากคิวรับเรื่องของแอดมิน (เหตุผลอยู่ใน badge ข้างล่าง)
   useEffect(() => {
@@ -2646,6 +2679,7 @@ export default function StaffDashboard() {
                       const isActive = activeModule === key
                       const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
                         : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
+                        : key === PATIENT_TRANSPORT_MODULE_KEY && patientWorkCount > 0 ? patientWorkCount
                         : null
                       return (
                         <button key={key} onClick={() => newTab ? window.open(newTab, "_blank", "noopener,noreferrer") : externalUrl ? navigate(externalUrl) : setActiveModule(key)}
@@ -2674,6 +2708,7 @@ export default function StaffDashboard() {
                       const isActive = activeModule === key
                       const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
                         : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
+                        : key === PATIENT_TRANSPORT_MODULE_KEY && patientWorkCount > 0 ? patientWorkCount
                         : null
                       return (
                         <button key={key} onClick={() => newTab ? window.open(newTab, "_blank", "noopener,noreferrer") : externalUrl ? navigate(externalUrl) : setActiveModule(key)}
@@ -2717,6 +2752,7 @@ export default function StaffDashboard() {
                 profile={profile}
                 pendingCount={pendingCount}
                 newComplaintCount={newComplaintCount}
+                patientWorkCount={patientWorkCount}
                 navigate={navigate}
                 onCreateManagementEvent={() => {
                   setAutoCreateEventSignal(signal => signal + 1)

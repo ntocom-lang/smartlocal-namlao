@@ -1,5 +1,6 @@
 import { ChevronRight, Plus } from 'lucide-react'
 import { activeOrgTerms } from '../../lib/orgTerms'
+import { PATIENT_TRANSPORT_MODULE_KEY } from '../../lib/patientTransport'
 
 const ROLE_LABELS = {
   superadmin: 'Super Admin', admin: 'แอดมินระบบ', officer: 'หัวหน้ากอง',
@@ -17,11 +18,11 @@ const ROLE_LABELS = {
 //      (ส่ง 'YYYY-MM-DD' ดิบจะโดนตีความเป็น UTC เพี้ยน 7 ชม.)
 //   2) Promise.all ต้องมี .catch ไม่งั้น query ที่ชน timeout 25 วิ ทำแดชบอร์ดค้างสปินเนอร์ถาวร
 export default function StaffOperationalDashboard({
-  visibleGroups, setActiveModule, profile, pendingCount, newComplaintCount = 0, navigate, onCreateManagementEvent,
+  visibleGroups, setActiveModule, profile, pendingCount, newComplaintCount = 0, patientWorkCount = 0, navigate, onCreateManagementEvent,
 }) {
   // ตัวเลขบนการ์ดต้องเป็นตัวเดียวกับ badge ใน sidebar (คำนวณที่ StaffDashboard จุดเดียว) —
   // คำร้อง = ใบที่ยังไม่มีใครกดเริ่มดำเนินการ ห้ามนับซ้ำในไฟล์นี้ ไม่งั้นสองจุดจะเลขไม่ตรงกัน
-  const cardBadges = { inbox: pendingCount, complaints: newComplaintCount }
+  const cardBadges = { inbox: pendingCount, complaints: newComplaintCount, [PATIENT_TRANSPORT_MODULE_KEY]: patientWorkCount }
   const todayTH = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
 
   const taskCopy = {
