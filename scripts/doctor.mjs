@@ -13,7 +13,8 @@
 import { existsSync, readFileSync, readdirSync, statSync, mkdirSync, writeFileSync, lstatSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { findDevconfig, isDevconfigRepo } from './lib/devconfig.mjs';
 
 const problems = [];
 const warnings = [];
@@ -167,7 +168,60 @@ if (!existsSync(memDir)) {
   }
 }
 
-/* ── 8. เตือนเรื่อง DB จริง เฉพาะครั้งแรกของเครื่องนี้ ──────────────── */
+/* ── 8. memory ใน devconfig ขึ้น origin แล้วหรือยัง ────────────────── */
+// ด่านที่ 7 ตรวจแค่ว่า junction ชี้ถูก — ชี้ถูกแต่ของไม่เคยขึ้น cloud ก็ผ่านได้
+// ซึ่งเกิดจริง: memory ค้าง 34 ไฟล์ 3 สัปดาห์ ขณะที่ doctor ขึ้น "เครื่องนี้พร้อมทำงาน"
+// นี่คือสิ่งที่ทำให้ย้ายเครื่องแล้วพัง จึงเป็น ❌ ไม่ใช่ ⚠️
+const devconfig = findDevconfig();
+if (!isDevconfigRepo(devconfig)) {
+  warn(`ไม่พบ repo devconfig ที่ ${devconfig}`, 'clone smartlocal-devconfig ไว้ข้างๆ โปรเจกต์ หรือตั้งตัวแปร SMARTLOCAL_DEVCONFIG');
+} else {
+  const dc = (args) => spawnSync('git', ['-C', devconfig, ...args], { encoding: 'utf8' });
+  const pending = dc(['status', '--porcelain', '-uall', '--', 'claude-memory']).stdout.split('\n').filter(Boolean).length;
+  const aheadRes = dc(['rev-list', '--count', '@{u}..HEAD']);
+  const ahead = aheadRes.status === 0 ? Number(aheadRes.stdout.trim()) : null;
+
+  if (pending || ahead) {
+    const bits = [pending ? `ยังไม่ commit ${pending} ไฟล์` : null, ahead ? `ยังไม่ push ${ahead} commit` : null].filter(Boolean).join(' · ');
+    fail(`memory ใน devconfig ยังไม่ขึ้น origin (${bits})`, 'รัน npm run handoff — ไปอีกเครื่องตอนนี้ Claude จะไม่รู้เรื่องที่คุยกันไว้');
+  } else if (ahead === null) {
+    warn('devconfig ไม่มี upstream', 'ตรวจว่า clone มาถูก remote — ไม่งั้น push ไม่ขึ้นที่ไหนเลย');
+  } else {
+    pass('memory ใน devconfig ตรงกับ origin');
+  }
+}
+
+/* ── 9. worktree ที่มีงานค้างอยู่เครื่องนี้เครื่องเดียว ─────────────── */
+// worktree ไม่ข้ามเครื่อง ของที่ค้างในนั้นจึงหายไปเลยเมื่อย้ายไปอีกเครื่อง
+// เครื่องนี้มี worktree ระดับ 60+ ตัว การไล่ git status ทีละตัวกินเวลา
+// ⇒ ปล่อยให้ข้ามได้ด้วย --no-worktrees เวลาที่แค่อยากเช็คเร็วๆ
+if (!process.argv.includes('--no-worktrees')) {
+  // เทียบกับ --show-toplevel ไม่ใช่ cwd เพราะถ้าเรียกจากโฟลเดอร์ย่อย cwd จะไม่ตรงกับราก
+  // แล้วทรีที่ยืนอยู่จะถูกนับเป็น "worktree อื่น" ทั้งที่เป็นตัวเดียวกัน
+  const norm = (p) => p.replace(/\\/g, '/').replace(/\/$/, '');
+  const here = norm(tryGit(['rev-parse', '--show-toplevel'], '') || process.cwd());
+  const trees = (tryGit(['worktree', 'list', '--porcelain'], '') || '')
+    .split('\n')
+    .filter((l) => l.startsWith('worktree '))
+    .map((l) => l.slice('worktree '.length))
+    .filter((w) => norm(w) !== here);
+
+  const dirtyTrees = trees.filter((w) => {
+    const st = spawnSync('git', ['-C', w, 'status', '--porcelain', '-uall'], { encoding: 'utf8' });
+    return st.status === 0 && st.stdout.trim().length > 0;
+  });
+
+  if (dirtyTrees.length) {
+    warn(
+      `worktree ${dirtyTrees.length} ตัว (จาก ${trees.length}) มีของค้างยังไม่ commit`,
+      `ของพวกนี้ไม่ข้ามเครื่อง: ${dirtyTrees.slice(0, 3).join(', ')}${dirtyTrees.length > 3 ? ' ...' : ''}`,
+    );
+  } else if (trees.length) {
+    pass(`worktree อีก ${trees.length} ตัว สะอาดหมด`);
+  }
+}
+
+/* ── 10. เตือนเรื่อง DB จริง เฉพาะครั้งแรกของเครื่องนี้ ─────────────── */
 const marker = join('tmp', '.doctor-seen');
 const firstRun = !existsSync(marker);
 
