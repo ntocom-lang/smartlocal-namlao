@@ -11,6 +11,7 @@
  *    (AGENTS.md บังคับให้ agent ทำงานใน worktree เสมอ เคสนี้จึงเกิดบ่อยกว่าที่คิด)
  */
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
@@ -36,6 +37,19 @@ export function findDevconfig() {
 
 /** เป็น git repo จริงไหม (แค่โฟลเดอร์มีอยู่ยังไม่พอ) */
 export const isDevconfigRepo = (dir) => existsSync(join(dir, '.git'));
+
+/**
+ * path ของ memory ของ Codex CLI — ตั้ง SMARTLOCAL_CODEX_MEMORY ทับได้
+ *
+ * ต่างจาก memory ของ Claude ตรงที่ Codex สร้างโฟลเดอร์นี้เป็น **git repo ของตัวเองอยู่แล้ว**
+ * จึงใช้วิธีเดียวกับ Claude (ย้ายไฟล์เข้า devconfig แล้วทำ junction) ไม่ได้ — repo จะซ้อนกัน
+ * ⇒ ใช้วิธีต่อ remote ให้ repo เดิมแทน แล้ว sync ในที่ตั้งเดิม ไม่แตะโครงสร้างที่ Codex ดูแลเอง
+ *
+ * เจอ 2026-09-26 ว่า repo นี้ไม่มี remote เลย มี commit เดียวชื่อ "Initialize Codex git baseline"
+ * = ความรู้ 1,397 KB อยู่บนดิสก์ลูกเดียว ฮาร์ดดิสก์พังแล้วหายถาวร
+ */
+export const findCodexMemory = () =>
+  resolve(process.env.SMARTLOCAL_CODEX_MEMORY ?? join(homedir(), '.codex', 'memories'));
 
 /**
  * รูปแบบ "ค่าคีย์จริง" ที่ห้ามหลุดขึ้น repo แม้จะเป็น private

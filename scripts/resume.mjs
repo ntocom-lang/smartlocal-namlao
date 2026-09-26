@@ -12,7 +12,7 @@
  * --restore จึงมีไว้ให้เลือกเอง และปฏิเสธถ้าตรวจพบ PR ที่ยังเปิด
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { findDevconfig, isDevconfigRepo } from './lib/devconfig.mjs';
+import { findCodexMemory, findDevconfig, isDevconfigRepo } from './lib/devconfig.mjs';
 
 const args = process.argv.slice(2);
 const RESTORE = args.includes('--restore');
@@ -118,6 +118,15 @@ if (isDevconfigRepo(devconfig)) {
 } else {
   console.log(`\n⚠️  ไม่พบ repo devconfig ที่ ${devconfig} — ข้ามการดึง memory/env`);
   console.log('    เก็บไว้ที่อื่น? ตั้งตัวแปร SMARTLOCAL_DEVCONFIG ชี้ไปที่นั่น');
+}
+
+// memory ของ Codex อยู่คนละ repo (Codex สร้างเป็น git repo ของตัวเองที่ ~/.codex/memories)
+// เครื่องที่ไม่ได้ลง Codex จะไม่มีโฟลเดอร์นี้ ⇒ เงียบไปเลย ไม่ต้องเตือน
+const codexMem = findCodexMemory();
+if (isDevconfigRepo(codexMem)) {
+  console.log(`\nดึง memory ของ Codex ล่าสุด (${codexMem})...`);
+  const r = spawnSync('git', ['-C', codexMem, 'pull', '--ff-only'], { stdio: 'inherit' });
+  if (r.status !== 0) console.log('⚠️  pull memory ของ Codex ไม่สำเร็จ — ตรวจเองอีกที');
 }
 
 /* ── ตรวจความพร้อมของเครื่องนี้ต่อ ──────────────────────────────── */

@@ -4,10 +4,11 @@
 โดย **ไม่มีเครื่องไหนเปิดค้างให้รีโมทเข้า** — git คือช่องทางเดียวที่งานข้ามเครื่องได้
 
 ```
-โค้ด + ประวัติ      -> GitHub (public)   smartlocal-namlao
-.env.local + memory -> GitHub (private)  smartlocal-devconfig
-persona ของ AI      -> generate จาก docs/ai/CORE.md ในเครื่อง (npm run ai:sync)
-deploy              -> GitHub Actions เมื่อ master ขยับ ไม่ใช่จากเครื่อง dev
+โค้ด + ประวัติ        -> GitHub (public)   smartlocal-namlao
+.env.local + memory   -> GitHub (private)  smartlocal-devconfig      (memory ของ Claude)
+memory ของ Codex      -> GitHub (private)  smartlocal-codex-memory   (~/.codex/memories)
+persona ของ AI ทุกตัว -> generate จาก docs/ai/CORE.md ในเครื่อง (npm run ai:sync)
+deploy                -> GitHub Actions เมื่อ master ขยับ ไม่ใช่จากเครื่อง dev
 ```
 
 ---
@@ -36,14 +37,15 @@ deploy              -> GitHub Actions เมื่อ master ขยับ ไม
 | 6 | `npm run ai:sync` | สร้าง `~/.claude/CLAUDE.md` + `~/.gemini/GEMINI.md` ให้ AI ทุกตัว |
 | 7 | `npm run env:pull` | ดึง `.env.local` จาก devconfig |
 | 8 | **เปิด Claude Code ที่โฟลเดอร์โปรเจกต์ 1 ครั้งก่อน** แล้วปิด<br>จากนั้น `npm run memory:link -- ../smartlocal-devconfig` | ผูก memory ของ Claude<br>ลำดับสำคัญ: Claude สร้างโฟลเดอร์ memory ตอนเปิดโปรเจกต์ครั้งแรกเท่านั้น รันก่อนเปิดจะ exit 1 แล้วโชว์รายการโฟลเดอร์ที่มีจริงให้เลือก (ตั้งใจไม่เดาชื่อให้) |
-| 9 | `npm run doctor` | ต้องผ่านทุกข้อก่อนเริ่มงาน |
+| 9 | **ถ้าใช้ Codex ด้วย** — `git clone https://github.com/ntocom-lang/smartlocal-codex-memory.git "$HOME/.codex/memories"` | ทำ**ก่อน**เปิด Codex ครั้งแรก ไม่งั้น Codex สร้างโฟลเดอร์เปล่าทับ แล้ว clone ไม่ลง |
+| 10 | `npm run doctor` | ต้องผ่านทุกข้อก่อนเริ่มงาน |
 
 **path ที่แนะนำ:** `C:\dev\smartlocal` — สั้น ไม่มีช่องว่าง ไม่ผูกกับไดรฟ์ที่อาจไม่มี
 ไม่ต้องใช้ path เดียวกับเครื่องอื่น สคริปต์คำนวณให้เอง
 
 ## ลง Windows ใหม่ / ย้ายโฟลเดอร์
 
-รันขั้น 3–9 ซ้ำ **ไม่มีอะไรผูกกับ path อีกแล้ว**
+รันขั้น 3–10 ซ้ำ **ไม่มีอะไรผูกกับ path อีกแล้ว**
 ถ้าแค่ย้ายโฟลเดอร์ (โปรเจกต์เดิม) รันแค่ `npm run memory:link` พอ
 — แต่ต้องเปิด Claude Code ที่ **path ใหม่** 1 ครั้งก่อนเสมอ ไม่งั้นสคริปต์หาโฟลเดอร์ memory ของ path นั้นไม่เจอ
 
@@ -73,14 +75,24 @@ npm run resume <branch>      # fetch + ff-only + pull devconfig + doctor
 memory ค้างอยู่เครื่องเดียว **34 ไฟล์ 3 สัปดาห์** (2026-09-07 → 09-26) โดยไม่มีอะไรฟ้อง
 ตั้งแต่ 2026-09-26 `handoff` commit + push `claude-memory/` ให้เอง และ `doctor` ขึ้น ❌ ถ้ายังไม่ขึ้น origin
 
-- แตะเฉพาะ `claude-memory/` — `env/.env.local` ต้องใช้ `npm run env:push` ที่มีด่านกันคีย์ฝั่ง server
-- มีด่านสแกนก่อน commit: เจอรูปแบบคีย์จริง (JWT, `sb_secret_…`, GitHub/GitLab token, private key) จะหยุดทันที
+ครอบ **memory ของ AI ทั้ง 2 ตัว** ตั้งแต่ 2026-09-26
+
+| ของใคร | เก็บที่ | ขอบเขตที่ handoff แตะ |
+|---|---|---|
+| **Claude** | `smartlocal-devconfig` → `claude-memory/` | เฉพาะโฟลเดอร์นั้น — `env/.env.local` ต้องใช้ `npm run env:push` ที่มีด่านกันคีย์ฝั่ง server |
+| **Codex** | `smartlocal-codex-memory` ← `~/.codex/memories` | ทั้ง repo (ไม่มีอย่างอื่นปน) |
+
+Codex สร้างโฟลเดอร์ `~/.codex/memories` เป็น **git repo ของตัวเองอยู่แล้ว** จึงใช้วิธีเดียวกับ Claude
+(ย้ายไฟล์เข้า devconfig แล้วทำ junction) ไม่ได้ — repo จะซ้อนกัน ⇒ ต่อ remote ให้ repo เดิมแทน
+เครื่องที่ไม่ได้ลง Codex จะข้ามข้อนี้ไปเงียบๆ ไม่ถือว่า handoff ล้มเหลว
+
+- มีด่านสแกนก่อน commit ทั้ง 2 repo: เจอรูปแบบคีย์จริง (JWT, `sb_secret_…`, GitHub/GitLab token, private key) จะหยุดทันที
   ⚠️ ด่านนี้จับ **รูปแบบคีย์** ได้ แต่จับ **ข้อมูลส่วนบุคคลของประชาชน (PDPA) ไม่ได้** —
   กติกาเดิมยังอยู่: memory ห้ามจดข้อมูลประชาชนตั้งแต่ต้น
 
 `handoff` / `resume` / `doctor` หา repo devconfig จากโฟลเดอร์ข้างๆ **ทรีหลัก** ให้เอง
 (ไม่ใช่ข้างๆ โฟลเดอร์ที่ยืนอยู่ — จึงเรียกจากใน `git worktree` ได้ด้วย) **ไม่ต้องตั้งตัวแปรอะไร**
-ถ้าเก็บไว้ที่อื่นค่อยตั้ง `SMARTLOCAL_DEVCONFIG` ชี้ไปที่นั่น
+ถ้าเก็บไว้ที่อื่นค่อยตั้ง `SMARTLOCAL_DEVCONFIG` (หรือ `SMARTLOCAL_CODEX_MEMORY`) ชี้ไปที่นั่น
 หาไม่เจอจะขึ้นเตือนให้เห็น ไม่ข้ามเงียบๆ
 
 **`handoff` สร้าง commit ชื่อ `wip(handoff): <ชื่อเครื่อง> @ <เวลา>`** — ไม่ต้องกังวลว่าจะรก

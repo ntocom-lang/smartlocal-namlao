@@ -19,7 +19,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
-import { findDevconfig, isDevconfigRepo, scanForSecrets } from './lib/devconfig.mjs';
+import { findCodexMemory, findDevconfig, isDevconfigRepo, scanForSecrets } from './lib/devconfig.mjs';
 
 const run = (args, opts = {}) => execFileSync('git', args, { encoding: 'utf8', ...opts }).trim();
 const show = (args) => execFileSync('git', args, { stdio: 'inherit' });
@@ -128,69 +128,90 @@ if (upstream && ahead === 0) {
   show(['push', '-u', 'origin', 'HEAD']);
 }
 
-/* ── devconfig: memory ของ Claude + .env.local ───────────────────── */
-// resume pull devconfig ให้อยู่แล้ว แต่เดิม handoff ไม่ push กลับ ⇒ ไม่สมมาตร
-// ผลจริง: memory กองอยู่เครื่องเดียว 34 ไฟล์ 3 สัปดาห์ โดยไม่มีอะไรฟ้อง (2026-09-07 → 09-26)
-// ไปนั่งอีกเครื่องแล้ว Claude ไม่รู้เรื่องงานช่วงนั้นเลย แล้วเสนอของที่เคยตัดทิ้งไปแล้วซ้ำ
-const devconfig = findDevconfig();
-let devconfigOk = true;
+/* ── repo ความจำของ AI ที่ต้องเก็บขึ้น cloud ด้วย ──────────────────── */
+// resume pull ให้อยู่แล้ว แต่เดิม handoff ไม่ push กลับ ⇒ ไม่สมมาตร ผลจริงที่วัดได้ 2026-09-26:
+//   Claude — memory กองอยู่เครื่องเดียว 34 ไฟล์ 3 สัปดาห์ (2026-09-07 → 09-26)
+//   Codex  — 1,397 KB ไม่เคยขึ้น cloud เลยตั้งแต่ติดตั้ง (repo ไม่มี remote)
+// ไปนั่งอีกเครื่องแล้ว AI ไม่รู้เรื่องงานช่วงนั้น แล้วเสนอของที่เคยตัดทิ้งไปแล้วซ้ำ
+//
+// pathspec = 'claude-memory' เพราะ devconfig มี env/.env.local ปนอยู่ ซึ่งต้องไปทาง env:push
+// pathspec = null แปลว่าทั้ง repo คือ memory (ของ Codex)
+const syncMemoryRepo = ({ dir, label, pathspec, missingHint, optional = false }) => {
+  if (!isDevconfigRepo(dir)) {
+    // optional = เครื่องนี้อาจไม่ได้ใช้ AI ตัวนั้น ไม่ควรทำให้ handoff ทั้งคำสั่งถือว่าล้มเหลว
+    if (optional) return true;
+    console.log(`\n⚠️  ไม่พบ repo ${label} ที่ ${dir}`);
+    console.log(`    ${missingHint}`);
+    return false;
+  }
 
-if (!isDevconfigRepo(devconfig)) {
-  devconfigOk = false;
-  console.log(`\n⚠️  ไม่พบ repo devconfig ที่ ${devconfig}`);
-  console.log('    memory ของ Claude จะไม่ข้ามเครื่อง — เก็บไว้ที่อื่น? ตั้งตัวแปร SMARTLOCAL_DEVCONFIG');
-} else {
-  const dc = (args, opts = {}) => spawnSync('git', ['-C', devconfig, ...args], { encoding: 'utf8', ...opts });
+  const g = (args, opts = {}) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', ...opts });
+  const scope = pathspec ? ['--', pathspec] : [];
+  let ok = true;
 
-  // แตะเฉพาะ claude-memory/ — env/.env.local ต้องผ่าน npm run env:push ที่มีด่านกัน key ฝั่ง server
-  const pending = dc(['status', '--porcelain', '-uall', '--', 'claude-memory']).stdout.split('\n').filter(Boolean);
-
+  const pending = g(['status', '--porcelain', '-uall', ...scope]).stdout.split('\n').filter(Boolean);
   if (pending.length) {
     // ls-files ให้ path ดิบ ไม่ต้องแกะคอลัมน์สถานะและไม่โดน core.quotepath หนีอักขระ
-    const files = dc(['ls-files', '-mo', '--exclude-standard', '--', 'claude-memory']).stdout.split('\n').filter(Boolean);
+    const files = g(['ls-files', '-mo', '--exclude-standard', ...scope]).stdout.split('\n').filter(Boolean);
 
     // ด่านคีย์: handoff push ให้เองโดยคนไม่ได้อ่านก่อน จึงต้องมีตัวกันแทนสายตาคน
     const hits = scanForSecrets((f) => {
       try {
-        return readFileSync(join(devconfig, f), 'utf8');
+        return readFileSync(join(dir, f), 'utf8');
       } catch {
         return null;
       }
     }, files);
 
     if (hits.length) {
-      console.error('\n❌ เจอรูปแบบคีย์จริงในไฟล์ memory ที่กำลังจะขึ้น repo:');
+      console.error(`\n❌ เจอรูปแบบคีย์จริงในไฟล์ของ ${label}:`);
       for (const h of hits) console.error(`     ${h.file}  (${h.name})`);
-      die('หยุดก่อน ยังไม่ commit อะไรใน devconfig', 'ลบค่าคีย์ออกจากไฟล์พวกนี้ก่อน แล้วรัน npm run handoff ใหม่');
+      die(`หยุดก่อน ยังไม่ commit อะไรใน ${label}`, 'ลบค่าคีย์ออกจากไฟล์พวกนี้ก่อน แล้วรัน npm run handoff ใหม่');
     }
 
-    console.log(`\nเก็บ memory ${pending.length} ไฟล์ขึ้น devconfig...`);
-    dc(['add', '--', 'claude-memory']);
+    console.log(`\nเก็บ ${label} ${pending.length} ไฟล์ขึ้น origin...`);
+    g(['add', '--', pathspec ?? '.']);
     const msg = `memory: ${hostname()} @ ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
-    const c = dc(['commit', '-m', msg], { stdio: 'inherit' });
-    if (c.status !== 0) {
-      devconfigOk = false;
-      console.log('⚠️  commit devconfig ไม่สำเร็จ');
+    if (g(['commit', '-m', msg], { stdio: 'inherit' }).status !== 0) {
+      ok = false;
+      console.log(`⚠️  commit ${label} ไม่สำเร็จ`);
     } else {
       console.log(`✅ commit แล้ว: ${msg}`);
     }
   }
 
   // push แยกจาก commit เสมอ — รอบก่อนอาจ commit ไว้แล้วแต่ push ไม่ผ่าน
-  const aheadDc = dc(['rev-list', '--count', '@{u}..HEAD']);
-  const n = aheadDc.status === 0 ? Number(aheadDc.stdout.trim()) : null;
+  const aheadRes = g(['rev-list', '--count', '@{u}..HEAD']);
+  const n = aheadRes.status === 0 ? Number(aheadRes.stdout.trim()) : null;
   if (n === null) {
-    devconfigOk = false;
-    console.log('⚠️  devconfig ไม่มี upstream — ตรวจว่า clone มาถูก remote');
+    ok = false;
+    console.log(`⚠️  ${label} ไม่มี upstream — ตรวจว่าต่อ remote ไว้ถูกหรือยัง`);
   } else if (n > 0) {
-    console.log(`push devconfig (${n} commit)...`);
-    if (dc(['push'], { stdio: 'inherit' }).status !== 0) {
-      devconfigOk = false;
+    console.log(`push ${label} (${n} commit)...`);
+    if (g(['push'], { stdio: 'inherit' }).status !== 0) {
+      ok = false;
       // จุดที่เคยพังเงียบมาแล้ว ห้ามปล่อยผ่านเป็นความสำเร็จเด็ดขาด
-      console.log('⚠️  push devconfig ไม่สำเร็จ — memory ยังอยู่แค่เครื่องนี้');
+      console.log(`⚠️  push ${label} ไม่สำเร็จ — ความจำยังอยู่แค่เครื่องนี้`);
     }
   }
-}
+  return ok;
+};
+
+// เรียกแยกบรรทัด ไม่ใช้ && เพราะถ้าตัวแรกพังต้องยังพยายามเก็บตัวที่สองให้ครบ
+const claudeOk = syncMemoryRepo({
+  dir: findDevconfig(),
+  label: 'memory ของ Claude (devconfig)',
+  pathspec: 'claude-memory',
+  missingHint: 'memory ของ Claude จะไม่ข้ามเครื่อง — เก็บไว้ที่อื่น? ตั้งตัวแปร SMARTLOCAL_DEVCONFIG',
+});
+const codexOk = syncMemoryRepo({
+  dir: findCodexMemory(),
+  label: 'memory ของ Codex',
+  pathspec: null, // ทั้ง repo คือ memory ไม่มีอย่างอื่นปน
+  missingHint: 'ต่อ remote ให้ ~/.codex/memories ก่อน หรือตั้งตัวแปร SMARTLOCAL_CODEX_MEMORY',
+  optional: true, // เครื่องที่ไม่ได้ลง Codex ไม่ควรถูกนับว่า handoff ล้มเหลว
+});
+const devconfigOk = claudeOk && codexOk;
 
 /* ── ตรวจซ้ำว่าไม่มีอะไรตกค้าง ──────────────────────────────────── */
 const left = run(['status', '--porcelain', '-uall']);
