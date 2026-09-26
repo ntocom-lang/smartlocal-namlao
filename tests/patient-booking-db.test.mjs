@@ -22,11 +22,11 @@ INSERT INTO public.profiles VALUES
  ('${admin}','${tenant}','admin','Admin TEST'),('${coordinator}','${tenant}','staff','Coordinator TEST'),
  ('${driver}','${tenant}','staff','Driver TEST'),('${citizen}','${tenant}','citizen','Citizen TEST'),
  ('${citizen2}','${tenant}','citizen','Citizen2 TEST'),('${outsider}','${otherTenant}','admin','Outside TEST');
-INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST',true,ARRAY['patient_transport_request'],0);
+INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST',true,ARRAY['patient_transport_request'],3);
 CREATE TABLE public.audit_logs(id bigserial PRIMARY KEY,municipality_id uuid,actor_id uuid,actor_name text,actor_role text,action text,resource_type text,resource_id uuid,resource_label text,metadata jsonb,created_at timestamptz NOT NULL DEFAULT now());
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql','20260923114252_patient_booking_admin_delete.sql','20260924154340_patient_booking_exact_appointment_hours.sql','20260924232558_patient_booking_month_calendar.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql','20260923114252_patient_booking_admin_delete.sql','20260924154340_patient_booking_exact_appointment_hours.sql','20260924232558_patient_booking_month_calendar.sql','20260926114444_patient_booking_all_days_public_pending.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -47,7 +47,7 @@ await actor(outsider); await fails(()=>rpc('patient_booking_workspace',[tenant])
 await actor(citizen); await fails(()=>rpc('patient_booking_save_settings',[tenant,2,settings]),/เฉพาะผู้ดูแล/)
 await fails(()=>db.query('SELECT * FROM public.patient_bookings'),/permission denied/)
 await fails(()=>rpc('ptb_plan',[tenant,[id(50)],'']),/permission denied/)
-await actor(null); const info = await rpc('patient_booking_info',[tenant]); assert.equal(info.owner_name,'Fund TEST'); assert(!('driver_id' in info)); await fails(()=>rpc('patient_booking_workspace',[tenant]),/permission denied/)
+await actor(null); const info = await rpc('patient_booking_info',[tenant]); assert.equal(info.owner_name,'Fund TEST'); assert.equal(info.min_lead_days,0); assert(!('driver_id' in info)); await fails(()=>rpc('patient_booking_workspace',[tenant]),/permission denied/)
 console.log('PASS default-deny table/helper permissions, tenant isolation, public projection, settings revision')
 
 await actor(citizen); const booking1=id(100), booking2=id(101)
@@ -126,10 +126,14 @@ const calendarDate = new Date(nextDay); calendarDate.setUTCDate(calendarDate.get
 const calendarDay=calendarDate.toISOString().slice(0,10), calendarAt=t=>`${calendarDay}T${t}:00+07:00`
 const calendarBase={...base,patient_name:'TEST calendar existing',appointment_at:calendarAt('10:30'),return_at:calendarAt('14:00'),return_mode:'later',companions:0}
 await actor(citizen); await rpc('patient_booking_submit',[tenant,id(400),calendarBase])
+await actor(null); let pendingDay=(await rpc('patient_booking_calendar',[tenant,calendarDay,calendarDay])).days[0]
+assert.equal(pendingDay.pending_count,1)
+assert(!JSON.stringify(pendingDay).includes('TEST calendar existing'))
+assert(!JSON.stringify(pendingDay).includes(calendarBase.pickup))
 await actor(coordinator); const cp=await rpc('patient_booking_preview',[tenant,[id(400)],'']);assert.deepEqual(cp.errors,[])
 await rpc('patient_booking_confirm',[tenant,id(410),[id(400)],cp,''])
 await actor(null); let cal=await rpc('patient_booking_calendar',[tenant,calendarDay,calendarDay]); let cd=cal.days[0]
-assert.equal(cd.trips[0].remaining,3);assert.equal(cd.trips[0].people,1);assert.equal(cd.trips[0].joinable,true);assert.equal(cd.free.length,3)
+assert.equal(cd.pending_count,0);assert.equal(cd.trips[0].remaining,3);assert.equal(cd.trips[0].people,1);assert.equal(cd.trips[0].joinable,true);assert.equal(cd.free.length,3)
 assert(!JSON.stringify(cal).includes('TEST calendar existing'));assert(!JSON.stringify(cal).includes(base.phone));assert(!JSON.stringify(cal).includes('booking_ids'));assert(!JSON.stringify(cal).includes('helper_name'))
 await fails(()=>rpc('ptb_join_plan',[tenant,id(400)]),/permission denied/)
 await fails(()=>rpc('patient_booking_calendar',[tenant,calendarDay,'2099-01-01']),/62/)
@@ -153,32 +157,43 @@ await fails(()=>rpc('patient_booking_submit_join',[tenant,id(402),id(410),{...ca
 await db.exec('RESET ROLE');await db.query('UPDATE public.patient_bookings SET share=false WHERE id=$1',[id(400)])
 await actor(null);cal=await rpc('patient_booking_calendar',[tenant,calendarDay,calendarDay]);assert.equal(cal.days[0].trips[0].people,null);assert.equal(cal.days[0].trips[0].route_id,null);assert.equal(cal.days[0].trips[0].appointment_at,null);assert.equal(cal.days[0].trips[0].joinable,false)
 await db.exec('RESET ROLE');await db.query('UPDATE public.patient_bookings SET share=true WHERE id=$1',[id(400)])
-await actor(admin);await rpc('patient_booking_save_settings',[tenant,4,{...settings,holidays:[calendarDay]}]);await actor(null);cal=await rpc('patient_booking_calendar',[tenant,calendarDay,calendarDay]);assert.equal(cal.days[0].status,'closed');assert.deepEqual(cal.days[0].free,[]);assert.equal(cal.days[0].trips[0].joinable,false)
+await actor(admin);await rpc('patient_booking_save_settings',[tenant,4,{...settings,holidays:[calendarDay]}]);await actor(null);cal=await rpc('patient_booking_calendar',[tenant,calendarDay,calendarDay]);assert.equal(cal.days[0].status,'open');assert.equal(cal.days[0].trips[0].joinable,true)
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,5,settings])
-console.log('PASS public calendar free intervals, privacy, bounds, holidays; join validation, atomic rollback, existing-trip confirmation and retry')
-// Day guards at intake: requests the queue could never confirm are refused here, staff intake is not.
+console.log('PASS public calendar pending count and confirmed trips without personal data; holiday dates remain open')
+// Intake still rejects an unavailable vehicle, but weekends and configured holiday dates remain bookable.
 await actor(null);const svc=await rpc('patient_booking_info',[tenant]);assert.equal(svc.buffer_minutes,15);assert.equal(svc.boarding_minutes,15)
 const weekend=new Date();weekend.setUTCDate(weekend.getUTCDate()+1);while(weekend.getUTCDay()!==6)weekend.setUTCDate(weekend.getUTCDate()+1)
 const satDay=weekend.toISOString().slice(0,10),satAt=time=>`${satDay}T${time}:00+07:00`
 const weekendBooking={...base,patient_name:'TEST weekend',phone:'0800000500',appointment_at:satAt('10:00'),return_at:satAt('12:00')}
-await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(500),weekendBooking]),/วันหยุด/)
-await actor(coordinator);await fails(()=>rpc('patient_booking_submit',[tenant,id(500),weekendBooking]),/วันหยุด/)
-assert.equal(await rpc('patient_booking_submit',[tenant,id(500),weekendBooking,true]),id(500))
+await actor(citizen);assert.equal(await rpc('patient_booking_submit',[tenant,id(505),weekendBooking]),id(505))
+await actor(coordinator);assert.deepEqual((await rpc('patient_booking_preview',[tenant,[id(505)],''])).errors,[])
+assert.equal(await rpc('patient_booking_submit',[tenant,id(500),{...weekendBooking,patient_name:'TEST staff weekend',phone:'0800000590'},true]),id(500))
+await actor(null);pendingDay=(await rpc('patient_booking_calendar',[tenant,satDay,satDay])).days[0]
+assert.equal(pendingDay.status,'open');assert.equal(pendingDay.pending_count,2)
+assert(!JSON.stringify(pendingDay).includes('TEST weekend'));assert(!JSON.stringify(pendingDay).includes(weekendBooking.phone))
 const holiday=new Date();holiday.setUTCDate(holiday.getUTCDate()+20);while([0,6].includes(holiday.getUTCDay()))holiday.setUTCDate(holiday.getUTCDate()+1)
 const holidayDay=holiday.toISOString().slice(0,10),holidayAt=time=>`${holidayDay}T${time}:00+07:00`
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,6,{...settings,holidays:[holidayDay]}])
-await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(501),{...base,patient_name:'TEST holiday',phone:'0800000501',appointment_at:holidayAt('10:00'),return_at:holidayAt('12:00')}]),/วันหยุด/)
+await actor(citizen);assert.equal(await rpc('patient_booking_submit',[tenant,id(501),{...base,patient_name:'TEST holiday',phone:'0800000501',appointment_at:holidayAt('10:00'),return_at:holidayAt('12:00')}]),id(501))
 const checked=new Date();checked.setUTCDate(checked.getUTCDate()+5);
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,7,{...settings,calendar_checked_through:checked.toISOString().slice(0,10)}])
 await actor(citizen);assert.equal(await rpc('patient_booking_submit',[tenant,id(502),{...base,patient_name:'TEST unchecked',phone:'0800000502',appointment_at:holidayAt('10:00'),return_at:holidayAt('12:00')}]),id(502))
 await actor(coordinator);assert(!(await rpc('patient_booking_preview',[tenant,[id(502)],''])).errors.some(e=>e.includes('ปฏิทิน')))
-await actor(null);assert.notEqual((await rpc('patient_booking_calendar',[tenant,holidayDay,holidayDay])).days[0].status,'unverified')
+await actor(null);pendingDay=(await rpc('patient_booking_calendar',[tenant,holidayDay,holidayDay])).days[0]
+assert.equal(pendingDay.status,'open');assert.equal(pendingDay.pending_count,2)
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,8,{...settings,unavailable:true}])
 await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(503),{...base,patient_name:'TEST unavailable',phone:'0800000503'}]),/งดรับจอง/)
 await actor(coordinator);await fails(()=>rpc('patient_booking_submit',[tenant,id(503),{...base,patient_name:'TEST unavailable',phone:'0800000503'}]),/งดรับจอง/)
 assert.equal(await rpc('patient_booking_submit',[tenant,id(503),{...base,patient_name:'TEST unavailable',phone:'0800000503'},true]),id(503))
 await actor(admin);await rpc('patient_booking_save_settings',[tenant,9,settings])
-console.log('PASS intake guards for weekends, holidays and unavailable vehicle; expired calendar does not block intake or planning; staff intake still accepted')
+const todayLocal=(await db.query("SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date::text AS day")).rows[0].day
+await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(506),{...base,patient_name:'TEST past hour',phone:'0800000506',appointment_at:`${todayLocal}T00:01:00+07:00`,return_at:null,return_mode:'one_way'}]),/เวลานัดผ่านมาแล้ว/)
+const tomorrow=(await db.query("SELECT ((now() AT TIME ZONE 'Asia/Bangkok')::date+1)::text AS day")).rows[0].day
+await actor(citizen);assert.equal(await rpc('patient_booking_submit',[tenant,id(504),{...base,patient_name:'TEST tomorrow',phone:'0800000504',appointment_at:`${tomorrow}T10:00:00+07:00`,return_at:`${tomorrow}T12:00:00+07:00`}]),id(504))
+await actor(null);pendingDay=(await rpc('patient_booking_calendar',[tenant,tomorrow,tomorrow])).days[0]
+assert.equal(pendingDay.status,'open');assert.equal(pendingDay.pending_count,1)
+assert.deepEqual((await rpc('patient_booking_calendar',[otherTenant,tomorrow,tomorrow])).days,[])
+console.log('PASS weekend, holiday and next-day intake despite old 3-day setting; unavailable vehicle still blocked; public pending counts are tenant-scoped')
 // หมุดจุดรับ: เป็นทางเลือก แต่ถ้าส่งมาต้องครบคู่ อยู่ในพื้นที่ และห้ามหลุดไปหน้าสาธารณะ
 const pinned={...base,patient_name:'TEST pinned',phone:'0800000600',pickup_lat:18.1234,pickup_lng:100.1234}
 await actor(citizen);await rpc('patient_booking_submit',[tenant,id(600),pinned])

@@ -12,7 +12,6 @@ export default function BookingSettings({ workspace, busy, onSave }) {
   const set = key => e => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
   const input = (key, label, props = {}) => <label>{label}<input className={inputClass} value={form[key] ?? ''} onChange={set(key)} {...props} /></label>
   function changeRoute(index, key, value) { setForm(f => ({ ...f, routes: f.routes.map((r, i) => i === index ? { ...r, [key]: value } : r) })) }
-  const partner = workspace.partners?.find(p => p.id === form.partner_id)
   const missing = [
     !form.partner_id && 'เลือกเจ้าของรถ', !form.driver_id && 'เลือกคนขับ',
     !form.coordinator_ids.length && 'เลือกผู้ยืนยันคิว (เป็นคนขับคนเดียวกันได้)',
@@ -35,10 +34,9 @@ export default function BookingSettings({ workspace, busy, onSave }) {
     <h2 className="text-xl font-bold">ตั้งค่ารถรับส่งผู้ป่วย</h2>
     {attemptedOpen && form.enabled && missing.length > 0 && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800"><p className="font-semibold">ยังเปิดรับจองไม่ได้ กรุณาเติมข้อมูลที่ขาด</p><ul className="mt-2 list-disc pl-5">{missing.map(item => <li key={item}>{item}</li>)}</ul></div>}
     <p className="rounded-xl bg-amber-50 p-3 text-sm">กรอกข้อมูลรถ ผู้รับผิดชอบ และโรงพยาบาลครั้งแรก หลังจากนั้นแก้เฉพาะเมื่อมีการเปลี่ยนแปลง ช่วงเวลานัดแพทย์และเวลาเผื่อมีค่าเริ่มต้นให้แล้ว</p>
+    <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950">เปิดรับคำขอได้ทุกวัน รวมเสาร์–อาทิตย์และวันหยุด ตั้งแต่วันนี้ถึงล่วงหน้า 12 เดือน เจ้าหน้าที่ตรวจรถและยืนยันคิวแต่ละเที่ยวตามปกติ</p>
     <div className="grid gap-4 sm:grid-cols-2">
-      <label>กองทุน/หน่วยงานเจ้าของรถ<select className={inputClass} value={form.partner_id || ''} onChange={set('partner_id')}><option value="">เลือกเจ้าของรถจากทะเบียนหน่วยงาน</option>{workspace.partners?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-        {/* min_lead_days lives on referral_partners; without this pointer an admin cannot find where to change it. */}
-        <span className="mt-1 block text-sm text-slate-600">{partner?.min_lead_days === undefined ? 'เลือกเจ้าของรถเพื่อดูจำนวนวันจองล่วงหน้า' : `ประชาชนต้องจองล่วงหน้าอย่างน้อย ${partner.min_lead_days} วัน`} · แก้จำนวนวันได้ที่หน้าผู้ดูแล เมนู “ประเภทคำขอเอกสาร” → ทะเบียนหน่วยงานรับเรื่องต่อ</span></label>
+      <label>กองทุน/หน่วยงานเจ้าของรถ<select className={inputClass} value={form.partner_id || ''} onChange={set('partner_id')}><option value="">เลือกเจ้าของรถจากทะเบียนหน่วยงาน</option>{workspace.partners?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       <label>บัญชีคนขับ<select aria-label="บัญชีคนขับ" className={inputClass} value={form.driver_id || ''} onChange={set('driver_id')}><option value="">เลือกบัญชีเจ้าหน้าที่ของคนขับ</option>{workspace.people?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       {['office_start', 'office_end'].map((key, i) => <label key={key}>{i ? 'สิ้นสุดเวลานัดแพทย์' : 'เริ่มเวลานัดแพทย์'}<input className={inputClass} type="time" required value={clockTime(form[key])} onChange={e => setForm(f => ({ ...f, [key]: minutes(e.target.value) }))} /></label>)}
       <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950 sm:col-span-2">เวลานัดแพทย์ที่เปิดให้จอง: <strong>{clockTime(form.office_start)}–{clockTime(form.office_end)} น.</strong> ตรงตามค่าที่ตั้งไว้ รถอาจออกไปรับก่อนเวลาเริ่มหรือกลับหลังเวลาสิ้นสุดตามระยะทางและเวลารับกลับ · มีผลหลังบันทึก</p>
