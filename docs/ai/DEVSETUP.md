@@ -62,16 +62,26 @@ deploy              -> GitHub Actions เมื่อ master ขยับ ไม
 
 ```bash
 # ก่อนเลิกงานที่เครื่องหนึ่ง
-npm run handoff              # commit ของค้างทั้งหมด + push ขึ้น origin
-git -C ../smartlocal-devconfig add -A && git -C ../smartlocal-devconfig commit -m "memory" && git -C ../smartlocal-devconfig push
+npm run handoff              # โค้ด + memory ขึ้น origin ให้ครบในคำสั่งเดียว
 
 # เริ่มงานที่อีกเครื่อง
 npm run resume <branch>      # fetch + ff-only + pull devconfig + doctor
 ```
 
-`resume` หา repo devconfig จาก `../smartlocal-devconfig` ให้เอง — **ไม่ต้องตั้งตัวแปรอะไร**
+**จำแค่ 2 คำสั่งนี้พอ ไม่มีคำสั่ง git ของ devconfig ให้พิมพ์เองอีกแล้ว**
+เดิมต้องพิมพ์ `git -C ../smartlocal-devconfig add/commit/push` เองทุกครั้ง ซึ่งลืมจริง —
+memory ค้างอยู่เครื่องเดียว **34 ไฟล์ 3 สัปดาห์** (2026-09-07 → 09-26) โดยไม่มีอะไรฟ้อง
+ตั้งแต่ 2026-09-26 `handoff` commit + push `claude-memory/` ให้เอง และ `doctor` ขึ้น ❌ ถ้ายังไม่ขึ้น origin
+
+- แตะเฉพาะ `claude-memory/` — `env/.env.local` ต้องใช้ `npm run env:push` ที่มีด่านกันคีย์ฝั่ง server
+- มีด่านสแกนก่อน commit: เจอรูปแบบคีย์จริง (JWT, `sb_secret_…`, GitHub/GitLab token, private key) จะหยุดทันที
+  ⚠️ ด่านนี้จับ **รูปแบบคีย์** ได้ แต่จับ **ข้อมูลส่วนบุคคลของประชาชน (PDPA) ไม่ได้** —
+  กติกาเดิมยังอยู่: memory ห้ามจดข้อมูลประชาชนตั้งแต่ต้น
+
+`handoff` / `resume` / `doctor` หา repo devconfig จากโฟลเดอร์ข้างๆ **ทรีหลัก** ให้เอง
+(ไม่ใช่ข้างๆ โฟลเดอร์ที่ยืนอยู่ — จึงเรียกจากใน `git worktree` ได้ด้วย) **ไม่ต้องตั้งตัวแปรอะไร**
 ถ้าเก็บไว้ที่อื่นค่อยตั้ง `SMARTLOCAL_DEVCONFIG` ชี้ไปที่นั่น
-หาไม่เจอจะขึ้นเตือนให้เห็น ไม่ข้ามเงียบๆ (เดิมข้ามเงียบ ทำให้ memory เป็นของเก่าโดยไม่รู้ตัว)
+หาไม่เจอจะขึ้นเตือนให้เห็น ไม่ข้ามเงียบๆ
 
 **`handoff` สร้าง commit ชื่อ `wip(handoff): <ชื่อเครื่อง> @ <เวลา>`** — ไม่ต้องกังวลว่าจะรก
 ตอนเปิด PR ค่อย squash ทีเดียว
