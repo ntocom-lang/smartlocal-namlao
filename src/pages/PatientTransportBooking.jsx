@@ -8,6 +8,8 @@ import BookingCalendar from '../components/patientTransport/BookingCalendar'
 import BookingForm from '../components/patientTransport/BookingForm'
 import BookingSettings from '../components/patientTransport/BookingSettings'
 import { BookingCards, CoordinatorQueue, DriverTrips } from '../components/patientTransport/BookingOperations'
+import { buildTripForwardLetterHtml, buildTripMonthReportHtml } from '../lib/patientTransportPrint'
+import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import { buttonClass, primaryClass, clockTime, orgAbbr } from '../lib/patientBooking'
 
 export default function PatientTransportBooking() {
@@ -75,6 +77,35 @@ export default function PatientTransportBooking() {
     const args = { p_entity: entity.id, p_revision: entity.revision, p_action: name, p_note: note }
     return mutate('patient_booking_action', { ...args, p_op: op(JSON.stringify(args)) }, 'บันทึกแล้ว และแจ้งสถานะในระบบให้ผู้เกี่ยวข้อง')
   }
+  // เอกสารถึงกองทุน: ผู้รับหนังสือจากทะเบียนหน่วยงานรับเรื่องต่อ + ผู้ลงนามจากทะเบียนกลาง
+  // (ทะเบียนเดียวกับหนังสือนำส่งของระบบเดิม ผู้ดูแลไม่ต้องตั้งค่าซ้ำ)
+  async function fundContext() {
+    const partnerId = workspace?.settings?.partner_id
+    const [partnerRes, signRes] = await Promise.all([
+      partnerId ? supabase.from('referral_partners').select('name, recipient_title, address, phone').eq('id', partnerId).maybeSingle() : Promise.resolve({ data: null }),
+      supabase.from('document_signatories').select(SIGNATORY_REGISTRY_SELECT).eq('municipality_id', tenantId).eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
+    ])
+    if (partnerRes.error) throw partnerRes.error
+    const mayorRow = pickSignatory(signRes.data ?? [], { role: 'mayor' })
+    return { partner: partnerRes.data, mayor: mayorRow ? { name: signatoryName(mayorRow), title: signatoryTitle(mayorRow) } : null }
+  }
+  // เปิดหน้าต่างทันทีตอนกด แล้วค่อยเติมเนื้อหาหลังโหลดข้อมูล — เปิดหลัง await เบราว์เซอร์จะบล็อกเป็นป๊อปอัป
+  async function printInNewWindow(build, failText) {
+    const win = window.open('', '_blank', 'width=1100,height=900')
+    if (!win) { setError('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาตป๊อปอัปของเว็บนี้'); return }
+    try { win.document.write(await build()); win.document.close() } catch (e) { win.close(); setError(`${failText}: ${e.message || 'กรุณาลองใหม่'}`) }
+  }
+  const printLetter = trip => printInNewWindow(async () => buildTripForwardLetterHtml({
+    tenant, trip, bookings: workspace.bookings, ...(await fundContext()),
+    // ต้องเป็น URL เต็ม หน้าต่างพิมพ์เป็น about:blank พาธ /images/... จะ resolve ไม่เจอ
+    emblemUrl: `${window.location.origin}/images/garuda.svg`,
+  }), 'เตรียมหนังสือนำส่งไม่สำเร็จ')
+  const printMonth = month => printInNewWindow(async () => {
+    const [{ data, error: failure }, context] = await Promise.all([supabase.rpc('patient_booking_month_report', { p_muni: tenantId, p_month: month }), fundContext()])
+    if (failure) throw failure
+    return buildTripMonthReportHtml({ tenant, report: data, partner: context.partner })
+  }, 'เตรียมสรุปรายเดือนไม่สำเร็จ')
+  const recordOdometer = (trip, start, end) => mutate('patient_booking_record_odometer', { p_trip: trip.id, p_start: start, p_end: end }, 'บันทึกเลขไมล์แล้ว')
   async function inspect(ids, helper) {
     if (lock.current) return
     lock.current = true; setBusy(true); setError('')
@@ -106,9 +137,11 @@ export default function PatientTransportBooking() {
       {view === 'mine' && (uid ? <BookingCards bookings={workspace?.bookings.filter(b => b.created_by === uid) || []} trips={workspace?.trips || []} busy={busy} onAction={action} /> : <Link to="/auth" className={primaryClass}>เข้าสู่ระบบเพื่อติดตามการจอง</Link>)}
       {view === 'queue' && isCoordinator && <><button className={`${buttonClass} mb-4`} disabled={busy || !info?.enabled} onClick={() => { setBookingSeed({}); setView('book') }}>รับจองแทนทางโทรศัพท์/หน้าเคาน์เตอร์</button>
         <CoordinatorQueue workspace={workspace} busy={busy} preview={preview} clearPreview={() => setPreview(null)} onAction={action} onPreview={inspect}
+          onRecordLetter={(trip, letterNo, letterDate) => mutate('patient_booking_record_letter', { p_trip: trip.id, p_letter_no: letterNo, p_letter_date: letterDate }, 'บันทึกเลขหนังสือนำส่งแล้ว')}
+          onPrintLetter={printLetter} onOdometer={recordOdometer} onMonthReport={printMonth}
           onAmend={(booking, values, reason) => { const args = { p_id: booking.id, p_revision: booking.revision, p_data: values, p_note: reason }; return mutate('patient_booking_amend', { ...args, p_op: op(JSON.stringify(args)) }, 'แก้ข้อมูลตามที่ประสานแล้ว พร้อมเก็บประวัติ') }}
           onConfirm={(ids, plan, helper) => plan.join_trip_id ? mutate('patient_booking_confirm_join', { p_op: op(JSON.stringify(plan)), p_booking: plan.join_booking_id, p_expected: plan }, 'ยืนยันร่วมเที่ยวแล้ว แจ้งแผนล่าสุดให้ผู้เดินทางและคนขับ') : mutate('patient_booking_confirm', { p_id: op(JSON.stringify({ ids, plan, helper })), p_ids: ids, p_expected: plan, p_helper: helper }, 'ยืนยันเที่ยวแล้ว ผู้จองและคนขับเห็นข้อมูลในระบบ')} /></>}
-      {view === 'driver' && isDriver && <DriverTrips workspace={workspace} uid={uid} busy={busy} onAction={action} />}
+      {view === 'driver' && isDriver && <DriverTrips workspace={workspace} uid={uid} busy={busy} onAction={action} onOdometer={recordOdometer} />}
       {view === 'settings' && isAdmin && <BookingSettings key={workspace.settings?.revision || 'new'} workspace={workspace} busy={busy} onSave={(revision, form) => mutate('patient_booking_save_settings', { p_revision: revision, p_data: { ...form, holidays: form.holidays.map(d => d.trim()).filter(Boolean) } }, 'บันทึกค่าตั้งต้นแล้ว')} />}
       {workspace?.limited && <p className="mt-4 rounded-xl bg-amber-50 p-3">รายการเกินขอบเขตหน้าจอ กรุณาติดต่อผู้ดูแลก่อนจัดคิวเพิ่มเติม</p>}
       {workspace?.notices?.length > 0 && <details className="mt-6 rounded-xl border border-slate-200 p-4"><summary className="min-h-11 cursor-pointer font-semibold">แจ้งเตือนการเดินทาง ({workspace.notices.length})</summary>{workspace.notices.map(n => <p key={n.id} className="border-t border-slate-100 py-3">{n.message}</p>)}</details>}
