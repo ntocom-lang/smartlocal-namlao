@@ -39,22 +39,25 @@ export default function BookingMonthPicker({ month, onMonth, days, selected, onS
       {Array.from({ length: total }, (_, i) => {
         const value = `${month}-${String(i + 1).padStart(2, '0')}`
         const day = days.find(d => d.date === value), state = value < first || value > last ? { text: '—', style: 'bg-slate-50 text-slate-400' } : status(day)
-        return <button key={value} type="button" data-calendar-date={value} aria-label={`${label(value)} ${state.text}`} aria-pressed={selected === value}
+        const pending = day?.pending_count || 0
+        return <button key={value} type="button" data-calendar-date={value} aria-label={`${label(value)} ${state.text}${pending ? ` รอยืนยัน ${pending} คำขอ` : ''}`} aria-pressed={selected === value}
           disabled={value < first || value > last || loading || !day} onClick={() => onSelect(value)}
           className={`min-h-16 min-w-0 rounded-lg border p-1 text-center disabled:opacity-40 ${state.style} ${selected === value ? 'ring-2 ring-sky-700 border-sky-700' : 'border-slate-200'}`}>
           <span className="block text-xs min-[440px]:hidden">{['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'][date(value).getUTCDay()]}</span>
           <span className="block font-bold">{i + 1}</span><span className="block text-[10px] sm:text-xs">{state.text}</span>
+          {pending > 0 && <span className="block text-[10px] font-semibold text-amber-900">รอ {pending}</span>}
           {!!day?.trips.length && <span className="block text-[10px]">{day.trips.length} เที่ยว</span>}
           <span className="hidden truncate text-xs sm:block">{day?.trips[0]?.route_label}</span>
         </button>
       })}
     </div>
-    <p className="text-xs text-slate-600">เขียว: รถว่าง/มีเวลาว่าง · ฟ้า: ขอร่วมได้ · แดง: เต็ม · เทา: หยุดหรือจองไม่ได้</p>
-    <p className="text-sm">จองล่วงหน้าได้ถึง {label(last)} · รายการด้านล่างเป็นเที่ยวที่ยืนยันแล้ว คำขอรอยืนยันยังไม่กันที่นั่ง</p>
+    <p className="text-xs text-slate-600">เขียว: รถว่าง/มีเวลาว่าง · ฟ้า: ขอร่วมได้ · แดง: เต็ม · ตัวเลข “รอ”: คำขอที่เจ้าหน้าที่ยังไม่ยืนยัน</p>
+    <p className="text-sm">จองล่วงหน้าได้ถึง {label(last)} · คำขอรอยืนยันยังไม่กันที่นั่ง ส่วนรายการเที่ยวด้านล่างเป็นเที่ยวที่ยืนยันแล้ว</p>
     <details><summary className="min-h-11 cursor-pointer py-2">เลือกวันอื่น</summary><label>วันที่นัดแพทย์<input type="date" className="block min-h-11 w-full rounded-lg border px-2" min={first} max={last} value={selected} onChange={e => { if (e.target.value) onSelect(e.target.value) }} /></label></details>
     {chosen && <div className="space-y-3 rounded-xl bg-slate-50 p-3" aria-label="เที่ยวรถในวันที่เลือก">
       <strong>{label(selected)}</strong>
       {chosen.status !== 'open' && <p>{DAY_BLOCKED[chosen.status] || 'ยังไม่เปิดรับจองวันนี้'}</p>}
+      {chosen.pending_count > 0 && <p className="rounded-lg bg-amber-50 p-2 text-sm text-amber-900">มี {chosen.pending_count} คำขอรอเจ้าหน้าที่ยืนยัน · ยังไม่กันที่นั่ง</p>}
       {!chosen.trips.length && <p>ยังไม่มีเที่ยวที่ยืนยันในวันนี้</p>}
       {chosen.trips.map(t => <article key={t.id} className="space-y-2 rounded-lg border bg-white p-3">
         <p className="font-semibold break-words">{t.route_label}</p>

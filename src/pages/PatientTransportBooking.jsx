@@ -70,7 +70,7 @@ export default function PatientTransportBooking() {
           {uid
             ? <button disabled={busy} className="min-h-16 w-full rounded-2xl bg-sky-800 px-4 text-lg font-bold text-white disabled:opacity-50" onClick={() => setView('book')}>🚐 ขอรถไปโรงพยาบาล</button>
             : <Link to="/auth" state={{ from: '/patient-transport' }} className="flex min-h-16 w-full items-center justify-center rounded-2xl bg-sky-800 px-4 text-lg font-bold text-white">เข้าสู่ระบบเพื่อขอรถ</Link>}
-          <p className="text-sm text-slate-600">รับ–ส่งไปโรงพยาบาลตามนัด ญาติหรือผู้ดูแลจองแทนได้ ไม่ต้องใช้เลขสมาชิกกองทุน · รับเวลานัดแพทย์วันราชการ {clockTime(info.office_start)}–{clockTime(info.office_end)} ตามปฏิทินหน่วยงาน</p>
+          <p className="text-sm text-slate-600">รับ–ส่งไปโรงพยาบาลตามนัด ญาติหรือผู้ดูแลจองแทนได้ ไม่ต้องใช้เลขสมาชิกกองทุน · เลือกเวลานัดแพทย์ได้ทุกวัน {clockTime(info.office_start)}–{clockTime(info.office_end)} น. เจ้าหน้าที่ยืนยันรถและเวลารับอีกครั้ง</p>
         </> : <>
           <p className="rounded-xl bg-slate-50 p-4">หน่วยงานยังไม่เปิดรับจองรถออนไลน์ กรุณาติดต่อเจ้าหน้าที่เพื่อสอบถามบริการ</p>
           {isStaff && <p className="text-sm">เปิดบริการได้ที่ <Link to="/staff/patient-transport" className="font-semibold text-sky-800 underline">หน้าทำงานเจ้าหน้าที่</Link></p>}
