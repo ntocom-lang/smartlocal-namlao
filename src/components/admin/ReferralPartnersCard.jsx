@@ -107,8 +107,8 @@ export default function ReferralPartnersCard({ tenant }) {
         <div className="min-w-0">
           <p className="text-sm font-bold text-gray-800">🚑 หน่วยงานรับเรื่องต่อ — รถรับ-ส่งผู้ป่วย</p>
           <p className="mt-0.5 text-xs leading-relaxed text-gray-500">
-            มีหน่วยงานที่เปิดรับเรื่องอย่างน้อย 1 แห่ง ประชาชนจึงจะเห็นบริการ “ขออนุเคราะห์รถรับ-ส่งผู้ป่วย”
-            ({activeCount > 0 ? `เปิดอยู่ ${activeCount} แห่ง` : 'ตอนนี้ยังไม่แสดง'})
+            ทะเบียนเจ้าของรถสำหรับเลือกในหน้าตั้งค่าระบบจองรถ เมื่อเลือกหน่วยงานและเปิดรับจองแล้ว ประชาชนจึงจะเห็นบริการ
+            ({activeCount > 0 ? `เปิดอยู่ ${activeCount} แห่ง` : 'ยังไม่มีหน่วยงานที่เปิดอยู่'})
           </p>
         </div>
         {!editing && (

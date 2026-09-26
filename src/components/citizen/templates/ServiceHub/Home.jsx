@@ -4,8 +4,8 @@ import { useTenant } from '../../../../contexts/TenantContext'
 import { useAuth } from '../../../../contexts/AuthContext'
 import { Wifi, Users, MapPinned, Compass, Phone, BookUser, ChevronRight, Ambulance, CalendarDays, Droplets, CloudRain } from 'lucide-react'
 import { supabase } from '../../../../lib/supabase'
-import { PATIENT_TRANSPORT_TYPE, PATIENT_TRANSPORT_MODULE_KEY } from '../../../../lib/patientTransport'
-import { removedDocumentTypes, selectableDocumentTypes } from '../../../../lib/documentTypes'
+import { PATIENT_TRANSPORT_MODULE_KEY } from '../../../../lib/patientTransport'
+import { selectableDocumentTypes } from '../../../../lib/documentTypes'
 import BannerSlider from '../../../../components/home/BannerSlider'
 // ComplaintBand นำออกจากหน้าแรกตามคำขอ (เข้าใช้งานผ่านปุ่ม ร้องเรียน/ร้องทุกข์ ด้านบน)
 import ComplaintStatsWidget from '../../../../components/home/ComplaintStatsWidget'
@@ -49,33 +49,30 @@ const MANUAL_SERVICE = {
 // การ์ดทางลัดแยกใต้เมนูเล็ก เฉพาะ ServiceHub ใช้สถานะเปิดบริการเดิมอัตโนมัติ
 function FeaturedServices() {
   const { tenant, isModuleEnabled } = useTenant()
-  const [transportTenantId, setTransportTenantId] = useState(null)
-  const transportEnabled = (!isModuleEnabled || isModuleEnabled(PATIENT_TRANSPORT_MODULE_KEY))
-    && !removedDocumentTypes(tenant).includes(PATIENT_TRANSPORT_TYPE)
+  const [bookingTenantId, setBookingTenantId] = useState(null)
+  const transportEnabled = !isModuleEnabled || isModuleEnabled(PATIENT_TRANSPORT_MODULE_KEY)
   const wasteEnabled = !isModuleEnabled || isModuleEnabled('waste')
   const waterSituationEnabled = !isModuleEnabled || isModuleEnabled('water-situation')
 
   useEffect(() => {
     if (!tenant?.id || !transportEnabled) return undefined
     let cancelled = false
-    // เงื่อนไขเดียวกับ CitizenDocRequest: RPC คืน boolean ไม่อ่านข้อมูลผู้ป่วย
-    supabase.rpc('has_active_referral_partner', {
-      _municipality_id: tenant.id,
-      _document_type: PATIENT_TRANSPORT_TYPE,
-    }).then(({ data, error }) => {
-      if (!cancelled) setTransportTenantId(!error && data === true ? tenant.id : null)
+    // ใช้สถานะเปิดรับจองของระบบใหม่โดยตรง ไม่ผูกกับสวิตช์คำขอเอกสารเดิม
+    // RPC นี้ส่งเฉพาะข้อมูลบริการสาธารณะ ไม่มีข้อมูลผู้ป่วย
+    supabase.rpc('patient_booking_info', { p_muni: tenant.id }).then(({ data, error }) => {
+      if (!cancelled) setBookingTenantId(!error && data?.enabled === true ? tenant.id : null)
     }).catch(() => {
-      if (!cancelled) setTransportTenantId(null)
+      if (!cancelled) setBookingTenantId(null)
     })
     return () => { cancelled = true }
   }, [tenant?.id, transportEnabled])
 
   const services = []
-  if (transportEnabled && tenant?.id && transportTenantId === tenant.id) services.push({
-    // ทางเข้าเดียวของบริการนี้ — หน้า /patient-transport ตัดสินเองว่าจะเป็นจองคิวรถหรือยื่นคำขอ
+  if (transportEnabled && tenant?.id && bookingTenantId === tenant.id) services.push({
+    // ทางเข้าเดียวของระบบจองรถรับส่งผู้ป่วย
     href: '/patient-transport',
     label: 'รถรับ-ส่งผู้ป่วย',
-    description: 'ยื่นคำขอรับบริการ',
+    description: 'จองรถไปโรงพยาบาล',
     icon: Ambulance,
     background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 55%, #075985 100%)',
   })
