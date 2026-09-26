@@ -201,6 +201,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
       {!info?.enabled && <p className="mb-4 rounded-xl bg-amber-50 p-4">{isAdmin ? 'ยังไม่เปิดรับจองออนไลน์ ตั้งค่ารถ คนขับ ผู้จัดคิว เส้นทางและเวลาให้บริการในแท็บ “ตั้งค่า” ก่อนเปิดบริการ' : 'ยังไม่เปิดรับจองออนไลน์ ให้ผู้ดูแลตั้งค่ารถและเปิดบริการก่อน'}</p>}
       {(view === 'inbox' || (view === 'calendar' && calendarBookingId)) && isCoordinator && <BookingInbox key={calendarBookingId || 'inbox'} workspace={workspace} busy={busy} error={error} isAdmin={isAdmin} action={intakeButton}
         detailOnly={view === 'calendar'} initialOpenId={calendarBookingId} onCloseBooking={() => setCalendarBookingId(null)}
+        currentUserId={uid} onOpenDriver={() => { setCalendarBookingId(null); setView('driver') }}
         created={created} onClearCreated={() => setCreated(null)} onDelete={deleteBooking} onConfirm={confirm} onJoin={joinIntoTrip} onAction={action} onRemove={removePassenger} onAmend={amend}
         onRecordLetter={recordLetter} onPrintLetter={printLetter} onOdometer={recordOdometer} onUpdateSchedule={updateSchedule}
         onReload={reload} onSettings={() => setView('settings')} />}

@@ -51,7 +51,8 @@ function buildRows(workspace) {
 
 const haystack = ({ booking: b }) => [b.patient_name, b.requester_name, b.phone, b.pickup, b.route_label, ref(b.id), dateTime(b.appointment_at), whenLabel(b.appointment_at)].join(' ').toLowerCase()
 
-function actionLabel({ next, group, booking }) {
+function actionLabel({ next, group, booking, trip }) {
+  if (next.id === 'view' && booking.status === 'confirmed' && trip?.state === 'confirmed') return 'ดูขั้นตอนต่อไป'
   if (next.id !== 'confirm') return next.label
   if (booking.requested_trip_id) return 'ยืนยันรถ · ร่วมเที่ยวที่ขอ'
   return group.length > 1 ? `ยืนยันรถ · ไปด้วยกัน ${group.length} คน` : 'ยืนยันรถ'
@@ -210,7 +211,7 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
   </details>
 }
 
-function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, onClose, onReload, onConfirm, onJoin, onOpen, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onUpdateSchedule, onSettings }) {
+function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, currentUserId, onOpenDriver, onClose, onReload, onConfirm, onJoin, onOpen, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onUpdateSchedule, onSettings }) {
   const { booking: b, trip, stage, next, group } = row
   const passengers = trip ? workspace.bookings.filter(x => x.trip_id === trip.id && x.status !== 'cancelled') : []
   const others = (trip ? passengers : group).filter(x => x.id !== b.id)
@@ -233,6 +234,15 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, onC
       onConfirm={onConfirm} onJoin={onJoin} onOpen={onOpen} act={act} onReload={onReload} onSettings={onSettings} />}
     {/* งานที่ต้องทำของแถวขึ้นก่อนรายละเอียด — แผ่นเปิดเพราะกดปุ่มนั้นมา จอมือถือจะได้ไม่ต้องเลื่อนหา */}
     {next.id === 'confirm' && !showProblem && <button type="button" className="min-h-12 w-full rounded-xl px-4 text-base font-bold text-white disabled:opacity-50" style={{ backgroundColor: next.color }} disabled={busy} onClick={() => onConfirm(row)}>{actionLabel(row)}</button>}
+    {b.status === 'confirmed' && trip?.state === 'confirmed' && <section aria-label="ขั้นตอนหลังยืนยันรถ" className="space-y-3 rounded-xl border border-sky-200 bg-sky-50 p-4">
+      <p className="font-bold text-sky-950">ยืนยันรถแล้ว · ขั้นต่อไป</p>
+      <p className="text-sm text-slate-800">ผู้จองและคนขับเห็นเที่ยวในระบบแล้ว พิมพ์หนังสือนำส่งกับใบคำขอได้ตอนนี้ วันเดินทางคนขับเปิด “งานคนขับ” เพื่อบันทึกการรับ–ส่งและจบเที่ยว</p>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={primaryClass} disabled={busy} onClick={() => onPrintLetter(trip)}>พิมพ์หนังสือนำส่ง + ใบคำขอ</button>
+        {trip.driver_id === currentUserId && <button type="button" className={buttonClass} onClick={onOpenDriver}>ไปงานคนขับ</button>}
+      </div>
+      {trip.driver_id !== currentUserId && <p className="text-sm text-slate-700">ถ้าคนขับใช้อีกบัญชี ให้เข้าหน้าเจ้าหน้าที่ด้วยบัญชีคนขับ แล้วเปิดแท็บ “งานคนขับ”</p>}
+    </section>}
     {next.id === 'cancel' && (soloRelease
       ? <ReasonAction busy={busy} primary title="ผู้จองขอยกเลิก" hint="เที่ยวนี้มีผู้เดินทางคนเดียว ยกเลิกแล้วช่วงเวลารถว่างให้คนอื่นจองได้ทันที" defaultReason="ผู้จองขอยกเลิก" button="ยกเลิกให้ตามที่ขอ" onRun={note => act(trip, 'release', note)} />
       : removable
@@ -260,7 +270,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, onC
   </Sheet>
 }
 
-export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, detailOnly = false, initialOpenId = null, onCloseBooking, onClearCreated, onDelete, onConfirm, onJoin, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onUpdateSchedule, onReload, onSettings }) {
+export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, detailOnly = false, initialOpenId = null, currentUserId, onOpenDriver, onCloseBooking, onClearCreated, onDelete, onConfirm, onJoin, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onUpdateSchedule, onReload, onSettings }) {
   const [deleting, setDeleting] = useState(null)
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteAttempted, setDeleteAttempted] = useState(false)
@@ -314,7 +324,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   }
   const pills = <Pills value={filter} onChange={setFilter} label="กรองคำขอรถ" items={PILLS.map(([id, label, color]) => ({ id, label, color, count: count(id) }))} />
   const sheet = open && <BookingSheet key={open.booking.id} row={open} rows={rows} workspace={workspace} problem={problem?.bookingId === open.booking.id ? problem : null}
-    busy={busy} error={error} isAdmin={isAdmin} onClose={close} onReload={onReload} onConfirm={confirmRow} onJoin={joinRow}
+    busy={busy} error={error} isAdmin={isAdmin} currentUserId={currentUserId} onOpenDriver={onOpenDriver} onClose={close} onReload={onReload} onConfirm={confirmRow} onJoin={joinRow}
     onOpen={id => { setProblem(null); setOpenId(id) }} onAction={onAction} onRemove={onRemove} onAmend={onAmend} onRecordLetter={onRecordLetter}
     onPrintLetter={onPrintLetter} onOdometer={onOdometer} onUpdateSchedule={onUpdateSchedule} onSettings={() => { close(); onSettings() }} />
   if (detailOnly) return sheet
