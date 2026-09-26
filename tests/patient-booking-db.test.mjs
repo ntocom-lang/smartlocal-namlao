@@ -26,7 +26,7 @@ INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST'
 CREATE TABLE public.audit_logs(id bigserial PRIMARY KEY,municipality_id uuid,actor_id uuid,actor_name text,actor_role text,action text,resource_type text,resource_id uuid,resource_label text,metadata jsonb,created_at timestamptz NOT NULL DEFAULT now());
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql','20260923114252_patient_booking_admin_delete.sql','20260924154340_patient_booking_exact_appointment_hours.sql','20260924232558_patient_booking_month_calendar.sql','20260926114444_patient_booking_all_days_public_pending.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql','20260923114252_patient_booking_admin_delete.sql','20260924154340_patient_booking_exact_appointment_hours.sql','20260924232558_patient_booking_month_calendar.sql','20260926114444_patient_booking_all_days_public_pending.sql','20260926141301_patient_booking_optional_odometer_reason.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -252,21 +252,27 @@ console.log('PASS fund documents: letter no per trip, odometer by current staff 
 
 await actor(coordinator)
 let flexTrip=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===liveTrip.id)
-await fails(()=>rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexTrip.docs_revision,13000,13033,false,'']),/เหตุผล/)
-let flexRev=await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexTrip.docs_revision,13000,13033,false,'กรอกผิด'])
-assert.equal(await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexTrip.docs_revision,13000,13033,false,'กรอกผิด']),flexRev)
+let flexRev=await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexTrip.docs_revision,13000,13033,false,''])
+assert.equal(await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexTrip.docs_revision,13000,13033,false,'']),flexRev)
 await fails(()=>rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev-1,12000,12042,false,'กรอกผิด']),/เปลี่ยนแล้ว/)
-await fails(()=>rpc('patient_booking_record_odometer',[tenant,liveTrip.id,flexRev,14000,14033]),/เหตุผล/)
-flexRev=await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,13000,50,true,'เปลี่ยนมาตรวัด'])
+flexRev=await rpc('patient_booking_record_odometer',[tenant,liveTrip.id,flexRev,14000,14033])
+flexRev=await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,13000,50,true,'   '])
 let flexReport=await rpc('patient_booking_month_report',[tenant,liveTrip.plan.date]);assert.equal(flexReport.trips.find(t=>t.trip_id===liveTrip.id).distance,null)
 flexRev=await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,null,null,true,'มาตรวัดมีปัญหา'])
-await fails(()=>rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,13000,13044,false,'']),/เหตุผล/)
-await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,13000,13044,false,'ตรวจสอบแก้ไขแล้ว'])
+flexRev=await rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,13000,13044,false,null])
+const repaired=(await rpc('patient_booking_month_report',[tenant,liveTrip.plan.date])).trips.find(t=>t.trip_id===liveTrip.id)
+assert.equal(repaired.distance,44)
+const corrected=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===liveTrip.id)
+assert.equal(corrected.odometer_note,'')
+await db.exec('RESET ROLE')
+const correctionEvent=(await db.query("SELECT actor_id,created_at,detail FROM public.patient_booking_events WHERE entity_id=$1 AND action='odometer_recorded' AND detail->>'end'='13033'",[liveTrip.id])).rows[0]
+assert.equal(correctionEvent.detail.previous_start,12000);assert.equal(correctionEvent.detail.previous_end,12042);assert.equal(correctionEvent.detail.note,'')
+assert.equal(correctionEvent.actor_id,coordinator);assert(correctionEvent.created_at)
 await actor(citizen);await fails(()=>rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,1,2,true,'กรอกผิด']),/คนขับ/)
 await db.exec('RESET ROLE');await db.query("UPDATE public.profiles SET role='citizen' WHERE id=$1",[driver]);await actor(driver)
 await fails(()=>rpc('patient_booking_save_odometer',[tenant,liveTrip.id,flexRev,1,2,true,'กรอกผิด']),/ยังเป็นเจ้าหน้าที่/)
 await db.exec('RESET ROLE');await db.query("UPDATE public.profiles SET role='staff' WHERE id=$1",[driver])
-console.log('PASS flexible odometer corrections require reason, revoked driver denied, stale and legacy writes guarded, anomaly excluded from report, repair restored')
+console.log('PASS flexible odometer corrections accept blank/null reasons with before/after audit, revoked driver denied, stale and legacy writes guarded, anomaly excluded from report, repair restored')
 // Schedule communication: isolated CAS, strict public projection, authorized roles only.
 await actor(coordinator)
 const scheduleBefore=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===id(410))

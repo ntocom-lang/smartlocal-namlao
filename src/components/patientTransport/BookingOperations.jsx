@@ -245,8 +245,8 @@ export function OdometerForm({ trip, trips, busy, onSave, quick }) {
   const distance = start !== '' && end !== '' ? Number(end) - Number(start) : null
   const abnormal = distance !== null && (distance < 0 || distance > 2000)
   const correction = (trip.odometer_start != null && Number(start) !== trip.odometer_start) || (trip.odometer_end != null && (end === '' || Number(end) !== trip.odometer_end)) || trip.odometer_issue
-  const needsReason = correction || issue
-  const compact = quick && !full && start !== '' && start != null && !needsReason
+  const showReason = correction || issue
+  const compact = quick && !full && start !== '' && start != null && !showReason
   return <form className={`mt-3 grid gap-3 rounded-xl bg-slate-50 p-3 ${compact ? 'sm:grid-cols-[1fr_auto]' : 'sm:grid-cols-[1fr_1fr_auto]'}`} onSubmit={async e => { e.preventDefault(); if (!edit.conflict && await onSave(edit.snapshot, start === '' ? null : Number(start), end === '' ? null : Number(end), issue, reason)) edit.reset() }}>
     {compact
       ? <p className="sm:col-span-full">เลขไมล์ออก <strong>{start}</strong> ({trip.odometer_start != null ? 'บันทึกไว้แล้ว' : 'ต่อจากเที่ยวก่อน'}) <button type="button" className="ml-1 min-h-11 font-semibold text-sky-800 underline" onClick={() => setFull(true)}>แก้</button></p>
@@ -254,8 +254,8 @@ export function OdometerForm({ trip, trips, busy, onSave, quick }) {
     <label>เลขไมล์กลับ<input className={inputClass} name="odometer_end" type="number" inputMode="numeric" min={0} max={2147483647} value={end} onChange={e => edit.change('end', e.target.value)} placeholder="กรอกเมื่อกลับถึงพื้นที่" /></label>
     <button className={`${compact ? primaryClass : buttonClass} self-end`} disabled={busy || edit.conflict || (abnormal && !issue)}>{compact ? 'บันทึกเลขไมล์กลับ' : 'บันทึกเลขไมล์'}</button>
     {(!compact || abnormal) && <label className="flex min-h-11 items-center gap-2 sm:col-span-full"><input className="size-5" type="checkbox" checked={issue} onChange={e => edit.change('issue', e.target.checked)} />มาตรวัดมีปัญหา / ระยะทางรอตรวจสอบ</label>}
-    {needsReason && <label className="sm:col-span-full">เหตุผลที่แก้เลขไมล์<select aria-label="เหตุผลที่แก้เลขไมล์" className={inputClass} required value={reason} onChange={e => edit.change('reason', e.target.value)}><option value="">เลือกเหตุผล</option>{['กรอกผิด', 'ตรวจเลขจากมาตรวัดแล้ว', 'เปลี่ยนมาตรวัด', 'มาตรวัดมีปัญหา', 'ตรวจสอบแก้ไขแล้ว'].map(r => <option key={r}>{r}</option>)}</select></label>}
-    {(issue || abnormal) ? <p className="text-sm text-amber-900 sm:col-span-full">{issue ? 'บันทึกได้ ระยะทางรอตรวจสอบและยังไม่นับในยอดรวม' : 'เลขไมล์ผิดปกติ หากมาตรวัดมีปัญหาให้เลือกช่องด้านบนและระบุเหตุผล'}</p> : distance !== null && <p className="text-sm sm:col-span-full">ระยะทาง {distance} กม.</p>}
+    {showReason && <label className="sm:col-span-full">เหตุผลที่แก้เลขไมล์ (ไม่บังคับ)<select aria-label="เหตุผลที่แก้เลขไมล์" className={inputClass} value={reason} onChange={e => edit.change('reason', e.target.value)}><option value="">ไม่ระบุเหตุผล</option>{['กรอกผิด', 'ตรวจเลขจากมาตรวัดแล้ว', 'เปลี่ยนมาตรวัด', 'มาตรวัดมีปัญหา', 'ตรวจสอบแก้ไขแล้ว'].map(r => <option key={r}>{r}</option>)}</select></label>}
+    {(issue || abnormal) ? <p className="text-sm text-amber-900 sm:col-span-full">{issue ? 'บันทึกได้ ระยะทางรอตรวจสอบและยังไม่นับในยอดรวม' : 'เลขไมล์ผิดปกติ หากมาตรวัดมีปัญหาให้เลือกช่องด้านบนเพื่อบันทึกรอตรวจสอบ'}</p> : distance !== null && <p className="text-sm sm:col-span-full">ระยะทาง {distance} กม.</p>}
     {trip.odometer_note && <p className="text-sm sm:col-span-full">เหตุผลที่บันทึกไว้: {trip.odometer_note}</p>}
     {quick && <p className="text-sm text-slate-600 sm:col-span-full">ใส่ทีหลังได้ · เที่ยวนี้จะรออยู่ตรงนี้จนกว่าจะใส่เลขไมล์กลับ</p>}
     <DraftConflict edit={edit} busy={busy} latest={`เลขไมล์ออก ${trip.odometer_start ?? '—'} · กลับ ${trip.odometer_end ?? '—'}${trip.odometer_issue ? ' · รอตรวจสอบ' : ''}`} />
