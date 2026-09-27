@@ -327,23 +327,20 @@ try{
  await declinedCard.getByText('รถไม่ว่างในช่วงเวลาที่ขอ').waitFor()
  console.log('PASS citizen cancel / cancellation request reach PostgreSQL; coordinator completes it and frees the vehicle; the traveller reads why staff cancelled')
 
- // ── คนขับ: ไป-กลับ 4 ปุ่ม · กดซ้ำหลังเน็ตหลุดทำต่อได้ · ผู้ป่วยแจ้งพร้อมกลับ · เลขไมล์ช่องเดียว ──
+ // ── คนขับ: ไป-กลับ 2 ปุ่ม · เที่ยวเดิมที่บันทึกค้างจบได้ · ผู้ป่วยแจ้งพร้อมกลับ · เลขไมล์ช่องเดียว ──
  const b1Trip=await tripOf(b1),chairTrip=await tripOf(chairD)
  await runSql(()=>db.query("UPDATE public.patient_booking_trips SET state='cancelled' WHERE state IN ('outbound','hospital','returning','issue') AND id NOT IN ($1,$2)",[b1Trip,chairTrip]))
  await page.setViewportSize({width:390,height:900})
  await page.clock.setFixedTime(new Date(`${b1Day}T07:00:00+07:00`))
  await visit('driver');await card(b1Trip).waitFor()
- await click('driverRound',card(b1Trip).getByRole('button',{name:'ออกรถไปรับ',exact:true}));await toast('บันทึกแล้ว · ออกรถไปรับ').waitFor()
+ await click('driverRound',card(b1Trip).getByRole('button',{name:'ออกรถ',exact:true}));await toast('บันทึกแล้ว · ออกรถ').waitFor()
  await runAs(driver,async()=>{const b=(await rpc('patient_booking_workspace',[tenant])).bookings.find(x=>x.id===b1);await rpc('patient_booking_action',[tenant,randomUUID(),b1,b.revision,'passenger_next',''])})
- await click('driverRound',card(b1Trip).getByRole('button',{name:'ส่งถึงโรงพยาบาลแล้ว',exact:true}));await toast('บันทึกแล้ว · ส่งถึงโรงพยาบาลแล้ว').waitFor()
- assert.equal((await bookingRow(b1)).passenger_step,2,'กดซ้ำหลังเน็ตหลุดต้องทำต่อจากขั้นที่ค้าง ไม่ข้ามหรือซ้ำ')
  await visit('newcomer');await page.getByRole('article').filter({hasText:b1.slice(0,8).toUpperCase()}).getByRole('button',{name:'พร้อมให้มารับกลับ',exact:true}).click()
  await toast('บันทึกแล้ว').waitFor();assert.equal((await bookingRow(b1)).return_ready,true)
  await visit('driver');await card(b1Trip).getByText('แจ้งพร้อมให้รับกลับแล้ว').waitFor()
- await click('driverRound',card(b1Trip).getByRole('button',{name:'ออกไปรับกลับ',exact:true}));await toast('บันทึกแล้ว · ออกไปรับกลับ').waitFor()
- await click('driverRound',card(b1Trip).getByRole('button',{name:'ส่งถึงบ้านแล้ว · จบงาน',exact:true}))
+ await click('driverRound',card(b1Trip).getByRole('button',{name:'กลับแล้ว · จบงาน',exact:true}))
  const odo=page.locator(`section[aria-label="จบแล้ว รอเติมเลขไมล์"] article[data-trip="${b1Trip}"]`);await odo.waitFor()
- assert.equal(clicks.driverRound,4,'ไป-กลับ 4 ปุ่ม');const b1Done=await bookingRow(b1);assert.equal(b1Done.status,'completed');assert.equal(b1Done.passenger_step,4)
+ assert.equal(clicks.driverRound,2,'ไป-กลับ 2 ปุ่ม');const b1Done=await bookingRow(b1);assert.equal(b1Done.status,'completed');assert.equal(b1Done.passenger_step,4)
  let startOdo=15000
  if(await odo.getByLabel('เลขไมล์ออก',{exact:true}).count())await odo.getByLabel('เลขไมล์ออก',{exact:true}).fill(String(startOdo))
  else startOdo=Number((await odo.locator('strong').first().innerText()).replace(/\D/g,''))
@@ -353,7 +350,7 @@ try{
  // ── ขาเดียว + แจ้งเหตุขัดข้อง → เจ้าหน้าที่แก้จากกล่องคำขอรถ → คนขับวิ่งต่อจนจบ (2 ปุ่ม) ──
  await page.clock.setFixedTime(new Date(`${helperDay}T07:00:00+07:00`))
  await visit('driver')
- await click('driverOneWay',card(chairTrip).getByRole('button',{name:'ออกรถไปรับ',exact:true}));await toast('บันทึกแล้ว · ออกรถไปรับ').waitFor()
+ await click('driverOneWay',card(chairTrip).getByRole('button',{name:'ออกรถ',exact:true}));await toast('บันทึกแล้ว · ออกรถ').waitFor()
  await card(chairTrip).getByRole('button',{name:'แจ้งเหตุขัดข้อง',exact:true}).click()
  await card(chairTrip).getByRole('button',{name:'รถเสีย / รถมีปัญหา',exact:true}).click()
  await card(chairTrip).getByRole('button',{name:'ส่งให้เจ้าหน้าที่',exact:true}).click()
@@ -361,9 +358,9 @@ try{
  await staffDesk();await row(chairD).getByRole('button',{name:'แก้เหตุขัดข้อง',exact:true}).click()
  await sheet.getByRole('button',{name:'แก้ไขแล้ว เดินรถต่อ',exact:true}).click();await sheet.waitFor({state:'detached'})
  await page.setViewportSize({width:390,height:900});await visit('driver')
- await click('driverOneWay',card(chairTrip).getByRole('button',{name:'ส่งถึงโรงพยาบาลแล้ว · จบงาน',exact:true}));await toast('บันทึกแล้ว · ส่งถึงโรงพยาบาลแล้ว · จบงาน').waitFor()
+ await click('driverOneWay',card(chairTrip).getByRole('button',{name:'กลับแล้ว · จบงาน',exact:true}));await toast('บันทึกแล้ว · กลับแล้ว · จบงาน').waitFor()
  const chairDone=await bookingRow(chairD);assert.equal(chairDone.status,'completed');assert.equal(chairDone.passenger_step,2);assert.equal(clicks.driverOneWay,2,'ขาเดียว 2 ปุ่ม')
- console.log('PASS driver: round trip in 4 presses with resume after a dropped connection, ready-to-return bell, one-field odometer; one-way in 2 presses with incident resolved from the inbox')
+ console.log('PASS driver: round trip in 2 presses with legacy partial-trip completion, ready-to-return bell, one-field odometer; one-way in 2 presses with incident resolved from the inbox')
 
  // ── เอกสารถึงกองทุนผ่านกล่องคำขอรถ + ร่างที่กรอกค้างไม่ถูกเขียนทับเงียบ ๆ ──
  {

@@ -5,7 +5,7 @@ import { activeOrgTerms } from './orgTerms.js'
 // ทำให้เทศบาลเห็นข้อความผิดประเภท · org_type ที่ไม่มีตัวย่อ (เช่น 'เทศบาล' เฉยๆ) ใช้คำกลาง
 export function orgAbbr() { return activeOrgTerms().abbr || 'หน่วยงาน' }
 export const BOOKING_STATUS = { submitted: 'รับคำขอแล้ว รอยืนยันรถ', confirmed: 'ยืนยันรถแล้ว', completed: 'จบเที่ยวแล้ว', cancelled: 'ยกเลิกแล้ว' }
-export const TRIP_STATUS = { confirmed: 'ยืนยันรถแล้ว', outbound: 'กำลังรับ–ส่งขาไป', hospital: 'ถึงโรงพยาบาล รอรับกลับ', returning: 'กำลังรับ–ส่งขากลับ', completed: 'จบเที่ยวแล้ว', issue: 'ต้องประสานเหตุขัดข้อง', cancelled: 'ยกเลิกแผนเที่ยว' }
+export const TRIP_STATUS = { confirmed: 'ยืนยันรถแล้ว', outbound: 'กำลังให้บริการ', hospital: 'กำลังให้บริการ', returning: 'กำลังให้บริการ', completed: 'จบเที่ยวแล้ว', issue: 'ต้องประสานเหตุขัดข้อง', cancelled: 'ยกเลิกแผนเที่ยว' }
 export const RETURN_MODES = { wait: 'รอรับกลับ', later: 'กลับมารับภายหลัง', one_way: 'ขาไปอย่างเดียว' }
 export const MOBILITY = { walk: 'เดินได้เอง', wheelchair: 'ใช้รถเข็น', stretcher: 'ใช้เปล' }
 export const inputClass = 'w-full min-h-11 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-900'
@@ -133,34 +133,18 @@ export function suggestGroups(bookings, settings) {
   return groups
 }
 
-// ── งานคนขับ: ปุ่มใหญ่ปุ่มเดียวต่อขั้น (เจ้าของระบบสั่ง 2569-09-21) ──
-// ไป-กลับ 4 ครั้ง · ขาเดียว 2 ครั้ง (เดิม 8 และ 4 ครั้ง เพราะต้องกดรับ/ส่งทีละคนแยกจากการเดินเที่ยว)
-// แต่ละปุ่มยิงคำสั่งเดิมของฐานข้อมูลหลายตัวต่อกัน — กติกาของฐานข้อมูลไม่เปลี่ยน
-// ⚠️ ที่เสียไป: เวลารับขึ้นรถรายคนไม่ถูกบันทึกแยก (บันทึกพร้อมกันตอนส่งถึง) สรุปรายเดือนไม่ได้ใช้ค่านี้
-export const DRIVER_STEPS = { round: ['ออกรถ', 'ถึง รพ.', 'ออกรับกลับ', 'ถึงบ้าน'], one_way: ['ออกรถ', 'ถึง รพ.'] }
+// คนขับบันทึกเฉพาะออกจากสำนักงานและกลับถึงสำนักงาน ไม่ต้องออนไลน์ระหว่างทาง
+export const DRIVER_STEPS = { round: ['ออกรถ', 'กลับแล้ว'], one_way: ['ออกรถ', 'กลับแล้ว'] }
 export function driverProgress(trip) {
-  const oneWay = trip.plan?.return_mode === 'one_way'
-  return { confirmed: 0, outbound: 1, hospital: 2, returning: 3, completed: oneWay ? 2 : 4 }[trip.state] ?? 0
+  return { confirmed: 0, outbound: 1, hospital: 1, returning: 1, completed: 2 }[trip.state] ?? 0
 }
-const riders = (trip, bookings) => bookings.filter(b => b.trip_id === trip.id && b.status === 'confirmed')
-// ป้ายปุ่มใหญ่ของขั้นถัดไป · '' = ไม่มีปุ่ม (รอเจ้าหน้าที่แก้เหตุขัดข้อง จบแล้ว หรือยกเลิก)
-export function driverNext(trip, bookings) {
-  if (!riders(trip, bookings).length && ['outbound', 'hospital', 'returning'].includes(trip.state)) return 'จบเที่ยว · ไม่มีผู้เดินทางแล้ว'
-  const oneWay = trip.plan?.return_mode === 'one_way'
-  return { confirmed: 'ออกรถไปรับ', outbound: oneWay ? 'ส่งถึงโรงพยาบาลแล้ว · จบงาน' : 'ส่งถึงโรงพยาบาลแล้ว', hospital: 'ออกไปรับกลับ', returning: 'ส่งถึงบ้านแล้ว · จบงาน' }[trip.state] || ''
+export function driverNext(trip) {
+  return { confirmed: 'ออกรถ', outbound: 'กลับแล้ว · จบงาน', hospital: 'กลับแล้ว · จบงาน', returning: 'กลับแล้ว · จบงาน' }[trip.state] || ''
 }
-// คำสั่งเดิมที่ต้องยิงเพื่อไปถึงขั้นถัดไป คำนวณจากสถานะล่าสุด ขั้นที่บันทึกแล้วจึงถูกข้ามเอง
-// (เน็ตหลุดกลางทาง กดซ้ำแล้วทำต่อจากที่ค้าง) · booking: null = คำสั่งของเที่ยว
-// ส่งถึงโรงพยาบาล = ผู้เดินทางทุกคน 0→1→2 แล้วเดินเที่ยว · ส่งถึงบ้าน = ทุกคน 2→3→4 แล้วจบเที่ยว
-export function driverSteps(trip, bookings) {
-  const people = riders(trip, bookings)
-  const bump = to => people.flatMap(b => Array.from({ length: Math.max(0, to - (Number(b.passenger_step) || 0)) }, () => ({ booking: b.id, action: 'passenger_next' })))
-  const next = { booking: null, action: 'trip_next' }
-  if (trip.state === 'confirmed') return [next]
-  if (trip.state === 'outbound') return [...bump(2), next]
-  // ไม่เหลือผู้เดินทาง (เจ้าหน้าที่นำออกระหว่างรอรับกลับ) = เดินเที่ยว 2 ครั้งจนจบ ไม่ต้องออกไปรับใคร
-  if (trip.state === 'hospital') return people.length ? [next] : [next, next]
-  if (trip.state === 'returning') return [...bump(4), next]
+// จบทั้งเที่ยวใน transaction เดียว ไม่สร้างเวลาถึงโรงพยาบาล/ออกกลับที่ไม่ได้บันทึกจริง
+export function driverSteps(trip) {
+  if (trip.state === 'confirmed') return [{ booking: null, action: 'trip_next' }]
+  if (['outbound', 'hospital', 'returning'].includes(trip.state)) return [{ booking: null, action: 'trip_finish' }]
   return []
 }
 
