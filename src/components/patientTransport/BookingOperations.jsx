@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ListCard } from './StaffShell'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
+import { useTenant } from '../../contexts/TenantContext'
+import { supabase } from '../../lib/supabase'
 import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer } from '../../lib/patientBooking'
 
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
@@ -54,11 +56,46 @@ export function BookingCards({ bookings, trips, onAction, busy }) {
 
 // รายงานและประวัติ — สรุปรายเดือนสำหรับแนบเบิก และรายการเหตุการณ์ย้อนหลัง
 export function QueueReport({ workspace, busy, onMonthReport }) {
-  return <ListCard title="รายงานและประวัติ" count={workspace.events.length}>
+  const { tenant } = useTenant()
+  const [page, setPage] = useState(1)
+  const [history, setHistory] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [retry, setRetry] = useState(0)
+  useEffect(() => {
+    if (!tenant?.id) return
+    let active = true
+    supabase.rpc('patient_booking_events_page', { p_muni: tenant.id, p_page: page }).then(({ data, error: requestError }) => {
+      if (!active) return
+      if (requestError || !data) {
+        setError('โหลดประวัติไม่สำเร็จ กรุณาลองอีกครั้ง')
+        setHistory(null)
+      } else {
+        setHistory(data)
+        setError('')
+        const lastPage = Math.max(1, Math.ceil(data.total / 20))
+        if (page > lastPage) setPage(lastPage)
+      }
+      setLoading(false)
+    })
+    return () => { active = false }
+  }, [tenant?.id, page, workspace, retry])
+  const total = history?.total ?? 0
+  const pages = Math.max(1, Math.ceil(total / 20))
+  const events = history?.page === page ? history.events : []
+  const changePage = next => { setLoading(true); setHistory(null); setPage(next) }
+  return <ListCard title="รายงานและประวัติ" count={total}>
     <div className="space-y-3 p-4 sm:p-5">
       <MonthReport busy={busy} onPrint={onMonthReport} />
       <p>จบแล้ว {workspace.trips.filter(t => t.state === 'completed').length} เที่ยว · รอดำเนินการ {workspace.trips.filter(t => !['completed', 'cancelled'].includes(t.state)).length} เที่ยว (เที่ยวปิดใน 30 วันล่าสุด)</p>
-      {workspace.events.map((e, i) => <div key={`${e.created_at}-${i}`} className="border-b border-slate-200 py-3"><strong>{e.action}</strong> · {dateTime(e.created_at)}<p className="text-sm">{e.detail?.note || `รายการ ${e.entity_id.slice(0, 8)}`}</p></div>)}
+      {loading && <p role="status">กำลังโหลดประวัติ...</p>}
+      {error && <div role="alert" className="rounded-xl bg-rose-50 p-3 text-rose-800">{error} <button type="button" className={buttonClass} onClick={() => { setLoading(true); setRetry(value => value + 1) }}>ลองอีกครั้ง</button></div>}
+      {!loading && !error && total === 0 && <p>ยังไม่มีประวัติ</p>}
+      {!loading && !error && events.map(e => <div key={e.id} data-report-event className="border-b border-slate-200 py-3"><strong>{e.action}</strong> · {dateTime(e.created_at)}<p className="text-sm">{e.detail?.note || `รายการ ${e.entity_id.slice(0, 8)}`}</p></div>)}
+      {!error && total > 0 && <nav aria-label="แบ่งหน้าประวัติ" className="flex flex-wrap items-center justify-between gap-2 pt-2 text-sm">
+        <span>แสดง {(page - 1) * 20 + 1}–{Math.min(page * 20, total)} จาก {total} รายการ · หน้า {page}/{pages}</span>
+        <div className="flex gap-2"><button type="button" className={buttonClass} disabled={loading || page <= 1} onClick={() => changePage(page - 1)}>ก่อนหน้า</button><button type="button" className={buttonClass} disabled={loading || page >= pages} onClick={() => changePage(page + 1)}>ถัดไป</button></div>
+      </nav>}
     </div>
   </ListCard>
 }
