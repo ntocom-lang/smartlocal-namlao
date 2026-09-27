@@ -21,6 +21,7 @@ import { canFinishWork, isComplaintWorker, requiresResolvedPin } from '../../lib
 import { startComplaintWork } from '../../lib/complaintFinish'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 import { isMissingSignatoryError, prepareComplaintPrint } from '../../lib/complaintPrint'
+import { buildComplaintListHtml } from '../../lib/complaintListPrint'
 import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
 import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef, toReliableImageUrl } from '../../lib/driveStorage'
 import { complaintFolderPath, complaintFileName } from '../../lib/driveFolders'
@@ -1728,61 +1729,14 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   }
 
   function handlePrintComplaints() {
-    const now = new Date()
-    const thDate = now.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
-    const filterLabel = FILTER_TABS[filterTab]
-    const rows = filtered.map((c, i) => {
-      const d = new Date(c.created_at)
-      const num = c.ref_no ?? '—'
-      const dateStr = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
-      const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
-      const reporter = c.reporter_name || c.profiles?.full_name || '—'
-      const status = STATUS[c.status]?.label ?? c.status
-      const detail = (c.detail ?? '').substring(0, 60) + ((c.detail ?? '').length > 60 ? '...' : '')
-      return `<tr>
-        <td style="text-align:center">${i + 1}</td>
-        <td style="text-align:center">${num}</td>
-        <td>${dateStr}</td>
-        <td>${cat}</td>
-        <td>${reporter}</td>
-        <td>${detail}</td>
-        <td style="text-align:center">${status}</td>
-      </tr>`
-    }).join('')
-
-    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
-<title>รายการคำร้อง</title>
-${GOV_FONT_LINK}
-<style>
-  ${govPageCss({ size: 'A4 landscape' })}
-  /* ตารางคุมขนาดตัวอักษรเองรายคอลัมน์ (12-16px) เพื่อให้คอลัมน์ครบใน A4 แนวนอน
-     จึงใช้เฉพาะตัวตนของฟอนต์จากมาตรฐานกลาง ไม่บังคับ 16pt ทั้งใบ */
-  body { ${govDocFontIdentityCss()} font-size: 14px; color: #111; }
-  h2 { text-align:center; font-size:16px; margin:0 0 4px; }
-  p.sub { text-align:center; font-size:13px; color:#555; margin:0 0 16px; }
-  table { width:100%; border-collapse:collapse; font-size:12px; }
-  th { background:#1d4ed8; color:#fff; padding:6px 8px; text-align:center; }
-  td { padding:5px 8px; border-bottom:1px solid #e5e7eb; vertical-align:top; }
-  tr:nth-child(even) td { background:#f8fafc; }
-  .footer { margin-top:12px; font-size:12px; color:#555; text-align:right; }
-  @media print { button { display:none; } }
-</style></head><body>
-<h2>${tenant?.name ?? ''} — รายการคำร้อง</h2>
-<p class="sub">ตัวกรอง: ${filterLabel} &nbsp;|&nbsp; ทั้งหมด ${filtered.length} รายการ &nbsp;|&nbsp; พิมพ์วันที่ ${thDate}</p>
-<table>
-  <thead><tr>
-    <th style="width:40px">ที่</th>
-    <th style="width:80px">เลขที่</th>
-    <th style="width:80px">วันที่</th>
-    <th style="width:130px">ประเภท</th>
-    <th style="width:110px">ผู้แจ้ง</th>
-    <th>รายละเอียด</th>
-    <th style="width:90px">สถานะ</th>
-  </tr></thead>
-  <tbody>${rows}</tbody>
-</table>
-<div class="footer">${escapeHtml(govEServiceOriginText(tenant))}</div>
-</body></html>`
+    // ชื่อผู้แจ้ง/รายละเอียดเป็นข้อความที่ประชาชนพิมพ์เอง — ตัวสร้างใบ escape ทุกค่าให้แล้ว ห้ามต่อ HTML เองที่นี่
+    const html = buildComplaintListHtml({
+      tenant,
+      filterLabel: FILTER_TABS[filterTab],
+      complaints: filtered,
+      categoryLabels: CATEGORY_LABEL,
+      statusLabels: Object.fromEntries(Object.entries(STATUS).map(([key, s]) => [key, s.label])),
+    })
     const w = window.open('', '_blank', 'width=1100,height=700')
     w.document.write(html)
     w.document.close()
@@ -1798,6 +1752,7 @@ ${GOV_FONT_LINK}
   function handlePrintOdorComplaints(rowsToPrint, filterSummary) {
     const now = new Date()
     const thDate = now.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+    // filterSummary มีชื่อสถานที่/อาการที่ประชาชนพิมพ์เอง (ตัวเลือกกรองดึงจากคำร้อง) — escape ตอนแปะหัวรายงาน
     const filterLabel = filterSummary || 'ทั้งหมด'
 
     // ⚠️ ทุกค่าที่มาจากผู้ใช้ต้องผ่าน escapeHtml ก่อนต่อเข้า template — สถานที่/หมู่บ้านเป็น free text
@@ -1900,8 +1855,8 @@ ${GOV_FONT_LINK}
   .cols > div { flex:1; }
   @media print { button { display:none; } }
 </style></head><body>
-<h2>${tenant?.name ?? ''} — รายงานคำร้องกลิ่นเหม็นรบกวน (มลพิษทางอากาศ)</h2>
-<p class="sub">เรียน ผู้บังคับบัญชา เพื่อทราบ &nbsp;|&nbsp; ตัวกรอง: ${filterLabel} &nbsp;|&nbsp; ทั้งหมด ${rowsToPrint.length} รายการ &nbsp;|&nbsp; พิมพ์วันที่ ${thDate}</p>
+<h2>${escapeHtml(tenant?.name ?? '')} — รายงานคำร้องกลิ่นเหม็นรบกวน (มลพิษทางอากาศ)</h2>
+<p class="sub">เรียน ผู้บังคับบัญชา เพื่อทราบ &nbsp;|&nbsp; ตัวกรอง: ${escapeHtml(filterLabel)} &nbsp;|&nbsp; ทั้งหมด ${rowsToPrint.length} รายการ &nbsp;|&nbsp; พิมพ์วันที่ ${thDate}</p>
 ${summaryHtml}
 <table>
   <thead><tr>
