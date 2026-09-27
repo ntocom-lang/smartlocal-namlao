@@ -13,6 +13,7 @@ import { previousOdometer, thaiDay } from '../src/lib/patientBooking.js'
 process.env.PATIENT_UI_QA = '1'
 const { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, baseBooking } = await import('./patient-booking-db.test.mjs')
 await db.exec(await readFile(new URL('../supabase/migrations/20260927180000_patient_booking_events_page.sql', import.meta.url), 'utf8'))
+await db.exec(await readFile(new URL('../supabase/migrations/20260927190000_patient_booking_move_into_trip.sql', import.meta.url), 'utf8'))
 await actor(admin); await rpc('patient_booking_save_settings',[tenant,(await rpc('patient_booking_workspace',[tenant])).settings.revision,settings])
 const setupTenant='00000000-0000-4000-8000-000000009001',setupAdmin='00000000-0000-4000-8000-000000009002',setupPartner='00000000-0000-4000-8000-000000009003'
 // ผู้ใช้ใหม่ที่ยังไม่เคยจอง — ใช้วัด "จองครั้งแรก" กับ "จองครั้งต่อไป" (เติมข้อมูลจากครั้งก่อน)
@@ -29,6 +30,7 @@ let chain = Promise.resolve()
 const users = { setupadmin:setupAdmin, citizen, newcomer, coordinator, driver, admin, anonymous: null }
 const order = {
  patient_booking_reschedule:['p_muni','p_op','p_booking','p_scope','p_expected','p_appointment','p_return','p_not_departed'],
+ patient_booking_move_into_trip:['p_muni','p_op','p_booking','p_expected','p_target','p_target_revision','p_target_booking','p_target_booking_revision'],
  patient_booking_delete:['p_muni','p_op','p_booking','p_revision','p_trip_revision','p_docs_revision','p_reason'],
  patient_booking_update_schedule:['p_muni','p_trip','p_revision','p_notice','p_pickup','p_return'],
  patient_booking_info:['p_muni'],patient_booking_workspace:['p_muni'],patient_booking_mine:['p_muni'],patient_booking_submit:['p_muni','p_id','p_data','p_staff_entry'],
@@ -631,6 +633,54 @@ try{
  assert.equal(new Date(movedUi.return_at).toISOString(),new Date(at(moveUiNext,'13:00')).toISOString())
  assert.notEqual(movedUi.trip_id,moveUiTrip)
  console.log('PASS mobile staff rescheduling through actual dialog: new day, appointment, return and reservation persisted')
+ // Moving onto a day with a confirmed, overlapping trip must join that trip instead of creating a second vehicle reservation.
+ const joinSourceDate=new Date(`${moveUiNext}T12:00:00Z`);joinSourceDate.setUTCDate(joinSourceDate.getUTCDate()+2)
+ const joinSourceDay=joinSourceDate.toISOString().slice(0,10);joinSourceDate.setUTCDate(joinSourceDate.getUTCDate()+1)
+ const joinTargetDay=joinSourceDate.toISOString().slice(0,10)
+ const joinSource=randomUUID(),joinTarget=randomUUID(),joinSourceTrip=randomUUID(),joinTargetTrip=randomUUID()
+ await submitAs(citizen,joinSource,{patient_name:'[TEST] ย้ายร่วมเที่ยวต้นทาง',phone:'0800000761',companions:0,appointment_at:at(joinSourceDay,'10:00'),return_at:at(joinSourceDay,'14:00')})
+ await submitAs(citizen,joinTarget,{patient_name:'[TEST] ย้ายร่วมเที่ยวปลายทาง',phone:'0800000762',companions:0,appointment_at:at(joinTargetDay,'10:00'),return_at:at(joinTargetDay,'14:00')})
+ await runAs(coordinator,async()=>{
+  for(const [id,tripId] of [[joinSource,joinSourceTrip],[joinTarget,joinTargetTrip]]){
+   const plan=await rpc('patient_booking_preview',[tenant,[id],'']);assert.deepEqual(plan.errors,[])
+   await rpc('patient_booking_confirm',[tenant,tripId,[id],plan,''])
+  }
+ })
+ const beforeJoin=await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))
+ const sourceSnapshot={trip:joinSourceTrip,revision:beforeJoin.trips.find(t=>t.id===joinSourceTrip).revision,
+  docs_revision:beforeJoin.trips.find(t=>t.id===joinSourceTrip).docs_revision,schedule_revision:beforeJoin.trips.find(t=>t.id===joinSourceTrip).schedule_revision,
+  settings_revision:beforeJoin.settings.revision,bookings:{[joinSource]:beforeJoin.bookings.find(b=>b.id===joinSource).revision}}
+ const targetRevision=beforeJoin.trips.find(t=>t.id===joinTargetTrip).revision
+ const targetBookingRevision=beforeJoin.bookings.find(b=>b.id===joinTarget).revision
+ const moveArgs=[tenant,randomUUID(),joinSource,sourceSnapshot,joinTargetTrip,targetRevision,joinTarget,targetBookingRevision]
+ await assert.rejects(runAs(citizen,()=>rpc('patient_booking_move_into_trip',moveArgs)),/เฉพาะเจ้าหน้าที่/)
+ await assert.rejects(runAs(driver,()=>rpc('patient_booking_move_into_trip',moveArgs)),/เฉพาะเจ้าหน้าที่/)
+ await assert.rejects(runAs(coordinator,()=>rpc('patient_booking_move_into_trip',[...moveArgs.slice(0,5),targetRevision+1,...moveArgs.slice(6)])),/เที่ยวเปลี่ยน/)
+ await runSql(()=>db.query('UPDATE public.patient_booking_settings SET seats=1 WHERE municipality_id=$1',[tenant]))
+ const capacityBefore=await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))
+ await assert.rejects(runAs(coordinator,()=>rpc('patient_booking_move_into_trip',moveArgs)),/ที่นั่งไม่พอ/)
+ assert.deepEqual(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant])),capacityBefore,'capacity failure must roll back both trips and the rider')
+ await runSql(()=>db.query('UPDATE public.patient_booking_settings SET seats=4 WHERE municipality_id=$1',[tenant]))
+ await staffDesk();await row(joinSource).click()
+ await sheet.locator('summary').filter({hasText:'จัดการเพิ่มเติม'}).click()
+ await sheet.getByRole('button',{name:'ย้ายไปร่วมเที่ยวที่มีอยู่',exact:true}).click()
+ await sheet.getByLabel('เลือกเที่ยวปลายทาง').selectOption(joinTargetTrip)
+ await sheet.getByText(/วันเวลานัดใหม่.*รับกลับ/).waitFor()
+ await page.setViewportSize({width:320,height:900})
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'ย้ายร่วมเที่ยว 320px overflow')
+ await sheet.getByRole('button',{name:'ย้ายไปร่วมเที่ยวนี้',exact:true}).click()
+ await sheet.getByRole('status').filter({hasText:'ย้ายไปร่วมเที่ยวแล้ว'}).waitFor()
+ const afterJoin=await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))
+ assert.equal(afterJoin.bookings.find(b=>b.id===joinSource).trip_id,joinTargetTrip)
+ assert.equal(afterJoin.bookings.find(b=>b.id===joinSource).appointment_at,afterJoin.bookings.find(b=>b.id===joinTarget).appointment_at)
+ assert.equal(afterJoin.bookings.find(b=>b.id===joinSource).return_at,afterJoin.bookings.find(b=>b.id===joinTarget).return_at)
+ assert.equal(afterJoin.trips.find(t=>t.id===joinSourceTrip).state,'cancelled')
+ assert.equal(afterJoin.trips.find(t=>t.id===joinTargetTrip).booking_ids.length,2)
+ const persistedMove=await runSql(async()=>(await db.query("SELECT id,payload FROM public.patient_booking_operations WHERE payload->>'action'='move_into_trip' ORDER BY created_at DESC LIMIT 1")).rows[0])
+ const replay=persistedMove.payload
+ assert.deepEqual(await runAs(coordinator,()=>rpc('patient_booking_move_into_trip',[tenant,persistedMove.id,joinSource,replay.expected,joinTargetTrip,replay.target_revision,joinTarget,replay.target_booking_revision])),replay.result)
+ assert.deepEqual(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant])),afterJoin,'retry must not alter trips or duplicate notices')
+ console.log('PASS confirmed rider joins existing trip through staff UI; original preserved, guards, replay and 320px')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}
