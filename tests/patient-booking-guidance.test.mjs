@@ -91,32 +91,20 @@ test('one next-step button per row, most urgent first', () => {
   ].find(a => a.id === id).rank)
   assert.deepEqual([...ranks].sort((x, y) => x - y), ranks)
 })
-test('driver: round trip is 4 big presses, one-way is 2, each press fires the old commands in order', () => {
-  const trip = (state, mode = 'wait') => ({ id: 'T', state, plan: { return_mode: mode } })
-  const rider = (id, step, status = 'confirmed') => ({ id, trip_id: 'T', status, passenger_step: step })
-  const two = [rider('A', 0), rider('B', 0), rider('X', 0, 'cancelled')]
-  const presses = ['confirmed', 'outbound', 'hospital', 'returning'].map(state => driverNext(trip(state), two))
-  assert.deepEqual(presses, ['ออกรถไปรับ', 'ส่งถึงโรงพยาบาลแล้ว', 'ออกไปรับกลับ', 'ส่งถึงบ้านแล้ว · จบงาน'])
-  assert.equal(driverNext(trip('outbound', 'one_way'), two), 'ส่งถึงโรงพยาบาลแล้ว · จบงาน')
-  assert.equal(driverNext(trip('issue'), two), '')
-  assert.equal(driverNext(trip('completed'), two), '')
-  // ส่งถึงโรงพยาบาล = ทุกคน 0→1→2 (ข้ามคนที่ถูกนำออกแล้ว) แล้วเดินเที่ยว
-  assert.deepEqual(driverSteps(trip('outbound'), two).map(s => `${s.booking || 'trip'}:${s.action}`),
-    ['A:passenger_next', 'A:passenger_next', 'B:passenger_next', 'B:passenger_next', 'trip:trip_next'])
-  assert.deepEqual(driverSteps(trip('returning'), [rider('A', 2)]).map(s => s.booking || 'trip'), ['A', 'A', 'trip'])
-  assert.deepEqual(driverSteps(trip('confirmed'), two).map(s => s.action), ['trip_next'])
-  assert.deepEqual(driverSteps(trip('hospital'), two).map(s => s.action), ['trip_next'])
-})
-test('driver: pressing again after a dropped connection continues from where it stopped', () => {
-  const trip = { id: 'T', state: 'outbound', plan: { return_mode: 'wait' } }
-  // A บันทึกไปแล้ว 1 ขั้น B ครบแล้ว — เหลือ A อีก 1 ขั้นกับเดินเที่ยว ไม่ยิงซ้ำของที่บันทึกแล้ว
-  const steps = driverSteps(trip, [{ id: 'A', trip_id: 'T', status: 'confirmed', passenger_step: 1 }, { id: 'B', trip_id: 'T', status: 'confirmed', passenger_step: 2 }])
-  assert.deepEqual(steps.map(s => s.booking || 'trip'), ['A', 'trip'])
-  // ไม่เหลือผู้เดินทาง: จบเที่ยวได้เลย ไม่ต้องออกไปรับใคร
-  assert.equal(driverNext({ ...trip, state: 'hospital' }, []), 'จบเที่ยว · ไม่มีผู้เดินทางแล้ว')
-  assert.deepEqual(driverSteps({ ...trip, state: 'hospital' }, []).map(s => s.action), ['trip_next', 'trip_next'])
-})
-test('driver step bar counts finished steps', () => {
-  assert.deepEqual(['confirmed', 'outbound', 'hospital', 'returning', 'completed'].map(state => driverProgress({ state, plan: { return_mode: 'later' } })), [0, 1, 2, 3, 4])
-  assert.equal(driverProgress({ state: 'completed', plan: { return_mode: 'one_way' } }), 2)
+test('driver: two actions for all modes, legacy states finish atomically', () => {
+  for (const mode of ['wait', 'later', 'one_way']) {
+    for (const state of ['outbound', 'hospital', 'returning']) {
+      const trip = { state, plan: { return_mode: mode } }
+      assert.equal(driverNext(trip), 'กลับแล้ว · จบงาน')
+      assert.deepEqual(driverSteps(trip), [{ booking: null, action: 'trip_finish' }])
+      assert.equal(driverProgress(trip), 1)
+    }
+  }
+  assert.equal(driverNext({state:'confirmed'}), 'ออกรถ')
+  assert.deepEqual(driverSteps({state:'confirmed'}), [{booking:null,action:'trip_next'}])
+  for (const state of ['issue','completed','cancelled']) {
+    assert.equal(driverNext({state}), '')
+    assert.deepEqual(driverSteps({state}), [])
+  }
+  assert.equal(driverProgress({state:'completed'}), 2)
 })

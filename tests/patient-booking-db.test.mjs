@@ -26,7 +26,7 @@ INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST'
 CREATE TABLE public.audit_logs(id bigserial PRIMARY KEY,municipality_id uuid,actor_id uuid,actor_name text,actor_role text,action text,resource_type text,resource_id uuid,resource_label text,metadata jsonb,created_at timestamptz NOT NULL DEFAULT now());
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql','20260923114252_patient_booking_admin_delete.sql','20260924154340_patient_booking_exact_appointment_hours.sql','20260924232558_patient_booking_month_calendar.sql','20260926114444_patient_booking_all_days_public_pending.sql','20260926141301_patient_booking_optional_odometer_reason.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql','20260923114252_patient_booking_admin_delete.sql','20260924154340_patient_booking_exact_appointment_hours.sql','20260924232558_patient_booking_month_calendar.sql','20260926114444_patient_booking_all_days_public_pending.sql','20260926141301_patient_booking_optional_odometer_reason.sql','20260927040000_patient_booking_two_driver_steps.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -605,6 +605,40 @@ await fails(()=>rpc('patient_booking_calendar',[tenant,horizon.outside,horizon.o
 await actor(coordinator)
 await fails(()=>rpc('patient_booking_submit',[tenant,randomUUID(),{...base,appointment_at:`${horizon.outside}T10:00:00+07:00`,return_at:null,return_mode:'one_way'},true]),/วันนัดอยู่นอกช่วง/)
 console.log('PASS monthly calendar: nine-month submission/amendment/join, public privacy, exact 12-month limit')
+// Two-action completion is atomic, audited once, and compatible with old partial trips.
+for (const mode of ['wait','later','one_way']) for (const state of ['outbound','hospital','returning']) {
+ await db.exec('RESET ROLE')
+ const tid=randomUUID(),bid=randomUUID(),bid2=randomUUID(),cancelled=randomUUID()
+ await db.query("INSERT INTO public.patient_booking_trips SELECT (jsonb_populate_record(NULL::public.patient_booking_trips,to_jsonb(t)||jsonb_build_object('id',$1::uuid,'state',$2::text,'revision',1,'booking_ids',jsonb_build_array($3::uuid,$4::uuid,$5::uuid),'plan',t.plan||jsonb_build_object('return_mode',$6::text)))).* FROM public.patient_booking_trips t WHERE id=$7",[tid,state,bid,bid2,cancelled,mode,distantTrip])
+ for(const newId of [bid,bid2,cancelled]) await db.query("INSERT INTO public.patient_bookings SELECT (jsonb_populate_record(NULL::public.patient_bookings,to_jsonb(b)||jsonb_build_object('id',$1::uuid,'trip_id',$2::uuid,'status',$3::text,'cancel_requested',false,'passenger_step',$4::integer,'revision',1,'return_mode',$5::text))).* FROM public.patient_bookings b WHERE trip_id=$6 LIMIT 1",[newId,tid,newId===cancelled?'cancelled':'confirmed',state==='outbound'?1:2,mode,distantTrip])
+ const assigned=(await db.query('SELECT driver_id FROM public.patient_booking_trips WHERE id=$1',[tid])).rows[0].driver_id
+ const operation=randomUUID()
+ await actor(citizen);await fails(()=>rpc('patient_booking_action',[tenant,operation,tid,1,'trip_finish','']),/ไม่มีสิทธิ์/)
+ await actor(outsider);await fails(()=>rpc('patient_booking_action',[tenant,operation,tid,1,'trip_finish','']),/ไม่มีสิทธิ์/)
+ await actor(assigned);await fails(()=>rpc('patient_booking_action',[tenant,operation,tid,0,'trip_finish','']),/เปลี่ยนแล้ว/)
+ await rpc('patient_booking_action',[tenant,operation,tid,1,'trip_finish',''])
+ await rpc('patient_booking_action',[tenant,operation,tid,1,'trip_finish','']) // lost response retry
+ await db.exec('RESET ROLE')
+ const trip=(await db.query('SELECT state,revision FROM public.patient_booking_trips WHERE id=$1',[tid])).rows[0]
+ assert.equal(trip.state,'completed');assert.equal(trip.revision,2)
+ const riders=(await db.query('SELECT id,status,passenger_step,revision FROM public.patient_bookings WHERE trip_id=$1',[tid])).rows
+ for(const b of riders.filter(b=>b.id!==cancelled)){assert.equal(b.status,'completed');assert.equal(b.passenger_step,mode==='one_way'?2:4);assert.equal(b.revision,2)}
+ assert.equal(riders.find(b=>b.id===cancelled).status,'cancelled');assert.equal(riders.find(b=>b.id===cancelled).revision,1)
+ const events=(await db.query('SELECT action,actor_id FROM public.patient_booking_events WHERE entity_id=$1',[tid])).rows
+ assert.deepEqual(events,[{action:'trip_finish',actor_id:assigned}])
+}
+// No completing before departure, during an incident, or with unresolved cancellation.
+await db.exec('RESET ROLE')
+await db.query("UPDATE public.patient_booking_trips SET state='confirmed' WHERE id=$1",[distantTrip])
+await actor(admin)
+const finishGuardTrip=(await rpc('patient_booking_workspace',[tenant])).trips.find(t=>t.id===distantTrip)
+await fails(()=>rpc('patient_booking_action',[tenant,randomUUID(),distantTrip,finishGuardTrip.revision,'trip_finish','']),/ออกรถแล้ว/)
+await db.exec('RESET ROLE');await db.query("UPDATE public.patient_booking_trips SET state='issue' WHERE id=$1",[distantTrip]);await actor(admin)
+await fails(()=>rpc('patient_booking_action',[tenant,randomUUID(),distantTrip,finishGuardTrip.revision,'trip_finish','']),/ออกรถแล้ว/)
+await db.exec('RESET ROLE');await db.query("UPDATE public.patient_booking_trips SET state='outbound' WHERE id=$1",[distantTrip]);await db.query('UPDATE public.patient_bookings SET cancel_requested=true WHERE trip_id=$1',[distantTrip]);await actor(admin)
+await fails(()=>rpc('patient_booking_action',[tenant,randomUUID(),distantTrip,finishGuardTrip.revision,'trip_finish','']),/ประสานก่อนจบงาน/)
+await db.exec('RESET ROLE');await db.query("UPDATE public.patient_booking_trips SET state='confirmed' WHERE id=$1",[distantTrip]);await db.query('UPDATE public.patient_bookings SET cancel_requested=false WHERE trip_id=$1',[distantTrip])
+console.log('PASS two-action completion: all modes and legacy states, shared riders, cancelled rider preserved, role/tenant/revision guards, retry once, no fabricated intermediate events')
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
 export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay, base as baseBooking }

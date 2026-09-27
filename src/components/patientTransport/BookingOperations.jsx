@@ -45,7 +45,7 @@ export function BookingCards({ bookings, trips, onAction, busy }) {
       {b.cancel_requested && <p className="my-2 rounded-xl bg-amber-50 p-3">ขอยกเลิกแล้ว รอเจ้าหน้าที่ประสานก่อนเปลี่ยนเที่ยว</p>}
       {b.return_ready && <p className="my-2 rounded-xl bg-sky-50 p-3">แจ้งพร้อมกลับแล้ว ไม่ได้หมายความว่ารถจะมาถึงทันที</p>}
       <div className="mt-3 flex flex-wrap gap-2">
-        {b.status === 'confirmed' && b.passenger_step === 2 && b.return_mode !== 'one_way' && !b.return_ready && <button className={buttonClass} disabled={busy} onClick={() => onAction(b, 'ready_return')}>พร้อมให้มารับกลับ</button>}
+        {b.status === 'confirmed' && ['outbound', 'hospital'].includes(trip?.state) && b.return_mode !== 'one_way' && !b.return_ready && <button className={buttonClass} disabled={busy} onClick={() => onAction(b, 'ready_return')}>พร้อมให้มารับกลับ</button>}
         {['submitted', 'confirmed'].includes(b.status) && !b.cancel_requested && <button className={buttonClass} disabled={busy} onClick={() => onAction(b, 'cancel')}>{b.status === 'submitted' ? 'ยกเลิกคำขอ' : 'ขอประสานยกเลิก'}</button>}
       </div>
     </article>
@@ -137,7 +137,7 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
         <p className="text-sm">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</p>
         <p className="text-sm">จุดรับ: {b.pickup}</p>
         {b.cancel_requested && <p className="text-sm font-semibold text-amber-800">ผู้จองขอยกเลิก รอเจ้าหน้าที่ประสาน · ถ้าไม่ได้ขึ้นรถ กด “แจ้งเหตุขัดข้อง”</p>}
-        {b.return_ready && t.state === 'hospital' && <p className="text-sm font-bold text-sky-800">🔔 แจ้งพร้อมให้รับกลับแล้ว</p>}
+        {b.return_ready && ['outbound', 'hospital'].includes(t.state) && <p className="text-sm font-bold text-sky-800">🔔 แจ้งพร้อมให้รับกลับแล้ว</p>}
         <div className="mt-2 flex flex-wrap gap-2">
           {b.phone && <a href={`tel:${b.phone}`} className={`${buttonClass} inline-flex items-center`}>📞 โทร {b.phone}</a>}
           {pin && <a href={`https://www.google.com/maps/dir/?api=1&destination=${b.pickup_lat},${b.pickup_lng}`} target="_blank" rel="noopener noreferrer" className={`${buttonClass} inline-flex items-center`}>📍 นำทางไปจุดรับ</a>}
@@ -147,12 +147,13 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
     {upcoming && <p className="text-sm text-slate-600">ปุ่มบันทึกจะขึ้นในวันเดินทาง</p>}
     {!upcoming && <>
       <DriverStepBar trip={t} />
+      <p className="text-sm text-slate-600">บันทึกตอนออกรถและกลับถึงสำนักงานเมื่อมีอินเทอร์เน็ต ไม่ต้องกดระหว่างทาง</p>
       {t.state === 'issue'
         ? <p className="rounded-xl bg-amber-50 p-3">แจ้งเหตุขัดข้องแล้ว: {t.issue_note || '—'} · รอเจ้าหน้าที่ประสาน แล้วปุ่มจะกลับมาเอง</p>
         : label && <>
           <button type="button" className="min-h-14 w-full rounded-2xl bg-sky-800 px-4 text-lg font-bold text-white disabled:opacity-50" disabled={busy} onClick={() => onAdvance(t, label)}>{label}</button>
           {/* ปุ่มนี้บันทึกผู้เดินทางทุกคนพร้อมกัน — คนที่ไม่ได้ขึ้นรถต้องแจ้งก่อน ไม่งั้นจะถูกบันทึกว่าไปด้วย */}
-          {t.state === 'outbound' && people.length > 0 && <p className="text-sm text-slate-600">{people.length > 1 ? 'กดเมื่อส่งครบทุกคนแล้ว · ' : ''}ถ้ามีผู้ป่วยไม่ได้ขึ้นรถ กด “แจ้งเหตุขัดข้อง” แทน</p>}
+          {t.state === 'outbound' && people.length > 0 && <p className="text-sm text-slate-600">{people.length > 1 ? 'กดจบงานเมื่อส่งครบทุกคนและรถกลับแล้ว · ' : ''}ถ้ามีผู้ป่วยไม่ได้ขึ้นรถ กด “แจ้งเหตุขัดข้อง” แทน</p>}
         </>}
       {t.state !== 'issue' && <IssueReport busy={busy} contactPhone={contactPhone} onReport={note => onAction(t, 'issue', note)} />}
     </>}
@@ -160,7 +161,7 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
 }
 
 // งานคนขับ — เจ้าของระบบสั่ง 2569-09-21 ให้ง่ายที่สุด: การ์ดเที่ยวละใบ ปุ่มใหญ่ปุ่มเดียวบอกขั้นถัดไป
-// ไป-กลับ 4 ครั้ง · ขาเดียว 2 ครั้ง (เดิม 8/4 ครั้ง + ช่องเลขไมล์และช่องเหตุขัดข้องค้างอยู่ทุกการ์ด)
+// ทุกเที่ยว 2 ครั้ง: ออกรถ และกลับแล้ว · จบงาน
 // ปุ่มขึ้นเฉพาะเที่ยวของวันนี้ (หรือเลยวันแล้วยังไม่จบ) · เลขไมล์ถามครั้งเดียวหลังจบงาน ใส่ทีหลังได้
 export function DriverTrips({ workspace, uid, busy, contactPhone, onAdvance, onAction, onOdometer }) {
   const mine = workspace.trips.filter(t => t.driver_id === uid)

@@ -127,10 +127,10 @@ export default function PatientTransportStaff({ onBack } = {}) {
       }
     }, 'นำออกจากเที่ยวแล้ว และแจ้งผู้เกี่ยวข้องในระบบ')
   }
-  // คนขับ: ปุ่มใหญ่ปุ่มเดียวต่อขั้น = ยิงคำสั่งเดิมหลายตัวต่อกัน (รับ/ส่งผู้เดินทางทุกคน แล้วเดินเที่ยว)
-  // อ่านสถานะล่าสุดจากฐานข้อมูลก่อนยิงทุกครั้ง: เน็ตหลุดกลางทาง กดซ้ำได้ ระบบทำต่อจากที่ค้าง
+  // คนขับ: ออกรถหนึ่งคำสั่ง กลับแล้วหนึ่งคำสั่งแบบ atomic รวมผู้เดินทางทั้งเที่ยว
+  // อ่านสถานะล่าสุดก่อนบันทึก: ผลตอบกลับหาย กดซ้ำได้โดยไม่บันทึกจบเที่ยวซ้ำ
   // เที่ยวไปอยู่ขั้นอื่นแล้ว (บันทึกไปแล้วแต่ผลไม่กลับมา/เจ้าหน้าที่หยุดเที่ยว) = หยุด ไม่กดข้ามขั้นให้เอง
-  // ⚠️ p_op ทุกคำสั่ง (#244) · revision นับต่อเองเพราะฐานข้อมูลเพิ่มทีละ 1 ต่อคำสั่ง
+  // ⚠️ p_op ทุกคำสั่ง (#244) · ฐานข้อมูลตรวจ revision และบันทึกทั้งเที่ยวใน transaction เดียว
   const TRIP_ORDER = ['confirmed', 'outbound', 'hospital', 'returning', 'completed']
   function advanceTrip(trip, label) {
     return task(async call => {
@@ -138,15 +138,10 @@ export default function PatientTransportStaff({ onBack } = {}) {
       const latest = fresh?.trips?.find(t => t.id === trip.id)
       if (!latest) throw new Error('ไม่พบเที่ยวนี้แล้ว กรุณาโหลดข้อมูลล่าสุด')
       if (latest.state !== trip.state) return { moved: latest.state, ahead: TRIP_ORDER.indexOf(latest.state) > TRIP_ORDER.indexOf(trip.state) }
-      const revisions = new Map((fresh.bookings || []).map(b => [b.id, b.revision]))
-      let tripRevision = latest.revision
-      for (const step of driverSteps(latest, fresh.bookings || [])) {
-        const revision = step.booking ? revisions.get(step.booking) : tripRevision
-        const args = { p_entity: step.booking || latest.id, p_revision: revision, p_action: step.action, p_note: '' }
-        await call('patient_booking_action', { ...args, p_op: op(JSON.stringify(args)) })
-        if (step.booking) revisions.set(step.booking, revision + 1)
-        else tripRevision += 1
-      }
+      const [step] = driverSteps(latest)
+      if (!step) throw new Error('เที่ยวนี้ยังไม่พร้อมบันทึก กรุณาตรวจสถานะล่าสุด')
+      const args = { p_entity: latest.id, p_revision: latest.revision, p_action: step.action, p_note: '' }
+      await call('patient_booking_action', { ...args, p_op: op(JSON.stringify(args)) })
       return { done: true }
     }, out => {
       if (out?.moved) return out.ahead ? 'ขั้นนี้บันทึกไว้แล้ว หน้าจอแสดงขั้นถัดไปให้แล้ว' : `สถานะเที่ยวเปลี่ยนเป็น “${TRIP_STATUS[out.moved] || out.moved}” แล้ว ตรวจหน้าจออีกครั้ง`

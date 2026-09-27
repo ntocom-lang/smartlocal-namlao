@@ -223,7 +223,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
   const remove = note => onRemove(b, trip, note).then(ok => { if (ok) onClose(); return ok })
   const showProblem = problem && b.status === 'submitted'
   // เงื่อนไขเดียวกับปุ่ม "พร้อมให้มารับกลับ" ฝั่งประชาชน (BookingOperations) และที่ฐานข้อมูลตรวจ
-  const readyReturn = b.status === 'confirmed' && b.passenger_step === 2 && b.return_mode !== 'one_way' && !b.return_ready
+  const readyReturn = b.status === 'confirmed' && ['outbound', 'hospital'].includes(trip?.state) && b.return_mode !== 'one_way' && !b.return_ready
   // พิมพ์หนังสือนำส่ง + ใบคำขอของทั้งเที่ยว (ชุดเดียวกับปุ่มในกล่อง "เอกสารส่งกองทุน") — มีเฉพาะคำขอที่ยืนยันรถแล้ว
   // ยังไม่ยืนยัน = ยังไม่มีเที่ยว ไม่มีหนังสือให้พิมพ์ · คำขอ/เที่ยวที่ยกเลิกแล้วไม่ต้องส่งเอกสารถึงกองทุน
   const printable = trip && b.status !== 'cancelled' && trip.state !== 'cancelled'
