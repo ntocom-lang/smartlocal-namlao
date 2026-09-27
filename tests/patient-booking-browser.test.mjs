@@ -117,6 +117,7 @@ try{
  console.log('PASS first-time empty draft settings saved without enabling booking')
  await page.locator('select').filter({has:page.locator(`option[value="${setupPartner}"]`)}).selectOption(setupPartner)
  await page.getByLabel('บัญชีคนขับ',{exact:true}).selectOption(setupAdmin)
+ await page.locator('summary').filter({hasText:'เจ้าหน้าที่ผู้ยืนยันคิว'}).click()
  await page.getByRole('group',{name:'เจ้าหน้าที่ผู้ยืนยันคิว',exact:true}).getByRole('checkbox').check()
  await page.getByLabel('ที่นั่งผู้โดยสาร ไม่รวมคนขับ',{exact:true}).fill('4');await page.getByLabel('ที่ยึดรถเข็น',{exact:true}).fill('1');await page.getByLabel('ที่ยึดเปล',{exact:true}).fill('1');await page.getByLabel('เบอร์ติดต่อหน่วยงาน',{exact:true}).fill('0800000000')
  await page.getByRole('button',{name:'เพิ่มเส้นทาง',exact:true}).click();await page.getByLabel('ชื่อโรงพยาบาล — พื้นที่รับ',{exact:true}).fill('TEST โรงพยาบาลใกล้เคียง');await page.getByLabel('นาทีต่อขา',{exact:true}).fill('30')
@@ -127,6 +128,7 @@ try{
 
  // ── บัญชีเดียวสองหน้าที่ (ผู้จัดคิว + คนขับ) เห็นทั้ง "คำขอรถ" และ "งานคนขับ" แม้ยังไม่มีเที่ยว ──
  await visit('admin');await page.getByRole('button',{name:'ตั้งค่า',exact:true}).click()
+ await page.locator('summary').filter({hasText:'เจ้าหน้าที่ผู้ยืนยันคิว'}).click()
  const dualCheckbox=page.getByRole('group',{name:'เจ้าหน้าที่ผู้ยืนยันคิว',exact:true}).getByRole('checkbox',{name:'Driver TEST',exact:true})
  await dualCheckbox.check();await page.getByLabel('บัญชีคนขับ',{exact:true}).selectOption(coordinator);await page.getByLabel('บัญชีคนขับ',{exact:true}).selectOption(driver);assert.equal(await dualCheckbox.isChecked(),true)
  await page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true}).click();await toast('บันทึกค่าตั้งต้นแล้ว').waitFor()
