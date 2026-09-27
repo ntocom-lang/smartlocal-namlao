@@ -178,6 +178,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
   }, 'เตรียมสรุปรายเดือนไม่สำเร็จ')
   const recordOdometer = (trip, start, end, issue, reason) => mutate('patient_booking_save_odometer', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_start: start, p_end: end, p_issue: issue, p_note: reason }, 'บันทึกเลขไมล์แล้ว')
   const recordLetter = (trip, letterNo, letterDate) => mutate('patient_booking_record_letter', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_letter_no: letterNo, p_letter_date: letterDate }, 'บันทึกเลขหนังสือนำส่งแล้ว')
+  const reschedule = args => task(call => call('patient_booking_reschedule', { ...args, p_op: op(`reschedule:${JSON.stringify(args)}`) }), out => out?.saved ? 'เปลี่ยนวันเวลาแล้ว ปฏิทินและงานคนขับใช้คิวใหม่แล้ว' : '')
   const updateSchedule = (trip, revision, publicNotice, pickup, back) => mutate('patient_booking_update_schedule', { p_trip: trip, p_revision: revision, p_notice: publicNotice, p_pickup: pickup, p_return: back }, 'บันทึกประกาศและเวลาประมาณการแล้ว')
   // ปุ่มหลักของกล่อง อยู่ในแถบเครื่องมือที่เดียวกับปุ่ม "รับแจ้งที่เคาน์เตอร์" ของคำร้อง
   // จอมือถือใช้ชื่อสั้น ไม่งั้นปุ่มเบียดช่องค้นหาจนเหลือแค่ไอคอน
@@ -198,7 +199,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
         detailOnly={view === 'calendar'} initialOpenId={calendarBookingId} onCloseBooking={() => setCalendarBookingId(null)}
         currentUserId={uid} onOpenDriver={() => { setCalendarBookingId(null); setView('driver') }}
         created={created} onClearCreated={() => setCreated(null)} onDelete={deleteBooking} onConfirm={confirm} onJoin={joinIntoTrip} onAction={action} onRemove={removePassenger} onAmend={amend}
-        onRecordLetter={recordLetter} onPrintLetter={printLetter} onOdometer={recordOdometer} onUpdateSchedule={updateSchedule}
+        onRecordLetter={recordLetter} onPrintLetter={printLetter} onOdometer={recordOdometer} onReschedule={reschedule} onUpdateSchedule={updateSchedule}
         onReload={reload} onSettings={() => setView('settings')} />}
       {view === 'calendar' && isCoordinator && <StaffBookingCalendar workspace={workspace} onOpenBooking={setCalendarBookingId} />}
       {view === 'report' && isCoordinator && <QueueReport workspace={workspace} busy={busy} onMonthReport={printMonth} />}

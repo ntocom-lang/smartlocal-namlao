@@ -27,6 +27,7 @@ await db.query("INSERT INTO public.locations(municipality_id,name,sort_order) VA
 let chain = Promise.resolve()
 const users = { setupadmin:setupAdmin, citizen, newcomer, coordinator, driver, admin, anonymous: null }
 const order = {
+ patient_booking_reschedule:['p_muni','p_op','p_booking','p_scope','p_expected','p_appointment','p_return','p_not_departed'],
  patient_booking_delete:['p_muni','p_op','p_booking','p_revision','p_trip_revision','p_docs_revision','p_reason'],
  patient_booking_update_schedule:['p_muni','p_trip','p_revision','p_notice','p_pickup','p_return'],
  patient_booking_info:['p_muni'],patient_booking_workspace:['p_muni'],patient_booking_mine:['p_muni'],patient_booking_submit:['p_muni','p_id','p_data','p_staff_entry'],
@@ -77,7 +78,8 @@ const server=await createServer({configFile:false,plugins:[plugin,react(),tailwi
 await server.listen();const address=server.httpServer.address();const base=`http://127.0.0.1:${address.port}`
 const browser=await chromium.launch({channel:'msedge',headless:true})
 const page=await browser.newPage({viewport:{width:390,height:900}});const errors=[]
-page.on('pageerror',e=>errors.push(e.message))
+page.setDefaultTimeout(20000)
+page.on('pageerror',e=>{errors.push(e.message);console.error('Browser error:',e.message)})
 await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort())
 
 // คำสั่งตรงถึงฐานข้อมูลต่อคิวเดียวกับคำขอจากเบราว์เซอร์ บทบาทจะได้ไม่สลับกันกลางทาง
@@ -408,11 +410,11 @@ try{
  // ── แจ้งรถล่าช้า (ย้ายจากตารางออกรถมาอยู่ใน "จัดการเพิ่มเติม") ผู้จองเห็นเวลาใหม่ในการ์ดของตัวเอง ──
  const joinTrip=await tripOf(joinA)
  await row(joinA).click();await sheet.locator('summary').filter({hasText:'จัดการเพิ่มเติม'}).click()
- await sheet.getByRole('button',{name:'แจ้งรถล่าช้า / ปรับเวลาประมาณการ',exact:true}).click()
+ await sheet.getByRole('button',{name:'เปลี่ยนวันเวลา / แจ้งรถล่าช้า',exact:true}).click()
  await sheet.getByLabel('ประกาศการเดินทาง',{exact:true}).selectOption('delayed')
  await sheet.getByLabel('เริ่มรับประมาณการใหม่',{exact:true}).fill('10:00');await sheet.getByLabel('รับกลับประมาณการใหม่',{exact:true}).fill('14:30')
  await sheet.getByRole('button',{name:'บันทึกประกาศและเวลา',exact:true}).click();await toast('บันทึกประกาศและเวลาประมาณการแล้ว').waitFor()
- await sheet.getByRole('button',{name:'แจ้งรถล่าช้า / ปรับเวลาประมาณการ',exact:true}).click();await sheet.getByLabel('เริ่มรับประมาณการใหม่',{exact:true}).fill('10:05')
+ await sheet.getByRole('button',{name:'เปลี่ยนวันเวลา / แจ้งรถล่าช้า',exact:true}).click();await sheet.getByLabel('เริ่มรับประมาณการใหม่',{exact:true}).fill('10:05')
  const scheduled=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===joinTrip)
  await runAs(coordinator,()=>rpc('patient_booking_update_schedule',[tenant,joinTrip,scheduled.schedule_revision,'delayed',at(joinDay,'10:10'),at(joinDay,'14:30')]))
  await sheet.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click();await sheet.getByText(/ข้อมูลแจ้งเวลาเปลี่ยนแล้ว:/).waitFor()
@@ -550,6 +552,29 @@ try{
  const joined=await runSql(()=>db.query('SELECT requested_trip_id FROM public.patient_bookings WHERE phone=$1',['0800000766']))
  assert.equal(joined.rows[0].requested_trip_id,monthTrip)
  console.log('PASS monthly picker: Thai month/year, eight-month trip details, mobile layout, join request persisted through actual UI')
+ // Reschedule through the staff dialog on a narrow screen, then verify persisted queue.
+ const moveUiDate=new Date();moveUiDate.setUTCDate(moveUiDate.getUTCDate()+190)
+ const moveUiDay=moveUiDate.toISOString().slice(0,10);moveUiDate.setUTCDate(moveUiDate.getUTCDate()+1)
+ const moveUiNext=moveUiDate.toISOString().slice(0,10), moveUiBooking=randomUUID(), moveUiTrip=randomUUID()
+ await submitAs(citizen,moveUiBooking,{patient_name:'TEST UI RESCHEDULE',companions:0,appointment_at:at(moveUiDay,'10:00'),return_at:at(moveUiDay,'12:00')})
+ await runAs(coordinator,async()=>{const plan=await rpc('patient_booking_preview',[tenant,[moveUiBooking],'']);await rpc('patient_booking_confirm',[tenant,moveUiTrip,[moveUiBooking],plan,''])})
+ await staffDesk();await row(moveUiBooking).click()
+ await sheet.locator('summary').filter({hasText:'จัดการเพิ่มเติม'}).click()
+ await sheet.getByRole('button',{name:'เปลี่ยนวันเวลา / แจ้งรถล่าช้า',exact:true}).click()
+ await page.setViewportSize({width:390,height:844})
+ await sheet.getByLabel('วันเดินทางใหม่',{exact:true}).fill(moveUiNext)
+ await sheet.getByLabel('เวลานัดแพทย์ใหม่',{exact:true}).fill('11:00')
+ await sheet.getByLabel('เวลารับกลับใหม่',{exact:true}).fill('13:00')
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
+ await sheet.getByLabel('วันเดินทางใหม่',{exact:true}).scrollIntoViewIfNeeded()
+ await page.screenshot({path:'D:/tmp/patient-reschedule-mobile.png',fullPage:false})
+ await sheet.getByRole('button',{name:'บันทึกวันเวลาใหม่',exact:true}).click()
+ await toast('เปลี่ยนวันเวลาแล้ว').waitFor()
+ const movedUi=await runSql(async()=>(await db.query('SELECT appointment_at,return_at,trip_id FROM public.patient_bookings WHERE id=$1',[moveUiBooking])).rows[0])
+ assert.equal(new Date(movedUi.appointment_at).toISOString(),new Date(at(moveUiNext,'11:00')).toISOString())
+ assert.equal(new Date(movedUi.return_at).toISOString(),new Date(at(moveUiNext,'13:00')).toISOString())
+ assert.notEqual(movedUi.trip_id,moveUiTrip)
+ console.log('PASS mobile staff rescheduling through actual dialog: new day, appointment, return and reservation persisted')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}
