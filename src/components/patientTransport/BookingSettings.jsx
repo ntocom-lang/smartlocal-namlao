@@ -43,7 +43,13 @@ export default function BookingSettings({ workspace, busy, onSave }) {
       {input('seats', 'ที่นั่งผู้โดยสาร ไม่รวมคนขับ', { type: 'number', min: 1, max: 15 })}{input('wheelchairs', 'ที่ยึดรถเข็น', { type: 'number', min: 0, max: 4 })}{input('stretchers', 'ที่ยึดเปล', { type: 'number', min: 0, max: 2 })}
       {input('contact_phone', 'เบอร์ติดต่อหน่วยงาน', { type: 'tel', maxLength: 10 })}
     </div>
-    <fieldset><legend className="font-semibold">เจ้าหน้าที่ผู้ยืนยันคิว</legend><p className="mt-2 text-sm text-slate-600">เลือกบัญชีเดียวกับคนขับได้ หากมอบหมายให้ทำทั้งสองหน้าที่ ให้เลือกชื่อนั้นเป็นคนขับและติ๊กเป็นผู้ยืนยันคิวด้วย ใช้บัญชีเดียวได้ทั้งจัดคิวและงานคนขับ</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{workspace.people?.map(p => <label key={p.id} className="flex min-h-11 items-center gap-3"><input className="size-5" type="checkbox" checked={form.coordinator_ids.includes(p.id)} onChange={e => setForm(f => ({ ...f, coordinator_ids: e.target.checked ? [...f.coordinator_ids, p.id] : f.coordinator_ids.filter(id => id !== p.id) }))} />{p.name}</label>)}</div></fieldset>
+    <details className="group rounded-xl border border-slate-200 p-3">
+      <summary className="flex min-h-11 cursor-pointer flex-wrap items-center justify-between gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-sky-700">
+        <span className="font-semibold">เจ้าหน้าที่ผู้ยืนยันคิว <span className="text-sm font-normal text-slate-600">· เลือกแล้ว {form.coordinator_ids.length} คน</span></span>
+        <span className="text-sm font-semibold text-sky-800"><span className="group-open:hidden">แสดงรายชื่อ ▾</span><span className="hidden group-open:inline">ซ่อนรายชื่อ ▴</span></span>
+      </summary>
+      <fieldset className="mt-2"><legend className="sr-only">เจ้าหน้าที่ผู้ยืนยันคิว</legend><p className="mt-2 text-sm text-slate-600">เลือกบัญชีเดียวกับคนขับได้ หากมอบหมายให้ทำทั้งสองหน้าที่ ให้เลือกชื่อนั้นเป็นคนขับและติ๊กเป็นผู้ยืนยันคิวด้วย ใช้บัญชีเดียวได้ทั้งจัดคิวและงานคนขับ</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{workspace.people?.map(p => <label key={p.id} className="flex min-h-11 items-center gap-3"><input className="size-5" type="checkbox" checked={form.coordinator_ids.includes(p.id)} onChange={e => setForm(f => ({ ...f, coordinator_ids: e.target.checked ? [...f.coordinator_ids, p.id] : f.coordinator_ids.filter(id => id !== p.id) }))} />{p.name}</label>)}</div></fieldset>
+    </details>
     <fieldset><legend className="font-semibold">เส้นทางโรงพยาบาลและพื้นที่รับ · เวลาเดินทางรวมระหว่างจุดรับ</legend>
       {form.routes.map((r, i) => <div key={r.id} className="my-3 grid gap-3 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1fr_140px_auto]">
         <label>ชื่อโรงพยาบาล — พื้นที่รับ<input className={inputClass} value={r.label} required maxLength={200} onChange={e => changeRoute(i, 'label', e.target.value)} /></label>
