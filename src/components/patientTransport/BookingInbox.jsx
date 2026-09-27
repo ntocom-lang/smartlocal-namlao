@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ListCard, Pills, Sheet } from './StaffShell'
 import { AmendBooking, TripFundDocs, OdometerForm } from './BookingOperations'
-import { ScheduleUpdate } from './BookingDaySchedule'
+import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
 import { STAGES, TRIP_STATUS, RETURN_MODES, MOBILITY, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, inputClass, buttonClass, primaryClass } from '../../lib/patientBooking'
 
 /**
@@ -176,7 +176,7 @@ function ProblemBox({ row, problem, rows, workspace, busy, isAdmin, onConfirm, o
 }
 
 // งานที่ไม่ได้ทำทุกวัน พับไว้ใต้ "จัดการเพิ่มเติม" — งานหลักของแถวอยู่ด้านบนเสมอ
-function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onUpdateSchedule }) {
+function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule }) {
   const { booking: b, trip, next, group } = row
   const [amending, setAmending] = useState(false)
   const [scheduling, setScheduling] = useState(false)
@@ -201,7 +201,9 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
       </>}
       {/* เปิดเป็นครั้ง ๆ แบบตารางออกรถเดิม — ฟอร์มจำ revision ตอนเปิดไว้เตือนเมื่อมีคนแก้ทับ
           บันทึกแล้วปิดทันที ไม่งั้นฟอร์มจะเตือน "ข้อมูลเปลี่ยน" จากการบันทึกของตัวเอง */}
-      {tripOpen && !scheduling && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling(true)}>แจ้งรถล่าช้า / ปรับเวลาประมาณการ</button>}
+      {tripOpen && !scheduling && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling(true)}>เปลี่ยนวันเวลา / แจ้งรถล่าช้า</button>}
+      {tripOpen && scheduling && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling(false)}>ปิดฟอร์มเปลี่ยนวันเวลา</button>}
+      {tripOpen && scheduling && <RescheduleJourney key={`reschedule-${trip.id}`} trip={trip} booking={b} passengers={passengers} settings={workspace.settings} busy={busy} onReschedule={async args => { const out = await onReschedule(args); if (out?.saved) setScheduling(false); return out }} />}
       {tripOpen && scheduling && <ScheduleUpdate key={trip.id} trip={trip} busy={busy} onUpdate={async (...args) => { const saved = await onUpdateSchedule(...args); if (saved) setScheduling(false); return saved }} />}
       {trip && next.id !== 'docs' && <TripFundDocs trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />}
       {trip?.state === 'completed' && next.id !== 'docs' && <OdometerForm trip={trip} trips={workspace.trips} busy={busy} onSave={onOdometer} />}
@@ -211,7 +213,7 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
   </details>
 }
 
-function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, currentUserId, onOpenDriver, onClose, onReload, onConfirm, onJoin, onOpen, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onUpdateSchedule, onSettings }) {
+function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, currentUserId, onOpenDriver, onClose, onReload, onConfirm, onJoin, onOpen, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onSettings }) {
   const { booking: b, trip, stage, next, group } = row
   const passengers = trip ? workspace.bookings.filter(x => x.trip_id === trip.id && x.status !== 'cancelled') : []
   const others = (trip ? passengers : group).filter(x => x.id !== b.id)
@@ -266,11 +268,11 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
     </div>}
     <Facts booking={b} trip={trip} others={others} />
     <MoreActions row={row} workspace={workspace} busy={busy} onConfirm={onConfirm} act={act} remove={remove} onAmend={onAmend}
-      onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onOdometer={onOdometer} onUpdateSchedule={onUpdateSchedule} />
+      onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} />
   </Sheet>
 }
 
-export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, detailOnly = false, initialOpenId = null, currentUserId, onOpenDriver, onCloseBooking, onClearCreated, onDelete, onConfirm, onJoin, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onUpdateSchedule, onReload, onSettings }) {
+export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, detailOnly = false, initialOpenId = null, currentUserId, onOpenDriver, onCloseBooking, onClearCreated, onDelete, onConfirm, onJoin, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onReload, onSettings }) {
   const [deleting, setDeleting] = useState(null)
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteAttempted, setDeleteAttempted] = useState(false)
@@ -326,7 +328,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   const sheet = open && <BookingSheet key={open.booking.id} row={open} rows={rows} workspace={workspace} problem={problem?.bookingId === open.booking.id ? problem : null}
     busy={busy} error={error} isAdmin={isAdmin} currentUserId={currentUserId} onOpenDriver={onOpenDriver} onClose={close} onReload={onReload} onConfirm={confirmRow} onJoin={joinRow}
     onOpen={id => { setProblem(null); setOpenId(id) }} onAction={onAction} onRemove={onRemove} onAmend={onAmend} onRecordLetter={onRecordLetter}
-    onPrintLetter={onPrintLetter} onOdometer={onOdometer} onUpdateSchedule={onUpdateSchedule} onSettings={() => { close(); onSettings() }} />
+    onPrintLetter={onPrintLetter} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} onSettings={() => { close(); onSettings() }} />
   if (detailOnly) return sheet
   return <ListCard title="คำขอรถ" count={rows.length} search={search} onSearch={setSearch} searchLabel="ค้นหาชื่อ เบอร์ จุดรับ โรงพยาบาล เลขที่" action={action} pills={pills}>
     <div className="space-y-4 p-4 sm:p-5">

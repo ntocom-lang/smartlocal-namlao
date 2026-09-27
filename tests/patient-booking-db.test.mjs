@@ -26,7 +26,7 @@ INSERT INTO public.referral_partners VALUES('${partner}','${tenant}','Fund TEST'
 CREATE TABLE public.audit_logs(id bigserial PRIMARY KEY,municipality_id uuid,actor_id uuid,actor_name text,actor_role text,action text,resource_type text,resource_id uuid,resource_label text,metadata jsonb,created_at timestamptz NOT NULL DEFAULT now());
 ALTER TABLE public.profiles ADD COLUMN phone text;
 `)
-for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql','20260923114252_patient_booking_admin_delete.sql','20260924154340_patient_booking_exact_appointment_hours.sql','20260924232558_patient_booking_month_calendar.sql','20260926114444_patient_booking_all_days_public_pending.sql','20260926141301_patient_booking_optional_odometer_reason.sql','20260927040000_patient_booking_two_driver_steps.sql']) {
+for (const file of ['20260918110000_patient_booking_tables.sql','20260918110100_patient_booking_rules.sql','20260918110200_patient_booking_api.sql','20260918110300_patient_booking_amend.sql','20260918113759_patient_booking_calendar.sql','20260918170100_patient_booking_day_guards.sql','20260919120000_patient_booking_pickup_point.sql','20260919120100_patient_booking_pickup_rpc.sql','20260919130000_patient_booking_trip_documents_columns.sql','20260919130100_patient_booking_trip_documents_rpc.sql','20260919140000_patient_booking_trip_docs_revision.sql','20260919140100_patient_booking_trip_docs_guards.sql','20260919150000_patient_booking_flexible_odometer.sql','20260919150100_patient_booking_flexible_odometer_rpc.sql','20260919160000_patient_booking_schedule_columns.sql','20260919160100_patient_booking_schedule_rpc.sql','20260919170000_patient_booking_dual_role.sql','20260919180000_patient_booking_minimal_setup.sql','20260919190000_patient_booking_entry_channel.sql','20260919190100_patient_booking_entry_channel_rpc.sql','20260919200000_patient_booking_mine.sql','20260920120000_patient_booking_retention.sql','20260920120100_patient_booking_retention_fn.sql','20260921120000_patient_booking_staff_join.sql','20260922120000_patient_booking_staff_entry_owner.sql','20260922130000_patient_booking_cancel_reason.sql','20260923114252_patient_booking_admin_delete.sql','20260924154340_patient_booking_exact_appointment_hours.sql','20260924232558_patient_booking_month_calendar.sql','20260926114444_patient_booking_all_days_public_pending.sql','20260926141301_patient_booking_optional_odometer_reason.sql','20260927040000_patient_booking_two_driver_steps.sql','20260927090000_patient_booking_reschedule.sql']) {
  await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 }
 const actor = async user => { await db.exec('RESET ROLE'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user || '']); await db.exec(`SET ROLE ${user ? 'authenticated' : 'anon'}`) }
@@ -639,6 +639,79 @@ await db.exec('RESET ROLE');await db.query("UPDATE public.patient_booking_trips 
 await fails(()=>rpc('patient_booking_action',[tenant,randomUUID(),distantTrip,finishGuardTrip.revision,'trip_finish','']),/ประสานก่อนจบงาน/)
 await db.exec('RESET ROLE');await db.query("UPDATE public.patient_booking_trips SET state='confirmed' WHERE id=$1",[distantTrip]);await db.query('UPDATE public.patient_bookings SET cancel_requested=false WHERE trip_id=$1',[distantTrip])
 console.log('PASS two-action completion: all modes and legacy states, shared riders, cancelled rider preserved, role/tenant/revision guards, retry once, no fabricated intermediate events')
+
+// Real reservation moves: separate from estimates, never mutate production data.
+const moveDay = offset => { const v=new Date(nextDay);v.setUTCDate(v.getUTCDate()+offset);return v.toISOString().slice(0,10) }
+const moveAt = (offset,time='10:00') => `${moveDay(offset)}T${time}:00+07:00`
+async function moveFixture(offset,count=1,mode='wait') {
+ const bids=[];await actor(citizen)
+ for(let i=0;i<count;i++){const bid=randomUUID();bids.push(bid);await rpc('patient_booking_submit',[tenant,bid,{...base,patient_name:`TEST reschedule ${bid}`,companions:0,return_mode:mode,appointment_at:moveAt(offset,i?'10:15':'10:00'),return_at:mode==='one_way'?null:moveAt(offset,i?'12:15':'12:00')}])}
+ await actor(coordinator);const p=await rpc('patient_booking_preview',[tenant,bids,'']);assert.deepEqual(p.errors,[])
+ const tid=randomUUID();await rpc('patient_booking_confirm',[tenant,tid,bids,p,'']);return {bids,tid}
+}
+async function moveSnapshot(tid) {
+ await actor(coordinator);const w=await rpc('patient_booking_workspace',[tenant]);const t=w.trips.find(x=>x.id===tid)
+ return {trip:tid,revision:t.revision,docs_revision:t.docs_revision,schedule_revision:t.schedule_revision,settings_revision:w.settings.revision,
+ bookings:Object.fromEntries(w.bookings.filter(x=>x.trip_id===tid&&x.status!=='cancelled').map(x=>[x.id,x.revision]))}
+}
+const sharedMove=await moveFixture(70,2), occupiedMove=await moveFixture(71)
+let snap=await moveSnapshot(sharedMove.tid)
+const args=[tenant,randomUUID(),sharedMove.bids[0],'single',snap,moveAt(71),moveAt(71,'12:00'),false]
+for(const user of [citizen,driver,outsider]){await actor(user);await fails(()=>rpc('patient_booking_reschedule',args),/ไม่มีสิทธิ์/)}
+await actor(null);await fails(()=>rpc('patient_booking_reschedule',args),/permission denied/)
+await actor(coordinator)
+await fails(()=>rpc('patient_booking_reschedule',[...args.slice(0,4),{...snap,revision:0},...args.slice(5)]),/เปลี่ยนแล้ว/)
+let beforeMove=await rpc('patient_booking_workspace',[tenant])
+let blockedMove=await rpc('patient_booking_reschedule',args)
+assert.equal(blockedMove.saved,false);assert(blockedMove.errors.some(x=>x.includes('ทับช่วง')));assert.equal(blockedMove.suggestions.length,3)
+assert.deepEqual(await rpc('patient_booking_workspace',[tenant]),beforeMove,'a conflict must roll back every booking, trip, revision and notice')
+const sameDayBlocked=await rpc('patient_booking_reschedule',[tenant,randomUUID(),sharedMove.bids[0],'single',snap,moveAt(70,'10:30'),moveAt(70,'12:30'),false])
+assert.equal(sameDayBlocked.saved,false,'remaining riders must still reserve their original vehicle blocks')
+const oldTripBefore=beforeMove.trips.find(x=>x.id===sharedMove.tid)
+const singleMoveArgs=[tenant,randomUUID(),sharedMove.bids[0],'single',snap,moveAt(72),moveAt(72,'13:00'),false]
+const singleMoved=await rpc('patient_booking_reschedule',singleMoveArgs);assert(singleMoved.saved)
+const afterSingle=await rpc('patient_booking_workspace',[tenant])
+assert.equal(afterSingle.bookings.find(x=>x.id===sharedMove.bids[0]).trip_id,singleMoved.trip_id)
+assert.deepEqual(afterSingle.bookings.find(x=>x.id===sharedMove.bids[1]),beforeMove.bookings.find(x=>x.id===sharedMove.bids[1]))
+assert.deepEqual(afterSingle.trips.find(x=>x.id===sharedMove.tid).plan.blocks,oldTripBefore.plan.blocks)
+assert.deepEqual(afterSingle.trips.find(x=>x.id===sharedMove.tid).booking_ids,[sharedMove.bids[1]])
+assert.deepEqual(await rpc('patient_booking_reschedule',singleMoveArgs),singleMoved)
+assert.deepEqual(await rpc('patient_booking_workspace',[tenant]),afterSingle,'network retry must not duplicate notices or revisions')
+await actor(citizen);let myMoved=await rpc('patient_booking_mine',[tenant]);assert.equal(myMoved.bookings.find(x=>x.id===sharedMove.bids[0]).trip_id,singleMoved.trip_id)
+await actor(null);const movedCalendar=await rpc('patient_booking_calendar',[tenant,moveDay(72),moveDay(72)])
+assert.equal(movedCalendar.days[0].trips.length,1);assert(!JSON.stringify(movedCalendar).includes('TEST reschedule'))
+await actor(driver);assert((await rpc('patient_booking_workspace',[tenant])).trips.some(x=>x.id===singleMoved.trip_id))
+const allMove=await moveFixture(74,2)
+await db.exec('RESET ROLE');await db.query("UPDATE public.patient_booking_trips SET forward_letter_no='TEST old letter',forward_letter_date=$2 WHERE id=$1",[allMove.tid,moveDay(74)])
+snap=await moveSnapshot(allMove.tid)
+const allMoved=await rpc('patient_booking_reschedule',[tenant,randomUUID(),allMove.bids[0],'all',snap,moveAt(75,'11:00'),moveAt(75,'13:00'),false]);assert(allMoved.saved)
+let movedWorkspace=await rpc('patient_booking_workspace',[tenant]);const preservedTrip=movedWorkspace.trips.find(x=>x.id===allMove.tid)
+assert.equal(preservedTrip.state,'cancelled');assert.equal(preservedTrip.forward_letter_no,'TEST old letter');assert.equal(preservedTrip.plan.date,moveDay(74))
+const newGroup=movedWorkspace.trips.find(x=>x.id===allMoved.trip_id);assert.equal(newGroup.forward_letter_no,null)
+const movedRiders=movedWorkspace.bookings.filter(x=>x.trip_id===allMoved.trip_id).sort((a,b)=>a.appointment_at.localeCompare(b.appointment_at))
+assert.equal(new Date(movedRiders[1].appointment_at)-new Date(movedRiders[0].appointment_at),15*60000)
+assert.equal(new Date(movedRiders[1].return_at)-new Date(movedRiders[0].return_at),15*60000)
+snap=await moveSnapshot(allMoved.trip_id)
+await fails(()=>rpc('patient_booking_reschedule',[tenant,randomUUID(),allMove.bids[0],'all',snap,moveAt(76,'20:00'),moveAt(77),false]),/วันเดียวกัน/)
+const wrongHours=await rpc('patient_booking_reschedule',[tenant,randomUUID(),allMove.bids[0],'all',snap,moveAt(76,'20:00'),moveAt(76,'22:00'),false]);assert.equal(wrongHours.saved,false)
+await fails(()=>rpc('patient_booking_reschedule',[tenant,randomUUID(),allMove.bids[0],'all',snap,moveAt(500),moveAt(500,'12:00'),false]),/12 เดือน/)
+const departureMove=await moveFixture(78,1,'one_way')
+snap=await moveSnapshot(departureMove.tid)
+await rpc('patient_booking_action',[tenant,randomUUID(),departureMove.tid,snap.revision,'trip_next',''])
+snap=await moveSnapshot(departureMove.tid)
+await fails(()=>rpc('patient_booking_reschedule',[tenant,randomUUID(),departureMove.bids[0],'single',snap,moveAt(79),null,false]),/ยังไม่ได้ออกรถ/)
+const correctedDeparture=await rpc('patient_booking_reschedule',[tenant,randomUUID(),departureMove.bids[0],'single',snap,moveAt(79),null,true]);assert(correctedDeparture.saved)
+await db.exec('RESET ROLE');assert.equal((await db.query("SELECT count(*)::int n FROM public.patient_booking_events WHERE entity_id=$1 AND action='departure_corrected'",[departureMove.tid])).rows[0].n,1)
+await db.query('UPDATE public.patient_bookings SET passenger_step=1 WHERE id=$1',[departureMove.bids[0]])
+snap=await moveSnapshot(correctedDeparture.trip_id)
+await fails(()=>rpc('patient_booking_reschedule',[tenant,randomUUID(),departureMove.bids[0],'single',snap,moveAt(80),null,true]),/ยังไม่ได้ออกรถ/)
+await db.exec('RESET ROLE');await db.query('UPDATE public.patient_bookings SET passenger_step=0 WHERE id=$1',[departureMove.bids[0]])
+snap=await moveSnapshot(correctedDeparture.trip_id)
+await db.exec('RESET ROLE');await db.query('UPDATE public.patient_bookings SET cancel_requested=true WHERE id=$1',[departureMove.bids[0]]);await actor(coordinator)
+await fails(()=>rpc('patient_booking_reschedule',[tenant,randomUUID(),departureMove.bids[0],'single',snap,moveAt(80),null,true]),/ขอยกเลิก/)
+await db.exec('RESET ROLE');await db.query('UPDATE public.patient_bookings SET cancel_requested=false WHERE id=$1',[departureMove.bids[0]])
+console.log('PASS atomic rescheduling: conflict rollback and suggestions, single/all riders, role/tenant/revision/retry guards, document history, public/citizen/driver views, date bounds, mistaken departure and actual journey protection')
+
 if (!process.env.PATIENT_UI_QA) await db.close()
 console.log('All isolated PostgreSQL checks passed.')
 export { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, day, calendarDay, base as baseBooking }
