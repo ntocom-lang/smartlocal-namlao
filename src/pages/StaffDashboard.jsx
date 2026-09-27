@@ -5,7 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, Users, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
-  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance,
+  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck,
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -35,6 +35,7 @@ import {
   WATERWORKS_DOCUMENT_TYPES, WATERWORKS_MODULE_KEY,
 } from '../lib/documentTypes'
 import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
+import { PERFORMANCE_ROLES } from '../lib/staffPerformanceData'
 import OdorReportPanel from '../components/staff/OdorReportPanel'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
 import UserProfileBadge from '../components/layout/UserProfileBadge'
@@ -67,6 +68,7 @@ const AssetBorrowRequestWizard = lazy(() => import('./AssetBorrowRequestWizard')
 const AssetBorrowRequestPanel = lazy(() => import('../components/staff/AssetBorrowRequestPanel'))
 const PatientTransportPanel = lazy(() => import('../components/staff/PatientTransportPanel'))
 const PatientTransportStaff = lazy(() => import('./PatientTransportStaff'))
+const StaffPerformanceModule = lazy(() => import('../components/staff/StaffPerformanceModule'))
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -186,6 +188,9 @@ const STANDALONE_GROUPS = [
       // รอออกแบบใหม่ — คอมโพเนนต์ CivilProjectAdmin/CivilProjectReport กับ branch ที่ render
       // มันยังอยู่ครบ เอากลับมาแค่ใส่ 2 บรรทัดนี้คืน
       { key: 'report',        label: 'รายงาน',           Icon: TrendingUp,    color: '#f59e0b', bg: '#fef3c7', desc: 'สรุปสถิติและรายงานของหน่วยงาน' },
+      // ไม่อยู่ใน MANAGED_MODULE_KEYS จึงเปิดให้ทุก อปท. เหมือนกันโดยไม่ต้องเขียน enabled_modules
+      // แล้วคุมด้วยบทบาทและโมดูลคำร้องอีกชั้น (hasPerformanceAccess ด้านล่าง)
+      { key: 'performance',   label: 'ผลการปฏิบัติงาน',   Icon: ClipboardCheck, color: '#7c3aed', bg: '#ede9fe', desc: 'ผลงานรายคนจากคำร้อง รายเดือน ไตรมาส ปี และรอบการประเมิน' },
       // externalUrl (ไม่ใช่ activeModule) เพราะศูนย์ข้อมูลเป็นหน้าแยกที่ route /data-center/staff
       // เดิมคีย์นี้ไม่มีในลิสต์เลย ถูก hardcode เป็นปุ่มใน sidebar อย่างเดียว ผลคือหน้าแดชบอร์ด
       // (ที่ไล่เมนูจาก visibleGroups) หามันไม่เจอ — "เมนูใช้งานด่วน" เหลือ 2 ปุ่ม และบนมือถือที่ไม่มี
@@ -255,6 +260,7 @@ const TECHNICIAN_MODULE_KEYS = [
   'data-center',   // ศูนย์ข้อมูลดิจิทัล
   'fleet',         // ยานพาหนะและเชื้อเพลิง
   'manual-staff',  // คู่มือ
+  'performance',   // ผลการปฏิบัติงาน — RPC staff_performance_rows ให้ช่างดูของตัวเองได้
 ]
 
 
@@ -2388,12 +2394,17 @@ export default function StaffDashboard() {
   // "เจ้าหน้าที่พัสดุของกอง" ไม่ใช่ระดับในองค์กร แอดมินต้องมอบให้เป็นรายคน
   // เงื่อนไขต้องตรงกับ asset_is_manager()/asset_can_manage() ฝั่งฐานข้อมูล ไม่งั้นได้เมนูหลอก
   const hasAssetAccess = Boolean(profile?.asset_role) || role === 'admin' || role === 'superadmin'
+  // ผลการปฏิบัติงานรายคนเป็นเรื่องของสายการประเมิน (เจ้าตัว/หัวหน้ากอง/แอดมิน/ผู้บริหาร) ไม่ใช่สภา
+  // — ต้องตรงกับสิทธิ์ใน RPC staff_performance_rows ไม่งั้นได้เมนูหลอก · ข้อมูลมาจากคำร้องล้วน
+  // อปท. ที่ปิดโมดูลคำร้องจึงไม่มีอะไรให้ดู · ระหว่างโหลดโปรไฟล์ role ยังว่าง เมนูจึงยังไม่โผล่
+  const hasPerformanceAccess = PERFORMANCE_ROLES.includes(role) && enabledKeys.includes('complaints')
   const roleScopedKeys = role === 'technician'
     ? enabledKeys.filter(k => TECHNICIAN_MODULE_KEYS.includes(k))
     : enabledKeys
   const scopedKeys = [
     ...(hasFleetAccess ? [] : ['fleet']),
     ...(hasAssetAccess ? [] : ['borrowable-assets']),
+    ...(hasPerformanceAccess ? [] : ['performance']),
   ].reduce((keys, hidden) => keys.filter(k => k !== hidden), roleScopedKeys)
   const patientModuleVisible = scopedKeys.includes(PATIENT_TRANSPORT_MODULE_KEY)
   const patientWorkCount = patientModuleVisible && patientWorkBadge.tenantId === tenant?.id && patientWorkBadge.profileId === profile?.id
@@ -2778,6 +2789,10 @@ export default function StaffDashboard() {
             {activeModule === 'projects'      && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'infra'      && <InfraWorkAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
+            {/* เข้าหน้านี้ได้ทาง router state (ปุ่มจากหน้าช่าง) ซึ่งไม่ผ่านตัวกรองเมนู จึงต้องเช็คสิทธิ์ซ้ำ */}
+            {activeModule === 'performance' && visibleModules.some(m => m.key === 'performance') && (
+              <StaffPerformanceModule tenant={tenant} profile={profile} />
+            )}
             {activeModule === 'civil-report'      && <CivilProjectReport tenant={tenant} />}
             {activeModule === 'posts'            && <PostsManager currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'tourism'          && <TourismManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} currentUserId={profile?.id ?? null} myDepartmentId={profile?.department_id ?? null} />}
