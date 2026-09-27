@@ -179,9 +179,11 @@ function ProblemBox({ row, problem, rows, workspace, busy, isAdmin, onConfirm, o
 function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule }) {
   const { booking: b, trip, next, group } = row
   const [amending, setAmending] = useState(false)
-  const [scheduling, setScheduling] = useState(false)
+  const [scheduling, setScheduling] = useState(null)
   const passengers = trip ? workspace.bookings.filter(x => x.trip_id === trip.id && x.status !== 'cancelled') : []
   const tripOpen = trip && !['completed', 'cancelled'].includes(trip.state)
+  const canReschedule = trip && ['confirmed', 'outbound'].includes(trip.state) && trip.odometer_end == null && passengers.every(x => x.passenger_step === 0 && !x.return_ready)
+  const inService = tripOpen && trip.state !== 'confirmed'
   const releasable = trip && (trip.state === 'confirmed' || (trip.state === 'issue' && trip.state_before_issue === 'confirmed')) && passengers.every(x => x.passenger_step === 0)
   const removable = b.status === 'confirmed' && [0, 2].includes(b.passenger_step) && next.id !== 'cancel'
   const submitted = b.status === 'submitted'
@@ -199,12 +201,11 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
         {b.requested_trip_id && <button type="button" className={buttonClass} disabled={busy} onClick={() => onConfirm(row, { ids: [b.id], separate: true })}>ยืนยันเป็นเที่ยวแยก (ไม่ร่วมเที่ยวที่ขอ)</button>}
         <ReasonAction busy={busy} title="ยกเลิกคำขอ" placeholder="เช่น ผู้จองแจ้งยกเลิกทางโทรศัพท์" button="ยกเลิกคำขอ" seenByCitizen onRun={note => act(b, 'cancel', note)} />
       </>}
-      {/* เปิดเป็นครั้ง ๆ แบบตารางออกรถเดิม — ฟอร์มจำ revision ตอนเปิดไว้เตือนเมื่อมีคนแก้ทับ
-          บันทึกแล้วปิดทันที ไม่งั้นฟอร์มจะเตือน "ข้อมูลเปลี่ยน" จากการบันทึกของตัวเอง */}
-      {tripOpen && !scheduling && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling(true)}>เปลี่ยนวันเวลา / แจ้งรถล่าช้า</button>}
-      {tripOpen && scheduling && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling(false)}>ปิดฟอร์มเปลี่ยนวันเวลา</button>}
-      {tripOpen && scheduling && <RescheduleJourney key={`reschedule-${trip.id}`} trip={trip} booking={b} passengers={passengers} settings={workspace.settings} busy={busy} onReschedule={async args => { const out = await onReschedule(args); if (out?.saved) setScheduling(false); return out }} />}
-      {tripOpen && scheduling && <ScheduleUpdate key={trip.id} trip={trip} busy={busy} onUpdate={async (...args) => { const saved = await onUpdateSchedule(...args); if (saved) setScheduling(false); return saved }} />}
+      {canReschedule && scheduling !== 'reschedule' && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling('reschedule')}>{trip.state === 'confirmed' ? 'เปลี่ยนวันและเวลาเดินทาง' : 'กดออกรถผิด · เปลี่ยนวันเวลา'}</button>}
+      {inService && scheduling !== 'estimate' && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling('estimate')}>แจ้งรถล่าช้า / เวลารับล่าสุด</button>}
+      {scheduling && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling(null)}>ปิดฟอร์ม</button>}
+      {canReschedule && scheduling === 'reschedule' && <RescheduleJourney key={`reschedule-${trip.id}`} trip={trip} booking={b} passengers={passengers} settings={workspace.settings} busy={busy} onReschedule={async args => { const out = await onReschedule(args); if (out?.saved) setScheduling(null); return out }} />}
+      {inService && scheduling === 'estimate' && <ScheduleUpdate key={trip.id} trip={trip} busy={busy} onUpdate={async (...args) => { const saved = await onUpdateSchedule(...args); if (saved) setScheduling(null); return saved }} />}
       {trip && next.id !== 'docs' && <TripFundDocs trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />}
       {trip?.state === 'completed' && next.id !== 'docs' && <OdometerForm trip={trip} trips={workspace.trips} busy={busy} onSave={onOdometer} />}
       {removable && <ReasonAction busy={busy} title="นำรายนี้ออกจากเที่ยว" hint="ใช้เมื่อประสานแล้วว่าไม่เดินทาง ผู้เดินทางคนอื่นในเที่ยวไม่เปลี่ยน · ถ้าเป็นคนสุดท้ายและรถยังไม่ออก ระบบคืนช่วงเวลารถให้ด้วย" placeholder="เช่น ผู้ป่วยแจ้งเลื่อนนัด" button="นำออกจากเที่ยว" seenByCitizen onRun={remove} />}

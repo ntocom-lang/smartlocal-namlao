@@ -17,7 +17,7 @@ export function RescheduleJourney({ trip, booking, passengers, settings, busy, o
   const stale = JSON.stringify(draft.expected) !== JSON.stringify(snapshot(trip, passengers, settings))
   const set = (key, value) => { setDraft(previous => ({ ...previous, [key]: value })); setResult(null) }
   const canMove = ['confirmed', 'outbound'].includes(trip.state) && trip.odometer_end == null && passengers.every(b => b.passenger_step === 0 && !b.return_ready)
-  if (!canMove) return <p className="rounded-xl bg-amber-50 p-3">เที่ยวนี้มีการรับ–ส่งแล้ว จึงเลื่อนวันทับประวัติไม่ได้ หากนัดครั้งใหม่ให้รับจองใหม่ ส่วนเวลาล่าช้าแจ้งได้ด้านล่าง</p>
+  if (!canMove) return <p className="rounded-xl bg-amber-50 p-3">เที่ยวนี้เริ่มให้บริการแล้ว จึงเลื่อนวันทับประวัติไม่ได้ หากนัดครั้งใหม่ให้รับจองใหม่</p>
   return <form className="space-y-3 rounded-xl bg-sky-50 p-3" onSubmit={async e => {
     e.preventDefault()
     if (busy || stale) return
@@ -55,8 +55,8 @@ export function ScheduleUpdate({ trip, busy, onUpdate }) {
     if (stale || busy) return
     await onUpdate(trip.id, draft.revision, draft.notice, bangkokISO(trip.plan.date, draft.pickup), bangkokISO(trip.plan.date, draft.back))
   }}>
-    <p className="font-semibold">แจ้งเวลาเดินทางล่าสุด</p>
-    <p className="text-sm">เที่ยวที่เปิดร่วมจะแสดงประกาศนี้ในตารางประชาชน เที่ยวส่วนตัวจะแสดงเฉพาะผู้จองและเจ้าหน้าที่ เวลานี้เป็นประมาณการ ไม่เปลี่ยนช่วงจองรถ หากกระทบเที่ยวอื่นให้ประสานจัดคิว</p>
+    <p className="font-semibold">แจ้งรถล่าช้า / เวลารับล่าสุด</p>
+    <p className="text-sm">ใช้เมื่อรถกำลังให้บริการและเวลารับเปลี่ยน เพื่อแจ้งผู้จองและคนขับ เวลานี้เป็นประมาณการ ไม่ย้ายคิวรถหรือเปลี่ยนวันนัด</p>
     <label className="block">ประกาศการเดินทาง<select aria-label="ประกาศการเดินทาง" className={inputClass} value={draft.notice} onChange={e => set('notice', e.target.value)}>{Object.entries(noticeLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
     <div className="grid min-w-0 gap-3 sm:grid-cols-2"><label className="min-w-0">เริ่มรับประมาณการใหม่<input type="time" className={inputClass} value={draft.pickup} onChange={e => set('pickup', e.target.value)} /></label>{trip.plan.return_mode !== 'one_way' && <label className="min-w-0">รับกลับประมาณการใหม่<input type="time" className={inputClass} value={draft.back} onChange={e => set('back', e.target.value)} /></label>}</div>
     <p className="text-sm">เว้นว่างเพื่อล้างประมาณการและกลับไปใช้เวลาตามแผน</p>
