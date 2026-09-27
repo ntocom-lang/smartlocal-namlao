@@ -3594,6 +3594,10 @@ function guessEmoji(label) {
   return null
 }
 
+// จำนวนวันของหมวดที่ยังไม่ได้ตั้ง — ต้องตรงกับ DEFAULT ของ category_assignments.sla_days และ COALESCE
+// ใน trigger auto_assign_complaint (นับเป็นวันทำการตั้งแต่ 20260927220100 ก่อนหน้านั้นคือ 3 วันปฏิทิน)
+const DEFAULT_SLA_WORKING_DAYS = 2
+
 function SlaInput({ value, onCommit }) {
   const [local, setLocal] = useState(value)
   useEffect(() => { setLocal(value) }, [value])
@@ -3608,7 +3612,7 @@ function SlaInput({ value, onCommit }) {
         onBlur={(e) => onCommit?.(e.target.value)}
         className="w-12 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-900 text-center focus:outline-none focus:border-amber-400"
       />
-      <span className="text-xs text-gray-400">วัน</span>
+      <span className="text-xs text-gray-400">วันทำการ</span>
     </div>
   )
 }
@@ -3696,7 +3700,7 @@ function ResolvedPinChip({ cat, onToggle, className = '' }) {
   )
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onToggleSubmitAudience, onToggleManualIntake, onToggleResolvedPin, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = 3, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onToggleSubmitAudience, onToggleManualIntake, onToggleResolvedPin, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = DEFAULT_SLA_WORKING_DAYS, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -3841,7 +3845,7 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
   const editingLabel = !!draft?.editingLabel
   const hasDraft = !!draft && !editingLabel
   const currentTechId = draft?.technician_id ?? assign?.technician_id ?? ''
-  const currentSla = draft?.sla_days ?? assign?.sla_days ?? 3
+  const currentSla = draft?.sla_days ?? assign?.sla_days ?? DEFAULT_SLA_WORKING_DAYS
   const currentDepartmentId = draft?.department_id ?? cat.department_id ?? ''
 
   return (
@@ -3934,7 +3938,7 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
             onChange={(e) => onSetDraft(cat.value, { sla_days: e.target.value })}
             className="w-12 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-900 text-center focus:outline-none focus:border-amber-400"
           />
-          <span className="text-xs text-gray-400">วัน</span>
+          <span className="text-xs text-gray-400">วันทำการ</span>
         </div>
       </td>
       <td className="px-1 py-3 text-center">
@@ -4093,7 +4097,7 @@ function CategoryManager({ tenant }) {
           setAssignMap((prev) => ({
             ...prev,
             [cat.value]: {
-              ...(prev[cat.value] ?? { sla_days: 3 }),
+              ...(prev[cat.value] ?? { sla_days: DEFAULT_SLA_WORKING_DAYS }),
               ...(techChanged ? { technician_id: d.technician_id ?? '' } : {}),
               ...(slaChanged ? { sla_days: slaVal } : {}),
             },
@@ -4143,7 +4147,7 @@ function CategoryManager({ tenant }) {
       setDepartments(departmentsRes.data ?? [])
       const aMap = {}
       for (const a of assignRes.data ?? []) {
-        aMap[a.category] = { technician_id: a.technician_id ?? '', sla_days: a.sla_days ?? 3 }
+        aMap[a.category] = { technician_id: a.technician_id ?? '', sla_days: a.sla_days ?? DEFAULT_SLA_WORKING_DAYS }
       }
       setAssignMap(aMap)
     } finally {
@@ -4203,7 +4207,7 @@ function CategoryManager({ tenant }) {
 
   async function handleTechChange(catValue, techId) {
     setSavingAssign(catValue)
-    setAssignMap((prev) => ({ ...prev, [catValue]: { ...(prev[catValue] ?? { sla_days: 3 }), technician_id: techId } }))
+    setAssignMap((prev) => ({ ...prev, [catValue]: { ...(prev[catValue] ?? { sla_days: DEFAULT_SLA_WORKING_DAYS }), technician_id: techId } }))
     await supabase.from('category_assignments').upsert({
       municipality_id: tenant.id,
       category: catValue,
@@ -4709,7 +4713,7 @@ function CategoryManager({ tenant }) {
                     departments={departments}
                     techGroups={techGroups}
                     techId={assignMap[cat.value]?.technician_id ?? ''}
-                    slaDays={assignMap[cat.value]?.sla_days ?? 3}
+                    slaDays={assignMap[cat.value]?.sla_days ?? DEFAULT_SLA_WORKING_DAYS}
                     onDepartmentChange={(departmentId) => handleDepartmentChange(cat, departmentId)}
                     onTechChange={(tid) => handleTechChange(cat.value, tid)}
                     onSlaChange={(d) => handleSlaChange(cat.value, d)}
