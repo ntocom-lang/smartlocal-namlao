@@ -1,6 +1,15 @@
 import { useState } from 'react'
 import { buttonClass, primaryClass, inputClass, minutes, clockTime } from '../../lib/patientBooking'
 
+function SettingsGroup({ number, title, children }) {
+  return <section aria-label={title} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <h3 className="flex items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold text-sky-950 sm:px-5">
+      <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-full bg-sky-800 text-sm text-white">{number}</span>{title}
+    </h3>
+    <div className="space-y-4 p-4 sm:p-5">{children}</div>
+  </section>
+}
+
 export default function BookingSettings({ workspace, busy, onSave }) {
   const [form, setForm] = useState(() => ({ enabled: false, partner_id: '', driver_id: '', coordinator_ids: [], office_start: 510, office_end: 990,
     seats: '', wheelchairs: '', stretchers: '', buffer_minutes: 15, boarding_minutes: 15, routes: [], holidays: [], calendar_checked_through: '',
@@ -34,15 +43,12 @@ export default function BookingSettings({ workspace, busy, onSave }) {
     <h2 className="text-xl font-bold">ตั้งค่ารถรับส่งผู้ป่วย</h2>
     {attemptedOpen && form.enabled && missing.length > 0 && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800"><p className="font-semibold">ยังเปิดรับจองไม่ได้ กรุณาเติมข้อมูลที่ขาด</p><ul className="mt-2 list-disc pl-5">{missing.map(item => <li key={item}>{item}</li>)}</ul></div>}
     <p className="rounded-xl bg-amber-50 p-3 text-sm">กรอกข้อมูลรถ ผู้รับผิดชอบ และโรงพยาบาลครั้งแรก หลังจากนั้นแก้เฉพาะเมื่อมีการเปลี่ยนแปลง ช่วงเวลานัดแพทย์และเวลาเผื่อมีค่าเริ่มต้นให้แล้ว</p>
-    <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950">เปิดรับคำขอได้ทุกวัน รวมเสาร์–อาทิตย์และวันหยุด ตั้งแต่วันนี้ถึงล่วงหน้า 12 เดือน เจ้าหน้าที่ตรวจรถและยืนยันคิวแต่ละเที่ยวตามปกติ</p>
-    <div className="grid gap-4 sm:grid-cols-2">
+    <SettingsGroup number="1" title="ผู้รับผิดชอบและการติดต่อ">
+      <div className="grid gap-4 sm:grid-cols-2">
       <label>กองทุน/หน่วยงานเจ้าของรถ<select className={inputClass} value={form.partner_id || ''} onChange={set('partner_id')}><option value="">เลือกเจ้าของรถจากทะเบียนหน่วยงาน</option>{workspace.partners?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       <label>บัญชีคนขับ<select aria-label="บัญชีคนขับ" className={inputClass} value={form.driver_id || ''} onChange={set('driver_id')}><option value="">เลือกบัญชีเจ้าหน้าที่ของคนขับ</option>{workspace.people?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-      {['office_start', 'office_end'].map((key, i) => <label key={key}>{i ? 'สิ้นสุดเวลานัดแพทย์' : 'เริ่มเวลานัดแพทย์'}<input className={inputClass} type="time" required value={clockTime(form[key])} onChange={e => setForm(f => ({ ...f, [key]: minutes(e.target.value) }))} /></label>)}
-      <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950 sm:col-span-2">เวลานัดแพทย์ที่เปิดให้จอง: <strong>{clockTime(form.office_start)}–{clockTime(form.office_end)} น.</strong> ตรงตามค่าที่ตั้งไว้ รถอาจออกไปรับก่อนเวลาเริ่มหรือกลับหลังเวลาสิ้นสุดตามระยะทางและเวลารับกลับ · มีผลหลังบันทึก</p>
-      {input('seats', 'ที่นั่งผู้โดยสาร ไม่รวมคนขับ', { type: 'number', min: 1, max: 15 })}{input('wheelchairs', 'ที่ยึดรถเข็น', { type: 'number', min: 0, max: 4 })}{input('stretchers', 'ที่ยึดเปล', { type: 'number', min: 0, max: 2 })}
       {input('contact_phone', 'เบอร์ติดต่อหน่วยงาน', { type: 'tel', maxLength: 10 })}
-    </div>
+      </div>
     <details className="group rounded-xl border border-slate-200 p-3">
       <summary className="flex min-h-11 cursor-pointer flex-wrap items-center justify-between gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-sky-700">
         <span className="font-semibold">เจ้าหน้าที่ผู้ยืนยันคิว <span className="text-sm font-normal text-slate-600">· เลือกแล้ว {form.coordinator_ids.length} คน</span></span>
@@ -50,7 +56,27 @@ export default function BookingSettings({ workspace, busy, onSave }) {
       </summary>
       <fieldset className="mt-2"><legend className="sr-only">เจ้าหน้าที่ผู้ยืนยันคิว</legend><p className="mt-2 text-sm text-slate-600">เลือกบัญชีเดียวกับคนขับได้ หากมอบหมายให้ทำทั้งสองหน้าที่ ให้เลือกชื่อนั้นเป็นคนขับและติ๊กเป็นผู้ยืนยันคิวด้วย ใช้บัญชีเดียวได้ทั้งจัดคิวและงานคนขับ</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{workspace.people?.map(p => <label key={p.id} className="flex min-h-11 items-center gap-3"><input className="size-5" type="checkbox" checked={form.coordinator_ids.includes(p.id)} onChange={e => setForm(f => ({ ...f, coordinator_ids: e.target.checked ? [...f.coordinator_ids, p.id] : f.coordinator_ids.filter(id => id !== p.id) }))} />{p.name}</label>)}</div></fieldset>
     </details>
-    <fieldset><legend className="font-semibold">เส้นทางโรงพยาบาลและพื้นที่รับ · เวลาเดินทางรวมระหว่างจุดรับ</legend>
+    </SettingsGroup>
+    <SettingsGroup number="2" title="ความจุรถ">
+      <p className="text-sm text-slate-600">ระบุความจุรถจริง ช่องที่ไม่มีให้ใส่ 0</p>
+      <div className="grid gap-4 sm:grid-cols-3">
+      {input('seats', 'ที่นั่งผู้โดยสาร ไม่รวมคนขับ', { type: 'number', min: 1, max: 15 })}{input('wheelchairs', 'ที่ยึดรถเข็น', { type: 'number', min: 0, max: 4 })}{input('stretchers', 'ที่ยึดเปล', { type: 'number', min: 0, max: 2 })}
+      </div>
+    </SettingsGroup>
+    <SettingsGroup number="3" title="วันและเวลาให้บริการ">
+    <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950">เปิดรับคำขอได้ทุกวัน รวมเสาร์–อาทิตย์และวันหยุด ตั้งแต่วันนี้ถึงล่วงหน้า 12 เดือน เจ้าหน้าที่ตรวจรถและยืนยันคิวแต่ละเที่ยวตามปกติ</p>
+      <div className="grid gap-4 sm:grid-cols-2">
+      {['office_start', 'office_end'].map((key, i) => <label key={key}>{i ? 'สิ้นสุดเวลานัดแพทย์' : 'เริ่มเวลานัดแพทย์'}<input className={inputClass} type="time" required value={clockTime(form[key])} onChange={e => setForm(f => ({ ...f, [key]: minutes(e.target.value) }))} /></label>)}
+      </div>
+      <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950">เวลานัดแพทย์ที่เปิดให้จอง: <strong>{clockTime(form.office_start)}–{clockTime(form.office_end)} น.</strong> ตรงตามค่าที่ตั้งไว้ รถอาจออกไปรับก่อนเวลาเริ่มหรือกลับหลังเวลาสิ้นสุดตามระยะทางและเวลารับกลับ · มีผลหลังบันทึก</p>
+    <details className="rounded-xl border border-slate-200 p-3"><summary className="flex min-h-11 cursor-pointer items-center font-semibold">ปรับเวลาเผื่อ · ปกติไม่ต้องแก้</summary><p className="my-2 text-sm">ระบบเผื่อก่อนนัด/หลังเที่ยว {form.buffer_minutes} นาที และขึ้นลงรถ {form.boarding_minutes} นาทีต่อคน เปลี่ยนเฉพาะเมื่อไม่ตรงกับการปฏิบัติงาน</p><div className="grid gap-4 sm:grid-cols-2">
+      {input('buffer_minutes', 'เวลาเผื่อก่อนนัด/หลังเที่ยว (นาที)', { type: 'number', min: 5, max: 90, required: true })}
+      {input('boarding_minutes', 'เวลาขึ้นลงต่อผู้เดินทาง (นาที)', { type: 'number', min: 5, max: 60, required: true })}
+    </div></details>
+    </SettingsGroup>
+    <SettingsGroup number="4" title="เส้นทางโรงพยาบาลและพื้นที่รับ">
+    <fieldset><legend className="sr-only">เส้นทางโรงพยาบาลและพื้นที่รับ · เวลาเดินทางรวมระหว่างจุดรับ</legend>
+      <p className="text-sm text-slate-600">กำหนดโรงพยาบาล พื้นที่รับ และเวลาเดินทางต่อขา เพื่อให้ระบบคำนวณคิวรถ</p>
       {form.routes.map((r, i) => <div key={r.id} className="my-3 grid gap-3 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1fr_140px_auto]">
         <label>ชื่อโรงพยาบาล — พื้นที่รับ<input className={inputClass} value={r.label} required maxLength={200} onChange={e => changeRoute(i, 'label', e.target.value)} /></label>
         <label>นาทีต่อขา<input className={inputClass} type="number" min={5} max={240} required value={r.minutes} onChange={e => changeRoute(i, 'minutes', Number(e.target.value))} /></label>
@@ -58,13 +84,14 @@ export default function BookingSettings({ workspace, busy, onSave }) {
       </div>)}
       <button type="button" className={buttonClass} onClick={() => setForm(f => ({ ...f, routes: [...f.routes, { id: crypto.randomUUID(), label: '', minutes: 30 }] }))}>เพิ่มเส้นทาง</button>
     </fieldset>
-    <details className="rounded-xl border border-slate-200 p-3"><summary className="flex min-h-11 cursor-pointer items-center font-semibold">ปรับเวลาเผื่อ · ปกติไม่ต้องแก้</summary><p className="my-2 text-sm">ระบบเผื่อก่อนนัด/หลังเที่ยว {form.buffer_minutes} นาที และขึ้นลงรถ {form.boarding_minutes} นาทีต่อคน เปลี่ยนเฉพาะเมื่อไม่ตรงกับการปฏิบัติงาน</p><div className="grid gap-4 sm:grid-cols-2">
-      {input('buffer_minutes', 'เวลาเผื่อก่อนนัด/หลังเที่ยว (นาที)', { type: 'number', min: 5, max: 90, required: true })}
-      {input('boarding_minutes', 'เวลาขึ้นลงต่อผู้เดินทาง (นาที)', { type: 'number', min: 5, max: 60, required: true })}
-    </div></details>
+    </SettingsGroup>
+    <SettingsGroup number="5" title="การเปิดรับจอง">
     {missing.length > 0 && <div className="rounded-xl bg-amber-50 p-3"><p className="font-semibold">ข้อมูลที่ต้องเติมก่อนเปิดรับจอง</p><p className="text-sm">หากยังกรอกไม่ครบ ให้เว้น “เปิดรับจองรถออนไลน์” ไว้ก่อนแล้วบันทึกการตั้งค่า</p><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{missing.map(item => <li key={item}>{item}</li>)}</ul></div>}
     <label className="flex min-h-11 items-center gap-3"><input className="size-5" type="checkbox" checked={form.unavailable} onChange={set('unavailable')} />รถหรือคนขับไม่พร้อม · หยุดยืนยันเที่ยวใหม่</label>
     <label className="flex min-h-11 items-center gap-3"><input className="size-5" type="checkbox" checked={form.enabled} onChange={set('enabled')} />เปิดรับจองรถออนไลน์</label>
+    </SettingsGroup>
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5"><p className="text-sm text-slate-600">แก้ไขครบแล้ว กดบันทึกครั้งเดียวทุกกลุ่ม</p>
     <button className={primaryClass} disabled={busy}>{busy ? 'กำลังบันทึก…' : 'บันทึกการตั้งค่า'}</button>
+    </div>
   </form>
 }

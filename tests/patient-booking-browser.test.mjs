@@ -435,6 +435,7 @@ try{
   for(const as of ['citizen','coordinator','driver','admin']){
    await visit(as);if(as==='admin')await page.getByRole('button',{name:'ตั้งค่า',exact:true}).click()
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${width} ${as} overflow`)
+   if(as==='admin' && process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-settings-${width}.png`,fullPage:true})}
   }
   console.log(`PASS rendered ${width}px four roles`)
  }
