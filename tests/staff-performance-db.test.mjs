@@ -12,6 +12,7 @@ const { PGlite } = await import(pathToFileURL(modulePath).href)
 
 const sqlFile = (relative) => readFile(new URL(relative, import.meta.url), 'utf8')
 const migration = await sqlFile('../supabase/migrations/20260927150000_staff_performance_rows_rpc.sql')
+const viewerMigration = await sqlFile('../supabase/migrations/20260927200000_staff_performance_rows_viewer.sql')
 
 // Real helper definitions are sliced out of the migrations that production runs, so the test
 // exercises the same department matching and ad-hoc rules instead of a hand-written copy.
@@ -86,6 +87,7 @@ const council = id(17)
 const citizen = id(18)
 const superadmin = id(19)
 const officerNoDept = id(20)
+const otherViewer = id(21)
 const nobody = id(99)
 const ROUND_2 = ['2026-04-01', '2026-09-30']
 
@@ -98,14 +100,20 @@ const test = async (label, run) => {
 
 const guardDb = new PGlite()
 await guardDb.exec(schema({ withResolvedBy: false }))
-await test('guard stops the migration when a required column is missing', () =>
-  assert.rejects(() => guardDb.exec(migration), /ไม่พบคอลัมน์ complaints\.resolved_by/))
+await test('guard stops both migrations when a required column is missing', async () => {
+  await assert.rejects(() => guardDb.exec(migration), /ไม่พบคอลัมน์ complaints\.resolved_by/)
+  await assert.rejects(() => guardDb.exec(viewerMigration), /ไม่พบคอลัมน์ complaints\.resolved_by/)
+})
 await guardDb.close()
 
 const db = new PGlite()
 await db.exec(schema())
 await db.exec(migration)
-await test('migration is repeatable', () => db.exec(migration))
+await db.exec(viewerMigration)
+await test('migrations are repeatable', async () => {
+  await db.exec(migration)
+  await db.exec(viewerMigration)
+})
 
 await db.query(`INSERT INTO public.departments VALUES
   ($1, $3, 'กองช่าง', 'ช่าง', 'works'),
@@ -124,6 +132,7 @@ await db.query(`INSERT INTO public.profiles VALUES
   ($11, 'officer', $12, NULL, '[TEST] หัวหน้าไม่มีกอง')`,
 [tech, staff, officer, otherOfficer, admin, otherAdmin, viewer, council, citizen, superadmin, officerNoDept,
   tenant, works, office, otherTenant])
+await db.query("INSERT INTO public.profiles VALUES ($1, 'viewer', $2, NULL, '[TEST] ผู้บริหาร อปท. อื่น')", [otherViewer, otherTenant])
 await db.query(`INSERT INTO public.complaint_categories (municipality_id, value, label, is_adhoc, requires_manual_intake) VALUES
   ($1, 'light', 'ไฟฟ้าสาธารณะ', false, false),
   ($1, 'odor', 'กลิ่นเหม็น', true, false),
@@ -211,6 +220,13 @@ await test('admin and superadmin see the same full set as the person', async () 
   assert.deepEqual(numbers(await call(admin, tech)), FULL)
   assert.deepEqual(numbers(await call(superadmin, tech)), FULL)
 })
+await test('executives (viewer) see everyone in their municipality, without village', async () => {
+  const rows = await call(viewer, tech)
+  assert.deepEqual(numbers(rows), FULL)
+  assert.ok(rows.every((r) => r.village === null), 'ผู้บริหารต้องไม่เห็นหมู่บ้าน')
+  assert.ok(rows.some((r) => r.ref_no !== null), 'เลขที่คำร้องยังต้องอยู่ ไว้ตรวจย้อน')
+  assert.ok((await call(admin, tech)).some((r) => r.village !== null), 'แอดมินยังเห็นหมู่บ้านตามเดิม')
+})
 await test('department head sees only complaints of their own department (no new permission)', async () => {
   assert.deepEqual(numbers(await call(officer, tech)), OFFICER_VIEW)
 })
@@ -227,8 +243,7 @@ await test('everyone else is refused with one message', async () => {
   await denied(otherOfficer, tech)
   await denied(officerNoDept, tech)
   await denied(otherAdmin, tech)
-  await denied(viewer, tech)
-  await denied(viewer, viewer)
+  await denied(otherViewer, tech)
   await denied(council, tech)
   await denied(citizen, citizen)
   await denied(admin, nobody)
@@ -296,6 +311,13 @@ await test('no complainant personal data or free text is returned', async () => 
     'resolved_by_name', 'status', 'village',
   ])
   assert.ok(!JSON.stringify(rows).includes('secret'))
+})
+
+await test('rollback to the first version removes executive access again', async () => {
+  await db.exec(migration)
+  await denied(viewer, tech)
+  await db.exec(viewerMigration)
+  assert.deepEqual(numbers(await call(viewer, tech)), FULL)
 })
 
 await db.close()
