@@ -40,6 +40,10 @@ export default function PatientTransportStaff({ onBack } = {}) {
   const isDriver = workspace?.role === 'driver' || (isCoordinator && !!uid && workspace?.settings?.driver_id === uid) || workspace?.trips?.some(t => t.driver_id === uid)
   const allowed = isCoordinator || isDriver
   const view = selectedView ?? (isCoordinator ? 'inbox' : 'driver')
+  // Count only this account's unfinished driver work. Completed trips with a valid odometer are history, not alerts.
+  const driverWorkCount = (workspace?.trips || []).filter(t => t.driver_id === uid &&
+    (t.state !== 'cancelled' && t.state !== 'completed' ||
+      t.state === 'completed' && (!Number.isFinite(t.odometer_end) || t.odometer_issue))).length
   const tabs = [
     { id: 'inbox', label: 'คำขอรถ', Icon: Inbox, show: isCoordinator },
     { id: 'calendar', label: 'ปฏิทิน', Icon: CalendarDays, show: isCoordinator },
@@ -193,6 +197,10 @@ export default function PatientTransportStaff({ onBack } = {}) {
       <p className="mt-2 text-sm">ให้ผู้ดูแลเพิ่มบัญชีนี้เป็นผู้จัดคิวหรือคนขับในหน้าตั้งค่าก่อน ระหว่างนี้ใช้หน้าประชาชนเพื่อจองรถได้ตามปกติ</p>
       <Link to="/patient-transport" className={`${primaryClass} mt-4 inline-flex items-center`}>ไปหน้าประชาชน</Link></div>}
     {current && allowed && <>
+      {isDriver && view !== 'driver' && driverWorkCount > 0 && <section aria-label="งานคนขับรอดำเนินการ" className="mb-4 flex flex-col gap-3 rounded-2xl border-2 border-amber-400 bg-amber-50 p-4 text-slate-950 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3"><span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-500"><Car size={24} aria-hidden="true" /></span><div><p className="font-bold">มีงานคนขับ {driverWorkCount} รายการ</p><p className="text-sm">เที่ยวที่ต้องไปหรือรอบันทึกเลขไมล์</p></div></div>
+        <button type="button" className="min-h-12 w-full rounded-xl bg-amber-500 px-5 py-3 text-center font-bold text-slate-950 hover:bg-amber-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-950 disabled:opacity-50 sm:w-auto" disabled={busy} onClick={() => { setCalendarBookingId(null); setView('driver') }}>ไปแท็บงานคนขับ →</button>
+      </section>}
       <div className="[&>nav]:flex-wrap [&>nav]:overflow-visible [&>nav>button]:min-h-11 [&>nav>button]:px-3 sm:[&>nav>button]:px-4"><TabBar tab={view} setTab={tab => { setCalendarBookingId(null); setView(tab) }} tabs={tabs} busy={busy} /></div>
       {!info?.enabled && <p className="mb-4 rounded-xl bg-amber-50 p-4">{isAdmin ? 'ยังไม่เปิดรับจองออนไลน์ ตั้งค่ารถ คนขับ ผู้จัดคิว เส้นทางและเวลาให้บริการในแท็บ “ตั้งค่า” ก่อนเปิดบริการ' : 'ยังไม่เปิดรับจองออนไลน์ ให้ผู้ดูแลตั้งค่ารถและเปิดบริการก่อน'}</p>}
       {(view === 'inbox' || (view === 'calendar' && calendarBookingId)) && isCoordinator && <BookingInbox key={calendarBookingId || 'inbox'} workspace={workspace} busy={busy} error={error} isAdmin={isAdmin} action={intakeButton}
