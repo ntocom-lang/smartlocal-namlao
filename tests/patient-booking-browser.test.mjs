@@ -12,6 +12,7 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { previousOdometer, thaiDay } from '../src/lib/patientBooking.js'
 process.env.PATIENT_UI_QA = '1'
 const { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, baseBooking } = await import('./patient-booking-db.test.mjs')
+await db.exec(await readFile(new URL('../supabase/migrations/20260927180000_patient_booking_events_page.sql', import.meta.url), 'utf8'))
 await actor(admin); await rpc('patient_booking_save_settings',[tenant,(await rpc('patient_booking_workspace',[tenant])).settings.revision,settings])
 const setupTenant='00000000-0000-4000-8000-000000009001',setupAdmin='00000000-0000-4000-8000-000000009002',setupPartner='00000000-0000-4000-8000-000000009003'
 // ผู้ใช้ใหม่ที่ยังไม่เคยจอง — ใช้วัด "จองครั้งแรก" กับ "จองครั้งต่อไป" (เติมข้อมูลจากครั้งก่อน)
@@ -37,6 +38,7 @@ const order = {
  patient_booking_preview_into_trip:['p_muni','p_booking','p_trip'],patient_booking_confirm_into_trip:['p_muni','p_op','p_booking','p_trip','p_expected'],
  patient_booking_amend:['p_muni','p_op','p_id','p_revision','p_data','p_note'],
  patient_booking_save_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end','p_issue','p_note'],patient_booking_record_letter:['p_muni','p_trip','p_docs_revision','p_letter_no','p_letter_date'],patient_booking_record_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end'],patient_booking_month_report:['p_muni','p_month'],
+ patient_booking_events_page:['p_muni','p_page'],
 }
 const plugin = {
  name:'isolated-patient-booking-browser',enforce:'pre',
@@ -484,6 +486,29 @@ try{
   const box=await tab.boundingBox();assert(box.x>=0&&box.x+box.width<=321,'แท็บเจ้าหน้าที่ต้องเห็นเต็มปุ่มบนมือถือ')
  }
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'แท็บเจ้าหน้าที่ 320px overflow')
+ // ประวัติจริงเกิน 50 รายการ: โหลดทีละ 20 จากฐานข้อมูล พร้อมสิทธิ์เฉพาะผู้จัดคิว
+ await runSql(async()=>{
+  for(let i=0;i<61;i++)await db.query('INSERT INTO public.patient_booking_events(municipality_id,actor_id,entity_id,action,detail,created_at) VALUES($1,$2,$3,$4,$5,$6)',[tenant,admin,randomUUID(),`[TEST] history ${String(i).padStart(2,'0')}`,{},new Date(Date.UTC(2026,8,27,12,0,i)).toISOString()])
+ })
+ const eventCount=Number((await runSql(async()=>(await db.query('SELECT count(*) AS total FROM public.patient_booking_events WHERE municipality_id=$1',[tenant])).rows[0].total)))
+ await assert.rejects(runAs(citizen,()=>rpc('patient_booking_events_page',[tenant,1])),/เฉพาะเจ้าหน้าที่/)
+ await assert.rejects(runAs(driver,()=>rpc('patient_booking_events_page',[tenant,1])),/เฉพาะเจ้าหน้าที่/)
+ const reportPage=await runAs(coordinator,()=>rpc('patient_booking_events_page',[tenant,1]))
+ assert.equal(reportPage.total,eventCount);assert.equal(reportPage.events.length,20)
+ await menu.getByRole('button',{name:'รายงาน',exact:true}).click()
+ const historyNav=page.getByRole('navigation',{name:'แบ่งหน้าประวัติ'})
+ await historyNav.getByText(`แสดง 1–20 จาก ${eventCount} รายการ · หน้า 1/${Math.ceil(eventCount/20)}`).waitFor()
+ assert.equal(await page.locator('[data-report-event]').count(),20)
+ await historyNav.getByRole('button',{name:'ถัดไป'}).click()
+ await historyNav.getByText(`แสดง 21–40 จาก ${eventCount} รายการ · หน้า 2/${Math.ceil(eventCount/20)}`).waitFor()
+ assert.equal(await page.locator('[data-report-event]').count(),20)
+ await historyNav.getByRole('button',{name:'ถัดไป'}).click()
+ await historyNav.getByText(`แสดง 41–60 จาก ${eventCount} รายการ · หน้า 3/${Math.ceil(eventCount/20)}`).waitFor()
+ assert.equal(await page.locator('[data-report-event]').count(),20)
+ await historyNav.getByRole('button',{name:'ก่อนหน้า'}).click()
+ await historyNav.getByText(`แสดง 21–40 จาก ${eventCount} รายการ · หน้า 2/${Math.ceil(eventCount/20)}`).waitFor()
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'รายงาน 320px overflow')
+ console.log('PASS staff report pages through database; 20 rows per page, navigation, 320px, denied to citizen and driver')
  await menu.getByRole('button',{name:'ปฏิทิน',exact:true}).click()
  const staffCalendar=page.getByRole('region',{name:'ปฏิทินงานรถรับส่งผู้ป่วย'})
  await staffCalendar.getByLabel('ปี พ.ศ.',{exact:true}).selectOption(joinDay.slice(0,4))
