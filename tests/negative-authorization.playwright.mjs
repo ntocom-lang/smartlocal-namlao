@@ -25,7 +25,7 @@ const ROUTE_MARKERS = {
   '/staff': 'ระบบเจ้าหน้าที่',
   '/admin': 'แผงควบคุม ADMIN',
   '/technician': 'แผงควบคุมช่าง',
-  '/fleet': 'ระบบยานพาหนะและเชื้อเพลิง',
+  '/fleet': 'ยานพาหนะและเชื้อเพลิง',
 }
 
 const FLEET_DENIED_TEXT = 'ไม่มีสิทธิ์เข้าใช้ระบบ'

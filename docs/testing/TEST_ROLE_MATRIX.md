@@ -69,6 +69,25 @@ access token, refresh token, recovery code หรือ browser storage/session 
 
 ทุกบัญชีลงท้าย `@smartlocal.test` (TLD สงวนตาม RFC 2606 เป็นอีเมลจริงไม่ได้แน่นอน)
 
+### เมนู "ผลการปฏิบัติงาน" (คีย์ `performance`) — ใครเห็นอะไร
+
+อยู่ใน `/staff` ถัดจากเมนู "รายงาน" · ทุก อปท. ได้เหมือนกัน (ไม่อยู่ใน `enabled_modules`)
+แต่ซ่อนเมื่อ อปท. ปิดโมดูลคำร้อง · หน้าจอเป็นแค่ด่านแรก สิทธิ์จริงคุมที่ RPC `staff_performance_rows`
+
+| บัญชี | เมนู | เลือกดูผลงานของ |
+|---|---|---|
+| `demo-technician`, `demo-technician-2` | เห็น + ปุ่มจาก `/technician` | ตัวเองเท่านั้น |
+| `demo-staff`, `demo-staff-edu`, `demo-staff-audit`, `demo-fleet-admin`, `demo-fleet-staff`, `demo-fleet-viewer` | เห็น | ตัวเองเท่านั้น (`fleet_role` ไม่มีผล) |
+| `demo-officer-eng`, `demo-officer-fin`, `demo-officer-edu`, `demo-officer-audit` | เห็น | ตัวเอง (ครบทุกเรื่อง) + คนในกอง — **ของคนอื่นนับเฉพาะคำร้องของกองตัวเอง** |
+| `demo-admin` | เห็น | ทุกคนใน อปท. |
+| `demo-viewer` | เห็น | ทุกคนใน อปท. — **ช่องหมู่บ้านต้องว่าง** |
+| `demo-council` | **ต้องไม่เห็น** | — (RPC ตอบ `42501`) |
+| `demo-citizen` | — (`/staff` ถูกปฏิเสธ) | — |
+
+เปิด/พิมพ์/ส่งออก CSV ผลงาน "ของคนอื่น" เขียน `audit_logs`
+(`view_` / `print_` / `export_staff_performance`) ตามที่ออกแบบ
+ทดสอบในนามแอดมิน/หัวหน้ากอง/ผู้บริหารจึงมีแถวเพิ่มใน `demo` ไม่ต้องลบ
+
 ### Super Admin — ใช้แล้วลบทิ้งทันที
 
 > [!CAUTION]
