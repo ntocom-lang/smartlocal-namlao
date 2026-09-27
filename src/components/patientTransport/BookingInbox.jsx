@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useTenant } from '../../contexts/TenantContext'
+import { supabase } from '../../lib/supabase'
 import { ListCard, Pills, Sheet } from './StaffShell'
 import { AmendBooking, TripFundDocs, OdometerForm } from './BookingOperations'
 import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
@@ -176,13 +178,63 @@ function ProblemBox({ row, problem, rows, workspace, busy, isAdmin, onConfirm, o
 }
 
 // งานที่ไม่ได้ทำทุกวัน พับไว้ใต้ "จัดการเพิ่มเติม" — งานหลักของแถวอยู่ด้านบนเสมอ
-function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule }) {
+function MoveIntoTrip({ booking, trip, passengers, workspace, busy, onReload }) {
+  const { tenant } = useTenant()
+  const [selected, setSelected] = useState('')
+  const [operation, setOperation] = useState(() => crypto.randomUUID())
+  const [pending, setPending] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [openedAt] = useState(() => Date.now())
+  const options = workspace.trips.filter(candidate => candidate.id !== trip.id && candidate.state === 'confirmed' &&
+    candidate.plan?.route_id === booking.route_id && candidate.plan?.return_mode === booking.return_mode &&
+    new Date(candidate.plan?.pickup_at).getTime() > openedAt).map(candidate => {
+    const riders = workspace.bookings.filter(item => item.trip_id === candidate.id && item.status === 'confirmed')
+    if (!riders.length || riders.some(item => !item.share || item.mobility !== 'walk' || item.passenger_step !== 0 || item.cancel_requested || item.return_ready)) return null
+    const first = [...riders].sort((a, b) => a.appointment_at.localeCompare(b.appointment_at) || a.id.localeCompare(b.id))[0]
+    return { trip: candidate, rider: first, count: riders.length }
+  }).filter(Boolean).sort((a, b) => a.rider.appointment_at.localeCompare(b.rider.appointment_at))
+  const target = options.find(option => option.trip.id === selected)
+  const move = async () => {
+    if (!target || pending || busy) return
+    setPending(true); setError(''); setMessage('')
+    try {
+      const expected = { trip: trip.id, revision: trip.revision, docs_revision: trip.docs_revision,
+        schedule_revision: trip.schedule_revision, settings_revision: workspace.settings.revision,
+        bookings: Object.fromEntries([...passengers].sort((a, b) => a.id.localeCompare(b.id)).map(item => [item.id, item.revision])) }
+      const { data, error: failure } = await supabase.rpc('patient_booking_move_into_trip', {
+        p_muni: tenant.id, p_op: operation, p_booking: booking.id, p_expected: expected,
+        p_target: target.trip.id, p_target_revision: target.trip.revision,
+        p_target_booking: target.rider.id, p_target_booking_revision: target.rider.revision,
+      })
+      if (failure || !data?.saved) setError(failure?.message || 'ย้ายคิวไม่สำเร็จ กรุณาลองใหม่')
+      else { setMessage('ย้ายไปร่วมเที่ยวแล้ว ระบบแจ้งผู้เกี่ยวข้องแล้ว กรุณาพิมพ์เอกสารใหม่'); await onReload() }
+    } catch { setError('ติดต่อระบบไม่สำเร็จ กรุณาโหลดข้อมูลล่าสุดก่อนลองอีกครั้ง') }
+    finally { setPending(false) }
+  }
+  return <div className="space-y-3 rounded-xl bg-sky-50 p-3">
+    <p className="font-semibold">ย้ายไปร่วมเที่ยวที่มีอยู่</p>
+    <p className="text-sm">ย้ายเฉพาะ {booking.patient_name} · ระบบใช้เวลานัดและเวลารับกลับของเที่ยวที่เลือก ตรวจที่นั่งและเวลารถใหม่ แล้วเก็บเที่ยวเดิมกับเอกสารไว้เป็นประวัติ</p>
+    <label className="block">เลือกเที่ยวปลายทาง<select className={inputClass} value={selected} onChange={event => { setSelected(event.target.value); setOperation(crypto.randomUUID()); setError(''); setMessage('') }}>
+      <option value="">เลือกวันที่และผู้เดินทางในเที่ยว</option>
+      {options.map(option => <option key={option.trip.id} value={option.trip.id}>{dateTime(option.rider.appointment_at)} · {option.rider.patient_name} · {option.count} คน</option>)}
+    </select></label>
+    {target && <p className="rounded-lg bg-white p-3 text-sm">วันเวลานัดใหม่ {dateTime(target.rider.appointment_at)} · {target.rider.return_at ? `รับกลับ ${dateTime(target.rider.return_at)}` : 'เที่ยวไปอย่างเดียว'} · จุดรับของผู้เดินทางรายนี้ยังคงเดิม เวลารถมารับจะคำนวณใหม่</p>}
+    {error && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900">{error} · คิวเดิมยังอยู่</p>}
+    {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-900">{message}</p>}
+    <button type="button" className={primaryClass} disabled={!target || pending || busy} onClick={move}>{pending ? 'กำลังตรวจคิว...' : 'ย้ายไปร่วมเที่ยวนี้'}</button>
+  </div>
+}
+
+function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onReload }) {
   const { booking: b, trip, next, group } = row
   const [amending, setAmending] = useState(false)
   const [scheduling, setScheduling] = useState(null)
+  const [openedAt] = useState(() => Date.now())
   const passengers = trip ? workspace.bookings.filter(x => x.trip_id === trip.id && x.status !== 'cancelled') : []
   const tripOpen = trip && !['completed', 'cancelled'].includes(trip.state)
   const canReschedule = trip && ['confirmed', 'outbound'].includes(trip.state) && trip.odometer_end == null && passengers.every(x => x.passenger_step === 0 && !x.return_ready)
+  const canMoveIntoTrip = canReschedule && trip.state === 'confirmed' && b.share && b.mobility === 'walk' && new Date(trip.plan?.pickup_at).getTime() > openedAt
   const inService = tripOpen && trip.state !== 'confirmed'
   const releasable = trip && (trip.state === 'confirmed' || (trip.state === 'issue' && trip.state_before_issue === 'confirmed')) && passengers.every(x => x.passenger_step === 0)
   const removable = b.status === 'confirmed' && [0, 2].includes(b.passenger_step) && next.id !== 'cancel'
@@ -202,9 +254,11 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
         <ReasonAction busy={busy} title="ยกเลิกคำขอ" placeholder="เช่น ผู้จองแจ้งยกเลิกทางโทรศัพท์" button="ยกเลิกคำขอ" seenByCitizen onRun={note => act(b, 'cancel', note)} />
       </>}
       {canReschedule && scheduling !== 'reschedule' && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling('reschedule')}>{trip.state === 'confirmed' ? 'เปลี่ยนวันและเวลาเดินทาง' : 'กดออกรถผิด · เปลี่ยนวันเวลา'}</button>}
+      {canMoveIntoTrip && scheduling !== 'move' && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling('move')}>ย้ายไปร่วมเที่ยวที่มีอยู่</button>}
       {inService && scheduling !== 'estimate' && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling('estimate')}>แจ้งรถล่าช้า / เวลารับล่าสุด</button>}
       {scheduling && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling(null)}>ปิดฟอร์ม</button>}
       {canReschedule && scheduling === 'reschedule' && <RescheduleJourney key={`reschedule-${trip.id}`} trip={trip} booking={b} passengers={passengers} settings={workspace.settings} busy={busy} onReschedule={async args => { const out = await onReschedule(args); if (out?.saved) setScheduling(null); return out }} />}
+      {canMoveIntoTrip && scheduling === 'move' && <MoveIntoTrip booking={b} trip={trip} passengers={passengers} workspace={workspace} busy={busy} onReload={onReload} />}
       {inService && scheduling === 'estimate' && <ScheduleUpdate key={trip.id} trip={trip} busy={busy} onUpdate={async (...args) => { const saved = await onUpdateSchedule(...args); if (saved) setScheduling(null); return saved }} />}
       {trip && next.id !== 'docs' && <TripFundDocs trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />}
       {trip?.state === 'completed' && next.id !== 'docs' && <OdometerForm trip={trip} trips={workspace.trips} busy={busy} onSave={onOdometer} />}
@@ -269,7 +323,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
     </div>}
     <Facts booking={b} trip={trip} others={others} />
     <MoreActions row={row} workspace={workspace} busy={busy} onConfirm={onConfirm} act={act} remove={remove} onAmend={onAmend}
-      onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} />
+      onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} onReload={onReload} />
   </Sheet>
 }
 
