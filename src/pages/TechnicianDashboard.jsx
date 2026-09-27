@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Loader2, MapPin, Phone, X, RefreshCw,
   CheckCircle2, ChevronRight, Wrench, Printer,
-  Plus, ChevronDown, Image,
+  Plus, ChevronDown, Image, ClipboardCheck,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { fetchComplaintPrivateDetail } from '../lib/complaintPrivacy'
@@ -511,6 +511,8 @@ export default function TechnicianDashboard() {
   const { session } = useAuth()
   const staffId = session?.user?.id
   const navigate = useNavigate()
+  // เมนูอยู่ในหน้าเจ้าหน้าที่ — StaffDashboard อ่าน state.module ตอน mount แล้วเปิดเมนูนั้นให้เลย
+  const openPerformance = () => navigate('/staff', { state: { module: 'performance' } })
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(null)
@@ -798,6 +800,11 @@ export default function TechnicianDashboard() {
             <p className="text-[11px] text-gray-400 mt-0.5">{myName} · {tenant?.name} — แผงควบคุมช่าง</p>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={openPerformance}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors">
+              <ClipboardCheck size={13} />
+              ผลการปฏิบัติงาน
+            </button>
             <button onClick={() => fetchComplaints()} disabled={loading}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50">
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
@@ -863,6 +870,19 @@ export default function TechnicianDashboard() {
               </div>
             </div>
           )}
+
+          {/* แสดงเสมอแม้ไม่มีงานค้าง — ผลงานที่ทำเสร็จไปแล้วยังต้องดู/พิมพ์ตอนประเมินได้ */}
+          <button onClick={openPerformance}
+            className="md:hidden flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3 text-left shadow-sm active:scale-[0.99] transition-transform">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: '#ede9fe', color: '#7c3aed' }}>
+              <ClipboardCheck size={18} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold text-gray-800">ผลการปฏิบัติงานของฉัน</span>
+              <span className="block text-[11px] text-gray-400">ผลงานจากคำร้อง รายเดือน ไตรมาส ปี และรอบการประเมิน</span>
+            </span>
+            <ChevronRight size={16} className="shrink-0 text-gray-300" />
+          </button>
 
           {loading ? (
             <div className="flex justify-center py-16">
