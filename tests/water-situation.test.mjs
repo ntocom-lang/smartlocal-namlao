@@ -4,8 +4,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
-  DAM_LEVELS, DAM_STALE_HOURS, EWS_FRESH_HOURS, RAIN_LEVELS, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS, bankText,
-  barPercent, buildAlerts, channelFill, damLevel, damTicks, damTrend, dataDayText, distanceText, ewsAlert,
+  DAM_LEVELS, DAM_STALE_HOURS, EWS_FRESH_HOURS, RAIN_LEVELS, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS, alertSummary,
+  bankText, barPercent, buildAlerts, channelFill, damLevel, damTicks, damTrend, dataDayText, distanceText, ewsAlert,
   flowCompare, formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainBarMax, rainLevel, safeColor,
   stationPlace, summaryStats, waterTrend,
 } from '../src/lib/waterSituation.js'
@@ -299,6 +299,73 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
   assert.equal(summaryStats({ rain: [rain[2]], dams: [dams[2]], now }).any, false)
   // อ่างที่ต้นทางยังไม่ลงตัวเลขของวันใหม่ (ปริมาตร null) ต้องไม่ทำให้ % เพี้ยน
   assert.equal(summaryStats({ dams: [{ dam_storage_mcm: null, dam_capacity_mcm: 6.76, recorded_at: ago(1) }], now }).dam, null)
+}
+
+// ── แถบเตือนบนหน้าแรก: ย่อคำเตือนเหลือบรรทัดเดียว ──
+{
+  const now = Date.now()
+  const ago = h => new Date(now - h * 3600_000).toISOString()
+  const rainStation = (code, name, mm, h = 1) => ({
+    station_code: code, station_name: name, rain_24h_mm: mm, recorded_at: ago(h),
+    tambon_name: 'ทุ่งศรี', amphoe_name: 'ร้องกวาง', distance_km: 6.5,
+  })
+  const summaryOf = (input, opts) => alertSummary(buildAlerts({ ...input, now }), { now, ...opts })
+
+  // วันปกติ = ไม่มีแถบ
+  assert.equal(summaryOf({}), null, 'ไม่มีเรื่องเข้าเกณฑ์ต้องไม่ขึ้นแถบ')
+  assert.equal(summaryOf({ rain: [rainStation('R1', 'บ้านผาราง', 45)] }), null, 'ฝนไม่ถึงเกณฑ์ไม่ขึ้นแถบ')
+  assert.equal(summaryOf({ rain: [rainStation('R1', 'บ้านผาราง', 120, 5)] }), null, 'ค่าเก่ากว่า 3 ชม. ไม่ขึ้นแถบ')
+
+  // ฝนหนักมาก — หยิบสถานีที่ค่าสูงสุดมาเป็นหัวเรื่อง และนับเรื่องที่เหลือ
+  const rainOnly = summaryOf(
+    { rain: [rainStation('R1', 'บ้านผาราง', 96), rainStation('R2', 'บ้านบุญแจ่ม', 132.5)] },
+    { homeAmphoe: 'ร้องกวาง' },
+  )
+  assert.equal(rainOnly.label, 'ฝนหนักมาก')
+  assert.equal(rainOnly.text, 'บ้านบุญแจ่ม 132.5 มม.', 'หัวเรื่องต้องเป็นสถานีที่ฝนแรงที่สุด')
+  assert.equal(rainOnly.total, 2)
+  assert.ok(rainOnly.meta.includes('ต.ทุ่งศรี') && rainOnly.meta.includes('ห่าง 6.5 กม.') && rainOnly.meta.includes('วัดเมื่อ'), rainOnly.meta)
+  assert.ok(!rainOnly.meta.includes('อ.ร้องกวาง'), 'อำเภอเดียวกับ อปท. ไม่ต้องโชว์ซ้ำ')
+
+  // สถานีนอกอำเภอต้องเห็นชัดว่าไม่ได้วัดในพื้นที่
+  const outside = summaryOf({ rain: [rainStation('R1', 'บ้านผาราง', 96)] }, { homeAmphoe: 'หนองม่วงไข่' })
+  assert.ok(outside.meta.includes('อ.ร้องกวาง'), outside.meta)
+
+  // ข้อความ สสน. อย่างเดียว
+  const warningOnly = summaryOf({ warnings: [{ issued_at: ago(2), message: 'น้ำล้นตลิ่งที่สถานีตัวอย่าง' }] })
+  assert.equal(warningOnly.label, 'ข้อความเตือนจาก สสน.')
+  assert.equal(warningOnly.text, 'น้ำล้นตลิ่งที่สถานีตัวอย่าง')
+  assert.equal(warningOnly.total, 1)
+
+  // ลำดับความสำคัญ: สถานีเตือนภัยมาก่อนฝน ฝนมาก่อนข้อความ สสน.
+  const mixed = summaryOf({
+    rain: [rainStation('R1', 'บ้านผาราง', 96)],
+    warnings: [{ issued_at: ago(1), message: 'ข้อความของ สสน.' }],
+    ews: [{ station_code: 'E1', station_name: 'สถานีตัวอย่าง', situation_level: 3, situation_text: 'วิกฤติ', recorded_at: ago(1), distance_km: 3 }],
+  })
+  assert.equal(mixed.label, 'สถานีเตือนภัยน้ำหลาก-ดินถล่ม')
+  assert.equal(mixed.text, 'สถานีตัวอย่าง · วิกฤติ')
+  assert.equal(mixed.total, 3, 'นับรวมทุกหมวด ไม่ใช่เฉพาะหมวดที่เป็นหัวเรื่อง')
+
+  const rainOverWarning = summaryOf({
+    rain: [rainStation('R1', 'บ้านผาราง', 96)],
+    warnings: [{ issued_at: ago(1), message: 'ข้อความของ สสน.' }],
+  })
+  assert.equal(rainOverWarning.label, 'ฝนหนักมาก')
+  assert.equal(rainOverWarning.total, 2)
+
+  // แถบบนหน้าแรกต้องใช้ผลของ buildAlerts ตัวเดียวกับหน้า /water-situation ห้ามมีเกณฑ์ของตัวเอง
+  const banner = readFileSync(new URL('../src/components/citizen/WaterAlertBanner.jsx', import.meta.url), 'utf8')
+  assert.ok(banner.includes('buildAlerts(') && banner.includes('alertSummary('), 'แถบหน้าแรกต้องเรียก buildAlerts + alertSummary')
+  assert.ok(!/\b90\.1\b/.test(banner), 'ห้ามเขียนเกณฑ์ตัวเลขซ้ำในคอมโพเนนต์')
+  assert.ok(banner.includes("isModuleEnabled(MODULE_KEY)"), 'ต้องกันไม่ให้ อปท. ที่ปิดโมดูลยิง RPC')
+  assert.ok(banner.includes('ไม่ใช่ประกาศของ'), 'ต้องคงคำกำกับว่าไม่ใช่ประกาศของ อปท.')
+
+  // ทุกธีมต้องมีแถบ — ใส่ธีมเดียวเท่ากับ อปท. ที่ใช้ธีมอื่นไม่เห็นคำเตือนเลย
+  for (const theme of ['EcoFriendly', 'ServiceHub', 'Kledkaew']) {
+    const home = readFileSync(new URL(`../src/components/citizen/templates/${theme}/Home.jsx`, import.meta.url), 'utf8')
+    assert.ok(home.includes('<WaterAlertBanner'), `ธีม ${theme} ยังไม่มีแถบเตือนบนหน้าแรก`)
+  }
 }
 
 console.log('✅ water-situation: ผ่านทุกข้อ')

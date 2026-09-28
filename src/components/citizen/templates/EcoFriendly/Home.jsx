@@ -9,6 +9,7 @@ import { selectableDocumentTypes } from '../../../../lib/documentTypes'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
+import WaterAlertBanner from '../../WaterAlertBanner'
 import {
   ChevronRight, Newspaper,
 } from 'lucide-react'
@@ -223,6 +224,10 @@ export default function HomePage() {
   return (
     <div className="bg-gray-50">
       <div className="px-3 sm:px-4 lg:px-6 pt-2 lg:pt-3 pb-4 max-w-[1440px] mx-auto">
+
+        {/* ขึ้นเฉพาะวันที่มีเรื่องเข้าเกณฑ์ วันปกติคืน null — อยู่บนสุดเพราะบนมือถือถ้าวางใต้แบนเนอร์
+            จะตกไปอยู่นอกจอแรก คำเตือนที่ต้องเลื่อนหาไม่ช่วยอะไรตอนฝนตกหนัก */}
+        <WaterAlertBanner className="mb-2" />
 
         {/* Mobile: สภาพอากาศอยู่ก่อนแบนเนอร์ / Desktop: แบนเนอร์ซ้าย ข้อมูลเมืองขวา */}
         <div className="grid lg:grid-cols-12 gap-2 lg:gap-4">
