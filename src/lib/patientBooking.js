@@ -26,6 +26,23 @@ export function bookingLastDay(today = thaiDay()) {
 }
 // เวลาเป็นนาฬิกาไทยจากค่า ISO ที่ฐานข้อมูลส่งมา เช่น "08:45"
 export function clockOf(value) { return value ? new Date(value).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) : '' }
+// The plan carries time ranges, never other riders' identities. Match a rider to their
+// appointment/return window; apply a later staff time announcement to every run equally.
+function riderWaveTime(trip, booking, waves, from, to, field, planned, estimated) {
+  const at = Date.parse(booking?.[from])
+  const wave = trip?.plan?.[waves]?.find(w => at >= Date.parse(w[to[0]]) && at <= Date.parse(w[to[1]]))
+  if (!wave?.[field]) return estimated || planned || null
+  const shift = Date.parse(estimated) - Date.parse(planned)
+  return Number.isFinite(shift) ? new Date(Date.parse(wave[field]) + shift).toISOString() : wave[field]
+}
+export function pickupForBooking(trip, booking) {
+  return riderWaveTime(trip, booking, 'outbound_waves', 'appointment_at', ['appointment_start', 'appointment_end'],
+    'pickup_at', trip?.plan?.pickup_at, trip?.estimated_pickup_at)
+}
+export function returnForBooking(trip, booking) {
+  return riderWaveTime(trip, booking, 'return_waves', 'return_at', ['return_start', 'return_end'],
+    'return_start', trip?.plan?.return_at, trip?.estimated_return_at)
+}
 // "วันนี้ / พรุ่งนี้" ช่วยให้กวาดตาหางานของวันได้เร็ว วันอื่นแสดงชื่อวันกับวันที่สั้น
 // ต่างปีต้องมีปีกำกับ ไม่งั้นคำขอค้างจากปีก่อนดูเหมือนนัดเดือนหน้า
 export function whenLabel(at) {
@@ -229,7 +246,9 @@ export function overlappingTrips(plan, trips = []) {
 // เป็นแค่ตัวกรองไม่ให้ถามฐานข้อมูลเปล่า ๆ — เงื่อนไขจริง (ยินยอมนั่งร่วม ที่นั่ง เวลา) ฐานข้อมูลตัดสินเอง
 export function joinCandidates(plan, trips = []) {
   return overlappingTrips(plan, trips).filter(t => t.state === 'confirmed' && t.plan?.route_id === plan?.route_id
-    && t.plan?.return_mode === plan?.return_mode && t.plan?.date === plan?.date).slice(0, 3)
+    && (t.plan?.return_mode === plan?.return_mode ||
+      (['wait', 'later'].includes(t.plan?.return_mode) && ['wait', 'later'].includes(plan?.return_mode)))
+    && t.plan?.date === plan?.date).slice(0, 3)
 }
 // เหตุที่ไปคันเดียวกันไม่ได้ เป็นภาษาเจ้าหน้าที่ — ข้อความจากฐานข้อมูลเขียนไว้ให้ประชาชน ("กรุณาประสานเจ้าหน้าที่")
 const JOIN_REFUSALS = [

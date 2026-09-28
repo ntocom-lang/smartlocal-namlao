@@ -3,7 +3,7 @@ import { ListCard } from './StaffShell'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
-import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer } from '../../lib/patientBooking'
+import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking } from '../../lib/patientBooking'
 
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
 const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
@@ -40,7 +40,7 @@ export function BookingCards({ bookings, trips, onAction, busy }) {
       {step === 1 && <p className="rounded-xl bg-amber-50 p-3">รอเจ้าหน้าที่ยืนยันรถ · ยังไม่ได้กันที่นั่งให้</p>}
       {step === 4 && <p className="rounded-xl bg-emerald-50 p-3">เดินทางเสร็จแล้ว ขอบคุณที่ใช้บริการ</p>}
       {b.requested_trip_id && b.status === 'submitted' && <p className="font-semibold text-sky-800">ขอร่วมเที่ยว รอเจ้าหน้าที่ตรวจยืนยัน</p>}
-      {trip && <div className="my-3 rounded-xl bg-sky-50 p-3"><strong>{TRIP_STATUS[trip.state]}</strong><p>รถจะมารับประมาณ {dateTime(trip.estimated_pickup_at || trip.plan.pickup_at)}</p>{trip.public_notice === 'delayed' && <p className="font-semibold text-amber-800">รถล่าช้า · กรุณาตรวจเวลาล่าสุด</p>}{trip.public_notice === 'contact' && <p className="font-semibold text-amber-800">กรุณาติดต่อเจ้าหน้าที่ก่อนเดินทาง</p>}{trip.estimated_return_at && <p>แจ้งรับกลับล่าสุด {dateTime(trip.estimated_return_at)} (ประมาณการ)</p>}<p className="text-sm">{RETURN_MODES[b.return_mode]} · {MOBILITY[b.mobility]}{b.companions ? ` · ผู้ติดตาม ${b.companions} คน` : ''}</p></div>}
+      {trip && <div className="my-3 rounded-xl bg-sky-50 p-3"><strong>{TRIP_STATUS[trip.state]}</strong><p>รถจะมารับคุณประมาณ {dateTime(pickupForBooking(trip, b))}</p>{trip.public_notice === 'delayed' && <p className="font-semibold text-amber-800">รถล่าช้า · กรุณาตรวจเวลาล่าสุด</p>}{trip.public_notice === 'contact' && <p className="font-semibold text-amber-800">กรุณาติดต่อเจ้าหน้าที่ก่อนเดินทาง</p>}{b.return_mode !== 'one_way' && <p>รับกลับประมาณ {dateTime(returnForBooking(trip, b))} (อาจปรับตามเวลาจริง)</p>}<p className="text-sm">{RETURN_MODES[b.return_mode]} · {MOBILITY[b.mobility]}{b.companions ? ` · ผู้ติดตาม ${b.companions} คน` : ''}</p></div>}
       {/* เหตุผลที่เจ้าหน้าที่บันทึกตอนกดยกเลิก — ของเดิมขึ้นแค่ป้าย “ยกเลิกแล้ว” ผู้จองต้องโทรถามเองว่าทำไมไม่ได้รถ
           ฐานข้อมูลส่ง cancel_note มาเฉพาะคำขอที่ถูกยกเลิกและมีเหตุผลที่เจ้าหน้าที่เขียนไว้ (20260922130000) */}
       {b.status === 'cancelled' && b.cancel_note && <p className="my-2 rounded-xl bg-amber-50 p-3"><strong>เจ้าหน้าที่แจ้งเหตุผลที่ยกเลิก</strong><br />{b.cancel_note}</p>}
@@ -165,6 +165,11 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
       <p className="text-lg font-bold">{whenLabel(pickupAt)} · ออกรับ {clockOf(pickupAt)} น.</p>
       <p className="font-semibold">🏥 {t.plan?.route_label}</p>
       <p className="text-sm text-slate-600">{RETURN_MODES[t.plan?.return_mode]}{t.plan?.return_mode !== 'one_way' && backAt ? ` · รับกลับประมาณ ${clockOf(backAt)} น.` : ''}</p>
+      {t.plan?.multiwave && <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">
+        <strong>แผนวิ่งรถวันนี้</strong>
+        <ol className="mt-1 list-inside list-decimal">{t.plan.outbound_waves?.map((w, i) => <li key={`out-${i}`}>รับรอบ {i + 1} เริ่ม {clockOf(w.pickup_at)} น. · นัด {clockOf(w.appointment_start)}–{clockOf(w.appointment_end)} น.</li>)}</ol>
+        <ol className="list-inside list-decimal">{t.plan.return_waves?.map((w, i) => <li key={`back-${i}`}>รับกลับรอบ {i + 1} ประมาณ {clockOf(w.return_start)} น.</li>)}</ol>
+      </div>}
     </div>
     {t.helper_name && <p className="text-sm">ผู้ช่วยเคลื่อนย้าย: <strong>{t.helper_name}</strong></p>}
     <ol className="space-y-2">{people.map((b, index) => {
@@ -172,6 +177,7 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
       return <li key={b.id} className="rounded-xl bg-slate-50 p-3">
         <p className="font-bold">{people.length > 1 ? `${index + 1}. ` : ''}{b.patient_name}</p>
         <p className="text-sm">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</p>
+        {t.plan?.multiwave && <p className="text-sm font-semibold text-sky-900">มารับประมาณ {clockOf(pickupForBooking(t, b))} น.{b.return_mode !== 'one_way' ? ` · รับกลับประมาณ ${clockOf(returnForBooking(t, b))} น.` : ''}</p>}
         <p className="text-sm">จุดรับ: {b.pickup}</p>
         {b.cancel_requested && <p className="text-sm font-semibold text-amber-800">ผู้จองขอยกเลิก รอเจ้าหน้าที่ประสาน · ถ้าไม่ได้ขึ้นรถ กด “แจ้งเหตุขัดข้อง”</p>}
         {b.return_ready && ['outbound', 'hospital'].includes(t.state) && <p className="text-sm font-bold text-sky-800">🔔 แจ้งพร้อมให้รับกลับแล้ว</p>}
