@@ -4,8 +4,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
-  DAM_LEVELS, DAM_STALE_HOURS, EWS_FRESH_HOURS, RAIN_LEVELS, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS, alertSummary,
-  bankText, barPercent, buildAlerts, channelFill, damLevel, damTicks, damTrend, dataDayText, distanceText, ewsAlert,
+  DAM_ALERT_RANK, DAM_LEVELS, DAM_PUBLIC_ALERT_RANK, DAM_STALE_HOURS, EWS_FRESH_HOURS, RAIN_LEVELS, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS,
+  alertSummary, bankText, barPercent, buildAlerts, channelFill, damLevel, damRank, damTicks, damTrend, dataDayText, distanceText, ewsAlert,
   flowCompare, formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainBarMax, rainLevel, safeColor,
   stationPlace, summaryStats, waterTrend,
 } from '../src/lib/waterSituation.js'
@@ -179,6 +179,27 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
   assert.equal(constant('HEAVY_RAIN_MM'), Math.round((heavyCeiling + 0.1) * 10) / 10)
   assert.equal(constant('RAIN_FRESH_HOURS'), STATION_STALE_HOURS)
   assert.equal(constant('EWS_FRESH_HOURS'), EWS_FRESH_HOURS)
+  assert.equal(constant('DAM_FRESH_HOURS'), DAM_STALE_HOURS, 'ความสดของข้อมูลอ่างต้องตรงกัน')
+  assert.ok(/const LEVEL_FRESH_HOURS = RAIN_FRESH_HOURS/.test(src), 'สถานีระดับน้ำต้องใช้ความสดเดียวกับสถานีฝน')
+
+  // เกณฑ์อ่างถูกเขียนไว้ 2 ที่ (หน้าเว็บ + Edge Function) — ขอบทุกช่วงและลำดับชั้นต้องตรงกันเป๊ะ
+  const damBlock = src.match(/const DAM_LEVELS = \[([\s\S]*?)\n\]/)[1]
+  const damRows = [...damBlock.matchAll(/key: '([a-z]+)'[^}]*?label: '([^']+)'[^}]*?upTo: (Infinity|[\d.]+)/g)]
+    .map(m => ({ key: m[1], label: m[2], upTo: m[3] === 'Infinity' ? Infinity : Number(m[3]) }))
+  assert.deepEqual(damRows, DAM_LEVELS.map(l => ({ key: l.key, label: l.label, upTo: l.upTo })),
+    'DAM_LEVELS ใน water-alert-notify ไม่ตรงกับฝั่งหน้าเว็บ')
+  assert.ok(/const DAM_ALERT_RANK = DAM_LEVELS\.findIndex\(l => l\.key === 'high'\)/.test(src))
+  assert.equal(DAM_ALERT_RANK, DAM_LEVELS.findIndex(l => l.key === 'high'))
+  // แถบฝั่งประชาชนตั้งใจใช้เกณฑ์สูงกว่า Telegram — ถ้าเผลอทำให้เท่ากัน แถบจะค้างทั้งฤดูฝน
+  assert.ok(DAM_PUBLIC_ALERT_RANK > DAM_ALERT_RANK, 'เกณฑ์ฝั่งประชาชนต้องสูงกว่าฝั่งเจ้าหน้าที่')
+  assert.equal(DAM_LEVELS[DAM_PUBLIC_ALERT_RANK].key, 'over')
+
+  // หน้าต่างหาค่าก่อนหน้าต้องตรงกับ RPC ไม่งั้นเว็บกับ Telegram ตัดสินคนละฐาน
+  const rpc = readFileSync(new URL('../supabase/migrations/20260919100300_water_warnings_rls_rpc.sql', import.meta.url), 'utf8')
+  assert.ok(rpc.includes("interval '50 minutes'") && rpc.includes("interval '3 hours'"), 'RPC เปลี่ยนหน้าต่างระดับน้ำแล้ว')
+  assert.ok(rpc.includes("interval '20 hours'") && rpc.includes("interval '3 days'"), 'RPC เปลี่ยนหน้าต่างอ่างแล้ว')
+  assert.ok(/const LEVEL_PREV_MIN_MS = 50 \* 60 \* 1000/.test(src) && /const LEVEL_PREV_MAX_MS = 3 \* 60 \* 60 \* 1000/.test(src))
+  assert.ok(/const DAM_PREV_MIN_MS = 20 \* 60 \* 60 \* 1000/.test(src) && /const DAM_PREV_MAX_MS = 3 \* 24 \* 60 \* 60 \* 1000/.test(src))
 }
 
 // ── ตัวตัดสินใจแถบเตือน ──
@@ -366,6 +387,73 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
     const home = readFileSync(new URL(`../src/components/citizen/templates/${theme}/Home.jsx`, import.meta.url), 'utf8')
     assert.ok(home.includes('<WaterAlertBanner'), `ธีม ${theme} ยังไม่มีแถบเตือนบนหน้าแรก`)
   }
+}
+
+// ── เรื่องใหม่ในแถบเตือน: น้ำสูงกว่าตลิ่ง + อ่างเก็บน้ำถึงชั้นที่ต้องเตือน ──
+{
+  const now = Date.now()
+  const ago = h => new Date(now - h * 3600_000).toISOString()
+  const level = (code, diff, h = 1, extra = {}) => ({
+    station_code: code, station_name: code, bank_diff_m: diff, recorded_at: ago(h),
+    tambon_name: 'น้ำรัด', amphoe_name: 'หนองม่วงไข่', distance_km: 14.1, ...extra,
+  })
+  const dam = (code, percent, h = 5) => ({
+    station_code: code, station_name: code, storage_percent: percent, recorded_at: ago(h),
+    tambon_name: 'น้ำเลา', amphoe_name: 'ร้องกวาง', distance_km: 3.6,
+  })
+
+  // ชั้นเกณฑ์อ่าง
+  assert.equal(damRank(29), DAM_LEVELS.findIndex(l => l.key === 'critical'))
+  // ขอบช่วงเป็นแบบ "ไม่เกิน" ตามต้นฉบับ: 80% พอดียังเป็นน้ำปานกลาง ต้องเกิน 80 ถึงเป็นน้ำมาก
+  assert.equal(damRank(80), DAM_LEVELS.findIndex(l => l.key === 'moderate'))
+  assert.equal(damRank(80.1), DAM_LEVELS.findIndex(l => l.key === 'high'))
+  assert.equal(damRank(100), DAM_LEVELS.findIndex(l => l.key === 'high'))
+  assert.equal(damRank(100.1), DAM_LEVELS.findIndex(l => l.key === 'over'))
+  assert.equal(damRank(null), null)
+  assert.ok(damRank(80) < DAM_ALERT_RANK, '80% พอดียังไม่ถึงชั้นที่ต้องเตือน')
+  assert.ok(damRank(80.1) >= DAM_ALERT_RANK)
+
+  // ขอบ 0 พอดี = เสมอตลิ่ง ยังไม่ถือว่าสูงกว่าตลิ่ง
+  assert.equal(buildAlerts({ levels: [level('L0', 0)], now }).any, false)
+  assert.equal(buildAlerts({ levels: [level('L1', 0.01)], now }).any, false)
+  assert.equal(buildAlerts({ levels: [level('L2', null)], now }).any, false, 'ไม่มีค่าเทียบตลิ่ง = ไม่เตือน')
+  assert.equal(buildAlerts({ levels: [level('L3', -0.35, 5)], now }).any, false, 'ค่าเก่ากว่า 3 ชม. ไม่เตือน')
+
+  const over = buildAlerts({ levels: [level('L4', -0.2), level('L5', -0.85)], now })
+  assert.deepEqual(over.overbank.map(s => s.station_code), ['L5', 'L4'], 'เรียงจากล้นมากไปน้อย')
+  assert.equal(over.any, true)
+
+  // แถบฝั่งประชาชนขึ้นเฉพาะ "เกินความจุเก็บกัก" (>100%) ไม่ใช่ตั้งแต่ "น้ำมาก" เหมือน Telegram
+  assert.equal(buildAlerts({ dams: [dam('D1', 88.6)], now }).any, false, 'อ่างชั้นน้ำมากไม่ขึ้นแถบให้ประชาชน')
+  assert.equal(buildAlerts({ dams: [dam('D1b', 100)], now }).any, false, '100% พอดียังไม่เกินความจุ')
+  assert.equal(buildAlerts({ dams: [dam('D2', 100.1)], now }).any, true)
+  assert.equal(buildAlerts({ dams: [dam('D3', 104, 60)], now }).any, false, 'ข้อมูลอ่างเก่ากว่า 48 ชม. ไม่เตือน')
+  assert.equal(buildAlerts({ dams: [dam('D4', null)], now }).any, false, 'ต้นทางยังไม่ลงตัวเลขของวันใหม่ = ไม่เตือน')
+  const damHit = buildAlerts({ dams: [dam('D5', 102), dam('D6', 118)], now })
+  assert.deepEqual(damHit.damOver.map(s => s.station_code), ['D6', 'D5'], 'เรียงจาก % มากไปน้อย')
+
+  // ลำดับหัวเรื่องบนแถบหน้าแรก: น้ำล้นตลิ่งมาก่อนฝน · อ่างน้ำมากอยู่ท้ายสุด
+  const mixed = alertSummary(buildAlerts({
+    levels: [level('L6', -0.35, 1, { river_name: 'แม่น้ำยม' })],
+    rain: [{ station_code: 'R1', station_name: 'บ้านผาราง', rain_24h_mm: 96, recorded_at: ago(1), distance_km: 6.5 }],
+    dams: [dam('D7', 104)],
+    now,
+  }), { now, homeAmphoe: 'ร้องกวาง' })
+  assert.equal(mixed.label, 'ระดับน้ำสูงกว่าตลิ่ง')
+  assert.equal(mixed.text, 'สถานีL6 สูงกว่าตลิ่ง 0.35 ม.')
+  assert.equal(mixed.total, 3)
+  assert.ok(mixed.meta.includes('อ.หนองม่วงไข่'), 'สถานีนอกอำเภอต้องบอกอำเภอเสมอ')
+
+  const damOnly = alertSummary(buildAlerts({ dams: [dam('D8', 104)], now }), { now, homeAmphoe: 'ร้องกวาง' })
+  assert.equal(damOnly.label, 'เกินความจุเก็บกัก')
+  assert.equal(damOnly.total, 1)
+  assert.ok(damOnly.text.includes('104%'), damOnly.text)
+
+  const rainOverDam = alertSummary(buildAlerts({
+    rain: [{ station_code: 'R2', station_name: 'บ้านผาราง', rain_24h_mm: 96, recorded_at: ago(1), distance_km: 6.5 }],
+    dams: [dam('D9', 104)], now,
+  }), { now })
+  assert.equal(rainOverDam.label, 'ฝนหนักมาก', 'อ่างน้ำมากไม่แย่งหัวเรื่องจากฝนหนักมาก')
 }
 
 console.log('✅ water-situation: ผ่านทุกข้อ')

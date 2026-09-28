@@ -56,6 +56,8 @@ export default function WaterAlertBanner({ className = '' }) {
   const alerts = buildAlerts({
     rain: stations.filter(s => s.station_type === 'rain'),
     ews: stations.filter(s => s.station_type === 'ews'),
+    levels: stations.filter(s => s.station_type === 'waterlevel'),
+    dams: stations.filter(s => s.station_type === 'dam'),
     warnings: data.warnings,
     now,
   })
