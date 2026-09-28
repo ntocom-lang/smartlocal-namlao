@@ -9,11 +9,96 @@ import react from '@vitejs/plugin-react'
 import tailwind from '@tailwindcss/vite'
 import { chromium } from 'playwright'
 import { mkdir, readFile } from 'node:fs/promises'
-import { previousOdometer, thaiDay } from '../src/lib/patientBooking.js'
+import { previousOdometer, thaiDay, pickupForBooking, returnForBooking } from '../src/lib/patientBooking.js'
 process.env.PATIENT_UI_QA = '1'
 const { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, baseBooking } = await import('./patient-booking-db.test.mjs')
 await db.exec(await readFile(new URL('../supabase/migrations/20260927180000_patient_booking_events_page.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20260927190000_patient_booking_move_into_trip.sql', import.meta.url), 'utf8'))
+await db.exec(await readFile(new URL('../supabase/migrations/20260928120000_patient_booking_multiwave.sql', import.meta.url), 'utf8'))
+await actor(admin)
+await rpc('patient_booking_save_settings', [tenant, (await rpc('patient_booking_workspace', [tenant])).settings.revision,
+  { ...settings, office_start: 450, office_end: 1050, routes: [{ ...settings.routes[0], minutes: 45 }] }])
+// One car: two outbound waves, one shared return. The old wait request must switch
+// to return-later only after a coordinator has reviewed and confirmed the entire plan.
+const waveDay = new Date(); waveDay.setUTCDate(waveDay.getUTCDate() + 70)
+const waveDate = waveDay.toISOString().slice(0, 10)
+const waveAt = (day, time) => `${day}T${time}:00+07:00`
+const waveTrip = randomUUID(), early = randomUUID(), lateA = randomUUID(), lateB = randomUUID()
+await actor(citizen)
+await rpc('patient_booking_submit', [tenant, early, { ...baseBooking, patient_name: 'TEST รอบแรก', phone: '0800000101', appointment_at: waveAt(waveDate, '08:00'), return_at: waveAt(waveDate, '17:30') }])
+await rpc('patient_booking_submit', [tenant, lateA, { ...baseBooking, patient_name: 'TEST รอบสอง A', phone: '0800000102', companions: 0, appointment_at: waveAt(waveDate, '11:00'), return_at: waveAt(waveDate, '17:30') }])
+await actor(coordinator)
+await rpc('patient_booking_confirm', [tenant, waveTrip, [early], await rpc('patient_booking_preview', [tenant, [early], '']), ''])
+const lateBPayload = { ...baseBooking, patient_name: 'TEST รอบสอง B', phone: '0800000103', companions: 0, appointment_at: waveAt(waveDate, '11:00'), return_at: waveAt(waveDate, '17:30') }
+await actor(admin); await rpc('patient_booking_submit', [tenant, lateB, lateBPayload, true])
+await actor(coordinator)
+assert((await rpc('patient_booking_preview', [tenant, [lateA, lateB], ''])).errors.includes('ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว'))
+let multi = await rpc('patient_booking_preview_multiwave', [tenant, [lateA, lateB], waveTrip])
+assert.deepEqual(multi.errors, [])
+assert.equal(multi.outbound_waves.length, 2)
+assert.equal(multi.return_waves.length, 1)
+assert.equal(multi.seats, 4)
+assert.notEqual(multi.outbound_waves[0].pickup_at, multi.outbound_waves[1].pickup_at)
+assert.equal(new Date(multi.outbound_waves[0].pickup_at).toISOString(), new Date(waveAt(waveDate, '06:45')).toISOString())
+assert.equal(new Date(multi.outbound_waves[1].pickup_at).toISOString(), new Date(waveAt(waveDate, '09:30')).toISOString())
+await actor(citizen); await assert.rejects(() => rpc('patient_booking_preview_multiwave', [tenant, [lateA, lateB], waveTrip]), /ไม่มีสิทธิ์/)
+await actor(coordinator)
+await assert.rejects(() => rpc('patient_booking_confirm_multiwave', [tenant, randomUUID(), [lateA, lateB], waveTrip, { ...multi, seats: 1 }]), /แผนหรือข้อมูลเปลี่ยน/)
+const multiOp = randomUUID()
+await rpc('patient_booking_confirm_multiwave', [tenant, multiOp, [lateA, lateB], waveTrip, multi])
+await rpc('patient_booking_confirm_multiwave', [tenant, multiOp, [lateA, lateB], waveTrip, multi])
+let waveWs = await rpc('patient_booking_workspace', [tenant])
+const savedWaveTrip = waveWs.trips.find(t => t.id === waveTrip)
+assert.equal(savedWaveTrip.plan.outbound_waves.length, 2)
+assert.equal(savedWaveTrip.plan.return_waves.length, 1)
+for (const bookingId of [early, lateA, lateB]) assert.equal(waveWs.bookings.find(b => b.id === bookingId).return_mode, 'later')
+assert.notEqual(pickupForBooking(savedWaveTrip, waveWs.bookings.find(b => b.id === early)), pickupForBooking(savedWaveTrip, waveWs.bookings.find(b => b.id === lateA)))
+assert.equal(returnForBooking(savedWaveTrip, waveWs.bookings.find(b => b.id === early)), returnForBooking(savedWaveTrip, waveWs.bookings.find(b => b.id === lateA)))
+await actor(citizen)
+const mineWave = await rpc('patient_booking_mine', [tenant])
+assert(!JSON.stringify(mineWave).includes('TEST รอบสอง B'))
+await actor(driver)
+await rpc('patient_booking_action', [tenant, randomUUID(), waveTrip, savedWaveTrip.revision, 'trip_next', ''])
+await rpc('patient_booking_action', [tenant, randomUUID(), waveTrip, savedWaveTrip.revision + 1, 'trip_finish', ''])
+await actor(coordinator)
+waveWs = await rpc('patient_booking_workspace', [tenant])
+assert([early, lateA, lateB].every(bookingId => waveWs.bookings.find(b => b.id === bookingId).status === 'completed'))
+console.log('PASS two outbound waves, shared return, coordinator approval, atomic conversion, retry, private view and two driver actions')
+
+// A second itinerary may have two independent return runs. Overlapping proposed runs
+// still fail before any booking or document is changed.
+const separateDay = new Date(waveDay); separateDay.setUTCDate(separateDay.getUTCDate() + 1)
+const separateDate = separateDay.toISOString().slice(0, 10)
+const firstSeparate = randomUUID(), secondSeparate = randomUUID(), separateTrip = randomUUID()
+await actor(citizen)
+await rpc('patient_booking_submit', [tenant, firstSeparate, { ...baseBooking, patient_name: 'TEST กลับรอบแรก', phone: '0800000111', companions: 0, appointment_at: waveAt(separateDate, '09:00'), return_at: waveAt(separateDate, '14:00') }])
+await rpc('patient_booking_submit', [tenant, secondSeparate, { ...baseBooking, patient_name: 'TEST กลับรอบสอง', phone: '0800000112', companions: 0, appointment_at: waveAt(separateDate, '12:00'), return_at: waveAt(separateDate, '16:30') }])
+await actor(coordinator)
+await rpc('patient_booking_confirm', [tenant, separateTrip, [firstSeparate], await rpc('patient_booking_preview', [tenant, [firstSeparate], '']), ''])
+multi = await rpc('patient_booking_preview_multiwave', [tenant, [secondSeparate], separateTrip])
+assert.deepEqual(multi.errors, [])
+assert.equal(multi.return_waves.length, 2)
+await rpc('patient_booking_confirm_multiwave', [tenant, randomUUID(), [secondSeparate], separateTrip, multi])
+await actor(null)
+const publishedWaves = (await rpc('patient_booking_calendar', [tenant, separateDate, separateDate])).days[0].trips.find(t => t.id === separateTrip)
+assert.equal(publishedWaves.joinable, false, 'legacy self-join must not bypass staff approval for a multi-run plan')
+assert.equal(publishedWaves.outbound_waves.length, 2)
+assert.equal(publishedWaves.return_waves.length, 2)
+assert(!JSON.stringify(publishedWaves).includes('TEST กลับรอบแรก'))
+console.log('PASS separate return waves are reserved without overlapping the same vehicle')
+const collisionDay = new Date(separateDay); collisionDay.setUTCDate(collisionDay.getUTCDate() + 1)
+const collisionDate = collisionDay.toISOString().slice(0, 10)
+const collisionFirst = randomUUID(), collisionSecond = randomUUID(), collisionTrip = randomUUID()
+await actor(citizen)
+await rpc('patient_booking_submit', [tenant, collisionFirst, { ...baseBooking, patient_name: 'TEST ชนรอบกลับ', phone: '0800000121', companions: 0, appointment_at: waveAt(collisionDate, '09:00'), return_at: waveAt(collisionDate, '13:00') }])
+await rpc('patient_booking_submit', [tenant, collisionSecond, { ...baseBooking, patient_name: 'TEST ชนรอบรับ', phone: '0800000122', companions: 0, appointment_at: waveAt(collisionDate, '12:00'), return_at: waveAt(collisionDate, '16:30') }])
+await actor(coordinator)
+await rpc('patient_booking_confirm', [tenant, collisionTrip, [collisionFirst], await rpc('patient_booking_preview', [tenant, [collisionFirst], '']), ''])
+const collision = await rpc('patient_booking_preview_multiwave', [tenant, [collisionSecond], collisionTrip])
+assert(collision.errors.includes('รอบรับ–ส่งทับกันภายในแผนเดียว'))
+await assert.rejects(() => rpc('patient_booking_confirm_multiwave', [tenant, randomUUID(), [collisionSecond], collisionTrip, collision]), /รอบรับ–ส่งทับกัน/)
+assert.equal((await rpc('patient_booking_workspace', [tenant])).bookings.find(b => b.id === collisionSecond).status, 'submitted')
+console.log('PASS overlapping outbound and return runs are rejected without changing the pending booking')
 await actor(admin); await rpc('patient_booking_save_settings',[tenant,(await rpc('patient_booking_workspace',[tenant])).settings.revision,settings])
 const setupTenant='00000000-0000-4000-8000-000000009001',setupAdmin='00000000-0000-4000-8000-000000009002',setupPartner='00000000-0000-4000-8000-000000009003'
 // ผู้ใช้ใหม่ที่ยังไม่เคยจอง — ใช้วัด "จองครั้งแรก" กับ "จองครั้งต่อไป" (เติมข้อมูลจากครั้งก่อน)
@@ -38,6 +123,7 @@ const order = {
  patient_booking_confirm:['p_muni','p_id','p_ids','p_expected','p_helper'],patient_booking_action:['p_muni','p_op','p_entity','p_revision','p_action','p_note'],
  patient_booking_calendar:['p_muni','p_from','p_to'],patient_booking_submit_join:['p_muni','p_id','p_trip','p_data','p_staff_entry'],patient_booking_preview_join:['p_muni','p_booking'],patient_booking_confirm_join:['p_muni','p_op','p_booking','p_expected'],
  patient_booking_preview_into_trip:['p_muni','p_booking','p_trip'],patient_booking_confirm_into_trip:['p_muni','p_op','p_booking','p_trip','p_expected'],
+ patient_booking_preview_multiwave:['p_muni','p_ids','p_trip'],patient_booking_confirm_multiwave:['p_muni','p_op','p_ids','p_trip','p_expected'],
  patient_booking_amend:['p_muni','p_op','p_id','p_revision','p_data','p_note'],
  patient_booking_save_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end','p_issue','p_note'],patient_booking_record_letter:['p_muni','p_trip','p_docs_revision','p_letter_no','p_letter_date'],patient_booking_record_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end'],patient_booking_month_report:['p_muni','p_month'],
  patient_booking_events_page:['p_muni','p_page'],
@@ -681,6 +767,30 @@ try{
  assert.deepEqual(await runAs(coordinator,()=>rpc('patient_booking_move_into_trip',[tenant,persistedMove.id,joinSource,replay.expected,joinTargetTrip,replay.target_revision,joinTarget,replay.target_booking_revision])),replay.result)
  assert.deepEqual(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant])),afterJoin,'retry must not alter trips or duplicate notices')
  console.log('PASS confirmed rider joins existing trip through staff UI; original preserved, guards, replay and 320px')
+ // Reproduce the real staff failure: a confirmed morning wait request and two pending
+ // midday requests for the same destination. The visible group button must finish the job.
+ const uiWaveDay=new Date();uiWaveDay.setUTCDate(uiWaveDay.getUTCDate()+300)
+ const uiWaveDate=uiWaveDay.toISOString().slice(0,10)
+ const uiWaveTrip=randomUUID(),uiEarly=randomUUID(),uiLateA=randomUUID(),uiLateB=randomUUID()
+ await submitAs(citizen,uiEarly,{patient_name:'[TEST] UI รอบเช้า',phone:'0800000881',appointment_at:at(uiWaveDate,'09:00'),return_at:at(uiWaveDate,'16:00')})
+ await submitAs(citizen,uiLateA,{patient_name:'[TEST] UI รอบสาย A',phone:'0800000882',companions:0,appointment_at:at(uiWaveDate,'12:00'),return_at:at(uiWaveDate,'16:00')})
+ await submitAs(citizen,uiLateB,{patient_name:'[TEST] UI รอบสาย B',phone:'0800000883',companions:0,appointment_at:at(uiWaveDate,'12:00'),return_at:at(uiWaveDate,'16:00')})
+ await runAs(coordinator,async()=>rpc('patient_booking_confirm',[tenant,uiWaveTrip,[uiEarly],await rpc('patient_booking_preview',[tenant,[uiEarly],'']),'']))
+ await staffDesk()
+ await row(uiLateA).getByRole('button',{name:/ยืนยันรถ.*ไปด้วยกัน 2 คน/}).click()
+ await problem.getByText('จัดรถรับ 2 รอบได้').waitFor()
+ await page.setViewportSize({width:320,height:900})
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'multiwave staff 320px overflow')
+ await problem.getByRole('button',{name:'ประสานแล้ว · ยืนยันรถหลายรอบ'}).click()
+ await toast('ยืนยันรถแล้ว').waitFor()
+ const uiWaveWs=await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))
+ assert([uiEarly,uiLateA,uiLateB].every(bid=>uiWaveWs.bookings.find(b=>b.id===bid).trip_id===uiWaveTrip))
+ await visit('driver')
+ await card(uiWaveTrip).getByText('แผนวิ่งรถวันนี้').waitFor()
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'multiwave driver 320px overflow')
+ await visit('citizen')
+ await page.getByText(/รถจะมารับคุณประมาณ/).first().waitFor()
+ console.log('PASS staff group button confirms two pickup waves; driver and citizen see their own schedule at 320px')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}

@@ -13,7 +13,7 @@ import { QueueReport, DriverTrips } from '../components/patientTransport/Booking
 import { buildTripForwardLetterHtml, buildTripMonthReportHtml } from '../lib/patientTransportPrint'
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
-import { TRIP_STATUS, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates } from '../lib/patientBooking'
+import { TRIP_STATUS, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking } from '../lib/patientBooking'
 
 /**
  * หน้าทำงานของเจ้าหน้าที่ — คำขอรถ · ปฏิทิน · งานคนขับ · รายงาน · ตั้งค่า
@@ -95,10 +95,21 @@ export default function PatientTransportStaff({ onBack } = {}) {
         // ชนเที่ยวที่ยืนยันแล้ว: ลองแผน "ไปคันเดียวกัน" ไว้ก่อน (อ่านอย่างเดียว ไม่จองอะไร)
         // ปุ่มแก้จะได้บอกเวลารถออกรับใหม่ของผู้เดินทางเดิมก่อนกด · ลองไม่ได้ก็ยังมีทางแก้อื่นครบ
         const joins = []
-        if (!requested && ids.length === 1 && plan.errors.includes('ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว')) {
+        if (!requested && plan.errors.includes('ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว')) {
           for (const trip of joinCandidates(plan, workspace.trips)) {
-            try { joins.push({ trip, plan: await call('patient_booking_preview_into_trip', { p_booking: ids[0], p_trip: trip.id }) }) }
-            catch (e) { joins.push({ trip, error: e.message || '', code: e.code }) }
+            try {
+              const multi = ids.length > 1
+              joins.push({ trip, ids, plan: await call(multi ? 'patient_booking_preview_multiwave' : 'patient_booking_preview_into_trip',
+                multi ? { p_ids: ids, p_trip: trip.id } : { p_booking: ids[0], p_trip: trip.id }) })
+            }
+            catch (e) {
+              // A single rider with a different appointment also needs a second vehicle run.
+              if (ids.length === 1 && String(e.message).includes('รอบรับหลายรอบ')) {
+                try { joins.push({ trip, ids, plan: await call('patient_booking_preview_multiwave', { p_ids: ids, p_trip: trip.id }) }); continue }
+                catch (multiError) { joins.push({ trip, error: multiError.message || '', code: multiError.code }); continue }
+              }
+              joins.push({ trip, error: e.message || '', code: e.code })
+            }
           }
         }
         return { ids, plan, joins }
@@ -111,12 +122,14 @@ export default function PatientTransportStaff({ onBack } = {}) {
   // ชนคิว → ให้ไปคันเดียวกับเที่ยวที่ยืนยันแล้ว (20260921120000) ฐานข้อมูลคำนวณแผนซ้ำใต้ล็อก
   // แผนเปลี่ยนระหว่างทาง = ปฏิเสธทั้งก้อน · ระบบแจ้งเวลาใหม่ให้ผู้เดินทางทุกคนและคนขับเอง
   // ⚠️ ความยินยอม "นั่งร่วมกับผู้ป่วยอื่น" ของทุกคนในเที่ยวยังบังคับที่ฐานข้อมูล เจ้าหน้าที่ข้ามไม่ได้
-  function joinIntoTrip(booking, trip, plan) {
-    const args = { p_booking: booking.id, p_trip: trip.id, p_expected: plan }
+  function joinIntoTrip(bookings, trip, plan) {
+    const ids = bookings.map(b => b.id)
+    const multi = !!plan.multiwave
+    const args = multi ? { p_ids: ids, p_trip: trip.id, p_expected: plan } : { p_booking: ids[0], p_trip: trip.id, p_expected: plan }
     return task(async call => {
-      await call('patient_booking_confirm_into_trip', { ...args, p_op: op(JSON.stringify(args)) })
+      await call(multi ? 'patient_booking_confirm_multiwave' : 'patient_booking_confirm_into_trip', { ...args, p_op: op(JSON.stringify(args)) })
       return { joined: true }
-    }, `ยืนยันรถแล้ว · ${booking.patient_name} ไปคันเดียวกับเที่ยวเดิม · รถออกรับ ${clockOf(plan.pickup_at)} น. ระบบแจ้งเวลาใหม่ให้ทุกคนแล้ว`)
+    }, `ยืนยันรถแล้ว · ${bookings.map(b => b.patient_name).join(', ')} · ${multi ? 'จัดรถรับหลายรอบ' : 'ไปคันเดียวกับเที่ยวเดิม'} · รถมารับ ${bookings.map(b => clockOf(pickupForBooking({ plan }, b))).join(', ')} น. ระบบแจ้งทุกคนแล้ว`)
   }
   // นำผู้เดินทางออกจากเที่ยว — ถ้าเป็นคนสุดท้ายและรถยังไม่ออก คืนคิวเที่ยวที่ว่างแล้วให้ในรอบเดียวกัน
   // ไม่งั้นเที่ยวว่างค้างกันเวลารถไว้ และกล่องคำขอรถมองไม่เห็นเพราะไม่เหลือคำขอในเที่ยวนั้น
