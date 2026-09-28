@@ -12,7 +12,7 @@
  * --restore จึงมีไว้ให้เลือกเอง และปฏิเสธถ้าตรวจพบ PR ที่ยังเปิด
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { findCodexMemory, findDevconfig, isDevconfigRepo } from './lib/devconfig.mjs';
+import { gitIn, integrateUpstream, memoryRepos } from './lib/devconfig.mjs';
 
 const args = process.argv.slice(2);
 const RESTORE = args.includes('--restore');
@@ -37,11 +37,20 @@ const die = (msg, hint) => {
 
 /* ── ห้ามทับของค้างในเครื่องนี้ ──────────────────────────────────── */
 // ถ้าเครื่องนี้มีงานที่ยังไม่ได้เก็บ การดึงงานจากอีกเครื่องมาทับคือทางที่งานหาย
-const dirty = run(['status', '--porcelain', '-uall']);
-if (dirty) {
+//
+// หยุดเฉพาะไฟล์ที่ track แล้วแก้ค้าง — ไฟล์ untracked ไม่ขวาง เพราะ switch / merge --ff-only
+// ปฏิเสธเองอยู่แล้วถ้าจะเขียนทับ path เดียวกัน
+// เดิมนับรวมทุกไฟล์ ⇒ ภาพหน้าจอ 4 ไฟล์ที่ session อื่นทิ้งไว้ในทรีหลัก (ห้ามแตะ) ทำให้ resume บน PC
+// ใช้ไม่ได้เลยจนกว่าจะมีคนไปลบของที่ไม่ใช่ของตัวเอง (เจอจริง 2026-09-28)
+const changes = run(['status', '--porcelain', '-uall']).split('\n').filter(Boolean);
+const dirty = changes.filter((l) => !l.startsWith('??'));
+if (dirty.length) {
   console.error('\nของค้างในเครื่องนี้:');
-  console.error(dirty);
+  console.error(dirty.join('\n'));
   die('เครื่องนี้มีงานที่ยังไม่ได้เก็บ', 'รัน npm run handoff บนเครื่องนี้ก่อน หรือ git stash ถ้าตั้งใจจะทิ้ง');
+}
+if (changes.length > dirty.length) {
+  console.log(`\n⚠️  มีไฟล์ใหม่ที่ยังไม่อยู่ใน git ${changes.length - dirty.length} ไฟล์ — ไม่ขวางการดึงงาน (ดูด้วย git status)`);
 }
 
 console.log('\nกำลังดึงข้อมูลล่าสุดจาก origin...');
@@ -108,25 +117,46 @@ if (RESTORE) {
 // ⇒ resume ขึ้นว่าสำเร็จทุกอย่าง ทั้งที่ memory ยังเป็นของเก่า (เจอจริงบนเครื่อง PC)
 // ตอนนี้ถ้าหาไม่เจอจะบอกออกมา ไม่เงียบอีกแล้ว
 //
-// ย้ายมาใช้ findDevconfig() ร่วมกับ handoff/doctor — สูตรเดิม resolve('../smartlocal-devconfig')
-// อิง cwd จึงชี้ผิดเมื่อรันจาก git worktree (ได้ D:\tmp\smartlocal-devconfig ที่ไม่มีอยู่จริง)
-const devconfig = findDevconfig();
-if (isDevconfigRepo(devconfig)) {
-  console.log(`\nดึง devconfig ล่าสุด (${devconfig})...`);
-  const r = spawnSync('git', ['-C', devconfig, 'pull', '--ff-only'], { stdio: 'inherit' });
-  if (r.status !== 0) console.log('⚠️  pull devconfig ไม่สำเร็จ — ตรวจเองอีกที');
-} else {
-  console.log(`\n⚠️  ไม่พบ repo devconfig ที่ ${devconfig} — ข้ามการดึง memory/env`);
-  console.log('    เก็บไว้ที่อื่น? ตั้งตัวแปร SMARTLOCAL_DEVCONFIG ชี้ไปที่นั่น');
-}
+// ใช้รายการ repo และขั้นรวมของชุดเดียวกับ handoff (lib/devconfig.mjs) — ห้ามเขียนสูตรแยก
+// สูตรหา path เดิม resolve('../smartlocal-devconfig') อิง cwd จึงชี้ผิดเมื่อรันจาก git worktree
+//
+// ⚠️ memory ที่ค้างจากรอบก่อน = handoff รอบที่แล้วบนเครื่องนี้ไม่ได้ส่งขึ้นไป
+//    ห้ามดึงของอีกเครื่องมาทับ ให้ไปรัน handoff ก่อน (มันรวม 2 ฝั่งให้ก่อน push)
+for (const repo of memoryRepos()) {
+  if (!repo.present) {
+    // เครื่องที่ไม่ได้ลง Codex จะไม่มีโฟลเดอร์นี้ ⇒ เงียบไปเลย ไม่ต้องเตือน
+    if (!repo.optional) {
+      console.log(`\n⚠️  ไม่พบ repo ของ ${repo.label} ที่ ${repo.dir} — ข้ามการดึง`);
+      console.log(`    ${repo.missingHint}`);
+    }
+    continue;
+  }
 
-// memory ของ Codex อยู่คนละ repo (Codex สร้างเป็น git repo ของตัวเองที่ ~/.codex/memories)
-// เครื่องที่ไม่ได้ลง Codex จะไม่มีโฟลเดอร์นี้ ⇒ เงียบไปเลย ไม่ต้องเตือน
-const codexMem = findCodexMemory();
-if (isDevconfigRepo(codexMem)) {
-  console.log(`\nดึง memory ของ Codex ล่าสุด (${codexMem})...`);
-  const r = spawnSync('git', ['-C', codexMem, 'pull', '--ff-only'], { stdio: 'inherit' });
-  if (r.status !== 0) console.log('⚠️  pull memory ของ Codex ไม่สำเร็จ — ตรวจเองอีกที');
+  const scope = repo.pathspec ? ['--', repo.pathspec] : [];
+  const pending = gitIn(repo, ['status', '--porcelain', '-uall', ...scope]).stdout.split('\n').filter(Boolean);
+  if (pending.length) {
+    console.log(`\n⚠️  ${repo.label} มีของค้างจากรอบก่อน ${pending.length} ไฟล์ ที่ยังไม่ได้ส่งขึ้นไป — ข้ามการดึงเพื่อไม่ให้ทับกัน`);
+    console.log('    รัน npm run handoff ก่อน (รวม 2 ฝั่งให้เอง) แล้วค่อย npm run resume อีกรอบ');
+    continue;
+  }
+
+  const up = integrateUpstream(repo);
+  if (!up.ok) {
+    // Codex ล้าง .git ตัวเองจน remote หาย (2026-09-28) — doctor ท้ายคำสั่งจะเตือนเอง ไม่ต้องพูดซ้ำตรงนี้
+    if (up.reason === 'no-upstream' && repo.optional) continue;
+    const why = {
+      'no-upstream': 'ไม่มี upstream',
+      fetch: 'ติดต่อ origin ไม่ได้ — เน็ตหลุด?',
+      dirty: `มีไฟล์แก้ค้าง: ${(up.files ?? []).join(', ')}`,
+      conflict: `ชนกันที่ ${(up.files ?? []).join(', ') || '(ดูด้วย git status)'} — ยกเลิกการรวมแล้ว ของในเครื่องไม่หาย`,
+    }[up.reason];
+    console.log(`\n⚠️  ดึง ${repo.label} ไม่สำเร็จ: ${why}`);
+    continue;
+  }
+  console.log(up.behind ? `\n✅ รับ ${repo.label} จากอีกเครื่อง ${up.behind} commit` : `\n✅ ${repo.label} ใหม่ล่าสุดอยู่แล้ว`);
+
+  const ahead = Number(gitIn(repo, ['rev-list', '--count', '@{u}..HEAD']).stdout.trim()) || 0;
+  if (ahead) console.log(`⚠️  ${repo.label} มี ${ahead} commit ในเครื่องที่ยังไม่ขึ้น origin — รัน npm run handoff`);
 }
 
 /* ── ตรวจความพร้อมของเครื่องนี้ต่อ ──────────────────────────────── */

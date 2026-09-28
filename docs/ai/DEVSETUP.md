@@ -63,17 +63,30 @@ deploy                -> GitHub Actions เมื่อ master ขยับ ไ�
 ## กิจวัตรประจำวัน
 
 ```bash
-# ก่อนเลิกงานที่เครื่องหนึ่ง
-npm run handoff              # โค้ด + memory ขึ้น origin ให้ครบในคำสั่งเดียว
+# ก่อนเลิกงานที่เครื่องหนึ่ง — พิมพ์จากทรีหลัก (บน master) หรือจาก branch งานก็ได้
+npm run handoff              # โค้ด (ถ้าอยู่บน branch งาน) + memory ขึ้น origin ในคำสั่งเดียว
 
 # เริ่มงานที่อีกเครื่อง
-npm run resume <branch>      # fetch + ff-only + pull devconfig + doctor
+npm run resume [branch]      # fetch + ff-only + รวม memory จากอีกเครื่อง + doctor
 ```
 
 **จำแค่ 2 คำสั่งนี้พอ ไม่มีคำสั่ง git ของ devconfig ให้พิมพ์เองอีกแล้ว**
 เดิมต้องพิมพ์ `git -C ../smartlocal-devconfig add/commit/push` เองทุกครั้ง ซึ่งลืมจริง —
 memory ค้างอยู่เครื่องเดียว **34 ไฟล์ 3 สัปดาห์** (2026-09-07 → 09-26) โดยไม่มีอะไรฟ้อง
 ตั้งแต่ 2026-09-26 `handoff` commit + push `claude-memory/` ให้เอง และ `doctor` ขึ้น ❌ ถ้ายังไม่ขึ้น origin
+
+แก้เพิ่ม 2026-09-28 หลังตั้งโน้ตบุคแล้วเจอของจริง 3 เรื่อง
+- **handoff บน master ข้ามส่วนโค้ด แต่เก็บ memory ต่อ** — เดิมหยุดทั้งคำสั่งก่อนถึงขั้น memory ทั้งที่ทรีหลัก
+  อยู่บน master เสมอ (doctor บอกให้รัน handoff แต่ handoff ปฏิเสธ) ⇒ memory ค้างบน PC อีก 10 ไฟล์
+  ไฟล์ที่ track แล้วแก้ค้างบน master ยังขึ้น ❌ (ไม่ commit ให้ เพราะ push เข้า master = deploy) ·
+  ไฟล์ untracked แค่เตือน เพราะมักเป็นภาพหน้าจอที่ session อื่นทิ้งไว้
+- **ก่อน push ดึงของที่อีกเครื่อง push ไว้มารวมก่อน** (rebase) — `MEMORY.md` ที่ทั้ง 2 เครื่องต่อบรรทัด
+  ท้ายไฟล์รวมกันได้ด้วย `merge=union` ใน `.gitattributes` ของ devconfig · ไฟล์อื่นชนกันเมื่อไร
+  ยกเลิกการรวมทันที ของในเครื่องไม่หาย ไม่ทิ้ง repo ค้างกลางทาง
+- **resume ไม่หยุดเพราะไฟล์ untracked ในทรีหลัก** (git กันทับเองอยู่แล้ว) · ถ้า memory มีของค้างจากรอบก่อน
+  จะไม่ดึงทับ แต่บอกให้รัน handoff ก่อน
+
+พฤติกรรมทั้งหมดนี้มีเทสต์กันถอยหลัง: `npm run test:memory-sync` (repo ชั่วคราวล้วน ไม่แตะของจริง)
 
 ครอบ **memory ของ AI ทั้ง 2 ตัว** ตั้งแต่ 2026-09-26
 
@@ -85,6 +98,12 @@ memory ค้างอยู่เครื่องเดียว **34 ไฟ�
 Codex สร้างโฟลเดอร์ `~/.codex/memories` เป็น **git repo ของตัวเองอยู่แล้ว** จึงใช้วิธีเดียวกับ Claude
 (ย้ายไฟล์เข้า devconfig แล้วทำ junction) ไม่ได้ — repo จะซ้อนกัน ⇒ ต่อ remote ให้ repo เดิมแทน
 เครื่องที่ไม่ได้ลง Codex จะข้ามข้อนี้ไปเงียบๆ ไม่ถือว่า handoff ล้มเหลว
+
+⚠️ **2026-09-28 พบว่าวิธีต่อ remote นี้ใช้ระยะยาวไม่ได้** — Codex ล้าง `.git` ของตัวเองแล้วสร้างใหม่
+(baseline 09-24 บน GitHub · สร้างใหม่อีกรอบ 09-28) remote ที่ต่อไว้หายทุกรอบ ไฟล์ไม่หาย
+ระหว่างเปลี่ยนไปใช้ git ของเราเองที่แยกจาก `.git` ของ Codex: repo ที่ไม่มี upstream จะแค่ขึ้นเตือน
+handoff ไม่ commit ลง repo ของ Codex และไม่ถือว่าล้มเหลว
+memory ของ Codex เป็นของ **ทุกโปรเจกต์** ในเครื่อง (ไม่ใช่แค่ SmartLocal) — เจ้าของระบบเลือกให้ sync ทั้งโฟลเดอร์
 
 - มีด่านสแกนก่อน commit ทั้ง 2 repo: เจอรูปแบบคีย์จริง (JWT, `sb_secret_…`, GitHub/GitLab token, private key) จะหยุดทันที
   ⚠️ ด่านนี้จับ **รูปแบบคีย์** ได้ แต่จับ **ข้อมูลส่วนบุคคลของประชาชน (PDPA) ไม่ได้** —
@@ -130,7 +149,7 @@ Gemini Gem "SmartLocal SME" · ChatGPT Project · Grok
 |---|---|
 | **clone ลง Desktop / Documents** | Windows 11 เปิด OneDrive backup โฟลเดอร์พวกนี้อัตโนมัติ → sync `node_modules` 745 MB แข่งกับ git → ไฟล์ล็อก, `.git/index` พัง, ได้ไฟล์ซ้ำชื่อ `xxx-DESKTOP-A1B2C3.js` |
 | **deploy จากเครื่อง dev** | `.env.local` มี `VITE_TENANT_SLUG` ที่ vite ฝังลงบันเดิล ทำให้ทุก อปท. กลายเป็นตัวเดียวกัน (เกิดจริง) — `predeploy-check.js` บล็อกไว้แล้ว ฉุกเฉินใช้ `ALLOW_LOCAL_DEPLOY=1` |
-| **`npm run handoff` บน master** | push เข้า master = deploy ขึ้น production ทันที — สคริปต์ปฏิเสธให้แล้ว |
+| **แก้โค้ดบน master แล้วหวังให้ handoff ส่งให้** | push เข้า master = deploy ขึ้น production ทันที — handoff บน master จึงไม่ commit โค้ดให้ (ขึ้น ❌ พร้อมรายชื่อไฟล์) แต่ยังเก็บ memory ตามปกติ ย้ายงานไป branch ก่อน |
 | **ให้ agent เรียก `handoff`/`resume` เอง** | `[SAFETY]` ใน AGENTS.md ห้าม agent commit/push — ผู้ใช้ต้องรันเอง |
 | **แก้ `AGENTS.md` / `.agents/rules/domain.md` / `web-snippets.md` ตรงๆ** | เป็นไฟล์ generated — แก้ที่ `docs/ai/CORE.md`, `DOMAIN.md`, `SAFETY.md` แล้วรัน `npm run ai:sync` |
 | **เอา `.chrome-test-profiles/` ขึ้น cloud** | 2 GB + มี session ล็อกอินจริงของ อปท. (PDPA) — เครื่องใหม่ต้องล็อกอินสร้างเอง |
