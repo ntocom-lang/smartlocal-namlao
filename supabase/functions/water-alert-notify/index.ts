@@ -9,13 +9,16 @@
 //   B. ข้อความเตือนของ สสน. (water_warnings) ที่ระบุอำเภอ + จังหวัดเดียวกับ อปท. — ส่งตามต้นฉบับ
 //   C. สถานีเตือนภัยน้ำหลาก-ดินถล่มของกรมทรัพยากรน้ำ ระดับ 2–3 — ตอนนี้ปิดอยู่ (ดึงจาก Supabase
 //      ไม่ได้ ดู 20260919100150) โค้ดรองรับไว้ เปิดแถว ews แล้วทำงานทันที
-//   D. สถานีระดับน้ำ: ระดับน้ำสูงกว่าตลิ่งต่ำสุดของสถานี (bank_diff_m < 0) — ข้อเท็จจริงทางกายภาพ
-//      ที่ thaiwater-sync คำนวณจาก min_bank ของต้นทาง ไม่ใช่เกณฑ์ที่เราตั้งเอง
+//   D. สถานีระดับน้ำ: เกณฑ์ระดับน้ำในแม่น้ำของกรมชลประทาน 3 ขั้น (มาตรฐานข้อมูลน้ำ ระยะที่ 3 ของ สสน.
+//      ตาราง 5.9) เทียบ bank_diff_m (ตลิ่งต่ำสุด − ระดับน้ำ ที่ thaiwater-sync คำนวณจาก min_bank ของต้นทาง)
+//      · เฝ้าระวัง = ต่ำกว่าตลิ่งไม่ถึง 1 ม. · แจ้งเตือนภัย = เสมอหรือสูงกว่าตลิ่ง
 //   E. อ่างเก็บน้ำ: % ความจุที่ระดับเก็บกักขยับขึ้นถึงชั้น "น้ำมาก" (80–100%) หรือ "เกินความจุเก็บกัก"
 //      (>100%) ตามเกณฑ์ของ สสน./กรมชลประทาน ชุดเดียวกับ DAM_LEVELS บนหน้าเว็บ
 //
 // D และ E แจ้ง **ตอนข้ามชั้นขึ้น** ไม่ใช่แจ้งตามสถานะ เพราะน้ำล้นตลิ่ง/อ่างน้ำมากค้างได้หลายวัน
 // ถ้าแจ้งตามสถานะจะส่งซ้ำทุกวันจนคนเลิกอ่าน · เมื่อข้ามชั้นลงกลับจะส่ง "สถานการณ์คลี่คลาย"
+// ไม่มีค่ารอบก่อนให้เทียบ: อ่างกับขั้นเฝ้าระวัง = ไม่ส่ง (เดาไม่ได้ว่าเพิ่งข้าม) · ขั้นแจ้งเตือนภัยของ
+// ระดับน้ำยังส่ง เพราะน้ำเสมอ/ล้นตลิ่งเป็นข้อเท็จจริงที่อันตราย ณ ตอนนี้ และคีย์รายวันกันส่งซ้ำอยู่แล้ว
 // ให้เฉพาะเรื่องที่เคยส่งขาเข้าสำเร็จไปแล้วภายใน 7 วัน (ไม่งั้นจะมี "คลี่คลาย" ลอยมาโดยไม่มีที่มา)
 // อ่านจากฐานข้อมูลเราเท่านั้น (thaiwater-sync เก็บไว้นาทีที่ 10 ตัวนี้รันนาทีที่ 15) ไม่ยิงต้นทางซ้ำ
 //
@@ -60,6 +63,23 @@ const LEVEL_PREV_MIN_MS = 50 * 60 * 1000
 const LEVEL_PREV_MAX_MS = 3 * 60 * 60 * 1000
 const DAM_PREV_MIN_MS = 20 * 60 * 60 * 1000
 const DAM_PREV_MAX_MS = 3 * 24 * 60 * 60 * 1000
+
+// เกณฑ์ระดับน้ำในแม่น้ำของกรมชลประทาน — มาตรฐานข้อมูลน้ำ ระยะที่ 3 ของ สสน. ตาราง 5.9
+//   ปกติ = ต่ำกว่าตลิ่งมากกว่า 1 ม. · เฝ้าระวัง = ต่ำกว่าตลิ่งน้อยกว่า 1 ม. · แจ้งเตือนภัย = เสมอตลิ่งหรือล้นตลิ่ง
+// 1.00 ม. พอดีตารางไม่ได้ระบุ เจ้าของระบบเลือกนับเป็นเฝ้าระวัง (ข้างที่ปลอดภัยกว่า 2569-09-28)
+// ⚠️ ต้องตรงกับ LEVEL_WATCH_M / levelRank ใน src/lib/waterSituation.js — เทสต์อ่านสองไฟล์มาเทียบ
+const LEVEL_WATCH_M = 1
+const LEVEL_RANK = { normal: 0, watch: 1, alert: 2 } as const
+
+// ขั้นของระดับน้ำ หรือ null เมื่อไม่มีค่า — ห้ามแปลงค่าว่างเป็น 0 (Number(null) = 0 จะกลายเป็น "เสมอตลิ่ง")
+function levelRank(diff: unknown): number | null {
+  if (diff === null || diff === undefined || diff === '') return null
+  const n = Number(diff)
+  if (!Number.isFinite(n)) return null
+  if (n <= 0) return LEVEL_RANK.alert
+  if (n <= LEVEL_WATCH_M) return LEVEL_RANK.watch
+  return LEVEL_RANK.normal
+}
 
 // เกณฑ์ % ของความจุที่ระดับเก็บกัก — คัดจากรายงานสถานภาพน้ำเขื่อนของ สสน. (tiwrm.hii.or.th
 // rid_bigcm) และฐานข้อมูลอ่างเก็บน้ำกรมชลประทาน (app.rid.go.th/reservoir)
@@ -111,7 +131,7 @@ type Station = {
   display_order: number | null
 }
 type Item = {
-  section: 'rain' | 'thaiwater' | 'ews' | 'level' | 'dam' | 'cleared'
+  section: 'rain' | 'thaiwater' | 'ews' | 'level' | 'watch' | 'dam' | 'cleared'
   key: string
   notificationType: string
   resourceType: string
@@ -219,6 +239,7 @@ function renderAlertMessage(items: Item[], tenant: Tenant, isTest: boolean): str
   const sources = ['คลังข้อมูลน้ำแห่งชาติ (ThaiWater) สสน.']
   if (items.some(i => i.section === 'rain')) sources.push('เกณฑ์ฝนของกรมอุตุนิยมวิทยา')
   if (items.some(i => i.section === 'ews')) sources.push('ระบบเตือนภัยล่วงหน้า กรมทรัพยากรน้ำ')
+  if (items.some(i => i.section === 'level' || i.section === 'watch')) sources.push('เกณฑ์ระดับน้ำในแม่น้ำของกรมชลประทาน')
   if (items.some(i => i.section === 'dam')) sources.push('เกณฑ์ปริมาณน้ำในอ่างของ สสน./กรมชลประทาน')
 
   // ชุดที่มีแต่ "คลี่คลาย" ไม่ใช่การเตือน จึงไม่ขึ้นหัวข้อ ⚠️ และไม่ต่อท้ายด้วยข้อความเรื่องดุลพินิจ
@@ -236,7 +257,8 @@ function renderAlertMessage(items: Item[], tenant: Tenant, isTest: boolean): str
   return [
     `⚠️ <b>${isTest ? '[ทดสอบ] ' : ''}แจ้งเตือนสถานการณ์น้ำ-ฝนใกล้พื้นที่</b>`,
     ...section('rain', `🌧️ <b>ฝนหนักมาก</b> (${HEAVY_RAIN_MM} มม. ขึ้นไปใน 24 ชม. ตามเกณฑ์กรมอุตุนิยมวิทยา)`),
-    ...section('level', '🌊 <b>ระดับน้ำสูงกว่าตลิ่ง</b> (เทียบตลิ่งต่ำสุดของสถานี)'),
+    ...section('level', '🌊 <b>ระดับน้ำเสมอหรือสูงกว่าตลิ่ง</b> (ขั้นแจ้งเตือนภัย · เทียบตลิ่งต่ำสุดของสถานี)'),
+    ...section('watch', `👀 <b>ระดับน้ำใกล้ตลิ่ง</b> (ขั้นเฝ้าระวัง · ต่ำกว่าตลิ่งไม่ถึง ${LEVEL_WATCH_M} ม.)`),
     ...section('thaiwater', `📢 <b>ข้อความเตือนจาก สสน.</b>${area ? ` (${area})` : ''}`),
     ...section('ews', '🚨 <b>สถานีเตือนภัยน้ำหลาก-ดินถล่ม</b> (กรมทรัพยากรน้ำ)'),
     ...section('dam', '🏞️ <b>อ่างเก็บน้ำใกล้พื้นที่</b>'),
@@ -435,25 +457,43 @@ serve(async (req) => {
         const place = placeText(s, tenant)
 
         if (s.station_type === 'waterlevel') {
-          // D: สูงกว่าตลิ่ง = bank_diff_m ติดลบ (ตลิ่งต่ำสุด − ระดับน้ำ) ไม่ใช่เกณฑ์ที่เราตั้งเอง
+          // D: ขั้นตามเกณฑ์ระดับน้ำของกรมชลประทาน เทียบ bank_diff_m (ตลิ่งต่ำสุด − ระดับน้ำ)
+          if (age > LEVEL_FRESH_HOURS * HOUR) continue
+          const rank = levelRank(r.bank_diff_m)
+          if (rank === null) continue
           const diff = Number(r.bank_diff_m)
-          if (r.bank_diff_m === null || !Number.isFinite(diff) || age > LEVEL_FRESH_HOURS * HOUR) continue
           const prev = previousOf(s.id, recordedAt, LEVEL_PREV_MIN_MS, LEVEL_PREV_MAX_MS)
-          const prevDiff = prev && prev.bank_diff_m !== null ? Number(prev.bank_diff_m) : null
+          const prevRank = prev ? levelRank(prev.bank_diff_m) : null
           const river = s.river_name ? `${escapeHtml(s.river_name, 60)} ` : ''
+          const station = `${river}สถานี${escapeHtml(s.station_name, 80)}`
           const situation = r.situation_text ? ` · สถานะจาก สสน.: <b>${escapeHtml(String(r.situation_text), 40)}</b>` : ''
+          const where = `  ${place} · วัดเมื่อ ${bangkokText(String(r.recorded_at))}`
 
-          if (diff < 0 && (prevDiff === null || prevDiff >= 0)) {
+          if (rank === LEVEL_RANK.alert && (prevRank === null || prevRank < LEVEL_RANK.alert)) {
+            // ไม่มีค่ารอบก่อนก็ส่ง: น้ำเสมอ/ล้นตลิ่งเป็นข้อเท็จจริงที่อันตราย ณ ตอนนี้ (ดูหัวไฟล์)
             push(s.municipality_id, {
               section: 'level', key: `${keyPrefix}bank:${s.station_code}:${day}`, notificationType: `waterlevel_overbank${typeSuffix}`,
               resourceType: 'water_station_config', resourceId: s.id, sortKey: diff,
-              line: `• ${river}สถานี${escapeHtml(s.station_name, 80)} <b>สูงกว่าตลิ่ง ${numText(Math.abs(diff))} ม.</b>${situation}\n  ${place} · วัดเมื่อ ${bangkokText(String(r.recorded_at))}`,
+              line: `• ${station} <b>${diff === 0 ? 'เสมอตลิ่ง' : `สูงกว่าตลิ่ง ${numText(Math.abs(diff))} ม.`}</b>${situation}\n${where}`,
             })
-          } else if (diff >= 0 && prevDiff !== null && prevDiff < 0) {
+          } else if (rank === LEVEL_RANK.watch && prevRank === LEVEL_RANK.normal) {
+            // ขั้นเฝ้าระวังต้องเห็นรอบก่อนว่ายังปกติ — ไม่มีค่าให้เทียบ = ไม่ส่ง (แบบเดียวกับอ่าง)
+            push(s.municipality_id, {
+              section: 'watch', key: `${keyPrefix}bankwatch:${s.station_code}:${day}`, notificationType: `waterlevel_watch${typeSuffix}`,
+              resourceType: 'water_station_config', resourceId: s.id, sortKey: diff,
+              line: `• ${station} <b>ต่ำกว่าตลิ่ง ${numText(diff)} ม.</b>${situation}\n${where}`,
+            })
+          } else if (rank < LEVEL_RANK.alert && prevRank === LEVEL_RANK.alert) {
             push(s.municipality_id, {
               section: 'cleared', key: `${keyPrefix}bankclear:${s.station_code}:${day}`, notificationType: `waterlevel_cleared${typeSuffix}`,
               resourceType: 'water_station_config', resourceId: s.id, sortKey: 10,
-              line: `• ${river}สถานี${escapeHtml(s.station_name, 80)} ระดับน้ำ<b>ลงมาต่ำกว่าตลิ่งแล้ว</b> (ต่ำกว่าตลิ่ง ${numText(diff)} ม.)\n  ${place} · วัดเมื่อ ${bangkokText(String(r.recorded_at))}`,
+              line: `• ${station} ระดับน้ำ<b>ลงมาต่ำกว่าตลิ่งแล้ว</b> (ต่ำกว่าตลิ่ง ${numText(diff)} ม.${rank === LEVEL_RANK.watch ? ' ยังอยู่ในขั้นเฝ้าระวัง' : ''})\n${where}`,
+            })
+          } else if (rank === LEVEL_RANK.normal && prevRank === LEVEL_RANK.watch) {
+            push(s.municipality_id, {
+              section: 'cleared', key: `${keyPrefix}bankwatchclear:${s.station_code}:${day}`, notificationType: `waterlevel_watch_cleared${typeSuffix}`,
+              resourceType: 'water_station_config', resourceId: s.id, sortKey: 11,
+              line: `• ${station} ระดับน้ำ<b>กลับสู่ขั้นปกติ</b> (ต่ำกว่าตลิ่ง ${numText(diff)} ม.)\n${where}`,
             })
           }
           continue
@@ -550,6 +590,7 @@ serve(async (req) => {
   // หรือรอบขาเข้าส่งไม่สำเร็จ) 7 วันเท่ากับอายุข้อมูลที่ water_readings เก็บไว้
   const entryTypeOf: Record<string, string> = {
     [`waterlevel_cleared${typeSuffix}`]: `waterlevel_overbank${typeSuffix}`,
+    [`waterlevel_watch_cleared${typeSuffix}`]: `waterlevel_watch${typeSuffix}`,
     [`dam_cleared${typeSuffix}`]: `dam_level${typeSuffix}`,
   }
   const clearedItems = [...itemsByTenant.entries()]
@@ -640,6 +681,7 @@ serve(async (req) => {
       thaiwater: items.filter(i => i.section === 'thaiwater').length,
       ews: items.filter(i => i.section === 'ews').length,
       level: items.filter(i => i.section === 'level').length,
+      watch: items.filter(i => i.section === 'watch').length,
       dam: items.filter(i => i.section === 'dam').length,
       cleared: items.filter(i => i.section === 'cleared').length,
     })),

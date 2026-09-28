@@ -4,11 +4,39 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
-  DAM_ALERT_RANK, DAM_LEVELS, DAM_PUBLIC_ALERT_RANK, DAM_STALE_HOURS, EWS_FRESH_HOURS, RAIN_LEVELS, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS,
+  DAM_ALERT_RANK, DAM_LEVELS, DAM_PUBLIC_ALERT_RANK, DAM_STALE_HOURS, EWS_FRESH_HOURS, LEVEL_TIERS, LEVEL_WATCH_M, RAIN_LEVELS,
+  RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS,
   alertSummary, bankText, barPercent, buildAlerts, channelFill, damLevel, damRank, damTicks, damTrend, dataDayText, distanceText, ewsAlert,
-  flowCompare, formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainBarMax, rainLevel, safeColor,
+  flowCompare, formatMcm, formatMm, isStale, levelRank, mapUrl, measuredAtText, rainBarMax, rainLevel, safeColor,
   stationPlace, summaryStats, waterTrend,
 } from '../src/lib/waterSituation.js'
+
+// ── เกณฑ์ระดับน้ำในแม่น้ำของกรมชลประทาน (มาตรฐานข้อมูลน้ำ ระยะที่ 3 ของ สสน. ตาราง 5.9) ──
+// ปกติ = ต่ำกว่าตลิ่งมากกว่า 1 ม. · เฝ้าระวัง = ต่ำกว่าตลิ่งน้อยกว่า 1 ม. · แจ้งเตือนภัย = เสมอหรือล้นตลิ่ง
+{
+  const tier = (diff) => LEVEL_TIERS[levelRank(diff)]?.key ?? null
+  assert.equal(LEVEL_WATCH_M, 1)
+  assert.equal(tier(3.73), 'normal')
+  assert.equal(tier(1.01), 'normal')
+  assert.equal(tier(1), 'watch', '1.00 ม. พอดีตารางไม่ได้ระบุ เจ้าของระบบเลือกนับเป็นเฝ้าระวัง')
+  assert.equal(tier(0.5), 'watch')
+  assert.equal(tier(0.01), 'watch')
+  assert.equal(tier(0), 'alert', 'เสมอตลิ่ง = แจ้งเตือนภัย')
+  assert.equal(tier(-0.35), 'alert')
+  assert.equal(tier('0.80'), 'watch', 'ค่าจาก RPC มาเป็นสตริงได้')
+  for (const empty of [null, undefined, '', 'abc']) {
+    assert.equal(levelRank(empty), null, `ค่าว่าง/ผิดรูปแบบต้องเป็น null ไม่ใช่ขั้นใดขั้นหนึ่ง: ${String(empty)}`)
+  }
+  // Telegram (water-alert-notify) ต้องตัดสินเหมือนหน้าเว็บทุกขอบ — อ่านซอร์สมาเทียบ
+  const src = readFileSync(new URL('../supabase/functions/water-alert-notify/index.ts', import.meta.url), 'utf8')
+  assert.equal(Number(src.match(/const LEVEL_WATCH_M = ([\d.]+)/)?.[1]), LEVEL_WATCH_M, 'LEVEL_WATCH_M สองฝั่งไม่ตรงกัน')
+  assert.ok(/if \(n <= 0\) return LEVEL_RANK\.alert/.test(src), 'Telegram ต้องนับเสมอตลิ่งเป็นแจ้งเตือนภัยเหมือนหน้าเว็บ')
+  assert.ok(/if \(n <= LEVEL_WATCH_M\) return LEVEL_RANK\.watch/.test(src), 'Telegram ต้องนับ 1.00 ม. พอดีเป็นเฝ้าระวังเหมือนหน้าเว็บ')
+  assert.ok(/if \(diff === null \|\| diff === undefined \|\| diff === ''\) return null/.test(src),
+    'Telegram ต้องกันค่าว่างก่อน Number() — Number(null) = 0 จะกลายเป็นเสมอตลิ่ง')
+  const web = readFileSync(new URL('../src/lib/waterSituation.js', import.meta.url), 'utf8')
+  assert.ok(!/bank_diff_m\) \?\? 0\)/.test(web), 'ห้ามแปลงค่าว่างเป็น 0 ก่อนเทียบตลิ่ง')
+}
 
 // ── เกณฑ์ปริมาณฝนของกรมอุตุนิยมวิทยา (ขอบช่วงทุกจุด) ──
 {
@@ -457,9 +485,12 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
   assert.ok(damRank(80.1) >= DAM_ALERT_RANK)
 
   // ขอบ 0 พอดี = เสมอตลิ่ง ยังไม่ถือว่าสูงกว่าตลิ่ง
-  assert.equal(buildAlerts({ levels: [level('L0', 0)], now }).any, false)
-  assert.equal(buildAlerts({ levels: [level('L1', 0.01)], now }).any, false)
+  // เกณฑ์กรมชลประทาน (ตาราง 5.9): "เสมอตลิ่ง" นับเป็นขั้นแจ้งเตือนภัยแล้ว ไม่ต้องรอให้ล้น
+  assert.equal(buildAlerts({ levels: [level('L0', 0)], now }).any, true, 'เสมอตลิ่งพอดี = แจ้งเตือนภัย')
+  // ขั้นเฝ้าระวังไม่ขึ้นแถบ (แถบนี้ไปขึ้นหน้าแรกของประชาชน) — แสดงบนการ์ดสถานีกับ Telegram แทน
+  assert.equal(buildAlerts({ levels: [level('L1', 0.01)], now }).any, false, 'ขั้นเฝ้าระวังไม่ขึ้นแถบ')
   assert.equal(buildAlerts({ levels: [level('L2', null)], now }).any, false, 'ไม่มีค่าเทียบตลิ่ง = ไม่เตือน')
+  assert.equal(buildAlerts({ levels: [level('L2b', '')], now }).any, false, 'ค่าว่างต้องไม่กลายเป็น 0 = เสมอตลิ่ง')
   assert.equal(buildAlerts({ levels: [level('L3', -0.35, 5)], now }).any, false, 'ค่าเก่ากว่า 3 ชม. ไม่เตือน')
 
   const over = buildAlerts({ levels: [level('L4', -0.2), level('L5', -0.85)], now })
@@ -482,8 +513,10 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
     dams: [dam('D7', 104)],
     now,
   }), { now, homeAmphoe: 'ร้องกวาง' })
-  assert.equal(mixed.label, 'ระดับน้ำสูงกว่าตลิ่ง')
+  assert.equal(mixed.label, 'ระดับน้ำเสมอหรือสูงกว่าตลิ่ง')
   assert.equal(mixed.text, 'สถานีL6 สูงกว่าตลิ่ง 0.35 ม.')
+  const atBank = alertSummary(buildAlerts({ levels: [level('L6b', 0)], now }), { now })
+  assert.equal(atBank.text, 'สถานีL6b ระดับน้ำเสมอตลิ่ง', 'เสมอตลิ่งต้องไม่เขียนว่า "สูงกว่าตลิ่ง 0.00 ม."')
   assert.equal(mixed.total, 3)
   assert.ok(mixed.meta.includes('อ.หนองม่วงไข่'), 'สถานีนอกอำเภอต้องบอกอำเภอเสมอ')
 

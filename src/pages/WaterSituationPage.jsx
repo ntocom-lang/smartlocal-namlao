@@ -12,7 +12,8 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import {
-  DAM_LEVELS, DAM_STALE_HOURS, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS, SYNC_STALE_HOURS, bankText, barPercent,
+  DAM_LEVELS, DAM_STALE_HOURS, LEVEL_TIERS, LEVEL_WATCH_M, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS, SYNC_STALE_HOURS,
+  bankText, barPercent, levelRank,
   channelFill, damLevel, damTicks, damTrend, buildAlerts, dataDayText, distanceText, ewsAlert, flowCompare,
   formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainBarMax, rainLevel, safeColor, stationPlace,
   summaryStats, toNum, waterTrend, localWaterSituation, shareWaterSituation,
@@ -329,7 +330,7 @@ function AlertBanner({ rain, ews, levels, dams, warnings, homeAmphoe, now, tenan
 
           {alerts.overbank.length > 0 && (
             <div>
-              <p className="text-xs font-bold text-gray-700">ระดับน้ำสูงกว่าตลิ่ง (เทียบตลิ่งต่ำสุดของสถานี)</p>
+              <p className="text-xs font-bold text-gray-700">ระดับน้ำเสมอหรือสูงกว่าตลิ่ง (เกณฑ์แจ้งเตือนภัยของกรมชลประทาน · เทียบตลิ่งต่ำสุดของสถานี)</p>
               <ul className="mt-1 space-y-1.5">
                 {alerts.overbank.map(s => (
                   <li key={s.station_code} className="text-sm text-gray-800">
@@ -583,6 +584,14 @@ function WaterLevelCard({ station: s, homeAmphoe, now }) {
   const bank = bankText(s.bank_diff_m)
   const mapHref = mapUrl(s.latitude, s.longitude)
   const meta = [stationPlace(s, homeAmphoe), distanceText(s.distance_km)].filter(Boolean).join(' · ')
+  // ขั้นตามเกณฑ์ระดับน้ำของกรมชลประทาน — ขึ้นป้ายเฉพาะเฝ้าระวังขึ้นไป ขั้นปกติไม่ต้องมีป้ายให้รก
+  // ค่าที่ค้างเกิน 3 ชม. ไม่ขึ้น เพราะบอกสถานะตอนนี้ไม่ได้
+  const rank = hasValue && !stale ? levelRank(s.bank_diff_m) : null
+  const tier = rank === 2
+    ? { className: 'border-red-200 bg-red-50 text-red-800', hint: 'เสมอหรือสูงกว่าตลิ่ง' }
+    : rank === 1
+      ? { className: 'border-amber-200 bg-amber-50 text-amber-900', hint: `ต่ำกว่าตลิ่งไม่ถึง ${LEVEL_WATCH_M} ม.` }
+      : null
 
   return (
     <div className="water-station-card rounded-2xl border bg-white p-4 shadow-sm" style={{ borderColor: hasValue && !stale ? `${color}66` : '#f3f4f6' }}>
@@ -608,6 +617,13 @@ function WaterLevelCard({ station: s, homeAmphoe, now }) {
           </span>
         )}
       </div>
+
+      {tier && (
+        <p className={`mt-3 flex items-start gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold leading-snug ${tier.className}`}>
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>เกณฑ์กรมชลประทาน: <span className="font-bold">{LEVEL_TIERS[rank].label}</span> — {tier.hint}</span>
+        </p>
+      )}
 
       {hasValue ? (
         <div className={`mt-3 ${stale ? 'opacity-50' : ''}`}>
