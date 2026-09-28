@@ -13,7 +13,7 @@ import { STAGES, TRIP_STATUS, RETURN_MODES, MOBILITY, bookingStage, staffNextAct
  * ของเดิมแยก 3 แท็บ (ตารางออกรถ · คิวรอจัดแผน · เที่ยวเดินรถ) ยืนยัน 1 คำขอต้องกด 3–4 ครั้ง
  * พร้อมอ่านผลตรวจแผนเอง และเมื่อชนคิวก็ไม่มีปุ่มให้ไปต่อ
  *
- * ตอนนี้ "ยืนยันรถ" คลิกเดียว = ระบบตรวจคิวแล้วยืนยันต่อทันที (patient_booking_preview → confirm)
+ * "ยืนยันรถ" ต้องทวนชื่อและวันเวลานัดก่อน ระบบจึงตรวจคิวและบันทึก (patient_booking_preview → confirm)
  * ติดปัญหา → แผ่นรายละเอียดเปิดเอง บอกเหตุประโยคเดียว + ปุ่มแก้ที่กดแล้วระบบยืนยันต่อให้เลย
  * ⚠️ การยืนยันรถยังเป็นเจ้าหน้าที่กดเองทุกครั้ง เพราะเป็นการตัดสินให้บริการแก่ประชาชน ระบบไม่ยืนยันแทน
  * ⚠️ คอลัมน์ "ดำเนินการ" ต้องปักขวาเสมอ ตารางกว้างกว่าพื้นที่ ถอดแล้วปุ่มหลักถูกตัดทุกจอ (#134)
@@ -352,10 +352,17 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   const open = rows.find(r => r.booking.id === openId)
   const createdRow = created && rows.find(r => r.booking.id === created.id)
 
-  // กดยืนยันจากแถวหรือจากแผ่น: ผ่าน = จบในคลิกเดียว · ติดปัญหา = เปิดแผ่นของแถวนั้นพร้อมปุ่มแก้
+  function approveVehicle(bookings, extra = '') {
+    const details = bookings.map(b => `• ${b.patient_name} · นัด ${dateTime(b.appointment_at)}`).join('\n')
+    return window.confirm(`ยืนยันรถให้ ${bookings.length} คนหรือไม่?\n\n${details}${extra ? `\n${extra}` : ''}\n\nตรวจข้อมูลแล้วกด “ตกลง” เพื่อบันทึกคิวรถ หรือกด “ยกเลิก” เพื่อกลับไปแก้ไข`)
+  }
+  // กดยืนยันจากแถวหรือจากแผ่น: ทวนก่อนทุกครั้ง · ติดปัญหา = เปิดแผ่นของแถวนั้นพร้อมปุ่มแก้
   // ไม่สำเร็จเพราะเครือข่าย/ข้อมูลเปลี่ยน = เปิดแผ่นให้เห็นข้อความผิดพลาดตรงหน้า (ไม่ต้องเลื่อนขึ้นไปหา)
   async function confirmRow(row, options = {}) {
     const ids = options.ids || (row.booking.requested_trip_id ? [row.booking.id] : row.group.map(b => b.id))
+    const bookings = workspace.bookings.filter(b => ids.includes(b.id)).map(b => options.amend?.booking?.id === b.id
+      ? { ...b, appointment_at: options.amend.values.appointment_at || b.appointment_at } : b)
+    if (!approveVehicle(bookings.length ? bookings : [row.booking], options.separate ? 'จัดเป็นเที่ยวแยก' : '')) return
     const out = await onConfirm(ids, options)
     if (out?.confirmed) {
       close()
@@ -368,7 +375,10 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   // ชนคิว → ไปคันเดียวกับเที่ยวที่ยืนยันแล้ว สำเร็จแล้วปิดแผ่น ไม่สำเร็จคงแผ่นไว้ให้เห็นข้อความผิดพลาด
   async function joinRow(row, option) {
     const incoming = rows.filter(x => option.ids?.includes(x.booking.id)).map(x => x.booking)
-    if (await onJoin(incoming.length ? incoming : [row.booking], option.trip, option.plan)) close()
+    const bookings = incoming.length ? incoming : [row.booking]
+    const extra = option.plan.multiwave ? 'จัดรถรับหลายรอบในเที่ยวเดียวกัน' : `ร่วมเที่ยวเดิม · เริ่มรับประมาณ ${clockOf(option.plan.pickup_at)} น.`
+    if (!approveVehicle(bookings, extra)) return
+    if (await onJoin(bookings, option.trip, option.plan)) close()
   }
   function press(row) {
     if (row.next.id === 'confirm') return confirmRow(row)

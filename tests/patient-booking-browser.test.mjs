@@ -170,6 +170,12 @@ const browser=await chromium.launch({channel:'msedge',headless:true})
 const page=await browser.newPage({viewport:{width:390,height:900}});const errors=[]
 page.setDefaultTimeout(20000)
 page.on('pageerror',e=>{errors.push(e.message);console.error('Browser error:',e.message)})
+const vehiclePrompts=[];let dismissNextVehiclePrompt=false
+page.on('dialog',async dialog=>{
+ if(dialog.type()!=='confirm'||!dialog.message().includes('ยืนยันรถให้')){await dialog.dismiss();return}
+ vehiclePrompts.push(dialog.message())
+ if(dismissNextVehiclePrompt){dismissNextVehiclePrompt=false;await dialog.dismiss()}else await dialog.accept()
+})
 await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort())
 
 // คำสั่งตรงถึงฐานข้อมูลต่อคิวเดียวกับคำขอจากเบราว์เซอร์ บทบาทจะได้ไม่สลับกันกลางทาง
@@ -281,12 +287,17 @@ try{
  await submitAs(citizen,groupE,{patient_name:'[TEST] ไปด้วยกัน อี',phone:'0810000008',share:true,companions:0,appointment_at:at(groupDay,'10:00'),return_at:at(groupDay,'12:00')})
  await submitAs(citizen,groupF,{patient_name:'[TEST] ไปด้วยกัน เอฟ',phone:'0810000009',share:true,companions:0,appointment_at:at(groupDay,'10:15'),return_at:at(groupDay,'12:00')})
 
- // ── ยืนยันรถคลิกเดียว ──
+ // ── กดยืนยันรถแล้วต้องทวนก่อน ยกเลิกแล้วข้อมูลไม่เปลี่ยน ──
  await staffDesk()
  await row(b1).waitFor()
+ dismissNextVehiclePrompt=true
+ await row(b1).getByRole('button',{name:'ยืนยันรถ',exact:true}).click()
+ assert.equal((await bookingRow(b1)).status,'submitted','ยกเลิกหน้าต่างทวนแล้วต้องไม่ยืนยันรถ')
+ assert(vehiclePrompts.at(-1).includes(mine.find(b=>b.id===b1).patient_name),'หน้าต่างทวนต้องแสดงชื่อผู้เดินทาง')
  await click('confirm',row(b1).getByRole('button',{name:'ยืนยันรถ',exact:true}))
  await toast('ยืนยันรถแล้ว').waitFor()
  assert.equal((await bookingRow(b1)).status,'confirmed');assert.equal(clicks.confirm,1)
+ assert.equal(vehiclePrompts.length,2,'กดซ้ำแล้วต้องทวนอีกครั้งก่อนบันทึก')
  await row(b1).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
  const afterConfirm=sheet.getByRole('region',{name:'ขั้นตอนหลังยืนยันรถ'})
  await afterConfirm.getByText('ยืนยันรถแล้ว · ขั้นต่อไป').waitFor()
@@ -337,7 +348,7 @@ try{
  await sheet.waitFor({state:'detached'});await row(b2).getByText('ยกเลิกแล้ว').waitFor()
  assert.equal((await bookingRow(b2)).status,'cancelled');assert.equal(clicks.conflictDecline,2)
  assert.equal((await runSql(async()=>(await db.query("SELECT detail->>'note' AS note FROM public.patient_booking_events WHERE entity_id=$1 AND action='cancel'",[b2])).rows[0])).note,'รถไม่ว่างในช่วงเวลาที่ขอ','เหตุผลที่ไม่ให้บริการต้องอยู่ในประวัติ')
- // ── ชนคิวแต่ไปคันเดียวกันได้ (20260921120000): บอกเวลาใหม่ก่อนกด แล้วรวมเที่ยวในคลิกเดียว ──
+ // ── ชนคิวแต่ไปคันเดียวกันได้: บอกเวลาใหม่ก่อนกด แล้วทวนก่อนรวมเที่ยว ──
  await page.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click()
  await row(joinA).getByRole('button',{name:'ยืนยันรถ',exact:true}).click();await toast('ยืนยันรถแล้ว').waitFor()
  await submitAs(citizen,joinB,{patient_name:'[TEST] นายบี ขอไปด้วย',phone:'0810000005',share:true,appointment_at:at(joinDay,'10:15'),return_at:at(joinDay,'12:00')})
@@ -346,10 +357,14 @@ try{
  const joinButton=problem.getByRole('button',{name:/^ให้ไปคันเดียวกัน · รถออกรับ \d\d:\d\d น\.$/});await joinButton.waitFor()
  await problem.getByText(/เวลารถออกรับใหม่ \d\d:\d\d น\. \(เดิม \d\d:\d\d น\.\)/).waitFor()
  await problem.getByRole('link',{name:'📞 [TEST] นางเอ นั่งร่วมได้'}).waitFor()
+ dismissNextVehiclePrompt=true
+ await joinButton.click()
+ assert.equal((await bookingRow(joinB)).status,'submitted','ยกเลิกหน้าต่างทวนร่วมเที่ยวแล้วต้องยังไม่ยืนยันรถ')
+ assert(vehiclePrompts.at(-1).includes('[TEST] นายบี ขอไปด้วย'),'หน้าต่างทวนร่วมเที่ยวต้องแสดงชื่อผู้ร่วมเที่ยว')
  await click('join',joinButton)
  await toast('ไปคันเดียวกับเที่ยวเดิม').waitFor()
  assert.equal(await tripOf(joinB),await tripOf(joinA),'ต้องอยู่เที่ยวเดียวกัน');assert.equal(clicks.join,2)
- // ── ยังไม่ได้ตรวจเขตพื้นที่ → "ตรวจแล้ว · ยืนยันรถ" ยืนยันต่อให้ในคลิกเดียวกัน ──
+ // ── ยังไม่ได้ตรวจเขตพื้นที่ → "ตรวจแล้ว · ยืนยันรถ" ทวนก่อนบันทึก ──
  await click('area',row(areaC).getByRole('button',{name:'ยืนยันรถ',exact:true}))
  await problem.getByText('ยังไม่ได้ตรวจว่าจุดรับอยู่ในเขตพื้นที่ให้บริการ').waitFor()
  await click('area',problem.getByRole('button',{name:'ตรวจแล้ว จุดรับอยู่ในเขต · ยืนยันรถ',exact:true}))
@@ -361,10 +376,11 @@ try{
  await problem.getByLabel('ชื่อผู้ช่วยเคลื่อนย้ายที่ไปด้วย').fill('[TEST] นายผู้ช่วย ยกได้')
  await click('helper',problem.getByRole('button',{name:'ยืนยันรถ',exact:true}))
  await toast('ยืนยันรถแล้ว').waitFor();assert.equal((await bookingRow(chairD)).status,'confirmed');assert.equal(clicks.helper,2)
- // ── ระบบเสนอให้ไปด้วยกัน (นั่งร่วมได้ทั้งคู่ เวลาใกล้กัน) → ยืนยันทั้งกลุ่มในคลิกเดียว ──
+ // ── ระบบเสนอให้ไปด้วยกัน (นั่งร่วมได้ทั้งคู่ เวลาใกล้กัน) → ทวนชื่อทั้งกลุ่มก่อนยืนยัน ──
  await row(groupE).getByRole('button',{name:'ยืนยันรถ · ไปด้วยกัน 2 คน',exact:true}).click();await toast('ยืนยันรถแล้ว').waitFor()
  assert.equal(await tripOf(groupE),await tripOf(groupF))
- console.log('PASS coordinator inbox: confirm in 1 click; conflict -> decline with reason in 2; conflict -> same vehicle in 2; area check, mover helper and suggested group each confirmed through the real UI')
+ assert(vehiclePrompts.at(-1).includes('[TEST] ไปด้วยกัน อี')&&vehiclePrompts.at(-1).includes('[TEST] ไปด้วยกัน เอฟ'),'หน้าต่างทวนการยืนยันทั้งกลุ่มต้องแสดงชื่อครบทุกคน')
+ console.log('PASS coordinator inbox: vehicle confirmation reviewed before saving, cancellation leaves booking pending; conflict, shared vehicle, area check, mover helper and suggested group through the real UI')
 
  // ── รับจองแทนทางโทรศัพท์ → กลับกล่องพร้อมปุ่ม "ยืนยันรถเลย" ──
  await page.getByRole('button',{name:/รับจองแทน/}).click()
@@ -381,7 +397,7 @@ try{
  await page.getByRole('button',{name:'ยืนยันรถเลย',exact:true}).click();await toast('ยืนยันรถแล้ว').waitFor()
  const intake=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).bookings.find(b=>b.patient_name==='[TEST] ผู้ป่วยโทรมา')
  assert.equal(intake.status,'confirmed');assert.equal(intake.entry_channel,'staff','ช่องทางต้องบันทึกว่าเจ้าหน้าที่รับแทน');assert.equal(intake.share,true)
- console.log('PASS staff intake by phone returns to the inbox with a one-click confirm, channel recorded as staff')
+ console.log('PASS staff intake by phone returns to the inbox with vehicle confirmation review, channel recorded as staff')
  // ── บัญชีเจ้าหน้าที่เปิดหน้าประชาชน: ฟอร์มต้องไม่เติมข้อมูลของคนที่โทรมาให้รับแทน ──
  // คำขอที่รับแทนบันทึกเจ้าหน้าที่เป็นผู้สร้าง ก่อน 20260922120000 จึงไปอยู่ใน "การจองของฉัน" ของเจ้าหน้าที่ด้วย
  // ถ้าหยิบมาเติม เจ้าหน้าที่ที่จองให้ตัวเองจะส่งคำขอด้วยชื่อ เบอร์ และจุดรับของคนอื่นโดยไม่รู้ตัว
