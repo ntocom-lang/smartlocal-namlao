@@ -14,7 +14,7 @@ import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import {
   DAM_LEVELS, DAM_STALE_HOURS, LEVEL_TIERS, LEVEL_WATCH_M, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS, SYNC_STALE_HOURS,
   bankText, barPercent, levelRank,
-  channelFill, damLevel, damTicks, damTrend, buildAlerts, dataDayText, distanceText, ewsAlert, flowCompare,
+  channelFill, damLevel, damSameInfo, damSameText, damTicks, damTrend, buildAlerts, dataDayText, distanceText, ewsAlert, flowCompare,
   formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainBarMax, rainLevel, safeColor, stationPlace,
   summaryStats, toNum, waterTrend, localWaterSituation, shareWaterSituation,
 } from '../lib/waterSituation'
@@ -258,6 +258,9 @@ function HeroStats({ rain, dams, levels, now }) {
       caption: `${stats.dam.count} อ่างรวมกัน`,
       // ปริมาตรเต็มยาวเกินการ์ดบนมือถือ (กว้างการ์ดละ ~118px) โชว์เฉพาะจอที่กว้างพอ
       detail: `${formatMcm(stats.dam.storage)} จาก ${formatMcm(stats.dam.capacity)} ล้าน ลบ.ม.`,
+      // ยอดรวมยังนับอ่างที่ตัวเลขซ้ำเดิมอยู่ — ต้องบอกบนการ์ดนี้ด้วย ไม่งั้นตัวเลขใหญ่ดูเหมือนค่าปัจจุบัน
+      warn: !stats.dam.same ? null
+        : stats.dam.same === stats.dam.count ? 'ตัวเลขไม่เปลี่ยนหลายวัน' : `${stats.dam.same} อ่างตัวเลขไม่เปลี่ยนหลายวัน`,
     })
   }
   if (stats.bank) {
@@ -294,6 +297,11 @@ function HeroStats({ rain, dams, levels, now }) {
           <p className="mt-1 text-[11px] leading-relaxed text-gray-600 md:text-xs">
             {c.caption}{c.detail && <span className="hidden md:inline"> · {c.detail}</span>}
           </p>
+          {c.warn && (
+            <p className="mt-0.5 flex items-start gap-1 text-[11px] font-semibold leading-snug text-amber-700 md:text-xs">
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" />{c.warn}
+            </p>
+          )}
         </div>
       ))}
     </div>
@@ -775,6 +783,9 @@ function DamCard({ station: s, homeAmphoe, now }) {
   const meta = [stationPlace(s, homeAmphoe), distanceText(s.distance_km)].filter(Boolean).join(' · ')
   // แถบยาวได้สุด 100% — เกินความจุเก็บกักให้เต็มแถบ ตัวเลขกับป้ายบอกส่วนที่เกินเอง
   const barWidth = percent !== null ? Math.max(0, Math.min(percent, 100)) : 0
+  // ตัวเลขทุกช่องซ้ำเดิมหลายวัน = ต้นทางน่าจะยังไม่ได้ปรับข้อมูล — บอกตรงๆ แทนการขึ้น "ข้อมูลของวันนี้" กับ "ทรงตัว"
+  // ซึ่งทำให้เข้าใจว่าเป็นค่าที่วัดวันนี้ (ข้อมูลที่เก่าเกิน 48 ชม. มีป้ายของตัวเองอยู่แล้ว จึงไม่ซ้อน)
+  const same = hasValue && !stale ? damSameInfo(s) : null
 
   return (
     <div className="water-station-card rounded-2xl border bg-white p-4 shadow-sm" style={{ borderColor: hasValue && !stale ? `${color}66` : '#f3f4f6' }}>
@@ -799,6 +810,13 @@ function DamCard({ station: s, homeAmphoe, now }) {
           </span>
         )}
       </div>
+
+      {same && (
+        <p className="mt-3 flex items-start gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold leading-snug text-amber-900">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>{damSameText(same, now)} — ต้นทางอาจยังไม่ได้ปรับข้อมูล ใช้ตัวเลขนี้อย่างระมัดระวัง</span>
+        </p>
+      )}
 
       {hasValue ? (
         <div className={`mt-3 ${stale ? 'opacity-50' : ''}`}>
@@ -835,7 +853,7 @@ function DamCard({ station: s, homeAmphoe, now }) {
           <div className="mt-2 space-y-2">
             <FlowBars inflow={inflow} released={released} />
             <div>
-              <Metric label={s.prev_recorded_at ? `ปริมาตรเทียบกับข้อมูลวันที่ ${dataDayText(s.prev_recorded_at, now)}` : 'ปริมาตรเทียบกับข้อมูลก่อนหน้า'} value={trend ? (
+              <Metric label={s.prev_recorded_at ? `ปริมาตรเทียบกับข้อมูลวันที่ ${dataDayText(s.prev_recorded_at, now)}` : 'ปริมาตรเทียบกับข้อมูลก่อนหน้า'} value={same ? 'ตัวเลขซ้ำเดิม เทียบไม่ได้' : trend ? (
                 <span className={`inline-flex items-center gap-1 ${TREND_STYLE[trend.dir].className}`}>
                   <TrendIcon size={15} /> {trend.label}
                 </span>
@@ -851,7 +869,9 @@ function DamCard({ station: s, homeAmphoe, now }) {
         {hasValue ? (
           stale
             ? <span className="text-amber-700">ไม่มีข้อมูลใหม่ตั้งแต่ {day}</span>
-            : <span className="text-gray-500">{day === 'วันนี้' ? 'ข้อมูลของวันนี้' : `ข้อมูลวันที่ ${day}`}</span>
+            : same
+              ? <span className="text-amber-700">{day === 'วันนี้' ? 'รายงานของวันนี้' : `รายงานวันที่ ${day}`}ใช้ตัวเลขชุดเดิม</span>
+              : <span className="text-gray-500">{day === 'วันนี้' ? 'ข้อมูลของวันนี้' : `ข้อมูลวันที่ ${day}`}</span>
         ) : <span />}
         {mapHref && (
           <a href={mapHref} target="_blank" rel="noopener noreferrer"

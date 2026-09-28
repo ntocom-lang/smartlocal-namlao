@@ -185,6 +185,28 @@ export function damTrend(current, previous) {
     : { dir: 'down', diff, label: `ลด ${formatMcm(Math.abs(diff))} ล้าน ลบ.ม.` }
 }
 
+// อ่างที่ตัวเลขทุกช่อง (ปริมาตร · ไหลเข้า · ระบาย) ซ้ำกับรายงานล่าสุดติดกันตั้งแต่กี่รายงานขึ้นไปถึงขึ้นป้าย
+// 3 = เกณฑ์ตรวจคุณภาพข้อมูลที่เจ้าของระบบเลือก (2569-09-28) ไม่ใช่เกณฑ์ภัย — อ่างที่มีน้ำไหลเข้าหรือระบายจริง
+// แทบไม่มีทางได้ตัวเลขเท่ากันถึงทศนิยม 2 ตำแหน่ง 3 วันติด ส่วน 2 วันเกิดได้จริงกับอ่างเล็กที่น้ำเข้า-ออกพอดีกัน
+// เหตุที่ต้องมี: 2569-09-28 อ่างขนาดกลางทั้ง 5 แห่งของ จ.แพร่ ค้างที่ค่าของ 19 ส.ค. นาน 40 วัน ขณะที่ต้นทาง
+// ลงวันที่ใหม่ทุกวัน ป้าย "ไม่มีข้อมูลใหม่" ที่ดูจากวันที่ (DAM_STALE_HOURS) จึงจับไม่ได้
+export const DAM_SAME_MIN_REPORTS = 3
+
+// คืน null เมื่อไม่ต้องขึ้นป้าย · ช่อง dam_same_* มาจาก RPC — RPC รุ่นที่ยังไม่มีช่องนี้ได้ null ไม่พัง
+export function damSameInfo(station) {
+  const count = toNum(station?.dam_same_count)
+  if (count === null || count < DAM_SAME_MIN_REPORTS) return null
+  return { count, since: station.dam_same_since ?? null, capped: station.dam_same_capped === true }
+}
+
+// capped = ข้อมูลที่ระบบเก็บไว้ (7 วัน) ไม่มีรายงานที่ต่างเลย ของจริงอาจนานกว่านั้น จึงต้องเขียนว่า "อย่างน้อย"
+export function damSameText(info, now) {
+  if (!info) return null
+  if (info.capped) return `ตัวเลขชุดนี้ซ้ำเดิมทุกวันมาอย่างน้อย ${info.count} วัน`
+  const since = dataDayText(info.since, now)
+  return `ตัวเลขชุดนี้ซ้ำเดิมทุกวันมา ${info.count} วัน${since ? ` ตั้งแต่${since === 'วันนี้' ? 'วันนี้' : ` ${since}`}` : ''}`
+}
+
 // ป้ายเตือนภัยของสถานีหนึ่ง — คืน null เมื่อไม่ต้องแสดง
 // แสดงเฉพาะระดับ 1–3: ค่าอื่นของต้นทาง (0, 9, ติดลบ) เว็บของเขาเองแสดงเป็น "ปกติ" แต่ไม่มีเอกสาร
 // อธิบาย 9 ที่สถานีครึ่งประเทศเป็นอยู่ จึงไม่แปลความให้ประชาชนวางใจว่า "ปกติ"
@@ -458,8 +480,10 @@ export function summaryStats({ rain = [], dams = [], levels = [], now }) {
 
   return {
     rain: topRain ? { station: topRain, mm: toNum(topRain.rain_24h_mm), level: rainLevel(topRain.rain_24h_mm) } : null,
+    // same = จำนวนอ่างในยอดรวมที่ตัวเลขซ้ำเดิมหลายวัน — ยอดรวมยังนับอ่างนั้นอยู่ การ์ดจึงต้องบอกให้รู้
     dam: damPercent === null ? null
-      : { percent: damPercent, count: damRows.length, storage, capacity, level: damLevel(damPercent) },
+      : { percent: damPercent, count: damRows.length, storage, capacity, level: damLevel(damPercent),
+        same: damRows.filter(s => damSameInfo(s)).length },
     bank: nearest ? { station: nearest, diff: toNum(nearest.bank_diff_m), text: bankText(nearest.bank_diff_m) } : null,
     any: Boolean(topRain) || damPercent !== null || Boolean(nearest),
   }

@@ -4,12 +4,45 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
-  DAM_ALERT_RANK, DAM_LEVELS, DAM_PUBLIC_ALERT_RANK, DAM_STALE_HOURS, EWS_FRESH_HOURS, LEVEL_TIERS, LEVEL_WATCH_M, RAIN_LEVELS,
-  RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS,
-  alertSummary, bankText, barPercent, buildAlerts, channelFill, damLevel, damRank, damTicks, damTrend, dataDayText, distanceText, ewsAlert,
-  flowCompare, formatMcm, formatMm, isStale, levelRank, mapUrl, measuredAtText, rainBarMax, rainLevel, safeColor,
-  stationPlace, summaryStats, waterTrend,
+  DAM_ALERT_RANK, DAM_LEVELS, DAM_PUBLIC_ALERT_RANK, DAM_SAME_MIN_REPORTS, DAM_STALE_HOURS, EWS_FRESH_HOURS, LEVEL_TIERS,
+  LEVEL_WATCH_M, RAIN_LEVELS, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS,
+  alertSummary, bankText, barPercent, buildAlerts, channelFill, damLevel, damRank, damSameInfo, damSameText, damTicks, damTrend,
+  dataDayText, distanceText, ewsAlert, flowCompare, formatMcm, formatMm, isStale, levelRank, mapUrl, measuredAtText, rainBarMax,
+  rainLevel, safeColor, stationPlace, summaryStats, waterTrend,
 } from '../src/lib/waterSituation.js'
+
+// ── ตัวเลขอ่างซ้ำเดิมหลายวัน (ต้นทางลงวันที่ใหม่ทุกวันแต่ไม่ปรับตัวเลข) ──
+// เจอจริง 2569-09-28: อ่างขนาดกลางทั้ง 5 แห่งของ จ.แพร่ ค้างที่ค่าของ 19 ส.ค. นาน 40 วัน
+{
+  const now = Date.now()
+  const day = (d) => new Date(now - d * 86400_000).toISOString()
+  assert.equal(DAM_SAME_MIN_REPORTS, 3, 'เกณฑ์ที่เจ้าของระบบเลือก 2569-09-28')
+  assert.equal(damSameInfo({ dam_same_count: 2, dam_same_since: day(1), dam_same_capped: false }), null, '2 วันเกิดได้จริงกับอ่างเล็ก')
+  assert.deepEqual(damSameInfo({ dam_same_count: 3, dam_same_since: day(2), dam_same_capped: false }),
+    { count: 3, since: day(2), capped: false })
+  assert.equal(damSameInfo({}), null, 'RPC ที่ยังไม่มีช่องนี้ = ไม่ขึ้นป้าย ไม่พัง')
+  assert.equal(damSameInfo({ dam_same_count: null }), null)
+  assert.equal(damSameInfo({ dam_same_count: '7', dam_same_capped: true }).count, 7, 'ค่าจาก RPC มาเป็นสตริงได้')
+  assert.equal(damSameText({ count: 7, since: day(6), capped: true }, now), 'ตัวเลขชุดนี้ซ้ำเดิมทุกวันมาอย่างน้อย 7 วัน',
+    'ข้อมูลที่เก็บไว้ไม่มีรายงานที่ต่างเลย ต้องเขียนว่า "อย่างน้อย"')
+  const text = damSameText({ count: 4, since: day(3), capped: false }, now)
+  assert.ok(text.startsWith('ตัวเลขชุดนี้ซ้ำเดิมทุกวันมา 4 วัน ตั้งแต่ ') && !text.includes('อย่างน้อย'), text)
+  // การ์ดสรุปบนสุดรวมอ่างที่ตัวเลขซ้ำเดิมไว้ในยอดรวม จึงต้องรู้ว่ามีกี่อ่าง
+  const damRow = (code, same) => ({ station_code: code, recorded_at: day(0.1), dam_storage_mcm: 5, dam_capacity_mcm: 10, dam_same_count: same, dam_same_capped: true })
+  assert.equal(summaryStats({ dams: [damRow('A', 7), damRow('B', 1)], now }).dam.same, 1)
+  assert.equal(summaryStats({ dams: [damRow('A', 1)], now }).dam.same, 0)
+
+  // RPC: CREATE OR REPLACE เขียนทับทั้งฟังก์ชัน — ต้องมีด่าน md5 และทุกช่องของรุ่นเดิมต้องอยู่ครบ
+  const mig = readFileSync(new URL('../supabase/migrations/20260928150000_water_situation_rpc_dam_same.sql', import.meta.url), 'utf8')
+  assert.ok(mig.includes("IS DISTINCT FROM 'ef87449a59f9c5bcbf0921853f417293'"), 'ต้องมีด่านตรวจว่า RPC บน production ยังเป็นรุ่นที่ยกมา')
+  assert.ok(mig.includes('GRANT EXECUTE ON FUNCTION public.get_public_water_situation(uuid) TO anon, authenticated'))
+  const keysOf = (sql) => new Set([...sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION')).matchAll(/^\s+'([a-z0-9_]+)',/gm)].map(m => m[1]))
+  const prev = readFileSync(new URL('../supabase/migrations/20260919100300_water_warnings_rls_rpc.sql', import.meta.url), 'utf8')
+  const next = keysOf(mig)
+  assert.ok(keysOf(prev).size >= 30, 'อ่านรายชื่อช่องของรุ่นเดิมไม่ได้ — regex ตกยุค')
+  for (const key of keysOf(prev)) assert.ok(next.has(key), `ช่อง ${key} หายไปจาก RPC รุ่นใหม่`)
+  for (const key of ['dam_same_count', 'dam_same_since', 'dam_same_capped']) assert.ok(next.has(key), `RPC รุ่นใหม่ต้องมี ${key}`)
+}
 
 // ── เกณฑ์ระดับน้ำในแม่น้ำของกรมชลประทาน (มาตรฐานข้อมูลน้ำ ระยะที่ 3 ของ สสน. ตาราง 5.9) ──
 // ปกติ = ต่ำกว่าตลิ่งมากกว่า 1 ม. · เฝ้าระวัง = ต่ำกว่าตลิ่งน้อยกว่า 1 ม. · แจ้งเตือนภัย = เสมอหรือล้นตลิ่ง
