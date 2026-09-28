@@ -175,13 +175,13 @@ if (!existsSync(memDir)) {
 // ตรวจทุกตัวใน memoryRepos() — รายการเดียวกับที่ handoff/resume ใช้ ห้ามเขียนรายการแยกในไฟล์นี้
 for (const r of memoryRepos()) {
   if (!r.present) {
-    if (!r.optional) warn(`ไม่พบ repo ของ ${r.label} ที่ ${r.dir}`, r.missingHint);
+    if (!r.optional) warn(r.missingMsg, r.missingHint);
     continue;
   }
   const g = (args) => gitIn(r, args);
 
   // ไม่มี upstream = handoff ไม่แตะ repo นี้เลย (ดู handoff.mjs) ⇒ จะขึ้น ❌ ว่ายังไม่ commit ไม่ได้
-  // ไม่งั้น doctor จะแดงค้างไปตลอดด้วยเรื่องที่ handoff แก้ให้ไม่ได้ (Codex ล้าง .git ตัวเองจน remote หาย 2026-09-28)
+  // ไม่งั้น doctor จะแดงค้างไปตลอดด้วยเรื่องที่ handoff แก้ให้ไม่ได้
   const aheadRes = g(['rev-list', '--count', '@{u}..HEAD']);
   if (aheadRes.status !== 0) {
     warn(`${r.label} ไม่มี upstream`, `${r.missingHint} — ไม่งั้น push ไม่ขึ้นที่ไหนเลย`);

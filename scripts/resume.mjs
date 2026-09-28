@@ -126,7 +126,7 @@ for (const repo of memoryRepos()) {
   if (!repo.present) {
     // เครื่องที่ไม่ได้ลง Codex จะไม่มีโฟลเดอร์นี้ ⇒ เงียบไปเลย ไม่ต้องเตือน
     if (!repo.optional) {
-      console.log(`\n⚠️  ไม่พบ repo ของ ${repo.label} ที่ ${repo.dir} — ข้ามการดึง`);
+      console.log(`\n⚠️  ${repo.missingMsg} — ข้ามการดึง`);
       console.log(`    ${repo.missingHint}`);
     }
     continue;

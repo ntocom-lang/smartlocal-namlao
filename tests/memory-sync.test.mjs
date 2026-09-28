@@ -15,6 +15,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSyn
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isThaiIdChecksumValid, scanForPersonalData } from '../scripts/lib/devconfig.mjs'
 
 const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts')
 
@@ -33,9 +34,11 @@ function isolatedEnv(base, extra = {}) {
     GIT_COMMITTER_EMAIL: 'test@example.invalid',
     GIT_TERMINAL_PROMPT: '0',
     SMARTLOCAL_CODEX_MEMORY: join(base, 'no-codex'), // ค่าปริยาย = เครื่องที่ไม่ได้ลง Codex
+    SMARTLOCAL_CODEX_REMOTE: join(base, 'no-remote.git'), // codex:link ห้ามวิ่งไป GitHub จริง
     ...extra,
   }
   delete env.SMARTLOCAL_DEVCONFIG // ให้หา devconfig จาก "ข้างทรีหลัก" แบบของจริง
+  delete env.SMARTLOCAL_CODEX_SYNC // ให้หา git ของ Codex จาก "ข้างทรีหลัก" เหมือนกัน
   return env
 }
 
@@ -228,21 +231,209 @@ test('handoff บน branch งาน: ส่งทั้งโค้ดแล�
   assert.match(remoteFiles(w), /claude-memory\/new\.md/)
 })
 
-test('Codex ไม่มี upstream: เตือนแต่ไม่ทำให้ handoff ล้ม และไม่ commit ลง repo ของ Codex', (t) => {
-  const w = makeWorld(t)
-  const codex = join(w.base, 'codex-memories')
-  mkdirSync(codex)
-  w.g(codex, 'init', '-q', '-b', 'master')
-  writeFileSync(join(codex, 'MEMORY.md'), 'baseline\n')
-  w.g(codex, 'add', '-A')
-  w.g(codex, 'commit', '-q', '-m', 'Initialize Codex git baseline')
-  writeFileSync(join(codex, 'new.md'), 'ของใหม่ของ Codex\n')
-  const before = w.g(codex, 'rev-parse', 'HEAD')
+/* ── memory ของ Codex: git ของเราเองแยกจาก .git ของ Codex ─────────── */
 
-  const r = runScript(w, 'handoff.mjs', w.A.main, { SMARTLOCAL_CODEX_MEMORY: codex })
+// โฟลเดอร์ของ Codex ที่มี .git ของตัวเอง — แบบเดียวกับที่ Codex สร้างจริง ("Initialize Codex git baseline")
+function codexFolder(w, dir, files) {
+  for (const [p, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, p)), { recursive: true })
+    writeFileSync(join(dir, p), text)
+  }
+  w.g(dir, 'init', '-q', '-b', 'master')
+  w.g(dir, 'add', '-A')
+  w.g(dir, 'commit', '-q', '-m', 'Initialize Codex git baseline')
+  return dir
+}
+
+// remote ของ memory Codex (= GitHub) ไล่ประวัติทีละ commit ตามลำดับ
+function codexRemote(w, history) {
+  const remote = join(w.base, 'codex-remote.git')
+  w.g(w.base, 'init', '-q', '--bare', '-b', 'master', remote)
+  const seed = join(w.base, 'codex-seed')
+  w.g(w.base, 'clone', '-q', remote, seed)
+  for (const files of history) {
+    for (const [p, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(seed, p)), { recursive: true })
+      writeFileSync(join(seed, p), text)
+    }
+    w.g(seed, 'add', '-A')
+    w.g(seed, 'commit', '-q', '-m', 'codex history')
+    w.g(seed, 'push', '-q', 'origin', 'master')
+  }
+  return remote
+}
+
+const codexEnv = (work, remote) => ({ SMARTLOCAL_CODEX_MEMORY: work, SMARTLOCAL_CODEX_REMOTE: remote })
+const syncDir = (m) => join(dirname(m.main), 'smartlocal-codex-memory.git') // ข้างทรีหลัก เหมือน devconfig
+const syncStatus = (w, work, m = w.A) => w.g(work, '--git-dir', syncDir(m), '--work-tree', work, 'status', '--porcelain')
+
+// เลขบัตรปลอมที่ผ่าน checksum — สร้างตอนรันจากเลขพาย ไม่ใช่เลขของใคร และไม่เขียนเป็นก้อนเดียวในไฟล์
+function fakeThaiId() {
+  const base = '314159265358'
+  let s = 0
+  for (let i = 0; i < 12; i++) s += Number(base[i]) * (13 - i)
+  return base + ((11 - (s % 11)) % 10)
+}
+
+test('Codex มีโฟลเดอร์แต่ยังไม่ได้ codex:link: handoff ฟ้องให้ตั้ง และไม่ commit ลง .git ของ Codex', (t) => {
+  const w = makeWorld(t)
+  const work = codexFolder(w, join(w.base, 'A-codex'), { 'MEMORY.md': 'baseline\n' })
+  writeFileSync(join(work, 'new.md'), 'ของใหม่ของ Codex\n')
+  const before = w.g(work, 'rev-parse', 'HEAD')
+
+  const r = runScript(w, 'handoff.mjs', w.A.main, { SMARTLOCAL_CODEX_MEMORY: work })
+  assert.equal(r.status, 1, out(r))
+  assert.match(r.stdout, /npm run codex:link/)
+  assert.equal(w.g(work, 'rev-parse', 'HEAD'), before, 'ห้าม commit ลง .git ที่ Codex เป็นเจ้าของ')
+})
+
+test('codex:link เครื่องใหม่ที่ยังไม่มีไฟล์ของ Codex: ดึงลงมาทั้งหมด', (t) => {
+  const w = makeWorld(t)
+  const remote = codexRemote(w, [{ 'MEMORY.md': 'สรุปจาก PC\n', 'rollout_summaries/a.md': 'งาน A\n' }])
+  const work = join(w.base, 'A-codex') // ยังไม่มีโฟลเดอร์ = Codex ยังไม่เคยเปิดบนเครื่องนี้
+
+  const r = runScript(w, 'link-codex-memory.mjs', w.A.main, codexEnv(work, remote))
   assert.equal(r.status, 0, out(r))
-  assert.match(r.stdout, /memory ของ Codex ไม่มี upstream/)
-  assert.equal(w.g(codex, 'rev-parse', 'HEAD'), before, 'ห้าม commit ลง .git ที่ Codex เป็นเจ้าของ')
+  assert.equal(readFileSync(join(work, 'MEMORY.md'), 'utf8'), 'สรุปจาก PC\n')
+  assert.ok(existsSync(join(work, 'rollout_summaries', 'a.md')))
+  assert.equal(syncStatus(w, work), '')
+})
+
+test('codex:link เครื่องที่ใช้ Codex อยู่แล้วและมีของใหม่กว่า: ไม่ทับ ไม่เอา .git ของ Codex ขึ้นไป และ handoff ส่งได้', (t) => {
+  const w = makeWorld(t)
+  const remote = codexRemote(w, [{ 'MEMORY.md': 'สรุปเก่า\n', 'rollout_summaries/a.md': 'งาน A\n' }])
+  const work = codexFolder(w, join(w.base, 'A-codex'), {
+    'MEMORY.md': 'สรุปใหม่ของเครื่องนี้\n',
+    'rollout_summaries/a.md': 'งาน A\n',
+    'rollout_summaries/b.md': 'งาน B ใหม่\n',
+  })
+  const codexHead = w.g(work, 'rev-parse', 'HEAD')
+  const env = codexEnv(work, remote)
+
+  const link = runScript(w, 'link-codex-memory.mjs', w.A.main, env)
+  assert.equal(link.status, 0, out(link))
+  assert.equal(readFileSync(join(work, 'MEMORY.md'), 'utf8'), 'สรุปใหม่ของเครื่องนี้\n', 'ห้ามทับของใหม่ในเครื่อง')
+
+  const r = runScript(w, 'handoff.mjs', w.A.main, env)
+  assert.equal(r.status, 0, out(r))
+  const tree = w.g(remote, 'ls-tree', '-r', '--name-only', 'master')
+  assert.match(tree, /rollout_summaries\/b\.md/)
+  assert.doesNotMatch(tree, /(^|\/)\.git(\/|$)/m, '.git ของ Codex ต้องไม่ขึ้นไปด้วย')
+  assert.equal(w.g(remote, 'show', 'master:MEMORY.md'), 'สรุปใหม่ของเครื่องนี้')
+  assert.equal(w.g(work, 'rev-parse', 'HEAD'), codexHead, 'ห้ามแตะ .git ที่ Codex เป็นเจ้าของ')
+})
+
+test('Codex ล้าง .git ของตัวเองแล้วสร้างใหม่ (เจอจริง 09-24 และ 09-28): sync ของเราไม่สะดุด', (t) => {
+  const w = makeWorld(t)
+  const remote = codexRemote(w, [{ 'MEMORY.md': 'สรุป\n' }])
+  const work = codexFolder(w, join(w.base, 'A-codex'), { 'MEMORY.md': 'สรุป\n' })
+  const env = codexEnv(work, remote)
+  assert.equal(runScript(w, 'link-codex-memory.mjs', w.A.main, env).status, 0)
+
+  rmSync(join(work, '.git'), { recursive: true, force: true })
+  w.g(work, 'init', '-q', '-b', 'master')
+  w.g(work, 'add', '-A')
+  w.g(work, 'commit', '-q', '-m', 'Initialize Codex git baseline')
+  writeFileSync(join(work, 'c.md'), 'งาน C หลัง Codex สร้าง .git ใหม่\n')
+
+  const r = runScript(w, 'handoff.mjs', w.A.main, env)
+  assert.equal(r.status, 0, out(r))
+  assert.match(w.g(remote, 'ls-tree', '-r', '--name-only', 'master'), /^c\.md$/m)
+})
+
+test('codex:link เครื่องที่ของในเครื่องเก่ากว่าบน GitHub: ไม่นับเป็นของใหม่ และ resume ดึงของใหม่ลงมา', (t) => {
+  const w = makeWorld(t)
+  const remote = codexRemote(w, [
+    { 'MEMORY.md': 'รุ่น 1\n', 'rollout_summaries/a.md': 'งาน A\n' },
+    { 'MEMORY.md': 'รุ่น 2\n', 'rollout_summaries/c.md': 'งาน C\n' },
+  ])
+  const work = codexFolder(w, join(w.base, 'A-codex'), { 'MEMORY.md': 'รุ่น 1\n', 'rollout_summaries/a.md': 'งาน A\n' })
+  const env = codexEnv(work, remote)
+
+  const link = runScript(w, 'link-codex-memory.mjs', w.A.main, env)
+  assert.equal(link.status, 0, out(link))
+  assert.equal(syncStatus(w, work), '', 'ของรุ่นเก่าต้องไม่ถูกนับเป็นของใหม่ของเครื่องนี้ ไม่งั้น handoff จะดันของเก่าทับของใหม่')
+
+  runScript(w, 'resume.mjs', w.A.main, env)
+  assert.equal(readFileSync(join(work, 'MEMORY.md'), 'utf8'), 'รุ่น 2\n')
+  assert.ok(existsSync(join(work, 'rollout_summaries', 'c.md')))
+})
+
+test('codex:link รันซ้ำได้: ครั้งที่ 2 บอกว่าตั้งไว้แล้ว ไม่แตะอะไร', (t) => {
+  const w = makeWorld(t)
+  const remote = codexRemote(w, [{ 'MEMORY.md': 'สรุป\n' }])
+  const work = codexFolder(w, join(w.base, 'A-codex'), { 'MEMORY.md': 'สรุป\n' })
+  const env = codexEnv(work, remote)
+  assert.equal(runScript(w, 'link-codex-memory.mjs', w.A.main, env).status, 0)
+  const head = w.g(work, '--git-dir', syncDir(w.A), 'rev-parse', 'HEAD')
+
+  const again = runScript(w, 'link-codex-memory.mjs', w.A.main, env)
+  assert.equal(again.status, 0, out(again))
+  assert.match(again.stdout, /ตั้งไว้แล้ว/)
+  assert.equal(w.g(work, '--git-dir', syncDir(w.A), 'rev-parse', 'HEAD'), head)
+})
+
+/* ── ด่านข้อมูลส่วนบุคคล ─────────────────────────────────────────── */
+
+test('scanForPersonalData: จับของจริง ไม่จับเลขตัวอย่าง นายกเทศมนตรี หรืออีเมลตัวอย่าง', () => {
+  const id = fakeThaiId()
+  const wrongCheck = id.slice(0, 12) + ((Number(id[12]) + 1) % 10)
+  const cases = [
+    ['เลขบัตร checksum ถูก', `รหัส ${id}`, 'block'],
+    ['เลขบัตรแบบมีขีด', `รหัส ${id[0]}-${id.slice(1, 5)}-${id.slice(5, 10)}-${id.slice(10, 12)}-${id[12]}`, 'block'],
+    ['เลขบัตร checksum ผิด', `รหัส ${wrongCheck}`, null],
+    // เบอร์ปลอมจากเลขพาย (3.14159265…) ให้เห็นว่าเป็นเลขสมมติ — ไม่สุ่มเลขที่อาจเป็นเบอร์ของใคร
+    ['เบอร์มือถือ', ['โทร 08', '1-415-', '9265'].join(''), 'block'],
+    ['เบอร์มือถือ +66', ['tel +66 8', '1 415 ', '9265'].join(''), 'block'],
+    ['เบอร์ตัวอย่างเลขเรียง', ['placeholder 08', '1-234-5678'].join(''), null],
+    ['เบอร์ตัวอย่างเลขซ้ำ', ['โทร 08', '0-000-0000'].join(''), null],
+    ['เลขบัตรตัวอย่างเลขซ้ำ', `รหัส 1${'1'.repeat(11)}${(() => { let s = 0; for (let i = 0; i < 12; i++) s += 13 - i; return (11 - (s % 11)) % 10 })()}`, null],
+    ['นายกเทศมนตรี', 'ให้นายกเทศมนตรีลงนาม', null],
+    ['อีเมลตัวอย่าง', 'user@example.com', null],
+    // .test สงวนไว้ตาม RFC 2606 ใช้เป็นอีเมลจริงไม่ได้ และไม่อยู่ในรายการโดเมนของทีม ⇒ ต้องนับเป็นคนนอก
+    ['อีเมลคนนอก', 'ส่งหา somchai@mail.test', 'warn'],
+    ['คำนำหน้า + ชื่อ', ['ผู้ยื่น นาย', 'สมชาย ใจดี'].join(''), 'warn'],
+    ['IP', 'เราเตอร์ 203.0.113.7', 'warn'],
+  ]
+  for (const [label, text, level] of cases) {
+    const hits = scanForPersonalData(() => text, ['x.md'])
+    if (level === null) assert.equal(hits.length, 0, `${label}: ไม่ควรจับ`)
+    else assert.ok(hits.some((h) => h.level === level), `${label}: ควรจับเป็น ${level}`)
+  }
+  assert.ok(isThaiIdChecksumValid(id) && !isThaiIdChecksumValid(wrongCheck))
+})
+
+test('ด่านข้อมูลส่วนบุคคล: เลขบัตรในไฟล์ของ Codex ⇒ หยุดเฉพาะ Codex ไม่พิมพ์เลขออกจอ ส่วน Claude ยังส่ง', (t) => {
+  const w = makeWorld(t)
+  const remote = codexRemote(w, [{ 'MEMORY.md': 'สรุป\n' }])
+  const work = codexFolder(w, join(w.base, 'A-codex'), { 'MEMORY.md': 'สรุป\n' })
+  const env = codexEnv(work, remote)
+  assert.equal(runScript(w, 'link-codex-memory.mjs', w.A.main, env).status, 0)
+  const id = fakeThaiId()
+  writeFileSync(join(work, 'leak.md'), `ผู้ร้อง ${id}\n`)
+  writeFileSync(join(w.A.cfg, 'claude-memory', 'new.md'), 'ความรู้ใหม่\n')
+  const before = w.g(remote, 'rev-parse', 'master')
+
+  const r = runScript(w, 'handoff.mjs', w.A.main, env)
+  assert.equal(r.status, 1, out(r))
+  assert.match(r.stdout, /เลขบัตรประชาชน/)
+  assert.ok(!out(r).includes(id), 'ห้ามพิมพ์ค่าที่เจอออกจอ')
+  assert.equal(w.g(remote, 'rev-parse', 'master'), before, 'memory ของ Codex ต้องไม่ถูกส่ง')
+  assert.match(syncStatus(w, work), /leak\.md/, 'ต้องยังไม่ commit')
+  assert.match(remoteFiles(w), /claude-memory\/new\.md/, 'memory ของ Claude ต้องยังส่งตามปกติ')
+})
+
+test('ด่านข้อมูลส่วนบุคคล: เบอร์ตัวอย่างเลขเรียงไม่หยุด (เจอจริง 5 จุดใน memory ของ Codex)', (t) => {
+  const w = makeWorld(t)
+  const remote = codexRemote(w, [{ 'MEMORY.md': 'สรุป\n' }])
+  const work = codexFolder(w, join(w.base, 'A-codex'), { 'MEMORY.md': 'สรุป\n' })
+  const env = codexEnv(work, remote)
+  assert.equal(runScript(w, 'link-codex-memory.mjs', w.A.main, env).status, 0)
+  writeFileSync(join(work, 'login.md'), ['ช่องเบอร์ใส่ placeholder `08', '1-234-5678`\n'].join(''))
+
+  const r = runScript(w, 'handoff.mjs', w.A.main, env)
+  assert.equal(r.status, 0, out(r))
+  assert.match(w.g(remote, 'ls-tree', '-r', '--name-only', 'master'), /^login\.md$/m)
 })
 
 /* ── resume ───────────────────────────────────────────────────────── */

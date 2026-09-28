@@ -15,6 +15,7 @@
     "handoff": "node scripts/handoff.mjs",
     "resume": "node scripts/resume.mjs",
     "memory:link": "node scripts/link-memory.mjs",
+    "codex:link": "node scripts/link-codex-memory.mjs",
     "env:pull": "node scripts/env-sync.mjs",
     "env:push": "node scripts/env-sync.mjs --push",
     "preview": "vite preview",
