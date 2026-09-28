@@ -21,7 +21,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
-import { gitIn, integrateUpstream, memoryRepos, scanForSecrets } from './lib/devconfig.mjs';
+import { gitIn, integrateUpstream, memoryRepos, scanForPersonalData, scanForSecrets } from './lib/devconfig.mjs';
 
 const run = (args, opts = {}) => execFileSync('git', args, { encoding: 'utf8', ...opts }).trim();
 const show = (args) => execFileSync('git', args, { stdio: 'inherit' });
@@ -177,7 +177,7 @@ const syncMemoryRepo = (repo) => {
   if (!repo.present) {
     // optional = เครื่องนี้อาจไม่ได้ใช้ AI ตัวนั้น ไม่ควรทำให้ handoff ทั้งคำสั่งถือว่าล้มเหลว
     if (optional) return true;
-    console.log(`\n⚠️  ไม่พบ repo ของ ${label} ที่ ${repo.dir}`);
+    console.log(`\n⚠️  ${repo.missingMsg}`);
     console.log(`    ${repo.missingHint}`);
     return false;
   }
@@ -185,7 +185,6 @@ const syncMemoryRepo = (repo) => {
   const g = (args, opts) => gitIn(repo, args, opts);
 
   // ไม่มี upstream = commit ไปก็ไม่มีที่ให้ push ⇒ ตรวจก่อนแตะอะไร
-  // Codex ล้าง .git ของตัวเองจน remote หาย (2026-09-28) ⇒ ตัวที่ optional เตือนแล้วข้าม ไม่ commit ลง repo ของมัน
   if (g(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).status !== 0) {
     console.log(`\n⚠️  ${label} ไม่มี upstream — ${repo.missingHint}`);
     return optional;
@@ -196,20 +195,39 @@ const syncMemoryRepo = (repo) => {
   if (pending.length) {
     // ls-files ให้ path ดิบ ไม่ต้องแกะคอลัมน์สถานะและไม่โดน core.quotepath หนีอักขระ
     const files = lines(g(['ls-files', '-mo', '--exclude-standard', ...scope]).stdout);
-
-    // ด่านคีย์: handoff push ให้เองโดยคนไม่ได้อ่านก่อน จึงต้องมีตัวกันแทนสายตาคน
-    const hits = scanForSecrets((f) => {
+    const read = (f) => {
       try {
         return readFileSync(join(repo.dir, f), 'utf8');
       } catch {
         return null;
       }
-    }, files);
+    };
 
+    // ด่านคีย์: handoff push ให้เองโดยคนไม่ได้อ่านก่อน จึงต้องมีตัวกันแทนสายตาคน
+    const hits = scanForSecrets(read, files);
     if (hits.length) {
       console.error(`\n❌ เจอรูปแบบคีย์จริงในไฟล์ของ ${label}:`);
       for (const h of hits) console.error(`     ${h.file}  (${h.name})`);
       die(`หยุดก่อน ยังไม่ commit อะไรใน ${label}`, 'ลบค่าคีย์ออกจากไฟล์พวกนี้ก่อน แล้วรัน npm run handoff ใหม่');
+    }
+
+    // ด่านข้อมูลส่วนบุคคล (PDPA) — memory ของ Codex เป็นของทุกโปรเจกต์ในเครื่อง มีงานอื่นปนมาด้วย
+    // หยุดเฉพาะ repo นี้ (ยังไม่ commit) ส่วน repo อื่นยังเก็บตามปกติ จึงไม่ต้องมีตัวเลือกให้ข้าม
+    // พิมพ์แค่ชื่อไฟล์กับชนิด ไม่พิมพ์ค่าที่เจอ — จอเทอร์มินัลก็ถูกจับภาพ/ส่งต่อได้
+    const pii = scanForPersonalData(read, files);
+    const blocked = pii.filter((h) => h.level === 'block');
+    if (blocked.length) {
+      console.log(`\n⛔ ${label}: เจอสิ่งที่หน้าตาเป็นข้อมูลส่วนบุคคล — รอบนี้ไม่ส่ง ${label} ขึ้น (ยังไม่ commit อะไร)`);
+      for (const h of blocked) console.log(`     ${h.file}  (${h.name} ${h.count} จุด)`);
+      console.log('    เปิดไฟล์ดู ถ้าเป็นข้อมูลของคนจริงให้ลบออก แล้วรัน npm run handoff ใหม่');
+      console.log('    ถ้าเป็นเลขตัวอย่างที่จับผิด ให้ Claude ช่วยดูแล้วปรับด่านใน scripts/lib/devconfig.mjs');
+      return false;
+    }
+    const noted = {};
+    for (const h of pii) if (h.level === 'warn') noted[h.name] = (noted[h.name] ?? 0) + h.count;
+    if (Object.keys(noted).length) {
+      const bits = Object.entries(noted).map(([n, c]) => `${n} ${c} จุด`).join(' · ');
+      console.log(`\nℹ️  ${label}: ไฟล์ที่จะส่งมี ${bits} — ไม่หยุด เพราะรูปแบบนี้ปนกับข้อมูลทั่วไปเยอะ`);
     }
 
     console.log(`\nเก็บ ${label} ${pending.length} ไฟล์...`);

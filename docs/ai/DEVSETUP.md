@@ -6,7 +6,7 @@
 ```
 โค้ด + ประวัติ        -> GitHub (public)   smartlocal-namlao
 .env.local + memory   -> GitHub (private)  smartlocal-devconfig      (memory ของ Claude)
-memory ของ Codex      -> GitHub (private)  smartlocal-codex-memory   (~/.codex/memories)
+memory ของ Codex      -> GitHub (private)  smartlocal-codex-memory   (git แยกข้างทรีหลัก ชี้ ~/.codex/memories)
 persona ของ AI ทุกตัว -> generate จาก docs/ai/CORE.md ในเครื่อง (npm run ai:sync)
 deploy                -> GitHub Actions เมื่อ master ขยับ ไม่ใช่จากเครื่อง dev
 ```
@@ -37,11 +37,11 @@ deploy                -> GitHub Actions เมื่อ master ขยับ ไ�
 | 6 | `npm run ai:sync` | สร้าง `~/.claude/CLAUDE.md` + `~/.gemini/GEMINI.md` ให้ AI ทุกตัว |
 | 7 | `npm run env:pull` | ดึง `.env.local` จาก devconfig |
 | 8 | **เปิด Claude Code ที่โฟลเดอร์โปรเจกต์ 1 ครั้งก่อน** แล้วปิด<br>จากนั้น `npm run memory:link -- ../smartlocal-devconfig` | ผูก memory ของ Claude<br>ลำดับสำคัญ: Claude สร้างโฟลเดอร์ memory ตอนเปิดโปรเจกต์ครั้งแรกเท่านั้น รันก่อนเปิดจะ exit 1 แล้วโชว์รายการโฟลเดอร์ที่มีจริงให้เลือก (ตั้งใจไม่เดาชื่อให้) |
-| 9 | **ถ้าใช้ Codex ด้วย** — `git clone https://github.com/ntocom-lang/smartlocal-codex-memory.git "$HOME/.codex/memories"` | ทำ**ก่อน**เปิด Codex ครั้งแรก ไม่งั้น Codex สร้างโฟลเดอร์เปล่าทับ แล้ว clone ไม่ลง |
+| 9 | **ถ้าใช้ Codex ด้วย** — `npm run codex:link` | ทำก่อนหรือหลังเปิด Codex ครั้งแรกก็ได้ ไม่ลบ ไม่ทับไฟล์ของ Codex ที่มีอยู่<br>**ห้าม `git clone` ลง `~/.codex/memories` เองแล้ว** (วิธีเดิมก่อน 2026-09-29) |
 | 10 | `npm run doctor` | ต้องผ่านทุกข้อก่อนเริ่มงาน |
 
-**path ที่แนะนำ:** `C:\dev\smartlocal` — สั้น ไม่มีช่องว่าง ไม่ผูกกับไดรฟ์ที่อาจไม่มี
-ไม่ต้องใช้ path เดียวกับเครื่องอื่น สคริปต์คำนวณให้เอง
+**path:** มีช่องว่างได้ (เช่น `D:\VS Code\smartlocal`) แต่ต้องใส่เครื่องหมายคำพูดครอบทุกคำสั่ง
+ไม่ต้องใช้ path เดียวกับเครื่องอื่น สคริปต์คำนวณให้เอง — ขอแค่ devconfig (และ git ของ Codex) อยู่ข้างโฟลเดอร์โปรเจกต์
 
 ## ลง Windows ใหม่ / ย้ายโฟลเดอร์
 
@@ -93,21 +93,28 @@ memory ค้างอยู่เครื่องเดียว **34 ไฟ�
 | ของใคร | เก็บที่ | ขอบเขตที่ handoff แตะ |
 |---|---|---|
 | **Claude** | `smartlocal-devconfig` → `claude-memory/` | เฉพาะโฟลเดอร์นั้น — `env/.env.local` ต้องใช้ `npm run env:push` ที่มีด่านกันคีย์ฝั่ง server |
-| **Codex** | `smartlocal-codex-memory` ← `~/.codex/memories` | ทั้ง repo (ไม่มีอย่างอื่นปน) |
+| **Codex** | `smartlocal-codex-memory` ← git ของเราเองที่ `<ข้างทรีหลัก>/smartlocal-codex-memory.git` ชี้ไฟล์ใน `~/.codex/memories` | ทั้งโฟลเดอร์ ยกเว้น `.git` ของ Codex |
 
-Codex สร้างโฟลเดอร์ `~/.codex/memories` เป็น **git repo ของตัวเองอยู่แล้ว** จึงใช้วิธีเดียวกับ Claude
-(ย้ายไฟล์เข้า devconfig แล้วทำ junction) ไม่ได้ — repo จะซ้อนกัน ⇒ ต่อ remote ให้ repo เดิมแทน
-เครื่องที่ไม่ได้ลง Codex จะข้ามข้อนี้ไปเงียบๆ ไม่ถือว่า handoff ล้มเหลว
+**memory ของ Codex ใช้ git ของเราเองที่แยกจาก `.git` ของ Codex** (ตั้งครั้งเดียวต่อเครื่องด้วย `npm run codex:link`)
+- รอบแรก (#310) ต่อ remote ให้ `.git` ที่ Codex สร้างไว้ตรงๆ ⇒ ใช้ไม่ได้: Codex ล้าง `.git` แล้วสร้างใหม่เอง
+  (baseline 09-24 บน GitHub · สร้างใหม่อีกรอบ 09-28) remote หายทุกรอบ และประวัติไม่ต่อกันอีกเลย
+- ตอนนี้ clone ไว้เป็น git dir แยก วางข้างทรีหลักเหมือน devconfig แล้วชี้ `core.worktree` ไปที่ `~/.codex/memories`
+  git ไม่ track entry ที่ชื่อ `.git` เด็ดขาด ⇒ Codex จะล้าง/สร้าง `.git` ของมันกี่รอบก็ไม่กระทบ
+- `codex:link` ไม่ลบ ไม่เขียนทับไฟล์ของ Codex ที่มีอยู่ — หาว่าไฟล์ในเครื่องตรงกับ commit ไหนในประวัติมากที่สุด
+  ตั้งเป็นจุดเริ่ม ที่ต่างจากนั้นคือของใหม่ของเครื่องนี้ (โฟลเดอร์ว่าง = ดึงลงมาทั้งหมด)
+- ⚠️ **ห้าม `git remote add` + `push -u` ให้ `~/.codex/memories` เอง** ประวัติไม่ต่อกับ GitHub แล้ว push ไม่ผ่าน
+  และห้ามแก้ด้วย `--force` เด็ดขาด (ประวัติบน GitHub หายทั้งหมด)
+- memory ของ Codex เป็นของ **ทุกโปรเจกต์** ในเครื่อง ไม่ใช่แค่ SmartLocal — เจ้าของระบบเลือกให้ sync ทั้งโฟลเดอร์
+- เครื่องที่ไม่มีโฟลเดอร์ `~/.codex/memories` (ไม่ได้ลง Codex) ข้ามไปเงียบๆ · มีโฟลเดอร์แต่ยังไม่ได้ `codex:link` ⇒ handoff ฟ้อง
 
-⚠️ **2026-09-28 พบว่าวิธีต่อ remote นี้ใช้ระยะยาวไม่ได้** — Codex ล้าง `.git` ของตัวเองแล้วสร้างใหม่
-(baseline 09-24 บน GitHub · สร้างใหม่อีกรอบ 09-28) remote ที่ต่อไว้หายทุกรอบ ไฟล์ไม่หาย
-ระหว่างเปลี่ยนไปใช้ git ของเราเองที่แยกจาก `.git` ของ Codex: repo ที่ไม่มี upstream จะแค่ขึ้นเตือน
-handoff ไม่ commit ลง repo ของ Codex และไม่ถือว่าล้มเหลว
-memory ของ Codex เป็นของ **ทุกโปรเจกต์** ในเครื่อง (ไม่ใช่แค่ SmartLocal) — เจ้าของระบบเลือกให้ sync ทั้งโฟลเดอร์
-
-- มีด่านสแกนก่อน commit ทั้ง 2 repo: เจอรูปแบบคีย์จริง (JWT, `sb_secret_…`, GitHub/GitLab token, private key) จะหยุดทันที
-  ⚠️ ด่านนี้จับ **รูปแบบคีย์** ได้ แต่จับ **ข้อมูลส่วนบุคคลของประชาชน (PDPA) ไม่ได้** —
-  กติกาเดิมยังอยู่: memory ห้ามจดข้อมูลประชาชนตั้งแต่ต้น
+ด่านก่อน commit ทั้ง 2 repo (handoff push ให้เองโดยไม่มีคนอ่านก่อน จึงต้องมีตัวกันแทนสายตาคน)
+- **คีย์จริง** (JWT, `sb_secret_…`, GitHub/GitLab token, private key) ⇒ หยุดทั้งคำสั่ง
+- **ข้อมูลส่วนบุคคล** ⇒ หยุดเฉพาะ repo นั้น (repo อื่นยังเก็บตามปกติ) · พิมพ์แค่ชื่อไฟล์ ไม่พิมพ์ค่าที่เจอ
+  - หยุด: เลขบัตรประชาชน 13 หลักที่ผ่านสูตรตรวจหลักสุดท้าย · เบอร์มือถือ — เว้นเลขตัวอย่างที่เรียงหรือซ้ำ
+    (วัดกับ memory จริง 190 ไฟล์ 2026-09-29: จับได้ 5 จุด เป็น placeholder เลขเรียงตัวเดียวกันทั้งหมด)
+  - แค่เตือน: อีเมลนอกทีม · ชื่อที่มีคำนำหน้า · IP address (ปนกับข้อมูลทั่วไปเยอะ หยุดแล้วจะหยุดทุกวัน)
+  - ⚠️ จับได้เฉพาะข้อมูลที่มีรูปแบบ ชื่อหรือที่อยู่ในประโยคทั่วไปจับไม่ได้ — กติกาเดิมยังอยู่:
+    memory ห้ามจดข้อมูลประชาชนตั้งแต่ต้น
 
 `handoff` / `resume` / `doctor` หา repo devconfig จากโฟลเดอร์ข้างๆ **ทรีหลัก** ให้เอง
 (ไม่ใช่ข้างๆ โฟลเดอร์ที่ยืนอยู่ — จึงเรียกจากใน `git worktree` ได้ด้วย) **ไม่ต้องตั้งตัวแปรอะไร**
