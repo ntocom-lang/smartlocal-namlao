@@ -200,6 +200,16 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
   assert.ok(rpc.includes("interval '20 hours'") && rpc.includes("interval '3 days'"), 'RPC เปลี่ยนหน้าต่างอ่างแล้ว')
   assert.ok(/const LEVEL_PREV_MIN_MS = 50 \* 60 \* 1000/.test(src) && /const LEVEL_PREV_MAX_MS = 3 \* 60 \* 60 \* 1000/.test(src))
   assert.ok(/const DAM_PREV_MIN_MS = 20 \* 60 \* 60 \* 1000/.test(src) && /const DAM_PREV_MAX_MS = 3 \* 24 \* 60 \* 60 \* 1000/.test(src))
+
+  // ⚠️ กันบั๊กที่ส่งคำเตือนผิดเข้ากลุ่มจริง 3 กลุ่มมาแล้ว (2569-09-28): ดึง water_readings ของทุกสถานี
+  // ย้อน 3 วันในคำสั่งเดียว = 2,016 แถว แต่ PostgREST คืนแค่ 1,000 แถวแล้วตัดเงียบๆ แถวของเมื่อวาน
+  // ของอ่างจึงหลุดหาย ระบบนึกว่าไม่มีค่าก่อนหน้า แล้วเดาว่า "เพิ่งข้ามชั้น"
+  assert.ok(src.includes('const ROW_CAP = 1000'), 'ต้องมีเพดานไว้ตรวจว่าโดนตัดหรือยัง')
+  assert.ok(/rows\.length >= ROW_CAP/.test(src), 'ชนเพดานต้องหยุดและแจ้ง error ไม่ใช่ส่งคำเตือนจากข้อมูลที่ขาด')
+  assert.ok(src.includes('const quickIds =') && src.includes('const historyIds ='),
+    'ต้องแยกคำสั่งดึงข้อมูล: สถานีฝน/ews เอาแค่ค่าล่าสุด ส่วนระดับน้ำ/อ่างต้องมีประวัติ')
+  assert.ok(/if \(prevRank === null\) continue/.test(src),
+    'อ่างที่ไม่มีค่าก่อนหน้าให้เทียบ ต้องไม่ส่ง ห้ามเดาว่าเพิ่งข้ามชั้น')
 }
 
 // ── ตัวตัดสินใจแถบเตือน ──
