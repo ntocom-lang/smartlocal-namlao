@@ -21,7 +21,7 @@ const NAV_GROUPS = [
       { label: 'สถานการณ์น้ำ-ฝน', href: '/water-situation', Icon: CloudRain },
       { label: 'ปฏิทินกิจกรรม',   href: '/events',      Icon: CalendarDays },
       { label: 'ข่าวสาร/ประกาศ',  href: '/news',        Icon: Newspaper },
-      { label: 'เที่ยว กิน พัก ชอป บริการ', href: '/tourism', Icon: MapPin },
+      { label: 'เที่ยว กิน พัก ช้อป บริการ', href: '/tourism', Icon: MapPin },
       { label: 'ศูนย์ข้อมูลดิจิทัล', href: '/data-center', Icon: Database },
     ],
   },

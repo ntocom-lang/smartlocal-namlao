@@ -337,7 +337,7 @@ function NamlaoMorePage() {
     { path: '/doc-request', icon: FileText, iconBg: 'bg-blue-100', iconColor: 'text-blue-600', label: 'สอบถามยอดชำระ' },
     { path: '/my-complaints', icon: FileSearch, iconBg: 'bg-sky-100', iconColor: 'text-sky-600', label: 'คำร้องของฉัน' },
     { path: '/events', icon: CalendarDays, iconBg: 'bg-green-100', iconColor: 'text-green-600', label: 'ปฏิทินกิจกรรม' },
-    { path: '/tourism', icon: Luggage, iconBg: 'bg-orange-100', iconColor: 'text-orange-600', label: 'เที่ยว กิน พัก ชอป บริการ' },
+    { path: '/tourism', icon: Luggage, iconBg: 'bg-orange-100', iconColor: 'text-orange-600', label: 'เที่ยว กิน พัก ช้อป บริการ' },
     { path: '/data-center', icon: Database, iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600', label: 'ศูนย์ข้อมูลดิจิทัล' },
     { path: '/my-docs', icon: FileText, iconBg: 'bg-sky-100', iconColor: 'text-sky-600', label: 'เอกสารของฉัน' },
     { path: '/weather', icon: Cloud, iconBg: 'bg-sky-100', iconColor: 'text-sky-600', label: 'สภาพอากาศ' },
@@ -616,7 +616,7 @@ function NamlaoMorePage() {
             icon={Luggage}
             iconBg="bg-orange-100"
             iconColor="text-orange-600"
-            label="เที่ยว กิน พัก ชอป บริการ"
+            label="เที่ยว กิน พัก ช้อป บริการ"
             desc="ที่เที่ยว ร้านอาหาร ที่พัก OTOP ของฝาก และช่าง/บริการในพื้นที่"
             href="/tourism"
           />
@@ -625,7 +625,7 @@ function NamlaoMorePage() {
             iconBg="bg-orange-100"
             iconColor="text-orange-600"
             label="ลงทะเบียนร้านค้า / ท่องเที่ยว"
-            desc="เที่ยว กิน พัก ชอป บริการ — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ"
+            desc="เที่ยว กิน พัก ช้อป บริการ — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ"
             href="/business-register"
           />
           <MenuRow

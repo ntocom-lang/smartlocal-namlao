@@ -29,7 +29,7 @@ function SuccessScreen({ onBack }) {
       <h2 className="text-xl font-bold text-gray-800 mb-2">ส่งข้อมูลสำเร็จ!</h2>
       <p className="text-gray-500 text-sm leading-relaxed mb-2 max-w-xs">
         เจ้าหน้าที่จะตรวจสอบและอนุมัติข้อมูลของคุณ
-        เมื่ออนุมัติแล้วจะแสดงบนหน้าเที่ยว กิน พัก ชอป บริการโดยอัตโนมัติ
+        เมื่ออนุมัติแล้วจะแสดงบนหน้าเที่ยว กิน พัก ช้อป บริการโดยอัตโนมัติ
       </p>
       <p className="text-xs text-gray-400 mb-8">โดยปกติใช้เวลาไม่เกิน 3 วันทำการ</p>
       <button onClick={onBack}
@@ -177,7 +177,7 @@ export default function BusinessRegisterPage() {
         </button>
         <div>
           <h1 className="font-bold text-white text-base leading-tight">ลงทะเบียนร้านค้า / ท่องเที่ยว</h1>
-          <p className="text-white/70 text-xs">เที่ยว กิน พัก ชอป บริการ · {tenant?.system_name || `${tenant?.name} One Data`}</p>
+          <p className="text-white/70 text-xs">เที่ยว กิน พัก ช้อป บริการ · {tenant?.system_name || `${tenant?.name} One Data`}</p>
         </div>
       </div>
 
@@ -189,7 +189,7 @@ export default function BusinessRegisterPage() {
         </div>
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-800">ลงทะเบียนร้านค้า / ท่องเที่ยว</h1>
-          <p className="text-sm text-gray-500 mt-0.5">เที่ยว กิน พัก ชอป บริการ · หลังอนุมัติจะแสดงบนหน้าเที่ยว กิน พัก ชอป บริการ</p>
+          <p className="text-sm text-gray-500 mt-0.5">เที่ยว กิน พัก ช้อป บริการ · หลังอนุมัติจะแสดงบนหน้าเที่ยว กิน พัก ช้อป บริการ</p>
         </div>
         <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-50 text-amber-700">
           📍 GPS บังคับ
@@ -252,7 +252,7 @@ export default function BusinessRegisterPage() {
           )}
           {!geo.lat && (
             <p className="text-xs text-amber-600 mt-1.5 px-1">
-              ⚠️ พิกัดนี้จะใช้แสดงหมุดบนแผนที่เที่ยว กิน พัก ชอป บริการ
+              ⚠️ พิกัดนี้จะใช้แสดงหมุดบนแผนที่เที่ยว กิน พัก ช้อป บริการ
             </p>
           )}
         </div>
@@ -409,7 +409,7 @@ export default function BusinessRegisterPage() {
           <p className="text-xs font-bold text-slate-700">การเปิดเผยข้อมูล</p>
           <p className="text-[11px] text-slate-500 leading-relaxed">
             ข้อมูลที่กรอก (ชื่อกิจการ รายละเอียด เบอร์โทร ที่อยู่ พิกัด รูปภาพ และช่องทางติดต่อ)
-            จะถูกเผยแพร่บนหน้า &quot;เที่ยว กิน พัก ชอป บริการ&quot; ของ{tenant?.name ? ` ${tenant.name}` : 'หน่วยงาน'}
+            จะถูกเผยแพร่บนหน้า &quot;เที่ยว กิน พัก ช้อป บริการ&quot; ของ{tenant?.name ? ` ${tenant.name}` : 'หน่วยงาน'}
             เพื่อประชาสัมพันธ์ให้ประชาชนและนักท่องเที่ยวติดต่อท่านได้ โดยจะแสดงต่อสาธารณะจนกว่าท่านจะแจ้งยกเลิก
             ท่านสามารถขอแก้ไขหรือถอนข้อมูลได้โดยติดต่อเจ้าหน้าที่
           </p>

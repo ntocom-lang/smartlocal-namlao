@@ -100,7 +100,7 @@ export default function KledkaewMore() {
       id: 'economy',
       title: 'ท่องเที่ยวและเศรษฐกิจ',
       items: [
-        { label: 'เที่ยว กิน พัก ชอป บริการ', icon: Luggage, href: '/tourism', color: 'text-[var(--color-primary)]' },
+        { label: 'เที่ยว กิน พัก ช้อป บริการ', icon: Luggage, href: '/tourism', color: 'text-[var(--color-primary)]' },
         { label: 'ลงทะเบียนร้านค้า', icon: Store, href: '/business-register', color: 'text-[var(--color-primary)]' },
         { label: 'ศูนย์ข้อมูลดิจิทัล', icon: Database, href: '/data-center', color: 'text-[var(--color-primary)]' },
       ],
