@@ -129,6 +129,27 @@ export function bankText(diff) {
   return d > 0 ? `ต่ำกว่าตลิ่ง ${d.toFixed(2)} ม.` : `สูงกว่าตลิ่ง ${Math.abs(d).toFixed(2)} ม.`
 }
 
+// เกณฑ์ระดับน้ำในแม่น้ำของกรมชลประทาน — มาตรฐานข้อมูลน้ำ ระยะที่ 3 ของ สสน. ตาราง 5.9
+//   ปกติ = ต่ำกว่าตลิ่งมากกว่า 1 ม. · เฝ้าระวัง = ต่ำกว่าตลิ่งน้อยกว่า 1 ม. · แจ้งเตือนภัย = เสมอตลิ่งหรือล้นตลิ่ง
+// 1.00 ม. พอดีตารางไม่ได้ระบุ เจ้าของระบบเลือกนับเป็นเฝ้าระวัง (ข้างที่ปลอดภัยกว่า 2569-09-28)
+// ข้อมูลปัดทศนิยม 2 ตำแหน่งตั้งแต่ thaiwater-sync จึงเทียบกับ 0 ตรงๆ ได้ ตรงกับ bankText ที่ขึ้น "เสมอตลิ่ง"
+// ⚠️ ต้องตรงกับ LEVEL_WATCH_M / levelRank ใน water-alert-notify — tests/water-situation.test.mjs อ่านสองไฟล์มาเทียบ
+export const LEVEL_WATCH_M = 1
+export const LEVEL_TIERS = [
+  { key: 'normal', label: 'ปกติ' },
+  { key: 'watch', label: 'เฝ้าระวัง' },
+  { key: 'alert', label: 'แจ้งเตือนภัย' },
+]
+
+// คืน index ใน LEVEL_TIERS หรือ null เมื่อไม่มีค่า — ห้ามแปลงค่าว่างเป็น 0 (จะกลายเป็น "เสมอตลิ่ง")
+export function levelRank(diff) {
+  const d = toNum(diff)
+  if (d === null) return null
+  if (d <= 0) return 2
+  if (d <= LEVEL_WATCH_M) return 1
+  return 0
+}
+
 export function waterTrend(current, previous) {
   const a = toNum(current)
   const b = toNum(previous)
@@ -198,7 +219,9 @@ export const DAM_PUBLIC_ALERT_RANK = DAM_LEVELS.findIndex(l => l.key === 'over')
 //   ฝนหนักมาก: สถานีฝนของ อปท. ระดับ veryHeavy ตาม RAIN_LEVELS (กรมอุตุฯ) ที่ค่ายังเป็นปัจจุบัน
 //   สสน.: ข้อความเตือนของอำเภอตัวเองที่ RPC คัดมาแล้ว (24 ชม. ล่าสุดของแต่ละสถานี) — แสดงตามต้นฉบับ
 //   สถานีเตือนภัย ทน.: ระดับ "เตรียมพร้อม" ขึ้นไปที่สถานะยังเป็นปัจจุบัน (ปิดอยู่ ไม่มีแถวส่งมา)
-//   ระดับน้ำสูงกว่าตลิ่ง: bank_diff_m ติดลบ (ตลิ่งต่ำสุด − ระดับน้ำ) ที่ค่ายังเป็นปัจจุบัน
+//   ระดับน้ำ: ขั้น "แจ้งเตือนภัย" ของกรมชลประทาน = เสมอหรือสูงกว่าตลิ่ง (levelRank = 2) ที่ค่ายังเป็นปัจจุบัน
+//     ขั้น "เฝ้าระวัง" (ต่ำกว่าตลิ่งไม่ถึง 1 ม.) ไม่ขึ้นแถบนี้โดยตั้งใจ — แสดงบนการ์ดสถานี และแจ้ง
+//     เจ้าหน้าที่ทาง Telegram แทน เพราะแถบนี้ไปขึ้นหน้าแรกให้ประชาชนเห็นด้วย แบบเดียวกับอ่าง
 //   อ่างเก็บน้ำ: % ความจุถึงชั้น "น้ำมาก" ขึ้นไปตามเกณฑ์ สสน./กรมชลประทาน
 //
 // ⚠️ **เกณฑ์เหมือน Telegram แต่จังหวะที่ขึ้นต่างกันโดยตั้งใจ** — หน้าเว็บแสดง "สถานะตอนนี้"
@@ -219,8 +242,9 @@ export function buildAlerts({ rain = [], ews = [], warnings = [], levels = [], d
     const age = toMillis(now) - new Date(w.issued_at).getTime()
     return Number.isFinite(age) && age >= 0 && age < 24 * 60 * 60 * 1000
   })
+  // เดิมเขียน (toNum(...) ?? 0) < 0 — ห้ามกลับไปใช้แบบนั้นกับ <= 0: ค่าว่างจะกลายเป็น 0 = "เสมอตลิ่ง"
   const overbank = levels
-    .filter(s => s.recorded_at && !isStale(s.recorded_at, now, STATION_STALE_HOURS) && (toNum(s.bank_diff_m) ?? 0) < 0)
+    .filter(s => s.recorded_at && !isStale(s.recorded_at, now, STATION_STALE_HOURS) && levelRank(s.bank_diff_m) === 2)
     .sort((a, b) => toNum(a.bank_diff_m) - toNum(b.bank_diff_m))
   const damOver = dams
     .filter(s => s.recorded_at && !isStale(s.recorded_at, now, DAM_STALE_HOURS) && (damRank(s.storage_percent) ?? -1) >= DAM_PUBLIC_ALERT_RANK)
@@ -248,12 +272,12 @@ export function alertSummary(alerts, { homeAmphoe, now } = {}) {
   const damOver = alerts.damOver ?? []
   const total = ews.length + rain.length + warnings.length + overbank.length + damOver.length
 
-  // น้ำสูงกว่าตลิ่งมาก่อนฝน: ฝนหนักเป็นเหตุ น้ำล้นตลิ่งเป็นผลที่เกิดขึ้นแล้ว
+  // น้ำเสมอ/สูงกว่าตลิ่งมาก่อนฝน: ฝนหนักเป็นเหตุ น้ำถึงตลิ่งเป็นผลที่เกิดขึ้นแล้ว
   if (overbank.length > 0 && ews.length === 0) {
     const station = overbank[0]
     return {
-      total, label: 'ระดับน้ำสูงกว่าตลิ่ง',
-      text: `สถานี${station.station_name} สูงกว่าตลิ่ง ${Math.abs(toNum(station.bank_diff_m)).toFixed(2)} ม.`,
+      total, label: 'ระดับน้ำเสมอหรือสูงกว่าตลิ่ง',
+      text: `สถานี${station.station_name} ${bankText(station.bank_diff_m)}`,
       meta: alertMetaLine(station, homeAmphoe, station.recorded_at, now, 'วัดเมื่อ'),
     }
   }
