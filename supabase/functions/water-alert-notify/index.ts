@@ -31,6 +31,9 @@
 // - รวมเรื่องของ อปท. เดียวกันเป็นชุดไม่เกิน 3,800 ตัวอักษร โดยไม่ตัดรายการหรือ HTML
 // - ส่งไม่สำเร็จ (Telegram ล่ม) รอบถัดไปพยายามใหม่ ไม่ถูกคีย์กันซ้ำกลืน — แบบเดียวกับ thaiwater-watchdog
 // - ข้อความเป็นข้อมูลประกอบการตัดสินใจ ไม่สั่งอพยพและไม่ประกาศแทนผู้บริหาร (ดุลพินิจทางปกครอง)
+// - ลงสมุด job_heartbeats ทุกรอบ (สำเร็จ = last_ok_at · พัง = last_error) ให้ thaiwater-watchdog
+//   จับได้ว่างานนี้หยุดทำงาน — ข้อมูลน้ำที่ยังสดไม่ได้แปลว่าแจ้งเตือนยังทำงาน ตัวเฝ้าระวังเดิมดูแค่ความสด
+//   exception ที่หลุดออกไปไม่ได้ลงสมุด แต่ last_ok_at จะหยุดเดิน ตัวเฝ้าระวังก็ยังจับได้
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -78,6 +81,12 @@ const MODULE_KEY = 'water-situation'
 // โหมดทดสอบส่งได้เฉพาะกลุ่มนี้ — ห้ามมีข้อความทดสอบหลุดเข้ากลุ่ม อปท. จริง
 const TEST_TENANT_SLUG = 'demo'
 const HOUR = 60 * 60 * 1000
+// ชื่อแถวในสมุดลงเวลา — ต้องตรงกับ WATCHED_JOBS ใน thaiwater-watchdog (เทสต์อ่านสองไฟล์มาเทียบ)
+const JOB_NAME = 'water-alert-notify'
+// PostgREST คืนไม่เกิน 1,000 แถวต่อคำสั่งแล้วตัดเงียบๆ ไม่แจ้ง error — ดึงทีละหน้าจนได้ครบตามยอดนับ
+const PAGE_SIZE = 1000
+// กันวนไม่จบ: 20 หน้า = 20,000 แถว ตอนนี้ใช้จริงราว 360 แถว (4 อปท. วัด 2569-09-28)
+const MAX_PAGES = 20
 
 type Tenant = {
   id: string
@@ -116,6 +125,20 @@ function json(body: unknown, status = 200) {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
+}
+
+// ลงสมุดลงเวลา — เขียนไม่สำเร็จแค่บันทึก log ไม่ทำให้รอบแจ้งเตือนพัง (ตารางหายก็ยังส่งแจ้งเตือนได้)
+// upsert ส่งเฉพาะคอลัมน์ของผลรอบนี้ รอบที่พังจึงไม่ลบ last_ok_at เดิม
+async function recordHeartbeat(
+  admin: ReturnType<typeof createClient>,
+  outcome: { ok: true } | { ok: false; error: string },
+) {
+  const at = new Date().toISOString()
+  const row = outcome.ok
+    ? { job_name: JOB_NAME, last_ok_at: at, updated_at: at }
+    : { job_name: JOB_NAME, last_error_at: at, last_error: cleanText(outcome.error, 500), updated_at: at }
+  const { error } = await admin.from('job_heartbeats').upsert(row, { onConflict: 'job_name' })
+  if (error) console.error('[water-alert-notify] ลงสมุดลงเวลาไม่สำเร็จ:', error.code, error.message)
 }
 
 // เทียบ secret แบบใช้เวลาเท่ากันทุกกรณี (ยกมาจาก thaiwater-sync ตั้งใจให้เหมือนกัน)
@@ -264,17 +287,27 @@ serve(async (req) => {
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
+  // ⚠️ นับจากนี้ทุกทางที่จบด้วย error ต้องผ่าน fail() เพื่อลงสมุดลงเวลา (เทสต์ล็อกไว้) — ไม่งั้น
+  // ตัวเฝ้าระวังจะไม่มีข้อความ error แนบไปให้คนแก้ · โหมดทดสอบไม่ลงสมุด เพราะยิงมือได้ทุกเมื่อ
+  // จะไปบังว่ารอบอัตโนมัติหยุดทำงานแล้ว
+  const fail = async (error: string) => {
+    if (!isTest) await recordHeartbeat(admin, { ok: false, error })
+    return json({ ok: false, error }, 500)
+  }
 
   const { data: tenantRows, error: tenantError } = await admin
     .from('municipalities')
     .select('id, slug, name, district, province, telegram_group_id, enabled_modules')
     .eq('is_active', true)
     .not('telegram_group_id', 'is', null)
-  if (tenantError) return json({ ok: false, error: cleanText(tenantError.message, 300) }, 500)
+  if (tenantError) return await fail(cleanText(tenantError.message, 300))
   const tenants = ((tenantRows ?? []) as Tenant[])
     .filter(moduleOn)
     .filter(t => !isTest || t.slug === TEST_TENANT_SLUG)
-  if (!tenants.length) return json({ ok: true, test: isTest, tenants: 0, sent: [] })
+  if (!tenants.length) {
+    if (!isTest) await recordHeartbeat(admin, { ok: true })
+    return json({ ok: true, test: isTest, tenants: 0, sent: [] })
+  }
 
   const { data: stationRows, error: stationError } = await admin
     .from('water_station_config')
@@ -282,7 +315,7 @@ serve(async (req) => {
     .in('municipality_id', tenants.map(t => t.id))
     .in('station_type', ['rain', 'ews', 'waterlevel', 'dam'])
     .eq('is_active', true)
-  if (stationError) return json({ ok: false, error: cleanText(stationError.message, 300) }, 500)
+  if (stationError) return await fail(cleanText(stationError.message, 300))
   const stations = (stationRows ?? []) as Station[]
   const tenantById = new Map(tenants.map(t => [t.id, t]))
 
@@ -300,7 +333,7 @@ serve(async (req) => {
     const rain = stations
       .filter(s => s.municipality_id === tenant.id && s.station_type === 'rain')
       .sort((a, b) => (a.display_order ?? 99) - (b.display_order ?? 99))[0]
-    if (!rain) return json({ ok: false, error: `${TEST_TENANT_SLUG} ไม่มีสถานีฝน` }, 500)
+    if (!rain) return await fail(`${TEST_TENANT_SLUG} ไม่มีสถานีฝน`)
     const at = new Date(now).toISOString()
     push(tenant.id, {
       section: 'rain', key: `${keyPrefix}rain:${rain.station_code}:${day}`, notificationType: `heavy_rain${typeSuffix}`,
@@ -315,28 +348,53 @@ serve(async (req) => {
   } else {
     // ── A + C + D + E: ค่าล่าสุดของทุกสถานี + ค่าก่อนหน้าของสถานีที่ต้องเทียบชั้น ──
     //
-    // ⚠️ แยกเป็น 2 คำสั่งโดยตั้งใจ ห้ามยุบกลับเป็นคำสั่งเดียว: PostgREST คืนสูงสุด 1,000 แถวต่อคำสั่ง
-    // และตัดเงียบๆ ไม่แจ้ง error · สถานีฝนรายงานรายชั่วโมง 3 วันรวมกันเกิน 1,600 แถวอยู่แล้ว
-    // (วัดจริง 2569-09-28: 2,016 แถว) ถ้าดึงรวมกัน แถว "เมื่อวาน" ของอ่างจะถูกตัดทิ้งทั้งหมด
-    // แล้วระบบจะเข้าใจว่าไม่มีค่าก่อนหน้า → ส่งคำเตือนผิดว่าอ่างเพิ่งข้ามชั้น (เกิดขึ้นจริงมาแล้ว)
+    // ⚠️ PostgREST คืนสูงสุด 1,000 แถวต่อคำสั่งและตัดเงียบๆ ไม่แจ้ง error — 2569-09-28 ดึงทุกสถานี
+    // ย้อน 3 วันในคำสั่งเดียวได้ 2,016 แถว แถว "เมื่อวาน" ของอ่างถูกตัดทิ้ง ระบบเข้าใจว่าไม่มีค่าก่อนหน้า
+    // แล้วส่งคำเตือนผิดเข้ากลุ่มจริง 3 กลุ่มว่าอ่างเพิ่งข้ามชั้น → fetchReadings ดึงทีละหน้าจนครบ
+    // แล้วเทียบกับยอดนับจริง ได้ไม่ครบเมื่อไรหยุดทั้งรอบ ห้ามส่งคำเตือนจากข้อมูลที่ขาด
+    // ยังแยก 2 คำสั่งไว้เพราะสถานีฝนใช้แค่ค่าล่าสุด ไม่ต้องลากประวัติ 3 วันมาด้วย
     if (stations.length) {
       const latest = new Map<string, Record<string, unknown>>()
       const history = new Map<string, Record<string, unknown>[]>()
       const COLUMNS = 'station_config_id, recorded_at, rain_24h_mm, situation_level, situation_text, bank_diff_m, storage_percent, dam_storage_mcm, dam_capacity_mcm, dam_inflow_mcm, dam_released_mcm'
-      const ROW_CAP = 1000
 
       const fetchReadings = async (ids: string[], sinceMs: number) => {
         if (!ids.length) return { rows: [] as Record<string, unknown>[], error: null as string | null }
-        const { data, error } = await admin
-          .from('water_readings')
-          .select(COLUMNS)
-          .in('station_config_id', ids)
-          .gte('recorded_at', new Date(now - sinceMs).toISOString())
-          .order('recorded_at', { ascending: false })
-        if (error) return { rows: [], error: cleanText(error.message, 300) }
-        const rows = (data ?? []) as Record<string, unknown>[]
-        // ชนเพดานเมื่อไรแปลว่าข้อมูลถูกตัด ผลที่ได้จะเชื่อไม่ได้ — หยุดดีกว่าส่งคำเตือนผิด
-        if (rows.length >= ROW_CAP) return { rows, error: `water_readings ถูกตัดที่ ${rows.length} แถว — ต้องแบ่งคำสั่งให้เล็กลง` }
+        const since = new Date(now - sinceMs).toISOString()
+        const rows: Record<string, unknown>[] = []
+        const seen = new Set<string>()
+        let total: number | null = null
+        let offset = 0
+        for (let page = 0; page < MAX_PAGES; page += 1) {
+          // เรียง recorded_at + station_config_id ซึ่งไม่ซ้ำกันแน่นอน (UNIQUE ของตาราง) หน้าต่อกันจึงไม่ข้ามแถว
+          const { data, error, count } = await admin
+            .from('water_readings')
+            .select(COLUMNS, page === 0 ? { count: 'exact' } : undefined)
+            .in('station_config_id', ids)
+            .gte('recorded_at', since)
+            .order('recorded_at', { ascending: false })
+            .order('station_config_id', { ascending: true })
+            .range(offset, offset + PAGE_SIZE - 1)
+          if (error) return { rows: [], error: cleanText(error.message, 300) }
+          if (page === 0) {
+            if (typeof count !== 'number') return { rows: [], error: 'water_readings ไม่คืนยอดนับ — ตรวจไม่ได้ว่าได้ข้อมูลครบไหม' }
+            total = count
+          }
+          const batch = (data ?? []) as Record<string, unknown>[]
+          for (const r of batch) {
+            // sync เขียนแถวใหม่ระหว่างดึงแต่ละหน้าได้ แถวท้ายหน้าก่อนจะเลื่อนมาซ้ำในหน้าถัดไป
+            const key = `${r.station_config_id}|${r.recorded_at}`
+            if (seen.has(key)) continue
+            seen.add(key)
+            rows.push(r)
+          }
+          // เลื่อนตามจำนวนที่ได้จริง ไม่ใช่ PAGE_SIZE — ถ้าเซิร์ฟเวอร์ตั้งเพดานต่ำกว่านี้จะได้ไม่ข้ามแถว
+          offset += batch.length
+          if (rows.length >= (total ?? 0) || batch.length === 0) break
+        }
+        if (total === null || rows.length < total) {
+          return { rows: [], error: `water_readings ได้ ${rows.length} จาก ${total ?? '?'} แถว — ข้อมูลไม่ครบ ไม่ส่งคำเตือนรอบนี้` }
+        }
         return { rows, error: null }
       }
 
@@ -348,8 +406,8 @@ serve(async (req) => {
         fetchReadings(quickIds, EWS_FRESH_HOURS * HOUR),
         fetchReadings(historyIds, DAM_PREV_MAX_MS),
       ])
-      if (quick.error) return json({ ok: false, error: quick.error }, 500)
-      if (deep.error) return json({ ok: false, error: deep.error }, 500)
+      if (quick.error) return await fail(quick.error)
+      if (deep.error) return await fail(deep.error)
 
       for (const r of [...quick.rows, ...deep.rows]) {
         const id = String(r.station_config_id)
@@ -465,7 +523,7 @@ serve(async (req) => {
       .eq('source', 'thaiwater')
       .gte('issued_at', new Date(now - WARNING_FRESH_HOURS * HOUR).toISOString())
       .order('issued_at', { ascending: false })
-    if (warningError) return json({ ok: false, error: cleanText(warningError.message, 300) }, 500)
+    if (warningError) return await fail(cleanText(warningError.message, 300))
 
     for (const t of tenants) {
       if (!t.district || !t.province) continue
@@ -505,7 +563,7 @@ serve(async (req) => {
       .eq('status', 'sent')
       .in('notification_type', Object.values(entryTypeOf))
       .gte('created_at', new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString())
-    if (pastError) return json({ ok: false, error: cleanText(pastError.message, 300) }, 500)
+    if (pastError) return await fail(cleanText(pastError.message, 300))
     const seen = new Set((past ?? []).map(r => `${r.municipality_id}|${r.resource_id}|${r.notification_type}`))
     for (const { tenantId, item } of clearedItems) {
       if (seen.has(`${tenantId}|${item.resourceId}|${entryTypeOf[item.notificationType]}`)) continue
@@ -570,6 +628,8 @@ serve(async (req) => {
     }
   }
 
+  // Telegram ส่งไม่สำเร็จไม่นับว่ารอบนี้พัง — แถวเป็น failed แล้วรอบหน้าส่งใหม่เอง
+  if (!isTest) await recordHeartbeat(admin, { ok: true })
   return json({
     ok: true,
     test: isTest,

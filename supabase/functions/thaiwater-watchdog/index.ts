@@ -20,6 +20,12 @@
 //
 // ไม่ใช้ recorded_at เป็นตัวตัดสิน: ถ้าต้นทางส่งค่าเก่าค้างมา แปลว่าสถานีนั้นไม่ส่งข้อมูล
 // ไม่ใช่ระบบเราพัง (หน้าเว็บมีป้าย "ข้อมูลอาจไม่เป็นปัจจุบัน" รายสถานีอยู่แล้ว)
+//
+// ตรวจเพิ่ม (2569-09-28): งานที่ต้องลงสมุด job_heartbeats ทุกรอบ (WATCHED_JOBS) — ข้อมูลที่ยังสด
+// ไม่ได้แปลว่าแจ้งเตือนยังทำงาน water-alert-notify พังเองได้ขณะที่ sync ปกติ (เคยเกือบเงียบมาแล้ว:
+// ข้อมูลเกินเพดาน 1,000 แถวของ PostgREST) · ไม่สำเร็จนานเกิน STALE_MINUTES = พลาด 2 รอบ → แจ้งกลุ่มเดิม
+// พร้อม error ล่าสุดที่งานลงไว้ · อ่านสมุดไม่ได้ (เช่นตารางยังไม่ถูกสร้าง) ให้ข้ามไป
+// ห้ามทำให้การตรวจข้อมูลค้างที่มีอยู่เดิมพังตาม
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -50,6 +56,13 @@ const TYPE_LABEL: Record<string, string> = {
   dam: 'ข้อมูลอ่างเก็บน้ำ',
   ews: 'สถานะสถานีเตือนภัย (กรมทรัพยากรน้ำ)',
 }
+
+// งานที่ต้องลงสมุดลงเวลาทุกรอบ — name ต้องตรงกับ JOB_NAME ในฟังก์ชันนั้น (เทสต์อ่านสองไฟล์มาเทียบ)
+// water-alert-notify รันทุกชั่วโมงนาทีที่ 15 ตัวนี้ตรวจนาทีที่ 25 · เกณฑ์ STALE_MINUTES เดียวกับข้อมูลค้าง
+// พลาด 1 รอบ = อายุ 70 นาที · พลาด 2 รอบ = 130 นาที
+const WATCHED_JOBS = [
+  { name: 'water-alert-notify', label: 'ระบบแจ้งเตือนน้ำ-ฝนใกล้พื้นที่ (water-alert-notify)' },
+] as const
 
 type StationType = typeof STATION_TYPES[number]
 type StaleFeed = { type: StationType; lastFetchedAt: string | null; ageMinutes: number | null }
@@ -204,12 +217,91 @@ serve(async (req) => {
     return result.ok
   }
 
+  // ── งานที่ต้องลงสมุดลงเวลาทุกรอบ (job_heartbeats) ──
+  // ผลรวมไว้ในคำตอบทุกทางผ่าน reply() · อ่านสมุดไม่ได้ = ข้ามไป ไม่ตอบ 500 (การตรวจข้อมูลค้างต้องทำต่อ)
+  let jobs: Record<string, unknown> = { stale: [], sent: null }
+  const { data: beats, error: beatsError } = await admin
+    .from('job_heartbeats')
+    .select('job_name, last_ok_at, last_error_at, last_error')
+    .in('job_name', WATCHED_JOBS.map((j) => j.name))
+  if (beatsError) {
+    console.error('[thaiwater-watchdog] อ่านสมุดลงเวลาไม่ได้:', beatsError.code, beatsError.message)
+    jobs = { error: cleanText(beatsError.message, 300) }
+  } else {
+    const staleJobs = WATCHED_JOBS.flatMap((j) => {
+      const beat = (beats ?? []).find((b) => b.job_name === j.name)
+      const lastOkAt: string | null = beat?.last_ok_at ?? null
+      const okAt = lastOkAt ? new Date(lastOkAt).getTime() : NaN
+      if (Number.isFinite(okAt) && now - okAt <= staleMinutes * 60_000) return []
+      // error ที่เก่ากว่าครั้งที่สำเร็จล่าสุด = เรื่องที่หายไปแล้ว ไม่ใช่สาเหตุของรอบนี้ จึงไม่แนบ
+      const errorAt = beat?.last_error_at ? new Date(beat.last_error_at).getTime() : NaN
+      const freshError = Boolean(beat?.last_error) && Number.isFinite(errorAt) && (!Number.isFinite(okAt) || errorAt > okAt)
+      return [{
+        name: j.name,
+        label: j.label,
+        lastOkAt,
+        ageMinutes: Number.isFinite(okAt) ? Math.round((now - okAt) / 60_000) : null,
+        lastError: freshError ? String(beat?.last_error) : null,
+        lastErrorAt: freshError ? String(beat?.last_error_at) : null,
+      }]
+    })
+
+    if (staleJobs.length > 0) {
+      // คีย์ผูกกับ "งานที่หยุด + วันที่ไทย" เหมือนข้อมูลค้าง → พังต่อเนื่องเตือนวันละครั้ง
+      const key = `${keyPrefix}water_alert_stale:${staleJobs.map((j) => j.name).join('+')}:${bangkokDate()}`
+      if (await claim(`water_alert_stale${typeSuffix}`, key) === 'skip') {
+        jobs = { stale: staleJobs, sent: false, reason: 'แจ้งไปแล้ว' }
+      } else {
+        // ไม่ตัดความยาวแบบข้อความข้อมูลค้าง: ตัดกลาง &amp; แล้ว Telegram ปฏิเสธทั้งข้อความ
+        // ความยาวมีเพดานอยู่แล้ว (label 80 · error 300 ตัวก่อน escape · งานเดียว) ต่ำกว่า 4,096 เสมอ
+        const text = [
+          `🔴 <b>${isTest ? '[ทดสอบ] ' : ''}ระบบแจ้งเตือนสถานการณ์น้ำ-ฝนหยุดทำงาน</b>`,
+          ...staleJobs.flatMap((j) => [
+            j.lastOkAt
+              ? `• ${escapeHtml(j.label, 80)} ทำงานสำเร็จล่าสุด ${bangkokText(j.lastOkAt)} (ผ่านมา ${ageText(j.ageMinutes)})`
+              : `• ${escapeHtml(j.label, 80)} ยังไม่เคยลงสมุดว่าทำงานสำเร็จ`,
+            j.lastError
+              ? `  error ล่าสุด ${bangkokText(j.lastErrorAt)}: ${escapeHtml(j.lastError, 300)}`
+              : '  ไม่มีบันทึก error — ฟังก์ชันอาจไม่ถูกเรียกเลย (cron หาย · secret ไม่ตรง · deploy ไม่ขึ้น)',
+          ]),
+          '',
+          'ระหว่างนี้กลุ่ม อปท. จะไม่ได้รับแจ้งเตือนฝนหนักมาก ระดับน้ำ หรืออ่างเก็บน้ำ แม้เกิดเหตุจริง',
+          'ตรวจที่ Supabase → Edge Functions → water-alert-notify → Logs',
+        ].join('\n')
+        jobs = { stale: staleJobs, sent: await finish(key, text) }
+      }
+    } else {
+      // กลับมาแล้ว — แจ้งเฉพาะเมื่อเคยแจ้งว่าหยุด และยังไม่เคยแจ้งว่ากลับมาหลังจากนั้น (แบบเดียวกับข้อมูลค้าง)
+      const { data: lastJobStale } = await admin.from('notification_deliveries')
+        .select('created_at').eq('municipality_id', tenant.id)
+        .eq('notification_type', `water_alert_stale${typeSuffix}`).eq('status', 'sent')
+        .order('created_at', { ascending: false }).limit(1)
+      const staleAt: string | undefined = lastJobStale?.[0]?.created_at
+      if (staleAt) {
+        const { data: lastJobRecovered } = await admin.from('notification_deliveries')
+          .select('created_at').eq('municipality_id', tenant.id)
+          .eq('notification_type', `water_alert_recovered${typeSuffix}`).eq('status', 'sent')
+          .order('created_at', { ascending: false }).limit(1)
+        const alreadyRecovered = Boolean(lastJobRecovered?.length) && lastJobRecovered![0].created_at >= staleAt
+        const recoveryKey = `${keyPrefix}water_alert_recovered:${staleAt}`
+        if (!alreadyRecovered && await claim(`water_alert_recovered${typeSuffix}`, recoveryKey) !== 'skip') {
+          const text = [
+            `✅ <b>${isTest ? '[ทดสอบ] ' : ''}ระบบแจ้งเตือนสถานการณ์น้ำ-ฝนกลับมาทำงานแล้ว</b>`,
+            `แจ้งว่าหยุดทำงานเมื่อ ${bangkokText(staleAt)} ตอนนี้ทำงานสำเร็จตามรอบปกติแล้ว`,
+          ].join('\n')
+          jobs = { stale: [], sent: await finish(recoveryKey, text), recovered: true }
+        }
+      }
+    }
+  }
+  const reply = (body: Record<string, unknown>) => json({ ...body, jobs })
+
   if (feeds.length > 0) {
     // คีย์ผูกกับ "ชนิดที่ค้าง + วันที่ไทย" → เตือนซ้ำได้วันละครั้งตราบใดที่ยังพัง
     // และถ้าลามจากฝนอย่างเดียวเป็นค้างทั้งคู่ คีย์เปลี่ยน จึงได้ข้อความใหม่ทันที
     const key = `${keyPrefix}water_sync_stale:${feeds.map((f) => f.type).join('+')}:${bangkokDate()}`
     if (await claim(`water_sync_stale${typeSuffix}`, key) === 'skip') {
-      return json({ ok: true, stale: feeds, sent: false, reason: 'แจ้งไปแล้ว' })
+      return reply({ ok: true, stale: feeds, sent: false, reason: 'แจ้งไปแล้ว' })
     }
     const lines = [
       `🔴 <b>${isTest ? '[ทดสอบ] ' : ''}ระบบดึงข้อมูลน้ำ-ฝนหยุดทำงาน</b>`,
@@ -220,7 +312,7 @@ serve(async (req) => {
       'ตรวจที่ Supabase → Edge Functions → thaiwater-sync → Logs',
     ].join('\n').slice(0, 1800)
     const sent = await finish(key, lines)
-    return json({ ok: true, stale: feeds, sent, test: isTest })
+    return reply({ ok: true, stale: feeds, sent, test: isTest })
   }
 
   // ปกติดี — ส่งข้อความ "กลับมาแล้ว" เฉพาะเมื่อมีเหตุค้างที่ยังไม่เคยแจ้งว่าหายเท่านั้น
@@ -228,25 +320,25 @@ serve(async (req) => {
     .select('created_at').eq('municipality_id', tenant.id)
     .eq('notification_type', `water_sync_stale${typeSuffix}`).eq('status', 'sent')
     .order('created_at', { ascending: false }).limit(1)
-  if (!lastStale?.length) return json({ ok: true, stale: [], sent: null })
+  if (!lastStale?.length) return reply({ ok: true, stale: [], sent: null })
 
   const { data: lastRecovered } = await admin.from('notification_deliveries')
     .select('created_at').eq('municipality_id', tenant.id)
     .eq('notification_type', `water_sync_recovered${typeSuffix}`).eq('status', 'sent')
     .order('created_at', { ascending: false }).limit(1)
   if (lastRecovered?.length && lastRecovered[0].created_at >= lastStale[0].created_at) {
-    return json({ ok: true, stale: [], sent: null })
+    return reply({ ok: true, stale: [], sent: null })
   }
 
   // คีย์ผูกกับเวลาของเหตุการณ์ที่แจ้งไป → 1 เหตุการณ์ได้ข้อความ "กลับมาแล้ว" ครั้งเดียว
   const recoveryKey = `${keyPrefix}water_sync_recovered:${lastStale[0].created_at}`
   if (await claim(`water_sync_recovered${typeSuffix}`, recoveryKey) === 'skip') {
-    return json({ ok: true, stale: [], sent: false, reason: 'แจ้งไปแล้ว' })
+    return reply({ ok: true, stale: [], sent: false, reason: 'แจ้งไปแล้ว' })
   }
   const recovered = [
     `✅ <b>${isTest ? '[ทดสอบ] ' : ''}ระบบดึงข้อมูลน้ำ-ฝนกลับมาทำงานแล้ว</b>`,
     `หยุดไปตั้งแต่ ${bangkokText(lastStale[0].created_at)} ตอนนี้ดึงข้อมูลได้ตามปกติ`,
   ].join('\n')
   const sent = await finish(recoveryKey, recovered)
-  return json({ ok: true, stale: [], sent, recovered: true })
+  return reply({ ok: true, stale: [], sent, recovered: true })
 })

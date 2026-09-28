@@ -204,12 +204,45 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
   // ⚠️ กันบั๊กที่ส่งคำเตือนผิดเข้ากลุ่มจริง 3 กลุ่มมาแล้ว (2569-09-28): ดึง water_readings ของทุกสถานี
   // ย้อน 3 วันในคำสั่งเดียว = 2,016 แถว แต่ PostgREST คืนแค่ 1,000 แถวแล้วตัดเงียบๆ แถวของเมื่อวาน
   // ของอ่างจึงหลุดหาย ระบบนึกว่าไม่มีค่าก่อนหน้า แล้วเดาว่า "เพิ่งข้ามชั้น"
-  assert.ok(src.includes('const ROW_CAP = 1000'), 'ต้องมีเพดานไว้ตรวจว่าโดนตัดหรือยัง')
-  assert.ok(/rows\.length >= ROW_CAP/.test(src), 'ชนเพดานต้องหยุดและแจ้ง error ไม่ใช่ส่งคำเตือนจากข้อมูลที่ขาด')
+  // แก้ถาวรด้วยการดึงทีละหน้าแล้วเทียบกับยอดนับจริง — ได้ไม่ครบต้องหยุดทั้งรอบ
+  assert.ok(src.includes('const PAGE_SIZE = 1000'), 'หน้าละ 1,000 แถว = เพดานของ PostgREST')
+  assert.ok(/\.range\(offset, offset \+ PAGE_SIZE - 1\)/.test(src), 'ต้องดึงทีละหน้าด้วย .range()')
+  assert.ok(/count: 'exact'/.test(src), 'ต้องขอยอดนับจริงไว้เทียบว่าได้ครบไหม')
+  assert.ok(/offset \+= batch\.length/.test(src),
+    'เลื่อนหน้าตามจำนวนที่ได้จริง ไม่ใช่ PAGE_SIZE — เซิร์ฟเวอร์ตั้งเพดานต่ำกว่านี้จะได้ไม่ข้ามแถว')
+  assert.ok(/rows\.length < total/.test(src), 'ได้ไม่ครบตามยอดนับต้องหยุดและแจ้ง error ไม่ใช่ส่งคำเตือนจากข้อมูลที่ขาด')
+  assert.ok(/\.order\('station_config_id'/.test(src), 'ต้องเรียงด้วยคีย์ที่ไม่ซ้ำ หน้าต่อกันจึงไม่ข้ามหรือซ้ำแถว')
+  assert.ok(!src.includes('ROW_CAP'), 'ห้ามกลับไปใช้วิธีหยุดเมื่อชนเพดาน — อปท. เพิ่มแล้วแจ้งเตือนจะหยุดทั้งระบบ')
   assert.ok(src.includes('const quickIds =') && src.includes('const historyIds ='),
     'ต้องแยกคำสั่งดึงข้อมูล: สถานีฝน/ews เอาแค่ค่าล่าสุด ส่วนระดับน้ำ/อ่างต้องมีประวัติ')
   assert.ok(/if \(prevRank === null\) continue/.test(src),
     'อ่างที่ไม่มีค่าก่อนหน้าให้เทียบ ต้องไม่ส่ง ห้ามเดาว่าเพิ่งข้ามชั้น')
+}
+
+// ── สมุดลงเวลา: แจ้งเตือนหยุดทำงานเมื่อไรต้องมีคนรู้ ──
+// thaiwater-watchdog เดิมดูแค่ความสดของข้อมูล ถ้า water-alert-notify พังเอง ข้อมูลยังสดตามปกติ
+// ตัวเฝ้าระวังจึงรายงานว่าปกติทั้งที่แจ้งเตือนหยุดส่งไปแล้ว
+{
+  const alertSrc = readFileSync(new URL('../supabase/functions/water-alert-notify/index.ts', import.meta.url), 'utf8')
+  const dogSrc = readFileSync(new URL('../supabase/functions/thaiwater-watchdog/index.ts', import.meta.url), 'utf8')
+  const jobName = alertSrc.match(/const JOB_NAME = '([a-z0-9-]+)'/)?.[1]
+  assert.equal(jobName, 'water-alert-notify')
+  assert.ok(dogSrc.includes(`name: '${jobName}'`), 'ชื่องานใน WATCHED_JOBS ต้องตรงกับ JOB_NAME ของ water-alert-notify')
+
+  // หลังสร้าง client ทุกทางที่ตอบ error ต้องผ่าน fail() ซึ่งลงสมุด — เพิ่มทางใหม่แล้วลืม = ไม่มี error แนบให้คนแก้
+  const afterClient = alertSrc.split('const admin = createClient(')[1]
+  assert.equal((afterClient.match(/json\(\{ ok: false/g) ?? []).length, 1, 'ห้ามตอบ error ตรงๆ โดยไม่ผ่าน fail()')
+  assert.ok((alertSrc.match(/if \(!isTest\) await recordHeartbeat\(admin, \{ ok: true \}\)/g) ?? []).length >= 2,
+    'ทางที่จบสำเร็จ (รวมกรณีไม่มี อปท. ให้ส่ง) ต้องลงสมุดว่าสำเร็จ')
+
+  // อ่านสมุดไม่ได้ต้องไม่ทำให้การตรวจข้อมูลค้างเดิมพังตาม (ตารางยังไม่ถูกสร้างก็ต้องทำงานต่อ)
+  const beatsBlock = dogSrc.split("from('job_heartbeats')")[1]?.split('const staleJobs')[0] ?? ''
+  assert.ok(beatsBlock.includes('if (beatsError)') && !beatsBlock.includes('return json('),
+    'อ่านสมุดลงเวลาไม่ได้ ห้ามตอบ error ทั้งรอบ')
+
+  const migration = readFileSync(new URL('../supabase/migrations/20260928140100_job_heartbeats_rls.sql', import.meta.url), 'utf8')
+  assert.ok(migration.includes('REVOKE ALL ON public.job_heartbeats FROM anon, authenticated, PUBLIC'))
+  assert.ok(migration.includes('ALTER TABLE public.job_heartbeats ENABLE ROW LEVEL SECURITY'))
 }
 
 // ── ตัวตัดสินใจแถบเตือน ──
