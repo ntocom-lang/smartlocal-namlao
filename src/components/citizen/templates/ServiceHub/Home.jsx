@@ -7,6 +7,7 @@ import { supabase } from '../../../../lib/supabase'
 import { PATIENT_TRANSPORT_MODULE_KEY } from '../../../../lib/patientTransport'
 import { selectableDocumentTypes } from '../../../../lib/documentTypes'
 import BannerSlider from '../../../../components/home/BannerSlider'
+import WaterAlertBanner from '../../WaterAlertBanner'
 // ComplaintBand นำออกจากหน้าแรกตามคำขอ (เข้าใช้งานผ่านปุ่ม ร้องเรียน/ร้องทุกข์ ด้านบน)
 import ComplaintStatsWidget from '../../../../components/home/ComplaintStatsWidget'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
@@ -323,6 +324,9 @@ export default function ServiceHubHome() {
       {/* Hero + e-Service ตั้งใจให้ชิดขอบจอเต็ม มุมเหลี่ยม ไม่มีช่องว่างคั่น — ตรงตามภาพอ้างอิงเป๊ะ
           ต่างจากส่วนอื่นด้านล่างที่ยังเป็นการ์ดโค้งมนมีระยะขอบตามปกติ */}
       <div className="max-w-[1440px] mx-auto">
+        {/* ขึ้นเฉพาะวันที่มีเรื่องเข้าเกณฑ์ วันปกติคืน null ไม่กินความสูงเลย — ระยะขอบอยู่ที่ตัวแถบเอง
+            ไม่ใช่ที่กล่องครอบ ไม่งั้นวันปกติหน้าแรกจะเลื่อนลงเปล่าๆ */}
+        <WaterAlertBanner className="mx-3 mb-2 sm:mx-4 lg:mx-6" />
         <HeroBanner tenant={tenant} rounded="rounded-none" />
         <EServiceGrid docTypes={docTypes} rounded="rounded-none" />
       </div>

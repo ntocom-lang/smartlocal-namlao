@@ -205,6 +205,49 @@ export function buildAlerts({ rain = [], ews = [], warnings = [], now }) {
   }
 }
 
+// ย่อผลของ buildAlerts ให้เหลือบรรทัดเดียวสำหรับแถบบนหน้าแรก (WaterAlertBanner)
+// ลำดับความสำคัญ: สถานีเตือนภัยน้ำหลาก-ดินถล่ม → ฝนหนักมาก → ข้อความบรรยายของ สสน.
+// เรียงแบบนี้เพราะสองอันแรกเป็นค่าตรวจวัดที่ถึงเกณฑ์แล้ว ส่วนข้อความ สสน. ครอบคลุมทั้งอำเภอ
+// ไม่เจาะจงจุด · ภายในแต่ละหมวด buildAlerts เรียงตัวที่แรงที่สุดไว้หน้าสุดให้แล้ว
+export function alertSummary(alerts, { homeAmphoe, now } = {}) {
+  if (!alerts?.any) return null
+  const ews = alerts.ews ?? []
+  const rain = alerts.heavyRain ?? []
+  const warnings = alerts.warnings ?? []
+  const total = ews.length + rain.length + warnings.length
+
+  if (ews.length > 0) {
+    const { station, alert } = ews[0]
+    return {
+      total, label: 'สถานีเตือนภัยน้ำหลาก-ดินถล่ม',
+      text: `${station.station_name} · ${alert.text}`,
+      meta: alertMetaLine(station, homeAmphoe, station.recorded_at, now, 'รายงานเมื่อ'),
+    }
+  }
+  if (rain.length > 0) {
+    const station = rain[0]
+    return {
+      total, label: 'ฝนหนักมาก',
+      text: `${station.station_name} ${formatMm(station.rain_24h_mm)} มม.`,
+      meta: alertMetaLine(station, homeAmphoe, station.recorded_at, now, 'วัดเมื่อ'),
+    }
+  }
+  const warning = warnings[0]
+  return {
+    total, label: 'ข้อความเตือนจาก สสน.',
+    text: warning.message,
+    meta: measuredAtText(warning.issued_at, now),
+  }
+}
+
+function alertMetaLine(station, homeAmphoe, at, now, verb) {
+  return [
+    stationPlace(station, homeAmphoe),
+    distanceText(station?.distance_km),
+    at ? `${verb} ${measuredAtText(at, now)}` : '',
+  ].filter(Boolean).join(' · ')
+}
+
 export function isStale(iso, now, hours) {
   if (!iso) return true
   const at = new Date(iso).getTime()
