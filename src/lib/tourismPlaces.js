@@ -1,4 +1,4 @@
-// ─── ตัวช่วยกลางของโมดูล "เที่ยว กิน พัก ชอป บริการ" ─────────────────────────────
+// ─── ตัวช่วยกลางของโมดูล "เที่ยว กิน พัก ช้อป บริการ" ─────────────────────────────
 //
 // แยกออกมาจาก TourismPage.jsx เพราะตรรกะ "ตอนนี้ร้านเปิดอยู่ไหม" กับการคำนวณระยะทาง
 // เป็นโค้ดบริสุทธิ์ที่ต้องเทสต์ได้โดยไม่ต้อง mount React (ดู tests/tourism-hours.test.mjs)
@@ -8,7 +8,7 @@ export const TOURISM_CATS = [
   { key: 'travel',  label: 'เที่ยว',  emoji: '🏛️', color: '#1d4ed8', bg: '#dbeafe' },
   { key: 'food',    label: 'กิน',     emoji: '🍽️', color: '#d97706', bg: '#fef3c7' },
   { key: 'stay',    label: 'พัก',     emoji: '🏨', color: '#7c3aed', bg: '#ede9fe' },
-  { key: 'shop',    label: 'ชอป',     emoji: '🛍️', color: '#15803d', bg: '#dcfce7' },
+  { key: 'shop',    label: 'ช้อป',     emoji: '🛍️', color: '#15803d', bg: '#dcfce7' },
   { key: 'service', label: 'บริการ',  emoji: '🔧', color: '#dc2626', bg: '#fee2e2' },
 ]
 

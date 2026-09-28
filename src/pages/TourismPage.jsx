@@ -355,7 +355,7 @@ export default function TourismPage() {
           </button>
           {/* ไม่ตัดคำ — จอ 320px แถบนี้เหลือ 132px แต่ชื่อหน้าต้องการ 165px ถ้า truncate ไว้
               จะเหลือ "เที่ยว กิน พัก ช…" ปล่อยให้ตกบรรทัดที่ 2 เฉพาะจอแคบแทน */}
-          <h1 className="text-base font-bold text-gray-800 flex-1 leading-tight">เที่ยว กิน พัก ชอป บริการ</h1>
+          <h1 className="text-base font-bold text-gray-800 flex-1 leading-tight">เที่ยว กิน พัก ช้อป บริการ</h1>
           <button onClick={() => navigate('/business-register')}
             className="shrink-0 flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-xl"
             style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>
@@ -365,7 +365,7 @@ export default function TourismPage() {
 
         <div className="hidden md:flex items-center justify-between px-6 pt-5 pb-1">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">เที่ยว กิน พัก ชอป บริการ</h1>
+            <h1 className="text-2xl font-bold text-gray-800">เที่ยว กิน พัก ช้อป บริการ</h1>
             <p className="text-sm text-gray-400 mt-0.5">
               ที่เที่ยว ร้านอาหาร ที่พัก ของฝาก และบริการในพื้นที่ · {places.length} รายการ
             </p>

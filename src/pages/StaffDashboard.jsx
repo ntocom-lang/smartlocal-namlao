@@ -177,7 +177,7 @@ const STANDALONE_GROUPS = [
     items: [
       { key: 'events',          label: 'ปฏิทินกิจกรรม',       Icon: CalendarDays, color: '#10b981', bg: '#d1fae5', desc: 'กำหนดการและปฏิทินกิจกรรมของหน่วยงาน' },
       { key: 'posts',           label: 'ข่าวสาร/ภาพกิจกรรม',  Icon: Images,       color: '#059669', bg: '#d1fae5', desc: 'ประกาศ ข่าวประชาสัมพันธ์ และอัลบั้มภาพ' },
-      { key: 'tourism',         label: 'เที่ยว กิน พัก ชอป บริการ', Icon: Luggage,      color: '#d97706', bg: '#fef3c7', desc: 'ที่เที่ยว ร้านอาหาร ที่พัก OTOP และร้านบริการในพื้นที่' },
+      { key: 'tourism',         label: 'เที่ยว กิน พัก ช้อป บริการ', Icon: Luggage,      color: '#d97706', bg: '#fef3c7', desc: 'ที่เที่ยว ร้านอาหาร ที่พัก OTOP และร้านบริการในพื้นที่' },
       { key: 'tourism-reviews', label: 'รีวิวสถานที่',        Icon: Star,         color: '#f59e0b', bg: '#fef3c7', desc: 'ตรวจสอบและลบรีวิวที่ไม่เหมาะสม' },
     ],
   },

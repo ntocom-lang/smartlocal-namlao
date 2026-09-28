@@ -23,7 +23,7 @@ export default function ModuleHeader({ Icon, label, desc, color, eyebrow = 'ร�
         <p className="text-[10px] font-extrabold uppercase tracking-[0.12em]" style={{ color: color ?? '#475569' }}>
           {eyebrow}
         </p>
-        {/* ไม่ใช้ truncate — ชื่อยาวอย่าง "เที่ยว กิน พัก ชอป บริการ" ต้องขึ้นบรรทัดใหม่บนมือถือ
+        {/* ไม่ใช้ truncate — ชื่อยาวอย่าง "เที่ยว กิน พัก ช้อป บริการ" ต้องขึ้นบรรทัดใหม่บนมือถือ
             ไม่ใช่ถูกตัดหาย ซึ่งทำให้อ่านไม่ออกว่าอยู่หน้าไหนพอดี */}
         <h1 className="text-lg font-extrabold tracking-tight text-slate-900 leading-tight">{label}</h1>
         {desc && <p className="text-[11px] text-slate-500 mt-0.5">{desc}</p>}

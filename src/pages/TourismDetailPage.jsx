@@ -12,7 +12,7 @@ const CAT_LABEL = {
   travel:  '🏛️ เที่ยว',
   food:    '🍽️ กิน',
   stay:    '🏨 พัก',
-  shop:    '🛍️ ชอป/OTOP',
+  shop:    '🛍️ ช้อป/OTOP',
   service: '🔧 บริการ',
 }
 
