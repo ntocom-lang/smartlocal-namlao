@@ -179,11 +179,33 @@ export function ewsAlert(station, now) {
   }
 }
 
-// เรื่องที่ต้องขึ้นแถบเตือนบนสุดของหน้า — ใช้กติกาเดียวกับ Telegram (water-alert-notify)
+// ชั้นเกณฑ์ของอ่าง (index ใน DAM_LEVELS ยิ่งมากยิ่งน้ำเยอะ) — ใช้เทียบว่าถึงชั้นที่ต้องเตือนหรือยัง
+export function damRank(percent) {
+  const level = damLevel(percent)
+  return level ? DAM_LEVELS.indexOf(level) : null
+}
+
+// ชั้นต่ำสุดที่ Telegram ของเจ้าหน้าที่แจ้ง = "น้ำมาก" (เกิน 80%) ต้องตรงกับ DAM_ALERT_RANK ใน water-alert-notify
+export const DAM_ALERT_RANK = DAM_LEVELS.findIndex(l => l.key === 'high')
+
+// ชั้นต่ำสุดที่ขึ้นแถบเตือนฝั่งประชาชน = "เกินความจุเก็บกัก" (>100%) — สูงกว่าฝั่งเจ้าหน้าที่โดยตั้งใจ
+// อ่างขนาดกลางอยู่ชั้น "น้ำมาก" เป็นเดือนในฤดูฝนตามปกติ (แม่คำปอง 88.6% ตอนตรวจ 2569-09-28)
+// ถ้าเอามาขึ้นแถบ แถบจะค้างบนหน้าแรกทั้งฤดู จนวันที่ฝนหนักจริงไม่มีใครมองแถบอีก
+// เจ้าหน้าที่ยังได้สัญญาณเร็วกว่าทาง Telegram ส่วนประชาชนเห็นเฉพาะตอนที่ผิดปกติจริง
+export const DAM_PUBLIC_ALERT_RANK = DAM_LEVELS.findIndex(l => l.key === 'over')
+
+// เรื่องที่ต้องขึ้นแถบเตือนบนสุดของหน้า — ใช้เกณฑ์ชุดเดียวกับ Telegram (water-alert-notify)
 //   ฝนหนักมาก: สถานีฝนของ อปท. ระดับ veryHeavy ตาม RAIN_LEVELS (กรมอุตุฯ) ที่ค่ายังเป็นปัจจุบัน
 //   สสน.: ข้อความเตือนของอำเภอตัวเองที่ RPC คัดมาแล้ว (24 ชม. ล่าสุดของแต่ละสถานี) — แสดงตามต้นฉบับ
 //   สถานีเตือนภัย ทน.: ระดับ "เตรียมพร้อม" ขึ้นไปที่สถานะยังเป็นปัจจุบัน (ปิดอยู่ ไม่มีแถวส่งมา)
-export function buildAlerts({ rain = [], ews = [], warnings = [], now }) {
+//   ระดับน้ำสูงกว่าตลิ่ง: bank_diff_m ติดลบ (ตลิ่งต่ำสุด − ระดับน้ำ) ที่ค่ายังเป็นปัจจุบัน
+//   อ่างเก็บน้ำ: % ความจุถึงชั้น "น้ำมาก" ขึ้นไปตามเกณฑ์ สสน./กรมชลประทาน
+//
+// ⚠️ **เกณฑ์เหมือน Telegram แต่จังหวะที่ขึ้นต่างกันโดยตั้งใจ** — หน้าเว็บแสดง "สถานะตอนนี้"
+// (เปิดดูเมื่อไรก็ต้องเห็นว่าน้ำยังล้นตลิ่งอยู่ไหม) ส่วน Telegram ส่ง "ตอนข้ามชั้น" ครั้งเดียว
+// เพราะข้อความที่ส่งซ้ำทุกวันจะถูกเลื่อนผ่าน · RPC ส่งค่าก่อนหน้ามาเฉพาะระดับน้ำ (ม.รทก.) กับ
+// ปริมาตรอ่าง ไม่มีค่าก่อนหน้าของ bank_diff_m และ % ความจุ หน้าเว็บจึงเทียบชั้นย้อนหลังไม่ได้อยู่แล้ว
+export function buildAlerts({ rain = [], ews = [], warnings = [], levels = [], dams = [], now }) {
   const heavyRain = rain
     .filter(s => rainLevel(s.rain_24h_mm)?.key === 'veryHeavy' && s.recorded_at && !isStale(s.recorded_at, now, STATION_STALE_HOURS))
     .sort((a, b) => toNum(b.rain_24h_mm) - toNum(a.rain_24h_mm))
@@ -197,11 +219,19 @@ export function buildAlerts({ rain = [], ews = [], warnings = [], now }) {
     const age = toMillis(now) - new Date(w.issued_at).getTime()
     return Number.isFinite(age) && age >= 0 && age < 24 * 60 * 60 * 1000
   })
+  const overbank = levels
+    .filter(s => s.recorded_at && !isStale(s.recorded_at, now, STATION_STALE_HOURS) && (toNum(s.bank_diff_m) ?? 0) < 0)
+    .sort((a, b) => toNum(a.bank_diff_m) - toNum(b.bank_diff_m))
+  const damOver = dams
+    .filter(s => s.recorded_at && !isStale(s.recorded_at, now, DAM_STALE_HOURS) && (damRank(s.storage_percent) ?? -1) >= DAM_PUBLIC_ALERT_RANK)
+    .sort((a, b) => toNum(b.storage_percent) - toNum(a.storage_percent))
   return {
     heavyRain,
     warnings: official,
     ews: ewsActive,
-    any: heavyRain.length > 0 || official.length > 0 || ewsActive.length > 0,
+    overbank,
+    damOver,
+    any: heavyRain.length > 0 || official.length > 0 || ewsActive.length > 0 || overbank.length > 0 || damOver.length > 0,
   }
 }
 
@@ -214,8 +244,19 @@ export function alertSummary(alerts, { homeAmphoe, now } = {}) {
   const ews = alerts.ews ?? []
   const rain = alerts.heavyRain ?? []
   const warnings = alerts.warnings ?? []
-  const total = ews.length + rain.length + warnings.length
+  const overbank = alerts.overbank ?? []
+  const damOver = alerts.damOver ?? []
+  const total = ews.length + rain.length + warnings.length + overbank.length + damOver.length
 
+  // น้ำสูงกว่าตลิ่งมาก่อนฝน: ฝนหนักเป็นเหตุ น้ำล้นตลิ่งเป็นผลที่เกิดขึ้นแล้ว
+  if (overbank.length > 0 && ews.length === 0) {
+    const station = overbank[0]
+    return {
+      total, label: 'ระดับน้ำสูงกว่าตลิ่ง',
+      text: `สถานี${station.station_name} สูงกว่าตลิ่ง ${Math.abs(toNum(station.bank_diff_m)).toFixed(2)} ม.`,
+      meta: alertMetaLine(station, homeAmphoe, station.recorded_at, now, 'วัดเมื่อ'),
+    }
+  }
   if (ews.length > 0) {
     const { station, alert } = ews[0]
     return {
@@ -232,11 +273,21 @@ export function alertSummary(alerts, { homeAmphoe, now } = {}) {
       meta: alertMetaLine(station, homeAmphoe, station.recorded_at, now, 'วัดเมื่อ'),
     }
   }
-  const warning = warnings[0]
+  if (warnings.length > 0) {
+    const warning = warnings[0]
+    return {
+      total, label: 'ข้อความเตือนจาก สสน.',
+      text: warning.message,
+      meta: measuredAtText(warning.issued_at, now),
+    }
+  }
+  // อ่างเกินความจุเก็บกักเป็นเรื่องที่ต้องเฝ้าระวัง แต่ไม่เร่งด่วนเท่าน้ำล้นตลิ่ง/ฝนหนักมาก
+  // จึงเป็นหัวเรื่องเฉพาะตอนไม่มีเรื่องอื่นเลย
+  const dam = damOver[0]
   return {
-    total, label: 'ข้อความเตือนจาก สสน.',
-    text: warning.message,
-    meta: measuredAtText(warning.issued_at, now),
+    total, label: damLevel(dam.storage_percent)?.label ?? 'อ่างเก็บน้ำ',
+    text: `${dam.station_name} ${toNum(dam.storage_percent).toLocaleString('th-TH', { maximumFractionDigits: 1 })}% ของความจุที่ระดับเก็บกัก`,
+    meta: alertMetaLine(dam, homeAmphoe, null, now, ''),
   }
 }
 

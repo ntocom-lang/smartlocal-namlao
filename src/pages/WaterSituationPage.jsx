@@ -107,6 +107,8 @@ export default function WaterSituationPage() {
   useVisibleRefresh(refresh, { intervalMs: REFRESH_MS, enabled: Boolean(tenantId) })
 
   // Y.38 measures Mae Kham Mi at Tamnaktham. Its reading does not establish conditions in Namlao.
+  // แถวของน้ำเลาถูกปิด (is_active = false) ในฐานข้อมูลแล้วตั้งแต่ 2569-09-28 เพื่อให้ Telegram กับ
+  // แถบบนหน้าแรกซึ่งอ่านจากฐานข้อมูลตรงๆ ตัดสินเหมือนหน้านี้ — ตัวกรองนี้เหลือไว้เป็นด่านสำรอง
   const scopedData = data && tenant?.slug === 'namlao'
     ? { ...data, stations: (data.stations ?? []).filter(s => !(s.station_type === 'waterlevel' && s.station_code === 'Y.38')) }
     : data
@@ -164,8 +166,8 @@ export default function WaterSituationPage() {
         ) : (
           <>
             <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} />
-            <AlertBanner rain={rain} ews={ews} warnings={visibleData.warnings} homeAmphoe={tenant?.district} now={checkedAt}
-              tenantName={tenant?.name} />
+            <AlertBanner rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings}
+              homeAmphoe={tenant?.district} now={checkedAt} tenantName={tenant?.name} />
             <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
             <nav className="water-section-nav" aria-label="หมวดข้อมูลน้ำ–ฝน">
               {rain.length > 0 && <a href="#water-rain"><CloudRain size={18} /><span>ฝน</span><small>{rain.length} สถานี</small></a>}
@@ -297,8 +299,8 @@ function HeroStats({ rain, dams, levels, now }) {
   )
 }
 
-function AlertBanner({ rain, ews, warnings, homeAmphoe, now, tenantName }) {
-  const alerts = buildAlerts({ rain, ews, warnings, now })
+function AlertBanner({ rain, ews, levels, dams, warnings, homeAmphoe, now, tenantName }) {
+  const alerts = buildAlerts({ rain, ews, levels, dams, warnings, now })
   if (!alerts.any) return null
 
   return (
@@ -315,6 +317,25 @@ function AlertBanner({ rain, ews, warnings, homeAmphoe, now, tenantName }) {
                 {alerts.heavyRain.map(s => (
                   <li key={s.station_code} className="text-sm text-gray-800">
                     <span className="font-semibold">{s.station_name}</span> {formatMm(s.rain_24h_mm)} มม.
+                    <span className="block text-xs text-gray-600">
+                      {[stationPlace(s, homeAmphoe), distanceText(s.distance_km), `วัดเมื่อ ${measuredAtText(s.recorded_at, now)}`]
+                        .filter(Boolean).join(' · ')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {alerts.overbank.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-gray-700">ระดับน้ำสูงกว่าตลิ่ง (เทียบตลิ่งต่ำสุดของสถานี)</p>
+              <ul className="mt-1 space-y-1.5">
+                {alerts.overbank.map(s => (
+                  <li key={s.station_code} className="text-sm text-gray-800">
+                    {s.river_name && <span className="font-semibold text-cyan-800">{s.river_name} </span>}
+                    <span className="font-semibold">สถานี{s.station_name}</span> {bankText(s.bank_diff_m)}
+                    {s.situation_text && <> · สถานะจาก สสน.: <span className="font-semibold">{s.situation_text}</span></>}
                     <span className="block text-xs text-gray-600">
                       {[stationPlace(s, homeAmphoe), distanceText(s.distance_km), `วัดเมื่อ ${measuredAtText(s.recorded_at, now)}`]
                         .filter(Boolean).join(' · ')}
@@ -357,6 +378,32 @@ function AlertBanner({ rain, ews, warnings, homeAmphoe, now, tenantName }) {
                     </span>
                   </li>
                 ))}
+              </ul>
+            </div>
+          )}
+
+          {alerts.damOver.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-gray-700">
+                อ่างเก็บน้ำเกินความจุที่ระดับเก็บกัก (เกณฑ์ของ สสน./กรมชลประทาน)
+              </p>
+              <ul className="mt-1 space-y-1.5">
+                {alerts.damOver.map(s => {
+                  const level = damLevel(s.storage_percent)
+                  return (
+                    <li key={s.station_code} className="flex items-start gap-1.5 text-sm text-gray-800">
+                      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: safeColor(level?.color) }} />
+                      <span>
+                        <span className="font-semibold">{s.station_name}</span> · {level?.label}{' '}
+                        {toNum(s.storage_percent)?.toLocaleString('th-TH', { maximumFractionDigits: 1 })}%
+                        <span className="block text-xs text-gray-600">
+                          {[stationPlace(s, homeAmphoe), distanceText(s.distance_km), `ข้อมูล${dataDayText(s.recorded_at, now)}`]
+                            .filter(Boolean).join(' · ')}
+                        </span>
+                      </span>
+                    </li>
+                  )
+                })}
               </ul>
             </div>
           )}
