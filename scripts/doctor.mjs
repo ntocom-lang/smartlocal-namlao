@@ -14,7 +14,7 @@ import { existsSync, readFileSync, readdirSync, statSync, mkdirSync, writeFileSy
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { findCodexMemory, findDevconfig, isDevconfigRepo } from './lib/devconfig.mjs';
+import { gitIn, memoryRepos } from './lib/devconfig.mjs';
 
 const problems = [];
 const warnings = [];
@@ -172,39 +172,28 @@ if (!existsSync(memDir)) {
 // ด่านที่ 7 ตรวจแค่ว่า junction ชี้ถูก — ชี้ถูกแต่ของไม่เคยขึ้น cloud ก็ผ่านได้
 // ซึ่งเกิดจริง: memory ค้าง 34 ไฟล์ 3 สัปดาห์ ขณะที่ doctor ขึ้น "เครื่องนี้พร้อมทำงาน"
 // นี่คือสิ่งที่ทำให้ย้ายเครื่องแล้วพัง จึงเป็น ❌ ไม่ใช่ ⚠️
-// ตรวจทั้ง 2 ตัว: Claude เก็บใน devconfig · Codex เป็น git repo ของตัวเองที่ ~/.codex/memories
-// (Codex ไม่มี remote มาแต่เกิด 1,397 KB จึงอยู่บนดิสก์ลูกเดียวจนถึง 2026-09-26)
-for (const r of [
-  {
-    dir: findDevconfig(),
-    label: 'memory ของ Claude',
-    pathspec: 'claude-memory',
-    missing: 'clone smartlocal-devconfig ไว้ข้างๆ โปรเจกต์ หรือตั้งตัวแปร SMARTLOCAL_DEVCONFIG',
-    optional: false,
-  },
-  {
-    dir: findCodexMemory(),
-    label: 'memory ของ Codex',
-    pathspec: null,
-    missing: 'ต่อ remote ให้ ~/.codex/memories หรือตั้งตัวแปร SMARTLOCAL_CODEX_MEMORY',
-    optional: true, // เครื่องที่ไม่ได้ลง Codex ไม่ต้องเตือน
-  },
-]) {
-  if (!isDevconfigRepo(r.dir)) {
-    if (!r.optional) warn(`ไม่พบ repo ของ ${r.label} ที่ ${r.dir}`, r.missing);
+// ตรวจทุกตัวใน memoryRepos() — รายการเดียวกับที่ handoff/resume ใช้ ห้ามเขียนรายการแยกในไฟล์นี้
+for (const r of memoryRepos()) {
+  if (!r.present) {
+    if (!r.optional) warn(`ไม่พบ repo ของ ${r.label} ที่ ${r.dir}`, r.missingHint);
     continue;
   }
-  const g = (args) => spawnSync('git', ['-C', r.dir, ...args], { encoding: 'utf8' });
+  const g = (args) => gitIn(r, args);
+
+  // ไม่มี upstream = handoff ไม่แตะ repo นี้เลย (ดู handoff.mjs) ⇒ จะขึ้น ❌ ว่ายังไม่ commit ไม่ได้
+  // ไม่งั้น doctor จะแดงค้างไปตลอดด้วยเรื่องที่ handoff แก้ให้ไม่ได้ (Codex ล้าง .git ตัวเองจน remote หาย 2026-09-28)
+  const aheadRes = g(['rev-list', '--count', '@{u}..HEAD']);
+  if (aheadRes.status !== 0) {
+    warn(`${r.label} ไม่มี upstream`, `${r.missingHint} — ไม่งั้น push ไม่ขึ้นที่ไหนเลย`);
+    continue;
+  }
+  const ahead = Number(aheadRes.stdout.trim());
   const scope = r.pathspec ? ['--', r.pathspec] : [];
   const pending = g(['status', '--porcelain', '-uall', ...scope]).stdout.split('\n').filter(Boolean).length;
-  const aheadRes = g(['rev-list', '--count', '@{u}..HEAD']);
-  const ahead = aheadRes.status === 0 ? Number(aheadRes.stdout.trim()) : null;
 
   if (pending || ahead) {
     const bits = [pending ? `ยังไม่ commit ${pending} ไฟล์` : null, ahead ? `ยังไม่ push ${ahead} commit` : null].filter(Boolean).join(' · ');
-    fail(`${r.label} ยังไม่ขึ้น origin (${bits})`, 'รัน npm run handoff — ไปอีกเครื่องตอนนี้ AI จะไม่รู้เรื่องที่คุยกันไว้');
-  } else if (ahead === null) {
-    warn(`${r.label} ไม่มี upstream`, `${r.missing} — ไม่งั้น push ไม่ขึ้นที่ไหนเลย`);
+    fail(`${r.label} ยังไม่ขึ้น origin (${bits})`, 'รัน npm run handoff (พิมพ์จากทรีหลักได้เลย) — ไปอีกเครื่องตอนนี้ AI จะไม่รู้เรื่องที่คุยกันไว้');
   } else {
     pass(`${r.label} ตรงกับ origin`);
   }

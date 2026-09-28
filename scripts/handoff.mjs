@@ -8,6 +8,8 @@
  * มีไว้เพราะตั้งแต่ 2026-09-05 ทำงานข้าม 2 เครื่อง (PC บ้าน / โน้ตบุคที่ทำงาน)
  * และไม่มีเครื่องไหนเปิดค้างให้รีโมทเข้า ⇒ git คือช่องทางเดียวที่งานข้ามเครื่องได้
  *
+ * รันได้ทั้งจาก branch งาน (โค้ด + memory) และจากทรีหลักบน master (memory อย่างเดียว)
+ *
  * ⚠️ คำสั่งนี้ commit + push ให้อัตโนมัติ — ตาม [SAFETY] ใน AGENTS.md
  *    ผู้ใช้ต้องเป็นคนรันเอง ห้าม agent เรียกคำสั่งนี้แทน
  *
@@ -19,10 +21,19 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
-import { findCodexMemory, findDevconfig, isDevconfigRepo, scanForSecrets } from './lib/devconfig.mjs';
+import { gitIn, integrateUpstream, memoryRepos, scanForSecrets } from './lib/devconfig.mjs';
 
 const run = (args, opts = {}) => execFileSync('git', args, { encoding: 'utf8', ...opts }).trim();
 const show = (args) => execFileSync('git', args, { stdio: 'inherit' });
+const tryRun = (args) => {
+  try {
+    return run(args, { stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return null;
+  }
+};
+const lines = (s) => (s ?? '').split('\n').filter(Boolean);
+const stamp = () => `${hostname()} @ ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
 
 const die = (msg, hint) => {
   console.error(`\n❌ ${msg}`);
@@ -33,15 +44,10 @@ const die = (msg, hint) => {
 
 const branch = run(['rev-parse', '--abbrev-ref', 'HEAD']);
 
-/* ── กัน push เข้า master โดยไม่ตั้งใจ ─────────────────────────────── */
 // push เข้า master = .github/workflows/deploy.yml ยิงขึ้น production ทันที
-// handoff เป็นการ "พักงานกลางคัน" ซึ่งไม่ควรเป็นสิ่งที่ deploy ออกไปหาประชาชน
-if (branch === 'master' || branch === 'HEAD') {
-  die(
-    `handoff จาก branch "${branch}" ไม่ได้`,
-    'push เข้า master = deploy ขึ้น production ทันที — ย้ายงานไป branch ใหม่ก่อน: git switch -c feat/<ชื่องาน>',
-  );
-}
+// handoff เป็นการ "พักงานกลางคัน" ซึ่งไม่ควรเป็นสิ่งที่ deploy ออกไปหาประชาชน ⇒ บน master ห้ามส่งโค้ด
+// แต่ memory ต้องเก็บเสมอไม่ว่าอยู่ branch ไหน (ดูเหตุผลที่ส่วนโค้ดบน master ข้างล่าง)
+const onMaster = branch === 'master' || branch === 'HEAD';
 
 /* ── เตือนเรื่อง worktree ที่มีงานค้าง ───────────────────────────── */
 // worktree อื่นไม่ถูก handoff พาไปด้วย ⇒ ย้ายเครื่องแล้วมองไม่เห็นงานในนั้น
@@ -90,42 +96,75 @@ if (stale.length) {
   console.log(`\n✅ worktree อีก ${otherTrees.length} ตัว สะอาดและ push แล้วทั้งหมด`);
 }
 
-/* ── commit ของค้างทั้งหมด ───────────────────────────────────────── */
-const dirty = run(['status', '--porcelain', '-uall']);
-if (dirty) {
-  console.log(`\nไฟล์ที่จะเก็บขึ้นไป (${dirty.split('\n').length} รายการ):`);
-  show(['status', '--short', '-uall']);
+/* ── ส่วนโค้ด ─────────────────────────────────────────────────────── */
+let codeOk = true;
 
-  run(['add', '-A']);
+if (onMaster) {
+  // เดิมตรงนี้หยุดทั้งคำสั่งด้วย die() ⇒ ไปไม่ถึงขั้นเก็บ memory ข้างล่าง
+  // แต่ทรีหลักอยู่บน master เป็นปกติ (AGENTS.md ห้ามสลับสาขาในทรีหลัก) คนจึงพิมพ์ handoff จากตรงนี้
+  // แล้วถูกปฏิเสธทุกครั้ง ขณะที่ doctor บอกให้รัน handoff = ทางตัน
+  // ผลจริง: memory ค้างอยู่บน PC 10 ไฟล์ (2026-09-26 → 28) ต้องไป push เองด้วยมือ
+  console.log(`\nอยู่บน ${branch === 'HEAD' ? 'detached HEAD' : 'master'} — ไม่ส่งโค้ด (push เข้า master = deploy ขึ้น production ทันที) เก็บเฉพาะ memory`);
 
-  // กันเคสที่ทุกอย่างที่เปลี่ยนถูก gitignore ⇒ add แล้วไม่มีอะไรใน index จริง
-  const staged = run(['diff', '--cached', '--name-only']);
-  if (!staged) {
-    console.log('\n(ไฟล์ที่เปลี่ยนถูก gitignore ทั้งหมด — ไม่มีอะไรต้อง commit)');
+  const changes = lines(run(['status', '--porcelain', '-uall']));
+  const tracked = changes.filter((l) => !l.startsWith('??'));
+  const untracked = changes.length - tracked.length;
+
+  if (tracked.length) {
+    codeOk = false;
+    console.log(`\n❌ มีไฟล์แก้ค้างบน ${branch} ${tracked.length} ไฟล์ — handoff ไม่ commit ให้ ของพวกนี้จึงไม่ข้ามเครื่อง`);
+    for (const l of tracked.slice(0, 10)) console.log(`     ${l}`);
+    if (tracked.length > 10) console.log(`     ... อีก ${tracked.length - 10} ไฟล์`);
+    console.log('   ย้ายงานไป branch ก่อน: git switch -c feat/<ชื่องาน> แล้วรัน npm run handoff อีกรอบ');
+  }
+  if (untracked) {
+    // ไฟล์ untracked ในทรีหลักมักเป็นของที่ session อื่นทิ้งไว้ (เช่น ภาพหน้าจอ) ไม่ใช่งานที่ต้องส่งต่อ
+    // ถ้านับเป็นความล้มเหลว handoff จะแดงทุกวันจนคนเลิกอ่านผล ⇒ แจ้งให้เห็นอย่างเดียว
+    console.log(`\n⚠️  มีไฟล์ใหม่ที่ยังไม่อยู่ใน git ${untracked} ไฟล์ — ไม่ข้ามเครื่อง (ดูรายการด้วย git status)`);
+  }
+
+  const ahead = Number(tryRun(['rev-list', '--count', 'origin/master..HEAD']) ?? 0);
+  if (ahead) {
+    codeOk = false;
+    console.log(`\n❌ ${branch} ในเครื่องมี ${ahead} commit ที่ไม่มีบน origin — handoff ไม่ push ให้เพราะจะ deploy ทันที`);
+    console.log('   ย้ายไป branch แล้วเปิด PR: git switch -c feat/<ชื่องาน>');
+  }
+} else {
+  const dirty = run(['status', '--porcelain', '-uall']);
+  if (dirty) {
+    console.log(`\nไฟล์ที่จะเก็บขึ้นไป (${dirty.split('\n').length} รายการ):`);
+    show(['status', '--short', '-uall']);
+
+    run(['add', '-A']);
+
+    // กันเคสที่ทุกอย่างที่เปลี่ยนถูก gitignore ⇒ add แล้วไม่มีอะไรใน index จริง
+    const staged = run(['diff', '--cached', '--name-only']);
+    if (!staged) {
+      console.log('\n(ไฟล์ที่เปลี่ยนถูก gitignore ทั้งหมด — ไม่มีอะไรต้อง commit)');
+    } else {
+      const msg = `wip(handoff): ${stamp()}`;
+      run(['commit', '-m', msg]);
+      console.log(`\n✅ commit แล้ว: ${msg}`);
+    }
   } else {
-    const msg = `wip(handoff): ${hostname()} @ ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
-    run(['commit', '-m', msg]);
-    console.log(`\n✅ commit แล้ว: ${msg}`);
+    console.log('\nไม่มีของค้าง — ข้ามขั้น commit');
   }
-} else {
-  console.log('\nไม่มีของค้าง — ข้ามขั้น commit');
-}
 
-/* ── push ─────────────────────────────────────────────────────────── */
-const upstream = (() => {
-  try {
-    return run(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
-  } catch {
-    return null;
+  const upstream = tryRun(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+  const ahead = upstream ? Number(run(['rev-list', '--count', `${upstream}..HEAD`])) : null;
+  if (upstream && ahead === 0) {
+    console.log(`✅ ${branch} ตรงกับ ${upstream} อยู่แล้ว ไม่ต้อง push`);
+  } else {
+    console.log(`\nกำลัง push ${branch} ขึ้น origin...`);
+    // push โค้ดพลาด (เน็ตหลุด / branch แตกสาย) ต้องไม่ทำให้ขั้น memory ข้างล่างถูกข้ามไปด้วย
+    // เดิม execFileSync โยน error ออกไปทั้งสคริปต์ ⇒ memory ไม่ถูกแตะเลยแม้จะส่งได้
+    try {
+      show(['push', '-u', 'origin', 'HEAD']);
+    } catch {
+      codeOk = false;
+      console.log(`⚠️  push ${branch} ไม่สำเร็จ — โค้ดยังอยู่แค่เครื่องนี้ (จะลองเก็บ memory ต่อให้)`);
+    }
   }
-})();
-
-const ahead = upstream ? Number(run(['rev-list', '--count', `${upstream}..HEAD`])) : null;
-if (upstream && ahead === 0) {
-  console.log(`✅ ${branch} ตรงกับ ${upstream} อยู่แล้ว ไม่ต้อง push`);
-} else {
-  console.log(`\nกำลัง push ${branch} ขึ้น origin...`);
-  show(['push', '-u', 'origin', 'HEAD']);
 }
 
 /* ── repo ความจำของ AI ที่ต้องเก็บขึ้น cloud ด้วย ──────────────────── */
@@ -133,31 +172,35 @@ if (upstream && ahead === 0) {
 //   Claude — memory กองอยู่เครื่องเดียว 34 ไฟล์ 3 สัปดาห์ (2026-09-07 → 09-26)
 //   Codex  — 1,397 KB ไม่เคยขึ้น cloud เลยตั้งแต่ติดตั้ง (repo ไม่มี remote)
 // ไปนั่งอีกเครื่องแล้ว AI ไม่รู้เรื่องงานช่วงนั้น แล้วเสนอของที่เคยตัดทิ้งไปแล้วซ้ำ
-//
-// pathspec = 'claude-memory' เพราะ devconfig มี env/.env.local ปนอยู่ ซึ่งต้องไปทาง env:push
-// pathspec = null แปลว่าทั้ง repo คือ memory (ของ Codex)
-const syncMemoryRepo = ({ dir, label, pathspec, missingHint, optional = false }) => {
-  if (!isDevconfigRepo(dir)) {
+const syncMemoryRepo = (repo) => {
+  const { label, pathspec, optional } = repo;
+  if (!repo.present) {
     // optional = เครื่องนี้อาจไม่ได้ใช้ AI ตัวนั้น ไม่ควรทำให้ handoff ทั้งคำสั่งถือว่าล้มเหลว
     if (optional) return true;
-    console.log(`\n⚠️  ไม่พบ repo ${label} ที่ ${dir}`);
-    console.log(`    ${missingHint}`);
+    console.log(`\n⚠️  ไม่พบ repo ของ ${label} ที่ ${repo.dir}`);
+    console.log(`    ${repo.missingHint}`);
     return false;
   }
 
-  const g = (args, opts = {}) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', ...opts });
-  const scope = pathspec ? ['--', pathspec] : [];
-  let ok = true;
+  const g = (args, opts) => gitIn(repo, args, opts);
 
-  const pending = g(['status', '--porcelain', '-uall', ...scope]).stdout.split('\n').filter(Boolean);
+  // ไม่มี upstream = commit ไปก็ไม่มีที่ให้ push ⇒ ตรวจก่อนแตะอะไร
+  // Codex ล้าง .git ของตัวเองจน remote หาย (2026-09-28) ⇒ ตัวที่ optional เตือนแล้วข้าม ไม่ commit ลง repo ของมัน
+  if (g(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).status !== 0) {
+    console.log(`\n⚠️  ${label} ไม่มี upstream — ${repo.missingHint}`);
+    return optional;
+  }
+
+  const scope = pathspec ? ['--', pathspec] : [];
+  const pending = lines(g(['status', '--porcelain', '-uall', ...scope]).stdout);
   if (pending.length) {
     // ls-files ให้ path ดิบ ไม่ต้องแกะคอลัมน์สถานะและไม่โดน core.quotepath หนีอักขระ
-    const files = g(['ls-files', '-mo', '--exclude-standard', ...scope]).stdout.split('\n').filter(Boolean);
+    const files = lines(g(['ls-files', '-mo', '--exclude-standard', ...scope]).stdout);
 
     // ด่านคีย์: handoff push ให้เองโดยคนไม่ได้อ่านก่อน จึงต้องมีตัวกันแทนสายตาคน
     const hits = scanForSecrets((f) => {
       try {
-        return readFileSync(join(dir, f), 'utf8');
+        return readFileSync(join(repo.dir, f), 'utf8');
       } catch {
         return null;
       }
@@ -169,61 +212,72 @@ const syncMemoryRepo = ({ dir, label, pathspec, missingHint, optional = false })
       die(`หยุดก่อน ยังไม่ commit อะไรใน ${label}`, 'ลบค่าคีย์ออกจากไฟล์พวกนี้ก่อน แล้วรัน npm run handoff ใหม่');
     }
 
-    console.log(`\nเก็บ ${label} ${pending.length} ไฟล์ขึ้น origin...`);
+    console.log(`\nเก็บ ${label} ${pending.length} ไฟล์...`);
     g(['add', '--', pathspec ?? '.']);
-    const msg = `memory: ${hostname()} @ ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
-    if (g(['commit', '-m', msg], { stdio: 'inherit' }).status !== 0) {
-      ok = false;
+    const msg = `memory: ${stamp()}`;
+    if (g(['commit', '-q', '-m', msg]).status !== 0) {
       console.log(`⚠️  commit ${label} ไม่สำเร็จ`);
-    } else {
-      console.log(`✅ commit แล้ว: ${msg}`);
+      return false;
     }
+    console.log(`✅ commit แล้ว: ${msg}`);
   }
+
+  // ของที่อีกเครื่อง push ไว้ต้องรวมเข้ามาก่อน ไม่งั้น push ถูกปฏิเสธแล้วความจำค้างเครื่องเดียวต่อ
+  const up = integrateUpstream(repo);
+  if (!up.ok) {
+    if (up.reason === 'fetch') {
+      console.log(`⚠️  ติดต่อ origin ของ ${label} ไม่ได้ — เน็ตหลุด? ความจำยังอยู่แค่เครื่องนี้`);
+      if (up.detail) console.log(`    ${up.detail}`);
+    } else if (up.reason === 'dirty') {
+      console.log(`⚠️  ${label} มีไฟล์นอกขอบเขตที่ handoff แตะแก้ค้างอยู่ จึงรวมของจากอีกเครื่องไม่ได้:`);
+      for (const f of up.files) console.log(`     ${f}`);
+      console.log('    commit หรือคืนค่าไฟล์พวกนี้เองก่อน แล้วรัน npm run handoff ใหม่');
+    } else if (up.reason === 'conflict') {
+      console.log(`⚠️  ${label}: 2 เครื่องแก้ไฟล์เดียวกันคนละแบบ — ยกเลิกการรวมแล้ว ของเครื่องนี้ยังอยู่ครบ (commit ไว้ในเครื่องแล้ว)`);
+      console.log(`    ไฟล์ที่ชน: ${up.files.length ? up.files.join(', ') : '(ดูด้วย git status)'}`);
+      console.log('    ให้ Claude ช่วยรวม 2 ฝั่ง แล้วรัน npm run handoff ใหม่');
+    }
+    return false;
+  }
+  if (up.behind) console.log(`✅ รับ ${label} จากอีกเครื่อง ${up.behind} commit มารวมแล้ว`);
 
   // push แยกจาก commit เสมอ — รอบก่อนอาจ commit ไว้แล้วแต่ push ไม่ผ่าน
-  const aheadRes = g(['rev-list', '--count', '@{u}..HEAD']);
-  const n = aheadRes.status === 0 ? Number(aheadRes.stdout.trim()) : null;
-  if (n === null) {
-    ok = false;
-    console.log(`⚠️  ${label} ไม่มี upstream — ตรวจว่าต่อ remote ไว้ถูกหรือยัง`);
-  } else if (n > 0) {
+  const n = Number(g(['rev-list', '--count', '@{u}..HEAD']).stdout.trim()) || 0;
+  if (n > 0) {
     console.log(`push ${label} (${n} commit)...`);
     if (g(['push'], { stdio: 'inherit' }).status !== 0) {
-      ok = false;
       // จุดที่เคยพังเงียบมาแล้ว ห้ามปล่อยผ่านเป็นความสำเร็จเด็ดขาด
       console.log(`⚠️  push ${label} ไม่สำเร็จ — ความจำยังอยู่แค่เครื่องนี้`);
+      return false;
     }
+    console.log(`✅ ${label} ขึ้น origin แล้ว`);
+  } else if (!pending.length && !up.behind) {
+    console.log(`\n✅ ${label} ตรงกับ origin อยู่แล้ว`);
   }
-  return ok;
+  return true;
 };
 
-// เรียกแยกบรรทัด ไม่ใช้ && เพราะถ้าตัวแรกพังต้องยังพยายามเก็บตัวที่สองให้ครบ
-const claudeOk = syncMemoryRepo({
-  dir: findDevconfig(),
-  label: 'memory ของ Claude (devconfig)',
-  pathspec: 'claude-memory',
-  missingHint: 'memory ของ Claude จะไม่ข้ามเครื่อง — เก็บไว้ที่อื่น? ตั้งตัวแปร SMARTLOCAL_DEVCONFIG',
-});
-const codexOk = syncMemoryRepo({
-  dir: findCodexMemory(),
-  label: 'memory ของ Codex',
-  pathspec: null, // ทั้ง repo คือ memory ไม่มีอย่างอื่นปน
-  missingHint: 'ต่อ remote ให้ ~/.codex/memories ก่อน หรือตั้งตัวแปร SMARTLOCAL_CODEX_MEMORY',
-  optional: true, // เครื่องที่ไม่ได้ลง Codex ไม่ควรถูกนับว่า handoff ล้มเหลว
-});
-const devconfigOk = claudeOk && codexOk;
+// วนให้ครบทุกตัวแม้ตัวแรกพัง ต้องยังพยายามเก็บตัวที่เหลือ
+const memOk = memoryRepos()
+  .map((r) => syncMemoryRepo(r))
+  .every(Boolean);
 
-/* ── ตรวจซ้ำว่าไม่มีอะไรตกค้าง ──────────────────────────────────── */
-const left = run(['status', '--porcelain', '-uall']);
+/* ── สรุป ─────────────────────────────────────────────────────────── */
+const left = onMaster ? '' : run(['status', '--porcelain', '-uall']);
 console.log('');
 if (left) {
   console.log('⚠️  ยังมีของค้างอยู่ (ผิดปกติ — ตรวจดูก่อนปิดเครื่อง):');
   console.log(left);
-} else if (!devconfigOk) {
-  console.log('⚠️  โค้ดขึ้น origin แล้ว แต่ memory ยังไม่ครบ — แก้ให้จบก่อนไปอีกเครื่อง');
-  console.log(`   ไม่งั้นที่นั่น Claude จะไม่รู้เรื่องที่คุยกันไว้`);
-} else {
-  console.log(`✅ เรียบร้อย — ไปที่อีกเครื่องแล้วรัน:  npm run resume ${branch}`);
+}
+if (!codeOk) {
+  console.log('❌ โค้ดยังไม่ขึ้น origin ครบ (ดูรายการข้างบน) — memory จัดการให้แล้วตามผลด้านบน');
+}
+if (!memOk) {
+  console.log('⚠️  memory ยังไม่ครบ — แก้ให้จบก่อนไปอีกเครื่อง');
+  console.log('   ไม่งั้นที่นั่น AI จะไม่รู้เรื่องที่คุยกันไว้');
+}
+if (codeOk && memOk && !left) {
+  console.log(`✅ เรียบร้อย — ไปที่อีกเครื่องแล้วรัน:  npm run resume${onMaster ? '' : ` ${branch}`}`);
 }
 console.log('');
-process.exit(devconfigOk ? 0 : 1);
+process.exit(codeOk && memOk ? 0 : 1);
