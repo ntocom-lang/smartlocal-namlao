@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Luggage, Store, RefreshCw, Loader2, Plus, Camera, Pencil, Trash2, X } from 'lucide-react'
+import { Luggage, Store, RefreshCw, Loader2, Plus, Camera, Pencil, Trash2, X, MapPin } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import ServiceUrlHint from '../common/ServiceUrlHint'
 import { compressImage } from '../../lib/imageUtils'
@@ -8,6 +8,7 @@ import { uploadFile } from '../../lib/driveStorage'
 import { driveFolderPath, DRIVE_MODULES } from '../../lib/driveFolders'
 import BusinessRegistrationAdmin from './BusinessRegistrationAdmin'
 import TourismPlacePreview from './TourismPlacePreview'
+import MapPicker from '../MapPicker'
 import OpeningHoursEditor from './OpeningHoursEditor'
 import { parseCoords, hoursToRows, rowsToHours, rowsAreValid, serviceUrlBlocked } from '../../lib/tourismPlaces'
 
@@ -184,6 +185,7 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
   // คอลัมน์ชุดใหม่ (เวลาทำการ/พิกัด/แนะนำ) มาจาก migration 20260906110000 — ถ้า อปท. ไหน
   // ยังไม่ได้รัน ให้ซ่อนช่องกรอกไปเลย ดีกว่าปล่อยให้กดบันทึกแล้วเจอ PGRST204 โดยไม่รู้สาเหตุ
   const [hasNewCols, setHasNewCols] = useState(null)
+  const [showPinPicker, setShowPinPicker] = useState(false)
   const [placesPage, setPlacesPage]         = useState(0)
   const [placesPageSize, setPlacesPageSize] = useState(20)
   // เก็บเป็น id ไม่ใช่ทั้งแถว — พอกดซ่อน/แสดงใน modal แล้ว places อัปเดต ป้ายในพรีวิวจะตามทันที
@@ -227,7 +229,7 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
     return currentUserRole === 'staff' && !!currentUserId && place.created_by === currentUserId
   }
 
-  function openAdd() { setForm(EMPTY_FORM); setSheet('add') }
+  function openAdd() { setForm(EMPTY_FORM); setShowPinPicker(false); setSheet('add') }
   function openEdit(place) {
     if (!canManagePlace(place)) return
     setForm({
@@ -241,9 +243,10 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
       is_featured: place.is_featured ?? false, hours_note: place.hours_note || '',
       hoursEnabled: !!place.opening_hours, hoursRows: hoursToRows(place.opening_hours),
     })
+    setShowPinPicker(false)
     setSheet(place.id)
   }
-  function closeSheet() { setSheet(null) }
+  function closeSheet() { setShowPinPicker(false); setSheet(null) }
 
   // แปลงค่าจากฟอร์มเป็น payload ของคอลัมน์ชุดใหม่ (คืน {} ถ้ายังไม่ได้รัน migration)
   function extraFields() {
@@ -278,6 +281,19 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
     }
     if (form.hoursEnabled && !rowsAreValid(form.hoursRows)) return 'เวลาทำการต้องอยู่ในรูปแบบ ชั่วโมง:นาที เช่น 08:30'
     return null
+  }
+
+  // รับพิกัดจากตัวเลือกหมุด — ตัดทศนิยมที่ 6 ตำแหน่ง (~0.1 เมตร) พอสำหรับหมุดร้านค้า
+  // และกันไม่ให้ค่าทศนิยมยาวเหยียดจาก Google Maps ไปกองใน DB
+  function handleConfirmPin(pos) {
+    if (pos && Number.isFinite(Number(pos.lat)) && Number.isFinite(Number(pos.lng))) {
+      setForm(p => ({
+        ...p,
+        latitude: Number(Number(pos.lat).toFixed(6)),
+        longitude: Number(Number(pos.lng).toFixed(6)),
+      }))
+    }
+    setShowPinPicker(false)
   }
 
   function fillCoordsFromMapsUrl() {
@@ -406,6 +422,7 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
 
   const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
   const isAdd = sheet === 'add'
+  const hasPin = String(form.latitude).trim() !== '' && String(form.longitude).trim() !== ''
 
   const placesTotalPages = placesPageSize === 'all' ? 1 : Math.max(1, Math.ceil(places.length / placesPageSize))
   const placesCurrentPage = Math.min(placesPage, placesTotalPages - 1)
@@ -668,21 +685,52 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
 
                 {hasNewCols && (
                   <>
-                    <div className="flex gap-2">
-                      <input value={form.latitude} inputMode="decimal"
-                        onChange={e => setForm(p => ({ ...p, latitude: e.target.value }))}
-                        placeholder="ละติจูด (เช่น 18.1234)" className={inputCls} />
-                      <input value={form.longitude} inputMode="decimal"
-                        onChange={e => setForm(p => ({ ...p, longitude: e.target.value }))}
-                        placeholder="ลองจิจูด (เช่น 100.5432)" className={inputCls} />
-                    </div>
-                    <button type="button" onClick={fillCoordsFromMapsUrl}
-                      className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600">
-                      ดึงพิกัดจากลิงก์ Google Maps ด้านบน
-                    </button>
-                    <p className="text-[11px] text-gray-400 leading-relaxed">
-                      พิกัดใช้เรียงลำดับ &quot;ใกล้ฉัน&quot; และปุ่มนำทางฝั่งประชาชน ถ้าไม่กรอกจะใช้ลิงก์ Google Maps แทน
-                    </p>
+                    {hasPin ? (
+                      <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-200 bg-white">
+                        <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                          <MapPin size={15} className="text-blue-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] text-gray-400">พิกัด</p>
+                          <p className="text-sm font-medium text-gray-800">
+                            {Number(form.latitude).toFixed(5)}, {Number(form.longitude).toFixed(5)}
+                          </p>
+                        </div>
+                        <div className="flex gap-1.5 shrink-0">
+                          <a href={`https://maps.google.com/?q=${form.latitude},${form.longitude}`}
+                            target="_blank" rel="noreferrer"
+                            className="text-xs font-semibold px-2 py-1 bg-blue-100 text-blue-700 rounded-lg">เปิดแผนที่</a>
+                          <button type="button" onClick={() => setShowPinPicker(true)}
+                            className="text-xs font-semibold px-2 py-1 rounded-lg bg-orange-100 text-orange-700">
+                            แก้ไขหมุด
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-orange-200 bg-orange-50/50">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
+                            <MapPin size={15} className="text-orange-400" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[13px] text-orange-600 font-medium">ยังไม่มีพิกัด</p>
+                            <p className="text-xs text-gray-400">ใช้เรียง &quot;ใกล้ฉัน&quot; และปุ่มนำทางฝั่งประชาชน</p>
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => setShowPinPicker(true)}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-orange-500 text-white hover:bg-orange-600 transition-colors shrink-0">
+                          ปักหมุด
+                        </button>
+                      </div>
+                    )}
+
+                    {/* ทางลัดที่โผล่เฉพาะตอนมีประโยชน์: ยังไม่มีหมุด แต่ลิงก์ Maps ด้านบนมีตัวเลขพิกัดอยู่แล้ว */}
+                    {!hasPin && parseCoords({ maps_url: form.maps_url }) && (
+                      <button type="button" onClick={fillCoordsFromMapsUrl}
+                        className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600">
+                        ใช้พิกัดจากลิงก์ Google Maps ด้านบน
+                      </button>
+                    )}
 
                     <div className="flex gap-2">
                       <input value={form.village_no}
@@ -775,6 +823,17 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
                   </div>
                 )}
               </div>
+
+              {showPinPicker && (
+                <div className="fixed inset-0 z-9999">
+                  <MapPicker
+                    initialPos={hasPin ? { lat: Number(form.latitude), lng: Number(form.longitude) } : null}
+                    fallbackPos={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
+                    onConfirm={handleConfirmPin}
+                    onClose={() => setShowPinPicker(false)}
+                  />
+                </div>
+              )}
 
               <div className="flex gap-2 pb-2">
                 <button onClick={handleSave} disabled={saving || !form.name.trim()}
