@@ -313,23 +313,50 @@ serve(async (req) => {
       line: `• ${bangkokText(at)} — สถานีตัวอย่าง ต.ตัวอย่าง อ.${escapeHtml(tenant.district ?? '', 40)} จ.${escapeHtml(tenant.province ?? '', 40)} [ข้อความตัวอย่าง] ล้นตลิ่งแล้ว 10 ซม.`,
     })
   } else {
-    // ── A + C + D + E: ค่าล่าสุดของทุกสถานี (ย้อน 3 วันให้พอกับหน้าต่างค่าก่อนหน้าของอ่าง) ──
+    // ── A + C + D + E: ค่าล่าสุดของทุกสถานี + ค่าก่อนหน้าของสถานีที่ต้องเทียบชั้น ──
+    //
+    // ⚠️ แยกเป็น 2 คำสั่งโดยตั้งใจ ห้ามยุบกลับเป็นคำสั่งเดียว: PostgREST คืนสูงสุด 1,000 แถวต่อคำสั่ง
+    // และตัดเงียบๆ ไม่แจ้ง error · สถานีฝนรายงานรายชั่วโมง 3 วันรวมกันเกิน 1,600 แถวอยู่แล้ว
+    // (วัดจริง 2569-09-28: 2,016 แถว) ถ้าดึงรวมกัน แถว "เมื่อวาน" ของอ่างจะถูกตัดทิ้งทั้งหมด
+    // แล้วระบบจะเข้าใจว่าไม่มีค่าก่อนหน้า → ส่งคำเตือนผิดว่าอ่างเพิ่งข้ามชั้น (เกิดขึ้นจริงมาแล้ว)
     if (stations.length) {
-      const since = new Date(now - DAM_PREV_MAX_MS).toISOString()
-      const { data: readings, error: readingError } = await admin
-        .from('water_readings')
-        .select('station_config_id, recorded_at, rain_24h_mm, situation_level, situation_text, bank_diff_m, storage_percent, dam_storage_mcm, dam_capacity_mcm, dam_inflow_mcm, dam_released_mcm')
-        .in('station_config_id', stations.map(s => s.id))
-        .gte('recorded_at', since)
-        .order('recorded_at', { ascending: false })
-      if (readingError) return json({ ok: false, error: cleanText(readingError.message, 300) }, 500)
       const latest = new Map<string, Record<string, unknown>>()
       const history = new Map<string, Record<string, unknown>[]>()
-      for (const r of readings ?? []) {
-        if (!latest.has(r.station_config_id)) latest.set(r.station_config_id, r)
-        const list = history.get(r.station_config_id) ?? []
+      const COLUMNS = 'station_config_id, recorded_at, rain_24h_mm, situation_level, situation_text, bank_diff_m, storage_percent, dam_storage_mcm, dam_capacity_mcm, dam_inflow_mcm, dam_released_mcm'
+      const ROW_CAP = 1000
+
+      const fetchReadings = async (ids: string[], sinceMs: number) => {
+        if (!ids.length) return { rows: [] as Record<string, unknown>[], error: null as string | null }
+        const { data, error } = await admin
+          .from('water_readings')
+          .select(COLUMNS)
+          .in('station_config_id', ids)
+          .gte('recorded_at', new Date(now - sinceMs).toISOString())
+          .order('recorded_at', { ascending: false })
+        if (error) return { rows: [], error: cleanText(error.message, 300) }
+        const rows = (data ?? []) as Record<string, unknown>[]
+        // ชนเพดานเมื่อไรแปลว่าข้อมูลถูกตัด ผลที่ได้จะเชื่อไม่ได้ — หยุดดีกว่าส่งคำเตือนผิด
+        if (rows.length >= ROW_CAP) return { rows, error: `water_readings ถูกตัดที่ ${rows.length} แถว — ต้องแบ่งคำสั่งให้เล็กลง` }
+        return { rows, error: null }
+      }
+
+      // สถานีฝน/ews ใช้แค่ค่าล่าสุด จึงย้อนเท่าหน้าต่างความสดที่ยาวที่สุดของสองชนิดนี้พอ
+      const quickIds = stations.filter(s => s.station_type === 'rain' || s.station_type === 'ews').map(s => s.id)
+      // สถานีระดับน้ำ/อ่างต้องมีประวัติไว้เทียบว่าข้ามชั้นหรือยัง จึงย้อนเท่าหน้าต่างค่าก่อนหน้าของอ่าง
+      const historyIds = stations.filter(s => s.station_type === 'waterlevel' || s.station_type === 'dam').map(s => s.id)
+      const [quick, deep] = await Promise.all([
+        fetchReadings(quickIds, EWS_FRESH_HOURS * HOUR),
+        fetchReadings(historyIds, DAM_PREV_MAX_MS),
+      ])
+      if (quick.error) return json({ ok: false, error: quick.error }, 500)
+      if (deep.error) return json({ ok: false, error: deep.error }, 500)
+
+      for (const r of [...quick.rows, ...deep.rows]) {
+        const id = String(r.station_config_id)
+        if (!latest.has(id)) latest.set(id, r)
+        const list = history.get(id) ?? []
         list.push(r)
-        history.set(r.station_config_id, list)
+        history.set(id, list)
       }
       // ค่าก่อนหน้าไว้เทียบว่าข้ามชั้นหรือยัง — เลือกแถวที่อยู่ในหน้าต่างเดียวกับ RPC ของหน้าเว็บ
       // (readings เรียงใหม่ไปเก่าแล้ว แถวแรกที่เข้าหน้าต่างคือค่าที่ใกล้ที่สุด)
@@ -381,6 +408,9 @@ serve(async (req) => {
           if (rank === null) continue
           const prev = previousOf(s.id, recordedAt, DAM_PREV_MIN_MS, DAM_PREV_MAX_MS)
           const prevRank = prev ? damRank(prev.storage_percent) : null
+          // ข้อมูลอ่างเป็นรายวันและมาสม่ำเสมอ ไม่มีค่าเมื่อวานให้เทียบ = ผิดปกติของระบบเรา ไม่ใช่ของอ่าง
+          // เทียบชั้นไม่ได้ก็ห้ามเดาว่า "เพิ่งข้ามชั้น" (เคยส่งคำเตือนผิด 3 กลุ่มมาแล้วเพราะข้อนี้)
+          if (prevRank === null) continue
           const percent = Number(r.storage_percent)
           const volume = [
             r.dam_storage_mcm !== null && `ปริมาตร ${numText(r.dam_storage_mcm)}${r.dam_capacity_mcm !== null ? `/${numText(r.dam_capacity_mcm)}` : ''} ล้าน ลบ.ม.`,
