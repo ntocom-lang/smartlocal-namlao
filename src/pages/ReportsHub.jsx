@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowLeft, ClipboardList, ShieldCheck, Database, ChevronRight, FileBarChart } from 'lucide-react'
+import { ArrowLeft, ClipboardList, ShieldCheck, Database, ChevronRight, FileBarChart, Eye } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 
 // ชื่อการ์ด 2 อันแรกตั้งตามถ้อยคำในแบบวัด OIT ของ ITA ข้อ e-Service ("รายงานสถิติข้อมูล
@@ -26,6 +26,13 @@ const REPORTS = [
     href: '/data-center/public',
     Icon: Database,
     iconBg: 'bg-sky-500',
+  },
+  {
+    label: 'สถิติการเข้าชมเว็บไซต์',
+    desc: 'จำนวนการเข้าชมรายวันและรายเดือน แยกตามปีงบประมาณ',
+    href: '/reports/visitors',
+    Icon: Eye,
+    iconBg: 'bg-violet-500',
   },
 ]
 

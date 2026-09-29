@@ -18,6 +18,7 @@ import { fetchProfile } from './lib/profileFetch'
 import { Phone, UserRound } from 'lucide-react'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from './lib/thaiName'
 import { recordVisit } from './lib/menuUsage'
+import { scheduleSiteOpen } from './lib/siteOpenCounter'
 import { BASENAME } from './lib/basename'
 
 const HomePage = lazyWithRetry(() => import('./pages/HomePage'))
@@ -53,6 +54,7 @@ const MyDocRequests = lazyWithRetry(() => import('./pages/MyDocRequests'))
 const LpaDocStats = lazyWithRetry(() => import('./pages/LpaDocStats'))
 const ComplaintStats = lazyWithRetry(() => import('./pages/ComplaintStats'))
 const ReportsHub = lazyWithRetry(() => import('./pages/ReportsHub'))
+const VisitorStats = lazyWithRetry(() => import('./pages/VisitorStats'))
 const PostsPage = lazyWithRetry(() => import('./pages/PostsPage'))
 const FleetPage = lazyWithRetry(() => import('./pages/FleetPage'))
 const PatientTransportBooking = lazyWithRetry(() => import('./pages/PatientTransportBooking'))
@@ -407,6 +409,11 @@ function AppShell() {
   useEffect(() => {
     recordVisit(location.pathname)
   }, [location.pathname])
+
+  // นับการเข้าชมเว็บไซต์ (ตัวนับท้ายเว็บ + /reports/visitors) ทุกครั้งที่หน้าแสดงผล รวมรีเฟรชและ
+  // เปลี่ยนหน้า — pathname อยู่ใน deps เพื่อให้นับใหม่ทุกหน้า และ cleanup ยกเลิกหน้าที่ redirect ผ่านไป
+  // ก่อนครบเวลาหน่วง นิยามการนับกับสิ่งที่ตัดออกอยู่ที่ src/lib/siteOpenStats.js
+  useEffect(() => scheduleSiteOpen(tenantId), [tenantId, location.pathname])
   // ช่างยังใช้เมนูล่างของแอป (NAV_TECH) ได้ ต่างจาก /admin กับ /staff ที่ไม่มีเมนูล่างเลย
   const hideBottomNav = ['/admin', '/staff', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
 
@@ -687,6 +694,8 @@ function AppShell() {
           <Route path="/my-docs" element={<MyDocRequests />} />
           <Route path="/doc-stats" element={<LpaDocStats />} />
           <Route path="/reports/complaints" element={<ComplaintStats />} />
+          {/* อยู่ใต้โมดูล report อัตโนมัติ (prefix /reports ใน MODULE_ROUTES ของ staffModules.js) */}
+          <Route path="/reports/visitors" element={<VisitorStats />} />
           <Route path="/reports" element={<ReportsHub />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/news" element={<PostsPage />} />
