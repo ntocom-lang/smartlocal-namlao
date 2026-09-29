@@ -74,6 +74,10 @@ export default function PatientTransportStaff({ onBack } = {}) {
     return { ...args, p_op: op(JSON.stringify(args)) }
   }
   const amend = (booking, values, reason) => mutate('patient_booking_amend', amendArgs(booking, values, reason), 'แก้ข้อมูลตามที่ประสานแล้ว พร้อมเก็บประวัติ')
+  const updatePickup = (booking, pickup, lat, lng) => {
+    const args = { p_id: booking.id, p_revision: booking.revision, p_pickup: pickup, p_lat: lat, p_lng: lng, p_verified: true }
+    return mutate('patient_booking_update_pickup', { ...args, p_op: op(`pickup:${JSON.stringify(args)}`) }, 'แก้จุดรับแล้ว · ผู้จองและคนขับเห็นข้อมูลล่าสุดในระบบ')
+  }
   // ยืนยันรถคลิกเดียว = ตรวจแผน แล้วยืนยันต่อทันทีถ้าไม่มีปัญหา (คำสั่งเดิม 2 ตัว ใต้ล็อกเดียว)
   // ติดปัญหา → คืนแผนให้กล่องเปิดแผ่นแก้ · ปุ่มแก้ส่ง verifyArea/helper/amend/separate มาแล้วยืนยันต่อในรอบเดียว
   // ⚠️ ยังเป็นเจ้าหน้าที่กดเองทุกครั้ง ระบบไม่ยืนยันแทน (การยืนยันรถคือการตัดสินให้บริการแก่ประชาชน)
@@ -219,7 +223,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
       {(view === 'inbox' || (view === 'calendar' && calendarBookingId)) && isCoordinator && <BookingInbox key={calendarBookingId || 'inbox'} workspace={workspace} busy={busy} error={error} isAdmin={isAdmin} action={intakeButton}
         detailOnly={view === 'calendar'} initialOpenId={calendarBookingId} onCloseBooking={() => setCalendarBookingId(null)}
         currentUserId={uid} onOpenDriver={() => { setCalendarBookingId(null); setView('driver') }}
-        created={created} onClearCreated={() => setCreated(null)} onDelete={deleteBooking} onConfirm={confirm} onJoin={joinIntoTrip} onAction={action} onRemove={removePassenger} onAmend={amend}
+        created={created} onClearCreated={() => setCreated(null)} onDelete={deleteBooking} onConfirm={confirm} onJoin={joinIntoTrip} onAction={action} onRemove={removePassenger} onAmend={amend} onUpdatePickup={updatePickup}
         onRecordLetter={recordLetter} onPrintLetter={printLetter} onOdometer={recordOdometer} onReschedule={reschedule} onUpdateSchedule={updateSchedule}
         onReload={reload} onSettings={() => setView('settings')} />}
       {view === 'calendar' && isCoordinator && <StaffBookingCalendar workspace={workspace} onOpenBooking={setCalendarBookingId} />}

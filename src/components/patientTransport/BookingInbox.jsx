@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
+import MapPicker from '../MapPicker'
 import { ListCard, Pills, Sheet } from './StaffShell'
 import { AmendBooking, TripFundDocs, OdometerForm } from './BookingOperations'
 import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
@@ -236,9 +237,92 @@ function MoveIntoTrip({ booking, trip, passengers, workspace, busy, onReload }) 
   </div>
 }
 
-function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onReload }) {
+function ChangeHospital({ booking, trip, passengers, workspace, busy, onReload, onBack }) {
+  const { tenant } = useTenant()
+  const current = { trip: trip.id, revision: trip.revision, docs_revision: trip.docs_revision,
+    schedule_revision: trip.schedule_revision, settings_revision: workspace.settings.revision,
+    bookings: Object.fromEntries([...passengers].sort((a, b) => a.id.localeCompare(b.id)).map(b => [b.id, b.revision])) }
+  const [expected] = useState(current)
+  const [route, setRoute] = useState('')
+  const [scope, setScope] = useState('single')
+  const [operation, setOperation] = useState(() => crypto.randomUUID())
+  const [review, setReview] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+  const stale = JSON.stringify(current) !== JSON.stringify(expected)
+  const routes = (workspace.settings.routes || []).filter(r => r.id !== booking.route_id)
+  const selected = routes.find(r => r.id === route)
+  const reset = () => { setReview(false); setError(''); setOperation(crypto.randomUUID()) }
+  const save = async () => {
+    if (pending || busy || stale || saved || !selected) return
+    setPending(true); setError('')
+    try {
+      const { data, error: failure } = await supabase.rpc('patient_booking_change_hospital', {
+        p_muni: tenant.id, p_op: operation, p_booking: booking.id, p_expected: expected, p_route: route, p_scope: scope,
+      })
+      if (failure || !data?.saved) setError(failure?.message || 'ยังเปลี่ยนโรงพยาบาลไม่สำเร็จ กรุณาลองใหม่')
+      else { setSaved(true); await onReload() }
+    } catch { setError('ติดต่อระบบไม่สำเร็จ กรุณาโหลดข้อมูลล่าสุดเพื่อตรวจผลก่อนลองใหม่') }
+    finally { setPending(false) }
+  }
+  return <div className="space-y-3 rounded-xl border-2 border-sky-700 bg-sky-50 p-3">
+    <h3 className="font-bold">เปลี่ยนโรงพยาบาลก่อนรถออก</h3>
+    {saved ? <p role="status">เปลี่ยนโรงพยาบาลแล้ว ระบบแจ้งผู้จองและคนขับแล้ว กรุณาตรวจเวลารับล่าสุดและพิมพ์เอกสารใหม่</p> : <>
+      <p className="text-sm">โรงพยาบาลเดิม: {booking.route_label} · คงวันเวลานัดเดิม ระบบคำนวณเวลารับและตรวจรถว่างใหม่ ถ้าชนคิวอื่นจะไม่เปลี่ยนข้อมูล</p>
+      <label className="block">โรงพยาบาลที่ถูกต้อง<select className={inputClass} value={route} disabled={pending} onChange={e => { setRoute(e.target.value); reset() }}><option value="">เลือกโรงพยาบาล</option>{routes.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}</select></label>
+      {!routes.length && <p role="alert">ยังไม่มีโรงพยาบาลอื่นให้เลือก ให้แอดมินเพิ่มโรงพยาบาลในตั้งค่ารถรับ–ส่งผู้ป่วยก่อน</p>}
+      {passengers.length > 1 && <><label className="block">ผู้เดินทางที่เปลี่ยนโรงพยาบาล<select className={inputClass} value={scope} disabled={pending} onChange={e => { setScope(e.target.value); reset() }}><option value="single">เฉพาะ {booking.patient_name}</option><option value="all">ทั้งเที่ยว {passengers.length} คน</option></select></label>
+        <p className="text-sm">{scope === 'all' ? `เปลี่ยนทุกคน: ${passengers.map(b => b.patient_name).join(' · ')}` : 'ผู้ร่วมเที่ยวคนอื่นยังไปโรงพยาบาลเดิม ระบบจะแยกเที่ยวและตรวจเวลารถไม่ให้ทับกัน'}</p></>}
+      {stale && <p role="alert">คิวเปลี่ยนแล้ว กรุณาปิดฟอร์มและเปิดใหม่จากข้อมูลล่าสุด</p>}
+      {error && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900">{error}</p>}
+      {review ? <div className="space-y-3 rounded-xl border bg-white p-3"><p>ยืนยันเปลี่ยนเป็น <strong>{selected?.label}</strong> สำหรับ {scope === 'all' ? `ทั้งเที่ยว ${passengers.length} คน` : booking.patient_name} ใช่หรือไม่?</p><p className="text-sm">วันเวลานัด {dateTime(booking.appointment_at)} · เอกสารที่พิมพ์แล้วต้องพิมพ์ใหม่</p><button type="button" className={primaryClass} disabled={busy || pending || stale} onClick={save}>{pending ? 'กำลังตรวจคิว...' : 'ยืนยันเปลี่ยนโรงพยาบาล'}</button></div>
+        : <button type="button" className={primaryClass} disabled={!selected || busy || stale} onClick={() => setReview(true)}>ตรวจและเปลี่ยนโรงพยาบาล</button>}
+    </>}
+    <button type="button" className={buttonClass} disabled={pending} onClick={onBack}>ปิดฟอร์มเปลี่ยนโรงพยาบาล</button>
+  </div>
+}
+
+function PickupCorrection({ booking, busy, onSave, onBack }) {
+  const { tenant } = useTenant()
+  const [snapshot] = useState(booking)
+  const [pickup, setPickup] = useState(booking.pickup || '')
+  const [point, setPoint] = useState({ lat: booking.pickup_lat ?? null, lng: booking.pickup_lng ?? null })
+  const [verified, setVerified] = useState(false)
+  const [showMap, setShowMap] = useState(false)
+  const stale = booking.revision !== snapshot.revision
+  const changed = pickup.trim() !== booking.pickup || point.lat !== (booking.pickup_lat ?? null) || point.lng !== (booking.pickup_lng ?? null)
+  return <form className="space-y-3 rounded-xl border-2 border-sky-700 p-3" onSubmit={async e => {
+    e.preventDefault()
+    if (!busy && !stale && changed && verified && pickup.trim() && await onSave(snapshot, pickup.trim(), point.lat, point.lng)) onBack()
+  }}>
+    <h3 className="font-bold">แก้จุดรับก่อนรถออก</h3>
+    <p className="text-sm text-slate-700">แก้เฉพาะผู้เดินทางรายนี้ คิวและเวลารถเดิมไม่เปลี่ยน ระบบจะแจ้งคนขับกับผู้จองและเก็บประวัติไว้</p>
+    <label className="block">จุดรับที่ถูกต้อง
+      <textarea className={`${inputClass} min-h-20`} required maxLength={500} value={pickup} onChange={e => {
+        setPickup(e.target.value)
+        // A text correction must never leave the driver navigating to the old pin.
+        setPoint({ lat: null, lng: null }); setVerified(false)
+      }} />
+    </label>
+    <p className="text-sm text-slate-700">{point.lat === null ? 'ยังไม่มีหมุดสำหรับจุดรับใหม่นี้ · หากไม่ปักหมุด คนขับต้องโทรถามทาง' : `หมุดที่จะใช้: ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`}</p>
+    <div className="flex flex-wrap gap-2">
+      <button type="button" className={buttonClass} onClick={() => setShowMap(true)}>📍 {point.lat === null ? 'ปักหมุดใหม่' : 'แก้หมุด'}</button>
+      {point.lat !== null && <button type="button" className={buttonClass} onClick={() => { setPoint({ lat: null, lng: null }); setVerified(false) }}>เอาหมุดออก</button>}
+    </div>
+    <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" className="size-5 shrink-0" checked={verified} onChange={e => setVerified(e.target.checked)} />ตรวจแล้วว่าจุดรับใหม่นี้อยู่ในเขตบริการและแจ้งผู้เดินทางแล้ว</label>
+    {stale && <p role="alert" className="text-red-700">คำขอเปลี่ยนแล้ว กรุณาปิดฟอร์มแล้วเปิดใหม่เพื่อตรวจข้อมูลล่าสุด</p>}
+    <div className="flex flex-wrap gap-2"><button type="submit" className={primaryClass} disabled={busy || stale || !changed || !verified || !pickup.trim()}>บันทึกจุดรับใหม่</button><button type="button" className={buttonClass} disabled={busy} onClick={onBack}>ปิด</button></div>
+    {showMap && <MapPicker initialPos={point.lat === null ? null : point} fallbackPos={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null} autoLocate={false}
+      onConfirm={({ lat, lng, address }) => { setPoint({ lat, lng }); if (!pickup.trim()) setPickup(address || ''); setVerified(false); setShowMap(false) }} onClose={() => setShowMap(false)} />}
+  </form>
+}
+
+function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onReload }) {
   const { booking: b, trip, next, group } = row
   const [amending, setAmending] = useState(false)
+  const [correctingPickup, setCorrectingPickup] = useState(false)
+  const [changingHospital, setChangingHospital] = useState(false)
   const [scheduling, setScheduling] = useState(null)
   const [openedAt] = useState(() => Date.now())
   const passengers = trip ? workspace.bookings.filter(x => x.trip_id === trip.id && x.status !== 'cancelled') : []
@@ -249,6 +333,7 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
   const releasable = trip && (trip.state === 'confirmed' || (trip.state === 'issue' && trip.state_before_issue === 'confirmed')) && passengers.every(x => x.passenger_step === 0)
   const removable = b.status === 'confirmed' && [0, 2].includes(b.passenger_step) && next.id !== 'cancel'
   const submitted = b.status === 'submitted'
+  const canCorrectPickup = b.status === 'confirmed' && trip?.state === 'confirmed' && b.passenger_step === 0
   if (b.status === 'cancelled' || (!submitted && !trip) || trip?.state === 'cancelled') return null
   // ไม่มีงานเพิ่มเติมให้ทำ (เช่น เที่ยวจบแล้วแต่เอกสารยังเป็นงานหลักของแถว) = ไม่แสดงกล่องพับว่าง ๆ
   if (!submitted && !tripOpen && !(trip && next.id !== 'docs') && !removable && !releasable) return null
@@ -263,6 +348,10 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
         {b.requested_trip_id && <button type="button" className={buttonClass} disabled={busy} onClick={() => onConfirm(row, { ids: [b.id], separate: true })}>ยืนยันเป็นเที่ยวแยก (ไม่ร่วมเที่ยวที่ขอ)</button>}
         <ReasonAction busy={busy} title="ยกเลิกคำขอ" placeholder="เช่น ผู้จองแจ้งยกเลิกทางโทรศัพท์" button="ยกเลิกคำขอ" seenByCitizen onRun={note => act(b, 'cancel', note)} />
       </>}
+      {canCorrectPickup && !correctingPickup && <button type="button" className={buttonClass} disabled={busy} onClick={() => setCorrectingPickup(true)}>แก้จุดรับ / หมุด</button>}
+      {canCorrectPickup && !changingHospital && <button type="button" className={buttonClass} disabled={busy} onClick={() => setChangingHospital(true)}>เปลี่ยนโรงพยาบาล</button>}
+      {canCorrectPickup && changingHospital && <ChangeHospital booking={b} trip={trip} passengers={passengers} workspace={workspace} busy={busy} onReload={onReload} onBack={() => setChangingHospital(false)} />}
+      {canCorrectPickup && correctingPickup && <PickupCorrection booking={b} busy={busy} onSave={onUpdatePickup} onBack={() => setCorrectingPickup(false)} />}
       {canReschedule && scheduling !== 'reschedule' && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling('reschedule')}>{trip.state === 'confirmed' ? 'เปลี่ยนวันและเวลาเดินทาง' : 'กดออกรถผิด · เปลี่ยนวันเวลา'}</button>}
       {canMoveIntoTrip && scheduling !== 'move' && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling('move')}>ย้ายไปร่วมเที่ยวที่มีอยู่</button>}
       {inService && scheduling !== 'estimate' && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling('estimate')}>แจ้งรถล่าช้า / เวลารับล่าสุด</button>}
@@ -278,7 +367,7 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
   </details>
 }
 
-function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, currentUserId, onOpenDriver, onClose, onReload, onConfirm, onJoin, onOpen, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onSettings }) {
+function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, currentUserId, onOpenDriver, onClose, onReload, onConfirm, onJoin, onOpen, onAction, onRemove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onSettings }) {
   const { booking: b, trip, stage, next, group } = row
   const passengers = trip ? workspace.bookings.filter(x => x.trip_id === trip.id && x.status !== 'cancelled') : []
   const others = (trip ? passengers : group).filter(x => x.id !== b.id)
@@ -332,12 +421,12 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
       <button type="button" className={primaryClass} disabled={busy} onClick={() => act(b, 'ready_return')}>แจ้งพร้อมให้มารับกลับแทนผู้จอง</button>
     </div>}
     <Facts booking={b} trip={trip} others={others} />
-    <MoreActions row={row} workspace={workspace} busy={busy} onConfirm={onConfirm} act={act} remove={remove} onAmend={onAmend}
+    <MoreActions row={row} workspace={workspace} busy={busy} onConfirm={onConfirm} act={act} remove={remove} onAmend={onAmend} onUpdatePickup={onUpdatePickup}
       onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} onReload={onReload} />
   </Sheet>
 }
 
-export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, detailOnly = false, initialOpenId = null, currentUserId, onOpenDriver, onCloseBooking, onClearCreated, onDelete, onConfirm, onJoin, onAction, onRemove, onAmend, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onReload, onSettings }) {
+export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, detailOnly = false, initialOpenId = null, currentUserId, onOpenDriver, onCloseBooking, onClearCreated, onDelete, onConfirm, onJoin, onAction, onRemove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onReload, onSettings }) {
   const [deleting, setDeleting] = useState(null)
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteAttempted, setDeleteAttempted] = useState(false)
@@ -403,7 +492,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   const pills = <Pills value={filter} onChange={setFilter} label="กรองคำขอรถ" items={PILLS.map(([id, label, color]) => ({ id, label, color, count: count(id) }))} />
   const sheet = open && <BookingSheet key={open.booking.id} row={open} rows={rows} workspace={workspace} problem={problem?.bookingId === open.booking.id ? problem : null}
     busy={busy} error={error} isAdmin={isAdmin} currentUserId={currentUserId} onOpenDriver={onOpenDriver} onClose={close} onReload={onReload} onConfirm={confirmRow} onJoin={joinRow}
-    onOpen={id => { setProblem(null); setOpenId(id) }} onAction={onAction} onRemove={onRemove} onAmend={onAmend} onRecordLetter={onRecordLetter}
+    onOpen={id => { setProblem(null); setOpenId(id) }} onAction={onAction} onRemove={onRemove} onAmend={onAmend} onUpdatePickup={onUpdatePickup} onRecordLetter={onRecordLetter}
     onPrintLetter={onPrintLetter} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} onSettings={() => { close(); onSettings() }} />
   if (detailOnly) return sheet
   return <ListCard title="คำขอรถ" count={rows.length} search={search} onSearch={setSearch} searchLabel="ค้นหาชื่อ เบอร์ จุดรับ โรงพยาบาล เลขที่" action={action} pills={pills}>
