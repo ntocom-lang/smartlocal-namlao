@@ -153,7 +153,7 @@ function IssueReport({ busy, contactPhone, onReport }) {
 
 // การ์ดเที่ยวของคนขับ: เวลา · โรงพยาบาล · ผู้เดินทาง (โทร/นำทาง) · แถบขั้น · ปุ่มใหญ่ปุ่มเดียว
 // upcoming = เที่ยวที่ยังไม่ถึงวัน แสดงไว้ให้เตรียมตัว/โทรนัด แต่ไม่มีปุ่มบันทึก กันกดผิดเที่ยว
-function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance, onAction }) {
+function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance, onAction, driverAssignment, canOperate = true }) {
   const people = bookings.filter(b => b.trip_id === t.id && b.status !== 'cancelled')
   const label = driverNext(t, bookings)
   const pickupAt = t.estimated_pickup_at || t.plan?.pickup_at
@@ -164,6 +164,7 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
       <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${t.state === 'issue' ? 'bg-red-100 text-red-800' : 'bg-sky-100 text-sky-900'}`}>{TRIP_STATUS[t.state]}</span>
       <p className="text-lg font-bold">{whenLabel(pickupAt)} · ออกรับ {clockOf(pickupAt)} น.</p>
       <p className="font-semibold">🏥 {t.plan?.route_label}</p>
+      <p className="text-sm">คนขับประจำเที่ยว: <strong>{t.driver_name || 'รอโหลดชื่อ'}</strong></p>
       <p className="text-sm text-slate-600">{RETURN_MODES[t.plan?.return_mode]}{t.plan?.return_mode !== 'one_way' && backAt ? ` · รับกลับประมาณ ${clockOf(backAt)} น.` : ''}</p>
       {t.plan?.multiwave && <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">
         <strong>แผนวิ่งรถวันนี้</strong>
@@ -188,7 +189,7 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
       </li>
     })}</ol>
     {upcoming && <p className="text-sm text-slate-600">ปุ่มบันทึกจะขึ้นในวันเดินทาง</p>}
-    {!upcoming && <>
+    {!upcoming && canOperate && <>
       <DriverStepBar trip={t} />
       <p className="text-sm text-slate-600">บันทึกตอนออกรถและกลับถึงสำนักงานเมื่อมีอินเทอร์เน็ต ไม่ต้องกดระหว่างทาง</p>
       {t.state === 'issue'
@@ -200,36 +201,96 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
         </>}
       {t.state !== 'issue' && <IssueReport busy={busy} contactPhone={contactPhone} onReport={note => onAction(t, 'issue', note)} />}
     </>}
+    <DriverHistory trip={t} />
+    {driverAssignment}
   </article>
+}
+
+const assignmentExpected = trips => Object.fromEntries([...trips].sort((a, b) => a.id.localeCompare(b.id)).map(t => [t.id, {
+  revision: t.revision, docs_revision: t.docs_revision, driver_id: t.driver_id,
+}]))
+
+function DriverHistory({ trip }) {
+  if (!trip.driver_history?.length) return null
+  return <details className="rounded-xl border p-3 text-sm"><summary className="min-h-11 cursor-pointer font-semibold">ประวัติคนขับ</summary>
+    <ol className="space-y-2">{trip.driver_history.map((h, i) => <li key={`${h.at}:${i}`}>
+      <p>{dateTime(h.at)} · {h.phase === 'in_journey' ? 'ส่งมอบระหว่างเที่ยว' : 'เปลี่ยนก่อนออกรถ'}</p>
+      <p>{h.before?.name || 'คนขับเดิม'} → <strong>{h.after?.name || 'คนขับใหม่'}</strong></p>
+    </li>)}</ol>
+  </details>
+}
+
+function DriverAssignment({ trips, people, busy, onReassign, onDone, batch = false }) {
+  const [snapshot] = useState(() => assignmentExpected(trips))
+  const [driver, setDriver] = useState('')
+  const [handover, setHandover] = useState(false)
+  const [review, setReview] = useState(false)
+  const current = assignmentExpected(trips)
+  const stale = JSON.stringify(current) !== JSON.stringify(snapshot)
+  const target = people.find(p => p.id === driver)
+  const active = trips.some(t => t.state !== 'confirmed' && !(t.state === 'issue' && t.state_before_issue === 'confirmed'))
+  const many = batch
+  return <div className="space-y-3 rounded-xl border-2 border-sky-300 bg-sky-50 p-3">
+    <p className="font-bold">{many ? `จัดคนขับแทนวันนี้ · ${trips.length} เที่ยว` : 'เปลี่ยนคนขับเที่ยวนี้'}</p>
+    <p className="text-sm">คนขับเดิม: {trips[0].driver_name} · {many ? `วันที่ ${thaiDateFromDateInput(trips[0].plan.date)}` : `โรงพยาบาล ${trips[0].plan?.route_label}`}</p>
+    <label className="block">คนขับแทน<select aria-label="คนขับแทน" className={inputClass} value={driver} disabled={busy} onChange={e => { setDriver(e.target.value); setReview(false) }}>
+      <option value="">เลือกเจ้าหน้าที่ของหน่วยงาน</option>{people.filter(p => p.id !== trips[0].driver_id).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+    </select></label>
+    {active && <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5" checked={handover} onChange={e => setHandover(e.target.checked)} />ประสานส่งมอบรถและผู้ป่วยระหว่างเที่ยวแล้ว</label>}
+    {stale && <p role="alert">เที่ยวเปลี่ยนแล้ว กรุณาปิดฟอร์มและเปิดใหม่เพื่อตรวจข้อมูลล่าสุด</p>}
+    {many && <ul className="space-y-1 text-sm">{trips.map(t => <li key={t.id}>{clockOf(t.plan?.pickup_at)} น. · {t.plan?.route_label}</li>)}</ul>}
+    {review ? <div className="space-y-2 rounded-lg bg-white p-3"><p>ยืนยันมอบหมาย <strong>{target?.name}</strong> ขับแทน {many ? `${trips.length} เที่ยวในวันนี้` : 'เที่ยวนี้'}?</p>
+      <p className="text-sm">ระบบจะแจ้งผู้เกี่ยวข้อง เก็บชื่อคนขับเดิมในประวัติ และให้พิมพ์เอกสารใหม่</p>
+      <button type="button" className={primaryClass} disabled={!target || busy || stale || (active && !handover)} onClick={async () => {
+        const result = await onReassign({ trip: many ? null : trips[0].id, day: many ? trips[0].plan.date : null,
+          fromDriver: trips[0].driver_id, driver, expected: snapshot, midtrip: handover })
+        if (result) onDone()
+      }}>ยืนยันเปลี่ยนคนขับ</button></div> : <button type="button" className={primaryClass} disabled={!target || busy || stale || (active && !handover)} onClick={() => setReview(true)}>ตรวจและเปลี่ยนคนขับ</button>}
+    <button type="button" className={buttonClass} disabled={busy} onClick={onDone}>ปิดฟอร์ม</button>
+  </div>
 }
 
 // งานคนขับ — เจ้าของระบบสั่ง 2569-09-21 ให้ง่ายที่สุด: การ์ดเที่ยวละใบ ปุ่มใหญ่ปุ่มเดียวบอกขั้นถัดไป
 // ทุกเที่ยว 2 ครั้ง: ออกรถ และกลับแล้ว · จบงาน
 // ปุ่มขึ้นเฉพาะเที่ยวของวันนี้ (หรือเลยวันแล้วยังไม่จบ) · เลขไมล์ถามครั้งเดียวหลังจบงาน ใส่ทีหลังได้
-export function DriverTrips({ workspace, uid, busy, contactPhone, onAdvance, onAction, onOdometer }) {
-  const mine = workspace.trips.filter(t => t.driver_id === uid)
+export function DriverTrips({ workspace, uid, isAdmin, canAssign, busy, contactPhone, onAdvance, onAction, onOdometer, onReassign }) {
+  const [assignment, setAssignment] = useState(null)
+  const mine = workspace.trips.filter(t => canAssign || t.driver_id === uid)
+  const canOperate = t => isAdmin || t.driver_id === uid
   const byPickup = (a, b) => String(a.plan?.pickup_at || '').localeCompare(String(b.plan?.pickup_at || ''))
   const today = thaiDay()
   const active = mine.filter(t => !['completed', 'cancelled'].includes(t.state)).sort(byPickup)
-  const now = active.filter(t => (t.plan?.date || today) <= today)
-  const later = active.filter(t => (t.plan?.date || today) > today)
+  const now = active.filter(t => t.state !== 'confirmed' || (t.plan?.date || today) <= today).sort((a, b) => Number(a.state === 'confirmed') - Number(b.state === 'confirmed') || byPickup(a, b))
+  const later = active.filter(t => t.state === 'confirmed' && (t.plan?.date || today) > today)
   // จบเที่ยวแล้วแต่ยังไม่มีเลขไมล์กลับ — ค้างไว้ตรงนี้จนกว่าจะใส่ (ผลตรวจ #227 ข้อ 4)
-  const awaitingOdometer = mine.filter(t => t.state === 'completed' && (!Number.isFinite(t.odometer_end) || t.odometer_issue)).sort(byPickup)
-  const recorded = mine.filter(t => t.state === 'completed' && Number.isFinite(t.odometer_end) && !t.odometer_issue).sort(byPickup).reverse()
+  const awaitingOdometer = mine.filter(t => canOperate(t) && t.state === 'completed' && (!Number.isFinite(t.odometer_end) || t.odometer_issue)).sort(byPickup)
+  const recorded = mine.filter(t => canOperate(t) && t.state === 'completed' && Number.isFinite(t.odometer_end) && !t.odometer_issue).sort(byPickup).reverse()
+  const daily = (workspace.trips || []).filter(t => t.state === 'confirmed' && t.plan?.date === assignment?.day && t.driver_id === assignment?.fromDriver).sort(byPickup)
+  const assignmentFor = t => !canAssign || ['completed','cancelled'].includes(t.state) ? null : <div className="space-y-2">
+    {assignment?.trip === t.id ? <DriverAssignment key={t.id} trips={[t]} people={workspace.people || []} busy={busy} onReassign={onReassign} onDone={() => setAssignment(null)} />
+      : <button type="button" className={buttonClass} disabled={busy} onClick={() => setAssignment({ trip: t.id })}>เปลี่ยนคนขับเที่ยวนี้</button>}
+  </div>
   return <div className="space-y-4">
     <div><h2 className="text-xl font-bold">งานคนขับ</h2><p className="text-sm font-semibold text-amber-800">กดบันทึกเมื่อจอดรถในที่ปลอดภัย</p></div>
+    {isAdmin && <p className="rounded-xl bg-amber-50 p-3 text-sm">แอดมินเห็นทุกเที่ยวและบันทึกออกรถ จบเที่ยว หรือเลขไมล์แทนได้ ระบบเก็บชื่อบัญชีผู้กดไว้ คนขับจริงยังเป็นชื่อที่แสดงบนเที่ยว</p>}
+    {canAssign && <div className="rounded-xl border bg-white p-3"><button type="button" className={buttonClass} onClick={() => setAssignment(assignment?.day ? null : { day: thaiDay(), fromDriver: workspace.settings?.driver_id })}>จัดคนขับแทนวันนี้</button>
+      {assignment?.day && <div className="mt-3 space-y-3"><label className="block">วันที่ต้องจัดคนขับแทน<input type="date" className={inputClass} value={assignment.day} onChange={e => setAssignment({ day: e.target.value, fromDriver: workspace.settings?.driver_id })} /></label>
+        <label className="block">คนขับเดิมที่ต้องการจัดแทน<select className={inputClass} value={assignment.fromDriver || ''} onChange={e => setAssignment({ ...assignment, fromDriver: e.target.value })}>{(workspace.people || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        {daily.length ? <DriverAssignment key={`${assignment.day}:${assignment.fromDriver}`} batch trips={daily} people={workspace.people || []} busy={busy} onReassign={onReassign} onDone={() => setAssignment(null)} /> : <p>วันที่เลือกไม่มีเที่ยวที่ยังไม่ออกรถของคนขับนี้</p>}</div>}
+    </div>}
     {!now.length && <p className="rounded-xl border border-slate-200 bg-white p-4 text-slate-600">วันนี้ไม่มีเที่ยวที่ต้องออก{later.length ? ` · เที่ยวถัดไป ${later.length} เที่ยวอยู่ด้านล่าง` : ''}</p>}
-    {now.map(t => <DriverCard key={t.id} trip={t} bookings={workspace.bookings} busy={busy} contactPhone={contactPhone} onAdvance={onAdvance} onAction={onAction} />)}
+    {now.map(t => <DriverCard key={t.id} trip={t} bookings={workspace.bookings} busy={busy} canOperate={canOperate(t)} contactPhone={contactPhone} onAdvance={onAdvance} onAction={onAction} driverAssignment={assignmentFor(t)} />)}
     {awaitingOdometer.length > 0 && <section aria-label="จบแล้ว รอเติมเลขไมล์" className="space-y-3">
       <h3 className="font-bold">จบแล้ว รอเติมเลขไมล์ ({awaitingOdometer.length})</h3>
       {awaitingOdometer.map(t => <article key={t.id} data-trip={t.id} className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
         <p className="font-semibold">🏥 {t.plan?.route_label}</p><p className="text-sm">{dateTime(t.plan?.pickup_at)}</p>
+        <p className="text-sm">คนขับ: {t.driver_name}</p><DriverHistory trip={t} />
         <OdometerForm quick trip={t} trips={workspace.trips} busy={busy} onSave={onOdometer} />
       </article>)}
     </section>}
     {later.length > 0 && <section aria-label="เที่ยวถัดไป" className="space-y-3">
       <h3 className="font-bold">เที่ยวถัดไป ({later.length})</h3>
-      {later.map(t => <DriverCard key={t.id} upcoming trip={t} bookings={workspace.bookings} busy={busy} />)}
+      {later.map(t => <DriverCard key={t.id} upcoming trip={t} bookings={workspace.bookings} busy={busy} driverAssignment={assignmentFor(t)} />)}
     </section>}
     {recorded.length > 0 && <details className="rounded-xl border border-slate-200 bg-white p-3"><summary className="min-h-11 cursor-pointer font-semibold">แก้เลขไมล์เที่ยวที่จบแล้ว (30 วันล่าสุด)</summary>
       {recorded.map(t => <article key={t.id} className="my-3 border-t p-3"><p>{t.plan?.route_label} · {dateTime(t.plan?.pickup_at)}</p><OdometerForm trip={t} trips={workspace.trips} busy={busy} onSave={onOdometer} /></article>)}

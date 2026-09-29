@@ -37,17 +37,17 @@ export default function PatientTransportStaff({ onBack } = {}) {
   const tenantId = tenant?.id
   const isCoordinator = ['admin', 'coordinator'].includes(workspace?.role)
   const isAdmin = workspace?.role === 'admin'
-  const isDriver = workspace?.role === 'driver' || (isCoordinator && !!uid && workspace?.settings?.driver_id === uid) || workspace?.trips?.some(t => t.driver_id === uid)
+  const isDriver = isAdmin || workspace?.role === 'driver' || (isCoordinator && !!uid && workspace?.settings?.driver_id === uid) || workspace?.trips?.some(t => t.driver_id === uid)
   const allowed = isCoordinator || isDriver
   const view = selectedView ?? (isCoordinator ? 'inbox' : 'driver')
   // Count only this account's unfinished driver work. Completed trips with a valid odometer are history, not alerts.
-  const driverWorkCount = (workspace?.trips || []).filter(t => t.driver_id === uid &&
+  const driverWorkCount = (workspace?.trips || []).filter(t => (isAdmin || t.driver_id === uid) &&
     (t.state !== 'cancelled' && t.state !== 'completed' ||
       t.state === 'completed' && (!Number.isFinite(t.odometer_end) || t.odometer_issue))).length
   const tabs = [
     { id: 'inbox', label: 'คำขอรถ', Icon: Inbox, show: isCoordinator },
     { id: 'calendar', label: 'ปฏิทิน', Icon: CalendarDays, show: isCoordinator },
-    { id: 'driver', label: 'งานคนขับ', Icon: Car, show: isDriver },
+    { id: 'driver', label: 'งานคนขับ', Icon: Car, show: isCoordinator || isDriver },
     { id: 'report', label: 'รายงาน', Icon: BarChart2, show: isCoordinator },
     { id: 'settings', label: 'ตั้งค่า', Icon: Settings, show: isAdmin },
   ].filter(t => t.show)
@@ -158,6 +158,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
       const fresh = await call('patient_booking_workspace', {})
       const latest = fresh?.trips?.find(t => t.id === trip.id)
       if (!latest) throw new Error('ไม่พบเที่ยวนี้แล้ว กรุณาโหลดข้อมูลล่าสุด')
+      if (latest.driver_id !== trip.driver_id) throw new Error('คนขับประจำเที่ยวเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุดก่อนบันทึก')
       if (latest.state !== trip.state) return { moved: latest.state, ahead: TRIP_ORDER.indexOf(latest.state) > TRIP_ORDER.indexOf(trip.state) }
       const [step] = driverSteps(latest)
       if (!step) throw new Error('เที่ยวนี้ยังไม่พร้อมบันทึก กรุณาตรวจสถานะล่าสุด')
@@ -198,6 +199,10 @@ export default function PatientTransportStaff({ onBack } = {}) {
     return buildTripMonthReportHtml({ tenant, report: data, partner: context.partner })
   }, 'เตรียมสรุปรายเดือนไม่สำเร็จ')
   const recordOdometer = (trip, start, end, issue, reason) => mutate('patient_booking_save_odometer', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_start: start, p_end: end, p_issue: issue, p_note: reason }, 'บันทึกเลขไมล์แล้ว')
+  const reassignDriver = ({ trip, day, fromDriver, driver, expected, midtrip }) => mutate('patient_booking_reassign_driver', {
+    p_op: op(`driver-cover:${JSON.stringify({ trip, day, fromDriver, driver, expected, midtrip })}`),
+    p_trip: trip, p_day: day, p_from_driver: fromDriver, p_driver: driver, p_expected: expected, p_midtrip: midtrip,
+  }, 'เปลี่ยนคนขับแล้ว · ผู้เกี่ยวข้องได้รับแจ้ง กรุณาตรวจเอกสารล่าสุด')
   const recordLetter = (trip, letterNo, letterDate) => mutate('patient_booking_record_letter', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_letter_no: letterNo, p_letter_date: letterDate }, 'บันทึกเลขหนังสือนำส่งแล้ว')
   const reschedule = args => task(call => call('patient_booking_reschedule', { ...args, p_op: op(`reschedule:${JSON.stringify(args)}`) }), out => out?.saved ? 'เปลี่ยนวันเวลาแล้ว ปฏิทินและงานคนขับใช้คิวใหม่แล้ว' : '')
   const updateSchedule = (trip, revision, publicNotice, pickup, back) => mutate('patient_booking_update_schedule', { p_trip: trip, p_revision: revision, p_notice: publicNotice, p_pickup: pickup, p_return: back }, 'บันทึกประกาศและเวลาประมาณการแล้ว')
@@ -232,7 +237,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
           ส่งแล้วกลับกล่องคำขอพร้อมแถบ "ยืนยันรถเลย" — ไม่ต้องไล่หาแถวที่เพิ่งรับเอง */}
       {view === 'book' && isCoordinator && info?.enabled && <BookingForm submitError={error} tenantId={tenantId} info={info} profileName={profileName} profilePhone={workspace?.my_profile?.phone} staffEntry busy={busy} onBack={() => setView('inbox')}
         onSubmit={(id, payload, tripId) => mutate(tripId ? 'patient_booking_submit_join' : 'patient_booking_submit', { p_id: id, p_data: payload, p_staff_entry: true, ...(tripId ? { p_trip: tripId } : {}) }, '', data => { setCreated({ id: String(data || id), name: payload.patient_name }); setView('inbox') })} />}
-      {view === 'driver' && isDriver && <DriverTrips workspace={workspace} uid={uid} busy={busy} contactPhone={info?.contact_phone} onAdvance={advanceTrip} onAction={action} onOdometer={recordOdometer} />}
+      {view === 'driver' && (isCoordinator || isDriver) && <DriverTrips workspace={workspace} uid={uid} isAdmin={isAdmin} canAssign={isCoordinator} busy={busy} contactPhone={info?.contact_phone} onAdvance={advanceTrip} onAction={action} onOdometer={recordOdometer} onReassign={reassignDriver} />}
       {view === 'settings' && isAdmin && <BookingSettings key={workspace.settings?.revision || 'new'} workspace={workspace} busy={busy} onSave={(revision, form) => mutate('patient_booking_save_settings', { p_revision: revision, p_data: form }, 'บันทึกค่าตั้งต้นแล้ว')} />}
       {workspace?.limited && <p className="mt-4 rounded-xl bg-amber-50 p-3">รายการเกินขอบเขตหน้าจอ กรุณาติดต่อผู้ดูแลก่อนจัดคิวเพิ่มเติม</p>}
     </>}

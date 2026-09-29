@@ -17,6 +17,8 @@ await db.exec(await readFile(new URL('../supabase/migrations/20260927190000_pati
 await db.exec(await readFile(new URL('../supabase/migrations/20260928120000_patient_booking_multiwave.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20260929100000_patient_booking_update_pickup.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20260929110000_patient_booking_change_hospital.sql', import.meta.url), 'utf8'))
+await db.exec(await readFile(new URL('../supabase/migrations/20260926125325_patient_booking_staff_work_badge.sql', import.meta.url), 'utf8'))
+await db.exec(await readFile(new URL('../supabase/migrations/20260929130000_patient_booking_driver_cover.sql', import.meta.url), 'utf8'))
 await actor(admin)
 await rpc('patient_booking_save_settings', [tenant, (await rpc('patient_booking_workspace', [tenant])).settings.revision,
   { ...settings, office_start: 450, office_end: 1050, routes: [{ ...settings.routes[0], minutes: 45 }] }])
@@ -105,19 +107,22 @@ await actor(admin); await rpc('patient_booking_save_settings',[tenant,(await rpc
 const setupTenant='00000000-0000-4000-8000-000000009001',setupAdmin='00000000-0000-4000-8000-000000009002',setupPartner='00000000-0000-4000-8000-000000009003'
 // ผู้ใช้ใหม่ที่ยังไม่เคยจอง — ใช้วัด "จองครั้งแรก" กับ "จองครั้งต่อไป" (เติมข้อมูลจากครั้งก่อน)
 const newcomer='00000000-0000-4000-8000-000000000016'
+const coverStaff='00000000-0000-4000-8000-000000000017'
 await db.exec('RESET ROLE')
 await db.query('INSERT INTO public.municipalities(id) VALUES($1)',[setupTenant])
 await db.query("INSERT INTO public.profiles(id,municipality_id,role,full_name) VALUES($1,$2,'admin','TEST ผู้รับผิดชอบรถ')",[setupAdmin,setupTenant])
 await db.query("INSERT INTO public.profiles(id,municipality_id,role,full_name) VALUES($1,$2,'citizen','TEST ผู้ใช้ใหม่')",[newcomer,tenant])
+await db.query("INSERT INTO public.profiles(id,municipality_id,role,full_name) VALUES($1,$2,'staff','TEST คนขับแทน')",[coverStaff,tenant])
 await db.query("INSERT INTO public.referral_partners(id,municipality_id,name,is_active,document_types,min_lead_days) VALUES($1,$2,'TEST กองทุนรถรับส่ง',true,ARRAY['patient_transport_request'],0)",[setupPartner,setupTenant])
 // ทะเบียนสถานที่ของ อปท. (ตารางเดียวกับที่หน้าคำร้องใช้) — ฟอร์มจองให้กดเลือกหมู่บ้านแทนพิมพ์เอง
 await db.exec('CREATE TABLE public.locations(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),municipality_id uuid,name text,sort_order integer)')
 await db.query("INSERT INTO public.locations(municipality_id,name,sort_order) VALUES($1,'TEST บ้านเหนือ',1),($1,'TEST บ้านใต้',2)",[tenant])
 let chain = Promise.resolve()
-const users = { setupadmin:setupAdmin, citizen, newcomer, coordinator, driver, admin, anonymous: null }
+const users = { setupadmin:setupAdmin, citizen, newcomer, coordinator, driver, admin, coverdriver:coverStaff, anonymous: null }
 const order = {
  patient_booking_update_pickup:['p_muni','p_op','p_id','p_revision','p_pickup','p_lat','p_lng','p_verified'],
  patient_booking_change_hospital:['p_muni','p_op','p_booking','p_expected','p_route','p_scope'],
+ patient_booking_reassign_driver:['p_muni','p_op','p_trip','p_day','p_from_driver','p_driver','p_expected','p_midtrip'],
  patient_booking_reschedule:['p_muni','p_op','p_booking','p_scope','p_expected','p_appointment','p_return','p_not_departed'],
  patient_booking_move_into_trip:['p_muni','p_op','p_booking','p_expected','p_target','p_target_revision','p_target_booking','p_target_booking_revision'],
  patient_booking_delete:['p_muni','p_op','p_booking','p_revision','p_trip_revision','p_docs_revision','p_reason'],
@@ -188,7 +193,7 @@ const runAs=(user,fn)=>queue(async()=>{await actor(user);return fn()})
 const runSql=fn=>queue(async()=>{await db.exec('RESET ROLE');return fn()})
 const tripOf=id=>runSql(async()=>(await db.query('SELECT trip_id FROM public.patient_bookings WHERE id=$1',[id])).rows[0].trip_id)
 const bookingRow=id=>runSql(async()=>(await db.query('SELECT status,trip_id,passenger_step,cancel_requested,return_ready,entry_channel,in_area FROM public.patient_bookings WHERE id=$1',[id])).rows[0])
-const STAFF_ROLES=['setupadmin','coordinator','driver','admin']
+const STAFF_ROLES=['setupadmin','coordinator','driver','admin','coverdriver']
 const visit=async as=>{
  if(STAFF_ROLES.includes(as)){await page.goto(`${base}/__patient?as=${as}&page=staff`);await page.getByRole('navigation',{name:'งานรถรับส่งผู้ป่วย'}).waitFor();return}
  await page.goto(`${base}/__patient?as=${as}`);await page.getByRole('region',{name:'บริการรถรับส่งผู้ป่วย'}).waitFor()}
@@ -588,7 +593,7 @@ try{
  // ── โครงเดียวกับกล่องงาน "คำร้อง": แถบแท็บชั้นเดียว กล่องบอกจำนวน ค้นหาได้ เปิดเรื่องเป็นแผ่นลอยทับ ──
  await page.clock.setFixedTime(new Date());await page.setViewportSize({width:1280,height:900});await visit('coordinator')
  const menu=page.getByRole('navigation',{name:'งานรถรับส่งผู้ป่วย'})
- assert.deepEqual(await menu.getByRole('button').allInnerTexts(),['คำขอรถ','ปฏิทิน','รายงาน'],'ผู้จัดคิวเห็นคำขอ ปฏิทิน และรายงาน')
+ assert.deepEqual(await menu.getByRole('button').allInnerTexts(),['คำขอรถ','ปฏิทิน','งานคนขับ','รายงาน'],'ผู้จัดคิวเห็นงานคนขับเพื่อจัดคนขับแทนด้วย')
  await page.setViewportSize({width:320,height:900})
  for(const tab of await menu.getByRole('button').all()){
   const box=await tab.boundingBox();assert(box.x>=0&&box.x+box.width<=321,'แท็บเจ้าหน้าที่ต้องเห็นเต็มปุ่มบนมือถือ')
@@ -871,6 +876,7 @@ try{
   assert(history.every(e=>e.detail.contact_purged&&!('before' in e.detail)&&!('after' in e.detail)),'retention must remove copied pickup details from this new audit event')
   const operations=(await db.query("SELECT payload FROM public.patient_booking_operations WHERE payload->>'action'='update_pickup' AND payload->>'booking'=$1",[pickupBooking])).rows
   assert(operations.every(o=>o.payload.contact_purged&&!('pickup' in o.payload)&&!('lat' in o.payload)&&!('lng' in o.payload)),'retention must remove copied pickup details from retry records')
+  await db.query("UPDATE public.patient_booking_trips SET state='completed' WHERE id=$1",[pickupTrip])
  })
  console.log('PASS confirmed pickup correction: staff UI map and text, 320px, role and state guards, audit, retry, private views and driver notice')
  // Correct the hospital on a confirmed booking without cancelling the citizen's request.
@@ -926,6 +932,7 @@ try{
  assert(await sheet.getByRole('button',{name:'ตรวจและเปลี่ยนโรงพยาบาล',exact:true}).isDisabled())
  await runSql(()=>db.query("UPDATE public.patient_booking_trips SET state='outbound' WHERE id=$1",[sharedTrip]))
  await assert.rejects(runAs(admin,()=>rpc('patient_booking_change_hospital',[tenant,randomUUID(),sharedA,hospitalSnapshot(sharedAfter,sharedA),'a','all'])),/รถยังไม่ออก/)
+ await runSql(async()=>{await db.query("UPDATE public.patient_booking_trips SET state='completed' WHERE id=$1",[sharedTrip]);await db.query("UPDATE public.patient_bookings SET status='completed' WHERE trip_id=$1",[sharedTrip])})
  // Distinct outbound runs can split successfully without moving the other rider.
  const splitDay=(await freeDays(1))[0],splitA=randomUUID(),splitB=randomUUID(),splitTrip=randomUUID()
  for(const [id,name,phone,time]of [[splitA,'เช้า','0800000941','09:00'],[splitB,'บ่าย','0800000942','13:00']])await submitAs(citizen,id,{patient_name:`[TEST] แยกโรงพยาบาล ${name}`,phone,companions:0,appointment_at:at(splitDay,time),return_mode:'one_way',return_at:null})
@@ -943,6 +950,101 @@ try{
  assert.deepEqual(splitAfter.trips.find(t=>t.id===splitTrip).booking_ids,[splitA])
  assert.equal(splitAfter.trips.find(t=>t.id===splitTrip).plan.outbound_waves.length,1)
  console.log('PASS hospital correction: mobile reviewed confirmation, role and revision guards, travel recalculation, shared conflict rollback, safe split, explicit all-rider change, driver/citizen/calendar updates and idempotent retry')
+ // Driver sick leave: admin can see all assignments and make an audited replacement.
+ await runAs(coordinator,async()=>{const t=(await rpc('patient_booking_workspace',[tenant])).trips.find(x=>x.id===joinTrip);if(t.state==='outbound')await rpc('patient_booking_action',[tenant,randomUUID(),t.id,t.revision,'trip_finish',''])})
+ const coverDay=(await freeDays(1))[0],coverBooking=randomUUID(),coverTrip=randomUUID()
+ await submitAs(citizen,coverBooking,{patient_name:'[TEST] คนขับลาป่วย',phone:'0800000951',companions:0,appointment_at:at(coverDay,'10:00'),return_mode:'one_way',return_at:null})
+ await runAs(coordinator,async()=>rpc('patient_booking_confirm',[tenant,coverTrip,[coverBooking],await rpc('patient_booking_preview',[tenant,[coverBooking],'']),'']))
+ const driverExpected=trips=>Object.fromEntries(trips.map(t=>[t.id,{revision:t.revision,docs_revision:t.docs_revision,driver_id:t.driver_id}]))
+ const beforeCover=await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))
+ const cover=beforeCover.trips.find(t=>t.id===coverTrip),coverExpected=driverExpected([cover])
+ const coverArgs=[tenant,randomUUID(),coverTrip,null,driver,coverStaff,coverExpected,false]
+ for(const who of [null,citizen,driver,coverStaff,setupAdmin])await assert.rejects(runAs(who,()=>rpc('patient_booking_reassign_driver',coverArgs)),/permission denied|เฉพาะแอดมินหรือผู้ยืนยันคิว/)
+ await assert.rejects(runAs(admin,()=>rpc('patient_booking_reassign_driver',[...coverArgs.slice(0,5),setupAdmin,coverExpected,false])),/บัญชีเจ้าหน้าที่ของหน่วยงานนี้/)
+ await assert.rejects(runAs(admin,()=>rpc('patient_booking_reassign_driver',[...coverArgs.slice(0,6),{[coverTrip]:{...coverExpected[coverTrip],revision:999}},false])),/เที่ยวหรือข้อมูลเปลี่ยน/)
+ await staffDesk('admin');await page.setViewportSize({width:320,height:900})
+ await page.getByRole('navigation',{name:'งานรถรับส่งผู้ป่วย'}).getByRole('button',{name:'งานคนขับ'}).click()
+ await card(coverTrip).getByRole('button',{name:'เปลี่ยนคนขับเที่ยวนี้'}).click()
+ await card(coverTrip).getByLabel('คนขับแทน').selectOption(coverStaff)
+ await card(coverTrip).getByRole('button',{name:'ตรวจและเปลี่ยนคนขับ'}).click()
+ assert.equal((await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===coverTrip).driver_id,driver,'review does not change driver')
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'320px admin replacement must fit')
+ await card(coverTrip).getByRole('button',{name:'ยืนยันเปลี่ยนคนขับ'}).click()
+ await toast('เปลี่ยนคนขับแล้ว').waitFor()
+ const afterCover=await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))
+ const assigned=afterCover.trips.find(t=>t.id===coverTrip)
+ assert.equal(assigned.driver_id,coverStaff);assert(assigned.docs_revision>cover.docs_revision)
+ assert.equal(assigned.driver_history.length,1);assert.equal(assigned.driver_history[0].phase,'before_departure')
+ const substituteView=await runAs(coverStaff,()=>rpc('patient_booking_workspace',[tenant]))
+ assert.equal(substituteView.role,'driver');assert(substituteView.trips.some(t=>t.id===coverTrip));assert.equal(substituteView.people,null)
+ assert.equal((await runAs(coverStaff,()=>rpc('patient_booking_staff_work_badge',[tenant]))).driver,1)
+ assert(!(await runAs(driver,()=>rpc('patient_booking_workspace',[tenant]))).trips.some(t=>t.id===coverTrip),'former driver must lose private trip access')
+ const coverOperation=await runSql(async()=>(await db.query("SELECT id FROM public.patient_booking_operations WHERE payload->>'action'='reassign_driver' AND payload->>'trip'=$1",[coverTrip])).rows[0].id)
+ await runAs(admin,()=>rpc('patient_booking_reassign_driver',[tenant,coverOperation,coverTrip,null,driver,coverStaff,coverExpected,false]))
+ assert.equal((await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===coverTrip).driver_history.length,1,'retry must not duplicate history')
+ // During an actual journey, require explicit handover and preserve both driver names.
+ await visit('coverdriver');await card(coverTrip).getByText('TEST คนขับแทน',{exact:true}).first().waitFor()
+ assert.equal(await card(coverTrip).getByRole('button',{name:'เปลี่ยนคนขับเที่ยวนี้'}).count(),0)
+ await assert.rejects(runAs(driver,()=>rpc('patient_booking_action',[tenant,randomUUID(),coverTrip,assigned.revision,'trip_next',''])),/ไม่มีสิทธิ์/)
+ await runAs(coverStaff,()=>rpc('patient_booking_action',[tenant,randomUUID(),coverTrip,assigned.revision,'trip_next','']))
+ const inMotion=(await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===coverTrip)
+ await assert.rejects(runAs(admin,()=>rpc('patient_booking_reassign_driver',[tenant,randomUUID(),coverTrip,null,coverStaff,driver,driverExpected([inMotion]),false])),/ส่งมอบงาน/)
+ await runAs(coordinator,()=>rpc('patient_booking_reassign_driver',[tenant,randomUUID(),coverTrip,null,coverStaff,driver,driverExpected([inMotion]),true]))
+ const handed=(await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===coverTrip)
+ assert.equal(handed.driver_id,driver);assert.deepEqual(handed.driver_history.map(h=>h.phase),['before_departure','in_journey'])
+ const driverHanded=await runAs(driver,()=>rpc('patient_booking_workspace',[tenant]))
+ assert(driverHanded.trips.some(t=>t.id===coverTrip),'new driver sees the in-progress trip')
+ assert(driverHanded.notices.some(n=>n.entity_id===coverTrip&&n.message.includes('เปลี่ยนคนขับ')))
+ await staffDesk('admin');await page.setViewportSize({width:320,height:900})
+ await page.getByRole('navigation',{name:'งานรถรับส่งผู้ป่วย'}).getByRole('button',{name:'งานคนขับ'}).click()
+ await card(coverTrip).getByText('ประวัติคนขับ',{exact:true}).click()
+ await card(coverTrip).getByText(/ส่งมอบระหว่างเที่ยว/).waitFor()
+ await card(coverTrip).getByRole('button',{name:/จบงาน/}).click()
+ await toast('บันทึกแล้ว').waitFor()
+ const finishedCover=(await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===coverTrip)
+ assert.equal(finishedCover.state,'completed');assert.equal(finishedCover.driver_id,driver,'admin recording must preserve the actual driver')
+ await runAs(admin,()=>rpc('patient_booking_save_odometer',[tenant,coverTrip,finishedCover.docs_revision,20000,20120,false,'']))
+ const finishAudit=await runSql(async()=>(await db.query("SELECT actor_id,detail FROM public.patient_booking_events WHERE entity_id=$1 AND action='trip_finish'",[coverTrip])).rows[0])
+ assert.equal(finishAudit.actor_id,admin);assert.equal(finishAudit.detail.driver_id,driver)
+ await assert.rejects(runAs(admin,()=>rpc('patient_booking_reassign_driver',[tenant,randomUUID(),coverTrip,null,driver,coverStaff,driverExpected([finishedCover]),false])),/เที่ยวหรือข้อมูลเปลี่ยน|เที่ยวจบ/)
+ // One click can reassign every still-confirmed run on a chosen day.
+ const coverAllDay=(await freeDays(1))[0],allA=randomUUID(),allB=randomUUID(),allTripA=randomUUID(),allTripB=randomUUID()
+ for(const [id,time]of [[allA,'09:00'],[allB,'15:00']])await submitAs(citizen,id,{patient_name:`[TEST] คนขับแทนทั้งวัน ${time}`,phone:id===allA?'0800000952':'0800000953',companions:0,appointment_at:at(coverAllDay,time),return_mode:'one_way',return_at:null})
+ await runAs(coordinator,async()=>{
+  await rpc('patient_booking_confirm',[tenant,allTripA,[allA],await rpc('patient_booking_preview',[tenant,[allA],'']),''])
+  await rpc('patient_booking_confirm',[tenant,allTripB,[allB],await rpc('patient_booking_preview',[tenant,[allB],'']),''])
+ })
+ const allBefore=await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))
+ const allExpected=driverExpected(allBefore.trips.filter(t=>[allTripA,allTripB].includes(t.id)))
+ await assert.rejects(runAs(citizen,()=>rpc('patient_booking_reassign_driver',[tenant,randomUUID(),null,coverAllDay,driver,admin,allExpected,false])),/permission denied|เฉพาะแอดมิน/)
+ await assert.rejects(runAs(admin,()=>rpc('patient_booking_reassign_driver',[tenant,randomUUID(),null,coverAllDay,driver,admin,driverExpected([allBefore.trips.find(t=>t.id===allTripA)]),false])),/รายการเที่ยวหรือข้อมูลเปลี่ยน/)
+ const collisionCover=randomUUID()
+ await runSql(()=>db.query("INSERT INTO public.patient_booking_trips(id,municipality_id,driver_id,booking_ids,plan,confirmed_by) SELECT $1,municipality_id,$2,'{}'::uuid[],plan,$2 FROM public.patient_booking_trips WHERE id=$3",[collisionCover,admin,allTripA]))
+ await assert.rejects(runAs(admin,()=>rpc('patient_booking_reassign_driver',[tenant,randomUUID(),null,coverAllDay,driver,admin,allExpected,false])),/งานรถรับส่งผู้ป่วยชนเวลา/)
+ const afterCollision=await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))
+ for(const id of [allTripA,allTripB])assert.deepEqual(afterCollision.trips.find(t=>t.id===id),allBefore.trips.find(t=>t.id===id),'bulk conflict must not partially reassign any trip')
+ await runSql(()=>db.query("UPDATE public.patient_booking_trips SET state='cancelled' WHERE id=$1",[collisionCover]))
+ await staffDesk('admin');await page.setViewportSize({width:320,height:900})
+ await page.getByRole('navigation',{name:'งานรถรับส่งผู้ป่วย'}).getByRole('button',{name:'งานคนขับ'}).click()
+ await page.getByRole('button',{name:'จัดคนขับแทนวันนี้'}).click()
+ await page.getByLabel('วันที่ต้องจัดคนขับแทน').fill(coverAllDay)
+ await page.getByText('จัดคนขับแทนวันนี้ · 2 เที่ยว').waitFor()
+ await page.getByLabel('คนขับแทน',{exact:true}).selectOption(admin)
+ await page.getByRole('button',{name:'ตรวจและเปลี่ยนคนขับ'}).click()
+ await page.getByRole('button',{name:'ยืนยันเปลี่ยนคนขับ'}).scrollIntoViewIfNeeded()
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'bulk driver cover fits 320px')
+ await page.screenshot({path:'D:/tmp/patient-driver-cover-320.png'})
+ await page.getByRole('button',{name:'ยืนยันเปลี่ยนคนขับ'}).click()
+ await toast('เปลี่ยนคนขับแล้ว').waitFor()
+ const allAfter=await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))
+ assert([allTripA,allTripB].every(id=>allAfter.trips.find(t=>t.id===id).driver_id===admin))
+ assert([allTripA,allTripB].every(id=>allAfter.trips.find(t=>t.id===id).driver_history.length===1))
+ const adminBadge=await runAs(admin,()=>rpc('patient_booking_staff_work_badge',[tenant]))
+ assert(adminBadge.driver>=2,'admin badge shows substitute work')
+ const rescheduledCover=await runAs(coordinator,()=>rpc('patient_booking_reschedule',[tenant,randomUUID(),allA,'single',hospitalSnapshot(allAfter,allA),at(coverAllDay,'09:15'),null,false]))
+ assert(rescheduledCover.saved)
+ assert.equal((await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===rescheduledCover.trip_id).driver_id,admin,'rescheduling must preserve the explicitly assigned substitute')
+ console.log('PASS driver cover: admin mobile work tab, reviewed single/day assignment, handover history, authorization, stale revisions, private reassignment, notices, retry and badge')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}
