@@ -1,5 +1,6 @@
 import { useLocation } from 'react-router-dom'
 import { useTenant } from '../../contexts/TenantContext'
+import SiteVisitCounter from './SiteVisitCounter'
 
 export default function Footer() {
   const { tenant } = useTenant()
@@ -51,6 +52,8 @@ export default function Footer() {
             </span>
           )}
         </div>
+
+        <SiteVisitCounter />
       </div>
     </footer>
   )
