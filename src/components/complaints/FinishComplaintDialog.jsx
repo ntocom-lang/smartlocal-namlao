@@ -3,15 +3,16 @@ import { createPortal } from 'react-dom'
 import { Camera, CheckCircle2, Loader2, MapPin, X } from 'lucide-react'
 import MapPicker from '../MapPicker'
 import { finishComplaint } from '../../lib/complaintFinish'
+import { initialResolvedPin, isSamePin, toPin } from '../../lib/complaintWorkflow'
 
 // กล่อง "ดำเนินการแล้ว" ใช้ร่วมทุกหน้า (แอดมิน / เจ้าหน้าที่ / ช่าง) — ขั้นสุดท้ายของคำร้อง
 // เจ้าของระบบกำหนด 2569-09-15: ต้องปักหมุดจุดที่ดำเนินการ (ยกเว้นหมวดที่ตั้งไว้) รูปไม่บังคับ
+// 2569-09-29: ผู้ร้องปักหมุดมาแล้วใช้หมุดนั้นเลย ผู้รับผิดชอบย้ายเฉพาะเมื่อผิดที่ (initialResolvedPin)
 // DB ตรวจซ้ำทุกข้อที่ finish_complaint() / guard_complaint_final_close_role() — ปุ่มที่นี่แค่กันกดเสียเที่ยว
 export default function FinishComplaintDialog({ complaint, requiresPin = true, categoryLabel = '', tenantSlug, onDone, onCancel }) {
-  const startPos = complaint?.latitude && complaint?.longitude
-    ? { lat: complaint.latitude, lng: complaint.longitude }
-    : null
-  const [pin, setPin] = useState(null)
+  const reporterPin = toPin(complaint?.latitude, complaint?.longitude)
+  const [pin, setPin] = useState(() => initialResolvedPin(complaint, requiresPin))
+  const usingReporterPin = isSamePin(pin, reporterPin)
   const [showMap, setShowMap] = useState(false)
   const [files, setFiles] = useState([])
   const [note, setNote] = useState('')
@@ -61,12 +62,33 @@ export default function FinishComplaintDialog({ complaint, requiresPin = true, c
         {/* หมุดจุดที่ดำเนินการ */}
         <div className="space-y-2">
           <p className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
-            <MapPin size={12} /> จุดที่ดำเนินการ {requiresPin ? <span className="text-red-500">(บังคับ)</span> : <span className="text-gray-400">(ไม่บังคับสำหรับหมวดนี้)</span>}
+            <MapPin size={12} /> จุดที่ดำเนินการ {!requiresPin
+              ? <span className="text-gray-400">(ไม่บังคับสำหรับหมวดนี้)</span>
+              : !pin && <span className="text-red-500">(บังคับ)</span>}
           </p>
-          {pin ? (
+          {usingReporterPin ? (
             <div className="flex items-center justify-between gap-2 rounded-xl border border-green-200 bg-green-50 px-3 py-2">
-              <span className="text-xs font-medium text-green-800">{pin.lat.toFixed(5)}, {pin.lng.toFixed(5)}</span>
-              <button type="button" onClick={() => setShowMap(true)} className="text-xs font-semibold text-green-700 underline">ปักใหม่</button>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-green-800 flex items-center gap-1">
+                  <CheckCircle2 size={13} className="shrink-0" /> ใช้หมุดที่ผู้ร้องปักไว้
+                </p>
+                <p className="text-[11px] text-green-700 mt-0.5">ถ้าจุดที่ทำงานจริงไม่ตรง กด "ดู/ย้ายหมุด"</p>
+              </div>
+              <button type="button" onClick={() => setShowMap(true)} className="shrink-0 text-xs font-semibold text-green-700 underline">ดู/ย้ายหมุด</button>
+            </div>
+          ) : pin ? (
+            <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-green-800">
+                  {reporterPin && 'ย้ายหมุดแล้ว · '}{pin.lat.toFixed(5)}, {pin.lng.toFixed(5)}
+                </span>
+                <button type="button" onClick={() => setShowMap(true)} className="shrink-0 text-xs font-semibold text-green-700 underline">ปักใหม่</button>
+              </div>
+              {reporterPin && (
+                <button type="button" onClick={() => setPin(reporterPin)} className="text-[11px] text-gray-500 underline">
+                  กลับไปใช้หมุดที่ผู้ร้องปักไว้
+                </button>
+              )}
             </div>
           ) : (
             <button type="button" onClick={() => setShowMap(true)}
@@ -123,9 +145,14 @@ export default function FinishComplaintDialog({ complaint, requiresPin = true, c
 
       {showMap && (
         <MapPicker
-          initialPos={pin ?? startPos}
-          fallbackPos={pin ?? startPos}
-          onConfirm={({ lat, lng }) => { setPin({ lat, lng }); setError(''); setShowMap(false) }}
+          initialPos={pin ?? reporterPin}
+          fallbackPos={pin ?? reporterPin}
+          onConfirm={({ lat, lng }) => {
+            // กดยืนยันโดยไม่ได้เลื่อน = หมุดผู้ร้องเดิม ใช้ค่าเป๊ะ ไม่เอาเศษทศนิยมที่แผนที่คืนมา
+            setPin(isSamePin({ lat, lng }, reporterPin) ? reporterPin : { lat, lng })
+            setError('')
+            setShowMap(false)
+          }}
           onClose={() => setShowMap(false)}
         />
       )}

@@ -55,6 +55,39 @@ export function requiresResolvedPin(categoryMeta, category) {
 }
 
 /**
+ * พิกัดที่ใช้เป็นหมุดจุดที่ดำเนินการได้ — ต้องตรงกับ CHECK complaints_resolved_location_check
+ * (lat ±90, lng ±180, ไม่ใช่ 0,0) ใช้ไม่ได้คืน null เพื่อไม่ส่งหมุดที่ DB จะปฏิเสธ
+ */
+export function toPin(lat, lng) {
+  if (lat == null || lng == null || lat === '' || lng === '') return null
+  const la = Number(lat)
+  const ln = Number(lng)
+  if (!Number.isFinite(la) || !Number.isFinite(ln)) return null
+  if (la < -90 || la > 90 || ln < -180 || ln > 180 || (la === 0 && ln === 0)) return null
+  return { lat: la, lng: ln }
+}
+
+// แผนที่คืนพิกัดกึ่งกลางที่คลาดเศษทศนิยมได้แม้ไม่ได้เลื่อน — ห่างไม่ถึง ~1 เมตรถือเป็นจุดเดียวกัน
+const SAME_PIN_EPS = 0.00001
+
+export function isSamePin(a, b) {
+  if (!a || !b) return false
+  return Math.abs(a.lat - b.lat) < SAME_PIN_EPS && Math.abs(a.lng - b.lng) < SAME_PIN_EPS
+}
+
+/**
+ * หมุดเริ่มต้นของกล่อง "ดำเนินการแล้ว"
+ * เจ้าของระบบกำหนด 2569-09-29: ผู้ร้องปักหมุดมาแล้วใช้เป็นจุดที่ดำเนินการได้เลย ย้ายเฉพาะเมื่อผิดที่
+ * — หมุดทั้งสองฝั่งเลือกบนแผนที่ (ไม่ใช่ GPS) ใครอยู่ที่ไหนก็ปักจุดไหนได้ การบังคับปักซ้ำจึงไม่ได้พิสูจน์อะไรเพิ่ม
+ * หมวดที่ไม่บังคับหมุด (ภาษี/ร้องทุกข์ ฯลฯ) ไม่เติมให้ เพราะเรื่องไม่มีจุดทำงานบนแผนที่
+ * ภายหลังรู้ได้ว่าผู้รับผิดชอบย้ายหมุดหรือไม่ โดยเทียบ resolved_latitude/longitude กับ latitude/longitude
+ */
+export function initialResolvedPin(complaint, requiresPin) {
+  if (!requiresPin) return null
+  return toPin(complaint?.latitude, complaint?.longitude)
+}
+
+/**
  * ผู้ร้องเปิดเรื่องกลับได้หรือไม่ — ต้องตรงกับ reopen_complaint()
  * @returns {{ allowed: boolean, reason: string, daysLeft: number }}
  */
