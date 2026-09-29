@@ -14,7 +14,7 @@ export async function startComplaintWork(complaintId) {
 /**
  * กด "ดำเนินการแล้ว": อัปโหลดรูป (ถ้ามี) → RPC finish_complaint → แจ้งผู้ร้อง + Telegram
  * @param {object} p
- * @param {object} p.complaint แถวคำร้อง (ใช้ id, ref_no, category, created_at, user_id, work_photos)
+ * @param {object} p.complaint แถวคำร้อง (ใช้ id, ref_no, created_at, work_photos)
  * @param {{lat:number,lng:number}|null} p.pin หมุดจุดที่ดำเนินการ
  * @param {File[]} [p.files] รูปผลงาน (ไม่บังคับ)
  * @param {string} [p.note]
@@ -50,16 +50,12 @@ export async function finishComplaint({ complaint, pin, files = [], note = '', c
   })
   if (error) return { error }
 
-  if (complaint.user_id) {
-    supabase.functions.invoke('send-push', {
-      body: {
-        user_id: complaint.user_id,
-        title: 'คำร้องของคุณดำเนินการแล้ว',
-        body: `คำร้อง${categoryLabel} ดำเนินการแล้ว — แตะเพื่อดูผลและให้คะแนน ถ้ายังไม่เรียบร้อยแจ้งกลับได้ภายใน 7 วัน`,
-        url: '/my-complaints',
-      },
-    }).catch(() => {})
-  }
+  // แจ้งผู้ร้อง: ส่งแค่เลขคำร้อง send-push หาเจ้าของและประกอบข้อความเอง — list_complaints_for_staff
+  // ตัด user_id ทิ้งสำหรับ officer/staff (PDPA) เดิมเช็ก complaint.user_id ผู้ร้องจึงไม่ได้แจ้งเตือน
+  // เมื่อ officer/staff ปิดงานจากตาราง
+  supabase.functions.invoke('send-push', {
+    body: { complaint_id: complaint.id, kind: 'complaint_finished' },
+  }).catch(() => {})
   notifyTelegram('complaint_status_updated', complaint.id)
   return { error: null, workPhotos: urls }
 }
