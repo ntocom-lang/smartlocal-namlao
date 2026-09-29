@@ -1744,15 +1744,17 @@ function buildDocHTML({ req, tenant, docDate }) {
 
 // ─── Complaints Module (staff-side) ───────────────────────────────────────────
 
+// text = เฉดเข้มสำหรับตัวเลขบนการ์ดกรองสถานะบนมือถือ (พื้นขาว) — เฉด color บางตัว เช่นเขียว #10b981
+// ได้ contrast กับพื้นขาวแค่ราว 2.5:1 ชุดเดียวกับ STATUS.text ใน ComplaintsManager.jsx
 const C_STATUS = {
-  pending:     { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7' },
-  received:    { label: 'รับเรื่องแล้ว',  color: '#3b82f6', bg: '#dbeafe' },
-  in_progress: { label: 'กำลังดำเนินการ', color: '#8b5cf6', bg: '#ede9fe' },
+  pending:     { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
+  received:    { label: 'รับเรื่องแล้ว',  color: '#3b82f6', bg: '#dbeafe', text: '#1d4ed8' },
+  in_progress: { label: 'กำลังดำเนินการ', color: '#8b5cf6', bg: '#ede9fe', text: '#5b21b6' },
   // ตัดขั้น "ปิดเรื่องแล้ว" ออก 2569-09-15 — 'closed' = "ดำเนินการแล้ว" สถานะสุดท้าย ('done' = ขั้นเก่าที่ค้าง)
-  done:        { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5' },
-  completed:   { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5' },
-  closed:      { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5' },
-  rejected:    { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2' },
+  done:        { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  completed:   { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  closed:      { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  rejected:    { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
 }
 // 'done' ขั้นเก่า + 'completed' legacy แสดงและกรองรวมกับ 'closed' ("ดำเนินการแล้ว")
 function normalizeFinished(status) {
@@ -2016,6 +2018,9 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
   const statusCount = status => status === 'all'
     ? complaints.length
     : complaints.filter(c => normalizeFinished(c.status) === status).length
+  // จำนวนคอลัมน์ของการ์ดสถานะบนมือถือตามจำนวนป้าย (มีเฉพาะสถานะที่มีงานจริง 1–5 ป้าย)
+  // 4 ป้ายใช้ 2×2 ไม่ให้เหลือการ์ดใบเดียวโดดในแถวที่สอง
+  const tileCols = { 1: 'max-md:grid-cols-1', 2: 'max-md:grid-cols-2', 4: 'max-md:grid-cols-2' }[filterItems.length] ?? 'max-md:grid-cols-3'
 
   return (
     <div className="space-y-4 md:space-y-5">
@@ -2051,14 +2056,19 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
         </div>
       </section>
 
-      <div className="-mx-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden">
-        <div className="flex w-max gap-2">
+      {/* ป้ายกรองสถานะ — มือถือ (< md) เป็นการ์ดตัวเลข (ตัวเลขบน ชื่อล่าง) เห็นครบในจอเดียว แบบเดียวกับ
+          หน้าคำร้องของแอดมิน (ComplaintsManager.jsx) เดิมเป็นแถวเลื่อนแนวนอนที่ป้ายหลังๆ ตกขอบจอโดยไม่มีอะไรบอก
+          คลาสปกติคือหน้าตาบน PC ของเดิมทุกตัว ส่วนมือถือปรับด้วย max-md: เท่านั้น */}
+      <div className="overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:overflow-visible max-md:pb-0">
+        <div className={`flex w-max gap-2 max-md:grid max-md:w-auto ${tileCols}`}>
         {filterItems.map(s => (
-          <button key={s} onClick={() => setFilterStatus(s)}
-            className={`inline-flex min-h-10 items-center gap-1.5 rounded-2xl border px-3.5 py-2 text-xs font-bold shadow-sm transition-all active:scale-95 ${filterStatus === s ? 'text-white border-transparent shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}
+          <button key={s} type="button" aria-pressed={filterStatus === s} onClick={() => setFilterStatus(s)}
+            className={`inline-flex min-h-10 items-center gap-1.5 rounded-2xl border px-3.5 py-2 text-xs font-bold shadow-sm transition-all active:scale-95 max-md:min-h-15 max-md:flex-col max-md:justify-center max-md:gap-1 max-md:px-0.5 max-md:text-center max-md:leading-tight max-md:text-balance ${filterStatus === s ? 'text-white border-transparent shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}
             style={filterStatus === s ? { backgroundColor: C_STATUS[s]?.color ?? 'var(--color-primary)' } : undefined}>
             {s === 'all' ? 'ทั้งหมด' : C_STATUS[s]?.label ?? s}
-            <span className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] ${filterStatus === s ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+            {/* ตัวเลขอยู่หลังชื่อใน DOM (โปรแกรมอ่านหน้าจออ่านว่า "รับเรื่องแล้ว 3") มือถือยกขึ้นไว้บนด้วย order-first */}
+            <span className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] max-md:order-first max-md:p-0 max-md:bg-transparent max-md:text-xl max-md:font-extrabold max-md:leading-none ${filterStatus === s ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 max-md:text-[color:var(--num-color)]'}`}
+              style={{ '--num-color': C_STATUS[s]?.text ?? '#334155' }}>
               {statusCount(s)}
             </span>
           </button>
