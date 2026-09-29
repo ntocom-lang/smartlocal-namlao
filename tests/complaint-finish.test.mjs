@@ -148,5 +148,23 @@ assert.equal(stripLabel('💡 ไฟฟ้าส่องสว่าง'), 'ไ
 assert.equal(stripLabel('🛠️ ซ่อมประปา'), 'ซ่อมประปา')
 assert.equal(stripLabel('ตัดต้นไม้'), 'ตัดต้นไม้')
 assert.equal(stripLabel('3 แยกไฟดับ'), '3 แยกไฟดับ')
+// หน้าเว็บต้องส่งแค่เลขคำร้องทุก role — ห้ามกลับไปพึ่ง complaint.user_id ที่ officer/staff ไม่ได้มากับรายการ
+const finishLib = readText('src/lib/complaintFinish.js').replace(/^\s*\/\/.*$/gm, '')
+assert.match(finishLib, /invoke\('send-push', \{\s*body: \{ complaint_id: complaint\.id, kind: 'complaint_finished' \},/)
+assert.doesNotMatch(finishLib, /complaint\.user_id/)
+// เรื่องลับ: ไม่ใส่ชื่อหมวดในแจ้งเตือน (ขึ้นหน้าจอล็อกผู้แจ้ง) — ชุดหมวดต้องเท่ากับ notify-telegram
+const confidentialSet = (src) => src.match(/const CONFIDENTIAL_COMPLAINT_CATEGORIES = new Set\(\[([^\]]*)\]\)/)?.[1]
+const telegramFn = readText('supabase/functions/notify-telegram/index.ts')
+assert.ok(confidentialSet(push), 'send-push ต้องมีชุดหมวดเรื่องลับ')
+assert.equal(confidentialSet(push), confidentialSet(telegramFn), 'หมวดเรื่องลับของ send-push กับ notify-telegram ต้องชุดเดียวกัน')
+assert.match(push, /body: confidential \? reopenHint : `คำร้อง\$\{label\} ดำเนินการแล้ว — \$\{reopenHint\}`/)
+// ลิงก์ในแจ้งเตือนต้องเป็น path ภายในเว็บ — sw.js เปิดลิงก์ตรงๆ "//host" พาออกไปเว็บอื่นได้
+const urlGuard = push.match(/url: typeof url === 'string' && \/(.+?)\/\.test\(url\)/)
+assert.ok(urlGuard, 'ไม่เจอด่านตรวจ url ของ send-push')
+const isInternalPath = (u) => new RegExp(urlGuard[1]).test(u)
+for (const ok of ['/', '/my-complaints', '/admin?tab=complaints']) assert.equal(isInternalPath(ok), true, ok)
+for (const bad of ['//evil.example', '/\\evil.example', 'https://evil.example', 'evil.example', 'javascript:alert(1)']) {
+  assert.equal(isInternalPath(bad), false, `ต้องไม่ยอม ${bad}`)
+}
 
 console.log('✓ complaint-finish: ผ่านทุกข้อ')

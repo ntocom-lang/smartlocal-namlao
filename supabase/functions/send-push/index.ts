@@ -27,6 +27,9 @@ const REOPEN_WINDOW_DAYS = 7
 // สมมติฐาน 2569-09-29: ส่งได้เฉพาะคำร้องที่เพิ่งปิด กันการกดส่งซ้ำย้อนหลังไปหาผู้ร้อง
 const FINISH_PUSH_WINDOW_MS = 15 * 60 * 1000
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// เรื่องลับ — ชุดเดียวกับ CONFIDENTIAL_COMPLAINT_CATEGORIES ของ notify-telegram
+// แจ้งเตือนขึ้นบนหน้าจอล็อกมือถือผู้แจ้ง ใครเห็นเครื่องก็รู้ว่าเขาแจ้งเรื่องทุจริต จึงไม่ใส่ชื่อหมวด (2569-09-29)
+const CONFIDENTIAL_COMPLAINT_CATEGORIES = new Set(['corruption'])
 
 if (VAPID_PUBLIC && VAPID_PRIVATE) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE)
@@ -79,24 +82,29 @@ async function resolveComplaintPush(
     return { error: 'complaint not recently finished', status: 409 }
   }
 
-  // ลำดับเดียวกับ guard_complaint_final_close_role() — หมวดซ้ำชื่อให้หมวดที่เปิดใช้อยู่มาก่อน
-  const { data: category } = await supabase
-    .from('complaint_categories')
-    .select('label')
-    .eq('municipality_id', complaint.municipality_id)
-    .eq('value', complaint.category)
-    .order('is_active', { ascending: false })
-    .order('sort_order')
-    .order('id')
-    .limit(1)
-    .maybeSingle()
-  const label = String(category?.label ?? '').replace(/^[\p{Extended_Pictographic}\u{FE0F}\u{200D}\s]+/u, '').trim()
+  const reopenHint = `แตะเพื่อดูผลและให้คะแนน ถ้ายังไม่เรียบร้อยแจ้งกลับได้ภายใน ${REOPEN_WINDOW_DAYS} วัน`
+  const confidential = CONFIDENTIAL_COMPLAINT_CATEGORIES.has(String(complaint.category ?? ''))
+  let label = ''
+  if (!confidential) {
+    // ลำดับเดียวกับ guard_complaint_final_close_role() — หมวดซ้ำชื่อให้หมวดที่เปิดใช้อยู่มาก่อน
+    const { data: category } = await supabase
+      .from('complaint_categories')
+      .select('label')
+      .eq('municipality_id', complaint.municipality_id)
+      .eq('value', complaint.category)
+      .order('is_active', { ascending: false })
+      .order('sort_order')
+      .order('id')
+      .limit(1)
+      .maybeSingle()
+    label = String(category?.label ?? '').replace(/^[\p{Extended_Pictographic}\u{FE0F}\u{200D}\s]+/u, '').trim()
+  }
 
   return {
     userId: complaint.user_id ?? null,
     message: {
       title: 'คำร้องของคุณดำเนินการแล้ว',
-      body: `คำร้อง${label} ดำเนินการแล้ว — แตะเพื่อดูผลและให้คะแนน ถ้ายังไม่เรียบร้อยแจ้งกลับได้ภายใน ${REOPEN_WINDOW_DAYS} วัน`,
+      body: confidential ? reopenHint : `คำร้อง${label} ดำเนินการแล้ว — ${reopenHint}`,
       url: '/my-complaints',
     },
   }
@@ -149,7 +157,9 @@ serve(async (req) => {
     let message: PushMessage = {
       title: String(title ?? '').slice(0, 150),
       body: String(body ?? '').slice(0, 300),
-      url: typeof url === 'string' && url.startsWith('/') ? url : '/',
+      // path ภายในเว็บเท่านั้น — "//host" และ "/\host" เบราว์เซอร์ตีความเป็นเว็บอื่น (protocol-relative)
+      // และ src/sw.js เปิดลิงก์นี้ตรงๆ ตอนกดแจ้งเตือน เดิมเช็กแค่ขึ้นต้นด้วย "/" จึงพาออกนอกเว็บได้
+      url: typeof url === 'string' && /^\/(?![/\\])/.test(url) ? url : '/',
     }
 
     const supabase = createClient(
