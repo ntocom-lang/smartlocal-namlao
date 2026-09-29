@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import MapPicker from '../MapPicker'
 import {
-  ClipboardList, Clock, Loader2, CheckCircle2, XCircle, AlertCircle,
+  ClipboardList, Loader2, CheckCircle2, XCircle,
   ChevronRight, ChevronLeft, Filter, Search, Phone, Trash2, Wrench,
   MapPin, X, FileText, Camera, ChevronDown,
   Shield, Printer, Users, RefreshCw, AlertTriangle, Building2, BarChart3, List,
@@ -134,21 +134,6 @@ const FILTER_KEYS = [null, ...STATUS_MAIN]
 // ODOR_TIME_RANGES/odorTimeRangeOf ย้ายไปอยู่กับตารางร่วม src/components/complaints/OdorComplaintTable.jsx
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-function StatCard({ label, value, icon: Icon, color }) {
-  return (
-    <div className="flex min-h-16 items-center gap-2.5 rounded-2xl border border-slate-100 bg-white p-2.5 shadow-sm">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-           style={{ backgroundColor: `${color}20` }}>
-        <Icon size={18} strokeWidth={2.1} style={{ color }} />
-      </div>
-      <div className="min-w-0">
-        <p className="text-xl font-extrabold leading-none text-slate-800">{value}</p>
-        <p className="mt-1 truncate text-[10px] font-medium leading-none text-slate-500">{label}</p>
-      </div>
-    </div>
-  )
-}
-
 function StatusBadge({ status }) {
   const s = STATUS[status] ?? STATUS.pending
   return (
@@ -1969,13 +1954,8 @@ ${summaryHtml}
   return (
     <div className="space-y-4">
 
-      {/* Stat cards — mobile grid / PC formal bar */}
-      <div className="grid grid-cols-2 gap-2 md:hidden">
-        <StatCard label="ทั้งหมด"         value={nonOdorComplaints.length}  icon={ClipboardList} color="#64748b" />
-        <StatCard label="คำร้องใหม่"      value={counts.new ?? 0}           icon={Clock}         color="#f59e0b" />
-        <StatCard label="กำลังดำเนินการ"  value={counts.in_progress ?? 0}   icon={AlertCircle}   color="#8b5cf6" />
-        <StatCard label="ดำเนินการแล้ว"   value={counts.closed ?? 0}        icon={CheckCircle2}  color="#10b981" />
-      </div>
+      {/* มือถือไม่มีการ์ดตัวเลขแยกแล้ว — ป้ายกรองสถานะในกล่องรายการเป็นการ์ดที่มีตัวเลขครบทุกสถานะแทน
+          (การ์ดชุดเดิม 4 ใบไม่มี "รับเรื่องแล้ว"/"ปฏิเสธ" ตัวเลขรวมกันไม่เท่ายอดทั้งหมด และซ้ำกับป้ายกรอง) */}
       {/* PC stat bar */}
       <div className="hidden md:flex border border-gray-200 rounded-none bg-white divide-x divide-gray-200 shadow-sm">
         {[
@@ -2039,35 +2019,45 @@ ${summaryHtml}
             )}
           </div>
 
-          {/* Filter tabs */}
-          <div className="flex gap-1.5 overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
+          {/* Filter tabs — ปุ่มชุดเดียวที่เปลี่ยนหน้าตาตามจอ ไม่ mount แยก 2 ชุด (เทสต์ที่หาปุ่มจากข้อความ
+              จะไปจับปุ่มชุดที่ซ่อนอยู่) คลาสปกติคือหน้าตาบน PC ของเดิมทุกตัว ส่วนมือถือปรับด้วย max-md: เท่านั้น
+              - มือถือ (< md): การ์ด 3 คอลัมน์ ตัวเลขใหญ่อยู่บน ชื่อสถานะอยู่ล่าง เห็นครบทุกสถานะในจอเดียว
+                เดิมเป็นแถวเลื่อนแนวนอน จอ 390px เห็นแค่ 3 จาก 7 ป้าย และไม่มีอะไรบอกว่าเลื่อนต่อได้
+                ชื่อสถานะคง text-xs (13px ตามที่ยกทั้งแอปใน index.css) ห้ามลดเพื่อให้พอดีการ์ด — ขอบซ้ายขวา
+                เหลือ px-0.5 แทน จอ 360px "กำลังดำเนินการ" ยังอยู่บรรทัดเดียว
+              - PC (md+): ป้ายแถวเดียวมีจุดสี + ตัวเลข เหมือนเดิม */}
+          <div className="flex flex-wrap gap-1.5 max-md:grid max-md:grid-cols-3">
             {FILTER_TABS.map((tab, i) => {
               const key = FILTER_KEYS[i]
               const active = filterTab === i && !odorTabActive
               const dotColor = key ? (STATUS[key]?.color ?? '#94a3b8') : '#64748b'
+              // ตัวเลขใหญ่บนมือถือใช้เฉดเข้มของสถานะ (ชุดเดียวกับตัวอักษรในป้ายสถานะ) — เฉดสว่างของจุดสี
+              // อย่างเหลือง #f59e0b บนพื้นขาวได้ contrast แค่ราว 2:1 อ่านยากบนจอสว่างน้อยตอนลงพื้นที่
+              const numColor = key ? (STATUS[key]?.text ?? '#334155') : '#334155'
               return (
-                <button key={i} onClick={() => { setFilterTab(i); setOdorTabActive(false) }}
-                  className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+                <button key={i} type="button" aria-pressed={active} onClick={() => { setFilterTab(i); setOdorTabActive(false) }}
+                  className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors max-md:min-h-15 max-md:flex-col max-md:justify-center max-md:gap-1 max-md:px-0.5 max-md:py-2 max-md:text-center max-md:leading-tight max-md:text-balance ${
                     active ? 'text-white border-transparent' : 'text-gray-600 bg-white border-gray-200 hover:bg-gray-50'
                   }`}
                   style={active ? { backgroundColor: 'var(--color-primary)' } : {}}>
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: active ? 'rgba(255,255,255,0.85)' : dotColor }} />
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0 max-md:hidden" style={{ backgroundColor: active ? 'rgba(255,255,255,0.85)' : dotColor }} />
                   {tab}
-                  {i > 0 && (
-                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
-                      active ? 'bg-white/25' : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      {nonOdorComplaints.filter((c) => normalizeStatus(c.status) === key).length}
-                    </span>
-                  )}
+                  {/* ตัวเลขอยู่หลังชื่อใน DOM (โปรแกรมอ่านหน้าจออ่านว่า "คำร้องใหม่ 3") มือถือยกขึ้นไว้บนด้วย order-first
+                      ป้าย "ทั้งหมด" บน PC ไม่มีตัวเลขตามเดิม เพราะแถบสถิติด้านบนบอกยอดรวมอยู่แล้ว */}
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none max-md:order-first max-md:p-0 max-md:bg-transparent max-md:text-xl max-md:font-extrabold ${
+                    active ? 'bg-white/25 max-md:text-white' : 'bg-gray-100 text-gray-500 max-md:text-[color:var(--num-color)]'
+                  } ${key ? '' : 'md:hidden'}`}
+                    style={{ '--num-color': numColor }}>
+                    {key ? (counts[key] ?? 0) : nonOdorComplaints.length}
+                  </span>
                 </button>
               )
             })}
             {/* แท็ปเฉพาะกิจ: กลิ่นเหม็นรบกวน — ส่งตรงผู้รับผิดชอบ ไม่ผ่านแอดมิน, ดูอย่างเดียว (ไม่ปนกับ
-                แท็ปสถานะข้างบน ไม่ใช้ FILTER_TABS/filterTab เพราะไม่ใช่สถานะ) */}
+                แท็ปสถานะข้างบน ไม่ใช้ FILTER_TABS/filterTab เพราะไม่ใช่สถานะ) · มือถือกินเต็มแถวใต้การ์ดสถานะ */}
             {odorComplaints.length > 0 && (
-              <button onClick={() => setOdorTabActive(true)}
-                className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+              <button type="button" aria-pressed={odorTabActive} onClick={() => setOdorTabActive(true)}
+                className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors max-md:col-span-3 max-md:min-h-10 max-md:justify-center ${
                   odorTabActive ? 'text-white border-transparent' : 'text-lime-700 bg-lime-50 border-lime-200 hover:bg-lime-100'
                 }`}
                 style={odorTabActive ? { backgroundColor: '#65a30d' } : {}}>

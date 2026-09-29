@@ -47,16 +47,26 @@ export function ListCard({ title, count, search, onSearch, searchLabel = 'ค้
 }
 
 // ป้ายกรองพร้อมจุดสีและจำนวน — รูปแบบเดียวกับแท็บสถานะของคำร้อง
+// มือถือ (< md) เป็นการ์ดตัวเลข (ตัวเลขบน ชื่อล่าง) เห็นครบในจอเดียว เหมือนหน้าคำร้อง — เดิมเป็นแถวเลื่อน
+// แนวนอนที่ป้ายหลังๆ ตกขอบจอโดยไม่มีอะไรบอกว่าเลื่อนได้ คลาสปกติคือหน้าตาบน PC ของเดิม มือถือปรับด้วย max-md: เท่านั้น
+// ตัวเลขใช้ color ของป้ายตรงๆ — ชุดที่ส่งมาตอนนี้เป็นเฉด 600–700 ตัวเลขใหญ่หนาอ่านบนพื้นขาวได้
+// ถ้าจะส่งเฉด 500 (เช่นเขียว #10b981) มาใช้ ต้องเพิ่มเฉดเข้มแยกแบบ STATUS.text ของคำร้อง
+// 4 ป้ายใช้ 2×2 ไม่ให้เหลือการ์ดใบเดียวโดดในแถวที่สอง
+// text-balance: ชื่อยาวที่ต้องขึ้นสองบรรทัดจะถูกแบ่งให้ยาวพอๆ กัน — ไม่มีมันจอ 360px ได้ "แล้วเสร็จในช่วง / นี้"
+// และ "ไม่ทราบวันแล้ว / เสร็จ" (ผลการปฏิบัติงาน) มีแล้วได้ "แล้วเสร็จ / ในช่วงนี้" · "ไม่ทราบวัน / แล้วเสร็จ"
+const TILE_COLS = { 1: 'max-md:grid-cols-1', 2: 'max-md:grid-cols-2', 4: 'max-md:grid-cols-2' }
 export function Pills({ value, onChange, items, label }) {
-  return <div className="scrollbar-none -mx-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0" role="group" aria-label={label}>
+  return <div className={`flex flex-wrap gap-1.5 max-md:grid ${TILE_COLS[items.length] ?? 'max-md:grid-cols-3'}`} role="group" aria-label={label}>
     {items.map(({ id, label: text, count, color }) => {
       const active = value === id
       return <button key={id} type="button" aria-pressed={active} onClick={() => onChange(id)}
-        className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${active ? 'border-transparent text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}
+        className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors max-md:min-h-15 max-md:flex-col max-md:justify-center max-md:gap-1 max-md:px-0.5 max-md:py-2 max-md:text-center max-md:leading-tight max-md:text-balance ${active ? 'border-transparent text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}
         style={active ? { backgroundColor: 'var(--color-primary)' } : {}}>
-        <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: active ? 'rgba(255,255,255,0.85)' : color || '#94a3b8' }} />
+        <span className="size-1.5 shrink-0 rounded-full max-md:hidden" style={{ backgroundColor: active ? 'rgba(255,255,255,0.85)' : color || '#94a3b8' }} />
         {text}
-        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${active ? 'bg-white/25' : 'bg-gray-100 text-gray-500'}`}>{count}</span>
+        {/* ตัวเลขอยู่หลังชื่อใน DOM (โปรแกรมอ่านหน้าจออ่านชื่อก่อน) มือถือยกขึ้นไว้บนด้วย order-first */}
+        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none max-md:order-first max-md:p-0 max-md:bg-transparent max-md:text-xl max-md:font-extrabold ${active ? 'bg-white/25' : 'bg-gray-100 text-gray-500 max-md:text-[color:var(--num-color)]'}`}
+          style={{ '--num-color': color || '#334155' }}>{count}</span>
       </button>
     })}
   </div>
