@@ -17,10 +17,13 @@ import {
   REOPEN_WINDOW_DAYS,
   canFinishWork,
   canStartWork,
+  initialResolvedPin,
   isComplaintWorker,
   isFinishedLike,
+  isSamePin,
   reopenState,
   requiresResolvedPin,
+  toPin,
   validateReopenReason,
 } from '../src/lib/complaintWorkflow.js'
 
@@ -64,6 +67,28 @@ assert.equal(requiresResolvedPin(META, 'light'), true)
 assert.equal(requiresResolvedPin(META, 'grievance'), false)
 assert.equal(requiresResolvedPin(META, 'unknown'), true, 'ไม่รู้ธง = ขอหมุดไว้ก่อน')
 assert.equal(requiresResolvedPin({}, 'light'), true)
+
+// หมุดเริ่มต้น: ผู้ร้องปักมาแล้วใช้ได้เลย ย้ายเฉพาะเมื่อผิดที่ (เจ้าของระบบกำหนด 2569-09-29)
+const pinned = { ...base, latitude: 18.1448, longitude: 100.1167 }
+assert.deepEqual(initialResolvedPin(pinned, true), { lat: 18.1448, lng: 100.1167 })
+assert.equal(initialResolvedPin(base, true), null, 'ผู้ร้องไม่ได้ปัก = ผู้รับผิดชอบต้องปักเอง')
+assert.equal(initialResolvedPin(pinned, false), null, 'หมวดไม่บังคับหมุด (ภาษี/ร้องทุกข์) ไม่เติมให้')
+assert.deepEqual(initialResolvedPin({ ...base, latitude: '18.1448', longitude: '100.1167' }, true),
+  { lat: 18.1448, lng: 100.1167 }, 'พิกัดที่มาเป็นข้อความต้องแปลงเป็นตัวเลข')
+// หมุดที่ CHECK ของ DB ไม่รับต้องไม่ถูกเติม ไม่งั้นปุ่มยืนยันกดได้แต่ DB ปฏิเสธ
+for (const [lat, lng] of [[0, 0], [91, 100], [18, 181], [-91, 100], [18, -181], [null, 100], [18, null], ['', ''], ['x', 'y']]) {
+  assert.equal(toPin(lat, lng), null, `ต้องไม่ใช้พิกัด ${lat},${lng} เป็นหมุด`)
+}
+assert.match(ddl, /NOT \(resolved_latitude = 0 AND resolved_longitude = 0\)/)
+assert.match(ddl, /resolved_latitude BETWEEN -90 AND 90\s+AND resolved_longitude BETWEEN -180 AND 180/)
+// แผนที่คืนจุดกึ่งกลางคลาดเศษทศนิยมได้ทั้งที่ไม่ได้เลื่อน — ต้องยังนับเป็นหมุดผู้ร้อง
+assert.equal(isSamePin({ lat: 18.1448, lng: 100.1167 }, { lat: 18.144800000000004, lng: 100.11669999999999 }), true)
+assert.equal(isSamePin({ lat: 18.1448, lng: 100.1167 }, { lat: 18.1449, lng: 100.1167 }), false, 'ย้าย ~11 ม. ต้องนับว่าย้าย')
+assert.equal(isSamePin(null, { lat: 18.1448, lng: 100.1167 }), false)
+assert.equal(isSamePin({ lat: 18.1448, lng: 100.1167 }, null), false)
+// กล่อง "ดำเนินการแล้ว" ต้องตั้งหมุดเริ่มต้นจากกฎนี้ ไม่ใช่เริ่มว่างแล้วบังคับปักซ้ำ
+const dialog = readText('src/components/complaints/FinishComplaintDialog.jsx')
+assert.match(dialog, /useState\(\(\) => initialResolvedPin\(complaint, requiresPin\)\)/)
 
 // ── เปิดเรื่องกลับ ───────────────────────────────────────────────────────────
 const finished = { ...base, status: 'closed', closed_at: new Date(NOW - 2 * DAY).toISOString() }
