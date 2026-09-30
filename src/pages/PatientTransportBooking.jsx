@@ -78,12 +78,12 @@ export default function PatientTransportBooking() {
         <p className="rounded-xl bg-amber-50 p-4">เจ็บป่วยฉุกเฉิน <a href="tel:1669" className="font-bold underline">โทร 1669</a> อย่ารอคิวจองรถ</p>
         {uid ? <section aria-label="คำขอของฉัน" className="space-y-3">
           <h2 className="text-lg font-bold">คำขอของฉัน ({active.length})</h2>
-          <BookingCards bookings={active} trips={workspace?.trips || []} busy={busy} onAction={action} />
+          <BookingCards bookings={active} allBookings={bookings} trips={workspace?.trips || []} busy={busy} onAction={action} />
           {/* ประวัติเรียงต่อด้านล่าง ไม่ต้องกดเปิด — ผู้จองรายหนึ่งมีไม่กี่รายการ
               (ระบบส่งมาเฉพาะที่ยังเดินอยู่กับ 30 วันล่าสุด) */}
           {past.length > 0 && <>
             <h2 className="pt-2 text-lg font-bold">ประวัติการจอง ({past.length})</h2>
-            <BookingCards bookings={past} trips={workspace?.trips || []} busy={busy} onAction={action} />
+            <BookingCards bookings={past} allBookings={bookings} trips={workspace?.trips || []} busy={busy} onAction={action} />
           </>}
         </section> : <p className="text-sm text-slate-600">เข้าสู่ระบบแล้วจะเห็นคำขอของตัวเองและสถานะรถที่นี่</p>}
       </>}
