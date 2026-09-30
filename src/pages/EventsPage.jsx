@@ -52,7 +52,10 @@ function CalendarView({ events, dotEvents, onSelectEvent, role }) {
 
   const [calYear, setCalYear]   = useState(todayRef.getFullYear())
   const [calMonth, setCalMonth] = useState(todayRef.getMonth())
-  const [selectedDay, setSelectedDay] = useState(todayRef.getDate())
+  // ไม่เลือก "วันนี้" ไว้ให้ตอนเปิดหน้า — รายการ "กิจกรรมเร็วๆ นี้" เริ่มจากวันนี้อยู่แล้ว ถ้าเลือกไว้ด้วย
+  // กิจกรรมของวันนี้จะขึ้นซ้ำ 2 ที่ (บนมือถือเรียงต่อกันเห็นชัด) ส่วนกิจกรรมของวันจะขึ้นเมื่อผู้ใช้แตะวันเอง
+  // (เจ้าของระบบเลือก 2569-09-30 หลังเจอวันที่ 30 ก.ย. ขึ้นซ้ำบนหน้าน้ำเลา)
+  const [selectedDay, setSelectedDay] = useState(null)
 
   const eventMap = useMemo(() => {
     const map = {}
@@ -217,6 +220,10 @@ function CalendarView({ events, dotEvents, onSelectEvent, role }) {
           </div>
         ))}
       </div>
+
+      {!selectedDay && (
+        <p className="mt-5 px-1 text-xs text-gray-400">แตะวันที่ในปฏิทินเพื่อดูกิจกรรมของวันนั้น</p>
+      )}
 
       {/* Selected-day events */}
       {selectedDay && (
