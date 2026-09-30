@@ -32,6 +32,12 @@ const RELATIONS = { self: 'ผู้ป่วยจองเอง', relative: '
 const ref = id => String(id).slice(0, 8).toUpperCase()
 const CONFLICT = 'ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว'
 
+function linkedConfirmedBooking(booking, bookings, events = []) {
+  if (booking.status !== 'cancelled') return null
+  const event = events.find(item => item.entity_id === booking.id && item.action === 'cancel_passenger' && item.detail?.existing_booking_id)
+  return bookings.find(item => item.id === event?.detail.existing_booking_id && ['confirmed', 'completed'].includes(item.status)) || null
+}
+
 // แถวของกล่อง: คำขอ + เที่ยว + ขั้น + งานถัดไป + กลุ่มที่ระบบเสนอให้ไปด้วยกัน
 // ระบบเสนอกลุ่มเฉพาะคนที่เลือก "นั่งร่วมได้" เดินได้เอง ปลายทาง/วัน/ขากลับตรงกัน เวลาห่างไม่เกิน 30 นาที
 // และที่นั่งพอ (suggestGroups) — ฐานข้อมูลคำนวณแผนทั้งก้อนซ้ำใต้ล็อกก่อนยืนยันทุกครั้ง
@@ -42,17 +48,18 @@ function buildRows(workspace) {
   const rows = workspace.bookings.map(booking => {
     // คนที่ถูกนำออกจากเที่ยวยังมี trip_id ค้างอยู่ — ไม่แสดงเที่ยวนั้นเป็นของเขาอีก (แบบการ์ดฝั่งประชาชน)
     const trip = booking.trip_id && booking.status !== 'cancelled' ? trips.get(booking.trip_id) || null : null
-    return { booking, trip, stage: bookingStage(booking, trip), next: staffNextAction(booking, trip), group: groupOf.get(booking.id) || [booking] }
+    const linked = linkedConfirmedBooking(booking, workspace.bookings, workspace.events)
+    return { booking, trip, linked, stage: bookingStage(booking, trip), next: staffNextAction(booking, trip), group: groupOf.get(booking.id) || [booking] }
   })
   // งานที่ต้องทำขึ้นก่อน (เหตุขัดข้อง → ขอยกเลิก → รอยืนยันรถ → เอกสาร) แล้วคำขอที่ยังเดินอยู่ตามวันนัด
   // ส่วนที่จบแล้วเรียงล่าสุดขึ้นก่อน
   const live = r => ['submitted', 'confirmed', 'running'].includes(r.stage)
-  const at = r => String(r.booking.appointment_at || '')
+  const at = r => String((r.linked || r.booking).appointment_at || '')
   return rows.sort((x, y) => x.next.rank - y.next.rank || Number(live(y)) - Number(live(x))
     || (live(x) ? at(x).localeCompare(at(y)) : at(y).localeCompare(at(x))))
 }
 
-const haystack = ({ booking: b }) => [b.patient_name, b.requester_name, b.phone, b.pickup, b.route_label, ref(b.id), dateTime(b.appointment_at), whenLabel(b.appointment_at)].join(' ').toLowerCase()
+const haystack = ({ booking: b, linked }) => [b.patient_name, b.requester_name, b.phone, b.pickup, b.route_label, ref(b.id), dateTime(b.appointment_at), whenLabel(b.appointment_at), linked && ref(linked.id), linked && dateTime(linked.appointment_at)].join(' ').toLowerCase()
 
 function actionLabel({ next, group, booking, trip }) {
   if (next.id === 'view' && booking.status === 'confirmed' && trip?.state === 'confirmed') return 'ดูขั้นตอนต่อไป'
@@ -96,12 +103,12 @@ function ReasonAction({ title, hint, defaultReason = '', placeholder = '', butto
   </div>
 }
 
-function Facts({ booking: b, trip, others }) {
+function Facts({ booking: b, trip, others, historical = false }) {
   const pin = Number.isFinite(b.pickup_lat) && Number.isFinite(b.pickup_lng)
   const items = [
-    ['วันเวลานัด', dateTime(b.appointment_at)],
-    ['โรงพยาบาล', b.route_label],
-    ['ขากลับ', b.return_mode === 'one_way' ? 'ขาไปอย่างเดียว' : `${RETURN_MODES[b.return_mode]} · ${b.return_at ? `ประมาณ ${clockOf(b.return_at)} น.` : 'ยังไม่ทราบเวลา'}`],
+    [historical ? 'วันเวลานัดเดิม (ยกเลิก)' : 'วันเวลานัด', dateTime(b.appointment_at)],
+    [historical ? 'โรงพยาบาลในคำขอเดิม' : 'โรงพยาบาล', b.route_label],
+    [historical ? 'ขากลับในคำขอเดิม' : 'ขากลับ', b.return_mode === 'one_way' ? 'ขาไปอย่างเดียว' : `${RETURN_MODES[b.return_mode]} · ${b.return_at ? `ประมาณ ${clockOf(b.return_at)} น.` : 'ยังไม่ทราบเวลา'}`],
     ['จุดรับ', <>{b.pickup}{pin && <a className="ml-2 font-semibold text-sky-800 underline" target="_blank" rel="noopener noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${b.pickup_lat},${b.pickup_lng}`}>📍 นำทาง</a>}</>],
     ['การเดินทาง', `${MOBILITY[b.mobility]} · ผู้ติดตาม ${b.companions} คน${b.share ? ' · นั่งร่วมกับผู้ป่วยอื่นได้' : ''}`],
     ['ผู้จอง', b.relation === 'self' ? RELATIONS.self : `${b.requester_name || '—'} (${RELATIONS[b.relation] || 'จองแทน'})`],
@@ -378,7 +385,7 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
 }
 
 function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, currentUserId, onOpenDriver, onClose, onReload, onConfirm, onJoin, onOpen, onAction, onRemove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onSettings }) {
-  const { booking: b, trip, stage, next, group } = row
+  const { booking: b, trip, linked, stage, next, group } = row
   const passengers = trip ? workspace.bookings.filter(x => x.trip_id === trip.id && x.status !== 'cancelled') : []
   const others = (trip ? passengers : group).filter(x => x.id !== b.id)
   const issue = b.status === 'confirmed' && trip?.state === 'issue'
@@ -396,6 +403,11 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
   return <Sheet wide title={b.patient_name} subtitle={`${issue ? 'เหตุขัดข้อง' : STAGES[stage].label} · เลขที่ ${ref(b.id)}`} onClose={onClose} onReload={onReload} busy={busy}
     onPrint={printable ? () => onPrintLetter(trip) : undefined} printLabel="พิมพ์หนังสือนำส่ง">
     {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
+    {linked && <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
+      <p className="font-bold text-sky-950">คิวที่ใช้เดินทาง: {dateTime(linked.appointment_at)} · เลขที่ {ref(linked.id)}</p>
+      <p className="text-sm text-slate-700">คำขอนี้ปิดเป็นคิวซ้ำ · นัดเดิม {dateTime(b.appointment_at)}</p>
+      <button type="button" className={buttonClass} onClick={() => onOpen(linked.id)}>เปิดคิวที่ยืนยันแล้ว</button>
+    </div>}
     {showProblem && <ProblemBox key={JSON.stringify(problem.plan.errors)} row={row} problem={problem} rows={rows} workspace={workspace} busy={busy} isAdmin={isAdmin}
       onConfirm={onConfirm} onJoin={onJoin} onOpen={onOpen} act={act} onReload={onReload} onSettings={onSettings} />}
     {/* งานที่ต้องทำของแถวขึ้นก่อนรายละเอียด — แผ่นเปิดเพราะกดปุ่มนั้นมา จอมือถือจะได้ไม่ต้องเลื่อนหา */}
@@ -430,7 +442,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
       <p className="text-sm text-slate-600">ผู้จองโทรมาแจ้งว่าตรวจเสร็จแล้ว · ระบบแจ้งคนขับให้</p>
       <button type="button" className={primaryClass} disabled={busy} onClick={() => act(b, 'ready_return')}>แจ้งพร้อมให้มารับกลับแทนผู้จอง</button>
     </div>}
-    <Facts booking={b} trip={trip} others={others} />
+    <Facts booking={b} trip={trip} others={others} historical={!!linked} />
     <MoreActions row={row} workspace={workspace} busy={busy} onConfirm={onConfirm} act={act} remove={remove} onAmend={onAmend} onUpdatePickup={onUpdatePickup}
       onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} onReload={onReload} />
   </Sheet>
@@ -527,14 +539,14 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
             <th className="sticky right-0 z-10 min-w-[170px] whitespace-nowrap px-2 py-2.5 text-center text-[11px] font-bold text-white shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>ดำเนินการ</th>
           </tr></thead>
           <tbody className="divide-y divide-gray-200">{shown.map((row, index) => {
-            const { booking: b, trip, group } = row
+            const { booking: b, trip, linked, group } = row
             const pickupAt = trip && pickupForBooking(trip, b)
             const shade = index % 2 === 0 ? '#fff' : '#f5f8fc'
             return <tr key={b.id} data-booking={b.id} className="cursor-pointer align-top transition-colors" style={{ backgroundColor: shade }}
               onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = shade}
               onClick={() => { setProblem(null); setOpenId(b.id) }}>
               <td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500">{index + 1}</td>
-              <td className="whitespace-nowrap border-r border-gray-200 px-2 py-2.5 text-center"><span className="block font-semibold">{whenLabel(b.appointment_at)}</span><span className="block">{clockOf(b.appointment_at)} น.</span>{pickupAt && b.status !== 'cancelled' && <span className="block text-[11px] text-gray-500">รถมารับ {clockOf(pickupAt)}</span>}</td>
+              <td className="whitespace-nowrap border-r border-gray-200 px-2 py-2.5 text-center"><span className="block font-semibold">{whenLabel((linked || b).appointment_at)}</span><span className="block">{clockOf((linked || b).appointment_at)} น.</span>{linked && <span className="block text-[11px] text-sky-800">คิวจริง {ref(linked.id)}</span>}{linked && <span className="block text-[11px] text-gray-500">เดิม {dateTime(b.appointment_at)}</span>}{pickupAt && b.status !== 'cancelled' && <span className="block text-[11px] text-gray-500">รถมารับ {clockOf(pickupAt)}</span>}</td>
               <td className="border-r border-gray-200 px-2 py-2.5"><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span>{b.status === 'submitted' && group.length > 1 && <span className="block text-[11px] font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</span>}</td>
               <td className="border-r border-gray-200 px-2 py-2.5"><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={b.pickup}>รับที่ {b.pickup}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[b.return_mode]}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
               <td className="border-r border-gray-200 px-2 py-2.5 text-center"><StatusChips row={row} /></td>
@@ -544,11 +556,12 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
         </table>
       </div>}
       <div className="space-y-3 md:hidden">{shown.map(row => {
-        const { booking: b, trip, group } = row
+        const { booking: b, trip, linked, group } = row
         const pickupAt = trip && pickupForBooking(trip, b)
         return <article key={b.id} data-booking={b.id} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4" onClick={() => { setProblem(null); setOpenId(b.id) }}>
           <div className="flex items-start justify-between gap-2"><h3 className="font-bold">{b.patient_name}</h3><StatusChips row={row} /></div>
-          <p><strong>{whenLabel(b.appointment_at)} {clockOf(b.appointment_at)} น.</strong> · {b.route_label}</p>
+          <p><strong>{whenLabel((linked || b).appointment_at)} {clockOf((linked || b).appointment_at)} น.</strong> · {linked ? linked.route_label : b.route_label}</p>
+          {linked && <p className="text-sm text-sky-800">คิวที่ใช้เดินทาง {ref(linked.id)} · นัดเดิมที่ยกเลิก {dateTime(b.appointment_at)}</p>}
           <p className="text-sm text-slate-600">จุดรับ: {b.pickup}{Number.isFinite(b.pickup_lat) ? ' · 📍 มีหมุด' : ''}</p>
           <p className="text-sm text-slate-600">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน{pickupAt && b.status !== 'cancelled' ? ` · รถมารับ ${clockOf(pickupAt)} น.` : ''}</p>
           {b.status === 'submitted' && group.length > 1 && <p className="text-sm font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</p>}

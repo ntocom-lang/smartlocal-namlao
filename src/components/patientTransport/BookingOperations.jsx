@@ -8,6 +8,16 @@ import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRI
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
 const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
 
+// The citizen only receives their own bookings and a cancellation reason, not staff events.
+// Link a closed duplicate only when one live booking matches the recorded reason.
+function linkedConfirmedBooking(booking, allBookings = []) {
+  if (booking.status !== 'cancelled') return null
+  if (!booking.cancel_note?.startsWith('คำขอนี้ซ้ำกับคิวที่ยืนยันแล้ว')) return null
+  const matches = allBookings.filter(item => item.id !== booking.id && ['confirmed', 'completed'].includes(item.status) && item.patient_name === booking.patient_name &&
+    item.phone === booking.phone && item.route_id === booking.route_id && item.created_by === booking.created_by)
+  return matches.length === 1 ? matches[0] : null
+}
+
 // แถบขั้นตอน 4 ขั้นของคำขอ — ภาษาเดียวกับแถบสถานะของ "คำขอบริการ/เอกสาร" ที่ประชาชนเคยเห็นแล้ว
 function StepBar({ step }) {
   return <ol className="my-3 flex items-start gap-1" aria-label={`ขั้นตอนของคำขอ · ${BOOKING_STEPS[step - 1] || ''}`}>
@@ -26,14 +36,19 @@ function StepBar({ step }) {
   </ol>
 }
 
-export function BookingCards({ bookings, trips, onAction, busy }) {
+export function BookingCards({ bookings, allBookings = bookings, trips, onAction, busy }) {
   if (!bookings.length) return <p className="rounded-xl border border-slate-200 p-4 text-slate-600">ยังไม่มีการจอง</p>
   return <div className="space-y-4">{bookings.map(b => {
     const trip = b.status === 'cancelled' ? null : trips.find(t => t.id === b.trip_id)
     const step = bookingStep(b, trip)
+    const linked = linkedConfirmedBooking(b, allBookings)
     return <article key={b.id} className="rounded-2xl border border-slate-200 bg-white p-4">
       <div className="mb-1 flex flex-wrap items-center gap-2"><h3 className="font-bold">{b.patient_name}</h3><span className={`rounded-full px-3 py-1 text-xs font-bold ${BOOKING_CHIP[b.status] || 'bg-slate-100'}`}>{BOOKING_STATUS[b.status]}</span></div>
-      <p>{b.route_label} · นัด {dateTime(b.appointment_at)}</p>
+      {linked ? <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
+        <p className="font-bold text-sky-950">คิวที่ใช้เดินทาง: นัด {dateTime(linked.appointment_at)} · เลขที่ {linked.id.slice(0, 8).toUpperCase()}</p>
+        <p className="text-sm text-slate-700">{linked.route_label || b.route_label} · {BOOKING_STATUS[linked.status]}</p>
+        <p className="text-sm text-slate-600">คำขอนี้ปิดเป็นคิวซ้ำ · นัดเดิม {dateTime(b.appointment_at)}</p>
+      </div> : <p>{b.route_label} · {b.status === 'cancelled' ? 'นัดเดิม (ยกเลิก)' : 'นัด'} {dateTime(b.appointment_at)}</p>}
       <p className="text-xs text-slate-500">เลขที่คำขอ {b.id.slice(0, 8).toUpperCase()}</p>
       {step > 0 && <StepBar step={step} />}
       {/* บรรทัดเดียวที่บอกว่า "ตอนนี้ถึงไหนและต้องรออะไร" — ของเดิมให้ผู้จองอ่านสถานะเที่ยวเอาความหมายเอง */}
