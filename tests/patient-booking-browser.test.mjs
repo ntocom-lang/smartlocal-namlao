@@ -19,6 +19,7 @@ await db.exec(await readFile(new URL('../supabase/migrations/20260929100000_pati
 await db.exec(await readFile(new URL('../supabase/migrations/20260929110000_patient_booking_change_hospital.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20260926125325_patient_booking_staff_work_badge.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20260929130000_patient_booking_driver_cover.sql', import.meta.url), 'utf8'))
+await db.exec(await readFile(new URL('../supabase/migrations/20260930110000_patient_booking_duplicate_shared_trip.sql', import.meta.url), 'utf8'))
 await actor(admin)
 await rpc('patient_booking_save_settings', [tenant, (await rpc('patient_booking_workspace', [tenant])).settings.revision,
   { ...settings, office_start: 450, office_end: 1050, routes: [{ ...settings.routes[0], minutes: 45 }] }])
@@ -799,6 +800,76 @@ try{
  assert.deepEqual(await runAs(coordinator,()=>rpc('patient_booking_move_into_trip',[tenant,persistedMove.id,joinSource,replay.expected,joinTargetTrip,replay.target_revision,joinTarget,replay.target_booking_revision])),replay.result)
  assert.deepEqual(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant])),afterJoin,'retry must not alter trips or duplicate notices')
  console.log('PASS confirmed rider joins existing trip through staff UI; original preserved, guards, replay and 320px')
+ // A patient already confirmed with the destination's other rider must not get a second
+ // seat. Closing only the redundant later booking must also replan the remaining rider.
+ const duplicateDate=new Date();duplicateDate.setUTCDate(duplicateDate.getUTCDate()+235)
+ const duplicateTargetDay=duplicateDate.toISOString().slice(0,10);duplicateDate.setUTCDate(duplicateDate.getUTCDate()+1)
+ const duplicateSourceDay=duplicateDate.toISOString().slice(0,10)
+ const duplicateExisting=randomUUID(),duplicatePeer=randomUUID(),duplicateSource=randomUUID(),duplicateOther=randomUUID()
+ const duplicateTargetTrip=randomUUID(),duplicateSourceTrip=randomUUID()
+ for(const [id,name,phone,day] of [
+  [duplicateExisting,'[TEST] ผู้เดินทางคิวซ้ำ','0800000771',duplicateTargetDay],
+  [duplicatePeer,'[TEST] ผู้ร่วมเที่ยวปลายทาง','0800000772',duplicateTargetDay],
+  [duplicateSource,'[TEST] ผู้เดินทางคิวซ้ำ','0800000771',duplicateSourceDay],
+  [duplicateOther,'[TEST] ผู้ร่วมเที่ยวต้นทาง','0800000773',duplicateSourceDay],
+ ]) await submitAs(citizen,id,{patient_name:name,phone,companions:0,appointment_at:at(day,'12:00'),return_at:at(day,'17:30')})
+ await runAs(coordinator,async()=>{
+  for(const [ids,tripId] of [[[duplicateExisting,duplicatePeer],duplicateTargetTrip],[[duplicateSource,duplicateOther],duplicateSourceTrip]]){
+   const plan=await rpc('patient_booking_preview',[tenant,ids,''])
+   await rpc('patient_booking_confirm',[tenant,tripId,ids,plan,''])
+  }
+ })
+ const duplicateBefore=await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))
+ const duplicateStart=duplicateBefore.trips.find(t=>t.id===duplicateSourceTrip)
+ const duplicateDestination=duplicateBefore.trips.find(t=>t.id===duplicateTargetTrip)
+ const duplicateExpected={trip:duplicateSourceTrip,revision:duplicateStart.revision,docs_revision:duplicateStart.docs_revision,
+  schedule_revision:duplicateStart.schedule_revision,settings_revision:duplicateBefore.settings.revision,
+  bookings:Object.fromEntries(duplicateBefore.bookings.filter(b=>b.trip_id===duplicateSourceTrip).map(b=>[b.id,b.revision]))}
+ const duplicateTargetRider=duplicateBefore.bookings.find(b=>b.id===duplicatePeer)
+ const duplicateArgs=[tenant,randomUUID(),duplicateSource,duplicateExpected,duplicateTargetTrip,duplicateDestination.revision,
+  duplicatePeer,duplicateTargetRider.revision]
+ await assert.rejects(runAs(citizen,()=>rpc('patient_booking_move_into_trip',duplicateArgs)),/เฉพาะเจ้าหน้าที่/)
+ await assert.rejects(runAs(coordinator,()=>rpc('patient_booking_move_into_trip',[
+  ...duplicateArgs.slice(0,5),duplicateDestination.revision+1,...duplicateArgs.slice(6)])),/เที่ยวเปลี่ยน/)
+ await assert.rejects(runAs(coordinator,()=>rpc('patient_booking_move_into_trip',[
+  ...duplicateArgs.slice(0,6),duplicateExisting,duplicateBefore.bookings.find(b=>b.id===duplicateExisting).revision+1])),/เวลาของเที่ยวปลายทางเปลี่ยน/)
+ await staffDesk();await row(duplicateSource).click()
+ await sheet.locator('summary').filter({hasText:'จัดการเพิ่มเติม'}).click()
+ await sheet.getByRole('button',{name:'ย้ายไปร่วมเที่ยวที่มีอยู่',exact:true}).click()
+ await sheet.getByLabel('เลือกเที่ยวปลายทาง').selectOption(duplicateTargetTrip)
+ await sheet.getByText('ผู้เดินทางมีคิวที่ยืนยันแล้วในเที่ยวนี้',{exact:false}).waitFor()
+ const closeDuplicate=sheet.getByRole('button',{name:'ปิดคำขอซ้ำ · ใช้คิวที่ยืนยันแล้ว'})
+ assert(await closeDuplicate.isDisabled())
+ await page.setViewportSize({width:320,height:900})
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'duplicate confirmation 320px overflow')
+ await sheet.getByRole('checkbox',{name:/ตรวจแล้วว่าคิวปลายทาง/}).scrollIntoViewIfNeeded()
+ await page.screenshot({path:'D:/tmp/patient-duplicate-confirm-320.png',fullPage:false})
+ await sheet.getByRole('checkbox',{name:/ตรวจแล้วว่าคิวปลายทาง/}).check()
+ await closeDuplicate.click()
+ let duplicateStatus='confirmed'
+ for(let attempt=0;attempt<30 && duplicateStatus==='confirmed';attempt++){
+  await new Promise(resolve=>setTimeout(resolve,100))
+  duplicateStatus=(await runSql(async()=>(await db.query('SELECT status FROM public.patient_bookings WHERE id=$1',[duplicateSource])).rows[0])).status
+ }
+ assert.equal(duplicateStatus,'cancelled',`duplicate close failed: ${await sheet.getByRole('alert').allTextContents()}`)
+ const duplicateAfter=await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))
+ assert.equal(duplicateAfter.bookings.find(b=>b.id===duplicateSource).status,'cancelled')
+ assert.equal(duplicateAfter.bookings.find(b=>b.id===duplicateExisting).status,'confirmed')
+ assert.match((await runAs(citizen,()=>rpc('patient_booking_mine',[tenant]))).bookings.find(b=>b.id===duplicateSource).cancel_note,/คำขอนี้ซ้ำกับคิวที่ยืนยันแล้ว/)
+ assert.equal(duplicateAfter.bookings.find(b=>b.id===duplicatePeer).trip_id,duplicateTargetTrip)
+ assert.equal(duplicateAfter.trips.find(t=>t.id===duplicateTargetTrip).revision,duplicateDestination.revision)
+ const replanned=duplicateAfter.trips.find(t=>t.id===duplicateSourceTrip)
+ assert.equal(replanned.state,'confirmed')
+ assert.deepEqual(replanned.booking_ids,[duplicateOther])
+ assert.notEqual(replanned.plan.pickup_at,duplicateStart.plan.pickup_at)
+ assert.equal(replanned.plan.booking_ids.length,1)
+ const closedOp=await runSql(async()=>(await db.query("SELECT id,payload FROM public.patient_booking_operations WHERE payload->>'action'='move_into_trip' ORDER BY created_at DESC LIMIT 1")).rows[0])
+ assert.equal(closedOp.payload.result.duplicate_closed,true)
+ assert.deepEqual(await runAs(coordinator,()=>rpc('patient_booking_move_into_trip',[
+  tenant,closedOp.id,duplicateSource,closedOp.payload.expected,duplicateTargetTrip,closedOp.payload.target_revision,
+  closedOp.payload.target_booking,closedOp.payload.target_booking_revision])),closedOp.payload.result)
+ assert.deepEqual(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant])),duplicateAfter,'duplicate retry must be idempotent')
+ console.log('PASS duplicate confirmed booking: reviewed UI closes only extra seat, replans other rider, preserves destination, rejects stale/unauthorized, retry')
  // Reproduce the real staff failure: a confirmed morning wait request and two pending
  // midday requests for the same destination. The visible group button must finish the job.
  const uiWaveDay=new Date();uiWaveDay.setUTCDate(uiWaveDay.getUTCDate()+300)

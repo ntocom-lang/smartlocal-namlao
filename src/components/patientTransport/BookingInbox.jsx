@@ -196,6 +196,7 @@ function MoveIntoTrip({ booking, trip, passengers, workspace, busy, onReload }) 
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [approvedDuplicate, setApprovedDuplicate] = useState(false)
   const [openedAt] = useState(() => Date.now())
   const options = workspace.trips.filter(candidate => candidate.id !== trip.id && candidate.state === 'confirmed' &&
     candidate.plan?.route_id === booking.route_id && candidate.plan?.return_mode === booking.return_mode &&
@@ -206,8 +207,12 @@ function MoveIntoTrip({ booking, trip, passengers, workspace, busy, onReload }) 
     return { trip: candidate, rider: first, count: riders.length }
   }).filter(Boolean).sort((a, b) => a.rider.appointment_at.localeCompare(b.rider.appointment_at))
   const target = options.find(option => option.trip.id === selected)
+  const existingBooking = target && workspace.bookings.find(item => item.trip_id === target.trip.id && item.status === 'confirmed' &&
+    item.id !== booking.id && item.patient_name === booking.patient_name && item.phone === booking.phone &&
+    item.route_id === booking.route_id && item.appointment_at === target.rider.appointment_at)
   const move = async () => {
     if (!target || pending || busy) return
+    const reviewedRider = existingBooking || target.rider
     setPending(true); setError(''); setMessage('')
     try {
       const expected = { trip: trip.id, revision: trip.revision, docs_revision: trip.docs_revision,
@@ -216,24 +221,29 @@ function MoveIntoTrip({ booking, trip, passengers, workspace, busy, onReload }) 
       const { data, error: failure } = await supabase.rpc('patient_booking_move_into_trip', {
         p_muni: tenant.id, p_op: operation, p_booking: booking.id, p_expected: expected,
         p_target: target.trip.id, p_target_revision: target.trip.revision,
-        p_target_booking: target.rider.id, p_target_booking_revision: target.rider.revision,
+        p_target_booking: reviewedRider.id, p_target_booking_revision: reviewedRider.revision,
       })
       if (failure || !data?.saved) setError(failure?.message || 'ย้ายคิวไม่สำเร็จ กรุณาลองใหม่')
-      else { setMessage('ย้ายไปร่วมเที่ยวแล้ว ระบบแจ้งผู้เกี่ยวข้องแล้ว กรุณาพิมพ์เอกสารใหม่'); await onReload() }
+      else { setMessage(data.duplicate_closed ? 'ปิดคำขอซ้ำแล้ว คิวในเที่ยวปลายทางยังอยู่ ระบบคำนวณเที่ยวเดิมและแจ้งผู้เกี่ยวข้องแล้ว กรุณาพิมพ์เอกสารเที่ยวเดิมใหม่' : 'ย้ายไปร่วมเที่ยวแล้ว ระบบแจ้งผู้เกี่ยวข้องแล้ว กรุณาพิมพ์เอกสารใหม่'); await onReload() }
     } catch { setError('ติดต่อระบบไม่สำเร็จ กรุณาโหลดข้อมูลล่าสุดก่อนลองอีกครั้ง') }
     finally { setPending(false) }
   }
   return <div className="space-y-3 rounded-xl bg-sky-50 p-3">
     <p className="font-semibold">ย้ายไปร่วมเที่ยวที่มีอยู่</p>
     <p className="text-sm">ย้ายเฉพาะ {booking.patient_name} · ระบบใช้เวลานัดและเวลารับกลับของเที่ยวที่เลือก ตรวจที่นั่งและเวลารถใหม่ แล้วเก็บเที่ยวเดิมกับเอกสารไว้เป็นประวัติ</p>
-    <label className="block">เลือกเที่ยวปลายทาง<select className={inputClass} value={selected} onChange={event => { setSelected(event.target.value); setOperation(crypto.randomUUID()); setError(''); setMessage('') }}>
+    <label className="block">เลือกเที่ยวปลายทาง<select className={inputClass} value={selected} onChange={event => { setSelected(event.target.value); setOperation(crypto.randomUUID()); setApprovedDuplicate(false); setError(''); setMessage('') }}>
       <option value="">เลือกวันที่และผู้เดินทางในเที่ยว</option>
       {options.map(option => <option key={option.trip.id} value={option.trip.id}>{dateTime(option.rider.appointment_at)} · {option.rider.patient_name} · {option.count} คน</option>)}
     </select></label>
     {target && <p className="rounded-lg bg-white p-3 text-sm">วันเวลานัดใหม่ {dateTime(target.rider.appointment_at)} · {target.rider.return_at ? `รับกลับ ${dateTime(target.rider.return_at)}` : 'เที่ยวไปอย่างเดียว'} · จุดรับของผู้เดินทางรายนี้ยังคงเดิม เวลารถมารับจะคำนวณใหม่</p>}
+    {existingBooking && <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+      <p className="font-semibold">ผู้เดินทางมีคิวที่ยืนยันแล้วในเที่ยวนี้ · เลขที่ {ref(existingBooking.id)}</p>
+      <p>ไม่ต้องเพิ่มที่นั่งซ้ำ ระบบจะปิดเฉพาะคำขอที่กำลังเปิดอยู่ คิวในเที่ยวปลายทางยังอยู่ ผู้เดินทางคนอื่นในเที่ยวเดิมยังเดินทางตามปกติ แต่เวลารถรับอาจเปลี่ยนหลังคำนวณแผนใหม่ ระบบจะแจ้งผู้เกี่ยวข้องและต้องพิมพ์เอกสารเที่ยวเดิมใหม่</p>
+      <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5 shrink-0" checked={approvedDuplicate} onChange={event => setApprovedDuplicate(event.target.checked)} />ตรวจแล้วว่าคิวปลายทางเป็นของผู้เดินทางรายนี้ และต้องการปิดคำขอซ้ำ</label>
+    </div>}
     {error && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900">{error} · คิวเดิมยังอยู่</p>}
     {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-900">{message}</p>}
-    <button type="button" className={primaryClass} disabled={!target || pending || busy} onClick={move}>{pending ? 'กำลังตรวจคิว...' : 'ย้ายไปร่วมเที่ยวนี้'}</button>
+    <button type="button" className={primaryClass} disabled={!target || pending || busy || (existingBooking && !approvedDuplicate)} onClick={move}>{pending ? 'กำลังตรวจคิว...' : existingBooking ? 'ปิดคำขอซ้ำ · ใช้คิวที่ยืนยันแล้ว' : 'ย้ายไปร่วมเที่ยวนี้'}</button>
   </div>
 }
 
