@@ -371,14 +371,6 @@ function EventManagementPage() {
   )
 }
 
-function EventsEntryPage() {
-  const { session, role, profileLoading } = useAuth()
-
-  if (session && profileLoading) return null
-  if (session && INTERNAL_EVENT_ROLES.includes(role)) return <EventManagementPage />
-  return <EventsPage />
-}
-
 function AppShell() {
   const { loading, error, tenant } = useTenant()
   const tenantId = tenant?.id
@@ -678,7 +670,10 @@ function AppShell() {
               <EventManagementPage />
             </RequireAuth>
           } />
-          <Route path="/events" element={<EventsEntryPage />} />
+          {/* ทุกบทบาทเห็นหน้าเดียวกัน (ปฏิทิน + รายการในหน้าเดียว) — เจ้าของระบบสั่ง 2569-09-30
+              เดิมบุคลากรภายในถูกพาไปหน้าจัดการแทน ซึ่งเห็นปฏิทินกับรายการได้ทีละอย่าง
+              งานจัดการยังอยู่ที่ /events/manage และเมนูปฏิทินในหน้าเจ้าหน้าที่ สิทธิ์เปิดอ่านดู EventsPage.jsx */}
+          <Route path="/events" element={<EventsPage />} />
           <Route path="/emergency" element={<EmergencyPage />} />
           <Route path="/directory" element={<DirectoryPage />} />
           {/* ไม่ต้องล็อกอิน — QR บนใบติดบอร์ดหมู่บ้านพามาที่นี่ตรงๆ */}

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, CalendarDays, MapPin, Clock, Plus, List, ChevronLeft, ChevronRight, History } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { useAuth } from '../contexts/AuthContext'
 import EventDetailModal from '../components/EventDetailModal'
 import { toDateStr } from '../lib/thaiDate'
 import { AUDIENCE_COLOR, AUDIENCE_LABEL } from '../lib/orgTerms'
@@ -15,6 +16,10 @@ const CATEGORY_COLOR = {
 
 const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 
+// บุคลากรภายใน = บทบาทที่เพิ่มกิจกรรมในปฏิทินได้ ต้องตรงกับ EVENT_MANAGER_ROLES ใน EventsManager.jsx
+// และ INTERNAL_EVENT_ROLES ใน App.jsx (ด่านของ /events/manage)
+const INTERNAL_ROLES = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician']
+
 function audienceFilter(role) {
   if (role === 'admin' || role === 'superadmin' || role === 'viewer') return null
   if (role === 'council') return ['public', 'council']
@@ -24,8 +29,21 @@ function audienceFilter(role) {
 
 // ทุกคนเห็นกิจกรรมในรายการ/ปฏิทินได้หมด (เช็ควันว่างของกลุ่มอื่นได้) แต่กดดูรายละเอียดเต็มได้เฉพาะคนมีสิทธิ์
 function canViewEventDetail(ev, role) {
+  // บุคลากรภายในได้ข้อมูลจาก RPC list_events_for_staff ที่ตัดสินสิทธิ์มาให้แล้วฝั่งเซิร์ฟเวอร์ — เชื่อค่านั้นก่อน
+  // กติกาเดียวกับหน้าจัดการ: สาธารณะ / กลุ่มของตัวเอง / คนสร้าง / หัวหน้ากองนั้น / แอดมิน
+  // (audienceFilter ด้านบนใช้กับข้อมูลที่ไม่ได้มาจาก RPC เท่านั้น ซึ่งมีแต่กิจกรรมสาธารณะ)
+  if (typeof ev.can_view_detail === 'boolean') return ev.can_view_detail
   const allowed = audienceFilter(role)
   return allowed === null || (ev.audiences ?? []).some(a => allowed.includes(a))
+}
+
+// ปุ่ม "แก้ไข" ในหน้ารายละเอียด ขึ้นเฉพาะเรื่องที่แก้ได้จริง — กติกาเดียวกับปุ่มแก้ไขในหน้าจัดการ
+// (EventsManager.jsx) และ policy "staff update events" ถ้าขึ้นทุกเรื่อง กดแล้วจะไปเจอ "บันทึกไม่สำเร็จ"
+function canEditEvent(ev, role, userId, scope) {
+  if (!ev || !INTERNAL_ROLES.includes(role)) return false
+  if (role === 'admin' || role === 'superadmin') return true
+  if (userId && ev.created_by === userId) return true
+  return !!scope?.is_dept_head && !!scope?.department_id && ev.department_id === scope.department_id
 }
 
 function CalendarView({ events, dotEvents, onSelectEvent, role }) {
@@ -279,12 +297,20 @@ export default function EventsPage() {
   const [events, setEvents]   = useState([])
   const [dotEvents, setDotEvents] = useState([])
   const [loading, setLoading] = useState(true)
-  const [role, setRole]       = useState(null)
   const [selected, setSelected] = useState(null)
-  const [canEdit, setCanEdit] = useState(false)
   const [view, setView]       = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'calendar' : 'list'))
   const [selectedAudience, setSelectedAudience] = useState(null) // null = ทั้งหมด
   const [activeTab, setActiveTab] = useState('upcoming') // 'upcoming' | 'past'
+  // กอง + สถานะหัวหน้ากองของผู้ใช้ ใช้ตัดสินปุ่ม "แก้ไข" (หัวหน้ากองแก้กิจกรรมของกองตนได้)
+  const [editScope, setEditScope] = useState(null)
+
+  // บทบาทมาจาก AuthContext ซึ่งลดเหลือ citizen ให้แล้วเมื่อบัญชีเป็นของ อปท. อื่น
+  // (เดิมหน้านี้อ่าน profiles.role เองตรงๆ จึงไม่ผ่านด่านข้าม อปท. นั้น)
+  const { session, role, profileLoading, profileError } = useAuth()
+  const userId     = session?.user?.id ?? null
+  const isInternal = INTERNAL_ROLES.includes(role)
+  // ล็อกอินอยู่ต้องรอรู้บทบาทก่อนค่อยดึง ไม่งั้นได้ชุดของประชาชนมาแสดงก่อนแล้วค่อยสลับเป็นชุดของเจ้าหน้าที่
+  const authReady  = session === null || (!!session && !profileLoading && (role !== null || profileError))
 
   function handleSelectEvent(ev) {
     if (canViewEventDetail(ev, role)) setSelected(ev)
@@ -295,45 +321,62 @@ export default function EventsPage() {
   }, [])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) return
-      supabase.from('profiles').select('role').eq('id', data.session.user.id).single()
-        .then(({ data: p }) => {
-          const r = p?.role ?? ''
-          setRole(r)
-          setCanEdit(r === 'admin' || r === 'superadmin' || r === 'officer' || r === 'council' || r === 'viewer' || r === 'staff')
-        })
-    })
-  }, [])
-
-  useEffect(() => {
-    if (!tenant?.id) return
+    if (!tenant?.id || !authReady) return
+    let cancelled = false
     const threeMonthsAgo = new Date()
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
-    let query = supabase
-      .from('events')
-      .select('*, creator:profiles!events_created_by_fkey(full_name)')
-      .eq('municipality_id', tenant.id)
-      .gte('event_date', toDateStr(threeMonthsAgo))
-      .order('event_date', { ascending: true })
+    const fromStr = toDateStr(threeMonthsAgo)
 
-    // ทุกคนดึงกิจกรรมมาแสดงในรายการ/ปฏิทินได้หมด (เช็ควันว่างของกลุ่มอื่นได้)
-    // กดดูรายละเอียดเต็มได้เฉพาะคนมีสิทธิ์ตาม audience — ดู canViewEventDetail
-    query.then(({ data }) => {
-      const sorted = (data ?? []).sort((a, b) => {
-        if (a.event_date < b.event_date) return -1
-        if (a.event_date > b.event_date) return 1
-        const ta = a.event_time ?? '99:99'
-        const tb = b.event_time ?? '99:99'
-        if (ta < tb) return -1
-        if (ta > tb) return 1
-        return new Date(a.created_at) - new Date(b.created_at)
+    // ประชาชน/ผู้ไม่ล็อกอิน — RLS คืนเฉพาะกิจกรรมสาธารณะให้เอง
+    const loadPublic = async () => {
+      let query = supabase
+        .from('events')
+        .select('*, creator:profiles!events_created_by_fkey(full_name)')
+        .eq('municipality_id', tenant.id)
+        .gte('event_date', fromStr)
+        .order('event_date', { ascending: true })
+      // บุคลากรภายในที่ต้องถอยมาทางนี้ต้องกรองเอง — RLS เปิดให้บุคลากรภายในอ่านทุกแถวเต็มๆ
+      // (รวมรายละเอียดและไฟล์แนบของกลุ่มอื่น) จึงขอเฉพาะแถวสาธารณะ เท่ากับที่ประชาชนเห็น
+      if (isInternal) query = query.contains('audiences', ['public'])
+      const { data, error } = await query
+      if (error) throw error
+      return data ?? []
+    }
+
+    // บุคลากรภายใน — ดึงผ่าน RPC ตัวเดียวกับหน้าจัดการ เห็นชื่อกิจกรรมทุกกลุ่ม (เช็ควันว่างได้)
+    // แต่เซิร์ฟเวอร์ตัดรายละเอียด/ไฟล์แนบของเรื่องที่ไม่มีสิทธิ์ออกก่อนส่งมา (migration 20260830090000)
+    const loadInternal = async () => {
+      const [eventsRes, scopeRes] = await Promise.all([
+        supabase.rpc('list_events_for_staff', { p_municipality_id: tenant.id }),
+        supabase.from('profiles').select('department_id, is_dept_head').eq('id', userId).maybeSingle(),
+      ])
+      if (!cancelled) setEditScope(scopeRes.data ?? null)
+      if (eventsRes.error) {
+        console.error('[events] list_events_for_staff ไม่สำเร็จ แสดงเฉพาะกิจกรรมสาธารณะแทน:', eventsRes.error.message)
+        return loadPublic()
+      }
+      // RPC คืนทุกช่วงเวลา ตัดให้เหลือช่วงเดียวกับที่ประชาชนเห็น (ย้อนหลัง 3 เดือน)
+      return (eventsRes.data ?? []).filter(ev => ev.event_date && ev.event_date >= fromStr)
+    }
+
+    ;(isInternal ? loadInternal() : loadPublic())
+      .then(rows => {
+        if (cancelled) return
+        const sorted = [...rows].sort((a, b) => {
+          if (a.event_date < b.event_date) return -1
+          if (a.event_date > b.event_date) return 1
+          const ta = a.event_time ?? '99:99'
+          const tb = b.event_time ?? '99:99'
+          if (ta < tb) return -1
+          if (ta > tb) return 1
+          return new Date(a.created_at) - new Date(b.created_at)
+        })
+        setEvents(sorted)
       })
-      setEvents(sorted)
-    })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [tenant?.id, role])
+      .catch(err => console.error('[events] โหลดกิจกรรมไม่สำเร็จ:', err?.message ?? err))
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [tenant?.id, authReady, isInternal, userId])
 
   // จุดปฏิทิน (วันที่ + กลุ่มเป้าหมายเท่านั้น ไม่มีชื่อ/สถานที่/รายละเอียด) — ดึงผ่าน RPC
   // ที่เปิดให้ทุกคนเรียกได้โดยไม่ต้องมีสิทธิ์ตาม audience เพื่อให้เห็นว่า "มีกิจกรรมวันไหนบ้าง"
@@ -552,7 +595,7 @@ export default function EventsPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 pb-24 md:pb-8">
-      {selected && <EventDetailModal ev={selected} onClose={() => setSelected(null)} canEdit={canEdit} />}
+      {selected && <EventDetailModal ev={selected} onClose={() => setSelected(null)} canEdit={canEditEvent(selected, role, userId, editScope)} />}
 
       {/* Mobile sticky header */}
       <div className="md:hidden sticky top-0 z-30 bg-gray-50/95 dark:bg-transparent backdrop-blur-md pt-3 pb-2 -mx-4 px-4">
@@ -578,7 +621,7 @@ export default function EventsPage() {
                 <><List size={16} /><span className="text-sm font-bold">รายการ</span></>
               )}
             </button>
-            {canEdit && (
+            {isInternal && (
               <button
                 onClick={goToAddEvent}
                 className="flex items-center justify-center gap-1.5 w-[92px] h-[36px] rounded-xl text-sm font-bold text-white transition-all active:scale-95 shadow-sm"
@@ -603,7 +646,7 @@ export default function EventsPage() {
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">กิจกรรมและงานสำคัญของหน่วยงาน</p>
           </div>
         </div>
-        {canEdit && (
+        {isInternal && (
           <button
             onClick={goToAddEvent}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white shadow-sm transition-all hover:opacity-90"

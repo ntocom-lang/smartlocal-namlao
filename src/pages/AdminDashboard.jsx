@@ -5420,7 +5420,8 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
     // เหลือรายการเดียวคือ events จึงถอดทั้งกลุ่ม) — โค้ดโมดูลยังอยู่ครบ ทั้ง import
     // EventsManagerComponent และ branch `activePage === 'events'` ด้านล่าง เอากลับมาได้ทันที
     // ด้วยการใส่กลุ่มนี้คืน ทางเข้าอื่นของปฏิทินกิจกรรมยังใช้งานได้ตามเดิม: หน้าเจ้าหน้าที่
-    // (StaffDashboard โมดูล events) และ route /events
+    // (StaffDashboard โมดูล events) และ route /events/manage — ส่วน /events เป็นหน้าฝั่งประชาชน
+    // ที่ทุกบทบาทเห็นเหมือนกันแล้ว (2569-09-30) ไม่ใช่ทางเข้าหน้าจัดการอีกต่อไป
     {
       group: 'ข้อมูลบริการประชาชน',
       description: 'ข้อมูลอ้างอิงที่ใช้รับเรื่องและติดต่อฉุกเฉิน',
