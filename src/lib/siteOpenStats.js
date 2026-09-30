@@ -6,6 +6,7 @@
 // นิยามการนับที่เจ้าของระบบเลือก (2569-09-29): เอายอดมากที่สุดเท่าที่ยังตรวจสอบย้อนได้
 //   การเข้าชม (ครั้ง) = ทุกครั้งที่หน้าแสดงผล ทั้งเปิดเว็บ รีเฟรช และเปลี่ยนหน้า ทุกคนรวมเจ้าหน้าที่
 //   ตัดออกเฉพาะสิ่งที่ "ไม่ใช่คน": บอต/crawler, เบราว์เซอร์ที่สคริปต์คุม (E2E ของเรา), localhost/dev
+//   และหน้าหลังบ้าน (BACKOFFICE_PATHS) ตั้งแต่ BACKOFFICE_EXCLUDED_SINCE — เหตุผลอยู่ที่ isCountablePath
 // ห้ามเติมตัวเลขปลอม ตัวคูณ หรือนับสัญญาณพื้นหลังเป็นการเข้าชม — เหตุผลอยู่หัวไฟล์
 // supabase/migrations/20260930100100_site_open_daily_rpc.sql
 
@@ -41,6 +42,35 @@ export function isCountableEnvironment({ isDev = false, hostname = '', userAgent
   if (isLocalHostname(hostname)) return false
   if (BOT_UA.test(String(userAgent || ''))) return false
   return true
+}
+
+// หน้าที่เจ้าหน้าที่ใช้ปฏิบัติงาน — ไม่นับเป็นการเข้าชมเว็บไซต์ (เจ้าของระบบเลือก 2569-09-30)
+// ตัวเลขท้ายเว็บควรตอบว่า "หน้าเว็บสาธารณะถูกเปิดกี่ครั้ง" ไม่ใช่ "เจ้าหน้าที่เข้าระบบกี่รอบ"
+// หลักเดียวกับตัวกรอง internal traffic ของเครื่องมือวัดสถิติทั่วไป
+// ⚠️ ต้องตรงกับ route จริงใน src/App.jsx — เทสต์ตรวจให้ ถ้าเปลี่ยนชื่อ route แล้วลืมแก้ที่นี่
+// หน้านั้นจะกลับมาถูกนับเงียบๆ · หน้าที่ประชาชนใช้ร่วม (/, /auth, /profile, /notifications,
+// /reports/*, /data-center, /data-center/public) ยังนับตามเดิม แม้คนเปิดจะเป็นเจ้าหน้าที่
+export const BACKOFFICE_PATHS = [
+  '/admin',             // รวม /admin/login
+  '/staff',             // รวม /staff/patient-transport (ทางลัดที่ redirect เข้า /staff)
+  '/technician',
+  '/fleet',
+  '/data-center/staff',
+  '/events/manage',
+  '/dev-journal',
+  '/device-login',      // เจ้าหน้าที่กดยืนยันรหัส 6 หลักจากจอคอมพิวเตอร์
+]
+
+// วันแรกที่ใช้นิยามนี้ (ต้นปีงบประมาณ 2570) — หน้า /reports/visitors เขียนกำกับว่ายอดก่อนวันนี้
+// นับรวมหน้าหลังบ้านอยู่ด้วย ตัวเลขข้ามช่วงจะได้ไม่ถูกอ่านเทียบกันแบบผิดนิยาม
+export const BACKOFFICE_EXCLUDED_SINCE = '2026-10-01'
+
+// หน้านี้นับเป็นการเข้าชมไหม — pathname มาจาก useLocation() ซึ่งตัด basename ออกแล้ว
+// เทียบแบบ "ตรงตัว หรือตามด้วย /" ไม่ใช่ startsWith ลอยๆ กัน route ในอนาคตชื่อ /staffing ถูกตัดไปด้วย
+// แปลงเป็นตัวเล็กก่อนเพราะ react-router จับ route แบบไม่สนตัวพิมพ์ (/Staff ก็เปิดหน้าเจ้าหน้าที่)
+export function isCountablePath(pathname) {
+  const path = String(pathname || '/').toLowerCase()
+  return !BACKOFFICE_PATHS.some(p => path === p || path.startsWith(`${p}/`))
 }
 
 // ควรนับเครื่องนี้เป็น "เครื่องไม่ซ้ำ" (ตัวรอง) ของวันนี้ไหม

@@ -412,8 +412,8 @@ function AppShell() {
 
   // นับการเข้าชมเว็บไซต์ (ตัวนับท้ายเว็บ + /reports/visitors) ทุกครั้งที่หน้าแสดงผล รวมรีเฟรชและ
   // เปลี่ยนหน้า — pathname อยู่ใน deps เพื่อให้นับใหม่ทุกหน้า และ cleanup ยกเลิกหน้าที่ redirect ผ่านไป
-  // ก่อนครบเวลาหน่วง นิยามการนับกับสิ่งที่ตัดออกอยู่ที่ src/lib/siteOpenStats.js
-  useEffect(() => scheduleSiteOpen(tenantId), [tenantId, location.pathname])
+  // ก่อนครบเวลาหน่วง นิยามการนับกับสิ่งที่ตัดออก (รวมหน้าหลังบ้าน) อยู่ที่ src/lib/siteOpenStats.js
+  useEffect(() => scheduleSiteOpen(tenantId, location.pathname), [tenantId, location.pathname])
   // ช่างยังใช้เมนูล่างของแอป (NAV_TECH) ได้ ต่างจาก /admin กับ /staff ที่ไม่มีเมนูล่างเลย
   const hideBottomNav = ['/admin', '/staff', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
 
