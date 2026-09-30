@@ -180,7 +180,14 @@ const page=await browser.newPage({viewport:{width:390,height:900}});const errors
 page.setDefaultTimeout(20000)
 page.on('pageerror',e=>{errors.push(e.message);console.error('Browser error:',e.message)})
 const vehiclePrompts=[];let dismissNextVehiclePrompt=false
+// กล่องทวนออกรถ/จบงานจากตารางงานคนขับบนจอ PC — ค่าเริ่มคือกด "ยกเลิก" ฉากที่ต้องบันทึกจริงตั้ง acceptNextTripPrompt เอง
+const tripPrompts=[];let acceptNextTripPrompt=false
 page.on('dialog',async dialog=>{
+ if(dialog.type()==='confirm'&&dialog.message().startsWith('บันทึก “')){
+  tripPrompts.push(dialog.message())
+  if(acceptNextTripPrompt){acceptNextTripPrompt=false;await dialog.accept()}else await dialog.dismiss()
+  return
+ }
  if(dialog.type()!=='confirm'||!dialog.message().includes('ยืนยันรถให้')){await dialog.dismiss();return}
  vehiclePrompts.push(dialog.message())
  if(dismissNextVehiclePrompt){dismissNextVehiclePrompt=false;await dialog.dismiss()}else await dialog.accept()
@@ -1045,6 +1052,82 @@ try{
  assert(rescheduledCover.saved)
  assert.equal((await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===rescheduledCover.trip_id).driver_id,admin,'rescheduling must preserve the explicitly assigned substitute')
  console.log('PASS driver cover: admin mobile work tab, reviewed single/day assignment, handover history, authorization, stale revisions, private reassignment, notices, retry and badge')
+ // ── จอ PC: งานคนขับเป็นตารางแบบกล่องคำขอรถ (เจ้าของระบบสั่ง 2569-09-30) · จอเล็กยังเป็นการ์ดปุ่มใหญ่ ──
+ // ออกรถ/จบงานจากแถวต้องผ่านกล่องทวน กดยกเลิกแล้วไม่บันทึก · จบงานแล้วแผ่นเปิดต่อที่ช่องเลขไมล์กลับ
+ const deskDay=(await freeDays(1))[0],deskBooking=randomUUID(),deskTrip=randomUUID()
+ await submitAs(citizen,deskBooking,{patient_name:'[TEST] ตารางคนขับ',phone:'0800000961',companions:1,appointment_at:at(deskDay,'10:00'),return_mode:'one_way',return_at:null})
+ await runAs(coordinator,async()=>rpc('patient_booking_confirm',[tenant,deskTrip,[deskBooking],await rpc('patient_booking_preview',[tenant,[deskBooking],'']),'']))
+ await runSql(()=>db.query("UPDATE public.patient_booking_trips SET state='cancelled' WHERE state IN ('outbound','hospital','returning','issue') AND id<>$1",[deskTrip]))
+ await page.clock.setFixedTime(new Date(`${deskDay}T07:00:00+07:00`))
+ const deskRow=page.locator(`tr[data-trip="${deskTrip}"]`),deskTable=page.locator('table').filter({hasText:'วันเวลาออกรับ'})
+ const deskState=async()=>(await runSql(async()=>(await db.query('SELECT state FROM public.patient_booking_trips WHERE id=$1',[deskTrip])).rows[0])).state
+ await page.setViewportSize({width:390,height:900});await visit('driver')
+ await card(deskTrip).getByRole('button',{name:'ออกรถ',exact:true}).waitFor()
+ assert.equal(await deskTable.count(),0,'จอเล็กต้องใช้การ์ดปุ่มใหญ่ ไม่ใช่ตาราง')
+ // ขยายจอโดยไม่โหลดหน้าใหม่ก็ต้องสลับเป็นตาราง
+ await page.setViewportSize({width:1280,height:900});await deskRow.waitFor()
+ assert.equal(await page.locator(`article[data-trip="${deskTrip}"]`).count(),0,'จอ PC ต้องไม่วาดการ์ดซ้ำกับแถวตาราง')
+ for(const width of [1280,1366,1440]){
+  await page.setViewportSize({width,height:900});await visit('driver');await deskRow.waitFor()
+  const fit=await deskRow.getByRole('button',{name:'ออกรถ',exact:true}).evaluate(button=>{
+   const box=button.closest('.overflow-x-auto').getBoundingClientRect(),own=button.getBoundingClientRect()
+   return {inside:own.left>=box.left-0.5&&own.right<=box.right+0.5,overflow:document.documentElement.scrollWidth>innerWidth}
+  })
+  assert.deepEqual(fit,{inside:true,overflow:false},`ปุ่มออกรถต้องไม่ถูกตัดที่จอ ${width}px`)
+  const statusRight=await deskRow.locator('td').nth(5).evaluate(td=>td.getBoundingClientRect().right),stickyLeft=await deskRow.locator('td').last().evaluate(td=>td.getBoundingClientRect().left)
+  assert(statusRight<=stickyLeft+0.5,`คอลัมน์ดำเนินการต้องไม่บังสถานะที่จอ ${width}px`)
+ }
+ if(process.env.PATIENT_PREVIEW_SHOTS)await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/driver-desk-1440.png`,fullPage:true})
+ // ผู้จัดคิวที่ไม่ใช่คนขับของเที่ยว: เห็นแถวแต่ไม่มีปุ่มออกรถ · เปลี่ยนคนขับอยู่ในแผ่น · จัดคนขับแทนทั้งวันเปิดเป็นแผ่น
+ await page.setViewportSize({width:1280,height:900});await visit('coordinator')
+ await page.getByRole('navigation',{name:'งานรถรับส่งผู้ป่วย'}).getByRole('button',{name:'งานคนขับ',exact:true}).click()
+ await deskRow.getByRole('button',{name:'ดูรายละเอียด',exact:true}).waitFor()
+ assert.equal(await deskRow.getByRole('button',{name:'ออกรถ',exact:true}).count(),0,'ผู้จัดคิวที่ไม่ใช่คนขับต้องไม่มีปุ่มออกรถ')
+ await deskRow.click();await sheet.getByRole('button',{name:'เปลี่ยนคนขับเที่ยวนี้',exact:true}).waitFor()
+ if(process.env.PATIENT_PREVIEW_SHOTS)await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/driver-desk-sheet-coordinator.png`})
+ await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
+ await page.getByRole('button',{name:'จัดคนขับแทนวันนี้',exact:true}).click();await sheet.getByLabel('วันที่ต้องจัดคนขับแทน').waitFor()
+ await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
+ // คนขับ: กล่องทวนบอกเที่ยวและผู้เดินทาง · กดยกเลิก = ไม่บันทึก · กดตกลง = บันทึกออกรถ
+ await visit('driver');await deskRow.waitFor()
+ const promptsBefore=tripPrompts.length
+ await deskRow.getByRole('button',{name:'ออกรถ',exact:true}).click()
+ assert.equal(tripPrompts.length,promptsBefore+1,'ออกรถจากแถวต้องขึ้นกล่องทวนก่อน')
+ const review=tripPrompts.at(-1)
+ assert(['บันทึก “ออกรถ”','[TEST] ตารางคนขับ','ออกรับ: วันนี้'].every(text=>review.includes(text)),`กล่องทวนต้องบอกเที่ยวและผู้เดินทาง: ${review}`)
+ assert.equal(await deskState(),'confirmed','กดยกเลิกในกล่องทวนต้องไม่บันทึก')
+ acceptNextTripPrompt=true
+ await deskRow.getByRole('button',{name:'ออกรถ',exact:true}).click();await toast('บันทึกแล้ว · ออกรถ').waitFor()
+ assert.equal(await deskState(),'outbound')
+ await deskRow.getByText('กำลังให้บริการ',{exact:true}).waitFor()
+ // ช่องค้นหาหาจากชื่อผู้เดินทางได้ — ทดสอบก่อนจบเที่ยว เพราะหลังจบฐานข้อมูลไม่ส่งชื่อผู้เดินทางให้คนขับแล้ว
+ const deskSearch=page.getByLabel('ค้นหาผู้ป่วย โรงพยาบาล คนขับ')
+ await deskSearch.fill('ตารางคนขับ');await deskRow.waitFor();assert.equal(await page.locator('tr[data-trip]').count(),1,'ค้นหาแล้วต้องเหลือเฉพาะเที่ยวที่ตรง')
+ await deskSearch.fill('ไม่มีชื่อนี้ในระบบ');await page.getByText('ไม่พบเที่ยวที่ค้นหา',{exact:true}).waitFor()
+ await deskSearch.fill('');await deskRow.waitFor()
+ // คลิกแถว = แผ่นรายละเอียดที่มีทุกอย่างของการ์ด (โทร แจ้งเหตุขัดข้อง)
+ await deskRow.click()
+ await sheet.getByRole('link',{name:/โทร 0800000961/}).waitFor();await sheet.getByRole('button',{name:'แจ้งเหตุขัดข้อง',exact:true}).waitFor()
+ await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
+ // จบงานจากแถว → แผ่นเปิดต่อที่ช่องเลขไมล์กลับ → บันทึกแล้วแผ่นปิด แถวเป็น "จบเที่ยวแล้ว"
+ acceptNextTripPrompt=true
+ await deskRow.getByRole('button',{name:'กลับแล้ว · จบงาน',exact:true}).click();await toast('บันทึกแล้ว · กลับแล้ว · จบงาน').waitFor()
+ assert(tripPrompts.at(-1).includes('ส่งผู้เดินทางครบทุกคน'),'กล่องทวนจบงานต้องเตือนเรื่องผู้ป่วยที่ไม่ได้ขึ้นรถ')
+ const deskOdo=sheet.locator(`article[data-trip="${deskTrip}"]`);await deskOdo.getByLabel('เลขไมล์กลับ',{exact:true}).waitFor()
+ let deskStart=30000
+ if(await deskOdo.getByLabel('เลขไมล์ออก',{exact:true}).count())await deskOdo.getByLabel('เลขไมล์ออก',{exact:true}).fill(String(deskStart))
+ else deskStart=Number((await deskOdo.locator('strong').first().innerText()).replace(/\D/g,''))
+ await deskOdo.getByLabel('เลขไมล์กลับ',{exact:true}).fill(String(deskStart+41));await deskOdo.getByText('ระยะทาง 41 กม.',{exact:true}).waitFor()
+ await deskOdo.getByRole('button',{name:/^บันทึกเลขไมล์/}).click();await toast('บันทึกเลขไมล์แล้ว').waitFor();await sheet.waitFor({state:'detached'})
+ assert.equal(await deskState(),'completed')
+ await deskRow.getByText('จบเที่ยวแล้ว',{exact:true}).waitFor();await deskRow.getByText('ระยะทาง 41 กม.',{exact:true}).waitFor()
+ await deskRow.getByText('ไม่แสดงหลังจบเที่ยว',{exact:true}).waitFor()
+ // ป้ายกรอง
+ const deskPills=page.getByRole('group',{name:'กรองงานคนขับ'})
+ await deskPills.getByRole('button',{name:/^วันนี้/}).click();assert.equal(await deskRow.count(),0,'เที่ยวที่จบแล้วต้องไม่อยู่ในกลุ่มวันนี้')
+ await deskPills.getByRole('button',{name:/^จบแล้ว/}).click();await deskRow.waitFor()
+ await deskPills.getByRole('button',{name:/^ทั้งหมด/}).click();await deskRow.waitFor()
+ console.log('PASS driver desk: PC table at 1280/1366/1440 with pinned action, cards below md, reviewed depart/finish from a row (dismiss records nothing), detail sheet, odometer after finish, coordinator view, filters and search')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}
