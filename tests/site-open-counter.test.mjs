@@ -1,5 +1,5 @@
 // ตัวนับการเข้าชมเว็บไซต์ (ท้ายเว็บ + /reports/visitors) — ตรวจ 3 ชั้น
-//   1) กติกาฝั่งหน้าเว็บ src/lib/siteOpenStats.js: ตัดวันเวลาไทย · ตัดสิ่งที่ไม่ใช่คน · เครื่องไม่ซ้ำต่อวัน
+//   1) กติกาฝั่งหน้าเว็บ src/lib/siteOpenStats.js: ตัดวันเวลาไทย · ตัดสิ่งที่ไม่ใช่คน · ตัดหน้าหลังบ้าน · เครื่องไม่ซ้ำต่อวัน
 //   2) รูปข้อมูลกราฟรายเดือน/รายปีงบ (เดือนที่ไม่มีข้อมูลต้องเป็น 0 ไม่ใช่หายไป)
 //   3) ชื่อ RPC ฝั่งหน้าเว็บตรงกับ migration + จุดเรียกใน AppShell + ป้าย "ครั้ง" ไม่กลายเป็น "คน"
 import assert from 'node:assert/strict'
@@ -8,10 +8,13 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  BACKOFFICE_EXCLUDED_SINCE,
+  BACKOFFICE_PATHS,
   bangkokDay,
   fiscalMonthSeries,
   fiscalYearSeries,
   isCountableEnvironment,
+  isCountablePath,
   isFirstTodayVisitor,
 } from '../src/lib/siteOpenStats.js'
 import { FISCAL_MONTHS_TH, fiscalYearBounds } from '../src/lib/fiscalYear.js'
@@ -58,6 +61,32 @@ test('ไม่นับบอต เบราว์เซอร์ที่ส�
   for (const hostname of ['localhost', '127.0.0.1', '192.168.1.44', '[::1]', 'app.localhost', '']) {
     assert.equal(isCountableEnvironment({ hostname, userAgent: UA.iphone }), false, `hostname "${hostname}" ต่อ DB จริงแต่ไม่ใช่ผู้เข้าชม`)
   }
+})
+
+test('ไม่นับหน้าหลังบ้าน แต่หน้าที่ประชาชนใช้ร่วมกับเจ้าหน้าที่ยังนับ', () => {
+  for (const p of [
+    '/admin', '/admin/login', '/staff', '/staff/', '/staff/patient-transport', '/technician', '/fleet',
+    '/data-center/staff', '/events/manage', '/dev-journal', '/device-login',
+    '/Staff', '/ADMIN', // react-router จับ route แบบไม่สนตัวพิมพ์ — ตัวพิมพ์ใหญ่ก็เปิดหน้าเจ้าหน้าที่ได้
+  ]) {
+    assert.equal(isCountablePath(p), false, `${p} เป็นหน้าหลังบ้าน ต้องไม่นับ`)
+  }
+  for (const p of [
+    '/', '', undefined, '/auth', '/profile', '/notifications', '/complaint', '/my-complaints', '/events',
+    '/reports', '/reports/visitors', '/data-center', '/data-center/public', '/tourism/abc',
+    '/staffing', '/administration', '/fleet-info', // ชื่อขึ้นต้นเหมือนกันแต่ไม่ใช่หน้าหลังบ้าน
+  ]) {
+    assert.equal(isCountablePath(p), true, `${p} ต้องนับ`)
+  }
+})
+
+test('รายชื่อหน้าหลังบ้านตรงกับ route จริงใน App.jsx และวันเปลี่ยนนิยามอยู่ในรูปแบบวันที่', async () => {
+  const app = await read('src/App.jsx')
+  // เปลี่ยนชื่อ route แล้วลืมแก้ BACKOFFICE_PATHS = หน้านั้นกลับมาถูกนับเงียบๆ
+  for (const p of BACKOFFICE_PATHS) {
+    assert.ok(app.includes(`path="${p}"`), `${p} ต้องเป็น route จริงใน App.jsx`)
+  }
+  assert.match(BACKOFFICE_EXCLUDED_SINCE, /^\d{4}-\d{2}-\d{2}$/, 'เทียบกับ since (YYYY-MM-DD) แบบสตริงในหน้ารายงาน')
 })
 
 test('เครื่องไม่ซ้ำต่อวัน: นับครั้งแรกของวันเท่านั้น และไม่นับถ้าอ่าน storage ไม่ได้', () => {
@@ -111,8 +140,10 @@ test('ชื่อ RPC ฝั่งหน้าเว็บตรงกับ mi
 
 test('AppShell นับใหม่ทุกครั้งที่เปลี่ยนหน้า และป้ายท้ายเว็บเป็น "ครั้ง" ไม่ใช่ "คน"', async () => {
   const app = await read('src/App.jsx')
-  assert.match(app, /useEffect\(\(\) => scheduleSiteOpen\(tenantId\), \[tenantId, location\.pathname\]\)/,
-    'ถ้าถอด location.pathname ออกจาก deps จะนับแค่ตอนโหลดหน้าแรก ยอดหายเงียบๆ')
+  assert.match(app, /useEffect\(\(\) => scheduleSiteOpen\(tenantId, location\.pathname\), \[tenantId, location\.pathname\]\)/,
+    'ถ้าถอด location.pathname ออกจาก deps จะนับแค่ตอนโหลดหน้าแรก ยอดหายเงียบๆ · ถ้าไม่ส่ง pathname หน้าหลังบ้านจะถูกนับ')
+  const counterLib = await read('src/lib/siteOpenCounter.js')
+  assert.match(counterLib, /!isCountablePath\(pathname\)/, 'scheduleSiteOpen ต้องตรวจหน้าหลังบ้านก่อนตั้งตัวจับเวลา')
   // ตัดคอมเมนต์ออกก่อน — คอมเมนต์ในไฟล์นั้นอธิบายไว้ว่าห้ามใช้คำว่า "ผู้เข้าชม … คน"
   const counter = (await read('src/components/layout/SiteVisitCounter.jsx'))
     .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')

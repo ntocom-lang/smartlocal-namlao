@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { supabase } from './supabase'
-import { bangkokDay, isCountableEnvironment, isFirstTodayVisitor } from './siteOpenStats.js'
+import { bangkokDay, isCountableEnvironment, isCountablePath, isFirstTodayVisitor } from './siteOpenStats.js'
 
 // ─── ตัวนับการเข้าชมเว็บไซต์: ยิง RPC + ถือยอดล่าสุดไว้ให้ท้ายเว็บ/หน้ารายงาน ───
 //
@@ -93,8 +93,9 @@ async function countNow(tenantId) {
 
 // เรียกจาก AppShell (src/App.jsx) ทุกครั้งที่ pathname เปลี่ยน — คืน cleanup ให้ useEffect
 // ถ้าเปลี่ยนหน้าอีกก่อนครบ SITE_OPEN_SETTLE_MS ตัวจับเวลาเดิมถูกยกเลิก นับเฉพาะหน้าที่อยู่จริง
-export function scheduleSiteOpen(tenantId) {
-  if (!tenantId || !isCountableEnvironment(currentEnvironment())) return undefined
+// หน้าหลังบ้าน (isCountablePath) ไม่ตั้งตัวจับเวลาเลย แต่ยังยกเลิกตัวของหน้าก่อนหน้าผ่าน cleanup ตามปกติ
+export function scheduleSiteOpen(tenantId, pathname) {
+  if (!tenantId || !isCountablePath(pathname) || !isCountableEnvironment(currentEnvironment())) return undefined
   const timer = setTimeout(() => { countNow(tenantId) }, SITE_OPEN_SETTLE_MS)
   return () => clearTimeout(timer)
 }

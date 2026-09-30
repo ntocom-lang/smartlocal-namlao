@@ -7,7 +7,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useSiteOpenSummary } from '../lib/siteOpenCounter'
-import { bangkokDay, fiscalMonthSeries, fiscalYearSeries } from '../lib/siteOpenStats.js'
+import { BACKOFFICE_EXCLUDED_SINCE, bangkokDay, fiscalMonthSeries, fiscalYearSeries } from '../lib/siteOpenStats.js'
 import { thaiDateFromDateInput } from '../lib/thaiDate.js'
 import FiscalYearPicker from '../components/common/FiscalYearPicker'
 import { FY_ALL, useFiscalYearParam, fiscalPeriodParts } from '../lib/fiscalYearParam'
@@ -146,6 +146,9 @@ export default function VisitorStats() {
   )?.key
 
   const since = summary?.since ? thaiDateFromDateInput(summary.since) : ''
+  // อปท. ที่เริ่มนับก่อนวันเลิกนับหน้าหลังบ้าน ยอดช่วงแรกยังรวมหน้าเหล่านั้น — ต้องบอกวันเปลี่ยนนิยาม
+  // ไม่งั้นคนอ่านเทียบยอดก่อน/หลังแล้วเข้าใจว่าคนเข้าชมลดลง · อปท. ที่เริ่มนับทีหลังไม่ต้องเห็นประโยคนี้
+  const countedBackofficeBefore = Boolean(summary?.since) && summary.since < BACKOFFICE_EXCLUDED_SINCE
   const now = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
 
   return (
@@ -322,6 +325,12 @@ export default function VisitorStats() {
           <ul className="list-disc pl-4 space-y-0.5">
             <li>นับ 1 ครั้งทุกครั้งที่หน้าเว็บแสดงผล ทั้งการเปิดเว็บ การรีเฟรช และการเปลี่ยนหน้า ผู้ใช้คนเดียวจึงนับได้หลายครั้ง</li>
             <li>ไม่นับโปรแกรมอัตโนมัติ เช่น บอตของเครื่องมือค้นหา และการทดสอบระบบ</li>
+            <li>
+              ไม่นับหน้าที่เจ้าหน้าที่ใช้ปฏิบัติงาน (ระบบหลังบ้าน)
+              {countedBackofficeBefore
+                ? ` ตั้งแต่ ${thaiDateFromDateInput(BACKOFFICE_EXCLUDED_SINCE)} · ยอดก่อนหน้านั้นนับรวมหน้าเหล่านี้ด้วย`
+                : ''}
+            </li>
             <li>ไม่เก็บข้อมูลส่วนบุคคล เก็บเฉพาะยอดรวมรายวันของหน่วยงาน</li>
             <li>วันตามเวลาประเทศไทย · ปีงบประมาณเริ่ม 1 ต.ค. สิ้นสุด 30 ก.ย.{since ? ` · เริ่มนับเมื่อ ${since}` : ''}</li>
           </ul>
