@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Printer } from 'lucide-react'
 import { ListCard, Pills, Sheet } from './StaffShell'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
 import { useTenant } from '../../contexts/TenantContext'
@@ -500,14 +501,32 @@ export function DriverTrips({ workspace, uid, isAdmin, canAssign, busy, error, c
   </div>
 }
 
+// ปุ่มพิมพ์ทุกปุ่มพิมพ์ "ทั้งเที่ยว" ชุดเดียว (ใบคำขอทุกคน + หนังสือนำส่ง 1 ใบ) ไม่ว่าจะกดจากแผ่นของคนไหน
+// เจ้าของระบบสั่ง 2569-10-01 (แบบ ก): เดิมหน้าจอไม่บอก เจ้าหน้าที่เปิดแผ่นของแต่ละคนแล้วกดพิมพ์ซ้ำ ได้กระดาษเกินมาทั้งชุด
+// riders = tripPassengers() ตัวเดียวกับที่ใบพิมพ์ใช้ (ส่งมาจาก BookingInbox) จำนวนแผ่นบนจอจึงเท่ากระดาษที่ออกจริง
+// ไฟล์นี้ใช้ร่วมกับหน้าประชาชน (BookingCards) จึงไม่ import โมดูลใบพิมพ์มาเอง
+// ⚠️ ระบบไม่ได้จำว่าพิมพ์ไปแล้ว ข้อความนี้กันคนเดียวกันพิมพ์ซ้ำ ไม่กันเจ้าหน้าที่คนละคนต่างคนต่างพิมพ์
+export function TripPrintNote({ riders }) {
+  const count = riders?.length || 0
+  if (!count) return null
+  if (count === 1) return <p className="text-sm text-slate-600">ใบคำขอจากประชาชนถึงนายก 1 ใบ + หนังสือนำส่งจาก อปท. ถึงกองทุน 1 ใบ = 2 แผ่น</p>
+  return <div role="note" aria-label="พิมพ์เอกสารทั้งเที่ยว" className="rounded-lg border border-sky-300 bg-white p-3 text-sm text-slate-800">
+    <p className="flex items-start gap-1.5 font-bold text-sky-950"><Printer size={16} className="mt-0.5 shrink-0" aria-hidden="true" /><span>เที่ยวนี้ไปด้วยกัน {count} คน: {riders.map(r => r.patient_name).join(' · ')}</span></p>
+    <p className="mt-1">กดพิมพ์ที่คนไหนก็ได้ ได้ชุดเดียวกันครบทั้งเที่ยว</p>
+    <p className="mt-1">ใบคำขอ {count} ใบ + หนังสือนำส่ง 1 ใบ = {count + 1} แผ่น · <strong>พิมพ์ครั้งเดียวพอ</strong></p>
+  </div>
+}
+
 // หนังสือนำส่งถึงกองทุน 1 ฉบับต่อเที่ยว — เลขที่/วันที่มาจากทะเบียนหนังสือส่งของสารบรรณ ระบบออกเลขเองไม่ได้
 // พิมพ์ได้ก่อนมีเลข (ช่อง "ที่" เว้นเส้นประให้เขียนมือ) เพราะบางแห่งลงเลขหลังผู้บริหารลงนาม
-export function TripFundDocs({ trip, busy, onRecordLetter, onPrintLetter }) {
+// riders = ผู้เดินทางที่ใบพิมพ์ของเที่ยวจะออกให้ (ดู TripPrintNote)
+export function TripFundDocs({ trip, riders = [], busy, onRecordLetter, onPrintLetter }) {
   const edit = useTripDraft(trip, { letterNo: trip.forward_letter_no || '', letterDate: trip.forward_letter_date || thaiDay() })
   const { letterNo, letterDate } = edit.values
   const [open, setOpen] = useState(false)
   return <div className="mt-4 rounded-xl border border-slate-200 p-3">
-    <p className="font-semibold">เอกสารคำขอและนำส่งกองทุน</p><p className="text-sm text-slate-600">ใบคำขอจากประชาชนถึงนายกคนละ 1 ใบ และหนังสือนำส่งจาก อปท. ถึงกองทุน 1 ใบต่อเที่ยว · ผู้ป่วย 1 คนได้ 2 ใบ ร่วมเที่ยว 2 คนได้ 3 ใบ</p>
+    <p className="font-semibold">เอกสารคำขอและนำส่งกองทุน</p>
+    <div className={riders.length > 1 ? 'my-2' : ''}><TripPrintNote riders={riders} /></div>
     {trip.forward_letter_no && !open
       ? <p className="text-sm">ที่ {trip.forward_letter_no} ลงวันที่ {thaiDateFromDateInput(trip.forward_letter_date)}</p>
       : <p className="text-sm text-slate-600">ยังไม่ได้บันทึกเลขที่หนังสือ พิมพ์ได้ก่อนแล้วเขียนเลขด้วยมือ</p>}

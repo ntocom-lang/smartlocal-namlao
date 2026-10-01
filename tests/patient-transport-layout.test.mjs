@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs'
 import { chromium } from 'playwright'
 import {
   buildPatientTransportFormHtml, buildPatientTransportPacketHtml,
-  buildTripForwardLetterHtml, buildTripMonthReportHtml,
+  buildTripForwardLetterHtml, buildTripMonthReportHtml, tripPassengers,
 } from '../src/lib/patientTransportPrint.js'
 import { assertSignBlockStandard, assertSignLinesAligned } from './lib/signBlockChecks.mjs'
 
@@ -297,6 +297,35 @@ const checks = [
           assert.ok(layout.breaks.every(value => value === 'page'), `${label}: มีแผ่นที่ไม่ได้ขึ้นหน้าใหม่ (${layout.breaks.join(', ')})`)
           // แถบเตือนชื่อนายกอยู่บนสุดของหน้าต่างเสมอ ไม่ย้ายตามหนังสือไปท้ายชุด — คนพิมพ์ต้องเห็นทันทีที่เปิด
           assert.equal(layout.first, notice ? 'screen-note' : 'sheet', `${label}: สิ่งแรกในหน้าต่างพิมพ์`)
+        } finally { await page.close() }
+      }
+    },
+  },
+  {
+    // เจ้าของระบบสั่ง 2569-10-01 (แบบ ก): หน้าจอเจ้าหน้าที่บอกก่อนกดพิมพ์ว่าเที่ยวที่ไปด้วยกัน "กดพิมพ์ที่คนไหนก็ได้
+    // ได้ชุดเดียวกัน · ใบคำขอ N ใบ + หนังสือนำส่ง 1 ใบ = N+1 แผ่น" โดยนับด้วย tripPassengers ตัวเดียวกับใบพิมพ์
+    // ข้อนี้ล็อกว่ารายชื่อที่จอใช้นับ = ใบคำขอที่ออกจริงทุกใบ เรียงเหมือนกัน ถ้ามีคนแก้เงื่อนไขนับฝั่งเดียว จอจะบอกจำนวนผิด
+    name: 'screen-count-matches-printed-forms',
+    reason: 'จำนวนแผ่นและรายชื่อที่หน้าจอเจ้าหน้าที่บอกก่อนกดพิมพ์ต้องเท่ากับกระดาษที่ออกจริง'
+      + ' คำขอที่ยกเลิก ยังรอยืนยัน หรืออยู่เที่ยวอื่น ต้องไม่ถูกนับทั้งบนจอและบนกระดาษ',
+    async run(browser) {
+      const mixed = [
+        ...TRIP_BOOKINGS.slice(0, 3),
+        { ...TRIP_BOOKINGS[3], id: 'b-cancelled', status: 'cancelled' },
+        { ...TRIP_BOOKINGS[4], id: 'b-submitted', status: 'submitted' },
+        { ...TRIP_BOOKINGS[5], id: 'b-other-trip', trip_id: 'trip-2' },
+        { ...TRIP_BOOKINGS[6], id: 'b-done', status: 'completed' },
+      ]
+      assert.deepEqual(tripPassengers(mixed, TRIP).map(b => b.id).sort(), ['b-0', 'b-1', 'b-2', 'b-done'],
+        'นับเฉพาะคำขอที่ยืนยันแล้ว/จบแล้วของเที่ยวนี้')
+      const refOf = b => `เลขที่คำขอ ${String(b.id).slice(0, 8).toUpperCase()}`
+      for (const bookings of [mixed, [...mixed].reverse(), mixed.slice(0, 1)]) {
+        const riders = tripPassengers(bookings, TRIP)
+        const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings }))
+        try {
+          const printed = (await formSheetsOf(page).locator('.form-no').allInnerTexts()).map(text => text.replace(/\s+/g, ' ').trim())
+          assert.deepEqual(printed, riders.map(refOf), 'ใบคำขอที่พิมพ์ต้องตรงกับรายชื่อที่หน้าจอใช้นับ ทั้งจำนวนและลำดับ')
+          assert.deepEqual(await sheetKinds(page), [...riders.map(() => 'form'), 'letter'], `จอบอก ${riders.length + 1} แผ่น กระดาษต้องออกเท่านั้น`)
         } finally { await page.close() }
       }
     },

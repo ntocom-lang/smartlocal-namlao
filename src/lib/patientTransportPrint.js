@@ -628,7 +628,9 @@ export function buildPatientTransportFormHtml(args) {
 // ข้อมูลที่การจองไม่ได้เก็บ (อายุ/สมาชิก/ประเภทนัด/ที่อยู่ผู้ยื่น) เว้นว่าง ห้ามเดาจากจุดรับ
 // บรรทัดกำกับใต้ชื่อผู้ยื่นตามช่องทางที่คำขอเข้ามา (patient_bookings.entry_channel) — ระบุว่าลงชื่อออนไลน์
 // เฉพาะคำขอที่ผู้จองล็อกอินยื่นเอง คำขอที่เจ้าหน้าที่รับจองแทนบอกตามจริงว่ารับจองแทน (ดู formSheet)
-function tripPassengers(bookings, trip) {
+// หน้าจอเจ้าหน้าที่ (BookingInbox) นับคนในเที่ยวด้วยฟังก์ชันนี้ตัวเดียวกัน — ข้อความ "ใบคำขอ N ใบ = N+1 แผ่น"
+// บนจอจึงตรงกับกระดาษที่ออกจริงเสมอ ห้ามเขียนเงื่อนไขนับซ้ำที่อื่น
+export function tripPassengers(bookings, trip) {
   return (bookings ?? [])
     .filter(b => b.trip_id === trip?.id && ['confirmed', 'completed'].includes(b.status))
     .sort((a, b) => String(a.appointment_at).localeCompare(String(b.appointment_at)))

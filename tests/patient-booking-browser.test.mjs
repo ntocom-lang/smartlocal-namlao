@@ -428,6 +428,34 @@ try{
  assert.equal(await tripOf(groupE),await tripOf(groupF))
  assert(vehiclePrompts.at(-1).includes('[TEST] ไปด้วยกัน อี')&&vehiclePrompts.at(-1).includes('[TEST] ไปด้วยกัน เอฟ'),'หน้าต่างทวนการยืนยันทั้งกลุ่มต้องแสดงชื่อครบทุกคน')
  console.log('PASS coordinator inbox: vehicle confirmation reviewed before saving, cancellation leaves booking pending; conflict, shared vehicle, area check, mover helper and suggested group through the real UI')
+ // ── เที่ยวที่ไปด้วยกันพิมพ์ชุดเดียว (เจ้าของระบบสั่ง 2569-10-01 แบบ ก) ──
+ // แถวบอกว่าอยู่เที่ยวเดียวกัน · กรอบเหนือปุ่มพิมพ์บอกรายชื่อและจำนวนแผ่น · กดพิมพ์จากคนไหนก็ได้ชุดเดียวกันจริง
+ // ตรวจกับหน้าต่างพิมพ์ด้วย ข้อความบนจอต้องเท่ากับกระดาษที่ออก ไม่ใช่แค่ขึ้นข้อความ
+ {
+  await row(groupE).getByText('ในเที่ยวเดียวกับ [TEST] ไปด้วยกัน เอฟ · เอกสารชุดเดียวกัน',{exact:true}).waitFor()
+  await row(groupF).getByText('ในเที่ยวเดียวกับ [TEST] ไปด้วยกัน อี · เอกสารชุดเดียวกัน',{exact:true}).waitFor()
+  assert.equal(await row(b1).getByText(/ในเที่ยวเดียวกับ/).count(),0,'เที่ยวที่มีคนเดียวต้องไม่ขึ้นบรรทัด "ในเที่ยวเดียวกับ"')
+  const packets=[]
+  for(const id of [groupF,groupE]){
+   await row(id).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
+   const next=sheet.getByRole('region',{name:'ขั้นตอนหลังยืนยันรถ'}),note=next.getByRole('note',{name:'พิมพ์เอกสารทั้งเที่ยว'})
+   await note.waitFor()
+   const text=(await note.innerText()).replace(/\s+/g,' ')
+   for(const part of ['เที่ยวนี้ไปด้วยกัน 2 คน: [TEST] ไปด้วยกัน อี · [TEST] ไปด้วยกัน เอฟ','กดพิมพ์ที่คนไหนก็ได้ ได้ชุดเดียวกันครบทั้งเที่ยว','ใบคำขอ 2 ใบ + หนังสือนำส่ง 1 ใบ = 3 แผ่น · พิมพ์ครั้งเดียวพอ'])assert.ok(text.includes(part),`กรอบเหนือปุ่มพิมพ์ต้องมี "${part}": "${text}"`)
+   const [win]=await Promise.all([page.waitForEvent('popup'),next.getByRole('button',{name:'พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน'}).click()])
+   await win.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
+   packets.push(await win.evaluate(()=>[...document.querySelectorAll('.sheet')].map(s=>s.querySelector('.letter-sign')?'letter':!s.querySelector('.form-title')?'other':s.innerText.includes('[TEST] ไปด้วยกัน อี')?'form:E':s.innerText.includes('[TEST] ไปด้วยกัน เอฟ')?'form:F':'form:?')))
+   await win.close();await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
+  }
+  assert.deepEqual(packets[0],['form:E','form:F','letter'],'จอบอก 3 แผ่น กระดาษต้องเป็นใบคำขอของทุกคนในเที่ยว + หนังสือนำส่ง 1 ใบ')
+  assert.deepEqual(packets[1],packets[0],'กดพิมพ์จากคนไหนก็ต้องได้ชุดเดียวกัน')
+  // เที่ยวที่มีคนเดียวไม่ขึ้นกรอบนี้ — ปุ่มพิมพ์ของเที่ยวคนเดียวไม่มีอะไรให้พิมพ์ซ้ำ
+  await row(b1).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
+  await sheet.getByRole('region',{name:'ขั้นตอนหลังยืนยันรถ'}).getByRole('button',{name:'พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน'}).waitFor()
+  assert.equal(await sheet.getByRole('note',{name:'พิมพ์เอกสารทั้งเที่ยว'}).count(),0,'เที่ยวที่มีคนเดียวต้องไม่ขึ้นกรอบพิมพ์ทั้งเที่ยว')
+  await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
+ }
+ console.log('PASS shared trip prints once: rows say same trip and same documents, note above the print button names both riders and 3 sheets, printing from either rider gives the same 3-sheet packet; single-rider trip shows no note')
 
  // ── รับจองแทนทางโทรศัพท์ → กลับกล่องพร้อมปุ่ม "ยืนยันรถเลย" ──
  await page.getByRole('button',{name:/รับจองแทน/}).click()

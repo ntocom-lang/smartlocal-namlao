@@ -3,9 +3,10 @@ import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
 import { ListCard, Pills, Sheet } from './StaffShell'
-import { AmendBooking, TripFundDocs, OdometerForm } from './BookingOperations'
+import { AmendBooking, TripFundDocs, TripPrintNote, OdometerForm } from './BookingOperations'
 import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
 import { STAGES, TRIP_STATUS, RETURN_MODES, MOBILITY, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, describeHistory } from '../../lib/patientBooking'
+import { tripPassengers } from '../../lib/patientTransportPrint'
 
 /**
  * กล่อง "คำขอรถ" ของเจ้าหน้าที่ — 1 แถว = 1 คำขอ และมีปุ่มเดียวต่อแถวที่บอกงานถัดไป
@@ -41,8 +42,11 @@ function linkedConfirmedBooking(booking, bookings, events = []) {
 // แถวของกล่อง: คำขอ + เที่ยว + ขั้น + งานถัดไป + กลุ่มที่ระบบเสนอให้ไปด้วยกัน
 // ระบบเสนอกลุ่มเฉพาะคนที่เลือก "นั่งร่วมได้" เดินได้เอง ปลายทาง/วัน/ขากลับตรงกัน เวลาห่างไม่เกิน 30 นาที
 // และที่นั่งพอ (suggestGroups) — ฐานข้อมูลคำนวณแผนทั้งก้อนซ้ำใต้ล็อกก่อนยืนยันทุกครั้ง
+// riders = คนที่ชุดเอกสารของเที่ยวจะพิมพ์ใบคำขอให้ — นับด้วย tripPassengers ตัวเดียวกับใบพิมพ์ จำนวนบนจอจึงเท่ากระดาษ
+// เที่ยวที่ยกเลิกแล้วไม่มีปุ่มพิมพ์ (BookingSheet.printable) จึงไม่นับ
 function buildRows(workspace) {
   const trips = new Map(workspace.trips.map(t => [t.id, t]))
+  const ridersOf = new Map(workspace.trips.filter(t => t.state !== 'cancelled').map(t => [t.id, tripPassengers(workspace.bookings, t)]))
   const groupOf = new Map()
   for (const group of suggestGroups(workspace.bookings.filter(b => !b.requested_trip_id), workspace.settings)) for (const b of group) groupOf.set(b.id, group)
   const rows = workspace.bookings.map(booking => {
@@ -50,7 +54,7 @@ function buildRows(workspace) {
     const trip = booking.trip_id && booking.status !== 'cancelled' ? trips.get(booking.trip_id) || null : null
     const linked = linkedConfirmedBooking(booking, workspace.bookings, workspace.events)
     const stage = bookingStage(booking, trip), next = staffNextAction(booking, trip)
-    return { booking, trip, linked, stage, next, section: sectionOf(next, stage), group: groupOf.get(booking.id) || [booking] }
+    return { booking, trip, linked, stage, next, section: sectionOf(next, stage), group: groupOf.get(booking.id) || [booking], riders: (trip && ridersOf.get(trip.id)) || [] }
   })
   return rows.sort((x, y) => SECTION_ORDER.indexOf(x.section) - SECTION_ORDER.indexOf(y.section)
     || (x.section === 'action' ? x.next.rank - y.next.rank : 0)
@@ -72,6 +76,12 @@ const SECTION_ORDER = ['action', 'live', 'done']
 const sectionOf = (next, stage) => next.rank < 9 ? 'action' : ['confirmed', 'running'].includes(stage) ? 'live' : 'done'
 // คำขอที่ปิดเป็นคิวซ้ำเรียงตามคิวที่ใช้เดินทางจริง — วันเดียวกับที่แสดงในแถว (#350)
 const sortAt = r => String((r.linked || r.booking).appointment_at || '')
+
+// คนอื่นในชุดเอกสารเดียวกัน — แถวบอกไว้ตั้งแต่ก่อนเปิดแผ่น ว่าเที่ยวที่ไปด้วยกันกดพิมพ์จากคนไหนก็ได้ชุดเดียวกัน
+// (เจ้าของระบบสั่ง 2569-10-01) ไม่งั้นแถวของแต่ละคนดูเป็นคนละงาน แล้วถูกเปิดพิมพ์ซ้ำทีละคน
+const tripMates = ({ booking, riders }) => riders.some(x => x.id === booking.id) ? riders.filter(x => x.id !== booking.id) : []
+// "เอกสารชุดเดียวกัน" ห้ามขาดกลางวลี — การ์ดมือถือ 390px ตัดเป็น "เอกสารชุด / เดียวกัน"
+const matesText = mates => <>ในเที่ยวเดียวกับ {mates.map(x => x.patient_name).join(', ')} · <span className="whitespace-nowrap">เอกสารชุดเดียวกัน</span></>
 
 const haystack = ({ booking: b, linked }) => [b.patient_name, b.requester_name, b.phone, b.pickup, b.route_label, ref(b.id), dateTime(b.appointment_at), whenLabel(b.appointment_at), linked && ref(linked.id), linked && dateTime(linked.appointment_at)].join(' ').toLowerCase()
 
@@ -412,7 +422,7 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
       {canReschedule && scheduling === 'reschedule' && <RescheduleJourney key={`reschedule-${trip.id}`} trip={trip} booking={b} passengers={passengers} settings={workspace.settings} busy={busy} onReschedule={async args => { const out = await onReschedule(args); if (out?.saved) setScheduling(null); return out }} />}
       {canMoveIntoTrip && scheduling === 'move' && <MoveIntoTrip booking={b} trip={trip} passengers={passengers} workspace={workspace} busy={busy} onReload={onReload} />}
       {inService && scheduling === 'estimate' && <ScheduleUpdate key={trip.id} trip={trip} busy={busy} onUpdate={async (...args) => { const saved = await onUpdateSchedule(...args); if (saved) setScheduling(null); return saved }} />}
-      {trip && next.id !== 'docs' && <TripFundDocs trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />}
+      {trip && next.id !== 'docs' && <TripFundDocs trip={trip} riders={row.riders} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />}
       {trip?.state === 'completed' && next.id !== 'docs' && <OdometerForm trip={trip} trips={workspace.trips} busy={busy} onSave={onOdometer} />}
       {removable && <ReasonAction busy={busy} title="นำรายนี้ออกจากเที่ยว" hint="ใช้เมื่อประสานแล้วว่าไม่เดินทาง ผู้เดินทางคนอื่นในเที่ยวไม่เปลี่ยน · ถ้าเป็นคนสุดท้ายและรถยังไม่ออก ระบบคืนช่วงเวลารถให้ด้วย" placeholder="เช่น ผู้ป่วยแจ้งเลื่อนนัด" button="นำออกจากเที่ยว" seenByCitizen onRun={remove} />}
       {releasable && <ReasonAction busy={busy} title="คืนคิวทั้งเที่ยว" hint="ผู้เดินทางทุกคนในเที่ยวนี้กลับไปเป็น “รอยืนยันรถ” เพื่อจัดรถใหม่" placeholder="เช่น รถเสีย ต้องจัดรถใหม่" button="คืนคิวทั้งเที่ยว" onRun={note => act(trip, 'release', note)} />}
@@ -485,6 +495,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
     {b.status === 'confirmed' && trip?.state === 'confirmed' && <section aria-label="ขั้นตอนหลังยืนยันรถ" className="space-y-3 rounded-xl border border-sky-200 bg-sky-50 p-4">
       <p className="font-bold text-sky-950">ยืนยันรถแล้ว · ขั้นต่อไป</p>
       <p className="text-sm text-slate-800">ผู้จองและคนขับเห็นเที่ยวในระบบแล้ว พิมพ์ใบคำขอจากประชาชนถึงนายก และหนังสือนำส่งจาก อปท. ถึงกองทุนได้ตอนนี้ วันเดินทางคนขับเปิด “งานคนขับ” เพื่อบันทึกการรับ–ส่งและจบเที่ยว</p>
+      {row.riders.length > 1 && <TripPrintNote riders={row.riders} />}
       <div className="flex flex-wrap gap-2">
         <button type="button" className={primaryClass} disabled={busy} onClick={() => onPrintLetter(trip)}>พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน</button>
         {trip.driver_id === currentUserId && <button type="button" className={buttonClass} onClick={onOpenDriver}>ไปงานคนขับ</button>}
@@ -503,7 +514,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
       <ReasonAction busy={busy} primary title="ประสานแก้ไขแล้ว" defaultReason="ประสานแก้ไขแล้ว เดินรถต่อได้" button="แก้ไขแล้ว เดินรถต่อ" onRun={note => act(trip, 'resolve', note)} />
     </>}
     {next.id === 'docs' && <>
-      <TripFundDocs trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />
+      <TripFundDocs trip={trip} riders={row.riders} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />
       <OdometerForm trip={trip} trips={workspace.trips} busy={busy} onSave={onOdometer} />
     </>}
     {/* ผู้จองโทรมาแจ้งว่าพร้อมกลับ — คำขอที่รับจองทางโทรศัพท์ผู้จองไม่มีบัญชีให้กดเอง ใครรับสายก็กดแทนได้
@@ -622,6 +633,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
           <tbody className="divide-y divide-gray-200">{shown.map((row, index) => {
             const { booking: b, trip, linked, group } = row
             const pickupAt = trip && pickupForBooking(trip, b)
+            const mates = tripMates(row)
             const shade = index % 2 === 0 ? '#fff' : '#f5f8fc'
             return <Fragment key={b.id}>
             {/* ช่องว่างก่อนส่วนถัดไปอยู่ในแถวหัวกลุ่มเอง ไม่แทรกแถวเปล่า ทุกแถวใน tbody จึงเป็นหัวกลุ่มหรือคำขอเท่านั้น */}
@@ -633,7 +645,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
               onClick={() => { setProblem(null); setOpenId(b.id) }}>
               <td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500" style={{ boxShadow: `inset 5px 0 0 ${SECTIONS[row.section].bar}` }}>{index + 1}</td>
               <td className="whitespace-nowrap border-r border-gray-200 px-2 py-2.5 text-center"><span className="block font-semibold">{whenLabel((linked || b).appointment_at)}</span><span className="block">{clockOf((linked || b).appointment_at)} น.</span>{linked && <span className="block text-[11px] text-sky-800">คิวจริง {ref(linked.id)}</span>}{linked && <span className="block text-[11px] text-gray-500">เดิม {dateTime(b.appointment_at)}</span>}{pickupAt && b.status !== 'cancelled' && <span className="block text-[11px] text-gray-500">รถมารับ {clockOf(pickupAt)}</span>}</td>
-              <td className="border-r border-gray-200 px-2 py-2.5"><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span>{b.status === 'submitted' && group.length > 1 && <span className="block text-[11px] font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</span>}</td>
+              <td className="border-r border-gray-200 px-2 py-2.5"><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span>{b.status === 'submitted' && group.length > 1 && <span className="block text-[11px] font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</span>}{mates.length > 0 && <span className="block text-[11px] font-semibold text-sky-800">{matesText(mates)}</span>}</td>
               <td className="border-r border-gray-200 px-2 py-2.5"><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={b.pickup}>รับที่ {b.pickup}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[b.return_mode]}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
               <td className="border-r border-gray-200 px-2 py-2.5 text-center"><StatusChips row={row} /></td>
               <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}><div className="flex flex-wrap justify-center gap-2"><RowButton row={row} busy={busy} onPress={press} />{deleteButton(row)}</div></td>
@@ -645,6 +657,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
       <div className="space-y-3 md:hidden">{shown.map((row, index) => {
         const { booking: b, trip, linked, group } = row
         const pickupAt = trip && pickupForBooking(trip, b)
+        const mates = tripMates(row)
         return <Fragment key={b.id}>
         {startsSection(index) && <h3 data-section-header={row.section} className={index ? 'pt-4' : ''}><SectionBand section={row.section} count={sectionCount[row.section]} rounded toggle={row.section === 'done' ? doneToggle : null} /></h3>}
         {!folded(row) && <article data-booking={b.id} data-section={row.section} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4" style={{ borderLeft: `5px solid ${SECTIONS[row.section].bar}` }} onClick={() => { setProblem(null); setOpenId(b.id) }}>
@@ -654,6 +667,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
           <p className="text-sm text-slate-600">จุดรับ: {b.pickup}{Number.isFinite(b.pickup_lat) ? ' · 📍 มีหมุด' : ''}</p>
           <p className="text-sm text-slate-600">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน{pickupAt && b.status !== 'cancelled' ? ` · รถมารับ ${clockOf(pickupAt)} น.` : ''}</p>
           {b.status === 'submitted' && group.length > 1 && <p className="text-sm font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</p>}
+          {mates.length > 0 && <p className="text-sm font-semibold text-sky-800">{matesText(mates)}</p>}
           <div className="flex flex-wrap gap-2"><RowButton row={row} busy={busy} onPress={press} full />{deleteButton(row)}</div>
         </article>}
         </Fragment>
