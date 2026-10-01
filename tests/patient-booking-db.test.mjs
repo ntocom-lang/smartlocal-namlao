@@ -189,9 +189,12 @@ await actor(admin);await rpc('patient_booking_save_settings',[tenant,9,settings]
 const todayLocal=(await db.query("SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date::text AS day")).rows[0].day
 await actor(citizen);await fails(()=>rpc('patient_booking_submit',[tenant,id(506),{...base,patient_name:'TEST past hour',phone:'0800000506',appointment_at:`${todayLocal}T00:01:00+07:00`,return_at:null,return_mode:'one_way'}]),/เวลานัดผ่านมาแล้ว/)
 const tomorrow=(await db.query("SELECT ((now() AT TIME ZONE 'Asia/Bangkok')::date+1)::text AS day")).rows[0].day
+// รันวันศุกร์ "พรุ่งนี้" คือวันเสาร์เดียวกับคำขอ TEST weekend 2 ใบข้างบน ยอดรอยืนยันของวันนั้นจึงไม่ใช่ 1 เสมอ
+// (เคยล้ม 3 !== 1 ทุกวันศุกร์) — นับจากยอดก่อนส่งแทนเลขตายตัว
+await actor(null);const pendingBefore=(await rpc('patient_booking_calendar',[tenant,tomorrow,tomorrow])).days[0]?.pending_count??0
 await actor(citizen);assert.equal(await rpc('patient_booking_submit',[tenant,id(504),{...base,patient_name:'TEST tomorrow',phone:'0800000504',appointment_at:`${tomorrow}T10:00:00+07:00`,return_at:`${tomorrow}T12:00:00+07:00`}]),id(504))
 await actor(null);pendingDay=(await rpc('patient_booking_calendar',[tenant,tomorrow,tomorrow])).days[0]
-assert.equal(pendingDay.status,'open');assert.equal(pendingDay.pending_count,1)
+assert.equal(pendingDay.status,'open');assert.equal(pendingDay.pending_count,pendingBefore+1)
 assert.deepEqual((await rpc('patient_booking_calendar',[otherTenant,tomorrow,tomorrow])).days,[])
 console.log('PASS weekend, holiday and next-day intake despite old 3-day setting; unavailable vehicle still blocked; public pending counts are tenant-scoped')
 // หมุดจุดรับ: เป็นทางเลือก แต่ถ้าส่งมาต้องครบคู่ อยู่ในพื้นที่ และห้ามหลุดไปหน้าสาธารณะ
