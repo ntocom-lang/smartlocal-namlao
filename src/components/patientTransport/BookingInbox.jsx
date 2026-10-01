@@ -5,7 +5,7 @@ import MapPicker from '../MapPicker'
 import { ListCard, Pills, Sheet } from './StaffShell'
 import { AmendBooking, TripFundDocs, OdometerForm } from './BookingOperations'
 import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
-import { STAGES, TRIP_STATUS, RETURN_MODES, MOBILITY, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, describeHistory } from '../../lib/patientBooking'
+import { STAGES, TRIP_STATUS, RETURN_MODES, MOBILITY, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, describeHistory } from '../../lib/patientBooking'
 
 /**
  * กล่อง "คำขอรถ" ของเจ้าหน้าที่ — 1 แถว = 1 คำขอ และมีปุ่มเดียวต่อแถวที่บอกงานถัดไป
@@ -217,6 +217,10 @@ function MoveIntoTrip({ booking, trip, passengers, workspace, busy, onReload }) 
   const existingBooking = target && workspace.bookings.find(item => item.trip_id === target.trip.id && item.status === 'confirmed' &&
     item.id !== booking.id && item.patient_name === booking.patient_name && item.phone === booking.phone &&
     item.route_id === booking.route_id && item.appointment_at === target.rider.appointment_at)
+  // รายการเที่ยวปนทุกวันโดยตั้งใจ (ย้ายวันได้) จึงต้องบอกให้เห็นก่อนกดว่าเป็นคนละวันกับนัดเดิม
+  // ⚠️ 2569-10-01 แอดมินย้ายใบนัด 8 ต.ค. เข้าเที่ยว 5 ต.ค. ที่ผู้ป่วยมีคิวอยู่แล้ว ระบบปิดเป็นคำขอซ้ำ ทั้งที่เป็นนัดจริงคนละวัน
+  // (ผู้ป่วยฟอกไตไปหลายวันต่อสัปดาห์) — คิวซ้ำคนละวัน ช่องติ๊กจึงต้องระบุวันนัดที่จะถูกยกเลิกตรง ๆ ให้ตรวจกับผู้ป่วยก่อน
+  const otherDay = target && thaiDay(target.rider.appointment_at) !== thaiDay(booking.appointment_at)
   const move = async () => {
     if (!target || pending || busy) return
     const reviewedRider = existingBooking || target.rider
@@ -243,10 +247,16 @@ function MoveIntoTrip({ booking, trip, passengers, workspace, busy, onReload }) 
       {options.map(option => <option key={option.trip.id} value={option.trip.id}>{dateTime(option.rider.appointment_at)} · {option.rider.patient_name} · {option.count} คน</option>)}
     </select></label>
     {target && <p className="rounded-lg bg-white p-3 text-sm">วันเวลานัดใหม่ {dateTime(target.rider.appointment_at)} · {target.rider.return_at ? `รับกลับ ${dateTime(target.rider.return_at)}` : 'เที่ยวไปอย่างเดียว'} · จุดรับของผู้เดินทางรายนี้ยังคงเดิม เวลารถมารับจะคำนวณใหม่</p>}
+    {target && otherDay && !existingBooking && <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-950">
+      เที่ยวนี้คนละวันกับนัดเดิม · นัดเดิม {dateTime(booking.appointment_at)} → นัดใหม่ {dateTime(target.rider.appointment_at)} · ย้ายเมื่อผู้ป่วยแจ้งเลื่อนนัดแล้วเท่านั้น
+    </p>}
     {existingBooking && <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
       <p className="font-semibold">ผู้เดินทางมีคิวที่ยืนยันแล้วในเที่ยวนี้ · เลขที่ {ref(existingBooking.id)}</p>
-      <p>ไม่ต้องเพิ่มที่นั่งซ้ำ ระบบจะปิดเฉพาะคำขอที่กำลังเปิดอยู่ คิวในเที่ยวปลายทางยังอยู่ ผู้เดินทางคนอื่นในเที่ยวเดิมยังเดินทางตามปกติ แต่เวลารถรับอาจเปลี่ยนหลังคำนวณแผนใหม่ ระบบจะแจ้งผู้เกี่ยวข้องและต้องพิมพ์เอกสารเที่ยวเดิมใหม่</p>
-      <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5 shrink-0" checked={approvedDuplicate} onChange={event => setApprovedDuplicate(event.target.checked)} />ตรวจแล้วว่าคิวปลายทางเป็นของผู้เดินทางรายนี้ และต้องการปิดคำขอซ้ำ</label>
+      {otherDay
+        ? <p>คิวที่ยืนยันแล้วเป็นนัด {dateTime(existingBooking.appointment_at)} ส่วนคำขอนี้เป็นนัด {dateTime(booking.appointment_at)} — อาจเป็นนัดจริงคนละวัน ถ้าปิดคำขอนี้ นัด {dateTime(booking.appointment_at)} จะถูกยกเลิกและผู้จองจะเห็นว่ายกเลิก</p>
+        : <p>ไม่ต้องเพิ่มที่นั่งซ้ำ ระบบจะปิดเฉพาะคำขอที่กำลังเปิดอยู่ คิวในเที่ยวปลายทางยังอยู่ ผู้เดินทางคนอื่นในเที่ยวเดิมยังเดินทางตามปกติ แต่เวลารถรับอาจเปลี่ยนหลังคำนวณแผนใหม่ ระบบจะแจ้งผู้เกี่ยวข้องและต้องพิมพ์เอกสารเที่ยวเดิมใหม่</p>}
+      <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5 shrink-0" checked={approvedDuplicate} onChange={event => setApprovedDuplicate(event.target.checked)} />
+        {otherDay ? `ผู้ป่วยแจ้งแล้วว่าไม่ไปนัด ${dateTime(booking.appointment_at)} · ปิดคำขอนี้ได้` : 'ตรวจแล้วว่าคิวปลายทางเป็นของผู้เดินทางรายนี้ และต้องการปิดคำขอซ้ำ'}</label>
     </div>}
     {error && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900">{error} · คิวเดิมยังอยู่</p>}
     {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-900">{message}</p>}

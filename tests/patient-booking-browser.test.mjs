@@ -787,6 +787,8 @@ try{
  await sheet.getByRole('button',{name:'ย้ายไปร่วมเที่ยวที่มีอยู่',exact:true}).click()
  await sheet.getByLabel('เลือกเที่ยวปลายทาง').selectOption(joinTargetTrip)
  await sheet.getByText(/วันเวลานัดใหม่.*รับกลับ/).waitFor()
+ // เที่ยวปลายทางเป็นวันถัดไป — ต้องเตือนว่าคนละวันกับนัดเดิมก่อนกดย้าย (เคสจริง 2569-10-01 ย้ายผิดวัน)
+ await sheet.getByText('เที่ยวนี้คนละวันกับนัดเดิม',{exact:false}).waitFor()
  await page.setViewportSize({width:320,height:900})
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'ย้ายร่วมเที่ยว 320px overflow')
  await sheet.getByRole('button',{name:'ย้ายไปร่วมเที่ยวนี้',exact:true}).click()
@@ -840,13 +842,16 @@ try{
  await sheet.getByRole('button',{name:'ย้ายไปร่วมเที่ยวที่มีอยู่',exact:true}).click()
  await sheet.getByLabel('เลือกเที่ยวปลายทาง').selectOption(duplicateTargetTrip)
  await sheet.getByText('ผู้เดินทางมีคิวที่ยืนยันแล้วในเที่ยวนี้',{exact:false}).waitFor()
+ // คิวซ้ำคนละวัน (ต้นทางเป็นวันถัดจากปลายทาง) = อาจเป็นนัดจริง 2 วัน ช่องติ๊กต้องระบุวันนัดที่จะถูกยกเลิก
+ await sheet.getByText('อาจเป็นนัดจริงคนละวัน',{exact:false}).waitFor()
+ assert.equal(await sheet.getByText('เที่ยวนี้คนละวันกับนัดเดิม',{exact:false}).count(),0,'คิวซ้ำแสดงคำเตือนในกล่องเดียว ไม่ซ้อน 2 กล่อง')
  const closeDuplicate=sheet.getByRole('button',{name:'ปิดคำขอซ้ำ · ใช้คิวที่ยืนยันแล้ว'})
  assert(await closeDuplicate.isDisabled())
  await page.setViewportSize({width:320,height:900})
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'duplicate confirmation 320px overflow')
- await sheet.getByRole('checkbox',{name:/ตรวจแล้วว่าคิวปลายทาง/}).scrollIntoViewIfNeeded()
+ await sheet.getByRole('checkbox',{name:/ผู้ป่วยแจ้งแล้วว่าไม่ไปนัด/}).scrollIntoViewIfNeeded()
  await page.screenshot({path:'D:/tmp/patient-duplicate-confirm-320.png',fullPage:false})
- await sheet.getByRole('checkbox',{name:/ตรวจแล้วว่าคิวปลายทาง/}).check()
+ await sheet.getByRole('checkbox',{name:/ผู้ป่วยแจ้งแล้วว่าไม่ไปนัด/}).check()
  await closeDuplicate.click()
  let duplicateStatus='confirmed'
  for(let attempt=0;attempt<30 && duplicateStatus==='confirmed';attempt++){
@@ -1253,6 +1258,21 @@ try{
  historyReply=null;await sheet.getByRole('button',{name:'ลองอีกครั้ง',exact:true}).click();await sheet.getByRole('region',{name:'ประวัติการดำเนินการ'}).waitFor()
  await page.unroute('**/__patient_rpc');await page.keyboard.press('Escape');await sheet.waitFor({state:'detached'})
  console.log('PASS booking history: who did what and when in the request sheet; booker and on-behalf labels, trip membership window, other requests isolated, staff-only, missing function hidden, retry')
+ // ── เปิดคำขอที่ถูกปิดเป็นคิวซ้ำผิดวันกลับมา (แก้ข้อมูลรายกรณีตามคำสั่งเจ้าของระบบ 2569-10-01 — ยังไม่มีปุ่มในระบบ) ──
+ // คำสั่งเดียวกับที่ใช้กับข้อมูลจริง: กลับเป็นรอยืนยันรถ ไม่มีเที่ยว + บันทึก reopened ในนามผู้สั่ง
+ // หลังเปิดกลับ: ป้าย "คิวที่ใช้เดินทาง" ต้องไม่ค้าง · ประวัติขึ้น "เปิดคำขอกลับมาใช้" · มีปุ่มยืนยันรถให้แอดมินกดต่อ
+ await runSql(async()=>{
+  const reopened=await db.query("UPDATE public.patient_bookings SET status='submitted',trip_id=NULL,requested_trip_id=NULL,cancel_requested=false,return_ready=false,passenger_step=0,revision=revision+1,updated_at=now() WHERE id=$1 AND status='cancelled'",[duplicateSource])
+  assert.equal(reopened.affectedRows,1)
+  await db.query("INSERT INTO public.patient_booking_events(municipality_id,actor_id,entity_id,action,detail) VALUES($1,$2,$3,'reopened',$4)",[tenant,admin,duplicateSource,{note:'TEST เปิดคำขอกลับ ย้ายเข้าเที่ยวผิดวัน'}])
+ })
+ assert.equal((await runAs(citizen,()=>rpc('patient_booking_mine',[tenant]))).bookings.find(b=>b.id===duplicateSource).cancel_note??null,null,'เปิดกลับแล้วผู้จองต้องไม่เห็นเหตุผลยกเลิกค้าง')
+ await staffDesk('admin');await row(duplicateSource).click()
+ await sheet.getByRole('region',{name:'ประวัติการดำเนินการ'}).getByText('เปิดคำขอกลับมาใช้',{exact:true}).waitFor()
+ assert.equal(await sheet.getByText('คิวที่ใช้เดินทาง',{exact:false}).count(),0,'คำขอที่เปิดกลับต้องไม่ขึ้นป้ายคิวซ้ำค้าง')
+ assert(await sheet.getByRole('button',{name:/^ยืนยันรถ/}).count()>0,'เปิดกลับแล้วต้องมีปุ่มยืนยันรถให้กดต่อ')
+ await page.keyboard.press('Escape');await sheet.waitFor({state:'detached'})
+ console.log('PASS reopened wrong-day duplicate: back to awaiting confirmation, no stale duplicate banner or cancel reason, history label, confirm button')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}
