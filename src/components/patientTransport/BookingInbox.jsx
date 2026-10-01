@@ -60,7 +60,14 @@ function buildRows(workspace) {
 // ส่วนของกล่อง (เจ้าของระบบสั่ง 2569-10-01): ต้องดำเนินการ → รอเดินทาง/กำลังเดินทาง → เสร็จแล้ว/ยกเลิก มีหัวกลุ่มคั่น
 // ทุกส่วนเรียงวันนัดเร็ว → ช้า · ส่วนต้องดำเนินการเรียงตามความด่วนก่อน (เหตุขัดข้อง → ขอยกเลิก → รอยืนยันรถ → เอกสาร)
 // เดิมส่วนที่จบแล้วเรียงล่าสุดขึ้นก่อนและไม่มีหัวกลุ่ม เจ้าหน้าที่เห็นวันกระโดด (20 ต.ค. → 5 ต.ค. → 29 ก.ย.) จึงเข้าใจว่าไม่ได้เรียง
-const SECTIONS = { action: 'ต้องดำเนินการ', live: 'รอเดินทาง / กำลังเดินทาง', done: 'เสร็จแล้ว / ยกเลิก' }
+// แต่ละส่วนมีสีของตัวเอง (สั่งเพิ่มวันเดียวกัน — หัวกลุ่มเทาอ่อนกลืนกับแถวลายสลับจนแยกส่วนไม่ออก): หัวกลุ่มเป็นแถบสี
+// เว้นช่องก่อนส่วนถัดไป และทุกแถว/การ์ดมีแถบสีซ้ายของส่วน เลื่อนพ้นหัวกลุ่มแล้วยังรู้ว่าอยู่ส่วนไหน
+// ส้ม = ต้องทำ · ฟ้า = รอ/กำลังเดินทาง · เทา = จบแล้ว (เงียบที่สุด) — bar = แถบซ้าย, tint = พื้นหัวกลุ่ม, ink = ตัวอักษร
+const SECTIONS = {
+  action: { label: 'ต้องดำเนินการ', bar: '#d97706', tint: '#fef3c7', ink: '#78350f' },
+  live: { label: 'รอเดินทาง / กำลังเดินทาง', bar: '#0284c7', tint: '#e0f2fe', ink: '#0c4a6e' },
+  done: { label: 'เสร็จแล้ว / ยกเลิก', bar: '#94a3b8', tint: '#e2e8f0', ink: '#334155' },
+}
 const SECTION_ORDER = ['action', 'live', 'done']
 const sectionOf = (next, stage) => next.rank < 9 ? 'action' : ['confirmed', 'running'].includes(stage) ? 'live' : 'done'
 // คำขอที่ปิดเป็นคิวซ้ำเรียงตามคิวที่ใช้เดินทางจริง — วันเดียวกับที่แสดงในแถว (#350)
@@ -91,6 +98,14 @@ function StatusChips({ row }) {
     <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold ${issue ? 'bg-red-100 text-red-800' : STAGES[stage].chip}`}>{text}</span>
     {b.status === 'confirmed' && b.cancel_requested && <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">ขอยกเลิก</span>}
     {b.status === 'confirmed' && b.return_ready && <span className="whitespace-nowrap rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-bold text-sky-900">พร้อมรับกลับ</span>}
+  </span>
+}
+
+// หัวกลุ่มของส่วน ใช้ทั้งตาราง (PC) และการ์ด (มือถือ) — เป็น span เพราะอยู่ใน h3 ได้
+function SectionBand({ section, count, rounded }) {
+  const { label, bar, tint, ink } = SECTIONS[section]
+  return <span className={`flex items-center gap-2 px-3 py-2 text-sm font-bold ${rounded ? 'rounded-xl' : ''}`} style={{ backgroundColor: tint, color: ink, borderLeft: `5px solid ${bar}` }}>
+    {label}<span className="whitespace-nowrap rounded-full border bg-white px-2 py-0.5 text-xs" style={{ borderColor: bar }}>{count} รายการ</span>
   </span>
 }
 
@@ -598,13 +613,14 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
             const pickupAt = trip && pickupForBooking(trip, b)
             const shade = index % 2 === 0 ? '#fff' : '#f5f8fc'
             return <Fragment key={b.id}>
-            {startsSection(index) && <tr data-section-header={row.section} className="bg-slate-100">
-              <td colSpan={6} className="px-3 py-1.5 text-xs font-bold text-slate-700">{SECTIONS[row.section]} <span className="font-semibold text-slate-500">({sectionCount[row.section]})</span></td>
+            {/* ช่องว่างก่อนส่วนถัดไปอยู่ในแถวหัวกลุ่มเอง ไม่แทรกแถวเปล่า ทุกแถวใน tbody จึงเป็นหัวกลุ่มหรือคำขอเท่านั้น */}
+            {startsSection(index) && <tr data-section-header={row.section}>
+              <td colSpan={6} className="p-0">{index > 0 && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand section={row.section} count={sectionCount[row.section]} /></td>
             </tr>}
             <tr data-booking={b.id} data-section={row.section} data-at={sortAt(row)} className="cursor-pointer align-top transition-colors" style={{ backgroundColor: shade }}
               onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = shade}
               onClick={() => { setProblem(null); setOpenId(b.id) }}>
-              <td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500">{index + 1}</td>
+              <td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500" style={{ boxShadow: `inset 5px 0 0 ${SECTIONS[row.section].bar}` }}>{index + 1}</td>
               <td className="whitespace-nowrap border-r border-gray-200 px-2 py-2.5 text-center"><span className="block font-semibold">{whenLabel((linked || b).appointment_at)}</span><span className="block">{clockOf((linked || b).appointment_at)} น.</span>{linked && <span className="block text-[11px] text-sky-800">คิวจริง {ref(linked.id)}</span>}{linked && <span className="block text-[11px] text-gray-500">เดิม {dateTime(b.appointment_at)}</span>}{pickupAt && b.status !== 'cancelled' && <span className="block text-[11px] text-gray-500">รถมารับ {clockOf(pickupAt)}</span>}</td>
               <td className="border-r border-gray-200 px-2 py-2.5"><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span>{b.status === 'submitted' && group.length > 1 && <span className="block text-[11px] font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</span>}</td>
               <td className="border-r border-gray-200 px-2 py-2.5"><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={b.pickup}>รับที่ {b.pickup}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[b.return_mode]}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
@@ -619,8 +635,8 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
         const { booking: b, trip, linked, group } = row
         const pickupAt = trip && pickupForBooking(trip, b)
         return <Fragment key={b.id}>
-        {startsSection(index) && <h3 data-section-header={row.section} className="pt-2 text-sm font-bold text-slate-700">{SECTIONS[row.section]} <span className="font-semibold text-slate-500">({sectionCount[row.section]})</span></h3>}
-        <article data-booking={b.id} data-section={row.section} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4" onClick={() => { setProblem(null); setOpenId(b.id) }}>
+        {startsSection(index) && <h3 data-section-header={row.section} className={index ? 'pt-4' : ''}><SectionBand section={row.section} count={sectionCount[row.section]} rounded /></h3>}
+        <article data-booking={b.id} data-section={row.section} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4" style={{ borderLeft: `5px solid ${SECTIONS[row.section].bar}` }} onClick={() => { setProblem(null); setOpenId(b.id) }}>
           <div className="flex items-start justify-between gap-2"><h3 className="font-bold">{b.patient_name}</h3><StatusChips row={row} /></div>
           <p><strong>{whenLabel((linked || b).appointment_at)} {clockOf((linked || b).appointment_at)} น.</strong> · {linked ? linked.route_label : b.route_label}</p>
           {linked && <p className="text-sm text-sky-800">คิวที่ใช้เดินทาง {ref(linked.id)} · นัดเดิมที่ยกเลิก {dateTime(b.appointment_at)}</p>}
