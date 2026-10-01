@@ -68,6 +68,7 @@
     "test:complaint-list-print": "node tests/complaint-list-print.test.mjs",
     "test:staff-performance": "node tests/staff-performance.test.mjs && node tests/staff-performance-print.test.mjs && node tests/staff-performance-layout.test.mjs",
     "test:service-audience": "node tests/service-audience.test.mjs",
+    "test:admin-update-user": "node tests/admin-update-user-guard.test.mjs",
     "test:guard": "node tests/guard-master-tree.test.mjs",
     "test:app-icon": "node tests/app-icon.test.mjs"
   },

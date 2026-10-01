@@ -1,0 +1,49 @@
+# กันฟังก์ชันฐานข้อมูลที่เคยถูกเขียนทับจนบั๊กเก่ากลับมา ไม่ให้เกิดซ้ำ
+#
+# เคสจริงที่ทำให้ต้องมี workflow นี้ (2026-10-01): admin_update_user() เคยแก้ให้คงสังกัด อปท.
+# ของประชาชนแล้ว (20260829130000) แต่ #108 CREATE OR REPLACE ทั้งฟังก์ชันจากเนื้อรุ่นเก่า
+# บั๊กกลับมาเงียบๆ 3 สัปดาห์ จนบัญชีประชาชนหลุดสังกัดจริง 2 บัญชี (docs/ai/NOTES.md ข้อ 5)
+#
+# ทำไมต้องแยกไฟล์ ไม่ไปเป็น step ใน deploy.yml:
+# deploy.yml มี paths-ignore: 'supabase/**' ⇒ ถ้าแก้แค่ migration มันจะไม่ trigger เลย
+# ซึ่งเป็นเคสหลักที่ต้องดักพอดี และ deploy.yml จงใจไม่รับ pull_request (ถือ secrets)
+#
+# ไม่ต้อง npm ci: เทสต์ใช้เฉพาะ node builtin อ่านไฟล์ในรีโป ไม่ต่อฐานข้อมูล
+# ⇒ PR จาก fork ก็ไม่ได้รัน install script ของ dependency ใคร
+#
+# ⚠️ workflow นี้ล้มแล้วได้แค่ "เตือน" ปุ่ม merge ยังกดได้ — จะให้บังคับจริงต้องตั้ง
+# required status check ที่ Settings → Rules ของ repo
+name: DB function guard
+
+on:
+  push:
+  pull_request:
+
+# ไม่ใช้ secret ใดๆ — workflow นี้แค่อ่านไฟล์ในโค้ดแล้วตรวจ
+permissions:
+  contents: read
+
+concurrency:
+  group: db-function-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: ตรวจว่า admin_update_user() ยังคงสังกัด อปท. ของประชาชน
+        run: node tests/admin-update-user-guard.test.mjs
+
+      - name: ชี้ทางแก้เมื่อไม่ผ่าน
+        if: failure()
+        run: |
+          echo "::error::migration ของ admin_update_user() จะทำให้บัญชีประชาชนหลุดสังกัด อปท. ทุกครั้งที่กดบันทึก — ห้าม apply ขึ้นฐานจริง"
+          echo "วิธีแก้: ดูข้อความของขั้นก่อนหน้า (ชื่อไฟล์ + บล็อกที่ต้องคงไว้) แล้วรัน 'npm run test:admin-update-user' บนเครื่องจนผ่าน"
+          echo "ที่มา: docs/ai/NOTES.md ข้อ 5 — CREATE OR REPLACE เขียนทับทั้งฟังก์ชัน ต้องตั้งต้นจากเนื้อรุ่นล่าสุดเสมอ"
