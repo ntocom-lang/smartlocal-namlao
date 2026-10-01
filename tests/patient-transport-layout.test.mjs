@@ -118,6 +118,8 @@ const TRIP_BOOKINGS = Array.from({ length: 8 }, (_, i) => ({
   mobility: i === 0 ? 'wheelchair' : 'walk', companions: i % 3,
   return_mode: 'wait', return_at: '2026-10-05T12:00:00+07:00',
   requester_name: `นายผู้ยื่น ทดสอบ${i + 1}`, relation: 'relative', created_at: '2026-10-01T08:00:00+07:00',
+  // ช่องทางที่คำขอเข้ามา (patient_bookings.entry_channel) — สลับให้เที่ยวเดียวมีทั้งคนที่จองเองกับคนที่เจ้าหน้าที่รับจองแทน
+  entry_channel: i % 2 ? 'staff' : 'online',
   consent_at: '2026-10-01T08:00:00+07:00', consent_version: 'patient-booking-v1',
   // ข้อมูลติดต่อพิมพ์เฉพาะใบคำขอ พิกัดไม่พิมพ์
   phone: '0891234567', pickup: 'บ้านเลขที่ 88 หมู่ 3', pickup_lat: 18.1234, pickup_lng: 100.1234,
@@ -326,7 +328,9 @@ const checks = [
   },
   {
     name: 'pdpa-and-template-notes-present',
-    reason: 'ย่อหน้าเงื่อนไขการใช้ข้อมูลกับบรรทัดกำกับที่มาของแบบ เป็นเนื้อหาบังคับ ห้ามหายไปเงียบๆ',
+    reason: 'ย่อหน้าเงื่อนไขการใช้ข้อมูลกับบรรทัดกำกับที่มาของแบบ เป็นเนื้อหาบังคับ ห้ามหายไปเงียบๆ'
+      + ' · ประโยค "การพิจารณาเป็นอำนาจของคณะกรรมการกองทุน มิใช่ของ อปท." เจ้าของระบบสั่งตัด 2569-10-01'
+      + ' (ใบนี้ยื่นต่อนายก เรื่องจบที่นายก) ต้องไม่กลับมาในทุกทางที่พิมพ์ใบคำขอ',
     async run(browser) {
       const page = await render(browser, buildPatientTransportPacketHtml(args()))
       try {
@@ -335,11 +339,29 @@ const checks = [
           'หนังสือนำส่งไม่มีย่อหน้าแจ้งฐานความยินยอม')
         assert.ok(text.includes('หยุดใช้ข้อมูลเมื่อเสร็จภารกิจ'),
           'หนังสือนำส่งไม่ได้จำกัดขอบเขตการใช้ข้อมูลของผู้รับ')
-        assert.ok(text.includes('สถาบันพัฒนาองค์กรชุมชน'),
-          'ใบคำขอไม่มีบรรทัดกำกับว่าลอกโครงมาจากแบบตัวอย่างกลางของ พอช.')
-        assert.ok(text.includes('มิใช่ของ'),
-          'ใบคำขอไม่ได้บอกว่าการพิจารณาเป็นอำนาจของกองทุน ไม่ใช่ของ อปท.')
       } finally { await page.close() }
+      for (const [label, html] of [
+        ['ชุดเอกสารคำขอ', buildPatientTransportPacketHtml(args())],
+        ['ใบคำขอฝั่งประชาชน', buildPatientTransportFormHtml(args())],
+        ['หนังสือต่อเที่ยว', buildTripForwardLetterHtml({ ...tripArgs(), bookings: TRIP_BOOKINGS.slice(0, 2) })],
+      ]) {
+        const sheets = await render(browser, html)
+        try {
+          const notes = await sheets.locator('.note-template').allInnerTexts()
+          assert.ok(notes.length > 0, `${label}: ไม่พบบรรทัดกำกับท้ายใบคำขอ`)
+          for (const note of notes) {
+            assert.ok(note.includes('สถาบันพัฒนาองค์กรชุมชน'),
+              `${label}: ใบคำขอไม่มีบรรทัดกำกับว่าลอกโครงมาจากแบบตัวอย่างกลางของ พอช.`)
+            assert.ok(note.includes('หากกองทุนมีแบบของตนเองให้ใช้แบบนั้นแทน'),
+              `${label}: บรรทัดกำกับไม่ได้บอกให้ใช้แบบของกองทุนเมื่อกองทุนมีแบบของตนเอง`)
+            for (const word of ['การพิจารณาเป็นอำนาจ', 'มิใช่ของ']) {
+              assert.ok(!note.includes(word), `${label}: บรรทัดท้ายใบยังมี "${word}" ที่สั่งตัดแล้ว`)
+            }
+          }
+          assert.ok(!(await sheets.locator('body').innerText()).includes('การพิจารณาเป็นอำนาจของคณะกรรมการกองทุน'),
+            `${label}: ประโยคที่สั่งตัดไปโผล่ที่อื่นในเอกสาร`)
+        } finally { await sheets.close() }
+      }
     },
   },
   {
@@ -475,7 +497,8 @@ const checks = [
   },
   {
     name: 'trip-letter-data-minimization',
-    reason: 'หนังสือไม่ใส่เบอร์/จุดรับ ใบคำขอมีข้อมูลตามแบบ ไม่พิมพ์พิกัดและไม่อ้างว่าลงชื่อออนไลน์',
+    reason: 'หนังสือไม่ใส่เบอร์/จุดรับ ใบคำขอมีข้อมูลตามแบบ ไม่พิมพ์พิกัด และไม่ติดข้อความโหมดเคาน์เตอร์ของระบบคำขอแบบเดิม'
+      + ' (บรรทัดกำกับการลงชื่อตรวจที่ trip-form-signature-follows-entry-channel)',
     async run(browser) {
       const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings: TRIP_BOOKINGS.slice(0, 1) }))
       try {
@@ -490,11 +513,151 @@ const checks = [
         assert.ok(letter.includes('พร 72301/88'))
         assert.ok(form.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
         assert.ok(!form.includes('สมาชิกกองทุนเลขที่'), 'คนทั่วไปไม่ต้องมีเลขสมาชิกกองทุนในแบบจองรถ')
-        assert.ok(form.includes('โปรดลงลายมือชื่อรับรอง'))
-        assert.ok(!form.includes('ลงชื่อโดยการยืนยันตัวตน'))
         assert.ok(!form.includes('เจ้าหน้าที่บันทึกคำขอแทนที่เคาน์เตอร์'))
         assert.equal(await page.locator('.box--on').count(), 0, 'ระบบต้องไม่ติ๊กช่องใดให้เอง')
       } finally { await page.close() }
+    },
+  },
+  {
+    // เจ้าของระบบสั่ง 2569-10-01: ใบคำขอถึงนายกลงชื่อเป็นชื่อผู้แจ้ง "แบบออนไลน์" — เขียนได้ตามจริงเฉพาะคำขอที่ผู้แจ้ง
+    // ล็อกอินจองเอง (entry_channel 'online') · คำขอที่เจ้าหน้าที่รับจองแทน เจ้าของระบบเลือก "ไม่ต้องเซ็น" ให้บอกตามจริง
+    // ว่าเจ้าหน้าที่รับจองแทน · ⚠️ ห้ามให้ใบที่ผู้แจ้งไม่ได้แตะระบบอ้างว่ายืนยันตัวตนผ่านระบบ (ใบนี้แนบไปกับหนังสือถึงองค์กรภายนอก)
+    name: 'trip-form-signature-follows-entry-channel',
+    reason: 'บรรทัดกำกับใต้ชื่อผู้ยื่นต้องตรงกับช่องทางที่คำขอเข้ามาจริง: จองเอง = ลงชื่อออนไลน์ · เจ้าหน้าที่รับจองแทน = บอกว่ารับจองแทน'
+      + ' ไม่ขอลายมือชื่อ · ไม่รู้ช่องทาง = ไม่อ้างอะไรเลย และหนังสือนำส่งต้องไม่เขียนขัดกับใบที่แนบ',
+    async run(browser) {
+      const read = async (html, shot) => {
+        const page = await render(browser, html)
+        try {
+          if (shot && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
+            await page.locator('.sheet').nth(shot.sheet).screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/${shot.file}` })
+          }
+          return await page.evaluate(() => [...document.querySelectorAll('.sheet')].map(sheet => ({
+            isForm: !!sheet.querySelector('.form-title'),
+            text: sheet.innerText,
+            note: sheet.querySelector('.signed-note')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
+            signed: [...sheet.querySelectorAll('.sign-signed')].map(el => el.textContent.trim()),
+            lines: sheet.querySelectorAll('.sign-line').length,
+          })))
+        } finally { await page.close() }
+      }
+      const trip = (bookings, shot) => read(buildTripForwardLetterHtml({ ...tripArgs(), bookings }), shot)
+      const booking = (index, overrides = {}) => ({ ...TRIP_BOOKINGS[index], ...overrides })
+      // วันเวลาแสดงตามเวลาเครื่องที่พิมพ์ — ตรวจรูปแบบ ไม่ล็อกชั่วโมง เครื่องที่ตั้งโซนเวลาอื่นจะได้ไม่ล้มลวง
+      const STAMP = String.raw`เมื่อ \d{1,2} \S+ 2569 เวลา \d{2}\.\d{2} น\.`
+      const nameOnLine = (form, name, label) => {
+        assert.deepEqual(form.signed, [name], `${label}: ชื่อผู้ยื่นต้องอยู่บนเส้นลงชื่อ 1 จุด`)
+        assert.equal(form.lines, 0, `${label}: ต้องไม่มีเส้นเปล่าให้เซ็น`)
+      }
+
+      // 1) ผู้แจ้งล็อกอินจองเอง — ลงชื่อออนไลน์ ไม่ขอให้เซ็นปากกา
+      {
+        const [letter, form] = await trip([booking(0, { entry_channel: 'online' })])
+        assert.match(form.note, new RegExp(`^ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service ${STAMP} · เลขอ้างอิง B-0$`),
+          `ใบของผู้ที่จองเอง: "${form.note}"`)
+        nameOnLine(form, TRIP_BOOKINGS[0].requester_name, 'จองเอง')
+        assert.ok(letter.text.includes('ผ่านระบบบริการอิเล็กทรอนิกส์'), 'หนังสือของคำขอที่จองเองต้องยังบอกว่ายื่นผ่านระบบ')
+        assert.deepEqual(letter.signed, [], 'หนังสือนำส่งต้องไม่มีชื่อพิมพ์แทนลายมือชื่อ')
+      }
+      // 2) เจ้าหน้าที่รับจองแทน — บอกตามจริง ไม่อ้างว่ายืนยันตัวตน ไม่ขอลายมือชื่อ
+      {
+        const [letter, form] = await trip([booking(0, { entry_channel: 'staff' })], { sheet: 1, file: 'patient-document-staff-entry.png' })
+        assert.match(form.note, new RegExp(`^เจ้าหน้าที่รับจองแทนทางโทรศัพท์/หน้าเคาน์เตอร์ ${STAMP} · เลขอ้างอิง B-0$`),
+          `ใบที่เจ้าหน้าที่รับจองแทน: "${form.note}"`)
+        for (const claim of ['ยืนยันตัวตน', 'ลงลายมือชื่อ']) {
+          assert.ok(!form.note.includes(claim), `ใบที่เจ้าหน้าที่รับจองแทนต้องไม่มี "${claim}": "${form.note}"`)
+        }
+        nameOnLine(form, TRIP_BOOKINGS[0].requester_name, 'รับจองแทน')
+        assert.ok(!letter.text.includes('ผ่านระบบบริการอิเล็กทรอนิกส์'),
+          'หนังสือเขียนว่ายื่นผ่านระบบ ทั้งที่ใบคำขอที่แนบเขียนว่าเจ้าหน้าที่รับจองแทน')
+        assert.ok(letter.text.includes(`ได้ยื่นคำขอต่อ${TENANT.name} ตามเลขอ้างอิง B-0`), 'ย่อหน้าแรกของหนังสือต้องยังอ่านต่อเนื่องหลังตัดวลี')
+      }
+      // 3) ไม่รู้ช่องทาง (ไม่มีค่า หรือค่าที่ไม่รู้จัก) — ไม่อ้างทั้งสองแบบ คงข้อความเดิมที่ขอให้เซ็นรับรอง
+      for (const unknown of [undefined, null, 'phone']) {
+        const [letter, form] = await trip([booking(0, { entry_channel: unknown })])
+        assert.ok(form.note.includes('จัดทำจากข้อมูลการจองรถ') && form.note.includes('โปรดลงลายมือชื่อรับรอง'),
+          `ช่องทาง ${unknown}: "${form.note}"`)
+        for (const claim of ['ยืนยันตัวตน', 'รับจองแทน']) {
+          assert.ok(!form.note.includes(claim), `ช่องทาง ${unknown}: อ้าง "${claim}" ทั้งที่ไม่รู้ช่องทาง`)
+        }
+        assert.ok(!letter.text.includes('ผ่านระบบบริการอิเล็กทรอนิกส์'), `ช่องทาง ${unknown}: หนังสืออ้างว่ายื่นผ่านระบบ`)
+      }
+      // 4) เที่ยวเดียวมีทั้งสองแบบ — แต่ละใบได้บรรทัดของตัวเอง ไม่ปนกัน
+      {
+        const sheets = await trip([booking(0), booking(1)])
+        const forms = sheets.filter(sheet => sheet.isForm)
+        assert.equal(forms.length, 2)
+        assert.ok(forms[0].note.includes('ยืนยันตัวตนผ่านระบบ E-Service') && forms[0].note.includes('B-0'), `ใบแรก: "${forms[0].note}"`)
+        assert.ok(forms[1].note.includes('เจ้าหน้าที่รับจองแทน') && forms[1].note.includes('B-1'), `ใบที่สอง: "${forms[1].note}"`)
+        assert.ok(!forms[1].note.includes('ยืนยันตัวตน'), 'ใบของคนที่เจ้าหน้าที่รับจองแทนติดข้อความลงชื่อออนไลน์ของอีกคน')
+        nameOnLine(forms[0], TRIP_BOOKINGS[0].requester_name, 'ร่วมเที่ยว คนที่ 1')
+        nameOnLine(forms[1], TRIP_BOOKINGS[1].requester_name, 'ร่วมเที่ยว คนที่ 2')
+      }
+      // 5) ชุดเอกสารของระบบคำขอแบบเดิมต้องได้ถ้อยคำเท่าเดิม — งานนี้แก้เฉพาะระบบจองคิว
+      for (const [label, form] of [['ยื่นออนไลน์', FORM], ['เจ้าหน้าที่คีย์แทนที่เคาน์เตอร์', { ...FORM, signed_by: null }]]) {
+        const [letter] = await read(buildPatientTransportPacketHtml(args({ form })))
+        assert.ok(letter.text.includes(`ได้ยื่นคำขอต่อ${TENANT.name} ผ่านระบบบริการอิเล็กทรอนิกส์ ตามเลขอ้างอิง A1B2C3D4`),
+          `ระบบคำขอแบบเดิม (${label}): ย่อหน้าแรกของหนังสือเปลี่ยนไป`)
+      }
+    },
+  },
+  {
+    // เจ้าของระบบเลือก 2569-10-01: หนังสือนำส่ง "นายกเซ็นปากกา" — ระบบพิมพ์ให้แค่ชื่อในวงเล็บ + ตำแหน่ง จากทะเบียนผู้ลงนามกลาง
+    // ⚠️ ห้ามพิมพ์ชื่อนายกเป็นลายมือชื่อ (.sign-signed): นายกไม่ได้ทำอะไรในระบบตอนพิมพ์ = ระบบลงนามแทนผู้มีอำนาจ
+    // บนหนังสือที่ส่งออกนอก อปท. — ถ้าวันหนึ่งจะให้นายกลงนามในระบบ ต้องมีการกดลงนามของนายกเองและบันทึกย้อนตรวจได้ก่อน
+    name: 'letter-signer-from-registry-never-auto-signed',
+    reason: 'หนังสือนำส่งต้องพิมพ์ชื่อนายกจากทะเบียนผู้ลงนามในวงเล็บ เว้นที่ให้เซ็นปากกา ห้ามพิมพ์ชื่อเป็นลายมือชื่อ'
+      + ' · ยังไม่ได้ตั้งชื่อ = วงเล็บว่าง ไม่เดาชื่อ และมีแถบเตือนบนจอที่ไม่ถูกพิมพ์',
+    async run(browser) {
+      const actingTitle = 'ปลัดองค์การบริหารส่วนตำบล ปฏิบัติหน้าที่นายกองค์การบริหารส่วนตำบลทุ่งแค้ว'
+      const cases = [
+        ['ตั้งชื่อแล้ว', MAYOR, { name: `(${MAYOR.name})`, title: MAYOR.title, notice: false }],
+        ['ทะเบียนว่าง', null, { name: null, title: 'นายกองค์การบริหารส่วนตำบลทุ่งแค้ว', notice: true }],
+        ['มีแต่ตำแหน่ง ชื่อเว้นว่าง', { name: '   ', title: actingTitle }, { name: null, title: actingTitle, notice: true }],
+      ]
+      for (const [docLabel, build] of [
+        ['ชุดเอกสารคำขอ', mayor => buildPatientTransportPacketHtml(args({ mayor }))],
+        ['หนังสือต่อเที่ยว', mayor => buildTripForwardLetterHtml({ ...tripArgs(), mayor, bookings: TRIP_BOOKINGS.slice(0, 2) })],
+      ]) {
+        for (const [caseLabel, mayor, expected] of cases) {
+          const label = `${docLabel} · ${caseLabel}`
+          const page = await render(browser, build(mayor))
+          try {
+            const inspect = () => page.evaluate(() => {
+              const letter = document.querySelector('.sheet')
+              const sign = letter.querySelector('.letter-sign')
+              const note = document.querySelector('.screen-note')
+              return {
+                lines: [...sign.querySelectorAll('p')].map(p => p.textContent.trim()),
+                signed: letter.querySelectorAll('.sign-signed').length,
+                gapMm: parseFloat(getComputedStyle(sign).marginTop) / 3.779527,
+                note: note && { text: note.textContent, display: getComputedStyle(note).display, inSheet: !!note.closest('.sheet') },
+              }
+            })
+            const printed = await inspect()
+            assert.equal(printed.signed, 0, `${label}: หนังสือนำส่งพิมพ์ชื่อแทนลายมือชื่อของนายก`)
+            assert.ok(printed.gapMm >= 11.9, `${label}: ที่ว่างให้นายกเซ็นเหลือ ${printed.gapMm.toFixed(1)}mm ต้องไม่ต่ำกว่า 12mm`)
+            assert.equal(printed.lines.length, 2, `${label}: ช่องลงนามต้องมี 2 บรรทัด (ชื่อในวงเล็บ + ตำแหน่ง)`)
+            if (expected.name) assert.equal(printed.lines[0], expected.name, `${label}: ชื่อในวงเล็บ`)
+            else assert.match(printed.lines[0], /^\(\.{20,}\)$/, `${label}: ไม่มีชื่อในทะเบียนต้องเป็นวงเล็บว่าง ห้ามเดาชื่อ — ได้ "${printed.lines[0]}"`)
+            assert.equal(printed.lines[1], expected.title, `${label}: ตำแหน่ง`)
+            if (!expected.notice) {
+              assert.equal(printed.note, null, `${label}: ตั้งชื่อนายกแล้วต้องไม่มีแถบเตือน`)
+              continue
+            }
+            assert.ok(printed.note, `${label}: ไม่มีแถบเตือนว่ายังไม่ได้ตั้งชื่อนายก`)
+            assert.ok(printed.note.text.includes('ผู้ลงนามเอกสาร') && printed.note.text.includes('ไม่ถูกพิมพ์'),
+              `${label}: แถบเตือนไม่ได้บอกว่าต้องไปตั้งที่ไหน — "${printed.note.text}"`)
+            assert.equal(printed.note.inSheet, false, `${label}: แถบเตือนอยู่ในแผ่นกระดาษ`)
+            assert.equal(printed.note.display, 'none', `${label}: แถบเตือนถูกพิมพ์ลงกระดาษ`)
+            await page.emulateMedia({ media: 'screen' })
+            assert.equal((await inspect()).note.display, 'block', `${label}: แถบเตือนไม่ขึ้นบนจอ`)
+            if (docLabel === 'หนังสือต่อเที่ยว' && caseLabel === 'ทะเบียนว่าง' && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
+              await page.screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/patient-letter-no-signer-on-screen.png`, clip: { x: 0, y: 0, width: 794, height: 1123 } })
+            }
+          } finally { await page.close() }
+        }
+      }
     },
   },
   {
