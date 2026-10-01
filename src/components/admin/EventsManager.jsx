@@ -932,6 +932,13 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     scroller?.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  // คลิกที่แถวในตาราง PC เพื่อเปิดรายละเอียด — ถ้าผู้ใช้เพิ่งลากคลุมข้อความในแถว (จะคัดลอกชื่อ/สถานที่)
+  // เบราว์เซอร์ก็ยิง click ตอนปล่อยเมาส์เหมือนกัน กรณีนั้นไม่เปิดหน้าต่างทับสิ่งที่เขากำลังคัดลอก
+  function openRowDetail(ev) {
+    if (window.getSelection?.()?.toString().trim()) return
+    setViewingEvent(ev)
+  }
+
   return (
     <div className="space-y-4" ref={topRef}>
       {showScrollTop && (
@@ -1636,15 +1643,19 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                         const canDeleteRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
                         const canView = canViewEventDetail(ev, currentUserRole, currentUserId, currentUserScope)
                         return (
+                          // คลิกตรงไหนของแถวก็เปิดรายละเอียด แบบเดียวกับตารางคำร้อง (ComplaintsManager) ที่เจ้าหน้าที่เคยชิน
+                          // (เจ้าของระบบสั่ง 2569-10-01) — ช่องที่มีปุ่มของตัวเอง (ไฟล์แนบ/จัดการ) กันไว้ด้วย stopPropagation
+                          // แถวที่ไม่มีสิทธิ์เปิดรายละเอียดไม่รับคลิก ปุ่มชื่อกิจกรรมยังอยู่ให้ใช้คีย์บอร์ดเปิดได้
                           <tr key={ev.id}
-                            className="transition-colors"
+                            className={`transition-colors${canView ? ' cursor-pointer' : ''}`}
                             style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f5f8fc' }}
                             onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc'}>
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc'}
+                            onClick={canView ? () => openRowDetail(ev) : undefined}>
                             <td className="px-3 py-2 text-center text-xs text-gray-400 border-r border-gray-200">{i + 1}</td>
                             <td className="px-3 py-2 border-r border-gray-200">
                               {canView ? (
-                                <button type="button" onClick={() => setViewingEvent(ev)}
+                                <button type="button" onClick={(e) => { e.stopPropagation(); setViewingEvent(ev) }}
                                   className="text-left group w-full">
                                   <p className="font-semibold text-blue-700 text-xs leading-snug group-hover:underline">{ev.title}</p>
                                   {ev.description && <p className="text-[11px] text-gray-400 truncate max-w-[220px]">{ev.description}</p>}
@@ -1698,6 +1709,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                                 ? <span className="text-gray-300 text-xs">—</span>
                                 : (canView && eventAttachments(ev).length > 0)
                                 ? <a href={eventAttachments(ev)[0]} target="_blank" rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
                                     title={`เปิดไฟล์แนบ${eventAttachments(ev).length > 1 ? ` (${eventAttachments(ev).length} ไฟล์)` : ''}`}
                                     className="relative inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors">
                                     <Paperclip size={13} className="text-blue-500" />
