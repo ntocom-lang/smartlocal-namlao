@@ -9,7 +9,7 @@ import react from '@vitejs/plugin-react'
 import tailwind from '@tailwindcss/vite'
 import { chromium } from 'playwright'
 import { mkdir, readFile } from 'node:fs/promises'
-import { previousOdometer, thaiDay, pickupForBooking, returnForBooking } from '../src/lib/patientBooking.js'
+import { previousOdometer, thaiDay, pickupForBooking, returnForBooking, staffNextAction, bookingStage } from '../src/lib/patientBooking.js'
 process.env.PATIENT_UI_QA = '1'
 const { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, baseBooking } = await import('./patient-booking-db.test.mjs')
 await db.exec(await readFile(new URL('../supabase/migrations/20260927180000_patient_booking_events_page.sql', import.meta.url), 'utf8'))
@@ -1273,6 +1273,45 @@ try{
  assert(await sheet.getByRole('button',{name:/^ยืนยันรถ/}).count()>0,'เปิดกลับแล้วต้องมีปุ่มยืนยันรถให้กดต่อ')
  await page.keyboard.press('Escape');await sheet.waitFor({state:'detached'})
  console.log('PASS reopened wrong-day duplicate: back to awaiting confirmation, no stale duplicate banner or cancel reason, history label, confirm button')
+ // ── กล่องคำขอรถแบ่ง 3 ส่วนตามความสำคัญ มีหัวกลุ่มคั่น แต่ละส่วนเรียงวันนัดเร็ว → ช้า (เจ้าของระบบสั่ง 2569-10-01) ──
+ // ต้องดำเนินการ (ความด่วนก่อน แล้ววันนัด) → รอเดินทาง/กำลังเดินทาง → เสร็จแล้ว/ยกเลิก (เดิมส่วนนี้เรียงล่าสุดขึ้นก่อน)
+ await staffDesk('coordinator')
+ const orderTable=page.locator('table').filter({hasText:'วันเวลานัด'})
+ await orderTable.locator('tr[data-booking]').first().waitFor()
+ const listed=await orderTable.locator('tbody tr').evaluateAll(trs=>trs.map(tr=>tr.dataset.sectionHeader
+  ?{header:tr.dataset.sectionHeader,text:tr.innerText.trim()}:{booking:tr.dataset.booking,section:tr.dataset.section,at:tr.dataset.at}))
+ const orderWorkspace=await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))
+ const orderTrips=new Map(orderWorkspace.trips.map(t=>[t.id,t]))
+ const sectionRank={action:0,live:1,done:2}
+ const bookingRows=listed.filter(item=>item.booking)
+ assert.equal(bookingRows.length,orderWorkspace.bookings.length,'ทุกคำขอต้องอยู่ในตาราง')
+ for(const [index,item] of bookingRows.entries()){
+  const b=orderWorkspace.bookings.find(x=>x.id===item.booking)
+  const trip=b.trip_id&&b.status!=='cancelled'?orderTrips.get(b.trip_id)||null:null
+  item.rank=staffNextAction(b,trip).rank
+  assert.equal(item.section,item.rank<9?'action':['confirmed','running'].includes(bookingStage(b,trip))?'live':'done',`ส่วนของคำขอ ${item.booking.slice(0,8)} ไม่ถูก`)
+  if(!index)continue
+  const prev=bookingRows[index-1]
+  assert(sectionRank[prev.section]<=sectionRank[item.section],'ส่วนต้องเรียง ต้องดำเนินการ → รอเดินทาง → เสร็จแล้ว')
+  if(prev.section!==item.section)continue
+  if(item.section==='action'&&prev.rank!==item.rank)assert(prev.rank<item.rank,'ส่วนต้องดำเนินการต้องเรียงตามความด่วน')
+  else assert(prev.at<=item.at,`ในส่วน ${item.section} ต้องเรียงวันนัดเร็วไปช้า: ${prev.at} → ${item.at}`)
+ }
+ const presentSections=[...new Set(bookingRows.map(item=>item.section))]
+ assert.deepEqual(presentSections,['action','live','done'],'ข้อมูลทดสอบต้องมีครบ 3 ส่วน')
+ assert.deepEqual(listed.filter(item=>item.header).map(item=>item.header),presentSections,'ส่วนละ 1 หัวกลุ่ม')
+ for(const [index,item] of listed.entries()){
+  if(item.header)assert(item.text.includes(`(${bookingRows.filter(row=>row.section===item.header).length})`),`หัวกลุ่ม ${item.header} ต้องบอกจำนวนถูก`)
+  else if(!listed[index-1]?.booking||listed[index-1].section!==item.section)assert.equal(listed[index-1]?.header,item.section,'หัวกลุ่มต้องอยู่ก่อนแถวแรกของส่วน')
+ }
+ // จอมือถือ: การ์ดเรียงชุดเดียวกับตาราง และมีหัวกลุ่มคั่นแบบเดียวกัน
+ await page.setViewportSize({width:390,height:900})
+ assert.deepEqual(await page.locator('article[data-booking]').evaluateAll(cards=>cards.map(card=>card.dataset.booking)),bookingRows.map(item=>item.booking),'มือถือต้องเรียงชุดเดียวกับตาราง')
+ assert.deepEqual(await page.locator('h3[data-section-header]').evaluateAll(heads=>heads.map(head=>head.dataset.sectionHeader)),presentSections)
+ await page.locator('h3[data-section-header="done"]').waitFor()
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'หัวกลุ่มต้องไม่ทำให้จอ 390px ล้น')
+ await page.setViewportSize({width:1280,height:900})
+ console.log('PASS inbox order: action → live → done sections with headers, urgency then appointment within action, ascending dates within each section, same order on mobile')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}
