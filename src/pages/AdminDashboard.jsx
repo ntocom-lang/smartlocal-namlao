@@ -390,8 +390,9 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
       return { ok: false, error: 'หัวหน้ากองต้องระบุกอง/หน่วยงานที่สังกัดก่อนบันทึก' }
     }
     setSaving(user.id)
-    const needsMuni = ['admin', 'staff', 'technician', 'officer', 'viewer', 'council'].includes(changes.role)
-    const payload = { ...changes, municipality_id: needsMuni ? (user.municipality_id || tenant?.id) : null }
+    // ประชาชนต้องคงสังกัด อปท. ไว้ ถ้าส่ง null ไปแล้วฝั่ง DB ไม่กันไว้ บัญชีจะหายจากรายการทันทีที่บันทึก
+    // (เคยเกิดจริง 2026-10-01) มีแค่ superadmin ที่ไม่ผูก อปท. เพราะเป็นบัญชี cross-tenant โดยการออกแบบ
+    const payload = { ...changes, municipality_id: changes.role === 'superadmin' ? null : (user.municipality_id || tenant?.id) }
     const clearsAssignment = ['citizen', 'superadmin'].includes(changes.role)
     const effectivePayload = clearsAssignment
       ? { ...payload, department_id: null, position_id: null, is_dept_head: false }
