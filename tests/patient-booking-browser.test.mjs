@@ -221,11 +221,13 @@ const clicks={}
 const click=async(key,locator)=>{await locator.click();clicks[key]=(clicks[key]||0)+1}
 // หน้าต่างพิมพ์: แผ่นหนังสือนำส่ง + ใบคำขอของคำขอที่ระบุ (บรรทัดกำกับใต้ชื่อผู้ยื่น) + แถบเตือนบนจอ
 // ใช้ยืนยันว่า entry_channel จากฐานข้อมูลไปถึงใบพิมพ์จริง ไม่ใช่ถูกแค่ในข้อมูลสมมติของเทสต์เลย์เอาต์
+// ⚠️ หาแผ่นจากชนิด (.letter-sign / .form-title) ไม่ใช่เลขลำดับ · kinds = ลำดับที่ออกจากเครื่องพิมพ์
 const printedDoc=(win,id)=>win.evaluate(ref=>{
- const sheets=[...document.querySelectorAll('.sheet')],form=sheets.find(s=>s.querySelector('.form-title')&&s.innerText.includes(ref)),notice=document.querySelector('.screen-note')
- return{sheets:sheets.length,all:document.body.innerText,letter:sheets[0].innerText,form:form?.innerText??'',
+ const sheets=[...document.querySelectorAll('.sheet')],letter=sheets.find(s=>s.querySelector('.letter-sign')),form=sheets.find(s=>s.querySelector('.form-title')&&s.innerText.includes(ref)),notice=document.querySelector('.screen-note')
+ return{sheets:sheets.length,kinds:sheets.map(s=>s.querySelector('.letter-sign')?'letter':s.querySelector('.form-title')?'form':'other'),
+  all:document.body.innerText,letter:letter?.innerText??'',form:form?.innerText??'',
   note:form?.querySelector('.signed-note')?.textContent.replace(/\s+/g,' ').trim()??'',
-  mayorSigned:sheets[0].querySelectorAll('.sign-signed').length,
+  mayorSigned:letter?letter.querySelectorAll('.sign-signed').length:-1,
   notice:notice&&{text:notice.textContent,display:getComputedStyle(notice).display}}},id.slice(0,8).toUpperCase())
 // วันทำการที่รถว่างทั้งวัน (ไม่มีเที่ยวเลย) ไว้ให้แต่ละฉากใช้คนละวัน ไม่ชนกันเองและไม่ชนข้อมูลของเทสต์ฐานข้อมูล
 const freeDays=async(count,skip=[])=>{
@@ -449,7 +451,8 @@ try{
   const [intakeWin]=await Promise.all([page.waitForEvent('popup'),sheet.getByRole('button',{name:'พิมพ์เอกสาร 2 ประเภท',exact:true}).click()])
   await intakeWin.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
   const doc=await printedDoc(intakeWin,intake.id)
-  assert.equal(doc.sheets,2,'เที่ยวของคำขอที่รับจองแทนมีผู้ป่วยคนเดียว = หนังสือ 1 + ใบคำขอ 1')
+  // ลำดับกระดาษตามลำดับเรื่อง (เจ้าของระบบสั่ง 2569-10-01): ใบคำขอ ประชาชน → นายก ก่อน แล้วหนังสือนำส่ง นายก → กองทุน
+  assert.deepEqual(doc.kinds,['form','letter'],'เที่ยวที่มีผู้ป่วยคนเดียวต้องพิมพ์ใบคำขอก่อน แล้วตามด้วยหนังสือนำส่ง')
   assert.match(doc.note,/^เจ้าหน้าที่รับจองแทนทางโทรศัพท์\/หน้าเคาน์เตอร์ เมื่อ \d{1,2} \S+ \d{4} เวลา \d{2}\.\d{2} น\. · เลขอ้างอิง [0-9A-F]{8}$/,`บรรทัดกำกับของใบที่เจ้าหน้าที่รับจองแทน: "${doc.note}"`)
   assert.ok(doc.form.includes('[TEST] ผู้ป่วยโทรมา'),'ชื่อผู้แจ้งต้องอยู่บนใบคำขอ')
   for(const claim of ['ยืนยันตัวตน','ลงลายมือชื่อ','ผ่านระบบบริการอิเล็กทรอนิกส์'])assert.ok(!doc.all.includes(claim),`เอกสารของคำขอที่รับจองแทนต้องไม่มี "${claim}"`)
@@ -570,6 +573,8 @@ try{
   const doc=await printedDoc(letterWin,b1)
   assert.match(doc.note,/^ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service เมื่อ \d{1,2} \S+ \d{4} เวลา \d{2}\.\d{2} น\. · เลขอ้างอิง [0-9A-F]{8}$/,`บรรทัดกำกับของใบที่ผู้จองยื่นเอง: "${doc.note}"`)
   assert.ok(!doc.form.includes('ลงลายมือชื่อ')&&!doc.form.includes('รับจองแทน'),'ใบของผู้ที่จองเองต้องไม่ขอให้เซ็นปากกา และไม่ติดข้อความของคำขอที่รับจองแทน')
+  // ลำดับกระดาษ: ใบคำขอทุกใบก่อน หนังสือนำส่งเป็นแผ่นสุดท้าย (เจ้าของระบบสั่ง 2569-10-01)
+  assert.ok(doc.kinds.length>=2&&doc.kinds.at(-1)==='letter'&&doc.kinds.slice(0,-1).every(kind=>kind==='form'),`ลำดับแผ่นต้องเป็น ใบคำขอ → หนังสือนำส่ง: ${doc.kinds}`)
   // หนังสือนำส่ง: นายกเซ็นปากกา ระบบไม่พิมพ์ชื่อเป็นลายมือชื่อ · ฐานทดสอบไม่มีทะเบียนผู้ลงนาม = ต้องเตือนบนจอว่าไปตั้งที่ไหน
   assert.equal(doc.mayorSigned,0,'หนังสือนำส่งต้องไม่มีชื่อพิมพ์แทนลายมือชื่อของนายก')
   assert.ok(doc.notice?.text.includes('ผู้ลงนามเอกสาร')&&doc.notice.display==='block','ยังไม่ได้ตั้งชื่อนายก หน้าต่างพิมพ์ต้องขึ้นแถบเตือนบนจอ')

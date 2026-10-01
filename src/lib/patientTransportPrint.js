@@ -1,6 +1,11 @@
-// ใบพิมพ์ของคำขอ "ขออนุเคราะห์รถรับ-ส่งผู้ป่วย" — 2 ใบที่ใช้คู่กัน
-//   1. หนังสือนำส่ง (หนังสือภายนอก) จาก อปท. ถึงประธานหน่วยงานผู้จัดรถ
-//   2. ใบคำขอรถรับ-ส่งผู้ป่วย จากประชาชนถึงนายก อปท. ที่แนบไปกับหนังสือนำส่ง
+// ใบพิมพ์ของคำขอ "ขออนุเคราะห์รถรับ-ส่งผู้ป่วย" — 2 ใบที่ใช้คู่กัน เรียงตามลำดับเรื่อง
+//   1. ใบคำขอรถรับ-ส่งผู้ป่วย จากประชาชนถึงนายก อปท. (ผู้ป่วยคนละ 1 ใบ)
+//   2. หนังสือนำส่ง (หนังสือภายนอก) จาก อปท. ถึงประธานหน่วยงานผู้จัดรถ ซึ่งแนบใบคำขอไปด้วย
+// ⚠️ ลำดับแผ่นตอนพิมพ์ = ลำดับนี้: ใบคำขอทุกใบก่อน หนังสือนำส่งเป็นแผ่นสุดท้าย (เจ้าของระบบสั่ง 2569-10-01
+// "ประชาชนแจ้งนายก → นายกส่งต่อกองทุน") เดิมพิมพ์หนังสือนำส่งก่อน ห้ามสลับกลับเองโดยไม่ถาม
+// — ประกอบที่ packetBody() จุดเดียว เทสต์ packet-prints-request-before-letter กันไว้
+// ⚠️ ใบคำขอเขียนเป็นประโยค ไม่ใช่ตาราง (เจ้าของระบบสั่ง 2569-10-01) — ถ้อยคำอยู่ใน formSheet และถูกล็อกไว้ตัวอักษรต่อ
+// ตัวอักษรที่เทสต์ request-form-is-prose-not-table ห้ามเปลี่ยนกลับเป็นตารางหรือแก้ประโยคเองโดยไม่ให้เจ้าของระบบเห็นก่อน
 //
 // ⚠️ รูปแบบหนังสือภายนอก (ตำแหน่งครุฑ/ช่อง "ที่"/ที่อยู่หัวขวา/คำลงท้าย) คัดจากคู่มืองานสารบรรณ
 // ของส่วนราชการที่อ้างระเบียบสำนักนายกรัฐมนตรีว่าด้วยงานสารบรรณ อีกทอดหนึ่ง **ยังไม่ได้เปิด
@@ -180,7 +185,7 @@ ${govSignBlockCss()}
 }
 
 // ---------------------------------------------------------------------------
-// ใบที่ 1 — หนังสือนำส่ง (หนังสือภายนอก)
+// หนังสือนำส่ง (หนังสือภายนอก) — แผ่นสุดท้ายของชุดเอกสาร
 // ---------------------------------------------------------------------------
 function letterCss() {
   return `
@@ -355,7 +360,7 @@ ${senderAddress.map(part => `      <p>${esc(part)}</p>`).join('\n')}
 }
 
 // ---------------------------------------------------------------------------
-// ใบที่ 2 — ใบคำขอรถรับ-ส่งผู้ป่วยถึงนายก อปท. (ปรับจากแบบตัวอย่างกลางของ พอช.)
+// ใบคำขอรถรับ-ส่งผู้ป่วยถึงนายก อปท. (ปรับจากแบบตัวอย่างกลางของ พอช.) — พิมพ์ก่อนหนังสือนำส่ง
 // ---------------------------------------------------------------------------
 function formCss() {
   return `
@@ -366,19 +371,14 @@ function formCss() {
   .form-title { text-align: center; font-size: 1.15em; font-weight: 700; margin: 1mm 0 0; }
   .form-fund { text-align: center; margin: 0 0 2mm; }
   .written-at { text-align: right; }
+  /* เนื้อความเป็นย่อหน้าประโยค ไม่ใช่ตาราง (เจ้าของระบบสั่ง 2569-10-01) — ทุกย่อหน้าใช้ 14pt ตามมาตรฐาน
+     ไม่มีข้อยกเว้นขนาดตัวอักษร 13pt ของตารางเดิมแล้ว
+     ⚠️ ห้ามเปลี่ยนเป็น text-align: justify — ประโยคไทยยืดได้เฉพาะตรงช่องว่าง บรรทัดที่มีช่องว่างน้อย
+     จะถูกยืดเป็นรูโหว่กลางประโยค (เหตุผลเต็มอยู่ที่ waterSupplyRequestPrint.js) */
   .form-para { text-indent: 2.5cm; text-align: left; margin-top: 2mm; }
-  /* รายการหมวดสวัสดิการตามแบบ พอช. — เรียงไหลได้ ไม่ล็อกคอลัมน์ เพราะชื่อหมวดยาวไม่เท่ากัน */
-  /* ตารางรายละเอียดการเดินทาง — ขยายจากข้อ 5 "อื่นๆ" ของแบบต้นฉบับซึ่งมีแค่บรรทัดเดียว
-     ⚠️ ข้อยกเว้น "ขนาดตัวอักษร" ตามกติกาโปรเจกต์: 13pt เฉพาะในตาราง เพราะช่องค่าเหลือกว้าง
-     ~120mm ถ้าใช้ 14pt ที่อยู่จุดรับซึ่งยาวเป็นปกติ (บ้านเลขที่+หมู่+ตำบล+อำเภอ+จังหวัด
-     พร้อมจุดสังเกต) ตัดเป็น 3 บรรทัดแทน 2 ทำให้ใบสูงเกินหน้าเดียว ฟอนต์และ font-size-adjust
-     ยังสืบทอดจาก body จึงพิมพ์ออกมาเท่ากันทุกเครื่องเหมือนเดิม
-     ⚠️ วัดจริงแล้วใบนี้เหลือที่เผื่อไม่ถึง 10mm — เพิ่มแถวหรือขยาย padding ต้องรัน
-     tests/patient-transport-layout.test.mjs ใหม่ทุกครั้ง */
-  table { width: 100%; border-collapse: collapse; margin: 1.5mm 0; font-size: 13pt; }
-  th, td { border: 1px solid #000; padding: 0.4mm 2mm; vertical-align: top; text-align: left; }
-  th { width: 34mm; font-weight: 400; background: #f4f4f4; }
-  .evidence { margin-top: 1.5mm; }
+  .evidence { margin-top: 2mm; }
+  /* คำลงท้ายอยู่กึ่งกลางหน้า แนวเดียวกับช่องลงนามผู้ยื่นที่จัดกลางหน้า (.center-row) */
+  .form-regards { text-align: center; margin-top: 3mm; }
   .note-template { margin-top: 1.5mm; font-size: 11pt; color: #333; line-height: 1.2; }`
 }
 
@@ -418,40 +418,80 @@ function formSheet({
   // (โหมดนี้ signed_at คือเวลาที่กดบันทึก ไม่ใช่เวลาที่ผู้ยื่นลงชื่อ) จึงแยกตัวแปรกันไว้ให้ชัด
   const counterStamp = signedOnline ? '' : appointmentText(form?.signed_at)
   const requesterName = textOr(parent?.requester_name)
-  const relation = optionLabel(REQUESTER_RELATIONS, form.requester_relation)
   const isSelf = (form.requester_relation ?? 'self') === 'self'
 
-  const appointmentKind = [
-    optionLabel(APPOINTMENT_KINDS, form.appointment_kind),
-    form.appointment_kind_note,
-  ].map(part => String(part ?? '').trim()).filter(Boolean).join(' — ')
+  // ── เนื้อความเป็นประโยค ไม่ใช่ตาราง (เจ้าของระบบสั่ง 2569-10-01 "ไม่ต้องใช้แบบตาราง ให้เป็นประโยคดีกว่า") ──
+  // ข้อมูลชุดเดียวกับตารางเดิมทุกรายการ เรียงเป็น 2 ย่อหน้า: (1) ใครขออะไรให้ใคร (2) นัดที่ไหน เมื่อไร รับที่ไหน เดินทางอย่างไร
+  // กติกาของประโยค
+  //  - ข้อมูลหลักที่ประโยคขาดไม่ได้ (ชื่อผู้ป่วย ปลายทาง วันเวลานัด จุดรับ) ใช้ line(): มีค่า = พิมพ์ค่า ไม่มี = เส้นประให้เขียนมือ
+  //  - ข้อมูลเสริมที่ระบบไม่มี (ที่อยู่ผู้ยื่น อายุ ประเภทการนัด จุดสังเกต ความเกี่ยวข้อง) ตัดทั้งวลีออก ไม่ทิ้งป้ายลอยอย่าง
+  //    "อายุ  ปี" หรือ "ที่อยู่ ......" ไว้ — คำขอจากระบบจองคิวไม่ได้เก็บช่องเหล่านี้ และไม่มีใครมาเขียนเติมบนใบที่ลงชื่อออนไลน์
+  //    ⚠️ ห้ามเอาจุดรับไปเติมเป็นที่อยู่ผู้ยื่น — ผู้จองแทนไม่ได้อยู่บ้านเดียวกับผู้ป่วยเสมอไป
+  //  - ผู้ป่วยยื่นเองใช้ "ข้าพเจ้า" ตลอดทั้งใบ ยื่นแทนใช้ "ผู้ป่วย" — ไม่งั้นใบที่ผู้ป่วยเขียนเองอ่านเหมือนพูดถึงคนอื่น
+  //  - คำที่ห้ามขาดกลางบรรทัดครอบด้วย .nb: ตัวตัดคำภาษาไทยของเบราว์เซอร์แยก "ผู้|ป่วย" "มี|ความประสงค์" และ
+  //    คำนำหน้ากับชื่อ ("นาง|สมศรี") ได้ ซึ่งในตารางไม่เคยเห็นเพราะแต่ละช่องสั้น พอเป็นประโยคยาวจะขาดกลางคำจริง
+  const clean = raw => String(raw ?? '').trim()
+  const nb = html => `<span class="nb">${html}</span>`
+  // ชื่อคน: ตัดบรรทัดได้เฉพาะตรงช่องว่างระหว่างชื่อกับนามสกุล ไม่มีชื่อ = เส้นประให้เขียนมือ
+  const personName = (raw, width) => (clean(raw)
+    ? `<span class="fill-value">${clean(raw).split(/\s+/).map(word => nb(esc(word))).join(' ')}</span>`
+    : line('', width))
+  const PATIENT = nb('ผู้ป่วย')
+  // ผู้ป่วยยื่นเอง = "ข้าพเจ้า" คือผู้ป่วย — แต่ถ้าชื่อผู้ป่วยในคำขอไม่ตรงกับชื่อผู้ยื่น (ข้อมูลขัดกัน) ต้องพิมพ์ชื่อผู้ป่วยแยก
+  // ไม่งั้นชื่อผู้ป่วยหายไปจากใบทั้งใบ (ตารางเดิมมีแถว "ผู้ป่วย" ของตัวเองเสมอ)
+  const sameName = (a, b) => clean(a).replace(/\s+/g, ' ') === clean(b).replace(/\s+/g, ' ')
+  const selfPatient = isSelf && (!clean(form.patient_name) || sameName(form.patient_name, requesterName))
+  const who = selfPatient ? 'ข้าพเจ้า' : PATIENT
 
-  // 8 แถว ไม่ใช่แถวละช่อง — ค่าที่สั้นถูกยุบรวมกับแถวข้างเคียง (ความเกี่ยวข้องไปอยู่กับผู้ประสานงาน
-  // ผู้ติดตามไปอยู่กับเที่ยวการเดินทาง) เพราะแถวละ ~7mm ทำให้ใบตกหน้า 2 (วัดจริง 312mm)
-  // ⚠️ เพิ่มแถวใหม่ต้องรันเทสต์เลย์เอาต์ก่อนเสมอ
-  const rows = [
-    ['ผู้ป่วย', [
-      textOr(form.patient_name),
-      form.patient_age != null && form.patient_age !== '' ? `อายุ ${form.patient_age} ปี` : '',
-    ].filter(Boolean).join('  ')],
-    ['จุดรับ', [textOr(form.pickup_address), form.pickup_landmark && `(จุดสังเกต ${form.pickup_landmark})`].filter(Boolean).join(' ')],
-    // ⚠️ ชื่อช่องต้องจบใน 1 บรรทัดที่ความกว้าง 34mm — "สถานพยาบาลปลายทาง" กับ
-    // "ลักษณะการเคลื่อนไหว" ตัด 2 บรรทัดแล้วดันแถวสูงขึ้นแถวละ ~6mm
-    ['ปลายทาง', [textOr(form.destination), form.destination_detail].filter(Boolean).join(' ')],
-    ['วันเวลานัด', appointmentText(header?.appointment_at)],
-    ['ประเภทการนัด', appointmentKind],
-    ['การเคลื่อนไหว', optionLabel(MOBILITY_LEVELS, header?.mobility ?? form.mobility)],
-    ['การเดินทาง', [
-      optionLabel(TRIP_TYPES, form.trip_type),
-      `ผู้ติดตาม ${form.companions ?? 0} คน`,
-      form.return_note,
-    ].filter(Boolean).join(' · ')],
-    ['ผู้ประสานงาน', [
-      requesterName,
-      isSelf ? 'ผู้ป่วยยื่นเอง' : [relation, form.requester_relation_note].filter(Boolean).join(' '),
-      parent?.requester_phone && `โทร. ${parent.requester_phone}`,
-    ].filter(Boolean).join(' · ')],
-  ]
+  // ความเกี่ยวข้องกับผู้ป่วย — "อื่นๆ" ใช้ข้อความที่ผู้ยื่นระบุเอง ไม่พิมพ์คำว่า "อื่นๆ" ลงในประโยค
+  const relationNote = clean(form.requester_relation_note)
+  const relationText = isSelf ? ''
+    : form.requester_relation === 'other' ? relationNote
+    : [optionLabel(REQUESTER_RELATIONS, form.requester_relation), relationNote && `(${relationNote})`].filter(Boolean).join(' ')
+  const age = form.patient_age != null && form.patient_age !== '' ? ` อายุ ${esc(form.patient_age)} ปี` : ''
+
+  // ประเภทการนัด — "อื่นๆ" ใช้ข้อความที่ระบุเองเช่นกัน · ระบบจองคิวไม่ได้เก็บช่องนี้ จึงไม่มีวลีนี้ในใบ
+  const kindNote = clean(form.appointment_kind_note)
+  const purpose = form.appointment_kind === 'other' ? kindNote
+    : [optionLabel(APPOINTMENT_KINDS, form.appointment_kind), kindNote].filter(Boolean).join(' ')
+  const destination = [form.destination, form.destination_detail].map(clean).filter(Boolean).join(' ')
+  const landmark = clean(form.pickup_landmark)
+  const mobility = optionLabel(MOBILITY_LEVELS, header?.mobility ?? form.mobility)
+  const companions = Number(form.companions) || 0
+  const tripLabel = optionLabel(TRIP_TYPES, form.trip_type)
+  // ระบบจองคิวส่ง "ขาไปอย่างเดียว" มาทั้งสองช่อง — ไม่พิมพ์ซ้ำในวงเล็บ
+  const returnNote = clean(form.return_note) === tripLabel ? '' : clean(form.return_note)
+  // เวลา "14.00 น." ในข้อความที่ผู้ยื่นพิมพ์เอง ห้ามขาดคนละบรรทัดระหว่างตัวเลขกับ "น." (รับ html ที่ escape แล้ว)
+  const keepTimes = html => html.replace(/\d{1,2}[.:]\d{2}\s?น\./g, time => nb(time))
+  // ขากลับของระบบจองคิวเป็นป้ายสั้น ("รอรับกลับ") ทั้งวงเล็บต้องอยู่บรรทัดเดียว — ข้อความยาวที่พิมพ์เองตัดบรรทัดได้ตามปกติ
+  const returnText = !returnNote ? ''
+    : returnNote.length <= 20 ? ` ${nb(`(${esc(returnNote)})`)}` : ` (${keepTimes(esc(returnNote))})`
+
+  const requestPara = [
+    `ข้าพเจ้า ${personName(requesterName, '65mm')}`,
+    form.fund_member_no && field('สมาชิกกองทุนเลขที่', form.fund_member_no, '32mm'),
+    clean(parent?.requester_address) && field('ที่อยู่', parent.requester_address, '80mm'),
+    clean(parent?.requester_phone) && `โทรศัพท์ <span class="fill-value">${nb(esc(clean(parent.requester_phone)))}</span>`,
+    form.beneficiary_of_name && `ในฐานะผู้รับผลประโยชน์ของ ${personName(form.beneficiary_of_name)}${
+      form.beneficiary_of_member_no ? ` สมาชิกเลขที่ <span class="fill-value">${esc(form.beneficiary_of_member_no)}</span>` : ''}`,
+    // วงเล็บท้ายความเกี่ยวข้อง ("ญาติ (บุตรสาว)") ต้องเว้นวรรคก่อน "ของผู้ป่วย"
+    relationText && `เป็น${esc(relationText)}${relationText.endsWith(')') ? ' ' : ''}ของ${PATIENT}`,
+    `${nb('มีความประสงค์')}ขอให้${esc(orgName)}ประสานขอความอนุเคราะห์${nb('รถรับ-ส่งผู้ป่วย')}จาก${esc(header?.partner_name_snapshot || 'กองทุนเจ้าของรถ')}`,
+    selfPatient ? `สำหรับข้าพเจ้าซึ่งเป็น${nb('ผู้ป่วยเอง')}${age}` : `สำหรับ ${personName(form.patient_name, '65mm')}${age}`,
+  ].filter(Boolean).join(' ')
+
+  // วันเวลานัดไม่ตัดบรรทัดกลางค่า — "5 ตุลาคม 2569 เวลา" ท้ายบรรทัดแล้ว "08.00 น." ไปอยู่บรรทัดใหม่ อ่านพลาดง่าย
+  const appointment = appointmentText(header?.appointment_at)
+  const travelPara = [
+    `${who}มีนัดที่ ${line(destination, '70mm')} ในวันที่ ${
+      appointment ? `<span class="fill-value nb">${esc(appointment)}</span>` : line('', '55mm')}`,
+    purpose && `เพื่อ${keepTimes(esc(purpose))}`,
+    `จึงขอให้รถมารับที่ ${line(form.pickup_address, '80mm')}${landmark ? ` (${nb('จุดสังเกต')} ${esc(landmark)})` : ''}`,
+    // เงื่อนไขการเดินทางต่อด้วย "โดย" ให้อ่านเป็นประโยคเดียวกับคำขอให้มารับ ไม่ใช่ข้อความลอยต่อท้าย
+    `โดย${[mobility && `${who}${esc(mobility)}`, companions > 0 ? `มีผู้ติดตาม ${companions} คน` : 'ไม่มีผู้ติดตาม']
+      .filter(Boolean).join(' ')}`,
+    tripLabel && `และขอเดินทาง${nb(esc(tripLabel))}${returnText}`,
+  ].filter(Boolean).join(' ')
 
   return `<div class="sheet">
   <div class="form-head">
@@ -468,24 +508,20 @@ function formSheet({
   <p class="kv"><span class="bold">เรื่อง</span>&nbsp;&nbsp;ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย</p>
   <p class="kv"><span class="bold">เรียน</span>&nbsp;&nbsp;${esc(orgHeadTitle(tenant))}</p>
 
-  <p class="form-para">${field('ข้าพเจ้า', requesterName, '65mm')} ${
-    form.fund_member_no ? field('สมาชิกกองทุนเลขที่', form.fund_member_no, '32mm') : ''} ${
-    field('ที่อยู่', textOr(parent?.requester_address), '80mm')} ${
-    field('โทรศัพท์', parent?.requester_phone, '35mm')}${
-    form.beneficiary_of_name
-      ? ` ในฐานะผู้รับผลประโยชน์ของ <span class="fill-value">${esc(form.beneficiary_of_name)}</span>${
-          form.beneficiary_of_member_no ? ` สมาชิกเลขที่ <span class="fill-value">${esc(form.beneficiary_of_member_no)}</span>` : ''}`
-      : ''
-  } มีความประสงค์ขอให้${esc(orgName)}ประสานขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยจาก${esc(header?.partner_name_snapshot || 'กองทุนเจ้าของรถ')} รายละเอียดตามตารางท้ายนี้</p>
+  <p class="form-para form-request">${requestPara}</p>
   <!-- ⚠️ ไม่พิมพ์ช่องติ๊กหมวด 1–5 ของแบบ พอช. (เสียชีวิต/เยี่ยมไข้/ทุนการศึกษา/รับขวัญบุตร/อื่นๆ)
        เจ้าของระบบสั่งตัดออก 2569-09-18 เพราะระบบเปิดรับเรื่องรถรับ-ส่งผู้ป่วยเรื่องเดียว
        ช่องหมวดอื่นทำให้ผู้อ่านเข้าใจว่ายื่นเรื่องอื่นผ่านระบบได้ เปิดหมวดใหม่เมื่อไรค่อยคิดใหม่ -->
+  <!-- ⚠️ ไม่มีตารางรายละเอียด โดยเจตนา — เจ้าของระบบสั่ง 2569-10-01 ให้เขียนเป็นประโยค ห้ามเปลี่ยนกลับเป็นตารางเองโดยไม่ถาม
+       เทสต์ request-form-is-prose-not-table กันไว้ -->
+  <p class="form-para form-travel">${travelPara}</p>
 
-  <table>
-${rows.map(([label, value]) => `    <tr><th>${label}</th><td>${value ? esc(value) : '&nbsp;'}</td></tr>`).join('\n')}
-  </table>
-
+  <!-- รายการติ๊กด้วยปากกา ไม่ใช่ประโยค จึงชิดซ้ายไม่ย่อหน้า — ย่อหน้า 2.5 ซม. แล้วเส้น "อื่นๆ" ตกไปอยู่บรรทัดใหม่ลอยๆ -->
   <p class="evidence">หลักฐาน&nbsp;&nbsp;${box()} สำเนาบัตรประชาชนผู้ป่วย&nbsp;&nbsp;${box()} ใบนัดแพทย์&nbsp;&nbsp;${box()} อื่นๆ ${line('', '24mm')}</p>
+
+  <!-- คำลงท้ายแบบเดียวกับแบบคำร้องใบอื่นของระบบที่ประชาชนยื่นต่อนายก (ใบขอรับการช่วยเหลือ ใบเก็บขนขยะ) -->
+  <p class="form-para form-closing">จึงเรียนมาเพื่อโปรดพิจารณาให้ความอนุเคราะห์</p>
+  <p class="form-regards">ขอแสดงความนับถือ</p>
 
   <div class="sign-block center-row" style="margin-top:3mm">
     ${govSignRow({
@@ -555,15 +591,22 @@ function signerNotice(mayor) {
     + ' · ผู้ดูแลระบบตั้งได้ที่ แผงควบคุมแอดมิน &gt; ผู้ลงนามเอกสาร (ข้อความนี้ไม่ถูกพิมพ์)</div>\n'
 }
 
+// ลำดับแผ่นของชุดเอกสาร: ใบคำขอ (ประชาชน → นายก) ทุกใบก่อน แล้วปิดท้ายด้วยหนังสือนำส่ง (นายก → กองทุน)
+// เจ้าของระบบสั่ง 2569-10-01 ให้เรียงตามลำดับเรื่อง — ทั้งสองทางที่พิมพ์ชุดเอกสารต้องประกอบผ่านฟังก์ชันนี้
+// แถบเตือนชื่อนายกอยู่บนสุดของหน้าต่างเสมอ ไม่ย้ายตามหนังสือไปท้ายชุด: คนพิมพ์ต้องเห็นทันทีที่หน้าต่างเปิด
+function packetBody(mayor, letter, forms) {
+  return signerNotice(mayor) + [...forms, letter].join('\n')
+}
+
 /**
- * ชุดเอกสารส่งกองทุน 2 แผ่น (หนังสือนำส่ง + ใบคำขอ) — ปุ่มเดียวของฝั่งเจ้าหน้าที่
+ * ชุดเอกสารส่งกองทุน 2 แผ่น (ใบคำขอ + หนังสือนำส่ง) — ปุ่มเดียวของฝั่งเจ้าหน้าที่
  * พิมพ์ทีเดียวได้ครบชุดที่ต้องเข้าแฟ้มคู่กัน ไม่ต้องกด 2 ปุ่มแล้วลืมใบใดใบหนึ่ง
  */
 export function buildPatientTransportPacketHtml(args) {
   return page(
     'ใบคำขอถึงนายกและหนังสือนำส่งกองทุน (รถรับ-ส่งผู้ป่วย)',
     `${letterCss()}${formCss()}`,
-    `${signerNotice(args.mayor)}${letterSheet(args)}\n${formSheet(args)}`,
+    packetBody(args.mayor, letterSheet(args), [formSheet(args)]),
   )
 }
 
@@ -634,7 +677,8 @@ export function buildTripForwardLetterHtml(args) {
   return page(
     'ใบคำขอถึงนายกและหนังสือนำส่งกองทุน (รถรับ-ส่งผู้ป่วย)',
     `${letterCss()}${formCss()}`,
-    signerNotice(args.mayor) + [letterSheet(letter), ...packets.map(formSheet)].join('\n'),
+    // ใบคำขอเรียงตามเวลานัดของผู้ป่วย (tripPassengers) แล้วจึงหนังสือนำส่งฉบับเดียวของเที่ยว
+    packetBody(args.mayor, letterSheet(letter), packets.map(formSheet)),
   )
 }
 
