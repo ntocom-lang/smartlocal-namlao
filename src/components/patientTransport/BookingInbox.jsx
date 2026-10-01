@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
@@ -49,15 +49,22 @@ function buildRows(workspace) {
     // คนที่ถูกนำออกจากเที่ยวยังมี trip_id ค้างอยู่ — ไม่แสดงเที่ยวนั้นเป็นของเขาอีก (แบบการ์ดฝั่งประชาชน)
     const trip = booking.trip_id && booking.status !== 'cancelled' ? trips.get(booking.trip_id) || null : null
     const linked = linkedConfirmedBooking(booking, workspace.bookings, workspace.events)
-    return { booking, trip, linked, stage: bookingStage(booking, trip), next: staffNextAction(booking, trip), group: groupOf.get(booking.id) || [booking] }
+    const stage = bookingStage(booking, trip), next = staffNextAction(booking, trip)
+    return { booking, trip, linked, stage, next, section: sectionOf(next, stage), group: groupOf.get(booking.id) || [booking] }
   })
-  // งานที่ต้องทำขึ้นก่อน (เหตุขัดข้อง → ขอยกเลิก → รอยืนยันรถ → เอกสาร) แล้วคำขอที่ยังเดินอยู่ตามวันนัด
-  // ส่วนที่จบแล้วเรียงล่าสุดขึ้นก่อน
-  const live = r => ['submitted', 'confirmed', 'running'].includes(r.stage)
-  const at = r => String((r.linked || r.booking).appointment_at || '')
-  return rows.sort((x, y) => x.next.rank - y.next.rank || Number(live(y)) - Number(live(x))
-    || (live(x) ? at(x).localeCompare(at(y)) : at(y).localeCompare(at(x))))
+  return rows.sort((x, y) => SECTION_ORDER.indexOf(x.section) - SECTION_ORDER.indexOf(y.section)
+    || (x.section === 'action' ? x.next.rank - y.next.rank : 0)
+    || sortAt(x).localeCompare(sortAt(y)) || x.booking.id.localeCompare(y.booking.id))
 }
+
+// ส่วนของกล่อง (เจ้าของระบบสั่ง 2569-10-01): ต้องดำเนินการ → รอเดินทาง/กำลังเดินทาง → เสร็จแล้ว/ยกเลิก มีหัวกลุ่มคั่น
+// ทุกส่วนเรียงวันนัดเร็ว → ช้า · ส่วนต้องดำเนินการเรียงตามความด่วนก่อน (เหตุขัดข้อง → ขอยกเลิก → รอยืนยันรถ → เอกสาร)
+// เดิมส่วนที่จบแล้วเรียงล่าสุดขึ้นก่อนและไม่มีหัวกลุ่ม เจ้าหน้าที่เห็นวันกระโดด (20 ต.ค. → 5 ต.ค. → 29 ก.ย.) จึงเข้าใจว่าไม่ได้เรียง
+const SECTIONS = { action: 'ต้องดำเนินการ', live: 'รอเดินทาง / กำลังเดินทาง', done: 'เสร็จแล้ว / ยกเลิก' }
+const SECTION_ORDER = ['action', 'live', 'done']
+const sectionOf = (next, stage) => next.rank < 9 ? 'action' : ['confirmed', 'running'].includes(stage) ? 'live' : 'done'
+// คำขอที่ปิดเป็นคิวซ้ำเรียงตามคิวที่ใช้เดินทางจริง — วันเดียวกับที่แสดงในแถว (#350)
+const sortAt = r => String((r.linked || r.booking).appointment_at || '')
 
 const haystack = ({ booking: b, linked }) => [b.patient_name, b.requester_name, b.phone, b.pickup, b.route_label, ref(b.id), dateTime(b.appointment_at), whenLabel(b.appointment_at), linked && ref(linked.id), linked && dateTime(linked.appointment_at)].join(' ').toLowerCase()
 
@@ -505,6 +512,9 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   const words = search.trim().toLowerCase()
   const shown = rows.filter(r => (filter === 'all' || r.stage === filter) && (!words || haystack(r).includes(words)))
   const count = id => id === 'all' ? rows.length : rows.filter(r => r.stage === id).length
+  // หัวกลุ่มขึ้นก่อนแถวแรกของแต่ละส่วน นับเฉพาะแถวที่แสดงอยู่ (หลังกรอง/ค้นหา) · ส่วนที่ไม่มีแถวไม่ขึ้นหัว
+  const sectionCount = shown.reduce((counts, r) => ({ ...counts, [r.section]: (counts[r.section] || 0) + 1 }), {})
+  const startsSection = index => index === 0 || shown[index - 1].section !== shown[index].section
   const open = rows.find(r => r.booking.id === openId)
   const createdRow = created && rows.find(r => r.booking.id === created.id)
 
@@ -587,7 +597,11 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
             const { booking: b, trip, linked, group } = row
             const pickupAt = trip && pickupForBooking(trip, b)
             const shade = index % 2 === 0 ? '#fff' : '#f5f8fc'
-            return <tr key={b.id} data-booking={b.id} className="cursor-pointer align-top transition-colors" style={{ backgroundColor: shade }}
+            return <Fragment key={b.id}>
+            {startsSection(index) && <tr data-section-header={row.section} className="bg-slate-100">
+              <td colSpan={6} className="px-3 py-1.5 text-xs font-bold text-slate-700">{SECTIONS[row.section]} <span className="font-semibold text-slate-500">({sectionCount[row.section]})</span></td>
+            </tr>}
+            <tr data-booking={b.id} data-section={row.section} data-at={sortAt(row)} className="cursor-pointer align-top transition-colors" style={{ backgroundColor: shade }}
               onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = shade}
               onClick={() => { setProblem(null); setOpenId(b.id) }}>
               <td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500">{index + 1}</td>
@@ -597,13 +611,16 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
               <td className="border-r border-gray-200 px-2 py-2.5 text-center"><StatusChips row={row} /></td>
               <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}><div className="flex flex-wrap justify-center gap-2"><RowButton row={row} busy={busy} onPress={press} />{deleteButton(row)}</div></td>
             </tr>
+            </Fragment>
           })}</tbody>
         </table>
       </div>}
-      <div className="space-y-3 md:hidden">{shown.map(row => {
+      <div className="space-y-3 md:hidden">{shown.map((row, index) => {
         const { booking: b, trip, linked, group } = row
         const pickupAt = trip && pickupForBooking(trip, b)
-        return <article key={b.id} data-booking={b.id} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4" onClick={() => { setProblem(null); setOpenId(b.id) }}>
+        return <Fragment key={b.id}>
+        {startsSection(index) && <h3 data-section-header={row.section} className="pt-2 text-sm font-bold text-slate-700">{SECTIONS[row.section]} <span className="font-semibold text-slate-500">({sectionCount[row.section]})</span></h3>}
+        <article data-booking={b.id} data-section={row.section} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4" onClick={() => { setProblem(null); setOpenId(b.id) }}>
           <div className="flex items-start justify-between gap-2"><h3 className="font-bold">{b.patient_name}</h3><StatusChips row={row} /></div>
           <p><strong>{whenLabel((linked || b).appointment_at)} {clockOf((linked || b).appointment_at)} น.</strong> · {linked ? linked.route_label : b.route_label}</p>
           {linked && <p className="text-sm text-sky-800">คิวที่ใช้เดินทาง {ref(linked.id)} · นัดเดิมที่ยกเลิก {dateTime(b.appointment_at)}</p>}
@@ -612,6 +629,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
           {b.status === 'submitted' && group.length > 1 && <p className="text-sm font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</p>}
           <div className="flex flex-wrap gap-2"><RowButton row={row} busy={busy} onPress={press} full />{deleteButton(row)}</div>
         </article>
+        </Fragment>
       })}</div>
     </div>
     {deleting && <Sheet title="ลบคำขอรถ" onClose={() => { if (!busy) setDeleting(null) }}>
