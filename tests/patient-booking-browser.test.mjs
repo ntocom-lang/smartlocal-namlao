@@ -1301,9 +1301,18 @@ try{
  assert.deepEqual(presentSections,['action','live','done'],'ข้อมูลทดสอบต้องมีครบ 3 ส่วน')
  assert.deepEqual(listed.filter(item=>item.header).map(item=>item.header),presentSections,'ส่วนละ 1 หัวกลุ่ม')
  for(const [index,item] of listed.entries()){
-  if(item.header)assert(item.text.includes(`(${bookingRows.filter(row=>row.section===item.header).length})`),`หัวกลุ่ม ${item.header} ต้องบอกจำนวนถูก`)
+  if(item.header)assert(item.text.includes(`${bookingRows.filter(row=>row.section===item.header).length} รายการ`),`หัวกลุ่ม ${item.header} ต้องบอกจำนวนถูก`)
   else if(!listed[index-1]?.booking||listed[index-1].section!==item.section)assert.equal(listed[index-1]?.header,item.section,'หัวกลุ่มต้องอยู่ก่อนแถวแรกของส่วน')
  }
+ // แยกส่วนด้วยสี (เจ้าของระบบสั่งเพิ่ม 2569-10-01 — หัวกลุ่มเทาอ่อนเดิมกลืนกับแถวลายสลับ): หัวกลุ่มคนละสี ไม่ใช่สีพื้นแถว
+ // และทุกแถวมีแถบซ้ายสีเดียวกับส่วนของตัวเอง
+ const bands=await orderTable.locator('tr[data-section-header] td > span:last-child').evaluateAll(spans=>spans.map(span=>getComputedStyle(span).backgroundColor))
+ assert.equal(new Set(bands).size,presentSections.length,'หัวกลุ่มแต่ละส่วนต้องคนละสี')
+ for(const band of bands)assert(!['rgb(255, 255, 255)','rgb(245, 248, 252)'].includes(band),'หัวกลุ่มต้องไม่ใช้สีเดียวกับพื้นแถว')
+ const strips=await orderTable.locator('tr[data-booking]').evaluateAll(trs=>trs.map(tr=>[tr.dataset.section,getComputedStyle(tr.cells[0]).boxShadow]))
+ const stripOf=new Map(strips)
+ assert(strips.every(([section,strip])=>strip!=='none'&&stripOf.get(section)===strip),'ทุกแถวต้องมีแถบซ้ายสีของส่วนตัวเอง')
+ assert.equal(new Set(stripOf.values()).size,presentSections.length,'แถบซ้ายแต่ละส่วนต้องคนละสี')
  // จอมือถือ: การ์ดเรียงชุดเดียวกับตาราง และมีหัวกลุ่มคั่นแบบเดียวกัน
  await page.setViewportSize({width:390,height:900})
  assert.deepEqual(await page.locator('article[data-booking]').evaluateAll(cards=>cards.map(card=>card.dataset.booking)),bookingRows.map(item=>item.booking),'มือถือต้องเรียงชุดเดียวกับตาราง')
@@ -1311,7 +1320,7 @@ try{
  await page.locator('h3[data-section-header="done"]').waitFor()
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'หัวกลุ่มต้องไม่ทำให้จอ 390px ล้น')
  await page.setViewportSize({width:1280,height:900})
- console.log('PASS inbox order: action → live → done sections with headers, urgency then appointment within action, ascending dates within each section, same order on mobile')
+ console.log('PASS inbox order: action → live → done sections with colored headers and row strips, urgency then appointment within action, ascending dates within each section, same order on mobile')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}
