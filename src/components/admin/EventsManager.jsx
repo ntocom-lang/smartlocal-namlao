@@ -9,6 +9,11 @@ import { driveFolderPath, driveMonthFolder, DRIVE_MODULES } from '../../lib/driv
 import { todayStr } from '../../lib/thaiDate'
 import { AUDIENCE_COLOR, AUDIENCE_LABEL, activeOrgTerms } from '../../lib/orgTerms'
 import { CalendarDayMarkers, CalendarDayObservances, CalendarObservanceLegend } from '../CalendarObservances'
+import { EventAssignmentFields, EventAssignmentDialog, AssignmentLine, AssignedBadge } from '../events/EventAssignment'
+import { saveEventAssignments } from '../../lib/eventAssignmentApi'
+import {
+  EMPTY_ASSIGNMENT, assignmentFormFromEvent, assignmentKey, validateAssignment, canAssignEvent, isAssignedTo,
+} from '../../lib/eventAssignment'
 
 // ปิด AI ทั้งระบบตามคำสั่งเจ้าของระบบ 2569-09-15 กันโควตา Gemini ฟรีหมด
 // Edge Function gemini-extract-event ถูกแทนด้วยตัวที่ตอบ 410 แล้ว ปุ่มจึงใช้ไม่ได้ ซ่อนไว้ไม่ให้กดแล้วเจอ error
@@ -146,7 +151,7 @@ function canViewEventDetail(ev, role, currentUserId, scope) {
   return (ev.audiences ?? []).some(a => mine.includes(a))
 }
 
-function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
+function EventCard({ ev, onEdit, onDelete, onView, deleting, currentUserId }) {
   const [confirmDel, setConfirmDel] = useState(false)
   const color = EVENTS_CATEGORY_COLOR[ev.category] ?? '#6b7280'
   const days = ev.event_date ? daysUntil(ev.event_date) : null
@@ -188,6 +193,7 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
                   {days}
                 </span>
               )}
+              {isAssignedTo(ev, currentUserId) && <AssignedBadge />}
             </div>
             <div className="flex items-center gap-1.5">
               <p className="text-sm font-bold text-gray-800 leading-tight">{ev.title}</p>
@@ -200,6 +206,7 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
                 : ''}
             </p>
             {ev.location && <p className="text-xs text-gray-400 mt-0.5">📍 {ev.location}</p>}
+            <AssignmentLine ev={ev} className="mt-0.5" />
             {ev.creator?.full_name && (
               <p className="text-xs text-gray-400 mt-0.5">✍️ {ev.creator.full_name}</p>
             )}
@@ -238,7 +245,7 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
   )
 }
 
-function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage, openAdd, canViewEvent }) {
+function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage, openAdd, canViewEvent, currentUserId }) {
   const todayRef = useMemo(() => {
     const t = new Date()
     t.setHours(0, 0, 0, 0)
@@ -461,6 +468,7 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
                             </span>
                           )
                         })}
+                        {isAssignedTo(ev, currentUserId) && <AssignedBadge />}
                       </div>
                       <p className="text-sm font-bold text-gray-800 leading-tight">{ev.title}</p>
                       {!ev.is_all_day && ev.event_time && (
@@ -474,6 +482,7 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
                           <MapPin size={11} /> {ev.location}
                         </p>
                       )}
+                      <AssignmentLine ev={ev} className="mt-0.5" />
                     </div>
                     {canManage && (
                       <div className="flex items-center gap-1 shrink-0 pt-0.5">
@@ -532,6 +541,12 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   const [extracting, setExtracting] = useState(false)
   const MAX_ATTACHMENTS = 10
   const [form, setForm] = useState(EMPTY_EVENT_FORM)
+  // มอบหมายผู้ไปแทน — แยกจาก form เพราะบันทึกคนละทาง (RPC set_event_assignments หลังกิจกรรมบันทึกแล้ว)
+  // assignmentOriginalKey ใช้เทียบว่าเปลี่ยนไหม ไม่เปลี่ยนก็ไม่เรียก RPC (ไม่เพิ่มประวัติเปล่าๆ)
+  const [assignment, setAssignment] = useState(EMPTY_ASSIGNMENT)
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [assignmentOriginalKey, setAssignmentOriginalKey] = useState('[]')
+  const [assigningEvent, setAssigningEvent] = useState(null)
   const [multiDay, setMultiDay] = useState(false)
   const [locationCustom, setLocationCustom] = useState(false)
   const [viewMode, setViewMode] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'calendar' : 'list'))
@@ -563,6 +578,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
       setForm({ ...EMPTY_EVENT_FORM, event_date: today, audiences: audienceAllowed ? [autoCreateAudience] : [] })
       setMultiDay(false)
       setLocationCustom(false)
+      resetAssignment()
       setEditingEvent(null)
       setFormError('')
       setShowForm(true)
@@ -657,16 +673,28 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     }
   }
 
+  function resetAssignment() {
+    setAssignment(EMPTY_ASSIGNMENT)
+    setAssignmentOriginalKey('[]')
+    setAssignOpen(false)
+  }
+
   function openAdd() {
     const today = todayStr()
     setForm({ ...EMPTY_EVENT_FORM, event_date: today })
     setMultiDay(false)
     setLocationCustom(false)
+    resetAssignment()
     setEditingEvent(null)
     setShowForm(true)
   }
 
   function openEdit(ev) {
+    const existingAssignment = assignmentFormFromEvent(ev)
+    setAssignment(existingAssignment)
+    setAssignmentOriginalKey(assignmentKey(existingAssignment))
+    // มีการมอบหมายอยู่แล้วให้เปิดส่วนนี้ไว้เลย จะได้เห็นว่าใครไปแทน
+    setAssignOpen(existingAssignment.assignees.length > 0)
     const hasMultiDay = !!(ev.end_date && ev.end_date !== ev.event_date)
     setLocationCustom(!!ev.location && !LOCATION_PRESETS.includes(ev.location))
     setForm({
@@ -756,6 +784,9 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     if (!form.category) { setFormError('กรุณาเลือกประเภทกิจกรรม'); return }
     if (form.category === 'อื่นๆ' && !form.customCategory.trim()) { setFormError('กรุณาระบุประเภทกิจกรรม'); return }
     if (!form.audiences.length) { setFormError('กรุณาเลือกกลุ่มเป้าหมายอย่างน้อย 1 กลุ่ม'); return }
+    // ตรวจการมอบหมายก่อนบันทึกกิจกรรม — ถ้าไปพลาดหลังบันทึกแล้ว กดบันทึกซ้ำจะได้กิจกรรมซ้ำ 2 รายการ
+    const assignmentError = validateAssignment(assignment)
+    if (assignmentError) { setFormError(assignmentError); return }
     setFormError('')
     setSaving(true)
     try {
@@ -800,8 +831,23 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         notifyTelegram('event_created', eventId)
       }
 
+      // การมอบหมายบันทึกแยกผ่าน RPC (ตรวจสิทธิ์ + ประวัติฝั่งเซิร์ฟเวอร์) หลังกิจกรรมบันทึกแล้ว
+      // พลาดก็ไม่ย้อนกิจกรรม แจ้งให้เปิดกิจกรรมแล้วกด "มอบหมายผู้ไปแทน" ใหม่ — แบบเดียวกับไฟล์แนบ
+      let assignmentSaveError = ''
+      if (eventId && assignmentKey(assignment) !== assignmentOriginalKey) {
+        try {
+          const { error: assignErr } = await saveEventAssignments(eventId, assignment)
+          if (assignErr) assignmentSaveError = assignErr.message
+        } catch (err) {
+          assignmentSaveError = err?.message ?? 'เชื่อมต่อไม่สำเร็จ'
+        }
+      }
+
       setShowForm(false)
       fetchEvents()
+      if (assignmentSaveError) {
+        alert('บันทึกกิจกรรมสำเร็จ แต่บันทึกการมอบหมายไม่สำเร็จ: ' + assignmentSaveError + '\n\nเปิดกิจกรรมนี้แล้วกด "มอบหมายผู้ไปแทน" อีกครั้ง')
+      }
       if (form.attachment_files.length > 0 && eventId) uploadEventAttachments(eventId, form.attachment_files, form.attachment_urls, form.title.trim())
     } catch (e) {
       const msg = e?.message ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง'
@@ -1167,6 +1213,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                       <p className="leading-relaxed whitespace-pre-wrap">{ev.description}</p>
                     </div>
                   )}
+                  {/* ผู้รับมอบหมายให้ไปแทน + ใครบันทึกเมื่อไร */}
+                  <AssignmentLine ev={ev} showRecorded />
                   {/* Attachment */}
                   {eventAttachments(ev).length > 0 && (
                     <div className="flex items-center gap-2.5 flex-wrap">
@@ -1188,20 +1236,47 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                   )}
                 </div>
 
-                {/* Actions */}
-                {canManage && (['admin', 'superadmin'].includes(currentUserRole) || ev.created_by === currentUserId) && (
-                  <div className="flex gap-2 mt-5 pt-4 border-t border-gray-100">
-                    <button onClick={() => { setViewingEvent(null); openEdit(ev) }}
-                      className="flex-1 py-2.5 rounded-xl border border-blue-300 text-blue-600 text-sm font-bold hover:bg-blue-50 transition-colors">
-                      แก้ไข
-                    </button>
-                  </div>
-                )}
+                {/* Actions — "มอบหมายผู้ไปแทน" ขึ้นให้ผู้บริหารด้วย แม้แก้ไขกิจกรรมไม่ได้ (เช่น ธุรการเป็นคนลง)
+                    กติกาเดียวกับด่านใน RPC set_event_assignments */}
+                {(() => {
+                  const canEditHere = canManage && (['admin', 'superadmin'].includes(currentUserRole) || ev.created_by === currentUserId)
+                  const canAssignHere = canAssignEvent(ev, currentUserRole, currentUserId, currentUserScope)
+                  if (!canEditHere && !canAssignHere) return null
+                  return (
+                    <div className="flex gap-2 mt-5 pt-4 border-t border-gray-100">
+                      {canAssignHere && (
+                        <button onClick={() => setAssigningEvent(ev)}
+                          className="flex-1 py-2.5 rounded-xl border border-violet-300 text-violet-700 text-sm font-bold hover:bg-violet-50 transition-colors">
+                          มอบหมายผู้ไปแทน
+                        </button>
+                      )}
+                      {canEditHere && (
+                        <button onClick={() => { setViewingEvent(null); openEdit(ev) }}
+                          className="flex-1 py-2.5 rounded-xl border border-blue-300 text-blue-600 text-sm font-bold hover:bg-blue-50 transition-colors">
+                          แก้ไข
+                        </button>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
           </div>
         )
       })()}
+
+      {assigningEvent && (
+        <EventAssignmentDialog
+          event={assigningEvent}
+          onClose={() => setAssigningEvent(null)}
+          onSaved={(list) => {
+            const savedId = assigningEvent.id
+            setEvents(prev => prev.map(e => (e.id === savedId ? { ...e, assignments: list } : e)))
+            setViewingEvent(prev => (prev && prev.id === savedId ? { ...prev, assignments: list } : prev))
+            setAssigningEvent(null)
+          }}
+        />
+      )}
 
       {showForm && (
         <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/50 px-2 pt-2 md:p-6">
@@ -1337,6 +1412,29 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400 resize-none" />
                   </div>
                 </div>
+                {/* มอบหมายผู้ไปแทน — พับไว้เป็นค่าเริ่มต้น งานปกติจึงไม่มีช่องกรอกเพิ่ม (ไม่เพิ่มภาระ)
+                    กดปิดเท่ากับล้างการมอบหมาย แบบเดียวกับปุ่ม "หลายวัน" ที่ล้างวันสิ้นสุด */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-gray-500">มอบหมายผู้ไปแทน</label>
+                    <button type="button"
+                      onClick={() => {
+                        if (assignOpen) setAssignment(EMPTY_ASSIGNMENT)
+                        setAssignOpen(v => !v)
+                      }}
+                      className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors ${assignOpen ? 'bg-violet-100 text-violet-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {assignOpen ? '✓ มอบหมายผู้ไปแทน' : '+ มอบหมายผู้ไปแทน'}
+                    </button>
+                  </div>
+                  {assignOpen && (
+                    <EventAssignmentFields
+                      value={assignment}
+                      onChange={setAssignment}
+                      category={form.category === 'อื่นๆ' ? (form.customCategory.trim() || 'อื่นๆ') : form.category}
+                      audiences={form.audiences}
+                    />
+                  )}
+                </div>
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-semibold text-gray-500 block">เอกสารแนบ</label>
@@ -1449,6 +1547,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
           onDelete={handleDelete}
           canManage={canManage}
           openAdd={openAdd}
+          currentUserId={currentUserId}
         />
       ) : (
         <div className="space-y-4">
@@ -1499,7 +1598,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                         onEdit={canManage && canEditRow ? openEdit : null}
                         onDelete={canManage && canDeleteRow ? handleDelete : null}
                         onView={canViewEventDetail(ev, currentUserRole, currentUserId, currentUserScope) ? setViewingEvent : null}
-                        deleting={deleting} />
+                        deleting={deleting}
+                        currentUserId={currentUserId} />
                     )
                   })}
                 </div>
@@ -1548,6 +1648,9 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                                   className="text-left group w-full">
                                   <p className="font-semibold text-blue-700 text-xs leading-snug group-hover:underline">{ev.title}</p>
                                   {ev.description && <p className="text-[11px] text-gray-400 truncate max-w-[220px]">{ev.description}</p>}
+                                  {/* ใส่ใต้ชื่อในช่องเดิม ไม่เพิ่มคอลัมน์ — ตารางนี้กว้างเกินจอ PC อยู่แล้ว */}
+                                  {isAssignedTo(ev, currentUserId) && <span className="mt-1 inline-block"><AssignedBadge /></span>}
+                                  <AssignmentLine ev={ev} className="mt-0.5 max-w-[320px]" />
                                 </button>
                               ) : (
                                 <div className="text-left w-full">

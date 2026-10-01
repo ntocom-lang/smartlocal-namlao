@@ -8,6 +8,8 @@ import EventDetailModal from '../components/EventDetailModal'
 import { toDateStr } from '../lib/thaiDate'
 import { AUDIENCE_COLOR, AUDIENCE_LABEL } from '../lib/orgTerms'
 import { CalendarDayMarkers, CalendarDayObservances, CalendarObservanceLegend } from '../components/CalendarObservances'
+import { AssignmentLine, AssignedBadge } from '../components/events/EventAssignment'
+import { canAssignEvent, isAssignedTo } from '../lib/eventAssignment'
 
 const CATEGORY_COLOR = {
   'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
@@ -46,7 +48,7 @@ function canEditEvent(ev, role, userId, scope) {
   return !!scope?.is_dept_head && !!scope?.department_id && ev.department_id === scope.department_id
 }
 
-function CalendarView({ events, dotEvents, onSelectEvent, role }) {
+function CalendarView({ events, dotEvents, onSelectEvent, role, userId }) {
   const todayRef = new Date()
   todayRef.setHours(0, 0, 0, 0)
 
@@ -269,6 +271,7 @@ function CalendarView({ events, dotEvents, onSelectEvent, role }) {
                             </span>
                           )
                         })}
+                        {isAssignedTo(ev, userId) && <AssignedBadge />}
                       </div>
                       <p className="text-sm font-bold text-gray-800 dark:text-slate-200 leading-tight">
                         {ev.title}
@@ -285,6 +288,7 @@ function CalendarView({ events, dotEvents, onSelectEvent, role }) {
                           <MapPin size={11} /> {ev.location}
                         </p>
                       )}
+                      {canView && <AssignmentLine ev={ev} className="mt-0.5" />}
                     </div>
                   </button>
                 )
@@ -567,6 +571,7 @@ export default function EventsPage() {
                           {diffDays === 0 ? 'วันนี้' : diffDays === 1 ? 'พรุ่งนี้' : `อีก ${diffDays} วัน`}
                         </span>
                       )}
+                      {isAssignedTo(ev, userId) && <AssignedBadge />}
                     </div>
                     <p className="text-sm font-bold text-gray-800 dark:text-slate-200 leading-tight">{ev.title}</p>
                     {!ev.is_all_day && ev.event_time && (
@@ -587,6 +592,8 @@ export default function EventsPage() {
                         <MapPin size={11} /> {ev.location}
                       </p>
                     )}
+                    {/* ประชาชนไม่ได้ข้อมูลนี้ตั้งแต่ฐานข้อมูล (ตารางแยกที่อ่านได้เฉพาะบุคลากรภายใน) */}
+                    {canView && <AssignmentLine ev={ev} className="mt-0.5" />}
                     {canView && ev.description && (
                       <p className="text-xs text-gray-400 mt-1.5 leading-relaxed line-clamp-2">{ev.description}</p>
                     )}
@@ -602,7 +609,19 @@ export default function EventsPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 pb-24 md:pb-8">
-      {selected && <EventDetailModal ev={selected} onClose={() => setSelected(null)} canEdit={canEditEvent(selected, role, userId, editScope)} />}
+      {selected && (
+        <EventDetailModal
+          ev={selected}
+          onClose={() => setSelected(null)}
+          canEdit={canEditEvent(selected, role, userId, editScope)}
+          canAssign={canAssignEvent(selected, role, userId, editScope)}
+          onAssignmentsChanged={(list) => {
+            const changedId = selected.id
+            setEvents(prev => prev.map(e => (e.id === changedId ? { ...e, assignments: list } : e)))
+            setSelected(prev => (prev && prev.id === changedId ? { ...prev, assignments: list } : prev))
+          }}
+        />
+      )}
 
       {/* Mobile sticky header */}
       <div className="md:hidden sticky top-0 z-30 bg-gray-50/95 dark:bg-transparent backdrop-blur-md pt-3 pb-2 -mx-4 px-4">
@@ -709,7 +728,7 @@ export default function EventsPage() {
 
             {/* Calendar column */}
             <div className={view === 'calendar' ? 'mt-0' : 'hidden md:block'}>
-              <CalendarView events={filteredEvents} dotEvents={filteredDotEvents} onSelectEvent={handleSelectEvent} role={role} />
+              <CalendarView events={filteredEvents} dotEvents={filteredDotEvents} onSelectEvent={handleSelectEvent} role={role} userId={userId} />
             </div>
 
             {/* List / Table column */}
