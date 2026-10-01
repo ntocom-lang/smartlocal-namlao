@@ -336,7 +336,7 @@ try{
  await row(b1).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
  const afterConfirm=sheet.getByRole('region',{name:'ขั้นตอนหลังยืนยันรถ'})
  await afterConfirm.getByText('ยืนยันรถแล้ว · ขั้นต่อไป').waitFor()
- const printAfterConfirm=afterConfirm.getByRole('button',{name:'พิมพ์หนังสือนำส่ง + ใบคำขอ'})
+ const printAfterConfirm=afterConfirm.getByRole('button',{name:'พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน'})
  await printAfterConfirm.waitFor()
  assert.equal(await afterConfirm.getByRole('button',{name:'ไปงานคนขับ'}).count(),0,'ผู้ยืนยันคิวที่ไม่ใช่คนขับต้องไม่ถูกส่งไปงานคนขับ')
  assert.equal(await page.getByRole('region',{name:'งานคนขับรอดำเนินการ'}).count(),0,'บัญชีผู้จัดคิวที่ไม่ใช่คนขับต้องไม่เห็นงานคนขับ')
@@ -377,7 +377,7 @@ try{
  await click('conflictDecline',row(b2).getByRole('button',{name:'ยืนยันรถ',exact:true}))
  await problem.waitFor();await problem.getByText('รถไม่ว่าง ช่วงเวลานี้ชนกับเที่ยวที่ยืนยันแล้ว').waitFor()
  await problem.getByText(/ไม่ได้: ผู้เดินทางเดิมในเที่ยวนั้นไม่ได้เลือกนั่งร่วม/).waitFor()
- assert.equal(await sheet.getByRole('button',{name:'พิมพ์หนังสือนำส่ง',exact:true}).count(),0,'ยังไม่ยืนยันรถ = ยังไม่มีหนังสือให้พิมพ์ ปุ่มพิมพ์บนหัวแผ่นต้องไม่ขึ้น')
+ assert.equal(await sheet.getByRole('button',{name:'พิมพ์เอกสาร 2 ประเภท',exact:true}).count(),0,'ยังไม่ยืนยันรถ = ยังไม่มีหนังสือให้พิมพ์ ปุ่มพิมพ์บนหัวแผ่นต้องไม่ขึ้น')
  assert.equal(await problem.getByLabel('เหตุผล: รถไม่ว่าง ให้บริการตามเวลานี้ไม่ได้').inputValue(),'รถไม่ว่างในช่วงเวลาที่ขอ')
  await click('conflictDecline',problem.getByRole('button',{name:'แจ้งว่ารถไม่ว่าง และยกเลิกคำขอ',exact:true}))
  // ยกเลิกแล้วย้ายไปส่วน "เสร็จแล้ว / ยกเลิก" ที่พับไว้ — หายจากจอทันที กดแสดงรายการแล้วเห็นป้ายยกเลิก
@@ -540,8 +540,8 @@ try{
  await staffDesk();await row(b1).getByRole('button',{name:'บันทึกเอกสาร',exact:true}).click()
  // ── ปุ่ม "พิมพ์" บนหัวแผ่น (เจ้าของระบบขอ 2026-09-24) — ไม่ต้องเลื่อนหาปุ่มพิมพ์ในกล่องเอกสาร ──
  {
-  const [letterWin]=await Promise.all([page.waitForEvent('popup'),click('printFromHeader',sheet.getByRole('button',{name:'พิมพ์หนังสือนำส่ง',exact:true}))])
-  await letterWin.waitForFunction(()=>document.body?.innerText.includes('ใบคำขอรับสวัสดิการ'))
+  const [letterWin]=await Promise.all([page.waitForEvent('popup'),click('printFromHeader',sheet.getByRole('button',{name:'พิมพ์เอกสาร 2 ประเภท',exact:true}))])
+  await letterWin.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
   const printed=await letterWin.evaluate(()=>document.body.innerText)
   assert.ok(printed.includes('ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย'),'ต้องได้หนังสือนำส่ง')
   assert.ok(printed.includes(b1.slice(0,8).toUpperCase()),'ต้องเป็นเอกสารของเที่ยวที่เปิดอยู่')

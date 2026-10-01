@@ -169,6 +169,45 @@ function sheetContentMm(page, index) {
 
 const checks = [
   {
+    name: 'citizen-to-mayor-and-office-to-fund',
+    reason: 'ใบคำขอของประชาชนต้องเรียนถึงนายก อปท. ส่วนหนังสือนำส่งเรียนถึงกองทุน ใช้ชื่อผู้รับคนละแหล่ง',
+    async run(browser) {
+      for (const [tenant, recipient] of [
+        [TENANT, 'นายกองค์การบริหารส่วนตำบลทุ่งแค้ว'],
+        [{ ...TENANT, name: 'เทศบาลตำบลน้ำเลา', org_type: 'เทศบาลตำบล' }, 'นายกเทศมนตรีตำบลน้ำเลา'],
+      ]) {
+        for (const html of [
+          buildPatientTransportPacketHtml(args({ tenant })),
+          buildPatientTransportFormHtml(args({ tenant })),
+          buildTripForwardLetterHtml({ ...tripArgs(), tenant, bookings: TRIP_BOOKINGS.slice(0, 2) }),
+        ]) {
+          const page = await render(browser, html)
+          try {
+            for (const sheet of await page.locator('.sheet').all()) {
+              const isForm = await sheet.locator('.form-title').count() > 0
+              const addressee = await sheet.locator('.kv').filter({ hasText: /^เรียน/ }).innerText()
+              assert.equal(addressee.replace(/^เรียน\s*/, '').trim(), isForm ? recipient : HEADER.recipient_title_snapshot)
+              if (isForm) {
+                assert.equal(await sheet.locator('.form-title').innerText(), 'ใบคำขอรถรับ-ส่งผู้ป่วย')
+                assert.ok((await sheet.locator('.form-para').innerText()).includes(`ขอให้${tenant.name}ประสาน`))
+                const overlaps = await sheet.evaluate(el => {
+                  const rect = selector => {
+                    const range = document.createRange()
+                    range.selectNodeContents(el.querySelector(selector))
+                    return range.getBoundingClientRect()
+                  }
+                  const title = rect('.form-title'), reference = rect('.form-no')
+                  return title.left < reference.right && title.right > reference.left && title.top < reference.bottom && title.bottom > reference.top
+                })
+                assert.equal(overlaps, false, 'ชื่อแบบพิมพ์ทับเลขที่คำขอ')
+              }
+            }
+          } finally { await page.close() }
+        }
+      }
+    },
+  },
+  {
     name: 'forward-letter-one-page',
     reason: 'หนังสือนำส่งที่ล้นหน้า 2 ทำให้ช่องลงนามนายกหลุดไปคนละหน้ากับเนื้อความ ใช้ไม่ได้',
     async run(browser) {
@@ -400,7 +439,7 @@ const checks = [
     name: 'trip-letter-one-page-each',
     reason: 'ผู้ป่วยหนึ่งคนได้ 2 ใบ; ร่วมเที่ยวใช้หนังสือเดียวแนบใบคำขอครบทุกคน ไม่มีเลขหนังสือซ้ำหลายฉบับ',
     async run(browser) {
-      for (const count of [1, 8]) {
+      for (const count of [1, 2, 8]) {
         const input = tripArgs()
         input.bookings = input.bookings.slice(0, count)
         input.bookings.push({ ...TRIP_BOOKINGS[0], id: 'cancelled', status: 'cancelled', patient_name: 'CANCELLED_PATIENT' })
@@ -440,7 +479,8 @@ const checks = [
         assert.ok(!(letter + form).includes('18.1234'))
         assert.ok(letter.includes('ให้ความยินยอมเป็นการเฉพาะ'))
         assert.ok(letter.includes('พร 72301/88'))
-        assert.ok(form.includes('ใบคำขอรับสวัสดิการ'))
+        assert.ok(form.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
+        assert.ok(!form.includes('สมาชิกกองทุนเลขที่'), 'คนทั่วไปไม่ต้องมีเลขสมาชิกกองทุนในแบบจองรถ')
         assert.ok(form.includes('โปรดลงลายมือชื่อรับรอง'))
         assert.ok(!form.includes('ลงชื่อโดยการยืนยันตัวตน'))
         assert.ok(!form.includes('เจ้าหน้าที่บันทึกคำขอแทนที่เคาน์เตอร์'))
