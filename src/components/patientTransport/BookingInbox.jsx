@@ -471,7 +471,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
   // ยังไม่ยืนยัน = ยังไม่มีเที่ยว ไม่มีหนังสือให้พิมพ์ · คำขอ/เที่ยวที่ยกเลิกแล้วไม่ต้องส่งเอกสารถึงกองทุน
   const printable = trip && b.status !== 'cancelled' && trip.state !== 'cancelled'
   return <Sheet wide title={b.patient_name} subtitle={`${issue ? 'เหตุขัดข้อง' : STAGES[stage].label} · เลขที่ ${ref(b.id)}`} onClose={onClose} onReload={onReload} busy={busy}
-    onPrint={printable ? () => onPrintLetter(trip) : undefined} printLabel="พิมพ์หนังสือนำส่ง">
+    onPrint={printable ? () => onPrintLetter(trip) : undefined} printLabel="พิมพ์เอกสาร 2 ประเภท">
     {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
     {linked && <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
       <p className="font-bold text-sky-950">คิวที่ใช้เดินทาง: {dateTime(linked.appointment_at)} · เลขที่ {ref(linked.id)}</p>
@@ -484,9 +484,9 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
     {next.id === 'confirm' && !showProblem && <button type="button" className="min-h-12 w-full rounded-xl px-4 text-base font-bold text-white disabled:opacity-50" style={{ backgroundColor: next.color }} disabled={busy} onClick={() => onConfirm(row)}>{actionLabel(row)}</button>}
     {b.status === 'confirmed' && trip?.state === 'confirmed' && <section aria-label="ขั้นตอนหลังยืนยันรถ" className="space-y-3 rounded-xl border border-sky-200 bg-sky-50 p-4">
       <p className="font-bold text-sky-950">ยืนยันรถแล้ว · ขั้นต่อไป</p>
-      <p className="text-sm text-slate-800">ผู้จองและคนขับเห็นเที่ยวในระบบแล้ว พิมพ์หนังสือนำส่งกับใบคำขอได้ตอนนี้ วันเดินทางคนขับเปิด “งานคนขับ” เพื่อบันทึกการรับ–ส่งและจบเที่ยว</p>
+      <p className="text-sm text-slate-800">ผู้จองและคนขับเห็นเที่ยวในระบบแล้ว พิมพ์ใบคำขอจากประชาชนถึงนายก และหนังสือนำส่งจาก อปท. ถึงกองทุนได้ตอนนี้ วันเดินทางคนขับเปิด “งานคนขับ” เพื่อบันทึกการรับ–ส่งและจบเที่ยว</p>
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={primaryClass} disabled={busy} onClick={() => onPrintLetter(trip)}>พิมพ์หนังสือนำส่ง + ใบคำขอ</button>
+        <button type="button" className={primaryClass} disabled={busy} onClick={() => onPrintLetter(trip)}>พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน</button>
         {trip.driver_id === currentUserId && <button type="button" className={buttonClass} onClick={onOpenDriver}>ไปงานคนขับ</button>}
       </div>
       {trip.driver_id !== currentUserId && <p className="text-sm text-slate-700">ถ้าคนขับใช้อีกบัญชี ให้เข้าหน้าเจ้าหน้าที่ด้วยบัญชีคนขับ แล้วเปิดแท็บ “งานคนขับ”</p>}
