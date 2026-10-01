@@ -372,3 +372,42 @@ export function describeHistory(events = []) {
     return { id: e.id, at: e.at, label, color, who, extra, note: e.note || '' }
   })
 }
+
+// หน้ารายงานโหลดประวัติทีละหน้า จึงห้ามเดาสถานะย้อนหลังจากคำขอปัจจุบัน
+// โดยเฉพาะ cancel ที่อาจเป็นเพียงการขอประสานยกเลิกหลังยืนยันรถแล้ว
+export function reportEvent(event, workspace = {}) {
+  const detail = event.detail || {}
+  const extraLabels = {
+    cancel: 'ดำเนินการยกเลิกคำขอ',
+    rescheduled: 'ย้ายผู้เดินทางออกจากเที่ยวเดิม',
+    joined_from_trip: 'รับผู้เดินทางจากเที่ยวอื่นมาร่วมเที่ยว',
+    delete_booking: 'ลบคำขอ',
+    settings_changed: 'ปรับตั้งค่าบริการรถ',
+    trip_next: 'บันทึกการเดินรถ',
+    note: 'บันทึกข้อความเพิ่มเติม',
+  }
+  const label = extraLabels[event.action] || HISTORY[event.action]?.[0] || 'บันทึกการเปลี่ยนแปลง'
+  const booking = (workspace.bookings || []).find(b => b.id === (detail.booking_id || event.entity_id))
+  const trip = (workspace.trips || []).find(t => t.id === event.entity_id)
+  const riders = booking ? [booking] : trip ? (workspace.bookings || []).filter(b => b.trip_id === trip.id && b.status !== 'cancelled') : []
+  return {
+    label: event.action === 'submitted' && booking?.entry_channel === 'staff' ? 'รับคำขอแทน (โทรศัพท์/เคาน์เตอร์)' : label,
+    subject: riders.length ? riders.map(b => b.patient_name).join(', ') : trip?.plan?.route_label || '',
+    reference: `${booking ? 'คำขอเลขที่' : trip ? 'เที่ยวรถเลขที่' : 'รายการอ้างอิง'} ${String(booking?.id || trip?.id || event.entity_id || '').slice(0, 8).toUpperCase()}`,
+    note: typeof detail.note === 'string' ? detail.note : '',
+  }
+}
+
+// ใช้ชุดข้อมูลรายเดือนจาก RPC โดยตรง ไม่ใช้ workspace ที่เก็บเที่ยวปิดแค่ 30 วัน
+export function monthReportSummary(trips = []) {
+  const completed = trips.filter(t => t.state === 'completed')
+  const measured = completed.filter(t => !t.odometer_issue && typeof t.distance === 'number' && Number.isFinite(t.distance) && t.distance >= 0)
+  return {
+    completed: completed.length,
+    pending: trips.filter(t => t.state !== 'completed' && t.state !== 'cancelled').length,
+    passengers: completed.reduce((sum, t) => sum + Number(t.passengers || 0), 0),
+    companions: completed.reduce((sum, t) => sum + Number(t.companions || 0), 0),
+    distance: measured.reduce((sum, t) => sum + t.distance, 0),
+    missingDistance: completed.length - measured.length,
+  }
+}
