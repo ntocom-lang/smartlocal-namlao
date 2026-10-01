@@ -209,6 +209,9 @@ const visit=async as=>{
  await page.goto(`${base}/__patient?as=${as}`);await page.getByRole('region',{name:'บริการรถรับส่งผู้ป่วย'}).waitFor()}
 const staffDesk=async(as='coordinator')=>{await page.setViewportSize({width:1280,height:900});await visit(as)}
 const row=id=>page.locator(`tr[data-booking="${id}"]`)
+// ส่วน "เสร็จแล้ว / ยกเลิก" พับไว้ตอนเปิดหน้า (เจ้าของระบบเลือก 2569-10-01) — ฉากที่ต้องดูแถวที่จบแล้วกดแสดงก่อน แบบเจ้าหน้าที่
+const doneToggle=()=>page.getByRole('button',{name:/^(แสดง|ซ่อน)รายการ$/})
+const openDone=async()=>{if(await doneToggle().getAttribute('aria-expanded')==='false')await doneToggle().click();assert.equal(await doneToggle().getAttribute('aria-expanded'),'true')}
 const toast=text=>page.getByRole('status').filter({hasText:text})
 const problem=page.getByRole('region',{name:'ยืนยันรถไม่ได้'})
 const sheet=page.getByRole('dialog')
@@ -377,7 +380,9 @@ try{
  assert.equal(await sheet.getByRole('button',{name:'พิมพ์หนังสือนำส่ง',exact:true}).count(),0,'ยังไม่ยืนยันรถ = ยังไม่มีหนังสือให้พิมพ์ ปุ่มพิมพ์บนหัวแผ่นต้องไม่ขึ้น')
  assert.equal(await problem.getByLabel('เหตุผล: รถไม่ว่าง ให้บริการตามเวลานี้ไม่ได้').inputValue(),'รถไม่ว่างในช่วงเวลาที่ขอ')
  await click('conflictDecline',problem.getByRole('button',{name:'แจ้งว่ารถไม่ว่าง และยกเลิกคำขอ',exact:true}))
- await sheet.waitFor({state:'detached'});await row(b2).getByText('ยกเลิกแล้ว').waitFor()
+ // ยกเลิกแล้วย้ายไปส่วน "เสร็จแล้ว / ยกเลิก" ที่พับไว้ — หายจากจอทันที กดแสดงรายการแล้วเห็นป้ายยกเลิก
+ await sheet.waitFor({state:'detached'});await row(b2).waitFor({state:'detached'})
+ await openDone();await row(b2).getByText('ยกเลิกแล้ว').waitFor()
  assert.equal((await bookingRow(b2)).status,'cancelled');assert.equal(clicks.conflictDecline,2)
  assert.equal((await runSql(async()=>(await db.query("SELECT detail->>'note' AS note FROM public.patient_booking_events WHERE entity_id=$1 AND action='cancel'",[b2])).rows[0])).note,'รถไม่ว่างในช่วงเวลาที่ขอ','เหตุผลที่ไม่ให้บริการต้องอยู่ในประวัติ')
  // ── ชนคิวแต่ไปคันเดียวกันได้: บอกเวลาใหม่ก่อนกด แล้วทวนก่อนรวมเที่ยว ──
@@ -544,8 +549,9 @@ try{
  }
  await sheet.getByRole('button',{name:'กรอกเลขหนังสือ',exact:true}).click()
  await sheet.getByLabel('เลขที่หนังสือ',{exact:true}).fill('พร 72301/77');await sheet.getByRole('button',{name:'บันทึกเลขหนังสือ',exact:true}).click();await toast('บันทึกเลขหนังสือนำส่งแล้ว').waitFor()
- // เอกสารครบแล้ว = แถวไม่มีงานค้าง ปุ่มแถวกลับเป็น "ดูรายละเอียด" และแบบฟอร์มย้ายไปอยู่ใต้ "จัดการเพิ่มเติม"
- await row(b1).getByRole('button',{name:'ดูรายละเอียด',exact:true}).waitFor()
+ // เอกสารครบแล้ว = แถวไม่มีงานค้าง ย้ายไปส่วน "เสร็จแล้ว / ยกเลิก" ที่พับไว้ (ปุ่มแถวเป็น "ดูรายละเอียด" ตรวจในฉาก inbox order)
+ // แผ่นที่เปิดอยู่ไม่ปิดตาม และแบบฟอร์มย้ายไปอยู่ใต้ "จัดการเพิ่มเติม"
+ await row(b1).waitFor({state:'detached'})
  await sheet.locator('summary').filter({hasText:'จัดการเพิ่มเติม'}).click()
  await sheet.getByText(/^ที่ พร 72301\/77 ลงวันที่/).waitFor()
  let docs=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===b1Trip)
@@ -1250,8 +1256,8 @@ try{
  await assert.rejects(runAs(setupAdmin,()=>rpc('patient_booking_history',[setupTenant,histBooking])),/ไม่พบคำขอนี้/)
  const deskHistory=new Set((await runAs(coordinator,()=>rpc('patient_booking_history',[tenant,deskBooking]))).events.map(e=>e.id))
  assert(deskHistory.size>0&&seen.every(e=>!deskHistory.has(e.id)),'ประวัติของคำขออื่นต้องไม่ปนกัน')
- // หน้าจอ: กล่องประวัติท้ายแผ่นคำขอ บอกชื่อผู้กด ผู้จอง และคนขับจริงเมื่อแอดมินกดแทน
- await staffDesk('coordinator');await row(histBooking).click()
+ // หน้าจอ: กล่องประวัติท้ายแผ่นคำขอ บอกชื่อผู้กด ผู้จอง และคนขับจริงเมื่อแอดมินกดแทน (คำขอนี้ถูกนำออกจากเที่ยว = อยู่ส่วนที่พับไว้)
+ await staffDesk('coordinator');await openDone();await row(histBooking).click()
  const histBox=sheet.getByRole('region',{name:'ประวัติการดำเนินการ'})
  for(const text of ['ส่งคำขอ','โดย Citizen TEST (ผู้จอง)','ขอยกเลิก (รอเจ้าหน้าที่ประสาน)','โดย Admin TEST · บันทึกแทนคนขับ Driver TEST','นำออกจากเที่ยว (ยกเลิก)',histReason])await histBox.getByText(text,{exact:true}).first().waitFor()
  assert.equal(await histBox.getByRole('listitem').count(),6)
@@ -1291,6 +1297,28 @@ try{
  await staffDesk('coordinator')
  const orderTable=page.locator('table').filter({hasText:'วันเวลานัด'})
  await orderTable.locator('tr[data-booking]').first().waitFor()
+ // ส่วน "เสร็จแล้ว / ยกเลิก" พับไว้ตอนเปิดหน้า (เจ้าของระบบเลือก 2569-10-01 แบบ ก — รายการที่จบแล้ว 30 วันต่อท้ายจนหน้ายาว)
+ // เห็นหัวกลุ่มพร้อมจำนวนและปุ่มแสดง แต่ไม่มีแถว · งานค้างกับรอเดินทางแสดงตามปกติ
+ const doneHeader=orderTable.locator('tr[data-section-header="done"]')
+ await doneHeader.waitFor()
+ assert.equal(await doneToggle().getAttribute('aria-expanded'),'false','เปิดหน้าแล้วส่วนเสร็จแล้วต้องพับไว้')
+ assert.equal(await orderTable.locator('tr[data-section="done"]').count(),0,'ส่วนที่พับต้องไม่มีแถว')
+ for(const section of ['action','live'])assert(await orderTable.locator(`tr[data-section="${section}"]`).count()>0,`ส่วน ${section} ต้องแสดงตามปกติ`)
+ const foldedCount=Number((await doneHeader.innerText()).match(/(\d+) รายการ/)[1])
+ assert(foldedCount>0,'หัวกลุ่มที่พับต้องบอกจำนวนรายการที่ซ่อนอยู่')
+ // ค้นหาหรือกดป้ายเสร็จแล้ว/ยกเลิก = กำลังหาของในส่วนนี้ ระบบเปิดให้เองโดยไม่มีปุ่มพับ · ล้างแล้วกลับไปพับเหมือนเดิม
+ await search.fill('[TEST] ประวัติคำขอ');await row(histBooking).waitFor()
+ assert.equal(await doneToggle().count(),0,'ระหว่างค้นหาต้องไม่มีปุ่มพับ')
+ await search.fill('');await row(histBooking).waitFor({state:'detached'})
+ const orderPills=page.getByRole('group',{name:'กรองคำขอรถ'})
+ await orderPills.getByRole('button',{name:/^ยกเลิก/}).click();await row(histBooking).waitFor()
+ assert.equal(await doneToggle().count(),0,'กดป้ายยกเลิกแล้วต้องเห็นรายการเลย ไม่ต้องกดแสดงอีก')
+ await orderPills.getByRole('button',{name:/^ทั้งหมด/}).click();await row(histBooking).waitFor({state:'detached'})
+ // กดแสดงรายการ → เห็นครบตามจำนวนบนหัวกลุ่ม และแถวที่จบแล้วปุ่มเป็น "ดูรายละเอียด"
+ await openDone()
+ assert.equal(await orderTable.locator('tr[data-section="done"]').count(),foldedCount,'กดแสดงแล้วต้องเห็นครบตามจำนวนบนหัวกลุ่ม')
+ const doneButtons=await orderTable.locator('tr[data-section="done"]').evaluateAll(trs=>trs.map(tr=>tr.querySelector('button')?.textContent.trim()))
+ assert(doneButtons.every(text=>text==='ดูรายละเอียด'),`แถวที่จบแล้วปุ่มแถวต้องเป็น "ดูรายละเอียด": ${JSON.stringify(doneButtons)}`)
  const listed=await orderTable.locator('tbody tr').evaluateAll(trs=>trs.map(tr=>tr.dataset.sectionHeader
   ?{header:tr.dataset.sectionHeader,text:tr.innerText.trim()}:{booking:tr.dataset.booking,section:tr.dataset.section,at:tr.dataset.at}))
  const orderWorkspace=await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))
@@ -1332,8 +1360,15 @@ try{
  assert.deepEqual(await page.locator('h3[data-section-header]').evaluateAll(heads=>heads.map(head=>head.dataset.sectionHeader)),presentSections)
  await page.locator('h3[data-section-header="done"]').waitFor()
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'หัวกลุ่มต้องไม่ทำให้จอ 390px ล้น')
+ // มือถือพับได้ด้วยปุ่มเดียวกัน (ขนาดนิ้วกด 44px) — พับแล้วการ์ดของส่วนเสร็จแล้วหาย เหลือหัวกลุ่ม
+ assert((await doneToggle().boundingBox()).height>=44,'ปุ่มพับบนมือถือต้องสูงอย่างน้อย 44px')
+ await doneToggle().click();assert.equal(await doneToggle().getAttribute('aria-expanded'),'false')
+ assert.equal(await page.locator('article[data-section="done"]').count(),0,'พับแล้วต้องไม่มีการ์ดของส่วนเสร็จแล้ว')
+ assert.equal(await page.locator('article[data-booking]').count(),bookingRows.length-foldedCount)
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'หัวกลุ่มที่มีปุ่มพับต้องไม่ทำให้จอ 390px ล้น')
  await page.setViewportSize({width:1280,height:900})
  console.log('PASS inbox order: action → live → done sections with colored headers and row strips, urgency then appointment within action, ascending dates within each section, same order on mobile')
+ console.log('PASS done section folded on open: header with count + show button, search and done/cancelled pills open it without a toggle, toggle on desktop and mobile')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}

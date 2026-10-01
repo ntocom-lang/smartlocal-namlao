@@ -102,10 +102,14 @@ function StatusChips({ row }) {
 }
 
 // หัวกลุ่มของส่วน ใช้ทั้งตาราง (PC) และการ์ด (มือถือ) — เป็น span เพราะอยู่ใน h3 ได้
-function SectionBand({ section, count, rounded }) {
+// toggle = ปุ่มพับ/แสดงของส่วนเสร็จแล้ว/ยกเลิก (ลูกศรซ่อนจากโปรแกรมอ่านจอ ชื่อปุ่มจึงเป็นคำล้วน)
+// มือถือปุ่มลงบรรทัดใหม่เต็มความกว้างแบบปุ่มในการ์ด — ถ้าอยู่บรรทัดเดียวกัน ชื่อส่วนถูกบีบจนขึ้น 2 บรรทัดที่จอ 390px
+function SectionBand({ section, count, rounded, toggle }) {
   const { label, bar, tint, ink } = SECTIONS[section]
-  return <span className={`flex items-center gap-2 px-3 py-2 text-sm font-bold ${rounded ? 'rounded-xl' : ''}`} style={{ backgroundColor: tint, color: ink, borderLeft: `5px solid ${bar}` }}>
-    {label}<span className="whitespace-nowrap rounded-full border bg-white px-2 py-0.5 text-xs" style={{ borderColor: bar }}>{count} รายการ</span>
+  return <span className={`flex flex-wrap items-center gap-2 px-3 text-sm font-bold ${toggle ? 'py-2 md:py-1' : 'py-2'} ${rounded ? 'rounded-xl' : ''}`} style={{ backgroundColor: tint, color: ink, borderLeft: `5px solid ${bar}` }}>
+    <span className="whitespace-nowrap">{label}</span><span className="whitespace-nowrap rounded-full border bg-white px-2 py-0.5 text-xs" style={{ borderColor: bar }}>{count} รายการ</span>
+    {toggle && <button type="button" aria-expanded={toggle.open} onClick={toggle.onToggle} className="ml-auto min-h-11 whitespace-nowrap rounded-xl border bg-white px-3 text-sm font-bold hover:bg-slate-50 max-md:w-full md:min-h-9" style={{ borderColor: bar, color: ink }}>
+      {toggle.open ? 'ซ่อนรายการ' : 'แสดงรายการ'}<span aria-hidden="true"> {toggle.open ? '▴' : '▾'}</span></button>}
   </span>
 }
 
@@ -523,6 +527,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   const [search, setSearch] = useState('')
   const [openId, setOpenId] = useState(initialOpenId)
   const [problem, setProblem] = useState(null)
+  const [showDone, setShowDone] = useState(false)
   const rows = buildRows(workspace)
   const words = search.trim().toLowerCase()
   const shown = rows.filter(r => (filter === 'all' || r.stage === filter) && (!words || haystack(r).includes(words)))
@@ -530,6 +535,12 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   // หัวกลุ่มขึ้นก่อนแถวแรกของแต่ละส่วน นับเฉพาะแถวที่แสดงอยู่ (หลังกรอง/ค้นหา) · ส่วนที่ไม่มีแถวไม่ขึ้นหัว
   const sectionCount = shown.reduce((counts, r) => ({ ...counts, [r.section]: (counts[r.section] || 0) + 1 }), {})
   const startsSection = index => index === 0 || shown[index - 1].section !== shown[index].section
+  // ส่วนเสร็จแล้ว/ยกเลิกพับไว้ตอนเปิดหน้า (เจ้าของระบบเลือก 2569-10-01 แบบ ก) — ระบบส่งรายการที่จบแล้วมาอีก 30 วัน
+  // (patient_booking_workspace) ต่อท้ายงานค้างจนหน้ายาวและแยกยากว่าอันไหนเสร็จ · หัวกลุ่มพร้อมจำนวนยังอยู่ กดแสดงได้
+  // ค้นหาหรือกดป้ายเสร็จแล้ว/ยกเลิก = กำลังหาของในส่วนนี้ ระบบเปิดให้เอง · งานบันทึกเอกสารหลังจบเที่ยวอยู่ส่วนต้องดำเนินการ ไม่ถูกพับ
+  const doneForced = !!words || ['completed', 'cancelled'].includes(filter)
+  const doneToggle = doneForced ? null : { open: showDone, onToggle: () => setShowDone(value => !value) }
+  const folded = row => row.section === 'done' && !showDone && !doneForced
   const open = rows.find(r => r.booking.id === openId)
   const createdRow = created && rows.find(r => r.booking.id === created.id)
 
@@ -615,9 +626,9 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
             return <Fragment key={b.id}>
             {/* ช่องว่างก่อนส่วนถัดไปอยู่ในแถวหัวกลุ่มเอง ไม่แทรกแถวเปล่า ทุกแถวใน tbody จึงเป็นหัวกลุ่มหรือคำขอเท่านั้น */}
             {startsSection(index) && <tr data-section-header={row.section}>
-              <td colSpan={6} className="p-0">{index > 0 && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand section={row.section} count={sectionCount[row.section]} /></td>
+              <td colSpan={6} className="p-0">{index > 0 && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand section={row.section} count={sectionCount[row.section]} toggle={row.section === 'done' ? doneToggle : null} /></td>
             </tr>}
-            <tr data-booking={b.id} data-section={row.section} data-at={sortAt(row)} className="cursor-pointer align-top transition-colors" style={{ backgroundColor: shade }}
+            {!folded(row) && <tr data-booking={b.id} data-section={row.section} data-at={sortAt(row)} className="cursor-pointer align-top transition-colors" style={{ backgroundColor: shade }}
               onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = shade}
               onClick={() => { setProblem(null); setOpenId(b.id) }}>
               <td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500" style={{ boxShadow: `inset 5px 0 0 ${SECTIONS[row.section].bar}` }}>{index + 1}</td>
@@ -626,7 +637,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
               <td className="border-r border-gray-200 px-2 py-2.5"><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={b.pickup}>รับที่ {b.pickup}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[b.return_mode]}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
               <td className="border-r border-gray-200 px-2 py-2.5 text-center"><StatusChips row={row} /></td>
               <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}><div className="flex flex-wrap justify-center gap-2"><RowButton row={row} busy={busy} onPress={press} />{deleteButton(row)}</div></td>
-            </tr>
+            </tr>}
             </Fragment>
           })}</tbody>
         </table>
@@ -635,8 +646,8 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
         const { booking: b, trip, linked, group } = row
         const pickupAt = trip && pickupForBooking(trip, b)
         return <Fragment key={b.id}>
-        {startsSection(index) && <h3 data-section-header={row.section} className={index ? 'pt-4' : ''}><SectionBand section={row.section} count={sectionCount[row.section]} rounded /></h3>}
-        <article data-booking={b.id} data-section={row.section} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4" style={{ borderLeft: `5px solid ${SECTIONS[row.section].bar}` }} onClick={() => { setProblem(null); setOpenId(b.id) }}>
+        {startsSection(index) && <h3 data-section-header={row.section} className={index ? 'pt-4' : ''}><SectionBand section={row.section} count={sectionCount[row.section]} rounded toggle={row.section === 'done' ? doneToggle : null} /></h3>}
+        {!folded(row) && <article data-booking={b.id} data-section={row.section} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4" style={{ borderLeft: `5px solid ${SECTIONS[row.section].bar}` }} onClick={() => { setProblem(null); setOpenId(b.id) }}>
           <div className="flex items-start justify-between gap-2"><h3 className="font-bold">{b.patient_name}</h3><StatusChips row={row} /></div>
           <p><strong>{whenLabel((linked || b).appointment_at)} {clockOf((linked || b).appointment_at)} น.</strong> · {linked ? linked.route_label : b.route_label}</p>
           {linked && <p className="text-sm text-sky-800">คิวที่ใช้เดินทาง {ref(linked.id)} · นัดเดิมที่ยกเลิก {dateTime(b.appointment_at)}</p>}
@@ -644,7 +655,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
           <p className="text-sm text-slate-600">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน{pickupAt && b.status !== 'cancelled' ? ` · รถมารับ ${clockOf(pickupAt)} น.` : ''}</p>
           {b.status === 'submitted' && group.length > 1 && <p className="text-sm font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</p>}
           <div className="flex flex-wrap gap-2"><RowButton row={row} busy={busy} onPress={press} full />{deleteButton(row)}</div>
-        </article>
+        </article>}
         </Fragment>
       })}</div>
     </div>
