@@ -219,6 +219,14 @@ const card=trip=>page.locator(`article[data-trip="${trip}"]`).first()
 const setDay=async value=>{await page.locator('summary').filter({hasText:'เลือกวันอื่น'}).first().evaluate(node=>{node.parentElement.open=true});await page.getByLabel('วันที่นัดแพทย์',{exact:true}).fill(value)}
 const clicks={}
 const click=async(key,locator)=>{await locator.click();clicks[key]=(clicks[key]||0)+1}
+// หน้าต่างพิมพ์: แผ่นหนังสือนำส่ง + ใบคำขอของคำขอที่ระบุ (บรรทัดกำกับใต้ชื่อผู้ยื่น) + แถบเตือนบนจอ
+// ใช้ยืนยันว่า entry_channel จากฐานข้อมูลไปถึงใบพิมพ์จริง ไม่ใช่ถูกแค่ในข้อมูลสมมติของเทสต์เลย์เอาต์
+const printedDoc=(win,id)=>win.evaluate(ref=>{
+ const sheets=[...document.querySelectorAll('.sheet')],form=sheets.find(s=>s.querySelector('.form-title')&&s.innerText.includes(ref)),notice=document.querySelector('.screen-note')
+ return{sheets:sheets.length,all:document.body.innerText,letter:sheets[0].innerText,form:form?.innerText??'',
+  note:form?.querySelector('.signed-note')?.textContent.replace(/\s+/g,' ').trim()??'',
+  mayorSigned:sheets[0].querySelectorAll('.sign-signed').length,
+  notice:notice&&{text:notice.textContent,display:getComputedStyle(notice).display}}},id.slice(0,8).toUpperCase())
 // วันทำการที่รถว่างทั้งวัน (ไม่มีเที่ยวเลย) ไว้ให้แต่ละฉากใช้คนละวัน ไม่ชนกันเองและไม่ชนข้อมูลของเทสต์ฐานข้อมูล
 const freeDays=async(count,skip=[])=>{
  const from=thaiDay(Date.now()+3*86400000),to=thaiDay(Date.now()+44*86400000)
@@ -434,7 +442,20 @@ try{
  await page.getByRole('button',{name:'ยืนยันรถเลย',exact:true}).click();await toast('ยืนยันรถแล้ว').waitFor()
  const intake=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).bookings.find(b=>b.patient_name==='[TEST] ผู้ป่วยโทรมา')
  assert.equal(intake.status,'confirmed');assert.equal(intake.entry_channel,'staff','ช่องทางต้องบันทึกว่าเจ้าหน้าที่รับแทน');assert.equal(intake.share,true)
- console.log('PASS staff intake by phone returns to the inbox with vehicle confirmation review, channel recorded as staff')
+ // ── ใบพิมพ์ของคำขอที่รับจองแทน (เจ้าของระบบเลือก 2569-10-01 "ไม่ต้องเซ็น") ──
+ // บอกตามจริงว่าเจ้าหน้าที่รับจองแทน ห้ามอ้างว่าผู้แจ้งยืนยันตัวตนผ่านระบบ และหนังสือนำส่งต้องไม่เขียนขัดกับใบที่แนบ
+ {
+  await row(intake.id).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
+  const [intakeWin]=await Promise.all([page.waitForEvent('popup'),sheet.getByRole('button',{name:'พิมพ์เอกสาร 2 ประเภท',exact:true}).click()])
+  await intakeWin.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
+  const doc=await printedDoc(intakeWin,intake.id)
+  assert.equal(doc.sheets,2,'เที่ยวของคำขอที่รับจองแทนมีผู้ป่วยคนเดียว = หนังสือ 1 + ใบคำขอ 1')
+  assert.match(doc.note,/^เจ้าหน้าที่รับจองแทนทางโทรศัพท์\/หน้าเคาน์เตอร์ เมื่อ \d{1,2} \S+ \d{4} เวลา \d{2}\.\d{2} น\. · เลขอ้างอิง [0-9A-F]{8}$/,`บรรทัดกำกับของใบที่เจ้าหน้าที่รับจองแทน: "${doc.note}"`)
+  assert.ok(doc.form.includes('[TEST] ผู้ป่วยโทรมา'),'ชื่อผู้แจ้งต้องอยู่บนใบคำขอ')
+  for(const claim of ['ยืนยันตัวตน','ลงลายมือชื่อ','ผ่านระบบบริการอิเล็กทรอนิกส์'])assert.ok(!doc.all.includes(claim),`เอกสารของคำขอที่รับจองแทนต้องไม่มี "${claim}"`)
+  await intakeWin.close();await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
+ }
+ console.log('PASS staff intake by phone returns to the inbox with vehicle confirmation review, channel recorded as staff and printed as staff intake without an online-signature claim')
  // ── บัญชีเจ้าหน้าที่เปิดหน้าประชาชน: ฟอร์มต้องไม่เติมข้อมูลของคนที่โทรมาให้รับแทน ──
  // คำขอที่รับแทนบันทึกเจ้าหน้าที่เป็นผู้สร้าง ก่อน 20260922120000 จึงไปอยู่ใน "การจองของฉัน" ของเจ้าหน้าที่ด้วย
  // ถ้าหยิบมาเติม เจ้าหน้าที่ที่จองให้ตัวเองจะส่งคำขอด้วยชื่อ เบอร์ และจุดรับของคนอื่นโดยไม่รู้ตัว
@@ -545,6 +566,13 @@ try{
   const printed=await letterWin.evaluate(()=>document.body.innerText)
   assert.ok(printed.includes('ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย'),'ต้องได้หนังสือนำส่ง')
   assert.ok(printed.includes(b1.slice(0,8).toUpperCase()),'ต้องเป็นเอกสารของเที่ยวที่เปิดอยู่')
+  // ผู้จองล็อกอินจองเอง (entry_channel 'online') = ลงชื่อออนไลน์ ไม่ขอให้เซ็นปากกา (เจ้าของระบบสั่ง 2569-10-01)
+  const doc=await printedDoc(letterWin,b1)
+  assert.match(doc.note,/^ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service เมื่อ \d{1,2} \S+ \d{4} เวลา \d{2}\.\d{2} น\. · เลขอ้างอิง [0-9A-F]{8}$/,`บรรทัดกำกับของใบที่ผู้จองยื่นเอง: "${doc.note}"`)
+  assert.ok(!doc.form.includes('ลงลายมือชื่อ')&&!doc.form.includes('รับจองแทน'),'ใบของผู้ที่จองเองต้องไม่ขอให้เซ็นปากกา และไม่ติดข้อความของคำขอที่รับจองแทน')
+  // หนังสือนำส่ง: นายกเซ็นปากกา ระบบไม่พิมพ์ชื่อเป็นลายมือชื่อ · ฐานทดสอบไม่มีทะเบียนผู้ลงนาม = ต้องเตือนบนจอว่าไปตั้งที่ไหน
+  assert.equal(doc.mayorSigned,0,'หนังสือนำส่งต้องไม่มีชื่อพิมพ์แทนลายมือชื่อของนายก')
+  assert.ok(doc.notice?.text.includes('ผู้ลงนามเอกสาร')&&doc.notice.display==='block','ยังไม่ได้ตั้งชื่อนายก หน้าต่างพิมพ์ต้องขึ้นแถบเตือนบนจอ')
   assert.equal(clicks.printFromHeader,1);await letterWin.close()
  }
  await sheet.getByRole('button',{name:'กรอกเลขหนังสือ',exact:true}).click()

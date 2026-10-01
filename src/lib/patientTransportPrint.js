@@ -18,6 +18,14 @@
 // ⚠️ ใบคำขอไม่มีกล่อง "สำหรับคณะกรรมการกองทุน" (ความเห็น / อนุมัติ–ไม่อนุมัติ / ช่องลงนามประธานและเหรัญญิก) แล้ว
 // เจ้าของระบบสั่งตัด 2569-10-01: ใบนี้ยื่นต่อนายก เรื่องจบที่นายก ยังไม่ไปถึงกองทุน
 // ห้ามใส่กลับเองโดยไม่ถาม — เทสต์ request-form-has-no-fund-committee-box กันไว้
+// ประโยคท้ายบรรทัดกำกับ "การพิจารณาเป็นอำนาจของคณะกรรมการกองทุน มิใช่ของ อปท." ตัดออกด้วยเหตุผลเดียวกัน
+// (สั่งวันเดียวกัน) — เทสต์ pdpa-and-template-notes-present กันไว้
+//
+// ⚠️ การลงชื่อ (เจ้าของระบบสั่ง 2569-10-01)
+//   ใบคำขอ       — ชื่อผู้แจ้งอยู่บนเส้นทุกกรณี บรรทัดกำกับบอกตามจริงว่าคำขอเข้ามาทางไหน (ดู formSheet)
+//   หนังสือนำส่ง — นายกเซ็นปากกา ระบบพิมพ์ให้แค่ชื่อในวงเล็บ + ตำแหน่ง จากทะเบียนผู้ลงนามกลาง
+//                  ห้ามพิมพ์ชื่อนายกเป็นลายมือชื่อ: นายกไม่ได้ทำอะไรในระบบตอนพิมพ์ จะกลายเป็นระบบลงนาม
+//                  แทนผู้มีอำนาจบนหนังสือที่ส่งออกนอก อปท. — เทสต์ letter-signer-from-registry-never-auto-signed กันไว้
 
 import {
   GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText,
@@ -159,7 +167,16 @@ ${govSignBlockCss()}
   .two-col > div { flex: 1 1 0; min-width: 0; }
   /* 10pt: บรรทัดกำกับการลงชื่อผ่านระบบ ต้องอ่านออกแต่ไม่แย่งน้ำหนักกับชื่อผู้ลงนาม */
   .signed-note { margin: 1mm 0 0; font-size: 10pt; color: #333; line-height: 1.2; text-align: center; }
-  .origin { ${GOV_ESERVICE_ORIGIN_CSS} text-align: center; margin-top: 2mm; }`
+  .origin { ${GOV_ESERVICE_ORIGIN_CSS} text-align: center; margin-top: 2mm; }
+  /* แถบเตือนของหน้าต่างพิมพ์ (ดู signerNotice) — เห็นบนจอเท่านั้น ไม่ลงกระดาษ
+     ซ่อนเป็นค่าตั้งต้นแล้วเปิดเฉพาะ screen: ตอนพิมพ์จึงไม่กินที่และไม่ดันหนังสือตกหน้า 2 */
+  .screen-note { display: none; }
+  @media screen {
+    .screen-note {
+      display: block; margin: 3mm; padding: 2mm 4mm;
+      border: 1px solid #b45309; background: #fef3c7; color: #78350f;
+    }
+  }`
 }
 
 // ---------------------------------------------------------------------------
@@ -266,10 +283,16 @@ function letterSheet({
     ? appointmentDateOnly(header.consent_at)
     : appointmentDateOnly(form.consent_at)
 
+  // "ผ่านระบบบริการอิเล็กทรอนิกส์" เขียนได้เฉพาะคำขอที่ผู้ยื่นส่งเข้าระบบเอง — คำขอของระบบจองคิวที่เจ้าหน้าที่
+  // รับจองแทน (หรือไม่รู้ช่องทาง) ตัดวลีนี้ออก ไม่เติมคำใหม่ ไม่งั้นหนังสือที่นายกลงนามขัดกับใบคำขอที่แนบ
+  // ซึ่งเขียนว่าเจ้าหน้าที่รับจองแทนทางโทรศัพท์ (เจ้าของระบบอนุมัติ 2569-10-01)
+  // ชุดเอกสารของคำขอแบบเดิม (channel online/counter) ได้ถ้อยคำเท่าเดิมทุกตัวอักษร
+  const viaEService = !['booking', 'booking_staff'].includes(form?.signed_by?.channel)
+
   // ย่อหน้าแรกให้ข้อมูลเท่าที่ผู้รับต้องใช้ตัดสินใจจัดรถ รายละเอียดที่เหลืออยู่ในใบแนบ
   // (หลัก data minimization — ไม่ยกทุกช่องมาไว้ในหนังสือที่เวียนผ่านหลายมือ)
   const para1 = passengerSummary || `ด้วย ${textOr(parent?.requester_name, 'ผู้ยื่นคำขอ')} ได้ยื่นคำขอต่อ${orgName} `
-    + `ผ่านระบบบริการอิเล็กทรอนิกส์ ตามเลขอ้างอิง ${referenceNo || '-'} `
+    + `${viaEService ? 'ผ่านระบบบริการอิเล็กทรอนิกส์ ' : ''}ตามเลขอ้างอิง ${referenceNo || '-'} `
     + `เพื่อขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย สำหรับ ${patientName || '-'}${patientAge} `
     + `ไปยัง ${destination || '-'} ในวันที่ ${appointmentText(header?.appointment_at) || '-'} `
     + `${mobility ? `ลักษณะการเคลื่อนไหวของผู้ป่วย ${mobility} ` : ''}`
@@ -364,16 +387,22 @@ function formCss() {
  *
  * ช่องลงนาม "ผู้ยื่นคำขอ" — ใบนี้ **พิมพ์ชื่อผู้ยื่นบนเส้นทุกกรณี** (เจ้าของระบบสั่ง 2569-09-10)
  * ต่างจากใบอื่นในระบบที่เว้นเส้นไว้เมื่อเจ้าหน้าที่คีย์แทน เหตุผลคือใบนี้ไม่ได้เป็นหลักฐาน
- * ผูกพันความรับผิดของผู้ยื่น แต่เป็นใบนำข้อมูลไปให้คณะกรรมการกองทุนพิจารณา ชื่อบนเส้นจึงทำ
+ * ผูกพันความรับผิดของผู้ยื่น แต่เป็นใบขอความอนุเคราะห์ถึงนายก ชื่อบนเส้นจึงทำ
  * หน้าที่ระบุตัวผู้ขอ ไม่ใช่การรับรองว่าลงลายมือชื่อแล้ว
  *
- * ⚠️ สิ่งที่ห้ามรวบเป็นอันเดียวคือ "บรรทัดกำกับ" ใต้ชื่อ ไม่ใช่ตัวชื่อ:
- *   online  — ผู้ยื่นล็อกอินยืนยันตัวตนแล้วยื่นเอง (form.signed_by.channel === 'online')
- *             กำกับได้ว่า "ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service เมื่อ…"
- *   counter — เจ้าหน้าที่คีย์แทนที่เคาน์เตอร์ ผู้ยื่น "ไม่ได้" ยืนยันตัวตนในระบบเลย
- *             ห้ามใช้ข้อความของโหมด online เด็ดขาด เพราะเป็นการอ้างข้อเท็จจริงที่ไม่เกิดขึ้น
- *             บนเอกสารที่ส่งออกไปให้องค์กรภายนอกใช้ประกอบการอนุมัติ — ต้องบอกตรงๆ ว่า
- *             เจ้าหน้าที่บันทึกแทน และให้ผู้ยื่นเซ็นรับรองทับ
+ * ⚠️ สิ่งที่ห้ามรวบเป็นอันเดียวคือ "บรรทัดกำกับ" ใต้ชื่อ ไม่ใช่ตัวชื่อ (form.signed_by.channel):
+ *   online        — ผู้ยื่นล็อกอินยืนยันตัวตนแล้วยื่นเอง
+ *                   กำกับได้ว่า "ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service เมื่อ…"
+ *                   ระบบจองคิวใช้โหมดนี้กับคำขอที่ entry_channel = 'online' (เจ้าของระบบสั่ง 2569-10-01)
+ *   counter       — คำขอแบบเดิมที่เจ้าหน้าที่คีย์แทนที่เคาน์เตอร์ ผู้ยื่น "ไม่ได้" ยืนยันตัวตนในระบบเลย
+ *                   ต้องบอกตรงๆ ว่าเจ้าหน้าที่บันทึกแทน และให้ผู้ยื่น (ซึ่งอยู่หน้าเคาน์เตอร์) เซ็นรับรองทับ
+ *   booking_staff — ระบบจองคิว: เจ้าหน้าที่รับจองแทนทางโทรศัพท์/หน้าเคาน์เตอร์ (entry_channel = 'staff')
+ *                   บอกตามจริงว่าเจ้าหน้าที่รับจองแทนเมื่อไร และ **ไม่ขอลายมือชื่อ** — เจ้าของระบบเลือก
+ *                   2569-10-01 หลังรับทราบว่าบนกระดาษจะไม่มีลายมือชื่อผู้แจ้ง หลักฐานความยินยอมเหลือแค่
+ *                   บันทึกในระบบ (ยังไม่ได้ยืนยันกับตัวบทกฎหมายคุ้มครองข้อมูลส่วนบุคคลว่าเพียงพอ)
+ *   booking       — ระบบจองคิวที่ไม่รู้ช่องทาง (ไม่ควรเกิด) ไม่อ้างทั้งสองแบบ ขอให้เซ็นรับรองทับ
+ *   ห้ามใช้ข้อความของโหมด online กับโหมดอื่นเด็ดขาด เพราะเป็นการอ้างข้อเท็จจริงที่ไม่เกิดขึ้น
+ *   บนเอกสารที่ส่งออกไปให้องค์กรภายนอก
  *
  * ⚠️ กองทุนเป็นองค์กรภายนอก อาจมีระเบียบของตนที่ต้องการลายมือชื่อสด — ถ้ากองทุนไม่รับ
  * ลายมือชื่ออิเล็กทรอนิกส์ ให้ผู้ยื่นเซ็นทับบนใบที่พิมพ์ออกมา ระบบไม่ได้รับรองแทนกองทุน
@@ -382,7 +411,8 @@ function formSheet({
   header, form = {}, parent = {}, tenant, referenceNo = '', docDate = '',
 }) {
   const orgName = tenant?.name?.trim() || 'หน่วยงาน'
-  const signedOnline = form?.signed_by?.channel === 'online'
+  const channel = form?.signed_by?.channel
+  const signedOnline = channel === 'online'
   const signedStamp = signedOnline ? appointmentText(form?.signed_at) : ''
   // เวลาที่เจ้าหน้าที่บันทึกคำขอแทน — ค่าเดียวกับ signed_at แต่ความหมายต่างกันคนละเรื่อง
   // (โหมดนี้ signed_at คือเวลาที่กดบันทึก ไม่ใช่เวลาที่ผู้ยื่นลงชื่อ) จึงแยกตัวแปรกันไว้ให้ชัด
@@ -467,8 +497,13 @@ ${rows.map(([label, value]) => `    <tr><th>${label}</th><td>${value ? esc(value
       signed: requesterName ? esc(requesterName) : '',
       below: [signatureName(requesterName, REQUESTER_LINE_W)],
     })}
-    ${form?.signed_by?.channel === 'booking'
+    ${channel === 'booking'
       ? `<p class="signed-note">จัดทำจากข้อมูลการจองรถ${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}<br>ผู้ยื่นคำขอโปรดลงลายมือชื่อรับรองทับชื่อข้างต้น</p>`
+      : channel === 'booking_staff'
+      // ไม่มีบรรทัดขอให้เซ็นทับ — เจ้าของระบบเลือก 2569-10-01 (ผู้แจ้งโทรมา ไม่ได้อยู่ให้เซ็น)
+      // ชื่อบนเส้นคือการระบุตัวผู้ขอ บรรทัดนี้บอกว่าใครเป็นคนบันทึกและเมื่อไร ห้ามเติมคำว่ายืนยันตัวตน
+      ? `<p class="signed-note">เจ้าหน้าที่รับจองแทนทางโทรศัพท์/หน้าเคาน์เตอร์${
+          counterStamp ? ` เมื่อ ${esc(counterStamp)}` : ''}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`
       : signedOnline
       ? `<p class="signed-note">ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service${
           signedStamp ? ` เมื่อ ${esc(signedStamp)}` : ''}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`
@@ -483,12 +518,13 @@ ${rows.map(([label, value]) => `    <tr><th>${label}</th><td>${value ? esc(value
 
   <!-- ⚠️ ไม่มีกล่อง "สำหรับคณะกรรมการกองทุน" (ความเห็น / อนุมัติ–ไม่อนุมัติ / ช่องลงนามประธานและเหรัญญิก) โดยเจตนา —
        เจ้าของระบบสั่งตัดออก 2569-10-01 เพราะใบนี้ยื่นต่อนายก เรื่องจบที่นายก ยังไม่ไปถึงกองทุน
-       ห้ามใส่กลับเองโดยไม่ถาม — เทสต์ request-form-has-no-fund-committee-box กันไว้ -->
+       ห้ามใส่กลับเองโดยไม่ถาม — เทสต์ request-form-has-no-fund-committee-box กันไว้
+       บรรทัดกำกับข้างล่างไม่มีประโยคว่าการพิจารณาเป็นอำนาจของกองทุนแล้วด้วยเหตุผลเดียวกัน (สั่งวันเดียวกัน)
+       — เทสต์ pdpa-and-template-notes-present กันไว้ -->
 
   <p class="note-template">
     จัดทำตามแบบตัวอย่างกลาง "ใบคำขอรับสวัสดิการ" ของสถาบันพัฒนาองค์กรชุมชน (องค์การมหาชน)
-    ปรับเป็นใบคำขอยื่นต่อ${esc(orgName)}เพื่อประสานกองทุนเจ้าของรถ · หากกองทุนมีแบบของตนเองให้ใช้แบบนั้นแทน
-    · การพิจารณาเป็นอำนาจของคณะกรรมการกองทุน มิใช่ของ${esc(orgName)}</p>
+    ปรับเป็นใบคำขอยื่นต่อ${esc(orgName)}เพื่อประสานกองทุนเจ้าของรถ · หากกองทุนมีแบบของตนเองให้ใช้แบบนั้นแทน</p>
   <div class="origin">${esc(govEServiceOriginText(orgName))}</div>
 </div>`
 }
@@ -509,6 +545,16 @@ ${body}
 </body></html>`
 }
 
+// แถบเตือนบนจอของหน้าต่างพิมพ์ (ไม่ลงกระดาษ) — ชื่อนายกในวงเล็บของหนังสือนำส่งมาจากทะเบียนผู้ลงนามกลาง
+// ยังไม่ได้ตั้ง = เว้นวงเล็บว่าง ห้ามเดาชื่อแทน แต่ต้องบอกคนพิมพ์ว่าทำไมว่างและไปตั้งที่ไหน
+// (เดิมออกเป็นจุดไข่ปลาเงียบ ๆ เจ้าหน้าที่ไม่รู้ว่าต้องทำอะไร — เจ้าของระบบสั่ง 2569-10-01)
+// อยู่ในตัวเอกสาร ไม่ใช่ในหน้าจอเจ้าหน้าที่ เพราะปุ่มพิมพ์มี 3 จุด ทุกจุดต้องเห็นเหมือนกัน
+function signerNotice(mayor) {
+  if (String(mayor?.name ?? '').trim()) return ''
+  return '<div class="screen-note">ยังไม่ได้ตั้งชื่อนายกในเมนู “ผู้ลงนามเอกสาร” หนังสือนำส่งจึงเว้นวงเล็บว่างไว้ให้เขียนชื่อเอง'
+    + ' · ผู้ดูแลระบบตั้งได้ที่ แผงควบคุมแอดมิน &gt; ผู้ลงนามเอกสาร (ข้อความนี้ไม่ถูกพิมพ์)</div>\n'
+}
+
 /**
  * ชุดเอกสารส่งกองทุน 2 แผ่น (หนังสือนำส่ง + ใบคำขอ) — ปุ่มเดียวของฝั่งเจ้าหน้าที่
  * พิมพ์ทีเดียวได้ครบชุดที่ต้องเข้าแฟ้มคู่กัน ไม่ต้องกด 2 ปุ่มแล้วลืมใบใดใบหนึ่ง
@@ -517,7 +563,7 @@ export function buildPatientTransportPacketHtml(args) {
   return page(
     'ใบคำขอถึงนายกและหนังสือนำส่งกองทุน (รถรับ-ส่งผู้ป่วย)',
     `${letterCss()}${formCss()}`,
-    `${letterSheet(args)}\n${formSheet(args)}`,
+    `${signerNotice(args.mayor)}${letterSheet(args)}\n${formSheet(args)}`,
   )
 }
 
@@ -537,7 +583,8 @@ export function buildPatientTransportFormHtml(args) {
 // ระบบจองคิวรถ: หนังสือนำส่งหนึ่งฉบับต่อเที่ยว + ใบคำขอรายผู้ป่วยตามแบบที่เจ้าของระบบเลือก
 // ใช้เลขหนังสือของเที่ยวเพียงครั้งเดียว แม้ร่วมเที่ยวหลายคน ไม่ออกหลายหนังสือด้วยเลขเดียวกัน
 // ข้อมูลที่การจองไม่ได้เก็บ (อายุ/สมาชิก/ประเภทนัด/ที่อยู่ผู้ยื่น) เว้นว่าง ห้ามเดาจากจุดรับ
-// ไม่ระบุว่าผู้ยื่นลงชื่อออนไลน์ เพราะการจองอาจเป็นเจ้าหน้าที่บันทึกแทน
+// บรรทัดกำกับใต้ชื่อผู้ยื่นตามช่องทางที่คำขอเข้ามา (patient_bookings.entry_channel) — ระบุว่าลงชื่อออนไลน์
+// เฉพาะคำขอที่ผู้จองล็อกอินยื่นเอง คำขอที่เจ้าหน้าที่รับจองแทนบอกตามจริงว่ารับจองแทน (ดู formSheet)
 function tripPassengers(bookings, trip) {
   return (bookings ?? [])
     .filter(b => b.trip_id === trip?.id && ['confirmed', 'completed'].includes(b.status))
@@ -548,26 +595,34 @@ export function buildTripForwardLetterHtml(args) {
   const { trip, bookings, partner } = args
   const people = tripPassengers(bookings, trip)
   if (!people.length) throw new Error('ไม่มีคำขอที่ยืนยันแล้วสำหรับพิมพ์ในเที่ยวนี้')
-  const packets = people.map(b => ({
-    ...args,
-    referenceNo: String(b.id).slice(0, 8).toUpperCase(),
-    docDate: b.created_at ? thaiDay(b.created_at) : '',
-    header: {
-      forward_letter_no: trip.forward_letter_no, forward_letter_date: trip.forward_letter_date,
-      partner_name_snapshot: textOr(partner?.name, 'กองทุนเจ้าของรถ'),
-      recipient_title_snapshot: textOr(partner?.recipient_title, `ประธาน${textOr(partner?.name, 'กองทุนเจ้าของรถ')}`),
-      appointment_at: b.appointment_at, mobility: b.mobility,
-      consent_at: b.consent_at,
-    },
-    parent: { requester_name: b.requester_name, requester_phone: b.phone },
-    form: {
-      patient_name: b.patient_name, pickup_address: b.pickup,
-      destination: b.route_label || trip.plan?.route_label,
-      requester_relation: b.relation, companions: b.companions,
-      trip_type: b.return_mode === 'one_way' ? 'one_way' : 'round_trip',
-      return_note: BOOKING_RETURN_MODES[b.return_mode], signed_by: { channel: 'booking' },
-    },
-  }))
+  const packets = people.map(b => {
+    // ⚠️ เทียบค่าตรงตัวทั้งสองทาง ห้ามเขียน "ไม่ใช่ staff = online" — ค่าที่ไม่รู้จักหรือไม่มี ต้องตกไป
+    // 'booking' ที่ไม่อ้างอะไรเลย (กติกาเดียวกับทุกใบ: อ้างว่าลงชื่อออนไลน์ได้เมื่อรู้แน่เท่านั้น)
+    const channel = b.entry_channel === 'online' ? 'online'
+      : b.entry_channel === 'staff' ? 'booking_staff' : 'booking'
+    return {
+      ...args,
+      referenceNo: String(b.id).slice(0, 8).toUpperCase(),
+      docDate: b.created_at ? thaiDay(b.created_at) : '',
+      header: {
+        forward_letter_no: trip.forward_letter_no, forward_letter_date: trip.forward_letter_date,
+        partner_name_snapshot: textOr(partner?.name, 'กองทุนเจ้าของรถ'),
+        recipient_title_snapshot: textOr(partner?.recipient_title, `ประธาน${textOr(partner?.name, 'กองทุนเจ้าของรถ')}`),
+        appointment_at: b.appointment_at, mobility: b.mobility,
+        consent_at: b.consent_at,
+      },
+      parent: { requester_name: b.requester_name, requester_phone: b.phone },
+      form: {
+        patient_name: b.patient_name, pickup_address: b.pickup,
+        destination: b.route_label || trip.plan?.route_label,
+        requester_relation: b.relation, companions: b.companions,
+        trip_type: b.return_mode === 'one_way' ? 'one_way' : 'round_trip',
+        return_note: BOOKING_RETURN_MODES[b.return_mode],
+        // created_at = เวลาที่คำขอถูกส่งเข้าระบบ: ผู้จองส่งเอง (online) หรือเจ้าหน้าที่กดบันทึกแทน (staff)
+        signed_by: { channel }, signed_at: channel === 'booking' ? null : b.created_at,
+      },
+    }
+  })
   const letter = { ...packets[0], attachmentCount: people.length }
   if (people.length > 1) {
     letter.referenceNo = ''
@@ -579,7 +634,7 @@ export function buildTripForwardLetterHtml(args) {
   return page(
     'ใบคำขอถึงนายกและหนังสือนำส่งกองทุน (รถรับ-ส่งผู้ป่วย)',
     `${letterCss()}${formCss()}`,
-    [letterSheet(letter), ...packets.map(formSheet)].join('\n'),
+    signerNotice(args.mayor) + [letterSheet(letter), ...packets.map(formSheet)].join('\n'),
   )
 }
 
