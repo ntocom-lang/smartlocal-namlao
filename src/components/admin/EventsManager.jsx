@@ -434,9 +434,11 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
               })}
             </p>
             {canManage && (
+              // ส่งวันที่ที่เลือกในปฏิทินไปด้วย — เดิมเรียก openAdd เปล่าๆ ฟอร์มจึงขึ้นวันนี้เสมอ
+              // แม้จะแตะวันอื่นอยู่ (เจ้าของระบบเจอ 2569-10-01: เลือก 30 ต.ค. แต่ฟอร์มขึ้น 1 ต.ค.)
               <button
                 type="button"
-                onClick={openAdd}
+                onClick={() => openAdd(dayKey(selectedDay))}
                 className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
               >
                 <Plus size={13} /> เพิ่มกิจกรรมวันนี้
@@ -702,9 +704,11 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     setAssignOpen(false)
   }
 
-  function openAdd() {
-    const today = todayStr()
-    setForm({ ...EMPTY_EVENT_FORM, event_date: today })
+  // date = วันที่ตั้งต้นของฟอร์ม (YYYY-MM-DD) จากวันที่เลือกในปฏิทิน · ไม่ส่งมาใช้วันนี้
+  // เช็กรูปแบบเอง เพราะปุ่มที่ผูก onClick={openAdd} ตรงๆ จะส่ง event ของการคลิกเข้ามาแทน
+  function openAdd(date) {
+    const startDate = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : todayStr()
+    setForm({ ...EMPTY_EVENT_FORM, event_date: startDate })
     setMultiDay(false)
     setRepeatYearly(false)
     setLocationCustom(false)
