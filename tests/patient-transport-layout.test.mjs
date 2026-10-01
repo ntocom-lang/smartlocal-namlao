@@ -4,8 +4,8 @@
 // ไม่ต้องล็อกอิน ไม่แตะฐานข้อมูล รันด้วย: node tests/patient-transport-layout.test.mjs
 //
 // ทำไมต้องมี: ทั้งสองใบต้องจบใบละ 1 แผ่น — หนังสือนำส่งที่ล้นไปหน้า 2 ทำให้ช่องลงนามของนายก
-// หลุดไปอยู่คนละหน้ากับเนื้อความ ซึ่งเป็นเอกสารที่ใช้ไม่ได้ ส่วนใบคำขอมีตาราง 10 แถว +
-// บล็อกลงนามของกองทุนอีก 2 ช่อง ที่อยู่จุดรับยาวๆ ดันใบตกหน้า 2 ได้จริง
+// หลุดไปอยู่คนละหน้ากับเนื้อความ ซึ่งเป็นเอกสารที่ใช้ไม่ได้ ส่วนใบคำขอมีตารางรายละเอียด
+// ที่อยู่จุดรับยาวๆ ดันใบตกหน้า 2 ได้จริง (กล่องของคณะกรรมการกองทุนตัดออกแล้ว 2569-10-01)
 //
 // ⚠️ วัดที่ viewport 794px = 210mm พอดี เพราะโหมดพิมพ์ของใบชุดนี้ตั้ง .sheet เป็น width:auto
 // แล้วให้ขอบกระดาษมาจาก padding (govPagePadding) — viewport กว้างกว่านี้ = ข้อความตัดบรรทัด
@@ -222,7 +222,7 @@ const checks = [
   },
   {
     name: 'welfare-form-one-page',
-    reason: 'ใบคำขอมีตาราง 10 แถว + ช่องลงนามกองทุน 2 ช่อง ที่อยู่ยาวๆ ดันตกหน้า 2 ได้',
+    reason: 'ใบคำขอมีตารางรายละเอียด + ช่องลงนามผู้ยื่น ที่อยู่ยาวๆ ดันตกหน้า 2 ได้',
     async run(browser) {
       const page = await render(browser, buildPatientTransportPacketHtml(args()))
       try {
@@ -270,7 +270,7 @@ const checks = [
   },
   {
     name: 'no-horizontal-overflow',
-    reason: 'พื้นที่พิมพ์กว้าง 16 ซม. ตาราง กล่องกองทุน หรือช่องลงนามล้นขอบขวาไม่ได้',
+    reason: 'พื้นที่พิมพ์กว้าง 16 ซม. ตาราง หัวหนังสือ หรือช่องลงนามล้นขอบขวาไม่ได้',
     async run(browser) {
       const page = await render(browser, buildPatientTransportPacketHtml(args()))
       try {
@@ -279,7 +279,7 @@ const checks = [
             const style = getComputedStyle(sheet)
             const inner = sheet.getBoundingClientRect().width
               - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
-            return [...sheet.querySelectorAll('table, .two-col, .committee, .letter-head')]
+            return [...sheet.querySelectorAll('table, .two-col, .letter-head')]
               .map(el => ({ index, diff: el.getBoundingClientRect().width - inner }))
               .filter(entry => entry.diff > 1)
           }))
@@ -297,10 +297,8 @@ const checks = [
     async run(browser) {
       const page = await render(browser, buildPatientTransportPacketHtml(args()))
       try {
-        // ผู้ยื่นคำขอ 1 ช่อง + กรรมการกองทุน 2 ช่อง (ช่องละ 2 บรรทัดใต้เส้น) = อย่างน้อย 5 บรรทัด
-        await assertSignBlockStandard(page, { minRows: 3, minBelow: 5 })
-        // ช่องกรรมการกองทุนอยู่บล็อกเดียวกัน 2 คอลัมน์ เส้นต้องยาวเท่ากัน
-        await assertSignLinesAligned(page, '.committee .sign-row')
+        // เหลือช่องผู้ยื่นคำขอช่องเดียว (ชื่อในวงเล็บใต้เส้น 1 บรรทัด) — ช่องกรรมการกองทุน 2 ช่องตัดออกแล้ว 2569-10-01
+        await assertSignBlockStandard(page, { minRows: 1, minBelow: 1 })
       } finally { await page.close() }
     },
   },
@@ -377,19 +375,29 @@ const checks = [
     },
   },
   {
-    name: 'fund-committee-fields-blank',
-    reason: 'คณะกรรมการกองทุนไม่ได้อยู่ในระบบนี้ ระบบต้องไม่กรอกความเห็นหรือชื่อผู้ลงนามให้',
+    name: 'request-form-has-no-fund-committee-box',
+    reason: 'เจ้าของระบบสั่งตัดกล่อง "สำหรับคณะกรรมการกองทุน" ออกจากใบคำขอ 2569-10-01 — ใบนี้ยื่นต่อนายก เรื่องจบที่นายก'
+      + ' ยังไม่ไปถึงกองทุน ต้องไม่มีช่องอนุมัติ/ไม่อนุมัติหรือช่องลงนามของกรรมการกองทุนในทุกทางที่พิมพ์ใบคำขอ',
     async run(browser) {
-      const page = await render(browser, buildPatientTransportPacketHtml(args()))
-      try {
-        const committee = await page.evaluate(() =>
-          document.querySelector('.committee').innerText.replace(/\s+/g, ' '))
-        assert.ok(!committee.includes('อนุมัติแล้ว'), 'กล่องกองทุนมีผลการพิจารณาที่ระบบเติมให้')
-        // ต้องไม่มีชื่อคนจริงคนใดหลุดเข้าไปในช่องลงนามของกองทุน
-        for (const name of [MAYOR.name, PARENT.requester_name, FORM.patient_name]) {
-          assert.ok(!committee.includes(name), `กล่องกองทุนมีชื่อ "${name}" อยู่ในช่องลงนาม`)
-        }
-      } finally { await page.close() }
+      for (const [label, html] of [
+        ['ชุดเอกสารคำขอ', buildPatientTransportPacketHtml(args())],
+        ['ใบคำขอฝั่งประชาชน', buildPatientTransportFormHtml(args())],
+        ['หนังสือต่อเที่ยว', buildTripForwardLetterHtml({ ...tripArgs(), bookings: TRIP_BOOKINGS.slice(0, 2) })],
+      ]) {
+        const page = await render(browser, html)
+        try {
+          assert.equal(await page.locator('.committee').count(), 0, `${label}: ยังมีกล่องของกองทุน`)
+          const forms = await page.locator('.sheet').filter({ has: page.locator('.form-title') }).allInnerTexts()
+          assert.ok(forms.length > 0, `${label}: ไม่พบใบคำขอ`)
+          for (const text of forms) {
+            for (const word of ['สำหรับคณะกรรมการกองทุน', 'ไม่อนุมัติ', 'ประธานคณะกรรมการกองทุน', 'เหรัญญิก']) {
+              assert.ok(!text.includes(word), `${label}: ใบคำขอยังมี "${word}"`)
+            }
+            // ส่วนของผู้ยื่นต้องอยู่ครบ — ตัดเฉพาะกล่องของกองทุน
+            for (const word of ['หลักฐาน', 'ผู้ยื่นคำขอ']) assert.ok(text.includes(word), `${label}: "${word}" หายไปด้วย`)
+          }
+        } finally { await page.close() }
+      }
     },
   },
   {
@@ -415,8 +423,8 @@ const checks = [
           `บรรทัดกำกับไม่ได้บอกว่าเจ้าหน้าที่บันทึกแทน: "${info.note}"`)
         assert.ok(/ลงลายมือชื่อรับรอง/.test(info.note),
           'ไม่ได้บอกให้ผู้ยื่นเซ็นรับรองทับ ทั้งที่ยังไม่มีลายมือชื่อจริงบนใบ')
-        // เหลือเส้นให้เขียนมือเฉพาะของกองทุน 2 ช่อง (ประธาน + เหรัญญิก/พยาน)
-        assert.equal(info.lines, 2, `มีเส้นลงนาม ${info.lines} เส้น ต้องเป็น 2`)
+        // ไม่เหลือเส้นเปล่าให้เขียนมือ — ช่องผู้ยื่นพิมพ์ชื่อบนเส้นแล้ว ส่วนช่องของกรรมการกองทุนตัดออก 2569-10-01
+        assert.equal(info.lines, 0, `มีเส้นลงนามเปล่า ${info.lines} เส้น ต้องไม่มี`)
       } finally { await page.close() }
     },
   },
@@ -447,7 +455,7 @@ const checks = [
         const page = await render(browser, buildTripForwardLetterHtml(input))
         try {
           assert.equal(await page.locator('.sheet').count(), count + 1)
-          assert.equal(await page.locator('.committee').count(), count)
+          assert.equal(await page.locator('.form-title').count(), count, 'ใบคำขอต้องครบคนละ 1 ใบ')
           const text = await page.locator('body').innerText()
           assert.ok(!text.includes('CANCELLED_PATIENT') && !text.includes('OTHER_TRIP_PATIENT'))
           assert.ok(text.includes(`จำนวน ${count} ฉบับ`))
@@ -455,7 +463,8 @@ const checks = [
             const mm = await sheetContentMm(page, i)
             assert.ok(mm <= ONE_PAGE_BUDGET_MM, `แผ่น ${i + 1} สูง ${mm.toFixed(1)}mm เกิน ${ONE_PAGE_BUDGET_MM}mm`)
           }
-          await assertSignBlockStandard(page, { minRows: count * 3, minBelow: count * 5 })
+          // ใบคำขอละ 1 ช่อง (ผู้ยื่นคำขอ) — ช่องกรรมการกองทุน 2 ช่องต่อใบตัดออกแล้ว 2569-10-01
+          await assertSignBlockStandard(page, { minRows: count, minBelow: count })
           if (count === 1 && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
             for (let i = 0; i < 2; i++) await page.locator('.sheet').nth(i).screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/patient-document-${i + 1}.png` })
           }
@@ -484,7 +493,7 @@ const checks = [
         assert.ok(form.includes('โปรดลงลายมือชื่อรับรอง'))
         assert.ok(!form.includes('ลงชื่อโดยการยืนยันตัวตน'))
         assert.ok(!form.includes('เจ้าหน้าที่บันทึกคำขอแทนที่เคาน์เตอร์'))
-        assert.equal(await page.locator('.committee .box--on').count(), 0)
+        assert.equal(await page.locator('.box--on').count(), 0, 'ระบบต้องไม่ติ๊กช่องใดให้เอง')
       } finally { await page.close() }
     },
   },

@@ -15,8 +15,9 @@
 // กองทุนแต่ละแห่งมีระเบียบและแบบฟอร์มของตนเอง ถ้ากองทุนปลายทางมีแบบของตัวเองต้องใช้แบบนั้นแทน
 // (บรรทัดกำกับท้ายใบบอกเรื่องนี้ไว้แล้ว ห้ามตัดออก)
 //
-// ⚠️ ช่องลงนามของคณะกรรมการกองทุน (ประธาน/เหรัญญิก/พยาน) ต้องว่างเสมอทุกกรณี — คนเหล่านั้น
-// ไม่ได้อยู่ในระบบนี้และยังไม่ได้พิจารณาอะไรตอนพิมพ์ใบ
+// ⚠️ ใบคำขอไม่มีกล่อง "สำหรับคณะกรรมการกองทุน" (ความเห็น / อนุมัติ–ไม่อนุมัติ / ช่องลงนามประธานและเหรัญญิก) แล้ว
+// เจ้าของระบบสั่งตัด 2569-10-01: ใบนี้ยื่นต่อนายก เรื่องจบที่นายก ยังไม่ไปถึงกองทุน
+// ห้ามใส่กลับเองโดยไม่ถาม — เทสต์ request-form-has-no-fund-committee-box กันไว้
 
 import {
   GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText,
@@ -95,7 +96,7 @@ function appointmentDateOnly(value) {
 
 // ช่องลงนามใช้ของกลาง govSignBlock.js — ของเดิมเป็นสำเนาของแบบก่อน PR #142 ที่ให้แกนยืด
 // ตามเนื้อหา ทำให้เส้นในแต่ละช่องยาวไม่เท่ากัน (กติกาข้อ 1 ของมาตรฐานห้ามไว้)
-const SIGN_LINE_W = '44mm'      // ช่องลงนามของคณะกรรมการกองทุน (ค่าเดิมของใบนี้)
+const SIGN_LINE_W = '44mm'      // วงเล็บเว้นชื่อผู้ลงนามหนังสือนำส่ง (ค่าเดิมของใบนี้)
 const REQUESTER_LINE_W = GOV_SIGN_LINE_W_WIDE  // ช่องผู้ยื่นคำขอกลางใบ
 
 function signatureName(name, width = SIGN_LINE_W) {
@@ -355,8 +356,6 @@ function formCss() {
   th, td { border: 1px solid #000; padding: 0.4mm 2mm; vertical-align: top; text-align: left; }
   th { width: 34mm; font-weight: 400; background: #f4f4f4; }
   .evidence { margin-top: 1.5mm; }
-  .committee { border: 1px solid #000; padding: 1.5mm 2mm; margin-top: 2.5mm; break-inside: avoid; }
-  .committee p { margin: 0.4mm 0; }
   .note-template { margin-top: 1.5mm; font-size: 11pt; color: #333; line-height: 1.2; }`
 }
 
@@ -482,16 +481,9 @@ ${rows.map(([label, value]) => `    <tr><th>${label}</th><td>${value ? esc(value
           <br>ผู้ยื่นคำขอโปรดลงลายมือชื่อรับรองทับชื่อข้างต้น</p>`}
   </div>
 
-  <!-- ส่วนของกองทุน — ระบบไม่กรอกให้เลยแม้แต่ช่องเดียว คณะกรรมการกองทุนไม่ได้อยู่ในระบบนี้ -->
-  <div class="committee">
-    <p class="bold">สำหรับคณะกรรมการกองทุน</p>
-    <p>ความเห็น ${line('', '135mm')}</p>
-    <p>${box()} อนุมัติ&nbsp;&nbsp;&nbsp;${box()} ไม่อนุมัติ เพราะ ${line('', '95mm')}</p>
-    <div class="two-col" style="margin-top:3mm">
-      <div>${govSignRow({ width: SIGN_LINE_W, below: [govNameBlank(SIGN_LINE_W), 'ประธานคณะกรรมการกองทุน'] })}</div>
-      <div>${govSignRow({ width: SIGN_LINE_W, below: [govNameBlank(SIGN_LINE_W), 'เหรัญญิก / พยาน'] })}</div>
-    </div>
-  </div>
+  <!-- ⚠️ ไม่มีกล่อง "สำหรับคณะกรรมการกองทุน" (ความเห็น / อนุมัติ–ไม่อนุมัติ / ช่องลงนามประธานและเหรัญญิก) โดยเจตนา —
+       เจ้าของระบบสั่งตัดออก 2569-10-01 เพราะใบนี้ยื่นต่อนายก เรื่องจบที่นายก ยังไม่ไปถึงกองทุน
+       ห้ามใส่กลับเองโดยไม่ถาม — เทสต์ request-form-has-no-fund-committee-box กันไว้ -->
 
   <p class="note-template">
     จัดทำตามแบบตัวอย่างกลาง "ใบคำขอรับสวัสดิการ" ของสถาบันพัฒนาองค์กรชุมชน (องค์การมหาชน)
