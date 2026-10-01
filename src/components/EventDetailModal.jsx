@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { X } from 'lucide-react'
 import { AUDIENCE_COLOR, AUDIENCE_LABEL } from '../lib/orgTerms'
+import { AssignmentLine, EventAssignmentDialog } from './events/EventAssignment'
 
 const CATEGORY_COLOR = {
   'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
@@ -23,8 +25,11 @@ function daysUntil(dateStr) {
   return `อีก ${diff} วัน`
 }
 
-export default function EventDetailModal({ ev, onClose, canEdit }) {
+// canAssign — ปุ่ม "มอบหมายผู้ไปแทน" (ผู้บริหารเห็นแม้แก้ไขกิจกรรมไม่ได้) บันทึกผ่าน RPC ในกล่องเล็ก
+// แล้วส่งรายการใหม่กลับทาง onAssignmentsChanged ให้หน้าที่เปิดอยู่แทนค่าเอง ไม่ต้องโหลดใหม่ทั้งหน้า
+export default function EventDetailModal({ ev, onClose, canEdit, canAssign = false, onAssignmentsChanged }) {
   const navigate = useNavigate()
+  const [assigning, setAssigning] = useState(false)
   const color = CATEGORY_COLOR[ev.category] ?? '#6b7280'
   const days = ev.event_date ? daysUntil(ev.event_date) : null
   const daysColor = days === 'วันนี้' ? '#ef4444' : days?.includes('ที่แล้ว') ? '#9ca3af' : days === 'พรุ่งนี้' ? '#f97316' : '#3b82f6'
@@ -38,7 +43,10 @@ export default function EventDetailModal({ ev, onClose, canEdit }) {
     navigate('/staff', { state: { module: 'events', editEventId: ev.id } })
   }
 
+  // กล่องมอบหมายวางเป็น "พี่น้อง" ของหน้าต่างนี้ ไม่ใช่ลูก — ถ้าอยู่ข้างใน คลิกในกล่องจะไหลไปโดน
+  // onClick ของพื้นหลังหน้าต่างนี้ แล้วปิดทั้งสองหน้าต่างพร้อมกัน
   return (
+    <>
     <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50 px-4"
       onClick={onClose}>
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden"
@@ -104,6 +112,8 @@ export default function EventDetailModal({ ev, onClose, canEdit }) {
                 <p className="leading-relaxed whitespace-pre-wrap">{ev.description}</p>
               </div>
             )}
+            {/* ผู้รับมอบหมายให้ไปแทน — มีเฉพาะข้อมูลที่มาจาก RPC ของบุคลากรภายใน ประชาชนไม่ได้ข้อมูลนี้ */}
+            <AssignmentLine ev={ev} showRecorded />
             {/* Attachment */}
             {attachments.length > 0 && (
               <div className="flex items-center gap-2.5 flex-wrap">
@@ -126,16 +136,35 @@ export default function EventDetailModal({ ev, onClose, canEdit }) {
           </div>
 
           {/* Actions */}
-          {canEdit && (
+          {(canEdit || canAssign) && (
             <div className="flex gap-2 mt-5 pt-4 border-t border-gray-100">
-              <button onClick={goEdit}
-                className="flex-1 py-2.5 rounded-xl border border-blue-300 text-blue-600 text-sm font-bold hover:bg-blue-50 transition-colors">
-                แก้ไข
-              </button>
+              {canAssign && (
+                <button onClick={() => setAssigning(true)}
+                  className="flex-1 py-2.5 rounded-xl border border-violet-300 text-violet-700 text-sm font-bold hover:bg-violet-50 transition-colors">
+                  มอบหมายผู้ไปแทน
+                </button>
+              )}
+              {canEdit && (
+                <button onClick={goEdit}
+                  className="flex-1 py-2.5 rounded-xl border border-blue-300 text-blue-600 text-sm font-bold hover:bg-blue-50 transition-colors">
+                  แก้ไข
+                </button>
+              )}
             </div>
           )}
         </div>
       </div>
     </div>
+    {assigning && (
+      <EventAssignmentDialog
+        event={ev}
+        onClose={() => setAssigning(false)}
+        onSaved={(list) => {
+          onAssignmentsChanged?.(list)
+          setAssigning(false)
+        }}
+      />
+    )}
+    </>
   )
 }

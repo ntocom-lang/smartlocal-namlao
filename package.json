@@ -53,6 +53,7 @@
     "test:water-situation": "node tests/water-situation.test.mjs",
     "test:pm25": "node --test tests/pm25.test.mjs",
     "test:site-open": "node --test tests/site-open-counter.test.mjs",
+    "test:event-assign": "node --test tests/event-assignment.test.mjs",
     "test:memory-sync": "node --test tests/memory-sync.test.mjs",
     "test:water-supply": "node tests/water-supply-print.test.mjs && node tests/water-supply-layout.test.mjs",
     "test:public-assistance": "node tests/public-assistance-print.test.mjs && node tests/public-assistance-layout.test.mjs",
