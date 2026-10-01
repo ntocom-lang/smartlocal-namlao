@@ -441,12 +441,34 @@ try{
  assert(vehiclePrompts.at(-1).includes('[TEST] ไปด้วยกัน อี')&&vehiclePrompts.at(-1).includes('[TEST] ไปด้วยกัน เอฟ'),'หน้าต่างทวนการยืนยันทั้งกลุ่มต้องแสดงชื่อครบทุกคน')
  console.log('PASS coordinator inbox: vehicle confirmation reviewed before saving, cancellation leaves booking pending; conflict, shared vehicle, area check, mover helper and suggested group through the real UI')
  // ── เที่ยวที่ไปด้วยกันพิมพ์ชุดเดียว (เจ้าของระบบสั่ง 2569-10-01 แบบ ก) ──
- // แถวบอกว่าอยู่เที่ยวเดียวกัน · กรอบเหนือปุ่มพิมพ์บอกรายชื่อและจำนวนแผ่น · กดพิมพ์จากคนไหนก็ได้ชุดเดียวกันจริง
+ // กรอบกลุ่มเที่ยวบอกว่าใครไปกับใคร · กรอบเหนือปุ่มพิมพ์บอกรายชื่อและจำนวนแผ่น · กดพิมพ์จากคนไหนก็ได้ชุดเดียวกันจริง
  // ตรวจกับหน้าต่างพิมพ์ด้วย ข้อความบนจอต้องเท่ากับกระดาษที่ออก ไม่ใช่แค่ขึ้นข้อความ
  {
-  await row(groupE).getByText('ในเที่ยวเดียวกับ [TEST] ไปด้วยกัน เอฟ · เอกสารชุดเดียวกัน',{exact:true}).waitFor()
-  await row(groupF).getByText('ในเที่ยวเดียวกับ [TEST] ไปด้วยกัน อี · เอกสารชุดเดียวกัน',{exact:true}).waitFor()
+  // กรอบกลุ่มเที่ยว (เจ้าของระบบเลือกแบบ ก 2569-10-02 "เห็นแล้วรู้เลยว่ากลุ่มไหนเป็นกลุ่มไหน"): คนในเที่ยวเดียวกันอยู่ในกรอบเดียว
+  // หัวกรอบบอกจำนวนคน วัน เวลารถมารับ และว่าเอกสารชุดเดียว · แถวในกรอบไม่มีบรรทัด "ในเที่ยวเดียวกับ" ซ้ำ
+  const groupTrip=await tripOf(groupE),tripFrame=page.locator(`tr[data-trip-group="${groupTrip}"]`)
+  await tripFrame.waitFor();await page.mouse.move(0,0)
+  assert.match((await tripFrame.innerText()).replace(/\s+/g,' ').trim(),/^เที่ยวเดียวกัน 2 คน · \S.* (รถมารับ|รถเริ่มรับ) \d\d:\d\d น\. เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว$/,'หัวกรอบต้องบอกจำนวนคน วัน เวลารถมารับ และว่าเอกสารชุดเดียว')
+  const framed=await page.locator('tbody tr').evaluateAll((trs,id)=>{const at=trs.findIndex(tr=>tr.dataset.tripGroup===id);return trs.slice(at+1,at+4).map(tr=>[tr.dataset.booking,tr.dataset.tripFrame??null,tr.style.backgroundColor])},groupTrip)
+  assert.deepEqual(framed.slice(0,2).map(([id,frame])=>[id,frame]),[[groupE,groupTrip],[groupF,groupTrip]],'หัวกรอบต้องอยู่เหนือแถวของทุกคนในเที่ยวพอดี เรียงตามเวลานัด')
+  assert.notEqual(framed[2]?.[1],groupTrip,'แถวถัดจากกรอบต้องไม่ใช่คนในเที่ยวนี้')
+  assert.equal(framed[0][2],framed[1][2],'แถวในกรอบเดียวกันต้องพื้นสีเดียวกัน');assert(!['rgb(255, 255, 255)','rgb(245, 248, 252)'].includes(framed[0][2]),`พื้นแถวในกรอบต้องต่างจากแถวลายสลับปกติ: ${framed[0][2]}`)
+  for(const id of [groupE,groupF])assert.equal(await row(id).getByText(/ในเที่ยวเดียวกับ/).count(),0,'แถวในกรอบไม่ต้องมีบรรทัด "ในเที่ยวเดียวกับ" ซ้ำ หัวกรอบบอกแล้ว')
+  assert.equal(await row(b1).getAttribute('data-trip-frame'),null,'เที่ยวที่มีคนเดียวต้องไม่มีกรอบ')
   assert.equal(await row(b1).getByText(/ในเที่ยวเดียวกับ/).count(),0,'เที่ยวที่มีคนเดียวต้องไม่ขึ้นบรรทัด "ในเที่ยวเดียวกับ"')
+  // คนในเที่ยวไม่ครบในจอ (ค้นหาเจอคนเดียว) = ไม่ตีกรอบ แถวกลับไปบอกชื่อคนที่ไปด้วยแทน หัวกรอบจึงไม่บอกจำนวนเกินแถวที่เห็น
+  const inboxSearch=page.getByLabel('ค้นหาชื่อ เบอร์ จุดรับ โรงพยาบาล เลขที่',{exact:true})
+  await inboxSearch.fill('ไปด้วยกัน อี')
+  await row(groupE).getByText('ในเที่ยวเดียวกับ [TEST] ไปด้วยกัน เอฟ · เอกสารชุดเดียวกัน',{exact:true}).waitFor()
+  assert.equal(await page.locator('tr[data-trip-group]').count(),0,'เห็นคนเดียวของเที่ยวต้องไม่ตีกรอบ');assert.equal(await row(groupE).getAttribute('data-trip-frame'),null)
+  await inboxSearch.fill('');await tripFrame.waitFor()
+  // มือถือ: กรอบเดียวกันครอบการ์ดของทุกคนในเที่ยว และไม่ทำให้จอล้น
+  await page.setViewportSize({width:390,height:900})
+  const cardFrame=page.locator(`section[data-trip-group="${groupTrip}"]`);await cardFrame.waitFor()
+  assert.deepEqual(await cardFrame.locator('article[data-booking]').evaluateAll(cards=>cards.map(card=>card.dataset.booking)),[groupE,groupF],'กรอบบนมือถือต้องครอบการ์ดของทุกคนในเที่ยว')
+  await cardFrame.getByText('เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว',{exact:true}).waitFor()
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'กรอบกลุ่มเที่ยวต้องไม่ทำให้จอ 390px ล้น')
+  await page.setViewportSize({width:1280,height:900});await tripFrame.waitFor()
   const packets=[]
   for(const id of [groupF,groupE]){
    await row(id).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
@@ -467,7 +489,7 @@ try{
   assert.equal(await sheet.getByRole('note',{name:'พิมพ์เอกสารทั้งเที่ยว'}).count(),0,'เที่ยวที่มีคนเดียวต้องไม่ขึ้นกรอบพิมพ์ทั้งเที่ยว')
   await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
  }
- console.log('PASS shared trip prints once: rows say same trip and same documents, note above the print button names both riders and 3 sheets, printing from either rider gives the same 3-sheet packet; single-rider trip shows no note')
+ console.log('PASS shared trip prints once: riders of one trip sit in one frame (table and mobile) whose header says how many, when and one document set; a lone visible rider falls back to the same-trip line; note above the print button names both riders and 3 sheets, printing from either rider gives the same 3-sheet packet; single-rider trip shows no frame and no note')
 
  // ── รับจองแทนทางโทรศัพท์ → กลับกล่องพร้อมปุ่ม "ยืนยันรถเลย" ──
  await page.getByRole('button',{name:/รับจองแทน/}).click()
@@ -1439,7 +1461,8 @@ try{
  assert.equal(await orderTable.locator('tr[data-section="done"]').count(),foldedCount,'กดแสดงแล้วต้องเห็นครบตามจำนวนบนหัวกลุ่ม')
  const doneButtons=await orderTable.locator('tr[data-section="done"]').evaluateAll(trs=>trs.map(tr=>tr.querySelector('button')?.textContent.trim()))
  assert(doneButtons.every(text=>text==='ดูรายละเอียด'),`แถวที่จบแล้วปุ่มแถวต้องเป็น "ดูรายละเอียด": ${JSON.stringify(doneButtons)}`)
- const listed=await orderTable.locator('tbody tr').evaluateAll(trs=>trs.map(tr=>tr.dataset.sectionHeader
+ // แถวหัวกรอบของกลุ่มเที่ยว (data-trip-group) ไม่ใช่หัวส่วนและไม่ใช่คำขอ ตรวจแยกด้านล่าง
+ const listed=await orderTable.locator('tbody tr:not([data-trip-group])').evaluateAll(trs=>trs.map(tr=>tr.dataset.sectionHeader
   ?{header:tr.dataset.sectionHeader,text:tr.innerText.trim()}:{booking:tr.dataset.booking,section:tr.dataset.section,at:tr.dataset.at}))
  const orderWorkspace=await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))
  const orderTrips=new Map(orderWorkspace.trips.map(t=>[t.id,t]))
@@ -1465,11 +1488,29 @@ try{
   if(item.header)assert(item.text.includes(`${bookingRows.filter(row=>row.section===item.header).length} รายการ`),`หัวกลุ่ม ${item.header} ต้องบอกจำนวนถูก`)
   else if(!listed[index-1]?.booking||listed[index-1].section!==item.section)assert.equal(listed[index-1]?.header,item.section,'หัวกลุ่มต้องอยู่ก่อนแถวแรกของส่วน')
  }
+ // กรอบกลุ่มเที่ยว (เจ้าของระบบเลือกแบบ ก 2569-10-02): หัวกรอบ 1 แถว ตามด้วยแถวของทุกคนในเที่ยวพอดี จำนวนบนหัวกรอบ = ผู้เดินทาง
+ // ที่ชุดเอกสารของเที่ยวพิมพ์ให้ · เที่ยวที่ทุกคนอยู่ติดกันในส่วนเดียวกันต้องมีกรอบ นอกนั้นต้องไม่มี (หัวกรอบห้ามบอกจำนวนเกินแถวที่เห็น)
+ const frames=await orderTable.locator('tbody tr').evaluateAll(trs=>trs.flatMap((tr,index)=>{
+  if(!tr.dataset.tripGroup)return []
+  const size=Number(tr.innerText.match(/เที่ยวเดียวกัน (\d+) คน/)?.[1])
+  return [{id:tr.dataset.tripGroup,size,members:trs.slice(index+1,index+1+size).map(next=>next.dataset.tripFrame??null),after:trs[index+1+size]?.dataset.tripFrame??null,band:getComputedStyle(tr.cells[0]).backgroundColor}]}))
+ assert(frames.length>0,'ข้อมูลทดสอบต้องมีเที่ยวที่ไปด้วยกันอย่างน้อย 1 เที่ยว')
+ for(const frame of frames){
+  assert(frame.size>=2&&frame.members.length===frame.size&&frame.members.every(id=>id===frame.id),`หัวกรอบเที่ยว ${frame.id.slice(0,8)} ต้องตามด้วยแถวของทุกคนในเที่ยวพอดี: ${JSON.stringify(frame)}`)
+  assert.notEqual(frame.after,frame.id,'แถวถัดจากกรอบต้องไม่ใช่คนในเที่ยวเดียวกัน')
+ }
+ assert.equal(await orderTable.locator('tr[data-trip-frame]').count(),frames.reduce((sum,frame)=>sum+frame.size,0),'แถวที่ติดป้ายกรอบต้องอยู่ใต้หัวกรอบของเที่ยวตัวเองทุกแถว')
+ for(const trip of orderWorkspace.trips.filter(t=>t.state!=='cancelled')){
+  const at=bookingRows.flatMap((item,index)=>{const b=orderWorkspace.bookings.find(x=>x.id===item.booking);return b.trip_id===trip.id&&['confirmed','completed'].includes(b.status)?[index]:[]})
+  const together=at.length>1&&at.at(-1)-at[0]===at.length-1&&new Set(at.map(index=>bookingRows[index].section)).size===1
+  assert.equal(frames.some(frame=>frame.id===trip.id&&frame.size===at.length),together,`เที่ยว ${trip.id.slice(0,8)} มีผู้เดินทาง ${at.length} คน ${together?'อยู่ติดกัน ต้องมีกรอบ':'ต้องไม่มีกรอบ'}`)
+ }
  // แยกส่วนด้วยสี (เจ้าของระบบสั่งเพิ่ม 2569-10-01 — หัวกลุ่มเทาอ่อนเดิมกลืนกับแถวลายสลับ): หัวกลุ่มคนละสี ไม่ใช่สีพื้นแถว
  // และทุกแถวมีแถบซ้ายสีเดียวกับส่วนของตัวเอง
  const bands=await orderTable.locator('tr[data-section-header] td > span:last-child').evaluateAll(spans=>spans.map(span=>getComputedStyle(span).backgroundColor))
  assert.equal(new Set(bands).size,presentSections.length,'หัวกลุ่มแต่ละส่วนต้องคนละสี')
  for(const band of bands)assert(!['rgb(255, 255, 255)','rgb(245, 248, 252)'].includes(band),'หัวกลุ่มต้องไม่ใช้สีเดียวกับพื้นแถว')
+ for(const frame of frames)assert(![...bands,'rgb(255, 255, 255)','rgb(245, 248, 252)'].includes(frame.band),`หัวกรอบเที่ยวต้องไม่ใช้สีของหัวส่วนหรือพื้นแถว: ${frame.band}`)
  const strips=await orderTable.locator('tr[data-booking]').evaluateAll(trs=>trs.map(tr=>[tr.dataset.section,getComputedStyle(tr.cells[0]).boxShadow]))
  const stripOf=new Map(strips)
  assert(strips.every(([section,strip])=>strip!=='none'&&stripOf.get(section)===strip),'ทุกแถวต้องมีแถบซ้ายสีของส่วนตัวเอง')
@@ -1478,6 +1519,7 @@ try{
  await page.setViewportSize({width:390,height:900})
  assert.deepEqual(await page.locator('article[data-booking]').evaluateAll(cards=>cards.map(card=>card.dataset.booking)),bookingRows.map(item=>item.booking),'มือถือต้องเรียงชุดเดียวกับตาราง')
  assert.deepEqual(await page.locator('h3[data-section-header]').evaluateAll(heads=>heads.map(head=>head.dataset.sectionHeader)),presentSections)
+ assert.deepEqual(await page.locator('section[data-trip-group]').evaluateAll(boxes=>boxes.map(box=>[box.dataset.tripGroup,box.querySelectorAll('article[data-booking]').length])),frames.map(frame=>[frame.id,frame.size]),'มือถือต้องมีกรอบกลุ่มเที่ยวชุดเดียวกับตาราง')
  await page.locator('h3[data-section-header="done"]').waitFor()
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'หัวกลุ่มต้องไม่ทำให้จอ 390px ล้น')
  // มือถือพับได้ด้วยปุ่มเดียวกัน (ขนาดนิ้วกด 44px) — พับแล้วการ์ดของส่วนเสร็จแล้วหาย เหลือหัวกลุ่ม
@@ -1487,7 +1529,7 @@ try{
  assert.equal(await page.locator('article[data-booking]').count(),bookingRows.length-foldedCount)
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'หัวกลุ่มที่มีปุ่มพับต้องไม่ทำให้จอ 390px ล้น')
  await page.setViewportSize({width:1280,height:900})
- console.log('PASS inbox order: action → live → done sections with colored headers and row strips, urgency then appointment within action, ascending dates within each section, same order on mobile')
+ console.log('PASS inbox order: action → live → done sections with colored headers and row strips, urgency then appointment within action, ascending dates within each section, same order on mobile; a trip frame wraps exactly the riders of every shared trip whose riders sit together, on table and mobile')
  console.log('PASS done section folded on open: header with count + show button, search and done/cancelled pills open it without a toggle, toggle on desktop and mobile')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
  assert.deepEqual(errors,[])

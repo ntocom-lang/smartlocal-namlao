@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
+import { Users } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
@@ -56,9 +57,11 @@ function buildRows(workspace) {
     const stage = bookingStage(booking, trip), next = staffNextAction(booking, trip)
     return { booking, trip, linked, stage, next, section: sectionOf(next, stage), group: groupOf.get(booking.id) || [booking], riders: (trip && ridersOf.get(trip.id)) || [] }
   })
+  // เวลานัดเท่ากัน → คนในเที่ยวเดียวกันอยู่ติดกันก่อน (กรอบกลุ่มเที่ยว tripBlocks ตีได้เฉพาะแถวที่ติดกัน) แล้วค่อยเรียงตามเลขคำขอ
   return rows.sort((x, y) => SECTION_ORDER.indexOf(x.section) - SECTION_ORDER.indexOf(y.section)
     || (x.section === 'action' ? x.next.rank - y.next.rank : 0)
-    || sortAt(x).localeCompare(sortAt(y)) || x.booking.id.localeCompare(y.booking.id))
+    || sortAt(x).localeCompare(sortAt(y)) || String(x.trip?.id ?? '').localeCompare(String(y.trip?.id ?? ''))
+    || x.booking.id.localeCompare(y.booking.id))
 }
 
 // ส่วนของกล่อง (เจ้าของระบบสั่ง 2569-10-01): ต้องดำเนินการ → รอเดินทาง/กำลังเดินทาง → เสร็จแล้ว/ยกเลิก มีหัวกลุ่มคั่น
@@ -79,9 +82,53 @@ const sortAt = r => String((r.linked || r.booking).appointment_at || '')
 
 // คนอื่นในชุดเอกสารเดียวกัน — แถวบอกไว้ตั้งแต่ก่อนเปิดแผ่น ว่าเที่ยวที่ไปด้วยกันกดพิมพ์จากคนไหนก็ได้ชุดเดียวกัน
 // (เจ้าของระบบสั่ง 2569-10-01) ไม่งั้นแถวของแต่ละคนดูเป็นคนละงาน แล้วถูกเปิดพิมพ์ซ้ำทีละคน
+// ใช้กับแถวที่ไม่ได้อยู่ในกรอบกลุ่มเที่ยว (tripBlocks) เท่านั้น — ในกรอบ หัวกรอบบอกแทนแล้ว
 const tripMates = ({ booking, riders }) => riders.some(x => x.id === booking.id) ? riders.filter(x => x.id !== booking.id) : []
 // "เอกสารชุดเดียวกัน" ห้ามขาดกลางวลี — การ์ดมือถือ 390px ตัดเป็น "เอกสารชุด / เดียวกัน"
 const matesText = mates => <>ในเที่ยวเดียวกับ {mates.map(x => x.patient_name).join(', ')} · <span className="whitespace-nowrap">เอกสารชุดเดียวกัน</span></>
+
+// กรอบกลุ่มเที่ยวเดียวกัน (เจ้าของระบบเลือกแบบ ก 2569-10-02 "เห็นแล้วรู้เลยว่ากลุ่มไหนเป็นกลุ่มไหน")
+// เดิมแต่ละแถวมีแค่บรรทัด "ในเที่ยวเดียวกับ…" ต้องอ่านทีละแถวถึงรู้ว่าใครไปกับใคร และแถวสลับสีตามลำดับ ไม่ได้ตามเที่ยว
+// กลุ่ม = เที่ยวเดียวกัน (วันเดียวกัน รถรอบเดียวกัน เอกสารชุดเดียวกัน) · วันเดียวกันแต่คนละเที่ยว = คนละกรอบ เพราะเอกสารคนละชุด
+// สีม่วงตั้งใจไม่ให้ซ้ำสีของหัวส่วน (ส้ม/ฟ้า/เทา) — bar = เส้นกรอบ, tint = พื้นหัวกรอบ, ink = ตัวอักษร, row = พื้นแถวในกรอบ
+// ⚠️ ตารางคำร้องไม่มีกรณีหลายแถวเป็นงานเดียวกัน จุดนี้จึงต่างจากโครงของคำร้องโดยเจตนา
+const TRIP_GROUP = { bar: '#7c3aed', tint: '#f5f3ff', ink: '#5b21b6', row: '#fbfaff' }
+const TRIP_EDGE = `2px solid ${TRIP_GROUP.bar}`
+
+// แบ่งรายการที่แสดงเป็นบล็อก: เที่ยวที่ "ทุกคนอยู่ติดกัน" = 1 บล็อกมีกรอบ · นอกนั้นแถวละบล็อก
+// ตีกรอบเฉพาะเมื่อครบทุกคนของเที่ยว (นับจาก riders ตัวเดียวกับใบพิมพ์) หัวกรอบจึงไม่บอกจำนวนเกินแถวที่เห็น
+// คนในเที่ยวไม่ครบในช่วงเดียวกัน (คนหนึ่งขอยกเลิกจึงไปอยู่ส่วนต้องดำเนินการ / ค้นหาแล้วเจอคนเดียว) = ไม่ตีกรอบ
+// แถวกลับไปใช้บรรทัด "ในเที่ยวเดียวกับ…" ที่บอกชื่อคนที่ไม่อยู่ในจอให้
+function tripBlocks(rows) {
+  const blocks = []
+  for (let start = 0; start < rows.length;) {
+    const { trip, riders, section } = rows[start]
+    const rider = row => row.trip?.id === trip?.id && row.section === section && riders.some(x => x.id === row.booking.id)
+    let end = start + 1
+    if (trip && riders.length > 1 && rider(rows[start])) {
+      while (end < rows.length && rider(rows[end])) end++
+      if (end - start !== riders.length) end = start + 1
+    }
+    blocks.push({ start, rows: rows.slice(start, end), framed: end - start > 1 })
+    start = end
+  }
+  return blocks
+}
+
+// หัวกรอบ: กี่คน · วันไหน รถมารับกี่โมง · เอกสารชุดเดียว — ใช้ทั้งตาราง (PC) และกรอบการ์ด (มือถือ) พื้นสีอยู่ที่ตัวกรอบ
+// รับคนละรอบในเที่ยวเดียวกัน (หลายรอบรับ) = บอกเวลารอบแรกว่า "รถเริ่มรับ" เวลาของแต่ละคนยังอยู่ในแถว
+// ในตาราง: จอแคบกว่าตาราง (แท็บเล็ต ~800px ตารางเลื่อนแนวนอน) ข้อความต้องตัดบรรทัดตามความกว้างที่เห็นและปักซ้ายไว้
+// ไม่งั้นป้าย "พิมพ์ครั้งเดียว" ยาวไปตามตาราง 860px แล้วถูกตัดหาย — 100cqw = ความกว้างของกล่องเลื่อน (container-type ที่ตัวกล่อง)
+function TripGroupBand({ row, card }) {
+  const { trip, riders } = row
+  const pickups = [...new Set(riders.map(rider => Date.parse(pickupForBooking(trip, rider))).filter(Number.isFinite))]
+  return <span className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-bold ${card ? 'px-1' : 'sticky left-0 w-fit max-w-[100cqw] px-3 py-1.5'}`} style={{ color: TRIP_GROUP.ink }}>
+    <Users size={16} strokeWidth={2.4} className="shrink-0" aria-hidden="true" />
+    <span className="whitespace-nowrap">เที่ยวเดียวกัน {riders.length} คน</span>
+    <span className="whitespace-nowrap font-semibold">· {whenLabel(riders[0].appointment_at)}{pickups.length > 0 && ` ${pickups.length > 1 ? 'รถเริ่มรับ' : 'รถมารับ'} ${clockOf(Math.min(...pickups))} น.`}</span>
+    <span className="whitespace-nowrap rounded-full border bg-white px-2 py-0.5 text-xs" style={{ borderColor: TRIP_GROUP.bar }}>เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว</span>
+  </span>
+}
 
 const haystack = ({ booking: b, linked }) => [b.patient_name, b.requester_name, b.phone, b.pickup, b.route_label, ref(b.id), dateTime(b.appointment_at), whenLabel(b.appointment_at), linked && ref(linked.id), linked && dateTime(linked.appointment_at)].join(' ').toLowerCase()
 
@@ -546,6 +593,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   // หัวกลุ่มขึ้นก่อนแถวแรกของแต่ละส่วน นับเฉพาะแถวที่แสดงอยู่ (หลังกรอง/ค้นหา) · ส่วนที่ไม่มีแถวไม่ขึ้นหัว
   const sectionCount = shown.reduce((counts, r) => ({ ...counts, [r.section]: (counts[r.section] || 0) + 1 }), {})
   const startsSection = index => index === 0 || shown[index - 1].section !== shown[index].section
+  const blocks = tripBlocks(shown)
   // ส่วนเสร็จแล้ว/ยกเลิกพับไว้ตอนเปิดหน้า (เจ้าของระบบเลือก 2569-10-01 แบบ ก) — ระบบส่งรายการที่จบแล้วมาอีก 30 วัน
   // (patient_booking_workspace) ต่อท้ายงานค้างจนหน้ายาวและแยกยากว่าอันไหนเสร็จ · หัวกลุ่มพร้อมจำนวนยังอยู่ กดแสดงได้
   // ค้นหาหรือกดป้ายเสร็จแล้ว/ยกเลิก = กำลังหาของในส่วนนี้ ระบบเปิดให้เอง · งานบันทึกเอกสารหลังจบเที่ยวอยู่ส่วนต้องดำเนินการ ไม่ถูกพับ
@@ -618,7 +666,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
       </div>}
       {!rows.length && <p className="py-10 text-center text-sm font-semibold text-gray-400">ยังไม่มีคำขอรถ · คำขอจากประชาชนและที่รับแทนจะขึ้นที่นี่</p>}
       {rows.length > 0 && !shown.length && <p className="py-10 text-center text-sm font-semibold text-gray-400">{words ? 'ไม่พบคำขอที่ค้นหา' : 'ไม่มีคำขอในกลุ่มนี้ · กดป้าย “ทั้งหมด” เพื่อดูทุกคำขอ'}</p>}
-      {shown.length > 0 && <div className="hidden overflow-x-auto border border-gray-300 shadow-sm md:block" style={{ borderRadius: 4 }}>
+      {shown.length > 0 && <div className="hidden overflow-x-auto border border-gray-300 shadow-sm [container-type:inline-size] md:block" style={{ borderRadius: 4 }}>
         {/* โรงพยาบาลกับจุดรับอยู่ช่องเดียวกัน (2 บรรทัด) ให้ตารางพอดีพื้นที่ — แยกคอลัมน์แล้วตารางล้น
             คอลัมน์ "ดำเนินการ" ที่ปักขวาจะทับป้ายสถานะจนอ่านไม่ออก */}
         <table className="w-full min-w-[860px] border-collapse text-sm">
@@ -630,46 +678,62 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
             <th className="whitespace-nowrap border-r border-white/10 px-2 py-2.5 text-center text-[11px] font-bold text-white">สถานะ</th>
             <th className="sticky right-0 z-10 min-w-[170px] whitespace-nowrap px-2 py-2.5 text-center text-[11px] font-bold text-white shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>ดำเนินการ</th>
           </tr></thead>
-          <tbody className="divide-y divide-gray-200">{shown.map((row, index) => {
-            const { booking: b, trip, linked, group } = row
-            const pickupAt = trip && pickupForBooking(trip, b)
-            const mates = tripMates(row)
-            const shade = index % 2 === 0 ? '#fff' : '#f5f8fc'
-            return <Fragment key={b.id}>
-            {/* ช่องว่างก่อนส่วนถัดไปอยู่ในแถวหัวกลุ่มเอง ไม่แทรกแถวเปล่า ทุกแถวใน tbody จึงเป็นหัวกลุ่มหรือคำขอเท่านั้น */}
-            {startsSection(index) && <tr data-section-header={row.section}>
-              <td colSpan={6} className="p-0">{index > 0 && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand section={row.section} count={sectionCount[row.section]} toggle={row.section === 'done' ? doneToggle : null} /></td>
+          <tbody className="divide-y divide-gray-200">{blocks.map(block => {
+            const lead = block.rows[0]
+            return <Fragment key={lead.booking.id}>
+            {/* ช่องว่างก่อนส่วนถัดไปอยู่ในแถวหัวกลุ่มเอง ไม่แทรกแถวเปล่า ทุกแถวใน tbody จึงเป็นหัวส่วน หัวกรอบเที่ยว หรือคำขอเท่านั้น */}
+            {startsSection(block.start) && <tr data-section-header={lead.section}>
+              <td colSpan={6} className="p-0">{block.start > 0 && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand section={lead.section} count={sectionCount[lead.section]} toggle={lead.section === 'done' ? doneToggle : null} /></td>
             </tr>}
-            {!folded(row) && <tr data-booking={b.id} data-section={row.section} data-at={sortAt(row)} className="cursor-pointer align-top transition-colors" style={{ backgroundColor: shade }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = shade}
-              onClick={() => { setProblem(null); setOpenId(b.id) }}>
-              <td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500" style={{ boxShadow: `inset 5px 0 0 ${SECTIONS[row.section].bar}` }}>{index + 1}</td>
-              <td className="whitespace-nowrap border-r border-gray-200 px-2 py-2.5 text-center"><span className="block font-semibold">{whenLabel((linked || b).appointment_at)}</span><span className="block">{clockOf((linked || b).appointment_at)} น.</span>{linked && <span className="block text-[11px] text-sky-800">คิวจริง {ref(linked.id)}</span>}{linked && <span className="block text-[11px] text-gray-500">เดิม {dateTime(b.appointment_at)}</span>}{pickupAt && b.status !== 'cancelled' && <span className="block text-[11px] text-gray-500">รถมารับ {clockOf(pickupAt)}</span>}</td>
-              <td className="border-r border-gray-200 px-2 py-2.5"><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span>{b.status === 'submitted' && group.length > 1 && <span className="block text-[11px] font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</span>}{mates.length > 0 && <span className="block text-[11px] font-semibold text-sky-800">{matesText(mates)}</span>}</td>
-              <td className="border-r border-gray-200 px-2 py-2.5"><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={b.pickup}>รับที่ {b.pickup}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[b.return_mode]}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
-              <td className="border-r border-gray-200 px-2 py-2.5 text-center"><StatusChips row={row} /></td>
-              <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}><div className="flex flex-wrap justify-center gap-2"><RowButton row={row} busy={busy} onPress={press} />{deleteButton(row)}</div></td>
+            {block.framed && !folded(lead) && <tr data-trip-group={lead.trip.id}>
+              <td colSpan={6} className="p-0" style={{ border: TRIP_EDGE, borderBottom: 0, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} /></td>
             </tr>}
+            {block.rows.map((row, offset) => {
+              const { booking: b, trip, linked, group } = row
+              const index = block.start + offset
+              const pickupAt = trip && pickupForBooking(trip, b)
+              const mates = block.framed ? [] : tripMates(row)
+              const shade = block.framed ? TRIP_GROUP.row : index % 2 === 0 ? '#fff' : '#f5f8fc'
+              // เส้นกรอบของกลุ่มเที่ยว: ซ้ายที่ช่องแรก ขวาที่ช่องท้าย ล่างที่ทุกช่องของแถวสุดท้าย (บนอยู่ที่หัวกรอบ)
+              const closes = block.framed && offset === block.rows.length - 1 ? { borderBottom: TRIP_EDGE } : null
+              return !folded(row) && <tr key={b.id} data-booking={b.id} data-section={row.section} data-at={sortAt(row)} data-trip-frame={block.framed ? trip.id : undefined} className="cursor-pointer align-top transition-colors" style={{ backgroundColor: shade }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = shade}
+                onClick={() => { setProblem(null); setOpenId(b.id) }}>
+                <td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500" style={{ boxShadow: `inset 5px 0 0 ${SECTIONS[row.section].bar}`, ...(block.framed && { borderLeft: TRIP_EDGE }), ...closes }}>{index + 1}</td>
+                <td className="whitespace-nowrap border-r border-gray-200 px-2 py-2.5 text-center" style={closes}><span className="block font-semibold">{whenLabel((linked || b).appointment_at)}</span><span className="block">{clockOf((linked || b).appointment_at)} น.</span>{linked && <span className="block text-[11px] text-sky-800">คิวจริง {ref(linked.id)}</span>}{linked && <span className="block text-[11px] text-gray-500">เดิม {dateTime(b.appointment_at)}</span>}{pickupAt && b.status !== 'cancelled' && <span className="block text-[11px] text-gray-500">รถมารับ {clockOf(pickupAt)}</span>}</td>
+                <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span>{b.status === 'submitted' && group.length > 1 && <span className="block text-[11px] font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</span>}{mates.length > 0 && <span className="block text-[11px] font-semibold text-sky-800">{matesText(mates)}</span>}</td>
+                <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={b.pickup}>รับที่ {b.pickup}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[b.return_mode]}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
+                <td className="border-r border-gray-200 px-2 py-2.5 text-center" style={closes}><StatusChips row={row} /></td>
+                <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit', ...(block.framed && { borderRight: TRIP_EDGE }), ...closes }}><div className="flex flex-wrap justify-center gap-2"><RowButton row={row} busy={busy} onPress={press} />{deleteButton(row)}</div></td>
+              </tr>
+            })}
             </Fragment>
           })}</tbody>
         </table>
       </div>}
-      <div className="space-y-3 md:hidden">{shown.map((row, index) => {
-        const { booking: b, trip, linked, group } = row
-        const pickupAt = trip && pickupForBooking(trip, b)
-        const mates = tripMates(row)
-        return <Fragment key={b.id}>
-        {startsSection(index) && <h3 data-section-header={row.section} className={index ? 'pt-4' : ''}><SectionBand section={row.section} count={sectionCount[row.section]} rounded toggle={row.section === 'done' ? doneToggle : null} /></h3>}
-        {!folded(row) && <article data-booking={b.id} data-section={row.section} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4" style={{ borderLeft: `5px solid ${SECTIONS[row.section].bar}` }} onClick={() => { setProblem(null); setOpenId(b.id) }}>
-          <div className="flex items-start justify-between gap-2"><h3 className="font-bold">{b.patient_name}</h3><StatusChips row={row} /></div>
-          <p><strong>{whenLabel((linked || b).appointment_at)} {clockOf((linked || b).appointment_at)} น.</strong> · {linked ? linked.route_label : b.route_label}</p>
-          {linked && <p className="text-sm text-sky-800">คิวที่ใช้เดินทาง {ref(linked.id)} · นัดเดิมที่ยกเลิก {dateTime(b.appointment_at)}</p>}
-          <p className="text-sm text-slate-600">จุดรับ: {b.pickup}{Number.isFinite(b.pickup_lat) ? ' · 📍 มีหมุด' : ''}</p>
-          <p className="text-sm text-slate-600">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน{pickupAt && b.status !== 'cancelled' ? ` · รถมารับ ${clockOf(pickupAt)} น.` : ''}</p>
-          {b.status === 'submitted' && group.length > 1 && <p className="text-sm font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</p>}
-          {mates.length > 0 && <p className="text-sm font-semibold text-sky-800">{matesText(mates)}</p>}
-          <div className="flex flex-wrap gap-2"><RowButton row={row} busy={busy} onPress={press} full />{deleteButton(row)}</div>
-        </article>}
+      <div className="space-y-3 md:hidden">{blocks.map(block => {
+        const lead = block.rows[0]
+        const cards = block.rows.map(row => {
+          const { booking: b, trip, linked, group } = row
+          const pickupAt = trip && pickupForBooking(trip, b)
+          const mates = block.framed ? [] : tripMates(row)
+          return <article key={b.id} data-booking={b.id} data-section={row.section} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4" style={{ borderLeft: `5px solid ${SECTIONS[row.section].bar}` }} onClick={() => { setProblem(null); setOpenId(b.id) }}>
+            <div className="flex items-start justify-between gap-2"><h3 className="font-bold">{b.patient_name}</h3><StatusChips row={row} /></div>
+            <p><strong>{whenLabel((linked || b).appointment_at)} {clockOf((linked || b).appointment_at)} น.</strong> · {linked ? linked.route_label : b.route_label}</p>
+            {linked && <p className="text-sm text-sky-800">คิวที่ใช้เดินทาง {ref(linked.id)} · นัดเดิมที่ยกเลิก {dateTime(b.appointment_at)}</p>}
+            <p className="text-sm text-slate-600">จุดรับ: {b.pickup}{Number.isFinite(b.pickup_lat) ? ' · 📍 มีหมุด' : ''}</p>
+            <p className="text-sm text-slate-600">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน{pickupAt && b.status !== 'cancelled' ? ` · รถมารับ ${clockOf(pickupAt)} น.` : ''}</p>
+            {b.status === 'submitted' && group.length > 1 && <p className="text-sm font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</p>}
+            {mates.length > 0 && <p className="text-sm font-semibold text-sky-800">{matesText(mates)}</p>}
+            <div className="flex flex-wrap gap-2"><RowButton row={row} busy={busy} onPress={press} full />{deleteButton(row)}</div>
+          </article>
+        })
+        return <Fragment key={lead.booking.id}>
+        {startsSection(block.start) && <h3 data-section-header={lead.section} className={block.start ? 'pt-4' : ''}><SectionBand section={lead.section} count={sectionCount[lead.section]} rounded toggle={lead.section === 'done' ? doneToggle : null} /></h3>}
+        {/* กรอบกลุ่มเที่ยวบนมือถือ = กล่องม่วงครอบการ์ดของทุกคนในเที่ยว หัวกรอบเดียวกับตาราง */}
+        {!folded(lead) && (block.framed
+          ? <section data-trip-group={lead.trip.id} className="space-y-2 rounded-2xl p-2" style={{ border: TRIP_EDGE, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} card />{cards}</section>
+          : cards)}
         </Fragment>
       })}</div>
     </div>
