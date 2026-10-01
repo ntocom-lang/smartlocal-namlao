@@ -7,13 +7,20 @@ import { extractEventFromFile } from '../../lib/geminiChat'
 import { uploadFile } from '../../lib/driveStorage'
 import { driveFolderPath, driveMonthFolder, DRIVE_MODULES } from '../../lib/driveFolders'
 import { todayStr } from '../../lib/thaiDate'
-import { AUDIENCE_COLOR, AUDIENCE_LABEL, activeOrgTerms } from '../../lib/orgTerms'
+import { AUDIENCE_COLOR, activeOrgTerms } from '../../lib/orgTerms'
 import { CalendarDayMarkers, CalendarDayObservances, CalendarObservanceLegend } from '../CalendarObservances'
 import { EventAssignmentFields, EventAssignmentDialog, AssignmentLine, AssignedBadge } from '../events/EventAssignment'
 import { saveEventAssignments } from '../../lib/eventAssignmentApi'
 import {
   EMPTY_ASSIGNMENT, assignmentFormFromEvent, assignmentKey, validateAssignment, canAssignEvent, isAssignedTo,
 } from '../../lib/eventAssignment'
+import { YearlyBadge, PersonalFormHint } from '../events/PersonalEvent'
+import { loadPersonalEvents, savePersonalEvent, deletePersonalEvent } from '../../lib/personalEventsApi'
+import {
+  PERSONAL_AUDIENCE, PERSONAL_LABEL, PERSONAL_COLOR, PERSONAL_DEFAULT_CATEGORY, MINE_FILTER, MINE_LABEL,
+  isPersonalEvent, isPersonalAudience, isMine, audienceMeta, audienceColor, nextAudiences, personalPayload,
+  validatePersonalForm, personalQuota, maxPersonalDate, eventsForCalendarYear,
+} from '../../lib/personalEvents'
 
 // ปิด AI ทั้งระบบตามคำสั่งเจ้าของระบบ 2569-09-15 กันโควตา Gemini ฟรีหมด
 // Edge Function gemini-extract-event ถูกแทนด้วยตัวที่ตอบ 410 แล้ว ปุ่มจึงใช้ไม่ได้ ซ่อนไว้ไม่ให้กดแล้วเจอ error
@@ -179,7 +186,7 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting, currentUserId }) {
                 {ev.category}
               </span>
               {(ev.audiences ?? []).map(v => {
-                const aud = AUDIENCE_OPTIONS.find(a => a.value === v)
+                const aud = audienceMeta(v)
                 return aud ? (
                   <span key={v} className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
                     style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '18' }}>
@@ -187,6 +194,7 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting, currentUserId }) {
                   </span>
                 ) : null
               })}
+              {ev.repeat_yearly && <YearlyBadge />}
               {days && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
                   style={{ backgroundColor: daysColor }}>
@@ -256,15 +264,16 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
   const [calMonth, setCalMonth] = useState(todayRef.getMonth())
   const [selectedDay, setSelectedDay] = useState(todayRef.getDate())
 
+  // รายการส่วนตัวแบบ "ทุกปี" ถูกย้ายไปวันของปีที่กำลังเปิดดู (eventsForCalendarYear) จึงต้องคำนวณใหม่เมื่อเปลี่ยนปี
   const eventMap = useMemo(() => {
     const map = {}
-    events.forEach(ev => {
+    eventsForCalendarYear(events, calYear).forEach(ev => {
       if (!ev.event_date) return
       if (!map[ev.event_date]) map[ev.event_date] = []
       map[ev.event_date].push(ev)
     })
     return map
-  }, [events])
+  }, [events, calYear])
 
   const firstDow  = new Date(calYear, calMonth, 1).getDay()
   const totalDays = new Date(calYear, calMonth + 1, 0).getDate()
@@ -294,6 +303,9 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
 
   const monthName = new Date(calYear, calMonth, 1)
     .toLocaleDateString('th-TH', { year: 'numeric', month: 'long' })
+
+  // คำอธิบายสี: 4 กลุ่มเดิม + "เฉพาะฉัน" (หน้านี้เปิดได้เฉพาะผู้มีตำแหน่ง จึงโชว์ได้เสมอ)
+  const legendKeys = [...Object.keys(AUDIENCE_COLOR), PERSONAL_AUDIENCE]
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-4">
@@ -385,7 +397,7 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
                   <span
                     key={i}
                     className="w-2 h-2 rounded-full shadow-xs"
-                    style={{ backgroundColor: AUDIENCE_COLOR[ev.audiences?.[0]] ?? '#6b7280' }}
+                    style={{ backgroundColor: audienceColor(ev.audiences?.[0]) }}
                   />
                 ))}
                 {dayEvs.length > 3 && (
@@ -402,11 +414,11 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
       <CalendarObservanceLegend year={calYear} />
       {/* Legend */}
       <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1 px-1">
-        {Object.entries(AUDIENCE_COLOR).map(([key, color]) => (
+        {legendKeys.map((key) => (
           <div key={key} className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: audienceColor(key) }} />
             <span className="text-[11px] text-gray-500">
-              {AUDIENCE_LABEL[key] ?? key}
+              {audienceMeta(key)?.label ?? key}
             </span>
           </div>
         ))}
@@ -458,16 +470,17 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
                           {ev.category}
                         </span>
                         {(ev.audiences ?? []).map(v => {
-                          const audColor = AUDIENCE_COLOR[v] ?? '#6b7280'
+                          const audColor = audienceColor(v)
                           return (
                             <span key={v}
                               className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                               style={{ backgroundColor: audColor + '20', color: audColor }}
                             >
-                              {v !== 'public' && '🔒 '}{AUDIENCE_LABEL[v] ?? v}
+                              {v !== 'public' && '🔒 '}{audienceMeta(v)?.label ?? v}
                             </span>
                           )
                         })}
+                        {ev.repeat_yearly && <YearlyBadge />}
                         {isAssignedTo(ev, currentUserId) && <AssignedBadge />}
                       </div>
                       <p className="text-sm font-bold text-gray-800 leading-tight">{ev.title}</p>
@@ -548,6 +561,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   const [assignmentOriginalKey, setAssignmentOriginalKey] = useState('[]')
   const [assigningEvent, setAssigningEvent] = useState(null)
   const [multiDay, setMultiDay] = useState(false)
+  // รายการส่วนตัว ("เฉพาะฉัน") ที่ตั้งให้ขึ้นทุกปี เช่น วันเกิด — ใช้ได้กับรายการวันเดียว จึงเปิดพร้อม "หลายวัน" ไม่ได้
+  const [repeatYearly, setRepeatYearly] = useState(false)
   const [locationCustom, setLocationCustom] = useState(false)
   const [viewMode, setViewMode] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'calendar' : 'list'))
   const [filterMonth, setFilterMonth] = useState('all')
@@ -577,6 +592,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         && !(currentUserRole === 'council' && autoCreateAudience === 'management')
       setForm({ ...EMPTY_EVENT_FORM, event_date: today, audiences: audienceAllowed ? [autoCreateAudience] : [] })
       setMultiDay(false)
+      setRepeatYearly(false)
       setLocationCustom(false)
       resetAssignment()
       setEditingEvent(null)
@@ -623,14 +639,21 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
       // ปุ่มฝั่งหน้าจออย่างเดียวกันไม่ได้ เพราะข้อมูลถูกส่งมาถึงเบราว์เซอร์แล้ว ใครเปิด
       // DevTools ก็อ่านได้ (ดู migration 20260830090000)
       // เจ้าของแก้ไข/ลบของตนเองได้ หัวหน้ากองแก้ไขงานในกอง และ Admin/SuperAdmin จัดการตามขอบเขตเดิม
-      const [scopeResult, eventsResult] = await Promise.all([
+      // รายการส่วนตัว ("เฉพาะฉัน") อยู่คนละตาราง ดึงขนานไปด้วยแล้วรวมเข้ารายการเดียวกันข้างล่าง
+      const [scopeResult, eventsResult, personalResult] = await Promise.all([
         userId
           ? supabase.from('profiles').select('department_id, is_dept_head').eq('id', userId).maybeSingle()
           : Promise.resolve({ data: null, error: null }),
         supabase.rpc('list_events_for_staff', { p_municipality_id: tenant.id }),
+        loadPersonalEvents(tenant.id, userId).catch((err) => ({ rows: [], error: err })),
       ])
 
       setCurrentUserScope(scopeResult.data ?? null)
+
+      // รายการส่วนตัวดึงไม่ได้ไม่ควรทำให้ปฏิทินของหน่วยงานตายไปด้วย — แสดงเท่าที่มี แล้วส่งเสียงใน console
+      if (personalResult.error) {
+        console.error('[events] โหลดรายการส่วนตัวไม่สำเร็จ แสดงเฉพาะกิจกรรมของหน่วยงาน:', personalResult.error.message)
+      }
 
       // ถ้ายังไม่ได้ apply migration บนฐานข้อมูลนั้น RPC จะไม่มีอยู่ (PGRST202 / 42883)
       // กรณีนั้นถอยไปใช้ query เดิมเพื่อไม่ให้หน้าปฏิทินตายทั้งหน้า — แต่ต้องรู้ว่าโหมดถอยนี้
@@ -652,7 +675,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         rows = fallback.data
       }
 
-      const sorted = (rows ?? []).sort((a, b) => {
+      const sorted = [...(rows ?? []), ...personalResult.rows].sort((a, b) => {
         if (a.event_date < b.event_date) return -1
         if (a.event_date > b.event_date) return 1
         const ta = a.event_time ?? '99:99'
@@ -683,6 +706,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     const today = todayStr()
     setForm({ ...EMPTY_EVENT_FORM, event_date: today })
     setMultiDay(false)
+    setRepeatYearly(false)
     setLocationCustom(false)
     resetAssignment()
     setEditingEvent(null)
@@ -697,8 +721,11 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     setAssignOpen(existingAssignment.assignees.length > 0)
     const hasMultiDay = !!(ev.end_date && ev.end_date !== ev.event_date)
     setLocationCustom(!!ev.location && !LOCATION_PRESETS.includes(ev.location))
+    // รายการส่วนตัวแบบ "ทุกปี": ev.event_date คือวันของครั้งถัดไป (หรือของปีที่เปิดดูในปฏิทิน) ไม่ใช่วันที่จดไว้
+    // ฟอร์มต้องใช้ base_date ไม่งั้นกดบันทึกเฉยๆ วันตั้งต้นจะเลื่อนไปปีหน้าเอง
+    setRepeatYearly(isPersonalEvent(ev) && !!ev.repeat_yearly)
     setForm({
-      title: ev.title, description: ev.description ?? '', event_date: ev.event_date,
+      title: ev.title, description: ev.description ?? '', event_date: ev.base_date ?? ev.event_date,
       event_time: ev.event_time ?? '', end_date: ev.end_date ?? '', location: ev.location ?? '',
       category: EVENTS_CATEGORIES.includes(ev.category ?? '') ? ev.category : 'อื่นๆ',
       customCategory: EVENTS_CATEGORIES.includes(ev.category ?? '') ? '' : (ev.category ?? ''),
@@ -784,9 +811,23 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     if (!form.category) { setFormError('กรุณาเลือกประเภทกิจกรรม'); return }
     if (form.category === 'อื่นๆ' && !form.customCategory.trim()) { setFormError('กรุณาระบุประเภทกิจกรรม'); return }
     if (!form.audiences.length) { setFormError('กรุณาเลือกกลุ่มเป้าหมายอย่างน้อย 1 กลุ่ม'); return }
-    // ตรวจการมอบหมายก่อนบันทึกกิจกรรม — ถ้าไปพลาดหลังบันทึกแล้ว กดบันทึกซ้ำจะได้กิจกรรมซ้ำ 2 รายการ
-    const assignmentError = validateAssignment(assignment)
-    if (assignmentError) { setFormError(assignmentError); return }
+    // รายการส่วนตัว ("เฉพาะฉัน") บันทึกคนละทาง: ลงตาราง personal_events ที่อ่านได้เฉพาะเจ้าของ
+    // ไม่มีการมอบหมาย ไฟล์แนบ แจ้งเตือน Telegram และประวัติใน audit_logs (แอดมินจะเห็นชื่อรายการ)
+    const isPrivate = isPersonalAudience(form.audiences)
+    if (editingEvent && isPersonalEvent(editingEvent) !== isPrivate) {
+      // ฟอร์มซ่อนตัวเลือกไว้แล้ว ด่านนี้กันกรณีหลุด — สองแบบเก็บคนละตาราง ย้ายข้ามด้วยการแก้ไขไม่ได้
+      setFormError('สลับระหว่าง "เฉพาะฉัน" กับกลุ่มอื่นด้วยการแก้ไขไม่ได้ กรุณาเพิ่มเป็นรายการใหม่')
+      return
+    }
+    const privatePayload = isPrivate ? personalPayload(form, { repeatYearly }) : null
+    if (isPrivate) {
+      const invalid = validatePersonalForm(privatePayload, todayStr())
+      if (invalid) { setFormError(invalid); return }
+    } else {
+      // ตรวจการมอบหมายก่อนบันทึกกิจกรรม — ถ้าไปพลาดหลังบันทึกแล้ว กดบันทึกซ้ำจะได้กิจกรรมซ้ำ 2 รายการ
+      const assignmentError = validateAssignment(assignment)
+      if (assignmentError) { setFormError(assignmentError); return }
+    }
     setFormError('')
     setSaving(true)
     try {
@@ -805,6 +846,22 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
       if (writerProfile.role !== 'superadmin' && writerProfile.municipality_id !== tenant?.id) {
         throw new Error('บัญชียังไม่ได้ผูกกับเทศบาลนี้ กรุณาให้ผู้ดูแลระบบตรวจข้อมูลหน่วยงานของบัญชี')
       }
+
+      if (isPrivate) {
+        // กติกา 100 รายการ/ล่วงหน้า 1 ปี บังคับที่ trigger — ข้อความจากฐานข้อมูลเป็นภาษาไทยอยู่แล้ว (PE001/PE002)
+        const { error: personalError } = await savePersonalEvent({
+          id: editingEvent?.id ?? null, tenantId: tenant.id, payload: privatePayload,
+        })
+        if (personalError) {
+          throw new Error(personalError.code === '42501'
+            ? 'บัญชีนี้ไม่มีสิทธิ์บันทึกรายการส่วนตัว'
+            : (personalError.message || 'บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'))
+        }
+        setShowForm(false)
+        fetchEvents()
+        return
+      }
+
       const payload = {
         municipality_id: tenant.id, title: form.title.trim(),
         description: form.description.trim() || null, event_date: form.event_date,
@@ -859,8 +916,18 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   }
 
   async function handleDelete(id) {
-    setDeleting(id)
     const ev = events.find(e => e.id === id)
+    if (isPersonalEvent(ev)) {
+      // รายการ "ทุกปี" เป็นกฎ 1 แถว ลบแล้วหายทุกปี — ถามให้ชัด เพราะปุ่มลบในมุมมองปฏิทินไม่มีขั้นยืนยัน
+      if (ev.repeat_yearly && !window.confirm(`"${ev.title}" ตั้งไว้ให้ขึ้นทุกปี\nลบแล้วจะไม่ขึ้นอีกทุกปี ต้องการลบใช่ไหม`)) return
+      setDeleting(id)
+      // จงใจไม่เรียก logAction — audit_logs เก็บชื่อรายการ และแอดมินเปิดดูได้
+      const { error: personalError } = await deletePersonalEvent(id)
+      setDeleting(null)
+      if (!personalError) setEvents((prev) => prev.filter((e) => e.id !== id))
+      return
+    }
+    setDeleting(id)
     await logAction({
       action: 'delete', resourceType: 'event',
       resourceId: id,
@@ -875,10 +942,14 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     }
   }
 
+  // ตัวกรองกลุ่มเป้าหมาย + ตัวเลือก "ของฉัน" (รายการที่จดเอง + กิจกรรมที่ตัวเองได้รับมอบหมาย ระบบรวมให้เอง)
+  const matchAudience = (e) => filterAudience === 'all'
+    || (filterAudience === MINE_FILTER ? isMine(e, currentUserId) : e.audiences?.includes(filterAudience))
+
   let filteredEvents = events
   if (filterMonth !== 'all') filteredEvents = filteredEvents.filter(e => e.event_date?.startsWith(filterMonth))
   if (filterCategory !== 'all') filteredEvents = filteredEvents.filter(e => e.category === filterCategory)
-  if (filterAudience !== 'all') filteredEvents = filteredEvents.filter(e => e.audiences?.includes(filterAudience))
+  if (filterAudience !== 'all') filteredEvents = filteredEvents.filter(matchAudience)
   if (searchQuery.trim()) {
     const q = searchQuery.trim().toLowerCase()
     filteredEvents = filteredEvents.filter(e => e.title.toLowerCase().includes(q) || (e.description && e.description.toLowerCase().includes(q)))
@@ -893,7 +964,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   // counts excluding each respective filter so numbers reflect the other active filters
   const eventsForMonthCount = events
     .filter(e => filterCategory === 'all' || e.category === filterCategory)
-    .filter(e => filterAudience === 'all' || e.audiences?.includes(filterAudience))
+    .filter(matchAudience)
     .filter(matchSearch)
   const monthCounts = eventsForMonthCount.reduce((acc, e) => {
     const ym = e.event_date?.slice(0, 7)
@@ -904,7 +975,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
 
   const eventsForCatCount = events
     .filter(e => filterMonth === 'all' || e.event_date?.startsWith(filterMonth))
-    .filter(e => filterAudience === 'all' || e.audiences?.includes(filterAudience))
+    .filter(matchAudience)
     .filter(matchSearch)
   const categoryCounts = Object.fromEntries(
     EVENTS_CATEGORIES.map(cat => [cat, eventsForCatCount.filter(e => e.category === cat).length])
@@ -917,6 +988,12 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   const audienceCounts = Object.fromEntries(
     AUDIENCE_OPTIONS.map(opt => [opt.value, eventsForAudienceCount.filter(e => e.audiences?.includes(opt.value)).length])
   )
+  const mineCount = eventsForAudienceCount.filter(e => isMine(e, currentUserId)).length
+
+  // ฟอร์มกำลังอยู่ในโหมดรายการส่วนตัวไหม + สถานะเพดาน 100 รายการ (บอกล่วงหน้าว่ารายการไหนจะถูกทับ)
+  const isPrivateForm = isPersonalAudience(form.audiences)
+  const personalFormQuota = personalQuota(events.filter(isPersonalEvent), todayStr())
+  const personalMaxDate = isPrivateForm ? maxPersonalDate(todayStr()) : undefined
 
   const now = new Date()
   now.setHours(0, 0, 0, 0)
@@ -1021,7 +1098,9 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
             : new Date(Number(filterMonth.split('-')[0]), Number(filterMonth.split('-')[1]) - 1, 1)
                 .toLocaleDateString('th-TH', { month: 'short' })
           const catLabel = filterCategory === 'all' ? 'ประเภท' : filterCategory
-          const audLabel = filterAudience === 'all' ? 'กลุ่ม' : (AUDIENCE_OPTIONS.find(a => a.value === filterAudience)?.label ?? filterAudience)
+          const audLabel = filterAudience === 'all' ? 'กลุ่ม'
+            : filterAudience === MINE_FILTER ? MINE_LABEL
+            : (AUDIENCE_OPTIONS.find(a => a.value === filterAudience)?.label ?? filterAudience)
 
           const chipDefs = [
             { key: 'month',    Icon: CalendarDays, label: monthLabel, active: filterMonth !== 'all',    color: '#f97316' },
@@ -1044,7 +1123,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
             { value: 'all', label: 'ทั้งหมด', count: eventsForAudienceCount.length },
             ...AUDIENCE_OPTIONS
               .filter(opt => currentUserRole === 'council' ? opt.value !== 'management' : true)
-              .map(opt => ({ value: opt.value, label: opt.label, count: audienceCounts[opt.value] ?? 0 }))
+              .map(opt => ({ value: opt.value, label: opt.label, count: audienceCounts[opt.value] ?? 0 })),
+            { value: MINE_FILTER, label: `🔒 ${MINE_LABEL}`, count: mineCount },
           ]
           const dropdownMap = {
             month:    { options: monthOpts, current: filterMonth,    onChange: setFilterMonth },
@@ -1133,6 +1213,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
               {AUDIENCE_OPTIONS.filter(opt => currentUserRole === 'council' ? opt.value !== 'management' : true).map(opt => (
                 <option key={opt.value} value={opt.value}>{opt.label} ({audienceCounts[opt.value] ?? 0})</option>
               ))}
+              <option value={MINE_FILTER}>🔒 {MINE_LABEL} ({mineCount})</option>
             </select>
           </div>
           {(searchQuery || filterMonth !== 'all' || filterCategory !== 'all' || filterAudience !== 'all') && (
@@ -1167,7 +1248,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
                         style={{ backgroundColor: color }}>{ev.category}</span>
                       {(ev.audiences ?? []).map(v => {
-                        const aud = AUDIENCE_OPTIONS.find(a => a.value === v)
+                        const aud = audienceMeta(v)
                         return aud ? (
                           <span key={v} className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
                             style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '18' }}>
@@ -1175,6 +1256,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                           </span>
                         ) : null
                       })}
+                      {ev.repeat_yearly && <YearlyBadge />}
                       {days && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
                           style={{ backgroundColor: daysColor }}>
@@ -1311,20 +1393,50 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-semibold text-gray-500">{multiDay ? 'วันที่เริ่ม *' : 'วันที่ *'}</label>
-                    <button type="button"
-                      onClick={() => { setMultiDay(v => !v); if (multiDay) setForm(p => ({ ...p, end_date: '' })) }}
-                      className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors ${multiDay ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
-                      {multiDay ? '✓ หลายวัน' : '+ หลายวัน'}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {/* "ทุกปี" มีเฉพาะรายการส่วนตัว (เช่น วันเกิด) และใช้กับรายการวันเดียว จึงเปิดพร้อม "หลายวัน" ไม่ได้ */}
+                      {isPrivateForm && (
+                        <button type="button"
+                          onClick={() => {
+                            if (!repeatYearly) { setMultiDay(false); setForm(p => ({ ...p, end_date: '' })) }
+                            setRepeatYearly(v => !v)
+                          }}
+                          className="text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors"
+                          style={repeatYearly
+                            ? { backgroundColor: PERSONAL_COLOR + '1f', color: PERSONAL_COLOR }
+                            : { backgroundColor: '#f3f4f6', color: '#6b7280' }}>
+                          {repeatYearly ? '✓ ทุกปี' : '+ ทุกปี'}
+                        </button>
+                      )}
+                      <button type="button"
+                        onClick={() => {
+                          if (multiDay) setForm(p => ({ ...p, end_date: '' }))
+                          else setRepeatYearly(false)
+                          setMultiDay(v => !v)
+                        }}
+                        className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors ${multiDay ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                        {multiDay ? '✓ หลายวัน' : '+ หลายวัน'}
+                      </button>
+                    </div>
                   </div>
-                  <input type="date" value={form.event_date} onChange={(e) => setForm((p) => ({ ...p, event_date: e.target.value }))}
+                  <input type="date" value={form.event_date} max={personalMaxDate} onChange={(e) => setForm((p) => ({ ...p, event_date: e.target.value }))}
                     className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
                   {multiDay && (
                     <div className="mt-2">
                       <label className="text-xs font-semibold text-gray-500 mb-1 block">ถึงวันที่</label>
-                      <input type="date" value={form.end_date} min={form.event_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))}
+                      <input type="date" value={form.end_date} min={form.event_date} max={personalMaxDate} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))}
                         className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
                     </div>
+                  )}
+                  {/* รายการส่วนตัวลงล่วงหน้าได้ไม่เกิน 1 ปี (ฐานข้อมูลบังคับอีกชั้น) — ช่องเลือกวันกันไว้แล้ว
+                      แต่พิมพ์เองยังเกินได้ จึงบอกทางไปต่อด้วย ไม่ใช่แค่บอกว่าผิด */}
+                  {isPrivateForm && personalMaxDate && (form.event_date > personalMaxDate || (multiDay && form.end_date > personalMaxDate)) && (
+                    <p className="mt-1.5 text-[11px] font-semibold text-red-600">
+                      รายการส่วนตัวลงล่วงหน้าได้ไม่เกิน 1 ปี ถ้าเป็นเรื่องที่เกิดทุกปี เช่น วันเกิด ให้เลือกวันของปีนี้แล้วกด &ldquo;ทุกปี&rdquo;
+                    </p>
+                  )}
+                  {isPrivateForm && repeatYearly && (
+                    <p className="mt-1.5 text-[11px] text-gray-500">↻ ขึ้นในปฏิทินตรงวันนี้ของทุกปี จนกว่าจะปิด &ldquo;ทุกปี&rdquo; หรือลบรายการ</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -1365,14 +1477,17 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-gray-500 mb-1 block">กลุ่มเป้าหมาย (เลือกได้หลายกลุ่ม)</label>
+                    {/* "เฉพาะฉัน" กับกลุ่มอื่นเลือกพร้อมกันไม่ได้ (nextAudiences) และตอนแก้ไขสลับข้ามกันไม่ได้
+                        เพราะเก็บคนละตาราง — แก้รายการส่วนตัวจึงเห็นแค่ปุ่ม "เฉพาะฉัน" แก้กิจกรรมเห็นแค่ 4 กลุ่มเดิม */}
                     <div className="grid grid-cols-2 gap-2">
-                      {AUDIENCE_OPTIONS.filter(opt => currentUserRole === 'council' ? opt.value !== 'management' : true).map((opt) => {
+                      {!(editingEvent && isPersonalEvent(editingEvent)) && AUDIENCE_OPTIONS.filter(opt => currentUserRole === 'council' ? opt.value !== 'management' : true).map((opt) => {
                         const selected = form.audiences.includes(opt.value)
                         return (
-                          <button key={opt.value} type="button" onClick={() => setForm((p) => {
-                            const next = selected ? p.audiences.filter(v => v !== opt.value) : [...p.audiences, opt.value]
-                            return { ...p, audiences: next.length ? next : p.audiences }
-                          })}
+                          <button key={opt.value} type="button" onClick={() => {
+                            // ออกจาก "เฉพาะฉัน" → "ทุกปี" ใช้ไม่ได้กับกิจกรรมของหน่วยงาน
+                            if (isPrivateForm) setRepeatYearly(false)
+                            setForm((p) => ({ ...p, audiences: nextAudiences(p.audiences, opt.value) }))
+                          }}
                             className="px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors border"
                             style={selected
                               ? { backgroundColor: opt.color, color: 'white', borderColor: opt.color }
@@ -1381,7 +1496,31 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                           </button>
                         )
                       })}
+                      {!(editingEvent && !isPersonalEvent(editingEvent)) && (
+                        <button type="button" data-audience={PERSONAL_AUDIENCE}
+                          onClick={() => {
+                            if (isPrivateForm) return
+                            // เข้าโหมดส่วนตัว: ไม่มีการมอบหมายและไฟล์แนบ ล้างทิ้งเลยแบบเดียวกับการปิดปุ่ม "มอบหมายผู้ไปแทน"
+                            // ไม่ให้มีค่าค้างที่มองไม่เห็นแล้วถูกข้ามไปเงียบๆ ตอนบันทึก
+                            setAssignment(EMPTY_ASSIGNMENT)
+                            setAssignOpen(false)
+                            setForm((p) => ({
+                              ...p,
+                              audiences: nextAudiences(p.audiences, PERSONAL_AUDIENCE),
+                              category: p.category || PERSONAL_DEFAULT_CATEGORY,
+                              attachment_files: [],
+                              attachment_urls: [],
+                            }))
+                          }}
+                          className="col-span-2 px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors border"
+                          style={isPrivateForm
+                            ? { backgroundColor: PERSONAL_COLOR, color: 'white', borderColor: PERSONAL_COLOR }
+                            : { backgroundColor: 'white', color: '#374151', borderColor: '#e5e7eb' }}>
+                          🔒 {PERSONAL_LABEL} (จดของตัวเอง ไม่มีใครเห็น){isPrivateForm && ' ✓'}
+                        </button>
+                      )}
                     </div>
+                    {isPrivateForm && <PersonalFormHint quota={personalFormQuota} editing={!!editingEvent} />}
                   </div>
                 </div>
                 <div className="md:grid md:grid-cols-2 md:gap-6 space-y-4 md:space-y-0">
@@ -1420,7 +1559,9 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                   </div>
                 </div>
                 {/* มอบหมายผู้ไปแทน — พับไว้เป็นค่าเริ่มต้น งานปกติจึงไม่มีช่องกรอกเพิ่ม (ไม่เพิ่มภาระ)
-                    กดปิดเท่ากับล้างการมอบหมาย แบบเดียวกับปุ่ม "หลายวัน" ที่ล้างวันสิ้นสุด */}
+                    กดปิดเท่ากับล้างการมอบหมาย แบบเดียวกับปุ่ม "หลายวัน" ที่ล้างวันสิ้นสุด
+                    รายการส่วนตัวไม่มีส่วนนี้และส่วนเอกสารแนบ (ข้อความล้วน ไม่กินพื้นที่ Drive) */}
+                {!isPrivateForm && (<>
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-semibold text-gray-500">มอบหมายผู้ไปแทน</label>
@@ -1505,6 +1646,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                   )}
                   <p className="text-[11px] text-gray-400 mt-1">รวมกันได้สูงสุด {MAX_ATTACHMENTS} ไฟล์ (ไฟล์ละไม่เกิน 20 MB)</p>
                 </div>
+                </>)}
               </div>
             </div>
             <div className="border-t border-gray-100 bg-white shrink-0 shadow-[0_-8px_24px_rgba(15,23,42,0.08)]">
@@ -1513,7 +1655,11 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                   className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">
                   ยกเลิก
                 </button>
-                <button onClick={handleSave} disabled={saving || !form.title.trim() || !form.event_date}
+                {/* ครบ 100 รายการและไม่มีอะไรให้ทับ (ล่วงหน้า/ทุกปีทั้งหมด) — ฐานข้อมูลจะปฏิเสธอยู่แล้ว ปิดปุ่มไว้ก่อน
+                    ข้อความใต้ปุ่ม "เฉพาะฉัน" บอกเหตุผลและทางไปต่อแล้ว */}
+                <button onClick={handleSave}
+                  disabled={saving || !form.title.trim() || !form.event_date
+                    || (isPrivateForm && !editingEvent && personalFormQuota.full && !personalFormQuota.victim)}
                   className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
                   style={{ backgroundColor: 'var(--color-primary)' }}>
                   {saving ? (
@@ -1688,7 +1834,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                             <td className="px-3 py-2 border-r border-gray-200">
                               <div className="flex flex-wrap gap-1">
                                 {(ev.audiences ?? []).map(v => {
-                                  const aud = AUDIENCE_OPTIONS.find(a => a.value === v)
+                                  const aud = audienceMeta(v)
                                   return aud ? (
                                     <span key={v} className="inline-flex px-2 py-0.5 rounded text-[10px] font-semibold border"
                                       style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '15' }}>
@@ -1696,6 +1842,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                                     </span>
                                   ) : null
                                 })}
+                                {ev.repeat_yearly && <YearlyBadge />}
                               </div>
                             </td>
                             <td className="px-3 py-2 text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">

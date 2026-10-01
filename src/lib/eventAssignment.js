@@ -85,6 +85,9 @@ const INTERNAL_ROLES = ['viewer', 'council', 'officer', 'staff', 'technician']
 // role มาจาก AuthContext ซึ่งลดเป็น citizen ให้แล้วเมื่อเป็นบัญชีของ อปท. อื่น
 export function canAssignEvent(ev, role, userId, scope) {
   if (!ev) return false
+  // รายการส่วนตัว ("เฉพาะฉัน") ไม่มีการมอบหมาย — อยู่คนละตารางกับ events RPC จะหากิจกรรมไม่เจอ
+  // (ev.is_personal มาจาก toPersonalEvent ใน personalEvents.js เช็กตรงนี้เพราะไฟล์นั้น import ไฟล์นี้อยู่แล้ว)
+  if (ev.is_personal === true) return false
   if (role === 'superadmin' || role === 'admin') return true
   if (!INTERNAL_ROLES.includes(role)) return false
   if (userId && ev.created_by === userId) return true
