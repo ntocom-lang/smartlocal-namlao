@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Users } from 'lucide-react'
+import { Printer, Users } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
@@ -119,14 +119,24 @@ function tripBlocks(rows) {
 // รับคนละรอบในเที่ยวเดียวกัน (หลายรอบรับ) = บอกเวลารอบแรกว่า "รถเริ่มรับ" เวลาของแต่ละคนยังอยู่ในแถว
 // ในตาราง: จอแคบกว่าตาราง (แท็บเล็ต ~800px ตารางเลื่อนแนวนอน) ข้อความต้องตัดบรรทัดตามความกว้างที่เห็นและปักซ้ายไว้
 // ไม่งั้นป้าย "พิมพ์ครั้งเดียว" ยาวไปตามตาราง 860px แล้วถูกตัดหาย — 100cqw = ความกว้างของกล่องเลื่อน (container-type ที่ตัวกล่อง)
-function TripGroupBand({ row, card }) {
+//
+// ป้าย "เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว" เป็นปุ่มพิมพ์เอกสารทั้งเที่ยว มีไอคอนเครื่องพิมพ์ (เจ้าของระบบสั่ง 2569-10-02
+// "กดแล้วพิมพ์ได้เลย + ไอคอนพิมพ์ จะได้รู้ว่าพิมพ์ได้เลย") — ชุดเดียวกับปุ่มพิมพ์ในแผ่นรายละเอียด ไม่ต้องเปิดแผ่นของใครก่อน
+// ⚠️ ต่างจากกติกา "ปุ่มรายรายการอยู่ในแผ่น" โดยเจตนา: ปุ่มนี้เป็นของทั้งกลุ่ม ไม่ใช่ของแถวใดแถวหนึ่ง
+// ปุ่มกรอบ ไม่ทึบ — พิมพ์เมื่อไรก็ได้ ไม่ใช่งานค้าง (ปุ่มทึบในตารางนี้หมายถึงงานถัดไปของแถว)
+// มือถือสูง 44px เต็มความกว้างแบบปุ่มในการ์ด · PC สูง 36px แบบปุ่มพับของหัวส่วน
+function TripGroupBand({ row, card, busy, onPrint }) {
   const { trip, riders } = row
   const pickups = [...new Set(riders.map(rider => Date.parse(pickupForBooking(trip, rider))).filter(Number.isFinite))]
-  return <span className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-bold ${card ? 'px-1' : 'sticky left-0 w-fit max-w-[100cqw] px-3 py-1.5'}`} style={{ color: TRIP_GROUP.ink }}>
+  return <span className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-bold ${card ? 'px-1' : 'sticky left-0 w-fit max-w-[100cqw] px-3 py-1'}`} style={{ color: TRIP_GROUP.ink }}>
     <Users size={16} strokeWidth={2.4} className="shrink-0" aria-hidden="true" />
     <span className="whitespace-nowrap">เที่ยวเดียวกัน {riders.length} คน</span>
     <span className="whitespace-nowrap font-semibold">· {whenLabel(riders[0].appointment_at)}{pickups.length > 0 && ` ${pickups.length > 1 ? 'รถเริ่มรับ' : 'รถมารับ'} ${clockOf(Math.min(...pickups))} น.`}</span>
-    <span className="whitespace-nowrap rounded-full border bg-white px-2 py-0.5 text-xs" style={{ borderColor: TRIP_GROUP.bar }}>เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว</span>
+    <button type="button" data-trip-print={trip.id} disabled={busy} onClick={() => onPrint(trip)} title={`กดเพื่อพิมพ์เอกสารทั้งเที่ยว: ใบคำขอ ${riders.length} ใบ + หนังสือนำส่ง 1 ใบ`}
+      className="inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border bg-white px-3 text-[13px] font-bold shadow-sm hover:bg-violet-100 active:scale-[0.98] disabled:opacity-50 max-md:w-full md:min-h-9"
+      style={{ borderColor: TRIP_GROUP.bar, color: TRIP_GROUP.ink }}>
+      <Printer size={15} strokeWidth={2.4} className="shrink-0" aria-hidden="true" />เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว
+    </button>
   </span>
 }
 
@@ -686,7 +696,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
               <td colSpan={6} className="p-0">{block.start > 0 && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand section={lead.section} count={sectionCount[lead.section]} toggle={lead.section === 'done' ? doneToggle : null} /></td>
             </tr>}
             {block.framed && !folded(lead) && <tr data-trip-group={lead.trip.id}>
-              <td colSpan={6} className="p-0" style={{ border: TRIP_EDGE, borderBottom: 0, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} /></td>
+              <td colSpan={6} className="p-0" style={{ border: TRIP_EDGE, borderBottom: 0, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} busy={busy} onPrint={onPrintLetter} /></td>
             </tr>}
             {block.rows.map((row, offset) => {
               const { booking: b, trip, linked, group } = row
@@ -732,7 +742,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
         {startsSection(block.start) && <h3 data-section-header={lead.section} className={block.start ? 'pt-4' : ''}><SectionBand section={lead.section} count={sectionCount[lead.section]} rounded toggle={lead.section === 'done' ? doneToggle : null} /></h3>}
         {/* กรอบกลุ่มเที่ยวบนมือถือ = กล่องม่วงครอบการ์ดของทุกคนในเที่ยว หัวกรอบเดียวกับตาราง */}
         {!folded(lead) && (block.framed
-          ? <section data-trip-group={lead.trip.id} className="space-y-2 rounded-2xl p-2" style={{ border: TRIP_EDGE, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} card />{cards}</section>
+          ? <section data-trip-group={lead.trip.id} className="space-y-2 rounded-2xl p-2" style={{ border: TRIP_EDGE, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} card busy={busy} onPrint={onPrintLetter} />{cards}</section>
           : cards)}
         </Fragment>
       })}</div>

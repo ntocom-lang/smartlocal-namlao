@@ -466,9 +466,21 @@ try{
   await page.setViewportSize({width:390,height:900})
   const cardFrame=page.locator(`section[data-trip-group="${groupTrip}"]`);await cardFrame.waitFor()
   assert.deepEqual(await cardFrame.locator('article[data-booking]').evaluateAll(cards=>cards.map(card=>card.dataset.booking)),[groupE,groupF],'กรอบบนมือถือต้องครอบการ์ดของทุกคนในเที่ยว')
-  await cardFrame.getByText('เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว',{exact:true}).waitFor()
+  const cardPrint=cardFrame.getByRole('button',{name:'เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว',exact:true});await cardPrint.waitFor()
+  const cardPrintBox=await cardPrint.boundingBox()
+  assert(cardPrintBox.height>=44&&cardPrintBox.x>=0&&cardPrintBox.x+cardPrintBox.width<=390,`ปุ่มพิมพ์ที่หัวกรอบบนมือถือต้องสูงอย่างน้อย 44px และอยู่ในจอ: ${JSON.stringify(cardPrintBox)}`)
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'กรอบกลุ่มเที่ยวต้องไม่ทำให้จอ 390px ล้น')
   await page.setViewportSize({width:1280,height:900});await tripFrame.waitFor()
+  // ป้าย "เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว" ที่หัวกรอบเป็นปุ่มพิมพ์ทั้งเที่ยว มีไอคอนเครื่องพิมพ์ (เจ้าของระบบสั่ง 2569-10-02
+  // "กดแล้วพิมพ์ได้เลย") — กดจากกล่องได้เลย ไม่ต้องเปิดแผ่นของใครก่อน และต้องได้ชุดเดียวกับปุ่มพิมพ์ในแผ่น
+  const packetOf=win=>win.evaluate(()=>[...document.querySelectorAll('.sheet')].map(s=>s.querySelector('.letter-sign')?'letter':!s.querySelector('.form-title')?'other':s.innerText.includes('[TEST] ไปด้วยกัน อี')?'form:E':s.innerText.includes('[TEST] ไปด้วยกัน เอฟ')?'form:F':'form:?'))
+  const framePrint=tripFrame.getByRole('button',{name:'เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว',exact:true})
+  assert.equal(await framePrint.locator('svg.lucide-printer').count(),1,'ปุ่มพิมพ์ที่หัวกรอบต้องมีไอคอนเครื่องพิมพ์')
+  const [frameWin]=await Promise.all([page.waitForEvent('popup'),framePrint.click()])
+  await frameWin.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
+  const framePacket=await packetOf(frameWin);await frameWin.close()
+  assert.deepEqual(framePacket,['form:E','form:F','letter'],'กดปุ่มที่หัวกรอบต้องพิมพ์ใบคำขอของทุกคนในเที่ยว + หนังสือนำส่ง 1 ใบ')
+  assert.equal(await sheet.count(),0,'กดพิมพ์ที่หัวกรอบต้องไม่เปิดแผ่นรายละเอียดของใคร')
   const packets=[]
   for(const id of [groupF,groupE]){
    await row(id).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
@@ -478,18 +490,19 @@ try{
    for(const part of ['เที่ยวนี้ไปด้วยกัน 2 คน: [TEST] ไปด้วยกัน อี · [TEST] ไปด้วยกัน เอฟ','กดพิมพ์ที่คนไหนก็ได้ ได้ชุดเดียวกันครบทั้งเที่ยว','ใบคำขอ 2 ใบ + หนังสือนำส่ง 1 ใบ = 3 แผ่น · พิมพ์ครั้งเดียวพอ'])assert.ok(text.includes(part),`กรอบเหนือปุ่มพิมพ์ต้องมี "${part}": "${text}"`)
    const [win]=await Promise.all([page.waitForEvent('popup'),next.getByRole('button',{name:'พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน'}).click()])
    await win.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
-   packets.push(await win.evaluate(()=>[...document.querySelectorAll('.sheet')].map(s=>s.querySelector('.letter-sign')?'letter':!s.querySelector('.form-title')?'other':s.innerText.includes('[TEST] ไปด้วยกัน อี')?'form:E':s.innerText.includes('[TEST] ไปด้วยกัน เอฟ')?'form:F':'form:?')))
+   packets.push(await packetOf(win))
    await win.close();await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
   }
   assert.deepEqual(packets[0],['form:E','form:F','letter'],'จอบอก 3 แผ่น กระดาษต้องเป็นใบคำขอของทุกคนในเที่ยว + หนังสือนำส่ง 1 ใบ')
   assert.deepEqual(packets[1],packets[0],'กดพิมพ์จากคนไหนก็ต้องได้ชุดเดียวกัน')
+  assert.deepEqual(framePacket,packets[0],'ปุ่มพิมพ์ที่หัวกรอบต้องได้ชุดเดียวกับปุ่มพิมพ์ในแผ่น')
   // เที่ยวที่มีคนเดียวไม่ขึ้นกรอบนี้ — ปุ่มพิมพ์ของเที่ยวคนเดียวไม่มีอะไรให้พิมพ์ซ้ำ
   await row(b1).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
   await sheet.getByRole('region',{name:'ขั้นตอนหลังยืนยันรถ'}).getByRole('button',{name:'พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน'}).waitFor()
   assert.equal(await sheet.getByRole('note',{name:'พิมพ์เอกสารทั้งเที่ยว'}).count(),0,'เที่ยวที่มีคนเดียวต้องไม่ขึ้นกรอบพิมพ์ทั้งเที่ยว')
   await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
  }
- console.log('PASS shared trip prints once: riders of one trip sit in one frame (table and mobile) whose header says how many, when and one document set; a lone visible rider falls back to the same-trip line; note above the print button names both riders and 3 sheets, printing from either rider gives the same 3-sheet packet; single-rider trip shows no frame and no note')
+ console.log('PASS shared trip prints once: riders of one trip sit in one frame (table and mobile) whose header says how many, when and one document set; a lone visible rider falls back to the same-trip line; the print button on the frame header (printer icon, 44px on mobile) prints the same packet without opening any sheet; note above the print button names both riders and 3 sheets, printing from either rider gives the same 3-sheet packet; single-rider trip shows no frame and no note')
 
  // ── รับจองแทนทางโทรศัพท์ → กลับกล่องพร้อมปุ่ม "ยืนยันรถเลย" ──
  await page.getByRole('button',{name:/รับจองแทน/}).click()
