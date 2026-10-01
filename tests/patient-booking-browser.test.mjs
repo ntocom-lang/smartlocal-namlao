@@ -257,7 +257,18 @@ try{
  await page.setViewportSize({width:390,height:900});await visit('newcomer')
  await click('citizenFirst',page.getByRole('button',{name:'🚐 ขอรถไปโรงพยาบาล',exact:true}))
  const timeChips=page.getByRole('group',{name:'เวลานัดแพทย์'}).getByRole('button');await timeChips.first().waitFor()
- const firstTimes=await timeChips.allInnerTexts();assert(firstTimes.length>0,'ต้องมีเวลาที่รถว่างให้เลือก')
+ // เปิดฟอร์มแล้วระบบเลือกวันแรกที่ยังจองได้ไว้ให้ (มีเวลาว่างขึ้นทันทีตามบรรทัดบน) แต่ช่วงบ่ายวันนั้นคือ "วันนี้" ที่อาจเหลือเวลาว่าง
+ // ช่องเดียว — 2569-10-01 ราว 15:00–15:30 เหลือ 16:30 ช่องเดียว การจองครั้งต่อไปที่กดเวลาสุดท้ายจึงได้เวลาเดียวกับครั้งแรก
+ // แล้วส่งไม่สำเร็จ ฉากนี้จึงใช้วันว่างทั้งวันที่เลือกเอง ผลไม่ขึ้นกับเวลาที่รันเทสต์ · ไม่นับคลิก เพราะผู้ใช้จริงไม่ต้องกดวัน
+ const [citizenDay]=await freeDays(1)
+ const pickCitizenDay=async()=>{
+  await page.getByLabel('ปี พ.ศ.',{exact:true}).selectOption(citizenDay.slice(0,4))
+  await page.getByLabel('เดือน',{exact:true}).selectOption(citizenDay.slice(5,7))
+  await page.locator(`[data-calendar-date="${citizenDay}"]`).click()
+  assert.equal(await page.locator(`[data-calendar-date="${citizenDay}"]`).getAttribute('aria-pressed'),'true')
+  await timeChips.first().waitFor()}
+ await pickCitizenDay()
+ const firstTimes=await timeChips.allInnerTexts();assert(firstTimes.length>1,'วันว่างทั้งวันต้องมีเวลาให้เลือกหลายช่อง การจองครั้งต่อไปจะได้เวลาไม่ซ้ำครั้งแรก')
  await click('citizenFirst',timeChips.first())
  assert.equal(await page.getByLabel('ชื่อ–สกุลผู้จอง',{exact:true}).inputValue(),'TEST Browser Requester','ชื่อผู้จองต้องเติมจากบัญชีให้แล้ว')
  await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill('0800000099')
@@ -287,6 +298,8 @@ try{
  assert.equal(await page.getByRole('group',{name:'หมู่บ้าน/สถานที่'}).getByRole('button',{name:'TEST บ้านเหนือ'}).getAttribute('aria-pressed'),'true')
  assert.equal(await page.getByLabel('บ้านเลขที่ / จุดสังเกต',{exact:true}).inputValue(),'บ้านเลขที่ 99 ข้างวัด')
  assert.equal(await shareBox.isChecked(),false,'จองครั้งต่อไปต้องคงค่าที่เจ้าตัวเลือกไว้ ไม่ติ๊กกลับให้เอง')
+ await pickCitizenDay()
+ assert.equal(await shareBox.isChecked(),false,'เปลี่ยนวันแล้วต้องไม่ล้างค่าที่เติมจากครั้งก่อน')
  await click('citizenRepeat',timeChips.last())
  await click('citizenRepeat',page.getByRole('button',{name:'ส่งคำขอ',exact:true}))
  await click('citizenRepeat',page.getByRole('checkbox',{name:'ยินยอมให้ใช้ข้อมูลตามข้อความข้างต้น'}))
