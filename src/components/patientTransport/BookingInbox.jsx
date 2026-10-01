@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
 import { ListCard, Pills, Sheet } from './StaffShell'
 import { AmendBooking, TripFundDocs, OdometerForm } from './BookingOperations'
 import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
-import { STAGES, TRIP_STATUS, RETURN_MODES, MOBILITY, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking } from '../../lib/patientBooking'
+import { STAGES, TRIP_STATUS, RETURN_MODES, MOBILITY, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, describeHistory } from '../../lib/patientBooking'
 
 /**
  * กล่อง "คำขอรถ" ของเจ้าหน้าที่ — 1 แถว = 1 คำขอ และมีปุ่มเดียวต่อแถวที่บอกงานถัดไป
@@ -384,6 +384,40 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
   </details>
 }
 
+// ประวัติการดำเนินการ — ใครกดอะไร เมื่อไร (เจ้าของระบบสั่ง 2569-10-01 แบบ ก) หน้าตาเดียวกับกล่องประวัติของคำร้อง
+// ระบบบันทึกทุกคำสั่งไว้ตั้งแต่เปิดระบบแล้ว (ptb_audit) กล่องนี้แค่อ่านมาแสดง เจ้าหน้าที่ไม่ต้องกรอกอะไรเพิ่ม
+// อ่านใหม่เมื่อคำขอหรือเที่ยวเปลี่ยน revision — กดปุ่มในแผ่นนี้แล้วประวัติต่อท้ายให้เอง
+// ⚠️ ฐานข้อมูลยังไม่มีฟังก์ชัน (PGRST202 = merge ก่อน apply migration 20261001100000) → ซ่อนกล่องเงียบ ๆ แผ่นต้องใช้งานต่อได้
+function BookingHistory({ booking, trip }) {
+  const { tenant } = useTenant()
+  const [retry, setRetry] = useState(0)
+  const [state, setState] = useState(null)
+  const version = `${booking.revision}:${trip?.id ?? ''}:${trip?.revision ?? ''}:${trip?.docs_revision ?? ''}:${retry}`
+  useEffect(() => {
+    if (!tenant?.id) return
+    let active = true
+    supabase.rpc('patient_booking_history', { p_muni: tenant.id, p_booking: booking.id }).then(({ data, error }) => {
+      if (!active) return
+      setState(error ? { failed: error.code !== 'PGRST202' } : { rows: describeHistory(data?.events) })
+    })
+    return () => { active = false }
+  }, [tenant?.id, booking.id, version])
+  if (state?.failed) return <p className="text-sm text-slate-600">โหลดประวัติการดำเนินการไม่สำเร็จ <button type="button" className="min-h-11 font-semibold text-sky-800 underline" onClick={() => setRetry(n => n + 1)}>ลองอีกครั้ง</button></p>
+  if (!state?.rows?.length) return null
+  return <section aria-label="ประวัติการดำเนินการ">
+    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">ประวัติการดำเนินการ</p>
+    <ol className="space-y-2">{state.rows.map(row => <li key={row.id} className="flex gap-2.5 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+      <span className="mt-0.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-gray-700"><span>{row.label}</span><span className="ml-2 font-normal text-gray-400">{dateTime(row.at)} น.</span></p>
+        <p className="mt-0.5 text-[11px] text-gray-500">โดย {row.who}</p>
+        {row.extra && <p className="mt-0.5 text-[11px] text-gray-500">{row.extra}</p>}
+        {row.note && <p className="mt-1 whitespace-pre-wrap text-xs text-gray-700 [overflow-wrap:anywhere]">{row.note}</p>}
+      </div>
+    </li>)}</ol>
+  </section>
+}
+
 function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, currentUserId, onOpenDriver, onClose, onReload, onConfirm, onJoin, onOpen, onAction, onRemove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onSettings }) {
   const { booking: b, trip, linked, stage, next, group } = row
   const passengers = trip ? workspace.bookings.filter(x => x.trip_id === trip.id && x.status !== 'cancelled') : []
@@ -445,6 +479,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
     <Facts booking={b} trip={trip} others={others} historical={!!linked} />
     <MoreActions row={row} workspace={workspace} busy={busy} onConfirm={onConfirm} act={act} remove={remove} onAmend={onAmend} onUpdatePickup={onUpdatePickup}
       onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} onReload={onReload} />
+    <BookingHistory booking={b} trip={trip} />
   </Sheet>
 }
 
