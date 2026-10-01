@@ -4,7 +4,7 @@ import { ListCard, Pills, Sheet } from './StaffShell'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
-import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking } from '../../lib/patientBooking'
+import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent, monthReportSummary } from '../../lib/patientBooking'
 
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
 const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
@@ -70,25 +70,37 @@ export function BookingCards({ bookings, allBookings = bookings, trips, onAction
   })}</div>
 }
 
-// รายงานและประวัติ — สรุปรายเดือนสำหรับแนบเบิก และรายการเหตุการณ์ย้อนหลัง
+// สรุปเดือนที่เลือกแยกจากประวัติทุกเดือน: หนึ่งเที่ยวมีได้หลายเหตุการณ์
 export function QueueReport({ workspace, busy, onMonthReport }) {
   const { tenant } = useTenant()
+  const [month, setMonth] = useState(thaiDay().slice(0, 7))
+  const [monthly, setMonthly] = useState(null)
+  const [monthError, setMonthError] = useState('')
+  const [monthRetry, setMonthRetry] = useState(0)
+  const [tripPage, setTripPage] = useState(1)
   const [page, setPage] = useState(1)
   const [history, setHistory] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   useEffect(() => {
+    if (!tenant?.id || !month) return
+    let active = true
+    supabase.rpc('patient_booking_month_report', { p_muni: tenant.id, p_month: `${month}-01` }).then(({ data, error: failure }) => {
+      if (!active) return
+      if (failure || !data) { setMonthly(null); setMonthError('โหลดสรุปเดือนนี้ไม่สำเร็จ กรุณาลองอีกครั้ง') }
+      else { setMonthly({ month, tenantId: tenant.id, trips: data.trips }); setMonthError('') }
+    })
+    return () => { active = false }
+  }, [tenant?.id, month, workspace, monthRetry])
+  useEffect(() => {
     if (!tenant?.id) return
     let active = true
     supabase.rpc('patient_booking_events_page', { p_muni: tenant.id, p_page: page }).then(({ data, error: requestError }) => {
       if (!active) return
-      if (requestError || !data) {
-        setError('โหลดประวัติไม่สำเร็จ กรุณาลองอีกครั้ง')
-        setHistory(null)
-      } else {
-        setHistory(data)
-        setError('')
+      if (requestError || !data) { setError('โหลดประวัติไม่สำเร็จ กรุณาลองอีกครั้ง'); setHistory(null) }
+      else {
+        setHistory({ ...data, tenantId: tenant.id }); setError('')
         const lastPage = Math.max(1, Math.ceil(data.total / 20))
         if (page > lastPage) setPage(lastPage)
       }
@@ -96,24 +108,69 @@ export function QueueReport({ workspace, busy, onMonthReport }) {
     })
     return () => { active = false }
   }, [tenant?.id, page, workspace, retry])
-  const total = history?.total ?? 0
+  const currentMonth = monthly?.month === month && monthly?.tenantId === tenant?.id
+  const trips = currentMonth ? monthly.trips : []
+  const summary = monthReportSummary(trips)
+  const monthLabel = month ? new Date(`${month}-01T00:00:00+07:00`).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', month: 'long', year: 'numeric' }) : ''
+  const total = history?.tenantId === tenant?.id ? history.total : 0
   const pages = Math.max(1, Math.ceil(total / 20))
-  const events = history?.page === page ? history.events : []
+  const events = history?.tenantId === tenant?.id && history?.page === page ? history.events : []
   const changePage = next => { setLoading(true); setHistory(null); setPage(next) }
-  return <ListCard title="รายงานและประวัติ" count={total}>
-    <div className="space-y-3 p-4 sm:p-5">
-      <MonthReport busy={busy} onPrint={onMonthReport} />
-      <p>จบแล้ว {workspace.trips.filter(t => t.state === 'completed').length} เที่ยว · รอดำเนินการ {workspace.trips.filter(t => !['completed', 'cancelled'].includes(t.state)).length} เที่ยว (เที่ยวปิดใน 30 วันล่าสุด)</p>
+  const tripPages = Math.max(1, Math.ceil(trips.length / 20))
+  const visibleTripPage = Math.min(tripPage, tripPages)
+  return <section className="space-y-4" aria-label="รายงานรถรับส่งผู้ป่วย">
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-label="สรุปการใช้รถประจำเดือน">
+      <h2 className="text-lg font-bold text-slate-900">สรุปการใช้รถประจำเดือน</h2>
+      <p className="mb-4 text-sm text-slate-600">เลือกเดือนเพื่อดูจำนวนเที่ยว ผู้เดินทาง และระยะทาง แล้วพิมพ์สรุปได้ทันที</p>
+      <form className="flex flex-wrap items-end gap-3" onSubmit={e => { e.preventDefault(); onMonthReport(`${month}-01`) }}>
+        <label className="min-w-0 flex-1 sm:max-w-xs">เดือนที่ต้องการดู<input className={inputClass} type="month" required value={month} onChange={e => { setMonth(e.target.value); setMonthly(null); setMonthError(''); setTripPage(1) }} /></label>
+        <button className={`${primaryClass} max-sm:w-full`} disabled={busy || !month || !currentMonth}>พิมพ์สรุปรายเดือน</button>
+      </form>
+      <p className="my-4 font-semibold">{month ? `ข้อมูลเดือน${monthLabel}` : 'กรุณาเลือกเดือน'} · ตามวันเดินทาง · ไม่รวมเที่ยวที่ยกเลิก</p>
+      {month && !monthError && !currentMonth && <p role="status">กำลังโหลดสรุปรายเดือน...</p>}
+      {monthError && <div role="alert" className="rounded-xl bg-rose-50 p-3 text-rose-800">{monthError} <button className={buttonClass} onClick={() => { setMonthly(null); setMonthError(''); setMonthRetry(value => value + 1) }}>ลองอีกครั้ง</button></div>}
+      {currentMonth && <>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[
+            ['จบเที่ยวแล้ว', `${summary.completed} เที่ยว`, 'ให้บริการเสร็จแล้ว', 'bg-emerald-50'],
+            ['เที่ยวที่ยังไม่จบ', `${summary.pending} เที่ยว`, 'ยืนยันรถแล้ว / กำลังให้บริการ / เหตุขัดข้อง', 'bg-sky-50'],
+            ['ให้บริการผู้เดินทาง', `${summary.passengers} ครั้ง`, `นับคนละ 1 ครั้งต่อเที่ยว · ผู้ติดตาม ${summary.companions} ครั้ง`, 'bg-indigo-50'],
+            ['ระยะทางที่บันทึกแล้ว', `${summary.distance.toLocaleString('th-TH')} กม.`, `เฉพาะเที่ยวที่จบ · ${summary.missingDistance ? `ยังไม่มีระยะทางที่ใช้ได้ ${summary.missingDistance} เที่ยว` : 'มีระยะทางครบทุกเที่ยวที่จบ'}`, 'bg-amber-50'],
+          ].map(([label, value, hint, color]) => <div key={label} data-report-summary={label} className={`min-w-0 rounded-xl p-3 ${color}`}><h3 className="text-sm font-semibold">{label}</h3><p className="my-1 text-xl font-bold">{value}</p><p className="text-xs text-slate-600">{hint}</p></div>)}
+        </div>
+        <h3 className="mb-1 mt-5 font-bold">รายการเที่ยวเดือนนี้ · {trips.length} เที่ยว</h3>
+        <p className="mb-3 text-sm text-slate-600">หนึ่งเที่ยวอาจมีผู้เดินทางหลายคน · คำขอที่ยังรอยืนยันรถยังไม่นับเป็นเที่ยว</p>
+        {!trips.length && <p className="rounded-xl bg-slate-50 p-4 text-slate-600">ไม่มีเที่ยวรถในเดือนที่เลือก ลองเลือกเดือนอื่น</p>}
+        <div className="space-y-3">{trips.slice((visibleTripPage - 1) * 20, visibleTripPage * 20).map(t => <article key={t.trip_id} data-report-trip className="rounded-xl border border-slate-200 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold">{thaiDateFromDateInput(t.date)} · รับประมาณ {clockOf(t.pickup_at) || 'ยังไม่ระบุ'}</h4><span className={`rounded-full px-3 py-1 text-xs font-bold ${t.state === 'completed' ? 'bg-emerald-100 text-emerald-900' : t.state === 'issue' ? 'bg-rose-100 text-rose-800' : 'bg-sky-100 text-sky-900'}`}>{TRIP_STATUS[t.state] || 'รอตรวจสถานะ'}</span></div>
+          <p className="mt-1 break-words font-semibold text-sky-900">{t.route_label || 'ยังไม่ระบุโรงพยาบาล'}</p>
+          <div className="mt-2 grid gap-1 text-sm sm:grid-cols-2"><p>ผู้เดินทาง {t.passengers} คน · ผู้ติดตาม {t.companions} คน</p><p>คนขับ: {t.driver_name || 'ยังไม่ระบุ'}</p><p>ระยะทาง: {t.odometer_issue ? 'มาตรวัดผิดปกติ' : t.distance == null ? 'ยังไม่บันทึกครบ' : `${t.distance.toLocaleString('th-TH')} กม.`}</p><p className="text-slate-500">เที่ยวรถเลขที่ {t.trip_id.slice(0, 8).toUpperCase()}</p></div>
+        </article>)}</div>
+        {tripPages > 1 && <nav aria-label="แบ่งหน้ารายการเที่ยว" className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm"><span>หน้า {visibleTripPage}/{tripPages} · ครั้งละ 20 เที่ยว</span><div className="flex gap-2"><button className={buttonClass} disabled={visibleTripPage <= 1} onClick={() => setTripPage(visibleTripPage - 1)}>ก่อนหน้า</button><button className={buttonClass} disabled={visibleTripPage >= tripPages} onClick={() => setTripPage(visibleTripPage + 1)}>ถัดไป</button></div></nav>}
+      </>}
+    </section>
+    <details className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <summary className="min-h-11 cursor-pointer font-bold text-slate-900">ประวัติการทำรายการทุกเดือน · {total} เหตุการณ์ <span className="text-sm font-normal text-slate-500">(กดดู / ซ่อน)</span></summary>
+      <p className="mb-3 text-sm text-slate-600">บันทึกสิ่งที่เกิดขึ้นกับคำขอหรือเที่ยวรถ · หนึ่งคำขอมีหลายเหตุการณ์ จำนวนนี้จึงไม่ใช่จำนวนเที่ยวหรือผู้เดินทาง</p>
       {loading && <p role="status">กำลังโหลดประวัติ...</p>}
       {error && <div role="alert" className="rounded-xl bg-rose-50 p-3 text-rose-800">{error} <button type="button" className={buttonClass} onClick={() => { setLoading(true); setRetry(value => value + 1) }}>ลองอีกครั้ง</button></div>}
-      {!loading && !error && total === 0 && <p>ยังไม่มีประวัติ</p>}
-      {!loading && !error && events.map(e => <div key={e.id} data-report-event className="border-b border-slate-200 py-3"><strong>{e.action}</strong> · {dateTime(e.created_at)}<p className="text-sm">{e.detail?.note || `รายการ ${e.entity_id.slice(0, 8)}`}</p></div>)}
-      {!error && total > 0 && <nav aria-label="แบ่งหน้าประวัติ" className="flex flex-wrap items-center justify-between gap-2 pt-2 text-sm">
+      {!loading && !error && total === 0 && <p>ยังไม่มีประวัติการทำรายการ</p>}
+      {!loading && !error && events.map(e => {
+        const info = reportEvent(e, workspace)
+        return <article key={e.id} data-report-event className="border-b border-slate-200 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-1"><h3 className="font-semibold text-slate-900">{info.label}</h3><time className="text-sm text-slate-500" dateTime={e.created_at}>{dateTime(e.created_at)}</time></div>
+          {info.subject && <p className="mt-1 break-words text-sky-900">{info.subject}</p>}
+          {info.note && <p className="mt-1 break-words text-sm">หมายเหตุ: {info.note}</p>}
+          <p className="mt-1 text-xs text-slate-500">{info.reference}</p>
+        </article>
+      })}
+      {!error && total > 0 && <nav aria-label="แบ่งหน้าประวัติ" className="flex flex-wrap items-center justify-between gap-2 pt-3 text-sm">
         <span>แสดง {(page - 1) * 20 + 1}–{Math.min(page * 20, total)} จาก {total} รายการ · หน้า {page}/{pages}</span>
         <div className="flex gap-2"><button type="button" className={buttonClass} disabled={loading || page <= 1} onClick={() => changePage(page - 1)}>ก่อนหน้า</button><button type="button" className={buttonClass} disabled={loading || page >= pages} onClick={() => changePage(page + 1)}>ถัดไป</button></div>
       </nav>}
-    </div>
-  </ListCard>
+      <p className="mt-3 text-xs text-slate-500">ประวัติเก่าอาจแสดงเฉพาะเลขอ้างอิง หากชื่อผู้เดินทางไม่อยู่ในชุดข้อมูลปัจจุบัน</p>
+    </details>
+  </section>
 }
 
 // saveLabel: แผ่นแก้ปัญหาของกล่องคำขอรถใช้ "บันทึกและยืนยันรถ" เพราะบันทึกแล้วระบบยืนยันต่อให้ทันที
@@ -585,14 +642,5 @@ export function OdometerForm({ trip, trips, busy, onSave, quick }) {
     {trip.odometer_note && <p className="text-sm sm:col-span-full">เหตุผลที่บันทึกไว้: {trip.odometer_note}</p>}
     {quick && <p className="text-sm text-slate-600 sm:col-span-full">ใส่ทีหลังได้ · เที่ยวนี้จะรออยู่ตรงนี้จนกว่าจะใส่เลขไมล์กลับ</p>}
     <DraftConflict edit={edit} busy={busy} latest={`เลขไมล์ออก ${trip.odometer_start ?? '—'} · กลับ ${trip.odometer_end ?? '—'}${trip.odometer_issue ? ' · รอตรวจสอบ' : ''}`} />
-  </form>
-}
-
-// สรุปรายเดือนไว้แนบเบิกกับกองทุน — จำนวนผู้เดินทางเท่านั้น ไม่มีชื่อ
-function MonthReport({ busy, onPrint }) {
-  const [month, setMonth] = useState(thaiDay().slice(0, 7))
-  return <form className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 p-3" onSubmit={e => { e.preventDefault(); onPrint(`${month}-01`) }}>
-    <label className="min-w-0">สรุปการใช้รถประจำเดือน<input className={inputClass} type="month" required value={month} onChange={e => setMonth(e.target.value)} /></label>
-    <button className={primaryClass} disabled={busy || !month}>พิมพ์สรุปรายเดือน</button>
   </form>
 }

@@ -9,7 +9,19 @@ import react from '@vitejs/plugin-react'
 import tailwind from '@tailwindcss/vite'
 import { chromium } from 'playwright'
 import { mkdir, readFile } from 'node:fs/promises'
-import { previousOdometer, thaiDay, pickupForBooking, returnForBooking, staffNextAction, bookingStage } from '../src/lib/patientBooking.js'
+import { previousOdometer, thaiDay, pickupForBooking, returnForBooking, staffNextAction, bookingStage, reportEvent, monthReportSummary } from '../src/lib/patientBooking.js'
+// หน่วยนับต้องไม่ทำให้เจ้าหน้าที่ตีความจำนวนเหตุการณ์เป็นจำนวนผู้ใช้บริการ
+assert.deepEqual(monthReportSummary([
+ {state:'completed',passengers:2,companions:1,distance:15},
+ {state:'completed',passengers:1,companions:0,distance:null},
+ {state:'completed',passengers:1,companions:0,distance:90,odometer_issue:true},
+ {state:'confirmed',passengers:9,distance:40},
+ {state:'cancelled',passengers:9,distance:40},
+]),{completed:3,pending:1,passengers:4,companions:1,distance:15,missingDistance:2})
+assert.equal(reportEvent({action:'cancel',entity_id:'abcdef00',detail:{note:'รอประสาน'}}).label,'ดำเนินการยกเลิกคำขอ')
+assert.equal(reportEvent({action:'unrecognized_internal_action',entity_id:'abcdef00'}).label,'บันทึกการเปลี่ยนแปลง')
+assert.deepEqual(reportEvent({action:'moved_into_trip',entity_id:'trip0000',detail:{booking_id:'book0000'}},{bookings:[{id:'book0000',patient_name:'TEST ผู้เดินทาง'}]}),{label:'ย้ายไปร่วมเที่ยวอื่น',subject:'TEST ผู้เดินทาง',reference:'คำขอเลขที่ BOOK0000',note:''})
+assert.equal(reportEvent({action:'submitted',entity_id:'book0000'},{bookings:[{id:'book0000',entry_channel:'staff'}]}).label,'รับคำขอแทน (โทรศัพท์/เคาน์เตอร์)')
 process.env.PATIENT_UI_QA = '1'
 const { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, baseBooking } = await import('./patient-booking-db.test.mjs')
 await db.exec(await readFile(new URL('../supabase/migrations/20260927180000_patient_booking_events_page.sql', import.meta.url), 'utf8'))
@@ -693,12 +705,59 @@ try{
  await runSql(async()=>{
   for(let i=0;i<61;i++)await db.query('INSERT INTO public.patient_booking_events(municipality_id,actor_id,entity_id,action,detail,created_at) VALUES($1,$2,$3,$4,$5,$6)',[tenant,admin,randomUUID(),`[TEST] history ${String(i).padStart(2,'0')}`,{},new Date(Date.UTC(2026,8,27,12,0,i)).toISOString()])
  })
+ // เหตุการณ์ที่รู้จัก + ข้อมูลเที่ยวเก่าเกิน 30 วัน ซึ่งต้องแสดงได้ในสรุปเดือนนั้น
+ await runSql(async()=>{
+  await db.query('INSERT INTO public.patient_booking_events(municipality_id,actor_id,entity_id,action,detail,created_at) VALUES($1,$2,$3,$4,$5,$6)',[tenant,admin,joinA,'submitted',{},'2099-01-01T00:00:00Z'])
+  for (const [state,end] of [['completed',115],['completed',null],['cancelled',120]]) {
+   await db.query(`INSERT INTO public.patient_booking_trips(id,municipality_id,driver_id,booking_ids,plan,state,confirmed_by,odometer_start,odometer_end,updated_at)
+    VALUES($1,$2,$3,'{}',$4,$5,$6,100,$7,'2001-01-01')`,[randomUUID(),tenant,driver,{date:'2001-01-10',pickup_at:'2001-01-10T08:00:00+07:00',route_label:'[TEST] โรงพยาบาลเดือนเก่า'},state,admin,end])
+  }
+ })
  const eventCount=Number((await runSql(async()=>(await db.query('SELECT count(*) AS total FROM public.patient_booking_events WHERE municipality_id=$1',[tenant])).rows[0].total)))
  await assert.rejects(runAs(citizen,()=>rpc('patient_booking_events_page',[tenant,1])),/เฉพาะเจ้าหน้าที่/)
  await assert.rejects(runAs(driver,()=>rpc('patient_booking_events_page',[tenant,1])),/เฉพาะเจ้าหน้าที่/)
  const reportPage=await runAs(coordinator,()=>rpc('patient_booking_events_page',[tenant,1]))
  assert.equal(reportPage.total,eventCount);assert.equal(reportPage.events.length,20)
  await menu.getByRole('button',{name:'รายงาน',exact:true}).click()
+ const monthlyReport=page.getByRole('region',{name:'สรุปการใช้รถประจำเดือน',exact:true})
+ const monthInput=monthlyReport.getByLabel('เดือนที่ต้องการดู')
+ await monthInput.fill('2001-01')
+ await monthlyReport.getByRole('heading',{name:'รายการเที่ยวเดือนนี้ · 2 เที่ยว',exact:true}).waitFor()
+ assert.equal(await monthlyReport.locator('[data-report-trip]').count(),2,'เที่ยวเก่าเกิน 30 วันยังอยู่ในสรุปเดือนเดิม และไม่รวมเที่ยวที่ยกเลิก')
+ assert.match(await monthlyReport.locator('[data-report-summary="จบเที่ยวแล้ว"]').innerText(),/2 เที่ยว/)
+ assert.match(await monthlyReport.locator('[data-report-summary="ระยะทางที่บันทึกแล้ว"]').innerText(),/15 กม\./)
+ assert.match(await monthlyReport.locator('[data-report-summary="ระยะทางที่บันทึกแล้ว"]').innerText(),/ยังไม่มีระยะทางที่ใช้ได้ 1 เที่ยว/)
+ // เลือกเดือนว่างต้องไม่แสดงยอดของเดือนก่อน
+ await monthInput.fill('2001-02')
+ await monthlyReport.getByText('ไม่มีเที่ยวรถในเดือนที่เลือก ลองเลือกเดือนอื่น').waitFor()
+ assert.match(await monthlyReport.locator('[data-report-summary="จบเที่ยวแล้ว"]').innerText(),/0 เที่ยว/)
+ // โหลดล้มเหลวมีทางลองใหม่ ไม่ขึ้นยอด 0 ลวง
+ let failMonthOnce=true
+ await page.route('**/__patient_rpc',async route=>{
+  const request=route.request().postDataJSON()
+  if(failMonthOnce&&request.name==='patient_booking_month_report'){
+   failMonthOnce=false
+   await route.fulfill({contentType:'application/json',body:JSON.stringify({data:null,error:{message:'[TEST] unavailable'}})})
+  }else await route.continue()
+ })
+ await monthInput.fill('2001-01')
+ await monthlyReport.getByRole('alert').waitFor()
+ assert.equal(await monthlyReport.locator('[data-report-summary]').count(),0)
+ await monthlyReport.getByRole('button',{name:'ลองอีกครั้ง'}).click()
+ await monthlyReport.getByRole('heading',{name:'รายการเที่ยวเดือนนี้ · 2 เที่ยว',exact:true}).waitFor()
+ await page.unroute('**/__patient_rpc')
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'สรุปรายเดือน 320px overflow')
+ if(process.env.PATIENT_PREVIEW_SHOTS){
+  await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true})
+  await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/staff-report-320.png`,fullPage:true})
+  await page.setViewportSize({width:1280,height:1000})
+  await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/staff-report-1280.png`,fullPage:true})
+  await page.setViewportSize({width:320,height:900})
+ }
+ console.log('PASS monthly report: selected month, trips older than 30 days, cancelled exclusion, missing odometer, empty month, retry, 320px')
+ await page.locator('summary').filter({hasText:'ประวัติการทำรายการทุกเดือน'}).click()
+ await page.locator('[data-report-event]').first().getByRole('heading',{name:'ส่งคำขอ',exact:true}).waitFor()
+ await page.locator('[data-report-event]').first().getByText('[TEST] นางเอ นั่งร่วมได้',{exact:true}).waitFor()
  const historyNav=page.getByRole('navigation',{name:'แบ่งหน้าประวัติ'})
  await historyNav.getByText(`แสดง 1–20 จาก ${eventCount} รายการ · หน้า 1/${Math.ceil(eventCount/20)}`).waitFor()
  assert.equal(await page.locator('[data-report-event]').count(),20)
