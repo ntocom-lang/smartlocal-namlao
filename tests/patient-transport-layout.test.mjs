@@ -169,6 +169,17 @@ function sheetContentMm(page, index) {
   }, index)
 }
 
+// แผ่นของชุดเอกสารต้องหาจาก "ชนิดของแผ่น" ไม่ใช่เลขลำดับ — ลำดับเป็นเรื่องที่เจ้าของระบบสั่งเปลี่ยนได้
+// (2569-10-01 สลับให้ใบคำขอขึ้นก่อนหนังสือนำส่ง) เทสต์ที่อ้างแผ่นด้วยเลขลำดับ ตอนสลับแล้ววัดผิดใบแบบเงียบๆ:
+// ข้อ "หนังสือนำส่งจบ 1 หน้า" ไปวัดใบคำขอแทนแล้วยังผ่าน
+const letterSheetOf = page => page.locator('.sheet').filter({ has: page.locator('.letter-sign') })
+const formSheetsOf = page => page.locator('.sheet').filter({ has: page.locator('.form-title') })
+/** ชนิดของแผ่นเรียงตามที่จะออกจากเครื่องพิมพ์ เช่น ['form', 'form', 'letter'] */
+function sheetKinds(page) {
+  return page.evaluate(() => [...document.querySelectorAll('.sheet')].map(sheet =>
+    (sheet.querySelector('.letter-sign') ? 'letter' : sheet.querySelector('.form-title') ? 'form' : 'other')))
+}
+
 const checks = [
   {
     name: 'citizen-to-mayor-and-office-to-fund',
@@ -191,7 +202,7 @@ const checks = [
               assert.equal(addressee.replace(/^เรียน\s*/, '').trim(), isForm ? recipient : HEADER.recipient_title_snapshot)
               if (isForm) {
                 assert.equal(await sheet.locator('.form-title').innerText(), 'ใบคำขอรถรับ-ส่งผู้ป่วย')
-                assert.ok((await sheet.locator('.form-para').innerText()).includes(`ขอให้${tenant.name}ประสาน`))
+                assert.ok((await sheet.locator('.form-request').innerText()).includes(`ขอให้${tenant.name}ประสาน`))
                 const overlaps = await sheet.evaluate(el => {
                   const rect = selector => {
                     const range = document.createRange()
@@ -215,7 +226,7 @@ const checks = [
     async run(browser) {
       const page = await render(browser, buildPatientTransportPacketHtml(args()))
       try {
-        const mm = await sheetContentMm(page, 0)
+        const mm = await sheetContentMm(page, (await sheetKinds(page)).indexOf('letter'))
         assert.ok(mm <= ONE_PAGE_BUDGET_MM,
           `หนังสือนำส่งสูง ${mm.toFixed(1)}mm เกินงบ ${ONE_PAGE_BUDGET_MM}mm `
           + `(พื้นที่ ${PRINT_HEIGHT_MM}mm) — ทบทวนระยะเว้นก่อนช่องลงนามหรือความยาวย่อหน้า`)
@@ -228,7 +239,7 @@ const checks = [
     async run(browser) {
       const page = await render(browser, buildPatientTransportPacketHtml(args()))
       try {
-        const mm = await sheetContentMm(page, 1)
+        const mm = await sheetContentMm(page, (await sheetKinds(page)).indexOf('form'))
         assert.ok(mm <= ONE_PAGE_BUDGET_MM,
           `ใบคำขอสูง ${mm.toFixed(1)}mm เกินงบ ${ONE_PAGE_BUDGET_MM}mm`)
       } finally { await page.close() }
@@ -248,8 +259,46 @@ const checks = [
           }
         })
         assert.equal(info.count, 2, `ได้ ${info.count} แผ่น ต้องเป็น 2 แผ่น`)
-        assert.equal(info.breakBefore, 'page', 'ใบคำขอไม่ได้ตั้ง break-before: page')
+        assert.equal(info.breakBefore, 'page', 'แผ่นที่ 2 ไม่ได้ตั้ง break-before: page')
       } finally { await page.close() }
+    },
+  },
+  {
+    // เจ้าของระบบสั่ง 2569-10-01: เรียงกระดาษตามลำดับเรื่อง "ประชาชนแจ้งนายก → นายกส่งต่อกองทุน"
+    // เดิมหนังสือนำส่งออกก่อนใบคำขอ ห้ามสลับกลับเองโดยไม่ถาม — ลำดับประกอบที่ packetBody() ในไฟล์ใบพิมพ์จุดเดียว
+    name: 'packet-prints-request-before-letter',
+    reason: 'ชุดเอกสารต้องพิมพ์ใบคำขอ (ประชาชน → นายก) ครบทุกใบก่อน แล้วปิดท้ายด้วยหนังสือนำส่ง (นายก → กองทุน) ฉบับเดียว'
+      + ' ทั้งสองทางที่พิมพ์ชุดเอกสาร',
+    async run(browser) {
+      const byAppointment = bookings => [...bookings]
+        .sort((a, b) => String(a.appointment_at).localeCompare(String(b.appointment_at)))
+        .map(b => `เลขที่คำขอ ${String(b.id).slice(0, 8).toUpperCase()}`)
+      const cases = [
+        ['ชุดเอกสารคำขอ (ระบบคำขอแบบเดิม)', buildPatientTransportPacketHtml(args()), ['เลขที่คำขอ A1B2C3D4'], false],
+        ...[1, 2, 8].map(count => [`หนังสือต่อเที่ยว ${count} คน`,
+          buildTripForwardLetterHtml({ ...tripArgs(), bookings: TRIP_BOOKINGS.slice(0, count) }),
+          byAppointment(TRIP_BOOKINGS.slice(0, count)), false]),
+        ['หนังสือต่อเที่ยว 2 คน ทะเบียนไม่มีชื่อนายก',
+          buildTripForwardLetterHtml({ ...tripArgs(), mayor: null, bookings: TRIP_BOOKINGS.slice(0, 2) }),
+          byAppointment(TRIP_BOOKINGS.slice(0, 2)), true],
+      ]
+      for (const [label, html, references, notice] of cases) {
+        const page = await render(browser, html)
+        try {
+          assert.deepEqual(await sheetKinds(page), [...references.map(() => 'form'), 'letter'],
+            `${label}: ลำดับแผ่นต้องเป็น ใบคำขอทุกใบ → หนังสือนำส่ง`)
+          // ร่วมเที่ยวหลายคน: ใบคำขอเรียงตามเวลานัดเหมือนเดิม ไม่สลับเพราะย้ายหนังสือไปท้าย
+          const printed = (await formSheetsOf(page).locator('.form-no').allInnerTexts()).map(text => text.replace(/\s+/g, ' ').trim())
+          assert.deepEqual(printed, references, `${label}: ใบคำขอไม่ได้เรียงตามเวลานัด`)
+          const layout = await page.evaluate(() => ({
+            breaks: [...document.querySelectorAll('.sheet')].slice(1).map(sheet => getComputedStyle(sheet).breakBefore),
+            first: document.body.firstElementChild.className,
+          }))
+          assert.ok(layout.breaks.every(value => value === 'page'), `${label}: มีแผ่นที่ไม่ได้ขึ้นหน้าใหม่ (${layout.breaks.join(', ')})`)
+          // แถบเตือนชื่อนายกอยู่บนสุดของหน้าต่างเสมอ ไม่ย้ายตามหนังสือไปท้ายชุด — คนพิมพ์ต้องเห็นทันทีที่เปิด
+          assert.equal(layout.first, notice ? 'screen-note' : 'sheet', `${label}: สิ่งแรกในหน้าต่างพิมพ์`)
+        } finally { await page.close() }
+      }
     },
   },
   {
@@ -260,11 +309,13 @@ const checks = [
       try {
         const info = await page.evaluate(() => ({
           sheets: document.querySelectorAll('.sheet').length,
+          letterParts: document.querySelectorAll('.letter-sign, .letter-head, .emblem').length,
           text: document.body.innerText,
         }))
         assert.equal(info.sheets, 1, `ได้ ${info.sheets} แผ่น ต้องเป็น 1 แผ่น`)
-        assert.ok(!info.text.includes('ขอแสดงความนับถือ'),
-          'ใบของประชาชนมีคำลงท้ายของหนังสือราชการติดมาด้วย')
+        // ⚠️ "ขอแสดงความนับถือ" ใช้เป็นตัวจับหนังสือนำส่งไม่ได้แล้ว — ใบคำขอแบบประโยคลงท้ายด้วยคำนี้เอง (2569-10-01)
+        assert.equal(info.letterParts, 0, 'ใบของประชาชนมีส่วนของหนังสือนำส่ง (หัวหนังสือ/ครุฑ/ช่องลงนามนายก) ติดมาด้วย')
+        assert.ok(!info.text.includes('สิ่งที่ส่งมาด้วย'), 'ใบของประชาชนมีบรรทัด "สิ่งที่ส่งมาด้วย" ของหนังสือนำส่งติดมาด้วย')
         assert.ok(!info.text.includes(MAYOR.name),
           'ใบของประชาชนมีชื่อผู้บริหาร อปท. ในช่องลงนาม ซึ่งไม่ควรมี')
       } finally { await page.close() }
@@ -380,6 +431,122 @@ const checks = [
     },
   },
   {
+    // เจ้าของระบบสั่ง 2569-10-01: "ใบคำขอรถรับ-ส่งผู้ป่วย ไม่ต้องใช้แบบตาราง ให้เป็นประโยคดีกว่า"
+    // ข้อมูลชุดเดียวกับตารางเดิมทุกรายการ เขียนเป็น 2 ย่อหน้า + คำลงท้ายแบบเดียวกับแบบคำร้องใบอื่นของระบบ
+    // ⚠️ ถ้อยคำในข้อนี้คือถ้อยคำบนกระดาษจริง — แก้ประโยคในไฟล์ใบพิมพ์ต้องแก้ที่นี่คู่กัน และต้องให้เจ้าของระบบเห็นก่อน
+    name: 'request-form-is-prose-not-table',
+    reason: 'ใบคำขอต้องเป็นประโยค ไม่ใช่ตาราง — ข้อมูลครบเท่าตารางเดิม วลีของข้อมูลที่ระบบไม่มีต้องหายทั้งวลี (ไม่เหลือป้ายลอย)'
+      + ' ข้อมูลหลักที่ขาดไม่ได้ต้องเหลือเส้นประให้เขียนมือ และผู้ป่วยยื่นเองต้องใช้ "ข้าพเจ้า" ตลอดใบ',
+    async run(browser) {
+      const WHEN = String.raw`\d{1,2} \S+ 25\d\d เวลา \d{2}\.\d{2} น\.`
+      const escapeRe = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      // ประโยคที่คาดไว้ โดย {WHEN} คือวันเวลานัด (แสดงตามเวลาเครื่องที่พิมพ์ จึงตรวจรูปแบบ ไม่ล็อกชั่วโมง)
+      const sentence = template => new RegExp(`^${template.split('{WHEN}').map(escapeRe).join(WHEN)}$`)
+      const read = async (html, shotFile) => {
+        const page = await render(browser, html)
+        try {
+          const forms = formSheetsOf(page)
+          if (shotFile && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
+            await forms.first().screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/${shotFile}` })
+          }
+          return await forms.evaluateAll(sheets => sheets.map(sheet => {
+            const text = selector => sheet.querySelector(selector)?.innerText.replace(/\s+/g, ' ').trim() ?? ''
+            const order = ['.form-request', '.form-travel', '.evidence', '.form-closing', '.form-regards', '.sign-block']
+              .map(selector => sheet.querySelector(selector))
+            return {
+              tables: sheet.querySelectorAll('table').length,
+              request: text('.form-request'), travel: text('.form-travel'),
+              closing: text('.form-closing'), regards: text('.form-regards'),
+              blanks: {
+                request: sheet.querySelectorAll('.form-request .fill-blank').length,
+                travel: sheet.querySelectorAll('.form-travel .fill-blank').length,
+              },
+              inOrder: order.every(Boolean) && order.every((el, i) => i === 0
+                || (order[i - 1].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0),
+              // "ผู้ป่วย" ในถ้อยคำคงที่ของประโยคต้องอยู่ใน .nb ทุกจุด ไม่งั้นขึ้นบรรทัดใหม่แล้วขาดกลางคำเป็น "ผู้|ป่วย"
+              looseWord: [...sheet.querySelectorAll('.form-request, .form-travel')]
+                .flatMap(paragraph => [...paragraph.childNodes])
+                .filter(node => node.nodeType === 3 && node.textContent.includes('ผู้ป่วย')).length,
+              // เวลา "14.00 น." ต้องไม่ขาดคนละบรรทัด: ทุกเวลาในย่อหน้าการเดินทางต้องอยู่ในกล่องห้ามตัดบรรทัด
+              splitTimes: (sheet.querySelector('.form-travel')?.innerText.match(/\d{1,2}[.:]\d{2}\s?น\./g) ?? []).length
+                - [...(sheet.querySelector('.form-travel')?.querySelectorAll('.nb') ?? [])]
+                  .reduce((sum, el) => sum + (el.textContent.match(/\d{1,2}[.:]\d{2}\s?น\./g) ?? []).length, 0),
+              all: sheet.innerText,
+            }
+          }))
+        } finally { await page.close() }
+      }
+      const request = `มีความประสงค์ขอให้${TENANT.name}ประสานขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยจาก`
+      const booker = TRIP_BOOKINGS[0]
+      const tripWith = overrides => buildTripForwardLetterHtml({ ...tripArgs(), bookings: [{ ...booker, ...overrides }] })
+
+      // 1) คำขอแบบเดิม ข้อมูลครบทุกช่อง (ค่ายาวสุด) — ทุกรายการของตารางเดิมต้องอยู่ในประโยค
+      const [full] = await read(buildPatientTransportFormHtml(args()), 'patient-form-prose-full.png')
+      assert.equal(full.request,
+        `ข้าพเจ้า ${PARENT.requester_name} สมาชิกกองทุนเลขที่ ${FORM.fund_member_no} ที่อยู่ ${PARENT.requester_address}`
+        + ` โทรศัพท์ ${PARENT.requester_phone} ในฐานะผู้รับผลประโยชน์ของ ${FORM.beneficiary_of_name} สมาชิกเลขที่ ${FORM.beneficiary_of_member_no}`
+        + ` เป็นญาติ (บุตรสาว) ของผู้ป่วย ${request}${HEADER.partner_name_snapshot} สำหรับ ${FORM.patient_name} อายุ 78 ปี`)
+      assert.match(full.travel, sentence(
+        `ผู้ป่วยมีนัดที่ ${FORM.destination} ${FORM.destination_detail} ในวันที่ {WHEN} เพื่อ${FORM.appointment_kind_note}`
+        + ` จึงขอให้รถมารับที่ ${FORM.pickup_address} (จุดสังเกต ${FORM.pickup_landmark})`
+        + ` โดยผู้ป่วยใช้รถเข็น (วีลแชร์) มีผู้ติดตาม 1 คน และขอเดินทางไป-กลับ (${FORM.return_note})`))
+
+      // 2) ระบบจองคิว ผู้ป่วยจองเอง — ไม่มีที่อยู่ อายุ ประเภทนัด จุดสังเกต: วลีต้องหายทั้งวลี และใช้ "ข้าพเจ้า" ตลอดใบ
+      const [self] = await read(tripWith({ relation: 'self', patient_name: booker.requester_name, mobility: 'walk', companions: 0 }),
+        'patient-form-prose-self.png')
+      assert.equal(self.request,
+        `ข้าพเจ้า ${booker.requester_name} โทรศัพท์ ${booker.phone} ${request}${PARTNER.name} สำหรับข้าพเจ้าซึ่งเป็นผู้ป่วยเอง`)
+      assert.match(self.travel, sentence(
+        `ข้าพเจ้ามีนัดที่ ${TRIP.plan.route_label} ในวันที่ {WHEN} จึงขอให้รถมารับที่ ${booker.pickup}`
+        + ' โดยข้าพเจ้าเดินได้เอง ไม่มีผู้ติดตาม และขอเดินทางไป-กลับ (รอรับกลับ)'))
+      for (const dangling of ['ที่อยู่', 'อายุ', 'เพื่อ', 'จุดสังเกต', 'ผู้ป่วยมีนัด']) {
+        assert.ok(!`${self.request} ${self.travel}`.includes(dangling), `ผู้ป่วยจองเอง: เหลือวลี "${dangling}" ทั้งที่ไม่มีข้อมูล`)
+      }
+      // 2b) ระบุว่าผู้ป่วยยื่นเอง แต่ชื่อผู้ป่วยไม่ตรงกับผู้ยื่น (ข้อมูลขัดกัน) — ชื่อผู้ป่วยต้องไม่หายไปจากใบ
+      const [mismatch] = await read(tripWith({ relation: 'self', patient_name: 'นางสมศรี ไม่ตรงชื่อ', mobility: 'walk', companions: 0 }))
+      assert.ok(mismatch.request.endsWith(`${PARTNER.name} สำหรับ นางสมศรี ไม่ตรงชื่อ`), `ชื่อผู้ป่วยหายไปจากใบ: "${mismatch.request}"`)
+      assert.ok(mismatch.travel.startsWith('ผู้ป่วยมีนัดที่'), `ชื่อไม่ตรงกันต้องเรียก "ผู้ป่วย" ไม่ใช่ "ข้าพเจ้า": "${mismatch.travel}"`)
+
+      // 3) ระบบจองคิว ผู้ดูแลจองแทน ผู้ป่วยนอนเปล ขาไปอย่างเดียว — ไม่พิมพ์ "ขาไปอย่างเดียว" ซ้ำในวงเล็บ
+      const [other] = await read(tripWith({ relation: 'caregiver', mobility: 'stretcher', companions: 2, return_mode: 'one_way' }))
+      assert.equal(other.request,
+        `ข้าพเจ้า ${booker.requester_name} โทรศัพท์ ${booker.phone} เป็นผู้ดูแลของผู้ป่วย ${request}${PARTNER.name} สำหรับ ${booker.patient_name}`)
+      assert.match(other.travel, sentence(
+        `ผู้ป่วยมีนัดที่ ${TRIP.plan.route_label} ในวันที่ {WHEN} จึงขอให้รถมารับที่ ${booker.pickup}`
+        + ' โดยผู้ป่วยต้องนอนเปล มีผู้ติดตาม 2 คน และขอเดินทางขาไปอย่างเดียว'))
+
+      // 4) ข้อมูลหลักหาย (คำขอเก่า/ข้อมูลไม่ครบ) — ประโยคยังอ่านได้ เหลือเส้นประให้เขียนมือ ไม่มีความเกี่ยวข้องก็ไม่พิมพ์วลีนั้น
+      const [sparse] = await read(buildPatientTransportFormHtml(args({
+        header: { ...HEADER, appointment_at: null, mobility: null },
+        form: { requester_relation: 'other', signed_by: null },
+        parent: { requester_name: PARENT.requester_name },
+      })))
+      assert.equal(sparse.blanks.request, 1, 'ไม่มีชื่อผู้ป่วยต้องเหลือเส้นประให้เขียน 1 จุด')
+      assert.equal(sparse.blanks.travel, 3, 'ไม่มีปลายทาง วันเวลานัด และจุดรับ ต้องเหลือเส้นประให้เขียน 3 จุด')
+      assert.ok(!sparse.request.includes('ของผู้ป่วย'), `ไม่ได้ระบุความเกี่ยวข้อง แต่ยังพิมพ์วลีความเกี่ยวข้อง: "${sparse.request}"`)
+
+      // 5) ทุกทางที่พิมพ์ใบคำขอ: ไม่มีตาราง มีคำลงท้าย เรียง เนื้อความ → หลักฐาน → คำลงท้าย → ลงชื่อ และไม่มีค่าว่างหลุดเป็นตัวหนังสือ
+      for (const [label, html] of [
+        ['ชุดเอกสารคำขอ', buildPatientTransportPacketHtml(args())],
+        ['ใบคำขอฝั่งประชาชน', buildPatientTransportFormHtml(args())],
+        ['หนังสือต่อเที่ยว', buildTripForwardLetterHtml({ ...tripArgs(), bookings: TRIP_BOOKINGS.slice(0, 2) })],
+        ['ข้อมูลไม่ครบ', buildPatientTransportFormHtml(args({ form: { signed_by: null }, parent: {} }))],
+      ]) {
+        const forms = await read(html)
+        assert.ok(forms.length > 0, `${label}: ไม่พบใบคำขอ`)
+        for (const form of forms) {
+          assert.equal(form.tables, 0, `${label}: ใบคำขอยังมีตาราง`)
+          assert.equal(form.closing, 'จึงเรียนมาเพื่อโปรดพิจารณาให้ความอนุเคราะห์', `${label}: คำลงท้ายของเนื้อความ`)
+          assert.equal(form.regards, 'ขอแสดงความนับถือ', `${label}: คำลงท้าย`)
+          assert.ok(form.inOrder, `${label}: ลำดับต้องเป็น ย่อหน้าคำขอ → ย่อหน้าการเดินทาง → หลักฐาน → คำลงท้าย → ลงชื่อ`)
+          assert.equal(form.looseWord, 0, `${label}: คำว่า "ผู้ป่วย" ในประโยคไม่ได้กันขาดกลางคำ`)
+          assert.equal(form.splitTimes, 0, `${label}: มีเวลา "xx.xx น." ที่ขาดคนละบรรทัดได้`)
+          assert.ok(!/undefined|null|NaN/.test(form.all), `${label}: มีค่าว่างหลุดออกมาเป็นตัวหนังสือ`)
+        }
+      }
+    },
+  },
+  {
     name: 'filled-fields-have-no-dotted-line',
     reason: 'เส้นประมีไว้ให้เขียนมือ ช่องที่ระบบพิมพ์ค่าแล้วต้องไม่มีเส้นประ ส่วนช่องว่างต้องยังมีให้เขียน',
     async run(browser) {
@@ -488,6 +655,7 @@ const checks = [
           // ใบคำขอละ 1 ช่อง (ผู้ยื่นคำขอ) — ช่องกรรมการกองทุน 2 ช่องต่อใบตัดออกแล้ว 2569-10-01
           await assertSignBlockStandard(page, { minRows: count, minBelow: count })
           if (count === 1 && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
+            // เลขในชื่อไฟล์ = ลำดับที่ออกจากเครื่องพิมพ์: 1 ใบคำขอ · 2 หนังสือนำส่ง
             for (let i = 0; i < 2; i++) await page.locator('.sheet').nth(i).screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/patient-document-${i + 1}.png` })
           }
         } finally { await page.close() }
@@ -502,8 +670,8 @@ const checks = [
     async run(browser) {
       const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings: TRIP_BOOKINGS.slice(0, 1) }))
       try {
-        const letter = await page.locator('.sheet').nth(0).innerText()
-        const form = await page.locator('.sheet').nth(1).innerText()
+        const letter = await letterSheetOf(page).innerText()
+        const form = await formSheetsOf(page).innerText()
         for (const value of ['0891234567', 'บ้านเลขที่ 88']) {
           assert.ok(!letter.includes(value))
           assert.ok(form.includes(value))
@@ -526,22 +694,25 @@ const checks = [
     reason: 'บรรทัดกำกับใต้ชื่อผู้ยื่นต้องตรงกับช่องทางที่คำขอเข้ามาจริง: จองเอง = ลงชื่อออนไลน์ · เจ้าหน้าที่รับจองแทน = บอกว่ารับจองแทน'
       + ' ไม่ขอลายมือชื่อ · ไม่รู้ช่องทาง = ไม่อ้างอะไรเลย และหนังสือนำส่งต้องไม่เขียนขัดกับใบที่แนบ',
     async run(browser) {
-      const read = async (html, shot) => {
+      // คืนแผ่นตามชนิด ไม่ใช่ตามลำดับ: letter = หนังสือนำส่ง · forms = ใบคำขอเรียงตามที่พิมพ์ · form = ใบคำขอใบแรก
+      const read = async (html, shotFile) => {
         const page = await render(browser, html)
         try {
-          if (shot && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
-            await page.locator('.sheet').nth(shot.sheet).screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/${shot.file}` })
+          if (shotFile && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
+            await formSheetsOf(page).first().screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/${shotFile}` })
           }
-          return await page.evaluate(() => [...document.querySelectorAll('.sheet')].map(sheet => ({
+          const sheets = await page.evaluate(() => [...document.querySelectorAll('.sheet')].map(sheet => ({
             isForm: !!sheet.querySelector('.form-title'),
             text: sheet.innerText,
             note: sheet.querySelector('.signed-note')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
             signed: [...sheet.querySelectorAll('.sign-signed')].map(el => el.textContent.trim()),
             lines: sheet.querySelectorAll('.sign-line').length,
           })))
+          const forms = sheets.filter(sheet => sheet.isForm)
+          return { letter: sheets.find(sheet => !sheet.isForm), forms, form: forms[0] }
         } finally { await page.close() }
       }
-      const trip = (bookings, shot) => read(buildTripForwardLetterHtml({ ...tripArgs(), bookings }), shot)
+      const trip = (bookings, shotFile) => read(buildTripForwardLetterHtml({ ...tripArgs(), bookings }), shotFile)
       const booking = (index, overrides = {}) => ({ ...TRIP_BOOKINGS[index], ...overrides })
       // วันเวลาแสดงตามเวลาเครื่องที่พิมพ์ — ตรวจรูปแบบ ไม่ล็อกชั่วโมง เครื่องที่ตั้งโซนเวลาอื่นจะได้ไม่ล้มลวง
       const STAMP = String.raw`เมื่อ \d{1,2} \S+ 2569 เวลา \d{2}\.\d{2} น\.`
@@ -552,7 +723,7 @@ const checks = [
 
       // 1) ผู้แจ้งล็อกอินจองเอง — ลงชื่อออนไลน์ ไม่ขอให้เซ็นปากกา
       {
-        const [letter, form] = await trip([booking(0, { entry_channel: 'online' })])
+        const { letter, form } = await trip([booking(0, { entry_channel: 'online' })])
         assert.match(form.note, new RegExp(`^ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service ${STAMP} · เลขอ้างอิง B-0$`),
           `ใบของผู้ที่จองเอง: "${form.note}"`)
         nameOnLine(form, TRIP_BOOKINGS[0].requester_name, 'จองเอง')
@@ -561,7 +732,7 @@ const checks = [
       }
       // 2) เจ้าหน้าที่รับจองแทน — บอกตามจริง ไม่อ้างว่ายืนยันตัวตน ไม่ขอลายมือชื่อ
       {
-        const [letter, form] = await trip([booking(0, { entry_channel: 'staff' })], { sheet: 1, file: 'patient-document-staff-entry.png' })
+        const { letter, form } = await trip([booking(0, { entry_channel: 'staff' })], 'patient-document-staff-entry.png')
         assert.match(form.note, new RegExp(`^เจ้าหน้าที่รับจองแทนทางโทรศัพท์/หน้าเคาน์เตอร์ ${STAMP} · เลขอ้างอิง B-0$`),
           `ใบที่เจ้าหน้าที่รับจองแทน: "${form.note}"`)
         for (const claim of ['ยืนยันตัวตน', 'ลงลายมือชื่อ']) {
@@ -574,7 +745,7 @@ const checks = [
       }
       // 3) ไม่รู้ช่องทาง (ไม่มีค่า หรือค่าที่ไม่รู้จัก) — ไม่อ้างทั้งสองแบบ คงข้อความเดิมที่ขอให้เซ็นรับรอง
       for (const unknown of [undefined, null, 'phone']) {
-        const [letter, form] = await trip([booking(0, { entry_channel: unknown })])
+        const { letter, form } = await trip([booking(0, { entry_channel: unknown })])
         assert.ok(form.note.includes('จัดทำจากข้อมูลการจองรถ') && form.note.includes('โปรดลงลายมือชื่อรับรอง'),
           `ช่องทาง ${unknown}: "${form.note}"`)
         for (const claim of ['ยืนยันตัวตน', 'รับจองแทน']) {
@@ -584,8 +755,7 @@ const checks = [
       }
       // 4) เที่ยวเดียวมีทั้งสองแบบ — แต่ละใบได้บรรทัดของตัวเอง ไม่ปนกัน
       {
-        const sheets = await trip([booking(0), booking(1)])
-        const forms = sheets.filter(sheet => sheet.isForm)
+        const { forms } = await trip([booking(0), booking(1)])
         assert.equal(forms.length, 2)
         assert.ok(forms[0].note.includes('ยืนยันตัวตนผ่านระบบ E-Service') && forms[0].note.includes('B-0'), `ใบแรก: "${forms[0].note}"`)
         assert.ok(forms[1].note.includes('เจ้าหน้าที่รับจองแทน') && forms[1].note.includes('B-1'), `ใบที่สอง: "${forms[1].note}"`)
@@ -595,7 +765,7 @@ const checks = [
       }
       // 5) ชุดเอกสารของระบบคำขอแบบเดิมต้องได้ถ้อยคำเท่าเดิม — งานนี้แก้เฉพาะระบบจองคิว
       for (const [label, form] of [['ยื่นออนไลน์', FORM], ['เจ้าหน้าที่คีย์แทนที่เคาน์เตอร์', { ...FORM, signed_by: null }]]) {
-        const [letter] = await read(buildPatientTransportPacketHtml(args({ form })))
+        const { letter } = await read(buildPatientTransportPacketHtml(args({ form })))
         assert.ok(letter.text.includes(`ได้ยื่นคำขอต่อ${TENANT.name} ผ่านระบบบริการอิเล็กทรอนิกส์ ตามเลขอ้างอิง A1B2C3D4`),
           `ระบบคำขอแบบเดิม (${label}): ย่อหน้าแรกของหนังสือเปลี่ยนไป`)
       }
@@ -624,8 +794,8 @@ const checks = [
           const page = await render(browser, build(mayor))
           try {
             const inspect = () => page.evaluate(() => {
-              const letter = document.querySelector('.sheet')
-              const sign = letter.querySelector('.letter-sign')
+              const sign = document.querySelector('.letter-sign')
+              const letter = sign.closest('.sheet')
               const note = document.querySelector('.screen-note')
               return {
                 lines: [...sign.querySelectorAll('p')].map(p => p.textContent.trim()),
@@ -670,7 +840,7 @@ const checks = [
       ]) {
         const page = await render(browser, html)
         try {
-          const letter = page.locator('.sheet').nth(0)
+          const letter = letterSheetOf(page)
           const text = await letter.innerText()
           assert.equal(await letter.locator('.owner').count(), 0, `${label}: ยังมีบล็อกเจ้าของเรื่อง`)
           for (const value of [TENANT.phone, TENANT.fax, 'โทรสาร']) {
@@ -692,7 +862,7 @@ const checks = [
       ]) {
         const page = await render(browser, html)
         try {
-          const text = await page.locator('.sheet').nth(0).innerText()
+          const text = await letterSheetOf(page).innerText()
           assert.ok(!text.includes('ข้อความยินยอมรุ่น'), `${label}: ยังมีคำว่า "ข้อความยินยอมรุ่น"`)
           assert.ok(!text.includes(version), `${label}: ยังพิมพ์รหัส ${version}`)
           assert.ok(text.includes('ให้ความยินยอมเป็นการเฉพาะ'), `${label}: ย่อหน้าความยินยอมหายไปด้วย`)
@@ -727,7 +897,7 @@ const checks = [
         const tenant = { ...TENANT, ...place }
         const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), tenant, bookings: TRIP_BOOKINGS.slice(0, 1) }))
         try {
-          const lines = await page.locator('.sheet').nth(0).locator('.sender p').allInnerTexts()
+          const lines = await letterSheetOf(page).locator('.sender p').allInnerTexts()
           assert.deepEqual(lines.slice(1).map(line => line.trim()), expected, label)
         } finally { await page.close() }
       }
