@@ -10,6 +10,12 @@ import { AUDIENCE_COLOR, AUDIENCE_LABEL } from '../lib/orgTerms'
 import { CalendarDayMarkers, CalendarDayObservances, CalendarObservanceLegend } from '../components/CalendarObservances'
 import { AssignmentLine, AssignedBadge } from '../components/events/EventAssignment'
 import { canAssignEvent, isAssignedTo } from '../lib/eventAssignment'
+import { YearlyBadge } from '../components/events/PersonalEvent'
+import { loadPersonalEvents } from '../lib/personalEventsApi'
+import {
+  PERSONAL_AUDIENCE, PERSONAL_COLOR, MINE_FILTER, MINE_LABEL,
+  canUsePersonalEvents, isPersonalEvent, isMine, audienceMeta, audienceColor, eventsForCalendarYear,
+} from '../lib/personalEvents'
 
 const CATEGORY_COLOR = {
   'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
@@ -59,26 +65,34 @@ function CalendarView({ events, dotEvents, onSelectEvent, role, userId }) {
   // (เจ้าของระบบเลือก 2569-09-30 หลังเจอวันที่ 30 ก.ย. ขึ้นซ้ำบนหน้าน้ำเลา)
   const [selectedDay, setSelectedDay] = useState(null)
 
+  // รายการส่วนตัวแบบ "ทุกปี" ถูกย้ายไปวันของปีที่กำลังเปิดดู จึงต้องคำนวณใหม่เมื่อเปลี่ยนปี
   const eventMap = useMemo(() => {
     const map = {}
-    events.forEach(ev => {
+    eventsForCalendarYear(events, calYear).forEach(ev => {
       if (!map[ev.event_date]) map[ev.event_date] = []
       map[ev.event_date].push(ev)
     })
     return map
-  }, [events])
+  }, [events, calYear])
 
   // จุดในตารางเดือนมาจาก dotEvents (วันที่ + กลุ่มเป้าหมายเท่านั้น ไม่มีเนื้อหา) ที่ทุกคน
   // เห็นได้หมดไม่ว่าจะมีสิทธิ์ดูรายละเอียดหรือไม่ — ต่างจาก eventMap ด้านบนที่ใช้กับ
   // รายการรายละเอียดด้านล่าง ซึ่งยังกรองตามสิทธิ์ตามปกติ
+  // รายการส่วนตัวไม่อยู่ใน get_event_dots (คนละตาราง) จึงเติมจาก events ของเจ้าของเอง
   const dotMap = useMemo(() => {
     const map = {}
-    ;(dotEvents ?? []).forEach(ev => {
+    const personal = eventsForCalendarYear((events ?? []).filter(isPersonalEvent), calYear)
+    ;[...(dotEvents ?? []), ...personal].forEach(ev => {
       if (!map[ev.event_date]) map[ev.event_date] = []
       map[ev.event_date].push(ev)
     })
     return map
-  }, [dotEvents])
+  }, [dotEvents, events, calYear])
+
+  // คำอธิบายสี: 4 กลุ่มเดิม + "เฉพาะฉัน" สำหรับผู้มีตำแหน่ง (ประชาชนไม่มีรายการส่วนตัว ไม่ต้องเห็นสีนี้)
+  const legendKeys = canUsePersonalEvents(role)
+    ? [...Object.keys(AUDIENCE_COLOR), PERSONAL_AUDIENCE]
+    : Object.keys(AUDIENCE_COLOR)
 
   const firstDow  = new Date(calYear, calMonth, 1).getDay()
   const totalDays = new Date(calYear, calMonth + 1, 0).getDate()
@@ -196,7 +210,7 @@ function CalendarView({ events, dotEvents, onSelectEvent, role, userId }) {
                   <span
                     key={i}
                     className="w-2 h-2 rounded-full shadow-sm"
-                    style={{ backgroundColor: AUDIENCE_COLOR[ev.audiences?.[0]] ?? '#6b7280' }}
+                    style={{ backgroundColor: audienceColor(ev.audiences?.[0]) }}
                   />
                 ))}
                 {dayEvs.length > 3 && (
@@ -213,11 +227,11 @@ function CalendarView({ events, dotEvents, onSelectEvent, role, userId }) {
       <CalendarObservanceLegend year={calYear} />
       {/* Legend */}
       <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3 px-1">
-        {Object.entries(AUDIENCE_COLOR).map(([key, color]) => (
+        {legendKeys.map((key) => (
           <div key={key} className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: audienceColor(key) }} />
             <span className="text-[11px] text-gray-400">
-              {AUDIENCE_LABEL[key] ?? key}
+              {audienceMeta(key)?.label ?? key}
             </span>
           </div>
         ))}
@@ -261,16 +275,17 @@ function CalendarView({ events, dotEvents, onSelectEvent, role, userId }) {
                           {ev.category}
                         </span>
                         {(ev.audiences ?? []).map(v => {
-                          const audColor = AUDIENCE_COLOR[v] ?? '#6b7280'
+                          const audColor = audienceColor(v)
                           return (
                             <span key={v}
                               className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
                               style={{ backgroundColor: audColor + '20', color: audColor }}
                             >
-                              {v !== 'public' && '🔒 '}{AUDIENCE_LABEL[v] ?? v}
+                              {v !== 'public' && '🔒 '}{audienceMeta(v)?.label ?? v}
                             </span>
                           )
                         })}
+                        {ev.repeat_yearly && <YearlyBadge />}
                         {isAssignedTo(ev, userId) && <AssignedBadge />}
                       </div>
                       <p className="text-sm font-bold text-gray-800 dark:text-slate-200 leading-tight">
@@ -357,17 +372,26 @@ export default function EventsPage() {
     // บุคลากรภายใน — ดึงผ่าน RPC ตัวเดียวกับหน้าจัดการ เห็นชื่อกิจกรรมทุกกลุ่ม (เช็ควันว่างได้)
     // แต่เซิร์ฟเวอร์ตัดรายละเอียด/ไฟล์แนบของเรื่องที่ไม่มีสิทธิ์ออกก่อนส่งมา (migration 20260830090000)
     const loadInternal = async () => {
-      const [eventsRes, scopeRes] = await Promise.all([
+      // รายการส่วนตัว ("เฉพาะฉัน") ของผู้ใช้คนนี้อยู่คนละตาราง ดึงขนานไปด้วย — พลาดก็ไม่ทำให้ปฏิทินของหน่วยงานหาย
+      const [eventsRes, scopeRes, personalRes] = await Promise.all([
         supabase.rpc('list_events_for_staff', { p_municipality_id: tenant.id }),
         supabase.from('profiles').select('department_id, is_dept_head').eq('id', userId).maybeSingle(),
+        canUsePersonalEvents(role)
+          ? loadPersonalEvents(tenant.id, userId).catch((err) => ({ rows: [], error: err }))
+          : Promise.resolve({ rows: [], error: null }),
       ])
       if (!cancelled) setEditScope(scopeRes.data ?? null)
+      if (personalRes.error) {
+        console.error('[events] โหลดรายการส่วนตัวไม่สำเร็จ แสดงเฉพาะกิจกรรมของหน่วยงาน:', personalRes.error.message)
+      }
+      // รายการ "ทุกปี" ไม่ถูกตัดตามช่วงเวลา (วันที่ของมันคือครั้งถัดไปซึ่งไม่เคยอยู่ในอดีต)
+      const personal = personalRes.rows.filter(ev => ev.repeat_yearly || (ev.end_date || ev.event_date) >= fromStr)
       if (eventsRes.error) {
         console.error('[events] list_events_for_staff ไม่สำเร็จ แสดงเฉพาะกิจกรรมสาธารณะแทน:', eventsRes.error.message)
-        return loadPublic()
+        return [...await loadPublic(), ...personal]
       }
       // RPC คืนทุกช่วงเวลา ตัดให้เหลือช่วงเดียวกับที่ประชาชนเห็น (ย้อนหลัง 3 เดือน)
-      return (eventsRes.data ?? []).filter(ev => ev.event_date && ev.event_date >= fromStr)
+      return [...(eventsRes.data ?? []).filter(ev => ev.event_date && ev.event_date >= fromStr), ...personal]
     }
 
     ;(isInternal ? loadInternal() : loadPublic())
@@ -387,7 +411,7 @@ export default function EventsPage() {
       .catch(err => console.error('[events] โหลดกิจกรรมไม่สำเร็จ:', err?.message ?? err))
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [tenant?.id, authReady, isInternal, userId])
+  }, [tenant?.id, authReady, isInternal, userId, role])
 
   // จุดปฏิทิน (วันที่ + กลุ่มเป้าหมายเท่านั้น ไม่มีชื่อ/สถานที่/รายละเอียด) — ดึงผ่าน RPC
   // ที่เปิดให้ทุกคนเรียกได้โดยไม่ต้องมีสิทธิ์ตาม audience เพื่อให้เห็นว่า "มีกิจกรรมวันไหนบ้าง"
@@ -415,13 +439,22 @@ export default function EventsPage() {
 
   // ตัวกรอง "กลุ่ม" ให้เลือกได้ทุกกลุ่มเสมอ (ดูแค่ว่าวันไหนไม่ว่างได้ แม้ดูรายละเอียดไม่ได้)
   const allAudienceKeys = Object.keys(AUDIENCE_LABEL)
+  // ปุ่ม "ของฉัน" (รายการที่จดเอง + กิจกรรมที่ได้รับมอบหมาย) เฉพาะผู้มีตำแหน่ง — ประชาชนไม่มีรายการส่วนตัว
+  const showMineChip = canUsePersonalEvents(role)
+  const mineSelected = selectedAudience === MINE_FILTER
 
   // กรองตาม chip ที่เลือก
-  const filteredEvents = selectedAudience
+  const filteredEvents = mineSelected
+    ? events.filter(ev => isMine(ev, userId))
+    : selectedAudience
     ? events.filter(ev => ev.audiences?.includes(selectedAudience))
     : events
 
-  const filteredDotEvents = selectedAudience
+  // จุดของ "ของฉัน" มาจากรายการที่กรองแล้ว (get_event_dots ไม่มี id จึงรู้ไม่ได้ว่าเรื่องไหนได้รับมอบหมาย)
+  // ส่วนรายการส่วนตัว CalendarView เติมจุดจาก events เอง จึงตัดออกตรงนี้กันจุดซ้ำ
+  const filteredDotEvents = mineSelected
+    ? filteredEvents.filter(ev => !isPersonalEvent(ev))
+    : selectedAudience
     ? dotEvents.filter(ev => ev.audiences?.includes(selectedAudience))
     : dotEvents
 
@@ -487,7 +520,7 @@ export default function EventsPage() {
       <CalendarDays size={40} strokeWidth={1.2} className="mb-3" />
       <p className="text-sm">
         {selectedAudience
-          ? `ไม่มีกิจกรรมสำหรับ "${AUDIENCE_LABEL[selectedAudience]}"`
+          ? `ไม่มีกิจกรรมสำหรับ "${mineSelected ? MINE_LABEL : AUDIENCE_LABEL[selectedAudience]}"`
           : activeTab === 'past' ? 'ไม่มีกิจกรรมที่ผ่านมาแล้ว' : 'ยังไม่มีกิจกรรมเร็วๆ นี้'}
       </p>
       {selectedAudience && (
@@ -550,16 +583,17 @@ export default function EventsPage() {
                         {ev.category}
                       </span>
                       {(ev.audiences ?? []).map(v => {
-                        const audColor = AUDIENCE_COLOR[v] ?? '#6b7280'
+                        const audColor = audienceColor(v)
                         return (
                           <span key={v}
                             className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
                             style={{ backgroundColor: audColor + '20', color: audColor }}
                           >
-                            {v !== 'public' && '🔒 '}{AUDIENCE_LABEL[v] ?? v}
+                            {v !== 'public' && '🔒 '}{audienceMeta(v)?.label ?? v}
                           </span>
                         )
                       })}
+                      {ev.repeat_yearly && <YearlyBadge />}
                       {isPast ? (
                         <span className="text-[11px] text-gray-400 font-medium">ผ่านไปแล้ว</span>
                       ) : (
@@ -713,6 +747,20 @@ export default function EventsPage() {
               {AUDIENCE_LABEL[key]}
             </button>
           ))}
+          {showMineChip && (
+            <button
+              data-audience-chip={MINE_FILTER}
+              onClick={() => setSelectedAudience(mineSelected ? null : MINE_FILTER)}
+              className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                mineSelected
+                  ? 'text-white border-transparent'
+                  : 'bg-white dark:bg-white/5 border-gray-200 dark:border-white/10 hover:border-gray-400'
+              }`}
+              style={mineSelected ? { backgroundColor: PERSONAL_COLOR } : { color: PERSONAL_COLOR }}
+            >
+              🔒 {MINE_LABEL}
+            </button>
+          )}
         </div>
       )}
 

@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { X } from 'lucide-react'
-import { AUDIENCE_COLOR, AUDIENCE_LABEL } from '../lib/orgTerms'
 import { AssignmentLine, EventAssignmentDialog } from './events/EventAssignment'
+import { YearlyBadge } from './events/PersonalEvent'
+import { audienceMeta } from '../lib/personalEvents'
 
 const CATEGORY_COLOR = {
   'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
@@ -59,14 +60,17 @@ export default function EventDetailModal({ ev, onClose, canEdit, canAssign = fal
               <div className="flex flex-wrap gap-1.5 mb-2">
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
                   style={{ backgroundColor: color }}>{ev.category}</span>
-                {(ev.audiences ?? []).map(v => (
-                  AUDIENCE_LABEL[v] && (
+                {/* audienceMeta รู้จัก "เฉพาะฉัน" ของรายการส่วนตัวด้วย (ไม่ได้อยู่ใน AUDIENCE_LABEL ที่หน้าสาธารณะใช้) */}
+                {(ev.audiences ?? []).map(v => {
+                  const aud = audienceMeta(v)
+                  return aud && (
                     <span key={v} className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
-                      style={{ color: AUDIENCE_COLOR[v], borderColor: AUDIENCE_COLOR[v], backgroundColor: AUDIENCE_COLOR[v] + '18' }}>
-                      {v !== 'public' ? '🔒 ' : '👥 '}{AUDIENCE_LABEL[v]}
+                      style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '18' }}>
+                      {v !== 'public' ? '🔒 ' : '👥 '}{aud.label}
                     </span>
                   )
-                ))}
+                })}
+                {ev.repeat_yearly && <YearlyBadge />}
                 {days && (
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
                     style={{ backgroundColor: daysColor }}>
