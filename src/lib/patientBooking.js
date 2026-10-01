@@ -351,6 +351,8 @@ const HISTORY = {
   cancel_passenger: ['นำออกจากเที่ยว (ยกเลิก)', STAGES.cancelled.color],
   release: ['คืนคิวทั้งเที่ยว', STAGES.cancelled.color],
   duplicate_booking_closed: ['ปิดคำขอซ้ำ (ใช้คิวที่ยืนยันแล้ว)', STAGES.cancelled.color],
+  // เปิดคำขอที่ปิดผิดกลับเป็นรอยืนยันรถ — ยังไม่มีปุ่มในระบบ เจ้าของระบบสั่งแก้ข้อมูลเป็นรายกรณี (2569-10-01 ใบที่ย้ายเข้าเที่ยวผิดวัน)
+  reopened: ['เปิดคำขอกลับมาใช้', STAGES.submitted.color],
 }
 // เหตุการณ์ที่ทำให้คำขอมีเที่ยวที่ยืนยันแล้ว — ใช้ตัดสินป้ายของ "cancel" ด้านล่าง
 const HISTORY_CONFIRMS = new Set(['confirmed', 'confirmed_join', 'confirmed_multiwave', 'staff_join', 'rescheduled_from', 'moved_into_trip'])
@@ -364,7 +366,7 @@ export function describeHistory(events = []) {
     if (e.action === 'cancel') [label, color] = confirmed ? ['ขอยกเลิก (รอเจ้าหน้าที่ประสาน)', STAGES.submitted.color] : ['ยกเลิกคำขอ', STAGES.cancelled.color]
     if (e.action === 'submitted' && e.entry_channel === 'staff') label = 'รับคำขอแทน (โทรศัพท์/เคาน์เตอร์)'
     if (HISTORY_CONFIRMS.has(e.action)) confirmed = true
-    if (['release', 'cancel_passenger'].includes(e.action)) confirmed = false
+    if (['release', 'cancel_passenger', 'reopened'].includes(e.action)) confirmed = false
     const who = [`${e.actor_name}${e.by_booker ? ' (ผู้จอง)' : ''}`, e.for_driver && `บันทึกแทนคนขับ ${e.for_driver}`].filter(Boolean).join(' · ')
     const extra = e.action === 'driver_reassigned' ? `${e.driver_before || 'คนขับเดิม'} → ${e.driver_after || 'คนขับใหม่'}` : ''
     return { id: e.id, at: e.at, label, color, who, extra, note: e.note || '' }
