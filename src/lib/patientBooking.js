@@ -320,3 +320,53 @@ export function normalizeBookingPhone(value) {
   // Keep unrecognized input intact so validation can explain the problem; never guess missing digits.
   return /^0[0-9]{8,9}$/.test(local) ? local : value
 }
+
+// ── ประวัติการดำเนินการของคำขอ (patient_booking_history, 20261001100000) — แปลรหัสคำสั่งเป็นภาษาเจ้าหน้าที่ ──
+// สีแถบซ้ายใช้ชุดเดียวกับขั้นของคำขอ (STAGES) ให้กวาดตาเห็นว่าเป็นช่วงไหนของงาน · สีเทา = แก้ข้อมูล/เอกสาร
+const EDITED = '#94a3b8'
+const HISTORY = {
+  submitted: ['ส่งคำขอ', STAGES.submitted.color],
+  requested_join: ['ขอร่วมเที่ยวที่มีอยู่', STAGES.submitted.color],
+  staff_join: ['ให้ร่วมเที่ยวที่ยืนยันแล้ว', STAGES.confirmed.color],
+  confirmed: ['ยืนยันรถ', STAGES.confirmed.color],
+  confirmed_join: ['ยืนยันรถ · ร่วมเที่ยวเดิม', STAGES.confirmed.color],
+  confirmed_multiwave: ['ยืนยันรถ · รับหลายรอบ', STAGES.confirmed.color],
+  rescheduled_from: ['เปลี่ยนวันเวลาเดินทาง', STAGES.confirmed.color],
+  moved_into_trip: ['ย้ายไปร่วมเที่ยวอื่น', STAGES.confirmed.color],
+  amended: ['แก้ข้อมูลตามที่ประสาน', EDITED],
+  pickup_corrected: ['แก้จุดรับ', EDITED],
+  hospital_changed: ['เปลี่ยนโรงพยาบาล', EDITED],
+  return_later_for_multiwave: ['เปลี่ยนเป็นกลับมารับภายหลัง (รับหลายรอบ)', EDITED],
+  schedule_updated: ['แจ้งเวลารับล่าสุด / รถล่าช้า', EDITED],
+  driver_reassigned: ['เปลี่ยนคนขับ', EDITED],
+  departure_corrected: ['แก้การกดออกรถผิด', EDITED],
+  letter_recorded: ['บันทึกเลขหนังสือนำส่ง', EDITED],
+  odometer_recorded: ['บันทึกเลขไมล์', EDITED],
+  trip_next: ['ออกรถ', STAGES.running.color],
+  passenger_next: ['บันทึกขั้นผู้เดินทาง', STAGES.running.color],
+  ready_return: ['แจ้งพร้อมให้มารับกลับ', STAGES.running.color],
+  issue: ['แจ้งเหตุขัดข้อง', '#b91c1c'],
+  resolve: ['แก้เหตุขัดข้องแล้ว เดินรถต่อ', STAGES.running.color],
+  trip_finish: ['กลับแล้ว · จบงาน', STAGES.completed.color],
+  cancel_passenger: ['นำออกจากเที่ยว (ยกเลิก)', STAGES.cancelled.color],
+  release: ['คืนคิวทั้งเที่ยว', STAGES.cancelled.color],
+  duplicate_booking_closed: ['ปิดคำขอซ้ำ (ใช้คิวที่ยืนยันแล้ว)', STAGES.cancelled.color],
+}
+// เหตุการณ์ที่ทำให้คำขอมีเที่ยวที่ยืนยันแล้ว — ใช้ตัดสินป้ายของ "cancel" ด้านล่าง
+const HISTORY_CONFIRMS = new Set(['confirmed', 'confirmed_join', 'confirmed_multiwave', 'staff_join', 'rescheduled_from', 'moved_into_trip'])
+// รับรายการตามลำดับเวลา (เก่า → ใหม่ แบบประวัติของคำร้อง) · joined_from_trip เกิดคู่กับ moved_into_trip ในคำสั่งเดียว แสดงบรรทัดเดียวพอ
+export function describeHistory(events = []) {
+  let confirmed = false
+  return events.filter(e => e.action !== 'joined_from_trip').map(e => {
+    let [label, color] = HISTORY[e.action] || [e.action, EDITED]
+    // ยกเลิกก่อนยืนยันรถ = ยกเลิกทันที · หลังยืนยันรถ = แค่ "ขอยกเลิก" รอเจ้าหน้าที่ประสาน (patient_booking_action)
+    // ป้ายเดียวตายตัวจะทำให้เข้าใจผิดว่าคำขอที่ยังเดินทางอยู่ถูกยกเลิกไปแล้ว จึงไล่สถานะตามลำดับเหตุการณ์เอง
+    if (e.action === 'cancel') [label, color] = confirmed ? ['ขอยกเลิก (รอเจ้าหน้าที่ประสาน)', STAGES.submitted.color] : ['ยกเลิกคำขอ', STAGES.cancelled.color]
+    if (e.action === 'submitted' && e.entry_channel === 'staff') label = 'รับคำขอแทน (โทรศัพท์/เคาน์เตอร์)'
+    if (HISTORY_CONFIRMS.has(e.action)) confirmed = true
+    if (['release', 'cancel_passenger'].includes(e.action)) confirmed = false
+    const who = [`${e.actor_name}${e.by_booker ? ' (ผู้จอง)' : ''}`, e.for_driver && `บันทึกแทนคนขับ ${e.for_driver}`].filter(Boolean).join(' · ')
+    const extra = e.action === 'driver_reassigned' ? `${e.driver_before || 'คนขับเดิม'} → ${e.driver_after || 'คนขับใหม่'}` : ''
+    return { id: e.id, at: e.at, label, color, who, extra, note: e.note || '' }
+  })
+}

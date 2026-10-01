@@ -20,6 +20,7 @@ await db.exec(await readFile(new URL('../supabase/migrations/20260929110000_pati
 await db.exec(await readFile(new URL('../supabase/migrations/20260926125325_patient_booking_staff_work_badge.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20260929130000_patient_booking_driver_cover.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20260930110000_patient_booking_duplicate_shared_trip.sql', import.meta.url), 'utf8'))
+await db.exec(await readFile(new URL('../supabase/migrations/20261001100000_patient_booking_history.sql', import.meta.url), 'utf8'))
 await actor(admin)
 await rpc('patient_booking_save_settings', [tenant, (await rpc('patient_booking_workspace', [tenant])).settings.revision,
   { ...settings, office_start: 450, office_end: 1050, routes: [{ ...settings.routes[0], minutes: 45 }] }])
@@ -137,6 +138,7 @@ const order = {
  patient_booking_amend:['p_muni','p_op','p_id','p_revision','p_data','p_note'],
  patient_booking_save_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end','p_issue','p_note'],patient_booking_record_letter:['p_muni','p_trip','p_docs_revision','p_letter_no','p_letter_date'],patient_booking_record_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end'],patient_booking_month_report:['p_muni','p_month'],
  patient_booking_events_page:['p_muni','p_page'],
+ patient_booking_history:['p_muni','p_booking'],
 }
 const plugin = {
  name:'isolated-patient-booking-browser',enforce:'pre',
@@ -1199,6 +1201,58 @@ try{
  await deskPills.getByRole('button',{name:/^จบแล้ว/}).click();await deskRow.waitFor()
  await deskPills.getByRole('button',{name:/^ทั้งหมด/}).click();await deskRow.waitFor()
  console.log('PASS driver desk: PC table at 1280/1366/1440 with pinned action, cards below md, reviewed depart/finish from a row (dismiss records nothing), detail sheet, odometer after finish, coordinator view, filters and search')
+ // ── ประวัติการดำเนินการในแผ่นคำขอ (เจ้าของระบบสั่ง 2569-10-01 แบบ ก): ใครกดอะไร เมื่อไร ──
+ // ผู้จองส่ง → ผู้ยืนยันคิวยืนยันรถ → ผู้จองขอยกเลิก → แอดมินกดออกรถแทนคนขับ → ผู้ยืนยันคิวนำออกพร้อมเหตุผล → เที่ยวจบทีหลัง
+ // เหตุการณ์ของเที่ยวก่อนคำขอเข้าเที่ยว หลังถูกนำออก หรือที่ระบุคำขออื่น ต้องไม่ปนเข้าประวัติของคำขอนี้
+ const histDay=(await freeDays(1))[0],histBooking=randomUUID(),histTrip=randomUUID(),histReason='TEST ผู้ป่วยแจ้งเลื่อนนัด'
+ await submitAs(citizen,histBooking,{patient_name:'[TEST] ประวัติคำขอ',phone:'0800000971',companions:0,appointment_at:at(histDay,'10:00'),return_mode:'one_way',return_at:null})
+ await runAs(coordinator,async()=>rpc('patient_booking_confirm',[tenant,histTrip,[histBooking],await rpc('patient_booking_preview',[tenant,[histBooking],'']),'']))
+ const histRevision=async table=>(await runSql(async()=>(await db.query(`SELECT revision FROM public.${table} WHERE id=$1`,[table==='patient_bookings'?histBooking:histTrip])).rows[0])).revision
+ const confirmedAt=(await runSql(async()=>(await db.query("SELECT created_at FROM public.patient_booking_events WHERE entity_id=$1 AND action='confirmed'",[histTrip])).rows[0])).created_at
+ const addTripEvent=(action,detail,created)=>runSql(()=>db.query('INSERT INTO public.patient_booking_events(municipality_id,actor_id,entity_id,action,detail,created_at) VALUES($1,$2,$3,$4,$5,$6)',[tenant,admin,histTrip,action,detail,created]))
+ await addTripEvent('schedule_updated',{note:'TEST ก่อนเข้าเที่ยว'},new Date(new Date(confirmedAt).getTime()-60000).toISOString())
+ await addTripEvent('moved_into_trip',{booking_id:randomUUID()},new Date().toISOString())
+ await addTripEvent('rescheduled',{scope:'single'},new Date().toISOString())
+ await addTripEvent('schedule_updated',{note:'TEST หลังเข้าเที่ยว'},new Date().toISOString())
+ let histRev=await histRevision('patient_bookings');await runAs(citizen,()=>rpc('patient_booking_action',[tenant,randomUUID(),histBooking,histRev,'cancel','']))
+ await runSql(()=>db.query("UPDATE public.patient_booking_trips SET state='cancelled' WHERE state IN ('outbound','hospital','returning','issue') AND id<>$1",[histTrip]))
+ let histTripRev=await histRevision('patient_booking_trips');await runAs(admin,()=>rpc('patient_booking_action',[tenant,randomUUID(),histTrip,histTripRev,'trip_next','']))
+ histRev=await histRevision('patient_bookings');await runAs(coordinator,()=>rpc('patient_booking_action',[tenant,randomUUID(),histBooking,histRev,'cancel_passenger',histReason]))
+ histTripRev=await histRevision('patient_booking_trips');await runAs(admin,()=>rpc('patient_booking_action',[tenant,randomUUID(),histTrip,histTripRev,'trip_finish','']))
+ const seen=(await runAs(coordinator,()=>rpc('patient_booking_history',[tenant,histBooking]))).events
+ assert.deepEqual(seen.map(e=>e.action),['submitted','confirmed','schedule_updated','cancel','trip_next','cancel_passenger'],'ประวัติต้องมีเฉพาะช่วงที่คำขออยู่ในเที่ยว')
+ assert.deepEqual(seen.map(e=>e.actor_name),['Citizen TEST','Coordinator TEST','Admin TEST','Citizen TEST','Admin TEST','Coordinator TEST'])
+ assert.deepEqual(seen.map(e=>e.by_booker),[true,false,false,true,false,false])
+ assert.equal(seen[2].note,'TEST หลังเข้าเที่ยว');assert.equal(seen[4].for_driver,'Driver TEST','แอดมินกดออกรถแทนต้องบอกชื่อคนขับจริง');assert.equal(seen[5].note,histReason)
+ const historyKeys=['id','action','at','actor_name','by_booker','entry_channel','note','for_driver','driver_before','driver_after']
+ assert(seen.every(e=>Object.keys(e).every(k=>historyKeys.includes(k))),'ห้ามส่ง before/after หรือรายละเอียดอื่นของคำขอออกไป')
+ assert.deepEqual((await runAs(admin,()=>rpc('patient_booking_history',[tenant,histBooking]))).events.map(e=>e.id),seen.map(e=>e.id),'แอดมินเห็นชุดเดียวกับผู้ยืนยันคิว')
+ for(const who of [citizen,driver,coverStaff])await assert.rejects(runAs(who,()=>rpc('patient_booking_history',[tenant,histBooking])),/เฉพาะเจ้าหน้าที่จัดคิว/)
+ await assert.rejects(runAs(null,()=>rpc('patient_booking_history',[tenant,histBooking])),/permission denied/)
+ await assert.rejects(runAs(setupAdmin,()=>rpc('patient_booking_history',[setupTenant,histBooking])),/ไม่พบคำขอนี้/)
+ const deskHistory=new Set((await runAs(coordinator,()=>rpc('patient_booking_history',[tenant,deskBooking]))).events.map(e=>e.id))
+ assert(deskHistory.size>0&&seen.every(e=>!deskHistory.has(e.id)),'ประวัติของคำขออื่นต้องไม่ปนกัน')
+ // หน้าจอ: กล่องประวัติท้ายแผ่นคำขอ บอกชื่อผู้กด ผู้จอง และคนขับจริงเมื่อแอดมินกดแทน
+ await staffDesk('coordinator');await row(histBooking).click()
+ const histBox=sheet.getByRole('region',{name:'ประวัติการดำเนินการ'})
+ for(const text of ['ส่งคำขอ','โดย Citizen TEST (ผู้จอง)','ขอยกเลิก (รอเจ้าหน้าที่ประสาน)','โดย Admin TEST · บันทึกแทนคนขับ Driver TEST','นำออกจากเที่ยว (ยกเลิก)',histReason])await histBox.getByText(text,{exact:true}).first().waitFor()
+ assert.equal(await histBox.getByRole('listitem').count(),6)
+ assert.equal(await histBox.getByText('กลับแล้ว · จบงาน',{exact:true}).count(),0,'เหตุการณ์หลังถูกนำออกจากเที่ยวต้องไม่ขึ้น')
+ if(process.env.PATIENT_PREVIEW_SHOTS)await histBox.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/booking-history.png`})
+ await page.keyboard.press('Escape');await sheet.waitFor({state:'detached'})
+ // ฐานข้อมูลยังไม่มีฟังก์ชัน (merge ก่อน apply migration) = ซ่อนกล่องเงียบ ๆ · ผิดพลาดอื่น = บอกพร้อมปุ่มลองอีกครั้ง
+ let historyReply={data:null,error:{code:'PGRST202',message:'Could not find the function'}}
+ await page.route('**/__patient_rpc',async route=>{const request=route.request().postDataJSON();if(request.name==='patient_booking_history'&&historyReply)await route.fulfill({json:historyReply});else await route.fallback()})
+ const historyAnswered=()=>page.waitForResponse(response=>response.url().endsWith('/__patient_rpc')&&response.request().postDataJSON()?.name==='patient_booking_history')
+ const answered=historyAnswered();await row(histBooking).click();await answered;await sheet.getByText('วันเวลานัด',{exact:true}).waitFor();await page.waitForTimeout(200)
+ assert.equal(await sheet.getByRole('region',{name:'ประวัติการดำเนินการ'}).count(),0,'ยังไม่มีฟังก์ชันต้องซ่อนกล่องประวัติ')
+ assert.equal(await sheet.getByText('โหลดประวัติการดำเนินการไม่สำเร็จ',{exact:false}).count(),0,'ยังไม่มีฟังก์ชันต้องไม่ขึ้นข้อความผิดพลาด')
+ await page.keyboard.press('Escape');await sheet.waitFor({state:'detached'})
+ historyReply={data:null,error:{message:'TEST network down'}}
+ await row(histBooking).click();await sheet.getByText('โหลดประวัติการดำเนินการไม่สำเร็จ',{exact:false}).waitFor()
+ historyReply=null;await sheet.getByRole('button',{name:'ลองอีกครั้ง',exact:true}).click();await sheet.getByRole('region',{name:'ประวัติการดำเนินการ'}).waitFor()
+ await page.unroute('**/__patient_rpc');await page.keyboard.press('Escape');await sheet.waitFor({state:'detached'})
+ console.log('PASS booking history: who did what and when in the request sheet; booker and on-behalf labels, trip membership window, other requests isolated, staff-only, missing function hidden, retry')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}
