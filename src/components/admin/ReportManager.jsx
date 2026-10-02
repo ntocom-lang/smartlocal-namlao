@@ -4,6 +4,7 @@ import { Wrench, TrendingUp, AlertTriangle, Printer, X, Clock, CheckCircle2, Dow
 import { supabase } from '../../lib/supabase'
 import { workingDaysBetween, workingDaysSince } from '../../lib/workingDays'
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from '../../lib/govDocStyle.js'
+import { printableCategoryLabel } from '../../lib/complaintCategoryLabels.js'
 
 // ระยะเวลาดำเนินการของคำร้อง 1 เรื่อง นับเป็น "วันทำการ" (ตัดเสาร์-อาทิตย์และวันหยุดนักขัตฤกษ์)
 // เดิมนับเป็นวันปฏิทิน ทำให้เรื่องที่คร่อมสงกรานต์/ปีใหม่ดูเหมือนช้ากว่าความเป็นจริงหลายวัน
@@ -150,7 +151,8 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
   const catTotals = {}
   complaints.forEach(c => { if (c.category) catTotals[c.category] = (catTotals[c.category] || 0) + 1 })
   const catOptions = Object.entries(catTotals).sort((a, b) => b[1] - a[1])
-  const catLabel = cat === 'all' ? null : (CATEGORY_LABEL[cat] ?? cat)
+  // printableCategoryLabel: ชื่อหมวดที่ยังโหลดไม่มา/ไม่มีแถวในฐานข้อมูลต้องไม่หลุดเป็นรหัส (water_repair) ลงรายงานที่พิมพ์/CSV
+  const catLabel = cat === 'all' ? null : printableCategoryLabel(cat, CATEGORY_LABEL[cat] ?? cat)
   const scoped = cat === 'all' ? complaints : complaints.filter(c => c.category === cat)
 
   const viewData = scoped.filter(c => {
@@ -233,7 +235,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
   const catCount = {}
   viewData.forEach(c => { catCount[c.category] = (catCount[c.category] || 0) + 1 })
   const catDataAll = Object.entries(catCount)
-    .map(([cat, count]) => ({ name: CATEGORY_LABEL[cat] ?? cat, emoji: CATEGORY_EMOJI[cat] ?? '📄', count }))
+    .map(([cat, count]) => ({ name: printableCategoryLabel(cat, CATEGORY_LABEL[cat] ?? cat), emoji: CATEGORY_EMOJI[cat] ?? '📄', count }))
     .sort((a, b) => b.count - a.count)
   const catData = catDataAll.slice(0, 6)
   const otherCount = catDataAll.slice(6).reduce((s, d) => s + d.count, 0)
@@ -274,7 +276,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
         new Date(c.created_at).toLocaleDateString('th-TH'),
         c.reporter_name ?? c.profiles?.full_name ?? '',
         c.phone ?? c.profiles?.phone ?? '',
-        CATEGORY_LABEL[c.category] ?? c.category ?? '',
+        c.category ? printableCategoryLabel(c.category, CATEGORY_LABEL[c.category] ?? c.category) : '',
         (c.description ?? '').replace(/\n/g, ' '),
         [c.location_name, c.village].filter(Boolean).join(', '),
         STATUS[c.status]?.label ?? c.status,

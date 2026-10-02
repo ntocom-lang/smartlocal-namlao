@@ -12,6 +12,7 @@ import { fleetPeriodRange, formatBEDate } from './fleetReportPeriod.js'
 import { fiscalQuarterBounds, FISCAL_MONTHS_TH } from './fiscalYear.js'
 import { workingDaysBetween, missingHolidayYears } from './workingDays.js'
 import { isFinishedLike } from './complaintWorkflow.js'
+import { printableCategoryLabel } from './complaintCategoryLabels.js'
 
 export const PERFORMANCE_PERIOD_MODES = [
   { value: 'month', label: 'รายเดือน' },
@@ -319,7 +320,7 @@ const DUE_RESULT_LABELS = { on_time: 'ทันกำหนด', late: 'เก�
 
 /** แถวสำหรับ CSV — กลุ่ม แล้วเสร็จ / ค้าง ณ สิ้นช่วง / ไม่ทราบวันแล้วเสร็จ */
 export function performanceCsvRows(summary, { categoryLabels = {} } = {}) {
-  const label = (category) => categoryLabels[category] ?? category ?? ''
+  const label = (category) => (category ? printableCategoryLabel(category, categoryLabels[category] ?? category) : '')
   const row = (group, item, result) => [
     group,
     item.refNo ?? '',

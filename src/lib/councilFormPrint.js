@@ -3,6 +3,7 @@ import {
 } from './govSignBlock.js'
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { orgClerkTitle, orgHeadTitle } from './orgTerms.js'
+import { printableCategoryLabel } from './complaintCategoryLabels.js'
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -211,7 +212,8 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
   const mayor = signatories.mayor ?? null
   const clerk = signatories.clerk ?? null
   const departmentHead = signatories.department_head ?? null
-  const requestCopy = buildRequestCopy(c.category, cat, tenant?.name)
+  // printableCategoryLabel กันรหัสหมวดดิบ (water_repair) หลุดลงกระดาษ — ผู้เรียกบางจุดส่ง `CATEGORY_LABEL[รหัส] ?? รหัส` มา
+  const requestCopy = buildRequestCopy(c.category, printableCategoryLabel(c.category, cat), tenant?.name)
 
   const location1 = [c.location_name, c.village].filter(Boolean).join(', ')
   const point1 = [location1, c.detail].filter(Boolean).join(' — ') || '.................................................................................................'

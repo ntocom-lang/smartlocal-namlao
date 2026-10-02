@@ -13,6 +13,7 @@ import {
   canViewOthers, loadCategoryLabels, loadPeople, loadPerformanceRows, loadPersonCard, loadSignatoryRegistry,
 } from '../../lib/staffPerformanceData'
 import { groupStaffByDepartment } from '../../lib/staffRoster'
+import { printableCategoryLabel } from '../../lib/complaintCategoryLabels'
 
 // เมนู "ผลการปฏิบัติงาน" — ผลงานรายคนจากคำร้อง ใช้ดูและพิมพ์ตอนประเมินผลการปฏิบัติงาน
 // ระบบรวบรวมเองจากที่เจ้าหน้าที่กดอยู่แล้วทุกวัน ไม่มีช่องกรอก ไม่ให้คะแนน ไม่จัดอันดับคน
@@ -161,7 +162,7 @@ export default function StaffPerformanceModule({ tenant, profile }) {
   const scopeNote = viewingOther && me?.role === 'officer'
     ? 'นับเฉพาะคำร้องของกองที่ผู้พิมพ์สังกัด ฉบับที่นับครบทุกเรื่องคือฉบับที่เจ้าตัวพิมพ์เอง'
     : ''
-  const categoryLabel = category === 'all' ? '' : (labels[category] ?? category)
+  const categoryLabel = category === 'all' ? '' : printableCategoryLabel(category, labels[category] ?? category)
   const canOutput = !loading && !result.error && Boolean(card?.id === personId)
 
   function handlePrint() {

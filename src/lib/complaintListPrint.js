@@ -1,4 +1,5 @@
 import { GOV_FONT_LINK, govDocFontIdentityCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { printableCategoryLabel } from './complaintCategoryLabels.js'
 
 // ⚠️ ชื่อผู้แจ้งกับรายละเอียดเป็นข้อความที่ประชาชนพิมพ์เอง และหน้าต่างพิมพ์เปิดด้วย window.open('')
 // ซึ่งอยู่โดเมนเดียวกับระบบ — ค่าที่ต่อดิบเข้า template ถูกเบราว์เซอร์อ่านเป็นแท็กแล้วทำงานในนาม
@@ -21,7 +22,8 @@ export function buildComplaintListHtml({
     const d = new Date(c.created_at)
     const num = c.ref_no ?? '—'
     const dateStr = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
-    const cat = categoryLabels[c.category] ?? c.category ?? '—'
+    // ใบรายการก็พิมพ์ชื่อหมวดเหมือนกัน — รหัสดิบ (water_repair) ต้องไม่หลุดลงกระดาษ (ดู complaintCategoryLabels.js)
+    const cat = c.category ? printableCategoryLabel(c.category, categoryLabels[c.category] ?? c.category) : '—'
     const reporter = c.reporter_name || c.profiles?.full_name || '—'
     const status = statusLabels[c.status] ?? c.status
     // ตัดก่อนแล้วค่อย escape — ถ้า escape ก่อน การตัดที่ 60 ตัวอักษรอาจผ่ากลาง &amp; จนเหลือ &am

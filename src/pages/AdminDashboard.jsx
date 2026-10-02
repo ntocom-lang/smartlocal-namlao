@@ -21,6 +21,7 @@ import IconOrImage from '../components/datacenter/CategoryIcon'
 import { fileToIconDataUrl, isIconImage, ICON_UPLOAD_ACCEPT, ICON_IMAGE_MAX_PX } from '../lib/dataCenterGroupIcon'
 import { compressImage } from '../lib/imageUtils'
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from '../lib/govDocStyle.js'
+import { printableCategoryLabel } from '../lib/complaintCategoryLabels.js'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { workingDaysBetween, workingDaysSince } from '../lib/workingDays'
 import { uploadFile } from '../lib/driveStorage'
@@ -5015,7 +5016,8 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
   const catCount = {}
   viewData.forEach(c => { catCount[c.category] = (catCount[c.category] || 0) + 1 })
   const catDataAll = Object.entries(catCount)
-    .map(([cat, count]) => ({ name: CATEGORY_LABEL[cat] ?? cat, emoji: CATEGORY_EMOJI[cat] ?? '📄', count }))
+    // printableCategoryLabel: ชื่อหมวดที่ยังโหลดไม่มา/ไม่มีแถวในฐานข้อมูลต้องไม่หลุดเป็นรหัส (water_repair) ลงรายงานที่พิมพ์/CSV
+    .map(([cat, count]) => ({ name: printableCategoryLabel(cat, CATEGORY_LABEL[cat] ?? cat), emoji: CATEGORY_EMOJI[cat] ?? '📄', count }))
     .sort((a, b) => b.count - a.count)
   const catData = catDataAll.slice(0, 6)
   const otherCount = catDataAll.slice(6).reduce((s, d) => s + d.count, 0)
@@ -5088,7 +5090,7 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
                 new Date(c.created_at).toLocaleDateString('th-TH'),
                 c.profiles?.full_name ?? '',
                 c.profiles?.phone ?? c.phone ?? '',
-                CATEGORY_LABEL[c.category] ?? c.category ?? '',
+                c.category ? printableCategoryLabel(c.category, CATEGORY_LABEL[c.category] ?? c.category) : '',
                 (c.description ?? '').replace(/\n/g,' '),
                 [c.location_name, c.village].filter(Boolean).join(', '),
                 STATUS[c.status]?.label ?? c.status,

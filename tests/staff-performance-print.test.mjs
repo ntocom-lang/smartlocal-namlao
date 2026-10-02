@@ -133,4 +133,19 @@ test('missing holiday years are warned on the paper', () => {
   assert.ok(out.includes('ยังไม่มีวันหยุดราชการของปี พ.ศ. 2570 ในระบบ'))
 })
 
+test('category names on the paper are Thai even when the label map has no entry for the code (2569-10-02)', () => {
+  // water_repair / รหัสสุ่ม ไม่อยู่ใน categoryLabels (ยังโหลดไม่มา/ไม่มีแถวในฐานข้อมูล) → ต้องไม่พิมพ์รหัสดิบลงใบ
+  const done = { created_at: '2026-09-01T02:00:00Z', closed_at: '2026-09-03T03:00:00Z', due_date: '2026-09-05' }
+  const sum = summarizePerformance(normalizePerformanceRows([
+    row(41, { ...done, category: 'water_repair' }), row(42, { ...done, category: 'cat_xyz123' }),
+  ]), { from: '2026-04-01', to: '2026-09-30', today: '2026-09-27' })
+  const out = buildStaffPerformanceHtml({ tenant: TENANT, person: PERSON, periodLabel: 'x', summary: sum, categoryLabels: {} })
+  assert.ok(!out.includes('water_repair') && !out.includes('cat_xyz123'), 'รหัสหมวดดิบหลุดลงใบผลการปฏิบัติงาน')
+  assert.ok(out.includes('ซ่อมน้ำประปา'), 'ต้องใช้ชื่อไทยมาตรฐานของ water_repair')
+  assert.ok(out.includes('เรื่องที่แจ้ง'), 'รหัสที่ไม่รู้จักต้องเป็น "เรื่องที่แจ้ง"')
+  // ชื่อที่ อปท. ตั้งเอง (อยู่ใน categoryLabels) ใช้ตามนั้น
+  const named = buildStaffPerformanceHtml({ tenant: TENANT, person: PERSON, periodLabel: 'x', summary: sum, categoryLabels: { water_repair: 'แจ้งท่อประปาแตก' } })
+  assert.ok(named.includes('แจ้งท่อประปาแตก') && !named.includes('ซ่อมน้ำประปา'), 'ชื่อที่ อปท. ตั้งเองถูกทับ')
+})
+
 console.log(`All ${cases} staff performance print checks passed`)

@@ -198,4 +198,13 @@ test('CSV has a BOM, Thai dates, notes and no spreadsheet formulas', () => {
   assert.equal(csvRows.filter((r) => r[0] === 'ไม่ทราบวันแล้วเสร็จ').length, 1)
 })
 
+test('CSV category column is Thai even when the label map has no entry for the code (2569-10-02)', () => {
+  const sum = lib.summarizePerformance(lib.normalizePerformanceRows([
+    row(41, { category: 'water_repair', created_at: '2026-09-01T02:00:00Z', closed_at: '2026-09-03T03:00:00Z' }),
+  ]), ROUND_2)
+  const csv = lib.toCsv(lib.performanceCsvRows(sum, { categoryLabels: {} }))
+  assert.ok(!csv.includes('water_repair'), 'รหัสหมวดดิบหลุดลง CSV')
+  assert.ok(csv.includes('ซ่อมน้ำประปา'), 'ต้องใช้ชื่อไทยมาตรฐานของ water_repair')
+})
+
 console.log(`All ${cases} staff performance checks passed`)
