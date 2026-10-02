@@ -4,13 +4,14 @@ import { FISCAL_QUARTERS } from '../../lib/fiscalYear'
 import ReportInfographic from './ReportInfographic'
 import { Printer } from 'lucide-react'
 import { ListCard, Pills, Sheet } from './StaffShell'
-import { thaiDateFromDateInput } from '../../lib/thaiDate'
+import { MONTHS_TH, thaiDateFromDateInput } from '../../lib/thaiDate'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
 import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent } from '../../lib/patientBooking'
 
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
 const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
+const REPORT_YEARS = Array.from({ length: 300 }, (_, index) => 2742 - index)
 
 // The citizen only receives their own bookings and a cancellation reason, not staff events.
 // Link a closed duplicate only when one live booking matches the recorded reason.
@@ -138,14 +139,14 @@ export function QueueReport({ workspace, busy, onPeriodReport }) {
       <h2 className="text-lg font-bold text-slate-900">สรุปการใช้รถ</h2>
       <p className="mb-4 text-sm text-slate-600">เลือกช่วงเพื่อดูจำนวนเที่ยว ผู้เดินทาง และระยะทาง แล้วพิมพ์สรุปได้ทันที</p>
       <form className="space-y-3" onSubmit={e => { e.preventDefault(); if (currentPeriod) onPeriodReport(period) }}>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="min-w-0">ประเภทรายงาน<select aria-label="ประเภทรายงาน" className={inputClass} value={mode} onChange={e => { setMode(e.target.value); setReportError(''); setTripPage(1) }}>{Object.entries(REPORT_MODES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-          {mode === 'month' && <label className="min-w-0">เดือนที่ต้องการดู<input className={inputClass} type="month" required value={month} onChange={e => { setMonth(e.target.value); setReportError(''); setTripPage(1) }} /></label>}
-          {['quarter', 'year'].includes(mode) && <>
-            <label className="min-w-0">การนับปี<select aria-label="การนับปี" className={inputClass} value={basis} onChange={e => { setBasis(e.target.value); setReportError(''); setTripPage(1) }}><option value="fiscal">ปีงบประมาณ (ต.ค.–ก.ย.)</option><option value="calendar">ปีปฏิทิน (ม.ค.–ธ.ค.)</option></select></label>
-            <label className="min-w-0">ปี พ.ศ.<input className={inputClass} type="number" inputMode="numeric" required min="2443" max="2742" value={year} onChange={e => { setYear(e.target.value); setReportError(''); setTripPage(1) }} /></label>
-          </>}
-          {mode === 'quarter' && <label className="min-w-0">ไตรมาส<select aria-label="ไตรมาส" className={inputClass} value={quarter} onChange={e => { setQuarter(e.target.value); setReportError(''); setTripPage(1) }}>{(basis === 'fiscal' ? FISCAL_QUARTERS : [{ value: 1, label: 'ไตรมาส 1 (ม.ค.–มี.ค.)' }, { value: 2, label: 'ไตรมาส 2 (เม.ย.–มิ.ย.)' }, { value: 3, label: 'ไตรมาส 3 (ก.ค.–ก.ย.)' }, { value: 4, label: 'ไตรมาส 4 (ต.ค.–ธ.ค.)' }]).map(q => <option key={q.value} value={q.value}>{q.label}</option>)}</select></label>}
+        <div role="group" aria-label="ประเภทรายงาน" className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          {Object.entries(REPORT_MODES).map(([value, label]) => <button key={value} type="button" aria-pressed={mode === value} onClick={() => { setMode(value); setReportError(''); setTripPage(1) }} className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 ${mode === value ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}>{label}</button>)}
+        </div>
+        <div className={`grid gap-3 sm:grid-cols-2 ${mode === 'quarter' ? 'lg:grid-cols-3' : ''}`}>
+          {mode === 'month' && <label className="min-w-0 text-xs font-semibold text-slate-500">เดือน<select aria-label="เดือน" className={`${inputClass} mt-1`} value={month.slice(5, 7)} onChange={e => { setMonth(`${month.slice(0, 4)}-${e.target.value}`); setReportError(''); setTripPage(1) }}>{MONTHS_TH.map((label, index) => <option key={label} value={String(index + 1).padStart(2, '0')}>{label}</option>)}</select></label>}
+          {mode === 'quarter' && <label className="min-w-0 text-xs font-semibold text-slate-500">ไตรมาส<select aria-label="ไตรมาส" className={`${inputClass} mt-1`} value={quarter} onChange={e => { setQuarter(e.target.value); setReportError(''); setTripPage(1) }}>{(basis === 'fiscal' ? FISCAL_QUARTERS : [{ value: 1, label: 'ไตรมาส 1 (ม.ค.–มี.ค.)' }, { value: 2, label: 'ไตรมาส 2 (เม.ย.–มิ.ย.)' }, { value: 3, label: 'ไตรมาส 3 (ก.ค.–ก.ย.)' }, { value: 4, label: 'ไตรมาส 4 (ต.ค.–ธ.ค.)' }]).map(q => <option key={q.value} value={q.value}>{q.label}</option>)}</select></label>}
+          {['quarter', 'year'].includes(mode) && <label className="min-w-0 text-xs font-semibold text-slate-500">การนับปี<select aria-label="การนับปี" className={`${inputClass} mt-1`} value={basis} onChange={e => { setBasis(e.target.value); setReportError(''); setTripPage(1) }}><option value="fiscal">ปีงบประมาณ (ต.ค.–ก.ย.)</option><option value="calendar">ปีปฏิทิน (ม.ค.–ธ.ค.)</option></select></label>}
+          {mode !== 'custom' && <label className="min-w-0 text-xs font-semibold text-slate-500">ปี พ.ศ.<select aria-label="ปี พ.ศ." className={`${inputClass} mt-1`} value={mode === 'month' ? String(Number(month.slice(0, 4)) + 543) : year} onChange={e => { if (mode === 'month') setMonth(`${Number(e.target.value) - 543}-${month.slice(5, 7)}`); else setYear(e.target.value); setReportError(''); setTripPage(1) }}>{REPORT_YEARS.map(value => <option key={value} value={value}>{value}</option>)}</select></label>}
           {mode === 'custom' && <>
             <label className="min-w-0">วันที่เริ่ม<input className={inputClass} type="date" required value={from} onChange={e => { setFrom(e.target.value); setReportError(''); setTripPage(1) }} /></label>
             <label className="min-w-0">วันที่สิ้นสุด<input className={inputClass} type="date" required min={from || undefined} value={to} onChange={e => { setTo(e.target.value); setReportError(''); setTripPage(1) }} /></label>

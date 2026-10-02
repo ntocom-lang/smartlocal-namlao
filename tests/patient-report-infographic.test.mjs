@@ -5,6 +5,7 @@ import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwind from '@tailwindcss/vite'
 import { chromium } from 'playwright'
+import { REPORT_MODES } from '../src/lib/patientReportPeriod.js'
 
 const artifactDir = process.env.PATIENT_REPORT_ARTIFACTS || 'D:/tmp/patient-report-infographic-shots'
 await mkdir(artifactDir, { recursive: true })
@@ -60,11 +61,18 @@ await page.addInitScript(()=>{
 try{
  await page.goto(`${base}/__report`)
  const report=page.getByRole('region',{name:'สรุปการใช้รถตามช่วงเวลา',exact:true})
- const month=report.getByLabel('เดือนที่ต้องการดู')
+ const selectMonth=async value=>{await report.getByLabel('ปี พ.ศ.',{exact:true}).selectOption(String(Number(value.slice(0,4))+543));await report.getByLabel('เดือน',{exact:true}).selectOption(value.slice(5,7))}
  const download=report.getByRole('button',{name:'ดาวน์โหลดอินโฟกราฟิก PNG',exact:true})
  const share=report.getByRole('button',{name:'แชร์อินโฟกราฟิก',exact:true})
  const ready=()=>page.waitForFunction(()=>{const button=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('ดาวน์โหลดอินโฟกราฟิก PNG'));return button&&!button.disabled})
- await month.fill('2026-01');await ready()
+ await selectMonth('2026-01');await ready()
+ assert.equal(await report.getByLabel('ปี พ.ศ.',{exact:true}).inputValue(),'2569')
+ assert.equal(await report.getByLabel('เดือน',{exact:true}).locator('option:checked').innerText(),'มกราคม')
+ // Changing only the Buddhist year must fetch that year and preserve the selected month.
+ await report.getByLabel('ปี พ.ศ.',{exact:true}).selectOption('2570');await ready()
+ assert.match(await report.innerText(),/มกราคม 2570/)
+ assert.deepEqual((await page.evaluate(()=>window.__requests.at(-1))),{p_muni:'test-tenant',p_from:'2027-01-01',p_to:'2027-01-31'})
+ await report.getByLabel('ปี พ.ศ.',{exact:true}).selectOption('2569');await ready()
  const infographic=page.getByRole('region',{name:'อินโฟกราฟิกสรุปรถรับส่งผู้ป่วย',exact:true})
  const pie=page.getByRole('region',{name:'กราฟวงกลมเที่ยวรถแยกตามโรงพยาบาล',exact:true})
  assert.equal(await pie.locator('[data-pie-hospital]').count(),3)
@@ -82,8 +90,14 @@ try{
  for(const width of [320,390,768,1440]){
   await page.setViewportSize({width,height:1100})
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`graph ${width}px overflow`)
-  for(const button of [download,share]){const box=await button.boundingBox();assert(box.height>=44&&box.x>=0&&box.x+box.width<=width,`${width}px action fully visible`)}
-  if([320,1440].includes(width))await page.screenshot({path:`${artifactDir}/report-${width}.png`,fullPage:true})
+  const modes=report.getByRole('group',{name:'ประเภทรายงาน',exact:true}).getByRole('button')
+  assert.equal(await modes.count(),4)
+  assert.equal(await report.getByRole('button',{name:'รายเดือน',exact:true}).getAttribute('aria-pressed'),'true')
+  for(const button of [download,share,...await modes.all(),report.getByLabel('เดือน',{exact:true}),report.getByLabel('ปี พ.ศ.',{exact:true})]){const box=await button.boundingBox();assert(box.height>=44&&box.x>=0&&box.x+box.width<=width,`${width}px action fully visible`)}
+  if([320,1440].includes(width)){
+   await page.screenshot({path:`${artifactDir}/report-${width}.png`,fullPage:true})
+   await report.locator('form').screenshot({path:`${artifactDir}/report-controls-${width}.png`})
+  }
  }
  const downloadPromise=page.waitForEvent('download');await download.click();const saved=await downloadPromise
  assert.equal(saved.suggestedFilename(),'patient-transport-2026-01.png')
@@ -105,14 +119,14 @@ try{
  assert(drawn.every(row=>row.x>=0&&row.x+row.width<=row.canvasWidth+1&&row.y+8<row.height),'every PNG text fits the canvas')
  assert(!drawn.some(row=>row.text.includes('TEST_PRIVATE')||row.text.includes(secret.phone)),'PNG contains no patient identifiers')
  // เปลี่ยนเดือนแล้วต้องเตรียมไฟล์ใหม่ ข้อความแชร์และกราฟต้องเป็นเดือนเดียวกัน
- await month.fill('2026-02');await ready();await share.click()
+ await selectMonth('2026-02');await ready();await share.click()
  shared=await page.evaluate(()=>window.__shares.at(-1))
  assert.equal(shared.name,'patient-transport-2026-02.png');assert.match(shared.text,/กุมภาพันธ์ 2569/);assert.match(shared.text,/5 กม\./);assert(!shared.text.includes('15 กม.'))
  assert.equal(await pie.locator('circle[data-pie-hospital]').count(),1,'single hospital must render a full circle')
  await pie.locator('[data-pie-legend]').getByText('1 เที่ยว · 100%',{exact:true}).waitFor()
  const newDownloadPromise=page.waitForEvent('download');await download.click();await(await newDownloadPromise).saveAs(`${artifactDir}/infographic-long-hospital.png`)
  // รวมโรงพยาบาลส่วนที่เกินเป็นกลุ่มอื่น โดยไม่ทำยอดหาย
- await month.fill('2026-04');await ready()
+ await selectMonth('2026-04');await ready()
  assert.equal(await graph.locator('[data-report-hospital]').count(),8)
  assert.equal(await pie.locator('[data-pie-hospital]').count(),8)
  await pie.locator('[data-pie-legend="อื่น ๆ (รวม 3 โรงพยาบาล)"]').getByText('3 เที่ยว · 30%',{exact:true}).waitFor()
@@ -121,7 +135,7 @@ try{
  await share.click();assert.match((await page.evaluate(()=>window.__shares.at(-1))).text,/แสดง 7 โรงพยาบาล/)
  const manyDownloadPromise=page.waitForEvent('download');await download.click();await(await manyDownloadPromise).saveAs(`${artifactDir}/infographic-many-hospitals.png`)
  // เดือนว่างไม่สร้างแท่งหรือยอดหลอก และยังดาวน์โหลดได้
- await month.fill('2026-03');await ready()
+ await selectMonth('2026-03');await ready()
  assert.equal(await pie.locator('[data-pie-hospital]').count(),0,'empty month must not fabricate a pie')
  assert.equal(await graph.getByRole('img').count(),0);await graph.getByText('ไม่มีเที่ยวรถในช่วงที่เลือก').waitFor()
  await share.click();assert.match((await page.evaluate(()=>window.__shares.at(-1))).text,/เที่ยวทั้งหมด 0 เที่ยว/)
@@ -129,25 +143,25 @@ try{
  await page.getByRole('status').filter({hasText:'เครื่องนี้ไม่รองรับแชร์ภาพโดยตรง'}).waitFor();assert.equal(await download.isEnabled(),true)
  await page.evaluate(()=>{window.__shareMode='abort'});await share.click();assert.equal(await page.getByText('เปิดเมนูแชร์ไม่สำเร็จ',{exact:false}).count(),0)
  // ภาพล้มเหลวมี retry และไม่ให้กดแชร์ไฟล์เดือนก่อน
- await page.evaluate(()=>{window.__failImage=true});await month.fill('2026-05')
+ await page.evaluate(()=>{window.__failImage=true});await selectMonth('2026-05')
  await page.getByRole('alert').filter({hasText:'เตรียมภาพไม่สำเร็จ'}).waitFor();assert.equal(await download.isDisabled(),true)
  await page.evaluate(()=>{window.__failImage=false});await page.getByRole('button',{name:'ลองเตรียมภาพใหม่'}).click();await ready()
  await report.getByRole('button',{name:'พิมพ์สรุป',exact:true}).click();assert.deepEqual((await page.evaluate(()=>window.__prints)).map(p=>[p.mode,p.from,p.to]),[['month','2026-05-01','2026-05-31']])
  // All period controls, graph/share and print must use exactly the same range.
  await page.evaluate(()=>{window.__shareMode='ok'})
- const mode=report.getByLabel('ประเภทรายงาน'),print=report.getByRole('button',{name:'พิมพ์สรุป',exact:true})
- await mode.selectOption('quarter');await report.getByLabel('ปี พ.ศ.',{exact:true}).fill('2569');await report.getByLabel('ไตรมาส',{exact:true}).selectOption('2');await ready()
+ const mode=value=>report.getByRole('button',{name:REPORT_MODES[value],exact:true}).click(),print=report.getByRole('button',{name:'พิมพ์สรุป',exact:true})
+ await mode('quarter');await report.getByLabel('ปี พ.ศ.',{exact:true}).selectOption('2569');await report.getByLabel('ไตรมาส',{exact:true}).selectOption('2');await ready()
  await report.getByRole('heading',{name:'รายการเที่ยวช่วงนี้ · 5 เที่ยว',exact:true}).waitFor()
  await print.click();await share.click();shared=await page.evaluate(()=>window.__shares.at(-1))
  assert.equal(shared.name,'patient-transport-2026-01-01_2026-03-31.png');assert.match(shared.text,/ไตรมาส 2 · ปีงบประมาณ 2569/);assert.match(shared.text,/20 กม\./)
  await report.getByLabel('การนับปี').selectOption('calendar');await report.getByLabel('ไตรมาส',{exact:true}).selectOption('1');await ready();await share.click()
  assert.match((await page.evaluate(()=>window.__shares.at(-1))).text,/ไตรมาส 1 · ปีปฏิทิน 2569/)
- await mode.selectOption('year');await ready();await report.getByRole('heading',{name:'รายการเที่ยวช่วงนี้ · 15 เที่ยว',exact:true}).waitFor()
+ await mode('year');await ready();await report.getByRole('heading',{name:'รายการเที่ยวช่วงนี้ · 15 เที่ยว',exact:true}).waitFor()
  await print.click();await share.click();shared=await page.evaluate(()=>window.__shares.at(-1))
  assert.equal(shared.name,'patient-transport-2026-01-01_2026-12-31.png');assert.match(shared.text,/ปีปฏิทิน 2569/);assert.match(shared.text,/30 กม\./)
  await report.getByLabel('การนับปี').selectOption('fiscal');await ready();await share.click()
  assert.equal((await page.evaluate(()=>window.__shares.at(-1))).name,'patient-transport-2025-10-01_2026-09-30.png')
- await mode.selectOption('custom');await report.getByLabel('วันที่เริ่ม',{exact:true}).fill('2026-01-10');await report.getByLabel('วันที่สิ้นสุด',{exact:true}).fill('2026-01-10');await ready()
+ await mode('custom');await report.getByLabel('วันที่เริ่ม',{exact:true}).fill('2026-01-10');await report.getByLabel('วันที่สิ้นสุด',{exact:true}).fill('2026-01-10');await ready()
  await report.getByRole('heading',{name:'รายการเที่ยวช่วงนี้ · 4 เที่ยว',exact:true}).waitFor();await print.click();await share.click()
  assert.equal((await page.evaluate(()=>window.__shares.at(-1))).name,'patient-transport-2026-01-10_2026-01-10.png')
  assert.deepEqual((await page.evaluate(()=>window.__prints)).map(p=>[p.mode,p.from,p.to]),[['month','2026-05-01','2026-05-31'],['quarter','2026-01-01','2026-03-31'],['year','2026-01-01','2026-12-31'],['custom','2026-01-10','2026-01-10']])
@@ -160,16 +174,16 @@ try{
   if([320,1440].includes(width))await page.screenshot({path:`${artifactDir}/period-custom-${width}.png`,fullPage:true})
  }
  // Old delayed responses cannot restore another period's data or PNG.
- await mode.selectOption('month');await page.evaluate(()=>{window.__delay=300});await month.fill('2026-01')
- await page.evaluate(()=>{window.__delay=0});await month.fill('2026-02');await ready();await share.click()
+ await mode('month');await page.evaluate(()=>{window.__delay=300});await selectMonth('2026-01')
+ await page.evaluate(()=>{window.__delay=0});await selectMonth('2026-02');await ready();await share.click()
  await page.waitForTimeout(350);assert.equal((await page.evaluate(()=>window.__shares.at(-1))).name,'patient-transport-2026-02.png');assert.match(await infographic.innerText(),/กุมภาพันธ์ 2569/)
- await page.evaluate(()=>{window.__rpcFail=true});await month.fill('2026-03');await report.getByRole('alert').filter({hasText:'โหลดสรุปช่วงนี้ไม่สำเร็จ'}).waitFor()
+ await page.evaluate(()=>{window.__rpcFail=true});await selectMonth('2026-03');await report.getByRole('alert').filter({hasText:'โหลดสรุปช่วงนี้ไม่สำเร็จ'}).waitFor()
  assert.equal(await report.locator('[data-report-summary]').count(),0);assert.equal(await print.isDisabled(),true)
  await page.evaluate(()=>{window.__rpcFail=false});await report.getByRole('button',{name:'ลองอีกครั้ง',exact:true}).click();await ready()
- await page.evaluate(()=>{window.__rpcReject=true});await month.fill('2026-06');await report.getByRole('alert').filter({hasText:'โหลดสรุปช่วงนี้ไม่สำเร็จ'}).waitFor()
+ await page.evaluate(()=>{window.__rpcReject=true});await selectMonth('2026-06');await report.getByRole('alert').filter({hasText:'โหลดสรุปช่วงนี้ไม่สำเร็จ'}).waitFor()
  await page.evaluate(()=>{window.__rpcReject=false});await report.getByRole('button',{name:'ลองอีกครั้ง',exact:true}).click();await ready()
  assert((await page.evaluate(()=>window.__drawn)).every(row=>row.x>=0&&row.x+row.width<=row.canvasWidth+1&&row.y+8<row.height),'all period PNG text fits')
  assert.deepEqual(errors,[])
- console.log('PASS report infographic: all 4 period modes, fiscal/calendar year and quarter, inclusive single day, hospital bars/pie percentages, 320/390/768/1440px, real PNG, text bounds, no patient identifiers, exact print/share ranges, grouped hospitals, empty period, activation/fallback/cancel, generation retry, stale response exclusion, RPC failure/rejection retry')
+ console.log('PASS report infographic: 4 visible mode buttons, Thai month/Buddhist year selectors, year-only change, all 4 period modes, fiscal/calendar year and quarter, inclusive single day, hospital bars/pie percentages, 320/390/768/1440px, real PNG, text bounds, no patient identifiers, exact print/share ranges, grouped hospitals, empty period, activation/fallback/cancel, generation retry, stale response exclusion, RPC failure/rejection retry')
  console.log(`Artifacts: ${artifactDir}`)
 }finally{await context.close();await browser.close();await server.close()}
