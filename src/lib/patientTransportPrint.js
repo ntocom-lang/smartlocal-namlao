@@ -615,8 +615,8 @@ function packetBody(mayor, letter, forms) {
 }
 
 /**
- * ชุดเอกสารส่งกองทุน 2 แผ่น (ใบคำขอ + หนังสือนำส่ง) — ปุ่มเดียวของฝั่งเจ้าหน้าที่
- * พิมพ์ทีเดียวได้ครบชุดที่ต้องเข้าแฟ้มคู่กัน ไม่ต้องกด 2 ปุ่มแล้วลืมใบใดใบหนึ่ง
+ * ตัวประกอบชุดเดิมคงไว้สำหรับผู้เรียกเดิมและการตรวจความตรงกันของเนื้อหา
+ * หน้าจอเจ้าหน้าที่ใช้ buildPatientTransportFormHtml / buildPatientTransportLetterHtml แยกแล้ว
  */
 export function buildPatientTransportPacketHtml(args) {
   return page(
@@ -638,16 +638,24 @@ export function buildPatientTransportFormHtml(args) {
   )
 }
 
+// หนังสือของนายกถึงกองทุนอย่างเดียว — ใบคำขอแนบพิมพ์จากปุ่มแยกของผู้เดินทางรายเดียวกัน
+export function buildPatientTransportLetterHtml(args) {
+  return page(
+    'หนังสือขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยถึงกองทุน',
+    letterCss(),
+    signerNotice(args.mayor) + letterSheet(args),
+  )
+}
+
 // ---------------------------------------------------------------------------
 // ระบบจองคิวรถ: ใบคำขอ + หนังสือนำส่งกองทุน "แยกรายคน" (เจ้าของระบบสั่ง 2569-10-02 เลือกแบบ ข: ผู้เดินทางแต่ละคน
 // พิมพ์ชุดของตัวเอง เลขที่หนังสือคนละเลข เก็บที่ patient_bookings.forward_letter_no — ดู bookingLetter ใน patientBooking.js)
-// หน้าจอเจ้าหน้าที่เรียก buildTripForwardLetterHtml ด้วยคำขอทีละใบ (bookings: [booking]) จึงได้ใบคำขอ 1 + หนังสือ 1 ของคนนั้น
-// ตัวประกอบยังรับหลายคนได้ (หนังสือ 1 ฉบับแนบใบคำขอหลายใบ ใช้เลขของคำขอคนแรก) แต่ไม่มีปุ่มไหนเรียกแบบนั้นแล้ว
+// หน้าจอเจ้าหน้าที่เรียก buildBookingRequestFormHtml / buildBookingForwardLetterHtml ด้วยคำขอเดียว เพื่อพิมพ์คนละประเภท
+// buildTripForwardLetterHtml คงไว้ตรวจความตรงกันกับชุดเดิม แต่ไม่มีปุ่มหน้าจอเรียกพิมพ์ชุดรวมแล้ว
 // ข้อมูลที่การจองไม่ได้เก็บ (อายุ/สมาชิก/ประเภทนัด/ที่อยู่ผู้ยื่น) เว้นว่าง ห้ามเดาจากจุดรับ
 // บรรทัดกำกับใต้ชื่อผู้ยื่นตามช่องทางที่คำขอเข้ามา (patient_bookings.entry_channel) — ระบุว่าลงชื่อออนไลน์
 // เฉพาะคำขอที่ผู้จองล็อกอินยื่นเอง คำขอที่เจ้าหน้าที่รับจองแทนบอกตามจริงว่ารับจองแทน (ดู formSheet)
-// หน้าจอเจ้าหน้าที่ (BookingInbox) นับคนในเที่ยวด้วยฟังก์ชันนี้ตัวเดียวกัน — ข้อความ "ใบคำขอ N ใบ = N+1 แผ่น"
-// บนจอจึงตรงกับกระดาษที่ออกจริงเสมอ ห้ามเขียนเงื่อนไขนับซ้ำที่อื่น
+// หน้าจอเจ้าหน้าที่ (BookingInbox) ยังนับผู้เดินทางในเที่ยวด้วยตัวกรองเดียวกัน
 export function tripPassengers(bookings, trip) {
   return (bookings ?? [])
     .filter(b => b.trip_id === trip?.id && ['confirmed', 'completed'].includes(b.status))
@@ -692,18 +700,27 @@ function bookingPacket(args, b, trip) {
  * ใบคำขอถึงนายกของคำขอเดียวในระบบจองคิว — พิมพ์ได้ตั้งแต่ยังรอยืนยันรถ
  * เจ้าของระบบสั่ง 2569-10-02 ("รอยืนยันรถ เพิ่มปุ่มพิมพ์ให้ด้วย พิมพ์ในส่วนที่พิมพ์ได้" · เลือกแบบ ก)
  * ยังไม่มีเที่ยว = ยังไม่มีหนังสือนำส่งถึงกองทุน (ไม่มีวันเวลารถและเลขหนังสือ) จึงออกแค่ใบคำขอ ประชาชน → นายก
- * แถบบนจอ (ไม่ลงกระดาษ) บอกว่าใบนี้จะออกอีกครั้งในชุดหลังยืนยันรถ ให้เจ้าหน้าที่เลือกเองว่าจะพิมพ์ตอนไหน กระดาษจะได้ไม่เกิน
- * ทางเลือก "หลังยืนยันรถพิมพ์เฉพาะหนังสือนำส่ง" เสนอแล้ว ไม่ได้เลือก
+ * หลังยืนยันรถยังพิมพ์ใบคำขอแยกได้ ใช้เที่ยวปัจจุบันเป็นข้อมูลสำรองเหมือนใบในชุดเดิม
  */
 export function buildBookingRequestFormHtml(args) {
   if (!args?.booking) throw new Error('ไม่พบคำขอสำหรับพิมพ์')
   return page(
     'ใบคำขอรถรับ-ส่งผู้ป่วยถึงนายก อปท.',
     formCss(),
-    '<div class="screen-note">ยังไม่ยืนยันรถ จึงมีเฉพาะใบคำขอถึงนายก · หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถ'
-      + ' · ใบคำขอนี้จะออกอีกครั้งในชุดเอกสารหลังยืนยันรถ พิมพ์ตอนใดตอนหนึ่งครั้งเดียวก็พอ (ข้อความนี้ไม่ถูกพิมพ์)</div>\n'
-      + formSheet(bookingPacket(args, args.booking, null)),
+    (args.booking.status === 'submitted'
+      ? '<div class="screen-note">ยังไม่ยืนยันรถ จึงมีเฉพาะใบคำขอถึงนายก · หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถจากปุ่มแยก (ข้อความนี้ไม่ถูกพิมพ์)</div>\n'
+      : '') + formSheet(bookingPacket(args, args.booking, args.trip ?? null)),
   )
+}
+
+// ปุ่มหนังสือของระบบจองคิวรับคำขอเดียวเท่านั้น กันข้อมูลคนอื่นในเที่ยวเดียวกันติดมาด้วย
+export function buildBookingForwardLetterHtml(args) {
+  const { booking, trip } = args ?? {}
+  if (!booking || !trip || booking.trip_id !== trip.id
+    || !['confirmed', 'completed'].includes(booking.status) || trip.state === 'cancelled') {
+    throw new Error('หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถในเที่ยวที่ยังไม่ยกเลิก')
+  }
+  return buildPatientTransportLetterHtml({ ...bookingPacket(args, booking, trip), attachmentCount: 1 })
 }
 
 export function buildTripForwardLetterHtml(args) {

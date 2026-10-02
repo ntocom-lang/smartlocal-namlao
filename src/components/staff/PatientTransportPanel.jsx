@@ -7,7 +7,7 @@ import { thaiDateFromDateInput, thaiDateTimeText } from '../../lib/thaiDate'
 import {
   APPOINTMENT_KINDS, MOBILITY_LEVELS, REQUESTER_RELATIONS, TRIP_TYPES, WORKFLOW_STATUS, optionLabel,
 } from '../../lib/patientTransport'
-import { buildPatientTransportPacketHtml } from '../../lib/patientTransportPrint'
+import { buildPatientTransportFormHtml, buildPatientTransportLetterHtml, writeAndPrint } from '../../lib/patientTransportPrint'
 import {
   SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE,
   pickSignatory, signatoryName, signatoryTitle,
@@ -216,8 +216,9 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
     }), 'ยกเลิกคำขอ')
   }
 
-  function handlePrint() {
-    const html = buildPatientTransportPacketHtml({
+  function handlePrint(kind) {
+    const build = kind === 'request' ? buildPatientTransportFormHtml : buildPatientTransportLetterHtml
+    const html = build({
       header,
       form: parent?.permit_form_data ?? {},
       parent,
@@ -232,9 +233,7 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
     })
     const win = window.open('', '_blank', 'width=860,height=1100')
     if (!win) return
-    win.document.write(html)
-    win.document.close()
-    setTimeout(() => { win.focus(); win.print() }, 400)
+    writeAndPrint(win, html)
   }
 
   if (loading) {
@@ -351,16 +350,22 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
 
       {/* พิมพ์ได้ทุกสถานะ ไม่ใช่เฉพาะตอนยังไม่ส่งต่อ — ใบหายหรือกองทุนขอสำเนาซ้ำเป็นเรื่องปกติ
           และเลขหนังสือที่บันทึกไว้แล้วจะถูกพิมพ์ลงช่อง "ที่" ให้เอง ใบที่พิมพ์ซ้ำจึงตรงกับต้นเรื่อง */}
-      <button onClick={handlePrint}
-        className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white text-sm font-semibold text-gray-700">
-        <Printer size={15} /> พิมพ์หนังสือนำส่ง + ใบคำขอ (2 แผ่น)
-      </button>
+      <div className="grid gap-2 sm:grid-cols-2" aria-label="เลือกเอกสารที่จะพิมพ์">
+        <button type="button" onClick={() => handlePrint('request')}
+          className="flex min-h-[44px] w-full items-center gap-2 rounded-2xl border border-gray-200 bg-white p-3 text-left text-sm text-gray-700">
+          <Printer size={15} className="shrink-0" aria-hidden="true" /><span><span className="block font-semibold">พิมพ์ใบคำขอรถรับ–ส่งผู้ป่วย</span><span className="block text-xs">ประชาชนถึงนายก</span></span>
+        </button>
+        <button type="button" onClick={() => handlePrint('letter')}
+          className="flex min-h-[44px] w-full items-center gap-2 rounded-2xl border border-gray-200 bg-white p-3 text-left text-sm text-gray-700">
+          <Printer size={15} className="shrink-0" aria-hidden="true" /><span><span className="block font-semibold">พิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย</span><span className="block text-xs">นายกถึงประธานกองทุน</span></span>
+        </button>
+      </div>
 
       {/* ── ส่งต่อ ─────────────────────────────────────────────────────── */}
       {editStatus === 'submitted' && (
         <div className="space-y-2 rounded-xl border border-blue-200 bg-blue-50 p-3">
           <p className="text-xs font-semibold text-blue-900">
-            พิมพ์หนังสือนำส่งพร้อมใบคำขอ ลงนาม แล้วบันทึกเลขหนังสือตามทะเบียนหนังสือส่ง
+            พิมพ์ใบคำขอและหนังสือขอความอนุเคราะห์จากปุ่มแยก ลงนาม แล้วบันทึกเลขหนังสือตามทะเบียนหนังสือส่ง
           </p>
           <div className="grid gap-2 sm:grid-cols-2">
             <div>

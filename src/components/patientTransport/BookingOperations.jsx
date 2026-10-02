@@ -586,7 +586,22 @@ export function DriverTrips({ workspace, uid, isAdmin, canAssign, busy, error, c
 // (เดิม #368/#371 พิมพ์ทั้งเที่ยวชุดเดียวและมีกรอบ "กดพิมพ์ที่คนไหนก็ได้" — เลิกแล้ว) · ปัญหากระดาษเกินหายเอง เพราะแต่ละคนพิมพ์ของตัวเอง
 // เลขที่/วันที่มาจากทะเบียนหนังสือส่งของสารบรรณ ระบบออกเลขเองไม่ได้ · พิมพ์ได้ก่อนมีเลข (ช่อง "ที่" เว้นเส้นประให้เขียนมือ)
 // เพราะบางแห่งลงเลขหลังผู้บริหารลงนาม · ไฟล์นี้ใช้ร่วมกับหน้าประชาชน (BookingCards) จึงไม่ import โมดูลใบพิมพ์มาเอง
-export function BookingFundDocs({ booking, trip, busy, onRecordLetter, onPrintLetter }) {
+// ใช้ป้ายเดียวกันทุกจุด แยกผู้ส่ง/ผู้รับชัดเจน และให้ชื่อปุ่มตัดบรรทัดบนมือถือได้
+export function BookingPrintButtons({ booking, busy, onPrintRequest, onPrintLetter }) {
+  return <div className="space-y-2" aria-label="เลือกเอกสารที่จะพิมพ์">
+    <div className="grid gap-2 sm:grid-cols-2">
+      <button type="button" className={`${buttonClass} text-left whitespace-normal`} disabled={busy || !onPrintRequest} onClick={() => onPrintRequest(booking)}>
+        <span className="block font-bold">พิมพ์ใบคำขอรถรับ–ส่งผู้ป่วย</span><span className="block text-xs font-normal text-slate-600">ประชาชนถึงนายก</span>
+      </button>
+      <button type="button" className={`${buttonClass} text-left whitespace-normal`} disabled={busy || !onPrintLetter} onClick={() => onPrintLetter(booking)}>
+        <span className="block font-bold">พิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย</span><span className="block text-xs font-normal text-slate-600">นายกถึงประธานกองทุน</span>
+      </button>
+    </div>
+    {!onPrintLetter && <p className="text-sm text-slate-600">หนังสือถึงกองทุนพิมพ์ได้หลังยืนยันรถ</p>}
+  </div>
+}
+
+export function BookingFundDocs({ booking, trip, busy, onRecordLetter, onPrintLetter, onPrintRequest }) {
   const letter = bookingLetter(booking, trip)
   const edit = useRevisionDraft(booking, 'letter_revision', { letterNo: letter.no, letterDate: letter.date || thaiDay() })
   const { letterNo, letterDate } = edit.values
@@ -602,8 +617,8 @@ export function BookingFundDocs({ booking, trip, busy, onRecordLetter, onPrintLe
       <label>ลงวันที่<input className={inputClass} type="date" required value={letterDate} onChange={e => edit.change("letterDate", e.target.value)} /></label>
       <DraftConflict edit={edit} busy={busy} latest={`เลขหนังสือ ${letter.no || "—"} · ${letter.date || "—"}`} /><button className={`${primaryClass} self-end`} disabled={busy || edit.conflict}>บันทึกเลขหนังสือ</button>
     </form>}
-    <div className="mt-3 flex flex-wrap gap-2">
-      <button type="button" className={buttonClass} disabled={busy} onClick={() => onPrintLetter(booking)}>พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน</button>
+    <div className="mt-3 space-y-2">
+      <BookingPrintButtons booking={booking} busy={busy} onPrintRequest={onPrintRequest} onPrintLetter={onPrintLetter} />
       {!open && <button type="button" className={buttonClass} disabled={busy} onClick={() => setOpen(true)}>{letter.no ? 'แก้เลขหนังสือ' : 'กรอกเลขหนังสือ'}</button>}
     </div>
   </div>
