@@ -13,8 +13,8 @@ export const PICKUP_SEPARATOR = ' · '
 
 const sameKey = part => part.replace(/\s+/g, ' ')
 
-/** ต่อส่วนของจุดรับ ข้ามส่วนว่างและส่วนที่ซ้ำกับส่วนก่อนหน้า */
-export function joinPickup(parts = []) {
+/** ส่วนของจุดรับที่ไม่ว่างและไม่ซ้ำกับส่วนก่อนหน้า (คงลำดับเดิม) */
+function uniqueParts(parts) {
   const seen = new Set()
   const kept = []
   for (const raw of parts) {
@@ -25,10 +25,39 @@ export function joinPickup(parts = []) {
     seen.add(key)
     kept.push(part)
   }
-  return kept.join(PICKUP_SEPARATOR)
+  return kept
 }
 
-/** จุดรับที่เก็บไว้แล้ว (อาจมีส่วนซ้ำจากคำขอเก่า) → ข้อความที่ไม่ซ้ำ */
-export function dedupePickup(text) {
-  return joinPickup(String(text ?? '').split(PICKUP_SEPARATOR))
+/** ต่อส่วนของจุดรับ ข้ามส่วนว่างและส่วนที่ซ้ำกับส่วนก่อนหน้า */
+export function joinPickup(parts = []) {
+  return uniqueParts(parts).join(PICKUP_SEPARATOR)
+}
+
+// ที่อยู่ที่ได้จากหมุดแผนที่ (Nominatim) เป็นข้อความที่เครื่องสร้าง คั่นด้วยจุลภาค และมีส่วนที่อ่านแล้วขัดกับ
+// ประโยคไทยในใบคำขอ ("จึงขอให้รถมารับที่ หมู่ 3 บ้านทุ่งแค้ว · พร.4009, Ban Thung Khaeo, อำเภอหนองม่วงไข่, …"
+// เจ้าของระบบแจ้ง 2569-10-02) — ส่วนที่ตัดทิ้งในใบพิมพ์ มี 2 แบบ:
+//   1. ส่วนที่เป็นอักษรอังกฤษล้วน ("Ban Thung Khaeo") — คำแปลซ้ำของชื่อไทยที่อยู่ข้างๆ
+//   2. รหัสทางหลวง ("พร.4009" "ทล.101") — อักษรไทย 2-3 ตัว + จุด + เลข 3-4 หลัก · ต้องมี 2 ตัวขึ้นไป
+//      เพราะ "ซ.5" (ซอย 5) กับ "ม.3" (หมู่ 3) เป็นที่อยู่จริง ตัดไม่ได้
+// ส่วนที่เหลือเรียงต่อกันด้วยช่องว่างแบบที่อยู่ไทย ("หมู่ 3 บ้านทุ่งแค้ว อำเภอหนองม่วงไข่ จังหวัดแพร่")
+//
+// ⚠️ "ภาคเหนือ" "ประเทศไทย" ที่ต่อท้ายที่อยู่จากช่องค้นหาแผนที่ จงใจ "ไม่ตัด" — เคยเสนอตัดแล้วเจ้าของระบบตอบ
+// "ไม่เอา" (2569-10-02) ห้ามเพิ่มกลับเอง
+//
+// ตัดเฉพาะใน "ใบพิมพ์" — ข้อมูลที่เก็บและหน้าจอเจ้าหน้าที่ยังเห็นข้อความเต็ม (หมุดพิกัดเก็บแยกอยู่แล้ว)
+const THAI_LETTER = /[฀-๿]/
+const LATIN_LETTER = /[A-Za-z]/
+const ROAD_CODE = /^[ก-ฮ]{2,3}\.\s?\d{3,4}$/
+
+const isNoise = part => (LATIN_LETTER.test(part) && !THAI_LETTER.test(part)) || ROAD_CODE.test(part)
+
+/**
+ * จุดรับที่เก็บไว้ → ข้อความที่อ่านต่อท้าย "จึงขอให้รถมารับที่" ได้เป็นประโยคไทย
+ * ตัดส่วนซ้ำ (คำขอเก่าที่เก็บ "A · A" ไว้) + ส่วนที่แทรกมาตามข้างบน
+ * ถ้าตัดแล้วไม่เหลืออะไร (ผู้จองพิมพ์อังกฤษล้วน) คืนข้อความเดิมที่ไม่ซ้ำ ดีกว่าปล่อยเส้นว่างให้ไปเขียนมือ
+ */
+export function pickupSentence(text) {
+  const parts = uniqueParts(String(text ?? '').split(/\s*[·,，;\n]\s*/))
+  const kept = parts.filter(part => !isNoise(part))
+  return (kept.length ? kept : parts).join(' ')
 }

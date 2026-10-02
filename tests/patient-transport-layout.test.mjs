@@ -20,7 +20,7 @@ import {
   buildTripForwardLetterHtml, buildTripMonthReportHtml, tripPassengers,
 } from '../src/lib/patientTransportPrint.js'
 import { assertSignBlockStandard, assertSignLinesAligned } from './lib/signBlockChecks.mjs'
-import { dedupePickup, joinPickup } from '../src/lib/pickupText.js'
+import { joinPickup, pickupSentence } from '../src/lib/pickupText.js'
 
 const TENANT = {
   name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว',
@@ -652,8 +652,8 @@ const checks = [
       assert.equal(joinPickup(['', VILLAGE, '   ']), VILLAGE, 'ส่วนว่างต้องไม่เหลือตัวคั่นลอยๆ')
       assert.equal(joinPickup(['หมู่ 1', 'บ้านเลขที่ 5 หมู่ 10']), 'หมู่ 1 · บ้านเลขที่ 5 หมู่ 10',
         'ห้ามตัดส่วนที่เป็นแค่ข้อความย่อยของอีกส่วน — "หมู่ 1" อยู่ใน "หมู่ 10" แต่คนละหมู่บ้าน')
-      assert.equal(dedupePickup(`${VILLAGE} · ${SPOT} · ${VILLAGE}`), `${VILLAGE} · ${SPOT}`, 'คำขอเก่าที่เก็บส่วนซ้ำไว้ไม่ติดกัน')
-      assert.equal(dedupePickup(null), '')
+      assert.equal(pickupSentence(`${VILLAGE} · ${SPOT} · ${VILLAGE}`), `${VILLAGE} ${SPOT}`, 'คำขอเก่าที่เก็บส่วนซ้ำไว้ไม่ติดกัน')
+      assert.equal(pickupSentence(null), '')
 
       const DUP = `${VILLAGE} · ${VILLAGE}`
       const countIn = (text, word) => text.split(word).length - 1
@@ -680,7 +680,49 @@ const checks = [
         const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings: [{ ...TRIP_BOOKINGS[0], pickup: `${VILLAGE} · ${SPOT}` }] }))
         try {
           const text = (await formSheetsOf(page).first().innerText()).replace(/\s+/g, ' ')
-          assert.ok(text.includes(`${VILLAGE} · ${SPOT}`), 'ส่วนที่ต่างกันหายไปหรือตัวคั่นเพี้ยน')
+          assert.ok(text.includes(`รถมารับที่ ${VILLAGE} ${SPOT} โดย`), 'ส่วนที่ต่างกันหายไปหรือเรียงไม่ต่อกันเป็นที่อยู่')
+        } finally { await page.close() }
+      }
+    },
+  },
+  {
+    // ที่อยู่จากหมุดแผนที่ถูกยัดลงช่องจุดสังเกต แล้วขึ้นกลางประโยคใบคำขอเป็น
+    // "จึงขอให้รถมารับที่ หมู่ 3 บ้านทุ่งแค้ว · พร.4009, Ban Thung Khaeo, อำเภอหนองม่วงไข่, จังหวัดแพร่ โดย…"
+    // (เจ้าของระบบแจ้ง 2569-10-02: ใส่ "· พร.4009, Ban Thung Khaeo" กับ "," มาทำไม ให้เป็นประโยคตามภาษาไทย)
+    name: 'pickup-text-reads-as-thai-sentence',
+    reason: 'จุดรับในประโยคใบคำขอต้องเป็นที่อยู่แบบไทย (ส่วนต่างๆ คั่นด้วยช่องว่าง) ไม่มีชื่ออังกฤษ รหัสทางหลวง จุลภาค หรือ " · " แทรก'
+      + ' · แต่ที่อยู่จริงที่พิมพ์สั้นๆ (ซ.5 ม.3 เลขบ้าน 99/1) ต้องไม่ถูกตัด และถ้าตัดแล้วไม่เหลืออะไรต้องคืนข้อความเดิม',
+    async run(browser) {
+      const RAW = 'หมู่ 3 บ้านทุ่งแค้ว · พร.4009, Ban Thung Khaeo, อำเภอหนองม่วงไข่, จังหวัดแพร่'
+      const SENTENCE = 'หมู่ 3 บ้านทุ่งแค้ว อำเภอหนองม่วงไข่ จังหวัดแพร่'
+      assert.equal(pickupSentence(RAW), SENTENCE, 'เคสจริงจากใบที่พิมพ์ออกมา')
+      assert.equal(
+        pickupSentence('ถนนยันตรกิจโกศล, ตำบลทุ่งแค้ว, อำเภอหนองม่วงไข่, จังหวัดแพร่, ภาคเหนือ, 54170, ประเทศไทย'),
+        'ถนนยันตรกิจโกศล ตำบลทุ่งแค้ว อำเภอหนองม่วงไข่ จังหวัดแพร่ ภาคเหนือ 54170 ประเทศไทย',
+        'ที่อยู่เต็มจากช่องค้นหาแผนที่: คงภาค/รหัสไปรษณีย์/ประเทศไว้ครบ — เจ้าของระบบไม่ให้ตัด (2569-10-02) เปลี่ยนแค่ตัวคั่นเป็นช่องว่าง')
+      assert.equal(pickupSentence('ทล.101, หมู่ 4 บ้านดอนชัย'), 'หมู่ 4 บ้านดอนชัย', 'รหัสทางหลวงตัวย่อ 2 ตัวอักษร + เลข 3 หลัก')
+      assert.equal(pickupSentence('บ้านเลขที่ 99/1 ซ.5, ม.3'), 'บ้านเลขที่ 99/1 ซ.5 ม.3', 'ซ.5 / ม.3 เป็นที่อยู่จริง ห้ามตัดเป็นรหัสทางหลวง')
+      assert.equal(pickupSentence('99/1'), '99/1', 'เลขบ้านเฉยๆ ต้องไม่ถูกตัด')
+      assert.equal(pickupSentence('ข้างร้าน 7-Eleven'), 'ข้างร้าน 7-Eleven', 'ส่วนที่มีอักษรไทยปนอังกฤษคือข้อความของผู้จอง ห้ามตัด')
+      assert.equal(pickupSentence('Near the temple'), 'Near the temple', 'ตัดแล้วไม่เหลืออะไร ต้องคืนข้อความเดิม ไม่ปล่อยเส้นว่าง')
+
+      const sentenceIn = (text) => new RegExp(`รถมารับที่ ${SENTENCE}( \\(จุดสังเกต[^)]*\\))? โดย`).test(text)
+      // ระบบจองคิว: ใบที่พิมพ์พร้อมหนังสือต่อเที่ยว
+      {
+        const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings: [{ ...TRIP_BOOKINGS[0], pickup: RAW }] }))
+        try {
+          const text = (await formSheetsOf(page).first().innerText()).replace(/\s+/g, ' ')
+          assert.ok(sentenceIn(text), `จุดรับในประโยคไม่ใช่ที่อยู่ไทย: "${text.slice(text.indexOf('รับที่'), text.indexOf('รับที่') + 90)}"`)
+          for (const stray of ['Ban Thung Khaeo', 'พร.4009']) assert.ok(!text.includes(stray), `ใบคำขอยังมี "${stray}"`)
+        } finally { await page.close() }
+      }
+      // ระบบคำขอแบบเดิม
+      {
+        const page = await render(browser, buildPatientTransportFormHtml(args({ form: { ...FORM, pickup_address: RAW } })))
+        try {
+          const text = (await formSheetsOf(page).first().innerText()).replace(/\s+/g, ' ')
+          assert.ok(sentenceIn(text), 'ใบคำขอแบบเดิมพิมพ์จุดรับไม่เป็นที่อยู่ไทย')
+          assert.ok(!text.includes('Ban Thung Khaeo'), 'ใบคำขอแบบเดิมยังมีชื่ออังกฤษ')
         } finally { await page.close() }
       }
     },
