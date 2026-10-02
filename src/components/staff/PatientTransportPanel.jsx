@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { pickupSentence } from '../../lib/pickupText'
 import { AlertTriangle, Check, CheckCircle2, Loader2, Printer, XCircle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
@@ -311,7 +312,7 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
             && `${form.beneficiary_of_name}${form.beneficiary_of_member_no ? ` (สมาชิกเลขที่ ${form.beneficiary_of_member_no})` : ''}`}
         </Row>
         <Row label="จุดรับ">
-          {form.pickup_address}{form.pickup_landmark && ` — ${form.pickup_landmark}`}
+          {pickupSentence(form.pickup_address)}{form.pickup_landmark && ` — ${form.pickup_landmark}`}
         </Row>
         <Row label="ปลายทาง">{[form.destination, form.destination_detail].filter(Boolean).join(' ')}</Row>
         <Row label="วันเวลานัด">{thaiDateTimeText(header.appointment_at)}</Row>

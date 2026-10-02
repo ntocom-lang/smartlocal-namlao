@@ -1,5 +1,6 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { govNameBlank } from './govSignBlock.js'
+import { stripForeignParts } from './pickupText.js'
 import { thaiDateFromDateInput } from './thaiDate.js'
 
 // ความกว้างช่องเขียนชื่อในวงเล็บ (ค่าเดิมของใบนี้) — ใบนี้ไม่มีเส้น "ลงชื่อ" ตามต้นฉบับ
@@ -29,6 +30,9 @@ function line(value, width = '36mm', { nowrap = false } = {}) {
 // จุดวางถังที่ปักหมุดไว้ → ข้อความสำหรับใบพิมพ์
 // พิกัดต้องมาก่อนชื่อสถานที่เสมอ เพราะเป็นค่าที่พนักงานเก็บขนพิมพ์ลงแอปนำทางได้ตรงๆ
 //
+// ตัดเฉพาะส่วนที่แทรกมา (อักษรอังกฤษล้วน/รหัสทางหลวง) ด้วย stripForeignParts — เจ้าของระบบอนุมัติ 2569-10-02
+// ("Ban Thung Khaeo" ทำให้ผู้อ่านงง) ส่วนที่เหลือคงครบทุกส่วน ไม่ตัดท้าย
+//
 // ⚠️ ห้ามตัดชื่อสถานที่ให้สั้นลงอีก — เคยตัดที่ 40 ตัวอักษรแล้วเลิกเมื่อ 2569-09-08 เพราะ
 // ชื่อจาก Nominatim ลงท้ายด้วยหน่วยการปกครองไล่จากเล็กไปใหญ่ (ถนน → ตำบล → อำเภอ →
 // จังหวัด → ภาค → รหัสไปรษณีย์ → ประเทศ) การตัดท้ายจึงไปตัดตรงส่วนที่ระบุพื้นที่พอดี
@@ -40,7 +44,7 @@ export function collectionPointText(point) {
   const lng = Number(point?.lng)
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return ''
   const coords = `${lat.toFixed(6)}, ${lng.toFixed(6)}`
-  const address = String(point?.address ?? '').trim()
+  const address = stripForeignParts(String(point?.address ?? '').trim())
   if (!address) return coords
   return `${coords} (${address})`
 }

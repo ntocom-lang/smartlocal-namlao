@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { reportPeriod, REPORT_MODES } from '../../lib/patientReportPeriod'
+import { pickupSentence } from '../../lib/pickupText'
 import { FISCAL_QUARTERS } from '../../lib/fiscalYear'
 import ReportInfographic from './ReportInfographic'
 import { ListCard, Pills, Sheet } from './StaffShell'
@@ -275,7 +276,7 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
         <p className="font-bold">{people.length > 1 ? `${index + 1}. ` : ''}{b.patient_name}</p>
         <p className="text-sm">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</p>
         {t.plan?.multiwave && <p className="text-sm font-semibold text-sky-900">มารับประมาณ {clockOf(pickupForBooking(t, b))} น.{b.return_mode !== 'one_way' ? ` · รับกลับประมาณ ${clockOf(returnForBooking(t, b))} น.` : ''}</p>}
-        <p className="text-sm">จุดรับ: {b.pickup}</p>
+        <p className="text-sm">จุดรับ: {pickupSentence(b.pickup)}</p>
         {b.cancel_requested && <p className="text-sm font-semibold text-amber-800">ผู้จองขอยกเลิก รอเจ้าหน้าที่ประสาน · ถ้าไม่ได้ขึ้นรถ กด “แจ้งเหตุขัดข้อง”</p>}
         {b.return_ready && ['outbound', 'hospital'].includes(t.state) && <p className="text-sm font-bold text-sky-800">🔔 แจ้งพร้อมให้รับกลับแล้ว</p>}
         <div className="mt-2 flex flex-wrap gap-2">

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { pickupSentence } from '../../lib/pickupText'
 import { BOOKING_STATUS, RETURN_MODES, TRIP_STATUS, bookingLastDay, buttonClass, clockOf, thaiDay, pickupForBooking } from '../../lib/patientBooking'
 
 const date = day => new Date(`${day}T12:00:00+07:00`)
@@ -103,7 +104,7 @@ export default function StaffBookingCalendar({ workspace, onOpenBooking }) {
         {selectedData.pending.map(booking => <button key={booking.id} type="button" onClick={() => onOpenBooking(booking.id)}
           className="block min-h-11 w-full space-y-1 rounded-lg border border-slate-300 bg-white p-3 text-left hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-sky-700">
           <span className="block font-semibold text-amber-900">รอยืนยันรถ · {booking.patient_name}</span><span className="block">นัด {clockOf(booking.appointment_at)} น. · {booking.route_label}</span>
-          <span className="block text-sm">จุดรับ {booking.pickup} · {RETURN_MODES[booking.return_mode] || booking.return_mode}</span>
+          <span className="block text-sm">จุดรับ {pickupSentence(booking.pickup)} · {RETURN_MODES[booking.return_mode] || booking.return_mode}</span>
         </button>)}
         {selectedData.trips.map(trip => {
           const riders = selectedData.riders.filter(b => b.trip_id === trip.id)
@@ -118,7 +119,7 @@ export default function StaffBookingCalendar({ workspace, onOpenBooking }) {
         ? <button key={row.booking.id} type="button" onClick={() => onOpenBooking(row.booking.id)}
           className="grid min-h-11 w-full gap-1 rounded-lg border p-3 text-left hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-sky-700 sm:grid-cols-[8rem_1fr]">
           <span className="font-semibold">{shortDate(row.day)}</span><span className="flex min-w-0 flex-col gap-1 text-sm"><strong className="text-amber-900">{BOOKING_STATUS.submitted} · {row.booking.patient_name}</strong>
-            <span>เวลานัด {clockOf(row.at)} น. · {row.booking.route_label}</span><span>จุดรับ {row.booking.pickup} · {RETURN_MODES[row.booking.return_mode] || row.booking.return_mode}</span></span>
+            <span>เวลานัด {clockOf(row.at)} น. · {row.booking.route_label}</span><span>จุดรับ {pickupSentence(row.booking.pickup)} · {RETURN_MODES[row.booking.return_mode] || row.booking.return_mode}</span></span>
         </button>
         : <article key={row.trip.id} className="grid gap-1 rounded-lg border p-3 sm:grid-cols-[8rem_1fr]">
           <span className="font-semibold">{shortDate(row.day)}</span><div className="flex min-w-0 flex-col gap-1 text-sm"><strong className="text-sky-900">{row.trip.plan?.route_label || row.riders[0]?.route_label || 'เที่ยวรถ'}</strong>
