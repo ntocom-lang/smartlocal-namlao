@@ -739,50 +739,80 @@ const checks = [
   },
   {
     // ⚠️ ข้อนี้ "กลับด้าน" จากของเดิม (ที่เคยห้ามพิมพ์ชื่อเมื่อเจ้าหน้าที่คีย์แทน) ตามที่เจ้าของ
-    // ระบบสั่งเมื่อ 2569-09-10 ให้พิมพ์ชื่อทุกกรณี — สิ่งที่ยังห้ามคือ "บรรทัดกำกับ" ที่อ้างว่า
-    // ยืนยันตัวตนผ่านระบบแล้ว เพราะไม่เป็นความจริงและใบนี้ส่งออกไปให้องค์กรภายนอกใช้อนุมัติ
+    // ระบบสั่งเมื่อ 2569-09-10 ให้พิมพ์ชื่อทุกกรณี · 2569-10-02 ตัดบรรทัดกำกับใต้ชื่อทุกช่องทาง (แบบ ข) ใบนี้จึงเหลือชื่อบนเส้น
+    // อย่างเดียว และต้องไม่มีข้อความใดอ้างว่ายืนยันตัวตนผ่านระบบ (ไม่เป็นความจริง และใบนี้ส่งออกไปให้องค์กรภายนอกใช้อนุมัติ)
     name: 'counter-entry-prints-name-but-not-online-claim',
-    reason: 'ใบที่เจ้าหน้าที่คีย์แทนต้องพิมพ์ชื่อผู้ยื่น แต่ห้ามอ้างว่ายืนยันตัวตนผ่านระบบแล้ว',
+    reason: 'ใบที่เจ้าหน้าที่คีย์แทนต้องพิมพ์ชื่อผู้ยื่นบนเส้น ไม่มีบรรทัดกำกับใต้ชื่อ และไม่มีข้อความอ้างว่ายืนยันตัวตนผ่านระบบ',
     async run(browser) {
       const counterForm = { ...FORM, signed_by: null }
       const page = await render(browser, buildPatientTransportFormHtml(args({ form: counterForm })))
       try {
         const info = await page.evaluate(() => ({
           signed: [...document.querySelectorAll('.sign-signed')].map(el => el.textContent.trim()),
-          note: document.querySelector('.signed-note')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
+          notes: document.querySelectorAll('.signed-note').length,
+          text: document.body.innerText,
           lines: document.querySelectorAll('.sign-line').length,
         }))
         assert.deepEqual(info.signed, [PARENT.requester_name],
           'ใบที่เจ้าหน้าที่คีย์แทนต้องพิมพ์ชื่อผู้ยื่นบนเส้น 1 จุด')
-        assert.ok(!/ยืนยันตัวตนผ่านระบบ/.test(info.note),
-          `บรรทัดกำกับอ้างว่ายืนยันตัวตนผ่านระบบทั้งที่ไม่ได้ยืนยัน: "${info.note}"`)
-        assert.ok(/บันทึกคำขอแทนที่เคาน์เตอร์/.test(info.note),
-          `บรรทัดกำกับไม่ได้บอกว่าเจ้าหน้าที่บันทึกแทน: "${info.note}"`)
-        assert.ok(/ลงลายมือชื่อรับรอง/.test(info.note),
-          'ไม่ได้บอกให้ผู้ยื่นเซ็นรับรองทับ ทั้งที่ยังไม่มีลายมือชื่อจริงบนใบ')
+        assert.equal(info.notes, 0, 'ใต้ชื่อผู้ยื่นต้องไม่มีบรรทัดกำกับ')
+        assert.ok(!/ยืนยันตัวตน/.test(info.text), 'ใบที่เจ้าหน้าที่คีย์แทนอ้างว่ายืนยันตัวตนผ่านระบบทั้งที่ไม่ได้ยืนยัน')
         // ไม่เหลือเส้นเปล่าให้เขียนมือ — ช่องผู้ยื่นพิมพ์ชื่อบนเส้นแล้ว ส่วนช่องของกรรมการกองทุนตัดออก 2569-10-01
         assert.equal(info.lines, 0, `มีเส้นลงนามเปล่า ${info.lines} เส้น ต้องไม่มี`)
       } finally { await page.close() }
     },
   },
   {
-    name: 'online-entry-keeps-eservice-note',
-    reason: 'ใบที่ประชาชนยื่นเองเหลือบรรทัดเดียวท้ายใบ "ผ่านระบบ E-Service <อปท.> · เลขอ้างอิง …" เป็นร่องรอยให้ตรวจย้อนได้'
-      + ' · เจ้าของระบบสั่งตัดบรรทัด "ลงชื่อโดยการยืนยันตัวตน…เมื่อ…" ใต้ชื่อออก 2569-10-02 ต้องไม่กลับมา',
+    // เจ้าของระบบสั่ง 2569-10-02 (แบบ ข "ตัดทุกแบบ"): ใต้ชื่อผู้ยื่นไม่มีบรรทัดกำกับ ทุกช่องทางที่คำขอเข้ามา — ต่อจาก #376 ที่ตัดของใบที่ยื่นออนไลน์
+    // รับทราบผลแล้ว: กระดาษไม่บอกว่าชื่อบนเส้นเป็นการลงชื่อผ่านระบบหรือเจ้าหน้าที่รับจองแทน ใครยื่น/รับจองแทนเมื่อไรดูได้ที่ประวัติการดำเนินการ
+    // ห้ามใส่กลับเองโดยไม่ถาม — ตรวจทุกทางที่พิมพ์ใบคำขอ ทุกช่องทาง และ html ดิบ (คอมเมนต์ในแม่แบบถูกส่งออกไปกับใบพิมพ์ด้วย)
+    name: 'request-form-has-no-signed-note',
+    reason: 'ใต้ชื่อผู้ยื่นต้องไม่มีบรรทัดกำกับ ทุกทางที่พิมพ์ใบคำขอและทุกช่องทาง · ชื่อยังอยู่บนเส้น เลขที่คำขอยังอยู่หัวใบ'
+      + ' และท้ายใบยังเป็นบรรทัดที่มาของเอกสาร',
     async run(browser) {
-      const page = await render(browser, buildPatientTransportFormHtml(args()))
-      try {
-        const info = await page.evaluate(() => ({
-          note: document.querySelector('.signed-note')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
-          origin: document.querySelector('.origin')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
-          text: document.body.innerText,
-        }))
-        assert.equal(info.note, '', `ใบที่ยื่นออนไลน์ต้องไม่มีบรรทัดกำกับใต้ชื่อ: "${info.note}"`)
-        assert.ok(!info.text.includes('ลงชื่อโดยการยืนยันตัวตน'), 'บรรทัดลงชื่อที่สั่งตัดกลับมาแล้ว')
-        assert.match(info.origin, /^ผ่านระบบ E-Service .+ · เลขอ้างอิง A1B2C3D4$/,
-          `บรรทัดกำกับที่มาท้ายใบไม่ครบ: "${info.origin}"`)
-        assert.ok(!/บันทึกคำขอแทนที่เคาน์เตอร์/.test(info.text), 'ใบที่ยื่นออนไลน์ติดข้อความของโหมดเคาน์เตอร์มาด้วย')
-      } finally { await page.close() }
+      const BANNED = ['ลงชื่อโดยการยืนยันตัวตน', 'ยืนยันตัวตนผ่านระบบ', 'เจ้าหน้าที่รับจองแทน', 'เจ้าหน้าที่บันทึกคำขอแทน',
+        'โปรดลงลายมือชื่อรับรอง', 'ลงลายมือชื่อรับรอง', 'จัดทำจากข้อมูลการจองรถ']
+      const RAW_BANNED = ['ลงชื่อโดยการยืนยันตัวตน', 'เจ้าหน้าที่รับจองแทนทางโทรศัพท์', 'เจ้าหน้าที่บันทึกคำขอแทนที่เคาน์เตอร์',
+        'โปรดลงลายมือชื่อรับรอง', 'จัดทำจากข้อมูลการจองรถ', 'signed-note']
+      const tripBooking = channel => ({ ...TRIP_BOOKINGS[0], entry_channel: channel, route_label: TRIP.plan.route_label })
+      const cases = [
+        ['ชุดเอกสารคำขอ · ยื่นออนไลน์', buildPatientTransportPacketHtml(args()), PARENT.requester_name],
+        ['ชุดเอกสารคำขอ · เจ้าหน้าที่คีย์แทนที่เคาน์เตอร์', buildPatientTransportPacketHtml(args({ form: { ...FORM, signed_by: null } })), PARENT.requester_name],
+        ['ใบคำขอฝั่งประชาชน · ยื่นออนไลน์', buildPatientTransportFormHtml(args()), PARENT.requester_name],
+        ['ใบคำขอฝั่งประชาชน · เจ้าหน้าที่คีย์แทนที่เคาน์เตอร์', buildPatientTransportFormHtml(args({ form: { ...FORM, signed_by: null } })), PARENT.requester_name],
+        ...['online', 'staff', undefined].flatMap(channel => [
+          [`ชุดต่อเที่ยว · ช่องทาง ${channel}`,
+            buildTripForwardLetterHtml({ ...tripArgs(), bookings: [tripBooking(channel)] }), TRIP_BOOKINGS[0].requester_name],
+          [`ใบคำขอตอนรอยืนยันรถ · ช่องทาง ${channel}`,
+            buildBookingRequestFormHtml({ tenant: TENANT, partner: PARTNER, mayor: MAYOR, booking: { ...tripBooking(channel), status: 'submitted', trip_id: null } }),
+            TRIP_BOOKINGS[0].requester_name],
+        ]),
+      ]
+      for (const [label, html, requester] of cases) {
+        for (const word of RAW_BANNED) assert.ok(!html.includes(word), `${label}: html ของใบพิมพ์ยังมี "${word}" (รวมคอมเมนต์และ CSS ในแม่แบบ)`)
+        const page = await render(browser, html)
+        try {
+          const forms = await page.evaluate(() => [...document.querySelectorAll('.sheet')].filter(sheet => sheet.querySelector('.form-title')).map(sheet => ({
+            text: sheet.innerText,
+            signed: [...sheet.querySelectorAll('.sign-signed')].map(el => el.textContent.trim()),
+            lines: sheet.querySelectorAll('.sign-line').length,
+            afterSign: sheet.querySelector('.sign-block').nextElementSibling?.className ?? null,
+            last: sheet.lastElementChild.className,
+            origin: sheet.querySelector('.origin')?.innerText.trim() ?? '',
+            reference: sheet.querySelector('.form-no')?.innerText.replace(/\s+/g, ' ').trim() ?? '',
+          })))
+          assert.ok(forms.length > 0, `${label}: ไม่พบใบคำขอ`)
+          for (const form of forms) {
+            for (const word of BANNED) assert.ok(!form.text.includes(word), `${label}: ใบคำขอยังมี "${word}" ที่สั่งตัดแล้ว`)
+            assert.deepEqual(form.signed, [requester], `${label}: ชื่อผู้ยื่นต้องยังอยู่บนเส้นลงชื่อ 1 จุด`)
+            assert.equal(form.lines, 0, `${label}: ต้องไม่มีเส้นเปล่าให้เซ็น`)
+            assert.equal(form.afterSign, 'origin', `${label}: ใต้ช่องลงชื่อต้องเป็นบรรทัดที่มาของเอกสารทันที ไม่มีบรรทัดอื่นคั่น`)
+            assert.equal(form.last, 'origin', `${label}: ท้ายใบต้องจบที่บรรทัดที่มาของเอกสาร`)
+            assert.ok(form.origin.includes(TENANT.name), `${label}: บรรทัดที่มาของเอกสารหายหรือไม่มีชื่อ อปท. — "${form.origin}"`)
+            assert.match(form.reference, /^เลขที่คำขอ \S+/, `${label}: เลขที่คำขอที่หัวใบเป็นเลขที่ใช้ค้นเรื่องกลับ ต้องยังอยู่`)
+          }
+        } finally { await page.close() }
+      }
     },
   },
   // --- ระบบจองคิวรถ: หนังสือนำส่งต่อเที่ยว + สรุปรายเดือน ------------------------------------
@@ -841,12 +871,15 @@ const checks = [
     },
   },
   {
-    // เจ้าของระบบสั่ง 2569-10-01: ใบคำขอถึงนายกลงชื่อเป็นชื่อผู้แจ้ง "แบบออนไลน์" — เขียนได้ตามจริงเฉพาะคำขอที่ผู้แจ้ง
-    // ล็อกอินจองเอง (entry_channel 'online') · คำขอที่เจ้าหน้าที่รับจองแทน เจ้าของระบบเลือก "ไม่ต้องเซ็น" ให้บอกตามจริง
-    // ว่าเจ้าหน้าที่รับจองแทน · ⚠️ ห้ามให้ใบที่ผู้แจ้งไม่ได้แตะระบบอ้างว่ายืนยันตัวตนผ่านระบบ (ใบนี้แนบไปกับหนังสือถึงองค์กรภายนอก)
-    name: 'trip-form-signature-follows-entry-channel',
-    reason: 'บรรทัดกำกับใต้ชื่อผู้ยื่นต้องตรงกับช่องทางที่คำขอเข้ามาจริง: จองเอง = ลงชื่อออนไลน์ · เจ้าหน้าที่รับจองแทน = บอกว่ารับจองแทน'
-      + ' ไม่ขอลายมือชื่อ · ไม่รู้ช่องทาง = ไม่อ้างอะไรเลย และหนังสือนำส่งต้องไม่เขียนขัดกับใบที่แนบ',
+    // ช่องทางที่คำขอเข้ามา (entry_channel) เหลือผลบนกระดาษ 2 ที่ (เจ้าของระบบสั่ง 2569-10-01 · ปรับ 2569-10-02):
+    //   1) หนังสือนำส่งเขียนว่ายื่น "ผ่านระบบบริการอิเล็กทรอนิกส์" ได้เฉพาะคำขอที่ผู้แจ้งล็อกอินจองเอง
+    //      ⚠️ ห้ามให้หนังสือถึงองค์กรภายนอกอ้างว่ายื่นผ่านระบบ ทั้งที่เจ้าหน้าที่รับจองแทนหรือไม่รู้ช่องทาง
+    //   2) บรรทัดที่มาท้ายใบคำขอ (.origin) ต่อท้ายเลขอ้างอิงเฉพาะใบที่ยื่นออนไลน์ (#376)
+    // บรรทัดกำกับใต้ชื่อผู้ยื่นถูกตัดทุกช่องทางแล้ว (แบบ ข 2569-10-02) — เดิมข้อนี้ชื่อ trip-form-signature-follows-entry-channel
+    // และตรวจบรรทัดกำกับ 3 แบบ ส่วนเลขอ้างอิงของใบอื่นยังอยู่ที่ "เลขที่คำขอ" หัวใบ (ค่าเดียวกัน)
+    name: 'trip-letter-wording-follows-entry-channel',
+    reason: 'หนังสือนำส่งเขียนว่ายื่นผ่านระบบบริการอิเล็กทรอนิกส์ได้เฉพาะคำขอที่ผู้จองยื่นเองออนไลน์ · ใบคำขอทุกช่องทางพิมพ์ชื่อผู้ยื่น'
+      + 'บนเส้นโดยไม่มีบรรทัดกำกับใต้ชื่อ และใบของแต่ละคนในเที่ยวเดียวกันต้องเป็นชื่อผู้ยื่นของใบนั้น',
     async run(browser) {
       // คืนแผ่นตามชนิด ไม่ใช่ตามลำดับ: letter = หนังสือนำส่ง · forms = ใบคำขอเรียงตามที่พิมพ์ · form = ใบคำขอใบแรก
       const read = async (html, shotFile) => {
@@ -858,8 +891,9 @@ const checks = [
           const sheets = await page.evaluate(() => [...document.querySelectorAll('.sheet')].map(sheet => ({
             isForm: !!sheet.querySelector('.form-title'),
             text: sheet.innerText,
-            note: sheet.querySelector('.signed-note')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
+            notes: sheet.querySelectorAll('.signed-note').length,
             origin: sheet.querySelector('.origin')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
+            reference: sheet.querySelector('.form-no')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
             signed: [...sheet.querySelectorAll('.sign-signed')].map(el => el.textContent.trim()),
             lines: sheet.querySelectorAll('.sign-line').length,
           })))
@@ -869,60 +903,49 @@ const checks = [
       }
       const trip = (bookings, shotFile) => read(buildTripForwardLetterHtml({ ...tripArgs(), bookings }), shotFile)
       const booking = (index, overrides = {}) => ({ ...TRIP_BOOKINGS[index], ...overrides })
-      // วันเวลาแสดงตามเวลาเครื่องที่พิมพ์ — ตรวจรูปแบบ ไม่ล็อกชั่วโมง เครื่องที่ตั้งโซนเวลาอื่นจะได้ไม่ล้มลวง
-      const STAMP = String.raw`เมื่อ \d{1,2} \S+ 2569 เวลา \d{2}\.\d{2} น\.`
-      const nameOnLine = (form, name, label) => {
+      const nameOnly = (form, name, label) => {
         assert.deepEqual(form.signed, [name], `${label}: ชื่อผู้ยื่นต้องอยู่บนเส้นลงชื่อ 1 จุด`)
         assert.equal(form.lines, 0, `${label}: ต้องไม่มีเส้นเปล่าให้เซ็น`)
+        assert.equal(form.notes, 0, `${label}: ใต้ชื่อผู้ยื่นต้องไม่มีบรรทัดกำกับ`)
+        for (const claim of ['ยืนยันตัวตน', 'รับจองแทน', 'ลงลายมือชื่อ', 'จัดทำจากข้อมูลการจองรถ']) {
+          assert.ok(!form.text.includes(claim), `${label}: ใบคำขอยังมี "${claim}"`)
+        }
       }
 
-      // 1) ผู้แจ้งล็อกอินจองเอง — ลงชื่อออนไลน์ ไม่ขอให้เซ็นปากกา
+      // 1) ผู้แจ้งล็อกอินจองเอง — หนังสือบอกว่ายื่นผ่านระบบ · ท้ายใบมีเลขอ้างอิง
       {
         const { letter, form } = await trip([booking(0, { entry_channel: 'online' })])
-        // 2569-10-02: ไม่มีบรรทัดกำกับใต้ชื่ออีกแล้ว เหลือบรรทัดท้ายใบบรรทัดเดียวพร้อมเลขอ้างอิง
-        assert.equal(form.note, '', `ใบของผู้ที่จองเองต้องไม่มีบรรทัดกำกับใต้ชื่อ: "${form.note}"`)
+        nameOnly(form, TRIP_BOOKINGS[0].requester_name, 'จองเอง')
         assert.match(form.origin, /^ผ่านระบบ E-Service .+ · เลขอ้างอิง B-0$/, `ใบของผู้ที่จองเอง: "${form.origin}"`)
-        nameOnLine(form, TRIP_BOOKINGS[0].requester_name, 'จองเอง')
         assert.ok(letter.text.includes('ผ่านระบบบริการอิเล็กทรอนิกส์'), 'หนังสือของคำขอที่จองเองต้องยังบอกว่ายื่นผ่านระบบ')
         assert.deepEqual(letter.signed, [], 'หนังสือนำส่งต้องไม่มีชื่อพิมพ์แทนลายมือชื่อ')
       }
-      // 2) เจ้าหน้าที่รับจองแทน — บอกตามจริง ไม่อ้างว่ายืนยันตัวตน ไม่ขอลายมือชื่อ
+      // 2) เจ้าหน้าที่รับจองแทน — หนังสือต้องไม่อ้างว่ายื่นผ่านระบบ · เลขที่คำขอยังอยู่หัวใบให้ค้นกลับ
       {
         const { letter, form } = await trip([booking(0, { entry_channel: 'staff' })], 'patient-document-staff-entry.png')
-        assert.match(form.note, new RegExp(`^เจ้าหน้าที่รับจองแทนทางโทรศัพท์/หน้าเคาน์เตอร์ ${STAMP} · เลขอ้างอิง B-0$`),
-          `ใบที่เจ้าหน้าที่รับจองแทน: "${form.note}"`)
-        for (const claim of ['ยืนยันตัวตน', 'ลงลายมือชื่อ']) {
-          assert.ok(!form.note.includes(claim), `ใบที่เจ้าหน้าที่รับจองแทนต้องไม่มี "${claim}": "${form.note}"`)
-        }
-        nameOnLine(form, TRIP_BOOKINGS[0].requester_name, 'รับจองแทน')
+        nameOnly(form, TRIP_BOOKINGS[0].requester_name, 'รับจองแทน')
+        assert.ok(form.reference.includes('B-0'), `เลขที่คำขอที่หัวใบต้องยังอยู่ (ใช้ค้นเรื่องกลับ): "${form.reference}"`)
+        assert.ok(!form.origin.includes('เลขอ้างอิง'), `ใบที่เจ้าหน้าที่รับจองแทนไม่พิมพ์เลขอ้างอิงท้ายใบ (ยื่นผ่านระบบเองไม่ได้): "${form.origin}"`)
         assert.ok(!letter.text.includes('ผ่านระบบบริการอิเล็กทรอนิกส์'),
-          'หนังสือเขียนว่ายื่นผ่านระบบ ทั้งที่ใบคำขอที่แนบเขียนว่าเจ้าหน้าที่รับจองแทน')
+          'หนังสือเขียนว่ายื่นผ่านระบบ ทั้งที่เจ้าหน้าที่รับจองแทน')
         assert.ok(letter.text.includes(`ได้ยื่นคำขอต่อ${TENANT.name} ตามเลขอ้างอิง B-0`), 'ย่อหน้าแรกของหนังสือต้องยังอ่านต่อเนื่องหลังตัดวลี')
       }
-      // 3) ไม่รู้ช่องทาง (ไม่มีค่า หรือค่าที่ไม่รู้จัก) — ไม่อ้างทั้งสองแบบ คงข้อความเดิมที่ขอให้เซ็นรับรอง
+      // 3) ไม่รู้ช่องทาง (ไม่มีค่า หรือค่าที่ไม่รู้จัก) — หนังสือต้องไม่อ้างว่ายื่นผ่านระบบ
       for (const unknown of [undefined, null, 'phone']) {
         const { letter, form } = await trip([booking(0, { entry_channel: unknown })])
-        assert.ok(form.note.includes('จัดทำจากข้อมูลการจองรถ') && form.note.includes('โปรดลงลายมือชื่อรับรอง'),
-          `ช่องทาง ${unknown}: "${form.note}"`)
-        for (const claim of ['ยืนยันตัวตน', 'รับจองแทน']) {
-          assert.ok(!form.note.includes(claim), `ช่องทาง ${unknown}: อ้าง "${claim}" ทั้งที่ไม่รู้ช่องทาง`)
-        }
+        nameOnly(form, TRIP_BOOKINGS[0].requester_name, `ช่องทาง ${unknown}`)
         assert.ok(!letter.text.includes('ผ่านระบบบริการอิเล็กทรอนิกส์'), `ช่องทาง ${unknown}: หนังสืออ้างว่ายื่นผ่านระบบ`)
       }
-      // 4) เที่ยวเดียวมีทั้งสองแบบ — แต่ละใบได้บรรทัดของตัวเอง ไม่ปนกัน
+      // 4) เที่ยวเดียวมีทั้งสองช่องทาง — แต่ละใบเป็นชื่อผู้ยื่นของตัวเอง ไม่ปนกัน
       {
         const { forms } = await trip([booking(0), booking(1)])
         assert.equal(forms.length, 2)
-        assert.ok(forms[0].note === '' && forms[0].origin.includes('ผ่านระบบ E-Service') && forms[0].origin.includes('B-0'),
-          `ใบแรก: "${forms[0].note}" / "${forms[0].origin}"`)
-        assert.ok(forms[1].note.includes('เจ้าหน้าที่รับจองแทน') && forms[1].note.includes('B-1'), `ใบที่สอง: "${forms[1].note}"`)
-        assert.ok(!forms[1].note.includes('ยืนยันตัวตน'), 'ใบของคนที่เจ้าหน้าที่รับจองแทนติดข้อความลงชื่อออนไลน์ของอีกคน')
-        // เลขอ้างอิงอยู่ในบรรทัดกำกับใต้ชื่อของใบนี้แล้ว ท้ายใบไม่พิมพ์ซ้ำอีกที่
-        assert.ok(!forms[1].origin.includes('เลขอ้างอิง'), `ใบที่เจ้าหน้าที่รับจองแทนมีเลขอ้างอิงซ้ำท้ายใบ: "${forms[1].origin}"`)
-        nameOnLine(forms[0], TRIP_BOOKINGS[0].requester_name, 'ร่วมเที่ยว คนที่ 1')
-        nameOnLine(forms[1], TRIP_BOOKINGS[1].requester_name, 'ร่วมเที่ยว คนที่ 2')
+        nameOnly(forms[0], TRIP_BOOKINGS[0].requester_name, 'ร่วมเที่ยว คนที่ 1')
+        nameOnly(forms[1], TRIP_BOOKINGS[1].requester_name, 'ร่วมเที่ยว คนที่ 2')
+        assert.ok(forms[0].origin.includes('ผ่านระบบ E-Service') && forms[0].origin.includes('B-0'), `ใบแรก: "${forms[0].origin}"`)
+        assert.ok(!forms[1].origin.includes('เลขอ้างอิง'), `ใบที่สอง (เจ้าหน้าที่รับจองแทน): "${forms[1].origin}"`)
       }
-      // 5) ชุดเอกสารของระบบคำขอแบบเดิมต้องได้ถ้อยคำเท่าเดิม — งานนี้แก้เฉพาะระบบจองคิว
+      // 5) ชุดเอกสารของระบบคำขอแบบเดิม: ย่อหน้าแรกของหนังสือได้ถ้อยคำเท่าเดิม
       for (const [label, form] of [['ยื่นออนไลน์', FORM], ['เจ้าหน้าที่คีย์แทนที่เคาน์เตอร์', { ...FORM, signed_by: null }]]) {
         const { letter } = await read(buildPatientTransportPacketHtml(args({ form })))
         assert.ok(letter.text.includes(`ได้ยื่นคำขอต่อ${TENANT.name} ผ่านระบบบริการอิเล็กทรอนิกส์ ตามเลขอ้างอิง A1B2C3D4`),

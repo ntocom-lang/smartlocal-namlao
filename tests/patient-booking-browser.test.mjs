@@ -234,7 +234,7 @@ const card=trip=>page.locator(`article[data-trip="${trip}"]`).first()
 const setDay=async value=>{await page.locator('summary').filter({hasText:'เลือกวันอื่น'}).first().evaluate(node=>{node.parentElement.open=true});await page.getByLabel('วันที่นัดแพทย์',{exact:true}).fill(value)}
 const clicks={}
 const click=async(key,locator)=>{await locator.click();clicks[key]=(clicks[key]||0)+1}
-// หน้าต่างพิมพ์: แผ่นหนังสือนำส่ง + ใบคำขอของคำขอที่ระบุ (บรรทัดกำกับใต้ชื่อผู้ยื่น) + แถบเตือนบนจอ
+// หน้าต่างพิมพ์: แผ่นหนังสือนำส่ง + ใบคำขอของคำขอที่ระบุ + แถบเตือนบนจอ · note = บรรทัดกำกับใต้ชื่อผู้ยื่น ซึ่งต้องว่างทุกช่องทาง (ตัด 2569-10-02)
 // ใช้ยืนยันว่า entry_channel จากฐานข้อมูลไปถึงใบพิมพ์จริง ไม่ใช่ถูกแค่ในข้อมูลสมมติของเทสต์เลย์เอาต์
 // ⚠️ หาแผ่นจากชนิด (.letter-sign / .form-title) ไม่ใช่เลขลำดับ · kinds = ลำดับที่ออกจากเครื่องพิมพ์
 const printedDoc=(win,id)=>win.evaluate(ref=>{
@@ -549,9 +549,9 @@ try{
   const doc=await printedDoc(intakeWin,intake.id)
   // ลำดับกระดาษตามลำดับเรื่อง (เจ้าของระบบสั่ง 2569-10-01): ใบคำขอ ประชาชน → นายก ก่อน แล้วหนังสือนำส่ง นายก → กองทุน
   assert.deepEqual(doc.kinds,['form','letter'],'เที่ยวที่มีผู้ป่วยคนเดียวต้องพิมพ์ใบคำขอก่อน แล้วตามด้วยหนังสือนำส่ง')
-  assert.match(doc.note,/^เจ้าหน้าที่รับจองแทนทางโทรศัพท์\/หน้าเคาน์เตอร์ เมื่อ \d{1,2} \S+ \d{4} เวลา \d{2}\.\d{2} น\. · เลขอ้างอิง [0-9A-F]{8}$/,`บรรทัดกำกับของใบที่เจ้าหน้าที่รับจองแทน: "${doc.note}"`)
+  assert.equal(doc.note,'',`ใต้ชื่อผู้ยื่นต้องไม่มีบรรทัดกำกับ แม้เป็นคำขอที่เจ้าหน้าที่รับจองแทน (เจ้าของระบบสั่งตัดทุกช่องทาง 2569-10-02): "${doc.note}"`)
   assert.ok(doc.form.includes('[TEST] ผู้ป่วยโทรมา'),'ชื่อผู้แจ้งต้องอยู่บนใบคำขอ')
-  for(const claim of ['ยืนยันตัวตน','ลงลายมือชื่อ','ผ่านระบบบริการอิเล็กทรอนิกส์'])assert.ok(!doc.all.includes(claim),`เอกสารของคำขอที่รับจองแทนต้องไม่มี "${claim}"`)
+  for(const claim of ['ยืนยันตัวตน','ลงลายมือชื่อ','ผ่านระบบบริการอิเล็กทรอนิกส์','เจ้าหน้าที่รับจองแทน'])assert.ok(!doc.all.includes(claim),`เอกสารของคำขอที่รับจองแทนต้องไม่มี "${claim}"`)
   await intakeWin.close();await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
  }
  console.log('PASS staff intake by phone returns to the inbox with vehicle confirmation review, channel recorded as staff and printed as staff intake without an online-signature claim')
