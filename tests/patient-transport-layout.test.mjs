@@ -273,9 +273,9 @@ const checks = [
     async run(browser) {
       const byAppointment = bookings => [...bookings]
         .sort((a, b) => String(a.appointment_at).localeCompare(String(b.appointment_at)))
-        .map(b => `เลขที่คำขอ ${String(b.id).slice(0, 8).toUpperCase()}`)
+        .map(b => `คำขอผ่าน E-Service ${String(b.id).slice(0, 8).toUpperCase()}`)
       const cases = [
-        ['ชุดเอกสารคำขอ (ระบบคำขอแบบเดิม)', buildPatientTransportPacketHtml(args()), ['เลขที่คำขอ A1B2C3D4'], false],
+        ['ชุดเอกสารคำขอ (ระบบคำขอแบบเดิม)', buildPatientTransportPacketHtml(args()), ['คำขอผ่าน E-Service A1B2C3D4'], false],
         ...[1, 2, 8].map(count => [`หนังสือต่อเที่ยว ${count} คน`,
           buildTripForwardLetterHtml({ ...tripArgs(), bookings: TRIP_BOOKINGS.slice(0, count) }),
           byAppointment(TRIP_BOOKINGS.slice(0, count)), false]),
@@ -319,7 +319,7 @@ const checks = [
       ]
       assert.deepEqual(tripPassengers(mixed, TRIP).map(b => b.id).sort(), ['b-0', 'b-1', 'b-2', 'b-done'],
         'นับเฉพาะคำขอที่ยืนยันแล้ว/จบแล้วของเที่ยวนี้')
-      const refOf = b => `เลขที่คำขอ ${String(b.id).slice(0, 8).toUpperCase()}`
+      const refOf = b => `คำขอผ่าน E-Service ${String(b.id).slice(0, 8).toUpperCase()}`
       for (const bookings of [mixed, [...mixed].reverse(), mixed.slice(0, 1)]) {
         const riders = tripPassengers(bookings, TRIP)
         const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings }))
@@ -746,6 +746,61 @@ const checks = [
     },
   },
   {
+    // เจ้าของระบบสั่ง 2569-10-02: หัวใบคำขอใช้รูปแบบเดียวกับใบคำร้อง (councilFormPrint.js) ไม่มีบรรทัด "เขียนที่"
+    //   มุมซ้าย: "คำขอผ่าน E-Service <เลขอ้างอิง>" / "ลงวันที่ ..."   มุมขวา: "คำขอเลขที่ ___" ให้เจ้าหน้าที่ลงเลขรับ
+    //   กลางหน้า: ชื่อแบบ (ตัวหนา) แล้วบรรทัด "ผ่านระบบ E-Service <อปท.>"
+    name: 'form-header-follows-complaint-layout',
+    reason: 'หัวใบคำขอต้องไม่มี "เขียนที่" และต้องเรียงแบบใบคำร้อง: มุมซ้ายเลขอ้างอิง+ลงวันที่ มุมขวาช่องเลขรับ ชื่อแบบกึ่งกลางอยู่ใต้ทั้งสองมุม'
+      + ' · ทุกทางที่พิมพ์ใบคำขอ · วัดกล่องตัวอักษรจริงด้วย Range ไม่วัดกล่องของ element (ดู AGENTS.md ช่องลงนาม)',
+    async run(browser) {
+      for (const [label, html] of [
+        ['ชุดเอกสารคำขอ', buildPatientTransportPacketHtml(args())],
+        ['ใบคำขอฝั่งประชาชน', buildPatientTransportFormHtml(args())],
+        ['หนังสือต่อเที่ยว', buildTripForwardLetterHtml({ ...tripArgs(), bookings: TRIP_BOOKINGS.slice(0, 2) })],
+      ]) {
+        const page = await render(browser, html)
+        try {
+          const forms = await formSheetsOf(page).evaluateAll(sheets => sheets.map(sheet => {
+            const box = selector => {
+              const el = sheet.querySelector(selector)
+              if (!el) return null
+              const range = document.createRange()
+              range.selectNodeContents(el)
+              const b = range.getBoundingClientRect()
+              return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, text: el.textContent.replace(/\s+/g, ' ').trim() }
+            }
+            return {
+              text: sheet.innerText.replace(/\s+/g, ' '),
+              no: box('.form-no'), date: box('.form-date'), official: box('.official-ref'),
+              title: box('.form-title'), origin: box('.form-fund'),
+              sheetLeft: sheet.getBoundingClientRect().left, sheetRight: sheet.getBoundingClientRect().right,
+            }
+          }))
+          assert.ok(forms.length > 0, `${label}: ไม่พบใบคำขอ`)
+          for (const f of forms) {
+            assert.ok(!f.text.includes('เขียนที่'), `${label}: ใบคำขอยังมี "เขียนที่"`)
+            assert.match(f.no?.text ?? '', /^คำขอผ่าน E-Service \S+/, `${label}: มุมซ้ายบนต้องเป็น "คำขอผ่าน E-Service <เลขอ้างอิง>": "${f.no?.text}"`)
+            assert.match(f.date?.text ?? '', /^ลงวันที่ \d{1,2} \S+ \d{4}$/, `${label}: ต้องมี "ลงวันที่ <วัน เดือน พ.ศ.>": "${f.date?.text}"`)
+            assert.match(f.official?.text ?? '', /^คำขอเลขที่/, `${label}: มุมขวาบนต้องเป็นช่อง "คำขอเลขที่": "${f.official?.text}"`)
+            assert.equal(f.origin?.text, `ผ่านระบบ E-Service ${TENANT.name}`, `${label}: ใต้ชื่อแบบต้องเป็น "ผ่านระบบ E-Service <อปท.>"`)
+            // ซ้ายอยู่ซ้ายของขวา และอยู่บรรทัดเดียวกัน (ลงวันที่อยู่ใต้เลขอ้างอิงในคอลัมน์ซ้าย)
+            assert.ok(f.no.right < f.official.left, `${label}: เลขอ้างอิงต้องอยู่ซ้ายของช่องเลขรับ ไม่ซ้อนกัน`)
+            assert.ok(Math.abs(f.no.top - f.official.top) < 2, `${label}: เลขอ้างอิงกับช่องเลขรับต้องอยู่บรรทัดเดียวกัน`)
+            assert.ok(f.date.top >= f.no.bottom - 1, `${label}: "ลงวันที่" ต้องอยู่ใต้เลขอ้างอิง`)
+            assert.ok(Math.abs(f.no.left - f.date.left) < 1, `${label}: เลขอ้างอิงกับลงวันที่ต้องเริ่มตรงขอบซ้ายเดียวกัน`)
+            // ชื่อแบบอยู่ใต้ทั้งสองมุม ไม่ทับ และอยู่กึ่งกลางหน้า
+            assert.ok(f.title.top >= Math.max(f.date.bottom, f.official.bottom) - 1, `${label}: ชื่อแบบต้องอยู่ใต้บล็อกมุมกระดาษ`)
+            assert.ok(f.origin.top >= f.title.bottom - 1, `${label}: "ผ่านระบบ E-Service…" ต้องอยู่ใต้ชื่อแบบ`)
+            const mid = (f.title.left + f.title.right) / 2
+            const printLeft = f.no.left
+            const printRight = f.official.right
+            assert.ok(Math.abs(mid - (printLeft + printRight) / 2) < 3, `${label}: ชื่อแบบต้องอยู่กึ่งกลางพื้นที่พิมพ์ (กลางชื่อ ${mid.toFixed(1)} กลางหน้า ${((printLeft + printRight) / 2).toFixed(1)})`)
+          }
+        } finally { await page.close() }
+      }
+    },
+  },
+  {
     name: 'evidence-line-has-no-id-copy',
     reason: 'บรรทัดหลักฐานในใบคำขอเหลือ "☐ ใบนัดแพทย์ ☐ อื่นๆ ___" เจ้าของระบบสั่งตัด "สำเนาบัตรประชาชนผู้ป่วย" ออก 2569-10-02'
       + ' ต้องไม่กลับมาในทุกทางที่พิมพ์ใบคำขอ และต้องไม่เหลือแค่ครึ่งเดียว (ช่องติ๊ก 2 ช่อง ตามคำที่เหลือ)',
@@ -869,7 +924,7 @@ const checks = [
             assert.equal(form.afterSign, 'origin', `${label}: ใต้ช่องลงชื่อต้องเป็นบรรทัดที่มาของเอกสารทันที ไม่มีบรรทัดอื่นคั่น`)
             assert.equal(form.last, 'origin', `${label}: ท้ายใบต้องจบที่บรรทัดที่มาของเอกสาร`)
             assert.ok(form.origin.includes(TENANT.name), `${label}: บรรทัดที่มาของเอกสารหายหรือไม่มีชื่อ อปท. — "${form.origin}"`)
-            assert.match(form.reference, /^เลขที่คำขอ \S+/, `${label}: เลขที่คำขอที่หัวใบเป็นเลขที่ใช้ค้นเรื่องกลับ ต้องยังอยู่`)
+            assert.match(form.reference, /^คำขอผ่าน E-Service \S+/, `${label}: เลขอ้างอิงที่หัวใบเป็นเลขที่ใช้ค้นเรื่องกลับ ต้องยังอยู่`)
           }
         } finally { await page.close() }
       }
@@ -984,7 +1039,7 @@ const checks = [
       {
         const { letter, form } = await trip([booking(0, { entry_channel: 'staff' })], 'patient-document-staff-entry.png')
         nameOnly(form, TRIP_BOOKINGS[0].requester_name, 'รับจองแทน')
-        assert.ok(form.reference.includes('B-0'), `เลขที่คำขอที่หัวใบต้องยังอยู่ (ใช้ค้นเรื่องกลับ): "${form.reference}"`)
+        assert.ok(form.reference.includes('B-0'), `เลขอ้างอิงที่หัวใบต้องยังอยู่ (ใช้ค้นเรื่องกลับ): "${form.reference}"`)
         assert.ok(!form.origin.includes('เลขอ้างอิง'), `ใบที่เจ้าหน้าที่รับจองแทนไม่พิมพ์เลขอ้างอิงท้ายใบ (ยื่นผ่านระบบเองไม่ได้): "${form.origin}"`)
         assert.ok(!letter.text.includes('ผ่านระบบบริการอิเล็กทรอนิกส์'),
           'หนังสือเขียนว่ายื่นผ่านระบบ ทั้งที่เจ้าหน้าที่รับจองแทน')
