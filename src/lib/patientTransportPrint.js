@@ -366,23 +366,23 @@ ${senderAddress.map(part => `      <p>${esc(part)}</p>`).join('\n')}
 // ---------------------------------------------------------------------------
 function formCss() {
   return `
-  /* หัวใบใช้รูปแบบเดียวกับใบคำร้อง (councilFormPrint.js) ตามที่เจ้าของระบบสั่ง 2569-10-02 — มุมซ้าย "คำขอผ่าน E-Service
-     <เลขอ้างอิง>" กับ "ลงวันที่" มุมขวา "คำขอเลขที่…" ให้เจ้าหน้าที่ลงเลขรับ ไม่มีบรรทัด "เขียนที่" แล้ว
-     11pt โดยตั้งใจ (ข้อยกเว้นขนาดตัวอักษรข้อเดียวของใบนี้) — บล็อกมุมกระดาษเป็นเลขอ้างอิงของระบบกับช่องลงเลขรับ ไม่ใช่เนื้อความ
-     ต้องเล็กกว่าเนื้อความเพื่อไม่ให้อ่านสับสนว่าเป็นเลขที่หนังสือ ขนาดเท่ากับใบคำร้อง */
-  .request-refs { display: flex; align-items: flex-start; justify-content: space-between; gap: 6mm; font-size: 11pt; line-height: 1.4; }
+  /* เลขอ้างอิงระบบและวันที่อยู่มุมซ้าย ไม่ใช่เลขทะเบียนรับหนังสือ
+     เจ้าของระบบสั่งตัดช่อง "คำขอเลขที่…" 2569-10-02 เพื่อลดช่องกรอกที่ไม่จำเป็น
+     11pt เป็นข้อยกเว้นเดิมเฉพาะข้อมูลอ้างอิง เนื้อความใช้มาตรฐานร่วมจาก govDocStyle */
+  .request-refs { font-size: 11pt; line-height: 1.4; }
   .request-refs p { margin: 0; }
-  .official-ref { text-align: right; white-space: nowrap; }
-  .form-title { text-align: center; font-size: 1.15em; font-weight: 700; margin: 2mm 0 0; }
-  .form-fund { text-align: center; margin: 0 0 2mm; }
+  .form-title { text-align: center; font-size: 1.15em; font-weight: 700; margin: 5mm 0 1mm; }
+  .form-fund { text-align: center; margin: 0 0 5mm; }
   /* เนื้อความเป็นย่อหน้าประโยค ไม่ใช่ตาราง (เจ้าของระบบสั่ง 2569-10-01) — ทุกย่อหน้าใช้ 14pt ตามมาตรฐาน
      ไม่มีข้อยกเว้นขนาดตัวอักษร 13pt ของตารางเดิมแล้ว
      ⚠️ ห้ามเปลี่ยนเป็น text-align: justify — ประโยคไทยยืดได้เฉพาะตรงช่องว่าง บรรทัดที่มีช่องว่างน้อย
      จะถูกยืดเป็นรูโหว่กลางประโยค (เหตุผลเต็มอยู่ที่ waterSupplyRequestPrint.js) */
-  .form-para { text-indent: 2.5cm; text-align: left; margin-top: 2mm; }
-  .evidence { margin-top: 2mm; }
+  .form-para { text-indent: 2.5cm; text-align: left; margin-top: 3mm; }
+  .evidence { margin-top: 4mm; }
+  .form-closing { margin-top: 4mm; }
   /* คำลงท้ายอยู่กึ่งกลางหน้า แนวเดียวกับช่องลงนามผู้ยื่นที่จัดกลางหน้า (.center-row) */
-  .form-regards { text-align: center; margin-top: 3mm; }
+  .form-regards { text-align: center; margin-top: 6mm; }
+  .request-sign { margin-top: 8mm; break-inside: avoid; }
 `
 }
 
@@ -500,7 +500,6 @@ function formSheet({
       <p class="form-no">คำขอผ่าน E-Service ${line(referenceNo, '26mm')}</p>
       <p class="form-date">ลงวันที่ ${line(letterDateText(docDate), '36mm')}</p>
     </div>
-    <p class="official-ref">คำขอเลขที่ ${line('', '48mm')}</p>
   </div>
   <p class="form-title">ใบคำขอรถรับ-ส่งผู้ป่วย</p>
   <p class="form-fund">${esc(govEServiceOriginText(orgName))}</p>
@@ -525,7 +524,7 @@ function formSheet({
   <p class="form-para form-closing">จึงเรียนมาเพื่อโปรดพิจารณาให้ความอนุเคราะห์</p>
   <p class="form-regards">ขอแสดงความนับถือ</p>
 
-  <div class="sign-block center-row" style="margin-top:3mm">
+  <div class="sign-block center-row request-sign">
     ${govSignRow({
       width: REQUESTER_LINE_W,
       // grow: ช่องเดี่ยวที่มีคำต่อท้าย ชื่อยาวกว่าแกนต้องดันคำต่อท้ายออก ไม่ใช่พิมพ์ทับ
