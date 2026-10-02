@@ -197,12 +197,17 @@ export function bookingStage(booking, trip) {
 // สีปุ่ม = สีของผลที่จะได้ ใช้เฉด 700 ให้ตัวอักษรขาวอ่านออก · rank น้อย = ขึ้นก่อนในกล่อง
 // เลขที่/วันที่หนังสือนำส่งของคำขอหนึ่งใบ — เจ้าของระบบสั่ง 2569-10-02 ให้เอกสารแยกรายคน เลขที่หนังสือคนละเลข
 // (patient_bookings.forward_letter_no) · คำขอที่ยังไม่มีเลขของตัวเองใช้เลขของเที่ยว (เที่ยวเก่าที่บันทึกก่อนแยกรายคน)
-// own = เลขของคำขอนี้เอง · ไม่มีทั้งคู่ = ว่าง (พิมพ์ได้ ช่อง "ที่" เว้นเส้นประให้เขียนมือ)
+// own = เลขของคำขอนี้เอง · ไม่มีทั้งคู่ = ช่อง "ที่" ว่าง (พิมพ์ได้ เว้นเส้นประให้เขียนมือ)
+// วันที่ซึ่งยังไม่ได้บันทึกใช้วันที่ยืนยันเที่ยวรถ (created_at ของเที่ยวเกิดในคำสั่งยืนยัน)
+// ตามเวลาไทย · ไม่ใช้ updated_at เพราะอาจเป็นวันที่แก้คิว/เลขไมล์ภายหลัง และไม่เดาวันนี้เมื่อไม่มีหลักฐาน
 // ⚠️ ใช้ฟังก์ชันนี้ที่เดียวทั้งหน้าจอ งานถัดไป และใบพิมพ์ — ห้ามอ่าน trip.forward_letter_no ตรงๆ แล้วลืมเลขของคำขอ
 export function bookingLetter(booking, trip) {
-  if (booking?.forward_letter_no) return { no: booking.forward_letter_no, date: booking.forward_letter_date || '', own: true }
-  if (trip?.forward_letter_no) return { no: trip.forward_letter_no, date: trip.forward_letter_date || '', own: false }
-  return { no: '', date: '', own: false }
+  const confirmationDate = ['confirmed', 'completed'].includes(booking?.status) && trip?.state !== 'cancelled'
+    && trip?.created_at && Number.isFinite(new Date(trip.created_at).getTime()) ? thaiDay(trip.created_at) : ''
+  if (booking?.forward_letter_no) return { no: booking.forward_letter_no, date: booking.forward_letter_date || confirmationDate, own: true }
+  if (trip?.forward_letter_no) return { no: trip.forward_letter_no, date: trip.forward_letter_date || confirmationDate, own: false }
+  // ใบพิมพ์อาจส่งวันที่ที่เจ้าหน้าที่แก้ในร่างมาก่อนมีเลขที่ (ยังไม่บันทึกลงฐานข้อมูล)
+  return { no: '', date: booking?.forward_letter_date || confirmationDate, own: false }
 }
 
 export function staffNextAction(booking, trip) {
