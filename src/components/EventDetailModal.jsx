@@ -116,8 +116,9 @@ export default function EventDetailModal({ ev, onClose, canEdit, canAssign = fal
                 <p className="leading-relaxed whitespace-pre-wrap">{ev.description}</p>
               </div>
             )}
-            {/* ผู้รับมอบหมายให้ไปแทน — มีเฉพาะข้อมูลที่มาจาก RPC ของบุคลากรภายใน ประชาชนไม่ได้ข้อมูลนี้ */}
-            <AssignmentLine ev={ev} showRecorded />
+            {/* ผู้รับมอบหมายให้ไปแทน — มีเฉพาะข้อมูลที่มาจาก RPC ของบุคลากรภายใน ประชาชนไม่ได้ข้อมูลนี้
+                ไม่แสดง "บันทึกโดย … เมื่อ …" ตามที่เจ้าของระบบสั่งซ่อน (2569-10-02) — ข้อมูลยังเก็บในฐานข้อมูล */}
+            <AssignmentLine ev={ev} />
             {/* Attachment */}
             {attachments.length > 0 && (
               <div className="flex items-center gap-2.5 flex-wrap">

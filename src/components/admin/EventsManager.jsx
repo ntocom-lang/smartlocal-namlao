@@ -1306,8 +1306,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                       <p className="leading-relaxed whitespace-pre-wrap">{ev.description}</p>
                     </div>
                   )}
-                  {/* ผู้รับมอบหมายให้ไปแทน + ใครบันทึกเมื่อไร */}
-                  <AssignmentLine ev={ev} showRecorded />
+                  {/* ผู้รับมอบหมายให้ไปแทน (ไม่แสดงใครบันทึกเมื่อไร ตามที่เจ้าของระบบสั่งซ่อน) */}
+                  <AssignmentLine ev={ev} />
                   {/* Attachment */}
                   {eventAttachments(ev).length > 0 && (
                     <div className="flex items-center gap-2.5 flex-wrap">
