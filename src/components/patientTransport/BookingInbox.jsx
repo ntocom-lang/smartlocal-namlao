@@ -140,12 +140,12 @@ function printerOf({ booking: b, trip }, { onPrintLetter, onPrintRequest }) {
 }
 
 // ปุ่มพิมพ์ในแถว/การ์ด — มีไอคอนเครื่องพิมพ์ จะได้รู้ว่ากดแล้วพิมพ์ได้เลย · ปุ่มกรอบไม่ทึบ (ปุ่มทึบ = งานถัดไปของแถว)
-function RowPrint({ printer, name, busy, full }) {
+function RowPrint({ printer, name, busy, compact }) {
   if (!printer) return null
   return <button type="button" data-row-print disabled={busy} aria-label={`${printer.label}: ${name}`} title={printer.hint}
     onClick={e => { e.stopPropagation(); printer.run() }}
-    className={`inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 ${full ? 'w-full text-base' : ''}`}>
-    <Printer size={16} strokeWidth={2.4} className="shrink-0" aria-hidden="true" />พิมพ์</button>
+    className={`inline-flex items-center justify-center whitespace-nowrap rounded-xl border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 ${compact ? 'min-h-9 gap-1 px-2.5 py-1 text-[13px]' : 'min-h-11 gap-1.5 px-3 text-sm'}`}>
+    <Printer size={compact ? 14 : 16} strokeWidth={2.4} className="shrink-0" aria-hidden="true" />พิมพ์</button>
 }
 
 const haystack = ({ booking: b, linked }) => [b.patient_name, b.requester_name, b.phone, b.pickup, b.route_label, ref(b.id), dateTime(b.appointment_at), whenLabel(b.appointment_at), linked && ref(linked.id), linked && dateTime(linked.appointment_at)].join(' ').toLowerCase()
@@ -161,7 +161,7 @@ function actionLabel({ next, group, booking, trip }) {
 function RowButton({ row, busy, onPress, full }) {
   const { next } = row
   return <button type="button" disabled={busy} onClick={e => { e.stopPropagation(); onPress(row) }}
-    className={`min-h-11 rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-50 ${full ? 'w-full text-base' : ''} ${next.color ? 'border-transparent text-white' : 'border-slate-300 bg-white text-slate-700'}`}
+    className={`rounded-xl border font-bold disabled:opacity-50 ${full ? 'min-h-11 w-full px-3 py-2 text-base' : 'min-h-9 whitespace-nowrap px-2.5 py-1 text-[13px]'} ${next.color ? 'border-transparent text-white' : 'border-slate-300 bg-white text-slate-700'}`}
     style={next.color ? { backgroundColor: next.color } : undefined}>{actionLabel(row)}</button>
 }
 
@@ -655,8 +655,8 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   const close = () => { setOpenId(null); setProblem(null); onCloseBooking?.() }
 
   const deleteBlocked = deleting?.trip && !['confirmed', 'completed', 'cancelled'].includes(deleting.trip.state)
-  function deleteButton(row) {
-    return isAdmin && <button type="button" className="min-h-11 rounded-xl border border-red-300 px-4 text-sm font-bold text-red-700 hover:bg-red-50 disabled:opacity-50" disabled={busy}
+  function deleteButton(row, compact) {
+    return isAdmin && <button type="button" className={`rounded-xl border border-red-300 font-bold text-red-700 hover:bg-red-50 disabled:opacity-50 ${compact ? 'min-h-9 px-2.5 py-1 text-[13px]' : 'min-h-11 px-4 text-sm'}`} disabled={busy}
       onClick={e => { e.stopPropagation(); setOpenId(null); setDeleting(row); setDeleteReason(''); setDeleteAttempted(false) }}>ลบ</button>
   }
   async function submitDelete(e) {
@@ -721,7 +721,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
                 <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span>{b.status === 'submitted' && group.length > 1 && <span className="block text-[11px] font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</span>}{mates.length > 0 && <span className="block text-[11px] font-semibold text-sky-800">{matesText(mates)}</span>}</td>
                 <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={pickupSentence(b.pickup)}>รับที่ {pickupSentence(b.pickup)}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[b.return_mode]}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
                 <td className="border-r border-gray-200 px-2 py-2.5 text-center" style={closes}><StatusChips row={row} /></td>
-                <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit', ...(block.framed && { borderRight: TRIP_EDGE }), ...closes }}><div className="flex flex-wrap justify-center gap-2"><RowButton row={row} busy={busy} onPress={press} /><RowPrint printer={printerOf(row, { onPrintLetter, onPrintRequest })} name={b.patient_name} busy={busy} />{deleteButton(row)}</div></td>
+                <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit', ...(block.framed && { borderRight: TRIP_EDGE }), ...closes }}><div className="flex flex-nowrap items-center justify-center gap-1.5"><RowButton row={row} busy={busy} onPress={press} /><RowPrint printer={printerOf(row, { onPrintLetter, onPrintRequest })} name={b.patient_name} busy={busy} compact />{deleteButton(row, true)}</div></td>
               </tr>
             })}
             </Fragment>
