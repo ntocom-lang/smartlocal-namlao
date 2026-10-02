@@ -3,6 +3,7 @@ import { Printer, Users } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
+import { addressFromMap } from '../../lib/pickupText'
 import { ListCard, Pills, Sheet } from './StaffShell'
 import { AmendBooking, TripFundDocs, TripPrintNote, OdometerForm } from './BookingOperations'
 import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
@@ -434,7 +435,7 @@ function PickupCorrection({ booking, busy, onSave, onBack }) {
     {stale && <p role="alert" className="text-red-700">คำขอเปลี่ยนแล้ว กรุณาปิดฟอร์มแล้วเปิดใหม่เพื่อตรวจข้อมูลล่าสุด</p>}
     <div className="flex flex-wrap gap-2"><button type="submit" className={primaryClass} disabled={busy || stale || !changed || !verified || !pickup.trim()}>บันทึกจุดรับใหม่</button><button type="button" className={buttonClass} disabled={busy} onClick={onBack}>ปิด</button></div>
     {showMap && <MapPicker initialPos={point.lat === null ? null : point} fallbackPos={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null} autoLocate={false}
-      onConfirm={({ lat, lng, address }) => { setPoint({ lat, lng }); if (!pickup.trim()) setPickup(address || ''); setVerified(false); setShowMap(false) }} onClose={() => setShowMap(false)} />}
+      onConfirm={({ lat, lng, address }) => { setPoint({ lat, lng }); setPickup(addressFromMap(pickup, address)); setVerified(false); setShowMap(false) }} onClose={() => setShowMap(false)} />}
   </form>
 }
 

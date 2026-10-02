@@ -20,7 +20,7 @@ import {
   buildTripForwardLetterHtml, buildTripMonthReportHtml, tripPassengers,
 } from '../src/lib/patientTransportPrint.js'
 import { assertSignBlockStandard, assertSignLinesAligned } from './lib/signBlockChecks.mjs'
-import { joinPickup, pickupSentence } from '../src/lib/pickupText.js'
+import { addressFromMap, joinPickup, pickupSentence } from '../src/lib/pickupText.js'
 
 const TENANT = {
   name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว',
@@ -705,6 +705,24 @@ const checks = [
       assert.equal(pickupSentence('99/1'), '99/1', 'เลขบ้านเฉยๆ ต้องไม่ถูกตัด')
       assert.equal(pickupSentence('ข้างร้าน 7-Eleven'), 'ข้างร้าน 7-Eleven', 'ส่วนที่มีอักษรไทยปนอังกฤษคือข้อความของผู้จอง ห้ามตัด')
       assert.equal(pickupSentence('Near the temple'), 'Near the temple', 'ตัดแล้วไม่เหลืออะไร ต้องคืนข้อความเดิม ไม่ปล่อยเส้นว่าง')
+      assert.equal(pickupSentence('18.123456, 100.123456'), '18.123456, 100.123456', 'พิกัดล้วน (ค้นชื่อจากหมุดไม่สำเร็จ) ต้องคงจุลภาคคั่นละติจูด/ลองจิจูด')
+
+      // ต้นทาง: ที่อยู่ที่เติมจากหมุดลงช่องจุดรับต้องเป็นข้อความที่ตัดแล้ว (เจ้าของระบบสั่ง 2569-10-02)
+      const MAP_ADDRESS = 'พร.4009, Ban Thung Khaeo, อำเภอหนองม่วงไข่, จังหวัดแพร่'
+      assert.equal(addressFromMap('', MAP_ADDRESS), 'อำเภอหนองม่วงไข่ จังหวัดแพร่', 'ช่องว่างต้องได้ที่อยู่ที่ตัดแล้ว')
+      assert.equal(addressFromMap('   ', MAP_ADDRESS), 'อำเภอหนองม่วงไข่ จังหวัดแพร่', 'ช่องที่มีแต่ช่องว่างนับว่ายังว่าง')
+      assert.equal(addressFromMap(null, MAP_ADDRESS), 'อำเภอหนองม่วงไข่ จังหวัดแพร่')
+      assert.equal(addressFromMap('บ้านเลขที่ 99 ข้างวัด', MAP_ADDRESS), 'บ้านเลขที่ 99 ข้างวัด', 'ห้ามทับสิ่งที่ผู้ใช้พิมพ์เอง')
+      assert.equal(addressFromMap('', ''), '')
+      assert.equal(addressFromMap('', undefined), '')
+      // ที่ปักหมุดได้จริงมี 2 จุด (ฟอร์มจองของผู้จอง / ฟอร์มเจ้าหน้าที่แก้จุดรับ) ทั้งคู่ต้องผ่านตัวเติมเดียวกัน
+      // — เทสต์เบราว์เซอร์ของฟอร์มทั้งสองรันใน CI ไม่ได้ จึงตรวจที่ต้นฉบับว่ายังเรียกใช้อยู่ และไม่กลับไปเติมสตริงดิบ
+      for (const file of ['BookingForm.jsx', 'BookingInbox.jsx']) {
+        const source = readFileSync(new URL(`../src/components/patientTransport/${file}`, import.meta.url), 'utf8')
+        assert.ok(source.includes('addressFromMap('), `${file} ไม่ได้ใช้ addressFromMap ตอนเติมที่อยู่จากหมุด`)
+        assert.ok(!/setPickup\(\s*address\b/.test(source) && !/spot: f\.spot \|\| address/.test(source),
+          `${file} กลับไปเติมที่อยู่จากหมุดแบบดิบ`)
+      }
 
       const sentenceIn = (text) => new RegExp(`รถมารับที่ ${SENTENCE}( \\(จุดสังเกต[^)]*\\))? โดย`).test(text)
       // ระบบจองคิว: ใบที่พิมพ์พร้อมหนังสือต่อเที่ยว

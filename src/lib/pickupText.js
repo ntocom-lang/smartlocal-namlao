@@ -44,10 +44,15 @@ export function joinPickup(parts = []) {
 // ⚠️ "ภาคเหนือ" "ประเทศไทย" ที่ต่อท้ายที่อยู่จากช่องค้นหาแผนที่ จงใจ "ไม่ตัด" — เคยเสนอตัดแล้วเจ้าของระบบตอบ
 // "ไม่เอา" (2569-10-02) ห้ามเพิ่มกลับเอง
 //
-// ตัดเฉพาะใน "ใบพิมพ์" — ข้อมูลที่เก็บและหน้าจอเจ้าหน้าที่ยังเห็นข้อความเต็ม (หมุดพิกัดเก็บแยกอยู่แล้ว)
-const THAI_LETTER = /[฀-๿]/
+// ตัดที่ 2 ชั้น (เจ้าของระบบสั่ง "ตัดที่ต้นทางด้วย" 2569-10-02):
+//   - ต้นทาง: ตอนเติมที่อยู่จากหมุดลงช่องจุดรับ (addressFromMap) คำขอใหม่จึงเก็บข้อความที่ตัดแล้ว
+//   - ใบพิมพ์: pickupSentence ตัดซ้ำอีกชั้น เพราะคำขอเก่าที่เก็บข้อความเต็มไว้แล้วยังมีอยู่
+// ⚠️ จอเจ้าหน้าที่ที่แสดงจุดรับของคำขอเก่ายังเป็นข้อความเต็ม — ยังไม่ได้สั่งให้ตัดตรงนั้น (หมุดพิกัดเก็บแยกอยู่แล้ว)
+const THAI_LETTER = /[ก-๙]/
 const LATIN_LETTER = /[A-Za-z]/
 const ROAD_CODE = /^[ก-ฮ]{2,3}\.\s?\d{3,4}$/
+// ตอนค้นชื่อจากหมุดไม่สำเร็จ ช่องที่อยู่จะเป็นพิกัดล้วน "18.123456, 100.123456" — จุลภาคคั่นละติจูด/ลองจิจูดต้องอยู่
+const COORDINATES = /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/
 
 const isNoise = part => (LATIN_LETTER.test(part) && !THAI_LETTER.test(part)) || ROAD_CODE.test(part)
 
@@ -57,7 +62,17 @@ const isNoise = part => (LATIN_LETTER.test(part) && !THAI_LETTER.test(part)) || 
  * ถ้าตัดแล้วไม่เหลืออะไร (ผู้จองพิมพ์อังกฤษล้วน) คืนข้อความเดิมที่ไม่ซ้ำ ดีกว่าปล่อยเส้นว่างให้ไปเขียนมือ
  */
 export function pickupSentence(text) {
-  const parts = uniqueParts(String(text ?? '').split(/\s*[·,，;\n]\s*/))
+  const whole = String(text ?? '').trim()
+  if (COORDINATES.test(whole)) return whole
+  const parts = uniqueParts(whole.split(/\s*[·,，;\n]\s*/))
   const kept = parts.filter(part => !isNoise(part))
   return (kept.length ? kept : parts).join(' ')
+}
+
+/**
+ * เติมช่องจุดรับ/จุดสังเกตจากที่อยู่ของหมุดแผนที่ — เติมเฉพาะตอนช่องยังว่าง ไม่ทับสิ่งที่พิมพ์เอง
+ * และเก็บเป็นข้อความที่ผ่าน pickupSentence แล้ว (ไม่เก็บ "พร.4009, Ban Thung Khaeo, …" ลงช่อง)
+ */
+export function addressFromMap(current, address) {
+  return String(current ?? '').trim() ? current : pickupSentence(address)
 }
