@@ -42,7 +42,7 @@ import {
   GOV_SIGN_LINE_W_WIDE, govNameBlank, govSignBlockCss, govSignRow,
 } from './govSignBlock.js'
 import { orgHeadTitle, orgNameParts, orgOfficeName } from './orgTerms.js'
-import { dedupePickup } from './pickupText.js'
+import { pickupSentence } from './pickupText.js'
 import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
 import {
   APPOINTMENT_KINDS, MOBILITY_LEVELS, REQUESTER_RELATIONS, TRIP_TYPES, optionLabel,
@@ -482,7 +482,8 @@ function formSheet({
     `${who}มีนัดที่ ${line(destination, '70mm')} ในวันที่ ${
       appointment ? `<span class="fill-value nb">${esc(appointment)}</span>` : line('', '55mm')}`,
     purpose && `เพื่อ${keepTimes(esc(purpose))}`,
-    `จึงขอให้รถมารับที่ ${line(dedupePickup(form.pickup_address), '80mm')}${landmark ? ` (${nb('จุดสังเกต')} ${esc(landmark)})` : ''}`,
+    // pickupSentence ตัดส่วนที่แทรกมา (ชื่ออังกฤษ รหัสทางหลวง จุลภาค " · ") ให้อ่านเป็นประโยคไทย — ดู pickupText.js
+    `จึงขอให้รถมารับที่ ${line(pickupSentence(form.pickup_address), '80mm')}${landmark ? ` (${nb('จุดสังเกต')} ${esc(landmark)})` : ''}`,
     // เงื่อนไขการเดินทางต่อด้วย "โดย" ให้อ่านเป็นประโยคเดียวกับคำขอให้มารับ ไม่ใช่ข้อความลอยต่อท้าย
     `โดย${[mobility && `${who}${esc(mobility)}`, companions > 0 ? `มีผู้ติดตาม ${companions} คน` : 'ไม่มีผู้ติดตาม']
       .filter(Boolean).join(' ')}`,
