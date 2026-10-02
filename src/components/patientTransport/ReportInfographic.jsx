@@ -4,11 +4,11 @@ import { buttonClass, primaryClass, monthReportSummary } from '../../lib/patient
 
 const COLORS = { ink: '#16324f', green: '#059669', blue: '#0284c7', paper: '#f0f7fc', muted: '#52647a' }
 const PIE_COLORS = ['#7c3aed', '#ea580c', '#0891b2', '#db2777', '#b45309', '#0f766e', '#4f46e5', '#64748b']
-const PIE_NOTE = 'คิดจากเที่ยวทั้งหมดในเดือนที่เลือก · เปอร์เซ็นต์ปัดเศษไม่เกิน 1 ตำแหน่ง'
+const PIE_NOTE = 'คิดจากเที่ยวทั้งหมดในช่วงที่เลือก · เปอร์เซ็นต์ปัดเศษไม่เกิน 1 ตำแหน่ง'
 const SOURCE = 'แหล่งข้อมูล: ระบบรถรับ–ส่งผู้ป่วย SmartLocal · ตามวันเดินทาง · ไม่รวมเที่ยวที่ยกเลิก'
 const RULE = 'ผู้เดินทางนับคนละ 1 ครั้งต่อเที่ยว · ระยะทางนับเฉพาะเที่ยวที่จบและเลขไมล์ใช้ได้'
 
-function reportModel(tenantName, month, trips) {
+function reportModel(tenantName, period, trips) {
   const rows = trips.filter(t => t.state !== 'cancelled')
   const hospitals = new Map()
   for (const trip of rows) {
@@ -28,23 +28,22 @@ function reportModel(tenantName, month, trips) {
     return { name: group.name, count, start, end: cumulative / rows.length, color: PIE_COLORS[index], percent: (count / rows.length * 100).toLocaleString('th-TH', { maximumFractionDigits: 1 }) }
   })
   const summary = monthReportSummary(rows)
-  const monthLabel = new Date(`${month}-01T00:00:00+07:00`).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', month: 'long', year: 'numeric' })
-  const graphNote = sorted.length > 8 ? 'แสดง 7 โรงพยาบาลที่มีเที่ยวมากที่สุด และรวมแห่งที่เหลือในกลุ่มอื่น ๆ' : 'เปรียบเทียบจำนวนเที่ยวทั้งหมดในเดือนที่เลือก'
+  const graphNote = sorted.length > 8 ? 'แสดง 7 โรงพยาบาลที่มีเที่ยวมากที่สุด และรวมแห่งที่เหลือในกลุ่มอื่น ๆ' : 'เปรียบเทียบจำนวนเที่ยวทั้งหมดในช่วงที่เลือก'
   const metrics = [
     { label: 'จบเที่ยวแล้ว', value: `${summary.completed} เที่ยว`, hint: 'ให้บริการเสร็จแล้ว', color: '#047857', background: '#e7f7ef' },
     { label: 'เที่ยวที่ยังไม่จบ', value: `${summary.pending} เที่ยว`, hint: 'ยืนยันแล้ว / กำลังให้บริการ / เหตุขัดข้อง', color: '#0369a1', background: '#e8f5fd' },
     { label: 'ให้บริการผู้เดินทาง', value: `${summary.passengers} ครั้ง`, hint: `นับคนละ 1 ครั้งต่อเที่ยว · ผู้ติดตาม ${summary.companions} ครั้ง`, color: '#4338ca', background: '#eeedfc' },
-    { label: 'ระยะทางที่บันทึกแล้ว', value: `${summary.distance.toLocaleString('th-TH')} กม.`, hint: !summary.completed ? 'ยังไม่มีเที่ยวที่จบในเดือนนี้' : summary.missingDistance ? `ยังไม่มีระยะทางที่ใช้ได้ ${summary.missingDistance} เที่ยวที่จบ` : 'มีระยะทางครบทุกเที่ยวที่จบ', color: '#92400e', background: '#fff5df' },
+    { label: 'ระยะทางที่บันทึกแล้ว', value: `${summary.distance.toLocaleString('th-TH')} กม.`, hint: !summary.completed ? 'ยังไม่มีเที่ยวที่จบในช่วงนี้' : summary.missingDistance ? `ยังไม่มีระยะทางที่ใช้ได้ ${summary.missingDistance} เที่ยวที่จบ` : 'มีระยะทางครบทุกเที่ยวที่จบ', color: '#92400e', background: '#fff5df' },
   ]
-  return { tenantName, month, monthLabel, groups, slices, graphNote, metrics, total: rows.length, max: Math.max(1, ...groups.map(g => g.completed + g.pending)) }
+  return { tenantName, period, groups, slices, graphNote, metrics, total: rows.length, max: Math.max(1, ...groups.map(g => g.completed + g.pending)) }
 }
 
 function shareText(model) {
   return [
     `รถรับ–ส่งผู้ป่วย | ${model.tenantName}`,
-    `【สรุปเดือน${model.monthLabel}】\nเที่ยวทั้งหมด ${model.total} เที่ยว\n${model.metrics.map(m => `${m.label}: ${m.value}`).join('\n')}`,
-    `【เที่ยวรถแยกตามโรงพยาบาล】\n${model.groups.length ? model.groups.map(g => `${g.name}: จบ ${g.completed} เที่ยว · ยังไม่จบ ${g.pending} เที่ยว`).join('\n') : 'ไม่มีเที่ยวรถในเดือนนี้'}\n${model.graphNote}`,
-    `【สัดส่วนเที่ยวรถตามโรงพยาบาล】\n${model.slices.length ? model.slices.map(slice => `${slice.name}: ${slice.count} เที่ยว (${slice.percent}%)`).join('\n') : 'ไม่มีเที่ยวรถในเดือนนี้'}\n${PIE_NOTE}`,
+    `【${model.period.label}】\n${model.period.dates}\nเที่ยวทั้งหมด ${model.total} เที่ยว\n${model.metrics.map(m => `${m.label}: ${m.value}`).join('\n')}`,
+    `【เที่ยวรถแยกตามโรงพยาบาล】\n${model.groups.length ? model.groups.map(g => `${g.name}: จบ ${g.completed} เที่ยว · ยังไม่จบ ${g.pending} เที่ยว`).join('\n') : 'ไม่มีเที่ยวรถในช่วงนี้'}\n${model.graphNote}`,
+    `【สัดส่วนเที่ยวรถตามโรงพยาบาล】\n${model.slices.length ? model.slices.map(slice => `${slice.name}: ${slice.count} เที่ยว (${slice.percent}%)`).join('\n') : 'ไม่มีเที่ยวรถในช่วงนี้'}\n${PIE_NOTE}`,
     `【วิธีนับ】\n${RULE}\n${model.metrics[3].hint}`,
     `【แหล่งข้อมูล】\n${SOURCE}\nจากข้อมูลที่โหลดในหน้ารายงาน`,
   ].join('\n\n')
@@ -75,7 +74,9 @@ async function infographicFile(model) {
   const pieLegendHeight = model.slices.reduce((height, slice) => height + lines(slice.name, 508, 28, true).length * 39.2 + 83.6, 0)
   const piePlotHeight = Math.max(280, pieLegendHeight)
   const pieHeight = model.slices.length ? 78 + piePlotHeight + 80 : 160
-  const headerHeight = 232 + agencyLines.length * 42
+  const periodLines = lines(model.period.label, 880, 32)
+  const dateLines = lines(model.period.dates, 880, 26)
+  const headerHeight = 190 + periodLines.length * 44.8 + dateLines.length * 36.4 + agencyLines.length * 44.8
   // ขนาดภาพโตตามข้อความภาษาไทยและจำนวนโรงพยาบาล ไม่ตัดชื่อหรือคำอธิบายทิ้ง
   const lastLine = 'จากข้อมูลที่โหลดในหน้ารายงาน · ภาพสรุปนี้ไม่มีข้อมูลระบุตัวผู้ป่วย'
   const footerHeight = [model.graphNote, RULE, SOURCE, lastLine].reduce((height, value) => height + lines(value, 944, 24).length * 33.6, 0) + 160
@@ -90,8 +91,9 @@ async function infographicFile(model) {
   box(0, 0, 1080, headerHeight, COLORS.ink)
   box(64, 48, 8, 80, '#38bdf8')
   text('รถรับ–ส่งผู้ป่วย', 96, 94, 880, 52, '#ffffff', true)
-  text(`สรุปการให้บริการ · ${model.monthLabel}`, 96, 150, 880, 32, '#bae6fd')
-  text(model.tenantName, 64, 210, 944, 32, '#ffffff', true)
+  const periodBottom = text(model.period.label, 96, 150, 880, 32, '#bae6fd')
+  const datesBottom = text(model.period.dates, 96, periodBottom + 8, 880, 26, '#bae6fd')
+  text(model.tenantName, 64, datesBottom + 16, 944, 32, '#ffffff', true)
   let y = headerHeight + 38
   for (let index = 0; index < model.metrics.length; index++) {
     const metric = model.metrics[index]
@@ -121,14 +123,14 @@ async function infographicFile(model) {
       legendY = text(`${slice.count} เที่ยว · ${slice.percent}%`, 508, legendY + 8, 508, 24, COLORS.muted) + 18
     }
     text(PIE_NOTE, 64, top + piePlotHeight + 40, 944, 24, COLORS.muted)
-  } else text('ไม่มีเที่ยวรถในเดือนที่เลือก จึงยังไม่มีสัดส่วนให้แสดง', 64, y + 94, 944, 26, COLORS.muted)
+  } else text('ไม่มีเที่ยวรถในช่วงที่เลือก จึงยังไม่มีสัดส่วนให้แสดง', 64, y + 94, 944, 26, COLORS.muted)
   y += pieHeight
   text(`เที่ยวรถแยกตามโรงพยาบาล · ${model.total} เที่ยว`, 64, y + 38, 944, 33, COLORS.ink, true)
   y += 76
   box(64, y - 20, 24, 24, COLORS.green); text('จบเที่ยวแล้ว', 100, y, 390, 26)
   box(556, y - 20, 24, 24, COLORS.blue); text('เที่ยวที่ยังไม่จบ', 592, y, 424, 26)
   y += 52
-  if (!graphRows.length) { text('ไม่มีเที่ยวรถในเดือนที่เลือก', 64, y + 36, 944, 32, COLORS.muted); y += 100 }
+  if (!graphRows.length) { text('ไม่มีเที่ยวรถในช่วงที่เลือก', 64, y + 36, 944, 32, COLORS.muted); y += 100 }
   for (const group of graphRows) {
     y = text(group.name, 64, y + 28, 944, 30, COLORS.ink, true)
     box(64, y, 944, 28, '#e9eef4')
@@ -145,7 +147,7 @@ async function infographicFile(model) {
   text(lastLine, 64, y + 12, 944, 24, COLORS.muted)
   const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
   if (!blob) throw new Error('Cannot create PNG')
-  return new File([blob], `patient-transport-${model.month}.png`, { type: 'image/png' })
+  return new File([blob], `patient-transport-${model.period.fileKey}.png`, { type: 'image/png' })
 }
 
 
@@ -155,8 +157,8 @@ function piePath(start, end) {
   return `M 100 100 L ${x1} ${y1} A 86 86 0 ${end - start > 0.5 ? 1 : 0} 1 ${x2} ${y2} Z`
 }
 
-export default function ReportInfographic({ tenantName, month, trips }) {
-  const model = useMemo(() => reportModel(tenantName || 'หน่วยงาน', month, trips), [tenantName, month, trips])
+export default function ReportInfographic({ tenantName, period, trips }) {
+  const model = useMemo(() => reportModel(tenantName || 'หน่วยงาน', period, trips), [tenantName, period, trips])
   const key = JSON.stringify(model)
   const [prepared, setPrepared] = useState(null)
   const [retry, setRetry] = useState(0)
@@ -193,8 +195,8 @@ export default function ReportInfographic({ tenantName, month, trips }) {
   return <div className="my-4 space-y-3" data-report-visuals>
     <section aria-label="อินโฟกราฟิกสรุปรถรับส่งผู้ป่วย" className="overflow-hidden rounded-2xl border border-sky-200 bg-white">
       <header className="bg-[#16324f] p-4 text-white sm:p-5">
-        <div className="flex items-center gap-3"><Ambulance className="size-8 shrink-0 text-sky-300" /><div className="min-w-0"><h3 className="text-xl font-bold">รถรับ–ส่งผู้ป่วย</h3><p className="mt-1 text-sm text-sky-100">สรุปเดือน{model.monthLabel} · {model.total} เที่ยว</p></div></div>
-        <p className="mt-3 break-words text-sm text-sky-100">{model.tenantName}</p>
+        <div className="flex items-center gap-3"><Ambulance className="size-8 shrink-0 text-sky-300" /><div className="min-w-0"><h3 className="text-xl font-bold">รถรับ–ส่งผู้ป่วย</h3><p className="mt-1 text-sm text-sky-100">{model.period.label} · {model.total} เที่ยว</p></div></div>
+        <p className="mt-2 text-sm text-sky-100">{model.period.dates}</p><p className="mt-3 break-words text-sm text-sky-100">{model.tenantName}</p>
       </header>
       <div className="space-y-5 p-3 sm:p-5">
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{model.metrics.map(metric => <div key={metric.label} data-report-summary={metric.label} className="min-w-0 rounded-xl p-3" style={{ backgroundColor: metric.background }}><h4 className="text-sm font-semibold" style={{ color: metric.color }}>{metric.label}</h4><p className="my-1 text-xl font-bold" style={{ color: metric.color }}>{metric.value}</p><p className="text-xs text-slate-600">{metric.hint}</p></div>)}</div>
@@ -207,7 +209,7 @@ export default function ReportInfographic({ tenantName, month, trips }) {
               {model.slices.map(slice => slice.count === model.total ? <circle key={slice.name} cx="100" cy="100" r="86" fill={slice.color} data-pie-hospital={slice.name}><title>{slice.name} {slice.count} เที่ยว {slice.percent}%</title></circle> : <path key={slice.name} d={piePath(slice.start, slice.end)} fill={slice.color} stroke="white" strokeWidth="1.5" data-pie-hospital={slice.name}><title>{slice.name} {slice.count} เที่ยว {slice.percent}%</title></path>)}
             </svg>
             <ul className="w-full min-w-0 space-y-3">{model.slices.map(slice => <li key={slice.name} data-pie-legend={slice.name} className="flex items-start gap-2 text-sm"><span className="mt-1 size-3 shrink-0 rounded-sm" style={{ backgroundColor: slice.color }} /><div className="min-w-0"><p className="break-words font-semibold text-slate-800">{slice.name}</p><p className="text-slate-600">{slice.count} เที่ยว · {slice.percent}%</p></div></li>)}</ul>
-          </div> : <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">ไม่มีเที่ยวรถในเดือนที่เลือก จึงยังไม่มีสัดส่วนให้แสดง</p>}
+          </div> : <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">ไม่มีเที่ยวรถในช่วงที่เลือก จึงยังไม่มีสัดส่วนให้แสดง</p>}
           <p className="mt-3 text-xs text-slate-500">{PIE_NOTE}</p>
           <p className="mt-1 text-xs text-slate-500">{model.graphNote}</p>
         </section>
@@ -215,7 +217,7 @@ export default function ReportInfographic({ tenantName, month, trips }) {
           <h4 className="font-bold text-slate-900">เที่ยวรถแยกตามโรงพยาบาล</h4>
           <p className="mt-1 text-xs text-slate-500">หน่วย: เที่ยว · เรียงจากมากไปน้อย · ไม่ใช่จำนวนผู้เดินทาง</p>
           <div className="my-3 flex flex-wrap gap-x-4 gap-y-2 text-xs"><span className="flex items-center gap-2"><i className="size-3 rounded-sm bg-emerald-600" />จบเที่ยวแล้ว</span><span className="flex items-center gap-2"><i className="size-3 rounded-sm bg-sky-600" />เที่ยวที่ยังไม่จบ</span></div>
-          {!model.groups.length && <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">ไม่มีเที่ยวรถในเดือนที่เลือก</p>}
+          {!model.groups.length && <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">ไม่มีเที่ยวรถในช่วงที่เลือก</p>}
           <div className="space-y-4">{model.groups.map(group => <div key={group.name} data-report-hospital={group.name}>
             <div className="mb-1 flex items-start justify-between gap-3 text-sm"><p className="min-w-0 break-words font-semibold text-slate-800">{group.name}</p><span className="shrink-0 text-slate-500">{group.completed + group.pending} เที่ยว</span></div>
             <div role="img" aria-label={`${group.name}: จบ ${group.completed} เที่ยว ยังไม่จบ ${group.pending} เที่ยว`} className="flex h-5 overflow-hidden rounded bg-slate-100"><span className="bg-emerald-600" style={{ width: `${group.completed / model.max * 100}%` }} /><span className="bg-sky-600" style={{ width: `${group.pending / model.max * 100}%` }} /></div>

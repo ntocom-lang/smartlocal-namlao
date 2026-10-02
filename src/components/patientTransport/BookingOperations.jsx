@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { reportPeriod, REPORT_MODES } from '../../lib/patientReportPeriod'
+import { FISCAL_QUARTERS } from '../../lib/fiscalYear'
 import ReportInfographic from './ReportInfographic'
 import { Printer } from 'lucide-react'
 import { ListCard, Pills, Sheet } from './StaffShell'
@@ -71,13 +73,25 @@ export function BookingCards({ bookings, allBookings = bookings, trips, onAction
   })}</div>
 }
 
-// สรุปเดือนที่เลือกแยกจากประวัติทุกเดือน: หนึ่งเที่ยวมีได้หลายเหตุการณ์
-export function QueueReport({ workspace, busy, onMonthReport }) {
+// สรุปช่วงที่เลือกแยกจากประวัติทั้งหมด: หนึ่งเที่ยวมีได้หลายเหตุการณ์
+export function QueueReport({ workspace, busy, onPeriodReport }) {
   const { tenant } = useTenant()
-  const [month, setMonth] = useState(thaiDay().slice(0, 7))
-  const [monthly, setMonthly] = useState(null)
-  const [monthError, setMonthError] = useState('')
-  const [monthRetry, setMonthRetry] = useState(0)
+  const [today] = useState(thaiDay)
+  const [month, setMonth] = useState(today.slice(0, 7))
+  const [mode, setMode] = useState('month')
+  const [basis, setBasis] = useState('fiscal')
+  const [year, setYear] = useState(String(Number(today.slice(0, 4)) + 543 + (Number(today.slice(5, 7)) >= 10 ? 1 : 0)))
+  const [quarter, setQuarter] = useState(String(Math.floor(((Number(today.slice(5, 7)) + 2) % 12) / 3) + 1))
+  const [from, setFrom] = useState(today.slice(0, 7) + '-01')
+  const [to, setTo] = useState(today)
+  const selection = useMemo(() => {
+    try { return { period: reportPeriod({ mode, month, year, quarter, basis, from, to }), error: '' } }
+    catch (failure) { return { period: null, error: failure.message } }
+  }, [mode, month, year, quarter, basis, from, to])
+  const period = selection.period
+  const [reportData, setReportData] = useState(null)
+  const [reportError, setReportError] = useState('')
+  const [reportRetry, setReportRetry] = useState(0)
   const [tripPage, setTripPage] = useState(1)
   const [page, setPage] = useState(1)
   const [history, setHistory] = useState(null)
@@ -85,15 +99,17 @@ export function QueueReport({ workspace, busy, onMonthReport }) {
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   useEffect(() => {
-    if (!tenant?.id || !month) return
+    if (!tenant?.id || !period) return
     let active = true
-    supabase.rpc('patient_booking_month_report', { p_muni: tenant.id, p_month: `${month}-01` }).then(({ data, error: failure }) => {
+    supabase.rpc('patient_booking_period_report', { p_muni: tenant.id, p_from: period.from, p_to: period.to }).then(({ data, error: failure }) => {
       if (!active) return
-      if (failure || !data) { setMonthly(null); setMonthError('โหลดสรุปเดือนนี้ไม่สำเร็จ กรุณาลองอีกครั้ง') }
-      else { setMonthly({ month, tenantId: tenant.id, trips: data.trips }); setMonthError('') }
+      if (failure || !data || data.from !== period.from || data.to !== period.to || !Array.isArray(data.trips)) { setReportData(null); setReportError('โหลดสรุปช่วงนี้ไม่สำเร็จ กรุณาลองอีกครั้ง') }
+      else { setReportData({ key: period.key, tenantId: tenant.id, trips: data.trips }); setReportError('') }
+    }).catch(() => {
+      if (active) { setReportData(null); setReportError('โหลดสรุปช่วงนี้ไม่สำเร็จ กรุณาลองอีกครั้ง') }
     })
     return () => { active = false }
-  }, [tenant?.id, month, workspace, monthRetry])
+  }, [tenant?.id, period, workspace, reportRetry])
   useEffect(() => {
     if (!tenant?.id) return
     let active = true
@@ -109,9 +125,8 @@ export function QueueReport({ workspace, busy, onMonthReport }) {
     })
     return () => { active = false }
   }, [tenant?.id, page, workspace, retry])
-  const currentMonth = monthly?.month === month && monthly?.tenantId === tenant?.id
-  const trips = currentMonth ? monthly.trips : []
-  const monthLabel = month ? new Date(`${month}-01T00:00:00+07:00`).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', month: 'long', year: 'numeric' }) : ''
+  const currentPeriod = !!period && reportData?.key === period.key && reportData?.tenantId === tenant?.id
+  const trips = currentPeriod ? reportData.trips : []
   const total = history?.tenantId === tenant?.id ? history.total : 0
   const pages = Math.max(1, Math.ceil(total / 20))
   const events = history?.tenantId === tenant?.id && history?.page === page ? history.events : []
@@ -119,21 +134,35 @@ export function QueueReport({ workspace, busy, onMonthReport }) {
   const tripPages = Math.max(1, Math.ceil(trips.length / 20))
   const visibleTripPage = Math.min(tripPage, tripPages)
   return <section className="space-y-4" aria-label="รายงานรถรับส่งผู้ป่วย">
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-label="สรุปการใช้รถประจำเดือน">
-      <h2 className="text-lg font-bold text-slate-900">สรุปการใช้รถประจำเดือน</h2>
-      <p className="mb-4 text-sm text-slate-600">เลือกเดือนเพื่อดูจำนวนเที่ยว ผู้เดินทาง และระยะทาง แล้วพิมพ์สรุปได้ทันที</p>
-      <form className="flex flex-wrap items-end gap-3" onSubmit={e => { e.preventDefault(); onMonthReport(`${month}-01`) }}>
-        <label className="min-w-0 flex-1 sm:max-w-xs">เดือนที่ต้องการดู<input className={inputClass} type="month" required value={month} onChange={e => { setMonth(e.target.value); setMonthly(null); setMonthError(''); setTripPage(1) }} /></label>
-        <button className={`${primaryClass} max-sm:w-full`} disabled={busy || !month || !currentMonth}>พิมพ์สรุปรายเดือน</button>
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-label="สรุปการใช้รถตามช่วงเวลา">
+      <h2 className="text-lg font-bold text-slate-900">สรุปการใช้รถ</h2>
+      <p className="mb-4 text-sm text-slate-600">เลือกช่วงเพื่อดูจำนวนเที่ยว ผู้เดินทาง และระยะทาง แล้วพิมพ์สรุปได้ทันที</p>
+      <form className="space-y-3" onSubmit={e => { e.preventDefault(); if (currentPeriod) onPeriodReport(period) }}>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <label className="min-w-0">ประเภทรายงาน<select aria-label="ประเภทรายงาน" className={inputClass} value={mode} onChange={e => { setMode(e.target.value); setReportError(''); setTripPage(1) }}>{Object.entries(REPORT_MODES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          {mode === 'month' && <label className="min-w-0">เดือนที่ต้องการดู<input className={inputClass} type="month" required value={month} onChange={e => { setMonth(e.target.value); setReportError(''); setTripPage(1) }} /></label>}
+          {['quarter', 'year'].includes(mode) && <>
+            <label className="min-w-0">การนับปี<select aria-label="การนับปี" className={inputClass} value={basis} onChange={e => { setBasis(e.target.value); setReportError(''); setTripPage(1) }}><option value="fiscal">ปีงบประมาณ (ต.ค.–ก.ย.)</option><option value="calendar">ปีปฏิทิน (ม.ค.–ธ.ค.)</option></select></label>
+            <label className="min-w-0">ปี พ.ศ.<input className={inputClass} type="number" inputMode="numeric" required min="2443" max="2742" value={year} onChange={e => { setYear(e.target.value); setReportError(''); setTripPage(1) }} /></label>
+          </>}
+          {mode === 'quarter' && <label className="min-w-0">ไตรมาส<select aria-label="ไตรมาส" className={inputClass} value={quarter} onChange={e => { setQuarter(e.target.value); setReportError(''); setTripPage(1) }}>{(basis === 'fiscal' ? FISCAL_QUARTERS : [{ value: 1, label: 'ไตรมาส 1 (ม.ค.–มี.ค.)' }, { value: 2, label: 'ไตรมาส 2 (เม.ย.–มิ.ย.)' }, { value: 3, label: 'ไตรมาส 3 (ก.ค.–ก.ย.)' }, { value: 4, label: 'ไตรมาส 4 (ต.ค.–ธ.ค.)' }]).map(q => <option key={q.value} value={q.value}>{q.label}</option>)}</select></label>}
+          {mode === 'custom' && <>
+            <label className="min-w-0">วันที่เริ่ม<input className={inputClass} type="date" required value={from} onChange={e => { setFrom(e.target.value); setReportError(''); setTripPage(1) }} /></label>
+            <label className="min-w-0">วันที่สิ้นสุด<input className={inputClass} type="date" required min={from || undefined} value={to} onChange={e => { setTo(e.target.value); setReportError(''); setTripPage(1) }} /></label>
+          </>}
+        </div>
+        {selection.error && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-amber-900">{selection.error}</p>}
+        <button className={`${primaryClass} max-sm:w-full`} disabled={busy || !currentPeriod}>พิมพ์สรุป</button>
+        <p className="text-xs text-slate-500">เอกสาร A4 แนวนอน · หากมีวันที่หรือ URL ของเบราว์เซอร์บนกระดาษ ให้ปิดหัวกระดาษและท้ายกระดาษในหน้าต่างพิมพ์</p>
       </form>
-      <p className="my-4 font-semibold">{month ? `ข้อมูลเดือน${monthLabel}` : 'กรุณาเลือกเดือน'} · ตามวันเดินทาง · ไม่รวมเที่ยวที่ยกเลิก</p>
-      {month && !monthError && !currentMonth && <p role="status">กำลังโหลดสรุปรายเดือน...</p>}
-      {monthError && <div role="alert" className="rounded-xl bg-rose-50 p-3 text-rose-800">{monthError} <button className={buttonClass} onClick={() => { setMonthly(null); setMonthError(''); setMonthRetry(value => value + 1) }}>ลองอีกครั้ง</button></div>}
-      {currentMonth && <>
-        <ReportInfographic tenantName={tenant?.name} month={month} trips={trips} />
-        <h3 className="mb-1 mt-5 font-bold">รายการเที่ยวเดือนนี้ · {trips.length} เที่ยว</h3>
+      {period && <p className="my-4 font-semibold">{period.label} · {period.dates}<br /><span className="text-sm font-normal text-slate-600">ตามวันเดินทาง รวมวันเริ่มและวันสิ้นสุด · ไม่รวมเที่ยวที่ยกเลิก</span></p>}
+      {period && !reportError && !currentPeriod && <p role="status">กำลังโหลดสรุป...</p>}
+      {reportError && <div role="alert" className="rounded-xl bg-rose-50 p-3 text-rose-800">{reportError} <button className={buttonClass} onClick={() => { setReportData(null); setReportError(''); setReportRetry(value => value + 1) }}>ลองอีกครั้ง</button></div>}
+      {currentPeriod && <>
+        <ReportInfographic tenantName={tenant?.name} period={period} trips={trips} />
+        <h3 className="mb-1 mt-5 font-bold">รายการเที่ยวช่วงนี้ · {trips.length} เที่ยว</h3>
         <p className="mb-3 text-sm text-slate-600">หนึ่งเที่ยวอาจมีผู้เดินทางหลายคน · คำขอที่ยังรอยืนยันรถยังไม่นับเป็นเที่ยว</p>
-        {!trips.length && <p className="rounded-xl bg-slate-50 p-4 text-slate-600">ไม่มีเที่ยวรถในเดือนที่เลือก ลองเลือกเดือนอื่น</p>}
+        {!trips.length && <p className="rounded-xl bg-slate-50 p-4 text-slate-600">ไม่มีเที่ยวรถในช่วงที่เลือก ลองเลือกช่วงอื่น</p>}
         <div className="space-y-3">{trips.slice((visibleTripPage - 1) * 20, visibleTripPage * 20).map(t => <article key={t.trip_id} data-report-trip className="rounded-xl border border-slate-200 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold">{thaiDateFromDateInput(t.date)} · รับประมาณ {clockOf(t.pickup_at) || 'ยังไม่ระบุ'}</h4><span className={`rounded-full px-3 py-1 text-xs font-bold ${t.state === 'completed' ? 'bg-emerald-100 text-emerald-900' : t.state === 'issue' ? 'bg-rose-100 text-rose-800' : 'bg-sky-100 text-sky-900'}`}>{TRIP_STATUS[t.state] || 'รอตรวจสถานะ'}</span></div>
           <p className="mt-1 break-words font-semibold text-sky-900">{t.route_label || 'ยังไม่ระบุโรงพยาบาล'}</p>

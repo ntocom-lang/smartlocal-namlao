@@ -1,3 +1,4 @@
+import { reportPeriod, reportDateLabel } from './patientReportPeriod.js'
 // ใบพิมพ์ของคำขอ "ขออนุเคราะห์รถรับ-ส่งผู้ป่วย" — 2 ใบที่ใช้คู่กัน เรียงตามลำดับเรื่อง
 //   1. ใบคำขอรถรับ-ส่งผู้ป่วย จากประชาชนถึงนายก อปท. (ผู้ป่วยคนละ 1 ใบ)
 //   2. หนังสือนำส่ง (หนังสือภายนอก) จาก อปท. ถึงประธานหน่วยงานผู้จัดรถ ซึ่งแนบใบคำขอไปด้วย
@@ -45,7 +46,7 @@ import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
 import {
   APPOINTMENT_KINDS, MOBILITY_LEVELS, REQUESTER_RELATIONS, TRIP_TYPES, optionLabel,
 } from './patientTransport.js'
-import { RETURN_MODES as BOOKING_RETURN_MODES, TRIP_STATUS, thaiDay } from './patientBooking.js'
+import { RETURN_MODES as BOOKING_RETURN_MODES, TRIP_STATUS, thaiDay, monthReportSummary } from './patientBooking.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -576,13 +577,27 @@ function page(title, css, body) {
   return `<!DOCTYPE html>
 <html lang="th"><head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
 ${GOV_FONT_LINK}
 <style>${sharedCss()}${css}
+/* อยู่กับ viewport แม้เลื่อนดูเอกสารหลายหน้า และไม่เปลี่ยน layout ของกระดาษ */
+.print-window-tools { position: fixed; top: 8px; right: 12px; z-index: 100; }
+.print-window-close { min-height: 44px; padding: 8px 16px; border: 1px solid #a8b9cc;
+  border-radius: 10px; background: #fff; color: #16324f; font: inherit; font-weight: 700;
+  cursor: pointer; box-shadow: 0 2px 8px #16324f26; }
+.print-window-close:focus-visible { outline: 3px solid #0284c7; outline-offset: 2px; }
+@media print { .print-window-tools { display: none !important; } }
 </style>
 </head><body>
 ${body}
+<div class="print-window-tools"><button type="button" class="print-window-close" onclick="window.close()"><span aria-hidden="true">×</span> ปิดหน้าต่าง</button></div>
 </body></html>`
+}
+
+// หน้าต่างเปิดก่อนดึงข้อมูล เพื่อไม่โดน popup blocker; ปิดได้ทันทีระหว่างรอเครือข่าย
+export function buildPatientPrintLoadingHtml() {
+  return page('กำลังเตรียมเอกสาร', '.print-loading { padding: 72px 24px 24px; }', '<p class="print-loading" role="status">กำลังเตรียมเอกสาร...</p>')
 }
 
 // แถบเตือนบนจอของหน้าต่างพิมพ์ (ไม่ลงกระดาษ) — ชื่อนายกในวงเล็บของหนังสือนำส่งมาจากทะเบียนผู้ลงนามกลาง
@@ -716,19 +731,19 @@ export function buildTripForwardLetterHtml(args) {
 // ⚠️ เป็น "แบบสรุปกลาง" ของระบบ ยังไม่ใช่แบบเบิกของกองทุนใด ถ้ากองทุนมีแบบของตัวเองต้องใช้แบบนั้น
 // สรุปรายเดือนมีจำนวนผู้เดินทางเท่านั้น ไม่มีชื่อ (รายละเอียดอยู่ในใบคำขอแนบหนังสือรายเที่ยว)
 // ---------------------------------------------------------------------------
-export function buildTripMonthReportHtml({ tenant, report, partner }) {
+export function buildTripMonthReportHtml({ tenant, report, partner, period }) {
   const month = String(report?.month ?? '').slice(0, 7)
-  const [year, mm] = month.split('-').map(Number)
-  const monthText = year && mm ? `${MONTHS_TH[mm - 1]} ${year + 543}` : '-'
+  const range = period || reportPeriod({ mode: 'month', month })
+  if (period && (!report || !Array.isArray(report.trips) || report.from !== range.from || report.to !== range.to)) throw new Error('ช่วงข้อมูลรายงานไม่ตรงกับช่วงที่เลือก กรุณาโหลดใหม่')
   // ยอดรวมนับเฉพาะเที่ยวที่จบแล้ว — เที่ยวที่ยังไม่ได้วิ่ง/ยังวิ่งไม่จบแยกไปตารางท้ายใบ ไม่งั้นใบนี้
   // ถูกอ่านเป็นผลงานจริงทั้งที่รถยังไม่ได้ออก (ผลตรวจ #227 ข้อ 3)
-  const all = report?.trips ?? []
+  const all = (report?.trips ?? []).filter(t => t.date >= range.from && t.date <= range.to && t.state !== 'cancelled')
   const trips = all.filter(t => t.state === 'completed')
   const pending = all.filter(t => t.state !== 'completed' && t.state !== 'cancelled')
-  const totalPeople = trips.reduce((sum, t) => sum + Number(t.passengers || 0), 0)
-  const totalCompanions = trips.reduce((sum, t) => sum + Number(t.companions || 0), 0)
-  const measured = trips.filter(t => !t.odometer_issue && t.distance != null)
-  const totalKm = measured.reduce((sum, t) => sum + Number(t.distance), 0)
+  const summary = monthReportSummary(all)
+  const totalPeople = summary.passengers
+  const totalCompanions = summary.companions
+  const totalKm = summary.distance
   const rows = trips.map((t, i) => `<tr>
       <td class="num">${i + 1}</td>
       <td class="num">${esc(letterDateText(t.date))}</td>
@@ -741,17 +756,20 @@ export function buildTripMonthReportHtml({ tenant, report, partner }) {
       <td>${esc(t.driver_name ?? '')}</td>
       <td class="num">${esc(t.letter_no ?? '')}</td>
     </tr>`).join('\n')
-  // แนวนอนเจาะรูด้านบน: ขอบ 3/2/1/2 ซม. จาก govPageCss/govPagePadding เลือกชุดขอบให้เอง
+  // รายงานหลายหน้าใช้ @page margins จริงจากค่ากลางทุกหน้า ส่วน padding ใช้เฉพาะ preview
+  // margin:0 + sheet padding เดิมมีขอบเฉพาะหน้าแรก ทำให้หน้าต่อไปพิมพ์ชิดขอบบน
   const css = `
-  ${govPageCss({ size: 'A4 landscape', hideBrowserHeader: true })}
+  ${govPageCss({ size: 'A4 landscape' })}
   .sheet.landscape { width: 297mm; min-height: 210mm; padding: ${govPagePadding({ size: 'A4 landscape' })}; }
-  @media print { .sheet.landscape { width: auto; min-height: 208mm; } }
+  @media print { .sheet.landscape { width: auto; min-height: 0; padding: 0; margin: 0; } }
   .report-title { text-align: center; font-weight: 700; font-size: 1.1em; }
   .report-sub { text-align: center; margin: 0 0 3mm; }
   table { width: 100%; border-collapse: collapse; }
   th, td { border: 1px solid #000; padding: 0.8mm 1.2mm; vertical-align: top; }
   th { font-weight: 700; text-align: center; }
   td.num { text-align: center; white-space: nowrap; }
+  /* ยอดรวมทั้งช่วงแสดงท้ายตารางครั้งเดียว ไม่ซ้ำทุกหน้าจนดูเหมือนยอดรวมรายหน้า */
+  tfoot { display: table-row-group; }
   tfoot td { font-weight: 700; }
   /* เดือนที่วิ่งทุกวันทำการได้ ~22 เที่ยว เกินพื้นที่แนวนอน 170 มม. (แบบ 4 ได้ 13 แถว/หน้า) จึงยอมให้
      ขึ้นหน้าใหม่ แต่หัวตารางต้องซ้ำทุกหน้า แถวห้ามขาดกลาง และช่องลงนามห้ามแยกไปคนละหน้ากับยอดรวม */
@@ -766,26 +784,27 @@ export function buildTripMonthReportHtml({ tenant, report, partner }) {
     <div>${govSignRow({ role: 'ผู้ตรวจสอบ', below: [govNameBlank(), 'ตำแหน่ง ....................'] })}</div>
   </div>`
   return page(
-    'สรุปการใช้รถรับ-ส่งผู้ป่วยรายเดือน',
+    'สรุปการใช้รถรับ-ส่งผู้ป่วย ' + range.label,
     css,
     `<div class="sheet landscape">
-  <p class="report-title">สรุปการใช้รถรับ-ส่งผู้ป่วย ประจำเดือน ${esc(monthText)}</p>
+  <p class="report-title">สรุปการใช้รถรับ-ส่งผู้ป่วย ${esc(range.label)}</p>
+  <p class="report-sub">${esc(reportDateLabel(range.from))} – ${esc(reportDateLabel(range.to))} · ตามวันเดินทาง</p>
   <p class="report-sub">${esc(tenant?.name ?? '')} · รถของ${esc(textOr(partner?.name, 'กองทุนเจ้าของรถ'))}</p>
   <table>
     <thead><tr><th>ลำดับ</th><th>วันที่</th><th>เส้นทาง</th><th>ผู้เดินทาง</th><th>ผู้ติดตาม</th><th>เลขไมล์ออก</th><th>เลขไมล์กลับ</th><th>ระยะทาง (กม.)</th><th>คนขับ</th><th>หนังสือนำส่งที่</th></tr></thead>
     <tbody>
-${rows || '<tr><td colspan="10" class="num">ยังไม่มีเที่ยวที่จบในเดือนนี้</td></tr>'}
+${rows || '<tr><td colspan="10" class="num">ยังไม่มีเที่ยวที่จบในช่วงนี้</td></tr>'}
     </tbody>
     <tfoot><tr><td colspan="3">รวมเที่ยวที่จบแล้ว ${trips.length} เที่ยว</td><td class="num">${totalPeople}</td><td class="num">${totalCompanions}</td><td colspan="2"></td><td class="num">${totalKm}</td><td colspan="2"></td></tr></tfoot>
   </table>
-  ${pending.length ? `<p class="note bold">เที่ยวที่ยังไม่จบในเดือนนี้ ${pending.length} เที่ยว — ไม่นับรวมในยอดข้างบน</p>
+  ${pending.length ? `<p class="note bold">เที่ยวที่ยังไม่จบใน${range.mode === 'month' ? 'เดือน' : 'ช่วง'}นี้ ${pending.length} เที่ยว — ไม่นับรวมในยอดข้างบน</p>
   <table class="pending">
     <thead><tr><th>วันที่</th><th>เส้นทาง</th><th>สถานะ</th><th>ผู้เดินทางตามแผน</th></tr></thead>
     <tbody>
 ${pending.map(t => `<tr><td class="num">${esc(letterDateText(t.date))}</td><td>${esc(t.route_label ?? '')}</td><td>${esc(TRIP_STATUS[t.state] ?? t.state ?? '')}</td><td class="num">${Number(t.passengers || 0)}</td></tr>`).join('\n')}
     </tbody>
   </table>` : ''}
-  ${measured.length < trips.length ? `<p class="note">หมายเหตุ: มี ${trips.length - measured.length} เที่ยวที่เลขไมล์ยังไม่ครบหรือระยะทางรอตรวจสอบ ระยะทางรวมนับเฉพาะเที่ยวที่ตรวจสอบได้</p>` : ''}
+  ${summary.missingDistance ? `<p class="note">หมายเหตุ: มี ${summary.missingDistance} เที่ยวที่เลขไมล์ยังไม่ครบหรือระยะทางรอตรวจสอบ ระยะทางรวมนับเฉพาะเที่ยวที่ตรวจสอบได้</p>` : ''}
   ${sign}
   <div class="origin">${esc(govEServiceOriginText(tenant?.name || 'หน่วยงาน'))}</div>
 </div>`,
