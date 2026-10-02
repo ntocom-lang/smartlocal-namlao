@@ -366,13 +366,15 @@ ${senderAddress.map(part => `      <p>${esc(part)}</p>`).join('\n')}
 // ---------------------------------------------------------------------------
 function formCss() {
   return `
-  /* เลขที่คำขอวางทับมุมขวาบนบนบรรทัดเดียวกับชื่อแบบ ไม่กินบรรทัดของตัวเอง — ที่แนวตั้ง
-     ของใบนี้เหลือไม่ถึง 10mm จึงเอาคืนทุกบรรทัดที่เอาคืนได้โดยไม่เสียความหมาย */
-  .form-head { position: relative; }
-  .form-no { position: absolute; right: 0; top: 0; margin: 0; }
-  .form-title { text-align: center; font-size: 1.15em; font-weight: 700; margin: 1mm 0 0; }
+  /* หัวใบใช้รูปแบบเดียวกับใบคำร้อง (councilFormPrint.js) ตามที่เจ้าของระบบสั่ง 2569-10-02 — มุมซ้าย "คำขอผ่าน E-Service
+     <เลขอ้างอิง>" กับ "ลงวันที่" มุมขวา "คำขอเลขที่…" ให้เจ้าหน้าที่ลงเลขรับ ไม่มีบรรทัด "เขียนที่" แล้ว
+     11pt โดยตั้งใจ (ข้อยกเว้นขนาดตัวอักษรข้อเดียวของใบนี้) — บล็อกมุมกระดาษเป็นเลขอ้างอิงของระบบกับช่องลงเลขรับ ไม่ใช่เนื้อความ
+     ต้องเล็กกว่าเนื้อความเพื่อไม่ให้อ่านสับสนว่าเป็นเลขที่หนังสือ ขนาดเท่ากับใบคำร้อง */
+  .request-refs { display: flex; align-items: flex-start; justify-content: space-between; gap: 6mm; font-size: 11pt; line-height: 1.4; }
+  .request-refs p { margin: 0; }
+  .official-ref { text-align: right; white-space: nowrap; }
+  .form-title { text-align: center; font-size: 1.15em; font-weight: 700; margin: 2mm 0 0; }
   .form-fund { text-align: center; margin: 0 0 2mm; }
-  .written-at { text-align: right; }
   /* เนื้อความเป็นย่อหน้าประโยค ไม่ใช่ตาราง (เจ้าของระบบสั่ง 2569-10-01) — ทุกย่อหน้าใช้ 14pt ตามมาตรฐาน
      ไม่มีข้อยกเว้นขนาดตัวอักษร 13pt ของตารางเดิมแล้ว
      ⚠️ ห้ามเปลี่ยนเป็น text-align: justify — ประโยคไทยยืดได้เฉพาะตรงช่องว่าง บรรทัดที่มีช่องว่างน้อย
@@ -491,16 +493,17 @@ function formSheet({
   ].filter(Boolean).join(' ')
 
   return `<div class="sheet">
-  <div class="form-head">
-    <p class="form-no">เลขที่คำขอ ${line(referenceNo, '26mm')}</p>
-    <p class="form-title">ใบคำขอรถรับ-ส่งผู้ป่วย</p>
-    <p class="form-fund">${esc(orgName)}</p>
+  <!-- ⚠️ ไม่มีบรรทัด "เขียนที่" โดยเจตนา — เจ้าของระบบสั่งใช้หัวใบแบบเดียวกับใบคำร้อง 2569-10-02 (วันที่ย้ายมาเป็น "ลงวันที่"
+       ใต้เลขอ้างอิง) ห้ามใส่กลับเองโดยไม่ถาม — เทสต์ form-header-follows-complaint-layout กันไว้ -->
+  <div class="request-refs">
+    <div>
+      <p class="form-no">คำขอผ่าน E-Service ${line(referenceNo, '26mm')}</p>
+      <p class="form-date">ลงวันที่ ${line(letterDateText(docDate), '36mm')}</p>
+    </div>
+    <p class="official-ref">คำขอเลขที่ ${line('', '48mm')}</p>
   </div>
-
-  <!-- แบบต้นฉบับวาง "เขียนที่" กับ "วันที่" คนละบรรทัด แต่ที่แนวตั้งของใบนี้ไม่พอ (วัดจริงแล้ว
-       ใบเต็มพอดีหน้า) จึงรวมเป็นบรรทัดเดียวชิดขวา ซึ่งยังอ่านได้ตรงความหมายเดิม -->
-  <p class="written-at">${field('เขียนที่', orgOfficeName(tenant), '55mm')}&nbsp;&nbsp;&nbsp;${
-    field('วันที่', letterDateText(docDate), '42mm')}</p>
+  <p class="form-title">ใบคำขอรถรับ-ส่งผู้ป่วย</p>
+  <p class="form-fund">${esc(govEServiceOriginText(orgName))}</p>
 
   <p class="kv"><span class="bold">เรื่อง</span>&nbsp;&nbsp;ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย</p>
   <p class="kv"><span class="bold">เรียน</span>&nbsp;&nbsp;${esc(orgHeadTitle(tenant))}</p>
