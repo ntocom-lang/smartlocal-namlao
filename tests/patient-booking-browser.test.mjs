@@ -9,6 +9,7 @@ import react from '@vitejs/plugin-react'
 import tailwind from '@tailwindcss/vite'
 import { chromium } from 'playwright'
 import { mkdir, readFile } from 'node:fs/promises'
+import { REPORT_MODES } from '../src/lib/patientReportPeriod.js'
 import { previousOdometer, thaiDay, pickupForBooking, returnForBooking, staffNextAction, bookingStage, reportEvent, monthReportSummary } from '../src/lib/patientBooking.js'
 // หน่วยนับต้องไม่ทำให้เจ้าหน้าที่ตีความจำนวนเหตุการณ์เป็นจำนวนผู้ใช้บริการ
 assert.deepEqual(monthReportSummary([
@@ -776,8 +777,8 @@ try{
  assert.equal(reportPage.total,eventCount);assert.equal(reportPage.events.length,20)
  await menu.getByRole('button',{name:'รายงาน',exact:true}).click()
  const monthlyReport=page.getByRole('region',{name:'สรุปการใช้รถตามช่วงเวลา',exact:true})
- const monthInput=monthlyReport.getByLabel('เดือนที่ต้องการดู')
- await monthInput.fill('2001-01')
+ const selectReportMonth=async value=>{await monthlyReport.getByLabel('ปี พ.ศ.',{exact:true}).selectOption(String(Number(value.slice(0,4))+543));await monthlyReport.getByLabel('เดือน',{exact:true}).selectOption(value.slice(5,7))}
+ await selectReportMonth('2001-01')
  await monthlyReport.getByRole('heading',{name:'รายการเที่ยวช่วงนี้ · 2 เที่ยว',exact:true}).waitFor()
  assert.equal(await monthlyReport.locator('[data-report-trip]').count(),2,'เที่ยวเก่าเกิน 30 วันยังอยู่ในสรุปเดือนเดิม และไม่รวมเที่ยวที่ยกเลิก')
  assert.match(await monthlyReport.locator('[data-report-summary="จบเที่ยวแล้ว"]').innerText(),/2 เที่ยว/)
@@ -785,9 +786,9 @@ try{
  assert.match(await monthlyReport.locator('[data-report-summary="ระยะทางที่บันทึกแล้ว"]').innerText(),/ยังไม่มีระยะทางที่ใช้ได้ 1 เที่ยว/)
  // Print button goes through actual Staff page -> real range RPC -> printable document.
  for(const selection of [{mode:'month',label:'ประจำเดือน มกราคม 2544'},{mode:'quarter',label:'ไตรมาส 2 · ปีงบประมาณ 2544'},{mode:'year',label:'ปีปฏิทิน 2544'},{mode:'custom',label:'ตามช่วงวันที่กำหนด'}]){
-  await monthlyReport.getByLabel('ประเภทรายงาน',{exact:true}).selectOption(selection.mode)
+  await monthlyReport.getByRole('button',{name:REPORT_MODES[selection.mode],exact:true}).click()
   if(['quarter','year'].includes(selection.mode)){
-   await monthlyReport.getByLabel('ปี พ.ศ.',{exact:true}).fill('2544')
+   await monthlyReport.getByLabel('ปี พ.ศ.',{exact:true}).selectOption('2544')
    await monthlyReport.getByLabel('การนับปี',{exact:true}).selectOption(selection.mode==='quarter'?'fiscal':'calendar')
    if(selection.mode==='quarter')await monthlyReport.getByLabel('ไตรมาส',{exact:true}).selectOption('2')
   }
@@ -825,9 +826,9 @@ try{
  assert.equal(await page.getByRole('alert').filter({hasText:'เตรียมสรุปตามช่วงเวลาไม่สำเร็จ'}).count(),0)
  assert.equal(page.context().pages().filter(p=>p!==page).length,0,'closed print never reopens after its data arrives')
  await page.unroute('**/__patient_rpc')
- await monthlyReport.getByLabel('ประเภทรายงาน',{exact:true}).selectOption('month')
+ await monthlyReport.getByRole('button',{name:'รายเดือน',exact:true}).click()
  // เลือกเดือนว่างต้องไม่แสดงยอดของเดือนก่อน
- await monthInput.fill('2001-02')
+ await selectReportMonth('2001-02')
  await monthlyReport.getByText('ไม่มีเที่ยวรถในช่วงที่เลือก ลองเลือกช่วงอื่น').waitFor()
  assert.match(await monthlyReport.locator('[data-report-summary="จบเที่ยวแล้ว"]').innerText(),/0 เที่ยว/)
  // โหลดล้มเหลวมีทางลองใหม่ ไม่ขึ้นยอด 0 ลวง
@@ -839,7 +840,7 @@ try{
    await route.fulfill({contentType:'application/json',body:JSON.stringify({data:null,error:{message:'[TEST] unavailable'}})})
   }else await route.continue()
  })
- await monthInput.fill('2001-01')
+ await selectReportMonth('2001-01')
  await monthlyReport.getByRole('alert').waitFor()
  assert.equal(await monthlyReport.locator('[data-report-summary]').count(),0)
  await monthlyReport.getByRole('button',{name:'ลองอีกครั้ง'}).click()
