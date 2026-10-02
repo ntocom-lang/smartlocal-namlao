@@ -8,6 +8,7 @@ import Footer from './components/layout/Footer'
 import ModuleGuard from './components/common/ModuleGuard'
 import { PATIENT_TRANSPORT_MODULE_KEY } from './lib/patientTransport'
 import NotFound from './components/common/NotFound'
+import TenantPicker from './components/common/TenantPicker'
 import BottomNav from './components/layout/BottomNav'
 import CitizenSidebar from './components/layout/CitizenSidebar'
 import InstallPrompt from './components/InstallPrompt'
@@ -372,7 +373,7 @@ function EventManagementPage() {
 }
 
 function AppShell() {
-  const { loading, error, tenant } = useTenant()
+  const { loading, error, errorKind, tenant } = useTenant()
   const tenantId = tenant?.id
   const [showPhoneReminder, setShowPhoneReminder] = useState(false)
   const [phoneReminderRequired, setPhoneReminderRequired] = useState(false)
@@ -591,6 +592,12 @@ function AppShell() {
         </div>
       </div>
     )
+  }
+
+  // เปิดเว็บที่ไม่ได้ระบุหน่วยงาน หรือระบุผิด → ให้เลือกหน่วยงานของตัวเอง แทนข้อความ "กรุณาติดต่อผู้ดูแลระบบ"
+  // ที่ผู้ใช้แก้เองไม่ได้ (เหตุผลเต็มที่ TenantPicker) error ชนิดอื่น (เน็ต/สิทธิ์) ยังขึ้นหน้าเดิมด้านล่าง
+  if (error && (errorKind === 'no-slug' || errorKind === 'not-found')) {
+    return <TenantPicker notice={errorKind === 'not-found' ? error : null} />
   }
 
   if (error) {
