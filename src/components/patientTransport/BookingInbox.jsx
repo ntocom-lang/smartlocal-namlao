@@ -521,7 +521,7 @@ function BookingHistory({ booking, trip }) {
   </section>
 }
 
-function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, currentUserId, onOpenDriver, onClose, onReload, onConfirm, onJoin, onOpen, onAction, onRemove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onSettings }) {
+function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, currentUserId, onOpenDriver, onClose, onReload, onConfirm, onJoin, onOpen, onAction, onRemove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onPrintRequest, onOdometer, onReschedule, onUpdateSchedule, onSettings }) {
   const { booking: b, trip, linked, stage, next, group } = row
   const passengers = trip ? workspace.bookings.filter(x => x.trip_id === trip.id && x.status !== 'cancelled') : []
   const others = (trip ? passengers : group).filter(x => x.id !== b.id)
@@ -534,11 +534,15 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
   const showProblem = problem && b.status === 'submitted'
   // เงื่อนไขเดียวกับปุ่ม "พร้อมให้มารับกลับ" ฝั่งประชาชน (BookingOperations) และที่ฐานข้อมูลตรวจ
   const readyReturn = b.status === 'confirmed' && ['outbound', 'hospital'].includes(trip?.state) && b.return_mode !== 'one_way' && !b.return_ready
-  // พิมพ์หนังสือนำส่ง + ใบคำขอของทั้งเที่ยว (ชุดเดียวกับปุ่มในกล่อง "เอกสารส่งกองทุน") — มีเฉพาะคำขอที่ยืนยันรถแล้ว
-  // ยังไม่ยืนยัน = ยังไม่มีเที่ยว ไม่มีหนังสือให้พิมพ์ · คำขอ/เที่ยวที่ยกเลิกแล้วไม่ต้องส่งเอกสารถึงกองทุน
-  const printable = trip && b.status !== 'cancelled' && trip.state !== 'cancelled'
+  // ปุ่ม "พิมพ์" บนหัวแผ่น พิมพ์เท่าที่พิมพ์ได้ตามขั้นของคำขอ
+  // - ยืนยันรถแล้ว: หนังสือนำส่ง + ใบคำขอของทั้งเที่ยว (ชุดเดียวกับปุ่มในกล่อง "เอกสารส่งกองทุน")
+  // - รอยืนยันรถ: ยังไม่มีเที่ยว จึงยังไม่มีหนังสือนำส่ง แต่ใบคำขอถึงนายกพิมพ์ได้แล้ว (เจ้าของระบบสั่ง 2569-10-02 เลือกแบบ ก)
+  //   หน้าต่างพิมพ์บอกเองว่ามีแค่ใบคำขอ และใบนี้จะออกอีกครั้งในชุดหลังยืนยันรถ
+  // - คำขอ/เที่ยวที่ยกเลิกแล้ว: ไม่ต้องส่งเอกสารถึงกองทุน ไม่มีปุ่มพิมพ์
+  const requestOnly = b.status === 'submitted'
+  const printable = !requestOnly && trip && b.status !== 'cancelled' && trip.state !== 'cancelled'
   return <Sheet wide title={b.patient_name} subtitle={`${issue ? 'เหตุขัดข้อง' : STAGES[stage].label} · เลขที่ ${ref(b.id)}`} onClose={onClose} onReload={onReload} busy={busy}
-    onPrint={printable ? () => onPrintLetter(trip) : undefined} printLabel="พิมพ์เอกสาร 2 ประเภท">
+    onPrint={printable ? () => onPrintLetter(trip) : requestOnly ? () => onPrintRequest(b) : undefined} printLabel={requestOnly ? 'พิมพ์ใบคำขอถึงนายก' : 'พิมพ์เอกสาร 2 ประเภท'}>
     {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
     {linked && <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
       <p className="font-bold text-sky-950">คิวที่ใช้เดินทาง: {dateTime(linked.appointment_at)} · เลขที่ {ref(linked.id)}</p>
@@ -587,7 +591,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
   </Sheet>
 }
 
-export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, detailOnly = false, initialOpenId = null, currentUserId, onOpenDriver, onCloseBooking, onClearCreated, onDelete, onConfirm, onJoin, onAction, onRemove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onReload, onSettings }) {
+export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, detailOnly = false, initialOpenId = null, currentUserId, onOpenDriver, onCloseBooking, onClearCreated, onDelete, onConfirm, onJoin, onAction, onRemove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onPrintRequest, onOdometer, onReschedule, onUpdateSchedule, onReload, onSettings }) {
   const [deleting, setDeleting] = useState(null)
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteAttempted, setDeleteAttempted] = useState(false)
@@ -665,7 +669,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   const sheet = open && <BookingSheet key={open.booking.id} row={open} rows={rows} workspace={workspace} problem={problem?.bookingId === open.booking.id ? problem : null}
     busy={busy} error={error} isAdmin={isAdmin} currentUserId={currentUserId} onOpenDriver={onOpenDriver} onClose={close} onReload={onReload} onConfirm={confirmRow} onJoin={joinRow}
     onOpen={id => { setProblem(null); setOpenId(id) }} onAction={onAction} onRemove={onRemove} onAmend={onAmend} onUpdatePickup={onUpdatePickup} onRecordLetter={onRecordLetter}
-    onPrintLetter={onPrintLetter} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} onSettings={() => { close(); onSettings() }} />
+    onPrintLetter={onPrintLetter} onPrintRequest={onPrintRequest} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} onSettings={() => { close(); onSettings() }} />
   if (detailOnly) return sheet
   return <ListCard title="คำขอรถ" count={rows.length} search={search} onSearch={setSearch} searchLabel="ค้นหาชื่อ เบอร์ จุดรับ โรงพยาบาล เลขที่" action={action} pills={pills}>
     <div className="space-y-4 p-4 sm:p-5">

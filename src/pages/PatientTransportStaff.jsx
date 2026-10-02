@@ -10,7 +10,7 @@ import StaffBookingCalendar from '../components/patientTransport/StaffBookingCal
 import BookingSettings from '../components/patientTransport/BookingSettings'
 import { TabBar } from '../components/patientTransport/StaffShell'
 import { QueueReport, DriverTrips } from '../components/patientTransport/BookingOperations'
-import { buildTripForwardLetterHtml, buildTripMonthReportHtml } from '../lib/patientTransportPrint'
+import { buildBookingRequestFormHtml, buildTripForwardLetterHtml, buildTripMonthReportHtml } from '../lib/patientTransportPrint'
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
 import { TRIP_STATUS, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking } from '../lib/patientBooking'
@@ -193,6 +193,10 @@ export default function PatientTransportStaff({ onBack } = {}) {
     // ต้องเป็น URL เต็ม หน้าต่างพิมพ์เป็น about:blank พาธ /images/... จะ resolve ไม่เจอ
     emblemUrl: `${window.location.origin}/images/garuda.svg`,
   }), 'เตรียมหนังสือนำส่งไม่สำเร็จ')
+  // คำขอที่ยังรอยืนยันรถ: ยังไม่มีเที่ยว พิมพ์ได้เฉพาะใบคำขอถึงนายกของคำขอนั้น (เจ้าของระบบสั่ง 2569-10-02)
+  const printRequest = booking => printInNewWindow(async () => buildBookingRequestFormHtml({
+    tenant, booking, ...(await fundContext()),
+  }), 'เตรียมใบคำขอไม่สำเร็จ')
   const printMonth = month => printInNewWindow(async () => {
     const [{ data, error: failure }, context] = await Promise.all([supabase.rpc('patient_booking_month_report', { p_muni: tenantId, p_month: month }), fundContext()])
     if (failure) throw failure
@@ -229,7 +233,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
         detailOnly={view === 'calendar'} initialOpenId={calendarBookingId} onCloseBooking={() => setCalendarBookingId(null)}
         currentUserId={uid} onOpenDriver={() => { setCalendarBookingId(null); setView('driver') }}
         created={created} onClearCreated={() => setCreated(null)} onDelete={deleteBooking} onConfirm={confirm} onJoin={joinIntoTrip} onAction={action} onRemove={removePassenger} onAmend={amend} onUpdatePickup={updatePickup}
-        onRecordLetter={recordLetter} onPrintLetter={printLetter} onOdometer={recordOdometer} onReschedule={reschedule} onUpdateSchedule={updateSchedule}
+        onRecordLetter={recordLetter} onPrintLetter={printLetter} onPrintRequest={printRequest} onOdometer={recordOdometer} onReschedule={reschedule} onUpdateSchedule={updateSchedule}
         onReload={reload} onSettings={() => setView('settings')} />}
       {view === 'calendar' && isCoordinator && <StaffBookingCalendar workspace={workspace} onOpenBooking={setCalendarBookingId} />}
       {view === 'report' && isCoordinator && <QueueReport workspace={workspace} busy={busy} onMonthReport={printMonth} />}
