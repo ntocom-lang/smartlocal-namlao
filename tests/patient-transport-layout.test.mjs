@@ -669,7 +669,7 @@ const checks = [
         try {
           const text = (await formSheetsOf(page).first().innerText()).replace(/\s+/g, ' ')
           assert.equal(countIn(text, VILLAGE), 1, `ใบคำขอพิมพ์จุดรับซ้ำ: "${text.slice(text.indexOf('รับที่'), text.indexOf('รับที่') + 80)}"`)
-          // ตัวคั่น " · " ยังมีที่อื่นในใบ (บรรทัดท้ายใบ "· เลขอ้างอิง") จึงตรวจเฉพาะที่ตามหลังจุดรับ
+          // ตรวจเฉพาะตัวคั่นที่ตามหลังจุดรับ ไม่ตรวจทั้งหน้า
           assert.ok(!text.includes(`${VILLAGE} · `), 'ตัวคั่นจุดรับค้างอยู่ทั้งที่ไม่เหลือส่วนที่สอง')
         } finally { await page.close() }
       }
@@ -975,7 +975,7 @@ const checks = [
     // ห้ามใส่กลับเองโดยไม่ถาม — ตรวจทุกทางที่พิมพ์ใบคำขอ ทุกช่องทาง และ html ดิบ (คอมเมนต์ในแม่แบบถูกส่งออกไปกับใบพิมพ์ด้วย)
     name: 'request-form-has-no-signed-note',
     reason: 'ใต้ชื่อผู้ยื่นต้องไม่มีบรรทัดกำกับ ทุกทางที่พิมพ์ใบคำขอและทุกช่องทาง · ชื่อยังอยู่บนเส้น เลขที่คำขอยังอยู่หัวใบ'
-      + ' และท้ายใบยังเป็นบรรทัดที่มาของเอกสาร',
+      + ' และท้ายใบจบที่ช่องลงชื่อ ไม่มีบรรทัดที่มา "ผ่านระบบ E-Service" ซ้ำ (เก็บที่เดียวใต้ชื่อแบบ — เจ้าของระบบสั่ง 2569-10-02)',
     async run(browser) {
       const BANNED = ['ลงชื่อโดยการยืนยันตัวตน', 'ยืนยันตัวตนผ่านระบบ', 'เจ้าหน้าที่รับจองแทน', 'เจ้าหน้าที่บันทึกคำขอแทน',
         'โปรดลงลายมือชื่อรับรอง', 'ลงลายมือชื่อรับรอง', 'จัดทำจากข้อมูลการจองรถ']
@@ -1005,7 +1005,8 @@ const checks = [
             lines: sheet.querySelectorAll('.sign-line').length,
             afterSign: sheet.querySelector('.sign-block').nextElementSibling?.className ?? null,
             last: sheet.lastElementChild.className,
-            origin: sheet.querySelector('.origin')?.innerText.trim() ?? '',
+            origins: sheet.querySelectorAll('.origin').length,
+            fund: sheet.querySelector('.form-fund')?.innerText.trim() ?? '',
             reference: sheet.querySelector('.form-no')?.innerText.replace(/\s+/g, ' ').trim() ?? '',
           })))
           assert.ok(forms.length > 0, `${label}: ไม่พบใบคำขอ`)
@@ -1013,9 +1014,13 @@ const checks = [
             for (const word of BANNED) assert.ok(!form.text.includes(word), `${label}: ใบคำขอยังมี "${word}" ที่สั่งตัดแล้ว`)
             assert.deepEqual(form.signed, [requester], `${label}: ชื่อผู้ยื่นต้องยังอยู่บนเส้นลงชื่อ 1 จุด`)
             assert.equal(form.lines, 0, `${label}: ต้องไม่มีเส้นเปล่าให้เซ็น`)
-            assert.equal(form.afterSign, 'origin', `${label}: ใต้ช่องลงชื่อต้องเป็นบรรทัดที่มาของเอกสารทันที ไม่มีบรรทัดอื่นคั่น`)
-            assert.equal(form.last, 'origin', `${label}: ท้ายใบต้องจบที่บรรทัดที่มาของเอกสาร`)
-            assert.ok(form.origin.includes(TENANT.name), `${label}: บรรทัดที่มาของเอกสารหายหรือไม่มีชื่อ อปท. — "${form.origin}"`)
+            // ท้ายใบจบที่ช่องลงชื่อ — ไม่มีบรรทัดที่มา (.origin) และไม่มีอะไรต่อท้าย
+            assert.equal(form.afterSign, null, `${label}: ใต้ช่องลงชื่อต้องไม่มีอะไรต่อท้าย (พบ .${form.afterSign})`)
+            assert.ok(form.last.includes('sign-block'), `${label}: ท้ายใบต้องจบที่ช่องลงชื่อ (พบ .${form.last})`)
+            assert.equal(form.origins, 0, `${label}: ท้ายใบยังมีบรรทัดที่มา ซึ่งพิมพ์ "ผ่านระบบ E-Service" ซ้ำกับใต้ชื่อแบบ`)
+            // "ผ่านระบบ E-Service <อปท.>" ต้องปรากฏครั้งเดียวทั้งใบ คือใต้ชื่อแบบ
+            assert.equal(form.fund, `ผ่านระบบ E-Service ${TENANT.name}`, `${label}: ใต้ชื่อแบบต้องเป็น "ผ่านระบบ E-Service <อปท.>"`)
+            assert.equal(form.text.split('ผ่านระบบ E-Service').length - 1, 1, `${label}: "ผ่านระบบ E-Service" ต้องพิมพ์ครั้งเดียวต่อใบ`)
             assert.match(form.reference, /^คำขอผ่าน E-Service \S+/, `${label}: เลขอ้างอิงที่หัวใบเป็นเลขที่ใช้ค้นเรื่องกลับ ต้องยังอยู่`)
           }
         } finally { await page.close() }
@@ -1133,9 +1138,10 @@ const checks = [
     // ช่องทางที่คำขอเข้ามา (entry_channel) เหลือผลบนกระดาษ 2 ที่ (เจ้าของระบบสั่ง 2569-10-01 · ปรับ 2569-10-02):
     //   1) หนังสือนำส่งเขียนว่ายื่น "ผ่านระบบบริการอิเล็กทรอนิกส์" ได้เฉพาะคำขอที่ผู้แจ้งล็อกอินจองเอง
     //      ⚠️ ห้ามให้หนังสือถึงองค์กรภายนอกอ้างว่ายื่นผ่านระบบ ทั้งที่เจ้าหน้าที่รับจองแทนหรือไม่รู้ช่องทาง
-    //   2) บรรทัดที่มาท้ายใบคำขอ (.origin) ต่อท้ายเลขอ้างอิงเฉพาะใบที่ยื่นออนไลน์ (#376)
+    //   2) (เดิม) บรรทัดที่มาท้ายใบคำขอต่อท้ายเลขอ้างอิงเฉพาะใบที่ยื่นออนไลน์ (#376) — ลบแล้ว 2569-10-02 (แบบ ก เหลือที่เดียวใต้ชื่อแบบ)
+    //      เลขอ้างอิงอยู่มุมซ้ายบนทุกช่องทาง (.form-no) ใช้ค้นเรื่องกลับ
     // บรรทัดกำกับใต้ชื่อผู้ยื่นถูกตัดทุกช่องทางแล้ว (แบบ ข 2569-10-02) — เดิมข้อนี้ชื่อ trip-form-signature-follows-entry-channel
-    // และตรวจบรรทัดกำกับ 3 แบบ ส่วนเลขอ้างอิงของใบอื่นยังอยู่ที่ "เลขที่คำขอ" หัวใบ (ค่าเดียวกัน)
+    // และตรวจบรรทัดกำกับ 3 แบบ
     name: 'trip-letter-wording-follows-entry-channel',
     reason: 'หนังสือนำส่งเขียนว่ายื่นผ่านระบบบริการอิเล็กทรอนิกส์ได้เฉพาะคำขอที่ผู้จองยื่นเองออนไลน์ · ใบคำขอทุกช่องทางพิมพ์ชื่อผู้ยื่น'
       + 'บนเส้นโดยไม่มีบรรทัดกำกับใต้ชื่อ และใบของแต่ละคนในเที่ยวเดียวกันต้องเป็นชื่อผู้ยื่นของใบนั้น',
@@ -1151,7 +1157,7 @@ const checks = [
             isForm: !!sheet.querySelector('.form-title'),
             text: sheet.innerText,
             notes: sheet.querySelectorAll('.signed-note').length,
-            origin: sheet.querySelector('.origin')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
+            origins: sheet.querySelectorAll('.origin').length,
             reference: sheet.querySelector('.form-no')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
             signed: [...sheet.querySelectorAll('.sign-signed')].map(el => el.textContent.trim()),
             lines: sheet.querySelectorAll('.sign-line').length,
@@ -1171,11 +1177,12 @@ const checks = [
         }
       }
 
-      // 1) ผู้แจ้งล็อกอินจองเอง — หนังสือบอกว่ายื่นผ่านระบบ · ท้ายใบมีเลขอ้างอิง
+      // 1) ผู้แจ้งล็อกอินจองเอง — หนังสือบอกว่ายื่นผ่านระบบ · เลขอ้างอิงอยู่มุมซ้ายบน ท้ายใบไม่มีบรรทัดที่มา
       {
         const { letter, form } = await trip([booking(0, { entry_channel: 'online' })])
         nameOnly(form, TRIP_BOOKINGS[0].requester_name, 'จองเอง')
-        assert.match(form.origin, /^ผ่านระบบ E-Service .+ · เลขอ้างอิง B-0$/, `ใบของผู้ที่จองเอง: "${form.origin}"`)
+        assert.match(form.reference, /^คำขอผ่าน E-Service B-0$/, `ใบของผู้ที่จองเอง: "${form.reference}"`)
+        assert.equal(form.origins, 0, 'ท้ายใบต้องไม่มีบรรทัดที่มา (เก็บที่เดียวใต้ชื่อแบบ)')
         assert.ok(letter.text.includes('ผ่านระบบบริการอิเล็กทรอนิกส์'), 'หนังสือของคำขอที่จองเองต้องยังบอกว่ายื่นผ่านระบบ')
         assert.deepEqual(letter.signed, [], 'หนังสือนำส่งต้องไม่มีชื่อพิมพ์แทนลายมือชื่อ')
       }
@@ -1184,7 +1191,7 @@ const checks = [
         const { letter, form } = await trip([booking(0, { entry_channel: 'staff' })], 'patient-document-staff-entry.png')
         nameOnly(form, TRIP_BOOKINGS[0].requester_name, 'รับจองแทน')
         assert.ok(form.reference.includes('B-0'), `เลขอ้างอิงที่หัวใบต้องยังอยู่ (ใช้ค้นเรื่องกลับ): "${form.reference}"`)
-        assert.ok(!form.origin.includes('เลขอ้างอิง'), `ใบที่เจ้าหน้าที่รับจองแทนไม่พิมพ์เลขอ้างอิงท้ายใบ (ยื่นผ่านระบบเองไม่ได้): "${form.origin}"`)
+        assert.equal(form.origins, 0, 'ใบที่เจ้าหน้าที่รับจองแทนก็ไม่มีบรรทัดที่มาท้ายใบ')
         assert.ok(!letter.text.includes('ผ่านระบบบริการอิเล็กทรอนิกส์'),
           'หนังสือเขียนว่ายื่นผ่านระบบ ทั้งที่เจ้าหน้าที่รับจองแทน')
         assert.ok(letter.text.includes(`ได้ยื่นคำขอต่อ${TENANT.name} ตามเลขอ้างอิง B-0`), 'ย่อหน้าแรกของหนังสือต้องยังอ่านต่อเนื่องหลังตัดวลี')
@@ -1201,8 +1208,9 @@ const checks = [
         assert.equal(forms.length, 2)
         nameOnly(forms[0], TRIP_BOOKINGS[0].requester_name, 'ร่วมเที่ยว คนที่ 1')
         nameOnly(forms[1], TRIP_BOOKINGS[1].requester_name, 'ร่วมเที่ยว คนที่ 2')
-        assert.ok(forms[0].origin.includes('ผ่านระบบ E-Service') && forms[0].origin.includes('B-0'), `ใบแรก: "${forms[0].origin}"`)
-        assert.ok(!forms[1].origin.includes('เลขอ้างอิง'), `ใบที่สอง (เจ้าหน้าที่รับจองแทน): "${forms[1].origin}"`)
+        assert.ok(forms[0].reference.includes('B-0'), `ใบแรก: "${forms[0].reference}"`)
+        assert.ok(forms[1].reference.includes('B-1'), `ใบที่สอง: "${forms[1].reference}"`)
+        assert.equal(forms[0].origins + forms[1].origins, 0, 'ทั้งสองใบต้องไม่มีบรรทัดที่มาท้ายใบ')
       }
       // 5) ชุดเอกสารของระบบคำขอแบบเดิม: ย่อหน้าแรกของหนังสือได้ถ้อยคำเท่าเดิม
       for (const [label, form] of [['ยื่นออนไลน์', FORM], ['เจ้าหน้าที่คีย์แทนที่เคาน์เตอร์', { ...FORM, signed_by: null }]]) {
