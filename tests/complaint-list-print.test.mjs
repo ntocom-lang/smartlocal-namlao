@@ -70,6 +70,17 @@ await test('ข้อความปกติออกมาตรงตาม�
   assert.equal(count(html, '<tr>'), 3, 'หัวตาราง 1 + ข้อมูล 2 แถว')
 })
 
+await test('ชื่อหมวดบนใบรายการเป็นไทยเสมอ ไม่หลุดเป็นรหัสดิบ (2569-10-02)', () => {
+  // categoryLabels ไม่มี water_repair (ยังไม่ merge จากฐานข้อมูล) → ต้องได้ชื่อมาตรฐาน ไม่ใช่ "water_repair"
+  const html = build([complaint(1, { category: 'water_repair' }), complaint(2, { category: 'cat_xyz123' }), complaint(3, { category: null })])
+  assert.ok(!html.includes('water_repair') && !html.includes('cat_xyz123'), 'รหัสหมวดดิบหลุดลงใบรายการ')
+  assert.ok(html.includes('<td>ซ่อมน้ำประปา</td>'))
+  assert.ok(html.includes('<td>เรื่องที่แจ้ง</td>'), 'รหัสที่ไม่รู้จักต้องเป็น "เรื่องที่แจ้ง"')
+  assert.ok(html.includes('<td>—</td>'), 'ไม่มีหมวดเลยยังเป็นขีดกลางตามเดิม')
+  // ชื่อที่ อปท. ตั้งเอง (อยู่ใน categoryLabels) ใช้ตามนั้น
+  assert.ok(build([complaint(4, { category: 'water_repair' })], { categoryLabels: { water_repair: 'แจ้งท่อประปาแตก' } }).includes('<td>แจ้งท่อประปาแตก</td>'))
+})
+
 await test('แท็กในชื่อผู้แจ้งออกมาเป็นตัวอักษร', () => {
   const html = build(PAYLOADS.map((p, i) => complaint(i + 1, { reporter_name: p })))
   for (const p of PAYLOADS) assert.ok(html.includes(`<td>${esc(p)}</td>`), p)

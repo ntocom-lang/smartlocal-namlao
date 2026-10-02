@@ -15,6 +15,7 @@ import {
 import { govNameBlank, govSignBlockCss, govSignRow } from './govSignBlock.js'
 import { pickSignatory, signatoryName, signatoryTitle } from './documentSignatories.js'
 import { CHANNEL_LABELS, DIMENSION_LABELS, thaiShortDate } from './staffPerformance.js'
+import { printableCategoryLabel } from './complaintCategoryLabels.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -69,7 +70,8 @@ function itemNotes(item) {
 
 // หมวดบรรทัดแรก ลักษณะปัญหาบรรทัดที่สอง — ปล่อยให้ตัดเองแล้วคำไทยขาดกลางคำ เช่น "เสา / เอียง"
 function subjectHtml(item, categoryLabels) {
-  const category = esc(categoryLabels[item.category] ?? item.category ?? '')
+  // printableCategoryLabel: รหัสหมวดดิบ (water_repair) ต้องไม่หลุดลงใบที่ใช้ประกอบการประเมิน — ดู complaintCategoryLabels.js
+  const category = esc(item.category ? printableCategoryLabel(item.category, categoryLabels[item.category] ?? item.category) : '')
   return item.issueType ? `${category}<br>${esc(item.issueType)}` : category
 }
 
@@ -118,7 +120,7 @@ ${govSignBlockCss()}`
 
 function summaryTable(summary, categoryLabels) {
   const rows = summary.byCategory.map(group => `<tr>
-      <td>${esc(categoryLabels[group.category] ?? group.category ?? '')}</td>
+      <td>${esc(group.category ? printableCategoryLabel(group.category, categoryLabels[group.category] ?? group.category) : '')}</td>
       ${summaryCells(group).map(value => `<td class="num">${esc(value)}</td>`).join('')}
     </tr>`).join('\n')
   const total = summary.byCategory.length > 1

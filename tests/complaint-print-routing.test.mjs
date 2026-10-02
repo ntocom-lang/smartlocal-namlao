@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { buildCouncilComplaintHtml } from '../src/lib/councilFormPrint.js'
+import { printableCategoryLabel, STANDARD_CATEGORY_LABEL, UNKNOWN_CATEGORY_LABEL } from '../src/lib/complaintCategoryLabels.js'
 
 const signatories = {
   department_head: { name: '[TEST] หัวหน้ากองช่าง', title: 'ผู้อำนวยการกองช่าง' },
@@ -66,6 +67,57 @@ assert.doesNotMatch(draftHtml, /\[TEST\] หัวหน้ากองช่า
 assert.doesNotMatch(draftHtml, /class="sign-row"/)
 assert.match(namedHtml, /class="sign-row"/,
   'ใบที่พิมพ์ปกติต้องมีบล็อกลงชื่อ ไม่งั้นข้อบนไม่ได้พิสูจน์อะไรเลย')
+
+// ชื่อหมวดบนใบคำร้องต้องเป็นภาษาไทยเสมอ — เจ้าของระบบแจ้ง 2569-10-02 จากใบที่พิมพ์จริง: "ขอให้พิจารณาดำเนินการเกี่ยวกับwater_repair"
+// สาเหตุ: หน้าจอส่ง `CATEGORY_LABEL[รหัส] ?? รหัส` มา ถ้าชื่อจากฐานข้อมูลยังไม่ merge/หมวดไม่มีแถว ก็ได้รหัสดิบ
+{
+  const bodyText = html => html.replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
+  const printed = (category, cat) => bodyText(buildCouncilComplaintHtml({ ...baseArgs, c: { ...baseArgs.c, category }, cat, signatories }))
+
+  // เคสจริง: ผู้เรียกส่งรหัสดิบมาเป็นชื่อหมวด
+  const raw = printed('water_repair', 'water_repair')
+  assert.ok(!/[A-Za-z]{3,}_[A-Za-z]+|water_repair/.test(raw), 'ใบคำร้องยังมีรหัสหมวดดิบ: ' + raw.match(/.{0,30}water_repair.{0,20}/)?.[0])
+  assert.ok(raw.includes('ขอให้พิจารณาดำเนินการเกี่ยวกับซ่อมน้ำประปา'), 'หัวเรื่องต้องใช้ชื่อไทยมาตรฐานของหมวด')
+  assert.ok(raw.includes('คำร้องขอให้พิจารณาดำเนินการเกี่ยวกับซ่อมน้ำประปา'), 'หัวใบต้องใช้ชื่อไทยมาตรฐานของหมวด')
+
+  // ชื่อที่ อปท. ตั้งเองเป็นไทย ใช้ตามนั้น ไม่ทับด้วยชื่อมาตรฐาน
+  assert.ok(printed('water_repair', 'แจ้งท่อประปาแตก').includes('เกี่ยวกับแจ้งท่อประปาแตก'), 'ชื่อไทยที่ อปท. ตั้งเองต้องไม่ถูกทับ')
+  // หมวดไม่รู้จัก/ชื่อว่าง/ขีดกลาง → "เรื่องที่แจ้ง" ไม่ปล่อยรหัสหรือขีดกลางลงกระดาษ
+  for (const cat of ['cat_mtsubkz2', '', undefined, '—']) {
+    const text = printed('cat_mtsubkz2', cat)
+    assert.ok(!text.includes('cat_mtsubkz2'), `รหัสสุ่มหลุดลงกระดาษ (cat=${JSON.stringify(cat)})`)
+    assert.ok(text.includes(`เกี่ยวกับ${UNKNOWN_CATEGORY_LABEL}`), `ต้องใช้ "${UNKNOWN_CATEGORY_LABEL}" (cat=${JSON.stringify(cat)})`)
+  }
+  // ชื่อที่ไม่ใช่ไทยแต่ไม่เหมือนรหัส (แอดมินตั้งเอง) คงไว้ ไม่เดาแทน
+  assert.equal(printableCategoryLabel('wifi_zone', 'Wi-Fi สาธารณะ'), 'Wi-Fi สาธารณะ')
+  assert.equal(printableCategoryLabel('wifi_zone', 'Free WiFi'), 'Free WiFi')
+
+  // ชื่อมาตรฐานทุกตัวต้องเป็นไทย และไม่ซ้ำรหัส — กันมีคนเพิ่มรหัสใหม่แล้วใส่ชื่ออังกฤษ
+  for (const [code, label] of Object.entries(STANDARD_CATEGORY_LABEL)) {
+    assert.ok(/[ก-๙]/.test(label), `ชื่อมาตรฐานของ ${code} ไม่มีอักษรไทย: "${label}"`)
+    assert.equal(printableCategoryLabel(code, code), label, `รหัส ${code} ต้องแปลงเป็นชื่อมาตรฐาน`)
+  }
+  // หมวดมาตรฐานที่ค่าตั้งต้นของแอดมินสร้างให้ทุก อปท. ต้องมีชื่อมาตรฐานครบ (water_repair คือตัวที่ขาดจนหลุด)
+  const adminSource = await readFile(new URL('../src/pages/AdminDashboard.jsx', import.meta.url), 'utf8')
+  const seed = adminSource.slice(adminSource.indexOf('const DEFAULT_SEED'), adminSource.indexOf('const EMOJI_HINTS'))
+  for (const [, code] of seed.matchAll(/value:\s*'([a-z_]+)'/g)) {
+    assert.ok(STANDARD_CATEGORY_LABEL[code], `หมวดตั้งต้น "${code}" ไม่มีชื่อมาตรฐานใน complaintCategoryLabels.js`)
+  }
+}
+
+// รายงานผู้บริหารที่พิมพ์/ส่งออก CSV (ReportManager + ชุดซ้ำในหน้าแอดมิน) และเมนูผลการปฏิบัติงาน ต้องกรองชื่อหมวดด้วยตัวเดียวกัน
+// — ฟังก์ชันพิมพ์ไม่ได้ export และ import supabase จึงเทสต์พฤติกรรมไม่ได้ ตรวจจากต้นฉบับว่ายังเรียกใช้และไม่กลับไปใช้ `ชื่อ ?? รหัส`
+for (const file of ['src/components/admin/ReportManager.jsx', 'src/pages/AdminDashboard.jsx', 'src/components/staff/StaffPerformanceModule.jsx']) {
+  const source = await readFile(new URL(`../${file}`, import.meta.url), 'utf8')
+  assert.ok(source.includes('printableCategoryLabel'), `${file} ไม่ได้ใช้ printableCategoryLabel`)
+}
+for (const file of ['src/components/admin/ReportManager.jsx', 'src/pages/AdminDashboard.jsx']) {
+  const source = await readFile(new URL(`../${file}`, import.meta.url), 'utf8')
+  // ตารางประเภทคำร้องของรายงาน (catDataAll) และคอลัมน์ประเภทของ CSV ต้องผ่านตัวกรอง
+  assert.match(source, /name: printableCategoryLabel\(cat, CATEGORY_LABEL\[cat\] \?\? cat\)/, `${file}: ตารางประเภทคำร้องของรายงานกลับไปใช้ชื่อดิบ`)
+  assert.match(source, /c\.category \? printableCategoryLabel\(c\.category, CATEGORY_LABEL\[c\.category\] \?\? c\.category\) : ''/, `${file}: คอลัมน์ประเภทของ CSV กลับไปใช้ชื่อดิบ`)
+  assert.doesNotMatch(source, /name: CATEGORY_LABEL\[cat\] \?\? cat/, `${file}: ยังมีชื่อหมวดแบบ ชื่อ ?? รหัส ในตารางรายงาน`)
+}
 
 const citizenFormSource = await readFile(new URL('../src/pages/CitizenForm.jsx', import.meta.url), 'utf8')
 const ossFormSource = await readFile(new URL('../src/components/admin/OssIntakeForm.jsx', import.meta.url), 'utf8')
