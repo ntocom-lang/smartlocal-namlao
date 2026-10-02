@@ -4,7 +4,7 @@ import { Wrench, TrendingUp, AlertTriangle, Printer, X, Clock, CheckCircle2, Dow
 import { supabase } from '../../lib/supabase'
 import { workingDaysBetween, workingDaysSince } from '../../lib/workingDays'
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from '../../lib/govDocStyle.js'
-import { printableCategoryLabel } from '../../lib/complaintCategoryLabels.js'
+import { printableCategoryLabel, categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 
 // ระยะเวลาดำเนินการของคำร้อง 1 เรื่อง นับเป็น "วันทำการ" (ตัดเสาร์-อาทิตย์และวันหยุดนักขัตฤกษ์)
 // เดิมนับเป็นวันปฏิทิน ทำให้เรื่องที่คร่อมสงกรานต์/ปีใหม่ดูเหมือนช้ากว่าความเป็นจริงหลายวัน
@@ -344,7 +344,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
             <option value="all">ทุกประเภท</option>
             {catOptions.map(([value, count]) => (
               <option key={value} value={value}>
-                {CATEGORY_EMOJI[value] ? `${CATEGORY_EMOJI[value]} ` : ''}{CATEGORY_LABEL[value] ?? value} ({count})
+                {CATEGORY_EMOJI[value] ? `${CATEGORY_EMOJI[value]} ` : ''}{categoryNameOf(CATEGORY_LABEL, value)} ({count})
               </option>
             ))}
           </select>
@@ -544,7 +544,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
                     <div key={c.id} className="flex items-center gap-3 py-2.5">
                       <span className="text-lg shrink-0">{CATEGORY_EMOJI[c.category] ?? '📄'}</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-gray-700 truncate">{CATEGORY_LABEL[c.category] ?? c.category}</p>
+                        <p className="text-xs font-semibold text-gray-700 truncate">{categoryNameOf(CATEGORY_LABEL, c.category)}</p>
                         <p className="text-[11px] text-gray-400 mt-0.5 truncate">
                           {c.assigned_to_name ? `ช่าง: ${c.assigned_to_name}` : c.assigned_to ? 'มอบหมายแล้ว ยังไม่รับงาน' : 'ยังไม่ได้มอบหมายช่าง'}
                         </p>
@@ -575,7 +575,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
                     <div key={c.id} className="flex items-center gap-3 py-2.5">
                       <span className="text-lg shrink-0">{CATEGORY_EMOJI[c.category] ?? '📄'}</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-gray-700 truncate">{CATEGORY_LABEL[c.category] ?? c.category}</p>
+                        <p className="text-xs font-semibold text-gray-700 truncate">{categoryNameOf(CATEGORY_LABEL, c.category)}</p>
                         <span className="text-[13px] px-1.5 py-0.5 rounded-full font-medium"
                           style={{ backgroundColor: s?.bg, color: s?.text }}>{s?.label}</span>
                       </div>

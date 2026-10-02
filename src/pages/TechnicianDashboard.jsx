@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { categoryNameOf } from '../lib/complaintCategoryLabels.js'
 import { useNavigate } from 'react-router-dom'
 import {
   Loader2, MapPin, Phone, X, RefreshCw,
@@ -171,7 +172,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
   // ขั้นสุดท้ายคือ "ดำเนินการแล้ว" ('closed') — เปิดกล่องปักหมุดแทนการเปลี่ยนสถานะตรง
   const isFinishStep = action?.next === 'closed'
   const [showFinish, setShowFinish] = useState(false)
-  const catLabel = CATEGORY_LABEL[c.category] ?? c.category
+  const catLabel = categoryNameOf(CATEGORY_LABEL, c.category)
   const catEmoji = CATEGORY_EMOJI[c.category] ?? '📄'
 
   async function handlePrint() {
@@ -248,7 +249,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
           body: {
             user_id: c.user_id,
             title: 'มีรูปหลักฐานการทำงานใหม่',
-            body: `เจ้าหน้าที่เพิ่มรูปความคืบหน้าในคำร้อง${CATEGORY_LABEL[c.category] ?? c.category ?? ''}`,
+            body: `เจ้าหน้าที่เพิ่มรูปความคืบหน้าในคำร้อง${categoryNameOf(CATEGORY_LABEL, c.category)}`,
             url: '/my-complaints',
           },
         }).catch(() => {})
@@ -919,7 +920,7 @@ export default function TechnicianDashboard() {
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-gray-800 truncate">
                               <span className="text-gray-400 font-mono font-normal mr-1">{i + 1}.</span>
-                              {CATEGORY_LABEL[c.category] ?? c.category}
+                              {categoryNameOf(CATEGORY_LABEL, c.category)}
                             </p>
                             <p className="text-xs text-gray-500 mt-0.5 truncate font-medium">
                               {c.location_name || c.village || '—'}{dueHint ? ` · ${dueHint}` : ''}
@@ -964,7 +965,7 @@ export default function TechnicianDashboard() {
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
                                   {!seenIds.has(c.id) && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
-                                  <span className="font-semibold text-gray-800">{CATEGORY_LABEL[c.category] ?? c.category}</span>
+                                  <span className="font-semibold text-gray-800">{categoryNameOf(CATEGORY_LABEL, c.category)}</span>
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-gray-500 max-w-[220px] truncate">{c.detail}</td>
@@ -1001,7 +1002,7 @@ export default function TechnicianDashboard() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-gray-600 truncate">
                             <span className="text-gray-400 font-mono font-normal mr-1">{i + 1}.</span>
-                            {CATEGORY_LABEL[c.category] ?? c.category}
+                            {categoryNameOf(CATEGORY_LABEL, c.category)}
                           </p>
                           <p className="text-xs text-gray-400 mt-0.5 truncate">{c.detail}</p>
                         </div>

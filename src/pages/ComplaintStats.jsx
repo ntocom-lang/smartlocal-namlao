@@ -9,6 +9,7 @@ import {
   Tooltip, LabelList, AreaChart, Area, PieChart, Pie, Cell,
 } from 'recharts'
 import { supabase } from '../lib/supabase'
+import { categoryNameOf } from '../lib/complaintCategoryLabels.js'
 import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import FiscalYearPicker from '../components/common/FiscalYearPicker'
@@ -155,7 +156,8 @@ export default function ComplaintStats() {
   const fiscalPeriod = fiscalPeriodParts(fiscalYear)
 
   function categoryLabel(value) {
-    return categoryLabels[value] ?? FALLBACK_CATEGORY_LABELS[value] ?? value
+    // หน้าสถิติสาธารณะ — ประชาชนเห็น ชื่อหมวดที่ไม่มีทั้งในฐานข้อมูลและตาราง fallback ต้องไม่หลุดเป็นรหัส (water_repair)
+    return categoryNameOf({ ...FALLBACK_CATEGORY_LABELS, ...categoryLabels }, value)
   }
 
   // rows ดึงมาสูงสุด AGGREGATE_LIMIT รายการ (เรียงใหม่→เก่า) ใช้คำนวณกราฟหมวดหมู่/แนวโน้มรายเดือน

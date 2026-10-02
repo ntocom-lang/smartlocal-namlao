@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, useCallback, useRef } from 'react'
+import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 import MapPicker from '../MapPicker'
 import {
   ClipboardList, Loader2, CheckCircle2, XCircle,
@@ -311,7 +312,7 @@ function workPhotoFolder(c) {
   if (!c) return undefined
   return complaintFolderPath({
     refNo: c.ref_no,
-    categoryLabel: CATEGORY_LABEL[c.category] ?? c.category,
+    categoryLabel: categoryNameOf(CATEGORY_LABEL, c.category),
     createdAt: c.created_at,
   })
 }
@@ -377,7 +378,7 @@ function ActionButton({ status, id, onUpdate, loading, size = 'sm', tenant, comp
         <FinishComplaintDialog
           complaint={complaint}
           requiresPin={requiresResolvedPin(categoryMeta, complaint.category)}
-          categoryLabel={CATEGORY_LABEL[complaint.category] ?? complaint.category}
+          categoryLabel={categoryNameOf(CATEGORY_LABEL, complaint.category)}
           tenantSlug={tenant?.slug}
           onCancel={handleClose}
           onDone={(result) => { handleClose(); onFinished?.(id, result) }}
@@ -738,7 +739,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
     const thDate = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
     const num = c.ref_no ?? '—'
     const phone = c.phone || c.profiles?.phone || '—'
-    const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
+    const cat = (categoryNameOf(CATEGORY_LABEL, c.category) || '—')
 
     // Database เป็นผู้ resolve ผู้ลงนามและบันทึก snapshot ก่อนสร้างแบบพิมพ์
     let printContextResult = await prepareComplaintPrint(c.id)
@@ -782,7 +783,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
       const thDate = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
       const num = c.ref_no ?? '—'
       const phone = c.phone || c.profiles?.phone || '—'
-      const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
+      const cat = (categoryNameOf(CATEGORY_LABEL, c.category) || '—')
       const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, includeStaffSignatures: false })
 
       const blob = await generateDraftPdfBlob(html)
@@ -861,7 +862,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
   async function handleDownloadFinalDoc() { await openOfficialDoc(c.final_document_path) }
   async function handleDownloadDraftPdf() { await openOfficialDoc(c.draft_pdf_path) }
 
-  const categoryLabel = CATEGORY_LABEL[c.category] ?? c.category
+  const categoryLabel = categoryNameOf(CATEGORY_LABEL, c.category)
   const categoryEmoji = CATEGORY_EMOJI[c.category] || ''
   const dateStr = new Date(c.created_at).toLocaleDateString('th-TH', {
     day: '2-digit', month: 'long', year: 'numeric',
@@ -1745,7 +1746,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
           body: {
             user_id: c.user_id,
             title: 'เจ้าหน้าที่บันทึกข้อความถึงคุณ',
-            body: `มีบันทึกใหม่ในคำร้อง${CATEGORY_LABEL[c?.category] ?? c?.category ?? ''}`,
+            body: `มีบันทึกใหม่ในคำร้อง${categoryNameOf(CATEGORY_LABEL, c?.category)}`,
             url: '/my-complaints',
           },
         }).catch(() => {})
@@ -2137,7 +2138,7 @@ ${summaryHtml}
                   style={{ '--tw-ring-color': 'var(--color-primary)' }}>
                   <option value="">ประเภททั้งหมด ({baseFiltered.length})</option>
                   {categoryOptions.map(([cat, count]) => (
-                    <option key={cat} value={cat}>{CATEGORY_LABEL[cat] ?? cat} ({count})</option>
+                    <option key={cat} value={cat}>{categoryNameOf(CATEGORY_LABEL, cat)} ({count})</option>
                   ))}
                 </select>
               </div>
@@ -2303,7 +2304,7 @@ ${summaryHtml}
                   <div className="flex items-start justify-between gap-2">
                     <span className="font-semibold text-gray-800 text-sm leading-snug flex items-center gap-1.5 flex-wrap">
                       <span className="text-gray-400 font-mono font-normal mr-1">{complaintStartIdx + i + 1}.</span>
-                      {CATEGORY_LABEL[c.category] ?? c.category}
+                      {categoryNameOf(CATEGORY_LABEL, c.category)}
                       {c.latitude && (
                         <span className="text-orange-500 shrink-0" title="มีพิกัด GPS"><MapPin size={11} /></span>
                       )}
@@ -2430,7 +2431,7 @@ ${summaryHtml}
                       </td>
                       <td className="px-2 py-2 font-medium text-gray-800 text-xs border-r border-gray-200 overflow-hidden">
                         <div className="flex min-w-0 items-center gap-1">
-                          <span className="truncate" title={CATEGORY_LABEL[c.category] ?? c.category}>{CATEGORY_LABEL[c.category] ?? c.category}</span>
+                          <span className="truncate" title={categoryNameOf(CATEGORY_LABEL, c.category)}>{categoryNameOf(CATEGORY_LABEL, c.category)}</span>
                           {c.latitude && (
                             <span className="text-orange-500 shrink-0" title="มีพิกัด GPS"><MapPin size={11} /></span>
                           )}

@@ -21,7 +21,7 @@ import IconOrImage from '../components/datacenter/CategoryIcon'
 import { fileToIconDataUrl, isIconImage, ICON_UPLOAD_ACCEPT, ICON_IMAGE_MAX_PX } from '../lib/dataCenterGroupIcon'
 import { compressImage } from '../lib/imageUtils'
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from '../lib/govDocStyle.js'
-import { printableCategoryLabel } from '../lib/complaintCategoryLabels.js'
+import { printableCategoryLabel, categoryNameOf } from '../lib/complaintCategoryLabels.js'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { workingDaysBetween, workingDaysSince } from '../lib/workingDays'
 import { uploadFile } from '../lib/driveStorage'
@@ -5322,7 +5322,7 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
                       <span className="text-lg shrink-0">{CATEGORY_EMOJI[c.category] ?? '📄'}</span>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-gray-700 truncate">
-                          {CATEGORY_LABEL[c.category] ?? c.category}
+                          {categoryNameOf(CATEGORY_LABEL, c.category)}
                         </p>
                         <p className="text-[11px] text-gray-400 mt-0.5 truncate">
                           {c.assigned_to_name
@@ -5362,7 +5362,7 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
                       <span className="text-lg shrink-0">{CATEGORY_EMOJI[c.category] ?? '📄'}</span>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-gray-700 truncate">
-                          {CATEGORY_LABEL[c.category] ?? c.category}
+                          {categoryNameOf(CATEGORY_LABEL, c.category)}
                         </p>
                         <span className="text-[13px] px-1.5 py-0.5 rounded-full font-medium"
                           style={{ backgroundColor: s?.bg, color: s?.text }}>

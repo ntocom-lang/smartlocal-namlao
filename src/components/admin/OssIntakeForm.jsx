@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 import { X, MapPin, Loader2, ImagePlus, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
@@ -68,7 +69,7 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
         // ต้องไปกองรวมกับของเดือน/หมวดเดียวกัน ไม่แยกที่เก็บตามช่องทางที่รับเรื่อง
         const folder = complaintFolderPath({
           refNo: inserted.ref_no,
-          categoryLabel: categoryLabels?.[form.category] ?? form.category,
+          categoryLabel: categoryNameOf(categoryLabels, form.category),
         })
         for (const [i, { file }] of photos.entries()) {
           try {
@@ -137,7 +138,7 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
       terminology: null,
       num: result.ref_no,
       thDate: new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' }),
-      cat: categoryLabels?.[form.category] ?? form.category,
+      cat: categoryNameOf(categoryLabels, form.category),
       phone: form.phone,
       signatories: printContextResult.data?.signatories ?? {},
     })

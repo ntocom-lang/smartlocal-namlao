@@ -13,7 +13,7 @@ import {
   canViewOthers, loadCategoryLabels, loadPeople, loadPerformanceRows, loadPersonCard, loadSignatoryRegistry,
 } from '../../lib/staffPerformanceData'
 import { groupStaffByDepartment } from '../../lib/staffRoster'
-import { printableCategoryLabel } from '../../lib/complaintCategoryLabels'
+import { printableCategoryLabel, categoryNameOf } from '../../lib/complaintCategoryLabels'
 
 // เมนู "ผลการปฏิบัติงาน" — ผลงานรายคนจากคำร้อง ใช้ดูและพิมพ์ตอนประเมินผลการปฏิบัติงาน
 // ระบบรวบรวมเองจากที่เจ้าหน้าที่กดอยู่แล้วทุกวัน ไม่มีช่องกรอก ไม่ให้คะแนน ไม่จัดอันดับคน
@@ -254,7 +254,7 @@ export default function StaffPerformanceModule({ tenant, profile }) {
             <label className={labelCls} htmlFor="performance-category">หมวดคำร้อง</label>
             <select id="performance-category" value={category} onChange={e => setCategory(e.target.value)} className={selectCls}>
               <option value="all">ทุกหมวด</option>
-              {categoryOptions.map(value => <option key={value} value={value}>{labels[value] ?? value}</option>)}
+              {categoryOptions.map(value => <option key={value} value={value}>{categoryNameOf(labels, value)}</option>)}
             </select>
           </div>
         </div>
@@ -347,7 +347,7 @@ export default function StaffPerformanceModule({ tenant, profile }) {
                     const isTotal = group === total
                     return (
                       <tr key={group.category ?? 'total'} className={`border-t border-gray-200 text-center ${isTotal ? 'bg-gray-50 font-bold' : ''}`}>
-                        <td className="px-3 py-2 text-left">{isTotal ? 'รวมทุกหมวด' : (labels[group.category] ?? group.category)}</td>
+                        <td className="px-3 py-2 text-left">{isTotal ? 'รวมทุกหมวด' : (categoryNameOf(labels, group.category))}</td>
                         <td className="px-2 py-2">{group.quantity.completed}</td>
                         <td className="px-2 py-2">{group.quantity.received ? `${group.quantity.receivedDone}/${group.quantity.received} (${rateText(group.quantity.receivedDoneRate)})` : '–'}</td>
                         <td className="px-2 py-2">{group.quantity.openAtEnd}</td>
@@ -388,7 +388,7 @@ export default function StaffPerformanceModule({ tenant, profile }) {
                     {listItems.map(item => (
                       <tr key={item.id} className="border-t border-gray-100 align-top">
                         <td className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">{item.refNo ?? '—'}</td>
-                        <td className="px-3 py-2 text-gray-700">{labels[item.category] ?? item.category}{item.issueType && <span className="block text-gray-400">{item.issueType}</span>}</td>
+                        <td className="px-3 py-2 text-gray-700">{categoryNameOf(labels, item.category)}{item.issueType && <span className="block text-gray-400">{item.issueType}</span>}</td>
                         <td className="px-3 py-2 text-gray-600">{item.village ?? ''}</td>
                         <td className="whitespace-nowrap px-3 py-2 text-center text-gray-600">{thaiShortDate(item.receivedDate)}</td>
                         <td className="whitespace-nowrap px-3 py-2 text-center text-gray-600">

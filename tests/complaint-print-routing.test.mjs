@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { buildCouncilComplaintHtml } from '../src/lib/councilFormPrint.js'
-import { printableCategoryLabel, STANDARD_CATEGORY_LABEL, UNKNOWN_CATEGORY_LABEL } from '../src/lib/complaintCategoryLabels.js'
+import { categoryNameOf, printableCategoryLabel, STANDARD_CATEGORY_LABEL, UNKNOWN_CATEGORY_LABEL } from '../src/lib/complaintCategoryLabels.js'
 
 const signatories = {
   department_head: { name: '[TEST] หัวหน้ากองช่าง', title: 'ผู้อำนวยการกองช่าง' },
@@ -74,14 +74,19 @@ assert.match(namedHtml, /class="sign-row"/,
   const bodyText = html => html.replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
   const printed = (category, cat) => bodyText(buildCouncilComplaintHtml({ ...baseArgs, c: { ...baseArgs.c, category }, cat, signatories }))
 
-  // เคสจริง: ผู้เรียกส่งรหัสดิบมาเป็นชื่อหมวด
-  const raw = printed('water_repair', 'water_repair')
-  assert.ok(!/[A-Za-z]{3,}_[A-Za-z]+|water_repair/.test(raw), 'ใบคำร้องยังมีรหัสหมวดดิบ: ' + raw.match(/.{0,30}water_repair.{0,20}/)?.[0])
-  assert.ok(raw.includes('ขอให้พิจารณาดำเนินการเกี่ยวกับซ่อมน้ำประปา'), 'หัวเรื่องต้องใช้ชื่อไทยมาตรฐานของหมวด')
-  assert.ok(raw.includes('คำร้องขอให้พิจารณาดำเนินการเกี่ยวกับซ่อมน้ำประปา'), 'หัวใบต้องใช้ชื่อไทยมาตรฐานของหมวด')
-
-  // ชื่อที่ อปท. ตั้งเองเป็นไทย ใช้ตามนั้น ไม่ทับด้วยชื่อมาตรฐาน
-  assert.ok(printed('water_repair', 'แจ้งท่อประปาแตก').includes('เกี่ยวกับแจ้งท่อประปาแตก'), 'ชื่อไทยที่ อปท. ตั้งเองต้องไม่ถูกทับ')
+  // เคสจริง: ผู้เรียกส่งรหัสดิบมาเป็นชื่อหมวด — water_repair มีถ้อยคำเฉพาะ (เจ้าของระบบอนุมัติ 2569-10-02) ไม่ผูกกับชื่อหมวด
+  // ทุกทางต้องได้ถ้อยคำเดียวกัน ทั้งชื่อดิบ / ชื่อไทยที่ อปท. ตั้งเอง / ไม่มีชื่อ
+  for (const cat of ['water_repair', 'ซ่อมน้ำประปา', 'แจ้งท่อประปาแตก', '', undefined]) {
+    const text = printed('water_repair', cat)
+    assert.ok(!/[A-Za-z]{3,}_[A-Za-z]+|water_repair/.test(text), 'ใบคำร้องยังมีรหัสหมวดดิบ: ' + text.match(/.{0,30}water_repair.{0,20}/)?.[0])
+    assert.ok(text.includes('คำร้องขอความอนุเคราะห์ซ่อมแซมระบบน้ำประปา'), `หัวใบต้องเป็นถ้อยคำเฉพาะของหมวดซ่อมน้ำประปา (cat=${JSON.stringify(cat)})`)
+    assert.ok(text.includes('เรื่อง &nbsp;&nbsp;ขอความอนุเคราะห์ซ่อมแซมระบบน้ำประปา'), `บรรทัดเรื่องต้องเป็นถ้อยคำเฉพาะ (cat=${JSON.stringify(cat)})`)
+    assert.ok(text.includes('ตรวจสอบและดำเนินการซ่อมแซมระบบน้ำประปา ณ สถานที่และตามรายละเอียดที่ระบุด้านล่าง'), `เนื้อความต้องเป็นถ้อยคำเฉพาะ (cat=${JSON.stringify(cat)})`)
+    assert.ok(!text.includes('เกี่ยวกับซ่อมน้ำประปา'), 'ห้ามกลับไปใช้แม่แบบทั่วไป "…เกี่ยวกับซ่อมน้ำประปา"')
+  }
+  // หมวดที่ใช้แม่แบบทั่วไปหรือแม่แบบตามชื่อ: รหัสดิบได้ชื่อมาตรฐาน · ชื่อไทยที่ อปท. ตั้งเองใช้ตามนั้น ไม่ทับ
+  assert.ok(printed('noise', 'noise').includes('แจ้งปัญหาเหตุรำคาญ'), 'รหัส noise ดิบต้องได้ชื่อมาตรฐาน "เหตุรำคาญ"')
+  assert.ok(printed('other', 'แจ้งท่อประปาแตก').includes('เกี่ยวกับแจ้งท่อประปาแตก'), 'ชื่อไทยที่ อปท. ตั้งเองต้องไม่ถูกทับ')
   // หมวดไม่รู้จัก/ชื่อว่าง/ขีดกลาง → "เรื่องที่แจ้ง" ไม่ปล่อยรหัสหรือขีดกลางลงกระดาษ
   for (const cat of ['cat_mtsubkz2', '', undefined, '—']) {
     const text = printed('cat_mtsubkz2', cat)
@@ -91,6 +96,32 @@ assert.match(namedHtml, /class="sign-row"/,
   // ชื่อที่ไม่ใช่ไทยแต่ไม่เหมือนรหัส (แอดมินตั้งเอง) คงไว้ ไม่เดาแทน
   assert.equal(printableCategoryLabel('wifi_zone', 'Wi-Fi สาธารณะ'), 'Wi-Fi สาธารณะ')
   assert.equal(printableCategoryLabel('wifi_zone', 'Free WiFi'), 'Free WiFi')
+
+  // หน้าจอทุกหน้าใช้ categoryNameOf แทน `แผนที่[รหัส] ?? รหัส` — ไม่มีรหัส = ว่างเหมือนของเดิม · ชื่อจากฐานข้อมูลทับชื่อมาตรฐานเสมอ
+  assert.equal(categoryNameOf({}, 'water_repair'), 'ซ่อมน้ำประปา')
+  assert.equal(categoryNameOf({ water_repair: 'แจ้งท่อประปาแตก' }, 'water_repair'), 'แจ้งท่อประปาแตก')
+  assert.equal(categoryNameOf({ light: 'ไฟฟ้าสาธารณะ (กองช่าง)' }, 'light'), 'ไฟฟ้าสาธารณะ (กองช่าง)')
+  assert.equal(categoryNameOf(undefined, 'noise'), 'เหตุรำคาญ')
+  assert.equal(categoryNameOf({}, 'cat_mtsubkz2'), UNKNOWN_CATEGORY_LABEL)
+  assert.equal(categoryNameOf({}, null), '')
+  assert.equal(categoryNameOf({}, ''), '')
+  assert.equal(categoryNameOf({}, undefined), '')
+
+  // ห้ามมีที่ไหนในโค้ดหน้าจอกลับไปใช้ `แผนที่ชื่อหมวด[รหัส] ?? รหัส` — ผู้เรียกใหม่ต้องใช้ categoryNameOf (หรือ printableCategoryLabel)
+  // ไล่ทุกไฟล์ใน src · ตัวที่อยู่ในวงเล็บของ printableCategoryLabel(...) เป็นรูปแบบที่ถูกต้องอยู่แล้วจึงไม่นับ
+  const { readdir } = await import('node:fs/promises')
+  const walk = async dir => (await Promise.all((await readdir(dir, { withFileTypes: true })).map(entry => {
+    const full = new URL(entry.name + (entry.isDirectory() ? '/' : ''), dir)
+    return entry.isDirectory() ? walk(full) : /\.(jsx|js)$/.test(entry.name) ? [full] : []
+  }))).flat()
+  const RAW_FALLBACK = /(?<!printableCategoryLabel\([^,()]+, )\b(CATEGORY_LABEL|C_CAT|COMPLAINT_CATEGORY_LABEL|catLabel|categoryLabels|labels)(\?\.)?\[([A-Za-z_.?]+)\] \?\? \3\b/
+  const offenders = []
+  for (const file of await walk(new URL('../src/', import.meta.url))) {
+    if (file.pathname.endsWith('/complaintCategoryLabels.js')) continue
+    const text = await readFile(file, 'utf8')
+    text.split('\n').forEach((line, i) => { if (RAW_FALLBACK.test(line)) offenders.push(`${file.pathname.split('/src/')[1]}:${i + 1}: ${line.trim().slice(0, 100)}`) })
+  }
+  assert.deepEqual(offenders, [], 'ยังมีจุดที่ชื่อหมวดตกเป็นรหัสดิบ — ใช้ categoryNameOf(แผนที่, รหัส) แทน:\n' + offenders.join('\n'))
 
   // ชื่อมาตรฐานทุกตัวต้องเป็นไทย และไม่ซ้ำรหัส — กันมีคนเพิ่มรหัสใหม่แล้วใส่ชื่ออังกฤษ
   for (const [code, label] of Object.entries(STANDARD_CATEGORY_LABEL)) {

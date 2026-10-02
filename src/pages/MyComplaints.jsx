@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { categoryNameOf } from '../lib/complaintCategoryLabels.js'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -346,7 +347,7 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
   }
 
   if (!c) return null
-  const categoryLabel = catLabel[c.category] ?? c.category
+  const categoryLabel = categoryNameOf(catLabel, c.category)
   const categoryEmoji = catEmoji[c.category] ?? '📄'
   const dateStr = new Date(c.created_at).toLocaleDateString('th-TH', {
     day: '2-digit', month: 'long', year: 'numeric',
@@ -914,7 +915,7 @@ export default function MyComplaints() {
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <p className="flex items-center gap-1.5 font-bold text-gray-800 text-sm">
                     <CategoryIcon emoji={catEmoji[searchResult.category] ?? '📄'} size={16} style={tenant?.category_icon_style} />
-                    {catLabel[searchResult.category] ?? searchResult.category}
+                    {categoryNameOf(catLabel, searchResult.category)}
                   </p>
                   {/* หมวดเฉพาะกิจ StatusBadge จะคืน null ที่นี่ AckBadge จึงต้องมีคู่กันเสมอ
                       ไม่งั้นค้นด้วยเลขที่คำร้องแล้วจะไม่เหลือป้ายบอกสถานะอะไรเลยสักอัน */}
@@ -1014,7 +1015,7 @@ export default function MyComplaints() {
                     <div className="flex items-center justify-between gap-2 mb-0.5">
                       <p className="font-semibold text-gray-800 text-sm truncate">
                         <span className="text-gray-400 font-mono font-normal mr-1">{startIdx + i + 1}.</span>
-                        {catLabel[c.category] ?? c.category}
+                        {categoryNameOf(catLabel, c.category)}
                       </p>
                       <ChevronRight size={14} className="text-gray-300 shrink-0" />
                     </div>
