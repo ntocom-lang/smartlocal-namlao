@@ -245,7 +245,7 @@ const printedDoc=(win,id)=>win.evaluate(ref=>{
  return{sheets:sheets.length,kinds:sheets.map(s=>s.querySelector('.letter-sign')?'letter':s.querySelector('.form-title')?'form':'other'),
   all:document.body.innerText,letter:letter?.innerText??'',form:form?.innerText??'',
   note:form?.querySelector('.signed-note')?.textContent.replace(/\s+/g,' ').trim()??'',
-  origin:form?.querySelector('.origin')?.textContent.replace(/\s+/g,' ').trim()??'',
+  origin:form?.querySelector('.origin')?.textContent.replace(/\s+/g,' ').trim()??'',originCount:form?form.querySelectorAll('.origin').length:-1,
   mayorSigned:letter?letter.querySelectorAll('.sign-signed').length:-1,
   notice:notice&&{text:notice.textContent,display:getComputedStyle(notice).display}}},id.slice(0,8).toUpperCase())
 // วันทำการที่รถว่างทั้งวัน (ไม่มีเที่ยวเลย) ไว้ให้แต่ละฉากใช้คนละวัน ไม่ชนกันเองและไม่ชนข้อมูลของเทสต์ฐานข้อมูล
@@ -417,7 +417,8 @@ try{
   assert.deepEqual(doc.kinds,['form'],'รอยืนยันรถต้องพิมพ์ได้เฉพาะใบคำขอ 1 แผ่น ไม่มีหนังสือนำส่ง')
   assert.ok(doc.form.includes(mine.find(b=>b.id===b2).patient_name),'ใบคำขอต้องเป็นของคำขอที่เปิดอยู่')
   assert.equal(doc.note,'',`คำขอที่ผู้จองยื่นเอง ต้องไม่มีบรรทัดกำกับใต้ชื่อ (สั่งตัด 2569-10-02): "${doc.note}"`)
-  assert.match(doc.origin,/^ผ่านระบบ E-Service .+ · เลขอ้างอิง [0-9A-F]{8}$/,`คำขอที่ผู้จองยื่นเอง บรรทัดท้ายใบต้องเหมือนใบในชุดหลังยืนยัน: "${doc.origin}"`)
+  assert.equal(doc.originCount,0,`ท้ายใบต้องไม่มีบรรทัดที่มา (เก็บที่เดียวใต้ชื่อแบบ — สั่งลบ 2569-10-02): "${doc.origin}"`)
+  assert.match(doc.form,/ผ่านระบบ E-Service/,'ใต้ชื่อแบบต้องมี "ผ่านระบบ E-Service <อปท.>" เหมือนใบในชุดหลังยืนยัน')
   assert.ok(doc.notice&&doc.notice.display==='block'&&doc.notice.text.includes('หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถ')&&doc.notice.text.includes('จะออกอีกครั้งในชุดเอกสารหลังยืนยันรถ'),`แถบบนจอของใบที่พิมพ์ตอนรอยืนยันรถ: ${JSON.stringify(doc.notice)}`)
   await Promise.all([pendingWin.waitForEvent('close'),pendingWin.getByRole('button',{name:'ปิดหน้าต่าง',exact:true}).click()])
   assert.equal((await bookingRow(b2)).status,'submitted','พิมพ์ใบคำขอแล้วสถานะคำขอต้องไม่เปลี่ยน')
@@ -697,7 +698,7 @@ try{
   // ผู้จองล็อกอินจองเอง (entry_channel 'online') = ลงชื่อออนไลน์ ไม่ขอให้เซ็นปากกา (เจ้าของระบบสั่ง 2569-10-01)
   const doc=await printedDoc(letterWin,b1)
   assert.equal(doc.note,'',`ใบที่ผู้จองยื่นเองต้องไม่มีบรรทัดกำกับใต้ชื่อ (สั่งตัด 2569-10-02): "${doc.note}"`)
-  assert.match(doc.origin,/^ผ่านระบบ E-Service .+ · เลขอ้างอิง [0-9A-F]{8}$/,`บรรทัดท้ายใบของใบที่ผู้จองยื่นเอง: "${doc.origin}"`)
+  assert.equal(doc.originCount,0,`ท้ายใบของใบที่ผู้จองยื่นเองต้องไม่มีบรรทัดที่มา (สั่งลบ 2569-10-02): "${doc.origin}"`)
   assert.ok(!doc.form.includes('ลงลายมือชื่อ')&&!doc.form.includes('รับจองแทน'),'ใบของผู้ที่จองเองต้องไม่ขอให้เซ็นปากกา และไม่ติดข้อความของคำขอที่รับจองแทน')
   // ลำดับกระดาษ: ใบคำขอทุกใบก่อน หนังสือนำส่งเป็นแผ่นสุดท้าย (เจ้าของระบบสั่ง 2569-10-01)
   assert.ok(doc.kinds.length>=2&&doc.kinds.at(-1)==='letter'&&doc.kinds.slice(0,-1).every(kind=>kind==='form'),`ลำดับแผ่นต้องเป็น ใบคำขอ → หนังสือนำส่ง: ${doc.kinds}`)
