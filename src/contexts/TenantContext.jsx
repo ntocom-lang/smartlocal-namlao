@@ -161,6 +161,12 @@ export function TenantProvider({ children }) {
   const [terminology, setTerminology] = useState(getOrgTerms(DEFAULT_ORG_TYPE))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // ชนิดของ error — ให้ผู้ใช้ตัดสินใจได้ว่าจะแสดงอะไร (ข้อความ error เป็นสตริงล้วน แยกชนิดจากข้อความไม่ได้)
+  //   'no-slug'   = URL ไม่ได้ระบุหน่วยงาน (www.rk-networks.com ฯลฯ)
+  //   'not-found' = ระบุแล้วแต่ไม่มีหน่วยงานนั้นจริง (พิมพ์ผิด) — ฐานข้อมูลตอบว่า 0 แถว
+  //   'error'     = โหลดไม่สำเร็จด้วยเหตุอื่น (เน็ตหลุด, timeout, สิทธิ์ผิดพลาด 42501) ห้ามเอาไปรวมกับสองชนิดบน
+  //                 เพราะการชวนให้ "เลือกหน่วยงานใหม่" ตอนที่เป็นแค่เน็ตสะดุดคือพาผู้ใช้ออกจากเว็บที่เขาเปิดถูกแล้ว
+  const [errorKind, setErrorKind] = useState(null)
   // ตัวนับรอบการโหลดวันหยุดราชการ — ไม่มีใครอ่านค่านี้ตรงๆ แต่การเปลี่ยนค่ามันบังคับให้
   // ทุก component ที่ใช้ useTenant() เรนเดอร์ใหม่ ตัวเลข "เหลือ N วันทำการ" ที่คำนวณไปแล้ว
   // จากตาราง static จึงถูกคิดใหม่ตามข้อมูลใน DB โดยไม่ต้องแก้ component สักตัว
@@ -177,6 +183,7 @@ export function TenantProvider({ children }) {
 
     if (!slug) {
       setError('ไม่พบรหัสหน่วยงาน กรุณาตรวจสอบ URL หรือตั้งค่า VITE_TENANT_SLUG')
+      setErrorKind('no-slug')
       setLoading(false)
       return
     }
@@ -186,6 +193,7 @@ export function TenantProvider({ children }) {
       const timerId = setTimeout(() => {
         timedOut = true
         setError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่')
+        setErrorKind('error')
         setLoading(false)
       }, 12000)
 
@@ -201,6 +209,10 @@ export function TenantProvider({ children }) {
 
         if (dbError || !data) {
           setError(`ไม่พบหน่วยงานรหัส "${slug}" ในระบบ`)
+          // PGRST116 = .single() ได้ 0 แถว = "ไม่มีหน่วยงานนี้จริง" ส่วน error อื่นจาก DB (42501 สิทธิ์คอลัมน์
+          // ผิด, เครือข่าย) ข้อความข้างบนยังเหมือนเดิมเพื่อไม่เปลี่ยนพฤติกรรม แต่ต้องไม่ถูกนับเป็น not-found
+          // ไม่งั้นหน้าเลือกหน่วยงานจะโผล่ทั้งที่ปัญหาจริงอยู่ที่ระบบ (ดู project-municipalities-column-grants)
+          setErrorKind(!dbError || dbError.code === 'PGRST116' ? 'not-found' : 'error')
           setLoading(false)
           return
         }
@@ -242,6 +254,7 @@ export function TenantProvider({ children }) {
         clearTimeout(timerId)
         if (!timedOut) {
           setError(`ไม่พบหน่วยงานรหัส "${slug}" ในระบบ`)
+          setErrorKind('error') // เข้ามาทาง catch = มีข้อยกเว้นระหว่างทาง ไม่ใช่คำตอบ "0 แถว" จากฐานข้อมูล
           setLoading(false)
         }
       }
@@ -270,7 +283,7 @@ export function TenantProvider({ children }) {
   }
 
   return (
-    <TenantContext.Provider value={{ tenant, terminology, loading, error, patchTenant, isModuleEnabled, holidaysVersion, reloadHolidays }}>
+    <TenantContext.Provider value={{ tenant, terminology, loading, error, errorKind, patchTenant, isModuleEnabled, holidaysVersion, reloadHolidays }}>
       {children}
     </TenantContext.Provider>
   )
