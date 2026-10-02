@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import MapPicker from '../MapPicker'
-import { joinPickup } from '../../lib/pickupText'
+import { addressFromMap, joinPickup } from '../../lib/pickupText'
 import BookingMonthPicker from './BookingMonthPicker'
 import BookingReviewSheet from './BookingReviewSheet'
 import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, orgAbbr, normalizeBookingPhone, clockOf, bookingLastDay } from '../../lib/patientBooking'
@@ -346,8 +346,9 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       initialPos={form.pickup_lat === null ? null : { lat: form.pickup_lat, lng: form.pickup_lng }}
       fallbackPos={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
       onConfirm={({ lat, lng, address }) => {
-        // เติมที่อยู่จากแผนที่ให้เฉพาะตอนช่องยังว่าง ไม่ทับสิ่งที่ผู้จองพิมพ์เอง
-        setForm(f => ({ ...f, pickup_lat: lat, pickup_lng: lng, spot: f.spot || address || '' }))
+        // เติมที่อยู่จากแผนที่ให้เฉพาะตอนช่องยังว่าง ไม่ทับสิ่งที่ผู้จองพิมพ์เอง · addressFromMap ตัดส่วนที่แทรกมา
+        // (ชื่ออังกฤษ รหัสทางหลวง จุลภาค) ให้เป็นที่อยู่แบบไทยก่อนลงช่อง
+        setForm(f => ({ ...f, pickup_lat: lat, pickup_lng: lng, spot: addressFromMap(f.spot, address) }))
         setShowMap(false)
       }}
       onClose={() => setShowMap(false)} />}
