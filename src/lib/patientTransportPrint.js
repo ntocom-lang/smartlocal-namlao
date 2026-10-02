@@ -453,7 +453,7 @@ function fundFormSheet({ header, form = {}, parent = {}, tenant, referenceNo = '
   <p>${field('ที่อยู่', parent?.requester_address, '70mm')} ${field('โทรศัพท์', parent?.requester_phone, '30mm')} มีความประสงค์ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยจากกองทุน รายละเอียดตามตารางท้ายนี้</p>
   <table class="fund-details"><tbody>${rows.map(([label, value]) => `<tr><th scope="row">${esc(label)}</th><td>${esc(value) || '&nbsp;'}</td></tr>`).join('')}</tbody></table>
   <!-- หลักฐานเป็นช่องให้ระบุตามที่กองทุนกำหนด ไม่บังคับแนบหรือเพิ่มการเก็บข้อมูลในระบบ -->
-  <p class="fund-evidence">หลักฐาน ${box()} สำเนาบัตรประชาชนผู้ป่วย ${box()} ใบนัดแพทย์ ${box()} อื่นๆ ${line('', '25mm')}</p>
+  <p class="fund-evidence">หลักฐาน ${box()} ใบนัดแพทย์ ${box()} อื่นๆ ${line('', '25mm')}</p>
   <div class="sign-block center-row fund-request-sign">${govSignRow({
     width: REQUESTER_LINE_W, grow: true, role: 'ผู้ยื่นคำขอ', signed: requesterName ? esc(requesterName) : '',
     below: [signatureName(requesterName, REQUESTER_LINE_W)],

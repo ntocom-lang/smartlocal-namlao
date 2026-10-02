@@ -991,16 +991,18 @@ const checks = [
   {
     name: 'evidence-line-has-no-id-copy',
     reason: 'บรรทัดหลักฐานในใบคำขอเหลือ "☐ ใบนัดแพทย์ ☐ อื่นๆ ___" เจ้าของระบบสั่งตัด "สำเนาบัตรประชาชนผู้ป่วย" ออก 2569-10-02'
-      + ' ต้องไม่กลับมาในทุกทางที่พิมพ์ใบคำขอ และต้องไม่เหลือแค่ครึ่งเดียว (ช่องติ๊ก 2 ช่อง ตามคำที่เหลือ)',
+      + ' ต้องไม่กลับมาในใบคำขอและใบคำขอรับสวัสดิการ และต้องไม่เหลือแค่ครึ่งเดียว (ช่องติ๊ก 2 ช่อง ตามคำที่เหลือ)',
     async run(browser) {
       for (const [label, html] of [
         ['ชุดเอกสารคำขอ', buildPatientTransportPacketHtml(args())],
         ['ใบคำขอฝั่งประชาชน', buildPatientTransportFormHtml(args())],
+        ['ชุดหนังสือและใบคำขอรับสวัสดิการ', buildPatientTransportLetterHtml(args())],
+        ['ชุดนำส่งกองทุนของผู้เดินทาง', buildBookingForwardLetterHtml({ ...tripArgs(), booking: TRIP_BOOKINGS[0] })],
         ['หนังสือต่อเที่ยว', buildTripForwardLetterHtml({ ...tripArgs(), bookings: TRIP_BOOKINGS.slice(0, 2) })],
       ]) {
         const page = await render(browser, html)
         try {
-          const lines = await page.locator('.evidence').evaluateAll(els => els.map(el => ({
+          const lines = await page.locator('.evidence, .fund-evidence').evaluateAll(els => els.map(el => ({
             text: el.textContent.replace(/\s+/g, ' ').trim(),
             boxes: el.querySelectorAll('.box').length,
           })))
