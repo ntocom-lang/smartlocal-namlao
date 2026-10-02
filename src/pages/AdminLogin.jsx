@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
-import { supabase, setRememberSession } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
 import { appUrl } from '../lib/basename'
 import { Lock, Mail, Loader2, ShieldCheck, Eye, EyeOff, KeyRound, Smartphone } from 'lucide-react'
@@ -26,9 +26,6 @@ export default function AdminLogin() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  // ค่าเริ่มต้น = จำไว้ ให้ตรงกับพฤติกรรมเดิม การไม่ติ๊กคือเจ้าหน้าที่เลือกเองว่าไม่ให้ค้าง
-  // บนเครื่องนี้ (session จะอยู่แค่จนปิดแท็บ) ไม่ใช่ระบบพาออกอัตโนมัติ
-  const [remember, setRemember] = useState(true)
   // เจ้าหน้าที่ที่ไปใช้ PC เครื่องคนอื่นไม่ควรต้องพิมพ์รหัสผ่านทิ้งไว้บนเครื่องนั้น
   const [tab, setTab] = useState('password')
   const [loadingGoogle, setLoadingGoogle] = useState(false)
@@ -45,9 +42,6 @@ export default function AdminLogin() {
     // fetchWithTimeout ใน supabase.js) ไม่ใช่แค่คืน error object พอ await โยนออกไป setLoading(false)
     // ไม่ได้รัน ปุ่มจะค้างเป็น "กำลังเข้าสู่ระบบ..." แบบ disabled ถาวร เจ้าหน้าที่กดซ้ำไม่ได้
     // และไม่มีข้อความบอกว่าเกิดอะไรขึ้น ต้องเดาเองว่าต้องรีเฟรชหน้า
-    // ต้องตั้งก่อนยิง signIn — storage adapter ใน supabase.js อ่านค่านี้ตอนเขียน session ลงเครื่อง
-    // ของเดิมส่ง options.persistSession ซึ่ง auth-js ไม่เคยอ่าน ติ๊กหรือไม่ก็ค้างบนเครื่องเหมือนกันหมด
-    setRememberSession(remember)
     try {
       const { error: authError } = await supabase.auth.signInWithPassword({
         email,
@@ -68,10 +62,8 @@ export default function AdminLogin() {
     }
   }
 
-  // ปุ่ม OAuth ฝั่งเจ้าหน้าที่ — ต่างจากของ AuthPage 2 จุดที่จงใจ ไม่ควร merge เป็นตัวเดียวกัน
-  //   1. เคารพช่องติ๊ก "จำการเข้าสู่ระบบไว้บนเครื่องนี้" (AuthPage บังคับ true เพราะเป็นมือถือ
-  //      ส่วนตัวของประชาชน) เครื่องกลางในสำนักงานต้องเลือกได้ว่าไม่ให้ session ค้าง
-  //   2. กลับมาลง /admin ไม่ใช่หน้าแรกประชาชน
+  // ปุ่ม OAuth ฝั่งเจ้าหน้าที่ — ต่างจากของ AuthPage 1 จุดที่จงใจ ไม่ควร merge เป็นตัวเดียวกัน
+  //   • กลับมาลง /admin ไม่ใช่หน้าแรกประชาชน
   //
   // ที่ต้องเขียน try/catch: signInWithOAuth "reject" ได้จริง (เน็ตหลุด หรือชน timeout 25 วิของ
   // fetchWithTimeout) ถ้าไม่ดัก setLoading(false) ไม่ได้รัน ปุ่มจะค้างเป็นสปินเนอร์ disabled ถาวร
@@ -79,7 +71,6 @@ export default function AdminLogin() {
   async function startOAuth(provider, { setLoading: setProviderLoading, errorText, queryParams }) {
     // App.jsx อ่านคีย์นี้ตอน SIGNED_IN แล้ว navigate ต่อให้ (ดู src/App.jsx บรรทัด oauth_from)
     sessionStorage.setItem('oauth_from', from)
-    setRememberSession(remember)
     setProviderLoading(true)
     setOauthError('')
     try {
@@ -205,16 +196,6 @@ export default function AdminLogin() {
             </button>
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-              className="w-4 h-4 rounded accent-(--color-primary)"
-            />
-            <span className="text-sm text-gray-500">จำการเข้าสู่ระบบไว้บนเครื่องนี้</span>
-          </label>
-
           {error && (
             <p className="text-sm text-red-500 text-center">{error}</p>
           )}
@@ -281,6 +262,13 @@ export default function AdminLogin() {
         )}
         </>
         ) : <DeviceLoginPanel />}
+
+        {/* ทุกวิธีเข้าสู่ระบบจำไว้บนเครื่องนี้เสมอ ไม่มีช่องติ๊ก (เจ้าของระบบสั่ง 2026-10-02) — เจ้าหน้าที่ที่ใช้
+            เครื่องร่วมกับผู้อื่นต้องรู้ก่อนกดว่า session จะค้างจนกว่าจะกด "ออกจากระบบ" เอง ระบบไม่พาออกให้ */}
+        <p className="text-[11px] text-gray-400 text-center mt-4 leading-relaxed">
+          เข้าสู่ระบบแล้ว ระบบจะจำไว้บนเครื่องนี้ ไม่ต้องกรอกใหม่<br />
+          ใช้เครื่องร่วมกับผู้อื่น โปรดกด &ldquo;ออกจากระบบ&rdquo; เมื่อเลิกใช้งาน
+        </p>
       </div>
     </div>
   )

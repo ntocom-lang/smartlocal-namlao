@@ -30,16 +30,19 @@ function readInitialAuthParams() {
 
 export const initialAuthParams = readInitialAuthParams()
 
-// ── "จำการเข้าสู่ระบบไว้บนเครื่องนี้" ────────────────────────────────────────────
+// ── "จำการเข้าสู่ระบบ" = จำเสมอ ทุกทางเข้า ไม่มีโหมด "ไม่จำ" ─────────────────────────────────
 //
-// ของเดิมส่ง options: { persistSession: remember } เข้า signInWithPassword ซึ่ง auth-js ไม่เคยอ่าน
-// (หยิบจาก options แค่ captchaToken ตัวเดียว ดู GoTrueClient ตรง /token?grant_type=password)
-// ผลคือติ๊กหรือไม่ติ๊กก็เขียน session ลง localStorage เหมือนกันหมด — เจ้าหน้าที่ที่ไปใช้ PC กลาง
-// ของสำนักงานเข้าใจว่าไม่ได้ให้จำ แต่บัญชีค้างอยู่บนเครื่องนั้นจริง
+// เจ้าของระบบสั่ง (2026-10-02): "ให้จำการเข้าสู่ระบบทุกอย่างได้เลย ถ้าจะออกก็ให้เขากดออกเอง"
+// ผู้ใช้กลุ่มหลักคือผู้สูงอายุที่จำรหัสผ่านไม่ได้ (และ Google/LINE ไม่มีรหัสผ่านให้กรอกด้วยซ้ำ)
+// หลุดครั้งเดียวคือเข้าไม่ได้อีกเลย session จึงอยู่ใน localStorage ที่เดียวเสมอ (ค่าเริ่มต้นของ
+// supabase-js) ข้ามการปิดเบราว์เซอร์ และจะหายก็ต่อเมื่อผู้ใช้กดออกจากระบบเอง (signOutSafely) หรือ
+// เซิร์ฟเวอร์ยืนยันว่า refresh token ตายจริงเท่านั้น
 //
-// persistSession เป็น option ระดับ createClient เปลี่ยนรายครั้งไม่ได้ จึงต้องคุมที่ชั้น storage แทน:
-// ติ๊ก = localStorage (อยู่ข้ามการปิดเบราว์เซอร์) ไม่ติ๊ก = sessionStorage (หายเมื่อปิดแท็บ)
-const REMEMBER_KEY = 'sl-auth-remember'
+// ประวัติ (ไว้กันคนต่อไปเอากลับมา): เคยมีช่องติ๊ก "จำการเข้าสู่ระบบไว้บนเครื่องนี้" ที่เก็บ session ไว้
+// sessionStorage เมื่อไม่ติ๊ก ทดสอบกับ SDK จริงพบว่ากลไกนั้นพา session ที่ผู้ใช้เลือกจำไว้หลุดได้เอง
+// (ล็อกอินแบบไม่ติ๊กที่ล้มเหลว + ต่ออายุ token = session ย้ายไป sessionStorage แล้วหายเมื่อปิดแท็บ)
+// และค่า "ไม่จำ" ค้างถาวรไปกระทบทางที่ไม่มีช่องติ๊ก จึงเลิกมีโหมดนี้ทั้งระบบ แทนที่จะอุดทีละช่อง
+const LEGACY_REMEMBER_KEYS = ['sl-auth-remember', 'sl-auth-oauth-remember'] // ค่าของกลไกเก่า ไม่ใช้แล้ว
 
 function safeStorage(kind) {
   try {
@@ -49,68 +52,41 @@ function safeStorage(kind) {
   }
 }
 
-// ไม่มีค่าที่บันทึกไว้ = ถือว่าจำ เพื่อไม่ให้ผู้ใช้เดิมที่ล็อกอินค้างอยู่ก่อนหน้านี้ถูกเด้งออกตอน
-// อัปเดตโค้ด และเพื่อให้ OAuth (Google/LINE) ซึ่งไม่มีช่องติ๊กยังค้าง session ไว้ตามเดิม
-// (ตรงกับกติกา 2026-08-29: ห้ามมีทางไหนพาผู้ใช้ออกจากระบบเองนอกจากผู้ใช้สั่ง)
-function wantsPersistentSession() {
+function expiresAtOf(raw) {
   try {
-    return safeStorage('local')?.getItem(REMEMBER_KEY) !== '0'
+    const at = JSON.parse(raw)?.expires_at
+    return Number.isFinite(at) ? at : 0
   } catch {
-    return true
+    return 0
   }
 }
 
-/**
- * ตั้งว่า session ที่กำลังจะถูกสร้างควรค้างบนเครื่องนี้ไหม — ต้องเรียก "ก่อน" signIn ทุกครั้ง
- * เพราะ storage adapter อ่านค่านี้ตอนเขียน session ลงเครื่อง
- */
-export function setRememberSession(remember) {
+// ย้าย session ที่เคยถูกเก็บไว้ sessionStorage (คนที่เคยไม่ติ๊กจำ) มาไว้ localStorage ให้ "จำ" เหมือนทุกคน
+// ไม่งั้นพวกเขาจะหลุดเมื่อปิดแท็บ ทั้งที่กติกาตอนนี้คือห้ามหลุดเอง และห้ามทิ้งไว้ใน sessionStorage
+// เพราะ SDK อ่านที่เดียว (localStorage) จะมองไม่เห็น session นั้นแล้วพาไปหน้าเข้าสู่ระบบ
+// ถ้ามีทั้งสองที่ ให้เอาตัวที่หมดอายุทีหลัง (ใหม่กว่า) — ต้องรันก่อน createClient เสมอ
+function migrateLegacyStorage() {
   const local = safeStorage('local')
-  if (!local) return
+  const session = safeStorage('session')
   try {
-    if (remember) local.removeItem(REMEMBER_KEY)
-    else local.setItem(REMEMBER_KEY, '0')
+    LEGACY_REMEMBER_KEYS.forEach((key) => local?.removeItem(key))
+    if (!local || !session) return
+    const keys = []
+    for (let i = 0; i < session.length; i += 1) {
+      const key = session.key(i)
+      if (key && /^sb-.+-auth-token$/.test(key)) keys.push(key)
+    }
+    keys.forEach((key) => {
+      const moving = session.getItem(key)
+      if (moving !== null && expiresAtOf(moving) >= expiresAtOf(local.getItem(key))) local.setItem(key, moving)
+      session.removeItem(key)
+    })
   } catch {
-    // เครื่องที่ปิด storage ไว้ ปล่อยให้ใช้ค่า default (จำ) ไปตามเดิม
+    // ย้ายไม่ได้ (storage เต็ม/ถูกปิด) ปล่อยไว้ที่เดิม ไม่ทำให้แอปพัง
   }
 }
 
-// code-verifier ของ PKCE ต้องอยู่ localStorage เสมอ ห้ามตามค่า remember
-// ผู้ใช้กด "ลืมรหัสผ่าน" ในแท็บหนึ่ง แล้วเปิดลิงก์จากอีเมลในแท็บ/หน้าต่างใหม่เสมอ ถ้า verifier
-// ไปอยู่ใน sessionStorage (ผูกกับแท็บเดิม) แท็บใหม่จะหาไม่เจอ แล้วการรีเซ็ตรหัสผ่านพังทั้งฟีเจอร์
-function isTabScopable(key) {
-  return !String(key).includes('code-verifier')
-}
-
-const rememberAwareStorage = {
-  getItem(key) {
-    try {
-      return safeStorage('session')?.getItem(key) ?? safeStorage('local')?.getItem(key) ?? null
-    } catch {
-      return null
-    }
-  },
-  setItem(key, value) {
-    try {
-      const useSession = isTabScopable(key) && !wantsPersistentSession()
-      const target = safeStorage(useSession ? 'session' : 'local')
-      const other = safeStorage(useSession ? 'local' : 'session')
-      target?.setItem(key, value)
-      // กันของเก่าค้างอีกฝั่ง ไม่งั้น getItem จะหยิบ session เดิมที่ควรถูกทิ้งไปแล้วกลับมาใช้
-      other?.removeItem(key)
-    } catch {
-      // เขียนไม่ได้ (โหมดส่วนตัว/โควตาเต็ม) ปล่อยให้ session อยู่แค่ในแรมของหน้านี้
-    }
-  },
-  removeItem(key) {
-    try {
-      safeStorage('session')?.removeItem(key)
-      safeStorage('local')?.removeItem(key)
-    } catch {
-      // ไม่มีอะไรให้ทำต่อ
-    }
-  },
-}
+migrateLegacyStorage()
 
 const FETCH_TIMEOUT_MS = 25_000
 
@@ -295,7 +271,8 @@ async function fetchWithAuthRecovery(input, init = {}) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: { fetch: fetchWithAuthRecovery },
-  auth: { lock: noOpLock, storage: rememberAwareStorage },
+  // ไม่ส่ง storage = ใช้ localStorage ของ SDK เอง (ถ้าเบราว์เซอร์ปิด storage SDK ถอยไปใช้แรมให้เอง)
+  auth: { lock: noOpLock },
 })
 
 supabase.auth.onAuthStateChange((event) => {
@@ -424,9 +401,8 @@ export async function getSessionResilient() {
 // ชื่อเต็ม เพื่อไม่ให้พังเงียบๆ ถ้า supabase-js เปลี่ยนรูปแบบ key ภายในวันหลัง
 function purgeStoredAuthSession() {
   try {
-    // ต้องกวาดทั้งสองที่ — ตั้งแต่มี rememberAwareStorage แล้ว session ของคนที่ไม่ติ๊ก
-    // "จำการเข้าสู่ระบบ" จะไปอยู่ sessionStorage ถ้าล้างแต่ localStorage การบังคับออกจากระบบ
-    // จะไม่มีผลกับคนกลุ่มนั้นเลย
+    // กวาด sessionStorage ด้วยเผื่อมีแท็บเก่าที่ยังรันโค้ดรุ่นก่อน (ซึ่งเก็บ session ที่นั่นเมื่อไม่ติ๊กจำ)
+    // เขียนทิ้งไว้ — ไม่งั้นการบังคับออกจากระบบจะไม่มีผลกับ session นั้น
     const removed = []
     for (const store of [localStorage, sessionStorage]) {
       const keys = []
@@ -471,7 +447,13 @@ export async function signOutSafely(redirectTo = '/') {
     // local ยังเรียกเซิร์ฟเวอร์ให้เพิกถอน session นี้จริง (GoTrueClient._signOut → admin.signOut
     // ด้วย scope นั้น) ไม่ใช่แค่ลบในเครื่อง; ถ้าต้องการเตะเครื่องอื่นให้ใช้ ActiveSessions แทน
     const { error } = await supabase.auth.signOut({ scope: 'local' })
-    if (!error) return { ok: true, forced: false }
+    if (!error) {
+      // SDK ล้างเฉพาะ localStorage — สำเนาที่แท็บเก่า (รันโค้ดรุ่นที่มีช่องติ๊ก) เขียนทิ้งไว้ใน
+      // sessionStorage ต้องล้างด้วย ไม่งั้นการย้ายของเก่าตอนโหลดหน้าถัดไปจะปลุก session นั้นกลับมา
+      // ผู้ใช้ที่กดออกแล้วจะกลับมาล็อกอินเองโดยไม่ได้สั่ง ขัดกับ "ถ้าจะออกให้เขากดออกเอง"
+      purgeStoredAuthSession()
+      return { ok: true, forced: false }
+    }
     console.warn('[auth] signOut() คืน error, บังคับล้าง session ในเครื่อง:', error.message)
   } catch (err) {
     console.warn('[auth] signOut() โยน error, บังคับล้าง session ในเครื่อง:', err?.message ?? err)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { supabase, setRememberSession } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
 import { useTenant } from '../contexts/TenantContext'
 import DeviceLoginPanel from '../components/auth/DeviceLoginPanel'
@@ -47,9 +47,6 @@ export default function AuthPage() {
   }, [from, location.pathname, location.search, location.state?.oauthError, navigate])
   const [success, setSuccess] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  // ค่าเริ่มต้น = จำไว้ ให้ตรงกับพฤติกรรมเดิมของระบบ และกติกาที่ว่าผู้ใช้ต้องกดออกเอง
-  // การ "ไม่ติ๊ก" คือผู้ใช้เลือกเองว่าไม่ให้ค้างบนเครื่องนี้ ไม่ใช่ระบบพาออกอัตโนมัติ
-  const [remember, setRemember] = useState(true)
   const [loadingGoogle, setLoadingGoogle] = useState(false)
   const [loadingLine, setLoadingLine] = useState(false)
   const [loadingLineWeb, setLoadingLineWeb] = useState(false)
@@ -125,7 +122,6 @@ export default function AuthPage() {
     oauthBusy.current = true
     const attempt = ++oauthAttempt.current
     storeOauthFrom()
-    setRememberSession(true)
     setProviderLoading(true)
     setError('')
     const release = () => {
@@ -253,8 +249,6 @@ export default function AuthPage() {
     // ต้องมี try/finally: signInWithPassword reject ได้จริงเมื่อเน็ตหลุดหรือชน timeout 25 วิ
     // ของ fetchWithTimeout ถ้าปล่อยหลุด setLoading(false) ไม่ได้รัน ปุ่ม "เข้าสู่ระบบ" จะค้าง
     // เป็นสปินเนอร์ disabled ถาวร ผู้ใช้กดซ้ำไม่ได้และไม่มีข้อความบอกว่าเกิดอะไรขึ้น
-    // ต้องตั้งก่อนยิง signIn — storage adapter ใน supabase.js อ่านค่านี้ตอนเขียน session ลงเครื่อง
-    setRememberSession(remember)
     try {
       const { error: err } = await supabase.auth.signInWithPassword({
         email: resolveLoginEmail(form.email),
@@ -550,12 +544,7 @@ export default function AuthPage() {
           </div>
 
           {mode === 'login' && (
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}
-                  className="w-4 h-4 rounded accent-(--color-primary)" />
-                <span className="text-sm text-gray-500">จำการเข้าสู่ระบบไว้บนเครื่องนี้</span>
-              </label>
+            <div className="flex items-center justify-end">
               <button type="button" onClick={() => { setMode('forgot'); setError(''); setSuccess(''); setShowOfficeHelp(false) }}
                 className="text-sm text-blue-500 hover:text-blue-700 transition-colors">
                 ลืมรหัสผ่าน?
