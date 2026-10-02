@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs'
 import { chromium } from 'playwright'
 import {
   buildBookingRequestFormHtml, buildPatientTransportFormHtml, buildPatientTransportPacketHtml,
-  buildTripForwardLetterHtml, buildTripMonthReportHtml, tripPassengers,
+  buildTripForwardLetterHtml, buildTripMonthReportHtml, tripPassengers, writeAndPrint, PRINT_DIALOG_DELAY_MS,
 } from '../src/lib/patientTransportPrint.js'
 import { assertSignBlockStandard, assertSignLinesAligned } from './lib/signBlockChecks.mjs'
 import { addressFromMap, joinPickup, pickupSentence } from '../src/lib/pickupText.js'
@@ -797,6 +797,51 @@ const checks = [
             assert.ok(Math.abs(mid - (printLeft + printRight) / 2) < 3, `${label}: ชื่อแบบต้องอยู่กึ่งกลางพื้นที่พิมพ์ (กลางชื่อ ${mid.toFixed(1)} กลางหน้า ${((printLeft + printRight) / 2).toFixed(1)})`)
           }
         } finally { await page.close() }
+      }
+    },
+  },
+  {
+    // เจ้าของระบบแจ้ง 2569-10-02: กดพิมพ์ใบคำขอรถรับ-ส่งฝั่งเจ้าหน้าที่แล้วหน้าต่างพิมพ์ไม่เด้ง ต่างจากหน้าคำร้อง
+    // สาเหตุ: เติมเอกสารลงหน้าต่างแล้วไม่เรียก print() · ปุ่มพิมพ์ฝั่งเจ้าหน้าที่ 3 ปุ่ม (ใบคำขอ/หนังสือนำส่ง/สรุปช่วงเวลา) ผ่านทางเดียวกัน
+    name: 'staff-print-opens-print-dialog',
+    reason: 'เติมเอกสารลงหน้าต่างพิมพ์แล้วต้องเด้งหน้าต่างพิมพ์ให้เอง (หลังหน่วงให้ฟอนต์โหลด) และต้องไม่พิมพ์ถ้าเจ้าหน้าที่ปิดหน้าต่างไปแล้ว'
+      + ' · ปุ่มพิมพ์ฝั่งเจ้าหน้าที่ต้องผ่าน writeAndPrint ทุกปุ่ม ไม่เขียนลงหน้าต่างเอง',
+    async run() {
+      const fakeWindow = () => {
+        const log = []
+        return {
+          log, closed: false,
+          document: { open: () => log.push('open'), write: html => log.push(`write:${html}`), close: () => log.push('close') },
+          focus: () => log.push('focus'), print: () => log.push('print'),
+        }
+      }
+      const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+      // เติมเอกสารแล้วเด้งหน้าต่างพิมพ์ครั้งเดียว หลังโฟกัสหน้าต่าง · ยังไม่เด้งก่อนครบเวลาหน่วง
+      {
+        const win = fakeWindow()
+        writeAndPrint(win, '<p>เอกสาร</p>', 30)
+        assert.deepEqual(win.log, ['open', 'write:<p>เอกสาร</p>', 'close'], 'ต้องเติมเอกสารก่อน และยังไม่พิมพ์ทันที (ฟอนต์ยังไม่โหลด)')
+        await wait(120)
+        assert.deepEqual(win.log.slice(3), ['focus', 'print'], 'ต้องโฟกัสหน้าต่างแล้วเด้งหน้าต่างพิมพ์ ครั้งเดียว')
+      }
+      // เจ้าหน้าที่ปิดหน้าต่างระหว่างรอ → ไม่พิมพ์
+      {
+        const win = fakeWindow()
+        writeAndPrint(win, '<p>x</p>', 30)
+        win.closed = true
+        await wait(120)
+        assert.ok(!win.log.includes('print'), 'หน้าต่างถูกปิดแล้ว ต้องไม่เรียกพิมพ์')
+      }
+      assert.equal(PRINT_DIALOG_DELAY_MS, 400, 'หน่วง 400ms เท่าปุ่มพิมพ์ของหน้าคำร้อง/ใบคำขอฝั่งประชาชน')
+
+      // ปุ่มพิมพ์ฝั่งเจ้าหน้าที่ทุกปุ่มผ่าน printInNewWindow ซึ่งต้องใช้ writeAndPrint — ห้ามกลับไปเขียนลงหน้าต่างเอง
+      const source = readFileSync(new URL('../src/pages/PatientTransportStaff.jsx', import.meta.url), 'utf8')
+      const body = source.slice(source.indexOf('async function printInNewWindow'), source.indexOf('const printLetter'))
+      assert.ok(body.includes('writeAndPrint(win, html)'), 'printInNewWindow ไม่ได้ใช้ writeAndPrint')
+      assert.ok(!/win\.document\.(open|write)\(\s*html/.test(body), 'printInNewWindow กลับไปเขียนเอกสารลงหน้าต่างเองโดยไม่เรียกพิมพ์')
+      for (const button of ['printLetter', 'printRequest', 'printPeriod']) {
+        assert.ok(new RegExp(`const ${button} = [^=]*=> printInNewWindow\\(`).test(source), `${button} ไม่ได้ผ่าน printInNewWindow`)
       }
     },
   },
