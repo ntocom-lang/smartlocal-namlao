@@ -14,6 +14,7 @@ import { hydroHourlyResponse } from './hydroHourly.js'
 import { buildIcons } from './manifestIcons.js'
 import { airQualityResponse } from './airQuality.js'
 import { pm25DetailsResponse } from './pm25Details.js'
+import { httpsRedirectResponse } from './httpsRedirect.js'
 
 const SHELL_PATH = '/_template.html'
 
@@ -186,6 +187,11 @@ function normalizeHexColor(value) {
 
 export default {
   async fetch(request, env) {
+    // ต้องเป็นด่านแรกสุด ก่อนทุก route — เหตุผลเต็มที่ worker/httpsRedirect.js (หน้าเว็บแบบ http ทำให้
+    // login ด้วย LINE/Google ไปลงจอดที่ อปท. น้ำเลา ผ่านการถอยไปใช้ Site URL ของ Supabase)
+    const toHttps = httpsRedirectResponse(request)
+    if (toHttps) return toHttps
+
     const url = new URL(request.url)
     if (url.pathname === '/api/hydro-hourly') return hydroHourlyResponse(request)
     if (url.pathname === '/api/air-quality') return airQualityResponse(request)
