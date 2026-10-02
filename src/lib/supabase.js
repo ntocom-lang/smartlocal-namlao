@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, AuthRetryableFetchError } from '@supabase/supabase-js'
 import { isNetworkAuthError } from './authErrors'
 
 export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -209,14 +209,80 @@ function requestUrlOf(input) {
   return input?.url ?? ''
 }
 
+// ── กันไม่ให้ SDK ลบ session ทิ้งเองตอนเซิร์ฟเวอร์สะอึก ─────────────────────────────────
+//
+// กติกา (2026-10-02): คนที่ติ๊ก "จำการเข้าสู่ระบบไว้บนเครื่องนี้" ต้องค้างตลอดไป ห้ามหลุดเอง
+// ยกเว้นผู้ใช้กดออกเอง หรือเซิร์ฟเวอร์ยืนยันชัดว่า refresh token ตายจริง
+//
+// ปัญหา: auth-js (2.105.4 ดู GoTrueClient._callRefreshToken กับ _recoverAndRefresh) ลบ session ออก
+// จากเครื่องแล้วประกาศ SIGNED_OUT ทันทีที่ขอ refresh แล้วได้ error ที่ "ไม่ใช่ retryable" ส่วนที่ถูกนับ
+// ว่า retryable มีแค่ fetch ล้ม กับ status 502/503/504/520-524/530 (lib/fetch.js NETWORK_ERROR_CODES)
+// ดังนั้น
+//   • 500 unexpected_failure — เช่น ฐานข้อมูลแผนฟรีโหลดหนัก
+//   • 429 over_request_rate_limit — เพดานของ /token คือ 150 ครั้ง/5 นาที ต่อ IP นับรวมทั้ง
+//     password, refresh token, ID token, PKCE (ตามเอกสาร Supabase) ทั้งสำนักงานหรือวง wifi ของงาน
+//     ที่ออก IP เดียวกันใช้โควตาร่วมกัน
+// ถูกอ่านเป็น "refresh token ตายแล้ว" ผู้ใช้โดนพาออกจากระบบทั้งที่ token ยังดี 100%
+// (ทดสอบกับเซิร์ฟเวอร์ปลอมแล้ว: ก่อนแก้ ทั้งสองกรณีลบ session + ยิง SIGNED_OUT ทันที)
+//
+// แก้ที่ชั้น fetch: ถ้าความล้มเหลวเป็นแบบชั่วคราว ให้ throw เหมือน fetch ล้ม — auth-js จะห่อเป็น
+// AuthRetryableFetchError (fetch.js _handleRequest) = เก็บ session ไว้ รอรอบ auto-refresh ถัดไป
+//
+// ⚠️ 429 มีสองความหมายในเอกสารเดียวกัน แยกด้วย status ไม่ได้ ต้องอ่านรหัสใน body:
+//   over_request_rate_limit      = ชั่วคราว → เก็บ session
+//   refresh_token_already_used   = ตายจริง (ใช้ซ้ำเกิน reuse interval 10 วิ → เซิร์ฟเวอร์เพิกถอน
+//                                  ทั้ง session) → ปล่อยให้ SDK จัดการตามเดิม
+// body มีสองรูปทรงตามเวอร์ชัน API: {code:'xxx'} (2024-01-01+) หรือ {error_code:'xxx'}
+// ส่วน 4xx อื่นๆ ที่ไม่ใช่ 429 ไม่แตะเลย (404 refresh_token_not_found, 401 session_expired,
+// 403 user_banned, 400 invalid_grant ฯลฯ คือเซิร์ฟเวอร์ตัดสินแล้วว่าตาย ถูกเพิกถอนโดยผู้ดูแล/ระบบ)
+const REFRESH_TOKEN_DEAD_CODE = 'refresh_token_already_used'
+
+// พักการยิง refresh หลังเจอความล้มเหลวชั่วคราว — auth-js ลองซ้ำเองด้วย backoff 200ms→12.8s ได้ถึง
+// 8 ครั้งต่อรอบ (วัดจริงกับ 503: 8 request ใน 25 วินาที) แล้วรอบถัดไปอีก 30 วินาที ถ้า 429 ยังเป็น
+// ตัวยิงซ้ำเองก็ยิ่งกินโควตา IP เดียวกันของคนอื่นทั้งสำนักงาน ให้ยิงจริงแค่ครั้งแรก ที่เหลือโยน
+// error ทิ้งในเครื่องโดยไม่ออกเน็ต (ตัวนับ SDK ยังทำงานตามปกติ แค่ไม่มีทราฟฟิก)
+const REFRESH_COOLDOWN_MS = 60_000
+let refreshCooldownUntil = 0
+
+function isRefreshTokenRequest(url) {
+  return url.includes('/auth/v1/token') && url.includes('grant_type=refresh_token')
+}
+
+async function isTransientRefreshFailure(res) {
+  if (res.status >= 500) return true
+  if (res.status !== 429) return false
+  try {
+    const body = await res.clone().json()
+    const code = typeof body?.code === 'string' ? body.code : body?.error_code
+    return code !== REFRESH_TOKEN_DEAD_CODE
+  } catch {
+    // 429 ที่ body ไม่ใช่ JSON = ตัวจำกัดอัตราของ proxy/CDN ด้านหน้า ไม่ใช่คำตัดสินของ GoTrue
+    return true
+  }
+}
+
 async function fetchWithAuthRecovery(input, init = {}) {
+  const url = requestUrlOf(input)
+  const isRefresh = isRefreshTokenRequest(url)
+
+  if (isRefresh && Date.now() < refreshCooldownUntil) {
+    throw new TypeError('Failed to fetch (refresh paused: server failed a moment ago)')
+  }
+
   const res = await fetchWithTimeout(input, init)
+
+  if (isRefresh && !res.ok && await isTransientRefreshFailure(res)) {
+    refreshCooldownUntil = Date.now() + REFRESH_COOLDOWN_MS
+    console.warn(`[auth] ต่ออายุ token ไม่สำเร็จชั่วคราว (HTTP ${res.status}) — คงสถานะล็อกอินไว้ ลองใหม่ภายหลัง`)
+    throw new TypeError(`Failed to fetch (refresh deferred: HTTP ${res.status} is transient)`)
+  }
+
   // ห้ามแตะ endpoint ของ auth เอง (/auth/v1/*) — auth-js จัดการวงจร token ของตัวเองอยู่แล้ว
   // (refresh อัตโนมัติ, ตั้งใจข้าม 401/403 ตอน logout, มี deferred กัน refresh ซ้อน) การยิง
   // recoverExpiredSession() สวนเข้าไปตอน logout ตอบ 401 จะสร้าง session ใหม่ทับของที่เพิ่งลบ
   // ผู้ใช้เด้งกลับเข้าระบบทันทีหลังกดออก — และ noOpLock ด้านบนทำให้ไม่มี lock กันสองงานนี้ชนกัน
   // ตัวดักนี้มีไว้สำหรับ request ที่ผ่าน RLS (PostgREST/Storage/Functions) เท่านั้น
-  const isAuthEndpoint = requestUrlOf(input).includes('/auth/v1/')
+  const isAuthEndpoint = url.includes('/auth/v1/')
   if (!isAuthEndpoint && (res.status === 400 || res.status === 401)) {
     res.clone().text().then((body) => {
       if (/jwt|token.{0,20}expired|expired.{0,20}token|invalid.{0,20}token/i.test(body)) {
@@ -251,6 +317,106 @@ if (typeof document !== 'undefined') {
     if (document.visibilityState === 'visible') supabase.auth.startAutoRefresh()
     else supabase.auth.stopAutoRefresh()
   })
+}
+
+// ── อ่าน session ที่ค้างในเครื่อง โดยไม่ผ่านเครือข่าย ─────────────────────────────────────
+//
+// ใช้เฉพาะตอนที่ getSession() ตอบ "ไม่มี session" เพราะ refresh สะดุดชั่วคราว ทั้งที่ session ยังอยู่
+// ในเครื่องครบ (ดู getSessionResilient ข้างล่าง) access token ในนี้อาจหมดอายุแล้ว — ห้ามเอาไปแนบ
+// request เอง ให้ใช้ยืนยันแค่ "ใครล็อกอินอยู่" ส่วน token จริงให้ SDK ต่ออายุให้เอง
+// key ตรงกับ /^sb-.+-auth-token$/ เท่านั้น ไม่รวม -code-verifier ของ PKCE และ -user
+export function readStoredSession() {
+  try {
+    for (const store of [safeStorage('session'), safeStorage('local')]) {
+      if (!store) continue
+      for (let i = 0; i < store.length; i += 1) {
+        const key = store.key(i)
+        if (!key || !/^sb-.+-auth-token$/.test(key)) continue
+        const parsed = JSON.parse(store.getItem(key))
+        if (parsed?.access_token && parsed?.refresh_token && parsed?.user) return parsed
+      }
+    }
+  } catch {
+    // ค่าในเครื่องเสียหรืออ่านไม่ได้ ถือว่าไม่มี session
+  }
+  return null
+}
+
+// ── ไม่ให้ทุกคำขอค้างตามตัวต่ออายุ token ─────────────────────────────────────────────────
+//
+// supabase-js ทุก request (REST/RPC/Storage/Functions) เรียก auth.getSession() เพื่อเอา token ก่อนส่ง
+// (SupabaseClient._getAccessToken) และเมื่อ access token หมดอายุ getSession() จะรอให้ refresh จบ —
+// พอ refresh ล้มชั่วคราว auth-js ลองซ้ำเองด้วย backoff รวม ~25 วินาที ทุก request ในแอปค้างตามไปหมด
+// รวมถึงโหลดข้อมูลหน่วยงานที่ TenantContext ยอมรอแค่ 12 วินาทีแล้วขึ้น "ไม่สามารถเชื่อมต่อระบบได้"
+// (พบตอนทดสอบบนเบราว์เซอร์จริง: หลังแก้ให้ session รอด แอปทั้งหน้าล่มแทนที่จะถูกเตะ ซึ่งแย่พอกัน)
+//
+// ทางแก้: ถ้า token ใกล้หมด/หมดอายุแล้ว ให้รอ refresh ได้ไม่เกิน TOKEN_WAIT_MS และเลิกรอทันทีที่
+// fetchWithAuthRecovery เริ่มพักการยิง (แปลว่าเซิร์ฟเวอร์เพิ่งล้ม) แล้วปล่อย request ไปต่อ
+//   • token ยังใช้ได้อีกเกิน TOKEN_USABLE_MIN_MS → ส่งด้วย token เดิม สิทธิ์ผู้ใช้ไม่หาย
+//   • หมดอายุแล้ว → ส่งแบบไม่มี token (ข้อมูลสาธารณะโหลดได้ ส่วนที่ต้องล็อกอินจะไม่ผ่าน RLS)
+// ตัวต่ออายุอัตโนมัติของ SDK ยังลองต่อเองตามรอบ พอสำเร็จ request ถัดไปก็ได้ token ใหม่เอง
+// ช่วงที่ refresh ปกติ (ตอบภายในไม่กี่วินาที) ไม่มีอะไรเปลี่ยน — ผลลัพธ์จริงของ SDK มาก่อนเสมอ
+//
+// ⚠️ ผูกกับรายละเอียดภายในของ supabase-js ที่ _getAccessToken เรียก this.auth.getSession() ถ้า SDK
+// เปลี่ยนวิธีนี้ในอนาคต ตัวกันค้างจะไม่ทำงานแต่ไม่มีอะไรพัง (กลับไปรอเหมือนเดิม)
+const SDK_EXPIRY_MARGIN_MS = 90_000 // auth-js constants.EXPIRY_MARGIN_MS = 3 tick × 30 วิ
+const TOKEN_WAIT_MS = 5000
+const TOKEN_USABLE_MIN_MS = 5000
+const TOKEN_POLL_MS = 250
+
+const sdkGetSession = supabase.auth.getSession.bind(supabase.auth)
+
+supabase.auth.getSession = async function getSessionWithoutStalling() {
+  const stored = readStoredSession()
+  const msLeft = stored?.expires_at ? stored.expires_at * 1000 - Date.now() : null
+  // ไม่มี session หรือ token ยังสด = เส้นทางปกติของ SDK ไม่ต้องยุ่ง
+  if (msLeft === null || msLeft >= SDK_EXPIRY_MARGIN_MS) return sdkGetSession()
+
+  const withoutRefresh = () => (msLeft > TOKEN_USABLE_MIN_MS
+    ? { data: { session: stored }, error: null }
+    : { data: { session: null }, error: new AuthRetryableFetchError('Token refresh is not available right now', 0) })
+
+  if (Date.now() < refreshCooldownUntil) return withoutRefresh()
+
+  let settled = null
+  sdkGetSession().then(
+    (result) => { settled = result },
+    (err) => { settled = { data: { session: null }, error: err } },
+  )
+  const startedAt = Date.now()
+  while (!settled && Date.now() - startedAt < TOKEN_WAIT_MS && Date.now() >= refreshCooldownUntil) {
+    await new Promise((resolve) => setTimeout(resolve, TOKEN_POLL_MS))
+  }
+  return settled ?? withoutRefresh()
+}
+
+/**
+ * แทน supabase.auth.getSession() ในจุดที่ "ไม่มี session = พาไปหน้าเข้าสู่ระบบ"
+ *
+ * ปัญหา: ถ้า access token หมดอายุแล้วตอนเปิดแอป (มือถือพักไว้เกิน 1 ชั่วโมง) แล้วต่ออายุไม่ทันเพราะ
+ * สัญญาณแย่/เซิร์ฟเวอร์สะดุด auth-js คืน { session: null, error } ทั้งที่ session ยังอยู่ในเครื่อง
+ * (GoTrueClient.__loadSession) หน้าที่เห็น null แล้ว navigate ไป /auth จึงพาผู้ใช้ออกจากระบบทั้งที่
+ * ยังล็อกอินอยู่ — คนที่จำรหัสผ่านไม่ได้จะเข้าไม่ได้อีกเลย
+ *
+ * ทางแก้: ถ้าล้มเพราะการเชื่อมต่อให้คืน session ที่ค้างในเครื่องไปก่อน แล้วปล่อยให้ตัวต่ออายุ
+ * อัตโนมัติของ SDK ลองต่อเอง (สำเร็จ → TOKEN_REFRESHED, ตายจริง → SIGNED_OUT)
+ * ถ้าเซิร์ฟเวอร์ยืนยันว่าตายจริง SDK ลบ session ออกจากเครื่องไปแล้ว readStoredSession จึงได้ null
+ * และคืนผล "ไม่มี session" ตามเดิม
+ */
+export async function getSessionResilient() {
+  let result
+  try {
+    result = await supabase.auth.getSession()
+  } catch (err) {
+    result = { data: { session: null }, error: err }
+  }
+
+  if (result?.data?.session) return result
+  if (isNetworkAuthError(result?.error)) {
+    const stored = readStoredSession()
+    if (stored) return { data: { session: stored }, error: null }
+  }
+  return result
 }
 
 // supabase-js เก็บ session ไว้ที่ key `sb-<project-ref>-auth-token` ใน localStorage และมี key
@@ -297,7 +463,14 @@ function purgeStoredAuthSession() {
  */
 export async function signOutSafely(redirectTo = '/') {
   try {
-    const { error } = await supabase.auth.signOut()
+    // scope 'local' = เพิกถอนเฉพาะ session ของเครื่องนี้ ห้ามปล่อยเป็นค่าเริ่มต้นของ SDK
+    // (auth-js GoTrueClient.signOut: options = { scope: 'global' }) เพราะ global เตะ "ทุกเครื่อง"
+    // ของบัญชีนั้นออกด้วย — ผู้สูงอายุที่ติ๊กจำไว้บนมือถือตัวเอง แล้วลูกหลานไปกดออกบนเครื่องอื่นของ
+    // บัญชีเดียวกัน (หรือเจ้าหน้าที่กดออกจาก PC สำนักงาน) จะถูกเตะจากมือถือไปด้วยโดยไม่มีใครบนมือถือ
+    // เครื่องนั้นสั่ง ซึ่งขัดกับกติกาที่ว่าห้ามหลุดเองนอกจากเจ้าของเครื่องสั่ง
+    // local ยังเรียกเซิร์ฟเวอร์ให้เพิกถอน session นี้จริง (GoTrueClient._signOut → admin.signOut
+    // ด้วย scope นั้น) ไม่ใช่แค่ลบในเครื่อง; ถ้าต้องการเตะเครื่องอื่นให้ใช้ ActiveSessions แทน
+    const { error } = await supabase.auth.signOut({ scope: 'local' })
     if (!error) return { ok: true, forced: false }
     console.warn('[auth] signOut() คืน error, บังคับล้าง session ในเครื่อง:', error.message)
   } catch (err) {

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, getSessionResilient, readStoredSession } from '../lib/supabase'
 import { fetchProfile } from '../lib/profileFetch'
 import { useTenant } from './TenantContext'
 
@@ -21,13 +21,23 @@ export function AuthProvider({ children }) {
     // unhandled rejection ขึ้น console error ตอนเปิดเว็บ และ session ค้างเป็น undefined ถาวร
     // ซึ่งทั้งแอปแปลว่า "กำลังโหลด" ผู้ใช้จึงติดหน้าโหลดโดยไม่มีทางไปต่อจนกว่าจะรีเฟรชเอง
     // ผลลัพธ์ที่ถูกต้องของ token เสียคือ "ยังไม่ได้เข้าสู่ระบบ" (null) แบบเงียบๆ
-    supabase.auth.getSession()
+    //
+    // ใช้ getSessionResilient ไม่ใช่ getSession ตรงๆ: ถ้าต่ออายุ token ไม่ทันเพราะสัญญาณแย่ getSession
+    // คืน null ทั้งที่ session ยังอยู่ในเครื่อง RequireAuth จะเห็น null แล้วพาไปหน้าเข้าสู่ระบบ
+    // (กติกา 2026-10-02: คนที่ติ๊กจำไว้ห้ามหลุดเอง ดูเหตุผลเต็มที่ getSessionResilient)
+    getSessionResilient()
       .then(({ data }) => setSession(data.session))
       .catch((err) => {
         console.warn('[auth] อ่าน session เดิมไม่ได้ ถือว่ายังไม่ได้เข้าสู่ระบบ:', err?.message ?? err)
         setSession(null)
       })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      // SDK ส่ง INITIAL_SESSION พร้อม null เมื่อต่ออายุ token ไม่สำเร็จชั่วคราว (GoTrueClient.
+      // _emitInitialSession จับ error แล้วส่ง null) และมาช้ากว่าปกติถึงครึ่งนาที ถ้าเขียนทับ session
+      // ที่เรายืนยันจากเครื่องไว้แล้ว ผู้ใช้จะถูกพาไปหน้าเข้าสู่ระบบอยู่ดี — ข้ามเฉพาะกรณีที่ session ยัง
+      // อยู่ในเครื่อง (ถ้าเซิร์ฟเวอร์ยืนยันว่าตายจริง SDK ลบออกไปแล้ว readStoredSession จะได้ null
+      // และตามด้วย SIGNED_OUT ซึ่งไม่ถูกข้าม)
+      if (event === 'INITIAL_SESSION' && !s && readStoredSession()) return
       setSession(s)
       if (!s) { setRole(null); setProfileName(null); setProfileAvatarUrl(null) }
     })

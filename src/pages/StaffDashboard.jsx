@@ -7,7 +7,7 @@ import {
   Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
   Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck,
 } from 'lucide-react'
-import { supabase, signOutSafely } from '../lib/supabase'
+import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
 import { useTenant } from '../contexts/TenantContext'
 import { PATIENT_TRANSPORT_MODULE_KEY } from '../lib/patientTransport'
@@ -2447,7 +2447,8 @@ export default function StaffDashboard() {
   //  ที่เป็นผู้ใช้เพียงรายเดียว — ComplaintsStaffModule ดึงชุดเดียวกันเองตอนเปิดแท็บคำร้องอยู่แล้ว)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    // getSessionResilient: เน็ตสะดุดตอนต่ออายุ token ต้องไม่พาออกจากระบบ (ดูเหตุผลที่ src/lib/supabase.js)
+    getSessionResilient().then(({ data }) => {
       if (!data.session) { navigate('/auth', { state: { from: '/staff' } }); return }
       supabase.from('profiles').select('*').eq('id', data.session.user.id).single()
         .then(({ data: p }) => setProfile(p))
