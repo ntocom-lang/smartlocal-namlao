@@ -1,7 +1,7 @@
-import { GOV_FONT_LINK, govDocFontCss, govPageCss } from './govDocStyle.js'
+import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { govNameBlank, govSignBlockCss, govSignRow } from './govSignBlock.js'
 import { orgHeadTitle, orgNameParts, orgOfficeName } from './orgTerms.js'
-import { MONTHS_TH, thaiDateFromDateInput, thaiDateTimeText } from './thaiDate.js'
+import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
 
 // ความกว้างเส้นลงนามของใบนี้ — ยาวกว่าค่ามาตรฐาน 40mm เพราะเป็นช่องลงนามเดี่ยวกลางกลุ่ม
 // ด้านขวาของหน้า มีที่เหลือให้เซ็นเต็มที่ ไม่ต้องเรียงแนวกับช่องอื่น (ค่าเดิมของใบนี้)
@@ -255,7 +255,7 @@ export function buildWaterServiceFormHtml(documentType, args) {
   return variant ? buildWaterFormHtml(variant, args) : ''
 }
 
-function buildWaterFormHtml(variant, { form, tenant, docDate, referenceNo = '', signedAt = '' }) {
+function buildWaterFormHtml(variant, { form, tenant, docDate, referenceNo = '' }) {
   const data = form || {}
   const applicant = data.applicant || {}
   const applicantName = `${applicant.title || ''}${applicant.first || ''} ${applicant.last || ''}`.trim()
@@ -299,7 +299,6 @@ function buildWaterFormHtml(variant, { form, tenant, docDate, referenceNo = '', 
   const site = data.same_as_applicant ? applicant : (data.site || {})
 
   const signedOnline = data.signed_by?.channel === 'online'
-  const signedStamp = signedOnline ? thaiDateTimeText(signedAt || data.signed_at) : ''
 
   return `<!DOCTYPE html>
 <html lang="th">
@@ -451,8 +450,14 @@ ${enclosureHtml}    <p class="body-copy">
         signed: signedOnline ? esc(applicantName) : '',
         below: [applicantName ? `(${esc(applicantName)})` : govNameBlank(SIGN_LINE_W)],
       })}
+      ${/* เจ้าของระบบสั่งตัดบรรทัด "ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service เมื่อ…" ออก 2569-10-02
+           เหลือบรรทัดกำกับที่มาบรรทัดเดียว เลขอ้างอิงต่อท้ายบรรทัดนั้น (ตัวที่เจ้าหน้าที่ใช้ค้นเรื่องกลับ ห้ามตัดทิ้ง)
+           ใบนี้ไม่มีบรรทัด .origin แยก บรรทัดนี้จึงทำหน้าที่นั้นแทน ห้ามลบทั้งบรรทัด
+           ⚠️ พิมพ์เฉพาะใบที่ผู้ยื่นยื่นออนไลน์เอง — โหมดเคาน์เตอร์/คำขอเก่าไม่พิมพ์อะไรเลยเหมือนเดิม
+           เพราะผู้ยื่นไม่ได้ยื่นผ่านระบบด้วยตัวเอง ห้ามอ้างว่า "ผ่านระบบ E-Service" (เทสต์ water-supply-print กันไว้) */''}
       ${signedOnline
-        ? `<p class="signed-note">ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service${signedStamp ? `<br>${esc(signedStamp)}` : ''}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`
+        ? `<p class="signed-note">${esc(govEServiceOriginText(tenant))}${
+          referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`
         : ''}
     </section>
   </main>

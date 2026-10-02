@@ -149,10 +149,15 @@ const checks = [
         const mm = await contentHeightMm(page)
         assert.ok(mm <= ONE_PAGE_BUDGET_MM,
           `ใบที่ยื่นออนไลน์สูง ${mm.toFixed(1)}mm เกินงบ ${ONE_PAGE_BUDGET_MM}mm`)
-        // บรรทัดกำกับต้องอยู่จริง ไม่ใช่ผ่านเพราะมันหายไป
-        const note = await page.evaluate(() =>
-          document.querySelector('.signed-note')?.textContent?.trim() ?? '')
-        assert.match(note, /ลงชื่อโดยการยืนยันตัวตน/, 'ไม่พบบรรทัดกำกับการลงชื่อในใบที่เรนเดอร์จริง')
+        // บรรทัดกำกับที่มาต้องอยู่จริง ไม่ใช่ผ่านเพราะมันหายไป · บรรทัด "ลงชื่อโดยการยืนยันตัวตน…" ใต้ชื่อ
+        // ผู้ยืมต้องไม่กลับมา (เจ้าของระบบสั่งตัด 2569-10-02) เหลือบรรทัดเดียวท้ายใบพร้อมเลขอ้างอิง
+        const foot = await page.evaluate(() => ({
+          origin: document.querySelector('.origin')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+          signedNotes: document.querySelectorAll('.signed-note').length,
+        }))
+        assert.match(foot.origin, /^ผ่านระบบ E-Service .+ · เลขอ้างอิง A1B2C3D4$/,
+          `ไม่พบบรรทัดกำกับที่มาพร้อมเลขอ้างอิงท้ายใบ: "${foot.origin}"`)
+        assert.equal(foot.signedNotes, 0, 'บรรทัดลงชื่อใต้ชื่อผู้ยืมกลับมาแล้ว (สั่งตัด 2569-10-02)')
       } finally { await page.close() }
     },
   },

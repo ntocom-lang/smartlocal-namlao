@@ -450,10 +450,11 @@ const checks = [
     },
   },
   {
-    name: 'pdpa-and-template-notes-present',
-    reason: 'ย่อหน้าเงื่อนไขการใช้ข้อมูลกับบรรทัดกำกับที่มาของแบบ เป็นเนื้อหาบังคับ ห้ามหายไปเงียบๆ'
-      + ' · ประโยค "การพิจารณาเป็นอำนาจของคณะกรรมการกองทุน มิใช่ของ อปท." เจ้าของระบบสั่งตัด 2569-10-01'
-      + ' (ใบนี้ยื่นต่อนายก เรื่องจบที่นายก) ต้องไม่กลับมาในทุกทางที่พิมพ์ใบคำขอ',
+    name: 'pdpa-note-present-and-form-has-no-template-note',
+    reason: 'ย่อหน้าเงื่อนไขการใช้ข้อมูลในหนังสือนำส่งเป็นเนื้อหาบังคับ ห้ามหายไปเงียบๆ'
+      + ' · ส่วนย่อหน้ากำกับที่มาของแบบ (พอช. / ให้ใช้แบบของกองทุน) เจ้าของระบบสั่งลบ 2569-10-02'
+      + ' และประโยค "การพิจารณาเป็นอำนาจของคณะกรรมการกองทุน มิใช่ของ อปท." สั่งตัด 2569-10-01'
+      + ' (ใบนี้ยื่นต่อนายก เรื่องจบที่นายก) ทั้งสองอย่างต้องไม่กลับมาในทุกทางที่พิมพ์ใบคำขอ',
     async run(browser) {
       const page = await render(browser, buildPatientTransportPacketHtml(args()))
       try {
@@ -470,19 +471,19 @@ const checks = [
       ]) {
         const sheets = await render(browser, html)
         try {
-          const notes = await sheets.locator('.note-template').allInnerTexts()
-          assert.ok(notes.length > 0, `${label}: ไม่พบบรรทัดกำกับท้ายใบคำขอ`)
-          for (const note of notes) {
-            assert.ok(note.includes('สถาบันพัฒนาองค์กรชุมชน'),
-              `${label}: ใบคำขอไม่มีบรรทัดกำกับว่าลอกโครงมาจากแบบตัวอย่างกลางของ พอช.`)
-            assert.ok(note.includes('หากกองทุนมีแบบของตนเองให้ใช้แบบนั้นแทน'),
-              `${label}: บรรทัดกำกับไม่ได้บอกให้ใช้แบบของกองทุนเมื่อกองทุนมีแบบของตนเอง`)
-            for (const word of ['การพิจารณาเป็นอำนาจ', 'มิใช่ของ']) {
-              assert.ok(!note.includes(word), `${label}: บรรทัดท้ายใบยังมี "${word}" ที่สั่งตัดแล้ว`)
-            }
+          assert.equal(await sheets.locator('.note-template').count(), 0,
+            `${label}: ย่อหน้ากำกับที่มาของแบบกลับมาแล้ว (สั่งลบ 2569-10-02)`)
+          const body = await sheets.locator('body').innerText()
+          for (const phrase of [
+            'สถาบันพัฒนาองค์กรชุมชน',
+            'หากกองทุนมีแบบของตนเองให้ใช้แบบนั้นแทน',
+            'การพิจารณาเป็นอำนาจของคณะกรรมการกองทุน',
+          ]) {
+            assert.ok(!body.includes(phrase), `${label}: ข้อความที่สั่งลบไปโผล่ในเอกสาร — "${phrase}"`)
           }
-          assert.ok(!(await sheets.locator('body').innerText()).includes('การพิจารณาเป็นอำนาจของคณะกรรมการกองทุน'),
-            `${label}: ประโยคที่สั่งตัดไปโผล่ที่อื่นในเอกสาร`)
+          // ท้ายใบต้องเหลือบรรทัดกำกับที่มาไว้เสมอ ไม่งั้นคนถือกระดาษไม่รู้ว่าออกจากระบบของ อปท. ไหน
+          assert.ok(body.includes('ผ่านระบบ E-Service'),
+            `${label}: ท้ายใบไม่เหลือบรรทัดกำกับที่มา "ผ่านระบบ E-Service …"`)
         } finally { await sheets.close() }
       }
     },
@@ -691,15 +692,21 @@ const checks = [
   },
   {
     name: 'online-entry-keeps-eservice-note',
-    reason: 'ใบที่ประชาชนยื่นเองต้องมีบรรทัดกำกับ E-Service พร้อมเลขอ้างอิง เป็นร่องรอยให้ตรวจย้อนได้',
+    reason: 'ใบที่ประชาชนยื่นเองเหลือบรรทัดเดียวท้ายใบ "ผ่านระบบ E-Service <อปท.> · เลขอ้างอิง …" เป็นร่องรอยให้ตรวจย้อนได้'
+      + ' · เจ้าของระบบสั่งตัดบรรทัด "ลงชื่อโดยการยืนยันตัวตน…เมื่อ…" ใต้ชื่อออก 2569-10-02 ต้องไม่กลับมา',
     async run(browser) {
       const page = await render(browser, buildPatientTransportFormHtml(args()))
       try {
-        const note = await page.evaluate(() =>
-          document.querySelector('.signed-note')?.textContent.replace(/\s+/g, ' ').trim() ?? '')
-        assert.ok(/ยืนยันตัวตนผ่านระบบ E-Service/.test(note), `ไม่พบบรรทัดกำกับ E-Service: "${note}"`)
-        assert.ok(note.includes('A1B2C3D4'), 'บรรทัดกำกับไม่มีเลขอ้างอิง')
-        assert.ok(!/บันทึกคำขอแทนที่เคาน์เตอร์/.test(note), 'ใบที่ยื่นออนไลน์ติดข้อความของโหมดเคาน์เตอร์มาด้วย')
+        const info = await page.evaluate(() => ({
+          note: document.querySelector('.signed-note')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
+          origin: document.querySelector('.origin')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
+          text: document.body.innerText,
+        }))
+        assert.equal(info.note, '', `ใบที่ยื่นออนไลน์ต้องไม่มีบรรทัดกำกับใต้ชื่อ: "${info.note}"`)
+        assert.ok(!info.text.includes('ลงชื่อโดยการยืนยันตัวตน'), 'บรรทัดลงชื่อที่สั่งตัดกลับมาแล้ว')
+        assert.match(info.origin, /^ผ่านระบบ E-Service .+ · เลขอ้างอิง A1B2C3D4$/,
+          `บรรทัดกำกับที่มาท้ายใบไม่ครบ: "${info.origin}"`)
+        assert.ok(!/บันทึกคำขอแทนที่เคาน์เตอร์/.test(info.text), 'ใบที่ยื่นออนไลน์ติดข้อความของโหมดเคาน์เตอร์มาด้วย')
       } finally { await page.close() }
     },
   },
@@ -777,6 +784,7 @@ const checks = [
             isForm: !!sheet.querySelector('.form-title'),
             text: sheet.innerText,
             note: sheet.querySelector('.signed-note')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
+            origin: sheet.querySelector('.origin')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
             signed: [...sheet.querySelectorAll('.sign-signed')].map(el => el.textContent.trim()),
             lines: sheet.querySelectorAll('.sign-line').length,
           })))
@@ -796,8 +804,9 @@ const checks = [
       // 1) ผู้แจ้งล็อกอินจองเอง — ลงชื่อออนไลน์ ไม่ขอให้เซ็นปากกา
       {
         const { letter, form } = await trip([booking(0, { entry_channel: 'online' })])
-        assert.match(form.note, new RegExp(`^ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service ${STAMP} · เลขอ้างอิง B-0$`),
-          `ใบของผู้ที่จองเอง: "${form.note}"`)
+        // 2569-10-02: ไม่มีบรรทัดกำกับใต้ชื่ออีกแล้ว เหลือบรรทัดท้ายใบบรรทัดเดียวพร้อมเลขอ้างอิง
+        assert.equal(form.note, '', `ใบของผู้ที่จองเองต้องไม่มีบรรทัดกำกับใต้ชื่อ: "${form.note}"`)
+        assert.match(form.origin, /^ผ่านระบบ E-Service .+ · เลขอ้างอิง B-0$/, `ใบของผู้ที่จองเอง: "${form.origin}"`)
         nameOnLine(form, TRIP_BOOKINGS[0].requester_name, 'จองเอง')
         assert.ok(letter.text.includes('ผ่านระบบบริการอิเล็กทรอนิกส์'), 'หนังสือของคำขอที่จองเองต้องยังบอกว่ายื่นผ่านระบบ')
         assert.deepEqual(letter.signed, [], 'หนังสือนำส่งต้องไม่มีชื่อพิมพ์แทนลายมือชื่อ')
@@ -829,9 +838,12 @@ const checks = [
       {
         const { forms } = await trip([booking(0), booking(1)])
         assert.equal(forms.length, 2)
-        assert.ok(forms[0].note.includes('ยืนยันตัวตนผ่านระบบ E-Service') && forms[0].note.includes('B-0'), `ใบแรก: "${forms[0].note}"`)
+        assert.ok(forms[0].note === '' && forms[0].origin.includes('ผ่านระบบ E-Service') && forms[0].origin.includes('B-0'),
+          `ใบแรก: "${forms[0].note}" / "${forms[0].origin}"`)
         assert.ok(forms[1].note.includes('เจ้าหน้าที่รับจองแทน') && forms[1].note.includes('B-1'), `ใบที่สอง: "${forms[1].note}"`)
         assert.ok(!forms[1].note.includes('ยืนยันตัวตน'), 'ใบของคนที่เจ้าหน้าที่รับจองแทนติดข้อความลงชื่อออนไลน์ของอีกคน')
+        // เลขอ้างอิงอยู่ในบรรทัดกำกับใต้ชื่อของใบนี้แล้ว ท้ายใบไม่พิมพ์ซ้ำอีกที่
+        assert.ok(!forms[1].origin.includes('เลขอ้างอิง'), `ใบที่เจ้าหน้าที่รับจองแทนมีเลขอ้างอิงซ้ำท้ายใบ: "${forms[1].origin}"`)
         nameOnLine(forms[0], TRIP_BOOKINGS[0].requester_name, 'ร่วมเที่ยว คนที่ 1')
         nameOnLine(forms[1], TRIP_BOOKINGS[1].requester_name, 'ร่วมเที่ยว คนที่ 2')
       }
