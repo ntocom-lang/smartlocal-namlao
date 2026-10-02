@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
+import ReportInfographic from './ReportInfographic'
 import { Printer } from 'lucide-react'
 import { ListCard, Pills, Sheet } from './StaffShell'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
-import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent, monthReportSummary } from '../../lib/patientBooking'
+import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent } from '../../lib/patientBooking'
 
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
 const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
@@ -110,7 +111,6 @@ export function QueueReport({ workspace, busy, onMonthReport }) {
   }, [tenant?.id, page, workspace, retry])
   const currentMonth = monthly?.month === month && monthly?.tenantId === tenant?.id
   const trips = currentMonth ? monthly.trips : []
-  const summary = monthReportSummary(trips)
   const monthLabel = month ? new Date(`${month}-01T00:00:00+07:00`).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', month: 'long', year: 'numeric' }) : ''
   const total = history?.tenantId === tenant?.id ? history.total : 0
   const pages = Math.max(1, Math.ceil(total / 20))
@@ -130,14 +130,7 @@ export function QueueReport({ workspace, busy, onMonthReport }) {
       {month && !monthError && !currentMonth && <p role="status">กำลังโหลดสรุปรายเดือน...</p>}
       {monthError && <div role="alert" className="rounded-xl bg-rose-50 p-3 text-rose-800">{monthError} <button className={buttonClass} onClick={() => { setMonthly(null); setMonthError(''); setMonthRetry(value => value + 1) }}>ลองอีกครั้ง</button></div>}
       {currentMonth && <>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[
-            ['จบเที่ยวแล้ว', `${summary.completed} เที่ยว`, 'ให้บริการเสร็จแล้ว', 'bg-emerald-50'],
-            ['เที่ยวที่ยังไม่จบ', `${summary.pending} เที่ยว`, 'ยืนยันรถแล้ว / กำลังให้บริการ / เหตุขัดข้อง', 'bg-sky-50'],
-            ['ให้บริการผู้เดินทาง', `${summary.passengers} ครั้ง`, `นับคนละ 1 ครั้งต่อเที่ยว · ผู้ติดตาม ${summary.companions} ครั้ง`, 'bg-indigo-50'],
-            ['ระยะทางที่บันทึกแล้ว', `${summary.distance.toLocaleString('th-TH')} กม.`, `เฉพาะเที่ยวที่จบ · ${summary.missingDistance ? `ยังไม่มีระยะทางที่ใช้ได้ ${summary.missingDistance} เที่ยว` : 'มีระยะทางครบทุกเที่ยวที่จบ'}`, 'bg-amber-50'],
-          ].map(([label, value, hint, color]) => <div key={label} data-report-summary={label} className={`min-w-0 rounded-xl p-3 ${color}`}><h3 className="text-sm font-semibold">{label}</h3><p className="my-1 text-xl font-bold">{value}</p><p className="text-xs text-slate-600">{hint}</p></div>)}
-        </div>
+        <ReportInfographic tenantName={tenant?.name} month={month} trips={trips} />
         <h3 className="mb-1 mt-5 font-bold">รายการเที่ยวเดือนนี้ · {trips.length} เที่ยว</h3>
         <p className="mb-3 text-sm text-slate-600">หนึ่งเที่ยวอาจมีผู้เดินทางหลายคน · คำขอที่ยังรอยืนยันรถยังไม่นับเป็นเที่ยว</p>
         {!trips.length && <p className="rounded-xl bg-slate-50 p-4 text-slate-600">ไม่มีเที่ยวรถในเดือนที่เลือก ลองเลือกเดือนอื่น</p>}
