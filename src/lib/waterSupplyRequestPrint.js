@@ -2,6 +2,7 @@ import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from 
 import { govNameBlank, govSignBlockCss, govSignRow } from './govSignBlock.js'
 import { orgHeadTitle, orgNameParts, orgOfficeName } from './orgTerms.js'
 import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
+import { stripForeignParts } from './pickupText.js'
 
 // ความกว้างเส้นลงนามของใบนี้ — ยาวกว่าค่ามาตรฐาน 40mm เพราะเป็นช่องลงนามเดี่ยวกลางกลุ่ม
 // ด้านขวาของหน้า มีที่เหลือให้เซ็นเต็มที่ ไม่ต้องเรียงแนวกับช่องอื่น (ค่าเดิมของใบนี้)
@@ -100,7 +101,8 @@ export function meterPointText(point) {
   const address = String(point?.address ?? '').trim()
   if (!address) return coords
 
-  const parts = address.split(',').map(part => part.trim()).filter(Boolean)
+  // ตัดส่วนที่แทรกมา (อักษรอังกฤษล้วน/รหัสทางหลวง) ก่อนนับความยาว — เจ้าของระบบอนุมัติ 2569-10-02
+  const parts = stripForeignParts(address).split(',').map(part => part.trim()).filter(Boolean)
   const kept = []
   let used = 0
   for (const part of parts) {

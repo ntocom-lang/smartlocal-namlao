@@ -22,7 +22,9 @@ import {
 import { bookingLetter } from '../src/lib/patientBooking.js'
 import { thaiDateFromDateInput } from '../src/lib/thaiDate.js'
 import { assertSignBlockStandard, assertSignLinesAligned } from './lib/signBlockChecks.mjs'
-import { addressFromMap, joinPickup, pickupSentence } from '../src/lib/pickupText.js'
+import { addressFromMap, joinPickup, pickupSentence, stripForeignParts } from '../src/lib/pickupText.js'
+import { collectionPointText } from '../src/lib/wasteCollectionRequestPrint.js'
+import { meterPointText } from '../src/lib/waterSupplyRequestPrint.js'
 
 const TENANT = {
   name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว',
@@ -846,6 +848,47 @@ const checks = [
       assert.ok(!/win\.document\.(open|write)\(\s*html/.test(body), 'printInNewWindow กลับไปเขียนเอกสารลงหน้าต่างเองโดยไม่เรียกพิมพ์')
       for (const button of ['printLetter', 'printRequest', 'printPeriod']) {
         assert.ok(new RegExp(`const ${button} = [^=]*=> printInNewWindow\\(`).test(source), `${button} ไม่ได้ผ่าน printInNewWindow`)
+      }
+    },
+  },
+  {
+    // เจ้าของระบบอนุมัติ 2569-10-02: ตัดส่วนที่แทรกมา ("Ban Thung Khaeo" "พร.4009") ออกจากจุดรับ/ที่อยู่จากหมุดทุกที่ที่แสดงให้คนอ่าน
+    //   - ใบแจ้งเก็บขยะ + ใบขอใช้น้ำประปา: ที่อยู่ในวงเล็บต่อท้ายพิกัด คงจุลภาคและส่วนอื่นครบ (ไม่ใช่ประโยค · เคยสั่ง "ห้ามตัดชื่อสถานที่")
+    //   - หน้าจอเจ้าหน้าที่รถรับ-ส่ง: แสดงจุดรับของคำขอเก่าที่เก็บข้อความเต็มไว้ (แสดงผลอย่างเดียว ข้อมูลที่เก็บไม่เปลี่ยน)
+    name: 'foreign-address-parts-dropped-everywhere-readers-see',
+    reason: 'ที่อยู่จากหมุดที่คนอ่านเห็น (ใบเก็บขยะ/น้ำประปา/หน้าจอเจ้าหน้าที่) ต้องไม่มีส่วนอังกฤษล้วนหรือรหัสทางหลวงแทรก'
+      + ' แต่ส่วนที่เหลือต้องอยู่ครบ ไม่ตัดท้าย และค่าที่เก็บในฐานข้อมูลต้องไม่ถูกแก้',
+    async run() {
+      const MAP = 'พร.4009, Ban Thung Khaeo, ถนนยันตรกิจโกศล, ตำบลทุ่งแค้ว, อำเภอหนองม่วงไข่, จังหวัดแพร่, ภาคเหนือ, 54170, ประเทศไทย'
+      const KEPT = 'ถนนยันตรกิจโกศล, ตำบลทุ่งแค้ว, อำเภอหนองม่วงไข่, จังหวัดแพร่, ภาคเหนือ, 54170, ประเทศไทย'
+      assert.equal(stripForeignParts(MAP), KEPT, 'ตัดเฉพาะส่วนอังกฤษล้วนกับรหัสทางหลวง คงจุลภาคและส่วนอื่นครบ')
+      assert.equal(stripForeignParts(' ถนนเอ , ถนนเอ , ตำบลบี '), 'ถนนเอ, ตำบลบี', 'ส่วนซ้ำเหลือครั้งเดียว')
+      assert.equal(stripForeignParts('Near the temple'), 'Near the temple', 'ตัดแล้วไม่เหลืออะไร ต้องคืนข้อความเดิม')
+      assert.equal(stripForeignParts('บ้านเลขที่ 99/1 ซ.5, ม.3'), 'บ้านเลขที่ 99/1 ซ.5, ม.3', 'ซ.5 / ม.3 เป็นที่อยู่จริง ห้ามตัด')
+      assert.equal(stripForeignParts('ข้างร้าน 7-Eleven, ตำบลบี'), 'ข้างร้าน 7-Eleven, ตำบลบี', 'ส่วนที่มีอักษรไทยปนอังกฤษคือข้อความของผู้จอง ห้ามตัด')
+      assert.equal(stripForeignParts(null), '')
+
+      // ใบแจ้งเก็บขยะ: พิกัดก่อน แล้วที่อยู่ในวงเล็บ — คงครบ ไม่มี … และไม่มีส่วนที่แทรกมา
+      assert.equal(collectionPointText({ lat: 18.307591, lng: 100.154992, address: MAP }), `18.307591, 100.154992 (${KEPT})`)
+      assert.equal(collectionPointText({ lat: 18.3, lng: 100.1, address: '' }), '18.300000, 100.100000', 'ไม่มีที่อยู่ = พิกัดอย่างเดียว')
+      assert.equal(collectionPointText({ lat: 18.3, lng: 100.1, address: 'Ban Thung Khaeo' }), '18.300000, 100.100000 (Ban Thung Khaeo)', 'ที่อยู่อังกฤษล้วน คืนข้อความเดิม ไม่ปล่อยวงเล็บว่าง')
+      // ใบขอใช้น้ำประปา: ตัดส่วนที่แทรกก่อนนับความยาว (ยังตัดที่รอยจุลภาคไม่เกิน 48 ตัวอักษรตามเดิม)
+      const water = meterPointText({ lat: 18.307591, lng: 100.154992, address: MAP })
+      assert.ok(!water.includes('Ban Thung Khaeo') && !water.includes('พร.4009'), `ใบน้ำประปายังมีส่วนที่แทรกมา: ${water}`)
+      assert.ok(water.startsWith('18.307591, 100.154992 (ถนนยันตรกิจโกศล, ตำบลทุ่งแค้ว'), `ใบน้ำประปาต้องเริ่มด้วยส่วนไทยแรก: ${water}`)
+
+      // หน้าจอเจ้าหน้าที่ทุกจุดที่แสดงจุดรับต้องผ่าน pickupSentence · ช่องแก้จุดรับ (ข้อมูลดิบให้แก้) และข้อมูลค้นหาคงดิบ
+      const read = file => readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')
+      const SCREENS = [
+        'components/patientTransport/BookingInbox.jsx', 'components/patientTransport/BookingOperations.jsx',
+        'components/patientTransport/StaffBookingCalendar.jsx', 'components/staff/PatientTransportPanel.jsx',
+      ]
+      for (const file of SCREENS) {
+        const source = read(file)
+        assert.ok(source.includes('pickupSentence('), `${file} ไม่ได้ใช้ pickupSentence แสดงจุดรับ`)
+        // แสดงผลดิบ {b.pickup} / {booking.pickup} / {row.booking.pickup} / {form.pickup_address} ต้องไม่เหลือ
+        assert.ok(!/\{(b|booking|row\.booking)\.pickup\}/.test(source) && !/\{form\.pickup_address\}/.test(source),
+          `${file} ยังแสดงจุดรับแบบข้อความเต็มดิบ`)
       }
     },
   },
