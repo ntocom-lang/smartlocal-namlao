@@ -547,7 +547,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
     {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
     {printable && next.id !== 'docs' && <section aria-label="เอกสารของผู้เดินทาง" className="space-y-3 rounded-xl border border-slate-200 p-4">
       <p className="font-bold">เอกสารของ {b.patient_name}</p>
-      <BookingPrintButtons booking={b} busy={busy} onPrintRequest={onPrintRequest} onPrintLetter={letterAvailable ? onPrintLetter : null} />
+      <BookingPrintButtons booking={b} trip={trip} busy={busy} onPrintRequest={onPrintRequest} onPrintLetter={letterAvailable ? onPrintLetter : null} onRecordLetter={onRecordLetter} />
     </section>}
     {linked && <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
       <p className="font-bold text-sky-950">คิวที่ใช้เดินทาง: {dateTime(linked.appointment_at)} · เลขที่ {ref(linked.id)}</p>

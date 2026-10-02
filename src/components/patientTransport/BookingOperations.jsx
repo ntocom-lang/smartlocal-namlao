@@ -587,39 +587,62 @@ export function DriverTrips({ workspace, uid, isAdmin, canAssign, busy, error, c
 // เลขที่/วันที่มาจากทะเบียนหนังสือส่งของสารบรรณ ระบบออกเลขเองไม่ได้ · พิมพ์ได้ก่อนมีเลข (ช่อง "ที่" เว้นเส้นประให้เขียนมือ)
 // เพราะบางแห่งลงเลขหลังผู้บริหารลงนาม · ไฟล์นี้ใช้ร่วมกับหน้าประชาชน (BookingCards) จึงไม่ import โมดูลใบพิมพ์มาเอง
 // ใช้ป้ายเดียวกันทุกจุด แยกผู้ส่ง/ผู้รับชัดเจน และให้ชื่อปุ่มตัดบรรทัดบนมือถือได้
-export function BookingPrintButtons({ booking, busy, onPrintRequest, onPrintLetter }) {
+export function BookingPrintButtons({ booking, trip, busy, onPrintRequest, onPrintLetter, onRecordLetter }) {
+  const letter = bookingLetter(booking, trip)
+  const edit = useRevisionDraft(booking, 'letter_revision', { letterNo: letter.no, letterDate: letter.date })
+  const { letterNo, letterDate } = edit.values
+  const canEdit = !!onPrintLetter && !!onRecordLetter
+  const changed = canEdit && (letterNo.trim() !== letter.no || letterDate !== letter.date)
+  const save = async () => {
+    const saved = !edit.conflict && await onRecordLetter(edit.snapshot, letterNo.trim(), letterDate)
+    if (saved) edit.reset()
+    return saved
+  }
   return <div className="space-y-2" aria-label="เลือกเอกสารที่จะพิมพ์">
-    <div className="grid gap-2 sm:grid-cols-2">
+    <form className="space-y-3" onSubmit={e => {
+      e.preventDefault()
+      if (busy || !onPrintLetter || (canEdit && edit.conflict)) return
+      // เปิดหน้าต่างใน onPrintLetter ก่อน await บันทึก กันมือถือบล็อกป๊อปอัป
+      // ส่งค่าที่บันทึกสำเร็จตรงเข้าใบพิมพ์ ไม่รอ state จาก polling มาเปลี่ยนก่อน
+      onPrintLetter(changed ? { ...edit.snapshot, forward_letter_no: letterNo.trim(), forward_letter_date: letterDate } : booking, changed ? save : null)
+    }}>
+      {canEdit && <fieldset className="grid gap-3 rounded-xl bg-slate-50 p-3 sm:grid-cols-2" disabled={busy}>
+        <legend className="px-1 font-semibold">เลขที่และวันที่หนังสือก่อนพิมพ์</legend>
+        <label>เลขที่หนังสือ (ที่)<input className={inputClass} required={changed} pattern={'.*\\S.*'} maxLength={60} value={letterNo} onChange={e => {
+          edit.change('letterNo', e.target.value)
+          if (!letterDate && e.target.value.trim()) edit.change('letterDate', thaiDay())
+        }} placeholder="เช่น พร 72301/123" /></label>
+        <label>ลงวันที่<input className={inputClass} type="date" required={changed} value={letterDate} onChange={e => edit.change('letterDate', e.target.value)} /></label>
+        <p className="text-sm text-slate-600 sm:col-span-full">กรอกจากทะเบียนหนังสือส่ง ระบบไม่ออกเลขให้เอง · หากยังไม่มีเลขและวันที่ ให้เว้นทั้งสองช่องแล้วพิมพ์ได้</p>
+        <DraftConflict edit={edit} busy={busy} latest={`เลขหนังสือ ${letter.no || '—'} · ${letter.date || '—'}`} />
+      </fieldset>}
+      <div className="grid gap-2 sm:grid-cols-2">
       <button type="button" className={`${buttonClass} text-left whitespace-normal`} disabled={busy || !onPrintRequest} onClick={() => onPrintRequest(booking)}>
         <span className="block font-bold">พิมพ์ใบคำขอรถรับ–ส่งผู้ป่วย</span><span className="block text-xs font-normal text-slate-600">ประชาชนถึงนายก</span>
       </button>
-      <button type="button" className={`${buttonClass} text-left whitespace-normal`} disabled={busy || !onPrintLetter} onClick={() => onPrintLetter(booking)}>
-        <span className="block font-bold">พิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย</span><span className="block text-xs font-normal text-slate-600">นายกถึงประธานกองทุน · หนังสือ + ใบคำขอรับสวัสดิการ (2 แผ่น)</span>
+      <button type="submit" className={`${changed ? primaryClass : buttonClass} text-left whitespace-normal`} disabled={busy || !onPrintLetter || (canEdit && edit.conflict)}>
+        <span className="block font-bold">{changed ? 'บันทึกและพิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย' : 'พิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย'}</span><span className="block text-xs font-normal">นายกถึงประธานกองทุน · หนังสือ + ใบคำขอรับสวัสดิการ (2 แผ่น)</span>
       </button>
-    </div>
+      </div>
+      {canEdit && changed && <div className="flex flex-wrap gap-2">
+        <button type="button" className={buttonClass} disabled={busy || edit.conflict} onClick={e => { if (e.currentTarget.form.reportValidity()) save() }}>บันทึกเลขที่/วันที่อย่างเดียว</button>
+        {!edit.conflict && <button type="button" className={buttonClass} disabled={busy} onClick={edit.reset}>ใช้ค่าที่บันทึกไว้</button>}
+      </div>}
+    </form>
     {!onPrintLetter && <p className="text-sm text-slate-600">หนังสือถึงกองทุนพิมพ์ได้หลังยืนยันรถ</p>}
   </div>
 }
 
 export function BookingFundDocs({ booking, trip, busy, onRecordLetter, onPrintLetter, onPrintRequest }) {
   const letter = bookingLetter(booking, trip)
-  const edit = useRevisionDraft(booking, 'letter_revision', { letterNo: letter.no, letterDate: letter.date || thaiDay() })
-  const { letterNo, letterDate } = edit.values
-  const [open, setOpen] = useState(false)
   return <div className="mt-4 rounded-xl border border-slate-200 p-3">
     <p className="font-semibold">เอกสารคำขอและนำส่งกองทุน</p>
     <p className="text-sm text-slate-600">ของ {booking.patient_name} คนเดียว · ปุ่มแรก: ใบคำขอประชาชนถึงนายก 1 แผ่น · ปุ่มที่สอง: หนังสือนายกถึงกองทุนพร้อมใบคำขอรับสวัสดิการ 2 แผ่น · เลขที่หนังสือแยกรายคน</p>
-    {letter.no && !open
+    {letter.no
       ? <p className="text-sm">ที่ {letter.no} ลงวันที่ {thaiDateFromDateInput(letter.date)}{!letter.own && <span className="text-slate-600"> (เลขของเที่ยวเดิม ยังไม่ได้บันทึกเลขของคนนี้)</span>}</p>
       : <p className="text-sm text-slate-600">ยังไม่ได้บันทึกเลขที่หนังสือ พิมพ์ได้ก่อนแล้วเขียนเลขด้วยมือ</p>}
-    {open && <form className="mt-3 grid gap-3 sm:grid-cols-[1fr_180px_auto]" onSubmit={async e => { e.preventDefault(); if (!edit.conflict && await onRecordLetter(edit.snapshot, letterNo, letterDate)) { edit.reset(); setOpen(false) } }}>
-      <label>เลขที่หนังสือ<input className={inputClass} required maxLength={60} value={letterNo} onChange={e => edit.change("letterNo", e.target.value)} placeholder="เช่น พร 72301/123" /></label>
-      <label>ลงวันที่<input className={inputClass} type="date" required value={letterDate} onChange={e => edit.change("letterDate", e.target.value)} /></label>
-      <DraftConflict edit={edit} busy={busy} latest={`เลขหนังสือ ${letter.no || "—"} · ${letter.date || "—"}`} /><button className={`${primaryClass} self-end`} disabled={busy || edit.conflict}>บันทึกเลขหนังสือ</button>
-    </form>}
     <div className="mt-3 space-y-2">
-      <BookingPrintButtons booking={booking} busy={busy} onPrintRequest={onPrintRequest} onPrintLetter={onPrintLetter} />
-      {!open && <button type="button" className={buttonClass} disabled={busy} onClick={() => setOpen(true)}>{letter.no ? 'แก้เลขหนังสือ' : 'กรอกเลขหนังสือ'}</button>}
+      <BookingPrintButtons booking={booking} trip={trip} busy={busy} onPrintRequest={onPrintRequest} onPrintLetter={onPrintLetter} onRecordLetter={onRecordLetter} />
     </div>
   </div>
 }
