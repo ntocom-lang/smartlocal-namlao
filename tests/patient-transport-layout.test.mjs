@@ -184,13 +184,13 @@ const formSheetsOf = page => page.locator('.sheet').filter({ has: page.locator('
 /** ชนิดของแผ่นเรียงตามที่จะออกจากเครื่องพิมพ์ เช่น ['form', 'form', 'letter'] */
 function sheetKinds(page) {
   return page.evaluate(() => [...document.querySelectorAll('.sheet')].map(sheet =>
-    (sheet.querySelector('.letter-sign') ? 'letter' : sheet.querySelector('.form-title') ? 'form' : 'other')))
+    (sheet.querySelector('.letter-sign') ? 'letter' : sheet.querySelector('.fund-title') ? 'fund-form' : sheet.querySelector('.form-title') ? 'form' : 'other')))
 }
 
 const checks = [
   {
-    name: 'separate-document-buttons-print-one-type',
-    reason: 'ปุ่มใบคำขอและหนังสือถึงกองทุนต้องออกคนละประเภท ใบละหน้า และเป็นของผู้เดินทางที่เลือกเท่านั้น',
+    name: 'separate-buttons-request-and-two-page-fund-packet',
+    reason: 'ปุ่มแรกต้องออกใบคำขอถึงนายก 1 แผ่น ปุ่มที่สองต้องออกหนังสือและใบคำขอรับสวัสดิการ 2 แผ่นของรายที่เลือก',
     async run(browser) {
       for (const index of [0, 1]) {
         const booking = { ...TRIP_BOOKINGS[index], route_label: TRIP.plan.route_label, forward_letter_no: `พร 2569/${index + 1}` }
@@ -200,17 +200,29 @@ const checks = [
         const packet = await render(browser, buildTripForwardLetterHtml(context))
         try {
           assert.deepEqual(await sheetKinds(request), ['form'])
-          assert.deepEqual(await sheetKinds(letter), ['letter'])
+          assert.deepEqual(await sheetKinds(letter), ['letter', 'fund-form'])
           assert.equal(await formSheetsOf(request).innerText(), await formSheetsOf(packet).innerText(), 'ใบคำขอแยกต้องใช้ข้อมูลเดียวกับชุดเดิม')
-          assert.equal(await letterSheetOf(letter).innerText(), await letterSheetOf(packet).innerText(), 'หนังสือแยกต้องคงเนื้อหาและเลขของรายนี้')
+          const oldLetterText = (await letterSheetOf(packet).innerText()).replace('ใบคำขอรถรับ-ส่งผู้ป่วย', 'ใบคำขอรับสวัสดิการ (รถรับ-ส่งผู้ป่วย)')
+          assert.equal(await letterSheetOf(letter).innerText(), oldLetterText, 'หนังสือต้องคงเนื้อหาและเลขของรายนี้ เปลี่ยนเฉพาะชื่อใบแนบ')
           assert.equal(await request.locator('.screen-note').count(), 0, 'ยืนยันรถแล้วต้องไม่บอกว่ายังไม่ยืนยัน')
           assert.ok((await letterSheetOf(letter).innerText()).includes(booking.forward_letter_no))
           assert.ok(!(await letterSheetOf(letter).innerText()).includes(TRIP_BOOKINGS[1 - index].patient_name), 'หนังสือมีผู้เดินทางอื่นติดมา')
           for (const page of [request, letter]) {
-            assert.ok(await sheetContentMm(page, 0) <= ONE_PAGE_BUDGET_MM, 'เอกสารแยกเกิน A4 หน้าเดียว')
+            for (let sheet = 0; sheet < await page.locator('.sheet').count(); sheet++) {
+              assert.ok(await sheetContentMm(page, sheet) <= ONE_PAGE_BUDGET_MM, `แผ่น ${sheet + 1} เกิน A4 หน้าเดียว`)
+            }
             assert.equal(await page.locator('.print-window-close').count(), 1, 'หน้าต่างต้องมีปุ่มปิด')
           }
           await assertSignBlockStandard(request, { minRows: 1, minBelow: 1 })
+          await assertSignBlockStandard(letter, { minRows: 3, minBelow: 5 })
+          await assertSignLinesAligned(letter, '.fund-committee .sign-row')
+          const fund = letter.locator('.fund-form-sheet')
+          assert.ok((await fund.locator('.kv').last().innerText()).includes(PARTNER.recipient_title))
+          assert.equal(await fund.locator('.fund-details tr').count(), 8)
+          assert.ok((await fund.locator('.fund-details').innerText()).includes(booking.patient_name))
+          assert.ok(!(await fund.innerText()).includes(TRIP_BOOKINGS[1 - index].patient_name))
+          assert.equal(await fund.locator('.fund-committee .box--on, .fund-committee .sign-signed').count(), 0, 'ห้ามระบบอนุมัติหรือลงนามแทนกรรมการ')
+          assert.equal((await fund.locator('.fund-details tr').filter({ hasText: 'ประเภทการนัด' }).locator('td').innerText()).trim(), '', 'ไม่มีข้อมูลประเภทนัดต้องไม่เดา')
           if (index === 0 && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
             for (const [name, page] of [['request', request], ['letter', letter]]) {
               await page.screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/patient-separated-${name}.png`, clip: { x: 0, y: 0, width: 794, height: 1123 } })
@@ -225,8 +237,9 @@ const checks = [
       ]) assert.throws(() => buildBookingForwardLetterHtml({ ...tripArgs(), booking, ...override }), /หลังยืนยันรถ/)
       const legacy = await render(browser, buildPatientTransportLetterHtml(args()))
       try {
-        assert.deepEqual(await sheetKinds(legacy), ['letter'], 'ทางเข้าคำขอเดิมต้องพิมพ์หนังสืออย่างเดียวได้')
-        assert.ok(await sheetContentMm(legacy, 0) <= ONE_PAGE_BUDGET_MM)
+        assert.deepEqual(await sheetKinds(legacy), ['letter', 'fund-form'], 'ทางเข้าคำขอเดิมต้องพิมพ์ชุดถึงกองทุนครบ 2 แผ่น')
+        for (const sheet of [0, 1]) assert.ok(await sheetContentMm(legacy, sheet) <= ONE_PAGE_BUDGET_MM)
+        await assertSignBlockStandard(legacy, { minRows: 3, minBelow: 5 })
       } finally { await legacy.close() }
     },
   },
