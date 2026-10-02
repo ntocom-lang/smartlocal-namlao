@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { Fragment, useEffect, useState, useCallback, useRef } from 'react'
 import MapPicker from '../MapPicker'
 import {
   ClipboardList, Loader2, CheckCircle2, XCircle,
@@ -17,7 +17,7 @@ import { canReturnComplaint, complaintIntakeReason } from '../../lib/complaintIn
 import ReturnToIntakeButton from '../complaints/ReturnToIntakeButton'
 import FinishComplaintDialog from '../complaints/FinishComplaintDialog'
 import ComplaintTextBlock from '../complaints/ComplaintTextBlock'
-import { canFinishWork, isComplaintWorker, requiresResolvedPin } from '../../lib/complaintWorkflow'
+import { canFinishWork, isComplaintWorker, isFinishedLike, requiresResolvedPin } from '../../lib/complaintWorkflow'
 import { startComplaintWork } from '../../lib/complaintFinish'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 import { isMissingSignatoryError, prepareComplaintPrint } from '../../lib/complaintPrint'
@@ -111,16 +111,18 @@ const STATUS_MAIN = ['new', 'received', 'in_progress', 'closed', 'rejected']
 // ตัดแค่เสาร์-อาทิตย์ ไม่ตัดวันหยุดนักขัตฤกษ์ และใช้ toISOString() ซึ่งทำให้ due_date
 // ที่ตั้งช่วง 00:00–06:59 น. เพี้ยนไป 1 วัน (ดูคำอธิบายใน src/lib/thaiDate.js)
 
-function SlaBadge({ dueDate, status }) {
+function SlaBadge({ dueDate, status, compact = false }) {
   if (!dueDate || status === 'done' || status === 'closed' || status === 'rejected') return null
   const days = workingDaysLeft(dueDate)
   if (days === null) return null
   const color = days < 0 ? { bg: '#fee2e2', text: '#991b1b' }
     : days <= 5 ? { bg: '#fef3c7', text: '#92400e' }
     : { bg: '#d1fae5', text: '#065f46' }
-  const label = days < 0 ? `เกินกำหนด ${Math.abs(days)} วันทำการ`
-    : days === 0 ? 'ครบกำหนดวันนี้'
-    : `เหลือ ${days} วันทำการ`
+  const label = compact
+    ? (days < 0 ? `เกิน ${Math.abs(days)} วัน` : days === 0 ? 'ครบวันนี้' : `เหลือ ${days} วัน`)
+    : (days < 0 ? `เกินกำหนด ${Math.abs(days)} วันทำการ`
+      : days === 0 ? 'ครบกำหนดวันนี้'
+      : `เหลือ ${days} วันทำการ`)
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
           style={{ backgroundColor: color.bg, color: color.text }}>
@@ -260,6 +262,47 @@ function StatusStepper({ status, note }) {
 
 const LEGACY_STATUS = { pending: 'new', completed: 'closed', done: 'closed', received: 'received' }
 function normalizeActionStatus(s) { return LEGACY_STATUS[s] ?? s ?? 'new' }
+
+// ─── จัดกลุ่ม "ยังไม่เสร็จ / เสร็จสิ้นแล้ว" ในรายการคำร้อง ──────────────────────────────────────
+//
+// เจ้าหน้าที่เปิดหน้านี้เพื่อหา "งานที่ต้องทำต่อ" ไม่ใช่เพื่ออ่านประวัติ เรื่องที่จบแล้วจึงต้องลงไปอยู่
+// ท้ายรายการเสมอ ไม่ปนกับงานค้างเหมือนเดิมที่เรียงตามวันที่ยื่นอย่างเดียว
+//
+// ปฏิเสธนับเป็น "เสร็จสิ้น" ด้วย เพราะไม่มีงานค้างให้ทำต่อแล้ว — ป้ายสีแดงในคอลัมน์สถานะ
+// ยังบอกอยู่ว่าคนละแบบกับ "ดำเนินการแล้ว" จึงไม่ต้องแยกกลุ่มที่สาม
+function isSettledComplaint(status) {
+  const s = normalizeActionStatus(status)
+  return isFinishedLike(s) || s === 'rejected'
+}
+
+// ลำดับในกลุ่ม "ยังไม่เสร็จ" = วันครบกำหนดที่ trigger auto_assign_complaint ตั้งให้ตอนมอบหมาย
+// (เกินกำหนดอยู่บนสุด) ไม่ใช่วันที่ยื่น — ป้ายกี่วันข้างเลขที่คำร้องคือตัวเดียวกัน เจ้าหน้าที่จึงเห็น
+// เหตุผลของลำดับได้จากหน้าจอโดยไม่ต้องเดา
+//
+// due_date เป็น date ของ Postgres ('YYYY-MM-DD') เทียบเป็นสตริงได้ตรงกับเทียบเป็นวันที่
+// เรื่องที่ยังไม่มีวันครบกำหนด (ยังไม่ถูกมอบหมาย/หมวดเฉพาะกิจ) ไปอยู่ท้ายกลุ่มแล้วเรียงเก่าก่อน
+// — ไม่ใช่ว่าไม่สำคัญ แต่ยังไม่มีเส้นตายให้เทียบ ถ้าดันขึ้นบนสุดจะเบียดงานที่เลยกำหนดจริงลงไป
+function compareOpenComplaints(a, b) {
+  if (a.due_date && b.due_date) {
+    if (a.due_date !== b.due_date) return a.due_date < b.due_date ? -1 : 1
+  } else if (a.due_date) return -1
+  else if (b.due_date) return 1
+  return new Date(a.created_at) - new Date(b.created_at)
+}
+
+function compareComplaintRows(a, b) {
+  const settledA = isSettledComplaint(a.status)
+  const settledB = isSettledComplaint(b.status)
+  if (settledA !== settledB) return settledA ? 1 : -1
+  // กลุ่มที่จบแล้วเรียงใหม่สุดก่อน เพราะใช้ดูย้อนหลังว่าเพิ่งปิดเรื่องอะไรไป
+  return settledA ? new Date(b.created_at) - new Date(a.created_at) : compareOpenComplaints(a, b)
+}
+
+const ROW_GROUP = {
+  open:    { label: 'ยังไม่เสร็จ',   dot: '#f59e0b', bg: '#fff7ed', text: '#92400e' },
+  settled: { label: 'เสร็จสิ้นแล้ว', dot: '#10b981', bg: '#ecfdf5', text: '#065f46' },
+}
+function rowGroupKey(c) { return isSettledComplaint(c.status) ? 'settled' : 'open' }
 
 // รูปผลการดำเนินการลงโฟลเดอร์เดียวกับรูปที่ประชาชนแนบ (โฟลเดอร์ของเรื่องนั้น) แยกกันด้วยชื่อไฟล์
 // ที่มีคำว่า "ผลงาน" — เจ้าหน้าที่เปิดโฟลเดอร์เดือนเดียวก็เห็นครบทั้งก่อนและหลังซ่อม
@@ -1903,7 +1946,13 @@ ${summaryHtml}
       (filterTechnician === '__none__' ? !c.assigned_to : c.assigned_to === filterTechnician)
     const matchDepartment = filterDepartment === '' || (c.department ?? '') === filterDepartment
     return matchStatus && matchSearch && matchCategory && matchVillage && matchTech && matchDepartment
-  }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  }).sort(compareComplaintRows)
+
+  // นับจากทั้งรายการที่กรองไว้ ไม่ใช่เฉพาะหน้าที่เปิดอยู่ — หัวกลุ่มจึงบอกยอดจริงของตัวกรองนั้น
+  const groupCounts = {
+    open:    filtered.filter((c) => !isSettledComplaint(c.status)).length,
+    settled: filtered.filter((c) => isSettledComplaint(c.status)).length,
+  }
 
   const baseFiltered = nonOdorComplaints.filter((c) => {
     const matchStatus = FILTER_KEYS[filterTab] ? normalizeStatus(c.status) === FILTER_KEYS[filterTab] : true
@@ -2232,7 +2281,17 @@ ${summaryHtml}
             {/* Mobile card list */}
             <div className="md:hidden divide-y divide-gray-100">
               {paginatedFiltered.map((c, i) => (
-                <div key={c.id} className="px-4 py-3.5 space-y-2 cursor-pointer flex items-start gap-2"
+                <Fragment key={c.id}>
+                {/* หัวกลุ่มโผล่ที่แถวแรกของหน้าเสมอ ไม่ใช่เฉพาะตอนกลุ่มเปลี่ยน — หน้า 2 ที่เป็น
+                    "เสร็จสิ้นแล้ว" ล้วนจะได้รู้ว่ากำลังดูกลุ่มไหนอยู่ */}
+                {(i === 0 || rowGroupKey(paginatedFiltered[i - 1]) !== rowGroupKey(c)) && (
+                  <div className="flex items-center gap-2 px-4 py-2 text-[11px] font-bold"
+                       style={{ backgroundColor: ROW_GROUP[rowGroupKey(c)].bg, color: ROW_GROUP[rowGroupKey(c)].text }}>
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ROW_GROUP[rowGroupKey(c)].dot }} />
+                    {ROW_GROUP[rowGroupKey(c)].label} ({groupCounts[rowGroupKey(c)]})
+                  </div>
+                )}
+                <div className="px-4 py-3.5 space-y-2 cursor-pointer flex items-start gap-2"
                      aria-busy={openingComplaintId === c.id}
                      onClick={() => openComplaint(c)}>
                   {canBulkDelete && (
@@ -2294,6 +2353,7 @@ ${summaryHtml}
                   </div>
                   </div>
                 </div>
+                </Fragment>
               ))}
             </div>
 
@@ -2338,7 +2398,20 @@ ${summaryHtml}
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {paginatedFiltered.map((c, i) => (
-                    <tr key={c.id}
+                    <Fragment key={c.id}>
+                    {(i === 0 || rowGroupKey(paginatedFiltered[i - 1]) !== rowGroupKey(c)) && (
+                      <tr>
+                        <td colSpan={canBulkDelete ? 10 : 9}
+                            className="px-3 py-1.5 text-xs font-bold border-y border-gray-200"
+                            style={{ backgroundColor: ROW_GROUP[rowGroupKey(c)].bg, color: ROW_GROUP[rowGroupKey(c)].text }}>
+                          <span className="inline-flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ROW_GROUP[rowGroupKey(c)].dot }} />
+                            {ROW_GROUP[rowGroupKey(c)].label} ({groupCounts[rowGroupKey(c)]})
+                          </span>
+                        </td>
+                      </tr>
+                    )}
+                    <tr
                       className="cursor-pointer transition-colors"
                       style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f5f8fc' }}
                       onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
@@ -2398,6 +2471,11 @@ ${summaryHtml}
                       </td>
                       <td className="px-2 py-2 border-r border-gray-200 overflow-hidden">
                         <StatusBadge status={c.status} />
+                        {c.due_date && (
+                          <span className="mt-0.5 block">
+                            <SlaBadge dueDate={c.due_date} status={c.status} compact />
+                          </span>
+                        )}
                         {/* ไม่ขยายคอลัมน์ — ตารางกว้างเกินพื้นที่อยู่แล้ว (ดู test:staff-inbox) ตัดข้อความแล้วดูเต็มที่ title */}
                         {isAdmin && complaintIntakeReason(c, categoryMeta) && (
                           <span className="mt-0.5 block truncate text-[10px] font-medium text-amber-700" title={complaintIntakeReason(c, categoryMeta).text}>
@@ -2419,6 +2497,7 @@ ${summaryHtml}
                         </div>
                       </td>
                     </tr>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
