@@ -1,6 +1,6 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { govNameBlank } from './govSignBlock.js'
-import { thaiDateFromDateInput, thaiDateTimeText } from './thaiDate.js'
+import { thaiDateFromDateInput } from './thaiDate.js'
 
 // ความกว้างช่องเขียนชื่อในวงเล็บ (ค่าเดิมของใบนี้) — ใบนี้ไม่มีเส้น "ลงชื่อ" ตามต้นฉบับ
 // จึงไม่มีเส้นให้เทียบความกว้างด้วย ใช้ค่าที่ต้นฉบับเว้นไว้ตามเดิม
@@ -75,7 +75,7 @@ function organizationHeadTitle(tenant) {
  * ข้อมูลใน form มาจาก permit_form_data ซึ่งเป็นชื่อคอลัมน์ legacy ของ document_requests;
  * form_type ใช้แยกรูปแบบข้อมูลนี้ออกจากแบบ ข.๑ อย่างชัดเจน
  */
-export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenceNo = '', signedAt = null }) {
+export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenceNo = '' }) {
   const data = form || {}
   const applicant = data.applicant || {}
   const applicantName = `${applicant.title || ''}${applicant.first || ''} ${applicant.last || ''}`.trim()
@@ -92,7 +92,6 @@ export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenc
   // คำขอเก่าที่ยื่นก่อนมีฟีเจอร์นี้ไม่มี signed_by ติดมา จึงตกมาที่โหมดเว้นช่องเซ็นตามเดิม
   // — ถูกต้องแล้ว ระบบย้อนหลังไปอ้างว่าเขาลงชื่ออิเล็กทรอนิกส์ไม่ได้
   const signedOnline = data.signed_by?.channel === 'online'
-  const signedStamp = signedOnline ? thaiDateTimeText(signedAt || data.signed_at) : ''
 
   return `<!DOCTYPE html>
 <html lang="th">
@@ -196,9 +195,6 @@ export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenc
         : '<div class="signature-space"></div>'}
       <p>${applicantName ? `(${esc(applicantName)})` : govNameBlank(NAME_BLANK_W)}</p>
       <p>ผู้ขออนุญาต</p>
-      ${signedOnline
-        ? `<p class="signed-note">ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service${signedStamp ? `<br>${esc(signedStamp)}` : ''}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`
-        : ''}
     </section>
 
     ${/* บรรทัดกำกับที่มาอยู่ล่างสุดคู่กับเลขอ้างอิง ไม่ใช่ใต้ชื่อเรื่องแบบใบคำร้อง —

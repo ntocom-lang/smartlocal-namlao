@@ -1,7 +1,7 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { govNameBlank, govSignBlockCss, govSignRow } from './govSignBlock.js'
 import { getOrgTerms, orgHeadTitle, orgOfficeName } from './orgTerms.js'
-import { MONTHS_TH, thaiDateTimeText } from './thaiDate.js'
+import { MONTHS_TH } from './thaiDate.js'
 
 // ความกว้างเส้นลงนามของผู้ยื่น (ค่าเดิมของใบนี้ — ช่องเดี่ยวชิดขวา ไม่ต้องเรียงแนวกับช่องอื่น)
 const SIGN_LINE_W = '50mm'
@@ -135,13 +135,12 @@ export function attachmentPageCount(rows) {
  * @param {object}   args.tenant      แถว municipalities ของ อปท. ที่ออกใบ
  * @param {string}   args.docDate     วันที่บนหัวใบ (ISO) = วันที่ยื่น ไม่ใช่วันที่กดพิมพ์
  * @param {string}   [args.referenceNo]
- * @param {string}   [args.signedAt]
  * @param {Array<{name?: string}>} [args.departments] กองจริงของ อปท. สำหรับช่องติ๊กส่วนงาน
  * @param {{clerk?: {name?: string, title?: string}, mayor?: {name?: string, title?: string}}} [args.signatories]
  * @param {boolean}  [args.includeOfficerBlock] พิมพ์ตารางท้ายใบสำหรับเจ้าหน้าที่ (ดูค่าปริยายด้านล่าง)
  */
 export function buildPublicAssistanceRequestHtml({
-  form, tenant, docDate, referenceNo = '', signedAt = '', departments = [], signatories = null,
+  form, tenant, docDate, referenceNo = '', departments = [], signatories = null,
   // ⚠️ ถอดตารางท้ายใบ (สำหรับเจ้าหน้าที่ / ความเห็นปลัด / คำอนุมัติ / ช่องติ๊กส่วนงาน /
   // ผลการดำเนินการ) ออกชั่วคราวตามคำสั่งผู้ใช้ระบบ 2569-09-09 — โค้ดกับเทสต์ยังอยู่ครบ
   // เปิดกลับด้วย includeOfficerBlock: true ที่จุดเรียกใช้ ไม่ต้องรื้อไฟล์นี้ใหม่
@@ -163,7 +162,6 @@ export function buildPublicAssistanceRequestHtml({
   const affectedCount = affected.length > 0 ? String(affected.length) : ''
 
   const signedOnline = data.signed_by?.channel === 'online'
-  const signedStamp = signedOnline ? thaiDateTimeText(signedAt || data.signed_at) : ''
 
   // ช่องติ๊กส่วนงาน: ต้นฉบับมี 4 ช่องตายตัว ระบบใช้กองจริงของ อปท. — จำกัด 6 ช่องเพราะแถวนี้
   // สูงได้ไม่เกิน 3 บรรทัด (2 คอลัมน์) ถ้าเกินนั้นบล็อกเจ้าหน้าที่จะดันใบตกหน้า 2
@@ -476,9 +474,12 @@ ${govSignBlockCss()}
       </tr>
     </table>` : ''}
 
-    <p class="signed-note">${signedOnline
-      ? `ลงชื่อโดยการยืนยันตัวตน${esc(govEServiceOriginText(tenant))}${signedStamp ? `<br>${esc(signedStamp)}` : ''}`
-      : `ยื่นคำร้อง${esc(govEServiceOriginText(tenant))}`}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>
+    ${/* เจ้าของระบบสั่งตัดบรรทัด "ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service เมื่อ…" ออกทุกใบ
+       2569-10-02 เหลือบรรทัดกำกับที่มาบรรทัดเดียว เลขอ้างอิงย้ายมาต่อท้ายบรรทัดนี้แทน
+       (เลขอ้างอิงคือตัวที่เจ้าหน้าที่ใช้ค้นเรื่องกลับเมื่อมีคนถือกระดาษมาถาม ห้ามตัดทิ้ง)
+         ใบนี้ไม่มีบรรทัด .origin แยกต่างหาก บรรทัดนี้จึงทำหน้าที่นั้นแทน ห้ามลบทั้งบรรทัด */''}
+    <p class="signed-note">${esc(govEServiceOriginText(tenant))}${
+      referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>
   </main>
 
   ${attachmentHtml}

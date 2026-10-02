@@ -3,7 +3,7 @@ import { getOrgTerms, orgClerkTitle, orgHeadTitle, orgNameParts } from './orgTer
 import {
   GOV_SIGN_LINE_W, GOV_SIGN_LINE_W_WIDE, govNameBlank, govSignBlockCss, govSignRow,
 } from './govSignBlock.js'
-import { MONTHS_TH, thaiDateTimeText } from './thaiDate.js'
+import { MONTHS_TH } from './thaiDate.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -164,7 +164,6 @@ export function buildAssetBorrowHtml({
   // ⚠️ ต้องเทียบ channel === 'online' เท่านั้น ห้ามใช้ "มี signed_at ไหม" เป็นตัวตัดสิน
   // ใบที่เจ้าหน้าที่คีย์แทนก็มี signed_at (เวลาที่กดบันทึก) แต่ผู้ยืมไม่ได้ยืนยันตัวตนอะไรเลย
   const signedOnline = form?.signed_by?.channel === 'online'
-  const signedStamp = signedOnline ? thaiDateTimeText(form?.signed_at) : ''
 
   const due = thaiDateParts(header?.return_due_date)
   const problems = items.reduce((sum, item) => sum + (item.damaged_qty ?? 0) + (item.lost_qty ?? 0), 0)
@@ -362,12 +361,6 @@ ${rows}
       signed: signedOnline && borrowerName ? esc(borrowerName) : '',
       below: [signatureName({ name: borrowerName }, BORROWER_LINE_W)],
     })}
-    ${/* ⚠️ ไม่ใส่ชื่อหน่วยงานในบรรทัดนี้ ทั้งที่ใบน้ำประปา/ใบขยะใส่ — บรรทัดท้ายใบ (.origin)
-          บอกชื่อหน่วยงานอยู่แล้ว ใส่ซ้ำทำให้ข้อความยาวจนตัด 2 บรรทัด ดันใบเป็น 271.8mm
-          เกินงบ 1 หน้า (วัดจริง 2569-09-09) */''}${signedOnline
-      ? `<p class="signed-note">ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service${
-          signedStamp ? ` เมื่อ ${esc(signedStamp)}` : ''}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`
-      : ''}
   </div>
 
   <div class="two-col gap">
@@ -418,7 +411,10 @@ ${problems > 0 ? `  <div class="note-damage">
 ${items.filter(item => (item.damaged_qty ?? 0) + (item.lost_qty ?? 0) > 0).map(item => `    <p class="para">${esc(item.asset_name_snapshot)} — ชำรุด ${item.damaged_qty} ${esc(item.unit_snapshot)} · สูญหาย ${item.lost_qty} ${esc(item.unit_snapshot)}${item.settlement_note ? ` · ${esc(item.settlement_note)}` : ''}</p>`).join('\n')}
   </div>
 ` : ''}
-  <div class="origin">${esc(govEServiceOriginText(orgShort))}</div>
+  ${/* เจ้าของระบบสั่งตัดบรรทัด "ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service เมื่อ…" ใต้ชื่อผู้ยืมออก
+       2569-10-02 เหลือบรรทัดกำกับที่มาบรรทัดเดียว เลขอ้างอิงต่อท้ายบรรทัดนี้แทน (ตัวที่เจ้าหน้าที่ใช้ค้นเรื่อง
+       กลับ ห้ามตัดทิ้ง) · เลขพิมพ์เฉพาะใบที่ผู้ยืมยื่นออนไลน์ เหมือนที่เคยพิมพ์ในบรรทัดที่ตัดไป */''}
+  <div class="origin">${esc(govEServiceOriginText(orgShort))}${signedOnline && referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</div>
 </div>
 </body></html>`
 }

@@ -49,10 +49,13 @@ assert.match(online, /<p class="signed-name">นายสมชาย ใจด�
 assert.match(online, /<div class="signature-typed"><\/div>/)
 assert.doesNotMatch(online, /<div class="signature-space">/,
   'โหมดออนไลน์ต้องไม่เว้นช่องเซ็นปากกา ไม่งั้นได้ทั้งชื่อพิมพ์และช่องว่างซ้อนกัน')
-assert.match(online, /ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service/)
-assert.match(online, /7 กันยายน พ\.ศ\. 2569 เวลา 10\.32 น\./,
-  'ต้องมีวันเวลาที่ลงชื่อ ไม่งั้นบรรทัดกำกับใช้อ้างอิงย้อนหลังไม่ได้')
-assert.match(online, /เลขอ้างอิง A1B2C3D4/)
+// เจ้าของระบบสั่งตัดบรรทัด "ลงชื่อโดยการยืนยันตัวตน…เมื่อ…" ใต้ชื่อออก 2569-10-02 — ท้ายใบเหลือบรรทัดเดียว
+// "ผ่านระบบ E-Service <อปท.> | เลขอ้างอิงระบบ: …" วันเวลาที่ลงชื่อไม่พิมพ์แล้ว
+assert.doesNotMatch(online, /ลงชื่อโดยการยืนยันตัวตน/, 'บรรทัดลงชื่อที่สั่งตัดกลับมาแล้ว')
+assert.doesNotMatch(online, /class="signed-note"/, 'บรรทัดลงชื่อที่สั่งตัดกลับมาแล้ว')
+assert.match(online, /ผ่านระบบ E-Service .+ &nbsp;\|&nbsp; เลขอ้างอิงระบบ: A1B2C3D4/,
+  'ท้ายใบต้องมีบรรทัดกำกับที่มาพร้อมเลขอ้างอิง')
+assert.doesNotMatch(online, /7 กันยายน พ\.ศ\. 2569 เวลา 10\.32 น\./, 'วันเวลาที่ลงชื่อกลับมาแล้ว (สั่งตัด 2569-10-02)')
 assert.match(online, /ผู้ขออนุญาต/)
 
 // ── โหมดเคาน์เตอร์: เจ้าหน้าที่กรอกแทน ต้องเว้นช่องให้เซ็นด้วยปากกา ──────────
@@ -71,7 +74,7 @@ assert.doesNotMatch(legacy, /ลงชื่อโดยการยืนยั
 // ── ไม่มีเวลาลงชื่อ แต่ channel เป็น online: ยังพิมพ์ชื่อ แต่ตัดบรรทัดวันเวลาทิ้ง ──
 const noStamp = render(baseForm({ signed_at: undefined }))
 assert.match(noStamp, /<p class="signed-name">นายสมชาย ใจดี<\/p>/)
-assert.match(noStamp, /ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service/)
+assert.match(noStamp, /ผ่านระบบ E-Service/)
 assert.doesNotMatch(noStamp, /เวลา \d{2}\.\d{2} น\./,
   'ค่าเวลาเสีย/ไม่มี ต้องไม่พิมพ์ Invalid Date ลงใบราชการ')
 

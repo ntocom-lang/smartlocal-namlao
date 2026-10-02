@@ -158,15 +158,16 @@ assert.equal((noDepts.match(/class="checkbox"/g) || []).length, 4)
 
 // ── โหมดลงนาม 2 แบบ ─────────────────────────────────────────────────────────
 assert.match(online, /<span class="sign-signed">นายสมชาย ใจดี<\/span>/)
-assert.match(online, /ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service องค์การบริหารส่วนตำบลทุ่งแค้ว/)
-assert.match(online, /เลขอ้างอิง A1B2C3D4/)
+// เจ้าของระบบสั่งตัด "ลงชื่อโดยการยืนยันตัวตน…เมื่อ…" ออกทุกใบ 2569-10-02 — เหลือบรรทัดกำกับที่มาพร้อมเลขอ้างอิง
+assert.doesNotMatch(online, /ลงชื่อโดยการยืนยันตัวตน/, 'บรรทัดลงชื่อที่สั่งตัดกลับมาแล้ว')
+assert.match(online, /<p class="signed-note">ผ่านระบบ E-Service องค์การบริหารส่วนตำบลทุ่งแค้ว · เลขอ้างอิง A1B2C3D4<\/p>/)
 
 const counter = render(baseForm({ signed_by: { channel: 'counter', name: 'นายสมชาย ใจดี' } }))
 assert.doesNotMatch(counter, /class="sign-signed"/,
   'เจ้าหน้าที่กรอกแทน: ห้ามพิมพ์ชื่อประชาชนเป็นลายมือชื่อ ต้องเว้นให้เซ็นด้วยปากกา')
 assert.doesNotMatch(counter, /ลงชื่อโดยการยืนยันตัวตน/,
   'ผู้ยื่นไม่ได้ยืนยันตัวตนในระบบ ห้ามเขียนว่าลงชื่อทางอิเล็กทรอนิกส์')
-assert.match(counter, /ยื่นคำร้องผ่านระบบ E-Service องค์การบริหารส่วนตำบลทุ่งแค้ว/,
+assert.match(counter, /<p class="signed-note">ผ่านระบบ E-Service องค์การบริหารส่วนตำบลทุ่งแค้ว/,
   'ใบที่ออกจากระบบต้องมีบรรทัดกำกับที่มาทุกโหมด')
 
 // คำร้องเก่าที่ไม่มี signed_by เลย ต้องตกมาที่โหมดเซ็นปากกา ไม่ใช่ถือว่าลงชื่อแล้ว
