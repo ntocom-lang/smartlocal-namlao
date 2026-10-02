@@ -37,9 +37,39 @@ export function computeBasename() {
 // จะทำให้ path-mode คำนวณ basename ใหม่ผิด)
 export const BASENAME = computeBasename()
 
+// เครื่องตัวเอง/วง LAN ตอนพัฒนา — ไม่มี https ให้เปลี่ยนไป และ Supabase ก็ไม่รับ URL เหล่านี้อยู่แล้ว
+// จึงปล่อยตามเดิม ไม่ให้ลิงก์ที่ใช้ทดสอบบนมือถือในวงเดียวกันเสีย
+function isLocalHostname(hostname) {
+  return hostname === 'localhost' || hostname === '[::1]' || hostname.endsWith('.local') || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)
+}
+
+/**
+ * บังคับ https กับ URL ของ "โดเมนจริง" — ใช้กับ URL ที่จะส่งให้ Supabase เป็น redirectTo เสมอ
+ *
+ * ทำไม: Redirect URLs ของ Supabase อนุญาตเฉพาะ https:// ถ้าส่ง http://thungkaew.rk-networks.com/ ไป
+ * มันไม่ error แต่ "ถอยไปใช้ Site URL" ซึ่งคือ smartlocal-namlao.vercel.app ผู้ใช้ทุ่งแค้วที่เปิดเว็บ
+ * แบบ http:// แล้วกดเข้าด้วย LINE/Google จึงถูกส่งไปลงจอดที่เว็บน้ำเลา (เหตุการณ์จริง 2026-10-02
+ * ตรวจ allow-list ด้วย GET /auth/v1/verify กับ token ปลอม: https ผ่านทุกโดเมน http ถูกเปลี่ยนไป Site URL)
+ *
+ * เป็นชั้นป้องกันที่สองต่อจาก worker/httpsRedirect.js (ที่บังคับ https ตั้งแต่เปิดหน้า) — ชั้นนี้ไม่ขึ้นกับ
+ * ว่า Worker เห็น request.url เป็น http หรือไม่ และกันกรณีหน้าที่โหลดค้างมาก่อน Worker redirect ด้วย
+ */
+export function toHttps(url) {
+  try {
+    const u = new URL(url)
+    if (u.protocol !== 'http:' || isLocalHostname(u.hostname)) return url
+    u.protocol = 'https:'
+    u.port = '' // พอร์ต http แบบกำหนดเองไม่มีความหมายบน https ของโดเมนจริง
+    return u.href
+  } catch {
+    return url
+  }
+}
+
 // URL เต็มที่กลับมาที่แอปตัวเองได้ถูกที่ทุก deployment mode
 // เช่น appUrl('/device-login?code=abc') → https://host/namlao/device-login?code=abc
+// ผ่าน toHttps เสมอ — มีผู้ใช้ส่งไปเป็น redirectTo ของ OAuth/รีเซ็ตรหัสผ่าน (เหตุผลที่ toHttps)
 export function appUrl(path = '/') {
   const suffix = path.startsWith('/') ? path : `/${path}`
-  return `${window.location.origin}${BASENAME}${suffix}`
+  return toHttps(`${window.location.origin}${BASENAME}${suffix}`)
 }

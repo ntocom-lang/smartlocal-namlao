@@ -10,6 +10,7 @@ import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf } from '../lib/thai
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import ActiveSessions from '../components/profile/ActiveSessions'
 import { validateNewPassword, PASSWORD_HINT } from '../lib/passwordPolicy'
+import { toHttps } from '../lib/basename'
 import { activeOrgTerms } from '../lib/orgTerms'
 
 // role ที่ใช้การเข้าสู่ระบบด้วย QR ได้ ต้องตรงกับ STAFF_ROLES ใน edge function device-login
@@ -237,7 +238,8 @@ export default function ProfilePage() {
     try {
       const { error: err } = await supabase.auth.linkIdentity({
         provider,
-        options: { redirectTo: window.location.href },
+        // toHttps: ถ้าหน้านี้เปิดแบบ http:// Supabase จะปฏิเสธ redirectTo แล้วส่งไป Site URL (น้ำเลา)
+        options: { redirectTo: toHttps(window.location.href) },
       })
       if (!err) return
 
