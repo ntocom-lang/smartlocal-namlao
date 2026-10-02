@@ -449,8 +449,7 @@ function fundFormSheet({ header, form = {}, parent = {}, tenant, referenceNo = '
   </div>
   <p class="kv"><span class="bold">เรื่อง</span>&nbsp;&nbsp;ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย</p>
   <p class="kv"><span class="bold">เรียน</span>&nbsp;&nbsp;${esc(recipient)}</p>
-  <p class="fund-intro">ข้าพเจ้า ${line(requesterName, REQUESTER_LINE_W)} ${field('สมาชิกกองทุนเลขที่', form.fund_member_no, '32mm')}</p>
-  <p>${field('ที่อยู่', parent?.requester_address, '70mm')} ${field('โทรศัพท์', parent?.requester_phone, '30mm')} มีความประสงค์ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยจากกองทุน รายละเอียดตามตารางท้ายนี้</p>
+  <p class="fund-intro">ข้าพเจ้า ${line(requesterName, REQUESTER_LINE_W)} ${field('โทรศัพท์', parent?.requester_phone, '30mm')} มีความประสงค์ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยจากกองทุน รายละเอียดตามตารางท้ายนี้</p>
   <table class="fund-details"><tbody>${rows.map(([label, value]) => `<tr><th scope="row">${esc(label)}</th><td>${esc(value) || '&nbsp;'}</td></tr>`).join('')}</tbody></table>
   <!-- หลักฐานเป็นช่องให้ระบุตามที่กองทุนกำหนด ไม่บังคับแนบหรือเพิ่มการเก็บข้อมูลในระบบ -->
   <p class="fund-evidence">หลักฐาน ${box()} ใบนัดแพทย์ ${box()} อื่นๆ ${line('', '25mm')}</p>
