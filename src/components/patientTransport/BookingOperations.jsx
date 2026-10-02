@@ -594,7 +594,7 @@ export function BookingPrintButtons({ booking, busy, onPrintRequest, onPrintLett
         <span className="block font-bold">พิมพ์ใบคำขอรถรับ–ส่งผู้ป่วย</span><span className="block text-xs font-normal text-slate-600">ประชาชนถึงนายก</span>
       </button>
       <button type="button" className={`${buttonClass} text-left whitespace-normal`} disabled={busy || !onPrintLetter} onClick={() => onPrintLetter(booking)}>
-        <span className="block font-bold">พิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย</span><span className="block text-xs font-normal text-slate-600">นายกถึงประธานกองทุน</span>
+        <span className="block font-bold">พิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย</span><span className="block text-xs font-normal text-slate-600">นายกถึงประธานกองทุน · หนังสือ + ใบคำขอรับสวัสดิการ (2 แผ่น)</span>
       </button>
     </div>
     {!onPrintLetter && <p className="text-sm text-slate-600">หนังสือถึงกองทุนพิมพ์ได้หลังยืนยันรถ</p>}
@@ -608,7 +608,7 @@ export function BookingFundDocs({ booking, trip, busy, onRecordLetter, onPrintLe
   const [open, setOpen] = useState(false)
   return <div className="mt-4 rounded-xl border border-slate-200 p-3">
     <p className="font-semibold">เอกสารคำขอและนำส่งกองทุน</p>
-    <p className="text-sm text-slate-600">ของ {booking.patient_name} คนเดียว · ใบคำขอจากประชาชนถึงนายก 1 ใบ + หนังสือนำส่งจาก อปท. ถึงกองทุน 1 ฉบับ · เลขที่หนังสือแยกรายคน</p>
+    <p className="text-sm text-slate-600">ของ {booking.patient_name} คนเดียว · ปุ่มแรก: ใบคำขอประชาชนถึงนายก 1 แผ่น · ปุ่มที่สอง: หนังสือนายกถึงกองทุนพร้อมใบคำขอรับสวัสดิการ 2 แผ่น · เลขที่หนังสือแยกรายคน</p>
     {letter.no && !open
       ? <p className="text-sm">ที่ {letter.no} ลงวันที่ {thaiDateFromDateInput(letter.date)}{!letter.own && <span className="text-slate-600"> (เลขของเที่ยวเดิม ยังไม่ได้บันทึกเลขของคนนี้)</span>}</p>
       : <p className="text-sm text-slate-600">ยังไม่ได้บันทึกเลขที่หนังสือ พิมพ์ได้ก่อนแล้วเขียนเลขด้วยมือ</p>}

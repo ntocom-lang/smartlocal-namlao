@@ -357,7 +357,7 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
         </button>
         <button type="button" onClick={() => handlePrint('letter')}
           className="flex min-h-[44px] w-full items-center gap-2 rounded-2xl border border-gray-200 bg-white p-3 text-left text-sm text-gray-700">
-          <Printer size={15} className="shrink-0" aria-hidden="true" /><span><span className="block font-semibold">พิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย</span><span className="block text-xs">นายกถึงประธานกองทุน</span></span>
+          <Printer size={15} className="shrink-0" aria-hidden="true" /><span><span className="block font-semibold">พิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย</span><span className="block text-xs">นายกถึงประธานกองทุน · หนังสือ + ใบคำขอรับสวัสดิการ (2 แผ่น)</span></span>
         </button>
       </div>
 

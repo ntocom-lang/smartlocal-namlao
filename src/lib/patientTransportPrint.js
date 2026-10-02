@@ -274,7 +274,7 @@ function senderAddressLines(tenant) {
 function letterSheet({
   header, form = {}, parent = {}, tenant,
   mayor = null, referenceNo = '', emblemUrl = '',
-  passengerSummary = '', attachmentCount = 1,
+  passengerSummary = '', attachmentCount = 1, attachmentTitle = 'ใบคำขอรถรับ-ส่งผู้ป่วย',
 }) {
   const orgName = tenant?.name?.trim() || 'หน่วยงาน'
   const mayorTitle = mayor?.title?.trim() || orgHeadTitle(tenant)
@@ -339,7 +339,7 @@ ${senderAddress.map(part => `      <p>${esc(part)}</p>`).join('\n')}
 
   <p class="kv"><span class="bold">เรื่อง</span>&nbsp;&nbsp;ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย</p>
   <p class="kv"><span class="bold">เรียน</span>&nbsp;&nbsp;${esc(header?.recipient_title_snapshot ?? '')}</p>
-  <p class="kv kv--wide"><span class="bold">สิ่งที่ส่งมาด้วย</span>&nbsp;&nbsp;ใบคำขอรถรับ-ส่งผู้ป่วย&nbsp;&nbsp;จำนวน ${attachmentCount} ฉบับ</p>
+  <p class="kv kv--wide"><span class="bold">สิ่งที่ส่งมาด้วย</span>&nbsp;&nbsp;${esc(attachmentTitle)}&nbsp;&nbsp;จำนวน ${attachmentCount} ฉบับ</p>
 
   <p class="body-para">${esc(para1)}</p>
   <p class="body-para">${esc(para2)}</p>
@@ -384,6 +384,82 @@ function formCss() {
   .form-regards { text-align: center; margin-top: 6mm; }
   .request-sign { margin-top: 8mm; break-inside: avoid; }
 `
+}
+
+// ใบแนบคำขอรับสวัสดิการถึงกองทุน แยกจากใบคำขอประชาชนถึงนายกซึ่งยังเป็นแบบประโยค
+// ใช้ฟอนต์/ขอบกระดาษและช่องลงนามร่วมเหมือนทุกใบ ไม่ตั้งขนาดฟอนต์ใหม่เฉพาะตาราง
+function fundFormCss() {
+  return `
+  .fund-header { position: relative; }
+  .fund-title { text-align: center; font-weight: 700; margin-bottom: 1mm; }
+  .fund-reference { position: absolute; top: 0; right: 0; }
+  .fund-name { text-align: center; margin-bottom: 2mm; }
+  .fund-written { text-align: right; margin-bottom: 2mm; }
+  .fund-intro { text-indent: 2.5cm; margin-top: 2mm; }
+  .fund-details { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 2mm; }
+  .fund-details th, .fund-details td { border: 1px solid #000; padding: 0.7mm 1.5mm; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+  .fund-details th { width: 32mm; font-weight: normal; }
+  .fund-evidence { margin-top: 2mm; }
+  .fund-request-sign { margin-top: 3mm; }
+  /* ชื่อยาวให้คำต่อท้ายขึ้นบรรทัดใหม่ แกนชื่อและวงเล็บยังใช้ govSignBlock เดิม */
+  .fund-request-sign .sign-row { flex-wrap: wrap; }
+  .fund-committee { border: 1px solid #000; padding: 2mm; margin-top: 3mm; break-inside: avoid; }
+  .fund-opinion { display: inline-block; width: calc(100% - 18mm); border-bottom: 1px dotted #000; }
+  .fund-decision-reason { display: inline-block; width: 78mm; border-bottom: 1px dotted #000; }
+  .fund-committee .two-col { margin-top: 3mm; }
+  `
+}
+
+function fundFormSheet({ header, form = {}, parent = {}, tenant, referenceNo = '', docDate = '' }) {
+  const requesterName = textOr(parent?.requester_name)
+  const fundName = textOr(header?.partner_name_snapshot, 'กองทุนเจ้าของรถ')
+  const recipient = textOr(header?.recipient_title_snapshot, `ประธาน${fundName}`)
+  const patientName = textOr(form.patient_name, requesterName)
+  const patientAge = form.patient_age != null && form.patient_age !== '' ? ` อายุ ${form.patient_age} ปี` : ''
+  const destination = [form.destination, form.destination_detail].map(value => textOr(value)).filter(Boolean).join(' ')
+  const appointmentKind = form.appointment_kind === 'other' ? textOr(form.appointment_kind_note) : optionLabel(APPOINTMENT_KINDS, form.appointment_kind)
+  const relation = form.requester_relation === 'other' ? textOr(form.requester_relation_note) : optionLabel(REQUESTER_RELATIONS, form.requester_relation)
+  const travel = [optionLabel(TRIP_TYPES, form.trip_type), `ผู้ติดตาม ${Number(form.companions) || 0} คน`, textOr(form.return_note)].filter(Boolean).join(' · ')
+  const coordinator = [requesterName, relation, parent?.requester_phone ? `โทร. ${parent.requester_phone}` : ''].filter(Boolean).join(' · ')
+  const rows = [
+    ['ผู้ป่วย', patientName + patientAge],
+    ['จุดรับ', pickupSentence(form.pickup_address, form.pickup_landmark)],
+    ['ปลายทาง', destination],
+    ['วันเวลานัด', appointmentText(header?.appointment_at)],
+    ['ประเภทการนัด', appointmentKind],
+    ['การเคลื่อนไหว', optionLabel(MOBILITY_LEVELS, header?.mobility ?? form.mobility)],
+    ['การเดินทาง', travel],
+    ['ผู้ประสานงาน', coordinator],
+  ]
+  return `<div class="sheet fund-form-sheet">
+  <div class="fund-header">
+    <p class="fund-title">ใบคำขอรับสวัสดิการ</p>
+    <p class="fund-reference">เลขที่คำขอ ${esc(referenceNo)}</p>
+  </div>
+  <p class="fund-name">${esc(fundName)}</p>
+  <p class="fund-written">เขียนที่ ${esc(orgOfficeName(tenant))} &nbsp; วันที่ ${line(letterDateText(docDate), '36mm')}</p>
+  <p class="kv"><span class="bold">เรื่อง</span>&nbsp;&nbsp;ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย</p>
+  <p class="kv"><span class="bold">เรียน</span>&nbsp;&nbsp;${esc(recipient)}</p>
+  <p class="fund-intro">ข้าพเจ้า ${line(requesterName, REQUESTER_LINE_W)} ${field('สมาชิกกองทุนเลขที่', form.fund_member_no, '32mm')}</p>
+  <p>${field('ที่อยู่', parent?.requester_address, '70mm')} ${field('โทรศัพท์', parent?.requester_phone, '30mm')} มีความประสงค์ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยจากกองทุน รายละเอียดตามตารางท้ายนี้</p>
+  <table class="fund-details"><tbody>${rows.map(([label, value]) => `<tr><th scope="row">${esc(label)}</th><td>${esc(value) || '&nbsp;'}</td></tr>`).join('')}</tbody></table>
+  <!-- หลักฐานเป็นช่องให้ระบุตามที่กองทุนกำหนด ไม่บังคับแนบหรือเพิ่มการเก็บข้อมูลในระบบ -->
+  <p class="fund-evidence">หลักฐาน ${box()} สำเนาบัตรประชาชนผู้ป่วย ${box()} ใบนัดแพทย์ ${box()} อื่นๆ ${line('', '25mm')}</p>
+  <div class="sign-block center-row fund-request-sign">${govSignRow({
+    width: REQUESTER_LINE_W, grow: true, role: 'ผู้ยื่นคำขอ', signed: requesterName ? esc(requesterName) : '',
+    below: [signatureName(requesterName, REQUESTER_LINE_W)],
+  })}</div>
+  <div class="fund-committee sign-block">
+    <p class="bold">สำหรับคณะกรรมการกองทุน</p>
+    <p>ความเห็น <span class="fund-opinion">&nbsp;</span></p>
+    <p>${box()} อนุมัติ ${box()} ไม่อนุมัติ เพราะ <span class="fund-decision-reason">&nbsp;</span></p>
+    <div class="two-col">
+      <div>${govSignRow({ below: [govNameBlank(), 'ประธานคณะกรรมการกองทุน'] })}</div>
+      <div>${govSignRow({ below: [govNameBlank(), 'เหรัญญิก / พยาน'] })}</div>
+    </div>
+  </div>
+  <p class="origin">${esc(govEServiceOriginText(tenant?.name?.trim() || 'หน่วยงาน'))}</p>
+  </div>`
 }
 
 /**
@@ -637,12 +713,13 @@ export function buildPatientTransportFormHtml(args) {
   )
 }
 
-// หนังสือของนายกถึงกองทุนอย่างเดียว — ใบคำขอแนบพิมพ์จากปุ่มแยกของผู้เดินทางรายเดียวกัน
+// ชุดถึงกองทุนตามภาพที่เจ้าของระบบให้: หนังสือนายก 1 แผ่น + ใบคำขอรับสวัสดิการแนบ 1 แผ่น
+// ใบคำขอประชาชนถึงนายกยังพิมพ์จากปุ่มแรกต่างหาก ไม่ใช้แทนใบแนบถึงกองทุน
 export function buildPatientTransportLetterHtml(args) {
   return page(
-    'หนังสือขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยถึงกองทุน',
-    letterCss(),
-    signerNotice(args.mayor) + letterSheet(args),
+    'หนังสือขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยพร้อมใบคำขอรับสวัสดิการ (2 แผ่น)',
+    `${letterCss()}${fundFormCss()}`,
+    signerNotice(args.mayor) + letterSheet({ ...args, attachmentTitle: 'ใบคำขอรับสวัสดิการ (รถรับ-ส่งผู้ป่วย)' }) + fundFormSheet(args),
   )
 }
 
