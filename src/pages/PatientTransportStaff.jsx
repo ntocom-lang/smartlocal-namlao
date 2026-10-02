@@ -196,8 +196,10 @@ export default function PatientTransportStaff({ onBack } = {}) {
       win.close(); setError(`${failText}: ${e.message || 'กรุณาลองใหม่'}`)
     }
   }
-  const printLetter = trip => printInNewWindow(async () => buildTripForwardLetterHtml({
-    tenant, trip, bookings: workspace.bookings, ...(await fundContext()),
+  // พิมพ์ชุดของผู้เดินทาง "คนเดียว" = ใบคำขอของเขา + หนังสือนำส่งของเขา (เจ้าของระบบสั่ง 2569-10-02 เลือกแบบ ข: เอกสารแยกรายคน
+  // เลขที่หนังสือคนละเลข) — ส่งเฉพาะคำขอนี้ให้ตัวประกอบ ใบของคนอื่นในเที่ยวเดียวกันจึงไม่ติดมา
+  const printLetter = booking => printInNewWindow(async () => buildTripForwardLetterHtml({
+    tenant, trip: workspace.trips.find(t => t.id === booking.trip_id), bookings: [booking], ...(await fundContext()),
     // ต้องเป็น URL เต็ม หน้าต่างพิมพ์เป็น about:blank พาธ /images/... จะ resolve ไม่เจอ
     emblemUrl: `${window.location.origin}/images/garuda.svg`,
   }), 'เตรียมหนังสือนำส่งไม่สำเร็จ')
@@ -215,7 +217,8 @@ export default function PatientTransportStaff({ onBack } = {}) {
     p_op: op(`driver-cover:${JSON.stringify({ trip, day, fromDriver, driver, expected, midtrip })}`),
     p_trip: trip, p_day: day, p_from_driver: fromDriver, p_driver: driver, p_expected: expected, p_midtrip: midtrip,
   }, 'เปลี่ยนคนขับแล้ว · ผู้เกี่ยวข้องได้รับแจ้ง กรุณาตรวจเอกสารล่าสุด')
-  const recordLetter = (trip, letterNo, letterDate) => mutate('patient_booking_record_letter', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_letter_no: letterNo, p_letter_date: letterDate }, 'บันทึกเลขหนังสือนำส่งแล้ว')
+  // เลขหนังสือแยกรายคน (20261002130100) — ส่ง letter_revision ที่หน้าจอเห็นมาด้วย ไม่ตรง = มีคนแก้ไปก่อน ฐานข้อมูลปฏิเสธ
+  const recordLetter = (booking, letterNo, letterDate) => mutate('patient_booking_record_booking_letter', { p_booking: booking.id, p_letter_revision: booking.letter_revision ?? 0, p_letter_no: letterNo, p_letter_date: letterDate }, 'บันทึกเลขหนังสือนำส่งแล้ว')
   const reschedule = args => task(call => call('patient_booking_reschedule', { ...args, p_op: op(`reschedule:${JSON.stringify(args)}`) }), out => out?.saved ? 'เปลี่ยนวันเวลาแล้ว ปฏิทินและงานคนขับใช้คิวใหม่แล้ว' : '')
   const updateSchedule = (trip, revision, publicNotice, pickup, back) => mutate('patient_booking_update_schedule', { p_trip: trip, p_revision: revision, p_notice: publicNotice, p_pickup: pickup, p_return: back }, 'บันทึกประกาศและเวลาประมาณการแล้ว')
   // ปุ่มหลักของกล่อง อยู่ในแถบเครื่องมือที่เดียวกับปุ่ม "รับแจ้งที่เคาน์เตอร์" ของคำร้อง

@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
 import { addressFromMap } from '../../lib/pickupText'
 import { ListCard, Pills, Sheet } from './StaffShell'
-import { AmendBooking, TripFundDocs, TripPrintNote, OdometerForm } from './BookingOperations'
+import { AmendBooking, BookingFundDocs, OdometerForm } from './BookingOperations'
 import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
 import { STAGES, TRIP_STATUS, RETURN_MODES, MOBILITY, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, describeHistory } from '../../lib/patientBooking'
 import { tripPassengers } from '../../lib/patientTransportPrint'
@@ -44,8 +44,8 @@ function linkedConfirmedBooking(booking, bookings, events = []) {
 // แถวของกล่อง: คำขอ + เที่ยว + ขั้น + งานถัดไป + กลุ่มที่ระบบเสนอให้ไปด้วยกัน
 // ระบบเสนอกลุ่มเฉพาะคนที่เลือก "นั่งร่วมได้" เดินได้เอง ปลายทาง/วัน/ขากลับตรงกัน เวลาห่างไม่เกิน 30 นาที
 // และที่นั่งพอ (suggestGroups) — ฐานข้อมูลคำนวณแผนทั้งก้อนซ้ำใต้ล็อกก่อนยืนยันทุกครั้ง
-// riders = คนที่ชุดเอกสารของเที่ยวจะพิมพ์ใบคำขอให้ — นับด้วย tripPassengers ตัวเดียวกับใบพิมพ์ จำนวนบนจอจึงเท่ากระดาษ
-// เที่ยวที่ยกเลิกแล้วไม่มีปุ่มพิมพ์ (BookingSheet.printable) จึงไม่นับ
+// riders = ผู้เดินทางของเที่ยวนั้น (ยืนยันแล้ว/จบแล้ว) — ใช้ตีกรอบกลุ่มเที่ยวและบอกว่าไปรถคันเดียวกับใคร เท่านั้น
+// ไม่เกี่ยวกับเอกสารแล้ว (แยกรายคน 2569-10-02) · นับด้วย tripPassengers ตัวเดียวกับตัวประกอบใบพิมพ์ · เที่ยวที่ยกเลิกแล้วไม่นับ
 function buildRows(workspace) {
   const trips = new Map(workspace.trips.map(t => [t.id, t]))
   const ridersOf = new Map(workspace.trips.filter(t => t.state !== 'cancelled').map(t => [t.id, tripPassengers(workspace.bookings, t)]))
@@ -81,16 +81,15 @@ const sectionOf = (next, stage) => next.rank < 9 ? 'action' : ['confirmed', 'run
 // คำขอที่ปิดเป็นคิวซ้ำเรียงตามคิวที่ใช้เดินทางจริง — วันเดียวกับที่แสดงในแถว (#350)
 const sortAt = r => String((r.linked || r.booking).appointment_at || '')
 
-// คนอื่นในชุดเอกสารเดียวกัน — แถวบอกไว้ตั้งแต่ก่อนเปิดแผ่น ว่าเที่ยวที่ไปด้วยกันกดพิมพ์จากคนไหนก็ได้ชุดเดียวกัน
-// (เจ้าของระบบสั่ง 2569-10-01) ไม่งั้นแถวของแต่ละคนดูเป็นคนละงาน แล้วถูกเปิดพิมพ์ซ้ำทีละคน
+// คนอื่นที่ไปรถคันเดียวกัน — แถวบอกไว้ตั้งแต่ก่อนเปิดแผ่น ว่าใครไปกับใคร (เจ้าของระบบสั่ง 2569-10-01)
+// ⚠️ ไม่ใช่เอกสารชุดเดียวกัน: เจ้าของระบบสั่งกลับ 2569-10-02 ให้เอกสารแยกรายคน (ใบคำขอ + หนังสือนำส่งของใครของมัน เลขที่หนังสือคนละเลข)
 // ใช้กับแถวที่ไม่ได้อยู่ในกรอบกลุ่มเที่ยว (tripBlocks) เท่านั้น — ในกรอบ หัวกรอบบอกแทนแล้ว
 const tripMates = ({ booking, riders }) => riders.some(x => x.id === booking.id) ? riders.filter(x => x.id !== booking.id) : []
-// "เอกสารชุดเดียวกัน" ห้ามขาดกลางวลี — การ์ดมือถือ 390px ตัดเป็น "เอกสารชุด / เดียวกัน"
-const matesText = mates => <>ในเที่ยวเดียวกับ {mates.map(x => x.patient_name).join(', ')} · <span className="whitespace-nowrap">เอกสารชุดเดียวกัน</span></>
+const matesText = mates => `ไปรถคันเดียวกับ ${mates.map(x => x.patient_name).join(', ')}`
 
 // กรอบกลุ่มเที่ยวเดียวกัน (เจ้าของระบบเลือกแบบ ก 2569-10-02 "เห็นแล้วรู้เลยว่ากลุ่มไหนเป็นกลุ่มไหน")
 // เดิมแต่ละแถวมีแค่บรรทัด "ในเที่ยวเดียวกับ…" ต้องอ่านทีละแถวถึงรู้ว่าใครไปกับใคร และแถวสลับสีตามลำดับ ไม่ได้ตามเที่ยว
-// กลุ่ม = เที่ยวเดียวกัน (วันเดียวกัน รถรอบเดียวกัน เอกสารชุดเดียวกัน) · วันเดียวกันแต่คนละเที่ยว = คนละกรอบ เพราะเอกสารคนละชุด
+// กลุ่ม = เที่ยวเดียวกัน (วันเดียวกัน รถรอบเดียวกัน) · วันเดียวกันแต่คนละเที่ยว = คนละกรอบ · เอกสารแยกรายคนทุกคน (2569-10-02)
 // สีม่วงตั้งใจไม่ให้ซ้ำสีของหัวส่วน (ส้ม/ฟ้า/เทา) — bar = เส้นกรอบ, tint = พื้นหัวกรอบ, ink = ตัวอักษร, row = พื้นแถวในกรอบ
 // ⚠️ ตารางคำร้องไม่มีกรณีหลายแถวเป็นงานเดียวกัน จุดนี้จึงต่างจากโครงของคำร้องโดยเจตนา
 const TRIP_GROUP = { bar: '#7c3aed', tint: '#f5f3ff', ink: '#5b21b6', row: '#fbfaff' }
@@ -116,29 +115,37 @@ function tripBlocks(rows) {
   return blocks
 }
 
-// หัวกรอบ: กี่คน · วันไหน รถมารับกี่โมง · เอกสารชุดเดียว — ใช้ทั้งตาราง (PC) และกรอบการ์ด (มือถือ) พื้นสีอยู่ที่ตัวกรอบ
+// หัวกรอบ: กี่คน · วันไหน รถมารับกี่โมง — ใช้ทั้งตาราง (PC) และกรอบการ์ด (มือถือ) พื้นสีอยู่ที่ตัวกรอบ
 // รับคนละรอบในเที่ยวเดียวกัน (หลายรอบรับ) = บอกเวลารอบแรกว่า "รถเริ่มรับ" เวลาของแต่ละคนยังอยู่ในแถว
 // ในตาราง: จอแคบกว่าตาราง (แท็บเล็ต ~800px ตารางเลื่อนแนวนอน) ข้อความต้องตัดบรรทัดตามความกว้างที่เห็นและปักซ้ายไว้
-// ไม่งั้นป้าย "พิมพ์ครั้งเดียว" ยาวไปตามตาราง 860px แล้วถูกตัดหาย — 100cqw = ความกว้างของกล่องเลื่อน (container-type ที่ตัวกล่อง)
-//
-// ป้าย "เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว" เป็นปุ่มพิมพ์เอกสารทั้งเที่ยว มีไอคอนเครื่องพิมพ์ (เจ้าของระบบสั่ง 2569-10-02
-// "กดแล้วพิมพ์ได้เลย + ไอคอนพิมพ์ จะได้รู้ว่าพิมพ์ได้เลย") — ชุดเดียวกับปุ่มพิมพ์ในแผ่นรายละเอียด ไม่ต้องเปิดแผ่นของใครก่อน
-// ⚠️ ต่างจากกติกา "ปุ่มรายรายการอยู่ในแผ่น" โดยเจตนา: ปุ่มนี้เป็นของทั้งกลุ่ม ไม่ใช่ของแถวใดแถวหนึ่ง
-// ปุ่มกรอบ ไม่ทึบ — พิมพ์เมื่อไรก็ได้ ไม่ใช่งานค้าง (ปุ่มทึบในตารางนี้หมายถึงงานถัดไปของแถว)
-// มือถือสูง 44px เต็มความกว้างแบบปุ่มในการ์ด · PC สูง 36px แบบปุ่มพับของหัวส่วน
-function TripGroupBand({ row, card, busy, onPrint }) {
+// — 100cqw = ความกว้างของกล่องเลื่อน (container-type ที่ตัวกล่อง)
+// ⚠️ หัวกรอบไม่มีปุ่มพิมพ์ และไม่มีคำว่าเอกสารชุดเดียวกันแล้ว (#371 เลิก 2569-10-02): เอกสารแยกรายคน ปุ่มพิมพ์อยู่ที่แถวของแต่ละคน
+function TripGroupBand({ row, card }) {
   const { trip, riders } = row
   const pickups = [...new Set(riders.map(rider => Date.parse(pickupForBooking(trip, rider))).filter(Number.isFinite))]
-  return <span className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-bold ${card ? 'px-1' : 'sticky left-0 w-fit max-w-[100cqw] px-3 py-1'}`} style={{ color: TRIP_GROUP.ink }}>
+  return <span className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-bold ${card ? 'px-1' : 'sticky left-0 w-fit max-w-[100cqw] px-3 py-1.5'}`} style={{ color: TRIP_GROUP.ink }}>
     <Users size={16} strokeWidth={2.4} className="shrink-0" aria-hidden="true" />
     <span className="whitespace-nowrap">เที่ยวเดียวกัน {riders.length} คน</span>
     <span className="whitespace-nowrap font-semibold">· {whenLabel(riders[0].appointment_at)}{pickups.length > 0 && ` ${pickups.length > 1 ? 'รถเริ่มรับ' : 'รถมารับ'} ${clockOf(Math.min(...pickups))} น.`}</span>
-    <button type="button" data-trip-print={trip.id} disabled={busy} onClick={() => onPrint(trip)} title={`กดเพื่อพิมพ์เอกสารทั้งเที่ยว: ใบคำขอ ${riders.length} ใบ + หนังสือนำส่ง 1 ใบ`}
-      className="inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border bg-white px-3 text-[13px] font-bold shadow-sm hover:bg-violet-100 active:scale-[0.98] disabled:opacity-50 max-md:w-full md:min-h-9"
-      style={{ borderColor: TRIP_GROUP.bar, color: TRIP_GROUP.ink }}>
-      <Printer size={15} strokeWidth={2.4} className="shrink-0" aria-hidden="true" />เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว
-    </button>
   </span>
+}
+
+// พิมพ์เอกสารของคำขอหนึ่งใบ "คนเดียว" (เจ้าของระบบสั่ง 2569-10-02 แบบ ข — เอกสารแยกรายคน เลขที่หนังสือคนละเลข):
+//   ยืนยันรถแล้ว = ใบคำขอถึงนายก + หนังสือนำส่งกองทุนของคนนี้ · รอยืนยันรถ = ใบคำขอเท่านั้น (ยังไม่มีเที่ยว จึงยังไม่มีหนังสือ)
+//   คำขอ/เที่ยวที่ยกเลิกแล้ว = ไม่มีให้พิมพ์ · ใช้ทั้งปุ่มหัวแผ่นและปุ่มในแถว ให้พิมพ์ได้ชุดเดียวกันทุกจุด
+function printerOf({ booking: b, trip }, { onPrintLetter, onPrintRequest }) {
+  if (b.status === 'submitted') return { run: () => onPrintRequest(b), label: 'พิมพ์ใบคำขอถึงนายก', hint: `พิมพ์ใบคำขอถึงนายกของ ${b.patient_name} (ยังไม่ยืนยันรถ จึงยังไม่มีหนังสือนำส่ง)` }
+  if (trip && b.status !== 'cancelled' && trip.state !== 'cancelled') return { run: () => onPrintLetter(b), label: 'พิมพ์เอกสาร 2 ประเภท', hint: `พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุนของ ${b.patient_name} คนเดียว` }
+  return null
+}
+
+// ปุ่มพิมพ์ในแถว/การ์ด — มีไอคอนเครื่องพิมพ์ จะได้รู้ว่ากดแล้วพิมพ์ได้เลย · ปุ่มกรอบไม่ทึบ (ปุ่มทึบ = งานถัดไปของแถว)
+function RowPrint({ printer, name, busy, full }) {
+  if (!printer) return null
+  return <button type="button" data-row-print disabled={busy} aria-label={`${printer.label}: ${name}`} title={printer.hint}
+    onClick={e => { e.stopPropagation(); printer.run() }}
+    className={`inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 ${full ? 'w-full text-base' : ''}`}>
+    <Printer size={16} strokeWidth={2.4} className="shrink-0" aria-hidden="true" />พิมพ์</button>
 }
 
 const haystack = ({ booking: b, linked }) => [b.patient_name, b.requester_name, b.phone, b.pickup, b.route_label, ref(b.id), dateTime(b.appointment_at), whenLabel(b.appointment_at), linked && ref(linked.id), linked && dateTime(linked.appointment_at)].join(' ').toLowerCase()
@@ -480,7 +487,7 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
       {canReschedule && scheduling === 'reschedule' && <RescheduleJourney key={`reschedule-${trip.id}`} trip={trip} booking={b} passengers={passengers} settings={workspace.settings} busy={busy} onReschedule={async args => { const out = await onReschedule(args); if (out?.saved) setScheduling(null); return out }} />}
       {canMoveIntoTrip && scheduling === 'move' && <MoveIntoTrip booking={b} trip={trip} passengers={passengers} workspace={workspace} busy={busy} onReload={onReload} />}
       {inService && scheduling === 'estimate' && <ScheduleUpdate key={trip.id} trip={trip} busy={busy} onUpdate={async (...args) => { const saved = await onUpdateSchedule(...args); if (saved) setScheduling(null); return saved }} />}
-      {trip && next.id !== 'docs' && <TripFundDocs trip={trip} riders={row.riders} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />}
+      {trip && next.id !== 'docs' && <BookingFundDocs booking={b} trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />}
       {trip?.state === 'completed' && next.id !== 'docs' && <OdometerForm trip={trip} trips={workspace.trips} busy={busy} onSave={onOdometer} />}
       {removable && <ReasonAction busy={busy} title="นำรายนี้ออกจากเที่ยว" hint="ใช้เมื่อประสานแล้วว่าไม่เดินทาง ผู้เดินทางคนอื่นในเที่ยวไม่เปลี่ยน · ถ้าเป็นคนสุดท้ายและรถยังไม่ออก ระบบคืนช่วงเวลารถให้ด้วย" placeholder="เช่น ผู้ป่วยแจ้งเลื่อนนัด" button="นำออกจากเที่ยว" seenByCitizen onRun={remove} />}
       {releasable && <ReasonAction busy={busy} title="คืนคิวทั้งเที่ยว" hint="ผู้เดินทางทุกคนในเที่ยวนี้กลับไปเป็น “รอยืนยันรถ” เพื่อจัดรถใหม่" placeholder="เช่น รถเสีย ต้องจัดรถใหม่" button="คืนคิวทั้งเที่ยว" onRun={note => act(trip, 'release', note)} />}
@@ -496,7 +503,7 @@ function BookingHistory({ booking, trip }) {
   const { tenant } = useTenant()
   const [retry, setRetry] = useState(0)
   const [state, setState] = useState(null)
-  const version = `${booking.revision}:${trip?.id ?? ''}:${trip?.revision ?? ''}:${trip?.docs_revision ?? ''}:${retry}`
+  const version = `${booking.revision}:${booking.letter_revision ?? 0}:${trip?.id ?? ''}:${trip?.revision ?? ''}:${trip?.docs_revision ?? ''}:${retry}`
   useEffect(() => {
     if (!tenant?.id) return
     let active = true
@@ -535,15 +542,11 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
   const showProblem = problem && b.status === 'submitted'
   // เงื่อนไขเดียวกับปุ่ม "พร้อมให้มารับกลับ" ฝั่งประชาชน (BookingOperations) และที่ฐานข้อมูลตรวจ
   const readyReturn = b.status === 'confirmed' && ['outbound', 'hospital'].includes(trip?.state) && b.return_mode !== 'one_way' && !b.return_ready
-  // ปุ่ม "พิมพ์" บนหัวแผ่น พิมพ์เท่าที่พิมพ์ได้ตามขั้นของคำขอ
-  // - ยืนยันรถแล้ว: หนังสือนำส่ง + ใบคำขอของทั้งเที่ยว (ชุดเดียวกับปุ่มในกล่อง "เอกสารส่งกองทุน")
-  // - รอยืนยันรถ: ยังไม่มีเที่ยว จึงยังไม่มีหนังสือนำส่ง แต่ใบคำขอถึงนายกพิมพ์ได้แล้ว (เจ้าของระบบสั่ง 2569-10-02 เลือกแบบ ก)
-  //   หน้าต่างพิมพ์บอกเองว่ามีแค่ใบคำขอ และใบนี้จะออกอีกครั้งในชุดหลังยืนยันรถ
-  // - คำขอ/เที่ยวที่ยกเลิกแล้ว: ไม่ต้องส่งเอกสารถึงกองทุน ไม่มีปุ่มพิมพ์
-  const requestOnly = b.status === 'submitted'
-  const printable = !requestOnly && trip && b.status !== 'cancelled' && trip.state !== 'cancelled'
+  // ปุ่ม "พิมพ์" บนหัวแผ่น พิมพ์ของคำขอนี้คนเดียว ตามขั้นของคำขอ (ดู printerOf) — ชุดเดียวกับปุ่มพิมพ์ในแถว
+  // เจ้าของระบบสั่ง 2569-10-02: เอกสารแยกรายคน (เดิมพิมพ์ทั้งเที่ยวชุดเดียว) · หน้าต่างพิมพ์ของคำขอที่รอยืนยันรถบอกเองว่ามีแค่ใบคำขอ
+  const printer = printerOf(row, { onPrintLetter, onPrintRequest })
   return <Sheet wide title={b.patient_name} subtitle={`${issue ? 'เหตุขัดข้อง' : STAGES[stage].label} · เลขที่ ${ref(b.id)}`} onClose={onClose} onReload={onReload} busy={busy}
-    onPrint={printable ? () => onPrintLetter(trip) : requestOnly ? () => onPrintRequest(b) : undefined} printLabel={requestOnly ? 'พิมพ์ใบคำขอถึงนายก' : 'พิมพ์เอกสาร 2 ประเภท'}>
+    onPrint={printer?.run} printLabel={printer?.label}>
     {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
     {linked && <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
       <p className="font-bold text-sky-950">คิวที่ใช้เดินทาง: {dateTime(linked.appointment_at)} · เลขที่ {ref(linked.id)}</p>
@@ -556,10 +559,9 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
     {next.id === 'confirm' && !showProblem && <button type="button" className="min-h-12 w-full rounded-xl px-4 text-base font-bold text-white disabled:opacity-50" style={{ backgroundColor: next.color }} disabled={busy} onClick={() => onConfirm(row)}>{actionLabel(row)}</button>}
     {b.status === 'confirmed' && trip?.state === 'confirmed' && <section aria-label="ขั้นตอนหลังยืนยันรถ" className="space-y-3 rounded-xl border border-sky-200 bg-sky-50 p-4">
       <p className="font-bold text-sky-950">ยืนยันรถแล้ว · ขั้นต่อไป</p>
-      <p className="text-sm text-slate-800">ผู้จองและคนขับเห็นเที่ยวในระบบแล้ว พิมพ์ใบคำขอจากประชาชนถึงนายก และหนังสือนำส่งจาก อปท. ถึงกองทุนได้ตอนนี้ วันเดินทางคนขับเปิด “งานคนขับ” เพื่อบันทึกการรับ–ส่งและจบเที่ยว</p>
-      {row.riders.length > 1 && <TripPrintNote riders={row.riders} />}
+      <p className="text-sm text-slate-800">ผู้จองและคนขับเห็นเที่ยวในระบบแล้ว พิมพ์ใบคำขอจากประชาชนถึงนายก และหนังสือนำส่งจาก อปท. ถึงกองทุน ของคนนี้ได้ตอนนี้ (เอกสารแยกรายคน) วันเดินทางคนขับเปิด “งานคนขับ” เพื่อบันทึกการรับ–ส่งและจบเที่ยว</p>
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={primaryClass} disabled={busy} onClick={() => onPrintLetter(trip)}>พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน</button>
+        <button type="button" className={primaryClass} disabled={busy} onClick={() => onPrintLetter(b)}>พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน</button>
         {trip.driver_id === currentUserId && <button type="button" className={buttonClass} onClick={onOpenDriver}>ไปงานคนขับ</button>}
       </div>
       {trip.driver_id !== currentUserId && <p className="text-sm text-slate-700">ถ้าคนขับใช้อีกบัญชี ให้เข้าหน้าเจ้าหน้าที่ด้วยบัญชีคนขับ แล้วเปิดแท็บ “งานคนขับ”</p>}
@@ -576,7 +578,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
       <ReasonAction busy={busy} primary title="ประสานแก้ไขแล้ว" defaultReason="ประสานแก้ไขแล้ว เดินรถต่อได้" button="แก้ไขแล้ว เดินรถต่อ" onRun={note => act(trip, 'resolve', note)} />
     </>}
     {next.id === 'docs' && <>
-      <TripFundDocs trip={trip} riders={row.riders} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />
+      <BookingFundDocs booking={b} trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />
       <OdometerForm trip={trip} trips={workspace.trips} busy={busy} onSave={onOdometer} />
     </>}
     {/* ผู้จองโทรมาแจ้งว่าพร้อมกลับ — คำขอที่รับจองทางโทรศัพท์ผู้จองไม่มีบัญชีให้กดเอง ใครรับสายก็กดแทนได้
@@ -701,7 +703,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
               <td colSpan={6} className="p-0">{block.start > 0 && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand section={lead.section} count={sectionCount[lead.section]} toggle={lead.section === 'done' ? doneToggle : null} /></td>
             </tr>}
             {block.framed && !folded(lead) && <tr data-trip-group={lead.trip.id}>
-              <td colSpan={6} className="p-0" style={{ border: TRIP_EDGE, borderBottom: 0, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} busy={busy} onPrint={onPrintLetter} /></td>
+              <td colSpan={6} className="p-0" style={{ border: TRIP_EDGE, borderBottom: 0, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} /></td>
             </tr>}
             {block.rows.map((row, offset) => {
               const { booking: b, trip, linked, group } = row
@@ -719,7 +721,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
                 <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span>{b.status === 'submitted' && group.length > 1 && <span className="block text-[11px] font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</span>}{mates.length > 0 && <span className="block text-[11px] font-semibold text-sky-800">{matesText(mates)}</span>}</td>
                 <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={b.pickup}>รับที่ {b.pickup}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[b.return_mode]}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
                 <td className="border-r border-gray-200 px-2 py-2.5 text-center" style={closes}><StatusChips row={row} /></td>
-                <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit', ...(block.framed && { borderRight: TRIP_EDGE }), ...closes }}><div className="flex flex-wrap justify-center gap-2"><RowButton row={row} busy={busy} onPress={press} />{deleteButton(row)}</div></td>
+                <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit', ...(block.framed && { borderRight: TRIP_EDGE }), ...closes }}><div className="flex flex-wrap justify-center gap-2"><RowButton row={row} busy={busy} onPress={press} /><RowPrint printer={printerOf(row, { onPrintLetter, onPrintRequest })} name={b.patient_name} busy={busy} />{deleteButton(row)}</div></td>
               </tr>
             })}
             </Fragment>
@@ -740,14 +742,14 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
             <p className="text-sm text-slate-600">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน{pickupAt && b.status !== 'cancelled' ? ` · รถมารับ ${clockOf(pickupAt)} น.` : ''}</p>
             {b.status === 'submitted' && group.length > 1 && <p className="text-sm font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</p>}
             {mates.length > 0 && <p className="text-sm font-semibold text-sky-800">{matesText(mates)}</p>}
-            <div className="flex flex-wrap gap-2"><RowButton row={row} busy={busy} onPress={press} full />{deleteButton(row)}</div>
+            <div className="flex flex-wrap gap-2"><RowButton row={row} busy={busy} onPress={press} full /><RowPrint printer={printerOf(row, { onPrintLetter, onPrintRequest })} name={b.patient_name} busy={busy} />{deleteButton(row)}</div>
           </article>
         })
         return <Fragment key={lead.booking.id}>
         {startsSection(block.start) && <h3 data-section-header={lead.section} className={block.start ? 'pt-4' : ''}><SectionBand section={lead.section} count={sectionCount[lead.section]} rounded toggle={lead.section === 'done' ? doneToggle : null} /></h3>}
         {/* กรอบกลุ่มเที่ยวบนมือถือ = กล่องม่วงครอบการ์ดของทุกคนในเที่ยว หัวกรอบเดียวกับตาราง */}
         {!folded(lead) && (block.framed
-          ? <section data-trip-group={lead.trip.id} className="space-y-2 rounded-2xl p-2" style={{ border: TRIP_EDGE, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} card busy={busy} onPrint={onPrintLetter} />{cards}</section>
+          ? <section data-trip-group={lead.trip.id} className="space-y-2 rounded-2xl p-2" style={{ border: TRIP_EDGE, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} card />{cards}</section>
           : cards)}
         </Fragment>
       })}</div>

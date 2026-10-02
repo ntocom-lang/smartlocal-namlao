@@ -19,6 +19,8 @@ import {
   buildBookingRequestFormHtml, buildPatientTransportFormHtml, buildPatientTransportPacketHtml,
   buildTripForwardLetterHtml, buildTripMonthReportHtml, tripPassengers, writeAndPrint, PRINT_DIALOG_DELAY_MS,
 } from '../src/lib/patientTransportPrint.js'
+import { bookingLetter } from '../src/lib/patientBooking.js'
+import { thaiDateFromDateInput } from '../src/lib/thaiDate.js'
 import { assertSignBlockStandard, assertSignLinesAligned } from './lib/signBlockChecks.mjs'
 import { addressFromMap, joinPickup, pickupSentence } from '../src/lib/pickupText.js'
 
@@ -138,7 +140,9 @@ const monthArgs = () => ({
       trip_id: `t-${i}`, date: `2026-10-${String(i + 1).padStart(2, '0')}`, state: i < 20 ? 'completed' : 'confirmed',
       route_label: 'โรงพยาบาลแพร่ — หมู่ 1 ถึงหมู่ 12', passengers: 4, companions: 3,
       odometer_start: i < 20 ? 12000 + i * 80 : null, odometer_end: i < 20 ? 12000 + i * 80 + 76 : null,
-      distance: i < 20 ? 76 : null, driver_name: 'นายขับดี ปลอดภัยยิ่ง', letter_no: `พร 72301/${100 + i}`,
+      distance: i < 20 ? 76 : null, driver_name: 'นายขับดี ปลอดภัยยิ่ง',
+      // เลขหนังสือแยกรายคน (2569-10-02): เที่ยวที่ไปหลายคนรายงานรวมเป็น "เลข, เลข, เลข" ต้องตัดบรรทัดในช่องเดียว ไม่ดันตารางล้นกระดาษ
+      letter_no: i === 3 ? 'พร 72301/103, พร 72301/104, พร 72301/105, พร 72301/106' : `พร 72301/${100 + i}`,
     })),
   },
 })
@@ -303,9 +307,9 @@ const checks = [
     },
   },
   {
-    // เจ้าของระบบสั่ง 2569-10-01 (แบบ ก): หน้าจอเจ้าหน้าที่บอกก่อนกดพิมพ์ว่าเที่ยวที่ไปด้วยกัน "กดพิมพ์ที่คนไหนก็ได้
-    // ได้ชุดเดียวกัน · ใบคำขอ N ใบ + หนังสือนำส่ง 1 ใบ = N+1 แผ่น" โดยนับด้วย tripPassengers ตัวเดียวกับใบพิมพ์
-    // ข้อนี้ล็อกว่ารายชื่อที่จอใช้นับ = ใบคำขอที่ออกจริงทุกใบ เรียงเหมือนกัน ถ้ามีคนแก้เงื่อนไขนับฝั่งเดียว จอจะบอกจำนวนผิด
+    // ⚠️ #368/#371 (พิมพ์ทั้งเที่ยวชุดเดียว) เลิกแล้ว — เจ้าของระบบสั่งกลับ 2569-10-02 ให้เอกสารแยกรายคน (ดู letter-is-per-person-with-own-number)
+    // ข้อนี้ยังเก็บไว้เพราะหน้าจอยังใช้ tripPassengers ตัวเดียวกับตัวประกอบใบพิมพ์ตีกรอบกลุ่มเที่ยว (จำนวนคนในหัวกรอบ)
+    // และตัวประกอบยังรับหลายคนได้ — ล็อกว่ารายชื่อที่ใช้นับ = ใบคำขอที่ตัวประกอบออกให้จริง เรียงเหมือนกัน
     name: 'screen-count-matches-printed-forms',
     reason: 'จำนวนแผ่นและรายชื่อที่หน้าจอเจ้าหน้าที่บอกก่อนกดพิมพ์ต้องเท่ากับกระดาษที่ออกจริง'
       + ' คำขอที่ยกเลิก ยังรอยืนยัน หรืออยู่เที่ยวอื่น ต้องไม่ถูกนับทั้งบนจอและบนกระดาษ',
@@ -976,6 +980,58 @@ const checks = [
     },
   },
   // --- ระบบจองคิวรถ: หนังสือนำส่งต่อเที่ยว + สรุปรายเดือน ------------------------------------
+  {
+    // เจ้าของระบบสั่ง 2569-10-02 เลือกแบบ ข: เอกสารแยกรายคน — ผู้เดินทางแต่ละคนพิมพ์ใบคำขอ + หนังสือนำส่งของตัวเอง เลขที่หนังสือคนละเลข
+    // (เดิม #368/#371 พิมพ์ทั้งเที่ยวชุดเดียว หนังสือฉบับเดียวมีเลขเดียว) หน้าจอเรียกตัวประกอบด้วยคำขอทีละใบ (bookings: [booking])
+    // ⚠️ เลขของคำขอต้องชนะเลขของเที่ยวเสมอ: ถ้าหนังสือของคนที่สองพิมพ์เลขของเที่ยว (เลขเดียวกับคนแรก) ก็กลับไปเป็นหนังสือหลายฉบับเลขเดียวกัน
+    name: 'letter-is-per-person-with-own-number',
+    reason: 'พิมพ์คำขอเดียวต้องได้ใบคำขอ 1 + หนังสือ 1 ของคนนั้น ไม่มีของคนอื่นในเที่ยวเดียวกัน · เลขที่/วันที่หนังสือเป็นของคำขอเอง'
+      + ' ไม่มีค่อยใช้เลขของเที่ยว (เที่ยวเก่า) ไม่มีทั้งคู่เว้นเส้นประให้เขียนมือ',
+    async run(browser) {
+      // 1) กติกาเลือกเลข (ตัวเดียวกับที่หน้าจอ งานถัดไป และใบพิมพ์ใช้)
+      const tripWithLetter = { forward_letter_no: 'พร 9/9', forward_letter_date: '2026-09-01' }
+      assert.deepEqual(bookingLetter({ forward_letter_no: 'พร 1/1', forward_letter_date: '2026-10-02' }, tripWithLetter),
+        { no: 'พร 1/1', date: '2026-10-02', own: true }, 'เลขของคำขอเองต้องมาก่อนเลขของเที่ยว')
+      assert.deepEqual(bookingLetter({ forward_letter_no: null }, tripWithLetter), { no: 'พร 9/9', date: '2026-09-01', own: false }, 'ไม่มีเลขของคำขอ = ใช้เลขของเที่ยวเดิม')
+      assert.deepEqual(bookingLetter({}, {}), { no: '', date: '', own: false })
+      assert.deepEqual(bookingLetter(undefined, undefined), { no: '', date: '', own: false })
+      // 2) พิมพ์ทีละคน — 3 คนในเที่ยวเดียวกัน เลขคนละเลข วันที่คนละวัน
+      const riders = TRIP_BOOKINGS.slice(0, 3).map((b, i) => ({ ...b, forward_letter_no: `พร 72301/${200 + i}`, forward_letter_date: `2026-10-0${i + 1}` }))
+      for (const [index, rider] of riders.entries()) {
+        const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings: [rider] }))
+        try {
+          assert.deepEqual(await sheetKinds(page), ['form', 'letter'], `คนที่ ${index + 1}: ต้องได้ใบคำขอ 1 + หนังสือ 1 ไม่มีของคนอื่น`)
+          const letter = await letterSheetOf(page).innerText()
+          const form = await formSheetsOf(page).innerText()
+          assert.ok(form.includes(`B-${index}`) && letter.includes(`B-${index}`), `คนที่ ${index + 1}: ใบคำขอและหนังสือต้องอ้างเลขที่คำขอของตัวเอง`)
+          const letterNo = (await page.locator('.letter-no').innerText()).replace(/\s+/g, ' ').trim()
+          assert.ok(letterNo.includes(`พร 72301/${200 + index}`), `คนที่ ${index + 1}: ช่อง "ที่" ต้องเป็นเลขของคำขอเอง: "${letterNo}"`)
+          assert.ok(!letterNo.includes('พร 72301/88'), `คนที่ ${index + 1}: ใช้เลขของเที่ยวทับเลขของคำขอ`)
+          assert.ok(letter.includes(thaiDateFromDateInput(`2026-10-0${index + 1}`)), `คนที่ ${index + 1}: วันที่หนังสือต้องเป็นของคำขอเอง`)
+          for (const other of riders.filter((_, i) => i !== index)) {
+            const otherIndex = riders.indexOf(other)
+            for (const text of [letter, form]) {
+              assert.ok(!text.includes(`B-${otherIndex}`) && !text.includes(`นายผู้ยื่น ทดสอบ${otherIndex + 1}`) && !text.includes(`พร 72301/${200 + otherIndex}`),
+                `คนที่ ${index + 1}: เอกสารมีข้อมูลของคนที่ ${otherIndex + 1} ปนมา`)
+            }
+          }
+          assert.ok(!/จำนวน \d+ ราย/.test(letter), `คนที่ ${index + 1}: หนังสือต้องเป็นฉบับของคนเดียว ไม่ใช่บัญชีรายชื่อหลายราย`)
+        } finally { await page.close() }
+      }
+      // 3) เที่ยวเก่า: คำขอไม่มีเลขของตัวเอง ใช้เลขของเที่ยว (TRIP = พร 72301/88) · ไม่มีเลขเลย = เส้นประให้เขียนมือ
+      for (const [label, trip, expected] of [
+        ['เที่ยวเก่า ใช้เลขของเที่ยว', TRIP, 'พร 72301/88'],
+        ['ยังไม่มีเลขเลย', { ...TRIP, forward_letter_no: null, forward_letter_date: null }, null],
+      ]) {
+        const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), trip, bookings: [TRIP_BOOKINGS[0]] }))
+        try {
+          const letterNo = (await page.locator('.letter-no').innerText()).replace(/\s+/g, ' ').trim()
+          if (expected) assert.ok(letterNo.includes(expected), `${label}: "${letterNo}"`)
+          else assert.ok(!/พร|\d/.test(letterNo), `${label}: ต้องเป็นเส้นประให้เขียนมือ ไม่ใช่เลขที่ระบบเดา — "${letterNo}"`)
+        } finally { await page.close() }
+      }
+    },
+  },
   {
     name: 'trip-letter-one-page-each',
     reason: 'ผู้ป่วยหนึ่งคนได้ 2 ใบ; ร่วมเที่ยวใช้หนังสือเดียวแนบใบคำขอครบทุกคน ไม่มีเลขหนังสือซ้ำหลายฉบับ',

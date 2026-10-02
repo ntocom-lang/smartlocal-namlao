@@ -47,7 +47,7 @@ import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
 import {
   APPOINTMENT_KINDS, MOBILITY_LEVELS, REQUESTER_RELATIONS, TRIP_TYPES, optionLabel,
 } from './patientTransport.js'
-import { RETURN_MODES as BOOKING_RETURN_MODES, TRIP_STATUS, thaiDay, monthReportSummary } from './patientBooking.js'
+import { RETURN_MODES as BOOKING_RETURN_MODES, TRIP_STATUS, thaiDay, monthReportSummary, bookingLetter } from './patientBooking.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -640,8 +640,10 @@ export function buildPatientTransportFormHtml(args) {
 }
 
 // ---------------------------------------------------------------------------
-// ระบบจองคิวรถ: หนังสือนำส่งหนึ่งฉบับต่อเที่ยว + ใบคำขอรายผู้ป่วยตามแบบที่เจ้าของระบบเลือก
-// ใช้เลขหนังสือของเที่ยวเพียงครั้งเดียว แม้ร่วมเที่ยวหลายคน ไม่ออกหลายหนังสือด้วยเลขเดียวกัน
+// ระบบจองคิวรถ: ใบคำขอ + หนังสือนำส่งกองทุน "แยกรายคน" (เจ้าของระบบสั่ง 2569-10-02 เลือกแบบ ข: ผู้เดินทางแต่ละคน
+// พิมพ์ชุดของตัวเอง เลขที่หนังสือคนละเลข เก็บที่ patient_bookings.forward_letter_no — ดู bookingLetter ใน patientBooking.js)
+// หน้าจอเจ้าหน้าที่เรียก buildTripForwardLetterHtml ด้วยคำขอทีละใบ (bookings: [booking]) จึงได้ใบคำขอ 1 + หนังสือ 1 ของคนนั้น
+// ตัวประกอบยังรับหลายคนได้ (หนังสือ 1 ฉบับแนบใบคำขอหลายใบ ใช้เลขของคำขอคนแรก) แต่ไม่มีปุ่มไหนเรียกแบบนั้นแล้ว
 // ข้อมูลที่การจองไม่ได้เก็บ (อายุ/สมาชิก/ประเภทนัด/ที่อยู่ผู้ยื่น) เว้นว่าง ห้ามเดาจากจุดรับ
 // บรรทัดกำกับใต้ชื่อผู้ยื่นตามช่องทางที่คำขอเข้ามา (patient_bookings.entry_channel) — ระบุว่าลงชื่อออนไลน์
 // เฉพาะคำขอที่ผู้จองล็อกอินยื่นเอง คำขอที่เจ้าหน้าที่รับจองแทนบอกตามจริงว่ารับจองแทน (ดู formSheet)
@@ -661,12 +663,14 @@ function bookingPacket(args, b, trip) {
   // 'booking' ที่ไม่อ้างอะไรเลย (กติกาเดียวกับทุกใบ: อ้างว่าลงชื่อออนไลน์ได้เมื่อรู้แน่เท่านั้น)
   const channel = b.entry_channel === 'online' ? 'online'
     : b.entry_channel === 'staff' ? 'booking_staff' : 'booking'
+  const letter = bookingLetter(b, trip)
   return {
     ...args,
     referenceNo: String(b.id).slice(0, 8).toUpperCase(),
     docDate: b.created_at ? thaiDay(b.created_at) : '',
     header: {
-      forward_letter_no: trip?.forward_letter_no, forward_letter_date: trip?.forward_letter_date,
+      // เลขของคำขอเอง ไม่มีค่อยใช้เลขของเที่ยว (เที่ยวเก่า) — ว่างได้ ช่อง "ที่" เว้นเส้นประให้เขียนมือ
+      forward_letter_no: letter.no || null, forward_letter_date: letter.date || null,
       partner_name_snapshot: textOr(partner?.name, 'กองทุนเจ้าของรถ'),
       recipient_title_snapshot: textOr(partner?.recipient_title, `ประธาน${textOr(partner?.name, 'กองทุนเจ้าของรถ')}`),
       appointment_at: b.appointment_at, mobility: b.mobility,

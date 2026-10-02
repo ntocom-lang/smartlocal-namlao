@@ -195,12 +195,22 @@ export function bookingStage(booking, trip) {
 
 // ปุ่มเดียวของแถว = งานถัดไปที่เจ้าหน้าที่ต้องทำ แบบ NEXT_ACTION ของคำร้อง (ComplaintsManager.jsx)
 // สีปุ่ม = สีของผลที่จะได้ ใช้เฉด 700 ให้ตัวอักษรขาวอ่านออก · rank น้อย = ขึ้นก่อนในกล่อง
+// เลขที่/วันที่หนังสือนำส่งของคำขอหนึ่งใบ — เจ้าของระบบสั่ง 2569-10-02 ให้เอกสารแยกรายคน เลขที่หนังสือคนละเลข
+// (patient_bookings.forward_letter_no) · คำขอที่ยังไม่มีเลขของตัวเองใช้เลขของเที่ยว (เที่ยวเก่าที่บันทึกก่อนแยกรายคน)
+// own = เลขของคำขอนี้เอง · ไม่มีทั้งคู่ = ว่าง (พิมพ์ได้ ช่อง "ที่" เว้นเส้นประให้เขียนมือ)
+// ⚠️ ใช้ฟังก์ชันนี้ที่เดียวทั้งหน้าจอ งานถัดไป และใบพิมพ์ — ห้ามอ่าน trip.forward_letter_no ตรงๆ แล้วลืมเลขของคำขอ
+export function bookingLetter(booking, trip) {
+  if (booking?.forward_letter_no) return { no: booking.forward_letter_no, date: booking.forward_letter_date || '', own: true }
+  if (trip?.forward_letter_no) return { no: trip.forward_letter_no, date: trip.forward_letter_date || '', own: false }
+  return { no: '', date: '', own: false }
+}
+
 export function staffNextAction(booking, trip) {
   if (booking.status === 'submitted') return { id: 'confirm', label: 'ยืนยันรถ', color: '#0369a1', rank: 2 }
   if (booking.status === 'confirmed' && trip?.state === 'issue') return { id: 'issue', label: 'แก้เหตุขัดข้อง', color: '#b91c1c', rank: 0 }
   if (booking.status === 'confirmed' && booking.cancel_requested) return { id: 'cancel', label: 'ประสานยกเลิก', color: '#b45309', rank: 1 }
   if (booking.status === 'completed' && trip && trip.state === 'completed'
-    && (!trip.forward_letter_no || trip.odometer_issue || !Number.isFinite(trip.odometer_end))) return { id: 'docs', label: 'บันทึกเอกสาร', color: '#047857', rank: 3 }
+    && (!bookingLetter(booking, trip).no || trip.odometer_issue || !Number.isFinite(trip.odometer_end))) return { id: 'docs', label: 'บันทึกเอกสาร', color: '#047857', rank: 3 }
   return { id: 'view', label: 'ดูรายละเอียด', color: '', rank: 9 }
 }
 
@@ -341,6 +351,7 @@ const HISTORY = {
   driver_reassigned: ['เปลี่ยนคนขับ', EDITED],
   departure_corrected: ['แก้การกดออกรถผิด', EDITED],
   letter_recorded: ['บันทึกเลขหนังสือนำส่ง', EDITED],
+  booking_letter_recorded: ['บันทึกเลขหนังสือนำส่ง', EDITED],
   odometer_recorded: ['บันทึกเลขไมล์', EDITED],
   trip_next: ['ออกรถ', STAGES.running.color],
   passenger_next: ['บันทึกขั้นผู้เดินทาง', STAGES.running.color],
