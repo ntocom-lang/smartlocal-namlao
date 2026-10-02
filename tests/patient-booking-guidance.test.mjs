@@ -83,6 +83,11 @@ test('one next-step button per row, most urgent first', () => {
   assert.equal(staffNextAction({ status: 'completed' }, { ...done, forward_letter_no: null }).id, 'docs')
   assert.equal(staffNextAction({ status: 'completed' }, { ...done, odometer_end: null }).id, 'docs')
   assert.equal(staffNextAction({ status: 'completed' }, done).id, 'view')
+  // เลขหนังสือแยกรายคน (2569-10-02): คำขอที่มีเลขของตัวเองไม่ต้องรอเลขของเที่ยว · ไม่มีทั้งเลขของคำขอและของเที่ยว = ยังต้องบันทึกเอกสาร
+  const noTripLetter = { ...done, forward_letter_no: null }
+  assert.equal(staffNextAction({ status: 'completed', forward_letter_no: 'พร 2/2', forward_letter_date: '2026-10-02' }, noTripLetter).id, 'view')
+  assert.equal(staffNextAction({ status: 'completed', forward_letter_no: null }, noTripLetter).id, 'docs')
+  assert.equal(staffNextAction({ status: 'completed', forward_letter_no: 'พร 2/2' }, { ...noTripLetter, odometer_end: null }).id, 'docs', 'เลขไมล์ยังค้างอยู่ งานเอกสารต้องไม่หาย')
   assert.equal(staffNextAction({ status: 'confirmed' }, { state: 'outbound' }).id, 'view')
   assert.equal(staffNextAction({ status: 'cancelled' }, null).id, 'view')
   const ranks = ['issue', 'cancel', 'confirm', 'docs', 'view'].map(id => [

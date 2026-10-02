@@ -2,12 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { reportPeriod, REPORT_MODES } from '../../lib/patientReportPeriod'
 import { FISCAL_QUARTERS } from '../../lib/fiscalYear'
 import ReportInfographic from './ReportInfographic'
-import { Printer } from 'lucide-react'
 import { ListCard, Pills, Sheet } from './StaffShell'
 import { MONTHS_TH, thaiDateFromDateInput } from '../../lib/thaiDate'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
-import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent } from '../../lib/patientBooking'
+import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent, bookingLetter } from '../../lib/patientBooking'
 
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
 const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
@@ -581,43 +580,30 @@ export function DriverTrips({ workspace, uid, isAdmin, canAssign, busy, error, c
   </div>
 }
 
-// ปุ่มพิมพ์ทุกปุ่มพิมพ์ "ทั้งเที่ยว" ชุดเดียว (ใบคำขอทุกคน + หนังสือนำส่ง 1 ใบ) ไม่ว่าจะกดจากแผ่นของคนไหน
-// เจ้าของระบบสั่ง 2569-10-01 (แบบ ก): เดิมหน้าจอไม่บอก เจ้าหน้าที่เปิดแผ่นของแต่ละคนแล้วกดพิมพ์ซ้ำ ได้กระดาษเกินมาทั้งชุด
-// riders = tripPassengers() ตัวเดียวกับที่ใบพิมพ์ใช้ (ส่งมาจาก BookingInbox) จำนวนแผ่นบนจอจึงเท่ากระดาษที่ออกจริง
-// ไฟล์นี้ใช้ร่วมกับหน้าประชาชน (BookingCards) จึงไม่ import โมดูลใบพิมพ์มาเอง
-// ⚠️ ระบบไม่ได้จำว่าพิมพ์ไปแล้ว ข้อความนี้กันคนเดียวกันพิมพ์ซ้ำ ไม่กันเจ้าหน้าที่คนละคนต่างคนต่างพิมพ์
-export function TripPrintNote({ riders }) {
-  const count = riders?.length || 0
-  if (!count) return null
-  if (count === 1) return <p className="text-sm text-slate-600">ใบคำขอจากประชาชนถึงนายก 1 ใบ + หนังสือนำส่งจาก อปท. ถึงกองทุน 1 ใบ = 2 แผ่น</p>
-  return <div role="note" aria-label="พิมพ์เอกสารทั้งเที่ยว" className="rounded-lg border border-sky-300 bg-white p-3 text-sm text-slate-800">
-    <p className="flex items-start gap-1.5 font-bold text-sky-950"><Printer size={16} className="mt-0.5 shrink-0" aria-hidden="true" /><span>เที่ยวนี้ไปด้วยกัน {count} คน: {riders.map(r => r.patient_name).join(' · ')}</span></p>
-    <p className="mt-1">กดพิมพ์ที่คนไหนก็ได้ ได้ชุดเดียวกันครบทั้งเที่ยว</p>
-    <p className="mt-1">ใบคำขอ {count} ใบ + หนังสือนำส่ง 1 ใบ = {count + 1} แผ่น · <strong>พิมพ์ครั้งเดียวพอ</strong></p>
-  </div>
-}
-
-// หนังสือนำส่งถึงกองทุน 1 ฉบับต่อเที่ยว — เลขที่/วันที่มาจากทะเบียนหนังสือส่งของสารบรรณ ระบบออกเลขเองไม่ได้
-// พิมพ์ได้ก่อนมีเลข (ช่อง "ที่" เว้นเส้นประให้เขียนมือ) เพราะบางแห่งลงเลขหลังผู้บริหารลงนาม
-// riders = ผู้เดินทางที่ใบพิมพ์ของเที่ยวจะออกให้ (ดู TripPrintNote)
-export function TripFundDocs({ trip, riders = [], busy, onRecordLetter, onPrintLetter }) {
-  const edit = useTripDraft(trip, { letterNo: trip.forward_letter_no || '', letterDate: trip.forward_letter_date || thaiDay() })
+// เอกสารถึงกองทุนของผู้เดินทางคนนี้ "คนเดียว" — ใบคำขอถึงนายก + หนังสือนำส่งกองทุน เลขที่หนังสือแยกรายคน
+// เจ้าของระบบสั่ง 2569-10-02 (แบบ ข): เอกสารไม่ใช้ร่วมกันทั้งเที่ยวแล้ว ต้องการแบบแยกเป็นของใครของมัน
+// (เดิม #368/#371 พิมพ์ทั้งเที่ยวชุดเดียวและมีกรอบ "กดพิมพ์ที่คนไหนก็ได้" — เลิกแล้ว) · ปัญหากระดาษเกินหายเอง เพราะแต่ละคนพิมพ์ของตัวเอง
+// เลขที่/วันที่มาจากทะเบียนหนังสือส่งของสารบรรณ ระบบออกเลขเองไม่ได้ · พิมพ์ได้ก่อนมีเลข (ช่อง "ที่" เว้นเส้นประให้เขียนมือ)
+// เพราะบางแห่งลงเลขหลังผู้บริหารลงนาม · ไฟล์นี้ใช้ร่วมกับหน้าประชาชน (BookingCards) จึงไม่ import โมดูลใบพิมพ์มาเอง
+export function BookingFundDocs({ booking, trip, busy, onRecordLetter, onPrintLetter }) {
+  const letter = bookingLetter(booking, trip)
+  const edit = useRevisionDraft(booking, 'letter_revision', { letterNo: letter.no, letterDate: letter.date || thaiDay() })
   const { letterNo, letterDate } = edit.values
   const [open, setOpen] = useState(false)
   return <div className="mt-4 rounded-xl border border-slate-200 p-3">
     <p className="font-semibold">เอกสารคำขอและนำส่งกองทุน</p>
-    <div className={riders.length > 1 ? 'my-2' : ''}><TripPrintNote riders={riders} /></div>
-    {trip.forward_letter_no && !open
-      ? <p className="text-sm">ที่ {trip.forward_letter_no} ลงวันที่ {thaiDateFromDateInput(trip.forward_letter_date)}</p>
+    <p className="text-sm text-slate-600">ของ {booking.patient_name} คนเดียว · ใบคำขอจากประชาชนถึงนายก 1 ใบ + หนังสือนำส่งจาก อปท. ถึงกองทุน 1 ฉบับ · เลขที่หนังสือแยกรายคน</p>
+    {letter.no && !open
+      ? <p className="text-sm">ที่ {letter.no} ลงวันที่ {thaiDateFromDateInput(letter.date)}{!letter.own && <span className="text-slate-600"> (เลขของเที่ยวเดิม ยังไม่ได้บันทึกเลขของคนนี้)</span>}</p>
       : <p className="text-sm text-slate-600">ยังไม่ได้บันทึกเลขที่หนังสือ พิมพ์ได้ก่อนแล้วเขียนเลขด้วยมือ</p>}
     {open && <form className="mt-3 grid gap-3 sm:grid-cols-[1fr_180px_auto]" onSubmit={async e => { e.preventDefault(); if (!edit.conflict && await onRecordLetter(edit.snapshot, letterNo, letterDate)) { edit.reset(); setOpen(false) } }}>
       <label>เลขที่หนังสือ<input className={inputClass} required maxLength={60} value={letterNo} onChange={e => edit.change("letterNo", e.target.value)} placeholder="เช่น พร 72301/123" /></label>
       <label>ลงวันที่<input className={inputClass} type="date" required value={letterDate} onChange={e => edit.change("letterDate", e.target.value)} /></label>
-      <DraftConflict edit={edit} busy={busy} latest={`เลขหนังสือ ${trip.forward_letter_no || "—"} · ${trip.forward_letter_date || "—"}`} /><button className={`${primaryClass} self-end`} disabled={busy || edit.conflict}>บันทึกเลขหนังสือ</button>
+      <DraftConflict edit={edit} busy={busy} latest={`เลขหนังสือ ${letter.no || "—"} · ${letter.date || "—"}`} /><button className={`${primaryClass} self-end`} disabled={busy || edit.conflict}>บันทึกเลขหนังสือ</button>
     </form>}
     <div className="mt-3 flex flex-wrap gap-2">
-      <button type="button" className={buttonClass} disabled={busy} onClick={() => onPrintLetter(trip)}>พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน</button>
-      {!open && <button type="button" className={buttonClass} disabled={busy} onClick={() => setOpen(true)}>{trip.forward_letter_no ? 'แก้เลขหนังสือ' : 'กรอกเลขหนังสือ'}</button>}
+      <button type="button" className={buttonClass} disabled={busy} onClick={() => onPrintLetter(booking)}>พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน</button>
+      {!open && <button type="button" className={buttonClass} disabled={busy} onClick={() => setOpen(true)}>{letter.no ? 'แก้เลขหนังสือ' : 'กรอกเลขหนังสือ'}</button>}
     </div>
   </div>
 }
@@ -625,16 +611,19 @@ export function TripFundDocs({ trip, riders = [], busy, onRecordLetter, onPrintL
 // เลขไมล์ต่อเที่ยว — ระบบเติมเลขไมล์ออกจากเลขไมล์กลับของเที่ยวก่อนหน้าให้เอง คนขับกรอกแค่ตอนกลับ
 // ไม่บังคับก่อนจบเที่ยว เจ้าหน้าที่จัดคิวแก้แทนได้ภายหลัง (ไม่เพิ่มขั้นตอนบังคับให้คนขับ)
 // Freeze the revision with the user's draft. Polling must never bless old inputs with a new revision.
-function useTripDraft(trip, latest) {
+// revision ที่ใช้เทียบคือ field ของ entity นั้น: เที่ยว = docs_revision (เลขไมล์) · คำขอ = letter_revision (เลขหนังสือแยกรายคน)
+function useRevisionDraft(entity, field, latest) {
   const [draft, setDraft] = useState(null)
-  const conflict = !!draft && draft.revision !== trip.docs_revision
+  const revision = entity[field] ?? 0
+  const conflict = !!draft && draft.revision !== revision
   return { values: draft?.values || latest, conflict,
-    snapshot: { ...trip, docs_revision: draft?.revision ?? trip.docs_revision },
-    change: (key, value) => setDraft(d => ({ revision: d?.revision ?? trip.docs_revision, values: { ...(d?.values || latest), [key]: value } })),
+    snapshot: { ...entity, [field]: draft?.revision ?? revision },
+    change: (key, value) => setDraft(d => ({ revision: d?.revision ?? revision, values: { ...(d?.values || latest), [key]: value } })),
     reset: () => setDraft(null),
-    accept: () => setDraft(d => d ? { ...d, revision: trip.docs_revision } : d),
+    accept: () => setDraft(d => d ? { ...d, revision } : d),
   }
 }
+const useTripDraft = (trip, latest) => useRevisionDraft(trip, 'docs_revision', latest)
 function DraftConflict({ edit, busy, latest }) {
   if (!edit.conflict) return null
   return <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 sm:col-span-full">

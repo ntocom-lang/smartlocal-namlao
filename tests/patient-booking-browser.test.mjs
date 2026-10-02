@@ -35,6 +35,8 @@ await db.exec(await readFile(new URL('../supabase/migrations/20260929130000_pati
 await db.exec(await readFile(new URL('../supabase/migrations/20260930110000_patient_booking_duplicate_shared_trip.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20261001100000_patient_booking_history.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20261002090000_patient_booking_period_report.sql', import.meta.url), 'utf8'))
+await db.exec(await readFile(new URL('../supabase/migrations/20261002130000_patient_booking_letter_per_booking_columns.sql', import.meta.url), 'utf8'))
+await db.exec(await readFile(new URL('../supabase/migrations/20261002130100_patient_booking_letter_per_booking_rpc.sql', import.meta.url), 'utf8'))
 await actor(admin)
 await rpc('patient_booking_save_settings', [tenant, (await rpc('patient_booking_workspace', [tenant])).settings.revision,
   { ...settings, office_start: 450, office_end: 1050, routes: [{ ...settings.routes[0], minutes: 45 }] }])
@@ -154,6 +156,7 @@ const order = {
  patient_booking_events_page:['p_muni','p_page'],
  patient_booking_period_report:['p_muni','p_from','p_to'],
  patient_booking_history:['p_muni','p_booking'],
+ patient_booking_record_booking_letter:['p_muni','p_booking','p_letter_revision','p_letter_no','p_letter_date'],
 }
 const plugin = {
  name:'isolated-patient-booking-browser',enforce:'pre',
@@ -461,69 +464,96 @@ try{
  assert.equal(await tripOf(groupE),await tripOf(groupF))
  assert(vehiclePrompts.at(-1).includes('[TEST] ไปด้วยกัน อี')&&vehiclePrompts.at(-1).includes('[TEST] ไปด้วยกัน เอฟ'),'หน้าต่างทวนการยืนยันทั้งกลุ่มต้องแสดงชื่อครบทุกคน')
  console.log('PASS coordinator inbox: vehicle confirmation reviewed before saving, cancellation leaves booking pending; conflict, shared vehicle, area check, mover helper and suggested group through the real UI')
- // ── เที่ยวที่ไปด้วยกันพิมพ์ชุดเดียว (เจ้าของระบบสั่ง 2569-10-01 แบบ ก) ──
- // กรอบกลุ่มเที่ยวบอกว่าใครไปกับใคร · กรอบเหนือปุ่มพิมพ์บอกรายชื่อและจำนวนแผ่น · กดพิมพ์จากคนไหนก็ได้ชุดเดียวกันจริง
- // ตรวจกับหน้าต่างพิมพ์ด้วย ข้อความบนจอต้องเท่ากับกระดาษที่ออก ไม่ใช่แค่ขึ้นข้อความ
+ // ── เอกสารแยกรายคน (เจ้าของระบบสั่ง 2569-10-02 เลือกแบบ ข: ใบคำขอ + หนังสือนำส่งของใครของมัน เลขที่หนังสือคนละเลข) ──
+ // เดิม #368/#371 พิมพ์ทั้งเที่ยวชุดเดียว (กรอบ "เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว") — เลิกแล้ว · กรอบกลุ่มเที่ยว #370 ยังอยู่ แต่บอกแค่ว่าไปรถคันเดียวกัน
+ // ตรวจกับหน้าต่างพิมพ์และฐานข้อมูลจริง: ปุ่มพิมพ์ของแถวไหนต้องได้เฉพาะเอกสารของคนนั้น และเลขที่หนังสือแยกกันจริง
  {
-  // กรอบกลุ่มเที่ยว (เจ้าของระบบเลือกแบบ ก 2569-10-02 "เห็นแล้วรู้เลยว่ากลุ่มไหนเป็นกลุ่มไหน"): คนในเที่ยวเดียวกันอยู่ในกรอบเดียว
-  // หัวกรอบบอกจำนวนคน วัน เวลารถมารับ และว่าเอกสารชุดเดียว · แถวในกรอบไม่มีบรรทัด "ในเที่ยวเดียวกับ" ซ้ำ
   const groupTrip=await tripOf(groupE),tripFrame=page.locator(`tr[data-trip-group="${groupTrip}"]`)
   await tripFrame.waitFor();await page.mouse.move(0,0)
-  assert.match((await tripFrame.innerText()).replace(/\s+/g,' ').trim(),/^เที่ยวเดียวกัน 2 คน · \S.* (รถมารับ|รถเริ่มรับ) \d\d:\d\d น\. เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว$/,'หัวกรอบต้องบอกจำนวนคน วัน เวลารถมารับ และว่าเอกสารชุดเดียว')
+  // หัวกรอบ: จำนวนคน วัน เวลารถ — ไม่มีคำว่าเอกสาร และไม่มีปุ่มพิมพ์ทั้งเที่ยว
+  assert.match((await tripFrame.innerText()).replace(/\s+/g,' ').trim(),/^เที่ยวเดียวกัน 2 คน · \S.* (รถมารับ|รถเริ่มรับ) \d\d:\d\d น\.$/,'หัวกรอบต้องบอกจำนวนคน วัน เวลารถมารับ เท่านั้น')
+  assert.equal(await tripFrame.locator('button').count(),0,'หัวกรอบต้องไม่มีปุ่มพิมพ์ทั้งเที่ยวแล้ว (เอกสารแยกรายคน)')
+  assert.equal(await page.locator('[data-trip-print]').count(),0)
+  assert(!(await page.locator('body').innerText()).includes('เอกสารชุดเดียวกัน'),'หน้าจอต้องไม่มีคำว่า "เอกสารชุดเดียวกัน" แล้ว')
   const framed=await page.locator('tbody tr').evaluateAll((trs,id)=>{const at=trs.findIndex(tr=>tr.dataset.tripGroup===id);return trs.slice(at+1,at+4).map(tr=>[tr.dataset.booking,tr.dataset.tripFrame??null,tr.style.backgroundColor])},groupTrip)
   assert.deepEqual(framed.slice(0,2).map(([id,frame])=>[id,frame]),[[groupE,groupTrip],[groupF,groupTrip]],'หัวกรอบต้องอยู่เหนือแถวของทุกคนในเที่ยวพอดี เรียงตามเวลานัด')
   assert.notEqual(framed[2]?.[1],groupTrip,'แถวถัดจากกรอบต้องไม่ใช่คนในเที่ยวนี้')
   assert.equal(framed[0][2],framed[1][2],'แถวในกรอบเดียวกันต้องพื้นสีเดียวกัน');assert(!['rgb(255, 255, 255)','rgb(245, 248, 252)'].includes(framed[0][2]),`พื้นแถวในกรอบต้องต่างจากแถวลายสลับปกติ: ${framed[0][2]}`)
-  for(const id of [groupE,groupF])assert.equal(await row(id).getByText(/ในเที่ยวเดียวกับ/).count(),0,'แถวในกรอบไม่ต้องมีบรรทัด "ในเที่ยวเดียวกับ" ซ้ำ หัวกรอบบอกแล้ว')
+  for(const id of [groupE,groupF])assert.equal(await row(id).getByText(/ไปรถคันเดียวกับ/).count(),0,'แถวในกรอบไม่ต้องมีบรรทัด "ไปรถคันเดียวกับ" ซ้ำ หัวกรอบบอกแล้ว')
   assert.equal(await row(b1).getAttribute('data-trip-frame'),null,'เที่ยวที่มีคนเดียวต้องไม่มีกรอบ')
-  assert.equal(await row(b1).getByText(/ในเที่ยวเดียวกับ/).count(),0,'เที่ยวที่มีคนเดียวต้องไม่ขึ้นบรรทัด "ในเที่ยวเดียวกับ"')
-  // คนในเที่ยวไม่ครบในจอ (ค้นหาเจอคนเดียว) = ไม่ตีกรอบ แถวกลับไปบอกชื่อคนที่ไปด้วยแทน หัวกรอบจึงไม่บอกจำนวนเกินแถวที่เห็น
+  assert.equal(await row(b1).getByText(/ไปรถคันเดียวกับ/).count(),0,'เที่ยวที่มีคนเดียวต้องไม่ขึ้นบรรทัด "ไปรถคันเดียวกับ"')
+  // คนในเที่ยวไม่ครบในจอ (ค้นหาเจอคนเดียว) = ไม่ตีกรอบ แถวกลับไปบอกชื่อคนที่ไปรถคันเดียวกันแทน หัวกรอบจึงไม่บอกจำนวนเกินแถวที่เห็น
   const inboxSearch=page.getByLabel('ค้นหาชื่อ เบอร์ จุดรับ โรงพยาบาล เลขที่',{exact:true})
   await inboxSearch.fill('ไปด้วยกัน อี')
-  await row(groupE).getByText('ในเที่ยวเดียวกับ [TEST] ไปด้วยกัน เอฟ · เอกสารชุดเดียวกัน',{exact:true}).waitFor()
+  await row(groupE).getByText('ไปรถคันเดียวกับ [TEST] ไปด้วยกัน เอฟ',{exact:true}).waitFor()
   assert.equal(await page.locator('tr[data-trip-group]').count(),0,'เห็นคนเดียวของเที่ยวต้องไม่ตีกรอบ');assert.equal(await row(groupE).getAttribute('data-trip-frame'),null)
   await inboxSearch.fill('');await tripFrame.waitFor()
-  // มือถือ: กรอบเดียวกันครอบการ์ดของทุกคนในเที่ยว และไม่ทำให้จอล้น
+  // มือถือ: กรอบเดียวกันครอบการ์ดของทุกคนในเที่ยว ไม่ล้นจอ และการ์ดแต่ละใบมีปุ่มพิมพ์ของตัวเองสูงอย่างน้อย 44px
   await page.setViewportSize({width:390,height:900})
   const cardFrame=page.locator(`section[data-trip-group="${groupTrip}"]`);await cardFrame.waitFor()
   assert.deepEqual(await cardFrame.locator('article[data-booking]').evaluateAll(cards=>cards.map(card=>card.dataset.booking)),[groupE,groupF],'กรอบบนมือถือต้องครอบการ์ดของทุกคนในเที่ยว')
-  const cardPrint=cardFrame.getByRole('button',{name:'เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว',exact:true});await cardPrint.waitFor()
-  const cardPrintBox=await cardPrint.boundingBox()
-  assert(cardPrintBox.height>=44&&cardPrintBox.x>=0&&cardPrintBox.x+cardPrintBox.width<=390,`ปุ่มพิมพ์ที่หัวกรอบบนมือถือต้องสูงอย่างน้อย 44px และอยู่ในจอ: ${JSON.stringify(cardPrintBox)}`)
+  assert.equal(await cardFrame.locator('button[data-trip-print]').count(),0)
+  for(const id of [groupE,groupF]){
+   const cardPrint=cardFrame.locator(`article[data-booking="${id}"] button[data-row-print]`);await cardPrint.waitFor()
+   const box=await cardPrint.boundingBox();assert(box.height>=44&&box.x>=0&&box.x+box.width<=390,`ปุ่มพิมพ์ในการ์ดมือถือต้องสูงอย่างน้อย 44px และอยู่ในจอ: ${JSON.stringify(box)}`)
+  }
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'กรอบกลุ่มเที่ยวต้องไม่ทำให้จอ 390px ล้น')
   await page.setViewportSize({width:1280,height:900});await tripFrame.waitFor()
-  // ป้าย "เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว" ที่หัวกรอบเป็นปุ่มพิมพ์ทั้งเที่ยว มีไอคอนเครื่องพิมพ์ (เจ้าของระบบสั่ง 2569-10-02
-  // "กดแล้วพิมพ์ได้เลย") — กดจากกล่องได้เลย ไม่ต้องเปิดแผ่นของใครก่อน และต้องได้ชุดเดียวกับปุ่มพิมพ์ในแผ่น
+
+  // ปุ่มพิมพ์ในแถว (ไอคอนเครื่องพิมพ์) — กดแล้วได้ใบคำขอ + หนังสือนำส่งของคนในแถวนั้นคนเดียว ไม่เปิดแผ่นรายละเอียด
   const packetOf=win=>win.evaluate(()=>[...document.querySelectorAll('.sheet')].map(s=>s.querySelector('.letter-sign')?'letter':!s.querySelector('.form-title')?'other':s.innerText.includes('[TEST] ไปด้วยกัน อี')?'form:E':s.innerText.includes('[TEST] ไปด้วยกัน เอฟ')?'form:F':'form:?'))
-  const framePrint=tripFrame.getByRole('button',{name:'เอกสารชุดเดียวกัน · พิมพ์ครั้งเดียว',exact:true})
-  assert.equal(await framePrint.locator('svg.lucide-printer').count(),1,'ปุ่มพิมพ์ที่หัวกรอบต้องมีไอคอนเครื่องพิมพ์')
-  const [frameWin]=await Promise.all([page.waitForEvent('popup'),framePrint.click()])
-  await frameWin.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
-  const framePacket=await packetOf(frameWin);await Promise.all([frameWin.waitForEvent('close'),frameWin.getByRole('button',{name:'ปิดหน้าต่าง',exact:true}).click()])
-  assert.deepEqual(framePacket,['form:E','form:F','letter'],'กดปุ่มที่หัวกรอบต้องพิมพ์ใบคำขอของทุกคนในเที่ยว + หนังสือนำส่ง 1 ใบ')
-  assert.equal(await sheet.count(),0,'กดพิมพ์ที่หัวกรอบต้องไม่เปิดแผ่นรายละเอียดของใคร')
-  const packets=[]
-  for(const id of [groupF,groupE]){
-   await row(id).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
-   const next=sheet.getByRole('region',{name:'ขั้นตอนหลังยืนยันรถ'}),note=next.getByRole('note',{name:'พิมพ์เอกสารทั้งเที่ยว'})
-   await note.waitFor()
-   const text=(await note.innerText()).replace(/\s+/g,' ')
-   for(const part of ['เที่ยวนี้ไปด้วยกัน 2 คน: [TEST] ไปด้วยกัน อี · [TEST] ไปด้วยกัน เอฟ','กดพิมพ์ที่คนไหนก็ได้ ได้ชุดเดียวกันครบทั้งเที่ยว','ใบคำขอ 2 ใบ + หนังสือนำส่ง 1 ใบ = 3 แผ่น · พิมพ์ครั้งเดียวพอ'])assert.ok(text.includes(part),`กรอบเหนือปุ่มพิมพ์ต้องมี "${part}": "${text}"`)
-   const [win]=await Promise.all([page.waitForEvent('popup'),next.getByRole('button',{name:'พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน'}).click()])
+  const letterNoOf=win=>win.evaluate(()=>document.querySelector('.letter-no')?.innerText.replace(/\s+/g,' ').trim()??'')
+  const printRow=async id=>{
+   const button=row(id).getByRole('button',{name:/^พิมพ์เอกสาร 2 ประเภท: /});assert.equal(await button.locator('svg.lucide-printer').count(),1,'ปุ่มพิมพ์ในแถวต้องมีไอคอนเครื่องพิมพ์')
+   const [win]=await Promise.all([page.waitForEvent('popup'),button.click()])
    await win.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
-   packets.push(await packetOf(win))
-   await win.close();await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
+   const out={packet:await packetOf(win),letterNo:await letterNoOf(win)};await win.close();assert.equal(await sheet.count(),0,'กดพิมพ์ที่แถวต้องไม่เปิดแผ่นรายละเอียดของใคร');return out
   }
-  assert.deepEqual(packets[0],['form:E','form:F','letter'],'จอบอก 3 แผ่น กระดาษต้องเป็นใบคำขอของทุกคนในเที่ยว + หนังสือนำส่ง 1 ใบ')
-  assert.deepEqual(packets[1],packets[0],'กดพิมพ์จากคนไหนก็ต้องได้ชุดเดียวกัน')
-  assert.deepEqual(framePacket,packets[0],'ปุ่มพิมพ์ที่หัวกรอบต้องได้ชุดเดียวกับปุ่มพิมพ์ในแผ่น')
-  // เที่ยวที่มีคนเดียวไม่ขึ้นกรอบนี้ — ปุ่มพิมพ์ของเที่ยวคนเดียวไม่มีอะไรให้พิมพ์ซ้ำ
-  await row(b1).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
-  await sheet.getByRole('region',{name:'ขั้นตอนหลังยืนยันรถ'}).getByRole('button',{name:'พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน'}).waitFor()
-  assert.equal(await sheet.getByRole('note',{name:'พิมพ์เอกสารทั้งเที่ยว'}).count(),0,'เที่ยวที่มีคนเดียวต้องไม่ขึ้นกรอบพิมพ์ทั้งเที่ยว')
-  await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
+  const printedE=await printRow(groupE),printedF=await printRow(groupF)
+  assert.deepEqual(printedE.packet,['form:E','letter'],'กดพิมพ์ของคนแรกต้องได้ใบคำขอของเขา + หนังสือของเขา ไม่มีของอีกคน')
+  assert.deepEqual(printedF.packet,['form:F','letter'],'กดพิมพ์ของคนที่สองต้องได้ใบคำขอของเขา + หนังสือของเขา ไม่มีของอีกคน')
+  assert(!/พร|\d/.test(printedE.letterNo)&&!/พร|\d/.test(printedF.letterNo),`ยังไม่ได้บันทึกเลข ช่อง "ที่" ต้องเป็นเส้นประให้เขียนมือ: "${printedE.letterNo}" / "${printedF.letterNo}"`)
+
+  // เลขที่หนังสือแยกรายคน: บันทึกผ่านหน้าจอทีละคน (กล่อง "เอกสารคำขอและนำส่งกองทุน" ในแผ่นของคนนั้น)
+  const recordViaSheet=async(id,no)=>{
+   await row(id).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
+   await sheet.locator('summary').filter({hasText:'จัดการเพิ่มเติม'}).click()
+   const docs=sheet.locator('div.rounded-xl',{hasText:'เอกสารคำขอและนำส่งกองทุน'}).last()
+   await docs.getByText(/เลขที่หนังสือแยกรายคน/).waitFor()
+   await docs.getByRole('button',{name:'กรอกเลขหนังสือ',exact:true}).click()
+   await docs.getByLabel('เลขที่หนังสือ').fill(no);await docs.getByRole('button',{name:'บันทึกเลขหนังสือ',exact:true}).click()
+   await toast('บันทึกเลขหนังสือนำส่งแล้ว').waitFor();await docs.getByText(new RegExp(`ที่ ${no}`)).waitFor()
+   await sheet.getByText('บันทึกเลขหนังสือนำส่ง',{exact:true}).first().waitFor({timeout:15000})
+   await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
+  }
+  await recordViaSheet(groupE,'พร 72301/301')
+  const letterRows=await runSql(async()=>(await db.query('SELECT id,forward_letter_no,forward_letter_date::text AS d,letter_revision FROM public.patient_bookings WHERE id=ANY($1)',[[groupE,groupF]])).rows)
+  const rowE=letterRows.find(r=>r.id===groupE),rowF=letterRows.find(r=>r.id===groupF)
+  assert.equal(rowE.forward_letter_no,'พร 72301/301');assert.equal(rowE.letter_revision,1);assert.equal(rowF.forward_letter_no,null,'บันทึกเลขของคนแรก ต้องไม่ไปติดคนที่สอง');assert.equal(rowF.letter_revision,0)
+  assert.equal((await runSql(async()=>(await db.query('SELECT forward_letter_no FROM public.patient_booking_trips WHERE id=$1',[groupTrip])).rows[0])).forward_letter_no,null,'เลขหนังสือแยกรายคนต้องไม่เขียนทับเลขของเที่ยว')
+  await recordViaSheet(groupF,'พร 72301/302')
+  assert.equal((await printRow(groupE)).letterNo.includes('พร 72301/301'),true,'หนังสือของคนแรกต้องเป็นเลขของเขา')
+  const secondPrint=await printRow(groupF);assert(secondPrint.letterNo.includes('พร 72301/302')&&!secondPrint.letterNo.includes('พร 72301/301'),`หนังสือของคนที่สองต้องเป็นเลขของเขา ไม่ใช่เลขของคนแรก: "${secondPrint.letterNo}"`)
+
+  // ฐานข้อมูล: ตรวจ revision, สิทธิ์, ข้อมูลที่ไม่ถูกต้อง, ประวัติ และรายงานรายเดือน/รายงวดที่รวมเลขของทุกคนในเที่ยว
+  const today=new Date().toISOString().slice(0,10)
+  const letterRev=async id=>(await runSql(async()=>(await db.query('SELECT letter_revision FROM public.patient_bookings WHERE id=$1',[id])).rows[0])).letter_revision
+  await runAs(coordinator,async()=>{
+   assert.equal(await rpc('patient_booking_record_booking_letter',[tenant,groupE,0,'พร 72301/301',rowE.d]),1,'ยิงซ้ำด้วยค่าเดิมต้องตอบ revision ปัจจุบันโดยไม่เขียนซ้ำ')
+   await assert.rejects(()=>rpc('patient_booking_record_booking_letter',[tenant,groupE,0,'พร 72301/399',today]),/เปลี่ยนแล้ว/,'revision เก่าที่ค่าต่างจากปัจจุบันต้องถูกปฏิเสธ')
+   await assert.rejects(()=>rpc('patient_booking_record_booking_letter',[tenant,groupE,1,'',today]),/เลขที่หนังสือ/)
+   await assert.rejects(()=>rpc('patient_booking_record_booking_letter',[tenant,groupE,1,'x','2600-01-01']),/วันที่หนังสือ/)
+   await assert.rejects(()=>rpc('patient_booking_record_booking_letter',[tenant,b2,0,'x',today]),/ไม่พบคำขอนี้|ยังไม่ได้ยืนยัน/,'คำขอที่ยกเลิกแล้วต้องบันทึกเลขหนังสือไม่ได้')
+  })
+  for(const [who,user] of [['คนขับ',driver],['ผู้จอง',citizen]])await runAs(user,()=>assert.rejects(()=>rpc('patient_booking_record_booking_letter',[tenant,groupE,1,'y',today]),/เจ้าหน้าที่จัดคิว/,`${who}ต้องบันทึกเลขหนังสือไม่ได้`))
+  assert.equal(await letterRev(groupE),1,'คำสั่งที่ถูกปฏิเสธต้องไม่เปลี่ยน revision')
+  const letterEvents=await runSql(async()=>(await db.query("SELECT entity_id,detail->>'letter_no' AS no FROM public.patient_booking_events WHERE action='booking_letter_recorded' AND entity_id=ANY($1) ORDER BY created_at",[[groupE,groupF]])).rows)
+  assert.deepEqual(letterEvents.map(e=>[e.entity_id,e.no]),[[groupE,'พร 72301/301'],[groupF,'พร 72301/302']],'ทุกการบันทึกเลขต้องมีร่องรอยในประวัติของคำขอนั้น')
+  const monthDay=(await runSql(async()=>(await db.query("SELECT t.plan->>'date' AS d FROM public.patient_booking_trips t WHERE t.id=$1",[groupTrip])).rows[0])).d
+  const reportRow=await runAs(coordinator,async()=>({month:(await rpc('patient_booking_month_report',[tenant,monthDay])).trips.find(t=>t.trip_id===groupTrip),period:(await rpc('patient_booking_period_report',[tenant,monthDay,monthDay])).trips.find(t=>t.trip_id===groupTrip)}))
+  for(const [label,report] of Object.entries(reportRow))assert.equal(report?.letter_no,'พร 72301/301, พร 72301/302',`รายงาน${label}ของเที่ยวต้องรวมเลขหนังสือของทุกคน เรียงตามเวลานัด: ${report?.letter_no}`)
  }
- console.log('PASS shared trip prints once: riders of one trip sit in one frame (table and mobile) whose header says how many, when and one document set; a lone visible rider falls back to the same-trip line; the print button on the frame header (printer icon, 44px on mobile) prints the same packet without opening any sheet; note above the print button names both riders and 3 sheets, printing from either rider gives the same 3-sheet packet; single-rider trip shows no frame and no note')
+ console.log('PASS separate documents per rider: trip frame only says who rides together (no document wording, no trip-wide print button); each row/card prints only that rider\'s request form + letter; letter numbers are recorded per rider through the sheet and the database (revision conflict, idempotent retry, roles, validation, audit event, month and period reports list every rider\'s number)')
 
  // ── รับจองแทนทางโทรศัพท์ → กลับกล่องพร้อมปุ่ม "ยืนยันรถเลย" ──
  await page.getByRole('button',{name:/รับจองแทน/}).click()
@@ -685,7 +715,10 @@ try{
  await sheet.locator('summary').filter({hasText:'จัดการเพิ่มเติม'}).click()
  await sheet.getByText(/^ที่ พร 72301\/77 ลงวันที่/).waitFor()
  let docs=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===b1Trip)
- assert.equal(docs.forward_letter_no,'พร 72301/77');assert.equal(docs.odometer_end,startOdo+33,'เลขไมล์ของคนขับต้องถึงฐานข้อมูล')
+ // เลขหนังสือแยกรายคน (2569-10-02): บันทึกที่คำขอของคนนั้น ไม่เขียนทับเลขของเที่ยว
+ const b1Letter=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).bookings.find(x=>x.id===b1)
+ assert.equal(b1Letter.forward_letter_no,'พร 72301/77','เลขหนังสือต้องบันทึกที่คำขอของคนที่เปิดแผ่น');assert.equal(docs.forward_letter_no,null,'เลขของเที่ยวต้องไม่ถูกเขียน')
+ assert.equal(docs.odometer_end,startOdo+33,'เลขไมล์ของคนขับต้องถึงฐานข้อมูล')
  await sheet.getByLabel('เลขไมล์กลับ',{exact:true}).fill(String(startOdo+40));await sheet.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).selectOption('กรอกผิด')
  await runAs(coordinator,()=>rpc('patient_booking_save_odometer',[tenant,b1Trip,docs.docs_revision,16000,16044,false,'กรอกผิด']))
  await sheet.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click();await sheet.getByText(/ค่าล่าสุด: เลขไมล์ออก 16000/).waitFor()
@@ -694,7 +727,9 @@ try{
  await sheet.getByRole('button',{name:'ยืนยันใช้ค่าที่ฉันแก้',exact:true}).click();await sheet.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await toast('บันทึกเลขไมล์แล้ว').waitFor()
  docs=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===b1Trip);assert.equal(docs.odometer_end,startOdo+40)
  await sheet.getByRole('button',{name:'แก้เลขหนังสือ',exact:true}).click();await sheet.getByLabel('เลขที่หนังสือ',{exact:true}).fill('TEST draft')
- await runAs(coordinator,()=>rpc('patient_booking_record_letter',[tenant,b1Trip,docs.docs_revision,'TEST newest',docs.forward_letter_date]))
+ // ร่างเลขหนังสือชนกับคนอื่นที่บันทึกก่อน: เลขหนังสือแยกรายคนแล้ว (2569-10-02) revision ที่เทียบคือ letter_revision ของคำขอ
+ const b1Now=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).bookings.find(x=>x.id===b1)
+ await runAs(coordinator,()=>rpc('patient_booking_record_booking_letter',[tenant,b1,b1Now.letter_revision,'TEST newest',b1Now.forward_letter_date]))
  await sheet.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click();await sheet.getByText(/ค่าล่าสุด: เลขหนังสือ TEST newest/).waitFor()
  assert.equal(await sheet.getByRole('button',{name:'บันทึกเลขหนังสือ',exact:true}).isDisabled(),true)
  await sheet.getByRole('button',{name:'ใช้ค่าล่าสุด',exact:true}).click();assert.equal(await sheet.getByLabel('เลขที่หนังสือ',{exact:true}).inputValue(),'TEST newest')
