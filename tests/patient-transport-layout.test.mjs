@@ -637,6 +637,32 @@ const checks = [
     },
   },
   {
+    name: 'evidence-line-has-no-id-copy',
+    reason: 'บรรทัดหลักฐานในใบคำขอเหลือ "☐ ใบนัดแพทย์ ☐ อื่นๆ ___" เจ้าของระบบสั่งตัด "สำเนาบัตรประชาชนผู้ป่วย" ออก 2569-10-02'
+      + ' ต้องไม่กลับมาในทุกทางที่พิมพ์ใบคำขอ และต้องไม่เหลือแค่ครึ่งเดียว (ช่องติ๊ก 2 ช่อง ตามคำที่เหลือ)',
+    async run(browser) {
+      for (const [label, html] of [
+        ['ชุดเอกสารคำขอ', buildPatientTransportPacketHtml(args())],
+        ['ใบคำขอฝั่งประชาชน', buildPatientTransportFormHtml(args())],
+        ['หนังสือต่อเที่ยว', buildTripForwardLetterHtml({ ...tripArgs(), bookings: TRIP_BOOKINGS.slice(0, 2) })],
+      ]) {
+        const page = await render(browser, html)
+        try {
+          const lines = await page.locator('.evidence').evaluateAll(els => els.map(el => ({
+            text: el.textContent.replace(/\s+/g, ' ').trim(),
+            boxes: el.querySelectorAll('.box').length,
+          })))
+          assert.ok(lines.length > 0, `${label}: ไม่พบบรรทัดหลักฐาน`)
+          for (const line of lines) {
+            assert.ok(!line.text.includes('บัตรประชาชน'), `${label}: บรรทัดหลักฐานยังมีบัตรประชาชน: "${line.text}"`)
+            assert.match(line.text, /^หลักฐาน ใบนัดแพทย์ อื่นๆ/, `${label}: บรรทัดหลักฐานไม่ใช่ "ใบนัดแพทย์ / อื่นๆ": "${line.text}"`)
+            assert.equal(line.boxes, 2, `${label}: ช่องติ๊กต้องมี 2 ช่อง (ใบนัดแพทย์, อื่นๆ) ได้ ${line.boxes}`)
+          }
+        } finally { await page.close() }
+      }
+    },
+  },
+  {
     name: 'request-form-has-no-fund-committee-box',
     reason: 'เจ้าของระบบสั่งตัดกล่อง "สำหรับคณะกรรมการกองทุน" ออกจากใบคำขอ 2569-10-01 — ใบนี้ยื่นต่อนายก เรื่องจบที่นายก'
       + ' ยังไม่ไปถึงกองทุน ต้องไม่มีช่องอนุมัติ/ไม่อนุมัติหรือช่องลงนามของกรรมการกองทุนในทุกทางที่พิมพ์ใบคำขอ',
