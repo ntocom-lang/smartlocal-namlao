@@ -10,7 +10,7 @@ import StaffBookingCalendar from '../components/patientTransport/StaffBookingCal
 import BookingSettings from '../components/patientTransport/BookingSettings'
 import { TabBar } from '../components/patientTransport/StaffShell'
 import { QueueReport, DriverTrips } from '../components/patientTransport/BookingOperations'
-import { buildBookingRequestFormHtml, buildTripForwardLetterHtml, buildTripMonthReportHtml, buildPatientPrintLoadingHtml, writeAndPrint } from '../lib/patientTransportPrint'
+import { buildBookingRequestFormHtml, buildBookingForwardLetterHtml, buildTripMonthReportHtml, buildPatientPrintLoadingHtml, writeAndPrint } from '../lib/patientTransportPrint'
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
 import { TRIP_STATUS, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking } from '../lib/patientBooking'
@@ -196,16 +196,15 @@ export default function PatientTransportStaff({ onBack } = {}) {
       win.close(); setError(`${failText}: ${e.message || 'กรุณาลองใหม่'}`)
     }
   }
-  // พิมพ์ชุดของผู้เดินทาง "คนเดียว" = ใบคำขอของเขา + หนังสือนำส่งของเขา (เจ้าของระบบสั่ง 2569-10-02 เลือกแบบ ข: เอกสารแยกรายคน
-  // เลขที่หนังสือคนละเลข) — ส่งเฉพาะคำขอนี้ให้ตัวประกอบ ใบของคนอื่นในเที่ยวเดียวกันจึงไม่ติดมา
-  const printLetter = booking => printInNewWindow(async () => buildTripForwardLetterHtml({
-    tenant, trip: workspace.trips.find(t => t.id === booking.trip_id), bookings: [booking], ...(await fundContext()),
+  // สองปุ่มพิมพ์เอกสารแยกรายคน: ใบคำขอประชาชนถึงนายก และหนังสือนายกถึงกองทุน
+  const printLetter = booking => printInNewWindow(async () => buildBookingForwardLetterHtml({
+    tenant, trip: workspace.trips.find(t => t.id === booking.trip_id), booking, ...(await fundContext()),
     // ต้องเป็น URL เต็ม หน้าต่างพิมพ์เป็น about:blank พาธ /images/... จะ resolve ไม่เจอ
     emblemUrl: `${window.location.origin}/images/garuda.svg`,
   }), 'เตรียมหนังสือนำส่งไม่สำเร็จ')
-  // คำขอที่ยังรอยืนยันรถ: ยังไม่มีเที่ยว พิมพ์ได้เฉพาะใบคำขอถึงนายกของคำขอนั้น (เจ้าของระบบสั่ง 2569-10-02)
+  // ใบคำขอพิมพ์แยกได้ทั้งก่อนและหลังยืนยันรถ โดยใช้ข้อมูลเที่ยวปัจจุบันเมื่อมีแล้ว
   const printRequest = booking => printInNewWindow(async () => buildBookingRequestFormHtml({
-    tenant, booking, ...(await fundContext()),
+    tenant, booking, trip: workspace.trips.find(t => t.id === booking.trip_id), ...(await fundContext()),
   }), 'เตรียมใบคำขอไม่สำเร็จ')
   const printPeriod = period => printInNewWindow(async () => {
     const [{ data, error: failure }, context] = await Promise.all([supabase.rpc('patient_booking_period_report', { p_muni: tenantId, p_from: period.from, p_to: period.to }), fundContext()])

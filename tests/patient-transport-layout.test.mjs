@@ -16,7 +16,7 @@ import process from 'node:process'
 import { readFileSync } from 'node:fs'
 import { chromium } from 'playwright'
 import {
-  buildBookingRequestFormHtml, buildPatientTransportFormHtml, buildPatientTransportPacketHtml,
+  buildBookingRequestFormHtml, buildBookingForwardLetterHtml, buildPatientTransportFormHtml, buildPatientTransportLetterHtml, buildPatientTransportPacketHtml,
   buildTripForwardLetterHtml, buildTripMonthReportHtml, tripPassengers, writeAndPrint, PRINT_DIALOG_DELAY_MS,
 } from '../src/lib/patientTransportPrint.js'
 import { bookingLetter } from '../src/lib/patientBooking.js'
@@ -189,6 +189,48 @@ function sheetKinds(page) {
 
 const checks = [
   {
+    name: 'separate-document-buttons-print-one-type',
+    reason: 'ปุ่มใบคำขอและหนังสือถึงกองทุนต้องออกคนละประเภท ใบละหน้า และเป็นของผู้เดินทางที่เลือกเท่านั้น',
+    async run(browser) {
+      for (const index of [0, 1]) {
+        const booking = { ...TRIP_BOOKINGS[index], route_label: TRIP.plan.route_label, forward_letter_no: `พร 2569/${index + 1}` }
+        const context = { ...tripArgs(), booking, bookings: [booking] }
+        const request = await render(browser, buildBookingRequestFormHtml(context))
+        const letter = await render(browser, buildBookingForwardLetterHtml(context))
+        const packet = await render(browser, buildTripForwardLetterHtml(context))
+        try {
+          assert.deepEqual(await sheetKinds(request), ['form'])
+          assert.deepEqual(await sheetKinds(letter), ['letter'])
+          assert.equal(await formSheetsOf(request).innerText(), await formSheetsOf(packet).innerText(), 'ใบคำขอแยกต้องใช้ข้อมูลเดียวกับชุดเดิม')
+          assert.equal(await letterSheetOf(letter).innerText(), await letterSheetOf(packet).innerText(), 'หนังสือแยกต้องคงเนื้อหาและเลขของรายนี้')
+          assert.equal(await request.locator('.screen-note').count(), 0, 'ยืนยันรถแล้วต้องไม่บอกว่ายังไม่ยืนยัน')
+          assert.ok((await letterSheetOf(letter).innerText()).includes(booking.forward_letter_no))
+          assert.ok(!(await letterSheetOf(letter).innerText()).includes(TRIP_BOOKINGS[1 - index].patient_name), 'หนังสือมีผู้เดินทางอื่นติดมา')
+          for (const page of [request, letter]) {
+            assert.ok(await sheetContentMm(page, 0) <= ONE_PAGE_BUDGET_MM, 'เอกสารแยกเกิน A4 หน้าเดียว')
+            assert.equal(await page.locator('.print-window-close').count(), 1, 'หน้าต่างต้องมีปุ่มปิด')
+          }
+          await assertSignBlockStandard(request, { minRows: 1, minBelow: 1 })
+          if (index === 0 && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
+            for (const [name, page] of [['request', request], ['letter', letter]]) {
+              await page.screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/patient-separated-${name}.png`, clip: { x: 0, y: 0, width: 794, height: 1123 } })
+            }
+          }
+        } finally { await request.close(); await letter.close(); await packet.close() }
+      }
+      const booking = TRIP_BOOKINGS[0]
+      for (const override of [
+        { trip: null }, { trip: { ...TRIP, id: 'other-trip' } },
+        { booking: { ...booking, status: 'submitted' } }, { trip: { ...TRIP, state: 'cancelled' } },
+      ]) assert.throws(() => buildBookingForwardLetterHtml({ ...tripArgs(), booking, ...override }), /หลังยืนยันรถ/)
+      const legacy = await render(browser, buildPatientTransportLetterHtml(args()))
+      try {
+        assert.deepEqual(await sheetKinds(legacy), ['letter'], 'ทางเข้าคำขอเดิมต้องพิมพ์หนังสืออย่างเดียวได้')
+        assert.ok(await sheetContentMm(legacy, 0) <= ONE_PAGE_BUDGET_MM)
+      } finally { await legacy.close() }
+    },
+  },
+  {
     name: 'citizen-to-mayor-and-office-to-fund',
     reason: 'ใบคำขอของประชาชนต้องเรียนถึงนายก อปท. ส่วนหนังสือนำส่งเรียนถึงกองทุน ใช้ชื่อผู้รับคนละแหล่ง',
     async run(browser) {
@@ -340,7 +382,7 @@ const checks = [
   {
     // เจ้าของระบบสั่ง 2569-10-02 (แบบ ก): คำขอที่ยังรอยืนยันรถพิมพ์ใบคำขอถึงนายกได้เลย ยังไม่มีเที่ยวจึงยังไม่มีหนังสือนำส่ง
     // ใบที่พิมพ์ตอนนี้ต้องเป็นใบเดียวกับที่จะออกในชุดของเที่ยวหลังยืนยันรถ (ประกอบจาก bookingPacket() ตัวเดียวกัน)
-    // แถบบนจอบอกว่ามีแค่ใบคำขอ และใบนี้จะออกอีกครั้งในชุดหลังยืนยัน — ให้เจ้าหน้าที่เลือกพิมพ์ตอนใดตอนหนึ่ง กระดาษไม่เกิน
+    // แถบบนจอบอกว่าหนังสือถึงกองทุนต้องพิมพ์จากปุ่มแยกหลังยืนยันรถ
     name: 'pending-request-form-matches-trip-packet',
     reason: 'ใบคำขอที่พิมพ์ตอนรอยืนยันรถต้องตรงกับใบในชุดหลังยืนยันทุกตัวอักษร มีแผ่นเดียว ไม่มีหนังสือนำส่ง จบ 1 หน้า'
       + ' และแถบบนจอต้องบอกว่าหนังสือนำส่งพิมพ์ได้หลังยืนยันรถ โดยไม่ลงกระดาษ',
@@ -365,7 +407,7 @@ const checks = [
           })
           const printed = await note()
           assert.ok(printed, 'ต้องมีแถบบอกว่ายังพิมพ์ได้เฉพาะใบคำขอ')
-          for (const part of ['ยังไม่ยืนยันรถ', 'หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถ', 'จะออกอีกครั้งในชุดเอกสารหลังยืนยันรถ', 'ไม่ถูกพิมพ์']) {
+          for (const part of ['ยังไม่ยืนยันรถ', 'หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถ', 'จากปุ่มแยก', 'ไม่ถูกพิมพ์']) {
             assert.ok(printed.text.includes(part), `แถบบนจอต้องมี "${part}" — "${printed.text}"`)
           }
           assert.equal(printed.inSheet, false, 'แถบบนจออยู่ในแผ่นกระดาษ')

@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
 import { addressFromMap, pickupSentence } from '../../lib/pickupText'
 import { ListCard, Pills, Sheet } from './StaffShell'
-import { AmendBooking, BookingFundDocs, OdometerForm } from './BookingOperations'
+import { AmendBooking, BookingFundDocs, BookingPrintButtons, OdometerForm } from './BookingOperations'
 import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
 import { STAGES, TRIP_STATUS, RETURN_MODES, MOBILITY, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, describeHistory } from '../../lib/patientBooking'
 import { tripPassengers } from '../../lib/patientTransportPrint'
@@ -130,22 +130,21 @@ function TripGroupBand({ row, card }) {
   </span>
 }
 
-// พิมพ์เอกสารของคำขอหนึ่งใบ "คนเดียว" (เจ้าของระบบสั่ง 2569-10-02 แบบ ข — เอกสารแยกรายคน เลขที่หนังสือคนละเลข):
-//   ยืนยันรถแล้ว = ใบคำขอถึงนายก + หนังสือนำส่งกองทุนของคนนี้ · รอยืนยันรถ = ใบคำขอเท่านั้น (ยังไม่มีเที่ยว จึงยังไม่มีหนังสือ)
-//   คำขอ/เที่ยวที่ยกเลิกแล้ว = ไม่มีให้พิมพ์ · ใช้ทั้งปุ่มหัวแผ่นและปุ่มในแถว ให้พิมพ์ได้ชุดเดียวกันทุกจุด
-function printerOf({ booking: b, trip }, { onPrintLetter, onPrintRequest }) {
-  if (b.status === 'submitted') return { run: () => onPrintRequest(b), label: 'พิมพ์ใบคำขอถึงนายก', hint: `พิมพ์ใบคำขอถึงนายกของ ${b.patient_name} (ยังไม่ยืนยันรถ จึงยังไม่มีหนังสือนำส่ง)` }
-  if (trip && b.status !== 'cancelled' && trip.state !== 'cancelled') return { run: () => onPrintLetter(b), label: 'พิมพ์เอกสาร 2 ประเภท', hint: `พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุนของ ${b.patient_name} คนเดียว` }
+// ปุ่มในแถวเปิดรายละเอียดให้เลือก 2 เอกสารก่อนพิมพ์ ไม่สั่งพิมพ์ชุดรวมทันที
+function printerOf({ booking: b, trip }, onOpen) {
+  if (b.status === 'submitted' || (trip && b.status !== 'cancelled' && trip.state !== 'cancelled')) {
+    return { run: () => onOpen(b.id), label: 'เลือกเอกสารที่จะพิมพ์', hint: `เลือกใบคำขอถึงนายกหรือหนังสือถึงกองทุนของ ${b.patient_name}` }
+  }
   return null
 }
 
-// ปุ่มพิมพ์ในแถว/การ์ด — มีไอคอนเครื่องพิมพ์ จะได้รู้ว่ากดแล้วพิมพ์ได้เลย · ปุ่มกรอบไม่ทึบ (ปุ่มทึบ = งานถัดไปของแถว)
+// ทางเข้าเอกสารในแถว/การ์ด — เปิดตัวเลือกที่มีชื่อเอกสารและผู้รับครบถ้วน
 function RowPrint({ printer, name, busy, compact }) {
   if (!printer) return null
   return <button type="button" data-row-print disabled={busy} aria-label={`${printer.label}: ${name}`} title={printer.hint}
     onClick={e => { e.stopPropagation(); printer.run() }}
-    className={`inline-flex items-center justify-center whitespace-nowrap rounded-xl border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 ${compact ? 'min-h-9 gap-1 px-2.5 py-1 text-[13px]' : 'min-h-11 gap-1.5 px-3 text-sm'}`}>
-    <Printer size={compact ? 14 : 16} strokeWidth={2.4} className="shrink-0" aria-hidden="true" />พิมพ์</button>
+    className={`inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-xl border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 ${compact ? 'gap-1 px-2.5 py-1 text-[13px]' : 'gap-1.5 px-3 text-sm'}`}>
+    <Printer size={compact ? 14 : 16} strokeWidth={2.4} className="shrink-0" aria-hidden="true" />เอกสาร</button>
 }
 
 const haystack = ({ booking: b, linked }) => [b.patient_name, b.requester_name, b.phone, b.pickup, b.route_label, ref(b.id), dateTime(b.appointment_at), whenLabel(b.appointment_at), linked && ref(linked.id), linked && dateTime(linked.appointment_at)].join(' ').toLowerCase()
@@ -446,7 +445,7 @@ function PickupCorrection({ booking, busy, onSave, onBack }) {
   </form>
 }
 
-function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onOdometer, onReschedule, onUpdateSchedule, onReload }) {
+function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onPrintRequest, onOdometer, onReschedule, onUpdateSchedule, onReload }) {
   const { booking: b, trip, next, group } = row
   const [amending, setAmending] = useState(false)
   const [correctingPickup, setCorrectingPickup] = useState(false)
@@ -487,7 +486,7 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
       {canReschedule && scheduling === 'reschedule' && <RescheduleJourney key={`reschedule-${trip.id}`} trip={trip} booking={b} passengers={passengers} settings={workspace.settings} busy={busy} onReschedule={async args => { const out = await onReschedule(args); if (out?.saved) setScheduling(null); return out }} />}
       {canMoveIntoTrip && scheduling === 'move' && <MoveIntoTrip booking={b} trip={trip} passengers={passengers} workspace={workspace} busy={busy} onReload={onReload} />}
       {inService && scheduling === 'estimate' && <ScheduleUpdate key={trip.id} trip={trip} busy={busy} onUpdate={async (...args) => { const saved = await onUpdateSchedule(...args); if (saved) setScheduling(null); return saved }} />}
-      {trip && next.id !== 'docs' && <BookingFundDocs booking={b} trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />}
+      {trip && b.status !== 'cancelled' && trip.state !== 'cancelled' && next.id !== 'docs' && <BookingFundDocs booking={b} trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onPrintRequest={onPrintRequest} />}
       {trip?.state === 'completed' && next.id !== 'docs' && <OdometerForm trip={trip} trips={workspace.trips} busy={busy} onSave={onOdometer} />}
       {removable && <ReasonAction busy={busy} title="นำรายนี้ออกจากเที่ยว" hint="ใช้เมื่อประสานแล้วว่าไม่เดินทาง ผู้เดินทางคนอื่นในเที่ยวไม่เปลี่ยน · ถ้าเป็นคนสุดท้ายและรถยังไม่ออก ระบบคืนช่วงเวลารถให้ด้วย" placeholder="เช่น ผู้ป่วยแจ้งเลื่อนนัด" button="นำออกจากเที่ยว" seenByCitizen onRun={remove} />}
       {releasable && <ReasonAction busy={busy} title="คืนคิวทั้งเที่ยว" hint="ผู้เดินทางทุกคนในเที่ยวนี้กลับไปเป็น “รอยืนยันรถ” เพื่อจัดรถใหม่" placeholder="เช่น รถเสีย ต้องจัดรถใหม่" button="คืนคิวทั้งเที่ยว" onRun={note => act(trip, 'release', note)} />}
@@ -542,12 +541,14 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
   const showProblem = problem && b.status === 'submitted'
   // เงื่อนไขเดียวกับปุ่ม "พร้อมให้มารับกลับ" ฝั่งประชาชน (BookingOperations) และที่ฐานข้อมูลตรวจ
   const readyReturn = b.status === 'confirmed' && ['outbound', 'hospital'].includes(trip?.state) && b.return_mode !== 'one_way' && !b.return_ready
-  // ปุ่ม "พิมพ์" บนหัวแผ่น พิมพ์ของคำขอนี้คนเดียว ตามขั้นของคำขอ (ดู printerOf) — ชุดเดียวกับปุ่มพิมพ์ในแถว
-  // เจ้าของระบบสั่ง 2569-10-02: เอกสารแยกรายคน (เดิมพิมพ์ทั้งเที่ยวชุดเดียว) · หน้าต่างพิมพ์ของคำขอที่รอยืนยันรถบอกเองว่ามีแค่ใบคำขอ
-  const printer = printerOf(row, { onPrintLetter, onPrintRequest })
-  return <Sheet wide title={b.patient_name} subtitle={`${issue ? 'เหตุขัดข้อง' : STAGES[stage].label} · เลขที่ ${ref(b.id)}`} onClose={onClose} onReload={onReload} busy={busy}
-    onPrint={printer?.run} printLabel={printer?.label}>
+  const printable = b.status === 'submitted' || (trip && b.status !== 'cancelled' && trip.state !== 'cancelled')
+  const letterAvailable = trip && ['confirmed', 'completed'].includes(b.status) && trip.state !== 'cancelled'
+  return <Sheet wide title={b.patient_name} subtitle={`${issue ? 'เหตุขัดข้อง' : STAGES[stage].label} · เลขที่ ${ref(b.id)}`} onClose={onClose} onReload={onReload} busy={busy}>
     {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
+    {printable && next.id !== 'docs' && <section aria-label="เอกสารของผู้เดินทาง" className="space-y-3 rounded-xl border border-slate-200 p-4">
+      <p className="font-bold">เอกสารของ {b.patient_name}</p>
+      <BookingPrintButtons booking={b} busy={busy} onPrintRequest={onPrintRequest} onPrintLetter={letterAvailable ? onPrintLetter : null} />
+    </section>}
     {linked && <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
       <p className="font-bold text-sky-950">คิวที่ใช้เดินทาง: {dateTime(linked.appointment_at)} · เลขที่ {ref(linked.id)}</p>
       <p className="text-sm text-slate-700">คำขอนี้ปิดเป็นคิวซ้ำ · นัดเดิม {dateTime(b.appointment_at)}</p>
@@ -561,7 +562,6 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
       <p className="font-bold text-sky-950">ยืนยันรถแล้ว · ขั้นต่อไป</p>
       <p className="text-sm text-slate-800">ผู้จองและคนขับเห็นเที่ยวในระบบแล้ว พิมพ์ใบคำขอจากประชาชนถึงนายก และหนังสือนำส่งจาก อปท. ถึงกองทุน ของคนนี้ได้ตอนนี้ (เอกสารแยกรายคน) วันเดินทางคนขับเปิด “งานคนขับ” เพื่อบันทึกการรับ–ส่งและจบเที่ยว</p>
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={primaryClass} disabled={busy} onClick={() => onPrintLetter(b)}>พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน</button>
         {trip.driver_id === currentUserId && <button type="button" className={buttonClass} onClick={onOpenDriver}>ไปงานคนขับ</button>}
       </div>
       {trip.driver_id !== currentUserId && <p className="text-sm text-slate-700">ถ้าคนขับใช้อีกบัญชี ให้เข้าหน้าเจ้าหน้าที่ด้วยบัญชีคนขับ แล้วเปิดแท็บ “งานคนขับ”</p>}
@@ -578,7 +578,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
       <ReasonAction busy={busy} primary title="ประสานแก้ไขแล้ว" defaultReason="ประสานแก้ไขแล้ว เดินรถต่อได้" button="แก้ไขแล้ว เดินรถต่อ" onRun={note => act(trip, 'resolve', note)} />
     </>}
     {next.id === 'docs' && <>
-      <BookingFundDocs booking={b} trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} />
+      <BookingFundDocs booking={b} trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onPrintRequest={onPrintRequest} />
       <OdometerForm trip={trip} trips={workspace.trips} busy={busy} onSave={onOdometer} />
     </>}
     {/* ผู้จองโทรมาแจ้งว่าพร้อมกลับ — คำขอที่รับจองทางโทรศัพท์ผู้จองไม่มีบัญชีให้กดเอง ใครรับสายก็กดแทนได้
@@ -589,7 +589,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
     </div>}
     <Facts booking={b} trip={trip} others={others} historical={!!linked} />
     <MoreActions row={row} workspace={workspace} busy={busy} onConfirm={onConfirm} act={act} remove={remove} onAmend={onAmend} onUpdatePickup={onUpdatePickup}
-      onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} onReload={onReload} />
+      onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onPrintRequest={onPrintRequest} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} onReload={onReload} />
     <BookingHistory booking={b} trip={trip} />
   </Sheet>
 }
@@ -721,7 +721,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
                 <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span>{b.status === 'submitted' && group.length > 1 && <span className="block text-[11px] font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</span>}{mates.length > 0 && <span className="block text-[11px] font-semibold text-sky-800">{matesText(mates)}</span>}</td>
                 <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={pickupSentence(b.pickup)}>รับที่ {pickupSentence(b.pickup)}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[b.return_mode]}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
                 <td className="border-r border-gray-200 px-2 py-2.5 text-center" style={closes}><StatusChips row={row} /></td>
-                <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit', ...(block.framed && { borderRight: TRIP_EDGE }), ...closes }}><div className="flex flex-nowrap items-center justify-center gap-1.5"><RowButton row={row} busy={busy} onPress={press} /><RowPrint printer={printerOf(row, { onPrintLetter, onPrintRequest })} name={b.patient_name} busy={busy} compact />{deleteButton(row, true)}</div></td>
+                <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit', ...(block.framed && { borderRight: TRIP_EDGE }), ...closes }}><div className="flex flex-nowrap items-center justify-center gap-1.5"><RowButton row={row} busy={busy} onPress={press} /><RowPrint printer={printerOf(row, id => { setProblem(null); setOpenId(id) })} name={b.patient_name} busy={busy} compact />{deleteButton(row, true)}</div></td>
               </tr>
             })}
             </Fragment>
@@ -742,7 +742,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
             <p className="text-sm text-slate-600">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน{pickupAt && b.status !== 'cancelled' ? ` · รถมารับ ${clockOf(pickupAt)} น.` : ''}</p>
             {b.status === 'submitted' && group.length > 1 && <p className="text-sm font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</p>}
             {mates.length > 0 && <p className="text-sm font-semibold text-sky-800">{matesText(mates)}</p>}
-            <div className="flex flex-wrap gap-2"><RowButton row={row} busy={busy} onPress={press} full /><RowPrint printer={printerOf(row, { onPrintLetter, onPrintRequest })} name={b.patient_name} busy={busy} />{deleteButton(row)}</div>
+            <div className="flex flex-wrap gap-2"><RowButton row={row} busy={busy} onPress={press} full /><RowPrint printer={printerOf(row, id => { setProblem(null); setOpenId(id) })} name={b.patient_name} busy={busy} />{deleteButton(row)}</div>
           </article>
         })
         return <Fragment key={lead.booking.id}>
