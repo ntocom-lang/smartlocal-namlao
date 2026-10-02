@@ -33,6 +33,7 @@ await db.exec(await readFile(new URL('../supabase/migrations/20260926125325_pati
 await db.exec(await readFile(new URL('../supabase/migrations/20260929130000_patient_booking_driver_cover.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20260930110000_patient_booking_duplicate_shared_trip.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20261001100000_patient_booking_history.sql', import.meta.url), 'utf8'))
+await db.exec(await readFile(new URL('../supabase/migrations/20261002090000_patient_booking_period_report.sql', import.meta.url), 'utf8'))
 await actor(admin)
 await rpc('patient_booking_save_settings', [tenant, (await rpc('patient_booking_workspace', [tenant])).settings.revision,
   { ...settings, office_start: 450, office_end: 1050, routes: [{ ...settings.routes[0], minutes: 45 }] }])
@@ -150,6 +151,7 @@ const order = {
  patient_booking_amend:['p_muni','p_op','p_id','p_revision','p_data','p_note'],
  patient_booking_save_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end','p_issue','p_note'],patient_booking_record_letter:['p_muni','p_trip','p_docs_revision','p_letter_no','p_letter_date'],patient_booking_record_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end'],patient_booking_month_report:['p_muni','p_month'],
  patient_booking_events_page:['p_muni','p_page'],
+ patient_booking_period_report:['p_muni','p_from','p_to'],
  patient_booking_history:['p_muni','p_booking'],
 }
 const plugin = {
@@ -411,7 +413,7 @@ try{
   assert.ok(doc.form.includes(mine.find(b=>b.id===b2).patient_name),'ใบคำขอต้องเป็นของคำขอที่เปิดอยู่')
   assert.match(doc.note,/^ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service เมื่อ /,`คำขอที่ผู้จองยื่นเอง บรรทัดกำกับต้องเหมือนใบในชุดหลังยืนยัน: "${doc.note}"`)
   assert.ok(doc.notice&&doc.notice.display==='block'&&doc.notice.text.includes('หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถ')&&doc.notice.text.includes('จะออกอีกครั้งในชุดเอกสารหลังยืนยันรถ'),`แถบบนจอของใบที่พิมพ์ตอนรอยืนยันรถ: ${JSON.stringify(doc.notice)}`)
-  await pendingWin.close()
+  await Promise.all([pendingWin.waitForEvent('close'),pendingWin.getByRole('button',{name:'ปิดหน้าต่าง',exact:true}).click()])
   assert.equal((await bookingRow(b2)).status,'submitted','พิมพ์ใบคำขอแล้วสถานะคำขอต้องไม่เปลี่ยน')
   await problem.waitFor()
  }
@@ -494,7 +496,7 @@ try{
   assert.equal(await framePrint.locator('svg.lucide-printer').count(),1,'ปุ่มพิมพ์ที่หัวกรอบต้องมีไอคอนเครื่องพิมพ์')
   const [frameWin]=await Promise.all([page.waitForEvent('popup'),framePrint.click()])
   await frameWin.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
-  const framePacket=await packetOf(frameWin);await frameWin.close()
+  const framePacket=await packetOf(frameWin);await Promise.all([frameWin.waitForEvent('close'),frameWin.getByRole('button',{name:'ปิดหน้าต่าง',exact:true}).click()])
   assert.deepEqual(framePacket,['form:E','form:F','letter'],'กดปุ่มที่หัวกรอบต้องพิมพ์ใบคำขอของทุกคนในเที่ยว + หนังสือนำส่ง 1 ใบ')
   assert.equal(await sheet.count(),0,'กดพิมพ์ที่หัวกรอบต้องไม่เปิดแผ่นรายละเอียดของใคร')
   const packets=[]
@@ -770,23 +772,66 @@ try{
  const reportPage=await runAs(coordinator,()=>rpc('patient_booking_events_page',[tenant,1]))
  assert.equal(reportPage.total,eventCount);assert.equal(reportPage.events.length,20)
  await menu.getByRole('button',{name:'รายงาน',exact:true}).click()
- const monthlyReport=page.getByRole('region',{name:'สรุปการใช้รถประจำเดือน',exact:true})
+ const monthlyReport=page.getByRole('region',{name:'สรุปการใช้รถตามช่วงเวลา',exact:true})
  const monthInput=monthlyReport.getByLabel('เดือนที่ต้องการดู')
  await monthInput.fill('2001-01')
- await monthlyReport.getByRole('heading',{name:'รายการเที่ยวเดือนนี้ · 2 เที่ยว',exact:true}).waitFor()
+ await monthlyReport.getByRole('heading',{name:'รายการเที่ยวช่วงนี้ · 2 เที่ยว',exact:true}).waitFor()
  assert.equal(await monthlyReport.locator('[data-report-trip]').count(),2,'เที่ยวเก่าเกิน 30 วันยังอยู่ในสรุปเดือนเดิม และไม่รวมเที่ยวที่ยกเลิก')
  assert.match(await monthlyReport.locator('[data-report-summary="จบเที่ยวแล้ว"]').innerText(),/2 เที่ยว/)
  assert.match(await monthlyReport.locator('[data-report-summary="ระยะทางที่บันทึกแล้ว"]').innerText(),/15 กม\./)
  assert.match(await monthlyReport.locator('[data-report-summary="ระยะทางที่บันทึกแล้ว"]').innerText(),/ยังไม่มีระยะทางที่ใช้ได้ 1 เที่ยว/)
+ // Print button goes through actual Staff page -> real range RPC -> printable document.
+ for(const selection of [{mode:'month',label:'ประจำเดือน มกราคม 2544'},{mode:'quarter',label:'ไตรมาส 2 · ปีงบประมาณ 2544'},{mode:'year',label:'ปีปฏิทิน 2544'},{mode:'custom',label:'ตามช่วงวันที่กำหนด'}]){
+  await monthlyReport.getByLabel('ประเภทรายงาน',{exact:true}).selectOption(selection.mode)
+  if(['quarter','year'].includes(selection.mode)){
+   await monthlyReport.getByLabel('ปี พ.ศ.',{exact:true}).fill('2544')
+   await monthlyReport.getByLabel('การนับปี',{exact:true}).selectOption(selection.mode==='quarter'?'fiscal':'calendar')
+   if(selection.mode==='quarter')await monthlyReport.getByLabel('ไตรมาส',{exact:true}).selectOption('2')
+  }
+  if(selection.mode==='custom'){
+   await monthlyReport.getByLabel('วันที่เริ่ม',{exact:true}).fill('2001-01-10')
+   await monthlyReport.getByLabel('วันที่สิ้นสุด',{exact:true}).fill('2001-01-10')
+  }
+  await monthlyReport.getByRole('heading',{name:'รายการเที่ยวช่วงนี้ · 2 เที่ยว',exact:true}).waitFor()
+  const [printWin]=await Promise.all([page.waitForEvent('popup'),monthlyReport.getByRole('button',{name:'พิมพ์สรุป',exact:true}).click()])
+  await printWin.waitForFunction(()=>!!document.querySelector('.report-title'))
+  assert((await printWin.locator('.report-title').innerText()).includes(selection.label))
+  assert.match(await printWin.locator('tfoot').innerText(),/รวมเที่ยวที่จบแล้ว 2 เที่ยว/)
+  assert(!await printWin.locator('body').innerText().then(text=>text.includes('PRIVATE_TEST')))
+  const closePrint=printWin.getByRole('button',{name:'ปิดหน้าต่าง',exact:true})
+  for(const width of [320,390,1440]){
+   await printWin.setViewportSize({width,height:900})
+   const box=await closePrint.boundingBox();assert(box.height>=44&&box.x>=0&&box.x+box.width<=width,'print close button visible at '+width)
+  }
+  await printWin.evaluate(()=>scrollTo(0,document.body.scrollHeight))
+  assert(await closePrint.isVisible(),'close stays visible while reading a long document')
+  await printWin.emulateMedia({media:'print'});assert.equal(await closePrint.isVisible(),false,'close is never printed')
+  await printWin.emulateMedia({media:'screen'})
+  await Promise.all([printWin.waitForEvent('close'),closePrint.click()])
+  assert.equal(page.isClosed(),false,'closing print does not close the staff page')
+ }
+ // Slow preparation is also closeable; response arriving afterwards must not reopen it or raise an error.
+ await page.route('**/__patient_rpc',async route=>{
+  if(route.request().postDataJSON().name==='patient_booking_period_report')await new Promise(resolve=>setTimeout(resolve,400))
+  await route.fallback()
+ })
+ const [loadingPrint]=await Promise.all([page.waitForEvent('popup'),monthlyReport.getByRole('button',{name:'พิมพ์สรุป',exact:true}).click()])
+ await loadingPrint.getByRole('status').filter({hasText:'กำลังเตรียมเอกสาร...'}).waitFor()
+ await Promise.all([loadingPrint.waitForEvent('close'),loadingPrint.getByRole('button',{name:'ปิดหน้าต่าง',exact:true}).click()])
+ await page.waitForTimeout(500)
+ assert.equal(await page.getByRole('alert').filter({hasText:'เตรียมสรุปตามช่วงเวลาไม่สำเร็จ'}).count(),0)
+ assert.equal(page.context().pages().filter(p=>p!==page).length,0,'closed print never reopens after its data arrives')
+ await page.unroute('**/__patient_rpc')
+ await monthlyReport.getByLabel('ประเภทรายงาน',{exact:true}).selectOption('month')
  // เลือกเดือนว่างต้องไม่แสดงยอดของเดือนก่อน
  await monthInput.fill('2001-02')
- await monthlyReport.getByText('ไม่มีเที่ยวรถในเดือนที่เลือก ลองเลือกเดือนอื่น').waitFor()
+ await monthlyReport.getByText('ไม่มีเที่ยวรถในช่วงที่เลือก ลองเลือกช่วงอื่น').waitFor()
  assert.match(await monthlyReport.locator('[data-report-summary="จบเที่ยวแล้ว"]').innerText(),/0 เที่ยว/)
  // โหลดล้มเหลวมีทางลองใหม่ ไม่ขึ้นยอด 0 ลวง
  let failMonthOnce=true
  await page.route('**/__patient_rpc',async route=>{
   const request=route.request().postDataJSON()
-  if(failMonthOnce&&request.name==='patient_booking_month_report'){
+  if(failMonthOnce&&request.name==='patient_booking_period_report'){
    failMonthOnce=false
    await route.fulfill({contentType:'application/json',body:JSON.stringify({data:null,error:{message:'[TEST] unavailable'}})})
   }else await route.continue()
@@ -795,7 +840,7 @@ try{
  await monthlyReport.getByRole('alert').waitFor()
  assert.equal(await monthlyReport.locator('[data-report-summary]').count(),0)
  await monthlyReport.getByRole('button',{name:'ลองอีกครั้ง'}).click()
- await monthlyReport.getByRole('heading',{name:'รายการเที่ยวเดือนนี้ · 2 เที่ยว',exact:true}).waitFor()
+ await monthlyReport.getByRole('heading',{name:'รายการเที่ยวช่วงนี้ · 2 เที่ยว',exact:true}).waitFor()
  await page.unroute('**/__patient_rpc')
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'สรุปรายเดือน 320px overflow')
  if(process.env.PATIENT_PREVIEW_SHOTS){

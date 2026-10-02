@@ -10,7 +10,7 @@ import StaffBookingCalendar from '../components/patientTransport/StaffBookingCal
 import BookingSettings from '../components/patientTransport/BookingSettings'
 import { TabBar } from '../components/patientTransport/StaffShell'
 import { QueueReport, DriverTrips } from '../components/patientTransport/BookingOperations'
-import { buildBookingRequestFormHtml, buildTripForwardLetterHtml, buildTripMonthReportHtml } from '../lib/patientTransportPrint'
+import { buildBookingRequestFormHtml, buildTripForwardLetterHtml, buildTripMonthReportHtml, buildPatientPrintLoadingHtml } from '../lib/patientTransportPrint'
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
 import { TRIP_STATUS, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking } from '../lib/patientBooking'
@@ -186,7 +186,15 @@ export default function PatientTransportStaff({ onBack } = {}) {
   async function printInNewWindow(build, failText) {
     const win = window.open('', '_blank', 'width=1100,height=900')
     if (!win) { setError('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาตป๊อปอัปของเว็บนี้'); return }
-    try { win.document.write(await build()); win.document.close() } catch (e) { win.close(); setError(`${failText}: ${e.message || 'กรุณาลองใหม่'}`) }
+    win.document.write(buildPatientPrintLoadingHtml()); win.document.close()
+    try {
+      const html = await build()
+      if (win.closed) return
+      win.document.open(); win.document.write(html); win.document.close()
+    } catch (e) {
+      if (win.closed) return
+      win.close(); setError(`${failText}: ${e.message || 'กรุณาลองใหม่'}`)
+    }
   }
   const printLetter = trip => printInNewWindow(async () => buildTripForwardLetterHtml({
     tenant, trip, bookings: workspace.bookings, ...(await fundContext()),
@@ -197,11 +205,11 @@ export default function PatientTransportStaff({ onBack } = {}) {
   const printRequest = booking => printInNewWindow(async () => buildBookingRequestFormHtml({
     tenant, booking, ...(await fundContext()),
   }), 'เตรียมใบคำขอไม่สำเร็จ')
-  const printMonth = month => printInNewWindow(async () => {
-    const [{ data, error: failure }, context] = await Promise.all([supabase.rpc('patient_booking_month_report', { p_muni: tenantId, p_month: month }), fundContext()])
+  const printPeriod = period => printInNewWindow(async () => {
+    const [{ data, error: failure }, context] = await Promise.all([supabase.rpc('patient_booking_period_report', { p_muni: tenantId, p_from: period.from, p_to: period.to }), fundContext()])
     if (failure) throw failure
-    return buildTripMonthReportHtml({ tenant, report: data, partner: context.partner })
-  }, 'เตรียมสรุปรายเดือนไม่สำเร็จ')
+    return buildTripMonthReportHtml({ tenant, report: data, period, partner: context.partner })
+  }, 'เตรียมสรุปตามช่วงเวลาไม่สำเร็จ')
   const recordOdometer = (trip, start, end, issue, reason) => mutate('patient_booking_save_odometer', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_start: start, p_end: end, p_issue: issue, p_note: reason }, 'บันทึกเลขไมล์แล้ว')
   const reassignDriver = ({ trip, day, fromDriver, driver, expected, midtrip }) => mutate('patient_booking_reassign_driver', {
     p_op: op(`driver-cover:${JSON.stringify({ trip, day, fromDriver, driver, expected, midtrip })}`),
@@ -236,7 +244,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
         onRecordLetter={recordLetter} onPrintLetter={printLetter} onPrintRequest={printRequest} onOdometer={recordOdometer} onReschedule={reschedule} onUpdateSchedule={updateSchedule}
         onReload={reload} onSettings={() => setView('settings')} />}
       {view === 'calendar' && isCoordinator && <StaffBookingCalendar workspace={workspace} onOpenBooking={setCalendarBookingId} />}
-      {view === 'report' && isCoordinator && <QueueReport workspace={workspace} busy={busy} onMonthReport={printMonth} />}
+      {view === 'report' && isCoordinator && <QueueReport workspace={workspace} busy={busy} onPeriodReport={printPeriod} />}
       {/* รับจองแทนมีที่นี่ที่เดียว และส่ง p_staff_entry ให้ฐานข้อมูลบันทึกว่าเป็นการรับเรื่องแทน
           ส่งแล้วกลับกล่องคำขอพร้อมแถบ "ยืนยันรถเลย" — ไม่ต้องไล่หาแถวที่เพิ่งรับเอง */}
       {view === 'book' && isCoordinator && info?.enabled && <BookingForm submitError={error} tenantId={tenantId} info={info} profileName={profileName} profilePhone={workspace?.my_profile?.phone} staffEntry busy={busy} onBack={() => setView('inbox')}
