@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import MapPicker from '../MapPicker'
+import { joinPickup } from '../../lib/pickupText'
 import BookingMonthPicker from './BookingMonthPicker'
 import BookingReviewSheet from './BookingReviewSheet'
 import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, orgAbbr, normalizeBookingPhone, clockOf, bookingLastDay } from '../../lib/patientBooking'
@@ -171,7 +172,8 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   }, [form.time, backLatest])
   const noTimes = !!day && !dayBlocked && times.length === 0
   const timeMissing = !!form.time && !times.includes(form.time)
-  const pickupText = () => [form.place, form.spot.trim()].filter(Boolean).join(' · ')
+  // joinPickup ตัดส่วนที่ซ้ำกัน — กดเลือกหมู่บ้านแล้วช่องจุดสังเกตมีชื่อเดียวกัน (พิมพ์เอง/เติมจากหมุด) ไม่ให้ได้ "A · A"
+  const pickupText = () => joinPickup([form.place, form.spot])
   const routeLabel = info.routes?.find(r => r.id === form.route_id)?.label || ''
   const change = key => e => { setMissing([]); setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })) }
   const set = (key, value) => { setMissing([]); setForm(f => ({ ...f, [key]: value })) }

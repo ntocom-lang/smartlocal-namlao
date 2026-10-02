@@ -20,6 +20,7 @@ import {
   buildTripForwardLetterHtml, buildTripMonthReportHtml, tripPassengers,
 } from '../src/lib/patientTransportPrint.js'
 import { assertSignBlockStandard, assertSignLinesAligned } from './lib/signBlockChecks.mjs'
+import { dedupePickup, joinPickup } from '../src/lib/pickupText.js'
 
 const TENANT = {
   name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว',
@@ -634,6 +635,54 @@ const checks = [
         assert.deepEqual(result.filled, [], `ช่องที่มีค่ายังมีเส้นประ: ${result.filled.join(', ')}`)
         assert.ok(result.blanks > 0, 'ช่องว่างสำหรับเขียนมือไม่มีเส้นประแล้ว')
       } finally { await page.close() }
+    },
+  },
+  {
+    // ผู้จองกดเลือก "หมู่ 3 บ้านทุ่งแค้ว" แล้วช่องจุดสังเกตมีคำเดียวกัน ระบบเก็บ "หมู่ 3 บ้านทุ่งแค้ว · หมู่ 3 บ้านทุ่งแค้ว"
+    // ขึ้นใบคำขอซ้ำสองรอบ (เจ้าของระบบแจ้ง 2569-10-02) · ตัดเฉพาะส่วนที่เหมือนกันทุกตัวอักษร เพราะเลขหมู่ซ้อนกันได้
+    name: 'pickup-text-has-no-duplicate-parts',
+    reason: 'จุดรับที่ซ้ำกัน ("A · A") ต้องพิมพ์ครั้งเดียว ทั้งคำขอใหม่และคำขอเก่าที่เก็บไว้แล้ว · แต่ส่วนที่ต่างกันต้องอยู่ครบ'
+      + ' และห้ามตัดแบบ "อยู่ในอีกส่วนหนึ่ง" (หมู่ 1 กับ หมู่ 10 คนละที่)',
+    async run(browser) {
+      const VILLAGE = 'หมู่ 3 บ้านทุ่งแค้ว'
+      const SPOT = 'บ้านเลขที่ 99 ข้างวัด'
+      assert.equal(joinPickup([VILLAGE, VILLAGE]), VILLAGE, 'ส่วนที่เหมือนกันต้องเหลือครั้งเดียว')
+      assert.equal(joinPickup([VILLAGE, ` ${VILLAGE.replace(' ', '  ')} `]), VILLAGE, 'ช่องว่างซ้ำ/หัวท้ายต่างกันยังนับว่าซ้ำ')
+      assert.equal(joinPickup([VILLAGE, SPOT]), `${VILLAGE} · ${SPOT}`, 'ส่วนที่ต่างกันต้องอยู่ครบตามลำดับ')
+      assert.equal(joinPickup(['', VILLAGE, '   ']), VILLAGE, 'ส่วนว่างต้องไม่เหลือตัวคั่นลอยๆ')
+      assert.equal(joinPickup(['หมู่ 1', 'บ้านเลขที่ 5 หมู่ 10']), 'หมู่ 1 · บ้านเลขที่ 5 หมู่ 10',
+        'ห้ามตัดส่วนที่เป็นแค่ข้อความย่อยของอีกส่วน — "หมู่ 1" อยู่ใน "หมู่ 10" แต่คนละหมู่บ้าน')
+      assert.equal(dedupePickup(`${VILLAGE} · ${SPOT} · ${VILLAGE}`), `${VILLAGE} · ${SPOT}`, 'คำขอเก่าที่เก็บส่วนซ้ำไว้ไม่ติดกัน')
+      assert.equal(dedupePickup(null), '')
+
+      const DUP = `${VILLAGE} · ${VILLAGE}`
+      const countIn = (text, word) => text.split(word).length - 1
+      // ระบบจองคิว: ใบที่พิมพ์พร้อมหนังสือต่อเที่ยว
+      {
+        const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings: [{ ...TRIP_BOOKINGS[0], pickup: DUP }] }))
+        try {
+          const text = (await formSheetsOf(page).first().innerText()).replace(/\s+/g, ' ')
+          assert.equal(countIn(text, VILLAGE), 1, `ใบคำขอพิมพ์จุดรับซ้ำ: "${text.slice(text.indexOf('รับที่'), text.indexOf('รับที่') + 80)}"`)
+          // ตัวคั่น " · " ยังมีที่อื่นในใบ (บรรทัดท้ายใบ "· เลขอ้างอิง") จึงตรวจเฉพาะที่ตามหลังจุดรับ
+          assert.ok(!text.includes(`${VILLAGE} · `), 'ตัวคั่นจุดรับค้างอยู่ทั้งที่ไม่เหลือส่วนที่สอง')
+        } finally { await page.close() }
+      }
+      // ระบบคำขอแบบเดิม: ข้อความจุดรับอยู่ใน form.pickup_address ตรงๆ
+      {
+        const page = await render(browser, buildPatientTransportFormHtml(args({ form: { ...FORM, pickup_address: DUP } })))
+        try {
+          const text = (await formSheetsOf(page).first().innerText()).replace(/\s+/g, ' ')
+          assert.equal(countIn(text, VILLAGE), 1, 'ใบคำขอแบบเดิมพิมพ์จุดรับซ้ำ')
+        } finally { await page.close() }
+      }
+      // ส่วนที่ต่างกันต้องไม่หาย
+      {
+        const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings: [{ ...TRIP_BOOKINGS[0], pickup: `${VILLAGE} · ${SPOT}` }] }))
+        try {
+          const text = (await formSheetsOf(page).first().innerText()).replace(/\s+/g, ' ')
+          assert.ok(text.includes(`${VILLAGE} · ${SPOT}`), 'ส่วนที่ต่างกันหายไปหรือตัวคั่นเพี้ยน')
+        } finally { await page.close() }
+      }
     },
   },
   {
