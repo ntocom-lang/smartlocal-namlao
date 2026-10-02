@@ -593,6 +593,8 @@ export function BookingPrintButtons({ booking, trip, busy, onPrintRequest, onPri
   const { letterNo, letterDate } = edit.values
   const canEdit = !!onPrintLetter && !!onRecordLetter
   const changed = canEdit && (letterNo.trim() !== letter.no || letterDate !== letter.date)
+  // ฐานข้อมูลบันทึกเลขที่กับวันที่เป็นคู่ · ยังไม่มีเลขที่ให้พิมพ์วันที่จากร่างได้ก่อน
+  const needsSave = changed && (!!letter.no || !!letterNo.trim())
   const save = async () => {
     const saved = !edit.conflict && await onRecordLetter(edit.snapshot, letterNo.trim(), letterDate)
     if (saved) edit.reset()
@@ -604,16 +606,16 @@ export function BookingPrintButtons({ booking, trip, busy, onPrintRequest, onPri
       if (busy || !onPrintLetter || (canEdit && edit.conflict)) return
       // เปิดหน้าต่างใน onPrintLetter ก่อน await บันทึก กันมือถือบล็อกป๊อปอัป
       // ส่งค่าที่บันทึกสำเร็จตรงเข้าใบพิมพ์ ไม่รอ state จาก polling มาเปลี่ยนก่อน
-      onPrintLetter(changed ? { ...edit.snapshot, forward_letter_no: letterNo.trim(), forward_letter_date: letterDate } : booking, changed ? save : null)
+      onPrintLetter(changed ? { ...edit.snapshot, forward_letter_no: letterNo.trim(), forward_letter_date: letterDate } : booking, needsSave ? save : null)
     }}>
       {canEdit && <fieldset className="grid gap-3 rounded-xl bg-slate-50 p-3 sm:grid-cols-2" disabled={busy}>
         <legend className="px-1 font-semibold">เลขที่และวันที่หนังสือก่อนพิมพ์</legend>
-        <label>เลขที่หนังสือ (ที่)<input className={inputClass} required={changed} pattern={'.*\\S.*'} maxLength={60} value={letterNo} onChange={e => {
+        <label>เลขที่หนังสือ (ที่)<input className={inputClass} required={needsSave} pattern={'.*\\S.*'} maxLength={60} value={letterNo} onChange={e => {
           edit.change('letterNo', e.target.value)
-          if (!letterDate && e.target.value.trim()) edit.change('letterDate', thaiDay())
+          if (!letterDate && e.target.value.trim() && letter.date) edit.change('letterDate', letter.date)
         }} placeholder="เช่น พร 72301/123" /></label>
         <label>ลงวันที่<input className={inputClass} type="date" required={changed} value={letterDate} onChange={e => edit.change('letterDate', e.target.value)} /></label>
-        <p className="text-sm text-slate-600 sm:col-span-full">กรอกจากทะเบียนหนังสือส่ง ระบบไม่ออกเลขให้เอง · หากยังไม่มีเลขและวันที่ ให้เว้นทั้งสองช่องแล้วพิมพ์ได้</p>
+        <p className="text-sm text-slate-600 sm:col-span-full">วันที่เริ่มต้นมาจากวันที่ยืนยันรถ แก้ก่อนพิมพ์ได้แม้ยังไม่มีเลขที่ · เมื่อกรอกเลขที่ตามทะเบียน ระบบบันทึกเลขที่และวันที่พร้อมกัน</p>
         <DraftConflict edit={edit} busy={busy} latest={`เลขหนังสือ ${letter.no || '—'} · ${letter.date || '—'}`} />
       </fieldset>}
       <div className="grid gap-2 sm:grid-cols-2">
@@ -621,11 +623,11 @@ export function BookingPrintButtons({ booking, trip, busy, onPrintRequest, onPri
         <span className="block font-bold">พิมพ์ใบคำขอรถรับ–ส่งผู้ป่วย</span><span className="block text-xs font-normal text-slate-600">ประชาชนถึงนายก</span>
       </button>
       <button type="submit" className={`${changed ? primaryClass : buttonClass} text-left whitespace-normal`} disabled={busy || !onPrintLetter || (canEdit && edit.conflict)}>
-        <span className="block font-bold">{changed ? 'บันทึกและพิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย' : 'พิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย'}</span><span className="block text-xs font-normal">นายกถึงประธานกองทุน · หนังสือ + ใบคำขอรับสวัสดิการ (2 แผ่น)</span>
+        <span className="block font-bold">{needsSave ? 'บันทึกและพิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย' : 'พิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย'}</span><span className="block text-xs font-normal">นายกถึงประธานกองทุน · หนังสือ + ใบคำขอรับสวัสดิการ (2 แผ่น)</span>
       </button>
       </div>
       {canEdit && changed && <div className="flex flex-wrap gap-2">
-        <button type="button" className={buttonClass} disabled={busy || edit.conflict} onClick={e => { if (e.currentTarget.form.reportValidity()) save() }}>บันทึกเลขที่/วันที่อย่างเดียว</button>
+        {needsSave && <button type="button" className={buttonClass} disabled={busy || edit.conflict} onClick={e => { if (e.currentTarget.form.reportValidity()) save() }}>บันทึกเลขที่/วันที่อย่างเดียว</button>}
         {!edit.conflict && <button type="button" className={buttonClass} disabled={busy} onClick={edit.reset}>ใช้ค่าที่บันทึกไว้</button>}
       </div>}
     </form>

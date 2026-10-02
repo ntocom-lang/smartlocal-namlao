@@ -12,7 +12,7 @@ const { default: react } = await import(pathToFileURL(require.resolve('@vitejs/p
 const { default: tailwind } = await import(pathToFileURL(require.resolve('@tailwindcss/vite')).href)
 const { chromium } = require('playwright')
 const tenant = { id: 'test-muni', org_type: 'อบต.', name: 'องค์การบริหารส่วนตำบลตัวอย่าง', district: 'ตัวอย่าง', province: 'ตัวอย่าง', address: 'เลขที่ 1 หมู่ที่ 1' }
-const trip = { id: 'test-trip', state: 'confirmed', revision: 1, docs_revision: 1, driver_id: 'test-driver', driver_name: 'TEST คนขับ', plan: { date: '2026-10-05', route_label: 'โรงพยาบาลตัวอย่าง', pickup_at: '2026-10-05T09:00:00+07:00', return_at: '2026-10-05T17:00:00+07:00' } }
+const trip = { id: 'test-trip', state: 'confirmed', created_at: '2026-09-30T18:30:00Z', updated_at: '2026-10-02T08:00:00+07:00', revision: 1, docs_revision: 1, driver_id: 'test-driver', driver_name: 'TEST คนขับ', plan: { date: '2026-10-05', route_label: 'โรงพยาบาลตัวอย่าง', pickup_at: '2026-10-05T09:00:00+07:00', return_at: '2026-10-05T17:00:00+07:00' } }
 const booking = { id: 'testbook-001', patient_name: 'TEST ผู้ป่วยตัวอย่าง', requester_name: 'TEST ผู้ยื่นตัวอย่าง', phone: '0800000000', status: 'confirmed', trip_id: trip.id, appointment_at: '2026-10-05T10:00:00+07:00', return_at: '2026-10-05T17:00:00+07:00', route_id: 'test-route', route_label: 'โรงพยาบาลตัวอย่าง', pickup: 'หมู่ 1 บ้านตัวอย่าง', mobility: 'walk', companions: 1, return_mode: 'wait', relation: 'relative', entry_channel: 'staff', created_at: '2026-10-02T08:00:00+07:00', consent_at: '2026-10-02T08:00:00+07:00', revision: 1, letter_revision: 1, forward_letter_no: 'ทด 2569/1', forward_letter_date: '2026-10-02', passenger_step: 0 }
 const workspace = { role: 'admin', settings: { enabled: true, partner_id: 'test-partner', driver_id: 'test-driver', seats: 10, open_time: '07:30', close_time: '17:30', revision: 1 }, bookings: [booking, { ...booking, id: 'testbook-002', patient_name: 'TEST ผู้ป่วยคนอื่น', forward_letter_no: 'ทด 2569/2' }], trips: [trip], routes: [{ id: 'test-route', label: 'โรงพยาบาลตัวอย่าง', duration_minutes: 60 }], staff: [], events: [] }
 const header = { municipality_id: tenant.id, partner_id: 'test-partner', workflow_status: 'forwarded', partner_name_snapshot: 'กองทุนตัวอย่าง', recipient_title_snapshot: 'ประธานกองทุนตัวอย่าง', appointment_at: booking.appointment_at, forward_letter_no: booking.forward_letter_no, forward_letter_date: booking.forward_letter_date, consent_at: booking.consent_at }
@@ -30,6 +30,7 @@ const plugin = {
       const query=new URLSearchParams(location.search);
       if(query.has('pending')){seed.bookings=[{...seed.bookings[0],status:'submitted',trip_id:null}];seed.trips=[];}
       if(query.has('blank')){seed.bookings[0].forward_letter_no=null;seed.bookings[0].forward_letter_date=null;}
+      if(query.has('no-confirmation')){seed.trips[0].created_at=null;}
       export default function(){
         const [workspace,setWorkspace]=useState(seed),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
         useEffect(()=>{window.__qaWorkspace=workspace;window.__qaRefresh=()=>setWorkspace(w=>({...w,bookings:w.bookings.map((b,i)=>i?b:{...b,letter_revision:b.letter_revision+1,forward_letter_no:'ทด 2569/ล่าสุด',forward_letter_date:'2026-10-02'})}));},[workspace]);
@@ -88,12 +89,13 @@ try {
       await docs.getByLabel('เลขที่หนังสือ (ที่)', { exact: true }).fill(number)
       await docs.getByLabel('ลงวันที่', { exact: true }).fill('2026-10-01')
     }
-    async function printed(button, number, firstDay = false) {
+    async function printed(button, number, expectedDay = null) {
       const wait = page.waitForEvent('popup'); await button.click(); const popup = await wait
       await popup.waitForFunction(() => window.__printCount === 1)
       assert.equal(await popup.locator('.sheet').count(), 2)
-      assert.ok((await popup.locator('.letter-no').innerText()).includes(number))
-      if (firstDay) assert.match(await popup.locator('.letter-date').innerText(), /^1 .*2569$/)
+      assert.equal((await popup.locator('.letter-no').innerText()).replace(/\s+/g, ' ').trim(), number ? `ที่ ${number}` : '')
+      assert.equal(await popup.locator('.letter-no .fill-blank').count(), 0, 'missing number must leave clean space without dotted placeholder')
+      if (expectedDay) assert.match(await popup.locator('.letter-date').innerText(), new RegExp(`^${Number(expectedDay)} .*2569$`))
       const text = (await popup.locator('.sheet').allInnerTexts()).join('\n')
       assert.ok(text.includes(booking.patient_name) && !text.includes('TEST ผู้ป่วยคนอื่น'))
       await popup.getByRole('button', { name: 'ปิดหน้าต่าง' }).click()
@@ -103,6 +105,7 @@ try {
     let docs = await open()
     const number = docs.getByLabel('เลขที่หนังสือ (ที่)', { exact: true })
     assert.equal(await number.inputValue(), booking.forward_letter_no)
+    assert.equal(await docs.getByLabel('ลงวันที่', { exact: true }).inputValue(), booking.forward_letter_date, 'recorded issue date must be preserved for reprint')
     for (const control of [number, docs.getByLabel('ลงวันที่', { exact: true }), docs.getByRole('button', { name: printName })]) {
       await control.scrollIntoViewIfNeeded(); const box = await control.boundingBox()
       assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= width, JSON.stringify(box))
@@ -147,6 +150,12 @@ try {
     assert.equal(await page.evaluate(() => window.__rpcCalls.length), 1)
     pass('save-only remains available and reprint does not save again')
 
+    docs = await open()
+    await docs.getByLabel('ลงวันที่', { exact: true }).fill('2026-10-03')
+    await printed(docs.getByRole('button', { name: savePrintName }), booking.forward_letter_no, 3)
+    assert.deepEqual(await page.evaluate(() => window.__rpcCalls[0].args), { p_booking: booking.id, p_letter_revision: 1, p_letter_no: booking.forward_letter_no, p_letter_date: '2026-10-03' })
+    pass('date-only correction saves without changing an existing letter number')
+
     docs = await open(); await fill(docs)
     await page.evaluate(() => { window.__blockPopup = true })
     await docs.getByRole('button', { name: savePrintName }).click()
@@ -156,17 +165,36 @@ try {
     pass('blocked popup does not save and draft stays available')
 
     docs = await open('blank=1')
-    assert.equal(await docs.getByLabel('ลงวันที่', { exact: true }).inputValue(), '')
+    assert.equal(await docs.getByLabel('ลงวันที่', { exact: true }).inputValue(), '2026-10-01', 'default must use Bangkok confirmation day, not appointment, submission or updated date')
     let popupWait = page.waitForEvent('popup'); await docs.getByRole('button', { name: printName }).click(); let blank = await popupWait
     await blank.waitForFunction(() => window.__printCount === 1)
-    assert.equal(await blank.locator('.letter-no .fill-blank').count(), 1)
-    assert.equal(await blank.locator('.letter-date .fill-blank').count(), 3, 'day, month and year stay blank before issue date is entered')
+    assert.equal((await blank.locator('.letter-no').innerText()).trim(), '')
+    assert.equal(await blank.locator('.letter-no .fill-blank').count(), 0)
+    assert.equal(await blank.locator('.letter-date .fill-blank').count(), 0)
+    assert.match(await blank.locator('.letter-date').innerText(), /^1 .*2569$/)
     await blank.close()
     assert.equal(await page.evaluate(() => window.__rpcCalls?.length || 0), 0)
-    await docs.getByLabel('ลงวันที่', { exact: true }).fill('2026-10-01')
-    await docs.getByRole('button', { name: savePrintName }).click()
-    assert.equal(await page.evaluate(() => window.__opened), 1, 'partial fields must not open another popup')
-    pass('blank letter still prints, partial data cannot be saved or printed')
+    pass('blank number prints with Bangkok confirmation date, without database write')
+    await docs.getByLabel('ลงวันที่', { exact: true }).fill('2026-10-03')
+    assert.equal(await docs.getByRole('button', { name: 'บันทึกเลขที่/วันที่อย่างเดียว', exact: true }).count(), 0)
+    await printed(docs.getByRole('button', { name: printName }), '', 3)
+    assert.equal(await page.evaluate(() => window.__rpcCalls?.length || 0), 0)
+    pass('editable draft date prints before number assignment without database write')
+
+    await docs.getByRole('button', { name: 'ใช้ค่าที่บันทึกไว้', exact: true }).click()
+    await docs.getByLabel('เลขที่หนังสือ (ที่)', { exact: true }).fill('ทด 2569/วันยืนยัน')
+    assert.equal(await docs.getByLabel('ลงวันที่', { exact: true }).inputValue(), '2026-10-01', 'entering a number must keep the confirmation date')
+    await printed(docs.getByRole('button', { name: savePrintName }), 'ทด 2569/วันยืนยัน', true)
+    assert.equal(await page.evaluate(() => window.__rpcCalls[0].args.p_letter_date), '2026-10-01')
+    pass('new number saves and prints the automatic confirmation date')
+
+    docs = await open('blank=1&no-confirmation=1')
+    assert.equal(await docs.getByLabel('ลงวันที่', { exact: true }).inputValue(), '', 'missing confirmation timestamp must not invent a date')
+    popupWait = page.waitForEvent('popup'); await docs.getByRole('button', { name: printName }).click(); blank = await popupWait
+    await blank.waitForFunction(() => window.__printCount === 1)
+    assert.equal(await blank.locator('.letter-date .fill-blank').count(), 3)
+    await blank.close()
+    pass('missing confirmation evidence keeps date blank instead of guessing today')
 
     docs = await open('pending=1')
     assert.equal(await docs.getByLabel('เลขที่หนังสือ (ที่)', { exact: true }).count(), 0)

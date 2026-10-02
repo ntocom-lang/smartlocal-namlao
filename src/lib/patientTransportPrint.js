@@ -202,6 +202,7 @@ function letterCss() {
   .emblem img { height: 100%; display: block; margin: 0 auto; }
   .letter-head { display: flex; align-items: flex-start; gap: 6mm; }
   .letter-no { flex: 0 0 auto; }
+  .letter-no:empty { min-width: 45mm; }
   /* ที่อยู่ผู้ส่งอยู่หัวขวา ชิดขวาของพื้นที่พิมพ์ ไม่ใช่กึ่งกลาง */
   .sender { flex: 1 1 auto; text-align: right; }
   .letter-date { text-align: center; margin: 3mm 0; }
@@ -279,6 +280,7 @@ function letterSheet({
   const orgName = tenant?.name?.trim() || 'หน่วยงาน'
   const mayorTitle = mayor?.title?.trim() || orgHeadTitle(tenant)
   const senderAddress = senderAddressLines(tenant)
+  const letterNo = String(header?.forward_letter_no ?? '').trim()
 
   const patientName = textOr(form.patient_name, parent?.requester_name)
   const patientAge = form.patient_age != null && form.patient_age !== ''
@@ -324,7 +326,7 @@ function letterSheet({
     : ''}</div>
 
   <div class="letter-head">
-    <p class="letter-no">${field('ที่', header?.forward_letter_no, '45mm')}</p>
+    <p class="letter-no">${letterNo ? field('ที่', letterNo, '45mm') : ''}</p>
     <div class="sender">
       <p>${orgNameHtml(orgOfficeName(tenant))}</p>
 ${senderAddress.map(part => `      <p>${esc(part)}</p>`).join('\n')}
