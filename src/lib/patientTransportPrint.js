@@ -636,38 +636,61 @@ export function tripPassengers(bookings, trip) {
     .sort((a, b) => String(a.appointment_at).localeCompare(String(b.appointment_at)))
 }
 
+// ข้อมูลของคำขอ 1 ใบสำหรับ formSheet/letterSheet — แหล่งเดียวของทั้งชุดต่อเที่ยว (หลังยืนยันรถ มี trip)
+// และใบคำขอเดี่ยวตอนรอยืนยันรถ (trip = null) ใบที่พิมพ์ก่อนยืนยันจึงตรงกับใบในชุดของเที่ยวทุกตัวอักษร
+function bookingPacket(args, b, trip) {
+  const { partner } = args
+  // ⚠️ เทียบค่าตรงตัวทั้งสองทาง ห้ามเขียน "ไม่ใช่ staff = online" — ค่าที่ไม่รู้จักหรือไม่มี ต้องตกไป
+  // 'booking' ที่ไม่อ้างอะไรเลย (กติกาเดียวกับทุกใบ: อ้างว่าลงชื่อออนไลน์ได้เมื่อรู้แน่เท่านั้น)
+  const channel = b.entry_channel === 'online' ? 'online'
+    : b.entry_channel === 'staff' ? 'booking_staff' : 'booking'
+  return {
+    ...args,
+    referenceNo: String(b.id).slice(0, 8).toUpperCase(),
+    docDate: b.created_at ? thaiDay(b.created_at) : '',
+    header: {
+      forward_letter_no: trip?.forward_letter_no, forward_letter_date: trip?.forward_letter_date,
+      partner_name_snapshot: textOr(partner?.name, 'กองทุนเจ้าของรถ'),
+      recipient_title_snapshot: textOr(partner?.recipient_title, `ประธาน${textOr(partner?.name, 'กองทุนเจ้าของรถ')}`),
+      appointment_at: b.appointment_at, mobility: b.mobility,
+      consent_at: b.consent_at,
+    },
+    parent: { requester_name: b.requester_name, requester_phone: b.phone },
+    form: {
+      patient_name: b.patient_name, pickup_address: b.pickup,
+      destination: b.route_label || trip?.plan?.route_label,
+      requester_relation: b.relation, companions: b.companions,
+      trip_type: b.return_mode === 'one_way' ? 'one_way' : 'round_trip',
+      return_note: BOOKING_RETURN_MODES[b.return_mode],
+      // created_at = เวลาที่คำขอถูกส่งเข้าระบบ: ผู้จองส่งเอง (online) หรือเจ้าหน้าที่กดบันทึกแทน (staff)
+      signed_by: { channel }, signed_at: channel === 'booking' ? null : b.created_at,
+    },
+  }
+}
+
+/**
+ * ใบคำขอถึงนายกของคำขอเดียวในระบบจองคิว — พิมพ์ได้ตั้งแต่ยังรอยืนยันรถ
+ * เจ้าของระบบสั่ง 2569-10-02 ("รอยืนยันรถ เพิ่มปุ่มพิมพ์ให้ด้วย พิมพ์ในส่วนที่พิมพ์ได้" · เลือกแบบ ก)
+ * ยังไม่มีเที่ยว = ยังไม่มีหนังสือนำส่งถึงกองทุน (ไม่มีวันเวลารถและเลขหนังสือ) จึงออกแค่ใบคำขอ ประชาชน → นายก
+ * แถบบนจอ (ไม่ลงกระดาษ) บอกว่าใบนี้จะออกอีกครั้งในชุดหลังยืนยันรถ ให้เจ้าหน้าที่เลือกเองว่าจะพิมพ์ตอนไหน กระดาษจะได้ไม่เกิน
+ * ทางเลือก "หลังยืนยันรถพิมพ์เฉพาะหนังสือนำส่ง" เสนอแล้ว ไม่ได้เลือก
+ */
+export function buildBookingRequestFormHtml(args) {
+  if (!args?.booking) throw new Error('ไม่พบคำขอสำหรับพิมพ์')
+  return page(
+    'ใบคำขอรถรับ-ส่งผู้ป่วยถึงนายก อปท.',
+    formCss(),
+    '<div class="screen-note">ยังไม่ยืนยันรถ จึงมีเฉพาะใบคำขอถึงนายก · หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถ'
+      + ' · ใบคำขอนี้จะออกอีกครั้งในชุดเอกสารหลังยืนยันรถ พิมพ์ตอนใดตอนหนึ่งครั้งเดียวก็พอ (ข้อความนี้ไม่ถูกพิมพ์)</div>\n'
+      + formSheet(bookingPacket(args, args.booking, null)),
+  )
+}
+
 export function buildTripForwardLetterHtml(args) {
-  const { trip, bookings, partner } = args
+  const { trip, bookings } = args
   const people = tripPassengers(bookings, trip)
   if (!people.length) throw new Error('ไม่มีคำขอที่ยืนยันแล้วสำหรับพิมพ์ในเที่ยวนี้')
-  const packets = people.map(b => {
-    // ⚠️ เทียบค่าตรงตัวทั้งสองทาง ห้ามเขียน "ไม่ใช่ staff = online" — ค่าที่ไม่รู้จักหรือไม่มี ต้องตกไป
-    // 'booking' ที่ไม่อ้างอะไรเลย (กติกาเดียวกับทุกใบ: อ้างว่าลงชื่อออนไลน์ได้เมื่อรู้แน่เท่านั้น)
-    const channel = b.entry_channel === 'online' ? 'online'
-      : b.entry_channel === 'staff' ? 'booking_staff' : 'booking'
-    return {
-      ...args,
-      referenceNo: String(b.id).slice(0, 8).toUpperCase(),
-      docDate: b.created_at ? thaiDay(b.created_at) : '',
-      header: {
-        forward_letter_no: trip.forward_letter_no, forward_letter_date: trip.forward_letter_date,
-        partner_name_snapshot: textOr(partner?.name, 'กองทุนเจ้าของรถ'),
-        recipient_title_snapshot: textOr(partner?.recipient_title, `ประธาน${textOr(partner?.name, 'กองทุนเจ้าของรถ')}`),
-        appointment_at: b.appointment_at, mobility: b.mobility,
-        consent_at: b.consent_at,
-      },
-      parent: { requester_name: b.requester_name, requester_phone: b.phone },
-      form: {
-        patient_name: b.patient_name, pickup_address: b.pickup,
-        destination: b.route_label || trip.plan?.route_label,
-        requester_relation: b.relation, companions: b.companions,
-        trip_type: b.return_mode === 'one_way' ? 'one_way' : 'round_trip',
-        return_note: BOOKING_RETURN_MODES[b.return_mode],
-        // created_at = เวลาที่คำขอถูกส่งเข้าระบบ: ผู้จองส่งเอง (online) หรือเจ้าหน้าที่กดบันทึกแทน (staff)
-        signed_by: { channel }, signed_at: channel === 'booking' ? null : b.created_at,
-      },
-    }
-  })
+  const packets = people.map(b => bookingPacket(args, b, trip))
   const letter = { ...packets[0], attachmentCount: people.length }
   if (people.length > 1) {
     letter.referenceNo = ''

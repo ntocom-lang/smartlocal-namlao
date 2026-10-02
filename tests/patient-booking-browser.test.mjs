@@ -399,7 +399,23 @@ try{
  await click('conflictDecline',row(b2).getByRole('button',{name:'ยืนยันรถ',exact:true}))
  await problem.waitFor();await problem.getByText('รถไม่ว่าง ช่วงเวลานี้ชนกับเที่ยวที่ยืนยันแล้ว').waitFor()
  await problem.getByText(/ไม่ได้: ผู้เดินทางเดิมในเที่ยวนั้นไม่ได้เลือกนั่งร่วม/).waitFor()
- assert.equal(await sheet.getByRole('button',{name:'พิมพ์เอกสาร 2 ประเภท',exact:true}).count(),0,'ยังไม่ยืนยันรถ = ยังไม่มีหนังสือให้พิมพ์ ปุ่มพิมพ์บนหัวแผ่นต้องไม่ขึ้น')
+ // ยังไม่ยืนยันรถ = ยังไม่มีเที่ยว จึงยังไม่มีหนังสือนำส่ง แต่ใบคำขอถึงนายกพิมพ์ได้แล้ว (เจ้าของระบบสั่ง 2569-10-02 แบบ ก)
+ // ปุ่ม "พิมพ์" บนหัวแผ่นพิมพ์เฉพาะใบคำขอของคำขอนี้ 1 แผ่น · แถบบนจอบอกว่าหนังสือนำส่งพิมพ์ได้หลังยืนยันรถและใบนี้จะออกอีกครั้ง
+ // ในชุดนั้น · พิมพ์แล้วสถานะคำขอต้องไม่เปลี่ยน และแผ่นยังอยู่ให้ทำงานต่อ
+ assert.equal(await sheet.getByRole('button',{name:'พิมพ์เอกสาร 2 ประเภท',exact:true}).count(),0,'ยังไม่ยืนยันรถ = ยังไม่มีหนังสือนำส่ง ปุ่มพิมพ์ชุดเอกสารของเที่ยวต้องไม่ขึ้น')
+ {
+  const [pendingWin]=await Promise.all([page.waitForEvent('popup'),sheet.getByRole('button',{name:'พิมพ์ใบคำขอถึงนายก',exact:true}).click()])
+  await pendingWin.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
+  const doc=await printedDoc(pendingWin,b2)
+  assert.deepEqual(doc.kinds,['form'],'รอยืนยันรถต้องพิมพ์ได้เฉพาะใบคำขอ 1 แผ่น ไม่มีหนังสือนำส่ง')
+  assert.ok(doc.form.includes(mine.find(b=>b.id===b2).patient_name),'ใบคำขอต้องเป็นของคำขอที่เปิดอยู่')
+  assert.match(doc.note,/^ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service เมื่อ /,`คำขอที่ผู้จองยื่นเอง บรรทัดกำกับต้องเหมือนใบในชุดหลังยืนยัน: "${doc.note}"`)
+  assert.ok(doc.notice&&doc.notice.display==='block'&&doc.notice.text.includes('หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถ')&&doc.notice.text.includes('จะออกอีกครั้งในชุดเอกสารหลังยืนยันรถ'),`แถบบนจอของใบที่พิมพ์ตอนรอยืนยันรถ: ${JSON.stringify(doc.notice)}`)
+  await pendingWin.close()
+  assert.equal((await bookingRow(b2)).status,'submitted','พิมพ์ใบคำขอแล้วสถานะคำขอต้องไม่เปลี่ยน')
+  await problem.waitFor()
+ }
+ console.log('PASS pending request prints the request form only: header print button before vehicle confirmation, one sheet without the forwarding letter, on-screen note says the letter comes after confirmation, booking stays pending')
  assert.equal(await problem.getByLabel('เหตุผล: รถไม่ว่าง ให้บริการตามเวลานี้ไม่ได้').inputValue(),'รถไม่ว่างในช่วงเวลาที่ขอ')
  await click('conflictDecline',problem.getByRole('button',{name:'แจ้งว่ารถไม่ว่าง และยกเลิกคำขอ',exact:true}))
  // ยกเลิกแล้วย้ายไปส่วน "เสร็จแล้ว / ยกเลิก" ที่พับไว้ — หายจากจอทันที กดแสดงรายการแล้วเห็นป้ายยกเลิก

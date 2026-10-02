@@ -16,7 +16,7 @@ import process from 'node:process'
 import { readFileSync } from 'node:fs'
 import { chromium } from 'playwright'
 import {
-  buildPatientTransportFormHtml, buildPatientTransportPacketHtml,
+  buildBookingRequestFormHtml, buildPatientTransportFormHtml, buildPatientTransportPacketHtml,
   buildTripForwardLetterHtml, buildTripMonthReportHtml, tripPassengers,
 } from '../src/lib/patientTransportPrint.js'
 import { assertSignBlockStandard, assertSignLinesAligned } from './lib/signBlockChecks.mjs'
@@ -328,6 +328,49 @@ const checks = [
           assert.deepEqual(await sheetKinds(page), [...riders.map(() => 'form'), 'letter'], `จอบอก ${riders.length + 1} แผ่น กระดาษต้องออกเท่านั้น`)
         } finally { await page.close() }
       }
+    },
+  },
+  {
+    // เจ้าของระบบสั่ง 2569-10-02 (แบบ ก): คำขอที่ยังรอยืนยันรถพิมพ์ใบคำขอถึงนายกได้เลย ยังไม่มีเที่ยวจึงยังไม่มีหนังสือนำส่ง
+    // ใบที่พิมพ์ตอนนี้ต้องเป็นใบเดียวกับที่จะออกในชุดของเที่ยวหลังยืนยันรถ (ประกอบจาก bookingPacket() ตัวเดียวกัน)
+    // แถบบนจอบอกว่ามีแค่ใบคำขอ และใบนี้จะออกอีกครั้งในชุดหลังยืนยัน — ให้เจ้าหน้าที่เลือกพิมพ์ตอนใดตอนหนึ่ง กระดาษไม่เกิน
+    name: 'pending-request-form-matches-trip-packet',
+    reason: 'ใบคำขอที่พิมพ์ตอนรอยืนยันรถต้องตรงกับใบในชุดหลังยืนยันทุกตัวอักษร มีแผ่นเดียว ไม่มีหนังสือนำส่ง จบ 1 หน้า'
+      + ' และแถบบนจอต้องบอกว่าหนังสือนำส่งพิมพ์ได้หลังยืนยันรถ โดยไม่ลงกระดาษ',
+    async run(browser) {
+      // 0 = ผู้จองยื่นเองออนไลน์ · 1 = เจ้าหน้าที่รับจองแทน (บรรทัดกำกับใต้ชื่อต่างกัน ต้องตรงกันทั้งสองแบบ)
+      for (const index of [0, 1]) {
+        const booking = { ...TRIP_BOOKINGS[index], route_label: TRIP.plan.route_label }
+        const pending = { ...booking, status: 'submitted', trip_id: null }
+        const single = await render(browser, buildBookingRequestFormHtml({ tenant: TENANT, partner: PARTNER, mayor: MAYOR, booking: pending }))
+        const packet = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings: [booking] }))
+        try {
+          assert.deepEqual(await sheetKinds(single), ['form'], 'รอยืนยันรถต้องได้ใบคำขอแผ่นเดียว')
+          assert.equal(await single.locator('.letter-sign, .letter-head, .emblem').count(), 0, 'รอยืนยันรถต้องไม่มีหนังสือนำส่ง')
+          const formText = page => formSheetsOf(page).first().innerText()
+          assert.equal(await formText(single), await formText(packet), 'ใบที่พิมพ์ตอนรอยืนยันรถต้องตรงกับใบในชุดหลังยืนยันรถ')
+          const mm = await sheetContentMm(single, 0)
+          assert.ok(mm <= ONE_PAGE_BUDGET_MM, `ใบคำขอตอนรอยืนยันรถสูง ${mm.toFixed(1)}mm เกินงบ ${ONE_PAGE_BUDGET_MM}mm`)
+          await assertSignBlockStandard(single, { minRows: 1, minBelow: 1 })
+          const note = () => single.evaluate(() => {
+            const el = document.querySelector('.screen-note')
+            return el && { text: el.textContent, display: getComputedStyle(el).display, inSheet: !!el.closest('.sheet') }
+          })
+          const printed = await note()
+          assert.ok(printed, 'ต้องมีแถบบอกว่ายังพิมพ์ได้เฉพาะใบคำขอ')
+          for (const part of ['ยังไม่ยืนยันรถ', 'หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถ', 'จะออกอีกครั้งในชุดเอกสารหลังยืนยันรถ', 'ไม่ถูกพิมพ์']) {
+            assert.ok(printed.text.includes(part), `แถบบนจอต้องมี "${part}" — "${printed.text}"`)
+          }
+          assert.equal(printed.inSheet, false, 'แถบบนจออยู่ในแผ่นกระดาษ')
+          assert.equal(printed.display, 'none', 'แถบบนจอถูกพิมพ์ลงกระดาษ')
+          await single.emulateMedia({ media: 'screen' })
+          assert.equal((await note()).display, 'block', 'แถบไม่ขึ้นบนจอ')
+          if (index === 0 && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
+            await single.screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/patient-pending-request-on-screen.png`, clip: { x: 0, y: 0, width: 794, height: 1123 } })
+          }
+        } finally { await single.close(); await packet.close() }
+      }
+      assert.throws(() => buildBookingRequestFormHtml({ tenant: TENANT, partner: PARTNER }), /ไม่พบคำขอ/, 'ไม่มีคำขอต้องไม่พิมพ์ใบเปล่า')
     },
   },
   {
