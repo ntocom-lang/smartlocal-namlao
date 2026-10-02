@@ -394,7 +394,11 @@ function fundFormCss() {
   .fund-title { text-align: center; font-weight: 700; margin-bottom: 1mm; }
   .fund-reference { position: absolute; top: 0; right: 0; }
   .fund-name { text-align: center; margin-bottom: 2mm; }
-  .fund-written { text-align: right; margin-bottom: 2mm; }
+  .fund-written { margin-bottom: 2mm; }
+  .fund-written-place { display: flex; justify-content: flex-end; align-items: baseline; gap: 1.5mm; max-width: 90mm; margin-left: auto; }
+  .fund-written-label, .fund-written-date { white-space: nowrap; }
+  .fund-written-office { min-width: 0; text-align: right; overflow-wrap: anywhere; }
+  .fund-written-date { text-align: center; margin-top: 3mm; }
   .fund-intro { text-indent: 2.5cm; margin-top: 2mm; }
   .fund-details { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 2mm; }
   .fund-details th, .fund-details td { border: 1px solid #000; padding: 0.7mm 1.5mm; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
@@ -437,7 +441,10 @@ function fundFormSheet({ header, form = {}, parent = {}, tenant, referenceNo = '
     <p class="fund-reference">เลขที่คำขอ ${esc(referenceNo)}</p>
   </div>
   <p class="fund-name">${esc(fundName)}</p>
-  <p class="fund-written">เขียนที่ ${esc(orgOfficeName(tenant))} &nbsp; วันที่ ${line(letterDateText(docDate), '36mm')}</p>
+  <div class="fund-written">
+    <p class="fund-written-place"><span class="fund-written-label">เขียนที่</span><span class="fund-written-office">${esc(orgOfficeName(tenant))}</span></p>
+    <p class="fund-written-date">วันที่ ${line(letterDateText(docDate), '36mm')}</p>
+  </div>
   <p class="kv"><span class="bold">เรื่อง</span>&nbsp;&nbsp;ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย</p>
   <p class="kv"><span class="bold">เรียน</span>&nbsp;&nbsp;${esc(recipient)}</p>
   <p class="fund-intro">ข้าพเจ้า ${line(requesterName, REQUESTER_LINE_W)} ${field('สมาชิกกองทุนเลขที่', form.fund_member_no, '32mm')}</p>

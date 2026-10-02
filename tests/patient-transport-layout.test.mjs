@@ -189,6 +189,47 @@ function sheetKinds(page) {
 
 const checks = [
   {
+    name: 'fund-form-written-place-and-date-alignment',
+    reason: 'เขียนที่ต้องชิดขวาและวันที่อยู่กลางบรรทัดถัดลงมา แม้ชื่อหน่วยงานยาวหรือยังไม่มีวันที่',
+    async run(browser) {
+      for (const [label, tenant, docDate] of [
+        ['ปกติ', TENANT, '2026-09-27'],
+        ['ชื่อหน่วยงานยาว', { ...TENANT, name: 'องค์การบริหารส่วนตำบลตัวอย่างชื่อท้องถิ่นยาวสำหรับตรวจตำแหน่งสถานที่เขียนและวันที่ในใบคำขอรับสวัสดิการ' }, '2026-09-27'],
+        ['ยังไม่มีวันที่', TENANT, ''],
+      ]) {
+        const page = await render(browser, buildPatientTransportLetterHtml(args({ tenant, docDate })))
+        try {
+          const layout = await page.locator('.fund-form-sheet').evaluate(sheet => {
+            // วัดข้อความจริงด้วย Range: กล่อง element กว้างเต็มช่องอาจกลบตำแหน่งข้อความที่ผิด
+            const rects = selector => {
+              const range = document.createRange()
+              range.selectNodeContents(sheet.querySelector(selector))
+              return [...range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0)
+                .map(rect => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }))
+            }
+            const table = sheet.querySelector('.fund-details').getBoundingClientRect()
+            return { table: { left: table.left, right: table.right }, place: rects('.fund-written-label'), office: rects('.fund-written-office'), date: rects('.fund-written-date') }
+          })
+          const dateLeft = Math.min(...layout.date.map(rect => rect.left))
+          const dateRight = Math.max(...layout.date.map(rect => rect.right))
+          const written = [...layout.place, ...layout.office]
+          const writtenRight = Math.max(...written.map(rect => rect.right))
+          const writtenBottom = Math.max(...written.map(rect => rect.bottom))
+          assert.ok(Math.abs(writtenRight - layout.table.right) < 1, `${label}: เขียนที่ไม่ชิดขอบขวา`)
+          assert.ok(Math.abs((dateLeft + dateRight) / 2 - (layout.table.left + layout.table.right) / 2) < 1, `${label}: วันที่ไม่อยู่กึ่งกลางพื้นที่พิมพ์`)
+          assert.ok(layout.date[0].top > writtenBottom, `${label}: วันที่ไม่ได้แยกอยู่ใต้สถานที่เขียน`)
+          for (const rect of written) {
+            assert.ok(rect.left >= layout.table.left - 1 && rect.right <= layout.table.right + 1, `${label}: สถานที่เขียนล้นพื้นที่พิมพ์`)
+          }
+          if (label === 'ชื่อหน่วยงานยาว') assert.ok(new Set(layout.office.map(rect => Math.round(rect.top))).size > 1, 'ไม่ได้ตรวจชื่อหน่วยงานที่ตัดบรรทัดจริง')
+          if (!docDate) assert.equal(await page.locator('.fund-written-date .fill-blank').count(), 1)
+          assert.deepEqual(await sheetKinds(page), ['letter', 'fund-form'])
+          for (const sheet of [0, 1]) assert.ok(await sheetContentMm(page, sheet) <= ONE_PAGE_BUDGET_MM, `${label}: แผ่น ${sheet + 1} เกิน A4`)
+        } finally { await page.close() }
+      }
+    },
+  },
+  {
     name: 'separate-buttons-request-and-two-page-fund-packet',
     reason: 'ปุ่มแรกต้องออกใบคำขอถึงนายก 1 แผ่น ปุ่มที่สองต้องออกหนังสือและใบคำขอรับสวัสดิการ 2 แผ่นของรายที่เลือก',
     async run(browser) {
