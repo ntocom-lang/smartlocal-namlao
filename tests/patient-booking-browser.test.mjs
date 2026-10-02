@@ -499,7 +499,6 @@ try{
   }
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'กรอบกลุ่มเที่ยวต้องไม่ทำให้จอ 390px ล้น')
   await page.setViewportSize({width:1280,height:900});await tripFrame.waitFor()
-
   // ปุ่มพิมพ์ในแถว (ไอคอนเครื่องพิมพ์) — กดแล้วได้ใบคำขอ + หนังสือนำส่งของคนในแถวนั้นคนเดียว ไม่เปิดแผ่นรายละเอียด
   const packetOf=win=>win.evaluate(()=>[...document.querySelectorAll('.sheet')].map(s=>s.querySelector('.letter-sign')?'letter':!s.querySelector('.form-title')?'other':s.innerText.includes('[TEST] ไปด้วยกัน อี')?'form:E':s.innerText.includes('[TEST] ไปด้วยกัน เอฟ')?'form:F':'form:?'))
   const letterNoOf=win=>win.evaluate(()=>document.querySelector('.letter-no')?.innerText.replace(/\s+/g,' ').trim()??'')
@@ -958,6 +957,14 @@ try{
  assert.equal(await page.getByRole('button',{name:'ลบ',exact:true}).count(),0)
  await page.goto(`${base}/__patient?as=admin&page=staff`)
  await page.getByRole('button',{name:'ลบ',exact:true}).first().waitFor()
+ // คอลัมน์ "ดำเนินการ" บนจอ PC: ปุ่มของแต่ละแถว (ปุ่มหลัก + พิมพ์ + ลบ) อยู่บรรทัดเดียวทุกความกว้าง — ปุ่ม "ลบ" เคยตกลงบรรทัดใหม่ (เจ้าของระบบสั่ง 2569-10-02)
+ // จอแคบ (1024/820px) คือจอที่ตารางเลื่อนแนวนอนอยู่แล้ว ตัดบรรทัดได้ง่ายที่สุดจึงวัดด้วย · วัดตอนเป็นแอดมินเพราะเห็นครบ 3 ปุ่ม
+ for(const width of [1280,1024,820]){
+  await page.setViewportSize({width,height:900})
+  const lines=await page.locator('tbody tr[data-booking]').evaluateAll(trs=>trs.filter(tr=>tr.offsetParent).map(tr=>{const buttons=[...tr.lastElementChild.querySelectorAll('button')];return{id:tr.dataset.booking,buttons:buttons.length,tops:new Set(buttons.map(button=>Math.round(button.getBoundingClientRect().top))).size}}))
+  assert(lines.some(line=>line.buttons>=3),`ต้องมีแถวที่มีปุ่มครบ 3 ปุ่ม (หลัก+พิมพ์+ลบ) ให้วัดที่ ${width}px`)
+  assert.deepEqual(lines.filter(line=>line.tops>1).map(line=>line.id),[],`ปุ่มคอลัมน์ดำเนินการต้องอยู่บรรทัดเดียวที่จอ ${width}px`)
+ }
  await page.getByRole('button',{name:'ลบ',exact:true}).first().click()
  const deleteDialog=page.getByRole('dialog',{name:'ลบคำขอรถ'})
  await deleteDialog.waitFor()

@@ -161,7 +161,7 @@ function actionLabel({ next, group, booking, trip }) {
 function RowButton({ row, busy, onPress, full }) {
   const { next } = row
   return <button type="button" disabled={busy} onClick={e => { e.stopPropagation(); onPress(row) }}
-    className={`min-h-11 rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-50 ${full ? 'w-full text-base' : ''} ${next.color ? 'border-transparent text-white' : 'border-slate-300 bg-white text-slate-700'}`}
+    className={`min-h-11 rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-50 ${full ? 'w-full text-base' : 'whitespace-nowrap'} ${next.color ? 'border-transparent text-white' : 'border-slate-300 bg-white text-slate-700'}`}
     style={next.color ? { backgroundColor: next.color } : undefined}>{actionLabel(row)}</button>
 }
 
@@ -721,7 +721,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
                 <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span>{b.status === 'submitted' && group.length > 1 && <span className="block text-[11px] font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => x.patient_name).join(', ')}</span>}{mates.length > 0 && <span className="block text-[11px] font-semibold text-sky-800">{matesText(mates)}</span>}</td>
                 <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={pickupSentence(b.pickup)}>รับที่ {pickupSentence(b.pickup)}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[b.return_mode]}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
                 <td className="border-r border-gray-200 px-2 py-2.5 text-center" style={closes}><StatusChips row={row} /></td>
-                <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit', ...(block.framed && { borderRight: TRIP_EDGE }), ...closes }}><div className="flex flex-wrap justify-center gap-2"><RowButton row={row} busy={busy} onPress={press} /><RowPrint printer={printerOf(row, { onPrintLetter, onPrintRequest })} name={b.patient_name} busy={busy} />{deleteButton(row)}</div></td>
+                <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit', ...(block.framed && { borderRight: TRIP_EDGE }), ...closes }}><div className="flex flex-nowrap items-center justify-center gap-2"><RowButton row={row} busy={busy} onPress={press} /><RowPrint printer={printerOf(row, { onPrintLetter, onPrintRequest })} name={b.patient_name} busy={busy} />{deleteButton(row)}</div></td>
               </tr>
             })}
             </Fragment>
