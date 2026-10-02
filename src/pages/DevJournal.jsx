@@ -5,7 +5,7 @@ import {
   LayoutGrid, LogOut, Folder, Activity, Database, Cpu, ShieldCheck, Sparkles,
   Clock3, CheckCircle2, CircleDot, Layers3, Command, ChevronRight,
 } from 'lucide-react'
-import { supabase, signOutSafely } from '../lib/supabase'
+import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
 import { thaiDate } from '../lib/thaiDate'
 import { useTenant } from '../contexts/TenantContext'
 import SuperAdminPanel from '../components/admin/SuperAdminPanel'
@@ -139,7 +139,8 @@ export default function DevJournal() {
   const [showModuleManager, setShowModuleManager] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    // getSessionResilient: เน็ตสะดุดตอนต่ออายุ token ต้องไม่พาออกจากระบบ (ดูเหตุผลที่ src/lib/supabase.js)
+    getSessionResilient().then(({ data }) => {
       const uid = data.session?.user?.id
       if (uid !== DEV_USER_ID) {
         navigate('/admin/login', { replace: true })
