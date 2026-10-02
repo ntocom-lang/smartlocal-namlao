@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { categoryNameOf } from '../lib/complaintCategoryLabels.js'
 import { useNavigate } from 'react-router-dom'
 import {
   Bell, ChevronLeft, CheckCircle2, XCircle, Loader2,
@@ -206,7 +207,7 @@ export default function NotificationsPage() {
                 const s = STATUS_INFO[n.status]
                 if (!s) return null
                 const Icon = s.Icon
-                const catLabel = CATEGORY_LABEL[n.category] ?? n.category
+                const catLabel = categoryNameOf(CATEGORY_LABEL, n.category)
                 const catEmoji = CATEGORY_EMOJI[n.category] ?? '📄'
                 const cno = n.complaint_number
                   ? (() => {

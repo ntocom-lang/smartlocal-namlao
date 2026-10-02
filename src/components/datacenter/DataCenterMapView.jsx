@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
+import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 // Construction ถูกเอาออกจาก import พร้อมกับปุ่มแท็บ "โครงการ" ที่คอมเมนต์ไว้ใน SummaryPanel
 // (ตรงตามที่ commit 79f5a3c ทำกับ ClipboardList ตอนถอดเมนู) เอากลับมาพร้อมกันตอนคืนแท็บ
 import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation } from 'lucide-react'
@@ -125,7 +126,7 @@ const PROJECT_TYPE_LABEL = {
   building: 'อาคาร/สิ่งก่อสร้าง', light: 'ไฟฟ้าสาธารณะ', park: 'สวนสาธารณะ', other: 'อื่นๆ',
 }
 const categoryLabel = e => {
-  if (e.source_table === 'complaints') return COMPLAINT_CATEGORY_LABEL[e.category] ?? e.category
+  if (e.source_table === 'complaints') return categoryNameOf(COMPLAINT_CATEGORY_LABEL, e.category)
   if (e.source_table === 'civil_projects') return PROJECT_TYPE_LABEL[e.category] ?? e.category
   return e.category
 }
