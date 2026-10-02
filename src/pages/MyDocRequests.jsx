@@ -5,7 +5,7 @@ import {
   RefreshCw, Loader2, ChevronRight, X, Search, Download,
   Share2, Copy, Check, Plus, Printer,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase, getSessionResilient } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildWasteCollectionRequestHtml } from '../lib/wasteCollectionRequestPrint'
@@ -817,7 +817,8 @@ export default function MyDocRequests() {
   }, [tenant?.fee_schedule?._custom_types])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    // getSessionResilient: เน็ตสะดุดตอนต่ออายุ token ต้องไม่พาออกจากระบบ (ดูเหตุผลที่ src/lib/supabase.js)
+    getSessionResilient().then(({ data }) => {
       setSession(data.session)
       if (!data.session) navigate('/auth', { state: { from: '/my-docs' }, replace: true })
     })

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Activity, Cpu, ShieldCheck, Sun, Moon, X } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase, getSessionResilient } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import DataCenter3DCanvas from '../components/datacenter/DataCenter3DCanvas'
@@ -79,7 +79,8 @@ export default function DataCenterDashboard() {
   }, [theme])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    // getSessionResilient: เน็ตสะดุดตอนต่ออายุ token ต้องไม่พาออกจากระบบ (ดูเหตุผลที่ src/lib/supabase.js)
+    getSessionResilient().then(({ data }) => {
       if (!data.session) { navigate('/auth', { state: { from: '/data-center' } }); return }
       supabase.from('profiles').select('*').eq('id', data.session.user.id).single()
         .then(({ data: p }) => setProfile(p))

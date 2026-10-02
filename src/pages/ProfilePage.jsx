@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase, signOutSafely } from '../lib/supabase'
+import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
 import { ChevronLeft, ChevronRight, Pencil, Loader2, X, Eye, EyeOff, Smartphone } from 'lucide-react'
 import { compressImage } from '../lib/imageUtils'
 import { useAuth } from '../contexts/AuthContext'
@@ -57,7 +57,8 @@ export default function ProfilePage() {
   const fileRef = useRef()
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
+    // getSessionResilient: เน็ตสะดุดตอนต่ออายุ token ต้องไม่พาออกจากระบบ (ดูเหตุผลที่ src/lib/supabase.js)
+    getSessionResilient().then(async ({ data }) => {
       const s = data.session
       if (!s) { navigate('/auth'); return }
       setSession(s)
