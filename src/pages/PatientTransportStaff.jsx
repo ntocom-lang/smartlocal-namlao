@@ -183,11 +183,13 @@ export default function PatientTransportStaff({ onBack } = {}) {
     return { partner: partnerRes.data, mayor: mayorRow ? { name: signatoryName(mayorRow), title: signatoryTitle(mayorRow) } : null }
   }
   // เปิดหน้าต่างทันทีตอนกด แล้วค่อยเติมเนื้อหาหลังโหลดข้อมูล — เปิดหลัง await เบราว์เซอร์จะบล็อกเป็นป๊อปอัป
-  async function printInNewWindow(build, failText) {
+  async function printInNewWindow(build, failText, beforePrint) {
     const win = window.open('', '_blank', 'width=1100,height=900')
     if (!win) { setError('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาตป๊อปอัปของเว็บนี้'); return }
     win.document.write(buildPatientPrintLoadingHtml()); win.document.close()
     try {
+      if (beforePrint && !await beforePrint()) { if (!win.closed) win.close(); return }
+      if (win.closed) return
       const html = await build()
       if (win.closed) return
       writeAndPrint(win, html)
@@ -197,11 +199,11 @@ export default function PatientTransportStaff({ onBack } = {}) {
     }
   }
   // สองปุ่มพิมพ์เอกสารแยกรายคน: ใบคำขอประชาชนถึงนายก และหนังสือนายกถึงกองทุน
-  const printLetter = booking => printInNewWindow(async () => buildBookingForwardLetterHtml({
+  const printLetter = (booking, beforePrint) => printInNewWindow(async () => buildBookingForwardLetterHtml({
     tenant, trip: workspace.trips.find(t => t.id === booking.trip_id), booking, ...(await fundContext()),
     // ต้องเป็น URL เต็ม หน้าต่างพิมพ์เป็น about:blank พาธ /images/... จะ resolve ไม่เจอ
     emblemUrl: `${window.location.origin}/images/garuda.svg`,
-  }), 'เตรียมหนังสือนำส่งไม่สำเร็จ')
+  }), 'เตรียมหนังสือนำส่งไม่สำเร็จ', beforePrint)
   // ใบคำขอพิมพ์แยกได้ทั้งก่อนและหลังยืนยันรถ โดยใช้ข้อมูลเที่ยวปัจจุบันเมื่อมีแล้ว
   const printRequest = booking => printInNewWindow(async () => buildBookingRequestFormHtml({
     tenant, booking, trip: workspace.trips.find(t => t.id === booking.trip_id), ...(await fundContext()),

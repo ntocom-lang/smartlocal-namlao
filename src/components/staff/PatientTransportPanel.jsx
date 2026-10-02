@@ -73,8 +73,7 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [acting, setActing] = useState(false)
-  const [letterNo, setLetterNo] = useState('')
-  const [letterDate, setLetterDate] = useState(todayBangkok)
+  const [letterDraft, setLetterDraft] = useState(null)
   const [fundContact, setFundContact] = useState('')
   const [fundNote, setFundNote] = useState('')
   const [closeNote, setCloseNote] = useState('')
@@ -157,6 +156,16 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
       ))
     ),
   )
+  const draft = letterDraft?.requestId === requestId ? letterDraft : null
+  const letterNo = draft?.no ?? header?.forward_letter_no ?? ''
+  const letterDate = draft?.date ?? header?.forward_letter_date ?? ''
+  const canEditLetter = canAct && header?.workflow_status === 'submitted'
+  function changeLetter(key, value) {
+    setLetterDraft(current => {
+      const values = current?.requestId === requestId ? current : { no: header?.forward_letter_no ?? '', date: header?.forward_letter_date ?? '' }
+      return { ...values, requestId, [key]: value, ...(key === 'no' && value.trim() && !values.date ? { date: todayBangkok() } : {}) }
+    })
+  }
 
   async function run(fn, label) {
     setActing(true)
@@ -219,7 +228,8 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
   function handlePrint(kind) {
     const build = kind === 'request' ? buildPatientTransportFormHtml : buildPatientTransportLetterHtml
     const html = build({
-      header,
+      // ก่อนส่งต่อใช้ค่าจากช่องกรอกได้ทันที หลังส่งต่อใช้เลขที่/วันที่ซึ่งบันทึกไว้เท่านั้น
+      header: kind === 'letter' && canEditLetter ? { ...header, forward_letter_no: letterNo.trim(), forward_letter_date: letterDate || null } : header,
       form: parent?.permit_form_data ?? {},
       parent,
       partner: printData.partner,
@@ -350,6 +360,12 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
 
       {/* พิมพ์ได้ทุกสถานะ ไม่ใช่เฉพาะตอนยังไม่ส่งต่อ — ใบหายหรือกองทุนขอสำเนาซ้ำเป็นเรื่องปกติ
           และเลขหนังสือที่บันทึกไว้แล้วจะถูกพิมพ์ลงช่อง "ที่" ให้เอง ใบที่พิมพ์ซ้ำจึงตรงกับต้นเรื่อง */}
+      <fieldset className="grid gap-3 rounded-xl bg-slate-50 p-3 sm:grid-cols-2" disabled={acting || !canEditLetter}>
+        <legend className="px-1 text-sm font-semibold">เลขที่และวันที่หนังสือก่อนพิมพ์</legend>
+        <label className="text-sm">เลขที่หนังสือ (ที่)<input className={`${textCls} min-h-[44px]`} value={letterNo} onChange={e => changeLetter('no', e.target.value)} placeholder="เช่น ทก 72301/123" maxLength={40} /></label>
+        <label className="text-sm">ลงวันที่<input className={`${textCls} min-h-[44px]`} type="date" value={letterDate} max={todayBangkok()} onChange={e => changeLetter('date', e.target.value)} /></label>
+      </fieldset>
+      <p className="text-xs text-gray-600">กรอกจากทะเบียนหนังสือส่งก่อนพิมพ์ได้ · {status === 'submitted' ? 'หลังลงนามแล้วจึงกดบันทึกว่าส่งหนังสือนำส่งแล้ว' : 'พิมพ์ซ้ำใช้เลขที่และวันที่ที่บันทึกไว้'}</p>
       <div className="grid gap-2 sm:grid-cols-2" aria-label="เลือกเอกสารที่จะพิมพ์">
         <button type="button" onClick={() => handlePrint('request')}
           className="flex min-h-[44px] w-full items-center gap-2 rounded-2xl border border-gray-200 bg-white p-3 text-left text-sm text-gray-700">
@@ -365,21 +381,9 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
       {editStatus === 'submitted' && (
         <div className="space-y-2 rounded-xl border border-blue-200 bg-blue-50 p-3">
           <p className="text-xs font-semibold text-blue-900">
-            พิมพ์ใบคำขอและหนังสือขอความอนุเคราะห์จากปุ่มแยก ลงนาม แล้วบันทึกเลขหนังสือตามทะเบียนหนังสือส่ง
+            ตรวจเลขที่และวันที่ในช่องด้านบน พิมพ์หนังสือ ลงนาม แล้วจึงบันทึกว่าส่งหนังสือนำส่งแล้ว
           </p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-[11px] font-semibold text-blue-800">เลขที่หนังสือนำส่ง</label>
-              <input className={textCls} value={letterNo} onChange={e => setLetterNo(e.target.value)}
-                placeholder="เช่น ทก 72301/123" maxLength={40} />
-            </div>
-            <div>
-              <label className="mb-1 block text-[11px] font-semibold text-blue-800">ลงวันที่</label>
-              <input className={textCls} type="date" value={letterDate} max={todayBangkok()}
-                onChange={e => setLetterDate(e.target.value)} />
-            </div>
-          </div>
-          <button onClick={forward} disabled={acting || !letterNo.trim()}
+          <button onClick={forward} disabled={acting || !letterNo.trim() || !letterDate}
             className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-blue-700 text-sm font-bold text-white disabled:opacity-50">
             {acting ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
             บันทึกว่าส่งหนังสือนำส่งแล้ว
