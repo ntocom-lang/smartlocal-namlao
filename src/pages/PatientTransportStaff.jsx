@@ -10,7 +10,7 @@ import StaffBookingCalendar from '../components/patientTransport/StaffBookingCal
 import BookingSettings from '../components/patientTransport/BookingSettings'
 import { TabBar } from '../components/patientTransport/StaffShell'
 import { QueueReport, DriverTrips } from '../components/patientTransport/BookingOperations'
-import { buildBookingRequestFormHtml, buildTripForwardLetterHtml, buildTripMonthReportHtml, buildPatientPrintLoadingHtml } from '../lib/patientTransportPrint'
+import { buildBookingRequestFormHtml, buildTripForwardLetterHtml, buildTripMonthReportHtml, buildPatientPrintLoadingHtml, writeAndPrint } from '../lib/patientTransportPrint'
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
 import { TRIP_STATUS, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking } from '../lib/patientBooking'
@@ -190,7 +190,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
     try {
       const html = await build()
       if (win.closed) return
-      win.document.open(); win.document.write(html); win.document.close()
+      writeAndPrint(win, html)
     } catch (e) {
       if (win.closed) return
       win.close(); setError(`${failText}: ${e.message || 'กรุณาลองใหม่'}`)
