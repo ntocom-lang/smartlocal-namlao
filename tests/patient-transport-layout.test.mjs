@@ -751,10 +751,10 @@ const checks = [
   },
   {
     // เจ้าของระบบสั่ง 2569-10-02: หัวใบคำขอใช้รูปแบบเดียวกับใบคำร้อง (councilFormPrint.js) ไม่มีบรรทัด "เขียนที่"
-    //   มุมซ้าย: "คำขอผ่าน E-Service <เลขอ้างอิง>" / "ลงวันที่ ..."   มุมขวา: "คำขอเลขที่ ___" ให้เจ้าหน้าที่ลงเลขรับ
+    //   มุมซ้าย: "คำขอผ่าน E-Service <เลขอ้างอิง>" / "ลงวันที่ ..." ไม่มีช่องเลขรับซ้ำ (เจ้าของระบบสั่งตัด)
     //   กลางหน้า: ชื่อแบบ (ตัวหนา) แล้วบรรทัด "ผ่านระบบ E-Service <อปท.>"
     name: 'form-header-follows-complaint-layout',
-    reason: 'หัวใบคำขอต้องไม่มี "เขียนที่" และต้องเรียงแบบใบคำร้อง: มุมซ้ายเลขอ้างอิง+ลงวันที่ มุมขวาช่องเลขรับ ชื่อแบบกึ่งกลางอยู่ใต้ทั้งสองมุม'
+    reason: 'หัวใบคำขอต้องไม่มี "เขียนที่" หรือช่อง "คำขอเลขที่" เหลือเลขอ้างอิง+ลงวันที่ ชื่อแบบกึ่งกลางอยู่ใต้บล็อกอ้างอิง'
       + ' · ทุกทางที่พิมพ์ใบคำขอ · วัดกล่องตัวอักษรจริงด้วย Range ไม่วัดกล่องของ element (ดู AGENTS.md ช่องลงนาม)',
     async run(browser) {
       for (const [label, html] of [
@@ -777,7 +777,8 @@ const checks = [
               text: sheet.innerText.replace(/\s+/g, ' '),
               no: box('.form-no'), date: box('.form-date'), official: box('.official-ref'),
               title: box('.form-title'), origin: box('.form-fund'),
-              sheetLeft: sheet.getBoundingClientRect().left, sheetRight: sheet.getBoundingClientRect().right,
+              printLeft: sheet.getBoundingClientRect().left + parseFloat(getComputedStyle(sheet).paddingLeft),
+              printRight: sheet.getBoundingClientRect().right - parseFloat(getComputedStyle(sheet).paddingRight),
             }
           }))
           assert.ok(forms.length > 0, `${label}: ไม่พบใบคำขอ`)
@@ -785,19 +786,18 @@ const checks = [
             assert.ok(!f.text.includes('เขียนที่'), `${label}: ใบคำขอยังมี "เขียนที่"`)
             assert.match(f.no?.text ?? '', /^คำขอผ่าน E-Service \S+/, `${label}: มุมซ้ายบนต้องเป็น "คำขอผ่าน E-Service <เลขอ้างอิง>": "${f.no?.text}"`)
             assert.match(f.date?.text ?? '', /^ลงวันที่ \d{1,2} \S+ \d{4}$/, `${label}: ต้องมี "ลงวันที่ <วัน เดือน พ.ศ.>": "${f.date?.text}"`)
-            assert.match(f.official?.text ?? '', /^คำขอเลขที่/, `${label}: มุมขวาบนต้องเป็นช่อง "คำขอเลขที่": "${f.official?.text}"`)
+            assert.equal(f.official, null, `${label}: ยังมีช่องเลขรับที่เจ้าของระบบสั่งตัด`)
+            assert.ok(!f.text.includes('คำขอเลขที่'), `${label}: ยังมีข้อความช่องเลขรับซ้ำ`)
             assert.equal(f.origin?.text, `ผ่านระบบ E-Service ${TENANT.name}`, `${label}: ใต้ชื่อแบบต้องเป็น "ผ่านระบบ E-Service <อปท.>"`)
-            // ซ้ายอยู่ซ้ายของขวา และอยู่บรรทัดเดียวกัน (ลงวันที่อยู่ใต้เลขอ้างอิงในคอลัมน์ซ้าย)
-            assert.ok(f.no.right < f.official.left, `${label}: เลขอ้างอิงต้องอยู่ซ้ายของช่องเลขรับ ไม่ซ้อนกัน`)
-            assert.ok(Math.abs(f.no.top - f.official.top) < 2, `${label}: เลขอ้างอิงกับช่องเลขรับต้องอยู่บรรทัดเดียวกัน`)
+            // ลงวันที่อยู่ใต้เลขอ้างอิงในคอลัมน์ซ้าย
             assert.ok(f.date.top >= f.no.bottom - 1, `${label}: "ลงวันที่" ต้องอยู่ใต้เลขอ้างอิง`)
             assert.ok(Math.abs(f.no.left - f.date.left) < 1, `${label}: เลขอ้างอิงกับลงวันที่ต้องเริ่มตรงขอบซ้ายเดียวกัน`)
-            // ชื่อแบบอยู่ใต้ทั้งสองมุม ไม่ทับ และอยู่กึ่งกลางหน้า
-            assert.ok(f.title.top >= Math.max(f.date.bottom, f.official.bottom) - 1, `${label}: ชื่อแบบต้องอยู่ใต้บล็อกมุมกระดาษ`)
+            // ชื่อแบบอยู่ใต้ข้อมูลอ้างอิง ไม่ทับ และอยู่กึ่งกลางพื้นที่พิมพ์
+            assert.ok(f.title.top >= f.date.bottom - 1, `${label}: ชื่อแบบต้องอยู่ใต้บล็อกมุมกระดาษ`)
             assert.ok(f.origin.top >= f.title.bottom - 1, `${label}: "ผ่านระบบ E-Service…" ต้องอยู่ใต้ชื่อแบบ`)
             const mid = (f.title.left + f.title.right) / 2
-            const printLeft = f.no.left
-            const printRight = f.official.right
+            const printLeft = f.printLeft
+            const printRight = f.printRight
             assert.ok(Math.abs(mid - (printLeft + printRight) / 2) < 3, `${label}: ชื่อแบบต้องอยู่กึ่งกลางพื้นที่พิมพ์ (กลางชื่อ ${mid.toFixed(1)} กลางหน้า ${((printLeft + printRight) / 2).toFixed(1)})`)
           }
         } finally { await page.close() }
