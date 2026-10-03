@@ -379,7 +379,7 @@ npm run lint:blocking
 
 ยังปิดบริการจริง: ต้องยืนยันอำนาจใช้รถ กิจกรรมตามข้อบังคับกองทุน และคำสั่งวันหยุด/นอกเวลากับฉบับปัจจุบัน
 สารบรรณ/กองทุนต้องรับรองถ้อยคำร่างก่อนออกหนังสือจริง ไม่มีการอนุมัติสิทธิ ค่าใช้จ่าย หรือลงนามแทนผู้มีอำนาจโดยระบบ
-ก่อนเปิดรับจริงยังต้องจัดการ stale tab และให้คนขับยืนยันบนมือถือจริง
+ก่อนเปิดรับจริงต้องติดตั้ง legacy RPC gate ตามหัวข้อท้ายไฟล์ และให้คนขับยืนยันบนมือถือจริง
 Demo สองบัญชี/คำสั่ง PostgREST พร้อมกันสำหรับคิวร่วมผู้ป่วย–ชุมชนผ่านแล้วตามหัวข้อ activation preparation ด้านล่าง
 การทดสอบ PGlite และจอจำลองไม่ใช่หลักฐานของ race บน DB จริงหรือโทรศัพท์จริง
 ไม่มี integration ตรวจ conflict กับรถในโมดูล fleet อื่นและไม่ย้ายคำขอประชาชนอัตโนมัติ
@@ -475,24 +475,24 @@ Supabase CLI pre/postflight ให้รันทีละคำสั่ง: �
 
 ผู้จัดคิวตรวจ exception/audit จากหน้าคิวเดิม ไม่เพิ่มแบบฟอร์มบันทึกประจำวันให้เจ้าหน้าที่
 
-### Proposed next phase — legacy RPC gate (await phase approval)
+### Approved phase — legacy RPC gate (2026-10-03)
 
-ข้อเสนอเชิงวิศวกรรม: เพิ่ม private view version สำหรับ client ปัจจุบันและให้ legacy endpoints แจ้งโหลดใหม่
+เจ้าของระบบอนุมัติทั้งเฟส รวม commit/push/apply/deploy ในบทสนทนา: เพิ่ม private view version สำหรับ client ปัจจุบันและให้ legacy endpoints แจ้งโหลดใหม่
 ก่อนส่งข้อมูลชุมชน แทนพึ่ง SW เพียงชั้นเดียว ทำให้แท็บเก่าที่เปิดก่อนมีคำขอชุมชนไม่โหลดข้อมูลใหม่ไปพิมพ์ผิดแบบ
 ไม่มีขั้นยืนยันงานเพิ่ม: reload ครั้งเดียวเมื่อเจอข้อความ upgrade แล้วกลับไปจัดคิวตามเดิม
 เมื่อปิด intake งานที่รับไว้ยังทำต่อทาง v2 ได้; ไม่เปลี่ยน scheduler/การตัดสินใจ/ข้อมูลคำขอ
 
-ไฟล์ที่เสนอ (7 ไฟล์; ต้องอนุมัติแยกก่อนลงมือ):
+ไฟล์ในเฟสที่อนุมัติ (7 ไฟล์):
 
 1. `supabase/migrations/20261003150000_patient_booking_service_views_v2.sql`: สร้าง `patient_booking_workspace_v2`/`patient_booking_mine_v2`
    จากนิยามล่าสุดเต็มทุกบรรทัด ตรวจ md5 กับ catalog, authz/tenant และ REVOKE/GRANT เหมือนเดิม
 2. `supabase/migrations/20261003150100_patient_booking_legacy_client_gate.sql`: legacy workspace/mine ตรวจ role/tenant ก่อน
    ปฏิเสธด้วยข้อความโหลดใหม่เมื่อกำลังเปิดบริการชุมชนหรือ projection ของผู้เรียกมีงานชุมชนที่ยังอยู่ในช่วงแสดงผล
    หากไม่มีข้อมูลชุมชนใช้ผล patient เดิมจาก v2; ไม่เปิด flag ไม่ย้ายหรือลบคำขอ
-3. `src/hooks/usePatientBooking.js`: เลือก private RPC v2 และแสดงเหตุโหลดใหม่/ล้างข้อมูลเมื่ออ่านไม่ได้ โดยคง citizen/mine กับ staff/workspace แยกกัน
+3. `src/hooks/usePatientBooking.js`: เลือก private RPC v2 ทั้ง reload และการอ่านก่อนบันทึกของคนขับ ไม่มี legacy fallback; ล้างข้อมูลเมื่ออ่านไม่ได้ โดยคง citizen/mine กับ staff/workspace แยกกัน
 4. `tests/patient-booking-community-booking.test.mjs`: legacy/v2 เมื่อเปิด-ปิด flag, งานค้าง, tenant/role/ACL/helper denial และ patient regression
 5. `tests/patient-booking-browser.test.mjs`: actual React + isolated DB ทดสอบแท็บเก่าอ่านไม่ได้ก่อนพิมพ์ และ client v2 ทำงานผู้ป่วย/ชุมชนได้
-   อัปเดต RPC routing mocks; existing module CI รันสองไฟล์นี้อยู่แล้ว ไม่แก้ workflow
+   อัปเดต RPC routing mocks; existing module CI รัน browser test นี้อยู่แล้ว ส่วน backend community test ต้องรันแยก ไม่แก้ workflow
 6. `tests/community-transport-demo-race.playwright.mjs`: เปลี่ยน workspace เป็น v2 หลัง backend/client รุ่นที่อนุมัติ live แล้ว
 7. `docs/ai/PATIENT_BOOKING_HANDOFF.md`: dependency, release/rollback order, หลักฐาน และ checklist โทรศัพท์จริง
 
@@ -507,3 +507,20 @@ Rollback client ไม่เปิดรับเพิ่มและไม่�
 ผู้ดูแลตรวจ version/tenant/config แล้วแก้ตาม audit โดยไม่แก้สิทธิ์หรือย้ายคำขออัตโนมัติ
 ไม่มี license/cloud/dependency ใหม่; ใช้ Supabase/React/Workbox/esbuild เดิม ภาระดูแลเพิ่มเฉพาะช่วง version transition
 การรับรองอำนาจใช้รถ คำสั่งนอกเวลา ถ้อยคำหนังสือ และการยืนยันบนโทรศัพท์จริงยังเป็น gate แยก
+
+Implementation: v2 คัด prosrc ล่าสุดครบทั้งฟังก์ชัน (md5 ตรง baseline) และใช้ SECURITY DEFINER,
+STABLE, search_path ว่าง, authenticated-only เช่นเดิม; legacy wrapper ตรวจ authz ก่อนเรียก v2 ครั้งเดียว
+ตรวจข้อมูลชุดเดียวกับที่จะส่งกลับ ปฏิเสธด้วย SQLSTATE PBC01 เมื่อ policy enabled หรือมี community booking/trip
+ใน projection ของผู้เรียก; ปิด policy แล้วผู้จองที่ไม่มีงานชุมชนยังอ่าน patient-only mine เดิมได้
+
+ผล local: isolated PostgreSQL community test ผ่าน 284 acceptance checks รวม guards ปฏิเสธนิยามที่ drift,
+legacy/v2 authz/tenant/ACL, เปิด policy ก่อนคำขอแรก, ปิด policy พร้อมงานค้าง และ patient-only equality
+actual React browser ผ่านชุดผู้ป่วยเดิมและชุมชน: legacy focus reload ล้าง private dataset/ปุ่มพิมพ์,
+v2 unavailable ไม่ fallback และ client ใหม่ยังดำเนินงานที่รับไว้หลังปิด intake
+HTTP fixture เรียกชื่อ RPC จริงที่ browser ส่งมา ไม่แปลง legacy เป็น v2 เพื่อหลีกเลี่ยง false pass
+
+Release dependency: สร้าง v2 ก่อน wrapper แล้ว deploy client; ไม่ย้อน wrapper เป็นนิยามเก่าเมื่อมีงานชุมชน
+หลักฐาน release แยกใน `D:/tmp/community-rpc-gate-20261003` (manifest, catalog pre/post, CI, hosts และ Demo journal)
+ห้ามถือข้อความ local test นี้เป็นหลักฐานว่า migration/deploy เสร็จ ต้องตรวจ release artifact ของรอบนั้น
+ข้อจำกัด: gate กันการโหลดข้อมูลใหม่ออนไลน์ แต่ลบข้อมูลที่แท็บเก่าดาวน์โหลดก่อน gate/offline ไปแล้วไม่ได้
+ข้อมูลชุมชนเก่า ณ baseline มีเฉพาะ Demo 6 ใบ; tenant จริง 0 ใบ จึงต้องติดตั้งก่อนรับข้อมูลจริงครั้งแรก

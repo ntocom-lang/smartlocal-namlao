@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 process.env.PATIENT_UI_QA = '1'
-const { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, id, baseBooking } = await import('./patient-booking-db.test.mjs')
+const { db, actor, rpc: rawRpc, tenant, admin, coordinator, driver, citizen, settings, id, baseBooking } = await import('./patient-booking-db.test.mjs')
+let viewsReady = false
+const rpc = (name,args) => rawRpc(viewsReady && ['patient_booking_workspace','patient_booking_mine'].includes(name) ? name+'_v2' : name,args)
 const read = f => readFile(new URL(`../supabase/migrations/${f}`, import.meta.url), 'utf8')
 const existing = ['20260927190000_patient_booking_move_into_trip.sql','20260928120000_patient_booking_multiwave.sql',
  '20260929100000_patient_booking_update_pickup.sql','20260929110000_patient_booking_change_hospital.sql',
@@ -43,13 +45,27 @@ try {
   await db.exec(definition)
  }
  for(const f of migrations) await db.exec(await read(f))
+ // Versioned views copy the reviewed body exactly; both phases reject drift.
+ const viewFile='20261003150000_patient_booking_service_views_v2.sql', gateFile='20261003150100_patient_booking_legacy_client_gate.sql'
+ const original=(await row("SELECT pg_get_functiondef('public.patient_booking_workspace(uuid)'::regprocedure) AS definition")).definition
+ await db.exec(original.replace(/AS (\$\w*\$)/,'AS $1\n-- local version drift'))
+ await fails(async()=>db.exec(await read(viewFile)),/Function drift/);await db.exec('ROLLBACK');await db.exec(original)
+ await db.exec(await read(viewFile))
+ const v2Definition=(await row("SELECT pg_get_functiondef('public.patient_booking_workspace_v2(uuid)'::regprocedure) AS definition")).definition
+ await db.exec(v2Definition.replace(/AS (\$\w*\$)/,'AS $1\n-- local version drift'))
+ await fails(async()=>db.exec(await read(gateFile)),/Function drift/);await db.exec('ROLLBACK');await db.exec(v2Definition)
+ await db.exec(await read(gateFile));viewsReady=true
  const after=(await db.query("SELECT oid::regprocedure::text AS identity,proacl::text AS acl,prosecdef,proconfig,provolatile FROM pg_proc WHERE pronamespace='public'::regnamespace ORDER BY 1")).rows
  for(const f of before) { const now=after.find(n=>n.identity===f.identity); check([now.acl,now.prosecdef,now.proconfig,now.provolatile],[f.acl,f.prosecdef,f.proconfig,f.provolatile]) }
- for(const name of ['ptb_community_payload','patient_booking_submit_community','patient_booking_amend_community','patient_booking_month_report_v2','patient_booking_period_report_v2']) {
+ for(const name of ['ptb_community_payload','patient_booking_submit_community','patient_booking_amend_community','patient_booking_month_report_v2','patient_booking_period_report_v2','patient_booking_workspace_v2','patient_booking_mine_v2']) {
   const f=after.find(f=>f.identity.startsWith(`${name}(`));check(f.prosecdef,true);check(f.proconfig,['search_path=""'])
   ok(!/[{,]=X\//.test(f.acl),'PUBLIC cannot execute')
  }
  for(const f of migrations) { await fails(async()=>db.exec(await read(f)), /Function drift/); await db.exec('ROLLBACK') }
+ await actor(admin)
+ check(await rawRpc('patient_booking_workspace',[tenant]),await rpc('patient_booking_workspace',[tenant]))
+ await actor(citizen);check(await rawRpc('patient_booking_mine',[tenant]),await rpc('patient_booking_mine',[tenant]))
+ for(const who of [null,id(15)]) {await actor(who);for(const name of ['patient_booking_workspace','patient_booking_mine','patient_booking_workspace_v2','patient_booking_mine_v2'])await fails(()=>rawRpc(name,[tenant]),/permission denied|ไม่มีสิทธิ์/)}
  await actor(admin)
  await rpc('patient_booking_save_settings',[tenant,(await workspace()).settings.revision,settings])
  await db.exec('RESET ROLE')
@@ -61,6 +77,9 @@ try {
  const calBefore=await rpc('patient_booking_calendar',[tenant,day,day])
  check(calBefore.days[0].community_free,[])
  await rpc('patient_booking_save_community_rules',[tenant,1,rules])
+ // Enabled policy rejects old RPC names before any community data is created.
+ for(const who of [admin,coordinator,driver,citizen]) {await actor(who);for(const name of ['patient_booking_workspace','patient_booking_mine'])await fails(()=>rawRpc(name,[tenant]),/กรุณาโหลดหน้าใหม่/);ok(await rpc('patient_booking_mine',[tenant]))}
+ await actor(admin)
  const currentInfo=await rpc('patient_booking_info',[tenant])
  data={requester_name:'TEST ผู้ติดต่อ',phone:'0800099000',pickup:'TEST จุดรับชุมชน',in_area:true,route_id:'test-temple',
   appointment_at:at('07:00'),return_at:at('19:00'),return_mode:'later',group_label:'TEST กลุ่มชุมชน',party_size:3,purpose_code:'test-activity',
@@ -157,6 +176,11 @@ try {
  await actor(admin)
  const current=(await workspace()).community_rules
  await rpc('patient_booking_save_community_rules',[tenant,current.revision,{...rules,enabled:false}])
+ // Closing intake never re-exposes visible community work to an old printer.
+ for(const who of [admin,coordinator,citizen]) {await actor(who);await fails(()=>rawRpc('patient_booking_workspace',[tenant]),/กรุณาโหลดหน้าใหม่/)}
+ await actor(citizen);await fails(()=>rawRpc('patient_booking_mine',[tenant]),/กรุณาโหลดหน้าใหม่/)
+ // An uninvolved citizen may still use the old patient-only projection when closed.
+ await actor(id(14));check(await rawRpc('patient_booking_mine',[tenant]),await rpc('patient_booking_mine',[tenant]))
  await actor(citizen); await fails(()=>submitted(randomUUID(),data),/ปิดรับคำขอใหม่/)
  check(await submitted(bid,data),bid) // lost response retry survives closure and later amendment
  await actor(coordinator)
@@ -189,6 +213,7 @@ try {
  for(const secret of [data.requester_name,data.phone,data.pickup,changed.group_label,'booking_ids','party_size','group_label','pickup_lat']) ok(!JSON.stringify(calendar).includes(secret),secret)
  for(const key of ['free','community_free']) for(const free of calendar.days[0][key]) for(const block of closedPlan.blocks) ok(!(Date.parse(free.start)<Date.parse(block.end)&&Date.parse(block.start)<Date.parse(free.end)))
  await actor(driver)
+ await fails(()=>rawRpc('patient_booking_workspace',[tenant]),/กรุณาโหลดหน้าใหม่/)
  const dw=await workspace(), driverBooking=dw.bookings.find(b=>b.id===bid)
  check(driverBooking.service_type,'community'); check(driverBooking.party_size,4); check(driverBooking.patient_name,'กลุ่ม TEST กลุ่มแก้ไข (4 คน)')
  check(dw.community_rules,null); ok(!dw.bookings.some(b=>b.id===second)); ok(!JSON.stringify(driverBooking).includes('consent_text'))

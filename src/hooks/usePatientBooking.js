@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
+// Private projections have separate versions so pre-community tabs cannot feed
+// new booking types into their patient print templates. No legacy fallback.
+const PRIVATE_VIEWS = { patient_booking_workspace: 'patient_booking_workspace_v2', patient_booking_mine: 'patient_booking_mine_v2' }
+
 /**
  * โหลดข้อมูลและสั่งงานของระบบจองรถรับส่งผู้ป่วย ใช้ร่วมกันระหว่างหน้าประชาชนกับหน้าทำงานเจ้าหน้าที่
  *
@@ -22,7 +26,7 @@ export default function usePatientBooking(tenantId, uid, privateRpc) {
     const generation = ++sequence.current
     return Promise.all([
       supabase.rpc('patient_booking_info', { p_muni: tenantId }),
-      uid ? supabase.rpc(privateRpc, { p_muni: tenantId }) : Promise.resolve({ data: null }),
+      uid ? supabase.rpc(PRIVATE_VIEWS[privateRpc] || privateRpc, { p_muni: tenantId }) : Promise.resolve({ data: null }),
     ]).then(([publicResult, privateResult]) => {
       if (generation !== sequence.current) return
       if (publicResult.error || privateResult.error) throw publicResult.error || privateResult.error
@@ -52,7 +56,7 @@ export default function usePatientBooking(tenantId, uid, privateRpc) {
     if (lockRef.current) return false
     lockRef.current = true; setBusy(true); setError(''); setNotice('')
     const call = async (name, args) => {
-      const result = await supabase.rpc(name, { p_muni: tenantId, ...args })
+      const result = await supabase.rpc(PRIVATE_VIEWS[name] || name, { p_muni: tenantId, ...args })
       if (result.error) throw result.error
       return result.data
     }
