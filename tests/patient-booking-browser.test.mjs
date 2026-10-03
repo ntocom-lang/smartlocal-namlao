@@ -38,6 +38,14 @@ await db.exec(await readFile(new URL('../supabase/migrations/20261001100000_pati
 await db.exec(await readFile(new URL('../supabase/migrations/20261002090000_patient_booking_period_report.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20261002130000_patient_booking_letter_per_booking_columns.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20261002130100_patient_booking_letter_per_booking_rpc.sql', import.meta.url), 'utf8'))
+await db.exec(await readFile(new URL('../supabase/migrations/20261003120000_patient_booking_community_rules_rpc.sql', import.meta.url), 'utf8'))
+for (const file of [
+  '20261003130000_patient_booking_community_constraints_retention.sql',
+  '20261003130100_patient_booking_community_scheduler_rpc.sql',
+  '20261003130200_patient_booking_community_projections_rpc.sql',
+  '20261003130300_patient_booking_community_reports_rpc.sql',
+  '20261003130400_patient_booking_community_intake_rpc.sql',
+]) await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 await actor(admin)
 await rpc('patient_booking_save_settings', [tenant, (await rpc('patient_booking_workspace', [tenant])).settings.revision,
   { ...settings, office_start: 450, office_end: 1050, routes: [{ ...settings.routes[0], minutes: 45 }] }])
@@ -156,6 +164,10 @@ const order = {
  patient_booking_save_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end','p_issue','p_note'],patient_booking_record_letter:['p_muni','p_trip','p_docs_revision','p_letter_no','p_letter_date'],patient_booking_record_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end'],patient_booking_month_report:['p_muni','p_month'],
  patient_booking_events_page:['p_muni','p_page'],
  patient_booking_period_report:['p_muni','p_from','p_to'],
+ patient_booking_period_report_v2:['p_muni','p_from','p_to','p_service'],
+ patient_booking_save_community_rules:['p_muni','p_revision','p_data'],
+ patient_booking_submit_community:['p_muni','p_id','p_data','p_staff'],
+ patient_booking_amend_community:['p_muni','p_op','p_id','p_revision','p_data','p_note'],
  patient_booking_history:['p_muni','p_booking'],
  patient_booking_record_booking_letter:['p_muni','p_booking','p_letter_revision','p_letter_no','p_letter_date'],
 }
@@ -265,6 +277,7 @@ const freeDays=async(count,skip=[])=>{
 }
 const submitAs=(user,id,data)=>runAs(user,()=>rpc('patient_booking_submit',[tenant,id,{...JSON.parse(JSON.stringify(baseBooking)),...data},false]))
 try{
+ if(!process.env.PATIENT_COMMUNITY_ONLY){
  // ── ตั้งค่าครั้งแรกผ่านหน้าจอจริง แล้วหน้าประชาชนเปิดปุ่มขอรถ ──
  await visit('setupadmin');await page.getByRole('button',{name:'ตั้งค่า',exact:true}).click()
  await page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true}).click();await toast('บันทึกค่าตั้งต้นแล้ว').waitFor()
@@ -1507,7 +1520,7 @@ try{
  assert.equal(await deskState(),'outbound')
  await deskRow.getByText('กำลังให้บริการ',{exact:true}).waitFor()
  // ช่องค้นหาหาจากชื่อผู้เดินทางได้ — ทดสอบก่อนจบเที่ยว เพราะหลังจบฐานข้อมูลไม่ส่งชื่อผู้เดินทางให้คนขับแล้ว
- const deskSearch=page.getByLabel('ค้นหาผู้ป่วย โรงพยาบาล คนขับ')
+ const deskSearch=page.getByLabel('ค้นหาผู้เดินทาง กลุ่ม สถานที่ คนขับ')
  await deskSearch.fill('ตารางคนขับ');await deskRow.waitFor();assert.equal(await page.locator('tr[data-trip]').count(),1,'ค้นหาแล้วต้องเหลือเฉพาะเที่ยวที่ตรง')
  await deskSearch.fill('ไม่มีชื่อนี้ในระบบ');await page.getByText('ไม่พบเที่ยวที่ค้นหา',{exact:true}).waitFor()
  await deskSearch.fill('');await deskRow.waitFor()
@@ -1699,5 +1712,204 @@ try{
  console.log('PASS inbox order: action → live → done sections with colored headers and row strips, urgency then appointment within action, ascending dates within each section, same order on mobile; a trip frame wraps exactly the riders of every shared trip whose riders sit together, on table and mobile')
  console.log('PASS done section folded on open: header with count + show button, search and done/cancelled pills open it without a toggle, toggle on desktop and mobile')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
+ }
+ // Community backend fixture is added after all legacy patient scenes/count checks.
+ // This does not enable any real tenant: the RPC is served only by isolated PGlite.
+ const communityRules={enabled:true,window_start:360,window_end:1200,
+  places:[{id:'test-community-place',label:'[TEST] สถานที่ชุมชน',minutes:45}],
+  activities:[{code:'test-community-activity',label:'[TEST] กิจกรรมชุมชน'}],rules_reference:'[TEST] ข้อบังคับจำลอง'}
+ await runAs(admin,async()=>{
+  const w=await rpc('patient_booking_workspace',[tenant])
+  await rpc('patient_booking_save_settings',[tenant,w.settings.revision,{...w.settings,driver_id:driver,coordinator_ids:[coordinator]}])
+  await rpc('patient_booking_save_community_rules',[tenant,w.community_rules.revision,communityRules])
+ })
+ const communityDate=new Date();communityDate.setUTCDate(communityDate.getUTCDate()+285)
+ const communityDay=communityDate.toISOString().slice(0,10),communityBooking=randomUUID(),communityTrip=randomUUID()
+ await runAs(citizen,async()=>{
+  const info=await rpc('patient_booking_info',[tenant])
+  await rpc('patient_booking_submit_community',[tenant,communityBooking,{requester_name:'[TEST] ผู้ติดต่อชุมชน',phone:'0800099990',
+   pickup:'[TEST] จุดรับกลุ่ม',in_area:true,route_id:'test-community-place',appointment_at:`${communityDay}T07:00:00+07:00`,
+   return_at:`${communityDay}T19:00:00+07:00`,return_mode:'later',group_label:'[TEST] กลุ่มชุมชน UI',party_size:3,
+   purpose_code:'test-community-activity',rules_version:info.community.rules_version,consent:true,
+   consent_version:'community-booking-v1',privacy_notice:info.community.privacy_notice,owner_name:info.owner_name},false])
+ })
+ await runAs(admin,async()=>{
+  const w=await rpc('patient_booking_workspace',[tenant])
+  await rpc('patient_booking_save_community_rules',[tenant,w.community_rules.revision,{...communityRules,enabled:false}])
+ })
+ await runAs(coordinator,async()=>{
+  const plan=await rpc('patient_booking_preview',[tenant,[communityBooking],'']);assert.deepEqual(plan.errors,[])
+  await rpc('patient_booking_confirm',[tenant,communityTrip,[communityBooking],plan,''])
+  assert(!(await rpc('patient_booking_period_report',[tenant,communityDay,communityDay])).trips.some(t=>t.trip_id===communityTrip))
+ })
+ await runAs(null,async()=>{
+  const cal=await rpc('patient_booking_calendar',[tenant,communityDay,communityDay])
+  assert.equal(cal.days[0].trips.find(t=>t.id===communityTrip).joinable,false)
+  assert(!JSON.stringify(cal).includes('[TEST] กลุ่มชุมชน UI'))
+ })
+ for(const width of [320,390]) {
+  await page.setViewportSize({width,height:900});await visit('driver')
+  await card(communityTrip).getByText('กลุ่ม [TEST] กลุ่มชุมชน UI (3 คน)',{exact:true}).waitFor()
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
+ }
+ if(process.env.PATIENT_PREVIEW_SHOTS)await card(communityTrip).screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/community-legacy-driver-390.png`})
+ assert.equal((await runSql(()=>db.query('SELECT patient_name FROM public.patient_bookings WHERE id=$1',[communityBooking]))).rows[0].patient_name,null)
+ console.log('PASS community backend with legacy UI: labelled driver projection at 320/390px, patient reports exclude community, public calendar private/nonjoinable, accepted work confirms after closure')
+ // The new frontend uses the same isolated DB; no real service flag or citizen data is touched.
+ await visit('citizen')
+ assert.equal(await page.getByRole('button',{name:'🚐 ขอรถไปกิจกรรมชุมชน',exact:true}).count(),0)
+ await visit('admin');await page.getByRole('button',{name:'ตั้งค่า',exact:true}).click()
+ const communitySettings=page.getByRole('form',{name:'ตั้งค่าบริการชุมชน'})
+ await communitySettings.getByLabel('เปิดรับคำขอชุมชนใหม่').check()
+ await communitySettings.getByRole('button',{name:'บันทึกกฎบริการชุมชน'}).click()
+ await toast('บันทึกกฎบริการชุมชนแล้ว').waitFor()
+ await communitySettings.getByRole('button',{name:'โหลดกฎล่าสุด'}).click()
+ await communitySettings.getByLabel('ข้อบังคับ/มติที่อนุญาตใช้รถ').fill('[TEST] ร่างในหน้าจอ ห้ามเขียนทับ')
+ await runAs(admin,async()=>{const w=await rpc('patient_booking_workspace',[tenant]);await rpc('patient_booking_save_community_rules',[tenant,w.community_rules.revision,{...communityRules,rules_reference:'[TEST] เปลี่ยนกฎจากอีกหน้าจอ'}])})
+ await page.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click()
+ await communitySettings.getByText('กฎถูกเปลี่ยนระหว่างแก้ไข ร่างนี้ยังไม่ถูกเขียนทับ',{exact:false}).waitFor()
+ assert.equal(await communitySettings.getByLabel('ข้อบังคับ/มติที่อนุญาตใช้รถ').inputValue(),'[TEST] ร่างในหน้าจอ ห้ามเขียนทับ')
+ assert(await communitySettings.getByRole('button',{name:'บันทึกกฎบริการชุมชน'}).isDisabled())
+ await communitySettings.getByRole('button',{name:'โหลดกฎล่าสุด'}).click()
+ console.log('PASS community settings CAS keeps unsaved draft and requires explicit reload after another editor changes rules')
+ const uiDate=new Date(communityDate);uiDate.setUTCDate(uiDate.getUTCDate()+1)
+ const communityUiDay=uiDate.toISOString().slice(0,10)
+ const fillCommunity=async({staff=false,label='[TEST] กลุ่มจากหน้าจอ',day=communityUiDay}={})=>{
+  const form=page.getByRole('form',{name:'ขอรถรับ–ส่งชุมชน',exact:true})
+  await form.getByLabel('กิจกรรมชุมชน',{exact:true}).selectOption('test-community-activity')
+  await form.getByLabel('สถานที่ชุมชน',{exact:true}).selectOption('test-community-place')
+  await form.getByLabel('ชื่อกลุ่ม/กิจกรรม',{exact:true}).fill(label)
+  await form.getByLabel('จำนวนผู้เดินทางทั้งหมด (รวมผู้จองที่ไปด้วย)').fill('3')
+  await form.locator('summary').filter({hasText:'เลือกวันอื่น'}).evaluate(node=>{node.parentElement.open=true})
+  await form.getByRole('textbox',{name:'วันที่ไปกิจกรรมชุมชน',exact:true}).fill(day)
+  await page.waitForFunction(()=>!document.body.innerText.includes('กำลังดูวันที่รถว่าง'))
+  if(staff)await form.getByLabel('เวลาที่ต้องถึง',{exact:true}).fill('07:00')
+  else {await form.getByLabel('เวลาที่ต้องถึง',{exact:true}).locator('option[value="07:00"]').waitFor({state:'attached'});await form.getByLabel('เวลาที่ต้องถึง',{exact:true}).selectOption('07:00')}
+  await form.getByLabel('ชื่อ–สกุลผู้ติดต่อ',{exact:true}).fill('[TEST] ผู้ติดต่อจากหน้าจอ')
+  await form.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill('0800099991')
+  await form.getByLabel('จุดรับ (บ้านเลขที่/หมู่บ้าน/จุดสังเกต)',{exact:true}).fill('[TEST] บ้านเลขที่ 99 จุดรับชุมชน')
+  return form
+ }
+ await page.setViewportSize({width:320,height:900});await visit('citizen')
+ await page.getByRole('button',{name:'🚐 ขอรถไปกิจกรรมชุมชน',exact:true}).click()
+ let cf=await fillCommunity()
+ assert.equal(await cf.getByLabel('รูปแบบรับกลับ').inputValue(),'one_way','do not guess a return time')
+ assert.equal(await cf.getByRole('checkbox',{name:/ร่วมเที่ยว/}).count(),0)
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
+ await cf.getByLabel('จำนวนผู้เดินทางทั้งหมด (รวมผู้จองที่ไปด้วย)').fill('16')
+ await cf.getByRole('button',{name:'ตรวจทานคำขอชุมชน',exact:true}).click()
+ await cf.getByRole('alert').filter({hasText:'จำนวนผู้เดินทางต้องเป็น 1 ถึง 15 คน'}).waitFor()
+ await cf.getByLabel('จำนวนผู้เดินทางทั้งหมด (รวมผู้จองที่ไปด้วย)').fill('3')
+ await cf.getByRole('button',{name:'ตรวจทานคำขอชุมชน',exact:true}).click()
+ await sheet.getByRole('button',{name:'ยืนยันส่งคำขอ',exact:true}).waitFor()
+ assert(await sheet.getByRole('button',{name:'ยืนยันส่งคำขอ',exact:true}).isDisabled())
+ assert(!(await sheet.innerText()).includes('ผู้ป่วย'))
+ await runAs(admin,async()=>{const w=await rpc('patient_booking_workspace',[tenant]);await rpc('patient_booking_save_community_rules',[tenant,w.community_rules.revision,{...communityRules,rules_reference:'[TEST] เปลี่ยนนโยบายก่อนส่งคำขอ'}])})
+ await page.evaluate(()=>window.dispatchEvent(new Event('focus')))
+ await sheet.getByRole('alert').filter({hasText:'กฎหรือข้อมูลคำขอเปลี่ยนแล้ว'}).waitFor()
+ assert(await sheet.getByRole('button',{name:'ยืนยันส่งคำขอ',exact:true}).isDisabled())
+ await sheet.getByRole('button',{name:'← กลับไปแก้ไข',exact:true}).click()
+ await cf.getByRole('button',{name:'ตรวจทานคำขอชุมชน',exact:true}).click()
+ await sheet.getByRole('checkbox',{name:'ยินยอมให้ใช้ข้อมูลตามข้อความข้างต้น',exact:true}).check()
+ const sentIds=[];let loseCommunityResponse=true, sentCommunityPayload
+ await page.route('**/__patient_rpc',async route=>{
+  const request=route.request().postDataJSON()
+  if(request.name!=='patient_booking_submit_community')return route.fallback()
+  sentIds.push(request.args.p_id)
+  sentCommunityPayload=request.args.p_data
+  assert.equal(request.args.p_staff,false);assert.equal(request.args.p_data.consent_version,'community-booking-v1')
+  assert.equal(Object.hasOwn(request.args.p_data,'patient_name'),false)
+  const response=await route.fetch()
+  if(loseCommunityResponse){loseCommunityResponse=false;await route.fulfill({contentType:'application/json',body:JSON.stringify({data:null,error:{message:'[TEST] ผลตอบกลับหาย'}})})}
+  else await route.fulfill({response})
+ })
+ await sheet.getByRole('button',{name:'ยืนยันส่งคำขอ',exact:true}).click()
+ await page.getByRole('alert').filter({hasText:'[TEST] ผลตอบกลับหาย'}).first().waitFor()
+ await sheet.getByRole('button',{name:'ยืนยันส่งคำขอ',exact:true}).click()
+ await page.getByRole('heading',{name:'ส่งคำขอสำเร็จ',exact:true}).waitFor()
+ await page.unroute('**/__patient_rpc')
+ assert.equal(sentIds.length,2);assert.equal(sentIds[0],sentIds[1])
+ const uiCommunityId=sentIds[0]
+ const storedCommunity=await runSql(async()=>(await db.query('SELECT patient_name,relation,party_size,entry_channel FROM public.patient_bookings WHERE id=$1',[uiCommunityId])).rows[0])
+ assert.deepEqual(storedCommunity,{patient_name:null,relation:null,party_size:3,entry_channel:'online'})
+ console.log('PASS community citizen form at 320px: separated fields, explicit consent, party validation, correct date month, lost response retry creates exactly one private group request')
+ await staffDesk();await page.getByRole('group',{name:'กรองประเภทบริการ'}).getByRole('button',{name:/^ชุมชน/}).click()
+ await row(uiCommunityId).waitFor();await row(uiCommunityId).click()
+ await sheet.locator('summary').filter({hasText:'จัดการเพิ่มเติม'}).first().evaluate(node=>{node.parentElement.open=true})
+ await sheet.getByRole('button',{name:'แก้ข้อมูลหลังโทรประสาน',exact:true}).click()
+ const amendCommunity=sheet.getByRole('form',{name:'แก้คำขอชุมชน',exact:true})
+ await amendCommunity.getByLabel('จำนวนผู้เดินทางทั้งหมด (รวมผู้จองที่ไปด้วย)').fill('4')
+ await amendCommunity.getByLabel('เหตุผลที่ประสานกับผู้จองแล้ว').fill('[TEST] ผู้จองเพิ่มจำนวนคนหลังประสาน')
+ await amendCommunity.getByRole('button',{name:'ตรวจทานคำขอชุมชน',exact:true}).click()
+ const amendReview=page.getByRole('dialog',{name:'ตรวจทานคำขอชุมชน',exact:true})
+ await amendReview.getByRole('checkbox',{name:'แจ้งผู้จองแล้ว และผู้จองยินยอมให้ใช้ข้อมูลตามข้อความข้างต้น',exact:true}).check()
+ await amendReview.getByRole('button',{name:'ยืนยันข้อมูลที่ประสานแล้ว',exact:true}).click()
+ await toast('แก้ข้อมูลตามที่ประสานแล้ว').waitFor()
+ await page.getByRole('dialog',{name:'กลุ่ม [TEST] กลุ่มจากหน้าจอ (4 คน)',exact:true}).getByRole('button',{name:'ปิด',exact:true}).click()
+ await row(uiCommunityId).getByRole('button',{name:'ยืนยันรถ',exact:true}).click()
+ await toast('ยืนยันรถแล้ว').waitFor()
+ const uiCommunityTrip=await tripOf(uiCommunityId);assert(uiCommunityTrip)
+ await row(uiCommunityId).click();await sheet.getByText('กลุ่ม [TEST] กลุ่มจากหน้าจอ (4 คน)',{exact:true}).first().waitFor()
+ assert.equal(await sheet.getByRole('button',{name:'เปลี่ยนโรงพยาบาลก่อนรถออก',exact:true}).count(),0)
+ const [communityRequestWin]=await Promise.all([page.waitForEvent('popup'),sheet.getByRole('button',{name:/พิมพ์ใบคำขอรถรับ–ส่งชุมชน/}).first().click()])
+ await communityRequestWin.getByRole('heading',{name:'ใบคำขอรถรับ–ส่งชุมชน (ร่าง)',exact:true}).waitFor()
+ assert.equal(await communityRequestWin.locator('.sheet').count(),1)
+ await communityRequestWin.emulateMedia({media:'print'});assert(await communityRequestWin.locator('.draft').isVisible());assert.equal(await communityRequestWin.locator('.sign-signed').count(),0)
+ await communityRequestWin.emulateMedia({media:'screen'});await clickToClosePage(communityRequestWin,communityRequestWin.getByRole('button',{name:'ปิดหน้าต่าง',exact:true}))
+ await sheet.getByRole('button',{name:'ปิด',exact:true}).first().click()
+ // Staff intake is excluded from the staff account's citizen autofill and mine projection.
+ await page.getByRole('button',{name:/รับจองแทน/}).click();await page.getByRole('button',{name:'รับจองชุมชน',exact:true}).click()
+ cf=page.getByRole('form',{name:'ขอรถรับ–ส่งชุมชน',exact:true});assert.equal(await cf.getByLabel('ชื่อ–สกุลผู้ติดต่อ',{exact:true}).inputValue(),'')
+ const staffDate=new Date(uiDate);staffDate.setUTCDate(staffDate.getUTCDate()+1)
+ cf=await fillCommunity({staff:true,label:'[TEST] รับจองชุมชนแทน',day:staffDate.toISOString().slice(0,10)})
+ await cf.getByRole('button',{name:'ตรวจทานคำขอชุมชน',exact:true}).click()
+ await sheet.getByRole('checkbox',{name:'แจ้งผู้จองแล้ว และผู้จองยินยอมให้ใช้ข้อมูลตามข้อความข้างต้น',exact:true}).check()
+ await sheet.getByRole('button',{name:'ยืนยันส่งคำขอ',exact:true}).click()
+ await page.getByText('กลุ่ม [TEST] รับจองชุมชนแทน (3 คน)',{exact:true}).first().waitFor()
+ assert(!(await runAs(coordinator,()=>rpc('patient_booking_mine',[tenant]))).bookings.some(b=>b.group_label==='[TEST] รับจองชุมชนแทน'))
+ console.log('PASS coordinator confirms one group with one action, community draft prints separately, staff intake does not leak into citizen mine/autofill')
+ const communityAreaDate=new Date(staffDate);communityAreaDate.setUTCDate(communityAreaDate.getUTCDate()+1)
+ const communityAreaId=randomUUID()
+ await runAs(coordinator,()=>rpc('patient_booking_submit_community',[tenant,communityAreaId,{...sentCommunityPayload,
+  group_label:'[TEST] ตรวจเขตชุมชน',in_area:false,appointment_at:`${communityAreaDate.toISOString().slice(0,10)}T07:00:00+07:00`},true]))
+ await page.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click()
+ await row(communityAreaId).getByRole('button',{name:'ยืนยันรถ',exact:true}).click()
+ await problem.getByText('ยังไม่ได้ตรวจว่าจุดรับอยู่ในเขตพื้นที่ให้บริการ').waitFor()
+ assert.equal(await problem.getByRole('button',{name:'ตรวจแล้ว จุดรับอยู่ในเขต · ยืนยันรถ',exact:true}).count(),0)
+ await problem.getByRole('button',{name:'ทบทวนจุดรับและข้อความการใช้ข้อมูลชุมชน',exact:true}).click()
+ const areaCommunity=problem.getByRole('form',{name:'แก้คำขอชุมชน',exact:true})
+ await areaCommunity.getByRole('checkbox',{name:/จุดรับอยู่ในเขตพื้นที่/}).check()
+ await areaCommunity.getByLabel('เหตุผลที่ประสานกับผู้จองแล้ว').fill('[TEST] ตรวจเขตและประสานผู้จองแล้ว')
+ await areaCommunity.getByRole('button',{name:'ตรวจทานคำขอชุมชน',exact:true}).click()
+ const areaReview=page.getByRole('dialog',{name:'ตรวจทานคำขอชุมชน',exact:true})
+ assert(await areaReview.getByRole('button',{name:'บันทึกและยืนยันรถ',exact:true}).isDisabled())
+ await areaReview.getByRole('checkbox',{name:'แจ้งผู้จองแล้ว และผู้จองยินยอมให้ใช้ข้อมูลตามข้อความข้างต้น',exact:true}).check()
+ await areaReview.getByRole('button',{name:'บันทึกและยืนยันรถ',exact:true}).click()
+ await toast('ยืนยันรถแล้ว').waitFor();assert.equal((await bookingRow(communityAreaId)).status,'confirmed')
+ await areaReview.waitFor({state:'detached'})
+ console.log('PASS community area correction explicitly rechecks policy/consent and then confirms; the patient area shortcut cannot manufacture community consent')
+ await page.getByRole('button',{name:/รับจองแทน/}).click();await page.getByRole('button',{name:'รับจองชุมชน',exact:true}).click()
+ await runAs(admin,async()=>{const w=await rpc('patient_booking_workspace',[tenant]);await rpc('patient_booking_save_community_rules',[tenant,w.community_rules.revision,{...communityRules,enabled:false}])})
+ await page.evaluate(()=>window.dispatchEvent(new Event('focus')))
+ await page.getByRole('status').filter({hasText:'บริการชุมชนปิดรับคำขอใหม่แล้ว'}).waitFor()
+ assert.equal(await page.getByRole('form',{name:'ขอรถรับ–ส่งชุมชน',exact:true}).count(),0)
+ assert.equal(await page.getByRole('heading',{name:'รับจองแทนทางโทรศัพท์/หน้าเคาน์เตอร์',exact:true}).count(),0,'closed community draft must not become a patient form')
+ await page.getByRole('button',{name:'กลับไปดูคำขอรถ',exact:true}).click()
+ console.log('PASS closing community intake mid-form stops new submission without converting the draft to a patient request; accepted trips remain')
+ // Report filters all share the v2 totals; public-facing output contains aggregate data only.
+ await page.getByRole('button',{name:'รายงาน',exact:true}).click()
+ const cr=page.getByRole('region',{name:'สรุปการใช้รถตามช่วงเวลา'})
+ await cr.getByRole('button',{name:'กำหนดเอง',exact:true}).click()
+ await cr.getByLabel('วันที่เริ่ม',{exact:true}).fill(communityDay)
+ await cr.getByLabel('วันที่สิ้นสุด',{exact:true}).fill(communityUiDay)
+ for(const service of ['community','patient','all']){
+  await cr.getByLabel('ประเภทบริการในรายงาน').selectOption(service)
+  if(service==='patient')await cr.getByText('ไม่มีเที่ยวรถในช่วงที่เลือก ลองเลือกช่วงอื่น').waitFor()
+  else await cr.getByRole('heading',{name:'รายการเที่ยวช่วงนี้ · 2 เที่ยว',exact:true}).waitFor()
+  assert.equal((await cr.innerText()).includes('[TEST] ผู้ติดต่อจากหน้าจอ'),false)
+ }
+ for(const width of [320,390,1024]){await page.setViewportSize({width,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)}
+ if(process.env.PATIENT_PREVIEW_SHOTS)await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/community-report-1024.png`,fullPage:true})
+ console.log('PASS community/all/patient report isolation and privacy at 320/390/1024px')
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}

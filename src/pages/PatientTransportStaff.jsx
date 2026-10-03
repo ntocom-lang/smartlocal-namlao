@@ -5,15 +5,18 @@ import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import BookingForm from '../components/patientTransport/BookingForm'
+import CommunityBookingForm from '../components/patientTransport/CommunityBookingForm'
+import CommunitySettings from '../components/patientTransport/CommunitySettings'
 import BookingInbox from '../components/patientTransport/BookingInbox'
 import StaffBookingCalendar from '../components/patientTransport/StaffBookingCalendar'
 import BookingSettings from '../components/patientTransport/BookingSettings'
 import { TabBar } from '../components/patientTransport/StaffShell'
 import { QueueReport, DriverTrips } from '../components/patientTransport/BookingOperations'
 import { buildBookingRequestFormHtml, buildBookingForwardLetterHtml, buildTripMonthReportHtml, buildPatientPrintLoadingHtml, writeAndPrint } from '../lib/patientTransportPrint'
+import { buildCommunityRequestFormHtml, buildCommunityForwardLetterHtml } from '../lib/communityTransportPrint'
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
-import { TRIP_STATUS, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking } from '../lib/patientBooking'
+import { TRIP_STATUS, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking, isCommunity, bookingName, servicePeriodReport } from '../lib/patientBooking'
 
 /**
  * หน้าทำงานของเจ้าหน้าที่ — คำขอรถ · ปฏิทิน · งานคนขับ · รายงาน · ตั้งค่า
@@ -33,6 +36,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
   const [selectedView, setView] = useState(null)
   const [calendarBookingId, setCalendarBookingId] = useState(null)
   const [created, setCreated] = useState(null)
+  const [intakeService, setIntakeService] = useState('patient')
   const { current, info, workspace, error, setError, notice, setNotice, busy, reload, mutate, task, op } = usePatientBooking(tenant?.id, uid, 'patient_booking_workspace')
   const tenantId = tenant?.id
   const isCoordinator = ['admin', 'coordinator'].includes(workspace?.role)
@@ -73,7 +77,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
     const args = { p_id: booking.id, p_revision: booking.revision, p_data: values, p_note: reason }
     return { ...args, p_op: op(JSON.stringify(args)) }
   }
-  const amend = (booking, values, reason) => mutate('patient_booking_amend', amendArgs(booking, values, reason), 'แก้ข้อมูลตามที่ประสานแล้ว พร้อมเก็บประวัติ')
+  const amend = (booking, values, reason) => mutate(isCommunity(booking) ? 'patient_booking_amend_community' : 'patient_booking_amend', amendArgs(booking, values, reason), 'แก้ข้อมูลตามที่ประสานแล้ว พร้อมเก็บประวัติ')
   const updatePickup = (booking, pickup, lat, lng) => {
     const args = { p_id: booking.id, p_revision: booking.revision, p_pickup: pickup, p_lat: lat, p_lng: lng, p_verified: true }
     return mutate('patient_booking_update_pickup', { ...args, p_op: op(`pickup:${JSON.stringify(args)}`) }, 'แก้จุดรับแล้ว · ผู้จองและคนขับเห็นข้อมูลล่าสุดในระบบ')
@@ -83,12 +87,14 @@ export default function PatientTransportStaff({ onBack } = {}) {
   // ⚠️ ยังเป็นเจ้าหน้าที่กดเองทุกครั้ง ระบบไม่ยืนยันแทน (การยืนยันรถคือการตัดสินให้บริการแก่ประชาชน)
   // ⚠️ ฐานข้อมูลคำนวณแผนซ้ำใต้ล็อกตอนยืนยัน แผนเปลี่ยนระหว่างทาง = ปฏิเสธทั้งรายการ ไม่ยืนยันแผนเก่า
   function confirm(ids, { helper = '', verifyArea = false, separate = false, amend: change = null } = {}) {
-    const names = ids.map(id => workspace.bookings.find(b => b.id === id)?.patient_name).filter(Boolean).join(', ')
+    const names = ids.map(id => bookingName(workspace.bookings.find(b => b.id === id))).filter(Boolean).join(', ')
     return task(async call => {
-      if (change) await call('patient_booking_amend', amendArgs(change.booking, change.values, change.reason))
+      if (change) await call(isCommunity(change.booking) ? 'patient_booking_amend_community' : 'patient_booking_amend', amendArgs(change.booking, change.values, change.reason))
       if (verifyArea) {
         for (const b of workspace.bookings.filter(row => ids.includes(row.id) && !row.in_area)) {
-          await call('patient_booking_amend', amendArgs(b, { appointment_at: b.appointment_at, return_at: b.return_at, route_id: b.route_id, pickup: b.pickup, in_area: true, return_mode: b.return_mode }, 'เจ้าหน้าที่ตรวจแล้วว่าจุดรับอยู่ในเขตพื้นที่'))
+          if (isCommunity(b)) throw new Error('คำขอชุมชนต้องทบทวนจุดรับและข้อความการใช้ข้อมูลหลังประสานผู้จองก่อนยืนยัน')
+          await call('patient_booking_amend', amendArgs(b,
+            { appointment_at: b.appointment_at, return_at: b.return_at, route_id: b.route_id, pickup: b.pickup, in_area: true, return_mode: b.return_mode }, 'เจ้าหน้าที่ตรวจแล้วว่าจุดรับอยู่ในเขตพื้นที่'))
         }
       }
       const requested = !separate && ids.length === 1 && workspace.bookings.find(b => b.id === ids[0])?.requested_trip_id
@@ -199,18 +205,20 @@ export default function PatientTransportStaff({ onBack } = {}) {
     }
   }
   // สองปุ่มพิมพ์เอกสารแยกรายคน: ใบคำขอประชาชนถึงนายก และหนังสือนายกถึงกองทุน
-  const printLetter = (booking, beforePrint) => printInNewWindow(async () => buildBookingForwardLetterHtml({
-    tenant, trip: workspace.trips.find(t => t.id === booking.trip_id), booking, ...(await fundContext()),
+  const printBooking = booking => ({ ...booking, purpose_label: workspace?.community_rules?.activities?.find(a => a.code === booking.purpose_code)?.label || booking.purpose_code })
+  const printLetter = (booking, beforePrint) => printInNewWindow(async () => (isCommunity(booking) ? buildCommunityForwardLetterHtml : buildBookingForwardLetterHtml)({
+    tenant, trip: workspace.trips.find(t => t.id === booking.trip_id), booking: printBooking(booking), ...(await fundContext()),
     // ต้องเป็น URL เต็ม หน้าต่างพิมพ์เป็น about:blank พาธ /images/... จะ resolve ไม่เจอ
     emblemUrl: `${window.location.origin}/images/garuda.svg`,
   }), 'เตรียมหนังสือนำส่งไม่สำเร็จ', beforePrint)
   // ใบคำขอพิมพ์แยกได้ทั้งก่อนและหลังยืนยันรถ โดยใช้ข้อมูลเที่ยวปัจจุบันเมื่อมีแล้ว
-  const printRequest = booking => printInNewWindow(async () => buildBookingRequestFormHtml({
-    tenant, booking, trip: workspace.trips.find(t => t.id === booking.trip_id), ...(await fundContext()),
+  const printRequest = booking => printInNewWindow(async () => (isCommunity(booking) ? buildCommunityRequestFormHtml : buildBookingRequestFormHtml)({
+    tenant, booking: printBooking(booking), trip: workspace.trips.find(t => t.id === booking.trip_id), ...(await fundContext()),
   }), 'เตรียมใบคำขอไม่สำเร็จ')
-  const printPeriod = period => printInNewWindow(async () => {
-    const [{ data, error: failure }, context] = await Promise.all([supabase.rpc('patient_booking_period_report', { p_muni: tenantId, p_from: period.from, p_to: period.to }), fundContext()])
-    if (failure) throw failure
+  const printPeriod = (period, service) => printInNewWindow(async () => {
+    const [data, context] = await Promise.all([servicePeriodReport(async (name, args) => {
+      const result = await supabase.rpc(name, { p_muni: tenantId, ...args }); if (result.error) throw result.error; return result.data
+    }, period.from, period.to, service), fundContext()])
     return buildTripMonthReportHtml({ tenant, report: data, period, partner: context.partner })
   }, 'เตรียมสรุปตามช่วงเวลาไม่สำเร็จ')
   const recordOdometer = (trip, start, end, issue, reason) => mutate('patient_booking_save_odometer', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_start: start, p_end: end, p_issue: issue, p_note: reason }, 'บันทึกเลขไมล์แล้ว')
@@ -241,7 +249,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
       </section>}
       <div className="[&>nav]:flex-wrap [&>nav]:overflow-visible [&>nav>button]:min-h-11 [&>nav>button]:px-3 sm:[&>nav>button]:px-4"><TabBar tab={view} setTab={tab => { setCalendarBookingId(null); setView(tab) }} tabs={tabs} busy={busy} /></div>
       {!info?.enabled && <p className="mb-4 rounded-xl bg-amber-50 p-4">{isAdmin ? 'ยังไม่เปิดรับจองออนไลน์ ตั้งค่ารถ คนขับ ผู้จัดคิว เส้นทางและเวลาให้บริการในแท็บ “ตั้งค่า” ก่อนเปิดบริการ' : 'ยังไม่เปิดรับจองออนไลน์ ให้ผู้ดูแลตั้งค่ารถและเปิดบริการก่อน'}</p>}
-      {(view === 'inbox' || (view === 'calendar' && calendarBookingId)) && isCoordinator && <BookingInbox key={calendarBookingId || 'inbox'} workspace={workspace} busy={busy} error={error} isAdmin={isAdmin} action={intakeButton}
+      {(view === 'inbox' || (view === 'calendar' && calendarBookingId)) && isCoordinator && <BookingInbox key={calendarBookingId || 'inbox'} workspace={{ ...workspace, public_info: info }} busy={busy} error={error} isAdmin={isAdmin} action={intakeButton}
         detailOnly={view === 'calendar'} initialOpenId={calendarBookingId} onCloseBooking={() => setCalendarBookingId(null)}
         currentUserId={uid} onOpenDriver={() => { setCalendarBookingId(null); setView('driver') }}
         created={created} onClearCreated={() => setCreated(null)} onDelete={deleteBooking} onConfirm={confirm} onJoin={joinIntoTrip} onAction={action} onRemove={removePassenger} onAmend={amend} onUpdatePickup={updatePickup}
@@ -251,10 +259,17 @@ export default function PatientTransportStaff({ onBack } = {}) {
       {view === 'report' && isCoordinator && <QueueReport workspace={workspace} busy={busy} onPeriodReport={printPeriod} />}
       {/* รับจองแทนมีที่นี่ที่เดียว และส่ง p_staff_entry ให้ฐานข้อมูลบันทึกว่าเป็นการรับเรื่องแทน
           ส่งแล้วกลับกล่องคำขอพร้อมแถบ "ยืนยันรถเลย" — ไม่ต้องไล่หาแถวที่เพิ่งรับเอง */}
-      {view === 'book' && isCoordinator && info?.enabled && <BookingForm submitError={error} tenantId={tenantId} info={info} profileName={profileName} profilePhone={workspace?.my_profile?.phone} staffEntry busy={busy} onBack={() => setView('inbox')}
+      {view === 'book' && isCoordinator && info?.enabled && <>
+        {info.community?.enabled && <div role="group" aria-label="เลือกบริการรับจองแทน" className="my-4 flex flex-wrap gap-2"><button type="button" className={intakeService === 'patient' ? primaryClass : buttonClass} onClick={() => setIntakeService('patient')}>รับจองผู้ป่วย</button><button type="button" className={intakeService === 'community' ? primaryClass : buttonClass} onClick={() => setIntakeService('community')}>รับจองชุมชน</button></div>}
+        {intakeService === 'community' ? info.community?.enabled ? <CommunityBookingForm submitError={error} tenantId={tenantId} info={info} staffEntry busy={busy} onBack={() => setView('inbox')}
+          onSubmit={(id, payload) => mutate('patient_booking_submit_community', { p_id: id, p_data: payload, p_staff: true }, '', data => { setCreated({ id: String(data || id), name: bookingName({ ...payload, service_type: 'community' }) }); setView('inbox') })} />
+          : <section role="status" className="space-y-3 rounded-xl bg-amber-50 p-4"><p>บริการชุมชนปิดรับคำขอใหม่แล้ว คำขอที่รับไว้ยังดำเนินต่อได้</p><button className={buttonClass} onClick={() => setView('inbox')}>กลับไปดูคำขอรถ</button></section>
+          : <BookingForm submitError={error} tenantId={tenantId} info={info} profileName={profileName} profilePhone={workspace?.my_profile?.phone} staffEntry busy={busy} onBack={() => setView('inbox')}
         onSubmit={(id, payload, tripId) => mutate(tripId ? 'patient_booking_submit_join' : 'patient_booking_submit', { p_id: id, p_data: payload, p_staff_entry: true, ...(tripId ? { p_trip: tripId } : {}) }, '', data => { setCreated({ id: String(data || id), name: payload.patient_name }); setView('inbox') })} />}
+      </>}
       {view === 'driver' && (isCoordinator || isDriver) && <DriverTrips workspace={workspace} uid={uid} isAdmin={isAdmin} canAssign={isCoordinator} busy={busy} error={error} contactPhone={info?.contact_phone} onAdvance={advanceTrip} onAction={action} onOdometer={recordOdometer} onReassign={reassignDriver} />}
       {view === 'settings' && isAdmin && <BookingSettings key={workspace.settings?.revision || 'new'} workspace={workspace} busy={busy} onSave={(revision, form) => mutate('patient_booking_save_settings', { p_revision: revision, p_data: form }, 'บันทึกค่าตั้งต้นแล้ว')} />}
+      {view === 'settings' && isAdmin && <CommunitySettings rules={workspace.community_rules} busy={busy} onSave={(revision, form) => mutate('patient_booking_save_community_rules', { p_revision: revision, p_data: form }, 'บันทึกกฎบริการชุมชนแล้ว')} />}
       {workspace?.limited && <p className="mt-4 rounded-xl bg-amber-50 p-3">รายการเกินขอบเขตหน้าจอ กรุณาติดต่อผู้ดูแลก่อนจัดคิวเพิ่มเติม</p>}
     </>}
     {/* ผลของการกดอยู่ติดขอบล่างจอ — กดจากแถวท้ายตารางแล้วยังเห็นว่าสำเร็จ ไม่ต้องเลื่อนขึ้นไปหา

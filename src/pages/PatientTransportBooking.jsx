@@ -4,6 +4,7 @@ import { CheckCircle2, RefreshCw, Wrench } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import BookingForm from '../components/patientTransport/BookingForm'
+import CommunityBookingForm from '../components/patientTransport/CommunityBookingForm'
 import { BookingCards } from '../components/patientTransport/BookingOperations'
 import usePatientBooking from '../hooks/usePatientBooking'
 import { buttonClass, primaryClass, clockTime } from '../lib/patientBooking'
@@ -36,7 +37,9 @@ export default function PatientTransportBooking() {
   // ค่าที่ใช้เติมฟอร์มให้ = คำขอล่าสุดที่ผู้ใช้คนนี้จองเอง (คนไปตามนัดประจำจะได้ไม่ต้องกรอกซ้ำทุกครั้ง)
   // ⚠️ ข้ามคำขอที่เจ้าหน้าที่รับจองแทน (entry_channel 'staff') — ถ้าหยิบมาเติม เจ้าหน้าที่ที่จองให้ตัวเองจะได้ชื่อ เบอร์
   // และจุดรับของคนที่โทรมาแทน (PDPA) · ตั้งแต่ 20260922120000 ฐานข้อมูลไม่ส่งคำขอกลุ่มนี้มาแล้ว กรองซ้ำไว้กันพลาด
-  const lastBooking = bookings.filter(b => b.entry_channel !== 'staff')
+  const lastBooking = bookings.filter(b => b.entry_channel !== 'staff' && b.service_type !== 'community')
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0]
+  const lastCommunity = bookings.filter(b => b.entry_channel === 'online' && b.service_type === 'community')
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0]
   // ⚠️ p_op ต้องส่งทุกครั้ง — patient_booking_action บังคับ operation id ไว้กันเน็ตหลุดแล้วยิงซ้ำ
   // (ขาดไปแล้ว PostgREST ตอบ PGRST202 "Could not find the function" ปุ่มยกเลิก/พร้อมกลับใช้ไม่ได้)
@@ -71,6 +74,11 @@ export default function PatientTransportBooking() {
             ? <button disabled={busy} className="min-h-16 w-full rounded-2xl bg-sky-800 px-4 text-lg font-bold text-white disabled:opacity-50" onClick={() => setView('book')}>🚐 ขอรถไปโรงพยาบาล</button>
             : <Link to="/auth" state={{ from: '/patient-transport' }} className="flex min-h-16 w-full items-center justify-center rounded-2xl bg-sky-800 px-4 text-lg font-bold text-white">เข้าสู่ระบบเพื่อขอรถ</Link>}
           <p className="text-sm text-slate-600">รับ–ส่งไปโรงพยาบาลตามนัด ญาติหรือผู้ดูแลจองแทนได้ ไม่ต้องใช้เลขสมาชิกกองทุน · เลือกเวลานัดแพทย์ได้ทุกวัน {clockTime(info.office_start)}–{clockTime(info.office_end)} น. เจ้าหน้าที่ยืนยันรถและเวลารับอีกครั้ง</p>
+          {info.community?.enabled && <>
+            {uid ? <button disabled={busy} className="min-h-16 w-full rounded-2xl bg-emerald-800 px-4 text-lg font-bold text-white disabled:opacity-50" onClick={() => setView('community')}>🚐 ขอรถไปกิจกรรมชุมชน</button>
+              : <Link to="/auth" state={{ from: '/patient-transport' }} className="flex min-h-16 w-full items-center justify-center rounded-2xl bg-emerald-800 px-4 text-lg font-bold text-white">เข้าสู่ระบบเพื่อขอรถไปกิจกรรมชุมชน</Link>}
+            <p className="text-sm text-slate-600">รับ–ส่งกลุ่มที่เดินขึ้นลงรถได้เอง ไม่ร่วมเที่ยว · เวลาที่ต้องถึง {clockTime(info.community.window_start)}–{clockTime(info.community.window_end)} น. รวมวันหยุด เจ้าหน้าที่ยืนยันอีกครั้ง</p>
+          </>}
         </> : <>
           <p className="rounded-xl bg-slate-50 p-4">หน่วยงานยังไม่เปิดรับจองรถออนไลน์ กรุณาติดต่อเจ้าหน้าที่เพื่อสอบถามบริการ</p>
           {isStaff && <p className="text-sm">เปิดบริการได้ที่ <Link to="/staff/patient-transport" className="font-semibold text-sky-800 underline">หน้าทำงานเจ้าหน้าที่</Link></p>}
@@ -94,6 +102,11 @@ export default function PatientTransportBooking() {
         busy={busy} onBack={() => setView('home')}
         onSubmit={(id, payload, tripId) => mutate(tripId ? 'patient_booking_submit_join' : 'patient_booking_submit', { p_id: id, p_data: payload, p_staff_entry: false, ...(tripId ? { p_trip: tripId } : {}) }, '',
           data => { setDone(String(data || id)); setView('done') })} />}
+      {view === 'community' && uid && info?.community?.enabled && <CommunityBookingForm submitError={error} tenantId={tenantId} info={info}
+        profileName={profileName} profilePhone={workspace?.my_profile?.phone} lastBooking={lastCommunity} busy={busy} onBack={() => setView('home')}
+        onSubmit={(id, payload) => mutate('patient_booking_submit_community', { p_id: id, p_data: payload, p_staff: false }, '',
+          data => { setDone(String(data || id)); setView('done') })} />}
+      {view === 'community' && !info?.community?.enabled && <div role="status" className="space-y-3 rounded-xl bg-amber-50 p-4"><p>บริการชุมชนปิดรับคำขอใหม่แล้ว คำขอที่ส่งไว้ยังติดตามได้</p><button className={buttonClass} onClick={() => setView('home')}>ดูคำขอของฉัน</button></div>}
     </section>}
     <footer className="mt-6 flex flex-wrap gap-4 border-t border-slate-200 pt-4 text-sm"><Link to="/my-docs" className="inline-flex min-h-11 items-center text-sky-800 underline">ติดตามคำขอที่เคยยื่นไว้</Link>{info?.contact_phone && <a className="inline-flex min-h-11 items-center text-sky-800 underline" href={`tel:${info.contact_phone}`}>ติดต่อเจ้าหน้าที่ {info.contact_phone}</a>}</footer>
   </div>

@@ -11,6 +11,34 @@ export const MOBILITY = { walk: 'เดินได้เอง', wheelchair: '�
 export const inputClass = 'w-full min-h-11 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-900'
 export const buttonClass = 'min-h-11 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 disabled:opacity-50'
 export const primaryClass = 'min-h-11 rounded-xl bg-sky-800 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50'
+export const isCommunity = booking => booking?.service_type === 'community'
+export const serviceLabel = booking => isCommunity(booking) ? 'ชุมชน' : 'ผู้ป่วย'
+export const bookingName = booking => isCommunity(booking) ? `กลุ่ม ${booking.group_label || 'ไม่ระบุชื่อกลุ่ม'} (${booking.party_size || 0} คน)` : booking?.patient_name || ''
+export const bookingPeople = booking => isCommunity(booking) ? Number(booking.party_size || 0) : 1 + Number(booking?.companions || 0)
+export const bookingTravel = booking => isCommunity(booking) ? `ผู้เดินทาง ${booking.party_size || 0} คน · ไม่ร่วมเที่ยว` : `${MOBILITY[booking?.mobility]} · ผู้ติดตาม ${booking?.companions || 0} คน`
+// Public info remains available when only community intake is closed. Never manufacture consent text.
+export function communityPayload(booking, info, overrides = {}) {
+  return {
+    ...Object.fromEntries(['requester_name', 'phone', 'pickup', 'route_id', 'appointment_at', 'return_at', 'return_mode', 'group_label', 'party_size', 'purpose_code'].map(key => [key, booking[key]])),
+    pickup_lat: booking.pickup_lat ?? null, pickup_lng: booking.pickup_lng ?? null, in_area: !!booking.in_area,
+    ...overrides, rules_version: info?.community?.rules_version, consent: true,
+    consent_version: info?.community?.consent_version, privacy_notice: info?.community?.privacy_notice, owner_name: info?.owner_name,
+  }
+}
+// v2 owns service/people/distance totals. Keep historical patient letter numbers from the legacy report.
+export async function servicePeriodReport(call, from, to, service = null) {
+  const [report, legacy] = await Promise.all([
+    call('patient_booking_period_report_v2', { p_from: from, p_to: to, p_service: service }),
+    service === 'community' ? null : call('patient_booking_period_report', { p_from: from, p_to: to }),
+  ])
+  if (report?.from !== from || report?.to !== to || !Array.isArray(report?.trips)) throw new Error('ช่วงข้อมูลรายงานไม่ตรงกับช่วงที่เลือก กรุณาโหลดใหม่')
+  if (legacy && (legacy.from !== from || legacy.to !== to || !Array.isArray(legacy.trips))) throw new Error('ข้อมูลเลขหนังสือไม่ตรงกับช่วงที่เลือก กรุณาโหลดใหม่')
+  const metadata = new Map((legacy?.trips || []).map(t => [t.trip_id, t]))
+  return { ...report, trips: report.trips.map(t => ({
+    ...(metadata.get(t.trip_id) || {}), ...t,
+    passengers: isCommunity(t) ? 0 : t.request_count,
+  })) }
+}
 export function thaiDay(value = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value))
   return ['year', 'month', 'day'].map(type => parts.find(p => p.type === type)?.value).join('-')
@@ -112,6 +140,7 @@ function dayMinutes(value, day) {
 // ⚠️ เป็นการกรองเพื่อไม่ให้ประชาชนเลือกเวลาที่ยืนยันไม่ได้ตั้งแต่ต้น ไม่ใช่การจองที่นั่ง
 // ฐานข้อมูลยังคำนวณแผนทั้งก้อนใหม่ใต้ล็อกก่อนยืนยันทุกครั้ง
 export function freeTimeChoices(form, info, dayInfo, step = 15, ignoreAvailability = false) {
+  if (isCommunity(form)) return communityTimeChoices(form, info, dayInfo, step, ignoreAvailability)
   if (!dayInfo?.date || dayInfo.status !== 'open' || !Number.isFinite(info?.office_start) || !Number.isFinite(info?.office_end)) return []
   const windows = (dayInfo.free || [])
     .map(w => ({ start: dayMinutes(w.start, dayInfo.date), end: dayMinutes(w.end, dayInfo.date) }))
@@ -132,13 +161,41 @@ export function freeTimeChoices(form, info, dayInfo, step = 15, ignoreAvailabili
   return times
 }
 
+// Mirrors the single community run in ptb_plan, including boarding every person.
+// Separate return runs may fit separate free windows; wait reserves the complete interval.
+export function communityVehicleBlocks(form, info) {
+  const c = info?.community, place = c?.places?.find(p => p.id === form.route_id)
+  const party = Number(form.party_size), travel = place?.minutes
+  if (!form.time || !Number.isInteger(party) || party < 1 || party > 15 ||
+    ![travel, info?.buffer_minutes, info?.boarding_minutes].every(Number.isFinite)) return []
+  const board = info.boarding_minutes * party, arrival = minutes(form.time)
+  const outbound = { start: arrival - travel - info.buffer_minutes - board, end: arrival + board + travel }
+  if (form.return_mode === 'one_way' || !form.back) return [outbound]
+  const back = minutes(form.back)
+  if (back < arrival) return []
+  const inbound = { start: back - travel - info.buffer_minutes, end: back + board + travel + info.buffer_minutes }
+  return form.return_mode === 'wait' || inbound.start <= outbound.end
+    ? [{ start: outbound.start, end: inbound.end }] : [outbound, inbound]
+}
+export function communityTimeChoices(form, info, dayInfo, step = 15, ignoreAvailability = false) {
+  const c = info?.community
+  if (!dayInfo?.date || dayInfo.status !== 'open' || !Number.isFinite(c?.window_start) || !Number.isFinite(c?.window_end)) return []
+  const windows = (dayInfo.community_free || []).map(w => ({ start: dayMinutes(w.start, dayInfo.date), end: dayMinutes(w.end, dayInfo.date) }))
+  const choices = new Set([c.window_start, Math.min(c.window_end, 1439)])
+  for (let at = Math.ceil(c.window_start / step) * step; at <= Math.min(c.window_end, 1439); at += step) choices.add(at)
+  return [...choices].sort((a, b) => a - b).filter(at => {
+    const spans = communityVehicleBlocks({ ...form, time: clockTime(at) }, info)
+    return spans.length && (ignoreAvailability || spans.every(span => windows.some(w => span.start >= w.start && span.end <= w.end)))
+  }).map(clockTime)
+}
+
 export function suggestGroups(bookings, settings) {
   const pending = bookings.filter(r => r.status === 'submitted').sort((a, b) => a.appointment_at.localeCompare(b.appointment_at) || a.id.localeCompare(b.id))
   const groups = []
   for (const r of pending) {
     const group = groups.find(g => {
       const first = g[0]
-      return settings?.seats && r.share && r.mobility === 'walk' && g.every(x => x.share && x.mobility === 'walk')
+      return !isCommunity(r) && settings?.seats && r.share && r.mobility === 'walk' && g.every(x => !isCommunity(x) && x.share && x.mobility === 'walk')
         && first.route_id === r.route_id && first.return_mode === r.return_mode && thaiDay(first.appointment_at) === thaiDay(r.appointment_at)
         && Math.abs(new Date(first.appointment_at) - new Date(r.appointment_at)) <= 30 * 60000
         && (r.return_mode === 'one_way' || (r.return_at && first.return_at && Math.abs(new Date(first.return_at) - new Date(r.return_at)) <= 30 * 60000))
@@ -226,6 +283,15 @@ export function staffNextAction(booking, trip) {
 // settings ไปหน้าตั้งค่า · issue ไปแก้เหตุขัดข้องของวันนั้น · reload โหลดข้อมูลล่าสุด
 const SETTINGS_FIX = ['settings']
 const CONFIRM_BLOCKERS = {
+  'ห้ามรวมงานผู้ป่วยกับงานชุมชน': ['งานผู้ป่วยและงานชุมชนต้องแยกเที่ยว', ['single']],
+  'งานชุมชนไม่เปิดร่วมเที่ยว': ['งานชุมชนใช้หนึ่งคำขอต่อเที่ยว รวมเฉพาะคนในกลุ่มนั้น', ['single']],
+  'งานชุมชนไม่ใช้ผู้ช่วยเคลื่อนย้าย': ['งานชุมชนรับเฉพาะผู้เดินได้ ให้ล้างชื่อผู้ช่วยของแผนนี้', ['reload', 'call']],
+  'ยังไม่ตั้งสถานที่ชุมชนและเวลาเดินทาง': ['สถานที่ชุมชนนี้ยังไม่มีเวลาเดินทางที่ใช้จัดคิวได้', ['amend', 'settings']],
+  'ยังไม่ตั้งช่วงเวลาบริการชุมชน': ['ยังไม่ได้ตั้งช่วงเวลาที่ต้องถึงของบริการชุมชน', SETTINGS_FIX],
+  'เวลาที่ต้องถึงอยู่นอกช่วงบริการชุมชน': ['เวลาที่ต้องถึงอยู่นอกช่วงเวลาบริการชุมชนที่ตั้งไว้', ['call', 'amend', 'cancel']],
+  'รูปแบบขากลับของผู้ร่วมเที่ยวไม่ตรงกัน': ['ขากลับของผู้ร่วมเที่ยวต้องเป็นรูปแบบเดียวกัน', ['single', 'call']],
+  'ต้องจัดรอบรับหลายรอบผ่านเที่ยวที่ยืนยันแล้ว': ['รอบรับหลายรอบต้องเริ่มจากเที่ยวที่ยืนยันแล้ว', ['single', 'call']],
+  'รอบรับ–ส่งทับกันภายในแผนเดียว': ['รถทำรอบรับ–ส่งตามแผนนี้พร้อมกันไม่ได้', ['call', 'amend', 'cancel']],
   'ต้องตรวจสอบพื้นที่รับบริการ': ['ยังไม่ได้ตรวจว่าจุดรับอยู่ในเขตพื้นที่ให้บริการ', ['area']],
   'ต้องยืนยันผู้ช่วยเคลื่อนย้ายประจำเที่ยว': ['ผู้ป่วยใช้รถเข็นหรือเปล ต้องมีผู้ช่วยเคลื่อนย้ายไปด้วย', ['helper']],
   'ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว': ['รถไม่ว่าง ช่วงเวลานี้ชนกับเที่ยวที่ยืนยันแล้ว', ['call', 'amend', 'cancel']],
@@ -260,7 +326,8 @@ export function overlappingTrips(plan, trips = []) {
 // เที่ยวที่ลอง "ให้ไปคันเดียวกัน" ได้ (20260921120000): ยืนยันแล้ว ปลายทาง วัน และขากลับตรงกัน
 // เป็นแค่ตัวกรองไม่ให้ถามฐานข้อมูลเปล่า ๆ — เงื่อนไขจริง (ยินยอมนั่งร่วม ที่นั่ง เวลา) ฐานข้อมูลตัดสินเอง
 export function joinCandidates(plan, trips = []) {
-  return overlappingTrips(plan, trips).filter(t => t.state === 'confirmed' && t.plan?.route_id === plan?.route_id
+  if ((plan?.service_type || 'patient') !== 'patient') return []
+  return overlappingTrips(plan, trips).filter(t => (t.plan?.service_type || 'patient') === 'patient' && t.state === 'confirmed' && t.plan?.route_id === plan?.route_id
     && (t.plan?.return_mode === plan?.return_mode ||
       (['wait', 'later'].includes(t.plan?.return_mode) && ['wait', 'later'].includes(plan?.return_mode)))
     && t.plan?.date === plan?.date).slice(0, 3)
@@ -287,6 +354,14 @@ export function bookingPlanGuidance(message, plan, workspace = {}) {
   const selected = (workspace.bookings || []).filter(b => plan?.booking_ids?.includes(b.id))
   let detail = ''
   if (!sameSettings) detail = 'ค่าตั้งเปลี่ยนหลังตรวจแผน กรุณาโหลดข้อมูลล่าสุดแล้วตรวจแผนอีกครั้ง'
+  else if (message === 'เวลาที่ต้องถึงอยู่นอกช่วงบริการชุมชน') {
+    const rules = workspace.community_rules
+    if (plan?.community_rules_version != null && rules?.rules_version != null && plan.community_rules_version !== rules.rules_version) {
+      detail = 'กฎบริการชุมชนเปลี่ยนหลังตรวจแผน กรุณาโหลดข้อมูลล่าสุดแล้วตรวจแผนอีกครั้ง'
+    } else if (Number.isFinite(rules?.window_start) && Number.isFinite(rules?.window_end)) {
+      detail = `ช่วงเวลาที่ต้องถึงของบริการชุมชน ${clockTime(rules.window_start)}–${clockTime(rules.window_end)} น.`
+    }
+  }
   else if (message === 'เวลานัดแพทย์อยู่นอกช่วงที่เปิดรับจอง' && Number.isFinite(settings.office_start) && Number.isFinite(settings.office_end)) {
     detail = `เวลานัดแพทย์ที่เปิดรับจอง ${clockTime(settings.office_start)}–${clockTime(settings.office_end)} น.${selected.length ? ` · ${selected.map(b => `${b.patient_name} นัด ${dateTime(b.appointment_at)}`).join(' / ')}` : ''}`
   } else if (message === 'เวลารับ–ส่งอยู่นอกเวลาบริการ' && Number.isFinite(settings.office_start) && Number.isFinite(settings.office_end) && plan?.date) {
@@ -408,7 +483,7 @@ export function reportEvent(event, workspace = {}) {
   const riders = booking ? [booking] : trip ? (workspace.bookings || []).filter(b => b.trip_id === trip.id && b.status !== 'cancelled') : []
   return {
     label: event.action === 'submitted' && booking?.entry_channel === 'staff' ? 'รับคำขอแทน (โทรศัพท์/เคาน์เตอร์)' : label,
-    subject: riders.length ? riders.map(b => b.patient_name).join(', ') : trip?.plan?.route_label || '',
+    subject: riders.length ? riders.map(bookingName).join(', ') : trip?.plan?.route_label || '',
     reference: `${booking ? 'คำขอเลขที่' : trip ? 'เที่ยวรถเลขที่' : 'รายการอ้างอิง'} ${String(booking?.id || trip?.id || event.entity_id || '').slice(0, 8).toUpperCase()}`,
     note: typeof detail.note === 'string' ? detail.note : '',
   }
@@ -425,5 +500,13 @@ export function monthReportSummary(trips = []) {
     companions: completed.reduce((sum, t) => sum + Number(t.companions || 0), 0),
     distance: measured.reduce((sum, t) => sum + t.distance, 0),
     missingDistance: completed.length - measured.length,
+  }
+}
+
+export function serviceReportSummary(trips = []) {
+  const completed = trips.filter(t => t.state === 'completed')
+  return { ...monthReportSummary(trips),
+    people: completed.reduce((sum, t) => sum + Number(t.people ?? Number(t.passengers || 0) + Number(t.companions || 0)), 0),
+    requests: completed.reduce((sum, t) => sum + Number(t.request_count ?? t.passengers ?? 0), 0),
   }
 }

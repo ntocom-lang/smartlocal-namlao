@@ -28,7 +28,13 @@ const plugin = {
   const normalized=id.replaceAll('\\','/')
   if(normalized.endsWith('/contexts/TenantContext.jsx'))return `export const useTenant=()=>({tenant:{id:'test-tenant',name:${JSON.stringify(agency)}}})`
   if(normalized.endsWith('/lib/supabase.js'))return `export const supabase={rpc:async(name,args)=>{
-   if(name==='patient_booking_period_report'){window.__requests=(window.__requests||[]).concat(args);if(window.__rpcReject)throw new Error('TEST network rejection');if(window.__rpcFail)return {data:null,error:{message:'TEST fail'}};if(window.__delay)await new Promise(r=>setTimeout(r,window.__delay));return {data:{from:args.p_from,to:args.p_to,trips:Object.values(window.__reportFixtures).flat().filter(t=>t.date>=args.p_from&&t.date<=args.p_to)},error:null}};
+   if(name==='patient_booking_period_report'||name==='patient_booking_period_report_v2'){
+    const v2=name.endsWith('_v2');if(!v2)window.__requests=(window.__requests||[]).concat(args);
+    if(window.__rpcReject)throw new Error('TEST network rejection');if(window.__rpcFail)return {data:null,error:{message:'TEST fail'}};if(window.__delay)await new Promise(r=>setTimeout(r,window.__delay));
+    let trips=Object.values(window.__reportFixtures).flat().filter(t=>t.date>=args.p_from&&t.date<=args.p_to);
+    trips=trips.filter(t=>v2?(!args.p_service||(t.service_type||'patient')===args.p_service):t.service_type!=='community');
+    if(v2)trips=trips.map(t=>({...t,service_type:t.service_type||'patient',request_count:t.request_count??t.passengers,people:t.people??t.passengers+t.companions}));
+    return {data:{from:args.p_from,to:args.p_to,...(v2?{service_type:args.p_service??null}:{}),trips},error:null}};
    if(name==='patient_booking_events_page')return {data:{total:0,page:1,events:[]},error:null};
    throw new Error('Unexpected RPC '+name)
   }};`
@@ -84,7 +90,7 @@ try{
  await graph.getByRole('img',{name:'โรงพยาบาลตัวอย่าง ข: จบ 0 เที่ยว ยังไม่จบ 1 เที่ยว',exact:true}).waitFor()
  assert.match(await infographic.locator('[data-report-summary="จบเที่ยวแล้ว"]').innerText(),/2 เที่ยว/)
  assert.match(await infographic.locator('[data-report-summary="เที่ยวที่ยังไม่จบ"]').innerText(),/2 เที่ยว/)
- assert.match(await infographic.locator('[data-report-summary="ให้บริการผู้เดินทาง"]').innerText(),/3 ครั้ง/)
+ assert.match(await infographic.locator('[data-report-summary="ให้บริการผู้เดินทาง"]').innerText(),/4 ครั้ง/)
  assert.match(await infographic.locator('[data-report-summary="ระยะทางที่บันทึกแล้ว"]').innerText(),/15 กม\./)
  assert.match(await infographic.innerText(),/ยังไม่มีระยะทางที่ใช้ได้ 1 เที่ยว/)
  for(const width of [320,390,768,1440]){
@@ -107,13 +113,13 @@ try{
  await share.click()
  let shared=await page.evaluate(()=>window.__shares.at(-1))
  assert.equal(shared.name,'patient-transport-2026-01.png');assert.equal(shared.type,'image/png');assert(shared.size>10000);assert(shared.activation,'native share must retain the click activation')
- assert.match(shared.text,/จบเที่ยวแล้ว: 2 เที่ยว/);assert.match(shared.text,/ให้บริการผู้เดินทาง: 3 ครั้ง/);assert.match(shared.text,/15 กม\./);assert.match(shared.text,/ยังไม่มีระยะทางที่ใช้ได้ 1 เที่ยว/)
+ assert.match(shared.text,/จบเที่ยวแล้ว: 2 เที่ยว/);assert.match(shared.text,/ให้บริการผู้เดินทาง: 4 ครั้ง/);assert.match(shared.text,/15 กม\./);assert.match(shared.text,/ยังไม่มีระยะทางที่ใช้ได้ 1 เที่ยว/)
  assert.match(shared.text,/โรงพยาบาลตัวอย่าง ก: จบ 2 เที่ยว/)
  assert.match(shared.text,/โรงพยาบาลตัวอย่าง ก: 2 เที่ยว \(50%\)/)
  assert.match(shared.text,/โรงพยาบาลตัวอย่าง ข: 1 เที่ยว \(25%\)/)
  assert(!shared.text.includes('TEST_PRIVATE'));assert(!shared.text.includes(secret.phone));assert(!shared.text.includes('18.123'));assert(!shared.text.includes('a1111111'))
  const drawn=await page.evaluate(()=>window.__drawn)
- assert(drawn.some(row=>row.text===agency),'agency in PNG');assert(drawn.some(row=>row.text==='3 ครั้ง'),'same service count in PNG')
+ assert(drawn.some(row=>row.text===agency),'agency in PNG');assert(drawn.some(row=>row.text==='4 ครั้ง'),'same service count including companions in PNG')
  assert(drawn.some(row=>row.text==='สัดส่วนเที่ยวรถแยกตามโรงพยาบาล'),'pie title in PNG')
  assert(drawn.some(row=>row.text==='2 เที่ยว · 50%'),'same hospital proportion in PNG')
  assert(drawn.every(row=>row.x>=0&&row.x+row.width<=row.canvasWidth+1&&row.y+8<row.height),'every PNG text fits the canvas')
@@ -183,6 +189,17 @@ try{
  await page.evaluate(()=>{window.__rpcReject=true});await selectMonth('2026-06');await report.getByRole('alert').filter({hasText:'โหลดสรุปช่วงนี้ไม่สำเร็จ'}).waitFor()
  await page.evaluate(()=>{window.__rpcReject=false});await report.getByRole('button',{name:'ลองอีกครั้ง',exact:true}).click();await ready()
  assert((await page.evaluate(()=>window.__drawn)).every(row=>row.x>=0&&row.x+row.width<=row.canvasWidth+1&&row.y+8<row.height),'all period PNG text fits')
+ await page.evaluate(()=>{window.__reportFixtures['2026-07']=[{trip_id:'community-test',date:'2026-07-10',state:'completed',service_type:'community',request_count:1,people:7,companions:0,distance:null,route_label:'[TEST] ศูนย์ชุมชน',group_label:'TEST_PRIVATE_GROUP',phone:'0899999999',pickup:'TEST_PRIVATE_ADDRESS'}]})
+ await selectMonth('2026-07');await report.getByLabel('ประเภทบริการในรายงาน').selectOption('community');await ready()
+ const communityGraphic=page.getByRole('region',{name:'อินโฟกราฟิกสรุปรถรับส่งชุมชน',exact:true})
+ assert.match(await communityGraphic.locator('[data-report-summary="ให้บริการผู้เดินทาง"]').innerText(),/7 ครั้ง/)
+ assert.match(await communityGraphic.locator('[data-report-summary="ให้บริการผู้เดินทาง"]').innerText(),/1 คำขอ/)
+ assert.match(await communityGraphic.locator('[data-report-summary="ระยะทางที่บันทึกแล้ว"]').innerText(),/ยังไม่บันทึก/)
+ await share.click();shared=await page.evaluate(()=>window.__shares.at(-1))
+ assert.match(shared.text,/รถรับ–ส่งชุมชน/);assert.match(shared.text,/7 ครั้ง/);assert(!shared.text.includes('TEST_PRIVATE'))
+ const communityDownload=page.waitForEvent('download');await download.click();await(await communityDownload).saveAs(`${artifactDir}/community-infographic.png`)
+ assert(!(await page.evaluate(()=>window.__drawn)).some(row=>row.text.includes('TEST_PRIVATE_GROUP')))
+ console.log('PASS community infographic: 7 people in one request, missing distance stays unknown, aggregate-only PNG/share')
  assert.deepEqual(errors,[])
  console.log('PASS report infographic: 4 visible mode buttons, Thai month/Buddhist year selectors, year-only change, all 4 period modes, fiscal/calendar year and quarter, inclusive single day, hospital bars/pie percentages, 320/390/768/1440px, real PNG, text bounds, no patient identifiers, exact print/share ranges, grouped hospitals, empty period, activation/fallback/cancel, generation retry, stale response exclusion, RPC failure/rejection retry')
  console.log(`Artifacts: ${artifactDir}`)

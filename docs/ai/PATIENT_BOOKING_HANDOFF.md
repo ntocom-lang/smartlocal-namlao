@@ -325,3 +325,185 @@ Migration: 20260919150000_patient_booking_flexible_odometer.sql (columns/constra
   — ก่อน merge งานที่แตะโมดูลนี้ต้องรันมือ: `patient-booking-db`, `patient-booking-browser`, `npm run test:patient-transport`
 - ยังไม่ได้ทดสอบ: ระบบคำขอเดิม (`tests/patient-transport.playwright.mjs`), มือถือคนขับจริง, เน็ตมือถือขาดกลางคำสั่ง
 - ยังรอเจ้าของระบบ: ถ้อยคำย่อหน้าที่ 2 ของหนังสือนำส่ง (ดูหัวข้อ "เอกสารถึงกองทุนเจ้าของรถ")
+
+## Community transport frontend — approved phase (2026-10-03)
+
+พัฒนาต่อจาก backend `2ac0841c` ใน worktree `D:/tmp/wt-community-transport`, สาขา `codex/community-transport` ตามแผนที่เจ้าของระบบอนุมัติ และอนุมัติ commit/push/deploy แล้ว
+ใช้ scheduler/รถ/คนขับ/tenant lock เดียวกับผู้ป่วย ไม่เพิ่ม migration หรือ dependency และไม่เปิด flag ของ tenant จริง
+
+- ประชาชน: ปุ่มชุมชนแสดงเฉพาะเมื่อเปิดรับคำขอ ฟอร์มกลุ่ม/กิจกรรม/จำนวนคน/สถานที่แยกจากผู้ป่วย ไม่มีชื่อผู้ป่วย ความสัมพันธ์ ผู้ติดตาม หรือขอร่วมเที่ยว
+  ไม่เดาเวลาหรือกฎ เปิดปฏิทินทุกวันตาม community calendar คำนวณเวลาขึ้นลงตามจำนวนคน และตรวจกลับไปกลับมาทั้งสองช่วงที่รถว่าง
+- ตรวจทานและยินยอมด้วย `community-booking-v1` และข้อความจาก RPC จริง จับ rules version/booking revision ที่ตรวจทานไว้
+  กฎเปลี่ยนต้องตรวจใหม่ ผลตอบกลับหายส่งซ้ำด้วย UUID เดิมได้ และเมื่อปิดรับระหว่างกรอกไม่สลับร่างไปเป็นคำขอผู้ป่วย
+- เจ้าหน้าที่: รับจองแทน/แก้หลังประสานด้วย RPC ชุมชนโดยเฉพาะ ชื่อกลุ่มและจำนวนคนแสดงในกล่องคำขอ ปฏิทิน และงานคนขับ
+  แยก filter ผู้ป่วย/ชุมชน/ทุกบริการ ห้ามชุมชนใช้ปุ่มเปลี่ยนโรงพยาบาลหรือรวมเที่ยว ผู้ประสานงานยืนยันรถครั้งเดียว ระบบตรวจคิวเอง
+  รับจองแทนไม่เข้า mine/autofill ของบัญชีเจ้าหน้าที่ที่เปิดหน้าประชาชน
+  คำขอชุมชนที่ยังไม่ตรวจเขตต้องผ่านฟอร์มทบทวนจุดรับ/นโยบายและยินยอมหลังประสานก่อนยืนยัน
+  ไม่ใช้ทางลัดตรวจเขตของผู้ป่วย เพราะ workspace ไม่ส่ง consent text เก่าและห้ามสร้างความยินยอมใหม่จากการตรวจจุดรับเพียงอย่างเดียว
+- Admin: ตั้งเวลา สถานที่+เวลาเดินทาง กิจกรรม และข้อบังคับครั้งเดียว บันทึกด้วย revision CAS ร่างที่แก้ค้างไม่ถูกเขียนทับเมื่ออีกหน้าจอบันทึกกฎ
+  ปิดรับคำขอใหม่ยังดำเนินคำขอ/เที่ยวที่รับไว้ได้
+- รายงานใช้ `patient_booking_period_report_v2` เป็นเจ้าของยอดคนทั้งหมด (รวมผู้ติดตาม), คำขอ และระยะทางต่อเที่ยว
+  อ่าน metadata เลขหนังสือผู้ป่วยจาก report เดิมตาม trip id เพื่อรักษาประวัติ ไม่ใช้ยอด legacy ทับ v2 ไม่คูณระยะทางตามคำขอ
+  ระยะทางที่ยังไม่มีแสดงไม่ครบ/ยังไม่บันทึก ภาพและข้อความแชร์มีแต่ข้อมูลรวม ไม่ใส่ชื่อกลุ่ม ผู้ติดต่อ เบอร์โทร หรือจุดรับ
+- เอกสารชุมชนแยกใบคำขอหนึ่งหน้าและหนังสือแจ้งกองทุนหนึ่งหน้า ใช้ `govDocStyle`/`govSignBlock` และ A4
+  ป้าย **ร่าง** ต้องติดไปบนกระดาษ ไม่มีลายเซ็นอัตโนมัติหรือใบคำขอรับสวัสดิการผู้ป่วย หนังสือแจ้งพิมพ์ได้หลังยืนยันรถเท่านั้น
+
+### Validation and release evidence
+
+หลักฐานและภาพอยู่ `D:/tmp/community-transport-ui-20261003` (ข้อมูลจำลอง `[TEST]` เท่านั้น)
+ขยาย mock ใน `tests/patient-report-infographic.test.mjs` เพิ่มจากรายชื่อแผนหนึ่งไฟล์ เพื่อให้ regression ของรายงานเรียก v2 ตาม implementation จริง
+ไม่มีการแก้ credential/.env/CI ด้วยมือ ส่วน workflow และการซ่อมปิดหน้าต่างพิมพ์รับมาจาก master ที่ commit แล้ว
+หัวข้อช่องว่าง CI ก่อนหน้านี้เป็นสถานะเก่า: master มี `patient-module-tests.yml` แล้ว
+
+```powershell
+$env:PATIENT_PGLITE_MODULE='D:/tmp/patient-booking-dbtest-20260918/node_modules/@electric-sql/pglite/dist/index.js'
+$env:PATIENT_PREVIEW_SHOTS='D:/tmp/community-transport-ui-20261003'
+node tests/patient-booking-browser.test.mjs
+# เลือกเฉพาะฉาก frontend ชุมชนระหว่างพัฒนา: $env:PATIENT_COMMUNITY_ONLY='1'
+node tests/community-transport-print.test.mjs
+node tests/community-transport-layout.test.mjs
+node tests/patient-report-period.test.mjs
+node tests/patient-report-infographic.test.mjs
+npm run test:patient-transport
+npm run lint:blocking
+```
+
+ผล local: ชุด browser ผู้ป่วยเดิม+ชุมชนผ่าน, patient print layout 37/37 ผ่าน, community content/layout/PDF ผ่าน
+รวมกรณีผลตอบกลับหาย, กฎเปลี่ยนระหว่างแก้/ตรวจทาน, ปิดรับขณะกรอก, staff mine privacy, แก้จำนวนคน, ยืนยันรถ, และรายงาน 3 filter
+ตรวจ mobile 320/390px และ desktop รวมกราฟ/PNG/share ที่นับคนจริงและไมล์ไม่ครบ
+เอกสารชุมชนข้อมูลยาวสุดตามช่องกรอกจบหนึ่งหน้า A4 ทั้งสองใบ แนวลงนามวัด `Range` ผ่าน helper กลาง
+ก่อน deploy ต้องตรวจ origin/master ล่าสุดและใช้ commit ที่รวมงานที่ merge แล้ว เพื่อไม่ย้อน runtime ของ session อื่น
+เลข commit/CI/Worker และผลสอง host บันทึกใน `release-report.json`/`RELEASE.md` ของหลักฐานหลัง release
+
+### Remaining activation gates
+
+ยังปิดบริการจริง: ต้องยืนยันอำนาจใช้รถ กิจกรรมตามข้อบังคับกองทุน และคำสั่งวันหยุด/นอกเวลากับฉบับปัจจุบัน
+สารบรรณ/กองทุนต้องรับรองถ้อยคำร่างก่อนออกหนังสือจริง ไม่มีการอนุมัติสิทธิ ค่าใช้จ่าย หรือลงนามแทนผู้มีอำนาจโดยระบบ
+ก่อนเปิดรับจริงยังต้องจัดการ stale tab และให้คนขับยืนยันบนมือถือจริง
+Demo สองบัญชี/คำสั่ง PostgREST พร้อมกันสำหรับคิวร่วมผู้ป่วย–ชุมชนผ่านแล้วตามหัวข้อ activation preparation ด้านล่าง
+การทดสอบ PGlite และจอจำลองไม่ใช่หลักฐานของ race บน DB จริงหรือโทรศัพท์จริง
+ไม่มี integration ตรวจ conflict กับรถในโมดูล fleet อื่นและไม่ย้ายคำขอประชาชนอัตโนมัติ
+ค่าใช้จ่ายเพิ่ม 0: ใช้ dependencies/Cloudflare Workers Free/Supabase เดิม และ GitHub standard runner ของ public repo
+ภาระเพิ่มเฉพาะตั้งกฎครั้งแรก/ทบทวนเมื่อเปลี่ยน เจ้าหน้าที่ตรวจข้อผิดพลาดในกล่องคำขอแล้วแก้หลังประสานพร้อม audit
+
+## Community activation preparation (2026-10-03)
+
+รอบต่อจาก frontend release `b334ef57` ตามคำสั่ง "ทำต่อได้เลย" แก้เฉพาะเทสต์ใหม่สองไฟล์และ handoff นี้
+ไม่แก้ runtime, ไม่เพิ่ม/apply migration, ไม่เปิด tenant จริง และไม่เพิ่ม dependency/service
+หลักฐานอยู่ `D:/tmp/community-transport-activation-20261003`
+
+### Stale-tab evidence — activation gate remains open
+
+`tests/community-transport-stale-tab.test.mjs` ทดสอบใน Chrome จริงบน HTTP server ในเครื่อง
+ใช้ reload handler จาก `src/main.jsx` ของ baseline `0ad22d2e` กับปัจจุบัน (เหมือนกันเมื่อ normalize CRLF)
+และ bundle `src/sw.js`/Workbox กับ print builders เก่าและปัจจุบันด้วย esbuild เดิม
+มีแต่ fixture `[TEST]` ไม่ต่อ Supabase; ปิดการขอ URL ภายนอก
+
+ผ่าน 6 checks: แท็บเก่าสองแท็บที่ออนไลน์และถูก SW ควบคุม reload เมื่อ worker ใหม่ activate แล้ว
+print builder ปัจจุบันปฏิเสธการพิมพ์ข้อมูลชุมชนด้วยแบบผู้ป่วย; แท็บที่ block SW ยังเก่าแม้ deployment/focus
+และยังสร้างแบบผู้ป่วยได้; reload ออนไลน์แก้ได้; เมื่อ endpoint update เข้าไม่ได้ แท็บที่ถูก SW ควบคุมยังใช้ printer เก่าได้
+และ reconnect+update แก้ได้; ไม่มี request ออกนอก localhost
+การจำลอง offline ใช้ page offline ร่วมกับ local worker endpoint 503 เพราะ worker ของ Chrome อาจไม่อยู่ใต้ page-level interception
+**ผลเทสต์ผ่านคือยืนยันช่องว่าง ไม่ใช่ผ่าน universal stale-tab safety หรือทดสอบโทรศัพท์จริง**
+
+```powershell
+$env:COMMUNITY_ACTIVATION_EVIDENCE='D:/tmp/community-transport-activation-20261003'
+node tests/community-transport-stale-tab.test.mjs
+```
+
+### Two-account Demo race runner
+
+`tests/community-transport-demo-race.playwright.mjs` โหมดปกติ read-only ตรวจ slug=demo, session ของบัญชี TEST
+สองบัญชีที่ auth user ID ต่างกันและมี role admin/coordinator อยู่แล้ว รถพร้อมและวันว่างสามวัน
+ไม่เพิ่มบัญชี ไม่เปลี่ยนสิทธิ์ ไม่อ่าน/บันทึก password/token ออกนอก memory และไม่ใช้ service_role
+Chrome TEST profiles อยู่ในเครื่องเท่านั้น; ชื่อ alias/ผลสิทธิ์ที่แสดงไม่มีชื่อบุคคลหรือ user ID
+
+`--write` เปิดเฉพาะ community rules ของ Demo ชั่วคราวด้วยกิจกรรม/สถานที่ `[TEST]`
+ทดสอบผู้ป่วยกับชุมชนยืนยันชนกันสองรอบ สลับผู้กดแต่ละบริการ ต้องมีเที่ยวเดียวและใบแพ้อยู่ submitted ไม่มี trip
+ตรวจ HTTP request lifetimes ซ้อนกัน, confirmed_by ของผู้ชนะ และประวัติยืนยันครั้งเดียว
+รอบที่สามใช้ trip ID เดียวกันจากสองบัญชี: ต้องยอมรับบัญชีผู้ยืนยันจริงบัญชีเดียว อีกบัญชีถูกปฏิเสธ
+และผู้ชนะ retry ด้วย ID เดิมได้ (idempotency ผูกกับ actor ไม่ใช่แชร์รหัสระหว่างบัญชี)
+ไม่อ้างว่าได้สังเกต PostgreSQL backend PID หรือ lock wait โดยตรง
+
+ก่อน HTTP write ทุกครั้งตรวจ tenant slug และเขียน durable journal ของ ID/config ที่จำเป็น ไม่มี token
+finally คืนเที่ยวก่อนออกรถและยกเลิกเฉพาะ booking IDs ของรอบนั้น ตรวจ `[TEST]` prefix และสมาชิกเที่ยวทุกคนก่อน cleanup
+คืน rules เดิมด้วย revision CAS; ถ้า session อื่นเปลี่ยน rules จะปฏิเสธการเขียนทับและรายงานให้ผู้ดูแลแก้
+แถวทดสอบที่ยกเลิกกับ audit คงอยู่ ไม่ DELETE และไม่ทำเครื่องหมายเที่ยวว่าเดินรถจริง
+เทสต์นี้ต้องรันในเครื่องโดย explicit `--write` เท่านั้น ไม่รัน live write ใน CI
+
+```powershell
+$env:PT_PROFILE_ROOT='D:/VS Code/E-Service/SmartLocal v1.1/.chrome-test-profiles'
+$env:PT_RACE_PROFILES='admin,superadmin'
+$env:COMMUNITY_ACTIVATION_EVIDENCE='D:/tmp/community-transport-activation-20261003'
+node tests/community-transport-demo-race.playwright.mjs          # read-only
+# login ด้วยตนเองเมื่อ session หมดอายุ; ไม่ส่งรหัสผ่านหรือ token ให้ agent
+$env:PT_INTERACTIVE_PROFILE='superadmin'
+node tests/community-transport-demo-race.playwright.mjs          # เปิดหน้าต่าง TEST-superadmin ให้ login
+Remove-Item Env:PT_INTERACTIVE_PROFILE -ErrorAction SilentlyContinue
+node tests/community-transport-demo-race.playwright.mjs --write
+# หลัง interruption ใช้ journal ของรอบนั้นเท่านั้น ไม่สแกน/ยกเลิกตามชื่อกว้างๆ
+node tests/community-transport-demo-race.playwright.mjs --cleanup 'D:/tmp/community-transport-activation-20261003/demo-race-<tag>.json'
+```
+
+ผลรอบนี้: TEST-admin กับ TEST-superadmin (login ใหม่ตามที่เจ้าของระบบเลือก) เป็นคนละ auth user ID และมีสิทธิ์ admin
+write run `febf9963` ผ่านครบ 7 checks รวม R1/R2 สลับบัญชี, R3 actor-bound retry, cleanup และ restore disabled
+ทดลอง cleanup ตาม journal เดิมซ้ำแล้วด้วย เพื่อยืนยันว่าปลอดภัยเมื่อรายการถูกยกเลิกแล้ว
+รอบแรก `37f4cdec` race ผ่านแต่ cleanup สะดุดเพราะ void RPC คืน body ว่าง; แก้ parser แล้ว recovery ตาม journal เดิมสำเร็จ
+และรันทวนทั้งรอบผ่าน ไม่เปลี่ยนบัญชี/สิทธิ์/การตั้งค่าผู้ป่วยเพื่อให้เทสต์ผ่าน
+รวมสองรอบสร้างคำขอ `[TEST]` 10 ใบใน Demo เท่านั้น ยกเลิกครบและไม่มีเที่ยวทดสอบค้าง แถว/audit ไม่ถูกลบ
+rules ของ Demo คงเป็นแถว disabled ที่คืน policy เดิม; revision/rules_version เพิ่มตาม audit ไม่ย้อนเลข version
+Catalog preflight แบบ read-only ตรงกับ post-deploy ทุก field: 51 functions, 34 bookings, community 0,
+rules 0, enabled rules 0, fingerprint `7600c626680fbdffbad4c6cde15f2231`
+Postflight: 44 bookings (เพิ่ม `[TEST]` 10 ใบ, เป็นชุมชน 6 ใบ), community rules 1 แถวเฉพาะ Demo และ enabled 0
+เมื่อ exclude เฉพาะ test IDs ทั้ง 10 ใบ count ของข้อมูลเดิมยังเป็น 34 และ fingerprint เดิมตรงทุกแถว
+functions/definitions/ACL/history/constraints/security ตรงกับ preflight ทั้งหมด ไม่มี schema migration ใหม่
+Supabase CLI pre/postflight ให้รันทีละคำสั่ง: การรันสอง CLI พร้อมกันรอบนี้ทำให้หนึ่งคำสั่งได้ temp-role auth error 28P01
+รันทวนทีละคำสั่งสำเร็จ โดยไม่แก้ credential หรือ `.env`
+
+### Physical driver acceptance to run after Demo setup
+
+ต้องใช้โทรศัพท์ของคนขับจริงและบัญชี TEST คนขับที่รับเที่ยว Demo อยู่แล้ว (viewport/UA simulation ไม่นับ)
+เตรียมคำขอ `[TEST] phone` และเที่ยวเฉพาะ Demo ตาม ID เมื่อผู้ทดสอบพร้อม ไม่แก้ข้อมูลจริงหรือส่ง Telegram
+
+1. เปิดคิว Demo บน Chrome Android/Safari iPhone ที่ใช้งานจริง ตรวจชื่อกลุ่ม จำนวนคน สถานที่ และจุดรับ
+   ปุ่ม "ออกรถ"/"กลับแล้ว" อ่านได้ แตะได้ครบ ไม่มี horizontal overflow และไม่มีแบบเอกสารผู้ป่วยให้ชุมชน
+2. ทดลองเน็ตขาดก่อนคำสั่ง: ต้องไม่แจ้งสำเร็จเกินผลจริง ลองใหม่หลังต่อเน็ตและตรวจ ID/revision เดิม ไม่สร้างเที่ยว/ประวัติซ้ำ
+   ทดลองผลตอบกลับขาดหลังสั่งโดยผู้ดูแลติดตามสถานะจากอีกบัญชี ไม่กดเลื่อนสถานะหลายครั้งเพื่อไล่ error
+3. ปิดจอ/สลับแอปแล้วกลับมา ตรวจ auth refresh และคิวล่าสุด; ปิดรับชุมชนแล้วยังเห็นและดำเนินงานที่รับไว้ได้
+4. ให้ผู้ใช้โทรศัพท์ยืนยันผลพร้อมรุ่นเครื่อง/OS/browser และ run IDs ของ Demo ใช้ข้อมูล `[TEST]` เท่านั้น
+   cleanup คำขอ/เที่ยวตามสถานะจริงใน Demo โดยไม่ลบ audit หรืออ้างว่าได้เดินรถจริง
+
+ผู้จัดคิวตรวจ exception/audit จากหน้าคิวเดิม ไม่เพิ่มแบบฟอร์มบันทึกประจำวันให้เจ้าหน้าที่
+
+### Proposed next phase — legacy RPC gate (await phase approval)
+
+ข้อเสนอเชิงวิศวกรรม: เพิ่ม private view version สำหรับ client ปัจจุบันและให้ legacy endpoints แจ้งโหลดใหม่
+ก่อนส่งข้อมูลชุมชน แทนพึ่ง SW เพียงชั้นเดียว ทำให้แท็บเก่าที่เปิดก่อนมีคำขอชุมชนไม่โหลดข้อมูลใหม่ไปพิมพ์ผิดแบบ
+ไม่มีขั้นยืนยันงานเพิ่ม: reload ครั้งเดียวเมื่อเจอข้อความ upgrade แล้วกลับไปจัดคิวตามเดิม
+เมื่อปิด intake งานที่รับไว้ยังทำต่อทาง v2 ได้; ไม่เปลี่ยน scheduler/การตัดสินใจ/ข้อมูลคำขอ
+
+ไฟล์ที่เสนอ (7 ไฟล์; ต้องอนุมัติแยกก่อนลงมือ):
+
+1. `supabase/migrations/20261003150000_patient_booking_service_views_v2.sql`: สร้าง `patient_booking_workspace_v2`/`patient_booking_mine_v2`
+   จากนิยามล่าสุดเต็มทุกบรรทัด ตรวจ md5 กับ catalog, authz/tenant และ REVOKE/GRANT เหมือนเดิม
+2. `supabase/migrations/20261003150100_patient_booking_legacy_client_gate.sql`: legacy workspace/mine ตรวจ role/tenant ก่อน
+   ปฏิเสธด้วยข้อความโหลดใหม่เมื่อกำลังเปิดบริการชุมชนหรือ projection ของผู้เรียกมีงานชุมชนที่ยังอยู่ในช่วงแสดงผล
+   หากไม่มีข้อมูลชุมชนใช้ผล patient เดิมจาก v2; ไม่เปิด flag ไม่ย้ายหรือลบคำขอ
+3. `src/hooks/usePatientBooking.js`: เลือก private RPC v2 และแสดงเหตุโหลดใหม่/ล้างข้อมูลเมื่ออ่านไม่ได้ โดยคง citizen/mine กับ staff/workspace แยกกัน
+4. `tests/patient-booking-community-booking.test.mjs`: legacy/v2 เมื่อเปิด-ปิด flag, งานค้าง, tenant/role/ACL/helper denial และ patient regression
+5. `tests/patient-booking-browser.test.mjs`: actual React + isolated DB ทดสอบแท็บเก่าอ่านไม่ได้ก่อนพิมพ์ และ client v2 ทำงานผู้ป่วย/ชุมชนได้
+   อัปเดต RPC routing mocks; existing module CI รันสองไฟล์นี้อยู่แล้ว ไม่แก้ workflow
+6. `tests/community-transport-demo-race.playwright.mjs`: เปลี่ยน workspace เป็น v2 หลัง backend/client รุ่นที่อนุมัติ live แล้ว
+7. `docs/ai/PATIENT_BOOKING_HANDOFF.md`: dependency, release/rollback order, หลักฐาน และ checklist โทรศัพท์จริง
+
+นิยามฐานจริง preflight: workspace `e5ce1f20886c6df4a60f4273bdf838a8`, mine `d69773d7616d9eaf9a83662e9c8a96a8`
+ต้องอ่าน catalog ใหม่ก่อนเขียนจริง ห้ามใช้ hash นี้เป็นหลักฐานปัจจุบันถ้ามี migration อื่นเข้ามา
+ลำดับ: ทดสอบ isolated DB/browser → ส่ง SQL diff ตรวจ → apply เฉพาะที่อนุมัติขณะ flag ปิด
+→ CI deploy v2 → smoke ทั้งสอง host/เปิดแท็บเก่าทดลอง Demo → เปิด tenant เฉพาะที่ระบุหลัง authority/document/phone gates ผ่าน
+Rollback client ไม่เปิดรับเพิ่มและไม่ย้อน schema/ข้อมูล; ใช้ client ที่รองรับ v2 ต่อเพื่อจบงานชุมชนที่ค้าง
+
+ข้อดี: กันข้อมูลใหม่เข้าหน้าพิมพ์เก่าที่ไม่รู้ชนิดบริการ, ตรวจย้อนได้, ลดการไล่ปิดแท็บรายคน
+ข้อเสีย: client เก่าต้อง reload และต้องดูแล RPC สองชื่อช่วงเปลี่ยนผ่าน; หาก RPC ตัดผิด เจ้าหน้าที่เห็นข้อความโหลดใหม่
+ผู้ดูแลตรวจ version/tenant/config แล้วแก้ตาม audit โดยไม่แก้สิทธิ์หรือย้ายคำขออัตโนมัติ
+ไม่มี license/cloud/dependency ใหม่; ใช้ Supabase/React/Workbox/esbuild เดิม ภาระดูแลเพิ่มเฉพาะช่วง version transition
+การรับรองอำนาจใช้รถ คำสั่งนอกเวลา ถ้อยคำหนังสือ และการยืนยันบนโทรศัพท์จริงยังเป็น gate แยก

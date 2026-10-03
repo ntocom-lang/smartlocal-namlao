@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { pickupSentence } from '../../lib/pickupText'
-import { BOOKING_STATUS, RETURN_MODES, TRIP_STATUS, bookingLastDay, buttonClass, clockOf, thaiDay, pickupForBooking } from '../../lib/patientBooking'
+import { BOOKING_STATUS, RETURN_MODES, TRIP_STATUS, bookingLastDay, buttonClass, clockOf, thaiDay, pickupForBooking, bookingName, bookingPeople } from '../../lib/patientBooking'
 
 const date = day => new Date(`${day}T12:00:00+07:00`)
 const dayLabel = day => date(day).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -10,7 +10,7 @@ const nextMonth = (month, delta) => {
   const d = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)) - 1 + delta, 1))
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
 }
-const peopleIn = riders => riders.reduce((sum, b) => sum + 1 + Number(b.companions || 0), 0)
+const peopleIn = riders => riders.reduce((sum, b) => sum + bookingPeople(b), 0)
 
 export default function StaffBookingCalendar({ workspace, onOpenBooking }) {
   const today = thaiDay()
@@ -57,7 +57,7 @@ export default function StaffBookingCalendar({ workspace, onOpenBooking }) {
   const riderButtons = riders => riders.length ? <div className="flex flex-wrap gap-2">
     {riders.map(b => <button key={b.id} type="button" onClick={() => onOpenBooking(b.id)}
       className="min-h-11 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-left font-semibold text-sky-900 hover:bg-sky-100 focus-visible:outline-2 focus-visible:outline-sky-700">
-      ดูคำขอ · {b.patient_name}
+      ดูคำขอ · {bookingName(b)}
     </button>)}
   </div> : <p className="text-sm">ยังไม่มีผู้เดินทางในรายการ</p>
   return <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-label="ปฏิทินงานรถรับส่งผู้ป่วย">
@@ -103,14 +103,14 @@ export default function StaffBookingCalendar({ workspace, onOpenBooking }) {
         {!selectedData.pending.length && !selectedData.trips.length && <p>ยังไม่มีคำขอหรือเที่ยวรถในวันนี้</p>}
         {selectedData.pending.map(booking => <button key={booking.id} type="button" onClick={() => onOpenBooking(booking.id)}
           className="block min-h-11 w-full space-y-1 rounded-lg border border-slate-300 bg-white p-3 text-left hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-sky-700">
-          <span className="block font-semibold text-amber-900">รอยืนยันรถ · {booking.patient_name}</span><span className="block">นัด {clockOf(booking.appointment_at)} น. · {booking.route_label}</span>
+          <span className="block font-semibold text-amber-900">รอยืนยันรถ · {bookingName(booking)}</span><span className="block">นัด {clockOf(booking.appointment_at)} น. · {booking.route_label}</span>
           <span className="block text-sm">จุดรับ {pickupSentence(booking.pickup)} · {RETURN_MODES[booking.return_mode] || booking.return_mode}</span>
         </button>)}
         {selectedData.trips.map(trip => {
           const riders = selectedData.riders.filter(b => b.trip_id === trip.id)
           return <article key={trip.id} className="space-y-2 rounded-lg border bg-white p-3"><p className="font-semibold text-sky-900">{TRIP_STATUS[trip.state] || trip.state} · {trip.plan?.route_label || riders[0]?.route_label || 'เที่ยวรถ'}</p>
             <p>{trip.plan?.multiwave ? `รับ ${trip.plan.outbound_waves?.length || 0} รอบ · ${trip.plan.outbound_waves?.map(w => clockOf(w.pickup_at)).join(' / ')} น.` : `เริ่มรับ ${clockOf(trip.estimated_pickup_at || trip.plan?.pickup_at)} น.`} · {peopleIn(riders)} คน</p>
-            {trip.plan?.multiwave && <p className="text-sm">{riders.map(b => `${b.patient_name} ${clockOf(pickupForBooking(trip, b))} น.`).join(' · ')}</p>}{riderButtons(riders)}</article>
+            {trip.plan?.multiwave && <p className="text-sm">{riders.map(b => `${bookingName(b)} ${clockOf(pickupForBooking(trip, b))} น.`).join(' · ')}</p>}{riderButtons(riders)}</article>
         })}
       </div>
     </> : <div role="region" className="space-y-2" aria-label="ตารางรายการรายเดือน">
@@ -118,7 +118,7 @@ export default function StaffBookingCalendar({ workspace, onOpenBooking }) {
       {monthlyRows.map(row => row.kind === 'pending'
         ? <button key={row.booking.id} type="button" onClick={() => onOpenBooking(row.booking.id)}
           className="grid min-h-11 w-full gap-1 rounded-lg border p-3 text-left hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-sky-700 sm:grid-cols-[8rem_1fr]">
-          <span className="font-semibold">{shortDate(row.day)}</span><span className="flex min-w-0 flex-col gap-1 text-sm"><strong className="text-amber-900">{BOOKING_STATUS.submitted} · {row.booking.patient_name}</strong>
+          <span className="font-semibold">{shortDate(row.day)}</span><span className="flex min-w-0 flex-col gap-1 text-sm"><strong className="text-amber-900">{BOOKING_STATUS.submitted} · {bookingName(row.booking)}</strong>
             <span>เวลานัด {clockOf(row.at)} น. · {row.booking.route_label}</span><span>จุดรับ {pickupSentence(row.booking.pickup)} · {RETURN_MODES[row.booking.return_mode] || row.booking.return_mode}</span></span>
         </button>
         : <article key={row.trip.id} className="grid gap-1 rounded-lg border p-3 sm:grid-cols-[8rem_1fr]">

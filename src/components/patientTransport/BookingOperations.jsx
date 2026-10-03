@@ -7,7 +7,7 @@ import { ListCard, Pills, Sheet } from './StaffShell'
 import { MONTHS_TH, thaiDateFromDateInput } from '../../lib/thaiDate'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
-import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent, bookingLetter } from '../../lib/patientBooking'
+import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent, bookingLetter, bookingName, bookingTravel, serviceLabel, isCommunity, servicePeriodReport } from '../../lib/patientBooking'
 
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
 const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
@@ -18,7 +18,7 @@ const REPORT_YEARS = Array.from({ length: 300 }, (_, index) => 2742 - index)
 function linkedConfirmedBooking(booking, allBookings = []) {
   if (booking.status !== 'cancelled') return null
   if (!booking.cancel_note?.startsWith('คำขอนี้ซ้ำกับคิวที่ยืนยันแล้ว')) return null
-  const matches = allBookings.filter(item => item.id !== booking.id && ['confirmed', 'completed'].includes(item.status) && item.patient_name === booking.patient_name &&
+  const matches = allBookings.filter(item => item.id !== booking.id && ['confirmed', 'completed'].includes(item.status) && bookingName(item) === bookingName(booking) &&
     item.phone === booking.phone && item.route_id === booking.route_id && item.created_by === booking.created_by)
   return matches.length === 1 ? matches[0] : null
 }
@@ -48,7 +48,7 @@ export function BookingCards({ bookings, allBookings = bookings, trips, onAction
     const step = bookingStep(b, trip)
     const linked = linkedConfirmedBooking(b, allBookings)
     return <article key={b.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-      <div className="mb-1 flex flex-wrap items-center gap-2"><h3 className="font-bold">{b.patient_name}</h3><span className={`rounded-full px-3 py-1 text-xs font-bold ${BOOKING_CHIP[b.status] || 'bg-slate-100'}`}>{BOOKING_STATUS[b.status]}</span></div>
+      <div className="mb-1 flex flex-wrap items-center gap-2"><h3 className="font-bold">{bookingName(b)}</h3><span className={`rounded-full px-3 py-1 text-xs font-bold ${isCommunity(b) ? 'bg-emerald-100 text-emerald-900' : 'bg-indigo-100 text-indigo-900'}`}>{serviceLabel(b)}</span><span className={`rounded-full px-3 py-1 text-xs font-bold ${BOOKING_CHIP[b.status] || 'bg-slate-100'}`}>{BOOKING_STATUS[b.status]}</span></div>
       {linked ? <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
         <p className="font-bold text-sky-950">คิวที่ใช้เดินทาง: นัด {dateTime(linked.appointment_at)} · เลขที่ {linked.id.slice(0, 8).toUpperCase()}</p>
         <p className="text-sm text-slate-700">{linked.route_label || b.route_label} · {BOOKING_STATUS[linked.status]}</p>
@@ -60,7 +60,7 @@ export function BookingCards({ bookings, allBookings = bookings, trips, onAction
       {step === 1 && <p className="rounded-xl bg-amber-50 p-3">รอเจ้าหน้าที่ยืนยันรถ · ยังไม่ได้กันที่นั่งให้</p>}
       {step === 4 && <p className="rounded-xl bg-emerald-50 p-3">เดินทางเสร็จแล้ว ขอบคุณที่ใช้บริการ</p>}
       {b.requested_trip_id && b.status === 'submitted' && <p className="font-semibold text-sky-800">ขอร่วมเที่ยว รอเจ้าหน้าที่ตรวจยืนยัน</p>}
-      {trip && <div className="my-3 rounded-xl bg-sky-50 p-3"><strong>{TRIP_STATUS[trip.state]}</strong><p>รถจะมารับคุณประมาณ {dateTime(pickupForBooking(trip, b))}</p>{trip.public_notice === 'delayed' && <p className="font-semibold text-amber-800">รถล่าช้า · กรุณาตรวจเวลาล่าสุด</p>}{trip.public_notice === 'contact' && <p className="font-semibold text-amber-800">กรุณาติดต่อเจ้าหน้าที่ก่อนเดินทาง</p>}{b.return_mode !== 'one_way' && <p>รับกลับประมาณ {dateTime(returnForBooking(trip, b))} (อาจปรับตามเวลาจริง)</p>}<p className="text-sm">{RETURN_MODES[b.return_mode]} · {MOBILITY[b.mobility]}{b.companions ? ` · ผู้ติดตาม ${b.companions} คน` : ''}</p></div>}
+      {trip && <div className="my-3 rounded-xl bg-sky-50 p-3"><strong>{TRIP_STATUS[trip.state]}</strong><p>รถจะมารับคุณประมาณ {dateTime(pickupForBooking(trip, b))}</p>{trip.public_notice === 'delayed' && <p className="font-semibold text-amber-800">รถล่าช้า · กรุณาตรวจเวลาล่าสุด</p>}{trip.public_notice === 'contact' && <p className="font-semibold text-amber-800">กรุณาติดต่อเจ้าหน้าที่ก่อนเดินทาง</p>}{b.return_mode !== 'one_way' && <p>รับกลับประมาณ {dateTime(returnForBooking(trip, b))} (อาจปรับตามเวลาจริง)</p>}<p className="text-sm">{RETURN_MODES[b.return_mode]} · {isCommunity(b) ? bookingTravel(b) : MOBILITY[b.mobility]}{!isCommunity(b) && b.companions ? ` · ผู้ติดตาม ${b.companions} คน` : ''}</p></div>}
       {/* เหตุผลที่เจ้าหน้าที่บันทึกตอนกดยกเลิก — ของเดิมขึ้นแค่ป้าย “ยกเลิกแล้ว” ผู้จองต้องโทรถามเองว่าทำไมไม่ได้รถ
           ฐานข้อมูลส่ง cancel_note มาเฉพาะคำขอที่ถูกยกเลิกและมีเหตุผลที่เจ้าหน้าที่เขียนไว้ (20260922130000) */}
       {b.status === 'cancelled' && b.cancel_note && <p className="my-2 rounded-xl bg-amber-50 p-3"><strong>เจ้าหน้าที่แจ้งเหตุผลที่ยกเลิก</strong><br />{b.cancel_note}</p>}
@@ -93,6 +93,7 @@ export function QueueReport({ workspace, busy, onPeriodReport }) {
   const [reportData, setReportData] = useState(null)
   const [reportError, setReportError] = useState('')
   const [reportRetry, setReportRetry] = useState(0)
+  const [service, setService] = useState('all')
   const [tripPage, setTripPage] = useState(1)
   const [page, setPage] = useState(1)
   const [history, setHistory] = useState(null)
@@ -102,15 +103,16 @@ export function QueueReport({ workspace, busy, onPeriodReport }) {
   useEffect(() => {
     if (!tenant?.id || !period) return
     let active = true
-    supabase.rpc('patient_booking_period_report', { p_muni: tenant.id, p_from: period.from, p_to: period.to }).then(({ data, error: failure }) => {
+    servicePeriodReport(async (name, args) => {
+      const result = await supabase.rpc(name, { p_muni: tenant.id, ...args }); if (result.error) throw result.error; return result.data
+    }, period.from, period.to, service === 'all' ? null : service).then(data => {
       if (!active) return
-      if (failure || !data || data.from !== period.from || data.to !== period.to || !Array.isArray(data.trips)) { setReportData(null); setReportError('โหลดสรุปช่วงนี้ไม่สำเร็จ กรุณาลองอีกครั้ง') }
-      else { setReportData({ key: period.key, tenantId: tenant.id, trips: data.trips }); setReportError('') }
+      setReportData({ key: period.key, tenantId: tenant.id, service, trips: data.trips }); setReportError('')
     }).catch(() => {
       if (active) { setReportData(null); setReportError('โหลดสรุปช่วงนี้ไม่สำเร็จ กรุณาลองอีกครั้ง') }
     })
     return () => { active = false }
-  }, [tenant?.id, period, workspace, reportRetry])
+  }, [tenant?.id, period, workspace, reportRetry, service])
   useEffect(() => {
     if (!tenant?.id) return
     let active = true
@@ -126,7 +128,7 @@ export function QueueReport({ workspace, busy, onPeriodReport }) {
     })
     return () => { active = false }
   }, [tenant?.id, page, workspace, retry])
-  const currentPeriod = !!period && reportData?.key === period.key && reportData?.tenantId === tenant?.id
+  const currentPeriod = !!period && reportData?.key === period.key && reportData?.tenantId === tenant?.id && reportData?.service === service
   const trips = currentPeriod ? reportData.trips : []
   const total = history?.tenantId === tenant?.id ? history.total : 0
   const pages = Math.max(1, Math.ceil(total / 20))
@@ -138,7 +140,8 @@ export function QueueReport({ workspace, busy, onPeriodReport }) {
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-label="สรุปการใช้รถตามช่วงเวลา">
       <h2 className="text-lg font-bold text-slate-900">สรุปการใช้รถ</h2>
       <p className="mb-4 text-sm text-slate-600">เลือกช่วงเพื่อดูจำนวนเที่ยว ผู้เดินทาง และระยะทาง แล้วพิมพ์สรุปได้ทันที</p>
-      <form className="space-y-3" onSubmit={e => { e.preventDefault(); if (currentPeriod) onPeriodReport(period) }}>
+      <form className="space-y-3" onSubmit={e => { e.preventDefault(); if (currentPeriod) onPeriodReport(period, service === 'all' ? null : service) }}>
+        <label className="block">ประเภทบริการในรายงาน<select className={inputClass} value={service} onChange={e => { setService(e.target.value); setTripPage(1) }}><option value="all">ทุกบริการ</option><option value="patient">ผู้ป่วย</option><option value="community">ชุมชน</option></select></label>
         <div role="group" aria-label="ประเภทรายงาน" className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           {Object.entries(REPORT_MODES).map(([value, label]) => <button key={value} type="button" aria-pressed={mode === value} onClick={() => { setMode(value); setReportError(''); setTripPage(1) }} className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 ${mode === value ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}>{label}</button>)}
         </div>
@@ -160,14 +163,14 @@ export function QueueReport({ workspace, busy, onPeriodReport }) {
       {period && !reportError && !currentPeriod && <p role="status">กำลังโหลดสรุป...</p>}
       {reportError && <div role="alert" className="rounded-xl bg-rose-50 p-3 text-rose-800">{reportError} <button className={buttonClass} onClick={() => { setReportData(null); setReportError(''); setReportRetry(value => value + 1) }}>ลองอีกครั้ง</button></div>}
       {currentPeriod && <>
-        <ReportInfographic tenantName={tenant?.name} period={period} trips={trips} />
+        <ReportInfographic tenantName={tenant?.name} period={period} trips={trips} service={service} />
         <h3 className="mb-1 mt-5 font-bold">รายการเที่ยวช่วงนี้ · {trips.length} เที่ยว</h3>
         <p className="mb-3 text-sm text-slate-600">หนึ่งเที่ยวอาจมีผู้เดินทางหลายคน · คำขอที่ยังรอยืนยันรถยังไม่นับเป็นเที่ยว</p>
         {!trips.length && <p className="rounded-xl bg-slate-50 p-4 text-slate-600">ไม่มีเที่ยวรถในช่วงที่เลือก ลองเลือกช่วงอื่น</p>}
         <div className="space-y-3">{trips.slice((visibleTripPage - 1) * 20, visibleTripPage * 20).map(t => <article key={t.trip_id} data-report-trip className="rounded-xl border border-slate-200 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold">{thaiDateFromDateInput(t.date)} · รับประมาณ {clockOf(t.pickup_at) || 'ยังไม่ระบุ'}</h4><span className={`rounded-full px-3 py-1 text-xs font-bold ${t.state === 'completed' ? 'bg-emerald-100 text-emerald-900' : t.state === 'issue' ? 'bg-rose-100 text-rose-800' : 'bg-sky-100 text-sky-900'}`}>{TRIP_STATUS[t.state] || 'รอตรวจสถานะ'}</span></div>
-          <p className="mt-1 break-words font-semibold text-sky-900">{t.route_label || 'ยังไม่ระบุโรงพยาบาล'}</p>
-          <div className="mt-2 grid gap-1 text-sm sm:grid-cols-2"><p>ผู้เดินทาง {t.passengers} คน · ผู้ติดตาม {t.companions} คน</p><p>คนขับ: {t.driver_name || 'ยังไม่ระบุ'}</p><p>ระยะทาง: {t.odometer_issue ? 'มาตรวัดผิดปกติ' : t.distance == null ? 'ยังไม่บันทึกครบ' : `${t.distance.toLocaleString('th-TH')} กม.`}</p><p className="text-slate-500">เที่ยวรถเลขที่ {t.trip_id.slice(0, 8).toUpperCase()}</p></div>
+          <p className="mt-1 break-words font-semibold text-sky-900">{serviceLabel(t)} · {t.route_label || 'ยังไม่ระบุสถานที่'}</p>
+          <div className="mt-2 grid gap-1 text-sm sm:grid-cols-2"><p>คำขอ {t.request_count ?? t.passengers} รายการ · ผู้เดินทางทั้งหมด {t.people ?? t.passengers + t.companions} คน{!isCommunity(t) && ` · ผู้ติดตาม ${t.companions} คน`}</p><p>คนขับ: {t.driver_name || 'ยังไม่ระบุ'}</p><p>ระยะทาง: {t.odometer_issue ? 'มาตรวัดผิดปกติ' : t.distance == null ? 'ยังไม่บันทึกครบ' : `${t.distance.toLocaleString('th-TH')} กม.`}</p><p className="text-slate-500">เที่ยวรถเลขที่ {t.trip_id.slice(0, 8).toUpperCase()}</p></div>
         </article>)}</div>
         {tripPages > 1 && <nav aria-label="แบ่งหน้ารายการเที่ยว" className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm"><span>หน้า {visibleTripPage}/{tripPages} · ครั้งละ 20 เที่ยว</span><div className="flex gap-2"><button className={buttonClass} disabled={visibleTripPage <= 1} onClick={() => setTripPage(visibleTripPage - 1)}>ก่อนหน้า</button><button className={buttonClass} disabled={visibleTripPage >= tripPages} onClick={() => setTripPage(visibleTripPage + 1)}>ถัดไป</button></div></nav>}
       </>}
@@ -202,7 +205,7 @@ export function AmendBooking({ booking, routes, busy, onBack, onSave, saveLabel 
   const [form, setForm] = useState({ day: thaiDay(booking.appointment_at), time: hhmm(booking.appointment_at), back: hhmm(booking.return_at), route_id: booking.route_id, pickup: booking.pickup, in_area: booking.in_area, return_mode: booking.return_mode, note: '' })
   const change = key => e => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
   return <form className="space-y-3 rounded-xl border-2 border-sky-700 p-4" onSubmit={e => { e.preventDefault(); onSave({ appointment_at: bangkokISO(form.day, form.time), return_at: form.return_mode === 'one_way' ? null : bangkokISO(form.day, form.back), route_id: form.route_id, pickup: form.pickup, in_area: form.in_area, return_mode: form.return_mode }, form.note) }}>
-    <h3 className="font-bold">แก้ข้อมูลตามที่ประสานกับ {booking.patient_name}</h3><div className="grid gap-3 sm:grid-cols-2">
+    <h3 className="font-bold">แก้ข้อมูลตามที่ประสานกับ {bookingName(booking)}</h3><div className="grid gap-3 sm:grid-cols-2">
       <label>วันนัด<input className={inputClass} type="date" required value={form.day} onChange={change('day')} /></label><label>เวลานัด<input className={inputClass} type="time" required value={form.time} onChange={change('time')} /></label>
       <label>เส้นทาง<select className={inputClass} value={form.route_id} onChange={change('route_id')}>{routes.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}</select></label>
       <label>ขากลับ<select className={inputClass} value={form.return_mode} onChange={change('return_mode')}>{Object.entries(RETURN_MODES).map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></label>
@@ -229,7 +232,7 @@ function DriverStepBar({ trip }) {
 // ตัวเลือกสำเร็จรูปให้คนขับกดแทนพิมพ์ · ⚠️ แจ้งแล้วเที่ยวหยุดรอจนเจ้าหน้าที่ประสานแก้
 // ล่าช้าเฉย ๆ จึงไม่อยู่ในตัวเลือก ให้โทรแจ้งแทน ไม่งั้นเที่ยวค้างทั้งที่ยังวิ่งต่อได้
 const ISSUE_CHOICES = ['ผู้ป่วยไม่ได้ขึ้นรถ', 'ติดต่อผู้ป่วยไม่ได้', 'รถเสีย / รถมีปัญหา', 'อุบัติเหตุ']
-function IssueReport({ busy, contactPhone, onReport }) {
+function IssueReport({ busy, contactPhone, onReport, community = false }) {
   const [open, setOpen] = useState(false)
   const [note, setNote] = useState('')
   const close = () => { setOpen(false); setNote('') }
@@ -237,7 +240,7 @@ function IssueReport({ busy, contactPhone, onReport }) {
   return <div className="space-y-3 rounded-xl border-2 border-red-200 bg-red-50 p-3">
     <p className="font-bold text-red-800">แจ้งเหตุขัดข้องให้เจ้าหน้าที่</p>
     <p className="text-sm">เที่ยวจะหยุดไว้จนเจ้าหน้าที่ประสานแก้{contactPhone && <> · ถ้าแค่ล่าช้า ไม่ต้องแจ้งที่นี่ <a className="font-semibold text-sky-800 underline" href={`tel:${contactPhone}`}>โทร {contactPhone}</a></>}</p>
-    <div className="grid grid-cols-2 gap-2">{ISSUE_CHOICES.map(text => <button key={text} type="button" aria-pressed={note === text} onClick={() => setNote(text)}
+    <div className="grid grid-cols-2 gap-2">{ISSUE_CHOICES.map(choice => community ? choice.replaceAll('ผู้ป่วย', 'ผู้เดินทาง') : choice).map(text => <button key={text} type="button" aria-pressed={note === text} onClick={() => setNote(text)}
       className={`min-h-12 rounded-xl border-2 px-2 text-sm font-semibold ${note === text ? 'border-red-800 bg-red-700 text-white' : 'border-slate-300 bg-white text-slate-900'}`}>{text}</button>)}</div>
     <label className="block text-sm">ข้อความที่จะส่ง<input className={inputClass} value={note} maxLength={500} onChange={e => setNote(e.target.value)} placeholder="กดเลือกด้านบน หรือพิมพ์เอง" /></label>
     <div className="flex gap-2">
@@ -273,8 +276,8 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
     <ol className="space-y-2">{people.map((b, index) => {
       const pin = Number.isFinite(b.pickup_lat) && Number.isFinite(b.pickup_lng) && Math.abs(b.pickup_lat) <= 90 && Math.abs(b.pickup_lng) <= 180
       return <li key={b.id} className="rounded-xl bg-slate-50 p-3">
-        <p className="font-bold">{people.length > 1 ? `${index + 1}. ` : ''}{b.patient_name}</p>
-        <p className="text-sm">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</p>
+        <p className="font-bold">{people.length > 1 ? `${index + 1}. ` : ''}{bookingName(b)}</p>
+        <p className="text-sm">{bookingTravel(b)}</p>
         {t.plan?.multiwave && <p className="text-sm font-semibold text-sky-900">มารับประมาณ {clockOf(pickupForBooking(t, b))} น.{b.return_mode !== 'one_way' ? ` · รับกลับประมาณ ${clockOf(returnForBooking(t, b))} น.` : ''}</p>}
         <p className="text-sm">จุดรับ: {pickupSentence(b.pickup)}</p>
         {b.cancel_requested && <p className="text-sm font-semibold text-amber-800">ผู้จองขอยกเลิก รอเจ้าหน้าที่ประสาน · ถ้าไม่ได้ขึ้นรถ กด “แจ้งเหตุขัดข้อง”</p>}
@@ -294,9 +297,9 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
         : label && <>
           <button type="button" className="min-h-14 w-full rounded-2xl bg-sky-800 px-4 text-lg font-bold text-white disabled:opacity-50" disabled={busy} onClick={() => onAdvance(t, label)}>{label}</button>
           {/* ปุ่มนี้บันทึกผู้เดินทางทุกคนพร้อมกัน — คนที่ไม่ได้ขึ้นรถต้องแจ้งก่อน ไม่งั้นจะถูกบันทึกว่าไปด้วย */}
-          {t.state === 'outbound' && people.length > 0 && <p className="text-sm text-slate-600">{people.length > 1 ? 'กดจบงานเมื่อส่งครบทุกคนและรถกลับแล้ว · ' : ''}ถ้ามีผู้ป่วยไม่ได้ขึ้นรถ กด “แจ้งเหตุขัดข้อง” แทน</p>}
+          {t.state === 'outbound' && people.length > 0 && <p className="text-sm text-slate-600">{people.length > 1 ? 'กดจบงานเมื่อส่งครบทุกคนและรถกลับแล้ว · ' : ''}ถ้ามีผู้เดินทางไม่ได้ขึ้นรถ กด “แจ้งเหตุขัดข้อง” แทน</p>}
         </>}
-      {t.state !== 'issue' && <IssueReport busy={busy} contactPhone={contactPhone} onReport={note => onAction(t, 'issue', note)} />}
+      {t.state !== 'issue' && <IssueReport community={isCommunity(t.plan)} busy={busy} contactPhone={contactPhone} onReport={note => onAction(t, 'issue', note)} />}
     </>}
     <DriverHistory trip={t} />
     {driverAssignment}
@@ -333,7 +336,7 @@ function DriverAssignment({ trips, people, busy, onReassign, onDone, batch = fal
     <label className="block">คนขับแทน<select aria-label="คนขับแทน" className={inputClass} value={driver} disabled={busy} onChange={e => { setDriver(e.target.value); setReview(false) }}>
       <option value="">เลือกเจ้าหน้าที่ของหน่วยงาน</option>{people.filter(p => p.id !== trips[0].driver_id).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
     </select></label>
-    {active && <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5" checked={handover} onChange={e => setHandover(e.target.checked)} />ประสานส่งมอบรถและผู้ป่วยระหว่างเที่ยวแล้ว</label>}
+    {active && <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5" checked={handover} onChange={e => setHandover(e.target.checked)} />ประสานส่งมอบรถและผู้เดินทางระหว่างเที่ยวแล้ว</label>}
     {stale && <p role="alert">เที่ยวเปลี่ยนแล้ว กรุณาปิดฟอร์มและเปิดใหม่เพื่อตรวจข้อมูลล่าสุด</p>}
     {many && <ul className="space-y-1 text-sm">{trips.map(t => <li key={t.id}>{clockOf(t.plan?.pickup_at)} น. · {t.plan?.route_label}</li>)}</ul>}
     {review ? <div className="space-y-2 rounded-lg bg-white p-3"><p>ยืนยันมอบหมาย <strong>{target?.name}</strong> ขับแทน {many ? `${trips.length} เที่ยวในวันนี้` : 'เที่ยวนี้'}?</p>
@@ -386,7 +389,7 @@ const DESK_PILLS = [
 const DESK_EMPTY = { now: 'วันนี้ไม่มีเที่ยวที่ต้องออก', odometer: 'ไม่มีเที่ยวที่รอเลขไมล์', later: 'ยังไม่มีเที่ยวถัดไป', done: 'ยังไม่มีเที่ยวที่จบแล้วใน 30 วันล่าสุด' }
 const pickupOf = t => t.estimated_pickup_at || t.plan?.pickup_at
 const deskText = ({ trip: t, riders }) => [t.plan?.route_label, t.driver_name, t.helper_name, whenLabel(pickupOf(t)), dateTime(pickupOf(t)),
-  ...riders.flatMap(b => [b.patient_name, b.phone, b.pickup])].join(' ').toLowerCase()
+  ...riders.flatMap(b => [bookingName(b), b.phone, b.pickup])].join(' ').toLowerCase()
 
 function deskStatus({ trip: t, kind }) {
   if (t.state === 'issue') return ['เหตุขัดข้อง', 'bg-red-100 text-red-800']
@@ -410,11 +413,11 @@ function reviewAdvance({ trip: t, riders }, label) {
   const at = pickupOf(t)
   return window.confirm([
     `บันทึก “${label}” เที่ยวนี้หรือไม่?`, '',
-    `• โรงพยาบาล: ${t.plan?.route_label || '—'}`,
+    `• ${isCommunity(t.plan) ? 'สถานที่ชุมชน' : 'โรงพยาบาล'}: ${t.plan?.route_label || '—'}`,
     `• ออกรับ: ${whenLabel(at)} ${clockOf(at)} น.`,
-    `• ผู้เดินทาง: ${riders.map(b => b.patient_name).join(', ') || '—'}`,
+    `• ผู้เดินทาง: ${riders.map(b => bookingName(b)).join(', ') || '—'}`,
     `• คนขับ: ${t.driver_name || '—'}`,
-    ...(t.state === 'confirmed' ? [] : ['', 'ระบบจะบันทึกว่าส่งผู้เดินทางครบทุกคนและรถกลับแล้ว ถ้ามีผู้ป่วยไม่ได้ขึ้นรถ ให้กด “ยกเลิก” แล้วคลิกแถวนี้เพื่อแจ้งเหตุขัดข้องแทน']),
+    ...(t.state === 'confirmed' ? [] : ['', 'ระบบจะบันทึกว่าส่งผู้เดินทางครบทุกคนและรถกลับแล้ว ถ้ามีผู้เดินทางไม่ได้ขึ้นรถ ให้กด “ยกเลิก” แล้วคลิกแถวนี้เพื่อแจ้งเหตุขัดข้องแทน']),
     '', 'ตรวจแล้วกด “ตกลง” เพื่อบันทึก หรือกด “ยกเลิก” เพื่อกลับไปตรวจ',
   ].join('\n'))
 }
@@ -448,7 +451,7 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
   return <div className="space-y-4">
     <p className="text-sm font-semibold text-amber-800">กดบันทึกเมื่อจอดรถในที่ปลอดภัย</p>
     {adminNote}
-    <ListCard title="งานคนขับ" count={rows.length} search={search} onSearch={setSearch} searchLabel="ค้นหาผู้ป่วย โรงพยาบาล คนขับ"
+    <ListCard title="งานคนขับ" count={rows.length} search={search} onSearch={setSearch} searchLabel="ค้นหาผู้เดินทาง กลุ่ม สถานที่ คนขับ"
       action={canAssign && <button type="button" className={buttonClass} onClick={onCover}>จัดคนขับแทนวันนี้</button>}
       pills={<Pills value={filter} onChange={setFilter} label="กรองงานคนขับ" items={DESK_PILLS.map(([id, label, color]) => ({ id, label, color, count: count(id) }))} />}>
       <div className="p-4 sm:p-5">
@@ -459,7 +462,7 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
             <thead><tr style={{ backgroundColor: '#1a3a5c' }}>
               <th className={`w-10 text-center ${th}`}>ที่</th>
               <th className={`text-center ${th}`}>วันเวลาออกรับ</th>
-              <th className={`text-left ${th}`}>โรงพยาบาล / ขากลับ</th>
+              <th className={`text-left ${th}`}>สถานที่ / ขากลับ</th>
               <th className={`text-left ${th}`}>ผู้เดินทาง</th>
               <th className={`text-left ${th}`}>คนขับ</th>
               <th className={`text-center ${th}`}>สถานะ</th>
@@ -479,7 +482,7 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
                 <td className={`${cell} text-center text-xs text-gray-500`}>{index + 1}</td>
                 <td className={`${cell} whitespace-nowrap text-center`}><span className="block font-semibold">{whenLabel(at)}</span><span className="block">ออกรับ {clockOf(at)} น.</span>{t.plan?.return_mode !== 'one_way' && back && <span className="block text-[11px] text-gray-500">รับกลับประมาณ {clockOf(back)} น.</span>}</td>
                 <td className={cell}><span className="block max-w-[220px] truncate font-semibold" title={t.plan?.route_label}>{t.plan?.route_label || '—'}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[t.plan?.return_mode]}{t.plan?.multiwave ? ' · รับหลายรอบ' : ''}</span></td>
-                <td className={cell}>{riders.length ? riders.map((b, i) => <span key={b.id} className={`block ${i ? 'mt-1.5' : ''}`}><span className="block font-semibold">{b.patient_name}</span><span className="block text-[11px] text-gray-500">{MOBILITY[b.mobility]} · ผู้ติดตาม {b.companions} คน</span></span>)
+                <td className={cell}>{riders.length ? riders.map((b, i) => <span key={b.id} className={`block ${i ? 'mt-1.5' : ''}`}><span className="block font-semibold">{bookingName(b)}</span><span className="block text-[11px] text-gray-500">{bookingTravel(b)}</span></span>)
                   // ฐานข้อมูลไม่ส่งข้อมูลผู้เดินทางให้คนขับเมื่อเที่ยวจบแล้ว (patient_booking_workspace) — บอกเหตุ ไม่ใช่ขีดว่างเหมือนไม่มีคนนั่ง
                   : <span className="text-[11px] text-gray-400">{t.state === 'completed' ? 'ไม่แสดงหลังจบเที่ยว' : '—'}</span>}</td>
                 <td className={cell}><span className="block max-w-[150px] truncate" title={t.driver_name || ''}>{t.driver_name || '—'}</span>{t.helper_name && <span className="block max-w-[150px] truncate text-[11px] text-gray-500" title={t.helper_name}>ผู้ช่วย {t.helper_name}</span>}</td>
@@ -620,10 +623,10 @@ export function BookingPrintButtons({ booking, trip, busy, onPrintRequest, onPri
       </fieldset>}
       <div className="grid gap-2 sm:grid-cols-2">
       <button type="button" className={`${buttonClass} text-left whitespace-normal`} disabled={busy || !onPrintRequest} onClick={() => onPrintRequest(booking)}>
-        <span className="block font-bold">พิมพ์ใบคำขอรถรับ–ส่งผู้ป่วย</span><span className="block text-xs font-normal text-slate-600">ประชาชนถึงนายก</span>
+        <span className="block font-bold">{isCommunity(booking) ? 'พิมพ์ใบคำขอรถรับ–ส่งชุมชน (ร่าง)' : 'พิมพ์ใบคำขอรถรับ–ส่งผู้ป่วย'}</span><span className="block text-xs font-normal text-slate-600">ประชาชนถึงนายก</span>
       </button>
       <button type="submit" className={`${changed ? primaryClass : buttonClass} text-left whitespace-normal`} disabled={busy || !onPrintLetter || (canEdit && edit.conflict)}>
-        <span className="block font-bold">{needsSave ? 'บันทึกและพิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย' : 'พิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย'}</span><span className="block text-xs font-normal">นายกถึงประธานกองทุน · หนังสือ + ใบคำขอรับสวัสดิการ (2 แผ่น)</span>
+        <span className="block font-bold">{isCommunity(booking) ? `${needsSave ? 'บันทึกและ' : ''}พิมพ์หนังสือแจ้งการรับ–ส่งชุมชน (ร่าง)` : needsSave ? 'บันทึกและพิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย' : 'พิมพ์หนังสือขอความอนุเคราะห์รถรับ–ส่งผู้ป่วย'}</span><span className="block text-xs font-normal">{isCommunity(booking) ? 'นายกถึงประธานกองทุน · แนบใบคำขอชุมชนจากปุ่มแรก' : 'นายกถึงประธานกองทุน · หนังสือ + ใบคำขอรับสวัสดิการ (2 แผ่น)'}</span>
       </button>
       </div>
       {canEdit && changed && <div className="flex flex-wrap gap-2">
@@ -639,7 +642,7 @@ export function BookingFundDocs({ booking, trip, busy, onRecordLetter, onPrintLe
   const letter = bookingLetter(booking, trip)
   return <div className="mt-4 rounded-xl border border-slate-200 p-3">
     <p className="font-semibold">เอกสารคำขอและนำส่งกองทุน</p>
-    <p className="text-sm text-slate-600">ของ {booking.patient_name} คนเดียว · ปุ่มแรก: ใบคำขอประชาชนถึงนายก 1 แผ่น · ปุ่มที่สอง: หนังสือนายกถึงกองทุนพร้อมใบคำขอรับสวัสดิการ 2 แผ่น · เลขที่หนังสือแยกรายคน</p>
+    <p className="text-sm text-slate-600">{isCommunity(booking) ? `ของ ${bookingName(booking)} · เอกสารร่างแยกตามคำขอกลุ่ม ให้สารบรรณและกองทุนตรวจรับก่อนใช้จริง` : `ของ ${bookingName(booking)} คนเดียว · ปุ่มแรก: ใบคำขอประชาชนถึงนายก 1 แผ่น · ปุ่มที่สอง: หนังสือนายกถึงกองทุนพร้อมใบคำขอรับสวัสดิการ 2 แผ่น · เลขที่หนังสือแยกรายคน`}</p>
     {letter.no
       ? <p className="text-sm">ที่ {letter.no} ลงวันที่ {thaiDateFromDateInput(letter.date)}{!letter.own && <span className="text-slate-600"> (เลขของเที่ยวเดิม ยังไม่ได้บันทึกเลขของคนนี้)</span>}</p>
       : <p className="text-sm text-slate-600">ยังไม่ได้บันทึกเลขที่หนังสือ พิมพ์ได้ก่อนแล้วเขียนเลขด้วยมือ</p>}

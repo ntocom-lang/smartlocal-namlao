@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress } from '../src/lib/patientBooking.js'
+import { bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress, joinCandidates } from '../src/lib/patientBooking.js'
 
 const error = 'เวลารับ–ส่งอยู่นอกเวลาบริการ'
 const plan = { date: '2026-09-21', settings_revision: 3, booking_ids: ['one'], blocks: [{ start: '2026-09-21T00:00:00Z', end: '2026-09-21T09:00:00Z' }] }
@@ -64,6 +64,25 @@ test('every current server plan error has a one-sentence reason and a fix button
   assert.equal(unknown.known, false)
   assert.equal(unknown.text, 'ข้อความใหม่จากระบบ')
   assert.deepEqual(unknown.fixes, ['reload', 'call'])
+})
+test('every community scheduler error has guidance and uses its own current hours', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20261003130100_patient_booking_community_scheduler_rpc.sql', import.meta.url), 'utf8')
+  for (const [, message] of sql.matchAll(/array_append\(errors,'([^']+)'\)/g)) {
+    assert.ok(bookingPlanGuidance(message, { ...plan, booking_ids: ['one', 'two'] }, workspace).known, message)
+  }
+  const community = { ...plan, service_type: 'community', community_rules_version: 2 }
+  const rules = { window_start: 360, window_end: 1200, rules_version: 2 }
+  const message = 'เวลาที่ต้องถึงอยู่นอกช่วงบริการชุมชน'
+  assert.match(bookingPlanGuidance(message, community, { ...workspace, community_rules: rules }).detail, /06:00–20:00/)
+  assert.equal(bookingPlanGuidance(message, community, workspace).detail, '')
+  assert.match(bookingPlanGuidance(message, community, { ...workspace, community_rules: { ...rules, rules_version: 3 } }).detail, /กฎบริการชุมชนเปลี่ยน/)
+})
+test('join candidates retain legacy patient trips and exclude every community combination', () => {
+  const p = { ...plan, route_id: 'a', return_mode: 'wait' }
+  const t = { id: 'trip', state: 'confirmed', booking_ids: ['other'], plan: { ...p } }
+  assert.deepEqual(joinCandidates(p, [t]), [t])
+  assert.deepEqual(joinCandidates({ ...p, service_type: 'community' }, [t]), [])
+  assert.deepEqual(joinCandidates(p, [{ ...t, plan: { ...t.plan, service_type: 'community' } }]), [])
 })
 test('inbox stage counts an incident under the step it happened in', () => {
   const booking = status => ({ status })
