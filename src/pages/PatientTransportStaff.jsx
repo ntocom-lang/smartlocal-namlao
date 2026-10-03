@@ -16,7 +16,7 @@ import { buildBookingRequestFormHtml, buildBookingForwardLetterHtml, buildTripMo
 import { buildCommunityRequestFormHtml, buildCommunityForwardLetterHtml } from '../lib/communityTransportPrint'
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
-import { TRIP_STATUS, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking, isCommunity, bookingName, communityPayload, servicePeriodReport } from '../lib/patientBooking'
+import { TRIP_STATUS, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking, isCommunity, bookingName, servicePeriodReport } from '../lib/patientBooking'
 
 /**
  * หน้าทำงานของเจ้าหน้าที่ — คำขอรถ · ปฏิทิน · งานคนขับ · รายงาน · ตั้งค่า
@@ -92,9 +92,9 @@ export default function PatientTransportStaff({ onBack } = {}) {
       if (change) await call(isCommunity(change.booking) ? 'patient_booking_amend_community' : 'patient_booking_amend', amendArgs(change.booking, change.values, change.reason))
       if (verifyArea) {
         for (const b of workspace.bookings.filter(row => ids.includes(row.id) && !row.in_area)) {
-          if (isCommunity(b) && b.rules_version !== info?.community?.rules_version) throw new Error('กฎบริการชุมชนเปลี่ยนแล้ว กรุณาแก้คำขอหลังประสานผู้จองก่อนยืนยัน')
-          await call(isCommunity(b) ? 'patient_booking_amend_community' : 'patient_booking_amend', amendArgs(b,
-            isCommunity(b) ? communityPayload(b, info, { in_area: true }) : { appointment_at: b.appointment_at, return_at: b.return_at, route_id: b.route_id, pickup: b.pickup, in_area: true, return_mode: b.return_mode }, 'เจ้าหน้าที่ตรวจแล้วว่าจุดรับอยู่ในเขตพื้นที่'))
+          if (isCommunity(b)) throw new Error('คำขอชุมชนต้องทบทวนจุดรับและข้อความการใช้ข้อมูลหลังประสานผู้จองก่อนยืนยัน')
+          await call('patient_booking_amend', amendArgs(b,
+            { appointment_at: b.appointment_at, return_at: b.return_at, route_id: b.route_id, pickup: b.pickup, in_area: true, return_mode: b.return_mode }, 'เจ้าหน้าที่ตรวจแล้วว่าจุดรับอยู่ในเขตพื้นที่'))
         }
       }
       const requested = !separate && ids.length === 1 && workspace.bookings.find(b => b.id === ids[0])?.requested_trip_id

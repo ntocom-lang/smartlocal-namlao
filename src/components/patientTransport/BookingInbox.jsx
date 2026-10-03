@@ -285,7 +285,9 @@ function ProblemBox({ row, problem, rows, workspace, busy, isAdmin, onConfirm, o
       {!!lastHelper && helper === lastHelper && <span className="text-sm text-slate-600">เติมชื่อจากเที่ยวล่าสุดให้แล้ว ตรวจว่าไปได้จริงก่อนกด</span>}
     </label>}
     <div className="flex flex-wrap gap-2">
-      {fixes.has('area') && <button type="button" className={primaryClass} disabled={busy} onClick={() => retry({ verifyArea: true })}>ตรวจแล้ว จุดรับอยู่ในเขต · ยืนยันรถ</button>}
+      {fixes.has('area') && (isCommunity(b)
+        ? !amending && <button type="button" className={primaryClass} disabled={busy} onClick={() => setAmending(true)}>ทบทวนจุดรับและข้อความการใช้ข้อมูลชุมชน</button>
+        : <button type="button" className={primaryClass} disabled={busy} onClick={() => retry({ verifyArea: true })}>ตรวจแล้ว จุดรับอยู่ในเขต · ยืนยันรถ</button>)}
       {fixes.has('helper') && !fixes.has('area') && <button type="button" className={primaryClass} disabled={busy || !helper.trim()} onClick={() => retry()}>ยืนยันรถ</button>}
       {fixes.has('single') && <button type="button" className={buttonClass} disabled={busy} onClick={() => retry({ ids: [b.id], separate: true })}>ยืนยันเฉพาะ {bookingName(b)} (ไม่ไปด้วยกัน)</button>}
       {fixes.has('amend') && !amending && <button type="button" className={buttonClass} disabled={busy} onClick={() => setAmending(true)}>แก้วันเวลาหลังโทรประสาน</button>}
