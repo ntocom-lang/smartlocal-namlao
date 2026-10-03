@@ -25,7 +25,9 @@ assert.equal(reportEvent({action:'unrecognized_internal_action',entity_id:'abcde
 assert.deepEqual(reportEvent({action:'moved_into_trip',entity_id:'trip0000',detail:{booking_id:'book0000'}},{bookings:[{id:'book0000',patient_name:'TEST ผู้เดินทาง'}]}),{label:'ย้ายไปร่วมเที่ยวอื่น',subject:'TEST ผู้เดินทาง',reference:'คำขอเลขที่ BOOK0000',note:''})
 assert.equal(reportEvent({action:'submitted',entity_id:'book0000'},{bookings:[{id:'book0000',entry_channel:'staff'}]}).label,'รับคำขอแทน (โทรศัพท์/เคาน์เตอร์)')
 process.env.PATIENT_UI_QA = '1'
-const { db, actor, rpc, tenant, admin, coordinator, driver, citizen, settings, baseBooking } = await import('./patient-booking-db.test.mjs')
+const { db, actor, rpc: rawRpc, tenant, admin, coordinator, driver, citizen, settings, baseBooking } = await import('./patient-booking-db.test.mjs')
+// Direct fixtures use current views; HTTP requests always execute their exact name.
+const rpc=(name,args)=>rawRpc(['patient_booking_workspace','patient_booking_mine'].includes(name)?name+'_v2':name,args)
 await db.exec(await readFile(new URL('../supabase/migrations/20260927180000_patient_booking_events_page.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20260927190000_patient_booking_move_into_trip.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20260928120000_patient_booking_multiwave.sql', import.meta.url), 'utf8'))
@@ -45,6 +47,8 @@ for (const file of [
   '20261003130200_patient_booking_community_projections_rpc.sql',
   '20261003130300_patient_booking_community_reports_rpc.sql',
   '20261003130400_patient_booking_community_intake_rpc.sql',
+  '20261003150000_patient_booking_service_views_v2.sql',
+  '20261003150100_patient_booking_legacy_client_gate.sql',
 ]) await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 await actor(admin)
 await rpc('patient_booking_save_settings', [tenant, (await rpc('patient_booking_workspace', [tenant])).settings.revision,
@@ -155,6 +159,7 @@ const order = {
  patient_booking_delete:['p_muni','p_op','p_booking','p_revision','p_trip_revision','p_docs_revision','p_reason'],
  patient_booking_update_schedule:['p_muni','p_trip','p_revision','p_notice','p_pickup','p_return'],
  patient_booking_info:['p_muni'],patient_booking_workspace:['p_muni'],patient_booking_mine:['p_muni'],patient_booking_submit:['p_muni','p_id','p_data','p_staff_entry'],
+ patient_booking_workspace_v2:['p_muni'],patient_booking_mine_v2:['p_muni'],
  patient_booking_save_settings:['p_muni','p_revision','p_data'],patient_booking_preview:['p_muni','p_ids','p_helper'],
  patient_booking_confirm:['p_muni','p_id','p_ids','p_expected','p_helper'],patient_booking_action:['p_muni','p_op','p_entity','p_revision','p_action','p_note'],
  patient_booking_calendar:['p_muni','p_from','p_to'],patient_booking_submit_join:['p_muni','p_id','p_trip','p_data','p_staff_entry'],patient_booking_preview_join:['p_muni','p_booking'],patient_booking_confirm_join:['p_muni','p_op','p_booking','p_expected'],
@@ -171,11 +176,18 @@ const order = {
  patient_booking_history:['p_muni','p_booking'],
  patient_booking_record_booking_letter:['p_muni','p_booking','p_letter_revision','p_letter_no','p_letter_date'],
 }
+// Simulate a pre-v2 tab using the same real React loader/error path. Only its RPC
+// routing is frozen; the middleware must not upgrade that request behind its back.
+const hookSource=await readFile(new URL('../src/hooks/usePatientBooking.js',import.meta.url),'utf8')
+assert.equal(hookSource.split('supabase.rpc(PRIVATE_VIEWS[privateRpc] || privateRpc,').length,2)
+const legacyHookSource=hookSource.replace('supabase.rpc(PRIVATE_VIEWS[privateRpc] || privateRpc,',"supabase.rpc(new URLSearchParams(location.search).has('legacy') ? privateRpc : (PRIVATE_VIEWS[privateRpc] || privateRpc),")
+ .replace('supabase.rpc(PRIVATE_VIEWS[name] || name,',"supabase.rpc(new URLSearchParams(location.search).has('legacy') ? name : (PRIVATE_VIEWS[name] || name),")
 const plugin = {
  name:'isolated-patient-booking-browser',enforce:'pre',
  resolveId(id){ if(id==='/__patient_entry.js')return '\0patient-entry.js' },
  load(id){
   const normalized=id.replaceAll('\\','/')
+  if(normalized.endsWith('/hooks/usePatientBooking.js'))return legacyHookSource
   if(id==='\0patient-entry.js')return `import React from 'react';import {createRoot} from 'react-dom/client';import {BrowserRouter} from 'react-router-dom';import Citizen from '/src/pages/PatientTransportBooking.jsx';import Staff from '/src/pages/PatientTransportStaff.jsx';const Page=new URLSearchParams(location.search).get('page')==='staff'?Staff:Citizen;import '/src/index.css';createRoot(document.getElementById('root')).render(React.createElement(BrowserRouter,null,React.createElement(Page)));`
   if(normalized.endsWith('/contexts/TenantContext.jsx'))return `export const useTenant=()=>({tenant:{id:new URLSearchParams(location.search).get('as')==='setupadmin'?'${setupTenant}':'${tenant}',name:'อบต. TEST'},isModuleEnabled:()=>true})`
   if(normalized.endsWith('/contexts/AuthContext.jsx'))return `const role=new URLSearchParams(location.search).get('as')||'citizen';const ids=${JSON.stringify(users)};export const useAuth=()=>({session:{user:{id:ids[role]}},profileName:'TEST Browser Requester'});`
@@ -203,7 +215,7 @@ const plugin = {
   if(req.url!=='/__patient_rpc')return next()
   const chunks=[];for await(const chunk of req)chunks.push(chunk)
   const request=JSON.parse(Buffer.concat(chunks).toString());
-  const task=async()=>{try{if(!order[request.name]||!Object.hasOwn(users,request.user))throw Error('Test API denied');await actor(users[request.user]);const data=await rpc(request.name,order[request.name].map(k=>request.args[k]));res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data,error:null}))}catch(e){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:null,error:{message:e.message,code:e.code}}))}}
+  const task=async()=>{try{if(!order[request.name]||!Object.hasOwn(users,request.user))throw Error('Test API denied');await actor(users[request.user]);const data=await rawRpc(request.name,order[request.name].map(k=>request.args[k]));res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data,error:null}))}catch(e){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:null,error:{message:e.message,code:e.code}}))}}
   chain=chain.then(task,task)
  })},
 }
@@ -301,7 +313,7 @@ try{
  await dualCheckbox.check();await page.getByLabel('บัญชีคนขับ',{exact:true}).selectOption(coordinator);await page.getByLabel('บัญชีคนขับ',{exact:true}).selectOption(driver);assert.equal(await dualCheckbox.isChecked(),true)
  await page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true}).click();await toast('บันทึกค่าตั้งต้นแล้ว').waitFor()
  await actor(driver);const dualWorkspace=await rpc('patient_booking_workspace',[tenant]);assert.equal(dualWorkspace.role,'coordinator');assert.equal(dualWorkspace.settings.driver_id,driver)
- await page.route('**/__patient_rpc',async route=>{const request=route.request().postDataJSON();if(request.name==='patient_booking_workspace'&&request.user==='driver'){const response=await route.fetch();const body=await response.json();body.data.trips=[];await route.fulfill({response,json:body})}else await route.fallback()})
+ await page.route('**/__patient_rpc',async route=>{const request=route.request().postDataJSON();if(request.name==='patient_booking_workspace_v2'&&request.user==='driver'){const response=await route.fetch();const body=await response.json();body.data.trips=[];await route.fulfill({response,json:body})}else await route.fallback()})
  await visit('driver');await page.getByRole('button',{name:'คำขอรถ',exact:true}).waitFor();assert.equal(await page.getByRole('region',{name:'งานคนขับรอดำเนินการ'}).count(),0,'ไม่มีงานต้องไม่แสดงปุ่มแจ้งเตือน');await page.getByRole('button',{name:'งานคนขับ',exact:true}).click();await page.getByText('วันนี้ไม่มีเที่ยวที่ต้องออก').waitFor();await page.unroute('**/__patient_rpc')
  await actor(admin);await rpc('patient_booking_save_settings',[tenant,(await rpc('patient_booking_workspace',[tenant])).settings.revision,settings])
  console.log('PASS dual-duty account keeps both tabs, including an empty driver tab')
@@ -1718,11 +1730,32 @@ try{
  const communityRules={enabled:true,window_start:360,window_end:1200,
   places:[{id:'test-community-place',label:'[TEST] สถานที่ชุมชน',minutes:45}],
   activities:[{code:'test-community-activity',label:'[TEST] กิจกรรมชุมชน'}],rules_reference:'[TEST] ข้อบังคับจำลอง'}
+ await page.goto(`${base}/__patient?as=coordinator&page=staff&legacy=1`)
+ await page.getByRole('navigation',{name:'งานรถรับส่งผู้ป่วย'}).waitFor()
+ assert(await page.locator('tr[data-booking]').count()>0,'old patient-only page still works before community is enabled')
+ const frozenUrl=page.url()
  await runAs(admin,async()=>{
   const w=await rpc('patient_booking_workspace',[tenant])
   await rpc('patient_booking_save_settings',[tenant,w.settings.revision,{...w.settings,driver_id:driver,coordinator_ids:[coordinator]}])
   await rpc('patient_booking_save_community_rules',[tenant,w.community_rules.revision,communityRules])
  })
+ await page.evaluate(()=>window.dispatchEvent(new Event('focus')))
+ await page.getByRole('alert').getByText(/กรุณาโหลดหน้าใหม่/).waitFor()
+ assert.equal(page.url(),frozenUrl,'stale tab was refreshed in place without navigation')
+ assert.equal(await page.locator('tr[data-booking]').count(),0,'error clears the old private dataset and its print actions')
+ assert.equal(await page.getByRole('navigation',{name:'งานรถรับส่งผู้ป่วย'}).count(),0)
+ if(process.env.PATIENT_PREVIEW_SHOTS)await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/legacy-rpc-blocked.png`,fullPage:true})
+ await visit('coordinator')
+ console.log('PASS stale legacy RPC blocks before first community record; focus reload clears private data, v2 page remains usable')
+ const viewRequests=[]
+ const missingView=async route=>{const request=route.request().postDataJSON();viewRequests.push(request.name);if(request.name==='patient_booking_workspace_v2')await route.fulfill({json:{data:null,error:{code:'PGRST202',message:'missing v2 view'}}});else await route.fallback()}
+ await page.route('**/__patient_rpc',missingView)
+ await page.evaluate(()=>window.dispatchEvent(new Event('focus')))
+ await page.getByRole('alert').getByText(/ระบบจองรถยังไม่พร้อมใช้งาน/).waitFor()
+ assert.equal(await page.locator('tr[data-booking]').count(),0)
+ assert(!viewRequests.includes('patient_booking_workspace'),'missing v2 never falls back to an unsafe legacy projection')
+ await page.unroute('**/__patient_rpc',missingView);await visit('coordinator')
+ console.log('PASS unavailable v2 RPC clears private data and never falls back to legacy')
  const communityDate=new Date();communityDate.setUTCDate(communityDate.getUTCDate()+285)
  const communityDay=communityDate.toISOString().slice(0,10),communityBooking=randomUUID(),communityTrip=randomUUID()
  await runAs(citizen,async()=>{
@@ -1754,7 +1787,7 @@ try{
  }
  if(process.env.PATIENT_PREVIEW_SHOTS)await card(communityTrip).screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/community-legacy-driver-390.png`})
  assert.equal((await runSql(()=>db.query('SELECT patient_name FROM public.patient_bookings WHERE id=$1',[communityBooking]))).rows[0].patient_name,null)
- console.log('PASS community backend with legacy UI: labelled driver projection at 320/390px, patient reports exclude community, public calendar private/nonjoinable, accepted work confirms after closure')
+ console.log('PASS community backend with v2 UI: labelled driver projection at 320/390px, patient reports exclude community, public calendar private/nonjoinable, accepted work confirms after closure')
  // The new frontend uses the same isolated DB; no real service flag or citizen data is touched.
  await visit('citizen')
  assert.equal(await page.getByRole('button',{name:'🚐 ขอรถไปกิจกรรมชุมชน',exact:true}).count(),0)
@@ -1911,5 +1944,15 @@ try{
  for(const width of [320,390,1024]){await page.setViewportSize({width,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)}
  if(process.env.PATIENT_PREVIEW_SHOTS)await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/community-report-1024.png`,fullPage:true})
  console.log('PASS community/all/patient report isolation and privacy at 320/390/1024px')
+ // The driver's pre-action read also uses v2, even after community intake closes.
+ await page.clock.setFixedTime(new Date(`${communityDay}T07:00:00+07:00`))
+ await page.setViewportSize({width:390,height:900});await visit('driver')
+ await card(communityTrip).getByRole('button',{name:'ออกรถ',exact:true}).click()
+ await toast('บันทึกแล้ว · ออกรถ').waitFor()
+ await card(communityTrip).getByRole('button',{name:'กลับแล้ว · จบงาน',exact:true}).click()
+ await toast('บันทึกแล้ว · กลับแล้ว · จบงาน').waitFor()
+ assert.equal((await bookingRow(communityBooking)).status,'completed')
+ assert.equal((await runSql(()=>db.query('SELECT state FROM public.patient_booking_trips WHERE id=$1',[communityTrip]))).rows[0].state,'completed')
+ console.log('PASS closed community intake still permits both driver actions through v2, including the pre-action private read')
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}

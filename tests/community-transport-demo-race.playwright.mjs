@@ -124,7 +124,7 @@ async function ok(actor, name, args, write = false) {
   return out.value
 }
 const ws = async () => {
-  const value = await ok(ctx.admin, 'patient_booking_workspace', { p_muni: ctx.muni })
+  const value = await ok(ctx.admin, 'patient_booking_workspace_v2', { p_muni: ctx.muni })
   assert.equal(value.limited, false, 'Workspace truncated; cannot verify owned test IDs safely')
   return value
 }
@@ -223,7 +223,7 @@ async function main() {
     Object.assign(report, previous, { mode: 'cleanup', tests: previous.tests || [] })
     delete report.error
     const actor = await session('admin')
-    const work = await ok(actor, 'patient_booking_workspace', { p_muni: ctx.muni })
+    const work = await ok(actor, 'patient_booking_workspace_v2', { p_muni: ctx.muni })
     assert.equal(work.role, 'admin'); ctx.admin = actor
     try { await cleanup() } finally { await restore() }
     return
@@ -232,7 +232,7 @@ async function main() {
   for (const alias of profiles) {
     try {
       const actor = await session(alias)
-      const work = await ok(actor, 'patient_booking_workspace', { p_muni: ctx.muni })
+      const work = await ok(actor, 'patient_booking_workspace_v2', { p_muni: ctx.muni })
       report.accounts.push({ alias, role: work.role, usable: ['admin', 'coordinator'].includes(work.role) })
       console.log(`CHECK TEST-${alias}: ${work.role}`)
       if (['admin', 'coordinator'].includes(work.role) && !actors.some(a => a.id === actor.id)) actors.push({ ...actor, role: work.role })
