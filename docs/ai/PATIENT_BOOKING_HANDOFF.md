@@ -450,6 +450,21 @@ TEST-fleet-admin เป็น driver; TEST-superadmin ต้อง login ให�
 Catalog preflight แบบ read-only ตรงกับ post-deploy ทุก field: 51 functions, 34 bookings, community 0,
 rules 0, enabled rules 0, fingerprint `7600c626680fbdffbad4c6cde15f2231`
 
+### Physical driver acceptance to run after Demo setup
+
+ต้องใช้โทรศัพท์ของคนขับจริงและบัญชี TEST คนขับที่รับเที่ยว Demo อยู่แล้ว (viewport/UA simulation ไม่นับ)
+เตรียมคำขอ `[TEST] phone` และเที่ยวเฉพาะ Demo ตาม ID เมื่อผู้ทดสอบพร้อม ไม่แก้ข้อมูลจริงหรือส่ง Telegram
+
+1. เปิดคิว Demo บน Chrome Android/Safari iPhone ที่ใช้งานจริง ตรวจชื่อกลุ่ม จำนวนคน สถานที่ และจุดรับ
+   ปุ่ม "ออกรถ"/"กลับแล้ว" อ่านได้ แตะได้ครบ ไม่มี horizontal overflow และไม่มีแบบเอกสารผู้ป่วยให้ชุมชน
+2. ทดลองเน็ตขาดก่อนคำสั่ง: ต้องไม่แจ้งสำเร็จเกินผลจริง ลองใหม่หลังต่อเน็ตและตรวจ ID/revision เดิม ไม่สร้างเที่ยว/ประวัติซ้ำ
+   ทดลองผลตอบกลับขาดหลังสั่งโดยผู้ดูแลติดตามสถานะจากอีกบัญชี ไม่กดเลื่อนสถานะหลายครั้งเพื่อไล่ error
+3. ปิดจอ/สลับแอปแล้วกลับมา ตรวจ auth refresh และคิวล่าสุด; ปิดรับชุมชนแล้วยังเห็นและดำเนินงานที่รับไว้ได้
+4. ให้ผู้ใช้โทรศัพท์ยืนยันผลพร้อมรุ่นเครื่อง/OS/browser และ run IDs ของ Demo ใช้ข้อมูล `[TEST]` เท่านั้น
+   cleanup คำขอ/เที่ยวตามสถานะจริงใน Demo โดยไม่ลบ audit หรืออ้างว่าได้เดินรถจริง
+
+ผู้จัดคิวตรวจ exception/audit จากหน้าคิวเดิม ไม่เพิ่มแบบฟอร์มบันทึกประจำวันให้เจ้าหน้าที่
+
 ### Proposed next phase — legacy RPC gate (await phase approval)
 
 ข้อเสนอเชิงวิศวกรรม: เพิ่ม private view version สำหรับ client ปัจจุบันและให้ legacy endpoints แจ้งโหลดใหม่
