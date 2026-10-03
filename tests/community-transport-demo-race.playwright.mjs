@@ -114,15 +114,20 @@ async function rpc(actor, name, args, write = false) {
   const response = await request(`${ctx.api}/rest/v1/rpc/${name}`, {
     method: 'POST', headers: { ...ctx.publicHeaders, Authorization: `Bearer ${actor?.token || ctx.key}`, 'Content-Type': 'application/json' }, body: JSON.stringify(args),
   })
-  const data = await response.json()
-  return { ok: response.ok, status: response.status, value: response.ok ? data : null, message: response.ok ? '' : String(data.message || 'RPC rejected').slice(0, 240), start, end: performance.now() }
+  const body = await response.text()
+  const data = body.trim() ? JSON.parse(body) : null
+  return { ok: response.ok, status: response.status, value: response.ok ? data : null, message: response.ok ? '' : String(data?.message || 'RPC rejected').slice(0, 240), start, end: performance.now() }
 }
 async function ok(actor, name, args, write = false) {
   const out = await rpc(actor, name, args, write)
   if (!out.ok) throw new Error(`${name}: ${out.status} ${out.message}`)
   return out.value
 }
-const ws = () => ok(ctx.admin, 'patient_booking_workspace', { p_muni: ctx.muni })
+const ws = async () => {
+  const value = await ok(ctx.admin, 'patient_booking_workspace', { p_muni: ctx.muni })
+  assert.equal(value.limited, false, 'Workspace truncated; cannot verify owned test IDs safely')
+  return value
+}
 const preview = (actor, ids) => ok(actor, 'patient_booking_preview', { p_muni: ctx.muni, p_ids: ids, p_helper: '' })
 const confirm = (actor, id, ids, plan) => rpc(actor, 'patient_booking_confirm', { p_muni: ctx.muni, p_id: id, p_ids: ids, p_expected: plan, p_helper: '' }, true)
 const action = (entity, revision, name) => ok(ctx.admin, 'patient_booking_action', { p_muni: ctx.muni, p_op: randomUUID(), p_entity: entity, p_revision: revision, p_action: name, p_note: `${PREFIX} cleanup` }, true)
@@ -215,7 +220,8 @@ async function main() {
     for (const ids of [previous.bookingIds, previous.tripIds]) assert(Array.isArray(ids) && ids.every(id => /^[0-9a-f-]{36}$/.test(id)), 'Invalid recovery IDs')
     previous.bookingIds.forEach(id => created.add(id)); previous.tripIds.forEach(id => tripIds.add(id))
     Object.assign(ctx, previous.recovery)
-    Object.assign(report, previous, { mode: 'cleanup', tests: [] })
+    Object.assign(report, previous, { mode: 'cleanup', tests: previous.tests || [] })
+    delete report.error
     const actor = await session('admin')
     const work = await ok(actor, 'patient_booking_workspace', { p_muni: ctx.muni })
     assert.equal(work.role, 'admin'); ctx.admin = actor

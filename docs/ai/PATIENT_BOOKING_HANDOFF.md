@@ -379,8 +379,9 @@ npm run lint:blocking
 
 ยังปิดบริการจริง: ต้องยืนยันอำนาจใช้รถ กิจกรรมตามข้อบังคับกองทุน และคำสั่งวันหยุด/นอกเวลากับฉบับปัจจุบัน
 สารบรรณ/กองทุนต้องรับรองถ้อยคำร่างก่อนออกหนังสือจริง ไม่มีการอนุมัติสิทธิ ค่าใช้จ่าย หรือลงนามแทนผู้มีอำนาจโดยระบบ
-ก่อนเปิดรับจริงยังต้องตัดสินวิธีจัดการ stale tab, ทดสอบ Demo สองบัญชี/สอง connection สำหรับคิวร่วมผู้ป่วย–ชุมชน
-และให้คนขับยืนยันบนมือถือจริง การทดสอบ PGlite และจอจำลองไม่ใช่หลักฐานผ่านสองข้อนี้
+ก่อนเปิดรับจริงยังต้องจัดการ stale tab และให้คนขับยืนยันบนมือถือจริง
+Demo สองบัญชี/คำสั่ง PostgREST พร้อมกันสำหรับคิวร่วมผู้ป่วย–ชุมชนผ่านแล้วตามหัวข้อ activation preparation ด้านล่าง
+การทดสอบ PGlite และจอจำลองไม่ใช่หลักฐานของ race บน DB จริงหรือโทรศัพท์จริง
 ไม่มี integration ตรวจ conflict กับรถในโมดูล fleet อื่นและไม่ย้ายคำขอประชาชนอัตโนมัติ
 ค่าใช้จ่ายเพิ่ม 0: ใช้ dependencies/Cloudflare Workers Free/Supabase เดิม และ GitHub standard runner ของ public repo
 ภาระเพิ่มเฉพาะตั้งกฎครั้งแรก/ทบทวนเมื่อเปลี่ยน เจ้าหน้าที่ตรวจข้อผิดพลาดในกล่องคำขอแล้วแก้หลังประสานพร้อม audit
@@ -444,11 +445,20 @@ node tests/community-transport-demo-race.playwright.mjs --write
 node tests/community-transport-demo-race.playwright.mjs --cleanup 'D:/tmp/community-transport-activation-20261003/demo-race-<tag>.json'
 ```
 
-สถานะตรวจบัญชีในรอบนี้: TEST-admin เป็น admin; TEST-officer, TEST-staff และบัญชี TEST ฝ่ายอื่นที่ตรวจเป็น citizen
-TEST-fleet-admin เป็น driver; TEST-superadmin ต้อง login ใหม่ เจ้าของระบบเลือก login โปรไฟล์นี้แล้ว
-**ยังไม่ผ่าน race gate จนมีรายงาน write-mode passed=true พร้อม cleanup และ restore สำเร็จ**
+ผลรอบนี้: TEST-admin กับ TEST-superadmin (login ใหม่ตามที่เจ้าของระบบเลือก) เป็นคนละ auth user ID และมีสิทธิ์ admin
+write run `febf9963` ผ่านครบ 7 checks รวม R1/R2 สลับบัญชี, R3 actor-bound retry, cleanup และ restore disabled
+ทดลอง cleanup ตาม journal เดิมซ้ำแล้วด้วย เพื่อยืนยันว่าปลอดภัยเมื่อรายการถูกยกเลิกแล้ว
+รอบแรก `37f4cdec` race ผ่านแต่ cleanup สะดุดเพราะ void RPC คืน body ว่าง; แก้ parser แล้ว recovery ตาม journal เดิมสำเร็จ
+และรันทวนทั้งรอบผ่าน ไม่เปลี่ยนบัญชี/สิทธิ์/การตั้งค่าผู้ป่วยเพื่อให้เทสต์ผ่าน
+รวมสองรอบสร้างคำขอ `[TEST]` 10 ใบใน Demo เท่านั้น ยกเลิกครบและไม่มีเที่ยวทดสอบค้าง แถว/audit ไม่ถูกลบ
+rules ของ Demo คงเป็นแถว disabled ที่คืน policy เดิม; revision/rules_version เพิ่มตาม audit ไม่ย้อนเลข version
 Catalog preflight แบบ read-only ตรงกับ post-deploy ทุก field: 51 functions, 34 bookings, community 0,
 rules 0, enabled rules 0, fingerprint `7600c626680fbdffbad4c6cde15f2231`
+Postflight: 44 bookings (เพิ่ม `[TEST]` 10 ใบ, เป็นชุมชน 6 ใบ), community rules 1 แถวเฉพาะ Demo และ enabled 0
+เมื่อ exclude เฉพาะ test IDs ทั้ง 10 ใบ count ของข้อมูลเดิมยังเป็น 34 และ fingerprint เดิมตรงทุกแถว
+functions/definitions/ACL/history/constraints/security ตรงกับ preflight ทั้งหมด ไม่มี schema migration ใหม่
+Supabase CLI pre/postflight ให้รันทีละคำสั่ง: การรันสอง CLI พร้อมกันรอบนี้ทำให้หนึ่งคำสั่งได้ temp-role auth error 28P01
+รันทวนทีละคำสั่งสำเร็จ โดยไม่แก้ credential หรือ `.env`
 
 ### Physical driver acceptance to run after Demo setup
 
