@@ -389,14 +389,22 @@ function formCss() {
      ที่ถูกคือให้คำลงท้ายกับแถวลงชื่อใช้ "คอลัมน์เดียวกัน" (subgrid): คอลัมน์กลางคือแกนของชื่อเสมอ คำลงท้ายอยู่คอลัมน์นั้น
      ความกว้างรวมของแถวเท่าเดิม ตำแหน่งแถวลงชื่อจึงไม่ขยับ ขยับเฉพาะคำลงท้าย
      ระยะแนวตั้งคงเดิม: เหนือคำลงท้าย 6mm · คำลงท้ายถึงช่องลงชื่อ 8mm (ไล่ไว้ให้ใบจบ 1 หน้า เทสต์ request-form-regards-centered-on-name)
-     กรอบเดียวกันห้ามขาดหน้า คำลงท้ายจึงไม่ถูกทิ้งไว้โดดเดี่ยวห่างจากลายมือชื่อ */
-  .request-close {
-    display: grid; grid-template-columns: auto minmax(${REQUESTER_LINE_W}, auto) auto; justify-content: center;
-    row-gap: 8mm; margin-top: 6mm; break-inside: avoid; page-break-inside: avoid;
-  }
-  .request-close .form-regards { grid-column: 2; text-align: center; white-space: nowrap; }
-  .request-close .request-sign, .request-close .request-sign .sign-row {
-    display: grid; grid-column: 1 / -1; grid-template-columns: subgrid;
+     กรอบเดียวกันห้ามขาดหน้า คำลงท้ายจึงไม่ถูกทิ้งไว้โดดเดี่ยวห่างจากลายมือชื่อ
+     ⚠️ ส่วน subgrid ต้องอยู่ใน @supports เสมอ — เบราว์เซอร์ที่ไม่รู้จัก subgrid (Chrome ก่อน 117 เช่นเครื่อง Windows 7/8 ที่ค้างรุ่น 109)
+     จะทิ้งกฎ grid-template-columns: subgrid แล้วแถวลงชื่อพังเป็นป้าย/เส้น/คำต่อท้ายซ้อนเป็นแถวตั้ง (แย่กว่าอาการเอียงเดิม)
+     นอก @supports จึงเป็นเลย์เอาต์เดิมทุกอย่าง (คำลงท้ายจัดกลางหน้า เยื้อง ~4.7mm) */
+  .request-close { margin-top: 6mm; break-inside: avoid; page-break-inside: avoid; }
+  .request-close .form-regards { text-align: center; }
+  .request-close .request-sign { margin-top: 8mm; }
+  @supports (grid-template-columns: subgrid) {
+    .request-close {
+      display: grid; grid-template-columns: auto minmax(${REQUESTER_LINE_W}, auto) auto; justify-content: center; row-gap: 8mm;
+    }
+    .request-close .form-regards { grid-column: 2; white-space: nowrap; }
+    .request-close .request-sign { margin-top: 0; }
+    .request-close .request-sign, .request-close .request-sign .sign-row {
+      display: grid; grid-column: 1 / -1; grid-template-columns: subgrid;
+    }
   }
 `
 }

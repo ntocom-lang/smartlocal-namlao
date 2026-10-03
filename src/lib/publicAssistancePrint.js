@@ -315,19 +315,26 @@ export function buildPublicAssistanceRequestHtml({
     }
 
     /* ช่องลงนามทั้งใบใช้ของกลาง govSignBlock.js — ตรงนี้เหลือแค่ตำแหน่งของกลุ่มบนหน้ากระดาษ */
-    .signature { margin: 0.5mm 0 3mm auto; width: 118mm; }
+    .signature { margin: 1.5mm 0 3mm auto; width: 118mm; }
     /* คำลงท้ายต้องอยู่กึ่งกลางเหนือ "ชื่อผู้ยื่น" พอดี (เจ้าของระบบสั่ง 2569-10-03 ตามใบคำขอรถรับ-ส่ง — เดิมเยื้อง 8.14mm ชื่อเอียงขวา)
        ⚠️ ห้ามกลับไปจัดกลางหน้า (.regards เต็มพื้นที่พิมพ์) — กล่อง .signature ชิดขวา 118mm ชื่อจึงอยู่กลางแกนที่ไม่ใช่กลางหน้า
        ⚠️ ห้ามแก้ด้วยการเลื่อนเป็นตัวเลขตายตัว — ความกว้าง "(ลงชื่อ)" และแกนที่ยืดตามชื่อเปลี่ยนตามฟอนต์/ชื่อ
        ที่ถูกคือให้คำลงท้ายกับแถวลงชื่อใช้คอลัมน์เดียวกัน (subgrid): คอลัมน์กลางคือแกนของชื่อเสมอ คำลงท้ายอยู่คอลัมน์นั้น
        แถวลงชื่อยังชิดซ้ายของกล่องเหมือนเดิม ไม่ขยับ ขยับเฉพาะคำลงท้าย · ระยะแนวตั้งคงเดิม (0.5mm เหนือคำลงท้าย · 1.5mm ถึงช่องลงชื่อ)
-       เทสต์ regards-centered-on-applicant-name (วัดในโหมดจอ ดู ⚠️ หัวไฟล์เทสต์เลย์เอาต์) */
-    .signature {
-      display: grid; grid-template-columns: auto minmax(${SIGN_LINE_W}, auto) auto; justify-content: start;
-      row-gap: 1.5mm; break-inside: avoid; page-break-inside: avoid;
+       เทสต์ regards-centered-on-applicant-name (วัดในโหมดจอ ดู ⚠️ หัวไฟล์เทสต์เลย์เอาต์)
+       ⚠️ ส่วน subgrid ต้องอยู่ใน @supports เสมอ — เบราว์เซอร์ที่ไม่รู้จัก subgrid (Chrome ก่อน 117 เช่นเครื่อง Windows 7/8 ที่ค้างรุ่น 109)
+       จะทิ้งกฎ grid-template-columns: subgrid แล้วแถวลงชื่อพังเป็นป้าย/เส้น/คำต่อท้ายซ้อนเป็นแถวตั้ง (แย่กว่าอาการเอียงเดิม)
+       นอก @supports จึงเป็นเลย์เอาต์เดิมทุกอย่าง (.regards จัดกลางหน้า .signature ชิดขวา) */
+    .close-sign { break-inside: avoid; page-break-inside: avoid; }
+    @supports (grid-template-columns: subgrid) {
+      .close-sign {
+        display: grid; grid-template-columns: auto minmax(${SIGN_LINE_W}, auto) auto; justify-content: start;
+        width: 118mm; margin: 0.5mm 0 3mm auto; row-gap: 1.5mm;
+      }
+      .close-sign .regards { grid-column: 2; margin: 0; white-space: nowrap; }
+      .close-sign .signature { margin: 0; width: auto; }
+      .close-sign .signature, .close-sign .signature .sign-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
     }
-    .signature .regards { grid-column: 2; margin: 0; white-space: nowrap; }
-    .signature .sign-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
 ${govSignBlockCss()}
     .signed-note { margin: auto 0 0; font-size: 10pt; color: #333; white-space: normal; line-height: 1.2; }
     /* เปิดตารางท้ายใบเมื่อไหร่ ตารางเป็นตัวยึดขอบล่างแทน (ดู .officer) บรรทัดนี้จึงต่อท้ายตาราง
@@ -433,18 +440,22 @@ ${govSignBlockCss()}
     ${writeLines(data.need, includeOfficerBlock ? 3 : 6)}
 
     <p class="closing">จึงเรียนมาเพื่อโปรดพิจารณาให้ความช่วยเหลือ</p>
-    <section class="signature">
+    <!-- คำลงท้ายกับช่องลงชื่ออยู่กล่องเดียวกันเพื่อใช้คอลัมน์ร่วมกัน (ดูเหตุผลที่ .close-sign) ลำดับในเอกสารยังเดิม -->
+    <div class="close-sign">
       <p class="regards">ขอแสดงความนับถือ</p>
-      ${govSignRow({
-        width: SIGN_LINE_W,
-        label: '(ลงชื่อ)',
-        // grow: ช่องเดี่ยวที่มีคำต่อท้าย ชื่อยาวกว่าแกนต้องดันคำต่อท้ายออก ไม่ใช่พิมพ์ทับ
-        grow: true,
-        role: 'ผู้ขอความช่วยเหลือ',
-        signed: signedOnline ? esc(applicantName) : '',
-        below: [applicantName ? `(${esc(applicantName)})` : govNameBlank(SIGN_LINE_W)],
-      })}
-    </section>
+
+      <section class="signature">
+        ${govSignRow({
+          width: SIGN_LINE_W,
+          label: '(ลงชื่อ)',
+          // grow: ช่องเดี่ยวที่มีคำต่อท้าย ชื่อยาวกว่าแกนต้องดันคำต่อท้ายออก ไม่ใช่พิมพ์ทับ
+          grow: true,
+          role: 'ผู้ขอความช่วยเหลือ',
+          signed: signedOnline ? esc(applicantName) : '',
+          below: [applicantName ? `(${esc(applicantName)})` : govNameBlank(SIGN_LINE_W)],
+        })}
+      </section>
+    </div>
 
     <!-- ⚠️ บรรทัดกำกับที่มาของใบต้องอยู่ล่างสุดของหน้า ไม่ใช่ใต้ลายมือชื่อ (ผู้ใช้ระบบสั่งย้าย
          2569-09-09) — เป็นข้อความของระบบ ไม่ใช่ส่วนหนึ่งของคำร้องที่ผู้ยื่นลงนามรับรอง
