@@ -382,9 +382,30 @@ function formCss() {
   .form-para { text-indent: 2.5cm; text-align: left; margin-top: 3mm; }
   .evidence { margin-top: 4mm; }
   .form-closing { margin-top: 4mm; }
-  /* คำลงท้ายอยู่กึ่งกลางหน้า แนวเดียวกับช่องลงนามผู้ยื่นที่จัดกลางหน้า (.center-row) */
-  .form-regards { text-align: center; margin-top: 6mm; }
-  .request-sign { margin-top: 8mm; break-inside: avoid; }
+  /* คำลงท้ายต้องอยู่กึ่งกลางเหนือ "ชื่อผู้ยื่น" พอดี (เจ้าของระบบแจ้ง 2569-10-03 จากใบจริงที่เยื้อง ~4.7mm)
+     ⚠️ ห้ามกลับไปจัดกลางหน้า (text-align: center ของ <p> เต็มพื้นที่พิมพ์) — แถวลงชื่อจัดกลางหน้าทั้งแถว
+     ("ลงชื่อ" + แกน + "ผู้ยื่นคำขอ") แต่คำว่า "ลงชื่อ" กับ "ผู้ยื่นคำขอ" กว้างไม่เท่ากัน แกนของชื่อจึงเยื้องจากกลางหน้า
+     ⚠️ ห้ามแก้ด้วยการเลื่อนเป็นตัวเลขตายตัว — ความกว้างสองคำนั้นขึ้นกับฟอนต์ที่เครื่องมี และแกนยืดตามชื่อที่ยาวได้
+     ที่ถูกคือให้คำลงท้ายกับแถวลงชื่อใช้ "คอลัมน์เดียวกัน" (subgrid): คอลัมน์กลางคือแกนของชื่อเสมอ คำลงท้ายอยู่คอลัมน์นั้น
+     ความกว้างรวมของแถวเท่าเดิม ตำแหน่งแถวลงชื่อจึงไม่ขยับ ขยับเฉพาะคำลงท้าย
+     ระยะแนวตั้งคงเดิม: เหนือคำลงท้าย 6mm · คำลงท้ายถึงช่องลงชื่อ 8mm (ไล่ไว้ให้ใบจบ 1 หน้า เทสต์ request-form-regards-centered-on-name)
+     กรอบเดียวกันห้ามขาดหน้า คำลงท้ายจึงไม่ถูกทิ้งไว้โดดเดี่ยวห่างจากลายมือชื่อ
+     ⚠️ ส่วน subgrid ต้องอยู่ใน @supports เสมอ — เบราว์เซอร์ที่ไม่รู้จัก subgrid (Chrome ก่อน 117 เช่นเครื่อง Windows 7/8 ที่ค้างรุ่น 109)
+     จะทิ้งกฎ grid-template-columns: subgrid แล้วแถวลงชื่อพังเป็นป้าย/เส้น/คำต่อท้ายซ้อนเป็นแถวตั้ง (แย่กว่าอาการเอียงเดิม)
+     นอก @supports จึงเป็นเลย์เอาต์เดิมทุกอย่าง (คำลงท้ายจัดกลางหน้า เยื้อง ~4.7mm) */
+  .request-close { margin-top: 6mm; break-inside: avoid; page-break-inside: avoid; }
+  .request-close .form-regards { text-align: center; }
+  .request-close .request-sign { margin-top: 8mm; }
+  @supports (grid-template-columns: subgrid) {
+    .request-close {
+      display: grid; grid-template-columns: auto minmax(${REQUESTER_LINE_W}, auto) auto; justify-content: center; row-gap: 8mm;
+    }
+    .request-close .form-regards { grid-column: 2; white-space: nowrap; }
+    .request-close .request-sign { margin-top: 0; }
+    .request-close .request-sign, .request-close .request-sign .sign-row {
+      display: grid; grid-column: 1 / -1; grid-template-columns: subgrid;
+    }
+  }
 `
 }
 
@@ -608,19 +629,22 @@ function formSheet({
 
   <!-- คำลงท้ายแบบเดียวกับแบบคำร้องใบอื่นของระบบที่ประชาชนยื่นต่อนายก (ใบขอรับการช่วยเหลือ ใบเก็บขนขยะ) -->
   <p class="form-para form-closing">จึงเรียนมาเพื่อโปรดพิจารณาให้ความอนุเคราะห์</p>
-  <p class="form-regards">ขอแสดงความนับถือ</p>
+  <!-- คำลงท้ายกับช่องลงชื่ออยู่กล่องเดียวกันเพื่อใช้คอลัมน์ร่วมกัน (ดูเหตุผลที่ .request-close) ลำดับในเอกสารยังเดิม -->
+  <div class="request-close">
+    <p class="form-regards">ขอแสดงความนับถือ</p>
 
-  <div class="sign-block center-row request-sign">
-    ${govSignRow({
-      width: REQUESTER_LINE_W,
-      // grow: ช่องเดี่ยวที่มีคำต่อท้าย ชื่อยาวกว่าแกนต้องดันคำต่อท้ายออก ไม่ใช่พิมพ์ทับ
-      grow: true,
-      role: 'ผู้ยื่นคำขอ',
-      // พิมพ์ชื่อบนเส้นทุกกรณี — ไม่มีชื่อจริงๆ (คำขอเก่าที่ไม่ได้กรอก) จึงตกไปเป็นเส้นให้เขียนมือ
-      signed: requesterName ? esc(requesterName) : '',
-      below: [signatureName(requesterName, REQUESTER_LINE_W)],
-    })}
-    <!-- ⚠️ ใต้ชื่อไม่มีบรรทัดกำกับ ทุกช่องทาง — เจ้าของระบบสั่งตัด 2569-10-02 ดูคำอธิบายหัวฟังก์ชัน -->
+    <div class="sign-block center-row request-sign">
+      ${govSignRow({
+        width: REQUESTER_LINE_W,
+        // grow: ช่องเดี่ยวที่มีคำต่อท้าย ชื่อยาวกว่าแกนต้องดันคำต่อท้ายออก ไม่ใช่พิมพ์ทับ
+        grow: true,
+        role: 'ผู้ยื่นคำขอ',
+        // พิมพ์ชื่อบนเส้นทุกกรณี — ไม่มีชื่อจริงๆ (คำขอเก่าที่ไม่ได้กรอก) จึงตกไปเป็นเส้นให้เขียนมือ
+        signed: requesterName ? esc(requesterName) : '',
+        below: [signatureName(requesterName, REQUESTER_LINE_W)],
+      })}
+      <!-- ⚠️ ใต้ชื่อไม่มีบรรทัดกำกับ ทุกช่องทาง — เจ้าของระบบสั่งตัด 2569-10-02 ดูคำอธิบายหัวฟังก์ชัน -->
+    </div>
   </div>
 
   <!-- ⚠️ ไม่มีกล่อง "สำหรับคณะกรรมการกองทุน" (ความเห็น / อนุมัติ–ไม่อนุมัติ / ช่องลงนามประธานและเหรัญญิก) โดยเจตนา —
