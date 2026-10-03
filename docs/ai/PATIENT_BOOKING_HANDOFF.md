@@ -384,3 +384,101 @@ npm run lint:blocking
 ไม่มี integration ตรวจ conflict กับรถในโมดูล fleet อื่นและไม่ย้ายคำขอประชาชนอัตโนมัติ
 ค่าใช้จ่ายเพิ่ม 0: ใช้ dependencies/Cloudflare Workers Free/Supabase เดิม และ GitHub standard runner ของ public repo
 ภาระเพิ่มเฉพาะตั้งกฎครั้งแรก/ทบทวนเมื่อเปลี่ยน เจ้าหน้าที่ตรวจข้อผิดพลาดในกล่องคำขอแล้วแก้หลังประสานพร้อม audit
+
+## Community activation preparation (2026-10-03)
+
+รอบต่อจาก frontend release `b334ef57` ตามคำสั่ง "ทำต่อได้เลย" แก้เฉพาะเทสต์ใหม่สองไฟล์และ handoff นี้
+ไม่แก้ runtime, ไม่เพิ่ม/apply migration, ไม่เปิด tenant จริง และไม่เพิ่ม dependency/service
+หลักฐานอยู่ `D:/tmp/community-transport-activation-20261003`
+
+### Stale-tab evidence — activation gate remains open
+
+`tests/community-transport-stale-tab.test.mjs` ทดสอบใน Chrome จริงบน HTTP server ในเครื่อง
+ใช้ reload handler จาก `src/main.jsx` ของ baseline `0ad22d2e` กับปัจจุบัน (เหมือนกันเมื่อ normalize CRLF)
+และ bundle `src/sw.js`/Workbox กับ print builders เก่าและปัจจุบันด้วย esbuild เดิม
+มีแต่ fixture `[TEST]` ไม่ต่อ Supabase; ปิดการขอ URL ภายนอก
+
+ผ่าน 6 checks: แท็บเก่าสองแท็บที่ออนไลน์และถูก SW ควบคุม reload เมื่อ worker ใหม่ activate แล้ว
+print builder ปัจจุบันปฏิเสธการพิมพ์ข้อมูลชุมชนด้วยแบบผู้ป่วย; แท็บที่ block SW ยังเก่าแม้ deployment/focus
+และยังสร้างแบบผู้ป่วยได้; reload ออนไลน์แก้ได้; เมื่อ endpoint update เข้าไม่ได้ แท็บที่ถูก SW ควบคุมยังใช้ printer เก่าได้
+และ reconnect+update แก้ได้; ไม่มี request ออกนอก localhost
+การจำลอง offline ใช้ page offline ร่วมกับ local worker endpoint 503 เพราะ worker ของ Chrome อาจไม่อยู่ใต้ page-level interception
+**ผลเทสต์ผ่านคือยืนยันช่องว่าง ไม่ใช่ผ่าน universal stale-tab safety หรือทดสอบโทรศัพท์จริง**
+
+```powershell
+$env:COMMUNITY_ACTIVATION_EVIDENCE='D:/tmp/community-transport-activation-20261003'
+node tests/community-transport-stale-tab.test.mjs
+```
+
+### Two-account Demo race runner
+
+`tests/community-transport-demo-race.playwright.mjs` โหมดปกติ read-only ตรวจ slug=demo, session ของบัญชี TEST
+สองบัญชีที่ auth user ID ต่างกันและมี role admin/coordinator อยู่แล้ว รถพร้อมและวันว่างสามวัน
+ไม่เพิ่มบัญชี ไม่เปลี่ยนสิทธิ์ ไม่อ่าน/บันทึก password/token ออกนอก memory และไม่ใช้ service_role
+Chrome TEST profiles อยู่ในเครื่องเท่านั้น; ชื่อ alias/ผลสิทธิ์ที่แสดงไม่มีชื่อบุคคลหรือ user ID
+
+`--write` เปิดเฉพาะ community rules ของ Demo ชั่วคราวด้วยกิจกรรม/สถานที่ `[TEST]`
+ทดสอบผู้ป่วยกับชุมชนยืนยันชนกันสองรอบ สลับผู้กดแต่ละบริการ ต้องมีเที่ยวเดียวและใบแพ้อยู่ submitted ไม่มี trip
+ตรวจ HTTP request lifetimes ซ้อนกัน, confirmed_by ของผู้ชนะ และประวัติยืนยันครั้งเดียว
+รอบที่สามใช้ trip ID เดียวกันจากสองบัญชี: ต้องยอมรับบัญชีผู้ยืนยันจริงบัญชีเดียว อีกบัญชีถูกปฏิเสธ
+และผู้ชนะ retry ด้วย ID เดิมได้ (idempotency ผูกกับ actor ไม่ใช่แชร์รหัสระหว่างบัญชี)
+ไม่อ้างว่าได้สังเกต PostgreSQL backend PID หรือ lock wait โดยตรง
+
+ก่อน HTTP write ทุกครั้งตรวจ tenant slug และเขียน durable journal ของ ID/config ที่จำเป็น ไม่มี token
+finally คืนเที่ยวก่อนออกรถและยกเลิกเฉพาะ booking IDs ของรอบนั้น ตรวจ `[TEST]` prefix และสมาชิกเที่ยวทุกคนก่อน cleanup
+คืน rules เดิมด้วย revision CAS; ถ้า session อื่นเปลี่ยน rules จะปฏิเสธการเขียนทับและรายงานให้ผู้ดูแลแก้
+แถวทดสอบที่ยกเลิกกับ audit คงอยู่ ไม่ DELETE และไม่ทำเครื่องหมายเที่ยวว่าเดินรถจริง
+เทสต์นี้ต้องรันในเครื่องโดย explicit `--write` เท่านั้น ไม่รัน live write ใน CI
+
+```powershell
+$env:PT_PROFILE_ROOT='D:/VS Code/E-Service/SmartLocal v1.1/.chrome-test-profiles'
+$env:PT_RACE_PROFILES='admin,superadmin'
+$env:COMMUNITY_ACTIVATION_EVIDENCE='D:/tmp/community-transport-activation-20261003'
+node tests/community-transport-demo-race.playwright.mjs          # read-only
+# login ด้วยตนเองเมื่อ session หมดอายุ; ไม่ส่งรหัสผ่านหรือ token ให้ agent
+$env:PT_INTERACTIVE_PROFILE='superadmin'
+node tests/community-transport-demo-race.playwright.mjs          # เปิดหน้าต่าง TEST-superadmin ให้ login
+Remove-Item Env:PT_INTERACTIVE_PROFILE -ErrorAction SilentlyContinue
+node tests/community-transport-demo-race.playwright.mjs --write
+# หลัง interruption ใช้ journal ของรอบนั้นเท่านั้น ไม่สแกน/ยกเลิกตามชื่อกว้างๆ
+node tests/community-transport-demo-race.playwright.mjs --cleanup 'D:/tmp/community-transport-activation-20261003/demo-race-<tag>.json'
+```
+
+สถานะตรวจบัญชีในรอบนี้: TEST-admin เป็น admin; TEST-officer, TEST-staff และบัญชี TEST ฝ่ายอื่นที่ตรวจเป็น citizen
+TEST-fleet-admin เป็น driver; TEST-superadmin ต้อง login ใหม่ เจ้าของระบบเลือก login โปรไฟล์นี้แล้ว
+**ยังไม่ผ่าน race gate จนมีรายงาน write-mode passed=true พร้อม cleanup และ restore สำเร็จ**
+Catalog preflight แบบ read-only ตรงกับ post-deploy ทุก field: 51 functions, 34 bookings, community 0,
+rules 0, enabled rules 0, fingerprint `7600c626680fbdffbad4c6cde15f2231`
+
+### Proposed next phase — legacy RPC gate (await phase approval)
+
+ข้อเสนอเชิงวิศวกรรม: เพิ่ม private view version สำหรับ client ปัจจุบันและให้ legacy endpoints แจ้งโหลดใหม่
+ก่อนส่งข้อมูลชุมชน แทนพึ่ง SW เพียงชั้นเดียว ทำให้แท็บเก่าที่เปิดก่อนมีคำขอชุมชนไม่โหลดข้อมูลใหม่ไปพิมพ์ผิดแบบ
+ไม่มีขั้นยืนยันงานเพิ่ม: reload ครั้งเดียวเมื่อเจอข้อความ upgrade แล้วกลับไปจัดคิวตามเดิม
+เมื่อปิด intake งานที่รับไว้ยังทำต่อทาง v2 ได้; ไม่เปลี่ยน scheduler/การตัดสินใจ/ข้อมูลคำขอ
+
+ไฟล์ที่เสนอ (7 ไฟล์; ต้องอนุมัติแยกก่อนลงมือ):
+
+1. `supabase/migrations/20261003150000_patient_booking_service_views_v2.sql`: สร้าง `patient_booking_workspace_v2`/`patient_booking_mine_v2`
+   จากนิยามล่าสุดเต็มทุกบรรทัด ตรวจ md5 กับ catalog, authz/tenant และ REVOKE/GRANT เหมือนเดิม
+2. `supabase/migrations/20261003150100_patient_booking_legacy_client_gate.sql`: legacy workspace/mine ตรวจ role/tenant ก่อน
+   ปฏิเสธด้วยข้อความโหลดใหม่เมื่อกำลังเปิดบริการชุมชนหรือ projection ของผู้เรียกมีงานชุมชนที่ยังอยู่ในช่วงแสดงผล
+   หากไม่มีข้อมูลชุมชนใช้ผล patient เดิมจาก v2; ไม่เปิด flag ไม่ย้ายหรือลบคำขอ
+3. `src/hooks/usePatientBooking.js`: เลือก private RPC v2 และแสดงเหตุโหลดใหม่/ล้างข้อมูลเมื่ออ่านไม่ได้ โดยคง citizen/mine กับ staff/workspace แยกกัน
+4. `tests/patient-booking-community-booking.test.mjs`: legacy/v2 เมื่อเปิด-ปิด flag, งานค้าง, tenant/role/ACL/helper denial และ patient regression
+5. `tests/patient-booking-browser.test.mjs`: actual React + isolated DB ทดสอบแท็บเก่าอ่านไม่ได้ก่อนพิมพ์ และ client v2 ทำงานผู้ป่วย/ชุมชนได้
+   อัปเดต RPC routing mocks; existing module CI รันสองไฟล์นี้อยู่แล้ว ไม่แก้ workflow
+6. `tests/community-transport-demo-race.playwright.mjs`: เปลี่ยน workspace เป็น v2 หลัง backend/client รุ่นที่อนุมัติ live แล้ว
+7. `docs/ai/PATIENT_BOOKING_HANDOFF.md`: dependency, release/rollback order, หลักฐาน และ checklist โทรศัพท์จริง
+
+นิยามฐานจริง preflight: workspace `e5ce1f20886c6df4a60f4273bdf838a8`, mine `d69773d7616d9eaf9a83662e9c8a96a8`
+ต้องอ่าน catalog ใหม่ก่อนเขียนจริง ห้ามใช้ hash นี้เป็นหลักฐานปัจจุบันถ้ามี migration อื่นเข้ามา
+ลำดับ: ทดสอบ isolated DB/browser → ส่ง SQL diff ตรวจ → apply เฉพาะที่อนุมัติขณะ flag ปิด
+→ CI deploy v2 → smoke ทั้งสอง host/เปิดแท็บเก่าทดลอง Demo → เปิด tenant เฉพาะที่ระบุหลัง authority/document/phone gates ผ่าน
+Rollback client ไม่เปิดรับเพิ่มและไม่ย้อน schema/ข้อมูล; ใช้ client ที่รองรับ v2 ต่อเพื่อจบงานชุมชนที่ค้าง
+
+ข้อดี: กันข้อมูลใหม่เข้าหน้าพิมพ์เก่าที่ไม่รู้ชนิดบริการ, ตรวจย้อนได้, ลดการไล่ปิดแท็บรายคน
+ข้อเสีย: client เก่าต้อง reload และต้องดูแล RPC สองชื่อช่วงเปลี่ยนผ่าน; หาก RPC ตัดผิด เจ้าหน้าที่เห็นข้อความโหลดใหม่
+ผู้ดูแลตรวจ version/tenant/config แล้วแก้ตาม audit โดยไม่แก้สิทธิ์หรือย้ายคำขออัตโนมัติ
+ไม่มี license/cloud/dependency ใหม่; ใช้ Supabase/React/Workbox/esbuild เดิม ภาระดูแลเพิ่มเฉพาะช่วง version transition
+การรับรองอำนาจใช้รถ คำสั่งนอกเวลา ถ้อยคำหนังสือ และการยืนยันบนโทรศัพท์จริงยังเป็น gate แยก
