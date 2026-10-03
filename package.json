@@ -61,6 +61,7 @@
     "test:council": "node tests/complaint-print-routing.test.mjs && node tests/council-form-layout.test.mjs",
     "test:asset-borrow": "node tests/asset-borrow-print.test.mjs && node tests/asset-borrow-layout.test.mjs",
     "test:patient-transport": "node tests/patient-transport-layout.test.mjs",
+    "test:regards-alignment": "node tests/regards-alignment.test.mjs",
     "test:staff-inbox": "node tests/staff-inbox-layout.playwright.mjs",
     "test:telegram": "node tests/telegram-notification-message.test.mjs",
     "test:complaint-intake": "node tests/complaint-intake.test.mjs",
