@@ -25,7 +25,7 @@ import {
   PROBLEM_MAX_CHARS,
   buildPublicAssistanceRequestHtml,
 } from '../src/lib/publicAssistancePrint.js'
-import { assertSignBlockStandard } from './lib/signBlockChecks.mjs'
+import { assertSignBlockStandard, measureSignRows, measureTextCenterMm } from './lib/signBlockChecks.mjs'
 
 const TENANT = {
   name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว',
@@ -376,6 +376,45 @@ const checks = [
         assert.equal(pdfPageCount(pdf), 3, '40 รายชื่อต้องได้ 3 แผ่น: คำร้อง 1 + แนบท้าย 2')
       } finally {
         await page.close()
+      }
+    },
+  },
+  {
+    // เจ้าของระบบสั่ง 2569-10-03 (ตามใบคำขอรถรับ-ส่ง): "ขอแสดงความนับถือ" ต้องอยู่ตรงชื่อผู้ยื่น — เดิมเยื้อง 8.14mm (ชื่อเอียงขวา)
+    // ต้นเหตุ: คำลงท้ายจัดกลางพื้นที่พิมพ์ แต่ .signature ชิดขวา (118mm) ชื่อจึงอยู่กลางแกนที่เยื้องไปทางขวา
+    // ⚠️ วัดในโหมดจอเท่านั้น (ดู ⚠️ หัวไฟล์) · ต้องวัดกล่องตัวอักษรจริง (Range) ห้ามวัดกล่องของ <p>
+    name: 'regards-centered-on-applicant-name',
+    reason: 'คำลงท้าย "ขอแสดงความนับถือ" ต้องอยู่กึ่งกลางเหนือชื่อผู้ยื่นพอดี ทั้งชื่อยาว ชื่อสั้น ลงชื่อออนไลน์/เคาน์เตอร์ และใบเปล่า'
+      + ' · แถวลงชื่อต้องไม่ขยับ (ชิดซ้ายของกล่อง .signature เหมือนเดิม) และระยะคำลงท้ายถึงช่องลงชื่อคง 1.5mm',
+    async run(browser) {
+      const SHORT = { title: 'นาย', first: 'สมชาย', last: 'ใจดี' }
+      const cases = [
+        ['ออนไลน์ ชื่อยาว', longForm()],
+        ['เคาน์เตอร์', longForm({ signed_by: { channel: 'counter', name: 'นางสาวประกายมาศ ศรีวิชัยเลิศสกุล' } })],
+        ['ชื่อสั้น', longForm({
+          applicant: { ...SHORT, phone: '081-234-5678', id_card: '1234567890123', addr_no: '199/25', addr_moo: '12',
+            addr_subdistrict: 'ทุ่งแค้ว', addr_district: 'หนองม่วงไข่', addr_province: 'แพร่' },
+          signed_by: { channel: 'online', name: 'นายสมชาย ใจดี' },
+        })],
+        ['ใบเปล่า', BLANK_FORM],
+      ]
+      for (const [label, form] of cases) {
+        const page = await render(browser, form, { departments: DEPARTMENTS, signatories: SIGNATORIES })
+        try {
+          const rows = await measureSignRows(page)
+          assert.ok(rows.length >= 1, `${label}: ต้องมีช่องลงนามผู้ยื่น`)
+          const name = rows[0].below[0]
+          const offset = (await measureTextCenterMm(page, '.regards')) - name.centerMm
+          assert.ok(Math.abs(offset) <= 0.5, `${label}: "ขอแสดงความนับถือ" เยื้องจากกึ่งกลางชื่อ ${offset.toFixed(2)}mm (ต้องไม่เกิน 0.5mm)`)
+          const geometry = await page.evaluate(mm => {
+            const regards = document.querySelector('.regards').getBoundingClientRect()
+            const signature = document.querySelector('.signature').getBoundingClientRect()
+            const row = document.querySelector('.signature .sign-row').getBoundingClientRect()
+            return { gap: (row.top - regards.bottom) / mm, rowShift: (row.left - signature.left) / mm }
+          }, 3.779527)
+          assert.ok(Math.abs(geometry.gap - 1.5) <= 0.3, `${label}: ระยะคำลงท้ายถึงช่องลงชื่อ ${geometry.gap.toFixed(2)}mm (ต้องคง 1.5mm)`)
+          assert.ok(Math.abs(geometry.rowShift) <= 0.3, `${label}: แถวลงชื่อต้องชิดซ้ายของกล่อง .signature เหมือนเดิม (ขยับ ${geometry.rowShift.toFixed(2)}mm)`)
+        } finally { await page.close() }
       }
     },
   },
