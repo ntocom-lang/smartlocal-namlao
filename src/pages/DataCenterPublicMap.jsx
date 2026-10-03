@@ -1,28 +1,28 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Home, Database, Layers, MapPin } from 'lucide-react'
+import { ArrowLeft, Home, Database, Layers, CalendarClock } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 import { supabase } from '../lib/supabase'
 import DataCenterMapView from '../components/datacenter/DataCenterMapView'
+import OpenDataDownload from '../components/datacenter/OpenDataDownload'
+import { formatThaiDate } from '../lib/dataCenterHealth'
 
-// สถิติรวมสาธารณะ — เอาแค่คอลัมน์เบาที่จำเป็นต่อการนับ (group_name/latitude/route_points)
-// RLS "dce public read active" (152_data_center_public_read.sql) เปิดให้ anon อ่านแถว status='active'
-// ของเทศบาลตัวเองอยู่แล้ว จึงกรอง .eq('status','active') ซ้ำที่ client เพื่อความชัดเจน ไม่ใช่รูรั่วใหม่
+// สถิติรวมสาธารณะ — นับที่ฐานข้อมูลด้วย RPC data_center_public_stats (เฉพาะรายการ active ตามนโยบาย RLS
+// "dce public read active") เดิมดึง group_name/latitude/route_points "ทุกแถว" มานับในเบราว์เซอร์ ซึ่งชนเพดาน
+// 1,000 แถวของ PostgREST แล้วตัวเลขต่ำกว่าจริงเงียบๆ และลากข้อมูลเส้นทาง (jsonb หนัก) มาทุกครั้งที่เปิดหน้า
+// ถ้าฟังก์ชันยังไม่พร้อม (error) จะไม่แสดงชิปสถิติเลย ไม่แสดงตัวเลขปลอม
 function useDataCenterPublicStats(tenantId) {
   const [stats, setStats] = useState(null)
 
   useEffect(() => {
     if (!tenantId) return
-    supabase.from('data_center_entries')
-      .select('group_name, latitude, route_points')
-      .eq('municipality_id', tenantId)
-      .eq('status', 'active')
+    let alive = true
+    supabase.rpc('data_center_public_stats', { _municipality_id: tenantId })
       .then(({ data, error }) => {
-        if (error || !data) return
-        const groups = new Set(data.map(e => e.group_name))
-        const mapped = data.filter(e => e.latitude != null || (e.route_points?.length ?? 0) > 0).length
-        setStats({ total: data.length, categories: groups.size, mapped })
+        if (!alive || error || !data) return
+        setStats({ total: data.total ?? 0, groups: data.groups ?? 0, latestUpdate: data.latest_update ?? null })
       })
+    return () => { alive = false }
   }, [tenantId])
 
   return stats
@@ -65,8 +65,15 @@ export default function DataCenterPublicMap() {
         {stats && (
           <div className="flex items-center gap-2 mt-3">
             <StatChip Icon={Database} value={stats.total} label="ข้อมูลทั้งหมด" />
-            <StatChip Icon={Layers} value={stats.categories} label="หมวดหมู่" />
-            <StatChip Icon={MapPin} value={stats.mapped} label="มีพิกัด/เส้นทาง" />
+            <StatChip Icon={Layers} value={stats.groups} label="หมวดหมู่" />
+            {stats.latestUpdate && <StatChip Icon={CalendarClock} value={formatThaiDate(stats.latestUpdate)} label="ปรับปรุงล่าสุด" />}
+          </div>
+        )}
+        {/* ข้อมูลเปิด: ชุดเดียวกับที่แสดงบนแผนที่นี้อยู่แล้ว (รายการที่เปิดใช้งาน) ให้นำไปใช้ต่อใน GIS/Excel ได้เอง */}
+        {tenant?.id && (
+          <div className="flex flex-wrap items-center gap-2 mt-2.5">
+            <span className="text-[10px] font-bold text-white/70">ข้อมูลเปิด ดาวน์โหลดได้:</span>
+            <OpenDataDownload tenant={tenant} variant="hero" />
           </div>
         )}
       </header>

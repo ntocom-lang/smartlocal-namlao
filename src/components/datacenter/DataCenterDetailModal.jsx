@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import {
   X, MapPin, ExternalLink, Calendar, Building2, Copy, Check, Pencil,
-  Image as ImageIcon, FileText, Globe, Route, Eye, EyeOff, Maximize2
+  Image as ImageIcon, FileText, Globe, Route, Eye, EyeOff, Maximize2, BadgeCheck
 } from 'lucide-react'
 import CategoryIcon from './CategoryIcon'
 import LeafletMapCanvas from '../common/LeafletMapCanvas'
 import { resolveEntryEmoji, resolveGroupEmoji, isIconImage } from '../../lib/dataCenterGroupIcon'
+import { safeHttpUrl } from '../../lib/dataCenterExport'
+import { formatAgo } from '../../lib/dataCenterHealth'
 
 function withAlpha(hex, alpha) {
   if (!hex || !hex.startsWith('#')) return `rgba(100, 116, 139, ${alpha})`
@@ -32,6 +34,8 @@ export default function DataCenterDetailModal({
   onEdit,
   onViewOnMap,
   onToggleStatus,
+  onVerify,
+  canVerify = false,
   departments = [],
   groupIconOverrides = {},
   theme = 'light',
@@ -40,6 +44,7 @@ export default function DataCenterDetailModal({
   const [copied, setCopied] = useState(false)
   const [previewPhoto, setPreviewPhoto] = useState(null)
   const [statusUpdating, setStatusUpdating] = useState(false)
+  const [verifying, setVerifying] = useState(false)
 
   const isLight = theme === 'light'
 
@@ -50,6 +55,9 @@ export default function DataCenterDetailModal({
     : 'ส่วนกลาง / ไม่ระบุกอง'
 
   if (!isOpen || !entry) return null
+
+  // ลิงก์ภายนอกมาจากการนำเข้าไฟล์ KML/GIS (ไม่ผ่านฟอร์มที่มีตัวกรอง) — เปิดเป็นลิงก์ได้เฉพาะ http(s) กัน javascript: URL
+  const externalHref = safeHttpUrl(entry.external_url)
 
   const isActive = entry.status !== 'archived'
   const entryEmoji = resolveEntryEmoji(entry.group_name, entry.category, groupIconOverrides)
@@ -91,6 +99,16 @@ export default function DataCenterDetailModal({
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
+  }
+
+  async function handleVerifyClick() {
+    if (!onVerify) return
+    setVerifying(true)
+    try {
+      await onVerify(entry)
+    } finally {
+      setVerifying(false)
+    }
   }
 
   async function handleToggleStatusClick() {
@@ -239,6 +257,31 @@ export default function DataCenterDetailModal({
             </div>
           </div>
 
+          {/* ความสดของข้อมูล: updated_at ขยับเมื่อเนื้อหาเปลี่ยนจริง · verified_at คือกดยืนยันว่ายังถูกต้อง */}
+          <div className={`flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl border text-xs ${
+            isLight ? 'bg-slate-50/70 border-slate-200/90' : 'bg-slate-950/50 border-slate-800'
+          }`}>
+            <p className={isLight ? 'text-slate-600' : 'text-slate-300'}>
+              แก้ไขเนื้อหาล่าสุด <b>{formatAgo(entry.updated_at)}</b>
+              {' · '}ตรวจทานล่าสุด <b>{entry.verified_at ? formatAgo(entry.verified_at) : 'ยังไม่เคย'}</b>
+            </p>
+            {onVerify && canVerify && (
+              <button
+                type="button"
+                onClick={handleVerifyClick}
+                disabled={verifying}
+                title="ข้อมูลยังตรงกับของจริง ไม่ต้องแก้ — บันทึกวันที่ตรวจทานและชื่อผู้ยืนยัน"
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[11px] font-bold transition-colors disabled:opacity-50 ${
+                  isLight
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                    : 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20'
+                }`}>
+                <BadgeCheck size={12} />
+                <span>{verifying ? 'กำลังบันทึก...' : 'ยืนยันว่ายังถูกต้อง'}</span>
+              </button>
+            )}
+          </div>
+
           {/* รายละเอียดเพิ่มเติม */}
           <div className={`p-4 rounded-2xl border space-y-2 ${
             isLight ? 'bg-slate-50/50 border-slate-200' : 'bg-slate-950/40 border-slate-800'
@@ -248,9 +291,9 @@ export default function DataCenterDetailModal({
                 <FileText size={15} className={isLight ? 'text-sky-600' : 'text-cyan-400'} />
                 <h3 className="font-extrabold text-xs tracking-wide">รายละเอียดและคำอธิบาย</h3>
               </div>
-              {entry.external_url && (
+              {externalHref && (
                 <a
-                  href={entry.external_url}
+                  href={externalHref}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-colors ${

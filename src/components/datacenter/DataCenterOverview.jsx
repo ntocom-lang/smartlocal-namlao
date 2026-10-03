@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Database, Layers, Radio, Globe, Sparkles, Upload, Plus, BarChart3, MapPin,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Pencil, Eye, Search, Filter, AlertCircle,
-  Download, AlertTriangle, RefreshCw, Loader2, Building2,
+  Download, AlertTriangle, RefreshCw, Loader2, Building2, HeartPulse,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import DataCenterImportModal from './DataCenterImportModal'
@@ -10,6 +10,8 @@ import DataCenterDetailModal from './DataCenterDetailModal'
 import GroupIconPicker from './GroupIconPicker'
 import CategoryIcon from './CategoryIcon'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, saveGroupIconOverride, iconKey } from '../../lib/dataCenterGroupIcon'
+import { entriesToCsv, datedFilename, downloadTextFile } from '../../lib/dataCenterExport'
+import { ISSUES, MUST_FIX_ISSUES } from '../../lib/dataCenterHealth'
 
 const TABLE_PAGE_SIZES = [10, 20, 50, 100]
 
@@ -32,18 +34,6 @@ function formatThaiDate(iso) {
 // ไปแมตช์ผิดขอบเขตที่ผู้ใช้ตั้งใจพิมพ์ (ไม่ใช่ช่องโหว่ SQL injection เพราะ parameterized อยู่แล้ว)
 function escapeIlikeTerm(term) {
   return term.replace(/[%_\\]/g, m => '\\' + m)
-}
-
-// pattern เดียวกับ src/components/fleet/FleetReport.jsx — BOM นำหน้ากัน Excel ไทยอ่านเพี้ยน
-function downloadCSV(rows, filename) {
-  const csv = '﻿' + rows.map(r =>
-    r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')
-  ).join('\n')
-  const a = Object.assign(document.createElement('a'), {
-    href: URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })),
-    download: filename,
-  })
-  document.body.appendChild(a); a.click(); document.body.removeChild(a)
 }
 
 function SortHeader({ label, sortKey, activeKey, dir, onSort, className = '' }) {
@@ -107,6 +97,10 @@ export default function DataCenterOverview({
   onImportSuccess,
   onSelectCategory,
   onViewOnMap,
+  // สุขภาพข้อมูลมาจาก RPC data_center_health ที่ DataCenterDashboard ดึงไว้ครั้งเดียว (null = ยังไม่โหลด/ฟังก์ชันยังไม่พร้อม)
+  health = null,
+  onOpenQuality,
+  canManageEntry,
   // สถิติทั้งก้อนมาจาก RPC data_center_summary ที่ DataCenterDashboard เรียกไว้ครั้งเดียว
   // คอมโพเนนต์นี้ไม่ดึงข้อมูลมานับเองอีกแล้ว (ยกเว้น fetchListPage ที่เป็นหน้ารายการจริง)
   summary = null,
@@ -181,7 +175,7 @@ export default function DataCenterOverview({
     setListLoading(true)
     setListError(null)
     let query = supabase.from('data_center_entries')
-      .select('id, name, group_name, category, status, latitude, longitude, description, photo_urls, external_url, route_points, route_color, department_id, created_by, created_at', { count: 'exact' })
+      .select('id, name, group_name, category, status, latitude, longitude, description, photo_urls, external_url, route_points, route_color, department_id, created_by, created_at, updated_at, verified_at', { count: 'exact' })
       .eq('municipality_id', tenantId)
     if (tableFilterGroup !== 'all') query = query.eq('group_name', tableFilterGroup)
     if (tableFilterCategory !== 'all') query = query.eq('category', tableFilterCategory)
@@ -221,6 +215,21 @@ export default function DataCenterOverview({
     onDataChanged?.()
   }
 
+  // "ยืนยันว่ายังถูกต้อง" — เจ้าหน้าที่ตรวจแล้วว่ารายการยังตรงกับของจริงโดยไม่ต้องแก้เนื้อหา
+  // เขียน verified_at/verified_by (ไม่แตะ updated_at ซึ่งขยับเฉพาะตอนเนื้อหาเปลี่ยนจริง — ดู trigger ใน migration)
+  // .select('id') เพื่อจับกรณี RLS ไม่ให้แก้ (PostgREST ตอบสำเร็จแต่ 0 แถว ไม่ใช่ error)
+  async function verifyEntry(entry) {
+    const stamp = new Date().toISOString()
+    const { data, error } = await supabase.from('data_center_entries')
+      .update({ verified_at: stamp, verified_by: profile?.id ?? null })
+      .eq('id', entry.id).select('id')
+    if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); return }
+    if (!data?.length) { alert('บัญชีนี้ไม่มีสิทธิ์ยืนยันรายการนี้ (รายการของกองอื่นหรือผู้สร้างรายอื่น)'); return }
+    setListRows(prev => prev.map(e => e.id === entry.id ? { ...e, verified_at: stamp } : e))
+    setSelectedDetailEntry(prev => prev && prev.id === entry.id ? { ...prev, verified_at: stamp } : prev)
+    onDataChanged?.()
+  }
+
   function sortByColumn(key) {
     if (tableSortKey === key) setTableSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setTableSortKey(key); setTableSortDir('asc') }
@@ -228,11 +237,13 @@ export default function DataCenterOverview({
   }
 
   // ส่งออก CSV ตามตัวกรอง/คำค้น/การเรียงปัจจุบันของตาราง (ไม่ใช่แค่หน้าที่กำลังโชว์) จำกัด 5,000 แถวกันไฟล์บวมเกินจำเป็น
+  // ตัวสร้างไฟล์อยู่ที่ src/lib/dataCenterExport.js: ละติจูด/ลองจิจูดแยกคอลัมน์ตัวเลข, กัน CSV/Formula injection
+  // (ชื่อ/รายละเอียดเป็นข้อความที่เจ้าหน้าที่พิมพ์เอง แต่คนเปิดไฟล์คือคนอื่น), วันที่เป็น พ.ศ. เหมือนเดิม
   async function handleExportCSV() {
     if (!tenantId || exporting) return
     setExporting(true)
     let query = supabase.from('data_center_entries')
-      .select('name, group_name, category, status, latitude, longitude, route_points, created_at')
+      .select('id, name, group_name, category, status, description, external_url, photo_urls, latitude, longitude, route_points, created_at, updated_at, verified_at')
       .eq('municipality_id', tenantId)
     if (tableFilterGroup !== 'all') query = query.eq('group_name', tableFilterGroup)
     if (tableFilterCategory !== 'all') query = query.eq('category', tableFilterCategory)
@@ -242,17 +253,7 @@ export default function DataCenterOverview({
     const { data, error } = await query
     setExporting(false)
     if (error) { alert('ส่งออกไม่สำเร็จ: ' + error.message); return }
-    downloadCSV([
-      ['ชื่อสถานที่', 'กลุ่มหลัก', 'ประเภทย่อย', 'สถานะ', 'พิกัด/เส้นทาง', 'บันทึกเมื่อ'],
-      ...(data ?? []).map(e => [
-        e.name ?? '',
-        e.group_name ?? '',
-        e.category ?? '',
-        e.status === 'archived' ? 'ไม่ใช้งาน' : 'ใช้งาน',
-        e.route_points?.length ? `เส้นทาง ${e.route_points.length} จุด` : (e.latitude != null ? `${e.latitude}, ${e.longitude}` : ''),
-        formatThaiDate(e.created_at),
-      ]),
-    ], `ศูนย์ข้อมูลดิจิทัล_${filterLabel}_${new Date().toISOString().slice(0, 10)}.csv`)
+    downloadTextFile(datedFilename(`ศูนย์ข้อมูลดิจิทัล_${filterLabel}`, 'csv'), entriesToCsv(data ?? [], { dateStyle: 'thai' }), 'text/csv;charset=utf-8')
   }
 
   if (!summary && !summaryError) return (
@@ -294,6 +295,13 @@ export default function DataCenterOverview({
   const activeEntriesCount = sumBy('active')
   const activeRate = totalEntries ? Math.round((activeEntriesCount / totalEntries) * 100) : 100
   const recentCount = sumBy('recent_30d')
+
+  // แถบสรุปสุขภาพข้อมูล — แสดงเฉพาะตอนดูภาพรวมทั้งหมด (ตัวเลขมาจากทั้ง อปท. ไม่แยกตามตัวกรองหมวดเมนูซ้าย)
+  const healthTotals = health?.totals ?? null
+  const healthMustItems = healthTotals
+    ? MUST_FIX_ISSUES.map(code => ({ code, n: healthTotals[code] ?? 0 })).filter(x => x.n > 0)
+    : []
+  const healthMustCount = healthMustItems.reduce((n, x) => n + x.n, 0)
 
   // GIS Types — latitude/longitude เป็น NOT NULL ทุกแถว "จุดพิกัด" จึงหมายถึงแถวที่ไม่ใช่เส้นทาง
   const polylineCount = sumBy('routes')
@@ -357,6 +365,8 @@ export default function DataCenterOverview({
           onEdit={onEditEntry}
           onViewOnMap={onViewOnMap}
           onToggleStatus={toggleStatus}
+          onVerify={verifyEntry}
+          canVerify={canManageEntry ? canManageEntry(selectedDetailEntry) : false}
           departments={summary?.departments ?? []}
           groupIconOverrides={groupIconOverrides}
           theme={theme}
@@ -519,14 +529,14 @@ export default function DataCenterOverview({
         }`}>
           <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
           <div className="flex items-center justify-between">
-            <span className={`text-[9px] font-black uppercase tracking-widest ${isLight ? 'text-blue-800' : 'text-blue-400/70'}`}>CATEGORIES</span>
+            <span className={`text-[9px] font-black uppercase tracking-widest ${isLight ? 'text-blue-800' : 'text-blue-400/70'}`}>DATA GROUPS</span>
             <div className={`p-1.5 rounded-lg border ${isLight ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-blue-500/20 text-blue-300 border-blue-500/40'}`}>
               <Layers size={13} />
             </div>
           </div>
           <p className={`text-lg font-black mt-1 font-mono tracking-tight ${isLight ? 'text-slate-900' : 'text-white'}`}>{groupStatsList.length}</p>
           <p className={`text-[10px] mt-0.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
-            หมวดหมู่หลักในเขตเทศบาล
+            กลุ่มข้อมูลหลักที่มีรายการ
           </p>
         </div>
 
@@ -538,14 +548,14 @@ export default function DataCenterOverview({
         }`}>
           <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
           <div className="flex items-center justify-between">
-            <span className={`text-[9px] font-black uppercase tracking-widest ${isLight ? 'text-emerald-800' : 'text-emerald-400/70'}`}>OPERATIONAL RATE</span>
+            <span className={`text-[9px] font-black uppercase tracking-widest ${isLight ? 'text-emerald-800' : 'text-emerald-400/70'}`}>ACTIVE RATE</span>
             <div className={`p-1.5 rounded-lg border ${isLight ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'}`}>
               <Radio size={13} className="animate-pulse" />
             </div>
           </div>
           <p className={`text-lg font-black mt-1 font-mono tracking-tight ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>{activeRate}%</p>
           <p className={`text-[10px] mt-0.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
-            พร้อมใช้งาน ({activeEntriesCount} รายการ)
+            เปิดใช้งานอยู่ {activeEntriesCount} รายการ
           </p>
         </div>
 
@@ -568,6 +578,34 @@ export default function DataCenterOverview({
           </p>
         </div>
       </div>
+
+      {!hasActiveFilter && healthTotals && (healthTotals.active ?? 0) > 0 && onOpenQuality && (
+        <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-2xl border backdrop-blur-xl ${
+          healthMustCount === 0
+            ? (isLight ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-emerald-500/5 border-emerald-500/30 text-emerald-100')
+            : (isLight ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-amber-500/5 border-amber-500/30 text-amber-100')
+        }`}>
+          <div className="flex items-start gap-2.5 min-w-0">
+            <HeartPulse size={17} className={`shrink-0 mt-0.5 ${healthMustCount === 0 ? 'text-emerald-500' : 'text-amber-500'}`} />
+            <div className="min-w-0">
+              <p className="text-xs font-bold">
+                {healthMustCount === 0
+                  ? `ข้อมูลพร้อมใช้ครบทั้ง ${healthTotals.active} รายการ`
+                  : `ข้อมูลพร้อมใช้ ${healthTotals.score}% — มี ${healthMustCount} จุดที่ควรตรวจ`}
+              </p>
+              {healthMustCount > 0 && (
+                <p className="text-[11px] opacity-80 mt-0.5">{healthMustItems.map(x => `${ISSUES[x.code].label} ${x.n}`).join(' · ')}</p>
+              )}
+            </div>
+          </div>
+          <button type="button" onClick={() => onOpenQuality('health')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border shrink-0 transition-colors ${
+              isLight ? 'bg-white border-slate-300 text-slate-700 hover:border-sky-400 hover:text-sky-700' : 'bg-slate-800 border-slate-700 text-slate-200 hover:border-cyan-500/40 hover:text-cyan-300'
+            }`}>
+            {healthMustCount === 0 ? 'ดูรายละเอียด' : 'ดูและแก้ไข'}
+          </button>
+        </div>
+      )}
 
       {(summary?.totals?.total ?? 0) === 0 && !summaryError && (
         <div className={`flex flex-col items-center justify-center py-20 rounded-2xl border backdrop-blur-xl ${
