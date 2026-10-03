@@ -9,6 +9,7 @@ import react from '@vitejs/plugin-react'
 import tailwind from '@tailwindcss/vite'
 import { chromium } from 'playwright'
 import { mkdir, readFile } from 'node:fs/promises'
+import { clickToClosePage } from './lib/closePage.mjs'
 import { REPORT_MODES } from '../src/lib/patientReportPeriod.js'
 import { previousOdometer, thaiDay, pickupForBooking, returnForBooking, staffNextAction, bookingStage, reportEvent, monthReportSummary } from '../src/lib/patientBooking.js'
 // หน่วยนับต้องไม่ทำให้เจ้าหน้าที่ตีความจำนวนเหตุการณ์เป็นจำนวนผู้ใช้บริการ
@@ -439,7 +440,7 @@ try{
   assert.equal(doc.originCount,0,`ท้ายใบต้องไม่มีบรรทัดที่มา (เก็บที่เดียวใต้ชื่อแบบ — สั่งลบ 2569-10-02): "${doc.origin}"`)
   assert.match(doc.form,/ผ่านระบบ E-Service/,'ใต้ชื่อแบบต้องมี "ผ่านระบบ E-Service <อปท.>" เหมือนใบในชุดหลังยืนยัน')
   assert.ok(doc.notice&&doc.notice.display==='block'&&doc.notice.text.includes('หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถจากปุ่มแยก'),`แถบบนจอของใบที่พิมพ์ตอนรอยืนยันรถ: ${JSON.stringify(doc.notice)}`)
-  await Promise.all([pendingWin.waitForEvent('close'),pendingWin.getByRole('button',{name:'ปิดหน้าต่าง',exact:true}).click()])
+  await clickToClosePage(pendingWin,pendingWin.getByRole('button',{name:'ปิดหน้าต่าง',exact:true}))
   assert.equal((await bookingRow(b2)).status,'submitted','พิมพ์ใบคำขอแล้วสถานะคำขอต้องไม่เปลี่ยน')
   await problem.waitFor()
  }
@@ -891,7 +892,7 @@ try{
   assert(await closePrint.isVisible(),'close stays visible while reading a long document')
   await printWin.emulateMedia({media:'print'});assert.equal(await closePrint.isVisible(),false,'close is never printed')
   await printWin.emulateMedia({media:'screen'})
-  await Promise.all([printWin.waitForEvent('close'),closePrint.click()])
+  await clickToClosePage(printWin,closePrint)
   assert.equal(page.isClosed(),false,'closing print does not close the staff page')
  }
  // Slow preparation is also closeable; response arriving afterwards must not reopen it or raise an error.
@@ -901,7 +902,7 @@ try{
  })
  const [loadingPrint]=await Promise.all([page.waitForEvent('popup'),monthlyReport.getByRole('button',{name:'พิมพ์สรุป',exact:true}).click()])
  await loadingPrint.getByRole('status').filter({hasText:'กำลังเตรียมเอกสาร...'}).waitFor()
- await Promise.all([loadingPrint.waitForEvent('close'),loadingPrint.getByRole('button',{name:'ปิดหน้าต่าง',exact:true}).click()])
+ await clickToClosePage(loadingPrint,loadingPrint.getByRole('button',{name:'ปิดหน้าต่าง',exact:true}))
  await page.waitForTimeout(500)
  assert.equal(await page.getByRole('alert').filter({hasText:'เตรียมสรุปตามช่วงเวลาไม่สำเร็จ'}).count(),0)
  assert.equal(page.context().pages().filter(p=>p!==page).length,0,'closed print never reopens after its data arrives')
