@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { bangkokISO, inputClass, buttonClass, primaryClass, thaiDay } from '../../lib/patientBooking'
+import { bangkokISO, inputClass, buttonClass, primaryClass, thaiDay, bookingName, isCommunity } from '../../lib/patientBooking'
 
 const time = value => value ? new Date(value).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) : ''
 const noticeLabels = { normal: 'ไม่มีประกาศเพิ่มเติม', delayed: 'รถล่าช้า', contact: 'ติดต่อเจ้าหน้าที่ก่อนเดินทาง' }
@@ -27,11 +27,11 @@ export function RescheduleJourney({ trip, booking, passengers, settings, busy, o
   }}>
     <p className="font-semibold">เปลี่ยนวันและเวลาเดินทาง</p>
     <p className="text-sm">ระบบตรวจรถว่างและย้ายคิวจริงให้พร้อมกันทั้งปฏิทินและงานคนขับ ถ้าคิวใหม่ชน คิวเดิมยังอยู่ เก็บประวัติวันเวลาและเลขหนังสือเดิมไว้ กรุณาพิมพ์เอกสารใหม่หลังเลื่อน</p>
-    {passengers.length > 1 && <><label className="block">ผู้เดินทางที่ต้องการเลื่อน<select className={inputClass} value={draft.scope} onChange={e => set('scope', e.target.value)}><option value="single">เฉพาะ {booking.patient_name}</option><option value="all">ทั้งเที่ยว {passengers.length} คน</option></select></label>
-      <p className="text-sm">{draft.scope === 'all' ? `เลื่อนทั้งเที่ยว: ${passengers.map(b => b.patient_name).join(' · ')} โดยคงระยะห่างเวลานัดของแต่ละคน` : 'ผู้เดินทางคนอื่นยังใช้วันเวลาเดิม ระบบจะตรวจไม่ให้รถทับกัน'}</p></>}
+    {passengers.length > 1 && <><label className="block">ผู้เดินทางที่ต้องการเลื่อน<select className={inputClass} value={draft.scope} onChange={e => set('scope', e.target.value)}><option value="single">เฉพาะ {bookingName(booking)}</option><option value="all">ทั้งเที่ยว {passengers.length} คน</option></select></label>
+      <p className="text-sm">{draft.scope === 'all' ? `เลื่อนทั้งเที่ยว: ${passengers.map(b => bookingName(b)).join(' · ')} โดยคงระยะห่างเวลานัดของแต่ละคน` : 'ผู้เดินทางคนอื่นยังใช้วันเวลาเดิม ระบบจะตรวจไม่ให้รถทับกัน'}</p></>}
     <div className="grid min-w-0 gap-3 sm:grid-cols-2">
       <label className="min-w-0">วันเดินทางใหม่<input required type="date" className={inputClass} value={draft.date} onChange={e => set('date', e.target.value)} /></label>
-      <label className="min-w-0">เวลานัดแพทย์ใหม่<input required type="time" className={inputClass} value={draft.appointment} onChange={e => set('appointment', e.target.value)} /></label>
+      <label className="min-w-0">{isCommunity(booking) ? 'เวลาที่ต้องถึงใหม่' : 'เวลานัดแพทย์ใหม่'}<input required type="time" className={inputClass} value={draft.appointment} onChange={e => set('appointment', e.target.value)} /></label>
       {booking.return_mode !== 'one_way' && <label className="min-w-0">เวลารับกลับใหม่<input required type="time" className={inputClass} value={draft.back} onChange={e => set('back', e.target.value)} /></label>}
     </div>
     <p className="text-sm">เวลาเริ่มรับจะคำนวณจากเวลานัด ระยะทาง และเวลาเผื่อที่ตั้งไว้โดยอัตโนมัติ</p>

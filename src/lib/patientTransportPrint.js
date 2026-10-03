@@ -47,7 +47,7 @@ import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
 import {
   APPOINTMENT_KINDS, MOBILITY_LEVELS, REQUESTER_RELATIONS, TRIP_TYPES, optionLabel,
 } from './patientTransport.js'
-import { RETURN_MODES as BOOKING_RETURN_MODES, TRIP_STATUS, thaiDay, monthReportSummary, bookingLetter } from './patientBooking.js'
+import { RETURN_MODES as BOOKING_RETURN_MODES, TRIP_STATUS, thaiDay, monthReportSummary, bookingLetter, isCommunity, serviceLabel, serviceReportSummary } from './patientBooking.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -773,6 +773,7 @@ export function tripPassengers(bookings, trip) {
 // ข้อมูลของคำขอ 1 ใบสำหรับ formSheet/letterSheet — แหล่งเดียวของทั้งชุดต่อเที่ยว (หลังยืนยันรถ มี trip)
 // และใบคำขอเดี่ยวตอนรอยืนยันรถ (trip = null) ใบที่พิมพ์ก่อนยืนยันจึงตรงกับใบในชุดของเที่ยวทุกตัวอักษร
 function bookingPacket(args, b, trip) {
+  if (isCommunity(b)) throw new Error('คำขอชุมชนต้องใช้เอกสารชุมชน กรุณาโหลดหน้าทำงานรุ่นล่าสุด')
   const { partner } = args
   // ⚠️ เทียบค่าตรงตัวทั้งสองทาง ห้ามเขียน "ไม่ใช่ staff = online" — ค่าที่ไม่รู้จักหรือไม่มี ต้องตกไป
   // 'booking' ที่ไม่อ้างอะไรเลย (กติกาเดียวกับทุกใบ: อ้างว่าลงชื่อออนไลน์ได้เมื่อรู้แน่เท่านั้น)
@@ -864,17 +865,21 @@ export function buildTripMonthReportHtml({ tenant, report, partner, period }) {
   // ยอดรวมนับเฉพาะเที่ยวที่จบแล้ว — เที่ยวที่ยังไม่ได้วิ่ง/ยังวิ่งไม่จบแยกไปตารางท้ายใบ ไม่งั้นใบนี้
   // ถูกอ่านเป็นผลงานจริงทั้งที่รถยังไม่ได้ออก (ผลตรวจ #227 ข้อ 3)
   const all = (report?.trips ?? []).filter(t => t.date >= range.from && t.date <= range.to && t.state !== 'cancelled')
+  const v2 = Object.hasOwn(report || {}, 'service_type')
+  const reportName = v2 ? `รถรับ–ส่ง${report.service_type === 'community' ? 'ชุมชน' : report.service_type === 'patient' ? 'ผู้ป่วย' : 'ผู้ป่วยและชุมชน'}` : 'รถรับ-ส่งผู้ป่วย'
+  const columns = v2 ? 11 : 10
   const trips = all.filter(t => t.state === 'completed')
   const pending = all.filter(t => t.state !== 'completed' && t.state !== 'cancelled')
-  const summary = monthReportSummary(all)
-  const totalPeople = summary.passengers
+  const summary = v2 ? serviceReportSummary(all) : monthReportSummary(all)
+  const totalPeople = v2 ? summary.people : summary.passengers
   const totalCompanions = summary.companions
   const totalKm = summary.distance
   const rows = trips.map((t, i) => `<tr>
       <td class="num">${i + 1}</td>
       <td class="num">${esc(letterDateText(t.date))}</td>
-      <td>${esc(t.route_label ?? '')}</td>
-      <td class="num">${Number(t.passengers || 0)}</td>
+      <td>${v2 ? esc(serviceLabel(t)) + '<br>' : ''}${esc(t.route_label ?? '')}</td>
+      ${v2 ? `<td class="num">${Number(t.request_count || 0)}</td>` : ''}
+      <td class="num">${Number(v2 ? t.people || 0 : t.passengers || 0)}</td>
       <td class="num">${Number(t.companions || 0)}</td>
       <td class="num">${esc(t.odometer_start ?? '')}</td>
       <td class="num">${esc(t.odometer_end ?? '')}</td>
@@ -910,24 +915,24 @@ export function buildTripMonthReportHtml({ tenant, report, partner, period }) {
     <div>${govSignRow({ role: 'ผู้ตรวจสอบ', below: [govNameBlank(), 'ตำแหน่ง ....................'] })}</div>
   </div>`
   return page(
-    'สรุปการใช้รถรับ-ส่งผู้ป่วย ' + range.label,
+    'สรุปการใช้' + reportName + ' ' + range.label,
     css,
     `<div class="sheet landscape">
-  <p class="report-title">สรุปการใช้รถรับ-ส่งผู้ป่วย ${esc(range.label)}</p>
+  <p class="report-title">สรุปการใช้${esc(reportName)} ${esc(range.label)}</p>
   <p class="report-sub">${esc(reportDateLabel(range.from))} – ${esc(reportDateLabel(range.to))} · ตามวันเดินทาง</p>
   <p class="report-sub">${esc(tenant?.name ?? '')} · รถของ${esc(textOr(partner?.name, 'กองทุนเจ้าของรถ'))}</p>
   <table>
-    <thead><tr><th>ลำดับ</th><th>วันที่</th><th>เส้นทาง</th><th>ผู้เดินทาง</th><th>ผู้ติดตาม</th><th>เลขไมล์ออก</th><th>เลขไมล์กลับ</th><th>ระยะทาง (กม.)</th><th>คนขับ</th><th>หนังสือนำส่งที่</th></tr></thead>
+    <thead><tr><th>ลำดับ</th><th>วันที่</th><th>${v2 ? 'บริการ/สถานที่' : 'เส้นทาง'}</th>${v2 ? '<th>คำขอ</th>' : ''}<th>${v2 ? 'คนทั้งหมด' : 'ผู้เดินทาง'}</th><th>ผู้ติดตาม</th><th>เลขไมล์ออก</th><th>เลขไมล์กลับ</th><th>ระยะทาง (กม.)</th><th>คนขับ</th><th>หนังสือนำส่งที่</th></tr></thead>
     <tbody>
-${rows || '<tr><td colspan="10" class="num">ยังไม่มีเที่ยวที่จบในช่วงนี้</td></tr>'}
+${rows || `<tr><td colspan="${columns}" class="num">ยังไม่มีเที่ยวที่จบในช่วงนี้</td></tr>`}
     </tbody>
-    <tfoot><tr><td colspan="3">รวมเที่ยวที่จบแล้ว ${trips.length} เที่ยว</td><td class="num">${totalPeople}</td><td class="num">${totalCompanions}</td><td colspan="2"></td><td class="num">${totalKm}</td><td colspan="2"></td></tr></tfoot>
+    <tfoot><tr><td colspan="3">รวมเที่ยวที่จบแล้ว ${trips.length} เที่ยว</td>${v2 ? `<td class="num">${summary.requests}</td>` : ''}<td class="num">${totalPeople}</td><td class="num">${totalCompanions}</td><td colspan="2"></td><td class="num">${v2 && trips.length && summary.missingDistance === trips.length ? 'ยังไม่ครบ' : totalKm}</td><td colspan="2"></td></tr></tfoot>
   </table>
   ${pending.length ? `<p class="note bold">เที่ยวที่ยังไม่จบใน${range.mode === 'month' ? 'เดือน' : 'ช่วง'}นี้ ${pending.length} เที่ยว — ไม่นับรวมในยอดข้างบน</p>
   <table class="pending">
     <thead><tr><th>วันที่</th><th>เส้นทาง</th><th>สถานะ</th><th>ผู้เดินทางตามแผน</th></tr></thead>
     <tbody>
-${pending.map(t => `<tr><td class="num">${esc(letterDateText(t.date))}</td><td>${esc(t.route_label ?? '')}</td><td>${esc(TRIP_STATUS[t.state] ?? t.state ?? '')}</td><td class="num">${Number(t.passengers || 0)}</td></tr>`).join('\n')}
+${pending.map(t => `<tr><td class="num">${esc(letterDateText(t.date))}</td><td>${v2 ? esc(serviceLabel(t)) + ' · ' : ''}${esc(t.route_label ?? '')}</td><td>${esc(TRIP_STATUS[t.state] ?? t.state ?? '')}</td><td class="num">${Number(v2 ? t.people || 0 : t.passengers || 0)}</td></tr>`).join('\n')}
     </tbody>
   </table>` : ''}
   ${summary.missingDistance ? `<p class="note">หมายเหตุ: มี ${summary.missingDistance} เที่ยวที่เลขไมล์ยังไม่ครบหรือระยะทางรอตรวจสอบ ระยะทางรวมนับเฉพาะเที่ยวที่ตรวจสอบได้</p>` : ''}

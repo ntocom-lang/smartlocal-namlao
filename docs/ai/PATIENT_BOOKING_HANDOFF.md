@@ -325,3 +325,60 @@ Migration: 20260919150000_patient_booking_flexible_odometer.sql (columns/constra
   — ก่อน merge งานที่แตะโมดูลนี้ต้องรันมือ: `patient-booking-db`, `patient-booking-browser`, `npm run test:patient-transport`
 - ยังไม่ได้ทดสอบ: ระบบคำขอเดิม (`tests/patient-transport.playwright.mjs`), มือถือคนขับจริง, เน็ตมือถือขาดกลางคำสั่ง
 - ยังรอเจ้าของระบบ: ถ้อยคำย่อหน้าที่ 2 ของหนังสือนำส่ง (ดูหัวข้อ "เอกสารถึงกองทุนเจ้าของรถ")
+
+## Community transport frontend — approved phase (2026-10-03)
+
+พัฒนาต่อจาก backend `2ac0841c` ใน worktree `D:/tmp/wt-community-transport`, สาขา `codex/community-transport` ตามแผนที่เจ้าของระบบอนุมัติ และอนุมัติ commit/push/deploy แล้ว
+ใช้ scheduler/รถ/คนขับ/tenant lock เดียวกับผู้ป่วย ไม่เพิ่ม migration หรือ dependency และไม่เปิด flag ของ tenant จริง
+
+- ประชาชน: ปุ่มชุมชนแสดงเฉพาะเมื่อเปิดรับคำขอ ฟอร์มกลุ่ม/กิจกรรม/จำนวนคน/สถานที่แยกจากผู้ป่วย ไม่มีชื่อผู้ป่วย ความสัมพันธ์ ผู้ติดตาม หรือขอร่วมเที่ยว
+  ไม่เดาเวลาหรือกฎ เปิดปฏิทินทุกวันตาม community calendar คำนวณเวลาขึ้นลงตามจำนวนคน และตรวจกลับไปกลับมาทั้งสองช่วงที่รถว่าง
+- ตรวจทานและยินยอมด้วย `community-booking-v1` และข้อความจาก RPC จริง จับ rules version/booking revision ที่ตรวจทานไว้
+  กฎเปลี่ยนต้องตรวจใหม่ ผลตอบกลับหายส่งซ้ำด้วย UUID เดิมได้ และเมื่อปิดรับระหว่างกรอกไม่สลับร่างไปเป็นคำขอผู้ป่วย
+- เจ้าหน้าที่: รับจองแทน/แก้หลังประสานด้วย RPC ชุมชนโดยเฉพาะ ชื่อกลุ่มและจำนวนคนแสดงในกล่องคำขอ ปฏิทิน และงานคนขับ
+  แยก filter ผู้ป่วย/ชุมชน/ทุกบริการ ห้ามชุมชนใช้ปุ่มเปลี่ยนโรงพยาบาลหรือรวมเที่ยว ผู้ประสานงานยืนยันรถครั้งเดียว ระบบตรวจคิวเอง
+  รับจองแทนไม่เข้า mine/autofill ของบัญชีเจ้าหน้าที่ที่เปิดหน้าประชาชน
+- Admin: ตั้งเวลา สถานที่+เวลาเดินทาง กิจกรรม และข้อบังคับครั้งเดียว บันทึกด้วย revision CAS ร่างที่แก้ค้างไม่ถูกเขียนทับเมื่ออีกหน้าจอบันทึกกฎ
+  ปิดรับคำขอใหม่ยังดำเนินคำขอ/เที่ยวที่รับไว้ได้
+- รายงานใช้ `patient_booking_period_report_v2` เป็นเจ้าของยอดคนทั้งหมด (รวมผู้ติดตาม), คำขอ และระยะทางต่อเที่ยว
+  อ่าน metadata เลขหนังสือผู้ป่วยจาก report เดิมตาม trip id เพื่อรักษาประวัติ ไม่ใช้ยอด legacy ทับ v2 ไม่คูณระยะทางตามคำขอ
+  ระยะทางที่ยังไม่มีแสดงไม่ครบ/ยังไม่บันทึก ภาพและข้อความแชร์มีแต่ข้อมูลรวม ไม่ใส่ชื่อกลุ่ม ผู้ติดต่อ เบอร์โทร หรือจุดรับ
+- เอกสารชุมชนแยกใบคำขอหนึ่งหน้าและหนังสือแจ้งกองทุนหนึ่งหน้า ใช้ `govDocStyle`/`govSignBlock` และ A4
+  ป้าย **ร่าง** ต้องติดไปบนกระดาษ ไม่มีลายเซ็นอัตโนมัติหรือใบคำขอรับสวัสดิการผู้ป่วย หนังสือแจ้งพิมพ์ได้หลังยืนยันรถเท่านั้น
+
+### Validation and release evidence
+
+หลักฐานและภาพอยู่ `D:/tmp/community-transport-ui-20261003` (ข้อมูลจำลอง `[TEST]` เท่านั้น)
+ขยาย mock ใน `tests/patient-report-infographic.test.mjs` เพิ่มจากรายชื่อแผนหนึ่งไฟล์ เพื่อให้ regression ของรายงานเรียก v2 ตาม implementation จริง
+ไม่มีการแก้ credential/.env/CI ด้วยมือ ส่วน workflow และการซ่อมปิดหน้าต่างพิมพ์รับมาจาก master ที่ commit แล้ว
+หัวข้อช่องว่าง CI ก่อนหน้านี้เป็นสถานะเก่า: master มี `patient-module-tests.yml` แล้ว
+
+```powershell
+$env:PATIENT_PGLITE_MODULE='D:/tmp/patient-booking-dbtest-20260918/node_modules/@electric-sql/pglite/dist/index.js'
+$env:PATIENT_PREVIEW_SHOTS='D:/tmp/community-transport-ui-20261003'
+node tests/patient-booking-browser.test.mjs
+# เลือกเฉพาะฉาก frontend ชุมชนระหว่างพัฒนา: $env:PATIENT_COMMUNITY_ONLY='1'
+node tests/community-transport-print.test.mjs
+node tests/community-transport-layout.test.mjs
+node tests/patient-report-period.test.mjs
+node tests/patient-report-infographic.test.mjs
+npm run test:patient-transport
+npm run lint:blocking
+```
+
+ผล local: ชุด browser ผู้ป่วยเดิม+ชุมชนผ่าน, patient print layout 37/37 ผ่าน, community content/layout/PDF ผ่าน
+รวมกรณีผลตอบกลับหาย, กฎเปลี่ยนระหว่างแก้/ตรวจทาน, ปิดรับขณะกรอก, staff mine privacy, แก้จำนวนคน, ยืนยันรถ, และรายงาน 3 filter
+ตรวจ mobile 320/390px และ desktop รวมกราฟ/PNG/share ที่นับคนจริงและไมล์ไม่ครบ
+เอกสารชุมชนข้อมูลยาวสุดตามช่องกรอกจบหนึ่งหน้า A4 ทั้งสองใบ แนวลงนามวัด `Range` ผ่าน helper กลาง
+ก่อน deploy ต้องตรวจ origin/master ล่าสุดและใช้ commit ที่รวมงานที่ merge แล้ว เพื่อไม่ย้อน runtime ของ session อื่น
+เลข commit/CI/Worker และผลสอง host บันทึกใน `release-report.json`/`RELEASE.md` ของหลักฐานหลัง release
+
+### Remaining activation gates
+
+ยังปิดบริการจริง: ต้องยืนยันอำนาจใช้รถ กิจกรรมตามข้อบังคับกองทุน และคำสั่งวันหยุด/นอกเวลากับฉบับปัจจุบัน
+สารบรรณ/กองทุนต้องรับรองถ้อยคำร่างก่อนออกหนังสือจริง ไม่มีการอนุมัติสิทธิ ค่าใช้จ่าย หรือลงนามแทนผู้มีอำนาจโดยระบบ
+ก่อนเปิดรับจริงยังต้องตัดสินวิธีจัดการ stale tab, ทดสอบ Demo สองบัญชี/สอง connection สำหรับคิวร่วมผู้ป่วย–ชุมชน
+และให้คนขับยืนยันบนมือถือจริง การทดสอบ PGlite และจอจำลองไม่ใช่หลักฐานผ่านสองข้อนี้
+ไม่มี integration ตรวจ conflict กับรถในโมดูล fleet อื่นและไม่ย้ายคำขอประชาชนอัตโนมัติ
+ค่าใช้จ่ายเพิ่ม 0: ใช้ dependencies/Cloudflare Workers Free/Supabase เดิม และ GitHub standard runner ของ public repo
+ภาระเพิ่มเฉพาะตั้งกฎครั้งแรก/ทบทวนเมื่อเปลี่ยน เจ้าหน้าที่ตรวจข้อผิดพลาดในกล่องคำขอแล้วแก้หลังประสานพร้อม audit

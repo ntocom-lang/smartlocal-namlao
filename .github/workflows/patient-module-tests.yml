@@ -1,0 +1,141 @@
+# รันเทสต์ของโมดูลรถรับ-ส่งผู้ป่วย + ใบพิมพ์ที่ใช้คำลงท้ายร่วมกัน ทุกครั้งที่แก้โค้ด
+#
+# เคสจริงที่ทำให้ต้องมี workflow นี้ (2026-10-03): #397 ทำให้ปุ่ม "เอกสาร" ในตารางสูง 44px แทน 36px
+# และเปลี่ยนป้ายปุ่มจนเทสต์เบราว์เซอร์ patient-booking-browser แดงตั้งแต่วันนั้น — แต่ไม่มีใครเห็น
+# เพราะ CI ที่มีอยู่ (deploy / ai-docs-check / db-function-guard) ไม่รันเทสต์ของโมดูลนี้เลย
+# ผลคือ master ค้างสถานะแดงโดยไม่มีสัญญาณอยู่หลายวัน จนรอบทดสอบเต็มกระบวนการจับได้ (PR #406)
+#
+# ทำไมต้องแยกไฟล์ ไม่ไปเป็น step ใน deploy.yml:
+# deploy.yml ถือ secrets จึงจงใจไม่รับ pull_request และมี paths-ignore — เทสต์ชุดนี้ไม่ใช้ secret ใดๆ
+# จึงรันบน PR ได้ (รวม PR จาก fork ซึ่ง GitHub ไม่ให้ secret อยู่แล้ว) และต้องรันก่อน merge ไม่ใช่หลัง
+#
+# ทุกเทสต์ในชุดนี้ปิดวงในเครื่อง: ไม่อ่าน .env / ไม่ต่อ Supabase / ไม่ยิงเครือข่ายออก
+# (เบราว์เซอร์เทสต์ใช้ vite ในโปรเซสกับ supabase client จำลอง, DB เทสต์ใช้ PGlite ในหน่วยความจำ)
+# เทสต์ที่ยิงของจริง (patient-booking-demo-race, patient-transport.playwright, fleet-*) ไม่อยู่ในนี้ — ต้องใช้ session ของบัญชีทดสอบ
+#
+# ⚠️ workflow นี้ล้มแล้วได้แค่ "เตือน" ปุ่ม merge ยังกดได้ — จะให้บังคับจริงต้องตั้ง required status check
+# ที่ Settings → Rules ของ repo (เหมือน db-function-guard)
+name: Patient module tests
+
+on:
+  push:
+    branches: [master]
+    # แก้แค่เอกสาร (docs/**, **.md) ไม่ต้องรัน — แต่ src/** ทั้งก้อน เพราะใบพิมพ์ใช้ไลบรารีกลางร่วมกัน
+    # (govSignBlock/govDocStyle/thaiDate) แก้ที่เดียวกระทบหลายใบ
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'supabase/migrations/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/patient-module-tests.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'supabase/migrations/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/patient-module-tests.yml'
+
+# ไม่ใช้ secret ใดๆ — อ่านโค้ดในรีโปแล้วรันเทสต์ในเครื่อง runner
+permissions:
+  contents: read
+
+concurrency:
+  group: patient-module-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # ในเครื่องวัดได้ ~5.5 นาที (patient-transport-layout 104s + patient-booking-browser 114s เป็นก้อนใหญ่)
+    # runner ช้ากว่า ~2 เท่า + ติดตั้ง dependency → เผื่อไว้ 25 นาที
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      # ต้อง npm ci เต็ม: เทสต์เบราว์เซอร์ใช้ vite + @vitejs/plugin-react + tailwind + playwright จาก lockfile
+      # (ต่างจาก db-function-guard ที่ใช้แค่ node builtin) — ไม่มี secret ใน job นี้ จึงไม่มีอะไรให้ install script ขโมย
+      - name: ติดตั้ง dependency ตาม lockfile
+        run: npm ci
+
+      # runner ของ GitHub ไม่มีฟอนต์ไทยเลย — ตกไปใช้ฟอนต์สำรองแล้วเทสต์ "จบ 1 หน้า" วัดผิดตัว
+      # font stack ของใบพิมพ์คือ THSarabunPSK → TH Sarabun New → Sarabun (src/lib/govDocStyle.js) ตัวสุดท้ายหาได้ฟรีแบบ OFL
+      # ที่ใช้ได้ตามหมายเหตุในโค้ด ("THSarabunPSK กับ Sarabun ให้ความสูงเอกสารเท่ากัน") และเทสต์เผื่อ metric ไว้ 11mm แล้ว
+      # ตรึงที่ commit ของ google/fonts + เช็ก sha256 กันไฟล์ถูกเปลี่ยนกลางทาง ($0: SIL OFL 1.1 ไม่ผูกบัตร ไม่ต้องสมัคร)
+      - name: ติดตั้งฟอนต์ Sarabun
+        run: |
+          base=https://raw.githubusercontent.com/google/fonts/9710da1eacb3be272583c3224dcb70f9da6eadbb/ofl/sarabun
+          dir="$HOME/.local/share/fonts"
+          mkdir -p "$dir"
+          while read -r name sum; do
+            curl -fsSL --retry 3 -o "$dir/$name" "$base/$name"
+            echo "$sum  $dir/$name" | sha256sum -c -
+          done <<'EOF'
+          Sarabun-Regular.ttf 226d4f368fbc0457990ddef2692679badfd2c1a4e89e5ac4d43c10ba7743b2f1
+          Sarabun-Bold.ttf d38308ca27d067b9a1b79006337c1f9a66c29aa016d96a9d88d3801da7fa83b9
+          Sarabun-Italic.ttf 595a968e97a8b8179a6bde2d74d4f91b11475dcfb6cf270037d76d8ed71160ea
+          Sarabun-BoldItalic.ttf 5ef1b930f9a3afed5ec83374b5617cad3a89d91a8fc5e372dc028c2aa2950f8d
+          EOF
+          fc-cache -f
+          fc-match Sarabun
+
+      # PGlite (Postgres ในหน่วยความจำ, Apache-2.0) ติดตั้งแยกนอก repo เหมือนที่ทำในเครื่อง — ไม่เพิ่ม dependency ให้แอปจริง
+      # เวอร์ชันตรึงตามที่เทสต์เขียนไว้ (tests/patient-booking-db.test.mjs บรรทัดที่ 2)
+      - name: ติดตั้ง PGlite 0.5.8 นอก repo
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pglite" --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
+          echo "PATIENT_PGLITE_MODULE=$RUNNER_TEMP/pglite/node_modules/@electric-sql/pglite/dist/index.js" >> "$GITHUB_ENV"
+          echo "PATIENT_REPORT_ARTIFACTS=$RUNNER_TEMP/patient-report-shots" >> "$GITHUB_ENV"
+
+      # เทสต์ใช้ channel: 'chrome' (ทุกตัว) และ 'msedge' (patient-report-*) ซึ่ง runner ลงไว้ให้แล้ว
+      # ถ้าวันหนึ่ง image เปลี่ยนจนหาไม่เจอ ให้ติดตั้งผ่าน playwright แทนที่จะล้มด้วยข้อความที่ไล่ยาก
+      - name: ตรวจว่ามี Chrome และ Edge
+        run: |
+          [ -x /opt/google/chrome/chrome ] || npx playwright install --with-deps chrome
+          [ -x /opt/microsoft/msedge/msedge ] || npx playwright install --with-deps msedge
+          /opt/google/chrome/chrome --version
+          /opt/microsoft/msedge/msedge --version
+
+      # รันทุกตัวให้ครบแล้วสรุปท้ายสุด ไม่หยุดที่ตัวแรกที่ล้ม — เห็นทั้งชุดในรอบเดียว ไม่ต้องไล่แก้ทีละตัวผ่านหลายรอบ push
+      - name: รันเทสต์ทั้งชุด
+        run: |
+          tests=(
+            patient-booking-guidance
+            patient-booking-db
+            public-assistance-print
+            complaint-print-routing
+            waste-cancel-print
+            waste-request-print
+            patient-booking-form-guidance
+            patient-transport-letter-print-ui
+            regards-alignment
+            public-assistance-layout
+            council-form-layout
+            waste-cancel-layout
+            patient-transport-layout
+            patient-report-period
+            patient-report-infographic
+            patient-booking-browser
+          )
+          failed=()
+          for t in "${tests[@]}"; do
+            echo "::group::$t"
+            if node "tests/$t.test.mjs"; then echo "PASS $t"; else failed+=("$t"); echo "::error title=เทสต์ไม่ผ่าน::$t"; fi
+            echo "::endgroup::"
+          done
+          echo "ผ่าน $(( ${#tests[@]} - ${#failed[@]} )) / ${#tests[@]} ตัว"
+          if [ "${#failed[@]}" -gt 0 ]; then printf 'ไม่ผ่าน: %s\n' "${failed[@]}"; exit 1; fi
+
+      - name: ชี้ทางแก้เมื่อไม่ผ่าน
+        if: failure()
+        run: |
+          echo "::error::เทสต์ของโมดูลรถรับ-ส่งผู้ป่วย/ใบพิมพ์ไม่ผ่าน — ดูกลุ่มบันทึกของตัวที่ล้มในขั้น 'รันเทสต์ทั้งชุด'"
+          echo "รันซ้ำในเครื่อง: node tests/<ชื่อ>.test.mjs (ตัว patient-booking-* ที่ใช้ PGlite ต้องตั้ง PATIENT_PGLITE_MODULE ตาม docs/ai/PATIENT_BOOKING_HANDOFF.md)"
+          echo "ถ้าล้มเฉพาะบน CI และผ่านในเครื่อง: สงสัยฟอนต์/เบราว์เซอร์ของ runner ก่อน (ขั้น 'ติดตั้งฟอนต์ Sarabun' + เวอร์ชัน Chrome ที่พิมพ์ไว้)"

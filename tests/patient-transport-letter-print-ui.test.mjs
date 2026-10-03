@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { clickToClosePage } from './lib/closePage.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const require = createRequire(path.join(root, 'package.json'))
 const { createServer } = await import(pathToFileURL(require.resolve('vite')).href)
@@ -98,7 +99,8 @@ try {
       if (expectedDay) assert.match(await popup.locator('.letter-date').innerText(), new RegExp(`^${Number(expectedDay)} .*2569$`))
       const text = (await popup.locator('.sheet').allInnerTexts()).join('\n')
       assert.ok(text.includes(booking.patient_name) && !text.includes('TEST ผู้ป่วยคนอื่น'))
-      await popup.getByRole('button', { name: 'ปิดหน้าต่าง' }).click()
+      // ปุ่มนี้สั่ง window.close() — เหตุผลที่ไม่คลิกตรงๆ และตัวช่วยร่วมอยู่ใน tests/lib/closePage.mjs
+      await clickToClosePage(popup, popup.getByRole('button', { name: 'ปิดหน้าต่าง' }))
     }
     const pass = name => { passed++; console.log(`PASS ${width}px ${name}`) }
 
