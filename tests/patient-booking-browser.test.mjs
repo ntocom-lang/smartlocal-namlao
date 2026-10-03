@@ -233,6 +233,13 @@ const openDone=async()=>{if(await doneToggle().getAttribute('aria-expanded')==='
 const toast=text=>page.getByRole('status').filter({hasText:text})
 const problem=page.getByRole('region',{name:'ยืนยันรถไม่ได้'})
 const sheet=page.getByRole('dialog')
+// ปุ่มเอกสารในแผ่นรายละเอียด (BookingPrintButtons) — #397/#400–#403 แยกเป็น 2 ปุ่ม: ใบคำขอถึงนายก 1 แผ่น กับ
+// หนังสือนำส่งกองทุน + ใบคำขอรับสวัสดิการ 2 แผ่น (ปุ่มเก่า "พิมพ์เอกสาร 2 ประเภท" / "พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน" ไม่มีแล้ว)
+// ปุ่มในแถว/การ์ด (data-row-print "เอกสาร") แค่เปิดแผ่นนี้ ไม่เด้งหน้าต่างพิมพ์เอง · .first() เพราะกล่องเดียวกันซ้ำใน "จัดการเพิ่มเติม" เมื่อพับเปิดอยู่
+const requestPrintBtn=()=>sheet.getByRole('button',{name:/^พิมพ์ใบคำขอรถรับ.ส่งผู้ป่วย/}).first()
+const letterPrintBtn=()=>sheet.getByRole('button',{name:/พิมพ์หนังสือขอความอนุเคราะห์รถรับ.ส่งผู้ป่วย/}).first()
+const letterNoField=()=>sheet.getByLabel(/^เลขที่หนังสือ \(ที่\)/).first()
+const saveLetterOnlyBtn=()=>sheet.getByRole('button',{name:'บันทึกเลขที่/วันที่อย่างเดียว',exact:true}).first()
 const card=trip=>page.locator(`article[data-trip="${trip}"]`).first()
 const setDay=async value=>{await page.locator('summary').filter({hasText:'เลือกวันอื่น'}).first().evaluate(node=>{node.parentElement.open=true});await page.getByLabel('วันที่นัดแพทย์',{exact:true}).fill(value)}
 const clicks={}
@@ -365,13 +372,21 @@ try{
  await row(b1).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
  const afterConfirm=sheet.getByRole('region',{name:'ขั้นตอนหลังยืนยันรถ'})
  await afterConfirm.getByText('ยืนยันรถแล้ว · ขั้นต่อไป').waitFor()
- const printAfterConfirm=afterConfirm.getByRole('button',{name:'พิมพ์ใบคำขอถึงนายก + หนังสือนำส่งกองทุน'})
- await printAfterConfirm.waitFor()
+ // ปุ่มพิมพ์ไม่ได้อยู่ในกรอบ "ขั้นตอนหลังยืนยันรถ" แล้ว (#397) แต่อยู่ในส่วน "เอกสารของผู้เดินทาง" ของแผ่นเดียวกัน — หลังยืนยันรถต้องกดได้ทั้ง 2 ปุ่ม
+ const docsRegion=sheet.getByRole('region',{name:'เอกสารของผู้เดินทาง'})
+ await docsRegion.waitFor()
+ assert.equal(await afterConfirm.getByRole('button',{name:/พิมพ์/}).count(),0,'กรอบขั้นตอนหลังยืนยันรถไม่มีปุ่มพิมพ์แล้ว ปุ่มพิมพ์อยู่ในส่วนเอกสารของผู้เดินทาง')
+ await requestPrintBtn().waitFor();await letterPrintBtn().waitFor()
+ assert.equal(await requestPrintBtn().isEnabled(),true,'หลังยืนยันรถต้องพิมพ์ใบคำขอได้');assert.equal(await letterPrintBtn().isEnabled(),true,'หลังยืนยันรถต้องพิมพ์หนังสือนำส่งได้')
+ await letterNoField().waitFor()
  assert.equal(await afterConfirm.getByRole('button',{name:'ไปงานคนขับ'}).count(),0,'ผู้ยืนยันคิวที่ไม่ใช่คนขับต้องไม่ถูกส่งไปงานคนขับ')
  assert.equal(await page.getByRole('region',{name:'งานคนขับรอดำเนินการ'}).count(),0,'บัญชีผู้จัดคิวที่ไม่ใช่คนขับต้องไม่เห็นงานคนขับ')
  await page.setViewportSize({width:320,height:800})
- const printBox=await printAfterConfirm.boundingBox()
- assert(printBox && printBox.width>=44 && printBox.x>=0 && printBox.x+printBox.width<=320,'ปุ่มพิมพ์หลังยืนยันต้องกดได้และอยู่ในจอมือถือ 320px')
+ for(const [label,button] of [['ใบคำขอ',requestPrintBtn()],['หนังสือนำส่ง',letterPrintBtn()]]){
+  const printBox=await button.boundingBox()
+  assert(printBox && printBox.width>=44 && printBox.height>=44 && printBox.x>=0 && printBox.x+printBox.width<=320,`ปุ่มพิมพ์${label}หลังยืนยันต้องกดได้และอยู่ในจอมือถือ 320px: ${JSON.stringify(printBox)}`)
+ }
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'ส่วนเอกสารของผู้เดินทางต้องไม่ทำให้จอ 320px ล้น')
  await page.setViewportSize({width:1280,height:900})
  await sheet.getByRole('button',{name:'ปิด',exact:true}).click()
  // หากบัญชีคนขับเป็นผู้ยืนยันคิวด้วย ปุ่มในรายละเอียดต้องพาไปงานคนขับของเที่ยวเดียวกัน
@@ -409,9 +424,13 @@ try{
  // ยังไม่ยืนยันรถ = ยังไม่มีเที่ยว จึงยังไม่มีหนังสือนำส่ง แต่ใบคำขอถึงนายกพิมพ์ได้แล้ว (เจ้าของระบบสั่ง 2569-10-02 แบบ ก)
  // ปุ่ม "พิมพ์" บนหัวแผ่นพิมพ์เฉพาะใบคำขอของคำขอนี้ 1 แผ่น · แถบบนจอบอกว่าหนังสือนำส่งพิมพ์ได้หลังยืนยันรถและใบนี้จะออกอีกครั้ง
  // ในชุดนั้น · พิมพ์แล้วสถานะคำขอต้องไม่เปลี่ยน และแผ่นยังอยู่ให้ทำงานต่อ
- assert.equal(await sheet.getByRole('button',{name:'พิมพ์เอกสาร 2 ประเภท',exact:true}).count(),0,'ยังไม่ยืนยันรถ = ยังไม่มีหนังสือนำส่ง ปุ่มพิมพ์ชุดเอกสารของเที่ยวต้องไม่ขึ้น')
+ // ปุ่มหนังสือยังโผล่แต่ปิดไว้ (ไม่ใช่ "ไม่มีปุ่ม" เหมือนรุ่นก่อน) + บอกเหตุผลบนจอ — ตรวจว่าปิดจริง ไม่ใช่แค่นับปุ่ม
+ assert.equal(await letterPrintBtn().isDisabled(),true,'ยังไม่ยืนยันรถ = ยังไม่มีหนังสือนำส่ง ปุ่มพิมพ์หนังสือต้องกดไม่ได้')
+ await sheet.getByText('หนังสือถึงกองทุนพิมพ์ได้หลังยืนยันรถ',{exact:true}).waitFor()
+ assert.equal(await sheet.getByLabel(/^เลขที่หนังสือ \(ที่\)/).count(),0,'ยังไม่มีเที่ยว = ยังไม่ต้องกรอกเลขที่หนังสือ ช่องกรอกต้องไม่ขึ้น')
+ assert.equal(await requestPrintBtn().isEnabled(),true,'รอยืนยันรถต้องพิมพ์ใบคำขอได้')
  {
-  const [pendingWin]=await Promise.all([page.waitForEvent('popup'),sheet.getByRole('button',{name:'พิมพ์ใบคำขอถึงนายก',exact:true}).click()])
+  const [pendingWin]=await Promise.all([page.waitForEvent('popup'),requestPrintBtn().click()])
   await pendingWin.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
   const doc=await printedDoc(pendingWin,b2)
   assert.deepEqual(doc.kinds,['form'],'รอยืนยันรถต้องพิมพ์ได้เฉพาะใบคำขอ 1 แผ่น ไม่มีหนังสือนำส่ง')
@@ -419,7 +438,7 @@ try{
   assert.equal(doc.note,'',`คำขอที่ผู้จองยื่นเอง ต้องไม่มีบรรทัดกำกับใต้ชื่อ (สั่งตัด 2569-10-02): "${doc.note}"`)
   assert.equal(doc.originCount,0,`ท้ายใบต้องไม่มีบรรทัดที่มา (เก็บที่เดียวใต้ชื่อแบบ — สั่งลบ 2569-10-02): "${doc.origin}"`)
   assert.match(doc.form,/ผ่านระบบ E-Service/,'ใต้ชื่อแบบต้องมี "ผ่านระบบ E-Service <อปท.>" เหมือนใบในชุดหลังยืนยัน')
-  assert.ok(doc.notice&&doc.notice.display==='block'&&doc.notice.text.includes('หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถ')&&doc.notice.text.includes('จะออกอีกครั้งในชุดเอกสารหลังยืนยันรถ'),`แถบบนจอของใบที่พิมพ์ตอนรอยืนยันรถ: ${JSON.stringify(doc.notice)}`)
+  assert.ok(doc.notice&&doc.notice.display==='block'&&doc.notice.text.includes('หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถจากปุ่มแยก'),`แถบบนจอของใบที่พิมพ์ตอนรอยืนยันรถ: ${JSON.stringify(doc.notice)}`)
   await Promise.all([pendingWin.waitForEvent('close'),pendingWin.getByRole('button',{name:'ปิดหน้าต่าง',exact:true}).click()])
   assert.equal((await bookingRow(b2)).status,'submitted','พิมพ์ใบคำขอแล้วสถานะคำขอต้องไม่เปลี่ยน')
   await problem.waitFor()
@@ -500,31 +519,44 @@ try{
   }
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'กรอบกลุ่มเที่ยวต้องไม่ทำให้จอ 390px ล้น')
   await page.setViewportSize({width:1280,height:900});await tripFrame.waitFor()
-  // ปุ่มพิมพ์ในแถว (ไอคอนเครื่องพิมพ์) — กดแล้วได้ใบคำขอ + หนังสือนำส่งของคนในแถวนั้นคนเดียว ไม่เปิดแผ่นรายละเอียด
-  const packetOf=win=>win.evaluate(()=>[...document.querySelectorAll('.sheet')].map(s=>s.querySelector('.letter-sign')?'letter':!s.querySelector('.form-title')?'other':s.innerText.includes('[TEST] ไปด้วยกัน อี')?'form:E':s.innerText.includes('[TEST] ไปด้วยกัน เอฟ')?'form:F':'form:?'))
+  // ปุ่ม "เอกสาร" ในแถว/การ์ด (ไอคอนเครื่องพิมพ์) — #397 เปลี่ยนเป็นเปิดแผ่นรายละเอียดของคนในแถวนั้น ไม่เด้งหน้าต่างพิมพ์เอง
+  // แล้วเลือกพิมพ์ในแผ่น: ใบคำขอถึงนายก (1 แผ่น) กับหนังสือนำส่ง + ใบคำขอรับสวัสดิการ (2 แผ่น) แยกคนละปุ่ม — ต้องได้เฉพาะของคนนั้นคนเดียว
+  const packetOf=win=>win.evaluate(()=>({kinds:[...document.querySelectorAll('.sheet')].map(s=>s.querySelector('.letter-sign')?'letter':!s.querySelector('.form-title')?'other':s.innerText.includes('[TEST] ไปด้วยกัน อี')?'form:E':s.innerText.includes('[TEST] ไปด้วยกัน เอฟ')?'form:F':'form:?'),text:document.body.innerText}))
   const letterNoOf=win=>win.evaluate(()=>document.querySelector('.letter-no')?.innerText.replace(/\s+/g,' ').trim()??'')
+  const openRowDocs=async id=>{
+   const button=row(id).getByRole('button',{name:/^เลือกเอกสารที่จะพิมพ์: /});assert.equal(await button.locator('svg.lucide-printer').count(),1,'ปุ่มเอกสารในแถวต้องมีไอคอนเครื่องพิมพ์')
+   await button.click();await sheet.waitFor();await requestPrintBtn().waitFor()
+  }
+  const closeSheet=async()=>{await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})}
   const printRow=async id=>{
-   const button=row(id).getByRole('button',{name:/^พิมพ์เอกสาร 2 ประเภท: /});assert.equal(await button.locator('svg.lucide-printer').count(),1,'ปุ่มพิมพ์ในแถวต้องมีไอคอนเครื่องพิมพ์')
-   const [win]=await Promise.all([page.waitForEvent('popup'),button.click()])
-   await win.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
-   const out={packet:await packetOf(win),letterNo:await letterNoOf(win)};await win.close();assert.equal(await sheet.count(),0,'กดพิมพ์ที่แถวต้องไม่เปิดแผ่นรายละเอียดของใคร');return out
+   await openRowDocs(id)
+   const [formWin]=await Promise.all([page.waitForEvent('popup'),requestPrintBtn().click()])
+   await formWin.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
+   const form=await packetOf(formWin);await formWin.close()
+   const [letterWin]=await Promise.all([page.waitForEvent('popup'),letterPrintBtn().click()])
+   await letterWin.waitForFunction(()=>document.querySelector('.letter-sign'))
+   const letter={...await packetOf(letterWin),letterNo:await letterNoOf(letterWin)};await letterWin.close()
+   await closeSheet();return{form,letter}
   }
   const printedE=await printRow(groupE),printedF=await printRow(groupF)
-  assert.deepEqual(printedE.packet,['form:E','letter'],'กดพิมพ์ของคนแรกต้องได้ใบคำขอของเขา + หนังสือของเขา ไม่มีของอีกคน')
-  assert.deepEqual(printedF.packet,['form:F','letter'],'กดพิมพ์ของคนที่สองต้องได้ใบคำขอของเขา + หนังสือของเขา ไม่มีของอีกคน')
-  assert(!/พร|\d/.test(printedE.letterNo)&&!/พร|\d/.test(printedF.letterNo),`ยังไม่ได้บันทึกเลข ช่อง "ที่" ต้องเป็นเส้นประให้เขียนมือ: "${printedE.letterNo}" / "${printedF.letterNo}"`)
+  assert.deepEqual(printedE.form.kinds,['form:E'],'ปุ่มใบคำขอของคนแรกต้องได้ใบคำขอของเขาแผ่นเดียว ไม่มีของอีกคน')
+  assert.deepEqual(printedF.form.kinds,['form:F'],'ปุ่มใบคำขอของคนที่สองต้องได้ใบคำขอของเขาแผ่นเดียว ไม่มีของอีกคน')
+  assert.deepEqual(printedE.letter.kinds,['letter','other'],'ปุ่มหนังสือของคนแรกต้องได้หนังสือนำส่ง 1 แผ่น + ใบคำขอรับสวัสดิการ 1 แผ่น')
+  assert.deepEqual(printedF.letter.kinds,['letter','other'],'ปุ่มหนังสือของคนที่สองต้องได้หนังสือนำส่ง 1 แผ่น + ใบคำขอรับสวัสดิการ 1 แผ่น')
+  assert(printedE.letter.text.includes('ไปด้วยกัน อี')&&!printedE.letter.text.includes('ไปด้วยกัน เอฟ')&&!printedE.form.text.includes('ไปด้วยกัน เอฟ'),'เอกสารของคนแรกต้องมีชื่อเขาและไม่มีชื่อของอีกคนในเที่ยวเดียวกัน')
+  assert(printedF.letter.text.includes('ไปด้วยกัน เอฟ')&&!printedF.letter.text.includes('ไปด้วยกัน อี')&&!printedF.form.text.includes('ไปด้วยกัน อี'),'เอกสารของคนที่สองต้องมีชื่อเขาและไม่มีชื่อของคนแรกในเที่ยวเดียวกัน')
+  assert(!/พร|\d/.test(printedE.letter.letterNo)&&!/พร|\d/.test(printedF.letter.letterNo),`ยังไม่ได้บันทึกเลข ช่อง "ที่" ต้องเป็นเส้นประให้เขียนมือ: "${printedE.letter.letterNo}" / "${printedF.letter.letterNo}"`)
 
-  // เลขที่หนังสือแยกรายคน: บันทึกผ่านหน้าจอทีละคน (กล่อง "เอกสารคำขอและนำส่งกองทุน" ในแผ่นของคนนั้น)
+  // เลขที่หนังสือแยกรายคน: บันทึกผ่านหน้าจอทีละคน — ช่อง "เลขที่หนังสือ (ที่)" + ปุ่ม "บันทึกเลขที่/วันที่อย่างเดียว" ในส่วนเอกสารของแผ่นคนนั้น
+  // (วันที่เริ่มต้นมาจากวันที่ยืนยันรถ จึงกรอกแค่เลขที่แล้วบันทึกได้)
   const recordViaSheet=async(id,no)=>{
-   await row(id).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
-   await sheet.locator('summary').filter({hasText:'จัดการเพิ่มเติม'}).click()
-   const docs=sheet.locator('div.rounded-xl',{hasText:'เอกสารคำขอและนำส่งกองทุน'}).last()
-   await docs.getByText(/เลขที่หนังสือแยกรายคน/).waitFor()
-   await docs.getByRole('button',{name:'กรอกเลขหนังสือ',exact:true}).click()
-   await docs.getByLabel('เลขที่หนังสือ').fill(no);await docs.getByRole('button',{name:'บันทึกเลขหนังสือ',exact:true}).click()
-   await toast('บันทึกเลขหนังสือนำส่งแล้ว').waitFor();await docs.getByText(new RegExp(`ที่ ${no}`)).waitFor()
+   await openRowDocs(id)
+   await letterNoField().fill(no)
+   await saveLetterOnlyBtn().click()
+   await toast('บันทึกเลขหนังสือนำส่งแล้ว').waitFor()
    await sheet.getByText('บันทึกเลขหนังสือนำส่ง',{exact:true}).first().waitFor({timeout:15000})
-   await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
+   assert.equal(await letterNoField().inputValue(),no,'หลังบันทึกแล้วช่องต้องแสดงเลขที่บันทึกไว้')
+   await closeSheet()
   }
   await recordViaSheet(groupE,'พร 72301/301')
   const letterRows=await runSql(async()=>(await db.query('SELECT id,forward_letter_no,forward_letter_date::text AS d,letter_revision FROM public.patient_bookings WHERE id=ANY($1)',[[groupE,groupF]])).rows)
@@ -532,8 +564,8 @@ try{
   assert.equal(rowE.forward_letter_no,'พร 72301/301');assert.equal(rowE.letter_revision,1);assert.equal(rowF.forward_letter_no,null,'บันทึกเลขของคนแรก ต้องไม่ไปติดคนที่สอง');assert.equal(rowF.letter_revision,0)
   assert.equal((await runSql(async()=>(await db.query('SELECT forward_letter_no FROM public.patient_booking_trips WHERE id=$1',[groupTrip])).rows[0])).forward_letter_no,null,'เลขหนังสือแยกรายคนต้องไม่เขียนทับเลขของเที่ยว')
   await recordViaSheet(groupF,'พร 72301/302')
-  assert.equal((await printRow(groupE)).letterNo.includes('พร 72301/301'),true,'หนังสือของคนแรกต้องเป็นเลขของเขา')
-  const secondPrint=await printRow(groupF);assert(secondPrint.letterNo.includes('พร 72301/302')&&!secondPrint.letterNo.includes('พร 72301/301'),`หนังสือของคนที่สองต้องเป็นเลขของเขา ไม่ใช่เลขของคนแรก: "${secondPrint.letterNo}"`)
+  assert.equal((await printRow(groupE)).letter.letterNo.includes('พร 72301/301'),true,'หนังสือของคนแรกต้องเป็นเลขของเขา')
+  const secondPrint=(await printRow(groupF)).letter;assert(secondPrint.letterNo.includes('พร 72301/302')&&!secondPrint.letterNo.includes('พร 72301/301'),`หนังสือของคนที่สองต้องเป็นเลขของเขา ไม่ใช่เลขของคนแรก: "${secondPrint.letterNo}"`)
 
   // ฐานข้อมูล: ตรวจ revision, สิทธิ์, ข้อมูลที่ไม่ถูกต้อง, ประวัติ และรายงานรายเดือน/รายงวดที่รวมเลขของทุกคนในเที่ยว
   const today=new Date().toISOString().slice(0,10)
@@ -574,15 +606,22 @@ try{
  // บอกตามจริงว่าเจ้าหน้าที่รับจองแทน ห้ามอ้างว่าผู้แจ้งยืนยันตัวตนผ่านระบบ และหนังสือนำส่งต้องไม่เขียนขัดกับใบที่แนบ
  {
   await row(intake.id).getByRole('button',{name:'ดูขั้นตอนต่อไป',exact:true}).click()
-  const [intakeWin]=await Promise.all([page.waitForEvent('popup'),sheet.getByRole('button',{name:'พิมพ์เอกสาร 2 ประเภท',exact:true}).click()])
+  // #397/#400: ใบคำขอ (1 แผ่น) กับหนังสือนำส่ง + ใบคำขอรับสวัสดิการ (2 แผ่น) พิมพ์แยกคนละปุ่ม ทั้งสองต้องไม่อ้างว่าผู้แจ้งลงชื่อผ่านระบบ
+  const [intakeWin]=await Promise.all([page.waitForEvent('popup'),requestPrintBtn().click()])
   await intakeWin.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
   const doc=await printedDoc(intakeWin,intake.id)
-  // ลำดับกระดาษตามลำดับเรื่อง (เจ้าของระบบสั่ง 2569-10-01): ใบคำขอ ประชาชน → นายก ก่อน แล้วหนังสือนำส่ง นายก → กองทุน
-  assert.deepEqual(doc.kinds,['form','letter'],'เที่ยวที่มีผู้ป่วยคนเดียวต้องพิมพ์ใบคำขอก่อน แล้วตามด้วยหนังสือนำส่ง')
+  assert.deepEqual(doc.kinds,['form'],'ปุ่มใบคำขอต้องได้ใบคำขอแผ่นเดียว (หนังสือนำส่งอยู่อีกปุ่ม)')
   assert.equal(doc.note,'',`ใต้ชื่อผู้ยื่นต้องไม่มีบรรทัดกำกับ แม้เป็นคำขอที่เจ้าหน้าที่รับจองแทน (เจ้าของระบบสั่งตัดทุกช่องทาง 2569-10-02): "${doc.note}"`)
   assert.ok(doc.form.includes('[TEST] ผู้ป่วยโทรมา'),'ชื่อผู้แจ้งต้องอยู่บนใบคำขอ')
-  for(const claim of ['ยืนยันตัวตน','ลงลายมือชื่อ','ผ่านระบบบริการอิเล็กทรอนิกส์','เจ้าหน้าที่รับจองแทน'])assert.ok(!doc.all.includes(claim),`เอกสารของคำขอที่รับจองแทนต้องไม่มี "${claim}"`)
-  await intakeWin.close();await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
+  const claims=['ยืนยันตัวตน','ลงลายมือชื่อ','ผ่านระบบบริการอิเล็กทรอนิกส์','เจ้าหน้าที่รับจองแทน']
+  for(const claim of claims)assert.ok(!doc.all.includes(claim),`ใบคำขอของคำขอที่รับจองแทนต้องไม่มี "${claim}"`)
+  await intakeWin.close()
+  const [intakeLetterWin]=await Promise.all([page.waitForEvent('popup'),letterPrintBtn().click()])
+  await intakeLetterWin.waitForFunction(()=>document.querySelector('.letter-sign'))
+  const intakeLetter=await printedDoc(intakeLetterWin,intake.id)
+  assert.deepEqual(intakeLetter.kinds,['letter','other'],'ปุ่มหนังสือต้องได้หนังสือนำส่ง 1 แผ่น + ใบคำขอรับสวัสดิการ 1 แผ่น')
+  for(const claim of claims)assert.ok(!intakeLetter.all.includes(claim),`หนังสือนำส่งของคำขอที่รับจองแทนต้องไม่มี "${claim}" (ขัดกับใบที่แนบ)`)
+  await intakeLetterWin.close();await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
  }
  console.log('PASS staff intake by phone returns to the inbox with vehicle confirmation review, channel recorded as staff and printed as staff intake without an online-signature claim')
  // ── บัญชีเจ้าหน้าที่เปิดหน้าประชาชน: ฟอร์มต้องไม่เติมข้อมูลของคนที่โทรมาให้รับแทน ──
@@ -688,27 +727,31 @@ try{
   assert.equal(previousOdometer(trip('first','07:00',null,'confirmed'),loaded),'','ไม่มีเที่ยวก่อนหน้าต้องเว้นว่าง ไม่เดา')
  }
  await staffDesk();await row(b1).getByRole('button',{name:'บันทึกเอกสาร',exact:true}).click()
- // ── ปุ่ม "พิมพ์" บนหัวแผ่น (เจ้าของระบบขอ 2026-09-24) — ไม่ต้องเลื่อนหาปุ่มพิมพ์ในกล่องเอกสาร ──
+ // ── พิมพ์จากแผ่นของเที่ยวที่จบแล้ว (ส่วน "เอกสารคำขอและนำส่งกองทุน" ของงานที่ค้างเอกสาร) — 2 ปุ่มแยก: ใบคำขอ / หนังสือ + ใบคำขอรับสวัสดิการ ──
  {
-  const [letterWin]=await Promise.all([page.waitForEvent('popup'),click('printFromHeader',sheet.getByRole('button',{name:'พิมพ์เอกสาร 2 ประเภท',exact:true}))])
-  await letterWin.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
-  const printed=await letterWin.evaluate(()=>document.body.innerText)
-  assert.ok(printed.includes('ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย'),'ต้องได้หนังสือนำส่ง')
-  assert.ok(printed.includes(b1.slice(0,8).toUpperCase()),'ต้องเป็นเอกสารของเที่ยวที่เปิดอยู่')
+  const [formWin]=await Promise.all([page.waitForEvent('popup'),click('printRequest',requestPrintBtn())])
+  await formWin.waitForFunction(()=>document.querySelector('.form-title')?.innerText.includes('ใบคำขอรถรับ-ส่งผู้ป่วย'))
   // ผู้จองล็อกอินจองเอง (entry_channel 'online') = ลงชื่อออนไลน์ ไม่ขอให้เซ็นปากกา (เจ้าของระบบสั่ง 2569-10-01)
-  const doc=await printedDoc(letterWin,b1)
+  const doc=await printedDoc(formWin,b1)
+  assert.deepEqual(doc.kinds,['form'],'ปุ่มใบคำขอต้องได้ใบคำขอแผ่นเดียว')
+  assert.ok(doc.form.includes(b1.slice(0,8).toUpperCase()),'ต้องเป็นใบคำขอของคำขอที่เปิดอยู่')
   assert.equal(doc.note,'',`ใบที่ผู้จองยื่นเองต้องไม่มีบรรทัดกำกับใต้ชื่อ (สั่งตัด 2569-10-02): "${doc.note}"`)
   assert.equal(doc.originCount,0,`ท้ายใบของใบที่ผู้จองยื่นเองต้องไม่มีบรรทัดที่มา (สั่งลบ 2569-10-02): "${doc.origin}"`)
   assert.ok(!doc.form.includes('ลงลายมือชื่อ')&&!doc.form.includes('รับจองแทน'),'ใบของผู้ที่จองเองต้องไม่ขอให้เซ็นปากกา และไม่ติดข้อความของคำขอที่รับจองแทน')
-  // ลำดับกระดาษ: ใบคำขอทุกใบก่อน หนังสือนำส่งเป็นแผ่นสุดท้าย (เจ้าของระบบสั่ง 2569-10-01)
-  assert.ok(doc.kinds.length>=2&&doc.kinds.at(-1)==='letter'&&doc.kinds.slice(0,-1).every(kind=>kind==='form'),`ลำดับแผ่นต้องเป็น ใบคำขอ → หนังสือนำส่ง: ${doc.kinds}`)
+  await formWin.close()
+  const [letterWin]=await Promise.all([page.waitForEvent('popup'),click('printLetter',letterPrintBtn())])
+  await letterWin.waitForFunction(()=>document.querySelector('.letter-sign'))
+  const printed=await letterWin.evaluate(()=>document.body.innerText)
+  assert.ok(printed.includes('ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย'),'ต้องได้หนังสือนำส่ง')
+  const letter=await printedDoc(letterWin,b1)
+  // หนังสือนำส่ง + ใบคำขอรับสวัสดิการ = 2 แผ่น (#400) · ใบคำขอถึงนายกไม่ติดมาในปุ่มนี้
+  assert.deepEqual(letter.kinds,['letter','other'],`ปุ่มหนังสือต้องได้หนังสือนำส่ง → ใบคำขอรับสวัสดิการ: ${letter.kinds}`)
   // หนังสือนำส่ง: นายกเซ็นปากกา ระบบไม่พิมพ์ชื่อเป็นลายมือชื่อ · ฐานทดสอบไม่มีทะเบียนผู้ลงนาม = ต้องเตือนบนจอว่าไปตั้งที่ไหน
-  assert.equal(doc.mayorSigned,0,'หนังสือนำส่งต้องไม่มีชื่อพิมพ์แทนลายมือชื่อของนายก')
-  assert.ok(doc.notice?.text.includes('ผู้ลงนามเอกสาร')&&doc.notice.display==='block','ยังไม่ได้ตั้งชื่อนายก หน้าต่างพิมพ์ต้องขึ้นแถบเตือนบนจอ')
-  assert.equal(clicks.printFromHeader,1);await letterWin.close()
+  assert.equal(letter.mayorSigned,0,'หนังสือนำส่งต้องไม่มีชื่อพิมพ์แทนลายมือชื่อของนายก')
+  assert.ok(letter.notice?.text.includes('ผู้ลงนามเอกสาร')&&letter.notice.display==='block','ยังไม่ได้ตั้งชื่อนายก หน้าต่างพิมพ์ต้องขึ้นแถบเตือนบนจอ')
+  assert.equal(clicks.printRequest,1);assert.equal(clicks.printLetter,1);await letterWin.close()
  }
- await sheet.getByRole('button',{name:'กรอกเลขหนังสือ',exact:true}).click()
- await sheet.getByLabel('เลขที่หนังสือ',{exact:true}).fill('พร 72301/77');await sheet.getByRole('button',{name:'บันทึกเลขหนังสือ',exact:true}).click();await toast('บันทึกเลขหนังสือนำส่งแล้ว').waitFor()
+ await letterNoField().fill('พร 72301/77');await saveLetterOnlyBtn().click();await toast('บันทึกเลขหนังสือนำส่งแล้ว').waitFor()
  // เอกสารครบแล้ว = แถวไม่มีงานค้าง ย้ายไปส่วน "เสร็จแล้ว / ยกเลิก" ที่พับไว้ (ปุ่มแถวเป็น "ดูรายละเอียด" ตรวจในฉาก inbox order)
  // แผ่นที่เปิดอยู่ไม่ปิดตาม และแบบฟอร์มย้ายไปอยู่ใต้ "จัดการเพิ่มเติม"
  await row(b1).waitFor({state:'detached'})
@@ -726,13 +769,15 @@ try{
  assert.equal(await sheet.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).isDisabled(),true)
  await sheet.getByRole('button',{name:'ยืนยันใช้ค่าที่ฉันแก้',exact:true}).click();await sheet.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await toast('บันทึกเลขไมล์แล้ว').waitFor()
  docs=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===b1Trip);assert.equal(docs.odometer_end,startOdo+40)
- await sheet.getByRole('button',{name:'แก้เลขหนังสือ',exact:true}).click();await sheet.getByLabel('เลขที่หนังสือ',{exact:true}).fill('TEST draft')
+ // ช่องเลขที่หนังสืออยู่ในส่วนเอกสารตลอด (ไม่มีปุ่ม "แก้เลขหนังสือ" ให้กดก่อนแล้ว) — พิมพ์ร่างค้างไว้เพื่อให้ชนกับเลขที่คนอื่นบันทึกก่อน
+ await letterNoField().fill('TEST draft')
  // ร่างเลขหนังสือชนกับคนอื่นที่บันทึกก่อน: เลขหนังสือแยกรายคนแล้ว (2569-10-02) revision ที่เทียบคือ letter_revision ของคำขอ
  const b1Now=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).bookings.find(x=>x.id===b1)
  await runAs(coordinator,()=>rpc('patient_booking_record_booking_letter',[tenant,b1,b1Now.letter_revision,'TEST newest',b1Now.forward_letter_date]))
  await sheet.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click();await sheet.getByText(/ค่าล่าสุด: เลขหนังสือ TEST newest/).waitFor()
- assert.equal(await sheet.getByRole('button',{name:'บันทึกเลขหนังสือ',exact:true}).isDisabled(),true)
- await sheet.getByRole('button',{name:'ใช้ค่าล่าสุด',exact:true}).click();assert.equal(await sheet.getByLabel('เลขที่หนังสือ',{exact:true}).inputValue(),'TEST newest')
+ assert.equal(await saveLetterOnlyBtn().isDisabled(),true,'ร่างชนกับเลขที่คนอื่นบันทึกก่อน ต้องบันทึกทับเงียบๆ ไม่ได้')
+ assert.equal(await letterPrintBtn().isDisabled(),true,'ร่างชนกันอยู่ ปุ่ม "บันทึกและพิมพ์" ต้องกดไม่ได้จนกว่าจะเลือกค่า')
+ await sheet.getByRole('button',{name:'ใช้ค่าล่าสุด',exact:true}).click();assert.equal(await letterNoField().inputValue(),'TEST newest')
  await sheet.getByLabel('เลขไมล์กลับ',{exact:true}).fill('5');await sheet.getByLabel('มาตรวัดมีปัญหา / ระยะทางรอตรวจสอบ',{exact:true}).check();await sheet.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).selectOption('เปลี่ยนมาตรวัด')
  await sheet.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await toast('บันทึกเลขไมล์แล้ว').waitFor()
  const report=await runAs(coordinator,()=>rpc('patient_booking_month_report',[tenant,`${b1Day.slice(0,7)}-01`]));assert.equal(report.trips.find(t=>t.trip_id===b1Trip).distance,null)

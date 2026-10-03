@@ -143,7 +143,7 @@ function RowPrint({ printer, name, busy, compact }) {
   if (!printer) return null
   return <button type="button" data-row-print disabled={busy} aria-label={`${printer.label}: ${name}`} title={printer.hint}
     onClick={e => { e.stopPropagation(); printer.run() }}
-    className={`inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-xl border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 ${compact ? 'gap-1 px-2.5 py-1 text-[13px]' : 'gap-1.5 px-3 text-sm'}`}>
+    className={`inline-flex items-center justify-center whitespace-nowrap rounded-xl border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 ${compact ? 'min-h-9 gap-1 px-2.5 py-1 text-[13px]' : 'min-h-11 gap-1.5 px-3 text-sm'}`}>
     <Printer size={compact ? 14 : 16} strokeWidth={2.4} className="shrink-0" aria-hidden="true" />เอกสาร</button>
 }
 
