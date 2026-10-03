@@ -72,7 +72,8 @@
     "test:service-audience": "node tests/service-audience.test.mjs",
     "test:admin-update-user": "node tests/admin-update-user-guard.test.mjs",
     "test:guard": "node tests/guard-master-tree.test.mjs",
-    "test:app-icon": "node tests/app-icon.test.mjs"
+    "test:app-icon": "node tests/app-icon.test.mjs",
+    "test:data-center": "node --test tests/data-center-hub.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

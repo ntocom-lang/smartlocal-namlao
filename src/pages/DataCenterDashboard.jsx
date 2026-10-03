@@ -1,21 +1,31 @@
 import { lazy, Suspense, useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Activity, Cpu, ShieldCheck, Sun, Moon, X } from 'lucide-react'
+import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Cpu, Sun, Moon, X, ClipboardCheck, Database, HeartPulse } from 'lucide-react'
 import { supabase, getSessionResilient } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import DataCenter3DCanvas from '../components/datacenter/DataCenter3DCanvas'
+import { DEFAULT_STALE_DAYS, scoreTone } from '../lib/dataCenterHealth'
 
 const DataCenterOverview = lazy(() => import('../components/datacenter/DataCenterOverview'))
 const DataCenterMap = lazy(() => import('../components/datacenter/DataCenterMap'))
 const DataCenterEntryForm = lazy(() => import('../components/datacenter/DataCenterEntryForm'))
 const DataCenterCategoryManager = lazy(() => import('../components/datacenter/DataCenterCategoryManager'))
+const DataCenterQuality = lazy(() => import('../components/datacenter/DataCenterQuality'))
 
 const BASE_MODULES = [
   { key: 'overview', label: 'ภาพรวมระบบ',   Icon: LayoutGrid },
   { key: 'map',      label: 'แผนที่ GIS',    Icon: MapPin },
   { key: 'add',      label: 'บันทึกข้อมูลใหม่', Icon: Plus },
+  { key: 'quality',  label: 'คุณภาพข้อมูล',   Icon: ClipboardCheck },
 ]
+
+// สีป้ายคะแนนบนหัวหน้า (พื้นหลังหัวเป็นสีเข้มเสมอทั้ง 2 ธีม จึงใช้ชุดเดียว)
+const HEADER_SCORE_CLS = {
+  good: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/40 hover:bg-emerald-500/20',
+  warn: 'text-amber-300 bg-amber-500/10 border-amber-500/40 hover:bg-amber-500/20',
+  bad: 'text-red-300 bg-red-500/10 border-red-500/40 hover:bg-red-500/20',
+}
 const CATEGORY_MANAGER_MODULE = { key: 'categories', label: 'จัดการหมวดหมู่', Icon: Tags }
 
 // จำธีมที่ผู้ใช้เลือกไว้ — เดิมเป็น useState('light') เฉยๆ ออกจากหน้าแล้วกลับมาต้องกดสลับใหม่ทุกครั้ง
@@ -59,6 +69,16 @@ export default function DataCenterDashboard() {
   // ปุ่ม "ดูบนแผนที่" จากรายการ — เก็บกลุ่ม/ประเภท+พิกัดของรายการที่กดไว้ ส่งต่อให้ DataCenterMap ไปกรอง+
   // pan กล้องไปที่จุดนั้นให้เลย (ไม่ต้องให้ผู้ใช้ไปกรองหมวดเองซ้ำอีกรอบบนแผนที่)
   const [mapFocus, setMapFocus] = useState(null)
+  // "สุขภาพข้อมูล" (RPC data_center_health) ดึงครั้งเดียวที่นี่ ใช้ทั้งป้ายคะแนนที่หัวหน้า, แถบเตือนใน Overview
+  // และหน้า "คุณภาพข้อมูล" — ไม่ให้แต่ละที่ยิงซ้ำคนละรอบ (หลักเดียวกับ summary ด้านบน)
+  const [health, setHealth] = useState(null)
+  const [healthError, setHealthError] = useState(null)
+  const [healthLoading, setHealthLoading] = useState(false)
+  const [healthVersion, setHealthVersion] = useState(0)
+  const [staleDays, setStaleDays] = useState(DEFAULT_STALE_DAYS)
+  const [qualityTab, setQualityTab] = useState('catalog')
+  // กดแก้ไขจากหน้า "คุณภาพข้อมูล" แล้วบันทึก/ยกเลิก ให้กลับไปหน้านั้นต่อ ไม่เด้งไปภาพรวม (แก้ทีละหลายรายการได้ต่อเนื่อง)
+  const [formReturn, setFormReturn] = useState('overview')
 
   const isLight = theme === 'light'
 
@@ -100,6 +120,22 @@ export default function DataCenterDashboard() {
     return () => { alive = false }
   }, [tenant?.id, refreshKey, summaryVersion])
 
+  // เปลี่ยนแค่เมื่อข้อมูลเปลี่ยน (summaryVersion/refreshKey) หรือผู้ใช้เปลี่ยนเกณฑ์ "ไม่ได้ตรวจทาน" / กด "ตรวจใหม่"
+  // ถ้าฟังก์ชันยังไม่ถูก apply บนฐาน (error) ป้ายคะแนนจะไม่ขึ้นเลย ไม่แสดงค่าปลอม
+  useEffect(() => {
+    if (!tenant?.id) return
+    let alive = true
+    supabase.rpc('data_center_health', { _municipality_id: tenant.id, _stale_days: staleDays })
+      .then(({ data, error }) => {
+        if (!alive) return
+        setHealthLoading(false)
+        if (error) { setHealthError(error.message); setHealth(null); return }
+        setHealthError(null)
+        setHealth(data ?? null)
+      })
+    return () => { alive = false }
+  }, [tenant?.id, refreshKey, summaryVersion, staleDays, healthVersion])
+
   // ทรีหมวดหมู่ในเมนูซ้าย/bottom sheet — นับเฉพาะรายการที่ยัง "ใช้งาน" เท่านั้น ตรงกับ logic เดิม
   // (เดิมกรอง r.status !== 'archived' ทิ้งก่อนนับ กลุ่ม/ประเภทที่เหลือแต่รายการ archived จึงไม่ขึ้นในทรี)
   const categoryTree = useMemo(() => {
@@ -123,6 +159,7 @@ export default function DataCenterDashboard() {
   }
 
   function goToAddEntry(group, category) {
+    setFormReturn('overview')
     setPrefillGroup(group ?? null)
     setPrefillCategory(category ?? null)
     setActiveModule('add')
@@ -145,7 +182,8 @@ export default function DataCenterDashboard() {
     setPrefillGroup(null)
     setPrefillCategory(null)
     setEditingEntry(null)
-    setActiveModule('overview')
+    setActiveModule(formReturn)
+    setFormReturn('overview')
   }
 
   function handleBackToStaff() {
@@ -161,13 +199,37 @@ export default function DataCenterDashboard() {
     return ['staff', 'technician'].includes(profile.role) && entry.created_by === profile.id
   }
 
-  function handleEditEntry(entry) {
+  function handleEditEntry(entry, returnTo = 'overview') {
     if (!canManageEntry(entry)) {
       window.alert('รายการนี้เป็นของกองอื่นหรือผู้สร้างรายอื่น คุณเปิดดูบนแผนที่ได้แต่แก้ไขไม่ได้')
       return
     }
+    setFormReturn(returnTo)
     setEditingEntry(entry)
     setActiveModule('add')
+  }
+
+  // รายการในหน้า "คุณภาพข้อมูล" มาจาก RPC ที่ส่งเฉพาะคอลัมน์เบา ฟอร์มแก้ไขต้องใช้แถวเต็ม (รูป/เส้นทาง/รายละเอียด)
+  // จึงดึงแถวเดียวตอนกดแก้ไข ไม่ยัดคอลัมน์หนักเข้า RPC ทุกแถว
+  async function handleEditEntryById(id) {
+    const { data, error } = await supabase.from('data_center_entries').select('*').eq('id', id).maybeSingle()
+    if (error || !data) { window.alert('เปิดรายการไม่สำเร็จ' + (error ? ': ' + error.message : ' (อาจถูกลบไปแล้ว)')); return }
+    handleEditEntry(data, 'quality')
+  }
+
+  function openQuality(tab) {
+    setQualityTab(tab)
+    setActiveModule('quality')
+  }
+
+  function refreshHealth() {
+    setHealthLoading(true)
+    setHealthVersion(v => v + 1)
+  }
+
+  function changeStaleDays(days) {
+    setHealthLoading(true)
+    setStaleDays(days)
   }
 
   const isMapModule = activeModule === 'map'
@@ -291,14 +353,21 @@ export default function DataCenterDashboard() {
               </div>
             </button>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 px-2 py-0.5 rounded-full tracking-widest uppercase flex items-center gap-1 shadow-sm shadow-cyan-500/20">
-                  <Activity size={10} className="animate-pulse text-cyan-400" />
-                  DATA CORE v2.0
-                </span>
-                <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-                  <ShieldCheck size={10} /> SYSTEM ONLINE
-                </span>
+              {/* ป้ายสถานะที่หัวหน้าต้องมาจากข้อมูลจริงเท่านั้น (เดิมเป็นข้อความตายตัว "DATA CORE v2.0 / SYSTEM ONLINE"
+                  ที่ไม่ได้ตรวจอะไรเลย) — จำนวนรายการมาจาก summary, คะแนนมาจาก data_center_health ไม่มีข้อมูล = ไม่แสดง */}
+              <div className="flex flex-wrap items-center gap-2">
+                {summary?.totals && (
+                  <span className="text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 px-2 py-0.5 rounded-full tracking-wide flex items-center gap-1 shadow-sm shadow-cyan-500/20">
+                    <Database size={10} /> {summary.totals.total} รายการ · {summary.groups?.length ?? 0} กลุ่มข้อมูล
+                  </span>
+                )}
+                {health?.totals?.score != null && (
+                  <button type="button" onClick={() => openQuality('health')}
+                    title="คะแนนความพร้อมของข้อมูล — กดเพื่อดูรายการที่ต้องดูแลและกฎที่ใช้ตรวจ"
+                    className={`text-[10px] font-black font-mono flex items-center gap-1 border px-2 py-0.5 rounded-full transition-colors ${HEADER_SCORE_CLS[scoreTone(health.totals.score)]}`}>
+                    <HeartPulse size={10} /> คุณภาพข้อมูล {health.totals.score}%
+                  </button>
+                )}
               </div>
               <p className="text-base font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-100 to-cyan-300 mt-1 leading-tight">
                 ศูนย์รวมข้อมูลดิจิทัล — {tenant?.name}
@@ -476,6 +545,7 @@ export default function DataCenterDashboard() {
               }>
                 {activeModule === 'overview' && <DataCenterOverview key={refreshKey} tenant={tenant} profile={profile} theme={theme}
                   summary={summary} summaryError={summaryError}
+                  health={health} onOpenQuality={openQuality} canManageEntry={canManageEntry}
                   initialFilterGroup={sidebarFilter.group} initialFilterCategory={sidebarFilter.category}
                   onAddNew={(group, category) => goToAddEntry(group, category)}
                   onEditEntry={handleEditEntry}
@@ -488,7 +558,14 @@ export default function DataCenterDashboard() {
                   summary={summary}
                   initialGroup={prefillGroup} initialCategory={prefillCategory} editingEntry={editingEntry}
                   onSaved={handleSaved}
-                  onCancel={() => { setPrefillGroup(null); setPrefillCategory(null); setEditingEntry(null); setActiveModule('overview') }} />}
+                  onCancel={() => { setPrefillGroup(null); setPrefillCategory(null); setEditingEntry(null); setActiveModule(formReturn); setFormReturn('overview') }} />}
+                {activeModule === 'quality' && <DataCenterQuality tenant={tenant} profile={profile} theme={theme}
+                  tab={qualityTab} onTabChange={setQualityTab} summary={summary}
+                  health={health} healthError={healthError} healthLoading={healthLoading}
+                  staleDays={staleDays} onChangeStaleDays={changeStaleDays} onRefreshHealth={refreshHealth}
+                  isManager={isManager} canManageEntry={canManageEntry}
+                  onEditEntryById={handleEditEntryById} onViewOnMap={goToMapFocus}
+                  onDataChanged={() => setSummaryVersion(v => v + 1)} />}
                 {activeModule === 'categories' && isManager && <DataCenterCategoryManager key={refreshKey} tenant={tenant}
                   summary={summary} onDataChanged={() => setSummaryVersion(v => v + 1)} />}
               </Suspense>
