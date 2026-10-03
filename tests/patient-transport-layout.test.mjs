@@ -21,7 +21,7 @@ import {
 } from '../src/lib/patientTransportPrint.js'
 import { bookingLetter } from '../src/lib/patientBooking.js'
 import { thaiDateFromDateInput } from '../src/lib/thaiDate.js'
-import { assertSignBlockStandard, assertSignLinesAligned } from './lib/signBlockChecks.mjs'
+import { assertSignBlockStandard, assertSignLinesAligned, measureSignRows, measureTextCenterMm } from './lib/signBlockChecks.mjs'
 import { addressFromMap, joinPickup, pickupSentence, stripForeignParts } from '../src/lib/pickupText.js'
 import { collectionPointText } from '../src/lib/wasteCollectionRequestPrint.js'
 import { meterPointText } from '../src/lib/waterSupplyRequestPrint.js'
@@ -1102,7 +1102,9 @@ const checks = [
             signed: [...sheet.querySelectorAll('.sign-signed')].map(el => el.textContent.trim()),
             lines: sheet.querySelectorAll('.sign-line').length,
             afterSign: sheet.querySelector('.sign-block').nextElementSibling?.className ?? null,
-            last: sheet.lastElementChild.className,
+            // กล่อง .request-close ห่อคำลงท้ายกับบล็อกลงชื่อไว้ด้วยกัน (ใช้คอลัมน์ร่วมกัน) — มองทะลุเฉพาะเมื่อมันเป็นองค์ประกอบสุดท้ายของใบ
+            // ถ้ามีอะไรต่อท้ายกล่องนั้น lastElementChild จะไม่ใช่กล่อง จึงยังจับได้เหมือนเดิม
+            last: (() => { const end = sheet.lastElementChild; return (end.classList.contains('request-close') ? end.lastElementChild : end).className })(),
             origins: sheet.querySelectorAll('.origin').length,
             fund: sheet.querySelector('.form-fund')?.innerText.trim() ?? '',
             reference: sheet.querySelector('.form-no')?.innerText.replace(/\s+/g, ' ').trim() ?? '',
@@ -1496,6 +1498,51 @@ const checks = [
           assert.equal(style.adjust, '0.45')
         } finally { await page.close() }
       }
+    },
+  },
+  {
+    // เจ้าของระบบแจ้ง 2569-10-03 (ภาพจากใบจริง): "ขอแสดงความนับถือ" เยื้องไปจากชื่อผู้ยื่นคำขอ ให้อยู่ตรงชื่อ
+    // ต้นเหตุ: คำลงท้ายจัดกลาง "พื้นที่พิมพ์" แต่ชื่ออยู่กลาง "แกนลงชื่อ" ซึ่งเยื้องจากกลางหน้า เพราะคำว่า "ลงชื่อ" (ซ้าย)
+    // กับ "ผู้ยื่นคำขอ" (ขวา) กว้างไม่เท่ากัน — ต้องวัดกล่องตัวอักษรจริง (Range) ห้ามวัดกล่องของ <p> ซึ่งอยู่กลางหน้าเสมอ
+    name: 'request-form-regards-centered-on-name',
+    reason: 'คำลงท้าย "ขอแสดงความนับถือ" ต้องอยู่กึ่งกลางเหนือชื่อผู้ยื่นพอดี ทั้งชื่อสั้น ชื่อที่ยาวกว่าแกน (แกนยืดตามชื่อ)'
+      + ' และไม่มีชื่อ (เส้นให้เขียนมือ) ทั้งใบจากระบบคำขอเดิมและใบจากระบบจองคิว · ระยะแนวตั้งระหว่างคำลงท้ายกับช่องลงชื่อต้องคง 8mm'
+      + ' (ค่าที่ไล่ไว้ให้ใบจบ 1 หน้า)',
+    async run(browser) {
+      const NAMES = [
+        ['ชื่อสั้น', 'นายสมชาย ใจดี'],
+        ['ชื่อยาวกว่าแกน', 'นางสาวประกายมาศ ศรีวิชัยพัฒนาเจริญสุขสันต์ ณ เชียงใหม่ทดสอบระบบ'],
+        ['ไม่มีชื่อ', ''],
+      ]
+      const builders = [
+        ['ระบบคำขอเดิม', requesterName => buildPatientTransportFormHtml(args({ parent: { ...PARENT, requester_name: requesterName } }))],
+        ['ระบบจองคิว', requesterName => {
+          const booking = { ...TRIP_BOOKINGS[0], route_label: TRIP.plan.route_label, requester_name: requesterName }
+          return buildBookingRequestFormHtml({ ...tripArgs(), booking, bookings: [booking] })
+        }],
+      ]
+      const offsets = []
+      for (const [system, build] of builders) {
+        for (const [label, requesterName] of NAMES) {
+          const page = await render(browser, build(requesterName))
+          try {
+            const rows = await measureSignRows(page)
+            assert.equal(rows.length, 1, `${system}/${label}: ใบคำขอต้องมีช่องลงนามผู้ยื่นช่องเดียว`)
+            const name = rows[0].below[0]
+            if (label === 'ชื่อยาวกว่าแกน') assert.ok(name.widthMm > 55, `${system}: เคสนี้ต้องมีชื่อยาวกว่าแกน 55mm จริง (วัดได้ ${name.widthMm.toFixed(1)}mm) ไม่งั้นไม่ได้ทดสอบแกนที่ยืดตามชื่อ`)
+            const offset = (await measureTextCenterMm(page, '.form-regards')) - name.centerMm
+            offsets.push(`${system}/${label} ${offset.toFixed(2)}mm`)
+            assert.ok(Math.abs(offset) <= 0.5, `${system}/${label}: "ขอแสดงความนับถือ" เยื้องจากกึ่งกลางชื่อ ${offset.toFixed(2)}mm (ต้องไม่เกิน 0.5mm)`)
+            const gap = await page.evaluate(mm => {
+              const regards = document.querySelector('.form-regards').getBoundingClientRect()
+              const sign = document.querySelector('.request-sign').getBoundingClientRect()
+              return (sign.top - regards.bottom) / mm
+            }, 3.779527)
+            assert.ok(Math.abs(gap - 8) <= 0.3, `${system}/${label}: ระยะคำลงท้ายถึงช่องลงชื่อ ${gap.toFixed(2)}mm (ต้องคง 8mm)`)
+          } finally { await page.close() }
+        }
+      }
+      return offsets.join(' · ')
     },
   },
 ]

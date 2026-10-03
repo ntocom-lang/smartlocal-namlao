@@ -132,3 +132,29 @@ export async function assertSignLinesAligned(page, selector = '.sign-row') {
       `คำต่อท้ายในคอลัมน์ที่ x=${column} เริ่มไม่ตรงแนวกัน: ${lefts.join(', ')}px`)
   }
 }
+
+/**
+ * กึ่งกลางแนวนอน (มม.) ของ "ตัวอักษรจริง" ขององค์ประกอบแรกที่ตรงกับ selector
+ *
+ * ใช้เทียบข้อความที่อยู่นอกช่องลงนามกับแกนของช่องลงนาม เช่น คำลงท้าย "ขอแสดงความนับถือ"
+ * ต้องอยู่เหนือชื่อผู้ลงนามพอดี (เจ้าของระบบแจ้ง 2569-10-03: ใบคำขอรถรับ-ส่งผู้ป่วยเยื้องไป ~5mm)
+ * วัดด้วย Range + getClientRects() เหมือน measureSignRows — ห้ามวัดด้วยกล่องของ element
+ * (กล่องของ <p> text-align: center กว้างเต็มพื้นที่พิมพ์ จึงอยู่กลางหน้าเสมอ ไม่ว่าตัวอักษรจะอยู่ตรงไหน)
+ *
+ * @param {import('playwright').Page} page
+ * @param {string} selector
+ * @returns {Promise<number>}
+ */
+export async function measureTextCenterMm(page, selector) {
+  const center = await page.evaluate(({ selector: css, mm }) => {
+    const el = document.querySelector(css)
+    if (!el) return null
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    const rects = [...range.getClientRects()]
+    if (!rects.length) return null
+    return (Math.min(...rects.map(rect => rect.left)) + Math.max(...rects.map(rect => rect.right))) / 2 / mm
+  }, { selector, mm: PX_PER_MM })
+  assert.notEqual(center, null, `ไม่พบข้อความของ ${selector} ให้วัด`)
+  return center
+}
