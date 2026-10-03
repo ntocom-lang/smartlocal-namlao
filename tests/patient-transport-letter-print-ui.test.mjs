@@ -98,7 +98,11 @@ try {
       if (expectedDay) assert.match(await popup.locator('.letter-date').innerText(), new RegExp(`^${Number(expectedDay)} .*2569$`))
       const text = (await popup.locator('.sheet').allInnerTexts()).join('\n')
       assert.ok(text.includes(booking.patient_name) && !text.includes('TEST ผู้ป่วยคนอื่น'))
-      await popup.getByRole('button', { name: 'ปิดหน้าต่าง' }).click()
+      // ปุ่มนี้สั่ง window.close() เพจจึงหายระหว่างที่ Playwright ยังคลิกไม่เสร็จได้ (ล้มบน CI 1 จาก 2 รอบ ทั้งที่โค้ดเดียวกัน)
+      // รับ error "เพจถูกปิด" เฉพาะเมื่อเพจปิดจริง แล้วรอ event close ยืนยันว่าหน้าต่างปิดจริง — เดิมไม่มีใครเช็กข้อนี้
+      const closed = popup.waitForEvent('close')
+      await popup.getByRole('button', { name: 'ปิดหน้าต่าง' }).click().catch(error => { if (!popup.isClosed()) throw error })
+      await closed
     }
     const pass = name => { passed++; console.log(`PASS ${width}px ${name}`) }
 
