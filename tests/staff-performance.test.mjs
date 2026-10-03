@@ -207,4 +207,34 @@ test('CSV category column is Thai even when the label map has no entry for the c
   assert.ok(csv.includes('ซ่อมน้ำประปา'), 'ต้องใช้ชื่อไทยมาตรฐานของ water_repair')
 })
 
+test('list paging: 20 per page, last page partial, no list = one empty page (2569-10-03)', () => {
+  assert.equal(lib.LIST_PAGE_SIZE, 20)
+  assert.deepEqual(lib.pageWindow(57, 0), { page: 0, pages: 3, start: 0, end: 20 })
+  assert.deepEqual(lib.pageWindow(57, 1), { page: 1, pages: 3, start: 20, end: 40 })
+  assert.deepEqual(lib.pageWindow(57, 2), { page: 2, pages: 3, start: 40, end: 57 })
+  assert.deepEqual(lib.pageWindow(20, 0), { page: 0, pages: 1, start: 0, end: 20 }, 'ครบ 20 พอดีต้องไม่เกิดหน้า 2 ว่าง')
+  assert.deepEqual(lib.pageWindow(21, 1), { page: 1, pages: 2, start: 20, end: 21 })
+  assert.deepEqual(lib.pageWindow(0, 0), { page: 0, pages: 1, start: 0, end: 0 })
+})
+
+test('list paging: out-of-range or invalid page is clamped, never an empty page (2569-10-03)', () => {
+  // เปลี่ยนไปกลุ่มที่รายการน้อยกว่าเดิมแล้วหน้าเก่าค้าง → ต้องตกที่หน้าสุดท้ายที่มีของ
+  assert.equal(lib.pageWindow(25, 5).page, 1)
+  assert.equal(lib.pageWindow(25, -3).page, 0)
+  assert.equal(lib.pageWindow(25, Number.NaN).page, 0)
+  assert.equal(lib.pageWindow(25, undefined).page, 0)
+  assert.equal(lib.pageWindow(0, 4).start, 0)
+})
+
+test('list paging: every item appears on exactly one page, in order', () => {
+  const ids = Array.from({ length: 47 }, (_, i) => i)
+  const seen = []
+  for (let page = 0; page < lib.pageWindow(ids.length, 0).pages; page++) {
+    const w = lib.pageWindow(ids.length, page)
+    assert.ok(w.end - w.start <= 20)
+    seen.push(...ids.slice(w.start, w.end))
+  }
+  assert.deepEqual(seen, ids)
+})
+
 console.log(`All ${cases} staff performance checks passed`)

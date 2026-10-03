@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Download, Info, Loader2, Printer } from 'lucide-react'
 import { ListCard, Pills } from '../patientTransport/StaffShell'
 import { logAction } from '../../lib/auditLog'
 import { MONTH_OPTIONS, QUARTERS, fiscalYearOptionsBE, yearOptionsBE } from '../../lib/fleetReportPeriod'
 import {
-  CHANNEL_LABELS, DIMENSION_LABELS, EVALUATION_ROUNDS, PERFORMANCE_PERIOD_MODES,
-  defaultPerformancePeriod, normalizePerformanceRows, performanceCsvRows, performancePeriodRange,
+  CHANNEL_LABELS, DIMENSION_LABELS, EVALUATION_ROUNDS, LIST_PAGE_SIZE, PERFORMANCE_PERIOD_MODES,
+  defaultPerformancePeriod, normalizePerformanceRows, pageWindow, performanceCsvRows, performancePeriodRange,
   summarizePerformance, thaiShortDate, toCsv,
 } from '../../lib/staffPerformance'
 import { buildStaffPerformanceHtml, pickCertifier } from '../../lib/staffPerformancePrint'
@@ -86,6 +86,11 @@ export default function StaffPerformanceModule({ tenant, profile }) {
   const [registry, setRegistry] = useState([])
   const [card, setCard] = useState(null)
   const [result, setResult] = useState({ rows: [], error: null, incomplete: false, key: '' })
+  // หน้าของตารางรายการ จำคู่กับอาร์เรย์รายการที่แบ่งอยู่ — เปลี่ยนช่วง/คน/หมวด = คำนวณสรุปใหม่ = อาร์เรย์ใหม่ = กลับหน้า 1
+  // เองโดยไม่ต้อง reset ใน effect (แบบเดียวกับ usePagedRows ของ FleetReport) · สลับกลุ่มรายการ (แล้วเสร็จ/ค้าง/ไม่ทราบวัน)
+  // อาร์เรย์เดิมยังเป็นตัวเดิม จึงต้องสั่งรีเซ็ตเองที่ปุ่ม ไม่งั้นสลับไปแล้วกลับมาจะค้างหน้าเก่า
+  const [paging, setPaging] = useState({ rows: null, page: 0 })
+  const listTopRef = useRef(null)
 
   // ผู้บริหารไม่มีคำร้องของตัวเอง จึงเริ่มที่คนแรกในรายชื่อแทนตัวเอง
   const defaultPersonId = me?.role === 'viewer' ? (people[0]?.id ?? null) : (me?.id ?? null)
@@ -183,6 +188,15 @@ export default function StaffPerformanceModule({ tenant, profile }) {
   const legacyCount = summary.completedItems.filter(i => i.completionSource === 'legacy').length
   const hidden = summary.confidential.completed + summary.confidential.openAtEnd
   const listItems = list === 'completed' ? summary.completedItems : list === 'open' ? summary.openItems : summary.undatedItems
+  // แบ่งหน้าเฉพาะที่แสดงบนจอ — ตัวเลขสรุป ใบพิมพ์ และ CSV ใช้ทุกรายการของช่วงที่เลือก ไม่ผ่านตรงนี้
+  const win = pageWindow(listItems.length, paging.rows === listItems ? paging.page : 0)
+  const pageItems = listItems.slice(win.start, win.end)
+  function goToPage(next) {
+    setPaging({ rows: listItems, page: next })
+    // กดจากท้ายตารางบนมือถือแล้วหน้าใหม่ต้องเริ่มที่บนสุดของตาราง ไม่ใช่ค้างท้ายหน้า
+    const top = listTopRef.current
+    if (top && top.getBoundingClientRect().top < 0) top.scrollIntoView({ block: 'start' })
+  }
   const errorText = result.error
     ? (result.error.code === '42501' ? 'ไม่มีสิทธิ์ดูผลการปฏิบัติงานของบุคคลนี้' : `โหลดข้อมูลไม่สำเร็จ: ${result.error.message}`)
     : ''
@@ -363,8 +377,9 @@ export default function StaffPerformanceModule({ tenant, profile }) {
             </div>
           )}
 
+          <div ref={listTopRef}>
           <ListCard title="รายการคำร้องของผู้รับผิดชอบ" count={listItems.length}
-            pills={<Pills value={list} onChange={setList} label="กลุ่มรายการ" items={[
+            pills={<Pills value={list} onChange={next => { setList(next); setPaging({ rows: null, page: 0 }) }} label="กลุ่มรายการ" items={[
               { id: 'completed', label: 'แล้วเสร็จในช่วงนี้', count: summary.completedItems.length, color: '#047857' },
               { id: 'open', label: 'ค้าง ณ สิ้นช่วง', count: summary.openItems.length, color: '#d97706' },
               { id: 'undated', label: 'ไม่ทราบวันแล้วเสร็จ', count: summary.undatedItems.length, color: '#6b7280' },
@@ -372,6 +387,7 @@ export default function StaffPerformanceModule({ tenant, profile }) {
             {listItems.length === 0 ? (
               <p className="px-5 py-10 text-center text-sm text-gray-400">ไม่มีคำร้องในกลุ่มนี้</p>
             ) : (
+              <>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] border-collapse text-xs">
                   <thead className="bg-gray-50 text-gray-600">
@@ -385,7 +401,7 @@ export default function StaffPerformanceModule({ tenant, profile }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {listItems.map(item => (
+                    {pageItems.map(item => (
                       <tr key={item.id} className="border-t border-gray-100 align-top">
                         <td className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">{item.refNo ?? '—'}</td>
                         <td className="px-3 py-2 text-gray-700">{categoryNameOf(labels, item.category)}{item.issueType && <span className="block text-gray-400">{item.issueType}</span>}</td>
@@ -416,8 +432,23 @@ export default function StaffPerformanceModule({ tenant, profile }) {
                   </tbody>
                 </table>
               </div>
+              {listItems.length > LIST_PAGE_SIZE && (
+                <nav aria-label="แบ่งหน้ารายการคำร้อง"
+                  className="flex flex-col items-center justify-between gap-2 border-t border-gray-200 px-4 py-3 text-xs text-gray-500 sm:flex-row sm:px-5 md:bg-[#f5f8fc]">
+                  <span>แสดง {win.start + 1}–{win.end} จาก {listItems.length} รายการ</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => goToPage(win.page - 1)} disabled={win.page === 0}
+                      className="min-h-10 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-40">ก่อนหน้า</button>
+                    <span aria-live="polite">หน้า {win.page + 1} / {win.pages}</span>
+                    <button type="button" onClick={() => goToPage(win.page + 1)} disabled={win.page >= win.pages - 1}
+                      className="min-h-10 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-40">ถัดไป</button>
+                  </div>
+                </nav>
+              )}
+              </>
             )}
           </ListCard>
+          </div>
         </>
       )}
     </div>

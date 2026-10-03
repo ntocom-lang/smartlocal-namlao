@@ -173,6 +173,20 @@ export function percent(numerator, denominator) {
   return Math.round((numerator / denominator) * 1000) / 10
 }
 
+/** จำนวนรายการต่อหน้าของตารางรายการบนจอ (เจ้าของระบบกำหนด 2026-10-03) — ใบพิมพ์/CSV ไม่แบ่งหน้า */
+export const LIST_PAGE_SIZE = 20
+
+/**
+ * ช่วงรายการของหน้าที่ขอ (page เริ่มที่ 0) — หน้าที่เกินช่วงถูกบีบกลับเข้ามา ไม่เคยได้หน้าว่าง
+ * ไม่มีรายการเลย = 1 หน้า ช่วง 0–0
+ */
+export function pageWindow(total, page, size = LIST_PAGE_SIZE) {
+  const pages = Math.max(1, Math.ceil(total / size))
+  const safePage = Math.min(Math.max(0, Number.isInteger(page) ? page : 0), pages - 1)
+  const start = safePage * size
+  return { page: safePage, pages, start, end: Math.min(start + size, total) }
+}
+
 export function median(values) {
   const sorted = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b)
   if (sorted.length === 0) return null
