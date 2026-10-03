@@ -226,6 +226,15 @@ export function staffNextAction(booking, trip) {
 // settings ไปหน้าตั้งค่า · issue ไปแก้เหตุขัดข้องของวันนั้น · reload โหลดข้อมูลล่าสุด
 const SETTINGS_FIX = ['settings']
 const CONFIRM_BLOCKERS = {
+  'ห้ามรวมงานผู้ป่วยกับงานชุมชน': ['งานผู้ป่วยและงานชุมชนต้องแยกเที่ยว', ['single']],
+  'งานชุมชนไม่เปิดร่วมเที่ยว': ['งานชุมชนใช้หนึ่งคำขอต่อเที่ยว รวมเฉพาะคนในกลุ่มนั้น', ['single']],
+  'งานชุมชนไม่ใช้ผู้ช่วยเคลื่อนย้าย': ['งานชุมชนรับเฉพาะผู้เดินได้ ให้ล้างชื่อผู้ช่วยของแผนนี้', ['reload', 'call']],
+  'ยังไม่ตั้งสถานที่ชุมชนและเวลาเดินทาง': ['สถานที่ชุมชนนี้ยังไม่มีเวลาเดินทางที่ใช้จัดคิวได้', ['amend', 'settings']],
+  'ยังไม่ตั้งช่วงเวลาบริการชุมชน': ['ยังไม่ได้ตั้งช่วงเวลาที่ต้องถึงของบริการชุมชน', SETTINGS_FIX],
+  'เวลาที่ต้องถึงอยู่นอกช่วงบริการชุมชน': ['เวลาที่ต้องถึงอยู่นอกช่วงเวลาบริการชุมชนที่ตั้งไว้', ['call', 'amend', 'cancel']],
+  'รูปแบบขากลับของผู้ร่วมเที่ยวไม่ตรงกัน': ['ขากลับของผู้ร่วมเที่ยวต้องเป็นรูปแบบเดียวกัน', ['single', 'call']],
+  'ต้องจัดรอบรับหลายรอบผ่านเที่ยวที่ยืนยันแล้ว': ['รอบรับหลายรอบต้องเริ่มจากเที่ยวที่ยืนยันแล้ว', ['single', 'call']],
+  'รอบรับ–ส่งทับกันภายในแผนเดียว': ['รถทำรอบรับ–ส่งตามแผนนี้พร้อมกันไม่ได้', ['call', 'amend', 'cancel']],
   'ต้องตรวจสอบพื้นที่รับบริการ': ['ยังไม่ได้ตรวจว่าจุดรับอยู่ในเขตพื้นที่ให้บริการ', ['area']],
   'ต้องยืนยันผู้ช่วยเคลื่อนย้ายประจำเที่ยว': ['ผู้ป่วยใช้รถเข็นหรือเปล ต้องมีผู้ช่วยเคลื่อนย้ายไปด้วย', ['helper']],
   'ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว': ['รถไม่ว่าง ช่วงเวลานี้ชนกับเที่ยวที่ยืนยันแล้ว', ['call', 'amend', 'cancel']],
@@ -260,7 +269,8 @@ export function overlappingTrips(plan, trips = []) {
 // เที่ยวที่ลอง "ให้ไปคันเดียวกัน" ได้ (20260921120000): ยืนยันแล้ว ปลายทาง วัน และขากลับตรงกัน
 // เป็นแค่ตัวกรองไม่ให้ถามฐานข้อมูลเปล่า ๆ — เงื่อนไขจริง (ยินยอมนั่งร่วม ที่นั่ง เวลา) ฐานข้อมูลตัดสินเอง
 export function joinCandidates(plan, trips = []) {
-  return overlappingTrips(plan, trips).filter(t => t.state === 'confirmed' && t.plan?.route_id === plan?.route_id
+  if ((plan?.service_type || 'patient') !== 'patient') return []
+  return overlappingTrips(plan, trips).filter(t => (t.plan?.service_type || 'patient') === 'patient' && t.state === 'confirmed' && t.plan?.route_id === plan?.route_id
     && (t.plan?.return_mode === plan?.return_mode ||
       (['wait', 'later'].includes(t.plan?.return_mode) && ['wait', 'later'].includes(plan?.return_mode)))
     && t.plan?.date === plan?.date).slice(0, 3)
@@ -287,6 +297,14 @@ export function bookingPlanGuidance(message, plan, workspace = {}) {
   const selected = (workspace.bookings || []).filter(b => plan?.booking_ids?.includes(b.id))
   let detail = ''
   if (!sameSettings) detail = 'ค่าตั้งเปลี่ยนหลังตรวจแผน กรุณาโหลดข้อมูลล่าสุดแล้วตรวจแผนอีกครั้ง'
+  else if (message === 'เวลาที่ต้องถึงอยู่นอกช่วงบริการชุมชน') {
+    const rules = workspace.community_rules
+    if (plan?.community_rules_version != null && rules?.rules_version != null && plan.community_rules_version !== rules.rules_version) {
+      detail = 'กฎบริการชุมชนเปลี่ยนหลังตรวจแผน กรุณาโหลดข้อมูลล่าสุดแล้วตรวจแผนอีกครั้ง'
+    } else if (Number.isFinite(rules?.window_start) && Number.isFinite(rules?.window_end)) {
+      detail = `ช่วงเวลาที่ต้องถึงของบริการชุมชน ${clockTime(rules.window_start)}–${clockTime(rules.window_end)} น.`
+    }
+  }
   else if (message === 'เวลานัดแพทย์อยู่นอกช่วงที่เปิดรับจอง' && Number.isFinite(settings.office_start) && Number.isFinite(settings.office_end)) {
     detail = `เวลานัดแพทย์ที่เปิดรับจอง ${clockTime(settings.office_start)}–${clockTime(settings.office_end)} น.${selected.length ? ` · ${selected.map(b => `${b.patient_name} นัด ${dateTime(b.appointment_at)}`).join(' / ')}` : ''}`
   } else if (message === 'เวลารับ–ส่งอยู่นอกเวลาบริการ' && Number.isFinite(settings.office_start) && Number.isFinite(settings.office_end) && plan?.date) {

@@ -37,6 +37,14 @@ await db.exec(await readFile(new URL('../supabase/migrations/20261001100000_pati
 await db.exec(await readFile(new URL('../supabase/migrations/20261002090000_patient_booking_period_report.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20261002130000_patient_booking_letter_per_booking_columns.sql', import.meta.url), 'utf8'))
 await db.exec(await readFile(new URL('../supabase/migrations/20261002130100_patient_booking_letter_per_booking_rpc.sql', import.meta.url), 'utf8'))
+await db.exec(await readFile(new URL('../supabase/migrations/20261003120000_patient_booking_community_rules_rpc.sql', import.meta.url), 'utf8'))
+for (const file of [
+  '20261003130000_patient_booking_community_constraints_retention.sql',
+  '20261003130100_patient_booking_community_scheduler_rpc.sql',
+  '20261003130200_patient_booking_community_projections_rpc.sql',
+  '20261003130300_patient_booking_community_reports_rpc.sql',
+  '20261003130400_patient_booking_community_intake_rpc.sql',
+]) await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 await actor(admin)
 await rpc('patient_booking_save_settings', [tenant, (await rpc('patient_booking_workspace', [tenant])).settings.revision,
   { ...settings, office_start: 450, office_end: 1050, routes: [{ ...settings.routes[0], minutes: 45 }] }])
@@ -1698,5 +1706,47 @@ try{
  console.log('PASS inbox order: action → live → done sections with colored headers and row strips, urgency then appointment within action, ascending dates within each section, same order on mobile; a trip frame wraps exactly the riders of every shared trip whose riders sit together, on table and mobile')
  console.log('PASS done section folded on open: header with count + show button, search and done/cancelled pills open it without a toggle, toggle on desktop and mobile')
  console.log(`PASS click counts ${JSON.stringify(clicks)}`)
+ // Community backend fixture is added after all legacy patient scenes/count checks.
+ // This does not enable any real tenant: the RPC is served only by isolated PGlite.
+ const communityRules={enabled:true,window_start:360,window_end:1200,
+  places:[{id:'test-community-place',label:'[TEST] สถานที่ชุมชน',minutes:45}],
+  activities:[{code:'test-community-activity',label:'[TEST] กิจกรรมชุมชน'}],rules_reference:'[TEST] ข้อบังคับจำลอง'}
+ await runAs(admin,async()=>{
+  const w=await rpc('patient_booking_workspace',[tenant])
+  await rpc('patient_booking_save_settings',[tenant,w.settings.revision,{...w.settings,driver_id:driver,coordinator_ids:[coordinator]}])
+  await rpc('patient_booking_save_community_rules',[tenant,w.community_rules.revision,communityRules])
+ })
+ const communityDate=new Date();communityDate.setUTCDate(communityDate.getUTCDate()+285)
+ const communityDay=communityDate.toISOString().slice(0,10),communityBooking=randomUUID(),communityTrip=randomUUID()
+ await runAs(citizen,async()=>{
+  const info=await rpc('patient_booking_info',[tenant])
+  await rpc('patient_booking_submit_community',[tenant,communityBooking,{requester_name:'[TEST] ผู้ติดต่อชุมชน',phone:'0800099990',
+   pickup:'[TEST] จุดรับกลุ่ม',in_area:true,route_id:'test-community-place',appointment_at:`${communityDay}T07:00:00+07:00`,
+   return_at:`${communityDay}T19:00:00+07:00`,return_mode:'later',group_label:'[TEST] กลุ่มชุมชน UI',party_size:3,
+   purpose_code:'test-community-activity',rules_version:info.community.rules_version,consent:true,
+   consent_version:'community-booking-v1',privacy_notice:info.community.privacy_notice,owner_name:info.owner_name},false])
+ })
+ await runAs(admin,async()=>{
+  const w=await rpc('patient_booking_workspace',[tenant])
+  await rpc('patient_booking_save_community_rules',[tenant,w.community_rules.revision,{...communityRules,enabled:false}])
+ })
+ await runAs(coordinator,async()=>{
+  const plan=await rpc('patient_booking_preview',[tenant,[communityBooking],'']);assert.deepEqual(plan.errors,[])
+  await rpc('patient_booking_confirm',[tenant,communityTrip,[communityBooking],plan,''])
+  assert(!(await rpc('patient_booking_period_report',[tenant,communityDay,communityDay])).trips.some(t=>t.trip_id===communityTrip))
+ })
+ await runAs(null,async()=>{
+  const cal=await rpc('patient_booking_calendar',[tenant,communityDay,communityDay])
+  assert.equal(cal.days[0].trips.find(t=>t.id===communityTrip).joinable,false)
+  assert(!JSON.stringify(cal).includes('[TEST] กลุ่มชุมชน UI'))
+ })
+ for(const width of [320,390]) {
+  await page.setViewportSize({width,height:900});await visit('driver')
+  await card(communityTrip).getByText('กลุ่ม [TEST] กลุ่มชุมชน UI (3 คน)',{exact:true}).waitFor()
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
+ }
+ if(process.env.PATIENT_PREVIEW_SHOTS)await card(communityTrip).screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/community-legacy-driver-390.png`})
+ assert.equal((await runSql(()=>db.query('SELECT patient_name FROM public.patient_bookings WHERE id=$1',[communityBooking]))).rows[0].patient_name,null)
+ console.log('PASS community backend with legacy UI: labelled driver projection at 320/390px, patient reports exclude community, public calendar private/nonjoinable, accepted work confirms after closure')
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}
