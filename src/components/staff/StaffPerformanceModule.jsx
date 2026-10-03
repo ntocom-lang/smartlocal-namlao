@@ -389,9 +389,10 @@ export default function StaffPerformanceModule({ tenant, profile }) {
             ) : (
               <>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-collapse text-xs">
+                <table className="w-full min-w-[808px] border-collapse text-xs">
                   <thead className="bg-gray-50 text-gray-600">
                     <tr>
+                      <th className="w-12 px-2 py-2 text-center">ที่</th>
                       <th className="px-3 py-2 text-left">เลขที่</th><th className="px-3 py-2 text-left">หมวด / ลักษณะปัญหา</th>
                       <th className="px-3 py-2 text-left">หมู่บ้าน</th><th className="px-3 py-2">วันที่รับเรื่อง</th>
                       <th className="px-3 py-2">{list === 'open' ? 'วันครบกำหนด' : 'วันที่แล้วเสร็จ'}</th>
@@ -401,8 +402,10 @@ export default function StaffPerformanceModule({ tenant, profile }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {pageItems.map(item => (
+                    {pageItems.map((item, index) => (
                       <tr key={item.id} className="border-t border-gray-100 align-top">
+                        {/* ลำดับนับต่อเนื่องข้ามหน้า (หน้า 2 เริ่ม 21) — นับตามรายการของกลุ่มที่เลือก ไม่ใช่เลขที่คำร้อง */}
+                        <td className="whitespace-nowrap px-2 py-2 text-center text-gray-500">{win.start + index + 1}</td>
                         <td className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">{item.refNo ?? '—'}</td>
                         <td className="px-3 py-2 text-gray-700">{categoryNameOf(labels, item.category)}{item.issueType && <span className="block text-gray-400">{item.issueType}</span>}</td>
                         <td className="px-3 py-2 text-gray-600">{item.village ?? ''}</td>
