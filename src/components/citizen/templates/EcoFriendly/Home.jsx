@@ -83,7 +83,7 @@ function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) 
       <div className="relative aspect-video bg-gray-100 cursor-pointer overflow-hidden"
         onClick={() => next()}>
         {post.image_url
-          ? <img key={post.id} src={post.image_url} alt={post.title}
+          ? <img loading="lazy" decoding="async" key={post.id} src={post.image_url} alt={post.title}
               className="w-full h-full object-cover transition-opacity duration-500"
               style={{ objectPosition: post.image_position ?? '50% 50%' }} />
           : <div className="w-full h-full flex items-center justify-center">
