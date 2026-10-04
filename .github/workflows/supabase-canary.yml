@@ -1,0 +1,52 @@
+# เฝ้าดูว่าเว็บยังดึงข้อมูล อปท. จาก Supabase ได้ไหม — ทุกชั่วโมง ถ้าล่ม job ล้มเหลวและ GitHub ส่งอีเมลแจ้ง
+#
+# เหตุที่ต้องมี (2026-10-04): Supabase ตัดบริการทั้งโปรเจกต์ (HTTP 402 เพราะ Cached Egress เกินโควตาแผนฟรี)
+# ทุกเว็บขึ้น "ไม่พบหน่วยงานรหัส …" และไม่มีใครรู้จนกว่าประชาชนจะบอก
+#
+# วิธีตรวจ: ขอ /manifest.webmanifest ของแต่ละเว็บ — worker/index.js ดึงข้อมูล อปท. จาก Supabase มาสร้างไฟล์นี้
+# ถ้า Supabase ตอบ 402/5xx หรือ Worker ล่ม จะได้ 404/5xx แทน 200 จึงตรวจได้ทั้งสายทางโดยไม่ต้องมี key ใดๆ
+# (ไม่ใช้ secret ไม่ยิง API ของ Supabase ตรง)
+#
+# ⚠️ ข้อจำกัดที่ต้องรู้
+#   - จับได้เฉพาะ "ล่มแล้ว" ไม่ใช่ "ใกล้เต็ม" เพราะ Supabase ไม่เปิดตัวเลขการใช้ให้ฝั่งเราอ่านโดยไม่มี token
+#     ส่วนการดูโควตาล่วงหน้ายังต้องเปิด Dashboard → Organization → Usage เอง (ดู docs/ai/NOTES.md ข้อ 15)
+#   - อีเมลแจ้งเตือนไปที่คนที่แก้ cron ล่าสุด ตามค่า Settings → Notifications → Actions ของ GitHub คนนั้น
+#   - GitHub ปิด schedule อัตโนมัติถ้า repo ไม่มีกิจกรรม 60 วัน (repo นี้ public ไม่เสียนาที Actions)
+name: Supabase canary
+
+on:
+  schedule:
+    - cron: '17 * * * *' # ทุกชั่วโมงที่นาที 17 (UTC) เลี่ยงต้นชั่วโมงที่คิวของ GitHub แน่น
+  workflow_dispatch: # กดรันเองจากแท็บ Actions ได้
+
+permissions: {}
+
+concurrency:
+  group: supabase-canary
+  cancel-in-progress: true
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      HOSTS: 'namlao.rk-networks.com demo.rk-networks.com'
+    steps:
+      - name: ตรวจ manifest ของแต่ละเว็บ
+        run: |
+          failed=""
+          for host in $HOSTS; do
+            code=000
+            # ลองซ้ำ 3 ครั้ง ห่างกัน 20 วินาที กันสะดุดชั่วคราว (เช่นช่วง deploy) ไม่ให้เตือนหลอก
+            for attempt in 1 2 3; do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://$host/manifest.webmanifest?canary=${GITHUB_RUN_ID}-${attempt}" || true)
+              [ "$code" = "200" ] && break
+              [ "$attempt" -lt 3 ] && sleep 20
+            done
+            echo "$host -> $code"
+            [ "$code" = "200" ] || failed="$failed $host($code)"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::เว็บดึงข้อมูล อปท. ไม่ได้:$failed — สาเหตุที่เคยเจอ: Supabase ตอบ 402 (เกินโควตาแผนฟรี) ตรวจที่ Dashboard → Organization → Usage หรือดู status.supabase.com แล้วอ่าน docs/ai/NOTES.md ข้อ 15"
+            exit 1
+          fi
