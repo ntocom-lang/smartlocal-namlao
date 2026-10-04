@@ -128,6 +128,7 @@ export default function SystemSettingsAdmin() {
       subject: 'logos',
       filename: `app-icon-${tenant.slug}.png`,
       municipality: tenant?.slug,
+      keepFormat: true, // ไอคอนแอปต้องเป็น PNG เสมอ — ห้ามให้ด่านย่อรูปแปลงเป็น JPEG
     })
     if (upErr) throw upErr
     // ไม่ต่อ &v= เหมือนโลโก้ — drive-file ได้ id ใหม่ทุกครั้งที่อัปโหลด URL จึงไม่ซ้ำอยู่แล้ว
@@ -316,6 +317,7 @@ export default function SystemSettingsAdmin() {
         subject: 'logos',
         filename: `logo-${tenant.slug}.png`,
         municipality: tenant?.slug,
+        keepFormat: true, // โลโก้ผูกกับไอคอนแอป/ภาพโปร่งใส — ต้องคง PNG
       })
       if (upErr) throw upErr
       // url จาก Drive มี query string (?id=...) อยู่แล้ว ต้องต่อด้วย & ไม่ใช่ ? (ผิดกับ Supabase Storage
@@ -359,6 +361,7 @@ export default function SystemSettingsAdmin() {
         subject: 'qr',
         filename: `${tenant.slug}.png`,
         municipality: tenant?.slug,
+        keepFormat: true, // QR ต้องคมและคงรูปแบบเดิม — JPEG ทำให้สแกนยาก
       })
       if (upErr) throw upErr
       const bustedUrl = `${url}&v=${Date.now()}`

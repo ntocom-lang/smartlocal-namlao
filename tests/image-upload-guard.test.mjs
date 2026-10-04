@@ -23,7 +23,7 @@ before(async () => {
   await page.evaluate(async () => {
     window.U = await import('/imageUtils.js')
     // รูปจำลองแบบรูปถ่าย: ไล่สี + วงกลมเบลอ + สัญญาณรบกวนเล็กน้อย (เมล็ดคงที่ ผลซ้ำได้)
-    window.makeImage = async ({ w, h, type = 'image/png', name = 'photo.png', transparentLeft = false, fileType = type }) => {
+    window.makeImage = async ({ w, h, type = 'image/png', name = 'photo.png', transparentLeft = false, fileType = type, noise = 4, quality }) => {
       const canvas = document.createElement('canvas')
       canvas.width = w
       canvas.height = h
@@ -40,12 +40,12 @@ before(async () => {
       let seed = 12345
       for (let i = 0; i < img.data.length; i += 4) {
         seed = (seed * 1664525 + 1013904223) >>> 0
-        const n = ((seed >>> 24) % 9) - 4
+        const n = ((seed >>> 24) % (noise * 2 + 1)) - noise
         img.data[i] += n; img.data[i + 1] += n; img.data[i + 2] += n
       }
       ctx.putImageData(img, 0, 0)
       if (transparentLeft) ctx.clearRect(0, 0, Math.floor(w / 2), h)
-      const blob = await new Promise(r => canvas.toBlob(r, type))
+      const blob = await new Promise(r => canvas.toBlob(r, type, quality))
       return new File([blob], name, { type: fileType })
     }
     window.dims = async file => { const b = await createImageBitmap(file); const d = { w: b.width, h: b.height }; b.close(); return d }
@@ -61,20 +61,77 @@ test('รูปใหญ่ใน bucket สาธารณะ → ถูกย�
     const d = await window.dims(out)
     return { before: f.size, after: out.size, same: out === f, type: out.type, w: d.w, h: d.h }
   })
-  assert.ok(r.before > 1.5 * 1024 * 1024, `รูปทดสอบต้องใหญ่กว่า 1.5 MB (ได้ ${r.before})`)
+  assert.ok(r.before > 500 * 1024, `รูปทดสอบต้องใหญ่กว่า 500 KB (ได้ ${r.before})`)
   assert.equal(r.same, false)
   assert.equal(r.type, 'image/jpeg')
   assert.ok(r.after < 1024 * 1024, `ต้องเล็กกว่า 1 MB (ได้ ${r.after})`)
   assert.ok(Math.max(r.w, r.h) <= 1600, `ด้านยาวต้องไม่เกิน 1600 px (ได้ ${r.w}x${r.h})`)
 })
 
-test('รูปเล็กกว่า 1.5 MB → คืนไฟล์เดิมตัวเดิม ไม่แตะ', async () => {
+test('รูปเล็กกว่า 500 KB → คืนไฟล์เดิมตัวเดิม ไม่แตะ', async () => {
   const r = await page.evaluate(async () => {
-    const f = await window.makeImage({ w: 600, h: 300 })
+    const f = await window.makeImage({ w: 400, h: 300 })
     return { size: f.size, same: (await window.U.limitPublicImage('municipality-assets', f)) === f }
   })
-  assert.ok(r.size < 1.5 * 1024 * 1024)
+  assert.ok(r.size < 500 * 1024, `รูปทดสอบต้องเล็กกว่า 500 KB (ได้ ${r.size})`)
   assert.equal(r.same, true)
+})
+
+test('รูปแนวตั้ง 3000x4000 → ด้านยาวไม่เกิน 1600 px (ของเดิมได้ 1600x2134)', async () => {
+  const r = await page.evaluate(async () => {
+    const f = await window.makeImage({ w: 3000, h: 4000, type: 'image/jpeg', name: 'IMG.jpg', quality: 0.92 })
+    const out = await window.U.limitPublicImage('event-attachments', f)
+    return { same: out === f, ...(await window.dims(out)), before: f.size, after: out.size }
+  })
+  assert.equal(r.same, false)
+  assert.ok(Math.max(r.w, r.h) <= 1600, `ด้านยาวต้องไม่เกิน 1600 px (ได้ ${r.w}x${r.h})`)
+  assert.equal(Math.round((r.w / r.h) * 100), 75, 'สัดส่วนภาพต้องคงเดิม 3:4')
+  assert.ok(r.after < r.before)
+})
+
+test('ไม่ขยายรูป: PNG 1400x1000 ที่หนัก >500 KB → ขนาดภาพคงเดิม เล็กลงแต่เป็น JPEG', async () => {
+  const r = await page.evaluate(async () => {
+    const f = await window.makeImage({ w: 1400, h: 1000, noise: 14 })
+    const out = await window.U.limitPublicImage('municipality-assets', f)
+    return { before: f.size, after: out.size, same: out === f, type: out.type, ...(await window.dims(out)) }
+  })
+  assert.ok(r.before > 500 * 1024, `รูปทดสอบต้องหนักกว่า 500 KB (ได้ ${r.before})`)
+  assert.equal(r.same, false)
+  assert.equal(r.type, 'image/jpeg')
+  assert.deepEqual([r.w, r.h], [1400, 1000], 'ห้ามขยายหรือย่อรูปที่ด้านยาวไม่ถึง 1600 px')
+  assert.ok(r.after < r.before * 0.85)
+})
+
+test('JPEG ที่ย่อแล้วหนัก >500 KB แต่เข้ารหัสซ้ำไม่ประหยัดถึง 15% → คืนไฟล์เดิม (ไม่เสียคุณภาพเปล่า)', async () => {
+  const r = await page.evaluate(async () => {
+    const f = await window.makeImage({ w: 1400, h: 1000, type: 'image/jpeg', name: 'a.jpg', noise: 34, quality: 0.85 })
+    return { size: f.size, same: (await window.U.limitPublicImage('municipality-assets', f)) === f }
+  })
+  assert.ok(r.size > 500 * 1024, `รูปทดสอบต้องหนักกว่า 500 KB ไม่งั้นเทสต์ไม่มีความหมาย (ได้ ${r.size})`)
+  assert.equal(r.same, true)
+})
+
+test('keepFormat: true → ไม่แตะแม้เป็น PNG ทึบขนาดใหญ่ (โลโก้/ไอคอนแอป/QR)', async () => {
+  const r = await page.evaluate(async () => {
+    const f = await window.makeImage({ w: 1400, h: 1000, noise: 14 })
+    return {
+      size: f.size,
+      kept: (await window.U.limitPublicImage('municipality-assets', f, { keepFormat: true })) === f,
+      shrunkWithout: (await window.U.limitPublicImage('municipality-assets', f)) !== f,
+    }
+  })
+  assert.ok(r.size > 500 * 1024)
+  assert.equal(r.kept, true)
+  assert.equal(r.shrunkWithout, true, 'พิสูจน์ว่าถ้าไม่ส่ง keepFormat ไฟล์เดียวกันนี้ถูกย่อจริง')
+})
+
+test('ไฟล์เสียที่อ้างว่าเป็น PNG หนัก >500 KB → คืนไฟล์เดิม ไม่ throw ไม่บล็อกการอัปโหลด', async () => {
+  const r = await page.evaluate(async () => {
+    const f = new File([new Uint8Array(900 * 1024)], 'broken.png', { type: 'image/png' })
+    const out = await window.U.limitPublicImage('municipality-assets', f)
+    return out === f
+  })
+  assert.equal(r, true)
 })
 
 test('bucket เอกสาร (สลิป/หนังสือราชการ ฯลฯ) → ไม่ย่อ เพราะตัวหนังสือในสแกนต้องอ่านออก', async () => {
@@ -102,16 +159,13 @@ test('ไม่ใช่รูปที่ย่อได้ (gif/svg/pdf) → �
   for (const [name, unchanged] of Object.entries(r)) assert.equal(unchanged, true, `${name} ต้องไม่ถูกแตะ`)
 })
 
-test('PNG โปร่งใส → ส่วนโปร่งใสเป็นสีขาว ไม่ใช่สีดำ', async () => {
-  const px = await page.evaluate(async () => {
+test('PNG ที่มีส่วนโปร่งใส → คืนไฟล์เดิม ไม่แปลงเป็น JPEG (พื้นโปร่งใสจะเพี้ยน)', async () => {
+  const r = await page.evaluate(async () => {
     const f = await window.makeImage({ w: 3000, h: 1600, transparentLeft: true })
-    const out = await window.U.limitPublicImage('municipality-assets', f)
-    const bmp = await createImageBitmap(out)
-    const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height
-    const ctx = c.getContext('2d'); ctx.drawImage(bmp, 0, 0)
-    return Array.from(ctx.getImageData(20, 20, 1, 1).data)
+    return { size: f.size, same: (await window.U.limitPublicImage('municipality-assets', f)) === f }
   })
-  assert.ok(px[0] >= 245 && px[1] >= 245 && px[2] >= 245, `ต้องเป็นสีขาว (ได้ rgb ${px.slice(0, 3)})`)
+  assert.ok(r.size > 500 * 1024)
+  assert.equal(r.same, true)
 })
 
 test('กล้องมือถือที่ file.type ว่าง → เช็คจากนามสกุลแล้วย่อได้', async () => {
@@ -148,10 +202,20 @@ test('uploadFile ต้องเรียก limitPublicImage ก่อนแป
   const fnStart = src.indexOf('export async function uploadFile(')
   assert.ok(fnStart > 0)
   const body = src.slice(fnStart)
-  const guard = body.indexOf('limitPublicImage(bucket, original)')
+  const guard = body.indexOf('limitPublicImage(bucket, original, { keepFormat: options.keepFormat })')
   const encode = body.indexOf('fileToBase64(file)')
   assert.ok(guard > 0, 'ไม่พบการเรียก limitPublicImage ใน uploadFile')
   assert.ok(encode > guard, 'limitPublicImage ต้องมาก่อน fileToBase64')
+})
+
+test('หน้าตั้งค่า: ไอคอนแอป / โลโก้ / QR ต้องส่ง keepFormat: true (ไม่งั้นถูกแปลงเป็น JPEG)', async () => {
+  const src = await read('../src/components/admin/SystemSettingsAdmin.jsx')
+  const calls = {
+    'ไอคอนแอป': /filename: `app-icon-\$\{tenant\.slug\}\.png`,[\s\S]{0,160}?keepFormat: true/,
+    'โลโก้': /filename: `logo-\$\{tenant\.slug\}\.png`,[\s\S]{0,160}?keepFormat: true/,
+    'QR': /filename: `\$\{tenant\.slug\}\.png`,[\s\S]{0,160}?keepFormat: true/,
+  }
+  for (const [name, re] of Object.entries(calls)) assert.match(src, re, `${name} ไม่ได้ส่ง keepFormat: true`)
 })
 
 test('หน้าตั้งค่า: ห้ามส่งไฟล์ดิบขึ้น municipality-assets และรูปถ่ายทุกช่องต้องเข้ารหัส JPEG', async () => {
