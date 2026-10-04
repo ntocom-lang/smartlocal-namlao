@@ -155,6 +155,15 @@ export const PUBLIC_IMAGE_SKIP_UNDER = 500 * 1024
 export const SHRINK_MIN_SAVING = 0.15
 const SHRINK_TIMEOUT_MS = 8_000
 
+// รูปข่าว/กิจกรรมที่แอดมินอัปโหลด (PostsManager) — "ความกว้าง" สูงสุดและคุณภาพ JPEG
+// ที่แสดงจริงมี 2 แบบ: การ์ด 4:3 (กว้างไม่เกิน ~380 px) กับโมดัลรายละเอียด aspect-video กว้างสูงสุด 512 px (max-w-lg)
+// ทั้งคู่เป็น object-cover ในกรอบแนวนอน จึงจำกัดที่ความกว้าง (ไม่ใช่ด้านยาว) — 800 px = ~1.5–2 เท่าของจุดที่แสดงใหญ่สุด
+// ยังคมบนมือถือ DPR 2 ส่วนเพดานด้านยาว 1600 px ของด่านกลางยังคงมีเหมือนเดิม
+// (วัดจาก log 2026-10-04: รูปข่าว 1200–2112 px 120–300 KB ต่อใบ ถูกโหลด ~14 ชุด/วัน = ~16 MB/วัน Cached Egress)
+// ห้ามเอาค่านี้ไปใช้กับรูปท่องเที่ยว — หน้ารายละเอียดแสดงสูง 420 px กว้างได้ถึง 1024 px ต้องการความละเอียดมากกว่านี้
+export const POST_IMAGE_MAX_WIDTH = 800
+export const POST_IMAGE_QUALITY = 0.8
+
 function loadImageElement(file) {
   const url = URL.createObjectURL(file)
   return new Promise((resolve, reject) => {
@@ -214,11 +223,13 @@ function canvasToJpeg(canvas, quality) {
  * (1200x2112 → 1600x2816 ไฟล์ใหญ่ขึ้น 139 → 322 KB) และรูปแนวตั้งด้านยาวเกิน maxPx (3000x4000 → 1600x2134)
  * ส่วน compressImage ยังคงพฤติกรรมเดิมไว้เพราะมี 20 จุดเรียกใช้ที่พึ่งมันอยู่
  */
-export async function shrinkPhoto(file, { maxEdge = PUBLIC_IMAGE_MAX_PX, quality = 0.85 } = {}) {
+export async function shrinkPhoto(file, { maxEdge = PUBLIC_IMAGE_MAX_PX, maxWidth = Infinity, quality = 0.85 } = {}) {
   const work = (async () => {
     const { naturalWidth: w, naturalHeight: h } = await loadImageElement(file)
     if (!w || !h) return file
-    const scale = Math.min(1, maxEdge / Math.max(w, h))
+    // maxWidth (ไม่บังคับ): สำหรับรูปที่แสดงด้วย object-cover ในกรอบแนวนอน — ความกว้างคือตัวกำหนดความคม ไม่ใช่ด้านยาว
+    // (รูปแนวตั้ง 1200x2112 ถ้าจำกัดด้านยาว 800 จะเหลือกว้าง 455 px แล้วถูกขยายเบลอ) maxEdge ยังเป็นเพดานเสมอ
+    const scale = Math.min(1, maxEdge / Math.max(w, h), maxWidth / w)
     const tw = Math.max(1, Math.round(w * scale))
     const th = Math.max(1, Math.round(h * scale))
     const { canvas, ctx } = await drawScaled(file, tw, th)
