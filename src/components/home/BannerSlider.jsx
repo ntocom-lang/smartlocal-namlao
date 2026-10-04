@@ -2,13 +2,20 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { toReliableImageUrl } from '../../lib/driveStorage'
+import { slideIndexesToLoad } from '../../lib/bannerSlides'
 
 const INTERVAL = 4500
+
+// seen = ใบที่เคยแสดงแล้ว ต้องคง <img> ไว้ ไม่งั้นสไลด์วนรอบสองจะเริ่มโหลดใหม่
+function visit(slide, to) {
+  return slide.seen.includes(to) ? { ...slide, idx: to } : { idx: to, seen: [...slide.seen, to] }
+}
 
 export default function BannerSlider({ rounded = true }) {
   const { tenant } = useTenant()
   const [banners, setBanners] = useState([])
-  const [idx, setIdx] = useState(0)
+  const [slide, setSlide] = useState({ idx: 0, seen: [0] })
+  const idx = slide.idx
   const timerRef = useRef(null)
   const startXRef = useRef(null)
 
@@ -28,14 +35,14 @@ export default function BannerSlider({ rounded = true }) {
 
   useEffect(() => {
     if (banners.length < 2) return
-    timerRef.current = setInterval(() => setIdx(i => (i + 1) % banners.length), INTERVAL)
+    timerRef.current = setInterval(() => setSlide(s => visit(s, (s.idx + 1) % banners.length)), INTERVAL)
     return () => clearInterval(timerRef.current)
   }, [banners.length])
 
   function goTo(i) {
     clearInterval(timerRef.current)
-    setIdx(i)
-    timerRef.current = setInterval(() => setIdx(p => (p + 1) % banners.length), INTERVAL)
+    setSlide(s => visit(s, i))
+    timerRef.current = setInterval(() => setSlide(s => visit(s, (s.idx + 1) % banners.length)), INTERVAL)
   }
 
   function onTouchStart(e) { startXRef.current = e.touches[0].clientX }
@@ -50,17 +57,21 @@ export default function BannerSlider({ rounded = true }) {
   if (!banners.length) return null
 
   const n = banners.length
+  // โหลดรูปเฉพาะใบที่แสดง/ใบถัดไป/ใบที่เคยแสดง — เหตุผลเต็มที่ src/lib/bannerSlides.js
+  const loadable = slideIndexesToLoad(n, idx, slide.seen)
 
-  function SlotImg({ b, visible }) {
+  function SlotImg({ b, visible, load }) {
     const Tag = b.link_url ? 'a' : 'div'
     const props = b.link_url ? { href: b.link_url, target: '_blank', rel: 'noopener noreferrer' } : {}
     return (
       <Tag {...props}
         className="absolute inset-0 w-full h-full transition-opacity duration-700"
         style={{ opacity: visible ? 1 : 0, pointerEvents: visible ? 'auto' : 'none' }}>
-        <img src={b.image_url} alt=""
-          className="w-full h-full object-cover"
-          style={{ objectPosition: b.object_position || 'center' }} />
+        {load && (
+          <img src={b.image_url} alt=""
+            className="w-full h-full object-cover"
+            style={{ objectPosition: b.object_position || 'center' }} />
+        )}
       </Tag>
     )
   }
@@ -70,7 +81,7 @@ export default function BannerSlider({ rounded = true }) {
       <div className="relative w-full overflow-hidden aspect-video md:aspect-[21/9] lg:aspect-[24/9]"
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {banners.map((b, i) => (
-          <SlotImg key={b.id} b={b} visible={i === idx} />
+          <SlotImg key={b.id} b={b} visible={i === idx} load={loadable.has(i)} />
         ))}
       </div>
       {n > 1 && (

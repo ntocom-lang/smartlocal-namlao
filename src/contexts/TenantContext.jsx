@@ -198,7 +198,7 @@ export function TenantProvider({ children }) {
       }, 12000)
 
       try {
-        const { data, error: dbError } = await supabase
+        const { data, error: dbError, status } = await supabase
           .from('municipalities')
           .select('id, slug, name, org_type, province, district, theme_color, layout_theme, ui_style, theme_presets, show_posts_highlight, logo_url, header_image_url, header_image_mode, category_icon_style, smart_city_image_url, developer_name, website_url, facebook_url, line_oa_url, phone, fax, address, email, internal_extensions, event_location_presets, latitude, longitude, system_name, system_subtitle, pwa_short_name, enabled_modules, telegram_group_id, promptpay_id, fee_schedule, qr_code_url, qr_label, bank_name, bank_account_no, bank_account_name')
           .eq('slug', slug)
@@ -208,6 +208,15 @@ export function TenantProvider({ children }) {
         if (timedOut) return
 
         if (dbError || !data) {
+          // 402 = Supabase ตัดบริการทั้งโปรเจกต์เพราะเกินโควตา (เกิดจริง 2026-10-04 ทุกเว็บขึ้นว่า
+          // "ไม่พบหน่วยงาน" ทั้งที่หน่วยงานอยู่ครบ) ต้องบอกว่าระบบขัดข้อง ไม่ใช่หน่วยงานหาย
+          // ข้อความไม่พูดเรื่องโควตา/เงิน เพราะผู้อ่านคือประชาชนที่แก้เองไม่ได้
+          if (status === 402) {
+            setError('ระบบขัดข้องชั่วคราว ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่อีกครั้งภายหลัง')
+            setErrorKind('error')
+            setLoading(false)
+            return
+          }
           setError(`ไม่พบหน่วยงานรหัส "${slug}" ในระบบ`)
           // PGRST116 = .single() ได้ 0 แถว = "ไม่มีหน่วยงานนี้จริง" ส่วน error อื่นจาก DB (42501 สิทธิ์คอลัมน์
           // ผิด, เครือข่าย) ข้อความข้างบนยังเหมือนเดิมเพื่อไม่เปลี่ยนพฤติกรรม แต่ต้องไม่ถูกนับเป็น not-found
