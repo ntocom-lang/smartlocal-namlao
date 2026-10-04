@@ -6,10 +6,9 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import BookingForm from '../components/patientTransport/BookingForm'
 import CommunityBookingForm from '../components/patientTransport/CommunityBookingForm'
-import CommunitySettings from '../components/patientTransport/CommunitySettings'
 import BookingInbox from '../components/patientTransport/BookingInbox'
 import StaffBookingCalendar from '../components/patientTransport/StaffBookingCalendar'
-import BookingSettings from '../components/patientTransport/BookingSettings'
+import TransportSettings from '../components/patientTransport/TransportSettings'
 import { TabBar } from '../components/patientTransport/StaffShell'
 import { QueueReport, DriverTrips } from '../components/patientTransport/BookingOperations'
 import { buildBookingRequestFormHtml, buildBookingForwardLetterHtml, buildTripMonthReportHtml, buildPatientPrintLoadingHtml, writeAndPrint } from '../lib/patientTransportPrint'
@@ -268,8 +267,9 @@ export default function PatientTransportStaff({ onBack } = {}) {
         onSubmit={(id, payload, tripId) => mutate(tripId ? 'patient_booking_submit_join' : 'patient_booking_submit', { p_id: id, p_data: payload, p_staff_entry: true, ...(tripId ? { p_trip: tripId } : {}) }, '', data => { setCreated({ id: String(data || id), name: payload.patient_name }); setView('inbox') })} />}
       </>}
       {view === 'driver' && (isCoordinator || isDriver) && <DriverTrips workspace={workspace} uid={uid} isAdmin={isAdmin} canAssign={isCoordinator} busy={busy} error={error} contactPhone={info?.contact_phone} onAdvance={advanceTrip} onAction={action} onOdometer={recordOdometer} onReassign={reassignDriver} />}
-      {view === 'settings' && isAdmin && <BookingSettings key={workspace.settings?.revision || 'new'} workspace={workspace} busy={busy} onSave={(revision, form) => mutate('patient_booking_save_settings', { p_revision: revision, p_data: form }, 'บันทึกค่าตั้งต้นแล้ว')} />}
-      {view === 'settings' && isAdmin && <CommunitySettings rules={workspace.community_rules} busy={busy} onSave={(revision, form) => mutate('patient_booking_save_community_rules', { p_revision: revision, p_data: form }, 'บันทึกกฎบริการชุมชนแล้ว')} />}
+      {view === 'settings' && isAdmin && <TransportSettings workspace={workspace} busy={busy}
+        onSavePatient={(revision, form) => mutate('patient_booking_save_settings', { p_revision: revision, p_data: form }, 'บันทึกค่าตั้งต้นแล้ว')}
+        onSaveCommunity={(revision, form) => mutate('patient_booking_save_community_rules', { p_revision: revision, p_data: form }, 'บันทึกกฎบริการชุมชนแล้ว')} />}
       {workspace?.limited && <p className="mt-4 rounded-xl bg-amber-50 p-3">รายการเกินขอบเขตหน้าจอ กรุณาติดต่อผู้ดูแลก่อนจัดคิวเพิ่มเติม</p>}
     </>}
     {/* ผลของการกดอยู่ติดขอบล่างจอ — กดจากแถวท้ายตารางแล้วยังเห็นว่าสำเร็จ ไม่ต้องเลื่อนขึ้นไปหา
