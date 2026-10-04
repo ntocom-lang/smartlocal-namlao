@@ -221,3 +221,41 @@ Supabase ตั้ง `max_rows = 1000` ให้ PostgREST — select ที่
   ความผิดพลาดของระบบเราเอง ไม่ใช่เหตุการณ์จริง
 - หยุดแล้วตอบ error ต้องมีคนได้ยิน: งานอัตโนมัติลงสมุด `job_heartbeats` ทุกรอบ
   ให้ `thaiwater-watchdog` เฝ้า ไม่งั้น error ก็เงียบเท่ากับไม่มีตัวกัน
+
+---
+
+## 15. Supabase ตัดบริการทั้งโปรเจกต์ (HTTP 402) เพราะ Cached Egress เกินโควตาแผนฟรี
+
+**เหตุการณ์จริง 2026-10-04:** ทุกเว็บ (ทั้ง 4 อปท.) ขึ้น "ไม่พบหน่วยงานรหัส …" ทั้งที่หน่วยงานอยู่ครบ — Supabase
+ตอบ **402** ทั้ง REST/Auth/Storage (`exceed_cached_egress_quota`, ใช้ 7.4 จาก 5 GB ในรอบบิลเดียว)
+ต้นเหตุ: แบนเนอร์หน้าแรกถูกโหลดครบทุกใบทุกครั้งที่เปิดเว็บ และแบนเนอร์เป็น PNG ที่อัปโหลดมาโดยไม่ย่อ
+(ใบเดียวหนัก 4.72 MB) แก้ใน #416 (โหลดทีละใบ) + ย่อไฟล์ + ด่านกลางตามข้างล่าง
+
+**ข้อเท็จจริงที่ต้องรู้ (ตรวจแล้ว):**
+- โควตาแผนฟรีเป็นของทั้ง **organization** ไม่ใช่รายโปรเจกต์ — org นี้มีโปรเจกต์อื่นอยู่ด้วย ใช้โควตาร่วมกัน
+- ตัวเลข "พื้นที่เก็บ" (Storage Size) กับ "ทราฟฟิก" (Cached Egress) เป็นคนละโควตา ไฟล์ 10 MB ที่ถูกโหลดซ้ำพันครั้ง
+  ทะลุเพดานได้ทั้งที่พื้นที่เก็บใช้ไม่ถึง 30%
+- รูปที่อัปโหลดขึ้น Google Drive **ไม่ได้ฟรีจากโควตา Supabase**: ระบบส่งรูปผ่าน Edge Function `drive-file`
+  (เพราะ hotlink Drive ตรงโดน ORB/หน้าเลือกบัญชี) จึงกิน Edge Function invocations (500k/เดือน) และ Egress (5 GB)
+  ฝั่งนี้ตั้ง Cache-Control 1 ปี immutable ไว้แล้ว ผู้ใช้เครื่องเดิมไม่โหลดซ้ำ
+
+**วิธีตรวจเร็ว:** `curl -s -o /dev/null -w "%{http_code}" "<SUPABASE_URL>/rest/v1/" -H "apikey: <anon>"` — 402 = โดนตัด
+(401 ตอนไม่ใส่ key เป็นเรื่องปกติ) · `/manifest.webmanifest` ของเว็บจะ 404 ทุก tenant เป็นอาการคู่กัน
+เพราะ Worker ดึง tenant จาก Supabase ไม่ได้ · ปลดทันทีได้ทางเดียวคืออัปเกรดแผน (เสียเงิน — เจ้าของตัดสินใจเอง)
+ไม่งั้นรอรอบบิลถัดไป
+
+**กติกา:**
+- รูปที่แสดงบนหน้าสาธารณะต้องไม่หนักเกิน ~1.5 MB — บังคับที่ `uploadFile()` ใน `src/lib/driveStorage.js` จุดเดียว
+  ผ่าน `limitPublicImage` (`src/lib/imageUtils.js`) ห้ามเอา bucket เอกสาร (payment-slips, official-documents,
+  document-certs, org-documents, fleet-documents) เข้า `PUBLIC_IMAGE_BUCKETS` เพราะบีบแล้วตัวหนังสือในสแกนอ่านไม่ออก
+- รูปถ่ายต้องเข้ารหัส JPEG (`PHOTO_JPEG` ใน SystemSettingsAdmin.jsx) โลโก้/QR ใช้ PNG · `compressImage` ไม่เท่ากับ
+  PNG→JPEG ที่รักษาความโปร่งใส (รองพื้นขาวให้) · ห้ามส่งไฟล์ดิบ (`file` จาก input) เข้า `uploadFile` โดยตรง
+- คอมโพเนนต์สไลด์/แกลเลอรีต้องไม่ใส่ `<img>` ของทุกใบลง DOM พร้อมกัน (opacity 0 ไม่ได้หยุดการดาวน์โหลด) —
+  ดู `slideIndexesToLoad` ใน `src/lib/bannerSlides.js`
+- ก่อนอัปโหลดไฟล์เข้า Supabase Storage ด้วยมือ ใช้ชื่อไฟล์ใหม่เสมอ (ไม่ทับ) เพื่อย้อนกลับได้
+- ตัวเลขโควตา (Free): Cached Egress 5 GB · Egress 5 GB · Edge Function 500k ครั้ง · Storage 1 GB · DB 500 MB ·
+  Log Ingestion 1 GB (เริ่มบังคับต้นปี 2570) — ตรวจที่ Dashboard → Organization → Usage ก่อนกลับมาแผนฟรีเสมอ
+  เกณฑ์ที่ใช้: Cached Egress เฉลี่ยต่อวันต้องต่ำกว่า ~0.11 GB (เผื่อ 30% ใต้เพดาน)
+- `supabase db query --output-format json` escape ตัว `&` เป็นรหัส unicode (backslash ตามด้วย u0026) — ดึง URL ออกมา curl ต้อง JSON.parse ก่อน
+  ไม่งั้นได้ 404 หลอก
+- เทสต์: `npm run test:banner` และ `npm run test:image-guard`
