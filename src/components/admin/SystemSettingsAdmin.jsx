@@ -12,6 +12,51 @@ const inputCls = 'w-full px-4 py-2.5 text-sm text-gray-900 bg-white border borde
 // จึงตั้งไว้ 20 ไม่ใช่ 10 แต่ไม่ปล่อยไม่จำกัด เพราะปุ่มลัดเรียงกริด 2 คอลัมน์ ยาวเกินไปจะกดยากบนมือถือ
 const MAX_EVENT_LOCATIONS = 20
 
+// รูปถ่ายที่ขึ้นหน้าสาธารณะ (หัวเว็บ / Smart City / พื้นหลังท่องเที่ยว / แบนเนอร์) ต้องเป็น JPEG
+// เดิม resizeImage เข้ารหัส PNG เสมอ ทั้งที่ตั้งชื่อไฟล์ .jpg — รูปถ่าย 1600 px แบบ PNG หนัก 1-5 MB
+// (Smart City ของน้ำเลาวัดจริง 1.21 MB) เทียบกับ JPEG q0.85 ราว 150-350 KB และหน้าแรกโหลดซ้ำทุกคนที่เข้าเว็บ
+// ซึ่งเป็นต้นเหตุหนึ่งที่ Supabase ตัดบริการเมื่อ 2026-10-04 · โลโก้/QR ยังใช้ PNG (ต้องคมและอาจโปร่งใส)
+const PHOTO_JPEG = { type: 'image/jpeg', quality: 0.85 }
+
+// เดิมไม่มี onerror/timeout เลย — ถ้าเบราว์เซอร์ decode ไฟล์เป็น <img> ไม่ได้ (ไฟล์เสีย, HEIC/WebP
+// บางรูปแบบที่ไม่รองรับ, ฯลฯ) Promise จะค้างไม่ resolve/reject ตลอดไป ทำให้ handleXxxUpload ที่ await
+// อยู่หยุดนิ่งเงียบๆ ไม่ error ไม่บันทึก แก้โดยเพิ่ม onerror + timeout กันค้าง แล้ว reject ให้ catch จับได้จริง
+function resizeImage(file, maxPx = 600, { type = 'image/png', quality = 0.92 } = {}) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file)
+    const timer = setTimeout(() => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('โหลดไฟล์รูปภาพไม่สำเร็จ (หมดเวลา) — ไฟล์อาจเสียหายหรือเป็นชนิดที่เบราว์เซอร์นี้ไม่รองรับ'))
+    }, 15000)
+    const img = new Image()
+    img.onload = () => {
+      clearTimeout(timer)
+      const scale = Math.min(1, maxPx / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width  = Math.round(img.width  * scale)
+      canvas.height = Math.round(img.height * scale)
+      const ctx = canvas.getContext('2d')
+      if (type === 'image/jpeg') {
+        // JPEG ไม่มีช่องโปร่งใส — ไม่รองพื้นขาวก่อน ส่วนโปร่งใสของ PNG จะกลายเป็นสีดำ
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob(blob => {
+        URL.revokeObjectURL(objectUrl)
+        if (blob) resolve(blob)
+        else reject(new Error('แปลงไฟล์รูปภาพไม่สำเร็จ — ลองไฟล์อื่น (แนะนำ JPG/PNG)'))
+      }, type, quality)
+    }
+    img.onerror = () => {
+      clearTimeout(timer)
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('เปิดไฟล์รูปภาพไม่สำเร็จ — ไฟล์อาจเสียหายหรือไม่ใช่รูปภาพที่รองรับ (รองรับ JPG/PNG/WebP)'))
+    }
+    img.src = objectUrl
+  })
+}
+
 export default function SystemSettingsAdmin() {
   const { tenant, patchTenant } = useTenant()
   const [pwaShortName, setPwaShortName] = useState(() => tenant?.pwa_short_name || '')
@@ -260,39 +305,6 @@ export default function SystemSettingsAdmin() {
     }
   }
 
-  // เดิมไม่มี onerror/timeout เลย — ถ้าเบราว์เซอร์ decode ไฟล์เป็น <img> ไม่ได้ (ไฟล์เสีย, HEIC/WebP
-  // บางรูปแบบที่ไม่รองรับ, ฯลฯ) Promise จะค้างไม่ resolve/reject ตลอดไป ทำให้ handleXxxUpload ที่ await
-  // อยู่หยุดนิ่งเงียบๆ ไม่ error ไม่บันทึก แก้โดยเพิ่ม onerror + timeout กันค้าง แล้ว reject ให้ catch จับได้จริง
-  function resizeImage(file, maxPx = 600) {
-    return new Promise((resolve, reject) => {
-      const objectUrl = URL.createObjectURL(file)
-      const timer = setTimeout(() => {
-        URL.revokeObjectURL(objectUrl)
-        reject(new Error('โหลดไฟล์รูปภาพไม่สำเร็จ (หมดเวลา) — ไฟล์อาจเสียหายหรือเป็นชนิดที่เบราว์เซอร์นี้ไม่รองรับ'))
-      }, 15000)
-      const img = new Image()
-      img.onload = () => {
-        clearTimeout(timer)
-        const scale = Math.min(1, maxPx / Math.max(img.width, img.height))
-        const canvas = document.createElement('canvas')
-        canvas.width  = Math.round(img.width  * scale)
-        canvas.height = Math.round(img.height * scale)
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
-        canvas.toBlob(blob => {
-          URL.revokeObjectURL(objectUrl)
-          if (blob) resolve(blob)
-          else reject(new Error('แปลงไฟล์รูปภาพไม่สำเร็จ — ลองไฟล์อื่น (แนะนำ JPG/PNG)'))
-        }, 'image/png', 0.92)
-      }
-      img.onerror = () => {
-        clearTimeout(timer)
-        URL.revokeObjectURL(objectUrl)
-        reject(new Error('เปิดไฟล์รูปภาพไม่สำเร็จ — ไฟล์อาจเสียหายหรือไม่ใช่รูปภาพที่รองรับ (รองรับ JPG/PNG/WebP)'))
-      }
-      img.src = objectUrl
-    })
-  }
-
   async function handleLogoUpload(e) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -376,7 +388,7 @@ export default function SystemSettingsAdmin() {
     setHeaderUploading(true)
     let publicUrl = null
     try {
-      const blob = await resizeImage(file, 1600)
+      const blob = await resizeImage(file, 1600, PHOTO_JPEG)
       const { url, error: upErr } = await uploadFile('municipality-assets', blob, {
         subject: 'headers',
         filename: `header-${tenant.slug}.jpg`,
@@ -449,7 +461,7 @@ export default function SystemSettingsAdmin() {
     setSmartCityUploading(true)
     let publicUrl = null
     try {
-      const blob = await resizeImage(file, 1600)
+      const blob = await resizeImage(file, 1600, PHOTO_JPEG)
       const { url, error: upErr } = await uploadFile('municipality-assets', blob, {
         subject: 'smart-city',
         filename: `smart-city-${tenant.slug}.jpg`,
@@ -514,10 +526,10 @@ export default function SystemSettingsAdmin() {
     setTourismBgUploading(true)
     let publicUrl = null
     try {
-      const blob = await resizeImage(file, 1600)
+      const blob = await resizeImage(file, 1600, PHOTO_JPEG)
       const { url, error: upErr } = await uploadFile('municipality-assets', blob, {
         subject: 'tourism-backgrounds',
-        filename: `tourism-background-${tenant.slug}.png`,
+        filename: `tourism-background-${tenant.slug}.jpg`,
         municipality: tenant?.slug,
       })
       if (upErr) throw upErr
@@ -1406,10 +1418,12 @@ function BannerManager({ tenant }) {
     setUploading(true)
     try {
       for (const file of files) {
-        const ext  = file.name.split('.').pop() || 'jpg'
-        const { url, error: upErr } = await uploadFile('municipality-assets', file, {
+        // แบนเนอร์ขึ้นหน้าแรกของทุกคนที่เข้าเว็บ ห้ามส่งไฟล์ดิบ (เดิมส่ง PNG 4.72 MB ขึ้นไปตรงๆ = ต้นเหตุหลัก
+        // ที่ Supabase ตัดบริการ 2026-10-04) ย่อเป็น JPEG ≤1600 px ก่อนเสมอ ชื่อไฟล์ใช้ .jpg ให้ตรงเนื้อไฟล์
+        const blob = await resizeImage(file, 1600, PHOTO_JPEG)
+        const { url, error: upErr } = await uploadFile('municipality-assets', blob, {
           subject: `banners/${tenant.slug}`,
-          filename: `${crypto.randomUUID()}.${ext}`,
+          filename: `${crypto.randomUUID()}.jpg`,
           municipality: tenant?.slug,
         })
         if (upErr) throw upErr
