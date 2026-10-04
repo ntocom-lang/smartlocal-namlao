@@ -263,6 +263,9 @@ const checks = [
           assert.ok((await fund.locator('.fund-details').innerText()).includes(booking.patient_name))
           assert.ok(!(await fund.innerText()).includes(TRIP_BOOKINGS[1 - index].patient_name))
           assert.equal(await fund.locator('.fund-committee .box--on, .fund-committee .sign-signed').count(), 0, 'ห้ามระบบอนุมัติหรือลงนามแทนกรรมการ')
+          // ช่องลงนามของกองทุนมี 2 ช่อง: ประธานคณะกรรมการกองทุน กับ "พยาน" เท่านั้น (เจ้าของระบบสั่งเอา "เหรัญญิก" ออก 2569-10-04)
+          assert.deepEqual(await fund.locator('.fund-committee .sign-row').evaluateAll(rows => rows.map(row => row.querySelector('.sign-below:last-child').innerText.trim())), ['ประธานคณะกรรมการกองทุน', 'พยาน'], 'ช่องลงนามกองทุนต้องเหลือประธานกับพยาน')
+          assert.ok(!(await fund.innerText()).includes('เหรัญญิก'), 'ใบคำขอรับสวัสดิการต้องไม่มีคำว่าเหรัญญิก')
           assert.equal((await fund.locator('.fund-details tr').filter({ hasText: 'ประเภทการนัด' }).locator('td').innerText()).trim(), '', 'ไม่มีข้อมูลประเภทนัดต้องไม่เดา')
           if (index === 0 && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
             for (const [name, page] of [['request', request], ['letter', letter]]) {

@@ -484,7 +484,7 @@ function fundFormSheet({ header, form = {}, parent = {}, tenant, referenceNo = '
     <p>${box()} อนุมัติ ${box()} ไม่อนุมัติ เพราะ <span class="fund-decision-reason">&nbsp;</span></p>
     <div class="two-col">
       <div>${govSignRow({ below: [govNameBlank(), 'ประธานคณะกรรมการกองทุน'] })}</div>
-      <div>${govSignRow({ below: [govNameBlank(), 'เหรัญญิก / พยาน'] })}</div>
+      <div>${govSignRow({ below: [govNameBlank(), 'พยาน'] })}</div>
     </div>
   </div>
   <p class="origin">${esc(govEServiceOriginText(tenant?.name?.trim() || 'หน่วยงาน'))}</p>
