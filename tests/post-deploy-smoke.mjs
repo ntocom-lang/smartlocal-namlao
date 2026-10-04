@@ -33,6 +33,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { chromium } from 'playwright'
+import { blockStorageImages } from './lib/blockStorageImages.mjs'
 
 const DEFAULT_HOSTS = ['namlao.rk-networks.com', 'demo.rk-networks.com']
 
@@ -91,6 +92,9 @@ async function checkHost(browser, host, timeout, expectBundle) {
     serviceWorkers: 'block',
     viewport: { width: 1440, height: 900 },
   })
+  // ด่านนี้ตรวจแค่ว่าแอป mount + ชื่อ อปท. + bundle ถูกต้อง ไม่ตรวจรูป แต่เปิดหน้าแรกน้ำเลา (รูปอยู่ Supabase Storage)
+  // ใหม่หมดทุกครั้ง — ไม่กันจะดึงรูปเต็มชุด ~3.6 MB ต่อรอบ เป็นส่วนหนึ่งของ Cached Egress ที่ทำให้ org โดน 402 (NOTES.md ข้อ 15)
+  await blockStorageImages(context)
   const page = await context.newPage()
 
   page.on('console', (msg) => {
