@@ -254,6 +254,12 @@ Supabase ตั้ง `max_rows = 1000` ให้ PostgREST — select ที่
   และรูปแนวตั้งด้านยาวเกิน (3000x4000 → 1600x2134) · ไฟล์จริงน้ำเลา: แบนเนอร์ 1.3–4.8 MB → 139–349 KB, หัวเว็บ 1,088 → 98 KB
 - **โลโก้ ไอคอนแอป QR ต้องส่ง `keepFormat: true`** ให้ `uploadFile` (มีเทสต์กัน 3 จุดใน SystemSettingsAdmin.jsx) ไม่งั้นถูกแปลงเป็น JPEG
   — โลโก้ผูกกับไอคอนแอป PWA · รูปถ่ายหน้าตั้งค่าเข้ารหัส JPEG ผ่าน `PHOTO_JPEG` · ห้ามส่งไฟล์ดิบ (`file` จาก input) ตรงๆ
+- <img> ที่ผูกกับข้อมูล (ข่าว/ท่องเที่ยว/บุคลากร) ต้องมี loading="lazy" decoding="async" — หน้าแรกมีรูปที่ซ่อนด้วย CSS (0x0)
+  ราวครึ่งหนึ่งเพราะเลย์เอาต์มือถือ/เดสก์ท็อปซ้อนกัน เบราว์เซอร์โหลดทุกรูปที่ไม่ lazy แม้มองไม่เห็น · รูปบนจอแรก (โลโก้/ฮีโร่/Smart City)
+  ห้าม lazy · ผลวัดจริงน้ำเลา: ลดได้ ~480 KB ต่อการเปิดครั้งแรก (4,079 → 3,622 KB) ไม่มากกว่านี้เพราะ Chrome โหลด lazy ล่วงหน้า
+  ในระยะ ~1,250 px ใต้จอ หน้าสั้นๆ จึงโหลดแทบครบ — จะลดต่อได้ต้องย่อไฟล์จริง ไม่ใช่ตั้ง lazy เพิ่ม
+- วัดดาวน์โหลด/แคชด้วย Playwright: อย่าใช้ page.route() เพราะมันปิดแคช HTTP ทำให้ตัวเลขเกินจริง (รูปเดียวกันโหลดซ้ำหลายรอบ)
+  ให้บล็อกด้วย CDP Network.setBlockedURLs แทน · เทสต์: npm run test:lazy-images
 - คอมโพเนนต์สไลด์/แกลเลอรีต้องไม่ใส่ `<img>` ของทุกใบลง DOM พร้อมกัน (opacity 0 ไม่ได้หยุดการดาวน์โหลด) —
   ดู `slideIndexesToLoad` ใน `src/lib/bannerSlides.js`
 - ก่อนอัปโหลดไฟล์เข้า Supabase Storage ด้วยมือ ใช้ชื่อไฟล์ใหม่เสมอ (ไม่ทับ) เพื่อย้อนกลับได้
@@ -262,4 +268,4 @@ Supabase ตั้ง `max_rows = 1000` ให้ PostgREST — select ที่
   เกณฑ์ที่ใช้: Cached Egress เฉลี่ยต่อวันต้องต่ำกว่า ~0.11 GB (เผื่อ 30% ใต้เพดาน)
 - `supabase db query --output-format json` escape ตัว `&` เป็นรหัส unicode (backslash ตามด้วย u0026) — ดึง URL ออกมา curl ต้อง JSON.parse ก่อน
   ไม่งั้นได้ 404 หลอก
-- เทสต์: `npm run test:banner` และ `npm run test:image-guard`
+- เทสต์: `npm run test:banner`, `npm run test:image-guard`, `npm run test:lazy-images`

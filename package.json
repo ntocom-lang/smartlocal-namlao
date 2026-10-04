@@ -75,7 +75,8 @@
     "test:app-icon": "node tests/app-icon.test.mjs",
     "test:data-center": "node --test tests/data-center-hub.test.mjs",
     "test:banner": "node --test tests/banner-slides.test.mjs",
-    "test:image-guard": "node --test tests/image-upload-guard.test.mjs"
+    "test:image-guard": "node --test tests/image-upload-guard.test.mjs",
+    "test:lazy-images": "node --test tests/lazy-images.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
