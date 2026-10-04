@@ -155,6 +155,14 @@ export const PUBLIC_IMAGE_SKIP_UNDER = 500 * 1024
 export const SHRINK_MIN_SAVING = 0.15
 const SHRINK_TIMEOUT_MS = 8_000
 
+// รูปข่าว/กิจกรรมที่แอดมินอัปโหลด (PostsManager) — ด้านยาวสูงสุดและคุณภาพ JPEG
+// ที่แสดงจริงมี 2 ขนาด: การ์ด 4:3 (กว้างไม่เกิน ~380 px) กับโมดัลรายละเอียด aspect-video กว้างสูงสุด 512 px (max-w-lg)
+// 800 px = ~1.5 เท่าของจุดที่แสดงใหญ่สุด ยังคมบนมือถือ ส่วน 1600 px ของด่านกลางเกินความจำเป็น 4 เท่าของพื้นที่
+// (วัดจาก log 2026-10-04: รูปข่าว 1200–2112 px 120–300 KB ต่อใบ ถูกโหลด ~14 ชุด/วัน = ~16 MB/วัน Cached Egress)
+// ห้ามเอาค่านี้ไปใช้กับรูปท่องเที่ยว — หน้ารายละเอียดแสดงสูง 420 px กว้างได้ถึง 1024 px ต้องการความละเอียดมากกว่านี้
+export const POST_IMAGE_MAX_EDGE = 800
+export const POST_IMAGE_QUALITY = 0.8
+
 function loadImageElement(file) {
   const url = URL.createObjectURL(file)
   return new Promise((resolve, reject) => {

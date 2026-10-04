@@ -196,6 +196,44 @@ test('bucket เอกสารต้องไม่หลุดเข้าร�
   }
 })
 
+// ── รูปข่าว: ย่อเหลือ 800 px ตั้งแต่ตอนอัปโหลด ───────────────────────────────────────────────
+// ข้อมูลจริง 2026-10-04: รูปข่าว 8 ใบบนหน้าแรกน้ำเลา 1.6 MB ต่อการโหลดแบบเย็น ถูกโหลด ~14 ชุด/วัน
+test('รูปข่าวแนวนอน 3000x2000 → JPEG ด้านยาว ≤ POST_IMAGE_MAX_EDGE และเล็กลงชัดเจน', async () => {
+  const r = await page.evaluate(async () => {
+    const f = await window.makeImage({ w: 3000, h: 2000, type: 'image/jpeg', name: 'news.jpg' })
+    const out = await window.U.shrinkPhoto(f, { maxEdge: window.U.POST_IMAGE_MAX_EDGE, quality: window.U.POST_IMAGE_QUALITY })
+    const d = await window.dims(out)
+    return { before: f.size, after: out.size, same: out === f, type: out.type, w: d.w, h: d.h, max: window.U.POST_IMAGE_MAX_EDGE }
+  })
+  assert.equal(r.max, 800)
+  assert.equal(r.same, false)
+  assert.equal(r.type, 'image/jpeg')
+  assert.ok(Math.max(r.w, r.h) <= 800, `ด้านยาวต้องไม่เกิน 800 px (ได้ ${r.w}x${r.h})`)
+  assert.ok(r.after < r.before * 0.5, `ต้องเล็กลงอย่างน้อยครึ่งหนึ่ง (ก่อน ${r.before} หลัง ${r.after})`)
+})
+
+test('รูปข่าวแนวตั้ง 1200x2112 (ขนาดจริงของข่าวบนหน้าแรก) → ด้านยาว 800 ไม่ถูกขยาย', async () => {
+  const r = await page.evaluate(async () => {
+    const f = await window.makeImage({ w: 1200, h: 2112, type: 'image/jpeg', name: 'poster.jpg' })
+    const out = await window.U.shrinkPhoto(f, { maxEdge: window.U.POST_IMAGE_MAX_EDGE, quality: window.U.POST_IMAGE_QUALITY })
+    const d = await window.dims(out)
+    return { before: f.size, after: out.size, w: d.w, h: d.h }
+  })
+  assert.equal(Math.max(r.w, r.h), 800)
+  assert.ok(r.w <= 455, `สัดส่วนต้องคงเดิม (ได้กว้าง ${r.w})`)
+  assert.ok(r.after < r.before, `ต้องเล็กลง (ก่อน ${r.before} หลัง ${r.after})`)
+})
+
+test('รูปข่าวที่เล็กอยู่แล้ว 500x300 → ไม่ถูกขยาย', async () => {
+  const r = await page.evaluate(async () => {
+    const f = await window.makeImage({ w: 500, h: 300, type: 'image/jpeg', name: 'small.jpg' })
+    const out = await window.U.shrinkPhoto(f, { maxEdge: window.U.POST_IMAGE_MAX_EDGE, quality: window.U.POST_IMAGE_QUALITY })
+    const d = await window.dims(out)
+    return { w: d.w, h: d.h }
+  })
+  assert.deepEqual([r.w, r.h], [500, 300])
+})
+
 // ── ระดับซอร์ส: กันการแก้กลับโดยไม่รู้ตัว ─────────────────────────────────────────────────
 test('uploadFile ต้องเรียก limitPublicImage ก่อนแปลงเป็น base64 เสมอ', async () => {
   const src = await read('../src/lib/driveStorage.js')
@@ -225,4 +263,16 @@ test('หน้าตั้งค่า: ห้ามส่งไฟล์ดิ
   assert.ok(photoCalls.length >= 4, `ต้องมีรูปถ่ายอย่างน้อย 4 ช่อง (หัวเว็บ, Smart City, พื้นหลัง, แบนเนอร์) ได้ ${photoCalls.length}`)
   for (const call of photoCalls) assert.match(call, /PHOTO_JPEG/, `${call} ต้องใช้ PHOTO_JPEG`)
   assert.doesNotMatch(src, /tourism-background-\$\{tenant\.slug\}\.png/, 'นามสกุลไฟล์ต้องตรงเนื้อไฟล์ (.jpg)')
+})
+
+test('หน้าจัดการข่าว: ย่อด้วย shrinkPhoto + POST_IMAGE_MAX_EDGE และนามสกุลต้องตรงเนื้อไฟล์', async () => {
+  const src = await read('../src/components/staff/PostsManager.jsx')
+  assert.match(src, /shrinkPhoto\(file, \{ maxEdge: POST_IMAGE_MAX_EDGE, quality: POST_IMAGE_QUALITY \}\)/, 'ไม่ได้ย่อด้วย shrinkPhoto ตามค่ารูปข่าว')
+  assert.doesNotMatch(src, /compressImage\(/, 'compressImage ข้ามไฟล์ <1.5 MB และขยายรูปแนวตั้งได้ — ห้ามกลับไปใช้')
+  assert.match(src, /compressed\.type === 'image\/jpeg' \? 'jpg'/, 'นามสกุลต้องดูจากไฟล์ที่ย่อแล้ว ไม่ใช่ไฟล์ต้นฉบับ')
+})
+
+test('หน้าจัดการท่องเที่ยว: ห้ามใช้ค่าย่อของรูปข่าว (หน้ารายละเอียดแสดงใหญ่กว่ามาก)', async () => {
+  const src = await read('../src/components/admin/TourismManager.jsx')
+  assert.doesNotMatch(src, /POST_IMAGE_MAX_EDGE/)
 })
