@@ -245,11 +245,15 @@ Supabase ตั้ง `max_rows = 1000` ให้ PostgREST — select ที่
 ไม่งั้นรอรอบบิลถัดไป
 
 **กติกา:**
-- รูปที่แสดงบนหน้าสาธารณะต้องไม่หนักเกิน ~1.5 MB — บังคับที่ `uploadFile()` ใน `src/lib/driveStorage.js` จุดเดียว
-  ผ่าน `limitPublicImage` (`src/lib/imageUtils.js`) ห้ามเอา bucket เอกสาร (payment-slips, official-documents,
-  document-certs, org-documents, fleet-documents) เข้า `PUBLIC_IMAGE_BUCKETS` เพราะบีบแล้วตัวหนังสือในสแกนอ่านไม่ออก
-- รูปถ่ายต้องเข้ารหัส JPEG (`PHOTO_JPEG` ใน SystemSettingsAdmin.jsx) โลโก้/QR ใช้ PNG · `compressImage` ไม่เท่ากับ
-  PNG→JPEG ที่รักษาความโปร่งใส (รองพื้นขาวให้) · ห้ามส่งไฟล์ดิบ (`file` จาก input) เข้า `uploadFile` โดยตรง
+- รูปที่แสดงบนหน้าสาธารณะ (bucket ใน `PUBLIC_IMAGE_BUCKETS`) ที่หนักเกิน 500 KB ถูกย่อเป็น JPEG ด้านยาว ≤1600 px ก่อนอัปโหลด
+  — บังคับที่ `uploadFile()` ใน `src/lib/driveStorage.js` จุดเดียวผ่าน `limitPublicImage` → `shrinkPhoto` (`src/lib/imageUtils.js`)
+  ห้ามเอา bucket เอกสาร (payment-slips, official-documents, document-certs, org-documents, fleet-documents) เข้า
+  `PUBLIC_IMAGE_BUCKETS` เพราะบีบแล้วตัวหนังสือในสแกนอ่านไม่ออก
+- `shrinkPhoto` ไม่ขยายรูป, คืนไฟล์เดิมเมื่อประหยัดไม่ถึง 15% / ภาพมีส่วนโปร่งใส / ถอดรหัสไม่ได้ · ห้ามใช้ `compressImage`
+  แทน: มันส่ง maxPx เป็น "ความกว้าง" ให้ createImageBitmap ขยายรูปแคบ (1200x2112 → 1600x2816 ไฟล์ใหญ่ขึ้น 139 → 322 KB)
+  และรูปแนวตั้งด้านยาวเกิน (3000x4000 → 1600x2134) · ไฟล์จริงน้ำเลา: แบนเนอร์ 1.3–4.8 MB → 139–349 KB, หัวเว็บ 1,088 → 98 KB
+- **โลโก้ ไอคอนแอป QR ต้องส่ง `keepFormat: true`** ให้ `uploadFile` (มีเทสต์กัน 3 จุดใน SystemSettingsAdmin.jsx) ไม่งั้นถูกแปลงเป็น JPEG
+  — โลโก้ผูกกับไอคอนแอป PWA · รูปถ่ายหน้าตั้งค่าเข้ารหัส JPEG ผ่าน `PHOTO_JPEG` · ห้ามส่งไฟล์ดิบ (`file` จาก input) ตรงๆ
 - <img> ที่ผูกกับข้อมูล (ข่าว/ท่องเที่ยว/บุคลากร) ต้องมี loading="lazy" decoding="async" — หน้าแรกมีรูปที่ซ่อนด้วย CSS (0x0)
   ราวครึ่งหนึ่งเพราะเลย์เอาต์มือถือ/เดสก์ท็อปซ้อนกัน เบราว์เซอร์โหลดทุกรูปที่ไม่ lazy แม้มองไม่เห็น · รูปบนจอแรก (โลโก้/ฮีโร่/Smart City)
   ห้าม lazy · ผลวัดจริงน้ำเลา: ลดได้ ~480 KB ต่อการเปิดครั้งแรก (4,079 → 3,622 KB) ไม่มากกว่านี้เพราะ Chrome โหลด lazy ล่วงหน้า
@@ -264,4 +268,4 @@ Supabase ตั้ง `max_rows = 1000` ให้ PostgREST — select ที่
   เกณฑ์ที่ใช้: Cached Egress เฉลี่ยต่อวันต้องต่ำกว่า ~0.11 GB (เผื่อ 30% ใต้เพดาน)
 - `supabase db query --output-format json` escape ตัว `&` เป็นรหัส unicode (backslash ตามด้วย u0026) — ดึง URL ออกมา curl ต้อง JSON.parse ก่อน
   ไม่งั้นได้ 404 หลอก
-- เทสต์: `npm run test:banner` และ `npm run test:image-guard`
+- เทสต์: `npm run test:banner`, `npm run test:image-guard`, `npm run test:lazy-images`

@@ -147,11 +147,110 @@ export function isShrinkableImage(file) {
   return SHRINKABLE_EXT.test(file.name ?? '')   // กล้องมือถือบางรุ่นคืน type ว่าง
 }
 
+// เกณฑ์ "เล็กพอแล้ว ไม่ต้องย่อ" ของรูปสาธารณะ — เดิม 1.5 MB (ผ่านมาตรฐานเดียวกับ compressImage) แต่รูปข่าว/ท่องเที่ยว
+// บนหน้าแรกวัดจริง 0.4–1 MB ต่อรูป และแสดงที่ ~320 px หลุดด่านทั้งหมด จึงลดเหลือ 500 KB
+export const PUBLIC_IMAGE_SKIP_UNDER = 500 * 1024
+// ต้องประหยัดได้อย่างน้อยเท่านี้จึงใช้ไฟล์ที่ย่อ ไม่งั้นคืนไฟล์เดิม — กันกรณีเข้ารหัส JPEG ซ้ำแล้วไฟล์ไม่เล็กลง
+// (เสียคุณภาพเปล่า) เช่นรูป JPEG ที่ผ่าน compressImage หรือ resizeImage มาแล้ว
+export const SHRINK_MIN_SAVING = 0.15
+const SHRINK_TIMEOUT_MS = 8_000
+
+function loadImageElement(file) {
+  const url = URL.createObjectURL(file)
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const timer = setTimeout(() => { URL.revokeObjectURL(url); reject(new Error('image_load_timeout')) }, 3_000)
+    img.onload = () => { clearTimeout(timer); URL.revokeObjectURL(url); resolve(img) }
+    img.onerror = () => { clearTimeout(timer); URL.revokeObjectURL(url); reject(new Error('image_load_error')) }
+    img.src = url
+  })
+}
+
+// วาดรูปลง canvas ขนาด tw x th (ย่ออย่างเดียว ไม่ขยาย — ผู้เรียกคำนวณขนาดมาแล้ว)
+// createImageBitmap ย่อตอน decode จึงไม่ต้องถือรูปเต็มความละเอียดไว้ในหน่วยความจำ (มือถือค้างเพราะเรื่องนี้มาก่อน)
+async function drawScaled(file, tw, th) {
+  const canvas = document.createElement('canvas')
+  canvas.width = tw
+  canvas.height = th
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file, { resizeWidth: tw, resizeHeight: th, resizeQuality: 'medium' })
+      ctx.drawImage(bitmap, 0, 0, tw, th)
+      bitmap.close()
+      return { canvas, ctx }
+    } catch { /* ถอยไปใช้ <img> */ }
+  }
+  const img = await loadImageElement(file)
+  ctx.drawImage(img, 0, 0, tw, th)
+  return { canvas, ctx }
+}
+
+function hasTransparency(ctx, w, h) {
+  const { data } = ctx.getImageData(0, 0, w, h)
+  for (let i = 3; i < data.length; i += 4) if (data[i] < 255) return true
+  return false
+}
+
+function canvasToJpeg(canvas, quality) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), 5_000)
+    try {
+      canvas.toBlob((blob) => { clearTimeout(timer); resolve(blob) }, 'image/jpeg', quality)
+    } catch {
+      clearTimeout(timer)
+      resolve(null)
+    }
+  })
+}
+
 /**
- * คืนไฟล์ที่ย่อแล้ว (JPEG ไม่เกิน 1600 px) ถ้าเป็นรูปใน bucket สาธารณะที่ใหญ่เกิน 1.5 MB
- * นอกเหนือจากนั้นคืนไฟล์เดิมตัวเดิม (=== file) ย่อไม่สำเร็จ/หมดเวลาก็คืนไฟล์เดิม ไม่บล็อกการอัปโหลด
+ * ย่อรูปถ่ายเป็น JPEG ด้านยาวไม่เกิน maxEdge (ไม่ขยายรูปเล็ก) คืนไฟล์เดิมตัวเดิม (=== file) เมื่อ:
+ *  - ถอดรหัสไม่ได้ / หมดเวลา / เกิดข้อผิดพลาดใดๆ (ไม่บล็อกการอัปโหลด)
+ *  - ภาพมีส่วนโปร่งใส (PNG โลโก้/ไอคอน) — แปลงเป็น JPEG แล้วพื้นโปร่งใสกลายเป็นสีดำ/ขาว ภาพเพี้ยน
+ *  - ผลที่ได้ไม่เล็กลงอย่างน้อย SHRINK_MIN_SAVING
+ *
+ * ไม่ใช้ compressImage เพราะมันส่ง maxPx เป็น "ความกว้าง" ให้ createImageBitmap: ขยายรูปแคบให้กว้างถึง maxPx
+ * (1200x2112 → 1600x2816 ไฟล์ใหญ่ขึ้น 139 → 322 KB) และรูปแนวตั้งด้านยาวเกิน maxPx (3000x4000 → 1600x2134)
+ * ส่วน compressImage ยังคงพฤติกรรมเดิมไว้เพราะมี 20 จุดเรียกใช้ที่พึ่งมันอยู่
  */
-export async function limitPublicImage(bucket, file) {
-  if (!PUBLIC_IMAGE_BUCKETS.has(bucket) || !isShrinkableImage(file)) return file
-  return compressImage(file, PUBLIC_IMAGE_MAX_PX, 0.85)
+export async function shrinkPhoto(file, { maxEdge = PUBLIC_IMAGE_MAX_PX, quality = 0.85 } = {}) {
+  const work = (async () => {
+    const { naturalWidth: w, naturalHeight: h } = await loadImageElement(file)
+    if (!w || !h) return file
+    const scale = Math.min(1, maxEdge / Math.max(w, h))
+    const tw = Math.max(1, Math.round(w * scale))
+    const th = Math.max(1, Math.round(h * scale))
+    const { canvas, ctx } = await drawScaled(file, tw, th)
+    try {
+      const isJpeg = /^image\/jpe?g$/i.test(file.type ?? '') || (!file.type && /\.jpe?g$/i.test(file.name ?? ''))
+      if (!isJpeg && hasTransparency(ctx, tw, th)) return file
+      const blob = await canvasToJpeg(canvas, quality)
+      if (!blob || blob.size > file.size * (1 - SHRINK_MIN_SAVING)) return file
+      const base = (file.name ?? 'photo').replace(/\.[^.]+$/, '') || 'photo'
+      return new File([blob], `${base}.jpg`, { type: 'image/jpeg' })
+    } finally {
+      canvas.width = 0
+      canvas.height = 0
+    }
+  })()
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(file), SHRINK_TIMEOUT_MS))
+  try {
+    return await Promise.race([work, timeout])
+  } catch (err) {
+    console.warn('shrinkPhoto failed, fallback to original file:', err)
+    return file
+  }
+}
+
+/**
+ * คืนไฟล์ที่ย่อแล้ว (JPEG ด้านยาวไม่เกิน 1600 px) ถ้าเป็นรูปใน bucket สาธารณะที่ใหญ่เกิน PUBLIC_IMAGE_SKIP_UNDER
+ * นอกเหนือจากนั้นคืนไฟล์เดิมตัวเดิม (=== file) ย่อไม่สำเร็จ/หมดเวลาก็คืนไฟล์เดิม ไม่บล็อกการอัปโหลด
+ *
+ * keepFormat: true สำหรับไฟล์ที่ต้องคงรูปแบบเดิม (โลโก้ ไอคอนแอป QR) — ต้องส่งเองที่จุดเรียก
+ */
+export async function limitPublicImage(bucket, file, { keepFormat = false } = {}) {
+  if (keepFormat || !PUBLIC_IMAGE_BUCKETS.has(bucket) || !isShrinkableImage(file)) return file
+  if (file.size <= PUBLIC_IMAGE_SKIP_UNDER) return file
+  return shrinkPhoto(file, { maxEdge: PUBLIC_IMAGE_MAX_PX, quality: 0.85 })
 }

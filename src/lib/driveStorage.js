@@ -39,8 +39,9 @@ function fileToBase64(file) {
 
 /**
  * @param {string} bucket - ต้องตรงกับ Supabase Storage bucket เดิม เช่น 'complaint-attachments'
- * @param {File|Blob} original - รูปใน bucket สาธารณะที่ใหญ่เกิน 1.5 MB จะถูกย่อเป็น JPEG ≤1600 px ก่อนส่งเสมอ
- * @param {{ subject?: string, folder?: string, filename?: string, municipality?: string }} [options] - municipality:
+ * @param {File|Blob} original - รูปใน bucket สาธารณะที่ใหญ่เกิน 500 KB จะถูกย่อเป็น JPEG ด้านยาว ≤1600 px ก่อนส่ง
+ *   (โลโก้/ไอคอนแอป/QR ต้องส่ง keepFormat: true ไม่งั้นถูกแปลงเป็น JPEG)
+ * @param {{ subject?: string, folder?: string, filename?: string, municipality?: string, keepFormat?: boolean }} [options] - municipality:
  *   slug ของเทศบาล ต้องส่งมาด้วยเสมอถ้าผู้ใช้ไม่ได้ login (เช่นประชาชนยื่นคำร้องแบบไม่ล็อกอิน) เพราะฝั่ง
  *   Edge Function ไม่มี profile ให้ดูเทศบาลจาก DB ได้ ต้องรู้จาก useTenant() ของโดเมนที่เปิดอยู่แทน
  *
@@ -53,7 +54,7 @@ function fileToBase64(file) {
 export async function uploadFile(bucket, original, options = {}) {
   // ด่านกลาง: รูปใน bucket สาธารณะที่ใหญ่เกิน 1.5 MB ถูกย่อก่อนส่งเสมอ ไม่ว่าปุ่มไหนเรียก
   // (เหตุผลเต็มที่ limitPublicImage ใน imageUtils.js — แบนเนอร์ 4.72 MB ทำให้ Supabase ตอบ 402 ทั้งระบบ)
-  const file = await limitPublicImage(bucket, original)
+  const file = await limitPublicImage(bucket, original, { keepFormat: options.keepFormat })
   // ย่อแล้วได้ JPEG เสมอ ชื่อไฟล์ที่ผู้เรียกกำหนด (.png ฯลฯ) ต้องเปลี่ยนตาม ไม่งั้นนามสกุลไม่ตรงเนื้อไฟล์
   const filename = file !== original && options.filename
     ? options.filename.replace(/\.[^.]+$/, '.jpg')
