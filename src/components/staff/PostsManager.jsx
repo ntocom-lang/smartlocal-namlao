@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { useAuth } from '../../contexts/AuthContext'
-import { shrinkPhoto, POST_IMAGE_MAX_EDGE, POST_IMAGE_QUALITY } from '../../lib/imageUtils'
+import { shrinkPhoto, POST_IMAGE_MAX_WIDTH, POST_IMAGE_QUALITY } from '../../lib/imageUtils'
 import { uploadFile } from '../../lib/driveStorage'
 import { driveFolderPath, driveMonthFolder, DRIVE_MODULES } from '../../lib/driveFolders'
 import {
@@ -119,7 +119,7 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
     try {
       // shrinkPhoto ไม่ใช่ compressImage: compressImage ข้ามไฟล์ <1.5 MB และส่ง maxPx เป็น "ความกว้าง" (ขยายรูปแนวตั้งได้)
       // ย่อไม่สำเร็จ/ไม่ประหยัดถึง 15% จะคืนไฟล์เดิม แล้วด่านกลางใน uploadFile ยังจับไฟล์ >500 KB ต่อ
-      const compressed = await shrinkPhoto(file, { maxEdge: POST_IMAGE_MAX_EDGE, quality: POST_IMAGE_QUALITY })
+      const compressed = await shrinkPhoto(file, { maxWidth: POST_IMAGE_MAX_WIDTH, quality: POST_IMAGE_QUALITY })
       // นามสกุลต้องตรงเนื้อไฟล์: shrinkPhoto แปลง PNG/WEBP เป็น JPEG แต่ uploadFile เปลี่ยนนามสกุลให้เฉพาะตอนที่ด่านกลางแปลงเอง
       const ext = compressed.type === 'image/jpeg' ? 'jpg' : file.name.split('.').pop()
       const { url, error: upErr } = await uploadFile('complaint-attachments', compressed, {
