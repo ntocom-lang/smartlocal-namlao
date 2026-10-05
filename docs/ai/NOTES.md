@@ -276,4 +276,28 @@ Supabase ตั้ง `max_rows = 1000` ให้ PostgREST — select ที่
   เกณฑ์ที่ใช้: Cached Egress เฉลี่ยต่อวันต้องต่ำกว่า ~0.11 GB (เผื่อ 30% ใต้เพดาน)
 - `supabase db query --output-format json` escape ตัว `&` เป็นรหัส unicode (backslash ตามด้วย u0026) — ดึง URL ออกมา curl ต้อง JSON.parse ก่อน
   ไม่งั้นได้ 404 หลอก
-- เทสต์: `npm run test:banner`, `npm run test:image-guard`, `npm run test:lazy-images`
+- **อปท. เพิ่ม = egress เพิ่มเป็นเส้นตรง** (ประมาณการ ยังไม่ใช่ตัวเลขจริง): Cached Egress ≈ จำนวน อปท. × เครื่องใหม่ต่อวัน × ขนาดรูปต่อการเปิดครั้งแรก
+  ที่ ~16 เครื่อง/วัน/อปท. (น้ำเลาเฉลี่ย 30 ก.ย.–4 ต.ค.) × 1.5 รอบ × 1.8 MB ≈ 43 MB/วัน/อปท. → 4 อปท. ชนเพดาน 5 GB/เดือน ·
+  สองทางรับมือ: (ก) ลดขนาดรูป (ข้างบน) (ข) ให้ Cloudflare จำรูปที่ edge — Worker `/_img/` ด้านล่าง
+- **รูปที่ edge ผ่าน Worker `/_img/` (`worker/imageProxy.js`)**: `/_img/<bucket>/<path>` หรือ `/_img/drive-file?id=` → Worker เช็ค allowlist →
+  ดึงจาก Supabase ครั้งแรก → เก็บ Cache API (edge 7 วัน, เบราว์เซอร์ 1 วัน) → ครั้งต่อไป Supabase ไม่ถูกแตะ · ทดสอบบน workerd จริง
+  (`wrangler dev --local`): MISS 0.51 วิ → HIT 0.04 วิ ไบต์ตรงต้นฉบับ (md5) · รูปบน Drive MISS 1.55 วิ → HIT 0.017 วิ
+  ⚠️ allowlist `complaint-attachments` เฉพาะ `posts/ tourism/ staff/` เท่านั้น — โฟลเดอร์ UUID คือรูปแนบคำร้องประชาชน (PDPA) ห้ามเพิ่ม `'*'`
+  ⚠️ ห้ามผ่าน SVG/HTML (ไฟล์ผู้ใช้เสิร์ฟจาก origin ของเว็บ = XSS) · ปลายทางตายตัวเป็น Supabase ของเรา ไม่รับ host จากผู้ใช้
+  ⚠️ รูปที่ผ่านตัวนี้นับโควตา Worker 100,000 คำขอ/วัน (static asset ไม่นับ) เปิดหน้าแรกแบบเย็น ≈ 25 คำขอ — อย่าเอารูปที่ไม่จำเป็นมาผ่าน
+  · เปลี่ยนรูปต้องเปลี่ยน URL (ชื่อไฟล์ใหม่/`?v=`) เพราะ edge จำ 7 วัน · เทสต์: `npm run test:image-proxy`
+- **รูปบน Drive (`/functions/v1/drive-file`) ไม่ได้ถูก CDN แคช** (`cf-cache-status: DYNAMIC`), ไม่ส่ง Content-Length, ไม่รับ Range →
+  ทุกเครื่องใหม่ยิง Edge Function (โควตา 500k/เดือน) และกิน Egress (5 GB) เอง · รูปใหม่ที่อัปโหลดหลังมีด่านย่อรูปจะเล็กอยู่แล้ว
+  แต่รูปเก่าที่ขึ้น Drive ก่อนมีด่าน (เช่น Smart City น้ำเลา 1.24 MB) ต้องอัปโหลดใหม่ผ่านหน้าตั้งค่า
+- **งบรูปต่อ อปท.: `npm run check:image-budget`** (อ่านอย่างเดียว ใช้ anon key; `--verbose` ดูทุกรูป, `--slug` เฉพาะรายเดียว) ·
+  ไม่ผ่านเมื่อ: รวมเกิน 3 MB (กรณีเลวร้ายสุด) / มีรูปเดี่ยวเกิน 400 KB / วัดขนาดไม่ได้ · ผลวัดจริง 2026-10-05 ทั้ง 4 อปท. ไม่ผ่าน
+  (น้ำเลา 7.7 MB, ทุ่งแค้ว 7.5 MB, ตำหนักธรรม 3.9 MB, demo 3.5 MB) — ตัวนี้เจอแบนเนอร์ตำหนักธรรม 5 ใบ (454–1,160 KB) และรูป Drive
+  ที่การย่อรอบแรกมองข้าม เพราะ SQL อ่านได้เฉพาะ `storage.objects` · รันก่อนเปิด อปท. ใหม่และหลังแอดมินอัปโหลดรูปชุดใหญ่ ·
+  ⚠️ รูป Drive วัดด้วยการ GET นับไบต์จริง (กิน egress เท่าขนาดรูปต่อรอบ รวมทุก อปท. หลัก MB) — อย่ารันถี่ · เทสต์: `npm run test:image-budget`
+- **Cloudflare R2 ยังไม่ทำ**: เปิดใช้ต้องกดในแดชบอร์ด (MCP ตอบ "Please enable R2 through the Cloudflare Dashboard") และแหล่งข้อมูลบุคคลที่สาม
+  ระบุว่าต้องใส่วิธีชำระเงินแม้ใช้ฟรีทั้งหมด (เอกสารทางการ Cloudflare ไม่ระบุทั้งสองทาง) → ผิดนโยบาย $0 ถ้าเป็นจริง · ถ้าเจ้าของเปิดหน้าสมัครแล้ว
+  ไม่ขอบัตร ค่อยทำ: จุดสลับอยู่ที่ `loadFromOrigin()` ใน imageProxy.js จุดเดียว URL ในฐานข้อมูลไม่ต้องแก้
+- กับดักทดสอบ Worker ในเครื่อง: `wrangler dev` เมื่อคอนฟิกมี `routes` ทำให้ Worker เห็นโฮสต์เป็นโดเมนจริง → ด่าน http→https ตอบ 301 ทุกคำขอ
+  (ใช้คอนฟิกชั่วคราวที่ตัด routes) · สั่ง kill ซ้ำโดยไม่หยุดตัวแม่ → wrangler สร้าง workerd ใหม่ฟังพอร์ตเดิมซ้อนกัน คำขอตกที่ตัวตายแล้วค้าง
+  ต้องหยุดที่ node ตัวแม่ตาม command line · ห้ามหยุด workerd ตามชื่อ (อาจเป็นของ session อื่น)
+- เทสต์: `npm run test:banner`, `npm run test:image-guard`, `npm run test:lazy-images`, `npm run test:image-proxy`, `npm run test:image-budget`

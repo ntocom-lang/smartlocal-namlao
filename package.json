@@ -77,7 +77,10 @@
     "test:banner": "node --test tests/banner-slides.test.mjs",
     "test:image-guard": "node --test tests/image-upload-guard.test.mjs",
     "test:lazy-images": "node --test tests/lazy-images.test.mjs",
-    "test:storage-image-block": "node --test tests/storage-image-block.test.mjs"
+    "test:storage-image-block": "node --test tests/storage-image-block.test.mjs",
+    "test:image-proxy": "node --test tests/image-proxy.test.mjs",
+    "test:image-budget": "node --test tests/image-budget.test.mjs",
+    "check:image-budget": "node scripts/check-image-budget.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -15,6 +15,7 @@ import { buildIcons } from './manifestIcons.js'
 import { airQualityResponse } from './airQuality.js'
 import { pm25DetailsResponse } from './pm25Details.js'
 import { httpsRedirectResponse } from './httpsRedirect.js'
+import { IMAGE_ROUTE_PREFIX, imageProxyResponse } from './imageProxy.js'
 
 const SHELL_PATH = '/_template.html'
 
@@ -186,7 +187,7 @@ function normalizeHexColor(value) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     // ต้องเป็นด่านแรกสุด ก่อนทุก route — เหตุผลเต็มที่ worker/httpsRedirect.js (หน้าเว็บแบบ http ทำให้
     // login ด้วย LINE/Google ไปลงจอดที่ อปท. น้ำเลา ผ่านการถอยไปใช้ Site URL ของ Supabase)
     const toHttps = httpsRedirectResponse(request)
@@ -196,6 +197,14 @@ export default {
     if (url.pathname === '/api/hydro-hourly') return hydroHourlyResponse(request)
     if (url.pathname === '/api/air-quality') return airQualityResponse(request)
     if (url.pathname === '/api/pm25-details') return pm25DetailsResponse(request)
+
+    // รูปหน้าเว็บผ่านแคช edge — ต้องมาก่อน isFileRequest() ที่ตอบ 404 ให้ทุก path ลงท้าย .png/.jpg
+    // เหตุผลเต็ม + allowlist อยู่ที่ worker/imageProxy.js (รูปแนบคำร้องของประชาชนห้ามผ่านที่นี่)
+    if (url.pathname.startsWith(IMAGE_ROUTE_PREFIX)) {
+      return imageProxyResponse(request, env, ctx, {
+        supabaseOrigin: new URL(env.VITE_SUPABASE_URL || FALLBACK_SUPABASE_URL).origin,
+      })
+    }
 
     // manifest ต่อ อปท. — ต้องเช็คก่อน isFileRequest() ซึ่งตอบ 404 ให้ทุกนามสกุลไฟล์
     //
