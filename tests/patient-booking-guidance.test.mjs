@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress, joinCandidates } from '../src/lib/patientBooking.js'
+import { bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress, joinCandidates, paginate, thaiDay, workspaceTruncated, WORKSPACE_ROW_LIMIT, loadPageSize, savePageSize } from '../src/lib/patientBooking.js'
 
 const error = 'เวลารับ–ส่งอยู่นอกเวลาบริการ'
 const plan = { date: '2026-09-21', settings_revision: 3, booking_ids: ['one'], blocks: [{ start: '2026-09-21T00:00:00Z', end: '2026-09-21T09:00:00Z' }] }
@@ -131,4 +131,62 @@ test('driver: two actions for all modes, legacy states finish atomically', () =>
     assert.deepEqual(driverSteps({state}), [])
   }
   assert.equal(driverProgress({state:'completed'}), 2)
+})
+
+// แบ่งหน้ารายการเจ้าหน้าที่ (เจ้าของระบบสั่ง 2569-10-05): ตัดหน้าตามหน่วย กรอบเที่ยวเดียวกันเป็นหน่วยเดียว ไม่ถูกตัดคร่อม
+const units = (...sizes) => sizes.map((size, id) => ({ id, size }))
+const shape = r => ({ page: r.page, pages: r.pages, ids: r.units.map(u => u.id), from: r.from, to: r.to, total: r.total })
+test('paginate: pages hold perPage rows, numbering is continuous and the page is clamped', () => {
+  assert.deepEqual(shape(paginate(units(1, 1, 1, 1, 1), 2, 1)), { page: 1, pages: 3, ids: [0, 1], from: 1, to: 2, total: 5 })
+  assert.deepEqual(shape(paginate(units(1, 1, 1, 1, 1), 2, 3)), { page: 3, pages: 3, ids: [4], from: 5, to: 5, total: 5 })
+  assert.equal(paginate(units(1, 1, 1), 2, 99).page, 2, 'หน้าที่เกินช่วงถูกบีบเข้าหน้าสุดท้าย (รายการลดลงหลังบันทึก)')
+  assert.equal(paginate(units(1, 1, 1), 2, 0).page, 1)
+  assert.equal(paginate(units(1, 1, 1), 2, 'x').page, 1)
+  assert.deepEqual(shape(paginate([], 20, 1)), { page: 1, pages: 1, ids: [], from: 0, to: 0, total: 0 })
+})
+test('paginate: a trip frame is never split across pages', () => {
+  // กรอบ 4 คนตกที่ขอบหน้า: หน้าเกิน perPage ได้ แต่กรอบอยู่ครบในหน้าเดียวเสมอ
+  const result = paginate(units(1, 4, 1, 1), 2, 1)
+  assert.deepEqual(shape(result), { page: 1, pages: 2, ids: [0, 1], from: 1, to: 5, total: 7 })
+  assert.deepEqual(shape(paginate(units(1, 4, 1, 1), 2, 2)).ids, [2, 3])
+  for (let perPage = 1; perPage <= 8; perPage++) {
+    const sizes = [3, 1, 4, 2, 1, 5, 1]
+    const ids = Array.from({ length: paginate(units(...sizes), perPage, 1).pages }, (_, i) => paginate(units(...sizes), perPage, i + 1).units.map(u => u.id))
+    assert.deepEqual(ids.flat(), sizes.map((_, i) => i), `ทุกหน่วยต้องอยู่หน้าเดียว ไม่ซ้ำ ไม่ตก (perPage ${perPage})`)
+  }
+})
+test('paginate: all rows on one page for "all"; folded (size 0) units never open an empty page', () => {
+  assert.deepEqual(shape(paginate(units(1, 1, 1, 1), 'all', 5)), { page: 1, pages: 1, ids: [0, 1, 2, 3], from: 1, to: 4, total: 4 })
+  // ส่วนที่พับอยู่ (size 0) ตกท้ายหน้าสุดท้าย ไม่ได้หน้าใหม่ที่มีแต่หัวกลุ่ม
+  assert.deepEqual(shape(paginate(units(1, 1, 0, 0), 2, 1)), { page: 1, pages: 1, ids: [0, 1, 2, 3], from: 1, to: 2, total: 2 })
+  assert.deepEqual(shape(paginate(units(1, 1, 1, 0), 2, 2)), { page: 2, pages: 2, ids: [2, 3], from: 3, to: 3, total: 3 })
+  assert.deepEqual(shape(paginate(units(0, 0), 2, 1)), { page: 1, pages: 1, ids: [0, 1], from: 0, to: 0, total: 0 })
+})
+test('workspace cap: the staff page warns when the database sent its maximum', () => {
+  const rows = n => Array.from({ length: n }, (_, i) => ({ id: i }))
+  assert.equal(WORKSPACE_ROW_LIMIT, 1000, 'ต้องตรงกับ LIMIT 1000 ใน patient_booking_workspace_v2')
+  assert.equal(workspaceTruncated({ bookings: rows(999), trips: rows(10) }), false)
+  assert.equal(workspaceTruncated({ bookings: rows(1000), trips: [] }), true)
+  assert.equal(workspaceTruncated({ bookings: [], trips: rows(1000) }), true)
+  assert.equal(workspaceTruncated(null), false)
+  assert.equal(workspaceTruncated({}), false)
+})
+test('thaiDay keeps Bangkok calendar day (shared formatter must not change results)', () => {
+  assert.equal(thaiDay('2026-10-04T18:00:00Z'), '2026-10-05', '18:00 UTC = 01:00 วันถัดไปที่กรุงเทพ')
+  assert.equal(thaiDay('2026-10-04T16:59:59Z'), '2026-10-04')
+  assert.equal(thaiDay(Date.UTC(2026, 0, 1, 17, 0, 0)), '2026-01-02')
+  assert.match(thaiDay(), /^\d{4}-\d{2}-\d{2}$/)
+})
+test('page size preference: remembered per device, junk and missing storage fall back to 20', () => {
+  assert.equal(loadPageSize(), 20, 'ไม่มี localStorage (โหมดส่วนตัว/เซิร์ฟเวอร์) ต้องใช้ค่าตั้งต้นไม่พัง')
+  assert.doesNotThrow(() => savePageSize(50))
+  const store = new Map()
+  globalThis.localStorage = { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)) }
+  try {
+    assert.equal(loadPageSize(), 20)
+    savePageSize(50); assert.equal(loadPageSize(), 50)
+    savePageSize('all'); assert.equal(loadPageSize(), 'all')
+    savePageSize(10); assert.equal(loadPageSize(), 10)
+    for (const junk of ['7', 'abc', '', '0', '-1']) { store.set('ptb-staff-page-size', junk); assert.equal(loadPageSize(), 20, `ค่าเพี้ยน ${JSON.stringify(junk)} ต้องใช้ค่าตั้งต้น`) }
+  } finally { delete globalThis.localStorage }
 })

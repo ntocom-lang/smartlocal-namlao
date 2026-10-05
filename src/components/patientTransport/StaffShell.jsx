@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { Printer, RefreshCw, Search, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Printer, RefreshCw, Search, X } from 'lucide-react'
+import { PAGE_SIZES, PAGE_SIZE_DEFAULT } from '../../lib/patientBooking'
 
 /**
  * โครงหน้าทำงานของโมดูลรถรับ-ส่งผู้ป่วย — ใช้รูปแบบเดียวกับ "คำร้อง" และ "ยานพาหนะ"
@@ -32,6 +33,32 @@ export function SectionBand({ label, bar, tint, ink, count, rounded, toggle }) {
     {toggle && <button type="button" aria-expanded={toggle.open} onClick={toggle.onToggle} className="ml-auto min-h-11 whitespace-nowrap rounded-xl border bg-white px-3 text-sm font-bold hover:bg-slate-50 max-md:w-full md:min-h-9" style={{ borderColor: bar, color: ink }}>
       {toggle.open ? 'ซ่อนรายการ' : 'แสดงรายการ'}<span aria-hidden="true"> {toggle.open ? '▴' : '▾'}</span></button>}
   </span>
+}
+
+// แถบแบ่งหน้าท้ายตาราง — หน้าตาเดียวกับแท็บคำร้อง (เลือกจำนวนต่อหน้า + ก่อนหน้า/เลขหน้า/ถัดไป) ใช้ร่วมกล่องคำขอรถและงานคนขับ
+// ขึ้นเมื่อรายการเกินค่าตั้งต้น (20) เท่านั้น — เลือก "ทั้งหมด" แล้วแถบต้องยังอยู่ ไม่งั้นเปลี่ยนกลับไม่ได้ จึงวัดจาก total ไม่ใช่จำนวนหน้า
+// การตัดหน้า (กรอบเที่ยวเดียวกันไม่ถูกตัดคร่อม) อยู่ที่ paginate() ใน lib/patientBooking.js · ปุ่มสูง 44px บนมือถือ
+export function Pager({ total, from, to, page, pages, perPage, onPage, onPerPage }) {
+  if (total <= PAGE_SIZE_DEFAULT) return null
+  const numbers = Array.from({ length: pages }, (_, i) => i + 1)
+    .filter(n => pages <= 7 || n === 1 || n === pages || Math.abs(n - page) <= 1)
+    .reduce((out, n, i, all) => (i > 0 && n - all[i - 1] > 1 ? [...out, '…', n] : [...out, n]), [])
+  const button = 'inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-gray-200 bg-white px-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30 md:min-h-9 md:min-w-9'
+  return <nav aria-label="แบ่งหน้ารายการ" className="flex flex-col items-center justify-between gap-3 border-t border-gray-200 pt-4 sm:flex-row">
+    <label className="flex flex-wrap items-center justify-center gap-2 text-xs text-gray-500">แสดง
+      <select aria-label="จำนวนรายการต่อหน้า" value={perPage} onChange={e => onPerPage(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+        className="min-h-11 rounded-lg border border-gray-200 bg-white px-2 text-sm font-medium text-gray-700 md:min-h-9">
+        {PAGE_SIZES.map(n => <option key={n} value={n}>{n} รายการ</option>)}<option value="all">ทั้งหมด</option>
+      </select>
+      <span className="text-gray-400">({from}–{to} จาก {total})</span>
+    </label>
+    {pages > 1 && <div className="flex flex-wrap items-center justify-center gap-1.5">
+      <button type="button" className={button} aria-label="หน้าก่อนหน้า" disabled={page <= 1} onClick={() => onPage(page - 1)}><ChevronLeft size={16} aria-hidden="true" /></button>
+      {numbers.map((n, i) => n === '…' ? <span key={`gap-${i}`} className="px-1 text-gray-400" aria-hidden="true">…</span>
+        : <button key={n} type="button" className={`${button} ${n === page ? '!border-transparent !bg-[#1a3a5c] !text-white' : ''}`} aria-label={`หน้า ${n}`} aria-current={n === page ? 'page' : undefined} onClick={() => onPage(n)}>{n}</button>)}
+      <button type="button" className={button} aria-label="หน้าถัดไป" disabled={page >= pages} onClick={() => onPage(page + 1)}><ChevronRight size={16} aria-hidden="true" /></button>
+    </div>}
+  </nav>
 }
 
 // กล่องรายการ: หัวแถบกรมท่าบอกจำนวน + แถบเครื่องมือ (ค้นหา/ปุ่มหลัก) + ป้ายกรอง — คัดจาก ComplaintsManager.jsx

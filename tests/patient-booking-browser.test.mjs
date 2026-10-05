@@ -223,6 +223,9 @@ const server=await createServer({configFile:false,plugins:[plugin,react(),tailwi
 await server.listen();const address=server.httpServer.address();const base=`http://127.0.0.1:${address.port}`
 const browser=await chromium.launch({channel:'msedge',headless:true})
 const page=await browser.newPage({viewport:{width:390,height:900}});const errors=[]
+// ตารางเจ้าหน้าที่แบ่งหน้าละ 20 และจำค่าที่เลือกไว้ในเครื่อง (2569-10-05) ข้อมูลทดสอบสะสมหลายสิบแถว ฉากเก่าหาแถวตาม id จึงตั้ง "ทั้งหมด" ให้ครั้งแรกของแท็บ
+// (sessionStorage กันตั้งซ้ำทุกครั้งที่เปิดหน้า) · ฉากแบ่งหน้าเองเปลี่ยนเป็น 20 แล้วคืน "ทั้งหมด" ตอนจบ
+await page.addInitScript(()=>{if(!sessionStorage.getItem('pager-test-default')){localStorage.setItem('ptb-staff-page-size','all');sessionStorage.setItem('pager-test-default','1')}})
 page.setDefaultTimeout(20000)
 page.on('pageerror',e=>{errors.push(e.message);console.error('Browser error:',e.message)})
 const vehiclePrompts=[];let dismissNextVehiclePrompt=false
@@ -1997,5 +2000,61 @@ try{
  assert.equal((await bookingRow(communityBooking)).status,'completed')
  assert.equal((await runSql(()=>db.query('SELECT state FROM public.patient_booking_trips WHERE id=$1',[communityTrip]))).rows[0].state,'completed')
  console.log('PASS closed community intake still permits both driver actions through v2, including the pre-action private read')
+ // ── แบ่งหน้าตารางเจ้าหน้าที่ (เจ้าของระบบสั่ง 2569-10-05 "ทำไว้รอ อย่าให้เจอปัญหาแล้วค่อยทำ") ──
+ // โคลนคำขอรอยืนยัน 45 ใบด้วย SQL (ส่วน "ต้องดำเนินการ") แล้วตรวจแถบแบ่งหน้าของกล่องคำขอรถ: ค่าตั้งต้น 20 ต่อหน้า เลขลำดับต่อกันข้ามหน้า
+ // หัวกลุ่มขึ้นซ้ำที่ต้นหน้า กรอบเที่ยวเดียวกันไม่แหว่ง ค้นหาแล้วกลับหน้า 1 "ทั้งหมด" แล้วแถบยังอยู่ · จากนั้นขยายเป็น 1,010 ใบดูแถบเตือนเพดาน 1,000 แล้วลบทิ้งทั้งหมด
+ const pagerClone=(from,to)=>runSql(()=>db.query(`INSERT INTO public.patient_bookings SELECT (jsonb_populate_record(NULL::public.patient_bookings,to_jsonb(b)||jsonb_build_object('id','00000000-0000-4000-8000-'||lpad((990000000000+g)::text,12,'0'),'trip_id',NULL,'status','submitted','patient_name','[TEST] แบ่งหน้า '||g,'appointment_at',to_jsonb(b.appointment_at+g*interval '1 minute')))).* FROM (SELECT * FROM public.patient_bookings LIMIT 1) b,generate_series($1::int,$2::int) g`,[from,to]))
+ const pagerNav=()=>page.getByRole('navigation',{name:'แบ่งหน้ารายการ'})
+ const pagerState=()=>page.evaluate(()=>{
+  const rows=[...document.querySelectorAll('tr[data-booking]')].filter(r=>r.offsetParent),framed={}
+  rows.forEach(r=>{const f=r.dataset.tripFrame;if(f)framed[f]=(framed[f]||0)+1})
+  const text=document.querySelector('nav[aria-label="แบ่งหน้ารายการ"]')?.innerText.replace(/\s+/g,' ').trim()??null,total=Number(/จาก (\d+)/.exec(text??'')?.[1]??0)
+  return {rows:rows.length,first:rows[0]?.firstElementChild.innerText.trim(),last:rows.at(-1)?.firstElementChild.innerText.trim(),total,text,
+   heads:[...document.querySelectorAll('tr[data-section-header]')].map(h=>h.innerText.replace(/\s+/g,' ').trim()),
+   brokenFrames:[...document.querySelectorAll('tr[data-trip-group]')].filter(f=>(framed[f.dataset.tripGroup]||0)<2).length}
+ })
+ await pagerClone(1,45)
+ await page.evaluate(()=>localStorage.setItem('ptb-staff-page-size','20'))
+ await staffDesk('coordinator');await pagerNav().waitFor()
+ const p1=await pagerState()
+ assert(p1.total>=45&&p1.rows>=20&&p1.rows<20+10,`หน้า 1 ต้องมี 20 แถว (เกินได้เฉพาะกรอบเที่ยวสุดท้าย): ${JSON.stringify(p1)}`)
+ assert.equal(p1.first,'1');assert.equal(p1.last,String(p1.rows));assert(p1.text.includes(`(1–${p1.rows} จาก ${p1.total})`),p1.text)
+ assert(p1.heads[0].startsWith('ต้องดำเนินการ ')&&p1.brokenFrames===0,JSON.stringify(p1))
+ await pagerNav().getByRole('button',{name:'หน้า 2',exact:true}).click();await page.waitForFunction(()=>document.querySelector('tr[data-booking]')?.firstElementChild.innerText.trim()!=='1')
+ const p2=await pagerState()
+ assert.equal(p2.first,String(p1.rows+1),'เลขลำดับ "ที่" ต้องนับต่อจากหน้าก่อน');assert(p2.text.includes(`(${p1.rows+1}–${p1.rows+p2.rows} จาก ${p1.total})`),p2.text)
+ assert(p2.heads[0].startsWith('ต้องดำเนินการ ')&&p2.heads[0]===p1.heads[0],`ส่วนเดียวกันที่ต่อมาหน้าถัดไปต้องมีหัวกลุ่มซ้ำที่ต้นหน้า และนับทั้งกลุ่ม: ${p2.heads[0]} / ${p1.heads[0]}`)
+ assert.equal(p2.brokenFrames,0,'กรอบเที่ยวเดียวกันต้องไม่ถูกตัดคร่อมหน้า')
+ assert.equal(await pagerNav().getByRole('button',{name:'หน้า 2',exact:true}).getAttribute('aria-current'),'page')
+ // ค้นหา → กลับหน้า 1 และเหลือน้อยกว่าค่าตั้งต้น = ไม่มีแถบ · ล้างค้นหา → หน้า 1
+ const pagerSearch=page.getByLabel('ค้นหาชื่อ เบอร์ จุดรับ โรงพยาบาล เลขที่',{exact:true})
+ await pagerSearch.fill('[TEST] แบ่งหน้า 1');await page.waitForFunction(()=>!document.querySelector('nav[aria-label="แบ่งหน้ารายการ"]'))
+ assert.equal((await pagerState()).first,'1');await pagerSearch.fill('');await pagerNav().waitFor()
+ assert.equal((await pagerState()).first,'1','ล้างค้นหาแล้วต้องกลับหน้า 1')
+ // "ทั้งหมด" = หน้าเดียว แต่แถบต้องยังอยู่ ไม่งั้นเปลี่ยนกลับไม่ได้ · 10 ต่อหน้า = หน้ามากขึ้น
+ await pagerNav().getByLabel('จำนวนรายการต่อหน้า').selectOption('all')
+ const all=await pagerState();assert.equal(all.rows,p1.total);assert.equal(await pagerNav().getByRole('button',{name:/^หน้า \d/}).count(),0,'ทั้งหมดต้องไม่มีปุ่มเลขหน้า')
+ await pagerNav().getByLabel('จำนวนรายการต่อหน้า').selectOption('10')
+ const ten=await pagerState();assert(ten.rows>=10&&ten.rows<20&&ten.first==='1'&&await pagerNav().getByRole('button',{name:/^หน้า \d/}).count()>=3,JSON.stringify(ten))
+ // จำค่าที่เลือกไว้: สลับไปแท็บอื่นแล้วกลับมา (ตารางเปิดใหม่) ต้องยังเป็น 10 ไม่เด้งกลับ 20
+ await page.getByRole('navigation',{name:'งานรถรับส่งผู้ป่วย'}).getByRole('button',{name:'รายงาน',exact:true}).click()
+ await page.getByRole('navigation',{name:'งานรถรับส่งผู้ป่วย'}).getByRole('button',{name:'คำขอรถ',exact:true}).click();await pagerNav().waitFor()
+ assert.equal(await pagerNav().getByLabel('จำนวนรายการต่อหน้า').inputValue(),'10','ค่าจำนวนต่อหน้าที่เลือกต้องอยู่ต่อหลังสลับแท็บ')
+ // มือถือ: การ์ดหน้าเดียวกัน แถบสูงอย่างน้อย 44px ไม่ล้นจอ
+ await page.setViewportSize({width:390,height:900});await pagerNav().waitFor()
+ assert(await pagerNav().locator('button,select').evaluateAll(els=>els.every(el=>el.getBoundingClientRect().height>=44)),'ปุ่ม/ช่องเลือกของแถบแบ่งหน้าบนมือถือต้องสูงอย่างน้อย 44px')
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'แถบแบ่งหน้าต้องไม่ทำให้จอ 390px ล้น')
+ assert.equal(await page.locator('article[data-booking]').count(),ten.rows,'การ์ดบนมือถือต้องแบ่งหน้าเท่ากับตาราง')
+ await page.setViewportSize({width:1280,height:900})
+ // เพดาน 1,000: ฐานข้อมูลส่งได้ไม่เกิน 1,000 ใบ → หน้าจอต้องบอก ไม่ใช่ตัดเงียบ
+ assert.equal(await page.getByText('รายการเกินที่หน้านี้แสดงได้',{exact:true}).count(),0,'ยังไม่ถึงเพดานต้องไม่มีแถบเตือน')
+ await page.evaluate(()=>localStorage.setItem('ptb-staff-page-size','20'))
+ await pagerClone(46,1010);await staffDesk('coordinator')
+ await page.getByText('รายการเกินที่หน้านี้แสดงได้',{exact:true}).waitFor({timeout:60000})
+ assert((await pagerState()).rows>=20,'ถึงเพดานแล้วหน้าจอยังต้องใช้งานได้ (แสดงทีละหน้า)')
+ await runSql(()=>db.query("DELETE FROM public.patient_bookings WHERE patient_name LIKE '[TEST] แบ่งหน้า %'"));await staffDesk('coordinator')
+ await page.getByRole('button',{name:'คำขอรถ',exact:true}).waitFor();assert.equal(await page.getByText('รายการเกินที่หน้านี้แสดงได้',{exact:true}).count(),0,'ลบแล้วแถบเตือนต้องหาย')
+ await page.evaluate(()=>localStorage.setItem('ptb-staff-page-size','all'))
+ console.log('PASS staff pager: 20 per page, numbering continues, section header repeats, trip frames never split, search resets, "all" keeps the bar, mobile 44px, 1,000-row cap banner')
  assert.deepEqual(errors,[])
 }catch(error){ if(process.env.PATIENT_PREVIEW_SHOTS){await mkdir(process.env.PATIENT_PREVIEW_SHOTS,{recursive:true});await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/patient-browser-failure.png`,fullPage:true})};throw error }finally{await browser.close();await server.close();await db.close()}

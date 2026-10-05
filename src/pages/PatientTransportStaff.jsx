@@ -15,7 +15,7 @@ import { buildBookingRequestFormHtml, buildBookingForwardLetterHtml, buildTripMo
 import { buildCommunityRequestFormHtml, buildCommunityForwardLetterHtml } from '../lib/communityTransportPrint'
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
-import { TRIP_STATUS, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking, isCommunity, bookingName, servicePeriodReport } from '../lib/patientBooking'
+import { TRIP_STATUS, WORKSPACE_ROW_LIMIT, workspaceTruncated, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking, isCommunity, bookingName, servicePeriodReport } from '../lib/patientBooking'
 
 /**
  * หน้าทำงานของเจ้าหน้าที่ — คำขอรถ · ปฏิทิน · งานคนขับ · รายงาน · ตั้งค่า
@@ -248,6 +248,11 @@ export default function PatientTransportStaff({ onBack } = {}) {
       </section>}
       <div className="[&>nav]:flex-wrap [&>nav]:overflow-visible [&>nav>button]:min-h-11 [&>nav>button]:px-3 sm:[&>nav>button]:px-4"><TabBar tab={view} setTab={tab => { setCalendarBookingId(null); setView(tab) }} tabs={tabs} busy={busy} /></div>
       {!info?.enabled && <p className="mb-4 rounded-xl bg-amber-50 p-4">{isAdmin ? 'ยังไม่เปิดรับจองออนไลน์ ตั้งค่ารถ คนขับ ผู้จัดคิว เส้นทางและเวลาให้บริการในแท็บ “ตั้งค่า” ก่อนเปิดบริการ' : 'ยังไม่เปิดรับจองออนไลน์ ให้ผู้ดูแลตั้งค่ารถและเปิดบริการก่อน'}</p>}
+      {/* ฐานข้อมูลส่งรายการให้หน้านี้ได้ไม่เกิน WORKSPACE_ROW_LIMIT คำขอ/เที่ยว ตัดคำขอที่นัดไกลสุดทิ้งก่อน — ถึงเพดานแล้วต้องบอก ห้ามหายเงียบ (ดู workspaceTruncated) */}
+      {['inbox', 'calendar', 'driver'].includes(view) && workspaceTruncated(workspace) && <div role="alert" className="mb-4 rounded-xl border-2 border-amber-400 bg-amber-50 p-4 text-amber-950">
+        <p className="font-bold">รายการเกินที่หน้านี้แสดงได้</p>
+        <p className="text-sm">หน้านี้แสดงได้สูงสุด {WORKSPACE_ROW_LIMIT.toLocaleString('th-TH')} คำขอและ {WORKSPACE_ROW_LIMIT.toLocaleString('th-TH')} เที่ยว ตอนนี้ถึงเพดานแล้ว คำขอที่นัดไกลที่สุดอาจไม่แสดง ข้อมูลในระบบยังอยู่ครบ กรุณาแจ้งผู้ดูแลระบบ</p>
+      </div>}
       {(view === 'inbox' || (view === 'calendar' && calendarBookingId)) && isCoordinator && <BookingInbox key={calendarBookingId || 'inbox'} workspace={{ ...workspace, public_info: info }} busy={busy} error={error} isAdmin={isAdmin} action={intakeButton}
         detailOnly={view === 'calendar'} initialOpenId={calendarBookingId} onCloseBooking={() => setCalendarBookingId(null)}
         currentUserId={uid} onOpenDriver={() => { setCalendarBookingId(null); setView('driver') }}

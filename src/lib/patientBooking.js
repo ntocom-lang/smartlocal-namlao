@@ -39,8 +39,10 @@ export async function servicePeriodReport(call, from, to, service = null) {
     passengers: isCommunity(t) ? 0 : t.request_count,
   })) }
 }
+// ตัวจัดรูปแบบสร้างครั้งเดียว — เดิมสร้างใหม่ทุกครั้งที่เรียก suggestGroups เรียกคู่ละ 2 ครั้ง คำขอรอยืนยัน 600 ใบ (เจอ 2569-10-05 ตอนจำลองข้อมูลมากๆ) = หน้าค้าง ~18 วินาที
+const THAI_DAY_FORMAT = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' })
 export function thaiDay(value = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value))
+  const parts = THAI_DAY_FORMAT.formatToParts(new Date(value))
   return ['year', 'month', 'day'].map(type => parts.find(p => p.type === type)?.value).join('-')
 }
 export function dateTime(value) {
@@ -253,6 +255,49 @@ export const SECTION_TONES = {
   live: { bar: '#0284c7', tint: '#e0f2fe', ink: '#0c4a6e' },
   done: { bar: '#94a3b8', tint: '#e2e8f0', ink: '#334155' },
 }
+// ── แบ่งหน้ารายการของเจ้าหน้าที่ (เจ้าของระบบสั่ง 2569-10-05 "ทำไว้รอ อย่าให้เจอปัญหาแล้วค่อยทำ") ──
+// ค่าตั้งต้น 20 รายการต่อหน้า เท่าแท็บคำร้อง · แถบแบ่งหน้าขึ้นเมื่อรายการเกินค่าตั้งต้น ปริมาณจริงตอนนี้ยังไม่เกิน เจ้าหน้าที่จึงยังไม่เห็นอะไรเปลี่ยน
+export const PAGE_SIZES = [10, 20, 50, 100]
+export const PAGE_SIZE_DEFAULT = 20
+// จำค่าที่เจ้าหน้าที่เลือกไว้ในเครื่อง — สลับแท็บแล้วตารางเปิดใหม่ ถ้าไม่จำ ค่าที่เลือก (50/ทั้งหมด) จะเด้งกลับเป็น 20 ทุกครั้ง · ใช้ร่วมสองตาราง
+// เบราว์เซอร์ที่ปิดที่เก็บข้อมูล (โหมดส่วนตัว/บล็อก) ใช้ค่าตั้งต้นต่อไป ไม่พัง
+const PAGE_SIZE_KEY = 'ptb-staff-page-size'
+export function loadPageSize() {
+  try {
+    const saved = localStorage.getItem(PAGE_SIZE_KEY)
+    return saved === 'all' ? 'all' : PAGE_SIZES.includes(Number(saved)) ? Number(saved) : PAGE_SIZE_DEFAULT
+  } catch { return PAGE_SIZE_DEFAULT }
+}
+export function savePageSize(value) {
+  try { localStorage.setItem(PAGE_SIZE_KEY, String(value)) } catch { /* เก็บไม่ได้ก็ใช้แค่รอบนี้ */ }
+}
+
+// units = [{ size }] เรียงตามลำดับที่แสดง — กรอบเที่ยวเดียวกัน (หลายคน) เป็น 1 หน่วยที่ size = จำนวนแถว จะได้ไม่ถูกตัดคร่อมสองหน้า
+// หน้าหนึ่งรับหน่วยจนครบ perPage แถวแล้วปิด จึงเกิน perPage ได้ไม่เกินจำนวนแถวของกรอบสุดท้ายลบ 1
+// size 0 = หน่วยที่ไม่แสดงแถว (ส่วนที่พับอยู่) ต่อท้ายหน้าที่มันตกอยู่เสมอ ไม่เปิดหน้าใหม่ — ไม่งั้นได้หน้าว่างที่มีแต่หัวกลุ่ม
+// page เกินช่วงถูกบีบเข้าช่วง (รายการลดลงหลังกดบันทึก แล้วหน้าที่ดูอยู่หายไป) · perPage = 'all' คือหน้าเดียว
+export function paginate(units, perPage, page = 1) {
+  const all = perPage === 'all' || !Number.isFinite(perPage) || perPage < 1
+  const pages = []
+  for (const unit of units) {
+    const last = pages.at(-1)
+    if (!last || (!all && unit.size > 0 && last.rows >= perPage)) pages.push({ units: [], rows: 0 })
+    pages.at(-1).units.push(unit)
+    pages.at(-1).rows += unit.size
+  }
+  const total = units.reduce((sum, unit) => sum + unit.size, 0)
+  if (!pages.length) return { page: 1, pages: 1, units: [], from: 0, to: 0, total }
+  const current = Math.min(Math.max(1, Math.trunc(Number(page)) || 1), pages.length)
+  const before = pages.slice(0, current - 1).reduce((sum, p) => sum + p.rows, 0)
+  const { units: onPage, rows } = pages[current - 1]
+  return { page: current, pages: pages.length, units: onPage, from: rows ? before + 1 : 0, to: before + rows, total }
+}
+
+// ฐานข้อมูลส่งคำขอและเที่ยวให้หน้าเจ้าหน้าที่ได้ไม่เกิน 1,000 ใบต่อชนิด (LIMIT 1000 ใน patient_booking_workspace_v2 · migration 20261003150000)
+// คำขอเรียงวันนัดเก่า→ใหม่ จึงตัดคำขอที่นัดไกลที่สุดทิ้งก่อน ซึ่งมักเป็นคำขอที่ยังรอยืนยัน · เที่ยวเรียงตามเวลาสร้างใหม่→เก่า ตัดเที่ยวเก่าสุดทิ้ง
+// ถึงเพดานแล้วหน้าจอต้องบอก ห้ามหายเงียบ — แก้ที่ต้นเหตุ (ให้ฐานข้อมูลคัดรายการแบบอื่น) เป็นงาน migration แยก
+export const WORKSPACE_ROW_LIMIT = 1000
+export const workspaceTruncated = workspace => (workspace?.bookings?.length ?? 0) >= WORKSPACE_ROW_LIMIT || (workspace?.trips?.length ?? 0) >= WORKSPACE_ROW_LIMIT
 export function bookingStage(booking, trip) {
   if (['submitted', 'completed', 'cancelled'].includes(booking.status)) return booking.status
   const state = trip?.state === 'issue' ? trip.state_before_issue : trip?.state

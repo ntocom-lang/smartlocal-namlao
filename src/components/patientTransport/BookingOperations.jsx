@@ -1,13 +1,13 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { reportPeriod, REPORT_MODES } from '../../lib/patientReportPeriod'
 import { pickupSentence } from '../../lib/pickupText'
 import { FISCAL_QUARTERS } from '../../lib/fiscalYear'
 import ReportInfographic from './ReportInfographic'
-import { ListCard, Pills, SectionBand, Sheet } from './StaffShell'
+import { ListCard, Pager, Pills, SectionBand, Sheet } from './StaffShell'
 import { MONTHS_TH, thaiDateFromDateInput } from '../../lib/thaiDate'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
-import { SECTION_TONES, BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent, bookingLetter, bookingName, bookingTravel, serviceLabel, isCommunity, servicePeriodReport } from '../../lib/patientBooking'
+import { SECTION_TONES, loadPageSize, paginate, savePageSize, BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent, bookingLetter, bookingName, bookingTravel, serviceLabel, isCommunity, servicePeriodReport } from '../../lib/patientBooking'
 
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
 const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
@@ -443,6 +443,16 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
   // หัวกลุ่มขึ้นก่อนแถวแรกของแต่ละส่วน นับเฉพาะแถวที่แสดงอยู่ (หลังกรอง/ค้นหา)
   const sectionCount = shown.reduce((counts, r) => ({ ...counts, [deskSection(r.kind)]: (counts[deskSection(r.kind)] || 0) + 1 }), {})
   const startsSection = index => index === 0 || deskSection(shown[index - 1].kind) !== deskSection(shown[index].kind)
+  // แบ่งหน้า (เจ้าของระบบสั่ง 2569-10-05 "ทำไว้รอ"): 1 แถว = 1 หน่วย · หัวกลุ่มขึ้นซ้ำที่ต้นหน้าถัดไปถ้ากลุ่มเดียวกันต่อกันมา (ตัวเลขในหัวนับทั้งกลุ่ม)
+  // เลขลำดับ "ที่" นับต่อจากหน้าก่อน · เปลี่ยนตัวกรอง/ค้นหา/จำนวนต่อหน้า = กลับหน้า 1 (key เปลี่ยน ไม่ต้องใช้ effect)
+  const [perPage, setPerPage] = useState(loadPageSize)
+  const listKey = [filter, words, perPage].join('|')
+  const [paging, setPaging] = useState({ key: listKey, page: 1 })
+  // key เปลี่ยน = เริ่มหน้า 1 และ "ลืม" หน้าเดิมจริง (ถ้าแค่คำนวณหน้า 1 ตอนแสดง พอล้างค้นหากลับมา key เดิม หน้าเก่าจะโผล่คืน)
+  if (paging.key !== listKey) setPaging({ key: listKey, page: 1 })
+  const listTop = useRef(null)
+  const paged = paginate(shown.map((row, index) => ({ row, index, size: 1 })), perPage, paging.key === listKey ? paging.page : 1)
+  const gotoPage = n => { setPaging({ key: listKey, page: n }); listTop.current?.scrollIntoView({ block: 'start' }) }
   const open = rows.find(r => r.trip.id === openId)
   const close = () => { setOpenId(null); onCloseTrip() }
   // ออกรถ/จบงานจากแถวต้องผ่านกล่องทวนก่อน (เจ้าของระบบเลือกแบบ ก 2569-09-30) — แถวตารางอยู่ชิดกัน กดผิดแถว
@@ -468,7 +478,7 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
     <ListCard title="งานคนขับ" count={rows.length} search={search} onSearch={setSearch} searchLabel="ค้นหาผู้เดินทาง กลุ่ม สถานที่ คนขับ"
       action={canAssign && <button type="button" className={buttonClass} onClick={onCover}>จัดคนขับแทนวันนี้</button>}
       pills={<Pills value={filter} onChange={setFilter} label="กรองงานคนขับ" items={DESK_PILLS.map(([id, label, color]) => ({ id, label, color, count: count(id) }))} />}>
-      <div className="p-4 sm:p-5">
+      <div ref={listTop} className="scroll-mt-24 p-4 sm:p-5">
         {!rows.length && <p className="py-10 text-center text-sm font-semibold text-gray-400">ยังไม่มีเที่ยวที่ต้องขับ · เที่ยวที่ยืนยันรถแล้วจะขึ้นที่นี่</p>}
         {rows.length > 0 && !shown.length && <p className="py-10 text-center text-sm font-semibold text-gray-400">{words ? 'ไม่พบเที่ยวที่ค้นหา' : `${DESK_EMPTY[filter]} · กดป้าย “ทั้งหมด” เพื่อดูทุกเที่ยว`}</p>}
         {shown.length > 0 && <div className="overflow-x-auto border border-gray-300 shadow-sm" style={{ borderRadius: 4 }}>
@@ -482,7 +492,7 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
               <th className={`text-center ${th}`}>สถานะ</th>
               <th className="sticky right-0 z-10 min-w-[170px] whitespace-nowrap px-2 py-2.5 text-center text-[11px] font-bold text-white shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>ดำเนินการ</th>
             </tr></thead>
-            <tbody className="divide-y divide-gray-200">{shown.map((row, index) => {
+            <tbody className="divide-y divide-gray-200">{paged.units.map(({ row, index }, offset) => {
               const { trip: t, kind, riders } = row
               const at = pickupOf(t)
               const back = t.estimated_return_at || t.plan?.return_at
@@ -493,8 +503,8 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
               const section = deskSection(kind)
               return <Fragment key={t.id}>
               {/* ช่องว่างก่อนส่วนถัดไปอยู่ในแถวหัวกลุ่มเอง ไม่แทรกแถวเปล่า (แบบเดียวกับกล่องคำขอรถ) */}
-              {startsSection(index) && <tr data-section-header={section}>
-                <td colSpan={7} className="p-0">{index > 0 && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand {...DESK_SECTIONS[section]} count={sectionCount[section]} /></td>
+              {(startsSection(index) || offset === 0) && <tr data-section-header={section}>
+                <td colSpan={7} className="p-0">{offset > 0 && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand {...DESK_SECTIONS[section]} count={sectionCount[section]} /></td>
               </tr>}
               <tr data-trip={t.id} data-section={section} className="cursor-pointer align-top transition-colors" style={{ backgroundColor: shade }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = shade}
@@ -521,6 +531,7 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
             })}</tbody>
           </table>
         </div>}
+        <Pager total={paged.total} from={paged.from} to={paged.to} page={paged.page} pages={paged.pages} perPage={perPage} onPage={gotoPage} onPerPage={value => { setPerPage(value); savePageSize(value) }} />
       </div>
     </ListCard>
     {open && <Sheet key={open.trip.id} wide title={open.trip.plan?.route_label || 'เที่ยวรถ'} subtitle={`${deskStatus(open)[0]} · ${whenLabel(openAt)} ออกรับ ${clockOf(openAt)} น.`} onClose={close} busy={busy}>
