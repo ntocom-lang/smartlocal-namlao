@@ -183,6 +183,9 @@ ${govSignBlockCss()}
       display: block; margin: 3mm; padding: 2mm 4mm;
       border: 1px solid #b45309; background: #fef3c7; color: #78350f;
     }
+    /* ปุ่ม "ปิดหน้าต่าง" ลอยมุมขวาบนของหน้าต่าง (ดู page) — กันที่ขวาบนไว้ให้ปุ่ม ตัวอักษร 2 บรรทัดแรกจึงไม่วิ่งไปอยู่ใต้ปุ่ม
+       บรรทัดถัดลงไปใช้เต็มความกว้างเหมือนเดิม (ใช้ float แทน padding เพื่อไม่ให้แถบแคบลงทั้งก้อน) */
+    .screen-note::before { content: ''; float: right; width: 9em; height: 44px; }
   }`
 }
 

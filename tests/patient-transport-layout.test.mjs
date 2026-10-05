@@ -1374,6 +1374,20 @@ const checks = [
             assert.equal(printed.note.display, 'none', `${label}: แถบเตือนถูกพิมพ์ลงกระดาษ`)
             await page.emulateMedia({ media: 'screen' })
             assert.equal((await inspect()).note.display, 'block', `${label}: แถบเตือนไม่ขึ้นบนจอ`)
+            // ปุ่ม "ปิดหน้าต่าง" ลอยมุมขวาบนของหน้าต่าง ตัวอักษรของแถบต้องไม่วิ่งไปอยู่ใต้ปุ่ม (เคยทับปลายบรรทัดแรกจนอ่านไม่ครบ)
+            // วัดกล่องของตัวอักษรจริงด้วย Range ไม่ใช่กล่องของแถบ — กล่องแถบกว้างถึงขอบจอได้ แต่ตัวอักษรห้ามเข้าใต้ปุ่ม
+            for (const width of [360, 794, 1280]) {
+              await page.setViewportSize({ width, height: 900 })
+              const covered = await page.evaluate(() => {
+                const button = document.querySelector('.print-window-close').getBoundingClientRect()
+                const range = document.createRange()
+                range.selectNodeContents(document.querySelector('.screen-note'))
+                return [...range.getClientRects()].filter(r => r.width > 0
+                  && r.left < button.right && r.right > button.left && r.top < button.bottom && r.bottom > button.top).length
+              })
+              assert.equal(covered, 0, `${label}: ปุ่มปิดหน้าต่างทับตัวอักษรของแถบเตือน ${covered} บรรทัดที่หน้าต่างกว้าง ${width}px`)
+            }
+            await page.setViewportSize({ width: 794, height: 1123 })
             if (docLabel === 'หนังสือต่อเที่ยว' && caseLabel === 'ทะเบียนว่าง' && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
               await page.screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/patient-letter-no-signer-on-screen.png`, clip: { x: 0, y: 0, width: 794, height: 1123 } })
             }
