@@ -379,6 +379,37 @@ const WATER_FORM_PRINT_LABELS = {
   water_supply_cancel: 'แบบคำขอยกเลิกใช้น้ำประปา',
 }
 
+// ผู้ลงนามท้ายใบคำขอที่เจ้าหน้าที่พิมพ์ — ทุกประเภทใช้ชุดเดียวกัน (เจ้าของระบบสั่ง 2569-10-05)
+// ⚠️ คำขอประเภทใหม่ที่เพิ่มเข้าหน้า "งานบริการประชาชน" ต้องเรียกตัวนี้แล้วส่ง signatories +
+// departmentName เข้าใบพิมพ์ด้วยเสมอ (ตัวใบใช้ govStaffSignBlock.js วาดช่องลงนามให้แล้ว)
+//
+// โหลดตอนกดพิมพ์ ไม่ใช่ตอนเปิดรายการ — ใบเดียวใช้ ไม่ควรยิงทุกครั้งที่เลื่อนดูงาน
+// อ่านไม่ได้หรือยังไม่ได้ตั้งผู้ลงนาม = ได้ช่องลงนามเปล่าให้เขียนมือ ไม่ใช่ไม่มีช่องลงนาม
+// เพราะใบพวกนี้ต้องเวียนเซ็นในสำนักงานทุกใบ
+async function loadPrintSignatories(req) {
+  const [{ data: departments }, { data: signRows }] = await Promise.all([
+    supabase.from('departments')
+      .select('id,name').eq('municipality_id', req.municipality_id).order('name'),
+    supabase.from('document_signatories').select(SIGNATORY_REGISTRY_SELECT)
+      .eq('municipality_id', req.municipality_id)
+      .eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
+  ])
+  const registry = signRows ?? []
+  const toSignatory = row => (row ? { name: signatoryName(row), title: signatoryTitle(row) } : null)
+  return {
+    departments: departments ?? [],
+    // ชื่อกองที่ถือเรื่อง ใช้เป็นชื่อตำแหน่งสำรองของช่องแรกเมื่อยังไม่ได้ตั้งผู้ลงนามของกองนั้น
+    departmentName: (departments ?? []).find(dept => dept.id === req.department_id)?.name ?? '',
+    signatories: {
+      department_head: toSignatory(pickSignatory(registry, {
+        role: 'department_head', departmentId: req.department_id ?? null,
+      })),
+      clerk: toSignatory(pickSignatory(registry, { role: 'clerk' })),
+      mayor: toSignatory(pickSignatory(registry, { role: 'mayor' })),
+    },
+  }
+}
+
 function TaskDetailSheet({
   req, onClose, onUpdate, acting, tenant, onInquiryUpdate, currentUserRole, onDelete,
   canAssign = false, assignees = [], assigning = false, assigneeName = null, onAssign,
@@ -705,7 +736,8 @@ function TaskDetailSheet({
         )}
         {req.document_type === 'waste_collection_request' && req.permit_form_data && (
           <div className="px-4 pb-2 pt-3 border-t border-gray-100 shrink-0">
-            <button onClick={() => {
+            <button onClick={async () => {
+              const { signatories, departmentName } = await loadPrintSignatories(req)
               const html = buildWasteCollectionRequestHtml({
                 form: req.permit_form_data,
                 tenant,
@@ -714,6 +746,7 @@ function TaskDetailSheet({
                 // ต้องเป็นเวลาที่ผู้ยื่นลงชื่อตอนยื่น ไม่ใช่เวลาที่เจ้าหน้าที่กดพิมพ์ — ใบที่พิมพ์
                 // ซ้ำอีกหกเดือนต้องยังแสดงวันเวลาเดิม ไม่งั้นบรรทัดกำกับใช้อ้างอิงไม่ได้เลย
                 signedAt: req.permit_form_data.signed_at ?? req.created_at,
+                signatories, departmentName,
               })
               const w = window.open('', '_blank', 'width=860,height=1100')
               if (!w) return
@@ -729,7 +762,8 @@ function TaskDetailSheet({
         )}
         {req.document_type === 'waste_collection_cancel' && req.permit_form_data && (
           <div className="px-4 pb-2 pt-3 border-t border-gray-100 shrink-0">
-            <button onClick={() => {
+            <button onClick={async () => {
+              const { signatories, departmentName } = await loadPrintSignatories(req)
               const html = buildWasteCollectionCancelHtml({
                 form: req.permit_form_data,
                 tenant,
@@ -738,6 +772,7 @@ function TaskDetailSheet({
                 // ต้องเป็นเวลาที่ผู้ยื่นลงชื่อตอนยื่น ไม่ใช่เวลาที่เจ้าหน้าที่กดพิมพ์ — ใบที่พิมพ์
                 // ซ้ำอีกหกเดือนต้องยังแสดงวันเวลาเดิม ไม่งั้นบรรทัดกำกับใช้อ้างอิงไม่ได้เลย
                 signedAt: req.permit_form_data.signed_at ?? req.created_at,
+                signatories, departmentName,
               })
               const w = window.open('', '_blank', 'width=860,height=1100')
               if (!w) return
@@ -753,7 +788,8 @@ function TaskDetailSheet({
         )}
         {WATER_FORM_TYPES.includes(req.document_type) && req.permit_form_data && (
           <div className="px-4 pb-2 pt-3 border-t border-gray-100 shrink-0">
-            <button onClick={() => {
+            <button onClick={async () => {
+              const { signatories, departmentName } = await loadPrintSignatories(req)
               const html = buildWaterServiceFormHtml(req.document_type, {
                 form: req.permit_form_data,
                 tenant,
@@ -763,6 +799,9 @@ function TaskDetailSheet({
                 // ต้องเป็นเวลาที่ผู้ยื่นลงชื่อตอนยื่น ไม่ใช่เวลาที่เจ้าหน้าที่กดพิมพ์ — ใบที่พิมพ์
                 // ซ้ำอีกหกเดือนต้องยังแสดงวันเวลาเดิม ไม่งั้นบรรทัดกำกับใช้อ้างอิงไม่ได้เลย
                 signedAt: req.permit_form_data.signed_at ?? req.created_at,
+                // ใบฝั่งเจ้าหน้าที่มีช่องลงนาม 3 ตำแหน่งเสมอ ส่วนใบที่ประชาชนพิมพ์เองจาก
+                // "คำขอของฉัน" ไม่ส่งสองคีย์นี้ จึงไม่มีช่องลงนามเจ้าหน้าที่เหมือนเดิม
+                signatories, departmentName,
               })
               const w = window.open('', '_blank', 'width=860,height=1100')
               if (!w) return
@@ -779,18 +818,7 @@ function TaskDetailSheet({
         {req.document_type === 'public_assistance_request' && req.permit_form_data && (
           <div className="px-4 pb-2 pt-3 border-t border-gray-100 shrink-0">
             <button onClick={async () => {
-              // โหลดตอนกดพิมพ์ ไม่ใช่ตอนเปิดรายการ — ใบเดียวใช้ ไม่ควรยิงทุกครั้งที่เลื่อนดูงาน
-              // ผู้ลงนามมาจากทะเบียนกลาง (เมนู "ผู้ลงนามเอกสาร") ชุดเดียวกับใบคำร้อง/ใบใช้รถ
-              // อ่านไม่ได้หรือยังไม่ตั้ง = ใบพิมพ์เส้นประให้เขียนมือเหมือนเดิม ไม่พังทั้งใบ
-              const [{ data: departments }, { data: signRows }] = await Promise.all([
-                supabase.from('departments')
-                  .select('name').eq('municipality_id', req.municipality_id).order('name'),
-                supabase.from('document_signatories').select(SIGNATORY_REGISTRY_SELECT)
-                  .eq('municipality_id', req.municipality_id)
-                  .eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
-              ])
-              const registry = signRows ?? []
-              const toSignatory = row => (row ? { name: signatoryName(row), title: signatoryTitle(row) } : null)
+              const { signatories, departmentName, departments } = await loadPrintSignatories(req)
               const html = buildPublicAssistanceRequestHtml({
                 form: req.permit_form_data,
                 tenant,
@@ -800,11 +828,8 @@ function TaskDetailSheet({
                 // ต้องเป็นเวลาที่ผู้ยื่นลงชื่อตอนยื่น ไม่ใช่เวลาที่เจ้าหน้าที่กดพิมพ์ — ใบที่พิมพ์
                 // ซ้ำอีกหกเดือนต้องยังแสดงวันเวลาเดิม ไม่งั้นบรรทัดกำกับใช้อ้างอิงไม่ได้เลย
                 signedAt: req.permit_form_data.signed_at ?? req.created_at,
-                departments: departments ?? [],
-                signatories: {
-                  clerk: toSignatory(pickSignatory(registry, { role: 'clerk' })),
-                  mayor: toSignatory(pickSignatory(registry, { role: 'mayor' })),
-                },
+                departments,
+                signatories, departmentName,
               })
               const w = window.open('', '_blank', 'width=860,height=1100')
               if (!w) return

@@ -1,5 +1,6 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
-import { govNameBlank } from './govSignBlock.js'
+import { govNameBlank, govSignBlockCss } from './govSignBlock.js'
+import { govStaffSignBlockCss, govStaffSignBlockHtml } from './govStaffSignBlock.js'
 import { stripForeignParts } from './pickupText.js'
 import { thaiDateFromDateInput } from './thaiDate.js'
 
@@ -79,7 +80,9 @@ function organizationHeadTitle(tenant) {
  * ข้อมูลใน form มาจาก permit_form_data ซึ่งเป็นชื่อคอลัมน์ legacy ของ document_requests;
  * form_type ใช้แยกรูปแบบข้อมูลนี้ออกจากแบบ ข.๑ อย่างชัดเจน
  */
-export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenceNo = '' }) {
+export function buildWasteCollectionRequestHtml({
+  form, tenant, thDate, referenceNo = '', signatories = null, departmentName = '',
+}) {
   const data = form || {}
   const applicant = data.applicant || {}
   const applicantName = `${applicant.title || ''}${applicant.first || ''} ${applicant.last || ''}`.trim()
@@ -156,6 +159,17 @@ export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenc
        (ลดจาก 12pt ตอนที่เนื้อความยังเป็น 16pt — พอเนื้อความเหลือ 14pt ระยะห่างเดิมแคบเกินไป) */
     .reference { margin-top: 14mm; font-size: 11pt; color: #333; }
 
+    /* โหมดบีบระยะ — ใช้เฉพาะใบที่มีช่องลงนามเจ้าหน้าที่ต่อท้าย (เจ้าของระบบสั่ง 2569-10-05
+       ว่าคำขอทุกใบต้องจบแผ่นเดียว) บีบเฉพาะ "ระยะเว้นระหว่างบล็อก" ไม่แตะขนาดฟอนต์
+       ขอบกระดาษ หรือถ้อยคำ · ใบที่ประชาชนพิมพ์เองไม่มีคลาสนี้ ระยะเดิมจึงไม่เปลี่ยน
+       ⚠️ .signature-space คือที่เว้นให้เซ็นด้วยปากกา ลดได้ถึง 12mm เท่านั้น (ลายเซ็นสูง 8-10mm) */
+    .sheet--staff p { margin-bottom: 3mm; }
+    .sheet--staff .signature { margin-top: 6mm; }
+    .sheet--staff .signature-space { height: 12mm; }
+    .sheet--staff .reference { margin-top: 6mm; }
+${govSignBlockCss()}
+${govStaffSignBlockCss()}
+
     @media screen {
       body { background: #e5e7eb; padding: 12px; }
       .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm 20mm 9mm 30mm; background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
@@ -166,7 +180,7 @@ export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenc
   </style>
 </head>
 <body>
-  <main class="sheet" data-pdf-page>
+  <main class="sheet${signatories ? ' sheet--staff' : ''}" data-pdf-page>
     <div class="title">ใบแจ้งขออนุญาตเก็บขนขยะมูลฝอย</div>
     <p class="write-at">เขียนที่ ${line(orgName, '52mm')}</p>
     <p class="date">วันที่ ${line(requestDate, '48mm')}</p>
@@ -206,6 +220,7 @@ export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenc
     <p class="reference">
       ${esc(govEServiceOriginText(tenant))}${referenceNo ? ` &nbsp;|&nbsp; เลขอ้างอิงระบบ: ${esc(referenceNo)}` : ''}
     </p>
+${govStaffSignBlockHtml({ signatories, tenant, departmentName })}
   </main>
 </body>
 </html>`
