@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Newspaper, Camera, CalendarDays, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { edgeImageUrl } from '../lib/edgeImage'
 
 function fmtDate(dateStr) {
   if (!dateStr) return ''
@@ -35,7 +36,7 @@ function PostDetailModal({ post, onClose }) {
         <div className="overflow-y-auto flex-1">
           {post.image_url && (
             <div className="aspect-video bg-gray-100 overflow-hidden shrink-0">
-              <img src={post.image_url} alt={post.title}
+              <img src={edgeImageUrl(post.image_url)} alt={post.title}
                    className="w-full h-full object-cover"
                    style={{ objectPosition: post.image_position ?? '50% 50%' }} />
             </div>
@@ -146,7 +147,7 @@ export default function PostsPage() {
                      className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]">
                   <div className="aspect-4/3 bg-gray-100 overflow-hidden shrink-0">
                     {post.image_url
-                      ? <img src={post.image_url} alt={post.title}
+                      ? <img src={edgeImageUrl(post.image_url)} alt={post.title}
                              className="w-full h-full object-cover"
                              style={{ objectPosition: post.image_position ?? '50% 50%' }} />
                       : <div className="w-full h-full flex items-center justify-center text-gray-300">

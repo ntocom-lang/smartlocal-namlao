@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, ExternalLink, Share2, Phone, X, Zap, ShoppingCart, CalendarCheck, MessageCircle, Globe, Bike, Star, Loader2, Clock, Navigation } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { edgeImageUrl } from '../lib/edgeImage'
 import {
   getOpenState, weeklyHours, directionsUrl, DAY_KEYS,
   resolveServiceUrl, serviceChannelLabel,
@@ -389,7 +390,7 @@ export default function TourismDetailPage() {
     )
   }
 
-  const allImages = [place.image_url, ...(place.gallery ?? [])].filter(Boolean)
+  const allImages = [place.image_url, ...(place.gallery ?? [])].filter(Boolean).map(u => edgeImageUrl(u))
 
   const isOnline       = place.service_type === 'online' || place.service_type === 'online_only'
   const isOnlineOnly   = place.service_type === 'online_only'

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { edgeImageUrl } from '../lib/edgeImage'
 import {
   TOURISM_CATS, catOf, getOpenState, parseCoords, haversineKm,
   formatDistance, directionsUrl, matchesQuery, resolveServiceUrl, serviceChannelLabel,
@@ -119,7 +120,7 @@ function PlaceCard({ place, onOpen, rating, distanceKm, now }) {
       <button onClick={onOpen} className="text-left w-full active:scale-[0.99] transition-transform">
         <div className="relative overflow-hidden bg-gray-100" style={{ aspectRatio: '4/3' }}>
           {place.image_url
-            ? <img src={place.image_url} alt={place.name} loading="lazy" decoding="async"
+            ? <img src={edgeImageUrl(place.image_url)} alt={place.name} loading="lazy" decoding="async"
                 className="w-full h-full object-cover" />
             : <div className="w-full h-full flex items-center justify-center text-4xl">{cat?.emoji ?? '🏙️'}</div>
           }

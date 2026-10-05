@@ -6,9 +6,11 @@
 // (เหตุการณ์ 2026-10-04) ส่วนเทสต์ E2E ไม่ได้ดูเนื้อรูปเลย — ตรวจสิทธิ์ ปุ่ม และข้อความเท่านั้น
 //
 // ทำอะไร: รูป (resourceType 'image') ที่ชี้ /storage/v1/object/public/ ของ *.supabase.co ถูกตอบด้วยพิกเซล 1x1 แทนการยิงเครือข่าย
+//  - รวมถึง /_img/ ของ *.rk-networks.com (พร็อกซีแคช edge ของเราเอง, PR #426/#427): หน้าเว็บจริงเปลี่ยน URL รูป Storage เป็น /_img/ แล้ว
+//    ถ้าไม่กรองด้วย สคริปต์ทดสอบจะดึงรูปผ่าน Worker ทุกรอบ — รอบแรกของแต่ละรูปไปถึง Supabase (นับ Cached Egress) และทุกรูปนับโควตา Worker
 //  - ไม่ใช้ abort: abort ทำให้ onerror/รูปสำรองในแอปทำงานและ console เต็มไปด้วย net::ERR_FAILED ที่เทสต์บางชุดนับเป็นข้อผิดพลาด
 //  - fetch()/XHR ที่ชี้ Storage ไม่แตะ (route.fallback) เพราะแอปบางจุดอ่านไฟล์จริง เช่นสร้างไอคอนแอปจากโลโก้
-//  - ไฟล์ที่เก็บบน Drive ผ่าน /functions/v1/drive-file ไม่ใช่ Cached Egress จึงไม่กรอง
+//  - ไฟล์ที่เก็บบน Drive ผ่าน /functions/v1/drive-file ตรงๆ ไม่ใช่ Cached Egress จึงไม่กรอง (แต่ถ้าผ่าน /_img/drive-file จะถูกกรองตามข้อบน)
 //
 // ใช้กับสคริปต์ที่เปิดผู้เช่าซึ่งเก็บรูปบน Supabase Storage (น้ำเลา ตำหนักธรรม ทุ่งแค้ว) — ตอนนี้คือ post-deploy-smoke
 // (มีเทสต์กันถูกถอดออกใน tests/storage-image-block.test.mjs) · สคริปต์ Playwright ชั่วคราวที่เปิดผู้เช่าเหล่านี้ (เว็บจริงหรือ
@@ -30,9 +32,14 @@ export function isPublicStorageUrl(url) {
   return url.hostname.endsWith('.supabase.co') && url.pathname.startsWith('/storage/v1/object/public/')
 }
 
+/** พร็อกซีรูปของเราเอง: https://<tenant>.rk-networks.com/_img/... (src/lib/edgeImage.js สร้าง URL แบบนี้เฉพาะบนโดเมนจริง) */
+export function isEdgeImageUrl(url) {
+  return url.hostname.endsWith('.rk-networks.com') && url.pathname.startsWith('/_img/')
+}
+
 /** @param {import('playwright').Page | import('playwright').BrowserContext} target */
 export async function blockStorageImages(target) {
-  await target.route(isPublicStorageUrl, route => {
+  await target.route(url => isPublicStorageUrl(url) || isEdgeImageUrl(url), route => {
     const request = route.request()
     const type = request.resourceType()
     // ไอคอนแท็บ (<link rel="icon">) ที่เบราว์เซอร์ดึงเองมี resourceType 'other' ไม่ใช่ 'image' แต่ Accept ขึ้นต้น image/

@@ -2,6 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { installEdgeImageFallback } from './lib/edgeImage'
+
+// รูปที่วิ่งผ่านแคช edge (/_img/) ถ้าโหลดไม่ขึ้นให้กลับไปขอ URL เดิมของ Supabase — ต้องติดก่อน render ครั้งแรก
+installEdgeImageFallback()
 
 // เมื่อ SW ใหม่ activate แล้ว reload ทันทีเพื่อโหลด JS/CSS ใหม่จาก cache ล่าสุด
 // skipWaiting() อยู่ใน sw.js — ทำให้ SW ใหม่ activate ทันที แต่ยังต้อง reload เอง

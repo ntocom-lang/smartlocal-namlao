@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { toReliableImageUrl } from '../lib/driveStorage'
+import { edgeImageUrl } from '../lib/edgeImage'
 import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
 import { loadHolidays } from '../lib/holidaysSource'
 import { getOrgTerms, setActiveOrgType, DEFAULT_ORG_TYPE } from '../lib/orgTerms'
@@ -235,11 +236,17 @@ export function TenantProvider({ children }) {
         // Chromium/Edge บล็อกด้วย ORB เวลาฝังเป็น <img> — ดู toReliableImageUrl ใน driveStorage.js
         // แก้ตรงจุดเดียวตรงนี้ ครอบคลุมทุกที่ในแอปที่อ่าน tenant.logo_url / tenant.header_image_url
         // จาก useTenant() (Header/BottomNav ของทุกธีม, PWA manifest ฯลฯ) โดยไม่ต้องแก้ทีละไฟล์
+        // แล้วส่งต่อให้ edgeImageUrl ให้รูปวิ่งผ่านแคช Cloudflare แทนดึง Supabase ทุกครั้ง (ลด Cached Egress — NOTES.md ข้อ 15)
+        // ⚠️ ค่านี้อยู่แค่ใน state ฝั่ง browser ไม่ถูกเขียนกลับ DB (SystemSettingsAdmin เขียนเฉพาะ URL ของไฟล์ที่เพิ่งอัปโหลด)
+        // ถ้าวันหนึ่งมีโค้ดเอา tenant.logo_url ไปบันทึกกลับ ต้องใช้ originalImageUrl() แปลงก่อน ไม่งั้น /_img/ จะเข้า DB
+        // header_image_url ที่ใช้เป็น CSS background (หน้าเจ้าหน้าที่/แอดมิน/ธีมเกลดแก้ว) ไม่มีตัวสำรองเมื่อ Worker ล่ม → ภาพพื้นหลังหาย
+        // แต่ไม่พังการใช้งาน (มีสีพื้นรองอยู่) · <img> ทุกจุดมีตัวสำรองใน main.jsx
+        const edgeUrl = (value) => edgeImageUrl(toReliableImageUrl(value))
         const resolvedTenant = {
           ...merged,
-          logo_url: toReliableImageUrl(merged.logo_url),
-          header_image_url: toReliableImageUrl(merged.header_image_url),
-          smart_city_image_url: toReliableImageUrl(merged.smart_city_image_url),
+          logo_url: edgeUrl(merged.logo_url),
+          header_image_url: edgeUrl(merged.header_image_url),
+          smart_city_image_url: edgeUrl(merged.smart_city_image_url),
         }
 
         setTenant(resolvedTenant)
