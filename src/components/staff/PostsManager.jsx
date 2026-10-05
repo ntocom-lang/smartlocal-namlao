@@ -168,6 +168,9 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
   }
 
   function onPointerDown(e) {
+    // ปุ่ม ✕ ลบรูปอยู่ในกล่องนี้: ถ้าไม่ข้าม setPointerCapture จะดึง pointer ไปไว้ที่กล่อง
+    // click ไม่ถึงปุ่ม (ลบไม่ได้) และ calcPos ย้ายจุดโฟกัสไปมุมขวาบนแทน
+    if (e.target.closest('button')) return
     dragging.current = true
     e.currentTarget.setPointerCapture(e.pointerId)
     calcPos(e)
