@@ -452,8 +452,8 @@ function TaskDetailSheet({
 
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
-            <X size={18} />
+          <button onClick={onClose} aria-label="ปิด" className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-xl border border-gray-300 bg-gray-100 px-3 text-sm font-bold text-gray-800 shadow-sm transition-colors hover:bg-gray-200 active:scale-95">
+            <X size={20} strokeWidth={2.5} /> ปิด
           </button>
           <div className="flex-1 min-w-0">
             <p className="font-bold text-gray-800 truncate">{req.requester_name}</p>
@@ -966,7 +966,9 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuilding
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
       <div className="bg-white w-full md:max-w-xl md:rounded-3xl rounded-t-3xl max-h-[93vh] flex flex-col overflow-hidden shadow-2xl">
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500"><X size={18} /></button>
+          <button onClick={onClose} aria-label="ปิด" className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-xl border border-gray-300 bg-gray-100 px-3 text-sm font-bold text-gray-800 shadow-sm transition-colors hover:bg-gray-200 active:scale-95">
+            <X size={20} strokeWidth={2.5} /> ปิด
+          </button>
           <p className="font-bold text-gray-800">สร้างคำขอ (walk-in / โทรศัพท์)</p>
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
