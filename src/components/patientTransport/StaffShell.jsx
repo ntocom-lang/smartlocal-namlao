@@ -23,6 +23,17 @@ export function TabBar({ tab, setTab, tabs, highlight, busy }) {
   </nav>
 }
 
+// หัวกลุ่มของส่วน ใช้ทั้งตาราง (PC) และการ์ด (มือถือ) — เป็น span เพราะอยู่ใน h3 ได้
+// toggle = ปุ่มพับ/แสดงของส่วนเสร็จแล้ว/ยกเลิก (ลูกศรซ่อนจากโปรแกรมอ่านจอ ชื่อปุ่มจึงเป็นคำล้วน)
+// มือถือปุ่มลงบรรทัดใหม่เต็มความกว้างแบบปุ่มในการ์ด — ถ้าอยู่บรรทัดเดียวกัน ชื่อส่วนถูกบีบจนขึ้น 2 บรรทัดที่จอ 390px
+export function SectionBand({ label, bar, tint, ink, count, rounded, toggle }) {
+  return <span className={`flex flex-wrap items-center gap-2 px-3 text-sm font-bold ${toggle ? 'py-2 md:py-1' : 'py-2'} ${rounded ? 'rounded-xl' : ''}`} style={{ backgroundColor: tint, color: ink, borderLeft: `5px solid ${bar}` }}>
+    <span className="whitespace-nowrap">{label}</span><span className="whitespace-nowrap rounded-full border bg-white px-2 py-0.5 text-xs" style={{ borderColor: bar }}>{count} รายการ</span>
+    {toggle && <button type="button" aria-expanded={toggle.open} onClick={toggle.onToggle} className="ml-auto min-h-11 whitespace-nowrap rounded-xl border bg-white px-3 text-sm font-bold hover:bg-slate-50 max-md:w-full md:min-h-9" style={{ borderColor: bar, color: ink }}>
+      {toggle.open ? 'ซ่อนรายการ' : 'แสดงรายการ'}<span aria-hidden="true"> {toggle.open ? '▴' : '▾'}</span></button>}
+  </span>
+}
+
 // กล่องรายการ: หัวแถบกรมท่าบอกจำนวน + แถบเครื่องมือ (ค้นหา/ปุ่มหลัก) + ป้ายกรอง — คัดจาก ComplaintsManager.jsx
 export function ListCard({ title, count, search, onSearch, searchLabel = 'ค้นหา', action, pills, children }) {
   return <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm md:rounded-none">

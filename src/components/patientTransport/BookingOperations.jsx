@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { reportPeriod, REPORT_MODES } from '../../lib/patientReportPeriod'
 import { pickupSentence } from '../../lib/pickupText'
 import { FISCAL_QUARTERS } from '../../lib/fiscalYear'
 import ReportInfographic from './ReportInfographic'
-import { ListCard, Pills, Sheet } from './StaffShell'
+import { ListCard, Pills, SectionBand, Sheet } from './StaffShell'
 import { MONTHS_TH, thaiDateFromDateInput } from '../../lib/thaiDate'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
-import { BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent, bookingLetter, bookingName, bookingTravel, serviceLabel, isCommunity, servicePeriodReport } from '../../lib/patientBooking'
+import { SECTION_TONES, BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent, bookingLetter, bookingName, bookingTravel, serviceLabel, isCommunity, servicePeriodReport } from '../../lib/patientBooking'
 
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
 const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
@@ -387,6 +387,17 @@ const DESK_PILLS = [
   ['done', 'จบแล้ว', '#059669'],
 ]
 const DESK_EMPTY = { now: 'วันนี้ไม่มีเที่ยวที่ต้องออก', odometer: 'ไม่มีเที่ยวที่รอเลขไมล์', later: 'ยังไม่มีเที่ยวถัดไป', done: 'ยังไม่มีเที่ยวที่จบแล้วใน 30 วันล่าสุด' }
+// ส่วนของตารางงานคนขับ (เจ้าของระบบสั่ง 2569-10-05 "แยกงานที่ยังไม่เสร็จกับงานที่เสร็จแล้ว ในภาพเหมือนกันไปหมด"):
+// เดิมทุกเที่ยวอยู่ตารางเดียว ต่างกันแค่สีป้ายสถานะ — ใส่หัวกลุ่มสีแบบเดียวกับกล่องคำขอรถ (สีกลางใน StaffShell)
+// ต้องทำตอนนี้ = วันนี้/กำลังเดินทาง/เหตุขัดข้อง + รอเลขไมล์ (จบเที่ยวแล้วแต่งานคนขับยังไม่ครบ) · เที่ยวถัดไป = ยืนยันรถแล้วยังไม่ถึงวัน · จบแล้ว = เลขไมล์ครบ
+// rows เรียงตาม kind อยู่แล้ว (now → odometer → later → done) หัวกลุ่มจึงขึ้นตรงรอยต่อโดยไม่ต้องเรียงใหม่ · ไม่พับส่วนจบแล้ว:
+// พับแล้วแถวที่เพิ่งบันทึกเลขไมล์จะหายไปทันที คนขับจะงงว่างานไปไหน (ต่างจากกล่องคำขอรถที่ผู้จัดคิวไม่ได้กดบันทึกทีละเที่ยว)
+const DESK_SECTIONS = {
+  action: { label: 'ต้องทำตอนนี้', ...SECTION_TONES.action },
+  live: { label: 'เที่ยวถัดไป', ...SECTION_TONES.live },
+  done: { label: 'จบแล้ว', ...SECTION_TONES.done },
+}
+const deskSection = kind => kind === 'later' ? 'live' : kind === 'done' ? 'done' : 'action'
 const pickupOf = t => t.estimated_pickup_at || t.plan?.pickup_at
 const deskText = ({ trip: t, riders }) => [t.plan?.route_label, t.driver_name, t.helper_name, whenLabel(pickupOf(t)), dateTime(pickupOf(t)),
   ...riders.flatMap(b => [bookingName(b), b.phone, b.pickup])].join(' ').toLowerCase()
@@ -429,6 +440,9 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
   const words = search.trim().toLowerCase()
   const shown = rows.filter(r => (filter === 'all' || r.kind === filter) && (!words || deskText(r).includes(words)))
   const count = id => id === 'all' ? rows.length : rows.filter(r => r.kind === id).length
+  // หัวกลุ่มขึ้นก่อนแถวแรกของแต่ละส่วน นับเฉพาะแถวที่แสดงอยู่ (หลังกรอง/ค้นหา)
+  const sectionCount = shown.reduce((counts, r) => ({ ...counts, [deskSection(r.kind)]: (counts[deskSection(r.kind)] || 0) + 1 }), {})
+  const startsSection = index => index === 0 || deskSection(shown[index - 1].kind) !== deskSection(shown[index].kind)
   const open = rows.find(r => r.trip.id === openId)
   const close = () => { setOpenId(null); onCloseTrip() }
   // ออกรถ/จบงานจากแถวต้องผ่านกล่องทวนก่อน (เจ้าของระบบเลือกแบบ ก 2569-09-30) — แถวตารางอยู่ชิดกัน กดผิดแถว
@@ -476,10 +490,16 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
               const [status, tone] = deskStatus(row)
               const distance = kind === 'done' && Number.isFinite(t.odometer_start) && Number.isFinite(t.odometer_end) ? t.odometer_end - t.odometer_start : null
               const shade = index % 2 === 0 ? '#fff' : '#f5f8fc'
-              return <tr key={t.id} data-trip={t.id} className="cursor-pointer align-top transition-colors" style={{ backgroundColor: shade }}
+              const section = deskSection(kind)
+              return <Fragment key={t.id}>
+              {/* ช่องว่างก่อนส่วนถัดไปอยู่ในแถวหัวกลุ่มเอง ไม่แทรกแถวเปล่า (แบบเดียวกับกล่องคำขอรถ) */}
+              {startsSection(index) && <tr data-section-header={section}>
+                <td colSpan={7} className="p-0">{index > 0 && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand {...DESK_SECTIONS[section]} count={sectionCount[section]} /></td>
+              </tr>}
+              <tr data-trip={t.id} data-section={section} className="cursor-pointer align-top transition-colors" style={{ backgroundColor: shade }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = shade}
                 onClick={() => setOpenId(t.id)}>
-                <td className={`${cell} text-center text-xs text-gray-500`}>{index + 1}</td>
+                <td className={`${cell} text-center text-xs text-gray-500`} style={{ boxShadow: `inset 5px 0 0 ${DESK_SECTIONS[section].bar}` }}>{index + 1}</td>
                 <td className={`${cell} whitespace-nowrap text-center`}><span className="block font-semibold">{whenLabel(at)}</span><span className="block">ออกรับ {clockOf(at)} น.</span>{t.plan?.return_mode !== 'one_way' && back && <span className="block text-[11px] text-gray-500">รับกลับประมาณ {clockOf(back)} น.</span>}</td>
                 <td className={cell}><span className="block max-w-[220px] truncate font-semibold" title={t.plan?.route_label}>{t.plan?.route_label || '—'}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[t.plan?.return_mode]}{t.plan?.multiwave ? ' · รับหลายรอบ' : ''}</span></td>
                 <td className={cell}>{riders.length ? riders.map((b, i) => <span key={b.id} className={`block ${i ? 'mt-1.5' : ''}`}><span className="block font-semibold">{bookingName(b)}</span><span className="block text-[11px] text-gray-500">{bookingTravel(b)}</span></span>)
@@ -497,6 +517,7 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
                     style={action.color ? { backgroundColor: action.color } : undefined}>{action.label}</button>
                 </td>
               </tr>
+              </Fragment>
             })}</tbody>
           </table>
         </div>}

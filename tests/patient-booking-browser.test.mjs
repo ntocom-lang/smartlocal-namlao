@@ -1508,6 +1508,23 @@ try{
   const statusRight=await deskRow.locator('td').nth(5).evaluate(td=>td.getBoundingClientRect().right),stickyLeft=await deskRow.locator('td').last().evaluate(td=>td.getBoundingClientRect().left)
   assert(statusRight<=stickyLeft+0.5,`คอลัมน์ดำเนินการต้องไม่บังสถานะที่จอ ${width}px`)
  }
+ // หัวกลุ่มของตารางงานคนขับ (เจ้าของระบบสั่ง 2569-10-05): ต้องทำตอนนี้ → เที่ยวถัดไป → จบแล้ว · จำนวนในหัวต้องเท่าแถวใต้หัว · ทุกแถวมีแถบสีซ้ายของกลุ่ม
+ const DESK_GROUP_LABEL={action:'ต้องทำตอนนี้',live:'เที่ยวถัดไป',done:'จบแล้ว'},DESK_GROUP_ORDER=['action','live','done']
+ const deskGroups=()=>page.locator('table tbody tr').evaluateAll(trs=>{const out=[];for(const tr of trs){if(tr.dataset.sectionHeader)out.push({key:tr.dataset.sectionHeader,text:tr.innerText.replace(/\s+/g,' ').trim(),rows:[]});else if(tr.dataset.trip)out.at(-1)?.rows.push({trip:tr.dataset.trip,section:tr.dataset.section,bar:tr.firstElementChild.style.boxShadow})}return out})
+ const assertDeskGroups=async why=>{
+  const groups=await deskGroups(),total=await page.locator('tr[data-trip]').count()
+  assert.equal(groups.reduce((sum,group)=>sum+group.rows.length,0),total,`${why}: ทุกแถวต้องอยู่ใต้หัวกลุ่ม (ไม่มีแถวลอยก่อนหัวแรก)`)
+  assert.deepEqual(groups.map(group=>group.key),DESK_GROUP_ORDER.filter(key=>groups.some(group=>group.key===key)),`${why}: หัวกลุ่มต้องไม่ซ้ำและเรียง ต้องทำตอนนี้ → เที่ยวถัดไป → จบแล้ว`)
+  for(const group of groups){
+   assert.equal(group.text,`${DESK_GROUP_LABEL[group.key]} ${group.rows.length} รายการ`,`${why}: หัวกลุ่ม ${group.key} ต้องบอกชื่อและจำนวนแถวใต้หัว`)
+   assert(group.rows.every(row=>row.section===group.key),`${why}: แถวใต้หัว ${group.key} ต้องเป็นของกลุ่มนี้`)
+   assert.equal(new Set(group.rows.map(row=>row.bar)).size,1,`${why}: แถบสีซ้ายในกลุ่มเดียวกันต้องสีเดียว`)
+  }
+  assert.equal(new Set(groups.map(group=>group.rows[0].bar)).size,groups.length,`${why}: แต่ละกลุ่มต้องคนละสีแถบซ้าย`)
+  return groups
+ }
+ const deskGroupOf=async why=>(await assertDeskGroups(why)).find(group=>group.rows.some(row=>row.trip===deskTrip))?.key
+ assert.equal(await deskGroupOf('ก่อนออกรถ'),'action','เที่ยวที่ต้องออกวันนี้ต้องอยู่กลุ่ม "ต้องทำตอนนี้"')
  if(process.env.PATIENT_PREVIEW_SHOTS)await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/driver-desk-1440.png`,fullPage:true})
  // ผู้จัดคิวที่ไม่ใช่คนขับของเที่ยว: เห็นแถวแต่ไม่มีปุ่มออกรถ · เปลี่ยนคนขับอยู่ในแผ่น · จัดคนขับแทนทั้งวันเปิดเป็นแผ่น
  await page.setViewportSize({width:1280,height:900});await visit('coordinator')
@@ -1545,6 +1562,7 @@ try{
  await deskRow.getByRole('button',{name:'กลับแล้ว · จบงาน',exact:true}).click();await toast('บันทึกแล้ว · กลับแล้ว · จบงาน').waitFor()
  assert(tripPrompts.at(-1).includes('ส่งผู้เดินทางครบทุกคน'),'กล่องทวนจบงานต้องเตือนเรื่องผู้ป่วยที่ไม่ได้ขึ้นรถ')
  const deskOdo=sheet.locator(`article[data-trip="${deskTrip}"]`);await deskOdo.getByLabel('เลขไมล์กลับ',{exact:true}).waitFor()
+ assert.equal(await deskGroupOf('จบเที่ยวแล้วแต่ยังไม่ใส่เลขไมล์'),'action','เที่ยวที่จบแล้วแต่ยังไม่มีเลขไมล์กลับต้องอยู่กลุ่ม "ต้องทำตอนนี้" ไม่ใช่ "จบแล้ว"')
  let deskStart=30000
  if(await deskOdo.getByLabel('เลขไมล์ออก',{exact:true}).count())await deskOdo.getByLabel('เลขไมล์ออก',{exact:true}).fill(String(deskStart))
  else deskStart=Number((await deskOdo.locator('strong').first().innerText()).replace(/\D/g,''))
@@ -1552,11 +1570,13 @@ try{
  await deskOdo.getByRole('button',{name:/^บันทึกเลขไมล์/}).click();await toast('บันทึกเลขไมล์แล้ว').waitFor();await sheet.waitFor({state:'detached'})
  assert.equal(await deskState(),'completed')
  await deskRow.getByText('จบเที่ยวแล้ว',{exact:true}).waitFor();await deskRow.getByText('ระยะทาง 41 กม.',{exact:true}).waitFor()
+ assert.equal(await deskGroupOf('หลังบันทึกเลขไมล์'),'done','เที่ยวที่เลขไมล์ครบต้องย้ายไปกลุ่ม "จบแล้ว"')
  await deskRow.getByText('ไม่แสดงหลังจบเที่ยว',{exact:true}).waitFor()
  // ป้ายกรอง
  const deskPills=page.getByRole('group',{name:'กรองงานคนขับ'})
  await deskPills.getByRole('button',{name:/^วันนี้/}).click();assert.equal(await deskRow.count(),0,'เที่ยวที่จบแล้วต้องไม่อยู่ในกลุ่มวันนี้')
  await deskPills.getByRole('button',{name:/^จบแล้ว/}).click();await deskRow.waitFor()
+ assert.deepEqual((await assertDeskGroups('กรองจบแล้ว')).map(group=>group.key),['done'],'กรอง "จบแล้ว" ต้องเหลือหัวกลุ่มเดียว')
  await deskPills.getByRole('button',{name:/^ทั้งหมด/}).click();await deskRow.waitFor()
  console.log('PASS driver desk: PC table at 1280/1366/1440 with pinned action, cards below md, reviewed depart/finish from a row (dismiss records nothing), detail sheet, odometer after finish, coordinator view, filters and search')
  // ── ประวัติการดำเนินการในแผ่นคำขอ (เจ้าของระบบสั่ง 2569-10-01 แบบ ก): ใครกดอะไร เมื่อไร ──

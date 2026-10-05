@@ -244,6 +244,15 @@ export const STAGES = {
   completed: { label: 'เสร็จแล้ว', color: '#059669', chip: 'bg-emerald-100 text-emerald-900' },
   cancelled: { label: 'ยกเลิกแล้ว', color: '#64748b', chip: 'bg-slate-200 text-slate-700' },
 }
+// สีของหัวกลุ่ม 3 ส่วนที่ใช้ร่วมกันทุกแท็บ (เจ้าของระบบสั่ง 2569-10-01 กล่องคำขอรถ · 2569-10-05 งานคนขับ — เห็นแล้วรู้ว่างานไหนเสร็จหรือยัง)
+// ส้ม = ต้องทำ · ฟ้า = รอ/กำลังเดินทาง · เทา = จบแล้ว (เงียบที่สุด) — bar = แถบซ้าย, tint = พื้นหัวกลุ่ม, ink = ตัวอักษร
+// ชื่อส่วนแต่ละแท็บตั้งเอง ("ต้องดำเนินการ" ของคำขอรถ · "ต้องทำตอนนี้" ของงานคนขับ) สีใช้ชุดเดียวกัน สองแท็บจะได้ไม่ผิดกัน
+// ตัวแถบหัวกลุ่มคือ SectionBand ใน components/patientTransport/StaffShell.jsx (ค่าคงที่วางที่นี่เพราะไฟล์คอมโพเนนต์ export ค่าอื่นไม่ได้ ตามกฎ react-refresh)
+export const SECTION_TONES = {
+  action: { bar: '#d97706', tint: '#fef3c7', ink: '#78350f' },
+  live: { bar: '#0284c7', tint: '#e0f2fe', ink: '#0c4a6e' },
+  done: { bar: '#94a3b8', tint: '#e2e8f0', ink: '#334155' },
+}
 export function bookingStage(booking, trip) {
   if (['submitted', 'completed', 'cancelled'].includes(booking.status)) return booking.status
   const state = trip?.state === 'issue' ? trip.state_before_issue : trip?.state
