@@ -5,10 +5,10 @@ import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
 import CommunityBookingForm from './CommunityBookingForm'
 import { addressFromMap, pickupSentence } from '../../lib/pickupText'
-import { ListCard, Pills, Sheet } from './StaffShell'
+import { ListCard, Pills, SectionBand, Sheet } from './StaffShell'
 import { AmendBooking, BookingFundDocs, BookingPrintButtons, OdometerForm } from './BookingOperations'
 import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
-import { STAGES, TRIP_STATUS, RETURN_MODES, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, describeHistory, bookingName, bookingPeople, bookingTravel, isCommunity, serviceLabel } from '../../lib/patientBooking'
+import { SECTION_TONES, STAGES, TRIP_STATUS, RETURN_MODES, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, describeHistory, bookingName, bookingPeople, bookingTravel, isCommunity, serviceLabel } from '../../lib/patientBooking'
 import { tripPassengers } from '../../lib/patientTransportPrint'
 
 /**
@@ -79,9 +79,9 @@ function buildRows(workspace) {
 // เว้นช่องก่อนส่วนถัดไป และทุกแถว/การ์ดมีแถบสีซ้ายของส่วน เลื่อนพ้นหัวกลุ่มแล้วยังรู้ว่าอยู่ส่วนไหน
 // ส้ม = ต้องทำ · ฟ้า = รอ/กำลังเดินทาง · เทา = จบแล้ว (เงียบที่สุด) — bar = แถบซ้าย, tint = พื้นหัวกลุ่ม, ink = ตัวอักษร
 const SECTIONS = {
-  action: { label: 'ต้องดำเนินการ', bar: '#d97706', tint: '#fef3c7', ink: '#78350f' },
-  live: { label: 'รอเดินทาง / กำลังเดินทาง', bar: '#0284c7', tint: '#e0f2fe', ink: '#0c4a6e' },
-  done: { label: 'เสร็จแล้ว / ยกเลิก', bar: '#94a3b8', tint: '#e2e8f0', ink: '#334155' },
+  action: { label: 'ต้องดำเนินการ', ...SECTION_TONES.action },
+  live: { label: 'รอเดินทาง / กำลังเดินทาง', ...SECTION_TONES.live },
+  done: { label: 'เสร็จแล้ว / ยกเลิก', ...SECTION_TONES.done },
 }
 const SECTION_ORDER = ['action', 'live', 'done']
 const sectionOf = (next, stage) => next.rank < 9 ? 'action' : ['confirmed', 'running'].includes(stage) ? 'live' : 'done'
@@ -180,18 +180,6 @@ function StatusChips({ row }) {
     <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold ${issue ? 'bg-red-100 text-red-800' : STAGES[stage].chip}`}>{text}</span>
     {b.status === 'confirmed' && b.cancel_requested && <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">ขอยกเลิก</span>}
     {b.status === 'confirmed' && b.return_ready && <span className="whitespace-nowrap rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-bold text-sky-900">พร้อมรับกลับ</span>}
-  </span>
-}
-
-// หัวกลุ่มของส่วน ใช้ทั้งตาราง (PC) และการ์ด (มือถือ) — เป็น span เพราะอยู่ใน h3 ได้
-// toggle = ปุ่มพับ/แสดงของส่วนเสร็จแล้ว/ยกเลิก (ลูกศรซ่อนจากโปรแกรมอ่านจอ ชื่อปุ่มจึงเป็นคำล้วน)
-// มือถือปุ่มลงบรรทัดใหม่เต็มความกว้างแบบปุ่มในการ์ด — ถ้าอยู่บรรทัดเดียวกัน ชื่อส่วนถูกบีบจนขึ้น 2 บรรทัดที่จอ 390px
-function SectionBand({ section, count, rounded, toggle }) {
-  const { label, bar, tint, ink } = SECTIONS[section]
-  return <span className={`flex flex-wrap items-center gap-2 px-3 text-sm font-bold ${toggle ? 'py-2 md:py-1' : 'py-2'} ${rounded ? 'rounded-xl' : ''}`} style={{ backgroundColor: tint, color: ink, borderLeft: `5px solid ${bar}` }}>
-    <span className="whitespace-nowrap">{label}</span><span className="whitespace-nowrap rounded-full border bg-white px-2 py-0.5 text-xs" style={{ borderColor: bar }}>{count} รายการ</span>
-    {toggle && <button type="button" aria-expanded={toggle.open} onClick={toggle.onToggle} className="ml-auto min-h-11 whitespace-nowrap rounded-xl border bg-white px-3 text-sm font-bold hover:bg-slate-50 max-md:w-full md:min-h-9" style={{ borderColor: bar, color: ink }}>
-      {toggle.open ? 'ซ่อนรายการ' : 'แสดงรายการ'}<span aria-hidden="true"> {toggle.open ? '▴' : '▾'}</span></button>}
   </span>
 }
 
@@ -717,7 +705,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
             return <Fragment key={lead.booking.id}>
             {/* ช่องว่างก่อนส่วนถัดไปอยู่ในแถวหัวกลุ่มเอง ไม่แทรกแถวเปล่า ทุกแถวใน tbody จึงเป็นหัวส่วน หัวกรอบเที่ยว หรือคำขอเท่านั้น */}
             {startsSection(block.start) && <tr data-section-header={lead.section}>
-              <td colSpan={6} className="p-0">{block.start > 0 && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand section={lead.section} count={sectionCount[lead.section]} toggle={lead.section === 'done' ? doneToggle : null} /></td>
+              <td colSpan={6} className="p-0">{block.start > 0 && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand {...SECTIONS[lead.section]} count={sectionCount[lead.section]} toggle={lead.section === 'done' ? doneToggle : null} /></td>
             </tr>}
             {block.framed && !folded(lead) && <tr data-trip-group={lead.trip.id}>
               <td colSpan={6} className="p-0" style={{ border: TRIP_EDGE, borderBottom: 0, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} /></td>
@@ -763,7 +751,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
           </article>
         })
         return <Fragment key={lead.booking.id}>
-        {startsSection(block.start) && <h3 data-section-header={lead.section} className={block.start ? 'pt-4' : ''}><SectionBand section={lead.section} count={sectionCount[lead.section]} rounded toggle={lead.section === 'done' ? doneToggle : null} /></h3>}
+        {startsSection(block.start) && <h3 data-section-header={lead.section} className={block.start ? 'pt-4' : ''}><SectionBand {...SECTIONS[lead.section]} count={sectionCount[lead.section]} rounded toggle={lead.section === 'done' ? doneToggle : null} /></h3>}
         {/* กรอบกลุ่มเที่ยวบนมือถือ = กล่องม่วงครอบการ์ดของทุกคนในเที่ยว หัวกรอบเดียวกับตาราง */}
         {!folded(lead) && (block.framed
           ? <section data-trip-group={lead.trip.id} className="space-y-2 rounded-2xl p-2" style={{ border: TRIP_EDGE, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} card />{cards}</section>

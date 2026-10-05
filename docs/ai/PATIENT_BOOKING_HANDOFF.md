@@ -240,6 +240,9 @@ Migration: 20260919150000_patient_booking_flexible_odometer.sql (columns/constra
   + ปุ่มแก้ที่ยืนยันต่อให้เอง (`bookingPlanGuidance().fixes`) · นำผู้เดินทางคนสุดท้ายออก = คืนคิวเที่ยวว่างให้ด้วย
 - คนขับ (`DriverTrips`): ปุ่มใหญ่ปุ่มเดียวต่อขั้น ยิง `passenger_next` ทุกคน + `trip_next` ต่อกัน (`driverSteps`)
   อ่านสถานะล่าสุดก่อนยิงทุกครั้ง เน็ตหลุดกดซ้ำทำต่อจากที่ค้าง · ปุ่มขึ้นเฉพาะเที่ยวของวันนี้ · เลขไมล์ถามหลังจบงานช่องเดียว
+  จอ PC (`DriverDesk` ใน `BookingOperations.jsx`) แบ่งตารางเป็น 3 กลุ่มมีหัวสี ต้องทำตอนนี้ (วันนี้/กำลังเดินทาง/เหตุขัดข้อง + รอเลขไมล์) · เที่ยวถัดไป · จบแล้ว
+  (เจ้าของระบบสั่ง 2569-10-05 "ในภาพเหมือนกันไปหมด") ใช้ `SectionBand` ใน `StaffShell.jsx` + สีกลาง `SECTION_TONES` ใน `patientBooking.js` ร่วมกับกล่องคำขอรถ
+  ไม่พับกลุ่ม "จบแล้ว" โดยเจตนา (พับแล้วแถวที่เพิ่งบันทึกเลขไมล์หายทันที) · มือถือไม่เปลี่ยน (มีหัวแยกส่วนอยู่แล้ว) · เทสต์ `deskGroups` ในฉาก driver desk
   ⚠️ เวลารับขึ้นรถรายคนไม่ถูกบันทึกแยกแล้ว (สรุปรายเดือนไม่ได้ใช้)
 - Migration `20260921120000_patient_booking_staff_join.sql` (apply บน production แล้ว 2026-09-21 + บันทึก
   schema_migrations เอง): `ptb_join_plan_to` + `patient_booking_preview_into_trip` / `patient_booking_confirm_into_trip`
