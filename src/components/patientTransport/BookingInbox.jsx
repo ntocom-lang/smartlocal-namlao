@@ -1,14 +1,14 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { Printer, Users } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
 import CommunityBookingForm from './CommunityBookingForm'
 import { addressFromMap, pickupSentence } from '../../lib/pickupText'
-import { ListCard, Pills, SectionBand, Sheet } from './StaffShell'
+import { ListCard, Pager, Pills, SectionBand, Sheet } from './StaffShell'
 import { AmendBooking, BookingFundDocs, BookingPrintButtons, OdometerForm } from './BookingOperations'
 import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
-import { SECTION_TONES, STAGES, TRIP_STATUS, RETURN_MODES, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, describeHistory, bookingName, bookingPeople, bookingTravel, isCommunity, serviceLabel } from '../../lib/patientBooking'
+import { SECTION_TONES, STAGES, loadPageSize, paginate, savePageSize, TRIP_STATUS, RETURN_MODES, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, describeHistory, bookingName, bookingPeople, bookingTravel, isCommunity, serviceLabel } from '../../lib/patientBooking'
 import { tripPassengers } from '../../lib/patientTransportPrint'
 
 /**
@@ -617,6 +617,19 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   const doneForced = !!words || ['completed', 'cancelled'].includes(filter)
   const doneToggle = doneForced ? null : { open: showDone, onToggle: () => setShowDone(value => !value) }
   const folded = row => row.section === 'done' && !showDone && !doneForced
+  // แบ่งหน้า (เจ้าของระบบสั่ง 2569-10-05 "ทำไว้รอ"): หน่วยที่ตัด = กรอบเที่ยวเดียวกันทั้งก้อน ไม่ถูกตัดคร่อมสองหน้า · ส่วนที่พับอยู่ไม่นับแถว (size 0)
+  // หัวกลุ่มของมันจึงตามไปต่อท้ายหน้าสุดท้าย · หัวกลุ่มขึ้นซ้ำที่ต้นหน้าถัดไปถ้ากลุ่มเดียวกันต่อกันมา (ตัวเลขในหัวนับทั้งกลุ่ม ไม่ใช่เฉพาะหน้านั้น)
+  // เปลี่ยนตัวกรอง/ค้นหา/จำนวนต่อหน้า = กลับหน้า 1 (key ของรายการเปลี่ยน ไม่ต้องใช้ effect)
+  const [perPage, setPerPage] = useState(loadPageSize)
+  const listKey = [filter, serviceFilter, words, perPage].join('|')
+  const [paging, setPaging] = useState({ key: listKey, page: 1 })
+  // key เปลี่ยน = เริ่มหน้า 1 และ "ลืม" หน้าเดิมจริง (ถ้าแค่คำนวณหน้า 1 ตอนแสดง พอล้างค้นหากลับมา key เดิม หน้าเก่าจะโผล่คืน)
+  if (paging.key !== listKey) setPaging({ key: listKey, page: 1 })
+  const listTop = useRef(null)
+  const paged = paginate(blocks.map(block => ({ block, size: folded(block.rows[0]) ? 0 : block.rows.length })), perPage, paging.key === listKey ? paging.page : 1)
+  const pageBlocks = paged.units.map(unit => unit.block)
+  const startsHeader = block => startsSection(block.start) || block === pageBlocks[0]
+  const gotoPage = n => { setPaging({ key: listKey, page: n }); listTop.current?.scrollIntoView({ block: 'start' }) }
   const open = rows.find(r => r.booking.id === openId)
   const createdRow = created && rows.find(r => r.booking.id === created.id)
 
@@ -680,7 +693,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
     onPrintLetter={onPrintLetter} onPrintRequest={onPrintRequest} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} onSettings={() => { close(); onSettings() }} />
   if (detailOnly) return sheet
   return <ListCard title="คำขอรถ" count={rows.length} search={search} onSearch={setSearch} searchLabel="ค้นหาชื่อ เบอร์ จุดรับ โรงพยาบาล เลขที่" action={action} pills={pills}>
-    <div className="space-y-4 p-4 sm:p-5">
+    <div ref={listTop} className="scroll-mt-24 space-y-4 p-4 sm:p-5">
       {created && <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3">
         <p className="min-w-0 flex-1"><strong>รับคำขอแทนแล้ว</strong> · {created.name} · เลขที่ {ref(created.id)}</p>
         {createdRow?.next.id === 'confirm' && <button type="button" className="min-h-11 rounded-xl px-4 text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: createdRow.next.color }} disabled={busy} onClick={() => confirmRow(createdRow)}>ยืนยันรถเลย</button>}
@@ -700,12 +713,12 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
             <th className="whitespace-nowrap border-r border-white/10 px-2 py-2.5 text-center text-[11px] font-bold text-white">สถานะ</th>
             <th className="sticky right-0 z-10 min-w-[170px] whitespace-nowrap px-2 py-2.5 text-center text-[11px] font-bold text-white shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>ดำเนินการ</th>
           </tr></thead>
-          <tbody className="divide-y divide-gray-200">{blocks.map(block => {
+          <tbody className="divide-y divide-gray-200">{pageBlocks.map(block => {
             const lead = block.rows[0]
             return <Fragment key={lead.booking.id}>
             {/* ช่องว่างก่อนส่วนถัดไปอยู่ในแถวหัวกลุ่มเอง ไม่แทรกแถวเปล่า ทุกแถวใน tbody จึงเป็นหัวส่วน หัวกรอบเที่ยว หรือคำขอเท่านั้น */}
-            {startsSection(block.start) && <tr data-section-header={lead.section}>
-              <td colSpan={6} className="p-0">{block.start > 0 && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand {...SECTIONS[lead.section]} count={sectionCount[lead.section]} toggle={lead.section === 'done' ? doneToggle : null} /></td>
+            {startsHeader(block) && <tr data-section-header={lead.section}>
+              <td colSpan={6} className="p-0">{block !== pageBlocks[0] && <span className="block h-4 border-b border-gray-200 bg-white" />}<SectionBand {...SECTIONS[lead.section]} count={sectionCount[lead.section]} toggle={lead.section === 'done' ? doneToggle : null} /></td>
             </tr>}
             {block.framed && !folded(lead) && <tr data-trip-group={lead.trip.id}>
               <td colSpan={6} className="p-0" style={{ border: TRIP_EDGE, borderBottom: 0, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} /></td>
@@ -733,7 +746,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
           })}</tbody>
         </table>
       </div>}
-      <div className="space-y-3 md:hidden">{blocks.map(block => {
+      <div className="space-y-3 md:hidden">{pageBlocks.map(block => {
         const lead = block.rows[0]
         const cards = block.rows.map(row => {
           const { booking: b, trip, linked, group } = row
@@ -751,13 +764,14 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
           </article>
         })
         return <Fragment key={lead.booking.id}>
-        {startsSection(block.start) && <h3 data-section-header={lead.section} className={block.start ? 'pt-4' : ''}><SectionBand {...SECTIONS[lead.section]} count={sectionCount[lead.section]} rounded toggle={lead.section === 'done' ? doneToggle : null} /></h3>}
+        {startsHeader(block) && <h3 data-section-header={lead.section} className={block === pageBlocks[0] ? '' : 'pt-4'}><SectionBand {...SECTIONS[lead.section]} count={sectionCount[lead.section]} rounded toggle={lead.section === 'done' ? doneToggle : null} /></h3>}
         {/* กรอบกลุ่มเที่ยวบนมือถือ = กล่องม่วงครอบการ์ดของทุกคนในเที่ยว หัวกรอบเดียวกับตาราง */}
         {!folded(lead) && (block.framed
           ? <section data-trip-group={lead.trip.id} className="space-y-2 rounded-2xl p-2" style={{ border: TRIP_EDGE, backgroundColor: TRIP_GROUP.tint }}><TripGroupBand row={lead} card />{cards}</section>
           : cards)}
         </Fragment>
       })}</div>
+      <Pager total={paged.total} from={paged.from} to={paged.to} page={paged.page} pages={paged.pages} perPage={perPage} onPage={gotoPage} onPerPage={value => { setPerPage(value); savePageSize(value) }} />
     </div>
     {deleting && <Sheet title="ลบคำขอรถ" onClose={() => { if (!busy) setDeleting(null) }}>
       <form onSubmit={submitDelete} className="space-y-4">

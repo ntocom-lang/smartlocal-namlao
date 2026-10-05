@@ -243,6 +243,11 @@ Migration: 20260919150000_patient_booking_flexible_odometer.sql (columns/constra
   จอ PC (`DriverDesk` ใน `BookingOperations.jsx`) แบ่งตารางเป็น 3 กลุ่มมีหัวสี ต้องทำตอนนี้ (วันนี้/กำลังเดินทาง/เหตุขัดข้อง + รอเลขไมล์) · เที่ยวถัดไป · จบแล้ว
   (เจ้าของระบบสั่ง 2569-10-05 "ในภาพเหมือนกันไปหมด") ใช้ `SectionBand` ใน `StaffShell.jsx` + สีกลาง `SECTION_TONES` ใน `patientBooking.js` ร่วมกับกล่องคำขอรถ
   ไม่พับกลุ่ม "จบแล้ว" โดยเจตนา (พับแล้วแถวที่เพิ่งบันทึกเลขไมล์หายทันที) · มือถือไม่เปลี่ยน (มีหัวแยกส่วนอยู่แล้ว) · เทสต์ `deskGroups` ในฉาก driver desk
+- แบ่งหน้าตารางเจ้าหน้าที่ (เจ้าของระบบสั่ง 2569-10-05 "ทำไว้รอ อย่าให้เจอปัญหาแล้วค่อยทำ"): กล่องคำขอรถ + ตารางงานคนขับ (PC) ค่าตั้งต้น 20 ต่อหน้า (10/20/50/100/ทั้งหมด จำใน localStorage `ptb-staff-page-size`)
+  `paginate()` ใน `patientBooking.js` ตัดตามหน่วย — กรอบเที่ยวเดียวกันเป็นหน่วยเดียวไม่ถูกตัดคร่อม ส่วนที่พับอยู่ = size 0 ไม่เปิดหน้าใหม่ · แถบ `Pager` ใน `StaffShell.jsx` ขึ้นเมื่อ total > 20
+  หัวกลุ่มขึ้นซ้ำที่ต้นหน้า (ตัวเลขนับทั้งกลุ่ม) เลขลำดับต่อข้ามหน้า key รายการเปลี่ยน (ตัวกรอง/ค้นหา/จำนวนต่อหน้า) = หน้า 1 · **ยังไม่แบ่งหน้า**: การ์ดงานคนขับบนมือถือ (ส่วนจบแล้วพับอยู่), ปฏิทิน, ฝั่งประชาชน
+  ⚠️ เพดานข้อมูล: `patient_booking_workspace_v2` ส่งคำขอ ≤ 1,000 (เรียงวันนัดเก่า→ใหม่ ตัดนัดไกลสุดทิ้ง) และเที่ยว ≤ 1,000 (ใหม่→เก่า) — หน้าจอขึ้นแถบเตือนเมื่อถึง (`workspaceTruncated`) แก้ที่ต้นเหตุต้องแก้ RPC (migration แยก ยังไม่ทำ)
+  ⚠️ `thaiDay()` ใช้ตัวจัดรูปแบบตัวเดียว (เดิมสร้างใหม่ทุกครั้ง: คำขอรอยืนยัน 600 ใบ = หน้าค้าง ~18 วินาทีใน `suggestGroups`) · เทสต์: `paginate`/`workspaceTruncated`/`thaiDay` ใน patient-booking-guidance, ฉาก staff pager ท้าย patient-booking-browser
   ⚠️ เวลารับขึ้นรถรายคนไม่ถูกบันทึกแยกแล้ว (สรุปรายเดือนไม่ได้ใช้)
 - Migration `20260921120000_patient_booking_staff_join.sql` (apply บน production แล้ว 2026-09-21 + บันทึก
   schema_migrations เอง): `ptb_join_plan_to` + `patient_booking_preview_into_trip` / `patient_booking_confirm_into_trip`
