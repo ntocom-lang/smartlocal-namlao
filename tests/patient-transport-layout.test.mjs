@@ -439,10 +439,10 @@ const checks = [
   {
     // เจ้าของระบบสั่ง 2569-10-02 (แบบ ก): คำขอที่ยังรอยืนยันรถพิมพ์ใบคำขอถึงนายกได้เลย ยังไม่มีเที่ยวจึงยังไม่มีหนังสือนำส่ง
     // ใบที่พิมพ์ตอนนี้ต้องเป็นใบเดียวกับที่จะออกในชุดของเที่ยวหลังยืนยันรถ (ประกอบจาก bookingPacket() ตัวเดียวกัน)
-    // แถบบนจอบอกว่าหนังสือถึงกองทุนต้องพิมพ์จากปุ่มแยกหลังยืนยันรถ
+    // ไม่มีแถบบนจอบอกเรื่องหนังสือถึงกองทุน (เคยมี #373 — สั่งเอาออก 2569-10-05 เจ้าหน้าที่งง) ปุ่มหนังสือแยกอยู่ในแผ่นรายละเอียดอยู่แล้ว
     name: 'pending-request-form-matches-trip-packet',
     reason: 'ใบคำขอที่พิมพ์ตอนรอยืนยันรถต้องตรงกับใบในชุดหลังยืนยันทุกตัวอักษร มีแผ่นเดียว ไม่มีหนังสือนำส่ง จบ 1 หน้า'
-      + ' และแถบบนจอต้องบอกว่าหนังสือนำส่งพิมพ์ได้หลังยืนยันรถ โดยไม่ลงกระดาษ',
+      + ' และต้องไม่มีแถบหรือข้อความบนจอใดๆ ทั้งโหมดจอ โหมดพิมพ์ และซอร์ส',
     async run(browser) {
       // 0 = ผู้จองยื่นเองออนไลน์ · 1 = เจ้าหน้าที่รับจองแทน (บรรทัดกำกับใต้ชื่อต่างกัน ต้องตรงกันทั้งสองแบบ)
       for (const index of [0, 1]) {
@@ -458,19 +458,19 @@ const checks = [
           const mm = await sheetContentMm(single, 0)
           assert.ok(mm <= ONE_PAGE_BUDGET_MM, `ใบคำขอตอนรอยืนยันรถสูง ${mm.toFixed(1)}mm เกินงบ ${ONE_PAGE_BUDGET_MM}mm`)
           await assertSignBlockStandard(single, { minRows: 1, minBelow: 1 })
-          const note = () => single.evaluate(() => {
-            const el = document.querySelector('.screen-note')
-            return el && { text: el.textContent, display: getComputedStyle(el).display, inSheet: !!el.closest('.sheet') }
-          })
-          const printed = await note()
-          assert.ok(printed, 'ต้องมีแถบบอกว่ายังพิมพ์ได้เฉพาะใบคำขอ')
-          for (const part of ['ยังไม่ยืนยันรถ', 'หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถ', 'จากปุ่มแยก', 'ไม่ถูกพิมพ์']) {
-            assert.ok(printed.text.includes(part), `แถบบนจอต้องมี "${part}" — "${printed.text}"`)
+          // เจ้าของระบบสั่งเอาแถบบนจอ "ยังไม่ยืนยันรถ จึงมีเฉพาะใบคำขอถึงนายก · หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถจากปุ่มแยก" ออก (2569-10-05)
+          // เจ้าหน้าที่งง กลัวข้อความนั้นพิมพ์ออกมาด้วย — ทั้งโหมดจอและโหมดพิมพ์ต้องไม่มีแถบและไม่มีข้อความนั้นเลย ซอร์สก็ต้องไม่มี (comment ในแม่แบบติดไปกับใบ)
+          for (const media of ['print', 'screen']) {
+            await single.emulateMedia({ media })
+            assert.equal(await single.locator('.screen-note').count(), 0, `โหมด ${media}: ใบคำขอตอนรอยืนยันรถต้องไม่มีแถบบนจอใดๆ`)
+            const body = await single.evaluate(() => document.body.textContent)
+            for (const part of ['ยังไม่ยืนยันรถ', 'หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถ', 'จากปุ่มแยก', 'ข้อความนี้ไม่ถูกพิมพ์']) {
+              assert.ok(!body.includes(part), `โหมด ${media}: ใบไม่ควรมีข้อความ "${part}"`)
+            }
           }
-          assert.equal(printed.inSheet, false, 'แถบบนจออยู่ในแผ่นกระดาษ')
-          assert.equal(printed.display, 'none', 'แถบบนจอถูกพิมพ์ลงกระดาษ')
-          await single.emulateMedia({ media: 'screen' })
-          assert.equal((await note()).display, 'block', 'แถบไม่ขึ้นบนจอ')
+          const source = await single.content()
+          // (ไม่ตรวจคำว่า screen-note ในซอร์ส: กฎ CSS ของแถบเป็นของส่วนกลาง ใช้กับแถบชื่อนายกของหนังสือนำส่งด้วย — ตรวจที่ DOM ด้านบนแล้ว)
+          for (const part of ['ยังไม่ยืนยันรถ', 'จากปุ่มแยก']) assert.ok(!source.includes(part), `ซอร์สใบคำขอตอนรอยืนยันรถต้องไม่มี "${part}"`)
           if (index === 0 && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
             await single.screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/patient-pending-request-on-screen.png`, clip: { x: 0, y: 0, width: 794, height: 1123 } })
           }

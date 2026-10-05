@@ -467,7 +467,7 @@ try{
   assert.equal(doc.note,'',`คำขอที่ผู้จองยื่นเอง ต้องไม่มีบรรทัดกำกับใต้ชื่อ (สั่งตัด 2569-10-02): "${doc.note}"`)
   assert.equal(doc.originCount,0,`ท้ายใบต้องไม่มีบรรทัดที่มา (เก็บที่เดียวใต้ชื่อแบบ — สั่งลบ 2569-10-02): "${doc.origin}"`)
   assert.match(doc.form,/ผ่านระบบ E-Service/,'ใต้ชื่อแบบต้องมี "ผ่านระบบ E-Service <อปท.>" เหมือนใบในชุดหลังยืนยัน')
-  assert.ok(doc.notice&&doc.notice.display==='block'&&doc.notice.text.includes('หนังสือนำส่งกองทุนพิมพ์ได้หลังยืนยันรถจากปุ่มแยก'),`แถบบนจอของใบที่พิมพ์ตอนรอยืนยันรถ: ${JSON.stringify(doc.notice)}`)
+  assert.equal(doc.notice,null,`ใบคำขอตอนรอยืนยันรถต้องไม่มีแถบบนจอใดๆ (สั่งเอาออก 2569-10-05 เจ้าหน้าที่งง): ${JSON.stringify(doc.notice)}`)
   await clickToClosePage(pendingWin,pendingWin.getByRole('button',{name:'ปิดหน้าต่าง',exact:true}))
   assert.equal((await bookingRow(b2)).status,'submitted','พิมพ์ใบคำขอแล้วสถานะคำขอต้องไม่เปลี่ยน')
   await problem.waitFor()
