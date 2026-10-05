@@ -5,16 +5,18 @@ import test, { before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
-import { blockStorageImages, isPublicStorageUrl } from './lib/blockStorageImages.mjs'
+import { blockStorageImages, isPublicStorageUrl, isEdgeImageUrl } from './lib/blockStorageImages.mjs'
 
 const STORAGE_IMG = 'https://umxssfahtuprnztlytdd.supabase.co/storage/v1/object/public/municipality-assets/logos/logo-namlao.png'
 const SIGNED_IMG = 'https://umxssfahtuprnztlytdd.supabase.co/storage/v1/object/sign/docs/a.png?token=t'
 const OTHER_IMG = 'https://cdn.test/a.svg'
 const ICON_IMG = 'https://umxssfahtuprnztlytdd.supabase.co/storage/v1/object/public/logos/tab-icon.png'
+const EDGE_IMG = 'https://namlao.rk-networks.com/_img/municipality-assets/logos/logo-namlao.png'
+const EDGE_DRIVE_IMG = 'https://namlao.rk-networks.com/_img/drive-file?id=1AbCdEfGhIjKlMnOp&v=1'
 
 let browser
 let page
-const reachedNetwork = [] // URL ของ supabase.co ที่ "หลุดไปถึงเครือข่าย" (route ปลอมด้านล่างเป็นด่านสุดท้าย)
+const reachedNetwork = [] // URL ของ supabase.co และ /_img/ ที่ "หลุดไปถึงเครือข่าย" (route ปลอมด้านล่างเป็นด่านสุดท้าย)
 
 before(async () => {
   browser = await chromium.launch({ channel: 'chrome', headless: true })
@@ -22,13 +24,13 @@ before(async () => {
   // route ที่ลงทะเบียนก่อนถูกเรียกทีหลัง: ตัวกันรูปลงทะเบียนทีหลังสุดจึงเห็นคำขอก่อน แล้ว fallback ลงมาที่นี่
   await page.route('https://block.test/**', route => route.fulfill({
     contentType: 'text/html',
-    body: `<!doctype html><title>t</title><link rel="icon" href="${ICON_IMG}"><img id="a" src="${STORAGE_IMG}"><img id="b" src="${OTHER_IMG}"><img id="c" src="${SIGNED_IMG}">`,
+    body: `<!doctype html><title>t</title><link rel="icon" href="${ICON_IMG}"><img id="a" src="${STORAGE_IMG}"><img id="b" src="${OTHER_IMG}"><img id="c" src="${SIGNED_IMG}"><img id="d" src="${EDGE_IMG}"><img id="e" src="${EDGE_DRIVE_IMG}">`,
   }))
   await page.route('https://cdn.test/**', route => route.fulfill({
     contentType: 'image/svg+xml',
     body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20"/></svg>',
   }))
-  await page.route(url => url.hostname.endsWith('.supabase.co'), route => {
+  await page.route(url => url.hostname.endsWith('.supabase.co') || url.hostname.endsWith('.rk-networks.com'), route => {
     reachedNetwork.push(route.request().url())
     return route.fulfill({ contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: 'REAL' })
   })
@@ -62,6 +64,25 @@ test('fetch() ไป Storage สาธารณะ → ไม่ใช่รู�
   const text = await page.evaluate(url => fetch(url).then(r => r.text()), STORAGE_IMG)
   assert.equal(text, 'REAL')
   assert.ok(reachedNetwork.includes(STORAGE_IMG))
+})
+
+test('รูปผ่านพร็อกซี /_img/ ของเรา (Storage และ drive-file) → ได้พิกเซล 1x1 และไม่หลุดไปถึงเครือข่าย', async () => {
+  assert.equal(await page.$eval('#d', img => img.naturalWidth), 1)
+  assert.equal(await page.$eval('#e', img => img.naturalWidth), 1)
+  assert.ok(!reachedNetwork.includes(EDGE_IMG), 'คำขอ /_img/ หลุดไปถึง Worker จริง')
+  assert.ok(!reachedNetwork.includes(EDGE_DRIVE_IMG), 'คำขอ /_img/drive-file หลุดไปถึง Worker จริง')
+})
+
+test('isEdgeImageUrl แม่นยำ — เฉพาะ /_img/ บน *.rk-networks.com', () => {
+  assert.equal(isEdgeImageUrl(new URL(EDGE_IMG)), true)
+  assert.equal(isEdgeImageUrl(new URL(EDGE_DRIVE_IMG)), true)
+  for (const u of [
+    'https://namlao.rk-networks.com/assets/index.js',
+    'https://namlao.rk-networks.com/icons/_img/x.png',
+    'https://example.com/_img/x.png',
+    'https://rk-networks.com.evil.test/_img/x.png',
+    'http://localhost:5174/_img/x.png',
+  ]) assert.equal(isEdgeImageUrl(new URL(u)), false, u)
 })
 
 test('isPublicStorageUrl แม่นยำ', () => {

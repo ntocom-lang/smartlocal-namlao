@@ -286,6 +286,19 @@ Supabase ตั้ง `max_rows = 1000` ให้ PostgREST — select ที่
   ⚠️ ห้ามผ่าน SVG/HTML (ไฟล์ผู้ใช้เสิร์ฟจาก origin ของเว็บ = XSS) · ปลายทางตายตัวเป็น Supabase ของเรา ไม่รับ host จากผู้ใช้
   ⚠️ รูปที่ผ่านตัวนี้นับโควตา Worker 100,000 คำขอ/วัน (static asset ไม่นับ) เปิดหน้าแรกแบบเย็น ≈ 25 คำขอ — อย่าเอารูปที่ไม่จำเป็นมาผ่าน
   · เปลี่ยนรูปต้องเปลี่ยน URL (ชื่อไฟล์ใหม่/`?v=`) เพราะ edge จำ 7 วัน · เทสต์: `npm run test:image-proxy`
+- **ฝั่งหน้าเว็บที่เรียก `/_img/`: `src/lib/edgeImage.js`** — `edgeImageUrl(url)` เขียน URL ตอนเรนเดอร์เท่านั้น (ฐานข้อมูลไม่ถูกแตะ) เฉพาะโฮสต์
+  `*.rk-networks.com` และไม่ใช่ DEV · คืน URL เต็ม (`https://โฮสต์/_img/...`) เพราะใบพิมพ์ (document.write) กับ `fetch()` ไอคอนแอปต้องใช้ ·
+  ใช้ที่: `TenantContext` (logo/header/smart_city), `BannerSlider`, `PostsHighlight`, `PostsPage`, `TourismSection/Page/DetailPage`,
+  `StaffSection`, `Home.jsx` ของ 5 ธีม · **ตัวสำรอง**: `main.jsx` ดัก error ของ `<img>` ทั้งแอป ถ้า `/_img/` ตอบ error ชี้กลับ URL เดิมของ Supabase 1 ครั้ง;
+  พื้นหลัง CSS ของท่องเที่ยวมีตัวสำรองแยก (โหลดทดสอบด้วย `Image()`), แต่ `header_image_url` ที่ใช้เป็น CSS background (หน้าเจ้าหน้าที่/แอดมิน/ธีมเกลดแก้ว)
+  **ไม่มีตัวสำรอง** — Worker ล่มภาพพื้นหลังหาย ไม่ถึงกับพัง
+  ⚠️ ห้ามเอา `edgeImageUrl` ไปใช้ใน `ComplaintsManager`, `SystemSettingsAdmin`, `PostsManager`, `TenantPicker`, `driveStorage.js` (รูปแนบคำร้องประชาชน
+  และค่าที่บันทึกลงฐานข้อมูล — เทสต์ `test:edge-image` กันไว้) · ถ้าจะเอา `tenant.logo_url` ไปบันทึกกลับ DB ต้องผ่าน `originalImageUrl()` ก่อน
+  ⚠️ เพิ่มจุดแสดงรูปสาธารณะใหม่ (ข่าว/ท่องเที่ยว/บุคลากร/แบนเนอร์) ต้องครอบ `edgeImageUrl` ไม่งั้นรูปนั้นยังดึง Supabase ตรง ·
+  รายการ bucket ใน `edgeImage.js` ต้องตรง `ALLOWED_STORAGE` ของ Worker (เทสต์เทียบให้) · สคริปต์ Playwright ที่เปิดเว็บจริงต้องเรียก `blockStorageImages`
+  (ครอบ `/_img/` แล้ว ไม่งั้นทุกรอบเทสต์กินโควตา Worker และรอบแรกของแต่ละรูปไปถึง Supabase)
+  ตรวจจริง 2026-10-05 (บันเดิลใหม่บนโฮสต์จริงทั้ง 4 อปท. + Worker จริง): 0 คำขอรูปตรงไป Supabase, รูปทุกใบขึ้น, รอบสองได้ HIT ครบ ·
+  จำลอง Worker ล่ม (502): รูป `<img>` สำรองครบ พื้นหลังท่องเที่ยวสำรองได้ ไม่มีรูปเสีย · เทสต์: `npm run test:edge-image`
 - **รูปบน Drive (`/functions/v1/drive-file`) ไม่ได้ถูก CDN แคช** (`cf-cache-status: DYNAMIC`), ไม่ส่ง Content-Length, ไม่รับ Range →
   ทุกเครื่องใหม่ยิง Edge Function (โควตา 500k/เดือน) และกิน Egress (5 GB) เอง · รูปใหม่ที่อัปโหลดหลังมีด่านย่อรูปจะเล็กอยู่แล้ว
   แต่รูปเก่าที่ขึ้น Drive ก่อนมีด่าน (เช่น Smart City น้ำเลา 1.24 MB) ต้องอัปโหลดใหม่ผ่านหน้าตั้งค่า
@@ -300,4 +313,4 @@ Supabase ตั้ง `max_rows = 1000` ให้ PostgREST — select ที่
 - กับดักทดสอบ Worker ในเครื่อง: `wrangler dev` เมื่อคอนฟิกมี `routes` ทำให้ Worker เห็นโฮสต์เป็นโดเมนจริง → ด่าน http→https ตอบ 301 ทุกคำขอ
   (ใช้คอนฟิกชั่วคราวที่ตัด routes) · สั่ง kill ซ้ำโดยไม่หยุดตัวแม่ → wrangler สร้าง workerd ใหม่ฟังพอร์ตเดิมซ้อนกัน คำขอตกที่ตัวตายแล้วค้าง
   ต้องหยุดที่ node ตัวแม่ตาม command line · ห้ามหยุด workerd ตามชื่อ (อาจเป็นของ session อื่น)
-- เทสต์: `npm run test:banner`, `npm run test:image-guard`, `npm run test:lazy-images`, `npm run test:image-proxy`, `npm run test:image-budget`
+- เทสต์: `npm run test:banner`, `npm run test:image-guard`, `npm run test:lazy-images`, `npm run test:image-proxy`, `npm run test:image-budget`, `npm run test:edge-image`

@@ -11,6 +11,7 @@ import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
 import { Info, ChevronRight, Megaphone, Newspaper, CalendarDays, ChevronLeft, Landmark, Trash2, Truck, Lightbulb, Hospital, Route, Bug, Droplets } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
+import { edgeImageUrl } from '../../../../lib/edgeImage'
 import StaffSection from '../../../../components/home/StaffSection'
 import { toDateStr } from '../../../../lib/thaiDate'
 import { AUDIENCE_LABEL as AUD_LABEL } from '../../../../lib/orgTerms'
@@ -194,7 +195,7 @@ function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) 
       <div className="relative aspect-video bg-gray-100 cursor-pointer overflow-hidden"
         onClick={() => next()}>
         {post.image_url
-          ? <img key={post.id} src={post.image_url} alt={post.title}
+          ? <img key={post.id} src={edgeImageUrl(post.image_url)} alt={post.title}
               className="w-full h-full object-cover transition-opacity duration-500"
               style={{ objectPosition: post.image_position ?? '50% 50%' }} />
           : <div className="w-full h-full flex items-center justify-center">

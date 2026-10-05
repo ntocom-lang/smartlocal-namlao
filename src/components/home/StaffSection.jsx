@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTenant } from '../../contexts/TenantContext'
 import { fetchPublicPersonnel } from '../../lib/personnelDirectory'
+import { edgeImageUrl } from '../../lib/edgeImage'
 
 // Premium Executive Card matching the mockup style (Vertical layout with interactive hover effects)
 function ExecutivePremiumCard({ person }) {
@@ -17,7 +18,7 @@ function ExecutivePremiumCard({ person }) {
       <div className="relative shrink-0 z-10 w-full h-40 md:h-56 flex items-end justify-center mb-2">
         {person.photo_url ? (
           <img loading="lazy" decoding="async"
-            src={person.photo_url}
+            src={edgeImageUrl(person.photo_url)}
             alt={person.name}
             className="h-full object-contain drop-shadow-md transition-all duration-300 origin-bottom group-hover:scale-108 group-hover:-translate-y-1 group-hover:drop-shadow-2xl"
           />
@@ -60,7 +61,7 @@ function StaffCard({ person }) {
          style={{ backgroundColor: 'var(--bg-card, #ffffff)', borderRadius: 'var(--radius-card, 1rem)', border: 'var(--border-card, 1px solid #f3f4f6)', boxShadow: 'var(--shadow-card, 0 1px 2px 0 rgba(0,0,0,0.05))', backdropFilter: 'var(--blur-card, none)' }}>
       <div className="rounded-full overflow-hidden shrink-0 ring-2 ring-gray-100 dark:ring-white/10">
         {person.photo_url ? (
-          <img loading="lazy" decoding="async" src={person.photo_url} alt={person.name}
+          <img loading="lazy" decoding="async" src={edgeImageUrl(person.photo_url)} alt={person.name}
                  className="w-16 h-16 object-cover object-top" />
         ) : (
           <div className="w-16 h-16 rounded-full flex items-center justify-center font-bold text-white bg-gradient-to-tr from-lime-400 to-emerald-600 text-sm">

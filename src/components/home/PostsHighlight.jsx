@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { Newspaper, Camera, CalendarDays, ChevronRight, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+import { edgeImageUrl } from '../../lib/edgeImage'
 
 function fmtDate(dateStr) {
   if (!dateStr) return ''
@@ -38,7 +39,7 @@ function PostDetailModal({ post, onClose }) {
         <div className="overflow-y-auto flex-1">
           {post.image_url && (
             <div className="aspect-video bg-gray-100 overflow-hidden shrink-0">
-              <img loading="lazy" decoding="async" src={post.image_url} alt={post.title}
+              <img loading="lazy" decoding="async" src={edgeImageUrl(post.image_url)} alt={post.title}
                    className="w-full h-full object-cover"
                    style={{ objectPosition: post.image_position ?? '50% 50%' }} />
             </div>
@@ -74,7 +75,7 @@ function NewsCard({ post, onClick }) {
          }}>
       <div className="aspect-4/3 bg-gray-100 overflow-hidden shrink-0">
         {post.image_url
-          ? <img loading="lazy" decoding="async" src={post.image_url} alt={post.title}
+          ? <img loading="lazy" decoding="async" src={edgeImageUrl(post.image_url)} alt={post.title}
                  className="w-full h-full object-cover"
                  style={{ objectPosition: post.image_position ?? '50% 50%' }} />
           : <div className="w-full h-full flex items-center justify-center text-gray-300">
@@ -106,7 +107,7 @@ function ActivityCard({ post, onClick }) {
          }}>
       <div className="aspect-4/3 bg-gray-100 overflow-hidden shrink-0">
         {post.image_url
-          ? <img loading="lazy" decoding="async" src={post.image_url} alt={post.title}
+          ? <img loading="lazy" decoding="async" src={edgeImageUrl(post.image_url)} alt={post.title}
                  className="w-full h-full object-cover"
                  style={{ objectPosition: post.image_position ?? '50% 50%' }} />
           : <div className="w-full h-full flex items-center justify-center text-gray-300">

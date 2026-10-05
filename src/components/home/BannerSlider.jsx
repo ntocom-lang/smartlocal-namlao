@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { toReliableImageUrl } from '../../lib/driveStorage'
+import { edgeImageUrl } from '../../lib/edgeImage'
 import { slideIndexesToLoad } from '../../lib/bannerSlides'
 
 const INTERVAL = 4500
@@ -28,7 +29,7 @@ export default function BannerSlider({ rounded = true }) {
       .eq('is_active', true)
       .order('sort_order')
       .then(({ data }) => {
-        if (data?.length) setBanners(data.map(b => ({ ...b, image_url: toReliableImageUrl(b.image_url) })))
+        if (data?.length) setBanners(data.map(b => ({ ...b, image_url: edgeImageUrl(toReliableImageUrl(b.image_url)) })))
       })
       .catch(() => {})
   }, [tenant?.id])

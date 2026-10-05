@@ -14,6 +14,7 @@ import {
   ChevronRight, Newspaper,
 } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
+import { edgeImageUrl } from '../../../../lib/edgeImage'
 import ComplaintBand from '../../../../components/home/ComplaintBand'
 import SmartCityBanner from '../../../../components/home/SmartCityBanner'
 
@@ -83,7 +84,7 @@ function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) 
       <div className="relative aspect-video bg-gray-100 cursor-pointer overflow-hidden"
         onClick={() => next()}>
         {post.image_url
-          ? <img loading="lazy" decoding="async" key={post.id} src={post.image_url} alt={post.title}
+          ? <img loading="lazy" decoding="async" key={post.id} src={edgeImageUrl(post.image_url)} alt={post.title}
               className="w-full h-full object-cover transition-opacity duration-500"
               style={{ objectPosition: post.image_position ?? '50% 50%' }} />
           : <div className="w-full h-full flex items-center justify-center">

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Luggage, Utensils, BedDouble, ShoppingBag, Wrench, ChevronRight, MapPin, Compass } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { toReliableImageUrl } from '../../lib/driveStorage'
+import { edgeImageUrl, originalImageUrl } from '../../lib/edgeImage'
 import { useTenant } from '../../contexts/TenantContext'
 
 const CATS = [
@@ -19,7 +20,7 @@ function TourismSection() {
   const navigate = useNavigate()
   const [places, setPlaces] = useState([])
   const [activeCat, setActiveCat] = useState('travel')
-  const [backgroundUrl, setBackgroundUrl] = useState(() => toReliableImageUrl(tenant?.tourism_background_url) || '/tourism-bg.jpg')
+  const [backgroundUrl, setBackgroundUrl] = useState(() => edgeImageUrl(toReliableImageUrl(tenant?.tourism_background_url)) || '/tourism-bg.jpg')
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -43,12 +44,23 @@ function TourismSection() {
       .maybeSingle()
       .then(({ data, error }) => {
         if (!cancelled && !error) {
-          setBackgroundUrl(toReliableImageUrl(data?.tourism_background_url) || '/tourism-bg.jpg')
+          setBackgroundUrl(edgeImageUrl(toReliableImageUrl(data?.tourism_background_url)) || '/tourism-bg.jpg')
         }
       })
 
     return () => { cancelled = true }
   }, [tenant?.id, tenant?.tourism_background_url])
+
+  // ภาพพื้นหลังเป็น CSS ซึ่งไม่มี error event ให้ตัวสำรองกลางใน main.jsx จับ — ถ้า /_img/ โหลดไม่ขึ้นให้กลับไปใช้ URL เดิมของ Supabase
+  // (ใช้ URL เดียวกับที่ CSS ขอ เบราว์เซอร์จึงไม่ดึงซ้ำสองรอบ)
+  useEffect(() => {
+    const original = originalImageUrl(backgroundUrl)
+    if (!original) return undefined
+    const probe = new Image()
+    probe.onerror = () => setBackgroundUrl(original)
+    probe.src = backgroundUrl
+    return () => { probe.onerror = null }
+  }, [backgroundUrl])
 
   const filtered = activeCat ? places.filter(p => p.category === activeCat) : places
   const catData  = CATS.find(c => c.key === activeCat)
@@ -135,7 +147,7 @@ function TourismSection() {
                 <button onClick={() => navigate(`/tourism/${hero.id}`)}
                         className="relative w-full rounded-2xl overflow-hidden active:scale-[0.97] transition-transform group" style={{ height: 148 }}>
                   {hero.image_url
-                    ? <img loading="lazy" decoding="async" src={hero.image_url} alt={hero.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    ? <img loading="lazy" decoding="async" src={edgeImageUrl(hero.image_url)} alt={hero.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                     : <div className="absolute inset-0 flex items-center justify-center text-5xl" style={{ background: `linear-gradient(135deg, ${catData?.from}aa, ${catData?.to})` }}>{catData?.emoji ?? '🏙️'}</div>}
                   <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/20 to-black/10" />
                   <div className="absolute inset-x-0 top-0 h-0.5 rounded-t-2xl" style={{ background: `linear-gradient(90deg, ${catData?.from}, ${catData?.to})` }} />
@@ -154,7 +166,7 @@ function TourismSection() {
                     <button key={place.id} onClick={() => navigate(`/tourism/${place.id}`)}
                             className="relative rounded-2xl overflow-hidden active:scale-[0.96] transition-transform group" style={{ height: 100 }}>
                       {place.image_url
-                        ? <img loading="lazy" decoding="async" src={place.image_url} alt={place.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        ? <img loading="lazy" decoding="async" src={edgeImageUrl(place.image_url)} alt={place.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                         : <div className="absolute inset-0 flex items-center justify-center text-4xl" style={{ background: `linear-gradient(135deg, ${catData?.from}88, ${catData?.to})` }}>{catData?.emoji ?? '🏙️'}</div>}
                       <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent" />
                       <div className="absolute top-2 left-2 w-5 h-5 rounded-full flex items-center justify-center backdrop-blur-md" style={{ backgroundColor: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.3)' }}>
@@ -243,7 +255,7 @@ function TourismSection() {
                 <button onClick={() => navigate(`/tourism/${hero.id}`)}
                         className="relative col-span-2 rounded-2xl overflow-hidden active:scale-[0.98] transition-transform group" style={{ height: 180 }}>
                   {hero.image_url
-                    ? <img loading="lazy" decoding="async" src={hero.image_url} alt={hero.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    ? <img loading="lazy" decoding="async" src={edgeImageUrl(hero.image_url)} alt={hero.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                     : <div className="absolute inset-0 flex items-center justify-center text-5xl" style={{ background: `linear-gradient(135deg, ${catData?.from}aa, ${catData?.to})` }}>{catData?.emoji ?? '🏙️'}</div>}
                   <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/20 to-black/10" />
                   <div className="absolute inset-x-0 top-0 h-0.5" style={{ background: `linear-gradient(90deg, ${catData?.from}, ${catData?.to})` }} />
@@ -262,7 +274,7 @@ function TourismSection() {
                   <button key={place.id} onClick={() => navigate(`/tourism/${place.id}`)}
                           className="relative flex-1 rounded-2xl overflow-hidden active:scale-[0.97] transition-transform group">
                     {place.image_url
-                      ? <img loading="lazy" decoding="async" src={place.image_url} alt={place.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      ? <img loading="lazy" decoding="async" src={edgeImageUrl(place.image_url)} alt={place.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                       : <div className="absolute inset-0 flex items-center justify-center text-3xl" style={{ background: `linear-gradient(135deg, ${catData?.from}88, ${catData?.to})` }}>{catData?.emoji ?? '🏙️'}</div>}
                     <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/10 to-transparent" />
                     <p className="absolute bottom-2 left-2.5 right-2.5 text-[11px] font-bold text-white drop-shadow-lg leading-tight line-clamp-2">{place.name}</p>
