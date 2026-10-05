@@ -1,5 +1,6 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { govNameBlank, govSignBlockCss, govSignRow } from './govSignBlock.js'
+import { govStaffSignBlockCss, govStaffSignBlockHtml } from './govStaffSignBlock.js'
 import { orgHeadTitle, orgNameParts, orgOfficeName } from './orgTerms.js'
 import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
 import { stripForeignParts } from './pickupText.js'
@@ -257,7 +258,9 @@ export function buildWaterServiceFormHtml(documentType, args) {
   return variant ? buildWaterFormHtml(variant, args) : ''
 }
 
-function buildWaterFormHtml(variant, { form, tenant, docDate, referenceNo = '' }) {
+function buildWaterFormHtml(variant, {
+  form, tenant, docDate, referenceNo = '', signatories = null, departmentName = '',
+}) {
   const data = form || {}
   const applicant = data.applicant || {}
   const applicantName = `${applicant.title || ''}${applicant.first || ''} ${applicant.last || ''}`.trim()
@@ -391,6 +394,21 @@ function buildWaterFormHtml(variant, { form, tenant, docDate, referenceNo = '' }
        ตัวช่องลงนามใช้ของกลาง govSignBlock.js ตรงนี้เหลือแค่ตำแหน่งของกลุ่มบนหน้ากระดาษ
        กว้าง 104mm พอให้ชื่อยาวสุดที่เจอจริง (เส้น 54 + "ลงชื่อ" 10 + "ผู้ขออนุญาต" 22) ไม่ล้น */
     .signature { margin: 18mm 8mm 0 auto; width: 104mm; }
+
+${govStaffSignBlockCss()}
+
+    /* โหมดบีบระยะ — ใช้เฉพาะใบที่มีช่องลงนามเจ้าหน้าที่ต่อท้าย
+       เหตุผล: ใบขอใช้น้ำเคสยาวสุดตามเทสต์เลย์เอาต์ (ชื่อยาว + ที่อยู่ 2 ชุด + พิกัด) สูง 234mm
+       ช่องลงนาม 2 แถวกินอีก ~53mm รวมแล้วล้นไปหน้า 2 เจ้าของระบบสั่งว่าต้องจบแผ่นเดียว
+       (2569-10-05) จึงบีบเฉพาะ "ระยะเว้นระหว่างบล็อก" ไม่แตะขนาดฟอนต์ ขอบกระดาษ หรือถ้อยคำ
+       ⚠️ ใบที่ประชาชนพิมพ์เองไม่มีคลาสนี้ ระยะเดิมทุกจุดจึงไม่เปลี่ยน */
+    .sheet--staff .title { margin: 0 0 6mm; }
+    .sheet--staff .write-at { margin-bottom: 4mm; }
+    .sheet--staff .date-line { margin-bottom: 5mm; }
+    .sheet--staff .subject, .sheet--staff .to { margin-bottom: 3mm; }
+    .sheet--staff .enclosure { margin-bottom: 4mm; }
+    .sheet--staff .body-copy { margin-bottom: 2mm; }
+    .sheet--staff .signature { margin-top: 8mm; }
 ${govSignBlockCss()}
     /* 10pt: บรรทัดกำกับต้องอ่านออกแต่ต้องไม่แย่งน้ำหนักกับชื่อผู้ลงนาม และต้องไม่ดันใบตกหน้า 2
        white-space ปกติ (ไม่ nowrap) เพราะข้อความยาวกว่าความกว้างช่องลงนาม */
@@ -406,7 +424,7 @@ ${govSignBlockCss()}
   </style>
 </head>
 <body>
-  <main class="sheet" data-pdf-page>
+  <main class="sheet${signatories ? ' sheet--staff' : ''}" data-pdf-page>
     <div class="title">${variant.title}</div>
 
     <div class="write-at">
@@ -462,6 +480,7 @@ ${enclosureHtml}    <p class="body-copy">
           referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`
         : ''}
     </section>
+${govStaffSignBlockHtml({ signatories, tenant, departmentName })}
   </main>
 </body>
 </html>`

@@ -1,5 +1,6 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
-import { govNameBlank } from './govSignBlock.js'
+import { govNameBlank, govSignBlockCss } from './govSignBlock.js'
+import { govStaffSignBlockCss, govStaffSignBlockHtml } from './govStaffSignBlock.js'
 import { orgHeadTitle } from './orgTerms.js'
 import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
 // ใช้ตัวแปลงพิกัดตัวเดียวกับใบขอรับบริการโดยตั้งใจ — สองใบนี้พิมพ์จุดวางถังของบ้านหลังเดียวกัน
@@ -91,7 +92,10 @@ export function signedAtText(value) {
  * ข้อมูลใน form มาจาก permit_form_data (ชื่อคอลัมน์ legacy ของ document_requests)
  * form_type = 'waste_collection_cancel' ใช้แยกรูปแบบข้อมูลนี้ออกจากใบขอรับบริการและแบบ ข.๑
  */
-export function buildWasteCollectionCancelHtml({ form, tenant, thDate, referenceNo = '', signedAt = '' }) {
+export function buildWasteCollectionCancelHtml({
+  form, tenant, thDate, referenceNo = '', signedAt = '',
+  signatories = null, departmentName = '',
+}) {
   const data = form || {}
   const applicant = data.applicant || {}
   // ผู้ใช้บริการที่จะถูกยกเลิกอาจเป็นคนละคนกับผู้ยื่น (ลูกยื่นแทนพ่อแม่ที่ย้ายไปอยู่กับญาติ
@@ -197,6 +201,32 @@ export function buildWasteCollectionCancelHtml({ form, tenant, thDate, reference
        + เลขอ้างอิง) ตัดออกแล้วเหลือที่นี่ที่เดียว */
     .reference { margin: 0; font-size: 11pt; color: #333; }
 
+    /* โหมดบีบระยะ — ใช้เฉพาะใบที่มีช่องลงนามเจ้าหน้าที่ต่อท้าย (เจ้าของระบบสั่ง 2569-10-05
+       ว่าคำขอทุกใบต้องจบแผ่นเดียว) บีบเฉพาะ "ระยะเว้นระหว่างบล็อก" ไม่แตะขนาดฟอนต์
+       ขอบกระดาษ หรือถ้อยคำ · ใบที่ประชาชนพิมพ์เองไม่มีคลาสนี้ ระยะเดิมจึงไม่เปลี่ยน
+       ⚠️ .signature-space คือที่เว้นให้เซ็นด้วยปากกา ลดได้ถึง 12mm เท่านั้น (ลายเซ็นสูง 8-10mm) */
+    .sheet--staff p { margin-bottom: 3mm; }
+    .sheet--staff .signature { margin-top: 4mm; }
+    .sheet--staff .signature-space { height: 10mm; }
+    .sheet--staff .reference { margin-top: 3mm; }
+    /* ระยะ "รอบ" บล็อกลงนามเป็นเรื่องของใบปลายทาง (กติกาใน govSignBlock.js) ใบนี้เนื้อหา
+       ยาวกว่าใบอื่นจึงต้องกระชับกว่าค่ากลาง — วัดแล้วเหลือขอบ ~20mm ก่อนตกหน้า 2 */
+    .sheet--staff .staff-sign { margin-top: 5mm; }
+    .sheet--staff .staff-sign-row--last { margin-top: 6mm; }
+    /* ⚠️ ช่องเว้นประทับตราขั้นต่ำ 55mm มีไว้ดันบรรทัดเลขอ้างอิงลงไปติดขอบล่างของใบที่
+       ประชาชนถือไป — ใบฝั่งเจ้าหน้าที่เอาพื้นที่ส่วนนั้นไปใช้เป็นช่องลงนาม 3 ตำแหน่งแทน
+       จึงเหลือ 8mm และต้อง "ไม่ยืด" ด้วย (flex-grow 0) ไม่งั้นมันกินพื้นที่ว่างทั้งหมด
+       แล้วดันช่องลงนามตกไปหน้า 2 เสมอ แม้เนื้อหาจะสั้น (วัดจริง 282mm แล้ว 235mm ก็ยัง 2 หน้า) */
+    /* ใบฝั่งเจ้าหน้าที่ไม่ต้องเว้นที่ตรายางแยกอีกก้อน — ตราประทับลงคู่กับช่องลงนามท้ายใบ
+       และที่ว่าง 55mm ก้อนนี้คือสาเหตุที่ใบล้นไปหน้า 2 (วัดจริง 2569-10-05) */
+    .sheet--staff .stamp-space { display: none; }
+    /* ใบฝั่งเจ้าหน้าที่ไม่ต้องยืดเต็มหน้า — บรรทัดเลขอ้างอิงไม่ต้องไปติดขอบล่างแล้ว
+       เพราะมีช่องลงนาม 3 ตำแหน่งปิดท้ายใบแทน ถ้ายังยืดเต็มหน้าอยู่ ของที่ต่อท้ายจะเลย
+       ขอบล่างแล้วได้กระดาษแผ่นที่ 2 เปล่าๆ ออกมา (เจอจริง 2569-10-05) */
+    .sheet--staff { min-height: 0; }
+${govSignBlockCss()}
+${govStaffSignBlockCss()}
+
     @media screen {
       body { background: #e5e7eb; padding: 12px; }
       .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm 20mm 9mm 30mm; background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
@@ -211,7 +241,7 @@ export function buildWasteCollectionCancelHtml({ form, tenant, thDate, reference
   </style>
 </head>
 <body>
-  <main class="sheet" data-pdf-page>
+  <main class="sheet${signatories ? ' sheet--staff' : ''}" data-pdf-page>
     <div class="title">ใบแจ้งขอยกเลิกการเก็บขนขยะมูลฝอย</div>
     <p class="write-at">เขียนที่ ${line(orgName, '52mm')}</p>
     <p class="date">วันที่ ${line(thDate || '', '48mm')}</p>
@@ -256,6 +286,10 @@ export function buildWasteCollectionCancelHtml({ form, tenant, thDate, reference
 
     ${/* ที่ว่างให้เจ้าหน้าที่ปั๊มตรายางรับเรื่อง/สั่งการ ระบบไม่พิมพ์ช่องลงนามผู้มีอำนาจให้
          เพราะตรายางของ อปท. มีช่องลงนามอยู่ในตัวอยู่แล้ว */''}
+${/* ⚠️ ช่องลงนามเจ้าหน้าที่ต้องอยู่ "ก่อน" ช่องเว้นตรายาง — ใบนี้ให้ .stamp-space ยืดดัน
+     บรรทัดเลขอ้างอิงไปติดขอบล่างเสมอ (flex) ถ้าเอาช่องลงนามไปต่อท้ายบรรทัดนั้น มันจะไหล
+     ออกนอกกล่องหน้ากระดาษกลายเป็นหน้าที่ 2 ทันที ทั้งที่เนื้อหารวมแค่ 235mm (วัดจริง) */''}
+${govStaffSignBlockHtml({ signatories, tenant, departmentName })}
     <div class="stamp-space"></div>
 
     ${/* บรรทัดเดียวที่บอกที่มาของเอกสาร อยู่ล่างสุดของหน้า — เดิมมี .signed-note ใต้ช่องลงนาม

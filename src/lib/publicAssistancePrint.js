@@ -1,5 +1,6 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { govNameBlank, govSignBlockCss, govSignRow } from './govSignBlock.js'
+import { govStaffSignBlockCss, govStaffSignBlockHtml } from './govStaffSignBlock.js'
 import { getOrgTerms, orgHeadTitle, orgOfficeName } from './orgTerms.js'
 import { MONTHS_TH } from './thaiDate.js'
 
@@ -141,6 +142,7 @@ export function attachmentPageCount(rows) {
  */
 export function buildPublicAssistanceRequestHtml({
   form, tenant, docDate, referenceNo = '', departments = [], signatories = null,
+  departmentName = '',
   // ⚠️ ถอดตารางท้ายใบ (สำหรับเจ้าหน้าที่ / ความเห็นปลัด / คำอนุมัติ / ช่องติ๊กส่วนงาน /
   // ผลการดำเนินการ) ออกชั่วคราวตามคำสั่งผู้ใช้ระบบ 2569-09-09 — โค้ดกับเทสต์ยังอยู่ครบ
   // เปิดกลับด้วย includeOfficerBlock: true ที่จุดเรียกใช้ ไม่ต้องรื้อไฟล์นี้ใหม่
@@ -148,6 +150,11 @@ export function buildPublicAssistanceRequestHtml({
   includeOfficerBlock = false,
 }) {
   const data = form || {}
+  // ช่องลงนามเจ้าหน้าที่ใช้เมื่อไม่ได้เปิดตารางท้ายใบ (ตารางนั้นมีช่องความเห็นปลัด/คำสั่งนายก
+  // ในตัวอยู่แล้ว จะได้ไม่มีช่องลงนามซ้ำสองชุดในใบเดียว)
+  // ⚠️ ใบที่มีบล็อกนี้ต้องลดบรรทัดเขียนมือลงด้วย กติกาเดียวกับตอนเปิดตารางท้ายใบ —
+  // ไม่งั้นบล็อกไปจบพอดีขอบล่าง 276mm ไม่เหลือขอบเผื่อฟอนต์ต่างเครื่องเลย (วัดจริง 2569-10-05)
+  const hasStaffSignBlock = !includeOfficerBlock && Boolean(signatories)
   const applicant = data.applicant || {}
   const applicantName = `${applicant.title || ''}${applicant.first || ''} ${applicant.last || ''}`.trim()
   const officeName = orgOfficeName(tenant)
@@ -336,10 +343,16 @@ export function buildPublicAssistanceRequestHtml({
       .close-sign .signature, .close-sign .signature .sign-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
     }
 ${govSignBlockCss()}
+${govStaffSignBlockCss()}
     .signed-note { margin: auto 0 0; font-size: 10pt; color: #333; white-space: normal; line-height: 1.2; }
     /* เปิดตารางท้ายใบเมื่อไหร่ ตารางเป็นตัวยึดขอบล่างแทน (ดู .officer) บรรทัดนี้จึงต่อท้ายตาราง
        ตามปกติ ถ้าปล่อยให้ auto ทั้งคู่ ที่ว่างจะถูกแบ่งครึ่งแล้วตารางลอยขึ้นกลางหน้า */
     .officer + .signed-note { margin-top: 2mm; }
+    /* ใบนี้ยืดเต็มหน้าเสมอ (min-height 276mm) ของท้ายใบจึงต้องมี margin-top:auto ดันชิดขอบล่าง
+       เดิมเป็นหน้าที่ของ .signed-note — พอมีช่องลงนามเจ้าหน้าที่ต่อท้าย ตัวที่ต้องชิดล่างคือ
+       ช่องลงนาม ส่วนบรรทัดกำกับกลับไปอยู่ติดเนื้อความตามเดิม */
+    .sheet--staff .signed-note { margin-top: 2mm; }
+    .sheet--staff .staff-sign { margin-top: auto; }
 
     /* บล็อกเจ้าหน้าที่ท้ายหน้า 1 — ตารางเส้นจริงตามต้นฉบับ
        ⚠️ 12pt เป็นข้อยกเว้นเรื่อง "ขนาดตัวอักษร" ที่มาตรฐานกลางอนุญาตให้ทำได้ในเอกสารตาราง
@@ -403,7 +416,7 @@ ${govSignBlockCss()}
   </style>
 </head>
 <body>
-  <main class="sheet sheet--request" data-pdf-page>
+  <main class="sheet sheet--request${hasStaffSignBlock ? ' sheet--staff' : ''}" data-pdf-page>
     <div class="title">แบบคำร้องขอรับการช่วยเหลือประชาชน</div>
 
     <div class="write-at">
@@ -434,10 +447,10 @@ ${govSignBlockCss()}
          ช่องที่ผู้ยื่นกรอกมาแล้วไม่ใช้เส้นประ ค่านี้จึงมีผลกับใบเปล่าที่พิมพ์แจกหน้าเคาน์เตอร์
          กับใบที่เว้นช่องไว้เท่านั้น -->
     <p class="section-head">๑. ปัญหาความเดือดร้อน</p>
-    ${writeLines(data.problem, includeOfficerBlock ? 7 : 15)}
+    ${writeLines(data.problem, includeOfficerBlock ? 7 : (hasStaffSignBlock ? 9 : 15))}
 
     <p class="section-head">๒. ความต้องการรับการช่วยเหลือ</p>
-    ${writeLines(data.need, includeOfficerBlock ? 3 : 6)}
+    ${writeLines(data.need, includeOfficerBlock ? 3 : (hasStaffSignBlock ? 4 : 6))}
 
     <p class="closing">จึงเรียนมาเพื่อโปรดพิจารณาให้ความช่วยเหลือ</p>
     <!-- คำลงท้ายกับช่องลงชื่ออยู่กล่องเดียวกันเพื่อใช้คอลัมน์ร่วมกัน (ดูเหตุผลที่ .close-sign) ลำดับในเอกสารยังเดิม -->
@@ -502,6 +515,9 @@ ${govSignBlockCss()}
          ใบนี้ไม่มีบรรทัด .origin แยกต่างหาก บรรทัดนี้จึงทำหน้าที่นั้นแทน ห้ามลบทั้งบรรทัด */''}
     <p class="signed-note">${esc(govEServiceOriginText(tenant))}${
       referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>
+${/* ช่องลงนามเจ้าหน้าที่ชุดกลาง — ใช้เมื่อไม่ได้เปิดตารางท้ายใบ (ซึ่งมีช่องความเห็นปลัด/
+     คำสั่งนายกในตัวอยู่แล้ว) เปิดตารางกลับมาเมื่อไหร่ต้องไม่พิมพ์ซ้ำสองชุด */''}
+${hasStaffSignBlock ? govStaffSignBlockHtml({ signatories, tenant, departmentName }) : ''}
   </main>
 
   ${attachmentHtml}
