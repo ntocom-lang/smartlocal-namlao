@@ -292,22 +292,22 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
         {/* Header */}
         <div className="shrink-0 px-5 pt-6 pb-5"
              style={{ background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)' }}>
-          <div className="absolute top-4 right-4 flex gap-2">
+          <div className="mb-3 flex justify-end gap-2">
             <button onClick={handlePrint}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-colors"
               title="พิมพ์แบบคำร้องเดิมของหน่วยงาน">
               <Printer size={16} /> พิมพ์แบบคำร้อง
             </button>
-            <button onClick={onClose}
-              className="p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors">
-              <X size={16} />
+            <button onClick={onClose} aria-label="ปิด"
+              className="inline-flex min-h-11 items-center gap-1 rounded-xl bg-white px-3 text-sm font-bold text-gray-800 shadow-lg transition-colors hover:bg-gray-100 active:scale-95">
+              <X size={20} strokeWidth={2.5} /> ปิด
             </button>
           </div>
           <div className="flex items-start gap-3">
             <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl shrink-0">
               {catEmoji}
             </div>
-            <div className="flex-1 min-w-0 pr-36">
+            <div className="flex-1 min-w-0">
               <p className="text-white/70 text-xs">งานที่ได้รับมอบหมาย</p>
               <p className="text-white font-bold text-base mt-0.5">{catLabel}</p>
               {c.subject && <p className="text-white/80 text-sm mt-1">{c.subject}</p>}
