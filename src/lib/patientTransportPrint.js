@@ -141,8 +141,32 @@ function mayorSignWidth(...texts) {
 // "ตำแหน่ง …" ในย่อหน้าเปิดของใบคำขอรับสวัสดิการ — ขึ้นบรรทัดใหม่ได้เฉพาะที่ช่องว่างในตำแหน่งเอง ไม่ตัดกลางคำ
 // (เคยตัดเป็น "…ส่วนตำบลทุ่ง" / "แค้ว" คนละบรรทัด เจ้าของระบบแจ้ง 2569-10-06) และไม่ปล่อยคำว่า "ตำแหน่ง" ค้างท้ายบรรทัดแยกจากตำแหน่ง
 // ตำแหน่งปกติไม่มีช่องว่าง (นายกองค์การบริหารส่วนตำบลทุ่งแค้ว) จึงเป็นก้อนเดียวและย้ายทั้งก้อนลงบรรทัดถัดไปเมื่อไม่พอที่
+// วลี "มีความประสงค์" ที่ตามหลังก็ผูกเป็นก้อนเดียวในแม่แบบ ไม่ให้ "มี" ค้างท้ายบรรทัดแล้ว "ความประสงค์" ขึ้นบรรทัดใหม่
 function positionPhrase(title) {
-  return esc(title).split(' ').map((word, index) => `<span class="nb">${index === 0 ? 'ตำแหน่ง&nbsp;' : ''}${word}</span>`).join(' ')
+  return esc(title).split(' ').map((word, index) => `<span class="nb fund-position">${index === 0 ? 'ตำแหน่ง&nbsp;' : ''}${word}</span>`).join(' ')
+}
+
+// ย่อหน้าเปิดของใบคำขอรับสวัสดิการ: ปกติเยื้อง 2.5cm แต่ถ้า "ข้าพเจ้า [ชื่อนายก] ตำแหน่ง …" ยาวจนตำแหน่งทั้งก้อนต้องลงบรรทัดสอง บรรทัดแรกจะเหลือแค่
+// "ข้าพเจ้า [ชื่อ]" แล้วว่างยาวท้ายบรรทัด (เจ้าของระบบแจ้ง 2569-10-06 พร้อมภาพ ให้ขยับย่อหน้าเข้ามาเพื่อให้ชื่อกับตำแหน่งอยู่บรรทัดเดียวกัน)
+// จึงลดการเยื้องเป็นขั้น 20/15/10mm เท่าที่จำเป็น ใบที่พออยู่แล้วคง 2.5cm ไม่พอแม้ที่ 10mm ก็คง 2.5cm แล้วให้ตำแหน่งทั้งก้อนลงบรรทัดถัดไป (positionPhrase)
+// ประมาณความกว้างจากค่าที่วัดจริง: บรรทัด "ข้าพเจ้า [ชื่อ] ตำแหน่ง [คำแรกของตำแหน่ง]" = 139.0 / 143.7 / 124.4 / 158.0 / 129.2mm เมื่อมีอักษรไทยที่กินที่
+// (ไม่นับช่องว่าง สระบน/ล่าง วรรณยุกต์) 53 / 55 / 47 / 62 / 49 ตัว กับช่องว่าง 4 จุด → ราว 2.4mm ต่อตัว + ~3mm ต่อช่องว่าง (ช่องว่างรอบชื่อกว้างกว่าช่องว่างปกติ)
+// ใช้ 2.45/3.0 ให้สูงกว่าจริง 3–6mm แล้วเผื่อเพิ่มอีก 3mm เพราะฟอนต์ต่างเครื่องกว้างไม่เท่ากัน (ประมาณสูงไป = ได้ย่อหน้าตื้นไปหน่อย ไม่ใช่ล้น)
+// ⚠️ ครั้งแรกนับช่องว่างเป็นตัวอักษรแล้วคูณ 0.6 ทำให้ประมาณต่ำไป 7mm บรรทัดแรกชิดขอบขวา — เทสต์ต้องเหลือที่ว่างท้ายบรรทัด ≥ 3mm
+const FUND_INTRO_INDENTS_MM = [25, 20, 15, 10]
+const FUND_INTRO_PRINT_WIDTH_MM = 160  // A4 210 − ขอบซ้าย 30 − ขอบขวา 20
+const THAI_TEXT_MM_PER_CHAR = 2.45
+const THAI_TEXT_MM_PER_SPACE = 3.0
+const thaiTextMm = text => {
+  const value = String(text ?? '')
+  return [...value].filter(char => char !== ' ' && !isThaiNonSpacing(char)).length * THAI_TEXT_MM_PER_CHAR
+    + [...value].filter(char => char === ' ').length * THAI_TEXT_MM_PER_SPACE
+}
+function fundIntroIndentMm(name, title) {
+  const nameMm = String(name ?? '').trim() ? thaiTextMm(name) : Number.parseFloat(REQUESTER_LINE_W)
+  const need = thaiTextMm(`ข้าพเจ้า  ตำแหน่ง ${String(title ?? '').split(' ')[0]}`) + nameMm
+  const room = FUND_INTRO_PRINT_WIDTH_MM - need - 3
+  return FUND_INTRO_INDENTS_MM.find(mm => mm <= room) ?? FUND_INTRO_INDENTS_MM[0]
 }
 
 // ที่อยู่ผู้ยื่น/ผู้ป่วยที่กรอกมาเป็นข้อความอิสระอยู่แล้ว ไม่ต้องประกอบใหม่จากรายช่อง
@@ -472,6 +496,7 @@ function fundFormSheet({ header, form = {}, parent = {}, tenant, mayor = null, r
   // ช่องลงนามด้านล่างไม่ส่ง signed: นายกเซ็นปากกา ห้ามพิมพ์ชื่อเป็นลายมือชื่อ (คอมเมนต์อยู่ที่นี่ ไม่ใส่ใน HTML เพราะจะติดไปกับใบพิมพ์)
   const mayorTitle = textOr(mayor?.title, orgHeadTitle(tenant))
   const mayorSignW = mayorSignWidth(mayorTitle, `(${textOr(mayor?.name)})`)
+  const introIndent = fundIntroIndentMm(mayor?.name, mayorTitle)
   const fundName = textOr(header?.partner_name_snapshot, 'กองทุนเจ้าของรถ')
   const recipient = textOr(header?.recipient_title_snapshot, `ประธาน${fundName}`)
   const patientName = textOr(form.patient_name, requesterName)
@@ -503,7 +528,7 @@ function fundFormSheet({ header, form = {}, parent = {}, tenant, mayor = null, r
   </div>
   <p class="kv"><span class="bold">เรื่อง</span>&nbsp;&nbsp;ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย</p>
   <p class="kv"><span class="bold">เรียน</span>&nbsp;&nbsp;${esc(recipient)}</p>
-  <p class="fund-intro">ข้าพเจ้า ${line(mayor?.name, REQUESTER_LINE_W)} ${positionPhrase(mayorTitle)} มีความประสงค์ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยจากกองทุน รายละเอียดตามตารางท้ายนี้</p>
+  <p class="fund-intro"${introIndent === FUND_INTRO_INDENTS_MM[0] ? '' : ` style="text-indent:${introIndent}mm"`}>ข้าพเจ้า ${line(mayor?.name, REQUESTER_LINE_W)} ${positionPhrase(mayorTitle)} <span class="nb">มีความประสงค์</span>ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยจากกองทุน รายละเอียดตามตารางท้ายนี้</p>
   <table class="fund-details"><tbody>${rows.map(([label, value]) => `<tr><th scope="row">${esc(label)}</th><td>${esc(value) || '&nbsp;'}</td></tr>`).join('')}</tbody></table>
   <!-- หลักฐานเป็นช่องให้ระบุตามที่กองทุนกำหนด ไม่บังคับแนบหรือเพิ่มการเก็บข้อมูลในระบบ -->
   <p class="fund-evidence">หลักฐาน ${box()} ใบนัดแพทย์ ${box()} อื่นๆ ${line('', '25mm')}</p>
