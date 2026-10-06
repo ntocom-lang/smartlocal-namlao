@@ -20,6 +20,7 @@ import {
   buildTripForwardLetterHtml, buildTripMonthReportHtml, tripPassengers, writeAndPrint, PRINT_DIALOG_DELAY_MS,
 } from '../src/lib/patientTransportPrint.js'
 import { bookingLetter } from '../src/lib/patientBooking.js'
+import { pickPatientRequestDepartment, resolvePatientRequestSignatories } from '../src/lib/patientRequestSignatories.js'
 import { thaiDateFromDateInput } from '../src/lib/thaiDate.js'
 import { assertSignBlockStandard, assertSignLinesAligned, measureSignRows, measureTextCenterMm } from './lib/signBlockChecks.mjs'
 import { addressFromMap, joinPickup, pickupSentence, stripForeignParts } from '../src/lib/pickupText.js'
@@ -333,6 +334,96 @@ const checks = [
           }
         } finally { await page.close() }
       }
+    },
+  },
+  {
+    // เจ้าของระบบสั่ง 2569-10-06: ใบคำขอรถรับ-ส่งผู้ป่วยที่เจ้าหน้าที่พิมพ์ (ภาพแรก) เพิ่มช่องลงนาม ผอ.กอง / ปลัด / นายก ตามผังใบคำขอบริการอื่น
+    // ชื่อ-ตำแหน่งดึงจากทะเบียน "ผู้ลงนามเอกสาร" · กองที่ถือเรื่อง = กองสวัสดิการสังคม (ที่ทุ่งแค้ว) ไม่มีกองนี้ใช้สำนักปลัดแทน
+    // ⚠️ ไม่พิมพ์ชื่อเป็นลายมือชื่อ — เวียนเซ็นด้วยปากกา · ใบฝั่งประชาชนไม่ส่ง signatories จึงไม่มีช่องนี้ (ตรวจใน test:staff-sign)
+    name: 'request-form-staff-sign-block-from-registry',
+    reason: 'ใบคำขอที่เจ้าหน้าที่พิมพ์ต้องมีช่องลงนาม 3 ตำแหน่ง ชื่อ/ตำแหน่งมาจากทะเบียนผู้ลงนาม ผอ.กองเป็นของกองสวัสดิการสังคม (ไม่มีใช้สำนักปลัด)'
+      + ' ยังไม่ตั้งผู้ลงนามได้เส้นประ+ตำแหน่งสำรอง · ไม่มีช่อง .sign-signed ในบล็อก · จบ 1 แผ่นแม้ข้อมูลยาวสุด',
+    async run(browser) {
+      const row = (role, name, extra = {}) => ({
+        signatory_role: role, department_id: null, custom_label: null, manual_name: name, title_override: null,
+        effective_from: '2020-01-01', effective_to: null, profile: null, ...extra,
+      })
+      const DEPTS = [
+        { id: 'd-general', code: 'general', name: 'สำนักปลัด' },
+        { id: 'd-welfare', code: 'welfare', name: 'กองสวัสดิการสังคม' },
+        { id: 'd-eng', code: 'engineering', name: 'กองช่าง' },
+      ]
+      const MAYOR_ROW = row('mayor', 'นายกันตพงษ์ คำปลูก', { title_override: 'นายกองค์การบริหารส่วนตำบลทุ่งแค้ว' })
+      const CLERK_ROW = row('clerk', 'นายปริญญา เทียมแสน', { title_override: 'ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว' })
+      const WELFARE_HEAD = row('department_head', 'นายสวัสดิ์ สังคมดี', { department_id: 'd-welfare' })
+      const ENG_HEAD = row('department_head', 'นายเอกชัย ช่างดี', { department_id: 'd-eng' })
+      const GENERAL_HEAD = row('department_head', 'นายหัวหน้า สำนักปลัด', { department_id: 'd-general' })
+
+      // กติกาหากอง (ตรงกับตัวเดินเรื่องคำขอรถรับ-ส่งในฐานข้อมูล): รหัส welfare → ชื่อมี "สวัสดิการ" → สำนักปลัด → ไม่เจอเลยเป็น null
+      assert.equal(pickPatientRequestDepartment(DEPTS).id, 'd-welfare')
+      assert.equal(pickPatientRequestDepartment([{ id: 'x', code: '', name: 'ศูนย์สวัสดิการสังคม' }, DEPTS[0]]).id, 'x', 'ชื่อมีคำว่าสวัสดิการต้องชนะสำนักปลัด')
+      assert.equal(pickPatientRequestDepartment([{ id: 'a', code: 'x', name: 'กองสวัสดิการเด็ก' }, { id: 'b', code: 'WELFARE', name: 'กองอื่น' }]).id, 'b', 'รหัส welfare ต้องมาก่อนการเทียบชื่อ')
+      assert.equal(pickPatientRequestDepartment([DEPTS[2], DEPTS[0]]).id, 'd-general', 'ไม่มีกองสวัสดิการให้ใช้สำนักปลัด')
+      assert.equal(pickPatientRequestDepartment([{ id: 'p', name: 'สำนักปลัด' }]).id, 'p', 'สำนักปลัดเทียบด้วยชื่อได้เมื่อไม่มีรหัส')
+      assert.equal(pickPatientRequestDepartment([DEPTS[2]]), null)
+      assert.equal(pickPatientRequestDepartment([]), null)
+      // ผู้ลงนามที่พ้นวาระแล้วต้องไม่ถูกพิมพ์ (กติกาเดียวกับ pickSignatory ของใบอื่น)
+      const expired = resolvePatientRequestSignatories({ departments: DEPTS, registry: [{ ...WELFARE_HEAD, effective_to: '2020-12-31' }] })
+      assert.equal(expired.signatories.department_head, null)
+
+      const cases = [
+        ['กองสวัสดิการสังคมมีผู้ลงนาม', DEPTS, [MAYOR_ROW, CLERK_ROW, WELFARE_HEAD, ENG_HEAD, GENERAL_HEAD], {
+          head: ['(นายสวัสดิ์ สังคมดี)', 'ผู้อำนวยการกองสวัสดิการสังคม'], absent: ['นายเอกชัย', 'นายหัวหน้า'],
+        }],
+        ['ไม่มีกองสวัสดิการสังคม ใช้สำนักปลัด', [DEPTS[0], DEPTS[2]], [MAYOR_ROW, CLERK_ROW, WELFARE_HEAD, ENG_HEAD, GENERAL_HEAD], {
+          head: ['(นายหัวหน้า สำนักปลัด)', 'หัวหน้าสำนักปลัด'], absent: ['นายเอกชัย', 'นายสวัสดิ์'],
+        }],
+        ['มีกองแต่ยังไม่ตั้งผู้ลงนามของกอง', DEPTS, [MAYOR_ROW, CLERK_ROW, ENG_HEAD], {
+          head: [null, 'ผู้อำนวยการกองสวัสดิการสังคม'], absent: ['นายเอกชัย'],
+        }],
+        ['อ่านทะเบียนไม่ได้ ทุกช่องว่าง', DEPTS, [], {
+          head: [null, 'ผู้อำนวยการกองสวัสดิการสังคม'], clerk: [null, 'ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว'], mayor: [null, 'นายกองค์การบริหารส่วนตำบลทุ่งแค้ว'], absent: [],
+        }],
+      ]
+      for (const [label, departments, registry, expected] of cases) {
+        const resolved = resolvePatientRequestSignatories({ departments, registry })
+        const page = await render(browser, buildBookingRequestFormHtml({ tenant: TENANT, booking: TRIP_BOOKINGS[0], partner: PARTNER, ...resolved }))
+        try {
+          const view = await page.evaluate(() => {
+            const block = document.querySelector('.staff-sign')
+            return {
+              cells: block ? [...block.querySelectorAll('.staff-sign-cell')].map(cell => [...cell.querySelectorAll('.sign-below')].map(el => el.textContent.trim())) : [],
+              signedInBlock: block ? block.querySelectorAll('.sign-signed').length : -1,
+              lines: block ? block.querySelectorAll('.sign-line').length : -1,
+              requesterSigned: document.querySelectorAll('.request-sign .sign-signed').length,
+              text: document.body.innerText,
+            }
+          })
+          assert.equal(view.cells.length, 3, `${label}: ต้องมีช่องลงนามเจ้าหน้าที่ 3 ตำแหน่ง`)
+          const [head, clerk, mayor] = view.cells
+          const same = (cell, [name, title], what) => {
+            if (name) assert.equal(cell[0], name, `${label}: ชื่อ${what}`)
+            else assert.match(cell[0], /^\(\.{20,}\)$/, `${label}: ${what}ไม่มีชื่อต้องเป็นวงเล็บว่างให้เขียนมือ — "${cell[0]}"`)
+            assert.equal(cell[1], title, `${label}: ตำแหน่ง${what}`)
+          }
+          same(head, expected.head, 'ผอ.กอง')
+          same(clerk, expected.clerk ?? ['(นายปริญญา เทียมแสน)', 'ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว'], 'ปลัด')
+          same(mayor, expected.mayor ?? ['(นายกันตพงษ์ คำปลูก)', 'นายกองค์การบริหารส่วนตำบลทุ่งแค้ว'], 'นายก')
+          for (const name of expected.absent) assert.ok(!view.text.includes(name), `${label}: มีชื่อ ${name} ของกองอื่นติดมา`)
+          assert.equal(view.signedInBlock, 0, `${label}: ห้ามพิมพ์ชื่อเป็นลายมือชื่อในช่องลงนามเจ้าหน้าที่ (เวียนเซ็นด้วยปากกา)`)
+          assert.equal(view.lines, 3, `${label}: ทุกช่องต้องมีเส้นให้เซ็น`)
+          assert.equal(view.requesterSigned, 1, `${label}: ช่องผู้ยื่นด้านบนต้องยังอยู่เหมือนเดิม`)
+          assert.deepEqual(await sheetKinds(page), ['form'])
+          assert.ok(await sheetContentMm(page, 0) <= ONE_PAGE_BUDGET_MM, `${label}: ใบคำขอเกิน A4 หน้าเดียวเมื่อเพิ่มช่องลงนาม`)
+          await assertSignBlockStandard(page, { minRows: 4, minBelow: 7 })
+          if (label === 'กองสวัสดิการสังคมมีผู้ลงนาม' && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
+            await page.locator('.sheet').first().screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/request-form-staff-sign.png` })
+          }
+        } finally { await page.close() }
+      }
+      // ไม่ส่ง signatories (ใบฝั่งประชาชน/ผู้เรียกเดิม) = ไม่มีช่องลงนามเจ้าหน้าที่ และใบเหมือนเดิมทุกอย่าง
+      const plain = await render(browser, buildBookingRequestFormHtml({ tenant: TENANT, booking: TRIP_BOOKINGS[0], partner: PARTNER }))
+      try { assert.equal(await plain.locator('.staff-sign').count(), 0, 'ไม่ส่ง signatories ต้องไม่มีช่องลงนามเจ้าหน้าที่') } finally { await plain.close() }
     },
   },
   {

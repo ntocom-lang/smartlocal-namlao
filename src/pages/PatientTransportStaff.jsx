@@ -14,6 +14,7 @@ import { QueueReport, DriverTrips } from '../components/patientTransport/Booking
 import { buildBookingRequestFormHtml, buildBookingForwardLetterHtml, buildTripMonthReportHtml, buildPatientPrintLoadingHtml, writeAndPrint } from '../lib/patientTransportPrint'
 import { buildCommunityRequestFormHtml, buildCommunityForwardLetterHtml } from '../lib/communityTransportPrint'
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
+import { resolvePatientRequestSignatories } from '../lib/patientRequestSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
 import { TRIP_STATUS, WORKSPACE_ROW_LIMIT, workspaceTruncated, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking, isCommunity, bookingName, servicePeriodReport } from '../lib/patientBooking'
 
@@ -187,6 +188,16 @@ export default function PatientTransportStaff({ onBack } = {}) {
     const mayorRow = pickSignatory(signRes.data ?? [], { role: 'mayor' })
     return { partner: partnerRes.data, mayor: mayorRow ? { name: signatoryName(mayorRow), title: signatoryTitle(mayorRow) } : null }
   }
+  // ช่องลงนามท้ายใบคำขอถึงนายก (ผอ.กองสวัสดิการสังคม / ปลัด / นายก) — ชื่อดึงจากทะเบียน "ผู้ลงนามเอกสาร" เหมือนใบคำขอบริการอื่น
+  // (loadPrintSignatories ใน StaffDashboard.jsx) โหลดตอนกดพิมพ์ ไม่ใช่ตอนเปิดรายการ · กองที่ถือเรื่อง: กองสวัสดิการสังคม ถ้าไม่มีใช้สำนักปลัด
+  // อ่านไม่ได้หรือยังไม่ได้ตั้งผู้ลงนาม = ช่องลงนามเปล่าให้เขียนมือ ไม่ใช่ไม่มีช่อง และไม่ขวางการพิมพ์ (ใบเวียนเซ็นด้วยปากกาทุกใบ)
+  async function requestSignContext() {
+    const [deptRes, signRes] = await Promise.all([
+      supabase.from('departments').select('id,code,name').eq('municipality_id', tenantId).order('sort_order'),
+      supabase.from('document_signatories').select(SIGNATORY_REGISTRY_SELECT).eq('municipality_id', tenantId).eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
+    ])
+    return resolvePatientRequestSignatories({ departments: deptRes.data ?? [], registry: signRes.data ?? [] })
+  }
   // เปิดหน้าต่างทันทีตอนกด แล้วค่อยเติมเนื้อหาหลังโหลดข้อมูล — เปิดหลัง await เบราว์เซอร์จะบล็อกเป็นป๊อปอัป
   async function printInNewWindow(build, failText, beforePrint) {
     const win = window.open('', '_blank', 'width=1100,height=900')
@@ -213,6 +224,8 @@ export default function PatientTransportStaff({ onBack } = {}) {
   // ใบคำขอพิมพ์แยกได้ทั้งก่อนและหลังยืนยันรถ โดยใช้ข้อมูลเที่ยวปัจจุบันเมื่อมีแล้ว
   const printRequest = booking => printInNewWindow(async () => (isCommunity(booking) ? buildCommunityRequestFormHtml : buildBookingRequestFormHtml)({
     tenant, booking: printBooking(booking), trip: workspace.trips.find(t => t.id === booking.trip_id), ...(await fundContext()),
+    // ใบคำขอชุมชนเป็นเอกสารร่างอีกชุด ไม่อยู่ในคำสั่งช่องลงนาม 3 ตำแหน่ง
+    ...(isCommunity(booking) ? {} : await requestSignContext()),
   }), 'เตรียมใบคำขอไม่สำเร็จ')
   const printPeriod = (period, service) => printInNewWindow(async () => {
     const [data, context] = await Promise.all([servicePeriodReport(async (name, args) => {

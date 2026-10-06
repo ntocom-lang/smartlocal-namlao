@@ -17,6 +17,7 @@ import { buildWaterServiceFormHtml } from '../src/lib/waterSupplyRequestPrint.js
 import { buildWasteCollectionRequestHtml } from '../src/lib/wasteCollectionRequestPrint.js'
 import { buildWasteCollectionCancelHtml } from '../src/lib/wasteCollectionCancelPrint.js'
 import { buildPublicAssistanceRequestHtml } from '../src/lib/publicAssistancePrint.js'
+import { buildBookingRequestFormHtml } from '../src/lib/patientTransportPrint.js'
 import { assertSignBlockStandard } from './lib/signBlockChecks.mjs'
 
 const TENANT = {
@@ -78,8 +79,27 @@ const ASSISTANCE_FORM = {
   ],
 }
 
+// คำขอรถรับ-ส่งผู้ป่วยในระบบจองคิว (เจ้าของระบบสั่ง 2569-10-06) — ข้อมูลยาวสุดที่เจอจริงเพื่อให้ใบสูงที่สุด
+const PATIENT_BOOKING = {
+  id: 'a1b2c3d4-0000-4000-8000-000000000001', trip_id: null, status: 'submitted', entry_channel: 'online',
+  patient_name: 'นางประกายมาศ ศรีวิชัยเลิศสกุลวงศ์', requester_name: 'นางสาวสุดารัตน์ ศรีวิชัยเลิศสกุลวงศ์', phone: '0812345678',
+  relation: 'relative', companions: 2, return_mode: 'wait', mobility: 'wheelchair',
+  pickup: 'บ้านเลขที่ 199/25 หมู่ที่ 12 ตำบลทุ่งแค้ว อำเภอหนองม่วงไข่ จังหวัดแพร่ 54170 บ้านหลังคาสีน้ำเงินตรงข้ามศาลาประชาคมหมู่บ้าน',
+  route_label: 'โรงพยาบาลแพร่ อาคารผู้ป่วยนอก ชั้น 2 คลินิกไตเทียม',
+  appointment_at: '2026-10-05T08:30:00+07:00', return_at: '2026-10-05T14:00:00+07:00',
+  created_at: '2026-09-10T09:15:00+07:00', consent_at: '2026-09-10T09:15:00+07:00',
+}
+
 // departmentName ตั้งคนละกองโดยตั้งใจ เพื่อให้เห็นว่าชื่อตำแหน่งสำรองมาจากกองที่ถือเรื่องจริง
 const FORMS = [
+  {
+    // กองที่ถือเรื่อง = กองสวัสดิการสังคม (ไม่มีกองนี้ใช้สำนักปลัด) — ดู patientRequestSignatories.js
+    label: 'ใบคำขอรถรับ-ส่งผู้ป่วย (ระบบจองคิว)', departmentName: 'กองสวัสดิการสังคม',
+    headFallback: 'ผู้อำนวยการกองสวัสดิการสังคม',
+    build: extra => buildBookingRequestFormHtml({
+      tenant: TENANT, booking: PATIENT_BOOKING, partner: { name: 'กองทุนสวัสดิการชุมชนตำบลทุ่งแค้ว' }, ...extra,
+    }),
+  },
   {
     label: 'ขออนุญาตใช้น้ำประปา', departmentName: 'กองช่าง', headFallback: 'ผู้อำนวยการกองช่าง',
     build: extra => buildWaterServiceFormHtml('water_supply_request', {
