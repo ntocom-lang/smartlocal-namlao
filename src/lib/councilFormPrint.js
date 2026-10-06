@@ -1,5 +1,5 @@
 import {
-  GOV_SIGN_LINE_W, govNameBlank, govSignBlockCss, govSignRow,
+  GOV_SIGN_LINE_W, govNameBlank, govSignBlockCss, govSignRow, govSplitActingTitle,
 } from './govSignBlock.js'
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { orgClerkTitle, orgHeadTitle } from './orgTerms.js'
@@ -240,7 +240,8 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
         width: GOV_SIGN_LINE_W,
         below: [
           person?.name ? `(${esc(person.name)})` : govNameBlank(GOV_SIGN_LINE_W),
-          esc(person?.title) || esc(fallbackTitle),
+          // ตำแหน่งรักษาราชการแทนยาว ตัดหลังคำว่า "รักษาราชการแทน" เป็น 2 บรรทัด (เจ้าของระบบสั่ง 2569-10-06)
+          ...govSplitActingTitle(person?.title || fallbackTitle).map(esc),
           // 11pt — บรรทัดอ้างอิงคำสั่งมอบอำนาจใต้ชื่อผู้ลงนาม เป็นข้อความประกอบ ไม่ใช่เนื้อความ
           // จึงเล็กกว่าได้ แต่ต้องไม่เล็กจนอ่านไม่ออก (เดิม 12px = 9pt)
           person?.authority_reference
@@ -309,8 +310,10 @@ ${govSignBlockCss()}
 
   ${includeStaffSignatures ? `
   <div style="display:flex;justify-content:space-between;margin-top:24px;">
-    ${signBlock(departmentHead, departmentHeadFallback(c.department))}
-    ${signBlock(clerk, clerkTitle)}
+    ${/* แถวบนแบ่ง 46/54 ไม่ใช่ 48/48 — คอลัมน์ขวาเป็นของปลัดซึ่งอาจเป็นผู้รักษาราชการแทนที่ตำแหน่งยาวสุด
+       (ล้นขอบขวาเมื่อ 48%) เหมือนช่องลงนามเจ้าหน้าที่ใน govStaffSignBlock.js */''}
+    ${signBlock(departmentHead, departmentHeadFallback(c.department), '46%')}
+    ${signBlock(clerk, clerkTitle, '54%')}
   </div>
 
   <div style="display:flex;justify-content:flex-end;margin-top:28px;">

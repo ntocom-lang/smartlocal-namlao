@@ -15,35 +15,13 @@
 // ใบพวกนี้เวียนเซ็นด้วยปากกาในสำนักงาน ชื่อที่พิมพ์คือชื่อในวงเล็บใต้เส้นเท่านั้น
 // (ต่างจากช่องผู้ยื่นด้านบนของใบ ซึ่งผู้ยื่นยืนยันตัวตนผ่านระบบมาแล้วจริง)
 
-import { GOV_SIGN_LINE_W, govNameBlank, govSignRow } from './govSignBlock.js'
+import { GOV_SIGN_LINE_W, govNameBlank, govSignRow, govSplitActingTitle } from './govSignBlock.js'
 import { orgClerkTitle, orgHeadTitle } from './orgTerms.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[character])
-}
-
-// คำที่บอกว่าเป็นการรักษาราชการแทน — ตำแหน่งแบบ "ผู้อำนวยการกองช่าง รักษาราชการแทน ปลัด…" ยาวกว่าคอลัมน์
-// (48% ของพื้นที่พิมพ์) และ .sign-below ห้ามตัดบรรทัดเอง จึงล้นขอบขวากระดาษ
-// เจ้าของระบบสั่ง 2569-10-06: ให้ตัดหลังคำนี้ — บรรทัดแรก "ตำแหน่งเดิม + รักษาราชการแทน"
-// บรรทัดที่สอง "ตำแหน่งที่รักษาราชการแทน" (ตำแหน่งที่ไม่ใช่การรักษาราชการแทนไม่แตะ)
-const ACTING_WORDS = ['รักษาราชการแทน', 'รักษาการแทน', 'ปฏิบัติราชการแทน', 'ทำการแทน']
-
-/**
- * แบ่งชื่อตำแหน่งเป็นบรรทัดสำหรับพิมพ์ใต้เส้นลงนาม (ยังไม่ escape)
- * มีข้อความทั้งก่อนและหลังคำว่ารักษาราชการแทน = 2 บรรทัด นอกนั้นคืนบรรทัดเดียวตามเดิม
- */
-export function govSplitActingTitle(title) {
-  const text = String(title ?? '').replace(/\s+/g, ' ').trim()
-  for (const word of ACTING_WORDS) {
-    const at = text.indexOf(word)
-    if (at <= 0) continue
-    const first = text.slice(0, at + word.length).trim()
-    const second = text.slice(at + word.length).trim()
-    if (second) return [first, second]
-  }
-  return text ? [text] : []
 }
 
 /**
