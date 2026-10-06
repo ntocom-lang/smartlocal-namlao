@@ -24,6 +24,28 @@ function esc(value) {
   })[character])
 }
 
+// คำที่บอกว่าเป็นการรักษาราชการแทน — ตำแหน่งแบบ "ผู้อำนวยการกองช่าง รักษาราชการแทน ปลัด…" ยาวกว่าคอลัมน์
+// (48% ของพื้นที่พิมพ์) และ .sign-below ห้ามตัดบรรทัดเอง จึงล้นขอบขวากระดาษ
+// เจ้าของระบบสั่ง 2569-10-06: ให้ตัดหลังคำนี้ — บรรทัดแรก "ตำแหน่งเดิม + รักษาราชการแทน"
+// บรรทัดที่สอง "ตำแหน่งที่รักษาราชการแทน" (ตำแหน่งที่ไม่ใช่การรักษาราชการแทนไม่แตะ)
+const ACTING_WORDS = ['รักษาราชการแทน', 'รักษาการแทน', 'ปฏิบัติราชการแทน', 'ทำการแทน']
+
+/**
+ * แบ่งชื่อตำแหน่งเป็นบรรทัดสำหรับพิมพ์ใต้เส้นลงนาม (ยังไม่ escape)
+ * มีข้อความทั้งก่อนและหลังคำว่ารักษาราชการแทน = 2 บรรทัด นอกนั้นคืนบรรทัดเดียวตามเดิม
+ */
+export function govSplitActingTitle(title) {
+  const text = String(title ?? '').replace(/\s+/g, ' ').trim()
+  for (const word of ACTING_WORDS) {
+    const at = text.indexOf(word)
+    if (at <= 0) continue
+    const first = text.slice(0, at + word.length).trim()
+    const second = text.slice(at + word.length).trim()
+    if (second) return [first, second]
+  }
+  return text ? [text] : []
+}
+
 /**
  * ชื่อตำแหน่งสำรองของหัวหน้าส่วนราชการที่ถือเรื่อง ใช้เมื่อยังไม่ได้ตั้งผู้ลงนามของกองนั้น
  * กติกาเดียวกับใบคำร้อง (councilFormPrint.js) เพื่อให้เอกสารคนละใบของ อปท. เดียวกัน
@@ -55,7 +77,7 @@ export function govStaffSignBlockHtml({ signatories, tenant, departmentName = ''
     width: GOV_SIGN_LINE_W,
     below: [
       person?.name ? `(${esc(person.name)})` : govNameBlank(GOV_SIGN_LINE_W),
-      esc(person?.title) || esc(fallbackTitle),
+      ...govSplitActingTitle(person?.title || fallbackTitle).map(esc),
       // 11pt — เลขที่คำสั่งรักษาราชการแทน เป็นข้อความประกอบใต้ตำแหน่ง ไม่ใช่เนื้อความ
       // ผู้ลงนามที่ไม่ใช่เจ้าของตำแหน่งต้องแสดงฐานอำนาจ ไม่งั้นเอกสารถูกทักท้วงได้
       person?.authority_reference
@@ -87,6 +109,10 @@ export function govStaffSignBlockCss() {
   .staff-sign-row { display: flex; justify-content: space-between; }
   .staff-sign-row--last { justify-content: flex-end; margin-top: 8mm; }
   .staff-sign-cell { width: 48%; }
+  /* ⚠️ แถวบนแบ่ง 46/54 ไม่ใช่ 48/48 — คอลัมน์ขวาเป็นของปลัด ซึ่งบางครั้งเป็นผู้รักษาราชการแทนที่ตำแหน่งยาวที่สุด
+     ("ผู้อำนวยการกองช่าง รักษาราชการแทน" วัดแล้วล้นขอบขวา 4px เมื่อคอลัมน์ 48%) คอลัมน์ซ้ายตำแหน่งสั้นเหลือที่เหลือเฟือ */
+  .staff-sign-row:not(.staff-sign-row--last) .staff-sign-cell:first-child { width: 46%; }
+  .staff-sign-row:not(.staff-sign-row--last) .staff-sign-cell:last-child { width: 54%; }
   /* ⚠️ คอลัมน์แถวล่างกว้าง 54% ไม่ใช่ 48% เท่าแถวบน — ชื่อตำแหน่งนายกยาวกว่าปลัด
      เหตุผลเดียวกับใบคำร้อง (councilFormPrint.js) ซึ่งวัดแล้วล้นขอบขวา 4px ถ้าใช้ 48% */
   .staff-sign-row--last .staff-sign-cell { width: 54%; }`
