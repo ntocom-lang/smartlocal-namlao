@@ -10,7 +10,7 @@ import {
 import { buildPatientTransportFormHtml, buildPatientTransportLetterHtml, writeAndPrint } from '../../lib/patientTransportPrint'
 import {
   SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE,
-  pickSignatory, signatoryName, signatoryTitle,
+  pickSignatory, signatoryMoment, signatoryName, signatoryTitle,
 } from '../../lib/documentSignatories'
 
 const textCls = 'w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm'
@@ -69,7 +69,8 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
   const [events, setEvents] = useState([])
   // ข้อมูลที่ใช้เฉพาะตอนพิมพ์ — โหลดแยกและไม่กันหน้าจอ อ่านไม่ได้ก็ยังทำงานต่อได้
   // (ใบจะพิมพ์ชื่อผู้ลงนามเป็นเส้นจุดให้เขียนมือแทน ซึ่งยังใช้งานได้จริง)
-  const [printData, setPrintData] = useState({ mayor: null, partner: null })
+  // registry เก็บทั้งทะเบียน (รวมแถวที่ปิดแล้ว) แล้วเลือกนายกตอนกดพิมพ์ — ใบคำขอกับหนังสือนำส่งเป็นเอกสารคนละเวลา
+  const [printData, setPrintData] = useState({ registry: [], partner: null })
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [acting, setActing] = useState(false)
@@ -114,20 +115,16 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
       const row = headRes.data
       if (!row?.municipality_id) return
       Promise.all([
+        // ไม่กรอง is_active — ต้องมีแถวที่ปิดไปแล้วด้วย ถึงจะหาผู้ลงนาม ณ เวลาของเอกสารได้ (pickSignatory แบบมี at)
         supabase.from('document_signatories').select(SIGNATORY_REGISTRY_SELECT)
           .eq('municipality_id', row.municipality_id)
-          .eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
+          .eq('document_type', SIGNATORY_SCOPE),
         // ที่อยู่/เบอร์ของหน่วยงานปลายทางอยู่ในทะเบียน ไม่ได้ snapshot ไว้ในคำขอ — หนังสือ
         // ที่พิมพ์ซ้ำภายหลังจึงได้ที่อยู่ปัจจุบันเสมอ ซึ่งถูกต้องกว่าที่อยู่เก่าตอนยื่น
         supabase.from('referral_partners').select('address, phone').eq('id', row.partner_id).maybeSingle(),
       ]).then(([signRes, partnerRes]) => {
         if (cancelled) return
-        const registry = signRes.data ?? []
-        const mayorRow = pickSignatory(registry, { role: 'mayor' })
-        setPrintData({
-          mayor: mayorRow ? { name: signatoryName(mayorRow), title: signatoryTitle(mayorRow) } : null,
-          partner: partnerRes.data ?? null,
-        })
+        setPrintData({ registry: signRes.data ?? [], partner: partnerRes.data ?? null })
       })
     })
     return () => { cancelled = true }
@@ -227,6 +224,13 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
 
   function handlePrint(kind) {
     const build = kind === 'request' ? buildPatientTransportFormHtml : buildPatientTransportLetterHtml
+    // นายกของทั้งชุด (ใบคำขอ + หนังสือนำส่ง) = คนที่ดำรงตำแหน่งตอนส่งต่อ (ลงวันที่ย้อนหลังใช้วันที่ในหนังสือ)
+    // ยังไม่ส่งต่อ = นายกคนปัจจุบัน — เจ้าของระบบสั่ง 2569-10-06: เรื่องที่เสร็จแล้วคงชื่อเดิม เรื่องที่ค้างใช้คนใหม่
+    const at = signatoryMoment({
+      finishedAt: canEditLetter ? null : header?.forwarded_at,
+      documentDate: header?.forward_letter_date,
+    })
+    const mayorRow = pickSignatory(printData.registry, { role: 'mayor', at })
     const html = build({
       // ก่อนส่งต่อใช้ค่าจากช่องกรอกได้ทันที หลังส่งต่อใช้เลขที่/วันที่ซึ่งบันทึกไว้เท่านั้น
       header: kind === 'letter' && canEditLetter ? { ...header, forward_letter_no: letterNo.trim(), forward_letter_date: letterDate || null } : header,
@@ -234,7 +238,7 @@ export default function PatientTransportPanel({ requestId, onChanged }) {
       parent,
       partner: printData.partner,
       tenant,
-      mayor: printData.mayor,
+      mayor: mayorRow ? { name: signatoryName(mayorRow), title: signatoryTitle(mayorRow) } : null,
       // เลขอ้างอิง 8 ตัวแรกของ request id — รูปแบบเดียวกับที่ Inbox กับหน้าประชาชนแสดง
       referenceNo: String(requestId ?? '').slice(0, 8).toUpperCase(),
       docDate: parent?.created_at,

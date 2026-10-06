@@ -28,21 +28,23 @@ export function pickPatientRequestDepartment(departments) {
 }
 
 /**
- * @param {{departments: Array, registry: Array}} args registry = แถว document_signatories ที่ active (SIGNATORY_REGISTRY_SELECT)
+ * @param {{departments: Array, registry: Array, at?: string|null}} args registry = แถว document_signatories
+ *   (SIGNATORY_REGISTRY_SELECT) รวมแถวที่ปิดแล้ว · at = bookingLetterMoment() ได้ผู้ลงนามที่ดำรงตำแหน่งตอนเรื่องเสร็จ
+ *   (เจ้าของระบบสั่ง 2569-10-06 เรื่องที่เสร็จแล้วคงชื่อเดิม เรื่องที่ค้างใช้คนใหม่) ไม่ส่ง = ผู้ลงนามวันนี้
  * @returns {{departmentName: string, signatories: {department_head: object|null, clerk: object|null, mayor: object|null}}}
  *   พร้อมส่งเข้า formSheet / govStaffSignBlockHtml ได้ทันที แต่ละช่อง null = พิมพ์เส้นประให้เขียนมือ
  */
-export function resolvePatientRequestSignatories({ departments, registry }) {
+export function resolvePatientRequestSignatories({ departments, registry, at = null }) {
   const department = pickPatientRequestDepartment(departments)
   const toSignatory = row => (row ? { name: signatoryName(row), title: signatoryTitle(row) } : null)
   return {
     departmentName: department?.name ?? '',
     signatories: {
       department_head: toSignatory(department
-        ? pickSignatory(registry, { role: 'department_head', departmentId: department.id })
+        ? pickSignatory(registry, { role: 'department_head', departmentId: department.id, at })
         : null),
-      clerk: toSignatory(pickSignatory(registry, { role: 'clerk' })),
-      mayor: toSignatory(pickSignatory(registry, { role: 'mayor' })),
+      clerk: toSignatory(pickSignatory(registry, { role: 'clerk', at })),
+      mayor: toSignatory(pickSignatory(registry, { role: 'mayor', at })),
     },
   }
 }

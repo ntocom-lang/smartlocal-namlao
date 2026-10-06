@@ -27,7 +27,7 @@ import { buildWaterServiceFormHtml, WATER_FORM_TYPES } from '../lib/waterSupplyR
 import { buildPublicAssistanceRequestHtml } from '../lib/publicAssistancePrint'
 import {
   SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE,
-  pickSignatory, signatoryName, signatoryTitle,
+  pickSignatory, signatoryMoment, signatoryName, signatoryTitle,
 } from '../lib/documentSignatories'
 import { uploadFile } from '../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
@@ -386,15 +386,25 @@ const WATER_FORM_PRINT_LABELS = {
 // โหลดตอนกดพิมพ์ ไม่ใช่ตอนเปิดรายการ — ใบเดียวใช้ ไม่ควรยิงทุกครั้งที่เลื่อนดูงาน
 // อ่านไม่ได้หรือยังไม่ได้ตั้งผู้ลงนาม = ได้ช่องลงนามเปล่าให้เขียนมือ ไม่ใช่ไม่มีช่องลงนาม
 // เพราะใบพวกนี้ต้องเวียนเซ็นในสำนักงานทุกใบ
+//
+// ผู้ลงนาม = คนที่ดำรงตำแหน่งตอนเรื่องเสร็จ (ดำเนินการเสร็จสิ้น/ปฏิเสธ/ยกเลิก) · เรื่องที่ยังไม่เสร็จ = คนปัจจุบัน
+// (เจ้าของระบบสั่ง 2569-10-06 "เปลี่ยนตอนไหนก็ใช้ตั้งแต่ตอนนั้น อย่ายุ่งของเก่า" + "เรื่องค้างใช้ชื่อคนใหม่ คนเก่ากลับมาเซ็นไม่ได้")
+// เวลาที่เสร็จ: issued_at (ตอนแนบเอกสารผลลัพธ์) ถ้าไม่มีใช้ updated_at ที่ปุ่มเปลี่ยนสถานะตั้งไว้ — ตารางนี้ไม่มีคอลัมน์
+// เวลาปิดเรื่องโดยตรง ⚠️ ถ้าแก้คำขอที่เสร็จแล้วทีหลัง updated_at จะเลื่อนตาม
+const FINISHED_REQUEST_STATUSES = ['completed', 'rejected', 'cancelled']
 async function loadPrintSignatories(req) {
   const [{ data: departments }, { data: signRows }] = await Promise.all([
     supabase.from('departments')
       .select('id,name').eq('municipality_id', req.municipality_id).order('name'),
+    // ไม่กรอง is_active — ต้องมีแถวที่ปิดไปแล้วด้วย ถึงจะหาผู้ลงนาม ณ เวลาของเอกสารได้ (pickSignatory แบบมี at)
     supabase.from('document_signatories').select(SIGNATORY_REGISTRY_SELECT)
       .eq('municipality_id', req.municipality_id)
-      .eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
+      .eq('document_type', SIGNATORY_SCOPE),
   ])
   const registry = signRows ?? []
+  const at = signatoryMoment({
+    finishedAt: FINISHED_REQUEST_STATUSES.includes(req.status) ? (req.issued_at ?? req.updated_at) : null,
+  })
   const toSignatory = row => (row ? { name: signatoryName(row), title: signatoryTitle(row) } : null)
   return {
     departments: departments ?? [],
@@ -402,10 +412,10 @@ async function loadPrintSignatories(req) {
     departmentName: (departments ?? []).find(dept => dept.id === req.department_id)?.name ?? '',
     signatories: {
       department_head: toSignatory(pickSignatory(registry, {
-        role: 'department_head', departmentId: req.department_id ?? null,
+        role: 'department_head', departmentId: req.department_id ?? null, at,
       })),
-      clerk: toSignatory(pickSignatory(registry, { role: 'clerk' })),
-      mayor: toSignatory(pickSignatory(registry, { role: 'mayor' })),
+      clerk: toSignatory(pickSignatory(registry, { role: 'clerk', at })),
+      mayor: toSignatory(pickSignatory(registry, { role: 'mayor', at })),
     },
   }
 }

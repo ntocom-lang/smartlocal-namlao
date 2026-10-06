@@ -215,7 +215,8 @@ assert.ok(tripsSource.includes('const marked = defaultVehicleAuthority(signatori
 assert.ok(tripsSource.includes('organizationSignatories(signatories)'))
 // เก็บคู่ (role, label) เพราะบทบาท custom มีได้หลายแถว role อย่างเดียวชี้ไม่ถูกว่าแถวไหน
 assert.equal((tripsSource.match(/order_authority_label: form\.order_authority_role === CUSTOM_ROLE/g) ?? []).length, 3)
-assert.ok(tripsSource.includes('pickSignatory(signatories, { role: authorityRole, customLabel: authorityLabel })'))
+// at = วันที่ของใบขอ — เปลี่ยนผู้ลงนามแล้วใบเก่าต้องคงชื่อเดิม (ดู tests/signatory-as-of-document.test.mjs)
+assert.ok(tripsSource.includes('pickSignatory(signatories, { role: authorityRole, customLabel: authorityLabel, at })'))
 // กล่องผู้ลงนามอยู่ล่างสุดของทั้งสองฟอร์ม (บรรทัดสุดท้ายก่อนปิด Modal)
 assert.equal((tripsSource.match(/ {10}\{signatoryFields\}\r?\n {8}<\/Modal>/g) ?? []).length, 2)
 
