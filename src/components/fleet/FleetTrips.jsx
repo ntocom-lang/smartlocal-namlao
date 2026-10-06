@@ -9,7 +9,7 @@ import { buildFleetTripRequestHtml, resolveDeptHead, resolveOrderAuthority } fro
 import { FLEET_TRIP_KM_CONFIRM, checkTripOdometer, isImplausibleTripDistance } from '../../lib/fleetOdometer'
 import {
   CUSTOM_ROLE, SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, defaultVehicleAuthority,
-  organizationSignatories, pickSignatory, signatoryName, signatoryTitle,
+  organizationSignatories, pickSignatory, signatoryMoment, signatoryName, signatoryTitle,
 } from '../../lib/documentSignatories'
 import FleetEmptyState from './FleetEmptyState'
 import ResponsiveSelect from '../common/ResponsiveSelect'
@@ -690,10 +690,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       // ผู้ลงนามบนใบขออนุญาต (แบบ 3) มาจากทะเบียนผู้ลงนามกลางที่ อปท. ตั้งไว้
       // ไม่ใช่บัญชีที่กดอนุมัติในระบบ — คนกดอนุมัติอาจเป็นผู้ดูแลระบบยานพาหนะที่ไม่ได้
       // เป็นผู้มีอำนาจสั่งใช้รถตามคำสั่งมอบอำนาจ ยังไม่ตั้งค่า = เว้นว่างให้เซ็นสด
+      // ไม่กรอง is_active — ต้องมีแถวที่ปิดไปแล้วด้วย ถึงจะหาผู้ลงนาม ณ เวลาของเอกสารได้ (pickSignatory แบบมี at)
+      // ตัวเลือกบนฟอร์ม (pickSignatory ไม่มี at / defaultVehicleAuthority / organizationSignatories) ตัดแถวที่ปิดแล้วเอง
       supabase.from('document_signatories')
         .select(SIGNATORY_REGISTRY_SELECT)
         .eq('municipality_id', tenant.id)
-        .eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
+        .eq('document_type', SIGNATORY_SCOPE),
       // ทะเบียนพนักงานขับรถ — คนละแกนกับ fleet_role (สิทธิ์ในระบบ) อ่านผ่าน view
       // ที่ตัดเลขใบขับขี่ออกแล้วตาม PDPA เจ้าหน้าที่ทั่วไปไม่ต้องเห็นเลขใบขับขี่
       supabase.from('fleet_drivers_directory').select('profile_id,full_name,license_expires_on')
@@ -846,10 +848,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const deptHeadDeptId = t.dept_head_department_id || t.department_id || null
     const authorityRole = t.order_authority_role || 'mayor'
     const authorityLabel = t.order_authority_label || null
+    // ผู้ลงนาม = คนที่ดำรงตำแหน่งตอนอนุมัติ (approved_at · บันทึกย้อนหลังใช้วันที่เอกสาร document_date)
+    // รายการเก่าที่ผ่านอนุมัติแล้วแต่ไม่มี approved_at ใช้เวลาบันทึกแทน · ยังไม่อนุมัติ = คนปัจจุบัน
+    // (เจ้าของระบบสั่ง 2569-10-06 เปลี่ยนผู้ลงนามแล้วใบที่เสร็จแล้วคงชื่อเดิม ใบที่ค้างใช้คนใหม่)
+    const approved = Boolean(t.approved_at) || ['approved', 'in_progress', 'completed'].includes(t.status)
+    const at = signatoryMoment({ finishedAt: approved ? (t.approved_at ?? t.created_at) : null, documentDate: t.document_date })
     const deptHeadRow = deptHeadDeptId
-      ? pickSignatory(signatories, { role: 'department_head', departmentId: deptHeadDeptId })
+      ? pickSignatory(signatories, { role: 'department_head', departmentId: deptHeadDeptId, at })
       : null
-    const authorityRow = pickSignatory(signatories, { role: authorityRole, customLabel: authorityLabel })
+    const authorityRow = pickSignatory(signatories, { role: authorityRole, customLabel: authorityLabel, at })
     const win = window.open('', '_blank', 'width=900,height=760')
     if (!win) return alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
     win.document.open()

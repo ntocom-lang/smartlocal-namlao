@@ -1,5 +1,6 @@
 // Suggestions only. PostgreSQL recomputes the complete plan under the resource lock.
 import { activeOrgTerms } from './orgTerms.js'
+import { signatoryMoment } from './documentSignatories.js'
 
 // คำเรียกหน่วยงานสั้นตามประเภทจริง (อบต./ทต./ทม./ทน./อบจ.) — เดิมฝัง "อบต." ตายตัว
 // ทำให้เทศบาลเห็นข้อความผิดประเภท · org_type ที่ไม่มีตัวย่อ (เช่น 'เทศบาล' เฉยๆ) ใช้คำกลาง
@@ -319,6 +320,20 @@ export function bookingLetter(booking, trip) {
   if (trip?.forward_letter_no) return { no: trip.forward_letter_no, date: trip.forward_letter_date || confirmationDate, own: false }
   // ใบพิมพ์อาจส่งวันที่ที่เจ้าหน้าที่แก้ในร่างมาก่อนมีเลขที่ (ยังไม่บันทึกลงฐานข้อมูล)
   return { no: '', date: booking?.forward_letter_date || confirmationDate, own: false }
+}
+
+// เวลาที่ใช้หาผู้ลงนามของเอกสารชุดนี้ (ใบคำขอ + หนังสือนำส่ง) — ชุดเอกสารลงนามตอนออกหนังสือนำส่ง
+// เลือกหนังสือแบบเดียวกับ bookingLetter: เลขของคำขอเองก่อน แล้วเลขของเที่ยว
+// บันทึกเลขแล้ว = เวลาที่บันทึก (ลงวันที่ย้อนหลังใช้วันที่ในหนังสือ) · ยังไม่บันทึกเลข = เรื่องยังไม่เสร็จ ใช้คนปัจจุบัน
+// (เจ้าของระบบสั่ง 2569-10-06: เปลี่ยนผู้ลงนามแล้วเอกสารที่เสร็จแล้วคงชื่อเดิม เรื่องที่ค้างใช้คนใหม่)
+export function bookingLetterMoment(booking, trip) {
+  if (booking?.forward_letter_no) {
+    return signatoryMoment({ finishedAt: booking.forward_recorded_at, documentDate: booking.forward_letter_date })
+  }
+  if (trip?.forward_letter_no) {
+    return signatoryMoment({ finishedAt: trip.forward_recorded_at, documentDate: trip.forward_letter_date })
+  }
+  return signatoryMoment({})
 }
 
 export function staffNextAction(booking, trip) {

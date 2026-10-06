@@ -7,7 +7,7 @@ import { thaiDateFromDateInput } from '../../lib/thaiDate'
 import { buildAssetBorrowHtml } from '../../lib/assetBorrowPrint'
 import {
   SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE,
-  pickSignatory, signatoryName, signatoryTitle,
+  pickSignatory, signatoryMoment, signatoryName, signatoryTitle,
 } from '../../lib/documentSignatories'
 
 const numCls = 'w-16 rounded-lg border border-gray-200 px-2 py-1.5 text-center text-sm'
@@ -83,16 +83,20 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
       headRes.data.department_id
         ? supabase.from('departments').select('name').eq('id', headRes.data.department_id).maybeSingle()
         : Promise.resolve({ data: null }),
+      // ไม่กรอง is_active — ต้องมีแถวที่ปิดไปแล้วด้วย ถึงจะหาผู้ลงนาม ณ เวลาของเอกสารได้ (pickSignatory แบบมี at)
       supabase.from('document_signatories').select(SIGNATORY_REGISTRY_SELECT)
-        .eq('municipality_id', muni).eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
+        .eq('municipality_id', muni).eq('document_type', SIGNATORY_SCOPE),
       supabase.from('document_requests').select('permit_form_data').eq('id', requestId).maybeSingle(),
     ])
     const registry = signRes.data ?? []
     const toSignatory = row => (row ? { name: signatoryName(row), title: signatoryTitle(row) } : null)
+    // ผู้ลงนาม = คนที่ดำรงตำแหน่งตอนอนุมัติ (approved_at) · ยังไม่อนุมัติ = คนปัจจุบัน
+    // (เจ้าของระบบสั่ง 2569-10-06 เปลี่ยนผู้ลงนามแล้วใบที่เสร็จแล้วคงชื่อเดิม ใบที่ค้างใช้คนใหม่)
+    const at = signatoryMoment({ finishedAt: headRes.data?.approved_at })
     setPrintData({
       department: deptRes.data?.name ?? '',
-      clerk: toSignatory(pickSignatory(registry, { role: 'clerk' })),
-      mayor: toSignatory(pickSignatory(registry, { role: 'mayor' })),
+      clerk: toSignatory(pickSignatory(registry, { role: 'clerk', at })),
+      mayor: toSignatory(pickSignatory(registry, { role: 'mayor', at })),
     })
     setSnapshot(parentRes.data?.permit_form_data ?? {})
 

@@ -16,7 +16,7 @@ import { buildCommunityRequestFormHtml, buildCommunityForwardLetterHtml } from '
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import { resolvePatientRequestSignatories } from '../lib/patientRequestSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
-import { TRIP_STATUS, WORKSPACE_ROW_LIMIT, workspaceTruncated, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking, isCommunity, bookingName, servicePeriodReport } from '../lib/patientBooking'
+import { TRIP_STATUS, WORKSPACE_ROW_LIMIT, workspaceTruncated, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking, isCommunity, bookingName, bookingLetterMoment, servicePeriodReport } from '../lib/patientBooking'
 
 /**
  * หน้าทำงานของเจ้าหน้าที่ — คำขอรถ · ปฏิทิน · งานคนขับ · รายงาน · ตั้งค่า
@@ -178,25 +178,27 @@ export default function PatientTransportStaff({ onBack } = {}) {
   }
   // เอกสารถึงกองทุน: ผู้รับหนังสือจากทะเบียนหน่วยงานรับเรื่องต่อ + ผู้ลงนามจากทะเบียนกลาง
   // (ทะเบียนเดียวกับหนังสือนำส่งของระบบเดิม ผู้ดูแลไม่ต้องตั้งค่าซ้ำ)
-  async function fundContext() {
+  // at = เวลาของเอกสาร ได้นายกที่ดำรงตำแหน่งตอนนั้น (เปลี่ยนนายกแล้วเอกสารเก่าต้องคงชื่อเดิม เจ้าของระบบสั่ง 2569-10-06)
+  // ไม่ส่ง = นายกวันนี้ (สรุปตามช่วงเวลาออกตอนกดพิมพ์) · ไม่กรอง is_active — ต้องมีแถวที่ปิดไปแล้วด้วย ถึงจะหาผู้ลงนาม ณ เวลาของเอกสารได้ (pickSignatory แบบมี at)
+  async function fundContext(at = null) {
     const partnerId = workspace?.settings?.partner_id
     const [partnerRes, signRes] = await Promise.all([
       partnerId ? supabase.from('referral_partners').select('name, recipient_title, address, phone').eq('id', partnerId).maybeSingle() : Promise.resolve({ data: null }),
-      supabase.from('document_signatories').select(SIGNATORY_REGISTRY_SELECT).eq('municipality_id', tenantId).eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
+      supabase.from('document_signatories').select(SIGNATORY_REGISTRY_SELECT).eq('municipality_id', tenantId).eq('document_type', SIGNATORY_SCOPE),
     ])
     if (partnerRes.error) throw partnerRes.error
-    const mayorRow = pickSignatory(signRes.data ?? [], { role: 'mayor' })
+    const mayorRow = pickSignatory(signRes.data ?? [], { role: 'mayor', at })
     return { partner: partnerRes.data, mayor: mayorRow ? { name: signatoryName(mayorRow), title: signatoryTitle(mayorRow) } : null }
   }
   // ช่องลงนามท้ายใบคำขอถึงนายก (ผอ.กองสวัสดิการสังคม / ปลัด / นายก) — ชื่อดึงจากทะเบียน "ผู้ลงนามเอกสาร" เหมือนใบคำขอบริการอื่น
   // (loadPrintSignatories ใน StaffDashboard.jsx) โหลดตอนกดพิมพ์ ไม่ใช่ตอนเปิดรายการ · กองที่ถือเรื่อง: กองสวัสดิการสังคม ถ้าไม่มีใช้สำนักปลัด
   // อ่านไม่ได้หรือยังไม่ได้ตั้งผู้ลงนาม = ช่องลงนามเปล่าให้เขียนมือ ไม่ใช่ไม่มีช่อง และไม่ขวางการพิมพ์ (ใบเวียนเซ็นด้วยปากกาทุกใบ)
-  async function requestSignContext() {
+  async function requestSignContext(at = null) {
     const [deptRes, signRes] = await Promise.all([
       supabase.from('departments').select('id,code,name').eq('municipality_id', tenantId).order('sort_order'),
-      supabase.from('document_signatories').select(SIGNATORY_REGISTRY_SELECT).eq('municipality_id', tenantId).eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
+      supabase.from('document_signatories').select(SIGNATORY_REGISTRY_SELECT).eq('municipality_id', tenantId).eq('document_type', SIGNATORY_SCOPE),
     ])
-    return resolvePatientRequestSignatories({ departments: deptRes.data ?? [], registry: signRes.data ?? [] })
+    return resolvePatientRequestSignatories({ departments: deptRes.data ?? [], registry: signRes.data ?? [], at })
   }
   // เปิดหน้าต่างทันทีตอนกด แล้วค่อยเติมเนื้อหาหลังโหลดข้อมูล — เปิดหลัง await เบราว์เซอร์จะบล็อกเป็นป๊อปอัป
   async function printInNewWindow(build, failText, beforePrint) {
@@ -216,16 +218,19 @@ export default function PatientTransportStaff({ onBack } = {}) {
   }
   // สองปุ่มพิมพ์เอกสารแยกรายคน: ใบคำขอประชาชนถึงนายก และหนังสือนายกถึงกองทุน
   const printBooking = booking => ({ ...booking, purpose_label: workspace?.community_rules?.activities?.find(a => a.code === booking.purpose_code)?.label || booking.purpose_code })
+  // ผู้ลงนามของทั้งชุด (ใบคำขอ + หนังสือนำส่ง) = ตอนบันทึกเลขหนังสือ ยังไม่บันทึก = คนปัจจุบัน (bookingLetterMoment)
   const printLetter = (booking, beforePrint) => printInNewWindow(async () => (isCommunity(booking) ? buildCommunityForwardLetterHtml : buildBookingForwardLetterHtml)({
-    tenant, trip: workspace.trips.find(t => t.id === booking.trip_id), booking: printBooking(booking), ...(await fundContext()),
+    tenant, trip: workspace.trips.find(t => t.id === booking.trip_id), booking: printBooking(booking),
+    ...(await fundContext(bookingLetterMoment(booking, workspace.trips.find(t => t.id === booking.trip_id)))),
     // ต้องเป็น URL เต็ม หน้าต่างพิมพ์เป็น about:blank พาธ /images/... จะ resolve ไม่เจอ
     emblemUrl: `${window.location.origin}/images/garuda.svg`,
   }), 'เตรียมหนังสือนำส่งไม่สำเร็จ', beforePrint)
   // ใบคำขอพิมพ์แยกได้ทั้งก่อนและหลังยืนยันรถ โดยใช้ข้อมูลเที่ยวปัจจุบันเมื่อมีแล้ว
   const printRequest = booking => printInNewWindow(async () => (isCommunity(booking) ? buildCommunityRequestFormHtml : buildBookingRequestFormHtml)({
-    tenant, booking: printBooking(booking), trip: workspace.trips.find(t => t.id === booking.trip_id), ...(await fundContext()),
+    tenant, booking: printBooking(booking), trip: workspace.trips.find(t => t.id === booking.trip_id),
+    ...(await fundContext(bookingLetterMoment(booking, workspace.trips.find(t => t.id === booking.trip_id)))),
     // ใบคำขอชุมชนเป็นเอกสารร่างอีกชุด ไม่อยู่ในคำสั่งช่องลงนาม 3 ตำแหน่ง
-    ...(isCommunity(booking) ? {} : await requestSignContext()),
+    ...(isCommunity(booking) ? {} : await requestSignContext(bookingLetterMoment(booking, workspace.trips.find(t => t.id === booking.trip_id)))),
   }), 'เตรียมใบคำขอไม่สำเร็จ')
   const printPeriod = (period, service) => printInNewWindow(async () => {
     const [data, context] = await Promise.all([servicePeriodReport(async (name, args) => {
