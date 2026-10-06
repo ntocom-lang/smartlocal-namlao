@@ -256,6 +256,11 @@ const checks = [
             return {
               intro: sheet.querySelector('.fund-intro').innerText.replace(/\s+/g, ' ').trim(),
               introBlanks: sheet.querySelectorAll('.fund-intro .fill-blank').length,
+              // ตำแหน่งในย่อหน้าเปิดต้องไม่ถูกตัดกลางคำ: แต่ละก้อน .nb อยู่บรรทัดเดียว (nowrap = กล่องข้อความ 1 กล่อง) และไม่ล้นพื้นที่พิมพ์
+              positionChunks: [...sheet.querySelectorAll('.fund-intro .nb')].map(el => ({
+                text: el.textContent.replace(/\s+/g, ' ').trim(), lines: el.getClientRects().length,
+                overflow: [...(() => { range.selectNodeContents(el); return range.getClientRects() })()].filter(r => r.right > area.right + 1).length,
+              })),
               rows: sign.querySelectorAll('.sign-row').length,
               lines: sign.querySelectorAll('.sign-line').length,
               role: sign.querySelectorAll('.sign-role').length,
@@ -272,6 +277,11 @@ const checks = [
           assert.equal(view.introBlanks, expected.name ? 0 : 1, `${label}: ชื่อว่างต้องเป็นเส้นให้เขียนเอง 1 ช่อง และมีชื่อต้องไม่เหลือเส้น`)
           assert.ok(!view.intro.includes(PARENT.requester_name) && !view.intro.includes('โทรศัพท์') && !view.intro.includes(PARENT.requester_phone),
             `${label}: ผู้ขอของใบนี้คือนายก ห้ามเอาชื่อ/เบอร์ผู้ยื่นมาเป็นผู้ขอ — "${view.intro}"`)
+          // ตำแหน่ง (ไม่มีช่องว่างในตำแหน่งปกติ) ต้องอยู่ก้อนเดียว ไม่ตัดกลางคำ และมีคำว่า "ตำแหน่ง" นำหน้าในก้อนเดียวกัน
+          assert.ok(view.positionChunks.length >= 1 && view.positionChunks.every(chunk => chunk.lines === 1 && chunk.overflow === 0),
+            `${label}: ตำแหน่งในย่อหน้าเปิดถูกตัดกลางคำหรือล้นพื้นที่พิมพ์ — ${JSON.stringify(view.positionChunks)}`)
+          assert.equal(view.positionChunks.map(chunk => chunk.text).join(' '), `ตำแหน่ง ${expected.title}`, `${label}: ก้อนตำแหน่งในย่อหน้าเปิด`)
+          if (!expected.title.includes(' ')) assert.equal(view.positionChunks.length, 1, `${label}: ตำแหน่งที่ไม่มีช่องว่างต้องเป็นก้อนเดียว`)
           assert.equal(view.rows, 1, `${label}: ช่องลงนามกลางใบต้องมีช่องเดียว`)
           assert.equal(view.lines, 1, `${label}: ต้องเป็นเส้นเว้นให้นายกเซ็นปากกา`)
           assert.equal(view.role, 0, `${label}: ห้ามมีคำว่า "ผู้ยื่นคำขอ" ต่อท้ายเส้นของนายก`)
