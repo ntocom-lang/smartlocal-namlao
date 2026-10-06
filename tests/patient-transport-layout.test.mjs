@@ -240,7 +240,9 @@ const checks = [
       const actingTitle = 'ปลัดองค์การบริหารส่วนตำบล ปฏิบัติหน้าที่นายกองค์การบริหารส่วนตำบลทุ่งแค้ว'
       const longName = 'นายสมศักดิ์ ตั้งใจพัฒนาสุขสันต์วงศ์ใหญ่โตมากมาย'
       const cases = [
-        ['ตั้งชื่อนายกแล้ว', MAYOR, { name: MAYOR.name, title: MAYOR.title }],
+        // sameLine: ชื่อนายก + "ตำแหน่ง …" ต้องอยู่บรรทัดแรกบรรทัดเดียวกัน (ย่อหน้าลดลงเท่าที่จำเป็น — เจ้าของระบบสั่ง 2569-10-06 ตามภาพจากใบจริง)
+        ['ตั้งชื่อนายกแล้ว', MAYOR, { name: MAYOR.name, title: MAYOR.title, sameLine: true }],
+        ['ชื่อสั้นตามภาพจากใบจริง', { name: 'นายกันตพงษ์ คำปลูก', title: MAYOR.title }, { name: 'นายกันตพงษ์ คำปลูก', title: MAYOR.title, sameLine: true }],
         ['ทะเบียนว่าง', null, { name: null, title: 'นายกองค์การบริหารส่วนตำบลทุ่งแค้ว' }],
         ['มีแต่ตำแหน่ง ชื่อเว้นว่าง', { name: '   ', title: actingTitle }, { name: null, title: actingTitle }],
         ['ชื่อและตำแหน่งยาวมาก', { name: longName, title: actingTitle }, { name: longName, title: actingTitle }],
@@ -254,13 +256,26 @@ const checks = [
             const textRects = el => { range.selectNodeContents(el); return [...range.getClientRects()].filter(r => r.width > 0 && r.height > 0) }
             const sign = sheet.querySelector('.fund-request-sign')
             return {
+              areaRight: area.right,
               intro: sheet.querySelector('.fund-intro').innerText.replace(/\s+/g, ' ').trim(),
               introBlanks: sheet.querySelectorAll('.fund-intro .fill-blank').length,
               // ตำแหน่งในย่อหน้าเปิดต้องไม่ถูกตัดกลางคำ: แต่ละก้อน .nb อยู่บรรทัดเดียว (nowrap = กล่องข้อความ 1 กล่อง) และไม่ล้นพื้นที่พิมพ์
-              positionChunks: [...sheet.querySelectorAll('.fund-intro .nb')].map(el => ({
+              positionChunks: [...sheet.querySelectorAll('.fund-intro .fund-position')].map(el => ({
                 text: el.textContent.replace(/\s+/g, ' ').trim(), lines: el.getClientRects().length,
                 overflow: [...(() => { range.selectNodeContents(el); return range.getClientRects() })()].filter(r => r.right > area.right + 1).length,
               })),
+              // บรรทัดแรกของย่อหน้าเปิด: ตั้งแต่ต้นย่อหน้าถึงท้ายก้อน "ตำแหน่ง …" ก้อนแรก ต้องอยู่บรรทัดเดียวกัน (ต่างกันไม่เกิน 2px) และไม่ล้นขวา
+              introFirstLine: (() => {
+                const intro = sheet.querySelector('.fund-intro')
+                const probe = document.createRange()
+                probe.setStart(intro, 0); probe.setEndAfter(intro.querySelector('.fund-position'))
+                const rects = [...probe.getClientRects()].filter(r => r.width > 0)
+                return {
+                  spread: Math.max(...rects.map(r => r.top)) - Math.min(...rects.map(r => r.top)),
+                  right: Math.max(...rects.map(r => r.right)), indent: getComputedStyle(intro).textIndent,
+                }
+              })(),
+              intentLines: [...sheet.querySelectorAll('.fund-intro .nb:not(.fund-position)')].reduce((lines, el) => Math.max(lines, el.getClientRects().length), 0),
               rows: sign.querySelectorAll('.sign-row').length,
               lines: sign.querySelectorAll('.sign-line').length,
               role: sign.querySelectorAll('.sign-role').length,
@@ -282,6 +297,13 @@ const checks = [
             `${label}: ตำแหน่งในย่อหน้าเปิดถูกตัดกลางคำหรือล้นพื้นที่พิมพ์ — ${JSON.stringify(view.positionChunks)}`)
           assert.equal(view.positionChunks.map(chunk => chunk.text).join(' '), `ตำแหน่ง ${expected.title}`, `${label}: ก้อนตำแหน่งในย่อหน้าเปิด`)
           if (!expected.title.includes(' ')) assert.equal(view.positionChunks.length, 1, `${label}: ตำแหน่งที่ไม่มีช่องว่างต้องเป็นก้อนเดียว`)
+          assert.equal(view.intentLines, 1, `${label}: วลี "มีความประสงค์" ถูกตัดคนละบรรทัด ("มี" ค้างท้ายบรรทัด)`)
+          if (expected.sameLine) {
+            assert.ok(view.introFirstLine.spread <= 2, `${label}: ชื่อนายกกับตำแหน่งไม่อยู่บรรทัดเดียวกัน (ต่างกัน ${view.introFirstLine.spread}px, ย่อหน้า ${view.introFirstLine.indent})`)
+            // ต้องเหลือที่ว่างท้ายบรรทัดอย่างน้อย 3mm (≈11px) ไม่ชิดขอบขวา — ฟอนต์ต่างเครื่องกว้างกว่านี้เล็กน้อยแล้วตำแหน่งจะตกบรรทัดอีก
+            assert.ok(view.areaRight - view.introFirstLine.right >= 11, `${label}: บรรทัดแรกของย่อหน้าเปิดชิดขอบขวา เหลือที่ว่าง ${(view.areaRight - view.introFirstLine.right).toFixed(1)}px (ย่อหน้า ${view.introFirstLine.indent})`)
+          }
+          assert.ok(view.introFirstLine.right <= view.areaRight + 1, `${label}: บรรทัดแรกของย่อหน้าเปิดล้นพื้นที่พิมพ์`)
           assert.equal(view.rows, 1, `${label}: ช่องลงนามกลางใบต้องมีช่องเดียว`)
           assert.equal(view.lines, 1, `${label}: ต้องเป็นเส้นเว้นให้นายกเซ็นปากกา`)
           assert.equal(view.role, 0, `${label}: ห้ามมีคำว่า "ผู้ยื่นคำขอ" ต่อท้ายเส้นของนายก`)
@@ -299,6 +321,9 @@ const checks = [
           await assertSignBlockStandard(page, { minRows: 3, minBelow: 6 })
           if (label === 'ตั้งชื่อนายกแล้ว' && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
             await page.locator('.fund-form-sheet').screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/fund-form-mayor-named.png` })
+          }
+          if (label === 'ชื่อสั้นตามภาพจากใบจริง' && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
+            await page.locator('.fund-form-sheet').screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/fund-form-mayor-owner-sample.png` })
           }
           if (label === 'ชื่อและตำแหน่งยาวมาก' && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
             await page.locator('.fund-form-sheet').screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/fund-form-mayor-long.png` })
