@@ -63,6 +63,28 @@ export function govNameBlank(width = GOV_SIGN_LINE_W, { fontPt = BASE_FONT_PT } 
   return `(${'.'.repeat(dots)})`
 }
 
+// คำที่บอกว่าเป็นการรักษาราชการแทน — ตำแหน่งแบบ "ผู้อำนวยการกองช่าง รักษาราชการแทน ปลัด…" ยาวกว่าคอลัมน์
+// และ .sign-below ห้ามตัดบรรทัดเอง จึงล้นขอบขวากระดาษ · ใช้ร่วมช่องลงนามเจ้าหน้าที่กับใบคำร้อง
+// เจ้าของระบบสั่ง 2569-10-06: ให้ตัดหลังคำนี้ — บรรทัดแรก "ตำแหน่งเดิม + รักษาราชการแทน"
+// บรรทัดที่สอง "ตำแหน่งที่รักษาราชการแทน" (ตำแหน่งที่ไม่ใช่การรักษาราชการแทนไม่แตะ)
+const ACTING_WORDS = ['รักษาราชการแทน', 'รักษาการแทน', 'ปฏิบัติราชการแทน', 'ทำการแทน']
+
+/**
+ * แบ่งชื่อตำแหน่งเป็นบรรทัดสำหรับพิมพ์ใต้เส้นลงนาม (ยังไม่ escape)
+ * มีข้อความทั้งก่อนและหลังคำว่ารักษาราชการแทน = 2 บรรทัด นอกนั้นคืนบรรทัดเดียวตามเดิม
+ */
+export function govSplitActingTitle(title) {
+  const text = String(title ?? '').replace(/\s+/g, ' ').trim()
+  for (const word of ACTING_WORDS) {
+    const at = text.indexOf(word)
+    if (at <= 0) continue
+    const first = text.slice(0, at + word.length).trim()
+    const second = text.slice(at + word.length).trim()
+    if (second) return [first, second]
+  }
+  return text ? [text] : []
+}
+
 /**
  * บล็อกลงนามหนึ่งจุด — "เส้นคือแกน" บรรทัดที่อยู่ใต้มันต้องอยู่กึ่งกลางบนแกนเดียวกันเสมอ
  *

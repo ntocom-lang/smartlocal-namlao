@@ -100,6 +100,40 @@ const checks = [
       } finally { await page.close() }
     },
   },
+  {
+    name: 'acting-title-splits-after-acting-word',
+    reason: 'ตำแหน่งรักษาราชการแทนยาว ตัดหลังคำว่า "รักษาราชการแทน" เป็น 2 บรรทัดตามแบบ และไม่ล้นขอบขวา (เจ้าของระบบสั่ง 2569-10-06)',
+    async run(browser) {
+      const acting = {
+        ...SIGNATORIES,
+        department_head: { name: 'นายชัยศักดิ์ ชัยธรรม', title: 'ผู้อำนวยการกองช่าง' },
+        clerk: {
+          name: 'นายชัยศักดิ์ ชัยธรรม',
+          title: 'ผู้อำนวยการกองช่าง รักษาราชการแทน ปลัดเทศบาลตำบลน้ำเลา',
+          authority_reference: 'คำสั่งที่ 45/2569',
+        },
+      }
+      const page = await render(browser, buildCouncilComplaintHtml({ ...ARGS, signatories: acting }))
+      try {
+        const seen = await page.evaluate(() => {
+          const limit = document.body.getBoundingClientRect().right
+          const clerkCell = document.querySelectorAll('.center-row')[1]
+          const lines = [...clerkCell.querySelectorAll('.sign-below')].map(el => el.textContent.trim())
+          const right = Math.max(...[...document.querySelectorAll('.sign-below')].map(el => {
+            const range = document.createRange()
+            range.selectNodeContents(el)
+            return Math.max(...[...range.getClientRects()].map(rect => rect.right))
+          }))
+          return { lines, overflow: right - limit }
+        })
+        assert.deepEqual(seen.lines.slice(1, 3), ['ผู้อำนวยการกองช่าง รักษาราชการแทน', 'ปลัดเทศบาลตำบลน้ำเลา'])
+        assert.ok(seen.lines[3].includes('45/2569'), 'เลขที่คำสั่งต้องอยู่ใต้ตำแหน่ง')
+        assert.ok(seen.overflow <= 0.5, `ตำแหน่งล้นขอบขวาของพื้นที่พิมพ์ ${seen.overflow.toFixed(1)}px`)
+        await assertSignBlockStandard(page, { minRows: 3, minBelow: 7 })
+        await assertSignLinesAligned(page)
+      } finally { await page.close() }
+    },
+  },
 ]
 
 const browser = await chromium.launch({ channel: 'chrome' })

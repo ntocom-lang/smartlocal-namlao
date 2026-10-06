@@ -18,7 +18,7 @@ import { buildWasteCollectionRequestHtml } from '../src/lib/wasteCollectionReque
 import { buildWasteCollectionCancelHtml } from '../src/lib/wasteCollectionCancelPrint.js'
 import { buildPublicAssistanceRequestHtml } from '../src/lib/publicAssistancePrint.js'
 import { buildBookingRequestFormHtml } from '../src/lib/patientTransportPrint.js'
-import { govSplitActingTitle } from '../src/lib/govStaffSignBlock.js'
+import { govSplitActingTitle } from '../src/lib/govSignBlock.js'
 import { assertSignBlockStandard } from './lib/signBlockChecks.mjs'
 
 const TENANT = {
