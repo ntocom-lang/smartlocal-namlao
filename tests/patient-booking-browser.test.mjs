@@ -208,6 +208,8 @@ const plugin = {
     // หนังสือนำส่งอ่านผู้รับจากทะเบียนหน่วยงานรับเรื่องต่อ · ฐานทดสอบไม่มีทะเบียนผู้ลงนาม = ว่าง (หนังสือใช้ตำแหน่งตั้งต้น)
     else if(query.table==='referral_partners')rows=(await db.query('SELECT name FROM public.referral_partners WHERE id=$1',[filter('id')])).rows
     else if(query.table==='document_signatories')rows=[]
+    // ช่องลงนามท้ายใบคำขอ (2569-10-06): หากองที่ถือเรื่อง = กองสวัสดิการสังคม ถ้าไม่มีใช้สำนักปลัด · ทะเบียนผู้ลงนามยังว่าง = วงเล็บเว้นชื่อให้เขียนมือ
+    else if(query.table==='departments')rows=[{id:'00000000-0000-4000-8000-0000000000d1',code:'general',name:'สำนักปลัด'},{id:'00000000-0000-4000-8000-0000000000d2',code:'welfare',name:'กองสวัสดิการสังคม'}]
     else throw Error('Test API denied')
     res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:query.single?(rows[0]??null):rows,error:null}))
    }catch(e){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:null,error:{message:e.message}}))}}
@@ -550,7 +552,7 @@ try{
   await page.setViewportSize({width:1280,height:900});await tripFrame.waitFor()
   // ปุ่ม "เอกสาร" ในแถว/การ์ด (ไอคอนเครื่องพิมพ์) — #397 เปลี่ยนเป็นเปิดแผ่นรายละเอียดของคนในแถวนั้น ไม่เด้งหน้าต่างพิมพ์เอง
   // แล้วเลือกพิมพ์ในแผ่น: ใบคำขอถึงนายก (1 แผ่น) กับหนังสือนำส่ง + ใบคำขอรับสวัสดิการ (2 แผ่น) แยกคนละปุ่ม — ต้องได้เฉพาะของคนนั้นคนเดียว
-  const packetOf=win=>win.evaluate(()=>({kinds:[...document.querySelectorAll('.sheet')].map(s=>s.querySelector('.letter-sign')?'letter':!s.querySelector('.form-title')?'other':s.innerText.includes('[TEST] ไปด้วยกัน อี')?'form:E':s.innerText.includes('[TEST] ไปด้วยกัน เอฟ')?'form:F':'form:?'),text:document.body.innerText}))
+  const packetOf=win=>win.evaluate(()=>({kinds:[...document.querySelectorAll('.sheet')].map(s=>s.querySelector('.letter-sign')?'letter':!s.querySelector('.form-title')?'other':s.innerText.includes('[TEST] ไปด้วยกัน อี')?'form:E':s.innerText.includes('[TEST] ไปด้วยกัน เอฟ')?'form:F':'form:?'),text:document.body.innerText,staff:{cells:document.querySelectorAll('.staff-sign-cell').length,signed:document.querySelectorAll('.staff-sign .sign-signed').length,text:(document.querySelector('.staff-sign')?.textContent??'').replace(/\s+/g,' ').trim()}}))
   const letterNoOf=win=>win.evaluate(()=>document.querySelector('.letter-no')?.innerText.replace(/\s+/g,' ').trim()??'')
   const openRowDocs=async id=>{
    const button=row(id).getByRole('button',{name:/^เลือกเอกสารที่จะพิมพ์: /});assert.equal(await button.locator('svg.lucide-printer').count(),1,'ปุ่มเอกสารในแถวต้องมีไอคอนเครื่องพิมพ์')
@@ -574,6 +576,13 @@ try{
   assert.deepEqual(printedF.letter.kinds,['letter','other'],'ปุ่มหนังสือของคนที่สองต้องได้หนังสือนำส่ง 1 แผ่น + ใบคำขอรับสวัสดิการ 1 แผ่น')
   assert(printedE.letter.text.includes('ไปด้วยกัน อี')&&!printedE.letter.text.includes('ไปด้วยกัน เอฟ')&&!printedE.form.text.includes('ไปด้วยกัน เอฟ'),'เอกสารของคนแรกต้องมีชื่อเขาและไม่มีชื่อของอีกคนในเที่ยวเดียวกัน')
   assert(printedF.letter.text.includes('ไปด้วยกัน เอฟ')&&!printedF.letter.text.includes('ไปด้วยกัน อี')&&!printedF.form.text.includes('ไปด้วยกัน อี'),'เอกสารของคนที่สองต้องมีชื่อเขาและไม่มีชื่อของคนแรกในเที่ยวเดียวกัน')
+  // ช่องลงนามเจ้าหน้าที่ท้ายใบคำขอ (เจ้าของระบบสั่ง 2569-10-06): ใบคำขอมี ผอ.กองสวัสดิการสังคม/ปลัด/นายก จากฐานทดสอบจริง · หนังสือนำส่งกับใบรับสวัสดิการไม่มี · ไม่พิมพ์ชื่อเป็นลายเซ็น
+  for(const printed of [printedE,printedF]){
+   assert.equal(printed.form.staff.cells,3,`ใบคำขอที่เจ้าหน้าที่พิมพ์ต้องมีช่องลงนาม 3 ตำแหน่ง: ${JSON.stringify(printed.form.staff)}`)
+   assert(printed.form.staff.text.includes('ผู้อำนวยการกองสวัสดิการสังคม')&&printed.form.staff.text.includes('ปลัด')&&printed.form.staff.text.includes('นาย'),`ตำแหน่งในช่องลงนาม: ${printed.form.staff.text}`)
+   assert.equal(printed.form.staff.signed,0,'ช่องลงนามเจ้าหน้าที่ต้องเป็นเส้นให้เซ็นปากกา ไม่พิมพ์ชื่อเป็นลายมือชื่อ')
+   assert.equal(printed.letter.staff.cells,0,'หนังสือนำส่งและใบรับสวัสดิการต้องไม่มีช่องลงนาม 3 ตำแหน่งของใบคำขอ')
+  }
   assert(!/พร|\d/.test(printedE.letter.letterNo)&&!/พร|\d/.test(printedF.letter.letterNo),`ยังไม่ได้บันทึกเลข ช่อง "ที่" ต้องเป็นเส้นประให้เขียนมือ: "${printedE.letter.letterNo}" / "${printedF.letter.letterNo}"`)
 
   // เลขที่หนังสือแยกรายคน: บันทึกผ่านหน้าจอทีละคน — ช่อง "เลขที่หนังสือ (ที่)" + ปุ่ม "บันทึกเลขที่/วันที่อย่างเดียว" ในส่วนเอกสารของแผ่นคนนั้น

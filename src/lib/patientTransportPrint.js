@@ -33,6 +33,8 @@ import { reportPeriod, reportDateLabel } from './patientReportPeriod.js'
 //   หนังสือนำส่ง — นายกเซ็นปากกา ระบบพิมพ์ให้แค่ชื่อในวงเล็บ + ตำแหน่ง จากทะเบียนผู้ลงนามกลาง
 //                  ห้ามพิมพ์ชื่อนายกเป็นลายมือชื่อ: นายกไม่ได้ทำอะไรในระบบตอนพิมพ์ จะกลายเป็นระบบลงนาม
 //                  แทนผู้มีอำนาจบนหนังสือที่ส่งออกนอก อปท. — เทสต์ letter-signer-from-registry-never-auto-signed กันไว้
+//   ใบคำขอถึงนายก ฉบับที่เจ้าหน้าที่พิมพ์ — ท้ายใบมีช่องลงนามเจ้าหน้าที่ 3 ตำแหน่ง ผอ.กองสวัสดิการสังคม / ปลัด / นายก ตามผังเดียวกับใบคำขอบริการอื่น
+//                  (govStaffSignBlock.js · เจ้าของระบบสั่ง 2569-10-06) ใบฝั่งประชาชนไม่ส่ง signatories จึงไม่มีช่องนี้ · ที่มาของชื่อ: patientRequestSignatories.js
 //   ใบคำขอรับสวัสดิการ (ใบแนบหนังสือนำส่ง) — นายกเป็นผู้ขอ (เจ้าของระบบสั่ง 2569-10-06 ให้ตรงกับป้ายปุ่ม "นายกถึงประธานกองทุน"):
 //                  "ข้าพเจ้า [ชื่อนายก] ตำแหน่ง …" + นายกเซ็นปากกา ระบบพิมพ์ให้แค่ชื่อในวงเล็บ + ตำแหน่ง จากทะเบียนเดียวกับหนังสือ
 //                  ห้ามพิมพ์ชื่อนายกเป็นลายมือชื่อเช่นเดียวกัน · เดิมเขียนเป็นเสียงผู้ยื่น (ข้าพเจ้า [ผู้ยื่น] / ลงชื่อ ผู้ยื่นคำขอ)
@@ -45,6 +47,7 @@ import {
 import {
   GOV_SIGN_LINE_W_WIDE, govNameBlank, govSignBlockCss, govSignRow,
 } from './govSignBlock.js'
+import { govStaffSignBlockCss, govStaffSignBlockHtml } from './govStaffSignBlock.js'
 import { orgHeadTitle, orgNameParts, orgOfficeName } from './orgTerms.js'
 import { pickupSentence } from './pickupText.js'
 import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
@@ -458,6 +461,7 @@ function formCss() {
       display: grid; grid-column: 1 / -1; grid-template-columns: subgrid;
     }
   }
+${govStaffSignBlockCss()}
 `
 }
 
@@ -578,6 +582,7 @@ function fundFormSheet({ header, form = {}, parent = {}, tenant, mayor = null, r
  */
 function formSheet({
   header, form = {}, parent = {}, tenant, referenceNo = '', docDate = '',
+  signatories = null, departmentName = '',
 }) {
   const orgName = tenant?.name?.trim() || 'หน่วยงาน'
   const requesterName = textOr(parent?.requester_name)
@@ -704,6 +709,7 @@ function formSheet({
       <!-- ⚠️ ใต้ชื่อไม่มีบรรทัดกำกับ ทุกช่องทาง — เจ้าของระบบสั่งตัด 2569-10-02 ดูคำอธิบายหัวฟังก์ชัน -->
     </div>
   </div>
+${govStaffSignBlockHtml({ signatories, tenant, departmentName })}
 
   <!-- ⚠️ ไม่มีกล่อง "สำหรับคณะกรรมการกองทุน" (ความเห็น / อนุมัติ–ไม่อนุมัติ / ช่องลงนามประธานและเหรัญญิก) โดยเจตนา —
        เจ้าของระบบสั่งตัดออก 2569-10-01 เพราะใบนี้ยื่นต่อนายก เรื่องจบที่นายก ยังไม่ไปถึงกองทุน
