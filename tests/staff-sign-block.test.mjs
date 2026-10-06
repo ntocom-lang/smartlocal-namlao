@@ -18,6 +18,7 @@ import { buildWasteCollectionRequestHtml } from '../src/lib/wasteCollectionReque
 import { buildWasteCollectionCancelHtml } from '../src/lib/wasteCollectionCancelPrint.js'
 import { buildPublicAssistanceRequestHtml } from '../src/lib/publicAssistancePrint.js'
 import { buildBookingRequestFormHtml } from '../src/lib/patientTransportPrint.js'
+import { govSplitActingTitle } from '../src/lib/govStaffSignBlock.js'
 import { assertSignBlockStandard } from './lib/signBlockChecks.mjs'
 
 const TENANT = {
@@ -254,6 +255,47 @@ async function main() {
         }
       })
     }
+
+    // ── ตำแหน่งรักษาราชการแทนยาว: ตัดหลังคำว่า "รักษาราชการแทน" ไม่ล้นขอบขวา (เจ้าของระบบสั่ง 2569-10-06) ──
+    await check('ตำแหน่งรักษาราชการแทน — ตัดเป็น 2 บรรทัดตามแบบ ไม่ล้นขอบ จบ 1 แผ่น', async () => {
+      assert.deepEqual(govSplitActingTitle('ผู้อำนวยการกองช่าง รักษาราชการแทน ปลัดเทศบาลตำบลสาธิต'),
+        ['ผู้อำนวยการกองช่าง รักษาราชการแทน', 'ปลัดเทศบาลตำบลสาธิต'])
+      assert.deepEqual(govSplitActingTitle('ปลัดเทศบาลตำบลสาธิต'), ['ปลัดเทศบาลตำบลสาธิต'], 'ไม่ใช่รักษาราชการแทนต้องไม่แตะ')
+      assert.deepEqual(govSplitActingTitle('รักษาราชการแทน'), ['รักษาราชการแทน'], 'ไม่มีข้อความทั้งสองฝั่งต้องไม่ตัด')
+      assert.deepEqual(govSplitActingTitle(''), [])
+
+      const acting = {
+        ...SIGNATORIES,
+        department_head: { name: 'นางสาวจันทร์จิรา ค้นธสิ่งข์', title: 'ผู้อำนวยการกองช่าง' },
+        clerk: {
+          name: 'นายมาชัย ไพศาลธนสมบัติ',
+          title: 'ผู้อำนวยการกองช่าง รักษาราชการแทน ปลัดเทศบาลตำบลสาธิต',
+          authority_reference: 'คำสั่งเทศบาลตำบลสาธิต ที่ 123/2569',
+        },
+      }
+      const page = await render(browser, FORMS[1].build({ signatories: acting, departmentName: 'กองช่าง' }))
+      try {
+        const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
+        assert.equal(pdfPageCount(pdf), 1, 'ตัดเป็น 2 บรรทัดแล้วใบล้นไปอีกหน้า')
+        const seen = await page.evaluate(() => {
+          const sheet = document.querySelector('.sheet').getBoundingClientRect()
+          const cells = [...document.querySelectorAll('.staff-sign-cell')]
+          const lines = [...cells[1].querySelectorAll('.sign-below')].map(el => el.textContent.trim())
+          const right = Math.max(...[...document.querySelectorAll('.staff-sign .sign-below')].map(el => {
+            const range = document.createRange()
+            range.selectNodeContents(el)
+            return Math.max(...[...range.getClientRects()].map(rect => rect.right))
+          }))
+          return { lines, overflow: right - sheet.right }
+        })
+        assert.deepEqual(seen.lines.slice(1, 3), ['ผู้อำนวยการกองช่าง รักษาราชการแทน', 'ปลัดเทศบาลตำบลสาธิต'])
+        assert.ok(seen.lines[3].includes('123/2569'), 'เลขที่คำสั่งต้องอยู่ใต้ตำแหน่งเสมอ')
+        assert.ok(seen.overflow <= 0.5, 'ตำแหน่งล้นขอบขวาของแผ่น ' + seen.overflow.toFixed(1) + 'px')
+        await assertSignBlockStandard(page, { minRows: 3, minBelow: 6 })
+      } finally {
+        await page.close()
+      }
+    })
   } finally {
     await browser.close()
   }
