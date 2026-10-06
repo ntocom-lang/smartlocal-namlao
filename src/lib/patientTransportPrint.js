@@ -138,6 +138,13 @@ function mayorSignWidth(...texts) {
   return `${Math.min(MAYOR_SIGN_MAX_MM, Math.max(MAYOR_SIGN_MIN_MM, Math.ceil(Math.max(0, ...texts.map(mm)))))}mm`
 }
 
+// "ตำแหน่ง …" ในย่อหน้าเปิดของใบคำขอรับสวัสดิการ — ขึ้นบรรทัดใหม่ได้เฉพาะที่ช่องว่างในตำแหน่งเอง ไม่ตัดกลางคำ
+// (เคยตัดเป็น "…ส่วนตำบลทุ่ง" / "แค้ว" คนละบรรทัด เจ้าของระบบแจ้ง 2569-10-06) และไม่ปล่อยคำว่า "ตำแหน่ง" ค้างท้ายบรรทัดแยกจากตำแหน่ง
+// ตำแหน่งปกติไม่มีช่องว่าง (นายกองค์การบริหารส่วนตำบลทุ่งแค้ว) จึงเป็นก้อนเดียวและย้ายทั้งก้อนลงบรรทัดถัดไปเมื่อไม่พอที่
+function positionPhrase(title) {
+  return esc(title).split(' ').map((word, index) => `<span class="nb">${index === 0 ? 'ตำแหน่ง&nbsp;' : ''}${word}</span>`).join(' ')
+}
+
 // ที่อยู่ผู้ยื่น/ผู้ป่วยที่กรอกมาเป็นข้อความอิสระอยู่แล้ว ไม่ต้องประกอบใหม่จากรายช่อง
 function textOr(value, fallback = '') {
   const content = String(value ?? '').trim()
@@ -496,7 +503,7 @@ function fundFormSheet({ header, form = {}, parent = {}, tenant, mayor = null, r
   </div>
   <p class="kv"><span class="bold">เรื่อง</span>&nbsp;&nbsp;ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย</p>
   <p class="kv"><span class="bold">เรียน</span>&nbsp;&nbsp;${esc(recipient)}</p>
-  <p class="fund-intro">ข้าพเจ้า ${line(mayor?.name, REQUESTER_LINE_W)} ตำแหน่ง ${esc(mayorTitle)} มีความประสงค์ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยจากกองทุน รายละเอียดตามตารางท้ายนี้</p>
+  <p class="fund-intro">ข้าพเจ้า ${line(mayor?.name, REQUESTER_LINE_W)} ${positionPhrase(mayorTitle)} มีความประสงค์ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยจากกองทุน รายละเอียดตามตารางท้ายนี้</p>
   <table class="fund-details"><tbody>${rows.map(([label, value]) => `<tr><th scope="row">${esc(label)}</th><td>${esc(value) || '&nbsp;'}</td></tr>`).join('')}</tbody></table>
   <!-- หลักฐานเป็นช่องให้ระบุตามที่กองทุนกำหนด ไม่บังคับแนบหรือเพิ่มการเก็บข้อมูลในระบบ -->
   <p class="fund-evidence">หลักฐาน ${box()} ใบนัดแพทย์ ${box()} อื่นๆ ${line('', '25mm')}</p>
