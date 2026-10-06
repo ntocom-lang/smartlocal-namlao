@@ -230,6 +230,77 @@ const checks = [
     },
   },
   {
+    // เจ้าของระบบสั่ง 2569-10-06: ใบคำขอรับสวัสดิการ (ใบแนบหนังสือนำส่ง) นายกเป็นผู้ขอ ให้ตรงกับป้ายปุ่ม "นายกถึงประธานกองทุน"
+    // (เดิมเป็นเสียงผู้ยื่น: "ข้าพเจ้า [ผู้ยื่น]" + ลงชื่อ ผู้ยื่นคำขอ) — ผู้รับยังเป็นประธานคณะกรรมการกองทุนตามทะเบียนกองทุน
+    // ⚠️ ห้ามพิมพ์ชื่อนายกเป็นลายมือชื่อ (.sign-signed) เหมือนหนังสือนำส่ง: นายกเซ็นปากกา ระบบพิมพ์แค่ชื่อในวงเล็บ + ตำแหน่ง
+    name: 'fund-form-mayor-is-requester-never-auto-signed',
+    reason: 'ใบคำขอรับสวัสดิการต้องเป็นของนายก: "ข้าพเจ้า [ชื่อนายก] ตำแหน่ง …" + ช่องเซ็นปากกา (ชื่อในวงเล็บ + ตำแหน่ง จากทะเบียนผู้ลงนาม)'
+      + ' ไม่มีชื่อผู้ยื่นเป็นผู้ขอหรือลงชื่อ ไม่พิมพ์ชื่อนายกเป็นลายมือชื่อ · ชื่อว่างเป็นเส้นให้เขียนเอง · ชื่อ/ตำแหน่งยาวไม่ล้นพื้นที่พิมพ์และจบ 1 แผ่น',
+    async run(browser) {
+      const actingTitle = 'ปลัดองค์การบริหารส่วนตำบล ปฏิบัติหน้าที่นายกองค์การบริหารส่วนตำบลทุ่งแค้ว'
+      const longName = 'นายสมศักดิ์ ตั้งใจพัฒนาสุขสันต์วงศ์ใหญ่โตมากมาย'
+      const cases = [
+        ['ตั้งชื่อนายกแล้ว', MAYOR, { name: MAYOR.name, title: MAYOR.title }],
+        ['ทะเบียนว่าง', null, { name: null, title: 'นายกองค์การบริหารส่วนตำบลทุ่งแค้ว' }],
+        ['มีแต่ตำแหน่ง ชื่อเว้นว่าง', { name: '   ', title: actingTitle }, { name: null, title: actingTitle }],
+        ['ชื่อและตำแหน่งยาวมาก', { name: longName, title: actingTitle }, { name: longName, title: actingTitle }],
+      ]
+      for (const [label, mayor, expected] of cases) {
+        const page = await render(browser, buildPatientTransportLetterHtml(args({ mayor })))
+        try {
+          const view = await page.locator('.fund-form-sheet').evaluate(sheet => {
+            const area = sheet.querySelector('.fund-details').getBoundingClientRect()
+            const range = document.createRange()
+            const textRects = el => { range.selectNodeContents(el); return [...range.getClientRects()].filter(r => r.width > 0 && r.height > 0) }
+            const sign = sheet.querySelector('.fund-request-sign')
+            return {
+              intro: sheet.querySelector('.fund-intro').innerText.replace(/\s+/g, ' ').trim(),
+              introBlanks: sheet.querySelectorAll('.fund-intro .fill-blank').length,
+              rows: sign.querySelectorAll('.sign-row').length,
+              lines: sign.querySelectorAll('.sign-line').length,
+              role: sign.querySelectorAll('.sign-role').length,
+              signedAnywhere: sheet.querySelectorAll('.sign-signed').length,
+              below: [...sign.querySelectorAll('.sign-below')].map(el => el.textContent.trim()),
+              overflow: [...sign.querySelectorAll('.sign-below, .sign-label')].flatMap(textRects)
+                .filter(r => r.left < area.left - 1 || r.right > area.right + 1).length,
+              table: sheet.querySelector('.fund-details').innerText,
+            }
+          })
+          const intro = `ข้าพเจ้า ${expected.name ?? ''}`
+          assert.ok(view.intro.startsWith(expected.name ? intro : 'ข้าพเจ้า'), `${label}: ย่อหน้าเปิดต้องขึ้นต้นด้วยข้าพเจ้า + ชื่อนายก — "${view.intro}"`)
+          assert.ok(view.intro.includes(`ตำแหน่ง ${expected.title} มีความประสงค์ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยจากกองทุน`), `${label}: ตำแหน่งในย่อหน้าเปิด — "${view.intro}"`)
+          assert.equal(view.introBlanks, expected.name ? 0 : 1, `${label}: ชื่อว่างต้องเป็นเส้นให้เขียนเอง 1 ช่อง และมีชื่อต้องไม่เหลือเส้น`)
+          assert.ok(!view.intro.includes(PARENT.requester_name) && !view.intro.includes('โทรศัพท์') && !view.intro.includes(PARENT.requester_phone),
+            `${label}: ผู้ขอของใบนี้คือนายก ห้ามเอาชื่อ/เบอร์ผู้ยื่นมาเป็นผู้ขอ — "${view.intro}"`)
+          assert.equal(view.rows, 1, `${label}: ช่องลงนามกลางใบต้องมีช่องเดียว`)
+          assert.equal(view.lines, 1, `${label}: ต้องเป็นเส้นเว้นให้นายกเซ็นปากกา`)
+          assert.equal(view.role, 0, `${label}: ห้ามมีคำว่า "ผู้ยื่นคำขอ" ต่อท้ายเส้นของนายก`)
+          assert.equal(view.signedAnywhere, 0, `${label}: ใบพิมพ์ชื่อแทนลายมือชื่อ — ระบบลงนามแทนนายก`)
+          assert.equal(view.below.length, 2, `${label}: ใต้เส้นต้องมี 2 บรรทัด (ชื่อในวงเล็บ + ตำแหน่ง) ได้ ${JSON.stringify(view.below)}`)
+          if (expected.name) assert.equal(view.below[0], `(${expected.name})`, `${label}: ชื่อในวงเล็บ`)
+          else assert.match(view.below[0], /^\(\.{20,}\)$/, `${label}: ไม่มีชื่อในทะเบียนต้องเป็นวงเล็บว่าง ห้ามเดาชื่อ — "${view.below[0]}"`)
+          assert.equal(view.below[1], expected.title, `${label}: ตำแหน่งใต้เส้น`)
+          assert.equal(view.overflow, 0, `${label}: ชื่อ/ตำแหน่งในช่องลงนามล้นพื้นที่พิมพ์`)
+          // ชื่อและเบอร์ผู้ยื่นยังอยู่ในแถว "ผู้ประสานงาน" ของตาราง (ผู้รับต้องรู้ว่าติดต่อใคร)
+          assert.ok(view.table.includes(PARENT.requester_name) && view.table.includes(`โทร. ${PARENT.requester_phone}`), `${label}: ผู้ประสานงานหายจากตาราง`)
+          assert.deepEqual(await sheetKinds(page), ['letter', 'fund-form'])
+          for (const sheet of [0, 1]) assert.ok(await sheetContentMm(page, sheet) <= ONE_PAGE_BUDGET_MM, `${label}: แผ่น ${sheet + 1} สูงเกิน A4`)
+          assert.equal(await page.locator('.fund-form-sheet').locator('text=ผู้ยื่นคำขอ').count(), 0, `${label}: ใบคำขอรับสวัสดิการยังมีคำว่าผู้ยื่นคำขอ`)
+          await assertSignBlockStandard(page, { minRows: 3, minBelow: 6 })
+          if (label === 'ตั้งชื่อนายกแล้ว' && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
+            await page.locator('.fund-form-sheet').screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/fund-form-mayor-named.png` })
+          }
+          if (label === 'ชื่อและตำแหน่งยาวมาก' && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
+            await page.locator('.fund-form-sheet').screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/fund-form-mayor-long.png` })
+          }
+          if (label === 'ทะเบียนว่าง' && process.env.PATIENT_PRINT_SCREENSHOT_DIR) {
+            await page.locator('.fund-form-sheet').screenshot({ path: `${process.env.PATIENT_PRINT_SCREENSHOT_DIR}/fund-form-mayor-blank.png` })
+          }
+        } finally { await page.close() }
+      }
+    },
+  },
+  {
     name: 'separate-buttons-request-and-two-page-fund-packet',
     reason: 'ปุ่มแรกต้องออกใบคำขอถึงนายก 1 แผ่น ปุ่มที่สองต้องออกหนังสือและใบคำขอรับสวัสดิการ 2 แผ่นของรายที่เลือก',
     async run(browser) {
@@ -255,7 +326,7 @@ const checks = [
             assert.equal(await page.locator('.print-window-close').count(), 1, 'หน้าต่างต้องมีปุ่มปิด')
           }
           await assertSignBlockStandard(request, { minRows: 1, minBelow: 1 })
-          await assertSignBlockStandard(letter, { minRows: 3, minBelow: 5 })
+          await assertSignBlockStandard(letter, { minRows: 3, minBelow: 6 })
           await assertSignLinesAligned(letter, '.fund-committee .sign-row')
           const fund = letter.locator('.fund-form-sheet')
           assert.ok((await fund.locator('.kv').last().innerText()).includes(PARTNER.recipient_title))
@@ -283,7 +354,7 @@ const checks = [
       try {
         assert.deepEqual(await sheetKinds(legacy), ['letter', 'fund-form'], 'ทางเข้าคำขอเดิมต้องพิมพ์ชุดถึงกองทุนครบ 2 แผ่น')
         for (const sheet of [0, 1]) assert.ok(await sheetContentMm(legacy, sheet) <= ONE_PAGE_BUDGET_MM)
-        await assertSignBlockStandard(legacy, { minRows: 3, minBelow: 5 })
+        await assertSignBlockStandard(legacy, { minRows: 3, minBelow: 6 })
       } finally { await legacy.close() }
     },
   },

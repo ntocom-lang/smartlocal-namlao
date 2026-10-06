@@ -33,6 +33,10 @@ import { reportPeriod, reportDateLabel } from './patientReportPeriod.js'
 //   หนังสือนำส่ง — นายกเซ็นปากกา ระบบพิมพ์ให้แค่ชื่อในวงเล็บ + ตำแหน่ง จากทะเบียนผู้ลงนามกลาง
 //                  ห้ามพิมพ์ชื่อนายกเป็นลายมือชื่อ: นายกไม่ได้ทำอะไรในระบบตอนพิมพ์ จะกลายเป็นระบบลงนาม
 //                  แทนผู้มีอำนาจบนหนังสือที่ส่งออกนอก อปท. — เทสต์ letter-signer-from-registry-never-auto-signed กันไว้
+//   ใบคำขอรับสวัสดิการ (ใบแนบหนังสือนำส่ง) — นายกเป็นผู้ขอ (เจ้าของระบบสั่ง 2569-10-06 ให้ตรงกับป้ายปุ่ม "นายกถึงประธานกองทุน"):
+//                  "ข้าพเจ้า [ชื่อนายก] ตำแหน่ง …" + นายกเซ็นปากกา ระบบพิมพ์ให้แค่ชื่อในวงเล็บ + ตำแหน่ง จากทะเบียนเดียวกับหนังสือ
+//                  ห้ามพิมพ์ชื่อนายกเป็นลายมือชื่อเช่นเดียวกัน · เดิมเขียนเป็นเสียงผู้ยื่น (ข้าพเจ้า [ผู้ยื่น] / ลงชื่อ ผู้ยื่นคำขอ)
+//                  ห้ามเปลี่ยนกลับเองโดยไม่ถาม — ชื่อผู้ยื่น/เบอร์โทรยังอยู่ในแถว "ผู้ประสานงาน" ของตาราง
 
 import {
   GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText,
@@ -118,6 +122,20 @@ const REQUESTER_LINE_W = GOV_SIGN_LINE_W_WIDE  // ช่องผู้ยื่
 function signatureName(name, width = SIGN_LINE_W) {
   const value = String(name ?? '').trim()
   return value ? `(${esc(value)})` : govNameBlank(width)
+}
+
+// ช่องลงนามของนายกบนใบคำขอรับสวัสดิการ: ตำแหน่งนายกยาวกว่าเส้นมาตรฐาน 55mm ได้ (วัดจริง "นายกองค์การบริหารส่วนตำบลทุ่งแค้ว" 66.8mm,
+// "ปลัด… ปฏิบัติหน้าที่นายก…" 142mm) ถ้าปล่อยให้แกนยืดเองเส้นจะยาวกว่าวงเล็บว่างที่คำนวณไว้ที่ 55mm (เขียนชื่อ-สกุลไม่พอ/ไม่เท่ากัน)
+// จึงประมาณความกว้างจากตัวอักษรไทยที่กินที่ (ไม่นับสระบน/ล่าง/วรรณยุกต์) ราว 2.5mm ต่อตัว แล้วใช้ค่าเดียวกันกับทั้งเส้นและวงเล็บ
+// เพดาน 140mm = พื้นที่พิมพ์ 160mm หักป้าย "ลงชื่อ" — เกินกว่านั้นข้อความล้นออกสองข้างเท่ากันบนแกนเดิม ไม่หายไปไหน
+// สระบน/ล่าง (0E31, 0E34-0E3A, 0E47-0E4E รวมวรรณยุกต์/การันต์) ไม่กินที่ในบรรทัด
+const isThaiNonSpacing = char => { const code = char.codePointAt(0); return code === 0x0E31 || (code >= 0x0E34 && code <= 0x0E3A) || (code >= 0x0E47 && code <= 0x0E4E) }
+const SIGN_MM_PER_THAI_CHAR = 2.55
+const MAYOR_SIGN_MIN_MM = 55
+const MAYOR_SIGN_MAX_MM = 140
+function mayorSignWidth(...texts) {
+  const mm = text => [...String(text ?? '')].filter(char => !isThaiNonSpacing(char)).length * SIGN_MM_PER_THAI_CHAR
+  return `${Math.min(MAYOR_SIGN_MAX_MM, Math.max(MAYOR_SIGN_MIN_MM, Math.ceil(Math.max(0, ...texts.map(mm)))))}mm`
 }
 
 // ที่อยู่ผู้ยื่น/ผู้ป่วยที่กรอกมาเป็นข้อความอิสระอยู่แล้ว ไม่ต้องประกอบใหม่จากรายช่อง
@@ -430,7 +448,8 @@ function fundFormCss() {
   .fund-details th, .fund-details td { border: 1px solid #000; padding: 0.7mm 1.5mm; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
   .fund-details th { width: 32mm; font-weight: normal; }
   .fund-evidence { margin-top: 2mm; }
-  .fund-request-sign { margin-top: 3mm; }
+  /* นายกเซ็นปากกาเหนือเส้น (เดิมเป็นชื่อผู้ยื่นพิมพ์บนเส้น จึงเว้นแค่ 3mm) — เว้น 10mm + แถวของเส้นเอง ≈ ที่เซ็น 16mm ใกล้เคียงหนังสือนำส่ง (12mm) */
+  .fund-request-sign { margin-top: 10mm; }
   /* ชื่อยาวให้คำต่อท้ายขึ้นบรรทัดใหม่ แกนชื่อและวงเล็บยังใช้ govSignBlock เดิม */
   .fund-request-sign .sign-row { flex-wrap: wrap; }
   .fund-committee { border: 1px solid #000; padding: 2mm; margin-top: 3mm; break-inside: avoid; }
@@ -440,8 +459,12 @@ function fundFormCss() {
   `
 }
 
-function fundFormSheet({ header, form = {}, parent = {}, tenant, referenceNo = '', docDate = '' }) {
+function fundFormSheet({ header, form = {}, parent = {}, tenant, mayor = null, referenceNo = '', docDate = '' }) {
   const requesterName = textOr(parent?.requester_name)
+  // ผู้ขอของใบนี้คือนายก — ที่มาและค่าตั้งต้นเดียวกับช่องลงนามของหนังสือนำส่ง (letterSheet)
+  // ช่องลงนามด้านล่างไม่ส่ง signed: นายกเซ็นปากกา ห้ามพิมพ์ชื่อเป็นลายมือชื่อ (คอมเมนต์อยู่ที่นี่ ไม่ใส่ใน HTML เพราะจะติดไปกับใบพิมพ์)
+  const mayorTitle = textOr(mayor?.title, orgHeadTitle(tenant))
+  const mayorSignW = mayorSignWidth(mayorTitle, `(${textOr(mayor?.name)})`)
   const fundName = textOr(header?.partner_name_snapshot, 'กองทุนเจ้าของรถ')
   const recipient = textOr(header?.recipient_title_snapshot, `ประธาน${fundName}`)
   const patientName = textOr(form.patient_name, requesterName)
@@ -473,13 +496,13 @@ function fundFormSheet({ header, form = {}, parent = {}, tenant, referenceNo = '
   </div>
   <p class="kv"><span class="bold">เรื่อง</span>&nbsp;&nbsp;ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย</p>
   <p class="kv"><span class="bold">เรียน</span>&nbsp;&nbsp;${esc(recipient)}</p>
-  <p class="fund-intro">ข้าพเจ้า ${line(requesterName, REQUESTER_LINE_W)} ${field('โทรศัพท์', parent?.requester_phone, '30mm')} มีความประสงค์ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยจากกองทุน รายละเอียดตามตารางท้ายนี้</p>
+  <p class="fund-intro">ข้าพเจ้า ${line(mayor?.name, REQUESTER_LINE_W)} ตำแหน่ง ${esc(mayorTitle)} มีความประสงค์ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วยจากกองทุน รายละเอียดตามตารางท้ายนี้</p>
   <table class="fund-details"><tbody>${rows.map(([label, value]) => `<tr><th scope="row">${esc(label)}</th><td>${esc(value) || '&nbsp;'}</td></tr>`).join('')}</tbody></table>
   <!-- หลักฐานเป็นช่องให้ระบุตามที่กองทุนกำหนด ไม่บังคับแนบหรือเพิ่มการเก็บข้อมูลในระบบ -->
   <p class="fund-evidence">หลักฐาน ${box()} ใบนัดแพทย์ ${box()} อื่นๆ ${line('', '25mm')}</p>
   <div class="sign-block center-row fund-request-sign">${govSignRow({
-    width: REQUESTER_LINE_W, grow: true, role: 'ผู้ยื่นคำขอ', signed: requesterName ? esc(requesterName) : '',
-    below: [signatureName(requesterName, REQUESTER_LINE_W)],
+    width: mayorSignW,
+    below: [signatureName(mayor?.name, mayorSignW), esc(mayorTitle)],
   })}</div>
   <div class="fund-committee sign-block">
     <p class="bold">สำหรับคณะกรรมการกองทุน</p>
