@@ -50,6 +50,7 @@ for (const file of [
   '20261003150000_patient_booking_service_views_v2.sql',
   '20261003150100_patient_booking_legacy_client_gate.sql',
   '20261007150000_patient_booking_destination_zone.sql',
+  '20261007170000_patient_booking_other_place.sql',
 ]) await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 await actor(admin)
 await rpc('patient_booking_save_settings', [tenant, (await rpc('patient_booking_workspace', [tenant])).settings.revision,
@@ -1143,6 +1144,87 @@ try{
  // ฉากวัดคอลัมน์ที่ 1280px ด้านล่างใช้ข้อมูลชื่อสั้นของตัวเอง (ชื่อยาวบังสถานะได้ทั้งปลายทางเดียวและหลายปลายทาง แยกเป็นงานต่างหาก)
  await runSql(()=>db.query("UPDATE public.patient_booking_trips SET state='cancelled' WHERE id=$1",[zoneTrip]))
  console.log('PASS destination zone: full day suggests a same-zone trip, rider keeps own clinic, earlier return, staff confirms into the trip')
+
+ // สถานที่อื่น (20261007170000) — แอดมินเปิดช่อง "อื่นๆ" ครั้งเดียว ผู้จองกดแล้วพิมพ์ชื่อสถานที่เอง (เจ้าของระบบสั่ง 2569-10-07)
+ // ตรวจจนถึงฐานข้อมูลและหน้าเจ้าหน้าที่: ชื่อที่พิมพ์เป็นปลายทางของคำขอ · ไม่ร่วมเที่ยว · เจ้าหน้าที่เห็นชื่อพร้อมคำเตือน · แก้ชื่อได้ ·
+ // ยืนยันรถแล้วกันรถตามเวลาเดินทางมาตรฐาน · หน้าตั้งค่าเปิด/ปิดช่องได้โดยไม่ปนกับรายการโรงพยาบาล
+ const otherDate=new Date();otherDate.setUTCDate(otherDate.getUTCDate()+272)
+ const otherDay=otherDate.toISOString().slice(0,10), otherPhone='0800000781'
+ await runAs(admin,async()=>rpc('patient_booking_save_settings',[tenant,(await rpc('patient_booking_workspace',[tenant])).settings.revision,{...settings,routes:[...settings.routes,{id:'__other__',label:'อื่นๆ (พิมพ์ชื่อสถานที่เอง)',minutes:75}]}]))
+ await page.setViewportSize({width:390,height:900});await visit('newcomer')
+ await page.getByRole('button',{name:'🚐 ขอรถไปโรงพยาบาล',exact:true}).click()
+ await page.getByLabel('ปี พ.ศ.',{exact:true}).selectOption(otherDay.slice(0,4))
+ await page.getByLabel('เดือน',{exact:true}).selectOption(otherDay.slice(5,7))
+ await page.locator(`[data-calendar-date="${otherDay}"]`).click()
+ // บัญชีนี้มีคำขอเก่าจากฉากก่อนหน้า ฟอร์มเติมเส้นทางเดิมให้ (ซึ่งอาจไม่อยู่ในตั้งค่าแล้ว → ไม่มีเวลาให้เลือก) เลือกโรงพยาบาลในรายการก่อนเสมอ
+ const placeGroup=page.getByRole('group',{name:'โรงพยาบาลที่จะไป'})
+ await placeGroup.getByRole('button',{name:/^Hospital A/}).click()
+ await page.getByRole('group',{name:'เวลานัดแพทย์'}).getByRole('button',{name:'12:00 น.',exact:true}).click()
+ assert.equal(await placeGroup.getByRole('button').count(),2,'ต้องมีโรงพยาบาลในรายการ 1 ปุ่ม + ปุ่มอื่นๆ')
+ assert.match(await placeGroup.getByRole('button').last().textContent(),/^อื่นๆ \(พิมพ์ชื่อสถานที่เอง\)ใช้เวลาเดินทางมาตรฐานประมาณ 75 นาที$/,'ปุ่มอื่นๆ อยู่ท้ายสุดและบอกเวลามาตรฐาน')
+ assert.equal(await page.getByLabel('ชื่อสถานที่ที่จะไป',{exact:true}).count(),0,'ยังไม่ได้กดอื่นๆ ต้องไม่มีช่องพิมพ์')
+ await placeGroup.getByRole('button',{name:/^อื่นๆ/}).click()
+ const placeInput=page.getByLabel('ชื่อสถานที่ที่จะไป',{exact:true})
+ await placeInput.waitFor()
+ await page.waitForFunction(()=>document.activeElement?.getAttribute('placeholder')?.includes('พิมพ์ชื่อสถานที่'),null,{timeout:5000})
+ assert.equal(await page.getByRole('checkbox',{name:/นั่งรถคันเดียวกับ/}).count(),0,'สถานที่อื่นไม่มีช่องขอนั่งร่วม')
+ await page.getByRole('group',{name:'ขากลับ'}).getByRole('button',{name:/^ไปอย่างเดียว/}).click()
+ await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill(otherPhone)
+ await page.getByRole('group',{name:'หมู่บ้าน/สถานที่'}).getByRole('button',{name:'TEST บ้านเหนือ'}).click()
+ await page.getByLabel('บ้านเลขที่ / จุดสังเกต',{exact:true}).fill('TEST other pickup')
+ await page.getByRole('button',{name:'ส่งคำขอ',exact:true}).click()
+ await page.getByRole('alert').getByText('ชื่อสถานที่ที่จะไป',{exact:true}).waitFor()
+ assert.equal(await page.getByText('ส่งคำขอสำเร็จ',{exact:true}).count(),0,'ไม่มีชื่อสถานที่ต้องส่งไม่ได้')
+ await placeInput.fill('  วัดพระธาตุ\tช่อแฮ  ')
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
+ await page.screenshot({path:'D:/tmp/patient-other-place-390.png',fullPage:true})
+ await page.getByRole('button',{name:'ส่งคำขอ',exact:true}).click()
+ await page.getByText('วัดพระธาตุ ช่อแฮ',{exact:true}).waitFor()
+ await page.getByRole('checkbox',{name:'ยินยอมให้ใช้ข้อมูลตามข้อความข้างต้น'}).check()
+ await page.getByRole('button',{name:'ยืนยันส่งคำขอ',exact:true}).click()
+ await page.getByText('ส่งคำขอสำเร็จ',{exact:true}).waitFor()
+ const placed=(await runSql(()=>db.query('SELECT id,route_id,route_label,share,status FROM public.patient_bookings WHERE phone=$1',[otherPhone]))).rows[0]
+ assert.deepEqual([placed.route_id,placed.route_label,placed.share,placed.status],['__other__','วัดพระธาตุ ช่อแฮ',false,'submitted'])
+ await staffDesk();await row(placed.id).waitFor();await row(placed.id).click()
+ await sheet.getByText('วัดพระธาตุ ช่อแฮ').first().waitFor()
+ await sheet.getByText(/ผู้จองพิมพ์ชื่อเอง/).first().waitFor()
+ await sheet.locator('summary').filter({hasText:'จัดการเพิ่มเติม'}).first().evaluate(node=>{node.parentElement.open=true})
+ await sheet.getByRole('button',{name:'แก้ข้อมูลหลังโทรประสาน',exact:true}).click()
+ const otherAmend=sheet.locator('form').filter({hasText:'แก้ข้อมูลตามที่ประสานกับ'}).first()
+ assert.equal(await otherAmend.getByLabel('ชื่อสถานที่ที่จะไป',{exact:true}).inputValue(),'วัดพระธาตุ ช่อแฮ','แก้ข้อมูลต้องเติมชื่อที่ผู้จองพิมพ์ให้')
+ await otherAmend.getByLabel('ชื่อสถานที่ที่จะไป',{exact:true}).fill('วัดพระธาตุช่อแฮ (แก้คำสะกด)')
+ await otherAmend.getByLabel('เหตุผลและผลประสาน',{exact:true}).fill('[TEST] ผู้จองแจ้งชื่อที่ถูกต้อง')
+ await otherAmend.getByRole('button',{name:'ยืนยันข้อมูลที่ประสานแล้ว',exact:true}).click()
+ await toast('แก้ข้อมูลตามที่ประสานแล้ว').waitFor()
+ const renamed=(await runSql(()=>db.query('SELECT route_id,route_label,share FROM public.patient_bookings WHERE id=$1',[placed.id]))).rows[0]
+ assert.deepEqual([renamed.route_id,renamed.route_label,renamed.share],['__other__','วัดพระธาตุช่อแฮ (แก้คำสะกด)',false])
+ await runAs(coordinator,async()=>{
+  const plan=await rpc('patient_booking_preview',[tenant,[placed.id],''])
+  assert.deepEqual([plan.errors,plan.route_label],[[],'วัดพระธาตุช่อแฮ (แก้คำสะกด)'])
+  // นัด 12:00 ขาไปอย่างเดียว เวลาเดินทางมาตรฐาน 75 นาที + เผื่อ 15 + ขึ้นรถ 15 → ออกรับ 10:15
+  assert.equal(Date.parse(plan.pickup_at),Date.parse(at(otherDay,'10:15')),'กันรถตามเวลาเดินทางมาตรฐาน 75 นาที')
+ })
+ // หน้าตั้งค่า: ช่องอื่นๆ แยกจากรายการโรงพยาบาล เปิด/ปิดและแก้เวลามาตรฐานได้
+ await visit('admin');await page.getByRole('button',{name:'ตั้งค่า',exact:true}).click()
+ const otherToggle=page.getByRole('checkbox',{name:/เปิดช่อง “อื่นๆ” ให้ผู้จองพิมพ์ชื่อสถานที่/})
+ await otherToggle.waitFor();assert.equal(await otherToggle.isChecked(),true)
+ assert.equal(await page.getByLabel('ชื่อโรงพยาบาล — พื้นที่รับ',{exact:true}).count(),1,'ช่องอื่นๆ ต้องไม่ขึ้นเป็นแถวโรงพยาบาล')
+ const otherMinutes=page.getByLabel('เวลาเดินทางมาตรฐานของสถานที่อื่น (นาทีต่อขา)',{exact:true})
+ assert.equal(await otherMinutes.inputValue(),'75')
+ await otherMinutes.fill('90')
+ await page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true}).click();await toast('บันทึกค่าตั้งต้นแล้ว').waitFor()
+ let otherSettings=(await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))).settings
+ assert.deepEqual(otherSettings.routes.filter(r=>r.id==='__other__').map(r=>r.minutes),[90],'บันทึกเวลามาตรฐานใหม่')
+ assert.deepEqual(otherSettings.routes.filter(r=>r.id!=='__other__').map(r=>r.id),settings.routes.map(r=>r.id),'โรงพยาบาลในรายการไม่ถูกแตะ')
+ await otherToggle.uncheck()
+ assert.equal(await otherMinutes.count(),0)
+ await page.getByRole('button',{name:'บันทึกการตั้งค่า',exact:true}).click();await toast('บันทึกค่าตั้งต้นแล้ว').waitFor()
+ otherSettings=(await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))).settings
+ assert.equal(otherSettings.routes.some(r=>r.id==='__other__'),false,'ปิดช่องแล้วไม่มีเส้นทางพิเศษค้าง')
+ await runAs(admin,async()=>rpc('patient_booking_save_settings',[tenant,otherSettings.revision,settings]))
+ // ยกเลิกคำขอของฉากนี้ (ไม่ลบแถว) เพื่อไม่ให้ปนกับฉากถัดไป
+ await runSql(()=>db.query("UPDATE public.patient_bookings SET status='cancelled' WHERE id=$1",[placed.id]))
+ console.log('PASS other place: admin opens the channel once, rider types the name, review shows it, no sharing, staff sees the warning and fixes the name, plan uses the standard travel time')
  // Reschedule through the staff dialog on a narrow screen, then verify persisted queue.
  const moveUiDate=new Date();moveUiDate.setUTCDate(moveUiDate.getUTCDate()+190)
  const moveUiDay=moveUiDate.toISOString().slice(0,10);moveUiDate.setUTCDate(moveUiDate.getUTCDate()+1)

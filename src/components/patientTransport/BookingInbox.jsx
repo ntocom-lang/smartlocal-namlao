@@ -8,7 +8,7 @@ import { addressFromMap, pickupSentence } from '../../lib/pickupText'
 import { ListCard, Pager, Pills, SectionBand, Sheet } from './StaffShell'
 import { AmendBooking, BookingFundDocs, BookingPrintButtons, OdometerForm } from './BookingOperations'
 import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
-import { SECTION_TONES, STAGES, loadPageSize, paginate, savePageSize, TRIP_STATUS, RETURN_MODES, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, describeHistory, bookingName, bookingPeople, bookingTravel, isCommunity, serviceLabel } from '../../lib/patientBooking'
+import { SECTION_TONES, STAGES, loadPageSize, paginate, savePageSize, TRIP_STATUS, RETURN_MODES, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, describeHistory, bookingName, bookingPeople, bookingTravel, isCommunity, serviceLabel, isOtherPlace } from '../../lib/patientBooking'
 import { tripPassengers } from '../../lib/patientTransportPrint'
 
 /**
@@ -204,6 +204,9 @@ function Facts({ booking: b, trip, others, historical = false }) {
   const items = [
     [isCommunity(b) ? 'เวลาที่ต้องถึง' : historical ? 'วันเวลานัดเดิม (ยกเลิก)' : 'วันเวลานัด', dateTime(b.appointment_at)],
     [isCommunity(b) ? 'สถานที่ชุมชน' : historical ? 'โรงพยาบาลในคำขอเดิม' : 'โรงพยาบาล', b.route_label],
+    // สถานที่อื่น (20261007170000): ชื่อนี้ผู้จองพิมพ์เอง ระบบกันรถตามเวลาเดินทางมาตรฐานที่ตั้งไว้ ไม่ใช่ระยะทางจริง
+    // เจ้าหน้าที่ต้องตรวจก่อนกดยืนยันรถ (ห้ามให้ระบบตัดสินแทน) — แถวนี้ไม่ขึ้นกับคำขอที่ปิดแล้ว
+    ...(isOtherPlace(b.route_id) && !historical ? [['สถานที่อื่น', 'ผู้จองพิมพ์ชื่อเอง · ระบบกันรถตามเวลาเดินทางมาตรฐานที่ตั้งไว้ ไม่ร่วมเที่ยวกับใคร · ตรวจระยะทางและเวลาจริงก่อนยืนยันรถ']] : []),
     [historical ? 'ขากลับในคำขอเดิม' : 'ขากลับ', b.return_mode === 'one_way' ? 'ขาไปอย่างเดียว' : `${RETURN_MODES[b.return_mode]} · ${b.return_at ? `ประมาณ ${clockOf(b.return_at)} น.` : 'ยังไม่ทราบเวลา'}`],
     ['จุดรับ', <>{pickupSentence(b.pickup)}{pin && <a className="ml-2 font-semibold text-sky-800 underline" target="_blank" rel="noopener noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${b.pickup_lat},${b.pickup_lng}`}>📍 นำทาง</a>}</>],
     ['การเดินทาง', `${bookingTravel(b)}${b.share ? ' · นั่งร่วมกับผู้ป่วยอื่นได้' : ''}`],
@@ -376,7 +379,8 @@ function ChangeHospital({ booking, trip, passengers, workspace, busy, onReload, 
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const stale = JSON.stringify(current) !== JSON.stringify(expected)
-  const routes = (workspace.settings.routes || []).filter(r => r.id !== booking.route_id)
+  // ช่อง "อื่นๆ" เลือกเป็นปลายทางใหม่ไม่ได้ (ไม่มีที่พิมพ์ชื่อ ฐานข้อมูลก็ปฏิเสธ) — ต้องแก้ชื่อผ่าน "แก้ข้อมูลตามที่ประสาน"
+  const routes = (workspace.settings.routes || []).filter(r => r.id !== booking.route_id && !isOtherPlace(r.id))
   const selected = routes.find(r => r.id === route)
   const reset = () => { setReview(false); setError(''); setOperation(crypto.randomUUID()) }
   const save = async () => {
