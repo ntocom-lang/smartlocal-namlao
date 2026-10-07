@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, Plus, Save, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { CUSTOM_ROLE, SIGNATORY_SCOPE, todayBangkok } from '../../lib/documentSignatories'
+import {
+  CUSTOM_ROLE, earliestEffectiveFrom, SIGNATORY_BACKDATE_LIMIT_DAYS, SIGNATORY_SCOPE, todayBangkok,
+} from '../../lib/documentSignatories'
+import { thaiDateFromDateInput } from '../../lib/thaiDate'
 
 // ต้องรวม customLabel ด้วย เพราะบทบาท custom มีได้หลายแถวต่อ อปท. ถ้าคีย์ชนกัน
 // ทุกแถวที่แอดมินสร้างเองจะแสดงค่าของแถวเดียวกันหมด
@@ -47,9 +50,15 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
   const [manualName, setManualName] = useState(assignment?.manual_name ?? '')
   const [titleOverride, setTitleOverride] = useState(assignment?.title_override ?? '')
   const [vehicleDefault, setVehicleDefault] = useState(Boolean(assignment?.is_vehicle_order_default))
+  // '' = วันนี้ (ส่ง null ให้ DB เติมวันตามเวลาไทยเอง) · ค่าอื่น = วันมีผลย้อนหลังที่แอดมินเลือก
+  // ไม่ตั้งค่าเริ่มต้นเป็นวันมีผลของแถวเดิม — บันทึกใหม่ = แต่งตั้งใหม่ ถ้าเอาวันเดิมมาใส่จะกลายเป็นย้อนหลังเกิน 30 วันทันที
+  const [effectiveFrom, setEffectiveFrom] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  const today = todayBangkok()
+  const earliest = earliestEffectiveFrom(today)
+  const backdated = Boolean(effectiveFrom) && effectiveFrom < today
   const selected = sourceMode === 'profile' ? people.find((person) => person.id === profileId) : null
   // ต้องมี selected ก่อน มิฉะนั้น undefined !== departmentId จะทำให้แถวหัวหน้ากอง
   // ขึ้นคำเตือน 'อยู่นอกกอง' ตั้งแต่ยังไม่ได้เลือกใครเลย
@@ -75,15 +84,29 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
     if (sourceMode === 'profile' && !profileId) { setError('กรุณาเลือกผู้ลงนาม'); return }
     if (sourceMode === 'manual' && !manualName.trim()) { setError('กรุณากรอกชื่อ-นามสกุลผู้ลงนาม'); return }
     if (sourceMode === 'manual' && !titleOverride.trim()) { setError('กรุณากรอกตำแหน่งที่ต้องการพิมพ์'); return }
+    if (effectiveFrom && effectiveFrom > today) { setError('วันที่มีผลต้องไม่เกินวันนี้'); return }
+    if (effectiveFrom && effectiveFrom < earliest) {
+      setError(`วันที่มีผลย้อนหลังได้ไม่เกิน ${SIGNATORY_BACKDATE_LIMIT_DAYS} วัน (เลือกได้ตั้งแต่ ${thaiDateFromDateInput(earliest)})`)
+      return
+    }
+    // ตั้งย้อนหลัง = ชื่อบนเอกสารที่เสร็จไปแล้วเปลี่ยนตาม ต้องให้แอดมินเห็นผลก่อนกดยืนยันทุกครั้ง
+    if (backdated) {
+      const who = sourceMode === 'manual' ? manualName.trim() : selected?.full_name
+      const confirmed = window.confirm(
+        `ตั้ง “${who}” เป็นผู้ลงนามช่อง “${slot.label}” มีผลย้อนหลังตั้งแต่ ${thaiDateFromDateInput(effectiveFrom)}\n\n`
+        + 'เอกสารที่เสร็จตั้งแต่วันนั้นจะพิมพ์ชื่อนี้แทนคนเดิมเมื่อพิมพ์ซ้ำ\n'
+        + 'เอกสารที่เสร็จก่อนวันนั้นไม่เปลี่ยน\n\nยืนยัน?')
+      if (!confirmed) return
+    }
     setSaving(true)
     setError('')
     // ต้องส่งครบทุก argument แม้ตัวที่หน้าจอไม่ให้กรอกแล้ว: PostgREST เลือกฟังก์ชันจากชุดชื่อ argument
     // ที่ส่งไป ถ้าละตัวที่มี DEFAULT ไว้จะเสี่ยงได้ PGRST202 "Could not find the function ... in the
     // schema cache" ซึ่งอ่านไม่ออกว่าเกิดจากอะไร ในโปรเจกต์นี้ยังไม่มี RPC ตัวไหนละ argument เลย
     //
-    // ส่ง p_effective_from เป็น null โดยตั้งใจ — ให้ DB coalesce เป็นวันนี้ตามเวลา Asia/Bangkok
-    // จะได้ไม่ต้องพึ่งนาฬิกาของเครื่องผู้ใช้ ส่วนเลขที่คำสั่ง/วันสิ้นสุดไม่ใช้แล้ว ผู้ดูแลเปลี่ยนตัว
-    // ผู้ลงนามเองเมื่อมีคำสั่งใหม่
+    // p_effective_from ส่ง null เมื่อมีผลวันนี้ — ให้ DB coalesce เป็นวันนี้ตามเวลา Asia/Bangkok จะได้ไม่ต้อง
+    // พึ่งนาฬิกาของเครื่องผู้ใช้ ส่งวันจริงเฉพาะตอนแอดมินเลือกย้อนหลัง (DB ตรวจซ้ำว่าไม่เกิน 30 วัน)
+    // ส่วนเลขที่คำสั่ง/วันสิ้นสุดไม่ใช้แล้ว ผู้ดูแลเปลี่ยนตัวผู้ลงนามเองเมื่อมีคำสั่งใหม่
     const { error: saveError } = await supabase.rpc('set_document_signatory_v4', {
       p_municipality_id: slot.municipalityId,
       p_signatory_role: slot.role,
@@ -92,7 +115,7 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
       p_manual_name: sourceMode === 'manual' ? manualName.trim() : null,
       p_title_override: titleOverride.trim() || null,
       p_authority_reference: null,
-      p_effective_from: null,
+      p_effective_from: backdated ? effectiveFrom : null,
       p_effective_to: null,
       // ชื่อแถวเป็นตัวระบุแถวสำหรับบทบาทที่แอดมินสร้างเอง บทบาทของระบบต้องส่ง null
       p_custom_label: slot.customLabel ?? null,
@@ -137,6 +160,11 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
         <span className={`mt-0.5 ml-5 inline-block text-[10px] font-semibold ${status.ready ? 'text-emerald-700' : 'text-amber-700'}`}>
           {status.label}
         </span>
+        {assignment?.effective_from && (
+          <p className="ml-5 mt-0.5 text-[10px] leading-tight text-gray-500">
+            มีผลตั้งแต่ {thaiDateFromDateInput(assignment.effective_from)}
+          </p>
+        )}
         {slot.hint && (
           <p className="ml-5 mt-0.5 text-[10px] leading-tight text-gray-400">{slot.hint}</p>
         )}
@@ -186,6 +214,19 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
         <input value={titleOverride} onChange={(event) => setTitleOverride(event.target.value)}
           placeholder={sourceMode === 'manual' ? 'ตำแหน่งที่พิมพ์ *' : selected ? personTitle(selected) : 'ตำแหน่งจากโปรไฟล์'}
           maxLength={250} aria-label={`ชื่อตำแหน่งที่พิมพ์ ${slot.label}`} className={FIELD_CLASS} />
+        {/* วันมีผล — ปกติไม่ต้องแตะ (= วันนี้ มีผลทันทีที่กดบันทึก) เลือกย้อนหลังได้เมื่อคำสั่งแต่งตั้งมีผลก่อนวันที่มาตั้งในระบบ
+            ตั้งล่วงหน้าไม่ได้ — เจ้าของระบบเลือกทำเฉพาะย้อนหลัง 2569-10-07 */}
+        <label className="mt-1.5 flex items-center gap-1.5 text-[10px] font-semibold text-gray-500">
+          <span className="shrink-0">มีผลตั้งแต่</span>
+          <input type="date" value={effectiveFrom || today} min={earliest} max={today}
+            onChange={(event) => setEffectiveFrom(event.target.value === today ? '' : event.target.value)}
+            aria-label={`มีผลตั้งแต่ ${slot.label}`} className={`${FIELD_CLASS} py-1`} />
+        </label>
+        {backdated && (
+          <p className="mt-1 text-[10px] font-medium leading-tight text-amber-700">
+            ย้อนหลัง — เอกสารที่เสร็จตั้งแต่ {thaiDateFromDateInput(effectiveFrom)} จะพิมพ์ชื่อนี้แทนคนเดิม
+          </p>
+        )}
         {/* หัวหน้ากองติ๊กไม่ได้ — อำนาจสั่งใช้รถเป็นของผู้บริหารท้องถิ่นหรือผู้รับมอบอำนาจ
             ตามคำสั่ง (DB บังคับซ้ำอีกชั้นทั้งที่ CHECK และใน RPC) */}
         {!slot.departmentId && (
@@ -322,6 +363,10 @@ export default function SignatorySettings({ tenant }) {
             (ชื่อแถวมาจากหน้าจัดการกอง/ส่วนราชการ แก้ที่นั่นแล้วเปลี่ยนตามทันที)
             เลือกจากบัญชีบุคลากรหรือกรอกชื่อและตำแหน่งเองสำหรับผู้ที่ไม่มีบัญชี
             โดยไม่เกี่ยวกับผู้รับผิดชอบลงพื้นที่หรือสิทธิ์เข้าเมนู
+          </p>
+          <p className="mt-1 text-xs leading-5 text-gray-500">
+            เปลี่ยนผู้ลงนามแล้ว เอกสารที่เสร็จไปก่อนหน้าคงชื่อเดิม เรื่องที่ยังไม่เสร็จใช้ชื่อใหม่
+            ถ้าคำสั่งแต่งตั้งมีผลก่อนวันที่มาตั้งในระบบ เลือก “มีผลตั้งแต่” ย้อนหลังได้ไม่เกิน {SIGNATORY_BACKDATE_LIMIT_DAYS} วัน
           </p>
         </div>
         {!loading && (

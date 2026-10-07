@@ -229,10 +229,12 @@ assert.ok(!manualSignatoryMigrationSource.includes("ผู้ลงนามอ�
 // PostgREST จับคู่ฟังก์ชันจากชุดชื่อ argument ที่ส่งไป การละ argument ที่มี DEFAULT ทำให้เสี่ยง
 // PGRST202 ที่อ่านไม่ออก จึงต้องส่งครบทั้ง 9 ตัวเสมอ แม้ตัวที่หน้าจอไม่ให้กรอกแล้ว
 assert.ok(signatorySettingsSource.includes("p_authority_reference: null"))
-assert.ok(signatorySettingsSource.includes("p_effective_from: null"))
+// ช่อง "มีผลตั้งแต่" กลับมาแล้ว (เจ้าของระบบสั่ง 2569-10-07) แต่ส่งวันจริงเฉพาะตอนเลือกย้อนหลัง
+// มีผลวันนี้ยังส่ง null ให้ DB เติมวันตามเวลาไทยเหมือนเดิม — นาฬิกาเครื่องที่ล้ำไปวันหน้าจะได้ไม่โดน 22007
+assert.ok(signatorySettingsSource.includes("p_effective_from: backdated ? effectiveFrom : null"))
 assert.ok(signatorySettingsSource.includes("p_effective_to: null"))
 assert.ok(signatorySettingsSource.includes("PGRST202"))
-// วันเริ่มมีผลต้องมาจาก DB ไม่ใช่นาฬิกาเครื่องผู้ใช้ (หน้าจอไม่มีช่องให้แก้แล้ว)
+// วันเริ่มมีผลที่ไม่ได้เลือกย้อนหลังต้องมาจาก DB ไม่ใช่นาฬิกาเครื่องผู้ใช้
 assert.ok(manualSignatoryMigrationSource.includes("v_effective_from date := coalesce(p_effective_from, v_today)"))
 assert.ok(!manualSignatoryMigrationSource.includes("IF p_effective_from IS NULL OR p_effective_from > v_today THEN"))
 // พารามิเตอร์ยังต้องอยู่ในลายเซ็นฟังก์ชัน เผื่อกลับมาบังคับใช้โดยไม่ต้องแก้ signature

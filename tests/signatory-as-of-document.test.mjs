@@ -13,8 +13,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
-  defaultVehicleAuthority, isSignatoryActiveToday, organizationSignatories, pickSignatory,
-  signatoryMoment, signatoryName,
+  defaultVehicleAuthority, earliestEffectiveFrom, isSignatoryActiveToday, organizationSignatories, pickSignatory,
+  SIGNATORY_BACKDATE_LIMIT_DAYS, signatoryMoment, signatoryName,
 } from '../src/lib/documentSignatories.js'
 import { bookingLetterMoment } from '../src/lib/patientBooking.js'
 import { resolvePatientRequestSignatories } from '../src/lib/patientRequestSignatories.js'
@@ -192,15 +192,86 @@ check('รายงานที่ออกตอนกดพิมพ์ใช�
   }
 })
 
+// ── วันมีผลย้อนหลัง (เจ้าของระบบสั่ง 2569-10-07) ────────────────────────────────────────────────
+// เหตุการณ์จริงที่น้ำเลา: ปลัดคนใหม่เริ่มลงนาม 5 ต.ค. แต่ตั้งในระบบ 6 ต.ค. 08:54 (กดบันทึกซ้ำ 2 ครั้งห่างกัน 8 วินาที)
+// วิธีแก้ที่ตกลงกัน: แอดมินตั้งปลัดคนใหม่ซ้ำโดยเลือก "มีผลตั้งแต่" 5 ต.ค. — ข้อมูลชุดนี้ตรงกับที่ตรวจนิพจน์ SQL
+// ของ prepare_complaint_print (migration 20261007120000) แบบอ่านอย่างเดียวบน DB แล้ว ได้ผลตรงกันทุกจุดเวลา
+const BACKDATE_REGISTRY = [
+  row('ปลัดคนเดิม', 'clerk', '2026-08-30T13:39:55.142182+00:00', { is_active: false, updated_at: '2026-10-06T01:54:23.058501+00:00' }),
+  row('ปลัดคนใหม่', 'clerk', '2026-10-06T01:54:23.058501+00:00', { is_active: false, updated_at: '2026-10-06T01:54:31.773159+00:00' }),
+  row('ปลัดคนใหม่', 'clerk', '2026-10-06T01:54:31.773159+00:00', { is_active: false, updated_at: '2026-10-07T05:00:00+00:00' }),
+  row('ปลัดคนใหม่', 'clerk', '2026-10-07T05:00:00+00:00', { effective_from: '2026-10-05' }),
+]
+
+check('ตั้งวันมีผลย้อนหลัง: เอกสารที่เสร็จตั้งแต่ 00:00 น. ของวันนั้นได้คนใหม่ ก่อนหน้านั้นคงคนเดิม', () => {
+  const at = iso => nameAt(BACKDATE_REGISTRY, iso)
+  assert.equal(at('2026-10-04T05:00:00+00:00'), 'ปลัดคนเดิม', '4 ต.ค. เที่ยง')
+  assert.equal(at('2026-10-04T16:59:59+00:00'), 'ปลัดคนเดิม', '4 ต.ค. 23:59:59 เวลาไทย')
+  assert.equal(at('2026-10-04T17:00:00+00:00'), 'ปลัดคนใหม่', '5 ต.ค. 00:00 เวลาไทย = วันมีผล')
+  assert.equal(at('2026-10-05T09:35:25+00:00'), 'ปลัดคนใหม่', 'คำร้องเลขที่ 166 ปิด 5 ต.ค. 16:35')
+  assert.equal(at('2026-10-06T01:54:25+00:00'), 'ปลัดคนใหม่', 'ช่วง 8 วินาทีที่กดบันทึกซ้ำ')
+  assert.equal(at('2026-10-07T06:00:00+00:00'), 'ปลัดคนใหม่', 'หลังตั้งย้อนหลัง')
+  assert.equal(at('2026-07-15T03:00:00+00:00'), 'ปลัดคนเดิม', 'ก่อนเริ่มตั้งทะเบียน = คนแรกของช่อง')
+  assert.equal(signatoryName(pickSignatory(BACKDATE_REGISTRY, { role: 'clerk' })), 'ปลัดคนใหม่', 'ไม่ส่ง at = คนปัจจุบัน')
+})
+
+check('แถวที่ไม่ได้ตั้งย้อนหลังเริ่มมีผลตอนกดตั้งเหมือนเดิม — เทียบวันตามเวลาไทย ไม่ใช่ UTC', () => {
+  // กดตั้ง 00:30 น. วันที่ 10 เวลาไทย = 17:30 UTC วันที่ 9 — effective_from ที่ DB เติมให้คือวันที่ 10 (เวลาไทย)
+  // ถ้าเทียบด้วยวัน UTC จะเข้าใจผิดว่าเป็นแถวย้อนหลัง แล้วเลื่อนจุดเปลี่ยนคนไปเที่ยงคืน
+  const earlier = row('คนเดิม', 'mayor', '2026-09-01T00:00:00+00:00', { is_active: false, updated_at: '2026-10-09T17:30:00+00:00' })
+  const lateNight = row('คนใหม่', 'mayor', '2026-10-09T17:30:00+00:00', { effective_from: '2026-10-10' })
+  const rows = [earlier, lateNight]
+  assert.equal(nameAt(rows, '2026-10-09T17:10:00+00:00', { role: 'mayor' }), 'คนเดิม', '00:10 น. ก่อนกดตั้ง')
+  assert.equal(nameAt(rows, '2026-10-09T17:31:00+00:00', { role: 'mayor' }), 'คนใหม่', '00:31 น. หลังกดตั้ง')
+})
+
+check('วันแรกที่เลือกได้ = ย้อนจากวันนี้ (เวลาไทย) 30 วัน', () => {
+  assert.equal(SIGNATORY_BACKDATE_LIMIT_DAYS, 30)
+  assert.equal(earliestEffectiveFrom('2026-10-07'), '2026-09-07')
+  assert.equal(earliestEffectiveFrom('2026-03-01'), '2026-01-30', 'ข้ามเดือนกุมภาพันธ์')
+  assert.equal(earliestEffectiveFrom('2027-01-15'), '2026-12-16', 'ข้ามปี')
+})
+
+// นิยามล่าสุดของ prepare_complaint_print = migration ล่าสุดที่ CREATE OR REPLACE ฟังก์ชันนี้
+const LATEST_PRINT_MIGRATION = '20261007120000_signatory_backdate_effective_from.sql'
+const migration = file => readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+const functionBody = (sql, name) => {
+  const start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`)
+  assert.ok(start >= 0, `ไม่พบ ${name}`)
+  const next = sql.indexOf('CREATE OR REPLACE FUNCTION', start + 1)
+  return sql.slice(start, next < 0 ? undefined : next)
+}
+
 check('ใบคำร้อง (SQL): ปิดแล้ว = ตอนปิด · ยังไม่ปิด = ตอนนี้', () => {
-  const sql = readFileSync(new URL('../supabase/migrations/20261006120000_complaint_print_signatory_as_of.sql', import.meta.url), 'utf8')
-    .replace(/\r\n/g, '\n')
+  const sql = functionBody(migration(LATEST_PRINT_MIGRATION), 'prepare_complaint_print')
   assert.match(sql, /WHEN v_complaint\.status IN \('closed', 'completed', 'done', 'rejected'\)\n\s+THEN coalesce\(v_complaint\.closed_at, v_complaint\.updated_at, now\(\)\)\n\s+ELSE now\(\)/)
   assert.doesNotMatch(sql, /v_today/, 'ยังเหลือการเลือกตามวันนี้')
   assert.doesNotMatch(sql, /v_as_of := coalesce\(v_complaint\.created_at/, 'ห้ามใช้เวลายื่น — เรื่องที่ค้างต้องได้คนปัจจุบัน')
   assert.doesNotMatch(sql, /AND signatory\.is_active\n/, 'ยังกรองเฉพาะแถวที่ใช้อยู่ — หาคนเก่าไม่เจอ')
   assert.match(sql, /later\.created_at > signatory\.created_at/, 'ต้องจบผลของแถวเก่าตอนมีแถวใหม่มาแทน')
   assert.match(sql, /'signatories_as_of', v_as_of/, 'audit ต้องบันทึกเวลาที่ใช้เลือกผู้ลงนาม ตรวจย้อนได้')
+})
+
+check('ใบคำร้อง (SQL): เริ่มมีผลตามวันมีผลย้อนหลัง กติกาเดียวกับ startsAt() ฝั่งเว็บ', () => {
+  const sql = functionBody(migration(LATEST_PRINT_MIGRATION), 'prepare_complaint_print')
+  const startsAt = alias => new RegExp(
+    `WHEN ${alias}\\.effective_from < timezone\\('Asia/Bangkok', ${alias}\\.created_at\\)::date\\n\\s+`
+    + `THEN ${alias}\\.effective_from::timestamp AT TIME ZONE 'Asia/Bangkok'\\n\\s+ELSE ${alias}\\.created_at`)
+  assert.match(sql, startsAt('signatory'), 'แถวที่เลือก')
+  assert.match(sql, startsAt('later'), 'แถวที่มาแทนต้องตัดช่วงของแถวเก่าที่วันมีผลของมัน')
+  assert.match(sql, /WHEN slot\.starts_at <= v_as_of/)
+  assert.match(sql, /WHEN v_as_of < slot\.first_starts_at AND slot\.starts_at = slot\.first_starts_at/)
+  assert.doesNotMatch(sql, /slot\.created_at <= v_as_of/, 'ยังเริ่มมีผลตามเวลาที่กดตั้ง')
+})
+
+check('set_document_signatory_v4: ย้อนได้ไม่เกิน 30 วัน · ห้ามกลบช่วงของคนอื่น · audit บอกว่าย้อนหลัง', () => {
+  const sql = functionBody(migration(LATEST_PRINT_MIGRATION), 'set_document_signatory_v4')
+  assert.match(sql, /v_earliest date := timezone\('Asia\/Bangkok', now\(\)\)::date - 30;/, 'ต้องตรงกับ SIGNATORY_BACKDATE_LIMIT_DAYS')
+  assert.match(sql, /IF v_effective_from < v_earliest THEN/)
+  assert.match(sql, /IF v_effective_from > v_today THEN/, 'ยังห้ามตั้งล่วงหน้า (ไม่ทำเฟส 2)')
+  assert.match(sql, /WHERE shadowed\.starts_at >= v_effective_from::timestamp AT TIME ZONE 'Asia\/Bangkok'/)
+  assert.match(sql, /regexp_replace\(shadowed\.full_name, '\[\[:space:\]\]', '', 'g'\) <> v_new_identity/, 'คนเดียวกันย้อนทับได้')
+  assert.match(sql, /'backdated', v_effective_from < v_today/)
 })
 
 const failed = results.filter(line => line.startsWith('FAIL')).length
