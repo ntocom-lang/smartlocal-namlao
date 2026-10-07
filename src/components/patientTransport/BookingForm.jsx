@@ -5,7 +5,7 @@ import MapPicker from '../MapPicker'
 import { addressFromMap, joinPickup } from '../../lib/pickupText'
 import BookingMonthPicker from './BookingMonthPicker'
 import BookingReviewSheet from './BookingReviewSheet'
-import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, orgAbbr, normalizeBookingPhone, clockOf, bookingLastDay, sameDestinationGroup, destinationGroup, joinReturnChoices } from '../../lib/patientBooking'
+import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, orgAbbr, normalizeBookingPhone, clockOf, bookingLastDay, sameDestinationGroup, destinationGroup, joinReturnChoices, OTHER_PLACE_MAX, isOtherPlace, cleanPlaceName } from '../../lib/patientBooking'
 
 /**
  * ฟอร์มขอจองรถ — หน้าเดียวจบ แล้วจบด้วยหน้าทวนก่อนส่งแบบ "คำร้อง" (BookingReviewSheet)
@@ -72,7 +72,7 @@ function seedFromLast(last) {
   return {
     requester_name: last.requester_name || '', phone: last.phone || '',
     relation: last.relation || 'self', patient_name: last.relation === 'self' ? '' : (last.patient_name || ''),
-    route_id: last.route_id || '', return_mode: last.return_mode || 'wait',
+    route_id: last.route_id || '', other_place: isOtherPlace(last.route_id) ? last.route_label || '' : '', return_mode: last.return_mode || 'wait',
     mobility: last.mobility || 'walk', companions: Number(last.companions) || 0, share: !!last.share,
     pickup_lat: last.pickup_lat ?? null, pickup_lng: last.pickup_lng ?? null, ...splitPickup(last.pickup || ''),
   }
@@ -96,10 +96,12 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   const [form, setForm] = useState({
     requester_name: staffEntry ? '' : profileName || '', phone: staffEntry ? '' : profilePhone || '',
     patient_name: '', relation: 'self', place: '', spot: '', pickup_lat: null, pickup_lng: null,
-    day: '', time: '', route_id: info.routes?.[0]?.id || '', mobility: 'walk', companions: 0, share: true,
+    // ช่อง "อื่นๆ" อยู่ท้ายรายการเสมอ ห้ามเป็นค่าเริ่มต้น (ต้องมีชื่อสถานที่ก่อนจึงใช้ได้)
+    day: '', time: '', route_id: info.routes?.find(r => !isOtherPlace(r.id))?.id || '', other_place: '', mobility: 'walk', companions: 0, share: true,
     return_mode: 'wait', back: '', ...seedFromLast(last), ...initial,
   })
   const id = useRef(crypto.randomUUID()) // Stable on uncertain response; retry the same operation.
+  const otherInput = useRef(null)
   const leadDays = staffEntry ? 0 : Number(info.min_lead_days) || 0
   const first = shiftDay(leadDays)
   const lastDay = bookingLastDay()
@@ -174,7 +176,10 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   const timeMissing = !!form.time && !times.includes(form.time)
   // joinPickup ตัดส่วนที่ซ้ำกัน — กดเลือกหมู่บ้านแล้วช่องจุดสังเกตมีชื่อเดียวกัน (พิมพ์เอง/เติมจากหมุด) ไม่ให้ได้ "A · A"
   const pickupText = () => joinPickup([form.place, form.spot])
-  const routeLabel = info.routes?.find(r => r.id === form.route_id)?.label || ''
+  // สถานที่อื่น: หน้าทวนก่อนส่งต้องแสดงชื่อที่ผู้จองพิมพ์ ไม่ใช่ป้าย "อื่นๆ" ของตั้งค่า
+  const otherChosen = isOtherPlace(form.route_id)
+  const otherName = cleanPlaceName(form.other_place)
+  const routeLabel = otherChosen ? otherName : info.routes?.find(r => r.id === form.route_id)?.label || ''
   const change = key => e => { setMissing([]); setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })) }
   const set = (key, value) => { setMissing([]); setForm(f => ({ ...f, [key]: value })) }
   const stop = !staffEntry && !!dayBlocked
@@ -187,7 +192,8 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   }
   const joinBacks = useMemo(() => joinTrip ? joinReturnChoices({ time: form.time, route_id: form.route_id }, info, joinTrip) : [], [joinTrip, form.time, form.route_id, info])
   const tripGroup = joinTrip ? destinationGroup(info.routes, joinTrip.route_id) : []
-  const routeChoices = tripGroup.length ? tripGroup : (info.routes || [])
+  // ช่อง "อื่นๆ" ต่อท้ายรายการเสมอ ไม่ว่าแอดมินจะเรียงไว้ตรงไหน · ขอร่วมเที่ยวแล้วไม่มีช่องนี้ (สถานที่อื่นไม่ร่วมเที่ยว)
+  const routeChoices = tripGroup.length ? tripGroup : [...(info.routes || []).filter(r => !isOtherPlace(r.id)), ...(info.routes || []).filter(r => isOtherPlace(r.id))]
   // วันที่เลือกไม่มีเวลาว่าง → ระบบหาเที่ยวที่ไปทางเดียวกัน (ปลายทางเดียวกันหรือกลุ่มเดียวกัน) มาเสนอให้ขอนั่งไปด้วยเอง
   const rideAlong = noTimes && !staffEntry && !joinTrip ? (dayInfo?.trips || []).filter(t => t.joinable && sameDestinationGroup(info.routes, t.route_id, form.route_id)) : []
   const contact = info.contact_phone && <p className="mt-2 text-sm">ติดต่อเจ้าหน้าที่ <a className="font-semibold underline" href={`tel:${info.contact_phone}`}>{info.contact_phone}</a></p>
@@ -206,6 +212,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
     if (!day) list.push({ key: 'day', label: 'วันที่ไปโรงพยาบาล', advice: 'กดเลือกวันจากปุ่มวันที่รถว่างในข้อ 1' })
     if (!form.time || timeMissing) list.push({ key: 'time', label: 'เวลานัดแพทย์', advice: 'กดเลือกเวลาตามใบนัดแพทย์ในข้อ 2 ถ้าไม่มีเวลาที่ต้องการให้เลือกวันอื่น' })
     if (!form.route_id) list.push({ key: 'route', label: 'โรงพยาบาลที่จะไป', advice: 'กดเลือกโรงพยาบาลปลายทางในข้อ 3' })
+    else if (otherChosen && otherName.length < 2) list.push({ key: 'route', label: 'ชื่อสถานที่ที่จะไป', advice: 'พิมพ์ชื่อสถานที่ที่จะไปในข้อ 3 (อย่างน้อย 2 ตัวอักษร)' })
     if (!String(form.requester_name).trim()) list.push({ key: 'who', label: 'ชื่อ–สกุลผู้จอง', advice: 'กรอกชื่อและนามสกุลของผู้ที่ติดต่อกลับได้ในข้อ 5' })
     if (!/^0[0-9]{8,9}$/.test(form.phone)) list.push({ key: 'who', label: 'เบอร์ติดต่อกลับ', advice: 'กรอกเบอร์โทรที่ขึ้นต้นด้วย 0 จำนวน 9–10 หลักในข้อ 5' })
     if (form.relation !== 'self' && !String(form.patient_name).trim()) list.push({ key: 'who', label: 'ชื่อ–สกุลผู้เดินทาง', advice: 'กรอกชื่อผู้ป่วยที่จะเดินทางในข้อ 5' })
@@ -224,7 +231,9 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
     in_area: true,
     pickup_lat: form.pickup_lat ?? '', pickup_lng: form.pickup_lng ?? '',
     route_id: form.route_id, mobility: form.mobility, companions: Number(form.companions),
-    share: !!form.share, return_mode: form.return_mode,
+    // สถานที่อื่นไม่ร่วมเที่ยว (ฐานข้อมูลบังคับ share=false อยู่แล้ว ส่งให้ตรงกันเพื่อให้หน้าทวนกับที่เก็บไม่ขัดกัน)
+    ...(otherChosen ? { other_place: otherName } : {}),
+    share: otherChosen ? false : !!form.share, return_mode: form.return_mode,
     appointment_at: bangkokISO(day, form.time),
     return_at: form.return_mode === 'one_way' ? null : bangkokISO(day, form.back || backLatest),
     is_emergency: false, consent: true, representative_authorized: form.relation !== 'self',
@@ -285,11 +294,22 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       {timeMissing && <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-900">เวลา {form.time} น. ที่เลือกไว้ไม่ว่างแล้ว กรุณากดเลือกเวลาใหม่</p>}
     </Section>
 
-    <Section step={3} title="โรงพยาบาลที่จะไป" done={!!form.route_id} warn={warn('route')}
+    <Section step={3} title="โรงพยาบาลที่จะไป" done={!!form.route_id && (!otherChosen || otherName.length >= 2)} warn={warn('route')}
       hint={joinTrip ? 'ขอร่วมเที่ยวได้เฉพาะปลายทางเดียวกันหรืออยู่กลุ่มเดียวกับเที่ยวนั้น' : undefined}>
-      <Choice label="โรงพยาบาลที่จะไป" hideLabel value={form.route_id} onChange={value => set('route_id', value)}
+      <Choice label="โรงพยาบาลที่จะไป" hideLabel value={form.route_id}
+        onChange={value => { set('route_id', value); if (isOtherPlace(value)) setTimeout(() => otherInput.current?.focus(), 0) }}
         cols={routeChoices.length === 1 ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'}
-        items={routeChoices.map(r => ({ value: r.id, label: r.label, note: Number.isFinite(Number(r.minutes)) ? `ทางเดียวประมาณ ${r.minutes} นาที` : '' }))} />
+        items={routeChoices.map(r => isOtherPlace(r.id)
+          ? { value: r.id, label: 'อื่นๆ (พิมพ์ชื่อสถานที่เอง)', note: Number.isFinite(Number(r.minutes)) ? `ใช้เวลาเดินทางมาตรฐานประมาณ ${r.minutes} นาที` : '' }
+          : { value: r.id, label: r.label, note: Number.isFinite(Number(r.minutes)) ? `ทางเดียวประมาณ ${r.minutes} นาที` : '' })} />
+      {/* สถานที่อื่น (20261007170000): พิมพ์ชื่อเอง เจ้าหน้าที่เห็นชื่อนี้ก่อนยืนยันรถ และตรวจระยะทางจริงเอง
+          ระบบกันรถตามเวลาเดินทางมาตรฐานที่แอดมินตั้งไว้ ไม่ร่วมเที่ยวกับผู้ป่วยคนอื่น ห้ามเดาชื่อ/ที่อยู่ให้ */}
+      {otherChosen && <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <label className="block"><span className="text-base font-bold">ชื่อสถานที่ที่จะไป</span>
+          <input ref={otherInput} className={`${inputClass} mt-1`} value={form.other_place} maxLength={OTHER_PLACE_MAX} autoComplete="off"
+            placeholder="เช่น โรงพยาบาล… หรือ คลินิก… (พิมพ์ชื่อสถานที่)" aria-invalid={warn('route') && otherName.length < 2} onChange={change('other_place')} /></label>
+        <p className="text-sm text-slate-600">พิมพ์เฉพาะชื่อสถานที่ ไม่ต้องใส่ชื่อบุคคลหรือเลขที่บ้าน · ไปสถานที่อื่นจะไม่นั่งรถร่วมกับผู้อื่น และเจ้าหน้าที่จะตรวจระยะทางก่อนยืนยันรถ</p>
+      </div>}
     </Section>
 
     {joinTrip ? <Section step={4} title="ขากลับ" done={joinTrip.return_mode === 'one_way' || joinBacks.includes(form.back)} warn={warn('back')}
@@ -357,8 +377,10 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
         items={Object.entries(MOBILITY).map(([value, label]) => ({ value, label }))} />
       <Choice label="ผู้ติดตาม" value={Number(form.companions)} onChange={value => set('companions', value)} cols="grid-cols-5" compact
         items={[0, 1, 2, 3, 4].map(n => ({ value: n, label: n === 0 ? 'ไม่มี' : `${n} คน` }))} />
-      <label className="flex min-h-11 gap-3 rounded-xl border border-slate-200 p-3"><input className="mt-1 size-5 shrink-0" type="checkbox" checked={form.share} onChange={change('share')} />
-        นั่งรถคันเดียวกับผู้ป่วยคนอื่นที่ไปโรงพยาบาลเดียวกันได้ (ช่วยให้ได้คิวเร็วขึ้น)</label>
+      {otherChosen
+        ? <p className="rounded-xl border border-slate-200 p-3 text-sm text-slate-700">ไปสถานที่อื่นจะไม่นั่งรถคันเดียวกับผู้ป่วยคนอื่น</p>
+        : <label className="flex min-h-11 gap-3 rounded-xl border border-slate-200 p-3"><input className="mt-1 size-5 shrink-0" type="checkbox" checked={form.share} onChange={change('share')} />
+          นั่งรถคันเดียวกับผู้ป่วยคนอื่นที่ไปโรงพยาบาลเดียวกันได้ (ช่วยให้ได้คิวเร็วขึ้น)</label>}
     </Section>
 
     {missing.length > 0 && <div role="alert" className="space-y-2 rounded-xl bg-red-50 p-3 text-red-900">

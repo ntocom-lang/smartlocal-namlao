@@ -13,6 +13,14 @@ export const inputClass = 'w-full min-h-11 min-w-0 rounded-xl border border-slat
 export const buttonClass = 'min-h-11 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 disabled:opacity-50'
 export const primaryClass = 'min-h-11 rounded-xl bg-sky-800 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50'
 export const isCommunity = booking => booking?.service_type === 'community'
+// สถานที่อื่น (20261007170000): แอดมินเปิดช่อง "อื่นๆ" ครั้งเดียวในหน้าตั้งค่า (routes[] ที่ id นี้ มีแค่ minutes = ค่ามาตรฐาน)
+// ผู้จองพิมพ์ชื่อสถานที่เอง → ฐานข้อมูลเก็บเป็น route_label ของคำขอนั้น และไม่ให้ร่วมเที่ยวกับใคร
+// ⚠️ ค่านี้ต้องตรงกับ '__other__' ใน patient_booking_submit/amend/change_hospital
+export const OTHER_PLACE_ID = '__other__'
+export const OTHER_PLACE_MAX = 200
+export const isOtherPlace = routeId => routeId === OTHER_PLACE_ID
+// ตัดช่องว่าง/ขึ้นบรรทัดใหม่ให้เหลือช่องว่างเดียวแบบเดียวกับที่ฐานข้อมูลทำ — ข้อความที่ผู้ใช้เห็นในหน้าทวนจะตรงกับที่เก็บจริง
+export const cleanPlaceName = text => Array.from(String(text ?? ''), ch => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127 ? ' ' : ch).join('').replace(/\s+/g, ' ').trim().slice(0, OTHER_PLACE_MAX + 1)
 export const serviceLabel = booking => isCommunity(booking) ? 'ชุมชน' : 'ผู้ป่วย'
 export const bookingName = booking => isCommunity(booking) ? `กลุ่ม ${booking.group_label || 'ไม่ระบุชื่อกลุ่ม'} (${booking.party_size || 0} คน)` : booking?.patient_name || ''
 export const bookingPeople = booking => isCommunity(booking) ? Number(booking.party_size || 0) : 1 + Number(booking?.companions || 0)

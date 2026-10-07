@@ -7,7 +7,7 @@ import { ListCard, Pager, Pills, SectionBand, Sheet } from './StaffShell'
 import { MONTHS_TH, thaiDateFromDateInput } from '../../lib/thaiDate'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
-import { SECTION_TONES, loadPageSize, paginate, savePageSize, BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent, bookingLetter, bookingName, bookingTravel, serviceLabel, isCommunity, servicePeriodReport } from '../../lib/patientBooking'
+import { SECTION_TONES, loadPageSize, paginate, savePageSize, BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent, bookingLetter, bookingName, bookingTravel, serviceLabel, isCommunity, servicePeriodReport, isOtherPlace, cleanPlaceName, OTHER_PLACE_MAX } from '../../lib/patientBooking'
 
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
 const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
@@ -202,12 +202,20 @@ export function QueueReport({ workspace, busy, onPeriodReport }) {
 // saveLabel: แผ่นแก้ปัญหาของกล่องคำขอรถใช้ "บันทึกและยืนยันรถ" เพราะบันทึกแล้วระบบยืนยันต่อให้ทันที
 export function AmendBooking({ booking, routes, busy, onBack, onSave, saveLabel = 'ยืนยันข้อมูลที่ประสานแล้ว' }) {
   const hhmm = value => value ? new Date(value).toLocaleTimeString('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) : ''
-  const [form, setForm] = useState({ day: thaiDay(booking.appointment_at), time: hhmm(booking.appointment_at), back: hhmm(booking.return_at), route_id: booking.route_id, pickup: booking.pickup, in_area: booking.in_area, return_mode: booking.return_mode, note: '' })
+  const [form, setForm] = useState({ day: thaiDay(booking.appointment_at), time: hhmm(booking.appointment_at), back: hhmm(booking.return_at), route_id: booking.route_id, pickup: booking.pickup, in_area: booking.in_area, return_mode: booking.return_mode, note: '',
+    // สถานที่อื่น: ชื่อที่ผู้จองพิมพ์อยู่ใน route_label ของคำขอ เติมให้แก้ได้ ไม่ใช่ป้าย "อื่นๆ" ของตั้งค่า
+    other_place: isOtherPlace(booking.route_id) ? booking.route_label || '' : '' })
+  const other = isOtherPlace(form.route_id)
+  const otherName = cleanPlaceName(form.other_place)
+  // เส้นทางเดิมของคำขอถูกนำออกจากตั้งค่าแล้ว (เช่น แอดมินปิดช่อง "อื่นๆ") ต้องยังเห็นเป็นตัวเลือกที่เลือกอยู่
+  // ไม่งั้น select แสดงเส้นทางแรกแต่ส่งค่าเดิม ผู้แก้เข้าใจผิดว่าเปลี่ยนแล้ว — ฐานข้อมูลจะปฏิเสธและให้เลือกเส้นทางใหม่
+  const choices = routes.some(r => r.id === booking.route_id) ? routes : [{ id: booking.route_id, label: `${booking.route_label} (ไม่อยู่ในตั้งค่าแล้ว)` }, ...routes]
   const change = key => e => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
-  return <form className="space-y-3 rounded-xl border-2 border-sky-700 p-4" onSubmit={e => { e.preventDefault(); onSave({ appointment_at: bangkokISO(form.day, form.time), return_at: form.return_mode === 'one_way' ? null : bangkokISO(form.day, form.back), route_id: form.route_id, pickup: form.pickup, in_area: form.in_area, return_mode: form.return_mode }, form.note) }}>
+  return <form className="space-y-3 rounded-xl border-2 border-sky-700 p-4" onSubmit={e => { e.preventDefault(); onSave({ appointment_at: bangkokISO(form.day, form.time), return_at: form.return_mode === 'one_way' ? null : bangkokISO(form.day, form.back), route_id: form.route_id, pickup: form.pickup, in_area: form.in_area, return_mode: form.return_mode, ...(other ? { other_place: otherName } : {}) }, form.note) }}>
     <h3 className="font-bold">แก้ข้อมูลตามที่ประสานกับ {bookingName(booking)}</h3><div className="grid gap-3 sm:grid-cols-2">
       <label>วันนัด<input className={inputClass} type="date" required value={form.day} onChange={change('day')} /></label><label>เวลานัด<input className={inputClass} type="time" required value={form.time} onChange={change('time')} /></label>
-      <label>เส้นทาง<select className={inputClass} value={form.route_id} onChange={change('route_id')}>{routes.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}</select></label>
+      <label>เส้นทาง<select className={inputClass} value={form.route_id} onChange={change('route_id')}>{choices.map(r => <option key={r.id} value={r.id}>{isOtherPlace(r.id) && routes.some(x => x.id === r.id) ? 'อื่นๆ (พิมพ์ชื่อสถานที่เอง)' : r.label}</option>)}</select></label>
+      {other && <label>ชื่อสถานที่ที่จะไป<input className={inputClass} required minLength={2} maxLength={OTHER_PLACE_MAX} autoComplete="off" value={form.other_place} onChange={change('other_place')} /></label>}
       <label>ขากลับ<select className={inputClass} value={form.return_mode} onChange={change('return_mode')}>{Object.entries(RETURN_MODES).map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></label>
       {form.return_mode !== 'one_way' && <label>เวลาพร้อมรับกลับ<input className={inputClass} type="time" value={form.back} onChange={change('back')} /></label>}
       <label>จุดรับ<input className={inputClass} required maxLength={500} value={form.pickup} onChange={change('pickup')} /></label>

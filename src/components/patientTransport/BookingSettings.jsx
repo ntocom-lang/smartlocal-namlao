@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { buttonClass, primaryClass, inputClass, minutes, clockTime } from '../../lib/patientBooking'
+import { buttonClass, primaryClass, inputClass, minutes, clockTime, OTHER_PLACE_ID } from '../../lib/patientBooking'
 
 function SettingsGroup({ number, title, children }) {
   return <section aria-label={title} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -20,14 +20,25 @@ export default function BookingSettings({ workspace, busy, onSave }) {
   const [attemptedOpen, setAttemptedOpen] = useState(false)
   const set = key => e => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
   const input = (key, label, props = {}) => <label>{label}<input className={inputClass} value={form[key] ?? ''} onChange={set(key)} {...props} /></label>
-  function changeRoute(index, key, value) { setForm(f => ({ ...f, routes: f.routes.map((r, i) => i === index ? { ...r, [key]: value } : r) })) }
+  function changeRoute(routeId, key, value) { setForm(f => ({ ...f, routes: f.routes.map(r => r.id === routeId ? { ...r, [key]: value } : r) })) }
+  // ช่อง "อื่นๆ" (20261007170000) เก็บเป็นเส้นทางพิเศษ id '__other__' มีแค่เวลาเดินทางมาตรฐาน — แยกออกจากรายการโรงพยาบาล
+  // จะได้ไม่ไปปนกับกลุ่มปลายทาง และไม่นับเป็น "เส้นทางโรงพยาบาลอย่างน้อย 1 เส้นทาง"
+  const listedRoutes = form.routes.filter(r => r.id !== OTHER_PLACE_ID)
+  const otherRoute = form.routes.find(r => r.id === OTHER_PLACE_ID)
+  // ค่าเริ่มต้นตอนเปิดช่อง = เวลาเดินทางของโรงพยาบาลที่ไกลที่สุดที่ตั้งไว้ (แอดมินเห็นและแก้ได้ก่อนบันทึก)
+  const farthest = Math.max(30, ...listedRoutes.map(r => Number(r.minutes) || 0))
+  function toggleOther(on) {
+    setForm(f => ({ ...f, routes: on
+      ? [...f.routes.filter(r => r.id !== OTHER_PLACE_ID), { id: OTHER_PLACE_ID, label: 'อื่นๆ (พิมพ์ชื่อสถานที่เอง)', minutes: Math.min(240, farthest) }]
+      : f.routes.filter(r => r.id !== OTHER_PLACE_ID) }))
+  }
   // ชื่อกลุ่มที่ใช้อยู่แล้วให้เลือกซ้ำได้ — พิมพ์ต่างกันแค่ตัวเดียวระบบถือเป็นคนละกลุ่ม
-  const zoneNames = [...new Set(form.routes.map(r => String(r.zone || '').trim()).filter(Boolean))]
+  const zoneNames = [...new Set(listedRoutes.map(r => String(r.zone || '').trim()).filter(Boolean))]
   const missing = [
     !form.partner_id && 'เลือกเจ้าของรถ', !form.driver_id && 'เลือกคนขับ',
     !form.coordinator_ids.length && 'เลือกผู้ยืนยันคิว (เป็นคนขับคนเดียวกันได้)',
     ['seats', 'wheelchairs', 'stretchers'].some(key => form[key] === '' || form[key] == null) && 'ระบุความจุรถจริง ช่องที่ไม่มีให้ใส่ 0',
-    !form.routes.length && 'เพิ่มโรงพยาบาลและเวลาเดินทางอย่างน้อย 1 เส้นทาง',
+    !listedRoutes.length && 'เพิ่มโรงพยาบาลและเวลาเดินทางอย่างน้อย 1 เส้นทาง',
     !/^0[0-9]{8,9}$/.test(form.contact_phone) && 'ระบุเบอร์ติดต่อหน่วยงาน',
   ].filter(Boolean)
   return <form className="space-y-5" onInvalidCapture={e => { const section = e.target.closest('details'); if (section) section.open = true }} onSubmit={e => {
@@ -86,14 +97,27 @@ export default function BookingSettings({ workspace, busy, onSave }) {
         ระบบคิดเวลาจากปลายทางที่ไกลที่สุดของรอบ แล้วบวกเวลาแวะจุดละ {form.buffer_minutes} นาที (เวลาเผื่อในข้อ 3) · เว้นว่าง = ไม่รวมกับปลายทางอื่น
       </p>
       <datalist id="patient-route-zones">{zoneNames.map(zone => <option key={zone} value={zone} />)}</datalist>
-      {form.routes.map((r, i) => <div key={r.id} className="my-3 grid gap-3 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1fr_140px_auto]">
-        <label>ชื่อโรงพยาบาล — พื้นที่รับ<input className={inputClass} value={r.label} required maxLength={200} onChange={e => changeRoute(i, 'label', e.target.value)} /></label>
-        <label>นาทีต่อขา<input className={inputClass} type="number" min={5} max={240} required value={r.minutes} onChange={e => changeRoute(i, 'minutes', Number(e.target.value))} /></label>
+      {listedRoutes.map(r => <div key={r.id} className="my-3 grid gap-3 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1fr_140px_auto]">
+        <label>ชื่อโรงพยาบาล — พื้นที่รับ<input className={inputClass} value={r.label} required maxLength={200} onChange={e => changeRoute(r.id, 'label', e.target.value)} /></label>
+        <label>นาทีต่อขา<input className={inputClass} type="number" min={5} max={240} required value={r.minutes} onChange={e => changeRoute(r.id, 'minutes', Number(e.target.value))} /></label>
         <button type="button" className={buttonClass} onClick={() => setForm(f => ({ ...f, routes: f.routes.filter(x => x.id !== r.id) }))}>นำออกจากร่าง</button>
         <label className="sm:col-span-3">กลุ่มปลายทาง <span className="text-sm font-normal text-slate-600">(ถ้ามี)</span>
-          <input className={inputClass} list="patient-route-zones" maxLength={60} placeholder="เว้นว่าง = ไม่รวมกับปลายทางอื่น" value={r.zone || ''} onChange={e => changeRoute(i, 'zone', e.target.value)} /></label>
+          <input className={inputClass} list="patient-route-zones" maxLength={60} placeholder="เว้นว่าง = ไม่รวมกับปลายทางอื่น" value={r.zone || ''} onChange={e => changeRoute(r.id, 'zone', e.target.value)} /></label>
       </div>)}
       <button type="button" className={buttonClass} onClick={() => setForm(f => ({ ...f, routes: [...f.routes, { id: crypto.randomUUID(), label: '', minutes: 30 }] }))}>เพิ่มเส้นทาง</button>
+      {/* สถานที่อื่น (20261007170000): ตั้งครั้งเดียว — ผู้จองเห็นปุ่ม "อื่นๆ" แล้วพิมพ์ชื่อสถานที่เอง
+          ใช้เวลาเดินทางมาตรฐานค่าเดียวกันกับทุกสถานที่อื่น (เจ้าของระบบเลือก 2569-10-07) ไม่ร่วมเที่ยวกับใคร ปิดไว้เป็นค่าเริ่มต้น */}
+      <div className="mt-4 space-y-3 rounded-xl border border-slate-200 p-3">
+        <label className="flex min-h-11 items-center gap-3"><input className="size-5" type="checkbox" checked={!!otherRoute} onChange={e => toggleOther(e.target.checked)} />
+          เปิดช่อง “อื่นๆ” ให้ผู้จองพิมพ์ชื่อสถานที่ที่ไม่อยู่ในรายการเอง</label>
+        {otherRoute && <>
+          <label className="block">เวลาเดินทางมาตรฐานของสถานที่อื่น (นาทีต่อขา)
+            <input className={inputClass} type="number" min={5} max={240} required value={otherRoute.minutes} onChange={e => changeRoute(OTHER_PLACE_ID, 'minutes', Number(e.target.value))} /></label>
+          <p className="text-sm text-slate-700">เริ่มต้นเป็นเวลาของโรงพยาบาลที่ไกลที่สุดที่ตั้งไว้ แก้ได้ ระบบใช้ค่านี้ค่าเดียวกันกันรถให้ทุกสถานที่อื่น ถ้าสถานที่จริงไกลกว่านี้ รถจะถูกกันสั้นเกินไป
+            ตั้งให้สูงไว้ก่อนเพื่อความปลอดภัย · เจ้าหน้าที่เห็นชื่อสถานที่ก่อนกดยืนยันรถทุกครั้งและต้องตรวจระยะทางจริงเอง · สถานที่อื่นไม่นั่งรถร่วมกับผู้ป่วยคนอื่น</p>
+          <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">⚠️ ระบบไม่ได้ตรวจว่ากองทุนอนุญาตให้ใช้รถไปสถานที่ประเภทใด ผู้จัดคิวต้องตัดสินตามข้อบังคับของกองทุนตอนยืนยันรถ</p>
+        </>}
+      </div>
     </fieldset>
     </SettingsGroup>
     <SettingsGroup number="5" title="การเปิดรับจอง">
