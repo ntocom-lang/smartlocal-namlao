@@ -13,7 +13,7 @@ function fmtDate(dateStr) {
   })
 }
 
-function PostDetailModal({ post, onClose }) {
+export function PostDetailModal({ post, onClose }) {
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
