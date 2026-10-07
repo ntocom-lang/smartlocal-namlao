@@ -106,7 +106,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
         // ปุ่มแก้จะได้บอกเวลารถออกรับใหม่ของผู้เดินทางเดิมก่อนกด · ลองไม่ได้ก็ยังมีทางแก้อื่นครบ
         const joins = []
         if (!requested && plan.errors.includes('ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว')) {
-          for (const trip of joinCandidates(plan, workspace.trips)) {
+          for (const trip of joinCandidates(plan, workspace.trips, workspace.settings?.routes)) {
             try {
               const multi = ids.length > 1
               joins.push({ trip, ids, plan: await call(multi ? 'patient_booking_preview_multiwave' : 'patient_booking_preview_into_trip',

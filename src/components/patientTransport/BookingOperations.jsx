@@ -258,6 +258,10 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
   const label = driverNext(t, bookings)
   const pickupAt = t.estimated_pickup_at || t.plan?.pickup_at
   const backAt = t.estimated_return_at || t.plan?.return_at
+  // กลุ่มปลายทาง (20261007150000): เที่ยวเดียวแวะหลายปลายทาง / รับกลับหลายรอบได้โดยไม่ต้องเป็น multiwave
+  // คนขับต้องเห็นว่าใครลงที่ไหน และใครกลับรอบไหน ไม่งั้นต้องโทรถามผู้จัดคิว
+  const manyStops = new Set(people.map(b => b.route_id)).size > 1
+  const manyRuns = !!t.plan?.multiwave || (t.plan?.return_waves?.length || 0) > 1
   return <article data-trip={t.id} aria-label={`เที่ยว ${t.plan?.route_label} ${clockOf(pickupAt)} น.`} className={bare ? 'space-y-3' : `space-y-3 rounded-2xl border-2 bg-white p-4 ${upcoming ? 'border-slate-200' : 'border-sky-700'}`}>
     {/* ป้ายสถานะอยู่บรรทัดบนสุด — วางข้างหัวการ์ดแล้วจอมือถือตัดเวลาและชื่อโรงพยาบาลขึ้นบรรทัดใหม่ */}
     <div className="space-y-0.5">
@@ -266,7 +270,7 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
       <p className="font-semibold">🏥 {t.plan?.route_label}</p>
       <p className="text-sm">คนขับประจำเที่ยว: <strong>{t.driver_name || 'รอโหลดชื่อ'}</strong></p>
       <p className="text-sm text-slate-600">{RETURN_MODES[t.plan?.return_mode]}{t.plan?.return_mode !== 'one_way' && backAt ? ` · รับกลับประมาณ ${clockOf(backAt)} น.` : ''}</p>
-      {t.plan?.multiwave && <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">
+      {manyRuns && <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">
         <strong>แผนวิ่งรถวันนี้</strong>
         <ol className="mt-1 list-inside list-decimal">{t.plan.outbound_waves?.map((w, i) => <li key={`out-${i}`}>รับรอบ {i + 1} เริ่ม {clockOf(w.pickup_at)} น. · นัด {clockOf(w.appointment_start)}–{clockOf(w.appointment_end)} น.</li>)}</ol>
         <ol className="list-inside list-decimal">{t.plan.return_waves?.map((w, i) => <li key={`back-${i}`}>รับกลับรอบ {i + 1} ประมาณ {clockOf(w.return_start)} น.</li>)}</ol>
@@ -278,7 +282,8 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
       return <li key={b.id} className="rounded-xl bg-slate-50 p-3">
         <p className="font-bold">{people.length > 1 ? `${index + 1}. ` : ''}{bookingName(b)}</p>
         <p className="text-sm">{bookingTravel(b)}</p>
-        {t.plan?.multiwave && <p className="text-sm font-semibold text-sky-900">มารับประมาณ {clockOf(pickupForBooking(t, b))} น.{b.return_mode !== 'one_way' ? ` · รับกลับประมาณ ${clockOf(returnForBooking(t, b))} น.` : ''}</p>}
+        {manyStops && <p className="text-sm font-semibold text-sky-900">ลงที่: {b.route_label}</p>}
+        {manyRuns && <p className="text-sm font-semibold text-sky-900">มารับประมาณ {clockOf(pickupForBooking(t, b))} น.{b.return_mode !== 'one_way' ? ` · รับกลับประมาณ ${clockOf(returnForBooking(t, b))} น.` : ''}</p>}
         <p className="text-sm">จุดรับ: {pickupSentence(b.pickup)}</p>
         {b.cancel_requested && <p className="text-sm font-semibold text-amber-800">ผู้จองขอยกเลิก รอเจ้าหน้าที่ประสาน · ถ้าไม่ได้ขึ้นรถ กด “แจ้งเหตุขัดข้อง”</p>}
         {b.return_ready && ['outbound', 'hospital'].includes(t.state) && <p className="text-sm font-bold text-sky-800">🔔 แจ้งพร้อมให้รับกลับแล้ว</p>}

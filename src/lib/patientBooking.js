@@ -111,6 +111,18 @@ export function journeyWindow({ time, back, return_mode: returnMode, route_id: r
   return { start, end: minutes(back) + info.boarding_minutes + travel + info.buffer_minutes }
 }
 
+// กลุ่มปลายทาง (20261007150000): ปลายทางที่ผู้ดูแลตั้งชื่อกลุ่มเดียวกัน = รถเที่ยวเดียวแวะส่งได้หลายจุด
+// ว่าง = ไม่รวมกับปลายทางอื่น · ต้องตัดสินแบบเดียวกับ ptb_plan (ตัดช่องว่างหัวท้าย แล้วเทียบตรงตัว)
+export function routeZone(routes, routeId) { return String(routes?.find(r => r.id === routeId)?.zone || '').trim() }
+export function sameDestinationGroup(routes, a, b) {
+  if (!a || !b) return false
+  if (a === b) return true
+  const zone = routeZone(routes, a)
+  return !!zone && zone === routeZone(routes, b)
+}
+// ปลายทางทั้งหมดที่นั่งรถเที่ยวเดียวกับปลายทางนี้ได้ (รวมตัวเอง) ตามลำดับในหน้าตั้งค่า
+export function destinationGroup(routes, routeId) { return (routes || []).filter(r => sameDestinationGroup(routes, r.id, routeId)) }
+
 // แถบขั้นตอนที่ประชาชนเห็นในการ์ด "คำขอของฉัน" — 4 ขั้นแบบเดียวกับแถบสถานะของคำขอบริการ/เอกสาร
 // (src/pages/MyDocRequests.jsx) ประชาชนจะได้อ่านสถานะด้วยภาษาชุดเดียวกันทุกบริการ
 export const BOOKING_STEPS = ['ส่งคำขอแล้ว', 'ยืนยันรถแล้ว', 'กำลังเดินทาง', 'เสร็จแล้ว']
@@ -164,6 +176,25 @@ export function freeTimeChoices(form, info, dayInfo, step = 15, ignoreAvailabili
   return times
 }
 
+// เวลารับกลับที่ผู้ขอร่วมเที่ยวเลือกได้ — เที่ยว "รอรับกลับ" รถรออยู่ปลายทางอยู่แล้ว จึงพาผู้ขอร่วมกลับบ้านก่อนได้
+// ถ้ากลับไปทันรอบรับกลับเดิม (คิดแบบรอบขากลับของ ptb_plan ด้วยปลายทางของผู้ขอเอง ห่างรอบเดิมเกิน 30 นาที
+// ไม่งั้นฐานข้อมูลรวมเป็นรอบเดียวกัน) · เที่ยวแบบอื่นต้องกลับพร้อมเที่ยว เวลาสุดท้ายในรายการ = กลับพร้อมเที่ยวเสมอ
+// ⚠️ ตัวกรองไม่ให้เลือกเวลาที่ยืนยันไม่ได้ ฐานข้อมูลยังตรวจแผนทั้งก้อนใหม่ก่อนรับคำขอ
+export function joinReturnChoices(form, info, trip) {
+  const tripBack = clockOf(trip?.return_at)
+  if (!tripBack) return []
+  const travel = Number(info?.routes?.find(r => r.id === form.route_id)?.minutes)
+  if (trip.return_mode !== 'wait' || !form.time || !trip.date || !Number.isFinite(travel)
+    || !Number.isFinite(info?.buffer_minutes) || !Number.isFinite(info?.boarding_minutes)) return [tripBack]
+  const waves = (trip.return_waves || []).map(w => ({ start: dayMinutes(w.return_start, trip.date), depart: dayMinutes(w.depart_at, trip.date), end: dayMinutes(w.end_at, trip.date) }))
+  const out = []
+  for (let at = Math.ceil(minutes(form.time) / 60) * 60; at < minutes(tripBack); at += 60) {
+    const depart = at - travel - info.buffer_minutes, end = at + info.boarding_minutes + travel + info.buffer_minutes
+    if (waves.every(w => Math.abs(at - w.start) > 30 && (end <= w.depart || depart >= w.end))) out.push(clockTime(at))
+  }
+  return [...out, tripBack]
+}
+
 // Mirrors the single community run in ptb_plan, including boarding every person.
 // Separate return runs may fit separate free windows; wait reserves the complete interval.
 export function communityVehicleBlocks(form, info) {
@@ -199,7 +230,7 @@ export function suggestGroups(bookings, settings) {
     const group = groups.find(g => {
       const first = g[0]
       return !isCommunity(r) && settings?.seats && r.share && r.mobility === 'walk' && g.every(x => !isCommunity(x) && x.share && x.mobility === 'walk')
-        && first.route_id === r.route_id && first.return_mode === r.return_mode && thaiDay(first.appointment_at) === thaiDay(r.appointment_at)
+        && sameDestinationGroup(settings?.routes, first.route_id, r.route_id) && first.return_mode === r.return_mode && thaiDay(first.appointment_at) === thaiDay(r.appointment_at)
         && Math.abs(new Date(first.appointment_at) - new Date(r.appointment_at)) <= 30 * 60000
         && (r.return_mode === 'one_way' || (r.return_at && first.return_at && Math.abs(new Date(first.return_at) - new Date(r.return_at)) <= 30 * 60000))
         && g.reduce((n, x) => n + 1 + x.companions, 1 + r.companions) <= settings.seats
@@ -392,11 +423,12 @@ export function overlappingTrips(plan, trips = []) {
   return trips.filter(t => t.state !== 'cancelled' && !(t.booking_ids || []).some(id => plan?.booking_ids?.includes(id))
     && (t.plan?.blocks || []).some(old => (plan?.blocks || []).some(b => Date.parse(old.start) < Date.parse(b.end) && Date.parse(b.start) < Date.parse(old.end))))
 }
-// เที่ยวที่ลอง "ให้ไปคันเดียวกัน" ได้ (20260921120000): ยืนยันแล้ว ปลายทาง วัน และขากลับตรงกัน
+// เที่ยวที่ลอง "ให้ไปคันเดียวกัน" ได้ (20260921120000): ยืนยันแล้ว ปลายทาง (หรือกลุ่มปลายทาง) วัน และขากลับตรงกัน
 // เป็นแค่ตัวกรองไม่ให้ถามฐานข้อมูลเปล่า ๆ — เงื่อนไขจริง (ยินยอมนั่งร่วม ที่นั่ง เวลา) ฐานข้อมูลตัดสินเอง
-export function joinCandidates(plan, trips = []) {
+// routes = เส้นทางในหน้าตั้งค่า ไม่ส่งมา = เทียบปลายทางตรงตัวแบบเดิม
+export function joinCandidates(plan, trips = [], routes = []) {
   if ((plan?.service_type || 'patient') !== 'patient') return []
-  return overlappingTrips(plan, trips).filter(t => (t.plan?.service_type || 'patient') === 'patient' && t.state === 'confirmed' && t.plan?.route_id === plan?.route_id
+  return overlappingTrips(plan, trips).filter(t => (t.plan?.service_type || 'patient') === 'patient' && t.state === 'confirmed' && sameDestinationGroup(routes, t.plan?.route_id, plan?.route_id)
     && (t.plan?.return_mode === plan?.return_mode ||
       (['wait', 'later'].includes(t.plan?.return_mode) && ['wait', 'later'].includes(plan?.return_mode)))
     && t.plan?.date === plan?.date).slice(0, 3)

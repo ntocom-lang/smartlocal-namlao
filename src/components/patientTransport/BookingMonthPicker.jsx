@@ -1,4 +1,4 @@
-import { buttonClass, clockOf, DAY_BLOCKED, freeTimeChoices } from '../../lib/patientBooking'
+import { buttonClass, clockOf, DAY_BLOCKED, freeTimeChoices, destinationGroup } from '../../lib/patientBooking'
 
 const date = value => new Date(`${value}T12:00:00+07:00`)
 const label = value => date(value).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' })
@@ -60,12 +60,17 @@ export default function BookingMonthPicker({ month, onMonth, days, selected, onS
       {chosen.status !== 'open' && <p>{DAY_BLOCKED[chosen.status] || 'ยังไม่เปิดรับจองวันนี้'}</p>}
       {chosen.pending_count > 0 && <p className="rounded-lg bg-amber-50 p-2 text-sm text-amber-900">มี {chosen.pending_count} คำขอรอเจ้าหน้าที่ยืนยัน · ยังไม่กันที่นั่ง</p>}
       {!chosen.trips.length && <p>ยังไม่มีเที่ยวที่ยืนยันในวันนี้</p>}
-      {chosen.trips.map(t => <article key={t.id} className="space-y-2 rounded-lg border bg-white p-3">
-        <p className="font-semibold break-words">{t.route_label}</p>
-        <p className="text-sm">เริ่มรับ {clockOf(t.estimated_pickup_at || t.pickup_at)} น.{t.people != null && ` · ${t.people} คน · เหลือ ${t.remaining} ที่นั่ง`}</p>
-        <p className="text-sm">{community ? 'รถติดภารกิจ · งานชุมชนไม่ร่วมเที่ยว' : t.status === 'full' ? 'เที่ยวนี้เต็ม' : t.joinable ? 'เปิดให้ขอร่วมเที่ยว' : 'ไม่เปิดร่วมเที่ยว'}</p>
-        {!community && t.joinable && <button type="button" className={buttonClass} onClick={() => onJoin(t)}>ขอร่วมเที่ยวนี้</button>}
-      </article>)}
+      {chosen.trips.map(t => {
+        // กลุ่มปลายทาง: บอกว่าไปที่ไหนได้บ้างกับเที่ยวนี้ ผู้จองไม่ต้องเดาว่าคลินิกของตัวเองนั่งไปด้วยได้ไหม
+        const group = !community && t.joinable ? destinationGroup(info?.routes, t.route_id) : []
+        return <article key={t.id} className="space-y-2 rounded-lg border bg-white p-3">
+          <p className="font-semibold break-words">{t.route_label}</p>
+          <p className="text-sm">เริ่มรับ {clockOf(t.estimated_pickup_at || t.pickup_at)} น.{t.people != null && ` · ${t.people} คน · เหลือ ${t.remaining} ที่นั่ง`}</p>
+          <p className="text-sm">{community ? 'รถติดภารกิจ · งานชุมชนไม่ร่วมเที่ยว' : t.status === 'full' ? 'เที่ยวนี้เต็ม' : t.joinable ? 'เปิดให้ขอร่วมเที่ยว' : 'ไม่เปิดร่วมเที่ยว'}</p>
+          {group.length > 1 && <p className="text-sm break-words text-slate-700">ไปพร้อมกันได้: {group.map(r => r.label).join(' · ')}</p>}
+          {!community && t.joinable && <button type="button" className={buttonClass} onClick={() => onJoin(t)}>ขอร่วมเที่ยวนี้</button>}
+        </article>
+      })}
       {(chosen.status === 'open' || staffEntry) && <button type="button" className={buttonClass} onClick={() => onSelect(selected)}>จองเวลาอื่นในวันนี้</button>}
     </div>}
   </div>

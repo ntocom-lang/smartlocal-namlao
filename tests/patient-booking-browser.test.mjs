@@ -49,6 +49,7 @@ for (const file of [
   '20261003130400_patient_booking_community_intake_rpc.sql',
   '20261003150000_patient_booking_service_views_v2.sql',
   '20261003150100_patient_booking_legacy_client_gate.sql',
+  '20261007150000_patient_booking_destination_zone.sql',
 ]) await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 await actor(admin)
 await rpc('patient_booking_save_settings', [tenant, (await rpc('patient_booking_workspace', [tenant])).settings.revision,
@@ -1096,6 +1097,52 @@ try{
  const joined=await runSql(()=>db.query('SELECT requested_trip_id FROM public.patient_bookings WHERE phone=$1',['0800000766']))
  assert.equal(joined.rows[0].requested_trip_id,monthTrip)
  console.log('PASS monthly picker: Thai month/year, eight-month trip details, mobile layout, join request persisted through actual UI')
+ // กลุ่มปลายทาง (20261007150000) — เคสทุ่งแค้ว 2569-10-09: เที่ยวรอรับกลับกันรถทั้งช่วง คนไปคลินิกในเมืองเดียวกันจองไม่ได้ทั้งวัน
+ // ระบบต้องเสนอเที่ยวที่ไปทางเดียวกันเอง ผู้จองคงคลินิกของตัวเอง เลือกกลับก่อนได้ และเจ้าหน้าที่ยืนยันเข้าเที่ยวเดิมได้
+ const zoneRoutes=[{...settings.routes[0],zone:'TEST ในเมือง'},{id:'zone-clinic',label:'TEST คลินิกในเมือง',minutes:30,zone:'TEST ในเมือง'}]
+ await runAs(admin,async()=>rpc('patient_booking_save_settings',[tenant,(await rpc('patient_booking_workspace',[tenant])).settings.revision,{...settings,routes:zoneRoutes}]))
+ const zoneDate=new Date();zoneDate.setUTCDate(zoneDate.getUTCDate()+245)
+ const zoneDay=zoneDate.toISOString().slice(0,10), zoneTrip=randomUUID(), dialysis=[randomUUID(),randomUUID()]
+ for(const [i,bid] of dialysis.entries()) await submitAs(citizen,bid,{patient_name:`TEST ฟอกไต ${i}`,phone:`080000077${i}`,share:true,companions:0,appointment_at:at(zoneDay,'12:00'),return_at:at(zoneDay,'17:30')})
+ await runAs(coordinator,async()=>{const plan=await rpc('patient_booking_preview',[tenant,dialysis,'']);assert.deepEqual(plan.errors,[]);await rpc('patient_booking_confirm',[tenant,zoneTrip,dialysis,plan,''])})
+ await visit('newcomer')
+ await page.getByRole('button',{name:'🚐 ขอรถไปโรงพยาบาล',exact:true}).click()
+ await page.getByLabel('ปี พ.ศ.',{exact:true}).selectOption(zoneDay.slice(0,4))
+ await page.getByLabel('เดือน',{exact:true}).selectOption(zoneDay.slice(5,7))
+ const zoneCell=page.locator(`[data-calendar-date="${zoneDay}"]`)
+ await zoneCell.getByText('ร่วมได้',{exact:true}).waitFor();await zoneCell.click()
+ await page.getByText('ไปพร้อมกันได้: Hospital A / Zone A TEST · TEST คลินิกในเมือง',{exact:true}).waitFor()
+ await page.getByRole('group',{name:'ขากลับ'}).getByRole('button',{name:/^ให้รถรอรับกลับ/}).click()
+ await page.getByRole('group',{name:'โรงพยาบาลที่จะไป'}).getByRole('button',{name:/^TEST คลินิกในเมือง/}).click()
+ await page.getByText('วันที่เลือกรถไม่ว่างแล้ว',{exact:true}).waitFor()
+ await page.getByRole('button',{name:/^ขอไปพร้อมเที่ยว Hospital A/}).click()
+ await page.getByRole('group',{name:'เวลานัดแพทย์'}).getByRole('button',{name:'12:00 น.',exact:true}).click()
+ assert(await page.getByRole('group',{name:'โรงพยาบาลที่จะไป'}).getByRole('button',{name:/^TEST คลินิกในเมือง/}).getAttribute('aria-pressed')==='true','ขอร่วมแล้วต้องยังเป็นคลินิกของผู้จอง')
+ // กลับก่อนได้ถึง 15:00 (รถถึงฐาน 16:00 ทันออกไปรับฟอกไต 16:45) · 17:30 = กลับพร้อมเที่ยว (เลือกไว้ให้ก่อน)
+ assert.deepEqual(await page.getByRole('group',{name:'เวลารับกลับ'}).getByRole('button').evaluateAll(bs=>bs.map(b=>b.textContent.replace('✓','').trim())),
+  ['12:00 น.','13:00 น.','14:00 น.','15:00 น.','17:30 น.กลับพร้อมเที่ยว'])
+ await page.getByRole('group',{name:'เวลารับกลับ'}).getByRole('button',{name:'13:00 น.',exact:true}).click()
+ await page.getByLabel('เบอร์ติดต่อกลับ',{exact:true}).fill('0800000779')
+ await page.getByRole('group',{name:'หมู่บ้าน/สถานที่'}).getByRole('button',{name:'TEST บ้านเหนือ'}).click()
+ await page.getByLabel('บ้านเลขที่ / จุดสังเกต',{exact:true}).fill('TEST zone pickup')
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
+ await page.screenshot({path:'D:/tmp/patient-destination-zone-390.png',fullPage:true})
+ await page.getByRole('button',{name:'ส่งคำขอ',exact:true}).click()
+ await page.getByRole('checkbox',{name:'ยินยอมให้ใช้ข้อมูลตามข้อความข้างต้น'}).check()
+ await page.getByRole('button',{name:'ยืนยันส่งคำขอ',exact:true}).click()
+ await page.getByText('ส่งคำขอสำเร็จ',{exact:true}).waitFor()
+ const zoneJoin=(await runSql(()=>db.query('SELECT id,route_id,requested_trip_id,return_at FROM public.patient_bookings WHERE phone=$1',['0800000779']))).rows[0]
+ assert.deepEqual([zoneJoin.route_id,zoneJoin.requested_trip_id,new Date(zoneJoin.return_at).getTime()],['zone-clinic',zoneTrip,Date.parse(at(zoneDay,'13:00'))])
+ await runAs(coordinator,async()=>{
+  const plan=await rpc('patient_booking_preview_join',[tenant,zoneJoin.id])
+  assert.deepEqual([plan.errors,plan.route_label,plan.return_waves.length],[[],'Hospital A / Zone A TEST + TEST คลินิกในเมือง',2])
+  assert.equal(await rpc('patient_booking_confirm_join',[tenant,randomUUID(),zoneJoin.id,plan]),zoneTrip)
+ })
+ await runAs(admin,async()=>rpc('patient_booking_save_settings',[tenant,(await rpc('patient_booking_workspace',[tenant])).settings.revision,settings]))
+ // เก็บเที่ยวของฉากนี้ออกจากรายการงาน — ชื่อเที่ยวหลายปลายทางยาวถึงเพดาน 220px ของช่องโรงพยาบาลในตารางคนขับจอ PC
+ // ฉากวัดคอลัมน์ที่ 1280px ด้านล่างใช้ข้อมูลชื่อสั้นของตัวเอง (ชื่อยาวบังสถานะได้ทั้งปลายทางเดียวและหลายปลายทาง แยกเป็นงานต่างหาก)
+ await runSql(()=>db.query("UPDATE public.patient_booking_trips SET state='cancelled' WHERE id=$1",[zoneTrip]))
+ console.log('PASS destination zone: full day suggests a same-zone trip, rider keeps own clinic, earlier return, staff confirms into the trip')
  // Reschedule through the staff dialog on a narrow screen, then verify persisted queue.
  const moveUiDate=new Date();moveUiDate.setUTCDate(moveUiDate.getUTCDate()+190)
  const moveUiDay=moveUiDate.toISOString().slice(0,10);moveUiDate.setUTCDate(moveUiDate.getUTCDate()+1)

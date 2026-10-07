@@ -5,7 +5,7 @@ import MapPicker from '../MapPicker'
 import { addressFromMap, joinPickup } from '../../lib/pickupText'
 import BookingMonthPicker from './BookingMonthPicker'
 import BookingReviewSheet from './BookingReviewSheet'
-import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, orgAbbr, normalizeBookingPhone, clockOf, bookingLastDay } from '../../lib/patientBooking'
+import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, orgAbbr, normalizeBookingPhone, clockOf, bookingLastDay, sameDestinationGroup, destinationGroup, joinReturnChoices } from '../../lib/patientBooking'
 
 /**
  * ฟอร์มขอจองรถ — หน้าเดียวจบ แล้วจบด้วยหน้าทวนก่อนส่งแบบ "คำร้อง" (BookingReviewSheet)
@@ -178,6 +178,18 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   const change = key => e => { setMissing([]); setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })) }
   const set = (key, value) => { setMissing([]); setForm(f => ({ ...f, [key]: value })) }
   const stop = !staffEntry && !!dayBlocked
+  // กลุ่มปลายทาง: ขอร่วมเที่ยวแล้วคงโรงพยาบาลที่เลือกไว้ถ้าอยู่กลุ่มเดียวกับเที่ยว ไม่งั้นใช้ปลายทางของเที่ยว
+  // เวลารับกลับเริ่มที่ "กลับพร้อมเที่ยว" เสมอ เที่ยวรอรับกลับเลือกกลับก่อนได้ในข้อ 4
+  const joinWith = trip => {
+    setJoinTrip(trip); setMissing([])
+    setForm(f => ({ ...f, day: trip.date, time: '', route_id: sameDestinationGroup(info.routes, f.route_id, trip.route_id) ? f.route_id : trip.route_id,
+      return_mode: trip.return_mode, back: clockOf(trip.return_at), share: true }))
+  }
+  const joinBacks = useMemo(() => joinTrip ? joinReturnChoices({ time: form.time, route_id: form.route_id }, info, joinTrip) : [], [joinTrip, form.time, form.route_id, info])
+  const tripGroup = joinTrip ? destinationGroup(info.routes, joinTrip.route_id) : []
+  const routeChoices = tripGroup.length ? tripGroup : (info.routes || [])
+  // วันที่เลือกไม่มีเวลาว่าง → ระบบหาเที่ยวที่ไปทางเดียวกัน (ปลายทางเดียวกันหรือกลุ่มเดียวกัน) มาเสนอให้ขอนั่งไปด้วยเอง
+  const rideAlong = noTimes && !staffEntry && !joinTrip ? (dayInfo?.trips || []).filter(t => t.joinable && sameDestinationGroup(info.routes, t.route_id, form.route_id)) : []
   const contact = info.contact_phone && <p className="mt-2 text-sm">ติดต่อเจ้าหน้าที่ <a className="font-semibold underline" href={`tel:${info.contact_phone}`}>{info.contact_phone}</a></p>
   const submissionAdvice = /ข้อความใช้ข้อมูลเปลี่ยน/.test(submitError)
     ? 'ข้อความการใช้ข้อมูลของหน่วยงานเปลี่ยนระหว่างกรอก กดส่งคำขอใหม่อีกครั้งเพื่ออ่านข้อความล่าสุด'
@@ -198,7 +210,8 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
     if (!/^0[0-9]{8,9}$/.test(form.phone)) list.push({ key: 'who', label: 'เบอร์ติดต่อกลับ', advice: 'กรอกเบอร์โทรที่ขึ้นต้นด้วย 0 จำนวน 9–10 หลักในข้อ 5' })
     if (form.relation !== 'self' && !String(form.patient_name).trim()) list.push({ key: 'who', label: 'ชื่อ–สกุลผู้เดินทาง', advice: 'กรอกชื่อผู้ป่วยที่จะเดินทางในข้อ 5' })
     if (!pickupText()) list.push({ key: 'pickup', label: 'จุดรับ', advice: places.length ? 'กดเลือกหมู่บ้าน/สถานที่ หรือพิมพ์บ้านเลขที่และจุดสังเกตในข้อ 6' : 'พิมพ์บ้านเลขที่ หมู่บ้าน และจุดสังเกตของจุดรับในข้อ 6' })
-    if (joinTrip && (!dayInfo?.trips.some(t => t.id === joinTrip.id && t.joinable) || form.route_id !== joinTrip.route_id || form.return_mode !== joinTrip.return_mode || form.back !== clockOf(joinTrip.return_at))) list.push({ key: 'day', label: 'เที่ยวที่ขอร่วม', advice: 'ข้อมูลเที่ยวหรือเส้นทางขากลับเปลี่ยน กรุณาเลือกเที่ยวจากปฏิทินอีกครั้ง หรือเลือกจองเที่ยวใหม่' })
+    if (joinTrip && (!dayInfo?.trips.some(t => t.id === joinTrip.id && t.joinable) || !sameDestinationGroup(info.routes, form.route_id, joinTrip.route_id) || form.return_mode !== joinTrip.return_mode)) list.push({ key: 'day', label: 'เที่ยวที่ขอร่วม', advice: 'ข้อมูลเที่ยวหรือเส้นทางขากลับเปลี่ยน กรุณาเลือกเที่ยวจากปฏิทินอีกครั้ง หรือเลือกจองเที่ยวใหม่' })
+    else if (joinTrip && joinTrip.return_mode !== 'one_way' && !joinBacks.includes(form.back)) list.push({ key: 'back', label: 'เวลารับกลับ', advice: 'กดเลือกเวลารับกลับจากปุ่มในข้อ 4' })
     return list
   }
   const payload = () => ({
@@ -239,8 +252,8 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
         days={days} selected={day} info={info} draft={form} first={first} last={lastDay} staffEntry={staffEntry}
         loading={calendar?.month !== month} failed={calendar?.month === month && calendar.failed} onReload={() => setRefresh(n => n + 1)}
         onSelect={value => { setMonth(value.slice(0, 7)); setJoinTrip(null); setForm(f => ({ ...f, day: value, time: '', back: '' })) }}
-        onJoin={trip => { setJoinTrip(trip); setForm(f => ({ ...f, day: trip.date, time: '', route_id: trip.route_id, return_mode: trip.return_mode, back: clockOf(trip.return_at), share: true })) }} />
-      {joinTrip && <p role="status" className="rounded-xl bg-sky-50 p-3">ขอร่วมเที่ยว: {joinTrip.route_label} · ใช้ได้เมื่อผู้เดินทางเดินได้ ยินดีนั่งร่วม และมีที่นั่งพอ กรุณาเลือกเวลานัดตามใบนัดจริง ระบบจะตรวจอีกครั้งก่อนรับคำขอ <button type="button" className={buttonClass} onClick={() => { setJoinTrip(null); set('back', '') }}>เปลี่ยนเป็นจองเที่ยวใหม่</button></p>}
+        onJoin={joinWith} />
+      {joinTrip && <p role="status" className="rounded-xl bg-sky-50 p-3">ขอร่วมเที่ยว: {joinTrip.route_label}{tripGroup.length > 1 && ` · ไปคนละแห่งได้ถ้าอยู่ในกลุ่มเดียวกัน: ${tripGroup.map(r => r.label).join(', ')} (เลือกในข้อ 3)`} · ใช้ได้เมื่อผู้เดินทางเดินได้ ยินดีนั่งร่วม และมีที่นั่งพอ กรุณาเลือกเวลานัดตามใบนัดจริง ระบบจะตรวจอีกครั้งก่อนรับคำขอ <button type="button" className={buttonClass} onClick={() => { setJoinTrip(null); set('back', '') }}>เปลี่ยนเป็นจองเที่ยวใหม่</button></p>}
       <p className="rounded-xl bg-slate-100 p-3">วันที่เลือก: <strong>{fullDate(day)}</strong></p>
       {dayBlocked && <div role="alert" className={`rounded-xl p-3 ${staffEntry ? 'bg-amber-50' : 'bg-red-50 text-red-900'}`}>
         <p className="font-semibold">วันที่เลือกจองไม่ได้: {dayBlocked}</p>
@@ -261,17 +274,31 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       {noTimes && <div role="alert" className="rounded-xl bg-amber-50 p-3">
         <p className="font-semibold">วันที่เลือกรถไม่ว่างแล้ว</p>
         <p className="mt-1 text-sm">กดเลือกวันอื่นในข้อ 1{form.return_mode !== 'one_way' && ' หรือถ้าทราบว่าจะเสร็จประมาณกี่โมง ให้เลือก “คาดว่าเสร็จประมาณ” ในข้อ 4 จะมีเวลาให้เลือกมากขึ้น'}</p>
+        {rideAlong.length > 0 && <div className="mt-3 space-y-2 border-t border-amber-200 pt-3">
+          <p className="font-semibold">มีรถไปทางเดียวกันในวันนี้ ขอนั่งไปด้วยได้</p>
+          {rideAlong.map(t => <button key={t.id} type="button" className={`${buttonClass} block w-full text-left`} onClick={() => joinWith(t)}>
+            ขอไปพร้อมเที่ยว {t.route_label} · ออกรับ {clockOf(t.estimated_pickup_at || t.pickup_at)} น. · เหลือ {t.remaining} ที่นั่ง
+          </button>)}
+          <p className="text-sm">รับผู้ร่วมเพิ่มแล้วเวลาออกรับอาจเร็วขึ้น ระบบแจ้งเวลาจริงหลังเจ้าหน้าที่ยืนยัน</p>
+        </div>}
       </div>}
       {timeMissing && <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-900">เวลา {form.time} น. ที่เลือกไว้ไม่ว่างแล้ว กรุณากดเลือกเวลาใหม่</p>}
     </Section>
 
-    <Section step={3} title="โรงพยาบาลที่จะไป" done={!!form.route_id} warn={warn('route')}>
+    <Section step={3} title="โรงพยาบาลที่จะไป" done={!!form.route_id} warn={warn('route')}
+      hint={joinTrip ? 'ขอร่วมเที่ยวได้เฉพาะปลายทางเดียวกันหรืออยู่กลุ่มเดียวกับเที่ยวนั้น' : undefined}>
       <Choice label="โรงพยาบาลที่จะไป" hideLabel value={form.route_id} onChange={value => set('route_id', value)}
-        cols={info.routes?.length === 1 ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'}
-        items={(info.routes || []).map(r => ({ value: r.id, label: r.label, note: Number.isFinite(Number(r.minutes)) ? `ทางเดียวประมาณ ${r.minutes} นาที` : '' }))} />
+        cols={routeChoices.length === 1 ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'}
+        items={routeChoices.map(r => ({ value: r.id, label: r.label, note: Number.isFinite(Number(r.minutes)) ? `ทางเดียวประมาณ ${r.minutes} นาที` : '' }))} />
     </Section>
 
-    <Section step={4} title="ขากลับ" done hint="ระบบเลือก “ให้รถรอรับกลับ” ไว้ให้ก่อน เปลี่ยนได้">
+    {joinTrip ? <Section step={4} title="ขากลับ" done={joinTrip.return_mode === 'one_way' || joinBacks.includes(form.back)} warn={warn('back')}
+      hint={`ใช้แบบเดียวกับเที่ยวที่ขอร่วม: ${RETURN_MODES[joinTrip.return_mode] || ''}`}>
+      {/* เที่ยวรอรับกลับ: รถรออยู่ปลายทาง จึงพาผู้ขอร่วมกลับบ้านก่อนแล้วไปรับคนเดิมทันได้ (joinReturnChoices) */}
+      {joinTrip.return_mode !== 'one_way' && <Choice label="เวลารับกลับ" value={form.back} onChange={value => set('back', value)} cols="grid-cols-2 sm:grid-cols-4" compact
+        hint={joinBacks.length > 1 ? 'เสร็จเร็วกลับก่อนได้ รถพาไปส่งบ้านแล้วกลับไปรับผู้ป่วยเที่ยวเดิมทันเวลา' : 'เที่ยวนี้กลับพร้อมกันทุกคน'}
+        items={joinBacks.map(time => ({ value: time, label: `${time} น.`, note: time === clockOf(joinTrip.return_at) ? 'กลับพร้อมเที่ยว' : '' }))} />}
+    </Section> : <Section step={4} title="ขากลับ" done hint="ระบบเลือก “ให้รถรอรับกลับ” ไว้ให้ก่อน เปลี่ยนได้">
       <Choice label="ขากลับ" hideLabel value={form.return_mode} onChange={value => { set('return_mode', value); if (value === 'one_way') set('back', '') }} cols="grid-cols-1 sm:grid-cols-3"
         items={[
           { value: 'wait', label: 'ให้รถรอรับกลับ', note: 'รถรออยู่ที่โรงพยาบาลจนเสร็จ' },
@@ -283,7 +310,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
         <button type="button" className={buttonClass} onClick={() => setShowBack(v => !v)}>{showBack ? 'ปิดตัวเลือกเวลารับกลับ' : 'ระบุเวลาที่คาดว่าเสร็จ (ถ้าทราบ)'}</button>
         {(showBack || noTimes) && <Choice label="คาดว่าเสร็จประมาณ" value={form.back} onChange={value => set('back', value)} cols="grid-cols-3 sm:grid-cols-4" compact items={backChoices} />}
       </>}
-    </Section>
+    </Section>}
 
     <Section step={5} title="ผู้เดินทางและเบอร์ติดต่อ" done={filledTraveler} warn={warn('who')}>
       <Choice label="ผู้เดินทาง" hideLabel value={form.relation === 'self' ? 'self' : 'other'} cols="grid-cols-2"
