@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress, joinCandidates, paginate, thaiDay, workspaceTruncated, WORKSPACE_ROW_LIMIT, loadPageSize, savePageSize } from '../src/lib/patientBooking.js'
+import { bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress, joinCandidates, sameDestinationGroup, destinationGroup, joinReturnChoices, suggestGroups, paginate, thaiDay, workspaceTruncated, WORKSPACE_ROW_LIMIT, loadPageSize, savePageSize } from '../src/lib/patientBooking.js'
 
 const error = 'เวลารับ–ส่งอยู่นอกเวลาบริการ'
 const plan = { date: '2026-09-21', settings_revision: 3, booking_ids: ['one'], blocks: [{ start: '2026-09-21T00:00:00Z', end: '2026-09-21T09:00:00Z' }] }
@@ -83,6 +83,41 @@ test('join candidates retain legacy patient trips and exclude every community co
   assert.deepEqual(joinCandidates(p, [t]), [t])
   assert.deepEqual(joinCandidates({ ...p, service_type: 'community' }, [t]), [])
   assert.deepEqual(joinCandidates(p, [{ ...t, plan: { ...t.plan, service_type: 'community' } }]), [])
+})
+// กลุ่มปลายทาง (20261007150000) — ตัดสินแบบเดียวกับ ptb_plan: ตัดช่องว่างหัวท้าย เทียบตรงตัว ว่าง = ไม่รวมกับใคร
+test('destination groups: same zone rides together, blank or different zone stays separate', () => {
+  const routes = [{ id: 'a', zone: 'ในเมือง' }, { id: 'b', zone: ' ในเมือง ' }, { id: 'c' }, { id: 'd', zone: 'ต่างเมือง' }, { id: 'e', zone: '' }]
+  assert.equal(sameDestinationGroup(routes, 'a', 'b'), true)
+  assert.equal(sameDestinationGroup(routes, 'a', 'd'), false)
+  assert.equal(sameDestinationGroup(routes, 'c', 'e'), false, 'ว่างทั้งคู่ไม่ใช่กลุ่มเดียวกัน')
+  assert.equal(sameDestinationGroup(routes, 'c', 'c'), true)
+  assert.equal(sameDestinationGroup(routes, 'a', 'missing'), false)
+  assert.equal(sameDestinationGroup(undefined, 'a', 'b'), false)
+  assert.deepEqual(destinationGroup(routes, 'b').map(r => r.id), ['a', 'b'])
+  const p = { ...plan, route_id: 'a', return_mode: 'wait' }
+  const t = { id: 'trip', state: 'confirmed', booking_ids: ['other'], plan: { ...p, route_id: 'b' } }
+  assert.deepEqual(joinCandidates(p, [t]), [], 'ไม่ส่งเส้นทางมา = เทียบปลายทางตรงตัวแบบเดิม')
+  assert.deepEqual(joinCandidates(p, [t], routes), [t])
+  assert.deepEqual(joinCandidates({ ...p, route_id: 'd' }, [t], routes), [])
+})
+test('suggested groups combine same-zone destinations only', () => {
+  const routes = [{ id: 'a', zone: 'ในเมือง' }, { id: 'b', zone: 'ในเมือง' }, { id: 'c' }]
+  const row = (id, route) => ({ id, route_id: route, status: 'submitted', share: true, mobility: 'walk', companions: 0, return_mode: 'wait',
+    appointment_at: '2026-10-09T05:00:00Z', return_at: '2026-10-09T10:30:00Z' })
+  assert.deepEqual(suggestGroups([row('1', 'a'), row('2', 'b'), row('3', 'c')], { seats: 10, routes }).map(g => g.map(r => r.id)), [['1', '2'], ['3']])
+  assert.deepEqual(suggestGroups([row('1', 'a'), row('2', 'b')], { seats: 10 }).map(g => g.length), [1, 1])
+})
+test('join return choices: ride home earlier only when the car gets back in time for the original wait-mode run', () => {
+  const info = { routes: [{ id: 'a', minutes: 30 }, { id: 'b', minutes: 45 }], buffer_minutes: 15, boarding_minutes: 15 }
+  // เที่ยวฟอกไตรอรับกลับ (เคสทุ่งแค้ว 2569-10-09): รับกลับ 17:30 รถออกจากฐาน 16:30
+  const trip = { date: '2026-10-09', return_mode: 'wait', return_at: '2026-10-09T10:30:00Z',
+    return_waves: [{ return_start: '2026-10-09T10:30:00Z', depart_at: '2026-10-09T09:30:00Z', end_at: '2026-10-09T12:00:00Z' }] }
+  // คลินิก 30 นาที: กลับ 15:00 ถึงฐาน 16:00 ทัน · 16:00 ไม่ทัน · 17:00 ห่างรอบเดิมไม่เกิน 30 นาที (ฐานข้อมูลรวมเป็นรอบเดียว)
+  assert.deepEqual(joinReturnChoices({ time: '12:00', route_id: 'a' }, info, trip), ['12:00', '13:00', '14:00', '15:00', '17:30'])
+  // ปลายทาง 45 นาที: กลับ 15:00 ถึงฐาน 16:15 ยังทัน 16:30
+  assert.deepEqual(joinReturnChoices({ time: '12:00', route_id: 'b' }, info, trip), ['12:00', '13:00', '14:00', '15:00', '17:30'])
+  assert.deepEqual(joinReturnChoices({ time: '12:00', route_id: 'a' }, info, { ...trip, return_mode: 'later' }), ['17:30'], 'แบบมารับทีหลังต้องกลับพร้อมเที่ยว')
+  assert.deepEqual(joinReturnChoices({ time: '12:00', route_id: 'a' }, info, { ...trip, return_mode: 'one_way', return_at: null }), [])
 })
 test('inbox stage counts an incident under the step it happened in', () => {
   const booking = status => ({ status })

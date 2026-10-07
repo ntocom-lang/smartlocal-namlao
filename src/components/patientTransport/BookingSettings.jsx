@@ -21,6 +21,8 @@ export default function BookingSettings({ workspace, busy, onSave }) {
   const set = key => e => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
   const input = (key, label, props = {}) => <label>{label}<input className={inputClass} value={form[key] ?? ''} onChange={set(key)} {...props} /></label>
   function changeRoute(index, key, value) { setForm(f => ({ ...f, routes: f.routes.map((r, i) => i === index ? { ...r, [key]: value } : r) })) }
+  // ชื่อกลุ่มที่ใช้อยู่แล้วให้เลือกซ้ำได้ — พิมพ์ต่างกันแค่ตัวเดียวระบบถือเป็นคนละกลุ่ม
+  const zoneNames = [...new Set(form.routes.map(r => String(r.zone || '').trim()).filter(Boolean))]
   const missing = [
     !form.partner_id && 'เลือกเจ้าของรถ', !form.driver_id && 'เลือกคนขับ',
     !form.coordinator_ids.length && 'เลือกผู้ยืนยันคิว (เป็นคนขับคนเดียวกันได้)',
@@ -77,10 +79,19 @@ export default function BookingSettings({ workspace, busy, onSave }) {
     <SettingsGroup number="4" title="เส้นทางโรงพยาบาลและพื้นที่รับ">
     <fieldset><legend className="sr-only">เส้นทางโรงพยาบาลและพื้นที่รับ · เวลาเดินทางรวมระหว่างจุดรับ</legend>
       <p className="text-sm text-slate-600">กำหนดโรงพยาบาล พื้นที่รับ และเวลาเดินทางต่อขา เพื่อให้ระบบคำนวณคิวรถ</p>
+      {/* กลุ่มปลายทาง (20261007150000): ตั้งครั้งเดียว ผู้ป่วยที่ไปคนละแห่งในกลุ่มเดียวกันนั่งรถเที่ยวเดียวกันได้
+          ptb_plan บวกเวลาแวะจุดละ 1 รอบของ "เวลาเผื่อ" ในข้อ 3 — ไม่เพิ่มช่องตั้งค่าใหม่ (เจ้าของระบบเลือก 2569-10-07) */}
+      <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950">
+        <strong>กลุ่มปลายทาง</strong> · ใส่ชื่อกลุ่มเดียวกัน (เช่น “ในเมือง”) ให้ปลายทางที่อยู่ใกล้กัน ผู้ป่วยที่ไปคนละแห่งในกลุ่มเดียวกันจะนั่งรถเที่ยวเดียวกันได้
+        ระบบคิดเวลาจากปลายทางที่ไกลที่สุดของรอบ แล้วบวกเวลาแวะจุดละ {form.buffer_minutes} นาที (เวลาเผื่อในข้อ 3) · เว้นว่าง = ไม่รวมกับปลายทางอื่น
+      </p>
+      <datalist id="patient-route-zones">{zoneNames.map(zone => <option key={zone} value={zone} />)}</datalist>
       {form.routes.map((r, i) => <div key={r.id} className="my-3 grid gap-3 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1fr_140px_auto]">
         <label>ชื่อโรงพยาบาล — พื้นที่รับ<input className={inputClass} value={r.label} required maxLength={200} onChange={e => changeRoute(i, 'label', e.target.value)} /></label>
         <label>นาทีต่อขา<input className={inputClass} type="number" min={5} max={240} required value={r.minutes} onChange={e => changeRoute(i, 'minutes', Number(e.target.value))} /></label>
         <button type="button" className={buttonClass} onClick={() => setForm(f => ({ ...f, routes: f.routes.filter(x => x.id !== r.id) }))}>นำออกจากร่าง</button>
+        <label className="sm:col-span-3">กลุ่มปลายทาง <span className="text-sm font-normal text-slate-600">(ถ้ามี)</span>
+          <input className={inputClass} list="patient-route-zones" maxLength={60} placeholder="เว้นว่าง = ไม่รวมกับปลายทางอื่น" value={r.zone || ''} onChange={e => changeRoute(i, 'zone', e.target.value)} /></label>
       </div>)}
       <button type="button" className={buttonClass} onClick={() => setForm(f => ({ ...f, routes: [...f.routes, { id: crypto.randomUUID(), label: '', minutes: 30 }] }))}>เพิ่มเส้นทาง</button>
     </fieldset>
