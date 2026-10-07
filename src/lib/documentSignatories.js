@@ -81,17 +81,41 @@ const timeOf = value => {
 
 const bangkokDate = time => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date(time))
 
-// เวลาที่แถวหมดผล — แถวที่ยังใช้อยู่ไม่มีเวลาหมด · แถวที่ปิดแล้วหมดเมื่อมีแถวใหม่มาแทนในช่องเดียวกัน
+// วันที่มีผลย้อนหลังได้ไม่เกินกี่วัน — เจ้าของระบบเลือก 2569-10-07 (set_document_signatory_v4 บังคับซ้ำฝั่ง DB)
+export const SIGNATORY_BACKDATE_LIMIT_DAYS = 30
+
+// วันแรกที่เลือกเป็นวันมีผลได้ (YYYY-MM-DD) — นับจากวันนี้ตามเวลาไทยย้อนไป SIGNATORY_BACKDATE_LIMIT_DAYS วัน
+export function earliestEffectiveFrom(today = todayBangkok()) {
+  const midnight = Date.parse(`${today}T00:00:00+07:00`)
+  return bangkokDate(midnight - SIGNATORY_BACKDATE_LIMIT_DAYS * 86_400_000)
+}
+
+// เวลาที่แถวเริ่มมีผล — ปกติคือ created_at (เวลาที่แอดมินกดตั้ง ละเอียดถึงวินาที)
+// ถ้าแอดมินระบุวันมีผลย้อนหลัง (effective_from ก่อนวันที่กดตั้ง) เริ่มที่ 00:00 น. ของวันนั้นตามเวลาไทย
+// เจ้าของระบบสั่ง 2569-10-07: ปลัดน้ำเลาคนใหม่เริ่มลงนามตั้งแต่ 5 ต.ค. แต่ตั้งในระบบ 6 ต.ค. 08:54
+// เอกสารที่เสร็จระหว่างนั้นจึงยังได้ชื่อคนเก่า — คนเก่าออกไปแล้ว คนที่ลงนามจริงคือคนใหม่
+// แถวที่ไม่ได้ระบุวันย้อนหลัง effective_from = วันที่กดตั้งพอดี (ค่าเริ่มต้นของ RPC) จึงได้ created_at เหมือนเดิม
+// ⚠️ กติกาเดียวกับ starts_at ใน prepare_complaint_print (migration 20261007120000) แก้ที่หนึ่งต้องแก้อีกที่
+function startsAt(row) {
+  const created = timeOf(row.created_at)
+  if (created !== null && row.effective_from && row.effective_from < bangkokDate(created)) {
+    return timeOf(`${row.effective_from}T00:00:00+07:00`) ?? created
+  }
+  return created
+}
+
+// เวลาที่แถวหมดผล — แถวที่ยังใช้อยู่ไม่มีเวลาหมด · แถวที่ปิดแล้วหมดเมื่อแถวที่ตั้งทีหลังในช่องเดียวกันเริ่มมีผล
 // หรือเมื่อถูกปิด (updated_at) แล้วแต่อันไหนก่อน — set_document_signatory_v4 ปิดแถวเก่าในธุรกรรมเดียวกับ
 // ที่สร้างแถวใหม่ สองค่านี้จึงเท่ากันพอดี ที่ต้องดูทั้งคู่เพราะ updated_at ของแถวที่ปิดแล้วอาจถูกแตะทีหลัง
 // (เช่น migration) ส่วนแถวที่ถูกลบออกเฉยๆ (clear_document_signatory_v2) ไม่มีแถวใหม่มาแทน จึงหมดที่ updated_at
+// แถวที่ตั้งทีหลังแต่มีผลย้อนหลัง ตัดช่วงของแถวเก่าให้จบที่วันมีผลนั้น ไม่ใช่เวลาที่กดตั้ง
 function validUntil(row, slot) {
   if (row.is_active !== false) return Infinity
   const created = timeOf(row.created_at)
   let until = timeOf(row.updated_at) ?? Infinity
   for (const other of slot) {
-    const next = timeOf(other.created_at)
-    if (next !== null && next > created && next < until) until = next
+    const next = startsAt(other)
+    if (next !== null && timeOf(other.created_at) > created && next < until) until = next
   }
   return until
 }
@@ -101,15 +125,16 @@ function signatoryAt(slot, at) {
   const day = bangkokDate(moment)
   const byNewest = [...slot].sort((a, b) => timeOf(b.created_at) - timeOf(a.created_at))
   const holder = byNewest.find(row =>
-    timeOf(row.created_at) <= moment && moment < validUntil(row, slot)
+    startsAt(row) <= moment && moment < validUntil(row, slot)
     && (!row.effective_from || row.effective_from <= day)
     && (!row.effective_to || row.effective_to >= day))
   if (holder) return holder
   // เอกสารที่เกิดก่อนเริ่มตั้งทะเบียนช่องนี้ (ทะเบียนเริ่มใช้ 2569-08-30 แต่มีคำร้องก่อนหน้านั้น)
   // ใช้ผู้ลงนามคนแรกที่ตั้งไว้ — ใกล้ความจริงที่สุดที่ระบบรู้ และเป็นชื่อที่ใบเหล่านี้เคยพิมพ์ออกไป
   // ช่วงที่ลบผู้ลงนามออกแล้วยังไม่ได้ตั้งคนใหม่ = ไม่มีผู้ลงนาม (null) ใบจะเว้นเส้นประให้เขียนมือ
-  const first = byNewest.at(-1)
-  return first && moment < timeOf(first.created_at) ? first : null
+  // "คนแรก" = แถวที่เริ่มมีผลเร็วที่สุด (เริ่มพร้อมกัน = แถวที่ตั้งทีหลัง ตรงกับ ORDER BY ฝั่ง SQL)
+  const first = [...slot].sort((a, b) => startsAt(a) - startsAt(b) || timeOf(b.created_at) - timeOf(a.created_at))[0]
+  return first && moment < startsAt(first) ? first : null
 }
 
 // เวลาที่ใช้หาผู้ลงนาม (ค่า at ของ pickSignatory)
