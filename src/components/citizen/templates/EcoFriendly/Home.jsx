@@ -6,7 +6,7 @@ import { useAuth } from '../../../../contexts/AuthContext'
 import { supabase } from '../../../../lib/supabase'
 // ประเภทที่ อปท. กดลบทิ้งในหน้าตั้งค่าแอดมิน ต้องหายจากหน้าแรกด้วย ไม่ใช่แค่ในฟอร์มยื่นคำขอ
 import { selectableDocumentTypes } from '../../../../lib/documentTypes'
-import PostsHighlight from '../../../../components/home/PostsHighlight'
+import PostsHighlight, { PostDetailModal } from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
 import WaterAlertBanner from '../../WaterAlertBanner'
@@ -44,17 +44,17 @@ const WASTE_SCHEDULE_SHORTCUT = { value: 'waste_schedule', label: 'ตารา�
 // ถ้าไม่ขึ้นหน้าแรก ประชาชนต้องเข้าเมนูเพิ่มเติมแล้วกางหมวด "บริการอื่นๆ" ก่อนถึงจะเจอ (บนมือถือหมวดยุบไว้)
 const WATER_SITUATION_SHORTCUT = { value: 'water_situation', label: 'สถานการณ์น้ำ-ฝน', emoji: '🌧️', href: '/water-situation' }
 
-function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) {
+function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news', onSelect, detailsOpen }) {
   const [idx, setIdx] = useState(0)
   const [paused, setPaused] = useState(false)
 
   const next = useCallback(() => setIdx(i => (i + 1) % posts.length), [posts.length])
 
   useEffect(() => {
-    if (posts.length < 2 || paused) return
+    if (posts.length < 2 || paused || detailsOpen) return
     const t = setInterval(next, 4500)
     return () => clearInterval(t)
-  }, [next, paused, posts.length])
+  }, [next, paused, posts.length, detailsOpen])
 
   if (!posts.length) return null
   const safeIdx = idx % posts.length
@@ -69,7 +69,9 @@ function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) 
         border: 'var(--border-card, 1px solid #f3f4f6)',
         backdropFilter: 'var(--blur-card, none)'
       }}
-      onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+      onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)}
+      onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) setPaused(false) }}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
         <div className="flex items-center gap-2">
           <Newspaper size={14} className="shrink-0" style={{ color: 'var(--color-primary)' }} />
@@ -81,19 +83,23 @@ function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) 
           ทั้งหมด <ChevronRight size={11} />
         </Link>
       </div>
-      <div className="relative aspect-video bg-gray-100 cursor-pointer overflow-hidden"
-        onClick={() => next()}>
-        {post.image_url
-          ? <img loading="lazy" decoding="async" key={post.id} src={edgeImageUrl(post.image_url)} alt={post.title}
-              className="w-full h-full object-cover transition-opacity duration-500"
-              style={{ objectPosition: post.image_position ?? '50% 50%' }} />
-          : <div className="w-full h-full flex items-center justify-center">
-              <Newspaper size={36} className="text-gray-300" strokeWidth={1.5} />
-            </div>}
+      <div className="relative aspect-video bg-gray-100 overflow-hidden">
+        <button type="button" onClick={() => onSelect(post)}
+          aria-label={`เปิดรายละเอียด${label}: ${post.title}`} aria-haspopup="dialog"
+          className="block w-full h-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
+          {post.image_url
+            ? <img loading="lazy" decoding="async" key={post.id} src={edgeImageUrl(post.image_url)} alt={post.title}
+                className="w-full h-full object-cover transition-opacity duration-500"
+                style={{ objectPosition: post.image_position ?? '50% 50%' }} />
+            : <div className="w-full h-full flex items-center justify-center">
+                <Newspaper size={36} className="text-gray-300" strokeWidth={1.5} />
+              </div>}
+        </button>
         {posts.length > 1 && (
           <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
             {posts.map((_, i) => (
-              <button key={i} onClick={e => { e.stopPropagation(); setIdx(i) }}
+              <button key={i} type="button" onClick={() => setIdx(i)}
+                aria-label={`แสดง${label}รายการที่ ${i + 1}`} aria-current={i === safeIdx ? 'true' : undefined}
                 className="rounded-full transition-all"
                 style={{
                   width: i === safeIdx ? 16 : 6, height: 6,
@@ -191,6 +197,7 @@ export default function HomePage() {
 
   const [sidebarNews, setSidebarNews] = useState([])
   const [sidebarActivities, setSidebarActivities] = useState([])
+  const [selectedPost, setSelectedPost] = useState(null)
   useEffect(() => {
     if (!tenant?.id) return
     supabase.from('posts')
@@ -217,8 +224,10 @@ export default function HomePage() {
 
   const RIGHT_SECTION = {
     weather:    <WeatherWidget key="weather" />,
-    news:       <NewsSlider key="news" posts={sidebarNews} label="ข่าวสาร/ประกาศ" />,
-    activities: <NewsSlider key="activities" posts={sidebarActivities} label="ภาพกิจกรรม/ผลงาน" href="/news?tab=activity" />,
+    news:       <NewsSlider key="news" posts={sidebarNews} label="ข่าวสาร/ประกาศ"
+                  onSelect={setSelectedPost} detailsOpen={selectedPost !== null} />,
+    activities: <NewsSlider key="activities" posts={sidebarActivities} label="ภาพกิจกรรม/ผลงาน" href="/news?tab=activity"
+                  onSelect={setSelectedPost} detailsOpen={selectedPost !== null} />,
   }
 
   const leftOrder  = LAYOUT_ORDER[layout]  || LAYOUT_ORDER.classic
@@ -265,6 +274,10 @@ export default function HomePage() {
       <div className="px-3 sm:px-4 lg:px-6 pb-2 max-w-[1440px] mx-auto">
         <TourismSection />
       </div>
+
+      {selectedPost && (
+        <PostDetailModal post={selectedPost} onClose={() => setSelectedPost(null)} />
+      )}
 
     </div>
   )
