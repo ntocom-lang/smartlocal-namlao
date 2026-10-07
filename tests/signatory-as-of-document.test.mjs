@@ -13,7 +13,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
-  defaultVehicleAuthority, earliestEffectiveFrom, isSignatoryActiveToday, organizationSignatories, pickSignatory,
+  defaultVehicleAuthority, earliestEffectiveFrom, effectiveDateForForm, isSignatoryActiveToday, organizationSignatories,
+  pickSignatory,
   SIGNATORY_BACKDATE_LIMIT_DAYS, signatoryMoment, signatoryName,
 } from '../src/lib/documentSignatories.js'
 import { bookingLetterMoment } from '../src/lib/patientBooking.js'
@@ -230,6 +231,30 @@ check('วันแรกที่เลือกได้ = ย้อนจา�
   assert.equal(earliestEffectiveFrom('2026-10-07'), '2026-09-07')
   assert.equal(earliestEffectiveFrom('2026-03-01'), '2026-01-30', 'ข้ามเดือนกุมภาพันธ์')
   assert.equal(earliestEffectiveFrom('2027-01-15'), '2026-12-16', 'ข้ามปี')
+})
+
+check('ช่อง "มีผลตั้งแต่": แสดงวันที่บันทึกไว้ ไม่เด้งกลับเป็นวันนี้ · เปลี่ยนคนแล้วเป็นวันนี้ · ไม่ได้แก้อะไรบันทึกไม่ได้', () => {
+  const TODAY = '2026-10-07'
+  const form = options => effectiveDateForForm({ today: TODAY, ...options })
+  // เคสที่เจ้าของระบบแจ้ง: บันทึกปลัดย้อนหลัง 5 ต.ค. แล้วช่องเด้งกลับเป็น 7 ต.ค. ดูเหมือนบันทึกไม่ติด จนกดซ้ำ
+  assert.deepEqual(form({ savedFrom: '2026-10-05', changed: false }), { value: '2026-10-05', dirty: false, backdated: false },
+    'หลังบันทึก: ช่องแสดง 5 ต.ค. · ปุ่มบันทึกกดไม่ได้ · ไม่ขึ้นคำเตือนย้อนหลังค้าง')
+  // เปลี่ยนตัวคน/ตำแหน่ง = แถวใหม่มีผลวันนี้ ห้ามพาวันของคนเก่าติดไป (30 ส.ค. เกินด่าน 30 วัน / กลบช่วงคนเก่า)
+  assert.deepEqual(form({ savedFrom: '2026-08-30', changed: true }), { value: TODAY, dirty: true, backdated: false })
+  assert.deepEqual(form({ savedFrom: '2026-08-30', changed: true, picked: '2026-10-05' }), { value: '2026-10-05', dirty: true, backdated: true },
+    'เปลี่ยนคนพร้อมเลือกวันย้อนหลัง')
+  // คนเดิม เลื่อนวันมีผลย้อนไป (วิธีแก้เคสปลัดน้ำเลา)
+  assert.deepEqual(form({ savedFrom: '2026-10-06', changed: false, picked: '2026-10-05' }), { value: '2026-10-05', dirty: true, backdated: true })
+  assert.equal(form({ savedFrom: '2026-10-05', changed: false, picked: '2026-10-05' }).dirty, false, 'เลือกวันเดิมซ้ำ = ไม่ได้แก้')
+  assert.deepEqual(form({ savedFrom: null, changed: true }), { value: TODAY, dirty: true, backdated: false }, 'ยังไม่เคยตั้ง')
+})
+
+check('หน้าตั้งผู้ลงนามใช้กติกาช่องวันที่จาก effectiveDateForForm และปิดปุ่มบันทึกเมื่อไม่ได้แก้อะไร', () => {
+  const text = source('components/admin/SignatorySettings.jsx')
+  assert.ok(text.includes('effectiveDateForForm({'), 'ต้องคำนวณช่องวันที่จากไลบรารีกลาง ไม่เขียนกติกาซ้ำในหน้าจอ')
+  assert.ok(text.includes('disabled={saving || !identityReady || !dirty}'), 'ไม่ได้แก้อะไรต้องกดบันทึกไม่ได้')
+  assert.ok(text.includes('value={effectiveFrom}'), 'ช่องวันที่ต้องแสดงค่าที่คำนวณแล้ว ไม่ใช่วันนี้ตายตัว')
+  assert.ok(!text.includes('value={effectiveFrom || today}'), 'แบบเดิมที่เด้งกลับเป็นวันนี้หลังบันทึก')
 })
 
 // นิยามล่าสุดของ prepare_complaint_print = migration ล่าสุดที่ CREATE OR REPLACE ฟังก์ชันนี้
