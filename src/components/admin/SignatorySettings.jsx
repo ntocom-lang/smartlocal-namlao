@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, Plus, Save, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import {
-  CUSTOM_ROLE, earliestEffectiveFrom, SIGNATORY_BACKDATE_LIMIT_DAYS, SIGNATORY_SCOPE, todayBangkok,
+  CUSTOM_ROLE, earliestEffectiveFrom, effectiveDateForForm, SIGNATORY_BACKDATE_LIMIT_DAYS, SIGNATORY_SCOPE, todayBangkok,
 } from '../../lib/documentSignatories'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
 
@@ -50,15 +50,26 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
   const [manualName, setManualName] = useState(assignment?.manual_name ?? '')
   const [titleOverride, setTitleOverride] = useState(assignment?.title_override ?? '')
   const [vehicleDefault, setVehicleDefault] = useState(Boolean(assignment?.is_vehicle_order_default))
-  // '' = วันนี้ (ส่ง null ให้ DB เติมวันตามเวลาไทยเอง) · ค่าอื่น = วันมีผลย้อนหลังที่แอดมินเลือก
-  // ไม่ตั้งค่าเริ่มต้นเป็นวันมีผลของแถวเดิม — บันทึกใหม่ = แต่งตั้งใหม่ ถ้าเอาวันเดิมมาใส่จะกลายเป็นย้อนหลังเกิน 30 วันทันที
-  const [effectiveFrom, setEffectiveFrom] = useState('')
+  // วันที่แอดมินเลือกเองในช่อง "มีผลตั้งแต่" ('' = ยังไม่ได้แตะ ใช้ค่าอัตโนมัติด้านล่าง)
+  const [pickedDate, setPickedDate] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const today = todayBangkok()
   const earliest = earliestEffectiveFrom(today)
-  const backdated = Boolean(effectiveFrom) && effectiveFrom < today
+  // แก้อะไรไปจากที่บันทึกไว้บ้าง — บันทึกทุกครั้ง = ปิดแถวเดิมแล้วสร้างแถวใหม่ จึงไม่ให้กดบันทึกถ้าไม่ได้แก้อะไร
+  // (2569-10-07 หน้าจอดูเหมือนบันทึกไม่ติด แอดมินกดซ้ำจนเกิดแถวประวัติเกินมา 3 แถว)
+  const changedFromSaved = !assignment
+    || sourceMode !== (assignment.manual_name ? 'manual' : 'profile')
+    || (sourceMode === 'profile'
+      ? profileId !== (assignment.profile_id ?? '')
+      : manualName.trim() !== (assignment.manual_name ?? '').trim())
+    || titleOverride.trim() !== (assignment.title_override ?? '').trim()
+    || vehicleDefault !== Boolean(assignment.is_vehicle_order_default)
+  // วันที่ในช่อง "มีผลตั้งแต่" + ปุ่มบันทึกกดได้ไหม + กำลังบันทึกย้อนหลังไหม — กติกาอยู่ที่ effectiveDateForForm
+  const { value: effectiveFrom, dirty, backdated } = effectiveDateForForm({
+    savedFrom: assignment?.effective_from ?? null, changed: changedFromSaved, picked: pickedDate, today,
+  })
   const selected = sourceMode === 'profile' ? people.find((person) => person.id === profileId) : null
   // ต้องมี selected ก่อน มิฉะนั้น undefined !== departmentId จะทำให้แถวหัวหน้ากอง
   // ขึ้นคำเตือน 'อยู่นอกกอง' ตั้งแต่ยังไม่ได้เลือกใครเลย
@@ -84,8 +95,9 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
     if (sourceMode === 'profile' && !profileId) { setError('กรุณาเลือกผู้ลงนาม'); return }
     if (sourceMode === 'manual' && !manualName.trim()) { setError('กรุณากรอกชื่อ-นามสกุลผู้ลงนาม'); return }
     if (sourceMode === 'manual' && !titleOverride.trim()) { setError('กรุณากรอกตำแหน่งที่ต้องการพิมพ์'); return }
-    if (effectiveFrom && effectiveFrom > today) { setError('วันที่มีผลต้องไม่เกินวันนี้'); return }
-    if (effectiveFrom && effectiveFrom < earliest) {
+    if (!dirty) return
+    if (effectiveFrom > today) { setError('วันที่มีผลต้องไม่เกินวันนี้'); return }
+    if (backdated && effectiveFrom < earliest) {
       setError(`วันที่มีผลย้อนหลังได้ไม่เกิน ${SIGNATORY_BACKDATE_LIMIT_DAYS} วัน (เลือกได้ตั้งแต่ ${thaiDateFromDateInput(earliest)})`)
       return
     }
@@ -214,12 +226,13 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
         <input value={titleOverride} onChange={(event) => setTitleOverride(event.target.value)}
           placeholder={sourceMode === 'manual' ? 'ตำแหน่งที่พิมพ์ *' : selected ? personTitle(selected) : 'ตำแหน่งจากโปรไฟล์'}
           maxLength={250} aria-label={`ชื่อตำแหน่งที่พิมพ์ ${slot.label}`} className={FIELD_CLASS} />
-        {/* วันมีผล — ปกติไม่ต้องแตะ (= วันนี้ มีผลทันทีที่กดบันทึก) เลือกย้อนหลังได้เมื่อคำสั่งแต่งตั้งมีผลก่อนวันที่มาตั้งในระบบ
+        {/* วันมีผล — แสดงวันที่บันทึกไว้ · เปลี่ยนตัวคน/ตำแหน่งแล้วกลายเป็นวันนี้ (มีผลทันทีที่กดบันทึก)
+            เลือกย้อนหลังได้เมื่อคำสั่งแต่งตั้งมีผลก่อนวันที่มาตั้งในระบบ
             ตั้งล่วงหน้าไม่ได้ — เจ้าของระบบเลือกทำเฉพาะย้อนหลัง 2569-10-07 */}
         <label className="mt-1.5 flex items-center gap-1.5 text-[10px] font-semibold text-gray-500">
           <span className="shrink-0">มีผลตั้งแต่</span>
-          <input type="date" value={effectiveFrom || today} min={earliest} max={today}
-            onChange={(event) => setEffectiveFrom(event.target.value === today ? '' : event.target.value)}
+          <input type="date" value={effectiveFrom} min={earliest} max={today}
+            onChange={(event) => setPickedDate(event.target.value)}
             aria-label={`มีผลตั้งแต่ ${slot.label}`} className={`${FIELD_CLASS} py-1`} />
         </label>
         {backdated && (
@@ -241,8 +254,8 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
       </div>
 
       <div className="flex items-center justify-end gap-1 md:pt-0.5">
-        <button type="button" onClick={save} disabled={saving || !identityReady}
-          title="บันทึกผู้ลงนาม"
+        <button type="button" onClick={save} disabled={saving || !identityReady || !dirty}
+          title={dirty ? 'บันทึกผู้ลงนาม' : 'บันทึกแล้ว — แก้ชื่อ ตำแหน่ง หรือวันมีผลก่อนจึงบันทึกได้'}
           className="flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[11px] font-bold text-white disabled:opacity-40">
           {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
           <span className="md:hidden">บันทึกผู้ลงนาม</span>

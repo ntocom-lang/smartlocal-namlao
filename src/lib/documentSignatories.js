@@ -90,6 +90,22 @@ export function earliestEffectiveFrom(today = todayBangkok()) {
   return bangkokDate(midnight - SIGNATORY_BACKDATE_LIMIT_DAYS * 86_400_000)
 }
 
+// ช่อง "มีผลตั้งแต่" บนหน้าตั้งผู้ลงนาม (SignatorySettings)
+//   savedFrom = effective_from ของแถวที่บันทึกไว้ (ยังไม่เคยตั้ง = null)
+//   changed   = แก้ตัวคน/ตำแหน่ง/เครื่องหมายสั่งใช้รถไปจากที่บันทึกไว้ (ยังไม่เคยตั้ง = true)
+//   picked    = วันที่แอดมินเลือกเองในช่อง ('' = ยังไม่ได้แตะ)
+// value     = วันที่แสดงในช่อง — ยังไม่แก้อะไร = วันที่บันทึกไว้ (เจ้าของระบบแจ้ง 2569-10-07: บันทึกแล้วช่องเด้งกลับเป็น
+//             วันนี้ ดูเหมือนบันทึกไม่ติด) · แก้ตัวคน/ตำแหน่งแล้ว = วันนี้ ไม่พาวันของคนเก่าติดไป (เช่น 30 ส.ค. เกินด่าน 30 วัน
+//             หรือไปกลบช่วงของคนเก่าจนชื่อหายจากเอกสาร)
+// dirty     = มีอะไรต่างจากที่บันทึกไว้ — บันทึกทุกครั้งคือปิดแถวเดิมสร้างแถวใหม่ ไม่ได้แก้อะไรจึงไม่ให้บันทึก
+// backdated = กำลังบันทึกย้อนหลัง (ต้องเตือน/ยืนยัน/ส่งวันที่ให้ DB) — แถวที่ตั้งย้อนหลังไว้แล้วไม่นับ
+export function effectiveDateForForm({ savedFrom = null, changed, picked = '', today = todayBangkok() }) {
+  const saved = savedFrom ?? today
+  const value = picked || (changed ? today : saved)
+  const dirty = Boolean(changed) || value !== saved
+  return { value, dirty, backdated: dirty && value < today }
+}
+
 // เวลาที่แถวเริ่มมีผล — ปกติคือ created_at (เวลาที่แอดมินกดตั้ง ละเอียดถึงวินาที)
 // ถ้าแอดมินระบุวันมีผลย้อนหลัง (effective_from ก่อนวันที่กดตั้ง) เริ่มที่ 00:00 น. ของวันนั้นตามเวลาไทย
 // เจ้าของระบบสั่ง 2569-10-07: ปลัดน้ำเลาคนใหม่เริ่มลงนามตั้งแต่ 5 ต.ค. แต่ตั้งในระบบ 6 ต.ค. 08:54
