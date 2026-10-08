@@ -432,18 +432,23 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
                 />
               </div>
 
-              {/* ── เนื้อหาย่อ (news only) ── */}
-              {isNews && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-gray-500">เนื้อหาย่อ</label>
-                  <textarea
-                    value={form.excerpt}
-                    onChange={e => setForm(f => ({ ...f, excerpt: e.target.value }))}
-                    rows={3} placeholder="สรุปเนื้อหาข่าวสั้นๆ..."
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-200"
-                  />
-                </div>
-              )}
+              {/* ── รายละเอียด ── */}
+              {/* ใช้คอลัมน์ excerpt ช่องเดียวทั้งข่าวและกิจกรรม: หน้าประชาชนแสดงช่องนี้เต็มๆ ตอนกดดูรายละเอียด
+                  (เดิมซ่อนไว้ในแท็บกิจกรรม ทำให้กิจกรรมทุกรายการขึ้น "ไม่มีรายละเอียดเพิ่มเติม") */}
+              <div className="space-y-1.5">
+                <label htmlFor="post-excerpt" className="text-xs font-semibold text-gray-500">รายละเอียด</label>
+                <textarea
+                  id="post-excerpt"
+                  value={form.excerpt}
+                  onChange={e => setForm(f => ({ ...f, excerpt: e.target.value }))}
+                  rows={6}
+                  placeholder={isNews ? 'รายละเอียดข่าว...' : 'รายละเอียดกิจกรรม เช่น จัดที่ไหน ใครเข้าร่วม ได้ผลอย่างไร...'}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white resize-y focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+                {isNews && (
+                  <p className="text-[11px] text-gray-400">2 บรรทัดแรกจะขึ้นเป็นข้อความย่อบนการ์ดข่าว</p>
+                )}
+              </div>
 
               {/* ── วันที่ ── */}
               <div className="space-y-1.5">
@@ -559,6 +564,9 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
               {/* Content */}
               <div className="p-3 space-y-2">
                 <p className="text-sm font-semibold text-gray-800 line-clamp-2 leading-snug">{p.title}</p>
+                {p.excerpt
+                  ? <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">{p.excerpt}</p>
+                  : <p className="text-xs text-gray-400 italic">ยังไม่มีรายละเอียด</p>}
                 {p.event_date && (
                   <p className="text-[11px] text-gray-400 flex items-center gap-1">
                     <CalendarDays size={10} /> {fmtDate(p.event_date)}
