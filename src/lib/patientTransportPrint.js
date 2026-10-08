@@ -54,7 +54,7 @@ import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
 import {
   APPOINTMENT_KINDS, MOBILITY_LEVELS, REQUESTER_RELATIONS, TRIP_TYPES, optionLabel,
 } from './patientTransport.js'
-import { RETURN_MODES as BOOKING_RETURN_MODES, TRIP_STATUS, thaiDay, monthReportSummary, bookingLetter, isCommunity, serviceLabel, serviceReportSummary } from './patientBooking.js'
+import { RETURN_MODES as BOOKING_RETURN_MODES, TRIP_STATUS, thaiDay, monthReportSummary, bookingLetter, isCommunity, serviceLabel, serviceReportSummary, dayDistance } from './patientBooking.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -936,11 +936,38 @@ export function buildTripMonthReportHtml({ tenant, report, partner, period }) {
   const columns = v2 ? 11 : 10
   const trips = all.filter(t => t.state === 'completed')
   const pending = all.filter(t => t.state !== 'completed' && t.state !== 'cancelled')
-  const summary = v2 ? serviceReportSummary(all) : monthReportSummary(all)
+  // เลขไมล์เหมาเป็นวัน (20261008100200): report.days มาจาก patient_booking_odometer_days ช่วงเดียวกัน
+  // เจ้าของระบบเลือก "1 แถว = 1 วัน" (2569-10-08) — รวมทุกเที่ยวที่จบของวันนั้น เลขไมล์/ระยะทางขึ้นแถวละครั้ง ไม่คูณตามจำนวนเที่ยว
+  // ไม่มี report.days = รายงานรุ่นก่อนเลขไมล์รายวัน ใช้ตารางรายเที่ยวเดิม
+  const byDay = Array.isArray(report?.days)
+  const summary = v2 ? serviceReportSummary(all, byDay ? report.days : null) : monthReportSummary(all, byDay ? report.days : null)
   const totalPeople = v2 ? summary.people : summary.passengers
   const totalCompanions = summary.companions
   const totalKm = summary.distance
-  const rows = trips.map((t, i) => `<tr>
+  const dayRecords = new Map((byDay ? report.days : []).map(d => [d.date, d]))
+  const dayRows = [...new Set(trips.map(t => t.date))].sort().map((date, i) => {
+    const list = trips.filter(t => t.date === date)
+    const rec = dayRecords.get(date)
+    const distance = dayDistance(rec)
+    const places = [...new Set(list.map(t => `${v2 ? `${serviceLabel(t)} · ` : ''}${t.route_label ?? ''}`))]
+    const drivers = [...new Set(list.map(t => t.driver_name).filter(Boolean))]
+    // เลขหนังสือแยกรายคน: เที่ยวหนึ่งมีได้หลายเลข (คั่น ", " จากฐานข้อมูล) รวมทั้งวันแล้วตัดเลขซ้ำ
+    const letters = [...new Set(list.flatMap(t => String(t.letter_no ?? '').split(',').map(no => no.trim()).filter(Boolean)))]
+    return `<tr>
+      <td class="num">${i + 1}</td>
+      <td class="num">${esc(letterDateText(date))}</td>
+      <td>${list.length} เที่ยว<br>${places.map(esc).join('<br>')}</td>
+      ${v2 ? `<td class="num">${list.reduce((sum, t) => sum + Number(t.request_count || 0), 0)}</td>` : ''}
+      <td class="num">${list.reduce((sum, t) => sum + Number(v2 ? t.people || 0 : t.passengers || 0), 0)}</td>
+      <td class="num">${list.reduce((sum, t) => sum + Number(t.companions || 0), 0)}</td>
+      <td class="num">${esc(rec?.odometer_start ?? '')}</td>
+      <td class="num">${esc(rec?.odometer_end ?? '')}</td>
+      <td class="num">${distance !== null ? distance : rec?.odometer_issue ? 'รอตรวจสอบ' : 'ยังไม่บันทึก'}</td>
+      <td>${esc(drivers.join(', '))}</td>
+      <td class="wrap">${esc(letters.join(', '))}</td>
+    </tr>`
+  }).join('\n')
+  const tripRows = trips.map((t, i) => `<tr>
       <td class="num">${i + 1}</td>
       <td class="num">${esc(letterDateText(t.date))}</td>
       <td>${v2 ? esc(serviceLabel(t)) + '<br>' : ''}${esc(t.route_label ?? '')}</td>
@@ -953,6 +980,7 @@ export function buildTripMonthReportHtml({ tenant, report, partner, period }) {
       <td>${esc(t.driver_name ?? '')}</td>
       <td class="num">${esc(t.letter_no ?? '')}</td>
     </tr>`).join('\n')
+  const rows = byDay ? dayRows : tripRows
   // รายงานหลายหน้าใช้ @page margins จริงจากค่ากลางทุกหน้า ส่วน padding ใช้เฉพาะ preview
   // margin:0 + sheet padding เดิมมีขอบเฉพาะหน้าแรก ทำให้หน้าต่อไปพิมพ์ชิดขอบบน
   const css = `
@@ -965,6 +993,8 @@ export function buildTripMonthReportHtml({ tenant, report, partner, period }) {
   th, td { border: 1px solid #000; padding: 0.8mm 1.2mm; vertical-align: top; }
   th { font-weight: 700; text-align: center; }
   td.num { text-align: center; white-space: nowrap; }
+  /* เลขหนังสือของทั้งวันอาจมีหลายเลข ให้ตัดบรรทัดได้ ไม่ดันตารางล้นขอบ */
+  td.wrap { text-align: center; }
   /* ยอดรวมทั้งช่วงแสดงท้ายตารางครั้งเดียว ไม่ซ้ำทุกหน้าจนดูเหมือนยอดรวมรายหน้า */
   tfoot { display: table-row-group; }
   tfoot td { font-weight: 700; }
@@ -988,11 +1018,11 @@ export function buildTripMonthReportHtml({ tenant, report, partner, period }) {
   <p class="report-sub">${esc(reportDateLabel(range.from))} – ${esc(reportDateLabel(range.to))} · ตามวันเดินทาง</p>
   <p class="report-sub">${esc(tenant?.name ?? '')} · รถของ${esc(textOr(partner?.name, 'กองทุนเจ้าของรถ'))}</p>
   <table>
-    <thead><tr><th>ลำดับ</th><th>วันที่</th><th>${v2 ? 'บริการ/สถานที่' : 'เส้นทาง'}</th>${v2 ? '<th>คำขอ</th>' : ''}<th>${v2 ? 'คนทั้งหมด' : 'ผู้เดินทาง'}</th><th>ผู้ติดตาม</th><th>เลขไมล์ออก</th><th>เลขไมล์กลับ</th><th>ระยะทาง (กม.)</th><th>คนขับ</th><th>หนังสือนำส่งที่</th></tr></thead>
+    <thead><tr><th>ลำดับ</th><th>วันที่</th><th>${byDay ? `เที่ยว / ${v2 ? 'บริการ/สถานที่' : 'ปลายทาง'}` : v2 ? 'บริการ/สถานที่' : 'เส้นทาง'}</th>${v2 ? '<th>คำขอ</th>' : ''}<th>${v2 ? 'คนทั้งหมด' : 'ผู้เดินทาง'}</th><th>ผู้ติดตาม</th><th>เลขไมล์ออก</th><th>เลขไมล์กลับ</th><th>${byDay ? 'ระยะทางทั้งวัน (กม.)' : 'ระยะทาง (กม.)'}</th><th>คนขับ</th><th>หนังสือนำส่งที่</th></tr></thead>
     <tbody>
 ${rows || `<tr><td colspan="${columns}" class="num">ยังไม่มีเที่ยวที่จบในช่วงนี้</td></tr>`}
     </tbody>
-    <tfoot><tr><td colspan="3">รวมเที่ยวที่จบแล้ว ${trips.length} เที่ยว</td>${v2 ? `<td class="num">${summary.requests}</td>` : ''}<td class="num">${totalPeople}</td><td class="num">${totalCompanions}</td><td colspan="2"></td><td class="num">${v2 && trips.length && summary.missingDistance === trips.length ? 'ยังไม่ครบ' : totalKm}</td><td colspan="2"></td></tr></tfoot>
+    <tfoot><tr><td colspan="3">${byDay ? `รวม ${summary.days} วัน · ${trips.length} เที่ยวที่จบแล้ว` : `รวมเที่ยวที่จบแล้ว ${trips.length} เที่ยว`}</td>${v2 ? `<td class="num">${summary.requests}</td>` : ''}<td class="num">${totalPeople}</td><td class="num">${totalCompanions}</td><td colspan="2"></td><td class="num">${(byDay ? summary.days && summary.missingDistance === summary.days : v2 && trips.length && summary.missingDistance === trips.length) ? 'ยังไม่ครบ' : totalKm}</td><td colspan="2"></td></tr></tfoot>
   </table>
   ${pending.length ? `<p class="note bold">เที่ยวที่ยังไม่จบใน${range.mode === 'month' ? 'เดือน' : 'ช่วง'}นี้ ${pending.length} เที่ยว — ไม่นับรวมในยอดข้างบน</p>
   <table class="pending">
@@ -1001,7 +1031,8 @@ ${rows || `<tr><td colspan="${columns}" class="num">ยังไม่มีเ�
 ${pending.map(t => `<tr><td class="num">${esc(letterDateText(t.date))}</td><td>${v2 ? esc(serviceLabel(t)) + ' · ' : ''}${esc(t.route_label ?? '')}</td><td>${esc(TRIP_STATUS[t.state] ?? t.state ?? '')}</td><td class="num">${Number(v2 ? t.people || 0 : t.passengers || 0)}</td></tr>`).join('\n')}
     </tbody>
   </table>` : ''}
-  ${summary.missingDistance ? `<p class="note">หมายเหตุ: มี ${summary.missingDistance} เที่ยวที่เลขไมล์ยังไม่ครบหรือระยะทางรอตรวจสอบ ระยะทางรวมนับเฉพาะเที่ยวที่ตรวจสอบได้</p>` : ''}
+  ${byDay ? `<p class="note">เลขไมล์บันทึกวันละครั้งตอนรถกลับถึงกองทุน ระยะทางของแต่ละวันรวมทุกเที่ยวของวันนั้น${summary.missingDistance ? ` · มี ${summary.missingDistance} วันที่ยังไม่มีเลขไมล์ปิดวันหรือรอตรวจสอบ ระยะทางรวมนับเฉพาะวันที่ตรวจสอบได้` : ''}</p>`
+    : summary.missingDistance ? `<p class="note">หมายเหตุ: มี ${summary.missingDistance} เที่ยวที่เลขไมล์ยังไม่ครบหรือระยะทางรอตรวจสอบ ระยะทางรวมนับเฉพาะเที่ยวที่ตรวจสอบได้</p>` : ''}
   ${sign}
   <div class="origin">${esc(govEServiceOriginText(tenant?.name || 'หน่วยงาน'))}</div>
 </div>`,

@@ -16,7 +16,7 @@ import { buildCommunityRequestFormHtml, buildCommunityForwardLetterHtml } from '
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import { resolvePatientRequestSignatories } from '../lib/patientRequestSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
-import { TRIP_STATUS, WORKSPACE_ROW_LIMIT, workspaceTruncated, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking, isCommunity, bookingName, bookingLetterMoment, servicePeriodReport } from '../lib/patientBooking'
+import { TRIP_STATUS, WORKSPACE_ROW_LIMIT, workspaceTruncated, dayPending, thaiDayAfter, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking, isCommunity, bookingName, bookingLetterMoment, servicePeriodReport } from '../lib/patientBooking'
 
 /**
  * หน้าทำงานของเจ้าหน้าที่ — คำขอรถ · ปฏิทิน · งานคนขับ · รายงาน · ตั้งค่า
@@ -44,10 +44,11 @@ export default function PatientTransportStaff({ onBack } = {}) {
   const isDriver = isAdmin || workspace?.role === 'driver' || (isCoordinator && !!uid && workspace?.settings?.driver_id === uid) || workspace?.trips?.some(t => t.driver_id === uid)
   const allowed = isCoordinator || isDriver
   const view = selectedView ?? (isCoordinator ? 'inbox' : 'driver')
-  // Count only this account's unfinished driver work. Completed trips with a valid odometer are history, not alerts.
-  const driverWorkCount = (workspace?.trips || []).filter(t => (isAdmin || t.driver_id === uid) &&
-    (t.state !== 'cancelled' && t.state !== 'completed' ||
-      t.state === 'completed' && (!Number.isFinite(t.odometer_end) || t.odometer_issue))).length
+  // Count only this account's unfinished driver work: trips not finished + days waiting for the end-of-day odometer
+  // (เลขไมล์เหมาเป็นวัน 20261008100200 — นับวันละ 1 เหมือน patient_booking_staff_work_badge ไม่ใช่เที่ยวละ 1)
+  const recentFrom = thaiDayAfter(-30)
+  const driverWorkCount = (workspace?.trips || []).filter(t => (isAdmin || t.driver_id === uid) && t.state !== 'cancelled' && t.state !== 'completed').length
+    + (workspace?.odometer?.days || []).filter(d => (isAdmin || d.mine) && d.date >= recentFrom && dayPending(d)).length
   const tabs = [
     { id: 'inbox', label: 'คำขอรถ', Icon: Inbox, show: isCoordinator },
     { id: 'calendar', label: 'ปฏิทิน', Icon: CalendarDays, show: isCoordinator },
@@ -173,7 +174,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
       return { done: true }
     }, out => {
       if (out?.moved) return out.ahead ? 'ขั้นนี้บันทึกไว้แล้ว หน้าจอแสดงขั้นถัดไปให้แล้ว' : `สถานะเที่ยวเปลี่ยนเป็น “${TRIP_STATUS[out.moved] || out.moved}” แล้ว ตรวจหน้าจออีกครั้ง`
-      return label.includes('จบ') ? `บันทึกแล้ว · ${label} — ใส่เลขไมล์กลับด้านล่างได้เลย หรือใส่ทีหลัง` : `บันทึกแล้ว · ${label}`
+      return label.includes('จบ') ? `บันทึกแล้ว · ${label} — เลขไมล์ใส่ครั้งเดียวตอนรถกลับถึงกองทุนหลังจบเที่ยวสุดท้ายของวัน` : `บันทึกแล้ว · ${label}`
     })
   }
   // เอกสารถึงกองทุน: ผู้รับหนังสือจากทะเบียนหน่วยงานรับเรื่องต่อ + ผู้ลงนามจากทะเบียนกลาง
@@ -238,7 +239,8 @@ export default function PatientTransportStaff({ onBack } = {}) {
     }, period.from, period.to, service), fundContext()])
     return buildTripMonthReportHtml({ tenant, report: data, period, partner: context.partner })
   }, 'เตรียมสรุปตามช่วงเวลาไม่สำเร็จ')
-  const recordOdometer = (trip, start, end, issue, reason) => mutate('patient_booking_save_odometer', { p_trip: trip.id, p_docs_revision: trip.docs_revision, p_start: start, p_end: end, p_issue: issue, p_note: reason }, 'บันทึกเลขไมล์แล้ว')
+  // เลขไมล์เหมาเป็นวัน: day = แถวของวันนั้น (revision 0 = ยังไม่เคยบันทึก) · ค่าเก่าทับค่าใหม่ไม่ได้ ฐานข้อมูลตอบ "เปลี่ยนแล้ว" แล้วโหลดใหม่
+  const recordOdometer = (day, start, end, issue, reason) => mutate('patient_booking_save_day_odometer', { p_day: day.date, p_revision: day.revision ?? 0, p_start: start, p_end: end, p_issue: issue, p_note: reason }, 'บันทึกเลขไมล์ประจำวันแล้ว')
   const reassignDriver = ({ trip, day, fromDriver, driver, expected, midtrip }) => mutate('patient_booking_reassign_driver', {
     p_op: op(`driver-cover:${JSON.stringify({ trip, day, fromDriver, driver, expected, midtrip })}`),
     p_trip: trip, p_day: day, p_from_driver: fromDriver, p_driver: driver, p_expected: expected, p_midtrip: midtrip,
@@ -261,7 +263,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
       <Link to="/patient-transport" className={`${primaryClass} mt-4 inline-flex items-center`}>ไปหน้าประชาชน</Link></div>}
     {current && allowed && <>
       {isDriver && view !== 'driver' && driverWorkCount > 0 && <section aria-label="งานคนขับรอดำเนินการ" className="mb-4 flex flex-col gap-3 rounded-2xl border-2 border-amber-400 bg-amber-50 p-4 text-slate-950 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3"><span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-500"><Car size={24} aria-hidden="true" /></span><div><p className="font-bold">มีงานคนขับ {driverWorkCount} รายการ</p><p className="text-sm">เที่ยวที่ต้องไปหรือรอบันทึกเลขไมล์</p></div></div>
+        <div className="flex items-center gap-3"><span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-500"><Car size={24} aria-hidden="true" /></span><div><p className="font-bold">มีงานคนขับ {driverWorkCount} รายการ</p><p className="text-sm">เที่ยวที่ต้องไปหรือวันที่รอเลขไมล์ปิดวัน</p></div></div>
         <button type="button" className="min-h-12 w-full rounded-xl bg-amber-500 px-5 py-3 text-center font-bold text-slate-950 hover:bg-amber-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-950 disabled:opacity-50 sm:w-auto" disabled={busy} onClick={() => { setCalendarBookingId(null); setView('driver') }}>ไปแท็บงานคนขับ →</button>
       </section>}
       <div className="[&>nav]:flex-wrap [&>nav]:overflow-visible [&>nav>button]:min-h-11 [&>nav>button]:px-3 sm:[&>nav>button]:px-4"><TabBar tab={view} setTab={tab => { setCalendarBookingId(null); setView(tab) }} tabs={tabs} busy={busy} /></div>

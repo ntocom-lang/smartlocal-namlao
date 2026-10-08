@@ -7,7 +7,7 @@ import { ListCard, Pager, Pills, SectionBand, Sheet } from './StaffShell'
 import { MONTHS_TH, thaiDateFromDateInput } from '../../lib/thaiDate'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
-import { SECTION_TONES, loadPageSize, paginate, savePageSize, BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousOdometer, pickupForBooking, returnForBooking, reportEvent, bookingLetter, bookingName, bookingTravel, serviceLabel, isCommunity, servicePeriodReport, isOtherPlace, cleanPlaceName, OTHER_PLACE_MAX } from '../../lib/patientBooking'
+import { SECTION_TONES, loadPageSize, paginate, savePageSize, BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousDayOdometer, dayRecorded, dayDistance, dayPending, thaiDayAfter, pickupForBooking, returnForBooking, reportEvent, bookingLetter, bookingName, bookingTravel, serviceLabel, isCommunity, servicePeriodReport, isOtherPlace, cleanPlaceName, OTHER_PLACE_MAX } from '../../lib/patientBooking'
 
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
 const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
@@ -107,7 +107,7 @@ export function QueueReport({ workspace, busy, onPeriodReport }) {
       const result = await supabase.rpc(name, { p_muni: tenant.id, ...args }); if (result.error) throw result.error; return result.data
     }, period.from, period.to, service === 'all' ? null : service).then(data => {
       if (!active) return
-      setReportData({ key: period.key, tenantId: tenant.id, service, trips: data.trips }); setReportError('')
+      setReportData({ key: period.key, tenantId: tenant.id, service, trips: data.trips, days: data.days }); setReportError('')
     }).catch(() => {
       if (active) { setReportData(null); setReportError('โหลดสรุปช่วงนี้ไม่สำเร็จ กรุณาลองอีกครั้ง') }
     })
@@ -130,6 +130,9 @@ export function QueueReport({ workspace, busy, onPeriodReport }) {
   }, [tenant?.id, page, workspace, retry])
   const currentPeriod = !!period && reportData?.key === period.key && reportData?.tenantId === tenant?.id && reportData?.service === service
   const trips = currentPeriod ? reportData.trips : []
+  // เลขไมล์เหมาเป็นวัน: การ์ดเที่ยวบอกระยะทางของ "ทั้งวัน" (รวมทุกเที่ยวของวันนั้น) ไม่ใช่ของเที่ยวนั้น
+  const reportDays = currentPeriod ? reportData.days : null
+  const dayOfTrip = t => (reportDays || []).find(d => d.date === t.date)
   const total = history?.tenantId === tenant?.id ? history.total : 0
   const pages = Math.max(1, Math.ceil(total / 20))
   const events = history?.tenantId === tenant?.id && history?.page === page ? history.events : []
@@ -163,14 +166,15 @@ export function QueueReport({ workspace, busy, onPeriodReport }) {
       {period && !reportError && !currentPeriod && <p role="status">กำลังโหลดสรุป...</p>}
       {reportError && <div role="alert" className="rounded-xl bg-rose-50 p-3 text-rose-800">{reportError} <button className={buttonClass} onClick={() => { setReportData(null); setReportError(''); setReportRetry(value => value + 1) }}>ลองอีกครั้ง</button></div>}
       {currentPeriod && <>
-        <ReportInfographic tenantName={tenant?.name} period={period} trips={trips} service={service} />
+        <ReportInfographic tenantName={tenant?.name} period={period} trips={trips} days={reportDays} service={service} />
         <h3 className="mb-1 mt-5 font-bold">รายการเที่ยวช่วงนี้ · {trips.length} เที่ยว</h3>
         <p className="mb-3 text-sm text-slate-600">หนึ่งเที่ยวอาจมีผู้เดินทางหลายคน · คำขอที่ยังรอยืนยันรถยังไม่นับเป็นเที่ยว</p>
         {!trips.length && <p className="rounded-xl bg-slate-50 p-4 text-slate-600">ไม่มีเที่ยวรถในช่วงที่เลือก ลองเลือกช่วงอื่น</p>}
         <div className="space-y-3">{trips.slice((visibleTripPage - 1) * 20, visibleTripPage * 20).map(t => <article key={t.trip_id} data-report-trip className="rounded-xl border border-slate-200 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold">{thaiDateFromDateInput(t.date)} · รับประมาณ {clockOf(t.pickup_at) || 'ยังไม่ระบุ'}</h4><span className={`rounded-full px-3 py-1 text-xs font-bold ${t.state === 'completed' ? 'bg-emerald-100 text-emerald-900' : t.state === 'issue' ? 'bg-rose-100 text-rose-800' : 'bg-sky-100 text-sky-900'}`}>{TRIP_STATUS[t.state] || 'รอตรวจสถานะ'}</span></div>
           <p className="mt-1 break-words font-semibold text-sky-900">{serviceLabel(t)} · {t.route_label || 'ยังไม่ระบุสถานที่'}</p>
-          <div className="mt-2 grid gap-1 text-sm sm:grid-cols-2"><p>คำขอ {t.request_count ?? t.passengers} รายการ · ผู้เดินทางทั้งหมด {t.people ?? t.passengers + t.companions} คน{!isCommunity(t) && ` · ผู้ติดตาม ${t.companions} คน`}</p><p>คนขับ: {t.driver_name || 'ยังไม่ระบุ'}</p><p>ระยะทาง: {t.odometer_issue ? 'มาตรวัดผิดปกติ' : t.distance == null ? 'ยังไม่บันทึกครบ' : `${t.distance.toLocaleString('th-TH')} กม.`}</p><p className="text-slate-500">เที่ยวรถเลขที่ {t.trip_id.slice(0, 8).toUpperCase()}</p></div>
+          <div className="mt-2 grid gap-1 text-sm sm:grid-cols-2"><p>คำขอ {t.request_count ?? t.passengers} รายการ · ผู้เดินทางทั้งหมด {t.people ?? t.passengers + t.companions} คน{!isCommunity(t) && ` · ผู้ติดตาม ${t.companions} คน`}</p><p>คนขับ: {t.driver_name || 'ยังไม่ระบุ'}</p>{reportDays ? <p>ระยะทางทั้งวัน: {dayRecorded(dayOfTrip(t)) ? `${dayDistance(dayOfTrip(t)).toLocaleString('th-TH')} กม. (รวมทุกเที่ยวของวันนั้น)` : dayOfTrip(t)?.odometer_issue ? 'รอตรวจสอบ' : 'ยังไม่บันทึกเลขไมล์ปิดวัน'}</p>
+            : <p>ระยะทาง: {t.odometer_issue ? 'มาตรวัดผิดปกติ' : t.distance == null ? 'ยังไม่บันทึกครบ' : `${t.distance.toLocaleString('th-TH')} กม.`}</p>}<p className="text-slate-500">เที่ยวรถเลขที่ {t.trip_id.slice(0, 8).toUpperCase()}</p></div>
         </article>)}</div>
         {tripPages > 1 && <nav aria-label="แบ่งหน้ารายการเที่ยว" className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm"><span>หน้า {visibleTripPage}/{tripPages} · ครั้งละ 20 เที่ยว</span><div className="flex gap-2"><button className={buttonClass} disabled={visibleTripPage <= 1} onClick={() => setTripPage(visibleTripPage - 1)}>ก่อนหน้า</button><button className={buttonClass} disabled={visibleTripPage >= tripPages} onClick={() => setTripPage(visibleTripPage + 1)}>ถัดไป</button></div></nav>}
       </>}
@@ -363,13 +367,28 @@ function DriverAssignment({ trips, people, busy, onReassign, onDone, batch = fal
   </div>
 }
 
-// จบเที่ยวแล้วแต่ยังไม่มีเลขไมล์กลับ — การ์ดเดียวกันทั้งในรายการบนมือถือและในแผ่นรายละเอียดของตารางจอ PC
-function AwaitingOdometer({ trip: t, trips, busy, onSave }) {
-  return <article data-trip={t.id} className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
-    <p className="font-semibold">🏥 {t.plan?.route_label}</p><p className="text-sm">{dateTime(t.plan?.pickup_at)}</p>
-    <p className="text-sm">คนขับ: {t.driver_name}</p><DriverHistory trip={t} />
-    <OdometerForm quick trip={t} trips={trips} busy={busy} onSave={onSave} />
+// ── เลขไมล์เหมาเป็นวัน (20261008100200 · เจ้าของระบบสั่ง 2569-10-08) ──
+// วันหนึ่งไปส่งกี่รอบก็ได้ ใส่เลขไมล์ครั้งเดียวตอนรถกลับถึงกองทุนสิ้นวัน (เดิมใส่รายเที่ยว แต่เที่ยวซ้อนเวลากันแบ่งเลขไมล์ไม่ได้)
+// 1 การ์ด = 1 วัน · มือถือวางการ์ดพร้อมช่องกรอกในรายการ · จอ PC เปิดในแผ่นลอย (ฟอร์มมีชุดเดียว ไม่ซ้ำสองที่)
+const thaiDate = date => thaiDateFromDateInput(date) || date
+const dayPlaces = (day, trips = []) => [...new Set(trips.filter(t => t.plan?.date === day.date && t.state !== 'cancelled').map(t => t.plan?.route_label).filter(Boolean))]
+function DayOdometerCard({ day, odometer, trips, busy, onSave }) {
+  const places = dayPlaces(day, trips)
+  return <article data-odometer-day={day.date} className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
+    <p className="font-semibold">{thaiDate(day.date)} · จบแล้ว {day.completed} เที่ยว</p>
+    {places.length > 0 && <p className="text-sm">ไป: {places.join(' · ')}</p>}
+    {day.odometer_issue && <p className="text-sm font-semibold text-amber-900">เลขไมล์ของวันนี้รอตรวจสอบ</p>}
+    <DayOdometerForm quick day={day} days={odometer.days} previous={odometer.previous} busy={busy} onSave={onSave} />
   </article>
+}
+// ระหว่างวันที่ยังมีเที่ยววิ่ง — บอกคนขับว่าไม่ต้องใส่เลขไมล์ตอนออกรถหรือตอนจบแต่ละเที่ยว
+function TodayOdometerNote({ odometer, canSee }) {
+  const today = thaiDay()
+  const day = odometer.days.find(d => d.date === today && canSee(d))
+  if (!day || day.open === 0 || dayRecorded(day)) return null
+  const start = previousDayOdometer(today, odometer.days, odometer.previous)
+  return <p data-today-odometer className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950">เลขไมล์วันนี้ใส่ครั้งเดียวตอนรถกลับถึงกองทุนหลังจบเที่ยวสุดท้าย
+    {start !== '' ? ` · เลขไมล์ออก ${start} (ต่อจากเลขล่าสุด)` : ''}</p>
 }
 
 // จอ PC (ตั้งแต่ md = 768px ของ Tailwind) ใช้ตาราง จอเล็กใช้การ์ดปุ่มใหญ่ — สลับด้วย JS ไม่ได้ซ่อนด้วย CSS แบบกล่องคำขอรถ
@@ -389,22 +408,22 @@ function useDesk() {
 // ── จอ PC: ตารางงานคนขับแบบกล่องคำขอรถ (เจ้าของระบบสั่ง 2569-09-30) ──
 // 1 แถว = 1 เที่ยว ชุดเดียวกับการ์ดบนมือถือ · คลิกแถวเปิดแผ่นลอยทับที่มีทุกอย่างของการ์ด (โทร นำทาง แจ้งเหตุขัดข้อง
 // ประวัติคนขับ เปลี่ยนคนขับ เลขไมล์) ปิดแล้วกลับมาที่แถวเดิม
-// เรียงงานที่ต้องทำก่อน: เหตุขัดข้อง → กำลังให้บริการ → ต้องออกวันนี้/เลยวัน → รอเลขไมล์ → เที่ยวถัดไป → จบแล้ว (ล่าสุดก่อน)
+// เรียงงานที่ต้องทำก่อน: เหตุขัดข้อง → กำลังให้บริการ → ต้องออกวันนี้/เลยวัน → เที่ยวถัดไป → จบแล้ว (ล่าสุดก่อน)
+// เลขไมล์เป็นรายวันแล้ว (20261008100200) — วันที่รอเลขไมล์ปิดวันอยู่ในกล่องเหนือตาราง ไม่ใช่แถวเที่ยว
 // ⚠️ คอลัมน์ "ดำเนินการ" ต้องปักขวาเสมอ ชื่อยาวดันตารางให้ล้นพื้นที่ได้ ถอดแล้วปุ่มหลักถูกตัด (บทเรียน #134)
 const RUNNING = ['outbound', 'hospital', 'returning']
 const DESK_PILLS = [
   ['all', 'ทั้งหมด', '#64748b'],
   ['now', 'วันนี้', '#7c3aed'],
-  ['odometer', 'รอเลขไมล์', '#d97706'],
   ['later', 'เที่ยวถัดไป', '#0284c7'],
   ['done', 'จบแล้ว', '#059669'],
 ]
-const DESK_EMPTY = { now: 'วันนี้ไม่มีเที่ยวที่ต้องออก', odometer: 'ไม่มีเที่ยวที่รอเลขไมล์', later: 'ยังไม่มีเที่ยวถัดไป', done: 'ยังไม่มีเที่ยวที่จบแล้วใน 30 วันล่าสุด' }
+const DESK_EMPTY = { now: 'วันนี้ไม่มีเที่ยวที่ต้องออก', later: 'ยังไม่มีเที่ยวถัดไป', done: 'ยังไม่มีเที่ยวที่จบแล้วใน 30 วันล่าสุด' }
 // ส่วนของตารางงานคนขับ (เจ้าของระบบสั่ง 2569-10-05 "แยกงานที่ยังไม่เสร็จกับงานที่เสร็จแล้ว ในภาพเหมือนกันไปหมด"):
 // เดิมทุกเที่ยวอยู่ตารางเดียว ต่างกันแค่สีป้ายสถานะ — ใส่หัวกลุ่มสีแบบเดียวกับกล่องคำขอรถ (สีกลางใน StaffShell)
-// ต้องทำตอนนี้ = วันนี้/กำลังเดินทาง/เหตุขัดข้อง + รอเลขไมล์ (จบเที่ยวแล้วแต่งานคนขับยังไม่ครบ) · เที่ยวถัดไป = ยืนยันรถแล้วยังไม่ถึงวัน · จบแล้ว = เลขไมล์ครบ
-// rows เรียงตาม kind อยู่แล้ว (now → odometer → later → done) หัวกลุ่มจึงขึ้นตรงรอยต่อโดยไม่ต้องเรียงใหม่ · ไม่พับส่วนจบแล้ว:
-// พับแล้วแถวที่เพิ่งบันทึกเลขไมล์จะหายไปทันที คนขับจะงงว่างานไปไหน (ต่างจากกล่องคำขอรถที่ผู้จัดคิวไม่ได้กดบันทึกทีละเที่ยว)
+// ต้องทำตอนนี้ = วันนี้/กำลังเดินทาง/เหตุขัดข้อง · เที่ยวถัดไป = ยืนยันรถแล้วยังไม่ถึงวัน · จบแล้ว = เที่ยวที่จบใน 30 วัน
+// rows เรียงตาม kind อยู่แล้ว (now → later → done) หัวกลุ่มจึงขึ้นตรงรอยต่อโดยไม่ต้องเรียงใหม่ · ไม่พับส่วนจบแล้ว:
+// พับแล้วแถวที่เพิ่งจบงานจะหายไปทันที คนขับจะงงว่างานไปไหน (ต่างจากกล่องคำขอรถที่ผู้จัดคิวไม่ได้กดบันทึกทีละเที่ยว)
 const DESK_SECTIONS = {
   action: { label: 'ต้องทำตอนนี้', ...SECTION_TONES.action },
   live: { label: 'เที่ยวถัดไป', ...SECTION_TONES.live },
@@ -415,10 +434,9 @@ const pickupOf = t => t.estimated_pickup_at || t.plan?.pickup_at
 const deskText = ({ trip: t, riders }) => [t.plan?.route_label, t.driver_name, t.helper_name, whenLabel(pickupOf(t)), dateTime(pickupOf(t)),
   ...riders.flatMap(b => [bookingName(b), b.phone, b.pickup])].join(' ').toLowerCase()
 
-function deskStatus({ trip: t, kind }) {
+function deskStatus({ trip: t }) {
   if (t.state === 'issue') return ['เหตุขัดข้อง', 'bg-red-100 text-red-800']
   if (RUNNING.includes(t.state)) return [TRIP_STATUS[t.state], 'bg-violet-100 text-violet-900']
-  if (kind === 'odometer') return [Number.isFinite(t.odometer_end) ? 'เลขไมล์รอตรวจสอบ' : 'รอเลขไมล์', 'bg-amber-100 text-amber-900']
   if (t.state === 'completed') return [TRIP_STATUS.completed, 'bg-emerald-100 text-emerald-900']
   return [TRIP_STATUS[t.state] || t.state, 'bg-sky-100 text-sky-900']
 }
@@ -428,8 +446,7 @@ function deskStatus({ trip: t, kind }) {
 function deskAction({ trip: t, kind, operate }) {
   const next = kind === 'now' && operate && t.state !== 'issue' ? driverNext(t) : ''
   if (next) return { id: 'advance', label: next, color: '#075985' }
-  if (kind === 'odometer') return { id: 'open', label: Number.isFinite(t.odometer_end) ? 'ตรวจเลขไมล์' : 'ใส่เลขไมล์กลับ', color: '#b45309' }
-  return { id: 'open', label: kind === 'done' ? 'แก้เลขไมล์' : 'ดูรายละเอียด' }
+  return { id: 'open', label: 'ดูรายละเอียด' }
 }
 
 // กล่องทวนก่อนบันทึกจากแถว — รูปแบบเดียวกับกล่องทวน "ยืนยันรถ" ของกล่องคำขอรถ
@@ -446,8 +463,10 @@ function reviewAdvance({ trip: t, riders }, label) {
   ].join('\n'))
 }
 
-function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adminNote, assignmentFor, coverFields, onCover, onCloseCover, onCloseTrip, onAdvance, onAction, onOdometer }) {
+function DriverDesk({ rows, workspace, odometer, pendingDays, dayNote, busy, error, canAssign, contactPhone, adminNote, assignmentFor, coverFields, onCover, onCloseCover, onCloseTrip, onAdvance, onAction, onOdometer }) {
   const [filter, setFilter] = useState('all')
+  // วันที่เปิดแผ่นเลขไมล์ปิดวัน — ตั้งเมื่อกดจากกล่องด้านบน หรือหลังจบเที่ยวสุดท้ายของวัน (ขึ้นเฉพาะวันที่ไม่มีเที่ยวค้างแล้ว)
+  const [askDay, setAskDay] = useState(null)
   const [search, setSearch] = useState('')
   const [openId, setOpenId] = useState(null)
   const words = search.trim().toLowerCase()
@@ -471,16 +490,20 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
   // ออกรถ/จบงานจากแถวต้องผ่านกล่องทวนก่อน (เจ้าของระบบเลือกแบบ ก 2569-09-30) — แถวตารางอยู่ชิดกัน กดผิดแถว
   // ระบบแจ้ง "สถานะเที่ยวรถเปลี่ยนแล้ว" ถึงผู้จองของเที่ยวนั้นทันที (ptb_notice ใน patient_booking_action) และคนขับย้อนเองไม่ได้
   // ไม่สำเร็จ = เปิดแผ่นของแถวนั้นให้เห็นข้อความผิดพลาดตรงหน้า (แบบกล่องคำขอรถ)
-  // จบงานแล้ว = เปิดแผ่นต่อที่ช่องเลขไมล์กลับ แถวย้ายไปกลุ่ม "รอเลขไมล์" แล้วไม่ต้องไล่หา (ปิดแผ่นไว้ใส่ทีหลังได้)
+  // จบเที่ยวแล้ว = ถ้าเป็นเที่ยวสุดท้ายของวัน (ไม่มีเที่ยวค้างในวันนั้น) เปิดแผ่นเลขไมล์ปิดวันต่อทันที ยังมีเที่ยวเหลือ = ไม่ถาม
   async function press(row) {
     const action = deskAction(row)
     if (action.id !== 'advance') { setOpenId(row.trip.id); return }
     if (!reviewAdvance(row, action.label)) return
     const out = await onAdvance(row.trip, action.label)
-    if (!out || (out.done && row.trip.state !== 'confirmed')) setOpenId(row.trip.id)
+    if (!out) setOpenId(row.trip.id)
+    else if (out.done && row.trip.state !== 'confirmed') setAskDay(row.trip.plan?.date || null)
   }
-  // บันทึกเลขไมล์สำเร็จ = ปิดแผ่นกลับไปที่ตาราง แถวเปลี่ยนเป็น "จบเที่ยวแล้ว"
+  // บันทึกเลขไมล์สำเร็จ = ปิดแผ่นกลับไปที่ตาราง
   const saveOdometer = async (...args) => { const saved = await onOdometer(...args); if (saved) close(); return saved }
+  const saveDay = async (...args) => { const saved = await onOdometer(...args); if (saved) setAskDay(null); return saved }
+  // แผ่นขึ้นเฉพาะวันที่ยังรอเลขไมล์ (ไม่มีเที่ยวค้างแล้ว) — จบเที่ยวที่ยังไม่ใช่เที่ยวสุดท้ายของวันจึงไม่ถาม
+  const asked = askDay ? pendingDays.find(d => d.date === askDay) : null
   const th = 'whitespace-nowrap border-r border-white/10 px-2 py-2.5 text-[11px] font-bold text-white'
   const cell = 'border-r border-gray-200 px-2 py-2.5'
   const chip = 'whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold'
@@ -488,6 +511,15 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
   return <div className="space-y-4">
     <p className="text-sm font-semibold text-amber-800">กดบันทึกเมื่อจอดรถในที่ปลอดภัย</p>
     {adminNote}
+    {dayNote}
+    {pendingDays.length > 0 && <section aria-label="จบวันแล้ว รอเลขไมล์ตอนรถกลับ" className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
+      <h3 className="font-bold">จบวันแล้ว รอเลขไมล์ตอนรถกลับ ({pendingDays.length})</h3>
+      <p className="text-sm text-amber-900">วันหนึ่งใส่ครั้งเดียว รวมทุกเที่ยวของวันนั้น</p>
+      <ul className="mt-2 divide-y divide-amber-200">{pendingDays.map(d => <li key={d.date} data-odometer-day={d.date} className="flex flex-wrap items-center justify-between gap-2 py-2">
+        <span><span className="font-semibold">{thaiDate(d.date)}</span> · จบแล้ว {d.completed} เที่ยว{d.odometer_issue ? ' · เลขไมล์รอตรวจสอบ' : ''}</span>
+        <button type="button" className={primaryClass} disabled={busy} onClick={() => setAskDay(d.date)}>{d.odometer_issue ? 'ตรวจเลขไมล์' : 'ใส่เลขไมล์ตอนรถกลับ'}</button>
+      </li>)}</ul>
+    </section>}
     <ListCard title="งานคนขับ" count={rows.length} search={search} onSearch={setSearch} searchLabel="ค้นหาผู้เดินทาง กลุ่ม สถานที่ คนขับ"
       action={canAssign && <button type="button" className={buttonClass} onClick={onCover}>จัดคนขับแทนวันนี้</button>}
       pills={<Pills value={filter} onChange={setFilter} label="กรองงานคนขับ" items={DESK_PILLS.map(([id, label, color]) => ({ id, label, color, count: count(id) }))} />}>
@@ -511,7 +543,6 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
               const back = t.estimated_return_at || t.plan?.return_at
               const action = deskAction(row)
               const [status, tone] = deskStatus(row)
-              const distance = kind === 'done' && Number.isFinite(t.odometer_start) && Number.isFinite(t.odometer_end) ? t.odometer_end - t.odometer_start : null
               const shade = index % 2 === 0 ? '#fff' : '#f5f8fc'
               const section = deskSection(kind)
               return <Fragment key={t.id}>
@@ -533,7 +564,7 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
                   <span className={`${chip} ${tone}`}>{status}</span>
                   {['now', 'later'].includes(kind) && riders.some(b => b.cancel_requested) && <span className={`${chip} bg-amber-100 text-amber-900`}>ขอยกเลิก</span>}
                   {['outbound', 'hospital'].includes(t.state) && riders.some(b => b.return_ready) && <span className={`${chip} bg-sky-100 text-sky-900`}>พร้อมรับกลับ</span>}
-                </span>{distance !== null && <span className="mt-1 block text-[11px] text-gray-500">ระยะทาง {distance} กม.</span>}</td>
+                </span></td>
                 <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit' }}>
                   <button type="button" disabled={busy} onClick={e => { e.stopPropagation(); press(row) }}
                     className={`min-h-11 rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-50 ${action.color ? 'border-transparent text-white' : 'border-slate-300 bg-white text-slate-700'}`}
@@ -551,12 +582,15 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
       {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
       {['now', 'later'].includes(open.kind) && <DriverCard bare trip={open.trip} bookings={workspace.bookings} busy={busy} upcoming={open.kind === 'later'} canOperate={open.operate}
         contactPhone={contactPhone} onAdvance={onAdvance} onAction={onAction} driverAssignment={assignmentFor(open.trip)} />}
-      {open.kind === 'odometer' && <AwaitingOdometer trip={open.trip} trips={workspace.trips} busy={busy} onSave={saveOdometer} />}
       {open.kind === 'done' && <article data-trip={open.trip.id} className="space-y-3">
         <p className="text-sm">{dateTime(open.trip.plan?.pickup_at)} · คนขับ {open.trip.driver_name || '—'}</p>
         <DriverHistory trip={open.trip} />
-        <OdometerForm trip={open.trip} trips={workspace.trips} busy={busy} onSave={saveOdometer} />
+        <DayOdometerOfTrip trip={open.trip} odometer={odometer} busy={busy} onSave={saveOdometer} />
       </article>}
+    </Sheet>}
+    {asked && <Sheet key={`day-${asked.date}`} title="เลขไมล์ปิดวัน" subtitle={`${thaiDate(asked.date)} · ใส่ครั้งเดียวตอนรถกลับถึงกองทุน`} onClose={() => setAskDay(null)} busy={busy}>
+      {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
+      <DayOdometerCard day={asked} odometer={odometer} trips={workspace.trips} busy={busy} onSave={saveDay} />
     </Sheet>}
     {coverFields && <Sheet title="จัดคนขับแทน" subtitle="เปลี่ยนคนขับทุกเที่ยวที่ยังไม่ออกรถของวันที่เลือก" onClose={onCloseCover} busy={busy}>
       {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
@@ -565,9 +599,18 @@ function DriverDesk({ rows, workspace, busy, error, canAssign, contactPhone, adm
   </div>
 }
 
+export function DayOdometerOfTrip({ trip, odometer = { failed: false, days: [], previous: null }, busy, onSave }) {
+  const day = odometer.days.find(d => d.date === trip.plan?.date)
+  return <div className="rounded-xl border border-slate-200 p-3">
+    <p className="font-semibold">เลขไมล์ประจำวัน {thaiDate(trip.plan?.date)} <span className="text-sm font-normal text-slate-600">(รวมทุกเที่ยวของวันนั้น)</span></p>
+    {day ? <DayOdometerForm day={day} days={odometer.days} previous={odometer.previous} busy={busy} onSave={onSave} />
+      : <p className="text-sm text-slate-600">{odometer.failed ? 'โหลดเลขไมล์รายวันไม่สำเร็จ กดโหลดข้อมูลล่าสุดอีกครั้ง' : 'วันนี้อยู่นอกช่วง 45 วันที่แสดง ดูระยะทางได้ในแท็บรายงาน'}</p>}
+  </div>
+}
+
 // งานคนขับ — เจ้าของระบบสั่ง 2569-09-21 ให้ง่ายที่สุด: การ์ดเที่ยวละใบ ปุ่มใหญ่ปุ่มเดียวบอกขั้นถัดไป
 // ทุกเที่ยว 2 ครั้ง: ออกรถ และกลับแล้ว · จบงาน
-// ปุ่มขึ้นเฉพาะเที่ยวของวันนี้ (หรือเลยวันแล้วยังไม่จบ) · เลขไมล์ถามครั้งเดียวหลังจบงาน ใส่ทีหลังได้
+// ปุ่มขึ้นเฉพาะเที่ยวของวันนี้ (หรือเลยวันแล้วยังไม่จบ) · เลขไมล์ถามวันละครั้งหลังจบเที่ยวสุดท้ายของวัน ใส่ทีหลังได้
 // จอ PC เป็นตาราง (DriverDesk ด้านบน) ใช้ชุดเที่ยวเดียวกับการ์ดมือถือ — การ์ดมือถือไม่เปลี่ยน
 export function DriverTrips({ workspace, uid, isAdmin, canAssign, busy, error, contactPhone, onAdvance, onAction, onOdometer, onReassign }) {
   const desk = useDesk()
@@ -579,9 +622,18 @@ export function DriverTrips({ workspace, uid, isAdmin, canAssign, busy, error, c
   const active = mine.filter(t => !['completed', 'cancelled'].includes(t.state)).sort(byPickup)
   const now = active.filter(t => t.state !== 'confirmed' || (t.plan?.date || today) <= today).sort((a, b) => Number(a.state === 'confirmed') - Number(b.state === 'confirmed') || byPickup(a, b))
   const later = active.filter(t => t.state === 'confirmed' && (t.plan?.date || today) > today)
-  // จบเที่ยวแล้วแต่ยังไม่มีเลขไมล์กลับ — ค้างไว้ตรงนี้จนกว่าจะใส่ (ผลตรวจ #227 ข้อ 4)
-  const awaitingOdometer = mine.filter(t => canOperate(t) && t.state === 'completed' && (!Number.isFinite(t.odometer_end) || t.odometer_issue)).sort(byPickup)
-  const recorded = mine.filter(t => canOperate(t) && t.state === 'completed' && Number.isFinite(t.odometer_end) && !t.odometer_issue).sort(byPickup).reverse()
+  const done = mine.filter(t => canOperate(t) && t.state === 'completed').sort(byPickup).reverse()
+  // เลขไมล์เหมาเป็นวัน: วันที่จบแล้วแต่ยังไม่มีเลขไมล์ค้างไว้จนกว่าจะใส่ (ผลตรวจ #227 ข้อ 4 ยังใช้ แต่เป็นรายวัน)
+  // ใช้ open/completed จากฐานข้อมูล เพราะวันเดียวกันอาจมีคนขับแทนวิ่งอีกเที่ยวที่บัญชีนี้มองไม่เห็น
+  const odometer = workspace.odometer || { failed: false, days: [], previous: null }
+  const canSeeDay = d => canAssign || isAdmin || d.mine
+  const recentFrom = thaiDayAfter(-30)
+  const pendingDays = odometer.days.filter(d => canSeeDay(d) && d.date >= recentFrom && d.date <= today && dayPending(d)).sort((a, b) => a.date.localeCompare(b.date))
+  const recordedDays = odometer.days.filter(d => canSeeDay(d) && d.date >= recentFrom && dayRecorded(d)).sort((a, b) => b.date.localeCompare(a.date))
+  const dayNote = <>
+    {odometer.failed && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">โหลดเลขไมล์รายวันไม่สำเร็จ กดโหลดข้อมูลล่าสุดอีกครั้ง หากยังไม่ได้ให้แจ้งผู้ดูแลระบบ</p>}
+    <TodayOdometerNote odometer={odometer} canSee={canSeeDay} />
+  </>
   const daily = (workspace.trips || []).filter(t => t.state === 'confirmed' && t.plan?.date === assignment?.day && t.driver_id === assignment?.fromDriver).sort(byPickup)
   const assignmentFor = t => !canAssign || ['completed','cancelled'].includes(t.state) ? null : <div className="space-y-2">
     {assignment?.trip === t.id ? <DriverAssignment key={t.id} trips={[t]} people={workspace.people || []} busy={busy} onReassign={onReassign} onDone={() => setAssignment(null)} />
@@ -599,11 +651,10 @@ export function DriverTrips({ workspace, uid, isAdmin, canAssign, busy, error, c
     const urgency = t => t.state === 'issue' ? 0 : RUNNING.includes(t.state) ? 1 : 2
     const rows = [
       ...[...now].sort((a, b) => urgency(a) - urgency(b) || byPickup(a, b)).map(trip => ({ kind: 'now', trip })),
-      ...awaitingOdometer.map(trip => ({ kind: 'odometer', trip })),
       ...later.map(trip => ({ kind: 'later', trip })),
-      ...recorded.map(trip => ({ kind: 'done', trip })),
+      ...done.map(trip => ({ kind: 'done', trip })),
     ].map(row => ({ ...row, operate: canOperate(row.trip), riders: workspace.bookings.filter(b => b.trip_id === row.trip.id && b.status !== 'cancelled') }))
-    return <DriverDesk rows={rows} workspace={workspace} busy={busy} error={error} canAssign={canAssign} contactPhone={contactPhone} adminNote={adminNote}
+    return <DriverDesk rows={rows} workspace={workspace} odometer={odometer} pendingDays={pendingDays} dayNote={dayNote} busy={busy} error={error} canAssign={canAssign} contactPhone={contactPhone} adminNote={adminNote}
       assignmentFor={assignmentFor} coverFields={coverFields} onCover={toggleCover} onCloseCover={() => setAssignment(null)}
       onCloseTrip={() => setAssignment(current => current?.trip ? null : current)} onAdvance={onAdvance} onAction={onAction} onOdometer={onOdometer} />
   }
@@ -615,16 +666,17 @@ export function DriverTrips({ workspace, uid, isAdmin, canAssign, busy, error, c
     </div>}
     {!now.length && <p className="rounded-xl border border-slate-200 bg-white p-4 text-slate-600">วันนี้ไม่มีเที่ยวที่ต้องออก{later.length ? ` · เที่ยวถัดไป ${later.length} เที่ยวอยู่ด้านล่าง` : ''}</p>}
     {now.map(t => <DriverCard key={t.id} trip={t} bookings={workspace.bookings} busy={busy} canOperate={canOperate(t)} contactPhone={contactPhone} onAdvance={onAdvance} onAction={onAction} driverAssignment={assignmentFor(t)} />)}
-    {awaitingOdometer.length > 0 && <section aria-label="จบแล้ว รอเติมเลขไมล์" className="space-y-3">
-      <h3 className="font-bold">จบแล้ว รอเติมเลขไมล์ ({awaitingOdometer.length})</h3>
-      {awaitingOdometer.map(t => <AwaitingOdometer key={t.id} trip={t} trips={workspace.trips} busy={busy} onSave={onOdometer} />)}
+    {dayNote}
+    {pendingDays.length > 0 && <section aria-label="จบวันแล้ว รอเลขไมล์ตอนรถกลับ" className="space-y-3">
+      <h3 className="font-bold">จบวันแล้ว รอเลขไมล์ตอนรถกลับ ({pendingDays.length})</h3>
+      {pendingDays.map(d => <DayOdometerCard key={d.date} day={d} odometer={odometer} trips={workspace.trips} busy={busy} onSave={onOdometer} />)}
     </section>}
     {later.length > 0 && <section aria-label="เที่ยวถัดไป" className="space-y-3">
       <h3 className="font-bold">เที่ยวถัดไป ({later.length})</h3>
       {later.map(t => <DriverCard key={t.id} upcoming trip={t} bookings={workspace.bookings} busy={busy} driverAssignment={assignmentFor(t)} />)}
     </section>}
-    {recorded.length > 0 && <details className="rounded-xl border border-slate-200 bg-white p-3"><summary className="min-h-11 cursor-pointer font-semibold">แก้เลขไมล์เที่ยวที่จบแล้ว (30 วันล่าสุด)</summary>
-      {recorded.map(t => <article key={t.id} className="my-3 border-t p-3"><p>{t.plan?.route_label} · {dateTime(t.plan?.pickup_at)}</p><OdometerForm trip={t} trips={workspace.trips} busy={busy} onSave={onOdometer} /></article>)}
+    {recordedDays.length > 0 && <details className="rounded-xl border border-slate-200 bg-white p-3"><summary className="min-h-11 cursor-pointer font-semibold">แก้เลขไมล์ย้อนหลัง (30 วันล่าสุด)</summary>
+      {recordedDays.map(d => <article key={d.date} data-odometer-day={d.date} className="my-3 border-t p-3"><p>{thaiDate(d.date)} · {d.completed} เที่ยว · ระยะทาง {dayDistance(d)} กม.</p><DayOdometerForm day={d} days={odometer.days} previous={odometer.previous} busy={busy} onSave={onOdometer} /></article>)}
     </details>}
   </div>
 }
@@ -697,10 +749,9 @@ export function BookingFundDocs({ booking, trip, busy, onRecordLetter, onPrintLe
   </div>
 }
 
-// เลขไมล์ต่อเที่ยว — ระบบเติมเลขไมล์ออกจากเลขไมล์กลับของเที่ยวก่อนหน้าให้เอง คนขับกรอกแค่ตอนกลับ
-// ไม่บังคับก่อนจบเที่ยว เจ้าหน้าที่จัดคิวแก้แทนได้ภายหลัง (ไม่เพิ่มขั้นตอนบังคับให้คนขับ)
+// ร่างที่ผู้ใช้กรอกค้าง (เลขไมล์ประจำวัน · เลขหนังสือแยกรายคน) — ไม่บังคับก่อนจบงาน เจ้าหน้าที่จัดคิวแก้แทนได้ภายหลัง
 // Freeze the revision with the user's draft. Polling must never bless old inputs with a new revision.
-// revision ที่ใช้เทียบคือ field ของ entity นั้น: เที่ยว = docs_revision (เลขไมล์) · คำขอ = letter_revision (เลขหนังสือแยกรายคน)
+// revision ที่ใช้เทียบคือ field ของ entity นั้น: วัน = revision (เลขไมล์ประจำวัน) · คำขอ = letter_revision (เลขหนังสือแยกรายคน)
 function useRevisionDraft(entity, field, latest) {
   const [draft, setDraft] = useState(null)
   const revision = entity[field] ?? 0
@@ -712,7 +763,6 @@ function useRevisionDraft(entity, field, latest) {
     accept: () => setDraft(d => d ? { ...d, revision } : d),
   }
 }
-const useTripDraft = (trip, latest) => useRevisionDraft(trip, 'docs_revision', latest)
 function DraftConflict({ edit, busy, latest }) {
   if (!edit.conflict) return null
   return <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 sm:col-span-full">
@@ -720,28 +770,34 @@ function DraftConflict({ edit, busy, latest }) {
     <div className="mt-2 flex flex-wrap gap-2"><button type="button" className={buttonClass} disabled={busy} onClick={edit.reset}>ใช้ค่าล่าสุด</button><button type="button" className={buttonClass} disabled={busy} onClick={edit.accept}>ยืนยันใช้ค่าที่ฉันแก้</button></div>
   </div>
 }
-// quick: หน้าคนขับหลังจบงาน — ถามแค่เลขไมล์กลับช่องเดียว เลขไมล์ออกที่ระบบเติมให้แสดงเป็นตัวหนังสือ (กด "แก้" ได้)
-// ช่อง "มาตรวัดมีปัญหา" ขึ้นเมื่อระยะผิดปกติหรือกดแก้เท่านั้น ของเดิมวาง 2 ช่อง + ช่องติ๊กค้างบนการ์ดทุกเที่ยว
-export function OdometerForm({ trip, trips, busy, onSave, quick }) {
-  const edit = useTripDraft(trip, { start: trip.odometer_start ?? previousOdometer(trip, trips), end: trip.odometer_end ?? '', issue: trip.odometer_issue || false, reason: '' })
+// เลขไมล์ประจำวัน (20261008100200) — เลขไมล์ออกต่อจากเลขกลับล่าสุดของวันก่อนให้เอง (แก้ได้) คนขับใส่แค่เลขไมล์ตอนรถกลับถึงกองทุน
+// ไม่บังคับก่อนจบวัน ผู้จัดคิวแก้แทนได้ภายหลัง · revision ของแถววันนั้น (0 = ยังไม่เคยบันทึก) กันค่าเก่าทับค่าใหม่
+// quick: หลังจบเที่ยวสุดท้ายของวัน — ช่องเดียว เลขไมล์ออกที่ระบบเติมให้แสดงเป็นตัวหนังสือ (กด "แก้" ได้)
+// ช่อง "มาตรวัดมีปัญหา" ขึ้นเมื่อระยะผิดปกติหรือกดแก้เท่านั้น · เหตุผลไม่บังคับ (เจ้าของระบบสั่ง 2569-09-26)
+export function DayOdometerForm({ day, days = [], previous = null, busy, onSave, quick }) {
+  const auto = previousDayOdometer(day.date, days, previous)
+  const edit = useRevisionDraft(day, 'revision', { start: day.odometer_start ?? auto, end: day.odometer_end ?? '', issue: day.odometer_issue || false, reason: '' })
   const [full, setFull] = useState(false)
   const { start, end, issue, reason } = edit.values
   const distance = start !== '' && end !== '' ? Number(end) - Number(start) : null
   const abnormal = distance !== null && (distance < 0 || distance > 2000)
-  const correction = (trip.odometer_start != null && Number(start) !== trip.odometer_start) || (trip.odometer_end != null && (end === '' || Number(end) !== trip.odometer_end)) || trip.odometer_issue
+  const correction = (day.odometer_start != null && Number(start) !== day.odometer_start) || (day.odometer_end != null && (end === '' || Number(end) !== day.odometer_end)) || day.odometer_issue
   const showReason = correction || issue
   const compact = quick && !full && start !== '' && start != null && !showReason
-  return <form className={`mt-3 grid gap-3 rounded-xl bg-slate-50 p-3 ${compact ? 'sm:grid-cols-[1fr_auto]' : 'sm:grid-cols-[1fr_1fr_auto]'}`} onSubmit={async e => { e.preventDefault(); if (!edit.conflict && await onSave(edit.snapshot, start === '' ? null : Number(start), end === '' ? null : Number(end), issue, reason)) edit.reset() }}>
+  // เลขออกไม่ต่อจากเลขล่าสุด (แก้เอง เปลี่ยนมาตรวัด หรือรถถูกใช้นอกระบบ) — เตือนให้เห็น ไม่บล็อก
+  const gap = auto !== '' && start !== '' && start != null && Number(start) !== Number(auto) ? Number(start) - Number(auto) : 0
+  return <form data-day-odometer={day.date} className={`mt-3 grid gap-3 rounded-xl bg-slate-50 p-3 ${compact ? 'sm:grid-cols-[1fr_auto]' : 'sm:grid-cols-[1fr_1fr_auto]'}`} onSubmit={async e => { e.preventDefault(); if (!edit.conflict && await onSave(edit.snapshot, start === '' ? null : Number(start), end === '' ? null : Number(end), issue, reason)) edit.reset() }}>
     {compact
-      ? <p className="sm:col-span-full">เลขไมล์ออก <strong>{start}</strong> ({trip.odometer_start != null ? 'บันทึกไว้แล้ว' : 'ต่อจากเที่ยวก่อน'}) <button type="button" className="ml-1 min-h-11 font-semibold text-sky-800 underline" onClick={() => setFull(true)}>แก้</button></p>
+      ? <p className="sm:col-span-full">เลขไมล์ออก <strong>{start}</strong> ({day.odometer_start != null ? 'บันทึกไว้แล้ว' : 'ต่อจากเลขล่าสุด'}) <button type="button" className="ml-1 min-h-11 font-semibold text-sky-800 underline" onClick={() => setFull(true)}>แก้</button></p>
       : <label>เลขไมล์ออก<input className={inputClass} name="odometer_start" type="number" inputMode="numeric" min={0} max={2147483647} required={!issue} value={start} onChange={e => edit.change('start', e.target.value)} /></label>}
-    <label>เลขไมล์กลับ<input className={inputClass} name="odometer_end" type="number" inputMode="numeric" min={0} max={2147483647} value={end} onChange={e => edit.change('end', e.target.value)} placeholder="กรอกเมื่อกลับถึงพื้นที่" /></label>
-    <button className={`${compact ? primaryClass : buttonClass} self-end`} disabled={busy || edit.conflict || (abnormal && !issue)}>{compact ? 'บันทึกเลขไมล์กลับ' : 'บันทึกเลขไมล์'}</button>
+    <label>เลขไมล์กลับ<input className={inputClass} name="odometer_end" type="number" inputMode="numeric" min={0} max={2147483647} value={end} onChange={e => edit.change('end', e.target.value)} placeholder="กรอกเมื่อรถกลับถึงกองทุน" /></label>
+    <button className={`${compact ? primaryClass : buttonClass} self-end`} disabled={busy || edit.conflict || (abnormal && !issue)}>{compact ? 'บันทึกเลขไมล์ปิดวัน' : 'บันทึกเลขไมล์'}</button>
     {(!compact || abnormal) && <label className="flex min-h-11 items-center gap-2 sm:col-span-full"><input className="size-5" type="checkbox" checked={issue} onChange={e => edit.change('issue', e.target.checked)} />มาตรวัดมีปัญหา / ระยะทางรอตรวจสอบ</label>}
     {showReason && <label className="sm:col-span-full">เหตุผลที่แก้เลขไมล์ (ไม่บังคับ)<select aria-label="เหตุผลที่แก้เลขไมล์" className={inputClass} value={reason} onChange={e => edit.change('reason', e.target.value)}><option value="">ไม่ระบุเหตุผล</option>{['กรอกผิด', 'ตรวจเลขจากมาตรวัดแล้ว', 'เปลี่ยนมาตรวัด', 'มาตรวัดมีปัญหา', 'ตรวจสอบแก้ไขแล้ว'].map(r => <option key={r}>{r}</option>)}</select></label>}
-    {(issue || abnormal) ? <p className="text-sm text-amber-900 sm:col-span-full">{issue ? 'บันทึกได้ ระยะทางรอตรวจสอบและยังไม่นับในยอดรวม' : 'เลขไมล์ผิดปกติ หากมาตรวัดมีปัญหาให้เลือกช่องด้านบนเพื่อบันทึกรอตรวจสอบ'}</p> : distance !== null && <p className="text-sm sm:col-span-full">ระยะทาง {distance} กม.</p>}
-    {trip.odometer_note && <p className="text-sm sm:col-span-full">เหตุผลที่บันทึกไว้: {trip.odometer_note}</p>}
-    {quick && <p className="text-sm text-slate-600 sm:col-span-full">ใส่ทีหลังได้ · เที่ยวนี้จะรออยู่ตรงนี้จนกว่าจะใส่เลขไมล์กลับ</p>}
-    <DraftConflict edit={edit} busy={busy} latest={`เลขไมล์ออก ${trip.odometer_start ?? '—'} · กลับ ${trip.odometer_end ?? '—'}${trip.odometer_issue ? ' · รอตรวจสอบ' : ''}`} />
+    {(issue || abnormal) ? <p className="text-sm text-amber-900 sm:col-span-full">{issue ? 'บันทึกได้ ระยะทางรอตรวจสอบและยังไม่นับในยอดรวม' : 'เลขไมล์ผิดปกติ หากมาตรวัดมีปัญหาให้เลือกช่องด้านบนเพื่อบันทึกรอตรวจสอบ'}</p> : distance !== null && <p className="text-sm sm:col-span-full">ระยะทางทั้งวัน {distance} กม.</p>}
+    {gap !== 0 && !issue && <p className="text-sm text-amber-900 sm:col-span-full">เลขไมล์ออกไม่ต่อจากเลขล่าสุด {auto} ({gap > 0 ? `มากกว่า ${gap}` : `น้อยกว่า ${-gap}`} กม.) ตรวจกับมาตรวัดอีกครั้ง</p>}
+    {day.odometer_note && <p className="text-sm sm:col-span-full">เหตุผลที่บันทึกไว้: {day.odometer_note}</p>}
+    {quick && <p className="text-sm text-slate-600 sm:col-span-full">ใส่ทีหลังได้ · วันนี้จะรออยู่ตรงนี้จนกว่าจะใส่เลขไมล์ตอนรถกลับ</p>}
+    <DraftConflict edit={edit} busy={busy} latest={`เลขไมล์ออก ${day.odometer_start ?? '—'} · กลับ ${day.odometer_end ?? '—'}${day.odometer_issue ? ' · รอตรวจสอบ' : ''}`} />
   </form>
 }
