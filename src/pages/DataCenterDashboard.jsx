@@ -1,10 +1,11 @@
 import { lazy, Suspense, useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Cpu, Sun, Moon, X, ClipboardCheck, Database, HeartPulse } from 'lucide-react'
-import { supabase, getSessionResilient } from '../lib/supabase'
+import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Sun, Moon, X, ClipboardCheck, Database, HeartPulse, LogOut } from 'lucide-react'
+import { supabase, getSessionResilient, signOutSafely } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
-import DataCenter3DCanvas from '../components/datacenter/DataCenter3DCanvas'
+import PortalSwitcher from '../components/layout/PortalSwitcher'
+import UserProfileBadge from '../components/layout/UserProfileBadge'
 import { DEFAULT_STALE_DAYS, scoreTone } from '../lib/dataCenterHealth'
 
 const DataCenterOverview = lazy(() => import('../components/datacenter/DataCenterOverview'))
@@ -20,11 +21,18 @@ const BASE_MODULES = [
   { key: 'quality',  label: 'คุณภาพข้อมูล',   Icon: ClipboardCheck },
 ]
 
-// สีป้ายคะแนนบนหัวหน้า (พื้นหลังหัวเป็นสีเข้มเสมอทั้ง 2 ธีม จึงใช้ชุดเดียว)
+// ป้ายคะแนนอยู่ในแถบเครื่องมือของโมดูล ใช้สีตามพื้นหลังเนื้อหา
 const HEADER_SCORE_CLS = {
-  good: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/40 hover:bg-emerald-500/20',
-  warn: 'text-amber-300 bg-amber-500/10 border-amber-500/40 hover:bg-amber-500/20',
-  bad: 'text-red-300 bg-red-500/10 border-red-500/40 hover:bg-red-500/20',
+  light: {
+    good: 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100',
+    warn: 'text-amber-800 bg-amber-50 border-amber-200 hover:bg-amber-100',
+    bad: 'text-red-700 bg-red-50 border-red-200 hover:bg-red-100',
+  },
+  dark: {
+    good: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/40 hover:bg-emerald-500/20',
+    warn: 'text-amber-300 bg-amber-500/10 border-amber-500/40 hover:bg-amber-500/20',
+    bad: 'text-red-300 bg-red-500/10 border-red-500/40 hover:bg-red-500/20',
+  },
 }
 const CATEGORY_MANAGER_MODULE = { key: 'categories', label: 'จัดการหมวดหมู่', Icon: Tags }
 
@@ -190,6 +198,11 @@ export default function DataCenterDashboard() {
     navigate('/staff')
   }
 
+  async function handleLogout() {
+    await signOutSafely('/')
+    navigate('/')
+  }
+
   function canManageEntry(entry) {
     if (!entry || !profile) return false
     if (profile.role === 'admin' || profile.role === 'superadmin') return true
@@ -237,46 +250,45 @@ export default function DataCenterDashboard() {
   const MODULES = isManager ? [...BASE_MODULES, CATEGORY_MANAGER_MODULE] : BASE_MODULES
 
   return (
-    <div className={isMapModule ? (isLight ? 'min-h-screen flex flex-col bg-[#eef4f9]' : 'min-h-screen flex flex-col bg-[#070a12]') : (isLight ? 'min-h-full bg-[#f0f4f8] text-slate-800' : 'min-h-full bg-[#070a12] text-slate-100')}>
-      {/* Mobile Cyber Header */}
-      <header className={`md:hidden px-4 pt-3 pb-3 relative overflow-hidden shrink-0 border-b ${isLight ? 'bg-gradient-to-r from-sky-900 via-indigo-900 to-slate-900 text-white border-cyan-400/30' : 'bg-gradient-to-b from-slate-900 to-[#070a12] text-white border-cyan-500/20'}`}>
-        <div className="absolute inset-0 opacity-40 pointer-events-none">
-          <DataCenter3DCanvas height="100%" theme={theme} />
-        </div>
-        <div className="flex items-center gap-3 relative z-10">
-          <button onClick={handleBackToStaff} aria-label="กลับหน้าเจ้าหน้าที่" className="shrink-0 active:scale-95 transition-transform">
-            <div className="w-10 h-10 rounded-xl border border-cyan-400/40 bg-slate-900/80 text-cyan-300 flex items-center justify-center shadow-lg shadow-cyan-500/10">
-              <ArrowLeft size={18} />
-            </div>
-          </button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-              <p className="font-extrabold text-sm leading-tight text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-blue-300 truncate">
-                ศูนย์รวมข้อมูลดิจิทัล
-              </p>
-            </div>
-            <p className="text-cyan-200/80 text-[11px] mt-0.5 truncate">{tenant?.name ?? 'Digital Data Center'}</p>
-          </div>
-
-          {activeModule === 'overview' && categoryTree.length > 0 && (
-            <button onClick={() => setShowMobileCategorySheet(true)} aria-label="เปลี่ยนหมวดหมู่ข้อมูล"
-              className="p-2 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 hover:text-white transition-all active:scale-90 shrink-0">
-              <Tags size={18} />
+    <div className={`min-h-screen flex flex-col ${isLight ? 'bg-[#eef2f7] text-slate-800' : 'bg-[#070a12] text-slate-100'}`}>
+      {/* ใช้ธีมและปุ่มสลับระบบชุดเดียวกับ StaffDashboard */}
+      <header className="relative w-full text-white overflow-hidden shrink-0"
+        style={{ background: 'linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+        {tenant?.header_image_url && (
+          <div className="absolute inset-0 opacity-25 pointer-events-none"
+            style={{ backgroundImage: `url("${tenant.header_image_url}")`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+        )}
+        <div className="absolute bottom-0 inset-x-0 h-12 pointer-events-none"
+          style={{ background: 'linear-gradient(to top, var(--color-primary-dark), transparent)' }} />
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 px-4 md:px-6 py-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1 md:flex-none">
+            <button type="button" onClick={() => navigate('/')} aria-label="กลับหน้าแรก"
+              className="flex h-11 w-11 shrink-0 items-center justify-center active:opacity-70 transition-opacity">
+              {tenant?.logo_url
+                ? <img src={tenant.logo_url} alt="" className="w-10 h-10 rounded-full border-2 border-white/40 bg-white/10 object-contain" />
+                : <span className="w-10 h-10 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center text-lg font-bold">🏛️</span>}
             </button>
-          )}
-          <button onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')} aria-label="เปลี่ยนธีม" className="p-2 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 hover:text-white transition-all active:scale-90 shrink-0">
-            {isLight ? <Moon size={18} /> : <Sun size={18} className="text-amber-400" />}
-          </button>
-          <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน" className="relative p-2 rounded-xl bg-slate-800/60 border border-slate-700 text-cyan-300 hover:text-white transition-colors shrink-0">
+            <div className="min-w-0">
+              <span className="text-[10px] font-black bg-white/20 text-white px-2 py-0.5 rounded-full tracking-widest uppercase">ระบบเจ้าหน้าที่</span>
+              <p className="text-sm font-bold text-white mt-0.5 leading-tight">{tenant?.name}</p>
+            </div>
+          </div>
+          <button type="button" onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน"
+            className="md:hidden relative flex h-11 min-w-11 flex-col items-center justify-center gap-1 text-white/85 hover:text-white">
             <Bell size={18} />
-            {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 min-w-3.5 h-3.5 px-0.5 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center">
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            )}
+            <span className="text-[9px]">แจ้งเตือน</span>
+            {unreadCount > 0 && <span className="absolute top-0 right-0 rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>}
           </button>
+          <div className="hidden md:flex items-center gap-2 flex-wrap justify-end">
+            <UserProfileBadge tone="onDark" className="min-h-11" />
+            <PortalSwitcher className="flex flex-wrap [&>a]:min-h-11" />
+            <button type="button" onClick={handleLogout}
+              className="flex min-h-11 items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
+              <LogOut size={13} /> ออกจากระบบ
+            </button>
+          </div>
         </div>
+        <PortalSwitcher className="relative z-10 flex flex-wrap px-4 pb-3 md:hidden [&>a]:min-h-11" />
       </header>
 
       {/* Mobile Category Sheet — เวอร์ชันมือถือของทรี "หมวดหมู่ข้อมูล" ในเมนูซ้าย desktop */}
@@ -285,13 +297,13 @@ export default function DataCenterDashboard() {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div onClick={e => e.stopPropagation()}
             className={`relative rounded-t-3xl max-h-[75vh] overflow-y-auto p-4 shadow-2xl ${
-              isLight ? 'bg-white text-slate-800' : 'bg-[#0b1329] text-slate-100 border-t border-cyan-500/30'
+              isLight ? 'bg-white text-slate-800' : 'bg-slate-900 text-slate-100 border-t border-slate-700'
             }`}
             style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 16px)' }}>
             <div className="flex items-center justify-between mb-3">
-              <p className={`text-xs font-black uppercase tracking-widest ${isLight ? 'text-sky-700' : 'text-cyan-400/80'}`}>เลือกหมวดหมู่ข้อมูล</p>
+              <p className={`text-xs font-bold ${isLight ? 'text-slate-700' : 'text-slate-200'}`}>เลือกหมวดหมู่ข้อมูล</p>
               <button onClick={() => setShowMobileCategorySheet(false)} aria-label="ปิด"
-                className={`p-1.5 rounded-lg ${isLight ? 'text-slate-500 bg-slate-100' : 'text-slate-400 bg-slate-800'}`}>
+                className={`flex h-11 w-11 items-center justify-center rounded-lg ${isLight ? 'text-slate-500 bg-slate-100' : 'text-slate-400 bg-slate-800'}`}>
                 <X size={16} />
               </button>
             </div>
@@ -299,7 +311,7 @@ export default function DataCenterDashboard() {
             <button onClick={() => { goToCategory(null, null); setShowMobileCategorySheet(false) }}
               className={`w-full flex items-center justify-between rounded-xl px-3.5 py-3 mb-2 text-sm font-bold transition-colors ${
                 !sidebarFilter.group
-                  ? (isLight ? 'bg-sky-100 text-sky-800 border border-sky-300' : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40')
+                  ? (isLight ? 'bg-sky-100 text-sky-800 border border-sky-300' : 'bg-white/20 text-white border border-white/20')
                   : (isLight ? 'bg-slate-50 text-slate-700 border border-slate-200' : 'bg-slate-800/50 text-slate-300 border border-transparent')
               }`}>
               <span>ภาพรวมทั้งหมด</span>
@@ -311,7 +323,7 @@ export default function DataCenterDashboard() {
                 <button onClick={() => { goToCategory(group, null); setShowMobileCategorySheet(false) }}
                   className={`w-full flex items-center justify-between rounded-xl px-3.5 py-3 text-sm font-bold transition-colors ${
                     sidebarFilter.group === group && !sidebarFilter.category
-                      ? (isLight ? 'bg-sky-100 text-sky-800 border border-sky-300' : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40')
+                      ? (isLight ? 'bg-sky-100 text-sky-800 border border-sky-300' : 'bg-white/20 text-white border border-white/20')
                       : (isLight ? 'bg-slate-50 text-slate-700 border border-slate-200' : 'bg-slate-800/40 text-slate-200 border border-transparent')
                   }`}>
                   <span>{group}</span>
@@ -321,12 +333,12 @@ export default function DataCenterDashboard() {
                   <div className="pl-3 mt-1 space-y-1">
                     {categories.map(({ category, count }) => (
                       <button key={category} onClick={() => { goToCategory(group, category); setShowMobileCategorySheet(false) }}
-                        className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors ${
+                        className={`w-full flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs transition-colors ${
                           sidebarFilter.group === group && sidebarFilter.category === category
-                            ? (isLight ? 'bg-sky-50 text-sky-700 font-bold' : 'bg-cyan-500/15 text-cyan-300 font-bold')
+                            ? (isLight ? 'bg-sky-50 text-sky-700 font-bold' : 'bg-white/10 text-white font-bold')
                             : (isLight ? 'text-slate-500' : 'text-slate-400')
                         }`}>
-                        <span className="truncate">{category}</span>
+                        <span className="text-left break-words">{category}</span>
                         <span className="font-mono shrink-0 ml-2">{count}</span>
                       </button>
                     ))}
@@ -338,82 +350,16 @@ export default function DataCenterDashboard() {
         </div>
       )}
 
-      {/* Desktop Cyber Command Header */}
-      <header className={`hidden md:block relative w-full overflow-hidden shrink-0 border-b ${isLight ? 'bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white border-cyan-400/30' : 'bg-gradient-to-b from-[#0b1120] to-[#070a12] text-white border-cyan-500/20'}`}>
-        {/* Background 3D Canvas Visualizer */}
-        <div className="absolute inset-0 opacity-50 pointer-events-none">
-          <DataCenter3DCanvas height="100%" theme={theme} />
-        </div>
-
-        <div className="relative z-10 flex items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-4">
-            <button onClick={handleBackToStaff} aria-label="กลับหน้าเจ้าหน้าที่" className="shrink-0 active:scale-95 transition-transform group">
-              <div className="w-10 h-10 rounded-xl bg-slate-900/80 border border-cyan-400/30 group-hover:border-cyan-400 text-cyan-300 flex items-center justify-center shadow-lg shadow-cyan-500/10 transition-colors">
-                <ArrowLeft size={18} />
-              </div>
-            </button>
-            <div>
-              {/* ป้ายสถานะที่หัวหน้าต้องมาจากข้อมูลจริงเท่านั้น (เดิมเป็นข้อความตายตัว "DATA CORE v2.0 / SYSTEM ONLINE"
-                  ที่ไม่ได้ตรวจอะไรเลย) — จำนวนรายการมาจาก summary, คะแนนมาจาก data_center_health ไม่มีข้อมูล = ไม่แสดง */}
-              <div className="flex flex-wrap items-center gap-2">
-                {summary?.totals && (
-                  <span className="text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 px-2 py-0.5 rounded-full tracking-wide flex items-center gap-1 shadow-sm shadow-cyan-500/20">
-                    <Database size={10} /> {summary.totals.total} รายการ · {summary.groups?.length ?? 0} กลุ่มข้อมูล
-                  </span>
-                )}
-                {health?.totals?.score != null && (
-                  <button type="button" onClick={() => openQuality('health')}
-                    title="คะแนนความพร้อมของข้อมูล — กดเพื่อดูรายการที่ต้องดูแลและกฎที่ใช้ตรวจ"
-                    className={`text-[10px] font-black font-mono flex items-center gap-1 border px-2 py-0.5 rounded-full transition-colors ${HEADER_SCORE_CLS[scoreTone(health.totals.score)]}`}>
-                    <HeartPulse size={10} /> คุณภาพข้อมูล {health.totals.score}%
-                  </button>
-                )}
-              </div>
-              <p className="text-base font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-100 to-cyan-300 mt-1 leading-tight">
-                ศูนย์รวมข้อมูลดิจิทัล — {tenant?.name}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* Theme Switcher Button */}
-            <button onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
-              className="px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-cyan-300 text-xs font-extrabold flex items-center gap-2 transition-all shadow-md active:scale-95 hover:scale-105">
-              {isLight ? <Moon size={15} className="text-cyan-300" /> : <Sun size={15} className="text-amber-400 animate-spin-slow" />}
-              <span>{isLight ? 'โหมดมืด (Dark)' : 'โหมดสว่าง (Light)'}</span>
-            </button>
-
-            {profile && (
-              <div className="flex items-center gap-3 pl-2 border-l border-cyan-500/30">
-                <div className="text-right">
-                  <div className="flex items-center justify-end gap-1.5">
-                    <Cpu size={12} className="text-cyan-400" />
-                    <p className="text-xs font-bold text-slate-200">{profile.full_name}</p>
-                  </div>
-                  <p className="text-[10px] font-mono text-cyan-300/70 capitalize">{profile.role ?? 'User'}</p>
-                </div>
-                <button onClick={handleBackToStaff} aria-label="กลับหน้าเจ้าหน้าที่"
-                  className="px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 transition-all border border-cyan-500/30 text-cyan-300 text-xs font-semibold flex items-center gap-1.5 shadow-sm shadow-cyan-500/20 hover:scale-105">
-                  <ArrowLeft size={14} />
-                  <span>หน้าหลัก</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
-
-
-
-      {/* Desktop cyber sidebar + main */}
-      <div className={isMapModule ? 'md:flex relative flex-1 min-h-0' : 'md:flex relative'}>
+      {/* เมนูซ้ายใช้รูปแบบเดียวกับหน้าเจ้าหน้าที่ */}
+      <div className="md:flex relative flex-1 min-h-0">
         {!sidebarHidden && (
-          <aside className="hidden md:flex flex-col w-60 shrink-0 shadow-2xl bg-[#0b1329]/95 border-r border-cyan-500/25 backdrop-blur-xl text-slate-100">
-            <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-1 sidebar-nav">
-              <div className="px-3 pb-2 text-[10px] font-black uppercase tracking-widest text-cyan-400/60 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                SYSTEM NAVIGATION
-              </div>
+          <aside className="hidden md:flex flex-col w-60 shrink-0 shadow-lg text-white" style={{ backgroundColor: '#1a3a5c' }}>
+            <nav aria-label="เมนูศูนย์รวมข้อมูลดิจิทัล" className="flex-1 px-3 py-4 overflow-y-auto space-y-0.5">
+              <button type="button" onClick={handleBackToStaff}
+                className="mb-3 flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60">
+                <ArrowLeft size={16} /> กลับแดชบอร์ดเจ้าหน้าที่
+              </button>
+              <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-widest text-white/55">ศูนย์รวมข้อมูลดิจิทัล</p>
               {MODULES.map(({ key, label, Icon }) => {
                 const isActive = activeModule === key
                 return (
@@ -422,24 +368,24 @@ export default function DataCenterDashboard() {
                     if (key === 'overview') setSidebarFilter({ group: null, category: null })
                     if (key === 'map') setMapFocus(null)
                   }}
-                    className={`group relative flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2 text-sm font-extrabold transition-all duration-200 focus-visible:outline-none ${
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${
                       isActive
-                        ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-500/10'
-                        : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 border border-transparent'
+                        ? 'bg-white/20 text-white shadow-sm'
+                        : 'text-white/80 hover:bg-white/10 hover:text-white'
                     }`}>
-                    {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 rounded-r-full bg-cyan-400 shadow-md shadow-cyan-400/50" />}
-                    <Icon size={17} className={isActive ? 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,240,255,0.6)]' : 'text-slate-400 group-hover:text-cyan-300'} />
-                    <span className="flex-1 text-left">{label}</span>
+                    <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} />
+                    <span className="flex-1 text-left text-xs">{label}</span>
                   </button>
                 )
               })}
 
               {/* tree กลุ่ม/ประเภทในเมนูซ้าย */}
               {categoryTree.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-cyan-500/20">
+                <div className="mt-4 pt-4 border-t border-white/10">
                   <div className="px-3 pb-2 flex items-center justify-between">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-cyan-400/60">หมวดหมู่ข้อมูล</p>
-                    <span className="text-[10px] font-mono bg-cyan-500/10 text-cyan-300 px-1.5 py-0.5 rounded border border-cyan-500/30">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-white/55">หมวดหมู่ข้อมูล</p>
+                    <span className="text-[10px] font-semibold bg-white/10 text-white/80 px-1.5 py-0.5 rounded-full">
                       {categoryTree.reduce((acc, g) => acc + g.total, 0)}
                     </span>
                   </div>
@@ -449,32 +395,33 @@ export default function DataCenterDashboard() {
                     const isExpanded = !collapsedGroups.has(group)
                     return (
                       <div key={group} className="mb-1">
-                        <div className={`group flex items-center rounded-xl transition-all ${
+                        <div className={`group flex items-center rounded-lg transition-all ${
                           isGroupActive
-                            ? 'bg-cyan-500/20 border border-cyan-500/40'
-                            : 'hover:bg-slate-800/50'
+                            ? 'bg-white/20 text-white shadow-sm'
+                            : 'hover:bg-white/10'
                         }`}>
                           <button type="button" onClick={() => toggleGroupExpand(group)}
                             aria-label={isExpanded ? `ยุบกลุ่ม ${group}` : `กางกลุ่ม ${group}`}
-                            className="shrink-0 p-1.5 pl-2 text-cyan-400/60 hover:text-cyan-300 transition-colors">
-                            <ChevronRight size={13} className={`transition-transform ${isExpanded ? 'rotate-90 text-cyan-400' : ''}`} />
+                            aria-expanded={isExpanded}
+                            className="shrink-0 p-1.5 pl-2 text-white/55 hover:text-white transition-colors">
+                            <ChevronRight size={13} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                           </button>
                           <button type="button"
                             onClick={() => {
                               goToCategory(group, null)
                               setCollapsedGroups(prev => { if (!prev.has(group)) return prev; const next = new Set(prev); next.delete(group); return next })
                             }}
-                            className={`flex-1 min-w-0 flex items-center justify-between gap-2 py-1.5 text-[13px] font-semibold text-left transition-colors ${
+                            className={`flex-1 min-w-0 flex min-h-9 items-center justify-between gap-2 py-1.5 text-xs font-semibold text-left transition-colors ${
                               isGroupActive
-                                ? 'text-cyan-200 font-bold'
-                                : 'text-slate-300 hover:text-cyan-200'
+                                ? 'text-white'
+                                : 'text-white/80 hover:text-white'
                             }`}>
-                            <span className="truncate">{group}</span>
-                            <span className="shrink-0 text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-cyan-400 border border-slate-700">{total}</span>
+                            <span className="break-words">{group}</span>
+                            <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/70">{total}</span>
                           </button>
                           <button type="button" onClick={() => goToAddEntry(group, null)}
                             aria-label={`เพิ่มข้อมูลในกลุ่ม ${group}`} title={`เพิ่มข้อมูลในกลุ่ม ${group}`}
-                            className="shrink-0 p-1 mr-1.5 rounded-lg text-slate-500 group-hover:text-cyan-400 hover:bg-cyan-500/20 transition-colors">
+                            className="shrink-0 p-1 mr-1.5 rounded-lg text-white/45 group-hover:text-white hover:bg-white/10 transition-colors">
                             <Plus size={13} />
                           </button>
                         </div>
@@ -485,21 +432,21 @@ export default function DataCenterDashboard() {
                             <div key={category}
                               className={`group flex items-center rounded-lg transition-all ${
                                 isCatActive
-                                  ? 'bg-cyan-500/15 border-l-2 border-cyan-400'
-                                  : 'hover:bg-slate-800/40'
+                                  ? 'bg-white/20 text-white shadow-sm'
+                                  : 'hover:bg-white/10'
                               }`}>
                               <button type="button" onClick={() => goToCategory(group, category)}
-                                className={`flex-1 min-w-0 flex items-center justify-between gap-2 pl-7 py-1.5 text-xs text-left transition-colors ${
+                                className={`flex-1 min-w-0 flex min-h-9 items-center justify-between gap-2 pl-7 py-1.5 text-xs text-left transition-colors ${
                                   isCatActive
-                                    ? 'text-cyan-300 font-bold'
-                                    : 'text-slate-400 group-hover:text-slate-200'
+                                    ? 'text-white font-semibold'
+                                    : 'text-white/60 group-hover:text-white'
                                 }`}>
-                                <span className="truncate">{category}</span>
-                                <span className="shrink-0 text-[10px] font-mono text-slate-500">{count}</span>
+                                <span className="break-words">{category}</span>
+                                <span className="shrink-0 text-[10px] text-white/50">{count}</span>
                               </button>
                               <button type="button" onClick={() => goToAddEntry(group, category)}
                                 aria-label={`เพิ่มข้อมูลในประเภท ${category}`} title={`เพิ่มข้อมูลในประเภท ${category}`}
-                                className="shrink-0 p-1 mr-1.5 rounded-md text-slate-600 group-hover:text-cyan-400 hover:bg-cyan-500/20 transition-colors">
+                                className="shrink-0 p-1 mr-1.5 rounded-md text-white/40 group-hover:text-white hover:bg-white/10 transition-colors">
                                 <Plus size={12} />
                               </button>
                             </div>
@@ -515,16 +462,47 @@ export default function DataCenterDashboard() {
         )}
 
 
-        {/* ปุ่มพับ/กางเมนูซ้ายหน้าแผนที่ */}
-        {activeModule === 'map' && (
-          <button onClick={() => setMapSidebarOpen(o => !o)} aria-label={mapSidebarOpen ? 'ซ่อนเมนู' : 'แสดงเมนู'}
-            className={`hidden md:flex absolute top-3 left-3 z-30 items-center justify-center w-9 h-9 rounded-xl shadow-xl border transition-all ${isLight ? 'bg-white/95 border-slate-200 text-sky-700 hover:bg-slate-50' : 'bg-slate-900/90 border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/20'}`}>
-            {mapSidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-          </button>
-        )}
-
         {/* Main Content */}
-        <main className={isMapModule ? 'flex-1 min-w-0 pb-24 md:pb-0 flex flex-col min-h-0' : 'flex-1 min-w-0 px-4 md:px-6 pb-24 md:pb-6 pt-5'}>
+        <main className={isMapModule ? 'flex-1 min-w-0 pb-28 md:pb-0 flex flex-col min-h-0' : 'flex-1 min-w-0 px-4 md:px-6 pb-28 md:pb-6 pt-5'}>
+          <div className={`flex flex-wrap items-center justify-between gap-3 ${isMapModule ? 'px-4 md:px-6 py-3 shrink-0' : 'max-w-5xl mx-auto mb-4'}`}>
+            <div>
+              <h1 className="text-lg font-extrabold leading-tight">ศูนย์รวมข้อมูลดิจิทัล</h1>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                {summary?.totals && (
+                  <span className={`flex items-center gap-1 text-[11px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                    <Database size={12} /> {summary.totals.total} รายการ · {summary.groups?.length ?? 0} กลุ่มข้อมูล
+                  </span>
+                )}
+                {health?.totals?.score != null && (
+                  <button type="button" onClick={() => openQuality('health')}
+                    title="คะแนนความพร้อมของข้อมูล — กดเพื่อดูรายการที่ต้องดูแลและกฎที่ใช้ตรวจ"
+                    className={`flex min-h-11 items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${HEADER_SCORE_CLS[theme][scoreTone(health.totals.score)]}`}>
+                    <HeartPulse size={13} /> คุณภาพข้อมูล {health.totals.score}%
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {isMapModule && (
+                <button type="button" onClick={() => setMapSidebarOpen(o => !o)}
+                  className={`hidden md:flex min-h-11 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition-colors ${isLight ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50' : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'}`}>
+                  {mapSidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+                  {mapSidebarOpen ? 'ซ่อนเมนู' : 'แสดงเมนู'}
+                </button>
+              )}
+              {activeModule === 'overview' && categoryTree.length > 0 && (
+                <button type="button" onClick={() => setShowMobileCategorySheet(true)} aria-label="เปลี่ยนหมวดหมู่ข้อมูล"
+                  className={`md:hidden flex min-h-11 items-center gap-2 rounded-full border px-3 text-xs font-semibold ${isLight ? 'bg-white border-slate-200 text-slate-600' : 'bg-slate-900 border-slate-700 text-slate-200'}`}>
+                  <Tags size={16} /> หมวดหมู่
+                </button>
+              )}
+              <button type="button" onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
+                className={`flex min-h-11 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition-colors ${isLight ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50' : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'}`}>
+                {isLight ? <Moon size={15} /> : <Sun size={15} />}
+                {isLight ? 'โหมดมืด' : 'โหมดสว่าง'}
+              </button>
+            </div>
+          </div>
           {isMapModule ? (
             <Suspense fallback={
               <div className="flex min-h-64 items-center justify-center">
@@ -537,7 +515,7 @@ export default function DataCenterDashboard() {
                 focusLat={mapFocus?.lat} focusLng={mapFocus?.lng} />
             </Suspense>
           ) : (
-            <div className="max-w-6xl mx-auto">
+            <div className="max-w-5xl mx-auto">
               <Suspense fallback={
                 <div className="flex min-h-64 items-center justify-center">
                   <div className="w-8 h-8 border-4 border-cyan-500/20 border-t-cyan-400 rounded-full animate-spin" />
@@ -575,11 +553,10 @@ export default function DataCenterDashboard() {
       </div>
 
 
-      {/* Cyber Mobile Bottom Bar */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch bg-slate-900/95 backdrop-blur-xl border-t border-cyan-500/30 shadow-[0_-8px_30px_rgba(0,0,0,0.5)]"
+      {/* เมนูมือถือใช้สีเดียวกับเมนูซ้าย และแสดงชื่อครบโดยขึ้นบรรทัดใหม่ */}
+      <nav aria-label="เมนูศูนย์รวมข้อมูลดิจิทัลบนมือถือ" className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t border-white/10 shadow-lg text-white"
         style={{
-          borderTopLeftRadius: '20px',
-          borderTopRightRadius: '20px',
+          backgroundColor: '#1a3a5c',
           paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 6px)',
         }}>
         {MODULES.map(({ key, label, Icon }) => {
@@ -590,18 +567,16 @@ export default function DataCenterDashboard() {
               if (key === 'overview') setSidebarFilter({ group: null, category: null })
               if (key === 'map') setMapFocus(null)
             }}
-              className="flex-1 flex flex-col items-center justify-center gap-1 pt-2 pb-1 transition-all active:scale-95">
-              <div className={`relative w-10 h-8 rounded-xl flex items-center justify-center transition-all duration-300 ${isActive ? 'bg-gradient-to-r from-cyan-500/30 to-blue-500/30 border border-cyan-400/50 shadow-md shadow-cyan-500/20' : ''}`}>
-                {isActive && <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(0,240,255,0.8)]" />}
-                <Icon size={18} strokeWidth={isActive ? 2.3 : 1.6} className={isActive ? 'text-cyan-300 drop-shadow-[0_0_6px_rgba(0,240,255,0.6)]' : 'text-slate-400'} />
-              </div>
-              <span className={`text-[10px] font-bold leading-tight truncate max-w-[75px] ${isActive ? 'text-cyan-300' : 'text-slate-400'}`}>
+              aria-current={isActive ? 'page' : undefined}
+              className={`flex-1 min-w-0 min-h-16 flex flex-col items-center justify-center gap-1 px-1 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'}`}>
+              <Icon size={18} strokeWidth={isActive ? 2.2 : 1.8} />
+              <span className="text-[10px] font-semibold leading-tight text-center break-words w-full">
                 {label}
               </span>
             </button>
           )
         })}
-      </div>
+      </nav>
     </div>
   )
 }
