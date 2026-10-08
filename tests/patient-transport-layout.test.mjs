@@ -150,6 +150,36 @@ const monthArgs = () => ({
   },
 })
 
+// เลขไมล์เหมาเป็นวัน (เจ้าของระบบเลือก "1 แถว = 1 วัน" 2569-10-08): 24 วัน วันละ 1–3 เที่ยว ชื่อปลายทางยาว
+// วันที่ 5 ยังไม่มีเลขไมล์ วันที่ 7 รอตรวจสอบ · ระยะทางต้องนับวันละครั้ง ไม่คูณตามจำนวนเที่ยว
+const DAY_COUNT = 24
+const tripsOfDay = d => d % 3 === 0 ? 3 : d % 2 === 0 ? 2 : 1
+const dayKm = d => 60 + d
+const DAY_TOTAL_KM = Array.from({ length: DAY_COUNT }, (_, i) => i + 1).filter(d => d !== 5 && d !== 7).reduce((sum, d) => sum + dayKm(d), 0)
+const DAY_TRIPS = Array.from({ length: DAY_COUNT }, (_, i) => i + 1).reduce((sum, d) => sum + tripsOfDay(d), 0)
+const dateOf = d => `2026-10-${String(d).padStart(2, '0')}`
+const monthDayArgs = () => ({
+  tenant: TENANT, partner: PARTNER,
+  report: {
+    month: '2026-10-01',
+    trips: [
+      ...Array.from({ length: DAY_COUNT }, (_, i) => i + 1).flatMap(d => Array.from({ length: tripsOfDay(d) }, (_, k) => ({
+        trip_id: `d-${d}-${k}`, date: dateOf(d), state: 'completed',
+        route_label: k === 1 ? 'ศูนย์ฟอกไต เมดแคร์ ข้างโรงเรียนป่าไม้แพร่' : 'โรงพยาบาลแพร่ — หมู่ 1 ถึงหมู่ 12', passengers: 2, companions: 1,
+        // เลขไมล์รายเที่ยวเดิมต้องไม่ถูกใช้เมื่อมีเลขไมล์รายวัน
+        odometer_start: 1, odometer_end: 999, distance: 998,
+        driver_name: k === 2 ? 'นายขับแทน ใจดี' : 'นายขับดี ปลอดภัยยิ่ง', letter_no: `พร 72301/${d * 10 + k}`,
+      }))),
+      { trip_id: 'p-25', date: dateOf(25), state: 'confirmed', route_label: 'โรงพยาบาลแพร่', passengers: 1, companions: 0 },
+      { trip_id: 'p-26', date: dateOf(26), state: 'confirmed', route_label: 'โรงพยาบาลแพร่', passengers: 1, companions: 0 },
+    ],
+    days: Array.from({ length: DAY_COUNT }, (_, i) => i + 1).filter(d => d !== 5).map(d => ({
+      date: dateOf(d), trips: tripsOfDay(d), completed: tripsOfDay(d), open: 0,
+      odometer_start: 12000 + d * 100, odometer_end: d === 7 ? 11000 : 12000 + d * 100 + dayKm(d), odometer_issue: d === 7, revision: 1,
+    })),
+  },
+})
+
 async function render(browser, html) {
   const page = await browser.newPage({ viewport: { width: 794, height: 1123 } })
   await page.setContent(html, { waitUntil: 'load' })
@@ -1691,6 +1721,43 @@ const checks = [
         assert.ok(!info.text.includes('นางทดสอบ'), 'สรุปรายเดือนห้ามมีชื่อผู้เดินทาง')
         assert.ok(info.text.includes('รวมเที่ยวที่จบแล้ว 20 เที่ยว') && info.text.includes('1520'), 'ยอดรวมต้องนับเฉพาะเที่ยวที่จบแล้ว')
         assert.ok(info.text.includes('เที่ยวที่ยังไม่จบในเดือนนี้ 2 เที่ยว'), 'เที่ยวที่ยังไม่ได้วิ่งต้องแยกแสดง ไม่หายไปเงียบๆ')
+        await assertSignBlockStandard(page, { minRows: 2, minBelow: 4 })
+        await assertSignLinesAligned(page, '.report-sign .sign-row')
+      } finally { await page.close() }
+    },
+  },
+  {
+    name: 'month-report-day-odometer-landscape',
+    reason: 'ใบสรุปแบบเลขไมล์รายวัน 1 แถว = 1 วัน (24 วัน วันละ 1–3 เที่ยว): ไม่ล้นขวา หัวตารางซ้ำ แถวไม่ขาด ระยะนับวันละครั้ง ช่องลงนามได้มาตรฐาน',
+    async run(browser) {
+      const page = await browser.newPage({ viewport: { width: 1123, height: 794 } })
+      try {
+        await page.setContent(buildTripMonthReportHtml(monthDayArgs()), { waitUntil: 'load' })
+        await page.evaluate(() => document.fonts.ready)
+        await page.emulateMedia({ media: 'print' })
+        await page.waitForTimeout(300)
+        const info = await page.evaluate(() => ({
+          overflow: document.documentElement.scrollWidth > innerWidth,
+          headerGroup: getComputedStyle(document.querySelector('thead')).display,
+          rowBreak: getComputedStyle(document.querySelector('tbody tr')).breakInside,
+          rows: document.querySelectorAll('table:not(.pending) tbody tr').length,
+          headers: [...document.querySelectorAll('table:not(.pending) thead th')].map(th => th.textContent.trim()),
+          day3: [...document.querySelectorAll('table:not(.pending) tbody tr')][2]?.innerText || '',
+          text: document.body.innerText,
+        }))
+        assert.equal(info.overflow, false, 'ตารางรายวันล้นขอบขวาของกระดาษแนวนอน')
+        assert.equal(info.headerGroup, 'table-header-group', 'หัวตารางไม่ซ้ำเมื่อขึ้นหน้าใหม่')
+        assert.equal(info.rowBreak, 'avoid', 'แถวขาดกลางระหว่างหน้าได้')
+        assert.equal(info.rows, DAY_COUNT, '1 แถวต้องเท่ากับ 1 วัน ไม่ใช่ 1 เที่ยว')
+        assert.ok(info.headers.includes('ระยะทางทั้งวัน (กม.)') && info.headers.some(h => h.startsWith('เที่ยว /')), `หัวตาราง: ${info.headers.join(' | ')}`)
+        assert.ok(info.day3.includes('3 เที่ยว') && info.day3.includes('ศูนย์ฟอกไต') && info.day3.includes(String(dayKm(3))) && info.day3.includes('พร 72301/30, พร 72301/31, พร 72301/32'),
+          `แถววันที่มี 3 เที่ยวต้องรวมปลายทาง เลขหนังสือ และระยะของวันครั้งเดียว: ${info.day3}`)
+        assert.ok(info.text.includes(`รวม ${DAY_COUNT} วัน · ${DAY_TRIPS} เที่ยวที่จบแล้ว`), 'แถวรวมต้องบอกจำนวนวันและเที่ยว')
+        assert.ok(info.text.includes(String(DAY_TOTAL_KM)), `ระยะรวมต้องเป็นผลรวมรายวัน ${DAY_TOTAL_KM} กม.`)
+        assert.ok(!info.text.includes('998'), 'ห้ามใช้ระยะรายเที่ยวเดิมเมื่อมีเลขไมล์รายวัน')
+        assert.ok(info.text.includes('ยังไม่บันทึก') && info.text.includes('รอตรวจสอบ'), 'วันที่ไม่มีเลขไมล์/รอตรวจสอบต้องบอก ไม่ใส่ 0')
+        assert.ok(info.text.includes('มี 2 วันที่ยังไม่มีเลขไมล์ปิดวันหรือรอตรวจสอบ'), 'หมายเหตุท้ายตารางนับเป็นวัน')
+        assert.ok(info.text.includes('เที่ยวที่ยังไม่จบในเดือนนี้ 2 เที่ยว'), 'เที่ยวที่ยังไม่ได้วิ่งต้องแยกแสดง')
         await assertSignBlockStandard(page, { minRows: 2, minBelow: 4 })
         await assertSignLinesAligned(page, '.report-sign .sign-row')
       } finally { await page.close() }

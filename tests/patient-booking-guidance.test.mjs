@@ -130,18 +130,24 @@ test('inbox stage counts an incident under the step it happened in', () => {
   assert.equal(bookingStage(booking('cancelled'), null), 'cancelled')
 })
 test('one next-step button per row, most urgent first', () => {
-  const done = { state: 'completed', forward_letter_no: 'พร 1/1', odometer_end: 120, odometer_issue: false }
+  const done = { state: 'completed', forward_letter_no: 'พร 1/1' }
+  // เลขไมล์เหมาเป็นวัน (20261008100200): งานเอกสารรอ "เลขไมล์ของวัน" ไม่ใช่เลขไมล์รายเที่ยวแล้ว
+  const dayDone = { date: '2026-10-08', completed: 2, open: 0, odometer_start: 100, odometer_end: 160, odometer_issue: false }
+  const dayMissing = { ...dayDone, odometer_start: null, odometer_end: null }
   assert.equal(staffNextAction({ status: 'submitted' }, null).id, 'confirm')
   assert.equal(staffNextAction({ status: 'confirmed', cancel_requested: true }, { state: 'issue' }).id, 'issue')
   assert.equal(staffNextAction({ status: 'confirmed', cancel_requested: true }, { state: 'confirmed' }).id, 'cancel')
   assert.equal(staffNextAction({ status: 'completed' }, { ...done, forward_letter_no: null }).id, 'docs')
-  assert.equal(staffNextAction({ status: 'completed' }, { ...done, odometer_end: null }).id, 'docs')
-  assert.equal(staffNextAction({ status: 'completed' }, done).id, 'view')
+  assert.equal(staffNextAction({ status: 'completed' }, done, dayMissing).id, 'docs', 'วันนั้นยังไม่มีเลขไมล์ปิดวัน')
+  assert.equal(staffNextAction({ status: 'completed' }, done, { ...dayDone, odometer_issue: true }).id, 'docs', 'เลขไมล์ของวันรอตรวจสอบ')
+  assert.equal(staffNextAction({ status: 'completed' }, done, dayDone).id, 'view')
+  assert.equal(staffNextAction({ status: 'completed' }, { ...done, odometer_end: null }, dayDone).id, 'view', 'เลขไมล์รายเที่ยวไม่ใช้ตัดสินแล้ว')
+  assert.equal(staffNextAction({ status: 'completed' }, done, null).id, 'view', 'วันนอกช่วงที่โหลด ไม่เดาว่าเลขไมล์ขาด')
   // เลขหนังสือแยกรายคน (2569-10-02): คำขอที่มีเลขของตัวเองไม่ต้องรอเลขของเที่ยว · ไม่มีทั้งเลขของคำขอและของเที่ยว = ยังต้องบันทึกเอกสาร
   const noTripLetter = { ...done, forward_letter_no: null }
   assert.equal(staffNextAction({ status: 'completed', forward_letter_no: 'พร 2/2', forward_letter_date: '2026-10-02' }, noTripLetter).id, 'view')
   assert.equal(staffNextAction({ status: 'completed', forward_letter_no: null }, noTripLetter).id, 'docs')
-  assert.equal(staffNextAction({ status: 'completed', forward_letter_no: 'พร 2/2' }, { ...noTripLetter, odometer_end: null }).id, 'docs', 'เลขไมล์ยังค้างอยู่ งานเอกสารต้องไม่หาย')
+  assert.equal(staffNextAction({ status: 'completed', forward_letter_no: 'พร 2/2' }, noTripLetter, dayMissing).id, 'docs', 'เลขไมล์ของวันยังค้างอยู่ งานเอกสารต้องไม่หาย')
   assert.equal(staffNextAction({ status: 'confirmed' }, { state: 'outbound' }).id, 'view')
   assert.equal(staffNextAction({ status: 'cancelled' }, null).id, 'view')
   const ranks = ['issue', 'cancel', 'confirm', 'docs', 'view'].map(id => [

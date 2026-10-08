@@ -11,7 +11,7 @@ import { chromium } from 'playwright'
 import { mkdir, readFile } from 'node:fs/promises'
 import { clickToClosePage } from './lib/closePage.mjs'
 import { REPORT_MODES } from '../src/lib/patientReportPeriod.js'
-import { previousOdometer, thaiDay, pickupForBooking, returnForBooking, staffNextAction, bookingStage, reportEvent, monthReportSummary } from '../src/lib/patientBooking.js'
+import { previousDayOdometer, dayDistance, dayPending, thaiDay, pickupForBooking, returnForBooking, staffNextAction, bookingStage, reportEvent, monthReportSummary } from '../src/lib/patientBooking.js'
 // หน่วยนับต้องไม่ทำให้เจ้าหน้าที่ตีความจำนวนเหตุการณ์เป็นจำนวนผู้ใช้บริการ
 assert.deepEqual(monthReportSummary([
  {state:'completed',passengers:2,companions:1,distance:15},
@@ -51,6 +51,9 @@ for (const file of [
   '20261003150100_patient_booking_legacy_client_gate.sql',
   '20261007150000_patient_booking_destination_zone.sql',
   '20261007170000_patient_booking_other_place.sql',
+  '20261008100000_patient_booking_day_odometer_table.sql',
+  '20261008100100_patient_booking_day_odometer_backfill.sql',
+  '20261008100200_patient_booking_day_odometer_rpc.sql',
 ]) await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 await actor(admin)
 await rpc('patient_booking_save_settings', [tenant, (await rpc('patient_booking_workspace', [tenant])).settings.revision,
@@ -168,7 +171,8 @@ const order = {
  patient_booking_preview_into_trip:['p_muni','p_booking','p_trip'],patient_booking_confirm_into_trip:['p_muni','p_op','p_booking','p_trip','p_expected'],
  patient_booking_preview_multiwave:['p_muni','p_ids','p_trip'],patient_booking_confirm_multiwave:['p_muni','p_op','p_ids','p_trip','p_expected'],
  patient_booking_amend:['p_muni','p_op','p_id','p_revision','p_data','p_note'],
- patient_booking_save_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end','p_issue','p_note'],patient_booking_record_letter:['p_muni','p_trip','p_docs_revision','p_letter_no','p_letter_date'],patient_booking_record_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end'],patient_booking_month_report:['p_muni','p_month'],
+ patient_booking_save_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end','p_issue','p_note'],
+ patient_booking_save_day_odometer:['p_muni','p_day','p_revision','p_start','p_end','p_issue','p_note'],patient_booking_odometer_days:['p_muni','p_from','p_to'],patient_booking_record_letter:['p_muni','p_trip','p_docs_revision','p_letter_no','p_letter_date'],patient_booking_record_odometer:['p_muni','p_trip','p_docs_revision','p_start','p_end'],patient_booking_month_report:['p_muni','p_month'],
  patient_booking_events_page:['p_muni','p_page'],
  patient_booking_period_report:['p_muni','p_from','p_to'],
  patient_booking_period_report_v2:['p_muni','p_from','p_to','p_service'],
@@ -426,7 +430,10 @@ try{
  await runAs(admin,async()=>rpc('patient_booking_save_settings',[tenant,(await rpc('patient_booking_workspace',[tenant])).settings.revision,{...settings,coordinator_ids:[coordinator,driver]}]))
  const driverWorkCount=await runAs(driver,async()=>{
   const w=await rpc('patient_booking_workspace',[tenant])
-  return w.trips.filter(t=>t.driver_id===driver && (t.state!=='cancelled' && t.state!=='completed' || t.state==='completed' && (!Number.isFinite(t.odometer_end) || t.odometer_issue))).length
+  // เลขไมล์เหมาเป็นวัน: งานคนขับ = เที่ยวที่ยังไม่จบ + วันที่รอเลขไมล์ปิดวัน (นับวันละ 1) ตรงกับหน้าจอ
+  const days=(await rpc('patient_booking_odometer_days',[tenant,thaiDay(Date.now()-45*86400000),thaiDay()])).days
+  return w.trips.filter(t=>t.driver_id===driver && t.state!=='cancelled' && t.state!=='completed').length
+   + days.filter(d=>d.mine && d.date>=thaiDay(Date.now()-30*86400000) && dayPending(d)).length
  })
  assert(driverWorkCount>0)
  await visit('driver')
@@ -736,13 +743,14 @@ try{
  await toast('บันทึกแล้ว').waitFor();assert.equal((await bookingRow(b1)).return_ready,true)
  await visit('driver');await card(b1Trip).getByText('แจ้งพร้อมให้รับกลับแล้ว').waitFor()
  await click('driverRound',card(b1Trip).getByRole('button',{name:'กลับแล้ว · จบงาน',exact:true}))
- const odo=page.locator(`section[aria-label="จบแล้ว รอเติมเลขไมล์"] article[data-trip="${b1Trip}"]`);await odo.waitFor()
+ // เลขไมล์เหมาเป็นวัน: จบเที่ยวสุดท้ายของวันแล้วการ์ด "จบวันแล้ว รอเลขไมล์ตอนรถกลับ" ขึ้นเอง วันละ 1 การ์ด (ไม่ใช่รายเที่ยว)
+ const odo=page.locator(`section[aria-label="จบวันแล้ว รอเลขไมล์ตอนรถกลับ"] article[data-odometer-day="${b1Day}"]`);await odo.waitFor()
  assert.equal(clicks.driverRound,2,'ไป-กลับ 2 ปุ่ม');const b1Done=await bookingRow(b1);assert.equal(b1Done.status,'completed');assert.equal(b1Done.passenger_step,4)
  let startOdo=15000
  if(await odo.getByLabel('เลขไมล์ออก',{exact:true}).count())await odo.getByLabel('เลขไมล์ออก',{exact:true}).fill(String(startOdo))
  else startOdo=Number((await odo.locator('strong').first().innerText()).replace(/\D/g,''))
- await odo.getByLabel('เลขไมล์กลับ',{exact:true}).fill(String(startOdo+33));await odo.getByText('ระยะทาง 33 กม.',{exact:true}).waitFor()
- await odo.getByRole('button',{name:/^บันทึกเลขไมล์/}).click();await toast('บันทึกเลขไมล์แล้ว').waitFor();await odo.waitFor({state:'detached'})
+ await odo.getByLabel('เลขไมล์กลับ',{exact:true}).fill(String(startOdo+33));await odo.getByText('ระยะทางทั้งวัน 33 กม.',{exact:true}).waitFor()
+ await odo.getByRole('button',{name:/^บันทึกเลขไมล์/}).click();await toast('บันทึกเลขไมล์ประจำวันแล้ว').waitFor();await odo.waitFor({state:'detached'})
  await visit('newcomer');await page.getByRole('article').filter({hasText:b1.slice(0,8).toUpperCase()}).getByText('เดินทางเสร็จแล้ว',{exact:false}).waitFor()
  // ── ขาเดียว + แจ้งเหตุขัดข้อง → เจ้าหน้าที่แก้จากกล่องคำขอรถ → คนขับวิ่งต่อจนจบ (2 ปุ่ม) ──
  await page.clock.setFixedTime(new Date(`${helperDay}T07:00:00+07:00`))
@@ -757,15 +765,19 @@ try{
  await page.setViewportSize({width:390,height:900});await visit('driver')
  await click('driverOneWay',card(chairTrip).getByRole('button',{name:'กลับแล้ว · จบงาน',exact:true}));await toast('บันทึกแล้ว · กลับแล้ว · จบงาน').waitFor()
  const chairDone=await bookingRow(chairD);assert.equal(chairDone.status,'completed');assert.equal(chairDone.passenger_step,2);assert.equal(clicks.driverOneWay,2,'ขาเดียว 2 ปุ่ม')
- console.log('PASS driver: round trip in 2 presses with legacy partial-trip completion, ready-to-return bell, one-field odometer; one-way in 2 presses with incident resolved from the inbox')
+ console.log('PASS driver: round trip in 2 presses with legacy partial-trip completion, ready-to-return bell, one end-of-day odometer card; one-way in 2 presses with incident resolved from the inbox')
 
  // ── เอกสารถึงกองทุนผ่านกล่องคำขอรถ + ร่างที่กรอกค้างไม่ถูกเขียนทับเงียบ ๆ ──
  {
-  const trip=(id,time,end,state='completed')=>({id,state,odometer_end:end,plan:{pickup_at:`2026-10-05T${time}:00+07:00`}})
-  const loaded=[trip('a','08:00',100),trip('late','11:00',200),trip('void','09:00',150,'cancelled'),trip('open','08:30',null,'confirmed')]
-  assert.equal(previousOdometer(trip('now','09:30',null,'confirmed'),loaded),100,'ต้องหยิบเที่ยวก่อนหน้า ไม่ใช่เที่ยวที่วิ่งทีหลังหรือที่ยกเลิก')
-  assert.equal(previousOdometer(trip('first','07:00',null,'confirmed'),loaded),'','ไม่มีเที่ยวก่อนหน้าต้องเว้นว่าง ไม่เดา')
+  // เลขไมล์ออกของวัน = เลขกลับของวันก่อนหน้าล่าสุด (ไม่ใช่วันหลัง ไม่ใช่วันที่รอตรวจสอบ) · ไม่มีในช่วง = เลขก่อนช่วงจากฐานข้อมูล
+  const days=[{date:'2026-10-03',odometer_start:50,odometer_end:100,odometer_issue:false},{date:'2026-10-07',odometer_start:150,odometer_end:200,odometer_issue:false},
+   {date:'2026-10-04',odometer_start:100,odometer_end:9,odometer_issue:true}]
+  assert.equal(previousDayOdometer('2026-10-05',days),100,'ต้องหยิบวันก่อนหน้า ไม่ใช่วันหลังหรือวันที่รอตรวจสอบ')
+  assert.equal(previousDayOdometer('2026-10-02',days),'','ไม่มีวันก่อนหน้าต้องเว้นว่าง ไม่เดา')
+  assert.equal(previousDayOdometer('2026-10-02',days,{date:'2026-09-30',odometer_end:40}),40,'ไม่มีในช่วงที่โหลด ใช้เลขก่อนช่วงจากฐานข้อมูล')
+  assert.equal(dayDistance(days[0]),50);assert.equal(dayDistance(days[2]),null,'วันที่รอตรวจสอบไม่มีระยะทาง')
  }
+ await page.clock.setFixedTime(new Date(`${b1Day}T18:00:00+07:00`))
  await staffDesk();await row(b1).getByRole('button',{name:'บันทึกเอกสาร',exact:true}).click()
  // ── พิมพ์จากแผ่นของเที่ยวที่จบแล้ว (ส่วน "เอกสารคำขอและนำส่งกองทุน" ของงานที่ค้างเอกสาร) — 2 ปุ่มแยก: ใบคำขอ / หนังสือ + ใบคำขอรับสวัสดิการ ──
  {
@@ -801,14 +813,17 @@ try{
  // เลขหนังสือแยกรายคน (2569-10-02): บันทึกที่คำขอของคนนั้น ไม่เขียนทับเลขของเที่ยว
  const b1Letter=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).bookings.find(x=>x.id===b1)
  assert.equal(b1Letter.forward_letter_no,'พร 72301/77','เลขหนังสือต้องบันทึกที่คำขอของคนที่เปิดแผ่น');assert.equal(docs.forward_letter_no,null,'เลขของเที่ยวต้องไม่ถูกเขียน')
- assert.equal(docs.odometer_end,startOdo+33,'เลขไมล์ของคนขับต้องถึงฐานข้อมูล')
+ const b1DayRow=async()=>(await runAs(coordinator,()=>rpc('patient_booking_odometer_days',[tenant,b1Day,b1Day]))).days[0]
+ assert.equal((await b1DayRow()).odometer_end,startOdo+33,'เลขไมล์ปิดวันของคนขับต้องถึงฐานข้อมูล');assert.equal(docs.odometer_end,null,'ไม่มีเลขไมล์รายเที่ยวแล้ว')
  await sheet.getByLabel('เลขไมล์กลับ',{exact:true}).fill(String(startOdo+40));await sheet.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).selectOption('กรอกผิด')
- await runAs(coordinator,()=>rpc('patient_booking_save_odometer',[tenant,b1Trip,docs.docs_revision,16000,16044,false,'กรอกผิด']))
+ // ⚠️ ห้ามเรียก b1DayRow() (ใช้คิว runAs) จากใน runAs อีกชั้น — คิวรอตัวเองแล้วเทสต์ค้างเงียบ ดึง revision ก่อนนอกคิว
+ const dayRevisionNow=(await b1DayRow()).revision
+ await runAs(coordinator,()=>rpc('patient_booking_save_day_odometer',[tenant,b1Day,dayRevisionNow,16000,16044,false,'กรอกผิด']))
  await sheet.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click();await sheet.getByText(/ค่าล่าสุด: เลขไมล์ออก 16000/).waitFor()
  assert.equal(await sheet.getByLabel('เลขไมล์กลับ',{exact:true}).inputValue(),String(startOdo+40))
  assert.equal(await sheet.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).isDisabled(),true)
- await sheet.getByRole('button',{name:'ยืนยันใช้ค่าที่ฉันแก้',exact:true}).click();await sheet.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await toast('บันทึกเลขไมล์แล้ว').waitFor()
- docs=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===b1Trip);assert.equal(docs.odometer_end,startOdo+40)
+ await sheet.getByRole('button',{name:'ยืนยันใช้ค่าที่ฉันแก้',exact:true}).click();await sheet.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await toast('บันทึกเลขไมล์ประจำวันแล้ว').waitFor()
+ assert.equal((await b1DayRow()).odometer_end,startOdo+40)
  // ช่องเลขที่หนังสืออยู่ในส่วนเอกสารตลอด (ไม่มีปุ่ม "แก้เลขหนังสือ" ให้กดก่อนแล้ว) — พิมพ์ร่างค้างไว้เพื่อให้ชนกับเลขที่คนอื่นบันทึกก่อน
  await letterNoField().fill('TEST draft')
  // ร่างเลขหนังสือชนกับคนอื่นที่บันทึกก่อน: เลขหนังสือแยกรายคนแล้ว (2569-10-02) revision ที่เทียบคือ letter_revision ของคำขอ
@@ -819,10 +834,10 @@ try{
  assert.equal(await letterPrintBtn().isDisabled(),true,'ร่างชนกันอยู่ ปุ่ม "บันทึกและพิมพ์" ต้องกดไม่ได้จนกว่าจะเลือกค่า')
  await sheet.getByRole('button',{name:'ใช้ค่าล่าสุด',exact:true}).click();assert.equal(await letterNoField().inputValue(),'TEST newest')
  await sheet.getByLabel('เลขไมล์กลับ',{exact:true}).fill('5');await sheet.getByLabel('มาตรวัดมีปัญหา / ระยะทางรอตรวจสอบ',{exact:true}).check();await sheet.getByLabel('เหตุผลที่แก้เลขไมล์',{exact:true}).selectOption('เปลี่ยนมาตรวัด')
- await sheet.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await toast('บันทึกเลขไมล์แล้ว').waitFor()
- const report=await runAs(coordinator,()=>rpc('patient_booking_month_report',[tenant,`${b1Day.slice(0,7)}-01`]));assert.equal(report.trips.find(t=>t.trip_id===b1Trip).distance,null)
+ await sheet.getByRole('button',{name:'บันทึกเลขไมล์',exact:true}).click();await toast('บันทึกเลขไมล์ประจำวันแล้ว').waitFor()
+ const issueDay=await b1DayRow();assert.equal(issueDay.odometer_issue,true);assert.equal(dayDistance(issueDay),null,'วันที่รอตรวจสอบไม่นับระยะทาง')
  await page.keyboard.press('Escape');await sheet.waitFor({state:'detached'})
- console.log('PASS fund documents through the inbox sheet: letter number + driver odometer reach PostgreSQL; stale drafts blocked, explicit overwrite, latest letter, abnormal meter excluded')
+ console.log('PASS fund documents through the inbox sheet: letter number + end-of-day odometer reach PostgreSQL; stale drafts blocked, explicit overwrite, latest letter, abnormal meter excluded')
 
  // ── แจ้งรถล่าช้า (ย้ายจากตารางออกรถมาอยู่ใน "จัดการเพิ่มเติม") ผู้จองเห็นเวลาใหม่ในการ์ดของตัวเอง ──
  const joinTrip=await tripOf(joinA)
@@ -889,6 +904,8 @@ try{
    await db.query(`INSERT INTO public.patient_booking_trips(id,municipality_id,driver_id,booking_ids,plan,state,confirmed_by,odometer_start,odometer_end,updated_at)
     VALUES($1,$2,$3,'{}',$4,$5,$6,100,$7,'2001-01-01')`,[randomUUID(),tenant,driver,{date:'2001-01-10',pickup_at:'2001-01-10T08:00:00+07:00',route_label:'[TEST] โรงพยาบาลเดือนเก่า'},state,admin,end])
   }
+  // เลขไมล์เหมาเป็นวัน: 2 เที่ยวที่จบในวันเดียวกันมีเลขไมล์วันเดียว 100 → 115 (เลขรายเที่ยวด้านบนไม่ถูกนับแล้ว)
+  await db.query("INSERT INTO public.patient_booking_odometer_days(municipality_id,service_date,odometer_start,odometer_end) VALUES($1,'2001-01-10',100,115)",[tenant])
  })
  const eventCount=Number((await runSql(async()=>(await db.query('SELECT count(*) AS total FROM public.patient_booking_events WHERE municipality_id=$1',[tenant])).rows[0].total)))
  await assert.rejects(runAs(citizen,()=>rpc('patient_booking_events_page',[tenant,1])),/เฉพาะเจ้าหน้าที่/)
@@ -903,7 +920,8 @@ try{
  assert.equal(await monthlyReport.locator('[data-report-trip]').count(),2,'เที่ยวเก่าเกิน 30 วันยังอยู่ในสรุปเดือนเดิม และไม่รวมเที่ยวที่ยกเลิก')
  assert.match(await monthlyReport.locator('[data-report-summary="จบเที่ยวแล้ว"]').innerText(),/2 เที่ยว/)
  assert.match(await monthlyReport.locator('[data-report-summary="ระยะทางที่บันทึกแล้ว"]').innerText(),/15 กม\./)
- assert.match(await monthlyReport.locator('[data-report-summary="ระยะทางที่บันทึกแล้ว"]').innerText(),/ยังไม่มีระยะทางที่ใช้ได้ 1 เที่ยว/)
+ assert.match(await monthlyReport.locator('[data-report-summary="ระยะทางที่บันทึกแล้ว"]').innerText(),/เลขไมล์ครบทั้ง 1 วัน/)
+ assert.equal(await monthlyReport.locator('[data-report-trip]').filter({hasText:'ระยะทางทั้งวัน: 15 กม. (รวมทุกเที่ยวของวันนั้น)'}).count(),2,'การ์ดเที่ยวบอกระยะของทั้งวัน ไม่ใช่ระยะรายเที่ยว')
  // Print button goes through actual Staff page -> real range RPC -> printable document.
  for(const selection of [{mode:'month',label:'ประจำเดือน มกราคม 2544'},{mode:'quarter',label:'ไตรมาส 2 · ปีงบประมาณ 2544'},{mode:'year',label:'ปีปฏิทิน 2544'},{mode:'custom',label:'ตามช่วงวันที่กำหนด'}]){
   await monthlyReport.getByRole('button',{name:REPORT_MODES[selection.mode],exact:true}).click()
@@ -920,7 +938,8 @@ try{
   const [printWin]=await Promise.all([page.waitForEvent('popup'),monthlyReport.getByRole('button',{name:'พิมพ์สรุป',exact:true}).click()])
   await printWin.waitForFunction(()=>!!document.querySelector('.report-title'))
   assert((await printWin.locator('.report-title').innerText()).includes(selection.label))
-  assert.match(await printWin.locator('tfoot').innerText(),/รวมเที่ยวที่จบแล้ว 2 เที่ยว/)
+  assert.match(await printWin.locator('tfoot').innerText(),/รวม 1 วัน · 2 เที่ยวที่จบแล้ว/)
+  assert.equal(await printWin.locator('table:not(.pending) tbody tr').count(),1,'ใบสรุปพิมพ์ 1 แถว = 1 วัน')
   assert(!await printWin.locator('body').innerText().then(text=>text.includes('PRIVATE_TEST')))
   const closePrint=printWin.getByRole('button',{name:'ปิดหน้าต่าง',exact:true})
   for(const width of [320,390,1440]){
@@ -974,7 +993,7 @@ try{
   await page.screenshot({path:`${process.env.PATIENT_PREVIEW_SHOTS}/staff-report-1280.png`,fullPage:true})
   await page.setViewportSize({width:320,height:900})
  }
- console.log('PASS monthly report: selected month, trips older than 30 days, cancelled exclusion, missing odometer, empty month, retry, 320px')
+ console.log('PASS monthly report: selected month, trips older than 30 days, cancelled exclusion, two trips one day counted once, empty month, retry, 320px')
  await page.locator('summary').filter({hasText:'ประวัติการทำรายการทุกเดือน'}).click()
  await page.locator('[data-report-event]').first().getByRole('heading',{name:'ส่งคำขอ',exact:true}).waitFor()
  await page.locator('[data-report-event]').first().getByText('[TEST] นางเอ นั่งร่วมได้',{exact:true}).waitFor()
@@ -1582,7 +1601,8 @@ try{
  await toast('บันทึกแล้ว').waitFor()
  const finishedCover=(await runAs(admin,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===coverTrip)
  assert.equal(finishedCover.state,'completed');assert.equal(finishedCover.driver_id,driver,'admin recording must preserve the actual driver')
- await runAs(admin,()=>rpc('patient_booking_save_odometer',[tenant,coverTrip,finishedCover.docs_revision,20000,20120,false,'']))
+ const coverOdometerDay=(await runAs(admin,()=>rpc('patient_booking_odometer_days',[tenant,finishedCover.plan.date,finishedCover.plan.date]))).days[0]
+ assert.equal(await runAs(admin,()=>rpc('patient_booking_save_day_odometer',[tenant,finishedCover.plan.date,coverOdometerDay.revision,20000,20120,false,''])),coverOdometerDay.revision+1,'แอดมินบันทึกเลขไมล์ของวันแทนคนขับได้')
  const finishAudit=await runSql(async()=>(await db.query("SELECT actor_id,detail FROM public.patient_booking_events WHERE entity_id=$1 AND action='trip_finish'",[coverTrip])).rows[0])
  assert.equal(finishAudit.actor_id,admin);assert.equal(finishAudit.detail.driver_id,driver)
  await assert.rejects(runAs(admin,()=>rpc('patient_booking_reassign_driver',[tenant,randomUUID(),coverTrip,null,driver,coverStaff,driverExpected([finishedCover]),false])),/เที่ยวหรือข้อมูลเปลี่ยน|เที่ยวจบ/)
@@ -1698,20 +1718,20 @@ try{
  await deskRow.click()
  await sheet.getByRole('link',{name:/โทร 0800000961/}).waitFor();await sheet.getByRole('button',{name:'แจ้งเหตุขัดข้อง',exact:true}).waitFor()
  await sheet.getByRole('button',{name:'ปิด',exact:true}).click();await sheet.waitFor({state:'detached'})
- // จบงานจากแถว → แผ่นเปิดต่อที่ช่องเลขไมล์กลับ → บันทึกแล้วแผ่นปิด แถวเป็น "จบเที่ยวแล้ว"
+ // จบงานจากแถว → เป็นเที่ยวสุดท้ายของวัน แผ่น "เลขไมล์ปิดวัน" เปิดต่อเอง → บันทึกแล้วแผ่นปิด (เลขไมล์เหมาเป็นวัน)
  acceptNextTripPrompt=true
  await deskRow.getByRole('button',{name:'กลับแล้ว · จบงาน',exact:true}).click();await toast('บันทึกแล้ว · กลับแล้ว · จบงาน').waitFor()
  assert(tripPrompts.at(-1).includes('ส่งผู้เดินทางครบทุกคน'),'กล่องทวนจบงานต้องเตือนเรื่องผู้ป่วยที่ไม่ได้ขึ้นรถ')
- const deskOdo=sheet.locator(`article[data-trip="${deskTrip}"]`);await deskOdo.getByLabel('เลขไมล์กลับ',{exact:true}).waitFor()
- assert.equal(await deskGroupOf('จบเที่ยวแล้วแต่ยังไม่ใส่เลขไมล์'),'action','เที่ยวที่จบแล้วแต่ยังไม่มีเลขไมล์กลับต้องอยู่กลุ่ม "ต้องทำตอนนี้" ไม่ใช่ "จบแล้ว"')
+ const deskOdo=sheet.locator(`article[data-odometer-day="${deskDay}"]`);await deskOdo.getByLabel('เลขไมล์กลับ',{exact:true}).waitFor()
+ assert.equal(await deskGroupOf('จบเที่ยวแล้ว'),'done','เที่ยวที่จบแล้วอยู่กลุ่ม "จบแล้ว" ทันที — เลขไมล์ไปอยู่กับวัน ไม่ใช่กับเที่ยว')
  let deskStart=30000
  if(await deskOdo.getByLabel('เลขไมล์ออก',{exact:true}).count())await deskOdo.getByLabel('เลขไมล์ออก',{exact:true}).fill(String(deskStart))
  else deskStart=Number((await deskOdo.locator('strong').first().innerText()).replace(/\D/g,''))
- await deskOdo.getByLabel('เลขไมล์กลับ',{exact:true}).fill(String(deskStart+41));await deskOdo.getByText('ระยะทาง 41 กม.',{exact:true}).waitFor()
- await deskOdo.getByRole('button',{name:/^บันทึกเลขไมล์/}).click();await toast('บันทึกเลขไมล์แล้ว').waitFor();await sheet.waitFor({state:'detached'})
+ await deskOdo.getByLabel('เลขไมล์กลับ',{exact:true}).fill(String(deskStart+41));await deskOdo.getByText('ระยะทางทั้งวัน 41 กม.',{exact:true}).waitFor()
+ await deskOdo.getByRole('button',{name:/^บันทึกเลขไมล์/}).click();await toast('บันทึกเลขไมล์ประจำวันแล้ว').waitFor();await sheet.waitFor({state:'detached'})
  assert.equal(await deskState(),'completed')
- await deskRow.getByText('จบเที่ยวแล้ว',{exact:true}).waitFor();await deskRow.getByText('ระยะทาง 41 กม.',{exact:true}).waitFor()
- assert.equal(await deskGroupOf('หลังบันทึกเลขไมล์'),'done','เที่ยวที่เลขไมล์ครบต้องย้ายไปกลุ่ม "จบแล้ว"')
+ await deskRow.getByText('จบเที่ยวแล้ว',{exact:true}).waitFor()
+ assert.equal(await page.locator(`section[aria-label="จบวันแล้ว รอเลขไมล์ตอนรถกลับ"] [data-odometer-day="${deskDay}"]`).count(),0,'บันทึกแล้ววันนั้นต้องหายจากกล่องรอเลขไมล์')
  await deskRow.getByText('ไม่แสดงหลังจบเที่ยว',{exact:true}).waitFor()
  // ป้ายกรอง
  const deskPills=page.getByRole('group',{name:'กรองงานคนขับ'})
@@ -1719,7 +1739,38 @@ try{
  await deskPills.getByRole('button',{name:/^จบแล้ว/}).click();await deskRow.waitFor()
  assert.deepEqual((await assertDeskGroups('กรองจบแล้ว')).map(group=>group.key),['done'],'กรอง "จบแล้ว" ต้องเหลือหัวกลุ่มเดียว')
  await deskPills.getByRole('button',{name:/^ทั้งหมด/}).click();await deskRow.waitFor()
- console.log('PASS driver desk: PC table at 1280/1366/1440 with pinned action, cards below md, reviewed depart/finish from a row (dismiss records nothing), detail sheet, odometer after finish, coordinator view, filters and search')
+ console.log('PASS driver desk: PC table at 1280/1366/1440 with pinned action, cards below md, reviewed depart/finish from a row (dismiss records nothing), detail sheet, end-of-day odometer after the last trip, coordinator view, filters and search')
+ // ── เคสที่เจ้าของระบบยกมา (2569-10-08): วันเดียวรถออกหลายรอบ — เลขไมล์เหมาเป็นวัน ──
+ // จบเที่ยวแรกยังไม่ถามเลขไมล์ (ยังมีเที่ยววิ่งวันนั้น) · จบเที่ยวสุดท้ายถามครั้งเดียว · รายงานนับระยะของวันนั้นครั้งเดียว ไม่คูณตามเที่ยว
+ {
+  const twoDay=(await freeDays(1))[0],earlyBooking=randomUUID(),lateBooking=randomUUID(),earlyTrip=randomUUID(),lateTrip=randomUUID()
+  await submitAs(citizen,earlyBooking,{patient_name:'[TEST] เลขไมล์วันเดียว เช้า',phone:'0800000971',companions:0,appointment_at:at(twoDay,'09:00'),return_mode:'one_way',return_at:null})
+  await submitAs(citizen,lateBooking,{patient_name:'[TEST] เลขไมล์วันเดียว บ่าย',phone:'0800000972',companions:0,appointment_at:at(twoDay,'14:00'),return_mode:'one_way',return_at:null})
+  await runAs(coordinator,async()=>{
+   await rpc('patient_booking_confirm',[tenant,earlyTrip,[earlyBooking],await rpc('patient_booking_preview',[tenant,[earlyBooking],'']),''])
+   await rpc('patient_booking_confirm',[tenant,lateTrip,[lateBooking],await rpc('patient_booking_preview',[tenant,[lateBooking],'']),''])
+  })
+  await page.clock.setFixedTime(new Date(`${twoDay}T07:00:00+07:00`))
+  await page.setViewportSize({width:390,height:900});await visit('driver')
+  const dayCard=page.locator(`section[aria-label="จบวันแล้ว รอเลขไมล์ตอนรถกลับ"] [data-odometer-day="${twoDay}"]`)
+  for(const label of ['ออกรถ','กลับแล้ว · จบงาน']){await card(earlyTrip).getByRole('button',{name:label,exact:true}).click();await toast(`บันทึกแล้ว · ${label}`).waitFor()}
+  await page.locator('[data-today-odometer]').waitFor()
+  assert.equal(await dayCard.count(),0,'ยังมีเที่ยวบ่ายวิ่งวันนั้น ห้ามถามเลขไมล์ปิดวัน')
+  for(const label of ['ออกรถ','กลับแล้ว · จบงาน']){await card(lateTrip).getByRole('button',{name:label,exact:true}).click();await toast(`บันทึกแล้ว · ${label}`).waitFor()}
+  await dayCard.waitFor()
+  assert.equal(await page.locator('[data-today-odometer]').count(),0,'จบครบแล้วไม่ต้องขึ้นแถบระหว่างวัน')
+  let twoStart=40000
+  if(await dayCard.getByLabel('เลขไมล์ออก',{exact:true}).count())await dayCard.getByLabel('เลขไมล์ออก',{exact:true}).fill(String(twoStart))
+  else twoStart=Number((await dayCard.locator('strong').first().innerText()).replace(/\D/g,''))
+  await dayCard.getByLabel('เลขไมล์กลับ',{exact:true}).fill(String(twoStart+95));await dayCard.getByText('ระยะทางทั้งวัน 95 กม.',{exact:true}).waitFor()
+  await dayCard.getByRole('button',{name:/^บันทึกเลขไมล์/}).click();await toast('บันทึกเลขไมล์ประจำวันแล้ว').waitFor();await dayCard.waitFor({state:'detached'})
+  const twoDays=(await runAs(coordinator,()=>rpc('patient_booking_odometer_days',[tenant,twoDay,twoDay]))).days
+  assert.deepEqual([twoDays[0].completed,twoDays[0].open,twoDays[0].odometer_end-twoDays[0].odometer_start,twoDays[0].revision],[2,0,95,1],'2 เที่ยว 1 วัน บันทึกเลขไมล์ครั้งเดียว')
+  const twoReport=await runAs(coordinator,()=>rpc('patient_booking_period_report_v2',[tenant,twoDay,twoDay,null]))
+  const twoSummary=monthReportSummary(twoReport.trips,twoDays)
+  assert.deepEqual([twoSummary.completed,twoSummary.days,twoSummary.distance,twoSummary.missingDistance],[2,1,95,0],'รายงานนับระยะของวันนั้นครั้งเดียว ไม่คูณ 2 เที่ยว')
+  console.log('PASS one day, two runs: first finish does not ask, last finish asks once, one odometer for the day, report counts the day once')
+ }
  // ── ประวัติการดำเนินการในแผ่นคำขอ (เจ้าของระบบสั่ง 2569-10-01 แบบ ก): ใครกดอะไร เมื่อไร ──
  // ผู้จองส่ง → ผู้ยืนยันคิวยืนยันรถ → ผู้จองขอยกเลิก → แอดมินกดออกรถแทนคนขับ → ผู้ยืนยันคิวนำออกพร้อมเหตุผล → เที่ยวจบทีหลัง
  // เหตุการณ์ของเที่ยวก่อนคำขอเข้าเที่ยว หลังถูกนำออก หรือที่ระบุคำขออื่น ต้องไม่ปนเข้าประวัติของคำขอนี้
@@ -1819,13 +1870,16 @@ try{
   ?{header:tr.dataset.sectionHeader,text:tr.innerText.trim()}:{booking:tr.dataset.booking,section:tr.dataset.section,at:tr.dataset.at}))
  const orderWorkspace=await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))
  const orderTrips=new Map(orderWorkspace.trips.map(t=>[t.id,t]))
+ // หน้าจอส่งเลขไมล์รายวันย้อน 45 วัน (ตามนาฬิกาของหน้า) ให้ staffNextAction — เทสต์ต้องใช้ช่วงเดียวกัน ไม่งั้นวันที่ยังไม่มีเลขไมล์จะถูกนับเป็น "เสร็จแล้ว"
+ const orderNow=await page.evaluate(()=>Date.now())
+ const orderDays=new Map((await runAs(coordinator,()=>rpc('patient_booking_odometer_days',[tenant,thaiDay(orderNow-45*86400000),thaiDay(orderNow)]))).days.map(d=>[d.date,d]))
  const sectionRank={action:0,live:1,done:2}
  const bookingRows=listed.filter(item=>item.booking)
  assert.equal(bookingRows.length,orderWorkspace.bookings.length,'ทุกคำขอต้องอยู่ในตาราง')
  for(const [index,item] of bookingRows.entries()){
   const b=orderWorkspace.bookings.find(x=>x.id===item.booking)
   const trip=b.trip_id&&b.status!=='cancelled'?orderTrips.get(b.trip_id)||null:null
-  item.rank=staffNextAction(b,trip).rank
+  item.rank=staffNextAction(b,trip,trip?orderDays.get(trip.plan?.date)||null:null).rank
   assert.equal(item.section,item.rank<9?'action':['confirmed','running'].includes(bookingStage(b,trip))?'live':'done',`ส่วนของคำขอ ${item.booking.slice(0,8)} ไม่ถูก`)
   if(!index)continue
   const prev=bookingRows[index-1]

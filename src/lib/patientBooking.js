@@ -34,16 +34,21 @@ export function communityPayload(booking, info, overrides = {}) {
     consent_version: info?.community?.consent_version, privacy_notice: info?.community?.privacy_notice, owner_name: info?.owner_name,
   }
 }
-// v2 owns service/people/distance totals. Keep historical patient letter numbers from the legacy report.
+// v2 owns service/people totals. Keep historical patient letter numbers from the legacy report.
+// ระยะทางมาจากเลขไมล์รายวัน (patient_booking_odometer_days) ช่วงเดียวกัน — days = null คือไม่มีข้อมูลรายวัน
+// (ตัวจำลองรุ่นเก่าในเทสต์) ตัวสรุปจะใช้ระยะรายเที่ยวเดิมแทน · ของจริงเรียกไม่สำเร็จ call จะโยน error ทั้งรายงาน ไม่ถอยเงียบ
 export async function servicePeriodReport(call, from, to, service = null) {
-  const [report, legacy] = await Promise.all([
+  const [report, legacy, odometer] = await Promise.all([
     call('patient_booking_period_report_v2', { p_from: from, p_to: to, p_service: service }),
     service === 'community' ? null : call('patient_booking_period_report', { p_from: from, p_to: to }),
+    call('patient_booking_odometer_days', { p_from: from, p_to: to }),
   ])
   if (report?.from !== from || report?.to !== to || !Array.isArray(report?.trips)) throw new Error('ช่วงข้อมูลรายงานไม่ตรงกับช่วงที่เลือก กรุณาโหลดใหม่')
   if (legacy && (legacy.from !== from || legacy.to !== to || !Array.isArray(legacy.trips))) throw new Error('ข้อมูลเลขหนังสือไม่ตรงกับช่วงที่เลือก กรุณาโหลดใหม่')
+  const days = Array.isArray(odometer?.days) ? odometer.days : null
+  if (days && (odometer.from !== from || odometer.to !== to)) throw new Error('ข้อมูลเลขไมล์ไม่ตรงกับช่วงที่เลือก กรุณาโหลดใหม่')
   const metadata = new Map((legacy?.trips || []).map(t => [t.trip_id, t]))
-  return { ...report, trips: report.trips.map(t => ({
+  return { ...report, days, trips: report.trips.map(t => ({
     ...(metadata.get(t.trip_id) || {}), ...t,
     passengers: isCommunity(t) ? 0 : t.request_count,
   })) }
@@ -264,16 +269,25 @@ export function driverSteps(trip) {
   return []
 }
 
-// เลขไมล์กลับของเที่ยวก่อนหน้า "ตามเวลาเริ่มรับ" ที่ไม่ถูกยกเลิกและบันทึกเลขไมล์กลับแล้ว
-// ⚠️ เดิมใช้ค่าสูงสุดของทุกเที่ยวที่โหลดมา ซึ่งหยิบเที่ยวที่วิ่งทีหลังมาได้เมื่อกรอกย้อนหลัง (ผลตรวจ #227 ข้อ 5)
-// ไม่มีเที่ยวก่อนหน้าในข้อมูลที่โหลดมา (หน้าจอเห็นย้อนหลัง 30 วัน) = เว้นว่างให้กรอกเอง ดีกว่าเดาผิด
-export function previousOdometer(trip, trips) {
-  const at = trip?.plan?.pickup_at
-  const before = trips
-    .filter(t => t.id !== trip.id && t.state === 'completed' && !t.odometer_issue && Number.isFinite(t.odometer_end) && at && t.plan?.pickup_at && t.plan.pickup_at < at)
-    .sort((a, b) => String(b.plan.pickup_at).localeCompare(String(a.plan.pickup_at)))
-  return before.length ? before[0].odometer_end : ''
+// ── เลขไมล์เหมาเป็นวัน (20261008100200 · เจ้าของระบบสั่ง 2569-10-08) ──
+// รถคันเดียววิ่งหลายเที่ยวซ้อนเวลากันได้ (08:00–16:00 กับ 10:00–17:00) เลขไมล์รายเที่ยวจึงแบ่งไม่ได้จริง
+// 1 แถว = 1 วัน: เลขไมล์ออกต่อจากเลขกลับล่าสุดของวันก่อน (ระบบเติมให้) · เลขไมล์กลับใส่ครั้งเดียวตอนรถกลับถึงกองทุนสิ้นวัน
+// แถวรายวันมาจาก patient_booking_odometer_days: { date, trips, completed, open, mine, services, odometer_*, revision }
+export const dayRecorded = day => !!day && Number.isFinite(day.odometer_end) && Number.isFinite(day.odometer_start) && !day.odometer_issue
+export const dayDistance = day => dayRecorded(day) ? day.odometer_end - day.odometer_start : null
+// เลขไมล์ออกของวัน = เลขกลับของวันล่าสุดก่อนหน้าที่บันทึกครบ (ข้ามวันที่รอตรวจสอบ) · ไม่มีในข้อมูลที่โหลดมา ใช้เลขก่อนช่วงจากฐานข้อมูล
+// ไม่มีทั้งคู่ (วันแรกที่ใช้ระบบ) = เว้นว่างให้กรอกเอง ดีกว่าเดาผิด
+export function previousDayOdometer(date, days = [], before = null) {
+  const prior = days.filter(d => d.date < date && Number.isFinite(d.odometer_end) && !d.odometer_issue)
+    .sort((a, b) => b.date.localeCompare(a.date))[0]
+  if (prior) return prior.odometer_end
+  return before?.date && before.date < date && Number.isFinite(before.odometer_end) ? before.odometer_end : ''
 }
+// วันที่รอเลขไมล์ปิดวัน: มีเที่ยวจบแล้ว ไม่มีเที่ยวค้างในวันนั้น (ทุกคนขับ) และยังไม่มีเลขไมล์ที่ใช้ได้
+// ใช้ open จากฐานข้อมูล ไม่ใช้ workspace — คนขับเห็นแค่เที่ยวของตัวเอง แต่วันนั้นอาจมีคนขับแทนวิ่งอีกเที่ยวอยู่
+// วันที่ (เวลาไทย) ถัดจากวันนี้ n วัน (ติดลบ = ย้อนหลัง) — ใช้ตัดช่วง 30 วันที่แก้เลขไมล์ย้อนหลังได้
+export const thaiDayAfter = days => thaiDay(Date.now() + days * 86400000)
+export const dayPending = day => !!day && day.completed > 0 && day.open === 0 && !dayRecorded(day)
 
 // ── กล่อง "คำขอรถ" ของเจ้าหน้าที่: 1 แถว = 1 คำขอ แบบกล่องงานคำร้อง (เจ้าของระบบสั่ง 2569-09-21) ──
 
@@ -375,12 +389,14 @@ export function bookingLetterMoment(booking, trip) {
   return signatoryMoment({})
 }
 
-export function staffNextAction(booking, trip) {
+// day = แถวเลขไมล์ของวันเดินทาง (เลขไมล์เหมาเป็นวัน) · ไม่มีแถว = อยู่นอกช่วงที่โหลด ไม่ถือว่าค้าง (ไม่เดาว่าขาด)
+// เลขไมล์รายเที่ยวเดิมไม่ใช้ตัดสินแล้ว — เที่ยวใหม่ไม่มีเลขไมล์รายเที่ยว ถ้ายังดูอยู่ทุกคำขอจะค้าง "บันทึกเอกสาร" ตลอด
+export function staffNextAction(booking, trip, day = null) {
   if (booking.status === 'submitted') return { id: 'confirm', label: 'ยืนยันรถ', color: '#0369a1', rank: 2 }
   if (booking.status === 'confirmed' && trip?.state === 'issue') return { id: 'issue', label: 'แก้เหตุขัดข้อง', color: '#b91c1c', rank: 0 }
   if (booking.status === 'confirmed' && booking.cancel_requested) return { id: 'cancel', label: 'ประสานยกเลิก', color: '#b45309', rank: 1 }
   if (booking.status === 'completed' && trip && trip.state === 'completed'
-    && (!bookingLetter(booking, trip).no || trip.odometer_issue || !Number.isFinite(trip.odometer_end))) return { id: 'docs', label: 'บันทึกเอกสาร', color: '#047857', rank: 3 }
+    && (!bookingLetter(booking, trip).no || (!!day && !dayRecorded(day)))) return { id: 'docs', label: 'บันทึกเอกสาร', color: '#047857', rank: 3 }
   return { id: 'view', label: 'ดูรายละเอียด', color: '', rank: 9 }
 }
 
@@ -585,6 +601,7 @@ export function reportEvent(event, workspace = {}) {
     settings_changed: 'ปรับตั้งค่าบริการรถ',
     trip_next: 'บันทึกการเดินรถ',
     note: 'บันทึกข้อความเพิ่มเติม',
+    day_odometer_recorded: 'บันทึกเลขไมล์ประจำวัน',
   }
   const label = extraLabels[event.action] || HISTORY[event.action]?.[0] || 'บันทึกการเปลี่ยนแปลง'
   const booking = (workspace.bookings || []).find(b => b.id === (detail.booking_id || event.entity_id))
@@ -592,29 +609,39 @@ export function reportEvent(event, workspace = {}) {
   const riders = booking ? [booking] : trip ? (workspace.bookings || []).filter(b => b.trip_id === trip.id && b.status !== 'cancelled') : []
   return {
     label: event.action === 'submitted' && booking?.entry_channel === 'staff' ? 'รับคำขอแทน (โทรศัพท์/เคาน์เตอร์)' : label,
-    subject: riders.length ? riders.map(bookingName).join(', ') : trip?.plan?.route_label || '',
+    // เลขไมล์ประจำวันผูกกับวัน ไม่ใช่คำขอ/เที่ยว — บอกวันที่และตัวเลขแทนชื่อผู้เดินทาง
+    subject: event.action === 'day_odometer_recorded' ? `วันที่ ${detail.date || '-'} · เลขไมล์ ${detail.start ?? '-'} → ${detail.end ?? '-'}${detail.issue ? ' (รอตรวจสอบ)' : ''}`
+      : riders.length ? riders.map(bookingName).join(', ') : trip?.plan?.route_label || '',
     reference: `${booking ? 'คำขอเลขที่' : trip ? 'เที่ยวรถเลขที่' : 'รายการอ้างอิง'} ${String(booking?.id || trip?.id || event.entity_id || '').slice(0, 8).toUpperCase()}`,
     note: typeof detail.note === 'string' ? detail.note : '',
   }
 }
 
 // ใช้ชุดข้อมูลรายเดือนจาก RPC โดยตรง ไม่ใช้ workspace ที่เก็บเที่ยวปิดแค่ 30 วัน
-export function monthReportSummary(trips = []) {
+// days (เลขไมล์เหมาเป็นวัน): ระยะทาง = ผลรวมของ "วันที่มีเที่ยวจบแล้วในรายงานนี้" วันละครั้ง ไม่คูณตามจำนวนเที่ยว
+//   missingDistance นับเป็น "วัน" ที่ยังไม่มีเลขไมล์หรือรอตรวจสอบ · รายงานกรองบริการ = ระยะของรถทั้งวันที่มีบริการนั้น
+// ไม่ส่ง days = รายงานรุ่นก่อนเลขไมล์รายวัน ใช้ระยะรายเที่ยวเดิม (unit = 'trip')
+export function monthReportSummary(trips = [], days = null) {
   const completed = trips.filter(t => t.state === 'completed')
-  const measured = completed.filter(t => !t.odometer_issue && typeof t.distance === 'number' && Number.isFinite(t.distance) && t.distance >= 0)
-  return {
+  const base = {
     completed: completed.length,
     pending: trips.filter(t => t.state !== 'completed' && t.state !== 'cancelled').length,
     passengers: completed.reduce((sum, t) => sum + Number(t.passengers || 0), 0),
     companions: completed.reduce((sum, t) => sum + Number(t.companions || 0), 0),
-    distance: measured.reduce((sum, t) => sum + t.distance, 0),
-    missingDistance: completed.length - measured.length,
   }
+  if (Array.isArray(days)) {
+    const byDate = new Map(days.map(d => [d.date, d]))
+    const dates = [...new Set(completed.map(t => t.date).filter(Boolean))].sort()
+    const measured = dates.filter(date => dayDistance(byDate.get(date)) !== null)
+    return { ...base, unit: 'day', days: dates.length, distance: measured.reduce((sum, date) => sum + dayDistance(byDate.get(date)), 0), missingDistance: dates.length - measured.length }
+  }
+  const measured = completed.filter(t => !t.odometer_issue && typeof t.distance === 'number' && Number.isFinite(t.distance) && t.distance >= 0)
+  return { ...base, distance: measured.reduce((sum, t) => sum + t.distance, 0), missingDistance: completed.length - measured.length }
 }
 
-export function serviceReportSummary(trips = []) {
+export function serviceReportSummary(trips = [], days = null) {
   const completed = trips.filter(t => t.state === 'completed')
-  return { ...monthReportSummary(trips),
+  return { ...monthReportSummary(trips, days),
     people: completed.reduce((sum, t) => sum + Number(t.people ?? Number(t.passengers || 0) + Number(t.companions || 0)), 0),
     requests: completed.reduce((sum, t) => sum + Number(t.request_count ?? t.passengers ?? 0), 0),
   }

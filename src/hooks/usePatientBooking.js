@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { thaiDay } from '../lib/patientBooking'
 
 // Private projections have separate versions so pre-community tabs cannot feed
 // new booking types into their patient print templates. No legacy fallback.
 const PRIVATE_VIEWS = { patient_booking_workspace: 'patient_booking_workspace_v2', patient_booking_mine: 'patient_booking_mine_v2' }
+// เลขไมล์เหมาเป็นวัน (20261008100200): หน้าทำงานเจ้าหน้าที่โหลดแถวรายวันย้อน 45 วันพร้อม workspace
+// (แก้ย้อนหลังได้ 30 วัน + เผื่อ) · เรียกไม่ได้ = workspace.odometer.failed ให้หน้าจอบอกเหตุ แต่ไม่ทำให้ทั้งหน้าพัง
+const ODOMETER_WINDOW_DAYS = 45
 
 /**
  * โหลดข้อมูลและสั่งงานของระบบจองรถรับส่งผู้ป่วย ใช้ร่วมกันระหว่างหน้าประชาชนกับหน้าทำงานเจ้าหน้าที่
@@ -24,13 +28,18 @@ export default function usePatientBooking(tenantId, uid, privateRpc) {
   const reload = useCallback(() => {
     if (!tenantId) return
     const generation = ++sequence.current
+    const staffView = !!uid && privateRpc === 'patient_booking_workspace'
     return Promise.all([
       supabase.rpc('patient_booking_info', { p_muni: tenantId }),
       uid ? supabase.rpc(PRIVATE_VIEWS[privateRpc] || privateRpc, { p_muni: tenantId }) : Promise.resolve({ data: null }),
-    ]).then(([publicResult, privateResult]) => {
+      staffView ? supabase.rpc('patient_booking_odometer_days', { p_muni: tenantId, p_from: thaiDay(Date.now() - ODOMETER_WINDOW_DAYS * 86400000), p_to: thaiDay() }) : Promise.resolve(null),
+    ]).then(([publicResult, privateResult, odometerResult]) => {
       if (generation !== sequence.current) return
       if (publicResult.error || privateResult.error) throw publicResult.error || privateResult.error
-      setData({ tenantId, uid, info: publicResult.data, workspace: privateResult.data })
+      const odometer = !staffView ? null : odometerResult?.error || !Array.isArray(odometerResult?.data?.days)
+        ? { failed: true, days: [], previous: null }
+        : { failed: false, days: odometerResult.data.days, previous: odometerResult.data.previous || null }
+      setData({ tenantId, uid, info: publicResult.data, workspace: staffView && privateResult.data ? { ...privateResult.data, odometer } : privateResult.data })
       setError('')
     }).catch(e => {
       if (generation !== sequence.current) return

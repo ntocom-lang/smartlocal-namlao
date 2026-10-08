@@ -35,6 +35,12 @@ const plugin = {
     trips=trips.filter(t=>v2?(!args.p_service||(t.service_type||'patient')===args.p_service):t.service_type!=='community');
     if(v2)trips=trips.map(t=>({...t,service_type:t.service_type||'patient',request_count:t.request_count??t.passengers,people:t.people??t.passengers+t.companions}));
     return {data:{from:args.p_from,to:args.p_to,...(v2?{service_type:args.p_service??null}:{}),trips},error:null}};
+   if(name==='patient_booking_odometer_days'){
+    // ปกติตอบแบบรุ่นเก่า (ไม่มีแถวรายวัน) ให้เคสเดิมนับระยะรายเที่ยวต่อไป · __dayMode = มีเลขไมล์เหมาเป็นวัน: วันละ 40 กม. (วันที่ __dayMissing ยังไม่ใส่)
+    if(window.__rpcReject)throw new Error('TEST network rejection');if(window.__rpcFail)return {data:null,error:{message:'TEST fail'}};
+    if(!window.__dayMode)return {data:{from:args.p_from,to:args.p_to},error:null};
+    const dates=[...new Set(Object.values(window.__reportFixtures).flat().filter(t=>t.state==='completed'&&t.date>=args.p_from&&t.date<=args.p_to).map(t=>t.date))].sort();
+    return {data:{from:args.p_from,to:args.p_to,previous:null,days:dates.map((date,i)=>{const trips=Object.values(window.__reportFixtures).flat().filter(t=>t.state==='completed'&&t.date===date).length;const missing=(window.__dayMissing||[]).includes(date);return {date,trips,completed:trips,open:0,mine:false,revision:1,odometer_issue:false,odometer_start:missing?null:20000+i*100,odometer_end:missing?null:20040+i*100}})},error:null}};
    if(name==='patient_booking_events_page')return {data:{total:0,page:1,events:[]},error:null};
    throw new Error('Unexpected RPC '+name)
   }};`
@@ -93,6 +99,22 @@ try{
  assert.match(await infographic.locator('[data-report-summary="ให้บริการผู้เดินทาง"]').innerText(),/4 ครั้ง/)
  assert.match(await infographic.locator('[data-report-summary="ระยะทางที่บันทึกแล้ว"]').innerText(),/15 กม\./)
  assert.match(await infographic.innerText(),/ยังไม่มีระยะทางที่ใช้ได้ 1 เที่ยว/)
+
+ // ── เลขไมล์เหมาเป็นวัน (เจ้าของระบบสั่ง 2569-10-08): มกราคมมี 2 เที่ยวที่จบในวันเดียวกัน ระยะ 40 กม. ต้องนับวันละครั้ง ไม่ใช่ 15 กม.รายเที่ยว และไม่คูณ 2 ──
+ await page.evaluate(()=>{window.__dayMode=true})
+ await selectMonth('2026-02');await ready();await selectMonth('2026-01');await ready()
+ assert.match(await infographic.locator('[data-report-summary="จบเที่ยวแล้ว"]').innerText(),/2 เที่ยว/)
+ const dayDistanceText=await infographic.locator('[data-report-summary="ระยะทางที่บันทึกแล้ว"]').innerText()
+ assert.match(dayDistanceText,/40 กม\./);assert(!dayDistanceText.includes('15'),`ต้องไม่ใช้ระยะรายเที่ยว: ${dayDistanceText}`)
+ assert.match(await infographic.innerText(),/เลขไมล์ครบทั้ง 1 วัน/);assert(!/ยังไม่มีระยะทางที่ใช้ได้/.test(await infographic.innerText()))
+ // วันที่ยังไม่ใส่เลขไมล์ = ยังไม่ครบ ไม่ใช่ 0 กม.
+ await page.evaluate(()=>{window.__dayMissing=['2026-01-10']})
+ await selectMonth('2026-02');await ready();await selectMonth('2026-01');await ready()
+ assert.match(await infographic.locator('[data-report-summary="ระยะทางที่บันทึกแล้ว"]').innerText(),/ยังไม่บันทึก/)
+ assert.match(await infographic.innerText(),/ยังไม่มีเลขไมล์ปิดวัน 1 จาก 1 วัน/)
+ await page.evaluate(()=>{window.__dayMode=false;window.__dayMissing=[]})
+ await selectMonth('2026-02');await ready();await selectMonth('2026-01');await ready()
+ console.log('PASS infographic day odometer: distance counted once per day, missing day stays unknown')
  for(const width of [320,390,768,1440]){
   await page.setViewportSize({width,height:1100})
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`graph ${width}px overflow`)

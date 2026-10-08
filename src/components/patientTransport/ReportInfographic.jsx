@@ -8,7 +8,8 @@ const PIE_NOTE = 'คิดจากเที่ยวทั้งหมดใ�
 const SOURCE = 'แหล่งข้อมูล: ระบบรถรับ–ส่งผู้ป่วย SmartLocal · ตามวันเดินทาง · ไม่รวมเที่ยวที่ยกเลิก'
 const RULE = 'ผู้เดินทางนับคนละ 1 ครั้งต่อเที่ยว · ระยะทางนับเฉพาะเที่ยวที่จบและเลขไมล์ใช้ได้'
 
-function reportModel(tenantName, period, trips, service) {
+// days = เลขไมล์รายวัน (เลขไมล์เหมาเป็นวัน 20261008100200) — มีแล้วระยะทางนับวันละครั้ง ไม่ส่ง = ระยะรายเที่ยวเดิม
+function reportModel(tenantName, period, trips, service, days = null) {
   const rows = trips.filter(t => t.state !== 'cancelled')
   const v2 = rows.some(t => Object.hasOwn(t, 'people'))
   const community = service === 'community' || rows.some(isCommunity)
@@ -35,15 +36,17 @@ function reportModel(tenantName, period, trips, service) {
     cumulative += count
     return { name: group.name, count, start, end: cumulative / rows.length, color: PIE_COLORS[index], percent: (count / rows.length * 100).toLocaleString('th-TH', { maximumFractionDigits: 1 }) }
   })
-  const summary = v2 ? serviceReportSummary(rows) : monthReportSummary(rows)
+  const summary = v2 ? serviceReportSummary(rows, days) : monthReportSummary(rows, days)
+  const byDay = summary.unit === 'day'
   const graphNote = sorted.length > 8 ? `แสดง 7 ${destination}ที่มีเที่ยวมากที่สุด และรวมแห่งที่เหลือในกลุ่มอื่น ๆ` : 'เปรียบเทียบจำนวนเที่ยวทั้งหมดในช่วงที่เลือก'
   const metrics = [
     { label: 'จบเที่ยวแล้ว', value: `${summary.completed} เที่ยว`, hint: 'ให้บริการเสร็จแล้ว', color: '#047857', background: '#e7f7ef' },
     { label: 'เที่ยวที่ยังไม่จบ', value: `${summary.pending} เที่ยว`, hint: 'ยืนยันแล้ว / กำลังให้บริการ / เหตุขัดข้อง', color: '#0369a1', background: '#e8f5fd' },
     { label: 'ให้บริการผู้เดินทาง', value: `${v2 ? summary.people : summary.passengers} ครั้ง`, hint: v2 ? `ผู้เดินทางทั้งหมดรวมผู้ติดตาม · ${summary.requests} คำขอ` : `นับคนละ 1 ครั้งต่อเที่ยว · ผู้ติดตาม ${summary.companions} ครั้ง`, color: '#4338ca', background: '#eeedfc' },
-    { label: 'ระยะทางที่บันทึกแล้ว', value: v2 && summary.completed && summary.missingDistance === summary.completed ? 'ยังไม่บันทึก' : `${summary.distance.toLocaleString('th-TH')} กม.`, hint: !summary.completed ? 'ยังไม่มีเที่ยวที่จบในช่วงนี้' : summary.missingDistance ? `ยังไม่มีระยะทางที่ใช้ได้ ${summary.missingDistance} เที่ยวที่จบ` : 'มีระยะทางครบทุกเที่ยวที่จบ', color: '#92400e', background: '#fff5df' },
+    { label: 'ระยะทางที่บันทึกแล้ว', value: (byDay ? summary.days && summary.missingDistance === summary.days : v2 && summary.completed && summary.missingDistance === summary.completed) ? 'ยังไม่บันทึก' : `${summary.distance.toLocaleString('th-TH')} กม.`, hint: !summary.completed ? 'ยังไม่มีเที่ยวที่จบในช่วงนี้' : byDay ? (summary.missingDistance ? `ยังไม่มีเลขไมล์ปิดวัน ${summary.missingDistance} จาก ${summary.days} วัน` : `เลขไมล์ครบทั้ง ${summary.days} วัน (นับวันละครั้ง)`) : summary.missingDistance ? `ยังไม่มีระยะทางที่ใช้ได้ ${summary.missingDistance} เที่ยวที่จบ` : 'มีระยะทางครบทุกเที่ยวที่จบ', color: '#92400e', background: '#fff5df' },
   ]
-  return { tenantName, period, title, destination, source, rule, groups, slices, graphNote, metrics, total: rows.length, max: Math.max(1, ...groups.map(g => g.completed + g.pending)) }
+  const ruleText = byDay ? rule.replace(/ระยะทางนับเฉพาะเที่ยวที่จบและเลขไมล์ใช้ได้/, 'ระยะทางนับจากเลขไมล์ปิดวัน วันละครั้ง (รวมทุกเที่ยวของวัน)') : rule
+  return { tenantName, period, title, destination, source, rule: ruleText, groups, slices, graphNote, metrics, total: rows.length, max: Math.max(1, ...groups.map(g => g.completed + g.pending)) }
 }
 
 function shareText(model) {
@@ -165,8 +168,8 @@ function piePath(start, end) {
   return `M 100 100 L ${x1} ${y1} A 86 86 0 ${end - start > 0.5 ? 1 : 0} 1 ${x2} ${y2} Z`
 }
 
-export default function ReportInfographic({ tenantName, period, trips, service = 'patient' }) {
-  const model = useMemo(() => reportModel(tenantName || 'หน่วยงาน', period, trips, service), [tenantName, period, trips, service])
+export default function ReportInfographic({ tenantName, period, trips, days = null, service = 'patient' }) {
+  const model = useMemo(() => reportModel(tenantName || 'หน่วยงาน', period, trips, service, days), [tenantName, period, trips, service, days])
   const key = JSON.stringify(model)
   const [prepared, setPrepared] = useState(null)
   const [retry, setRetry] = useState(0)
