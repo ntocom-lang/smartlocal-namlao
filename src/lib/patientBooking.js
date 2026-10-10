@@ -124,6 +124,22 @@ export function journeyWindow({ time, back, return_mode: returnMode, route_id: r
   return { start, end: minutes(back) + info.boarding_minutes + travel + info.buffer_minutes }
 }
 
+// ช่วงที่รถถูกกันจริงของคำขอเดียว (งานผู้ป่วย) ตามกติกาของ ptb_plan (20261010100000):
+// ไปอย่างเดียว = ช่วงไป · มีขากลับ = ช่วงไป + ช่วงกลับ รวมเป็นช่วงเดียวเมื่อทับ/ติดกัน (รถรอที่โรงพยาบาลหรือกลับไม่ทัน)
+// อยู่นานกว่ารถวิ่งไปกลับ ช่วงกลางว่างให้รอบอื่น — ทั้ง "รอรับกลับ" และ "มารับทีหลัง" ใช้กติกาเดียวกัน
+// journeyWindow คงไว้เป็นช่วงคลุมทั้งก้อน (ใช้เตือนเวลานอกเวลาบริการ) ส่วนตัวกรองเวลาว่างของฟอร์มใช้ฟังก์ชันนี้
+export function journeyBlocks({ time, back, return_mode: returnMode, route_id: routeId }, info) {
+  const route = info?.routes?.find(r => r.id === routeId)
+  if (!route || !time || !Number.isFinite(info?.buffer_minutes) || !Number.isFinite(info?.boarding_minutes)) return []
+  const travel = Number(route.minutes)
+  const appointment = minutes(time)
+  const outbound = { start: appointment - (travel + info.buffer_minutes + info.boarding_minutes), end: appointment + info.boarding_minutes + travel }
+  if (returnMode === 'one_way') return [outbound]
+  if (!back) return [{ start: outbound.start, end: outbound.start }]
+  const inbound = { start: minutes(back) - travel - info.buffer_minutes, end: minutes(back) + info.boarding_minutes + travel + info.buffer_minutes }
+  return inbound.start <= outbound.end ? [{ start: outbound.start, end: Math.max(outbound.end, inbound.end) }] : [outbound, inbound]
+}
+
 // กลุ่มปลายทาง (20261007150000): ปลายทางที่ผู้ดูแลตั้งชื่อกลุ่มเดียวกัน = รถเที่ยวเดียวแวะส่งได้หลายจุด
 // ว่าง = ไม่รวมกับปลายทางอื่น · ต้องตัดสินแบบเดียวกับ ptb_plan (ตัดช่องว่างหัวท้าย แล้วเทียบตรงตัว)
 export function routeZone(routes, routeId) { return String(routes?.find(r => r.id === routeId)?.zone || '').trim() }
@@ -181,10 +197,9 @@ export function freeTimeChoices(form, info, dayInfo, step = 15, ignoreAvailabili
     const time = clockTime(at)
     const back = form.return_mode === 'one_way' ? '' : (form.back || latestReturnClock({ ...form, time }, info))
     if (form.return_mode !== 'one_way' && (!back || minutes(back) < at)) continue
-    const span = journeyWindow({ ...form, time, back }, info)
-    if (!span) continue
-    const end = span.end ?? span.start
-    if (ignoreAvailability || windows.some(w => span.start >= w.start && end <= w.end)) times.push(time)
+    const spans = journeyBlocks({ ...form, time, back }, info)
+    if (!spans.length) continue
+    if (ignoreAvailability || spans.every(span => windows.some(w => span.start >= w.start && span.end <= w.end))) times.push(time)
   }
   return times
 }

@@ -321,12 +321,12 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
     </Section> : <Section step={4} title="ขากลับ" done hint="ระบบเลือก “ให้รถรอรับกลับ” ไว้ให้ก่อน เปลี่ยนได้">
       <Choice label="ขากลับ" hideLabel value={form.return_mode} onChange={value => { set('return_mode', value); if (value === 'one_way') set('back', '') }} cols="grid-cols-1 sm:grid-cols-3"
         items={[
-          { value: 'wait', label: 'ให้รถรอรับกลับ', note: 'รถรออยู่ที่โรงพยาบาลจนเสร็จ' },
+          { value: 'wait', label: 'ให้รถรอรับกลับ', note: 'ถ้าอยู่ไม่นาน รถรอที่โรงพยาบาล · ถ้านาน รถกลับมารับตามเวลาที่ระบุ' },
           { value: 'later', label: 'ให้รถมารับกลับทีหลัง', note: 'รถกลับไปก่อนแล้วมารับ' },
           { value: 'one_way', label: 'ไปอย่างเดียว', note: 'ไม่ต้องรับกลับ' },
         ]} />
       {form.return_mode !== 'one_way' && <>
-        <p className="rounded-xl bg-slate-100 p-3">เวลารับกลับ: <strong>{form.back ? `${form.back} น.` : `ยังไม่ทราบ — ระบบกันรถไว้ถึง ${backLatest || 'เวลาปิดบริการ'} น.`}</strong></p>
+        <p className="rounded-xl bg-slate-100 p-3">เวลารับกลับ: <strong>{form.back ? `${form.back} น.` : `ยังไม่ทราบ — ระบบสมมติว่ารับกลับ ${backLatest || 'เวลาปิดบริการ'} น.`}</strong></p>
         <button type="button" className={buttonClass} onClick={() => setShowBack(v => !v)}>{showBack ? 'ปิดตัวเลือกเวลารับกลับ' : 'ระบุเวลาที่คาดว่าเสร็จ (ถ้าทราบ)'}</button>
         {(showBack || noTimes) && <Choice label="คาดว่าเสร็จประมาณ" value={form.back} onChange={value => set('back', value)} cols="grid-cols-3 sm:grid-cols-4" compact items={backChoices} />}
       </>}

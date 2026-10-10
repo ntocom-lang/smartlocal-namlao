@@ -54,6 +54,8 @@ for (const file of [
   '20261008100000_patient_booking_day_odometer_table.sql',
   '20261008100100_patient_booking_day_odometer_backfill.sql',
   '20261008100200_patient_booking_day_odometer_rpc.sql',
+  '20261010100000_patient_booking_release_wait_gap.sql',
+  '20261010100100_patient_booking_release_wait_gap_backfill.sql',
 ]) await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'))
 await actor(admin)
 await rpc('patient_booking_save_settings', [tenant, (await rpc('patient_booking_workspace', [tenant])).settings.revision,
