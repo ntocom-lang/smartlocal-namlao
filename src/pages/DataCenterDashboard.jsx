@@ -320,27 +320,48 @@ export default function DataCenterDashboard() {
 
             {categoryTree.map(({ group, total, categories }) => (
               <div key={group} className="mb-2">
-                <button onClick={() => { goToCategory(group, null); setShowMobileCategorySheet(false) }}
-                  className={`w-full flex items-center justify-between rounded-xl px-3.5 py-3 text-sm font-bold transition-colors ${
-                    sidebarFilter.group === group && !sidebarFilter.category
-                      ? (isLight ? 'bg-sky-100 text-sky-800 border border-sky-300' : 'bg-white/20 text-white border border-white/20')
-                      : (isLight ? 'bg-slate-50 text-slate-700 border border-slate-200' : 'bg-slate-800/40 text-slate-200 border border-transparent')
-                  }`}>
-                  <span>{group}</span>
-                  <span className="font-mono text-xs opacity-80">{total}</span>
-                </button>
+                {/* ปุ่ม + ท้ายแถว = เข้าฟอร์มเพิ่มข้อมูลพร้อมเติมกลุ่ม/ประเภทให้เลย — ทางลัดเดียวกับ + ในเมนูซ้ายของ PC
+                    (ซ่อนบนมือถือ) แยกเป็นปุ่มของตัวเอง กดแถวยังเป็น "กรองดูรายการ" ตามเดิม ไม่ปนกัน
+                    ขนาด 44px ตามเกณฑ์ปุ่มสัมผัสของหน้านี้ */}
+                <div className="flex items-stretch gap-1.5">
+                  <button onClick={() => { goToCategory(group, null); setShowMobileCategorySheet(false) }}
+                    className={`flex-1 min-w-0 flex items-center justify-between gap-2 rounded-xl px-3.5 py-3 text-sm font-bold transition-colors ${
+                      sidebarFilter.group === group && !sidebarFilter.category
+                        ? (isLight ? 'bg-sky-100 text-sky-800 border border-sky-300' : 'bg-white/20 text-white border border-white/20')
+                        : (isLight ? 'bg-slate-50 text-slate-700 border border-slate-200' : 'bg-slate-800/40 text-slate-200 border border-transparent')
+                    }`}>
+                    <span className="text-left break-words">{group}</span>
+                    <span className="font-mono text-xs opacity-80 shrink-0">{total}</span>
+                  </button>
+                  <button type="button" onClick={() => { goToAddEntry(group, null); setShowMobileCategorySheet(false) }}
+                    aria-label={`เพิ่มข้อมูลในกลุ่ม ${group}`}
+                    className={`flex w-11 shrink-0 items-center justify-center rounded-xl border active:scale-95 transition-colors ${
+                      isLight ? 'bg-white border-sky-300 text-sky-700' : 'bg-slate-800 border-cyan-500/40 text-cyan-300'
+                    }`}>
+                    <Plus size={18} />
+                  </button>
+                </div>
                 {categories.length > 0 && (
                   <div className="pl-3 mt-1 space-y-1">
                     {categories.map(({ category, count }) => (
-                      <button key={category} onClick={() => { goToCategory(group, category); setShowMobileCategorySheet(false) }}
-                        className={`w-full flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs transition-colors ${
-                          sidebarFilter.group === group && sidebarFilter.category === category
-                            ? (isLight ? 'bg-sky-50 text-sky-700 font-bold' : 'bg-white/10 text-white font-bold')
-                            : (isLight ? 'text-slate-500' : 'text-slate-400')
-                        }`}>
-                        <span className="text-left break-words">{category}</span>
-                        <span className="font-mono shrink-0 ml-2">{count}</span>
-                      </button>
+                      <div key={category} className="flex items-stretch gap-1.5">
+                        <button onClick={() => { goToCategory(group, category); setShowMobileCategorySheet(false) }}
+                          className={`flex-1 min-w-0 flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs transition-colors ${
+                            sidebarFilter.group === group && sidebarFilter.category === category
+                              ? (isLight ? 'bg-sky-50 text-sky-700 font-bold' : 'bg-white/10 text-white font-bold')
+                              : (isLight ? 'text-slate-500' : 'text-slate-400')
+                          }`}>
+                          <span className="text-left break-words">{category}</span>
+                          <span className="font-mono shrink-0 ml-2">{count}</span>
+                        </button>
+                        <button type="button" onClick={() => { goToAddEntry(group, category); setShowMobileCategorySheet(false) }}
+                          aria-label={`เพิ่มข้อมูลในประเภท ${category}`}
+                          className={`flex w-11 shrink-0 items-center justify-center rounded-lg border active:scale-95 transition-colors ${
+                            isLight ? 'bg-white border-slate-200 text-sky-700' : 'bg-slate-800 border-slate-700 text-cyan-300'
+                          }`}>
+                          <Plus size={16} />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}

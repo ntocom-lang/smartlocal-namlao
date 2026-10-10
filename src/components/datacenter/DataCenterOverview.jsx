@@ -649,10 +649,16 @@ export default function DataCenterOverview({
                   </div>
                 </button>
                 <button type="button" onClick={() => onAddNew(g.name)} aria-label={`เพิ่มข้อมูลในกลุ่ม ${g.name}`} title={`เพิ่มข้อมูลในกลุ่ม ${g.name}`}
-                  className={`absolute top-3 right-3 p-1 rounded-lg border opacity-0 group-hover:opacity-100 transition-opacity ${
-                    isLight ? 'bg-white border-slate-200 text-slate-500 hover:text-sky-700' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-cyan-300'
+                  // จอสัมผัสไม่มี hover — เดิม opacity-0 + group-hover ทำให้ปุ่มนี้ "ไม่มีทางเห็น" บนมือถือ
+                  // pointer-coarse: เปลี่ยนเป็นแถบ "+ เพิ่มข้อมูล" เต็มความกว้างใต้การ์ด (static ไม่ลอย) — เคยลองลอยมุมล่างขวา
+                  // แล้วไปทับชื่อกลุ่ม (การ์ดมือถือกว้างแค่ครึ่งจอ ชื่อกลุ่มยาวไม่มีที่ว่างพอ) แถบแยกจึงไม่ทับอะไรเลย
+                  className={`absolute top-3 right-3 p-1 rounded-lg border opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity
+                    pointer-coarse:static pointer-coarse:opacity-100 pointer-coarse:flex pointer-coarse:items-center pointer-coarse:justify-center pointer-coarse:gap-1.5
+                    pointer-coarse:mx-3.5 pointer-coarse:mb-3 pointer-coarse:w-[calc(100%-1.75rem)] pointer-coarse:min-h-10 pointer-coarse:text-xs pointer-coarse:font-semibold ${
+                    isLight ? 'bg-white border-slate-200 text-slate-500 hover:text-sky-700 pointer-coarse:text-sky-700 pointer-coarse:border-sky-200' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-cyan-300 pointer-coarse:text-cyan-300'
                   }`}>
-                  <Plus size={12} />
+                  <Plus size={12} className="pointer-coarse:size-4" />
+                  <span className="hidden pointer-coarse:inline">เพิ่มข้อมูล</span>
                 </button>
               </div>
             ))}
