@@ -4,6 +4,8 @@ import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
 import { uploadFile } from '../../lib/driveStorage'
 import { driveFolderPath, DRIVE_MODULES } from '../../lib/driveFolders'
+import { MAX_QUICK_CHIPS, mergeOptions, normalizeName, pickVisible } from '../../lib/dataCenterPicker'
+import OptionPickerSheet from './OptionPickerSheet'
 
 const ROUTE_COLORS = [
   { hex: '#3b82f6', label: 'น้ำเงิน' }, { hex: '#22c55e', label: 'เขียว' },
@@ -26,6 +28,41 @@ const SEED_GROUPS = {
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
+const chipCls = (selected, dashed = false) => `min-h-10 rounded-full border px-3.5 text-xs font-semibold transition-colors active:scale-95 ${
+  selected
+    ? 'bg-blue-600 border-blue-600 text-white'
+    : dashed
+      ? 'bg-white border-dashed border-blue-300 text-blue-600'
+      : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+}`
+
+// ปุ่มเลือกกลุ่ม/ประเภท — โชว์เฉพาะตัวที่ใช้บ่อยสุดไม่เกิน MAX_QUICK_CHIPS ตัว (+ ตัวที่เลือกอยู่เสมอ)
+// ที่เหลือเปิดจากปุ่มท้ายแถวไปแผ่นค้นหา ความสูงของฟอร์มจึงคงที่แม้จะมีกลุ่ม/ประเภทเป็นร้อย
+// (เดิมโชว์ทุกตัวเป็นปุ่ม ที่ 50 ตัวยาว ~780px ต่อช่อง ดันช่องชื่อสถานที่ลงไปสองหน้าจอ)
+// ปุ่มท้ายแถวเปิดแผ่นเดียวกันทั้งสองกรณี: ตัวเลือกเยอะ = "ดูทั้งหมด" · ตัวเลือกน้อย = "+ ใหม่" (สร้างชื่อใหม่ในแผ่น)
+function OptionChips({ options, selected, onPick, onOpenSheet, newLabel, markNew }) {
+  const chips = pickVisible(options, selected)
+  const hasMore = options.length > MAX_QUICK_CHIPS
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {chips.map(o => {
+        const isSelected = normalizeName(o.value) === normalizeName(selected)
+        return (
+          <button key={o.value} type="button" aria-pressed={isSelected} onClick={() => onPick(o.value)} className={chipCls(isSelected)}>
+            {o.value}
+            {/* ป้าย "ใหม่" = ชื่อนี้ยังไม่มีในระบบ จะเกิดหมวดใหม่ตอนบันทึก — ไม่ติดตอนสรุปข้อมูลยังโหลดไม่เสร็จ (markNew=false)
+                ไม่งั้นรายการเก่าที่เปิดแก้ไขจะถูกป้ายว่าใหม่ทั้งที่มีอยู่แล้ว */}
+            {o.isNew && markNew && <span className="ml-1.5 rounded-full bg-white/25 px-1.5 text-[10px]">ใหม่</span>}
+          </button>
+        )
+      })}
+      <button type="button" aria-haspopup="dialog" onClick={onOpenSheet} className={chipCls(false, true)}>
+        {hasMore ? `ดูทั้งหมด (${options.length}) ›` : `+ ${newLabel}`}
+      </button>
+    </div>
+  )
+}
+
 export default function DataCenterEntryForm({ tenant, profile, summary = null, initialGroup, initialCategory, editingEntry, onSaved, onCancel }) {
   const isEditing = !!editingEntry
   const canDelete = isEditing && (
@@ -44,8 +81,7 @@ export default function DataCenterEntryForm({ tenant, profile, summary = null, i
         description: editingEntry.description ?? '', latitude: editingEntry.latitude ?? '', longitude: editingEntry.longitude ?? '', address: '',
       }
     : { group_name: initialGroup ?? '', category: initialCategory ?? '', name: '', description: '', latitude: '', longitude: '', address: '' })
-  const [groupNew, setGroupNew] = useState(false) // กด "+ กลุ่มใหม่" อยู่ → โชว์ช่องพิมพ์ชื่อ
-  const [categoryNew, setCategoryNew] = useState(false)
+  const [picker, setPicker] = useState(null) // null | 'group' | 'category' — แผ่นค้นหาที่เปิดอยู่
   const [existingPhotoUrls, setExistingPhotoUrls] = useState(editingEntry?.photo_urls ?? [])
   const [images, setImages] = useState([]) // รูปใหม่ที่เพิ่งเลือกในเซสชันนี้ ยังไม่อัปโหลด
   const [saving, setSaving] = useState(false)
@@ -110,49 +146,30 @@ export default function DataCenterEntryForm({ tenant, profile, summary = null, i
 
   // กลุ่ม/ประเภทที่ "มีอยู่จริง" ในเทศบาลนี้ มาจาก summary (RPC data_center_summary) ที่ parent ถืออยู่
   // — เดิมฟอร์มนี้ยิง query ดึงทั้งตารางมาเองอีกรอบเพียงเพื่อทำ datalist
+  // ตัวเลือก = ข้อมูลจริงก่อน แล้วค่อยตัวอย่างตั้งต้น (SEED) เรียงตามจำนวนรายการที่ใช้จริง ตัวที่ยังไม่มีรายการจมไปท้าย
+  // ส่ง "ข้อมูลจริง" ก่อนเสมอ: ถ้าชื่อซ้ำกัน mergeOptions จะคงค่าดิบจากฐานข้อมูลไว้ (ดูเหตุผลใน dataCenterPicker.js)
   const summaryGroups = summary?.groups ?? []
-  const groupOptions = Array.from(new Set([
-    ...Object.keys(SEED_GROUPS),
-    ...summaryGroups.map(g => g.group_name),
-  ])).sort((a, b) => a.localeCompare(b, 'th'))
-  const categoryOptions = Array.from(new Set([
-    ...(SEED_GROUPS[form.group_name] ?? []),
-    ...(summaryGroups.find(g => g.group_name === form.group_name)?.categories ?? []).map(c => c.category),
-  ])).sort((a, b) => a.localeCompare(b, 'th'))
+  const groupOptions = mergeOptions(
+    summaryGroups.map(g => ({ value: g.group_name, count: g.total })),
+    Object.keys(SEED_GROUPS).map(value => ({ value, count: 0 })),
+  )
+  const groupKey = normalizeName(form.group_name)
+  const currentGroup = summaryGroups.find(g => normalizeName(g.group_name) === groupKey)
+  const seedCategories = Object.entries(SEED_GROUPS).find(([name]) => normalizeName(name) === groupKey)?.[1] ?? []
+  const categoryOptions = mergeOptions(
+    (currentGroup?.categories ?? []).map(c => ({ value: c.category, count: c.total })),
+    seedCategories.map(value => ({ value, count: 0 })),
+  )
 
-  // กลุ่ม/ประเภทเลือกด้วยปุ่มแตะ ไม่ใช่ช่องพิมพ์ — บนมือถือพิมพ์ชื่อยาวๆ ยาก และพิมพ์เพี้ยนทีเดียวก็เกิดหมวดซ้ำ
-  // (ต้องไปรวมที่ "จัดการหมวดหมู่" ทีหลัง) ช่องพิมพ์โผล่เฉพาะตอนกด "+ ใหม่" หรือค่าที่ติดมาไม่อยู่ในรายการ
-  // (เช่น ตอนแก้รายการเก่าที่ summary ยังโหลดไม่เสร็จ) กลุ่ม/ประเภทที่พิมพ์ใหม่ยังเกิดทันทีตอนบันทึกเหมือนเดิม
-  const showGroupInput = groupNew || (form.group_name !== '' && !groupOptions.includes(form.group_name))
-  const showCategoryInput = categoryNew || categoryOptions.length === 0
-    || (form.category !== '' && !categoryOptions.includes(form.category))
-  const chipCls = (selected, isNew = false) => `min-h-10 rounded-full border px-3.5 text-xs font-semibold transition-colors active:scale-95 ${
-    selected
-      ? 'bg-blue-600 border-blue-600 text-white'
-      : isNew
-        ? 'bg-white border-dashed border-blue-300 text-blue-600'
-        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-  }`
+  // กลุ่ม/ประเภทเลือกด้วยปุ่มแตะ + แผ่นค้นหา ไม่ใช่ช่องพิมพ์ — บนมือถือพิมพ์ชื่อยาวๆ ยาก และพิมพ์เพี้ยนทีเดียวก็เกิด
+  // หมวดซ้ำ (ต้องไปรวมที่ "จัดการหมวดหมู่" ทีหลัง) ชื่อใหม่ยังเกิดทันทีตอนบันทึกเหมือนเดิม แต่สร้างผ่านแผ่นค้นหา
+  // ซึ่งจับคู่ชื่อที่ซ้ำของเดิมให้ก่อน
   function pickGroup(g) {
-    setGroupNew(false)
-    setCategoryNew(false)
     // เลือกกลุ่มเดิมซ้ำต้องไม่ล้างประเภทที่เลือกไว้แล้ว
-    setForm(f => (f.group_name === g ? f : { ...f, group_name: g, category: '' }))
-  }
-  function startNewGroup() {
-    if (showGroupInput) return
-    setGroupNew(true)
-    setCategoryNew(false)
-    setForm(f => ({ ...f, group_name: '', category: '' }))
+    setForm(f => (normalizeName(f.group_name) === normalizeName(g) ? f : { ...f, group_name: g, category: '' }))
   }
   function pickCategory(c) {
-    setCategoryNew(false)
     setForm(f => ({ ...f, category: c }))
-  }
-  function startNewCategory() {
-    if (showCategoryInput) return
-    setCategoryNew(true)
-    setForm(f => ({ ...f, category: '' }))
   }
 
   const canSave = form.group_name.trim() && form.category.trim() && form.name.trim()
@@ -221,24 +238,8 @@ export default function DataCenterEntryForm({ tenant, profile, summary = null, i
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3.5">
         <div>
           <label className="text-xs font-semibold text-gray-500 mb-1.5 block">กลุ่มหลัก *</label>
-          <div className="flex flex-wrap gap-1.5">
-            {groupOptions.map(g => {
-              const selected = !showGroupInput && form.group_name === g
-              return (
-                <button key={g} type="button" aria-pressed={selected} onClick={() => pickGroup(g)} className={chipCls(selected)}>
-                  {g}
-                </button>
-              )
-            })}
-            <button type="button" aria-pressed={showGroupInput} onClick={startNewGroup} className={chipCls(showGroupInput, true)}>
-              + กลุ่มใหม่
-            </button>
-          </div>
-          {showGroupInput && (
-            <input type="text" value={form.group_name} autoFocus={groupNew}
-              onChange={e => setForm(f => ({ ...f, group_name: e.target.value, category: '' }))}
-              className={inputCls + ' mt-2'} placeholder="พิมพ์ชื่อกลุ่มใหม่ เช่น สาธารณสุข" />
-          )}
+          <OptionChips options={groupOptions} selected={form.group_name} onPick={pickGroup}
+            onOpenSheet={() => setPicker('group')} newLabel="กลุ่มใหม่" markNew={summary !== null} />
         </div>
 
         <div>
@@ -246,28 +247,8 @@ export default function DataCenterEntryForm({ tenant, profile, summary = null, i
           {form.group_name.trim() === '' ? (
             <p className="text-xs text-gray-400">เลือกกลุ่มหลักก่อน แล้วเลือกประเภทย่อย</p>
           ) : (
-            <>
-              {categoryOptions.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {categoryOptions.map(c => {
-                    const selected = !showCategoryInput && form.category === c
-                    return (
-                      <button key={c} type="button" aria-pressed={selected} onClick={() => pickCategory(c)} className={chipCls(selected)}>
-                        {c}
-                      </button>
-                    )
-                  })}
-                  <button type="button" aria-pressed={showCategoryInput} onClick={startNewCategory} className={chipCls(showCategoryInput, true)}>
-                    + ประเภทใหม่
-                  </button>
-                </div>
-              )}
-              {showCategoryInput && (
-                <input type="text" value={form.category} autoFocus={categoryNew}
-                  onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                  className={inputCls + (categoryOptions.length > 0 ? ' mt-2' : '')} placeholder="พิมพ์ชื่อประเภทย่อย เช่น โรงพยาบาลรัฐ" />
-              )}
-            </>
+            <OptionChips options={categoryOptions} selected={form.category} onPick={pickCategory}
+              onOpenSheet={() => setPicker('category')} newLabel="ประเภทใหม่" markNew={summary !== null} />
           )}
         </div>
 
@@ -380,6 +361,16 @@ export default function DataCenterEntryForm({ tenant, profile, summary = null, i
           onConfirm={handlePickerConfirm}
           onClose={() => setShowPicker(false)}
         />
+      )}
+
+      {picker === 'group' && (
+        <OptionPickerSheet title="เลือกกลุ่มหลัก" options={groupOptions} selected={form.group_name} createLabel="กลุ่มใหม่"
+          onPick={value => { pickGroup(value); setPicker(null) }} onClose={() => setPicker(null)} />
+      )}
+      {picker === 'category' && (
+        <OptionPickerSheet title="เลือกประเภทย่อย" options={categoryOptions} selected={form.category} createLabel="ประเภทใหม่"
+          emptyHint={`ยังไม่มีประเภทย่อยในกลุ่ม “${form.group_name}” พิมพ์ชื่อเพื่อสร้างประเภทแรก`}
+          onPick={value => { pickCategory(value); setPicker(null) }} onClose={() => setPicker(null)} />
       )}
     </div>
   )

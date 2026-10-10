@@ -1,11 +1,12 @@
 import { lazy, Suspense, useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Sun, Moon, X, ClipboardCheck, Database, HeartPulse, LogOut } from 'lucide-react'
+import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Sun, Moon, ClipboardCheck, Database, HeartPulse, LogOut } from 'lucide-react'
 import { supabase, getSessionResilient, signOutSafely } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
 import UserProfileBadge from '../components/layout/UserProfileBadge'
+import MobileCategorySheet from '../components/datacenter/MobileCategorySheet'
 import { DEFAULT_STALE_DAYS, scoreTone } from '../lib/dataCenterHealth'
 
 const DataCenterOverview = lazy(() => import('../components/datacenter/DataCenterOverview'))
@@ -13,6 +14,9 @@ const DataCenterMap = lazy(() => import('../components/datacenter/DataCenterMap'
 const DataCenterEntryForm = lazy(() => import('../components/datacenter/DataCenterEntryForm'))
 const DataCenterCategoryManager = lazy(() => import('../components/datacenter/DataCenterCategoryManager'))
 const DataCenterQuality = lazy(() => import('../components/datacenter/DataCenterQuality'))
+
+// เมนูซ้ายกางทุกกลุ่มตั้งแต่เปิดหน้าได้ก็ต่อเมื่อประเภทย่อยรวมกันทุกกลุ่มไม่เกินเท่านี้ (ดู sidebarAutoCollapse)
+const SIDEBAR_AUTO_EXPAND_MAX_ROWS = 40
 
 const BASE_MODULES = [
   { key: 'overview', label: 'ภาพรวมระบบ',   Icon: LayoutGrid },
@@ -69,7 +73,10 @@ export default function DataCenterDashboard() {
   // งานที่แค่ทำให้ "ตัวเลขเปลี่ยน" เช่นกดเปิด/ปิดใช้งานรายการ ต้องรีเฟรชสถิติโดยไม่ล้างตัวกรองที่ผู้ใช้ตั้งไว้
   const [summaryVersion, setSummaryVersion] = useState(0)
   const [sidebarFilter, setSidebarFilter] = useState({ group: null, category: null })
-  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
+  // การกาง/พับกลุ่มในเมนูซ้ายที่ผู้ใช้กดเอง: group -> true (กาง) | false (พับ) — กลุ่มที่ไม่อยู่ในนี้ใช้ค่าเริ่มต้นตาม
+  // sidebarGroupDefaultExpanded() เก็บเป็น "ค่าที่ผู้ใช้เลือกชัดๆ" ไม่ใช่ "ต่างจากค่าเริ่มต้น" เพราะค่าเริ่มต้นขยับตามกลุ่มที่กรองอยู่
+  // ถ้าเก็บแบบหลังไว้ พอย้ายไปกรองกลุ่มอื่น กลุ่มที่ผู้ใช้เคยพับไว้จะกางเองเงียบๆ
+  const [groupExpandOverrides, setGroupExpandOverrides] = useState(() => new Map())
   const [theme, setTheme] = useState(readStoredTheme) // ค่าเริ่มต้นยังเป็นโหมดสว่างถ้าไม่เคยเลือกไว้
   // ทรี "หมวดหมู่ข้อมูล" อยู่ใน sidebar ฝั่ง desktop เท่านั้น (hidden md:flex) — มือถือไม่มีทางเปลี่ยนหมวดเลย
   // ต้องมี bottom sheet แยกให้กดเลือกหมวด/ประเภทย่อยแบบเดียวกับเมนูซ้าย
@@ -91,9 +98,9 @@ export default function DataCenterDashboard() {
   const isLight = theme === 'light'
 
   function toggleGroupExpand(group) {
-    setCollapsedGroups(prev => {
-      const next = new Set(prev)
-      next.has(group) ? next.delete(group) : next.add(group)
+    setGroupExpandOverrides(prev => {
+      const next = new Map(prev)
+      next.set(group, !(prev.has(group) ? prev.get(group) : sidebarGroupDefaultExpanded(group)))
       return next
     })
   }
@@ -160,6 +167,14 @@ export default function DataCenterDashboard() {
       .filter(g => g.total > 0)
       .sort((a, b) => a.group.localeCompare(b.group, 'th'))
   }, [summary])
+
+  // เมนูซ้ายกางทุกกลุ่มเป็นค่าเริ่มต้น "เฉพาะเมื่อประเภทรวมกันไม่มาก" — เดิมกางหมดเสมอ ที่ 60 กลุ่ม × 60 ประเภท
+  // กลุ่มแรกกลุ่มเดียวก็กินพื้นที่เมนูทั้งหมด กลุ่มที่เหลือต้องเลื่อนผ่านประเภทของกลุ่มแรกไปก่อน
+  // เกินเพดานนี้ → พับทุกกลุ่ม ยกเว้นกลุ่มที่กำลังกรองอยู่ ต่ำกว่าเพดาน (หน่วยงานที่ข้อมูลยังน้อย) หน้าตาเท่าเดิมทุกประการ
+  const sidebarCategoryRows = categoryTree.reduce((n, g) => n + g.categories.length, 0)
+  const sidebarAutoCollapse = sidebarCategoryRows > SIDEBAR_AUTO_EXPAND_MAX_ROWS
+  const sidebarGroupDefaultExpanded = group => !sidebarAutoCollapse || sidebarFilter.group === group
+  const isSidebarGroupExpanded = group => (groupExpandOverrides.has(group) ? groupExpandOverrides.get(group) : sidebarGroupDefaultExpanded(group))
 
   function goToCategory(group, category) {
     setSidebarFilter({ group: group ?? null, category: category ?? null })
@@ -293,82 +308,10 @@ export default function DataCenterDashboard() {
 
       {/* Mobile Category Sheet — เวอร์ชันมือถือของทรี "หมวดหมู่ข้อมูล" ในเมนูซ้าย desktop */}
       {showMobileCategorySheet && (
-        <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end" onClick={() => setShowMobileCategorySheet(false)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div onClick={e => e.stopPropagation()}
-            className={`relative rounded-t-3xl max-h-[75vh] overflow-y-auto p-4 shadow-2xl ${
-              isLight ? 'bg-white text-slate-800' : 'bg-slate-900 text-slate-100 border-t border-slate-700'
-            }`}
-            style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 16px)' }}>
-            <div className="flex items-center justify-between mb-3">
-              <p className={`text-xs font-bold ${isLight ? 'text-slate-700' : 'text-slate-200'}`}>เลือกหมวดหมู่ข้อมูล</p>
-              <button onClick={() => setShowMobileCategorySheet(false)} aria-label="ปิด"
-                className={`flex h-11 w-11 items-center justify-center rounded-lg ${isLight ? 'text-slate-500 bg-slate-100' : 'text-slate-400 bg-slate-800'}`}>
-                <X size={16} />
-              </button>
-            </div>
-
-            <button onClick={() => { goToCategory(null, null); setShowMobileCategorySheet(false) }}
-              className={`w-full flex items-center justify-between rounded-xl px-3.5 py-3 mb-2 text-sm font-bold transition-colors ${
-                !sidebarFilter.group
-                  ? (isLight ? 'bg-sky-100 text-sky-800 border border-sky-300' : 'bg-white/20 text-white border border-white/20')
-                  : (isLight ? 'bg-slate-50 text-slate-700 border border-slate-200' : 'bg-slate-800/50 text-slate-300 border border-transparent')
-              }`}>
-              <span>ภาพรวมทั้งหมด</span>
-              <span className="font-mono text-xs">{categoryTree.reduce((acc, g) => acc + g.total, 0)}</span>
-            </button>
-
-            {categoryTree.map(({ group, total, categories }) => (
-              <div key={group} className="mb-2">
-                {/* ปุ่ม + ท้ายแถว = เข้าฟอร์มเพิ่มข้อมูลพร้อมเติมกลุ่ม/ประเภทให้เลย — ทางลัดเดียวกับ + ในเมนูซ้ายของ PC
-                    (ซ่อนบนมือถือ) แยกเป็นปุ่มของตัวเอง กดแถวยังเป็น "กรองดูรายการ" ตามเดิม ไม่ปนกัน
-                    ขนาด 44px ตามเกณฑ์ปุ่มสัมผัสของหน้านี้ */}
-                <div className="flex items-stretch gap-1.5">
-                  <button onClick={() => { goToCategory(group, null); setShowMobileCategorySheet(false) }}
-                    className={`flex-1 min-w-0 flex items-center justify-between gap-2 rounded-xl px-3.5 py-3 text-sm font-bold transition-colors ${
-                      sidebarFilter.group === group && !sidebarFilter.category
-                        ? (isLight ? 'bg-sky-100 text-sky-800 border border-sky-300' : 'bg-white/20 text-white border border-white/20')
-                        : (isLight ? 'bg-slate-50 text-slate-700 border border-slate-200' : 'bg-slate-800/40 text-slate-200 border border-transparent')
-                    }`}>
-                    <span className="text-left break-words">{group}</span>
-                    <span className="font-mono text-xs opacity-80 shrink-0">{total}</span>
-                  </button>
-                  <button type="button" onClick={() => { goToAddEntry(group, null); setShowMobileCategorySheet(false) }}
-                    aria-label={`เพิ่มข้อมูลในกลุ่ม ${group}`}
-                    className={`flex w-11 shrink-0 items-center justify-center rounded-xl border active:scale-95 transition-colors ${
-                      isLight ? 'bg-white border-sky-300 text-sky-700' : 'bg-slate-800 border-cyan-500/40 text-cyan-300'
-                    }`}>
-                    <Plus size={18} />
-                  </button>
-                </div>
-                {categories.length > 0 && (
-                  <div className="pl-3 mt-1 space-y-1">
-                    {categories.map(({ category, count }) => (
-                      <div key={category} className="flex items-stretch gap-1.5">
-                        <button onClick={() => { goToCategory(group, category); setShowMobileCategorySheet(false) }}
-                          className={`flex-1 min-w-0 flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs transition-colors ${
-                            sidebarFilter.group === group && sidebarFilter.category === category
-                              ? (isLight ? 'bg-sky-50 text-sky-700 font-bold' : 'bg-white/10 text-white font-bold')
-                              : (isLight ? 'text-slate-500' : 'text-slate-400')
-                          }`}>
-                          <span className="text-left break-words">{category}</span>
-                          <span className="font-mono shrink-0 ml-2">{count}</span>
-                        </button>
-                        <button type="button" onClick={() => { goToAddEntry(group, category); setShowMobileCategorySheet(false) }}
-                          aria-label={`เพิ่มข้อมูลในประเภท ${category}`}
-                          className={`flex w-11 shrink-0 items-center justify-center rounded-lg border active:scale-95 transition-colors ${
-                            isLight ? 'bg-white border-slate-200 text-sky-700' : 'bg-slate-800 border-slate-700 text-cyan-300'
-                          }`}>
-                          <Plus size={16} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
+        <MobileCategorySheet tree={categoryTree} isLight={isLight} sidebarFilter={sidebarFilter}
+          onFilter={(group, category) => { goToCategory(group, category); setShowMobileCategorySheet(false) }}
+          onAdd={(group, category) => { goToAddEntry(group, category); setShowMobileCategorySheet(false) }}
+          onClose={() => setShowMobileCategorySheet(false)} />
       )}
 
       {/* เมนูซ้ายใช้รูปแบบเดียวกับหน้าเจ้าหน้าที่ */}
@@ -413,7 +356,7 @@ export default function DataCenterDashboard() {
 
                   {categoryTree.map(({ group, total, categories }) => {
                     const isGroupActive = activeModule === 'overview' && sidebarFilter.group === group && !sidebarFilter.category
-                    const isExpanded = !collapsedGroups.has(group)
+                    const isExpanded = isSidebarGroupExpanded(group)
                     return (
                       <div key={group} className="mb-1">
                         <div className={`group flex items-center rounded-lg transition-all ${
@@ -430,7 +373,7 @@ export default function DataCenterDashboard() {
                           <button type="button"
                             onClick={() => {
                               goToCategory(group, null)
-                              setCollapsedGroups(prev => { if (!prev.has(group)) return prev; const next = new Set(prev); next.delete(group); return next })
+                              setGroupExpandOverrides(prev => { if (prev.get(group) === true) return prev; const next = new Map(prev); next.set(group, true); return next })
                             }}
                             className={`flex-1 min-w-0 flex min-h-9 items-center justify-between gap-2 py-1.5 text-xs font-semibold text-left transition-colors ${
                               isGroupActive
