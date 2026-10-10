@@ -39,6 +39,7 @@
     "test:doc-types:write": "node tests/doc-type-delete.playwright.mjs --write",
     "test:odor:analytics": "node tests/odor-analytics.test.mjs",
     "test:odor:intake": "node tests/odor-intake.test.mjs",
+    "test:datacenter:picker": "node tests/datacenter-picker.test.mjs",
     "test:odor": "node tests/odor-workflow.playwright.mjs",
     "test:odor:write": "node tests/odor-workflow.playwright.mjs --write",
     "test:map:click": "node tests/map-click.playwright.mjs",

@@ -12,8 +12,12 @@ import CategoryIcon from './CategoryIcon'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, saveGroupIconOverride, iconKey } from '../../lib/dataCenterGroupIcon'
 import { entriesToCsv, datedFilename, downloadTextFile } from '../../lib/dataCenterExport'
 import { ISSUES, MUST_FIX_ISSUES } from '../../lib/dataCenterHealth'
+import { normalizeName } from '../../lib/dataCenterPicker'
 
 const TABLE_PAGE_SIZES = [10, 20, 50, 100]
+// การ์ดกลุ่มหน้าภาพรวมโชว์กี่ใบก่อนต้องกด "ดูทั้งหมด" — เรียงตามจำนวนรายการ จึงเป็นกลุ่มที่ใช้มากสุดเสมอ
+// (เดิมโชว์ทุกใบ ที่ 50 กลุ่มบนมือถือ 2 คอลัมน์จะยาวราว 25 แถว) เกินเลขนี้ถึงมีช่องค้นหาโผล่ขึ้นมา
+const GROUP_CARD_LIMIT = 8
 
 // bg เดิมของ getGroupMeta เป็นสีทึบ (ใช้กับแท่ง/ป้าย #อันดับ) — ตารางรายการต้องการป้ายกลุ่มแบบโปร่งแสง
 // (bg จาง + ตัวอักษรสีทึบ) แปลง hex → rgba(alpha) เอาเอง กันต้องผูกชุดสีที่สองแยกจาก getGroupMeta
@@ -124,6 +128,8 @@ export default function DataCenterOverview({
   const [savingGroupIcon, setSavingGroupIcon] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [selectedDetailEntry, setSelectedDetailEntry] = useState(null)
+  const [groupQuery, setGroupQuery] = useState('') // ช่องค้นหาการ์ดกลุ่ม (โผล่เมื่อมีกลุ่มเกิน GROUP_CARD_LIMIT)
+  const [showAllGroups, setShowAllGroups] = useState(false)
 
   // desktop table: ค้นหา/กรอง/เรียง/แบ่งหน้าอิสระจากสไลด์เมนูซ้าย (sync ค่าเริ่มต้นมาจากมันตอน filter เปลี่ยน)
   const [tableSearch, setTableSearch] = useState('')
@@ -317,6 +323,14 @@ export default function DataCenterOverview({
     percent: totalEntries ? Math.round((g.total / totalEntries) * 100) : 0,
     meta: getGroupMeta(g.group_name, groupIconOverrides),
   })).sort((a, b) => b.count - a.count)
+
+  // การ์ดกลุ่มที่จะวาด: ค้นหาอยู่ → ทุกกลุ่มที่ตรงคำค้น · ไม่ได้ค้นหา → ใช้บ่อยสุด GROUP_CARD_LIMIT ใบ จนกว่าจะกด "ดูทั้งหมด"
+  // กลุ่มน้อยกว่าเพดานก็โชว์ครบ ไม่มีช่องค้นหา/ปุ่มเพิ่มมาให้รก (หน้าตาเท่าเดิมทุกประการ)
+  const groupsOverLimit = groupStatsList.length > GROUP_CARD_LIMIT
+  const groupSearchKey = normalizeName(groupQuery)
+  const visibleGroupCards = groupSearchKey
+    ? groupStatsList.filter(g => normalizeName(g.name).includes(groupSearchKey))
+    : (groupsOverLimit && !showAllGroups ? groupStatsList.slice(0, GROUP_CARD_LIMIT) : groupStatsList)
 
   // Department breakdown — RPC join ชื่อกองมาให้แล้ว (name เป็น null ได้ถ้า RLS ของ departments
   // ไม่ให้เห็นแถวนั้น) ส่วนนี้แสดงเฉพาะตอนไม่มีตัวกรอง จึงใช้ยอดรวมทั้งเทศบาลตรงๆ
@@ -629,8 +643,21 @@ export default function DataCenterOverview({
               {groupStatsList.length} กลุ่มข้อมูล
             </span>
           </div>
+          {groupsOverLimit && (
+            <div className="relative mb-3">
+              <Search size={14} className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${isLight ? 'text-sky-600' : 'text-cyan-400'}`} />
+              <input type="text" value={groupQuery} onChange={e => setGroupQuery(e.target.value)} inputMode="search" enterKeyHint="done"
+                placeholder={`ค้นหากลุ่มข้อมูล (${groupStatsList.length} กลุ่ม)`} aria-label="ค้นหากลุ่มข้อมูล"
+                className={`w-full pl-9 pr-3 py-2 text-xs rounded-xl border focus:outline-none focus:ring-1 transition-all ${
+                  isLight ? 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-sky-500 focus:ring-sky-400' : 'bg-slate-900 border-cyan-500/30 text-white placeholder-slate-500 focus:border-cyan-400 focus:ring-cyan-400'
+                }`} />
+            </div>
+          )}
+          {visibleGroupCards.length === 0 && (
+            <p className={`py-6 text-center text-xs ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>ไม่พบกลุ่มที่ตรงกับ “{groupQuery.trim()}”</p>
+          )}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {groupStatsList.map(g => (
+            {visibleGroupCards.map(g => (
               <div key={g.name} className={`group relative rounded-xl border transition-all hover:scale-[1.02] ${
                 isLight ? 'bg-slate-50/80 border-slate-200 hover:border-slate-300' : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
               }`}>
@@ -663,6 +690,16 @@ export default function DataCenterOverview({
               </div>
             ))}
           </div>
+          {groupsOverLimit && !groupSearchKey && (
+            <button type="button" onClick={() => setShowAllGroups(v => !v)} aria-expanded={showAllGroups}
+              className={`mt-3 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border text-xs font-bold transition-colors ${
+                isLight ? 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+              }`}>
+              {showAllGroups
+                ? <><ChevronUp size={14} /> แสดงเฉพาะ {GROUP_CARD_LIMIT} กลุ่มที่ใช้มากสุด</>
+                : <><ChevronDown size={14} /> ดูทั้งหมด ({groupStatsList.length} กลุ่ม)</>}
+            </button>
+          )}
         </div>
       )}
 
