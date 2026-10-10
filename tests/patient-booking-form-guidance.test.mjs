@@ -3,7 +3,7 @@ import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { chromium } from 'playwright'
-import { thaiDay, bookingTimingAdvice, normalizeBookingPhone, freeTimeChoices, latestReturnClock, bookingLastDay } from '../src/lib/patientBooking.js'
+import { thaiDay, bookingTimingAdvice, normalizeBookingPhone, freeTimeChoices, latestReturnClock, bookingLastDay, journeyWindow, journeyBlocks } from '../src/lib/patientBooking.js'
 
 // ฟอร์มจองแบบปุ่มตัวเลือก (เจ้าของระบบสั่ง 2569-09-21 "ให้ประชาชนพิมพ์น้อยที่สุด")
 // เวลานัดขึ้นเฉพาะเวลาที่รถว่างและไปส่งทัน · ขาดอะไรบอกเป็นรายการภาษาไทย · ทวนก่อนส่ง + ยินยอม 1 ช่อง
@@ -39,6 +39,25 @@ assert.deepEqual(freeTimeChoices({ ...draft, return_mode: 'one_way' }, info, bus
 assert.deepEqual(freeTimeChoices(draft, info, { ...openDay([['03:30', '21:30']]), status: 'closed' }), [], 'วันปิดให้บริการต้องไม่มีเวลาให้เลือก')
 // ทราบเวลากลับแล้ว ช่วงกันรถสั้นลง เวลานัดที่เลือกได้ต้องไม่เกินเวลากลับ
 assert.equal(freeTimeChoices({ ...draft, back: '12:00' }, info, openDay([['03:30', '21:30']]), 30).at(-1), '12:00')
+
+// ปล่อยรถว่างช่วงรอ (20261010100000): ช่วงไป + ช่วงกลับ รวมเป็นช่วงเดียวเมื่อทับ/ติดกัน อยู่นานกว่ารถวิ่งไปกลับ = 2 ช่วง
+// ตัวเลขชุดเดียวกับ tests/patient-booking-wait-release.test.mjs (ขา 45 เผื่อ 15 ขึ้นรถ 15 นัด 10:00) ตัวกรองฟอร์มต้องไม่เข้มกว่าฐานข้อมูล
+const info45 = { ...info, routes: [{ id: 'r', label: 'โรงพยาบาล TEST', minutes: 45 }], office_start: 450, office_end: 1170 }
+const stay = (back, mode = 'wait') => journeyBlocks({ time: '10:00', back, return_mode: mode, route_id: 'r' }, info45)
+assert.deepEqual(stay('11:45'), [{ start: 525, end: 780 }], 'อยู่สั้น: ช่วงเดียวต่อเนื่อง')
+assert.deepEqual(stay('12:00'), [{ start: 525, end: 795 }], 'ติดกันพอดี: รวมเป็นช่วงเดียว')
+assert.deepEqual(stay('12:15'), [{ start: 525, end: 660 }, { start: 675, end: 810 }], 'อยู่นานกว่ารถวิ่งไปกลับ: 2 ช่วง')
+assert.deepEqual(stay('16:00', 'later'), [{ start: 525, end: 660 }, { start: 900, end: 1035 }], 'มารับภายหลังกติกาเดียวกัน')
+assert.deepEqual(stay(null, 'one_way'), [{ start: 525, end: 660 }])
+assert.deepEqual(stay(''), [{ start: 525, end: 525 }], 'ยังไม่มีเวลากลับ')
+assert.deepEqual(journeyBlocks({ time: '10:00', back: '16:00', return_mode: 'wait', route_id: 'missing' }, info45), [])
+assert.deepEqual(journeyWindow({ time: '10:00', back: '16:00', return_mode: 'wait', route_id: 'r' }, info45), { start: 525, end: 1035 }, 'ช่วงคลุมทั้งก้อนคงเดิม (ใช้เตือนเวลานอกเวลาบริการ)')
+// รถมีเที่ยวกลางวัน 11:00–15:00 → เวลานัดที่ไปแล้วกลับเย็นได้ต้องขึ้นให้เลือก (เดิมช่วงเดียวคลุมทั้งก้อนจึงไม่ขึ้นสักเวลา)
+const midday = openDay([['03:30', '11:00'], ['15:00', '21:30']])
+assert.deepEqual(freeTimeChoices({ ...draft, back: '16:00' }, info45, midday, 30), ['07:30', '08:00', '08:30', '09:00', '09:30', '10:00'])
+assert.deepEqual(freeTimeChoices({ ...draft, return_mode: 'later', back: '16:00' }, info45, midday, 30), ['07:30', '08:00', '08:30', '09:00', '09:30', '10:00'])
+assert.deepEqual(freeTimeChoices({ ...draft, back: '12:00' }, info45, midday, 30), [], 'กลับกลางวัน = รถรอที่โรงพยาบาลต่อเนื่อง ชนเที่ยวกลางวัน')
+assert.deepEqual(freeTimeChoices({ ...draft, back: '16:00' }, info45, openDay([['03:30', '11:00']]), 30), [], 'ช่วงกลับไม่อยู่ในช่องว่างใด ๆ ต้องไม่ขึ้น')
 
 const server = await createServer({ configFile: false, envDir: false, server: { host: '127.0.0.1', port: 0 }, plugins: [react(), tailwindcss(), {
   name: 'isolated-booking-form-guidance', enforce: 'pre',

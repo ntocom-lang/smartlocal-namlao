@@ -110,6 +110,7 @@ jobs:
             patient-booking-guidance
             patient-booking-db
             patient-booking-day-odometer
+            patient-booking-wait-release
             public-assistance-print
             complaint-print-routing
             waste-cancel-print
