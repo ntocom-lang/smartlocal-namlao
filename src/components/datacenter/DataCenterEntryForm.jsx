@@ -44,6 +44,8 @@ export default function DataCenterEntryForm({ tenant, profile, summary = null, i
         description: editingEntry.description ?? '', latitude: editingEntry.latitude ?? '', longitude: editingEntry.longitude ?? '', address: '',
       }
     : { group_name: initialGroup ?? '', category: initialCategory ?? '', name: '', description: '', latitude: '', longitude: '', address: '' })
+  const [groupNew, setGroupNew] = useState(false) // กด "+ กลุ่มใหม่" อยู่ → โชว์ช่องพิมพ์ชื่อ
+  const [categoryNew, setCategoryNew] = useState(false)
   const [existingPhotoUrls, setExistingPhotoUrls] = useState(editingEntry?.photo_urls ?? [])
   const [images, setImages] = useState([]) // รูปใหม่ที่เพิ่งเลือกในเซสชันนี้ ยังไม่อัปโหลด
   const [saving, setSaving] = useState(false)
@@ -118,6 +120,41 @@ export default function DataCenterEntryForm({ tenant, profile, summary = null, i
     ...(summaryGroups.find(g => g.group_name === form.group_name)?.categories ?? []).map(c => c.category),
   ])).sort((a, b) => a.localeCompare(b, 'th'))
 
+  // กลุ่ม/ประเภทเลือกด้วยปุ่มแตะ ไม่ใช่ช่องพิมพ์ — บนมือถือพิมพ์ชื่อยาวๆ ยาก และพิมพ์เพี้ยนทีเดียวก็เกิดหมวดซ้ำ
+  // (ต้องไปรวมที่ "จัดการหมวดหมู่" ทีหลัง) ช่องพิมพ์โผล่เฉพาะตอนกด "+ ใหม่" หรือค่าที่ติดมาไม่อยู่ในรายการ
+  // (เช่น ตอนแก้รายการเก่าที่ summary ยังโหลดไม่เสร็จ) กลุ่ม/ประเภทที่พิมพ์ใหม่ยังเกิดทันทีตอนบันทึกเหมือนเดิม
+  const showGroupInput = groupNew || (form.group_name !== '' && !groupOptions.includes(form.group_name))
+  const showCategoryInput = categoryNew || categoryOptions.length === 0
+    || (form.category !== '' && !categoryOptions.includes(form.category))
+  const chipCls = (selected, isNew = false) => `min-h-10 rounded-full border px-3.5 text-xs font-semibold transition-colors active:scale-95 ${
+    selected
+      ? 'bg-blue-600 border-blue-600 text-white'
+      : isNew
+        ? 'bg-white border-dashed border-blue-300 text-blue-600'
+        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+  }`
+  function pickGroup(g) {
+    setGroupNew(false)
+    setCategoryNew(false)
+    // เลือกกลุ่มเดิมซ้ำต้องไม่ล้างประเภทที่เลือกไว้แล้ว
+    setForm(f => (f.group_name === g ? f : { ...f, group_name: g, category: '' }))
+  }
+  function startNewGroup() {
+    if (showGroupInput) return
+    setGroupNew(true)
+    setCategoryNew(false)
+    setForm(f => ({ ...f, group_name: '', category: '' }))
+  }
+  function pickCategory(c) {
+    setCategoryNew(false)
+    setForm(f => ({ ...f, category: c }))
+  }
+  function startNewCategory() {
+    if (showCategoryInput) return
+    setCategoryNew(true)
+    setForm(f => ({ ...f, category: '' }))
+  }
+
   const canSave = form.group_name.trim() && form.category.trim() && form.name.trim()
     && (isRoute ? routePoints.length >= 2 : form.latitude !== '' && form.longitude !== '')
   const photoCount = existingPhotoUrls.length + images.length
@@ -182,21 +219,56 @@ export default function DataCenterEntryForm({ tenant, profile, summary = null, i
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3.5">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">กลุ่มหลัก *</label>
-            <input type="text" list="dce-groups" value={form.group_name}
+        <div>
+          <label className="text-xs font-semibold text-gray-500 mb-1.5 block">กลุ่มหลัก *</label>
+          <div className="flex flex-wrap gap-1.5">
+            {groupOptions.map(g => {
+              const selected = !showGroupInput && form.group_name === g
+              return (
+                <button key={g} type="button" aria-pressed={selected} onClick={() => pickGroup(g)} className={chipCls(selected)}>
+                  {g}
+                </button>
+              )
+            })}
+            <button type="button" aria-pressed={showGroupInput} onClick={startNewGroup} className={chipCls(showGroupInput, true)}>
+              + กลุ่มใหม่
+            </button>
+          </div>
+          {showGroupInput && (
+            <input type="text" value={form.group_name} autoFocus={groupNew}
               onChange={e => setForm(f => ({ ...f, group_name: e.target.value, category: '' }))}
-              className={inputCls} placeholder="เช่น สาธารณสุข" />
-            <datalist id="dce-groups">{groupOptions.map(g => <option key={g} value={g} />)}</datalist>
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">ประเภทย่อย *</label>
-            <input type="text" list="dce-categories" value={form.category}
-              onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-              className={inputCls} placeholder="เช่น โรงพยาบาลรัฐ" />
-            <datalist id="dce-categories">{categoryOptions.map(c => <option key={c} value={c} />)}</datalist>
-          </div>
+              className={inputCls + ' mt-2'} placeholder="พิมพ์ชื่อกลุ่มใหม่ เช่น สาธารณสุข" />
+          )}
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-gray-500 mb-1.5 block">ประเภทย่อย *</label>
+          {form.group_name.trim() === '' ? (
+            <p className="text-xs text-gray-400">เลือกกลุ่มหลักก่อน แล้วเลือกประเภทย่อย</p>
+          ) : (
+            <>
+              {categoryOptions.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {categoryOptions.map(c => {
+                    const selected = !showCategoryInput && form.category === c
+                    return (
+                      <button key={c} type="button" aria-pressed={selected} onClick={() => pickCategory(c)} className={chipCls(selected)}>
+                        {c}
+                      </button>
+                    )
+                  })}
+                  <button type="button" aria-pressed={showCategoryInput} onClick={startNewCategory} className={chipCls(showCategoryInput, true)}>
+                    + ประเภทใหม่
+                  </button>
+                </div>
+              )}
+              {showCategoryInput && (
+                <input type="text" value={form.category} autoFocus={categoryNew}
+                  onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                  className={inputCls + (categoryOptions.length > 0 ? ' mt-2' : '')} placeholder="พิมพ์ชื่อประเภทย่อย เช่น โรงพยาบาลรัฐ" />
+              )}
+            </>
+          )}
         </div>
 
         <div>
