@@ -1,4 +1,5 @@
-// ลิ้นชักเมนูซ้ายบนมือถือ (src/components/common/PortalDrawer.jsx) ของ 2 พอร์ทัล: เจ้าหน้าที่ (/staff) และแอดมิน (/admin)
+// ลิ้นชักเมนูซ้ายบนมือถือ (src/components/common/PortalDrawer.jsx) ของ 3 หน้า: เจ้าหน้าที่ (/staff) · แอดมิน (/admin)
+// · ศูนย์รวมข้อมูลดิจิทัล (/data-center/staff — เมนูของหน้านี้เองไม่ใช่เมนูเจ้าหน้าที่ เทียบกับแถบล่างของหน้านั้น)
 //
 // ตรวจต่อพอร์ทัล ต่อขนาดจอ (360 / 390px):
 //   1. แถบหัว: ปุ่ม ☰ กดได้ ≥ 44px · ไม่มีอะไรล้นขอบจอ · ชื่อ อปท. ไม่ถูกตัด (⚠️ ขึ้นกับความยาวชื่อบนสนามซ้อม)
@@ -58,6 +59,44 @@ const PORTALS = [
       })
     },
     pick: { key: 'report', heading: 'รายงาน' },
+  },
+  {
+    name: 'ศูนย์ข้อมูล', file: 'data-center', path: '/data-center/staff', homeKey: 'back-to-staff',
+    // รายการแรกของลิ้นชักคือ "กลับแดชบอร์ดเจ้าหน้าที่" (ปุ่มนำทาง ไม่เคยเป็นหน้าปัจจุบัน) · ท้ายรายการมี "เลือกหมวดหมู่และประเภท" เพิ่ม
+    homeActive: false, extraAt: 'end',
+    // หัวหน้านี้ไม่ใช่ header.md:hidden เหมือนหน้าอื่น (ใช้หัวเดียวกันทุกขนาดจอ) — แถวที่มีโลโก้/กระดิ่ง และชื่อ อปท. ขึ้นบรรทัดใหม่ได้ปกติ
+    headerRow: 'header .relative.z-10.flex', nameMayWrap: true,
+    async waitReady(page) {
+      await page.getByRole('heading', { name: 'ศูนย์รวมข้อมูลดิจิทัล', level: 1 }).waitFor({ timeout: 40_000 })
+    },
+    // โมดูลบนแถบล่างมือถือของหน้านี้ (aria-label ของ nav) — ชุดเดียวกับที่ลิ้นชักต้องมี
+    async otherMenu(page) {
+      return page.evaluate(() => [...document.querySelectorAll('nav[aria-label="เมนูศูนย์รวมข้อมูลดิจิทัลบนมือถือ"] button')]
+        .map(b => ({ label: b.textContent.trim(), badge: null })))
+    },
+    // หน้านี้หัวเรื่องเหมือนเดิมทุกโมดูล ไม่มี heading ต่างกัน — ดูจากปุ่มบนแถบล่างที่ aria-current แทน
+    pick: {
+      key: 'map',
+      async verify(page) {
+        await page.locator('nav[aria-label="เมนูศูนย์รวมข้อมูลดิจิทัลบนมือถือ"] button[aria-current="page"]')
+          .filter({ hasText: 'แผนที่ GIS' }).waitFor({ timeout: 20_000 })
+      },
+    },
+    // ปุ่มพิเศษ 2 อัน ทดสอบท้ายสุด (อันหลังพาออกนอกหน้า): หมวดหมู่ → เปิดแผ่นเลือกหมวดที่ลิ้นชักปิดตัวลง · กลับแดชบอร์ดเจ้าหน้าที่ → ไป /staff
+    async specialChecks(page, where, helpers) {
+      await helpers.openDrawer()
+      if (await page.locator('[data-drawer-item="category-sheet"]').count()) {
+        await page.locator('[data-drawer-item="category-sheet"]').click()
+        await page.getByText('เลือกหมวดหมู่ข้อมูล', { exact: true }).waitFor({ timeout: 10_000 })
+        await page.waitForFunction(helpers.isHidden)
+        // ปุ่ม ✕ ของแผ่นเลือกหมวด (ในหน้ามีปุ่มชื่อ "ปิด" อื่นอีก จึงจำกัดเฉพาะในแผ่น)
+        await page.locator('div.fixed.inset-0', { hasText: 'เลือกหมวดหมู่ข้อมูล' }).getByRole('button', { name: 'ปิด', exact: true }).click()
+        await helpers.openDrawer()
+      }
+      await page.locator('[data-drawer-item="back-to-staff"]').click()
+      await page.waitForURL('**/staff', { timeout: 20_000 })
+      assert.equal(new URL(page.url()).pathname, '/staff', `${where}: กด "กลับแดชบอร์ดเจ้าหน้าที่" แล้วไม่ได้ไปหน้า /staff`)
+    },
   },
 ]
 
@@ -119,26 +158,36 @@ async function checkPortal(page, baseUrl, auth, portal, width) {
   await page.setViewportSize({ width, height: 844 })
   await page.goto(`${baseUrl}${portal.path}`, { waitUntil: 'domcontentloaded', timeout: 45_000 })
   await waitForSettled(page, auth)
-  await page.getByText(portal.ready).first().waitFor({ timeout: 30_000 })
+  if (portal.waitReady) await portal.waitReady(page)
+  else await page.getByText(portal.ready).first().waitFor({ timeout: 30_000 })
   const where = `${portal.name} ${width}px`
   const toggle = page.locator('button[aria-label="เปิดเมนู"]')
+  const openDrawer = async () => {
+    await toggle.click()
+    await page.waitForFunction(isShown)
+    await page.waitForTimeout(350)
+  }
 
-  // 1) แถบหัว
-  const head = await page.evaluate(() => {
-    const row = document.querySelector('header.md\\:hidden').firstElementChild
+  // 1) แถบหัว (หน้าเจ้าหน้าที่/แอดมินใช้ header.md:hidden · หน้าศูนย์ข้อมูลส่ง headerRow มาเอง)
+  const head = await page.evaluate(rowSelector => {
+    const row = rowSelector ? document.querySelector(rowSelector) : document.querySelector('header.md\\:hidden').firstElementChild
     const btn = document.querySelector('button[aria-label="เปิดเมนู"]').getBoundingClientRect()
     const name = row.querySelector('p.truncate')
+    const shown = [...row.children].filter(k => k.getBoundingClientRect().width > 0)
     return {
       btn: [btn.width, btn.height],
       overflowX: document.documentElement.scrollWidth - innerWidth,
       rowOverflow: row.scrollWidth - row.clientWidth,
-      kidsOutside: [...row.children].filter(k => k.getBoundingClientRect().width > 0 && k.getBoundingClientRect().right > innerWidth).length,
-      nameTruncated: name.scrollWidth > name.clientWidth + 1,
+      kidsOutside: shown.filter(k => k.getBoundingClientRect().right > innerWidth).length,
+      // กระดิ่ง/ปุ่มท้ายแถวห้ามหล่นลงบรรทัดใหม่ (แถวของหน้าศูนย์ข้อมูลเป็น flex-wrap)
+      wrapped: Math.abs(shown[0].getBoundingClientRect().top - shown.at(-1).getBoundingClientRect().top) > 20,
+      nameTruncated: name ? name.scrollWidth > name.clientWidth + 1 : false,
     }
-  })
+  }, portal.headerRow ?? null)
   assert.ok(head.btn[0] >= MIN_TAP && head.btn[1] >= MIN_TAP, `${where}: ปุ่ม ☰ เล็กกว่า ${MIN_TAP}px (${head.btn.map(Math.round).join('×')})`)
   assert.ok(head.overflowX <= 1 && head.rowOverflow <= 1 && head.kidsOutside === 0, `${where}: แถบหัวล้นขอบจอ`)
-  assert.equal(head.nameTruncated, false, `${where}: ชื่อ อปท. บนแถบหัวถูกตัด — แถบหัวแน่นเกินไป`)
+  assert.equal(head.wrapped, false, `${where}: แถบหัวแน่นจนปุ่มท้ายแถวหล่นลงบรรทัดใหม่`)
+  if (!portal.nameMayWrap) assert.equal(head.nameTruncated, false, `${where}: ชื่อ อปท. บนแถบหัวถูกตัด — แถบหัวแน่นเกินไป`)
 
   // 2) ปิดอยู่
   let s = await page.evaluate(drawerState)
@@ -148,9 +197,7 @@ async function checkPortal(page, baseUrl, auth, portal, width) {
   assert.equal((await page.evaluate(drawerState)).focusInside, false, `${where}: โฟกัสเข้าไปในลิ้นชักที่ปิดอยู่`)
 
   // 3) เปิด
-  await toggle.click()
-  await page.waitForFunction(isShown)
-  await page.waitForTimeout(350)
+  await openDrawer()
   s = await page.evaluate(drawerState)
   assert.ok(s.visible && s.left >= -1 && s.left <= 1, `${where}: ลิ้นชักไม่เลื่อนเข้ามาชิดขอบซ้าย (left=${Math.round(s.left)})`)
   assert.ok(s.width <= Math.min(width * 0.86, 320) + 1, `${where}: ลิ้นชักกว้าง ${Math.round(s.width)}px เกิน min(86vw, 320px)`)
@@ -161,7 +208,7 @@ async function checkPortal(page, baseUrl, auth, portal, width) {
   const small = s.items.filter(i => i.height < MIN_TAP)
   assert.deepEqual(small.map(i => `${i.key} ${Math.round(i.height)}px`), [], `${where}: ปุ่มในลิ้นชักเล็กกว่า ${MIN_TAP}px`)
   assert.equal(s.items[0]?.key, portal.homeKey, `${where}: รายการแรกต้องเป็นหน้าหลักของพอร์ทัล (${portal.homeKey})`)
-  assert.equal(s.items[0]?.current, 'page', `${where}: อยู่หน้าหลัก รายการหน้าหลักต้องมี aria-current`)
+  assert.equal(s.items[0]?.current ?? null, portal.homeActive === false ? null : 'page', `${where}: aria-current ของรายการแรกไม่ถูกต้อง (ตอนอยู่หน้าหลัก)`)
   assert.ok(await page.locator('a[data-drawer-user][href="/profile"]').count(), `${where}: ไม่มีชิปผู้ใช้ที่ลิงก์ไปหน้าโปรไฟล์`)
   // ภาพหน้าจอ: ปิดชื่อผู้ใช้ไว้ (เป็นบัญชีทดสอบ แต่กติกาคือไม่เก็บชื่อลงภาพ)
   await page.evaluate(() => document.querySelectorAll('[data-drawer-user] span.truncate').forEach(e => { e.style.color = 'transparent' }))
@@ -192,7 +239,8 @@ async function checkPortal(page, baseUrl, auth, portal, width) {
   const other = await portal.otherMenu(page)
   const extra = moduleItems.length - other.length
   assert.ok(extra >= 0 && extra <= 1, `${where}: จำนวนรายการลิ้นชัก (${moduleItems.length}) ต่างจากหน้าเมนูอีกแบบ (${other.length}) เกินทางลัดเพิ่ม 1 รายการ`)
-  const drawerModules = moduleItems.slice(extra) // ทางลัดเพิ่ม (ถ้ามี) อยู่ใต้หน้าหลักก่อนกลุ่มโมดูลเสมอ
+  // ทางลัดเพิ่ม (ถ้ามี): ปกติอยู่ใต้หน้าหลักก่อนกลุ่มโมดูล (แอดมิน → แดชบอร์ดเจ้าหน้าที่) · extraAt 'end' = ต่อท้ายสุด (ศูนย์ข้อมูล → เลือกหมวดหมู่)
+  const drawerModules = portal.extraAt === 'end' ? moduleItems.slice(0, other.length) : moduleItems.slice(extra)
   assert.deepEqual(drawerModules.map(i => i.label), other.map(i => i.label), `${where}: ลำดับ/ชื่อเมนูในลิ้นชักไม่ตรงกับหน้าเมนูอีกแบบ`)
   drawerModules.forEach((d, i) => assert.equal(d.badge, other[i].badge, `${where}: ตัวเลขของ "${d.label}" ลิ้นชัก (${d.badge}) ไม่ตรงอีกแบบ (${other[i].badge})`))
 
@@ -208,16 +256,20 @@ async function checkPortal(page, baseUrl, auth, portal, width) {
   await page.waitForFunction(isShown)
   await page.locator(`[data-drawer-item="${portal.pick.key}"]`).click()
   await page.waitForFunction(isHidden)
-  await page.getByRole('heading', { name: portal.pick.heading, exact: true }).first().waitFor({ timeout: 20_000 })
+  // เปิดโมดูลถูกตัว: หน้าส่วนใหญ่ดูจาก heading ของโมดูล · หน้าที่ไม่มี heading ต่างกันส่ง verify มาเอง
+  if (portal.pick.verify) await portal.pick.verify(page)
+  else await page.getByRole('heading', { name: portal.pick.heading, exact: true }).first().waitFor({ timeout: 20_000 })
   await toggle.click()
   await page.waitForFunction(isShown)
   s = await page.evaluate(drawerState)
-  assert.equal(s.items.find(i => i.key === portal.pick.key)?.current, 'page', `${where}: อยู่หน้า${portal.pick.heading} รายการนั้นต้องมี aria-current`)
-  assert.equal(s.items.find(i => i.key === portal.homeKey)?.current ?? null, null, `${where}: อยู่หน้า${portal.pick.heading} รายการหน้าหลักต้องไม่ไฮไลต์`)
+  assert.equal(s.items.find(i => i.key === portal.pick.key)?.current, 'page', `${where}: อยู่ในโมดูล ${portal.pick.key} รายการนั้นต้องมี aria-current`)
+  assert.equal(s.items.find(i => i.key === portal.homeKey)?.current ?? null, null, `${where}: อยู่ในโมดูล ${portal.pick.key} รายการหน้าหลักต้องไม่ไฮไลต์`)
   await page.keyboard.press('Escape')
   // ปิดแล้วต้องซ่อนจริงภายใน 3 วิ (ซ่อนหลังเลื่อนออกสุด 200ms — ตรวจทันทีจะเห็นว่ายังเปิดอยู่)
   await page.waitForFunction(isHidden, null, { timeout: 3_000 })
     .catch(() => { throw new Error(`${where}: ลิ้นชักไม่ซ่อนหลังปิด`) })
+  // ปุ่มพิเศษเฉพาะหน้า (ทดสอบท้ายสุดเพราะบางอันพาออกนอกหน้า)
+  if (portal.specialChecks) await portal.specialChecks(page, where, { openDrawer, isHidden })
   return `${s.items.length} รายการ · กว้าง ${Math.round(s.width)}px · ปุ่มเล็กสุด ${Math.round(Math.min(...s.items.map(i => i.height)))}px`
 }
 
