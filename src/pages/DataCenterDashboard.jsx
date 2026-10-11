@@ -7,7 +7,7 @@ import { useNotifications } from '../contexts/NotificationsContext'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
 import UserProfileBadge from '../components/layout/UserProfileBadge'
 import MobileCategorySheet from '../components/datacenter/MobileCategorySheet'
-import PortalDrawer from '../components/common/PortalDrawer'
+import PortalDrawer, { GroupLabel } from '../components/common/PortalDrawer'
 import { DEFAULT_STALE_DAYS, scoreTone } from '../lib/dataCenterHealth'
 
 const DataCenterOverview = lazy(() => import('../components/datacenter/DataCenterOverview'))
@@ -226,11 +226,10 @@ export default function DataCenterDashboard() {
     if (key === 'map') setMapFocus(null)
   }
 
-  // กดเมนูในลิ้นชักมือถือ: กลับแดชบอร์ดเจ้าหน้าที่ · เปิดแผ่นเลือกหมวด (ตัวเดียวกับปุ่ม "หมวดหมู่" ในหน้าภาพรวม) · หรือเปิดโมดูล
+  // กดเมนูในลิ้นชักมือถือ: กลับแดชบอร์ดเจ้าหน้าที่ หรือเปิดโมดูล (ทรีหมวดหมู่จัดการเองใน renderCategoryRows)
   function openFromDrawer(item) {
     setDrawerOpen(false)
     if (item.key === 'back-to-staff') handleBackToStaff()
-    else if (item.key === 'category-sheet') setShowMobileCategorySheet(true)
     else openModule(item.key)
   }
 
@@ -284,6 +283,83 @@ export default function DataCenterDashboard() {
   const isMapModule = activeModule === 'map'
   const isManager = profile?.role === 'admin' || profile?.role === 'superadmin'
   const MODULES = isManager ? [...BASE_MODULES, CATEGORY_MANAGER_MODULE] : BASE_MODULES
+  const categoryTotal = categoryTree.reduce((acc, g) => acc + g.total, 0)
+
+  // แถวทรี "หมวดหมู่ข้อมูล" ใช้ร่วมเมนูซ้าย PC (touch=false) กับลิ้นชักมือถือ (touch=true) — สถานะกาง/พับและตัวกรองเป็นชุดเดียวกัน
+  // touch: แถว/ปุ่มสูง 44px ให้นิ้วจิ้มได้ และปิดลิ้นชักหลังเลือกปลายทาง (กาง/พับไม่ปิด ผู้ใช้ยังเลือกต่อได้)
+  // PC ใช้คลาสเดิมทุกตัวไม่เปลี่ยน
+  function renderCategoryRows(touch) {
+    const sz = touch
+      ? { toggle: 'flex h-11 w-11 shrink-0 items-center justify-center', row: 'min-h-11 text-[13px]', catPad: 'pl-9', add: 'flex h-11 w-11 shrink-0 items-center justify-center' }
+      : { toggle: 'shrink-0 p-1.5 pl-2', row: 'min-h-9 text-xs', catPad: 'pl-7', add: 'shrink-0 p-1 mr-1.5' }
+    const done = fn => () => { fn(); if (touch) setDrawerOpen(false) }
+    return categoryTree.map(({ group, total, categories }) => {
+      const isGroupActive = activeModule === 'overview' && sidebarFilter.group === group && !sidebarFilter.category
+      const isExpanded = isSidebarGroupExpanded(group)
+      return (
+        <div key={group} className="mb-1">
+          <div className={`group flex items-center rounded-lg transition-all ${
+            isGroupActive
+              ? 'bg-white/20 text-white shadow-sm'
+              : 'hover:bg-white/10'
+          }`}>
+            <button type="button" onClick={() => toggleGroupExpand(group)} data-cat-toggle={group}
+              aria-label={isExpanded ? `ยุบกลุ่ม ${group}` : `กางกลุ่ม ${group}`}
+              aria-expanded={isExpanded}
+              className={`${sz.toggle} text-white/55 hover:text-white transition-colors`}>
+              <ChevronRight size={touch ? 16 : 13} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+            </button>
+            <button type="button" data-cat-group={group} aria-current={isGroupActive ? 'true' : undefined}
+              onClick={done(() => {
+                goToCategory(group, null)
+                setGroupExpandOverrides(prev => { if (prev.get(group) === true) return prev; const next = new Map(prev); next.set(group, true); return next })
+              })}
+              className={`flex-1 min-w-0 flex ${sz.row} items-center justify-between gap-2 py-1.5 font-semibold text-left transition-colors ${
+                isGroupActive
+                  ? 'text-white'
+                  : 'text-white/80 hover:text-white'
+              }`}>
+              <span className="break-words">{group}</span>
+              <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/70">{total}</span>
+            </button>
+            <button type="button" onClick={done(() => goToAddEntry(group, null))} data-cat-add={group}
+              aria-label={`เพิ่มข้อมูลในกลุ่ม ${group}`} title={`เพิ่มข้อมูลในกลุ่ม ${group}`}
+              className={`${sz.add} rounded-lg text-white/45 group-hover:text-white hover:bg-white/10 transition-colors`}>
+              <Plus size={touch ? 16 : 13} />
+            </button>
+          </div>
+
+          {isExpanded && categories.map(({ category, count }) => {
+            const isCatActive = activeModule === 'overview' && sidebarFilter.group === group && sidebarFilter.category === category
+            return (
+              <div key={category}
+                className={`group flex items-center rounded-lg transition-all ${
+                  isCatActive
+                    ? 'bg-white/20 text-white shadow-sm'
+                    : 'hover:bg-white/10'
+                }`}>
+                <button type="button" onClick={done(() => goToCategory(group, category))} data-cat-category={category}
+                  aria-current={isCatActive ? 'true' : undefined}
+                  className={`flex-1 min-w-0 flex ${sz.row} items-center justify-between gap-2 ${sz.catPad} py-1.5 text-left transition-colors ${
+                    isCatActive
+                      ? 'text-white font-semibold'
+                      : 'text-white/60 group-hover:text-white'
+                  }`}>
+                  <span className="break-words">{category}</span>
+                  <span className="shrink-0 text-[10px] text-white/50">{count}</span>
+                </button>
+                <button type="button" onClick={done(() => goToAddEntry(group, category))} data-cat-add={`${group}/${category}`}
+                  aria-label={`เพิ่มข้อมูลในประเภท ${category}`} title={`เพิ่มข้อมูลในประเภท ${category}`}
+                  className={`${sz.add} rounded-md text-white/40 group-hover:text-white hover:bg-white/10 transition-colors`}>
+                  <Plus size={touch ? 15 : 12} />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )
+    })
+  }
 
   return (
     <div className={`min-h-screen flex flex-col ${isLight ? 'bg-[#eef2f7] text-slate-800' : 'bg-[#070a12] text-slate-100'}`}>
@@ -334,17 +410,19 @@ export default function DataCenterDashboard() {
       </header>
 
       {/* ลิ้นชักเมนูซ้ายบนมือถือ — ตรงกับเมนูซ้าย PC ของหน้านี้: กลับแดชบอร์ดเจ้าหน้าที่ · โมดูลของศูนย์ข้อมูล · ทรีหมวดหมู่
-          (ทรีมีรายการเยอะและกางพับได้ ใช้แผ่นเลือกหมวดเดิมแทนการยัดทรีลงลิ้นชัก) */}
+          (ทรีกาง/พับและกรองด้วยสถานะชุดเดียวกับเมนูซ้าย PC · แผ่นเลือกหมวดเดิมยังเปิดได้จากปุ่ม "หมวดหมู่" ในหน้าภาพรวม) */}
       <PortalDrawer open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="ระบบเจ้าหน้าที่"
         ariaLabel="เมนูศูนย์รวมข้อมูลดิจิทัล" homeGroupLabel="ระบบเจ้าหน้าที่"
         homeItem={{ key: 'back-to-staff', label: 'กลับแดชบอร์ดเจ้าหน้าที่', Icon: ArrowLeft }}
-        groups={[
-          { group: 'ศูนย์รวมข้อมูลดิจิทัล', items: MODULES },
-          ...(categoryTree.length > 0
-            ? [{ group: 'หมวดหมู่ข้อมูล', items: [{ key: 'category-sheet', label: 'เลือกหมวดหมู่และประเภท', Icon: Tags }] }]
-            : []),
-        ]}
-        activeKey={activeModule} onSelect={openFromDrawer} />
+        groups={[{ group: 'ศูนย์รวมข้อมูลดิจิทัล', items: MODULES }]}
+        activeKey={activeModule} onSelect={openFromDrawer}>
+        {categoryTree.length > 0 && (
+          <div data-drawer-category-tree>
+            <GroupLabel count={categoryTotal}>หมวดหมู่ข้อมูล</GroupLabel>
+            {renderCategoryRows(true)}
+          </div>
+        )}
+      </PortalDrawer>
 
       {/* Mobile Category Sheet — เวอร์ชันมือถือของทรี "หมวดหมู่ข้อมูล" ในเมนูซ้าย desktop */}
       {showMobileCategorySheet && (
@@ -386,75 +464,11 @@ export default function DataCenterDashboard() {
                   <div className="px-3 pb-2 flex items-center justify-between">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-white/55">หมวดหมู่ข้อมูล</p>
                     <span className="text-[10px] font-semibold bg-white/10 text-white/80 px-1.5 py-0.5 rounded-full">
-                      {categoryTree.reduce((acc, g) => acc + g.total, 0)}
+                      {categoryTotal}
                     </span>
                   </div>
 
-                  {categoryTree.map(({ group, total, categories }) => {
-                    const isGroupActive = activeModule === 'overview' && sidebarFilter.group === group && !sidebarFilter.category
-                    const isExpanded = isSidebarGroupExpanded(group)
-                    return (
-                      <div key={group} className="mb-1">
-                        <div className={`group flex items-center rounded-lg transition-all ${
-                          isGroupActive
-                            ? 'bg-white/20 text-white shadow-sm'
-                            : 'hover:bg-white/10'
-                        }`}>
-                          <button type="button" onClick={() => toggleGroupExpand(group)}
-                            aria-label={isExpanded ? `ยุบกลุ่ม ${group}` : `กางกลุ่ม ${group}`}
-                            aria-expanded={isExpanded}
-                            className="shrink-0 p-1.5 pl-2 text-white/55 hover:text-white transition-colors">
-                            <ChevronRight size={13} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                          </button>
-                          <button type="button"
-                            onClick={() => {
-                              goToCategory(group, null)
-                              setGroupExpandOverrides(prev => { if (prev.get(group) === true) return prev; const next = new Map(prev); next.set(group, true); return next })
-                            }}
-                            className={`flex-1 min-w-0 flex min-h-9 items-center justify-between gap-2 py-1.5 text-xs font-semibold text-left transition-colors ${
-                              isGroupActive
-                                ? 'text-white'
-                                : 'text-white/80 hover:text-white'
-                            }`}>
-                            <span className="break-words">{group}</span>
-                            <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/70">{total}</span>
-                          </button>
-                          <button type="button" onClick={() => goToAddEntry(group, null)}
-                            aria-label={`เพิ่มข้อมูลในกลุ่ม ${group}`} title={`เพิ่มข้อมูลในกลุ่ม ${group}`}
-                            className="shrink-0 p-1 mr-1.5 rounded-lg text-white/45 group-hover:text-white hover:bg-white/10 transition-colors">
-                            <Plus size={13} />
-                          </button>
-                        </div>
-
-                        {isExpanded && categories.map(({ category, count }) => {
-                          const isCatActive = activeModule === 'overview' && sidebarFilter.group === group && sidebarFilter.category === category
-                          return (
-                            <div key={category}
-                              className={`group flex items-center rounded-lg transition-all ${
-                                isCatActive
-                                  ? 'bg-white/20 text-white shadow-sm'
-                                  : 'hover:bg-white/10'
-                              }`}>
-                              <button type="button" onClick={() => goToCategory(group, category)}
-                                className={`flex-1 min-w-0 flex min-h-9 items-center justify-between gap-2 pl-7 py-1.5 text-xs text-left transition-colors ${
-                                  isCatActive
-                                    ? 'text-white font-semibold'
-                                    : 'text-white/60 group-hover:text-white'
-                                }`}>
-                                <span className="break-words">{category}</span>
-                                <span className="shrink-0 text-[10px] text-white/50">{count}</span>
-                              </button>
-                              <button type="button" onClick={() => goToAddEntry(group, category)}
-                                aria-label={`เพิ่มข้อมูลในประเภท ${category}`} title={`เพิ่มข้อมูลในประเภท ${category}`}
-                                className="shrink-0 p-1 mr-1.5 rounded-md text-white/40 group-hover:text-white hover:bg-white/10 transition-colors">
-                                <Plus size={12} />
-                              </button>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )
-                  })}
+                  {renderCategoryRows(false)}
                 </div>
               )}
             </nav>
