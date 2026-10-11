@@ -16,7 +16,7 @@ import { buildCommunityRequestFormHtml, buildCommunityForwardLetterHtml } from '
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import { resolvePatientRequestSignatories } from '../lib/patientRequestSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
-import { TRIP_STATUS, WORKSPACE_ROW_LIMIT, workspaceTruncated, dayPending, thaiDayAfter, buttonClass, primaryClass, clockOf, driverSteps, joinCandidates, pickupForBooking, isCommunity, bookingName, bookingLetterMoment, servicePeriodReport } from '../lib/patientBooking'
+import { TRIP_STATUS, WORKSPACE_ROW_LIMIT, workspaceTruncated, dayPending, thaiDayAfter, buttonClass, primaryClass, driverSteps, joinCandidates, isCommunity, bookingName, bookingLetterMoment, servicePeriodReport } from '../lib/patientBooking'
 
 /**
  * หน้าทำงานของเจ้าหน้าที่ — คำขอรถ · ปฏิทิน · งานคนขับ · รายงาน · ตั้งค่า
@@ -102,36 +102,34 @@ export default function PatientTransportStaff({ onBack } = {}) {
       const plan = requested
         ? await call('patient_booking_preview_join', { p_booking: ids[0] })
         : await call('patient_booking_preview', { p_ids: ids, p_helper: helper })
-      if (plan.errors?.length) {
-        // ชนเที่ยวที่ยืนยันแล้ว: ลองแผน "ไปคันเดียวกัน" ไว้ก่อน (อ่านอย่างเดียว ไม่จองอะไร)
-        // ปุ่มแก้จะได้บอกเวลารถออกรับใหม่ของผู้เดินทางเดิมก่อนกด · ลองไม่ได้ก็ยังมีทางแก้อื่นครบ
-        const joins = []
-        if (!requested && plan.errors.includes('ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว')) {
-          for (const trip of joinCandidates(plan, workspace.trips, workspace.settings?.routes)) {
-            try {
-              const multi = ids.length > 1
-              joins.push({ trip, ids, plan: await call(multi ? 'patient_booking_preview_multiwave' : 'patient_booking_preview_into_trip',
-                multi ? { p_ids: ids, p_trip: trip.id } : { p_booking: ids[0], p_trip: trip.id }) })
+      const joins = []
+      if (!requested && !separate) {
+        // ตรวจเที่ยววันเดียวกันเพื่อเสนอแผน "ไปคันเดียวกัน" ไว้ก่อน (อ่านอย่างเดียว ไม่จองอะไร)
+        // ให้เจ้าหน้าที่เลือกการร่วมเที่ยวและประสานเวลารับเอง · ลองไม่ได้ก็ยังมีทางแก้อื่นครบ
+        for (const trip of joinCandidates(plan, workspace.trips, workspace.settings?.routes)) {
+          try {
+            const multi = ids.length > 1
+            joins.push({ trip, ids, plan: await call(multi ? 'patient_booking_preview_multiwave' : 'patient_booking_preview_into_trip',
+              multi ? { p_ids: ids, p_trip: trip.id } : { p_booking: ids[0], p_trip: trip.id }) })
+          }
+          catch (e) {
+            // A single rider with a different appointment also needs a second vehicle run.
+            if (ids.length === 1 && String(e.message).includes('รอบรับหลายรอบ')) {
+              try { joins.push({ trip, ids, plan: await call('patient_booking_preview_multiwave', { p_ids: ids, p_trip: trip.id }) }); continue }
+              catch (multiError) { joins.push({ trip, error: multiError.message || '', code: multiError.code }); continue }
             }
-            catch (e) {
-              // A single rider with a different appointment also needs a second vehicle run.
-              if (ids.length === 1 && String(e.message).includes('รอบรับหลายรอบ')) {
-                try { joins.push({ trip, ids, plan: await call('patient_booking_preview_multiwave', { p_ids: ids, p_trip: trip.id }) }); continue }
-                catch (multiError) { joins.push({ trip, error: multiError.message || '', code: multiError.code }); continue }
-              }
-              joins.push({ trip, error: e.message || '', code: e.code })
-            }
+            joins.push({ trip, error: e.message || '', code: e.code })
           }
         }
-        return { ids, plan, joins }
       }
+      if (plan.errors?.length || joins.some(option => option.plan && !option.plan.errors?.length)) return { ids, plan, joins, helper }
       if (requested) await call('patient_booking_confirm_join', { p_op: op(JSON.stringify(plan)), p_booking: ids[0], p_expected: plan })
       else await call('patient_booking_confirm', { p_id: op(JSON.stringify({ ids, plan, helper })), p_ids: ids, p_expected: plan, p_helper: helper })
       return { ids, plan, confirmed: true }
-    }, out => out?.confirmed ? `ยืนยันรถแล้ว · ${names} · รถมารับประมาณ ${clockOf(out.plan.pickup_at)} น. ผู้จองและคนขับเห็นในระบบแล้ว` : '')
+    }, out => out?.confirmed ? `ยืนยันรถแล้ว · ${names} · กรุณาประสานและแจ้งเวลารับ ผู้จองและคนขับเห็นสถานะในระบบแล้ว` : '')
   }
-  // ชนคิว → ให้ไปคันเดียวกับเที่ยวที่ยืนยันแล้ว (20260921120000) ฐานข้อมูลคำนวณแผนซ้ำใต้ล็อก
-  // แผนเปลี่ยนระหว่างทาง = ปฏิเสธทั้งก้อน · ระบบแจ้งเวลาใหม่ให้ผู้เดินทางทุกคนและคนขับเอง
+  // เจ้าหน้าที่เลือกให้ไปคันเดียวกับเที่ยวที่ยืนยันแล้ว (20260921120000) ฐานข้อมูลคำนวณแผนซ้ำใต้ล็อก
+  // แผนเปลี่ยนระหว่างทาง = ปฏิเสธทั้งก้อน · เจ้าหน้าที่ประสานเวลารับ ผู้เกี่ยวข้องเห็นการร่วมเที่ยวในระบบ
   // ⚠️ ความยินยอม "นั่งร่วมกับผู้ป่วยอื่น" ของทุกคนในเที่ยวยังบังคับที่ฐานข้อมูล เจ้าหน้าที่ข้ามไม่ได้
   function joinIntoTrip(bookings, trip, plan) {
     const ids = bookings.map(b => b.id)
@@ -140,7 +138,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
     return task(async call => {
       await call(multi ? 'patient_booking_confirm_multiwave' : 'patient_booking_confirm_into_trip', { ...args, p_op: op(JSON.stringify(args)) })
       return { joined: true }
-    }, `ยืนยันรถแล้ว · ${bookings.map(b => b.patient_name).join(', ')} · ${multi ? 'จัดรถรับหลายรอบ' : 'ไปคันเดียวกับเที่ยวเดิม'} · รถมารับ ${bookings.map(b => clockOf(pickupForBooking({ plan }, b))).join(', ')} น. ระบบแจ้งทุกคนแล้ว`)
+    }, `ยืนยันรถแล้ว · ${bookings.map(b => b.patient_name).join(', ')} · ${multi ? 'จัดรถรับหลายรอบ' : 'ไปคันเดียวกับเที่ยวเดิม'} · กรุณาประสานและแจ้งเวลารับ ระบบแจ้งสถานะทุกคนแล้ว`)
   }
   // นำผู้เดินทางออกจากเที่ยว — ถ้าเป็นคนสุดท้ายและรถยังไม่ออก คืนคิวเที่ยวที่ว่างแล้วให้ในรอบเดียวกัน
   // ไม่งั้นเที่ยวว่างค้างกันเวลารถไว้ และกล่องคำขอรถมองไม่เห็นเพราะไม่เหลือคำขอในเที่ยวนั้น

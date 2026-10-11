@@ -7,7 +7,7 @@ import { ListCard, Pager, Pills, SectionBand, Sheet } from './StaffShell'
 import { MONTHS_TH, thaiDateFromDateInput } from '../../lib/thaiDate'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
-import { SECTION_TONES, loadPageSize, paginate, savePageSize, BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousDayOdometer, dayRecorded, dayDistance, dayPending, thaiDayAfter, pickupForBooking, returnForBooking, reportEvent, bookingLetter, bookingName, bookingTravel, serviceLabel, isCommunity, servicePeriodReport, isOtherPlace, cleanPlaceName, OTHER_PLACE_MAX } from '../../lib/patientBooking'
+import { SECTION_TONES, loadPageSize, paginate, savePageSize, BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousDayOdometer, dayRecorded, dayDistance, dayPending, thaiDayAfter, returnForBooking, pickupLabel, tripOrderTime, reportEvent, bookingLetter, bookingName, bookingTravel, serviceLabel, isCommunity, servicePeriodReport, isOtherPlace, cleanPlaceName, OTHER_PLACE_MAX } from '../../lib/patientBooking'
 
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
 const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
@@ -60,7 +60,7 @@ export function BookingCards({ bookings, allBookings = bookings, trips, onAction
       {step === 1 && <p className="rounded-xl bg-amber-50 p-3">รอเจ้าหน้าที่ยืนยันรถ · ยังไม่ได้กันที่นั่งให้</p>}
       {step === 4 && <p className="rounded-xl bg-emerald-50 p-3">เดินทางเสร็จแล้ว ขอบคุณที่ใช้บริการ</p>}
       {b.requested_trip_id && b.status === 'submitted' && <p className="font-semibold text-sky-800">ขอร่วมเที่ยว รอเจ้าหน้าที่ตรวจยืนยัน</p>}
-      {trip && <div className="my-3 rounded-xl bg-sky-50 p-3"><strong>{TRIP_STATUS[trip.state]}</strong><p>รถจะมารับคุณประมาณ {dateTime(pickupForBooking(trip, b))}</p>{trip.public_notice === 'delayed' && <p className="font-semibold text-amber-800">รถล่าช้า · กรุณาตรวจเวลาล่าสุด</p>}{trip.public_notice === 'contact' && <p className="font-semibold text-amber-800">กรุณาติดต่อเจ้าหน้าที่ก่อนเดินทาง</p>}{b.return_mode !== 'one_way' && <p>รับกลับประมาณ {dateTime(returnForBooking(trip, b))} (อาจปรับตามเวลาจริง)</p>}<p className="text-sm">{RETURN_MODES[b.return_mode]} · {isCommunity(b) ? bookingTravel(b) : MOBILITY[b.mobility]}{!isCommunity(b) && b.companions ? ` · ผู้ติดตาม ${b.companions} คน` : ''}</p></div>}
+      {trip && <div className="my-3 rounded-xl bg-sky-50 p-3"><strong>{TRIP_STATUS[trip.state]}</strong><p>{pickupLabel(trip, true)}</p>{trip.public_notice === 'delayed' && <p className="font-semibold text-amber-800">รถล่าช้า · กรุณาตรวจเวลาล่าสุด</p>}{trip.public_notice === 'contact' && <p className="font-semibold text-amber-800">กรุณาติดต่อเจ้าหน้าที่ก่อนเดินทาง</p>}{b.return_mode !== 'one_way' && <p>รับกลับประมาณ {dateTime(returnForBooking(trip, b))} (อาจปรับตามเวลาจริง)</p>}<p className="text-sm">{RETURN_MODES[b.return_mode]} · {isCommunity(b) ? bookingTravel(b) : MOBILITY[b.mobility]}{!isCommunity(b) && b.companions ? ` · ผู้ติดตาม ${b.companions} คน` : ''}</p></div>}
       {/* เหตุผลที่เจ้าหน้าที่บันทึกตอนกดยกเลิก — ของเดิมขึ้นแค่ป้าย “ยกเลิกแล้ว” ผู้จองต้องโทรถามเองว่าทำไมไม่ได้รถ
           ฐานข้อมูลส่ง cancel_note มาเฉพาะคำขอที่ถูกยกเลิกและมีเหตุผลที่เจ้าหน้าที่เขียนไว้ (20260922130000) */}
       {b.status === 'cancelled' && b.cancel_note && <p className="my-2 rounded-xl bg-amber-50 p-3"><strong>เจ้าหน้าที่แจ้งเหตุผลที่ยกเลิก</strong><br />{b.cancel_note}</p>}
@@ -171,7 +171,7 @@ export function QueueReport({ workspace, busy, onPeriodReport }) {
         <p className="mb-3 text-sm text-slate-600">หนึ่งเที่ยวอาจมีผู้เดินทางหลายคน · คำขอที่ยังรอยืนยันรถยังไม่นับเป็นเที่ยว</p>
         {!trips.length && <p className="rounded-xl bg-slate-50 p-4 text-slate-600">ไม่มีเที่ยวรถในช่วงที่เลือก ลองเลือกช่วงอื่น</p>}
         <div className="space-y-3">{trips.slice((visibleTripPage - 1) * 20, visibleTripPage * 20).map(t => <article key={t.trip_id} data-report-trip className="rounded-xl border border-slate-200 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold">{thaiDateFromDateInput(t.date)} · รับประมาณ {clockOf(t.pickup_at) || 'ยังไม่ระบุ'}</h4><span className={`rounded-full px-3 py-1 text-xs font-bold ${t.state === 'completed' ? 'bg-emerald-100 text-emerald-900' : t.state === 'issue' ? 'bg-rose-100 text-rose-800' : 'bg-sky-100 text-sky-900'}`}>{TRIP_STATUS[t.state] || 'รอตรวจสถานะ'}</span></div>
+          <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold">{thaiDateFromDateInput(t.date)}</h4><span className={`rounded-full px-3 py-1 text-xs font-bold ${t.state === 'completed' ? 'bg-emerald-100 text-emerald-900' : t.state === 'issue' ? 'bg-rose-100 text-rose-800' : 'bg-sky-100 text-sky-900'}`}>{TRIP_STATUS[t.state] || 'รอตรวจสถานะ'}</span></div>
           <p className="mt-1 break-words font-semibold text-sky-900">{serviceLabel(t)} · {t.route_label || 'ยังไม่ระบุสถานที่'}</p>
           <div className="mt-2 grid gap-1 text-sm sm:grid-cols-2"><p>คำขอ {t.request_count ?? t.passengers} รายการ · ผู้เดินทางทั้งหมด {t.people ?? t.passengers + t.companions} คน{!isCommunity(t) && ` · ผู้ติดตาม ${t.companions} คน`}</p><p>คนขับ: {t.driver_name || 'ยังไม่ระบุ'}</p>{reportDays ? <p>ระยะทางทั้งวัน: {dayRecorded(dayOfTrip(t)) ? `${dayDistance(dayOfTrip(t)).toLocaleString('th-TH')} กม. (รวมทุกเที่ยวของวันนั้น)` : dayOfTrip(t)?.odometer_issue ? 'รอตรวจสอบ' : 'ยังไม่บันทึกเลขไมล์ปิดวัน'}</p>
             : <p>ระยะทาง: {t.odometer_issue ? 'มาตรวัดผิดปกติ' : t.distance == null ? 'ยังไม่บันทึกครบ' : `${t.distance.toLocaleString('th-TH')} กม.`}</p>}<p className="text-slate-500">เที่ยวรถเลขที่ {t.trip_id.slice(0, 8).toUpperCase()}</p></div>
@@ -268,23 +268,22 @@ function IssueReport({ busy, contactPhone, onReport, community = false }) {
 function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance, onAction, driverAssignment, canOperate = true, bare = false }) {
   const people = bookings.filter(b => b.trip_id === t.id && b.status !== 'cancelled')
   const label = driverNext(t, bookings)
-  const pickupAt = t.estimated_pickup_at || t.plan?.pickup_at
   const backAt = t.estimated_return_at || t.plan?.return_at
   // กลุ่มปลายทาง (20261007150000): เที่ยวเดียวแวะหลายปลายทาง / รับกลับหลายรอบได้โดยไม่ต้องเป็น multiwave
   // คนขับต้องเห็นว่าใครลงที่ไหน และใครกลับรอบไหน ไม่งั้นต้องโทรถามผู้จัดคิว
   const manyStops = new Set(people.map(b => b.route_id)).size > 1
   const manyRuns = !!t.plan?.multiwave || (t.plan?.return_waves?.length || 0) > 1
-  return <article data-trip={t.id} aria-label={`เที่ยว ${t.plan?.route_label} ${clockOf(pickupAt)} น.`} className={bare ? 'space-y-3' : `space-y-3 rounded-2xl border-2 bg-white p-4 ${upcoming ? 'border-slate-200' : 'border-sky-700'}`}>
+  return <article data-trip={t.id} aria-label={`เที่ยว ${t.plan?.route_label} ${pickupLabel(t)}`} className={bare ? 'space-y-3' : `space-y-3 rounded-2xl border-2 bg-white p-4 ${upcoming ? 'border-slate-200' : 'border-sky-700'}`}>
     {/* ป้ายสถานะอยู่บรรทัดบนสุด — วางข้างหัวการ์ดแล้วจอมือถือตัดเวลาและชื่อโรงพยาบาลขึ้นบรรทัดใหม่ */}
     <div className="space-y-0.5">
       <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${t.state === 'issue' ? 'bg-red-100 text-red-800' : 'bg-sky-100 text-sky-900'}`}>{TRIP_STATUS[t.state]}</span>
-      <p className="text-lg font-bold">{whenLabel(pickupAt)} · ออกรับ {clockOf(pickupAt)} น.</p>
+      <p className="text-lg font-bold">{whenLabel(tripOrderTime(t))} · {pickupLabel(t)}</p>
       <p className="font-semibold">🏥 {t.plan?.route_label}</p>
       <p className="text-sm">คนขับประจำเที่ยว: <strong>{t.driver_name || 'รอโหลดชื่อ'}</strong></p>
       <p className="text-sm text-slate-600">{RETURN_MODES[t.plan?.return_mode]}{t.plan?.return_mode !== 'one_way' && backAt ? ` · รับกลับประมาณ ${clockOf(backAt)} น.` : ''}</p>
       {manyRuns && <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">
         <strong>แผนวิ่งรถวันนี้</strong>
-        <ol className="mt-1 list-inside list-decimal">{t.plan.outbound_waves?.map((w, i) => <li key={`out-${i}`}>รับรอบ {i + 1} เริ่ม {clockOf(w.pickup_at)} น. · นัด {clockOf(w.appointment_start)}–{clockOf(w.appointment_end)} น.</li>)}</ol>
+        <ol className="mt-1 list-inside list-decimal">{t.plan.outbound_waves?.map((w, i) => <li key={`out-${i}`}>รอบ {i + 1} นัด {clockOf(w.appointment_start)}–{clockOf(w.appointment_end)} น.</li>)}</ol>
         <ol className="list-inside list-decimal">{t.plan.return_waves?.map((w, i) => <li key={`back-${i}`}>รับกลับรอบ {i + 1} ประมาณ {clockOf(w.return_start)} น.</li>)}</ol>
       </div>}
     </div>
@@ -293,9 +292,10 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
       const pin = Number.isFinite(b.pickup_lat) && Number.isFinite(b.pickup_lng) && Math.abs(b.pickup_lat) <= 90 && Math.abs(b.pickup_lng) <= 180
       return <li key={b.id} className="rounded-xl bg-slate-50 p-3">
         <p className="font-bold">{people.length > 1 ? `${index + 1}. ` : ''}{bookingName(b)}</p>
+        <p className="text-sm font-semibold text-sky-900">{isCommunity(b) ? 'ต้องถึง' : 'นัดแพทย์'} {dateTime(b.appointment_at)}</p>
         <p className="text-sm">{bookingTravel(b)}</p>
         {manyStops && <p className="text-sm font-semibold text-sky-900">ลงที่: {b.route_label}</p>}
-        {manyRuns && <p className="text-sm font-semibold text-sky-900">มารับประมาณ {clockOf(pickupForBooking(t, b))} น.{b.return_mode !== 'one_way' ? ` · รับกลับประมาณ ${clockOf(returnForBooking(t, b))} น.` : ''}</p>}
+        {manyRuns && <p className="text-sm font-semibold text-sky-900">{pickupLabel(t)}{b.return_mode !== 'one_way' ? ` · รับกลับประมาณ ${clockOf(returnForBooking(t, b))} น.` : ''}</p>}
         <p className="text-sm">จุดรับ: {pickupSentence(b.pickup)}</p>
         {b.cancel_requested && <p className="text-sm font-semibold text-amber-800">ผู้จองขอยกเลิก รอเจ้าหน้าที่ประสาน · ถ้าไม่ได้ขึ้นรถ กด “แจ้งเหตุขัดข้อง”</p>}
         {b.return_ready && ['outbound', 'hospital'].includes(t.state) && <p className="text-sm font-bold text-sky-800">🔔 แจ้งพร้อมให้รับกลับแล้ว</p>}
@@ -355,7 +355,7 @@ function DriverAssignment({ trips, people, busy, onReassign, onDone, batch = fal
     </select></label>
     {active && <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5" checked={handover} onChange={e => setHandover(e.target.checked)} />ประสานส่งมอบรถและผู้เดินทางระหว่างเที่ยวแล้ว</label>}
     {stale && <p role="alert">เที่ยวเปลี่ยนแล้ว กรุณาปิดฟอร์มและเปิดใหม่เพื่อตรวจข้อมูลล่าสุด</p>}
-    {many && <ul className="space-y-1 text-sm">{trips.map(t => <li key={t.id}>{clockOf(t.plan?.pickup_at)} น. · {t.plan?.route_label}</li>)}</ul>}
+    {many && <ul className="space-y-1 text-sm">{trips.map(t => <li key={t.id}>{pickupLabel(t)} · {t.plan?.route_label}</li>)}</ul>}
     {review ? <div className="space-y-2 rounded-lg bg-white p-3"><p>ยืนยันมอบหมาย <strong>{target?.name}</strong> ขับแทน {many ? `${trips.length} เที่ยวในวันนี้` : 'เที่ยวนี้'}?</p>
       <p className="text-sm">ระบบจะแจ้งผู้เกี่ยวข้อง เก็บชื่อคนขับเดิมในประวัติ และให้พิมพ์เอกสารใหม่</p>
       <button type="button" className={primaryClass} disabled={!target || busy || stale || (active && !handover)} onClick={async () => {
@@ -430,7 +430,7 @@ const DESK_SECTIONS = {
   done: { label: 'จบแล้ว', ...SECTION_TONES.done },
 }
 const deskSection = kind => kind === 'later' ? 'live' : kind === 'done' ? 'done' : 'action'
-const pickupOf = t => t.estimated_pickup_at || t.plan?.pickup_at
+const pickupOf = tripOrderTime
 const deskText = ({ trip: t, riders }) => [t.plan?.route_label, t.driver_name, t.helper_name, whenLabel(pickupOf(t)), dateTime(pickupOf(t)),
   ...riders.flatMap(b => [bookingName(b), b.phone, b.pickup])].join(' ').toLowerCase()
 
@@ -455,7 +455,7 @@ function reviewAdvance({ trip: t, riders }, label) {
   return window.confirm([
     `บันทึก “${label}” เที่ยวนี้หรือไม่?`, '',
     `• ${isCommunity(t.plan) ? 'สถานที่ชุมชน' : 'โรงพยาบาล'}: ${t.plan?.route_label || '—'}`,
-    `• ออกรับ: ${whenLabel(at)} ${clockOf(at)} น.`,
+    `• วันเดินทาง: ${whenLabel(at)} · ${pickupLabel(t)}`,
     `• ผู้เดินทาง: ${riders.map(b => bookingName(b)).join(', ') || '—'}`,
     `• คนขับ: ${t.driver_name || '—'}`,
     ...(t.state === 'confirmed' ? [] : ['', 'ระบบจะบันทึกว่าส่งผู้เดินทางครบทุกคนและรถกลับแล้ว ถ้ามีผู้เดินทางไม่ได้ขึ้นรถ ให้กด “ยกเลิก” แล้วคลิกแถวนี้เพื่อแจ้งเหตุขัดข้องแทน']),
@@ -554,7 +554,7 @@ function DriverDesk({ rows, workspace, odometer, pendingDays, dayNote, busy, err
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = shade}
                 onClick={() => setOpenId(t.id)}>
                 <td className={`${cell} text-center text-xs text-gray-500`} style={{ boxShadow: `inset 5px 0 0 ${DESK_SECTIONS[section].bar}` }}>{index + 1}</td>
-                <td className={`${cell} whitespace-nowrap text-center`}><span className="block font-semibold">{whenLabel(at)}</span><span className="block">ออกรับ {clockOf(at)} น.</span>{t.plan?.return_mode !== 'one_way' && back && <span className="block text-[11px] text-gray-500">รับกลับประมาณ {clockOf(back)} น.</span>}</td>
+                <td className={`${cell} whitespace-nowrap text-center`}><span className="block font-semibold">{whenLabel(at)}</span><span className="block text-sm">{isCommunity(t.plan) ? 'ต้องถึง' : 'นัดแรก'} {clockOf(t.plan?.appointment_at || t.plan?.outbound_waves?.[0]?.appointment_start || riders[0]?.appointment_at) || 'ยังไม่ทราบ'}</span><span className="block">{pickupLabel(t)}</span>{t.plan?.return_mode !== 'one_way' && back && <span className="block text-[11px] text-gray-500">รับกลับประมาณ {clockOf(back)} น.</span>}</td>
                 <td className={cell}><span className="block max-w-[220px] truncate font-semibold" title={t.plan?.route_label}>{t.plan?.route_label || '—'}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[t.plan?.return_mode]}{t.plan?.multiwave ? ' · รับหลายรอบ' : ''}</span></td>
                 <td className={cell}>{riders.length ? riders.map((b, i) => <span key={b.id} className={`block ${i ? 'mt-1.5' : ''}`}><span className="block font-semibold">{bookingName(b)}</span><span className="block text-[11px] text-gray-500">{bookingTravel(b)}</span></span>)
                   // ฐานข้อมูลไม่ส่งข้อมูลผู้เดินทางให้คนขับเมื่อเที่ยวจบแล้ว (patient_booking_workspace) — บอกเหตุ ไม่ใช่ขีดว่างเหมือนไม่มีคนนั่ง
@@ -583,7 +583,7 @@ function DriverDesk({ rows, workspace, odometer, pendingDays, dayNote, busy, err
       {['now', 'later'].includes(open.kind) && <DriverCard bare trip={open.trip} bookings={workspace.bookings} busy={busy} upcoming={open.kind === 'later'} canOperate={open.operate}
         contactPhone={contactPhone} onAdvance={onAdvance} onAction={onAction} driverAssignment={assignmentFor(open.trip)} />}
       {open.kind === 'done' && <article data-trip={open.trip.id} className="space-y-3">
-        <p className="text-sm">{dateTime(open.trip.plan?.pickup_at)} · คนขับ {open.trip.driver_name || '—'}</p>
+        <p className="text-sm">{pickupLabel(open.trip, true)} · คนขับ {open.trip.driver_name || '—'}</p>
         <DriverHistory trip={open.trip} />
         <DayOdometerOfTrip trip={open.trip} odometer={odometer} busy={busy} onSave={saveOdometer} />
       </article>}
@@ -617,7 +617,7 @@ export function DriverTrips({ workspace, uid, isAdmin, canAssign, busy, error, c
   const [assignment, setAssignment] = useState(null)
   const mine = workspace.trips.filter(t => canAssign || t.driver_id === uid)
   const canOperate = t => isAdmin || t.driver_id === uid
-  const byPickup = (a, b) => String(a.plan?.pickup_at || '').localeCompare(String(b.plan?.pickup_at || ''))
+  const byPickup = (a, b) => String(tripOrderTime(a)).localeCompare(String(tripOrderTime(b)))
   const today = thaiDay()
   const active = mine.filter(t => !['completed', 'cancelled'].includes(t.state)).sort(byPickup)
   const now = active.filter(t => t.state !== 'confirmed' || (t.plan?.date || today) <= today).sort((a, b) => Number(a.state === 'confirmed') - Number(b.state === 'confirmed') || byPickup(a, b))

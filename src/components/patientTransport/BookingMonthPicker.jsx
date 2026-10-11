@@ -1,4 +1,4 @@
-import { buttonClass, clockOf, DAY_BLOCKED, freeTimeChoices, destinationGroup } from '../../lib/patientBooking'
+import { buttonClass, pickupLabel, DAY_BLOCKED, freeTimeChoices, destinationGroup } from '../../lib/patientBooking'
 
 const date = value => new Date(`${value}T12:00:00+07:00`)
 const label = value => date(value).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' })
@@ -13,8 +13,8 @@ export default function BookingMonthPicker({ month, onMonth, days, selected, onS
     if (day.status !== 'open') return { text: day.status === 'closed' ? 'หยุด' : 'จองไม่ได้', style: 'bg-slate-100 text-slate-500' }
     if (!community && day.trips.some(t => t.joinable)) return { text: 'ร่วมได้', style: 'bg-sky-50 text-sky-900' }
     const available = (community ? info.community?.places || [] : info.routes || []).some(r => freeTimeChoices({ ...draft, service_type: serviceType, route_id: r.id, return_mode: 'one_way', back: '' }, info, day).length)
-    if (available) return { text: day.trips.length ? 'มีเที่ยว' : 'รถว่าง', style: 'bg-emerald-50 text-emerald-900' }
-    return { text: day.trips.length ? 'เต็ม' : 'ไม่มีเวลา', style: 'bg-rose-50 text-rose-900' }
+    if (available) return { text: day.trips.length ? 'มีเที่ยว' : 'จองได้', style: 'bg-emerald-50 text-emerald-900' }
+    return { text: 'ไม่มีเวลา', style: 'bg-rose-50 text-rose-900' }
   }
   const chosen = days.find(d => d.date === selected)
   return <div className="min-w-0 space-y-3">
@@ -32,8 +32,8 @@ export default function BookingMonthPicker({ month, onMonth, days, selected, onS
       </select></label>
     </div>
     <p className="font-semibold">{date(start).toLocaleDateString('th-TH', { month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' })}</p>
-    {loading && <p role="status">กำลังดูวันที่รถว่าง…</p>}
-    {failed && <div role="alert">ตรวจวันว่างไม่สำเร็จ <button type="button" className={buttonClass} onClick={onReload}>ลองใหม่</button></div>}
+    {loading && <p role="status">กำลังดูวันเปิดรับคำขอ…</p>}
+    {failed && <div role="alert">ตรวจวันเปิดรับคำขอไม่สำเร็จ <button type="button" className={buttonClass} onClick={onReload}>ลองใหม่</button></div>}
     <div className="hidden min-[440px]:grid grid-cols-7 gap-1 text-center text-xs" aria-hidden="true">{['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'].map(d => <span key={d}>{d}</span>)}</div>
     <div role="group" aria-label={community ? 'วันที่ไปกิจกรรมชุมชน' : 'วันที่ไปโรงพยาบาล'} className="grid grid-cols-4 min-[440px]:grid-cols-7 gap-1">
       {Array.from({ length: offset }, (_, i) => <span key={`blank-${i}`} className="hidden min-[440px]:block" />)}
@@ -52,7 +52,7 @@ export default function BookingMonthPicker({ month, onMonth, days, selected, onS
         </button>
       })}
     </div>
-    <p className="text-xs text-slate-600">เขียว: รถว่าง/มีเวลาว่าง · {!community && 'ฟ้า: ขอร่วมได้ · '}แดง: เต็ม · ตัวเลข “รอ”: คำขอที่เจ้าหน้าที่ยังไม่ยืนยัน</p>
+    <p className="text-xs text-slate-600">เขียว: เปิดรับคำขอ · {!community && 'ฟ้า: ขอร่วมได้ · '}แดง: ไม่มีเวลานัดให้เลือก · ตัวเลข “รอ”: คำขอที่เจ้าหน้าที่ยังไม่ยืนยัน</p>
     <p className="text-sm">จองล่วงหน้าได้ถึง {label(last)} · คำขอรอยืนยันยังไม่กันที่นั่ง ส่วนรายการเที่ยวด้านล่างเป็นเที่ยวที่ยืนยันแล้ว</p>
     <details><summary className="min-h-11 cursor-pointer py-2">เลือกวันอื่น</summary><label>{community ? 'วันที่ไปกิจกรรมชุมชน' : 'วันที่นัดแพทย์'}<input type="date" className="block min-h-11 w-full rounded-lg border px-2" min={first} max={last} value={selected} onChange={e => { if (e.target.value) onSelect(e.target.value) }} /></label></details>
     {chosen && <div className="space-y-3 rounded-xl bg-slate-50 p-3" aria-label="เที่ยวรถในวันที่เลือก">
@@ -65,8 +65,8 @@ export default function BookingMonthPicker({ month, onMonth, days, selected, onS
         const group = !community && t.joinable ? destinationGroup(info?.routes, t.route_id) : []
         return <article key={t.id} className="space-y-2 rounded-lg border bg-white p-3">
           <p className="font-semibold break-words">{t.route_label}</p>
-          <p className="text-sm">เริ่มรับ {clockOf(t.estimated_pickup_at || t.pickup_at)} น.{t.people != null && ` · ${t.people} คน · เหลือ ${t.remaining} ที่นั่ง`}</p>
-          <p className="text-sm">{community ? 'รถติดภารกิจ · งานชุมชนไม่ร่วมเที่ยว' : t.status === 'full' ? 'เที่ยวนี้เต็ม' : t.joinable ? 'เปิดให้ขอร่วมเที่ยว' : 'ไม่เปิดร่วมเที่ยว'}</p>
+          <p className="text-sm">{pickupLabel(t)}{t.people != null && ` · ${t.people} คน · เหลือ ${t.remaining} ที่นั่ง`}</p>
+          <p className="text-sm">{community ? 'งานชุมชนไม่เปิดร่วมเที่ยว' : t.status === 'full' ? 'เที่ยวนี้เต็ม' : t.joinable ? 'เปิดให้ขอร่วมเที่ยว' : 'ไม่เปิดร่วมเที่ยว'}</p>
           {group.length > 1 && <p className="text-sm break-words text-slate-700">ไปพร้อมกันได้: {group.map(r => r.label).join(' · ')}</p>}
           {!community && t.joinable && <button type="button" className={buttonClass} onClick={() => onJoin(t)}>ขอร่วมเที่ยวนี้</button>}
         </article>

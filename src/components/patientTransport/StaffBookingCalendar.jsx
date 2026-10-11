@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { pickupSentence } from '../../lib/pickupText'
-import { BOOKING_STATUS, RETURN_MODES, TRIP_STATUS, bookingLastDay, buttonClass, clockOf, thaiDay, pickupForBooking, bookingName, bookingPeople } from '../../lib/patientBooking'
+import { BOOKING_STATUS, RETURN_MODES, TRIP_STATUS, bookingLastDay, buttonClass, clockOf, thaiDay, pickupLabel, tripOrderTime, bookingName, bookingPeople, isCommunity } from '../../lib/patientBooking'
 
 const date = day => new Date(`${day}T12:00:00+07:00`)
 const dayLabel = day => date(day).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -45,7 +45,7 @@ export default function StaffBookingCalendar({ workspace, onOpenBooking }) {
     if (!data) return []
     return [
       ...data.pending.map(booking => ({ day, kind: 'pending', at: booking.appointment_at, booking })),
-      ...data.trips.map(trip => ({ day, kind: 'trip', at: trip.estimated_pickup_at || trip.plan?.pickup_at, trip, riders: data.riders.filter(b => b.trip_id === trip.id) })),
+      ...data.trips.map(trip => ({ day, kind: 'trip', at: tripOrderTime(trip), trip, riders: data.riders.filter(b => b.trip_id === trip.id) })),
     ]
   }).sort((a, b) => a.day.localeCompare(b.day) || String(a.at || '').localeCompare(String(b.at || '')))
   const chooseMonth = value => {
@@ -109,8 +109,8 @@ export default function StaffBookingCalendar({ workspace, onOpenBooking }) {
         {selectedData.trips.map(trip => {
           const riders = selectedData.riders.filter(b => b.trip_id === trip.id)
           return <article key={trip.id} className="space-y-2 rounded-lg border bg-white p-3"><p className="font-semibold text-sky-900">{TRIP_STATUS[trip.state] || trip.state} · {trip.plan?.route_label || riders[0]?.route_label || 'เที่ยวรถ'}</p>
-            <p>{trip.plan?.multiwave ? `รับ ${trip.plan.outbound_waves?.length || 0} รอบ · ${trip.plan.outbound_waves?.map(w => clockOf(w.pickup_at)).join(' / ')} น.` : `เริ่มรับ ${clockOf(trip.estimated_pickup_at || trip.plan?.pickup_at)} น.`} · {peopleIn(riders)} คน</p>
-            {trip.plan?.multiwave && <p className="text-sm">{riders.map(b => `${bookingName(b)} ${clockOf(pickupForBooking(trip, b))} น.`).join(' · ')}</p>}{riderButtons(riders)}</article>
+            <p>{trip.plan?.multiwave ? `นัด ${trip.plan.outbound_waves?.length || 0} รอบ · ${pickupLabel(trip)}` : pickupLabel(trip)} · {peopleIn(riders)} คน</p>
+            <p className="text-sm">{riders.map(b => `${bookingName(b)} ${isCommunity(b) ? 'ต้องถึง' : 'นัด'} ${clockOf(b.appointment_at)} น.`).join(' · ')}</p>{riderButtons(riders)}</article>
         })}
       </div>
     </> : <div role="region" className="space-y-2" aria-label="ตารางรายการรายเดือน">
@@ -123,7 +123,7 @@ export default function StaffBookingCalendar({ workspace, onOpenBooking }) {
         </button>
         : <article key={row.trip.id} className="grid gap-1 rounded-lg border p-3 sm:grid-cols-[8rem_1fr]">
           <span className="font-semibold">{shortDate(row.day)}</span><div className="flex min-w-0 flex-col gap-1 text-sm"><strong className="text-sky-900">{row.trip.plan?.route_label || row.riders[0]?.route_label || 'เที่ยวรถ'}</strong>
-            <span>{row.trip.plan?.multiwave ? `รับ ${row.trip.plan.outbound_waves?.length || 0} รอบ · ${row.trip.plan.outbound_waves?.map(w => clockOf(w.pickup_at)).join(' / ')} น.` : `เริ่มรับ ${clockOf(row.at)} น.`} · {TRIP_STATUS[row.trip.state] || row.trip.state} · {peopleIn(row.riders)} คน</span>{riderButtons(row.riders)}</div>
+            <span>{row.trip.plan?.multiwave ? `นัด ${row.trip.plan.outbound_waves?.length || 0} รอบ · ${pickupLabel(row.trip)}` : pickupLabel(row.trip)} · {TRIP_STATUS[row.trip.state] || row.trip.state} · {peopleIn(row.riders)} คน</span><span>{row.riders.map(b => `${bookingName(b)} ${isCommunity(b) ? 'ต้องถึง' : 'นัด'} ${clockOf(b.appointment_at)} น.`).join(' · ')}</span>{riderButtons(row.riders)}</div>
         </article>)}
     </div>}
     <p className="text-xs text-slate-600">แสดงคำขอที่ยังรอยืนยัน เที่ยวที่ยืนยันหรือกำลังดำเนินการ และรายการที่เพิ่งเสร็จใน 30 วันล่าสุด · กด “โหลดข้อมูลล่าสุด” ด้านบนเพื่อตรวจคิวอีกครั้ง</p>

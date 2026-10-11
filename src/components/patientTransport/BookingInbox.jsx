@@ -8,7 +8,7 @@ import { addressFromMap, pickupSentence } from '../../lib/pickupText'
 import { ListCard, Pager, Pills, SectionBand, Sheet } from './StaffShell'
 import { AmendBooking, BookingFundDocs, BookingPrintButtons, DayOdometerOfTrip } from './BookingOperations'
 import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
-import { SECTION_TONES, STAGES, loadPageSize, paginate, savePageSize, TRIP_STATUS, RETURN_MODES, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, describeHistory, bookingName, bookingPeople, bookingTravel, isCommunity, serviceLabel, isOtherPlace } from '../../lib/patientBooking'
+import { SECTION_TONES, STAGES, loadPageSize, paginate, savePageSize, TRIP_STATUS, RETURN_MODES, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, pickupLabel, describeHistory, bookingName, bookingPeople, bookingTravel, isCommunity, serviceLabel, isOtherPlace } from '../../lib/patientBooking'
 import { tripPassengers } from '../../lib/patientTransportPrint'
 
 /**
@@ -136,7 +136,7 @@ function TripGroupBand({ row, card }) {
   return <span className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-bold ${card ? 'px-1' : 'sticky left-0 w-fit max-w-[100cqw] px-3 py-1.5'}`} style={{ color: TRIP_GROUP.ink }}>
     <Users size={16} strokeWidth={2.4} className="shrink-0" aria-hidden="true" />
     <span className="whitespace-nowrap">เที่ยวเดียวกัน {riders.length} คน</span>
-    <span className="whitespace-nowrap font-semibold">· {whenLabel(riders[0].appointment_at)}{pickups.length > 0 && ` ${pickups.length > 1 ? 'รถเริ่มรับ' : 'รถมารับ'} ${clockOf(Math.min(...pickups))} น.`}</span>
+    <span className="whitespace-nowrap font-semibold">· {whenLabel(riders[0].appointment_at)}{pickups.length > 0 ? ` ${pickups.length > 1 ? 'รถเริ่มรับ' : 'รถมารับ'} ${clockOf(Math.min(...pickups))} น.` : ' รอประสานเวลารับ'}</span>
   </span>
 }
 
@@ -207,9 +207,9 @@ function Facts({ booking: b, trip, others, historical = false }) {
   const items = [
     [isCommunity(b) ? 'เวลาที่ต้องถึง' : historical ? 'วันเวลานัดเดิม (ยกเลิก)' : 'วันเวลานัด', dateTime(b.appointment_at)],
     [isCommunity(b) ? 'สถานที่ชุมชน' : historical ? 'โรงพยาบาลในคำขอเดิม' : 'โรงพยาบาล', b.route_label],
-    // สถานที่อื่น (20261007170000): ชื่อนี้ผู้จองพิมพ์เอง ระบบกันรถตามเวลาเดินทางมาตรฐานที่ตั้งไว้ ไม่ใช่ระยะทางจริง
+    // สถานที่อื่น (20261007170000): ชื่อนี้ผู้จองพิมพ์เอง เจ้าหน้าที่จัดรอบรับ–ส่งเอง ไม่ใช่ระยะทางจริง
     // เจ้าหน้าที่ต้องตรวจก่อนกดยืนยันรถ (ห้ามให้ระบบตัดสินแทน) — แถวนี้ไม่ขึ้นกับคำขอที่ปิดแล้ว
-    ...(isOtherPlace(b.route_id) && !historical ? [['สถานที่อื่น', 'ผู้จองพิมพ์ชื่อเอง · ระบบกันรถตามเวลาเดินทางมาตรฐานที่ตั้งไว้ ไม่ร่วมเที่ยวกับใคร · ตรวจระยะทางและเวลาจริงก่อนยืนยันรถ']] : []),
+    ...(isOtherPlace(b.route_id) && !historical ? [['สถานที่อื่น', 'ผู้จองพิมพ์ชื่อเอง · เจ้าหน้าที่จัดรอบรับ–ส่งเอง ไม่ร่วมเที่ยวกับใคร · ตรวจระยะทางและเวลาจริงก่อนยืนยันรถ']] : []),
     [historical ? 'ขากลับในคำขอเดิม' : 'ขากลับ', b.return_mode === 'one_way' ? 'ขาไปอย่างเดียว' : `${RETURN_MODES[b.return_mode]} · ${b.return_at ? `ประมาณ ${clockOf(b.return_at)} น.` : 'ยังไม่ทราบเวลา'}`],
     ['จุดรับ', <>{pickupSentence(b.pickup)}{pin && <a className="ml-2 font-semibold text-sky-800 underline" target="_blank" rel="noopener noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${b.pickup_lat},${b.pickup_lng}`}>📍 นำทาง</a>}</>],
     ['การเดินทาง', `${bookingTravel(b)}${b.share ? ' · นั่งร่วมกับผู้ป่วยอื่นได้' : ''}`],
@@ -218,7 +218,7 @@ function Facts({ booking: b, trip, others, historical = false }) {
     ['รับเรื่องทาง', b.entry_channel === 'staff' ? 'เจ้าหน้าที่รับแทน (โทรศัพท์/เคาน์เตอร์)' : 'ออนไลน์'],
     ...(trip ? [
       ['สถานะเที่ยว', TRIP_STATUS[trip.state]],
-      ['รถมารับ', `ประมาณ ${clockOf(pickupForBooking(trip, b))} น.`],
+      ['รถมารับ', pickupLabel(trip)],
       ...(b.return_mode !== 'one_way' ? [['รับกลับ', `ประมาณ ${clockOf(returnForBooking(trip, b))} น.`]] : []),
       ['คนขับ', trip.driver_name || '—'],
       ...(trip.helper_name ? [['ผู้ช่วย', trip.helper_name]] : []),
@@ -244,19 +244,20 @@ function ProblemBox({ row, problem, rows, workspace, busy, isAdmin, onConfirm, o
   const issueRow = rows.find(r => r.booking.status === 'confirmed' && r.trip?.state === 'issue' && r.trip.plan?.date === problem.plan.date)
   const conflict = problem.plan.errors.includes(CONFLICT)
   const cancelReason = conflict ? 'รถไม่ว่างในช่วงเวลาที่ขอ' : issues.find(x => x.fixes.includes('cancel'))?.text || ''
-  const retry = (options = {}) => onConfirm(row, { ids: problem.ids, helper: fixes.has('helper') ? helper.trim() : '', ...options })
-  return <section aria-label="ยืนยันรถไม่ได้" className="space-y-3 rounded-xl border-2 border-red-300 bg-red-50 p-3 sm:p-4">
-    <h4 className="font-bold text-red-800">ยืนยันรถไม่ได้{issues.length > 1 ? ` · ต้องแก้ ${issues.length} เรื่อง` : ''}</h4>
+  const retry = (options = {}) => onConfirm(row, { ids: problem.ids, helper: problem.plan.helper_required ? helper.trim() : '', ...options })
+  const hasErrors = issues.length > 0
+  return <section aria-label={hasErrors ? 'ยืนยันรถไม่ได้' : 'เลือกการจัดเที่ยว'} className={`space-y-3 rounded-xl border-2 p-3 sm:p-4 ${hasErrors ? 'border-red-300 bg-red-50' : 'border-sky-300 bg-sky-50'}`}>
+    <h4 className={`font-bold ${hasErrors ? 'text-red-800' : 'text-sky-900'}`}>{hasErrors ? `ยืนยันรถไม่ได้${issues.length > 1 ? ` · ต้องแก้ ${issues.length} เรื่อง` : ''}` : 'มีเที่ยวไปทางเดียวกัน เลือกการจัดรถ'}</h4>
+    {!hasErrors && <p className="text-sm">ระบบเตรียมทางเลือกจากปลายทาง ความยินยอมและที่นั่ง เจ้าหน้าที่ประสานรอบรถแล้วเลือกยืนยันได้ หรือจัดเป็นเที่ยวแยก</p>}
     <ol className="space-y-2">{issues.map((x, i) => <li key={x.message} className="rounded-lg bg-white p-3">
       <p className="font-semibold text-slate-900">{issues.length > 1 ? `${i + 1}. ` : ''}{x.text}</p>
       {x.detail && <p className="mt-1 text-sm text-slate-700">{x.message === CONFLICT ? 'ชนกับ: ' : ''}{x.detail}</p>}
     </li>)}</ol>
-    {/* ชนคิว: ระบบลองแผน "ไปคันเดียวกัน" ไว้แล้ว — ขึ้นเวลาใหม่ของผู้เดินทางเดิมให้เห็นก่อนกด
-        (ขึ้นรถเพิ่ม 1 คน รถต้องออกรับเร็วขึ้น) ระบบแจ้งทุกคนในแอป แต่ควรโทรแจ้งผู้เดินทางเดิมด้วย */}
-    {(problem.joins || []).map(option => {
+    {/* เตรียมการร่วมเที่ยวจากปลายทางและความจุ โดยไม่คำนวณช่วงกันรถ */}
+    {(problem.joins || []).filter(option => hasErrors || (option.plan && !option.plan.errors?.length)).map(option => {
       const riders = workspace.bookings.filter(x => x.trip_id === option.trip.id && x.status === 'confirmed')
       if (!option.plan || option.plan.errors?.length) return <p key={option.trip.id} className="rounded-lg bg-white p-3 text-sm text-slate-700">
-        ไปคันเดียวกับเที่ยวเริ่มรับ {clockOf(option.trip.plan?.pickup_at)} น. ไม่ได้: {joinRefusal(option, workspace)}
+        ไปคันเดียวกับเที่ยว {option.trip.plan?.route_label} ไม่ได้: {joinRefusal(option, workspace)}
       </p>
       const incoming = rows.filter(x => option.ids?.includes(x.booking.id)).map(x => x.booking)
       const waves = option.plan.outbound_waves || []
@@ -265,15 +266,16 @@ function ProblemBox({ row, problem, rows, workspace, busy, isAdmin, onConfirm, o
       return <div key={option.trip.id} className="space-y-2 rounded-lg border-2 border-emerald-400 bg-white p-3">
         <p className="font-semibold text-emerald-900">{option.plan.multiwave ? `จัดรถรับ ${waves.length} รอบได้` : 'ไปคันเดียวกับเที่ยวเดิมได้'}{riders.length ? ` · ร่วมเที่ยวกับ ${riders.map(x => bookingName(x)).join(', ')}` : ''}</p>
         {option.plan.multiwave ? <>
-          <ol className="list-inside list-decimal text-sm">{waves.map((wave, i) => <li key={i}>รอบรับ {i + 1}: เริ่ม {clockOf(wave.pickup_at)} น. · นัดแพทย์ {clockOf(wave.appointment_start)}–{clockOf(wave.appointment_end)} น.</li>)}</ol>
+          <ol className="list-inside list-decimal text-sm">{waves.map((wave, i) => <li key={i}>รอบ {i + 1}: นัดแพทย์ {clockOf(wave.appointment_start)}–{clockOf(wave.appointment_end)} น.</li>)}</ol>
           <p className="text-sm">รับกลับ {returns.length} รอบ: {returns.map(w => `${clockOf(w.return_start)} น.`).join(' / ') || 'ขาไปอย่างเดียว'}</p>
-          {!!changedWait.length && <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">ต้องประสาน {changedWait.map(x => bookingName(x)).join(', ')} ก่อน: รถจะออกไปรับรอบอื่น จึงเปลี่ยนจาก “รอรับกลับ” เป็น “กลับมารับภายหลัง” ระบบบันทึกและแจ้งเวลาใหม่เมื่อยืนยัน</p>}
+          {!!changedWait.length && <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">ต้องประสาน {changedWait.map(x => bookingName(x)).join(', ')} ก่อน: รถจะออกไปรับรอบอื่น จึงเปลี่ยนจาก “รอรับกลับ” เป็น “กลับมารับภายหลัง” ระบบบันทึกการร่วมเที่ยวเมื่อยืนยัน ให้แจ้งเวลาที่ประสานแล้ว</p>}
           <p className="text-sm">คนขับจะเห็นทุกรอบในงานเดียว และกดเพียง “ออกรถ” กับ “กลับแล้ว” เมื่อจบทั้งหมด</p>
-        </> : <p className="text-sm">เวลารถออกรับใหม่ <strong>{clockOf(option.plan.pickup_at)} น.</strong> (เดิม {clockOf(option.trip.plan?.pickup_at)} น.) ระบบแจ้งเวลาใหม่ในแอปให้ทุกคน ควรโทรแจ้งผู้เดินทางเดิมด้วย</p>}
+        </> : <p className="text-sm">เจ้าหน้าที่และคนขับประสานเวลารับร่วมกัน ผู้จองเห็นเวลาที่แจ้งล่าสุดในระบบ</p>}
         {(option.plan.multiwave ? changedWait : riders).some(x => x.phone) && <div className="flex flex-wrap gap-2">{(option.plan.multiwave ? changedWait : riders).filter(x => x.phone).map(x => <a key={x.id} className={`${buttonClass} inline-flex items-center`} href={`tel:${x.phone}`}>📞 {bookingName(x)}</a>)}</div>}
-        <button type="button" className={primaryClass} disabled={busy} onClick={() => onJoin(row, option)}>{option.plan.multiwave ? 'ประสานแล้ว · ยืนยันรถหลายรอบ' : `ให้ไปคันเดียวกัน · รถออกรับ ${clockOf(option.plan.pickup_at)} น.`}</button>
+        <button type="button" className={primaryClass} disabled={busy} onClick={() => onJoin(row, option)}>{option.plan.multiwave ? 'ประสานแล้ว · ยืนยันรถหลายรอบ' : 'ประสานแล้ว · ให้ไปคันเดียวกัน'}</button>
       </div>
     })}
+    {!hasErrors && <button type="button" className={buttonClass} disabled={busy} onClick={() => retry({ separate: true })}>ยืนยันเป็นเที่ยวแยก</button>}
     {fixes.has('helper') && <label className="block">ชื่อผู้ช่วยเคลื่อนย้ายที่ไปด้วย
       <input className={inputClass} value={helper} maxLength={200} onChange={e => setHelper(e.target.value)} />
       {!!lastHelper && helper === lastHelper && <span className="text-sm text-slate-600">เติมชื่อจากเที่ยวล่าสุดให้แล้ว ตรวจว่าไปได้จริงก่อนกด</span>}
@@ -308,10 +310,8 @@ function MoveIntoTrip({ booking, trip, passengers, workspace, busy, onReload }) 
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [approvedDuplicate, setApprovedDuplicate] = useState(false)
-  const [openedAt] = useState(() => Date.now())
   const options = workspace.trips.filter(candidate => candidate.id !== trip.id && candidate.state === 'confirmed' &&
-    candidate.plan?.route_id === booking.route_id && candidate.plan?.return_mode === booking.return_mode &&
-    new Date(candidate.plan?.pickup_at).getTime() > openedAt).map(candidate => {
+    candidate.plan?.route_id === booking.route_id && candidate.plan?.return_mode === booking.return_mode).map(candidate => {
     const riders = workspace.bookings.filter(item => item.trip_id === candidate.id && item.status === 'confirmed')
     if (!riders.length || riders.some(item => !item.share || item.mobility !== 'walk' || item.passenger_step !== 0 || item.cancel_requested || item.return_ready)) return null
     const first = [...riders].sort((a, b) => a.appointment_at.localeCompare(b.appointment_at) || a.id.localeCompare(b.id))[0]
@@ -345,12 +345,12 @@ function MoveIntoTrip({ booking, trip, passengers, workspace, busy, onReload }) 
   }
   return <div className="space-y-3 rounded-xl bg-sky-50 p-3">
     <p className="font-semibold">ย้ายไปร่วมเที่ยวที่มีอยู่</p>
-    <p className="text-sm">ย้ายเฉพาะ {bookingName(booking)} · ระบบใช้เวลานัดและเวลารับกลับของเที่ยวที่เลือก ตรวจที่นั่งและเวลารถใหม่ แล้วเก็บเที่ยวเดิมกับเอกสารไว้เป็นประวัติ</p>
-    <label className="block">เลือกเที่ยวปลายทาง<select className={inputClass} value={selected} onChange={event => { setSelected(event.target.value); setOperation(crypto.randomUUID()); setApprovedDuplicate(false); setError(''); setMessage('') }}>
+    <p className="text-sm">ย้ายเฉพาะ {bookingName(booking)} · ระบบใช้เวลานัดและเวลารับกลับของเที่ยวที่เลือก ตรวจที่นั่งและข้อมูลเที่ยวใหม่ แล้วเก็บเที่ยวเดิมกับเอกสารไว้เป็นประวัติ</p>
+    <label className="block">เลือกเที่ยวปลายทาง<select aria-label="เลือกเที่ยวปลายทาง" className={inputClass} value={selected} onChange={event => { setSelected(event.target.value); setOperation(crypto.randomUUID()); setApprovedDuplicate(false); setError(''); setMessage('') }}>
       <option value="">เลือกวันที่และผู้เดินทางในเที่ยว</option>
       {options.map(option => <option key={option.trip.id} value={option.trip.id}>{dateTime(option.rider.appointment_at)} · {option.rider.patient_name} · {option.count} คน</option>)}
     </select></label>
-    {target && <p className="rounded-lg bg-white p-3 text-sm">วันเวลานัดใหม่ {dateTime(target.rider.appointment_at)} · {target.rider.return_at ? `รับกลับ ${dateTime(target.rider.return_at)}` : 'เที่ยวไปอย่างเดียว'} · จุดรับของผู้เดินทางรายนี้ยังคงเดิม เวลารถมารับจะคำนวณใหม่</p>}
+    {target && <p className="rounded-lg bg-white p-3 text-sm">วันเวลานัดใหม่ {dateTime(target.rider.appointment_at)} · {target.rider.return_at ? `รับกลับ ${dateTime(target.rider.return_at)}` : 'เที่ยวไปอย่างเดียว'} · จุดรับของผู้เดินทางรายนี้ยังคงเดิม ให้ประสานและแจ้งเวลารับใหม่</p>}
     {target && otherDay && !existingBooking && <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-950">
       เที่ยวนี้คนละวันกับนัดเดิม · นัดเดิม {dateTime(booking.appointment_at)} → นัดใหม่ {dateTime(target.rider.appointment_at)} · ย้ายเมื่อผู้ป่วยแจ้งเลื่อนนัดแล้วเท่านั้น
     </p>}
@@ -358,7 +358,7 @@ function MoveIntoTrip({ booking, trip, passengers, workspace, busy, onReload }) 
       <p className="font-semibold">ผู้เดินทางมีคิวที่ยืนยันแล้วในเที่ยวนี้ · เลขที่ {ref(existingBooking.id)}</p>
       {otherDay
         ? <p>คิวที่ยืนยันแล้วเป็นนัด {dateTime(existingBooking.appointment_at)} ส่วนคำขอนี้เป็นนัด {dateTime(booking.appointment_at)} — อาจเป็นนัดจริงคนละวัน ถ้าปิดคำขอนี้ นัด {dateTime(booking.appointment_at)} จะถูกยกเลิกและผู้จองจะเห็นว่ายกเลิก</p>
-        : <p>ไม่ต้องเพิ่มที่นั่งซ้ำ ระบบจะปิดเฉพาะคำขอที่กำลังเปิดอยู่ คิวในเที่ยวปลายทางยังอยู่ ผู้เดินทางคนอื่นในเที่ยวเดิมยังเดินทางตามปกติ แต่เวลารถรับอาจเปลี่ยนหลังคำนวณแผนใหม่ ระบบจะแจ้งผู้เกี่ยวข้องและต้องพิมพ์เอกสารเที่ยวเดิมใหม่</p>}
+        : <p>ไม่ต้องเพิ่มที่นั่งซ้ำ ระบบจะปิดเฉพาะคำขอที่กำลังเปิดอยู่ คิวในเที่ยวปลายทางยังอยู่ ผู้เดินทางคนอื่นในเที่ยวเดิมยังเดินทางตามปกติ แต่ให้ประสานเวลารับของผู้เดินทางที่เหลืออีกครั้ง ระบบจะแจ้งผู้เกี่ยวข้องและต้องพิมพ์เอกสารเที่ยวเดิมใหม่</p>}
       <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5 shrink-0" checked={approvedDuplicate} onChange={event => setApprovedDuplicate(event.target.checked)} />
         {otherDay ? `ผู้ป่วยแจ้งแล้วว่าไม่ไปนัด ${dateTime(booking.appointment_at)} · ปิดคำขอนี้ได้` : 'ตรวจแล้วว่าคิวปลายทางเป็นของผู้เดินทางรายนี้ และต้องการปิดคำขอซ้ำ'}</label>
     </div>}
@@ -401,11 +401,11 @@ function ChangeHospital({ booking, trip, passengers, workspace, busy, onReload, 
   return <div className="space-y-3 rounded-xl border-2 border-sky-700 bg-sky-50 p-3">
     <h3 className="font-bold">เปลี่ยนโรงพยาบาลก่อนรถออก</h3>
     {saved ? <p role="status">เปลี่ยนโรงพยาบาลแล้ว ระบบแจ้งผู้จองและคนขับแล้ว กรุณาตรวจเวลารับล่าสุดและพิมพ์เอกสารใหม่</p> : <>
-      <p className="text-sm">โรงพยาบาลเดิม: {booking.route_label} · คงวันเวลานัดเดิม ระบบคำนวณเวลารับและตรวจรถว่างใหม่ ถ้าชนคิวอื่นจะไม่เปลี่ยนข้อมูล</p>
+      <p className="text-sm">โรงพยาบาลเดิม: {booking.route_label} · คงวันเวลานัดเดิม เจ้าหน้าที่ประสานเวลารับใหม่</p>
       <label className="block">โรงพยาบาลที่ถูกต้อง<select className={inputClass} value={route} disabled={pending} onChange={e => { setRoute(e.target.value); reset() }}><option value="">เลือกโรงพยาบาล</option>{routes.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}</select></label>
       {!routes.length && <p role="alert">ยังไม่มีโรงพยาบาลอื่นให้เลือก ให้แอดมินเพิ่มโรงพยาบาลในตั้งค่ารถรับ–ส่งผู้ป่วยก่อน</p>}
       {passengers.length > 1 && <><label className="block">ผู้เดินทางที่เปลี่ยนโรงพยาบาล<select className={inputClass} value={scope} disabled={pending} onChange={e => { setScope(e.target.value); reset() }}><option value="single">เฉพาะ {bookingName(booking)}</option><option value="all">ทั้งเที่ยว {passengers.length} คน</option></select></label>
-        <p className="text-sm">{scope === 'all' ? `เปลี่ยนทุกคน: ${passengers.map(b => bookingName(b)).join(' · ')}` : 'ผู้ร่วมเที่ยวคนอื่นยังไปโรงพยาบาลเดิม ระบบจะแยกเที่ยวและตรวจเวลารถไม่ให้ทับกัน'}</p></>}
+        <p className="text-sm">{scope === 'all' ? `เปลี่ยนทุกคน: ${passengers.map(b => bookingName(b)).join(' · ')}` : 'ผู้ร่วมเที่ยวคนอื่นยังไปโรงพยาบาลเดิม ระบบจะแยกเที่ยว ให้เจ้าหน้าที่จัดรอบรับ–ส่งเอง'}</p></>}
       {stale && <p role="alert">คิวเปลี่ยนแล้ว กรุณาปิดฟอร์มและเปิดใหม่จากข้อมูลล่าสุด</p>}
       {error && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900">{error}</p>}
       {review ? <div className="space-y-3 rounded-xl border bg-white p-3"><p>ยืนยันเปลี่ยนเป็น <strong>{selected?.label}</strong> สำหรับ {scope === 'all' ? `ทั้งเที่ยว ${passengers.length} คน` : bookingName(booking)} ใช่หรือไม่?</p><p className="text-sm">วันเวลานัด {dateTime(booking.appointment_at)} · เอกสารที่พิมพ์แล้วต้องพิมพ์ใหม่</p><button type="button" className={primaryClass} disabled={busy || pending || stale} onClick={save}>{pending ? 'กำลังตรวจคิว...' : 'ยืนยันเปลี่ยนโรงพยาบาล'}</button></div>
@@ -456,12 +456,11 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
   const [correctingPickup, setCorrectingPickup] = useState(false)
   const [changingHospital, setChangingHospital] = useState(false)
   const [scheduling, setScheduling] = useState(null)
-  const [openedAt] = useState(() => Date.now())
   const passengers = trip ? workspace.bookings.filter(x => x.trip_id === trip.id && x.status !== 'cancelled') : []
   const tripOpen = trip && !['completed', 'cancelled'].includes(trip.state)
   const canReschedule = trip && ['confirmed', 'outbound'].includes(trip.state) && trip.odometer_end == null && passengers.every(x => x.passenger_step === 0 && !x.return_ready)
-  const canMoveIntoTrip = !isCommunity(b) && canReschedule && trip.state === 'confirmed' && b.share && b.mobility === 'walk' && new Date(trip.plan?.pickup_at).getTime() > openedAt
-  const inService = tripOpen && trip.state !== 'confirmed'
+  const canMoveIntoTrip = !isCommunity(b) && canReschedule && trip.state === 'confirmed' && b.share && b.mobility === 'walk'
+  const inService = tripOpen
   const releasable = trip && (trip.state === 'confirmed' || (trip.state === 'issue' && trip.state_before_issue === 'confirmed')) && passengers.every(x => x.passenger_step === 0)
   const removable = b.status === 'confirmed' && [0, 2].includes(b.passenger_step) && next.id !== 'cancel'
   const submitted = b.status === 'submitted'
@@ -486,7 +485,7 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
       {canCorrectPickup && correctingPickup && <PickupCorrection booking={b} busy={busy} onSave={onUpdatePickup} onBack={() => setCorrectingPickup(false)} />}
       {canReschedule && scheduling !== 'reschedule' && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling('reschedule')}>{trip.state === 'confirmed' ? 'เปลี่ยนวันและเวลาเดินทาง' : 'กดออกรถผิด · เปลี่ยนวันเวลา'}</button>}
       {canMoveIntoTrip && scheduling !== 'move' && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling('move')}>ย้ายไปร่วมเที่ยวที่มีอยู่</button>}
-      {inService && scheduling !== 'estimate' && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling('estimate')}>แจ้งรถล่าช้า / เวลารับล่าสุด</button>}
+      {inService && scheduling !== 'estimate' && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling('estimate')}>แจ้งเวลารับ–ส่ง / รถล่าช้า</button>}
       {scheduling && <button type="button" className={buttonClass} disabled={busy} onClick={() => setScheduling(null)}>ปิดฟอร์ม</button>}
       {canReschedule && scheduling === 'reschedule' && <RescheduleJourney key={`reschedule-${trip.id}`} trip={trip} booking={b} passengers={passengers} settings={workspace.settings} busy={busy} onReschedule={async args => { const out = await onReschedule(args); if (out?.saved) setScheduling(null); return out }} />}
       {canMoveIntoTrip && scheduling === 'move' && <MoveIntoTrip booking={b} trip={trip} passengers={passengers} workspace={workspace} busy={busy} onReload={onReload} />}
@@ -572,7 +571,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
       {trip.driver_id !== currentUserId && <p className="text-sm text-slate-700">ถ้าคนขับใช้อีกบัญชี ให้เข้าหน้าเจ้าหน้าที่ด้วยบัญชีคนขับ แล้วเปิดแท็บ “งานคนขับ”</p>}
     </section>}
     {next.id === 'cancel' && (soloRelease
-      ? <ReasonAction busy={busy} primary title="ผู้จองขอยกเลิก" hint="เที่ยวนี้มีผู้เดินทางคนเดียว ยกเลิกแล้วช่วงเวลารถว่างให้คนอื่นจองได้ทันที" defaultReason="ผู้จองขอยกเลิก" button="ยกเลิกให้ตามที่ขอ" onRun={note => act(trip, 'release', note)} />
+      ? <ReasonAction busy={busy} primary title="ผู้จองขอยกเลิก" hint="เที่ยวนี้มีผู้เดินทางคนเดียว ยกเลิกแล้วระบบปิดเที่ยวให้" defaultReason="ผู้จองขอยกเลิก" button="ยกเลิกให้ตามที่ขอ" onRun={note => act(trip, 'release', note)} />
       : removable
         ? <ReasonAction busy={busy} primary title="ผู้จองขอยกเลิก" hint="นำผู้เดินทางรายนี้ออกจากเที่ยว ผู้เดินทางคนอื่นไม่เปลี่ยน" defaultReason="ผู้จองขอยกเลิก" seenByCitizen button="ยกเลิกให้ตามที่ขอ" onRun={remove} />
         : <p className="rounded-xl bg-amber-50 p-3">ผู้เดินทางอยู่บนรถ ยกเลิกระหว่างทางไม่ได้ ให้โทรประสานคนขับ</p>)}
@@ -666,7 +665,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
   async function joinRow(row, option) {
     const incoming = rows.filter(x => option.ids?.includes(x.booking.id)).map(x => x.booking)
     const bookings = incoming.length ? incoming : [row.booking]
-    const extra = option.plan.multiwave ? 'จัดรถรับหลายรอบในเที่ยวเดียวกัน' : `ร่วมเที่ยวเดิม · เริ่มรับประมาณ ${clockOf(option.plan.pickup_at)} น.`
+    const extra = option.plan.multiwave ? 'จัดรถรับหลายรอบในเที่ยวเดียวกัน' : 'ร่วมเที่ยวเดิม · เจ้าหน้าที่ประสานเวลารับ'
     if (!approveVehicle(bookings, extra)) return
     if (await onJoin(bookings, option.trip, option.plan)) close()
   }
@@ -733,7 +732,6 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
             {block.rows.map((row, offset) => {
               const { booking: b, trip, linked, group } = row
               const index = block.start + offset
-              const pickupAt = trip && pickupForBooking(trip, b)
               const mates = block.framed ? [] : tripMates(row)
               const shade = block.framed ? TRIP_GROUP.row : index % 2 === 0 ? '#fff' : '#f5f8fc'
               // เส้นกรอบของกลุ่มเที่ยว: ซ้ายที่ช่องแรก ขวาที่ช่องท้าย ล่างที่ทุกช่องของแถวสุดท้าย (บนอยู่ที่หัวกรอบ)
@@ -742,7 +740,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = shade}
                 onClick={() => { setProblem(null); setOpenId(b.id) }}>
                 <td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500" style={{ boxShadow: `inset 5px 0 0 ${SECTIONS[row.section].bar}`, ...(block.framed && { borderLeft: TRIP_EDGE }), ...closes }}>{index + 1}</td>
-                <td className="whitespace-nowrap border-r border-gray-200 px-2 py-2.5 text-center" style={closes}><span className="block font-semibold">{whenLabel((linked || b).appointment_at)}</span><span className="block">{clockOf((linked || b).appointment_at)} น.</span>{linked && <span className="block text-[11px] text-sky-800">คิวจริง {ref(linked.id)}</span>}{linked && <span className="block text-[11px] text-gray-500">เดิม {dateTime(b.appointment_at)}</span>}{pickupAt && b.status !== 'cancelled' && <span className="block text-[11px] text-gray-500">รถมารับ {clockOf(pickupAt)}</span>}</td>
+                <td className="whitespace-nowrap border-r border-gray-200 px-2 py-2.5 text-center" style={closes}><span className="block font-semibold">{whenLabel((linked || b).appointment_at)}</span><span className="block">{clockOf((linked || b).appointment_at)} น.</span>{linked && <span className="block text-[11px] text-sky-800">คิวจริง {ref(linked.id)}</span>}{linked && <span className="block text-[11px] text-gray-500">เดิม {dateTime(b.appointment_at)}</span>}{trip && b.status !== 'cancelled' && <span className="block text-[11px] text-gray-500">{pickupLabel(trip)}</span>}</td>
                 <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="font-semibold">{bookingName(b)}</span><span className="block text-[11px] text-gray-500">{bookingTravel(b)}</span>{b.status === 'submitted' && group.length > 1 && <span className="block text-[11px] font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => bookingName(x)).join(', ')}</span>}{mates.length > 0 && <span className="block text-[11px] font-semibold text-sky-800">{matesText(mates)}</span>}</td>
                 <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={pickupSentence(b.pickup)}>รับที่ {pickupSentence(b.pickup)}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[b.return_mode]}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
                 <td className="border-r border-gray-200 px-2 py-2.5 text-center" style={closes}><StatusChips row={row} /></td>
@@ -757,14 +755,13 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
         const lead = block.rows[0]
         const cards = block.rows.map(row => {
           const { booking: b, trip, linked, group } = row
-          const pickupAt = trip && pickupForBooking(trip, b)
           const mates = block.framed ? [] : tripMates(row)
           return <article key={b.id} data-booking={b.id} data-section={row.section} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4" style={{ borderLeft: `5px solid ${SECTIONS[row.section].bar}` }} onClick={() => { setProblem(null); setOpenId(b.id) }}>
             <div className="flex items-start justify-between gap-2"><h3 className="font-bold">{bookingName(b)}</h3><StatusChips row={row} /></div>
             <p><strong>{whenLabel((linked || b).appointment_at)} {clockOf((linked || b).appointment_at)} น.</strong> · {linked ? linked.route_label : b.route_label}</p>
             {linked && <p className="text-sm text-sky-800">คิวที่ใช้เดินทาง {ref(linked.id)} · นัดเดิมที่ยกเลิก {dateTime(b.appointment_at)}</p>}
             <p className="text-sm text-slate-600">จุดรับ: {pickupSentence(b.pickup)}{Number.isFinite(b.pickup_lat) ? ' · 📍 มีหมุด' : ''}</p>
-            <p className="text-sm text-slate-600">{bookingTravel(b)}{pickupAt && b.status !== 'cancelled' ? ` · รถมารับ ${clockOf(pickupAt)} น.` : ''}</p>
+            <p className="text-sm text-slate-600">{bookingTravel(b)}{trip && b.status !== 'cancelled' ? ` · ${pickupLabel(trip)}` : ''}</p>
             {b.status === 'submitted' && group.length > 1 && <p className="text-sm font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => bookingName(x)).join(', ')}</p>}
             {mates.length > 0 && <p className="text-sm font-semibold text-sky-800">{matesText(mates)}</p>}
             <div className="flex flex-wrap gap-2"><RowButton row={row} busy={busy} onPress={press} full /><RowPrint printer={printerOf(row, id => { setProblem(null); setOpenId(id) })} name={bookingName(b)} busy={busy} />{deleteButton(row)}</div>

@@ -34,30 +34,18 @@ assert.deepEqual(freeTimeChoices({ ...draft, return_mode: 'one_way' }, { ...info
 assert.deepEqual(freeTimeChoices(draft, { ...info, office_start: 460, office_end: 1040 }, openDay([['03:30', '21:30']]), 30).filter(t => ['07:40', '17:20'].includes(t)), ['07:40', '17:20'])
 // มีเที่ยวที่ยืนยันแล้ว 09:00–13:00 → เหลือเวลาที่แผนทั้งช่วงไม่ชนเท่านั้น
 const busyDay = openDay([['03:30', '09:00'], ['13:00', '21:30']])
-assert.deepEqual(freeTimeChoices(draft, info, busyDay, 30), ['14:30', '15:00', '15:30', '16:00', '16:30'])
-assert.deepEqual(freeTimeChoices({ ...draft, return_mode: 'one_way' }, info, busyDay, 15), ['14:30', '14:45', '15:00', '15:15', '15:30', '15:45', '16:00', '16:15', '16:30'])
+assert.deepEqual(freeTimeChoices(draft, info, busyDay, 30), wholeDay)
+assert.deepEqual(freeTimeChoices({ ...draft, return_mode: 'one_way' }, info, busyDay, 15), freeTimeChoices({ ...draft, return_mode: 'one_way' }, info, openDay([]), 15))
 assert.deepEqual(freeTimeChoices(draft, info, { ...openDay([['03:30', '21:30']]), status: 'closed' }), [], 'วันปิดให้บริการต้องไม่มีเวลาให้เลือก')
 // ทราบเวลากลับแล้ว ช่วงกันรถสั้นลง เวลานัดที่เลือกได้ต้องไม่เกินเวลากลับ
 assert.equal(freeTimeChoices({ ...draft, back: '12:00' }, info, openDay([['03:30', '21:30']]), 30).at(-1), '12:00')
 
-// ปล่อยรถว่างช่วงรอ (20261010100000): ช่วงไป + ช่วงกลับ รวมเป็นช่วงเดียวเมื่อทับ/ติดกัน อยู่นานกว่ารถวิ่งไปกลับ = 2 ช่วง
-// ตัวเลขชุดเดียวกับ tests/patient-booking-wait-release.test.mjs (ขา 45 เผื่อ 15 ขึ้นรถ 15 นัด 10:00) ตัวกรองฟอร์มต้องไม่เข้มกว่าฐานข้อมูล
-const info45 = { ...info, routes: [{ id: 'r', label: 'โรงพยาบาล TEST', minutes: 45 }], office_start: 450, office_end: 1170 }
-const stay = (back, mode = 'wait') => journeyBlocks({ time: '10:00', back, return_mode: mode, route_id: 'r' }, info45)
-assert.deepEqual(stay('11:45'), [{ start: 525, end: 780 }], 'อยู่สั้น: ช่วงเดียวต่อเนื่อง')
-assert.deepEqual(stay('12:00'), [{ start: 525, end: 795 }], 'ติดกันพอดี: รวมเป็นช่วงเดียว')
-assert.deepEqual(stay('12:15'), [{ start: 525, end: 660 }, { start: 675, end: 810 }], 'อยู่นานกว่ารถวิ่งไปกลับ: 2 ช่วง')
-assert.deepEqual(stay('16:00', 'later'), [{ start: 525, end: 660 }, { start: 900, end: 1035 }], 'มารับภายหลังกติกาเดียวกัน')
-assert.deepEqual(stay(null, 'one_way'), [{ start: 525, end: 660 }])
-assert.deepEqual(stay(''), [{ start: 525, end: 525 }], 'ยังไม่มีเวลากลับ')
-assert.deepEqual(journeyBlocks({ time: '10:00', back: '16:00', return_mode: 'wait', route_id: 'missing' }, info45), [])
-assert.deepEqual(journeyWindow({ time: '10:00', back: '16:00', return_mode: 'wait', route_id: 'r' }, info45), { start: 525, end: 1035 }, 'ช่วงคลุมทั้งก้อนคงเดิม (ใช้เตือนเวลานอกเวลาบริการ)')
-// รถมีเที่ยวกลางวัน 11:00–15:00 → เวลานัดที่ไปแล้วกลับเย็นได้ต้องขึ้นให้เลือก (เดิมช่วงเดียวคลุมทั้งก้อนจึงไม่ขึ้นสักเวลา)
-const midday = openDay([['03:30', '11:00'], ['15:00', '21:30']])
-assert.deepEqual(freeTimeChoices({ ...draft, back: '16:00' }, info45, midday, 30), ['07:30', '08:00', '08:30', '09:00', '09:30', '10:00'])
-assert.deepEqual(freeTimeChoices({ ...draft, return_mode: 'later', back: '16:00' }, info45, midday, 30), ['07:30', '08:00', '08:30', '09:00', '09:30', '10:00'])
-assert.deepEqual(freeTimeChoices({ ...draft, back: '12:00' }, info45, midday, 30), [], 'กลับกลางวัน = รถรอที่โรงพยาบาลต่อเนื่อง ชนเที่ยวกลางวัน')
-assert.deepEqual(freeTimeChoices({ ...draft, back: '16:00' }, info45, openDay([['03:30', '11:00']]), 30), [], 'ช่วงกลับไม่อยู่ในช่องว่างใด ๆ ต้องไม่ขึ้น')
+// Legacy travel values and blocks never restrict appointment choices or invent pickup times.
+for (const mode of ['wait', 'later', 'one_way']) {
+  assert.deepEqual(journeyBlocks({ time: '10:00', back: '16:00', return_mode: mode, route_id: 'r' }, info), [])
+  assert.equal(journeyWindow({ time: '10:00', back: '16:00', return_mode: mode, route_id: 'r' }, info), null)
+}
+assert.deepEqual(freeTimeChoices(draft, { ...info, routes: [{ id: 'r' }], buffer_minutes: undefined, boarding_minutes: undefined }, openDay([]), 30), wholeDay)
 
 const server = await createServer({ configFile: false, envDir: false, server: { host: '127.0.0.1', port: 0 }, plugins: [react(), tailwindcss(), {
   name: 'isolated-booking-form-guidance', enforce: 'pre',
@@ -152,23 +140,22 @@ try {
   await settingsPage.getByText('เวลานัดแพทย์ที่เปิดให้จอง: 07:30–17:30 น.', { exact: false }).waitFor()
   await settingsPage.getByLabel('เริ่มเวลานัดแพทย์').fill('08:00')
   await settingsPage.getByText('เวลานัดแพทย์ที่เปิดให้จอง: 08:00–17:30 น.', { exact: false }).waitFor()
-  await settingsPage.getByText('ปรับเวลาเผื่อ · ปกติไม่ต้องแก้').click()
-  await settingsPage.getByLabel('เวลาเผื่อก่อนนัด/หลังเที่ยว (นาที)').fill('20')
-  await settingsPage.getByText('เวลานัดแพทย์ที่เปิดให้จอง: 08:00–17:30 น.', { exact: false }).waitFor()
+  assert.equal(await settingsPage.getByText('นาทีต่อขา', { exact: true }).count(), 0)
+  assert.equal(await settingsPage.getByLabel('เวลาเผื่อก่อนนัด/หลังเที่ยว (นาที)').count(), 0)
   await settingsPage.close()
   console.log('PASS settings preview keeps appointment hours independent of travel buffer')
   // ระหว่างรอปฏิทิน ต้องบอกว่ากำลังดูวันว่าง ไม่ใช่บอกว่าไม่มีวันว่าง (ผู้จองบนเน็ตช้าจะเข้าใจว่าจองไม่ได้แล้วเลิกจอง)
   const port = server.httpServer.address().port
-  for (const [query, waitText, label] of [['slowcal', 'กำลังดูวันที่รถว่าง', 'ปฏิทินโหลดช้า'], ['calfail', 'ตรวจวันว่างไม่สำเร็จ', 'ปฏิทินโหลดไม่สำเร็จ']]) {
+  for (const [query, waitText, label] of [['slowcal', 'กำลังดูวันเปิดรับคำขอ', 'ปฏิทินโหลดช้า'], ['calfail', 'ตรวจวันเปิดรับคำขอไม่สำเร็จ', 'ปฏิทินโหลดไม่สำเร็จ']]) {
     const page = await browser.newPage({ viewport: { width: 375, height: 900 } })
     page.setDefaultTimeout(8000)
     await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
     await page.goto(`http://127.0.0.1:${port}/__guidance#${query}`)
     await page.getByText(waitText, { exact: false }).waitFor()
-    assert.equal(await page.getByText('ยังไม่มีวันที่รถว่างในช่วงนี้', { exact: false }).count(), 0, `${label}: ห้ามบอกว่าไม่มีวันว่าง`)
+    assert.equal(await page.getByText('ยังไม่มีวันที่เปิดรับคำขอในช่วงนี้', { exact: false }).count(), 0, `${label}: ห้ามบอกว่าไม่มีวันว่าง`)
     if (query === 'slowcal') {
       await page.locator('[data-calendar-date][aria-pressed="true"]').waitFor()
-      assert.equal(await page.getByText('กำลังดูวันที่รถว่าง', { exact: false }).count(), 0, 'ปฏิทินมาแล้วต้องเลิกขึ้นข้อความรอ')
+      assert.equal(await page.getByText('กำลังดูวันเปิดรับคำขอ', { exact: false }).count(), 0, 'ปฏิทินมาแล้วต้องเลิกขึ้นข้อความรอ')
     }
     await page.close()
   }

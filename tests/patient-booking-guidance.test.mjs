@@ -1,11 +1,26 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress, joinCandidates, sameDestinationGroup, destinationGroup, joinReturnChoices, suggestGroups, paginate, thaiDay, workspaceTruncated, WORKSPACE_ROW_LIMIT, loadPageSize, savePageSize } from '../src/lib/patientBooking.js'
+import { bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress, joinCandidates, sameDestinationGroup, destinationGroup, joinReturnChoices, suggestGroups, paginate, thaiDay, workspaceTruncated, WORKSPACE_ROW_LIMIT, loadPageSize, savePageSize, pickupLabel, pickupForBooking } from '../src/lib/patientBooking.js'
 
 const error = 'เวลารับ–ส่งอยู่นอกเวลาบริการ'
 const plan = { date: '2026-09-21', settings_revision: 3, booking_ids: ['one'], blocks: [{ start: '2026-09-21T00:00:00Z', end: '2026-09-21T09:00:00Z' }] }
 const workspace = { settings: { revision: 3, office_start: 510, office_end: 990, seats: 2 } }
+
+test('replanning a legacy trip never presents its computed pickup as a staff announcement', () => {
+  const old = { schedule_revision: 1, estimated_pickup_at: '2026-10-20T06:00:00+07:00', plan: { scheduling_mode: 'manual' } }
+  assert.equal(pickupLabel(old), 'รอประสานเวลารับ')
+  assert.equal(pickupForBooking(old), null)
+  const announced = { ...old, schedule_revision: 2, estimated_pickup_at: '2026-10-20T11:15:00+07:00' }
+  assert.equal(pickupLabel(announced), 'รับประมาณ 11:15 น.')
+})
+
+test('all current manual scheduler errors have an actionable Thai explanation', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20261011120100_patient_booking_manual_scheduler_rpc.sql', import.meta.url), 'utf8')
+  for (const [, message] of sql.matchAll(/array_append\(errors,'([^']+)'\)/g)) {
+    assert.ok(bookingPlanGuidance(message, { ...plan, booking_ids: ['one', 'two'] }, workspace).known, message)
+  }
+})
 
 test('explains appointment outside the configured window without treating travel outside it as an error', () => {
   const issue = bookingPlanGuidance('เวลานัดแพทย์อยู่นอกช่วงที่เปิดรับจอง', plan, workspace)
@@ -14,26 +29,13 @@ test('explains appointment outside the configured window without treating travel
   assert.deepEqual(issue.fixes, ['call', 'amend', 'cancel'])
 })
 
-test('explains 07:00 pickup against actual 08:30 opening, independently of browser timezone', () => {
+test('old travel and outside-service errors request refresh without calculating vehicle time', () => {
   const issue = bookingPlanGuidance(error, plan, workspace)
-  assert.match(issue.detail, /เริ่มรับ 07:00 ก่อนเวลาเปิดบริการ 08:30/)
-  assert.match(issue.detail, /08:30–16:30/)
-  assert.doesNotMatch(issue.detail, /หลังเวลาปิด/)
-  // นอกเวลาบริการ: โทรประสาน → แก้วันเวลาแล้วยืนยันต่อ หรือยกเลิกพร้อมเหตุผล
-  assert.deepEqual(issue.fixes, ['call', 'amend', 'cancel'])
-})
-test('explains late return independently, including split trips', () => {
-  const late = { ...plan, blocks: [{ start: '2026-09-21T02:00:00Z', end: '2026-09-21T04:00:00Z' }, { start: '2026-09-21T07:00:00Z', end: '2026-09-21T11:00:00Z' }] }
-  const issue = bookingPlanGuidance(error, late, workspace)
-  assert.match(issue.detail, /หลังเวลาปิดบริการ 16:30/)
-  assert.doesNotMatch(issue.detail, /ก่อนเวลาเปิด/)
-})
-test('does not invent default settings or use stale revision', () => {
-  assert.equal(bookingPlanGuidance(error, plan).detail, '')
+  assert.match(issue.detail, /ระบบรุ่นเก่า/)
+  assert.doesNotMatch(issue.detail, /ก่อนเวลาเปิด|หลังเวลาปิด|รวมเวลาเดินทาง/)
   assert.match(bookingPlanGuidance(error, plan, { settings: { ...workspace.settings, revision: 4 } }).detail, /ค่าตั้งเปลี่ยน/)
-  assert.doesNotMatch(bookingPlanGuidance(error, plan, { settings: { ...workspace.settings, revision: 4 } }).detail, /08:30/)
-  assert.match(bookingPlanGuidance(error, plan, { settings: { ...workspace.settings, office_start: 480 } }).detail, /ก่อนเวลาเปิดบริการ 08:00/)
 })
+
 test('shows actual capacity; "confirm this request alone" only when the plan has several people', () => {
   const single = bookingPlanGuidance('ที่นั่งไม่พอรวมผู้ติดตามและผู้ช่วยแล้ว', { ...plan, seats: 4 }, workspace)
   assert.match(single.detail, /4 ที่นั่ง.*2 ที่นั่ง/)
@@ -41,15 +43,12 @@ test('shows actual capacity; "confirm this request alone" only when the plan has
   const group = bookingPlanGuidance('ที่นั่งไม่พอรวมผู้ติดตามและผู้ช่วยแล้ว', { ...plan, seats: 4, booking_ids: ['one', 'two'] }, workspace)
   assert.deepEqual(group.fixes, ['single', 'call', 'cancel'])
 })
-test('shows only overlapping active trips, not cancelled or touching boundaries', () => {
-  const trip = (id, state, start, end) => ({ id, state, booking_ids: [id], plan: { route_label: id, pickup_at: start, blocks: [{ start, end }] } })
-  const trips = [trip('CONFLICT', 'confirmed', '2026-09-21T01:00:00Z', '2026-09-21T02:00:00Z'), trip('CANCELLED', 'cancelled', '2026-09-21T01:00:00Z', '2026-09-21T02:00:00Z'), trip('TOUCHING', 'confirmed', '2026-09-21T09:00:00Z', '2026-09-21T10:00:00Z')]
-  const issue = bookingPlanGuidance('ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว', plan, { trips })
-  assert.match(issue.detail, /CONFLICT/)
-  assert.doesNotMatch(issue.detail, /CANCELLED|TOUCHING/)
-  assert.match(issue.text, /รถไม่ว่าง/)
-  assert.ok(issue.fixes.includes('cancel') && issue.fixes.includes('call'))
+test('old overlap errors cannot be used to declare the vehicle unavailable', () => {
+  const issue = bookingPlanGuidance('ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว', plan, workspace)
+  assert.match(issue.text, /โหลดหน้าใหม่/)
+  assert.deepEqual(issue.fixes, ['reload', 'call'])
 })
+
 test('every current server plan error has a one-sentence reason and a fix button, unknown errors retain original message', () => {
   const sql = readFileSync(new URL('../supabase/migrations/20260919180000_patient_booking_minimal_setup.sql', import.meta.url), 'utf8')
   const update = readFileSync(new URL('../supabase/migrations/20260924154340_patient_booking_exact_appointment_hours.sql', import.meta.url), 'utf8')
@@ -113,9 +112,9 @@ test('join return choices: ride home earlier only when the car gets back in time
   const trip = { date: '2026-10-09', return_mode: 'wait', return_at: '2026-10-09T10:30:00Z',
     return_waves: [{ return_start: '2026-10-09T10:30:00Z', depart_at: '2026-10-09T09:30:00Z', end_at: '2026-10-09T12:00:00Z' }] }
   // คลินิก 30 นาที: กลับ 15:00 ถึงฐาน 16:00 ทัน · 16:00 ไม่ทัน · 17:00 ห่างรอบเดิมไม่เกิน 30 นาที (ฐานข้อมูลรวมเป็นรอบเดียว)
-  assert.deepEqual(joinReturnChoices({ time: '12:00', route_id: 'a' }, info, trip), ['12:00', '13:00', '14:00', '15:00', '17:30'])
+  assert.deepEqual(joinReturnChoices({ time: '12:00', route_id: 'a' }, info, trip), ['12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '17:30'])
   // ปลายทาง 45 นาที: กลับ 15:00 ถึงฐาน 16:15 ยังทัน 16:30
-  assert.deepEqual(joinReturnChoices({ time: '12:00', route_id: 'b' }, info, trip), ['12:00', '13:00', '14:00', '15:00', '17:30'])
+  assert.deepEqual(joinReturnChoices({ time: '12:00', route_id: 'b' }, info, trip), ['12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '17:30'])
   assert.deepEqual(joinReturnChoices({ time: '12:00', route_id: 'a' }, info, { ...trip, return_mode: 'later' }), ['17:30'], 'แบบมารับทีหลังต้องกลับพร้อมเที่ยว')
   assert.deepEqual(joinReturnChoices({ time: '12:00', route_id: 'a' }, info, { ...trip, return_mode: 'one_way', return_at: null }), [])
 })

@@ -5,7 +5,7 @@ import MapPicker from '../MapPicker'
 import { addressFromMap, joinPickup } from '../../lib/pickupText'
 import BookingMonthPicker from './BookingMonthPicker'
 import BookingReviewSheet from './BookingReviewSheet'
-import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, orgAbbr, normalizeBookingPhone, clockOf, bookingLastDay, sameDestinationGroup, destinationGroup, joinReturnChoices, OTHER_PLACE_MAX, isOtherPlace, cleanPlaceName } from '../../lib/patientBooking'
+import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, orgAbbr, normalizeBookingPhone, clockOf, pickupLabel, bookingLastDay, sameDestinationGroup, destinationGroup, joinReturnChoices, OTHER_PLACE_MAX, isOtherPlace, cleanPlaceName } from '../../lib/patientBooking'
 
 /**
  * ฟอร์มขอจองรถ — หน้าเดียวจบ แล้วจบด้วยหน้าทวนก่อนส่งแบบ "คำร้อง" (BookingReviewSheet)
@@ -18,8 +18,8 @@ import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, 
  * แต่ละเรื่องอยู่ในกล่องมีกรอบของตัวเองพร้อมเลขขั้น (เจ้าของระบบบอกว่าของเดิม "มองแล้วปนกันไปหมด")
  *
  * สองอย่างที่ระบบทำให้เองเพื่อให้กดน้อยลงและเจ้าหน้าที่ไม่ต้องตามแก้
- * 1. เวลานัดขึ้นเฉพาะเวลาที่ "รถว่างจริง" (freeTimeChoices ใช้ช่อง free ของ patient_booking_calendar)
- *    ประชาชนจึงเลือกเวลาที่ยืนยันไม่ได้ไม่ได้ตั้งแต่ต้น
+ * 1. เวลานัดขึ้นตามช่วงเปิดรับคำขอ เจ้าหน้าที่ตรวจและจัดรอบเอง
+ *    ระบบไม่ใช้สูตรเวลาเดินทางตัดตัวเลือกเวลานัด
  * 2. จองครั้งต่อไปเติมข้อมูลจากการจองครั้งก่อนของคนคนนั้นเอง เหลือเลือกวัน–เวลาแล้วส่ง
  */
 const shiftDay = days => thaiDay(Date.now() + days * 86400000)
@@ -112,7 +112,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   const monthEnd = `${month}-${new Date(Number(month.slice(0, 4)), Number(month.slice(5)), 0).getDate()}`
   const from = monthFirst < first ? first : monthFirst
   const to = monthEnd > lastDay ? lastDay : monthEnd
-  // ปฏิทินสาธารณะรู้วันหยุด ระยะจองล่วงหน้า เหตุขัดข้อง และ "ช่วงที่รถว่าง" ของแต่ละวันอยู่แล้ว
+  // ปฏิทินสาธารณะรู้วันหยุด ระยะจองล่วงหน้า เหตุขัดข้อง และ "ช่วงเวลานัดที่รับจอง" ของแต่ละวันอยู่แล้ว
   const [calendar, setCalendar] = useState(null)
   useEffect(() => {
     if (!tenantId) return
@@ -141,7 +141,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
 
   const days = useMemo(() => (calendar?.month === month ? calendar.days : []) || [], [calendar, month])
   const { route_id: routeId, return_mode: returnMode, back } = form
-  // วันที่จองได้ = วันที่เปิดรับจองและยังมีเวลาที่รถว่างให้เลือกจริง (เจ้าหน้าที่รับเรื่องแทนดูแค่วันเปิด)
+  // วันที่จองได้ = วันที่เปิดรับคำขอและยังมีเวลานัดให้เลือก (เจ้าหน้าที่รับเรื่องแทนดูแค่วันเปิด)
   const bookable = useMemo(() => {
     const draft = { route_id: routeId, return_mode: returnMode, back }
     return days.filter(d => staffEntry ? d.status === 'open' : freeTimeChoices(draft, info, d).length > 0)
@@ -157,16 +157,16 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       ? { date: day, status: 'open', free: [] }
       : null
     const source = staffEntry ? wholeDay : (dayInfo?.status === 'open' ? dayInfo : null)
-    return source ? freeTimeChoices(draft, info, source, step, staffEntry || !!joinTrip).filter(time => !joinTrip || Math.abs(minutes(time) - minutes(clockOf(joinTrip.appointment_at))) <= 30) : []
+    return source ? freeTimeChoices(draft, info, source, step).filter(time => !joinTrip || Math.abs(minutes(time) - minutes(clockOf(joinTrip.appointment_at))) <= 30) : []
   }, [staffEntry, dayInfo, day, routeId, returnMode, back, info, step, joinTrip])
   const dayBlocked = !day ? ''
     : day < first ? (leadDays ? `ต้องจองล่วงหน้าอย่างน้อย ${leadDays} วัน คือตั้งแต่ ${fullDate(first)} เป็นต้นไป` : 'วันที่เลือกผ่านมาแล้ว กรุณาเลือกวันถัดไป')
     : day > lastDay ? 'จองล่วงหน้าได้ไม่เกิน 12 เดือน'
     : dayInfo?.status && dayInfo.status !== 'open' ? DAY_BLOCKED[dayInfo.status] : ''
   const backLatest = latestReturnClock(form, info)
-  // ตัวเลือก "คาดว่าเสร็จประมาณ" ทีละชั่วโมง ใช้เมื่อผู้จองทราบเวลา จะทำให้มีเวลานัดให้เลือกมากขึ้น
+  // ตัวเลือก "คาดว่าเสร็จประมาณ" ทีละชั่วโมง ใช้เมื่อผู้จองทราบเวลา ให้เจ้าหน้าที่ใช้ประสานรับกลับ
   const backChoices = useMemo(() => {
-    const out = [{ value: '', label: 'ยังไม่ทราบ', note: backLatest ? `กันรถถึง ${backLatest} น.` : '' }]
+    const out = [{ value: '', label: 'ยังไม่ทราบ', note: 'เจ้าหน้าที่ประสานเวลารับกลับ' }]
     if (!form.time || !backLatest) return out
     for (let at = Math.ceil(minutes(form.time) / 60) * 60; at <= minutes(backLatest); at += 60) out.push({ value: clockTime(at), label: `${clockTime(at)} น.` })
     if (!out.some(item => item.value === backLatest)) out.push({ value: backLatest, label: `${backLatest} น.` })
@@ -194,13 +194,13 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   const tripGroup = joinTrip ? destinationGroup(info.routes, joinTrip.route_id) : []
   // ช่อง "อื่นๆ" ต่อท้ายรายการเสมอ ไม่ว่าแอดมินจะเรียงไว้ตรงไหน · ขอร่วมเที่ยวแล้วไม่มีช่องนี้ (สถานที่อื่นไม่ร่วมเที่ยว)
   const routeChoices = tripGroup.length ? tripGroup : [...(info.routes || []).filter(r => !isOtherPlace(r.id)), ...(info.routes || []).filter(r => isOtherPlace(r.id))]
-  // วันที่เลือกไม่มีเวลาว่าง → ระบบหาเที่ยวที่ไปทางเดียวกัน (ปลายทางเดียวกันหรือกลุ่มเดียวกัน) มาเสนอให้ขอนั่งไปด้วยเอง
-  const rideAlong = noTimes && !staffEntry && !joinTrip ? (dayInfo?.trips || []).filter(t => t.joinable && sameDestinationGroup(info.routes, t.route_id, form.route_id)) : []
+  // เสนอเที่ยววันเดียวกันที่ไปทางเดียวกัน แม้ยังมีเวลานัดให้เลือก เจ้าหน้าที่เป็นผู้ยืนยัน
+  const rideAlong = !staffEntry && !joinTrip && dayInfo?.status === 'open' ? (dayInfo.trips || []).filter(t => t.joinable && sameDestinationGroup(info.routes, t.route_id, form.route_id)) : []
   const contact = info.contact_phone && <p className="mt-2 text-sm">ติดต่อเจ้าหน้าที่ <a className="font-semibold underline" href={`tel:${info.contact_phone}`}>{info.contact_phone}</a></p>
   const submissionAdvice = /ข้อความใช้ข้อมูลเปลี่ยน/.test(submitError)
     ? 'ข้อความการใช้ข้อมูลของหน่วยงานเปลี่ยนระหว่างกรอก กดส่งคำขอใหม่อีกครั้งเพื่ออ่านข้อความล่าสุด'
     : /รับกลับ/.test(submitError) ? 'ตรวจ “คาดว่าเสร็จประมาณ” ให้ไม่ก่อนเวลานัดและอยู่ในวันเดียวกัน'
-    : /วันนัด|วันหยุด|ล่วงหน้า/.test(submitError) ? 'เลือกวันจากปุ่มวันที่รถว่างในข้อ 1 หากวันนัดเปลี่ยนไม่ได้ ให้ติดต่อเจ้าหน้าที่'
+    : /วันนัด|วันหยุด|ล่วงหน้า/.test(submitError) ? 'เลือกวันจากปุ่มวันที่เปิดรับคำขอในข้อ 1 หากวันนัดเปลี่ยนไม่ได้ ให้ติดต่อเจ้าหน้าที่'
     : /ที่นั่ง|เต็ม|คิว|เที่ยว/.test(submitError) ? 'คิวรถอาจเปลี่ยนหลังเปิดหน้านี้ กดเลือกวันหรือเวลาใหม่อีกครั้ง'
     : /ปิดรับ|ไม่เปิด|ไม่พร้อม/.test(submitError) ? 'หน่วยงานยังรับคำขอนี้ไม่ได้ กรุณาติดต่อเจ้าหน้าที่ตามเบอร์ด้านล่าง'
     : 'ตรวจการเชื่อมต่อแล้วกดส่งซ้ำได้ ระบบใช้รหัสคำขอเดิมเพื่อป้องกันคำขอซ้ำ หากยังไม่สำเร็จให้ติดต่อเจ้าหน้าที่พร้อมข้อความนี้'
@@ -209,7 +209,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   // key ใช้ทำกรอบแดงที่กล่องซึ่งยังไม่ครบ ผู้ใช้จะได้รู้ว่าต้องกลับไปแก้กล่องไหน
   function incomplete() {
     const list = []
-    if (!day) list.push({ key: 'day', label: 'วันที่ไปโรงพยาบาล', advice: 'กดเลือกวันจากปุ่มวันที่รถว่างในข้อ 1' })
+    if (!day) list.push({ key: 'day', label: 'วันที่ไปโรงพยาบาล', advice: 'กดเลือกวันจากปุ่มวันที่เปิดรับคำขอในข้อ 1' })
     if (!form.time || timeMissing) list.push({ key: 'time', label: 'เวลานัดแพทย์', advice: 'กดเลือกเวลาตามใบนัดแพทย์ในข้อ 2 ถ้าไม่มีเวลาที่ต้องการให้เลือกวันอื่น' })
     if (!form.route_id) list.push({ key: 'route', label: 'โรงพยาบาลที่จะไป', advice: 'กดเลือกโรงพยาบาลปลายทางในข้อ 3' })
     else if (otherChosen && otherName.length < 2) list.push({ key: 'route', label: 'ชื่อสถานที่ที่จะไป', advice: 'พิมพ์ชื่อสถานที่ที่จะไปในข้อ 3 (อย่างน้อย 2 ตัวอักษร)' })
@@ -266,32 +266,31 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       <p className="rounded-xl bg-slate-100 p-3">วันที่เลือก: <strong>{fullDate(day)}</strong></p>
       {dayBlocked && <div role="alert" className={`rounded-xl p-3 ${staffEntry ? 'bg-amber-50' : 'bg-red-50 text-red-900'}`}>
         <p className="font-semibold">วันที่เลือกจองไม่ได้: {dayBlocked}</p>
-        <p className="mt-1 text-sm">{staffEntry ? 'รับเรื่องแทนต่อได้ แต่ต้องประสานวันเวลากับผู้จองและคนขับก่อนยืนยันคิว' : 'กดเลือกวันจากปุ่มวันที่รถว่างด้านบน'}</p>
+        <p className="mt-1 text-sm">{staffEntry ? 'รับเรื่องแทนต่อได้ แต่ต้องประสานวันเวลากับผู้จองและคนขับก่อนยืนยันคิว' : 'กดเลือกวันจากปุ่มวันที่เปิดรับคำขอด้านบน'}</p>
       </div>}
     </Section>
 
     <Section step={2} title="เวลานัดแพทย์" done={!!form.time && !timeMissing} warn={warn('time')}
-      hint={staffEntry ? 'ทุกเวลาในช่วงที่หน่วยงานตั้งไว้ ระบบจะตรวจคิวซ้ำตอนยืนยันรถ' : 'เวลาที่หน่วยงานตั้งไว้และรถยังว่าง'}>
+      hint="เลือกเวลาตามใบนัดในช่วงที่หน่วยงานเปิดรับคำขอ">
       <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950">
         หน่วยงานเปิดรับเวลานัดแพทย์ {clockTime(info.office_start)}–{clockTime(info.office_end)} น.
-        {' '}รถอาจออกไปรับก่อนเวลาเริ่มหรือกลับหลังเวลาสิ้นสุดตามระยะทางและเวลารับกลับ
-        {!staffEntry && ' · เวลาที่รถไม่ว่างจะไม่แสดงเป็นปุ่ม'}
+        {' '}เจ้าหน้าที่และคนขับประสานเวลารับ–ส่งเองหลังรับคำขอ
       </p>
       <Choice label="เวลานัดแพทย์" hideLabel value={form.time} onChange={value => set('time', value)} cols="grid-cols-3 sm:grid-cols-4"
         compact items={times.map(time => ({ value: time, label: `${time} น.` }))} />
       {times.length > 0 && step === 30 && <button type="button" className={buttonClass} onClick={() => setAllTimes(true)}>ดูเวลาทุก 15 นาที</button>}
       {noTimes && <div role="alert" className="rounded-xl bg-amber-50 p-3">
-        <p className="font-semibold">วันที่เลือกรถไม่ว่างแล้ว</p>
-        <p className="mt-1 text-sm">กดเลือกวันอื่นในข้อ 1{form.return_mode !== 'one_way' && ' หรือถ้าทราบว่าจะเสร็จประมาณกี่โมง ให้เลือก “คาดว่าเสร็จประมาณ” ในข้อ 4 จะมีเวลาให้เลือกมากขึ้น'}</p>
-        {rideAlong.length > 0 && <div className="mt-3 space-y-2 border-t border-amber-200 pt-3">
+        <p className="font-semibold">ยังไม่มีเวลานัดให้เลือกตามข้อมูลนี้</p>
+        <p className="mt-1 text-sm">ตรวจวันและเวลารับกลับที่เลือก หรือกดเลือกวันอื่นในข้อ 1</p>
+      </div>}
+      {rideAlong.length > 0 && <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
           <p className="font-semibold">มีรถไปทางเดียวกันในวันนี้ ขอนั่งไปด้วยได้</p>
           {rideAlong.map(t => <button key={t.id} type="button" className={`${buttonClass} block w-full text-left`} onClick={() => joinWith(t)}>
-            ขอไปพร้อมเที่ยว {t.route_label} · ออกรับ {clockOf(t.estimated_pickup_at || t.pickup_at)} น. · เหลือ {t.remaining} ที่นั่ง
+            ขอไปพร้อมเที่ยว {t.route_label} · {pickupLabel(t)} · เหลือ {t.remaining} ที่นั่ง
           </button>)}
-          <p className="text-sm">รับผู้ร่วมเพิ่มแล้วเวลาออกรับอาจเร็วขึ้น ระบบแจ้งเวลาจริงหลังเจ้าหน้าที่ยืนยัน</p>
+          <p className="text-sm">เจ้าหน้าที่ตรวจที่นั่งและยืนยันการร่วมเที่ยว แล้วประสานเวลารับกับผู้เดินทางและคนขับ</p>
         </div>}
-      </div>}
-      {timeMissing && <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-900">เวลา {form.time} น. ที่เลือกไว้ไม่ว่างแล้ว กรุณากดเลือกเวลาใหม่</p>}
+      {timeMissing && <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-900">เวลา {form.time} น. ไม่อยู่ในตัวเลือกปัจจุบัน กรุณาตรวจวันและเลือกเวลาใหม่</p>}
     </Section>
 
     <Section step={3} title="โรงพยาบาลที่จะไป" done={!!form.route_id && (!otherChosen || otherName.length >= 2)} warn={warn('route')}
@@ -300,10 +299,10 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
         onChange={value => { set('route_id', value); if (isOtherPlace(value)) setTimeout(() => otherInput.current?.focus(), 0) }}
         cols={routeChoices.length === 1 ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'}
         items={routeChoices.map(r => isOtherPlace(r.id)
-          ? { value: r.id, label: 'อื่นๆ (พิมพ์ชื่อสถานที่เอง)', note: Number.isFinite(Number(r.minutes)) ? `ใช้เวลาเดินทางมาตรฐานประมาณ ${r.minutes} นาที` : '' }
-          : { value: r.id, label: r.label, note: Number.isFinite(Number(r.minutes)) ? `ทางเดียวประมาณ ${r.minutes} นาที` : '' })} />
+          ? { value: r.id, label: 'อื่นๆ (พิมพ์ชื่อสถานที่เอง)', note: '' }
+          : { value: r.id, label: r.label, note: '' })} />
       {/* สถานที่อื่น (20261007170000): พิมพ์ชื่อเอง เจ้าหน้าที่เห็นชื่อนี้ก่อนยืนยันรถ และตรวจระยะทางจริงเอง
-          ระบบกันรถตามเวลาเดินทางมาตรฐานที่แอดมินตั้งไว้ ไม่ร่วมเที่ยวกับผู้ป่วยคนอื่น ห้ามเดาชื่อ/ที่อยู่ให้ */}
+          เจ้าหน้าที่ประสานการเดินทางตามสถานที่จริง ไม่ร่วมเที่ยวกับผู้ป่วยคนอื่น ห้ามเดาชื่อ/ที่อยู่ให้ */}
       {otherChosen && <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
         <label className="block"><span className="text-base font-bold">ชื่อสถานที่ที่จะไป</span>
           <input ref={otherInput} className={`${inputClass} mt-1`} value={form.other_place} maxLength={OTHER_PLACE_MAX} autoComplete="off"
@@ -314,9 +313,9 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
 
     {joinTrip ? <Section step={4} title="ขากลับ" done={joinTrip.return_mode === 'one_way' || joinBacks.includes(form.back)} warn={warn('back')}
       hint={`ใช้แบบเดียวกับเที่ยวที่ขอร่วม: ${RETURN_MODES[joinTrip.return_mode] || ''}`}>
-      {/* เที่ยวรอรับกลับ: รถรออยู่ปลายทาง จึงพาผู้ขอร่วมกลับบ้านก่อนแล้วไปรับคนเดิมทันได้ (joinReturnChoices) */}
+      {/* เวลาที่พร้อมรับกลับให้ผู้จัดคิวใช้ประสานแยกรอบหรือรับพร้อมเที่ยวเดิม */}
       {joinTrip.return_mode !== 'one_way' && <Choice label="เวลารับกลับ" value={form.back} onChange={value => set('back', value)} cols="grid-cols-2 sm:grid-cols-4" compact
-        hint={joinBacks.length > 1 ? 'เสร็จเร็วกลับก่อนได้ รถพาไปส่งบ้านแล้วกลับไปรับผู้ป่วยเที่ยวเดิมทันเวลา' : 'เที่ยวนี้กลับพร้อมกันทุกคน'}
+        hint={joinBacks.length > 1 ? 'แจ้งเวลาที่พร้อมให้รับกลับ เจ้าหน้าที่ประสานว่าจะรับแยกรอบหรือพร้อมเที่ยวเดิม' : 'เที่ยวนี้กลับพร้อมกันทุกคน'}
         items={joinBacks.map(time => ({ value: time, label: `${time} น.`, note: time === clockOf(joinTrip.return_at) ? 'กลับพร้อมเที่ยว' : '' }))} />}
     </Section> : <Section step={4} title="ขากลับ" done hint="ระบบเลือก “ให้รถรอรับกลับ” ไว้ให้ก่อน เปลี่ยนได้">
       <Choice label="ขากลับ" hideLabel value={form.return_mode} onChange={value => { set('return_mode', value); if (value === 'one_way') set('back', '') }} cols="grid-cols-1 sm:grid-cols-3"
@@ -412,7 +411,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
         { label: 'โรงพยาบาล', value: routeLabel },
         { label: 'ผู้เดินทาง', value: `${payload().patient_name}${form.mobility === 'walk' ? '' : ` · ${MOBILITY[form.mobility]}`}${Number(form.companions) ? ` · ผู้ติดตาม ${form.companions} คน` : ''}` },
         { label: 'จุดรับ', value: `${pickupText()}${form.pickup_lat === null ? ' · ไม่ได้ปักหมุด' : ' · ปักหมุดแล้ว'}` },
-        { label: 'ขากลับ', value: `${RETURN_MODES[form.return_mode]}${form.return_mode === 'one_way' ? '' : ` · ${form.back ? `คาดว่าเสร็จ ${form.back} น.` : `ยังไม่ทราบเวลา (กันรถถึง ${backLatest} น.)`}`}` },
+        { label: 'ขากลับ', value: `${RETURN_MODES[form.return_mode]}${form.return_mode === 'one_way' ? '' : ` · ${form.back ? `คาดว่าเสร็จ ${form.back} น.` : `ยังไม่ทราบเวลา (ประสานรับกลับอีกครั้ง)`}`}` },
         { label: 'เบอร์ติดต่อ', value: form.phone },
       ]} />}
   </form>

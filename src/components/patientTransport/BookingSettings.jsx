@@ -12,7 +12,7 @@ function SettingsGroup({ number, title, children }) {
 
 export default function BookingSettings({ workspace, busy, onSave }) {
   const [form, setForm] = useState(() => ({ enabled: false, partner_id: '', driver_id: '', coordinator_ids: [], office_start: 510, office_end: 990,
-    seats: '', wheelchairs: '', stretchers: '', buffer_minutes: 15, boarding_minutes: 15, routes: [], holidays: [], calendar_checked_through: '',
+    seats: '', wheelchairs: '', stretchers: '', routes: [], holidays: [], calendar_checked_through: '',
     unavailable: false, delegation_reference: '', privacy_notice: '', contact_phone: '',
     // อปท. ที่ยังไม่เคยบันทึกตั้งค่า workspace ส่ง settings มาเป็นอ็อบเจกต์ที่ทุกช่องเป็น null (to_jsonb ของแถวว่างใน plpgsql)
     // ถ้ากระจายทับตรงๆ coordinator_ids/routes/holidays กลายเป็น null แล้วหน้าตั้งค่าพังตั้งแต่เปิดครั้งแรก
@@ -21,15 +21,14 @@ export default function BookingSettings({ workspace, busy, onSave }) {
   const set = key => e => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
   const input = (key, label, props = {}) => <label>{label}<input className={inputClass} value={form[key] ?? ''} onChange={set(key)} {...props} /></label>
   function changeRoute(routeId, key, value) { setForm(f => ({ ...f, routes: f.routes.map(r => r.id === routeId ? { ...r, [key]: value } : r) })) }
-  // ช่อง "อื่นๆ" (20261007170000) เก็บเป็นเส้นทางพิเศษ id '__other__' มีแค่เวลาเดินทางมาตรฐาน — แยกออกจากรายการโรงพยาบาล
+  // ช่อง "อื่นๆ" (20261007170000) เก็บเป็นเส้นทางพิเศษ id '__other__' ให้พิมพ์ชื่อสถานที่เอง — แยกออกจากรายการโรงพยาบาล
   // จะได้ไม่ไปปนกับกลุ่มปลายทาง และไม่นับเป็น "เส้นทางโรงพยาบาลอย่างน้อย 1 เส้นทาง"
   const listedRoutes = form.routes.filter(r => r.id !== OTHER_PLACE_ID)
   const otherRoute = form.routes.find(r => r.id === OTHER_PLACE_ID)
-  // ค่าเริ่มต้นตอนเปิดช่อง = เวลาเดินทางของโรงพยาบาลที่ไกลที่สุดที่ตั้งไว้ (แอดมินเห็นและแก้ได้ก่อนบันทึก)
-  const farthest = Math.max(30, ...listedRoutes.map(r => Number(r.minutes) || 0))
+  // เปิดช่องโดยไม่ต้องกรอกเวลาเดินทาง เจ้าหน้าที่ประสานรอบรถเอง
   function toggleOther(on) {
     setForm(f => ({ ...f, routes: on
-      ? [...f.routes.filter(r => r.id !== OTHER_PLACE_ID), { id: OTHER_PLACE_ID, label: 'อื่นๆ (พิมพ์ชื่อสถานที่เอง)', minutes: Math.min(240, farthest) }]
+      ? [...f.routes.filter(r => r.id !== OTHER_PLACE_ID), { id: OTHER_PLACE_ID, label: 'อื่นๆ (พิมพ์ชื่อสถานที่เอง)' }]
       : f.routes.filter(r => r.id !== OTHER_PLACE_ID) }))
   }
   // ชื่อกลุ่มที่ใช้อยู่แล้วให้เลือกซ้ำได้ — พิมพ์ต่างกันแค่ตัวเดียวระบบถือเป็นคนละกลุ่ม
@@ -38,7 +37,7 @@ export default function BookingSettings({ workspace, busy, onSave }) {
     !form.partner_id && 'เลือกเจ้าของรถ', !form.driver_id && 'เลือกคนขับ',
     !form.coordinator_ids.length && 'เลือกผู้ยืนยันคิว (เป็นคนขับคนเดียวกันได้)',
     ['seats', 'wheelchairs', 'stretchers'].some(key => form[key] === '' || form[key] == null) && 'ระบุความจุรถจริง ช่องที่ไม่มีให้ใส่ 0',
-    !listedRoutes.length && 'เพิ่มโรงพยาบาลและเวลาเดินทางอย่างน้อย 1 เส้นทาง',
+    !listedRoutes.length && 'เพิ่มโรงพยาบาลอย่างน้อย 1 เส้นทาง',
     !/^0[0-9]{8,9}$/.test(form.contact_phone) && 'ระบุเบอร์ติดต่อหน่วยงาน',
   ].filter(Boolean)
   return <form className="space-y-5" onInvalidCapture={e => { const section = e.target.closest('details'); if (section) section.open = true }} onSubmit={e => {
@@ -50,12 +49,12 @@ export default function BookingSettings({ workspace, busy, onSave }) {
     }
     setAttemptedOpen(false)
     // Keep retired setup fields out of writes; the server preserves existing values and supplies the notice.
-    const payload = Object.fromEntries(Object.entries(form).filter(([key]) => !['calendar_checked_through', 'delegation_reference', 'holidays', 'privacy_notice'].includes(key)))
-    onSave(workspace.settings?.revision ?? 1, payload)
+    const payload = Object.fromEntries(Object.entries(form).filter(([key]) => !['calendar_checked_through', 'delegation_reference', 'holidays', 'privacy_notice', 'buffer_minutes', 'boarding_minutes'].includes(key)))
+    onSave(workspace.settings?.revision ?? 1, { ...payload, routes: payload.routes.map(r => ({ id: r.id, label: r.label, ...(r.zone ? { zone: r.zone } : {}) })) })
   }}>
     <h2 className="text-xl font-bold">ตั้งค่ารถรับส่งผู้ป่วย</h2>
     {attemptedOpen && form.enabled && missing.length > 0 && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800"><p className="font-semibold">ยังเปิดรับจองไม่ได้ กรุณาเติมข้อมูลที่ขาด</p><ul className="mt-2 list-disc pl-5">{missing.map(item => <li key={item}>{item}</li>)}</ul></div>}
-    <p className="rounded-xl bg-amber-50 p-3 text-sm">กรอกข้อมูลรถ ผู้รับผิดชอบ และโรงพยาบาลครั้งแรก หลังจากนั้นแก้เฉพาะเมื่อมีการเปลี่ยนแปลง ช่วงเวลานัดแพทย์และเวลาเผื่อมีค่าเริ่มต้นให้แล้ว</p>
+    <p className="rounded-xl bg-amber-50 p-3 text-sm">กรอกข้อมูลรถ ผู้รับผิดชอบ และโรงพยาบาลครั้งแรก หลังจากนั้นแก้เฉพาะเมื่อมีการเปลี่ยนแปลง ช่วงเวลานัดแพทย์มีค่าเริ่มต้นให้แล้ว เจ้าหน้าที่จัดรอบรับ–ส่งตามงานในวันนั้น</p>
     <SettingsGroup number="1" title="ผู้รับผิดชอบและการติดต่อ">
       <div className="grid gap-4 sm:grid-cols-2">
       <label>กองทุน/หน่วยงานเจ้าของรถ<select className={inputClass} value={form.partner_id || ''} onChange={set('partner_id')}><option value="">เลือกเจ้าของรถจากทะเบียนหน่วยงาน</option>{workspace.partners?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
@@ -81,40 +80,29 @@ export default function BookingSettings({ workspace, busy, onSave }) {
       <div className="grid gap-4 sm:grid-cols-2">
       {['office_start', 'office_end'].map((key, i) => <label key={key}>{i ? 'สิ้นสุดเวลานัดแพทย์' : 'เริ่มเวลานัดแพทย์'}<input className={inputClass} type="time" required value={clockTime(form[key])} onChange={e => setForm(f => ({ ...f, [key]: minutes(e.target.value) }))} /></label>)}
       </div>
-      <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950">เวลานัดแพทย์ที่เปิดให้จอง: <strong>{clockTime(form.office_start)}–{clockTime(form.office_end)} น.</strong> ตรงตามค่าที่ตั้งไว้ รถอาจออกไปรับก่อนเวลาเริ่มหรือกลับหลังเวลาสิ้นสุดตามระยะทางและเวลารับกลับ · มีผลหลังบันทึก</p>
-    <details className="rounded-xl border border-slate-200 p-3"><summary className="flex min-h-11 cursor-pointer items-center font-semibold">ปรับเวลาเผื่อ · ปกติไม่ต้องแก้</summary><p className="my-2 text-sm">ระบบเผื่อก่อนนัด/หลังเที่ยว {form.buffer_minutes} นาที และขึ้นลงรถ {form.boarding_minutes} นาทีต่อคน เปลี่ยนเฉพาะเมื่อไม่ตรงกับการปฏิบัติงาน</p><div className="grid gap-4 sm:grid-cols-2">
-      {input('buffer_minutes', 'เวลาเผื่อก่อนนัด/หลังเที่ยว (นาที)', { type: 'number', min: 5, max: 90, required: true })}
-      {input('boarding_minutes', 'เวลาขึ้นลงต่อผู้เดินทาง (นาที)', { type: 'number', min: 5, max: 60, required: true })}
-    </div></details>
+      <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950">เวลานัดแพทย์ที่เปิดให้จอง: <strong>{clockTime(form.office_start)}–{clockTime(form.office_end)} น.</strong> ตรงตามค่าที่ตั้งไว้ เจ้าหน้าที่และคนขับประสานเวลารับ–ส่งเอง ระบบไม่คำนวณช่วงกันรถ · มีผลหลังบันทึก</p>
+
     </SettingsGroup>
     <SettingsGroup number="4" title="เส้นทางโรงพยาบาลและพื้นที่รับ">
-    <fieldset><legend className="sr-only">เส้นทางโรงพยาบาลและพื้นที่รับ · เวลาเดินทางรวมระหว่างจุดรับ</legend>
-      <p className="text-sm text-slate-600">กำหนดโรงพยาบาล พื้นที่รับ และเวลาเดินทางต่อขา เพื่อให้ระบบคำนวณคิวรถ</p>
-      {/* กลุ่มปลายทาง (20261007150000): ตั้งครั้งเดียว ผู้ป่วยที่ไปคนละแห่งในกลุ่มเดียวกันนั่งรถเที่ยวเดียวกันได้
-          ptb_plan บวกเวลาแวะจุดละ 1 รอบของ "เวลาเผื่อ" ในข้อ 3 — ไม่เพิ่มช่องตั้งค่าใหม่ (เจ้าของระบบเลือก 2569-10-07) */}
+    <fieldset><legend className="sr-only">เส้นทางโรงพยาบาลและพื้นที่รับ</legend>
+      <p className="text-sm text-slate-600">กำหนดโรงพยาบาล พื้นที่รับ และกลุ่มปลายทาง เพื่อช่วยเจ้าหน้าที่จัดเที่ยว</p>
       <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950">
         <strong>กลุ่มปลายทาง</strong> · ใส่ชื่อกลุ่มเดียวกัน (เช่น “ในเมือง”) ให้ปลายทางที่อยู่ใกล้กัน ผู้ป่วยที่ไปคนละแห่งในกลุ่มเดียวกันจะนั่งรถเที่ยวเดียวกันได้
-        ระบบคิดเวลาจากปลายทางที่ไกลที่สุดของรอบ แล้วบวกเวลาแวะจุดละ {form.buffer_minutes} นาที (เวลาเผื่อในข้อ 3) · เว้นว่าง = ไม่รวมกับปลายทางอื่น
+        เจ้าหน้าที่ตรวจรายการงานและจัดเวลารับ–ส่งเอง · เว้นว่าง = ไม่รวมกับปลายทางอื่น
       </p>
       <datalist id="patient-route-zones">{zoneNames.map(zone => <option key={zone} value={zone} />)}</datalist>
-      {listedRoutes.map(r => <div key={r.id} className="my-3 grid gap-3 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1fr_140px_auto]">
+      {listedRoutes.map(r => <div key={r.id} className="my-3 grid gap-3 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1fr_auto]">
         <label>ชื่อโรงพยาบาล — พื้นที่รับ<input className={inputClass} value={r.label} required maxLength={200} onChange={e => changeRoute(r.id, 'label', e.target.value)} /></label>
-        <label>นาทีต่อขา<input className={inputClass} type="number" min={5} max={240} required value={r.minutes} onChange={e => changeRoute(r.id, 'minutes', Number(e.target.value))} /></label>
         <button type="button" className={buttonClass} onClick={() => setForm(f => ({ ...f, routes: f.routes.filter(x => x.id !== r.id) }))}>นำออกจากร่าง</button>
-        <label className="sm:col-span-3">กลุ่มปลายทาง <span className="text-sm font-normal text-slate-600">(ถ้ามี)</span>
+        <label className="sm:col-span-2">กลุ่มปลายทาง <span className="text-sm font-normal text-slate-600">(ถ้ามี)</span>
           <input className={inputClass} list="patient-route-zones" maxLength={60} placeholder="เว้นว่าง = ไม่รวมกับปลายทางอื่น" value={r.zone || ''} onChange={e => changeRoute(r.id, 'zone', e.target.value)} /></label>
       </div>)}
-      <button type="button" className={buttonClass} onClick={() => setForm(f => ({ ...f, routes: [...f.routes, { id: crypto.randomUUID(), label: '', minutes: 30 }] }))}>เพิ่มเส้นทาง</button>
-      {/* สถานที่อื่น (20261007170000): ตั้งครั้งเดียว — ผู้จองเห็นปุ่ม "อื่นๆ" แล้วพิมพ์ชื่อสถานที่เอง
-          ใช้เวลาเดินทางมาตรฐานค่าเดียวกันกับทุกสถานที่อื่น (เจ้าของระบบเลือก 2569-10-07) ไม่ร่วมเที่ยวกับใคร ปิดไว้เป็นค่าเริ่มต้น */}
+      <button type="button" className={buttonClass} onClick={() => setForm(f => ({ ...f, routes: [...f.routes, { id: crypto.randomUUID(), label: '' }] }))}>เพิ่มเส้นทาง</button>
       <div className="mt-4 space-y-3 rounded-xl border border-slate-200 p-3">
         <label className="flex min-h-11 items-center gap-3"><input className="size-5" type="checkbox" checked={!!otherRoute} onChange={e => toggleOther(e.target.checked)} />
           เปิดช่อง “อื่นๆ” ให้ผู้จองพิมพ์ชื่อสถานที่ที่ไม่อยู่ในรายการเอง</label>
         {otherRoute && <>
-          <label className="block">เวลาเดินทางมาตรฐานของสถานที่อื่น (นาทีต่อขา)
-            <input className={inputClass} type="number" min={5} max={240} required value={otherRoute.minutes} onChange={e => changeRoute(OTHER_PLACE_ID, 'minutes', Number(e.target.value))} /></label>
-          <p className="text-sm text-slate-700">เริ่มต้นเป็นเวลาของโรงพยาบาลที่ไกลที่สุดที่ตั้งไว้ แก้ได้ ระบบใช้ค่านี้ค่าเดียวกันกันรถให้ทุกสถานที่อื่น ถ้าสถานที่จริงไกลกว่านี้ รถจะถูกกันสั้นเกินไป
-            ตั้งให้สูงไว้ก่อนเพื่อความปลอดภัย · เจ้าหน้าที่เห็นชื่อสถานที่ก่อนกดยืนยันรถทุกครั้งและต้องตรวจระยะทางจริงเอง · สถานที่อื่นไม่นั่งรถร่วมกับผู้ป่วยคนอื่น</p>
+          <p className="text-sm text-slate-700">เจ้าหน้าที่ตรวจชื่อสถานที่และประสานเวลารับ–ส่งก่อนยืนยันรถ · สถานที่อื่นไม่นั่งรถร่วมกับผู้ป่วยคนอื่น</p>
           <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">⚠️ ระบบไม่ได้ตรวจว่ากองทุนอนุญาตให้ใช้รถไปสถานที่ประเภทใด ผู้จัดคิวต้องตัดสินตามข้อบังคับของกองทุนตอนยืนยันรถ</p>
         </>}
       </div>
