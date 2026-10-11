@@ -6,7 +6,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, Users, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
-  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid,
+  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid, Menu,
 } from 'lucide-react'
 import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -40,6 +40,7 @@ import { PERFORMANCE_ROLES } from '../lib/staffPerformanceData'
 import OdorReportPanel from '../components/staff/OdorReportPanel'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
 import UserProfileBadge from '../components/layout/UserProfileBadge'
+import PortalDrawer from '../components/common/PortalDrawer'
 
 const CivilProjectAdmin = lazy(() => import('../components/admin/CivilProjectAdmin'))
 const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
@@ -2400,6 +2401,7 @@ export default function StaffDashboard() {
   const { tenant } = useTenant()
   const { unreadCount } = useNotifications()
   const [activeModule, setActiveModule] = useState(location.state?.module ?? 'home')
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const [mapOpenComplaintId] = useState(location.state?.openComplaintId ?? null)
   const [autoEditEventId, setAutoEditEventId] = useState(location.state?.editEventId ?? null)
   const [autoCreateEventSignal, setAutoCreateEventSignal] = useState(0)
@@ -2653,6 +2655,18 @@ export default function StaffDashboard() {
   const menuTabActive = activeModule === 'menu' || (activeModule !== 'home' && !barHas(activeModule))
   const menuTabBadge = (barHas('inbox') ? 0 : pendingCount) + (barHas('complaints') ? 0 : newComplaintCount) + patientWorkCount
 
+  // ลิ้นชักเมนูซ้ายบนมือถือ (PortalDrawer) — กดเมนูแล้วทำเหมือนเมนูซ้ายบน PC: ไฟล์ static เปิดแท็บใหม่ ·
+  // หน้าแยก (ศูนย์ข้อมูล) navigate · นอกนั้นสลับโมดูล · แล้วปิดลิ้นชักทุกกรณี
+  // closeDrawer ต้อง useCallback — effect ในลิ้นชักผูกกับมัน ถ้าเปลี่ยนทุกรอบ render โฟลกัสจะถูกดึงกลับทุกครั้ง
+  const closeDrawer = useCallback(() => setDrawerOpen(false), [])
+  const drawerBadges = { inbox: pendingCount, complaints: newComplaintCount, [PATIENT_TRANSPORT_MODULE_KEY]: patientWorkCount }
+  function openFromDrawer(item) {
+    setDrawerOpen(false)
+    if (item.newTab) window.open(item.newTab, '_blank', 'noopener,noreferrer')
+    else if (item.externalUrl) navigate(item.externalUrl)
+    else setActiveModule(item.key)
+  }
+
   return (
     <div className="min-h-full" style={{ backgroundColor: '#eef2f7' }}>
 
@@ -2662,6 +2676,12 @@ export default function StaffDashboard() {
       <header className="md:hidden text-white px-4 pt-3 pb-4 relative overflow-hidden shrink-0"
         style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
         <div className="flex items-center gap-3 relative z-10">
+          {/* ปุ่มเปิดลิ้นชักเมนูซ้าย — ซ้ายสุดของหัวจอ · พื้นที่กดสูง 44px ตามเกณฑ์ปุ่มของทั้งระบบ */}
+          <button type="button" onClick={() => setDrawerOpen(true)} aria-label="เปิดเมนู"
+            aria-expanded={drawerOpen} aria-controls="portal-drawer"
+            className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white/90 transition-colors active:bg-white/15">
+            <Menu size={22} aria-hidden="true" />
+          </button>
           {/* กดโลโก้ = กลับหน้าแรกฝั่งประชาชน (พฤติกรรมเดิมของทุกหน้าในระบบ) — ป้าย "ระบบเจ้าหน้าที่"
               ข้างล่างทำหน้าที่บอกโหมดแทน จึงไม่ต้องมีปุ่มออกแยกอีกปุ่ม */}
           <button onClick={() => navigate('/')} aria-label="กลับหน้าแรก" className="shrink-0 active:opacity-70 transition-opacity">
@@ -2673,8 +2693,10 @@ export default function StaffDashboard() {
             <p className="font-bold text-sm leading-tight truncate">{tenant?.name ?? 'Staff Portal'}</p>
             <span className="mt-1 inline-block rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest">ระบบเจ้าหน้าที่</span>
           </div>
+          {/* ซ่อนบนจอ < 400px: ปุ่ม ☰ ที่เพิ่มเข้ามาแย่งที่จนชื่อ อปท. ถูกตัด (360px เหลือ 90px ต้องการ 113px)
+              ศูนย์รวมข้อมูลยังเข้าได้จากลิ้นชัก กริดแท็บ "เมนู" และการ์ดทางลัดบนแดชบอร์ด */}
           {enabledKeys.includes('data-center') && (
-            <button onClick={() => navigate('/data-center/staff')} aria-label="ศูนย์รวมข้อมูลดิจิทัล" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
+            <button onClick={() => navigate('/data-center/staff')} aria-label="ศูนย์รวมข้อมูลดิจิทัล" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0 max-[399px]:hidden">
               <Database size={19} />
             </button>
           )}
@@ -2697,6 +2719,10 @@ export default function StaffDashboard() {
           </button>
         </div>
       </header>
+
+      <PortalDrawer open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="ระบบเจ้าหน้าที่"
+        ariaLabel="เมนูเจ้าหน้าที่" groups={visibleHomeGroups} activeKey={activeModule}
+        badges={drawerBadges} onSelect={openFromDrawer} />
 
         {/* PC header — staff themed */}
         <header className="hidden md:block relative w-full text-white overflow-hidden"
