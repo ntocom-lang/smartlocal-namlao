@@ -12,7 +12,9 @@ import { filterOptions, findOption, normalizeName, tidyName } from '../../lib/da
 // รายการที่วาดสูงสุด — กันหน้าค้างถ้าวันหนึ่งมีตัวเลือกเป็นพัน ผู้ใช้พิมพ์ค้นหาเพื่อกรองต่อได้เสมอ
 const MAX_ROWS = 200
 
-export default function OptionPickerSheet({ title, options, selected, onPick, onClose, createLabel, emptyHint }) {
+// zClass: ค่าเริ่มต้น z-60 พอสำหรับในฟอร์มธรรมดา แต่แผ่นนี้ถูกเปิดซ้อนในหน้าต่างที่อยู่เหนือแผงสรุปของแผนที่มือถือ (z-1001)
+// ได้เหมือนกัน — ผู้เรียกต้องส่งคลาสที่สูงกว่าชั้นที่ซ้อนอยู่ มิฉะนั้นแผ่นจะจมอยู่ใต้และกดไม่ได้
+export default function OptionPickerSheet({ title, options, selected, onPick, onClose, createLabel, emptyHint, zClass = 'z-60' }) {
   const [query, setQuery] = useState('')
   const inputRef = useRef(null)
 
@@ -44,7 +46,7 @@ export default function OptionPickerSheet({ title, options, selected, onPick, on
   }
 
   return (
-    <div className="fixed inset-0 z-60 flex items-end justify-center md:items-center" role="dialog" aria-modal="true" aria-label={title}>
+    <div className={`fixed inset-0 ${zClass} flex items-end justify-center md:items-center`} role="dialog" aria-modal="true" aria-label={title}>
       <button type="button" aria-label="ปิด" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-black/50 cursor-default" />
       <div className="relative flex w-full max-h-[80vh] flex-col rounded-t-3xl bg-white text-slate-800 shadow-2xl md:max-w-md md:rounded-2xl"
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 12px)' }}>

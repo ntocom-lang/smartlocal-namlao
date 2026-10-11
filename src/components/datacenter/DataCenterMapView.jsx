@@ -2,12 +2,18 @@ import { useEffect, useState, useMemo } from 'react'
 import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 // Construction ถูกเอาออกจาก import พร้อมกับปุ่มแท็บ "โครงการ" ที่คอมเมนต์ไว้ใน SummaryPanel
 // (ตรงตามที่ commit 79f5a3c ทำกับ ClipboardList ตอนถอดเมนู) เอากลับมาพร้อมกันตอนคืนแท็บ
-import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation } from 'lucide-react'
+import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation, Target } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import LeafletMapCanvas from '../common/LeafletMapCanvas'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, isIconImage } from '../../lib/dataCenterGroupIcon'
 import CategoryIcon from './CategoryIcon'
 import { odorTimeRangeLabel } from '../../lib/odorTimeRanges'
+import useAdhocZones from '../../hooks/useAdhocZones'
+import AdhocZonesPanel, { AdhocZoneCard } from './AdhocZonesPanel'
+import AdhocZoneForm from './AdhocZoneForm'
+import {
+  buildZoneOverlays, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn, normalizeRadii, zoomForRadius,
+} from '../../lib/adhocZones'
 
 function TrafficLightIcon({ size = 20, className = "" }) {
   return (
@@ -203,7 +209,7 @@ function TabCount({ value }) {
 // เนื้อหาแท็บ + การ์ดสรุป — ใช้ร่วมกันทั้งแถบขวาบน PC และแผงล่างบนมือถือ ไม่ต้องแก้ 2 ที่
 // showSourceTabs=false (ฝั่งประชาชน): ซ่อนเฉพาะปุ่ม "คำร้อง"/"โครงการ" — แถบ "ศูนย์ข้อมูลดิจิทัล" ยังต้องอยู่เสมอ
 // (เดิมซ่อนทั้งแถบไปด้วยโดยไม่ตั้งใจ ทำให้ประชาชนไม่เห็นหัวข้ออะไรเลย)
-function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs, routeCategoryKeys, showRoutes, setShowRoutes, groupIconOverrides, statusFilter, setStatusFilter, dceCount, complaintCount }) {
+function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs, routeCategoryKeys, showRoutes, setShowRoutes, groupIconOverrides, statusFilter, setStatusFilter, dceCount, complaintCount, extraTop = null }) {
   return (
     <>
       <div className="flex border-b border-gray-100 shrink-0">
@@ -265,6 +271,9 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
           })}
         </div>
       )}
+
+      {/* ชิ้นส่วนเสริมใต้ตัวกรองสถานะ — ใช้กับแผงวงรัศมีเรื่องเฉพาะกิจ (เฉพาะแท็บคำร้อง ฝั่งเจ้าหน้าที่) */}
+      {extraTop}
 
       <div className="p-3 space-y-3">
         {activeSummary.length === 0 ? (
@@ -372,6 +381,16 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   // ไอคอนกลุ่มหลักที่แอดมินตั้งเอง (data_center_group_icons) — ตัวเดียวกับที่ DataCenterOverview.jsx
   // ใช้ กันอิโมจิไม่ตรงกันระหว่างหน้ารายการกับแผนที่ ดู src/lib/dataCenterGroupIcon.js
   const [groupIconOverrides, setGroupIconOverrides] = useState({})
+
+  // ── วงรัศมีเรื่องเฉพาะกิจ (ฝั่งเจ้าหน้าที่เท่านั้น — allowStatusFilter=false จะไม่ยิงอะไรเลย) ──
+  // สิทธิ์ตัดสินที่ DB (RLS) ฝั่งนี้แค่ซ่อน/โชว์ปุ่ม · สวิตช์เปิด-ปิดเป็นค่าส่วนตัวในเบราว์เซอร์ ไม่กระทบคนอื่น
+  // (ต่างจาก "ปิดเรื่อง" ที่เก็บใน DB แล้วซ่อนให้ทุกคน) เก็บ "ที่ปิด" ไม่ใช่ "ที่เปิด" ให้เรื่อง/วงใหม่ขึ้นเอง
+  const zonesApi = useAdhocZones({ tenantId: tenant?.id, enabled: allowStatusFilter })
+  const [zoneLayerOn, setZoneLayerOn] = useState(() => readLayerOn(globalThis.localStorage))
+  const [hiddenZoneKeys, setHiddenZoneKeys] = useState(() => readHiddenKeys(globalThis.localStorage))
+  const [selectedZoneId, setSelectedZoneId] = useState(null)
+  const [zoneForm, setZoneForm] = useState(null) // null = ปิด · { zone: null } = เพิ่มใหม่ · { zone } = แก้ไข
+  const [zoneFocus, setZoneFocus] = useState(null) // { lat, lng, zoom, nonce } — กดชื่อเรื่องในแผงแล้วบินไปดูวง (nonce = นับครั้งที่กด ให้กดเรื่องเดิมซ้ำแล้วกล้องยังกลับมา)
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -498,6 +517,53 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const floatSummary = buildGroupSummary(
     entries.filter(e => isFloatGroup(e.group_name)), resolveCategoryLabel, resolveMarkerIcon,
   )
+  const zoneOverlays = useMemo(
+    () => buildZoneOverlays(zonesApi.zones, { layerOn: zoneLayerOn, hidden: hiddenZoneKeys }),
+    [zonesApi.zones, zoneLayerOn, hiddenZoneKeys],
+  )
+  const hasOpenZones = zonesApi.zones.some(z => z.is_active)
+  const selectedZone = zonesApi.zones.find(z => z.id === selectedZoneId && z.is_active) ?? null
+  const zonesPanelVisible = allowStatusFilter && (zonesApi.zones.length > 0 || zonesApi.canManage)
+  // สถานที่ในศูนย์ข้อมูลที่ใช้เป็นจุดต้นทางได้ — มาจากหมุดที่โหลดอยู่แล้ว ไม่ต้องยิงคำขอเพิ่ม (ไม่รวมเส้นทางถนน)
+  const zoneSourceEntries = allRows
+    .filter(r => r.source_table === 'data_center_entries' && !(r.route_points?.length >= 2))
+    .map(r => ({ id: r.source_id, name: r.title || '', lat: r.latitude, lng: r.longitude, group: r.group_name || '', category: r.category || '' }))
+    .filter(r => r.name)
+
+  function toggleZoneLayer() {
+    setZoneLayerOn(prev => { writeLayerOn(globalThis.localStorage, !prev); return !prev })
+  }
+  function toggleZoneHidden(key) {
+    setHiddenZoneKeys(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      writeHiddenKeys(globalThis.localStorage, next)
+      return next
+    })
+  }
+  function focusZone(zone) {
+    const radii = normalizeRadii(zone.radii_m)
+    const zoom = zoomForRadius(zone.latitude, radii[radii.length - 1])
+    // มือถือ (< lg): bottom sheet สูงสุด 55% ของแผนที่บังครึ่งล่าง → เลื่อนจุดศูนย์กลางลงใต้จุดต้นทางเท่ากับ 27% ของความสูงจอ
+    // (เมตรต่อพิกเซลที่ซูมนั้น × พิกเซล ÷ 111,320 ม./องศา) ให้จุดต้นทางและวงอยู่ในส่วนบนที่ไม่ถูกบัง · PC ไม่มี sheet ไม่ชดเชย
+    const isNarrow = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 1023px)').matches
+    const shiftPx = isNarrow ? Math.round(window.innerHeight * 0.27) : 0
+    const metersPerPx = (156543.03 * Math.cos((Number(zone.latitude) * Math.PI) / 180)) / 2 ** zoom
+    const latShift = (shiftPx * metersPerPx) / 111320
+    setZoneFocus(prev => ({ lat: Number(zone.latitude) - latShift, lng: Number(zone.longitude), zoom, nonce: (prev?.nonce ?? 0) + 1 }))
+    setSelectedZoneId(zone.id)
+    setSelectedEntry(null)
+    // เรื่องที่ผู้ใช้ปิดไว้แล้วกดดูชื่อ = อยากเห็น เปิดให้เลย ไม่ใช่เลื่อนไปดูแผนที่เปล่า
+    setHiddenZoneKeys(prev => {
+      const key = `z:${zone.id}`
+      if (!prev.has(key)) return prev
+      const next = new Set(prev); next.delete(key)
+      writeHiddenKeys(globalThis.localStorage, next)
+      return next
+    })
+    if (!zoneLayerOn) { setZoneLayerOn(true); writeLayerOn(globalThis.localStorage, true) }
+  }
+
   const mapButtons = [
     hasRoutes && {
       id: 'routes', label: 'เส้นทางถนน', Icon: TrafficLightIcon,
@@ -514,6 +580,12 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
         }),
       }
     })),
+    // ท้ายสุดของแถวโดยตั้งใจ — tests/map-click.playwright.mjs กด "ปุ่มแรก" ของ .absolute.right-3.top-3 เพื่อปิดเลเยอร์ CCTV
+    // ถ้าปุ่มนี้อยู่ต้นแถว พอ อปท. ใดสร้างวงรัศมี เทสต์นั้นจะกดผิดปุ่มแล้วรายงานผลผิด · ปุ่มเดิมจึงต้องอยู่ตำแหน่งเดิมทุกตัว
+    hasOpenZones && {
+      id: 'adhoc-zones', label: 'วงรัศมีเรื่องเฉพาะกิจ', Icon: Target,
+      on: zoneLayerOn, toggle: toggleZoneLayer,
+    },
   ].filter(Boolean)
 
   const fallbackCenter = tenant?.latitude && tenant?.longitude ? { lat: Number(tenant.latitude), lng: Number(tenant.longitude) } : { lat: 13.7563, lng: 100.5018 }
@@ -532,6 +604,15 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   // ฝั่งประชาชน (allowStatusFilter=false) ไม่มีแท็บคำร้อง/โครงการให้กด ล็อกไว้ที่ dce เสมอไม่ว่า activeTab จะเป็นอะไร
   const effectiveTab = allowStatusFilter ? activeTab : 'dce'
   const activeSummary = effectiveTab === 'dce' ? dceSummary : effectiveTab === 'complaints' ? complaintSummary : projectSummary
+
+  // แผงวงรัศมีอยู่ใต้แท็บ "คำร้อง" (ที่เดียวกับตัวกรอง "เฉพาะกิจ") — ปุ่มลอยบนแผนที่เปิด/ปิดชั้นนี้ได้ทุกแท็บอยู่แล้ว
+  const zonesPanel = zonesPanelVisible && effectiveTab === 'complaints' ? (
+    <AdhocZonesPanel zones={zonesApi.zones} counts={zonesApi.counts} categories={zonesApi.categories}
+      canManage={zonesApi.canManage} layerOn={zoneLayerOn} onToggleLayer={toggleZoneLayer}
+      hidden={hiddenZoneKeys} onToggleHidden={toggleZoneHidden} selectedZoneId={selectedZoneId}
+      onAdd={() => setZoneForm({ zone: null })} onEdit={zone => setZoneForm({ zone })}
+      onFocus={focusZone} onReopen={zone => zonesApi.setZoneActive(zone.id, true)} />
+  ) : null
 
   // keysInGroup = ประเภทย่อยทั้งหมดของกลุ่มนี้ที่โชว์ในการ์ด (ตัดประเภทที่เป็นเส้นทางออกแล้ว) —
   // กดหัวการ์ดต้องเปิด/ปิดหมุดทั้งกลุ่มยกชุด ไม่ใช่แค่สลับ activeGroups ที่เป็นตัวกรองชั้นนอก
@@ -620,7 +701,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               mapTypeId="hybrid"
               boundaryGeoJson={boundaryGeoJson}
               className="w-full h-full min-h-[70vh]"
-              markers={visible.filter(e => !(e.route_points?.length >= 2)).map(e => {
+              circles={zoneOverlays.circles}
+              flyTo={zoneFocus}
+              markers={[...visible.filter(e => !(e.route_points?.length >= 2)).map(e => {
                 const meta = groupMeta(e.group_name, groupIconOverrides)
                 const icon = resolveMarkerIcon(e)
                 return {
@@ -641,7 +724,19 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                   scale: 10,
                   entry: e,
                 }
-              })}
+              }),
+              // หมุดจุดต้นทางของวงรัศมี — ลอยเหนือหมุดอื่น (zIndex) และใช้ tooltip ไม่ใช่ title ด้วยเหตุผลเดียวกับหมุดข้างบน
+              ...zoneOverlays.pins.map(pin => ({
+                id: pin.id,
+                position: pin.position,
+                tooltip: `${pin.zone.label} · จุดต้นทางของวงรัศมี`,
+                color: '#b45309',
+                label: '🔍',
+                shape: 'circle',
+                scale: 12,
+                zIndex: 1000,
+                zone: pin.zone,
+              }))]}
               polylines={visible.filter(e => e.route_points?.length >= 2).map(e => ({
                 id: `${e.source_table}-${e.source_id}`,
                 path: e.route_points,
@@ -650,13 +745,17 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                 opacity: 0.88,
                 entry: e,
               }))}
-              onFeatureClick={feature => setSelectedEntry(feature.entry)}
+              onFeatureClick={feature => {
+                if (feature.zone) { setSelectedZoneId(feature.zone.id); setSelectedEntry(null); return }
+                setSelectedEntry(feature.entry)
+                setSelectedZoneId(null)
+              }}
               /* กดที่ว่างบนแผนที่แล้วปิดแผงรายละเอียดเลย ไม่ต้องเล็งปุ่ม × ที่เล็กมากบนมือถือ
                   Leaflet ไม่ส่ง event click ของแผนที่เมื่อกดโดนหมุด (หยุด propagation ให้เอง)
                   กดหมุดอื่นจึงยังสลับแผงได้ตามปกติ ไม่ใช่ปิดแล้วต้องกดใหม่
                   ส่วนตัวแผงอยู่นอก .leaflet-container (เป็น sibling) การกดในแผงจึงไม่ตกมาถึงตรงนี้
                   ปุ่มอนุมัติ/เปลี่ยนสถานะข้างในเลยยังกดได้ ไม่ถูกปิดทิ้งก่อนทำงาน */
-              onMapClick={() => setSelectedEntry(null)}
+              onMapClick={() => { setSelectedEntry(null); setSelectedZoneId(null) }}
             />
           )}
 
@@ -799,10 +898,25 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
             </div>
           )}
 
+          {/* การ์ดจุดต้นทางของวงรัศมี — ตำแหน่งเดียวกับการ์ดหมุด (มือถือด้านบนพ้น bottom sheet, PC ล่างกลาง)
+              สองการ์ดไม่เปิดพร้อมกัน: กดหมุดชนิดหนึ่งจะปิดอีกชนิดเสมอ (ดู onFeatureClick) */}
+          {selectedZone && (
+            <AdhocZoneCard zone={selectedZone} counts={zonesApi.counts} categories={zonesApi.categories}
+              canManage={zonesApi.canManage} onClose={() => setSelectedZoneId(null)}
+              onEdit={zone => setZoneForm({ zone })}
+              className="absolute left-1/2 -translate-x-1/2 top-16 lg:top-auto lg:bottom-4 z-1002 max-h-[45vh] overflow-y-auto w-[min(340px,calc(100%-32px))]" />
+          )}
+          {zoneForm && (
+            <AdhocZoneForm key={zoneForm.zone?.id ?? 'new'} zone={zoneForm.zone} categories={zonesApi.categories}
+              entries={zoneSourceEntries} tenant={tenant} canDelete={zonesApi.canManage}
+              onSave={zonesApi.saveZone} onDelete={zonesApi.deleteZone} onSetActive={zonesApi.setZoneActive}
+              onClose={() => setZoneForm(null)} />
+          )}
+
           {/* มือถือ/แท็บเล็ต: แผงสรุปแบบ bottom sheet ลอยเหนือแผนที่ (ตาม layout เทศบาลนครนนทบุรี) — absolute
               ผูกกับกรอบแผนที่ ไม่ใช่ fixed กับจอ กันชนกับแถบเมนูล่างของแดชบอร์ดเจ้าหน้าที่ตอนฝังในหน้านั้น */}
           {/* วาง bottom sheet เหนือ Google Maps และ controls เพื่อให้แตะใช้งานได้เสมอ */}
-          {groups.length > 0 && (
+          {(groups.length > 0 || zonesPanelVisible) && (
             <div className="lg:hidden absolute bottom-0 left-0 right-0 z-1001 bg-white rounded-t-2xl overflow-hidden flex flex-col"
               style={{ boxShadow: '0 -6px 24px rgba(0,0,0,0.18)', maxHeight: sheetExpanded ? '55%' : 'auto' }}>
               <button onClick={() => setSheetExpanded(v => !v)} aria-label={sheetExpanded ? 'ย่อแผงสรุป' : 'ขยายแผงสรุป'}
@@ -829,7 +943,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                     routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes}
                     groupIconOverrides={groupIconOverrides}
                     statusFilter={statusFilter} setStatusFilter={setStatusFilter}
-                    dceCount={dceEntries.length} complaintCount={complaintEntries.length} />
+                    dceCount={dceEntries.length} complaintCount={complaintEntries.length} extraTop={zonesPanel} />
                 </div>
               )}
             </div>
@@ -844,7 +958,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
             routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes}
             groupIconOverrides={groupIconOverrides}
             statusFilter={statusFilter} setStatusFilter={setStatusFilter}
-            dceCount={dceEntries.length} complaintCount={complaintEntries.length} />
+            dceCount={dceEntries.length} complaintCount={complaintEntries.length} extraTop={zonesPanel} />
         </aside>
       </div>
     </div>

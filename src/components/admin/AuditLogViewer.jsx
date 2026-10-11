@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Shield, Trash2, RefreshCw, User, Clock, ChevronDown, ChevronUp, Search, Eye } from 'lucide-react'
+import { Shield, Trash2, RefreshCw, User, Clock, ChevronDown, ChevronUp, Search, Eye, Plus, Pencil } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 const ACTION_INFO = {
   delete:        { label: 'ลบ',              bg: '#fee2e2', color: '#991b1b', Icon: Trash2 },
   update_status: { label: 'อัปเดตสถานะ',     bg: '#dbeafe', color: '#1e40af', Icon: RefreshCw },
+  // วงรัศมีเรื่องเฉพาะกิจ (adhoc_impact_zones, 20261012120100) — trigger เขียน create/update/delete ทุกครั้งที่เจ้าหน้าที่แก้
+  create:        { label: 'เพิ่ม',             bg: '#d1fae5', color: '#065f46', Icon: Plus },
+  update:        { label: 'แก้ไข',             bg: '#dbeafe', color: '#1e40af', Icon: Pencil },
   approve:       { label: 'อนุมัติ',          bg: '#d1fae5', color: '#065f46', Icon: Shield },
   reject:        { label: 'ปฏิเสธ',           bg: '#fee2e2', color: '#991b1b', Icon: Shield },
   assign:        { label: 'มอบหมาย',          bg: '#ede9fe', color: '#5b21b6', Icon: User },
@@ -30,6 +33,7 @@ const RESOURCE_LABEL = {
   public_holiday:     'วันหยุดราชการ',
   complaint_category: 'ประเภทคำร้อง',
   document_type:      'ประเภทคำขอเอกสาร',
+  adhoc_impact_zone:  'วงรัศมีเรื่องเฉพาะกิจ',
 }
 
 const ROLE_LABEL = {
