@@ -43,6 +43,8 @@ export default function LeafletMapCanvas({
   mapTypeId = 'hybrid', // 'hybrid' | 'roadmap' | 'satellite'
   markers = [],
   polylines = [],
+  circles = [],
+  flyTo = null,
   boundaryGeoJson = null,
   fitBounds = false,
   onMapClick,
@@ -60,6 +62,7 @@ export default function LeafletMapCanvas({
   const baseLayersRef = useRef({})
   const markerLayersRef = useRef([])
   const polylineLayersRef = useRef([])
+  const circleLayersRef = useRef([])
   const geojsonLayerRef = useRef(null)
   const callbacksRef = useRef({ onMapClick, onMapRightClick, onFeatureClick, onFeatureRightClick, onPolylineRightClick, onMarkerDragEnd, onMapReady })
   const lastFitSignatureRef = useRef('')
@@ -198,6 +201,17 @@ export default function LeafletMapCanvas({
       map.setZoom(zoom)
     }
   }, [zoom])
+
+  // 3b. สั่งกล้องไปจุดที่ระบุ — แยกจาก center/zoom ข้างบนโดยตั้งใจ: center/zoom เป็น "ค่าตั้งต้น" ที่ขยับเมื่อ prop เปลี่ยนจริงเท่านั้น
+  // (ผู้ใช้ลากแผนที่ไปที่อื่นแล้ว กดเรื่องเดิมซ้ำ ค่า prop ยังเท่าเดิม กล้องจึงไม่กลับ) ส่วน flyTo ขยับทุกครั้งที่ nonce เปลี่ยน
+  // lastFlyRef กันยิงซ้ำตอน re-render ด้วย nonce เดิม
+  const lastFlyRef = useRef(null)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !flyTo || !isPoint(flyTo) || flyTo.nonce === lastFlyRef.current) return
+    lastFlyRef.current = flyTo.nonce
+    map.setView([Number(flyTo.lat), Number(flyTo.lng)], Number(flyTo.zoom) || map.getZoom(), { animate: true })
+  }, [flyTo])
 
   // 4. Render Markers
   useEffect(() => {
@@ -344,6 +358,61 @@ export default function LeafletMapCanvas({
       polylineLayersRef.current.push(polyline)
     })
   }, [polylines])
+
+  // 5b. Render Circles — วงรัศมี (เช่น 1/2 กม. รอบฟาร์มที่ถูกร้องเรียน)
+  // interactive:false โดยตั้งใจ: วงใหญ่คลุมหมุดและพื้นแผนที่ไว้ทั้งก้อน ถ้ารับการกดเอง จะกลืนการกดหมุดข้างใต้
+  // และทำให้ onMapClick (กดที่ว่างเพื่อปิดการ์ด) ไม่ทำงานทั้งที่กดในวง
+  // รัศมีเป็นเมตรจริง (L.circle ไม่ใช่ circleMarker ที่รัศมีเป็นพิกเซล) จึงยืด/หดตามระดับซูมให้เอง
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    circleLayersRef.current.forEach(l => map.removeLayer(l))
+    circleLayersRef.current = []
+
+    circles.filter(c => isPoint(c.center) && Number(c.radius) > 0).forEach(circleData => {
+      const center = [Number(circleData.center.lat), Number(circleData.center.lng)]
+      const radius = Number(circleData.radius)
+      const color = safeColor(circleData.color || '#dc2626')
+
+      const circle = L.circle(center, {
+        radius,
+        color,
+        weight: circleData.weight ?? 2,
+        opacity: circleData.opacity ?? 0.9,
+        fillColor: safeColor(circleData.fillColor || circleData.color || '#dc2626'),
+        fillOpacity: circleData.fillOpacity ?? 0.08,
+        dashArray: circleData.dashArray ? '7, 7' : undefined,
+        interactive: false,
+      })
+      circle.addTo(map)
+      circleLayersRef.current.push(circle)
+
+      if (circleData.label) {
+        // ป้ายอยู่ที่ขอบวง ไม่ใช่กลางวง (กลางวงคือหมุดต้นทางและวงซ้อนกัน) และ "คนละมุม" ตามลำดับวง:
+        // วงในอยู่ทิศเหนือ วงถัดไปเอียงไปทางตะวันออกทีละ 40° ถ้าทุกวงใช้ทิศเหนือ ที่ซูมออกวง 500 ม./1 กม./2 กม.
+        // จะอยู่ห่างกันไม่กี่พิกเซล ป้ายซ้อนทับกันจนอ่านไม่ออก (เจอตอนทดสอบหน้าจอจริง) · labelAngle ผู้เรียกกำหนดเองได้
+        const angle = ((circleData.labelAngle ?? 0) * Math.PI) / 180
+        const labelPos = [
+          center[0] + (radius * Math.cos(angle)) / 111320,
+          center[1] + (radius * Math.sin(angle)) / (111320 * Math.max(0.01, Math.cos((center[0] * Math.PI) / 180))),
+        ]
+        const labelMarker = L.marker(labelPos, {
+          interactive: false,
+          keyboard: false,
+          zIndexOffset: -500,
+          icon: L.divIcon({
+            className: 'smartlocal-circle-label',
+            iconSize: [0, 0],
+            iconAnchor: [0, 0],
+            html: `<div style="transform: translate(-50%, -50%); white-space: nowrap; background: rgba(255,255,255,0.94); color: ${color}; border: 1px solid ${color}; border-radius: 9999px; padding: 1px 8px; font-size: 11px; font-weight: 700; line-height: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.25); pointer-events: none;">${escapeHtml(circleData.label)}</div>`,
+          }),
+        })
+        labelMarker.addTo(map)
+        circleLayersRef.current.push(labelMarker)
+      }
+    })
+  }, [circles])
 
   // 6. Fit Bounds
   useEffect(() => {
