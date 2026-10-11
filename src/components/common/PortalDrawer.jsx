@@ -64,7 +64,8 @@ function GroupLabel({ children, accent }) {
 }
 
 export default function PortalDrawer({
-  open, onClose, tenant, portalLabel, ariaLabel, homeItem = DEFAULT_HOME, extraItems = [], groups, activeKey, badges, onSelect,
+  open, onClose, tenant, portalLabel, ariaLabel, homeItem = DEFAULT_HOME, homeGroupLabel = 'ภาพรวม', extraItems = [],
+  groups, activeKey, badges, onSelect,
 }) {
   const { role, displayName, avatarUrl } = useAuth()
   const panelRef = useRef(null)
@@ -136,7 +137,7 @@ export default function PortalDrawer({
         </div>
 
         <nav aria-label="เมนูโมดูล" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 [scrollbar-color:rgba(255,255,255,0.35)_transparent] [scrollbar-width:thin]">
-          <GroupLabel>ภาพรวม</GroupLabel>
+          <GroupLabel>{homeGroupLabel}</GroupLabel>
           <DrawerItem item={homeItem} active={activeKey === homeItem.key} onSelect={onSelect} />
           {/* ทางลัดเพิ่มใต้ "ภาพรวม" (เช่น แอดมิน → แดชบอร์ดเจ้าหน้าที่ ตามเมนูซ้าย PC) — ไม่ใช่กลุ่มเมนูโมดูล */}
           {extraItems.map(item => <DrawerItem key={item.key} item={item} active={activeKey === item.key} onSelect={onSelect} />)}

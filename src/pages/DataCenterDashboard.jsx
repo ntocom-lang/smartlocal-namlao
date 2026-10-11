@@ -1,12 +1,13 @@
-import { lazy, Suspense, useState, useEffect, useMemo } from 'react'
+import { lazy, Suspense, useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Sun, Moon, ClipboardCheck, Database, HeartPulse, LogOut } from 'lucide-react'
+import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Sun, Moon, ClipboardCheck, Database, HeartPulse, LogOut, Menu } from 'lucide-react'
 import { supabase, getSessionResilient, signOutSafely } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
 import UserProfileBadge from '../components/layout/UserProfileBadge'
 import MobileCategorySheet from '../components/datacenter/MobileCategorySheet'
+import PortalDrawer from '../components/common/PortalDrawer'
 import { DEFAULT_STALE_DAYS, scoreTone } from '../lib/dataCenterHealth'
 
 const DataCenterOverview = lazy(() => import('../components/datacenter/DataCenterOverview'))
@@ -81,6 +82,10 @@ export default function DataCenterDashboard() {
   // ทรี "หมวดหมู่ข้อมูล" อยู่ใน sidebar ฝั่ง desktop เท่านั้น (hidden md:flex) — มือถือไม่มีทางเปลี่ยนหมวดเลย
   // ต้องมี bottom sheet แยกให้กดเลือกหมวด/ประเภทย่อยแบบเดียวกับเมนูซ้าย
   const [showMobileCategorySheet, setShowMobileCategorySheet] = useState(false)
+  // ลิ้นชักเมนูซ้ายบนมือถือ (PortalDrawer) — เนื้อหาเดียวกับเมนูซ้ายบน PC ของหน้านี้
+  // closeDrawer ต้อง useCallback — effect ในลิ้นชักผูกกับมัน ถ้าเปลี่ยนทุกรอบ render โฟกัสจะถูกดึงกลับทุกครั้ง
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const closeDrawer = useCallback(() => setDrawerOpen(false), [])
   // ปุ่ม "ดูบนแผนที่" จากรายการ — เก็บกลุ่ม/ประเภท+พิกัดของรายการที่กดไว้ ส่งต่อให้ DataCenterMap ไปกรอง+
   // pan กล้องไปที่จุดนั้นให้เลย (ไม่ต้องให้ผู้ใช้ไปกรองหมวดเองซ้ำอีกรอบบนแผนที่)
   const [mapFocus, setMapFocus] = useState(null)
@@ -213,6 +218,22 @@ export default function DataCenterDashboard() {
     navigate('/staff')
   }
 
+  // เปิดโมดูลของหน้านี้ — ใช้ร่วมเมนูซ้าย PC, แถบล่างมือถือ และลิ้นชักมือถือ ให้ทำเหมือนกันเป๊ะ
+  // (กลับภาพรวม = ล้างตัวกรองหมวด · เข้าแผนที่ = ล้างจุดโฟกัสที่ค้างจากปุ่ม "ดูบนแผนที่")
+  function openModule(key) {
+    setActiveModule(key)
+    if (key === 'overview') setSidebarFilter({ group: null, category: null })
+    if (key === 'map') setMapFocus(null)
+  }
+
+  // กดเมนูในลิ้นชักมือถือ: กลับแดชบอร์ดเจ้าหน้าที่ · เปิดแผ่นเลือกหมวด (ตัวเดียวกับปุ่ม "หมวดหมู่" ในหน้าภาพรวม) · หรือเปิดโมดูล
+  function openFromDrawer(item) {
+    setDrawerOpen(false)
+    if (item.key === 'back-to-staff') handleBackToStaff()
+    else if (item.key === 'category-sheet') setShowMobileCategorySheet(true)
+    else openModule(item.key)
+  }
+
   async function handleLogout() {
     await signOutSafely('/')
     navigate('/')
@@ -277,6 +298,12 @@ export default function DataCenterDashboard() {
           style={{ background: 'linear-gradient(to top, var(--color-primary-dark), transparent)' }} />
         <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 px-4 md:px-6 py-3">
           <div className="flex items-center gap-3 min-w-0 flex-1 md:flex-none">
+            {/* ปุ่มเปิดลิ้นชักเมนูซ้าย (มือถือเท่านั้น) — พื้นที่กดสูง 44px */}
+            <button type="button" onClick={() => setDrawerOpen(true)} aria-label="เปิดเมนู"
+              aria-expanded={drawerOpen} aria-controls="portal-drawer"
+              className="md:hidden -ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white/90 transition-colors active:bg-white/15">
+              <Menu size={22} aria-hidden="true" />
+            </button>
             <button type="button" onClick={() => navigate('/')} aria-label="กลับหน้าแรก"
               className="flex h-11 w-11 shrink-0 items-center justify-center active:opacity-70 transition-opacity">
               {tenant?.logo_url
@@ -306,6 +333,19 @@ export default function DataCenterDashboard() {
         <PortalSwitcher className="relative z-10 flex flex-wrap px-4 pb-3 md:hidden [&>a]:min-h-11" />
       </header>
 
+      {/* ลิ้นชักเมนูซ้ายบนมือถือ — ตรงกับเมนูซ้าย PC ของหน้านี้: กลับแดชบอร์ดเจ้าหน้าที่ · โมดูลของศูนย์ข้อมูล · ทรีหมวดหมู่
+          (ทรีมีรายการเยอะและกางพับได้ ใช้แผ่นเลือกหมวดเดิมแทนการยัดทรีลงลิ้นชัก) */}
+      <PortalDrawer open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="ระบบเจ้าหน้าที่"
+        ariaLabel="เมนูศูนย์รวมข้อมูลดิจิทัล" homeGroupLabel="ระบบเจ้าหน้าที่"
+        homeItem={{ key: 'back-to-staff', label: 'กลับแดชบอร์ดเจ้าหน้าที่', Icon: ArrowLeft }}
+        groups={[
+          { group: 'ศูนย์รวมข้อมูลดิจิทัล', items: MODULES },
+          ...(categoryTree.length > 0
+            ? [{ group: 'หมวดหมู่ข้อมูล', items: [{ key: 'category-sheet', label: 'เลือกหมวดหมู่และประเภท', Icon: Tags }] }]
+            : []),
+        ]}
+        activeKey={activeModule} onSelect={openFromDrawer} />
+
       {/* Mobile Category Sheet — เวอร์ชันมือถือของทรี "หมวดหมู่ข้อมูล" ในเมนูซ้าย desktop */}
       {showMobileCategorySheet && (
         <MobileCategorySheet tree={categoryTree} isLight={isLight} sidebarFilter={sidebarFilter}
@@ -327,11 +367,7 @@ export default function DataCenterDashboard() {
               {MODULES.map(({ key, label, Icon }) => {
                 const isActive = activeModule === key
                 return (
-                  <button key={key} onClick={() => {
-                    setActiveModule(key)
-                    if (key === 'overview') setSidebarFilter({ group: null, category: null })
-                    if (key === 'map') setMapFocus(null)
-                  }}
+                  <button key={key} onClick={() => openModule(key)}
                     aria-current={isActive ? 'page' : undefined}
                     className={`flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${
                       isActive
@@ -526,11 +562,7 @@ export default function DataCenterDashboard() {
         {MODULES.map(({ key, label, Icon }) => {
           const isActive = activeModule === key
           return (
-            <button key={key} onClick={() => {
-              setActiveModule(key)
-              if (key === 'overview') setSidebarFilter({ group: null, category: null })
-              if (key === 'map') setMapFocus(null)
-            }}
+            <button key={key} onClick={() => openModule(key)}
               aria-current={isActive ? 'page' : undefined}
               className={`flex-1 min-w-0 min-h-16 flex flex-col items-center justify-center gap-1 px-1 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'}`}>
               <Icon size={18} strokeWidth={isActive ? 2.2 : 1.8} />
