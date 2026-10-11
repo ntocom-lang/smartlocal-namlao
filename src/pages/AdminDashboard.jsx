@@ -13,7 +13,7 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat, ArrowLeftRight, BookUser, ShieldQuestion,
-  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck
+  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck, Menu
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 // ไอคอนที่เป็นได้ทั้งอิโมจิและรูปแนบ — ของกลางชุดเดียวกับศูนย์ข้อมูลดิจิทัล ไม่ทำซ้ำอีกชุด
@@ -63,6 +63,7 @@ import { ROLE_LABELS, ROLE_DESCRIPTIONS, fetchAssignableStaff, groupStaffByDepar
 import { DEV_USER_ID } from '../lib/portalAccess'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
 import UserProfileBadge from '../components/layout/UserProfileBadge'
+import PortalDrawer from '../components/common/PortalDrawer'
 import FleetSetup from '../components/fleet/FleetSetup'
 import { adminUpdateUser } from '../lib/adminUpdateUser'
 import { logAction } from '../lib/auditLog'
@@ -5668,6 +5669,9 @@ export default function AdminDashboard() {
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading] = useState(true)
   const [activePage, setActivePage] = useState(location.state?.page ?? 'dashboard')
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  // closeDrawer ต้อง useCallback — effect ในลิ้นชักผูกกับมัน ถ้าเปลี่ยนทุกรอบ render โฟกัสจะถูกดึงกลับทุกครั้ง
+  const closeDrawer = useCallback(() => setDrawerOpen(false), [])
   const [currentUserRole, setCurrentUserRole] = useState(null)
   const [currentUserId, setCurrentUserId] = useState(null)
   const [currentUserAvatar, setCurrentUserAvatar] = useState(null)
@@ -5771,6 +5775,17 @@ export default function AdminDashboard() {
     .map(group => ({ ...group, items: group.items.filter(item => item.show) }))
     .filter(group => group.items.length > 0)
 
+  // กดเมนูในลิ้นชักมือถือ = ทำเหมือนเมนูซ้ายบน PC: คู่มือ (ไฟล์ static) เปิดแท็บใหม่ · หน้าแยก (ศูนย์ข้อมูล/
+  // ผู้พัฒนา) navigate · นอกนั้นสลับหน้าในแผงควบคุม · แล้วปิดลิ้นชักทุกกรณี
+  function openFromDrawer(item) {
+    setDrawerOpen(false)
+    if (item.isExternal) window.open(item.href, '_blank', 'noopener,noreferrer')
+    else if (item.isDevLink || item.navTo) {
+      if (item.newTab) window.open(item.navTo, '_blank', 'noopener,noreferrer')
+      else navigate(item.navTo ?? '/dev-journal')
+    } else setActivePage(item.key)
+  }
+
   return (
     <div className="min-h-full" style={{ backgroundColor: '#eef2f7' }}>
 
@@ -5812,6 +5827,12 @@ export default function AdminDashboard() {
       <header className="md:hidden text-white px-4 pt-3 pb-4 relative overflow-hidden"
         style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
         <div className="flex items-center gap-3 relative z-10">
+          {/* ปุ่มเปิดลิ้นชักเมนูซ้าย — ซ้ายสุดของหัวจอ · พื้นที่กดสูง 44px */}
+          <button type="button" onClick={() => setDrawerOpen(true)} aria-label="เปิดเมนู"
+            aria-expanded={drawerOpen} aria-controls="portal-drawer"
+            className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white/90 transition-colors active:bg-white/15">
+            <Menu size={22} aria-hidden="true" />
+          </button>
           <button onClick={() => navigate('/')} className="shrink-0 active:opacity-70 transition-opacity">
             {tenant?.logo_url
               ? <img src={tenant.logo_url} alt="โลโก้" className="w-11 h-11 rounded-full object-contain bg-white/10 p-0.5 border border-white/20" />
@@ -5840,6 +5861,13 @@ export default function AdminDashboard() {
           </button>
         </div>
       </header>
+
+      {/* ลิ้นชักเมนูซ้ายบนมือถือ — เนื้อหาเดียวกับเมนูซ้าย PC (adminMenuGroups + ทางไปแดชบอร์ดเจ้าหน้าที่ของ admin) */}
+      <PortalDrawer open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="แผงควบคุม Admin"
+        ariaLabel="เมนูผู้ดูแลระบบ" homeItem={{ key: 'dashboard', label: 'หน้าหลัก', Icon: LayoutGrid }}
+        extraItems={(currentUserRole === 'admin' || currentUserRole === 'superadmin')
+          ? [{ key: 'to-staff', label: 'แดชบอร์ดสำหรับเจ้าหน้าที่', Icon: Users, navTo: '/staff' }] : []}
+        groups={adminMenuGroups} activeKey={activePage} onSelect={openFromDrawer} />
 
       {/* Desktop sidebar + content */}
       <div className="md:flex">
