@@ -1,7 +1,8 @@
 // เมนูแบบไอคอน (src/components/common/MenuTileGrid.jsx) — วัดเลย์เอาต์บนมือถือจริง
 //
-// ใช้ 2 ที่ ตรวจทั้งคู่:
+// ใช้ 3 ที่ ตรวจทั้งหมด:
 //   ก) หน้า "เมนูทั้งหมด" ของประชาชน /more (ไม่ต้องล็อกอิน) — 3 คอลัมน์ ปุ่มใหญ่
+//   ก2) เหมือน ก) แต่ธีม Kledkaew (หน้าเมนูแยกไฟล์ — ดักคำตอบ municipalities สลับ ui_style ในเบราว์เซอร์ทดสอบ)
 //   ข) แท็บ "เมนู" ในแถบล่างของเจ้าหน้าที่ /staff (ล็อกอินบัญชีทดสอบ) — 4 คอลัมน์ที่จอ ≥ 380px
 //
 // ตรวจต่อขนาดจอ:
@@ -106,10 +107,25 @@ function assertGrid(m, where) {
   }
 }
 
-async function checkCitizen(browser, baseUrl) {
+// kledkaew = ธีมหน้าตาเฉพาะ (src/components/citizen/templates/Kledkaew/More.jsx) — สนามซ้อมไม่ได้ใช้ธีมนี้
+// จึงดักคำตอบ GET municipalities แล้วสลับ ui_style ในเบราว์เซอร์ทดสอบเท่านั้น (อ่านอย่างเดียว ไม่แตะฐานข้อมูล)
+async function checkCitizen(browser, baseUrl, { kledkaew = false } = {}) {
+  const tag = kledkaew ? 'ประชาชน(Kledkaew)' : 'ประชาชน'
+  // คีย์ของปุ่ม: ธีมปกติใช้ชื่อที่ตั้งเอง ธีม Kledkaew ใช้เส้นทางปลายทาง (ไม่มีเส้นทาง = ใช้ชื่อเมนู)
+  const loginKey = kledkaew ? '/auth' : 'login'
+  const forbiddenKeys = kledkaew ? ['ออกจากระบบ', '/staff', '/admin', '/technician'] : ['logout', 'staff-system', 'admin-panel', 'events-manage']
   let failed = 0
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
   const page = await context.newPage()
+  if (kledkaew) {
+    await page.route('**/rest/v1/municipalities*', async route => {
+      const response = await route.fetch()
+      let body
+      try { body = await response.json() } catch { return route.fulfill({ response }) }
+      const patch = row => (row && typeof row === 'object' && 'ui_style' in row ? { ...row, ui_style: 'kledkaew' } : row)
+      await route.fulfill({ response, json: Array.isArray(body) ? body.map(patch) : patch(body) })
+    })
+  }
   for (const width of CITIZEN_WIDTHS) {
     try {
       await page.setViewportSize({ width, height: 844 })
@@ -117,19 +133,23 @@ async function checkCitizen(browser, baseUrl) {
       await page.waitForSelector('[data-menu-group]', { timeout: 30_000 })
       await page.waitForTimeout(800)
       const m = await page.evaluate(measureGrid)
-      await page.screenshot({ path: path.join(SHOT_DIR, `citizen-${width}.png`) })
-      assertGrid(m, `ประชาชน ${width}px`)
+      await page.screenshot({ path: path.join(SHOT_DIR, `citizen${kledkaew ? '-kledkaew' : ''}-${width}.png`) })
+      assertGrid(m, `${tag} ${width}px`)
+      if (kledkaew) {
+        // ต้องเป็นหน้าธีม Kledkaew จริง (ไม่ใช่ตกไปหน้าเมนูธีมปกติเพราะดักไม่โดน) และคงการ์ดเอกลักษณ์ของธีมไว้
+        assert.ok(await page.getByText('ติดต่อ / แจ้งเหตุ').first().isVisible(), `${tag} ${width}px: ไม่เห็นการ์ด "ติดต่อ / แจ้งเหตุ" ของธีม Kledkaew`)
+      }
       // ผู้เยี่ยมชมที่ยังไม่ล็อกอิน: ต้องมีทางเข้าสู่ระบบ และต้องไม่เห็นเมนูของเจ้าหน้าที่/ออกจากระบบ
       const keys = m.tiles.map(t => t.key)
-      assert.ok(keys.includes('login'), `ประชาชน ${width}px: ไม่มีปุ่ม "เข้าสู่ระบบ" สำหรับผู้ที่ยังไม่ล็อกอิน`)
-      for (const forbidden of ['logout', 'staff-system', 'admin-panel', 'events-manage']) {
-        assert.ok(!keys.includes(forbidden), `ประชาชน ${width}px: ผู้เยี่ยมชมเห็นเมนู ${forbidden}`)
+      assert.ok(keys.includes(loginKey), `${tag} ${width}px: ไม่มีปุ่ม "เข้าสู่ระบบ" สำหรับผู้ที่ยังไม่ล็อกอิน`)
+      for (const forbidden of forbiddenKeys) {
+        assert.ok(!keys.includes(forbidden), `${tag} ${width}px: ผู้เยี่ยมชมเห็นเมนู ${forbidden}`)
       }
-      if (width < 768) assert.ok(m.columns <= 4, `ประชาชน ${width}px: เห็น ${m.columns} คอลัมน์ในกลุ่มแรก`)
-      console.log(`PASS  ประชาชน ${width}px — ${m.groups.length} กลุ่ม ${m.tiles.length} ปุ่ม · เล็กสุด ${Math.round(Math.min(...m.tiles.map(t => t.width)))}×${Math.round(Math.min(...m.tiles.map(t => t.height)))}px`)
+      if (width < 768) assert.ok(m.columns <= 4, `${tag} ${width}px: เห็น ${m.columns} คอลัมน์ในกลุ่มแรก`)
+      console.log(`PASS  ${tag} ${width}px — ${m.groups.length} กลุ่ม ${m.tiles.length} ปุ่ม · เล็กสุด ${Math.round(Math.min(...m.tiles.map(t => t.width)))}×${Math.round(Math.min(...m.tiles.map(t => t.height)))}px`)
     } catch (error) {
       failed += 1
-      console.log(`FAIL  ประชาชน ${width}px — ${error.message.split('\n')[0]}`)
+      console.log(`FAIL  ${tag} ${width}px — ${error.message.split('\n')[0]}`)
     }
   }
   await context.close()
@@ -225,11 +245,12 @@ async function main() {
   let failed = 0
   try {
     failed += await checkCitizen(browser, baseUrl)
+    failed += await checkCitizen(browser, baseUrl, { kledkaew: true })
   } finally {
     await browser.close().catch(() => {})
   }
   failed += await checkStaff(baseUrl)
-  const total = CITIZEN_WIDTHS.length + STAFF_WIDTHS.length
+  const total = CITIZEN_WIDTHS.length * 2 + STAFF_WIDTHS.length
   console.log(`\n${total - failed}/${total} ผ่าน — ภาพหน้าจอ: ${SHOT_DIR}`)
   process.exit(failed ? 1 : 0)
 }
