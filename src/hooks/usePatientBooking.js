@@ -36,6 +36,7 @@ export default function usePatientBooking(tenantId, uid, privateRpc) {
     ]).then(([publicResult, privateResult, odometerResult]) => {
       if (generation !== sequence.current) return
       if (publicResult.error || privateResult.error) throw publicResult.error || privateResult.error
+      if (publicResult.data && publicResult.data.scheduling_mode !== 'manual') throw new Error('ระบบจัดรถกำลังปรับปรุง กรุณาติดต่อผู้ดูแลและโหลดข้อมูลล่าสุด')
       const odometer = !staffView ? null : odometerResult?.error || !Array.isArray(odometerResult?.data?.days)
         ? { failed: true, days: [], previous: null }
         : { failed: false, days: odometerResult.data.days, previous: odometerResult.data.previous || null }

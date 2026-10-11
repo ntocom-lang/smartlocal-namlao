@@ -13,7 +13,7 @@ export const inputClass = 'w-full min-h-11 min-w-0 rounded-xl border border-slat
 export const buttonClass = 'min-h-11 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 disabled:opacity-50'
 export const primaryClass = 'min-h-11 rounded-xl bg-sky-800 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50'
 export const isCommunity = booking => booking?.service_type === 'community'
-// สถานที่อื่น (20261007170000): แอดมินเปิดช่อง "อื่นๆ" ครั้งเดียวในหน้าตั้งค่า (routes[] ที่ id นี้ มีแค่ minutes = ค่ามาตรฐาน)
+// สถานที่อื่น: แอดมินเปิดช่อง "อื่นๆ" ครั้งเดียว ไม่ใช้เวลาเดินทางกันรถ
 // ผู้จองพิมพ์ชื่อสถานที่เอง → ฐานข้อมูลเก็บเป็น route_label ของคำขอนั้น และไม่ให้ร่วมเที่ยวกับใคร
 // ⚠️ ค่านี้ต้องตรงกับ '__other__' ใน patient_booking_submit/amend/change_hospital
 export const OTHER_PLACE_ID = '__other__'
@@ -70,22 +70,19 @@ export function bookingLastDay(today = thaiDay()) {
 }
 // เวลาเป็นนาฬิกาไทยจากค่า ISO ที่ฐานข้อมูลส่งมา เช่น "08:45"
 export function clockOf(value) { return value ? new Date(value).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) : '' }
-// The plan carries time ranges, never other riders' identities. Match a rider to their
-// appointment/return window; apply a later staff time announcement to every run equally.
-function riderWaveTime(trip, booking, waves, from, to, field, planned, estimated) {
-  const at = Date.parse(booking?.[from])
-  const wave = trip?.plan?.[waves]?.find(w => at >= Date.parse(w[to[0]]) && at <= Date.parse(w[to[1]]))
-  if (!wave?.[field]) return estimated || planned || null
-  const shift = Date.parse(estimated) - Date.parse(planned)
-  return Number.isFinite(shift) ? new Date(Date.parse(wave[field]) + shift).toISOString() : wave[field]
+// Only staff announcements are pickup times. Legacy generated estimates had revision 1.
+export function coordinatedPickup(trip) {
+  return trip?.estimated_pickup_at && trip.schedule_revision > 1
+    ? trip.estimated_pickup_at : null
 }
-export function pickupForBooking(trip, booking) {
-  return riderWaveTime(trip, booking, 'outbound_waves', 'appointment_at', ['appointment_start', 'appointment_end'],
-    'pickup_at', trip?.plan?.pickup_at, trip?.estimated_pickup_at)
+export function pickupForBooking(trip) { return coordinatedPickup(trip) }
+export function returnForBooking(trip, booking) { return trip?.estimated_return_at || booking?.return_at || trip?.plan?.return_at || null }
+export function pickupLabel(trip, full = false) {
+  const at = coordinatedPickup(trip)
+  return at ? `รับประมาณ ${full ? dateTime(at) : `${clockOf(at)} น.`}` : 'รอประสานเวลารับ'
 }
-export function returnForBooking(trip, booking) {
-  return riderWaveTime(trip, booking, 'return_waves', 'return_at', ['return_start', 'return_end'],
-    'return_start', trip?.plan?.return_at, trip?.estimated_return_at)
+export function tripOrderTime(trip) {
+  return coordinatedPickup(trip) || trip?.plan?.appointment_at || trip?.appointment_at || trip?.plan?.outbound_waves?.[0]?.appointment_start || `${trip?.plan?.date || trip?.date || ''}T00:00:00+07:00`
 }
 // "วันนี้ / พรุ่งนี้" ช่วยให้กวาดตาหางานของวันได้เร็ว วันอื่นแสดงชื่อวันกับวันที่สั้น
 // ต่างปีต้องมีปีกำกับ ไม่งั้นคำขอค้างจากปีก่อนดูเหมือนนัดเดือนหน้า
@@ -110,35 +107,9 @@ export const DAY_BLOCKED = {
   issue: 'วันนี้มีเหตุขัดข้องที่ยังไม่คลี่คลาย กรุณาเลือกวันอื่นหรือติดต่อเจ้าหน้าที่',
 }
 
-// Mirrors ptb_plan for a single booking so the form warns before the request reaches the queue.
-// PostgreSQL still recomputes the whole plan under the resource lock before any confirmation.
-export function journeyWindow({ time, back, return_mode: returnMode, route_id: routeId }, info) {
-  const route = info?.routes?.find(r => r.id === routeId)
-  if (!route || !time || !Number.isFinite(info?.buffer_minutes) || !Number.isFinite(info?.boarding_minutes)) return null
-  const travel = Number(route.minutes)
-  const appointment = minutes(time)
-  const start = appointment - (travel + info.buffer_minutes + info.boarding_minutes)
-  const outbound = appointment + info.boarding_minutes + travel
-  if (returnMode === 'one_way') return { start, end: outbound }
-  if (!back) return { start, end: null }
-  return { start, end: minutes(back) + info.boarding_minutes + travel + info.buffer_minutes }
-}
-
-// ช่วงที่รถถูกกันจริงของคำขอเดียว (งานผู้ป่วย) ตามกติกาของ ptb_plan (20261010100000):
-// ไปอย่างเดียว = ช่วงไป · มีขากลับ = ช่วงไป + ช่วงกลับ รวมเป็นช่วงเดียวเมื่อทับ/ติดกัน (รถรอที่โรงพยาบาลหรือกลับไม่ทัน)
-// อยู่นานกว่ารถวิ่งไปกลับ ช่วงกลางว่างให้รอบอื่น — ทั้ง "รอรับกลับ" และ "มารับทีหลัง" ใช้กติกาเดียวกัน
-// journeyWindow คงไว้เป็นช่วงคลุมทั้งก้อน (ใช้เตือนเวลานอกเวลาบริการ) ส่วนตัวกรองเวลาว่างของฟอร์มใช้ฟังก์ชันนี้
-export function journeyBlocks({ time, back, return_mode: returnMode, route_id: routeId }, info) {
-  const route = info?.routes?.find(r => r.id === routeId)
-  if (!route || !time || !Number.isFinite(info?.buffer_minutes) || !Number.isFinite(info?.boarding_minutes)) return []
-  const travel = Number(route.minutes)
-  const appointment = minutes(time)
-  const outbound = { start: appointment - (travel + info.buffer_minutes + info.boarding_minutes), end: appointment + info.boarding_minutes + travel }
-  if (returnMode === 'one_way') return [outbound]
-  if (!back) return [{ start: outbound.start, end: outbound.start }]
-  const inbound = { start: minutes(back) - travel - info.buffer_minutes, end: minutes(back) + info.boarding_minutes + travel + info.buffer_minutes }
-  return inbound.start <= outbound.end ? [{ start: outbound.start, end: Math.max(outbound.end, inbound.end) }] : [outbound, inbound]
-}
+// Kept for old imports only. Manual dispatch does not calculate vehicle reservations.
+export function journeyWindow() { return null }
+export function journeyBlocks() { return [] }
 
 // กลุ่มปลายทาง (20261007150000): ปลายทางที่ผู้ดูแลตั้งชื่อกลุ่มเดียวกัน = รถเที่ยวเดียวแวะส่งได้หลายจุด
 // ว่าง = ไม่รวมกับปลายทางอื่น · ต้องตัดสินแบบเดียวกับ ptb_plan (ตัดช่องว่างหัวท้าย แล้วเทียบตรงตัว)
@@ -162,9 +133,9 @@ export function bookingStep(booking, trip) {
   return booking.status === 'confirmed' ? 2 : 1
 }
 
-// ไม่ทราบเวลารับกลับ: กันรถอย่างน้อยถึงเวลานัดสุดท้ายของหน่วยงาน
+// ไม่ทราบเวลารับกลับ: ค่าเริ่มต้นสำหรับคำขอเท่านั้น ไม่ใช้กันรถ
 // นัดช่วงท้ายเผื่ออย่างน้อย 60 นาทีหลังนัด ไม่สร้างแผนที่รับกลับทันทีตอนเริ่มพบแพทย์
-// เป็นเวลาเผื่อจัดคิว ไม่ใช่เวลาที่แพทย์จะตรวจเสร็จ เจ้าหน้าที่ยังปรับได้หลังประสาน
+// ไม่ใช่เวลาที่แพทย์จะตรวจเสร็จ เจ้าหน้าที่ยังปรับได้หลังประสาน
 export function latestReturnClock(form, info) {
   if (form.return_mode === 'one_way') return ''
   if (!Number.isFinite(info?.office_end)) return ''
@@ -173,82 +144,30 @@ export function latestReturnClock(form, info) {
   return back > 0 ? clockTime(back) : ''
 }
 
-// นาทีของวันนั้นตามเวลาไทย จากเวลาที่ฐานข้อมูลส่งมาเป็น ISO
-function dayMinutes(value, day) {
-  const at = Date.parse(value)
-  return Number.isFinite(at) ? Math.round((at - Date.parse(`${day}T00:00:00+07:00`)) / 60000) : NaN
+// Intake hours are appointment/arrival hours, not proof that the vehicle is free.
+function intakeTimes(form, dayInfo, start, end, step) {
+  if (!dayInfo?.date || dayInfo.status !== 'open' || !Number.isFinite(start) || !Number.isFinite(end)) return []
+  const last = Math.min(end, 1439), choices = new Set([start, last])
+  for (let at = Math.ceil(start / step) * step; at <= last; at += step) choices.add(at)
+  return [...choices].sort((a, b) => a - b).filter(at => at >= start && at <= last
+    && Date.parse(bangkokISO(dayInfo.date, clockTime(at))) > Date.now()
+    && (form.return_mode === 'one_way' || !form.back || minutes(form.back) >= at)).map(clockTime)
 }
-
-// เวลานัดที่ "รถว่างจริง" ของวันนั้น — ช่วงกันรถที่ ptb_plan จะคำนวณต้องอยู่ในช่วงว่างช่วงเดียวทั้งช่วง
-// ช่อง free ของ patient_booking_calendar ตัดเวลาที่ผ่านมาแล้วและช่วงของเที่ยวที่ยืนยันแล้วออกให้แล้ว
-// ⚠️ เป็นการกรองเพื่อไม่ให้ประชาชนเลือกเวลาที่ยืนยันไม่ได้ตั้งแต่ต้น ไม่ใช่การจองที่นั่ง
-// ฐานข้อมูลยังคำนวณแผนทั้งก้อนใหม่ใต้ล็อกก่อนยืนยันทุกครั้ง
-export function freeTimeChoices(form, info, dayInfo, step = 15, ignoreAvailability = false) {
-  if (isCommunity(form)) return communityTimeChoices(form, info, dayInfo, step, ignoreAvailability)
-  if (!dayInfo?.date || dayInfo.status !== 'open' || !Number.isFinite(info?.office_start) || !Number.isFinite(info?.office_end)) return []
-  const windows = (dayInfo.free || [])
-    .map(w => ({ start: dayMinutes(w.start, dayInfo.date), end: dayMinutes(w.end, dayInfo.date) }))
-    .filter(w => Number.isFinite(w.start) && Number.isFinite(w.end))
-  const times = []
-  const endOfDay = Math.min(info.office_end, 1439)
-  const choices = new Set([info.office_start, endOfDay])
-  for (let at = Math.ceil(info.office_start / step) * step; at <= endOfDay; at += step) choices.add(at)
-  for (const at of [...choices].sort((a, b) => a - b)) {
-    const time = clockTime(at)
-    const back = form.return_mode === 'one_way' ? '' : (form.back || latestReturnClock({ ...form, time }, info))
-    if (form.return_mode !== 'one_way' && (!back || minutes(back) < at)) continue
-    const spans = journeyBlocks({ ...form, time, back }, info)
-    if (!spans.length) continue
-    if (ignoreAvailability || spans.every(span => windows.some(w => span.start >= w.start && span.end <= w.end))) times.push(time)
-  }
-  return times
+export function freeTimeChoices(form, info, dayInfo, step = 15) {
+  return isCommunity(form) ? communityTimeChoices(form, info, dayInfo, step)
+    : intakeTimes(form, dayInfo, info?.office_start, info?.office_end, step)
 }
-
-// เวลารับกลับที่ผู้ขอร่วมเที่ยวเลือกได้ — เที่ยว "รอรับกลับ" รถรออยู่ปลายทางอยู่แล้ว จึงพาผู้ขอร่วมกลับบ้านก่อนได้
-// ถ้ากลับไปทันรอบรับกลับเดิม (คิดแบบรอบขากลับของ ptb_plan ด้วยปลายทางของผู้ขอเอง ห่างรอบเดิมเกิน 30 นาที
-// ไม่งั้นฐานข้อมูลรวมเป็นรอบเดียวกัน) · เที่ยวแบบอื่นต้องกลับพร้อมเที่ยว เวลาสุดท้ายในรายการ = กลับพร้อมเที่ยวเสมอ
-// ⚠️ ตัวกรองไม่ให้เลือกเวลาที่ยืนยันไม่ได้ ฐานข้อมูลยังตรวจแผนทั้งก้อนใหม่ก่อนรับคำขอ
+// Staff coordinate separate return rounds. No travel formula removes return choices.
 export function joinReturnChoices(form, info, trip) {
   const tripBack = clockOf(trip?.return_at)
-  if (!tripBack) return []
-  const travel = Number(info?.routes?.find(r => r.id === form.route_id)?.minutes)
-  if (trip.return_mode !== 'wait' || !form.time || !trip.date || !Number.isFinite(travel)
-    || !Number.isFinite(info?.buffer_minutes) || !Number.isFinite(info?.boarding_minutes)) return [tripBack]
-  const waves = (trip.return_waves || []).map(w => ({ start: dayMinutes(w.return_start, trip.date), depart: dayMinutes(w.depart_at, trip.date), end: dayMinutes(w.end_at, trip.date) }))
+  if (!tripBack || !form.time || trip.return_mode !== 'wait') return tripBack ? [tripBack] : []
   const out = []
-  for (let at = Math.ceil(minutes(form.time) / 60) * 60; at < minutes(tripBack); at += 60) {
-    const depart = at - travel - info.buffer_minutes, end = at + info.boarding_minutes + travel + info.buffer_minutes
-    if (waves.every(w => Math.abs(at - w.start) > 30 && (end <= w.depart || depart >= w.end))) out.push(clockTime(at))
-  }
+  for (let at = Math.ceil(minutes(form.time) / 60) * 60; at < minutes(tripBack); at += 60) out.push(clockTime(at))
   return [...out, tripBack]
 }
-
-// Mirrors the single community run in ptb_plan, including boarding every person.
-// Separate return runs may fit separate free windows; wait reserves the complete interval.
-export function communityVehicleBlocks(form, info) {
-  const c = info?.community, place = c?.places?.find(p => p.id === form.route_id)
-  const party = Number(form.party_size), travel = place?.minutes
-  if (!form.time || !Number.isInteger(party) || party < 1 || party > 15 ||
-    ![travel, info?.buffer_minutes, info?.boarding_minutes].every(Number.isFinite)) return []
-  const board = info.boarding_minutes * party, arrival = minutes(form.time)
-  const outbound = { start: arrival - travel - info.buffer_minutes - board, end: arrival + board + travel }
-  if (form.return_mode === 'one_way' || !form.back) return [outbound]
-  const back = minutes(form.back)
-  if (back < arrival) return []
-  const inbound = { start: back - travel - info.buffer_minutes, end: back + board + travel + info.buffer_minutes }
-  return form.return_mode === 'wait' || inbound.start <= outbound.end
-    ? [{ start: outbound.start, end: inbound.end }] : [outbound, inbound]
-}
-export function communityTimeChoices(form, info, dayInfo, step = 15, ignoreAvailability = false) {
-  const c = info?.community
-  if (!dayInfo?.date || dayInfo.status !== 'open' || !Number.isFinite(c?.window_start) || !Number.isFinite(c?.window_end)) return []
-  const windows = (dayInfo.community_free || []).map(w => ({ start: dayMinutes(w.start, dayInfo.date), end: dayMinutes(w.end, dayInfo.date) }))
-  const choices = new Set([c.window_start, Math.min(c.window_end, 1439)])
-  for (let at = Math.ceil(c.window_start / step) * step; at <= Math.min(c.window_end, 1439); at += step) choices.add(at)
-  return [...choices].sort((a, b) => a - b).filter(at => {
-    const spans = communityVehicleBlocks({ ...form, time: clockTime(at) }, info)
-    return spans.length && (ignoreAvailability || spans.every(span => windows.some(w => span.start >= w.start && span.end <= w.end)))
-  }).map(clockTime)
+export function communityVehicleBlocks() { return [] }
+export function communityTimeChoices(form, info, dayInfo, step = 15) {
+  return intakeTimes(form, dayInfo, info?.community?.window_start, info?.community?.window_end, step)
 }
 
 export function suggestGroups(bookings, settings) {
@@ -425,7 +344,8 @@ const CONFIRM_BLOCKERS = {
   'ห้ามรวมงานผู้ป่วยกับงานชุมชน': ['งานผู้ป่วยและงานชุมชนต้องแยกเที่ยว', ['single']],
   'งานชุมชนไม่เปิดร่วมเที่ยว': ['งานชุมชนใช้หนึ่งคำขอต่อเที่ยว รวมเฉพาะคนในกลุ่มนั้น', ['single']],
   'งานชุมชนไม่ใช้ผู้ช่วยเคลื่อนย้าย': ['งานชุมชนรับเฉพาะผู้เดินได้ ให้ล้างชื่อผู้ช่วยของแผนนี้', ['reload', 'call']],
-  'ยังไม่ตั้งสถานที่ชุมชนและเวลาเดินทาง': ['สถานที่ชุมชนนี้ยังไม่มีเวลาเดินทางที่ใช้จัดคิวได้', ['amend', 'settings']],
+  'ยังไม่ตั้งสถานที่ชุมชนและเวลาเดินทาง': ['ข้อมูลการจัดคิวรุ่นเก่า กรุณาโหลดหน้าใหม่', ['reload']],
+  'ยังไม่ตั้งสถานที่ชุมชน': ['สถานที่ชุมชนนี้ไม่อยู่ในรายการที่ตั้งไว้', ['amend', 'settings']],
   'ยังไม่ตั้งช่วงเวลาบริการชุมชน': ['ยังไม่ได้ตั้งช่วงเวลาที่ต้องถึงของบริการชุมชน', SETTINGS_FIX],
   'เวลาที่ต้องถึงอยู่นอกช่วงบริการชุมชน': ['เวลาที่ต้องถึงอยู่นอกช่วงเวลาบริการชุมชนที่ตั้งไว้', ['call', 'amend', 'cancel']],
   'รูปแบบขากลับของผู้ร่วมเที่ยวไม่ตรงกัน': ['ขากลับของผู้ร่วมเที่ยวต้องเป็นรูปแบบเดียวกัน', ['single', 'call']],
@@ -433,7 +353,7 @@ const CONFIRM_BLOCKERS = {
   'รอบรับ–ส่งทับกันภายในแผนเดียว': ['รถทำรอบรับ–ส่งตามแผนนี้พร้อมกันไม่ได้', ['call', 'amend', 'cancel']],
   'ต้องตรวจสอบพื้นที่รับบริการ': ['ยังไม่ได้ตรวจว่าจุดรับอยู่ในเขตพื้นที่ให้บริการ', ['area']],
   'ต้องยืนยันผู้ช่วยเคลื่อนย้ายประจำเที่ยว': ['ผู้ป่วยใช้รถเข็นหรือเปล ต้องมีผู้ช่วยเคลื่อนย้ายไปด้วย', ['helper']],
-  'ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว': ['รถไม่ว่าง ช่วงเวลานี้ชนกับเที่ยวที่ยืนยันแล้ว', ['call', 'amend', 'cancel']],
+  'ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว': ['กรุณาโหลดหน้าใหม่เพื่อใช้การจัดรอบโดยเจ้าหน้าที่', ['reload', 'call']],
   'มีเหตุขัดข้องที่ยังไม่คลี่คลายในวันเดียวกัน': ['วันนั้นมีเที่ยวที่แจ้งเหตุขัดข้องค้างอยู่ ต้องแก้เหตุนั้นก่อน', ['issue']],
   'ตรงวันหยุดให้บริการ': ['วันนัดตรงวันหยุดให้บริการ', ['call', 'amend', 'cancel']],
   'เวลารับ–ส่งอยู่นอกเวลาบริการ': ['เวลารับ–ส่งเกินเวลาให้บริการของรถ', ['call', 'amend', 'cancel']],
@@ -456,27 +376,20 @@ const CONFIRM_BLOCKERS = {
   'ยังไม่ยืนยันที่ยึดเปล': ['รถยังไม่ได้ตั้งว่ามีที่ยึดเปล', SETTINGS_FIX],
 }
 
-// เที่ยวที่ชนเวลากับแผนนี้ — เงื่อนไขเดียวกับที่ ptb_plan ใช้ตัดสิน "ทับช่วงรถ" (ทุกสถานะยกเว้นยกเลิก
-// และไม่นับเที่ยวที่มีคำขอในแผนนี้อยู่แล้ว) ใช้ทั้งบอกว่าชนกับเที่ยวไหน และหาเที่ยวที่ลองไปคันเดียวกัน
-export function overlappingTrips(plan, trips = []) {
-  return trips.filter(t => t.state !== 'cancelled' && !(t.booking_ids || []).some(id => plan?.booking_ids?.includes(id))
-    && (t.plan?.blocks || []).some(old => (plan?.blocks || []).some(b => Date.parse(old.start) < Date.parse(b.end) && Date.parse(b.start) < Date.parse(old.end))))
-}
-// เที่ยวที่ลอง "ให้ไปคันเดียวกัน" ได้ (20260921120000): ยืนยันแล้ว ปลายทาง (หรือกลุ่มปลายทาง) วัน และขากลับตรงกัน
-// เป็นแค่ตัวกรองไม่ให้ถามฐานข้อมูลเปล่า ๆ — เงื่อนไขจริง (ยินยอมนั่งร่วม ที่นั่ง เวลา) ฐานข้อมูลตัดสินเอง
-// routes = เส้นทางในหน้าตั้งค่า ไม่ส่งมา = เทียบปลายทางตรงตัวแบบเดิม
+// Legacy guidance may still contain an overlap error; it must never create a reservation.
+export function overlappingTrips() { return [] }
+// Existing confirmed trips for the same day/destination. Staff choose whether to combine.
 export function joinCandidates(plan, trips = [], routes = []) {
   if ((plan?.service_type || 'patient') !== 'patient') return []
-  return overlappingTrips(plan, trips).filter(t => (t.plan?.service_type || 'patient') === 'patient' && t.state === 'confirmed' && sameDestinationGroup(routes, t.plan?.route_id, plan?.route_id)
+  return trips.filter(t => !(t.booking_ids || []).some(id => plan?.booking_ids?.includes(id)) && t.plan?.date === plan?.date && (t.plan?.service_type || 'patient') === 'patient' && t.state === 'confirmed' && sameDestinationGroup(routes, t.plan?.route_id, plan?.route_id)
     && (t.plan?.return_mode === plan?.return_mode ||
-      (['wait', 'later'].includes(t.plan?.return_mode) && ['wait', 'later'].includes(plan?.return_mode)))
-    && t.plan?.date === plan?.date).slice(0, 3)
+      (['wait', 'later'].includes(t.plan?.return_mode) && ['wait', 'later'].includes(plan?.return_mode)))).slice(0, 3)
 }
 // เหตุที่ไปคันเดียวกันไม่ได้ เป็นภาษาเจ้าหน้าที่ — ข้อความจากฐานข้อมูลเขียนไว้ให้ประชาชน ("กรุณาประสานเจ้าหน้าที่")
 const JOIN_REFUSALS = [
   ['เที่ยวนี้ไม่เปิดร่วมแล้ว', 'เที่ยวนั้นออกรถแล้ว หรือเปลี่ยนสถานะไปแล้ว'],
   ['เที่ยวนี้ไม่พร้อมรับผู้ร่วมเพิ่ม', 'ผู้เดินทางเดิมในเที่ยวนั้นไม่ได้เลือกนั่งร่วม ใช้รถเข็น/เปล หรือขอยกเลิกไว้'],
-  ['เวลาเริ่มรับของแผนร่วมเที่ยวผ่านแล้ว', 'เวลารถออกรับของแผนใหม่ผ่านไปแล้ว'],
+  ['เวลาเริ่มรับของแผนร่วมเที่ยวผ่านแล้ว', 'ข้อมูลการจัดคิวรุ่นเก่า กรุณาโหลดหน้าใหม่'],
   ['คนขับเปลี่ยนแล้ว', 'คนขับของเที่ยวนั้นไม่ใช่คนขับปัจจุบัน ต้องจัดเที่ยวใหม่'],
 ]
 export function joinRefusal({ plan, error, code } = {}, workspace = {}) {
@@ -504,23 +417,12 @@ export function bookingPlanGuidance(message, plan, workspace = {}) {
   }
   else if (message === 'เวลานัดแพทย์อยู่นอกช่วงที่เปิดรับจอง' && Number.isFinite(settings.office_start) && Number.isFinite(settings.office_end)) {
     detail = `เวลานัดแพทย์ที่เปิดรับจอง ${clockTime(settings.office_start)}–${clockTime(settings.office_end)} น.${selected.length ? ` · ${selected.map(b => `${b.patient_name} นัด ${dateTime(b.appointment_at)}`).join(' / ')}` : ''}`
-  } else if (message === 'เวลารับ–ส่งอยู่นอกเวลาบริการ' && Number.isFinite(settings.office_start) && Number.isFinite(settings.office_end) && plan?.date) {
-    const midnight = Date.parse(`${plan.date}T00:00:00+07:00`)
-    const open = midnight + settings.office_start * 60000
-    const close = midnight + settings.office_end * 60000
-    const starts = (plan.blocks || []).map(b => Date.parse(b.start)).filter(Number.isFinite)
-    const ends = (plan.blocks || []).map(b => Date.parse(b.end)).filter(Number.isFinite)
-    const start = starts.length ? Math.min(...starts) : Date.parse(plan.pickup_at)
-    const end = ends.length ? Math.max(...ends) : NaN
-    const clock = at => new Date(at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })
-    const problems = []
-    if (start < open) problems.push(`เริ่มรับ ${clock(start)} ก่อนเวลาเปิดบริการ ${clockTime(settings.office_start)}`)
-    if (end > close) problems.push(`รถกลับถึงพื้นที่ ${dateTime(end)} หลังเวลาปิดบริการ ${clockTime(settings.office_end)}`)
-    detail = [...problems, `เวลาบริการที่ตั้งไว้ ${clockTime(settings.office_start)}–${clockTime(settings.office_end)} น. ระบบรวมเวลาเดินทางและเวลาเผื่อรับ–ส่งด้วย`].join(' · ')
+  } else if (message === 'เวลารับ–ส่งอยู่นอกเวลาบริการ') {
+    detail = 'ข้อมูลการจัดคิวจากระบบรุ่นเก่า กรุณาโหลดหน้าใหม่เพื่อใช้การจัดรอบโดยเจ้าหน้าที่'
   } else if (message === 'ที่นั่งไม่พอรวมผู้ติดตามและผู้ช่วยแล้ว' && Number.isFinite(plan?.seats) && Number.isFinite(settings.seats)) {
     detail = `แผนนี้ต้องใช้ ${plan.seats} ที่นั่ง รวมผู้ติดตามและผู้ช่วยแล้ว แต่รถตั้งไว้ ${settings.seats} ที่นั่ง ไม่รวมคนขับ`
   } else if (message === 'ทับช่วงรถหรือคนขับของเที่ยวที่ยืนยันแล้ว') {
-    detail = overlappingTrips(plan, workspace.trips).map(t => `${t.plan.route_label || 'เที่ยวเดิม'} · เริ่มรับ ${dateTime(t.plan.pickup_at)}`).join(' / ')
+    detail = 'ข้อมูลการจัดคิวจากระบบรุ่นเก่า กรุณาโหลดหน้าใหม่'
   } else if (['เวลานัดห่างเกินช่วงร่วมเที่ยว', 'เวลารับกลับห่างเกินช่วงร่วมเที่ยว', 'ยังไม่มีเวลาขากลับ', 'เวลารับกลับอยู่ก่อนเวลานัด'].includes(message)) {
     detail = selected.map(b => `${b.patient_name} · นัด ${dateTime(b.appointment_at)} · พร้อมรับกลับ ${dateTime(b.return_at)}`).join(' / ')
   }
@@ -532,15 +434,8 @@ export function bookingPlanGuidance(message, plan, workspace = {}) {
 
 // Advisory only: does not change appointments or reserve the vehicle.
 export function bookingTimingAdvice(form, info) {
-  const route = info?.routes?.find(r => r.id === form.route_id)
-  const travel = route?.minutes == null ? NaN : Number(route.minutes)
-  if (![travel, info?.buffer_minutes, info?.boarding_minutes, info?.office_start, info?.office_end].every(Number.isFinite) || travel < 0) return null
-  const before = travel + info.buffer_minutes + info.boarding_minutes
-  const after = form.return_mode === 'one_way' ? travel + info.boarding_minutes : before
-  // ช่วงตั้งค่าเป็นเวลานัดแพทย์โดยตรง เวลาเดินทางใช้คำนวณช่วงที่รถถูกจองเท่านั้น
-  const earliest = info.office_start
-  const latest = info.office_end
-  return { travel, before, after, earliest, latest, possible: earliest <= latest, span: journeyWindow(form, info) }
+  if (!info?.routes?.some(r => r.id === form.route_id) || !Number.isFinite(info.office_start) || !Number.isFinite(info.office_end)) return null
+  return { earliest: info.office_start, latest: info.office_end, possible: info.office_start <= info.office_end, span: null }
 }
 
 export function normalizeBookingPhone(value) {

@@ -29,7 +29,7 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
     const to = `${month}-${String(new Date(Number(month.slice(0, 4)), Number(month.slice(5)), 0).getDate()).padStart(2, '0')}`
     supabase.rpc('patient_booking_calendar', { p_muni: tenantId, p_from: month + '-01', p_to: to }).then(({ data, error }) => {
       if (!live) return
-      if (error) { setLoadError(error.message || 'ตรวจเวลารถไม่สำเร็จ'); return }
+      if (error) { setLoadError(error.message || 'ตรวจวันให้บริการไม่สำเร็จ'); return }
       setCalendar({ tenantId, month, days: data?.days || [] }); setLoadError('')
     })
     return () => { live = false }
@@ -38,7 +38,7 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
   const days = ready ? calendar.days : []
   const day = days.find(d => d.date === form.day)
   const draft = useMemo(() => ({ ...form, service_type: 'community' }), [form])
-  const times = freeTimeChoices(draft, info, day, 15, staffEntry)
+  const times = freeTimeChoices(draft, info, day, 15)
   const place = c?.places?.find(p => p.id === form.route_id), activity = c?.activities?.find(a => a.code === form.purpose_code)
   const change = (key, value) => { setForm(f => ({ ...f, [key]: value })); setMissing([]) }
   const snapshot = () => communityPayload({ ...form, appointment_at: bangkokISO(form.day, form.time),
@@ -49,7 +49,7 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
     e.preventDefault()
     const errors = [
       !form.day && 'เลือกวันเดินทาง', !ready && 'รอตรวจเวลารถให้เสร็จ หรือกดโหลดใหม่เมื่อโหลดไม่สำเร็จ',
-      !place && 'เลือกสถานที่ชุมชนที่ตั้งเวลาเดินทางไว้', !activity && 'เลือกกิจกรรมที่กองทุนอนุญาต',
+      !place && 'เลือกสถานที่ชุมชน', !activity && 'เลือกกิจกรรมที่กองทุนอนุญาต',
       !form.time && 'เลือกเวลาที่ต้องถึง', form.time && !times.includes(form.time) && !staffEntry && 'คิวรถเปลี่ยนแล้ว กรุณาเลือกเวลาอื่น',
       form.time && c && (form.time < clockTime(c.window_start) || form.time > clockTime(c.window_end)) && 'เวลาที่ต้องถึงอยู่นอกช่วงบริการชุมชน',
       !staffEntry && day?.status !== 'open' && (DAY_BLOCKED[day?.status] || 'ยังตรวจวันว่างไม่ได้'),
@@ -86,10 +86,10 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
       <p>เวลาที่ต้องถึง {clockTime(c.window_start)}–{clockTime(c.window_end)} น. · เปิดทุกวันรวมวันหยุด</p>
       <label className="block">เวลาที่ต้องถึง{staffEntry ? <input type="time" className={inputClass} min={clockTime(c.window_start)} max={clockTime(Math.min(c.window_end, 1439))} value={form.time} onChange={e => change('time', e.target.value)} />
         : <select aria-label="เวลาที่ต้องถึง" className={inputClass} value={form.time} onChange={e => change('time', e.target.value)}><option value="">เลือกเวลาที่ต้องถึง</option>{times.map(t => <option key={t} value={t}>{t} น.</option>)}</select>}</label>
-      {!!form.day && ready && !times.length && <p role="status" className="rounded-xl bg-amber-50 p-3">ยังไม่มีเวลาที่รถว่างพอสำหรับสถานที่และจำนวนคนนี้ ตรวจสถานที่หรือเลือกวันอื่น{staffEntry ? ' · รับเรื่องไว้ให้เจ้าหน้าที่ประสานได้ แต่ยังไม่ยืนยันรถ' : ''}</p>}
+      {!!form.day && ready && !times.length && <p role="status" className="rounded-xl bg-amber-50 p-3">ยังไม่มีเวลาให้เลือกในช่วงให้บริการของวันนี้ ตรวจวันและเวลาที่เลือก{staffEntry ? ' · รับเรื่องไว้ให้เจ้าหน้าที่ประสานได้ แต่ยังไม่ยืนยันรถ' : ''}</p>}
       <label className="block">รูปแบบรับกลับ<select aria-label="รูปแบบรับกลับ" className={inputClass} value={form.return_mode} onChange={e => change('return_mode', e.target.value)}>{Object.entries(RETURN_MODES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       {form.return_mode !== 'one_way' && <label className="block">เวลาที่พร้อมให้รับกลับ<input type="time" className={inputClass} min={form.time || undefined} value={form.back} onChange={e => change('back', e.target.value)} /></label>}
-      <p className="text-sm text-slate-600">ระบบเผื่อเวลาเดินทางและขึ้นลงรถตามจำนวนคน เวลาว่างเป็นข้อมูลตามแผน ยังไม่ใช่การกันรถให้</p>
+      <p className="text-sm text-slate-600">เลือกเวลาที่ต้องถึงสถานที่ เจ้าหน้าที่จัดรอบรถและประสานเวลารับให้หลังยืนยัน</p>
     </section>
     <section aria-label="ผู้ติดต่อและจุดรับชุมชน" className="space-y-3 rounded-2xl border bg-white p-4">
       <h3 className="font-bold">3. ผู้ติดต่อและจุดรับ</h3>

@@ -17,7 +17,7 @@ export default function CommunitySettings({ rules, busy, onSave }) {
     e.preventDefault()
     if (busy || stale || (draft.enabled && missing)) return
     const ok = await onSave(draft.revision, { enabled: draft.enabled, window_start: draft.start ? minutes(draft.start) : null,
-      window_end: draft.end ? minutes(draft.end) : null, places: draft.places.map(p => ({ ...p, label: p.label.trim(), minutes: Number(p.minutes) })),
+      window_end: draft.end ? minutes(draft.end) : null, places: draft.places.map(p => ({ id: p.id, label: p.label.trim() })),
       activities: draft.activities.map(a => ({ ...a, label: a.label.trim() })), rules_reference: draft.rules_reference.trim() })
     if (ok) setSaved(true)
   }}>
@@ -29,14 +29,13 @@ export default function CommunitySettings({ rules, busy, onSave }) {
       <label>เริ่มเวลาที่ต้องถึง<input type="time" className={inputClass} value={draft.start} required={draft.enabled || !!draft.end} onChange={e => change('start', e.target.value)} /></label>
       <label>สิ้นสุดเวลาที่ต้องถึง<input type="time" className={inputClass} value={draft.end} required={draft.enabled || !!draft.start} min={draft.start || undefined} onChange={e => change('end', e.target.value)} /></label>
     </div>
-    <p className="text-sm text-slate-600">ช่วงนี้เป็นเวลาที่ต้องถึงปลายทาง รถอาจออกก่อนหรือกลับหลังช่วงนี้ตามระยะทางและจำนวนผู้เดินทาง ไม่มีค่าเริ่มต้นให้เดา</p>
-    <fieldset className="space-y-3"><legend className="font-bold">สถานที่ชุมชนและเวลาเดินทาง</legend>
-      {draft.places.map((p, index) => <div key={p.id} className="grid gap-2 rounded-xl border p-3 sm:grid-cols-[1fr_10rem_auto]">
+    <p className="text-sm text-slate-600">ช่วงนี้เป็นเวลาที่ต้องถึงปลายทาง เจ้าหน้าที่และคนขับจัดรอบรับ–ส่งเอง ระบบไม่คำนวณช่วงกันรถ</p>
+    <fieldset className="space-y-3"><legend className="font-bold">สถานที่ชุมชน</legend>
+      {draft.places.map((p, index) => <div key={p.id} className="grid gap-2 rounded-xl border p-3 sm:grid-cols-[1fr_auto]">
         <label>สถานที่ชุมชน {index + 1}<input required maxLength={200} className={inputClass} value={p.label} onChange={e => updateRow('places', index, 'label', e.target.value)} /></label>
-        <label>เวลาเดินทาง (นาที)<input required type="number" min={5} max={240} step={1} className={inputClass} value={p.minutes} onChange={e => updateRow('places', index, 'minutes', e.target.value)} /></label>
         <button type="button" className={`${buttonClass} self-end`} disabled={busy} onClick={() => change('places', draft.places.filter((_, i) => i !== index))}>นำสถานที่ {index + 1} ออก</button>
       </div>)}
-      <button type="button" className={buttonClass} disabled={busy || draft.places.length >= 100} onClick={() => change('places', [...draft.places, { id: `place_${crypto.randomUUID()}`, label: '', minutes: '' }])}>+ เพิ่มสถานที่ชุมชน</button>
+      <button type="button" className={buttonClass} disabled={busy || draft.places.length >= 100} onClick={() => change('places', [...draft.places, { id: `place_${crypto.randomUUID()}`, label: '' }])}>+ เพิ่มสถานที่ชุมชน</button>
     </fieldset>
     <fieldset className="space-y-3"><legend className="font-bold">กิจกรรมที่กองทุนอนุญาต</legend>
       {draft.activities.map((a, index) => <div key={a.code} className="flex flex-wrap items-end gap-2">
