@@ -2,7 +2,7 @@ import { buttonClass, pickupLabel, DAY_BLOCKED, freeTimeChoices, destinationGrou
 
 const date = value => new Date(`${value}T12:00:00+07:00`)
 const label = value => date(value).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' })
-export default function BookingMonthPicker({ month, onMonth, days, selected, onSelect, onJoin, info, draft, first, last, loading, failed, onReload, staffEntry, serviceType = 'patient' }) {
+export default function BookingMonthPicker({ month, onMonth, days, selected, onSelect, onJoin, info, draft, first, last, loading, failed, onReload, serviceType = 'patient' }) {
   const community = serviceType === 'community'
   const start = `${month}-01`
   const total = new Date(Number(month.slice(0, 4)), Number(month.slice(5)), 0).getDate()
@@ -71,7 +71,6 @@ export default function BookingMonthPicker({ month, onMonth, days, selected, onS
           {!community && t.joinable && <button type="button" className={buttonClass} onClick={() => onJoin(t)}>ขอร่วมเที่ยวนี้</button>}
         </article>
       })}
-      {(chosen.status === 'open' || staffEntry) && <button type="button" className={buttonClass} onClick={() => onSelect(selected)}>จองเวลาอื่นในวันนี้</button>}
     </div>}
   </div>
 }
