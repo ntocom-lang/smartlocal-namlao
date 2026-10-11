@@ -4,10 +4,11 @@ import { LayoutDashboard, X } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ROLE_LABELS } from '../../lib/staffRoster'
 
-// เมนูซ้ายแบบลิ้นชักเลื่อนออกจากซ้าย — ใช้ร่วม 2 ที่ (เฉพาะมือถือ md:hidden):
+// เมนูซ้ายแบบลิ้นชักเลื่อนออกจากซ้าย — ใช้ร่วม 3 ที่ (เฉพาะมือถือ md:hidden):
 //   - หน้าเจ้าหน้าที่ (StaffDashboard.jsx)
 //   - แผงควบคุมแอดมิน (AdminDashboard.jsx)
-// บน PC ทั้งสองหน้ามีเมนูซ้ายถาวรอยู่แล้ว (aside) ไฟล์นี้ไม่แตะมัน
+//   - ศูนย์รวมข้อมูลดิจิทัล (DataCenterDashboard.jsx)
+// บน PC ทั้งสามหน้ามีเมนูซ้ายถาวรอยู่แล้ว (aside) ไฟล์นี้ไม่แตะมัน
 //
 // เนื้อหาใช้กลุ่มเมนูชุดเดียวกับเมนูซ้าย PC ของหน้านั้น (ผู้เรียกกรองสิทธิ์/โมดูลที่เปิดมาให้แล้ว) จึงไม่มีเมนูหลอก
 // หรือเมนูที่ขาดไป · ตัวเลขแดงมาจากชุดเดียวกับแถบล่าง/กริด (badges ส่งมาจากผู้เรียก)
@@ -53,19 +54,23 @@ function DrawerItem({ item, active, badge, onSelect }) {
   )
 }
 
-function GroupLabel({ children, accent }) {
+// count (ถ้ามี) = ชิปตัวเลขท้ายหัวกลุ่ม เช่น จำนวนรายการทั้งหมดของ "หมวดหมู่ข้อมูล"
+export function GroupLabel({ children, accent, count }) {
   return (
     <div className="flex items-center gap-2 px-3 pb-1.5 pt-4">
       {accent && <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: accent }} />}
       <span className="text-[11px] font-bold tracking-wide text-white/60">{children}</span>
       <span aria-hidden="true" className="h-px flex-1 bg-white/15" />
+      {count != null && <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-white/80">{count}</span>}
     </div>
   )
 }
 
+// children = เนื้อหาต่อท้ายกลุ่มเมนู ในกรอบเลื่อนเดียวกัน — ใช้กับของที่ไม่ใช่ปุ่มเมนูธรรมดา
+// (ทรีหมวดหมู่ของหน้าศูนย์ข้อมูล ซึ่งกาง/พับได้และมีปุ่มเพิ่มข้อมูลต่อแถว) ผู้ส่งต้องปิดลิ้นชักเองเมื่อเลือกปลายทาง
 export default function PortalDrawer({
   open, onClose, tenant, portalLabel, ariaLabel, homeItem = DEFAULT_HOME, homeGroupLabel = 'ภาพรวม', extraItems = [],
-  groups, activeKey, badges, onSelect,
+  groups, activeKey, badges, onSelect, children,
 }) {
   const { role, displayName, avatarUrl } = useAuth()
   const panelRef = useRef(null)
@@ -152,6 +157,7 @@ export default function PortalDrawer({
               </div>
             </div>
           ))}
+          {children}
         </nav>
 
         {/* ชิปผู้ใช้ — แตะไปหน้าโปรไฟล์ (ปุ่มรูปโปรไฟล์บนหัวจอพาไปที่เดียวกัน) · ใต้ safe-area บน iPhone */}

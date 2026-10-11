@@ -62,8 +62,8 @@ const PORTALS = [
   },
   {
     name: 'ศูนย์ข้อมูล', file: 'data-center', path: '/data-center/staff', homeKey: 'back-to-staff',
-    // รายการแรกของลิ้นชักคือ "กลับแดชบอร์ดเจ้าหน้าที่" (ปุ่มนำทาง ไม่เคยเป็นหน้าปัจจุบัน) · ท้ายรายการมี "เลือกหมวดหมู่และประเภท" เพิ่ม
-    homeActive: false, extraAt: 'end',
+    // รายการแรกของลิ้นชักคือ "กลับแดชบอร์ดเจ้าหน้าที่" (ปุ่มนำทาง ไม่เคยเป็นหน้าปัจจุบัน) · ทรีหมวดหมู่อยู่ใต้กลุ่มโมดูล (ไม่ใช่ data-drawer-item)
+    homeActive: false,
     // หัวหน้านี้ไม่ใช่ header.md:hidden เหมือนหน้าอื่น (ใช้หัวเดียวกันทุกขนาดจอ) — แถวที่มีโลโก้/กระดิ่ง และชื่อ อปท. ขึ้นบรรทัดใหม่ได้ปกติ
     headerRow: 'header .relative.z-10.flex', nameMayWrap: true,
     async waitReady(page) {
@@ -82,15 +82,80 @@ const PORTALS = [
           .filter({ hasText: 'แผนที่ GIS' }).waitFor({ timeout: 20_000 })
       },
     },
-    // ปุ่มพิเศษ 2 อัน ทดสอบท้ายสุด (อันหลังพาออกนอกหน้า): หมวดหมู่ → เปิดแผ่นเลือกหมวดที่ลิ้นชักปิดตัวลง · กลับแดชบอร์ดเจ้าหน้าที่ → ไป /staff
+    // ทรี "หมวดหมู่ข้อมูล" ในลิ้นชัก (เหมือนเมนูซ้าย PC) แล้วปุ่ม "กลับแดชบอร์ดเจ้าหน้าที่" ท้ายสุด (พาออกนอกหน้า)
     async specialChecks(page, where, helpers) {
       await helpers.openDrawer()
-      if (await page.locator('[data-drawer-item="category-sheet"]').count()) {
-        await page.locator('[data-drawer-item="category-sheet"]').click()
-        await page.getByText('เลือกหมวดหมู่ข้อมูล', { exact: true }).waitFor({ timeout: 10_000 })
+      const tree = page.locator('[data-drawer-category-tree]')
+      // ทรีเหมือนกับเมนูซ้าย PC ทุกประการ: aside ถูกซ่อนด้วย CSS บนมือถือแต่ยังอยู่ใน DOM จึงอ่านเทียบกันได้
+      const names = sel => page.evaluate(s => [...document.querySelectorAll(s)].map(e => e.getAttribute('data-cat-group')), sel)
+      const pcGroups = await names('aside [data-cat-group]')
+      const drawerGroups = await names('[data-drawer-category-tree] [data-cat-group]')
+      assert.deepEqual(drawerGroups, pcGroups, `${where}: กลุ่มในทรีของลิ้นชักไม่ตรงกับเมนูซ้าย PC`)
+      if (!drawerGroups.length) {
+        assert.equal(await tree.count(), 0, `${where}: ไม่มีข้อมูลหมวดหมู่แต่ลิ้นชักยังวาดหัวทรี`)
+        console.log(`  · ${where}: อปท. นี้ยังไม่มีข้อมูลหมวดหมู่ — ข้ามการตรวจทรี`)
+      } else {
+        await tree.waitFor({ state: 'visible' })
+        // หัวทรี + ตัวเลขรวม = ผลรวมของตัวเลขทุกกลุ่ม
+        const head = await page.evaluate(() => {
+          const t = document.querySelector('[data-drawer-category-tree]')
+          const total = Number(t.firstElementChild.lastElementChild.textContent)
+          const sum = [...t.querySelectorAll('[data-cat-group] > span:last-child')].reduce((n, e) => n + Number(e.textContent), 0)
+          return { title: t.firstElementChild.textContent, total, sum }
+        })
+        assert.ok(head.title.includes('หมวดหมู่ข้อมูล'), `${where}: ไม่มีหัว "หมวดหมู่ข้อมูล" ในลิ้นชัก`)
+        assert.equal(head.total, head.sum, `${where}: ตัวเลขรวมหมวดหมู่ (${head.total}) ไม่เท่าผลรวมรายกลุ่ม (${head.sum})`)
+        // ปุ่มทุกตัวในทรีจิ้มได้ ≥ 44px และไม่ล้นความกว้างลิ้นชัก
+        const geo = await page.evaluate(() => {
+          const panel = document.getElementById('portal-drawer').getBoundingClientRect()
+          const btns = [...document.querySelectorAll('[data-drawer-category-tree] button')]
+          return {
+            n: btns.length,
+            // ปุ่มกาง/พับกับปุ่ม + เป็นปุ่มไอคอนล้วน ต้องกว้างพอด้วย · ปุ่มชื่อกลุ่ม/ประเภทกว้างเต็มแถวอยู่แล้ว ตรวจแค่ความสูง
+            small: btns.map(b => ({ b, r: b.getBoundingClientRect() }))
+              .filter(({ b, r }) => r.height < 43.5 || (b.hasAttribute('data-cat-toggle') || b.hasAttribute('data-cat-add')) && r.width < 43.5)
+              .map(({ b, r }) => `${b.getAttribute('aria-label') || b.textContent.trim().slice(0, 20)} ${Math.round(r.width)}×${Math.round(r.height)}`),
+            outside: btns.filter(b => b.getBoundingClientRect().right > panel.right + 1).length,
+          }
+        })
+        assert.deepEqual(geo.small, [], `${where}: ปุ่มในทรีเล็กกว่า 44px`)
+        assert.equal(geo.outside, 0, `${where}: ปุ่มในทรีล้นขอบลิ้นชัก`)
+
+        // กาง/พับกลุ่ม: กดแล้วจำนวนแถวประเภทเปลี่ยน ลิ้นชักยังเปิดอยู่
+        const toggle = page.locator(`[data-drawer-category-tree] [data-cat-toggle="${drawerGroups[0]}"]`)
+        const before = await toggle.getAttribute('aria-expanded')
+        const rowsBefore = await page.locator('[data-drawer-category-tree] [data-cat-category]').count()
+        await toggle.click()
+        assert.notEqual(await toggle.getAttribute('aria-expanded'), before, `${where}: กดกาง/พับแล้ว aria-expanded ไม่เปลี่ยน`)
+        assert.notEqual(await page.locator('[data-drawer-category-tree] [data-cat-category]').count(), rowsBefore, `${where}: กดกาง/พับแล้วจำนวนแถวประเภทไม่เปลี่ยน`)
+        assert.ok((await page.evaluate(() => getComputedStyle(document.getElementById('portal-drawer')).visibility)) === 'visible', `${where}: กดกาง/พับแล้วลิ้นชักปิดเอง (ควรเปิดค้างให้เลือกต่อ)`)
+        // ต้องกางไว้ เพื่อเลือกประเภทย่อยด้านล่าง (กดครั้งแรกอาจเพิ่งพับมันไป)
+        if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'true', `${where}: กางกลุ่มกลับไม่ได้`)
+
+        // เลือกกลุ่ม: ลิ้นชักปิด · ไปหน้าภาพรวม · แถวกลุ่มนั้นมี aria-current (เปิดลิ้นชักดูอีกที)
+        await page.locator(`[data-drawer-category-tree] [data-cat-group="${drawerGroups[0]}"]`).click()
         await page.waitForFunction(helpers.isHidden)
-        // ปุ่ม ✕ ของแผ่นเลือกหมวด (ในหน้ามีปุ่มชื่อ "ปิด" อื่นอีก จึงจำกัดเฉพาะในแผ่น)
-        await page.locator('div.fixed.inset-0', { hasText: 'เลือกหมวดหมู่ข้อมูล' }).getByRole('button', { name: 'ปิด', exact: true }).click()
+        await page.locator('nav[aria-label="เมนูศูนย์รวมข้อมูลดิจิทัลบนมือถือ"] button[aria-current="page"]').filter({ hasText: 'ภาพรวมระบบ' }).waitFor({ timeout: 20_000 })
+        await helpers.openDrawer()
+        assert.equal(await page.locator(`[data-drawer-category-tree] [data-cat-group="${drawerGroups[0]}"]`).getAttribute('aria-current'), 'true', `${where}: เลือกกลุ่มแล้ว แถวกลุ่มไม่มี aria-current`)
+
+        // เลือกประเภทย่อย: เหมือนกัน แต่ aria-current ย้ายมาที่ประเภท และกลุ่มต้องไม่ถูกไฮไลต์ซ้อน
+        const firstCat = page.locator('[data-drawer-category-tree] [data-cat-category]').first()
+        if (await firstCat.count()) {
+          const catName = await firstCat.getAttribute('data-cat-category')
+          await firstCat.click()
+          await page.waitForFunction(helpers.isHidden)
+          await helpers.openDrawer()
+          const current = await page.evaluate(() => [...document.querySelectorAll('[data-drawer-category-tree] [aria-current="true"]')]
+            .map(b => b.getAttribute('data-cat-category') ?? `กลุ่ม:${b.getAttribute('data-cat-group')}`))
+          assert.deepEqual(current, [catName], `${where}: หลังเลือกประเภท "${catName}" แถวที่ไฮไลต์ต้องมีแค่ประเภทนั้น (ได้ ${JSON.stringify(current)})`)
+        }
+
+        // ปุ่ม + ของกลุ่ม → โมดูล "บันทึกข้อมูลใหม่" และลิ้นชักปิด
+        await page.locator(`[data-drawer-category-tree] [data-cat-add="${drawerGroups[0]}"]`).click()
+        await page.waitForFunction(helpers.isHidden)
+        await page.locator('nav[aria-label="เมนูศูนย์รวมข้อมูลดิจิทัลบนมือถือ"] button[aria-current="page"]').filter({ hasText: 'บันทึกข้อมูลใหม่' }).waitFor({ timeout: 20_000 })
         await helpers.openDrawer()
       }
       await page.locator('[data-drawer-item="back-to-staff"]').click()
