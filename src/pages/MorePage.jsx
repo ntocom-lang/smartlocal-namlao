@@ -4,9 +4,9 @@ import {
   ArrowLeft, UserCircle2, Pencil, LogIn, LogOut,
   Bell, FileSearch, ClipboardList, ShieldCheck,
   Phone, Globe, Share2, MessageCircle,
-  ChevronRight, ChevronDown, Star, Copy, Download, Check, Monitor, X,
+  ChevronRight, Star, Copy, Download, Check, Monitor, X,
   UploadIcon, PlusSquare, BookOpen, Store, FileText, Briefcase,
-  CalendarDays, Luggage, AlertTriangle, Cloud, CloudRain, Wind, RefreshCw, Database, Trash2,
+  CalendarDays, Luggage, AlertTriangle, Cloud, CloudRain, Wind, RefreshCw, Database, Trash2, LayoutGrid,
 } from 'lucide-react'
 import qrCodeImage from '../assets/qr-code.png'
 import { supabase, signOutSafely } from '../lib/supabase'
@@ -17,6 +17,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import SatisfactionModal from '../components/SatisfactionModal'
+import { MenuGroup } from '../components/common/MenuTileGrid'
 import KledkaewMore from '../components/citizen/templates/Kledkaew/More'
 import { useInstallPrompt } from '../hooks/useInstallPrompt'
 import { AndroidGuide } from '../components/InstallPrompt'
@@ -178,76 +179,6 @@ function QRShareCard({ tenant }) {
   )
 }
 
-// ─── Section + Row helpers ─────────────────────────────────────────────────
-
-// id/isOpen/onToggle ทำให้แต่ละหมวดยุบ/ขยายได้บนมือถือ (หน้ายาวมากตาลาย) — บน PC (md:) เปิดค้างไว้
-// เสมอ เพราะจอกว้างพอ ไม่ต้องประหยัดพื้นที่แนวตั้งแบบมือถือ
-function Section({ title, id, isOpen, onToggle, children }) {
-  return (
-    <div>
-      {title && (
-        <button type="button" onClick={() => onToggle?.(id)}
-          className="w-full flex items-center justify-between gap-2 px-4 mb-2 md:pointer-events-none">
-          <span className="text-[13px] font-bold text-gray-500 uppercase tracking-wider text-left">{title}</span>
-          <ChevronDown size={16}
-            className={`text-gray-400 shrink-0 transition-transform md:hidden ${isOpen ? 'rotate-180' : ''}`} />
-        </button>
-      )}
-      <div className={`bg-white rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(15,23,42,0.06),0_1px_2px_rgba(15,23,42,0.04)] border border-gray-100 divide-y divide-gray-100 ${isOpen ? 'block' : 'hidden'} md:block`}>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-// ปุ่มลัดเมนูที่ใช้บ่อย — วางไว้นอก accordion ที่ยุบได้ ตั้งใจให้เห็นตลอดไม่ต้องกดขยายหมวดไหนก่อน
-function QuickLink({ icon: Icon, iconBg, iconColor, label, href }) {
-  return (
-    <Link to={href}
-      className="flex flex-col items-center gap-1.5 py-1 rounded-2xl text-center hover:bg-gray-50 active:bg-gray-100 transition-colors">
-      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm ${iconBg}`}>
-        <Icon size={22} className={iconColor} />
-      </div>
-      <span className="text-[11px] font-semibold text-gray-600 leading-tight">{label}</span>
-    </Link>
-  )
-}
-
-function MenuRow({ icon: Icon, iconBg, iconColor = 'text-gray-600', label, desc, badge, href, onClick, danger, external }) {
-  // แถวเมนูซ่อนตัวเองเมื่อปลายทางเป็นหน้าของโมดูลที่ อปท. นี้ไม่ได้เปิดใช้งาน
-  // ทำที่นี่จุดเดียวแทนการใส่เงื่อนไขคร่อม <MenuRow> ทีละอัน (หน้านี้มีเกิน 20 แถว กระจายอยู่หลายกลุ่ม
-  // ใส่ทีละอันแล้วพลาดแถวเดียวคือลิงก์ค้างที่กดแล้วเจอหน้า "ยังไม่ได้เปิดใช้งาน")
-  const { isModuleEnabled } = useTenant()
-  const moduleKey = href && !external ? moduleForPath(href) : null
-  if (moduleKey && !isModuleEnabled(moduleKey)) return null
-
-  const inner = (
-    <div className={`flex items-center gap-3.5 px-4 py-3.5 transition-colors hover:bg-gray-50 active:bg-gray-100 ${danger ? 'bg-red-50/50 hover:bg-red-50 active:bg-red-100' : ''}`}>
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${iconBg ?? 'bg-gray-100'}`}>
-        <Icon size={19} className={danger ? 'text-red-600' : iconColor} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm font-semibold leading-tight ${danger ? 'text-red-600' : 'text-gray-800'}`}>{label}</p>
-        {desc && <p className="text-xs text-gray-500 mt-0.5 leading-snug">{desc}</p>}
-      </div>
-      {badge != null && badge > 0 && (
-        <span className="min-w-5 h-5 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1.5 shrink-0" style={{ backgroundColor: 'var(--color-primary)' }}>
-          {badge > 99 ? '99+' : badge}
-        </span>
-      )}
-      {!danger && <ChevronRight size={15} className="text-gray-300 shrink-0" />}
-    </div>
-  )
-
-  if (href && (href.startsWith('tel:') || external)) {
-    return <a href={href} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}>{inner}</a>
-  }
-  if (href) {
-    return <Link to={href}>{inner}</Link>
-  }
-  return <button className="w-full text-left" onClick={onClick}>{inner}</button>
-}
-
 // ─── Page ──────────────────────────────────────────────────────────────────
 
 export default function MorePage() {
@@ -275,18 +206,6 @@ function NamlaoMorePage() {
   const installState = installMode === 'installed' ? 'installed' : installMode === 'hidden' ? 'unknown' : 'installable'
   const [showIOSGuide, setShowIOSGuide] = useState(false)
   const [clearingCache, setClearingCache] = useState(false)
-
-  // เปิดค้างไว้แค่หมวดที่ใช้บ่อยที่สุด ("บริการหลัก") ตอนโหลดหน้าครั้งแรก ที่เหลือยุบไว้ก่อน — กันหน้า
-  // ยาวเกินจนตาลาย ผู้ใช้กดหัวข้อเพื่อขยายเองได้ (ไม่มีผลบน PC ซึ่งเปิดทุกหมวดค้างไว้เสมอ)
-  const [openSections, setOpenSections] = useState(() => new Set(['onedata']))
-  function toggleSection(id) {
-    setOpenSections(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
 
   function handleClearCache() {
     setClearingCache(true)
@@ -325,27 +244,25 @@ function NamlaoMorePage() {
   const isInternal = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician'].includes(role)
   const initials  = (displayName[0] || '?').toUpperCase()
 
-  const hasSocial = tenant?.website_url || tenant?.facebook_url || tenant?.line_oa_url
-
   // ─── เมนูที่ใช้บ่อย ─── ต้อง sync path กับ TRACKABLE_PATHS ใน src/lib/menuUsage.js (path ไหนไม่อยู่
   // ในนั้น จะไม่ถูกนับ ต่อให้ใส่ไว้ในนี้ก็ตาม) DEFAULT_QUICK_PATHS ใช้ตอนยังไม่มีประวัติการใช้งานเลย
   // (ผู้ใช้ใหม่/เพิ่งล้าง cache) เรียงตามที่คาดว่าจำเป็นที่สุดของงานบริการประชาชนทั่วไป
+  // color = สีประจำเมนู (hex) — MenuTileGrid ไล่เฉดและปรับให้ไอคอนขาวอ่านออกเอง (src/lib/menuTileColor.js)
   const QUICK_MENU_CATALOG = [
-    { path: '/emergency', icon: AlertTriangle, iconBg: 'bg-red-100', iconColor: 'text-red-600', label: 'สายด่วนฉุกเฉิน' },
-    { path: '/complaint', icon: ClipboardList, iconBg: 'bg-orange-100', iconColor: 'text-orange-600',
-      label: 'ร้องเรียน/ร้องทุกข์' },
-    { path: '/doc-request', icon: FileText, iconBg: 'bg-blue-100', iconColor: 'text-blue-600', label: 'สอบถามยอดชำระ' },
-    { path: '/my-complaints', icon: FileSearch, iconBg: 'bg-sky-100', iconColor: 'text-sky-600', label: 'คำร้องของฉัน' },
-    { path: '/events', icon: CalendarDays, iconBg: 'bg-green-100', iconColor: 'text-green-600', label: 'ปฏิทินกิจกรรม' },
-    { path: '/tourism', icon: Luggage, iconBg: 'bg-orange-100', iconColor: 'text-orange-600', label: 'เที่ยว กิน พัก ช้อป บริการ' },
-    { path: '/data-center', icon: Database, iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600', label: 'ศูนย์ข้อมูลดิจิทัล' },
-    { path: '/my-docs', icon: FileText, iconBg: 'bg-sky-100', iconColor: 'text-sky-600', label: 'เอกสารของฉัน' },
-    { path: '/weather', icon: Cloud, iconBg: 'bg-sky-100', iconColor: 'text-sky-600', label: 'สภาพอากาศ' },
-    { path: '/pm25', icon: Wind, iconBg: 'bg-sky-100', iconColor: 'text-sky-600', label: 'สถานการณ์ PM2.5' },
-    { path: '/contact', icon: Phone, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', label: 'ติดต่อเรา' },
-    { path: '/notifications', icon: Bell, iconBg: 'bg-purple-100', iconColor: 'text-purple-600', label: 'แจ้งเตือน' },
-    { path: '/waste', icon: Trash2, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', label: 'ตารางวันเก็บขยะ' },
-    { path: '/water-situation', icon: CloudRain, iconBg: 'bg-sky-100', iconColor: 'text-sky-600', label: 'สถานการณ์น้ำ-ฝน' },
+    { path: '/emergency', icon: AlertTriangle, color: '#dc2626', label: 'สายด่วนฉุกเฉิน' },
+    { path: '/complaint', icon: ClipboardList, color: '#ea580c', label: 'ร้องเรียน/ร้องทุกข์' },
+    { path: '/doc-request', icon: FileText, color: '#2563eb', label: 'สอบถามยอดชำระ' },
+    { path: '/my-complaints', icon: FileSearch, color: '#0284c7', label: 'คำร้องของฉัน' },
+    { path: '/events', icon: CalendarDays, color: '#16a34a', label: 'ปฏิทินกิจกรรม' },
+    { path: '/tourism', icon: Luggage, color: '#ea580c', label: 'เที่ยว กิน พัก ช้อป บริการ' },
+    { path: '/data-center', icon: Database, color: '#4f46e5', label: 'ศูนย์ข้อมูลดิจิทัล' },
+    { path: '/my-docs', icon: FileText, color: '#0284c7', label: 'เอกสารของฉัน' },
+    { path: '/weather', icon: Cloud, color: '#0284c7', label: 'สภาพอากาศ' },
+    { path: '/pm25', icon: Wind, color: '#0284c7', label: 'สถานการณ์ PM2.5' },
+    { path: '/contact', icon: Phone, color: '#059669', label: 'ติดต่อเรา' },
+    { path: '/notifications', icon: Bell, color: '#9333ea', label: 'แจ้งเตือน' },
+    { path: '/waste', icon: Trash2, color: '#059669', label: 'ตารางวันเก็บขยะ' },
+    { path: '/water-situation', icon: CloudRain, color: '#0284c7', label: 'สถานการณ์น้ำ-ฝน' },
   ]
   const DEFAULT_QUICK_PATHS = ['/complaint', '/emergency', '/doc-request', '/my-complaints']
   // อ่าน localStorage แบบ lazy initializer ของ useState (sync, ครั้งเดียวตอน mount) แทน useEffect+setState
@@ -364,6 +281,90 @@ function NamlaoMorePage() {
       const key = moduleForPath(item.path)
       return !key || isModuleEnabled(key)
     })
+
+  // ─── เมนูทั้งหมด (กริดไอคอน — MenuTileGrid.jsx) ───
+  // กรองเมนูของโมดูลที่ อปท. นี้ไม่ได้เปิดใช้งาน "ก่อนวาด" (เดิม MenuRow ซ่อนตัวเองทีละแถว) เพื่อให้เลข
+  // "N เมนู" ที่หัวกลุ่มตรงกับที่เห็นจริง และกลุ่มที่ไม่เหลือเมนูไม่ขึ้นหัวเปล่า · ลิงก์นอก (external) กับเมนูที่เป็น
+  // ปุ่มกด (onClick) ไม่ผูกกับโมดูลจึงไม่ถูกกรอง เหมือนเดิม · desc = คำอธิบายเดิมใต้ชื่อเมนู ไม่โชว์บนจอแต่ให้
+  // โปรแกรมอ่านหน้าจออ่าน (ดูเหตุผลใน MenuTileGrid.jsx) — ห้ามตัดทิ้ง เพราะชื่อบางเมนูสั้นจนไม่ชัดถ้าไม่มีคำอธิบาย
+  const moduleOn = path => {
+    const key = moduleForPath(path)
+    return !key || isModuleEnabled(key)
+  }
+  const staffSystemItem = {
+    key: 'staff-system', label: 'ระบบเจ้าหน้าที่', desc: 'กล่องงาน เอกสาร อนุมัติ รายงาน',
+    Icon: Briefcase, color: '#0284c7', to: '/staff',
+  }
+  const menuGroups = [
+    { id: 'social', title: 'ช่องทางออนไลน์', Icon: Globe, color: '#2563eb', items: [
+      tenant?.website_url && { key: 'website', label: 'เว็บไซต์', Icon: Globe, color: '#2563eb', href: tenant.website_url, external: true },
+      tenant?.facebook_url && { key: 'facebook', label: 'Facebook', Icon: Share2, color: '#1d4ed8', href: tenant.facebook_url, external: true },
+      tenant?.line_oa_url && { key: 'line', label: 'Line OA', Icon: MessageCircle, color: '#16a34a', href: tenant.line_oa_url, external: true },
+    ] },
+    { id: 'admin', title: 'ผู้ดูแลระบบ', Icon: ShieldCheck, color: '#d97706', show: isAdmin, items: [
+      { key: 'admin-panel', label: 'แผงควบคุม Admin', desc: 'จัดการคำร้อง เจ้าหน้าที่ และข้อมูลระบบ', Icon: ShieldCheck, color: '#d97706', to: '/admin' },
+      staffSystemItem,
+    ] },
+    { id: 'staff', title: 'ระบบเจ้าหน้าที่', Icon: Briefcase, color: '#0284c7', show: isStaff, items: [staffSystemItem] },
+    { id: 'viewer', title: 'ผู้บริหาร', Icon: ShieldCheck, color: '#059669', show: isViewer, items: [
+      { key: 'viewer-report', label: 'รายงานสรุป', desc: 'ดูรายงานและสถิติคำร้องของหน่วยงาน', Icon: ShieldCheck, color: '#059669', to: '/admin' },
+    ] },
+    { id: 'calendar', title: 'ปฏิทินสำหรับเจ้าหน้าที่', Icon: CalendarDays, color: '#059669', show: isInternal, items: [
+      { key: 'events-manage', label: 'จัดการปฏิทินกิจกรรม', desc: 'เพิ่มกำหนดการและแจ้งกลุ่มผู้เกี่ยวข้อง', Icon: CalendarDays, color: '#059669', to: '/events/manage' },
+    ] },
+    { id: 'onedata', title: tenant?.system_name || `${tenant?.name} One Data`, Icon: Database, color: '#4f46e5', items: [
+      { key: 'emergency', label: 'สายด่วนฉุกเฉิน', desc: 'รวมเบอร์โทรฉุกเฉินในพื้นที่', Icon: AlertTriangle, color: '#dc2626', to: '/emergency' },
+      { key: 'complaint', label: 'ร้องเรียน/ร้องทุกข์', desc: 'แจ้งซ่อม / ขอน้ำ / แจ้งเหตุสิ่งแวดล้อม', Icon: ClipboardList, color: '#ea580c', to: '/complaint' },
+      { key: 'doc-request', label: 'สอบถามยอดชำระเรื่องนั้นๆ', desc: 'สอบถามค่าธรรมเนียม / ภาษี / ค่าธรรมเนียมขยะ / ขออนุญาตก่อสร้างบ้าน', Icon: FileText, color: '#2563eb', to: '/doc-request' },
+      { key: 'events', label: 'ปฏิทินกิจกรรม', desc: 'กิจกรรมและงานประเพณีของท้องถิ่น', Icon: CalendarDays, color: '#16a34a', to: '/events' },
+      { key: 'tourism', label: 'เที่ยว กิน พัก ช้อป บริการ', desc: 'ที่เที่ยว ร้านอาหาร ที่พัก OTOP ของฝาก และช่าง/บริการในพื้นที่', Icon: Luggage, color: '#ea580c', to: '/tourism' },
+      { key: 'business-register', label: 'ลงทะเบียนร้านค้า / ท่องเที่ยว', desc: 'เที่ยว กิน พัก ช้อป บริการ — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ', Icon: Store, color: '#ea580c', to: '/business-register' },
+      { key: 'data-center', label: 'ศูนย์ข้อมูลดิจิทัล', desc: 'แผนที่รวมพิกัด/สถานที่สำคัญทุกชนิดในเขตเทศบาล', Icon: Database, color: '#4f46e5', to: '/data-center' },
+    ] },
+    { id: 'services', title: 'บริการอื่นๆ', Icon: LayoutGrid, color: '#0284c7', items: [
+      installState === 'installed' && {
+        key: 'install-done', label: 'ติดตั้งแอปพลิเคชันแล้ว', desc: 'คุณมีแอปพลิเคชันบนหน้าจอหลักของคุณแล้ว', Icon: Check, color: '#16a34a',
+      },
+      installState === 'installable' && {
+        key: 'install', label: isIOS ? 'เพิ่มไปยังหน้าจอโฮม' : 'ติดตั้งแอปพลิเคชัน',
+        desc: isIOS ? 'เพิ่มหน้าเว็บนี้ไปยังหน้าจอโฮม' : 'ติดตั้งระบบลงในเครื่องเพื่อเข้าถึงอย่างรวดเร็ว',
+        Icon: isIOS ? UploadIcon : Monitor, color: '#2563eb', onClick: handleInstall,
+      },
+      {
+        key: 'clear-cache', label: clearingCache ? 'กำลังล้างแคช...' : 'ล้างแคช / อัปเดตเวอร์ชั่นล่าสุด',
+        desc: 'กดถ้าแอปไม่อัปเดตข้อมูล/ฟีเจอร์ใหม่ ระบบจะโหลดเวอร์ชั่นล่าสุดให้ทันที',
+        Icon: RefreshCw, color: '#0d9488', onClick: clearingCache ? undefined : handleClearCache,
+      },
+      {
+        key: 'satisfaction', label: 'ประเมินความพึงพอใจ',
+        desc: satComplaintId ? 'มีคำร้องที่ปิดแล้ว รอการประเมิน' : `ให้คะแนนการให้บริการของ${tenant?.name || 'หน่วยงาน'}`,
+        Icon: Star, color: '#ca8a04', onClick: () => satComplaintId ? setShowSat(true) : navigate('/satisfaction'),
+      },
+      { key: 'notifications', label: 'การแจ้งเตือน', desc: 'อัปเดตสถานะคำร้องของคุณ', Icon: Bell, color: '#9333ea', badge: unreadCount, onClick: () => navigate('/notifications') },
+      { key: 'my-complaints', label: 'คำร้องของฉัน', desc: 'ติดตามและดูประวัติคำร้องที่ยื่น', Icon: FileSearch, color: '#2563eb', to: '/my-complaints' },
+      { key: 'my-docs', label: 'เอกสารของฉัน', desc: 'ตรวจสอบสถานะใบรับรองและเอกสารราชการ', Icon: FileText, color: '#0284c7', to: '/my-docs' },
+      { key: 'weather', label: 'สภาพอากาศ', desc: 'ข้อมูลสภาพอากาศและการพยากรณ์ในพื้นที่', Icon: Cloud, color: '#0284c7', to: '/weather' },
+      { key: 'pm25', label: 'สถานการณ์ PM2.5', desc: 'ค่าฝุ่นและคุณภาพอากาศจากสถานี Air4Thai', Icon: Wind, color: '#0284c7', to: '/pm25' },
+      { key: 'water-situation', label: 'สถานการณ์น้ำ-ฝน', desc: 'ปริมาณฝนและระดับน้ำจากสถานีตรวจวัดใกล้พื้นที่', Icon: CloudRain, color: '#0284c7', to: '/water-situation' },
+      { key: 'manual', label: 'คู่มือการใช้งาน', desc: 'วิธีการยื่นคำร้องสำหรับประชาชน', Icon: BookOpen, color: '#4f46e5', href: '/manual-citizen.html', external: true },
+    ] },
+    { id: 'transparency', title: 'ความโปร่งใส (LPA / ITA)', Icon: ShieldCheck, color: '#059669', items: [
+      { key: 'doc-stats', label: 'รายงานการออกเอกสารดิจิทัล', desc: 'สถิติคำขอ อัตราเสร็จสิ้น ระยะเวลาดำเนินการ — LPA ๑.๗', Icon: ShieldCheck, color: '#059669', to: '/doc-stats' },
+      { key: 'complaint-report', label: 'รายงานการจัดการเรื่องร้องเรียน/ร้องทุกข์', desc: 'สถิติการรับเรื่องและระยะเวลาดำเนินการ', Icon: ClipboardList, color: '#059669', to: '/reports/complaints' },
+    ] },
+    { id: 'contact', title: 'ติดต่อหน่วยงาน', Icon: Phone, color: '#059669', items: [
+      { key: 'contact', label: 'ติดต่อเรา', desc: 'เบอร์โทรศัพท์ สถานที่ตั้ง และช่องทางโซเชียลมีเดีย', Icon: Phone, color: '#059669', to: '/contact' },
+    ] },
+    { id: 'account', title: 'บัญชีของฉัน', Icon: UserCircle2, color: '#475569', items: session ? [
+      { key: 'profile', label: 'โปรไฟล์', desc: 'ข้อมูลส่วนตัวและการตั้งค่า', Icon: UserCircle2, color: '#475569', to: '/profile' },
+      { key: 'logout', label: 'ออกจากระบบ', Icon: LogOut, danger: true, onClick: handleLogout },
+    ] : [
+      { key: 'login', label: 'เข้าสู่ระบบ', desc: 'เข้าสู่ระบบเพื่อใช้งานได้เต็มที่', Icon: LogIn, color: '#2563eb', to: '/auth' },
+    ] },
+  ]
+    .filter(group => group.show !== false)
+    .map(group => ({ ...group, items: group.items.filter(Boolean).filter(item => !item.to || moduleOn(item.to)) }))
+    .filter(group => group.items.length > 0)
 
   return (
     <div className="min-h-screen pb-28 md:pb-8" style={{ backgroundColor: '#eef2f7' }}>
@@ -467,338 +468,18 @@ function NamlaoMorePage() {
         )}
 
         {/* ─── เมนูที่ใช้บ่อย ─── จัดอันดับจากพฤติกรรมจริงของแต่ละคน (ดู quickItems ด้านบน + src/lib/menuUsage.js)
-            ไม่อยู่ใน accordion ด้านล่าง กดใช้ได้ทันทีไม่ต้องขยายหมวดก่อน */}
-        <div>
-          <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider px-4 mb-2">เมนูที่ใช้งานบ่อย</p>
-          <div className="bg-white rounded-2xl shadow-[0_1px_3px_rgba(15,23,42,0.06),0_1px_2px_rgba(15,23,42,0.04)] border border-gray-100 px-2 py-4">
-            <div className="grid grid-cols-4 gap-1">
-              {quickItems.map(item => (
-                <QuickLink key={item.path} icon={item.icon} iconBg={item.iconBg} iconColor={item.iconColor}
-                  label={item.label} href={item.path} />
-              ))}
-            </div>
-          </div>
-        </div>
+            อยู่บนสุดเสมอ กดใช้ได้ทันที — 4 คอลัมน์เพราะเป็นแถวทางลัด (กลุ่มด้านล่างใช้ 3 คอลัมน์ ปุ่มใหญ่กว่า) */}
+        <MenuGroup title="เมนูที่ใช้งานบ่อย" Icon={Star} color="#f59e0b" layout="quick"
+          items={quickItems.map(item => ({ key: item.path, label: item.label, Icon: item.icon, color: item.color, to: item.path }))} />
 
-        {/* เนื้อหาส่วนที่เหลือใช้ CSS multi-column (ไม่ใช่ grid) บน PC — แต่ละ Section สูงไม่เท่ากัน
+        {/* เนื้อหาส่วนที่เหลือใช้ CSS multi-column (ไม่ใช่ grid) บน PC — แต่ละกลุ่มสูงไม่เท่ากัน
             grid-cols-2 ปกติจะจัดแถวชนกันดูรก ส่วนนี้ปล่อยให้ไหลจากบนลงล่างทีละคอลัมน์แทน จบสวยเป็นระเบียบ
             ทุกความสูง ไม่ต้องคำนวณเอง */}
         <div className="space-y-5 md:space-y-0 md:columns-2 md:gap-5 md:*:mb-5 md:*:break-inside-avoid-column">
-
-        {/* ─── ช่องทางออนไลน์ ─── */}
-        {hasSocial && (
-          <Section title="ช่องทางออนไลน์" id="social" isOpen={openSections.has('social')} onToggle={toggleSection}>
-            <div className="px-4 py-4 grid grid-cols-3 gap-3">
-              {tenant.website_url && (
-                <a href={tenant.website_url} target="_blank" rel="noreferrer"
-                   className="flex flex-col items-center gap-2 py-3 rounded-2xl hover:bg-gray-50 active:bg-gray-100 transition-colors">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center shadow-sm">
-                    <Globe size={22} className="text-blue-600" />
-                  </div>
-                  <span className="text-[13px] font-semibold text-gray-600">เว็บไซต์</span>
-                </a>
-              )}
-              {tenant.facebook_url && (
-                <a href={tenant.facebook_url} target="_blank" rel="noreferrer"
-                   className="flex flex-col items-center gap-2 py-3 rounded-2xl hover:bg-gray-50 active:bg-gray-100 transition-colors">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center shadow-sm">
-                    <Share2 size={22} className="text-white" />
-                  </div>
-                  <span className="text-[13px] font-semibold text-gray-600">Facebook</span>
-                </a>
-              )}
-              {tenant.line_oa_url && (
-                <a href={tenant.line_oa_url} target="_blank" rel="noreferrer"
-                   className="flex flex-col items-center gap-2 py-3 rounded-2xl hover:bg-gray-50 active:bg-gray-100 transition-colors">
-                  <div className="w-12 h-12 rounded-2xl bg-green-500 flex items-center justify-center shadow-sm">
-                    <MessageCircle size={22} className="text-white" />
-                  </div>
-                  <span className="text-[13px] font-semibold text-gray-600">Line OA</span>
-                </a>
-              )}
-            </div>
-          </Section>
-        )}
-
-        {/* ─── Admin section ─── */}
-        {isAdmin && (
-          <Section title="ผู้ดูแลระบบ" id="admin" isOpen={openSections.has('admin')} onToggle={toggleSection}>
-            <MenuRow
-              icon={ShieldCheck}
-              iconBg="bg-amber-100"
-              iconColor="text-amber-600"
-              label="แผงควบคุม Admin"
-              desc="จัดการคำร้อง เจ้าหน้าที่ และข้อมูลระบบ"
-              href="/admin"
-            />
-            <MenuRow
-              icon={Briefcase}
-              iconBg="bg-sky-100"
-              iconColor="text-sky-600"
-              label="ระบบเจ้าหน้าที่"
-              desc="กล่องงาน เอกสาร อนุมัติ รายงาน"
-              href="/staff"
-            />
-          </Section>
-        )}
-        {isStaff && (
-          <Section title="ระบบเจ้าหน้าที่" id="staff" isOpen={openSections.has('staff')} onToggle={toggleSection}>
-            <MenuRow
-              icon={Briefcase}
-              iconBg="bg-sky-100"
-              iconColor="text-sky-600"
-              label="ระบบเจ้าหน้าที่"
-              desc="กล่องงาน เอกสาร อนุมัติ รายงาน"
-              href="/staff"
-            />
-          </Section>
-        )}
-        {isViewer && (
-          <Section title="ผู้บริหาร" id="viewer" isOpen={openSections.has('viewer')} onToggle={toggleSection}>
-            <MenuRow
-              icon={ShieldCheck}
-              iconBg="bg-emerald-100"
-              iconColor="text-emerald-600"
-              label="รายงานสรุป"
-              desc="ดูรายงานและสถิติคำร้องของหน่วยงาน"
-              href="/admin"
-            />
-          </Section>
-        )}
-        {isInternal && (
-          <Section title="ปฏิทินสำหรับเจ้าหน้าที่" id="calendar" isOpen={openSections.has('calendar')} onToggle={toggleSection}>
-            <MenuRow
-              icon={CalendarDays}
-              iconBg="bg-emerald-100"
-              iconColor="text-emerald-600"
-              label="จัดการปฏิทินกิจกรรม"
-              desc="เพิ่มกำหนดการและแจ้งกลุ่มผู้เกี่ยวข้อง"
-              href="/events/manage"
-            />
-          </Section>
-        )}
-
-        {/* ─── One Data ─── */}
-        <Section title={tenant?.system_name || `${tenant?.name} One Data`} id="onedata" isOpen={openSections.has('onedata')} onToggle={toggleSection}>
-          <MenuRow
-            icon={AlertTriangle}
-            iconBg="bg-red-100"
-            iconColor="text-red-600"
-            label="สายด่วนฉุกเฉิน"
-            desc="รวมเบอร์โทรฉุกเฉินในพื้นที่"
-            href="/emergency"
-          />
-          <MenuRow
-            icon={ClipboardList}
-            iconBg="bg-orange-100"
-            iconColor="text-orange-600"
-            label="ร้องเรียน/ร้องทุกข์"
-            desc="แจ้งซ่อม / ขอน้ำ / แจ้งเหตุสิ่งแวดล้อม"
-            href="/complaint"
-          />
-          <MenuRow
-            icon={FileText}
-            iconBg="bg-blue-100"
-            iconColor="text-blue-600"
-            label="สอบถามยอดชำระเรื่องนั้นๆ"
-            desc="สอบถามค่าธรรมเนียม / ภาษี / ค่าธรรมเนียมขยะ / ขออนุญาตก่อสร้างบ้าน"
-            href="/doc-request"
-          />
-          <MenuRow
-            icon={CalendarDays}
-            iconBg="bg-green-100"
-            iconColor="text-green-600"
-            label="ปฏิทินกิจกรรม"
-            desc="กิจกรรมและงานประเพณีของท้องถิ่น"
-            href="/events"
-          />
-          <MenuRow
-            icon={Luggage}
-            iconBg="bg-orange-100"
-            iconColor="text-orange-600"
-            label="เที่ยว กิน พัก ช้อป บริการ"
-            desc="ที่เที่ยว ร้านอาหาร ที่พัก OTOP ของฝาก และช่าง/บริการในพื้นที่"
-            href="/tourism"
-          />
-          <MenuRow
-            icon={Store}
-            iconBg="bg-orange-100"
-            iconColor="text-orange-600"
-            label="ลงทะเบียนร้านค้า / ท่องเที่ยว"
-            desc="เที่ยว กิน พัก ช้อป บริการ — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ"
-            href="/business-register"
-          />
-          <MenuRow
-            icon={Database}
-            iconBg="bg-indigo-100"
-            iconColor="text-indigo-600"
-            label="ศูนย์ข้อมูลดิจิทัล"
-            desc="แผนที่รวมพิกัด/สถานที่สำคัญทุกชนิดในเขตเทศบาล"
-            href="/data-center"
-          />
-        </Section>
-
-        {/* ─── บริการ ─── */}
-        <Section title="บริการอื่นๆ" id="services" isOpen={openSections.has('services')} onToggle={toggleSection}>
-          {installState === 'installed' ? (
-            <MenuRow
-              icon={Check}
-              iconBg="bg-green-100"
-              iconColor="text-green-600"
-              label="ติดตั้งแอปพลิเคชันแล้ว"
-              desc="คุณมีแอปพลิเคชันบนหน้าจอหลักของคุณแล้ว"
-            />
-          ) : installState === 'installable' ? (
-            <MenuRow
-              icon={isIOS ? UploadIcon : Monitor}
-              iconBg="bg-blue-100"
-              iconColor="text-blue-600"
-              label={isIOS ? 'เพิ่มไปยังหน้าจอโฮม' : 'ติดตั้งแอปพลิเคชัน'}
-              desc={isIOS ? 'เพิ่มหน้าเว็บนี้ไปยังหน้าจอโฮม' : 'ติดตั้งระบบลงในเครื่องเพื่อเข้าถึงอย่างรวดเร็ว'}
-              onClick={handleInstall}
-            />
-          ) : null}
-          <MenuRow
-            icon={RefreshCw}
-            iconBg="bg-teal-100"
-            iconColor="text-teal-600"
-            label={clearingCache ? 'กำลังล้างแคช...' : 'ล้างแคช / อัปเดตเวอร์ชั่นล่าสุด'}
-            desc="กดถ้าแอปไม่อัปเดตข้อมูล/ฟีเจอร์ใหม่ ระบบจะโหลดเวอร์ชั่นล่าสุดให้ทันที"
-            onClick={clearingCache ? undefined : handleClearCache}
-          />
-          <MenuRow
-            icon={Star}
-            iconBg="bg-yellow-100"
-            iconColor="text-yellow-600"
-            label="ประเมินความพึงพอใจ"
-            desc={satComplaintId ? 'มีคำร้องที่ปิดแล้ว รอการประเมิน' : `ให้คะแนนการให้บริการของ${tenant?.name || 'หน่วยงาน'}`}
-            onClick={() => satComplaintId ? setShowSat(true) : navigate('/satisfaction')}
-          />
-          <MenuRow
-            icon={Bell}
-            iconBg="bg-purple-100"
-            iconColor="text-purple-600"
-            label="การแจ้งเตือน"
-            desc="อัปเดตสถานะคำร้องของคุณ"
-            badge={unreadCount}
-            onClick={() => navigate('/notifications')}
-          />
-          <MenuRow
-            icon={FileSearch}
-            iconBg="bg-blue-100"
-            iconColor="text-blue-600"
-            label="คำร้องของฉัน"
-            desc="ติดตามและดูประวัติคำร้องที่ยื่น"
-            href="/my-complaints"
-          />
-          <MenuRow
-            icon={FileText}
-            iconBg="bg-sky-100"
-            iconColor="text-sky-600"
-            label="เอกสารของฉัน"
-            desc="ตรวจสอบสถานะใบรับรองและเอกสารราชการ"
-            href="/my-docs"
-          />
-          <MenuRow
-            icon={Cloud}
-            iconBg="bg-sky-100"
-            iconColor="text-sky-600"
-            label="สภาพอากาศ"
-            desc="ข้อมูลสภาพอากาศและการพยากรณ์ในพื้นที่"
-            href="/weather"
-          />
-          {/* ซ่อนเองเมื่อ อปท. ไม่ได้เปิดโมดูล water-situation (MenuRow เช็ค moduleForPath ให้) */}
-          <MenuRow
-            icon={Wind}
-            iconBg="bg-sky-100"
-            iconColor="text-sky-600"
-            label="สถานการณ์ PM2.5"
-            desc="ค่าฝุ่นและคุณภาพอากาศจากสถานี Air4Thai"
-            href="/pm25"
-          />
-          <MenuRow
-            icon={CloudRain}
-            iconBg="bg-sky-100"
-            iconColor="text-sky-600"
-            label="สถานการณ์น้ำ-ฝน"
-            desc="ปริมาณฝนและระดับน้ำจากสถานีตรวจวัดใกล้พื้นที่"
-            href="/water-situation"
-          />
-          <MenuRow
-            icon={BookOpen}
-            iconBg="bg-indigo-100"
-            iconColor="text-indigo-600"
-            label="คู่มือการใช้งาน"
-            desc="วิธีการยื่นคำร้องสำหรับประชาชน"
-            href="/manual-citizen.html"
-            external
-          />
-        </Section>
-
-        {/* ─── ความโปร่งใส ─── */}
-        <Section title="ความโปร่งใส (LPA / ITA)" id="transparency" isOpen={openSections.has('transparency')} onToggle={toggleSection}>
-          <MenuRow
-            icon={ShieldCheck}
-            iconBg="bg-emerald-100"
-            iconColor="text-emerald-600"
-            label="รายงานการออกเอกสารดิจิทัล"
-            desc="สถิติคำขอ อัตราเสร็จสิ้น ระยะเวลาดำเนินการ — LPA ๑.๗"
-            href="/doc-stats"
-          />
-          <MenuRow
-            icon={ClipboardList}
-            iconBg="bg-emerald-100"
-            iconColor="text-emerald-600"
-            label="รายงานการจัดการเรื่องร้องเรียน/ร้องทุกข์"
-            desc="สถิติการรับเรื่องและระยะเวลาดำเนินการ"
-            href="/reports/complaints"
-          />
-        </Section>
-
-        {/* ─── ข้อมูลหน่วยงาน ─── */}
-        <Section title="ติดต่อหน่วยงาน" id="contact" isOpen={openSections.has('contact')} onToggle={toggleSection}>
-          <MenuRow
-            icon={Phone}
-            iconBg="bg-emerald-100"
-            iconColor="text-emerald-600"
-            label="ติดต่อเรา"
-            desc="เบอร์โทรศัพท์ สถานที่ตั้ง และช่องทางโซเชียลมีเดีย"
-            href="/contact"
-          />
-        </Section>
-
-        {/* ─── บัญชีผู้ใช้ ─── */}
-        <Section title="บัญชีของฉัน" id="account" isOpen={openSections.has('account')} onToggle={toggleSection}>
-          {session ? (
-            <>
-              <MenuRow
-                icon={UserCircle2}
-                iconBg="bg-gray-100"
-                iconColor="text-gray-600"
-                label="โปรไฟล์"
-                desc="ข้อมูลส่วนตัวและการตั้งค่า"
-                href="/profile"
-              />
-              <MenuRow
-                icon={LogOut}
-                iconBg="bg-red-100"
-                label="ออกจากระบบ"
-                danger
-                onClick={handleLogout}
-              />
-            </>
-          ) : (
-            <MenuRow
-              icon={LogIn}
-              iconBg="bg-blue-100"
-              iconColor="text-blue-600"
-              label="เข้าสู่ระบบ"
-              desc="เข้าสู่ระบบเพื่อใช้งานได้เต็มที่"
-              href="/auth"
-            />
-          )}
-        </Section>
-
+          {menuGroups.map(group => (
+            <MenuGroup key={group.id} title={group.title} Icon={group.Icon} color={group.color}
+              layout="citizen" items={group.items} />
+          ))}
         </div>
 
         {/* ─── QR Share ─── */}

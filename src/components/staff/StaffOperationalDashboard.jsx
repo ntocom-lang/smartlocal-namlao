@@ -1,6 +1,60 @@
-import { ChevronRight, Plus } from 'lucide-react'
+import {
+  ChevronRight, Plus, LayoutGrid, HeartHandshake, Megaphone, Layers, BookOpen,
+  Building2, Banknote, Hammer, GraduationCap, ShieldCheck,
+} from 'lucide-react'
 import { activeOrgTerms } from '../../lib/orgTerms'
 import { PATIENT_TRANSPORT_MODULE_KEY } from '../../lib/patientTransport'
+import { MenuGroup } from '../common/MenuTileGrid'
+
+// ไอคอนหัวกลุ่มของหน้าเมนูแบบไอคอน — ผูกตามชื่อกลุ่มใน STANDALONE_GROUPS/MODULE_GROUPS (StaffDashboard.jsx)
+// ถ้าเปลี่ยนชื่อกลุ่มแล้วลืมมาแก้ที่นี่ แค่ได้ไอคอนกลางๆ (LayoutGrid) ไม่มีอะไรพัง
+const GROUP_ICONS = {
+  'งานบริการประชาชน': HeartHandshake,
+  'ประชาสัมพันธ์และท่องเที่ยว': Megaphone,
+  'แผนงานและทรัพยากรกลาง': Layers,
+  'คู่มือ': BookOpen,
+  'สำนักปลัด': Building2,
+  'กองคลัง': Banknote,
+  'กองช่าง': Hammer,
+  'กองการศึกษา': GraduationCap,
+  'ตรวจสอบภายใน': ShieldCheck,
+}
+
+// ตัวเลขบนการ์ด/ไอคอนต้องเป็นตัวเดียวกับ badge ใน sidebar (คำนวณที่ StaffDashboard จุดเดียว) —
+// คำร้อง = ใบที่ยังไม่มีใครกดเริ่มดำเนินการ ห้ามนับซ้ำในไฟล์นี้ ไม่งั้นสองจุดจะเลขไม่ตรงกัน
+function menuBadges({ pendingCount, newComplaintCount = 0, patientWorkCount = 0 }) {
+  return { inbox: pendingCount, complaints: newComplaintCount, [PATIENT_TRANSPORT_MODULE_KEY]: patientWorkCount }
+}
+
+// newTab = ไฟล์ static นอก router (เช่น /manual-staff.html) ต้องเปิดแท็บใหม่
+// ถ้าไม่ดักตรงนี้จะตกไป setActiveModule('manual-staff') ซึ่งไม่มี branch ไหน render = จอเปล่า
+function openModuleItem(item, { navigate, setActiveModule }) {
+  if (item.newTab) window.open(item.newTab, '_blank', 'noopener,noreferrer')
+  else if (item.externalUrl) navigate(item.externalUrl)
+  else setActiveModule(item.key)
+}
+
+// หน้า "เมนูทั้งหมด" ของเจ้าหน้าที่บนมือถือ (แท็บ "เมนู" ในแถบล่าง) — กริดไอคอนจัดกลุ่มตามโมดูลที่
+// เห็นได้จริง visibleGroups ผ่านตัวกรองสิทธิ์/โมดูลที่เปิดมาจาก StaffDashboard แล้ว (กลุ่มว่างถูกตัดออกแล้ว)
+export function StaffMenuGrid({ visibleGroups, setActiveModule, navigate, pendingCount, newComplaintCount, patientWorkCount }) {
+  const badges = menuBadges({ pendingCount, newComplaintCount, patientWorkCount })
+  const total = visibleGroups.reduce((sum, group) => sum + group.items.length, 0)
+  return (
+    <div className="space-y-3">
+      <header className="min-w-0">
+        <h1 className="text-lg font-black text-slate-900">เมนูทั้งหมด</h1>
+        <p className="text-[11px] text-slate-500">{total} เมนู · แสดงตามโมดูลและสิทธิ์ของบัญชีนี้</p>
+      </header>
+      {visibleGroups.map(({ group, items }) => (
+        <MenuGroup key={group} title={group} Icon={GROUP_ICONS[group] ?? LayoutGrid} color={items[0]?.color}
+          items={items.map(item => ({
+            key: item.key, label: item.label, Icon: item.Icon, color: item.color, badge: badges[item.key],
+            onClick: () => openModuleItem(item, { navigate, setActiveModule }),
+          }))} />
+      ))}
+    </div>
+  )
+}
 
 const ROLE_LABELS = {
   superadmin: 'Super Admin', admin: 'แอดมินระบบ', officer: 'หัวหน้ากอง',
@@ -20,9 +74,7 @@ const ROLE_LABELS = {
 export default function StaffOperationalDashboard({
   visibleGroups, setActiveModule, profile, pendingCount, newComplaintCount = 0, patientWorkCount = 0, navigate, onCreateManagementEvent,
 }) {
-  // ตัวเลขบนการ์ดต้องเป็นตัวเดียวกับ badge ใน sidebar (คำนวณที่ StaffDashboard จุดเดียว) —
-  // คำร้อง = ใบที่ยังไม่มีใครกดเริ่มดำเนินการ ห้ามนับซ้ำในไฟล์นี้ ไม่งั้นสองจุดจะเลขไม่ตรงกัน
-  const cardBadges = { inbox: pendingCount, complaints: newComplaintCount, [PATIENT_TRANSPORT_MODULE_KEY]: patientWorkCount }
+  const cardBadges = menuBadges({ pendingCount, newComplaintCount, patientWorkCount })
   const todayTH = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
 
   const taskCopy = {
@@ -35,14 +87,12 @@ export default function StaffOperationalDashboard({
     .map(key => visibleItems.find(item => item.key === key))
     .filter(Boolean)
 
-  // newTab = ไฟล์ static นอก router (เช่น /manual-staff.html) ต้องเปิดแท็บใหม่
-  // ถ้าไม่ดักตรงนี้จะตกไป setActiveModule('manual-staff') ซึ่งไม่มี branch ไหน render = จอเปล่า
   function openTask(item) {
     if (item.key === 'events' && onCreateManagementEvent) onCreateManagementEvent()
-    else if (item.newTab) window.open(item.newTab, '_blank', 'noopener,noreferrer')
-    else if (item.externalUrl) navigate(item.externalUrl)
-    else setActiveModule(item.key)
+    else openModuleItem(item, { navigate, setActiveModule })
   }
+  const totalMenus = visibleItems.length
+  const totalBadge = Object.values(cardBadges).reduce((sum, n) => sum + (Number(n) > 0 ? Number(n) : 0), 0)
 
   return (
     <div className="space-y-2">
@@ -87,7 +137,20 @@ export default function StaffOperationalDashboard({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      {/* มือถือ (< md): เมนูทั้งหมดอยู่ในแท็บ "เมนู" ของแถบล่าง (กริดไอคอน) หน้าแดชบอร์ดเหลือทางลัดด่วน
+          กับปุ่มนี้ ไม่วางกริดซ้ำสองที่ — PC ยังใช้แผงการ์ดด้านล่างเหมือนเดิม เพราะมีเมนูซ้ายอยู่แล้ว */}
+      <button type="button" onClick={() => setActiveModule('menu')}
+        className="flex min-h-14 w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left shadow-sm active:scale-[0.99] md:hidden">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600"><LayoutGrid size={19} /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold text-slate-800">เมนูทั้งหมด</span>
+          <span className="block text-[11px] text-slate-500">{totalMenus} เมนูตามสิทธิ์ของบัญชีนี้</span>
+        </span>
+        {totalBadge > 0 && <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">{totalBadge > 99 ? '99+' : totalBadge}</span>}
+        <ChevronRight size={16} className="shrink-0 text-slate-300" />
+      </button>
+
+      <section className="hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:block">
         <div className="mb-3">
           <h2 className="text-sm font-bold text-slate-800">เครื่องมือที่ใช้งานได้</h2>
           <p className="text-[10px] text-slate-400">แสดงตามโมดูลและสิทธิ์ของบัญชีนี้</p>
@@ -97,15 +160,18 @@ export default function StaffOperationalDashboard({
             <div key={group}>
               <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">{group}</p>
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-4">
-                {items.map(({ key, label, Icon, color, bg, externalUrl, newTab }) => (
+                {items.map((item) => {
+                  const { key, label, Icon, color, bg } = item
+                  return (
                   <button key={key} type="button"
-                    onClick={() => newTab ? window.open(newTab, '_blank', 'noopener,noreferrer') : externalUrl ? navigate(externalUrl) : setActiveModule(key)}
+                    onClick={() => openModuleItem(item, { navigate, setActiveModule })}
                     className="flex min-h-14 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-50 active:scale-[0.99]">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: bg ?? `${color}18` }}><Icon size={18} style={{ color }} /></div>
                     <p className="min-w-0 flex-1 text-xs font-bold leading-tight text-slate-700">{label}</p>
                     {cardBadges[key] > 0 && <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[9px] font-bold text-white">{cardBadges[key] > 99 ? '99+' : cardBadges[key]}</span>}
                   </button>
-                ))}
+                  )
+                })}
               </div>
             </div>
           ))}

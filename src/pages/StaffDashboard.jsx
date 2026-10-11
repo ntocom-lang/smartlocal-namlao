@@ -6,7 +6,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, Users, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
-  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck,
+  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid,
 } from 'lucide-react'
 import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -59,6 +59,7 @@ const PostsManager = lazy(() => import('../components/staff/PostsManager'))
 const BorrowableAssetsManager = lazy(() => import('../components/staff/BorrowableAssetsManager'))
 const WasteScheduleManager = lazy(() => import('../components/staff/WasteScheduleManager'))
 const StaffOperationalDashboard = lazy(() => import('../components/staff/StaffOperationalDashboard'))
+const StaffMenuGrid = lazy(() => import('../components/staff/StaffOperationalDashboard').then(m => ({ default: m.StaffMenuGrid })))
 const FleetPage = lazy(() => import('./FleetPage'))
 const BuildingPermitWizard = lazy(() => import('./BuildingPermitWizard'))
 const WasteCollectionRequestWizard = lazy(() => import('./WasteCollectionRequestWizard'))
@@ -2640,6 +2641,18 @@ export default function StaffDashboard() {
     navigate('/')
   }
 
+  // แถบล่างมือถือ: ทางลัด 4 ปุ่มที่ใช้บ่อย (กรองด้วย visibleModules เหมือนเมนูซ้าย — ปิดโมดูลแล้วต้องหาย
+  // ทั้งระบบ ไม่งั้นเป็นปุ่มหลอก) + ปุ่ม "เมนู" ที่เปิดกริดไอคอนของทุกโมดูล
+  const bottomTabs = [
+    { key: 'home',       label: 'แดชบอร์ด',   Icon: LayoutDashboard },
+    { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', Icon: FileText },
+    { key: 'complaints', label: 'คำร้อง',      Icon: MessageSquareWarning },
+    { key: 'events',     label: 'ปฏิทินกิจกรรม', Icon: CalendarDays },
+  ].filter(({ key }) => key === 'home' || visibleModules.some(m => m.key === key))
+  const barHas = key => bottomTabs.some(t => t.key === key)
+  const menuTabActive = activeModule === 'menu' || (activeModule !== 'home' && !barHas(activeModule))
+  const menuTabBadge = (barHas('inbox') ? 0 : pendingCount) + (barHas('complaints') ? 0 : newComplaintCount) + patientWorkCount
+
   return (
     <div className="min-h-full" style={{ backgroundColor: '#eef2f7' }}>
 
@@ -2820,6 +2833,17 @@ export default function StaffDashboard() {
                 }}
               />
             )}
+            {/* แท็บ "เมนู" ของแถบล่างมือถือ — กริดไอคอนของทุกโมดูลที่เห็นได้ (ใช้ visibleHomeGroups ตัวเดียวกับแดชบอร์ด) */}
+            {activeModule === 'menu' && (
+              <StaffMenuGrid
+                visibleGroups={visibleHomeGroups}
+                setActiveModule={setActiveModule}
+                navigate={navigate}
+                pendingCount={pendingCount}
+                newComplaintCount={newComplaintCount}
+                patientWorkCount={patientWorkCount}
+              />
+            )}
             {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} currentUserRole={profile?.role} onRequestDeleted={refreshPendingBadge} />}
             {activeModule === 'complaints' && (
               // 'staff' ตัดออกจากรายชื่อนี้แล้ว — คำอธิบายบทบาท (ดู ROLE_DESCRIPTIONS ใน AdminDashboard.jsx)
@@ -2869,12 +2893,7 @@ export default function StaffDashboard() {
             borderTopRightRadius: '20px',
             paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 6px)',
           }}>
-          {[
-            { key: 'home',       label: 'แดชบอร์ด',   Icon: LayoutDashboard },
-            { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', Icon: FileText },
-            { key: 'complaints', label: 'คำร้อง',      Icon: MessageSquareWarning },
-            { key: 'events',     label: 'ปฏิทินกิจกรรม', Icon: CalendarDays },
-          ].filter(({ key }) => key === 'home' || visibleModules.some(m => m.key === key)).map(({ key, label, Icon }) => {
+          {bottomTabs.map(({ key, label, Icon }) => {
             const isActive = activeModule === key
             const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
               : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
@@ -2901,26 +2920,27 @@ export default function StaffDashboard() {
               </button>
             )
           })}
-          {/* รายงาน — ต้องกรองด้วย visibleModules เหมือนปุ่มอื่น ไม่งั้นเป็นปุ่มหลอกใน อปท.
-              ที่ปิดโมดูลรายงานไว้ (หลักการ: ปิดโมดูลแล้วต้องหายทั้งระบบ) */}
-          {visibleModules.some(m => m.key === 'report') && (() => {
-            const isActive = activeModule === 'report'
-            return (
-              <button onClick={() => setActiveModule('report')}
-                className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
-                <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
-                  style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : 'transparent' }}>
-                  {isActive && (
-                    <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full bg-amber-400" />
-                  )}
-                  <TrendingUp size={20} strokeWidth={isActive ? 2.2 : 1.6}
-                    style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }} />
-                </div>
-                <span className="text-[10px] font-bold leading-tight"
-                  style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }}>รายงาน</span>
-              </button>
-            )
-          })()}
+          {/* เมนู — ปุ่มสุดท้ายเสมอ (แทนปุ่ม "รายงาน" เดิม: รายงานไปอยู่ในกริดเมนูกับทางลัดบนแดชบอร์ดแล้ว
+              ทำให้แถบล่างยังมี 5 ปุ่มเท่าเดิม ไม่แคบลง) · ไฮไลต์ด้วยเมื่ออยู่ในโมดูลที่ไม่มีปุ่มของตัวเองบนแถบ
+              เพราะทางเข้าโมดูลนั้นคือเมนู · ตัวเลขรวมงานค้างของโมดูลที่ไม่มีปุ่มบนแถบ (เช่น รถรับ-ส่งผู้ป่วย) */}
+          <button onClick={() => setActiveModule('menu')} aria-label={menuTabBadge > 0 ? `เมนู ${menuTabBadge} รายการรอ` : 'เมนู'}
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
+            <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
+              style={{ backgroundColor: menuTabActive ? 'rgba(255,255,255,0.2)' : 'transparent' }}>
+              {menuTabActive && (
+                <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full bg-white" />
+              )}
+              <LayoutGrid size={20} strokeWidth={menuTabActive ? 2.2 : 1.6}
+                style={{ color: menuTabActive ? '#fff' : 'rgba(255,255,255,0.45)' }} />
+              {menuTabBadge > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full text-[9px] font-bold text-amber-900 flex items-center justify-center px-1 bg-amber-400">
+                  {menuTabBadge > 9 ? '9+' : menuTabBadge}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-bold leading-tight"
+              style={{ color: menuTabActive ? '#fff' : 'rgba(255,255,255,0.45)' }}>เมนู</span>
+          </button>
         </nav>
 
     </div>
