@@ -41,6 +41,7 @@
     "test:odor:intake": "node tests/odor-intake.test.mjs",
     "test:datacenter:picker": "node tests/datacenter-picker.test.mjs",
     "test:adhoc-zones": "node tests/adhoc-zones.test.mjs",
+    "test:adhoc-affected": "node tests/adhoc-affected.test.mjs",
     "test:odor": "node tests/odor-workflow.playwright.mjs",
     "test:odor:write": "node tests/odor-workflow.playwright.mjs --write",
     "test:map:click": "node tests/map-click.playwright.mjs",
