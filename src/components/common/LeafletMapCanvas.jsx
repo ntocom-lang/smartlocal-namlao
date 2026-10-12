@@ -253,6 +253,20 @@ export default function LeafletMapCanvas({
         `
       }
 
+      // markerData.nameLabel = ป้ายชื่อที่ "แสดงค้าง" ใต้หมุด (ต่างจาก tooltip ที่ขึ้นแค่ตอนเอาเมาส์ชี้ — บนมือถือไม่มี hover เลย)
+      // ผู้เรียกส่งมาเฉพาะหมุดที่อยากให้เห็นชื่อ ไม่ส่ง = หน้าตาหมุดเหมือนเดิมทุกประการ · ป้ายไม่รับการกด (pointer-events: none)
+      // เพื่อไม่บังหมุดข้างเคียงที่อยู่ใต้ป้าย · ชื่อมาจากข้อมูลที่ผู้ใช้กรอก จึง escape ทุกครั้ง
+      const nameText = markerData.nameLabel ? String(markerData.nameLabel).trim() : ''
+      if (nameText) {
+        const nameColor = safeColor(color)
+        iconHtml = `
+          <div style="position: relative; width: ${size}px; height: ${size}px;">
+            ${iconHtml}
+            <div style="position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 3px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: rgba(255,255,255,0.95); color: ${nameColor}; border: 1px solid ${nameColor}; border-radius: 6px; padding: 1px 7px; font-size: 12px; font-weight: 700; line-height: 17px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); pointer-events: none;">${escapeHtml(nameText)}</div>
+          </div>
+        `
+      }
+
       const customIcon = L.divIcon({
         html: iconHtml,
         className: 'smartlocal-custom-marker',
