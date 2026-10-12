@@ -167,3 +167,21 @@ export function writeLayerOn(storage, on) {
     storage?.setItem(LAYER_STORAGE_KEY, on ? 'on' : 'off')
   } catch { /* ignore */ }
 }
+
+// ป้ายชื่อจุดต้นทาง (ฟาร์ม) ที่แสดงค้างบนแผนที่ — ค่าเริ่มต้น = เปิด เพราะบนมือถือไม่มี hover
+// ถ้าไม่แสดงค้างจะไม่มีทางเห็นชื่อฟาร์มจากแผนที่เลย (ต้องกดทีละจุด) · ปิดได้เมื่อป้ายแน่นหรือบังภาพ
+export const NAMES_STORAGE_KEY = 'dc-adhoc-zones-names'
+
+export function readNamesOn(storage) {
+  try {
+    return storage?.getItem(NAMES_STORAGE_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
+
+export function writeNamesOn(storage, on) {
+  try {
+    storage?.setItem(NAMES_STORAGE_KEY, on ? 'on' : 'off')
+  } catch { /* ignore */ }
+}

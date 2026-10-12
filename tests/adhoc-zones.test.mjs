@@ -12,7 +12,7 @@ import {
   MIN_RADIUS_M, MAX_RADIUS_M, MAX_RINGS, DEFAULT_RADII_M,
   kmToMeters, normalizeRadii, formatRadius, ringColor, zoneHideKey, ringHideKey,
   validZoneCoords, zoomForRadius, buildZoneOverlays, indexCounts, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn,
-  HIDDEN_STORAGE_KEY, LAYER_STORAGE_KEY,
+  readNamesOn, writeNamesOn, HIDDEN_STORAGE_KEY, LAYER_STORAGE_KEY, NAMES_STORAGE_KEY,
 } from '../src/lib/adhocZones.js'
 
 // ── kmToMeters ──────────────────────────────────────────────────────────────
@@ -230,6 +230,25 @@ const fakeStorage = (initial = {}) => {
   assert.equal(readLayerOn(st), false)
   writeLayerOn(st, true)
   assert.equal(readLayerOn(st), true)
+}
+{
+  // ป้ายชื่อฟาร์ม: ค่าเริ่มต้น = เปิด · เก็บแยกคีย์จากชั้นวงรัศมี (ปิดชื่อแล้ววง/หมุดต้องไม่หาย และกลับกัน)
+  const st = fakeStorage()
+  assert.equal(readNamesOn(st), true, 'ยังไม่เคยตั้ง → แสดงชื่อ')
+  writeNamesOn(st, false)
+  assert.equal(st._m.get(NAMES_STORAGE_KEY), 'off')
+  assert.equal(readNamesOn(st), false)
+  assert.equal(readLayerOn(st), true, 'ปิดชื่อแล้วชั้นวงรัศมีต้องยังเปิดอยู่')
+  writeNamesOn(st, true)
+  assert.equal(readNamesOn(st), true)
+  writeLayerOn(st, false)
+  assert.equal(readNamesOn(st), true, 'ปิดชั้นวงรัศมีแล้วค่าชื่อต้องไม่ถูกแตะ (จำไว้ตอนเปิดกลับมา)')
+  assert.notEqual(NAMES_STORAGE_KEY, LAYER_STORAGE_KEY)
+  assert.notEqual(NAMES_STORAGE_KEY, HIDDEN_STORAGE_KEY)
+  const broken = { getItem() { throw new Error('denied') }, setItem() { throw new Error('denied') } }
+  assert.equal(readNamesOn(broken), true, 'อ่านไม่ได้ → แสดงชื่อ')
+  assert.doesNotThrow(() => writeNamesOn(broken, false))
+  assert.equal(readNamesOn(null), true)
 }
 {
   // เพดานจำนวนคีย์ กัน storage บวมถ้ามีบั๊กเขียนวน

@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 // Construction ถูกเอาออกจาก import พร้อมกับปุ่มแท็บ "โครงการ" ที่คอมเมนต์ไว้ใน SummaryPanel
 // (ตรงตามที่ commit 79f5a3c ทำกับ ClipboardList ตอนถอดเมนู) เอากลับมาพร้อมกันตอนคืนแท็บ
-import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation, Target } from 'lucide-react'
+import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation, Target, Tag } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import LeafletMapCanvas from '../common/LeafletMapCanvas'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, isIconImage } from '../../lib/dataCenterGroupIcon'
@@ -15,7 +15,7 @@ import useAdhocAffected from '../../hooks/useAdhocAffected'
 import { buildAffectedMarkers } from '../../lib/adhocAffected'
 import AdhocZoneForm from './AdhocZoneForm'
 import {
-  buildZoneOverlays, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn, normalizeRadii, zoomForRadius,
+  buildZoneOverlays, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn, readNamesOn, writeNamesOn, normalizeRadii, zoomForRadius,
 } from '../../lib/adhocZones'
 
 function TrafficLightIcon({ size = 20, className = "" }) {
@@ -390,6 +390,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   // (ต่างจาก "ปิดเรื่อง" ที่เก็บใน DB แล้วซ่อนให้ทุกคน) เก็บ "ที่ปิด" ไม่ใช่ "ที่เปิด" ให้เรื่อง/วงใหม่ขึ้นเอง
   const zonesApi = useAdhocZones({ tenantId: tenant?.id, enabled: allowStatusFilter })
   const [zoneLayerOn, setZoneLayerOn] = useState(() => readLayerOn(globalThis.localStorage))
+  // ป้ายชื่อฟาร์มที่แสดงค้างข้างหมุดจุดต้นทาง — จำค่าในเครื่องนี้ (ส่วนตัว) ค่าเริ่มต้น = เปิด
+  const [zoneNamesOn, setZoneNamesOn] = useState(() => readNamesOn(globalThis.localStorage))
   const [hiddenZoneKeys, setHiddenZoneKeys] = useState(() => readHiddenKeys(globalThis.localStorage))
   const [selectedZoneId, setSelectedZoneId] = useState(null)
   const [zoneForm, setZoneForm] = useState(null) // null = ปิด · { zone: null } = เพิ่มใหม่ · { zone } = แก้ไข
@@ -565,6 +567,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   function toggleZoneLayer() {
     setZoneLayerOn(prev => { writeLayerOn(globalThis.localStorage, !prev); return !prev })
   }
+  function toggleZoneNames() {
+    setZoneNamesOn(prev => { writeNamesOn(globalThis.localStorage, !prev); return !prev })
+  }
   function toggleZoneHidden(key) {
     setHiddenZoneKeys(prev => {
       const next = new Set(prev)
@@ -618,6 +623,11 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     hasOpenZones && {
       id: 'adhoc-zones', label: 'วงรัศมีเรื่องเฉพาะกิจ', Icon: Target,
       on: zoneLayerOn, toggle: toggleZoneLayer,
+    },
+    // ปุ่มชื่อฟาร์มอยู่ถัดจากปุ่มวงรัศมีและโผล่เฉพาะตอนชั้นวงรัศมีเปิดอยู่ — ถ้าชั้นปิดไม่มีหมุดให้ติดป้าย กดแล้วไม่เกิดอะไร
+    hasOpenZones && zoneLayerOn && {
+      id: 'adhoc-zone-names', label: 'ชื่อฟาร์ม', Icon: Tag,
+      on: zoneNamesOn, toggle: toggleZoneNames,
     },
   ].filter(Boolean)
 
@@ -766,6 +776,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                 id: pin.id,
                 position: pin.position,
                 tooltip: `${pin.zone.label} · จุดต้นทางของวงรัศมี`,
+                // ป้ายชื่อแสดงค้างเฉพาะหมุดจุดต้นทาง (หมุดอื่นไม่ติดชื่อ) — ปิด/เปิดได้จากปุ่ม "ชื่อฟาร์ม"
+                nameLabel: zoneNamesOn ? pin.zone.label : '',
                 color: '#b45309',
                 label: '🔍',
                 shape: 'circle',
