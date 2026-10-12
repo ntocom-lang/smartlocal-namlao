@@ -69,6 +69,7 @@
     "test:patient-transport": "node tests/patient-transport-layout.test.mjs",
     "test:regards-alignment": "node tests/regards-alignment.test.mjs",
     "test:staff-inbox": "node tests/staff-inbox-layout.playwright.mjs",
+    "test:staff-home": "node tests/staff-home-frequent.test.mjs && node tests/staff-home-summary.test.mjs && node tests/staff-home-layout.playwright.mjs",
     "test:telegram": "node tests/telegram-notification-message.test.mjs",
     "test:complaint-intake": "node tests/complaint-intake.test.mjs",
     "test:complaint-finish": "node tests/complaint-finish.test.mjs",

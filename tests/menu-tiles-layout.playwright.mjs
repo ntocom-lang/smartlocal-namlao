@@ -184,7 +184,7 @@ async function checkStaff(baseUrl) {
         await page.setViewportSize({ width, height: 844 })
         await page.goto(`${baseUrl}/staff`, { waitUntil: 'domcontentloaded', timeout: 45_000 })
         await waitForSettled(page, auth)
-        await page.getByText('เมนูใช้งานด่วน').first().waitFor({ timeout: 30_000 })
+        await page.getByText('แดชบอร์ดสำหรับเจ้าหน้าที่').first().waitFor({ timeout: 30_000 })
 
         // แถบล่าง: ≤ 5 ปุ่ม และ "เมนู" เป็นปุ่มสุดท้าย
         const bar = await page.locator('nav.fixed button').evaluateAll(els => els.map(b => ({
