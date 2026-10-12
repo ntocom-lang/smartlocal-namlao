@@ -9,7 +9,10 @@ import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, isIconIm
 import CategoryIcon from './CategoryIcon'
 import { odorTimeRangeLabel } from '../../lib/odorTimeRanges'
 import useAdhocZones from '../../hooks/useAdhocZones'
-import AdhocZonesPanel, { AdhocZoneCard } from './AdhocZonesPanel'
+import AdhocZonesPanel, { AdhocZoneCard, AdhocAffectedCard } from './AdhocZonesPanel'
+import AdhocAffectedForm from './AdhocAffectedForm'
+import useAdhocAffected from '../../hooks/useAdhocAffected'
+import { buildAffectedMarkers } from '../../lib/adhocAffected'
 import AdhocZoneForm from './AdhocZoneForm'
 import {
   buildZoneOverlays, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn, normalizeRadii, zoomForRadius,
@@ -392,6 +395,18 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const [zoneForm, setZoneForm] = useState(null) // null = ปิด · { zone: null } = เพิ่มใหม่ · { zone } = แก้ไข
   const [zoneFocus, setZoneFocus] = useState(null) // { lat, lng, zoom, nonce } — กดชื่อเรื่องในแผงแล้วบินไปดูวง (nonce = นับครั้งที่กด ให้กดเรื่องเดิมซ้ำแล้วกล้องยังกลับมา)
 
+  // ── ผู้ได้รับผลกระทบ (พิกัดบุคคล) — ฝั่งเจ้าหน้าที่ที่จัดการได้เท่านั้น (แอดมิน/ผู้รับผิดชอบ) ──
+  // ปิดเป็นค่าเริ่มต้นทุกครั้งที่เปิดหน้า และไม่เก็บค่าไว้ใน localStorage โดยตั้งใจ: การเปิดดูแต่ละครั้งต้องเป็นการตัดสินใจ
+  // ของผู้ใช้ในครั้งนั้น เพราะทุกการดึงที่มีจุดถูกบันทึกใน audit log · affectedSession นับครั้งที่เปิด = ดึงใหม่ทุกครั้ง
+  const [affectedOn, setAffectedOn] = useState(false)
+  const [affectedSession, setAffectedSession] = useState(0)
+  const [selectedAffectedId, setSelectedAffectedId] = useState(null)
+  const [affectedForm, setAffectedForm] = useState(null) // null | { zone, point } — point=null คือเพิ่มใหม่
+  const openZoneIds = zonesApi.zones.filter(z => z.is_active).map(z => z.id)
+  const affectedApi = useAdhocAffected({
+    zoneIds: openZoneIds, enabled: affectedOn && zonesApi.canManage, session: affectedSession,
+  })
+
   useEffect(() => {
     if (!tenant?.id) return
     let active = true
@@ -523,12 +538,29 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   )
   const hasOpenZones = zonesApi.zones.some(z => z.is_active)
   const selectedZone = zonesApi.zones.find(z => z.id === selectedZoneId && z.is_active) ?? null
+  const affectedMarkers = useMemo(
+    () => buildAffectedMarkers(affectedApi.points, zonesApi.zones, { layerOn: affectedOn && zonesApi.canManage, hidden: hiddenZoneKeys }),
+    [affectedApi.points, zonesApi.zones, affectedOn, zonesApi.canManage, hiddenZoneKeys],
+  )
+  const selectedAffected = affectedMarkers.find(m => m.point.id === selectedAffectedId) ?? null
   const zonesPanelVisible = allowStatusFilter && (zonesApi.zones.length > 0 || zonesApi.canManage)
   // สถานที่ในศูนย์ข้อมูลที่ใช้เป็นจุดต้นทางได้ — มาจากหมุดที่โหลดอยู่แล้ว ไม่ต้องยิงคำขอเพิ่ม (ไม่รวมเส้นทางถนน)
   const zoneSourceEntries = allRows
     .filter(r => r.source_table === 'data_center_entries' && !(r.route_points?.length >= 2))
     .map(r => ({ id: r.source_id, name: r.title || '', lat: r.latitude, lng: r.longitude, group: r.group_name || '', category: r.category || '' }))
     .filter(r => r.name)
+
+  function setAffectedLayer(next) {
+    setAffectedOn(next)
+    if (next) setAffectedSession(n => n + 1) // เปิดใหม่ทุกครั้ง = ดึงใหม่ + มีรอย "เปิดดู" ใน audit log
+    else setSelectedAffectedId(null)
+  }
+  async function saveAffected(values, id) {
+    const result = await affectedApi.save(values, id)
+    // เพิ่ม/แก้แล้วชั้นยังปิดอยู่ → เปิดให้เห็นจุดที่เพิ่งบันทึก (การเปิดนี้ดึงจากเซิร์ฟเวอร์ใหม่ จึงมีรอย "เปิดดู" 1 แถวตามปกติ)
+    if (!result.error && !affectedOn) setAffectedLayer(true)
+    return result
+  }
 
   function toggleZoneLayer() {
     setZoneLayerOn(prev => { writeLayerOn(globalThis.localStorage, !prev); return !prev })
@@ -553,6 +585,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     setZoneFocus(prev => ({ lat: Number(zone.latitude) - latShift, lng: Number(zone.longitude), zoom, nonce: (prev?.nonce ?? 0) + 1 }))
     setSelectedZoneId(zone.id)
     setSelectedEntry(null)
+    setSelectedAffectedId(null)
     // เรื่องที่ผู้ใช้ปิดไว้แล้วกดดูชื่อ = อยากเห็น เปิดให้เลย ไม่ใช่เลื่อนไปดูแผนที่เปล่า
     setHiddenZoneKeys(prev => {
       const key = `z:${zone.id}`
@@ -611,7 +644,10 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
       canManage={zonesApi.canManage} layerOn={zoneLayerOn} onToggleLayer={toggleZoneLayer}
       hidden={hiddenZoneKeys} onToggleHidden={toggleZoneHidden} selectedZoneId={selectedZoneId}
       onAdd={() => setZoneForm({ zone: null })} onEdit={zone => setZoneForm({ zone })}
-      onFocus={focusZone} onReopen={zone => zonesApi.setZoneActive(zone.id, true)} />
+      onFocus={focusZone} onReopen={zone => zonesApi.setZoneActive(zone.id, true)}
+      affectedOn={affectedOn} onToggleAffected={() => setAffectedLayer(!affectedOn)}
+      affectedLoading={affectedApi.loading} affectedError={affectedApi.error} affectedPoints={affectedApi.points}
+      onAddAffected={zone => setAffectedForm({ zone, point: null })} />
   ) : null
 
   // keysInGroup = ประเภทย่อยทั้งหมดของกลุ่มนี้ที่โชว์ในการ์ด (ตัดประเภทที่เป็นเส้นทางออกแล้ว) —
@@ -736,6 +772,18 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                 scale: 12,
                 zIndex: 1000,
                 zone: pin.zone,
+              })),
+              // หมุดผู้ได้รับผลกระทบ (พิกัดบุคคล) — มีเฉพาะเมื่อผู้ใช้เปิดชั้นเอง · tooltip บอกแค่ชนิดกับชื่อเรื่อง ไม่มีหมายเหตุ
+              ...affectedMarkers.map(m => ({
+                id: m.id,
+                position: m.position,
+                tooltip: `${m.kind.label} · ผู้ได้รับผลกระทบรอบ ${m.zone.label}`,
+                color: '#7c3aed',
+                label: m.kind.emoji,
+                shape: 'circle',
+                scale: 9,
+                zIndex: 900,
+                affected: m,
               }))]}
               polylines={visible.filter(e => e.route_points?.length >= 2).map(e => ({
                 id: `${e.source_table}-${e.source_id}`,
@@ -746,16 +794,18 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                 entry: e,
               }))}
               onFeatureClick={feature => {
-                if (feature.zone) { setSelectedZoneId(feature.zone.id); setSelectedEntry(null); return }
+                if (feature.affected) { setSelectedAffectedId(feature.affected.point.id); setSelectedZoneId(null); setSelectedEntry(null); return }
+                if (feature.zone) { setSelectedZoneId(feature.zone.id); setSelectedEntry(null); setSelectedAffectedId(null); return }
                 setSelectedEntry(feature.entry)
                 setSelectedZoneId(null)
+                setSelectedAffectedId(null)
               }}
               /* กดที่ว่างบนแผนที่แล้วปิดแผงรายละเอียดเลย ไม่ต้องเล็งปุ่ม × ที่เล็กมากบนมือถือ
                   Leaflet ไม่ส่ง event click ของแผนที่เมื่อกดโดนหมุด (หยุด propagation ให้เอง)
                   กดหมุดอื่นจึงยังสลับแผงได้ตามปกติ ไม่ใช่ปิดแล้วต้องกดใหม่
                   ส่วนตัวแผงอยู่นอก .leaflet-container (เป็น sibling) การกดในแผงจึงไม่ตกมาถึงตรงนี้
                   ปุ่มอนุมัติ/เปลี่ยนสถานะข้างในเลยยังกดได้ ไม่ถูกปิดทิ้งก่อนทำงาน */
-              onMapClick={() => { setSelectedEntry(null); setSelectedZoneId(null) }}
+              onMapClick={() => { setSelectedEntry(null); setSelectedZoneId(null); setSelectedAffectedId(null) }}
             />
           )}
 
@@ -903,7 +953,14 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
           {selectedZone && (
             <AdhocZoneCard zone={selectedZone} counts={zonesApi.counts} categories={zonesApi.categories}
               canManage={zonesApi.canManage} onClose={() => setSelectedZoneId(null)}
+              affectedPoints={affectedOn && zonesApi.canManage ? affectedApi.points : null}
               onEdit={zone => setZoneForm({ zone })}
+              className="absolute left-1/2 -translate-x-1/2 top-16 lg:top-auto lg:bottom-4 z-1002 max-h-[45vh] overflow-y-auto w-[min(340px,calc(100%-32px))]" />
+          )}
+          {selectedAffected && (
+            <AdhocAffectedCard marker={selectedAffected} canManage={zonesApi.canManage}
+              onClose={() => setSelectedAffectedId(null)}
+              onEdit={m => setAffectedForm({ zone: m.zone, point: m.point })}
               className="absolute left-1/2 -translate-x-1/2 top-16 lg:top-auto lg:bottom-4 z-1002 max-h-[45vh] overflow-y-auto w-[min(340px,calc(100%-32px))]" />
           )}
           {zoneForm && (
@@ -911,6 +968,11 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               entries={zoneSourceEntries} tenant={tenant} canDelete={zonesApi.canManage}
               onSave={zonesApi.saveZone} onDelete={zonesApi.deleteZone} onSetActive={zonesApi.setZoneActive}
               onClose={() => setZoneForm(null)} />
+          )}
+          {affectedForm && (
+            <AdhocAffectedForm key={affectedForm.point?.id ?? `new-${affectedForm.zone.id}`} zone={affectedForm.zone} point={affectedForm.point}
+              tenant={tenant} onSave={saveAffected} onDelete={affectedApi.remove}
+              onClose={() => setAffectedForm(null)} />
           )}
 
           {/* มือถือ/แท็บเล็ต: แผงสรุปแบบ bottom sheet ลอยเหนือแผนที่ (ตาม layout เทศบาลนครนนทบุรี) — absolute
@@ -951,7 +1013,12 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
         </div>
 
         {/* แถบขวา — เฉพาะจอ PC ขึ้นไป */}
-        <aside className="hidden lg:flex lg:flex-col lg:w-[380px] shrink-0 border-l border-gray-200 bg-white overflow-y-auto">
+        {/* เนื้อหาแผงขวาวางแบบ absolute ภายใน aside โดยตั้งใจ — ไม่ให้ความสูงของเนื้อหามีผลต่อความสูงของแถวแผนที่
+            เดิม aside เป็น flex-col + overflow-y-auto เอง พอแท็บ "คำร้อง" มีแผงวงรัศมี (จุดต้นทางหลายจุด) เนื้อหาสูงกว่าจอ
+            ทั้งแถวรวมถึงแผนที่ก็ยืดตามจนก้นแผนที่ล้นจอ (เห็น +28px กับจุดต้นทาง 1 จุด) แล้วตัวเลื่อนด้านในของหน้าเลื่อนเอง
+            ทันทีที่กดแผนที่ครั้งแรก ทำให้หมุดอื่นมาอยู่ใต้เมาส์ก่อนปล่อย = คลิกแรกบนหมุดพลาด (production ที่ยังไม่มีจุดต้นทางไม่เป็น) */}
+        <aside className="relative hidden lg:block lg:w-[380px] shrink-0 border-l border-gray-200 bg-white">
+          <div className="absolute inset-0 flex flex-col overflow-y-auto">
           <SummaryPanel activeTab={effectiveTab} setActiveTab={setActiveTab} activeSummary={activeSummary}
             activeGroups={activeGroups} toggleGroup={toggleGroup}
             activeCategories={activeCategories} toggleCategory={toggleCategory} showSourceTabs={allowStatusFilter}
@@ -959,6 +1026,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
             groupIconOverrides={groupIconOverrides}
             statusFilter={statusFilter} setStatusFilter={setStatusFilter}
             dceCount={dceEntries.length} complaintCount={complaintEntries.length} extraTop={zonesPanel} />
+          </div>
         </aside>
       </div>
     </div>

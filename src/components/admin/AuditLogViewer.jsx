@@ -8,6 +8,8 @@ const ACTION_INFO = {
   // วงรัศมีเรื่องเฉพาะกิจ (adhoc_impact_zones, 20261012120100) — trigger เขียน create/update/delete ทุกครั้งที่เจ้าหน้าที่แก้
   create:        { label: 'เพิ่ม',             bg: '#d1fae5', color: '#065f46', Icon: Plus },
   update:        { label: 'แก้ไข',             bg: '#dbeafe', color: '#1e40af', Icon: Pencil },
+  // เปิดดูพิกัดผู้ได้รับผลกระทบ (พิกัดบุคคล) — adhoc_affected_list() เขียนหนึ่งแถวต่อการดึงหนึ่งครั้งที่มีจุด (นับจำนวน ไม่เก็บพิกัด)
+  view_affected_points: { label: 'เปิดดูพิกัดผู้ได้รับผลกระทบ', bg: '#ede9fe', color: '#5b21b6', Icon: Eye },
   approve:       { label: 'อนุมัติ',          bg: '#d1fae5', color: '#065f46', Icon: Shield },
   reject:        { label: 'ปฏิเสธ',           bg: '#fee2e2', color: '#991b1b', Icon: Shield },
   assign:        { label: 'มอบหมาย',          bg: '#ede9fe', color: '#5b21b6', Icon: User },
@@ -34,6 +36,7 @@ const RESOURCE_LABEL = {
   complaint_category: 'ประเภทคำร้อง',
   document_type:      'ประเภทคำขอเอกสาร',
   adhoc_impact_zone:  'วงรัศมีเรื่องเฉพาะกิจ',
+  adhoc_affected_point: 'ผู้ได้รับผลกระทบ (เฉพาะกิจ)',
 }
 
 const ROLE_LABEL = {
@@ -189,6 +192,7 @@ export default function AuditLogViewer({ tenant }) {
           <option value="delete">ลบ</option>
           <option value="update_status">อัปเดตสถานะ</option>
           <option value="view_pii">เปิดดูข้อมูลส่วนบุคคล</option>
+          <option value="view_affected_points">เปิดดูพิกัดผู้ได้รับผลกระทบ</option>
           <option value="approve">อนุมัติ</option>
           <option value="reject">ปฏิเสธ</option>
           <option value="update_submit_audience">เปลี่ยนผู้ที่แจ้ง/ยื่นได้</option>

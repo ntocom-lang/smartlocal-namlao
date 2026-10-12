@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Target, Eye, EyeOff, Pencil, Plus, X, ChevronDown, ChevronRight, MapPin } from 'lucide-react'
+import { Target, Eye, EyeOff, Pencil, Plus, X, ChevronDown, ChevronRight, MapPin, Users } from 'lucide-react'
 import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 import { ZONE_DISCLAIMER, formatRadius, normalizeRadii, ringColor, zoneHideKey, ringHideKey } from '../../lib/adhocZones'
+import { affectedKind, countAffectedByRing, countByZone } from '../../lib/adhocAffected'
 
 // ส่วนแสดง/จัดการ "วงรัศมีเรื่องเฉพาะกิจ" บนแผนที่ศูนย์ข้อมูลฝั่งเจ้าหน้าที่ — มี 2 ชิ้น:
 //   AdhocZonesPanel: รายการเรื่องในแถบขวา/แผงล่างมือถือ พร้อมสวิตช์เปิด-ปิดรายเรื่อง/รายวง
@@ -34,8 +35,11 @@ function RingChip({ zoneId, radius, index, count, hidden, onToggle, disabled }) 
 export default function AdhocZonesPanel({
   zones, counts, categories, canManage, layerOn, onToggleLayer, hidden, onToggleHidden,
   onAdd, onEdit, onFocus, onReopen, selectedZoneId,
+  // ผู้ได้รับผลกระทบ (พิกัดบุคคล): ปิดเป็นค่าเริ่มต้น เปิดดูเมื่อกดเอง · แสดงเฉพาะผู้ที่จัดการได้ (canManage)
+  affectedOn = false, onToggleAffected, affectedLoading = false, affectedError = null, affectedPoints = [], onAddAffected,
 }) {
   const [showClosed, setShowClosed] = useState(false)
+  const affectedByZone = countByZone(affectedPoints)
   const labels = categoryLabels(categories)
   const openZones = zones.filter(z => z.is_active)
   const closedZones = zones.filter(z => !z.is_active)
@@ -59,6 +63,26 @@ export default function AdhocZonesPanel({
           </button>
         )}
       </div>
+
+      {canManage && openZones.length > 0 && (
+        <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-violet-50 px-2.5 py-2">
+          <p className="flex min-w-0 items-start gap-1.5 text-[11px] leading-snug text-violet-900">
+            <Users size={13} className="mt-0.5 shrink-0" />
+            <span><span className="font-bold">ผู้ได้รับผลกระทบ</span> · พิกัดบุคคล เปิดดูแล้วมีบันทึก audit</span>
+          </p>
+          <button type="button" onClick={onToggleAffected} aria-pressed={affectedOn}
+            className="flex min-h-9 shrink-0 items-center gap-1 rounded-full border px-2.5 text-[11px] font-semibold active:scale-95"
+            style={affectedOn
+              ? { backgroundColor: '#7c3aed', borderColor: '#7c3aed', color: '#fff' }
+              : { backgroundColor: '#fff', borderColor: '#c4b5fd', color: '#6d28d9' }}>
+            {affectedOn ? <Eye size={13} /> : <EyeOff size={13} />}
+            {affectedOn ? 'แสดงอยู่' : 'เปิดดู'}
+          </button>
+        </div>
+      )}
+      {canManage && affectedOn && affectedError && (
+        <p role="alert" className="mt-1.5 rounded-lg bg-red-50 px-2.5 py-1.5 text-[11px] text-red-700">{affectedError}</p>
+      )}
 
       {openZones.length === 0 && (
         <p className="mt-2 rounded-xl border border-dashed border-gray-200 px-3 py-3 text-[11px] leading-relaxed text-gray-400">
@@ -104,6 +128,17 @@ export default function AdhocZonesPanel({
                     onToggle={onToggleHidden} disabled={hidden.has(zoneHideKey(zone.id))} />
                 ))}
               </div>
+              {canManage && (
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-violet-700">
+                    {affectedOn ? (affectedLoading ? 'กำลังโหลด...' : `ผู้ได้รับผลกระทบ ${affectedByZone.get(zone.id) ?? 0} จุด`) : ''}
+                  </span>
+                  <button type="button" onClick={() => onAddAffected(zone)}
+                    className="flex min-h-9 items-center gap-1 rounded-full border border-violet-300 bg-violet-50 px-2.5 text-[11px] font-bold text-violet-700 active:scale-95">
+                    <Plus size={12} /> ผู้ได้รับผลกระทบ
+                  </button>
+                </div>
+              )}
             </li>
           )
         })}
@@ -143,9 +178,11 @@ export default function AdhocZonesPanel({
 }
 
 // การ์ดลอยตอนกดหมุดจุดต้นทางบนแผนที่ — ตำแหน่ง/ขนาดเหมือนการ์ดรายละเอียดหมุดของแผนที่ (ผู้เรียกใส่ className ให้)
-export function AdhocZoneCard({ zone, counts, categories, canManage, onClose, onEdit, className = '' }) {
+// affectedPoints: null = ไม่ได้เปิดชั้นผู้ได้รับผลกระทบ (ไม่โชว์ตัวเลขของบุคคลเลย) · อาร์เรย์ = เปิดอยู่ โชว์จำนวนต่อวง
+export function AdhocZoneCard({ zone, counts, categories, canManage, onClose, onEdit, affectedPoints = null, className = '' }) {
   const radii = normalizeRadii(zone.radii_m)
   const zoneCounts = counts.get(zone.id)
+  const affectedStats = affectedPoints ? countAffectedByRing(zone, affectedPoints) : null
   const labels = categoryLabels(categories)
   return (
     <div className={`rounded-2xl border border-red-200 bg-white p-3 text-xs shadow-2xl ${className}`}>
@@ -171,6 +208,15 @@ export function AdhocZoneCard({ zone, counts, categories, canManage, onClose, on
           </li>
         ))}
       </ul>
+      {affectedStats && (
+        <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-violet-800">
+          <span className="flex items-center gap-1 font-bold"><Users size={12} /> ผู้ได้รับผลกระทบ {affectedStats.total} จุด</span>
+          {radii.map(radius => (
+            <span key={radius}>ภายใน {formatRadius(radius)} {affectedStats.byRadius.get(radius) ?? 0}</span>
+          ))}
+          {affectedStats.outside > 0 && <span>นอกวง {affectedStats.outside}</span>}
+        </p>
+      )}
       <details className="mt-2 text-[10px] leading-relaxed text-gray-400">
         <summary className="cursor-pointer select-none py-1 font-semibold text-gray-500">วิธีอ่านตัวเลข</summary>
         ตัวเลข = จำนวนคำร้องที่ผู้แจ้งปักพิกัดอยู่ในวง (สะสมรวมวงที่เล็กกว่า) เฉพาะเรื่องที่คุณมีสิทธิ์เห็น · {ZONE_DISCLAIMER}
@@ -179,6 +225,44 @@ export function AdhocZoneCard({ zone, counts, categories, canManage, onClose, on
         <button type="button" onClick={() => onEdit(zone)}
           className="mt-2 flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 font-bold text-gray-700 active:scale-95">
           <Pencil size={13} /> แก้ไขจุดนี้
+        </button>
+      )}
+    </div>
+  )
+}
+
+// การ์ดลอยตอนกดหมุดผู้ได้รับผลกระทบ (พิกัดบุคคล) — โชว์แค่ชนิด/วงที่อยู่/ระยะจากจุดต้นทาง/หมายเหตุ ไม่มีชื่อหรือข้อมูลติดต่อ (ไม่ได้เก็บไว้ตั้งแต่ต้น)
+// ตำแหน่ง/ขนาดเหมือนการ์ดหมุดอื่น (ผู้เรียกใส่ className ให้)
+export function AdhocAffectedCard({ marker, canManage, onClose, onEdit, className = '' }) {
+  const { point, zone, ring } = marker
+  const kind = affectedKind(point.kind)
+  const where = ring
+    ? (ring.radius != null ? `อยู่ในวง ${formatRadius(ring.radius)}` : 'อยู่นอกวงที่กำหนด')
+    : ''
+  const approx = ring ? `ห่างจุดต้นทางประมาณ ${formatRadius(Math.round(ring.distance / 10) * 10)}` : ''
+  return (
+    <div className={`rounded-2xl border border-violet-200 bg-white p-3 text-xs shadow-2xl ${className}`}>
+      <div className="mb-1.5 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 font-bold text-gray-800">
+            <span aria-hidden="true">{kind.emoji}</span>
+            <span className="truncate">{kind.label}</span>
+          </p>
+          <p className="truncate text-[11px] text-gray-400">ผู้ได้รับผลกระทบรอบ {zone.label}</p>
+        </div>
+        <button type="button" onClick={onClose} aria-label="ปิด" className="shrink-0 rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X size={14} /></button>
+      </div>
+      {(where || approx) && (
+        <p className="text-[11px] text-violet-800">
+          <span className="font-bold">{where}</span>{where && approx ? ' · ' : ''}{approx}
+        </p>
+      )}
+      {point.note && <p className="mt-1.5 whitespace-pre-wrap wrap-break-word text-gray-700">{point.note}</p>}
+      <p className="mt-2 text-[10px] leading-relaxed text-gray-400">พิกัดบุคคล — ใช้เพื่อประเมินผลกระทบของเรื่องนี้เท่านั้น ทุกการเปิดดู/แก้/ลบมีบันทึกใน audit log</p>
+      {canManage && (
+        <button type="button" onClick={() => onEdit(marker)}
+          className="mt-2 flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 font-bold text-gray-700 active:scale-95">
+          <Pencil size={13} /> แก้ไข / ลบ
         </button>
       )}
     </div>
