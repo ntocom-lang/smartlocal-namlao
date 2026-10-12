@@ -34,7 +34,7 @@ const MIN_TAP = 44
 // หน้าเมนูอีกแบบของแต่ละพอร์ทัล ไว้เทียบกับลิ้นชัก — คืน [{ label, badge }] ตามลำดับที่เห็น
 const PORTALS = [
   {
-    name: 'เจ้าหน้าที่', file: 'staff', path: '/staff', ready: 'เมนูใช้งานด่วน', homeKey: 'home',
+    name: 'เจ้าหน้าที่', file: 'staff', path: '/staff', ready: 'แดชบอร์ดสำหรับเจ้าหน้าที่', homeKey: 'home',
     // กริดแท็บ "เมนู" (ปุ่มสุดท้ายของแถบล่าง) แล้วกลับแดชบอร์ด
     async otherMenu(page) {
       await page.locator('nav.fixed button').last().click()
@@ -44,7 +44,7 @@ const PORTALS = [
         badge: t.querySelector('[data-menu-badge]')?.textContent.trim() ?? null,
       })))
       await page.locator('nav.fixed button').first().click()
-      await page.getByText('เมนูใช้งานด่วน').first().waitFor({ timeout: 20_000 })
+      await page.getByText('แดชบอร์ดสำหรับเจ้าหน้าที่').first().waitFor({ timeout: 20_000 })
       return items
     },
     pick: { key: 'complaints', heading: 'คำร้อง' },

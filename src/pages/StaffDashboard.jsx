@@ -12,6 +12,7 @@ import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
 import { useTenant } from '../contexts/TenantContext'
 import { PATIENT_TRANSPORT_MODULE_KEY } from '../lib/patientTransport'
+import { recordUsage, safeLocalStorage } from '../lib/staffHomeFrequent'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import FinishComplaintDialog from '../components/complaints/FinishComplaintDialog'
@@ -2409,6 +2410,12 @@ export default function StaffDashboard() {
   const [pendingCount, setPendingCount] = useState(0)
   const [newComplaintCount, setNewComplaintCount] = useState(0)
   const [patientWorkBadge, setPatientWorkBadge] = useState({ tenantId: null, profileId: null, count: 0 })
+  // สถานะการโหลดของตัวเลข badge ทั้งสามตัว ('loading' | 'ok' | 'error') ให้หน้าแรกแยกออกว่าเลข 0 คือ
+  // "ไม่มีงานค้างจริง" หรือ "ยังไม่รู้" — ตัวเลขเริ่มที่ 0 เสมอ ถ้าไม่มีสถานะนี้หน้าแรกจะขึ้น "ไม่มีงานค้าง" ผิดๆ
+  const [workStatus, setWorkStatus] = useState({ inbox: 'loading', complaints: 'loading', [PATIENT_TRANSPORT_MODULE_KEY]: 'loading' })
+  const markWork = useCallback((key, status) => {
+    setWorkStatus(prev => (prev[key] === status ? prev : { ...prev, [key]: status }))
+  }, [])
   // null = ยังไม่รู้ ใช้กันไม่ให้ badge ของแอดมินโชว์ตัวเลขผิดระหว่างรอผลหมวดเฉพาะกิจ
   const [adhocCategories, setAdhocCategories] = useState(null)
 
@@ -2503,10 +2510,11 @@ export default function StaffDashboard() {
     return supabase.from('document_requests').select('id', { count: 'exact', head: true })
       .eq('municipality_id', pendingTenantId).eq('status', 'pending')
       .then(({ count, error }) => {
-        if (error) { console.error('document request badge count error:', error.message); return }
+        if (error) { console.error('document request badge count error:', error.message); markWork('inbox', 'error'); return }
         setPendingCount(count ?? 0)
+        markWork('inbox', 'ok')
       })
-  }, [pendingTenantId])
+  }, [pendingTenantId, markWork])
 
   useEffect(() => {
     if (!pendingTenantId) return
@@ -2532,9 +2540,14 @@ export default function StaffDashboard() {
       const seq = ++requestSeq
       const { data, error } = await supabase.rpc('patient_booking_staff_work_badge', { p_muni: tenantId })
       if (cancelled || seq !== requestSeq) return
-      if (error) { console.error('patient transport badge count error:', error.message); return }
+      if (error) { console.error('patient transport badge count error:', error.message); markWork(PATIENT_TRANSPORT_MODULE_KEY, 'error'); return }
       const count = Number(data?.total)
-      if (Number.isFinite(count) && count >= 0) setPatientWorkBadge({ tenantId, profileId, count })
+      if (Number.isFinite(count) && count >= 0) {
+        setPatientWorkBadge({ tenantId, profileId, count })
+        markWork(PATIENT_TRANSPORT_MODULE_KEY, 'ok')
+      } else {
+        markWork(PATIENT_TRANSPORT_MODULE_KEY, 'error')
+      }
     }
     const refreshWhenVisible = () => { if (!document.hidden) refresh() }
     refreshWhenVisible()
@@ -2549,7 +2562,7 @@ export default function StaffDashboard() {
       window.removeEventListener('focus', refreshWhenVisible)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
-  }, [tenant?.id, profile?.id, patientModuleVisible, activeModule])
+  }, [tenant?.id, profile?.id, patientModuleVisible, activeModule, markWork])
 
   // หมวดเฉพาะกิจของเทศบาลนี้ — ใช้ตัดออกจากคิวรับเรื่องของแอดมิน (เหตุผลอยู่ใน badge ข้างล่าง)
   useEffect(() => {
@@ -2615,8 +2628,9 @@ export default function StaffDashboard() {
     // ตัวเลขค้างยังดีกว่าไฟเขียวปลอม และทำให้แยกออกว่า 0 คือศูนย์จริงหรือ query พัง
     const refreshComplaintBadge = () =>
       badgeQuery().then(({ count, error }) => {
-        if (error) { console.error('complaint badge count error:', error.message); return }
+        if (error) { console.error('complaint badge count error:', error.message); markWork('complaints', 'error'); return }
         setNewComplaintCount(count ?? 0)
+        markWork('complaints', 'ok')
       })
 
     refreshComplaintBadge()
@@ -2636,7 +2650,14 @@ export default function StaffDashboard() {
     return () => {
       supabase.removeChannel(ch)
     }
-  }, [tenant?.id, profile?.id, profile?.role, adhocCategories])
+  }, [tenant?.id, profile?.id, profile?.role, adhocCategories, markWork])
+
+  // นับการเปิดโมดูลไว้เรียง "ใช้บ่อย" บนหน้าแรก — จุดเดียวที่ครอบทุกทางเข้า (เมนูซ้าย ลิ้นชัก แถบล่าง การ์ด)
+  // เก็บเฉพาะบนเครื่องนี้ ไม่ส่งออกไปไหน (ดู src/lib/staffHomeFrequent.js)
+  useEffect(() => {
+    if (!tenant?.id || !profile?.id) return
+    recordUsage(safeLocalStorage(), tenant.id, profile.id, activeModule)
+  }, [activeModule, tenant?.id, profile?.id])
 
   async function handleLogout() {
     await signOutSafely('/')
@@ -2849,9 +2870,11 @@ export default function StaffDashboard() {
                 visibleGroups={visibleHomeGroups}
                 setActiveModule={setActiveModule}
                 profile={profile}
+                tenantId={tenant?.id}
                 pendingCount={pendingCount}
                 newComplaintCount={newComplaintCount}
                 patientWorkCount={patientWorkCount}
+                workStatus={workStatus}
                 navigate={navigate}
                 onCreateManagementEvent={() => {
                   setAutoCreateEventSignal(signal => signal + 1)
