@@ -185,3 +185,35 @@ export function writeNamesOn(storage, on) {
     storage?.setItem(NAMES_STORAGE_KEY, on ? 'on' : 'off')
   } catch { /* ignore */ }
 }
+
+// ── ตัวกรองสถานะของแผนที่ศูนย์ข้อมูล (ย้ายมาจาก DataCenterMapView.jsx เพื่อให้เทสต์ล็อกกฎได้) ─────────────
+// สถานะจริงในตาราง complaints ใช้ทั้ง 'closed' และ 'done' แทนความหมาย "เสร็จสิ้น"
+export const COMPLETED_COMPLAINT_STATUSES = ['closed', 'done']
+// ตาราง civil_projects ใช้ status = 'completed' แทนความหมาย "จบงาน"
+export const COMPLETED_PROJECT_STATUSES = ['completed']
+
+// คำร้องหมวดเฉพาะกิจ (complaint_categories.is_adhoc, เช่น odor) ไม่เคยเปลี่ยน status ออกจาก 'pending'
+// เลย เพราะข้าม status pipeline ปกติทั้งหมด (ใช้ extra_data.acknowledged_at ของตัวเองแทน) — ถ้ากรองด้วย
+// เสร็จสิ้นแล้ว/กำลังดำเนินการแบบเดิม จะไม่มีวันขึ้นแท็บ "เสร็จสิ้นแล้ว" แม้จะรับทราบ/จัดการแล้ว
+// จึงแยกเป็นแท็บของตัวเอง ไม่ยุ่งกับ completed/in_progress เลย โชว์ทุกเรื่องเฉพาะกิจไม่ว่า status จะเป็นอะไร
+export function isAdhocEntry(entry, categoryMeta) {
+  return entry?.source_table === 'complaints' && !!categoryMeta?.[entry.category]?.is_adhoc
+}
+
+// ใช้กรองเฉพาะแถวจากตาราง complaints/civil_projects เท่านั้น — แหล่งข้อมูลอื่น (data_center_entries ฯลฯ)
+// ไม่มีแนวคิด "เสร็จสิ้น/กำลังดำเนินการ" แบบนี้ จึงไม่ถูกกรองด้วยตัวเลือกนี้
+//
+// โหมด 'adhoc' = คำร้องเฉพาะกิจ + หมุดสถานที่ในศูนย์ข้อมูล (วัด โรงเรียน ฯลฯ) เพื่อให้เปิดดูสถานที่รอบฟาร์มได้
+// (เจ้าของสั่ง 2569-10-14) — หมุดสถานที่ผ่านมาถึงตัวกรองชั้นถัดไป ซึ่งเริ่มต้น "ปิด" ทุกประเภทอยู่แล้ว (activeCategories ว่าง)
+// หน้าตาเริ่มต้นของโหมดนี้จึงไม่เปลี่ยน · คำร้องที่ไม่ใช่เฉพาะกิจและโครงการยังถูกตัดออกเหมือนเดิม
+export function matchesStatusFilter(entry, statusFilter, categoryMeta) {
+  if (statusFilter === 'adhoc') return isAdhocEntry(entry, categoryMeta) || entry?.source_table === 'data_center_entries'
+  if (statusFilter === 'all') return true
+  // แท็บเสร็จสิ้นแล้ว/กำลังดำเนินการ ตัดหมวดเฉพาะกิจออกเสมอ — status ของมันไม่เคยขยับตาม pipeline ปกติ
+  // เข้าไปอยู่ผิดที่ผิดทาง (ค้างเป็น "กำลังดำเนินการ" ตลอดกาล) ไปดูที่แท็บ "เฉพาะกิจ" แทน
+  if (isAdhocEntry(entry, categoryMeta)) return false
+  if (entry.source_table !== 'complaints' && entry.source_table !== 'civil_projects') return true
+  const completedSet = entry.source_table === 'complaints' ? COMPLETED_COMPLAINT_STATUSES : COMPLETED_PROJECT_STATUSES
+  const isCompleted = completedSet.includes(entry.status)
+  return statusFilter === 'completed' ? isCompleted : !isCompleted
+}
