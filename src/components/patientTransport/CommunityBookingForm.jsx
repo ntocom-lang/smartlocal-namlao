@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useTenant } from '../../contexts/TenantContext'
+import MapPicker from '../MapPicker'
+import { addressFromMap } from '../../lib/pickupText'
 import BookingMonthPicker from './BookingMonthPicker'
 import { RETURN_MODES, DAY_BLOCKED, inputClass, buttonClass, primaryClass, thaiDay, bookingLastDay, clockTime, clockOf,
   bangkokISO, freeTimeChoices, communityPayload, normalizeBookingPhone, dateTime, orgAbbr } from '../../lib/patientBooking'
@@ -8,6 +11,8 @@ const policyKey = info => JSON.stringify([info?.community?.rules_version, info?.
 
 export default function CommunityBookingForm({ tenantId, info, initial, profileName, profilePhone, lastBooking, staffEntry = false,
   busy, submitError = '', onBack, onSubmit, saveLabel = 'ยืนยันส่งคำขอ' }) {
+  const { tenant } = useTenant()
+  const [showMap, setShowMap] = useState(false)
   const [id] = useState(() => crypto.randomUUID())
   const [original] = useState(() => initial || null)
   const [today] = useState(thaiDay)
@@ -41,6 +46,13 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
   const times = freeTimeChoices(draft, info, day, 15)
   const place = c?.places?.find(p => p.id === form.route_id), activity = c?.activities?.find(a => a.code === form.purpose_code)
   const change = (key, value) => { setForm(f => ({ ...f, [key]: value })); setMissing([]) }
+  const pinned = Number.isFinite(form.pickup_lat) && Number.isFinite(form.pickup_lng)
+  // เติมที่อยู่จากแผนที่ให้เฉพาะตอนช่องจุดรับยังว่าง ไม่ทับสิ่งที่ผู้จองพิมพ์เอง (เหมือนฟอร์มผู้ป่วย) · ช่องรับได้ไม่เกิน 500 ตัวอักษร
+  const confirmPin = ({ lat, lng, address }) => {
+    setForm(f => ({ ...f, pickup_lat: lat, pickup_lng: lng, pickup: String(addressFromMap(f.pickup, address) ?? '').slice(0, 500) }))
+    setMissing([])
+    setShowMap(false)
+  }
   const snapshot = () => communityPayload({ ...form, appointment_at: bangkokISO(form.day, form.time),
     return_at: form.return_mode === 'one_way' ? null : bangkokISO(form.day, form.back),
     party_size: Number(form.party_size), requester_name: form.requester_name.trim(), phone: form.phone.trim(),
@@ -66,7 +78,11 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
   }
   if (!c?.privacy_notice || !Number.isFinite(c.window_start) || !Number.isFinite(c.window_end)) return <section className="space-y-3"><button className={buttonClass} onClick={onBack}>← ย้อนกลับ</button><p role="alert">ยังไม่มีข้อมูลบริการชุมชนครบถ้วน กรุณาติดต่อผู้ดูแลเพื่อตั้งค่าและโหลดข้อมูลล่าสุด</p></section>
   const reviewStale = review && (review.policy !== policyKey(info) || stale)
-  return <form aria-label={original ? 'แก้คำขอชุมชน' : 'ขอรถรับ–ส่งชุมชน'} noValidate onSubmit={submit} className="space-y-4">
+  // MapPicker วางเป็นพี่น้องของ <form> ไม่ใช่ลูก: มันวาดผ่าน portal แต่ event ของ React ยังไหลขึ้นต้นไม้คอมโพเนนต์
+  // ช่องค้นหาสถานที่ในแผนที่เป็น <form> เหมือนกัน (handleSearch กันแค่ preventDefault) ถ้าอยู่ใต้ <form> นี้
+  // กด Enter ค้นหาสถานที่จะไปเรียก submit ของฟอร์มชุมชน — ตรวจข้อมูล/เปิดหน้าตรวจทานโดยผู้ใช้ไม่ได้สั่ง
+  return <>
+  <form aria-label={original ? 'แก้คำขอชุมชน' : 'ขอรถรับ–ส่งชุมชน'} noValidate onSubmit={submit} className="space-y-4">
     <button type="button" className={buttonClass} disabled={busy} onClick={onBack}>← ย้อนกลับ</button>
     <h2 className="text-xl font-bold">{original ? 'แก้คำขอชุมชนหลังประสานผู้จอง' : staffEntry ? 'รับจองชุมชนแทนทางโทรศัพท์/หน้าเคาน์เตอร์' : 'ขอรถรับ–ส่งชุมชน'}</h2>
     <p className="rounded-xl bg-sky-50 p-3">สำหรับกลุ่มที่เดินขึ้นลงรถได้เอง ไม่รองรับรถเข็น/เปล และไม่ร่วมเที่ยวกับผู้ป่วย · เจ้าหน้าที่ตรวจและยืนยันรถอีกครั้ง</p>
@@ -95,7 +111,18 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
       <h3 className="font-bold">3. ผู้ติดต่อและจุดรับ</h3>
       <label className="block">ชื่อ–สกุลผู้ติดต่อ<input autoComplete="name" className={inputClass} maxLength={200} value={form.requester_name} onChange={e => change('requester_name', e.target.value)} /></label>
       <label className="block">เบอร์ติดต่อกลับ<input type="tel" autoComplete="tel" className={inputClass} maxLength={20} value={form.phone} onChange={e => change('phone', e.target.value)} onBlur={() => change('phone', normalizeBookingPhone(form.phone))} /></label>
-      <label className="block">จุดรับ (บ้านเลขที่/หมู่บ้าน/จุดสังเกต)<textarea aria-label="จุดรับ (บ้านเลขที่/หมู่บ้าน/จุดสังเกต)" className={inputClass} rows={3} maxLength={500} value={form.pickup} onChange={e => { change('pickup', e.target.value); change('pickup_lat', null); change('pickup_lng', null) }} /></label>
+      <label className="block">จุดรับ (บ้านเลขที่/หมู่บ้าน/จุดสังเกต)<textarea aria-label="จุดรับ (บ้านเลขที่/หมู่บ้าน/จุดสังเกต)" className={inputClass} rows={3} maxLength={500} value={form.pickup} onChange={e => change('pickup', e.target.value)} /></label>
+      {/* หมุดไม่บังคับ (ตามฟอร์มผู้ป่วย) แต่ขึ้นเต็มความกว้างเพราะคนขับใช้หมุดนี้กดนำทางไปรับ — แก้ข้อความจุดรับแล้วหมุดไม่หาย
+          ต้องกด "เอาหมุดออก" เอง เพื่อไม่ให้พิมพ์แก้คำผิดแล้วหมุดที่ปักไว้หายเงียบๆ */}
+      {pinned
+        ? <div className="space-y-2">
+          <button type="button" className="min-h-14 w-full rounded-xl border border-emerald-600 bg-emerald-600 px-4 text-base font-semibold text-white" onClick={() => setShowMap(true)}>
+            ✓ ปักหมุดแล้ว {form.pickup_lat.toFixed(5)}, {form.pickup_lng.toFixed(5)} · แก้หมุด
+          </button>
+          <button type="button" className={buttonClass} onClick={() => setForm(f => ({ ...f, pickup_lat: null, pickup_lng: null }))}>เอาหมุดออก</button>
+        </div>
+        : <button type="button" className={`${buttonClass} min-h-14 w-full text-base`} onClick={() => setShowMap(true)}>📍 ปักหมุดจากแผนที่</button>}
+      <p className="text-sm text-slate-600">{pinned ? 'คนขับกดนำทางไปหมุดนี้ได้เลย' : 'ปักหมุดช่วยให้คนขับไปรับถูกจุด ถ้าไม่ปักเจ้าหน้าที่จะโทรถามทาง'}</p>
       <label className="flex min-h-11 items-center gap-3"><input className="size-5" type="checkbox" checked={form.in_area} onChange={e => change('in_area', e.target.checked)} />จุดรับอยู่ในเขตพื้นที่ให้บริการของ{orgAbbr()}</label>
       {original && <label className="block">เหตุผลที่ประสานกับผู้จองแล้ว<textarea className={inputClass} rows={2} maxLength={500} value={form.reason} onChange={e => change('reason', e.target.value)} /></label>}
     </section>
@@ -108,7 +135,7 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
         <dl className="divide-y rounded-xl border">{[
           ['กิจกรรม', activity?.label], ['ชื่อกลุ่ม', form.group_label], ['ผู้เดินทาง', `${form.party_size} คน`], ['สถานที่', place?.label],
           ['เวลาที่ต้องถึง', dateTime(review.payload.appointment_at)], ['รับกลับ', form.return_mode === 'one_way' ? 'ขาไปอย่างเดียว' : dateTime(review.payload.return_at)],
-          ['ผู้ติดต่อ', form.requester_name], ['เบอร์โทร', form.phone], ['จุดรับ', form.pickup],
+          ['ผู้ติดต่อ', form.requester_name], ['เบอร์โทร', form.phone], ['จุดรับ', `${form.pickup}${Number.isFinite(review.payload.pickup_lat) && Number.isFinite(review.payload.pickup_lng) ? ' · ปักหมุดแล้ว' : ' · ไม่ได้ปักหมุด'}`],
         ].map(([label, value]) => <div key={label} className="flex gap-3 p-3"><dt className="w-24 shrink-0 text-sm text-slate-500">{label}</dt><dd className="min-w-0 break-words">{value}</dd></div>)}</dl>
         <p className="rounded-xl bg-slate-50 p-3">เมื่อกดส่ง รับรองว่ากิจกรรมและจำนวนคนถูกต้อง ผู้เดินทางเดินขึ้นลงรถได้เอง จุดรับอยู่ในเขต และได้แจ้งข้อมูลให้ผู้ติดต่อทราบแล้ว การส่งคำขอยังไม่ใช่การยืนยันรถ</p>
         <details className="rounded-xl border p-3"><summary className="min-h-11 cursor-pointer font-semibold">อ่านข้อความการใช้ข้อมูลทั้งหมด</summary><p className="whitespace-pre-wrap">{c.privacy_notice}</p><p className="mt-2 font-semibold">เจ้าของรถและผู้รับข้อมูล: {info.owner_name}</p></details>
@@ -121,4 +148,10 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
       </section>
     </div>}
   </form>
+  {showMap && <MapPicker
+    initialPos={pinned ? { lat: form.pickup_lat, lng: form.pickup_lng } : null}
+    fallbackPos={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
+    onConfirm={confirmPin}
+    onClose={() => setShowMap(false)} />}
+  </>
 }
