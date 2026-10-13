@@ -15,7 +15,7 @@ import useAdhocAffected from '../../hooks/useAdhocAffected'
 import { buildAffectedMarkers } from '../../lib/adhocAffected'
 import AdhocZoneForm from './AdhocZoneForm'
 import {
-  buildZoneOverlays, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn, readNamesOn, writeNamesOn, normalizeRadii, zoomForRadius,
+  buildZoneOverlays, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn, readNamesOn, writeNamesOn, normalizeRadii, zoomForRadius, isAdhocEntry, matchesStatusFilter,
 } from '../../lib/adhocZones'
 
 function TrafficLightIcon({ size = 20, className = "" }) {
@@ -79,11 +79,7 @@ const isIconUrl = isIconImage
 
 // ฝั่งประชาชนบังคับเห็นเฉพาะ "คำร้อง"/"โครงการ" ที่เสร็จสิ้น/จบงานแล้วเท่านั้น (ไม่มีตัวเลือกสถานะ)
 // ฝั่งเจ้าหน้าที่ (allowStatusFilter=true) เลือกดูสถานะอื่นได้ด้วยผ่านตัวกรองสถานะ — ค่าเริ่มต้นยังเป็น "เสร็จสิ้นแล้ว" เหมือนกัน
-// สถานะจริงในตาราง complaints ใช้ทั้ง 'closed' และ 'done' แทนความหมาย "เสร็จสิ้น"
-const COMPLETED_COMPLAINT_STATUSES = ['closed', 'done']
-// ตาราง civil_projects ใช้ status = 'completed' แทนความหมาย "จบงาน"
-const COMPLETED_PROJECT_STATUSES = ['completed']
-
+// (กฎกรองสถานะ + ค่าคงที่สถานะ "เสร็จสิ้น" อยู่ใน src/lib/adhocZones.js: matchesStatusFilter / isAdhocEntry — มีเทสต์ล็อกไว้)
 const STATUS_FILTER_OPTIONS = [
   { value: 'completed',   label: 'เสร็จสิ้นแล้ว' },
   { value: 'in_progress', label: 'กำลังดำเนินการ' },
@@ -92,26 +88,6 @@ const STATUS_FILTER_OPTIONS = [
   // คำว่า "ทั้งหมด" ถูกอ่านว่ารวมหมุดของศูนย์ข้อมูลดิจิทัลเข้ามาด้วย ทั้งที่หมุดพวกนั้นอยู่คนละแท็บ
   { value: 'all',         label: 'ทุกสถานะ' },
 ]
-// คำร้องหมวดเฉพาะกิจ (complaint_categories.is_adhoc, เช่น odor) ไม่เคยเปลี่ยน status ออกจาก 'pending'
-// เลย เพราะข้าม status pipeline ปกติทั้งหมด (ใช้ extra_data.acknowledged_at ของตัวเองแทน) — ถ้ากรองด้วย
-// เสร็จสิ้นแล้ว/กำลังดำเนินการแบบเดิม จะไม่มีวันขึ้นแท็บ "เสร็จสิ้นแล้ว" แม้จะรับทราบ/จัดการแล้วจริงก็ตาม
-// จึงแยกเป็นแท็บของตัวเอง ไม่ยุ่งกับ completed/in_progress เลย โชว์ทุกเรื่องเฉพาะกิจไม่ว่า status จะเป็นอะไร
-function isAdhocEntry(entry, categoryMeta) {
-  return entry.source_table === 'complaints' && !!categoryMeta[entry.category]?.is_adhoc
-}
-// ใช้กรองเฉพาะแถวจากตาราง complaints/civil_projects เท่านั้น — แหล่งข้อมูลอื่น (data_center_entries ฯลฯ)
-// ไม่มีแนวคิด "เสร็จสิ้น/กำลังดำเนินการ" แบบนี้ จึงไม่ถูกกรองด้วยตัวเลือกนี้
-function matchesStatusFilter(entry, statusFilter, categoryMeta) {
-  if (statusFilter === 'adhoc') return isAdhocEntry(entry, categoryMeta)
-  if (statusFilter === 'all') return true
-  // แท็บเสร็จสิ้นแล้ว/กำลังดำเนินการ ตัดหมวดเฉพาะกิจออกเสมอ — status ของมันไม่เคยขยับตาม pipeline ปกติ
-  // เข้าไปอยู่ผิดที่ผิดทาง (ค้างเป็น "กำลังดำเนินการ" ตลอดกาล) ไปดูที่แท็บ "เฉพาะกิจ" แทน
-  if (isAdhocEntry(entry, categoryMeta)) return false
-  if (entry.source_table !== 'complaints' && entry.source_table !== 'civil_projects') return true
-  const completedSet = entry.source_table === 'complaints' ? COMPLETED_COMPLAINT_STATUSES : COMPLETED_PROJECT_STATUSES
-  const isCompleted = completedSet.includes(entry.status)
-  return statusFilter === 'completed' ? isCompleted : !isCompleted
-}
 
 // ป้ายชื่อไทยของ category — อ้างอิงจาก CATEGORY_LABEL เดิมใน ComplaintsManager.jsx (คำร้อง)
 // และ ROUTE_STYLE เดิมใน MapDashboardAdmin.jsx (โครงการ) เพื่อไม่ให้ชื่อขัดกันระหว่างหน้า
@@ -381,6 +357,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   // ต้องเริ่มต้นเปิดทุกตัว ทั้งที่ยังไม่รู้ว่ามีประเภทย่อยอะไรบ้างจนกว่า allRows จะโหลดเสร็จ — ถ้าเก็บเป็นชุด
   // ที่เปิดจะต้องไปเติมค่าใน useEffect ซึ่งชน lint rule react-hooks/set-state-in-effect ของโปรเจกต์
   const [floatOff, setFloatOff] = useState(() => new Set())
+  // โหมด "เฉพาะกิจ" ให้หมุดศูนย์ข้อมูลเข้ามาเปิดดูได้ (วัด ฯลฯ) แต่หน้าตาเริ่มต้นต้องไม่เปลี่ยน — ปุ่มลอย (กล้อง ฯลฯ) ของโหมดนี้
+  // จึงเริ่มต้น "ปิด" ต้องกดเปิดเอง · เก็บเป็นชุด "ที่เปิด" แยกจาก floatOff ของโหมดอื่น (สลับโหมดแล้วค่าของอีกโหมดไม่ถูกแตะ)
+  const [adhocFloatOn, setAdhocFloatOn] = useState(() => new Set())
   // ไอคอนกลุ่มหลักที่แอดมินตั้งเอง (data_center_group_icons) — ตัวเดียวกับที่ DataCenterOverview.jsx
   // ใช้ กันอิโมจิไม่ตรงกันระหว่างหน้ารายการกับแผนที่ ดู src/lib/dataCenterGroupIcon.js
   const [groupIconOverrides, setGroupIconOverrides] = useState({})
@@ -505,6 +484,13 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     ? (complaintCategoryMeta[e.category]?.emoji || markerEmoji(e, groupIconOverrides))
     : markerEmoji(e, groupIconOverrides)
   const entries = allRows.filter(e => matchesStatusFilter(e, effectiveStatusFilter, complaintCategoryMeta))
+  const adhocMode = effectiveStatusFilter === 'adhoc'
+  const floatShown = key => (adhocMode ? adhocFloatOn.has(key) : !floatOff.has(key))
+  const toggleFloat = key => (adhocMode ? setAdhocFloatOn : setFloatOff)(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
   const groups = Array.from(new Set(entries.map(e => e.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
   const visible = entries.filter(e => {
     if (e.route_points?.length >= 2) {
@@ -519,7 +505,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
       return true
     }
     // กลุ่ม "ปุ่มลอยบนแผนที่" ข้ามตัวกรอง 2 ชั้นปกติ ไปขึ้นกับปุ่มลอยของประเภทย่อยตัวเอง (ดู FLOAT_GROUP)
-    if (isFloatGroup(e.group_name)) return !floatOff.has(categoryKey(e, resolveCategoryLabel))
+    if (isFloatGroup(e.group_name)) return floatShown(categoryKey(e, resolveCategoryLabel))
     return (activeGroups === null || activeGroups.has(e.group_name))
       && activeCategories.has(categoryKey(e, resolveCategoryLabel))
   })
@@ -610,12 +596,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     ...floatSummary.flatMap(g => g.categories.map(c => {
       const key = `${g.group}::${c.category}`
       return {
-        id: key, label: c.category, icon: c.icon, on: !floatOff.has(key),
-        toggle: () => setFloatOff(prev => {
-          const next = new Set(prev)
-          next.has(key) ? next.delete(key) : next.add(key)
-          return next
-        }),
+        id: key, label: c.category, icon: c.icon, on: floatShown(key),
+        toggle: () => toggleFloat(key),
       }
     })),
     // ท้ายสุดของแถวโดยตั้งใจ — tests/map-click.playwright.mjs กด "ปุ่มแรก" ของ .absolute.right-3.top-3 เพื่อปิดเลเยอร์ CCTV
@@ -649,7 +631,23 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const activeSummary = effectiveTab === 'dce' ? dceSummary : effectiveTab === 'complaints' ? complaintSummary : projectSummary
 
   // แผงวงรัศมีอยู่ใต้แท็บ "คำร้อง" (ที่เดียวกับตัวกรอง "เฉพาะกิจ") — ปุ่มลอยบนแผนที่เปิด/ปิดชั้นนี้ได้ทุกแท็บอยู่แล้ว
-  const zonesPanel = zonesPanelVisible && effectiveTab === 'complaints' ? (
+  // สถานที่ในศูนย์ข้อมูลที่เปิดดูรอบฟาร์มได้ (วัด โรงเรียน ฯลฯ) — ไม่นับเส้นทางถนนและกลุ่มปุ่มลอย (กล้อง ฯลฯ มีปุ่มลอยของตัวเองอยู่แล้ว)
+  const placeCount = dceEntries.filter(e => !isFloatGroup(e.group_name) && !(e.route_points?.length >= 2)).length
+  const zonesPanel = zonesPanelVisible && effectiveTab === 'complaints' ? (<>
+    {/* ชั้นที่ 3 ที่เปิด/ปิดได้อิสระ: สถานที่อื่นจากศูนย์ข้อมูล (วัด โรงเรียน ฯลฯ) — เลือกประเภทที่อยากเห็นได้ในแท็บ
+        "ศูนย์ข้อมูลดิจิทัล" (เริ่มต้นปิดทุกประเภท) แถวนี้แค่พาไปที่นั่น ไม่เก็บสถานะของตัวเอง */}
+    {placeCount > 0 && (
+      <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-2.5">
+        <p className="flex min-w-0 items-start gap-1.5 text-[11px] leading-snug text-sky-900">
+          <Database size={13} className="mt-0.5 shrink-0" />
+          <span><span className="font-bold">สถานที่อื่น</span> · วัด โรงเรียน ฯลฯ จากศูนย์ข้อมูล ({placeCount} แห่ง) เลือกประเภทที่อยากเห็นรอบฟาร์ม</span>
+        </p>
+        <button type="button" onClick={() => setActiveTab('dce')}
+          className="flex min-h-9 shrink-0 items-center rounded-full border border-sky-300 bg-white px-3 text-[11px] font-semibold text-sky-800 active:scale-95">
+          เลือก
+        </button>
+      </div>
+    )}
     <AdhocZonesPanel zones={zonesApi.zones} counts={zonesApi.counts} categories={zonesApi.categories}
       canManage={zonesApi.canManage} layerOn={zoneLayerOn} onToggleLayer={toggleZoneLayer}
       hidden={hiddenZoneKeys} onToggleHidden={toggleZoneHidden} selectedZoneId={selectedZoneId}
@@ -658,7 +656,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
       affectedOn={affectedOn} onToggleAffected={() => setAffectedLayer(!affectedOn)}
       affectedLoading={affectedApi.loading} affectedError={affectedApi.error} affectedPoints={affectedApi.points}
       onAddAffected={zone => setAffectedForm({ zone, point: null })} />
-  ) : null
+  </>) : null
 
   // keysInGroup = ประเภทย่อยทั้งหมดของกลุ่มนี้ที่โชว์ในการ์ด (ตัดประเภทที่เป็นเส้นทางออกแล้ว) —
   // กดหัวการ์ดต้องเปิด/ปิดหมุดทั้งกลุ่มยกชุด ไม่ใช่แค่สลับ activeGroups ที่เป็นตัวกรองชั้นนอก

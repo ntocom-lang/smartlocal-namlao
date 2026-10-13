@@ -13,6 +13,7 @@ import {
   kmToMeters, normalizeRadii, formatRadius, ringColor, zoneHideKey, ringHideKey,
   validZoneCoords, zoomForRadius, buildZoneOverlays, indexCounts, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn,
   readNamesOn, writeNamesOn, HIDDEN_STORAGE_KEY, LAYER_STORAGE_KEY, NAMES_STORAGE_KEY,
+  isAdhocEntry, matchesStatusFilter,
 } from '../src/lib/adhocZones.js'
 
 // ── kmToMeters ──────────────────────────────────────────────────────────────
@@ -255,6 +256,48 @@ const fakeStorage = (initial = {}) => {
   const st = fakeStorage()
   writeHiddenKeys(st, new Set(Array.from({ length: 900 }, (_, i) => `z:${i}`)))
   assert.equal(readHiddenKeys(st).size, 500)
+}
+
+// ── ตัวกรองสถานะของแผนที่ศูนย์ข้อมูล (ทุกโหมด × ทุกแหล่งข้อมูล) ──────────────────────
+// โหมด "เฉพาะกิจ" เคยตัดหมุดสถานที่ในศูนย์ข้อมูลออกหมด (แท็บศูนย์ข้อมูลขึ้น 0 เปิดวัดไม่ได้) → ต้องผ่านมาถึงตัวกรองประเภทที่ปิดไว้ตั้งต้น
+{
+  const meta = { odor: { is_adhoc: true }, garbage: { is_adhoc: false }, road: {} }
+  const row = {
+    adhoc: { source_table: 'complaints', category: 'odor', status: 'pending' },
+    adhocClosed: { source_table: 'complaints', category: 'odor', status: 'closed' },
+    normalDone: { source_table: 'complaints', category: 'garbage', status: 'closed' },
+    normalDone2: { source_table: 'complaints', category: 'road', status: 'done' },
+    normalOpen: { source_table: 'complaints', category: 'garbage', status: 'pending' },
+    place: { source_table: 'data_center_entries', group_name: 'สถานที่สำคัญ', category: 'วัด' },
+    float: { source_table: 'data_center_entries', group_name: 'ปุ่มลอยบนแผนที่', category: 'กล้องวงจรปิด' },
+    projectDone: { source_table: 'civil_projects', status: 'completed' },
+    projectOpen: { source_table: 'civil_projects', status: 'in_progress' },
+  }
+  const pass = (mode, names) => Object.entries(row).filter(([, r]) => matchesStatusFilter(r, mode, meta)).map(([k]) => k).sort()
+  const want = names => [...names].sort()
+
+  assert.deepEqual(pass('adhoc'), want(['adhoc', 'adhocClosed', 'place', 'float']),
+    'เฉพาะกิจ = คำร้องเฉพาะกิจทุกสถานะ + หมุดสถานที่ศูนย์ข้อมูล (วัด ฯลฯ) · คำร้องปกติและโครงการยังไม่เข้า')
+  assert.deepEqual(pass('completed'), want(['normalDone', 'normalDone2', 'place', 'float', 'projectDone']),
+    'เสร็จสิ้นแล้ว: ตัดเฉพาะกิจออกเสมอ · หมุดสถานที่ไม่ถูกกรองด้วยสถานะ (พฤติกรรมเดิม)')
+  assert.deepEqual(pass('in_progress'), want(['normalOpen', 'place', 'float', 'projectOpen']),
+    'กำลังดำเนินการ: ตัดเฉพาะกิจออกเสมอ')
+  assert.deepEqual(pass('all'), want(Object.keys(row)), 'ทุกสถานะ = ทุกแถว')
+
+  // หมุดสถานที่ต้องไม่ถูกตัดในโหมดใดเลย และหมวดเฉพาะกิจต้องไม่หลุดไปอยู่แท็บสถานะปกติ
+  for (const mode of ['adhoc', 'completed', 'in_progress', 'all']) assert.ok(matchesStatusFilter(row.place, mode, meta), `สถานที่ต้องผ่านโหมด ${mode}`)
+  for (const mode of ['completed', 'in_progress']) assert.equal(matchesStatusFilter(row.adhoc, mode, meta), false, `เฉพาะกิจต้องไม่ขึ้นแท็บ ${mode}`)
+  // ปล่อยคำร้องปกติเข้าโหมดเฉพาะกิจไม่ได้ (ไม่งั้นแผนที่กลิ่นเต็มไปด้วยเรื่องอื่น)
+  assert.equal(matchesStatusFilter(row.normalOpen, 'adhoc', meta), false)
+  assert.equal(matchesStatusFilter(row.projectDone, 'adhoc', meta), false)
+
+  assert.equal(isAdhocEntry(row.adhoc, meta), true)
+  assert.equal(isAdhocEntry(row.normalDone, meta), false)
+  assert.equal(isAdhocEntry(row.place, meta), false, 'is_adhoc ใช้กับคำร้องเท่านั้น แม้ชื่อหมวดจะตรงกับ key ใน meta')
+  assert.equal(isAdhocEntry({ source_table: 'data_center_entries', category: 'odor' }, meta), false)
+  assert.equal(isAdhocEntry(null, meta), false)
+  assert.equal(isAdhocEntry(row.adhoc, null), false, 'ยังโหลดหมวดไม่เสร็จต้องไม่ throw')
+  assert.equal(isAdhocEntry(row.adhoc, undefined), false)
 }
 
 console.log('adhoc-zones: ผ่านทั้งหมด')
