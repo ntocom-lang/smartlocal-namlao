@@ -50,39 +50,67 @@ export default function LeafletMapPicker({
   }, [initialPos, fallbackPos, defaultLat, defaultLng, tenant?.latitude, tenant?.longitude])
 
   const [selected, setSelected] = useState(initialLocation)
+  // จุดตั้งต้นของกล้อง — ต้องนิ่งตลอดอายุ component ห้ามส่ง `selected` เข้า LeafletMapCanvas เป็น center
+  // เพราะ canvas สั่ง panTo ทุกครั้งที่ center เปลี่ยน: ชื่อที่อยู่จาก Nominatim ตอบช้า (0.5–2 วิ) พอมาถึงก็ดึงกล้องกลับ
+  // ไปจุดที่ผู้ใช้ปัดผ่านมาแล้ว (เจ้าของระบบแจ้ง 2569-10-14 "เลื่อนแล้วเด้งคืน") กล้องขยับเฉพาะผู้ใช้ลากเอง
+  // หรือเมื่อโค้ดสั่งตรงๆ (setView/panTo ของค้นหา · ตำแหน่งของฉัน · แตะแผนที่) — ทุกจุดนั้นสั่งอยู่แล้ว
+  const [viewCenter] = useState(initialLocation)
   const isModal = modal ?? Boolean(onConfirm || onClose)
   const selectedRef = useRef(initialLocation)
+  const geocodeSeqRef = useRef(0)
+  const geocodeAbortRef = useRef(null)
+  // ผู้เรียกส่ง callback เป็นฟังก์ชันใหม่ทุก render แต่ map.on('moveend') ผูกครั้งเดียวตอนแผนที่พร้อม
+  // เก็บตัวล่าสุดไว้ใน ref จะไม่เรียกตัวเก่าที่ค้างอยู่
+  const onLocationSelectRef = useRef(onLocationSelect)
+  useEffect(() => { onLocationSelectRef.current = onLocationSelect })
 
   const commitSelection = useCallback(location => {
     selectedRef.current = location
     setSelected(location)
-    onLocationSelect?.(location)
-  }, [onLocationSelect])
+    onLocationSelectRef.current?.(location)
+  }, [])
 
-  // Reverse Geocode using OpenStreetMap Nominatim with debouncing & Thai language
+  // พิกัดอัปเดตทันทีที่ผู้ใช้ปล่อยนิ้ว (ปุ่ม "ยืนยันตำแหน่ง" จึงได้จุดใต้หมุดเป๊ะเสมอ) ส่วนชื่อที่อยู่เป็นแค่ข้อความ
+  // ที่ตามมาทีหลัง: ถามเฉพาะจุดล่าสุด ยกเลิกคำถามเก่าที่ยังค้าง และเขียนชื่อลงบน "จุดล่าสุด" เท่านั้น
+  // คำตอบของจุดที่ผ่านมาแล้วไม่มีสิทธิ์เขียนพิกัดทับ (Nominatim จำกัด 1 ครั้ง/วินาที การยกเลิกช่วยลดโหลดด้วย)
   const reverseGeocode = useCallback(point => {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+    geocodeAbortRef.current?.abort()
+    const seq = ++geocodeSeqRef.current
+    const coordsText = `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`
+    const applyAddress = address => {
+      if (seq !== geocodeSeqRef.current || !isMountedRef.current) return
+      commitSelection({ ...selectedRef.current, address })
+    }
     debounceTimerRef.current = setTimeout(async () => {
+      const controller = new AbortController()
+      geocodeAbortRef.current = controller
       try {
         const res = await fetch(
           `https://nominatim.openstreetmap.org/reverse?format=json&lat=${point.lat}&lon=${point.lng}&zoom=18&addressdetails=1&accept-language=th`,
-          { headers: { 'User-Agent': 'SmartLocal-GIS/1.1' } }
+          { headers: { 'User-Agent': 'SmartLocal-GIS/1.1' }, signal: controller.signal }
         )
         if (res.ok) {
           const data = await res.json()
           const raw = data.display_name || ''
           // Clean up excessively long OSM string
-          const formatted = raw ? raw.split(',').slice(0, 4).join(',').trim() : `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`
-          commitSelection({ ...point, address: formatted })
+          applyAddress(raw ? raw.split(',').slice(0, 4).join(',').trim() : coordsText)
         } else {
-          commitSelection({ ...point, address: `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}` })
+          applyAddress(coordsText)
         }
       } catch (err) {
+        if (err?.name === 'AbortError') return
         console.warn('[LeafletMapPicker] Reverse geocoding failed:', err)
-        commitSelection({ ...point, address: `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}` })
+        applyAddress(coordsText)
       }
-    }, 450)
+    }, 600)
   }, [commitSelection])
+
+  // ผู้ใช้เลือกจุดใหม่ (ลากเสร็จ/แตะแผนที่): พิกัดเปลี่ยนทันที ชื่อที่อยู่ว่างไว้จนกว่าคำตอบของจุดนี้จะมา
+  const selectPoint = useCallback(point => {
+    commitSelection({ ...point, address: '' })
+    reverseGeocode(point)
+  }, [commitSelection, reverseGeocode])
 
   // Search places in Thailand via Nominatim
   async function handleSearch(e) {
@@ -182,12 +210,16 @@ export default function LeafletMapPicker({
         const point = { lat: center.lat, lng: center.lng }
         const prev = selectedRef.current
         const distanceMoved = Math.hypot(point.lat - prev.lat, point.lng - prev.lng)
+        if (distanceMoved < 1e-9) return
         if (distanceMoved > 0.00008) {
-          reverseGeocode(point)
+          selectPoint(point)
+        } else {
+          // ขยับไม่ถึง ~9 ม. (หรือแผนที่คลาดเศษพิกเซลหลังสั่ง setView) ชื่อที่อยู่เดิมยังใช้ได้ แต่พิกัดต้องตรงหมุดเสมอ
+          commitSelection({ ...point, address: prev.address })
         }
       })
     }
-  }, [readOnly, fixedCenterPin, initialPos?.address, reverseGeocode])
+  }, [readOnly, fixedCenterPin, initialPos?.address, reverseGeocode, selectPoint, commitSelection])
 
   useEffect(() => {
     isMountedRef.current = true
@@ -198,6 +230,7 @@ export default function LeafletMapPicker({
     return () => {
       isMountedRef.current = false
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+      geocodeAbortRef.current?.abort()
     }
   }, [readOnly, autoLocate, skipGeolocation, initialPos, locateMe])
 
@@ -271,14 +304,14 @@ export default function LeafletMapPicker({
       {/* Map Canvas */}
       <div className={isModal ? 'relative min-h-0 flex-1' : 'relative overflow-hidden rounded-2xl border border-gray-200 shadow-sm'}>
         <LeafletMapCanvas
-          center={selected}
+          center={viewCenter}
           zoom={zoom}
           mapTypeId="hybrid"
           boundaryGeoJson={showBoundary ? undefined : false}
           className={isModal ? 'w-full h-full min-h-[360px]' : mapClassName}
           onMapClick={readOnly ? undefined : (point) => {
             if (mapRef.current) mapRef.current.panTo([point.lat, point.lng])
-            reverseGeocode(point)
+            selectPoint(point)
           }}
           onMapReady={handleMapReady}
           markers={(readOnly || !fixedCenterPin) && validPoint(selected) ? [{ id: 'selected-location', position: selected, color: '#ef4444', scale: 17, title: 'ตำแหน่งที่เลือก' }] : []}
