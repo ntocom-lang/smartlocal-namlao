@@ -114,7 +114,13 @@ export default function LeafletMapPicker({
 
   // Search places in Thailand via Nominatim
   async function handleSearch(e) {
-    if (e) e.preventDefault()
+    if (e) {
+      e.preventDefault()
+      // ตัวปักหมุดวาดผ่าน portal แต่ event ของ React ไหลขึ้นต้นไม้คอมโพเนนต์ ไม่ใช่ต้นไม้ DOM — ถ้าผู้เรียกวางตัวปักหมุดไว้ใต้ <form>
+      // ของตัวเอง (ฟอร์มจองรถผู้ป่วย, แก้จุดรับในกล่องงาน ฯลฯ) การกด Enter ในช่องค้นหานี้จะ "ส่งฟอร์มแม่" ไปด้วย
+      // (เคยทำให้หน้าตรวจทานคำขอเปิดเองทั้งที่ผู้ใช้แค่ค้นหาสถานที่) จึงหยุดที่นี่ที่เดียว ไม่ต้องให้ทุกผู้เรียกจำไว้ว่าต้องวางเป็นพี่น้องของ <form>
+      e.stopPropagation()
+    }
     const q = searchQuery.trim()
     if (!q) return
 

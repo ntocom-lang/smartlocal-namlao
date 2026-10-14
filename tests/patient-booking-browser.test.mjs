@@ -1159,6 +1159,15 @@ try{
  await page.getByLabel('บ้านเลขที่ / จุดสังเกต',{exact:true}).fill('TEST zone pickup')
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
  await page.screenshot({path:'D:/tmp/patient-destination-zone-390.png',fullPage:true})
+ // Enter ในช่องค้นหาสถานที่ของแผนที่ปักหมุดต้องค้นหาอย่างเดียว ไม่ไหลขึ้นไปส่งฟอร์มจองที่ครอบอยู่ (พบ 2569-10-14 ระหว่างทำฟอร์มชุมชน:
+ // ช่องค้นหาของแผนที่เป็น <form> ที่วาดผ่าน portal แต่ event ของ React ไหลขึ้นต้นไม้คอมโพเนนต์ ทำให้หน้าตรวจทานเปิดเองทั้งที่ผู้ใช้แค่ค้นหา)
+ // ฟอร์มกรอกครบอยู่แล้วตรงนี้ จึงพิสูจน์ได้: ถ้า event หลุด หน้าทวน/ช่องยินยอมต้องโผล่
+ const patientPicker=page.getByRole('dialog').filter({hasText:'ยืนยันตำแหน่ง'})
+ await page.getByRole('button',{name:'📍 ปักหมุดจากแผนที่',exact:true}).click();await patientPicker.waitFor()
+ await patientPicker.getByPlaceholder('ค้นหาบ้านเลขที่ ชื่อสถานที่ หรือถนนในประเทศไทย...').fill('ศาลากลาง')
+ await patientPicker.getByPlaceholder('ค้นหาบ้านเลขที่ ชื่อสถานที่ หรือถนนในประเทศไทย...').press('Enter');await page.waitForTimeout(500)
+ assert.equal(await page.getByRole('checkbox',{name:'ยินยอมให้ใช้ข้อมูลตามข้อความข้างต้น'}).count(),0,'Enter ในช่องค้นหาของแผนที่ต้องไม่เปิดหน้าตรวจทานของฟอร์มจองรถผู้ป่วย')
+ await patientPicker.getByRole('button',{name:'ยืนยันตำแหน่ง',exact:true}).click();await patientPicker.waitFor({state:'detached'})
  await page.getByRole('button',{name:'ส่งคำขอ',exact:true}).click()
  await page.getByRole('checkbox',{name:'ยินยอมให้ใช้ข้อมูลตามข้อความข้างต้น'}).check()
  await page.getByRole('button',{name:'ยืนยันส่งคำขอ',exact:true}).click()
