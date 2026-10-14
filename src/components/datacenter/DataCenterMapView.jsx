@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 // Construction ถูกเอาออกจาก import พร้อมกับปุ่มแท็บ "โครงการ" ที่คอมเมนต์ไว้ใน SummaryPanel
 // (ตรงตามที่ commit 79f5a3c ทำกับ ClipboardList ตอนถอดเมนู) เอากลับมาพร้อมกันตอนคืนแท็บ
-import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation, Target, Tag } from 'lucide-react'
+import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation, Target, Tag, Tags } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import LeafletMapCanvas from '../common/LeafletMapCanvas'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, isIconImage } from '../../lib/dataCenterGroupIcon'
@@ -16,6 +16,7 @@ import { buildAffectedMarkers } from '../../lib/adhocAffected'
 import AdhocZoneForm from './AdhocZoneForm'
 import {
   buildZoneOverlays, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn, readNamesOn, writeNamesOn, normalizeRadii, zoomForRadius, isAdhocEntry, matchesStatusFilter,
+  readPlaceNamesOn, writePlaceNamesOn, canShowPlaceName,
 } from '../../lib/adhocZones'
 
 function TrafficLightIcon({ size = 20, className = "" }) {
@@ -371,6 +372,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const [zoneLayerOn, setZoneLayerOn] = useState(() => readLayerOn(globalThis.localStorage))
   // ป้ายชื่อฟาร์มที่แสดงค้างข้างหมุดจุดต้นทาง — จำค่าในเครื่องนี้ (ส่วนตัว) ค่าเริ่มต้น = เปิด
   const [zoneNamesOn, setZoneNamesOn] = useState(() => readNamesOn(globalThis.localStorage))
+  // ป้ายชื่อสถานที่ (วัด โรงเรียน ฯลฯ) แสดงค้างใต้หมุด — ใช้ได้ทั้งฝั่งเจ้าหน้าที่และประชาชน (เป็นข้อมูลสาธารณะเดียวกับ tooltip)
+  // ค่าเริ่มต้น = ปิด (ต่างจากชื่อฟาร์ม) เหตุผลที่ readPlaceNamesOn ใน adhocZones.js · จำค่าในเครื่องนี้ ไม่กระทบคนอื่น
+  const [placeNamesOn, setPlaceNamesOn] = useState(() => readPlaceNamesOn(globalThis.localStorage))
   const [hiddenZoneKeys, setHiddenZoneKeys] = useState(() => readHiddenKeys(globalThis.localStorage))
   const [selectedZoneId, setSelectedZoneId] = useState(null)
   const [zoneForm, setZoneForm] = useState(null) // null = ปิด · { zone: null } = เพิ่มใหม่ · { zone } = แก้ไข
@@ -517,6 +521,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   // ปุ่มลอยบนแผนที่ = ปุ่มเส้นทางถนน (ของเดิม) + 1 ปุ่มต่อ 1 ประเภทย่อยในกลุ่ม "ปุ่มลอยบนแผนที่"
   // ใช้ buildGroupSummary ตัวเดียวกับแถบสรุป ไอคอน/ชื่อ/การนับจึงมาจากแหล่งเดียวกันเสมอ
   const hasRoutes = entries.some(e => e.route_points?.length >= 2)
+  const labelsPlace = e => canShowPlaceName(e, isFloatGroup(e.group_name))
+  const hasLabelablePlace = visible.some(labelsPlace)
   const floatSummary = buildGroupSummary(
     entries.filter(e => isFloatGroup(e.group_name)), resolveCategoryLabel, resolveMarkerIcon,
   )
@@ -555,6 +561,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   }
   function toggleZoneNames() {
     setZoneNamesOn(prev => { writeNamesOn(globalThis.localStorage, !prev); return !prev })
+  }
+  function togglePlaceNames() {
+    setPlaceNamesOn(prev => { writePlaceNamesOn(globalThis.localStorage, !prev); return !prev })
   }
   function toggleZoneHidden(key) {
     setHiddenZoneKeys(prev => {
@@ -610,6 +619,12 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     hasOpenZones && zoneLayerOn && {
       id: 'adhoc-zone-names', label: 'ชื่อฟาร์ม', Icon: Tag,
       on: zoneNamesOn, toggle: toggleZoneNames,
+    },
+    // ปุ่มชื่อสถานที่อยู่ท้ายแถวเหมือนกัน (เหตุผลเดียวกับด้านบน) และโผล่เฉพาะตอนมีหมุดสถานที่ที่ติดป้ายได้อยู่บนแผนที่จริง
+    // — ประเภทสถานที่เริ่มต้นปิดทุกตัว ถ้าไม่มีหมุดสักอัน ปุ่มนี้กดแล้วไม่เกิดอะไร (ค่าที่กดไว้ยังจำอยู่ พอเปิดประเภทก็ขึ้นป้ายเลย)
+    hasLabelablePlace && {
+      id: 'place-names', label: 'ชื่อสถานที่', Icon: Tags,
+      on: placeNamesOn, toggle: togglePlaceNames,
     },
   ].filter(Boolean)
 
@@ -761,6 +776,10 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                   // ส่ง tooltip แทน — ช่องที่ให้ข้อความ hover โดยไม่ผูก popup เอาชื่อหมุดกลับมาให้
                   // คนใช้ PC ชี้เมาส์ดูได้เร็วๆ ว่าหมุดไหนคืออะไร โดยไม่ต้องกดทีละใบ
                   tooltip: pinTitleOf(e),
+                  // ป้ายชื่อค้างเฉพาะสถานที่ (ดู canShowPlaceName) · ชื่อเดียวกับ tooltip/การ์ด จึงผ่านกฎ PDPA ชุดเดียวกัน
+                  nameLabel: placeNamesOn && labelsPlace(e) ? pinTitleOf(e) : '',
+                  // สีป้ายใช้ color (เข้ม) ของกลุ่ม ไม่ใช่ pinColor (อ่อน) — pinColor มีไว้ให้อิโมจิบนหมุดเห็นชัด ไม่ได้มีไว้ให้ตัวอักษร
+                  nameColor: meta.color,
                   color: meta.pinColor ?? meta.color,
                   label: isIconUrl(icon) ? '' : icon,
                   iconUrl: isIconUrl(icon) ? icon : null,

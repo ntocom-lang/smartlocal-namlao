@@ -186,6 +186,35 @@ export function writeNamesOn(storage, on) {
   } catch { /* ignore */ }
 }
 
+// ป้ายชื่อ "สถานที่" (วัด โรงเรียน ร้านอาหาร ฯลฯ จากศูนย์ข้อมูล) — ค่าเริ่มต้น = ปิด ต่างจากป้ายชื่อฟาร์มข้างบน
+// เพราะฟาร์มมีไม่กี่จุดและชื่อคือสิ่งที่อยากเห็น แต่สถานที่มีเป็นสิบเป็นร้อย เปิดให้เองแล้วป้ายจะทับกันจนอ่านไม่ออก
+// และหน้าแผนที่ที่ประชาชนเคยเห็นจะเปลี่ยนหน้าตาไปเอง · คนที่อยากเห็นกดเปิดเอง เครื่องนั้นจำค่าไว้ (เป็นค่าส่วนตัว)
+export const PLACE_NAMES_STORAGE_KEY = 'dc-map-place-names'
+
+export function readPlaceNamesOn(storage) {
+  try {
+    return storage?.getItem(PLACE_NAMES_STORAGE_KEY) === 'on'
+  } catch {
+    return false
+  }
+}
+
+export function writePlaceNamesOn(storage, on) {
+  try {
+    storage?.setItem(PLACE_NAMES_STORAGE_KEY, on ? 'on' : 'off')
+  } catch { /* ignore */ }
+}
+
+// หมุดไหนติดป้ายชื่อค้างได้ — เฉพาะ "สถานที่" ที่เจ้าหน้าที่กรอกเองในศูนย์ข้อมูล (data_center_entries)
+//  - ไม่ติดคำร้อง/คำขอ: ชื่อของมันคือหัวเรื่องที่ประชาชนพิมพ์เอง ซึ่งการ์ดรายละเอียดจงใจไม่แสดง (PDPA) ป้ายค้างบนแผนที่ยิ่งไม่ควรหลุด
+//  - ไม่ติดเส้นทางถนน (ไม่ใช่หมุด) และกลุ่ม "ปุ่มลอยบนแผนที่" (กล้องวงจรปิดมีเป็นสิบตัวชื่อซ้ำๆ ติดป้ายแล้วแผนที่รก)
+// isFloat ส่งจากผู้เรียก เพราะค่าคงที่ชื่อกลุ่มปุ่มลอยอยู่ในคอมโพเนนต์ ไม่ได้อยู่ในไฟล์นี้
+export function canShowPlaceName(entry, isFloat) {
+  if (entry?.source_table !== 'data_center_entries') return false
+  if (entry.route_points?.length >= 2) return false
+  return !isFloat
+}
+
 // ── ตัวกรองสถานะของแผนที่ศูนย์ข้อมูล (ย้ายมาจาก DataCenterMapView.jsx เพื่อให้เทสต์ล็อกกฎได้) ─────────────
 // สถานะจริงในตาราง complaints ใช้ทั้ง 'closed' และ 'done' แทนความหมาย "เสร็จสิ้น"
 export const COMPLETED_COMPLAINT_STATUSES = ['closed', 'done']
