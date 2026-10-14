@@ -256,9 +256,11 @@ export default function LeafletMapCanvas({
       // markerData.nameLabel = ป้ายชื่อที่ "แสดงค้าง" ใต้หมุด (ต่างจาก tooltip ที่ขึ้นแค่ตอนเอาเมาส์ชี้ — บนมือถือไม่มี hover เลย)
       // ผู้เรียกส่งมาเฉพาะหมุดที่อยากให้เห็นชื่อ ไม่ส่ง = หน้าตาหมุดเหมือนเดิมทุกประการ · ป้ายไม่รับการกด (pointer-events: none)
       // เพื่อไม่บังหมุดข้างเคียงที่อยู่ใต้ป้าย · ชื่อมาจากข้อมูลที่ผู้ใช้กรอก จึง escape ทุกครั้ง
+      // markerData.nameColor = สีกรอบ/ตัวอักษรของป้าย (ไม่ส่ง = ใช้สีเดียวกับหมุดเหมือนเดิม) — มีไว้ให้หมุดที่สีพื้นอ่อนจงใจ
+      // (เช่น สถานศึกษา #93c5fd เพื่อให้อิโมจิเห็นชัด) ส่งสีเข้มมาแทน ไม่งั้นตัวอักษรอ่อนบนพื้นขาวอ่านไม่ออก
       const nameText = markerData.nameLabel ? String(markerData.nameLabel).trim() : ''
       if (nameText) {
-        const nameColor = safeColor(color)
+        const nameColor = safeColor(markerData.nameColor || color)
         iconHtml = `
           <div style="position: relative; width: ${size}px; height: ${size}px;">
             ${iconHtml}

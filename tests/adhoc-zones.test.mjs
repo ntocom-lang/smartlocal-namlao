@@ -13,6 +13,7 @@ import {
   kmToMeters, normalizeRadii, formatRadius, ringColor, zoneHideKey, ringHideKey,
   validZoneCoords, zoomForRadius, buildZoneOverlays, indexCounts, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn,
   readNamesOn, writeNamesOn, HIDDEN_STORAGE_KEY, LAYER_STORAGE_KEY, NAMES_STORAGE_KEY,
+  readPlaceNamesOn, writePlaceNamesOn, canShowPlaceName, PLACE_NAMES_STORAGE_KEY,
   isAdhocEntry, matchesStatusFilter,
 } from '../src/lib/adhocZones.js'
 
@@ -250,6 +251,44 @@ const fakeStorage = (initial = {}) => {
   assert.equal(readNamesOn(broken), true, 'อ่านไม่ได้ → แสดงชื่อ')
   assert.doesNotThrow(() => writeNamesOn(broken, false))
   assert.equal(readNamesOn(null), true)
+}
+{
+  // ป้ายชื่อสถานที่: ค่าเริ่มต้น = "ปิด" (กลับกับชื่อฟาร์ม) · คีย์แยกจากชื่อฟาร์ม กดอันหนึ่งอีกอันต้องไม่ขยับ
+  const st = fakeStorage()
+  assert.equal(readPlaceNamesOn(st), false, 'ยังไม่เคยตั้ง → ไม่แสดงชื่อ (หน้าแผนที่เดิมต้องไม่เปลี่ยนเอง)')
+  writePlaceNamesOn(st, true)
+  assert.equal(st._m.get(PLACE_NAMES_STORAGE_KEY), 'on')
+  assert.equal(readPlaceNamesOn(st), true)
+  assert.equal(readNamesOn(st), true, 'เปิดชื่อสถานที่แล้วชื่อฟาร์มต้องไม่ขยับ (ยังเป็นค่าเริ่มต้น = เปิด)')
+  writeNamesOn(st, false)
+  assert.equal(readPlaceNamesOn(st), true, 'ปิดชื่อฟาร์มแล้วชื่อสถานที่ต้องไม่ถูกแตะ')
+  writePlaceNamesOn(st, false)
+  assert.equal(readPlaceNamesOn(st), false)
+  assert.equal(readNamesOn(st), false, 'ปิดชื่อสถานที่แล้วชื่อฟาร์มต้องไม่ขยับ')
+  assert.notEqual(PLACE_NAMES_STORAGE_KEY, NAMES_STORAGE_KEY)
+  assert.notEqual(PLACE_NAMES_STORAGE_KEY, LAYER_STORAGE_KEY)
+  assert.notEqual(PLACE_NAMES_STORAGE_KEY, HIDDEN_STORAGE_KEY)
+  st._m.set(PLACE_NAMES_STORAGE_KEY, 'true')
+  assert.equal(readPlaceNamesOn(st), false, 'ค่าแปลกปลอมที่ไม่ใช่ on → ปิด (เปิดเฉพาะที่เราเขียนเองเท่านั้น)')
+  const broken = { getItem() { throw new Error('denied') }, setItem() { throw new Error('denied') } }
+  assert.equal(readPlaceNamesOn(broken), false, 'อ่านไม่ได้ → ปิด')
+  assert.doesNotThrow(() => writePlaceNamesOn(broken, true))
+  assert.equal(readPlaceNamesOn(null), false)
+}
+{
+  // หมุดไหนติดป้ายชื่อค้างได้: เฉพาะสถานที่ในศูนย์ข้อมูล · คำร้อง/เส้นทาง/ปุ่มลอย (กล้อง) ต้องไม่ติด
+  const place = { source_table: 'data_center_entries', group_name: 'สถานที่สำคัญ', category: 'วัด', title: 'วัดบ้านนา' }
+  assert.equal(canShowPlaceName(place, false), true)
+  assert.equal(canShowPlaceName(place, true), false, 'กลุ่มปุ่มลอย (กล้อง ฯลฯ) ไม่ติดป้าย — มีเป็นสิบตัวชื่อซ้ำ')
+  assert.equal(canShowPlaceName({ ...place, route_points: [{ lat: 1, lng: 1 }, { lat: 2, lng: 2 }] }, false), false, 'เส้นทางถนนไม่ใช่หมุด')
+  assert.equal(canShowPlaceName({ ...place, route_points: [{ lat: 1, lng: 1 }] }, false), true, 'จุดเดียวไม่ใช่เส้นทาง')
+  assert.equal(canShowPlaceName({ ...place, route_points: null }, false), true)
+  // ⚠️ PDPA: ชื่อของคำร้องคือหัวเรื่องที่ประชาชนพิมพ์เอง ห้ามขึ้นเป็นป้ายค้างบนแผนที่ไม่ว่าแหล่งไหนที่ไม่ใช่สถานที่
+  for (const source of ['complaints', 'civil_projects', 'business_registrations', 'infrastructure_works', undefined]) {
+    assert.equal(canShowPlaceName({ ...place, source_table: source }, false), false, `ห้ามติดป้ายแหล่ง ${source}`)
+  }
+  assert.equal(canShowPlaceName(null, false), false)
+  assert.equal(canShowPlaceName(undefined, false), false)
 }
 {
   // เพดานจำนวนคีย์ กัน storage บวมถ้ามีบั๊กเขียนวน
