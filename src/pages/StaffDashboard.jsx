@@ -1,12 +1,12 @@
-import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { categoryNameOf } from '../lib/complaintCategoryLabels.js'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
-  Inbox, FileText, MessageSquareWarning, LogOut,
+  Inbox, FileText, MessageSquareWarning,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, Users, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
-  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid, Menu,
+  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid, Menu, ArrowLeft,
 } from 'lucide-react'
 import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -40,8 +40,9 @@ import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
 import { PERFORMANCE_ROLES } from '../lib/staffPerformanceData'
 import OdorReportPanel from '../components/staff/OdorReportPanel'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
-import UserProfileBadge from '../components/layout/UserProfileBadge'
+import StaffAccountMenu from '../components/layout/StaffAccountMenu'
 import PortalDrawer from '../components/common/PortalDrawer'
+import useStickyChrome from '../hooks/useStickyChrome'
 
 const CivilProjectAdmin = lazy(() => import('../components/admin/CivilProjectAdmin'))
 const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
@@ -222,7 +223,8 @@ const STANDALONE_GROUPS = [
 ]
 
 // จัดกลุ่มเมนูตามโครงสร้างส่วนราชการจริง (สำนักปลัด/กองคลัง/กองช่าง/กองการศึกษา/ตรวจสอบภายใน)
-// กองที่ยังไม่มีเมนูงาน (alwaysShow) ยังคงโชว์หัวข้อไว้ให้ครบทุกกอง ไม่ซ่อน
+// กองที่ยังไม่มีเมนูงาน (items ว่าง) ไม่ขึ้นในเมนู — เดิมโชว์หัวกองพร้อมข้อความ "ยังไม่มีเมนูงานในกองนี้" ไว้ให้ครบทุกกอง
+// แต่กลายเป็นบรรทัดว่างที่กดไม่ได้ 3 กอง (2569-10-14 เจ้าของให้ซ่อน) · คงนิยามกองไว้ เมนูใหม่ของกองนั้นจะโผล่เองเมื่อเพิ่มเข้า items
 const MODULE_GROUPS = [
   {
     group: 'สำนักปลัด',
@@ -232,17 +234,16 @@ const MODULE_GROUPS = [
       // เมนูนี้ทุกคนใน อปท. เห็นได้ (อ่านอย่างเดียว) — สิทธิ์แก้ตัดสินที่ can_manage_waste_schedule()
       { key: 'waste', label: 'ตารางเก็บขยะ', Icon: Trash2, color: '#15803d', bg: '#dcfce7', desc: 'ตั้งรอบเก็บขยะครั้งเดียว ระบบแจ้งวันเก็บให้ประชาชนเอง' },
     ],
-    alwaysShow: true,
   },
-  { group: 'กองคลัง', items: [], alwaysShow: true },
+  { group: 'กองคลัง', items: [] },
   {
     group: 'กองช่าง',
     items: [
       { key: 'infra', label: 'บันทึกงานซ่อม', Icon: Hammer, color: '#0891b2', bg: '#e0f2fe', desc: 'ช่างปักหมุดหน้างาน · ธุรการบันทึกรายละเอียด' },
     ],
   },
-  { group: 'กองการศึกษา', items: [], alwaysShow: true },
-  { group: 'ตรวจสอบภายใน', items: [], alwaysShow: true },
+  { group: 'กองการศึกษา', items: [] },
+  { group: 'ตรวจสอบภายใน', items: [] },
 ]
 const MODULES = [...STANDALONE_GROUPS.flatMap(g => g.items), ...MODULE_GROUPS.flatMap(g => g.items)]
 
@@ -2403,6 +2404,9 @@ export default function StaffDashboard() {
   const { unreadCount } = useNotifications()
   const [activeModule, setActiveModule] = useState(location.state?.module ?? 'home')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // หัวจอ PC ปักติดบน + เมนูซ้ายปักใต้หัว: ต้องรู้ความสูงจริงของหัว (ดู src/hooks/useStickyChrome.js)
+  const pcHeaderRef = useRef(null)
+  const stickyBox = useStickyChrome(pcHeaderRef)
   const [mapOpenComplaintId] = useState(location.state?.openComplaintId ?? null)
   const [autoEditEventId, setAutoEditEventId] = useState(location.state?.editEventId ?? null)
   const [autoCreateEventSignal, setAutoCreateEventSignal] = useState(0)
@@ -2472,12 +2476,11 @@ export default function StaffDashboard() {
     .filter(g => g.items.length > 0)
   const visibleGroups = MODULE_GROUPS
     .map(g => ({ ...g, items: g.items.filter(m => scopedKeys.includes(m.key)) }))
-    // ช่างไม่ต้องเห็นหัวข้อกองอื่นที่ยังไม่มีเมนูงาน (สำนักปลัด/กองคลัง ฯลฯ) — เป็นแค่ความรก
-    .filter(g => g.items.length > 0 || (g.alwaysShow && role !== 'technician'))
+    // กองที่ไม่มีเมนูให้ผู้ใช้คนนี้เห็น ไม่ต้องขึ้นหัวข้อ (ทุกบทบาท — เดิมโชว์กองว่างให้ทุกคนยกเว้นช่าง)
+    .filter(g => g.items.length > 0)
   // หน้า Dashboard ต้องเห็นทุกงานที่เปิดใช้จริง ไม่ใช่เฉพาะเมนูที่ผูกกับกอง
-  // และไม่ส่งกลุ่มว่างไปแสดง เพราะทำให้หน้าแรกดูเหมือนไม่มีเครื่องมือให้ใช้งาน
+  // visibleGroups กรองกลุ่มว่างออกแล้ว — เมนูซ้าย PC ลิ้นชักมือถือ และแผงหน้าแรกจึงเห็นชุดเดียวกัน
   const visibleHomeGroups = [...visibleStandaloneGroups, ...visibleGroups]
-    .filter(group => group.items.length > 0)
   const visibleModules = visibleHomeGroups.flatMap(group => group.items)
 
   useEffect(() => {
@@ -2688,6 +2691,13 @@ export default function StaffDashboard() {
     else setActiveModule(item.key)
   }
 
+  // หัวจอมือถือ: อยู่โมดูลไหนให้บอกชื่อโมดูล + ปุ่ม ← กลับแดชบอร์ด (แทนโลโก้/ชื่อ อปท. ที่ไม่ได้บอกอะไร)
+  // หน้าแรกคงเดิม · แท็บ "เมนู" ไม่อยู่ใน MODULES จึงตั้งชื่อเอง · โมดูลที่หาชื่อไม่เจอ (เช่น เข้าผ่าน router state)
+  // กลับไปใช้หัวแบบหน้าแรก ไม่ขึ้นชื่อมั่ว
+  const mobileModuleTitle = activeModule === 'home' ? null
+    : activeModule === 'menu' ? 'เมนูทั้งหมด'
+    : MODULES.find(m => m.key === activeModule)?.label ?? null
+
   return (
     <div className="min-h-full" style={{ backgroundColor: '#eef2f7' }}>
 
@@ -2703,15 +2713,24 @@ export default function StaffDashboard() {
             className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white/90 transition-colors active:bg-white/15">
             <Menu size={22} aria-hidden="true" />
           </button>
-          {/* กดโลโก้ = กลับหน้าแรกฝั่งประชาชน (พฤติกรรมเดิมของทุกหน้าในระบบ) — ป้าย "ระบบเจ้าหน้าที่"
-              ข้างล่างทำหน้าที่บอกโหมดแทน จึงไม่ต้องมีปุ่มออกแยกอีกปุ่ม */}
-          <button onClick={() => navigate('/')} aria-label="กลับหน้าแรก" className="shrink-0 active:opacity-70 transition-opacity">
-            {tenant?.logo_url
-              ? <img src={tenant.logo_url} alt="โลโก้" className="w-11 h-11 rounded-full object-contain bg-white/10 p-0.5 border border-white/20" />
-              : <div className="w-11 h-11 rounded-full border-2 border-white/40 bg-white/20 flex items-center justify-center text-lg font-bold">{tenant?.name?.[0] ?? '?'}</div>}
-          </button>
+          {mobileModuleTitle ? (
+            // อยู่ในโมดูล: ← กลับแดชบอร์ด (ปุ่มเดียวกับแท็บ "แดชบอร์ด" ของแถบล่าง แต่อยู่ใกล้นิ้วโป้งบนหัวจอ)
+            <button type="button" onClick={() => setActiveModule('home')} aria-label="กลับแดชบอร์ด" data-staff-back
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white/90 transition-colors active:bg-white/15">
+              <ArrowLeft size={22} aria-hidden="true" />
+            </button>
+          ) : (
+            // หน้าแรก: กดโลโก้ = กลับหน้าแรกฝั่งประชาชน (พฤติกรรมเดิมของทุกหน้าในระบบ) — ป้าย "ระบบเจ้าหน้าที่"
+            // ข้างล่างทำหน้าที่บอกโหมดแทน จึงไม่ต้องมีปุ่มออกแยกอีกปุ่ม
+            <button onClick={() => navigate('/')} aria-label="กลับหน้าแรก" className="shrink-0 active:opacity-70 transition-opacity">
+              {tenant?.logo_url
+                ? <img src={tenant.logo_url} alt="โลโก้" className="w-11 h-11 rounded-full object-contain bg-white/10 p-0.5 border border-white/20" />
+                : <div className="w-11 h-11 rounded-full border-2 border-white/40 bg-white/20 flex items-center justify-center text-lg font-bold">{tenant?.name?.[0] ?? '?'}</div>}
+            </button>
+          )}
           <div className="flex-1 min-w-0">
-            <p className="font-bold text-sm leading-tight truncate">{tenant?.name ?? 'Staff Portal'}</p>
+            {/* ชื่อโมดูลยาว (เช่น "ยานพาหนะและเชื้อเพลิง") ตัดขึ้นบรรทัดใหม่ได้ ไม่ truncate — ชื่อ อปท. บนหน้าแรกยัง truncate เหมือนเดิม */}
+            <p data-staff-title className={`font-bold text-sm leading-tight ${mobileModuleTitle ? '' : 'truncate'}`}>{mobileModuleTitle ?? tenant?.name ?? 'Staff Portal'}</p>
             <span className="mt-1 inline-block rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest">ระบบเจ้าหน้าที่</span>
           </div>
           {/* ซ่อนบนจอ < 400px: ปุ่ม ☰ ที่เพิ่มเข้ามาแย่งที่จนชื่อ อปท. ถูกตัด (360px เหลือ 90px ต้องการ 113px)
@@ -2745,13 +2764,17 @@ export default function StaffDashboard() {
         ariaLabel="เมนูเจ้าหน้าที่" groups={visibleHomeGroups} activeKey={activeModule}
         badges={drawerBadges} onSelect={openFromDrawer} />
 
-        {/* PC header — staff themed */}
-        <header className="hidden md:block relative w-full text-white overflow-hidden"
+        {/* PC header — staff themed · ปักติดบนขณะเลื่อน (sticky ภายใน <main overflow-y-auto> ของ App) ·
+            overflow-hidden ย้ายไปอยู่ที่ชั้นพื้นหลังเท่านั้น ไม่งั้นเมนูบัญชีที่หย่อนลงมาใต้หัวจะถูกตัดทิ้ง ·
+            z-30 ต่ำกว่าหน้าต่างทับ (z-50/z-[60]) และสูงกว่าคอลัมน์ปักในตาราง (z-10) */}
+        <header ref={pcHeaderRef} data-staff-header className="hidden md:block sticky top-0 z-30 w-full text-white"
           style={{ background: 'linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-          <div className="absolute inset-0 opacity-25 pointer-events-none"
-            style={{ backgroundImage: `url("${tenant?.header_image_url || 'https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&q=80&w=1000'}")`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
-          <div className="absolute bottom-0 inset-x-0 h-12 pointer-events-none"
-            style={{ background: 'linear-gradient(to top, var(--color-primary-dark), transparent)' }} />
+          <div aria-hidden="true" className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute inset-0 opacity-25"
+              style={{ backgroundImage: `url("${tenant?.header_image_url || 'https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&q=80&w=1000'}")`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+            <div className="absolute bottom-0 inset-x-0 h-12"
+              style={{ background: 'linear-gradient(to top, var(--color-primary-dark), transparent)' }} />
+          </div>
 
           {/* Top row */}
           <div className="relative z-10 flex items-center justify-between px-6 py-3">
@@ -2767,13 +2790,19 @@ export default function StaffDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
-              <UserProfileBadge tone="onDark" />
-              <PortalSwitcher className="flex" />
-              <button onClick={handleLogout}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
-                <LogOut size={13} />
-                ออกจากระบบ
+              {/* กระดิ่งแจ้งเตือน — บนมือถือมีมานานแล้ว PC เพิ่งเพิ่ม (ตัวเลขเดียวกับ useNotifications) */}
+              <button type="button" onClick={() => navigate('/notifications')} aria-label={unreadCount > 0 ? `การแจ้งเตือน ${unreadCount} รายการใหม่` : 'การแจ้งเตือน'} data-pc-bell
+                className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 transition-colors hover:border-white/40 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70">
+                <Bell size={18} aria-hidden="true" />
+                {unreadCount > 0 && (
+                  <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
               </button>
+              <PortalSwitcher className="flex" />
+              {/* ออกจากระบบย้ายเข้าเมนูบัญชี — ปุ่มที่ออกจากทุกอุปกรณ์ไม่ควรวางเด่นให้กดพลาด */}
+              <StaffAccountMenu onLogout={handleLogout} />
             </div>
           </div>
 
@@ -2781,8 +2810,10 @@ export default function StaffDashboard() {
 
         {/* Desktop sidebar + main */}
         <div className="md:flex">
-          <aside className="hidden md:flex flex-col w-60 shrink-0 shadow-lg"
-            style={{ backgroundColor: '#1a3a5c' }}>
+          {/* เมนูซ้ายปักใต้หัวจอ: sticky + self-start (ไม่ยืดตามแถว) + ความสูง = ที่เหลือใต้หัวในตัวเลื่อน
+              nav ข้างในเลื่อนเองได้ — ความกว้าง w-60 คงเดิม พื้นที่เนื้อหาไม่เปลี่ยน (ตารางกล่องงานพึ่งความกว้างนี้) */}
+          <aside data-staff-aside className="hidden md:flex flex-col w-60 shrink-0 shadow-lg sticky self-start"
+            style={{ backgroundColor: '#1a3a5c', top: stickyBox.top ?? undefined, height: stickyBox.height ?? undefined }}>
             <nav className="flex-1 px-3 py-4 overflow-y-auto">
               <button onClick={() => setActiveModule('home')}
                 className={`mb-2 flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${activeModule === 'home' ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
@@ -2822,9 +2853,7 @@ export default function StaffDashboard() {
                 <div key={group} className="mb-3">
                   <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-widest text-white/55">{group}</p>
                   <div className="space-y-0.5">
-                    {items.length === 0 ? (
-                      <p className="px-3 py-1.5 text-[11px] italic text-white/35">ยังไม่มีเมนูงานในกองนี้</p>
-                    ) : items.map(({ key, label, Icon, externalUrl, newTab }) => {
+                    {items.map(({ key, label, Icon, externalUrl, newTab }) => {
                       const isActive = activeModule === key
                       const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
                         : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
