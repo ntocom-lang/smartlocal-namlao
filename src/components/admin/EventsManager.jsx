@@ -21,6 +21,7 @@ import {
   isPersonalEvent, isPersonalAudience, isMine, audienceMeta, audienceColor, nextAudiences, personalPayload,
   validatePersonalForm, personalQuota, maxPersonalDate, eventsForCalendarYear,
 } from '../../lib/personalEvents'
+import { canEditEvent, audienceHint, lockedDetailNote, EDIT_RULE_NOTE, EDIT_BLOCKED_NOTE } from '../../lib/eventExplain'
 
 // ปิด AI ทั้งระบบตามคำสั่งเจ้าของระบบ 2569-09-15 กันโควตา Gemini ฟรีหมด
 // Edge Function gemini-extract-event ถูกแทนด้วยตัวที่ตอบ 410 แล้ว ปุ่มจึงใช้ไม่ได้ ซ่อนไว้ไม่ให้กดแล้วเจอ error
@@ -218,6 +219,10 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting, currentUserId }) {
             {ev.creator?.full_name && (
               <p className="text-xs text-gray-400 mt-0.5">✍️ {ev.creator.full_name}</p>
             )}
+            {/* เปิดรายละเอียดไม่ได้ (onView เป็น null) — บอกเหตุผลบนจอ ไม่ใช่แค่เมาส์ชี้ เพราะมือถือไม่มีเมาส์ */}
+            {!onView && (
+              <p data-locked-note className="text-[11px] text-gray-400 mt-1">🔒 {lockedDetailNote(ev)}</p>
+            )}
             {ev.description && (
               <p className="text-xs text-gray-500 mt-1 leading-relaxed line-clamp-2">{ev.description}</p>
             )}
@@ -253,7 +258,7 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting, currentUserId }) {
   )
 }
 
-function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage, openAdd, canViewEvent, currentUserId }) {
+function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage, openAdd, canViewEvent, canEditEvt, currentUserId }) {
   const todayRef = useMemo(() => {
     const t = new Date()
     t.setHours(0, 0, 0, 0)
@@ -263,6 +268,7 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
   const [calYear, setCalYear]   = useState(todayRef.getFullYear())
   const [calMonth, setCalMonth] = useState(todayRef.getMonth())
   const [selectedDay, setSelectedDay] = useState(todayRef.getDate())
+  const [confirmDelId, setConfirmDelId] = useState(null)
 
   // รายการส่วนตัวแบบ "ทุกปี" ถูกย้ายไปวันของปีที่กำลังเปิดดู (eventsForCalendarYear) จึงต้องคำนวณใหม่เมื่อเปลี่ยนปี
   const eventMap = useMemo(() => {
@@ -498,8 +504,14 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
                         </p>
                       )}
                       <AssignmentLine ev={ev} className="mt-0.5" />
+                      {/* เปิดรายละเอียดไม่ได้ — บอกเหตุผลบนจอ (title ข้างบนเห็นเฉพาะตอนเอาเมาส์ชี้ มือถือไม่มี) */}
+                      {!canViewEvent(ev) && (
+                        <p data-locked-note className="text-[11px] text-gray-400 mt-1">🔒 {lockedDetailNote(ev)}</p>
+                      )}
                     </div>
-                    {canManage && (
+                    {/* ปุ่มแก้ไข/ลบ ขึ้นเฉพาะกิจกรรมที่แก้ได้จริง — เดิมขึ้นทุกรายการ กดแล้วฐานข้อมูลปฏิเสธเงียบๆ
+                        (ลบแล้วรายการหายจากจอทั้งที่ไม่ได้ลบ) และลบได้ทันทีไม่มีขั้นยืนยัน */}
+                    {canManage && canEditEvt(ev) && (
                       <div className="flex items-center gap-1 shrink-0 pt-0.5">
                         <button
                           type="button"
@@ -509,14 +521,33 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
                         >
                           <Pencil size={14} />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => onDelete(ev.id)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                          title="ลบ"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        {confirmDelId === ev.id ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => { onDelete(ev.id); setConfirmDelId(null) }}
+                              className="px-2 py-1 rounded-lg bg-red-500 text-white text-xs font-bold"
+                            >
+                              ลบ
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDelId(null)}
+                              className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-xs"
+                            >
+                              ยกเลิก
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDelId(ev.id)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            title="ลบ"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -553,6 +584,13 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   const [confirmDelId, setConfirmDelId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  // ข้อความผิดพลาดของการลบ (นอกฟอร์ม) — เดิมลบไม่ได้แล้วเงียบ
+  const [actionError, setActionError] = useState('')
+  const actionErrorRef = useRef(null)
+  // กดลบจากรายการวันที่เลือกในปฏิทิน ซึ่งอยู่ล่างจอ ข้อความผิดพลาดอยู่บนสุดของหน้า — เลื่อนมาให้เห็นเอง ไม่งั้นนึกว่ากดแล้วไม่เกิดอะไร
+  useEffect(() => {
+    if (actionError) actionErrorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [actionError])
   const [extracting, setExtracting] = useState(false)
   const MAX_ATTACHMENTS = 10
   const [form, setForm] = useState(EMPTY_EVENT_FORM)
@@ -921,17 +959,33 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
 
   async function handleDelete(id) {
     const ev = events.find(e => e.id === id)
+    setActionError('')
     if (isPersonalEvent(ev)) {
-      // รายการ "ทุกปี" เป็นกฎ 1 แถว ลบแล้วหายทุกปี — ถามให้ชัด เพราะปุ่มลบในมุมมองปฏิทินไม่มีขั้นยืนยัน
+      // รายการ "ทุกปี" เป็นกฎ 1 แถว ลบแล้วหายทุกปี — ถามให้ชัดอีกชั้น เพราะข้อความยืนยันทั่วไปไม่ได้บอกเรื่องนี้
       if (ev.repeat_yearly && !window.confirm(`"${ev.title}" ตั้งไว้ให้ขึ้นทุกปี\nลบแล้วจะไม่ขึ้นอีกทุกปี ต้องการลบใช่ไหม`)) return
       setDeleting(id)
       // จงใจไม่เรียก logAction — audit_logs เก็บชื่อรายการ และแอดมินเปิดดูได้
       const { error: personalError } = await deletePersonalEvent(id)
       setDeleting(null)
-      if (!personalError) setEvents((prev) => prev.filter((e) => e.id !== id))
+      if (personalError) {
+        setActionError('ลบรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+        return
+      }
+      setEvents((prev) => prev.filter((e) => e.id !== id))
       return
     }
     setDeleting(id)
+    // .select('id') เพื่อรู้ว่าลบได้จริง — RLS ที่ไม่อนุญาตจะคืน 0 แถวโดยไม่มี error
+    // เดิมถือว่าสำเร็จ รายการเลยหายจากจอทั้งที่ยังอยู่ในฐานข้อมูล (กลับมาเองตอนโหลดใหม่)
+    const { data: deleted, error } = await supabase.from('events').delete().eq('id', id).select('id')
+    if (error || !deleted?.length) {
+      setDeleting(null)
+      setActionError(error
+        ? 'ลบไม่สำเร็จ: ' + error.message
+        : 'ลบกิจกรรมนี้ไม่ได้ — ลบได้เฉพาะผู้ลงกิจกรรม หัวหน้ากองที่ดูแล หรือผู้ดูแลระบบ')
+      return
+    }
+    // บันทึกประวัติหลังลบสำเร็จเท่านั้น — เดิมบันทึกก่อนลบ จึงมีประวัติ "ลบ" ของรายการที่ไม่ได้ถูกลบจริง
     await logAction({
       action: 'delete', resourceType: 'event',
       resourceId: id,
@@ -939,11 +993,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
       municipalityId: tenant.id,
       metadata: { event_date: ev?.event_date, category: ev?.category, audiences: ev?.audiences },
     })
-    const { error } = await supabase.from('events').delete().eq('id', id)
     setDeleting(null)
-    if (!error) {
-      setEvents((prev) => prev.filter((e) => e.id !== id))
-    }
+    setEvents((prev) => prev.filter((e) => e.id !== id))
   }
 
   // ตัวกรองกลุ่มเป้าหมาย + ตัวเลือก "ของฉัน" (รายการที่จดเอง + กิจกรรมที่ตัวเองได้รับมอบหมาย ระบบรวมให้เอง)
@@ -1332,11 +1383,18 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                 {/* Actions — "มอบหมายผู้ไปแทน" ขึ้นให้ผู้บริหารด้วย แม้แก้ไขกิจกรรมไม่ได้ (เช่น ธุรการเป็นคนลง)
                     กติกาเดียวกับด่านใน RPC set_event_assignments */}
                 {(() => {
-                  const canEditHere = canManage && (['admin', 'superadmin'].includes(currentUserRole) || ev.created_by === currentUserId)
+                  const canEditHere = canManage && canEditEvent(ev, currentUserRole, currentUserId, currentUserScope)
                   const canAssignHere = canAssignEvent(ev, currentUserRole, currentUserId, currentUserScope)
-                  if (!canEditHere && !canAssignHere) return null
+                  // แก้ไม่ได้ก็บอกเหตุผล ไม่ปล่อยให้ปุ่มหายเงียบๆ
+                  const blockedNote = canManage && !canEditHere
+                  if (!canEditHere && !canAssignHere) {
+                    return blockedNote
+                      ? <p data-edit-blocked className="mt-5 pt-4 border-t border-gray-100 text-xs text-gray-400">{EDIT_BLOCKED_NOTE}</p>
+                      : null
+                  }
                   return (
-                    <div className="flex gap-2 mt-5 pt-4 border-t border-gray-100">
+                    <div className="mt-5 pt-4 border-t border-gray-100">
+                    <div className="flex gap-2">
                       {canAssignHere && (
                         <button onClick={() => setAssigningEvent(ev)}
                           className="flex-1 py-2.5 rounded-xl border border-violet-300 text-violet-700 text-sm font-bold hover:bg-violet-50 transition-colors">
@@ -1349,6 +1407,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                           แก้ไข
                         </button>
                       )}
+                    </div>
+                    {blockedNote && <p data-edit-blocked className="mt-2 text-xs text-gray-400">{EDIT_BLOCKED_NOTE}</p>}
                     </div>
                   )
                 })()}
@@ -1524,6 +1584,18 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                         </button>
                       )}
                     </div>
+                    {!isPrivateForm && !(editingEvent && isPersonalEvent(editingEvent)) && (() => {
+                      // บอกว่าติ๊กกลุ่มที่เลือกแล้วใครเห็นอะไร — เดิมคำตอบอยู่แค่ในคู่มือ ผู้ลงกิจกรรมจึงถามซ้ำ
+                      const hint = audienceHint(form.audiences)
+                      const tone = hint.tone === 'public'
+                        ? 'bg-amber-50 border border-amber-200 text-amber-800'
+                        : hint.tone === 'none' ? 'text-amber-700' : 'text-gray-500'
+                      return (
+                        <p data-audience-hint={hint.tone} className={`mt-2 text-[11px] leading-relaxed rounded-lg ${hint.tone === 'public' ? 'px-2.5 py-2 ' : ''}${tone}`}>
+                          {hint.text}
+                        </p>
+                      )
+                    })()}
                     {isPrivateForm && <PersonalFormHint quota={personalFormQuota} editing={!!editingEvent} />}
                   </div>
                 </div>
@@ -1681,6 +1753,21 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         </div>
       )}
 
+      {actionError && (
+        <div ref={actionErrorRef} role="alert" className="flex items-start justify-between gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5 mb-3">
+          <p className="text-sm text-red-600 font-medium">{actionError}</p>
+          <button type="button" onClick={() => setActionError('')} aria-label="ปิดข้อความ"
+            className="shrink-0 text-red-400 hover:text-red-600">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+      {/* บอกครั้งเดียวว่าทำไมบางรายการไม่มีปุ่มแก้ไข/ลบ — ขึ้นเฉพาะเมื่อมีรายการที่ผู้ใช้แก้ไม่ได้จริง (แอดมินไม่เห็น) */}
+      {canManage && !loading && !loadError
+        && events.some(e => !canEditEvent(e, currentUserRole, currentUserId, currentUserScope)) && (
+        <p data-edit-rule-note className="text-xs text-gray-400 mb-3">{EDIT_RULE_NOTE}</p>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-10 text-gray-400">
           <Loader2 size={24} className="animate-spin" />
@@ -1700,6 +1787,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
           events={filteredEvents}
           onSelectEvent={setViewingEvent}
           canViewEvent={(ev) => canViewEventDetail(ev, currentUserRole, currentUserId, currentUserScope)}
+          canEditEvt={(ev) => canEditEvent(ev, currentUserRole, currentUserId, currentUserScope)}
           onEdit={openEdit}
           onDelete={handleDelete}
           canManage={canManage}
@@ -1746,10 +1834,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                 {/* Mobile cards */}
                 <div className={`md:hidden space-y-2 ${activeTab === 'past' ? 'opacity-80' : ''}`}>
                   {paginatedList.map((ev) => {
-                    const isAdminManager = ['admin', 'superadmin'].includes(currentUserRole)
-                    const isDepartmentHeadForEvent = !!currentUserScope?.is_dept_head && !!currentUserScope?.department_id && ev.department_id === currentUserScope.department_id
-                    const canEditRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
-                    const canDeleteRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
+                    const canEditRow = canEditEvent(ev, currentUserRole, currentUserId, currentUserScope)
+                    const canDeleteRow = canEditRow
                     return (
                       <EventCard key={ev.id} ev={ev}
                         onEdit={canManage && canEditRow ? openEdit : null}
@@ -1787,10 +1873,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                         const relDays = ev.event_date ? daysUntil(ev.event_date) : null
                         const relDaysColor = relDays === 'วันนี้' ? '#ef4444' : relDays === 'พรุ่งนี้' ? '#f97316'
                           : relDays?.startsWith('อีก') ? '#3b82f6' : null
-                        const isAdminManager = ['admin', 'superadmin'].includes(currentUserRole)
-                        const isDepartmentHeadForEvent = !!currentUserScope?.is_dept_head && !!currentUserScope?.department_id && ev.department_id === currentUserScope.department_id
-                        const canEditRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
-                        const canDeleteRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
+                        const canEditRow = canEditEvent(ev, currentUserRole, currentUserId, currentUserScope)
+                        const canDeleteRow = canEditRow
                         const canView = canViewEventDetail(ev, currentUserRole, currentUserId, currentUserScope)
                         return (
                           // คลิกตรงไหนของแถวก็เปิดรายละเอียด แบบเดียวกับตารางคำร้อง (ComplaintsManager) ที่เจ้าหน้าที่เคยชิน
@@ -1817,6 +1901,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                                 <div className="text-left w-full">
                                   <p className="font-semibold text-gray-500 text-xs leading-snug">{ev.title}</p>
                                   {ev.description && <p className="text-[11px] text-gray-400 truncate max-w-[220px]">{ev.description}</p>}
+                                  <p data-locked-note className="text-[11px] text-gray-400 mt-0.5">🔒 {lockedDetailNote(ev)}</p>
                                 </div>
                               )}
                             </td>
@@ -1907,7 +1992,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                                     )}
                                   </div>
                                 ) : (
-                                  <span className="text-[11px] text-gray-300">—</span>
+                                  <span className="text-[11px] text-gray-300" title={EDIT_BLOCKED_NOTE}>—</span>
                                 )}
                               </td>
                             )}
