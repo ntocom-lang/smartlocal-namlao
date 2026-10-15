@@ -246,6 +246,63 @@ export function fitPaddingFor(mapRect, sheetRect, base = FIT_BASE_PADDING) {
   return padding
 }
 
+// ── ค้นหาสถานที่บนแผนที่ + ปุ่ม "ตำแหน่งของฉัน" (เฟส B ของงาน "ให้ประชาชนไม่ต้องถามเรื่องแผนที่", เจ้าของสั่ง 2569-10-15) ──
+// ค้นเฉพาะ "สถานที่" ที่เจ้าหน้าที่กรอกในศูนย์ข้อมูล (data_center_entries) ที่โหลดมาอยู่แล้ว — ไม่ยิงคำขอเพิ่ม ไม่เพิ่มงานเจ้าหน้าที่
+//  - ไม่ค้นคำร้อง/คำขอ: ชื่อของมันคือหัวเรื่องที่ประชาชนพิมพ์เอง (PDPA) · ไม่ค้นเส้นทางถนน (ไม่ใช่จุด)
+//  - ไม่ค้นกลุ่ม "ปุ่มลอยบนแผนที่" (กล้องวงจรปิดมีเป็นสิบตัวชื่อซ้ำๆ + คุมด้วยปุ่มลอยของมันเอง) — isFloat ส่งจากผู้เรียกเพราะค่าคงที่ชื่อกลุ่มอยู่ในคอมโพเนนต์
+// พิมพ์หลายคำได้ (ต้องเจอครบทุกคำ) และค้นได้ทั้งชื่อ ประเภท และกลุ่ม — พิมพ์ "วัด" แล้วขึ้นวัดทุกแห่งได้เลย (คนส่วนใหญ่ไม่รู้ชื่อเป๊ะ)
+// ลำดับ: ชื่อขึ้นต้นด้วยคำที่พิมพ์ → ชื่อมีคำนั้น → ตรงที่ประเภท/กลุ่มเท่านั้น แล้วเรียงตามชื่อแบบไทย
+const hasCoord = value => value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(Number(value))
+const searchNorm = value => String(value ?? '').normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim()
+
+export function searchPlaces(entries, query, { limit = 8, titleOf = e => e?.title ?? e?.name ?? '', isFloat = () => false } = {}) {
+  const tokens = searchNorm(query).split(' ').filter(Boolean)
+  if (tokens.length === 0 || !Array.isArray(entries)) return []
+  const scored = []
+  for (const entry of entries) {
+    if (entry?.source_table !== 'data_center_entries') continue
+    if (entry.route_points?.length >= 2 || isFloat(entry)) continue
+    // Number(null) = 0 จะผ่านเป็นพิกัด (0,0) เงียบๆ — ต้องกัน null/ว่างก่อนแปลง
+    if (!hasCoord(entry.latitude) || !hasCoord(entry.longitude)) continue
+    const title = searchNorm(titleOf(entry))
+    if (!title) continue
+    const haystack = `${title} ${searchNorm(entry.category)} ${searchNorm(entry.group_name)}`
+    if (!tokens.every(token => haystack.includes(token))) continue
+    const rank = title.startsWith(tokens[0]) && tokens.every(token => title.includes(token)) ? 0 : tokens.every(token => title.includes(token)) ? 1 : 2
+    scored.push({ entry, rank, title })
+  }
+  scored.sort((a, b) => a.rank - b.rank || a.title.localeCompare(b.title, 'th'))
+  return scored.slice(0, Math.max(0, limit)).map(item => item.entry)
+}
+
+// ระยะทางตามผิวโลก (กม.) — ใช้เช็กว่าตำแหน่งของผู้ใช้อยู่ในย่านเทศบาลไหม
+export function distanceKm(a, b) {
+  const lat1 = Number(a?.lat), lng1 = Number(a?.lng), lat2 = Number(b?.lat), lng2 = Number(b?.lng)
+  if (![lat1, lng1, lat2, lng2].every(Number.isFinite)) return Infinity
+  const rad = deg => (deg * Math.PI) / 180
+  const h = Math.sin(rad(lat2 - lat1) / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(rad(lng2 - lng1) / 2) ** 2
+  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)))
+}
+
+// ตำแหน่งของผู้ใช้ที่ห่างจากศูนย์กลางเทศบาลเกินนี้ (กม.) จะไม่เลื่อนแผนที่ตามไป — ไม่งั้นกดปุ่มจากต่างจังหวัดแล้วแผนที่หนีไปครึ่งประเทศ
+// ผู้ใช้เห็นข้อความบอกเหตุผลแทน · เทศบาลตำบลกว้างไม่เกินสิบกิโลเมตร จึงเผื่อไว้ 30
+export const LOCATE_MAX_DISTANCE_KM = 30
+
+export function geolocationErrorMessage(code) {
+  if (code === 1) return 'ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง — เปิดสิทธิ์ตำแหน่งของเบราว์เซอร์แล้วลองใหม่'
+  if (code === 3) return 'หาตำแหน่งไม่ทันเวลา — ลองใหม่อีกครั้งในที่โล่ง'
+  return 'หาตำแหน่งของคุณไม่ได้ในตอนนี้ — ลองใหม่อีกครั้ง'
+}
+
+// เลื่อนละติจูดของจุดที่จะบินไปให้ต่ำลง px พิกเซลบนหน้าจอ (ที่ระดับซูมนั้น) — มือถือมีแผงล่างทับครึ่งล่างของแผนที่
+// จุดกลางแผนที่อยู่ใต้แผง จึงต้องให้กล้องเล็งต่ำกว่าจุดเป้าหมาย จุดเป้าหมายจะได้ขึ้นมาอยู่ในส่วนบนที่ไม่ถูกบัง (กติกาเดียวกับ focusZone)
+export function latShiftForPixels(latitude, zoom, px) {
+  const lat = Number(latitude), z = Number(zoom), pixels = Number(px)
+  if (![lat, z, pixels].every(Number.isFinite) || pixels <= 0) return 0
+  const metersPerPx = (156543.03 * Math.cos((lat * Math.PI) / 180)) / 2 ** z
+  return (pixels * metersPerPx) / 111320
+}
+
 // ── ขอบเขตของ "เรื่องเฉพาะกิจ" บนแผนที่ (เจ้าของสั่ง 2569-10-15: แยกเรื่องใครเรื่องมัน + เป็นของ อปท. ที่เปิดหมวดนี้เท่านั้น) ──
 // ทุกอย่างของเรื่องเฉพาะกิจ (ตัวกรอง "เฉพาะกิจ", แผงวงรัศมี, วง/หมุดฟาร์ม, ผู้ได้รับผลกระทบ และปุ่มลอยของมัน)
 // ต้องโผล่ต่อเมื่อ (1) อปท. นี้มีหมวดคำร้องเฉพาะกิจที่ "เปิดใช้อยู่" และ (2) ผู้ใช้กดตัวกรอง "เฉพาะกิจ" อยู่

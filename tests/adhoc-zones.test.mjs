@@ -16,6 +16,7 @@ import {
   readPlaceNamesOn, writePlaceNamesOn, canShowPlaceName, PLACE_NAMES_STORAGE_KEY,
   hasAdhocCategory, adhocScope, visibleStatusOptions,
   PUBLIC_AUTO_OPEN_MAX_PINS, shouldAutoOpenCategories, fitPaddingFor, FIT_BASE_PADDING,
+  searchPlaces, distanceKm, LOCATE_MAX_DISTANCE_KM, geolocationErrorMessage, latShiftForPixels,
   isAdhocEntry, matchesStatusFilter,
 } from '../src/lib/adhocZones.js'
 
@@ -403,6 +404,78 @@ const fakeStorage = (initial = {}) => {
   const absurd = fitPaddingFor({ top: 0, bottom: 200 }, { top: 10 }) // แผนที่เตี้ยกว่าขั้นต่ำ
   assert.equal(absurd.bottom, 40, 'แผนที่เตี้ยเกินจะเผื่อ → ใช้ค่าปกติ ไม่ติดลบ')
   assert.equal(FIT_BASE_PADDING, 40, 'ต้องเท่ากับ padding ตั้งต้นของ LeafletMapCanvas ที่ผู้เรียกอื่นพึ่งอยู่')
+}
+
+// ── ค้นหาสถานที่ + ตำแหน่งของฉัน (เฟส B) ──
+{
+  const P = (title, category, group, extra = {}) => ({ source_table: 'data_center_entries', title, category, group_name: group, latitude: 17.6, longitude: 100.1, route_points: null, ...extra })
+  const rows = [
+    P('วัดบ้านนา', 'วัด', 'สถานที่สำคัญ'),
+    P('วัดดอนแก้ว', 'วัด', 'สถานที่สำคัญ'),
+    P('โรงเรียนบ้านนา', 'โรงเรียน', 'สถานศึกษา'),
+    P('ร้านข้าวแกงป้าวัด', 'ร้านอาหาร', 'สถานประกอบการ'),
+    P('ตลาดสดน้ำเลา', 'ตลาดเอกชน', 'สถานประกอบการ'),
+    P('กล้อง 1', 'กล้องวงจรปิด', 'ปุ่มลอยบนแผนที่'),
+    P('ถนนสายหลัก', 'ถนนสายหลัก', 'โครงสร้างพื้นฐาน', { route_points: [{ lat: 1, lng: 1 }, { lat: 2, lng: 2 }] }),
+    { source_table: 'complaints', title: 'กลิ่นเหม็นบ้านวัดใหม่', category: 'odor', group_name: 'คำร้อง', latitude: 17.6, longitude: 100.1 },
+    P('ที่ไม่มีพิกัด', 'วัด', 'สถานที่สำคัญ', { latitude: null }),
+  ]
+  const isFloat = e => e.group_name === 'ปุ่มลอยบนแผนที่'
+  const names = q => searchPlaces(rows, q, { isFloat }).map(e => e.title)
+
+  assert.deepEqual(names('วัดบ้านนา'), ['วัดบ้านนา'], 'ชื่อตรง')
+  assert.deepEqual(names('  วัดบ้านนา  '), ['วัดบ้านนา'], 'ช่องว่างหัวท้าย')
+  assert.deepEqual(names('วัด'), ['วัดดอนแก้ว', 'วัดบ้านนา', 'ร้านข้าวแกงป้าวัด'], 'พิมพ์ "วัด": ชื่อขึ้นต้น (เรียงตามพยัญชนะไทย ด ก่อน บ) → ชื่อมีคำ (ร้านป้าวัด) · ไม่มีคำร้อง/จุดไม่มีพิกัด')
+  assert.deepEqual(names('บ้านนา'), ['โรงเรียนบ้านนา', 'วัดบ้านนา'], 'ค้นกลางชื่อได้ (ไม่มีชื่อไหนขึ้นต้นด้วยคำนี้ → เรียงตามพยัญชนะไทย โ ก่อน ว)')
+  assert.deepEqual(names('โรงเรียน'), ['โรงเรียนบ้านนา'], 'ค้นด้วยชื่อ (ขึ้นต้น)')
+  assert.deepEqual(names('สถานศึกษา'), ['โรงเรียนบ้านนา'], 'ค้นด้วยกลุ่มได้ (ตรงที่ประเภท/กลุ่มเท่านั้น)')
+  assert.deepEqual(names('ตลาด'), ['ตลาดสดน้ำเลา'])
+  assert.deepEqual(names('วัด บ้านนา'), ['วัดบ้านนา'], 'หลายคำ ต้องเจอครบทุกคำ (คำหนึ่งตรงที่ประเภท อีกคำตรงที่ชื่อ)')
+  assert.deepEqual(names('นาวัด'), [], 'คำที่ไม่มีอยู่จริงต้องไม่ได้อะไร')
+  assert.deepEqual(names('กล้อง'), [], 'ไม่ค้นกลุ่มปุ่มลอย (กล้องวงจรปิด)')
+  assert.deepEqual(names('ถนน'), [], 'ไม่ค้นเส้นทางถนน')
+  assert.deepEqual(names('กลิ่น'), [], '⚠️ ไม่ค้นคำร้อง (ชื่อคือหัวเรื่องที่ประชาชนพิมพ์เอง — PDPA)')
+  assert.deepEqual(names('odor'), [], 'ไม่ค้นคำร้องแม้จะพิมพ์ตรงประเภท')
+  assert.deepEqual(names('ไม่มีพิกัด'), [], 'จุดที่ไม่มีพิกัดปักบนแผนที่ไม่ได้')
+  assert.deepEqual(searchPlaces([P('พิกัดว่าง', 'วัด', 'x', { latitude: '', longitude: '' }), P('พิกัดเป็นศูนย์', 'วัด', 'x', { latitude: 0, longitude: 0 })], 'พิกัด').map(e => e.title), ['พิกัดเป็นศูนย์'], 'สตริงว่างไม่ใช่พิกัด แต่ 0 เป็นตัวเลขจริง (ไม่ตัดทิ้ง)')
+  assert.deepEqual(names(''), [])
+  assert.deepEqual(names('   '), [])
+  assert.deepEqual(names(null), [])
+  assert.deepEqual(searchPlaces(null, 'วัด'), [])
+  assert.deepEqual(searchPlaces([null, undefined, {}], 'วัด'), [], 'แถวเพี้ยนต้องไม่ throw')
+  assert.equal(searchPlaces(rows, 'วัด', { limit: 1 }).length, 1, 'จำกัดจำนวนผลลัพธ์')
+  assert.deepEqual(searchPlaces(rows, 'วัด', { limit: 0 }), [])
+  assert.deepEqual(searchPlaces(rows, 'ตลาด', { titleOf: () => '' }), [], 'ไม่มีชื่อให้แสดง = ข้าม')
+  // ชื่อที่ผ่าน titleOf เป็นตัวตัดสิน (ผู้เรียกใช้ pinTitleOf ชุดเดียวกับ tooltip/การ์ด จึงไม่หลุดข้อความที่ไม่ควรหลุด)
+  assert.deepEqual(searchPlaces(rows, 'ร้านค้า', { titleOf: e => (e.title === 'ตลาดสดน้ำเลา' ? 'ร้านค้าชุมชน' : e.title), isFloat }).map(e => e.title), ['ตลาดสดน้ำเลา'])
+  assert.equal(rows.length, 9, 'ต้องไม่แก้อาร์เรย์ต้นทาง')
+
+  // distanceKm
+  assert.equal(distanceKm({ lat: 17.6, lng: 100.1 }, { lat: 17.6, lng: 100.1 }), 0)
+  const bkkToPhrae = distanceKm({ lat: 13.7563, lng: 100.5018 }, { lat: 18.1445, lng: 100.1403 })
+  assert.ok(bkkToPhrae > 480 && bkkToPhrae < 500, `กรุงเทพฯ–แพร่ ~488 กม. ได้ ${bkkToPhrae.toFixed(1)}`)
+  const oneKm = distanceKm({ lat: 17.6, lng: 100.1 }, { lat: 17.6 + 1 / 111.32, lng: 100.1 })
+  assert.ok(Math.abs(oneKm - 1) < 0.02, `ละติจูดต่างกัน 1/111.32 องศา ≈ 1 กม. ได้ ${oneKm}`)
+  assert.equal(distanceKm(null, { lat: 1, lng: 1 }), Infinity, 'ค่าเพี้ยน → ไกลสุด (ไม่เลื่อนแผนที่ตาม)')
+  assert.equal(distanceKm({ lat: 'x', lng: 1 }, { lat: 1, lng: 1 }), Infinity)
+  assert.ok(distanceKm({ lat: 17.63, lng: 100.098 }, { lat: 17.65, lng: 100.12 }) < LOCATE_MAX_DISTANCE_KM, 'ในย่านเทศบาลต้องอยู่ในเพดาน')
+  assert.ok(bkkToPhrae > LOCATE_MAX_DISTANCE_KM, 'ต่างจังหวัดต้องเกินเพดาน')
+
+  // ข้อความตอนหาตำแหน่งไม่ได้ ต้องบอกว่าทำอะไรต่อ
+  assert.match(geolocationErrorMessage(1), /เปิดสิทธิ์ตำแหน่ง/)
+  assert.match(geolocationErrorMessage(3), /ลองใหม่/)
+  assert.match(geolocationErrorMessage(2), /ลองใหม่/)
+  assert.match(geolocationErrorMessage(undefined), /ลองใหม่/)
+  assert.notEqual(geolocationErrorMessage(1), geolocationErrorMessage(3))
+
+  // latShiftForPixels: เลื่อนต่ำลงตามพิกเซล ที่ซูมสูงเลื่อนน้อยกว่า
+  const s14 = latShiftForPixels(17.6, 14, 216), s17 = latShiftForPixels(17.6, 17, 216)
+  assert.ok(s14 > 0 && s17 > 0 && s14 > s17 * 7 && s14 < s17 * 9, 'ซูม +3 = เมตรต่อพิกเซลเล็กลง 8 เท่า')
+  // ตรวจเลขจริง: ซูม 17 ที่ละติจูด 17.6 → 0.8758 ม./พิกเซล × 216 / 111320
+  assert.ok(Math.abs(s17 - (216 * (156543.03 * Math.cos((17.6 * Math.PI) / 180)) / 2 ** 17) / 111320) < 1e-12)
+  assert.equal(latShiftForPixels(17.6, 17, 0), 0, 'PC (ไม่มีแผงทับ) ไม่เลื่อน')
+  assert.equal(latShiftForPixels(17.6, 17, -5), 0)
+  assert.equal(latShiftForPixels('x', 17, 100), 0)
 }
 
 console.log('adhoc-zones: ผ่านทั้งหมด')
