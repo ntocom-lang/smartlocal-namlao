@@ -60,6 +60,7 @@
     "test:waste-schedule": "node tests/waste-schedule.test.mjs && node tests/waste-schedule-poster.test.mjs",
     "test:water-situation": "node tests/water-situation.test.mjs",
     "test:small-reservoir": "node tests/small-reservoir.test.mjs",
+    "test:water-village": "node tests/water-village.test.mjs",
     "test:pm25": "node --test tests/pm25.test.mjs",
     "test:site-open": "node --test tests/site-open-counter.test.mjs",
     "test:event-assign": "node --test tests/event-assignment.test.mjs",
