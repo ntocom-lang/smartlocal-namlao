@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 // Construction ถูกเอาออกจาก import พร้อมกับปุ่มแท็บ "โครงการ" ที่คอมเมนต์ไว้ใน SummaryPanel
 // (ตรงตามที่ commit 79f5a3c ทำกับ ClipboardList ตอนถอดเมนู) เอากลับมาพร้อมกันตอนคืนแท็บ
@@ -17,6 +17,7 @@ import AdhocZoneForm from './AdhocZoneForm'
 import {
   buildZoneOverlays, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn, readNamesOn, writeNamesOn, normalizeRadii, zoomForRadius, isAdhocEntry, matchesStatusFilter,
   readPlaceNamesOn, writePlaceNamesOn, canShowPlaceName, adhocScope, visibleStatusOptions,
+  shouldAutoOpenCategories, fitPaddingFor,
 } from '../../lib/adhocZones'
 
 function TrafficLightIcon({ size = 20, className = "" }) {
@@ -189,7 +190,7 @@ function TabCount({ value }) {
 // เนื้อหาแท็บ + การ์ดสรุป — ใช้ร่วมกันทั้งแถบขวาบน PC และแผงล่างบนมือถือ ไม่ต้องแก้ 2 ที่
 // showSourceTabs=false (ฝั่งประชาชน): ซ่อนเฉพาะปุ่ม "คำร้อง"/"โครงการ" — แถบ "ศูนย์ข้อมูลดิจิทัล" ยังต้องอยู่เสมอ
 // (เดิมซ่อนทั้งแถบไปด้วยโดยไม่ตั้งใจ ทำให้ประชาชนไม่เห็นหัวข้ออะไรเลย)
-function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs, routeCategoryKeys, showRoutes, setShowRoutes, groupIconOverrides, statusFilter, setStatusFilter, adhocAvailable = false, dceCount, complaintCount, extraTop = null }) {
+function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs, routeCategoryKeys, showRoutes, setShowRoutes, groupIconOverrides, statusFilter, setStatusFilter, adhocAvailable = false, dceCount, complaintCount, extraTop = null, emptyHint = '' }) {
   return (
     <>
       <div className="flex border-b border-gray-100 shrink-0">
@@ -257,6 +258,8 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
       {extraTop}
 
       <div className="p-3 space-y-3">
+        {/* บอกว่าต้องกดอะไร เมื่อไม่มีประเภทไหนเปิดอยู่เลย (ฝั่งประชาชน) — ไม่งั้นเห็นแผนที่ว่างเฉยๆ แล้วเข้าใจว่าไม่มีข้อมูล */}
+        {emptyHint && <p role="status" className="rounded-xl bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800">{emptyHint}</p>}
         {activeSummary.length === 0 ? (
           <p className="text-xs text-gray-300 text-center py-10">ยังไม่มีข้อมูลในหมวดนี้</p>
         ) : activeSummary.map(({ group, total, categories }) => {
@@ -345,8 +348,16 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const [activeGroups, setActiveGroups] = useState(() => initialGroup ? new Set([initialGroup]) : null) // null = เปิดไว้ทั้งหมดตั้งแต่แรก (หัวข้อหลัก เช่น คำร้อง/โครงการ)
   // หัวข้อรอง (ประเภทย่อยในการ์ด) เริ่มต้นปิดไว้ก่อน (Set ว่าง) ต้องกดเปิดเองทีละประเภท — ยกเว้นกระโดดมาจาก
   // ปุ่ม "ดูบนแผนที่" ที่ต้องเปิดประเภทเป้าหมายให้เห็นหมุดทันที ไม่งั้นกดมาแล้วแผนที่จะว่างเปล่า
-  const [activeCategories, setActiveCategories] = useState(() =>
-    initialGroup && initialCategory ? new Set([`${initialGroup}::${initialCategory}`]) : new Set())
+  // userCategories = ที่ผู้ใช้ (หรือปุ่ม "ดูบนแผนที่") เลือกแล้ว · null = ยังไม่แตะ ใช้ค่าตั้งต้นที่คำนวณจากข้อมูลแทน
+  // (หน้าประชาชนที่หมุดไม่มาก เปิดทุกประเภทให้เอง — ดู shouldAutoOpenCategories) · แยกแบบนี้เพราะค่าตั้งต้นรู้ได้หลังโหลดข้อมูลเสร็จ
+  // ถ้าเก็บเป็น state เดียวต้องไปเติมใน useEffect ซึ่งชน lint rule react-hooks/set-state-in-effect ของโปรเจกต์
+  const [userCategories, setUserCategories] = useState(() =>
+    initialGroup && initialCategory ? new Set([`${initialGroup}::${initialCategory}`]) : null)
+  const mapAreaRef = useRef(null) // กรอบแผนที่ + แผงล่างมือถือ — ใช้วัดว่าแผงทับแผนที่เท่าไรตอน fit
+  const sheetRef = useRef(null)
+  // รูปทรงหน้าเปลี่ยนหลัง fit ครั้งแรก (แถบสถิติหัวหน้าโหลดทีหลังดันกรอบลง ~60px → แผงล่างทับแผนที่ต่างจากตอน fit) → นับขึ้น 1 ให้แผนที่ fit ใหม่
+  // สร้างใน effect ด้านล่าง · state ถูกตั้งใน callback ของ ResizeObserver ไม่ใช่ใน effect ตรงๆ จึงไม่ชน lint rule set-state-in-effect
+  const [layoutTick, setLayoutTick] = useState(0)
   const [activeTab, setActiveTab] = useState('dce') // 'dce' | 'complaints' | 'projects'
   // แผงสรุปแบบ bottom sheet บนมือถือ — เริ่มกางไว้ก่อน กดย่อ/ปิดได้ (ไม่มีผลกับ PC ที่ใช้แถบขวาแทน)
   const [sheetExpanded, setSheetExpanded] = useState(true)
@@ -396,6 +407,19 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const affectedApi = useAdhocAffected({
     zoneIds: openZoneIds, enabled: affectedOn && zonesApi.canManage && adhocMode, session: affectedSession,
   })
+
+  // หน้าประชาชน: ถ้ากรอบพ่อของแผนที่เปลี่ยนขนาดหลังโหลด (หัวหน้าโหลดสถิติเสร็จ/แถบเบราว์เซอร์บนมือถือหด) ให้แผนที่ fit ใหม่ — ดู refitSignal ใน LeafletMapCanvas
+  useEffect(() => {
+    const el = mapAreaRef.current
+    if (allowStatusFilter || !el || typeof ResizeObserver === 'undefined') return undefined
+    let initial = true
+    const observer = new ResizeObserver(() => {
+      if (initial) { initial = false; return } // ครั้งแรกถูกเรียกทันทีตอนเริ่มสังเกต ยังไม่ใช่การเปลี่ยนขนาด
+      setLayoutTick(n => n + 1)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [allowStatusFilter])
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -500,6 +524,17 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     return next
   })
   const groups = Array.from(new Set(entries.map(e => e.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
+  // ประเภทสถานที่ที่เปิดอยู่ตอนนี้ = ที่ผู้ใช้เลือกไว้ ถ้ายังไม่เคยเลือกใช้ค่าตั้งต้น: หน้าประชาชนที่หมุดไม่มาก = เปิดทุกประเภท (เหตุผลที่ adhocZones.js)
+  // นับเฉพาะหมุดจริง ไม่รวมเส้นทางถนน (มีปุ่มของตัวเอง) และกลุ่มปุ่มลอย (กล้อง ฯลฯ มีปุ่มลอยของตัวเอง)
+  const placeCategoryKeys = entries
+    .filter(e => !(e.route_points?.length >= 2) && !isFloatGroup(e.group_name))
+    .map(e => categoryKey(e, resolveCategoryLabel))
+  const autoOpenCategories = shouldAutoOpenCategories({
+    isPublic: !allowStatusFilter,
+    hasFocus: Boolean(initialGroup) || (Number.isFinite(focusLat) && Number.isFinite(focusLng)),
+    pinCount: placeCategoryKeys.length,
+  })
+  const activeCategories = userCategories ?? (autoOpenCategories ? new Set(placeCategoryKeys) : new Set())
   const visible = entries.filter(e => {
     if (e.route_points?.length >= 2) {
       if (!showRoutes) return false
@@ -650,11 +685,33 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     },
   ].filter(Boolean)
 
-  const fallbackCenter = tenant?.latitude && tenant?.longitude ? { lat: Number(tenant.latitude), lng: Number(tenant.longitude) } : { lat: 13.7563, lng: 100.5018 }
   // มีพิกัดจุดโฟกัส (มาจากปุ่ม "ดูบนแผนที่") ใช้ pan กล้องไปจุดนั้นแทนศูนย์กลางเทศบาลเดิม พร้อมซูมเข้าใกล้ขึ้น
   const hasFocusPoint = Number.isFinite(focusLat) && Number.isFinite(focusLng)
-  const mapCenter = hasFocusPoint ? { lat: focusLat, lng: focusLng } : fallbackCenter
+  // ⚠️ ต้อง memo: LeafletMapCanvas ดู prop center ด้วย "ตัวตนของอ็อบเจ็กต์" (effect [center]) แล้วสั่ง panTo กลับศูนย์กลางเทศบาลเมื่อกล้องห่างเกิน ~30 ม.
+  // เดิมสร้างอ็อบเจ็กต์ใหม่ทุก render → ทุกการ render ใหม่ของหน้านี้ (กดประเภท กดหมุด เปิดแผง) ดึงกล้องกลับศูนย์กลางเอง ทับที่ผู้ใช้ลากไว้
+  // และทับ fit ที่เพิ่งทำ (หมุดเลยกลับไปจมใต้แผงล่างบนมือถือ — ศูนย์กลางเทศบาลอยู่ใต้แผงพอดี) · ได้ค่าเดิมเมื่อพิกัดไม่เปลี่ยน
+  const tenantLat = tenant?.latitude
+  const tenantLng = tenant?.longitude
+  const mapCenter = useMemo(() => {
+    if (hasFocusPoint) return { lat: focusLat, lng: focusLng }
+    return tenantLat && tenantLng
+      ? { lat: Number(tenantLat), lng: Number(tenantLng) }
+      : { lat: 13.7563, lng: 100.5018 }
+  }, [hasFocusPoint, focusLat, focusLng, tenantLat, tenantLng])
   const mapZoom = hasFocusPoint ? 17 : 13
+  // แผงล่างบนมือถือลอยทับแผนที่ — วัดตอนจะ fit จริง (ไม่ใช่ตอน render) เพราะความสูงแผงเปลี่ยนตามการย่อ/ขยายและขนาดจอ
+  // บน PC แผงนี้ซ่อน (display: none → ไม่มี client rects) จึงได้ระยะเผื่อปกติ
+  const getFitPadding = () => {
+    const sheet = sheetRef.current
+    const sheetRect = sheet && sheet.getClientRects().length ? sheet.getBoundingClientRect() : null
+    // ใช้กรอบของตัวแผนที่เอง (.leaflet-container สูง 70vh) ไม่ใช่กรอบพ่อ — แผงล่างยึดก้นกรอบพ่อซึ่งยาวกว่าแผนที่ (วัดจริง: 641 กับ 560px)
+    // ถ้าใช้กรอบพ่อจะเผื่อเกินจริงราว 80px แล้วหมุดถูกบีบเข้ามุมบน
+    const mapEl = mapAreaRef.current?.querySelector('.leaflet-container')
+    return fitPaddingFor(mapEl?.getBoundingClientRect() ?? null, sheetRect)
+  }
+  // หน้าประชาชนที่ไม่มีประเภทไหนเปิดอยู่ (อปท. ที่หมุดเยอะเกินเพดานเปิดเอง หรือผู้ใช้ปิดหมด) ต้องบอกว่าต้องกดอะไร ไม่งั้นเห็นแผนที่ว่างเฉยๆ
+  const emptyHint = !allowStatusFilter && placeCategoryKeys.length > 0 && !placeCategoryKeys.some(k => activeCategories.has(k))
+    ? 'แตะชื่อประเภทด้านล่างเพื่อดูหมุดบนแผนที่' : ''
 
   // แถบขวา: แยก 3 แท็บตามแหล่งข้อมูล — ศูนย์ข้อมูลดิจิทัล (กรอกเอง) / คำร้อง / โครงการ แยกกันคนละแถบ
   const dceEntries = entries.filter(e => e.source_table === 'data_center_entries')
@@ -709,8 +766,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
       return
     }
     const allOn = keysInGroup.every(k => activeCategories.has(k))
-    setActiveCategories(prev => {
-      const next = new Set(prev)
+    setUserCategories(prev => {
+      const next = new Set(prev ?? activeCategories) // ยังไม่เคยเลือก = เริ่มจากค่าตั้งต้นที่ผู้ใช้เห็นอยู่ตอนกด
       keysInGroup.forEach(k => { if (allOn) next.delete(k); else next.add(k) })
       return next
     })
@@ -756,8 +813,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     : null
 
   function toggleCategory(key) {
-    setActiveCategories(prev => {
-      const next = new Set(prev)
+    setUserCategories(prev => {
+      const next = new Set(prev ?? activeCategories)
       next.has(key) ? next.delete(key) : next.add(key)
       return next
     })
@@ -770,7 +827,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
 
       {/* PC: แผนที่ฝั่งซ้าย + แถบข้อมูลฝั่งขวา (ตาม layout เทศบาลนครนนทบุรี) / มือถือ: แผนที่เต็มจอ + แผงสรุปลอยด้านล่าง */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
-        <div className="flex-1 min-w-0 min-h-0 relative">
+        <div ref={mapAreaRef} className="flex-1 min-w-0 min-h-0 relative">
           {loading ? (
             <div className="w-full h-full flex items-center justify-center py-20">
               <Loader2 size={28} className="animate-spin text-gray-300" />
@@ -782,6 +839,13 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               mapTypeId="hybrid"
               boundaryGeoJson={boundaryGeoJson}
               className="w-full h-full min-h-[70vh]"
+              // หน้าประชาชน: ซูมให้พอดีกับหมุดที่เปิดอยู่ทุกครั้งที่ชุดหมุดเปลี่ยน และเผื่อพื้นที่ใต้แผงล่างบนมือถือ — ไม่งั้นหมุดจมใต้แผง
+              // (วัดบน namlao มือถือ: เปิดครบ 17 หมุด เห็นจริง 6) · หน้าเจ้าหน้าที่ไม่ fit (เคยชินกับกล้องที่ตัวเองวางไว้ + มีวงรัศมี)
+              // และตอนกระโดดมาจากปุ่ม "ดูบนแผนที่" ต้องคงซูมที่ตั้งใจไว้ (ซูม 17 ที่หมุดเดียว)
+              fitBounds={!allowStatusFilter && !hasFocusPoint}
+              fitPadding={getFitPadding}
+              refitSignal={layoutTick}
+              fitAnimate={false}
               circles={zoneOverlays.circles}
               flyTo={zoneFocus}
               markers={[...visible.filter(e => !(e.route_points?.length >= 2)).map(e => {
@@ -864,27 +928,32 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               ขวาบนถูกแถบสลับ แผนที่/ดาวเทียม ของ GoogleMapCanvas จองไว้ ตอนนี้ย้ายมาใช้
               LeafletMapCanvas แล้ว ไม่มีแถบนั้น และปุ่มซูมของ Leaflet อยู่ bottomright มุมขวาบนจึงว่าง */}
           {mapButtons.length > 0 && (
-            <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
+            <div className={`absolute right-3 top-3 z-20 flex items-center gap-2 ${allowStatusFilter ? '' : 'max-w-[calc(100%-1.5rem)] flex-wrap justify-end'}`}>
               {mapButtons.map(({ id, label, Icon, icon, on, toggle, onColor = '#1e88c7' }) => (
                 // group/relative: ให้ป้ายชื่อโผล่ใต้ปุ่มตอน hover/โฟกัสด้วยคีย์บอร์ด — ใช้ป้ายในหน้าเว็บเอง
                 // ไม่ใช้ title ของเบราว์เซอร์ เพราะมันขึ้นช้า หน้าตาแล้วแต่ OS และแตะบนมือถือไม่ขึ้นเลย
                 <div key={id} className="relative group">
                   <button type="button" aria-label={`${on ? 'ซ่อน' : 'แสดง'}${label}`} aria-pressed={on}
                     onClick={toggle}
-                    className="w-10 h-10 rounded-full shadow-md border flex items-center justify-center transition-all active:scale-95"
+                    className={`h-10 rounded-full shadow-md border flex items-center justify-center transition-all active:scale-95 ${allowStatusFilter ? 'w-10' : 'gap-1.5 px-3 text-xs font-semibold'}`}
                     style={on
                       ? { backgroundColor: onColor, borderColor: onColor, color: '#ffffff' }
                       : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: onColor }}>
                     {/* เส้นทางถนนใช้ไอคอน SVG ในโค้ด ส่วนปุ่มจากกลุ่ม "ปุ่มลอยบนแผนที่" ใช้ไอคอนที่
                         แอดมินตั้งให้ประเภทย่อยนั้น ซึ่งเป็นได้ทั้งอิโมจิและรูปแนบ (CategoryIcon จัดการให้) */}
                     {Icon ? <Icon size={20} /> : <span className="text-xl leading-none"><CategoryIcon value={icon} alt="" /></span>}
+                    {/* ประชาชนเห็นชื่อปุ่มเป็นข้อความถาวร — ไอคอนล้วน (เช่นรูปไฟจราจร = เส้นทางถนน) ไม่มีใครรู้ว่าคืออะไร และป้ายตอน hover
+                        ไม่มีบนมือถือ · ฝั่งเจ้าหน้าที่ยังเป็นไอคอนล้วนเหมือนเดิม (เคยชิน + ปุ่มมีหลายตัว) */}
+                    {!allowStatusFilter && <span className="whitespace-nowrap">{label}</span>}
                   </button>
                   {/* ป้ายชื่อยึดขอบขวาของปุ่ม (ตามชุดปุ่มที่ย้ายมาอยู่มุมขวาบน) — ถ้ายังยึดซ้ายอยู่
                       ป้ายของปุ่มขวาสุดจะยื่นทะลุขอบแผนที่ออกไป อ่านไม่ครบ */}
-                  <span aria-hidden="true"
-                    className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-gray-800/90 px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                    {label}
-                  </span>
+                  {allowStatusFilter && (
+                    <span aria-hidden="true"
+                      className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-gray-800/90 px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                      {label}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -1030,7 +1099,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               ผูกกับกรอบแผนที่ ไม่ใช่ fixed กับจอ กันชนกับแถบเมนูล่างของแดชบอร์ดเจ้าหน้าที่ตอนฝังในหน้านั้น */}
           {/* วาง bottom sheet เหนือ Google Maps และ controls เพื่อให้แตะใช้งานได้เสมอ */}
           {(groups.length > 0 || zonesPanelVisible) && (
-            <div className="lg:hidden absolute bottom-0 left-0 right-0 z-1001 bg-white rounded-t-2xl overflow-hidden flex flex-col"
+            <div ref={sheetRef} className="lg:hidden absolute bottom-0 left-0 right-0 z-1001 bg-white rounded-t-2xl overflow-hidden flex flex-col"
               style={{ boxShadow: '0 -6px 24px rgba(0,0,0,0.18)', maxHeight: sheetExpanded ? '55%' : 'auto' }}>
               <button onClick={() => setSheetExpanded(v => !v)} aria-label={sheetExpanded ? 'ย่อแผงสรุป' : 'ขยายแผงสรุป'}
                 className="w-full flex justify-center pt-2 pb-1 shrink-0">
@@ -1056,7 +1125,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                     routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes}
                     groupIconOverrides={groupIconOverrides}
                     statusFilter={statusFilter} setStatusFilter={changeStatusFilter} adhocAvailable={adhocAvailable}
-                    dceCount={dceEntries.length} complaintCount={complaintEntries.length} extraTop={zonesPanel} />
+                    dceCount={dceEntries.length} complaintCount={complaintEntries.length} extraTop={zonesPanel} emptyHint={emptyHint} />
                 </div>
               )}
             </div>
@@ -1076,7 +1145,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
             routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes}
             groupIconOverrides={groupIconOverrides}
             statusFilter={statusFilter} setStatusFilter={changeStatusFilter} adhocAvailable={adhocAvailable}
-            dceCount={dceEntries.length} complaintCount={complaintEntries.length} extraTop={zonesPanel} />
+            dceCount={dceEntries.length} complaintCount={complaintEntries.length} extraTop={zonesPanel} emptyHint={emptyHint} />
           </div>
         </aside>
       </div>

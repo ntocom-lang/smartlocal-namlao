@@ -15,6 +15,7 @@ import {
   readNamesOn, writeNamesOn, HIDDEN_STORAGE_KEY, LAYER_STORAGE_KEY, NAMES_STORAGE_KEY,
   readPlaceNamesOn, writePlaceNamesOn, canShowPlaceName, PLACE_NAMES_STORAGE_KEY,
   hasAdhocCategory, adhocScope, visibleStatusOptions,
+  PUBLIC_AUTO_OPEN_MAX_PINS, shouldAutoOpenCategories, fitPaddingFor, FIT_BASE_PADDING,
   isAdhocEntry, matchesStatusFilter,
 } from '../src/lib/adhocZones.js'
 
@@ -370,6 +371,38 @@ const fakeStorage = (initial = {}) => {
   assert.deepEqual(visibleStatusOptions(options, false).map(o => o.value), ['completed', 'in_progress', 'all'])
   assert.deepEqual(visibleStatusOptions(null, true), [])
   assert.equal(options.length, 4, 'ต้องไม่แก้อาร์เรย์เดิม (ค่าคงที่ของคอมโพเนนต์)')
+}
+
+// ── หน้าแรกของแผนที่ประชาชน: เปิดทุกประเภทให้เอง + fit ไม่ให้หมุดจมใต้แผงล่าง (เจ้าของสั่ง 2569-10-15) ──
+{
+  const base = { isPublic: true, hasFocus: false, pinCount: 20 }
+  assert.equal(shouldAutoOpenCategories(base), true, 'ประชาชน + หมุดไม่มาก (namlao 20) → เปิดเอง')
+  assert.equal(shouldAutoOpenCategories({ ...base, pinCount: PUBLIC_AUTO_OPEN_MAX_PINS }), true, 'เท่าเพดานพอดียังเปิด')
+  assert.equal(shouldAutoOpenCategories({ ...base, pinCount: PUBLIC_AUTO_OPEN_MAX_PINS + 1 }), false, 'เกินเพดาน → เริ่มปิดเหมือนเดิม (กันรก)')
+  assert.equal(shouldAutoOpenCategories({ ...base, isPublic: false }), false, 'หน้าเจ้าหน้าที่ไม่ใช้กฎนี้ (ต้องคงหน้าตาเริ่มต้น โดยเฉพาะโหมดเฉพาะกิจ)')
+  assert.equal(shouldAutoOpenCategories({ ...base, hasFocus: true }), false, 'มาจากปุ่ม "ดูบนแผนที่" ต้องเปิดเฉพาะประเภทเป้าหมาย ห้ามเปิดทุกประเภทแทน')
+  assert.equal(shouldAutoOpenCategories({ ...base, pinCount: 0 }), false, 'ไม่มีหมุดเลย ไม่มีอะไรให้เปิด')
+  assert.equal(shouldAutoOpenCategories({ ...base, pinCount: undefined }), false)
+  assert.equal(shouldAutoOpenCategories({ ...base, pinCount: 'abc' }), false)
+  assert.equal(shouldAutoOpenCategories({ isPublic: true, pinCount: 5 }), true, 'ไม่ส่ง hasFocus = ไม่มีโฟกัส')
+  assert.equal(shouldAutoOpenCategories({ ...base, pinCount: 100, max: 200 }), true, 'ปรับเพดานได้ทางพารามิเตอร์')
+
+  // fitPaddingFor: เผื่อเฉพาะส่วนที่แผงล่างทับแผนที่จริง
+  const map = { top: 159, bottom: 800 } // มือถือ 390×800 ที่วัดจาก namlao
+  assert.deepEqual(fitPaddingFor(map, null), { top: 40, right: 40, bottom: 40, left: 40 }, 'ไม่มีแผง (จอ PC) = เหมือนเดิมทุกประการ')
+  assert.deepEqual(fitPaddingFor(null, { top: 447 }), { top: 40, right: 40, bottom: 40, left: 40 })
+  assert.deepEqual(fitPaddingFor(map, { top: 447 }), { top: 40, right: 40, bottom: 40 + 353, left: 40 }, 'แผงทับ 353px → เผื่อใต้เท่านั้น')
+  assert.equal(fitPaddingFor(map, { top: 900 }).bottom, 40, 'แผงอยู่ใต้แผนที่ ไม่ทับ → ไม่เผื่อ')
+  assert.equal(fitPaddingFor(map, { top: 800 }).bottom, 40, 'ชิดขอบล่างพอดี (ทับ 0) → ไม่เผื่อ')
+  assert.equal(fitPaddingFor(map, { top: Number.NaN }).bottom, 40, 'ค่าเพี้ยนต้องไม่ทำให้ padding เป็น NaN (Leaflet จะ fit พัง)')
+  // จอเตี้ยมาก: เผื่อเต็มแล้วไม่เหลือที่ให้ซูม → ต้องจำกัด ให้พื้นที่ที่เห็นอย่างน้อย 140px
+  const short = { top: 159, bottom: 640 } // 360×640
+  const tight = fitPaddingFor(short, { top: 375 }) // ทับ 265 · ความสูงแผนที่ 481
+  assert.equal(tight.bottom, 40 + (481 - 140 - 80), 'เผื่อได้ไม่เกิน ความสูง − 140 − ขอบสองด้าน')
+  assert.ok(481 - tight.top - tight.bottom >= 140, 'พื้นที่ที่เหลือสำหรับ fit ต้อง ≥ 140px')
+  const absurd = fitPaddingFor({ top: 0, bottom: 200 }, { top: 10 }) // แผนที่เตี้ยกว่าขั้นต่ำ
+  assert.equal(absurd.bottom, 40, 'แผนที่เตี้ยเกินจะเผื่อ → ใช้ค่าปกติ ไม่ติดลบ')
+  assert.equal(FIT_BASE_PADDING, 40, 'ต้องเท่ากับ padding ตั้งต้นของ LeafletMapCanvas ที่ผู้เรียกอื่นพึ่งอยู่')
 }
 
 console.log('adhoc-zones: ผ่านทั้งหมด')

@@ -215,6 +215,37 @@ export function canShowPlaceName(entry, isFloat) {
   return !isFloat
 }
 
+// ── หน้าแรกของแผนที่ฝั่งประชาชน (เจ้าของสั่ง 2569-10-15: ทำให้ประชาชนไม่ต้องถามว่า "หมุดอยู่ไหน") ──
+// ปัญหาจริงที่วัดบน namlao มือถือ: เปิดมาหมุด 0 อัน (ทุกประเภทเริ่มปิด) และพอเปิดครบ 17 หมุดจมใต้แผงล่างถึง 11 อัน
+// (แผงล่างกิน ~55% ของจอและศูนย์กลางแผนที่ = ศูนย์กลางเทศบาลอยู่ใต้แผงพอดี)
+//
+// เปิดทุกประเภทให้เองเฉพาะ "หน้าประชาชน" และเฉพาะเมื่อหมุดสถานที่ไม่มากจนรก — อปท. ที่ข้อมูลเยอะกว่าเพดานนี้ยังเริ่มปิดเหมือนเดิม
+// (ไปใช้ข้อความชี้ให้กดประเภทแทน) · หน้าเจ้าหน้าที่ไม่ใช้กฎนี้ (เคยชินกับของเดิม + โหมดเฉพาะกิจต้องคงหน้าตาเริ่มต้นไว้)
+// เพดาน 60: ตอนวัด namlao 20 · thungkaew 14 · demo 5 — ค่านี้ไม่ใช่ข้อกำหนด ปรับได้ที่เดียวตรงนี้
+export const PUBLIC_AUTO_OPEN_MAX_PINS = 60
+
+// hasFocus = กระโดดมาจากปุ่ม "ดูบนแผนที่" ซึ่งต้องเปิดเฉพาะประเภทเป้าหมาย (ห้ามเปิดทุกประเภทแทน)
+export function shouldAutoOpenCategories({ isPublic, hasFocus, pinCount, max = PUBLIC_AUTO_OPEN_MAX_PINS }) {
+  return Boolean(isPublic) && !hasFocus && Number(pinCount) > 0 && Number(pinCount) <= max
+}
+
+// ระยะเผื่อของ fitBounds บนแผนที่ที่มีแผงลอยบังด้านล่าง (px) — base เท่าเดิมของ LeafletMapCanvas (40)
+// sheetRect = กรอบแผงล่างตอนนี้ (null ถ้าไม่มี/ซ่อนอยู่ เช่นจอ PC) · เผื่อเฉพาะส่วนที่แผงทับแผนที่จริง
+// และกันไม่ให้พื้นที่ที่เหลือมองเห็นต่ำกว่า MIN_VISIBLE (จอเตี้ยมากๆ ถ้าเผื่อเต็มจะไม่เหลือที่ให้ซูม)
+export const FIT_BASE_PADDING = 40
+const FIT_MIN_VISIBLE_HEIGHT = 140
+
+export function fitPaddingFor(mapRect, sheetRect, base = FIT_BASE_PADDING) {
+  const padding = { top: base, right: base, bottom: base, left: base }
+  if (!mapRect || !sheetRect) return padding
+  const mapHeight = Number(mapRect.bottom) - Number(mapRect.top)
+  const covered = Number(mapRect.bottom) - Number(sheetRect.top)
+  if (!Number.isFinite(mapHeight) || !Number.isFinite(covered) || covered <= 0) return padding
+  const maxInset = Math.max(0, mapHeight - FIT_MIN_VISIBLE_HEIGHT - base * 2)
+  padding.bottom = base + Math.round(Math.min(covered, maxInset))
+  return padding
+}
+
 // ── ขอบเขตของ "เรื่องเฉพาะกิจ" บนแผนที่ (เจ้าของสั่ง 2569-10-15: แยกเรื่องใครเรื่องมัน + เป็นของ อปท. ที่เปิดหมวดนี้เท่านั้น) ──
 // ทุกอย่างของเรื่องเฉพาะกิจ (ตัวกรอง "เฉพาะกิจ", แผงวงรัศมี, วง/หมุดฟาร์ม, ผู้ได้รับผลกระทบ และปุ่มลอยของมัน)
 // ต้องโผล่ต่อเมื่อ (1) อปท. นี้มีหมวดคำร้องเฉพาะกิจที่ "เปิดใช้อยู่" และ (2) ผู้ใช้กดตัวกรอง "เฉพาะกิจ" อยู่
