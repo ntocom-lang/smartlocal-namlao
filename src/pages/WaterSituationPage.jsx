@@ -10,7 +10,6 @@ import './WaterSituationPage.css'
 import WaterSituationShare from './WaterSituationShare'
 import ReservoirGauge from '../components/water/ReservoirGauge'
 import SmallReservoirSection from '../components/water/SmallReservoirSection'
-import MyVillageCard from '../components/water/MyVillageCard'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
@@ -172,8 +171,6 @@ export default function WaterSituationPage() {
             <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} />
             <AlertBanner rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings}
               homeAmphoe={tenant?.district} now={checkedAt} tenantName={tenant?.name} />
-            {/* ส่วนนี้ซ่อนเองถ้า อปท. ยังไม่ได้ตั้งค่าหมู่ (RPC คืนว่าง) · ใช้ข้อมูลระดับ อปท. ไม่ผูกกับโหมดแชร์ ?scope= เพื่อให้สถานะหมู่ไม่เปลี่ยนตามลิงก์ที่เข้ามา */}
-            <MyVillageCard stations={scopedData?.stations ?? []} warnings={scopedData?.warnings ?? []} now={checkedAt} />
             <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
             <nav className="water-section-nav" aria-label="หมวดข้อมูลน้ำ–ฝน">
               {rain.length > 0 && <a href="#water-rain"><CloudRain size={18} /><span>ฝน</span><small>{rain.length} สถานี</small></a>}
