@@ -215,6 +215,25 @@ export function canShowPlaceName(entry, isFloat) {
   return !isFloat
 }
 
+// ── ขอบเขตของ "เรื่องเฉพาะกิจ" บนแผนที่ (เจ้าของสั่ง 2569-10-15: แยกเรื่องใครเรื่องมัน + เป็นของ อปท. ที่เปิดหมวดนี้เท่านั้น) ──
+// ทุกอย่างของเรื่องเฉพาะกิจ (ตัวกรอง "เฉพาะกิจ", แผงวงรัศมี, วง/หมุดฟาร์ม, ผู้ได้รับผลกระทบ และปุ่มลอยของมัน)
+// ต้องโผล่ต่อเมื่อ (1) อปท. นี้มีหมวดคำร้องเฉพาะกิจที่ "เปิดใช้อยู่" และ (2) ผู้ใช้กดตัวกรอง "เฉพาะกิจ" อยู่
+// ข้อ (1) อ่านจากข้อมูลหมวด ไม่ผูกชื่อ อปท. ในโค้ด — อปท. ไหนเปิดหมวดกลิ่นเมื่อไรก็ได้ของครบทันทีโดยไม่ต้องแก้โค้ด
+// categoryMeta = แผนที่ value → แถวหมวด (โหลดเฉพาะหมวดที่ is_active) ที่ DataCenterMapView ถืออยู่
+export function hasAdhocCategory(categoryMeta) {
+  return Object.values(categoryMeta ?? {}).some(category => category?.is_adhoc === true)
+}
+
+export function adhocScope(statusFilter, categoryMeta) {
+  const available = hasAdhocCategory(categoryMeta)
+  return { available, active: available && statusFilter === 'adhoc' }
+}
+
+// ตัวเลือกของตัวกรองสถานะ — ซ่อนชิป "เฉพาะกิจ" ใน อปท. ที่ไม่มีหมวดนี้ (กดแล้วไม่มีอะไรให้ดู มีแต่ทำให้งง)
+export function visibleStatusOptions(options, adhocAvailable) {
+  return (Array.isArray(options) ? options : []).filter(option => adhocAvailable || option?.value !== 'adhoc')
+}
+
 // ── ตัวกรองสถานะของแผนที่ศูนย์ข้อมูล (ย้ายมาจาก DataCenterMapView.jsx เพื่อให้เทสต์ล็อกกฎได้) ─────────────
 // สถานะจริงในตาราง complaints ใช้ทั้ง 'closed' และ 'done' แทนความหมาย "เสร็จสิ้น"
 export const COMPLETED_COMPLAINT_STATUSES = ['closed', 'done']

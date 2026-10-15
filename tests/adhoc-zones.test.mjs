@@ -14,6 +14,7 @@ import {
   validZoneCoords, zoomForRadius, buildZoneOverlays, indexCounts, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn,
   readNamesOn, writeNamesOn, HIDDEN_STORAGE_KEY, LAYER_STORAGE_KEY, NAMES_STORAGE_KEY,
   readPlaceNamesOn, writePlaceNamesOn, canShowPlaceName, PLACE_NAMES_STORAGE_KEY,
+  hasAdhocCategory, adhocScope, visibleStatusOptions,
   isAdhocEntry, matchesStatusFilter,
 } from '../src/lib/adhocZones.js'
 
@@ -337,6 +338,38 @@ const fakeStorage = (initial = {}) => {
   assert.equal(isAdhocEntry(null, meta), false)
   assert.equal(isAdhocEntry(row.adhoc, null), false, 'ยังโหลดหมวดไม่เสร็จต้องไม่ throw')
   assert.equal(isAdhocEntry(row.adhoc, undefined), false)
+}
+
+// ── ขอบเขตเรื่องเฉพาะกิจ (เจ้าของสั่ง 2569-10-15: เป็นของ อปท. ที่เปิดหมวดนี้เท่านั้น + โผล่เฉพาะตอนกดตัวกรอง "เฉพาะกิจ") ──
+{
+  // รูปข้อมูลจริงที่ DataCenterMapView โหลด: complaint_categories เฉพาะแถว is_active (value → แถว)
+  const namlao = { odor: { value: 'odor', is_adhoc: true }, trash: { value: 'trash', is_adhoc: false }, road: { value: 'road' } }
+  const noAdhoc = { trash: { value: 'trash', is_adhoc: false }, road: { value: 'road' } } // เช่น tamnaktham/thungkaew ที่ปิดหมวดกลิ่นไว้ (แถว is_active=false ไม่ถูกโหลดมา)
+
+  assert.equal(hasAdhocCategory(namlao), true)
+  assert.equal(hasAdhocCategory(noAdhoc), false, 'อปท. ที่ไม่มีหมวดเฉพาะกิจเปิดอยู่ต้องไม่ได้ของเรื่องนี้')
+  assert.equal(hasAdhocCategory({}), false, 'ยังโหลดหมวดไม่เสร็จ → ยังไม่โผล่ (ไม่กะพริบเข้ามาแล้วหาย)')
+  assert.equal(hasAdhocCategory(null), false)
+  assert.equal(hasAdhocCategory(undefined), false)
+  assert.equal(hasAdhocCategory({ odor: null }), false, 'แถวว่างต้องไม่ throw')
+  assert.equal(hasAdhocCategory({ odor: { is_adhoc: 'true' } }), false, 'ต้องเป็น boolean จริงเท่านั้น ไม่เดาจากสตริง')
+
+  // active = มีหมวด "และ" กดตัวกรองเฉพาะกิจอยู่ — ครบทั้ง 4 ตัวกรอง × 2 แบบ อปท.
+  for (const mode of ['completed', 'in_progress', 'all']) {
+    assert.deepEqual(adhocScope(mode, namlao), { available: true, active: false }, `โหมด ${mode} ต้องไม่มีของเรื่องเฉพาะกิจปน แม้ อปท. จะมีหมวดนี้`)
+    assert.deepEqual(adhocScope(mode, noAdhoc), { available: false, active: false })
+  }
+  assert.deepEqual(adhocScope('adhoc', namlao), { available: true, active: true })
+  assert.deepEqual(adhocScope('adhoc', noAdhoc), { available: false, active: false },
+    'อปท. ที่ไม่มีหมวด ต่อให้ state ค้างเป็น adhoc ก็ต้องไม่เปิดโหมด (กันของเรื่องนี้หลุดไป อปท. อื่น)')
+  assert.deepEqual(adhocScope('adhoc', {}), { available: false, active: false })
+
+  // ชิปตัวกรอง: ซ่อน "เฉพาะกิจ" เมื่อไม่มีหมวด · ตัวอื่นครบและเรียงเดิม
+  const options = [{ value: 'completed' }, { value: 'in_progress' }, { value: 'adhoc' }, { value: 'all' }]
+  assert.deepEqual(visibleStatusOptions(options, true).map(o => o.value), ['completed', 'in_progress', 'adhoc', 'all'])
+  assert.deepEqual(visibleStatusOptions(options, false).map(o => o.value), ['completed', 'in_progress', 'all'])
+  assert.deepEqual(visibleStatusOptions(null, true), [])
+  assert.equal(options.length, 4, 'ต้องไม่แก้อาร์เรย์เดิม (ค่าคงที่ของคอมโพเนนต์)')
 }
 
 console.log('adhoc-zones: ผ่านทั้งหมด')
