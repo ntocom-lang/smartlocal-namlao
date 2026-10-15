@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 // Construction ถูกเอาออกจาก import พร้อมกับปุ่มแท็บ "โครงการ" ที่คอมเมนต์ไว้ใน SummaryPanel
 // (ตรงตามที่ commit 79f5a3c ทำกับ ClipboardList ตอนถอดเมนู) เอากลับมาพร้อมกันตอนคืนแท็บ
-import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation, Target, Tag, Tags } from 'lucide-react'
+import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation, Target, Tag, Tags, Users } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import LeafletMapCanvas from '../common/LeafletMapCanvas'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, isIconImage } from '../../lib/dataCenterGroupIcon'
@@ -16,7 +16,7 @@ import { buildAffectedMarkers } from '../../lib/adhocAffected'
 import AdhocZoneForm from './AdhocZoneForm'
 import {
   buildZoneOverlays, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn, readNamesOn, writeNamesOn, normalizeRadii, zoomForRadius, isAdhocEntry, matchesStatusFilter,
-  readPlaceNamesOn, writePlaceNamesOn, canShowPlaceName,
+  readPlaceNamesOn, writePlaceNamesOn, canShowPlaceName, adhocScope, visibleStatusOptions,
 } from '../../lib/adhocZones'
 
 function TrafficLightIcon({ size = 20, className = "" }) {
@@ -189,7 +189,7 @@ function TabCount({ value }) {
 // เนื้อหาแท็บ + การ์ดสรุป — ใช้ร่วมกันทั้งแถบขวาบน PC และแผงล่างบนมือถือ ไม่ต้องแก้ 2 ที่
 // showSourceTabs=false (ฝั่งประชาชน): ซ่อนเฉพาะปุ่ม "คำร้อง"/"โครงการ" — แถบ "ศูนย์ข้อมูลดิจิทัล" ยังต้องอยู่เสมอ
 // (เดิมซ่อนทั้งแถบไปด้วยโดยไม่ตั้งใจ ทำให้ประชาชนไม่เห็นหัวข้ออะไรเลย)
-function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs, routeCategoryKeys, showRoutes, setShowRoutes, groupIconOverrides, statusFilter, setStatusFilter, dceCount, complaintCount, extraTop = null }) {
+function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs, routeCategoryKeys, showRoutes, setShowRoutes, groupIconOverrides, statusFilter, setStatusFilter, adhocAvailable = false, dceCount, complaintCount, extraTop = null }) {
   return (
     <>
       <div className="flex border-b border-gray-100 shrink-0">
@@ -239,7 +239,8 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
       {showSourceTabs && activeTab === 'complaints' && (
         <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border-b border-gray-100 shrink-0">
           <span className="text-[11px] font-bold text-gray-400 pr-0.5">สถานะ</span>
-          {STATUS_FILTER_OPTIONS.map(opt => {
+          {/* ชิป "เฉพาะกิจ" โผล่เฉพาะ อปท. ที่เปิดหมวดคำร้องเฉพาะกิจอยู่ (ดู adhocScope ใน adhocZones.js) */}
+          {visibleStatusOptions(STATUS_FILTER_OPTIONS, adhocAvailable).map(opt => {
             const on = statusFilter === opt.value
             return (
               <button key={opt.value} onClick={() => setStatusFilter(opt.value)}
@@ -352,6 +353,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   // ฝั่งประชาชนไม่มีปุ่มเลือก บังคับ 'completed' เสมอ — ฝั่งเจ้าหน้าที่เลือกเปลี่ยนได้ผ่าน allowStatusFilter
   const [statusFilter, setStatusFilter] = useState('completed')
   const effectiveStatusFilter = allowStatusFilter ? statusFilter : 'completed'
+  // เรื่องเฉพาะกิจ (วงรัศมี/ฟาร์ม/ผู้ได้รับผลกระทบ + ปุ่มลอยของมัน) แยกเป็นของตัวเอง โผล่เฉพาะตอนกดตัวกรอง "เฉพาะกิจ"
+  // และเฉพาะ อปท. ที่เปิดหมวดนี้อยู่ (เจ้าของสั่ง 2569-10-15) · adhocAvailable = มีหมวดเปิดอยู่ · adhocMode = กำลังดูโหมดนี้
+  const { available: adhocAvailable, active: adhocMode } = adhocScope(effectiveStatusFilter, complaintCategoryMeta)
   // ปุ่มลอยเปิด/ปิดเส้นทาง (ถนน) ทั้งหมดพร้อมกัน — ไม่ต้องไปติ๊กทีละประเภทในแถบขวา
   const [showRoutes, setShowRoutes] = useState(false)
   // ประเภทย่อยในกลุ่ม "ปุ่มลอยบนแผนที่" ที่ผู้ใช้กดปิด — เก็บเป็นชุด "ที่ปิด" ไม่ใช่ "ที่เปิด" เพราะปุ่มลอย
@@ -368,7 +372,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   // ── วงรัศมีเรื่องเฉพาะกิจ (ฝั่งเจ้าหน้าที่เท่านั้น — allowStatusFilter=false จะไม่ยิงอะไรเลย) ──
   // สิทธิ์ตัดสินที่ DB (RLS) ฝั่งนี้แค่ซ่อน/โชว์ปุ่ม · สวิตช์เปิด-ปิดเป็นค่าส่วนตัวในเบราว์เซอร์ ไม่กระทบคนอื่น
   // (ต่างจาก "ปิดเรื่อง" ที่เก็บใน DB แล้วซ่อนให้ทุกคน) เก็บ "ที่ปิด" ไม่ใช่ "ที่เปิด" ให้เรื่อง/วงใหม่ขึ้นเอง
-  const zonesApi = useAdhocZones({ tenantId: tenant?.id, enabled: allowStatusFilter })
+  // อปท. ที่ไม่มีหมวดเฉพาะกิจเปิดอยู่ไม่ต้องยิงคำขอวงรัศมีเลย (ได้ผลเท่ากับไม่มีอะไรให้ดู แต่ไม่เสียคำขอเปล่า 3 ครั้งต่อการเปิดหน้า)
+  const zonesApi = useAdhocZones({ tenantId: tenant?.id, enabled: allowStatusFilter && adhocAvailable })
   const [zoneLayerOn, setZoneLayerOn] = useState(() => readLayerOn(globalThis.localStorage))
   // ป้ายชื่อฟาร์มที่แสดงค้างข้างหมุดจุดต้นทาง — จำค่าในเครื่องนี้ (ส่วนตัว) ค่าเริ่มต้น = เปิด
   const [zoneNamesOn, setZoneNamesOn] = useState(() => readNamesOn(globalThis.localStorage))
@@ -389,7 +394,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const [affectedForm, setAffectedForm] = useState(null) // null | { zone, point } — point=null คือเพิ่มใหม่
   const openZoneIds = zonesApi.zones.filter(z => z.is_active).map(z => z.id)
   const affectedApi = useAdhocAffected({
-    zoneIds: openZoneIds, enabled: affectedOn && zonesApi.canManage, session: affectedSession,
+    zoneIds: openZoneIds, enabled: affectedOn && zonesApi.canManage && adhocMode, session: affectedSession,
   })
 
   useEffect(() => {
@@ -488,7 +493,6 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     ? (complaintCategoryMeta[e.category]?.emoji || markerEmoji(e, groupIconOverrides))
     : markerEmoji(e, groupIconOverrides)
   const entries = allRows.filter(e => matchesStatusFilter(e, effectiveStatusFilter, complaintCategoryMeta))
-  const adhocMode = effectiveStatusFilter === 'adhoc'
   const floatShown = key => (adhocMode ? adhocFloatOn.has(key) : !floatOff.has(key))
   const toggleFloat = key => (adhocMode ? setAdhocFloatOn : setFloatOff)(prev => {
     const next = new Set(prev)
@@ -526,18 +530,19 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const floatSummary = buildGroupSummary(
     entries.filter(e => isFloatGroup(e.group_name)), resolveCategoryLabel, resolveMarkerIcon,
   )
+  // วง/หมุดฟาร์ม/ผู้ได้รับผลกระทบ วาดเฉพาะในโหมด "เฉพาะกิจ" — โหมดอื่นแผนที่ต้องไม่มีของเรื่องนี้ปนเลย (เจ้าของสั่ง 2569-10-15)
   const zoneOverlays = useMemo(
-    () => buildZoneOverlays(zonesApi.zones, { layerOn: zoneLayerOn, hidden: hiddenZoneKeys }),
-    [zonesApi.zones, zoneLayerOn, hiddenZoneKeys],
+    () => buildZoneOverlays(zonesApi.zones, { layerOn: zoneLayerOn && adhocMode, hidden: hiddenZoneKeys }),
+    [zonesApi.zones, zoneLayerOn, adhocMode, hiddenZoneKeys],
   )
   const hasOpenZones = zonesApi.zones.some(z => z.is_active)
-  const selectedZone = zonesApi.zones.find(z => z.id === selectedZoneId && z.is_active) ?? null
+  const selectedZone = adhocMode ? (zonesApi.zones.find(z => z.id === selectedZoneId && z.is_active) ?? null) : null
   const affectedMarkers = useMemo(
-    () => buildAffectedMarkers(affectedApi.points, zonesApi.zones, { layerOn: affectedOn && zonesApi.canManage, hidden: hiddenZoneKeys }),
-    [affectedApi.points, zonesApi.zones, affectedOn, zonesApi.canManage, hiddenZoneKeys],
+    () => buildAffectedMarkers(affectedApi.points, zonesApi.zones, { layerOn: affectedOn && zonesApi.canManage && adhocMode, hidden: hiddenZoneKeys }),
+    [affectedApi.points, zonesApi.zones, affectedOn, zonesApi.canManage, adhocMode, hiddenZoneKeys],
   )
   const selectedAffected = affectedMarkers.find(m => m.point.id === selectedAffectedId) ?? null
-  const zonesPanelVisible = allowStatusFilter && (zonesApi.zones.length > 0 || zonesApi.canManage)
+  const zonesPanelVisible = allowStatusFilter && adhocMode && (zonesApi.zones.length > 0 || zonesApi.canManage)
   // สถานที่ในศูนย์ข้อมูลที่ใช้เป็นจุดต้นทางได้ — มาจากหมุดที่โหลดอยู่แล้ว ไม่ต้องยิงคำขอเพิ่ม (ไม่รวมเส้นทางถนน)
   const zoneSourceEntries = allRows
     .filter(r => r.source_table === 'data_center_entries' && !(r.route_points?.length >= 2))
@@ -548,6 +553,15 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     setAffectedOn(next)
     if (next) setAffectedSession(n => n + 1) // เปิดใหม่ทุกครั้ง = ดึงใหม่ + มีรอย "เปิดดู" ใน audit log
     else setSelectedAffectedId(null)
+  }
+  // ออกจากโหมด "เฉพาะกิจ" = เลิกดูเรื่องนี้ ต้องปิดชั้นผู้ได้รับผลกระทบด้วย (ไม่ให้ค้าง "เปิด" โดยไม่มีใครเห็น แล้วกลับเข้าโหมดมาเป็นดึงเงียบๆ
+  // ไม่มีรอย "เปิดดู" ใหม่ใน audit) และปิดการ์ดของวง/ผู้ได้รับผลกระทบที่เปิดค้างอยู่
+  function changeStatusFilter(value) {
+    setStatusFilter(value)
+    if (value !== 'adhoc') {
+      setAffectedLayer(false)
+      setSelectedZoneId(null)
+    }
   }
   async function saveAffected(values, id) {
     const result = await affectedApi.save(values, id)
@@ -611,12 +625,20 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     })),
     // ท้ายสุดของแถวโดยตั้งใจ — tests/map-click.playwright.mjs กด "ปุ่มแรก" ของ .absolute.right-3.top-3 เพื่อปิดเลเยอร์ CCTV
     // ถ้าปุ่มนี้อยู่ต้นแถว พอ อปท. ใดสร้างวงรัศมี เทสต์นั้นจะกดผิดปุ่มแล้วรายงานผลผิด · ปุ่มเดิมจึงต้องอยู่ตำแหน่งเดิมทุกตัว
-    hasOpenZones && {
+    // ปุ่มของเรื่องเฉพาะกิจทั้ง 3 (วงรัศมี / ผู้ได้รับผลกระทบ / ชื่อฟาร์ม) โผล่เฉพาะตอนกดตัวกรอง "เฉพาะกิจ" (adhocMode) —
+    // โหมดอื่นต้องไม่มีปุ่มของเรื่องนี้ปนเลย · ที่เดียวกับแผงในแถบข้างจึงคุมชั้นเดียวกัน (สถานะร่วมกัน ไม่ใช่ปุ่มซ้ำที่แยกสถานะ)
+    adhocMode && hasOpenZones && {
       id: 'adhoc-zones', label: 'วงรัศมีเรื่องเฉพาะกิจ', Icon: Target,
       on: zoneLayerOn, toggle: toggleZoneLayer,
     },
+    // ผู้ได้รับผลกระทบ (พิกัดบุคคล) — เฉพาะผู้ที่จัดการได้ · สีม่วงตรงกับหมุดและแผงของมัน ป้ายบอกตรงๆ ว่าเปิดดูแล้วมี audit
+    // (การเปิดทุกครั้งดึงใหม่จากเซิร์ฟเวอร์และถูกบันทึก — ดู setAffectedLayer) · ไม่ผูกกับชั้นวงรัศมี เปิด/ปิดแยกกันได้เหมือนในแผง
+    adhocMode && hasOpenZones && zonesApi.canManage && {
+      id: 'adhoc-affected', label: 'ผู้ได้รับผลกระทบ (เปิดดูมีบันทึก audit)', Icon: Users,
+      on: affectedOn, toggle: () => setAffectedLayer(!affectedOn), onColor: '#7c3aed',
+    },
     // ปุ่มชื่อฟาร์มอยู่ถัดจากปุ่มวงรัศมีและโผล่เฉพาะตอนชั้นวงรัศมีเปิดอยู่ — ถ้าชั้นปิดไม่มีหมุดให้ติดป้าย กดแล้วไม่เกิดอะไร
-    hasOpenZones && zoneLayerOn && {
+    adhocMode && hasOpenZones && zoneLayerOn && {
       id: 'adhoc-zone-names', label: 'ชื่อฟาร์ม', Icon: Tag,
       on: zoneNamesOn, toggle: toggleZoneNames,
     },
@@ -843,7 +865,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               LeafletMapCanvas แล้ว ไม่มีแถบนั้น และปุ่มซูมของ Leaflet อยู่ bottomright มุมขวาบนจึงว่าง */}
           {mapButtons.length > 0 && (
             <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
-              {mapButtons.map(({ id, label, Icon, icon, on, toggle }) => (
+              {mapButtons.map(({ id, label, Icon, icon, on, toggle, onColor = '#1e88c7' }) => (
                 // group/relative: ให้ป้ายชื่อโผล่ใต้ปุ่มตอน hover/โฟกัสด้วยคีย์บอร์ด — ใช้ป้ายในหน้าเว็บเอง
                 // ไม่ใช้ title ของเบราว์เซอร์ เพราะมันขึ้นช้า หน้าตาแล้วแต่ OS และแตะบนมือถือไม่ขึ้นเลย
                 <div key={id} className="relative group">
@@ -851,8 +873,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                     onClick={toggle}
                     className="w-10 h-10 rounded-full shadow-md border flex items-center justify-center transition-all active:scale-95"
                     style={on
-                      ? { backgroundColor: '#1e88c7', borderColor: '#1e88c7', color: '#ffffff' }
-                      : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: '#1e88c7' }}>
+                      ? { backgroundColor: onColor, borderColor: onColor, color: '#ffffff' }
+                      : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: onColor }}>
                     {/* เส้นทางถนนใช้ไอคอน SVG ในโค้ด ส่วนปุ่มจากกลุ่ม "ปุ่มลอยบนแผนที่" ใช้ไอคอนที่
                         แอดมินตั้งให้ประเภทย่อยนั้น ซึ่งเป็นได้ทั้งอิโมจิและรูปแนบ (CategoryIcon จัดการให้) */}
                     {Icon ? <Icon size={20} /> : <span className="text-xl leading-none"><CategoryIcon value={icon} alt="" /></span>}
@@ -1033,7 +1055,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                     activeCategories={activeCategories} toggleCategory={toggleCategory} showSourceTabs={allowStatusFilter}
                     routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes}
                     groupIconOverrides={groupIconOverrides}
-                    statusFilter={statusFilter} setStatusFilter={setStatusFilter}
+                    statusFilter={statusFilter} setStatusFilter={changeStatusFilter} adhocAvailable={adhocAvailable}
                     dceCount={dceEntries.length} complaintCount={complaintEntries.length} extraTop={zonesPanel} />
                 </div>
               )}
@@ -1053,7 +1075,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
             activeCategories={activeCategories} toggleCategory={toggleCategory} showSourceTabs={allowStatusFilter}
             routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes}
             groupIconOverrides={groupIconOverrides}
-            statusFilter={statusFilter} setStatusFilter={setStatusFilter}
+            statusFilter={statusFilter} setStatusFilter={changeStatusFilter} adhocAvailable={adhocAvailable}
             dceCount={dceEntries.length} complaintCount={complaintEntries.length} extraTop={zonesPanel} />
           </div>
         </aside>
