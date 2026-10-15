@@ -8,6 +8,8 @@ import {
 } from 'lucide-react'
 import './WaterSituationPage.css'
 import WaterSituationShare from './WaterSituationShare'
+import ReservoirGauge from '../components/water/ReservoirGauge'
+import SmallReservoirSection from '../components/water/SmallReservoirSection'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
@@ -189,6 +191,9 @@ export default function WaterSituationPage() {
                 </div>
               )}
             </div>
+            {/* อ่างขนาดเล็กจากผังน้ำออนไลน์แพร่ — ไม่พึ่งฐานข้อมูล/RPC ข้างบน (ดึงผ่าน Worker เอง) จึงอยู่นอกเงื่อนไข dams.length
+                ทุ่งแค้วไม่มีอ่างขนาดกลางในรัศมี 15 กม. แต่มีห้วยยอย/ห้วยปุยในผังน้ำตำบล */}
+            <SmallReservoirSection slug={tenant?.slug} tenantName={tenant?.name} now={checkedAt} />
             <SourceNote tenantName={tenant?.name} />
 
           </>
@@ -962,23 +967,5 @@ function WaterLandscape() {
       <path d="M377 121V97L392 111V142M407 142V116L422 130V165" stroke="#7edac6" strokeWidth="5" strokeLinecap="round" />
       <path d="M62 195V159M48 177L62 153L76 177Z" fill="#62c6b1" stroke="#62c6b1" strokeWidth="3" strokeLinejoin="round" />
     </svg>
-  )
-}
-
-function ReservoirGauge({ percent, color }) {
-  const id = useId()
-  const fill = barPercent(percent, 100)
-  return (
-    <div className="water-gauge" role="img" aria-label={`น้ำในอ่าง ${formatMm(percent)}% ของความจุที่ระดับเก็บกัก`}>
-      <svg viewBox="0 0 112 112" aria-hidden="true">
-        <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop stopColor="#e0f2fe" /><stop offset="1" stopColor="#bae6fd" /></linearGradient></defs>
-        <circle cx="56" cy="56" r="42" fill={`url(#${id})`} />
-        <circle cx="56" cy="56" r="49" fill="none" stroke="#e2e8f0" strokeWidth="6" />
-        <circle cx="56" cy="56" r="49" fill="none" stroke={color} strokeWidth="6" pathLength="100"
-          strokeDasharray={`${fill} 100`} transform="rotate(-90 56 56)" />
-        <path d="M25 76Q40 69 56 76T87 76" stroke="#38bdf8" strokeWidth="2" fill="none" />
-      </svg>
-      <strong>{formatMm(percent)}<small>%</small></strong>
-    </div>
   )
 }
