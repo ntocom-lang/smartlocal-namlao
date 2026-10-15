@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -47,6 +47,17 @@ export default function LeafletMapCanvas({
   flyTo = null,
   boundaryGeoJson = null,
   fitBounds = false,
+  // ระยะเผื่อของ fitBounds เป็น px: อ็อบเจ็กต์ { top, right, bottom, left } หรือฟังก์ชันที่คืนอ็อบเจ็กต์นั้น (เรียกตอนจะ fit จริง
+  // ให้วัดแผงที่ลอยทับแผนที่ ณ ตอนนั้นได้) · ไม่ส่ง = 40 รอบด้านเหมือนเดิมทุกประการ — ผู้เรียกอื่นไม่ต้องแก้อะไร
+  fitPadding = null,
+  // ตัวเลขที่ผู้เรียกเพิ่มเมื่อ "รูปทรงหน้าเปลี่ยนหลัง fit" (เช่น หัวหน้าโหลดสถิติเสร็จแล้วดันแผนที่ลง ~60px จนแผงลอยทับหมุดต่างจากตอน fit)
+  // → fit ใหม่ให้ เฉพาะตอนที่ผู้ใช้ยังไม่ได้แตะแผนที่เอง (ลาก/ซูม/กด) · ผู้เรียกวัดรูปทรงเอง เพราะรู้ว่าอะไรลอยทับแผนที่
+  // ไม่ส่ง/0 = ไม่แตะอะไรเลย ผู้เรียกอื่นที่ใช้ fitBounds อยู่ (โครงการ/กลิ่น/เส้นทาง) ทำงานเหมือนเดิม
+  refitSignal = 0,
+  // false = fit แบบกระโดดทันที ไม่มีอนิเมชัน · ต้องใช้คู่กับ refitSignal: Leaflet ทิ้งคำสั่งเลื่อน/ซูมที่มาระหว่างอนิเมชันซูมกำลังวิ่งอยู่
+  // เงียบๆ (และตอนอนิเมชันจบยังลากกล้องไปจุดของคำสั่งแรกทับ) fit ครั้งแรกกับ fit ใหม่ตอนรูปทรงหน้าเปลี่ยนห่างกันไม่กี่ร้อยมิลลิวินาที
+  // จึงชนกัน — วัดจริง: ได้ผลเลื่อนไปมาแล้วแต่จังหวะ ไม่ส่ง = อนิเมชันเหมือนเดิม
+  fitAnimate = true,
   onMapClick,
   onMapRightClick,
   onFeatureClick,
@@ -66,6 +77,10 @@ export default function LeafletMapCanvas({
   const geojsonLayerRef = useRef(null)
   const callbacksRef = useRef({ onMapClick, onMapRightClick, onFeatureClick, onFeatureRightClick, onPolylineRightClick, onMarkerDragEnd, onMapReady })
   const lastFitSignatureRef = useRef('')
+  const fitPaddingRef = useRef(fitPadding)
+  const fitInputRef = useRef({ markers, polylines })
+  const fitAnimateRef = useRef(fitAnimate)
+  const fitTouchedRef = useRef(false) // ผู้ใช้แตะแผนที่เองแล้วหลัง fit ครั้งล่าสุด → ห้าม fit ทับตอนกรอบเปลี่ยนขนาด
   const fallbackLayersRef = useRef([])
   const [loading, setLoading] = useState(true)
   // derive จาก prop ตรงๆ ไม่เก็บเป็น state ซ้ำ — ไม่มีปุ่มสลับในตัว component แล้ว
@@ -103,6 +118,14 @@ export default function LeafletMapCanvas({
   useEffect(() => {
     callbacksRef.current = { onMapClick, onMapRightClick, onFeatureClick, onFeatureRightClick, onPolylineRightClick, onMarkerDragEnd, onMapReady }
   }, [onMapClick, onMapRightClick, onFeatureClick, onFeatureRightClick, onPolylineRightClick, onMarkerDragEnd, onMapReady])
+
+  // ต้องอยู่ก่อน effect "Fit Bounds" ด้านล่าง (effect รันตามลำดับที่เขียน) — fitPadding เป็นฟังก์ชันใหม่ทุกครั้งที่ผู้เรียก render
+  // จึงเก็บใน ref แทนการใส่ใน dependency ไม่งั้นทุก render จะดึงให้ effect fit รันซ้ำ
+  useEffect(() => {
+    fitPaddingRef.current = fitPadding
+    fitAnimateRef.current = fitAnimate
+    fitInputRef.current = { markers, polylines }
+  })
 
   // 1. Initialize Map and Tile Layers
   useEffect(() => {
@@ -430,23 +453,50 @@ export default function LeafletMapCanvas({
     })
   }, [circles])
 
-  // 6. Fit Bounds
-  useEffect(() => {
+  // 6. Fit Bounds — อ่านหมุด/เส้นจาก fitInputRef (อัปเดตทุก render โดย effect ด้านบน) เพื่อให้ effect refitSignal ด้านล่างเรียกซ้ำได้
+  // ด้วยข้อมูลล่าสุดโดยไม่ต้องผูกกับ props · force = ข้ามการเทียบ signature (กรอบเปลี่ยนขนาดแต่หมุดชุดเดิม)
+  const runFit = useCallback(force => {
     const map = mapRef.current
-    if (!map || !fitBounds) return
-
+    if (!map) return
+    const { markers: fitMarkers, polylines: fitPolylines } = fitInputRef.current
     const points = [
-      ...markers.map(m => m.position),
-      ...polylines.flatMap(l => l.path || []),
+      ...fitMarkers.map(m => m.position),
+      ...fitPolylines.flatMap(l => l.path || []),
     ].filter(isPoint)
 
     const signature = points.map(p => `${Number(p.lat).toFixed(5)},${Number(p.lng).toFixed(5)}`).join('|')
-    if (points.length && signature !== lastFitSignatureRef.current) {
+    if (points.length && (force || signature !== lastFitSignatureRef.current)) {
       const bounds = L.latLngBounds(points.map(p => [Number(p.lat), Number(p.lng)]))
-      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 })
+      const wanted = typeof fitPaddingRef.current === 'function' ? fitPaddingRef.current() : fitPaddingRef.current
+      const pad = { top: 40, right: 40, bottom: 40, left: 40, ...(wanted || {}) }
+      map.fitBounds(bounds, { paddingTopLeft: [pad.left, pad.top], paddingBottomRight: [pad.right, pad.bottom], maxZoom: 16, ...(fitAnimateRef.current ? {} : { animate: false }) })
       lastFitSignatureRef.current = signature
+      fitTouchedRef.current = false
     }
-  }, [markers, polylines, fitBounds])
+  }, [])
+
+  useEffect(() => {
+    if (!fitBounds) return
+    runFit(false)
+  }, [markers, polylines, fitBounds, runFit])
+
+  // 6b. fit ใหม่เมื่อผู้เรียกบอกว่ารูปทรงหน้าเปลี่ยน (refitSignal) — ยกเว้นผู้ใช้แตะแผนที่เองไปแล้ว ห้ามดึงกล้องกลับ
+  // เคสจริง: หน้าแผนที่ประชาชน fit ตอนข้อมูลมาถึง แต่แถบสถิติหัวหน้าโหลดทีหลังดันแผนที่ลง ~60px หมุดเลยเลื่อนไปชิดแผงล่าง
+  // (ขนาดของ Leaflet container ไม่เปลี่ยน — มันสูง 70vh ตายตัว — ResizeObserver ที่ตัวแผนที่เองจึงจับไม่ได้ ต้องให้ผู้เรียกบอก)
+  useEffect(() => {
+    const el = containerRef.current
+    if (!fitBounds || !el) return undefined
+    const markTouched = () => { fitTouchedRef.current = true }
+    const touchEvents = ['pointerdown', 'wheel', 'keydown']
+    touchEvents.forEach(name => el.addEventListener(name, markTouched, { passive: true }))
+    return () => touchEvents.forEach(name => el.removeEventListener(name, markTouched))
+  }, [fitBounds])
+
+  useEffect(() => {
+    if (!fitBounds || !refitSignal || fitTouchedRef.current) return
+    mapRef.current?.invalidateSize({ animate: false })
+    runFit(true)
+  }, [refitSignal, fitBounds, runFit])
 
   // 7. Render Boundary GeoJSON
   useEffect(() => {
