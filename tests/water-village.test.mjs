@@ -7,7 +7,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { buildAlerts } from '../src/lib/waterSituation.js'
 import {
   LINKABLE_TYPES, VILLAGE_NEARBY_KM, VILLAGE_STATUSES,
-  bankTextCm, levelTrendText, loadChosenMoo, rankStations, resolveLinks, saveChosenMoo, stationDistance,
+  bankTextCm, hasAreaAlert, levelTrendText, loadChosenMoo, rankStations, resolveLinks, saveChosenMoo, stationDistance,
   stationIsFresh, suggestStations, villageFacts, villageStatus, villageTitle,
 } from '../src/lib/waterVillage.js'
 
@@ -87,6 +87,7 @@ const statusOf = (stations, linked = stations, warnings = []) =>
   assert.equal(s.status, 'ok')
   assert.equal(s.label, 'ค่าที่วัดได้ปกติ')
   assert.deepEqual(s.stale, [])
+  assert.equal(s.reason, 'ทุกสถานีที่เลือกมีค่าใหม่ และยังไม่ถึงเกณฑ์เฝ้าระวัง')
 
   // ฝนหนัก (35–90 มม.) ไม่ดันสถานะ · อ่าง "น้ำมาก" (80–100%) ไม่ดันสถานะ
   assert.equal(statusOf([rain('R1', 35.1), level('L1', 2.1)]).status, 'ok')
@@ -202,6 +203,18 @@ const statusOf = (stations, linked = stations, warnings = []) =>
   assert.ok(highCount > 30 && highCount < 470, `ชุดสุ่มต้องครอบทั้งกรณีเตือนและไม่เตือน (ได้ ${highCount})`)
 }
 
+// ── เรื่องเตือนระดับพื้นที่ (แถบบนสุด) ที่ไม่เกี่ยวกับสถานีของหมู่ ──
+{
+  const overDam = dam('D9', 100.6)
+  const myRain = rain('R1', 0)
+  assert.equal(hasAreaAlert({ stations: [myRain, overDam], now }), true, 'อ่างเกิน 100% อยู่ที่ไหนในพื้นที่ก็นับ')
+  assert.equal(statusOf([myRain, overDam], [myRain]).status, 'ok', 'แต่หมู่ที่ไม่ได้ผูกอ่างนั้นยังเป็น "ปกติ" — การ์ดต้องบอกให้ดูแถบเตือนด้านบนเอง')
+  assert.equal(hasAreaAlert({ stations: [myRain, level('L1', 2)], now }), false)
+  assert.equal(hasAreaAlert({ stations: [myRain], warnings: [{ issued_at: ago(1), message: 'x' }], now }), true)
+  assert.equal(hasAreaAlert({ stations: [level('L1', -0.1, 5)], now }), false, 'สถานีที่ค้างไม่นับ')
+  assert.equal(hasAreaAlert({ stations: null, now }), false)
+}
+
 // ── ข้อเท็จจริงรายสถานีบนการ์ด ──
 {
   const village = { moo_no: 5, latitude: 18.31, longitude: 100.14, stations: [] }
@@ -291,6 +304,8 @@ const statusOf = (stations, linked = stations, warnings = []) =>
 
 assert.deepEqual(Object.keys(VILLAGE_STATUSES), ['ok', 'nodata', 'watch', 'high'])
 assert.deepEqual(Object.values(VILLAGE_STATUSES).map(s => s.label), ['ค่าที่วัดได้ปกติ', 'ข้อมูลไม่พอ', 'เฝ้าระวัง', 'ระวังสูง'])
+assert.equal(new Set(Object.values(VILLAGE_STATUSES).map(s => s.glyph)).size, 4, 'ทุกสถานะต้องมีรูปทรงไม่ซ้ำ ไม่พึ่งสีอย่างเดียว')
+for (const s of Object.values(VILLAGE_STATUSES)) assert.ok(s.glyph && s.chip, `${s.key} ต้องมีรูปทรงและสี`)
 
 // ── migration 3 ไฟล์: สิทธิ์ ข้อจำกัด และการไม่ทับของเดิม ──
 {

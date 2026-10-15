@@ -20,11 +20,12 @@ export const VILLAGE_NEARBY_KM = 5
 // ชนิดสถานีที่ผูกกับหมู่ได้ (ตรงกับ CHECK ของ water_village_stations) — สถานีเตือนภัย 'ews' ติดมากับสถานีฝนรหัสเดียวกัน
 export const LINKABLE_TYPES = ['rain', 'waterlevel', 'dam']
 
+// glyph = รูปทรงนำหน้าป้าย (● ○ ▲ ◆) ให้แยกสถานะได้โดยไม่พึ่งสีอย่างเดียว · chip = คลาสสีของป้าย ใช้ร่วมหน้าตั้งค่ากับการ์ดประชาชน
 export const VILLAGE_STATUSES = {
-  ok: { key: 'ok', label: 'ค่าที่วัดได้ปกติ' },
-  nodata: { key: 'nodata', label: 'ข้อมูลไม่พอ' },
-  watch: { key: 'watch', label: 'เฝ้าระวัง' },
-  high: { key: 'high', label: 'ระวังสูง' },
+  ok: { key: 'ok', label: 'ค่าที่วัดได้ปกติ', glyph: '●', chip: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+  nodata: { key: 'nodata', label: 'ข้อมูลไม่พอ', glyph: '○', chip: 'border-gray-300 bg-gray-100 text-gray-700' },
+  watch: { key: 'watch', label: 'เฝ้าระวัง', glyph: '▲', chip: 'border-amber-300 bg-amber-50 text-amber-900' },
+  high: { key: 'high', label: 'ระวังสูง', glyph: '◆', chip: 'border-rose-300 bg-rose-50 text-rose-800' },
 }
 
 // ค่าที่ใช้ตัดสินว่าสถานีหนึ่ง "มีค่า" — สถานีที่มีเวลาวัดแต่ไม่มีตัวเลขของตัวชี้วัดนั้นนับว่าไม่มีค่า
@@ -96,6 +97,17 @@ export function resolveLinks(village, stations) {
   return { found, missing }
 }
 
+/**
+ * มีเรื่องเตือนที่ใดที่หนึ่งในพื้นที่ของ อปท. หรือไม่ (ทุกสถานี ไม่ใช่เฉพาะที่ผูกกับหมู่) — เกณฑ์เดียวกับแถบเตือนบนสุดของหน้า
+ * ใช้เตือนบนการ์ดหมู่ที่ไม่ได้ขึ้น "ระวังสูง" เอง: แถบบนสุดบอกเตือนเรื่องอ่างหรือสถานีอื่น แต่การ์ดบอก "ปกติ" เพราะสถานีที่ผูกไว้ปกติ
+ * สองอย่างนี้ไม่ขัดกันตามตรรกะ แต่ผู้อ่านจะเห็นเป็นข้อขัดแย้ง — การ์ดจึงต้องบอกให้ดูแถบด้านบน (ไม่เปลี่ยนสถานะของหมู่)
+ */
+export function hasAreaAlert({ stations, warnings = [], now }) {
+  const list = Array.isArray(stations) ? stations : []
+  const of = type => list.filter(s => s?.station_type === type)
+  return buildAlerts({ rain: of('rain'), ews: of('ews'), warnings, levels: of('waterlevel'), dams: of('dam'), now }).any
+}
+
 const joinNames = stations => stations.map(s => s.station_name).join(', ')
 
 /**
@@ -147,7 +159,7 @@ export function villageStatus({ village, stations, warnings = [], now }) {
     if (missing.length > 0) reasons.push('สถานีที่เลือกไว้ถูกถอดออกจากระบบ')
     return result('nodata', reasons)
   }
-  return result('ok', ['ค่าที่วัดได้ยังไม่ถึงเกณฑ์เฝ้าระวัง'])
+  return result('ok', ['ทุกสถานีที่เลือกมีค่าใหม่ และยังไม่ถึงเกณฑ์เฝ้าระวัง'])
 }
 
 /**
