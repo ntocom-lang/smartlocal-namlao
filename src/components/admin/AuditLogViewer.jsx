@@ -37,6 +37,8 @@ const RESOURCE_LABEL = {
   document_type:      'ประเภทคำขอเอกสาร',
   adhoc_impact_zone:  'วงรัศมีเรื่องเฉพาะกิจ',
   adhoc_affected_point: 'ผู้ได้รับผลกระทบ (เฉพาะกิจ)',
+  water_village_station: 'สถานีน้ำ–ฝนของหมู่',
+  water_village_coords: 'พิกัดกลางหมู่',
 }
 
 const ROLE_LABEL = {

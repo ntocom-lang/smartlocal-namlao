@@ -6,7 +6,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, Users, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
-  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid, Menu, ArrowLeft,
+  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid, Menu, ArrowLeft, CloudRain,
 } from 'lucide-react'
 import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -61,6 +61,7 @@ const TourismReviewsAdmin = lazy(() => import('../components/admin/TourismManage
 const PostsManager = lazy(() => import('../components/staff/PostsManager'))
 const BorrowableAssetsManager = lazy(() => import('../components/staff/BorrowableAssetsManager'))
 const WasteScheduleManager = lazy(() => import('../components/staff/WasteScheduleManager'))
+const WaterVillageSetup = lazy(() => import('../components/staff/WaterVillageSetup'))
 const StaffOperationalDashboard = lazy(() => import('../components/staff/StaffOperationalDashboard'))
 const StaffMenuGrid = lazy(() => import('../components/staff/StaffOperationalDashboard').then(m => ({ default: m.StaffMenuGrid })))
 const FleetPage = lazy(() => import('./FleetPage'))
@@ -233,6 +234,9 @@ const MODULE_GROUPS = [
       // ถ้าวันหนึ่งเพิ่มกองสาธารณสุขแล้วมีกลุ่มเมนูของกองนั้น ให้ย้ายมาไว้ที่นั่น
       // เมนูนี้ทุกคนใน อปท. เห็นได้ (อ่านอย่างเดียว) — สิทธิ์แก้ตัดสินที่ can_manage_waste_schedule()
       { key: 'waste', label: 'ตารางเก็บขยะ', Icon: Trash2, color: '#15803d', bg: '#dcfce7', desc: 'ตั้งรอบเก็บขยะครั้งเดียว ระบบแจ้งวันเก็บให้ประชาชนเอง' },
+      // คีย์เดียวกับโมดูล "สถานการณ์น้ำ-ฝน" ที่เปิด/ปิดรายหน่วยงานอยู่แล้ว (MANAGED_MODULE_KEYS) จึงโผล่เฉพาะ อปท. ที่เปิดน้ำ-ฝน
+      // ใช้ทะเบียนหมู่เดียวกับตารางเก็บขยะ · ทุกคนใน อปท. เห็นได้ (อ่านอย่างเดียว) สิทธิ์แก้ตัดสินที่ can_manage_waste_schedule()
+      { key: 'water-situation', label: 'น้ำ–ฝนรายหมู่', Icon: CloudRain, color: '#0284c7', bg: '#e0f2fe', desc: 'เลือกสถานีวัดน้ำ–ฝนที่ใช้อ่านสถานการณ์ของแต่ละหมู่ ตั้งครั้งเดียว' },
     ],
   },
   { group: 'กองคลัง', items: [] },
@@ -2950,6 +2954,7 @@ export default function StaffDashboard() {
             {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
             {activeModule === 'waste' && <WasteScheduleManager tenant={tenant} />}
+            {activeModule === 'water-situation' && <WaterVillageSetup tenant={tenant} />}
             {activeModule === PATIENT_TRANSPORT_MODULE_KEY && <PatientTransportStaff onBack={() => setActiveModule('home')} />}
             {activeModule === 'borrowable-assets' && (
               <BorrowableAssetsManager tenant={tenant}
