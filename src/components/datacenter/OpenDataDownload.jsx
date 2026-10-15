@@ -44,12 +44,12 @@ export default function OpenDataDownload({ tenant, variant = 'hero', isLight = t
       <button type="button" onClick={() => run('geojson')} disabled={!!busy}
         title="ไฟล์พิกัดมาตรฐาน GeoJSON เปิดใน QGIS / ArcGIS / Google My Maps ได้ทันที"
         className={`inline-flex items-center gap-1.5 rounded-xl border font-bold transition-colors disabled:opacity-60 ${btn}`}>
-        {busy === 'geojson' ? <Loader2 size={13} className="animate-spin" /> : <FileJson size={13} />} GeoJSON
+        {busy === 'geojson' ? <Loader2 size={13} className="animate-spin" /> : <FileJson size={13} />} {hero ? 'ไฟล์แผนที่ (GeoJSON)' : 'GeoJSON'}
       </button>
       <button type="button" onClick={() => run('csv')} disabled={!!busy}
         title="ตาราง CSV (UTF-8) เปิดใน Excel ได้ มีละติจูด/ลองจิจูดแยกคอลัมน์"
         className={`inline-flex items-center gap-1.5 rounded-xl border font-bold transition-colors disabled:opacity-60 ${btn}`}>
-        {busy === 'csv' ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />} CSV
+        {busy === 'csv' ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />} {hero ? 'ตาราง Excel (CSV)' : 'CSV'}
       </button>
       {status && (
         <span role="status" className={`text-[11px] font-semibold ${hero ? (status.ok ? 'text-emerald-200' : 'text-red-200') : (status.ok ? (isLight ? 'text-emerald-700' : 'text-emerald-400') : (isLight ? 'text-red-600' : 'text-red-400'))}`}>

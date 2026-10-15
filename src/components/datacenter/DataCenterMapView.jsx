@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useRef } from 'react'
 import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 // Construction ถูกเอาออกจาก import พร้อมกับปุ่มแท็บ "โครงการ" ที่คอมเมนต์ไว้ใน SummaryPanel
 // (ตรงตามที่ commit 79f5a3c ทำกับ ClipboardList ตอนถอดเมนู) เอากลับมาพร้อมกันตอนคืนแท็บ
-import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation, Target, Tag, Tags, Users } from 'lucide-react'
+import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation, Target, Tag, Tags, Users, Search, LocateFixed } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import LeafletMapCanvas from '../common/LeafletMapCanvas'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, isIconImage } from '../../lib/dataCenterGroupIcon'
@@ -18,6 +18,7 @@ import {
   buildZoneOverlays, readHiddenKeys, writeHiddenKeys, readLayerOn, writeLayerOn, readNamesOn, writeNamesOn, normalizeRadii, zoomForRadius, isAdhocEntry, matchesStatusFilter,
   readPlaceNamesOn, writePlaceNamesOn, canShowPlaceName, adhocScope, visibleStatusOptions,
   shouldAutoOpenCategories, fitPaddingFor,
+  searchPlaces, distanceKm, LOCATE_MAX_DISTANCE_KM, geolocationErrorMessage, latShiftForPixels,
 } from '../../lib/adhocZones'
 
 function TrafficLightIcon({ size = 20, className = "" }) {
@@ -187,10 +188,60 @@ function TabCount({ value }) {
   )
 }
 
+// ช่องค้นหาสถานที่ในแผงสรุป — ประชาชนส่วนใหญ่ไม่รู้ว่าสถานที่อยู่ใต้ประเภทไหน พิมพ์ชื่อ/ประเภท (เช่น "วัด") แล้วกดเลือกเพื่อบินไปที่หมุด
+// ผลลัพธ์แสดงเป็นรายการใต้ช่องในแผงที่เลื่อนได้ ไม่ลอยทับแผนที่ (บนมือถือแผนที่ถูกแผงล่างบังไปครึ่งหนึ่งอยู่แล้ว) · ตัวกรองและกติกา PDPA
+// อยู่ใน searchPlaces (adhocZones.js) · แผงนี้ถูก render 2 ที่ (PC/มือถือ) แต่ซ่อนด้วย CSS ที่ละอัน จึงเก็บข้อความค้นหาในตัวมันเอง
+function PlaceSearchBox({ entries, titleOf, iconOf, subtitleOf, isFloat, onPick }) {
+  const [query, setQuery] = useState('')
+  const trimmed = query.trim()
+  const results = searchPlaces(entries, query, { titleOf, isFloat })
+  function pick(entry) {
+    onPick(entry)
+    setQuery('')
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="relative">
+        <Search size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        {/* text-base (16px): iOS ซูมหน้าเองเมื่อแตะช่องที่ตัวอักษรเล็กกว่า 16px */}
+        <input type="text" inputMode="search" enterKeyHint="search" autoComplete="off" maxLength={80}
+          value={query} onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && results[0]) { e.preventDefault(); pick(results[0]) } }}
+          aria-label="ค้นหาสถานที่บนแผนที่" placeholder="ค้นหาสถานที่ เช่น วัด โรงเรียน ชื่อร้าน"
+          className="min-h-11 w-full rounded-xl border border-gray-200 bg-white pl-9 pr-10 text-base text-gray-800 placeholder:text-gray-400 focus:border-sky-400 focus:outline-none" />
+        {query && (
+          <button type="button" aria-label="ล้างคำค้นหา" onClick={() => setQuery('')}
+            className="absolute right-1 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100">
+            <X size={15} />
+          </button>
+        )}
+      </div>
+      {trimmed && (results.length > 0 ? (
+        <ul className="overflow-hidden rounded-xl border border-gray-100 bg-white">
+          {results.map(entry => (
+            <li key={`${entry.source_table}-${entry.source_id}`} className="border-b border-gray-50 last:border-b-0">
+              <button type="button" onClick={() => pick(entry)}
+                className="flex min-h-11 w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-sky-50 active:bg-sky-100">
+                <span className="shrink-0 text-base leading-none"><CategoryIcon value={iconOf(entry)} alt="" /></span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-gray-800">{titleOf(entry)}</span>
+                  <span className="block truncate text-[11px] text-gray-400">{subtitleOf(entry)}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p role="status" className="px-1 text-xs text-gray-500">ไม่พบสถานที่ที่ตรงกับ “{trimmed}” — ลองพิมพ์ให้สั้นลง หรือพิมพ์ชื่อประเภท เช่น วัด โรงเรียน</p>
+      ))}
+    </div>
+  )
+}
+
 // เนื้อหาแท็บ + การ์ดสรุป — ใช้ร่วมกันทั้งแถบขวาบน PC และแผงล่างบนมือถือ ไม่ต้องแก้ 2 ที่
 // showSourceTabs=false (ฝั่งประชาชน): ซ่อนเฉพาะปุ่ม "คำร้อง"/"โครงการ" — แถบ "ศูนย์ข้อมูลดิจิทัล" ยังต้องอยู่เสมอ
 // (เดิมซ่อนทั้งแถบไปด้วยโดยไม่ตั้งใจ ทำให้ประชาชนไม่เห็นหัวข้ออะไรเลย)
-function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs, routeCategoryKeys, showRoutes, setShowRoutes, groupIconOverrides, statusFilter, setStatusFilter, adhocAvailable = false, dceCount, complaintCount, extraTop = null, emptyHint = '' }) {
+function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs, routeCategoryKeys, showRoutes, setShowRoutes, groupIconOverrides, statusFilter, setStatusFilter, adhocAvailable = false, dceCount, complaintCount, extraTop = null, emptyHint = '', searchBox = null }) {
   return (
     <>
       <div className="flex border-b border-gray-100 shrink-0">
@@ -258,6 +309,7 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
       {extraTop}
 
       <div className="p-3 space-y-3">
+        {activeTab === 'dce' && searchBox}
         {/* บอกว่าต้องกดอะไร เมื่อไม่มีประเภทไหนเปิดอยู่เลย (ฝั่งประชาชน) — ไม่งั้นเห็นแผนที่ว่างเฉยๆ แล้วเข้าใจว่าไม่มีข้อมูล */}
         {emptyHint && <p role="status" className="rounded-xl bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800">{emptyHint}</p>}
         {activeSummary.length === 0 ? (
@@ -358,6 +410,15 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   // รูปทรงหน้าเปลี่ยนหลัง fit ครั้งแรก (แถบสถิติหัวหน้าโหลดทีหลังดันกรอบลง ~60px → แผงล่างทับแผนที่ต่างจากตอน fit) → นับขึ้น 1 ให้แผนที่ fit ใหม่
   // สร้างใน effect ด้านล่าง · state ถูกตั้งใน callback ของ ResizeObserver ไม่ใช่ใน effect ตรงๆ จึงไม่ชน lint rule set-state-in-effect
   const [layoutTick, setLayoutTick] = useState(0)
+  // ตำแหน่งของฉัน — อยู่ในเบราว์เซอร์นี้เท่านั้น ไม่ส่งไปที่ไหน ไม่เก็บ (ต่างจากพิกัดผู้ได้รับผลกระทบ) กดปุ่มอีกครั้งเพื่อซ่อน
+  const [myPos, setMyPos] = useState(null) // { lat, lng, accuracy } | null
+  const [locating, setLocating] = useState(false)
+  const [locateMsg, setLocateMsg] = useState('')
+  useEffect(() => {
+    if (!locateMsg) return undefined
+    const timer = setTimeout(() => setLocateMsg(''), 8000)
+    return () => clearTimeout(timer)
+  }, [locateMsg])
   const [activeTab, setActiveTab] = useState('dce') // 'dce' | 'complaints' | 'projects'
   // แผงสรุปแบบ bottom sheet บนมือถือ — เริ่มกางไว้ก่อน กดย่อ/ปิดได้ (ไม่มีผลกับ PC ที่ใช้แถบขวาแทน)
   const [sheetExpanded, setSheetExpanded] = useState(true)
@@ -820,6 +881,67 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     })
   }
 
+  // ---- ค้นหาสถานที่ + ตำแหน่งของฉัน ----
+  // บินไปจุดหนึ่ง: มือถือมีแผงล่างทับครึ่งล่างของแผนที่ → เล็งต่ำกว่าจุดเป้าหมายให้จุดนั้นขึ้นมาอยู่ส่วนบนที่ไม่ถูกบัง (กติกาเดียวกับ focusZone)
+  const isNarrowScreen = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(max-width: 1023px)').matches)
+  function flyToPoint(lat, lng, zoom, shiftPx = isNarrowScreen() ? Math.round(window.innerHeight * 0.27) : 0) {
+    const shift = latShiftForPixels(lat, zoom, shiftPx)
+    setZoneFocus(prev => ({ lat: Number(lat) - shift, lng: Number(lng), zoom, nonce: (prev?.nonce ?? 0) + 1 }))
+  }
+  function pickPlace(entry) {
+    // ประเภทของสถานที่นี้ปิดอยู่ → เปิดให้เห็นหมุด (เหมือนที่ toggleGroup ทำ ต้องเปิดตัวกรองชั้นกลุ่มด้วย)
+    const key = categoryKey(entry, resolveCategoryLabel)
+    setUserCategories(prev => new Set(prev ?? activeCategories).add(key))
+    setActiveGroups(prev => (prev === null ? null : new Set(prev).add(entry.group_name)))
+    setSelectedEntry(entry)
+    setSelectedZoneId(null)
+    setSelectedAffectedId(null)
+    // มือถือ: แผงล่างกินครึ่งจอ และการ์ดสถานที่ลอยอยู่ด้านบน หมุดที่เลือกจะอยู่ระหว่างสองอย่างนี้ไม่พอดี (วัดจริง: ชิดขอบการ์ดพอดี) —
+    // คนที่เลือกสถานที่ = อยากดูแผนที่ จึงย่อแผงล่างให้เห็นแผนที่เต็ม แล้วบินไปกลางแผนที่ ต้องการค้นอีกแตะที่แถบหัวแผงเพื่อกางกลับ
+    const narrow = isNarrowScreen()
+    if (narrow) setSheetExpanded(false)
+    // ถ้าประเภทเพิ่งถูกเปิด ชุดหมุดเปลี่ยน → หน้าประชาชนจะ fit ใหม่ในรอบ render เดียวกัน และทับคำสั่งบินถ้าสั่งพร้อมกัน จึงรอให้ fit เสร็จก่อนค่อยบิน
+    setTimeout(() => flyToPoint(entry.latitude, entry.longitude, 17, narrow ? 0 : undefined), 80)
+  }
+  function toggleLocate() {
+    if (myPos) { setMyPos(null); setLocateMsg(''); return }
+    if (locating) return
+    if (typeof navigator === 'undefined' || !navigator.geolocation) { setLocateMsg('เบราว์เซอร์นี้ไม่รองรับการหาตำแหน่ง'); return }
+    setLocating(true)
+    setLocateMsg('')
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setLocating(false)
+        const here = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }
+        // อยู่ไกลจากเขตเทศบาลมาก (เช่นเปิดจากต่างจังหวัด) ไม่เลื่อนแผนที่ตามไป — ไม่งั้นแผนที่หนีไปครึ่งประเทศแล้วหมุดหายหมด
+        const km = tenantLat && tenantLng ? distanceKm(here, { lat: Number(tenantLat), lng: Number(tenantLng) }) : 0
+        if (km > LOCATE_MAX_DISTANCE_KM) {
+          setLocateMsg(`ตำแหน่งของคุณอยู่ห่างจากเขตเทศบาลประมาณ ${Math.round(km)} กม. จึงไม่เลื่อนแผนที่ไปที่นั่น`)
+          return
+        }
+        setMyPos(here)
+        flyToPoint(here.lat, here.lng, Number(here.accuracy) > 150 ? 16 : 17)
+      },
+      err => { setLocating(false); setLocateMsg(geolocationErrorMessage(err?.code)) },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+    )
+  }
+  // จุดตำแหน่งของฉันวาดเป็นวง (วงความแม่นยำ + จุดกลาง) ผ่าน circles ไม่ใช่หมุด — ถ้าเป็นหมุด หน้าประชาชนที่ fit ตามหมุดจะซูมออกไปรวมตำแหน่งผู้ใช้ด้วย
+  const mapCircles = useMemo(() => {
+    if (!myPos) return zoneOverlays.circles
+    const center = { lat: myPos.lat, lng: myPos.lng }
+    const accuracy = Math.min(500, Math.max(10, Number(myPos.accuracy) || 30))
+    return [
+      ...zoneOverlays.circles,
+      { id: 'me-accuracy', center, radius: accuracy, color: '#2563eb', fillColor: '#2563eb', fillOpacity: 0.12, weight: 1, opacity: 0.5 },
+      { id: 'me-dot', center, radius: 10, color: '#ffffff', fillColor: '#2563eb', fillOpacity: 1, weight: 3, opacity: 1 },
+    ]
+  }, [zoneOverlays.circles, myPos])
+  const searchBox = (
+    <PlaceSearchBox entries={dceEntries} titleOf={pinTitleOf} iconOf={resolveMarkerIcon} isFloat={e => isFloatGroup(e.group_name)} onPick={pickPlace}
+      subtitleOf={e => [resolveCategoryLabel(e), e.group_name].filter(v => v && v !== pinTitleOf(e)).join(' · ')} />
+  )
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* ตัวกรองสถานะย้ายเข้าไปอยู่ใน SummaryPanel ใต้แท็บ "คำร้อง" แล้ว (เหตุผลกำกับไว้ตรงจุดนั้น)
@@ -846,7 +968,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               fitPadding={getFitPadding}
               refitSignal={layoutTick}
               fitAnimate={false}
-              circles={zoneOverlays.circles}
+              circles={mapCircles}
               flyTo={zoneFocus}
               markers={[...visible.filter(e => !(e.route_points?.length >= 2)).map(e => {
                 const meta = groupMeta(e.group_name, groupIconOverrides)
@@ -927,8 +1049,25 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
           {/* ปุ่มลอยทั้งชุด (เส้นทางถนน/กล้องวงจรปิด ฯลฯ) เรียงแถวเดียวมุมขวาบน — เดิมอยู่ซ้ายบนเพราะ
               ขวาบนถูกแถบสลับ แผนที่/ดาวเทียม ของ GoogleMapCanvas จองไว้ ตอนนี้ย้ายมาใช้
               LeafletMapCanvas แล้ว ไม่มีแถบนั้น และปุ่มซูมของ Leaflet อยู่ bottomright มุมขวาบนจึงว่าง */}
+          {/* ตำแหน่งของฉัน: ปุ่มเดี่ยวมุมซ้ายบน แยกจากกลุ่มปุ่มขวา — ถ้าอยู่ในกลุ่มขวา ปุ่มที่ 3 ทำให้แถวปุ่มตกบรรทัดที่สองบนมือถือ
+              แล้วการ์ดสถานที่ (top-16) ลอยทับปุ่ม · ไอคอนเป้าเล็ง = สัญลักษณ์มาตรฐานของแผนที่ทุกแอป (ไม่ต้องมีข้อความกำกับ) · ไม่อยู่ในกลุ่มขวา
+              ปุ่มแรกของกลุ่มนั้นจึงยังเป็นปุ่มเดิมเสมอ (tests/map-click กดปุ่มแรก) */}
+          <div className="absolute left-3 top-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-col items-start gap-2">
+            <button type="button" onClick={toggleLocate} aria-pressed={Boolean(myPos)} disabled={locating}
+              aria-label={`${myPos ? 'ซ่อน' : 'แสดง'}ตำแหน่งของฉัน`} title="ตำแหน่งของฉัน"
+              className="flex size-11 items-center justify-center rounded-full border shadow-md transition-all active:scale-95 disabled:opacity-70"
+              style={myPos
+                ? { backgroundColor: '#2563eb', borderColor: '#2563eb', color: '#ffffff' }
+                : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: '#2563eb' }}>
+              {locating ? <Loader2 size={20} className="animate-spin" /> : <LocateFixed size={20} />}
+            </button>
+            {locateMsg && (
+              <p role="status" className="rounded-lg bg-gray-800/90 px-3 py-2 text-xs font-semibold text-white shadow-lg">{locateMsg}</p>
+            )}
+          </div>
+
           {mapButtons.length > 0 && (
-            <div className={`absolute right-3 top-3 z-20 flex items-center gap-2 ${allowStatusFilter ? '' : 'max-w-[calc(100%-1.5rem)] flex-wrap justify-end'}`}>
+            <div className={`absolute right-3 top-3 z-20 flex items-center gap-2 ${allowStatusFilter ? '' : 'max-w-[calc(100%-4.5rem)] flex-wrap justify-end'}`}>
               {mapButtons.map(({ id, label, Icon, icon, on, toggle, onColor = '#1e88c7' }) => (
                 // group/relative: ให้ป้ายชื่อโผล่ใต้ปุ่มตอน hover/โฟกัสด้วยคีย์บอร์ด — ใช้ป้ายในหน้าเว็บเอง
                 // ไม่ใช้ title ของเบราว์เซอร์ เพราะมันขึ้นช้า หน้าตาแล้วแต่ OS และแตะบนมือถือไม่ขึ้นเลย
@@ -1125,7 +1264,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                     routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes}
                     groupIconOverrides={groupIconOverrides}
                     statusFilter={statusFilter} setStatusFilter={changeStatusFilter} adhocAvailable={adhocAvailable}
-                    dceCount={dceEntries.length} complaintCount={complaintEntries.length} extraTop={zonesPanel} emptyHint={emptyHint} />
+                    dceCount={dceEntries.length} complaintCount={complaintEntries.length} extraTop={zonesPanel} emptyHint={emptyHint} searchBox={searchBox} />
                 </div>
               )}
             </div>
@@ -1145,7 +1284,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
             routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes}
             groupIconOverrides={groupIconOverrides}
             statusFilter={statusFilter} setStatusFilter={changeStatusFilter} adhocAvailable={adhocAvailable}
-            dceCount={dceEntries.length} complaintCount={complaintEntries.length} extraTop={zonesPanel} emptyHint={emptyHint} />
+            dceCount={dceEntries.length} complaintCount={complaintEntries.length} extraTop={zonesPanel} emptyHint={emptyHint} searchBox={searchBox} />
           </div>
         </aside>
       </div>

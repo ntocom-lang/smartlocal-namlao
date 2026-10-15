@@ -72,7 +72,7 @@ export default function DataCenterPublicMap() {
         {/* ข้อมูลเปิด: ชุดเดียวกับที่แสดงบนแผนที่นี้อยู่แล้ว (รายการที่เปิดใช้งาน) ให้นำไปใช้ต่อใน GIS/Excel ได้เอง */}
         {tenant?.id && (
           <div className="flex flex-wrap items-center gap-2 mt-2.5">
-            <span className="text-[10px] font-bold text-white/70">ข้อมูลเปิด ดาวน์โหลดได้:</span>
+            <span className="text-[10px] font-bold text-white/70">ดาวน์โหลดข้อมูลสถานที่เก็บไว้ใช้เอง:</span>
             <OpenDataDownload tenant={tenant} variant="hero" />
           </div>
         )}
