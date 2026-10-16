@@ -1,6 +1,6 @@
 import HydroHourlyPanel from './HydroHourlyPanel'
 import { HYDRO_TENANTS } from '../lib/hydroHourly'
-import { useCallback, useEffect, useId, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useId, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, CloudRain, Dam, ExternalLink,
@@ -10,6 +10,7 @@ import './WaterSituationPage.css'
 import WaterSituationShare from './WaterSituationShare'
 import ReservoirGauge from '../components/water/ReservoirGauge'
 import SmallReservoirSection from '../components/water/SmallReservoirSection'
+import { diagramTenant } from '../lib/waterDiagram/model'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
@@ -23,6 +24,8 @@ import {
 
 // ข้อมูลในฐานเปลี่ยนชั่วโมงละครั้ง (thaiwater-sync) — ถามซ้ำถี่กว่านี้ก็ไม่ได้ของใหม่ เปลืองโควตาฟรีเปล่า
 const REFRESH_MS = 5 * 60 * 1000
+// ผังน้ำเคลื่อนไหวหนักกว่าส่วนอื่น (ข้อมูลผัง + SVG) และมีแค่ อปท. ในทะเบียน — โหลดเมื่อต้องแสดงจริง อปท. อื่นไม่ต้องโหลด
+const WaterDiagram = lazy(() => import('../components/water/WaterDiagram'))
 const THAIWATER_URL = 'https://www.thaiwater.net'
 const EWS_URL = 'https://ews.dwr.go.th/'
 
@@ -194,6 +197,12 @@ export default function WaterSituationPage() {
             {/* อ่างขนาดเล็กจากผังน้ำออนไลน์แพร่ — ไม่พึ่งฐานข้อมูล/RPC ข้างบน (ดึงผ่าน Worker เอง) จึงอยู่นอกเงื่อนไข dams.length
                 ทุ่งแค้วไม่มีอ่างขนาดกลางในรัศมี 15 กม. แต่มีห้วยยอย/ห้วยปุยในผังน้ำตำบล */}
             <SmallReservoirSection slug={tenant?.slug} tenantName={tenant?.name} now={checkedAt} />
+            {/* ผังน้ำตำบล (ภาพประกอบทิศทางน้ำตามผัง ไม่ใช่ค่าวัด) — ใช้สถานีระดับ อปท. ไม่ผูกกับโหมดแชร์ ?scope= */}
+            {diagramTenant(tenant?.slug) && (
+              <Suspense fallback={null}>
+                <WaterDiagram slug={tenant?.slug} tenantName={tenant?.name} stations={scopedData?.stations ?? []} now={checkedAt} />
+              </Suspense>
+            )}
             <SourceNote tenantName={tenant?.name} />
 
           </>

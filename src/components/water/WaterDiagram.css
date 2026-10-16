@@ -1,0 +1,62 @@
+/* ผังน้ำเคลื่อนไหว (WaterDiagram.jsx) — เฉพาะส่วนที่ Tailwind ทำไม่ได้: แอนิเมชันเส้นน้ำ เส้นเชื่อมรายการสายน้ำ ขนาดแผนที่
+   คลาสขึ้นต้น wd- ทั้งหมด กันชนกับ CSS ของหน้า (.water-page ...) */
+
+/* เส้นน้ำ: ลายสีขาวเลื่อนทับเส้นฟ้าไปตามทิศของ path (from → to) — ระยะเลื่อน = ความยาวลาย 1 รอบ (--period) วนต่อเนื่องไม่กระตุก */
+.wd-flow {
+  fill: none;
+  stroke: #fff;
+  stroke-linecap: round;
+  stroke-opacity: 0.8;
+  animation: wd-flow var(--dur, 1.8s) linear infinite;
+}
+@keyframes wd-flow { to { stroke-dashoffset: calc(var(--period, 30px) * -1); } }
+
+/* คลองสองปลายลูกศร: ระยิบ ไม่วิ่งไปทางใด */
+.wd-shimmer { animation: wd-shimmer 3s ease-in-out infinite; }
+@keyframes wd-shimmer { 0%, 100% { stroke-opacity: 0.55; } 50% { stroke-opacity: 1; } }
+
+.wd-bob { display: inline-block; animation: wd-bob 1.6s ease-in-out infinite; }
+@keyframes wd-bob { 0%, 100% { transform: translateY(-2px); } 50% { transform: translateY(3px); } }
+
+/* หยุดด้วยผู้ใช้ (คลาส wd-paused จากปุ่ม) หรือเมื่อนอกจอ/แท็บซ่อน (IntersectionObserver + visibilitychange ตั้ง data-offscreen ให้)
+   ใช้ data attribute ไม่ใช่คลาส เพราะ React เขียน className ทับทุกครั้งที่กดปุ่ม — เฉพาะ CSS ไม่ re-render */
+.wd-root.wd-paused .wd-flow,
+.wd-root.wd-paused .wd-shimmer,
+.wd-root.wd-paused .wd-bob,
+.wd-root[data-offscreen] .wd-flow,
+.wd-root[data-offscreen] .wd-shimmer,
+.wd-root[data-offscreen] .wd-bob { animation-play-state: paused; }
+
+/* ผู้ใช้ตั้งค่าลดการเคลื่อนไหวที่ระบบปฏิบัติการ → ไม่วิ่งเลย (ดูทิศจากลูกศร) — กฎของหน้าเดิมครอบแค่ transition */
+@media (prefers-reduced-motion: reduce) {
+  .wd-flow, .wd-shimmer, .wd-bob { animation: none !important; }
+}
+
+/* กล่องแผนที่: เลื่อนได้ทั้งสองแกน กว้างขั้นต่ำเพื่อให้ตัวหนังสือในผังอ่านออก ตัวซูมปรับความกว้างของ svg */
+.wd-mapbox { position: relative; overflow: auto; -webkit-overflow-scrolling: touch; }
+.wd-mapbox > svg { display: block; width: 100%; min-width: 820px; height: auto; }
+
+/* รายการสายน้ำ: เส้นฟ้าเชื่อมจุดวงกลมของแต่ละรายการ */
+.wd-lane ol { list-style: none; margin: 0; padding: 0; }
+.wd-lane li { position: relative; padding: 6px 0 6px 28px; font-size: 14px; }
+.wd-lane li::before { content: ""; position: absolute; left: 9px; top: 0; bottom: 0; width: 3px; background: #bfdbfe; }
+.wd-lane li:first-child::before { top: 50%; }
+.wd-lane li:last-child::before { bottom: 50%; }
+.wd-lane li .wd-dot {
+  position: absolute; left: 3px; top: 50%; margin-top: -8px; width: 15px; height: 15px;
+  border-radius: 50%; background: #fff; border: 3px solid #3b82f6;
+}
+.wd-lane li.wd-plan .wd-dot { border-style: dashed; border-color: #b91c1c; }
+.wd-lane li.wd-fix .wd-dot { border-color: #d97706; }
+.wd-lane li.wd-next { padding-top: 0; padding-bottom: 0; min-height: 20px; font-size: 12px; color: #3b82f6; }
+
+.wd-tag { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 0 8px; border: 1px solid #cbd5e1; color: #475569; background: #f8fafc; }
+.wd-tag.wd-t-plan { border-style: dashed; border-color: #b91c1c; color: #991b1b; background: #fef2f2; }
+.wd-tag.wd-t-fix { border-color: #fbbf24; color: #92400e; background: #fffbeb; }
+.wd-tag.wd-t-ok { border-color: #7dd3fc; color: #075985; background: #f0f9ff; }
+.wd-tag.wd-t-warn { border-color: #fbbf24; color: #92400e; background: #fffbeb; }
+.wd-tag.wd-t-stale { border-style: dashed; color: #64748b; }
+.wd-tag.wd-t-na { color: #94a3b8; }
+.wd-sub { display: block; font-size: 12px; color: #64748b; }
+
+.wd-legend svg { width: 34px; height: 16px; flex-shrink: 0; }

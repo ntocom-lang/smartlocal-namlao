@@ -1,50 +1,15 @@
-import { useEffect, useState } from 'react'
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Dam, ExternalLink, Minus } from 'lucide-react'
 import ReservoirGauge from './ReservoirGauge'
+import { useReservoirReport } from './useReservoirReport'
 import { formatMcm, formatMm } from '../../lib/waterSituation'
 import {
   RESERVOIR_SOURCE, SMALL_RESERVOIRS, SMALL_RESERVOIR_TENANTS,
-  formatReportDate, formatReportDay, isReservoirReport, reservoirReportUrl, reservoirSummary,
+  formatReportDate, formatReportDay, reservoirReportUrl, reservoirSummary,
 } from '../../lib/smallReservoirs'
 
-// ข้อมูลเปลี่ยนสัปดาห์ละครั้ง — ถามซ้ำถี่กว่านี้ไม่ได้ของใหม่ (Worker จำคำตอบไว้ 6 ชม. อยู่แล้ว)
-const REFRESH_MS = 30 * 60 * 1000
-const RELOAD_ON_VISIBLE_MS = 10 * 60 * 1000
 // สีกลาง (ไม่ใช่สีสถานการณ์) — ยังไม่ได้ยืนยันว่าเกณฑ์สี DAM_LEVELS ใช้กับอ่างขนาดเล็กได้ ไม่ลงสีเอง
 const NEUTRAL_BLUE = '#0284c7'
 const QUARTERS = [25, 50, 75]
-
-// ดึงจาก Worker ของเราเอง (/api/small-reservoir) ไม่ผ่าน Supabase — ผูก visibilitychange ได้โดยไม่เกี่ยวกับกับดัก
-// "มือถือค้างเพราะ token refresh" ใน NOTES §7 (ตัวนั้นเกิดกับคำสั่ง Supabase ที่ต้องยืนยันตัวตนเท่านั้น)
-function useReservoirReport(id) {
-  const [state, setState] = useState({ id, report: null, failed: false, done: false })
-  useEffect(() => {
-    let alive = true
-    let lastLoad = 0
-    const controller = new AbortController()
-    async function load() {
-      if (document.hidden) return
-      lastLoad = Date.now()
-      try {
-        const response = await fetch(`/api/small-reservoir?id=${encodeURIComponent(id)}`, { signal: controller.signal })
-        if (!response.ok) throw new Error('Unavailable')
-        const report = await response.json()
-        // ไม่เชื่อ JSON ตรงๆ — ชนิดข้อมูลผิดหรือผิดอ่างให้ถือว่าดึงไม่สำเร็จ
-        if (!isReservoirReport(report, id)) throw new Error('Invalid report')
-        if (alive) setState({ id, report, failed: Boolean(report.refreshFailed), done: true })
-      } catch {
-        // ล้มครั้งนี้แต่เคยมีของเดิม → แสดงของเดิมต่อพร้อมป้าย ไม่ล้างทิ้ง
-        if (alive && !controller.signal.aborted) setState(prev => ({ id, report: prev.id === id ? prev.report : null, failed: true, done: true }))
-      }
-    }
-    const onVisible = () => { if (!document.hidden && Date.now() - lastLoad > RELOAD_ON_VISIBLE_MS) load() }
-    load()
-    const timer = setInterval(load, REFRESH_MS)
-    document.addEventListener('visibilitychange', onVisible)
-    return () => { alive = false; controller.abort(); clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) }
-  }, [id])
-  return state
-}
 
 // กราฟเส้น % ของ 26 รายงานล่าสุด — วาดค่าตามต้นฉบับตรงๆ ไม่ปรับแก้/ซ่อนค่าโดด (ให้ผู้ดูเห็นเองว่าค่าไหนกระโดด)
 // แกนเวลาตามวันที่จริง (รายงานไม่ได้ห่างเท่ากันเสมอ) · แกนตั้ง 0–110% มีเส้น 100% เป็นหลักอ้างอิง ไม่ใช่เกณฑ์สถานการณ์
