@@ -12,17 +12,39 @@ import {
 } from '../waterSituation.js'
 import { formatReportDay, reservoirSummary } from '../smallReservoirs.js'
 
-// อปท. ที่เห็นผัง — เลือกชัดเจน ไม่เดา (ผังต่อตำบล ต้องวาดใหม่ทีละตำบล)
+// อปท. ที่เห็นผัง — เลือกชัดเจน ไม่เดา (ผังต่อตำบล ต้องวาดใหม่ทีละตำบล) · diagram = id ใน diagrams.js
 //   thungkaew: ผังน้ำตำบลทุ่งแค้ว (เจ้าของระบบสั่ง 2569-10-14)
+//   tamnaktham: ผังน้ำตำบลตำหนักธรรม (2569-10-16)
 //   demo: ใช้ผัง+ค่าจริงของทุ่งแค้วเป็นตัวอย่างบนสนามซ้อม (แบบเดียวกับ SMALL_RESERVOIR_TENANTS.demo) — สถานีฝน/ระดับน้ำของ
 //         ทุ่งแค้ว (RES038, YOM003) ไม่อยู่ในรายการของ demo ป้ายเหล่านั้นจึงขึ้น "ไม่มีค่าในระบบ" ตามจริง
+//         preview: true = ดูผังอื่นบน demo ได้ด้วย ?diagram=<id> ไว้ตรวจก่อนเปิดให้ อปท. จริง (เฉพาะ demo)
 export const WATER_DIAGRAM_TENANTS = {
   thungkaew: { diagram: 'thungkaew', scope: '' },
-  demo: { diagram: 'thungkaew', scope: 'ข้อมูลจริงของทุ่งแค้ว ใช้สาธิต' },
+  tamnaktham: { diagram: 'tamnaktham', scope: '' },
+  demo: { diagram: 'thungkaew', scope: 'ข้อมูลจริงของทุ่งแค้ว ใช้สาธิต', preview: true },
+}
+
+// ป้ายบอกว่าใช้ข้อมูลจริงของ อปท. ไหนเมื่อดูผังบน demo — ต้องมีครบทุกผังที่ดูตัวอย่างได้
+export const DIAGRAM_PREVIEW_SCOPES = {
+  thungkaew: 'ข้อมูลจริงของทุ่งแค้ว ใช้สาธิต',
+  tamnaktham: 'ข้อมูลจริงของตำหนักธรรม ใช้สาธิต',
 }
 
 export function diagramTenant(slug) {
   return Object.hasOwn(WATER_DIAGRAM_TENANTS, slug || '') ? WATER_DIAGRAM_TENANTS[slug] : null
+}
+
+/**
+ * ผังที่ต้องแสดงให้ อปท. นี้ — { diagram: id, scope } หรือ null (ไม่แสดงหัวข้อนี้เลย)
+ * previewId ใช้ได้เฉพาะ อปท. ที่ตั้ง preview (demo) · อปท. จริงที่ใส่ ?diagram= มาถูกเมินเสมอ ไม่โชว์ผังของที่อื่น
+ */
+export function resolveDiagram(slug, previewId) {
+  const tenant = diagramTenant(slug)
+  if (!tenant) return null
+  if (tenant.preview && Object.hasOwn(DIAGRAM_PREVIEW_SCOPES, previewId || '')) {
+    return { diagram: previewId, scope: DIAGRAM_PREVIEW_SCOPES[previewId] }
+  }
+  return { diagram: tenant.diagram, scope: tenant.scope }
 }
 
 // สไตล์เส้นตามชนิด — dash = ลายเส้นสีขาวที่เลื่อนทับเส้นฟ้า (เฉพาะชนิดที่วิ่ง) · period = ผลรวมความยาวลาย

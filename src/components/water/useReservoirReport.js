@@ -10,8 +10,10 @@ const RELOAD_ON_VISIBLE_MS = 10 * 60 * 1000
 // ดึงจาก Worker ของเราเอง (/api/small-reservoir) ไม่ผ่าน Supabase — ผูก visibilitychange ได้โดยไม่เกี่ยวกับกับดัก
 // "มือถือค้างเพราะ token refresh" ใน NOTES §7 (ตัวนั้นเกิดกับคำสั่ง Supabase ที่ต้องยืนยันตัวตนเท่านั้น)
 export function useReservoirReport(id) {
-  const [state, setState] = useState({ id, report: null, failed: false, done: false })
+  const [state, setState] = useState({ id, report: null, failed: false, done: id === null || id === undefined })
   useEffect(() => {
+    // ไม่มี id = ผังนี้ไม่มีอ่างเล็กช่องนี้ (เช่นตำหนักธรรม) ไม่ดึงอะไร · state เริ่มต้นของ id ว่างตั้งเป็น done ด้านล่าง
+    if (id === null || id === undefined) return undefined
     let alive = true
     let lastLoad = 0
     const controller = new AbortController()

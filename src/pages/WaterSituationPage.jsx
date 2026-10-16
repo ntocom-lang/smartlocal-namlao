@@ -200,7 +200,7 @@ export default function WaterSituationPage() {
             {/* ผังน้ำตำบล (ภาพประกอบทิศทางน้ำตามผัง ไม่ใช่ค่าวัด) — ใช้สถานีระดับ อปท. ไม่ผูกกับโหมดแชร์ ?scope= */}
             {diagramTenant(tenant?.slug) && (
               <Suspense fallback={null}>
-                <WaterDiagram slug={tenant?.slug} tenantName={tenant?.name} stations={scopedData?.stations ?? []} now={checkedAt} />
+                <WaterDiagram slug={tenant?.slug} tenantName={tenant?.name} stations={scopedData?.stations ?? []} now={checkedAt} previewId={searchParams.get('diagram')} />
               </Suspense>
             )}
             <SourceNote tenantName={tenant?.name} />
