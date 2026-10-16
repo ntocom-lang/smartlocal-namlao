@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ExternalLink, Map as MapIcon, Pause, Play, ZoomIn, ZoomOut } from 'lucide-react'
 import './WaterDiagram.css'
 import { useReservoirReport } from './useReservoirReport'
-import { THUNGKAEW_DIAGRAM } from '../../lib/waterDiagram/thungkaew'
-import { EDGE_STYLES, chipWidth, diagramTenant, isAnimated, isShimmer, liveBadges } from '../../lib/waterDiagram/model'
+import { diagramById } from '../../lib/waterDiagram/diagrams'
+import { EDGE_STYLES, chipWidth, isAnimated, isShimmer, liveBadges, resolveDiagram } from '../../lib/waterDiagram/model'
 
 const BLUE = '#4472c4'
 const DARK = '#1f3864'
@@ -87,25 +87,49 @@ function Element({ el, badges }) {
         transform={el.r ? `rotate(${el.r} ${el.x} ${el.y})` : undefined}>{el.t}</text>
     )
     case 'edge': return <Edge el={el} />
-    case 'weir': return el.o === 'v'
-      ? <rect x={el.x - 6} y={el.y - el.w / 2} width={12} height={el.w} fill="#111" />
-      : <rect x={el.x - el.w / 2} y={el.y - 6} width={el.w} height={12} fill="#111" />
+    case 'outline': return el.cls === 'village'
+      ? <path d={el.d} fill="none" stroke="#94a3b8" strokeWidth={3} strokeDasharray="10 8" />
+      : <path d={el.d} fill="none" stroke="#4d7c0f" strokeWidth={3} strokeDasharray="3 7" />
+    case 'weir': {
+      // ฝาย: ดำ = มีตามผัง · แดงทึบ = แผนก่อสร้าง (ไม่เคลื่อนไหว) · t = ความหนา (ขีดบางของฝายเล็กในผัง)
+      const thick = el.t ?? 12
+      const fill = el.status === 'planned' ? RED : '#111'
+      return el.o === 'v'
+        ? <rect x={el.x - thick / 2} y={el.y - el.w / 2} width={thick} height={el.w} fill={fill} />
+        : <rect x={el.x - el.w / 2} y={el.y - thick / 2} width={el.w} height={thick} fill={fill} />
+    }
+    case 'bridge': return (
+      // สะพาน ")(" คร่อมลำน้ำ — o = h: ลำน้ำไหลแนวนอน (วงเล็บตั้ง) · v: ลำน้ำไหลแนวตั้ง (หมุน 90°)
+      <g transform={el.o === 'v' ? `rotate(90 ${el.x} ${el.y})` : undefined} fill="none" stroke="#111" strokeWidth={6} strokeLinecap="round">
+        <path d={`M${el.x - 15} ${el.y - 20} Q${el.x - 3} ${el.y} ${el.x - 15} ${el.y + 20}`} />
+        <path d={`M${el.x + 15} ${el.y - 20} Q${el.x + 3} ${el.y} ${el.x + 15} ${el.y + 20}`} />
+      </g>
+    )
     case 'reservoir': return <path d={`M${el.x} ${el.y - el.s} L${el.x + el.s} ${el.y + el.s * 0.8} L${el.x - el.s} ${el.y + el.s * 0.8} Z`} fill="#111827" />
     case 'pond': return <circle cx={el.x} cy={el.y} r={el.r} fill="#5b9bd5" stroke="#2f6aa8" strokeWidth={3} />
     case 'catch': return <circle cx={el.x} cy={el.y} r={el.r} fill="#e9d5ff55" stroke="#7c3aed" strokeWidth={3} strokeDasharray="3 5" />
-    case 'gate': return <path d={`M${el.x} ${el.y - 22} l22 22 l-22 22 l-22 -22 Z`} fill="#7c3aed" stroke="#5b21b6" strokeWidth={3} />
-    case 'supply': return (
-      <>
-        <rect x={el.x - 22} y={el.y - 22} width={44} height={44} fill="#fff" stroke={BLUE} strokeWidth={3} />
-        <path d={`M${el.x - 22} ${el.y - 22}L${el.x + 22} ${el.y + 22}M${el.x + 22} ${el.y - 22}L${el.x - 22} ${el.y + 22}`} stroke={BLUE} strokeWidth={3} />
-      </>
-    )
-    case 'pump': return (
-      <>
-        <circle cx={el.x} cy={el.y} r={27} fill="#fff" stroke={RED} strokeWidth={3.5} strokeDasharray="7 5" />
-        <text x={el.x} y={el.y + 10} textAnchor="middle" fontSize={30} fill={RED}>P</text>
-      </>
-    )
+    case 'gate': {
+      const half = el.s ?? 22
+      return <path d={`M${el.x} ${el.y - half} l${half} ${half} l-${half} ${half} l-${half} -${half} Z`} fill="#7c3aed" stroke="#5b21b6" strokeWidth={half < 12 ? 2 : 3} />
+    }
+    case 'supply': {
+      const half = el.s ?? 22
+      return (
+        <>
+          <rect x={el.x - half} y={el.y - half} width={half * 2} height={half * 2} fill="#fff" stroke={BLUE} strokeWidth={3} />
+          <path d={`M${el.x - half} ${el.y - half}L${el.x + half} ${el.y + half}M${el.x + half} ${el.y - half}L${el.x - half} ${el.y + half}`} stroke={BLUE} strokeWidth={3} />
+        </>
+      )
+    }
+    case 'pump': {
+      const radius = el.s ?? 27
+      return (
+        <>
+          <circle cx={el.x} cy={el.y} r={radius} fill="#fff" stroke={RED} strokeWidth={3.5} strokeDasharray="7 5" />
+          <text x={el.x} y={el.y + radius * 0.37} textAnchor="middle" fontSize={Math.round(radius * 1.1)} fill={RED}>P</text>
+        </>
+      )
+    }
     case 'house': return <path d={`M${el.x - 26} ${el.y + 4} L${el.x} ${el.y - 24} L${el.x + 26} ${el.y + 4} Z M${el.x - 18} ${el.y + 4} H${el.x + 18} V${el.y + 24} H${el.x - 18} Z`} fill={BLUE} opacity={0.85} />
     case 'school': return (
       <g fill="#111">
@@ -130,26 +154,45 @@ function Element({ el, badges }) {
   }
 }
 
+// คำอธิบายสัญลักษณ์: แสดงเฉพาะที่ผังนั้นมีจริง (when) — ผังไม่มีอ่างก็ไม่มีบรรทัดอ่าง · ทุกสัญลักษณ์ที่วาดต้องมีคำอธิบาย ไม่ให้ใครต้องถาม
+const has = (diagram, kind, pick = () => true) => diagram.elements.some(el => el.kind === kind && pick(el))
 const LEGEND = [
-  { key: 'flow', text: 'น้ำไหลตามทิศลูกศร (เส้นวิ่ง)', icon: (
+  { key: 'flow', when: () => true, text: 'น้ำไหลตามทิศลูกศร (เส้นวิ่ง)', icon: (
     <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M2 8H26" stroke={BLUE} strokeWidth="6" /><path d="M2 8H26" stroke="#fff" strokeWidth="2" strokeDasharray="4 8" strokeOpacity=".9" /><path d="M26 2L34 8L26 14Z" fill={BLUE} /></svg>
   ) },
-  { key: 'minor', text: 'ลำห้วยสาขา (ลูกศรนิ่ง)', icon: (
+  { key: 'minor', when: diagram => has(diagram, 'edge', el => el.cls === 'minor'), text: 'ลำห้วยสาขา (ลูกศรนิ่ง)', icon: (
     <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M2 8H26" stroke={BLUE} strokeWidth="3" /><path d="M26 3L34 8L26 13Z" fill={BLUE} /></svg>
   ) },
-  { key: 'weir', text: 'ฝาย', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><rect x="12" y="1" width="10" height="14" fill="#111" /></svg> },
-  { key: 'reservoir', text: 'อ่างเก็บน้ำ', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M17 1L31 15H3Z" fill="#111" /></svg> },
-  { key: 'pond', text: 'หนอง', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><circle cx="17" cy="8" r="7" fill="#5b9bd5" /></svg> },
-  { key: 'plan', text: 'เส้นประแดง = แผนก่อสร้าง ไม่เคลื่อนไหว', icon: (
+  { key: 'weir', when: diagram => has(diagram, 'weir', el => el.status !== 'planned'), text: 'ฝาย', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><rect x="12" y="1" width="10" height="14" fill="#111" /></svg> },
+  { key: 'planWeir', when: diagram => has(diagram, 'weir', el => el.status === 'planned'), text: 'แท่งแดง = ฝายแผนก่อสร้าง ไม่เคลื่อนไหว', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><rect x="12" y="1" width="10" height="14" fill={RED} /></svg> },
+  { key: 'reservoir', when: diagram => has(diagram, 'reservoir'), text: 'อ่างเก็บน้ำ', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M17 1L31 15H3Z" fill="#111" /></svg> },
+  { key: 'pond', when: diagram => has(diagram, 'pond'), text: 'หนอง', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><circle cx="17" cy="8" r="7" fill="#5b9bd5" /></svg> },
+  { key: 'gate', when: diagram => has(diagram, 'gate'), text: 'ประตูระบายน้ำ', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M17 1L26 8L17 15L8 8Z" fill="#7c3aed" stroke="#5b21b6" strokeWidth="1.5" /></svg> },
+  { key: 'bridge', when: diagram => has(diagram, 'bridge'), text: 'สะพาน', icon: (
+    <svg viewBox="0 0 34 16" aria-hidden="true"><g fill="none" stroke="#111" strokeWidth="3" strokeLinecap="round"><path d="M12 2Q16 8 12 14" /><path d="M22 2Q18 8 22 14" /></g></svg>
+  ) },
+  { key: 'supply', when: diagram => has(diagram, 'supply'), text: 'ระบบประปา', icon: (
+    <svg viewBox="0 0 34 16" aria-hidden="true"><rect x="9" y="1" width="14" height="14" fill="#fff" stroke={BLUE} strokeWidth="1.5" /><path d="M9 1L23 15M23 1L9 15" stroke={BLUE} strokeWidth="1.5" /></svg>
+  ) },
+  { key: 'pump', when: diagram => has(diagram, 'pump'), text: 'วงกลมประแดง = สถานีสูบน้ำแผนก่อสร้าง ไม่เคลื่อนไหว', icon: (
+    <svg viewBox="0 0 34 16" aria-hidden="true"><circle cx="17" cy="8" r="6.5" fill="#fff" stroke={RED} strokeWidth="2" strokeDasharray="4 3" /></svg>
+  ) },
+  { key: 'plan', when: diagram => has(diagram, 'edge', el => el.cls === 'plan'), text: 'เส้นประแดง = แผนก่อสร้าง ไม่เคลื่อนไหว', icon: (
     <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M2 8H32" stroke={RED} strokeWidth="3" strokeDasharray="7 5" /></svg>
   ) },
-  { key: 'repair', text: 'ลายขีดแดง = ชำรุดตามผัง ไม่เคลื่อนไหว', icon: (
+  { key: 'repair', when: diagram => has(diagram, 'repair'), text: 'ลายขีดแดง = ชำรุดตามผัง ไม่เคลื่อนไหว', icon: (
     <svg viewBox="0 0 34 16" aria-hidden="true">
       <defs><pattern id="wd-legend-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fff" /><path d="M0 0V6" stroke={RED} strokeWidth="2.5" /></pattern></defs>
       <rect x="8" y="2" width="18" height="12" fill="url(#wd-legend-hatch)" stroke={RED} strokeWidth="2" />
     </svg>
   ) },
-  { key: 'na', text: 'ขอบประ = ไม่มีค่า · ไม่มีรายงานใหม่ · ไม่ระบุ', icon: (
+  { key: 'tambon', when: diagram => has(diagram, 'outline', el => el.cls === 'tambon'), text: 'จุดเขียว = เขตตำบล', icon: (
+    <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M2 8H32" stroke="#4d7c0f" strokeWidth="3" strokeDasharray="3 5" /></svg>
+  ) },
+  { key: 'village', when: diagram => has(diagram, 'outline', el => el.cls === 'village'), text: 'เส้นประเทา = เขตหมู่บ้าน', icon: (
+    <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M2 8H32" stroke="#94a3b8" strokeWidth="3" strokeDasharray="8 6" /></svg>
+  ) },
+  { key: 'na', when: () => true, text: 'ขอบประ = ไม่มีค่า · ไม่มีรายงานใหม่ · ไม่ระบุ', icon: (
     <svg viewBox="0 0 34 16" aria-hidden="true"><rect x="1" y="2" width="30" height="12" rx="6" fill="#fff" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4 3" /></svg>
   ) },
 ]
@@ -160,7 +203,7 @@ function DiagramMap({ diagram, badges, zoom }) {
     <div className="wd-mapbox rounded-2xl border border-slate-300 bg-white">
       <svg viewBox={`0 0 ${w} ${h}`} role="img" fontFamily={FONT}
         style={{ width: `max(${zoom * 100}%, ${Math.round(zoom * MAP_MIN_WIDTH)}px)` }}
-        aria-label={`${diagram.title} แสดงอ่างเก็บน้ำ 3 แห่ง ห้วย ฝาย คลองชลประทาน หนอง และแม่น้ำยม ดูรายละเอียดทั้งหมดได้ในโหมดสายน้ำ (รายการ)`}>
+        aria-label={`${diagram.title} ${diagram.ariaSummary} ดูรายละเอียดทั้งหมดได้ในโหมดสายน้ำ (รายการ)`}>
         <defs>
           {[['aM', BLUE, 26], ['aB', BLUE, 36], ['aR', DARK, 44], ['aS', BLUE, 17], ['aP', RED, 18]].map(([id, fill, size]) => (
             <marker key={id} id={`wd-${id}`} viewBox="0 0 10 10" refX="7" refY="5" markerWidth={size} markerHeight={size} markerUnits="userSpaceOnUse" orient="auto">
@@ -216,20 +259,25 @@ function LaneItem({ item, badges, last }) {
 
 const BUTTON = 'inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-xl border border-slate-400 bg-white px-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50'
 
-function DiagramBody({ tenant, tenantName, stations, now }) {
-  const diagram = THUNGKAEW_DIAGRAM
+function DiagramBody({ diagram, scope, tenantName, stations, now }) {
   const root = useRef(null)
   const [mode, setMode] = useState(initialMode)
   const [paused, setPaused] = useState(false)
   const [zoom, setZoom] = useState(MIN_ZOOM)
   const reducedMotion = useReducedMotion()
   // ดึงรายงานอ่างเล็กเหมือนการ์ดด้านบน — Worker จำคำตอบ 6 ชม. ที่ edge อยู่แล้ว ไม่ไปต้นทางซ้ำ
-  const dam50 = useReservoirReport('50')
-  const dam30 = useReservoirReport('30')
+  // ผังไม่มีอ่างเล็ก (เช่นตำหนักธรรม) = id เป็น null ไม่ดึงอะไร · hook ต้องถูกเรียกจำนวนเท่าเดิมทุกครั้ง จึงตายตัว 2 ช่อง (เทสต์กันไม่ให้ผังมีเกิน 2)
+  const [smallA = null, smallB = null] = diagram.smallReservoirs ?? []
+  const reportA = useReservoirReport(smallA)
+  const reportB = useReservoirReport(smallB)
 
   const badges = useMemo(
-    () => liveBadges({ binds: diagram.binds, reports: { 50: dam50, 30: dam30 }, stations, now }),
-    [diagram.binds, dam50, dam30, stations, now],
+    () => liveBadges({
+      binds: diagram.binds,
+      reports: { ...(smallA === null ? {} : { [smallA]: reportA }), ...(smallB === null ? {} : { [smallB]: reportB }) },
+      stations, now,
+    }),
+    [diagram.binds, smallA, smallB, reportA, reportB, stations, now],
   )
 
   // หยุดเส้นน้ำเมื่อผังอยู่นอกจอหรือแท็บถูกซ่อน (ไม่กินแบตเปล่า) ด้วย data attribute ไม่ re-render · ไม่แตะ Supabase/auth (NOTES §7)
@@ -267,7 +315,7 @@ function DiagramBody({ tenant, tenantName, stations, now }) {
             <span className="whitespace-nowrap">ทิศทางน้ำตามผัง</span> ·{' '}
             <span className="whitespace-nowrap">ศูนย์บริหารจัดการทรัพยากรน้ำจังหวัดแพร่</span> ·{' '}
             <span className="whitespace-nowrap">วาดใหม่</span>
-            {tenant.scope && <> · <span className="whitespace-nowrap font-semibold text-gray-600">{tenant.scope}</span></>}
+            {scope && <> · <span className="whitespace-nowrap font-semibold text-gray-600">{scope}</span></>}
           </p>
         </div>
       </div>
@@ -310,16 +358,24 @@ function DiagramBody({ tenant, tenantName, stations, now }) {
 
       {mode === 'map' && (
         <ul className="wd-legend m-0 flex list-none flex-wrap gap-x-3.5 gap-y-1.5 px-0.5 text-xs text-slate-600">
-          {LEGEND.map(item => <li key={item.key} className="inline-flex items-center gap-1.5">{item.icon}{item.text}</li>)}
+          {LEGEND.filter(item => item.when(diagram)).map(item => <li key={item.key} className="inline-flex items-center gap-1.5">{item.icon}{item.text}</li>)}
         </ul>
       )}
 
       <div className="rounded-2xl border border-slate-300 bg-slate-50 px-3.5 py-3 text-xs leading-relaxed text-slate-600">
         <p>
-          <b>ที่มา:</b> ผังน้ำตำบลทุ่งแค้ว อำเภอหนองม่วงไข่ จังหวัดแพร่ ของศูนย์บริหารจัดการทรัพยากรน้ำจังหวัดแพร่
-          (ไฟล์ลงวันที่ 9 พ.ค. 2567 ตามชื่อไฟล์) — วาดใหม่ ไม่ได้คัดลอกภาพ ไม่ได้เป็นผลงานของ{tenantName || 'หน่วยงาน'} ·
+          <b>ที่มา:</b> {diagram.sourceTitle} ของศูนย์บริหารจัดการทรัพยากรน้ำจังหวัดแพร่
+          ({diagram.sourceDate}) — วาดใหม่ ไม่ได้คัดลอกภาพ ไม่ได้เป็นผลงานของ{tenantName || 'หน่วยงาน'} ·
           สถานะโครงสร้างอาจเปลี่ยนไปหลังทำผัง · ป้ายตัวเลขบนผังคือค่าจากสถานี/รายงานตามที่ระบุ ไม่ใช่ประกาศเตือนภัย
         </p>
+        {diagram.omitted?.length > 0 && (
+          <div className="mt-1.5" data-diagram-omitted>
+            <p className="font-semibold">ที่ผังต้นฉบับมีแต่เราวาดต่างไป หรือไม่ได้วาด:</p>
+            <ul className="ml-4 list-disc">
+              {diagram.omitted.map(text => <li key={text}>{text}</li>)}
+            </ul>
+          </div>
+        )}
         <a href={diagram.sourceUrl} target="_blank" rel="noopener noreferrer"
           className="mt-1 inline-flex min-h-[44px] items-center gap-1 font-semibold text-blue-700">
           ดูผังต้นฉบับ <ExternalLink size={12} />
@@ -330,12 +386,14 @@ function DiagramBody({ tenant, tenantName, stations, now }) {
 }
 
 /**
- * ผังน้ำตำบลทุ่งแค้ว เคลื่อนไหว — แสดงเฉพาะ อปท. ใน WATER_DIAGRAM_TENANTS (thungkaew + demo)
- * เส้นวิ่ง = ทิศน้ำตามผังที่ศูนย์ฯ แพร่วาดไว้ ไม่ใช่การวัดว่าน้ำไหล · ค่าสดบนผังมีแค่อ่างเล็ก 2 แห่ง ฝน และระดับน้ำที่สถานีใกล้
+ * ผังน้ำตำบลเคลื่อนไหว — แสดงเฉพาะ อปท. ใน WATER_DIAGRAM_TENANTS (ตอนนี้ thungkaew · tamnaktham · demo) แต่ละแห่งได้ผังของตัวเอง
+ * เส้นวิ่ง = ทิศน้ำตามผังที่ศูนย์ฯ แพร่วาดไว้ ไม่ใช่การวัดว่าน้ำไหล · ค่าสดบนผังมีเฉพาะที่ผูกไว้ในข้อมูลผัง (อ่างเล็ก ฝน ระดับน้ำ)
  * ไม่ส่งเข้า Telegram/แถบหน้าแรก/ภาพแชร์ · ไม่มีฐานข้อมูล/RPC ใหม่ (ข้อมูลผังเป็นไฟล์ในโค้ด)
+ * previewId (จาก ?diagram=) ใช้ได้เฉพาะ demo ดูผังอื่นด้วยข้อมูลจริงก่อนเปิดให้ อปท. จริง
  */
-export default function WaterDiagram({ slug, tenantName, stations, now }) {
-  const tenant = diagramTenant(slug)
-  if (!tenant) return null
-  return <DiagramBody tenant={tenant} tenantName={tenantName} stations={stations} now={now} />
+export default function WaterDiagram({ slug, tenantName, stations, now, previewId }) {
+  const resolved = resolveDiagram(slug, previewId)
+  const diagram = resolved ? diagramById(resolved.diagram) : null
+  if (!diagram) return null
+  return <DiagramBody key={diagram.id} diagram={diagram} scope={resolved.scope} tenantName={tenantName} stations={stations} now={now} />
 }

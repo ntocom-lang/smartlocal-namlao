@@ -1,4 +1,5 @@
-// E2E: ผังน้ำตำบลทุ่งแค้ว (src/components/water/WaterDiagram.jsx) บนหน้า /water-situation
+// E2E: ผังน้ำตำบล (ทุ่งแค้ว + ตำหนักธรรม) (src/components/water/WaterDiagram.jsx) บนหน้า /water-situation
+// ผังทุ่งแค้วเป็นค่าเริ่มต้นของ demo · ผังตำหนักธรรมเปิดบน demo ด้วย ?diagram=tamnaktham
 //
 // ตรวจ: ค่าสดบนผัง (อ่างเล็ก/ฝน/ระดับน้ำ) ทั้งแบบปกติ ค้าง และไม่มีค่า · 2 โหมด · เลย์เอาต์ 360/390/768/1280 · ปุ่ม ≥ 44px
 //   · เส้นวิ่งเฉพาะโครงสร้างที่มีตามผัง (ชำรุด/แผนก่อสร้างไม่วิ่ง) · กดหยุด · ลดการเคลื่อนไหว · คำกำกับและที่มาอยู่ครบ
@@ -17,6 +18,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { chromium } from 'playwright'
 import { THUNGKAEW_DIAGRAM } from '../src/lib/waterDiagram/thungkaew.js'
+import { DIAGRAMS } from '../src/lib/waterDiagram/diagrams.js'
 import { isAnimated } from '../src/lib/waterDiagram/model.js'
 
 const DEFAULT_BASE_URL = 'http://localhost:5174'
@@ -53,6 +55,10 @@ const station = (type, code, name, extra) => ({
   dam_same_count: null, dam_same_since: null, dam_same_capped: null, ...extra,
 })
 
+const tkStation = extra => station('waterlevel', 'Y.38', 'บ้านแม่คำมีตำหนักธรรม', {
+  tambon_name: 'ตำหนักธรรม', river_name: 'น้ำแม่คำมี', distance_km: 0.7, recorded_at: hoursAgo(0.5), bank_diff_m: 2.35, waterlevel_msl: 190.2, ...extra,
+})
+
 // ฉากจำลอง — ปกติ = สถานีฝน/ระดับน้ำสด + รายงานอ่างใหม่ · ค้าง = ทุกอย่างเก่า · ว่าง = ไม่มี RES038/YOM003
 const SCENES = {
   normal: {
@@ -73,6 +79,11 @@ const SCENES = {
     dams: null, // Worker ล่ม
     stations: [station('rain', 'OTHER', 'สถานีอื่น', { recorded_at: hoursAgo(0.5), rain_24h_mm: 0 })],
   },
+  // ตำหนักธรรม (?diagram=tamnaktham): ผังไม่มีอ่างเล็ก มีแต่ระดับน้ำ Y.38 ที่ห่างสำนักงาน 0.7 กม.
+  tkNormal: { dams: null, stations: [tkStation({})] },
+  tkStale: { dams: null, stations: [tkStation({ recorded_at: hoursAgo(5) })] },
+  tkNull: { dams: null, stations: [tkStation({ bank_diff_m: null })] },
+  tkEmpty: { dams: null, stations: [station('rain', 'OTHER', 'สถานีอื่น', { recorded_at: hoursAgo(0.5), rain_24h_mm: 0 })] },
   // ค่าว่างจากต้นทางต้องไม่กลายเป็น 0 / "ปกติ"
   nullvalues: {
     dams: { 50: reservoirJson(50, 'อ่างเก็บน้ำห้วยยอย', 0.3, 73.2, 2), 30: reservoirJson(30, 'อ่างเก็บน้ำห้วยปุย', 0.28, 76.79, 2) },
@@ -83,7 +94,7 @@ const SCENES = {
   },
 }
 
-async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 900, reducedMotion = 'no-preference' } = {}) {
+async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 900, reducedMotion = 'no-preference', diagram = null } = {}) {
   const scene = SCENES[sceneName]
   const context = await browser.newContext({ viewport: { width, height }, locale: 'th-TH', reducedMotion })
   const page = await context.newPage()
@@ -92,17 +103,19 @@ async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 9
   page.on('console', message => {
     if (message.type() === 'error' && !/Failed to load resource/.test(message.text())) problems.push(`console: ${message.text().slice(0, 200)}`)
   })
+  const reservoirRequests = []
   await page.route('**/api/small-reservoir*', route => {
     const id = new URL(route.request().url()).searchParams.get('id')
+    reservoirRequests.push(id)
     if (!scene.dams?.[id]) return route.fulfill({ status: 503, json: { error: 'down' } })
     return route.fulfill({ json: scene.dams[id] })
   })
   await page.route('**/rest/v1/rpc/get_public_water_situation', route =>
     route.fulfill({ json: { synced_at: hoursAgo(0.2), stations: scene.stations, warnings: [] } }))
-  await page.goto(`${baseUrl}/water-situation`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${baseUrl}/water-situation${diagram ? `?diagram=${diagram}` : ''}`, { waitUntil: 'domcontentloaded' })
   await page.locator('#water-diagram').waitFor({ timeout: 30_000 })
   await page.waitForTimeout(1200)
-  return { context, page, problems }
+  return { context, page, problems, reservoirRequests }
 }
 
 const section = page => page.locator('#water-diagram')
@@ -184,9 +197,9 @@ try {
   })
 
   // ── 4) เลย์เอาต์ ──
-  for (const width of [360, 390, 768, 1280]) {
-    await check(`เลย์เอาต์ ${width}px: โหมดเริ่มต้นถูก · ไม่เลื่อนแนวนอนทั้งหน้า · ปุ่มและลิงก์ ≥ 44px`, async () => {
-      const { context, page } = await openScene(browser, baseUrl, 'normal', { width })
+  for (const [diagram, scene, shotPrefix] of [[null, 'normal', 'lanes'], ['tamnaktham', 'tkNormal', 'tk-lanes']]) for (const width of [360, 390, 768, 1280]) {
+    await check(`เลย์เอาต์ ${diagram ?? 'thungkaew'} ${width}px: โหมดเริ่มต้นถูก · ไม่เลื่อนแนวนอนทั้งหน้า · ปุ่มและลิงก์ ≥ 44px`, async () => {
+      const { context, page } = await openScene(browser, baseUrl, scene, { width, diagram })
       try {
         const expected = width >= 768 ? 'ผังภาพ' : 'สายน้ำ (รายการ)'
         assert.equal(await modeButton(page, expected).getAttribute('aria-pressed'), 'true', `จอ ${width}px ต้องเริ่มที่โหมด ${expected}`)
@@ -209,7 +222,7 @@ try {
             .filter(item => item.h < 44 || (item.w < 44 && item.t.length < 3)))
           assert.deepEqual(small, [], `ปุ่ม/ลิงก์เล็กกว่า 44px: ${JSON.stringify(small)}`)
         }
-        await section(page).screenshot({ path: path.join(SHOT_DIR, `lanes-${width}.png`) })
+        await section(page).screenshot({ path: path.join(SHOT_DIR, `${shotPrefix}-${width}.png`) })
       } finally { await context.close() }
     })
   }
@@ -269,6 +282,15 @@ try {
     } finally { await context.close() }
   })
 
+  await check('กล่องที่มาของทุ่งแค้ว: บอกอายุผังต้นฉบับ + ของที่ไม่ใส่ชื่อเพราะอ่านไม่ชัด (ไม่ต้องมีใครถามว่าทำไมห้วยไม่มีชื่อ)', async () => {
+    const { context, page } = await openScene(browser, baseUrl, 'normal')
+    try {
+      const text = await section(page).innerText()
+      for (const needed of ['ไฟล์ลงวันที่ 9 พ.ค. 2567', 'ที่ผังต้นฉบับมีแต่เราวาดต่างไป หรือไม่ได้วาด', 'ไม่ขอเดาชื่อ']) assert.ok(text.includes(needed), `ต้องมี "${needed}"`)
+      assert.equal(await section(page).locator('[data-diagram-omitted] li').count(), THUNGKAEW_DIAGRAM.omitted.length)
+    } finally { await context.close() }
+  })
+
   await check('ไม่มีชื่อห้วยแนวตั้ง 4 เส้นที่ยังไม่ยืนยัน (ห้วยจำค่า/ห้วยย่าเฟย) บนหน้า · โหมดรายการมีครบทุกรายการของข้อมูล', async () => {
     const { context, page } = await openScene(browser, baseUrl, 'normal')
     try {
@@ -280,6 +302,87 @@ try {
       for (const lane of THUNGKAEW_DIAGRAM.lanes) {
         assert.ok(text.includes(lane.title), `ขาดสาย ${lane.title}`)
         for (const item of lane.items) assert.ok(text.includes(item.name), `ขาดรายการ ${item.name}`)
+      }
+    } finally { await context.close() }
+  })
+
+  // ── 7) ผังตำหนักธรรม (?diagram=tamnaktham บน demo) ──
+  const tk = DIAGRAMS.tamnaktham
+  await check('ตำหนักธรรม: ป้ายระดับน้ำ Y.38 พร้อมระยะ ในผังภาพและรายการ · ป้ายบอกว่าใช้ข้อมูลจริงของตำหนักธรรม · ไม่มีค่าฝน/อ่าง', async () => {
+    const { context, page, problems, reservoirRequests } = await openScene(browser, baseUrl, 'tkNormal', { diagram: 'tamnaktham' })
+    try {
+      // ผังนี้ไม่มีอ่างเล็ก: ห้ามมีคำขอรายงานอ่างที่ id ว่าง (null/undefined) — คำขอ 50/30 มาจากการ์ดอ่างเล็กด้านบนของ demo
+      assert.deepEqual(reservoirRequests.filter(id => id !== '50' && id !== '30'), [], 'ผังไม่มีอ่างเล็กต้องไม่ยิงคำขอ id แปลก')
+      assert.match(await section(page).locator('h2').innerText(), /ผังน้ำตำบลตำหนักธรรม/)
+      assert.match(await section(page).innerText(), /ข้อมูลจริงของตำหนักธรรม ใช้สาธิต/)
+      await modeButton(page, 'ผังภาพ').click()
+      await slotText(page, 'บ้านแม่คำมีตำหนักธรรม ห่าง 0.7 กม. · ต่ำกว่าตลิ่ง 2.35 ม.').waitFor({ timeout: 8000 })
+      const text = await mapText(page)
+      assert.ok(!/อ่าง \d|ฝน \d/.test(text), 'ผังนี้ไม่มีป้ายอ่าง/ฝน')
+      await section(page).screenshot({ path: path.join(SHOT_DIR, 'tk-normal-map-1280.png') })
+      await modeButton(page, 'สายน้ำ (รายการ)').click()
+      assert.ok((await section(page).innerText()).includes('บ้านแม่คำมีตำหนักธรรม ห่าง 0.7 กม. · ต่ำกว่าตลิ่ง 2.35 ม.'))
+      await section(page).screenshot({ path: path.join(SHOT_DIR, 'tk-normal-lanes-1280.png') })
+      assert.deepEqual(problems, [])
+    } finally { await context.close() }
+  })
+
+  await check('ตำหนักธรรม: ค่าค้าง/ค่าว่าง/ไม่มีสถานี = บอกตรงๆ ไม่ใช่ค่าสด ไม่เป็น 0', async () => {
+    for (const [scene, expected, forbidden] of [
+      ['tkStale', 'บ้านแม่คำมีตำหนักธรรม ห่าง 0.7 กม. ไม่มีค่าใหม่', /ต่ำกว่าตลิ่ง|2\.35/],
+      ['tkNull', 'ไม่มีค่าในระบบ', /ตลิ่ง|ปกติ/],
+      ['tkEmpty', 'ไม่มีค่าในระบบ', /ตลิ่ง|ปกติ|0 ม\./],
+    ]) {
+      const { context, page } = await openScene(browser, baseUrl, scene, { diagram: 'tamnaktham' })
+      try {
+        await modeButton(page, 'ผังภาพ').click()
+        await slotText(page, expected).waitFor({ timeout: 8000 })
+        assert.ok(!forbidden.test(await mapText(page)), `${scene}: ค่าที่ไม่สดต้องไม่โชว์เป็นค่าปัจจุบัน`)
+      } finally { await context.close() }
+    }
+  })
+
+  const tkAnimated = tk.elements.filter(isAnimated).length
+  await check(`ตำหนักธรรม: เส้นวิ่ง ${tkAnimated} เส้น (น้ำแม่คำมี + คลอง + แม่น้ำยม) · ฝาย/สถานีสูบแผนก่อสร้างสีแดงไม่มีแอนิเมชัน · ปุ่มหยุดทำงาน`, async () => {
+    const { context, page } = await openScene(browser, baseUrl, 'tkNormal', { diagram: 'tamnaktham' })
+    try {
+      await modeButton(page, 'ผังภาพ').click()
+      assert.equal(await section(page).locator('path.wd-flow').count(), tkAnimated)
+      const redStatic = await section(page).evaluate(root => [...root.querySelectorAll('.wd-mapbox svg rect[fill="#b91c1c"], .wd-mapbox svg circle[stroke="#b91c1c"]')]
+        .filter(el => getComputedStyle(el).animationName !== 'none').length)
+      assert.equal(redStatic, 0)
+      assert.equal(await section(page).locator('.wd-mapbox svg rect[fill="#b91c1c"]').count(), 2, 'ฝายแผนก่อสร้าง 2 แท่ง (หมู่ 1 และหมู่ 12)')
+      assert.equal(await section(page).locator('.wd-mapbox svg circle[stroke="#b91c1c"]').count(), 3, 'สถานีสูบน้ำแผนก่อสร้าง 3 จุด')
+      assert.equal(await section(page).locator('path.wd-shimmer').count(), 0, 'ผังนี้ไม่มีคลองสองทิศ')
+      const state = () => section(page).locator('path.wd-flow').first().evaluate(el => getComputedStyle(el).animationPlayState)
+      assert.equal(await state(), 'running')
+      await section(page).getByRole('button', { name: 'หยุดเคลื่อนไหว' }).click()
+      assert.equal(await state(), 'paused')
+    } finally { await context.close() }
+  })
+
+  await check('ตำหนักธรรม: ทุกสัญลักษณ์บนผังมีคำอธิบาย · กล่องที่มาบอกอายุผังและเขตหมู่บ้านที่วาดเป็นสีเทา · คำกำกับบังคับครบ · รายการสายน้ำครบ', async () => {
+    const { context, page } = await openScene(browser, baseUrl, 'tkNormal', { diagram: 'tamnaktham' })
+    try {
+      await modeButton(page, 'ผังภาพ').click()
+      const legend = await section(page).locator('.wd-legend').innerText()
+      for (const needed of ['ประตูระบายน้ำ', 'สะพาน', 'ระบบประปา', 'สถานีสูบน้ำแผนก่อสร้าง', 'ฝายแผนก่อสร้าง', 'เขตตำบล', 'เขตหมู่บ้าน']) assert.ok(legend.includes(needed), `คำอธิบายสัญลักษณ์ขาด "${needed}"`)
+      assert.ok(!legend.includes('อ่างเก็บน้ำ') && !legend.includes('หนอง'), 'ผังนี้ไม่มีอ่าง/หนอง ต้องไม่มีบรรทัดอธิบาย')
+      for (const mode of ['ผังภาพ', 'สายน้ำ (รายการ)']) {
+        await modeButton(page, mode).click()
+        const text = await section(page).innerText()
+        for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ผังน้ำตำบลตำหนักธรรม อำเภอหนองม่วงไข่', 'ไฟล์ลงวันที่ 9 พ.ค. 2567', 'เขตหมู่บ้านริมน้ำแม่คำมี', 'เส้นประเทา']) {
+          assert.ok(text.includes(needed), `โหมด ${mode} ต้องมี "${needed}"`)
+        }
+        assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 1)
+      }
+      const text = await section(page).innerText()
+      for (const lane of tk.lanes) {
+        assert.ok(text.includes(lane.title), `ขาดสาย ${lane.title}`)
+        for (const item of lane.items) assert.ok(text.includes(item.name), `ขาดรายการ ${item.name}`)
+      }
+      for (const planned of tk.lanes.flatMap(lane => lane.items).filter(item => item.status === 'planned')) {
+        assert.ok(text.includes('แผนก่อสร้าง · ไม่เคลื่อนไหว'), `${planned.name}: ต้องบอกว่าแผนก่อสร้าง`)
       }
     } finally { await context.close() }
   })

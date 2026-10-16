@@ -15,18 +15,7 @@
 // ลำดับในอาร์เรย์ = ลำดับการวาด (ตัวหลังทับตัวก่อน) · id ใส่เฉพาะตัวที่ lane หรือเทสต์อ้างถึง
 
 import { RESERVOIR_SOURCE } from '../smallReservoirs.js'
-
-const E = (cls, d, o = {}) => ({ kind: 'edge', cls, d, status: 'existing', arrow: true, ...o })
-const T = (x, y, t, o = {}) => ({ kind: 'text', x, y, t, ...o })
-const W = (x, y, o = 'h', w = 40) => ({ kind: 'weir', x, y, o, w })
-const RESERVOIR = (id, x, y, s = 34) => ({ kind: 'reservoir', id, x, y, s })
-const POND = (id, x, y, r = 44) => ({ kind: 'pond', id, x, y, r })
-
-// ลำห้วยสาขาที่ไหลเข้าลำหลักจากข้าง: ลูกศรนิ่ง + ป้ายชื่อ
-const sideCreeks = (rows, labelY, labelDx = 0) => rows.flatMap(([x1, y1, x2, y2, name, lift]) => [
-  E('minor', `M${x1} ${y1} L${x2} ${y2}`),
-  T((x1 + x2) / 2 + labelDx, y1 - (lift ?? labelY), name, { s: 19 }),
-])
+import { E, T, W, RESERVOIR, POND, sideCreeks } from './builders.js'
 
 const elements = [
   // ── กรอบเขตตำบล + ป้ายเขต ──
@@ -209,9 +198,18 @@ export const THUNGKAEW_LANES = [
 export const THUNGKAEW_DIAGRAM = {
   id: 'thungkaew',
   title: 'ผังน้ำตำบลทุ่งแค้ว',
+  sourceTitle: 'ผังน้ำตำบลทุ่งแค้ว อำเภอหนองม่วงไข่ จังหวัดแพร่',
+  sourceDate: 'ไฟล์ลงวันที่ 9 พ.ค. 2567 ตามชื่อไฟล์',
   viewBox: { w: 2000, h: 1125 },
   drawnLabel: 'พ.ค. 2567',
   sourceUrl: RESERVOIR_SOURCE,
+  ariaSummary: 'แสดงอ่างเก็บน้ำ 3 แห่ง ห้วย ฝาย คลองชลประทาน หนอง และแม่น้ำยม',
+  // อ่างเล็กที่ผังนี้แสดงค่าสด (id ตาม SMALL_RESERVOIRS) — ไม่เกิน 2 แห่งต่อผัง (หน้าจอเรียก useReservoirReport ตายตัว 2 ช่อง)
+  smallReservoirs: ['50', '30'],
+  // ของที่ผังต้นฉบับมีแต่เราไม่ได้วาด/วาดต่างไป พร้อมเหตุผล — ขึ้นในกล่องที่มา กันคำถามว่าทำไมไม่เหมือนต้นฉบับ
+  omitted: [
+    'ชื่อห้วยแนวตั้ง 4 เส้นกลางผัง — ต้นฉบับเขียนตะแคงอ่านไม่ชัด ไม่ขอเดาชื่อ จึงวาดเส้นโดยไม่ใส่ชื่อ',
+  ],
   elements,
   binds: THUNGKAEW_BINDS,
   lanes: THUNGKAEW_LANES,

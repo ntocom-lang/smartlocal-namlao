@@ -6,25 +6,48 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { SMALL_RESERVOIRS } from '../src/lib/smallReservoirs.js'
 import {
-  DIAGRAM_STATUSES, EDGE_STYLES, WATER_DIAGRAM_TENANTS, chipWidth, diagramTenant, isAnimated, isShimmer, liveBadges,
+  DIAGRAM_PREVIEW_SCOPES, DIAGRAM_STATUSES, EDGE_STYLES, WATER_DIAGRAM_TENANTS, chipWidth, diagramTenant, isAnimated, isShimmer, liveBadges,
+  resolveDiagram,
 } from '../src/lib/waterDiagram/model.js'
-import { THUNGKAEW_BINDS, THUNGKAEW_DIAGRAM, THUNGKAEW_LANES } from '../src/lib/waterDiagram/thungkaew.js'
+import { DIAGRAMS, diagramById } from '../src/lib/waterDiagram/diagrams.js'
+import { THUNGKAEW_BINDS } from '../src/lib/waterDiagram/thungkaew.js'
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
-const { elements, viewBox } = THUNGKAEW_DIAGRAM
 
-// ── ทะเบียน อปท. ──
+// ── ทะเบียน อปท. และการเลือกผัง ──
 {
-  assert.deepEqual(Object.keys(WATER_DIAGRAM_TENANTS).sort(), ['demo', 'thungkaew'])
-  assert.ok(diagramTenant('thungkaew'))
+  assert.deepEqual(Object.keys(WATER_DIAGRAM_TENANTS).sort(), ['demo', 'tamnaktham', 'thungkaew'])
+  assert.deepEqual(Object.keys(DIAGRAMS).sort(), ['tamnaktham', 'thungkaew'])
   assert.equal(diagramTenant('thungkaew').scope, '')
+  assert.equal(diagramTenant('tamnaktham').scope, '')
   assert.equal(diagramTenant('demo').scope, 'ข้อมูลจริงของทุ่งแค้ว ใช้สาธิต', 'demo ต้องบอกว่าเป็นข้อมูลของทุ่งแค้ว')
-  for (const other of ['namlao', 'tamnaktham', '', undefined, null, '__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+  for (const other of ['namlao', '', undefined, null, '__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
     assert.equal(diagramTenant(other), null, `${other} ต้องไม่เห็นผัง`)
+    assert.equal(resolveDiagram(other, 'thungkaew'), null, `${other} ต้องไม่เห็นผังแม้ใส่ ?diagram=`)
   }
+  // ทุก อปท. ในทะเบียนชี้ผังที่มีจริง · แต่ละ อปท. ได้ผังของตัวเอง
+  for (const [slug, tenant] of Object.entries(WATER_DIAGRAM_TENANTS)) assert.ok(diagramById(tenant.diagram), `${slug}: ผัง ${tenant.diagram} ไม่มี`)
+  assert.equal(resolveDiagram('thungkaew').diagram, 'thungkaew')
+  assert.equal(resolveDiagram('tamnaktham').diagram, 'tamnaktham')
+  assert.equal(resolveDiagram('demo').diagram, 'thungkaew', 'demo ค่าเริ่มต้น = ผังทุ่งแค้ว')
+
+  // ดูผังอื่นด้วย ?diagram= ได้เฉพาะ demo — อปท. จริงต้องไม่ถูกเปลี่ยนผังด้วย URL
+  assert.deepEqual(resolveDiagram('demo', 'tamnaktham'), { diagram: 'tamnaktham', scope: 'ข้อมูลจริงของตำหนักธรรม ใช้สาธิต' })
+  assert.equal(resolveDiagram('demo', 'thungkaew').scope, 'ข้อมูลจริงของทุ่งแค้ว ใช้สาธิต')
+  assert.equal(resolveDiagram('thungkaew', 'tamnaktham').diagram, 'thungkaew', 'อปท. จริงเมินพารามิเตอร์ ?diagram=')
+  assert.equal(resolveDiagram('tamnaktham', 'thungkaew').diagram, 'tamnaktham')
+  for (const bad of ['namlao', 'nope', '', null, undefined, '__proto__', 'constructor', 'toString']) {
+    assert.equal(resolveDiagram('demo', bad).diagram, 'thungkaew', `demo + ?diagram=${bad} ต้องกลับไปผังเริ่มต้น`)
+  }
+  // ผังที่ดูตัวอย่างได้ต้องมีป้ายบอกว่าข้อมูลของ อปท. ไหนครบทุกผัง
+  assert.deepEqual(Object.keys(DIAGRAM_PREVIEW_SCOPES).sort(), Object.keys(DIAGRAMS).sort())
+  for (const scope of Object.values(DIAGRAM_PREVIEW_SCOPES)) assert.match(scope, /^ข้อมูลจริงของ.+ ใช้สาธิต$/)
+
   // อ่างเล็กที่ผังใช้ต้องอยู่ใน อปท. กลุ่มเดียวกับการ์ด PR1 (ไม่งั้นผังแสดงค่าอ่างที่การ์ดด้านบนไม่แสดง)
   const smallTenants = read('src/lib/smallReservoirs.js').match(/SMALL_RESERVOIR_TENANTS = \{[\s\S]*?\n\}/)[0]
-  for (const slug of Object.keys(WATER_DIAGRAM_TENANTS)) assert.ok(smallTenants.includes(`${slug}:`), `${slug} ต้องอยู่ใน SMALL_RESERVOIR_TENANTS ด้วย`)
+  for (const [slug, tenant] of Object.entries(WATER_DIAGRAM_TENANTS)) {
+    if (diagramById(tenant.diagram).smallReservoirs.length > 0) assert.ok(smallTenants.includes(`${slug}:`), `${slug} ต้องอยู่ใน SMALL_RESERVOIR_TENANTS ด้วย (ผังมีอ่างเล็ก)`)
+  }
 }
 
 // ── สไตล์เส้น: ระยะเลื่อนต่อรอบต้องเท่าความยาวลาย ไม่งั้นวนแล้วกระตุก ──
@@ -37,55 +60,7 @@ const { elements, viewBox } = THUNGKAEW_DIAGRAM
   }
 }
 
-// ── ข้อมูลผัง: id ไม่ซ้ำ · ชนิดรู้จัก · พิกัดอยู่ในกรอบ ──
-const KINDS = new Set(['frame', 'text', 'edge', 'weir', 'reservoir', 'pond', 'gate', 'supply', 'pump', 'house', 'school', 'repair', 'planBox', 'chip', 'slot', 'catch'])
-const inBox = (x, y, label) => {
-  assert.ok(Number.isFinite(x) && Number.isFinite(y), `${label}: พิกัดไม่ใช่ตัวเลข`)
-  assert.ok(x >= 0 && x <= viewBox.w && y >= 0 && y <= viewBox.h, `${label}: (${x}, ${y}) อยู่นอกกรอบ ${viewBox.w}×${viewBox.h}`)
-}
-// edge ใช้เฉพาะคำสั่งสัมบูรณ์ M / L / H
-function pathPoints(d) {
-  const tokens = d.trim().split(/[\s,]+/)
-  const points = []
-  let last = [0, 0]
-  for (let i = 0; i < tokens.length;) {
-    const token = tokens[i]
-    const match = /^([MLH])(.*)$/.exec(token)
-    assert.ok(match, `path "${d}": อ่านคำสั่งไม่ได้ที่ "${token}"`)
-    const [, cmd, rest] = match
-    const nums = []
-    if (rest !== '') nums.push(Number(rest))
-    i += 1
-    const need = cmd === 'H' ? 1 : 2
-    while (nums.length < need) nums.push(Number(tokens[i++]))
-    last = cmd === 'H' ? [nums[0], last[1]] : [nums[0], nums[1]]
-    points.push(last)
-  }
-  return points
-}
-{
-  const ids = elements.filter(el => el.id).map(el => el.id)
-  assert.equal(new Set(ids).size, ids.length, `id ซ้ำ: ${ids.filter((id, i) => ids.indexOf(id) !== i)}`)
-  elements.forEach((el, index) => {
-    assert.ok(KINDS.has(el.kind), `element #${index}: ชนิด ${el.kind} ไม่รู้จัก`)
-    const label = `${el.kind}${el.id ? `#${el.id}` : ` [${index}]`}`
-    if (el.kind === 'edge') {
-      assert.ok(EDGE_STYLES[el.cls], `${label}: cls ${el.cls} ไม่รู้จัก`)
-      assert.ok(DIAGRAM_STATUSES.includes(el.status), `${label}: status ${el.status}`)
-      for (const [x, y] of pathPoints(el.d)) inBox(x, y, label)
-    } else if (el.x !== undefined) {
-      inBox(el.x, el.y, label)
-      if (el.w !== undefined && el.h !== undefined && el.kind !== 'weir') inBox(el.x + el.w, el.y + el.h, `${label} (มุมล่างขวา)`)
-    }
-  })
-  // นับของสำคัญตามผังต้นฉบับ — ข้อมูลหายไปครึ่งหนึ่งต้องไม่ผ่านเงียบๆ (ผังหลักมีอ่าง 3 · หนอง 3 · ประปา 2 · ชำรุด 2 · สถานีสูบ 2)
-  const count = kind => elements.filter(el => el.kind === kind).length
-  assert.ok(count('edge') >= 50, `เส้น ${count('edge')} < 50`)
-  assert.ok(count('weir') >= 25 && count('text') >= 55, `ฝาย ${count('weir')} / ป้าย ${count('text')} น้อยเกินไป`)
-  for (const [kind, n] of [['reservoir', 3], ['pond', 3], ['supply', 2], ['repair', 2], ['pump', 2], ['gate', 1], ['slot', 4]]) assert.equal(count(kind), n, `${kind} ต้องมี ${n}`)
-}
-
-// ── กฎการวิ่ง ──
+// ── กฎการวิ่ง (ตรรกะล้วน) ──
 {
   const edge = (cls, status = 'existing') => ({ kind: 'edge', cls, status })
   for (const cls of ['main', 'big', 'branch', 'river']) {
@@ -98,72 +73,181 @@ function pathPoints(d) {
   assert.equal(isShimmer(edge('canal', 'unknown')), false)
   assert.equal(isShimmer(edge('main')), false)
   for (const notEdge of [null, undefined, {}, { kind: 'weir' }, { kind: 'repair', status: 'repair' }]) assert.equal(isAnimated(notEdge), false)
+}
+
+// ── ข้อมูลผังแต่ละตำบล ──
+// ความคาดหวังต่อผัง: นับของสำคัญตามผังต้นฉบับ — ข้อมูลหายไปครึ่งหนึ่งต้องไม่ผ่านเงียบๆ
+const EXPECT = {
+  thungkaew: {
+    min: { edge: 50, weir: 25, text: 55 },
+    count: { reservoir: 3, pond: 3, supply: 2, repair: 2, pump: 2, gate: 1, slot: 4 },
+    animated: [15, 30],
+    small: ['50', '30'],
+    stations: [['thungkaew', 'rain', 'RES038'], ['thungkaew', 'waterlevel', 'YOM003']],
+    unconfirmed: ['ห้วยจำค่า', 'ห้วยย่าเฟย'], // ชื่อห้วย 4 เส้นกลางผังที่ยังไม่มีใครยืนยัน (ป้ายผังเขียนตะแคง)
+    mustSay: 'ห้วย 4 เส้น',
+  },
+  tamnaktham: {
+    min: { edge: 8, weir: 10, text: 25 },
+    count: { reservoir: 0, pond: 0, supply: 1, pump: 3, gate: 3, bridge: 3, outline: 3, slot: 1 },
+    animated: [3, 3], // น้ำแม่คำมี + คลองชลประทาน + แม่น้ำยม (ลูกศรทิศเดียวในผัง) — ลำห้วยสาขาลูกศรนิ่ง
+    small: [],
+    stations: [['tamnaktham', 'waterlevel', 'Y.38']],
+    unconfirmed: [],
+    mustSay: null,
+  },
+}
+const KINDS = new Set(['frame', 'outline', 'text', 'edge', 'weir', 'bridge', 'reservoir', 'pond', 'gate', 'supply', 'pump', 'house', 'school', 'repair', 'planBox', 'chip', 'slot', 'catch'])
+// edge/outline ใช้เฉพาะคำสั่งสัมบูรณ์ M / L / H / V / Z
+function pathPoints(d) {
+  const tokens = d.trim().replace(/([MLHVZ])/g, ' $1 ').trim().split(/[\s,]+/)
+  const points = []
+  let last = [0, 0]
+  for (let i = 0; i < tokens.length;) {
+    const cmd = tokens[i]
+    assert.ok(/^[MLHVZ]$/.test(cmd), `path "${d}": อ่านคำสั่งไม่ได้ที่ "${cmd}"`)
+    i += 1
+    if (cmd === 'Z') continue
+    if (cmd === 'H') last = [Number(tokens[i++]), last[1]]
+    else if (cmd === 'V') last = [last[0], Number(tokens[i++])]
+    else last = [Number(tokens[i++]), Number(tokens[i++])]
+    points.push(last)
+  }
+  return points
+}
+
+for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
+  const expect = EXPECT[diagramId]
+  assert.ok(expect, `ผัง ${diagramId} ยังไม่มีความคาดหวังใน EXPECT — เพิ่มตัวเลขตามผังต้นฉบับ`)
+  const { elements, viewBox, binds, lanes } = diagram
+  const at = text => `[${diagramId}] ${text}`
+  const inBox = (x, y, label) => {
+    assert.ok(Number.isFinite(x) && Number.isFinite(y), at(`${label}: พิกัดไม่ใช่ตัวเลข`))
+    assert.ok(x >= 0 && x <= viewBox.w && y >= 0 && y <= viewBox.h, at(`${label}: (${x}, ${y}) อยู่นอกกรอบ ${viewBox.w}×${viewBox.h}`))
+  }
+
+  // ฟิลด์ที่หน้าเว็บใช้แสดงที่มา — ขาดแล้วหน้าจะแสดงค่าว่างหรือพัง
+  for (const field of ['id', 'title', 'sourceTitle', 'sourceDate', 'drawnLabel', 'sourceUrl', 'ariaSummary']) assert.ok(diagram[field], at(`ขาดฟิลด์ ${field}`))
+  assert.equal(diagram.id, diagramId)
+  assert.deepEqual(diagram.viewBox, { w: 2000, h: 1125 }, at('ระบบพิกัดต้องตรงกับภาพต้นฉบับ'))
+  assert.match(diagram.sourceDate, /ไฟล์ลงวันที่ .+ 2567/, at('ต้องบอกอายุของผังต้นฉบับ'))
+  assert.ok(Array.isArray(diagram.omitted), at('omitted ต้องเป็นอาร์เรย์ (ว่างได้)'))
+  assert.deepEqual(diagram.smallReservoirs, expect.small, at('อ่างเล็กที่ผังแสดงค่าสด'))
+  assert.ok(diagram.smallReservoirs.length <= 2, at('หน้าจอเรียก useReservoirReport ตายตัว 2 ช่อง — ผังมีอ่างเล็กได้ไม่เกิน 2'))
+
+  // id ไม่ซ้ำ · ชนิดรู้จัก · พิกัดอยู่ในกรอบ
+  const ids = elements.filter(el => el.id).map(el => el.id)
+  assert.equal(new Set(ids).size, ids.length, at(`id ซ้ำ: ${ids.filter((id, i) => ids.indexOf(id) !== i)}`))
+  elements.forEach((el, index) => {
+    assert.ok(KINDS.has(el.kind), at(`element #${index}: ชนิด ${el.kind} ไม่รู้จัก`))
+    const label = `${el.kind}${el.id ? `#${el.id}` : ` [${index}]`}`
+    if (el.kind === 'edge') {
+      assert.ok(EDGE_STYLES[el.cls], at(`${label}: cls ${el.cls} ไม่รู้จัก`))
+      assert.ok(DIAGRAM_STATUSES.includes(el.status), at(`${label}: status ${el.status}`))
+      for (const [x, y] of pathPoints(el.d)) inBox(x, y, label)
+    } else if (el.kind === 'outline') {
+      assert.ok(['tambon', 'village'].includes(el.cls), at(`${label}: cls ${el.cls}`))
+      for (const [x, y] of pathPoints(el.d)) inBox(x, y, label)
+    } else if (el.x !== undefined) {
+      inBox(el.x, el.y, label)
+      if (el.w !== undefined && el.h !== undefined && el.kind !== 'weir') inBox(el.x + el.w, el.y + el.h, `${label} (มุมล่างขวา)`)
+    }
+    if (el.kind === 'weir' && el.status !== undefined) assert.ok(DIAGRAM_STATUSES.includes(el.status), at(`${label}: status ${el.status}`))
+  })
+  const count = kind => elements.filter(el => el.kind === kind).length
+  for (const [kind, n] of Object.entries(expect.min)) assert.ok(count(kind) >= n, at(`${kind} ${count(kind)} < ${n}`))
+  for (const [kind, n] of Object.entries(expect.count)) assert.equal(count(kind), n, at(`${kind} ต้องมี ${n}`))
 
   // กับข้อมูลจริง: ของที่ผังระบุชำรุด/แผนก่อสร้าง/ไม่ระบุทิศ ไม่มีเส้นวิ่งเลย
   for (const el of elements) {
-    if (['repair', 'planned', 'unknown'].includes(el.status)) assert.equal(isAnimated(el), false, `${el.id ?? el.kind}: ${el.status} ห้ามวิ่ง`)
-    if (el.kind === 'pump' || el.kind === 'planBox') assert.equal(el.status, 'planned', `${el.id}: ต้องเป็นแผนก่อสร้าง`)
+    if (['repair', 'planned', 'unknown'].includes(el.status)) assert.equal(isAnimated(el), false, at(`${el.id ?? el.kind}: ${el.status} ห้ามวิ่ง`))
+    if (el.kind === 'pump' || el.kind === 'planBox') assert.equal(el.status, 'planned', at(`${el.id}: ต้องเป็นแผนก่อสร้าง`))
     if (el.kind === 'repair') assert.equal(el.status, 'repair')
-    if (el.kind === 'edge' && el.cls === 'plan') assert.equal(el.status, 'planned', `${el.id}: เส้นแดงต้องเป็นแผนก่อสร้าง`)
+    if (el.kind === 'edge' && el.cls === 'plan') assert.equal(el.status, 'planned', at(`${el.id}: เส้นแดงต้องเป็นแผนก่อสร้าง`))
   }
-  const canal = elements.find(el => el.id === 'canal-right')
-  assert.equal(canal.cls, 'canal', 'คลองสองทิศ ไม่ระบุทิศ ต้องไม่วิ่ง')
-  assert.equal(isAnimated(canal), false)
   const animated = elements.filter(isAnimated)
-  assert.ok(animated.length >= 15 && animated.length <= 30, `เส้นวิ่ง ${animated.length} เส้น — เกินช่วงที่ตั้งใจ (มือถือรุ่นเก่าหน่วง)`)
-  // เส้นแรกของห้วย 4 เส้นถูกตัดที่รางส่งน้ำชำรุด: ช่วงที่ชำรุดต้องไม่มีเส้นวิ่งผ่าน
-  const repair = elements.find(el => el.id === 'repair-canal')
-  for (const el of animated.filter(e => e.id?.startsWith('creek4-a'))) {
-    for (const [x, y] of pathPoints(el.d)) assert.ok(!(x >= repair.x && x <= repair.x + repair.w && y > repair.y && y < repair.y + repair.h), `${el.id}: เส้นวิ่งผ่านกลางรางส่งน้ำชำรุด`)
-  }
-}
+  assert.ok(animated.length >= expect.animated[0] && animated.length <= expect.animated[1],
+    at(`เส้นวิ่ง ${animated.length} เส้น — นอกช่วง ${expect.animated.join('–')} (มือถือรุ่นเก่าหน่วง/ข้อมูลหาย)`))
 
-// ── ช่องค่าสด · สายน้ำ · แหล่งค่า ──
-{
+  // ช่องค่าสด · สายน้ำ · แหล่งค่า
   const slots = elements.filter(el => el.kind === 'slot').map(el => el.id).sort()
-  assert.deepEqual(slots, Object.keys(THUNGKAEW_BINDS).sort(), 'ช่องบนผังกับ bind ต้องตรงกัน')
-  assert.equal(THUNGKAEW_DIAGRAM.binds, THUNGKAEW_BINDS)
-  assert.equal(THUNGKAEW_DIAGRAM.lanes, THUNGKAEW_LANES)
-
-  for (const [slot, bind] of Object.entries(THUNGKAEW_BINDS)) {
-    if (bind.type === 'small-dam') assert.ok(Object.hasOwn(SMALL_RESERVOIRS, bind.id), `${slot}: อ่าง ${bind.id} ไม่อยู่ใน SMALL_RESERVOIRS`)
-    else assert.ok(bind.code, `${slot}: ต้องมีรหัสสถานี`)
+  assert.deepEqual(slots, Object.keys(binds).sort(), at('ช่องบนผังกับ bind ต้องตรงกัน'))
+  for (const [slot, bind] of Object.entries(binds)) {
+    if (bind.type === 'small-dam') {
+      assert.ok(Object.hasOwn(SMALL_RESERVOIRS, bind.id), at(`${slot}: อ่าง ${bind.id} ไม่อยู่ใน SMALL_RESERVOIRS`))
+      assert.ok(diagram.smallReservoirs.includes(bind.id), at(`${slot}: อ่าง ${bind.id} ต้องอยู่ใน smallReservoirs ของผัง ไม่งั้นหน้าไม่ดึงรายงาน`))
+    } else assert.ok(bind.code, at(`${slot}: ต้องมีรหัสสถานี`))
   }
-  // รหัสสถานีต้องตรงกับที่ seed ให้ทุ่งแค้วจริง (ไม่งั้นป้ายขึ้น "ไม่มีค่าในระบบ" ตลอดโดยไม่มีใครรู้)
+  for (const id of diagram.smallReservoirs) assert.ok(Object.values(binds).some(b => b.type === 'small-dam' && b.id === id), at(`อ่าง ${id} อยู่ใน smallReservoirs แต่ไม่มีช่องผูก`))
+  // รหัสสถานีต้องตรงกับที่ seed ให้ อปท. นั้นจริง (ไม่งั้นป้ายขึ้น "ไม่มีค่าในระบบ" ตลอดโดยไม่มีใครรู้)
   const seed = read('supabase/migrations/20260918160000_water_situation_seed_tenants.sql')
-  assert.match(seed, /\('thungkaew', 'rain', 'RES038'/, 'ทุ่งแค้วต้องมีสถานีฝน RES038')
-  assert.match(seed, /\('thungkaew', 'waterlevel', 'YOM003'/, 'ทุ่งแค้วต้องมีสถานีระดับน้ำ YOM003')
+  for (const [slug, type, code] of expect.stations) assert.ok(seed.includes(`('${slug}', '${type}', '${code}'`), at(`${slug} ต้องมีสถานี ${type} ${code} ใน seed`))
+  for (const bind of Object.values(binds).filter(b => b.code)) {
+    assert.ok(expect.stations.some(([, , code]) => code === bind.code), at(`bind ${bind.code} ไม่อยู่ในรายการสถานีที่ตรวจกับ seed ใน EXPECT`))
+  }
 
-  const ids = new Set(elements.filter(el => el.id).map(el => el.id))
-  const laneIds = THUNGKAEW_LANES.map(lane => lane.id)
-  assert.equal(new Set(laneIds).size, laneIds.length)
-  for (const lane of THUNGKAEW_LANES) {
-    assert.ok(lane.title && lane.items.length > 0, `${lane.id}: ต้องมีชื่อและรายการ`)
+  const idSet = new Set(ids)
+  const laneIds = lanes.map(lane => lane.id)
+  assert.equal(new Set(laneIds).size, laneIds.length, at('lane id ซ้ำ'))
+  for (const lane of lanes) {
+    assert.ok(lane.title && lane.items.length > 0, at(`${lane.id}: ต้องมีชื่อและรายการ`))
     lane.items.forEach(item => {
-      assert.ok(item.name, `${lane.id}: รายการไม่มีชื่อ`)
-      for (const ref of item.refs ?? []) assert.ok(ids.has(ref), `${lane.id} / ${item.name}: อ้าง ${ref} ที่ไม่มีบนผัง`)
-      for (const slot of item.live ?? []) assert.ok(slots.includes(slot), `${lane.id} / ${item.name}: ช่องค่าสด ${slot} ไม่มี`)
-      for (const tag of item.tags ?? []) assert.ok(['na', 'plan', 'fix'].includes(tag.k), `${item.name}: ชนิดแท็ก ${tag.k}`)
+      assert.ok(item.name, at(`${lane.id}: รายการไม่มีชื่อ`))
+      for (const ref of item.refs ?? []) assert.ok(idSet.has(ref), at(`${lane.id} / ${item.name}: อ้าง ${ref} ที่ไม่มีบนผัง`))
+      for (const slot of item.live ?? []) assert.ok(slots.includes(slot), at(`${lane.id} / ${item.name}: ช่องค่าสด ${slot} ไม่มี`))
+      for (const tag of item.tags ?? []) assert.ok(['na', 'plan', 'fix'].includes(tag.k), at(`${item.name}: ชนิดแท็ก ${tag.k}`))
       // รายการที่อ้างของแผนก่อสร้าง/ชำรุด ต้องบอกสถานะเดียวกับบนผัง (ไม่ให้รายการเขียนเหมือนใช้งานได้ปกติ)
       const states = new Set((item.refs ?? []).map(ref => elements.find(el => el.id === ref)?.status).filter(s => s && s !== 'existing'))
-      for (const state of states) assert.equal(item.status, state, `${item.name}: ผังระบุ ${state} แต่รายการไม่บอก`)
+      for (const state of states) assert.equal(item.status, state, at(`${item.name}: ผังระบุ ${state} แต่รายการไม่บอก`))
+      // และกลับกัน: รายการที่บอกว่าแผนก่อสร้าง/ชำรุด ต้องมีป้ายแท็กบอกตรงๆ ไม่ใช่แค่สีจุด
+      if (item.status === 'planned') assert.ok((item.tags ?? []).some(tag => tag.k === 'plan'), at(`${item.name}: แผนก่อสร้างต้องมีแท็ก`))
+      if (item.status === 'repair') assert.ok((item.tags ?? []).some(tag => tag.k === 'fix'), at(`${item.name}: ชำรุดต้องมีแท็ก`))
     })
   }
   // ทุกค่าสดต้องไปโผล่ในรายการสายน้ำด้วย (โหมดข้อความต้องไม่ขาดข้อมูลเทียบกับผังภาพ)
-  const liveInLanes = new Set(THUNGKAEW_LANES.flatMap(lane => lane.items.flatMap(item => item.live ?? [])))
-  assert.deepEqual([...liveInLanes].sort(), slots, 'ค่าสดบนผังทุกช่องต้องอยู่ในรายการสายน้ำ')
-}
+  const liveInLanes = new Set(lanes.flatMap(lane => lane.items.flatMap(item => item.live ?? [])))
+  assert.deepEqual([...liveInLanes].sort(), slots, at('ค่าสดบนผังทุกช่องต้องอยู่ในรายการสายน้ำ'))
+  // ทุกสิ่งที่ผังภาพมีและมี id ต้องอยู่ในรายการสายน้ำ (ผู้อ่านจอ/โหมดรายการเห็นครบเท่าผังภาพ)
+  const referenced = new Set(lanes.flatMap(lane => lane.items.flatMap(item => item.refs ?? [])))
+  const STRUCTURE = new Set(['reservoir', 'pond', 'gate', 'supply', 'pump', 'bridge', 'repair', 'planBox'])
+  for (const el of elements.filter(el => STRUCTURE.has(el.kind) && el.id)) assert.ok(referenced.has(el.id), at(`${el.kind}#${el.id} มีบนผังแต่ไม่อยู่ในรายการสายน้ำ`))
 
-// ── ชื่อที่ยังไม่ยืนยันกับ อบต. ต้องไม่โผล่ (ห้ามเดาชื่อ) ──
-{
-  const UNCONFIRMED = ['ห้วยจำค่า', 'ห้วยย่าเฟย']
+  // ชื่อที่ยังไม่ยืนยันกับ อบต. ต้องไม่โผล่ (ห้ามเดาชื่อ)
   const allText = [
     ...elements.filter(el => el.kind === 'text' || el.kind === 'chip').map(el => el.t),
-    ...THUNGKAEW_LANES.flatMap(lane => [lane.title, ...lane.items.flatMap(item => [item.name, item.sub ?? '', ...(item.tags ?? []).map(tag => tag.t)])]),
+    ...lanes.flatMap(lane => [lane.title, ...lane.items.flatMap(item => [item.name, item.sub ?? '', ...(item.tags ?? []).map(tag => tag.t)])]),
   ]
-  for (const name of UNCONFIRMED) assert.ok(!allText.some(text => text.includes(name)), `"${name}" ยังไม่ยืนยันกับ อบต. ห้ามขึ้นหน้า`)
-  assert.ok(!allText.includes('ห้วยจำ'), 'ป้าย "ห้วยจำ" (เส้นที่ 4) ยังไม่ยืนยัน')
-  assert.ok(allText.some(text => text.includes('ห้วย 4 เส้น')), 'ต้องบอกว่ามีห้วย 4 เส้นแต่ชื่อไม่ชัด')
+  for (const name of expect.unconfirmed) assert.ok(!allText.some(text => text.includes(name)), at(`"${name}" ยังไม่ยืนยันกับ อบต. ห้ามขึ้นหน้า`))
+  if (diagramId === 'thungkaew') assert.ok(!allText.includes('ห้วยจำ'), 'ป้าย "ห้วยจำ" (เส้นที่ 4) ยังไม่ยืนยัน')
+  if (expect.mustSay) {
+    assert.ok(allText.some(text => text.includes(expect.mustSay)), at(`ต้องบอกว่า "${expect.mustSay}"`))
+    assert.ok(diagram.omitted.some(text => text.includes('ไม่ขอเดาชื่อ')), at('ของที่ไม่ใส่ชื่อเพราะอ่านไม่ชัด ต้องบอกในกล่องที่มา (omitted)'))
+  }
+  // ของที่วาดต่างจากต้นฉบับต้องบอกเหตุผลในกล่องที่มา: เขตหมู่บ้านที่เปลี่ยนสีเป็นเทา
+  if (elements.some(el => el.kind === 'outline' && el.cls === 'village')) {
+    assert.ok(diagram.omitted.some(text => text.includes('เขตหมู่บ้าน') && text.includes('เทา')), at('เขตหมู่บ้านวาดเป็นสีเทา ต้องบอกเหตุผลใน omitted'))
+  }
+}
+
+// ── ผังเฉพาะตัว ──
+{
+  const thungkaew = DIAGRAMS.thungkaew
+  const canal = thungkaew.elements.find(el => el.id === 'canal-right')
+  assert.equal(canal.cls, 'canal', 'คลองสองทิศ ไม่ระบุทิศ ต้องไม่วิ่ง')
+  assert.equal(isAnimated(canal), false)
+  // เส้นแรกของห้วย 4 เส้นถูกตัดที่รางส่งน้ำชำรุด: ช่วงที่ชำรุดต้องไม่มีเส้นวิ่งผ่าน
+  const repair = thungkaew.elements.find(el => el.id === 'repair-canal')
+  for (const el of thungkaew.elements.filter(isAnimated).filter(e => e.id?.startsWith('creek4-a'))) {
+    for (const [x, y] of pathPoints(el.d)) assert.ok(!(x >= repair.x && x <= repair.x + repair.w && y > repair.y && y < repair.y + repair.h), `${el.id}: เส้นวิ่งผ่านกลางรางส่งน้ำชำรุด`)
+  }
+  // ตำหนักธรรม: ฝาย/สถานีสูบแผนก่อสร้างต้องเป็นสีแดงเท่าที่ผังต้นฉบับระบุ (ไม่เพิ่มเอง ไม่ตัดออก)
+  const tamnaktham = DIAGRAMS.tamnaktham
+  assert.deepEqual(tamnaktham.elements.filter(el => el.kind === 'weir' && el.status === 'planned').map(el => el.id).sort(), ['weir-1', 'weir-12'])
+  assert.deepEqual(tamnaktham.elements.filter(el => el.kind === 'pump').map(el => el.id).sort(), ['pump-1', 'pump-2', 'pump-3'])
+  // น้ำแม่คำมีกับคลองชลประทานตัดกัน ผังไม่ระบุว่าเชื่อมกัน → ต้องบอกในรายการ ไม่เขียนเหมือนน้ำถ่ายเข้าคลอง
+  const crossing = tamnaktham.lanes.flatMap(lane => lane.items).filter(item => item.name.includes('ตัดผ่าน'))
+  assert.ok(crossing.length >= 2, 'ทั้งสายน้ำแม่คำมีและสายคลองต้องพูดถึงจุดตัดกัน')
+  for (const item of crossing) assert.ok(item.sub?.includes('ไม่ระบุว่า'), `${item.name}: ต้องบอกว่าผังไม่ระบุว่าคลองรับน้ำจากน้ำแม่คำมี`)
 }
 
 // ── ป้ายค่าสด ──
@@ -271,11 +355,11 @@ function pathPoints(d) {
   const jsx = read('src/components/water/WaterDiagram.jsx')
   const css = read('src/components/water/WaterDiagram.css')
   const page = read('src/pages/WaterSituationPage.jsx')
-  for (const required of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ดูผังต้นฉบับ', 'data-diagram-disclaimer']) {
+  for (const required of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ดูผังต้นฉบับ', 'data-diagram-disclaimer', 'data-diagram-omitted', 'ที่ผังต้นฉบับมีแต่เราวาดต่างไป หรือไม่ได้วาด']) {
     assert.ok(jsx.includes(required), `WaterDiagram.jsx ต้องมี "${required}"`)
   }
   // ตรวจที่ import/การเรียกจริง ไม่ใช่คำในคอมเมนต์ — ผังไม่ผูกกับ Supabase/auth (NOTES §7)
-  for (const [name, source] of [['WaterDiagram.jsx', jsx], ['model.js', read('src/lib/waterDiagram/model.js')], ['thungkaew.js', read('src/lib/waterDiagram/thungkaew.js')]]) {
+  for (const [name, source] of [['WaterDiagram.jsx', jsx], ['model.js', read('src/lib/waterDiagram/model.js')], ['diagrams.js', read('src/lib/waterDiagram/diagrams.js')], ['builders.js', read('src/lib/waterDiagram/builders.js')], ['thungkaew.js', read('src/lib/waterDiagram/thungkaew.js')], ['tamnaktham.js', read('src/lib/waterDiagram/tamnaktham.js')]]) {
     assert.ok(!/from ['"][^'"]*supabase[^'"]*['"]/.test(source), `${name}: ห้าม import supabase`)
     assert.ok(!/\.rpc\(|supabase\.from\(/.test(source), `${name}: ห้ามเรียก RPC/ตาราง`)
     assert.ok(!/visibilitychange.*(supabase|auth)/i.test(source), `${name}: ห้ามผูก visibilitychange กับ auth`)
@@ -295,6 +379,10 @@ function pathPoints(d) {
   assert.match(page, /diagramTenant\(tenant\?\.slug\) && \(/)
   assert.match(page, /<WaterDiagram [^>]*stations=\{scopedData\?\.stations \?\? \[\]\}/)
   assert.ok(!/<WaterDiagram [^>]*visibleData/.test(page), 'ผังต้องไม่ผูกกับ visibleData (โหมดแชร์)')
+  // ?diagram= ส่งต่อให้คอมโพเนนต์ — ตัวตัดสินว่าใครใช้ได้อยู่ที่ resolveDiagram (เฉพาะ demo) ไม่ใช่หน้านี้
+  assert.match(page, /previewId=\{searchParams\.get\('diagram'\)\}/)
+  assert.match(jsx, /resolveDiagram\(slug, previewId\)/)
+  assert.ok(!/THUNGKAEW/.test(jsx), 'WaterDiagram.jsx ต้องไม่ผูกกับผังทุ่งแค้วตายตัว (เลือกผังตามทะเบียน)')
   // hook ของอ่างเล็กใช้ร่วมกับการ์ด PR1 จากไฟล์เดียว ไม่ซ้ำ
   assert.match(read('src/components/water/SmallReservoirSection.jsx'), /import \{ useReservoirReport \} from '\.\/useReservoirReport'/)
   assert.match(jsx, /import \{ useReservoirReport \} from '\.\/useReservoirReport'/)
