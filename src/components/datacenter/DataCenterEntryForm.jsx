@@ -260,8 +260,17 @@ export default function DataCenterEntryForm({ tenant, profile, summary = null, i
 
         <div>
           <label className="text-xs font-semibold text-gray-500 mb-1 block">รายละเอียด</label>
+          {/* ช่องนี้คือที่เดียวที่เบอร์โทร/เวลาเปิดของสถานที่ไปขึ้นบนแผนที่ประชาชนได้ (ตาราง data_center_entries ไม่มีคอลัมน์เบอร์/เวลาเปิด —
+              เจ้าของสั่ง 2569-10-17 ให้ใช้ช่องนี้) แต่ namlao ที่มี 17 แห่ง ไม่มีเบอร์/เวลาสักแห่ง เพราะช่องไม่เคยบอกว่าใส่ได้
+              หมายเหตุใต้ช่อง (ไม่ใช่แค่ placeholder ที่หายตอนเริ่มพิมพ์) เพราะต้องเตือน PDPA ตลอดเวลาที่พิมพ์:
+              ข้อความนี้เป็นข้อมูลสาธารณะ ใครก็เห็นบนแผนที่และดาวน์โหลดเป็น GeoJSON/CSV ได้ */}
           <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-            rows={3} className={inputCls + ' resize-none'} />
+            rows={3} className={inputCls + ' resize-none'}
+            placeholder="เช่น โทร 054-xxx-xxx · เปิดจันทร์–ศุกร์ 08:30–16:30 น." />
+          {/* gray-600 ไม่ใช่ gray-400 ของข้อความช่วยเหลือทั่วไปในฟอร์มนี้ — ข้อความนี้มีคำเตือน PDPA ต้องอ่านออก (gray-400 บนขาว ~2.5:1) */}
+          <p className="mt-1 text-[11px] leading-snug text-gray-600">
+            ประชาชนเห็นข้อความนี้บนแผนที่และดาวน์โหลดได้ — ใส่เบอร์โทร/เวลาเปิดได้ ใช้เบอร์ของสถานที่หรือหน่วยงาน ไม่ใช่เบอร์ส่วนตัวของบุคคล
+          </p>
         </div>
 
         <div>
