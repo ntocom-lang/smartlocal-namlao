@@ -8,19 +8,22 @@
 //  4) โครงสร้างที่ผังเองระบุว่า "ชำรุด" หรือ "แผนก่อสร้าง" และของที่ผังไม่ระบุทิศ ไม่เคลื่อนไหว
 
 import {
-  STATION_STALE_HOURS, bankText, distanceText, formatMm, isStale, measuredAtText, rainLevel, toNum,
+  DAM_STALE_HOURS, STATION_STALE_HOURS, bankText, dataDayText, damSameInfo, damSameText, distanceText, formatMcm, formatMm, isStale,
+  measuredAtText, rainLevel, toNum,
 } from '../waterSituation.js'
 import { formatReportDay, reservoirSummary } from '../smallReservoirs.js'
 
 // อปท. ที่เห็นผัง — เลือกชัดเจน ไม่เดา (ผังต่อตำบล ต้องวาดใหม่ทีละตำบล) · diagram = id ใน diagrams.js
 //   thungkaew: ผังน้ำตำบลทุ่งแค้ว (เจ้าของระบบสั่ง 2569-10-14)
 //   tamnaktham: ผังน้ำตำบลตำหนักธรรม (2569-10-16)
+//   namlao: ผังน้ำตำบลน้ำเลา (2569-10-16)
 //   demo: ใช้ผัง+ค่าจริงของทุ่งแค้วเป็นตัวอย่างบนสนามซ้อม (แบบเดียวกับ SMALL_RESERVOIR_TENANTS.demo) — สถานีฝน/ระดับน้ำของ
 //         ทุ่งแค้ว (RES038, YOM003) ไม่อยู่ในรายการของ demo ป้ายเหล่านั้นจึงขึ้น "ไม่มีค่าในระบบ" ตามจริง
 //         preview: true = ดูผังอื่นบน demo ได้ด้วย ?diagram=<id> ไว้ตรวจก่อนเปิดให้ อปท. จริง (เฉพาะ demo)
 export const WATER_DIAGRAM_TENANTS = {
   thungkaew: { diagram: 'thungkaew', scope: '' },
   tamnaktham: { diagram: 'tamnaktham', scope: '' },
+  namlao: { diagram: 'namlao', scope: '' },
   demo: { diagram: 'thungkaew', scope: 'ข้อมูลจริงของทุ่งแค้ว ใช้สาธิต', preview: true },
 }
 
@@ -28,6 +31,7 @@ export const WATER_DIAGRAM_TENANTS = {
 export const DIAGRAM_PREVIEW_SCOPES = {
   thungkaew: 'ข้อมูลจริงของทุ่งแค้ว ใช้สาธิต',
   tamnaktham: 'ข้อมูลจริงของตำหนักธรรม ใช้สาธิต',
+  namlao: 'ข้อมูลจริงของน้ำเลา ใช้สาธิต',
 }
 
 export function diagramTenant(slug) {
@@ -112,8 +116,30 @@ function rainBadge(station, now) {
   const label = rainLevel(mm)?.label
   return {
     tone: 'ok', text: `ฝน ${formatMm(mm)} มม.`,
-    detail: `ฝนสะสม 24 ชม. ${formatMm(mm)} มม.${label ? ` · ${label}` : ''} · วัดเมื่อ ${measuredAtText(station.recorded_at, now)}`,
+    detail: `ฝนสะสม 24 ชม. ${formatMm(mm)} มม.${label ? ` · ${label}` : ''}${station.station_name ? ` · สถานี${station.station_name}${distanceText(station.distance_km) ? ` ${distanceText(station.distance_km)}` : ''}` : ''} · วัดเมื่อ ${measuredAtText(station.recorded_at, now)}`,
   }
+}
+
+// อ่างขนาดกลางจากสถานี (ThaiWater/กรมชลประทาน ผ่าน get_public_water_situation) — ข้อมูลรายวัน ค้างเกิน 48 ชม. = ไม่มีค่าใหม่
+// ไม่ลงสีและไม่ใช้ป้ายชั้น "น้ำมาก" ของต้นทาง: ตัวเลขซ้ำเดิมเป็นเหลือง (เกณฑ์เดียวกับการ์ดอ่างหน้าหลัก ไม่ซ้ำตอนค้าง)
+// เกิน 100% เขียนอธิบายในรายละเอียดตรงๆ ว่าคือเกินความจุที่ระดับเก็บกักปกติ — ประชาชนเห็นเลขเกินร้อยแล้วมักสงสัยว่าผิด
+function damStationBadge(station, now) {
+  const pct = toNum(station?.storage_percent)
+  if (!station || pct === null || pct < 0 || !station.recorded_at) return MISSING
+  const value = `${formatMm(pct)}%`
+  const day = dataDayText(station.recorded_at, now)
+  const volume = [toNum(station.dam_storage_mcm) !== null && `ปริมาตร ${formatMcm(station.dam_storage_mcm)}${toNum(station.dam_capacity_mcm) !== null ? `/${formatMcm(station.dam_capacity_mcm)}` : ''} ล้าน ลบ.ม.`]
+    .filter(Boolean).join('')
+  const over = pct > 100 ? ' · มากกว่า 100% = เกินความจุที่ระดับเก็บกักปกติ ตามที่ต้นทางรายงาน' : ''
+  const where = [station.station_name, distanceText(station.distance_km)].filter(Boolean).join(' ')
+  if (isStale(station.recorded_at, now, DAM_STALE_HOURS)) {
+    return { tone: 'stale', text: `อ่าง ${value} · ไม่มีรายงานใหม่`, detail: `${where} · ${value} · ไม่มีรายงานใหม่ (ล่าสุด ${day || 'ไม่ทราบวัน'})` }
+  }
+  const same = damSameInfo(station)
+  if (same) {
+    return { tone: 'warn', text: `อ่าง ${value} · ตัวเลขซ้ำเดิม`, detail: `${where} · ${value}${over} · ${damSameText(same, now)} — ต้นทางอาจยังไม่ได้ปรับข้อมูล ใช้ตัวเลขนี้อย่างระมัดระวัง` }
+  }
+  return { tone: 'ok', text: `อ่าง ${value}`, detail: `${where} · ${value} ของความจุที่ระดับเก็บกัก${volume ? ` · ${volume}` : ''}${over} · ข้อมูลของ${day === 'วันนี้' ? 'วันนี้' : ` ${day || 'วันที่ไม่ทราบ'}`}` }
 }
 
 // ระดับน้ำ: เขียนเป็นข้อเท็จจริงของ "สถานีนั้น" พร้อมระยะ — ไม่ลงสี ไม่อ้างเป็นสถานการณ์ของแม่น้ำในตำบล (สถานีอยู่ห่างตำบล)
@@ -141,6 +167,7 @@ export function liveBadges({ binds, reports = {}, stations = [], now }) {
   const out = {}
   for (const [slot, bind] of Object.entries(binds ?? {})) {
     if (bind.type === 'small-dam') out[slot] = damBadge(reports[bind.id], now)
+    else if (bind.type === 'dam-station') out[slot] = damStationBadge(findStation(stations, 'dam', bind.code), now)
     else if (bind.type === 'rain') out[slot] = rainBadge(findStation(stations, 'rain', bind.code), now)
     else if (bind.type === 'level') out[slot] = levelBadge(findStation(stations, 'waterlevel', bind.code), now)
     else out[slot] = MISSING

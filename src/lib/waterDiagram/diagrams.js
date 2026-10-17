@@ -2,10 +2,12 @@
 // เพิ่มผังใหม่: ไฟล์ข้อมูลใหม่ 1 ไฟล์ + 1 บรรทัดที่นี่ + 1 แถวใน WATER_DIAGRAM_TENANTS (ดู docs/water-diagram.md)
 import { THUNGKAEW_DIAGRAM } from './thungkaew.js'
 import { TAMNAKTHAM_DIAGRAM } from './tamnaktham.js'
+import { NAMLAO_DIAGRAM } from './namlao.js'
 
 export const DIAGRAMS = {
   [THUNGKAEW_DIAGRAM.id]: THUNGKAEW_DIAGRAM,
   [TAMNAKTHAM_DIAGRAM.id]: TAMNAKTHAM_DIAGRAM,
+  [NAMLAO_DIAGRAM.id]: NAMLAO_DIAGRAM,
 }
 
 export function diagramById(id) {

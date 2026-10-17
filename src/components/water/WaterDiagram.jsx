@@ -87,9 +87,9 @@ function Element({ el, badges }) {
         transform={el.r ? `rotate(${el.r} ${el.x} ${el.y})` : undefined}>{el.t}</text>
     )
     case 'edge': return <Edge el={el} />
-    case 'outline': return el.cls === 'village'
-      ? <path d={el.d} fill="none" stroke="#94a3b8" strokeWidth={3} strokeDasharray="10 8" />
-      : <path d={el.d} fill="none" stroke="#4d7c0f" strokeWidth={3} strokeDasharray="3 7" />
+    case 'outline': return el.cls === 'tambon'
+      ? <path d={el.d} fill="none" stroke="#4d7c0f" strokeWidth={3} strokeDasharray="3 7" />
+      : <path d={el.d} fill="none" stroke="#94a3b8" strokeWidth={el.w ?? 3} strokeDasharray="10 8" />
     case 'weir': {
       // ฝาย: ดำ = มีตามผัง · แดงทึบ = แผนก่อสร้าง (ไม่เคลื่อนไหว) · t = ความหนา (ขีดบางของฝายเล็กในผัง)
       const thick = el.t ?? 12
@@ -105,8 +105,12 @@ function Element({ el, badges }) {
         <path d={`M${el.x + 15} ${el.y - 20} Q${el.x + 3} ${el.y} ${el.x + 15} ${el.y + 20}`} />
       </g>
     )
-    case 'reservoir': return <path d={`M${el.x} ${el.y - el.s} L${el.x + el.s} ${el.y + el.s * 0.8} L${el.x - el.s} ${el.y + el.s * 0.8} Z`} fill="#111827" />
+    case 'reservoir': return (
+      <path d={`M${el.x} ${el.y - el.s} L${el.x + el.s * (el.sx ?? 1)} ${el.y + el.s * 0.8} L${el.x - el.s * (el.sx ?? 1)} ${el.y + el.s * 0.8} Z`}
+        fill={el.status === 'planned' ? RED : '#111827'} transform={el.r ? `rotate(${el.r} ${el.x} ${el.y})` : undefined} />
+    )
     case 'pond': return <circle cx={el.x} cy={el.y} r={el.r} fill="#5b9bd5" stroke="#2f6aa8" strokeWidth={3} />
+    case 'source': return <ellipse cx={el.x} cy={el.y} rx={el.r ?? 14} ry={el.ry ?? el.r ?? 14} fill="#111" />
     case 'catch': return <circle cx={el.x} cy={el.y} r={el.r} fill="#e9d5ff55" stroke="#7c3aed" strokeWidth={3} strokeDasharray="3 5" />
     case 'gate': {
       const half = el.s ?? 22
@@ -165,7 +169,9 @@ const LEGEND = [
   ) },
   { key: 'weir', when: diagram => has(diagram, 'weir', el => el.status !== 'planned'), text: 'ฝาย', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><rect x="12" y="1" width="10" height="14" fill="#111" /></svg> },
   { key: 'planWeir', when: diagram => has(diagram, 'weir', el => el.status === 'planned'), text: 'แท่งแดง = ฝายแผนก่อสร้าง ไม่เคลื่อนไหว', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><rect x="12" y="1" width="10" height="14" fill={RED} /></svg> },
-  { key: 'reservoir', when: diagram => has(diagram, 'reservoir'), text: 'อ่างเก็บน้ำ', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M17 1L31 15H3Z" fill="#111" /></svg> },
+  { key: 'planReservoir', when: diagram => has(diagram, 'reservoir', el => el.status === 'planned'), text: 'สามเหลี่ยมแดง = อ่างแผนก่อสร้าง ไม่เคลื่อนไหว', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M17 1L31 15H3Z" fill={RED} /></svg> },
+  { key: 'reservoir', when: diagram => has(diagram, 'reservoir', el => el.status !== 'planned'), text: 'อ่างเก็บน้ำ', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M17 1L31 15H3Z" fill="#111" /></svg> },
+  { key: 'source', when: diagram => has(diagram, 'source'), text: 'แหล่งน้ำ', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><ellipse cx="17" cy="8" rx="7" ry="7" fill="#111" /></svg> },
   { key: 'pond', when: diagram => has(diagram, 'pond'), text: 'หนอง', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><circle cx="17" cy="8" r="7" fill="#5b9bd5" /></svg> },
   { key: 'gate', when: diagram => has(diagram, 'gate'), text: 'ประตูระบายน้ำ', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M17 1L26 8L17 15L8 8Z" fill="#7c3aed" stroke="#5b21b6" strokeWidth="1.5" /></svg> },
   { key: 'bridge', when: diagram => has(diagram, 'bridge'), text: 'สะพาน', icon: (
@@ -188,6 +194,9 @@ const LEGEND = [
   ) },
   { key: 'tambon', when: diagram => has(diagram, 'outline', el => el.cls === 'tambon'), text: 'จุดเขียว = เขตตำบล', icon: (
     <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M2 8H32" stroke="#4d7c0f" strokeWidth="3" strokeDasharray="3 5" /></svg>
+  ) },
+  { key: 'boundary', when: diagram => has(diagram, 'outline', el => el.cls === 'boundary'), text: 'เส้นประเทา = เขตตามผัง (ตำบล/หมู่บ้าน/พื้นที่)', icon: (
+    <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M2 8H32" stroke="#94a3b8" strokeWidth="3" strokeDasharray="8 6" /></svg>
   ) },
   { key: 'village', when: diagram => has(diagram, 'outline', el => el.cls === 'village'), text: 'เส้นประเทา = เขตหมู่บ้าน', icon: (
     <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M2 8H32" stroke="#94a3b8" strokeWidth="3" strokeDasharray="8 6" /></svg>

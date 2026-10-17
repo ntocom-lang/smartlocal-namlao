@@ -5,7 +5,8 @@ export const E = (cls, d, o = {}) => ({ kind: 'edge', cls, d, status: 'existing'
 export const T = (x, y, t, o = {}) => ({ kind: 'text', x, y, t, ...o })
 // ฝาย: o = h (แท่งนอน) | v (แท่งตั้ง) · w = ความยาว · extra = { t: ความหนา, status, id }
 export const W = (x, y, o = 'h', w = 40, extra = {}) => ({ kind: 'weir', x, y, o, w, ...extra })
-export const RESERVOIR = (id, x, y, s = 34) => ({ kind: 'reservoir', id, x, y, s })
+// อ่าง: extra = { r: องศาหมุน (ผังบางผังวาดสามเหลี่ยมชี้ตามทิศน้ำ) · sx: ยืดแนวนอน · status: 'planned' = แผนก่อสร้างสีแดง }
+export const RESERVOIR = (id, x, y, s = 34, extra = {}) => ({ kind: 'reservoir', id, x, y, s, ...extra })
 export const POND = (id, x, y, r = 44) => ({ kind: 'pond', id, x, y, r })
 // เส้นขอบเขต: cls = tambon (เขตตำบล จุดเขียว) | village (เขตหมู่บ้าน เส้นประเทา)
 export const OUTLINE = (cls, d, o = {}) => ({ kind: 'outline', cls, d, ...o })
