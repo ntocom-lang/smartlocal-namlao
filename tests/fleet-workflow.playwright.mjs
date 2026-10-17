@@ -801,7 +801,7 @@ async function checkForm3RequestPrint(baseUrl, headed) {
 
     const pendingPrint = await capturePrintDoc(context, page,
       { pdfPath: path.join(PRINT_DIR, 'fleet-form3-pending.pdf') })
-    assert.ok(pendingPrint.includes('ใบขออนุญาตใช้รถส่วนกลาง'), 'หน้าต่างพิมพ์ไม่ใช่ใบขออนุญาตใช้รถ (แบบ 3)')
+    assert.ok(pendingPrint.includes('ใบขออนุญาตใช้ยานพาหนะส่วนกลาง/รถรับรอง'), 'หน้าต่างพิมพ์ไม่ใช่ใบขออนุญาตใช้รถ (แบบ 3)')
     assert.ok(/\(\s*\)\s*อนุมัติ/.test(pendingPrint),
       'ระบบอนุมัติคิวให้อัตโนมัติ แต่เอกสารติ๊กช่อง "อนุมัติ" แทนผู้มีอำนาจ')
     await closeDetail(page)
@@ -857,7 +857,7 @@ async function checkForm3RequestPrint(baseUrl, headed) {
     for (const [field, value] of expected) {
       assert.ok(finalPrint.includes(value), `เอกสารพิมพ์ไม่มีค่าของช่อง "${field}"`)
     }
-    for (const role of ['ผู้ขออนุญาต', 'ผู้ขับรถ', 'ผู้มีอำนาจสั่งใช้รถ']) {
+    for (const role of ['ผู้ขออนุญาต', 'ผู้ขับรถ', 'ผู้มีอำนาจสั่งใช้ยานพาหนะ']) {
       assert.ok(finalPrint.includes(role), `เอกสารพิมพ์ไม่มีช่องลงนาม "${role}"`)
     }
     // ช่องลงนามที่ 3 (หัวหน้ากอง) ตรวจด้วยจำนวนช่อง ไม่ใช่ข้อความคงที่ — ตั้งแต่ b7197f9
@@ -881,7 +881,7 @@ async function checkForm3RequestPrint(baseUrl, headed) {
     // เทสนี้ผู้ขอกับคนกดอนุมัติเป็นคนเดียวกัน — ชื่อในช่องผู้ขอต้องไม่ไปโผล่ที่ช่องผู้มีอำนาจ
     const requesterBlock = finalPrint.slice(finalPrint.indexOf('ผู้ขออนุญาต'), finalPrint.indexOf('ผู้ขับรถ'))
     const requesterPrinted = (requesterBlock.match(/\(([^)]+)\)/) || [])[1]?.trim()
-    const authorityBlock = finalPrint.slice(finalPrint.lastIndexOf('ผู้มีอำนาจสั่งใช้รถ'))
+    const authorityBlock = finalPrint.slice(finalPrint.lastIndexOf('ผู้มีอำนาจสั่งใช้ยานพาหนะ'))
     if (requesterPrinted) {
       assert.ok(!authorityBlock.includes(requesterPrinted),
         `ช่องผู้มีอำนาจสั่งใช้รถพิมพ์ชื่อผู้ขอ/คนกดอนุมัติ (${requesterPrinted}) แทนผู้ลงนามที่ตั้งค่าไว้`)
@@ -892,7 +892,7 @@ async function checkForm3RequestPrint(baseUrl, headed) {
     // ไม่ใช่ป้ายช่องหัวหน้ากองที่เปลี่ยนตามทะเบียนผู้ลงนามของแต่ละ อปท.
     const driverBlock = finalPrint.slice(
       finalPrint.indexOf('ผู้ขับรถ'),
-      finalPrint.indexOf('ความเห็นของผู้มีอำนาจสั่งใช้รถ'))
+      finalPrint.indexOf('ความเห็นของผู้มีอำนาจสั่งใช้ยานพาหนะ'))
     const driverBase = driverName.replace(/\s*\(ฉัน\)\s*/, '').replace(/\s*—.*$/, '').trim()
     assert.ok(driverBlock.includes(driverBase),
       `ช่องผู้ขับรถบนแบบ 3 ไม่ตรงกับที่เลือกไว้ในฟอร์ม (${driverBase})`)

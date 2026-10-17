@@ -114,7 +114,7 @@ assert.ok(defaultHtml.includes('สมนึก นายกฯ'))
 assert.ok(defaultHtml.includes('สมปอง ผอ.กองการศึกษา'))
 // ป้ายบทบาทบนเส้นลงนามใช้ชื่อตำแหน่งที่ อปท. ตั้งไว้ ระบุตรงตัวกว่าคำกลางของแบบฟอร์ม
 assert.ok(defaultHtml.includes('ผู้อำนวยการกองการศึกษา'))
-assert.ok(!defaultHtml.includes('ผู้อำนวยการกอง/หัวหน้ากอง'))
+assert.ok(!defaultHtml.includes('ผู้อำนวยการสำนัก/กอง'))
 // ระบุตำแหน่งชัดแล้วไม่ต้องเผื่อ "หรือผู้แทน" อีก
 assert.ok(!defaultHtml.includes('หรือผู้แทน'))
 
@@ -164,7 +164,7 @@ const blankHtml = buildFleetTripRequestHtml({
   trip, tenant, orderAuthority: resolveOrderAuthority(null, tenant), deptHead: resolveDeptHead(null),
 })
 // ยังไม่ตั้งผู้ลงนามของกองนั้น = คงคำกลางของแบบฟอร์มไว้ ห้ามเว้นป้ายว่าง
-assert.ok(blankHtml.includes('ผู้อำนวยการกอง/หัวหน้ากอง'))
+assert.ok(blankHtml.includes('ผู้อำนวยการสำนัก/กอง'))
 assert.equal(resolveDeptHead(null).title, '')
 // กรณีนี้ยังไม่รู้ว่าใครเซ็น จึงยังต้องเผื่อ "หรือผู้แทน" ไว้
 assert.ok(blankHtml.includes('หรือผู้แทน'))
@@ -348,7 +348,7 @@ assert.ok(!settingsSource.includes("role: 'vehicle_authority'"))
 // ถ้าวันหนึ่งมีคนเติม approved_by ให้รายการ auto หรือเปลี่ยนเงื่อนไขติ๊กให้ดูแค่ status
 // ใบจะพิมพ์ว่า "อนุมัติแล้ว" ทั้งที่ยังไม่มีผู้มีอำนาจคนไหนพิจารณา
 const approvalBox = html => {
-  const match = html.match(/ความเห็นของผู้มีอำนาจสั่งใช้รถ&nbsp;&nbsp;\((.*?)\) อนุมัติ/)
+  const match = html.match(/ความเห็นของผู้มีอำนาจสั่งใช้ยานพาหนะ&nbsp;&nbsp;\((.*?)\) อนุมัติ/)
   assert.ok(match, 'ต้องมีช่องความเห็นของผู้มีอำนาจสั่งใช้รถบนแบบ 3')
   return match[1]
 }

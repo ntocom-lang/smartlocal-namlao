@@ -58,7 +58,9 @@ function meterText(value) {
   return Number.isFinite(number) ? esc(number.toLocaleString('th-TH')) : ''
 }
 
-function signatureBlock({ role, name = '', title = '', suffix = '' }) {
+// dateRow = บรรทัด "......... (วัน เดือน ปี)" ใต้ลายเซ็น ตามแบบ 3 ท้ายระเบียบ มท. พ.ศ. ๒๕๖๙
+// (ผู้อำนวยการสำนัก/กอง และผู้มีอำนาจสั่งใช้ ต้องลงวันที่กำกับลายเซ็นของตัวเอง)
+function signatureBlock({ role, name = '', title = '', suffix = '', dateRow = false }) {
   const inner = String(name ?? '').trim()
   const nameText = inner
     ? `(${esc(inner)})`
@@ -75,6 +77,11 @@ function signatureBlock({ role, name = '', title = '', suffix = '' }) {
       <span></span>
     </div>
     ${title ? `<div class="signature-row"><span></span><span class="signature-title">${esc(title)}</span><span></span></div>` : ''}
+    ${dateRow ? `<div class="signature-row signature-date-row">
+      <span></span>
+      <span class="signature-line"></span>
+      <span class="signature-role">(วัน เดือน ปี)</span>
+    </div>` : ''}
   </div>`
 }
 
@@ -96,7 +103,7 @@ export function resolveOrderAuthority(signatory, tenant, role = 'mayor') {
   return { name, title }
 }
 
-// ช่อง "ผู้อำนวยการกอง/หัวหน้ากอง" ใช้ชื่อตำแหน่งที่ อปท. ระบุไว้ในทะเบียนเป็นป้ายบทบาท
+// ช่อง "ผู้อำนวยการสำนัก/กอง" ใช้ชื่อตำแหน่งที่ อปท. ระบุไว้ในทะเบียนเป็นป้ายบทบาท
 // บนเส้นลงนามแทนคำกลางๆ ของแบบฟอร์ม — ระบุตรงตัวกว่าและไม่ได้เพิ่มบรรทัดใหม่
 // (การพิมพ์ตำแหน่งเป็นบรรทัดที่สองใต้ชื่อจะดันความสูงจนใบเกิน 1 หน้า A4 ซึ่งเป็น
 // ข้อบังคับของแบบฟอร์มนี้ จึงแทนที่ป้ายเดิมแทนการเพิ่ม)
@@ -146,7 +153,7 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
 <html lang="th">
 <head>
   <meta charset="utf-8">
-  <title>ใบขออนุญาตใช้รถส่วนกลาง</title>
+  <title>ใบขออนุญาตใช้ยานพาหนะส่วนกลาง/รถรับรอง</title>
   ${GOV_FONT_LINK}
   <style>
     /* ทั้งใบต้องจบใน 1 หน้า A4 เท่าต้นฉบับกระดาษ ตัวเลขระยะห่างด้านล่างถูกไล่ให้ความสูงรวม
@@ -208,19 +215,28 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
        ตอนนี้เป็นชื่อตำแหน่งจริงที่ อปท. พิมพ์เอง ยาวได้ถึง 250 ตัวอักษร ถ้าคง nowrap
        ที่สืบจาก .signature-row ไว้ ข้อความจะล้นออกนอกขอบกระดาษแล้วหายไปเงียบๆ
        บนเอกสารที่เอาไปให้เซ็น — ยอมให้ตัดบรรทัดแทน */
-    .signature-role { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+    /* pre-line: ป้ายผู้มีอำนาจสั่งใช้ยาวเกินคอลัมน์ ตัดบรรทัดเองตามคำที่กำหนด (
+) ไม่ให้เบราว์เซอร์ตัดกลางคำ "ส่วน|กลาง" */
+    .signature-role { text-align: left; white-space: pre-line; overflow-wrap: anywhere; }
     .signature-name-row { margin-top: 2pt; }
+    .signature-date-row { margin-top: 2pt; }
+    .plate-line { margin-top: 2pt; text-align: center; }
     .signature-name, .signature-title { position: relative; text-align: center; }
     .signature-name.is-blank { display: flex; justify-content: space-between; width: 100%; }
     .signature-suffix { position: absolute; left: 100%; top: 0; margin-left: 4px; white-space: nowrap; }
     .decision { margin-top: 22pt; page-break-inside: avoid; }
-    .decision .signature { margin-top: 22pt; }
+    .decision .signature { margin-top: 16pt; }
   </style>
 </head>
 <body>
 <div class="sheet">
   <div class="form-no">แบบ 3</div>
-  <h1>ใบขออนุญาตใช้รถส่วนกลาง ทะเบียนรถ <span class="field field-medium${filledClass(plate)}">${fillText(plate)}</span></h1>
+  <!-- หัวเรื่องและถ้อยคำหลักตามแบบ 3 ท้ายระเบียบกระทรวงมหาดไทยว่าด้วยการใช้และรักษายานพาหนะ
+       ขององค์กรปกครองส่วนท้องถิ่น พ.ศ. ๒๕๖๙ (ใช้บังคับ 17 มี.ค. 2569 แทนฉบับ 2548)
+       ช่องที่แบบท้ายระเบียบไม่มี (ทะเบียนรถ ท้องที่/จังหวัด เลขไมล์ ผู้ขับรถ ช่องติ๊กความเห็น)
+       คงไว้ตามที่ อปท. ใช้อยู่ — ตัดออกเมื่อนิติกรของ อปท. ยืนยันเท่านั้น -->
+  <h1>ใบขออนุญาตใช้ยานพาหนะส่วนกลาง/รถรับรอง</h1>
+  <p class="plate-line">ทะเบียนรถ <span class="field field-medium${filledClass(plate)}">${fillText(plate)}</span></p>
 
   <p class="date-line">วันที่ <span class="field${filledClass(requestedAt.day)}">${fillText(requestedAt.day)}</span>
     เดือน <span class="field field-medium${filledClass(requestedAt.month)}">${fillText(requestedAt.month)}</span>
@@ -230,13 +246,13 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
   <div class="line-row requester-line"><span class="indent">ข้าพเจ้า</span>
     <span class="fill${filledClass(requesterName)}">${fillText(requesterName)}</span>
     <span>ตำแหน่ง</span><span class="fill${filledClass(requesterPosition)}">${fillText(requesterPosition)}</span></div>
-  <div class="line-row"><span>ขออนุญาตใช้รถยนต์ไปที่</span><span class="fill${filledClass(destination)}">${fillText(destination)}</span></div>
+  <div class="line-row"><span>ขออนุญาตใช้ยานพาหนะส่วนกลาง/รถรับรอง ไปที่</span><span class="fill${filledClass(destination)}">${fillText(destination)}</span></div>
   ${destination ? '' : '<div class="continuation"></div>'}
-  <div class="line-row"><span>เพื่อ</span><span class="fill${filledClass(purpose)}">${fillText(purpose)}</span></div>
+  <div class="line-row"><span>เพื่อ</span><span class="fill${filledClass(purpose)}">${fillText(purpose)}</span>
+    <span>มีคนนั่ง</span><span class="fill fill-tiny${filledClass(passengers)}">${fillText(passengers)}</span><span>คน</span></div>
   ${purpose ? '' : '<div class="continuation"></div>'}
   <div class="line-row"><span>ในท้องที่</span><span class="fill${filledClass(trip?.destination_locality)}">${fillText(trip?.destination_locality)}</span>
-    <span>จังหวัด</span><span class="fill fill-narrow${filledClass(destinationProvince)}">${fillText(destinationProvince)}</span>
-    <span>มีคนนั่ง</span><span class="fill fill-tiny${filledClass(passengers)}">${fillText(passengers)}</span><span>คน</span></div>
+    <span>จังหวัด</span><span class="fill fill-narrow${filledClass(destinationProvince)}">${fillText(destinationProvince)}</span></div>
   <p class="body-line">ในวันที่ <span class="field${filledClass(departure.day)}">${fillText(departure.day)}</span>
     เดือน <span class="field field-medium${filledClass(departure.month)}">${fillText(departure.month)}</span>
     พ.ศ. <span class="field${filledClass(departure.year)}">${fillText(departure.year)}</span>
@@ -255,21 +271,22 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     ${signatureBlock({ role: 'ผู้ขออนุญาต', name: requesterName })}
     ${signatureBlock({ role: 'ผู้ขับรถ', name: driverName })}
     ${signatureBlock({
-      role: deptHead?.title?.trim() || 'ผู้อำนวยการกอง/หัวหน้ากอง',
+      role: deptHead?.title?.trim() || 'ผู้อำนวยการสำนัก/กอง',
       name: deptHead?.name || '',
       // "หรือผู้แทน" มีไว้เผื่อตอนที่ป้ายเป็นคำกลางและยังไม่รู้ว่าใครจะเซ็น
       // พอทะเบียนระบุทั้งชื่อและตำแหน่งมาแล้วก็ไม่ต้องเผื่ออีก คงไว้เฉพาะกรณียังไม่ได้ตั้ง
       suffix: deptHead?.title?.trim() ? '' : 'หรือผู้แทน',
+      dateRow: true,
     })}
   </div>
 
   <div class="decision">
     <div class="line-row">
-      <span>ความเห็นของผู้มีอำนาจสั่งใช้รถ&nbsp;&nbsp;(${approved ? '✓' : '&nbsp;'}) อนุมัติ&nbsp;&nbsp;(${rejected ? '✓' : '&nbsp;'}) ไม่อนุมัติ เพราะ</span>
+      <span>ความเห็นของผู้มีอำนาจสั่งใช้ยานพาหนะ&nbsp;&nbsp;(${approved ? '✓' : '&nbsp;'}) อนุมัติ&nbsp;&nbsp;(${rejected ? '✓' : '&nbsp;'}) ไม่อนุมัติ เพราะ</span>
       <span class="fill${filledClass(rejectReason)}">${fillText(rejectReason)}</span>
     </div>
     ${rejectReason ? '' : '<div class="continuation"></div>'}
-    ${signatureBlock({ role: 'ผู้มีอำนาจสั่งใช้รถ', name: authority.name, title: authority.title })}
+    ${signatureBlock({ role: 'ผู้มีอำนาจสั่งใช้ยานพาหนะ\nส่วนกลาง/รถรับรอง', name: authority.name, title: authority.title, dateRow: true })}
   </div>
   <div class="eservice-origin">${esc(govEServiceOriginText(tenant))}</div>
 </div>
