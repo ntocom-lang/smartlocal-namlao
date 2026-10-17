@@ -53,7 +53,7 @@ const server = await createServer({ configFile: false, envDir: false, server: { 
   load(id) {
     const file = id.replaceAll('\\', '/')
     // onSubmit คืน false = ส่งไม่สำเร็จ (เครือข่ายขัดข้อง) ฟอร์มต้องปิดแผ่นทวนแล้วบอกวิธีแก้
-    if (id === '\0guidance.js') return `import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import Form from '/src/components/patientTransport/BookingForm.jsx'; import Settings from '/src/components/patientTransport/BookingSettings.jsx'; import '/src/index.css'; function App(){const [error,setError]=useState(''); const info=${JSON.stringify(info)}; if(location.search.includes('extended')||location.search.includes('settings'))Object.assign(info,{office_start:450,office_end:1050,routes:[{id:'r',label:'โรงพยาบาล TEST',minutes:30}]}); if(location.search.includes('settings'))return React.createElement(Settings,{workspace:{settings:{...info,coordinator_ids:[],holidays:[]},partners:[],people:[]},busy:false,onSave:()=>{}}); return React.createElement(Form,{tenantId:"test",info,onBack:()=>{},onSubmit:()=>{setError('เครือข่ายขัดข้อง');return false},submitError:error})};createRoot(document.getElementById('root')).render(React.createElement(App));`
+    if (id === '\0guidance.js') return `import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import Form from '/src/components/patientTransport/BookingForm.jsx'; import Settings from '/src/components/patientTransport/BookingSettings.jsx'; import '/src/index.css'; function App(){const [error,setError]=useState(''); const info=${JSON.stringify(info)}; if(location.search.includes('extended')||location.search.includes('settings'))Object.assign(info,{office_start:450,office_end:1050,routes:[{id:'r',label:'โรงพยาบาล TEST',minutes:30}]}); if(location.search.includes('settings'))return React.createElement(Settings,{workspace:{settings:{...info,coordinator_ids:[],holidays:[]},partners:[],people:[]},busy:false,onSave:()=>{}}); return React.createElement(Form,{tenantId:"test",info,...(location.search.includes('extended')?{initial:{day:${JSON.stringify(day)}}}:{}),onBack:()=>{},onSubmit:()=>{setError('เครือข่ายขัดข้อง');return false},submitError:error})};createRoot(document.getElementById('root')).render(React.createElement(App));`
     // ปฏิทินสาธารณะ: ทุกวันเปิด รถว่างทั้งวัน · ทะเบียนสถานที่ของหน่วยงาน 2 แห่ง
     if (file.endsWith('/lib/supabase.js')) return `export const supabase={
       rpc:async(name,args)=>{const qs=location.hash;if(name==='patient_booking_calendar'&&qs.includes('calfail'))return{data:null,error:{message:'TEST calendar down'}};if(name==='patient_booking_calendar'&&qs.includes('slowcal'))await new Promise(r=>setTimeout(r,1500));const days=[];const to=new Date(args.p_to+'T12:00:00+07:00').getTime();for(let t=new Date(args.p_from+'T12:00:00+07:00').getTime();t<=to&&days.length<60;t+=86400000){const d=new Date(t+7*3600000).toISOString().slice(0,10);days.push({date:d,status:'open',free:[{start:d+'T03:30:00+07:00',end:d+'T21:30:00+07:00'}],trips:[]})}return {data:{days}}},
@@ -125,6 +125,12 @@ try {
   // 07:30–17:30 คือช่วงเวลานัดแพทย์ตรงตามที่หน่วยงานตั้ง
   const extended = await browser.newPage({ viewport: { width: 390, height: 900 } })
   await extended.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+  // ⚠️ เทสต์นี้เคยล้มทุกครั้งที่รันช่วง 07:30–17:30 เวลาไทย (พบ 2026-10-14, พิสูจน์สาเหตุ 2026-10-17): ฟอร์มเลือก "วันแรกที่ยังมีเวลานัดเหลือ" เอง
+  // = วันนี้ (min_lead_days 0) แล้วกรองเวลาที่ผ่านไปแล้วทิ้ง (Date.now()) ปุ่มแรกเลยเป็นเวลาถัดจากนาทีที่รันแทน 07:30 — ฟอร์มถูกแล้ว (ไม่ควรเสนอเวลา
+  // ที่ผ่านไปแล้ว) ผิดที่เทสต์ไม่ตรึงวัน จึงส่ง initial.day = วันล่วงหน้าให้ฟอร์ม (ที่ตัวสร้างฟอร์มด้านบน)
+  // และตรึงนาฬิกาเบราว์เซอร์เป็นเที่ยงวันนี้เพิ่มอีกชั้น: ถ้าวันไหนมีคนถอด initial.day ออก เทสต์ต้องแดง "ทุกชั่วโมง" ไม่ใช่เฉพาะตอนรันกลางวัน
+  // (ตรึงเฉพาะ Date ไม่หยุด timer ของหน้า)
+  await extended.clock.setFixedTime(new Date(`${thaiDay(Date.now())}T12:00:00+07:00`))
   await extended.goto(`http://127.0.0.1:${server.httpServer.address().port}/__guidance?extended`)
   const extendedSection = extended.getByRole('region', { name: 'เวลานัดแพทย์' })
   const extendedTimes = extended.getByRole('group', { name: 'เวลานัดแพทย์' }).getByRole('button')
