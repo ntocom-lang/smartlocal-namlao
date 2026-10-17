@@ -6,7 +6,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, Users, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
-  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid, Menu, ArrowLeft,
+  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid, Menu, ArrowLeft, CloudRain,
 } from 'lucide-react'
 import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -61,6 +61,7 @@ const TourismReviewsAdmin = lazy(() => import('../components/admin/TourismManage
 const PostsManager = lazy(() => import('../components/staff/PostsManager'))
 const BorrowableAssetsManager = lazy(() => import('../components/staff/BorrowableAssetsManager'))
 const WasteScheduleManager = lazy(() => import('../components/staff/WasteScheduleManager'))
+const WaterEventsPanel = lazy(() => import('../components/staff/WaterEventsPanel'))
 const StaffOperationalDashboard = lazy(() => import('../components/staff/StaffOperationalDashboard'))
 const StaffMenuGrid = lazy(() => import('../components/staff/StaffOperationalDashboard').then(m => ({ default: m.StaffMenuGrid })))
 const FleetPage = lazy(() => import('./FleetPage'))
@@ -233,6 +234,10 @@ const MODULE_GROUPS = [
       // ถ้าวันหนึ่งเพิ่มกองสาธารณสุขแล้วมีกลุ่มเมนูของกองนั้น ให้ย้ายมาไว้ที่นั่น
       // เมนูนี้ทุกคนใน อปท. เห็นได้ (อ่านอย่างเดียว) — สิทธิ์แก้ตัดสินที่ can_manage_waste_schedule()
       { key: 'waste', label: 'ตารางเก็บขยะ', Icon: Trash2, color: '#15803d', bg: '#dcfce7', desc: 'ตั้งรอบเก็บขยะครั้งเดียว ระบบแจ้งวันเก็บให้ประชาชนเอง' },
+      // อ่านอย่างเดียว ไม่มีช่องกรอก — ระบบจดค่าฝน/ระดับน้ำช่วงเกิดเหตุการณ์ให้เอง (water_event_tick) เปิดดูตอนมีคนถาม
+      // ไม่อยู่ใน MANAGED_MODULE_KEYS (ไม่มีคีย์ enabled_modules ของตัวเอง): โผล่เมื่อ อปท. เปิด 'water-situation' + บทบาทเห็นได้ (hasWaterEventsAccess)
+      // วางใต้สำนักปลัดแบบเดียวกับตารางเก็บขยะ — ⚠️ ยังไม่มี อบต. ยืนยันว่ากองไหนดูแลงานป้องกันสาธารณภัย ย้ายได้ที่นี่จุดเดียว
+      { key: 'water-events', label: 'เหตุการณ์น้ำ-ฝน', Icon: CloudRain, color: '#0369a1', bg: '#e0f2fe', desc: 'ระบบจดค่าฝนและระดับน้ำช่วงเกิดเหตุการณ์ให้เอง ดูย้อนหลังได้เกิน 7 วัน ไม่ต้องกรอกอะไร' },
     ],
   },
   { group: 'กองคลัง', items: [] },
@@ -2460,6 +2465,10 @@ export default function StaffDashboard() {
   // — ต้องตรงกับสิทธิ์ใน RPC staff_performance_rows ไม่งั้นได้เมนูหลอก · ข้อมูลมาจากคำร้องล้วน
   // อปท. ที่ปิดโมดูลคำร้องจึงไม่มีอะไรให้ดู · ระหว่างโหลดโปรไฟล์ role ยังว่าง เมนูจึงยังไม่โผล่
   const hasPerformanceAccess = PERFORMANCE_ROLES.includes(role) && enabledKeys.includes('complaints')
+  // เหตุการณ์น้ำ-ฝน: ต้องตรงกับ can_view_water_events() ฝั่งฐานข้อมูล (admin/officer/staff/superadmin) และ อปท. ต้องเปิดโมดูลสถานการณ์น้ำ-ฝน
+  // กติกา enabled_modules เดียวกับ isModuleEnabled: แถวที่ไม่ใช่ array = ยังไม่เคยตั้งค่า ถือว่าเปิดทุกโมดูล
+  const hasWaterEventsAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
+    && (!Array.isArray(tenant?.enabled_modules) || tenant.enabled_modules.includes('water-situation'))
   const roleScopedKeys = role === 'technician'
     ? enabledKeys.filter(k => TECHNICIAN_MODULE_KEYS.includes(k))
     : enabledKeys
@@ -2467,6 +2476,7 @@ export default function StaffDashboard() {
     ...(hasFleetAccess ? [] : ['fleet']),
     ...(hasAssetAccess ? [] : ['borrowable-assets']),
     ...(hasPerformanceAccess ? [] : ['performance']),
+    ...(hasWaterEventsAccess ? [] : ['water-events']),
   ].reduce((keys, hidden) => keys.filter(k => k !== hidden), roleScopedKeys)
   const patientModuleVisible = scopedKeys.includes(PATIENT_TRANSPORT_MODULE_KEY)
   const patientWorkCount = patientModuleVisible && patientWorkBadge.tenantId === tenant?.id && patientWorkBadge.profileId === profile?.id
@@ -2950,6 +2960,8 @@ export default function StaffDashboard() {
             {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
             {activeModule === 'waste' && <WasteScheduleManager tenant={tenant} />}
+            {/* เข้าหน้านี้ได้ทางลิงก์/เมนูเท่านั้น ที่ไม่ผ่านตัวกรองเมนูต้องเช็คสิทธิ์ซ้ำ (ตัวบังคับจริงคือฟังก์ชันฐานข้อมูล) */}
+            {activeModule === 'water-events' && visibleModules.some(m => m.key === 'water-events') && <WaterEventsPanel tenant={tenant} />}
             {activeModule === PATIENT_TRANSPORT_MODULE_KEY && <PatientTransportStaff onBack={() => setActiveModule('home')} />}
             {activeModule === 'borrowable-assets' && (
               <BorrowableAssetsManager tenant={tenant}

@@ -518,7 +518,7 @@ const B = await mkTenant('b', { modules: '{water-situation}' })  // เปิด
   assert.equal(rls.length, 3)
   assert.ok(rls.every(r => r.relrowsecurity === true), 'เปิด RLS ทุกตาราง')
   assert.equal((await db.query(`SELECT count(*)::int AS n FROM pg_policies WHERE tablename = ANY($1::text[])`, [`{${tables.join(',')}}`])).rows[0].n, 0,
-    'ยังไม่มี policy เปิดอ่าน (หน้าจอเจ้าหน้าที่เพิ่มใน PR 3.2)')
+    'ไม่มี policy เปิดอ่านตรง (หน้าจอเจ้าหน้าที่อ่านผ่านฟังก์ชัน list_water_events/get_water_event ของ PR 3.2)')
   await db.exec('SET ROLE authenticated')
   try {
     await fails(db, 'authenticated อ่านตาราง', 'SELECT * FROM public.water_events', /permission denied/)
