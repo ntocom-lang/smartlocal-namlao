@@ -7,6 +7,7 @@ import { buildFleetForm4Html } from '../../lib/fleetForm4Print'
 import { fuelRecordAmount } from '../../lib/fleetFuelAmount'
 import { buildFleetFuelLedgerHtml } from '../../lib/fleetFuelLedgerPrint'
 import { buildFleetForm6Html } from '../../lib/fleetForm6Print'
+import { buildFleetRegisterHtml } from '../../lib/fleetRegisterPrint'
 import {
   buildFleetFuelMemoHtml, buildMemoRows, defaultAddressee, memoMonthLabel,
 } from '../../lib/fleetFuelMemoPrint'
@@ -174,6 +175,7 @@ export default function FleetReport({ tenant }) {
   const [printingForm4, setPrintingForm4] = useState(false)
   const [printingLedger, setPrintingLedger] = useState(false)
   const [printingForm6, setPrintingForm6] = useState(false)
+  const [printingRegister, setPrintingRegister] = useState(false)
   const [printingMemo, setPrintingMemo] = useState(false)
   const [memoForm, setMemoForm] = useState(null)
 
@@ -405,6 +407,31 @@ export default function FleetReport({ tenant }) {
       alert('พิมพ์ไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
     } finally {
       setPrintingForm6(false)
+    }
+  }
+
+  // แบบ 1 / แบบ 2 ทะเบียนยานพาหนะ (ระเบียบ มท. ยานพาหนะ อปท. พ.ศ. ๒๕๖๙ ข้อ ๗) = ทุกคันของ อปท.
+  // ไม่ขึ้นกับช่วงเวลา/รถที่เลือกด้านบน — ทะเบียนคือสภาพ ณ วันที่พิมพ์ รวมรถที่จำหน่ายแล้ว
+  // ดึงสดตอนกดพิมพ์ (รายการรถด้านบนดึงมาแค่บางคอลัมน์สำหรับตัวกรอง)
+  async function printRegister() {
+    if (!tenant?.id) return alert('ไม่พบหน่วยงาน')
+    setPrintingRegister(true)
+    try {
+      const { data, error } = await supabase.from('fleet_vehicles')
+        .select('id,name,license_plate,asset_code,asset_kind,brand,model,manufacture_year,engine_cc,fuel_type,is_pool,status,regulation_category,purchase_price,acquired_date,disposed_date,departments(name)')
+        .eq('municipality_id', tenant.id)
+      if (error) {
+        alert('โหลดข้อมูลยานพาหนะไม่สำเร็จ: ' + error.message)
+        return
+      }
+      openPrintWindow(buildFleetRegisterHtml({
+        vehicles: data ?? [], orgName: tenant?.name ?? '', asOf: todayBangkok(),
+      }), { width: 1120, height: 760 })
+    } catch (err) {
+      console.error('[fleet-register] พิมพ์ทะเบียนยานพาหนะไม่สำเร็จ:', err?.message ?? err)
+      alert('พิมพ์ไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
+    } finally {
+      setPrintingRegister(false)
     }
   }
 
@@ -767,13 +794,17 @@ export default function FleetReport({ tenant }) {
             className="w-full md:w-auto px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
             🖨️ พิมพ์บันทึกข้อความสรุปน้ำมัน (ทุกคัน)
           </button>
+          <button onClick={printRegister} disabled={printingRegister}
+            className="w-full md:w-auto px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
+            {printingRegister ? 'กำลังเตรียมทะเบียน...' : '🖨️ พิมพ์ทะเบียนยานพาหนะ แบบ 1 / แบบ 2 (ทุกคัน)'}
+          </button>
           <button onClick={resetPeriod}
             className="px-3 py-1.5 text-[11px] font-semibold text-red-500 border border-red-200 rounded-lg hover:bg-red-50">
             ล้าง
           </button>
         </div>
         {!selVehicle && (
-          <p className="text-[11px] text-gray-400">แบบ 4 แบบ 6 และปริมาณการเบิกใช้น้ำมัน ต้องเลือกยานพาหนะ 1 คัน แล้วจึงพิมพ์ได้ · บันทึกข้อความสรุปพิมพ์ทุกคันในช่วงที่เลือกเสมอ</p>
+          <p className="text-[11px] text-gray-400">แบบ 4 แบบ 6 และปริมาณการเบิกใช้น้ำมัน ต้องเลือกยานพาหนะ 1 คัน แล้วจึงพิมพ์ได้ · บันทึกข้อความสรุปพิมพ์ทุกคันในช่วงที่เลือกเสมอ · ทะเบียนแบบ 1/2 พิมพ์ทุกคัน ณ วันที่พิมพ์</p>
         )}
       </div>
 
