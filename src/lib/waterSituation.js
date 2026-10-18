@@ -488,3 +488,15 @@ export function summaryStats({ rain = [], dams = [], levels = [], now }) {
     any: Boolean(topRain) || damPercent !== null || Boolean(nearest),
   }
 }
+
+// ประโยคใต้หัวเรื่องของหน้า ต้องพูดถึงเฉพาะชนิดสถานีที่หน้านี้แสดงจริง — น้ำเลาไม่มีสถานีระดับน้ำแล้ว
+// (ปิด YOM003 2569-10-18) ห้ามเขียนว่า "ติดตามระดับน้ำ" · ยังโหลดไม่เสร็จ/ไม่มีสถานีเลย ใช้คำกลาง ไม่เดาชนิด
+// (ไม่เอาข้อความเต็มไปใช้ระหว่างโหลด ไม่งั้นขึ้นคำว่าระดับน้ำก่อนแล้วหายไปทีหลัง)
+export const COVER_SUBJECT_NEUTRAL = 'ติดตามข้อมูลน้ำและฝน'
+export function coverSubject({ rain = [], dams = [], levels = [] } = {}) {
+  const parts = [rain.length && 'ฝน', dams.length && 'อ่างเก็บน้ำ', levels.length && 'ระดับน้ำ'].filter(Boolean)
+  if (parts.length === 0) return COVER_SUBJECT_NEUTRAL
+  if (parts.length === 1) return `ติดตาม${parts[0]}`
+  if (parts.length === 2) return `ติดตาม${parts[0]}และ${parts[1]}`
+  return 'ติดตามฝน อ่างเก็บน้ำ และระดับน้ำ'
+}

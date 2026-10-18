@@ -8,7 +8,7 @@ import {
   LEVEL_WATCH_M, RAIN_LEVELS, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS,
   alertSummary, bankText, barPercent, buildAlerts, channelFill, damLevel, damRank, damSameInfo, damSameText, damTicks, damTrend,
   dataDayText, distanceText, ewsAlert, flowCompare, formatMcm, formatMm, isStale, levelRank, mapUrl, measuredAtText, rainBarMax,
-  rainLevel, safeColor, stationPlace, summaryStats, waterTrend,
+  rainLevel, safeColor, stationPlace, summaryStats, waterTrend, COVER_SUBJECT_NEUTRAL, coverSubject,
 } from '../src/lib/waterSituation.js'
 
 // ── ตัวเลขอ่างซ้ำเดิมหลายวัน (ต้นทางลงวันที่ใหม่ทุกวันแต่ไม่ปรับตัวเลข) ──
@@ -563,6 +563,28 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
     dams: [dam('D9', 104)], now,
   }), { now })
   assert.equal(rainOverDam.label, 'ฝนหนักมาก', 'อ่างน้ำมากไม่แย่งหัวเรื่องจากฝนหนักมาก')
+}
+
+// ── ประโยคใต้หัวเรื่อง ต้องตรงกับสถานีที่แสดงจริง (เจ้าของระบบสั่ง 2569-10-18 หลังน้ำเลาไม่มีสถานีระดับน้ำแล้ว) ──
+{
+  const some = [{ station_code: 'x' }]
+  const none = []
+  assert.equal(coverSubject({ rain: some, dams: some, levels: some }), 'ติดตามฝน อ่างเก็บน้ำ และระดับน้ำ', 'ครบ 3 ชนิด = ข้อความเดิมทุกตัวอักษร')
+  assert.equal(coverSubject({ rain: some, dams: some, levels: none }), 'ติดตามฝนและอ่างเก็บน้ำ', 'น้ำเลา: ไม่มีระดับน้ำ ห้ามพูดถึงระดับน้ำ')
+  assert.equal(coverSubject({ rain: some, dams: none, levels: some }), 'ติดตามฝนและระดับน้ำ')
+  assert.equal(coverSubject({ rain: none, dams: some, levels: some }), 'ติดตามอ่างเก็บน้ำและระดับน้ำ')
+  assert.equal(coverSubject({ rain: some, dams: none, levels: none }), 'ติดตามฝน')
+  assert.equal(coverSubject({ rain: none, dams: some, levels: none }), 'ติดตามอ่างเก็บน้ำ')
+  assert.equal(coverSubject({ rain: none, dams: none, levels: some }), 'ติดตามระดับน้ำ')
+  assert.equal(coverSubject({ rain: none, dams: none, levels: none }), COVER_SUBJECT_NEUTRAL)
+  assert.equal(coverSubject(), COVER_SUBJECT_NEUTRAL, 'ยังไม่มีข้อมูล (กำลังโหลด/โหลดไม่สำเร็จ) = คำกลาง ไม่เดาชนิด')
+  assert.equal(COVER_SUBJECT_NEUTRAL, 'ติดตามข้อมูลน้ำและฝน')
+  for (const text of [COVER_SUBJECT_NEUTRAL, coverSubject({ rain: some }), coverSubject({ rain: some, dams: some })])
+    assert.ok(!text.includes('ระดับน้ำ'), `ไม่มีสถานีระดับน้ำ ห้ามมีคำว่าระดับน้ำ: ${text}`)
+  // หน้าต้องใช้ฟังก์ชันนี้ ไม่ใช่เขียนประโยคตายตัวกลับเข้าไป (ตัวกรอง/ปิดสถานีเปลี่ยนเมื่อไร ข้อความต้องตามเอง)
+  const page = readFileSync(new URL('../src/pages/WaterSituationPage.jsx', import.meta.url), 'utf8')
+  assert.ok(/coverSubject\(\{\s*rain,\s*dams,\s*levels\s*\}\)/.test(page), 'หน้าต้องเรียก coverSubject ด้วยรายการสถานีที่แสดงจริง')
+  assert.ok(!page.includes('ติดตามฝน อ่างเก็บน้ำ และระดับน้ำ'), 'ห้ามมีประโยคตายตัวเหลืออยู่ในหน้า')
 }
 
 console.log('✅ water-situation: ผ่านทุกข้อ')

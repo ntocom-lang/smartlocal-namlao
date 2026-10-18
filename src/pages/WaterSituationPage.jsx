@@ -21,7 +21,7 @@ import {
   bankText, barPercent, levelRank,
   channelFill, damLevel, damSameInfo, damSameText, damTicks, damTrend, buildAlerts, dataDayText, distanceText, ewsAlert, flowCompare,
   formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainBarMax, rainLevel, safeColor, stationPlace,
-  summaryStats, toNum, waterTrend, localWaterSituation, shareWaterSituation,
+  summaryStats, toNum, waterTrend, localWaterSituation, shareWaterSituation, coverSubject,
 } from '../lib/waterSituation'
 
 // ข้อมูลในฐานเปลี่ยนชั่วโมงละครั้ง (thaiwater-sync) — ถามซ้ำถี่กว่านี้ก็ไม่ได้ของใหม่ เปลืองโควตาฟรีเปล่า
@@ -147,7 +147,7 @@ export default function WaterSituationPage() {
           </button>
           <p className="water-eyebrow"><Waves size={16} /> ข้อมูลน้ำใกล้คุณ</p>
           <h1>สถานการณ์น้ำ–ฝน</h1>
-          <p className="water-cover-description">ติดตามฝน อ่างเก็บน้ำ และระดับน้ำ<br />{nearbyOnly ? 'ในตำบลและใกล้เคียงไม่เกิน 5 กม. จากสำนักงาน' : localOnly ? 'เฉพาะสถานีในตำบล ไม่รวมพื้นที่ข้างเคียง' : 'จากสถานีตรวจวัดใกล้พื้นที่'}</p>
+          <p className="water-cover-description" data-cover-subject>{coverSubject({ rain, dams, levels })}<br />{nearbyOnly ? 'ในตำบลและใกล้เคียงไม่เกิน 5 กม. จากสำนักงาน' : localOnly ? 'เฉพาะสถานีในตำบล ไม่รวมพื้นที่ข้างเคียง' : 'จากสถานีตรวจวัดใกล้พื้นที่'}</p>
           <span className="water-area"><MapPin size={14} /> {tenant?.name || 'สถานีตรวจวัดใกล้พื้นที่'}</span>
         </div>
         <WaterLandscape />
