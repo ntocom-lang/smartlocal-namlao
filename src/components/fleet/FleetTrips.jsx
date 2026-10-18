@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { assetIdentifier, assetOptionLabel } from '../../lib/fleetAssets'
 import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
-import { buildFleetTripRequestHtml, resolveDeptHead, resolveOrderAuthority } from '../../lib/fleetTripPrint'
+import { buildFleetSk1Html, buildFleetTripRequestHtml, resolveDeptHead, resolveOrderAuthority, tripRequesterIsMayor } from '../../lib/fleetTripPrint'
 import { FLEET_TRIP_KM_CONFIRM, checkTripOdometer, isImplausibleTripDistance } from '../../lib/fleetOdometer'
 import {
   CUSTOM_ROLE, SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, defaultVehicleAuthority,
@@ -860,15 +860,25 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       ? pickSignatory(signatories, { role: 'department_head', departmentId: deptHeadDeptId, at })
       : null
     const authorityRow = pickSignatory(signatories, { role: authorityRole, customLabel: authorityLabel, at })
-    const win = window.open('', '_blank', 'width=900,height=760')
-    if (!win) return alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
-    win.document.open()
-    win.document.write(buildFleetTripRequestHtml({
+    openPrintWindow(buildFleetTripRequestHtml({
       trip: t,
       tenant,
       orderAuthority: resolveOrderAuthority(authorityRow, tenant, authorityRole),
       deptHead: resolveDeptHead(deptHeadRow),
     }))
+  }
+
+  // แบบ สก. ๑ — นายกขอใช้รถ ใบนี้ให้นายกรับรองการใช้ของตัวเอง พิมพ์คู่กับแบบ 3 (ไม่ได้แทน)
+  // ข้อมูลทั้งใบมาจากคำขอใบเดียวกัน ไม่มีช่องกรอกเพิ่ม
+  function printSk1(t) {
+    openPrintWindow(buildFleetSk1Html({ trip: t, tenant }))
+  }
+
+  function openPrintWindow(html) {
+    const win = window.open('', '_blank', 'width=900,height=760')
+    if (!win) return alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
+    win.document.open()
+    win.document.write(html)
     win.document.close()
     const printWhenReady = async () => {
       try {
@@ -2291,6 +2301,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         const canFixOdometer = t.status === 'completed' && isAdmin
         // แบบ 5 (ข้อ 18) เกิดได้เฉพาะตอนรถออกไปแล้ว · ข้อมูลคู่กรณี/พยาน = ผู้ดูแลยานพาหนะเท่านั้น (RLS ซ้ำอีกชั้น)
         const canReportIncident = isAdmin && ['in_progress', 'completed'].includes(t.status)
+        // แบบ สก. ๑ เฉพาะคำขอของนายกที่ได้รถแล้ว — ถูกปฏิเสธ/ยกเลิก/ยังรอ = ไม่มีการใช้รถให้รับรอง
+        const canPrintSk1 = tripRequesterIsMayor(t) && ['approved', 'in_progress', 'completed'].includes(t.status)
         return (
           <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-4">
             <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl">
@@ -2354,11 +2366,18 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                   {t.notes && <div className="col-span-2"><p className="text-gray-400">หมายเหตุ</p><p className="font-semibold text-gray-700">{t.notes}</p></div>}
                 </div>
               </div>
-              <div className={`grid grid-cols-1 gap-2 px-5 pb-5 pt-3 border-t border-gray-100 ${canEdit || canFixOdometer || canReportIncident ? 'sm:grid-cols-2' : ''}`}>
+              <div className={`grid grid-cols-1 gap-2 px-5 pb-5 pt-3 border-t border-gray-100 ${canEdit || canFixOdometer || canReportIncident || canPrintSk1 ? 'sm:grid-cols-2' : ''}`}>
                 <button onClick={() => printTripRequest(t)}
                   className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50">
                   <Printer size={15} /> พิมพ์ใบขอใช้รถ (แบบ 3)
                 </button>
+                {canPrintSk1 && (
+                  <button onClick={() => printSk1(t)}
+                    title="นายกเป็นผู้ขอใช้รถ — พิมพ์ให้นายกลงนามรับรองการใช้รถ คู่กับแบบ 3"
+                    className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50">
+                    <Printer size={15} /> พิมพ์บันทึกรับรอง (แบบ สก. ๑)
+                  </button>
+                )}
                 {canEdit && (
                   <button onClick={() => openEditReserve(t)}
                     className="rounded-xl py-3 text-sm font-bold text-white"
