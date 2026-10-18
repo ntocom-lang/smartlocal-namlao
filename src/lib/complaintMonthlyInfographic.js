@@ -1,0 +1,301 @@
+// ภาพอินโฟกราฟิก "สรุปเรื่องร้องเรียนประจำเดือน" — ภาพเดียวที่เจ้าหน้าที่ดาวน์โหลด/แชร์ไปลง LINE หรือ Facebook
+// (แนวเดียวกับที่เทศบาลนครยะลาทำมือทุกเดือน แต่ระบบวาดให้เองจากตัวเลขรวม ไม่มีอะไรให้เจ้าหน้าที่กรอก)
+//
+// ภาพเป็นสตริง SVG ก้อนเดียว: หน้าเว็บแสดงผ่าน <img src="data:image/svg+xml"> และปุ่มดาวน์โหลดแปลงสตริงเดียวกัน
+// เป็น PNG — ภาพที่เห็นกับภาพที่ได้จึงมาจากตัววาดตัวเดียว ไม่มีทางหน้าตาต่างกัน
+//   <img> + SVG ไม่รันสคริปต์ใดๆ แม้ข้อความที่ฝังมาจะมีแท็ก (ชื่อ อปท./ชื่อหมวดแก้ได้โดยแอดมิน) และทุกค่ายัง esc() ซ้ำ
+//
+// ข้อมูลในภาพ: ยอดรวม ร้อยละ ชื่อหมวด ชื่อ อปท. เท่านั้น — ไม่มีชื่อ เบอร์ ที่อยู่ พิกัดผู้แจ้ง และไม่มีรายเรื่อง
+// ไอคอนเป็นของ lucide ไม่ใช้มาสคอต/ภาพประกอบของ อปท. ใด (เป็นอัตลักษณ์ของเขา)
+//
+// ฟอนต์: SVG ที่ถูกโหลดเป็นภาพใช้ได้เฉพาะฟอนต์ในเครื่อง (เว็บฟอนต์ไม่ติดมา) จึงระบุชุดที่มีอักษรไทยในแต่ละระบบ
+// และ "วัดความกว้างข้อความด้วย canvas ชุดฟอนต์เดียวกัน" ก่อนตัดบรรทัด — ข้อความไทยไม่มีช่องว่างคั่นคำ
+// ต้องตัดตามขอบเขตคำ (Intl.Segmenter) ไม่งั้นคำขาดกลางพยางค์
+//
+// ไฟล์นี้ต้องไม่แตะ DOM ตอนโหลดโมดูล — เทสต์รันด้วย node (ตัววัดข้อความส่งเข้ามาจากผู้เรียก)
+
+import { iconNodeForCategory } from './complaintCategoryIcons.js'
+import { formatCount, formatPercent } from './complaintMonthlySummary.js'
+
+export const IMAGE_WIDTH = 1080
+// 4:5 — ขนาดที่ Facebook/Instagram ไม่ครอปในฟีด ถ้าเนื้อหายาวกว่านี้ภาพจะสูงขึ้นเอง (ไม่ตัดข้อความทิ้ง)
+export const IMAGE_MIN_HEIGHT = 1350
+export const FONT_STACK = "Tahoma, 'Leelawadee UI', 'Noto Sans Thai', Thonburi, 'Sukhumvit Set', Arial, sans-serif"
+
+const MARGIN = 64
+const CONTENT_W = IMAGE_WIDTH - MARGIN * 2
+const INK = '#16324f'
+const MUTED = '#52647a'
+const PANEL = { resolved: { bg: '#e7f7ef', fg: '#047857' }, ongoing: { bg: '#fff5df', fg: '#92400e' } }
+
+// สีชิ้นวงกลม: ชุดเดียวกับภาพสรุปรถรับ-ส่งผู้ป่วย (ReportInfographic) เพื่อให้ภาพของระบบเดียวกันหน้าตาเข้ากัน
+// ทุกสีให้ไอคอนสีขาวชัดเกิน 3:1 (เกณฑ์ของกราฟิกที่ไม่ใช่ตัวอักษร) ส่วนตัวอักษรอยู่บนพื้นขาวเสมอ ไม่ทับชิ้นวงกลม
+export const SLICE_COLORS = ['#7c3aed', '#ea580c', '#0891b2', '#db2777', '#b45309', '#0f766e', '#4f46e5']
+export const REST_COLOR = '#64748b'
+
+const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+})[character])
+const num = n => Math.round(n * 100) / 100
+
+/**
+ * @param {ReturnType<import('./complaintMonthlySummary.js').summarizeMonth>} summary
+ * @param {{ tenantName?: string }} [options]
+ */
+export function buildInfographicModel(summary, { tenantName = '' } = {}) {
+  const total = summary.total
+  let cumulative = 0
+  const slices = summary.categories.map((category, index) => {
+    const start = total > 0 ? cumulative / total : 0
+    cumulative += category.count
+    return {
+      code: category.code,
+      label: category.label,
+      count: category.count,
+      percent: category.percent,
+      color: category.code === null ? REST_COLOR : SLICE_COLORS[index % SLICE_COLORS.length],
+      start,
+      end: total > 0 ? cumulative / total : 0,
+    }
+  })
+  const notes = [
+    ...summary.notes.filter(note => !note.startsWith('ไม่แสดงสัดส่วนตามหมวด')),
+    'แหล่งข้อมูล: ระบบ e-Service SmartLocal · ไม่มีข้อมูลระบุตัวบุคคลและไม่แสดงรายเรื่อง',
+  ]
+  return {
+    title: 'สรุปเรื่องร้องเรียน',
+    monthLabel: `เดือน${summary.period.label}`,
+    monthKey: summary.period.key,
+    tenantName: tenantName || 'หน่วยงาน',
+    total,
+    slices,
+    categoriesComplete: summary.categoriesComplete,
+    resolved: { count: summary.resolved, percent: summary.resolvedPercent },
+    ongoing: { count: summary.ongoing, percent: summary.ongoingPercent },
+    rejected: { count: summary.rejected, percent: summary.rejectedPercent },
+    notes,
+    asOf: summary.asOf,
+  }
+}
+
+/**
+ * ตัดข้อความเป็นบรรทัดตามความกว้างจริง — ตัดที่ขอบเขตคำ คำเดียวยาวเกินความกว้างจึงตัดกลางคำ (กรณีสุดวิสัยเท่านั้น)
+ * @param {string} value
+ * @param {number} maxWidth
+ * @param {number} size
+ * @param {boolean} bold
+ * @param {(text: string, size: number, bold: boolean) => number} measure
+ */
+export function wrapLines(value, maxWidth, size, bold, measure) {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim()
+  if (!text) return []
+  // Intl.Segmenter ไม่มีใน Firefox ก่อน 125 — ถอยไปตัดทีละอักษร (ตัดกลางคำได้ แต่ภาพยังออก ไม่ล้ม)
+  const segment = (value, granularity) => (typeof Intl.Segmenter === 'function'
+    ? [...new Intl.Segmenter('th', { granularity }).segment(value)].map(part => part.segment)
+    : Array.from(value))
+  // เครื่องหมายปิด/ๆ/ฯ ที่ถูกแยกเป็นคำของตัวเอง ต้องติดคำก่อนหน้า ไม่ปล่อยให้ขึ้นบรรทัดใหม่โดดเดี่ยว
+  // (เคสจริง: "กลิ่นเหม็นรบกวน (มลพิษทางอากาศ" แล้ว ")" ลงไปยืนบรรทัดถัดไปคนเดียว)
+  const words = []
+  for (const part of segment(text, 'word')) {
+    if (words.length && /^[)\]}”’"'ๆฯ.,;:!?…%]+$/u.test(part)) words[words.length - 1] += part
+    else words.push(part)
+  }
+  const lines = []
+  let line = ''
+  const push = () => { if (line.trim()) lines.push(line.trim()); line = '' }
+  for (const word of words) {
+    if (measure(line + word, size, bold) <= maxWidth) { line += word; continue }
+    push()
+    if (measure(word, size, bold) <= maxWidth) { line = word.trimStart(); continue }
+    for (const piece of segment(word, 'grapheme')) {
+      if (measure(line + piece, size, bold) > maxWidth) push()
+      line += piece
+    }
+  }
+  push()
+  return lines
+}
+
+function arcPoint(cx, cy, radius, fraction) {
+  const angle = fraction * Math.PI * 2 - Math.PI / 2
+  return [cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)]
+}
+
+/** ชิ้นวงแหวน (donut) จากเศษส่วน start→end ของวงกลม — เต็มวงต้องแยกเป็น 2 ครึ่ง เพราะส่วนโค้ง 360° วาดไม่ได้ */
+export function donutSlicePath(cx, cy, outer, inner, start, end) {
+  if (end - start >= 0.9999) {
+    const ring = (r, sweep) => `M ${num(cx - r)} ${num(cy)} A ${r} ${r} 0 1 ${sweep} ${num(cx + r)} ${num(cy)} A ${r} ${r} 0 1 ${sweep} ${num(cx - r)} ${num(cy)} Z`
+    return `${ring(outer, 1)} ${ring(inner, 0)}`
+  }
+  const large = end - start > 0.5 ? 1 : 0
+  const [x1, y1] = arcPoint(cx, cy, outer, start)
+  const [x2, y2] = arcPoint(cx, cy, outer, end)
+  const [x3, y3] = arcPoint(cx, cy, inner, end)
+  const [x4, y4] = arcPoint(cx, cy, inner, start)
+  return `M ${num(x1)} ${num(y1)} A ${outer} ${outer} 0 ${large} 1 ${num(x2)} ${num(y2)} L ${num(x3)} ${num(y3)} A ${inner} ${inner} 0 ${large} 0 ${num(x4)} ${num(y4)} Z`
+}
+
+const ICON_TAGS = new Set(['path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse'])
+
+function iconSvg(node, x, y, size) {
+  const shapes = node
+    .filter(([tag]) => ICON_TAGS.has(tag))
+    .map(([tag, attrs]) => `<${tag} ${Object.entries(attrs)
+      .filter(([name]) => name !== 'key')
+      .map(([name, value]) => `${esc(name)}="${esc(value)}"`).join(' ')}/>`)
+    .join('')
+  return `<g transform="translate(${num(x)} ${num(y)}) scale(${num(size / 24)})" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${shapes}</g>`
+}
+
+/**
+ * @param {ReturnType<typeof buildInfographicModel>} model
+ * @param {(text: string, size: number, bold: boolean) => number} measure วัดความกว้างข้อความ (px) ด้วยชุดฟอนต์ FONT_STACK
+ * @returns {{ svg: string, width: number, height: number }}
+ */
+export function buildInfographicSvg(model, measure) {
+  const parts = []
+  const text = (x, y, value, { size = 28, bold = false, fill = INK, anchor = 'start' } = {}) => {
+    parts.push(`<text x="${num(x)}" y="${num(y)}" font-size="${size}" font-weight="${bold ? 700 : 400}" fill="${fill}" text-anchor="${anchor}">${esc(value)}</text>`)
+  }
+  // หลายบรรทัด: คืนค่า y ของ "บรรทัดถัดไป" (baseline ถัดจากบรรทัดสุดท้าย) เพื่อวางของถัดไปต่อ
+  const block = (x, y, value, maxWidth, options = {}) => {
+    const size = options.size ?? 28
+    const step = Math.round(size * 1.4)
+    let cursor = y
+    for (const line of wrapLines(value, maxWidth, size, !!options.bold, measure)) {
+      text(x, cursor, line, options)
+      cursor += step
+    }
+    return cursor
+  }
+  const rect = (x, y, width, height, fill, radius = 0) => {
+    parts.push(`<rect x="${num(x)}" y="${num(y)}" width="${num(width)}" height="${num(height)}" rx="${radius}" fill="${fill}"/>`)
+  }
+
+  // ── หัวภาพ ──
+  // ชื่อ อปท. อาจยาวหลายบรรทัด — นับบรรทัดก่อนเพื่อรู้ความสูงของแถบหัวภาพ แล้วค่อยวางพื้นก่อนตัวอักษร
+  const tenantStart = 216
+  const tenantLines = wrapLines(model.tenantName, CONTENT_W, 32, true, measure)
+  const headerHeight = tenantStart + Math.max(0, tenantLines.length - 1) * Math.round(32 * 1.4) + 36
+  rect(0, 0, IMAGE_WIDTH, headerHeight, INK)
+  rect(MARGIN, 44, 8, 128, '#38bdf8')
+  text(MARGIN + 32, 96, model.title, { size: 52, bold: true, fill: '#ffffff' })
+  text(MARGIN + 32, 154, model.monthLabel, { size: 40, fill: '#bae6fd' })
+  block(MARGIN, tenantStart, model.tenantName, CONTENT_W, { size: 32, bold: true, fill: '#ffffff' })
+
+  let y = headerHeight + 56
+
+  // ── ส่วนที่ 1: สัดส่วนตามหมวด ──
+  text(MARGIN, y, 'สัดส่วนเรื่องร้องเรียน จำแนกตามหมวด', { size: 36, bold: true })
+  y += 32
+  const R = 172
+  const r = 106
+  if (model.total === 0) {
+    const cy = y + R + 10
+    parts.push(`<circle cx="${MARGIN + 200}" cy="${cy}" r="${(R + r) / 2}" fill="none" stroke="#e2e8f0" stroke-width="${R - r}"/>`)
+    text(MARGIN + 200, cy + 12, '0', { size: 80, bold: true, anchor: 'middle' })
+    text(MARGIN + 200, cy + 54, 'เรื่อง', { size: 28, fill: MUTED, anchor: 'middle' })
+    y = block(MARGIN + 440, cy - 8, 'ไม่มีเรื่องร้องเรียนที่รับผ่านระบบในเดือนนี้', CONTENT_W - 440, { size: 32, bold: true, fill: MUTED })
+    y = Math.max(y, cy + R) + 56
+  } else if (!model.categoriesComplete) {
+    y = block(MARGIN, y + 36, 'ไม่แสดงสัดส่วนตามหมวด เพราะจำนวนเรื่องมากเกินกว่าที่ดึงมาคำนวณได้ในครั้งเดียว', CONTENT_W, { size: 30, fill: MUTED }) + 20
+  } else {
+    const legendX = MARGIN + 392
+    const iconBox = 52
+    const textX = legendX + iconBox + 20
+    const textW = IMAGE_WIDTH - MARGIN - textX
+    const rows = model.slices.map(slice => {
+      const labelLines = wrapLines(slice.label, textW, 30, true, measure)
+      const height = Math.max(iconBox, labelLines.length * 40 + 32) + 18
+      return { slice, labelLines, height }
+    })
+    const legendHeight = rows.reduce((sum, row) => sum + row.height, 0) - 18
+    const contentHeight = Math.max(R * 2, legendHeight)
+    const cx = MARGIN + R
+    const cy = y + contentHeight / 2
+    for (const { slice } of rows) {
+      if (slice.count <= 0) continue
+      parts.push(`<path d="${donutSlicePath(cx, cy, R, r, slice.start, slice.end)}" fill="${slice.color}" fill-rule="evenodd" stroke="#ffffff" stroke-width="4" stroke-linejoin="round"/>`)
+    }
+    text(cx, cy - 56, 'รวมทั้งสิ้น', { size: 28, fill: MUTED, anchor: 'middle' })
+    text(cx, cy + 32, formatCount(model.total), { size: 84, bold: true, anchor: 'middle' })
+    text(cx, cy + 80, 'เรื่อง', { size: 28, fill: MUTED, anchor: 'middle' })
+    let rowY = y + (contentHeight - legendHeight) / 2
+    for (const { slice, labelLines, height } of rows) {
+      rect(legendX, rowY, iconBox, iconBox, slice.color, 14)
+      parts.push(iconSvg(iconNodeForCategory(slice.code), legendX + 10, rowY + 10, 32))
+      let lineY = rowY + 24
+      for (const line of labelLines) { text(textX, lineY, line, { size: 30, bold: true }); lineY += 40 }
+      text(textX, lineY - 8, `${formatCount(slice.count)} เรื่อง · ร้อยละ ${formatPercent(slice.percent)}`, { size: 27, fill: MUTED })
+      rowY += height
+    }
+    y += contentHeight + 44
+  }
+
+  // ── ส่วนที่ 2: ผลการดำเนินงาน ──
+  text(MARGIN, y, 'ผลการดำเนินงาน', { size: 36, bold: true })
+  y += 28
+  const cardW = (CONTENT_W - 24) / 2
+  const cardH = 224
+  for (const [index, card] of [
+    { label: 'ดำเนินการแล้วเสร็จ', data: model.resolved, palette: PANEL.resolved },
+    { label: 'อยู่ระหว่างดำเนินการ', data: model.ongoing, palette: PANEL.ongoing },
+  ].entries()) {
+    const x = MARGIN + index * (cardW + 24)
+    rect(x, y, cardW, cardH, card.palette.bg, 24)
+    text(x + 28, y + 52, card.label, { size: 30, bold: true, fill: card.palette.fg })
+    text(x + 28, y + 132, `${formatPercent(model.total ? card.data.percent : 0)}%`, { size: 80, bold: true, fill: card.palette.fg })
+    text(x + 28, y + 190, `${formatCount(card.data.count)} เรื่อง`, { size: 30, fill: card.palette.fg })
+  }
+  y += cardH
+  if (model.rejected.count > 0) {
+    y += 44
+    text(MARGIN, y, `ไม่รับเรื่อง/ยกเลิก ${formatCount(model.rejected.count)} เรื่อง (ร้อยละ ${formatPercent(model.rejected.percent)})`, { size: 28, fill: MUTED })
+  }
+
+  // ── ท้ายภาพ ──
+  y += 40
+  rect(MARGIN, y, CONTENT_W, 2, '#dbe5ef')
+  let noteY = y + 44
+  for (const note of model.notes) {
+    noteY = block(MARGIN, noteY, note, CONTENT_W, { size: 24, fill: MUTED }) + 6
+  }
+  noteY = block(MARGIN, noteY, `ข้อมูล ณ วันที่ ${model.asOf}`, CONTENT_W, { size: 24, fill: MUTED })
+
+  const height = Math.max(IMAGE_MIN_HEIGHT, Math.ceil(noteY + 16))
+  // พื้นขาวเต็มภาพเป็นองค์ประกอบแรกสุด — PNG ที่ไม่มีพื้นจะโปร่งใส แล้วตัวอักษรสีเข้มกลายเป็นดำบนดำในแอปโหมดมืด
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${IMAGE_WIDTH}" height="${height}" viewBox="0 0 ${IMAGE_WIDTH} ${height}" font-family="${FONT_STACK}" role="img" aria-label="${esc(`สรุปเรื่องร้องเรียน ${model.monthLabel} ${model.tenantName} รวม ${model.total} เรื่อง`)}"><title>${esc(`${model.title} ${model.monthLabel}`)}</title><rect width="${IMAGE_WIDTH}" height="${height}" fill="#ffffff"/>${parts.join('')}</svg>`
+  return { svg, width: IMAGE_WIDTH, height }
+}
+
+/** ตัววัดข้อความด้วย canvas ชุดฟอนต์เดียวกับภาพ — ใช้ในเบราว์เซอร์เท่านั้น */
+export function createCanvasMeasure() {
+  const context = document.createElement('canvas').getContext('2d')
+  if (!context) throw new Error('Canvas unavailable')
+  return (value, size, bold) => {
+    context.font = `${bold ? 700 : 400} ${size}px ${FONT_STACK}`
+    return context.measureText(value).width
+  }
+}
+
+export const svgDataUrl = svg => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+
+/** แปลงสตริง SVG เป็นไฟล์ PNG — เบราว์เซอร์เท่านั้น */
+export async function svgToPngFile(svg, width, height, fileName) {
+  const image = new Image()
+  image.decoding = 'async'
+  await new Promise((resolve, reject) => {
+    image.onload = resolve
+    image.onerror = () => reject(new Error('Cannot load SVG'))
+    image.src = svgDataUrl(svg)
+  })
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Canvas unavailable')
+  context.drawImage(image, 0, 0, width, height)
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+  if (!blob) throw new Error('Cannot create PNG')
+  return new File([blob], fileName, { type: 'image/png' })
+}
