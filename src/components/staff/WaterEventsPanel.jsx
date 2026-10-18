@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronRight, Info, Loader2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronRight, Info, Loader2, Printer, RefreshCw } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { loadPersonCard, loadSignatoryRegistry } from '../../lib/staffPerformanceData'
+import { buildWaterEventHtml, pickAcknowledger } from '../../lib/waterEventPrint'
 import {
   WATER_EVENTS_DISCLAIMER, WATER_EVENT_CRITERIA, WATER_EVENT_CRITERIA_NOTES,
   chartGapMs, closeReasonText, eventCard, eventSpan, openReasonLines, recorderStatus,
@@ -9,9 +11,32 @@ import {
 
 // หน้า "เหตุการณ์น้ำ-ฝน" ของเจ้าหน้าที่ — อ่านอย่างเดียว ไม่มีอะไรให้กรอก/กดยืนยัน/ลบ
 // (เจ้าของระบบสั่ง "ต้องไม่เพิ่มงานให้เจ้าหน้าที่": ระบบจดและปิดเหตุการณ์เอง หน้านี้มีไว้เปิดดูตอนมีคนถาม)
-// ปุ่มที่มีได้ มีแค่ 3 ชนิดและติดป้าย data-we-nav ไว้ให้เทสต์ตรวจ: open (เปิดรายละเอียด) · back (กลับ) · retry (โหลดใหม่ตอนผิดพลาด)
+// ปุ่มที่มีได้ มีแค่ 4 ชนิดและติดป้าย data-we-nav ไว้ให้เทสต์ตรวจ: open (เปิดรายละเอียด) · back (กลับ) · retry (โหลดใหม่ตอนผิดพลาด)
+// · print (พิมพ์สรุป A4 — มีเฉพาะหน้ารายละเอียด กดแล้วเปิดหน้าต่างพิมพ์ทันที ไม่มีอะไรให้กรอก: ผู้จัดทำมาจากบัญชีที่ล็อกอิน ผู้รับทราบมาจากทะเบียนผู้ลงนาม)
 // ข้อมูลมาจาก list_water_events / get_water_event (ตารางเหตุการณ์ปิดสิทธิ์ตรง) · เวลา "ตอนนี้" ใช้ของฐานข้อมูล ไม่ใช้นาฬิกาเครื่อง
 // ⚠️ ห้ามเพิ่ม input/textarea/select/form หรือปุ่มอื่นในไฟล์นี้ — tests/water-events-ui.playwright.mjs จะแดง
+
+// เปิดหน้าต่างก่อนรอข้อมูลใดๆ (ข้อมูลโหลดมาแล้วตอนนี้) ไม่งั้นเบราว์เซอร์มือถือบล็อก pop-up แล้วรอฟอนต์ราชการก่อนสั่งพิมพ์
+// แบบเดียวกับ StaffPerformanceModule / FleetReport
+function openPrintWindow(html) {
+  const win = window.open('', '_blank', 'width=900,height=1000')
+  if (!win) {
+    alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
+    return
+  }
+  win.document.open()
+  win.document.write(html)
+  win.document.close()
+  setTimeout(async () => {
+    try {
+      if (win.document.fonts?.ready) {
+        await Promise.race([win.document.fonts.ready, new Promise(resolve => setTimeout(resolve, 1200))])
+      }
+    } catch { /* โหลดฟอนต์ไม่ทันก็พิมพ์ด้วยฟอนต์บนเครื่อง */ }
+    win.focus()
+    win.print()
+  }, 200)
+}
 
 function describeError(error) {
   const code = error?.code
@@ -159,7 +184,7 @@ function StationCard({ summary }) {
   )
 }
 
-function EventDetail({ detail, onBack }) {
+function EventDetail({ detail, onBack, onPrint }) {
   const now = nowOf(detail)
   const event = detail.event
   const span = eventSpan(event, now)
@@ -168,10 +193,16 @@ function EventDetail({ detail, onBack }) {
   const warnings = warningRows(detail.warnings)
   return (
     <div data-we-detail className="space-y-4">
-      <button type="button" data-we-nav="back" onClick={onBack}
-        className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-        <ArrowLeft size={16} aria-hidden="true" />กลับไปรายการ
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" data-we-nav="back" onClick={onBack}
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+          <ArrowLeft size={16} aria-hidden="true" />กลับไปรายการ
+        </button>
+        <button type="button" data-we-nav="print" onClick={onPrint}
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-800 hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+          <Printer size={16} aria-hidden="true" />พิมพ์สรุป A4
+        </button>
+      </div>
 
       <section className="max-w-4xl space-y-2 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
@@ -226,12 +257,14 @@ function EventDetail({ detail, onBack }) {
   )
 }
 
-export default function WaterEventsPanel({ tenant }) {
+export default function WaterEventsPanel({ tenant, profile = null }) {
   const tenantId = tenant?.id
   const [list, setList] = useState({ status: 'loading', data: null, error: null })
   const [selectedId, setSelectedId] = useState(null)
   const [detail, setDetail] = useState({ status: 'idle', data: null, error: null })
   const [reloadKey, setReloadKey] = useState(0)
+  // ผู้จัดทำ/ผู้รับทราบบนใบพิมพ์ — โหลดเงียบๆ ตอนเปิดรายละเอียด · โหลดไม่ได้/ยังไม่มา = ใบพิมพ์เส้นประให้เขียนมือ ไม่บล็อกการพิมพ์
+  const [signers, setSigners] = useState({ preparer: null, acknowledger: null })
 
   useEffect(() => {
     if (!tenantId) return undefined
@@ -256,6 +289,28 @@ export default function WaterEventsPanel({ tenant }) {
     })
     return () => { cancelled = true }
   }, [tenantId, selectedId, reloadKey])
+
+  const profileId = profile?.id ?? null
+  useEffect(() => {
+    if (!tenantId || !selectedId) return undefined
+    let cancelled = false
+    Promise.all([
+      profileId ? loadPersonCard(profileId) : Promise.resolve(null),
+      loadSignatoryRegistry(tenantId),
+    ]).then(([card, rows]) => {
+      if (cancelled) return
+      setSigners({
+        preparer: card?.name ? { name: card.name, title: card.title } : null,
+        acknowledger: pickAcknowledger(rows),
+      })
+    }).catch(() => { /* ไม่ได้ชื่อ = เส้นประ */ })
+    return () => { cancelled = true }
+  }, [tenantId, selectedId, profileId])
+
+  const print = useCallback(() => {
+    if (!detail.data) return
+    openPrintWindow(buildWaterEventHtml({ tenant, detail: detail.data, ...signers }))
+  }, [tenant, detail.data, signers])
 
   const retry = useCallback(() => setReloadKey(k => k + 1), [])
   const back = useCallback(() => { setSelectedId(null); setDetail({ status: 'idle', data: null, error: null }) }, [])
@@ -300,7 +355,7 @@ export default function WaterEventsPanel({ tenant }) {
         </div>
       )
     }
-    return <EventDetail detail={detail.data} onBack={back} />
+    return <EventDetail detail={detail.data} onBack={back} onPrint={print} />
   }
 
   // ── หน้ารายการ ──

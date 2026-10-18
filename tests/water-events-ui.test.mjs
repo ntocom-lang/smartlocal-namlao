@@ -2,7 +2,7 @@
 // node tests/water-events-ui.test.mjs
 //
 // เรื่องที่ต้องไม่พลาด: (1) ค่าว่างไม่กลายเป็น 0 (2) เส้นกราฟไม่ลากข้ามช่วงที่สถานีไม่ส่งค่า (3) ข้อความเตือน สสน. ตามต้นฉบับ
-// (4) ข้อความสถานะระบบจดไม่สั่งให้ใครทำอะไร (5) หน้านี้ "ไม่มีงานให้เจ้าหน้าที่": ไม่มีช่องกรอก ไม่มีทางเขียน ปุ่มมีแค่ open/back/retry
+// (4) ข้อความสถานะระบบจดไม่สั่งให้ใครทำอะไร (5) หน้านี้ "ไม่มีงานให้เจ้าหน้าที่": ไม่มีช่องกรอก ไม่มีทางเขียน ปุ่มมีแค่ open/back/retry/print
 // (6) สิทธิ์ฝั่งหน้าเว็บตรงกับฟังก์ชันฐานข้อมูล (7) ฝั่งหน้าเว็บเรียกฟังก์ชันที่ migration มีจริง
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -155,6 +155,13 @@ const NOW = T('2026-10-20T09:00:00Z')
   assert.ok(dam.notes.some(n => n.includes('เกินความจุที่ระดับเก็บกักปกติ'))); assert.ok(dam.notes.some(n => n.includes('ซ้ำเดิม 3 รายงานติดกัน')))
   assert.equal(dam.gaps.length, 0, 'อ่างรายวันห่างกัน 24 ชม. ไม่นับเป็นช่วงขาด (เกณฑ์ 48 ชม.)')
   assert.equal(ews.headline, 'ระดับเตือนภัยสูงสุด 2 (เตรียมพร้อม)'); assert.equal(ews.chart, null)
+  // brief = รูปย่อ 1 แถวต่อสถานี (ใบพิมพ์ A4) — ว่าง = ไม่มีค่า ไม่ใช่ 0
+  assert.deepEqual(rain.brief, { metric: 'ฝนสะสม 24 ชม.', peakText: '110 มม. (ฝนหนักมาก)', peakAt: rain.brief.peakAt, lastText: rain.brief.lastText, flags: [] })
+  assert.match(rain.brief.peakAt, /^\d+ [ก-๙.]+ 69 \d\d:\d\d น\.$/); assert.match(rain.brief.lastText, /^0 มม\. \(.+ น\.\)$/, 'ค่าล่าสุดที่วัดได้ 0 มม. ยังเป็น 0')
+  assert.equal(level.brief.peakText, 'ต่ำกว่าตลิ่ง 0.80 ม.'); assert.match(level.brief.metric, /ใกล้ตลิ่งสุด/); assert.match(level.brief.lastText, /^ต่ำกว่าตลิ่ง 1\.20 ม\./)
+  assert.equal(dam.brief.peakText, '101.2% ของความจุเก็บกัก (เกินความจุเก็บกัก)'); assert.equal(dam.brief.lastText, '')
+  assert.deepEqual(dam.brief.flags, ['>100% = เกินความจุที่ระดับเก็บกักปกติ', 'ตัวเลขซ้ำเดิม 3 รายงาน'])
+  assert.equal(ews.brief.peakText, 'ระดับ 2 (เตรียมพร้อม)'); assert.equal(ews.brief.metric, 'ระดับเตือนภัย')
   // ไม่มีค่าที่วัดได้ → บอกตรงๆ ไม่ใช่ 0
   const blank = stationSummaries([
     { station_type: 'rain', station_code: 'R2', station_name: 'ว่าง', readings: [{ t: at(0) }, { t: at(1) }] },
@@ -163,6 +170,9 @@ const NOW = T('2026-10-20T09:00:00Z')
     { station_type: 'ews', station_code: 'E2', station_name: 'ว่าง', readings: [] },
   ])
   assert.deepEqual(blank.map(s => s.headline), ['ไม่มีค่าฝนที่วัดได้', 'ไม่มีค่าระดับน้ำที่วัดได้', 'ไม่มีค่าปริมาณน้ำที่วัดได้', 'ไม่มีค่าระดับเตือนภัยที่วัดได้'])
+  assert.ok(blank.every(s => s.brief.peakText === '' && s.brief.peakAt === '' && s.brief.lastText === ''), 'สถานีที่ไม่มีค่า brief ว่างทั้งหมด (ไม่ใช่ 0)')
+  assert.ok(blank.every(s => s.hasValue === false), 'สถานีที่ไม่มีค่า hasValue ต้องเป็น false (ใบพิมพ์ใช้แยกออกไปเป็นบรรทัดเดียว)')
+  assert.ok(out.every(s => s.hasValue === true), 'สถานีที่มีค่า hasValue ต้องเป็น true')
   assert.ok(blank.every(s => s.chart === null && !/\b0 มม|0%/.test(s.headline)))
   // เหตุการณ์ที่เปิดอยู่: สถานีเงียบตอนนี้ต้องบอก · ปิดแล้วไม่นับ
   const quiet = [{ station_type: 'rain', station_code: 'R3', station_name: 'เงียบ', readings: [{ t: at(0), rain_24h: 1 }, { t: at(1), rain_24h: 2 }] }]
@@ -197,7 +207,8 @@ const NOW = T('2026-10-20T09:00:00Z')
   console.log('✓ เกณฑ์บนหน้า: ตรงกับ SQL (90.1 มม. / 1 ม.) · คำกำกับครบ')
 }
 
-// ── 10) หน้านี้ไม่มีงานให้เจ้าหน้าที่: ไม่มีช่องกรอก ไม่มีทางเขียน ปุ่มมีแค่ open/back/retry ──
+// ── 10) หน้านี้ไม่มีงานให้เจ้าหน้าที่: ไม่มีช่องกรอก ไม่มีทางเขียน ปุ่มมีแค่ open/back/retry/print ──
+// print = พิมพ์สรุป A4 (PR 3.3) กดแล้วเปิดหน้าต่างพิมพ์ทันที ไม่มีอะไรให้กรอก — มีที่เดียว เฉพาะหน้ารายละเอียด
 const panel = read('src/components/staff/WaterEventsPanel.jsx')
 {
   const code = panel.split('\n').filter(l => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
@@ -209,11 +220,11 @@ const panel = read('src/components/staff/WaterEventsPanel.jsx')
   assert.deepEqual(rpcs, ['get_water_event', 'list_water_events'], 'เรียกได้แค่ฟังก์ชันอ่าน 2 ตัว')
   const buttons = [...code.matchAll(/<button\b[^>]*>/g)].map(m => m[0])
   assert.ok(buttons.length >= 5)
-  for (const b of buttons) assert.match(b, /data-we-nav="(open|back|retry)"/, `ปุ่มต้องเป็น open/back/retry เท่านั้น: ${b.slice(0, 80)}`)
+  for (const b of buttons) assert.match(b, /data-we-nav="(open|back|retry|print)"/, `ปุ่มต้องเป็น open/back/retry/print เท่านั้น: ${b.slice(0, 80)}`)
   const navs = new Set(buttons.map(b => b.match(/data-we-nav="(\w+)"/)[1]))
-  assert.deepEqual([...navs].sort(), ['back', 'open', 'retry'])
+  assert.deepEqual([...navs].sort(), ['back', 'open', 'print', 'retry'])
   assert.ok(!/<a\b/.test(code), 'ไม่มีลิงก์ออก')
-  console.log(`✓ หน้าจอ: ไม่มี input/textarea/select/form/ลบ/แก้ · อ่านผ่านฟังก์ชัน 2 ตัวเท่านั้น · ปุ่ม ${buttons.length} ปุ่ม มีแค่ open/back/retry`)
+  console.log(`✓ หน้าจอ: ไม่มี input/textarea/select/form/ลบ/แก้ · อ่านผ่านฟังก์ชัน 2 ตัวเท่านั้น · ปุ่ม ${buttons.length} ปุ่ม มีแค่ open/back/retry/print`)
 }
 
 // ── 11) ฟังก์ชันที่หน้าเว็บเรียกมีจริงใน migration + พารามิเตอร์ตรงกัน + สิทธิ์ตรงกัน ──

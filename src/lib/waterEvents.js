@@ -293,7 +293,8 @@ function seriesOf(readings, key) {
 }
 
 // สรุปรายสถานีของเหตุการณ์หนึ่ง — เรียงฝน → ระดับน้ำ → อ่าง → สถานีเตือนภัย
-// คืนโครง { key, type, typeLabel, name, code, readingsCount, headline, lines[], notes[], gaps[], chart }
+// คืนโครง { key, type, typeLabel, name, code, readingsCount, headline, lines[], notes[], gaps[], chart, hasValue,
+//          brief: { metric, peakText, peakAt, lastText } }  (brief = รูปย่อ 1 แถวต่อสถานี ใช้กับใบพิมพ์ A4 · ว่าง = ไม่มีค่า ไม่ใช่ 0)
 export function stationSummaries(stations, { now = null, open = false } = {}) {
   const list = Array.isArray(stations) ? stations : []
   const out = list.map((s) => {
@@ -313,6 +314,8 @@ export function stationSummaries(stations, { now = null, open = false } = {}) {
       gaps: [],
       chart: null,
       chartLabel: '',
+      hasValue: false,
+      brief: { metric: '', peakText: '', peakAt: '', lastText: '', flags: [] },
     }
     const thresholdHours = type === 'dam' ? DAM_STALE_HOURS : STATION_STALE_HOURS
     const gapList = stationGaps(readings, thresholdHours, { now: open ? now : null })
@@ -325,12 +328,18 @@ export function stationSummaries(stations, { now = null, open = false } = {}) {
         const level = rainLevel(peak.v)
         summary.headline = `ฝนสะสม 24 ชม. สูงสุด ${formatMm(peak.v)} มม.${level ? ` (${level.label})` : ''}`
         summary.lines.push(`เมื่อ ${thaiDateTime(peak.t)}`)
+        summary.brief.peakText = `${formatMm(peak.v)} มม.${level ? ` (${level.label})` : ''}`
+        summary.brief.peakAt = thaiDateTime(peak.t)
       } else {
         summary.headline = 'ไม่มีค่าฝนที่วัดได้'
       }
       if (hourly) summary.lines.push(`ฝนรายชั่วโมงสูงสุด ${formatMm(hourly.v)} มม.`)
       const last = lastOf(readings, 'rain_24h')
-      if (last && peak && last.t !== peak.t) summary.lines.push(`ค่าล่าสุดที่จด ${formatMm(last.v)} มม. (${thaiDateTime(last.t)})`)
+      if (last && peak && last.t !== peak.t) {
+        summary.lines.push(`ค่าล่าสุดที่จด ${formatMm(last.v)} มม. (${thaiDateTime(last.t)})`)
+        summary.brief.lastText = `${formatMm(last.v)} มม. (${thaiDateTime(last.t)})`
+      }
+      summary.brief.metric = 'ฝนสะสม 24 ชม.'
       summary.chart = seriesOf(readings, 'rain_24h')
       summary.chartLabel = 'ฝนสะสม 24 ชม. (มม.)'
       summary.baseline = 0
@@ -340,14 +349,22 @@ export function stationSummaries(stations, { now = null, open = false } = {}) {
       if (closest) {
         summary.headline = `ใกล้ตลิ่งที่สุด: ${bankText(closest.v)}`
         summary.lines.push(`เมื่อ ${thaiDateTime(closest.t)}`)
+        summary.brief.peakText = bankText(closest.v)
+        summary.brief.peakAt = thaiDateTime(closest.t)
       } else if (high) {
         summary.headline = `ระดับน้ำสูงสุด ${high.v.toFixed(2)} ม.รทก.`
+        summary.brief.peakText = `${high.v.toFixed(2)} ม.รทก.`
+        summary.brief.peakAt = thaiDateTime(high.t)
       } else {
         summary.headline = 'ไม่มีค่าระดับน้ำที่วัดได้'
       }
       if (high) summary.lines.push(`ระดับน้ำสูงสุด ${high.v.toFixed(2)} ม.รทก. (${thaiDateTime(high.t)})`)
       const last = lastOf(readings, 'bank_diff')
-      if (last && closest && last.t !== closest.t) summary.lines.push(`ค่าล่าสุดที่จด: ${bankText(last.v)} (${thaiDateTime(last.t)})`)
+      if (last && closest && last.t !== closest.t) {
+        summary.lines.push(`ค่าล่าสุดที่จด: ${bankText(last.v)} (${thaiDateTime(last.t)})`)
+        summary.brief.lastText = `${bankText(last.v)} (${thaiDateTime(last.t)})`
+      }
+      summary.brief.metric = closest ? 'ระดับน้ำเทียบตลิ่ง (ใกล้ตลิ่งสุด)' : 'ระดับน้ำ'
       summary.chart = seriesOf(readings, 'level_msl')
       summary.chartLabel = 'ระดับน้ำ (ม.รทก.)'
     } else if (type === 'dam') {
@@ -356,7 +373,12 @@ export function stationSummaries(stations, { now = null, open = false } = {}) {
         const level = damLevel(peak.v)
         summary.headline = `ปริมาณน้ำสูงสุด ${formatMcm(peak.v)}% ของความจุเก็บกัก${level ? ` (${level.label})` : ''}`
         summary.lines.push(`เมื่อ ${thaiDay(peak.t)}`)
-        if (peak.v > 100) summary.notes.push('มากกว่า 100% = เกินความจุที่ระดับเก็บกักปกติ ตามที่ต้นทางรายงาน')
+        summary.brief.peakText = `${formatMcm(peak.v)}% ของความจุเก็บกัก${level ? ` (${level.label})` : ''}`
+        summary.brief.peakAt = thaiDay(peak.t)
+        if (peak.v > 100) {
+          summary.notes.push('มากกว่า 100% = เกินความจุที่ระดับเก็บกักปกติ ตามที่ต้นทางรายงาน')
+          summary.brief.flags.push('>100% = เกินความจุที่ระดับเก็บกักปกติ')
+        }
       } else {
         summary.headline = 'ไม่มีค่าปริมาณน้ำที่วัดได้'
       }
@@ -368,7 +390,11 @@ export function stationSummaries(stations, { now = null, open = false } = {}) {
       if (released) summary.lines.push(`ระบายสูงสุด ${formatMcm(released.v)} ล้าน ลบ.ม.`)
       const volumeKeys = ['dam_storage', 'dam_inflow', 'dam_released']
       const same = longestSameRun(readings, volumeKeys.some(k => readings.some(r => toNum(r?.[k]) !== null)) ? volumeKeys : ['storage_pct'])
-      if (same >= DAM_SAME_MIN_REPORTS) summary.notes.push(`ตัวเลขชุดนี้ซ้ำเดิม ${same} รายงานติดกัน — ต้นทางอาจค้าง`)
+      if (same >= DAM_SAME_MIN_REPORTS) {
+        summary.notes.push(`ตัวเลขชุดนี้ซ้ำเดิม ${same} รายงานติดกัน — ต้นทางอาจค้าง`)
+        summary.brief.flags.push(`ตัวเลขซ้ำเดิม ${same} รายงาน`)
+      }
+      summary.brief.metric = 'ปริมาณน้ำในอ่าง'
       summary.chart = seriesOf(readings, 'storage_pct')
       summary.chartLabel = 'ปริมาณน้ำ (% ของความจุเก็บกัก)'
     } else if (type === 'ews') {
@@ -377,12 +403,21 @@ export function stationSummaries(stations, { now = null, open = false } = {}) {
         const row = readings.find(r => toNum(r?.sit_level) === peak.v && r.sit_text)
         summary.headline = `ระดับเตือนภัยสูงสุด ${peak.v}${row?.sit_text ? ` (${row.sit_text})` : ''}`
         summary.lines.push(`เมื่อ ${thaiDateTime(peak.t)}`)
+        summary.brief.peakText = `ระดับ ${peak.v}${row?.sit_text ? ` (${row.sit_text})` : ''}`
+        summary.brief.peakAt = thaiDateTime(peak.t)
       } else {
         summary.headline = 'ไม่มีค่าระดับเตือนภัยที่วัดได้'
       }
+      summary.brief.metric = 'ระดับเตือนภัย'
     } else {
       summary.headline = 'ชนิดสถานีที่ไม่รู้จัก'
     }
+    // hasValue = มีค่าที่วัดได้จริงของตัวชี้วัดหลักของสถานีนี้ (ใบพิมพ์ใช้แยกสถานีที่ไม่มีค่าไปรวมเป็นบรรทัดเดียว ไม่เขียนเป็นแถวว่าง)
+    summary.hasValue = type === 'rain' ? maxBy(readings, 'rain_24h') !== null
+      : type === 'waterlevel' ? (minBy(readings, 'bank_diff') ?? maxBy(readings, 'level_msl')) !== null
+        : type === 'dam' ? maxBy(readings, 'storage_pct') !== null
+          : type === 'ews' ? maxBy(readings, 'sit_level') !== null
+            : false
     if (summary.chart && summary.chart.length < 2) summary.chart = null
     return summary
   })

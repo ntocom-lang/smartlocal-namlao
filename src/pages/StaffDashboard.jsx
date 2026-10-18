@@ -2961,7 +2961,7 @@ export default function StaffDashboard() {
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
             {activeModule === 'waste' && <WasteScheduleManager tenant={tenant} />}
             {/* เข้าหน้านี้ได้ทางลิงก์/เมนูเท่านั้น ที่ไม่ผ่านตัวกรองเมนูต้องเช็คสิทธิ์ซ้ำ (ตัวบังคับจริงคือฟังก์ชันฐานข้อมูล) */}
-            {activeModule === 'water-events' && visibleModules.some(m => m.key === 'water-events') && <WaterEventsPanel tenant={tenant} />}
+            {activeModule === 'water-events' && visibleModules.some(m => m.key === 'water-events') && <WaterEventsPanel tenant={tenant} profile={profile} />}
             {activeModule === PATIENT_TRANSPORT_MODULE_KEY && <PatientTransportStaff onBack={() => setActiveModule('home')} />}
             {activeModule === 'borrowable-assets' && (
               <BorrowableAssetsManager tenant={tenant}
