@@ -7,7 +7,7 @@
 // ฟังก์ชัน list_water_events/get_water_event ถูกแทนด้วยข้อมูลจำลองในเบราว์เซอร์ (ยังไม่ได้ติดตั้งบนฐานข้อมูลจริง และตอนนี้ยังไม่มีเหตุการณ์จริง)
 //
 // เรื่องที่ล็อกไว้ ("ต้องไม่เพิ่มงานให้เจ้าหน้าที่"):
-//   1. หน้านี้ไม่มี input/textarea/select/form/contenteditable และปุ่มมีแค่ open/back/retry ทุกขนาดจอ ทุกสถานะ
+//   1. หน้านี้ไม่มี input/textarea/select/form/contenteditable และปุ่มมีแค่ open/back/retry (+ print เฉพาะหน้ารายละเอียด) ทุกขนาดจอ ทุกสถานะ
 //   2. ไม่มีคำขอเขียนไปที่ไหนเลย (ไม่มี PATCH/PUT/DELETE · ไม่อ่านตารางเหตุการณ์ตรง · เรียกแค่ฟังก์ชันอ่าน 2 ตัว)
 //   3. ข้อความสถานะระบบจดไม่สั่งให้ใครทำอะไร · ว่างเพราะสงบ / ระบบเงียบ / ไม่มีบันทึก แยกกันชัด
 //   4. ค่าว่าง = "ไม่มีค่า" ไม่เป็น 0 · เส้นกราฟขาดตรงช่วงสถานีไม่ส่งค่า · ข้อความ สสน. แสดงตามต้นฉบับ (ไม่ตีความ HTML)
@@ -131,7 +131,7 @@ async function openPanel(page, auth, width, height = 900) {
 }
 
 // ตรวจ "ไม่มีงานให้เจ้าหน้าที่" + ไม่ล้นจอ + เป้ากด — ใช้กับทุกสถานะของหน้า
-async function auditPanel(page, where) {
+async function auditPanel(page, where, { allowPrint = false } = {}) {
   const audit = await page.evaluate(({ minTap }) => {
     const root = document.querySelector('[data-we-list], [data-we-detail], [data-we-error], [data-we-missing]')?.parentElement ?? null
     const scope = root ?? document.body
@@ -148,7 +148,7 @@ async function auditPanel(page, where) {
   assert.equal(audit.fields, 0, `${where}: หน้านี้ห้ามมีช่องกรอก/ตัวเลือก (พบ ${audit.fields})`)
   assert.equal(audit.links, 0, `${where}: หน้านี้ไม่มีลิงก์ออก (พบ ${audit.links})`)
   for (const b of audit.buttons) {
-    assert.ok(['open', 'back', 'retry'].includes(b.nav), `${where}: ปุ่ม "${b.text}" ไม่ใช่ open/back/retry`)
+    assert.ok(['open', 'back', 'retry', ...(allowPrint ? ['print'] : [])].includes(b.nav), `${where}: ปุ่ม "${b.text}" ไม่ใช่ ${allowPrint ? 'open/back/retry/print' : 'open/back/retry'}`)
     assert.ok(b.h >= MIN_TAP - 0.5, `${where}: ปุ่ม "${b.text}" เตี้ยกว่า ${MIN_TAP}px (${Math.round(b.h)})`)
   }
   assert.equal(audit.overflow.length, 0, `${where}: มีของล้นจอ ${audit.overflow.join(' | ')}`)
@@ -265,7 +265,30 @@ async function checkEvents(page, auth, width, { fullDetail = true } = {}) {
     // ทุกค่าบนกราฟเป็นเลขจริง
     const paths = await page.locator('[data-we-chart] path').evaluateAll(els => els.map(e => e.getAttribute('d')))
     assert.ok(paths.every(d => d && !/NaN|Infinity/.test(d)))
-    await auditPanel(page, `รายละเอียด ${width}px`)
+    const detailAudit = await auditPanel(page, `รายละเอียด ${width}px`, { allowPrint: true })
+    assert.equal(detailAudit.buttons.filter(b => b.nav === 'print').length, 1, 'หน้ารายละเอียดต้องมีปุ่มพิมพ์ 1 ปุ่ม')
+    assert.equal(detailAudit.buttons.filter(b => b.nav === 'back').length, 1)
+    // ปุ่มพิมพ์: เปิดหน้าต่างพิมพ์ทันที ไม่มีอะไรให้กรอก — ดัก window.open ไว้อ่านใบที่ระบบสร้าง (ตัวเลย์เอาต์จริงทดสอบที่ water-event-print-layout)
+    await page.evaluate(() => {
+      window.__popup = { html: '', printed: 0, opened: 0 }
+      window.open = () => {
+        window.__popup.opened += 1
+        return { document: { open() {}, write(h) { window.__popup.html = h }, close() {}, fonts: null }, focus() {}, print() { window.__popup.printed += 1 } }
+      }
+    })
+    const fieldsBefore = await page.locator('[data-we-detail] input, [data-we-detail] textarea, [data-we-detail] select').count()
+    await page.locator('[data-we-nav="print"]').click()
+    await page.waitForFunction(() => window.__popup.printed === 1, null, { timeout: 5_000 })
+    const popup = await page.evaluate(() => window.__popup)
+    assert.equal(popup.opened, 1, 'กดครั้งเดียวเปิดหน้าต่างพิมพ์ครั้งเดียว')
+    assert.equal(fieldsBefore, 0, 'กดพิมพ์แล้วไม่มีช่องให้กรอก')
+    assert.ok(popup.html.includes('สรุปค่าที่วัดได้ช่วงเหตุการณ์น้ำ-ฝน'), 'ใบพิมพ์มีหัวเรื่อง')
+    assert.ok(popup.html.includes('บ้านบุญแจ่ม') && popup.html.includes('บ้านแม่คำมีตำหนักธรรม'), 'ใบมีชื่อสถานีของเหตุการณ์ที่เปิด')
+    assert.ok(popup.html.includes('&lt;b&gt;ไม่ตัดแต่ง&lt;/b&gt;'), 'ข้อความ สสน. ตามต้นฉบับแต่ escape ในใบพิมพ์')
+    assert.ok(!popup.html.includes('<b>ไม่ตัดแต่ง</b>'), 'ห้ามหลุดเป็น HTML ดิบ')
+    assert.ok(/<span class="sign-role">ผู้จัดทำ<\/span>/.test(popup.html) && /<span class="sign-role">ผู้รับทราบ<\/span>/.test(popup.html), 'ใบมีช่องลงนามผู้จัดทำ/ผู้รับทราบ')
+    assert.ok(popup.html.includes('data-open-note'), 'เหตุการณ์ที่เปิดอยู่ ใบต้องบอกว่าค่าอาจเปลี่ยน')
+    assert.ok(!popup.html.includes('<script'), 'ใบไม่มี script')
     await shot(page, '[data-we-detail]', `we-detail-${width}`)
     if (fullDetail) {
       await page.locator('[data-we-nav="back"]').first().click()
