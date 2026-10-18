@@ -525,10 +525,14 @@ function UsersTab({ tenant, depts }) {
   )
 }
 
+// งบประมาณน้ำมันซ่อนไว้ก่อนตามที่เจ้าของระบบเลือก 2569-10-18 — ยังใช้ตัดงบจริงไม่ได้
+// (เหตุผลครบดูที่ TABS ใน src/pages/FleetPage.jsx) เปิดกลับ = ตั้งเป็น true พร้อมกับเอา hidden ออกที่นั่น
+const SHOW_BUDGET = false
+
 /* ── Main ──────────────────────────────────────────────── */
 export default function FleetSetup({ tenant, depts: initDepts }) {
   const [depts, setDepts] = useState(initDepts ?? [])
-  const [activeTab, setActiveTab] = useState('budget')
+  const [activeTab, setActiveTab] = useState(SHOW_BUDGET ? 'budget' : 'users')
 
   useEffect(() => {
     if (initDepts !== undefined || !tenant?.id) return
@@ -546,17 +550,17 @@ export default function FleetSetup({ tenant, depts: initDepts }) {
         <div className="min-w-0">
           <p className="text-sm font-bold text-gray-800">ตั้งค่าระบบยานพาหนะ</p>
           <p className="text-[11px] text-gray-500">
-            งบประมาณและสิทธิ์ผู้ใช้ — จัดการรายชื่อกอง/หน่วยงานได้ที่เมนู "ตั้งค่าระบบ" → "กอง/หน่วยงาน"
+            {SHOW_BUDGET ? 'งบประมาณและสิทธิ์ผู้ใช้' : 'สิทธิ์ผู้ใช้'} — จัดการรายชื่อกอง/หน่วยงานได้ที่เมนู "ตั้งค่าระบบ" → "กอง/หน่วยงาน"
             ส่วนประเภทรถ/เครื่องยนต์ย้ายไปจัดการที่ระบบยานพาหนะ แท็บ "รถและเครื่องยนต์" แล้ว (ผู้มีสิทธิ์ fleet_admin เพิ่มเองได้เลย)
           </p>
         </div>
       </div>
       <div className="flex gap-2 flex-wrap">
-        <Tab id="budget" active={activeTab === 'budget'} label="งบประมาณ"    Icon={Wallet} onClick={setActiveTab} />
+        {SHOW_BUDGET && <Tab id="budget" active={activeTab === 'budget'} label="งบประมาณ"    Icon={Wallet} onClick={setActiveTab} />}
         <Tab id="users"  active={activeTab === 'users'}  label="สิทธิ์ผู้ใช้"  Icon={Users}  onClick={setActiveTab} />
       </div>
 
-      {activeTab === 'budget' && <BudgetTab tenant={tenant} depts={depts} />}
+      {SHOW_BUDGET && activeTab === 'budget' && <BudgetTab tenant={tenant} depts={depts} />}
       {activeTab === 'users'  && <UsersTab  tenant={tenant} depts={depts} />}
     </div>
   )

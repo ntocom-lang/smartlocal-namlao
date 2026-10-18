@@ -8,7 +8,8 @@
 //   4. สมุดประจำรถต้องนับเฉพาะทริปสถานะ completed ไม่รวมคำขอที่ยังไม่อนุมัติ/ถูกปฏิเสธ/ยกเลิก
 //   5. อัตราสิ้นเปลืองในสมุดประจำรถต้องใช้วิธี full-to-full เดียวกับหน้าภาพรวม
 //      (เดิมหาร distance/liters ได้ 0.6 กม./ล. สำหรับรถกระบะ ขณะที่หน้าภาพรวมได้ 7.1)
-//   โบนัส: แท็บ "งบประมาณ" ต้องขึ้นเฉพาะผู้ดูแลระบบยานพาหนะ
+//   โบนัส: แท็บ "งบประมาณ" ต้องไม่ขึ้นกับทุกบทบาท — เจ้าของระบบสั่งซ่อน 2569-10-18 จนกว่าจะตัดงบได้จริง
+//          (เดิมตรวจว่าขึ้นเฉพาะผู้ดูแลระบบยานพาหนะ · เหตุผลดู TABS ใน src/pages/FleetPage.jsx)
 //
 // ⚠️ ข้อบังคับด้านความปลอดภัย/PDPA (เหมือน negative-authorization.playwright.mjs)
 //   - ยิงได้เฉพาะสนามซ้อม demo.rk-networks.com หรือ dev server ในเครื่อง (VITE_TENANT_SLUG=demo)
@@ -17,7 +18,7 @@
 //   - ข้อมูลที่สร้างต้องขึ้นต้นด้วย [TEST] ไม่มี PII ไม่มีทะเบียนรถจริง ไม่มีพิกัดจริง
 //
 // โหมดการรัน
-//   ค่าเริ่มต้น = read-only ตรวจข้อ 1, 4, 5 และแท็บงบประมาณ จากข้อมูลที่มีอยู่แล้ว
+//   ค่าเริ่มต้น = read-only ตรวจข้อ 1, 4, 5 และว่าแท็บงบประมาณถูกซ่อน จากข้อมูลที่มีอยู่แล้ว
 //   --write     = ตรวจข้อ 2, 3 เพิ่ม ซึ่ง "เขียน DB ของสนามซ้อมจริง" (สร้างรถ 1 คัน
 //                 เติมน้ำมัน 1 ใบ และทริป 1 รายการต่อการรัน 1 ครั้ง) จึงต้องสั่งเอง
 //   --cleanup   = ลบเฉพาะข้อมูลที่โหมด --write สร้างไว้ (รถชื่อขึ้นต้น "[TEST] regression "
@@ -454,16 +455,13 @@ async function checkViewerReadOnly(baseUrl, headed) {
   }
 }
 
-// ข้อ 4/5 + แท็บงบประมาณ — ตรวจจากสมุดประจำรถของ fleet_admin
+// ข้อ 4/5 + แท็บงบประมาณถูกซ่อน — ตรวจจากสมุดประจำรถของ fleet_admin
 async function checkAdminViews(baseUrl, headed) {
   const { context, page } = await openFleet('fleet-admin', baseUrl, headed)
   try {
     const tabs = await visibleTabs(page)
-    assert.ok(tabs.includes('งบประมาณ'), 'fleet_admin ไม่เห็นแท็บงบประมาณ')
-
-    await openTab(page, 'งบประมาณ')
-    const budgetText = await bodyText(page)
-    assert.ok(budgetText.includes('งบประมาณน้ำมันต่อกอง'), 'แท็บงบประมาณเปิดไม่ขึ้น')
+    // ซ่อนแม้แต่ผู้ดูแล (2569-10-18) — กรอกงบได้แต่ตัดงบจริงไม่ได้ ขึ้นมาให้เห็นมีแต่ทำให้เข้าใจผิด
+    assert.ok(!tabs.includes('งบประมาณ'), 'แท็บงบประมาณต้องซ่อน จนกว่าจะตัดงบตามกองที่จ่ายได้จริง')
 
     await openTab(page, 'รถและเครื่องยนต์')
     const detailButton = page.locator('button[title="ดูสถิติการใช้งาน"]').filter({ visible: true }).first()
@@ -559,7 +557,7 @@ const TAB_ANCHORS = {
   'การใช้รถ': ['ประวัติการใช้รถ'],
   'ซ่อมบำรุง': ['บันทึกซ่อมบำรุง'],
   'รายงาน': ['ดูรายงาน', 'พิมพ์แบบ 4'],
-  'งบประมาณ': ['ปีงบประมาณ'],
+  // 'งบประมาณ' ถูกซ่อน 2569-10-18 (checkAdminViews ตรวจว่าไม่ขึ้นแทน) — เปิดกลับเมื่อไรใส่ ['ปีงบประมาณ'] คืน
 }
 // ข้อความที่แปลว่า "เรนเดอร์ไม่ผ่าน" ไม่ใช่แค่ไม่มีข้อมูล (FleetEmptyState เป็นสภาพปกติ)
 const CRASH_MARKERS = [
@@ -1206,7 +1204,7 @@ async function main() {
 
   const checks = [
     { name: 'viewer-read-only', reason: 'fleet_viewer ไม่มีปุ่มเขียนข้อมูลและไม่เห็นแท็บงบประมาณ', run: checkViewerReadOnly },
-    { name: 'admin-views', reason: 'แท็บงบประมาณเปิดได้ + สมุดประจำรถนับเที่ยว/อัตราสิ้นเปลืองถูกวิธี', run: checkAdminViews },
+    { name: 'admin-views', reason: 'แท็บงบประมาณถูกซ่อน + สมุดประจำรถนับเที่ยว/อัตราสิ้นเปลืองถูกวิธี', run: checkAdminViews },
     { name: 'form4-print-button', reason: 'แท็บรายงานมีปุ่มพิมพ์แบบ 4 และกดไม่ได้จนกว่าจะเลือกยานพาหนะ 1 คัน', run: checkForm4PrintButton },
     { name: 'all-tabs-smoke', reason: 'ทุกแท็บของผู้ดูแลเรนเดอร์ครบและไม่มี error ใน console', run: checkAllTabsSmoke },
   ]
