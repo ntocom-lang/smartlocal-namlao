@@ -37,7 +37,15 @@ const EMPTY = {
   department_id:'', notes:'',
   efficiency_min:'', efficiency_max:'', fuel_rate_standard_kml:'',
   insurance_expiry:'', act_expiry:'', registration_expiry:'', inspection_expiry:'',
+  regulation_category:'central', engine_cc:'', purchase_price:'', acquired_date:'', disposed_date:'',
 }
+
+// ประเภทตามระเบียบ มท. ยานพาหนะ อปท. 2569 ข้อ 7 — เลือกว่ารถอยู่ทะเบียนแบบ 1 หรือแบบ 2
+// คนละเรื่องกับ "ใช้ร่วมกันทุกกอง" (is_pool = ใครเบิกใช้ได้) รถที่ผูกกองเดียวก็ยังเป็นรถส่วนกลาง
+const REGULATION_CATEGORY_OPTIONS = [
+  { value: 'central',  label: 'ยานพาหนะส่วนกลาง (แบบ 2)' },
+  { value: 'position', label: 'รถยนต์ประจำตำแหน่ง (แบบ 1)' },
+]
 
 function daysTo(dateStr) {
   if (!dateStr) return null
@@ -188,6 +196,9 @@ const auditSnapshot = v => v ? {
   meter_unit: v.meter_unit, tank_capacity: v.tank_capacity, fuel_type: v.fuel_type,
   efficiency_min: v.efficiency_min, efficiency_max: v.efficiency_max,
   fuel_rate_standard_kml: v.fuel_rate_standard_kml,
+  // ข้อมูลทะเบียนแบบ 1/2 — ราคา/วันได้มา/วันจำหน่ายเป็นหลักฐานทรัพย์สิน แก้แล้วต้องเห็นว่าใครแก้
+  regulation_category: v.regulation_category, manufacture_year: v.manufacture_year, engine_cc: v.engine_cc,
+  purchase_price: v.purchase_price, acquired_date: v.acquired_date, disposed_date: v.disposed_date,
 } : null
 
 export default function FleetVehicles({ tenant, depts, isAdmin }) {
@@ -271,6 +282,8 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
       fuel_rate_standard_kml: v.fuel_rate_standard_kml ?? '',
       insurance_expiry: v.insurance_expiry ?? '', act_expiry: v.act_expiry ?? '',
       registration_expiry: v.registration_expiry ?? '', inspection_expiry: v.inspection_expiry ?? '',
+      regulation_category: v.regulation_category ?? 'central', engine_cc: v.engine_cc ?? '',
+      purchase_price: v.purchase_price ?? '', acquired_date: v.acquired_date ?? '', disposed_date: v.disposed_date ?? '',
     })
     setModal(v)
   }
@@ -304,6 +317,18 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
     // คนละแกนกับช่วงจับค่าผิดปกติด้านบน จึงตรวจแยกและไม่บังคับให้อยู่ในช่วงนั้น
     const stdRate = form.fuel_rate_standard_kml === '' ? null : Number(form.fuel_rate_standard_kml)
     if (stdRate !== null && !(stdRate > 0)) return alert('อัตราสิ้นเปลืองที่กำหนดต้องมากกว่า 0')
+    // ข้อมูลทะเบียนแบบ 1/2 — ไม่บังคับกรอก แต่ถ้ากรอกต้องเป็นค่าที่พิมพ์ลงทะเบียนทรัพย์สินได้
+    // (ฐานข้อมูลมี CHECK ชุดเดียวกัน ตรวจที่นี่ก่อนเพื่อให้ข้อความเป็นภาษาคน)
+    const year = form.manufacture_year === '' ? null : Number(form.manufacture_year)
+    if (year !== null && !(Number.isInteger(year) && year >= 1900 && year <= 2700))
+      return alert('รุ่นปีต้องเป็นตัวเลขปี 4 หลัก เช่น 2566')
+    const engineCc = form.engine_cc === '' ? null : Number(form.engine_cc)
+    if (engineCc !== null && !(Number.isInteger(engineCc) && engineCc > 0))
+      return alert('ขนาดเครื่องยนต์ต้องเป็นจำนวนเต็มซีซี เช่น 2393')
+    const price = form.purchase_price === '' ? null : Number(form.purchase_price)
+    if (price !== null && !(Number.isFinite(price) && price >= 0)) return alert('ราคาต้องเป็นตัวเลขไม่ติดลบ')
+    if (form.acquired_date && form.disposed_date && form.disposed_date < form.acquired_date)
+      return alert('วันจำหน่ายต้องไม่ก่อนวันได้มา')
     setSaving(true)
     const payload = {
       ...form,
@@ -311,7 +336,11 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
       license_plate: form.asset_kind === 'vehicle' ? form.license_plate.trim() : null,
       asset_code: form.asset_code.trim() || null,
       municipality_id: tenant.id,
-      manufacture_year: form.manufacture_year || null,
+      manufacture_year: year,
+      engine_cc: engineCc,
+      purchase_price: price,
+      acquired_date: form.acquired_date || null,
+      disposed_date: form.disposed_date || null,
       tank_capacity:    form.tank_capacity    || null,
       odometer_initial: Number(form.odometer_initial) || 0,
       department_id:    form.department_id    || null,
@@ -739,6 +768,51 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                   </div>
                 )}
               </div>
+
+              {/* ข้อมูลทะเบียนแบบ 1/2 (ระเบียบ มท. ยานพาหนะ อปท. 2569 ข้อ 7) — กรอกครั้งเดียวต่อคัน
+                  ไม่บังคับ ช่องที่ว่างจะพิมพ์ออกมาเป็นช่องว่างในทะเบียน (แท็บรายงาน) */}
+              {isVehicleAsset(form) && <div className="border-t border-gray-100 pt-4 space-y-3">
+                <div>
+                  <p className="text-xs font-bold text-gray-600">📋 ทะเบียนยานพาหนะ (แบบ 1 / แบบ 2)</p>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    ใช้พิมพ์ทะเบียนตามระเบียบในแท็บรายงาน กรอกครั้งเดียวต่อคันจากทะเบียนครุภัณฑ์ ไม่กรอกก็บันทึกได้
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">ประเภทตามระเบียบ</label>
+                    <select value={form.regulation_category} onChange={set('regulation_category')} className={sel}>
+                      {REGULATION_CATEGORY_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">รุ่นปี</label>
+                    <input type="number" inputMode="numeric" value={form.manufacture_year} onChange={set('manufacture_year')}
+                      placeholder="เช่น 2566" className={inp} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">ขนาดเครื่องยนต์ (ซีซี)</label>
+                    <input type="number" inputMode="numeric" value={form.engine_cc} onChange={set('engine_cc')}
+                      placeholder="เช่น 2393" className={inp} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">ราคา (บาท)</label>
+                    <input type="number" inputMode="decimal" step="0.01" min="0" value={form.purchase_price} onChange={set('purchase_price')}
+                      placeholder="เช่น 850000" className={inp} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">วันได้มา</label>
+                    <input type="date" value={form.acquired_date} onChange={set('acquired_date')} className={inp} />
+                  </div>
+                  {/* วันจำหน่ายโผล่เฉพาะรถที่ปลดประจำการ (หรือเคยกรอกไว้แล้ว) — รถที่ใช้งานอยู่ไม่ต้องเห็นช่องนี้ */}
+                  {(form.status === 'retired' || form.disposed_date) && (
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">วันจำหน่าย</label>
+                      <input type="date" value={form.disposed_date} onChange={set('disposed_date')} className={inp} />
+                    </div>
+                  )}
+                </div>
+              </div>}
 
               {isVehicleAsset(form) && <div className="border-t border-gray-100 pt-4 space-y-3">
                 <p className="text-xs font-bold text-gray-600">📄 เอกสารสำคัญ</p>
