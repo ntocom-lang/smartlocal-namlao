@@ -6,6 +6,7 @@ import { fetchAllRows } from '../../lib/fetchAllRows'
 import { buildFleetForm4Html } from '../../lib/fleetForm4Print'
 import { fuelRecordAmount } from '../../lib/fleetFuelAmount'
 import { buildFleetFuelLedgerHtml } from '../../lib/fleetFuelLedgerPrint'
+import { buildFleetForm6Html } from '../../lib/fleetForm6Print'
 import {
   buildFleetFuelMemoHtml, buildMemoRows, defaultAddressee, memoMonthLabel,
 } from '../../lib/fleetFuelMemoPrint'
@@ -62,7 +63,7 @@ function nextDay(dateStr) {
 
 const MAINT_TH = {
   routine: 'บำรุงรักษา', oil_change: 'เปลี่ยนถ่ายน้ำมัน', repair: 'ซ่อมแซม',
-  inspection: 'ตรวจสภาพ', tire: 'ยาง', battery: 'แบตเตอรี่', other: 'อื่นๆ',
+  inspection: 'ตรวจสภาพ', tire: 'ยาง', battery: 'แบตเตอรี่', emission: 'ตรวจวัดมลพิษ', other: 'อื่นๆ',
 }
 
 function downloadCSV(rows, filename) {
@@ -172,6 +173,7 @@ export default function FleetReport({ tenant }) {
   const [loading,    setLoading]    = useState(false)
   const [printingForm4, setPrintingForm4] = useState(false)
   const [printingLedger, setPrintingLedger] = useState(false)
+  const [printingForm6, setPrintingForm6] = useState(false)
   const [printingMemo, setPrintingMemo] = useState(false)
   const [memoForm, setMemoForm] = useState(null)
 
@@ -370,6 +372,39 @@ export default function FleetReport({ tenant }) {
       alert('พิมพ์ไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
     } finally {
       setPrintingLedger(false)
+    }
+  }
+
+  // แบบ 6 รายละเอียดการซ่อมบำรุง (ระเบียบ มท. ยานพาหนะ อปท. พ.ศ. ๒๕๖๙ ข้อ ๒๑) = สมุดรายคัน
+  // ดึงจาก fleet_maintenance ที่บันทึกไว้แล้ว เจ้าหน้าที่ไม่ต้องทำสมุดแยกอีก
+  async function printForm6() {
+    if (!tenant?.id) return alert('ไม่พบหน่วยงาน')
+    if (!selVehicle) return alert('แบบ 6 เป็นสมุดซ่อมบำรุงรายคัน กรุณาเลือกยานพาหนะก่อนพิมพ์')
+    const vehicle = vehicles.find(v => v.id === selVehicle)
+    if (!vehicle) return alert('ไม่พบยานพาหนะที่เลือก')
+    setPrintingForm6(true)
+    try {
+      const result = await fetchAllRows(() => supabase.from('fleet_maintenance')
+        .select('id,service_date,created_at,maintenance_type,description,cost,vendor,odometer')
+        .eq('municipality_id', tenant.id)
+        .eq('vehicle_id', selVehicle)
+        .gte('service_date', rangeFrom).lte('service_date', rangeTo)
+        .order('service_date').order('id'))
+      if (result.error) {
+        alert('โหลดบันทึกซ่อมบำรุงไม่สำเร็จ: ' + result.error.message)
+        return
+      }
+      if (result.truncated) {
+        alert('รายการซ่อมบำรุงในช่วงนี้มีจำนวนมากเกินกว่าที่ระบบดึงได้ในครั้งเดียว — เอกสารที่พิมพ์ยังไม่ครบ กรุณาแบ่งช่วงวันที่ให้สั้นลง')
+      }
+      openPrintWindow(buildFleetForm6Html({
+        vehicle, records: result.data ?? [], periodLabel, orgName: tenant?.name ?? '',
+      }))
+    } catch (err) {
+      console.error('[fleet-form6] พิมพ์แบบ 6 ไม่สำเร็จ:', err?.message ?? err)
+      alert('พิมพ์ไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
+    } finally {
+      setPrintingForm6(false)
     }
   }
 
@@ -724,6 +759,10 @@ export default function FleetReport({ tenant }) {
             className="w-full md:w-auto px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
             {printingLedger ? 'กำลังเตรียมเอกสาร...' : '🖨️ พิมพ์ปริมาณการเบิกใช้น้ำมัน (รายคัน)'}
           </button>
+          <button onClick={printForm6} disabled={printingForm6 || !selVehicle}
+            className="w-full md:w-auto px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+            {printingForm6 ? 'กำลังเตรียมแบบ 6...' : '🖨️ พิมพ์แบบ 6 รายละเอียดการซ่อมบำรุง (รายคัน)'}
+          </button>
           <button onClick={openMemoDialog} disabled={printingMemo}
             className="w-full md:w-auto px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
             🖨️ พิมพ์บันทึกข้อความสรุปน้ำมัน (ทุกคัน)
@@ -734,7 +773,7 @@ export default function FleetReport({ tenant }) {
           </button>
         </div>
         {!selVehicle && (
-          <p className="text-[11px] text-gray-400">แบบ 4 และปริมาณการเบิกใช้น้ำมัน ต้องเลือกยานพาหนะ 1 คัน แล้วจึงพิมพ์ได้ · บันทึกข้อความสรุปพิมพ์ทุกคันในช่วงที่เลือกเสมอ</p>
+          <p className="text-[11px] text-gray-400">แบบ 4 แบบ 6 และปริมาณการเบิกใช้น้ำมัน ต้องเลือกยานพาหนะ 1 คัน แล้วจึงพิมพ์ได้ · บันทึกข้อความสรุปพิมพ์ทุกคันในช่วงที่เลือกเสมอ</p>
         )}
       </div>
 

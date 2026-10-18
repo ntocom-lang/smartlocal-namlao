@@ -3,6 +3,7 @@ import { Car, Fuel, Route, AlertTriangle, TrendingUp, Wallet, CalendarClock } fr
 import { supabase } from '../../lib/supabase'
 import { fiscalYearOf, FISCAL_MONTHS_TH } from '../../lib/fiscalYear'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import { classifyEmission, emissionDueText, EMISSION_LABEL } from '../../lib/fleetEmission'
 
 const fmt = (n) => (n ?? 0).toLocaleString('th-TH')
 const fmtB = (n) => `฿${fmt(Math.round(n ?? 0))}`
@@ -85,6 +86,55 @@ function ExpiryAlert({ vehicles }) {
   )
 }
 
+// ตรวจวัดมลพิษ (ระเบียบ มท. ยานพาหนะ อปท. พ.ศ. ๒๕๖๙ ข้อ ๒๐) — ระบบนับครบกำหนดจากบันทึกซ่อมบำรุง
+// ประเภท "ตรวจวัดมลพิษ" ครั้งล่าสุด เจ้าหน้าที่ไม่ต้องจดวันนัดเอง
+// รถที่ยังไม่เคยบันทึกการตรวจ แสดงเป็นยอดรวมบรรทัดเดียว ไม่แจกรายคัน (วันแรกทุกคันจะขึ้นพร้อมกัน
+// จนกล่องรกและบังรายการที่เกินกำหนดจริง)
+function EmissionAlert({ status, vehicles }) {
+  if (!status) return null
+  const nameOf = id => vehicles.find(v => v.id === id)?.name ?? 'ไม่ทราบชื่อรถ'
+  const rows = status.rows.map(row => ({ ...row, ...classifyEmission(row, status.today) }))
+  const due = rows.filter(r => r.state === 'overdue' || r.state === 'soon')
+    .sort((a, b) => (a.state === b.state ? (a.daysLeft ?? 0) - (b.daysLeft ?? 0) : a.state === 'overdue' ? -1 : 1))
+  const never = rows.filter(r => r.state === 'never').length
+  if (!rows.length) return null
+  if (!due.length && !never) return (
+    <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 rounded-xl px-3 py-2 md:px-4 md:py-3 text-xs md:text-sm">
+      ✅ ตรวจวัดมลพิษยังไม่ถึงกำหนดทุกคัน
+    </div>
+  )
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 border-b border-gray-100">
+        <AlertTriangle size={15} className="text-amber-500" />
+        <span className="text-sm font-bold text-gray-700">{EMISSION_LABEL}</span>
+        <span className="text-[10px] text-gray-400">ทุก 6 เดือน หรือ 15,000 กม.</span>
+        {due.length > 0 && (
+          <span className="ml-auto text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">{due.length} คัน</span>
+        )}
+      </div>
+      <div className="divide-y divide-gray-50">
+        {due.slice(0, 5).map(r => (
+          <div key={r.vehicle_id} className="flex items-center justify-between px-3 py-2 md:px-4 md:py-2.5">
+            <p className="text-xs font-semibold text-gray-700">{nameOf(r.vehicle_id)}</p>
+            <span className={`text-[10px] font-black px-2 py-1 rounded-lg ${
+              r.state === 'overdue' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'
+            }`}>
+              {emissionDueText(r)}
+            </span>
+          </div>
+        ))}
+        {never > 0 && (
+          <p className="px-3 py-2 md:px-4 text-[11px] text-gray-500">
+            ยังไม่มีบันทึกการตรวจ <strong>{never}</strong> คัน — เมื่อตรวจแล้วให้บันทึกในแท็บซ่อมบำรุง
+            ประเภท "{EMISSION_LABEL}" พร้อมเลขไมล์ ระบบจะนับครั้งถัดไปให้เอง
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function BudgetBar({ depts, budgets, fuelByDept }) {
   if (!budgets.length) return null
   const now = new Date()
@@ -137,6 +187,7 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
   const [pendingCnt, setPendingCnt] = useState(0)
   const [overdueCnt, setOverdueCnt] = useState(0)
   const [loading,    setLoading]    = useState(true)
+  const [emission,   setEmission]   = useState(null) // { today, rows } จาก fleet_emission_status
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -193,6 +244,21 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
       })
       setFuelByDept(byDept)
     }).finally(() => setLoading(false))
+  }, [tenant?.id])
+
+  // วันนี้ตามเวลาไทยอ่านใน effect (ห้ามอ่านนาฬิการะหว่าง render) ส่งให้ตัวตัดสินพร้อมข้อมูล
+  useEffect(() => {
+    if (!tenant?.id) return
+    let alive = true
+    supabase.rpc('fleet_emission_status', { p_municipality_id: tenant.id }).then(({ data, error }) => {
+      if (!alive) return
+      if (error) return console.error('fleet_emission_status error:', error.message)
+      setEmission({
+        today: new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' }),
+        rows: data ?? [],
+      })
+    })
+    return () => { alive = false }
   }, [tenant?.id])
 
   /* ── Realtime ── */
@@ -283,6 +349,7 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
       )}
 
       <ExpiryAlert vehicles={vehicles} />
+      <EmissionAlert status={emission} vehicles={vehicles} />
 
       {isAdmin && <BudgetBar depts={depts} budgets={budgets} fuelByDept={fuelByDept} />}
     </div>

@@ -32,6 +32,8 @@ const TYPES = {
   inspection: { label: 'ตรวจสภาพ',         color: '#8b5cf6' },
   tire:       { label: 'ยาง',              color: '#10b981' },
   battery:    { label: 'แบตเตอรี่',        color: '#06b6d4' },
+  // ระเบียบ มท. ยานพาหนะ อปท. พ.ศ. ๒๕๖๙ ข้อ ๒๐ — แดชบอร์ดนับครบกำหนดครั้งถัดไปจากรายการประเภทนี้
+  emission:   { label: 'ตรวจวัดมลพิษ',      color: '#64748b' },
   other:      { label: 'อื่นๆ',             color: '#9ca3af' },
 }
 
@@ -591,6 +593,12 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                     onChange={set('other_type')}
                     className={`mt-2 ${inp}`}
                   />
+                )}
+                {form.maintenance_type === 'emission' && (
+                  <p className="mt-2 text-[11px] text-slate-600 bg-slate-50 rounded-lg px-2.5 py-1.5">
+                    ระเบียบฯ ข้อ 20 กำหนดตรวจทุก 6 เดือน หรือทุก 15,000 กม. แล้วแต่อย่างใดถึงก่อน —
+                    ระบบนับครั้งถัดไปให้เองจากรายการนี้ กรอกเลขไมล์ด้วย ไม่งั้นนับได้แค่ตามวัน
+                  </p>
                 )}
               </div>
               <div>
