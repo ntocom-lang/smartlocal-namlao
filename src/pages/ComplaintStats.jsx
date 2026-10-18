@@ -25,6 +25,10 @@ import ComplaintMonthlyInfographic from '../components/reports/ComplaintMonthlyI
 // ทั่วไปไม่เกินหลักพัน จึงพอเป็น "ทั้งหมด" ในทางปฏิบัติ ถ้าเกิน limit จะมีหมายเหตุแจ้งผู้ใช้ (ดู isTruncated ด้านล่าง)
 const AGGREGATE_LIMIT = 1000
 
+// หมวดเดียวที่ฟอร์มมีรายการ "ลักษณะปัญหา" ให้เลือก (ไฟฟ้าสาธารณะ) — ต้องตรงกับรายการอนุญาตในฟังก์ชันฐานข้อมูล
+// complaint_issue_breakdown_fy ถ้าเพิ่มหมวดใหม่ต้องเพิ่มทั้งฟอร์ม ฟังก์ชัน SQL และที่นี่ (เทสต์เทียบ SQL กับฟอร์มให้)
+const ISSUE_BREAKDOWN_CATEGORY = 'light'
+
 // สีสถานะ — ใช้ชุดเดียวกับ badge สถานะที่หน้าอื่นในระบบใช้ (amber/sky/emerald/red) ไม่สร้างชุดสีใหม่แยกเฉพาะกราฟ
 // (ตาม dataviz skill: status color เป็น design-system parameter ที่ยึดของเดิมที่ระบบมีอยู่แล้ว)
 const PIPELINE_STAGES = [
@@ -113,6 +117,8 @@ export default function ComplaintStats() {
   const isNarrow = useIsNarrow()
   const tenantId = tenant?.id
   const [stats, setStats]         = useState(null)
+  // ยอดแยกตามลักษณะปัญหาของหมวดไฟฟ้า (เฉพาะโหมดรายเดือน) — มาจากฟังก์ชันที่กรองรายการอนุญาตฝั่งฐานข้อมูลแล้ว
+  const [issueRows, setIssueRows] = useState(null)
   const [rows, setRows]           = useState([])
   const [categoryLabels, setCategoryLabels] = useState({})
   const [loading, setLoading]     = useState(true)
@@ -170,19 +176,26 @@ export default function ComplaintStats() {
             _municipality_id: tenantId, _limit: AGGREGATE_LIMIT,
             _from: activeRange.from, _to: activeRange.to,
           }),
+          // รายการย่อยใต้หมวดใช้แค่ภาพสรุปรายเดือน โหมดปีงบไม่ยิง · ถ้าฟังก์ชันยังไม่มีบนฐานข้อมูลนั้น/ผิดพลาด
+          // ได้ data เป็น null แล้วภาพก็แค่ไม่มีรายการย่อย (ไม่ทำให้ทั้งหน้าพัง)
+          ...(selectedMonth ? [supabase.rpc('complaint_issue_breakdown_fy', {
+            _municipality_id: tenantId, _category: ISSUE_BREAKDOWN_CATEGORY,
+            _from: activeRange.from, _to: activeRange.to,
+          })] : []),
         ]
       : [
           supabase.rpc('complaint_stats',   { _municipality_id: tenantId }),
           supabase.rpc('complaints_public', { _municipality_id: tenantId, _limit: AGGREGATE_LIMIT }),
         ]
-    return Promise.all(calls).then(([{ data: s }, { data: r }]) => {
+    return Promise.all(calls).then(([{ data: s }, { data: r }, issues]) => {
       // คำตอบของช่วงเวลาที่ผู้ใช้เปลี่ยนไปแล้วมาถึงช้า ต้องทิ้ง ไม่งั้นเลขของเดือนเก่าไปอยู่ใต้หัวข้อเดือนใหม่
       if (latestRangeKey.current !== rangeKey) return
       setStats(s)
       setRows(r ?? [])
+      setIssueRows(Array.isArray(issues?.data) ? issues.data : null)
       setLoadedKey(rangeKey)
     }).catch(() => {})
-  }, [tenantId, activeRange, rangeKey])
+  }, [tenantId, activeRange, rangeKey, selectedMonth])
 
   // ป้ายชื่อหมวดหมู่แยกออกจากรอบรีเฟรช — แอดมินแก้ปีละครั้ง ไม่ต้องดึงซ้ำทุกนาที
   useEffect(() => {
@@ -228,9 +241,12 @@ export default function ComplaintStats() {
   // ใบสรุปประจำเดือน — คำนวณล้วนจากตัวเลขที่ RPC สาธารณะคืนมา (ไม่มีชื่อ เบอร์ ที่อยู่ หรือพิกัด)
   const monthlySummary = useMemo(
     () => (selectedMonth && settled
-      ? summarizeMonth({ stats, rows, labelOf: categoryLabel, tenantName: tenant?.name ?? 'หน่วยงาน', period: selectedMonth })
+      ? summarizeMonth({
+        stats, rows, labelOf: categoryLabel, tenantName: tenant?.name ?? 'หน่วยงาน', period: selectedMonth,
+        issueBreakdown: issueRows ? { category: ISSUE_BREAKDOWN_CATEGORY, rows: issueRows } : null,
+      })
       : null),
-    [selectedMonth, settled, stats, rows, categoryLabel, tenant?.name],
+    [selectedMonth, settled, stats, rows, issueRows, categoryLabel, tenant?.name],
   )
 
   // ป้ายช่วงเวลาของหัวรายงาน/ข้อความไม่มีข้อมูล — โหมดรายเดือนใช้เดือนที่เลือกแทนปีงบ

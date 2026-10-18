@@ -6,9 +6,10 @@ import { chromium } from 'playwright'
 
 // ตั้งโซนเวลาเครื่องเป็นต่างประเทศ: ถ้าโค้ดอ่านเดือนจากเวลาเครื่องแทนเวลาไทย เคสข้ามเดือนด้านล่างจะพัง
 process.env.TZ = 'America/Los_Angeles'
+const Sum = await import('../src/lib/complaintMonthlySummary.js')
 const {
-  MAX_CATEGORY_ROWS, MONTH_OPTION_COUNT, lastFullMonth, monthPeriod, parseMonthParam, recentMonthOptions, summarizeMonth,
-} = await import('../src/lib/complaintMonthlySummary.js')
+  MAX_CATEGORY_ROWS, MONTH_OPTION_COUNT, UNSPECIFIED_ISSUE_LABEL, lastFullMonth, monthPeriod, parseMonthParam, recentMonthOptions, summarizeMonth,
+} = Sum
 const { buildComplaintMonthlyHtml } = await import('../src/lib/complaintMonthlyPrint.js')
 
 let cases = 0
@@ -140,6 +141,47 @@ await test('ชื่อหมวดมาจาก labelOf เท่านั�
   const s = summarize({ stats: { total: 2, resolved: 2 }, rows: rowsOf({ water_repair: 2 }), labelOf: () => 'ซ่อมน้ำประปา' })
   assert.ok(!s.narrative.includes('water_repair'))
   assert.ok(s.narrative.includes('ซ่อมน้ำประปา'))
+})
+
+// ── รายการย่อยใต้หมวด (complaint_issue_breakdown_fy) ──
+const LIGHT_ROWS = [
+  { issue_label: 'ไฟดับทั้งดวง', total: 6 }, { issue_label: 'ไฟกระพริบ', total: '3' }, // bigint จาก PostgREST อาจเป็นสตริง
+  { issue_label: 'สายไฟชำรุด', total: 2 }, { issue_label: null, total: 2 },
+]
+const lightOf = summary => summary.categories.find(c => c.code === 'light')
+
+await test('รายการย่อย: ผลรวมตรงยอดหมวด → แนบใต้หมวดนั้นตามลำดับเดิมจากฐานข้อมูล ชื่อ NULL = "ไม่ระบุลักษณะ"', () => {
+  const s = summarize({ issueBreakdown: { category: 'light', rows: LIGHT_ROWS } })
+  assert.deepEqual(lightOf(s).subItems, [
+    { label: 'ไฟดับทั้งดวง', count: 6 }, { label: 'ไฟกระพริบ', count: 3 },
+    { label: 'สายไฟชำรุด', count: 2 }, { label: UNSPECIFIED_ISSUE_LABEL, count: 2 },
+  ])
+  for (const c of s.categories.filter(c => c.code !== 'light')) assert.equal(c.subItems, undefined, `${c.label} ต้องไม่มีรายการย่อย`)
+})
+
+await test('รายการย่อย: ไม่ส่ง/ผลรวมไม่ตรง/มีแต่ไม่ระบุ/ว่าง → ไม่แสดง (ดีกว่าตัวเลขที่รวมกันไม่เท่าหมวด)', () => {
+  const cases = {
+    'ไม่ส่ง': null,
+    'ผลรวมเกิน (มีเรื่องเข้ามาคั่นระหว่างสองคำสั่ง)': { category: 'light', rows: [...LIGHT_ROWS, { issue_label: 'ไฟกระพริบ', total: 1 }] },
+    'ผลรวมขาด': { category: 'light', rows: LIGHT_ROWS.slice(0, 2) },
+    'มีแต่ไม่ระบุลักษณะ': { category: 'light', rows: [{ issue_label: null, total: 13 }] },
+    'แถวว่าง': { category: 'light', rows: [] },
+    'rows เป็น null': { category: 'light', rows: null },
+  }
+  for (const [name, issueBreakdown] of Object.entries(cases)) {
+    assert.equal(lightOf(summarize({ issueBreakdown })).subItems, undefined, name)
+  }
+})
+
+await test('รายการย่อย: หมวดไม่ตรง หรือหมวดถูกพับรวมใน "หมวดที่เหลือ" → ไม่แนบ', () => {
+  assert.equal(lightOf(summarize({ issueBreakdown: { category: 'trash', rows: LIGHT_ROWS } })).subItems, undefined)
+  const spec = Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`c${i}`, 11 - i]))
+  spec.light = 1
+  const s = Sum.summarizeMonth({
+    stats: { total: 67, resolved: 67 }, rows: rowsOf(spec), labelOf, tenantName: 'ก', period: APRIL, now: NOW,
+    issueBreakdown: { category: 'light', rows: [{ issue_label: 'ไฟดับทั้งดวง', total: 1 }] },
+  })
+  assert.ok(s.categories.every(c => c.subItems === undefined))
 })
 
 // ── ชั้นสอง: ใบพิมพ์ ──
