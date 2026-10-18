@@ -37,6 +37,7 @@
     "test:fleet:register": "node tests/fleet-register-print.test.mjs",
     "test:fleet:odometer": "node tests/fleet-odometer.test.mjs",
     "test:fleet:form5": "node tests/fleet-form5-print.test.mjs",
+    "test:fleet:vehicle-summary": "node tests/fleet-vehicle-summary.test.mjs",
     "test:fleet:sk1": "node tests/fleet-sk1-print.test.mjs",
     "test:waste-cancel": "node tests/waste-cancel-print.test.mjs && node tests/waste-cancel-layout.test.mjs",
     "test:doc-status": "node tests/document-status.test.mjs",
