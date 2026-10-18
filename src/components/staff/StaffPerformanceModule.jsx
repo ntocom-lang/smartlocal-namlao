@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Download, Info, Loader2, Printer } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { AlertTriangle, Download, FileBarChart, Info, Loader2, Printer } from 'lucide-react'
 import { ListCard, Pills } from '../patientTransport/StaffShell'
+import { lastFullMonth } from '../../lib/complaintMonthlySummary'
 import { logAction } from '../../lib/auditLog'
 import { MONTH_OPTIONS, QUARTERS, fiscalYearOptionsBE, yearOptionsBE } from '../../lib/fleetReportPeriod'
 import {
@@ -284,6 +286,13 @@ export default function StaffPerformanceModule({ tenant, profile }) {
             <Download size={14} />ดาวน์โหลด CSV
           </button>
         </div>
+        {/* ทางไปดูสรุปของทั้งหน่วยงาน (ระบบคำนวณให้เอง ไม่มีอะไรให้กรอก) — เลือกโหมดเดือนอยู่ก็พาไปเดือนเดียวกัน
+            โหมดอื่นพาไปเดือนล่าสุดที่จบครบแล้ว · ไม่ใช่ผลงานรายคน จึงแยกเป็นลิงก์ ไม่ปนในตารางนี้ */}
+        <Link to={`/reports/complaints?m=${period.mode === 'month'
+          ? `${period.yearBE}-${String(period.month).padStart(2, '0')}` : lastFullMonth().key}`}
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 underline underline-offset-2 hover:text-gray-800">
+          <FileBarChart size={14} aria-hidden="true" />ดูสรุปเรื่องร้องเรียนของทั้งหน่วยงานรายเดือน (หน้ารายงานสาธารณะ)
+        </Link>
       </div>
 
       {errorText && (
