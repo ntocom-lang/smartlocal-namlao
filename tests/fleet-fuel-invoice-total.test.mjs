@@ -6,7 +6,8 @@
 // เอกสารเคยพิมพ์ 1,999.95 ทำให้ยอดรวมทั้งเดือนไม่ตรงใบกำกับภาษี สอบยันกับฎีกาไม่ผ่าน
 
 import assert from 'node:assert/strict'
-import { fuelAmountDiffersFromCalc, fuelRecordAmount } from '../src/lib/fleetFuelAmount.js'
+import { readFileSync } from 'node:fs'
+import { fuelAmountDiffersFromCalc, fuelInvoiceReminder, fuelRecordAmount } from '../src/lib/fleetFuelAmount.js'
 import { buildFleetFuelLedgerHtml, ledgerTotals } from '../src/lib/fleetFuelLedgerPrint.js'
 import { buildFleetFuelMemoHtml, buildMemoRows } from '../src/lib/fleetFuelMemoPrint.js'
 import { buildFleetFuelRecordHtml } from '../src/lib/fleetFuelPrint.js'
@@ -85,5 +86,24 @@ assert.ok(!single.includes('1,999.95'), 'ใบรายการเดี่ย
 for (const doc of [ledger, memo, single]) {
   assert.ok(!doc.includes('undefined') && !doc.includes('NaN') && !doc.includes('Invalid Date'))
 }
+
+/* ── 7. เตือนให้กรอกยอดตามบิลก่อนบันทึก (เจ้าของระบบสั่ง 2026-10-18) ──
+   เคสจริง กค 9700 12 ต.ค. 2569: 34.4 ล. × 43.60 = 1,499.84 แต่จ่ายจริง 1,500 แล้วไม่ได้กรอกยอดบิล */
+assert.equal(fuelInvoiceReminder({ liters: '34.4', price_per_liter: '43.60', invoice_total: '' }), 1499.84,
+  'ยอดคำนวณมีเศษสตางค์ + ยังไม่กรอกยอดบิล ต้องเตือน')
+assert.equal(fuelInvoiceReminder({ liters: 34.4, price_per_liter: 43.6, invoice_total: 1500 }), null, 'กรอกยอดบิลแล้วไม่ต้องเตือน')
+assert.equal(fuelInvoiceReminder({ liters: 34.4, price_per_liter: 43.6, invoice_total: 0 }), null, 'ยอดบิล 0 = กรอกแล้ว ไม่ใช่ว่าง')
+assert.equal(fuelInvoiceReminder({ liters: 40, price_per_liter: 37.5, invoice_total: '' }), null, 'ยอดเต็มบาท (1,500.00) ไม่ต้องเตือน')
+// 50.25 × 39.80 ทศนิยมลอยตัวได้ 1999.9499999 — ต้องปัดเป็นสตางค์ก่อนตัดสิน
+assert.equal(fuelInvoiceReminder({ liters: 50.25, price_per_liter: 39.8, invoice_total: null }), 1999.95)
+assert.equal(fuelInvoiceReminder({ liters: 50, price_per_liter: 40, invoice_total: null }), null)
+assert.equal(fuelInvoiceReminder({ liters: '', price_per_liter: '43.60', invoice_total: '' }), null, 'ยังกรอกไม่ครบไม่ต้องเตือน')
+assert.equal(fuelInvoiceReminder({ liters: '34.4', price_per_liter: '', invoice_total: '' }), null)
+// หน้าบันทึกต้องใช้ตัวตัดสินนี้ทั้งตอนกรอกและตอนกดบันทึก และพากลับไปช่องยอดบิลเมื่อกดยกเลิก
+const fuelLog = readFileSync('src/components/fleet/FleetFuelLog.jsx', 'utf8')
+assert.ok(fuelLog.includes('fuelInvoiceReminder(form)'), 'FleetFuelLog ต้องใช้ fuelInvoiceReminder')
+assert.ok(/invoiceReminder !== null && !confirm\(/.test(fuelLog), 'ต้องถามก่อนบันทึกเมื่อยังไม่กรอกยอดบิล')
+assert.ok(fuelLog.includes('invoiceInputRef.current?.focus()'), 'กดยกเลิกแล้วต้องพากลับไปช่องยอดตามบิล')
+assert.ok(/ref=\{invoiceInputRef\}/.test(fuelLog), 'ช่องยอดตามบิลต้องผูก ref')
 
 console.log('fleet-fuel-invoice-total.test.mjs PASS')

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Plus, X, AlertTriangle, FileText, Paperclip, Pencil, Fuel, Printer } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -20,7 +20,7 @@ import {
   validateFleetDocument,
 } from '../../lib/fleetDocuments'
 import { buildFleetFuelRecordHtml, fuelTypeLabel } from '../../lib/fleetFuelPrint'
-import { fuelAmountDiffersFromCalc, fuelRecordAmount } from '../../lib/fleetFuelAmount'
+import { fuelAmountDiffersFromCalc, fuelInvoiceReminder, fuelRecordAmount } from '../../lib/fleetFuelAmount'
 
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 const sel = inp + ' appearance-none'
@@ -172,6 +172,10 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
   const invoiceMismatch = form.invoice_total !== '' && totalCost
     && Number.isFinite(Number(form.invoice_total))
     && Math.abs(Number(form.invoice_total) - parseFloat(totalCost)) >= 0.005
+  // ยังไม่กรอกยอดตามบิลทั้งที่ยอดคำนวณมีเศษสตางค์ — แนะนำให้กรอกยอดที่จ่ายจริง (เจ้าของระบบสั่ง 2026-10-18)
+  // เตือนระหว่างกรอก + ถามอีกครั้งตอนกดบันทึก ไม่บังคับ เพราะบิลเติมเต็มถังมีเศษสตางค์จริงได้
+  const invoiceReminder = fuelInvoiceReminder(form)
+  const invoiceInputRef = useRef(null)
 
   // อปท. ที่ยังไม่ได้ตั้งทะเบียนพนักงานขับรถต้องบันทึกน้ำมันต่อได้ ไม่งั้น deploy รอบนี้
   // จะทำให้ช่องผู้ขับรถว่างเปล่าทันทีทุกแห่งที่ยังไม่ได้ตั้งค่า
@@ -270,6 +274,16 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
     const invoiceTotal = form.invoice_total === '' ? null : Number(form.invoice_total)
     if (invoiceTotal !== null && (!Number.isFinite(invoiceTotal) || invoiceTotal < 0))
       return alert('ยอดรวมตามบิลต้องเป็น 0 หรือมากกว่า')
+    if (invoiceReminder !== null && !confirm(
+      `ยังไม่ได้กรอก "ยอดรวมตามบิล"\n\n`
+      + `ยอดคำนวณจากลิตร × ราคา = ${fmtB(invoiceReminder)} (มีเศษสตางค์)\n`
+      + 'ปั๊มส่วนใหญ่ออกบิลตามยอดเงินที่สั่งเติม เช่น 1,500.00 บาท\n\n'
+      + `• บิลเป็น ${fmtB(invoiceReminder)} จริง → กด OK บันทึกต่อ\n`
+      + '• ไม่ใช่ → กด ยกเลิก แล้วกรอกยอดที่จ่ายจริงตามบิล',
+    )) {
+      invoiceInputRef.current?.focus()
+      return
+    }
     const fileError = validateFleetDocument(receiptFile)
     if (fileError) return alert(fileError)
 
@@ -797,13 +811,20 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                   เพราะสมุดคุมพิมพ์สองค่านั้นลงกระดาษตรงๆ */}
               <div>
                 <label className="text-xs font-semibold text-gray-600 mb-1 block">ยอดรวมตามใบรับสินค้า/ใบส่งของ (บาท)</label>
-                <input type="number" step="0.01" min="0" inputMode="decimal"
+                <input type="number" step="0.01" min="0" inputMode="decimal" ref={invoiceInputRef}
                   value={form.invoice_total} onChange={set('invoice_total')}
                   placeholder={totalCost ? `ปล่อยว่าง = ใช้ ${totalCost}` : 'ยอดเงินบนบิล'}
                   className={inp} />
-                <p className="mt-1 text-[10px] text-gray-400">
-                  กรอกยอดที่พิมพ์บนบิลจริง เอกสารทุกใบจะใช้ยอดนี้ · ปล่อยว่างถ้ายอดบนบิลตรงกับยอดคำนวณอยู่แล้ว
-                </p>
+                {invoiceReminder !== null ? (
+                  <p className="mt-1 text-[11px] text-amber-700 font-semibold leading-relaxed">
+                    ⚠️ ยอดคำนวณ {fmtB(invoiceReminder)} มีเศษสตางค์ — ถ้าบิลจริงเป็นยอดอื่น (เช่น 1,500.00) กรอกยอดที่จ่ายจริงตามบิล
+                    เอกสารเบิกจะได้ตรงบิล
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[10px] text-gray-400">
+                    กรอกยอดที่พิมพ์บนบิลจริง เอกสารทุกใบจะใช้ยอดนี้ · ปล่อยว่างถ้ายอดบนบิลตรงกับยอดคำนวณอยู่แล้ว
+                  </p>
+                )}
                 {invoiceMismatch && (
                   <p className="mt-1 text-[10px] text-amber-600 font-semibold">
                     ต่างจากยอดคำนวณ {fmtB(Math.abs(Number(form.invoice_total) - parseFloat(totalCost)))} — เอกสารจะพิมพ์ยอดตามบิล
