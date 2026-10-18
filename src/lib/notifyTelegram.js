@@ -26,6 +26,7 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   'fleet_vehicle_repair_started',
   'fleet_vehicle_repair_finished',
   'fleet_maintenance_created',
+  'fleet_incident_reported',
 ])
 
 /**

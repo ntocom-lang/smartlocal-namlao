@@ -41,6 +41,8 @@ const notificationSpecs = {
   fleet_vehicle_repair_started: { table: 'fleet_vehicles', resourceType: 'fleet_vehicle', access: 'staff' },
   fleet_vehicle_repair_finished: { table: 'fleet_vehicles', resourceType: 'fleet_vehicle', access: 'staff' },
   fleet_maintenance_created: { table: 'fleet_maintenance', resourceType: 'fleet_maintenance', access: 'staff' },
+  // แบบ 5 (ระเบียบ มท. ยานพาหนะ อปท. 2569 ข้อ 18 ให้รายงานผู้บริหารทราบทันที) — ส่งครั้งเดียวต่อรายงาน
+  fleet_incident_reported: { table: 'fleet_incidents', resourceType: 'fleet_incident', access: 'staff' },
 } as const
 
 type NotificationType = keyof typeof notificationSpecs
@@ -649,6 +651,7 @@ const MAINTENANCE_TYPE_LABEL: Record<string, string> = {
   inspection: 'ตรวจสภาพ',
   tire: 'ยาง',
   battery: 'แบตเตอรี่',
+  emission: 'ตรวจวัดมลพิษ',
   other: 'อื่นๆ',
 }
 
@@ -674,6 +677,28 @@ function buildFleetMaintenanceCreatedMessage(record: Record<string, unknown>) {
       ? `นัดครั้งถัดไป: ${[nextDate, nextMeter ? `${nextMeter} ${meterUnitLabel(vehicle)}` : ''].filter(Boolean).map((v) => escapeHtml(v, 60)).join(' หรือ ')}`
       : '',
     department ? `กองเจ้าของรถ: ${escapeHtml(department, 80)}` : '',
+  ])
+}
+
+// แบบ 5 รายงานการสูญหาย/ความเสียหาย (ข้อ 18 ให้ผู้บริหารทราบทันที) — ⚠️ PDPA: บอกแค่รถ/วันเวลา/สถานที่
+// ห้ามใส่คู่กรณี/ผู้บาดเจ็บ/พยาน/รายละเอียดความเสียหาย (อยู่ในระบบให้ผู้ดูแลยานพาหนะเปิดดูตามสิทธิ์)
+// ต้องตรงกับ INCIDENT_KIND_LABEL ใน src/lib/fleetForm5Print.js (เทสต์ตรวจให้)
+const INCIDENT_KIND_LABEL: Record<string, string> = {
+  damage: 'ความเสียหาย',
+  loss: 'สูญหาย',
+}
+
+function buildFleetIncidentReportedMessage(record: Record<string, unknown>) {
+  const vehicle = record.vehicle as { name?: string; license_plate?: string } | null
+  const kind = INCIDENT_KIND_LABEL[String(record.incident_kind ?? '')] ?? INCIDENT_KIND_LABEL.damage
+  const incidentDate = formatThaiDate(record.incident_date)
+  const time = /^\d{1,2}:\d{2}/.test(String(record.incident_time ?? '')) ? String(record.incident_time).slice(0, 5) : ''
+  const resource = vehicleDepartmentResource(record)
+  return framedMessage(resource, '🚨', `รายงานเหตุ${kind}ยานพาหนะ (แบบ 5)`, [
+    `ยานพาหนะ: ${vehicleLabel(vehicle)}`,
+    incidentDate ? `เหตุเกิดเมื่อ: ${escapeHtml(incidentDate, 60)}${time ? ` เวลา ${escapeHtml(time, 5)} น.` : ''}` : '',
+    record.location ? `สถานที่: ${escapeHtml(record.location, 160)}` : '',
+    'รายละเอียดคู่กรณี/ผู้บาดเจ็บ/พยาน ดูในระบบได้เฉพาะผู้ดูแลยานพาหนะ',
   ])
 }
 
@@ -808,6 +833,7 @@ const FLEET_MESSAGE_BUILDERS: Partial<Record<NotificationType, (resource: Record
   fleet_vehicle_repair_started: buildFleetVehicleRepairMessage,
   fleet_vehicle_repair_finished: buildFleetVehicleRepairMessage,
   fleet_maintenance_created: buildFleetMaintenanceCreatedMessage,
+  fleet_incident_reported: buildFleetIncidentReportedMessage,
 }
 
 function isRecent(createdAt: unknown, minutes = 15) {
@@ -997,7 +1023,11 @@ serve(async (req) => {
               ? 'id,municipality_id,status,updated_at,name,license_plate,department:departments(name,color)'
               : spec.table === 'fleet_maintenance'
                 ? 'id,municipality_id,created_at,service_date,maintenance_type,description,cost,vendor,odometer,next_service_meter,next_service_date,vehicle:fleet_vehicles(name,license_plate,meter_unit,department:departments(name,color))'
-                : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount,payment_verified_at,department:departments(name,color)'
+                : spec.table === 'fleet_incidents'
+                  // ⚠️ PDPA: เฉพาะข้อเท็จจริงของเหตุ ห้ามดึง fleet_incident_people (คู่กรณี/ผู้บาดเจ็บ/พยาน)
+                  // และไม่ดึงช่องข้อความอิสระที่อาจมีชื่อคน (damage/other_*/case_result)
+                  ? 'id,municipality_id,created_at,incident_kind,incident_date,incident_time,location,vehicle:fleet_vehicles(name,license_plate,meter_unit,department:departments(name,color))'
+                  : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount,payment_verified_at,department:departments(name,color)'
     const { data: resource, error: resourceError } = await admin
       .from(spec.table)
       .select(selectColumns)
