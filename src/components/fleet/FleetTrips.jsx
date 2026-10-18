@@ -2046,8 +2046,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           {t.vehicle?.name}
           <p className="text-[10px] font-normal text-gray-400">{assetIdentifier(t.vehicle)}</p>
         </td>
+        {/* ไม่มีคอลัมน์วัตถุประสงค์ (เจ้าของระบบสั่ง 2569-10-18) — ข้อความยาวดันแถวสูงหลายบรรทัด
+            ตารางอ่านยาก ดูได้ในรายละเอียดเมื่อคลิกแถว ห้ามเพิ่มกลับโดยไม่ถาม */}
         <td className="px-4 py-2.5 text-xs text-gray-600 border-r border-gray-200">{t.destination}</td>
-        <td className="px-4 py-2.5 text-xs text-gray-500 border-r border-gray-200">{t.purpose}</td>
         <td className="px-4 py-2.5 text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">
           {t.requester?.full_name || '—'}
         </td>
@@ -2137,7 +2138,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr style={{ backgroundColor: '#1a3a5c' }}>
-              {['ที่', 'วันที่', 'ยานพาหนะ', 'ปลายทาง', 'วัตถุประสงค์', 'ผู้ใช้รถ', 'ระยะทาง', 'สถานะ', 'ดำเนินการ'].map(h => (
+              {['ที่', 'วันที่', 'ยานพาหนะ', 'ปลายทาง', 'ผู้ใช้รถ', 'ระยะทาง', 'สถานะ', 'ดำเนินการ'].map(h => (
                 <th key={h} className="px-3 py-2.5 text-left text-xs font-bold text-white border-r border-white/10 last:border-r-0 whitespace-nowrap">
                   {h}
                 </th>
