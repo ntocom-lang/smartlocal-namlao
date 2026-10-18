@@ -11,6 +11,8 @@ import WaterSituationShare from './WaterSituationShare'
 import ReservoirGauge from '../components/water/ReservoirGauge'
 import SmallReservoirSection from '../components/water/SmallReservoirSection'
 import { diagramTenant } from '../lib/waterDiagram/model'
+import RelationPill from '../components/water/RelationPill'
+import { relationOf, resolveSystem, systemById } from '../lib/waterSystem/model'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
@@ -26,6 +28,8 @@ import {
 const REFRESH_MS = 5 * 60 * 1000
 // ผังน้ำเคลื่อนไหวหนักกว่าส่วนอื่น (ข้อมูลผัง + SVG) และมีแค่ อปท. ในทะเบียน — โหลดเมื่อต้องแสดงจริง อปท. อื่นไม่ต้องโหลด
 const WaterDiagram = lazy(() => import('../components/water/WaterDiagram'))
+// ส่วน "ระบบน้ำของตำบล" (ฤดูแล้ง เฟส 5 · PR 5.2) — โหลดเฉพาะ อปท. ที่มีระบบที่ถอดแล้ว (ทะเบียน src/lib/waterSystem/model.js)
+const WaterSystem = lazy(() => import('../components/water/WaterSystem'))
 const THAIWATER_URL = 'https://www.thaiwater.net'
 const EWS_URL = 'https://ews.dwr.go.th/'
 
@@ -128,6 +132,9 @@ export default function WaterSituationPage() {
   const ews = stations.filter(s => s.station_type === 'ews')
   const ewsByCode = new Map(ews.map(s => [s.station_code, s]))
   const loading = tenantLoading || Boolean(tenantId && data === null && !loadError)
+  // ระบบน้ำของตำบล: อปท. ที่ยังไม่มีระบบที่ถอดแล้วไม่เห็นหัวข้อนี้เลย · ?system= ใช้ได้เฉพาะ demo (resolveSystem เมินที่อื่น)
+  const systemSelection = resolveSystem(tenant?.slug, searchParams.get('system'))
+  const waterSystem = systemSelection ? systemById(systemSelection.system) : null
 
   return (
     // จอกว้าง (lg ขึ้นไป) ขยายเป็น 2 คอลัมน์ — คอลัมน์เดียวกว้าง 512px ทิ้งพื้นที่ว่างสองข้างเกินครึ่งจอ
@@ -189,14 +196,20 @@ export default function WaterSituationPage() {
               )}
               {(dams.length > 0 || levels.length > 0) && (
                 <div className="space-y-4 xl:contents xl:space-y-0">
-                  {dams.length > 0 && <DamSection stations={dams} homeAmphoe={tenant?.district} now={checkedAt} />}
-                  {levels.length > 0 && <WaterLevelSection stations={levels} homeAmphoe={tenant?.district} now={checkedAt} />}
+                  {dams.length > 0 && <DamSection stations={dams} homeAmphoe={tenant?.district} now={checkedAt} system={waterSystem} />}
+                  {levels.length > 0 && <WaterLevelSection stations={levels} homeAmphoe={tenant?.district} now={checkedAt} system={waterSystem} />}
                 </div>
               )}
             </div>
             {/* อ่างขนาดเล็กจากผังน้ำออนไลน์แพร่ — ไม่พึ่งฐานข้อมูล/RPC ข้างบน (ดึงผ่าน Worker เอง) จึงอยู่นอกเงื่อนไข dams.length
                 ทุ่งแค้วไม่มีอ่างขนาดกลางในรัศมี 15 กม. แต่มีห้วยยอย/ห้วยปุยในผังน้ำตำบล */}
             <SmallReservoirSection slug={tenant?.slug} tenantName={tenant?.name} now={checkedAt} />
+            {waterSystem && (
+              <Suspense fallback={null}>
+                <WaterSystem slug={tenant?.slug} tenantId={tenantId} homeAmphoe={tenant?.district}
+                  stations={scopedData?.stations ?? []} now={checkedAt} previewId={searchParams.get('system')} />
+              </Suspense>
+            )}
             {/* ผังน้ำตำบล (ภาพประกอบทิศทางน้ำตามผัง ไม่ใช่ค่าวัด) — ใช้สถานีระดับ อปท. ไม่ผูกกับโหมดแชร์ ?scope= */}
             {diagramTenant(tenant?.slug) && (
               <Suspense fallback={null}>
@@ -571,7 +584,7 @@ function RainBar({ mm, max, color, dim }) {
   )
 }
 
-function WaterLevelSection({ stations, homeAmphoe, now }) {
+function WaterLevelSection({ stations, homeAmphoe, now, system = null }) {
   return (
     <section id="water-levels" className="water-level-panel space-y-3">
       <div className="water-section-heading flex items-start gap-2.5 px-1">
@@ -583,7 +596,7 @@ function WaterLevelSection({ stations, homeAmphoe, now }) {
           </p>
         </div>
       </div>
-      {stations.map(s => <WaterLevelCard key={s.station_code} station={s} homeAmphoe={homeAmphoe} now={now} />)}
+      {stations.map(s => <WaterLevelCard key={s.station_code} station={s} homeAmphoe={homeAmphoe} now={now} relation={relationOf(system, 'waterlevel', s.station_code)} />)}
     </section>
   )
 }
@@ -594,7 +607,7 @@ const TREND_STYLE = {
   flat: { Icon: ArrowRight,     className: 'text-gray-600' },
 }
 
-function WaterLevelCard({ station: s, homeAmphoe, now }) {
+function WaterLevelCard({ station: s, homeAmphoe, now, relation = null }) {
   const hasValue = s.recorded_at && (toNum(s.waterlevel_msl) !== null || toNum(s.storage_percent) !== null)
   const stale = Boolean(s.recorded_at) && isStale(s.recorded_at, now, STATION_STALE_HOURS)
   const color = safeColor(s.situation_color)
@@ -622,7 +635,8 @@ function WaterLevelCard({ station: s, homeAmphoe, now }) {
           {s.river_name && <p className="text-xs font-bold text-cyan-700">{s.river_name}</p>}
           <p className="text-base font-bold leading-tight text-gray-900">
             สถานี{s.station_name}
-            {s.is_primary && (
+            {relation && <span className="ml-1.5"><RelationPill relation={relation} /></span>}
+            {!relation && s.is_primary && (
               <span className="ml-1.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-bold text-emerald-700">
                 ในตำบล
               </span>
@@ -630,6 +644,7 @@ function WaterLevelCard({ station: s, homeAmphoe, now }) {
           </p>
           <p className="mt-0.5 text-xs text-gray-500">{meta}</p>
           {s.note && <p className="mt-0.5 text-xs text-amber-700">{s.note}</p>}
+          {relation?.note && <p data-relation-note className="mt-0.5 text-xs leading-snug text-gray-600">{relation.note}</p>}
         </div>
         {hasValue && s.situation_text && (
           <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold text-gray-800 ${stale ? 'opacity-50' : ''}`}
@@ -748,7 +763,7 @@ function ChannelCrossSection({ fill, percent, bankLabel, color, stationName }) {
   )
 }
 
-function DamSection({ stations, homeAmphoe, now, snapshot = false }) {
+function DamSection({ stations, homeAmphoe, now, snapshot = false, system = null }) {
   return (
     <section id={snapshot ? undefined : 'water-dams'} className="water-dam-panel space-y-3">
       <div className="water-section-heading flex items-start gap-2.5 px-1">
@@ -764,7 +779,7 @@ function DamSection({ stations, homeAmphoe, now, snapshot = false }) {
           </p>
         </div>
       </div>
-      {stations.map(s => <DamCard key={s.station_code} station={s} homeAmphoe={homeAmphoe} now={now} />)}
+      {stations.map(s => <DamCard key={s.station_code} station={s} homeAmphoe={homeAmphoe} now={now} relation={relationOf(system, 'dam', s.station_code)} />)}
       <div className="rounded-xl border border-gray-100 bg-white px-3 py-2.5 text-[11px] leading-relaxed text-gray-500">
         <p>ป้ายเทียบเกณฑ์ % ของความจุที่ระดับเก็บกัก ตามรายงานของ สสน. และกรมชลประทาน:</p>
         <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
@@ -780,7 +795,7 @@ function DamSection({ stations, homeAmphoe, now, snapshot = false }) {
   )
 }
 
-function DamCard({ station: s, homeAmphoe, now }) {
+function DamCard({ station: s, homeAmphoe, now, relation = null }) {
   const storage = toNum(s.dam_storage_mcm)
   const capacity = toNum(s.dam_capacity_mcm)
   const percent = toNum(s.storage_percent)
@@ -802,12 +817,13 @@ function DamCard({ station: s, homeAmphoe, now }) {
   const same = hasValue && !stale ? damSameInfo(s) : null
 
   return (
-    <div className="water-station-card rounded-2xl border bg-white p-4 shadow-sm" style={{ borderColor: hasValue && !stale ? `${color}66` : '#f3f4f6' }}>
+    <div id={`water-dam-${s.station_code}`} className="water-station-card rounded-2xl border bg-white p-4 shadow-sm" style={{ borderColor: hasValue && !stale ? `${color}66` : '#f3f4f6' }}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-base font-bold leading-tight text-gray-900">
             {s.station_name}
-            {s.is_primary && (
+            {relation && <span className="ml-1.5"><RelationPill relation={relation} /></span>}
+            {!relation && s.is_primary && (
               <span className="ml-1.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-bold text-emerald-700">
                 ในตำบล
               </span>
@@ -815,6 +831,7 @@ function DamCard({ station: s, homeAmphoe, now }) {
           </p>
           <p className="mt-0.5 text-xs text-gray-500">{meta}</p>
           {s.note && <p className="mt-0.5 text-xs text-amber-700">{s.note}</p>}
+          {relation?.note && <p data-relation-note className="mt-0.5 text-xs leading-snug text-gray-600">{relation.note}</p>}
         </div>
         {hasValue && level && (
           <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold text-gray-800 ${stale ? 'opacity-50' : ''}`}
