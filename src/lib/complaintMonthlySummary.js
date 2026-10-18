@@ -24,6 +24,10 @@ export const MAX_CATEGORY_ROWS = 8
 // ตัวเลือกเดือนย้อนหลังกี่เดือน (ใช้ทั้งดรอปดาวน์และเพดานที่ parseMonthParam ยอมรับ)
 export const MONTH_OPTION_COUNT = 24
 
+// ชื่อแถวของเรื่องที่ไม่มีลักษณะปัญหา — เรื่องก่อน 2026-08-24, เรื่องที่รับที่เคาน์เตอร์ และค่าที่ฟังก์ชันฐานข้อมูล
+// ไม่ยอมส่งออก (นอกรายการอนุญาต) ทั้งหมดมาเป็นแถวนี้ ไม่ซ่อนและไม่เดาเป็นลักษณะอื่น
+export const UNSPECIFIED_ISSUE_LABEL = 'ไม่ระบุลักษณะ'
+
 const MONTH_PARAM = /^(\d{4})-(0[1-9]|1[0-2])$/
 const pad2 = n => String(n).padStart(2, '0')
 
@@ -115,15 +119,34 @@ function joinThai(items) {
 }
 
 /**
+ * รายการย่อยใต้หมวด จากฟังก์ชัน complaint_issue_breakdown_fy (ยอดนับที่กรองรายการอนุญาตแล้ว ไม่มีข้อความดิบ)
+ * คืน null เมื่อไม่ควรแสดง: ไม่มีข้อมูล · ผลรวมไม่เท่ายอดของหมวด (สองคำสั่งอ่านฐานข้อมูลคนละจังหวะ มีเรื่องเข้ามาคั่นได้
+ * ดีกว่าไม่แสดงรอบนี้ แล้วรอบรีเฟรชถัดไปจะตรงเอง) · มีแต่ "ไม่ระบุลักษณะ" (ไม่ได้บอกอะไรเพิ่ม)
+ * @param {{ count: number }} category
+ * @param {Array<{ issue_label: string | null, total: number | string }>} breakdownRows
+ */
+function issueSubItems(category, breakdownRows) {
+  const items = (breakdownRows ?? [])
+    .map(row => ({ label: row.issue_label || UNSPECIFIED_ISSUE_LABEL, count: Number(row.total) || 0, specified: !!row.issue_label }))
+    .filter(item => item.count > 0)
+  if (!items.length || items.reduce((sum, item) => sum + item.count, 0) !== category.count) return null
+  if (!items.some(item => item.specified)) return null
+  // ฐานข้อมูลเรียงให้แล้ว (มาก→น้อย ไม่ระบุอยู่ท้าย) — ไม่เรียงซ้ำ เพื่อไม่ให้สองที่เรียงไม่เหมือนกัน
+  return items.map(({ label, count }) => ({ label, count }))
+}
+
+/**
  * @param {object} args
  * @param {{ total?: number, open?: number, in_progress?: number, resolved?: number, rejected?: number, avg_days?: number | null } | null} args.stats  จาก RPC complaint_stats_fy
  * @param {Array<{ category: string }>} args.rows  จาก complaints_public_fy (มี LIMIT) — ใช้นับหมวดเท่านั้น
+ * @param {{ category: string, rows: Array<{ issue_label: string | null, total: number | string }> } | null} [args.issueBreakdown]
+ *   ยอดแยกตามลักษณะปัญหาของหมวดเดียว (ตอนนี้ light) — ไม่ส่ง = ไม่มีรายการย่อย
  * @param {(code: string) => string} args.labelOf  ชื่อหมวดภาษาไทย (categoryNameOf) — รหัสดิบห้ามหลุด
  * @param {string} args.tenantName
  * @param {ReturnType<typeof monthPeriod>} args.period
  * @param {Date} [args.now]
  */
-export function summarizeMonth({ stats, rows, labelOf, tenantName, period, now = new Date() }) {
+export function summarizeMonth({ stats, rows, labelOf, tenantName, period, issueBreakdown = null, now = new Date() }) {
   const total = Number(stats?.total) || 0
   const resolved = Number(stats?.resolved) || 0
   const ongoing = (Number(stats?.open) || 0) + (Number(stats?.in_progress) || 0)
@@ -140,7 +163,11 @@ export function summarizeMonth({ stats, rows, labelOf, tenantName, period, now =
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'th'))
   const shown = sorted.length > MAX_CATEGORY_ROWS ? sorted.slice(0, MAX_CATEGORY_ROWS - 1) : sorted
   const folded = sorted.slice(shown.length)
-  const categories = shown.map(c => ({ ...c, percent: percentOf(c.count, total) }))
+  const categories = shown.map(c => {
+    const category = { ...c, percent: percentOf(c.count, total) }
+    const subItems = issueBreakdown && c.code === issueBreakdown.category ? issueSubItems(c, issueBreakdown.rows) : null
+    return subItems ? { ...category, subItems } : category
+  })
   if (folded.length) {
     const count = folded.reduce((sum, c) => sum + c.count, 0)
     // ตั้งชื่อ "หมวดที่เหลือ" ไม่ใช้คำว่า "อื่นๆ" เพราะชนกับหมวดจริงชื่อ "อื่นๆ" (รหัส other)

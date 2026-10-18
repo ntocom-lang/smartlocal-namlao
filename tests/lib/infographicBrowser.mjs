@@ -39,3 +39,15 @@ export const YALA_APRIL = {
   categories: { light: 13, other: 11, water: 7, trash: 7, road: 1 },
   labels: { light: 'ไฟฟ้าสาธารณะ', other: 'อื่นๆ', water: 'น้ำประปา', trash: 'ขยะ/ความสะอาด', road: 'ถนน/ทางสาธารณะ' },
 }
+
+/** ยอดแยกตามลักษณะปัญหาของหมวดไฟฟ้า 13 เรื่อง — ตัวเลขสมมติสำหรับดูหน้าตา (ยะลาไม่ได้เผยแพร่ตัวเลขระดับนี้) */
+export const LIGHT_BREAKDOWN = {
+  category: 'light',
+  rows: [
+    { issue_label: 'ไฟดับทั้งดวง', total: 6 },
+    { issue_label: 'ไฟกระพริบ', total: 3 },
+    { issue_label: 'สายไฟชำรุด', total: 2 },
+    { issue_label: 'เสาเอียง/ชำรุด', total: 1 },
+    { issue_label: null, total: 1 },
+  ],
+}

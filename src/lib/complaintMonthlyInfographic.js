@@ -23,6 +23,9 @@ export const IMAGE_MIN_HEIGHT = 1350
 export const FONT_STACK = "Tahoma, 'Leelawadee UI', 'Noto Sans Thai', Thonburi, 'Sukhumvit Set', Arial, sans-serif"
 
 const MARGIN = 64
+// รายการย่อยใต้หมวด: ระยะเยื้องจากชื่อหมวด และระยะระหว่างบรรทัด
+const SUB_INDENT = 22
+const SUB_STEP = 34
 const CONTENT_W = IMAGE_WIDTH - MARGIN * 2
 const INK = '#16324f'
 const MUTED = '#52647a'
@@ -50,6 +53,7 @@ export function buildInfographicModel(summary, { tenantName = '' } = {}) {
     cumulative += category.count
     return {
       code: category.code,
+      subItems: category.subItems ?? [],
       label: category.label,
       count: category.count,
       percent: category.percent,
@@ -206,8 +210,11 @@ export function buildInfographicSvg(model, measure) {
     const textW = IMAGE_WIDTH - MARGIN - textX
     const rows = model.slices.map(slice => {
       const labelLines = wrapLines(slice.label, textW, 30, true, measure)
-      const height = Math.max(iconBox, labelLines.length * 40 + 32) + 18
-      return { slice, labelLines, height }
+      // รายการย่อย (ลักษณะปัญหา) เยื้องเข้าไปใต้บรรทัดยอดของหมวด — ตัดบรรทัดเองเพราะชื่อยาวได้
+      const subLines = slice.subItems.map(item => wrapLines(`${item.label} ${formatCount(item.count)} เรื่อง`, textW - SUB_INDENT, 25, false, measure))
+      const subHeight = subLines.reduce((sum, lines) => sum + lines.length * SUB_STEP, 0)
+      const height = Math.max(iconBox, labelLines.length * 40 + 32 + (subHeight ? subHeight + 4 : 0)) + 18
+      return { slice, labelLines, subLines, height }
     })
     const legendHeight = rows.reduce((sum, row) => sum + row.height, 0) - 18
     const contentHeight = Math.max(R * 2, legendHeight)
@@ -221,12 +228,18 @@ export function buildInfographicSvg(model, measure) {
     text(cx, cy + 32, formatCount(model.total), { size: 84, bold: true, anchor: 'middle' })
     text(cx, cy + 80, 'เรื่อง', { size: 28, fill: MUTED, anchor: 'middle' })
     let rowY = y + (contentHeight - legendHeight) / 2
-    for (const { slice, labelLines, height } of rows) {
+    for (const { slice, labelLines, subLines, height } of rows) {
       rect(legendX, rowY, iconBox, iconBox, slice.color, 14)
       parts.push(iconSvg(iconNodeForCategory(slice.code), legendX + 10, rowY + 10, 32))
       let lineY = rowY + 24
       for (const line of labelLines) { text(textX, lineY, line, { size: 30, bold: true }); lineY += 40 }
       text(textX, lineY - 8, `${formatCount(slice.count)} เรื่อง · ร้อยละ ${formatPercent(slice.percent)}`, { size: 27, fill: MUTED })
+      let subY = lineY - 8 + SUB_STEP
+      for (const lines of subLines) {
+        // จุดนำหน้าเฉพาะบรรทัดแรกของแต่ละรายการ บรรทัดต่อเยื้องเท่ากัน
+        parts.push(`<circle cx="${textX + 7}" cy="${subY - 8}" r="3.5" fill="${slice.color}"/>`)
+        for (const line of lines) { text(textX + SUB_INDENT, subY, line, { size: 25, fill: INK }); subY += SUB_STEP }
+      }
       rowY += height
     }
     y += contentHeight + 44

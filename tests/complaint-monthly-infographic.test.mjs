@@ -5,7 +5,8 @@
 // ไม่ต่อฐานข้อมูล ไม่ใช้เน็ต (บล็อกทุก request ในเบราว์เซอร์)
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
-import { bundleInfographic, YALA_APRIL } from './lib/infographicBrowser.mjs'
+import { readFile } from 'node:fs/promises'
+import { bundleInfographic, YALA_APRIL, LIGHT_BREAKDOWN } from './lib/infographicBrowser.mjs'
 
 process.env.TZ = 'America/Los_Angeles'
 const Info = await import('../src/lib/complaintMonthlyInfographic.js')
@@ -146,6 +147,37 @@ await test('ไอคอน: ทุกหมวดมาตรฐานของ
   }
 })
 
+await test('รายการย่อยในภาพ: วาดใต้หมวดไฟฟ้าพร้อมจุดสีเดียวกับหมวด · หมวดอื่นไม่มี · ภาพสูงขึ้นตามจำนวนบรรทัด', () => {
+  const plainImage = render(summarize())
+  const withItems = render(summarize({ issueBreakdown: LIGHT_BREAKDOWN }))
+  for (const phrase of ['ไฟดับทั้งดวง 6 เรื่อง', 'ไฟกระพริบ 3 เรื่อง', 'สายไฟชำรุด 2 เรื่อง', 'เสาเอียง/ชำรุด 1 เรื่อง', 'ไม่ระบุลักษณะ 1 เรื่อง']) {
+    assert.ok(has(withItems.svg, phrase), `ไม่พบ ${phrase}`)
+    assert.ok(!has(plainImage.svg, phrase), `ภาพที่ไม่มีข้อมูลย่อยต้องไม่มี ${phrase}`)
+  }
+  // ไอคอน lucide บางตัว (เช่น เครื่องหมายคำถามของหมวดอื่นๆ) ก็มี <circle> จึงนับเฉพาะจุดนำหน้ารัศมี 3.5
+  assert.equal((withItems.svg.match(/<circle [^>]*r="3\.5"/g) ?? []).length, 5, 'จุดนำหน้ารายการย่อย 5 จุด')
+  assert.ok(withItems.height > plainImage.height)
+  const purple = Info.SLICE_COLORS[0]
+  assert.equal((withItems.svg.match(new RegExp(`<circle [^>]*r="3\.5" fill="${purple}"`, 'g')) ?? []).length, 5, 'จุดสีเดียวกับชิ้นวงกลมของหมวดไฟฟ้า')
+})
+
+await test('รายการอนุญาตใน SQL = ISSUE_TYPES_BY_CATEGORY ในฟอร์ม ทุกหมวด ทุกตัวอักษร (กันสองที่เพี้ยนกัน)', async () => {
+  const sql = await readFile(new URL('../supabase/migrations/20261018140000_complaint_issue_breakdown_fy.sql', import.meta.url), 'utf8')
+  const form = await readFile(new URL('../src/pages/CitizenForm.jsx', import.meta.url), 'utf8')
+  const fromSql = {}
+  for (const [, category, label] of sql.matchAll(/\(\s*'([a-z_]+)'\s*,\s*'([^']+)'\s*\)/g)) (fromSql[category] ??= []).push(label)
+  const block = form.match(/const ISSUE_TYPES_BY_CATEGORY = \{([\s\S]*?)\r?\n\}/)
+  assert.ok(block, 'หา ISSUE_TYPES_BY_CATEGORY ในฟอร์มไม่เจอ (เปลี่ยนรูปแบบไฟล์? ปรับเทสต์นี้ตาม)')
+  const fromForm = {}
+  for (const [, category, list] of block[1].matchAll(/([a-z_]+):\s*\[([^\]]*)\]/g)) fromForm[category] = [...list.matchAll(/'([^']+)'/g)].map(m => m[1])
+  assert.ok(Object.keys(fromForm).length >= 1 && Object.keys(fromSql).length >= 1)
+  assert.deepEqual(fromSql, fromForm, 'รายการลักษณะปัญหาใน SQL กับในฟอร์มไม่ตรงกัน — ต้องแก้ migration ใหม่ (ไฟล์ใหม่ ห้ามแก้ไฟล์ที่ apply แล้ว) หรือแก้ฟอร์มให้ตรง')
+  // หน้ารายงานดึงยอดเฉพาะหมวดเดียว — ถ้าฟอร์มเพิ่มหมวดที่สองต้องเพิ่มการดึงที่หน้ารายงานด้วย
+  const page = await readFile(new URL('../src/pages/ComplaintStats.jsx', import.meta.url), 'utf8')
+  const pageCategory = page.match(/const ISSUE_BREAKDOWN_CATEGORY = '([a-z_]+)'/)?.[1]
+  assert.deepEqual(Object.keys(fromForm), [pageCategory], 'หมวดที่ฟอร์มมีลักษณะปัญหา ≠ หมวดที่หน้ารายงานดึงยอดย่อย')
+})
+
 // ── ชั้นสอง: Chrome จริง ──
 const bundle = await bundleInfographic()
 const browser = await chromium.launch({ channel: 'chrome' })
@@ -167,6 +199,17 @@ try {
       },
       tenant: 'องค์การบริหารส่วนตำบลที่มีชื่อยาวมากพอสมควรสำหรับทดสอบการขึ้นบรรทัดใหม่ของข้อความในแถบหัวภาพ',
     },
+    subitems: { sample: YALA_APRIL, tenant: 'เทศบาลตำบลสาธิต', breakdown: LIGHT_BREAKDOWN },
+    subitemsLong: {
+      // ชื่อรายการย่อยยาวมาก (ฟอร์มเปลี่ยนรายการในอนาคต) ต้องตัดบรรทัดไม่ล้นขอบ/ไม่ทับรายการถัดไป
+      sample: { stats: { total: 14, resolved: 14 }, categories: { light: 14 }, labels: { light: 'ไฟฟ้าสาธารณะ' } },
+      tenant: 'เทศบาลตำบลสาธิต',
+      breakdown: { category: 'light', rows: [
+        { issue_label: 'ไฟดับทั้งดวงบริเวณทางแยกที่มีผู้สัญจรหนาแน่นและต้องการให้ซ่อมโดยด่วน', total: 7 },
+        { issue_label: 'เสาไฟเอียงล้มทับสายไฟและต้นไม้ริมทางสาธารณะ', total: 4 },
+        { issue_label: 'อื่นๆ', total: 2 }, { issue_label: null, total: 1 },
+      ] },
+    },
     empty: { sample: { stats: { total: 0 }, categories: {}, labels: {} }, tenant: 'เทศบาลตำบลสาธิต' },
     truncated: { sample: { stats: { total: 1500, resolved: 1200, in_progress: 300 }, categories: { a: 1000 }, labels: { a: 'ไฟฟ้า' } }, tenant: 'เทศบาลตำบลสาธิต' },
     single: { sample: { stats: { total: 6, resolved: 6 }, categories: { light: 6 }, labels: { light: 'ไฟฟ้าสาธารณะ' } }, tenant: 'เทศบาลตำบลสาธิต' },
@@ -176,7 +219,8 @@ try {
     const rows = Object.entries(spec.sample.categories).flatMap(([category, n]) => Array.from({ length: n }, () => ({ category })))
     const summary = Sum.summarizeMonth({
       stats: spec.sample.stats, rows, labelOf: c => spec.sample.labels[c] ?? c,
-      tenantName: spec.tenant, period: Sum.monthPeriod(2569, 4), now: new Date('2026-10-18T05:00:00Z'),
+      tenantName: spec.tenant, period: Sum.monthPeriod(2569, 4), issueBreakdown: spec.breakdown ?? null,
+      now: new Date('2026-10-18T05:00:00Z'),
     })
     const model = Info.buildInfographicModel(summary, { tenantName: spec.tenant })
     return Info.buildInfographicSvg(model, Info.createCanvasMeasure())
