@@ -858,7 +858,11 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
         />
       )}
       {detailVeh && (
-        <FleetVehicleDetail vehicle={detailVeh} tenant={tenant} isAdmin={isAdmin} onClose={() => setDetailVeh(null)} />
+        <FleetVehicleDetail vehicle={detailVeh} tenant={tenant} isAdmin={isAdmin} onClose={() => setDetailVeh(null)}
+          typeLabel={typeOptions.find(t => t.value === detailVeh.vehicle_type)?.label ?? detailVeh.vehicle_type ?? ''}
+          statusLabel={STATUS_TH[detailVeh.status] ?? ''} statusColor={STATUS_CLR[detailVeh.status] ?? '#9ca3af'}
+          // ส่วน "ข้อมูลครบ x/y" บอกว่าขาดอะไร ปุ่มนี้พาไปกรอกได้ทันที ไม่ต้องปิดแล้วหาแถวกดแก้ไขเอง
+          onEdit={() => { const v = detailVeh; setDetailVeh(null); openEdit(v) }} />
       )}
       {typesOpen && (
         <VehicleTypeManagerModal tenant={tenant} types={vehicleTypes} setTypes={setVehicleTypes} onClose={() => setTypesOpen(false)} />
