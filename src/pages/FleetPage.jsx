@@ -16,6 +16,12 @@ const FleetBudget = lazy(() => import('../components/fleet/FleetBudget'))
 // adminOnly = เห็นเฉพาะผู้มีสิทธิ์ fleet_admin (หรือ admin/superadmin ของ อปท.)
 // งบประมาณเดิมมี UI อยู่หลัง /admin ทางเดียว ผู้ดูแลยานพาหนะที่ role เป็น staff จึงตั้งงบไม่ได้
 // ทั้งที่ RLS fbudget_write ให้สิทธิ์อยู่แล้ว และแถบงบบนหน้าภาพรวมก็ไม่มีวันขึ้น
+// hidden = ซ่อนจากเมนูทุกบทบาท (โค้ด/ตาราง/สิทธิ์คงไว้ เปิดกลับได้ด้วยการเอา hidden ออก)
+// งบประมาณซ่อนตามที่เจ้าของระบบเลือก 2569-10-18 เพราะยังใช้จริงไม่ได้:
+//   - fleet_budgets ว่างทุก อปท. (ต้องกรอกรายกองรายเดือน 84 ช่อง/ปี ไม่มีใครกรอก)
+//   - แถบงบหน้าภาพรวมนับยอดใช้ตามกองของ "ตัวรถ" แต่รถใช้ร่วมทุกกองไม่มีกอง → ยอดใช้ 0 เสมอ
+//   - ฟอร์มเติมน้ำมันไม่มีช่องกองที่รับภาระ (fleet_fuel_records.department_id ว่างเกือบทั้งหมด)
+// จะเปิดกลับต้องแก้ 3 ข้อนี้ก่อน (ทางเลือก ข. ที่เสนอไว้: งบรายปีรายกอง + ระบบระบุกองที่จ่ายเอง)
 const TABS = [
   { id: 'dashboard',   label: 'ภาพรวม',     sub: 'สถิติและสรุปรวม',     Icon: LayoutDashboard, color: '#1a3a5c', grad: 'linear-gradient(135deg,#1a3a5c,#2d5f8a)' },
   { id: 'vehicles',    label: 'รถและเครื่องยนต์', sub: 'ทะเบียนรถและครุภัณฑ์', Icon: Car,          color: '#2563eb', grad: 'linear-gradient(135deg,#1d4ed8,#3b82f6)' },
@@ -23,7 +29,7 @@ const TABS = [
   { id: 'trips',       label: 'การใช้รถ', sub: 'คำขอและบันทึกการใช้รถ', Icon: Route,           color: '#7c3aed', grad: 'linear-gradient(135deg,#6d28d9,#8b5cf6)' },
   { id: 'maintenance', label: 'ซ่อมบำรุง',  sub: 'ประวัติการซ่อมบำรุง',  Icon: Wrench,          color: '#dc2626', grad: 'linear-gradient(135deg,#b91c1c,#ef4444)' },
   { id: 'report',      label: 'รายงาน',     sub: 'ส่งออก PDF / Excel',   Icon: BarChart2,       color: '#059669', grad: 'linear-gradient(135deg,#047857,#10b981)' },
-  { id: 'budget',      label: 'งบประมาณ',   sub: 'งบน้ำมันรายกอง',      Icon: Wallet,          color: '#0891b2', grad: 'linear-gradient(135deg,#0e7490,#22d3ee)', adminOnly: true },
+  { id: 'budget',      label: 'งบประมาณ',   sub: 'งบน้ำมันรายกอง',      Icon: Wallet,          color: '#0891b2', grad: 'linear-gradient(135deg,#0e7490,#22d3ee)', adminOnly: true, hidden: true },
 ]
 
 /* ── ปุ่มเปิดคู่มือการใช้งาน (เปิดแท็บใหม่ ไม่ทับหน้าที่กำลังทำงานอยู่) ── */
@@ -229,7 +235,7 @@ export default function FleetPage({ onBack } = {}) {
   const activeTab = tab ?? 'dashboard'
 
   // แท็บที่ผู้ใช้คนนี้เห็นจริง — งบประมาณเปิดให้เฉพาะผู้ดูแลระบบยานพาหนะ ตรงกับ RLS fbudget_write
-  const visibleTabs = TABS.filter(t => !t.adminOnly || isAdmin)
+  const visibleTabs = TABS.filter(t => !t.hidden && (!t.adminOnly || isAdmin))
 
   const contentNode = (
     <Suspense fallback={
@@ -244,7 +250,7 @@ export default function FleetPage({ onBack } = {}) {
       {activeTab === 'trips'       && <FleetTrips       {...ctx} />}
       {activeTab === 'maintenance' && <FleetMaintenance {...ctx} />}
       {activeTab === 'report'      && <FleetReport      tenant={tenant} depts={depts} />}
-      {activeTab === 'budget' && isAdmin && <FleetBudget tenant={tenant} depts={depts} />}
+      {activeTab === 'budget' && isAdmin && !TABS.find(t => t.id === 'budget')?.hidden && <FleetBudget tenant={tenant} depts={depts} />}
     </Suspense>
   )
 
