@@ -3,7 +3,9 @@ import { X, Route, Fuel, Wrench, Gauge, CalendarClock } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { assetIdentifier, isVehicleAsset } from '../../lib/fleetAssets'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import { form5DateText, INCIDENT_KIND_LABEL } from '../../lib/fleetForm5Print'
 import FleetEmptyState from './FleetEmptyState'
+import FleetIncidentModal from './FleetIncidentModal'
 
 const fmt  = n => (n ?? 0).toLocaleString('th-TH')
 const fmtB = n => `฿${fmt(Math.round(n ?? 0))}`
@@ -27,8 +29,12 @@ function monthKey(dateStr) {
 
 function isoDate(d) { return d.toISOString().slice(0, 10) }
 
-export default function FleetVehicleDetail({ vehicle, tenant, onClose }) {
+export default function FleetVehicleDetail({ vehicle, tenant, isAdmin = false, onClose }) {
   const [loading, setLoading] = useState(true)
+  // แบบ 5 รายงานเหตุสูญหาย/เสียหาย — ผู้ดูแลยานพาหนะเท่านั้น (RLS fleet_is_manager กันซ้ำ)
+  // กรณีไม่มีทริปผูก (เช่น รถหาย/เสียหายระหว่างจอด) สร้างจากที่นี่ · ทุกปีงบประมาณ ไม่กรองตามช่วง
+  const [incidents, setIncidents] = useState([])
+  const [incidentModal, setIncidentModal] = useState(null) // { id } | { id: null } = รายงานใหม่
   const [months,  setMonths]  = useState([]) // [{ key, label, trips, distance, fuelLiters, fuelCost, maintCost }]
   const [totals,  setTotals]  = useState({ trips: 0, distance: 0, fuelLiters: 0, fuelCost: 0, maintCost: 0 })
   // อัตราสิ้นเปลืองคิดแบบ full-to-full จาก efficiency_kml ที่ trigger ฝั่ง DB คำนวณให้ต่อการเติมแต่ละครั้ง
@@ -112,6 +118,21 @@ export default function FleetVehicleDetail({ vehicle, tenant, onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant?.id, vehicle?.id, from, to])
 
+  // ดึงเฉพาะข้อเท็จจริงของเหตุ ไม่ดึงตารางบุคคล — รายการนี้แค่ให้เลือกเปิด
+  function loadIncidents() {
+    if (!isAdmin || !tenant?.id || !vehicle?.id) return
+    supabase.from('fleet_incidents')
+      .select('id,incident_kind,incident_date,report_date,location,trip_id')
+      .eq('municipality_id', tenant.id).eq('vehicle_id', vehicle.id)
+      .order('incident_date', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) console.error('FleetVehicleDetail incidents error:', error.message)
+        setIncidents(data ?? [])
+      })
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { queueMicrotask(loadIncidents) }, [isAdmin, tenant?.id, vehicle?.id])
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-4">
@@ -177,10 +198,45 @@ export default function FleetVehicleDetail({ vehicle, tenant, onClose }) {
                   </div>
                 )}
               </div>
+
+              {isAdmin && isVehicleAsset(vehicle) && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">รายงานเหตุสูญหาย/เสียหาย (แบบ 5)</p>
+                    <button onClick={() => setIncidentModal({ id: null })}
+                      className="px-2 py-1 rounded-lg text-[11px] font-bold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100">
+                      + รายงานเหตุ
+                    </button>
+                  </div>
+                  {incidents.length === 0 ? (
+                    <p className="text-[11px] text-gray-400">ยังไม่มีรายงาน · เหตุระหว่างใช้รถรายงานจากรายละเอียดการใช้รถได้เลย ระบบเติมวันที่/ปลายทางให้</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {incidents.map(item => (
+                        <button key={item.id} onClick={() => setIncidentModal({ id: item.id })}
+                          className="w-full text-left flex items-center justify-between gap-2 bg-red-50/60 hover:bg-red-50 rounded-xl px-3 py-2.5">
+                          <span className="text-xs font-bold text-gray-700 shrink-0">{form5DateText(item.incident_date || item.report_date) || '—'}</span>
+                          <span className="flex-1 min-w-0 truncate text-[11px] text-gray-500">{item.location || '—'}</span>
+                          <span className="text-[10px] font-bold text-red-600 shrink-0">{INCIDENT_KIND_LABEL[item.incident_kind] ?? ''}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
       </div>
+      {incidentModal && (
+        <FleetIncidentModal
+          tenant={tenant}
+          vehicle={vehicle}
+          incidentId={incidentModal.id}
+          onClose={() => setIncidentModal(null)}
+          onSaved={loadIncidents}
+        />
+      )}
     </div>
   )
 }

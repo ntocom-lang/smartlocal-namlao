@@ -858,7 +858,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
         />
       )}
       {detailVeh && (
-        <FleetVehicleDetail vehicle={detailVeh} tenant={tenant} onClose={() => setDetailVeh(null)} />
+        <FleetVehicleDetail vehicle={detailVeh} tenant={tenant} isAdmin={isAdmin} onClose={() => setDetailVeh(null)} />
       )}
       {typesOpen && (
         <VehicleTypeManagerModal tenant={tenant} types={vehicleTypes} setTypes={setVehicleTypes} onClose={() => setTypesOpen(false)} />

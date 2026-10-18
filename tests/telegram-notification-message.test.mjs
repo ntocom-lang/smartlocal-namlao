@@ -442,6 +442,37 @@ assert.match(maintenanceMsg, /^นัดครั้งถัดไป: .*2570 �
 assert.ok(maintenanceMsg.endsWith(`\n${rule('🟡')}`), maintenanceMsg)
 assert.equal(/ค่าใช้จ่าย/.test(B.fleet_maintenance_created({ ...maintenance, cost: 0 })), false, 'ค่าใช้จ่าย 0 บาทต้องไม่ขึ้น')
 assert.match(B.fleet_maintenance_created({ ...maintenance, maintenance_type: 'zzz' }), /^ประเภท: อื่นๆ$/m)
+assert.match(B.fleet_maintenance_created({ ...maintenance, maintenance_type: 'emission' }), /^ประเภท: ตรวจวัดมลพิษ$/m)
+
+// แบบ 5 รายงานเหตุ — ⚠️ PDPA: ข้อความบอกแค่รถ/วันเวลา/สถานที่ ห้ามมีคู่กรณี/ผู้บาดเจ็บ/พยาน
+const incident = {
+  id: 'cc000000-1111-4222-8333-444455556666', incident_kind: 'damage', incident_date: '2026-10-18',
+  incident_time: '14:05:00', location: 'ถนนสาย 101 หน้าโรงเรียน', vehicle: maintenance.vehicle,
+  // ช่องเหล่านี้ไม่ได้ select มา แต่ถ้ามีคนเพิ่มเข้า select ข้อความต้องไม่หยิบไปใช้
+  damage: 'กันชนหน้าบุบ นายสมชาย บาดเจ็บ', other_cause: 'นายสมศักดิ์ ขับตัดหน้า', case_result: 'ตกลงกันได้',
+}
+const incidentMsg = B.fleet_incident_reported(incident)
+assert.ok(incidentMsg.startsWith('🚨 <b>รายงานเหตุความเสียหายยานพาหนะ (แบบ 5)</b>\n'), incidentMsg)
+assert.match(incidentMsg, /^ยานพาหนะ: .*กข 1234/m)
+assert.match(incidentMsg, /^เหตุเกิดเมื่อ: .*2569 เวลา 14:05 น\.$/m)
+assert.match(incidentMsg, /^สถานที่: ถนนสาย 101 หน้าโรงเรียน$/m)
+for (const leaked of ['สมชาย', 'สมศักดิ์', 'กันชน', 'ตกลงกันได้']) {
+  assert.equal(incidentMsg.includes(leaked), false, `⚠️ PDPA: ข้อความรายงานเหตุหลุด "${leaked}"`)
+}
+assert.ok(B.fleet_incident_reported({ ...incident, incident_kind: 'loss' }).startsWith('🚨 <b>รายงานเหตุสูญหายยานพาหนะ (แบบ 5)</b>'))
+// ไม่มีวัน/สถานที่ ต้องไม่เหลือหัวข้อว่าง
+const incidentSparse = B.fleet_incident_reported({ id: 'x', incident_kind: 'damage', vehicle: maintenance.vehicle })
+assert.equal(/^(เหตุเกิดเมื่อ|สถานที่):/m.test(incidentSparse), false, incidentSparse)
+// select ของ edge ต้องไม่แตะตารางบุคคลหรือช่องข้อความอิสระของรายงาน
+const incidentSelect = source.match(/spec\.table === 'fleet_incidents'[\s\S]*?\? '([^']+)'/)[1]
+for (const column of ['fleet_incident_people', 'damage', 'other_', 'case_result', 'police_station', 'addressee']) {
+  assert.equal(incidentSelect.includes(column), false, `⚠️ PDPA: select ของรายงานเหตุห้ามมี '${column}'`)
+}
+// ป้ายประเภทเหตุต้องตรงกับใบพิมพ์แบบ 5
+const { INCIDENT_KIND_LABEL: clientIncidentKinds } = await import('../src/lib/fleetForm5Print.js')
+const edgeIncidentKinds = Object.fromEntries([...source.match(/const INCIDENT_KIND_LABEL: Record<string, string> = \{([\s\S]*?)\n\}/)[1]
+  .matchAll(/(\w+):\s*'([^']+)'/g)].map((m) => [m[1], m[2]]))
+assert.deepEqual(edgeIncidentKinds, clientIncidentKinds, 'ป้ายประเภทเหตุใน Telegram ต้องตรงกับ src/lib/fleetForm5Print.js')
 
 const fuelMsg = buildFleetFuelCreatedMessage({
   id: 'bb000000-1111-4222-8333-444455556666', filled_at: '2026-09-13', liters: 40, price_per_liter: 30.5,
@@ -504,7 +535,7 @@ assert.notEqual(
 for (const message of [
   complaintNew, complaintStatus, created, permit, docStatus, fee, waitlisted,
   tripAuto, tripPending, tripApproved, tripRejected, tripCancelled, tripDeparted, tripReturned, equipmentReturned,
-  repairStarted, repairFinished, maintenanceMsg, fuelMsg, bumpedMsg,
+  repairStarted, repairFinished, maintenanceMsg, fuelMsg, bumpedMsg, incidentMsg, incidentSparse,
 ]) {
   assert.equal(message.includes('\n\n'), false, `ต้องไม่มีบรรทัดว่าง:\n${message}`)
   assert.equal(/: *$/m.test(message), false, `ต้องไม่มีหัวข้อที่ไม่มีค่าตามหลัง:\n${message}`)

@@ -12,6 +12,7 @@ import {
   organizationSignatories, pickSignatory, signatoryMoment, signatoryName, signatoryTitle,
 } from '../../lib/documentSignatories'
 import FleetEmptyState from './FleetEmptyState'
+import FleetIncidentModal from './FleetIncidentModal'
 import ResponsiveSelect from '../common/ResponsiveSelect'
 
 const STATUS_LABEL = {
@@ -580,6 +581,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   const [loading,   setLoading]   = useState(true)
   const [modal,     setModal]     = useState(null) // 'reserve'|'direct'|'depart'|'return'
   const [selTrip,   setSelTrip]   = useState(null)
+  // แบบ 5 รายงานเหตุสูญหาย/เสียหาย — ซ้อนบนหน้าต่างรายละเอียดทริป (ปิดแล้วกลับมาที่ทริปเดิม)
+  const [incidentTrip, setIncidentTrip] = useState(null)
   const [form,      setForm]      = useState({})
   const [saving,    setSaving]    = useState(false)
   const [conflict,  setConflict]  = useState(null) // null | { trips: [...conflicting fleet_trips], altVehicles: [...vehicles] }
@@ -2286,6 +2289,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         // ทริปที่ปิดแล้วแก้เลขไมล์ได้เฉพาะผู้ดูแล (DB ตรวจซ้ำด้วย fleet_is_manager) พร้อมเหตุผลทุกครั้ง
         // เดิมไม่มีทางแก้เลย เลขที่พิมพ์ผิดครั้งเดียวจึงถูกระบบเติมต่อให้ทริปถัดไปผิดตามทั้งชุด
         const canFixOdometer = t.status === 'completed' && isAdmin
+        // แบบ 5 (ข้อ 18) เกิดได้เฉพาะตอนรถออกไปแล้ว · ข้อมูลคู่กรณี/พยาน = ผู้ดูแลยานพาหนะเท่านั้น (RLS ซ้ำอีกชั้น)
+        const canReportIncident = isAdmin && ['in_progress', 'completed'].includes(t.status)
         return (
           <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-4">
             <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl">
@@ -2349,7 +2354,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                   {t.notes && <div className="col-span-2"><p className="text-gray-400">หมายเหตุ</p><p className="font-semibold text-gray-700">{t.notes}</p></div>}
                 </div>
               </div>
-              <div className={`grid grid-cols-1 gap-2 px-5 pb-5 pt-3 border-t border-gray-100 ${canEdit || canFixOdometer ? 'sm:grid-cols-2' : ''}`}>
+              <div className={`grid grid-cols-1 gap-2 px-5 pb-5 pt-3 border-t border-gray-100 ${canEdit || canFixOdometer || canReportIncident ? 'sm:grid-cols-2' : ''}`}>
                 <button onClick={() => printTripRequest(t)}
                   className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50">
                   <Printer size={15} /> พิมพ์ใบขอใช้รถ (แบบ 3)
@@ -2369,11 +2374,25 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                     ✏️ แก้เลขไมล์
                   </button>
                 )}
+                {canReportIncident && (
+                  <button onClick={() => setIncidentTrip(t)}
+                    className="rounded-xl border border-red-200 bg-red-50 py-3 text-sm font-bold text-red-600 hover:bg-red-100">
+                    🚨 รายงานเหตุสูญหาย/เสียหาย (แบบ 5)
+                  </button>
+                )}
               </div>
             </div>
           </div>
         )
       })()}
+      {incidentTrip && (
+        <FleetIncidentModal
+          tenant={tenant}
+          vehicle={{ ...incidentTrip.vehicle, id: incidentTrip.vehicle_id }}
+          trip={incidentTrip}
+          onClose={() => setIncidentTrip(null)}
+        />
+      )}
 
       {/* ขอใช้รถ / แก้ไขคำขอใช้รถ */}
       {modal === 'reserve' && (
