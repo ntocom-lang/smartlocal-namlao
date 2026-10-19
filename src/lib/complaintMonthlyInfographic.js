@@ -15,7 +15,7 @@
 // ไฟล์นี้ต้องไม่แตะ DOM ตอนโหลดโมดูล — เทสต์รันด้วย node (ตัววัดข้อความส่งเข้ามาจากผู้เรียก)
 
 import { iconNodeForCategory } from './complaintCategoryIcons.js'
-import { formatCount, formatDecimal, formatPercent } from './complaintMonthlySummary.js'
+import { formatCount, formatPercent } from './complaintMonthlySummary.js'
 import { QUIET_MODULES, qrLayout } from './qrSvg.js'
 
 export const IMAGE_WIDTH = 1080
@@ -79,8 +79,6 @@ export function buildInfographicModel(summary, { tenantName = '', reportUrl = ''
     resolved: { count: summary.resolved, percent: summary.resolvedPercent },
     ongoing: { count: summary.ongoing, percent: summary.ongoingPercent },
     rejected: { count: summary.rejected, percent: summary.rejectedPercent },
-    // วันเฉลี่ยจากแจ้งถึงเสร็จ (วันตามปฏิทิน นับเฉพาะเรื่องที่เสร็จ) — null เมื่อยังไม่มีเรื่องไหนเสร็จ ต้องไม่กลายเป็น "0 วัน"
-    avgDays: summary.avgDays == null || !Number.isFinite(Number(summary.avgDays)) ? null : Number(summary.avgDays),
     reportUrl: String(reportUrl ?? '').trim(),
     notes,
     asOf: summary.asOf,
@@ -347,13 +345,9 @@ export function buildInfographicSvg(model, measure) {
     text(x + 28, y + 190, `${formatCount(card.data.count)} เรื่อง`, { size: 30, fill: card.palette.fg })
   }
   y += cardH
-  if (model.avgDays !== null) {
-    // สิ่งที่ชาวบ้านอยากรู้ที่สุดคือ "แจ้งแล้วนานไหม" ไม่ใช่ร้อยละ — คำกำกับ "นับเฉพาะเรื่องที่เสร็จแล้ว" ห้ามตัด
-    // เพราะเรื่องที่ค้างนานไม่ถูกนับ ตัวเลขนี้จึงดูดีกว่าความจริงได้ (ใบ A4 เขียนกำกับไว้เหมือนกัน)
-    y += 48
-    const step = Math.round(28 * 1.4)
-    y = block(MARGIN, y, `ใช้เวลาเฉลี่ยจากแจ้งเรื่องถึงดำเนินการแล้วเสร็จ ${formatDecimal(model.avgDays)} วัน (นับเฉพาะเรื่องที่เสร็จแล้ว)`, CONTENT_W, { size: 28, fill: INK }) - step
-  }
+  // ภาพนี้ "ไม่แสดงระยะเวลาเฉลี่ย" โดยเจตนา (เจ้าของระบบสั่ง 2569-10-19 หลังเห็น "8.9 วัน" ของน้ำเลา: ภาพที่ลงกลุ่มชาวบ้าน
+  // เห็นแค่ตัวเลขเดียวแล้วถูกตีความเป็น "ช้า" โดยไม่เห็นบริบท) ค่านี้ยังอยู่ในหน้ารายงานและใบ A4 ที่มีคำอธิบายครบ
+  // เทสต์ล็อกไว้ว่าภาพไม่มีข้อความนี้ ถ้าจะนำกลับมาต้องให้เจ้าของระบบสั่งใหม่
   if (model.rejected.count > 0) {
     y += 44
     text(MARGIN, y, `ไม่รับเรื่อง/ยกเลิก ${formatCount(model.rejected.count)} เรื่อง (ร้อยละ ${formatPercent(model.rejected.percent)})`, { size: 28, fill: MUTED })

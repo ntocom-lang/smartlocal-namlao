@@ -182,7 +182,7 @@ await test('รายการอนุญาตใน SQL = ISSUE_TYPES_BY_CATE
   assert.deepEqual(Object.keys(fromForm), [pageCategory], 'หมวดที่ฟอร์มมีลักษณะปัญหา ≠ หมวดที่หน้ารายงานดึงยอดย่อย')
 })
 
-// ── "แจ้งเรื่อง/ติดตามเรื่อง" + เวลาเฉลี่ย (ทางต่อให้ชาวบ้านหลังอ่านภาพ) ──
+// ── "แจ้งเรื่อง/ติดตามเรื่อง" (ทางต่อให้ชาวบ้านหลังอ่านภาพ) + ภาพต้องไม่มีระยะเวลาเฉลี่ย ──
 const REPORT_URL = 'https://namlao.rk-networks.com/complaint'
 const withAvg = avg => summarize({ stats: { ...YALA_APRIL.stats, avg_days: avg } })
 const renderWith = (summary, reportUrl) =>
@@ -213,17 +213,22 @@ await test('QR: ข้อความว่าง/ยาวเกินควา
   assert.ok(Qr.qrLayout('https://ตัวอย่าง.ไทย/แจ้งเรื่อง', 252), 'ลิงก์ที่มีอักษรไทยต้องเข้ารหัสได้')
 })
 
-await test('เวลาเฉลี่ย: มีค่า = แถว "ใช้เวลาเฉลี่ย X วัน" พร้อมคำกำกับ · ไม่มีค่า (ยังไม่มีเรื่องเสร็จ) = ไม่มีแถว ไม่ใช่ "0 วัน"', () => {
-  const shown = renderWith(withAvg(3.4), '')
-  assert.ok(has(shown.svg, 'ใช้เวลาเฉลี่ยจากแจ้งเรื่องถึงดำเนินการแล้วเสร็จ 3.4 วัน (นับเฉพาะเรื่องที่เสร็จแล้ว)'))
-  const none = renderWith(summarize(), '') // ยะลา: avg_days null
-  assert.ok(!has(none.svg, 'ใช้เวลาเฉลี่ย') && !has(none.svg, 'วัน(นับ'))
-  assert.ok(shown.height > none.height, 'มีแถวเพิ่มภาพต้องสูงขึ้น')
-  // แก้ในวันเดียวกันได้ 0 วันจริง ต้องแสดง ไม่ถูกมองเป็น "ไม่มีค่า"
-  assert.ok(has(renderWith(withAvg(0), '').svg, 'เสร็จ 0 วัน'))
-  for (const bad of [undefined, NaN, 'abc', Infinity]) {
-    assert.equal(Info.buildInfographicModel(summarize({ stats: { ...YALA_APRIL.stats, avg_days: bad } }), {}).avgDays, null, `avg_days=${String(bad)}`)
+// เจ้าของระบบสั่ง 2569-10-19: ภาพที่ลงกลุ่มชาวบ้านต้องไม่โชว์ระยะเวลาเฉลี่ย (เห็นเลขเดียวแล้วถูกตีความว่า "ช้า") —
+// ค่านี้ยังอยู่ในหน้ารายงานและใบ A4 ที่มีคำอธิบายครบ เทสต์นี้กันการเอากลับมาโดยไม่ตั้งใจ
+await test('ภาพไม่มีระยะเวลาเฉลี่ยในทุกกรณี (ค่าปกติ/0/ไม่มีค่า/ใหญ่ผิดปกติ) · ความสูงภาพไม่ขึ้นกับค่านั้น · ใบสรุปยังถือค่าไว้ให้ใบ A4', () => {
+  const baseline = renderWith(summarize(), REPORT_URL)
+  for (const avg of [3.4, 8.9, 0, 120, null, undefined, NaN]) {
+    const summary = withAvg(avg)
+    const { svg, height } = renderWith(summary, REPORT_URL)
+    for (const phrase of ['ใช้เวลาเฉลี่ย', 'ระยะเวลาเฉลี่ย', 'เฉลี่ยจากแจ้งเรื่อง', 'นับเฉพาะเรื่องที่เสร็จ']) {
+      assert.ok(!has(svg, phrase), `avg_days=${String(avg)}: ภาพมี "${phrase}"`)
+    }
+    // ตัวเลขตามด้วย "วัน" (ไม่ใช่ "วันที่") = ระยะเวลาเป็นวัน ต้องไม่มีในภาพ
+    assert.ok(!/\d(?:\.\d+)?วัน(?!ที่)/.test(plain(svg)), `avg_days=${String(avg)}: มีตัวเลขจำนวนวันในภาพ`)
+    assert.equal(height, baseline.height, `avg_days=${String(avg)}: ความสูงเปลี่ยน`)
+    assert.ok(!('avgDays' in Info.buildInfographicModel(summary, {})), 'โมเดลภาพต้องไม่แบกค่านี้')
   }
+  assert.equal(withAvg(8.9).avgDays, 8.9, 'ใบสรุปต้องยังมีค่านี้ (ใบ A4 กับหน้ารายงานใช้)')
 })
 
 await test('กล่อง "แจ้งเรื่อง · ติดตามเรื่องของท่าน": ไม่ส่งลิงก์ = ไม่มีกล่อง · ส่งแล้ว = QR (ดำบนขาว) + ลิงก์ตัวอักษรไม่มี https://', () => {
@@ -390,7 +395,7 @@ try {
     truncated: { sample: { stats: { total: 1500, resolved: 1200, in_progress: 300 }, categories: { a: 1000 }, labels: { a: 'ไฟฟ้า' } }, tenant: 'เทศบาลตำบลสาธิต' },
     single: { sample: { stats: { total: 6, resolved: 6 }, categories: { light: 6 }, labels: { light: 'ไฟฟ้าสาธารณะ' } }, tenant: 'เทศบาลตำบลสาธิต' },
   }
-  // กล่อง "แจ้งเรื่อง/ติดตามเรื่อง" + แถวเวลาเฉลี่ย: ทุกเคสด้านล่างต้องผ่านการตรวจล้นขอบ/ทับกันเหมือนเคสอื่น
+  // กล่อง "แจ้งเรื่อง/ติดตามเรื่อง" + กล่อง QR: ทุกเคสด้านล่างต้องผ่านการตรวจล้นขอบ/ทับกันเหมือนเคสอื่น
   const WITH_AVG = { ...YALA_APRIL, stats: { ...YALA_APRIL.stats, avg_days: 3.4 } }
   CASES.reported = { sample: WITH_AVG, tenant: 'องค์การบริหารส่วนตำบลน้ำเลา', reportUrl: REPORT_URL }
   CASES.reportedEmpty = { sample: { stats: { total: 0 }, categories: {}, labels: {} }, tenant: 'องค์การบริหารส่วนตำบลทุ่งแค้ว', reportUrl: REPORT_URL }
@@ -531,7 +536,7 @@ try {
     assert.ok(height >= 1350 && height <= 1400, `สูง ${height}px`)
   })
 
-  await test('ภาพที่มี QR + เวลาเฉลี่ย สูงขึ้นแต่ไม่เกิน 1750 (ตัวอย่างปกติ) — กล่องนี้ห้ามบวมเกินที่ตั้งใจ', async () => {
+  await test('ภาพที่มี QR สูงขึ้นแต่ไม่เกิน 1750 (ตัวอย่างปกติ) — กล่องนี้ห้ามบวมเกินที่ตั้งใจ', async () => {
     const { height } = await build('reported')
     assert.ok(height > 1400 && height <= 1750, `สูง ${height}px`)
   })
