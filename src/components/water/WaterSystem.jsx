@@ -3,16 +3,16 @@ import { ExternalLink, Waves } from 'lucide-react'
 import RelationPill from './RelationPill'
 import { useDamHistory } from './useDamHistory'
 import {
-  NO_LIVE_TEXT, STALE_DIAGRAM_MONTHS, SYSTEM_DISCLAIMER_LINE, TREND_MIN_DAYS, UPSTREAM_DEPTH_NOTE, bangkokISODate, damTrendSummary, diagramAge, liveState,
-  relationOf, resolveSystem, systemById, thaiDate, trendFactText,
+  NO_LIVE_TEXT, STALE_DIAGRAM_MONTHS, SYSTEM_DISCLAIMER_LINE, TREND_MIN_DAYS, TREND_WINDOW_DAYS, UPSTREAM_DEPTH_NOTE, bangkokISODate, damTrendSummary, diagramAge, liveState,
+  relationOf, resolveSystem, systemById, systemCountsText, systemHasDams, thaiDate, trendFactText,
 } from '../../lib/waterSystem/model'
-import { DAM_STALE_HOURS, damSameInfo, damSameText, dataDayText, distanceText, isStale, stationPlace, toNum } from '../../lib/waterSituation'
 
 // ส่วน "ระบบน้ำของตำบล" บน /water-situation (ดีไซน์ฉบับปิด docs/water-system.md) — อ่านอย่างเดียว ไม่มีช่องกรอก
-//   ก่อนถึงตำบล → ในตำบล → ไหลต่อไปที่ + การ์ดแหล่งน้ำที่เกี่ยวข้อง (ค่าสด + แนวโน้ม 30 วันของอ่างต้นน้ำ) + "ผังมีแต่เราไม่ได้ใส่" + ที่มา/อายุผัง
+//   ก่อนถึงตำบล → ในตำบล → ไหลต่อไปที่ + การ์ดแนวโน้ม 30 วันของอ่างต้นน้ำ + "ผังมีแต่เราไม่ได้ใส่" + ที่มา/อายุผัง
+// การ์ดแนวโน้มมีเฉพาะแนวโน้ม — ตัวเลขล่าสุด/ป้ายค่าสด/คำเตือนตัวเลขซ้ำเดิม/คำอธิบายความสัมพันธ์อยู่ที่การ์ดอ่างเดิมของหน้าอยู่แล้ว ไม่แสดงซ้ำ (ชาวบ้านเห็นข้อความเดียวกันสองที่จะสับสน)
 // ค่าสดมาจาก stations ที่หน้าโหลดอยู่แล้ว · แนวโน้มมาจาก get_public_dam_history (เรียกครั้งเดียว) · ไม่พยากรณ์ ไม่บอกเวลาน้ำถึง
 
-const KIND_ICON = { stream: '≋', reservoir: '▲', weir: '┃', canal: '≋', pond: '◯', pump: 'Ⓟ', supply: '⊠', gauge: '◉', rain: '◉' }
+const KIND_ICON = { stream: '≋', reservoir: '▲', weir: '┃', canal: '≋', pond: '◯', pump: 'Ⓟ', supply: '⊠', gauge: '◉', rain: '◉', gate: '◆', other: '□' }
 const COLLAPSED_COUNT = 3
 
 function Tag({ tone, children }) {
@@ -85,7 +85,7 @@ function TrendChart({ chart, label }) {
 }
 
 function TrendPanel({ history, code }) {
-  if (history.status === 'loading') return <div className="mt-3 h-[72px] animate-pulse rounded-xl bg-gray-100" aria-hidden="true" />
+  if (history.status === 'loading' || history.status === 'idle') return <div className="mt-3 h-[72px] animate-pulse rounded-xl bg-gray-100" aria-hidden="true" />
   if (history.status !== 'ok') return null // โหลดไม่สำเร็จ = ซ่อนเฉพาะกราฟ ไม่แสดง error ดิบ
   const dam = history.dams.find(d => d.station_code === code)
   const summary = damTrendSummary(dam?.readings)
@@ -111,49 +111,37 @@ function TrendPanel({ history, code }) {
   )
 }
 
-function RelatedDamCard({ code, station, relation, system, history, now, homeAmphoe }) {
-  const percent = toNum(station.storage_percent)
-  const hasValue = Boolean(station.recorded_at) && toNum(station.dam_storage_mcm) !== null
-  const stale = Boolean(station.recorded_at) && isStale(station.recorded_at, now, DAM_STALE_HOURS)
-  const same = hasValue && !stale ? damSameInfo(station) : null
-  const day = dataDayText(station.recorded_at, now)
-  const meta = [stationPlace(station, homeAmphoe), distanceText(station.distance_km), hasValue ? (day === 'วันนี้' ? 'ข้อมูลของวันนี้' : `ข้อมูลวันที่ ${day}`) : ''].filter(Boolean).join(' · ')
-  const wantsTrend = relation.key === 'upstream' || relation.key === 'inside'
+function DamTrendCard({ code, station, relation, history }) {
+  // การ์ดนี้มีแต่แนวโน้ม — โหลดประวัติไม่สำเร็จ = ซ่อนทั้งการ์ด (ส่วนอื่นของหน้าอยู่ครบ ไม่แสดง error ดิบ)
+  if (history.status === 'error') return null
   return (
-    <div data-related-dam={code} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+    <div data-related-dam={code} className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-base font-bold leading-tight text-gray-900">{station.station_name}</p>
-          <p className="mt-0.5 text-xs text-gray-500">{meta}</p>
+          <p className="text-sm font-bold leading-tight text-gray-900">{station.station_name}</p>
+          <p className="mt-0.5 text-xs text-gray-500">แนวโน้มปริมาณน้ำในอ่าง {TREND_WINDOW_DAYS} วัน</p>
         </div>
         <RelationPill relation={relation} />
       </div>
-      <div className="mt-2 flex items-baseline justify-between gap-2">
-        {hasValue && percent !== null && !stale
-          ? <span className="text-3xl font-bold text-gray-900">{percent.toLocaleString('th-TH', { maximumFractionDigits: 1 })}%</span>
-          : <span className="text-sm text-gray-500">{hasValue && stale ? `ไม่มีข้อมูลใหม่ตั้งแต่ ${day}` : NO_LIVE_TEXT}</span>}
-        {hasValue && !stale && <Tag tone="live">ค่าสด</Tag>}
-      </div>
-      {same && <p className="mt-1 text-xs font-semibold text-amber-800">{damSameText(same, now)} — ต้นทางอาจยังไม่ได้ปรับข้อมูล</p>}
-      {relation.note && <p className="mt-2 text-xs leading-snug text-gray-600">{relation.note}</p>}
-      {wantsTrend && <TrendPanel history={history} code={code} />}
-      {percent !== null && percent > 100 && <p className="mt-1 text-xs text-gray-500">เกิน 100% = เกินความจุที่ระดับเก็บกักปกติ</p>}
-      {system && <a href={`#water-dam-${code}`} className="mt-1 inline-flex min-h-[44px] items-center text-sm font-bold text-sky-700">ดูรายละเอียดอ่างนี้ในหัวข้ออ่างเก็บน้ำ ↑</a>}
+      <TrendPanel history={history} code={code} />
+      <a href={`#water-dam-${code}`} className="mt-1 inline-flex min-h-[44px] items-center text-sm font-bold text-sky-700">ดูตัวเลขล่าสุดของอ่างนี้ในหัวข้ออ่างเก็บน้ำ ↑</a>
     </div>
   )
 }
 
-export default function WaterSystem({ slug, tenantId, stations, now, previewId, homeAmphoe }) {
+export default function WaterSystem({ slug, tenantId, stations, now, previewId }) {
   const selection = resolveSystem(slug, previewId)
   const system = selection ? systemById(selection.system) : null
-  const history = useDamHistory(tenantId, Boolean(system))
+  // ตำบลที่ไม่มีอ่างขนาดกลาง (ตำหนักธรรม ทุ่งแค้ว) ไม่เรียกประวัติอ่างเลย — ไม่มีการ์ดอ่างให้ใช้
+  const history = useDamHistory(tenantId, Boolean(system) && systemHasDams(system))
   if (!system) return null
 
   const age = diagramAge(system, now)
   const related = Object.entries(system.relations)
     .filter(([key]) => key.startsWith('dam:'))
     .map(([key]) => ({ code: key.slice(4), station: (stations || []).find(s => s.station_type === 'dam' && s.station_code === key.slice(4)), relation: relationOf(system, 'dam', key.slice(4)) }))
-    .filter(item => item.station && item.relation)
+    // แนวโน้มมีเฉพาะอ่างที่เป็นต้นน้ำ/อยู่ในตำบล — สายข้างเคียงมีป้ายและคำอธิบายที่การ์ดอ่างเดิมอยู่แล้ว
+    .filter(item => item.station && item.relation && ['upstream', 'inside'].includes(item.relation.key))
 
   return (
     <section id="water-system" data-water-system={system.id} className="space-y-3" aria-labelledby="water-system-title">
@@ -179,16 +167,13 @@ export default function WaterSystem({ slug, tenantId, stations, now, previewId, 
       <div className="space-y-2 lg:grid lg:grid-cols-3 lg:items-start lg:gap-3 lg:space-y-0">
         <Step index={1} title="ก่อนถึงตำบล" nodes={system.upstream} stations={stations} footnote={UPSTREAM_DEPTH_NOTE} />
         <Step index={2} title="ในตำบล" nodes={system.inside} stations={stations}
-          lead={`อ่าง ${system.counts.reservoirs} แห่ง · ฝายประมาณ ${system.counts.weirs} แห่ง · สระ ${system.counts.ponds} แห่ง · ห้วยสาขาประมาณ ${system.counts.tributaries} สาย · แผนก่อสร้าง ${system.counts.planned} รายการ`} />
+          lead={systemCountsText(system.counts)} />
         <Step index={3} title="ไหลต่อไปที่" nodes={system.downstream} stations={stations} />
       </div>
 
       {related.length > 0 && (
-        <div className="space-y-3 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">
-          {related.map(item => (
-            <RelatedDamCard key={item.code} code={item.code} station={item.station} relation={item.relation} system={system}
-              history={history} now={now} homeAmphoe={homeAmphoe} />
-          ))}
+        <div className="space-y-3 lg:grid lg:grid-cols-3 lg:gap-3 lg:space-y-0">
+          {related.map(item => <DamTrendCard key={item.code} code={item.code} station={item.station} relation={item.relation} history={history} />)}
         </div>
       )}
 

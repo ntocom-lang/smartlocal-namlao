@@ -59,6 +59,10 @@ const yom003 = extra => station('waterlevel', 'YOM003', 'หนองม่ว�
   bank_diff_m: 5.95, waterlevel_msl: 153.69, storage_percent: 16, situation_text: 'น้ำน้อย', situation_color: '#eab308', ...extra,
 })
 const rain = (code, name, mm) => station('rain', code, name, { distance_km: 2.6, recorded_at: hoursAgo(0.5), rain_24h_mm: mm })
+const y38 = extra => station('waterlevel', 'Y.38', 'บ้านแม่คำมีตำหนักธรรม', {
+  tambon_name: 'ตำหนักธรรม', amphoe_name: 'หนองม่วงไข่', river_name: 'น้ำแม่คำมี', distance_km: 0.7, recorded_at: hoursAgo(0.5),
+  bank_diff_m: 5.1, waterlevel_msl: 150.1, storage_percent: 20, situation_text: 'น้ำน้อย', situation_color: '#eab308', ...extra,
+})
 
 // ประวัติอ่าง n วัน ต่อสถานี (เก่า→ใหม่) · ค่าลดลงทุกวัน (ไม่ซ้ำ ไม่ให้ติดป้ายตัวเลขซ้ำ)
 const history = (n, base, mcmBase, cap) => Array.from({ length: n }, (_, i) => {
@@ -72,11 +76,14 @@ const dams = n => [
 ]
 
 const SCENES = {
-  ready: { stations: [dam305(), dam304(), yom003(), rain('STN0911', 'บ้านบุญแจ่ม', 3.5)], history: { status: 200, body: { days: 30, radius_km: 10, dams: dams(12) } } },
+  ready: { stations: [dam305({ dam_same_count: 4, dam_same_since: hoursAgo(72), dam_same_capped: false }), dam304(), yom003(), rain('STN0911', 'บ้านบุญแจ่ม', 3.5)], history: { status: 200, body: { days: 30, radius_km: 10, dams: dams(12) } } },
   building: { stations: [dam305(), dam304(), yom003()], history: { status: 200, body: { days: 30, radius_km: 10, dams: dams(3) } } },
   none: { stations: [dam305(), dam304(), yom003()], history: { status: 200, body: { days: 30, radius_km: 10, dams: [] } } },
   error: { stations: [dam305(), dam304(), yom003()], history: { status: 500, body: { message: 'boom' } } },
   nodam: { stations: [rain('STN0911', 'บ้านบุญแจ่ม', 0), yom003()], history: { status: 200, body: { days: 30, radius_km: 10, dams: [] } } },
+  // ตำหนักธรรม: Y.38 อยู่ในตำบล + YOM003 · ไม่มีอ่างกลาง (PR 5.1 ปิดแล้ว) · ทุ่งแค้ว: YOM003 + ฝน RES038 · ไม่มีอ่างกลาง
+  tamnaktham: { stations: [y38(), yom003({ distance_km: 6.6 }), rain('YOM003', 'หนองม่วงไข่', 1.5)], history: { status: 200, body: { days: 30, radius_km: 10, dams: [] } } },
+  thungkaew: { stations: [yom003({ distance_km: 4.8 }), rain('RES038', 'อ่างห้วยยอย', 0)], history: { status: 200, body: { days: 30, radius_km: 10, dams: [] } } },
 }
 
 async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 900, query = '?system=namlao' } = {}) {
@@ -95,6 +102,7 @@ async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 9
   })
   await page.route('**/rest/v1/rpc/get_public_water_situation', route =>
     route.fulfill({ json: { synced_at: hoursAgo(0.2), stations: scene.stations, warnings: [] } }))
+  await page.route('**/api/small-reservoir*', route => route.fulfill({ status: 503, json: { error: 'RESERVOIR_UNAVAILABLE' } }))
   await page.route('**/rest/v1/rpc/get_public_dam_history', route => {
     historyCalls.push(route.request().postData())
     return route.fulfill({ status: scene.history.status, json: scene.history.body })
@@ -127,7 +135,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: !process.ar
 
 try {
   // ── 1) พร้อมใช้งานเต็ม: คำกำกับ · 3 ขั้น · ป้ายความสัมพันธ์ · แนวโน้ม ──
-  await check('ปกติ: คำกำกับครบ · 3 ขั้น · ป้ายความสัมพันธ์ 305/304/YOM003 · แนวโน้มต้นน้ำ · สายข้างเคียงไม่มีแนวโน้ม', async () => {
+  await check('ปกติ: คำกำกับครบ · 3 ขั้น · ป้ายความสัมพันธ์ 305/304/YOM003 · การ์ดแนวโน้มเฉพาะต้นน้ำ ไม่ซ้ำกับการ์ดอ่างเดิม', async () => {
     const { context, page, problems, writes, historyCalls } = await openScene(browser, baseUrl, 'ready')
     try {
       const text = await section(page).innerText()
@@ -140,20 +148,25 @@ try {
       const noLive = text.includes('ไม่มีค่าสดในระบบ')
       assert.ok(noLive, 'อ่างที่ไม่ผูกสถานีต้องเขียน "ไม่มีค่าสดในระบบ"')
 
-      // การ์ดแหล่งน้ำที่เกี่ยวข้อง
+      // การ์ดแนวโน้ม: เฉพาะอ่างต้นน้ำ (305) · แม่ถางเป็นสายข้างเคียง ไม่มีแนวโน้มและไม่มีการ์ดในส่วนนี้
+      assert.equal(await section(page).locator('[data-related-dam]').count(), 1)
+      assert.equal(await section(page).locator('[data-related-dam="304"]').count(), 0)
       const card305 = section(page).locator('[data-related-dam="305"]')
-      const card304 = section(page).locator('[data-related-dam="304"]')
-      assert.ok((await card305.innerText()).includes('ต้นน้ำของตำบล'))
-      assert.ok((await card305.innerText()).includes('100.6%'))
+      const cardText = await card305.innerText()
+      assert.ok(cardText.includes('ต้นน้ำของตำบล') && cardText.includes('แนวโน้มปริมาณน้ำในอ่าง 30 วัน'))
+      // ไม่แสดงซ้ำกับการ์ดอ่างเดิม (ชาวบ้านเห็นข้อความเดียวกันสองที่จะสับสน)
+      for (const dup of ['ค่าสด', 'ซ้ำเดิม', 'ต้นสายลำน้ำแม่คำปอง', 'ปริมาณน้ำในอ่าง 6', 'ไม่มีค่าสดในระบบ']) assert.ok(!cardText.includes(dup), `การ์ดแนวโน้มห้ามมี "${dup}" (อยู่ที่การ์ดอ่างเดิมแล้ว)`)
+      assert.equal(await card305.locator('[data-relation-note]').count(), 0, 'คำอธิบายความสัมพันธ์อยู่ที่การ์ดอ่างเดิมเท่านั้น')
+      assert.equal(((await section(page).innerText()).match(/ซ้ำเดิม/g) || []).length, 0, 'คำเตือนตัวเลขซ้ำเดิมต้องไม่ขึ้นในส่วนระบบน้ำ')
+      assert.ok((await page.locator('#water-dam-305').innerText()).includes('ซ้ำเดิม'), 'คำเตือนตัวเลขซ้ำเดิมยังอยู่ที่การ์ดอ่างเดิม')
       assert.equal(await card305.locator('[data-trend="ready"]').count(), 1, 'ต้นน้ำต้องมีแนวโน้ม')
       const trendText = await card305.locator('[data-trend="ready"]').innerText()
       assert.match(trendText, /วันที่ผ่านมา ปริมาณน้ำในอ่างลดลง/)
       assert.ok(trendText.includes('ไม่ใช่การพยากรณ์'))
       for (const bad of ['เหลืออีก', 'จะหมด', 'จะเต็ม', 'คาดว่า']) assert.ok(!trendText.includes(bad), `ห้ามมี "${bad}"`)
       assert.ok(await card305.locator('svg path').count() >= 1, 'ต้องมีเส้นกราฟ')
-      const text304 = await card304.innerText()
-      assert.ok(text304.includes('สายข้างเคียง') && text304.includes('น้ำแม่หล่าย'), 'แม่ถางต้องเป็นสายข้างเคียงพร้อมคำอธิบาย')
-      assert.equal(await card304.locator('[data-trend]').count(), 0, 'สายข้างเคียงไม่แสดงแนวโน้มต้นน้ำ')
+      const text304 = await page.locator('#water-dam-304').innerText()
+      assert.ok(text304.includes('สายข้างเคียง') && text304.includes('น้ำแม่หล่าย'), 'แม่ถางต้องเป็นสายข้างเคียงพร้อมคำอธิบายที่การ์ดอ่างเดิม')
       assert.equal(await card305.locator('a[href="#water-dam-305"]').count(), 1, 'ต้องลิงก์ไปการ์ดอ่างเดิม')
 
       // ป้ายบนการ์ดเดิม
@@ -214,12 +227,13 @@ try {
     try {
       assert.equal(await section(page).locator('[data-trend]').count(), 0)
       assert.equal(await section(page).locator('[data-step]').count(), 3)
-      assert.equal(await section(page).locator('[data-related-dam]').count(), 2, 'การ์ดอ่างและค่าสดยังอยู่')
+      assert.equal(await section(page).locator('[data-related-dam]').count(), 0, 'โหลดประวัติไม่สำเร็จ = ซ่อนการ์ดแนวโน้มทั้งการ์ด (การ์ดนี้มีแต่แนวโน้ม)')
+      assert.equal(await page.locator('#water-dam-305').count(), 1, 'การ์ดอ่างเดิมและค่าสดยังอยู่ครบ')
       const text = await section(page).innerText()
       for (const raw of ['boom', 'error', 'Error', 'ผิดพลาด', '500']) assert.ok(!text.includes(raw), `ห้ามแสดง "${raw}"`)
       assert.deepEqual(problems, [])
       await page.setViewportSize({ width: 390, height: 900 })
-      await section(page).locator('[data-related-dam="305"]').screenshot({ path: path.join(SHOT_DIR, 'card-error-390.png') })
+      await section(page).locator('[data-step="2"]').screenshot({ path: path.join(SHOT_DIR, 'card-error-390.png') })
     } finally { await context.close() }
   })
   await check('ไม่มีอ่างในระบบ: ไม่มีการ์ดอ่าง · ขั้น "ในตำบล" บอก "ไม่มีค่าสดในระบบ" ไม่เขียนว่าปกติ', async () => {
@@ -252,6 +266,120 @@ try {
       } finally { await context.close() }
     })
   }
+
+  // ── 3b) ตำหนักธรรม + ทุ่งแค้ว (ดูบน demo ผ่าน ?system=) ──
+  await check('ตำหนักธรรม: คำกำกับ · 3 ขั้น · Y.38 ค่าสด + ป้ายอยู่ในตำบล · YOM003 ผังไม่ระบุ · ไม่มีอ่าง/ไม่เรียกประวัติอ่าง · ที่ผังไม่ยืนยันเป็นเส้นประ', async () => {
+    const { context, page, problems, writes, historyCalls } = await openScene(browser, baseUrl, 'tamnaktham', { query: '?system=tamnaktham' })
+    try {
+      assert.equal(await section(page).getAttribute('data-water-system'), 'tamnaktham')
+      const text = await section(page).innerText()
+      for (const phrase of ['ระบบน้ำของตำบลตำหนักธรรม', 'ตัวอย่างบนสนามซ้อม', 'ไม่ใช่ประกาศ', 'ไม่บอกเวลาน้ำถึง', 'ไม่ได้แสดงว่ามีน้ำไหลจริง', 'ไม่ได้รับรองว่าปลอดภัย',
+        'ต้นน้ำอยู่ไกลกว่านี้ ผังที่ใช้ไม่ครอบคลุม', 'ผังต้นฉบับมี แต่เราไม่ได้ใส่', 'ที่มาของข้อมูล', 'ฝาย 6 แห่ง · ห้วยสาขา 4 สาย · แผนก่อสร้าง 5 รายการ']) {
+        assert.ok(text.includes(phrase), `ต้องมี "${phrase}"`)
+      }
+      assert.match(text, /ผังตำบลอายุ \d+ ปี \d+ เดือน/)
+      assert.equal(await section(page).locator('[data-step]').count(), 3)
+      assert.equal(await section(page).locator('[data-related-dam]').count(), 0, 'ตำหนักธรรมไม่มีอ่าง ห้ามมีการ์ดอ่าง')
+      assert.ok(!text.includes('อ่าง 0 แห่ง') && !text.includes('สระ 0') && !text.includes(' 0 แห่ง'), 'ห้ามเขียนจำนวน 0')
+      assert.equal(historyCalls.length, 0, 'ไม่มีอ่างกลาง ต้องไม่เรียกประวัติอ่าง')
+      // Y.38 ผูกค่าสด
+      const gauge = section(page).locator('[data-node="in-gauge-y38"]')
+      assert.ok((await gauge.innerText()).includes('ค่าสด'))
+      // ที่ผังไม่ยืนยัน = เส้นประ + ป้าย "ผังไม่ระบุ" (ขั้น 1 มี 5 รายการ แสดง 3 ก่อน — ขยายก่อนตรวจ)
+      const step1 = section(page).locator('[data-step="1"]')
+      assert.equal(await step1.locator('li').count(), 3)
+      await step1.getByRole('button', { name: /ดูทั้งหมด 5 รายการ/ }).click()
+      assert.equal(await step1.locator('li').count(), 5)
+      for (const id of ['up-name-link', 'up-reservoir-province', 'up-canal-source']) {
+        const node = section(page).locator(`[data-node="${id}"]`)
+        assert.equal(await node.getAttribute('data-status'), 'unconfirmed', id)
+        assert.ok((await node.innerText()).includes('ผังไม่ระบุ'), `${id}: ต้องติดป้ายผังไม่ระบุ`)
+      }
+      assert.ok((await section(page).locator('[data-node="up-reservoir-province"]').innerText()).includes('ไม่มีค่าสดในระบบ'), 'อ่างต้นสายตามผังจังหวัดต้องเขียน "ไม่มีค่าสดในระบบ"')
+      // ป้ายบนการ์ดระดับน้ำเดิม
+      const levels = page.locator('#water-levels')
+      const levelText = await levels.innerText()
+      assert.ok(levelText.includes('อยู่ในตำบล') && levelText.includes('ผังไม่ระบุ'), 'Y.38 = อยู่ในตำบล · YOM003 = ผังไม่ระบุ')
+      assert.ok(await levels.locator('[data-relation-note]').count() >= 1)
+      // กล่อง "ไม่ได้ใส่" อธิบายเรื่องอ่างแม่คำปอง/แม่ถางและฝาย ม.12
+      const omitted = await section(page).locator('[data-system-omitted]').innerText()
+      assert.ok(omitted.includes('อ่างแม่คำปอง') && omitted.includes('ม.12') && omitted.includes('ความจุ'))
+      for (const bad of ['เหลืออีก', 'จะหมด', 'คาดว่า', 'ปกติ']) assert.ok(!text.includes(bad), `ห้ามมี "${bad}"`)
+      // ปุ่มย่อ/ขยาย: ขั้น "ในตำบล" มี 10 รายการ แสดง 3 ก่อน
+      const step2 = section(page).locator('[data-step="2"]')
+      assert.equal(await step2.locator('li').count(), 3)
+      await step2.getByRole('button', { name: /ดูทั้งหมด 10 รายการ/ }).click()
+      assert.equal(await step2.locator('li').count(), 10)
+      assert.deepEqual(writes, [])
+      assert.deepEqual(problems, [])
+      await shootSection(page, 'section-tamnaktham-1280.png')
+    } finally { await context.close() }
+  })
+  await check('ทุ่งแค้ว: อ่างเล็กไม่ขึ้นป้ายค่าสด (รายสัปดาห์ ไม่ใช่ค่าสด) · อ่างห้วยเฮือ "ไม่มีค่าสดในระบบ" · ฝน RES038 ค่าสด · ไม่เรียกประวัติอ่าง', async () => {
+    const { context, page, problems, writes, historyCalls } = await openScene(browser, baseUrl, 'thungkaew', { query: '?system=thungkaew' })
+    try {
+      assert.equal(await section(page).getAttribute('data-water-system'), 'thungkaew')
+      const text = await section(page).innerText()
+      assert.ok(text.includes('ระบบน้ำของตำบลทุ่งแค้ว') && text.includes('ตัวอย่างบนสนามซ้อม'))
+      assert.ok(text.includes('อ่าง 3 แห่ง · ฝายประมาณ 27 แห่ง · หนอง 3 แห่ง · ห้วยสาขาประมาณ 23 สาย · แผนก่อสร้าง 3 รายการ'))
+      assert.equal(await section(page).locator('[data-related-dam]').count(), 0)
+      assert.equal(historyCalls.length, 0)
+      await section(page).locator('[data-step="2"]').getByRole('button', { name: /ดูทั้งหมด \d+ รายการ/ }).click()
+      const yoiNode = section(page).locator('[data-node="in-res-yoi"]')
+      const yoi = await yoiNode.innerText()
+      assert.ok(yoi.includes('ไม่ใช่ค่าสด') && !yoi.includes('ไม่มีค่าสดในระบบ'), `อ่างห้วยยอยต้องบอกว่าไม่ใช่ค่าสด ได้ "${yoi}"`)
+      assert.equal(await yoiNode.locator('span.rounded-full').count(), 0, 'อ่างเล็กไม่ขึ้นป้ายค่าสด/ไม่มีค่าสด (มีการ์ดรายสัปดาห์ของตัวเอง)')
+      assert.ok((await section(page).locator('[data-node="in-res-hue"]').innerText()).includes('ไม่มีค่าสดในระบบ'))
+      assert.ok((await section(page).locator('[data-node="in-rain-res038"]').innerText()).includes('ค่าสด'))
+      assert.equal(await section(page).locator('[data-node="in-plan-box"]').getAttribute('data-status'), 'planned')
+      assert.equal(await section(page).locator('[data-node="in-repair"]').getAttribute('data-status'), 'repair')
+      assert.equal(await section(page).locator('[data-node="down-canal-end"]').getAttribute('data-status'), 'unconfirmed')
+      const levelText = await page.locator('#water-levels').innerText()
+      assert.ok(levelText.includes('ผังไม่ระบุ'), 'YOM003 ต้องติดป้ายผังไม่ระบุ')
+      assert.ok(!text.includes('ปกติ'))
+      assert.deepEqual(writes, [])
+      assert.deepEqual(problems, [])
+      await shootSection(page, 'section-thungkaew-1280.png')
+    } finally { await context.close() }
+  })
+  for (const sceneName of ['tamnaktham', 'thungkaew']) {
+    for (const width of [360, 390, 768, 1280]) {
+      await check(`${sceneName} ${width}px: ไม่ล้นจอ · เป้ากด ≥ ${MIN_TAP}px · ไม่มีช่องกรอก`, async () => {
+        const { context, page, problems } = await openScene(browser, baseUrl, sceneName, { width, query: `?system=${sceneName}` })
+        try {
+          assert.equal(await section(page).locator('input, textarea, select, form, [contenteditable]').count(), 0, 'ส่วนนี้อ่านอย่างเดียว')
+          const overflow = await page.evaluate(() => {
+            const el = document.querySelector('#water-system')
+            return { doc: document.documentElement.scrollWidth - document.documentElement.clientWidth, el: el.scrollWidth - el.clientWidth }
+          })
+          assert.ok(overflow.doc <= 1 && overflow.el <= 1, `ล้นแนวนอน ${JSON.stringify(overflow)}`)
+          const small = await section(page).locator('button, a[href]').evaluateAll((nodes, min) => nodes
+            .map(n => ({ text: (n.textContent || '').trim().slice(0, 30), h: Math.round(n.getBoundingClientRect().height) }))
+            .filter(n => n.h > 0 && n.h < min), MIN_TAP)
+          assert.deepEqual(small, [], `เป้ากดเล็กกว่า ${MIN_TAP}px`)
+          // ปุ่มเปลี่ยนชื่อเป็น "ย่อรายการ" หลังกด จึงกดปุ่มแรกที่ยังเป็น "ดูทั้งหมด" ซ้ำจนไม่เหลือ
+          const more = section(page).getByRole('button', { name: /ดูทั้งหมด \d+ รายการ/ })
+          while (await more.count() > 0) await more.first().click()
+          const after = await page.evaluate(() => ({
+            doc: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            el: document.querySelector('#water-system').scrollWidth - document.querySelector('#water-system').clientWidth,
+          }))
+          assert.ok(after.doc <= 1 && after.el <= 1, `ขยายทุกรายการแล้วล้นจอ ${JSON.stringify(after)}`)
+          await shootSection(page, `section-${sceneName}-${width}.png`)
+          assert.deepEqual(problems, [])
+        } finally { await context.close() }
+      })
+    }
+  }
+  await check('อปท. อื่นนอกทะเบียน/ใส่ ?system= แปลกบน demo: ไม่เห็นระบบของที่ไม่มี และไม่พัง', async () => {
+    for (const [query, expected] of [['?system=tamnaktham', 'tamnaktham'], ['?system=thungkaew', 'thungkaew'], ['?system=namlao', 'namlao'], ['?system=TAMNAKTHAM', 'namlao'], ['?system=tamnaktham%20', 'namlao']]) {
+      const { context, page, problems } = await openScene(browser, baseUrl, 'tamnaktham', { query })
+      try {
+        assert.equal(await section(page).getAttribute('data-water-system'), expected, `query "${query}"`)
+        assert.deepEqual(problems, [])
+      } finally { await context.close() }
+    }
+  })
 
   // ── 4) การเลือกระบบ ──
   await check('?system= แปลก/ไม่ใส่: demo ยังได้ระบบน้ำเลา (ค่าเริ่มต้น) ไม่พัง', async () => {

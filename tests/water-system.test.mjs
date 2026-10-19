@@ -1,8 +1,8 @@
-// ระบบน้ำของตำบล (ฤดูแล้ง เฟส 5 · PR 5.2) — ตรรกะ + ความสอดคล้องของทะเบียน + ข้อความบังคับ + ล็อกว่าไม่เพิ่มงานเจ้าหน้าที่
+// ระบบน้ำของตำบล (ฤดูแล้ง เฟส 5 · PR 5.2 น้ำเลา + PR 5.3 ตำหนักธรรม/ทุ่งแค้ว) — ตรรกะ + ความสอดคล้องของทะเบียน + ข้อความบังคับ + ล็อกว่าไม่เพิ่มงานเจ้าหน้าที่
 // ดีไซน์ฉบับปิด: docs/water-system.md · รันด้วย: node tests/water-system.test.mjs
 //
 // จุดที่ต้องไม่พลาด:
-//  (1) อปท. ที่ไม่มีระบบไม่เห็นหัวข้อนี้ · ?system= ใช้ได้เฉพาะ demo
+//  (1) อปท. ที่ไม่มีระบบไม่เห็นหัวข้อนี้ · ?system= ใช้ได้เฉพาะ demo · ตำหนักธรรม/ทุ่งแค้วเห็นระบบของตัวเอง ไม่เห็นของน้ำเลา
 //  (2) ทะเบียน: ทุกโหนดมีที่มา · id ไม่ซ้ำ · ความสัมพันธ์ของอ่าง/สถานีครบ ตรงกับโหนด · ไม่มีความจุจากผัง · ไม่มีคำต้องห้าม
 //  (3) แนวโน้มอ่าง: ค่าว่างไม่เป็น 0 · ไม่ลากเส้นข้ามช่องว่าง · ไม่ครบ 7 วัน = "กำลังเก็บ" · ไม่มีคำพยากรณ์
 //  (4) อายุผังคำนวณเอง (30 เดือน ไม่ใช่ 17) · แถบเหลืองที่ 36 เดือน
@@ -12,10 +12,16 @@ import { readFileSync } from 'node:fs'
 import {
   NODE_KINDS, NODE_ROLES, NODE_STATUSES, NO_LIVE_TEXT, RELATIONS, RELATION_KEYS, STALE_DIAGRAM_MONTHS, SYSTEMS, SYSTEM_DISCLAIMER,
   SYSTEM_DISCLAIMER_LINE, SYSTEM_PREVIEW_SCOPES, TREND_MIN_DAYS, TREND_WINDOW_DAYS, UPSTREAM_DEPTH_NOTE, WATER_SYSTEM_TENANTS,
-  ageText, bangkokISODate, damTrendSummary, diagramAge, liveState, monthsBetween, relationOf, resolveSystem, systemById, systemTenant,
-  thaiDate, trendChart, trendFactText,
+  ageText, bangkokISODate, damTrendSummary, diagramAge, liveState, monthsBetween, relationOf, resolveSystem, systemById, systemCountsText,
+  systemHasDams, systemTenant, thaiDate, trendChart, trendFactText,
 } from '../src/lib/waterSystem/model.js'
 import { NAMLAO_SYSTEM } from '../src/lib/waterSystem/namlao.js'
+import { TAMNAKTHAM_SYSTEM } from '../src/lib/waterSystem/tamnaktham.js'
+import { THUNGKAEW_SYSTEM } from '../src/lib/waterSystem/thungkaew.js'
+import { NAMLAO_DIAGRAM } from '../src/lib/waterDiagram/namlao.js'
+import { TAMNAKTHAM_DIAGRAM } from '../src/lib/waterDiagram/tamnaktham.js'
+import { THUNGKAEW_DIAGRAM } from '../src/lib/waterDiagram/thungkaew.js'
+import { SMALL_RESERVOIRS } from '../src/lib/smallReservoirs.js'
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const DAY = 86_400_000
@@ -23,25 +29,37 @@ const bkkMidnight = iso => Date.parse(`${iso}T00:00:00+07:00`)
 
 // ── 1) ใครเห็นระบบ ──
 {
-  assert.deepEqual(Object.keys(WATER_SYSTEM_TENANTS).sort(), ['demo', 'namlao'])
-  assert.deepEqual(Object.keys(SYSTEMS), ['namlao'])
+  assert.deepEqual(Object.keys(WATER_SYSTEM_TENANTS).sort(), ['demo', 'namlao', 'tamnaktham', 'thungkaew'])
+  assert.deepEqual(Object.keys(SYSTEMS), ['namlao', 'tamnaktham', 'thungkaew'])
   assert.equal(systemTenant('namlao').scope, '')
+  assert.equal(systemTenant('tamnaktham').scope, ''); assert.equal(systemTenant('thungkaew').scope, '')
   assert.equal(systemTenant('demo').scope, 'ข้อมูลจริงของน้ำเลา ใช้สาธิต', 'demo ต้องบอกว่าเป็นข้อมูลจริงของน้ำเลา')
-  for (const other of ['tamnaktham', 'thungkaew', 'cmu', '', undefined, null, '__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+  for (const other of ['cmu', '', undefined, null, '__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
     assert.equal(systemTenant(other), null, `${other} ต้องไม่เห็นระบบน้ำ`)
     assert.equal(resolveSystem(other, 'namlao'), null, `${other} ต้องไม่เห็นแม้ใส่ ?system=`)
   }
   assert.deepEqual(resolveSystem('namlao'), { system: 'namlao', scope: '' })
+  assert.deepEqual(resolveSystem('tamnaktham'), { system: 'tamnaktham', scope: '' }, 'ตำหนักธรรมเห็นระบบของตัวเอง')
+  assert.deepEqual(resolveSystem('thungkaew'), { system: 'thungkaew', scope: '' }, 'ทุ่งแค้วเห็นระบบของตัวเอง')
   assert.deepEqual(resolveSystem('demo'), { system: 'namlao', scope: 'ข้อมูลจริงของน้ำเลา ใช้สาธิต' })
   assert.deepEqual(resolveSystem('demo', 'namlao'), { system: 'namlao', scope: SYSTEM_PREVIEW_SCOPES.namlao })
-  assert.deepEqual(resolveSystem('namlao', 'namlao'), { system: 'namlao', scope: '' }, 'อปท. จริงเมิน ?system= — ไม่ติดป้ายสาธิต')
+  assert.deepEqual(resolveSystem('demo', 'tamnaktham'), { system: 'tamnaktham', scope: SYSTEM_PREVIEW_SCOPES.tamnaktham }, 'demo ดูระบบตำหนักธรรมได้ผ่าน ?system=')
+  assert.deepEqual(resolveSystem('demo', 'thungkaew'), { system: 'thungkaew', scope: SYSTEM_PREVIEW_SCOPES.thungkaew })
+  for (const id of ['tamnaktham', 'thungkaew']) assert.match(SYSTEM_PREVIEW_SCOPES[id], /ตัวอย่างบนสนามซ้อม/, `${id}: ป้ายบน demo ต้องบอกว่าเป็นตัวอย่าง`)
+  // อปท. จริงเมิน ?system= เสมอ — ห้ามเห็นระบบของที่อื่น/ติดป้ายสาธิต
+  for (const slug of ['namlao', 'tamnaktham', 'thungkaew']) {
+    for (const asked of ['namlao', 'tamnaktham', 'thungkaew', 'nope']) {
+      assert.deepEqual(resolveSystem(slug, asked), { system: slug, scope: '' }, `${slug} + ?system=${asked} ต้องเมิน`)
+    }
+  }
   for (const bad of ['cmu', 'nope', '', null, undefined, '__proto__', 'constructor', 'toString']) {
     assert.equal(resolveSystem('demo', bad).system, 'namlao', `demo + ?system=${bad} ต้องกลับค่าเริ่มต้น`)
     assert.equal(resolveSystem('namlao', bad).system, 'namlao')
   }
   assert.equal(systemById('namlao'), NAMLAO_SYSTEM)
+  assert.equal(systemById('tamnaktham'), TAMNAKTHAM_SYSTEM); assert.equal(systemById('thungkaew'), THUNGKAEW_SYSTEM)
   for (const bad of ['nope', '', null, undefined, '__proto__', 'constructor']) assert.equal(systemById(bad), null)
-  console.log('✓ ทะเบียน: เฉพาะ namlao + demo เห็นระบบน้ำ · อปท. อื่น/คีย์ prototype ไม่เห็น · ?system= ถูกเมินนอก demo')
+  console.log('✓ ทะเบียน: น้ำเลา/ตำหนักธรรม/ทุ่งแค้ว เห็นระบบของตัวเอง + demo · อปท. อื่น/คีย์ prototype ไม่เห็น · ?system= ถูกเมินนอก demo')
 }
 
 // ── 2) ความสอดคล้องของทะเบียน ──
@@ -215,6 +233,142 @@ const allNodes = [...sys.upstream, ...sys.inside, ...sys.downstream]
   console.log('✓ แนวโน้มอ่าง: <7 วัน=กำลังเก็บ (นับวันที่ต่างกัน) · ครบ 7 แสดง · ข้อเท็จจริงลด/เพิ่ม/เท่าเดิม ไม่มีคำพยากรณ์ · ค่าว่างไม่เป็น 0 · ตัดเส้นที่ช่องว่าง')
 }
 
+// ── 9) ทุกระบบ: ความสอดคล้องของทะเบียน (ตำหนักธรรม · ทุ่งแค้ว ใช้กติกาเดียวกับน้ำเลา) ──
+const FORBIDDEN_WORDS = ['รับรอง', 'อพยพ', 'มาตรา', 'พยากรณ์', 'คาดว่า', 'จะท่วม', 'ปลอดภัย', 'เตือนภัย', 'ประกาศเขต', 'ช่วยเหลือ', 'อนุมัติ', 'สั่งการ', 'ปกติ', 'กรุณา']
+{
+  for (const system of Object.values(SYSTEMS)) {
+    const tag = system.id
+    const nodes = [...system.upstream, ...system.inside, ...system.downstream]
+    const ids = nodes.map(n => n.id)
+    assert.equal(new Set(ids).size, ids.length, `${tag}: id โหนดต้องไม่ซ้ำ`)
+    const sourceIds = new Set(system.sources.map(s => s.id))
+    assert.ok(sourceIds.has(system.id) && sourceIds.has('province'), `${tag}: ต้องมีผังตำบลของตัวเองและผังจังหวัดใน sources`)
+    for (const s of system.sources) assert.match(s.date, /^\d{4}-\d{2}-\d{2}$/, `${tag}/${s.id}: วันที่ผังต้องเป็น YYYY-MM-DD`)
+    assert.ok(system.tambon && system.amphoe && system.summary.length > 30, `${tag}: ต้องมีชื่อตำบล/อำเภอ/สรุป`)
+    assert.ok(system.originalUrl.startsWith('https://www.phraepao.go.th/officechief/water/'), `${tag}: ลิงก์ผังต้นฉบับต้องเป็นของศูนย์ฯ`)
+    for (const n of nodes) {
+      assert.ok(NODE_KINDS.includes(n.kind), `${tag}/${n.id}: kind ${n.kind}`)
+      assert.ok(NODE_ROLES.includes(n.role), `${tag}/${n.id}: role ${n.role}`)
+      assert.ok(NODE_STATUSES.includes(n.status), `${tag}/${n.id}: status ${n.status}`)
+      assert.ok(sourceIds.has(n.source), `${tag}/${n.id}: source ${n.source} ไม่อยู่ใน sources`)
+      assert.ok(n.name && n.name.trim().length > 0 && typeof n.note === 'string', `${tag}/${n.id}: ต้องมีชื่อและ note (ว่างได้)`)
+      assert.ok(n.bind === null || (n.bind.type && n.bind.code), `${tag}/${n.id}: bind ต้องเป็น null หรือ { type, code }`)
+    }
+    for (const n of system.upstream) assert.equal(n.role, 'upstream', `${tag}/${n.id}: ขั้นก่อนถึงตำบลต้อง role upstream`)
+    for (const n of system.downstream) assert.equal(n.role, 'downstream', `${tag}/${n.id}: ขั้นไหลต่อต้อง role downstream`)
+    for (const n of system.inside) assert.ok(['inside', 'upstream'].includes(n.role), `${tag}/${n.id}: ในตำบล = inside หรืออ่างต้นสาย`)
+    for (const n of nodes.filter(x => x.status === 'unconfirmed')) assert.ok(n.note.length >= 20, `${tag}/${n.id}: ที่ผังไม่ยืนยันต้องบอกเหตุผล`)
+    assert.ok(nodes.some(n => n.status === 'planned'), `${tag}: แผนก่อสร้างของผังต้องไม่หาย`)
+    const plannedItems = nodes.filter(n => n.status === 'planned').reduce((sum, n) => sum + Number(/(\d+)\s*(?:แห่ง|จุด)/.exec(n.name)?.[1] ?? 1), 0)
+    assert.equal(system.counts.planned, plannedItems, `${tag}: จำนวนแผนก่อสร้างในสรุปต้องตรงกับโหนด`)
+    for (const n of nodes.filter(x => x.status === 'planned' || x.status === 'repair')) assert.ok(!/^(?:ปกติ|มีน้ำไหล)/.test(n.name), `${tag}/${n.id}`)
+
+    // ถ้อยคำ: ไม่คัดลอกความจุ · ไม่พยากรณ์ · ไม่รับรอง/สั่งการ
+    const dump = JSON.stringify(system)
+    for (const word of FORBIDDEN_WORDS) assert.ok(!dump.includes(word), `${tag}: ทะเบียนห้ามมีคำว่า "${word}"`)
+    assert.ok(!/\d+(?:\.\d+)?\s*ล้าน\s*ลบ\.?ม/.test(dump), `${tag}: ห้ามมีความจุ/ปริมาตรอ่างจากผัง`)
+    assert.ok(!/จุ\s*\d/.test(dump), `${tag}: ห้ามมี "จุ N" (ความจุตามผัง)`)
+    assert.ok(system.omitted.length >= 4, `${tag}: ผังมีแต่ไม่ได้ใส่ อย่างน้อย 4 ข้อ`)
+    for (const item of system.omitted) assert.ok(item.name && item.reason.length > 5, `${tag}: "${item.name}" ต้องมีเหตุผลที่ไม่ได้ใส่`)
+    assert.ok(system.omitted.some(o => /ความจุ/.test(o.name)), `${tag}: ต้องบอกว่าไม่ได้ใส่ความจุ พร้อมเหตุผล`)
+
+    // ความสัมพันธ์
+    for (const [key, value] of Object.entries(system.relations)) {
+      assert.ok(RELATION_KEYS.includes(value.relation), `${tag}/${key}: ความสัมพันธ์ ${value.relation}`)
+      assert.match(key, /^(dam|waterlevel):\S+$/, `${tag}: คีย์ความสัมพันธ์ต้องเป็น ชนิด:รหัส`)
+      if (['side', 'unspecified'].includes(value.relation)) assert.ok(value.note && value.note.length > 30, `${tag}/${key}: ป้ายสายข้างเคียง/ผังไม่ระบุต้องมีคำอธิบาย`)
+    }
+    // โหนดที่ผูกอ่างกลาง/สถานีระดับน้ำ ต้องมีป้ายของสถานีนั้น และบทบาทต้องตรงกัน
+    for (const n of nodes.filter(x => x.bind && ['dam', 'waterlevel'].includes(x.bind.type))) {
+      const rel = system.relations[`${n.bind.type}:${n.bind.code}`]
+      assert.ok(rel, `${tag}/${n.id}: สถานี ${n.bind.type}:${n.bind.code} ต้องมีป้ายความสัมพันธ์`)
+      assert.equal(rel.relation, n.role, `${tag}/${n.id}: บทบาทโหนดต้องตรงป้ายของสถานี`)
+    }
+    // อายุผัง: คำนวณจากไฟล์ผังตำบลเอง
+    const age = diagramAge(system, Date.parse('2026-10-18T05:00:00Z'))
+    assert.ok(age && age.months >= 24 && age.months <= 36, `${tag}: อายุผัง ${age?.months}`)
+  }
+  console.log('✓ ทุกระบบ: id ไม่ซ้ำ · ที่มา/ชนิด/บทบาท/สถานะถูกต้อง · ที่ไม่ยืนยันมีเหตุผล · แผนก่อสร้างไม่หาย · ไม่มีความจุ/คำต้องห้าม · ป้ายสถานีครบและตรงบทบาท')
+}
+
+// ── 10) ตำหนักธรรม + ทุ่งแค้ว: เรื่องเฉพาะของแต่ละตำบล ──
+{
+  const T = TAMNAKTHAM_SYSTEM, K = THUNGKAEW_SYSTEM
+  const tNodes = [...T.upstream, ...T.inside, ...T.downstream], kNodes = [...K.upstream, ...K.inside, ...K.downstream]
+  assert.deepEqual(Object.keys(T.relations).sort(), ['waterlevel:Y.38', 'waterlevel:YOM003'], 'ตำหนักธรรมเห็นสถานีระดับน้ำ Y.38 และ YOM003 (อ่างกลางถูกปิดแล้ว)')
+  assert.deepEqual(Object.keys(K.relations), ['waterlevel:YOM003'], 'ทุ่งแค้วเห็นสถานีระดับน้ำ YOM003 ตัวเดียว (ไม่มีอ่างกลาง)')
+  assert.equal(relationOf(T, 'waterlevel', 'Y.38').label, 'อยู่ในตำบล')
+  assert.equal(relationOf(T, 'waterlevel', 'YOM003').label, 'ผังไม่ระบุ')
+  assert.equal(relationOf(K, 'waterlevel', 'YOM003').label, 'ผังไม่ระบุ')
+  assert.equal(relationOf(T, 'dam', '305'), null, 'ตำหนักธรรมไม่มีป้ายอ่างแม่คำปอง')
+  assert.equal(relationOf(K, 'waterlevel', 'Y.38'), null)
+  // ไม่มีอ่างกลาง → ไม่ผูกอ่างกลาง ไม่ดึงประวัติ
+  for (const [name, system, nodes] of [['ตำหนักธรรม', T, tNodes], ['ทุ่งแค้ว', K, kNodes]]) {
+    assert.ok(!Object.keys(system.relations).some(k => k.startsWith('dam:')), `${name}: ห้ามมีป้ายอ่างกลาง`)
+    assert.ok(!nodes.some(n => n.bind?.type === 'dam'), `${name}: ห้ามผูกอ่างกลาง`)
+    assert.equal(systemHasDams(system), false)
+  }
+  assert.equal(systemHasDams(NAMLAO_SYSTEM), true)
+  assert.equal(systemHasDams(null), false); assert.equal(systemHasDams({}), false)
+
+  // ตำหนักธรรม: Y.38 ผูกค่าสด · ที่ผังไม่ยืนยัน 3 เรื่อง (ชื่อสาย · อ่างต้นสายตามผังจังหวัด · ต้นคลอง) ต้องเป็น unconfirmed
+  assert.deepEqual(tNodes.find(n => n.id === 'in-gauge-y38').bind, { type: 'waterlevel', code: 'Y.38' })
+  for (const id of ['up-name-link', 'up-reservoir-province', 'up-canal-source']) assert.equal(tNodes.find(n => n.id === id)?.status, 'unconfirmed', `ตำหนักธรรม/${id}`)
+  assert.match(tNodes.find(n => n.id === 'up-name-link').name, /\?$/, 'ชื่อ "น้ำแม่คำมี = ลำห้วยแม่คำมี" ต้องเป็นคำถาม ไม่เขียนยืนยัน')
+  // แม่คำปอง/แม่ถางอยู่เฉพาะกล่อง "ไม่ได้ใส่" (ไม่ใช่โหนดของระบบ) · ผังขัดกันเรื่องฝาย ม.12 ต้องบอก
+  assert.ok(T.omitted.some(o => /แม่คำปอง/.test(o.name) && /แม่ถาง/.test(o.name)))
+  assert.ok(!tNodes.some(n => /แม่คำปอง|แม่ถาง/.test(n.name + n.note)))
+  assert.ok(T.omitted.some(o => /ม\.12/.test(o.name) && /ขัดกัน/.test(o.reason)), 'ฝาย ม.12 สองผังสีไม่ตรงกัน ต้องบอก')
+  for (const leak of ['ห้วยเฮือ', 'ห้วยยอย', 'ห้วยปุ่ย', 'ห้วยปุย', 'บุญแจ่ม']) assert.ok(!JSON.stringify(T).includes(leak), `ตำหนักธรรมห้ามมี "${leak}" (ของตำบลอื่น)`)
+
+  // ทุ่งแค้ว: อ่างเล็ก 2 แห่งผูก id ตามทะเบียนอ่างเล็ก · เป็นรายงานรายสัปดาห์ ไม่ใช่ค่าสด · อ่างห้วยเฮือไม่มีค่า
+  const yoi = kNodes.find(n => n.id === 'in-res-yoi'), pui = kNodes.find(n => n.id === 'in-res-pui'), hue = kNodes.find(n => n.id === 'in-res-hue')
+  assert.deepEqual(yoi.bind, { type: 'small-reservoir', code: '50' }); assert.deepEqual(pui.bind, { type: 'small-reservoir', code: '30' })
+  for (const n of [yoi, pui]) {
+    assert.ok(Object.hasOwn(SMALL_RESERVOIRS, n.bind.code), `${n.id}: รหัสอ่างเล็กต้องอยู่ในทะเบียน`)
+    assert.ok(/ไม่ใช่ค่าสด/.test(n.note), `${n.id}: ต้องบอกว่ารายงานรายสัปดาห์ ไม่ใช่ค่าสด`)
+    assert.equal(liveState(n, []), null, `${n.id}: อ่างเล็กไม่ขึ้นป้ายค่าสด/ไม่มีค่าสด (มีการ์ดของตัวเองบนหน้า)`)
+    assert.equal(liveState(n, [{ station_type: 'dam', station_code: n.bind.code, recorded_at: '2026-10-17T17:00:00+00:00', dam_storage_mcm: 1 }]), null)
+  }
+  assert.equal(liveState(hue, []), 'none', 'อ่างห้วยเฮือไม่มีรายงาน = ไม่มีค่าสดในระบบ')
+  assert.equal(liveState(tNodes.find(n => n.id === 'up-reservoir-province'), []), 'none', 'อ่างต้นสายตามผังจังหวัด = ไม่มีค่าสดในระบบ')
+  const st = (type, code, extra = {}) => ({ station_type: type, station_code: code, recorded_at: '2026-10-17T17:00:00+00:00', ...extra })
+  const y38 = tNodes.find(n => n.id === 'in-gauge-y38')
+  assert.equal(liveState(y38, [st('waterlevel', 'Y.38', { bank_diff_m: 5.1 })]), 'live')
+  assert.equal(liveState(y38, [st('waterlevel', 'Y.38', { bank_diff_m: null, waterlevel_msl: null })]), 'none')
+  assert.equal(liveState(y38, [st('waterlevel', 'Y.38', { waterlevel_msl: 0 })]), 'live', 'ระดับ 0 จริงคือมีค่า')
+  assert.equal(liveState(y38, []), 'none')
+  const res038 = kNodes.find(n => n.id === 'in-rain-res038')
+  assert.equal(liveState(res038, [st('rain', 'RES038', { rain_24h_mm: 0 })]), 'live'); assert.equal(liveState(res038, []), 'none')
+  assert.equal(liveState(kNodes.find(n => n.id === 'in-repair'), []), null, 'รางชำรุดไม่ขึ้นป้าย')
+  assert.equal(liveState(kNodes.find(n => n.id === 'in-pumps-planned'), []), null, 'สถานีสูบตามแผนไม่ขึ้นป้าย')
+  for (const leak of ['แม่คำปอง', 'แม่ถาง', 'แม่คำมี', 'ปางจ๊าว', 'ตำหนักธรรม']) assert.ok(!JSON.stringify(K).includes(leak), `ทุ่งแค้วห้ามมี "${leak}" (ของตำบลอื่น)`)
+  console.log('✓ ตำหนักธรรม: ป้าย Y.38 อยู่ในตำบล/YOM003 ผังไม่ระบุ · ไม่มีอ่างกลาง · ที่ผังไม่ยืนยัน 3 เรื่องเป็น unconfirmed · ฝาย ม.12 ผังขัดกันมีบอก')
+  console.log('✓ ทุ่งแค้ว: อ่างเล็กผูก id ตามทะเบียน เป็นรายงานรายสัปดาห์ ไม่ใช่ค่าสด · ฝน RES038 ผูกค่าสด · อ่างห้วยเฮือไม่มีค่า')
+}
+
+// ── 11) สรุปจำนวน + ตรวจกับผังเคลื่อนไหว (กันตัวเลขในทะเบียนลอยจากภาพ) ──
+{
+  assert.equal(systemCountsText(NAMLAO_SYSTEM.counts), 'อ่าง 4 แห่ง · ฝายประมาณ 40 แห่ง · สระ 4 แห่ง · ห้วยสาขาประมาณ 25 สาย · แผนก่อสร้าง 4 รายการ', 'น้ำเลา: ข้อความเดิมทุกตัวอักษร')
+  assert.equal(systemCountsText(TAMNAKTHAM_SYSTEM.counts), 'ฝาย 6 แห่ง · ห้วยสาขา 4 สาย · แผนก่อสร้าง 5 รายการ', 'ตำหนักธรรมไม่มีอ่าง/สระ → ไม่เขียน "อ่าง 0 แห่ง"')
+  assert.equal(systemCountsText(THUNGKAEW_SYSTEM.counts), 'อ่าง 3 แห่ง · ฝายประมาณ 27 แห่ง · หนอง 3 แห่ง · ห้วยสาขาประมาณ 23 สาย · แผนก่อสร้าง 3 รายการ')
+  assert.equal(systemCountsText({}), ''); assert.equal(systemCountsText(null), ''); assert.equal(systemCountsText(undefined), '')
+  assert.equal(systemCountsText({ reservoirs: 0, weirs: 0, ponds: 0, tributaries: 0, planned: 0 }), '', '0 ไม่เขียน')
+  assert.equal(systemCountsText({ weirs: '9', reservoirs: null, planned: NaN }), '', 'ค่าที่ไม่ใช่ตัวเลขไม่เขียน')
+  assert.equal(systemCountsText({ weirs: 9 }), 'ฝาย 9 แห่ง'); assert.equal(systemCountsText({ weirs: 10 }), 'ฝายประมาณ 10 แห่ง', 'ตั้งแต่ 10 ขึ้นไปเขียน "ประมาณ" (นับจากภาพ)')
+  for (const system of Object.values(SYSTEMS)) assert.ok(!/ 0 /.test(` ${systemCountsText(system.counts)} `), `${system.id}: สรุปห้ามมีจำนวน 0`)
+
+  const planned = d => d.elements.filter(e => e.status === 'planned' && ['weir', 'pump', 'reservoir', 'planBox'].includes(e.kind)).length
+  const existing = (d, kind) => d.elements.filter(e => e.kind === kind && (e.status ?? 'existing') !== 'planned').length
+  for (const [system, diagram] of [[NAMLAO_SYSTEM, NAMLAO_DIAGRAM], [TAMNAKTHAM_SYSTEM, TAMNAKTHAM_DIAGRAM], [THUNGKAEW_SYSTEM, THUNGKAEW_DIAGRAM]]) {
+    assert.equal(system.counts.planned, planned(diagram), `${system.id}: แผนก่อสร้างในทะเบียนต้องตรงกับผังเคลื่อนไหว`)
+    assert.equal(system.counts.reservoirs ?? 0, existing(diagram, 'reservoir'), `${system.id}: จำนวนอ่างต้องตรงกับผังเคลื่อนไหว`)
+  }
+  assert.equal(THUNGKAEW_SYSTEM.counts.ponds, existing(THUNGKAEW_DIAGRAM, 'pond'), 'ทุ่งแค้ว: จำนวนหนองตรงกับผังเคลื่อนไหว')
+  assert.equal(THUNGKAEW_SYSTEM.counts.weirs, existing(THUNGKAEW_DIAGRAM, 'weir'), 'ทุ่งแค้ว: จำนวนฝายตรงกับผังเคลื่อนไหว')
+  console.log('✓ สรุปจำนวน: น้ำเลาข้อความเดิม · ไม่เขียน 0 · เกิน 9 = "ประมาณ" · อ่าง/แผนก่อสร้าง/หนอง/ฝายตรงกับผังเคลื่อนไหว')
+}
+
 // ── 8) ส่วนหน้าจอ: ไม่เพิ่มงานเจ้าหน้าที่ + ต่อหน้าถูกจุด ──
 {
   const comp = read('src/components/water/WaterSystem.jsx')
@@ -247,6 +401,18 @@ const allNodes = [...sys.upstream, ...sys.inside, ...sys.downstream]
   assert.ok(/<DamSection stations=\{dams\} homeAmphoe=\{tenant\.district\} now=\{now\} snapshot \/>/.test(page), 'การ์ดสำหรับภาพแชร์ต้องคงเดิม')
   // ตัวกรอง Y.38 ของน้ำเลายังอยู่ (ไม่แตะ)
   assert.ok(page.includes("s.station_code === 'Y.38'"))
+  // หลาย อปท.: ไม่เรียกประวัติอ่างเมื่อไม่มีอ่างกลาง · สรุปจำนวนมาจากตัวช่วย (ไม่เขียน "อ่าง 0 แห่ง") · ทุกชนิดโหนดมีไอคอน
+  assert.ok(/useDamHistory\(tenantId, Boolean\(system\) && systemHasDams\(system\)\)/.test(code), 'ตำบลที่ไม่มีอ่างต้องไม่เรียกประวัติอ่าง')
+  assert.ok(code.includes('systemCountsText(system.counts)') && !/system\.counts\.(reservoirs|weirs|ponds|tributaries|planned)/.test(code), 'สรุปจำนวนต้องมาจาก systemCountsText')
+  const iconKeys = [...(/const KIND_ICON = \{([^}]*)\}/.exec(code)?.[1] ?? '').matchAll(/(\w+):/g)].map(m => m[1])
+  assert.deepEqual([...iconKeys].sort(), [...NODE_KINDS].sort(), 'ไอคอนต้องมีครบทุกชนิดโหนด ไม่เกิน ไม่ขาด')
+  // การ์ดในส่วนนี้ = แนวโน้มล้วน ห้ามแสดงซ้ำกับการ์ดอ่างเดิม (ตัวเลขล่าสุด · ค่าสด · คำเตือนซ้ำเดิม · คำอธิบายความสัมพันธ์) — ชาวบ้านเห็นข้อความเดียวกันสองที่จะสับสน
+  assert.ok(code.includes('function DamTrendCard') && !code.includes('RelatedDamCard'), 'การ์ดต้องเป็น DamTrendCard (แนวโน้มล้วน)')
+  for (const dup of ['storage_percent', 'dam_storage_mcm', 'damSameText', 'damSameInfo', 'relation.note', 'recorded_at']) {
+    assert.ok(!code.includes(dup), `คอมโพเนนต์ห้ามมี "${dup}" (ตัวเลข/คำเตือน/คำอธิบายของอ่างอยู่ที่การ์ดอ่างเดิมแล้ว)`)
+  }
+  assert.ok(code.includes("['upstream', 'inside'].includes(item.relation.key)"), 'การ์ดแนวโน้มเฉพาะอ่างต้นน้ำ/ในตำบล (สายข้างเคียงไม่มี)')
+  assert.ok(/if \(history\.status === 'error'\) return null/.test(code), 'โหลดประวัติไม่สำเร็จ = ซ่อนทั้งการ์ด')
   console.log('✓ หน้าจอ: อ่านอย่างเดียว (ไม่มี input/form/เขียนข้อมูล · ปุ่มแค่ย่อ/ขยาย) · lazy เฉพาะ อปท. ที่มีระบบ · เรียกประวัติครั้งเดียว · ภาพแชร์ไม่เปลี่ยน')
 }
 
