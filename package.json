@@ -71,6 +71,8 @@
     "check:phrae-diagram": "node scripts/check-phrae-diagram.mjs",
     "test:water-events": "node tests/water-events.test.mjs && node tests/water-events-ui.test.mjs && node tests/water-event-print.test.mjs",
     "test:water-events-browser": "node tests/water-events-ui.playwright.mjs",
+    "test:water-announcements": "node tests/water-announcements.test.mjs",
+    "test:water-announcements-browser": "node tests/water-announcements-public.playwright.mjs && node tests/water-announcements-ui.playwright.mjs",
     "test:water-event-print-layout": "node tests/water-event-print-layout.test.mjs",
     "test:small-reservoir": "node tests/small-reservoir.test.mjs",
     "test:water-village": "node tests/water-village.test.mjs",

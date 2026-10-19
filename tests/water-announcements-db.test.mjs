@@ -1,10 +1,11 @@
-// ประกาศน้ำ-ฝนที่มีผู้ยืนยัน (เฟส 2 · PR 2.1) — รัน migration จริงใน PostgreSQL จำลอง (PGlite)
+// ประกาศน้ำ-ฝนที่มีผู้ยืนยัน (เฟส 2 · PR 2.1 + 2.2) — รัน migration จริงใน PostgreSQL จำลอง (PGlite)
 // node tests/water-announcements-db.test.mjs --pglite <โฟลเดอร์>/node_modules/@electric-sql/pglite/dist/index.js
 // ไม่ใช้เน็ต ไม่ใช้บัญชี ไม่แตะข้อมูลจริง
 //
 // เรื่องที่ต้องไม่พลาด (เส้นที่ห้ามข้าม — ดุลพินิจของผู้บริหาร):
-//  (1) ใครยืนยัน/ไม่ประกาศ/ยกเลิกได้ — เฉพาะบัญชีที่ตรงกับผู้ลงนามระดับหน่วยงาน (นายก/ปลัด) ที่ active วันนี้ของ อปท. นั้น
-//      admin ทั่วไป · superadmin · หัวหน้ากอง · ผู้ลงนามที่ไม่มีบัญชี · ผู้ลงนามหมดอายุ/ปิดแล้ว/ต่าง อปท. = ไม่ได้
+//  (1) ใครยืนยัน/ไม่ประกาศ/ยกเลิกได้ — เฉพาะบัญชีที่ admin ของ อปท. นั้นตั้งไว้ในตารางผู้มีสิทธิ์ยืนยัน (PR 2.2) และยังเป็นเจ้าหน้าที่ของ อปท. นั้น
+//      admin ทั่วไป · superadmin · ผู้ลงนามในทะเบียน (นายก/ปลัด/หัวหน้ากอง) ที่ไม่ได้ถูกตั้ง · ต่าง อปท. · ถูกลดบทบาท = ไม่ได้
+//      ใครตั้ง/ถอนผู้ยืนยันได้ — admin ของ อปท. นั้นกับ superadmin เท่านั้น (สูงสุด 5 คน ลง audit_logs)
 //  (2) ไม่มีคนกดยืนยัน = ไม่มีอะไรออกหน้าประชาชน (ร่างไม่โผล่ ไม่หมดอายุแล้วค้าง)
 //  (3) ข้อความที่ยืนยันแก้ไม่ได้ ลบไม่ได้ ล้างตารางไม่ได้ · ตารางปิดสนิทต่อ anon/authenticated
 //  (4) ร่างเฉพาะตอนมีค่าสดและสัญญาณยังเข้าเกณฑ์ · ค่าว่างไม่กลายเป็น 0 · ข้อความไม่มีคำสั่งอพยพ/คำรับรองความปลอดภัย
@@ -20,6 +21,8 @@ const { PGlite } = await import(pathToFileURL(modulePath).href)
 const sql = (name) => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')
 const F_TABLES = '20261020100000_water_announcements_tables.sql'
 const F_FUNCS = '20261020100100_water_announcements_functions.sql'
+const F_APPR_T = '20261020130000_water_announcement_approvers_table.sql'
+const F_APPR_F = '20261020130100_water_announcement_approvers_functions.sql'
 const F_EV_TABLES = '20261016100000_water_events_tables.sql'
 const F_EV_TICK = '20261016100100_water_events_tick_cron.sql'
 const F_EV_RPC = '20261017100000_water_events_staff_rpc.sql'
@@ -44,7 +47,7 @@ CREATE TABLE public.municipalities (
   id uuid PRIMARY KEY, slug text NOT NULL, name text, district text, province text,
   is_active boolean NOT NULL DEFAULT true, enabled_modules text[]
 );
-CREATE TABLE public.profiles (id uuid PRIMARY KEY, role text NOT NULL, municipality_id uuid, full_name text);
+CREATE TABLE public.profiles (id uuid PRIMARY KEY, role text NOT NULL, municipality_id uuid, full_name text, job_title text);
 -- ทะเบียนผู้ลงนามกลาง (เฉพาะคอลัมน์ที่ฟังก์ชันอ่าน)
 CREATE TABLE public.document_signatories (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -69,26 +72,36 @@ CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE
 
 const tablesText = await sql(F_TABLES)
 const funcsText = await sql(F_FUNCS)
+const apprTablesText = await sql(F_APPR_T)
+const apprFuncsText = await sql(F_APPR_F)
 const stripComments = (s) => s.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
 const code = stripComments(funcsText)
+const codeAppr = stripComments(apprFuncsText)
 
 // ── 0) อ่านไฟล์: โครงสร้างความปลอดภัย + ถ้อยคำ ──
 {
   // ฟังก์ชันที่เปลี่ยนสถานะ/อ่านข้อมูลต้องเป็น DEFINER ตั้ง search_path ทุกตัว
-  const fnBlocks = code.split(/CREATE OR REPLACE FUNCTION /).slice(1)
-  assert.ok(fnBlocks.length >= 12, `พบฟังก์ชัน ${fnBlocks.length}`)
+  const blocksOf = (src) => src.split(/CREATE OR REPLACE FUNCTION /).slice(1)
+  const oldBlocks = blocksOf(code)
+  const newBlocks = blocksOf(codeAppr)
+  // ฟังก์ชันที่ PR 2.2 เขียนทับ — ใช้ฉบับใหม่ตรวจ (ฉบับของ PR 2.1 ถูกแทนแล้ว)
+  const fnBlocks = [...newBlocks, ...oldBlocks]
+  assert.ok(oldBlocks.length >= 12 && newBlocks.length >= 7, `พบฟังก์ชัน ${oldBlocks.length}+${newBlocks.length}`)
   for (const b of fnBlocks) {
     const name = b.slice(0, b.indexOf('(')).trim()
     assert.ok(/SET search_path = pg_catalog, public/.test(b.split('$$')[0]), `${name}: ต้องตั้ง search_path`)
   }
   for (const name of ['water_announcement_tick', 'approve_water_announcement', 'decline_water_announcement', 'cancel_water_announcement',
-    'list_water_announcements', 'get_public_water_announcement', 'can_approve_water_announcement']) {
+    'list_water_announcements', 'get_public_water_announcement', 'can_approve_water_announcement',
+    'can_manage_water_announcement_approvers', 'list_water_announcement_approvers', 'set_water_announcement_approver', 'water_announcement_todo']) {
     const b = fnBlocks.find(x => x.startsWith(`public.${name}(`))
     assert.ok(b && /SECURITY DEFINER/.test(b.split('$$')[0]), `${name}: ต้องเป็น SECURITY DEFINER`)
   }
   // ไม่มีทางเขียนข้ามฟังก์ชัน: ไม่เปิด policy/GRANT ตาราง
-  assert.ok(!/CREATE POLICY/.test(code), 'ห้ามเปิด policy อ่านตรง')
-  assert.ok(!/GRANT\s+(SELECT|ALL|INSERT|UPDATE|DELETE|TRUNCATE)[^;]*ON\s+(TABLE\s+)?public\.water_announcement/i.test(code), 'ห้ามเปิดสิทธิ์ตาราง')
+  for (const src of [code, codeAppr, stripComments(apprTablesText)]) {
+    assert.ok(!/CREATE POLICY/.test(src), 'ห้ามเปิด policy อ่านตรง')
+    assert.ok(!/GRANT\s+(SELECT|ALL|INSERT|UPDATE|DELETE|TRUNCATE)[^;]*ON\s+(TABLE\s+)?public\.water_announcement/i.test(src), 'ห้ามเปิดสิทธิ์ตาราง')
+  }
   // ไม่ส่งข้อมูลภายในออกหน้าจอ
   const listFn = fnBlocks.find(x => x.startsWith('public.list_water_announcements('))
   assert.ok(!/\bfacts\b/.test(listFn.split('$$')[1]), 'หน้าเจ้าหน้าที่ไม่ส่ง facts')
@@ -104,20 +117,40 @@ const code = stripComments(funcsText)
   assert.ok(literals.includes('ไม่ใช่การพยากรณ์'), 'ข้อความร่างต้องบอกว่าไม่ใช่การพยากรณ์')
   // ผู้ยืนยัน: ต้องไม่รวม superadmin/admin ทั่วไป — อ่านจากทะเบียนผู้ลงนามเท่านั้น
   const apprFn = fnBlocks.find(x => x.startsWith('public.can_approve_water_announcement('))
-  assert.ok(/document_signatories/.test(apprFn) && /department_id IS NULL/.test(apprFn) && /water_announcement_approver_roles\(\)/.test(apprFn))
+  assert.ok(/water_announcement_approvers/.test(apprFn) && /p\.municipality_id = _municipality_id/.test(apprFn) && /p\.role IN \('admin', 'officer', 'staff'\)/.test(apprFn), 'ผู้ยืนยัน = ตารางผู้มีสิทธิ์ + ยังเป็นเจ้าหน้าที่ของ อปท. นั้น')
+  assert.ok(!/document_signatories|water_announcement_approver_roles/.test(apprFn.split('$$')[1]), 'ไม่พึ่งทะเบียนผู้ลงนาม (production ไม่มีผู้ลงนามที่มีบัญชีเลย)')
   assert.ok(!/superadmin/.test(apprFn.split('$$')[1]), 'superadmin ไม่ใช่ผู้มีอำนาจประกาศโดยตำแหน่ง')
-  assert.ok(/ARRAY\['mayor', 'clerk'\]/.test(code), 'ผู้ยืนยันตั้งต้น = นายก + ปลัด ที่ฟังก์ชันเดียว')
+  assert.ok(/DROP FUNCTION IF EXISTS public\.water_announcement_approver_roles\(\)/.test(codeAppr), 'ลบตัวช่วยเดิมที่ไม่ใช้แล้ว')
+  const manageFn = fnBlocks.find(x => x.startsWith('public.can_manage_water_announcement_approvers('))
+  assert.ok(/p\.role = 'superadmin' OR \(p\.role = 'admin' AND p\.municipality_id = _municipality_id\)/.test(manageFn), 'ตั้ง/ถอนผู้ยืนยันได้เฉพาะ admin ของ อปท. นั้นกับ superadmin')
+  const setFn = fnBlocks.find(x => x.startsWith('public.set_water_announcement_approver('))
+  assert.ok(/water_announcement_audit\(/.test(setFn) && /c_max\s+CONSTANT integer := 5/.test(setFn), 'ตั้ง/ถอนผู้ยืนยันลง audit และจำกัด 5 คน')
+  const todoFn = fnBlocks.find(x => x.startsWith('public.water_announcement_todo('))
+  assert.ok(/p_muni uuid/.test(todoFn), 'ชื่อพารามิเตอร์ p_muni ตามฮุก useHomeRpc')
+  const listAppr = fnBlocks.find(x => x.startsWith('public.list_water_announcement_approvers('))
+  for (const bad of ['email', 'phone', 'tel', 'id_card', 'address']) assert.ok(!new RegExp(`\\b${bad}\\b`).test(listAppr.split('$$')[1]), `รายชื่อผู้ยืนยันไม่ส่ง ${bad}`)
+  // authority_note เห็นเฉพาะ admin — ไม่ขึ้นหน้าประชาชน/หน้าเจ้าหน้าที่ทั่วไป
+  for (const name of ['get_public_water_announcement', 'list_water_announcements', 'water_announcement_todo']) {
+    assert.ok(!/authority_note/.test(fnBlocks.find(x => x.startsWith(`public.${name}(`)).split('$$')[1]), `${name} ไม่ส่ง authority_note`)
+  }
   // ตารางใหม่ต้อง REVOKE ก่อน (กับดัก default privileges) + RLS
   for (const t of ['water_announcement_settings', 'water_announcements']) {
     assert.ok(new RegExp(`REVOKE ALL ON public\\.${t}\\s+FROM anon, authenticated, PUBLIC`).test(code), `${t}: ต้อง REVOKE ALL`)
     assert.ok(new RegExp(`ALTER TABLE public\\.${t}\\s+ENABLE ROW LEVEL SECURITY`).test(code), `${t}: ต้องเปิด RLS`)
   }
-  // ตาราง: ไม่มีคอลัมน์ข้อมูลบุคคล
-  const tcode = stripComments(tablesText)
-  for (const bad of ['phone', 'tel', 'id_card', 'citizen', 'address', 'lat', 'lng', 'latitude', 'longitude', 'email']) {
-    assert.ok(!new RegExp(`^\\s+${bad}\\b`, 'm').test(tcode), `ตารางห้ามมีคอลัมน์ ${bad}`)
+  {
+    const t = 'water_announcement_approvers'
+    const src = stripComments(apprTablesText)
+    assert.ok(new RegExp(`REVOKE ALL ON public\\.${t}\\s+FROM anon, authenticated, PUBLIC`).test(src), `${t}: ต้อง REVOKE ALL`)
+    assert.ok(new RegExp(`ALTER TABLE public\\.${t}\\s+ENABLE ROW LEVEL SECURITY`).test(src), `${t}: ต้องเปิด RLS`)
   }
-  console.log('✓ ไฟล์: ฟังก์ชัน DEFINER ตั้ง search_path · ไม่มี policy/GRANT ตาราง · ไม่ส่ง facts/ตัวตนผู้ยืนยันออกหน้าจอ · ข้อความร่างไม่มีคำสั่ง/คำรับรอง · ผู้ยืนยันมาจากทะเบียนผู้ลงนามเท่านั้น (ไม่รวม superadmin)')
+  // ตาราง: ไม่มีคอลัมน์ข้อมูลบุคคล
+  for (const tcode of [stripComments(tablesText), stripComments(apprTablesText)]) {
+    for (const bad of ['phone', 'tel', 'id_card', 'citizen', 'address', 'lat', 'lng', 'latitude', 'longitude', 'email']) {
+      assert.ok(!new RegExp(`^\\s+${bad}\\b`, 'm').test(tcode), `ตารางห้ามมีคอลัมน์ ${bad}`)
+    }
+  }
+  console.log('✓ ไฟล์: ฟังก์ชัน DEFINER ตั้ง search_path · ไม่มี policy/GRANT ตาราง · ไม่ส่ง facts/ตัวตนผู้ยืนยันออกหน้าจอ · ข้อความร่างไม่มีคำสั่ง/คำรับรอง · ผู้ยืนยันมาจากตารางผู้มีสิทธิ์ที่ admin ตั้ง (ไม่รวม superadmin/ทะเบียนผู้ลงนาม) · ไม่ส่ง authority_note ออกหน้าจอทั่วไป')
 }
 
 const guardDb = new PGlite()
@@ -145,7 +178,20 @@ const fails = async (target, label, statement, pattern, params) => {
   await db.exec(tablesText) // ซ้ำได้
   await db.exec(funcsText)
   await db.exec(funcsText) // ซ้ำได้
-  console.log('✓ apply: ไฟล์ที่มาก่อนของที่ต้องพึ่งถูกปฏิเสธพร้อมบอกไฟล์ที่ต้อง apply ก่อน · apply ซ้ำได้ทั้งสองไฟล์')
+  // PR 2.2: ตารางผู้ยืนยัน + ฟังก์ชัน
+  const gdb0 = new PGlite()
+  await gdb0.exec(SETUP)
+  await fails(gdb0, 'ไฟล์ผู้ยืนยันก่อนตารางประกาศ', apprTablesText, /ต้อง apply 20261020100000/)
+  await db.exec(apprTablesText)
+  await db.exec(apprTablesText) // ซ้ำได้
+  await db.exec(apprFuncsText)
+  await db.exec(apprFuncsText) // ซ้ำได้
+  const gdb2 = new PGlite()
+  await gdb2.exec(SETUP)
+  for (const f of [...PREREQ, F_EV_TABLES, F_EV_TICK, F_EV_RPC]) await gdb2.exec(await sql(f))
+  await gdb2.exec(tablesText); await gdb2.exec(funcsText)
+  await fails(gdb2, 'ฟังก์ชันผู้ยืนยันก่อนตารางผู้ยืนยัน', apprFuncsText, /ต้อง apply 20261020130000/)
+  console.log('✓ apply: ไฟล์ที่มาก่อนของที่ต้องพึ่งถูกปฏิเสธพร้อมบอกไฟล์ที่ต้อง apply ก่อน · apply ซ้ำได้ทุกไฟล์ (รวม 2 ไฟล์ของ PR 2.2)')
 }
 
 // ── ข้อมูลทดสอบ ──
@@ -155,7 +201,7 @@ const DEPT = uuid(50)
 const U = {
   mayorA: uuid(11), clerkA: uuid(12), staffA: uuid(13), adminA: uuid(14), deptHeadA: uuid(15), customA: uuid(16),
   mayorB: uuid(17), superadmin: uuid(18), citizenA: uuid(19), expiredA: uuid(20), futureA: uuid(21), inactiveA: uuid(22),
-  technicianA: uuid(23), councilA: uuid(24), mayorAtoB: uuid(25), none: uuid(29),
+  technicianA: uuid(23), councilA: uuid(24), mayorAtoB: uuid(25), sigOnlyA: uuid(26), none: uuid(29),
 }
 const day = (offset) => new Date(Date.now() + offset * 86400000 + 7 * 3600000).toISOString().slice(0, 10)
 await db.exec(`
@@ -171,7 +217,8 @@ await db.exec(`
     ('${U.citizenA}', 'citizen', '${A}', 'ประชาชน'), ('${U.expiredA}', 'admin', '${A}', 'นายกคนเก่า'),
     ('${U.futureA}', 'admin', '${A}', 'นายกคนใหม่ยังไม่เริ่ม'), ('${U.inactiveA}', 'admin', '${A}', 'นายกที่ถูกปิดแถว'),
     ('${U.technicianA}', 'technician', '${A}', 'ช่าง'), ('${U.councilA}', 'council', '${A}', 'สภา'),
-    ('${U.mayorAtoB}', 'admin', '${A}', 'ผู้ลงนามของ ข แต่บัญชีอยู่ ก');
+    ('${U.mayorAtoB}', 'admin', '${A}', 'ผู้ลงนามของ ข แต่บัญชีอยู่ ก'),
+    ('${U.sigOnlyA}', 'admin', '${A}', 'ผู้ลงนามนายกแต่ไม่ได้ตั้งเป็นผู้ยืนยัน');
   INSERT INTO public.document_signatories (municipality_id, signatory_role, department_id, profile_id, is_active, effective_from, effective_to) VALUES
     ('${A}', 'mayor', NULL, '${U.mayorA}', true, '${day(-30)}', NULL),
     ('${A}', 'clerk', NULL, '${U.clerkA}', true, '${day(-30)}', NULL),
@@ -185,7 +232,14 @@ await db.exec(`
     -- แถวทะเบียนของบัญชีที่ไม่ใช่เจ้าหน้าที่ (ประชาชน/ช่าง/สภา) — แม้มีแถว บทบาทบัญชีก็ต้องไม่ผ่าน
     ('${A}', 'clerk', NULL, '${U.citizenA}', true, '${day(-30)}', NULL),
     ('${A}', 'clerk', NULL, '${U.technicianA}', true, '${day(-30)}', NULL),
-    ('${A}', 'clerk', NULL, '${U.councilA}', true, '${day(-30)}', NULL);
+    ('${A}', 'clerk', NULL, '${U.councilA}', true, '${day(-30)}', NULL),
+    -- ผู้ลงนามนายกที่ active และมีบัญชีจริง แต่ไม่ได้ถูกตั้งเป็นผู้ยืนยัน → ทะเบียนผู้ลงนามต้องไม่ให้สิทธิ์ยืนยันประกาศ (PR 2.2)
+    ('${A}', 'mayor', NULL, '${U.sigOnlyA}', true, '${day(-30)}', NULL);
+  -- ผู้มีสิทธิ์ยืนยัน (PR 2.2): ตั้งโดย admin ผ่านฟังก์ชัน — ที่นี่ใส่ตรงๆ ให้พร้อมทดสอบ รวมแถวของบัญชีที่ไม่ใช่เจ้าหน้าที่ (ประชาชน/ช่าง/สภา)
+  -- และบัญชีที่สังกัด ก แต่แถวเป็นของ ข เพื่อพิสูจน์ว่าบทบาท/สังกัดของบัญชีถูกตรวจซ้ำเสมอ
+  INSERT INTO public.water_announcement_approvers (municipality_id, profile_id) VALUES
+    ('${A}', '${U.mayorA}'), ('${A}', '${U.clerkA}'), ('${A}', '${U.citizenA}'), ('${A}', '${U.technicianA}'), ('${A}', '${U.councilA}'),
+    ('${B}', '${U.mayorB}'), ('${B}', '${U.mayorAtoB}');
   INSERT INTO public.document_signatories (municipality_id, signatory_role, department_id, profile_id, manual_name, is_active, effective_from) VALUES
     ('${A}', 'mayor', NULL, NULL, 'ชื่อกรอกเอง ไม่มีบัญชี', false, '${day(-400)}');
 `)
@@ -253,7 +307,7 @@ const resetEvent = async (sqlExtra = '') => {
   await asUser(U.mayorA, () => fails(db, 'ผู้ยืนยันอ่านตารางตรง', 'SELECT * FROM public.water_announcements', /permission denied/))
   await as('anon', null, () => fails(db, 'anon อ่านตารางตรง', 'SELECT * FROM public.water_announcements', /permission denied/))
   for (const fn of ['public.water_announcement_tick(timestamptz)', 'public.water_announcement_draft_text(text, uuid, timestamptz, jsonb, timestamptz)',
-    'public.water_announcement_audit(uuid, text, uuid, jsonb)', 'public.water_announcement_approver_roles()', 'public.water_announcement_thai_time(timestamptz)',
+    'public.water_announcement_audit(uuid, text, uuid, jsonb)', 'public.water_announcement_thai_time(timestamptz)',
     'public.water_announcements_guard()']) {
     for (const role of ['anon', 'authenticated']) {
       assert.equal((await db.query(`SELECT has_function_privilege('${role}', '${fn}', 'EXECUTE') AS ok`)).rows[0].ok, false, `${role} ต้องเรียก ${fn} ไม่ได้`)
@@ -402,10 +456,11 @@ const [D1] = await rows()
   const denyRe = /ไม่มีสิทธิ์ยืนยันประกาศ|ต้องเข้าสู่ระบบ/
   const nobody = [
     ['admin ทั่วไป', U.adminA], ['เจ้าหน้าที่ทั่วไป', U.staffA], ['superadmin', U.superadmin],
-    ['หัวหน้ากอง (department_head)', U.deptHeadA], ['ผู้ลงนามกำหนดเอง (custom)', U.customA], ['นายกต่าง อปท.', U.mayorB],
-    ['ผู้ลงนามที่หมดอายุแล้ว', U.expiredA], ['ผู้ลงนามที่ยังไม่ถึงวันเริ่ม', U.futureA], ['ผู้ลงนามที่ถูกปิดแถว', U.inactiveA],
-    ['ประชาชน', U.citizenA], ['ช่าง', U.technicianA], ['สภา', U.councilA],
-    ['บัญชี อปท. ก ที่เป็นผู้ลงนามของ ข', U.mayorAtoB], ['uid ที่ไม่มีใน profiles', U.none],
+    ['หัวหน้ากอง (department_head) ในทะเบียนผู้ลงนาม', U.deptHeadA], ['ผู้ลงนามกำหนดเอง (custom) ในทะเบียน', U.customA], ['ผู้ยืนยันของ อปท. อื่น (ข)', U.mayorB],
+    ['ผู้ลงนามนายก active ที่มีบัญชี แต่ไม่ได้ถูกตั้งเป็นผู้ยืนยัน', U.sigOnlyA],
+    ['ผู้ลงนามที่หมดอายุแล้ว (ไม่ได้ถูกตั้ง)', U.expiredA], ['ผู้ลงนามที่ยังไม่ถึงวันเริ่ม (ไม่ได้ถูกตั้ง)', U.futureA], ['ผู้ลงนามที่ถูกปิดแถว (ไม่ได้ถูกตั้ง)', U.inactiveA],
+    ['ประชาชน (มีแถวในตารางผู้ยืนยัน)', U.citizenA], ['ช่าง (มีแถวในตารางผู้ยืนยัน)', U.technicianA], ['สภา (มีแถวในตารางผู้ยืนยัน)', U.councilA],
+    ['บัญชี อปท. ก ที่แถวผู้ยืนยันเป็นของ ข', U.mayorAtoB], ['uid ที่ไม่มีใน profiles', U.none],
   ]
   for (const [who, uid] of nobody) {
     await asUser(uid, () => fails(db, `${who} approve`, 'SELECT public.approve_water_announcement($1) AS r', denyRe, [D1.id]))
@@ -422,9 +477,9 @@ const [D1] = await rows()
   }
   assert.equal((await asUser(U.mayorA, () => db.query('SELECT public.can_approve_water_announcement($1) AS ok', [B]))).rows[0].ok, false, 'นายก ก ไม่ใช่ผู้ยืนยันของ ข')
   assert.equal((await asUser(U.mayorA, () => db.query('SELECT public.can_approve_water_announcement(NULL) AS ok'))).rows[0].ok, false)
-  // บัญชีที่สังกัด อปท. ก แต่ไปอยู่ในทะเบียนผู้ลงนามของ ข → ไม่ใช่ผู้ยืนยันของ ข (สังกัดต้องตรงกันทั้งสองฝั่ง)
+  // บัญชีที่สังกัด อปท. ก แต่แถวผู้ยืนยันเป็นของ ข → ไม่ใช่ผู้ยืนยันของ ข (สังกัดของบัญชีต้องตรงกับแถวเสมอ)
   assert.equal((await asUser(U.mayorAtoB, () => db.query('SELECT public.can_approve_water_announcement($1) AS ok', [B]))).rows[0].ok, false)
-  console.log(`✓ สิทธิ์: ${nobody.length} กลุ่มที่ไม่ใช่นายก/ปลัดที่ active ของ อปท. นั้น ถูกปฏิเสธทั้งยืนยัน/ไม่ประกาศ/ยกเลิก · ร่างไม่ขึ้นหน้าประชาชน · นายก/ปลัดผ่าน`)
+  console.log(`✓ สิทธิ์: ${nobody.length} กลุ่มที่ไม่ได้ถูก admin ตั้งเป็นผู้ยืนยัน (รวมผู้ลงนามในทะเบียนและบัญชีที่ไม่ใช่เจ้าหน้าที่) ถูกปฏิเสธทั้งยืนยัน/ไม่ประกาศ/ยกเลิก · ร่างไม่ขึ้นหน้าประชาชน · ผู้ที่ถูกตั้งผ่าน`)
 }
 
 // ── 6) ยืนยัน ──
@@ -452,7 +507,8 @@ let PUBLISHED
   assert.deepEqual((await asUser(U.mayorA, () => decline(D1.id))).rows[0].r, { ok: false, reason: 'already_handled', status: 'published' })
   // หน้าประชาชนเห็น
   const open = (await as('anon', null, () => pub(A))).rows[0].r
-  assert.deepEqual(Object.keys(open).sort(), ['body', 'expires_at', 'id', 'issuer', 'published_at'])
+  assert.deepEqual(Object.keys(open).sort(), ['body', 'expires_at', 'id', 'issuer', 'published_at', 'server_now'])
+  assert.ok(Math.abs(new Date(open.server_now) - Date.now()) < 60000, 'server_now = เวลาของฐานข้อมูล (หน้าเว็บใช้นับหมดอายุแทนนาฬิกาเครื่อง)')
   assert.equal(open.body, D1.body); assert.equal(open.issuer, 'อบต.ตัวอย่าง ก')
   assert.equal((await as('anon', null, () => pub(B))).rows[0].r, null, 'ประกาศของ ก ไม่ขึ้นที่ ข')
   // audit
@@ -460,7 +516,7 @@ let PUBLISHED
   assert.equal(audit.length, 1); assert.equal(audit[0].action, 'approve'); assert.equal(audit[0].actor_id, U.clerkA)
   assert.equal(audit[0].resource_type, 'water_announcement'); assert.equal(audit[0].resource_id, D1.id); assert.equal(audit[0].municipality_id, A)
   assert.equal(audit[0].metadata.hours, 24)
-  console.log('✓ ยืนยัน: นายก/ปลัดยืนยันได้ · ค่าเริ่มต้น 24 ชม. · ข้อความไม่เปลี่ยน · ยืนยันซ้ำ/ตัดสินซ้ำไม่ได้ · หน้าประชาชนเห็นเฉพาะ 5 ฟิลด์ · audit_logs มีผู้ยืนยัน')
+  console.log('✓ ยืนยัน: นายก/ปลัดยืนยันได้ · ค่าเริ่มต้น 24 ชม. · ข้อความไม่เปลี่ยน · ยืนยันซ้ำ/ตัดสินซ้ำไม่ได้ · หน้าประชาชนเห็นเฉพาะ 6 ฟิลด์ (รวม server_now) · audit_logs มีผู้ยืนยัน')
 }
 
 // ── 7) หมดอายุ / ต่ออายุ / ยกเลิก ──
@@ -626,6 +682,8 @@ let PUBLISHED
     assert.equal(r.current.body, 'ฉบับที่ใช้อยู่')
     assert.equal(r.enabled, true)
     assert.equal(r.can_approve, uid === U.mayorA, `${who}: can_approve`)
+    assert.equal(r.can_manage_approvers, ['admin', 'mayor', 'superadmin'].includes(who), `${who}: can_manage_approvers (mayorA เป็น admin ของ ก)`)
+    assert.equal(typeof r.approvers_count, 'number')
     assert.ok(!JSON.stringify(r).includes('ภายใน'), 'ไม่ส่ง facts')
     assert.deepEqual(Object.keys(r.history[0]).sort(), ['body', 'closed_at', 'drafted_at', 'expires_at', 'id', 'published_at', 'status'])
   }
@@ -663,6 +721,146 @@ let PUBLISHED
   assert.equal(nye, '1 ม.ค. 2570 เวลา 00:30 น.', 'ข้ามปีตามเวลาไทย')
   assert.equal((await db.query(`SELECT public.water_announcement_thai_time(NULL) AS s`)).rows[0].s, null)
   console.log('✓ เวลา: UTC → ไทย พ.ศ. ถูกต้อง รวมข้ามปี')
+}
+
+// ── 16) ตั้ง/ถอนผู้มีสิทธิ์ยืนยัน (PR 2.2) ──
+{
+  // แถวทดสอบของบัญชีที่ไม่ใช่เจ้าหน้าที่ (ข้อ 5 ใช้พิสูจน์แล้ว) ลบทิ้งก่อน ไม่ให้กินโควตา 5 คน
+  await db.exec(`DELETE FROM public.water_announcement_approvers WHERE profile_id IN ('${U.citizenA}', '${U.technicianA}', '${U.councilA}')`)
+  const mgr = (uid, muni = A) => asUser(uid, () => db.query('SELECT public.can_manage_water_announcement_approvers($1) AS ok', [muni]))
+  for (const [who, uid, expect] of [['admin ของ ก', U.adminA, true], ['superadmin', U.superadmin, true], ['staff', U.staffA, false], ['หัวหน้ากอง (officer)', U.deptHeadA, false],
+    ['ผู้ยืนยันที่เป็น staff', U.clerkA, false], ['ประชาชน', U.citizenA, false], ['ช่าง', U.technicianA, false], ['สภา', U.councilA, false], ['admin ของ ข', U.mayorB, false]]) {
+    assert.equal((await mgr(uid)).rows[0].ok, expect, `${who}: can_manage ต้องเป็น ${expect}`)
+  }
+  assert.equal((await mgr(U.adminA, B)).rows[0].ok, false, 'admin ของ ก ตั้งผู้ยืนยันของ ข ไม่ได้')
+  assert.equal((await asUser(U.adminA, () => db.query('SELECT public.can_manage_water_announcement_approvers(NULL) AS ok'))).rows[0].ok, false)
+
+  const listAp = (uid, muni = A) => asUser(uid, () => db.query('SELECT public.list_water_announcement_approvers($1) AS r', [muni]))
+  const setAp = (uid, target, on, note, muni = A) => asUser(uid, () => note === undefined
+    ? db.query('SELECT public.set_water_announcement_approver($1, $2, $3) AS r', [muni, target, on])
+    : db.query('SELECT public.set_water_announcement_approver($1, $2, $3, $4) AS r', [muni, target, on, note]))
+  // ไม่ใช่ผู้จัดการ = ถูกปฏิเสธทั้งอ่านรายชื่อและตั้ง/ถอน
+  for (const [who, uid] of [['staff', U.staffA], ['ผู้ยืนยันที่เป็น staff', U.clerkA], ['ประชาชน', U.citizenA], ['admin ของ ข', U.mayorB], ['ไม่มีใน profiles', U.none]]) {
+    await asUser(uid, () => fails(db, `${who} list approvers`, 'SELECT public.list_water_announcement_approvers($1) AS r', /ไม่มีสิทธิ์ตั้งผู้มีสิทธิ์ยืนยัน/, [A]))
+    await asUser(uid, () => fails(db, `${who} set approver`, 'SELECT public.set_water_announcement_approver($1, $2, true) AS r', /ไม่มีสิทธิ์ตั้งผู้มีสิทธิ์ยืนยัน|ต้องเข้าสู่ระบบ/, [A, U.staffA]))
+  }
+  await as('anon', null, () => fails(db, 'anon list approvers', 'SELECT public.list_water_announcement_approvers($1) AS r', /permission denied/, [A]))
+  await as('anon', null, () => fails(db, 'anon set approver', 'SELECT public.set_water_announcement_approver($1, $2, true) AS r', /permission denied/, [A, U.staffA]))
+  assert.equal((await db.query(`SELECT count(*)::int AS n FROM public.water_announcement_approvers WHERE profile_id = $1`, [U.staffA])).rows[0].n, 0, 'ไม่มีใครตั้งผู้ยืนยันได้ถ้าไม่ใช่ admin')
+
+  // รายชื่อ: เฉพาะ admin/officer/staff ของ อปท. นั้น · ไม่มีอีเมล/เบอร์ · มีสถานะผู้ยืนยัน
+  await db.exec(`UPDATE public.profiles SET job_title = 'ปลัด อบต.' WHERE id = '${U.clerkA}'`)
+  const l1 = (await listAp(U.adminA)).rows[0].r
+  assert.equal(l1.max_approvers, 5); assert.equal(l1.enabled, true)
+  const ids = l1.people.map(x => x.id)
+  for (const out of [U.citizenA, U.technicianA, U.councilA, U.mayorB, U.superadmin]) assert.ok(!ids.includes(out), 'รายชื่อต้องไม่มีบัญชีที่ตั้งเป็นผู้ยืนยันไม่ได้')
+  for (const inn of [U.adminA, U.staffA, U.deptHeadA, U.mayorA, U.clerkA]) assert.ok(ids.includes(inn))
+  assert.deepEqual(Object.keys(l1.people[0]).sort(), ['authority_note', 'id', 'is_approver', 'job_title', 'name', 'role'])
+  assert.equal(l1.people.find(x => x.id === U.clerkA).job_title, 'ปลัด อบต.')
+  assert.equal(l1.people.find(x => x.id === U.mayorA).is_approver, true)
+  assert.equal(l1.people.find(x => x.id === U.staffA).is_approver, false)
+  assert.equal((await listAp(U.superadmin)).rows[0].r.people.length, l1.people.length, 'superadmin เห็นรายชื่อของ อปท. ที่ระบุ')
+
+  // ตั้งผู้ยืนยัน + อ้างอิงอำนาจ (ตัดช่องว่าง) → ได้สิทธิ์ทันที · audit
+  await db.exec(`DELETE FROM public.audit_logs`)
+  let r = (await setAp(U.adminA, U.staffA, true, '  ตามคำสั่ง อบต. ที่ 1/2569  ')).rows[0].r
+  assert.deepEqual(r, { ok: true, approvers_count: 3 })
+  assert.equal((await db.query(`SELECT authority_note, added_by FROM public.water_announcement_approvers WHERE profile_id = $1`, [U.staffA])).rows[0].authority_note, 'ตามคำสั่ง อบต. ที่ 1/2569')
+  assert.equal((await db.query(`SELECT added_by FROM public.water_announcement_approvers WHERE profile_id = $1`, [U.staffA])).rows[0].added_by, U.adminA)
+  assert.equal((await asUser(U.staffA, () => db.query('SELECT public.can_approve_water_announcement($1) AS ok', [A]))).rows[0].ok, true, 'ตั้งแล้วยืนยันได้ทันที')
+  const aud = (await db.query(`SELECT action, actor_id, resource_type, resource_id, municipality_id, metadata FROM public.audit_logs`)).rows
+  assert.equal(aud.length, 1); assert.equal(aud[0].action, 'update'); assert.equal(aud[0].actor_id, U.adminA); assert.equal(aud[0].resource_id, U.staffA)
+  assert.equal(aud[0].metadata.kind, 'approver'); assert.equal(aud[0].metadata.is_approver, true); assert.equal(aud[0].municipality_id, A)
+  // ตั้งซ้ำ = แก้ข้อความ ไม่เพิ่มจำนวน · ข้อความว่าง = ไม่มี
+  r = (await setAp(U.adminA, U.staffA, true, '')).rows[0].r
+  assert.deepEqual(r, { ok: true, approvers_count: 3 })
+  assert.equal((await db.query(`SELECT authority_note FROM public.water_announcement_approvers WHERE profile_id = $1`, [U.staffA])).rows[0].authority_note, null)
+  // ตารางเองต้องกันข้อความยาวเกิน 300 ตัวอักษร (ไม่พึ่งแค่ตัวตรวจในฟังก์ชัน) — แทรกตรงด้วยสิทธิ์เจ้าของตาราง 301 ตัว = ล้ม
+  await fails(db, 'ข้อความอ้างอิงยาว 301 ตัวอักษรเข้าตารางตรง',
+    `INSERT INTO public.water_announcement_approvers (municipality_id, profile_id, authority_note, added_by) VALUES ($1, $2, $3, $4)`,
+    /check constraint/i, [A, U.expiredA, 'ก'.repeat(301), U.adminA])
+  // ใส่ได้จนครบ 5 คน คนที่ 6 ถูกปฏิเสธ
+  assert.equal((await setAp(U.adminA, U.deptHeadA, true)).rows[0].r.approvers_count, 4)
+  assert.equal((await setAp(U.superadmin, U.customA, true)).rows[0].r.approvers_count, 5, 'superadmin ตั้งให้ อปท. ได้')
+  assert.deepEqual((await setAp(U.adminA, U.expiredA, true)).rows[0].r, { ok: false, reason: 'max_reached', max: 5 })
+  assert.equal((await asUser(U.expiredA, () => db.query('SELECT public.can_approve_water_announcement($1) AS ok', [A]))).rows[0].ok, false)
+  // ครบ 5 แล้วยังแก้ข้อความของคนเดิมได้ และถอนแล้วตั้งคนใหม่ได้
+  assert.equal((await setAp(U.adminA, U.customA, true, 'แก้ข้อความ')).rows[0].r.ok, true)
+  assert.equal((await setAp(U.adminA, U.customA, false)).rows[0].r.approvers_count, 4)
+  assert.equal((await asUser(U.customA, () => db.query('SELECT public.can_approve_water_announcement($1) AS ok', [A]))).rows[0].ok, false, 'ถอนแล้วหมดสิทธิ์ทันที')
+  assert.equal((await setAp(U.adminA, U.expiredA, true)).rows[0].r.ok, true)
+  // ตั้งไม่ได้: ประชาชน/ช่าง/สภา/บัญชีของ อปท. อื่น/ไม่มีบัญชี
+  for (const [who, target] of [['ประชาชน', U.citizenA], ['ช่าง', U.technicianA], ['สภา', U.councilA], ['บัญชี อปท. อื่น', U.mayorB], ['superadmin', U.superadmin], ['ไม่มีใน profiles', U.none]]) {
+    assert.deepEqual((await setAp(U.adminA, target, true)).rows[0].r, { ok: false, reason: 'not_staff' }, `${who} ตั้งเป็นผู้ยืนยันไม่ได้`)
+  }
+  await asUser(U.adminA, () => fails(db, 'ข้อความอ้างอิงยาวเกิน', 'SELECT public.set_water_announcement_approver($1, $2, true, $3) AS r', /ยาวเกิน 300/, [A, U.staffA, 'ก'.repeat(301)]))
+  assert.equal((await setAp(U.adminA, U.staffA, true, 'ก'.repeat(300))).rows[0].r.ok, true, 'ยาว 300 พอดีผ่าน')
+  await asUser(U.adminA, () => fails(db, 'ไม่ระบุบัญชี', 'SELECT public.set_water_announcement_approver($1, NULL, true) AS r', /ต้องระบุบัญชี/, [A]))
+  await asUser(U.adminA, () => fails(db, 'ไม่ระบุสถานะ', 'SELECT public.set_water_announcement_approver($1, $2, NULL) AS r', /ต้องระบุบัญชี/, [A, U.staffA]))
+  // admin ของ ก ตั้งผู้ยืนยันของ ข ไม่ได้ (ดู can_manage ด้านบน) — และการถอนบัญชีที่ไม่ได้เป็นผู้ยืนยันอยู่ไม่ error
+  assert.equal((await setAp(U.adminA, U.sigOnlyA, false)).rows[0].r.ok, true)
+  // เทียบบทบาทซ้ำทุกครั้ง: ถูกลดบทบาท/ย้าย อปท. = หมดสิทธิ์ทันที (แถวยังอยู่)
+  await db.exec(`UPDATE public.profiles SET role = 'citizen' WHERE id = '${U.deptHeadA}'`)
+  assert.equal((await asUser(U.deptHeadA, () => db.query('SELECT public.can_approve_water_announcement($1) AS ok', [A]))).rows[0].ok, false, 'ถูกลดบทบาท = หมดสิทธิ์')
+  await db.exec(`UPDATE public.profiles SET role = 'officer' WHERE id = '${U.deptHeadA}'`)
+  assert.equal((await asUser(U.deptHeadA, () => db.query('SELECT public.can_approve_water_announcement($1) AS ok', [A]))).rows[0].ok, true, 'คืนบทบาทแล้วกลับมามีสิทธิ์ (แถวยังอยู่)')
+  await db.exec(`UPDATE public.profiles SET municipality_id = '${B}' WHERE id = '${U.deptHeadA}'`)
+  assert.equal((await asUser(U.deptHeadA, () => db.query('SELECT public.can_approve_water_announcement($1) AS ok', [A]))).rows[0].ok, false, 'ย้าย อปท. = หมดสิทธิ์')
+  await db.exec(`UPDATE public.profiles SET municipality_id = '${A}' WHERE id = '${U.deptHeadA}'`)
+  // ตารางปิดสนิท
+  for (const role of ['anon', 'authenticated']) {
+    for (const p2 of ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) {
+      assert.equal((await db.query(`SELECT has_table_privilege('${role}', 'public.water_announcement_approvers', '${p2}') AS ok`)).rows[0].ok, false)
+    }
+  }
+  assert.equal((await db.query(`SELECT count(*)::int AS n FROM pg_policies WHERE tablename = 'water_announcement_approvers'`)).rows[0].n, 0)
+  for (const fn of ['public.list_water_announcement_approvers(uuid)', 'public.set_water_announcement_approver(uuid, uuid, boolean, text)',
+    'public.can_manage_water_announcement_approvers(uuid)', 'public.water_announcement_todo(uuid)']) {
+    assert.equal((await db.query(`SELECT has_function_privilege('anon', '${fn}', 'EXECUTE') AS ok`)).rows[0].ok, false, `anon เรียก ${fn} ไม่ได้`)
+    assert.equal((await db.query(`SELECT has_function_privilege('authenticated', '${fn}', 'EXECUTE') AS ok`)).rows[0].ok, true)
+  }
+  assert.equal((await db.query(`SELECT to_regprocedure('public.water_announcement_approver_roles()') AS f`)).rows[0].f, null, 'ตัวช่วยเดิมถูกลบแล้ว')
+  // ลบ อปท. ทั้งก้อนยังทำได้ (cascade) — ตารางผู้ยืนยันไม่ขวาง
+  await db.exec(`INSERT INTO public.municipalities (id, slug, name) VALUES ('${uuid(8)}', 'yy', 'ทดสอบลบ 2')`)
+  await db.exec(`INSERT INTO public.water_announcement_approvers (municipality_id, profile_id) VALUES ('${uuid(8)}', '${U.staffA}')`)
+  await db.exec(`DELETE FROM public.municipalities WHERE id = '${uuid(8)}'`)
+  console.log('✓ ผู้ยืนยัน: ตั้ง/ถอนได้เฉพาะ admin ของ อปท. นั้นกับ superadmin · รายชื่อไม่มีบัญชีที่ตั้งไม่ได้และไม่มีอีเมล/เบอร์ · สูงสุด 5 คน · อ้างอิงอำนาจ ≤ 300 ตัว · ตั้งแล้วยืนยันได้ทันที ถอนแล้วหมดสิทธิ์ทันที · ลดบทบาท/ย้าย อปท. = หมดสิทธิ์ · audit ทุกครั้ง · ตารางปิดสนิท')
+}
+
+// ── 17) ตัวถามบนหน้าแรกเจ้าหน้าที่ (water_announcement_todo) ──
+{
+  await wipe()
+  await db.exec(`UPDATE public.water_announcement_settings SET enabled = true WHERE municipality_id = '${A}'`)
+  await db.exec(`DELETE FROM public.water_events WHERE municipality_id = '${A}'`)
+  await resetEvent()
+  assert.equal((await tick(nowIso)).drafted, 1)
+  const todo = (uid, muni = A) => asUser(uid, () => db.query('SELECT public.water_announcement_todo($1) AS r', [muni]))
+  const mine = (await todo(U.mayorA)).rows[0].r
+  assert.deepEqual(Object.keys(mine).sort(), ['can_approve', 'drafted_at', 'pending'])
+  assert.equal(mine.can_approve, true); assert.equal(mine.pending, true); assert.ok(mine.drafted_at)
+  // ไม่ใช่ผู้ยืนยัน = ค่าคงที่ ไม่บอกอะไรเกี่ยวกับ อปท. (ไม่รู้ว่าเปิดใช้/มีร่างหรือไม่)
+  for (const [who, uid] of [['เจ้าหน้าที่ที่ถูกถอดสิทธิ์แล้ว', U.customA], ['admin (ไม่ได้ตั้ง)', U.adminA], ['ผู้ลงนามที่ไม่ได้ตั้ง', U.sigOnlyA], ['ประชาชน', U.citizenA], ['superadmin', U.superadmin], ['admin ของ ข', U.mayorB], ['ไม่มีใน profiles', U.none]]) {
+    assert.deepEqual((await todo(uid)).rows[0].r, { can_approve: false, pending: false }, `${who} ได้ค่าคงที่`)
+  }
+  await as('authenticated', null, async () => assert.deepEqual((await todo(null)).rows[0].r, { can_approve: false, pending: false }))
+  await as('anon', null, () => fails(db, 'anon todo', 'SELECT public.water_announcement_todo($1) AS r', /permission denied/, [A]))
+  // ปิดสวิตช์ / ร่างเก่า > 3 ชม. / เหตุการณ์ปิด = ไม่มีงานรอ
+  await db.exec(`UPDATE public.water_announcement_settings SET enabled = false WHERE municipality_id = '${A}'`)
+  assert.equal((await todo(U.mayorA)).rows[0].r.pending, false, 'ปิดสวิตช์ = ไม่มีงานรอ')
+  await db.exec(`UPDATE public.water_announcement_settings SET enabled = true WHERE municipality_id = '${A}'`)
+  assert.equal((await todo(U.mayorA)).rows[0].r.pending, true)
+  await db.exec(`ALTER TABLE public.water_announcements DISABLE TRIGGER water_announcements_guard_row`)
+  // 3 ชม. 30 นาที = เกินอายุร่าง (3 ชม.) แต่ยังไม่ถึง 4 ชม. — ถ้าเกณฑ์ในฟังก์ชันเลื่อนไปเป็น 4 ชม. จะต้องแดง
+  await db.exec(`UPDATE public.water_announcements SET drafted_at = now() - interval '3 hours 30 minutes' WHERE status = 'draft'`)
+  await db.exec(`ALTER TABLE public.water_announcements ENABLE TRIGGER water_announcements_guard_row`)
+  assert.equal((await todo(U.mayorA)).rows[0].r.pending, false, 'ร่างเก่ากว่า 3 ชม. กดยืนยันไม่ได้ จึงไม่นับเป็นงาน')
+  await wipe(); await resetEvent(); await tick(nowIso)
+  assert.equal((await todo(U.mayorA)).rows[0].r.pending, true)
+  await db.exec(`UPDATE public.water_events SET closed_at = now(), ended_at = now(), close_reason = 'calm' WHERE id = '${EV1}'`)
+  assert.equal((await todo(U.mayorA)).rows[0].r.pending, false, 'เหตุการณ์ปิดแล้ว = ไม่นับ')
+  // ผู้ยืนยันของ ข ถาม ก → ค่าคงที่
+  assert.deepEqual((await todo(U.mayorB, A)).rows[0].r, { can_approve: false, pending: false })
+  console.log('✓ todo (หน้าแรกเจ้าหน้าที่): ผู้ยืนยันเห็นเมื่อมีร่างที่ยืนยันได้จริง · คนอื่น/ข้าม อปท./ไม่ล็อกอิน ได้ค่าคงที่ · ปิดสวิตช์/ร่างเก่า/เหตุการณ์ปิด = ไม่นับ · anon เรียกไม่ได้')
 }
 
 console.log('\n✅ water-announcements-db: ผ่านทุกข้อ')

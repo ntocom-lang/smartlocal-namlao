@@ -5,6 +5,8 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { useVisibleRefresh } from '../../hooks/useVisibleRefresh'
 import { alertSummary, buildAlerts } from '../../lib/waterSituation'
+import WaterAnnouncementCard from '../water/WaterAnnouncementCard'
+import { useWaterAnnouncement } from '../water/useWaterAnnouncement'
 
 // เท่ากับหน้า /water-situation — ต้นทางเปลี่ยนชั่วโมงละครั้ง ถามถี่กว่านี้ก็ไม่ได้ของใหม่
 const REFRESH_MS = 5 * 60 * 1000
@@ -50,6 +52,11 @@ export default function WaterAlertBanner({ className = '' }) {
     load()
   }, [enabled, tenantId, load])
   useVisibleRefresh(load, { intervalMs: REFRESH_MS, enabled })
+
+  // ประกาศของ อปท. ที่ผู้มีสิทธิ์ยืนยันแล้ว ชนะข้อมูลดิบเสมอ: มีประกาศ = ขึ้นประกาศแทนแถบแจ้งเตือนดิบ (ไม่ซ้อนสองแถบให้ประชาชนสับสน)
+  // ครบอายุ/ยกเลิก = หายเอง แล้วกลับไปแถบแจ้งเตือนดิบตามเดิม · อปท. ที่ไม่ได้เปิดประกาศได้ null ตลอด หน้าแรกไม่เปลี่ยน
+  const { view: announcement } = useWaterAnnouncement({ tenantId, enabled })
+  if (announcement) return <WaterAnnouncementCard view={announcement} linkTo="/water-situation" className={className} />
 
   if (!enabled || !data) return null
   const stations = data.stations ?? []
