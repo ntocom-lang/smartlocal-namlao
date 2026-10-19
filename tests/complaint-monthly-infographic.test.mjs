@@ -200,6 +200,17 @@ try {
       tenant: 'องค์การบริหารส่วนตำบลที่มีชื่อยาวมากพอสมควรสำหรับทดสอบการขึ้นบรรทัดใหม่ของข้อความในแถบหัวภาพ',
     },
     subitems: { sample: YALA_APRIL, tenant: 'เทศบาลตำบลสาธิต', breakdown: LIGHT_BREAKDOWN },
+    // ชุดที่ล็อก (เฟส 2): หมายเหตุล็อกยาวกว่าหมายเหตุปกติ + "แก้ไขครั้งที่ N" ต้องไม่ล้น/ทับ แม้เนื้อหายาวสุด
+    locked: { sample: YALA_APRIL, tenant: 'เทศบาลตำบลสาธิต', breakdown: LIGHT_BREAKDOWN, lock: { publishedAt: '2026-05-02T01:30:00Z', revision: 1 } },
+    lockedCrowded: {
+      sample: {
+        stats: { total: 1045, open: 40, in_progress: 100, resolved: 890, rejected: 15, avg_days: 12.5 },
+        categories: Object.fromEntries([200, 150, 130, 120, 100, 90, 80, 70, 50, 35, 20].map((n, i) => [`c${i}`, n])),
+        labels: Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`c${i}`, `แจ้งเรื่องร้องทุกข์ร้องเรียนหมวดที่มีชื่อยาวพอสมควร ${i}`])),
+      },
+      tenant: 'องค์การบริหารส่วนตำบลที่มีชื่อยาวมากพอสมควรสำหรับทดสอบการขึ้นบรรทัดใหม่ของข้อความในแถบหัวภาพ',
+      lock: { publishedAt: '2026-05-02T01:30:00Z', revision: 12 },
+    },
     subitemsLong: {
       // ชื่อรายการย่อยยาวมาก (ฟอร์มเปลี่ยนรายการในอนาคต) ต้องตัดบรรทัดไม่ล้นขอบ/ไม่ทับรายการถัดไป
       sample: { stats: { total: 14, resolved: 14 }, categories: { light: 14 }, labels: { light: 'ไฟฟ้าสาธารณะ' } },
@@ -220,7 +231,7 @@ try {
     const summary = Sum.summarizeMonth({
       stats: spec.sample.stats, rows, labelOf: c => spec.sample.labels[c] ?? c,
       tenantName: spec.tenant, period: Sum.monthPeriod(2569, 4), issueBreakdown: spec.breakdown ?? null,
-      now: new Date('2026-10-18T05:00:00Z'),
+      now: new Date('2026-10-18T05:00:00Z'), lock: spec.lock ?? null,
     })
     const model = Info.buildInfographicModel(summary, { tenantName: spec.tenant })
     return Info.buildInfographicSvg(model, Info.createCanvasMeasure())
@@ -253,6 +264,17 @@ try {
       }
     })
   }
+
+  await test('ภาพของเดือนที่ล็อก: ท้ายภาพบอกวันที่ล็อก (2 พ.ค.) ไม่ใช่วันที่สร้างภาพ (18 ต.ค.) · มีหมายเหตุล็อกและครั้งที่แก้ไข', async () => {
+    const plain = (await build('locked')).svg
+    assert.ok(plain.includes('ข้อมูล ณ วันที่ 2 พฤษภาคม 2569'))
+    assert.ok(!plain.includes('18 ตุลาคม 2569'))
+    assert.ok(plain.includes('ล็อกไว้เมื่อวันที่ 2 พฤษภาคม 2569'))
+    const revised = (await build('lockedCrowded')).svg
+    assert.ok(revised.includes('แก้ไขครั้งที่ 11'))
+    const live = (await build('april')).svg
+    assert.ok(live.includes('ข้อมูล ณ วันที่ 18 ตุลาคม 2569') && !live.includes('ล็อกไว้เมื่อ'), 'ภาพตัวเลขสดต้องไม่เปลี่ยน')
+  })
 
   await test('Chrome: ภาพโหลดเป็น <img> ได้ ขนาดตรง และเป็น XML ที่ถูกต้อง', async () => {
     const { svg, width, height } = await build('april')
