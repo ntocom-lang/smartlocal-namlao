@@ -10,24 +10,31 @@ import { build } from 'vite'
 
 const ENTRY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'infographicEntry.js')
 
-/** รวมโมดูลตัววาด (และไอคอน lucide ที่ใช้) เป็นสคริปต์เดียวเพื่อฉีดเข้าหน้าเบราว์เซอร์ → window.InfoBundle */
-export async function bundleInfographic() {
+/**
+ * รวมโมดูลจากจุดเข้า `entry` เป็นสคริปต์เดียวเพื่อฉีดเข้าหน้าเบราว์เซอร์ → window[name]
+ * esbuild.jsx 'automatic' = ไฟล์ .jsx ไม่ต้อง import React (โปรเจกต์ใช้ plugin-react ซึ่งตั้งแบบนี้ให้ แต่ที่นี่ไม่โหลด plugin)
+ */
+export async function bundleEntry(entry, name) {
   const result = await build({
     configFile: false,
     logLevel: 'silent',
     // ไม่คัดลอกโฟลเดอร์ public/ ลงผลลัพธ์ และไม่เขียนไฟล์ใดลงดิสก์ (write: false)
     publicDir: false,
+    esbuild: { jsx: 'automatic' },
     // lib mode ไม่แทน process.env.NODE_ENV ให้เอง แต่โค้ดของ React ที่ lucide ดึงมาอ้างถึงมัน
     define: { 'process.env.NODE_ENV': '"production"' },
     build: {
       write: false,
       minify: false,
-      lib: { entry: ENTRY, name: 'InfoBundle', formats: ['iife'], fileName: 'infographic-bundle' },
+      lib: { entry, name, formats: ['iife'], fileName: 'test-bundle' },
     },
   })
   const output = (Array.isArray(result) ? result[0] : result).output
   return output.find(chunk => chunk.type === 'chunk').code
 }
+
+/** รวมโมดูลตัววาด (และไอคอน lucide ที่ใช้) เป็นสคริปต์เดียวเพื่อฉีดเข้าหน้าเบราว์เซอร์ → window.InfoBundle */
+export const bundleInfographic = () => bundleEntry(ENTRY, 'InfoBundle')
 
 /**
  * ตัวเลขเดือนเมษายน 2569 ของเทศบาลนครยะลา (จากภาพสรุปที่เทศบาลเผยแพร่เอง): 39 เรื่อง

@@ -76,13 +76,8 @@ export default function ComplaintMonthlyInfographic({ summary, tenantName }) {
     <section aria-label="ภาพสรุปประจำเดือนสำหรับเผยแพร่" className="bg-white rounded-2xl border border-gray-100 p-3 md:p-4 print:hidden">
       <p className="text-sm font-bold text-gray-700">ภาพสรุปประจำเดือน</p>
       <p className="text-xs text-gray-500 mt-0.5">ดาวน์โหลดไปโพสต์ใน LINE หรือ Facebook ได้ · ระบบวาดจากตัวเลขรวม ไม่มีข้อมูลระบุตัวบุคคล</p>
-      <img
-        src={svgDataUrl(image.svg)}
-        alt={summary.sentences.join(' ')}
-        width={image.width}
-        height={image.height}
-        className="mt-3 mx-auto block h-auto w-full max-w-md rounded-xl border border-gray-200"
-      />
+      {/* ปุ่มอยู่เหนือภาพ ไม่ใช่ใต้ภาพ: ภาพสูงราว 500px ปุ่มที่อยู่ใต้ภาพตกนอกจอแรกทั้งมือถือและ PC
+          เจ้าหน้าที่ที่มาเอาไปแชร์ต้องเลื่อนหา ทั้งที่ปุ่มเป็นสิ่งเดียวที่เขาต้องการ */}
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" className={buttonClass} disabled={!file} onClick={download}>
           <Download size={16} aria-hidden="true" />ดาวน์โหลดภาพ (PNG)
@@ -99,6 +94,13 @@ export default function ComplaintMonthlyInfographic({ summary, tenantName }) {
         </p>
       )}
       {message && <p role="status" className="mt-2 rounded-xl bg-sky-50 p-3 text-xs text-sky-900">{message}</p>}
+      <img
+        src={svgDataUrl(image.svg)}
+        alt={summary.sentences.join(' ')}
+        width={image.width}
+        height={image.height}
+        className="mt-3 mx-auto block h-auto w-full max-w-md rounded-xl border border-gray-200"
+      />
     </section>
   )
 }

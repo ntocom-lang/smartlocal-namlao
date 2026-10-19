@@ -39,6 +39,7 @@ import {
 import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
 import { PERFORMANCE_ROLES } from '../lib/staffPerformanceData'
 import OdorReportPanel from '../components/staff/OdorReportPanel'
+import MonthlyComplaintShareCard from '../components/staff/MonthlyComplaintShareCard'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
 import StaffAccountMenu from '../components/layout/StaffAccountMenu'
 import PortalDrawer from '../components/common/PortalDrawer'
@@ -2353,6 +2354,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
 }
 
 function StaffReportWrapper({ tenant }) {
+  const { isModuleEnabled } = useTenant()
   const tenantId = tenant?.id
   const [complaints, setComplaints] = useState([])
   const [technicians, setTechnicians] = useState([])
@@ -2389,15 +2391,26 @@ function StaffReportWrapper({ tenant }) {
     return () => supabase.removeChannel(channel)
   }, [tenantId, loadReportData])
 
+  // การ์ดทางลัดไปสรุปรายเดือนอยู่บนสุดเสมอ แม้ตัวรายงานด้านล่างกำลังโหลด (มันเป็นแค่ลิงก์ ไม่ต้องรอข้อมูล)
+  // — งานแชร์ประจำเดือนเป็นเหตุผลหลักที่เจ้าหน้าที่เปิดเมนูนี้ จึงไม่ควรต้องเลื่อนหา
+  const shareCard = isModuleEnabled('complaints') ? <MonthlyComplaintShareCard /> : null
   if (loading) return (
-    <div className="flex min-h-72 flex-col items-center justify-center rounded-3xl bg-white text-slate-400 shadow-sm">
-      <Loader2 size={28} className="animate-spin text-blue-500" />
-      <p className="mt-3 text-xs font-semibold">กำลังประมวลผลรายงานล่าสุด...</p>
+    <div className="space-y-3">
+      {shareCard}
+      <div className="flex min-h-72 flex-col items-center justify-center rounded-3xl bg-white text-slate-400 shadow-sm">
+        <Loader2 size={28} className="animate-spin text-blue-500" />
+        <p className="mt-3 text-xs font-semibold">กำลังประมวลผลรายงานล่าสุด...</p>
+      </div>
     </div>
   )
   // hideTitle: หน้าเจ้าหน้าที่มี ModuleHeader อยู่เหนือขึ้นไปแล้ว ส่วนหน้าแอดมินไม่มี
   // หัวเรื่องกลาง จึงต้องคงชื่อในแบนเนอร์ไว้ตามเดิม (ดู AdminDashboard → activePage === 'report')
-  return <ReportManager complaints={complaints} tenant={tenant} technicians={technicians} hideTitle />
+  return (
+    <div className="space-y-3">
+      {shareCard}
+      <ReportManager complaints={complaints} tenant={tenant} technicians={technicians} hideTitle />
+    </div>
+  )
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────

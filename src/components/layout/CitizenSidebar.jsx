@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   Home, ClipboardList, FileText, CalendarDays, Newspaper,
   MapPin, FileSearch, FolderOpen, Bell,
-  Phone, AlertCircle, BookUser, LogIn, LogOut, LayoutGrid, Database, Trash2, CloudRain,
+  Phone, AlertCircle, BookUser, LogIn, LogOut, LayoutGrid, Database, Trash2, CloudRain, FileBarChart,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTenant } from '../../contexts/TenantContext'
@@ -36,6 +36,10 @@ const NAV_GROUPS = [
   {
     label: 'ข้อมูลองค์กร',
     items: [
+      // ทางเข้าหน้าสถิติ/สรุปรายเดือนที่เจ้าหน้าที่ใช้แชร์ลงกลุ่ม — เดิมบนจอ PC ต้องเข้า "เมนูทั้งหมด" → ความโปร่งใส
+      // ชื่อเดียวกับรายการใน MorePage/Kledkaew More (ส่วนหัวของหน้า /reports/complaints คงถ้อยคำ ITA ไว้เหมือนเดิม)
+      // ตัดตามโมดูล: moduleForPath('/reports/complaints') = 'complaints' อปท. ที่ปิดโมดูลคำร้องจึงไม่เห็น
+      { label: 'รายงานร้องเรียน/ร้องทุกข์', href: '/reports/complaints', Icon: FileBarChart },
       { label: 'ติดต่อเรา',   href: '/contact',   Icon: Phone },
       { label: 'สายด่วนฉุกเฉิน', href: '/emergency', Icon: AlertCircle },
       { label: 'เบอร์โทรสำคัญ', href: '/directory', Icon: BookUser },

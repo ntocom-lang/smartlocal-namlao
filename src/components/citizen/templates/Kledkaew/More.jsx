@@ -110,7 +110,7 @@ export default function KledkaewMore() {
       items: [
         { label: 'การแจ้งเตือน', icon: Bell, href: '/notifications', color: '#9333ea', badge: unreadCount },
         { label: 'รายงานการออกเอกสาร', icon: ShieldCheck, href: '/doc-stats', color: '#059669' },
-        { label: 'รายงานการจัดการเรื่องร้องเรียน/ร้องทุกข์', icon: ClipboardList, href: '/reports/complaints', color: '#059669' },
+        { label: 'รายงานร้องเรียน/ร้องทุกข์', icon: ClipboardList, href: '/reports/complaints', color: '#059669' },
         { label: 'ประเมินความพึงพอใจ', icon: Info, href: '/satisfaction', color: '#ca8a04' },
         { label: 'ติดต่อเรา', icon: Phone, href: '/contact', color: '#059669' },
         { label: 'คู่มือการใช้งาน', icon: BookOpen, href: '/manual-citizen.html', external: true, color: '#4f46e5' },

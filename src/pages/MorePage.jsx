@@ -350,7 +350,7 @@ function NamlaoMorePage() {
     ] },
     { id: 'transparency', title: 'ความโปร่งใส (LPA / ITA)', Icon: ShieldCheck, color: '#059669', items: [
       { key: 'doc-stats', label: 'รายงานการออกเอกสารดิจิทัล', desc: 'สถิติคำขอ อัตราเสร็จสิ้น ระยะเวลาดำเนินการ — LPA ๑.๗', Icon: ShieldCheck, color: '#059669', to: '/doc-stats' },
-      { key: 'complaint-report', label: 'รายงานการจัดการเรื่องร้องเรียน/ร้องทุกข์', desc: 'สถิติการรับเรื่องและระยะเวลาดำเนินการ', Icon: ClipboardList, color: '#059669', to: '/reports/complaints' },
+      { key: 'complaint-report', label: 'รายงานร้องเรียน/ร้องทุกข์', desc: 'สรุปรายเดือน ภาพสำหรับแชร์ และสถิติรายปีงบประมาณ', Icon: ClipboardList, color: '#059669', to: '/reports/complaints' },
     ] },
     { id: 'contact', title: 'ติดต่อหน่วยงาน', Icon: Phone, color: '#059669', items: [
       { key: 'contact', label: 'ติดต่อเรา', desc: 'เบอร์โทรศัพท์ สถานที่ตั้ง และช่องทางโซเชียลมีเดีย', Icon: Phone, color: '#059669', to: '/contact' },
