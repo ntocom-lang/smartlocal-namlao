@@ -4,16 +4,16 @@
 // จุดที่ต้องไม่พลาด:
 //  (1) อปท. ที่ไม่มีระบบไม่เห็นหัวข้อนี้ · ?system= ใช้ได้เฉพาะ demo · ตำหนักธรรม/ทุ่งแค้วเห็นระบบของตัวเอง ไม่เห็นของน้ำเลา
 //  (2) ทะเบียน: ทุกโหนดมีที่มา · id ไม่ซ้ำ · ความสัมพันธ์ของอ่าง/สถานีครบ ตรงกับโหนด · ไม่มีความจุจากผัง · ไม่มีคำต้องห้าม
-//  (3) แนวโน้มอ่าง: ค่าว่างไม่เป็น 0 · ไม่ลากเส้นข้ามช่องว่าง · ไม่ครบ 7 วัน = "กำลังเก็บ" · ไม่มีคำพยากรณ์
+//  (3) การ์ดแนวโน้มอ่างกับกล่อง "ผังต้นฉบับมี แต่เราไม่ได้ใส่" ถูกตัดออกจากหน้า (เจ้าของระบบสั่ง 2026-10-19) — ล็อกไม่ให้กลับมา · ข้อมูล omitted ยังอยู่ในทะเบียนให้ อบต. ยืนยัน
 //  (4) อายุผังคำนวณเอง (30 เดือน ไม่ใช่ 17) · แถบเหลืองที่ 36 เดือน
 //  (5) ไม่มีช่องกรอก/ฟอร์มในส่วนนี้ · ปุ่มมีแค่ย่อ/ขยายรายการ
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import {
   NODE_KINDS, NODE_ROLES, NODE_STATUSES, NO_LIVE_TEXT, RELATIONS, RELATION_KEYS, STALE_DIAGRAM_MONTHS, SYSTEMS, SYSTEM_DISCLAIMER,
-  SYSTEM_DISCLAIMER_LINE, SYSTEM_PREVIEW_SCOPES, TREND_MIN_DAYS, TREND_WINDOW_DAYS, UPSTREAM_DEPTH_NOTE, WATER_SYSTEM_TENANTS,
-  ageText, bangkokISODate, damTrendSummary, diagramAge, liveState, monthsBetween, relationOf, resolveSystem, systemById, systemCountsText,
-  systemHasDams, systemTenant, thaiDate, trendChart, trendFactText,
+  SYSTEM_DISCLAIMER_LINE, SYSTEM_PREVIEW_SCOPES, UPSTREAM_DEPTH_NOTE, WATER_SYSTEM_TENANTS,
+  ageText, diagramAge, liveState, monthsBetween, relationOf, resolveSystem, systemById, systemCountsText,
+  systemTenant, thaiDate,
 } from '../src/lib/waterSystem/model.js'
 import { NAMLAO_SYSTEM } from '../src/lib/waterSystem/namlao.js'
 import { TAMNAKTHAM_SYSTEM } from '../src/lib/waterSystem/tamnaktham.js'
@@ -24,8 +24,6 @@ import { THUNGKAEW_DIAGRAM } from '../src/lib/waterDiagram/thungkaew.js'
 import { SMALL_RESERVOIRS } from '../src/lib/smallReservoirs.js'
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
-const DAY = 86_400_000
-const bkkMidnight = iso => Date.parse(`${iso}T00:00:00+07:00`)
 
 // ── 1) ใครเห็นระบบ ──
 {
@@ -153,8 +151,7 @@ const allNodes = [...sys.upstream, ...sys.inside, ...sys.downstream]
   assert.equal(diagramAge(fake, Date.parse('2026-10-17T05:00:00Z')).stale, false, '35 เดือน (วันก่อนครบ) ยังไม่ขึ้นแถบ')
   assert.equal(diagramAge(fake, Date.parse('2026-10-18T05:00:00Z')).stale, true, 'ครบ 36 เดือนขึ้นแถบเหลือง')
   assert.equal(diagramAge({ id: 'x', sources: [] }, now), null)
-  assert.equal(bangkokISODate(Date.parse('2026-10-11T17:00:00Z')), '2026-10-12', 'เที่ยงคืนไทย = 17:00 UTC ของวันก่อน ห้ามตัดวันที่จาก UTC')
-  console.log('✓ คำกำกับบังคับครบ · อายุผัง 29 เดือน = "2 ปี 5 เดือน" · แถบเหลืองที่ 36 เดือนพอดี · วันที่ไทยไม่เพี้ยนจาก UTC')
+  console.log('✓ คำกำกับบังคับครบ · อายุผัง 29 เดือน = "2 ปี 5 เดือน" · แถบเหลืองที่ 36 เดือนพอดี')
 }
 
 // ── 6) ค่าสดของโหนด ──
@@ -177,60 +174,22 @@ const allNodes = [...sys.upstream, ...sys.inside, ...sys.downstream]
   console.log('✓ ค่าสดโหนด: มีค่า=live · ไม่มี/ว่าง=ไม่มีค่าสดในระบบ (0 จริงยังเป็น live) · ฝาย/แผนก่อสร้างไม่ขึ้นป้าย')
 }
 
-// ── 7) แนวโน้มอ่าง ──
+// ── 7) ตัดออกจากหน้า (เจ้าของระบบสั่ง 2026-10-19): การ์ดแนวโน้มอ่าง 30 วัน + กล่อง "ผังต้นฉบับมี แต่เราไม่ได้ใส่" ──
+//   เหตุผล: การ์ดแนวโน้มซ้ำกับการ์ดอ่างเดิมของหน้า (ป้ายต้นน้ำ + ปริมาตรอยู่ที่นั่นแล้ว) · กล่อง "ไม่ได้ใส่" เป็นภาษาเทคนิคเกินไปสำหรับชาวบ้าน
 {
-  const day = (iso, extra = {}) => ({ recorded_at: new Date(bkkMidnight(iso)).toISOString(), storage_percent: 90, storage_mcm: 6.0, capacity_mcm: 6.76, ...extra })
-  const isoDay = n => bangkokISODate(bkkMidnight('2026-10-01') + n * DAY)
-  const series = (n, f = i => ({})) => Array.from({ length: n }, (_, i) => day(isoDay(i), f(i)))
-
-  assert.deepEqual(damTrendSummary(undefined), { state: 'none', days: 0 })
-  assert.deepEqual(damTrendSummary([]), { state: 'none', days: 0 })
-  assert.deepEqual(damTrendSummary([{ recorded_at: 'ไม่ใช่วันที่' }]), { state: 'none', days: 0 })
-
-  const six = damTrendSummary(series(6))
-  assert.equal(six.state, 'building'); assert.equal(six.needDays, 1); assert.equal(six.days, 6)
-  assert.equal(damTrendSummary(series(1)).needDays, TREND_MIN_DAYS - 1)
-  assert.equal(damTrendSummary(series(TREND_MIN_DAYS)).state, 'ready', `ครบ ${TREND_MIN_DAYS} วันพอดีต้องแสดง`)
-  // ห่างกัน 8 วันแต่มีแค่ 2 แถว ไม่ใช่แนวโน้ม
-  const sparse = damTrendSummary([day('2026-10-01'), day('2026-10-09')])
-  assert.equal(sparse.state, 'building'); assert.equal(sparse.needDays, 5)
-  assert.equal(TREND_WINDOW_DAYS, 30)
-
-  // ค่าลดลง: ข้อเท็จจริง ไม่พยากรณ์
-  const down = damTrendSummary(series(10, i => ({ storage_percent: 100 - i * 2, storage_mcm: 6.76 - i * 0.1 })))
-  assert.equal(down.state, 'ready'); assert.equal(down.facts.dir, 'down'); assert.equal(down.facts.mcm, 0.9)
-  assert.equal(down.facts.pctOfCapacity, 13.3)
-  assert.equal(trendFactText(down.facts), '10 วันที่ผ่านมา ปริมาณน้ำในอ่างลดลง 0.9 ล้าน ลบ.ม. (13.3% ของความจุ)')
-  assert.equal(damTrendSummary(series(8, i => ({ storage_mcm: 4 + i * 0.5 }))).facts.dir, 'up')
-  const flat = damTrendSummary(series(8))
-  assert.equal(flat.facts.dir, 'flat'); assert.equal(trendFactText(flat.facts), '8 วันที่ผ่านมา ปริมาณน้ำในอ่างเท่าเดิม')
-  assert.equal(trendFactText(null), '')
-  for (const text of [trendFactText(down.facts), trendFactText(flat.facts)]) {
-    for (const word of ['เหลืออีก', 'จะหมด', 'จะเต็ม', 'คาด', 'พยากรณ์', 'วันที่น้ำ']) assert.ok(!text.includes(word), `ข้อความแนวโน้มห้ามมี "${word}"`)
+  const code = read('src/components/water/WaterSystem.jsx').split('\n').filter(l => !l.trim().startsWith('//')).join('\n')
+  for (const gone of ['DamTrendCard', 'TrendChart', 'TrendPanel', 'useDamHistory', 'get_public_dam_history', 'data-related-dam', 'data-trend', 'data-system-omitted', 'omitted',
+    'ผังต้นฉบับมี แต่เราไม่ได้ใส่', 'ดูตัวเลขล่าสุดของอ่างนี้', 'แนวโน้มปริมาณน้ำในอ่าง']) {
+    assert.ok(!code.includes(gone), `หน้าห้ามมี "${gone}" อีก (ตัดออกตามที่เจ้าของระบบสั่ง)`)
   }
-
-  // ค่าว่างไม่เป็น 0 · 0 จริงยังเป็น 0
-  const blank = damTrendSummary(series(8, i => (i === 3 ? { storage_percent: null } : {})))
-  assert.equal(blank.chart.segments, 1, 'ค่า % ว่าง 1 วันไม่ทำให้เส้นขาด (ไม่ใช่ช่องว่างเกิน 48 ชม.) และไม่เป็น 0')
-  assert.ok(blank.chart.min >= 90, 'ค่าว่างต้องไม่ถูกนับเป็น 0')
-  const zero = damTrendSummary(series(8, i => (i === 7 ? { storage_percent: 0 } : {})))
-  assert.equal(zero.chart.min, 0, '0% จริงต้องเป็น 0')
-  assert.equal(damTrendSummary(series(8, () => ({ storage_percent: null }))).state, 'none', 'ไม่มี % สักแถว = ไม่วาดกราฟ')
-
-  // ช่องว่างเกิน 48 ชม. ตัดเส้น ไม่ลากข้าม
-  const gap = damTrendSummary([...series(4), ...Array.from({ length: 4 }, (_, i) => day(isoDay(8 + i)))])
-  assert.equal(gap.state, 'ready'); assert.equal(gap.chart.segments, 2, 'ข้อมูลหาย 4 วันต้องตัดเส้นเป็น 2 ช่วง')
-  // สเกลกราฟคงที่ 0–100% ไม่ขยายตามข้อมูล (ลดลง 9% ต้องไม่ดูเหมือนเทลงหมดถัง) · เกิน 100 ขยายเพดานเท่าที่ต้อง
-  const c90 = damTrendSummary(series(8, () => ({ storage_percent: 90 }))).chart
-  assert.equal(c90.top, 100); assert.match(c90.paths[0], /^M5 11\.2 /, '90% ต้องอยู่ที่ 90% ของความสูงที่ใช้ได้ (y = 72 - 5 - 0.9 × 62 = 11.2)')
-  const c50 = damTrendSummary(series(8, () => ({ storage_percent: 50 }))).chart
-  assert.match(c50.paths[0], /^M5 36 /, '50% ต้องอยู่กึ่งกลาง')
-  assert.equal(damTrendSummary(series(8, () => ({ storage_percent: 120 }))).chart.top, 120, 'ค่าเกิน 100 ขยายเพดานตามจริง ไม่ตัดทิ้ง')
-  assert.equal(trendChart([]), null); assert.equal(trendChart(null), null)
-  const lone = trendChart([{ t: 1, v: 40 }]); assert.equal(lone.paths.length, 0); assert.equal(lone.dots.length, 1)
-  // เรียงเวลาเอง
-  assert.equal(damTrendSummary(series(8).reverse()).state, 'ready')
-  console.log('✓ แนวโน้มอ่าง: <7 วัน=กำลังเก็บ (นับวันที่ต่างกัน) · ครบ 7 แสดง · ข้อเท็จจริงลด/เพิ่ม/เท่าเดิม ไม่มีคำพยากรณ์ · ค่าว่างไม่เป็น 0 · ตัดเส้นที่ช่องว่าง')
+  assert.equal(existsSync(new URL('../src/components/water/useDamHistory.js', import.meta.url)), false, 'ไม่ดึงประวัติอ่างอีก → ไม่มีตัวดึง')
+  const model = read('src/lib/waterSystem/model.js')
+  for (const gone of ['damTrendSummary', 'trendChart', 'trendFactText', 'TREND_WINDOW_DAYS', 'TREND_MIN_DAYS', 'systemHasDams', 'bangkokISODate', 'DAM_GAP_MS']) {
+    assert.ok(!model.includes(gone), `model ห้ามเหลือโค้ดแนวโน้มอ่างที่ไม่มีใครใช้: ${gone}`)
+  }
+  // รายการ "ที่ผังมีแต่ไม่ได้ใส่" ยังเก็บในทะเบียนเป็นบันทึกให้ อบต. ยืนยัน (ไม่ขึ้นหน้าเว็บ)
+  for (const system of Object.values(SYSTEMS)) assert.ok(system.omitted.length >= 4, `${system.id}: ยังต้องเก็บรายการที่ผังมีแต่ไม่ได้ใส่ไว้ในทะเบียน`)
+  console.log('✓ ตัดออกจากหน้า: การ์ดแนวโน้มอ่าง + กล่อง "ไม่ได้ใส่" + ตัวดึงประวัติอ่าง + โค้ดแนวโน้มใน model · ข้อมูล omitted ยังอยู่ในทะเบียน')
 }
 
 // ── 9) ทุกระบบ: ความสอดคล้องของทะเบียน (ตำหนักธรรม · ทุ่งแค้ว ใช้กติกาเดียวกับน้ำเลา) ──
@@ -302,14 +261,11 @@ const FORBIDDEN_WORDS = ['รับรอง', 'อพยพ', 'มาตรา'
   assert.equal(relationOf(K, 'waterlevel', 'YOM003').label, 'ผังไม่ระบุ')
   assert.equal(relationOf(T, 'dam', '305'), null, 'ตำหนักธรรมไม่มีป้ายอ่างแม่คำปอง')
   assert.equal(relationOf(K, 'waterlevel', 'Y.38'), null)
-  // ไม่มีอ่างกลาง → ไม่ผูกอ่างกลาง ไม่ดึงประวัติ
+  // ไม่มีอ่างกลาง → ไม่ผูกอ่างกลาง
   for (const [name, system, nodes] of [['ตำหนักธรรม', T, tNodes], ['ทุ่งแค้ว', K, kNodes]]) {
     assert.ok(!Object.keys(system.relations).some(k => k.startsWith('dam:')), `${name}: ห้ามมีป้ายอ่างกลาง`)
     assert.ok(!nodes.some(n => n.bind?.type === 'dam'), `${name}: ห้ามผูกอ่างกลาง`)
-    assert.equal(systemHasDams(system), false)
   }
-  assert.equal(systemHasDams(NAMLAO_SYSTEM), true)
-  assert.equal(systemHasDams(null), false); assert.equal(systemHasDams({}), false)
 
   // ตำหนักธรรม: Y.38 ผูกค่าสด · ที่ผังไม่ยืนยัน 3 เรื่อง (ชื่อสาย · อ่างต้นสายตามผังจังหวัด · ต้นคลอง) ต้องเป็น unconfirmed
   assert.deepEqual(tNodes.find(n => n.id === 'in-gauge-y38').bind, { type: 'waterlevel', code: 'Y.38' })
@@ -381,13 +337,8 @@ const FORBIDDEN_WORDS = ['รับรอง', 'อพยพ', 'มาตรา'
   assert.ok(!/supabase\.from|\.insert\(|\.update\(|\.delete\(|\.upsert\(/.test(code), 'ห้ามเขียนข้อมูล')
   assert.ok(code.includes('SYSTEM_DISCLAIMER_LINE'), 'ต้องแสดงคำกำกับบังคับ')
   assert.ok(code.includes('UPSTREAM_DEPTH_NOTE') && code.includes('NO_LIVE_TEXT'))
-  assert.ok(code.includes('data-system-omitted') && code.includes('data-system-source'), 'ต้องมีกล่อง "ผังมีแต่ไม่ได้ใส่" และ "ที่มา"')
+  assert.ok(code.includes('data-system-source'), 'ต้องมีกล่อง "ที่มาของข้อมูล"')
   for (const word of ['เหลืออีก', 'จะหมด', 'พยากรณ์ว่า', 'ปกติดี', 'ปลอดภัยแล้ว']) assert.ok(!code.includes(word), `คอมโพเนนต์ห้ามมี "${word}"`)
-
-  const hook = read('src/components/water/useDamHistory.js')
-  assert.ok(hook.includes("'get_public_dam_history'") && hook.includes('TREND_WINDOW_DAYS'), 'เรียกฟังก์ชันประวัติอ่าง 30 วันเท่านั้น')
-  assert.ok((hook.match(/supabase\.rpc\(/g) || []).length === 1, 'เรียกครั้งเดียวต่อการเปิดหน้า')
-  assert.ok(!hook.includes('setInterval'), 'อ่างส่งรายวัน ไม่ต้องถามถี่')
 
   const page = read('src/pages/WaterSituationPage.jsx')
   assert.ok(/const WaterSystem = lazy\(\(\) => import\('\.\.\/components\/water\/WaterSystem'\)\)/.test(page), 'WaterSystem ต้องโหลดแบบ lazy')
@@ -401,19 +352,13 @@ const FORBIDDEN_WORDS = ['รับรอง', 'อพยพ', 'มาตรา'
   assert.ok(/<DamSection stations=\{dams\} homeAmphoe=\{tenant\.district\} now=\{now\} snapshot \/>/.test(page), 'การ์ดสำหรับภาพแชร์ต้องคงเดิม')
   // ตัวกรอง Y.38 ของน้ำเลายังอยู่ (ไม่แตะ)
   assert.ok(page.includes("s.station_code === 'Y.38'"))
-  // หลาย อปท.: ไม่เรียกประวัติอ่างเมื่อไม่มีอ่างกลาง · สรุปจำนวนมาจากตัวช่วย (ไม่เขียน "อ่าง 0 แห่ง") · ทุกชนิดโหนดมีไอคอน
-  assert.ok(/useDamHistory\(tenantId, Boolean\(system\) && systemHasDams\(system\)\)/.test(code), 'ตำบลที่ไม่มีอ่างต้องไม่เรียกประวัติอ่าง')
+  // หน้าไม่ดึงข้อมูลเพิ่ม (ค่าสดมาจาก stations ที่หน้าโหลดอยู่แล้ว) · สรุปจำนวนมาจากตัวช่วย (ไม่เขียน "อ่าง 0 แห่ง") · ทุกชนิดโหนดมีไอคอน
+  assert.ok(!/supabase\.rpc\(|\.rpc\(/.test(code) && !code.includes('supabase'), 'ส่วนระบบน้ำไม่เรียกฐานข้อมูลเอง')
+  assert.ok(!/<WaterSystem[^>]*tenantId/.test(page), 'ไม่ต้องส่ง tenantId (ไม่มีอะไรให้ดึง)')
   assert.ok(code.includes('systemCountsText(system.counts)') && !/system\.counts\.(reservoirs|weirs|ponds|tributaries|planned)/.test(code), 'สรุปจำนวนต้องมาจาก systemCountsText')
   const iconKeys = [...(/const KIND_ICON = \{([^}]*)\}/.exec(code)?.[1] ?? '').matchAll(/(\w+):/g)].map(m => m[1])
   assert.deepEqual([...iconKeys].sort(), [...NODE_KINDS].sort(), 'ไอคอนต้องมีครบทุกชนิดโหนด ไม่เกิน ไม่ขาด')
-  // การ์ดในส่วนนี้ = แนวโน้มล้วน ห้ามแสดงซ้ำกับการ์ดอ่างเดิม (ตัวเลขล่าสุด · ค่าสด · คำเตือนซ้ำเดิม · คำอธิบายความสัมพันธ์) — ชาวบ้านเห็นข้อความเดียวกันสองที่จะสับสน
-  assert.ok(code.includes('function DamTrendCard') && !code.includes('RelatedDamCard'), 'การ์ดต้องเป็น DamTrendCard (แนวโน้มล้วน)')
-  for (const dup of ['storage_percent', 'dam_storage_mcm', 'damSameText', 'damSameInfo', 'relation.note', 'recorded_at']) {
-    assert.ok(!code.includes(dup), `คอมโพเนนต์ห้ามมี "${dup}" (ตัวเลข/คำเตือน/คำอธิบายของอ่างอยู่ที่การ์ดอ่างเดิมแล้ว)`)
-  }
-  assert.ok(code.includes("['upstream', 'inside'].includes(item.relation.key)"), 'การ์ดแนวโน้มเฉพาะอ่างต้นน้ำ/ในตำบล (สายข้างเคียงไม่มี)')
-  assert.ok(/if \(history\.status === 'error'\) return null/.test(code), 'โหลดประวัติไม่สำเร็จ = ซ่อนทั้งการ์ด')
-  console.log('✓ หน้าจอ: อ่านอย่างเดียว (ไม่มี input/form/เขียนข้อมูล · ปุ่มแค่ย่อ/ขยาย) · lazy เฉพาะ อปท. ที่มีระบบ · เรียกประวัติครั้งเดียว · ภาพแชร์ไม่เปลี่ยน')
+  console.log('✓ หน้าจอ: อ่านอย่างเดียว (ไม่มี input/form/เขียนข้อมูล · ปุ่มแค่ย่อ/ขยาย) · lazy เฉพาะ อปท. ที่มีระบบ · ไม่เรียกฐานข้อมูลเอง · ภาพแชร์ไม่เปลี่ยน')
 }
 
 console.log('\n✅ water-system: ผ่านทุกข้อ')

@@ -211,7 +211,7 @@ export default function WaterSituationPage() {
             <SmallReservoirSection slug={tenant?.slug} tenantName={tenant?.name} now={checkedAt} />
             {waterSystem && (
               <Suspense fallback={null}>
-                <WaterSystem slug={tenant?.slug} tenantId={tenantId}
+                <WaterSystem slug={tenant?.slug}
                   stations={scopedData?.stations ?? []} now={checkedAt} previewId={searchParams.get('system')} />
               </Suspense>
             )}
