@@ -8,7 +8,11 @@ import {
   chartGapMs, closeReasonText, eventCard, eventSpan, openReasonLines, recorderStatus,
   sparkline, stationSummaries, thaiDateTime, warningRows,
 } from '../../lib/waterEvents'
+import WaterAnnouncementsSection from './WaterAnnouncementsSection'
 
+// ส่วน "เหตุการณ์" ของหน้านี้ (ทุกอย่างใต้ data-we-list/data-we-detail) — อ่านอย่างเดียว ไม่มีอะไรให้กรอก/กดยืนยัน/ลบ
+// ส่วน "ประกาศน้ำ-ฝนของหน่วยงาน" (เฟส 2 · PR 2.2) อยู่เหนือรายการเหตุการณ์ แยกเป็นไฟล์ของตัวเอง ([data-wa-section]) — ปุ่มยืนยัน/ไม่ประกาศมีเฉพาะผู้มีสิทธิ์ยืนยัน
+// ข้อกำหนดข้างล่างนี้ใช้กับไฟล์นี้และส่วนเหตุการณ์เท่านั้น
 // หน้า "เหตุการณ์น้ำ-ฝน" ของเจ้าหน้าที่ — อ่านอย่างเดียว ไม่มีอะไรให้กรอก/กดยืนยัน/ลบ
 // (เจ้าของระบบสั่ง "ต้องไม่เพิ่มงานให้เจ้าหน้าที่": ระบบจดและปิดเหตุการณ์เอง หน้านี้มีไว้เปิดดูตอนมีคนถาม)
 // ปุ่มที่มีได้ มีแค่ 4 ชนิดและติดป้าย data-we-nav ไว้ให้เทสต์ตรวจ: open (เปิดรายละเอียด) · back (กลับ) · retry (โหลดใหม่ตอนผิดพลาด)
@@ -368,20 +372,24 @@ export default function WaterEventsPanel({ tenant, profile = null }) {
   const events = Array.isArray(data.events) ? data.events : []
   const total = Number(data.total) || events.length
   return (
-    <div data-we-list className="max-w-4xl space-y-4">
-      <RecorderLine status={status} />
-      {events.length === 0
-        ? <EmptyState status={status} />
-        : (
-          <>
-            <p className="text-sm text-gray-600">ระบบจดให้เองทั้งหมด ไม่มีอะไรที่ต้องกรอกหรือยืนยัน — กดการ์ดเพื่อดูค่าที่วัดได้ย้อนหลัง</p>
-            <ul className="space-y-3">
-              {events.map(event => <EventCard key={event.id} card={eventCard(event, now)} onOpen={setSelectedId} />)}
-            </ul>
-            {total > events.length && <p className="text-xs text-gray-500">แสดง {events.length} จาก {total.toLocaleString('th-TH')} เหตุการณ์ (ใหม่สุดก่อน)</p>}
-          </>
-        )}
-      <Disclaimer />
+    <div className="max-w-4xl space-y-4">
+      {/* ประกาศน้ำ-ฝนของหน่วยงาน: อปท. ที่ไม่ได้เปิดใช้ไม่เห็นอะไรเลย (ส่วนนี้คืน null) */}
+      <WaterAnnouncementsSection tenantId={tenantId} />
+      <div data-we-list className="space-y-4">
+        <RecorderLine status={status} />
+        {events.length === 0
+          ? <EmptyState status={status} />
+          : (
+            <>
+              <p className="text-sm text-gray-600">เหตุการณ์ที่ระบบจดไว้ จดให้เองทั้งหมด ไม่มีอะไรที่ต้องกรอกหรือยืนยัน — กดการ์ดเพื่อดูค่าที่วัดได้ย้อนหลัง</p>
+              <ul className="space-y-3">
+                {events.map(event => <EventCard key={event.id} card={eventCard(event, now)} onOpen={setSelectedId} />)}
+              </ul>
+              {total > events.length && <p className="text-xs text-gray-500">แสดง {events.length} จาก {total.toLocaleString('th-TH')} เหตุการณ์ (ใหม่สุดก่อน)</p>}
+            </>
+          )}
+        <Disclaimer />
+      </div>
     </div>
   )
 }

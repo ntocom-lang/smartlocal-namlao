@@ -15,6 +15,14 @@ const REFOCUS_MIN_MS = 60_000
 const cache = new Map()
 
 /**
+ * ล้างแคชของ RPC หนึ่งตัว (ทุก อปท./บัญชี) — เรียกหลังคนทำรายการที่เปลี่ยนตัวเลขบนหน้าแรก (เช่น ยืนยันประกาศน้ำ-ฝน)
+ * ไม่งั้นกลับหน้าแรกภายใน 30 วินาทีแล้วยังเห็นงานที่ทำเสร็จไปแล้วค้างอยู่
+ */
+export function clearHomeRpcCache(rpc) {
+  for (const key of [...cache.keys()]) if (key.startsWith(`${rpc}:`)) cache.delete(key)
+}
+
+/**
  * @param {{ rpc: string, tenantId?: string, profileId?: string, enabled: boolean }} opts
  * @returns {{ status: 'idle'|'loading'|'ok'|'error', data: any }}
  *   status 'idle' = ไม่ได้เปิดใช้ (บทบาทนี้ไม่ต้องดึง) · ระหว่างรีเฟรชเบื้องหลังยังคงค่าเดิมไว้ ไม่กระพริบเป็น loading

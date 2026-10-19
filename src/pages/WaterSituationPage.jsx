@@ -12,6 +12,8 @@ import ReservoirGauge from '../components/water/ReservoirGauge'
 import SmallReservoirSection from '../components/water/SmallReservoirSection'
 import { diagramTenant } from '../lib/waterDiagram/model'
 import RelationPill from '../components/water/RelationPill'
+import WaterAnnouncementCard from '../components/water/WaterAnnouncementCard'
+import { useWaterAnnouncement } from '../components/water/useWaterAnnouncement'
 import { relationOf, resolveSystem, systemById } from '../lib/waterSystem/model'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -54,6 +56,8 @@ export default function WaterSituationPage() {
   const nearbyOnly = searchParams.get('scope') === 'nearby5'
   const { tenant, loading: tenantLoading } = useTenant()
   const tenantId = tenant?.id
+  // ประกาศของ อปท. ที่ผู้มีสิทธิ์ยืนยันแล้ว (ฤดูแล้ง/ฤดูฝน เฟส 2) — ขึ้นบนสุดของหน้า · ไม่มีประกาศ = null ไม่มีอะไรเปลี่ยน
+  const { view: announcement } = useWaterAnnouncement({ tenantId })
   const hydroProfile = HYDRO_TENANTS[tenant?.slug]
   const [hydroState, setHydroState] = useState(null)
   const hydroCode = hydroProfile?.station
@@ -154,6 +158,7 @@ export default function WaterSituationPage() {
       </header>
 
       <div className="px-4 pt-1 md:pt-4 space-y-4">
+        <WaterAnnouncementCard view={announcement} />
         <HydroHourlyPanel key={tenant?.slug} profile={hydroProfile} report={hydroReports[0]} failed={hydro?.failed} now={checkedAt} />
         {loading ? (
           <div className="space-y-3">

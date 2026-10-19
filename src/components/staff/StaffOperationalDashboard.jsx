@@ -8,6 +8,7 @@ import { PATIENT_TRANSPORT_MODULE_KEY } from '../../lib/patientTransport'
 import { pickShortcuts, readUsage, safeLocalStorage } from '../../lib/staffHomeFrequent'
 import { useHomeRpc } from '../../lib/staffHomeData'
 import { bucketComplaintDue, groupMyEvents, normalizeWorkload, todoState } from '../../lib/staffHomeSummary'
+import { todoCount as waterAnnouncementTodoCount } from '../../lib/waterAnnouncements'
 import { MenuGroup } from '../common/MenuTileGrid'
 
 // ไอคอนหัวกลุ่มของหน้าเมนูแบบไอคอน — ผูกตามชื่อกลุ่มใน STANDALONE_GROUPS/MODULE_GROUPS (StaffDashboard.jsx)
@@ -248,19 +249,26 @@ export default function StaffOperationalDashboard({
   const myEvents = groupMyEvents(eventsItem && summaryOk ? summary.data?.my_events : [], summary.data?.today)
   const eventCount = myEvents.today.length + myEvents.tomorrow.length
 
+  // ร่างประกาศน้ำ-ฝนที่รอ "ฉัน" ยืนยัน (เฟส 2 · PR 2.2) — ร่างหมดความหมายใน 3 ชม. ถ้าผู้มีสิทธิ์ไม่เห็นก็ไม่มีประกาศ จึงขึ้นตรงนี้
+  // ดึงเฉพาะเมื่อบัญชีนี้เห็นเมนู "เหตุการณ์น้ำ-ฝน" (อปท. เปิดโมดูล) · ไม่ใช่ผู้ยืนยัน/ไม่มีร่าง/ยังไม่เปิดประกาศ = ไม่มีแถวนี้และไม่กระทบงานอื่น
+  // โหลดพลาด = ไม่ขึ้นแถวนี้ (ไม่บล็อกไฟเขียว "ไม่มีงานค้าง" ของงานอื่น) — ผู้ยืนยันยังเปิดดูร่างได้จากเมนูโดยตรง
+  const waterItem = itemByKey.get('water-events')
+  const waterTodo = useHomeRpc({ rpc: 'water_announcement_todo', tenantId, profileId, enabled: Boolean(waterItem) })
+  const waterPending = waterTodo.status === 'ok' && waterAnnouncementTodoCount(waterTodo.data) > 0
+
   // ภาระงานของกอง — เฉพาะหัวหน้ากอง (RPC ปฏิเสธบทบาทอื่นอยู่แล้ว ที่นี่แค่ไม่ยิงโดยไม่จำเป็น)
   const isDeptHead = profile?.role === 'officer' && Boolean(profile?.department_id) && Boolean(complaintsItem)
   const dept = useHomeRpc({ rpc: 'staff_dept_workload', tenantId, profileId, enabled: isDeptHead })
 
   const state = todoState({
-    badgeStatuses: workCards.map(card => card.status),
-    badgeCounts: workCards.map(card => card.count),
+    badgeStatuses: [...workCards.map(card => card.status), waterTodo.status === 'loading' ? 'loading' : null],
+    badgeCounts: [...workCards.map(card => card.count), waterPending ? 1 : 0],
     summaryStatus: summary.status === 'idle' ? null : summary.status,
     due,
   })
-  const hasTodo = workCards.length > 0 || summary.status !== 'idle'
+  const hasTodo = workCards.length > 0 || summary.status !== 'idle' || waterPending
   const hasAttention = due.overdue > 0 || due.soon > 0
-  const nothingShownYet = pendingCards.length === 0 && failedCards.length === 0 && !hasAttention
+  const nothingShownYet = pendingCards.length === 0 && failedCards.length === 0 && !hasAttention && !waterPending
 
   // ── ใช้บ่อย ── อ่านตอน mount (ออกจากหน้าแรกแล้วกลับมา component ถูกสร้างใหม่ จึงได้ลำดับล่าสุดเสมอ)
   // ไม่ใช้ useMemo: อ่าน localStorage ก้อนเล็กๆ + เรียงไม่เกิน 40 รายการ ถูกกว่าที่จะคอยดูแล dependency
@@ -311,6 +319,9 @@ export default function StaffOperationalDashboard({
                   {due.soon > 0 && (
                     <AttentionRow tone="amber" Icon={Clock} testId="soon" count={due.soon} onOpen={() => open(complaintsItem)}
                       text="คำร้องของคุณที่ใกล้ครบกำหนด" hint="ครบกำหนดภายใน 1 วันทำการ" />
+                  )}
+                  {waterPending && (
+                    <WorkRow item={{ ...waterItem, label: 'ประกาศน้ำ-ฝนรอคุณยืนยัน' }} count={1} hint="ร่างประกาศรอคุณตัดสิน · ยืนยันได้ภายใน 3 ชั่วโมง" onOpen={() => open(waterItem)} />
                   )}
                   {pendingCards.map(card => (
                     <WorkRow key={card.key} item={card.item} count={card.count} hint={card.hint({ isAdmin })} onOpen={() => open(card.item)} />

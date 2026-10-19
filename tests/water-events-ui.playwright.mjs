@@ -135,11 +135,14 @@ async function auditPanel(page, where, { allowPrint = false } = {}) {
   const audit = await page.evaluate(({ minTap }) => {
     const root = document.querySelector('[data-we-list], [data-we-detail], [data-we-error], [data-we-missing]')?.parentElement ?? null
     const scope = root ?? document.body
-    const fields = scope.querySelectorAll('input, textarea, select, form, [contenteditable=""], [contenteditable="true"], [role="textbox"], [role="combobox"], [role="switch"], [type="checkbox"]').length
-    const links = scope.querySelectorAll('a[href]').length
-    const buttons = [...scope.querySelectorAll('button')].map(b => ({ nav: b.getAttribute('data-we-nav'), h: b.getBoundingClientRect().height, text: b.textContent.trim().slice(0, 30) }))
+    // ส่วน "ประกาศน้ำ-ฝนของหน่วยงาน" (เฟส 2 · PR 2.2, [data-wa-section]) มีปุ่ม/ช่องกรอกของผู้มีสิทธิ์ยืนยันเอง — ตรวจแยกที่ tests/water-announcements-ui.playwright.mjs
+    // ที่นี่ตรวจเฉพาะส่วนเหตุการณ์ซึ่งยังต้องอ่านอย่างเดียวเหมือนเดิม
+    const mine = (el) => !el.closest('[data-wa-section]')
+    const fields = [...scope.querySelectorAll('input, textarea, select, form, [contenteditable=""], [contenteditable="true"], [role="textbox"], [role="combobox"], [role="switch"], [type="checkbox"]')].filter(mine).length
+    const links = [...scope.querySelectorAll('a[href]')].filter(mine).length
+    const buttons = [...scope.querySelectorAll('button')].filter(mine).map(b => ({ nav: b.getAttribute('data-we-nav'), h: b.getBoundingClientRect().height, text: b.textContent.trim().slice(0, 30) }))
     const overflow = []
-    for (const el of scope.querySelectorAll('*')) {
+    for (const el of [...scope.querySelectorAll('*')].filter(mine)) {
       const r = el.getBoundingClientRect()
       if (r.width > 0 && (r.right > innerWidth + 0.5 || r.left < -0.5)) overflow.push(`${el.tagName.toLowerCase()} ${Math.round(r.left)}..${Math.round(r.right)}`)
     }
