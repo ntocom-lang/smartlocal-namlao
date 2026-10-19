@@ -11,15 +11,18 @@ import {
 import { supabase } from '../lib/supabase'
 import { categoryNameOf } from '../lib/complaintCategoryLabels.js'
 import { useTenant } from '../contexts/TenantContext'
+import { useAuth } from '../contexts/AuthContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import FiscalYearPicker from '../components/common/FiscalYearPicker'
 import { FY_ALL, useFiscalYearParam, fiscalPeriodParts } from '../lib/fiscalYearParam'
 import { FISCAL_MONTHS_TH, fiscalYearBounds } from '../lib/fiscalYear'
 import {
-  formatPercent, lastFullMonth, parseMonthParam, recentMonthOptions, summarizeMonth,
+  formatPercent, isCurrentMonth, lastFullMonth, parseMonthParam, recentMonthOptions, summarizeMonth, thaiLongDate,
 } from '../lib/complaintMonthlySummary.js'
+import { canLockMonth, categoryCountsOf, issueRowsOf } from '../lib/complaintMonthlyLock.js'
 import { buildComplaintMonthlyHtml } from '../lib/complaintMonthlyPrint.js'
 import ComplaintMonthlyInfographic from '../components/reports/ComplaintMonthlyInfographic'
+import MonthlyLockPanel from '../components/reports/MonthlyLockPanel'
 
 // ดึงมาใช้คำนวณกราฟสรุปทั้งหมด (สถานะ/หมวดหมู่/แนวโน้มรายเดือน) — คำร้องเรียนสะสมของ อปท.
 // ทั่วไปไม่เกินหลักพัน จึงพอเป็น "ทั้งหมด" ในทางปฏิบัติ ถ้าเกิน limit จะมีหมายเหตุแจ้งผู้ใช้ (ดู isTruncated ด้านล่าง)
@@ -114,11 +117,16 @@ function StatCard({ label, value, sub, Icon, iconBg, border }) {
 
 export default function ComplaintStats() {
   const { tenant } = useTenant()
+  const { role } = useAuth()
   const isNarrow = useIsNarrow()
   const tenantId = tenant?.id
-  const [stats, setStats]         = useState(null)
+  // ตัวเลขสด (ผลของ complaint_stats_fy) — ตัวแปร stats ที่ใช้แสดงผลด้านล่างคือชุดที่ล็อกไว้ถ้าเดือนนั้นถูกล็อก ไม่งั้นเป็นตัวเลขสดนี้
+  const [liveStats, setLiveStats] = useState(null)
   // ยอดแยกตามลักษณะปัญหาของหมวดไฟฟ้า (เฉพาะโหมดรายเดือน) — มาจากฟังก์ชันที่กรองรายการอนุญาตฝั่งฐานข้อมูลแล้ว
   const [issueRows, setIssueRows] = useState(null)
+  // ชุดตัวเลขที่เจ้าหน้าที่ล็อกไว้ของเดือนที่เลือก (เฟส 2) · supported = ฟังก์ชันฝั่งฐานข้อมูลตอบได้ (ยังไม่ apply migration
+  // หรือผิดพลาด = false → หน้าทำงานเหมือนเดิมทุกอย่างและไม่โชว์ปุ่มล็อก ไม่ใช่หน้าพัง)
+  const [snapshot, setSnapshot] = useState({ supported: false, data: null })
   const [rows, setRows]           = useState([])
   const [categoryLabels, setCategoryLabels] = useState({})
   const [loading, setLoading]     = useState(true)
@@ -182,17 +190,23 @@ export default function ComplaintStats() {
             _municipality_id: tenantId, _category: ISSUE_BREAKDOWN_CATEGORY,
             _from: activeRange.from, _to: activeRange.to,
           })] : []),
+          // ชุดที่ล็อกไว้ — เดือนปัจจุบันยังไม่จบ ล็อกไม่ได้และไม่มีทางมีชุดที่ล็อก จึงไม่ต้องถาม
+          ...(selectedMonth && !isCurrentMonth(selectedMonth) ? [supabase.rpc('complaint_monthly_snapshot_get', {
+            _municipality_id: tenantId, _period_month: selectedMonth.from,
+          })] : []),
         ]
       : [
           supabase.rpc('complaint_stats',   { _municipality_id: tenantId }),
           supabase.rpc('complaints_public', { _municipality_id: tenantId, _limit: AGGREGATE_LIMIT }),
         ]
-    return Promise.all(calls).then(([{ data: s }, { data: r }, issues]) => {
+    return Promise.all(calls).then(([{ data: s }, { data: r }, issues, locked]) => {
       // คำตอบของช่วงเวลาที่ผู้ใช้เปลี่ยนไปแล้วมาถึงช้า ต้องทิ้ง ไม่งั้นเลขของเดือนเก่าไปอยู่ใต้หัวข้อเดือนใหม่
       if (latestRangeKey.current !== rangeKey) return
-      setStats(s)
+      setLiveStats(s)
       setRows(r ?? [])
       setIssueRows(Array.isArray(issues?.data) ? issues.data : null)
+      // locked = undefined เมื่อไม่ได้ถาม (โหมดปีงบ/เดือนปัจจุบัน) · มี error = ฟังก์ชันยังไม่พร้อม → ไม่โชว์ปุ่มล็อก
+      setSnapshot(locked ? { supported: !locked.error, data: locked.error ? null : (locked.data ?? null) } : { supported: false, data: null })
       setLoadedKey(rangeKey)
     }).catch(() => {})
   }, [tenantId, activeRange, rangeKey, selectedMonth])
@@ -215,6 +229,26 @@ export default function ComplaintStats() {
   // รอบช้ากว่า widget หน้าแรก — complaints_public ดึงได้ถึง AGGREGATE_LIMIT แถวต่อครั้ง
   // ถ้าเปิดหน้านี้ค้างไว้ทั้งวันที่ 60 วิ จะเป็นการดึงหลักพันแถวทุกนาทีโดยไม่มีอะไรเปลี่ยน
   useVisibleRefresh(loadStats, { intervalMs: 180_000, enabled: !!tenantId })
+
+  // เดือนที่ถูกล็อกแล้วแสดง "ชุดที่ล็อก" ทั้งหน้า (การ์ดตัวเลข วงกลมสถานะ กราฟหมวด ข้อความสรุป ภาพ ใบ A4) ไม่ใช่ตัวเลขสด
+  // — ไม่งั้นหน้าเดียวกันมีตัวเลขสองชุด ภาพที่แชร์ไปแล้วกับหน้าเว็บไม่ตรงกัน (ปัญหาที่เฟส 2 มาแก้)
+  const lockedSnapshot = selectedMonth && snapshot.data ? snapshot.data : null
+  const stats = lockedSnapshot ? lockedSnapshot.stats : liveStats
+  const lockedAtText = lockedSnapshot ? thaiLongDate(new Date(lockedSnapshot.published_at)) : ''
+  const lockedCategoryCounts = useMemo(() => (lockedSnapshot ? categoryCountsOf(lockedSnapshot) : null), [lockedSnapshot])
+  const effectiveIssueRows = lockedSnapshot ? issueRowsOf(lockedSnapshot, ISSUE_BREAKDOWN_CATEGORY) : issueRows
+  // ปุ่มล็อกโชว์เมื่อ: เดือนที่จบแล้ว + ฟังก์ชันฝั่งฐานข้อมูลตอบได้ + ผู้ใช้มีสิทธิ์ (role ผ่านการตรวจ อปท. ใน AuthContext แล้ว
+  // ฐานข้อมูลตรวจสิทธิ์ซ้ำเสมอตอนกดจริง)
+  const showLockPanel = !!selectedMonth && snapshot.supported && canLockMonth(role) && !isCurrentMonth(selectedMonth)
+
+  async function publishLock(note) {
+    const { data, error } = await supabase.rpc('publish_complaint_monthly_snapshot', {
+      _municipality_id: tenantId, _period_month: selectedMonth.from, _note: note || null,
+    })
+    if (error) return { error }
+    await loadStats() // โหลดชุดที่เพิ่งล็อกกลับมา — ทั้งหน้า ภาพ และใบ A4 สลับมาใช้ทันที
+    return { unchanged: data?.unchanged === true }
+  }
 
   // ร้อยละบนจอ — โหมดรายเดือนใช้ทศนิยม 1 ตำแหน่งให้ตรงกับข้อความสรุปและใบพิมพ์
   // (ไม่งั้นหน้าเดียวกันขึ้น "ร้อยละ 66.7" ในข้อความ แต่ "67%" ที่การ์ด) · โหมดปีงบคงจำนวนเต็มเหมือนเดิม
@@ -243,10 +277,12 @@ export default function ComplaintStats() {
     () => (selectedMonth && settled
       ? summarizeMonth({
         stats, rows, labelOf: categoryLabel, tenantName: tenant?.name ?? 'หน่วยงาน', period: selectedMonth,
-        issueBreakdown: issueRows ? { category: ISSUE_BREAKDOWN_CATEGORY, rows: issueRows } : null,
+        issueBreakdown: effectiveIssueRows ? { category: ISSUE_BREAKDOWN_CATEGORY, rows: effectiveIssueRows } : null,
+        categoryCounts: lockedCategoryCounts,
+        lock: lockedSnapshot ? { publishedAt: lockedSnapshot.published_at, revision: lockedSnapshot.revision } : null,
       })
       : null),
-    [selectedMonth, settled, stats, rows, issueRows, categoryLabel, tenant?.name],
+    [selectedMonth, settled, stats, rows, effectiveIssueRows, lockedCategoryCounts, lockedSnapshot, categoryLabel, tenant?.name],
   )
 
   // ป้ายช่วงเวลาของหัวรายงาน/ข้อความไม่มีข้อมูล — โหมดรายเดือนใช้เดือนที่เลือกแทนปีงบ
@@ -260,7 +296,8 @@ export default function ComplaintStats() {
   }
 
   // rows ดึงมาสูงสุด AGGREGATE_LIMIT รายการ (เรียงใหม่→เก่า) ใช้คำนวณกราฟหมวดหมู่/แนวโน้มรายเดือน
-  const isTruncated = stats?.total > rows.length
+  // (ชุดที่ล็อกนับยอดรายหมวดที่ฐานข้อมูลครบทุกเรื่อง ไม่ติดเพดานนี้)
+  const isTruncated = !lockedSnapshot && stats?.total > rows.length
 
   // ข้อมูลสำหรับ donut สถานะ — ตัด stage ที่ค่า 0 ออก (Pie แสดง slice 0% ไม่มีประโยชน์ ทั้งยังกันสัดส่วน
   // มุมพัง) percent ผูกไว้ในนี้เลยให้ Tooltip ใช้ตรงๆ ไม่ต้องคำนวณซ้ำ
@@ -273,7 +310,8 @@ export default function ComplaintStats() {
   // ไม่ยัดทุกหมวดขึ้นกราฟเดียว อ่านยาก) เรียงมาก→น้อย ใช้ single hue เพราะเป็นการเทียบขนาด ไม่ใช่ identity
   const categoryBreakdown = useMemo(() => {
     const counts = {}
-    rows.forEach(r => { counts[r.category] = (counts[r.category] ?? 0) + 1 })
+    if (lockedCategoryCounts) lockedCategoryCounts.forEach(c => { counts[c.category] = (counts[c.category] ?? 0) + c.total })
+    else rows.forEach(r => { counts[r.category] = (counts[r.category] ?? 0) + 1 })
     const sorted = Object.entries(counts)
       .map(([value, count]) => ({ label: categoryLabel(value), count }))
       .sort((a, b) => b.count - a.count)
@@ -283,7 +321,7 @@ export default function ComplaintStats() {
     // axisLabel = ตัดสั้นไว้ไม่ให้ล้นแกน Y (ป้ายยาวเช่น "แจ้งเรื่องร้องทุกข์ร้องเรียน" ถูกตัดตกขอบมาก่อน)
     // ชื่อเต็มยังอยู่ใน label เดิม โชว์ผ่าน tooltip ตอน hover แทน ไม่มีข้อมูลหายไปจริง
     return top.map(c => ({ ...c, axisLabel: c.label.length > 10 ? c.label.slice(0, 9) + '…' : c.label }))
-  }, [rows, categoryLabel])
+  }, [rows, lockedCategoryCounts, categoryLabel])
 
   // แท่งฝั่งมือถือคิดความยาวเทียบหมวดที่มากที่สุด (ไม่ใช่เทียบยอดรวม) ให้เห็นความต่างชัดเท่ากราฟ
   const maxCategoryCount = categoryBreakdown.reduce((m, c) => Math.max(m, c.count), 0)
@@ -363,7 +401,9 @@ export default function ComplaintStats() {
           <p className="text-xs sm:text-sm text-gray-500 mt-1 leading-snug">
             <span className="whitespace-nowrap">{tenant?.name ?? 'หน่วยงาน'}</span>
             <span className="text-gray-300"> · </span>
-            <span className="text-gray-400 whitespace-nowrap">ข้อมูล ณ วันที่ {now}</span>
+            <span className="text-gray-400 whitespace-nowrap">
+              {lockedSnapshot ? `ตัวเลขล็อกเมื่อวันที่ ${lockedAtText}` : `ข้อมูล ณ วันที่ ${now}`}
+            </span>
           </p>
 
           {/* ตัวกรองช่วงเวลา — ซ่อนตอนพิมพ์ เพราะช่วงเวลาที่เลือกพิมพ์ติดไปกับหัวรายงานอยู่แล้ว
@@ -411,6 +451,17 @@ export default function ComplaintStats() {
         </div>
       ) : (
       <div className="max-w-4xl mx-auto px-4 py-4 space-y-3">
+
+        {/* ล็อกตัวเลข (เฉพาะผู้มีสิทธิ์ ในเดือนที่จบแล้ว) — อยู่บนสุดเพราะเป็นขั้นแรกก่อนแชร์ภาพ: ตรวจตัวเลข กดล็อก แล้วค่อยดาวน์โหลด */}
+        {showLockPanel && (
+          <MonthlyLockPanel
+            monthLabel={selectedMonth.label}
+            lock={lockedSnapshot ? { revision: lockedSnapshot.revision, publishedAtText: lockedAtText } : null}
+            lockedStats={lockedSnapshot?.stats ?? null}
+            liveStats={liveStats}
+            onPublish={publishLock}
+          />
+        )}
 
         {/* ภาพสรุปสำหรับเผยแพร่ (ดาวน์โหลด PNG/แชร์) — วาดจากยอดรวมชุดเดียวกับข้อความด้านล่าง
             อยู่บนสุดเพราะเป็นของที่เจ้าหน้าที่มาเอาไปแชร์ทุกเดือน (เดิมอยู่หลังข้อความสรุป ต้องเลื่อนหาปุ่ม) */}

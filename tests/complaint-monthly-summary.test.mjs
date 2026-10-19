@@ -184,6 +184,53 @@ await test('รายการย่อย: หมวดไม่ตรง ห�
   assert.ok(s.categories.every(c => c.subItems === undefined))
 })
 
+// ── ชุดตัวเลขที่ล็อก (เฟส 2): categoryCounts + lock ──
+const LOCK_MAY = { publishedAt: '2026-05-02T01:30:00Z', revision: 1 } // 2 พ.ค. 2569 08:30 น. เวลาไทย
+
+await test('ชุดที่ล็อก: ยอดรายหมวดมาจาก categoryCounts — ไม่ติดเพดานของ rows (rows ถูกตัดที่ 1,000 แต่ยอดรวม 1,500 ยังได้สัดส่วนครบ) · bigint สตริงใช้ได้', () => {
+  const s = summarize({
+    stats: { total: 1500, resolved: 1200, in_progress: 300 }, rows: rowsOf({ light: 1000 }),
+    categoryCounts: [{ category: 'water', total: '600' }, { category: 'light', total: 900 }],
+  })
+  assert.equal(s.categoriesComplete, true)
+  assert.deepEqual(s.categories.map(c => [c.code, c.count, c.percent]), [['light', 900, 60], ['water', 600, 40]])
+  assert.ok(!s.notes.some(n => n.includes('ไม่แสดงสัดส่วนตามหมวด')))
+})
+
+await test('ชุดที่ล็อก: "ณ วันที่" = วันที่ล็อกตามเวลาไทย (ไม่ใช่วันที่เปิดดู) · หมายเหตุบอกวันที่ล็อกและแทนประโยค "ตัวเลขอาจเปลี่ยน"', () => {
+  const s = summarize({ lock: LOCK_MAY })
+  assert.equal(s.asOf, '2 พฤษภาคม 2569')
+  assert.deepEqual(s.locked, { asOf: '2 พฤษภาคม 2569', revision: 1 })
+  assert.ok(s.notes[0].includes('ตัวเลขชุดนี้ล็อกไว้เมื่อวันที่ 2 พฤษภาคม 2569'))
+  assert.ok(!s.notes.some(n => n.includes('ตัวเลขอาจเปลี่ยน')), 'ชุดที่ล็อกนิ่งแล้ว ห้ามบอกว่าตัวเลขอาจเปลี่ยน')
+  assert.ok(!s.notes[0].includes('แก้ไขครั้งที่'))
+  // 1 พ.ค. 17:30 UTC = 2 พ.ค. 00:30 เวลาไทย (เครื่องทดสอบตั้งเป็นลอสแอนเจลิส) ต้องได้วันที่ 2
+  assert.equal(summarize({ lock: { publishedAt: '2026-05-01T17:30:00Z', revision: 1 } }).asOf, '2 พฤษภาคม 2569')
+})
+
+await test('ชุดที่ล็อกซ้ำ (revision ≥ 2) บอกผู้อ่านว่าตัวเลขถูกแก้ไขกี่ครั้ง', () => {
+  assert.ok(summarize({ lock: { ...LOCK_MAY, revision: 2 } }).notes[0].includes('(แก้ไขครั้งที่ 1)'))
+  assert.ok(summarize({ lock: { ...LOCK_MAY, revision: 4 } }).notes[0].includes('(แก้ไขครั้งที่ 3)'))
+})
+
+await test('ไม่ส่ง lock → locked เป็น null และหมายเหตุเดิมไม่เปลี่ยน · วันที่ล็อกเสีย = ถือว่าไม่ได้ล็อก (ใช้วันที่เปิดดู ไม่ใช่ "Invalid Date")', () => {
+  const live = summarize()
+  assert.equal(live.locked, null)
+  assert.ok(live.notes[0].includes('ร้อยละที่แล้วเสร็จนับจากสถานะ ณ วันที่ 18 ตุลาคม 2569'))
+  const broken = summarize({ lock: { publishedAt: 'ไม่ใช่วันที่', revision: 1 } })
+  assert.equal(broken.locked, null)
+  assert.equal(broken.asOf, '18 ตุลาคม 2569')
+  assert.ok(!JSON.stringify(broken).includes('Invalid'))
+})
+
+await test('ชุดที่ล็อกกับรายการย่อยหมวดไฟฟ้า: แนบรายการย่อยจากชุดที่ล็อกเมื่อผลรวมตรงยอดหมวดเหมือนข้อมูลสด', () => {
+  const s = summarize({
+    categoryCounts: [{ category: 'light', total: 13 }, { category: 'other', total: 11 }, { category: 'water', total: 7 }, { category: 'trash', total: 7 }, { category: 'road', total: 1 }],
+    issueBreakdown: { category: 'light', rows: LIGHT_ROWS }, lock: LOCK_MAY,
+  })
+  assert.equal(lightOf(s).subItems.length, 4)
+})
+
 // ── ชั้นสอง: ใบพิมพ์ ──
 const PAYLOADS = [
   `<img src=x onerror="window.__pwned='img'">`,
@@ -246,6 +293,29 @@ try {
       const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
       const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length
       assert.equal(pages, 1, `ใบยาวสุดพิมพ์ได้ ${pages} แผ่น`)
+    } finally { await page.close() }
+  })
+
+  // ใบของเดือนที่ล็อก: หมายเหตุล็อก (ยาวกว่าหมายเหตุเดิม + "แก้ไขครั้งที่ N") ต้องยังจบ 1 แผ่นแม้เนื้อหายาวสุด และมีวันที่ล็อกในส่วนท้ายใบ
+  await test('ใบของเดือนที่ล็อก: จบ 1 แผ่น A4 แม้เนื้อหายาวสุด · ท้ายใบบอกวันที่ล็อก ไม่ใช่วันที่พิมพ์', async () => {
+    const spec = Object.fromEntries([200, 150, 130, 120, 100, 90, 80, 70, 50, 35, 20].map((n, i) => [`c${i}`, n]))
+    const tenantName = 'องค์การบริหารส่วนตำบลที่มีชื่อยาวมากพอสมควรสำหรับทดสอบการขึ้นบรรทัดใหม่ของข้อความ'
+    const worstLocked = summarizeMonth({
+      stats: { total: 1045, open: 40, in_progress: 100, resolved: 890, rejected: 15, avg_days: 12.5 },
+      rows: [], categoryCounts: Object.entries(spec).map(([category, total]) => ({ category, total })),
+      labelOf: code => `หมวดคำร้องเรื่องที่มีชื่อค่อนข้างยาวมาก ${code}`, tenantName,
+      period: monthPeriod(2569, 9), now: NOW, lock: { publishedAt: '2026-10-02T01:30:00Z', revision: 12 },
+    })
+    const html = buildComplaintMonthlyHtml({ tenant: { name: tenantName }, summary: worstLocked })
+    assert.ok(html.includes('ข้อมูล ณ วันที่ 2 ตุลาคม 2569') && !html.includes('ข้อมูล ณ วันที่ 18 ตุลาคม 2569'))
+    assert.ok(html.includes('ตัวเลขชุดนี้ล็อกไว้เมื่อวันที่ 2 ตุลาคม 2569 (แก้ไขครั้งที่ 11)'))
+    const page = await browser.newPage()
+    try {
+      await page.route('**/*', route => route.abort())
+      await page.setContent(html, { waitUntil: 'domcontentloaded' })
+      const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
+      const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length
+      assert.equal(pages, 1, `ใบของเดือนที่ล็อกพิมพ์ได้ ${pages} แผ่น`)
     } finally { await page.close() }
   })
 } finally {

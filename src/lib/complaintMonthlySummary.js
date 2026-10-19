@@ -9,7 +9,8 @@
 //
 // ⚠️ ร้อยละแล้วเสร็จ = สถานะ "ปัจจุบัน" ของเรื่องที่รับในเดือนนั้น ไม่ใช่สถานะ ณ สิ้นเดือน
 // เดือนที่ปิดไปแล้วจึงขยับได้ถ้ามีเรื่องแล้วเสร็จทีหลัง — ใบที่พิมพ์ต้องบอกวันที่ของข้อมูลเสมอ
-// (ตัวเลขที่ "ล็อกไว้" รายเดือนเป็นเฟส 2 ต้องมี migration ยังไม่ได้ทำ)
+// เฟส 2: เจ้าหน้าที่กด "ล็อกตัวเลข" ได้ (ตาราง complaint_monthly_snapshots, migration 20261019140000) ชุดที่ล็อกส่งเข้ามาทาง
+// categoryCounts/lock — "ณ วันที่" เป็นวันที่ล็อก ดู complaintMonthlyLock.js
 //
 // ไฟล์นี้ต้องไม่ import supabase/React — เทสต์รันด้วย node ตรงๆ
 
@@ -145,17 +146,26 @@ function issueSubItems(category, breakdownRows) {
  * @param {string} args.tenantName
  * @param {ReturnType<typeof monthPeriod>} args.period
  * @param {Date} [args.now]
+ * @param {Array<{ category: string, total: number | string }> | null} [args.categoryCounts]
+ *   ยอดรายหมวดที่นับมาแล้ว (ชุดที่ล็อกไว้) — ส่งมา = ใช้แทน rows และถือว่าครบ ไม่ติดเพดานของ rows
+ * @param {{ publishedAt: string | Date, revision: number } | null} [args.lock]
+ *   ชุดตัวเลขนี้ถูกล็อกไว้ (เฟส 2) — "ณ วันที่" เป็นวันที่ล็อก ไม่ใช่วันที่เปิดดู และหมายเหตุบอกว่าล็อกเมื่อไร
  */
-export function summarizeMonth({ stats, rows, labelOf, tenantName, period, issueBreakdown = null, now = new Date() }) {
+export function summarizeMonth({
+  stats, rows, labelOf, tenantName, period, issueBreakdown = null, now = new Date(), categoryCounts = null, lock = null,
+}) {
   const total = Number(stats?.total) || 0
   const resolved = Number(stats?.resolved) || 0
   const ongoing = (Number(stats?.open) || 0) + (Number(stats?.in_progress) || 0)
   const rejected = Number(stats?.rejected) || 0
 
   // นับหมวดได้ก็ต่อเมื่อดึงรายการมาครบทุกเรื่อง — ถ้าถูกตัดที่ LIMIT สัดส่วนจะเพี้ยนเงียบๆ จึงไม่แสดงเลย
-  const categoriesComplete = total === 0 || (rows?.length ?? 0) >= total
+  // ชุดที่ล็อกไว้นับมาที่ฐานข้อมูลครบทุกเรื่องแล้ว (GROUP BY ไม่มีเพดาน) จึงไม่ติดเงื่อนไขนี้
+  const categoriesComplete = categoryCounts !== null || total === 0 || (rows?.length ?? 0) >= total
   const counts = new Map()
-  if (categoriesComplete) {
+  if (categoryCounts !== null) {
+    for (const entry of categoryCounts) counts.set(entry.category, (counts.get(entry.category) ?? 0) + (Number(entry.total) || 0))
+  } else if (categoriesComplete) {
     for (const row of rows ?? []) counts.set(row.category, (counts.get(row.category) ?? 0) + 1)
   }
   const sorted = [...counts.entries()]
@@ -174,8 +184,11 @@ export function summarizeMonth({ stats, rows, labelOf, tenantName, period, issue
     categories.push({ code: null, label: `หมวดที่เหลือ (${folded.length} หมวด)`, count, percent: percentOf(count, total) })
   }
 
-  const current = isCurrentMonth(period, now)
-  const asOf = thaiLongDate(now)
+  const lockedAt = lock ? new Date(lock.publishedAt) : null
+  const lockValid = lockedAt !== null && !Number.isNaN(lockedAt.getTime())
+  const current = lockValid ? false : isCurrentMonth(period, now)
+  // ชุดที่ล็อก: "ณ วันที่" คือวันที่ล็อก (ตัวเลขนิ่งตั้งแต่วันนั้น) — วันที่เปิดดูไม่เกี่ยว
+  const asOf = thaiLongDate(lockValid ? lockedAt : now)
   const resolvedPercent = percentOf(resolved, total)
 
   const sentences = []
@@ -195,7 +208,11 @@ export function summarizeMonth({ stats, rows, labelOf, tenantName, period, issue
   }
 
   const notes = []
-  if (total > 0) {
+  if (lockValid) {
+    // ล็อกซ้ำ (revision ≥ 2) = มีการแก้ตัวเลขหลังเผยแพร่ครั้งแรก ต้องบอกให้ผู้อ่านรู้ ไม่ปล่อยให้ดูเหมือนชุดแรก
+    const revisionText = Number(lock.revision) > 1 ? ` (แก้ไขครั้งที่ ${Number(lock.revision) - 1})` : ''
+    notes.push(`ตัวเลขชุดนี้ล็อกไว้เมื่อวันที่ ${asOf}${revisionText} ร้อยละที่แล้วเสร็จนับจากสถานะ ณ วันนั้นของเรื่องที่รับในเดือนนี้ จึงอาจต่างจากสถานะปัจจุบัน`)
+  } else if (total > 0) {
     notes.push(`ร้อยละที่แล้วเสร็จนับจากสถานะ ณ วันที่ ${asOf} ของเรื่องที่รับในเดือนนี้ ตัวเลขอาจเปลี่ยนเมื่อมีเรื่องแล้วเสร็จภายหลัง`)
   }
   if (current) notes.push('เดือนนี้ยังไม่สิ้นสุด ตัวเลขเป็นยอดสะสมจนถึงวันที่ข้างต้น')
@@ -218,5 +235,6 @@ export function summarizeMonth({ stats, rows, labelOf, tenantName, period, issue
     notes,
     asOf,
     isCurrentMonth: current,
+    locked: lockValid ? { asOf, revision: Number(lock.revision) || 1 } : null,
   }
 }
