@@ -412,6 +412,12 @@ export default function ComplaintStats() {
       ) : (
       <div className="max-w-4xl mx-auto px-4 py-4 space-y-3">
 
+        {/* ภาพสรุปสำหรับเผยแพร่ (ดาวน์โหลด PNG/แชร์) — วาดจากยอดรวมชุดเดียวกับข้อความด้านล่าง
+            อยู่บนสุดเพราะเป็นของที่เจ้าหน้าที่มาเอาไปแชร์ทุกเดือน (เดิมอยู่หลังข้อความสรุป ต้องเลื่อนหาปุ่ม) */}
+        {monthlySummary && (
+          <ComplaintMonthlyInfographic summary={monthlySummary} tenantName={tenant?.name ?? 'หน่วยงาน'} />
+        )}
+
         {/* ── สรุปประจำเดือน (โหมดรายเดือนเท่านั้น) — ข้อความจากแม่แบบตายตัว มีแต่ตัวเลข ไม่ประเมินผลงานตัวเอง
              หมายเหตุใต้ข้อความบอกวันที่ของข้อมูล เพราะร้อยละแล้วเสร็จนับจากสถานะปัจจุบัน ไม่ใช่ ณ สิ้นเดือน ── */}
         {monthlySummary && (
@@ -431,11 +437,6 @@ export default function ComplaintStats() {
               </ul>
             )}
           </div>
-        )}
-
-        {/* ภาพสรุปสำหรับเผยแพร่ (ดาวน์โหลด PNG/แชร์) — วาดจากยอดรวมชุดเดียวกับข้อความด้านบน */}
-        {monthlySummary && (
-          <ComplaintMonthlyInfographic summary={monthlySummary} tenantName={tenant?.name ?? 'หน่วยงาน'} />
         )}
 
         {/* ── Stats grid ── */}
