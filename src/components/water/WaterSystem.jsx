@@ -1,16 +1,15 @@
 import { useState } from 'react'
 import { ExternalLink, Waves } from 'lucide-react'
-import RelationPill from './RelationPill'
-import { useDamHistory } from './useDamHistory'
 import {
-  NO_LIVE_TEXT, STALE_DIAGRAM_MONTHS, SYSTEM_DISCLAIMER_LINE, TREND_MIN_DAYS, TREND_WINDOW_DAYS, UPSTREAM_DEPTH_NOTE, bangkokISODate, damTrendSummary, diagramAge, liveState,
-  relationOf, resolveSystem, systemById, systemCountsText, systemHasDams, thaiDate, trendFactText,
+  NO_LIVE_TEXT, STALE_DIAGRAM_MONTHS, SYSTEM_DISCLAIMER_LINE, UPSTREAM_DEPTH_NOTE, diagramAge, liveState,
+  resolveSystem, systemById, systemCountsText, thaiDate,
 } from '../../lib/waterSystem/model'
 
 // ส่วน "ระบบน้ำของตำบล" บน /water-situation (ดีไซน์ฉบับปิด docs/water-system.md) — อ่านอย่างเดียว ไม่มีช่องกรอก
-//   ก่อนถึงตำบล → ในตำบล → ไหลต่อไปที่ + การ์ดแนวโน้ม 30 วันของอ่างต้นน้ำ + "ผังมีแต่เราไม่ได้ใส่" + ที่มา/อายุผัง
-// การ์ดแนวโน้มมีเฉพาะแนวโน้ม — ตัวเลขล่าสุด/ป้ายค่าสด/คำเตือนตัวเลขซ้ำเดิม/คำอธิบายความสัมพันธ์อยู่ที่การ์ดอ่างเดิมของหน้าอยู่แล้ว ไม่แสดงซ้ำ (ชาวบ้านเห็นข้อความเดียวกันสองที่จะสับสน)
-// ค่าสดมาจาก stations ที่หน้าโหลดอยู่แล้ว · แนวโน้มมาจาก get_public_dam_history (เรียกครั้งเดียว) · ไม่พยากรณ์ ไม่บอกเวลาน้ำถึง
+//   ก่อนถึงตำบล → ในตำบล → ไหลต่อไปที่ + ที่มา/อายุผัง
+// ไม่มีการ์ดแนวโน้มอ่าง และไม่มีกล่อง "ผังมีแต่เราไม่ได้ใส่" (เจ้าของระบบสั่งตัดออก 2026-10-19: ซ้ำกับการ์ดอ่างเดิมของหน้า / ภาษาเทคนิคเกินไปสำหรับชาวบ้าน)
+//   ป้าย "ต้นน้ำของตำบล" + ปริมาตรอ่างอยู่ที่การ์ดอ่างเดิมของหน้าอยู่แล้ว · รายการที่ผังมีแต่ไม่ได้ใส่ยังเก็บไว้ในข้อมูลผัง (omitted) ให้ อบต. ยืนยัน แต่ไม่ขึ้นหน้าเว็บ
+// ค่าสดมาจาก stations ที่หน้าโหลดอยู่แล้ว (ไม่มีคำขอเพิ่ม) · ไม่พยากรณ์ ไม่บอกเวลาน้ำถึง
 
 const KIND_ICON = { stream: '≋', reservoir: '▲', weir: '┃', canal: '≋', pond: '◯', pump: 'Ⓟ', supply: '⊠', gauge: '◉', rain: '◉', gate: '◆', other: '□' }
 const COLLAPSED_COUNT = 3
@@ -70,78 +69,12 @@ function Step({ index, title, nodes, stations, footnote, lead }) {
   )
 }
 
-function TrendChart({ chart, label }) {
-  const { width, height, pad } = chart
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label={label}>
-      <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="#cbd5e1" strokeWidth="1" />
-      <line x1={pad} y1={pad} x2={width - pad} y2={pad} stroke="#e2e8f0" strokeWidth="1" strokeDasharray="3 3" />
-      <text x={pad + 1} y={pad + 9} fontSize="9" fill="#94a3b8">{chart.top === 100 ? '100%' : `${chart.top.toLocaleString('th-TH', { maximumFractionDigits: 1 })}%`}</text>
-      <text x={pad + 1} y={height - pad - 3} fontSize="9" fill="#94a3b8">0%</text>
-      {chart.paths.map((d, i) => <path key={i} d={d} fill="none" stroke="#0b6b8f" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />)}
-      {chart.dots.map((dot, i) => <circle key={i} cx={dot.x} cy={dot.y} r="3" fill="#0b6b8f" />)}
-    </svg>
-  )
-}
-
-function TrendPanel({ history, code }) {
-  if (history.status === 'loading' || history.status === 'idle') return <div className="mt-3 h-[72px] animate-pulse rounded-xl bg-gray-100" aria-hidden="true" />
-  if (history.status !== 'ok') return null // โหลดไม่สำเร็จ = ซ่อนเฉพาะกราฟ ไม่แสดง error ดิบ
-  const dam = history.dams.find(d => d.station_code === code)
-  const summary = damTrendSummary(dam?.readings)
-  if (summary.state === 'none') {
-    return <p data-trend="none" className="mt-3 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500">ยังไม่มีประวัติค่าอ่างนี้ในระบบ</p>
-  }
-  if (summary.state === 'building') {
-    return (
-      <p data-trend="building" className="mt-3 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-600">
-        เริ่มเก็บแนวโน้มเมื่อ {thaiDate(bangkokISODate(Date.parse(summary.since)))} · จะแสดงกราฟเมื่อมีข้อมูลครบ {TREND_MIN_DAYS} วัน (อีก {summary.needDays} วัน)
-      </p>
-    )
-  }
-  const factText = trendFactText(summary.facts)
-  return (
-    <div data-trend="ready" className="mt-3">
-      <TrendChart chart={summary.chart} label={`แนวโน้มปริมาณน้ำในอ่าง ${summary.days} วัน ต่ำสุด ${summary.chart.min.toLocaleString('th-TH')}% สูงสุด ${summary.chart.max.toLocaleString('th-TH')}%`} />
-      <p className="text-xs text-gray-600">
-        {factText ? `${factText} · ` : ''}ค่าที่วัดได้ {summary.chart.min.toLocaleString('th-TH', { maximumFractionDigits: 1 })}–{summary.chart.max.toLocaleString('th-TH', { maximumFractionDigits: 1 })}%
-        {' '}· เส้นขาดตรงช่วงที่ไม่มีข้อมูล · ไม่ใช่การพยากรณ์
-      </p>
-    </div>
-  )
-}
-
-function DamTrendCard({ code, station, relation, history }) {
-  // การ์ดนี้มีแต่แนวโน้ม — โหลดประวัติไม่สำเร็จ = ซ่อนทั้งการ์ด (ส่วนอื่นของหน้าอยู่ครบ ไม่แสดง error ดิบ)
-  if (history.status === 'error') return null
-  return (
-    <div data-related-dam={code} className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-bold leading-tight text-gray-900">{station.station_name}</p>
-          <p className="mt-0.5 text-xs text-gray-500">แนวโน้มปริมาณน้ำในอ่าง {TREND_WINDOW_DAYS} วัน</p>
-        </div>
-        <RelationPill relation={relation} />
-      </div>
-      <TrendPanel history={history} code={code} />
-      <a href={`#water-dam-${code}`} className="mt-1 inline-flex min-h-[44px] items-center text-sm font-bold text-sky-700">ดูตัวเลขล่าสุดของอ่างนี้ในหัวข้ออ่างเก็บน้ำ ↑</a>
-    </div>
-  )
-}
-
-export default function WaterSystem({ slug, tenantId, stations, now, previewId }) {
+export default function WaterSystem({ slug, stations, now, previewId }) {
   const selection = resolveSystem(slug, previewId)
   const system = selection ? systemById(selection.system) : null
-  // ตำบลที่ไม่มีอ่างขนาดกลาง (ตำหนักธรรม ทุ่งแค้ว) ไม่เรียกประวัติอ่างเลย — ไม่มีการ์ดอ่างให้ใช้
-  const history = useDamHistory(tenantId, Boolean(system) && systemHasDams(system))
   if (!system) return null
 
   const age = diagramAge(system, now)
-  const related = Object.entries(system.relations)
-    .filter(([key]) => key.startsWith('dam:'))
-    .map(([key]) => ({ code: key.slice(4), station: (stations || []).find(s => s.station_type === 'dam' && s.station_code === key.slice(4)), relation: relationOf(system, 'dam', key.slice(4)) }))
-    // แนวโน้มมีเฉพาะอ่างที่เป็นต้นน้ำ/อยู่ในตำบล — สายข้างเคียงมีป้ายและคำอธิบายที่การ์ดอ่างเดิมอยู่แล้ว
-    .filter(item => item.station && item.relation && ['upstream', 'inside'].includes(item.relation.key))
 
   return (
     <section id="water-system" data-water-system={system.id} className="space-y-3" aria-labelledby="water-system-title">
@@ -169,19 +102,6 @@ export default function WaterSystem({ slug, tenantId, stations, now, previewId }
         <Step index={2} title="ในตำบล" nodes={system.inside} stations={stations}
           lead={systemCountsText(system.counts)} />
         <Step index={3} title="ไหลต่อไปที่" nodes={system.downstream} stations={stations} />
-      </div>
-
-      {related.length > 0 && (
-        <div className="space-y-3 lg:grid lg:grid-cols-3 lg:gap-3 lg:space-y-0">
-          {related.map(item => <DamTrendCard key={item.code} code={item.code} station={item.station} relation={item.relation} history={history} />)}
-        </div>
-      )}
-
-      <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs leading-relaxed text-gray-600" data-system-omitted>
-        <p className="font-bold text-gray-800">ผังต้นฉบับมี แต่เราไม่ได้ใส่</p>
-        <ul className="mt-1 list-disc space-y-0.5 pl-4">
-          {system.omitted.map(item => <li key={item.name}><span className="font-semibold">{item.name}</span> — {item.reason}</li>)}
-        </ul>
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs leading-relaxed text-gray-600" data-system-source>
