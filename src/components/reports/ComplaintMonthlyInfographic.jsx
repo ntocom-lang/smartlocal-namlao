@@ -3,6 +3,7 @@ import { Download, Share2 } from 'lucide-react'
 import {
   buildInfographicModel, buildInfographicSvg, createCanvasMeasure, svgDataUrl, svgToPngFile,
 } from '../../lib/complaintMonthlyInfographic'
+import { appUrl } from '../../lib/basename'
 
 // ภาพสรุปเรื่องร้องเรียนประจำเดือนสำหรับเผยแพร่ (LINE/Facebook) — วาดจากยอดรวมที่หน้าสถิติคำนวณไว้แล้ว
 // ภาพที่เห็นบนหน้ากับไฟล์ PNG ที่ดาวน์โหลดมาจากสตริง SVG ก้อนเดียวกัน (ดู src/lib/complaintMonthlyInfographic.js)
@@ -10,13 +11,15 @@ import {
 // เตรียมไฟล์ PNG ไว้ล่วงหน้าตั้งแต่ภาพขึ้นจอ ไม่ใช่ตอนกดปุ่ม: navigator.share() ต้องถูกเรียกในจังหวะที่ผู้ใช้เพิ่งกด
 // ถ้าต้องรอวาดภาพก่อน เบราว์เซอร์มือถือจะปฏิเสธการแชร์ (แบบเดียวกับ ReportInfographic ของรถรับ-ส่งผู้ป่วย)
 export default function ComplaintMonthlyInfographic({ summary, tenantName }) {
+  // หน้าแจ้งเรื่องของ อปท. นี้ (ผ่าน appUrl เพื่อให้ถูกทุกโหมด deploy) — ใส่เป็น QR ท้ายภาพ และต่อท้ายข้อความตอนแชร์
+  const reportUrl = useMemo(() => appUrl('/complaint'), [])
   const image = useMemo(() => {
     try {
-      return buildInfographicSvg(buildInfographicModel(summary, { tenantName }), createCanvasMeasure())
+      return buildInfographicSvg(buildInfographicModel(summary, { tenantName, reportUrl }), createCanvasMeasure())
     } catch {
       return null
     }
-  }, [summary, tenantName])
+  }, [summary, tenantName, reportUrl])
   const imageKey = image ? image.svg : ''
   const fileName = `complaints-${summary.period.key}.png`
 
@@ -60,7 +63,7 @@ export default function ComplaintMonthlyInfographic({ summary, tenantName }) {
       await navigator.share({
         files: [file],
         title: `สรุปเรื่องร้องเรียน เดือน${summary.period.label} | ${tenantName}`,
-        text: summary.sentences.join('\n'),
+        text: `${summary.sentences.join('\n')}\n\nแจ้งเรื่อง/ติดตามเรื่อง: ${reportUrl}`,
       })
     } catch (cause) {
       if (cause?.name !== 'AbortError') setMessage('เปิดเมนูแชร์ไม่สำเร็จ ลองอีกครั้ง หรือดาวน์โหลดภาพแล้วแนบในแอป')

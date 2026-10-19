@@ -15,7 +15,8 @@
 // ไฟล์นี้ต้องไม่แตะ DOM ตอนโหลดโมดูล — เทสต์รันด้วย node (ตัววัดข้อความส่งเข้ามาจากผู้เรียก)
 
 import { iconNodeForCategory } from './complaintCategoryIcons.js'
-import { formatCount, formatPercent } from './complaintMonthlySummary.js'
+import { formatCount, formatDecimal, formatPercent } from './complaintMonthlySummary.js'
+import { QUIET_MODULES, qrLayout } from './qrSvg.js'
 
 export const IMAGE_WIDTH = 1080
 // 4:5 — ขนาดที่ Facebook/Instagram ไม่ครอปในฟีด ถ้าเนื้อหายาวกว่านี้ภาพจะสูงขึ้นเอง (ไม่ตัดข้อความทิ้ง)
@@ -43,9 +44,10 @@ const num = n => Math.round(n * 100) / 100
 
 /**
  * @param {ReturnType<import('./complaintMonthlySummary.js').summarizeMonth>} summary
- * @param {{ tenantName?: string }} [options]
+ * @param {{ tenantName?: string, reportUrl?: string }} [options]
+ *   reportUrl: ลิงก์หน้าแจ้งเรื่องของ อปท. (เต็ม มี https://) — ใส่แล้วท้ายภาพมี QR + ข้อความชวนแจ้งเรื่อง ไม่ใส่ = ไม่มีกล่องนี้
  */
-export function buildInfographicModel(summary, { tenantName = '' } = {}) {
+export function buildInfographicModel(summary, { tenantName = '', reportUrl = '' } = {}) {
   const total = summary.total
   let cumulative = 0
   const slices = summary.categories.map((category, index) => {
@@ -77,6 +79,9 @@ export function buildInfographicModel(summary, { tenantName = '' } = {}) {
     resolved: { count: summary.resolved, percent: summary.resolvedPercent },
     ongoing: { count: summary.ongoing, percent: summary.ongoingPercent },
     rejected: { count: summary.rejected, percent: summary.rejectedPercent },
+    // วันเฉลี่ยจากแจ้งถึงเสร็จ (วันตามปฏิทิน นับเฉพาะเรื่องที่เสร็จ) — null เมื่อยังไม่มีเรื่องไหนเสร็จ ต้องไม่กลายเป็น "0 วัน"
+    avgDays: summary.avgDays == null || !Number.isFinite(Number(summary.avgDays)) ? null : Number(summary.avgDays),
+    reportUrl: String(reportUrl ?? '').trim(),
     notes,
     asOf: summary.asOf,
   }
@@ -261,9 +266,48 @@ export function buildInfographicSvg(model, measure) {
     text(x + 28, y + 190, `${formatCount(card.data.count)} เรื่อง`, { size: 30, fill: card.palette.fg })
   }
   y += cardH
+  if (model.avgDays !== null) {
+    // สิ่งที่ชาวบ้านอยากรู้ที่สุดคือ "แจ้งแล้วนานไหม" ไม่ใช่ร้อยละ — คำกำกับ "นับเฉพาะเรื่องที่เสร็จแล้ว" ห้ามตัด
+    // เพราะเรื่องที่ค้างนานไม่ถูกนับ ตัวเลขนี้จึงดูดีกว่าความจริงได้ (ใบ A4 เขียนกำกับไว้เหมือนกัน)
+    y += 48
+    const step = Math.round(28 * 1.4)
+    y = block(MARGIN, y, `ใช้เวลาเฉลี่ยจากแจ้งเรื่องถึงดำเนินการแล้วเสร็จ ${formatDecimal(model.avgDays)} วัน (นับเฉพาะเรื่องที่เสร็จแล้ว)`, CONTENT_W, { size: 28, fill: INK }) - step
+  }
   if (model.rejected.count > 0) {
     y += 44
     text(MARGIN, y, `ไม่รับเรื่อง/ยกเลิก ${formatCount(model.rejected.count)} เรื่อง (ร้อยละ ${formatPercent(model.rejected.percent)})`, { size: 28, fill: MUTED })
+  }
+
+  // ── ชวนแจ้งเรื่อง ──
+  // ภาพที่ถูกแชร์ลง LINE/Facebook หรือพิมพ์ติดบอร์ดหมู่บ้านคือช่องทางที่ถึงชาวบ้านจริง — อ่านจบแล้วต้องรู้ว่าแจ้งที่ไหน
+  // สร้าง QR ไม่ได้ (ลิงก์ผิดรูป) ก็ยังมีกล่องนี้ แต่เหลือเฉพาะลิงก์เป็นตัวอักษร ภาพไม่ล้ม
+  if (model.reportUrl) {
+    y += 48
+    const PAD = 28
+    const qr = qrLayout(model.reportUrl, 232)
+    const textX = MARGIN + PAD + (qr ? qr.side + 32 : 0)
+    const textW = IMAGE_WIDTH - MARGIN - PAD - textX
+    const slots = [
+      { size: 36, bold: true, fill: INK, lines: wrapLines('แจ้งเรื่อง · ติดตามเรื่องของท่าน', textW, 36, true, measure) },
+      { size: 28, bold: false, fill: MUTED, lines: wrapLines(qr ? 'สแกน QR หรือเข้าที่' : 'เข้าที่', textW, 28, false, measure) },
+      { size: 30, bold: true, fill: INK, lines: wrapLines(model.reportUrl.replace(/^https?:\/\//i, ''), textW, 30, true, measure) },
+    ]
+    const stepOf = slot => Math.round(slot.size * 1.4)
+    const textHeight = slots.reduce((sum, slot) => sum + slot.lines.length * stepOf(slot), 0)
+    const boxH = Math.max(qr ? qr.side : 0, textHeight) + PAD * 2
+    rect(MARGIN, y, CONTENT_W, boxH, '#eef6fd', 24)
+    if (qr) {
+      // พื้นขาวของ QR (รวมขอบสงบ) วางบนกล่องสีฟ้าอ่อน — QR ต้องดำบนขาวเสมอ ห้ามให้สีกล่องมาเป็นพื้นของ QR
+      parts.push(`<g transform="translate(${MARGIN + PAD} ${num(y + (boxH - qr.side) / 2)})"><rect width="${qr.side}" height="${qr.side}" fill="#ffffff"/><path transform="translate(${QUIET_MODULES * qr.module} ${QUIET_MODULES * qr.module}) scale(${qr.module})" d="${qr.d}" fill="#000000" shape-rendering="crispEdges"/></g>`)
+    }
+    let lineTop = y + (boxH - textHeight) / 2
+    for (const slot of slots) {
+      for (const line of slot.lines) {
+        text(textX, lineTop + Math.round(slot.size * 1.05), line, { size: slot.size, bold: slot.bold, fill: slot.fill })
+        lineTop += stepOf(slot)
+      }
+    }
+    y += boxH
   }
 
   // ── ท้ายภาพ ──

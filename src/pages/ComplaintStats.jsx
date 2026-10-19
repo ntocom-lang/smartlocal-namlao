@@ -21,6 +21,7 @@ import {
 } from '../lib/complaintMonthlySummary.js'
 import { canLockMonth, categoryCountsOf, issueRowsOf } from '../lib/complaintMonthlyLock.js'
 import { buildComplaintMonthlyHtml } from '../lib/complaintMonthlyPrint.js'
+import { appUrl } from '../lib/basename'
 import ComplaintMonthlyInfographic from '../components/reports/ComplaintMonthlyInfographic'
 import MonthlyLockPanel from '../components/reports/MonthlyLockPanel'
 
@@ -292,7 +293,7 @@ export default function ComplaintStats() {
 
   function printMonthly() {
     if (!monthlySummary) return
-    openPrintWindow(buildComplaintMonthlyHtml({ tenant, summary: monthlySummary }))
+    openPrintWindow(buildComplaintMonthlyHtml({ tenant, summary: monthlySummary, reportUrl: appUrl('/complaint') }))
   }
 
   // rows ดึงมาสูงสุด AGGREGATE_LIMIT รายการ (เรียงใหม่→เก่า) ใช้คำนวณกราฟหมวดหมู่/แนวโน้มรายเดือน

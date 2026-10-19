@@ -13,6 +13,9 @@ const Info = await import('../src/lib/complaintMonthlyInfographic.js')
 const Sum = await import('../src/lib/complaintMonthlySummary.js')
 const Icons = await import('../src/lib/complaintCategoryIcons.js')
 const { STANDARD_CATEGORY_LABEL } = await import('../src/lib/complaintCategoryLabels.js')
+const Qr = await import('../src/lib/qrSvg.js')
+// ไลบรารีตัวเดียวกับที่ตัววาดใช้ — เทสต์ใช้เมทริกซ์ของมันเป็น "เฉลย" แล้วตรวจว่าที่วาดลงภาพตรงกันทุกโมดูล
+const { create: createQr } = await import('qrcode')
 
 let cases = 0
 const test = async (label, run) => {
@@ -178,6 +181,79 @@ await test('รายการอนุญาตใน SQL = ISSUE_TYPES_BY_CATE
   assert.deepEqual(Object.keys(fromForm), [pageCategory], 'หมวดที่ฟอร์มมีลักษณะปัญหา ≠ หมวดที่หน้ารายงานดึงยอดย่อย')
 })
 
+// ── "แจ้งเรื่อง/ติดตามเรื่อง" + เวลาเฉลี่ย (ทางต่อให้ชาวบ้านหลังอ่านภาพ) ──
+const REPORT_URL = 'https://namlao.rk-networks.com/complaint'
+const withAvg = avg => summarize({ stats: { ...YALA_APRIL.stats, avg_days: avg } })
+const renderWith = (summary, reportUrl) =>
+  Info.buildInfographicSvg(Info.buildInfographicModel(summary, { tenantName: 'เทศบาลตำบลสาธิต', reportUrl }), measure)
+const RUN = /M(\d+) (\d+)h(\d+)v1h-\d+z/g
+
+await test('QR: path ที่วาดตรงกับเมทริกซ์ของไลบรารีทุกโมดูล · ไม่มีคำสั่งอื่นปน · โมดูลเป็นจำนวนเต็ม ขอบสงบ 4 โมดูล', () => {
+  const layout = Qr.qrLayout(REPORT_URL, 252)
+  const expected = createQr(REPORT_URL, { errorCorrectionLevel: 'M' }).modules
+  assert.equal(layout.size, expected.size)
+  assert.equal(layout.d.replace(RUN, ''), '', 'path มีคำสั่งนอกเหนือจากเส้นโมดูลดำ')
+  // ตัวอ่านนี้เขียนแยกจากตัวสร้าง path (อ่านกลับจากสตริงจริง ไม่ใช่เรียกฟังก์ชันเดิมซ้ำ)
+  const grid = Array.from({ length: layout.size }, () => Array(layout.size).fill(false))
+  for (const [, x, y, run] of layout.d.matchAll(RUN)) for (let i = 0; i < Number(run); i++) grid[Number(y)][Number(x) + i] = true
+  let wrong = 0
+  for (let row = 0; row < layout.size; row++) for (let col = 0; col < layout.size; col++) if (grid[row][col] !== !!expected.get(row, col)) wrong++
+  assert.equal(wrong, 0, `โมดูลไม่ตรง ${wrong} จุด`)
+  assert.ok(Number.isInteger(layout.module) && layout.module >= 6, `โมดูล ${layout.module}px เล็กไป — สแกนจากภาพบนจอไม่ติด`)
+  assert.equal(layout.side, layout.module * (layout.size + Qr.QUIET_MODULES * 2))
+  assert.ok(layout.side <= 252)
+  assert.equal(Qr.QUIET_MODULES, 4)
+})
+
+await test('QR: ข้อความว่าง/ยาวเกินความจุ/กรอบเล็กเกินไป = null (ผู้เรียกข้ามกล่อง QR ไม่ล้ม)', () => {
+  for (const bad of ['', '   ', null, undefined]) assert.equal(Qr.qrLayout(bad, 252), null)
+  assert.equal(Qr.qrLayout(`https://x.test/${'a'.repeat(2500)}`, 252), null, 'เกินความจุ QR สูงสุด')
+  assert.equal(Qr.qrLayout(REPORT_URL, 20), null, 'โมดูลต่ำกว่า 1px')
+  assert.ok(Qr.qrLayout('https://ตัวอย่าง.ไทย/แจ้งเรื่อง', 252), 'ลิงก์ที่มีอักษรไทยต้องเข้ารหัสได้')
+})
+
+await test('เวลาเฉลี่ย: มีค่า = แถว "ใช้เวลาเฉลี่ย X วัน" พร้อมคำกำกับ · ไม่มีค่า (ยังไม่มีเรื่องเสร็จ) = ไม่มีแถว ไม่ใช่ "0 วัน"', () => {
+  const shown = renderWith(withAvg(3.4), '')
+  assert.ok(has(shown.svg, 'ใช้เวลาเฉลี่ยจากแจ้งเรื่องถึงดำเนินการแล้วเสร็จ 3.4 วัน (นับเฉพาะเรื่องที่เสร็จแล้ว)'))
+  const none = renderWith(summarize(), '') // ยะลา: avg_days null
+  assert.ok(!has(none.svg, 'ใช้เวลาเฉลี่ย') && !has(none.svg, 'วัน(นับ'))
+  assert.ok(shown.height > none.height, 'มีแถวเพิ่มภาพต้องสูงขึ้น')
+  // แก้ในวันเดียวกันได้ 0 วันจริง ต้องแสดง ไม่ถูกมองเป็น "ไม่มีค่า"
+  assert.ok(has(renderWith(withAvg(0), '').svg, 'เสร็จ 0 วัน'))
+  for (const bad of [undefined, NaN, 'abc', Infinity]) {
+    assert.equal(Info.buildInfographicModel(summarize({ stats: { ...YALA_APRIL.stats, avg_days: bad } }), {}).avgDays, null, `avg_days=${String(bad)}`)
+  }
+})
+
+await test('กล่อง "แจ้งเรื่อง · ติดตามเรื่องของท่าน": ไม่ส่งลิงก์ = ไม่มีกล่อง · ส่งแล้ว = QR (ดำบนขาว) + ลิงก์ตัวอักษรไม่มี https://', () => {
+  const plainImage = renderWith(summarize(), '')
+  assert.ok(!plainImage.svg.includes('crispEdges') && !has(plainImage.svg, 'สแกน QR'), 'ไม่มีลิงก์ต้องไม่มีกล่อง')
+  const withQr = renderWith(summarize(), REPORT_URL)
+  assert.ok(has(withQr.svg, 'แจ้งเรื่อง · ติดตามเรื่องของท่าน') && has(withQr.svg, 'สแกน QR หรือเข้าที่'))
+  assert.ok(has(withQr.svg, 'namlao.rk-networks.com/complaint') && !has(withQr.svg, 'https://'))
+  assert.equal(withQr.svg.split('shape-rendering="crispEdges"').length - 1, 1)
+  assert.ok(/<path transform="translate\(\d+ \d+\) scale\(\d+\)" d="M[^"]+" fill="#000000"/.test(withQr.svg), 'QR ต้องดำล้วน')
+  assert.ok(withQr.height > plainImage.height)
+  // ภาพของเดือนที่ล็อก/สด ตัวเลขเหมือนเดิม ต่างแค่กล่องเพิ่ม — ลิงก์ไม่ปนกับข้อมูลในภาพ
+  assert.equal(plain(withQr.svg).includes('namlao'), true)
+})
+
+await test('กล่อง QR: ลิงก์ที่มีแท็ก/เครื่องหมายคำพูดถูกหนีอักขระ · สร้าง QR ไม่ได้ก็ยังเหลือลิงก์ตัวอักษร (ไม่ล้ม)', () => {
+  const evil = renderWith(summarize(), 'https://x.test/"><script>window.__pwned=1</script>')
+  assert.ok(!evil.svg.includes('<script'), 'ลิงก์หลุดเป็นโค้ด')
+  assert.ok(evil.svg.includes('&lt;script&gt;') || evil.svg.includes('&quot;&gt;'), 'ลิงก์ต้องออกมาเป็นตัวอักษรที่ถูกหนี')
+  const tooLong = renderWith(summarize(), `https://x.test/${'a'.repeat(2500)}`)
+  assert.ok(!tooLong.svg.includes('crispEdges') && has(tooLong.svg, 'เข้าที่') && !has(tooLong.svg, 'สแกน QR'))
+  assert.ok(has(tooLong.svg, 'แจ้งเรื่อง · ติดตามเรื่องของท่าน'))
+})
+
+await test('ไม่มีข้อมูลส่วนบุคคลแม้มีกล่อง QR: ลิงก์ชี้หน้าแจ้งเรื่องสาธารณะ ไม่มีพารามิเตอร์ติดตาม', () => {
+  const { svg } = renderWith(withAvg(3.4), REPORT_URL)
+  for (const banned of ['เบอร์', 'ที่อยู่', 'ผู้แจ้ง', 'ชื่อ-สกุล', 'ref_no', 'ES-69', 'พิกัด', 'token', '?']) {
+    assert.ok(!plain(svg).includes(banned), `ภาพไม่ควรมี "${banned}"`)
+  }
+})
+
 // ── ชั้นสอง: Chrome จริง ──
 const bundle = await bundleInfographic()
 const browser = await chromium.launch({ channel: 'chrome' })
@@ -225,6 +301,15 @@ try {
     truncated: { sample: { stats: { total: 1500, resolved: 1200, in_progress: 300 }, categories: { a: 1000 }, labels: { a: 'ไฟฟ้า' } }, tenant: 'เทศบาลตำบลสาธิต' },
     single: { sample: { stats: { total: 6, resolved: 6 }, categories: { light: 6 }, labels: { light: 'ไฟฟ้าสาธารณะ' } }, tenant: 'เทศบาลตำบลสาธิต' },
   }
+  // กล่อง "แจ้งเรื่อง/ติดตามเรื่อง" + แถวเวลาเฉลี่ย: ทุกเคสด้านล่างต้องผ่านการตรวจล้นขอบ/ทับกันเหมือนเคสอื่น
+  const WITH_AVG = { ...YALA_APRIL, stats: { ...YALA_APRIL.stats, avg_days: 3.4 } }
+  CASES.reported = { sample: WITH_AVG, tenant: 'องค์การบริหารส่วนตำบลน้ำเลา', reportUrl: REPORT_URL }
+  CASES.reportedEmpty = { sample: { stats: { total: 0 }, categories: {}, labels: {} }, tenant: 'องค์การบริหารส่วนตำบลทุ่งแค้ว', reportUrl: REPORT_URL }
+  // โฮสต์ยาว + มีพาธฐาน — บรรทัดลิงก์ต้องตัดขึ้นบรรทัดใหม่ ไม่ล้มกล่อง
+  CASES.reportedLongUrl = { sample: WITH_AVG, tenant: 'เทศบาลตำบลสาธิต', reportUrl: 'https://smartlocal-demonstration-municipality.rk-networks.com/some-long-base-path/complaint' }
+  CASES.reportedCrowded = { ...CASES.crowded, reportUrl: REPORT_URL }
+  CASES.reportedLocked = { ...CASES.lockedCrowded, reportUrl: REPORT_URL }
+
   const build = (name) => page.evaluate(({ spec }) => {
     const { Info, Sum } = InfoBundle
     const rows = Object.entries(spec.sample.categories).flatMap(([category, n]) => Array.from({ length: n }, () => ({ category })))
@@ -233,7 +318,7 @@ try {
       tenantName: spec.tenant, period: Sum.monthPeriod(2569, 4), issueBreakdown: spec.breakdown ?? null,
       now: new Date('2026-10-18T05:00:00Z'), lock: spec.lock ?? null,
     })
-    const model = Info.buildInfographicModel(summary, { tenantName: spec.tenant })
+    const model = Info.buildInfographicModel(summary, { tenantName: spec.tenant, reportUrl: spec.reportUrl ?? '' })
     return Info.buildInfographicSvg(model, Info.createCanvasMeasure())
   }, { spec: CASES[name] })
 
@@ -329,6 +414,42 @@ try {
   await test('ความสูงตัวอย่างปกติ (5 หมวด) ใกล้ 4:5 ไม่เกิน 1400 — ฟีด Facebook/Instagram ไม่ครอป', async () => {
     const { height } = await build('april')
     assert.ok(height >= 1350 && height <= 1400, `สูง ${height}px`)
+  })
+
+  await test('ภาพที่มี QR + เวลาเฉลี่ย สูงขึ้นแต่ไม่เกิน 1750 (ตัวอย่างปกติ) — กล่องนี้ห้ามบวมเกินที่ตั้งใจ', async () => {
+    const { height } = await build('reported')
+    assert.ok(height > 1400 && height <= 1750, `สูง ${height}px`)
+  })
+
+  // ตรวจตลอดสายจาก SVG ถึงไฟล์ PNG ที่ดาวน์โหลดจริง: สุ่มสีพิกเซลกลางโมดูลทุกจุดเทียบกับเมทริกซ์ของไลบรารี
+  // (ตำแหน่ง/ขนาดโมดูล/ขอบสงบที่คำนวณผิดแม้ 1px ทำให้สแกนไม่ติด แต่ตาคนดูภาพแล้วไม่เห็น)
+  await test('Chrome: QR ในไฟล์ PNG ตรงกับเมทริกซ์ทุกโมดูล · ขอบสงบเป็นสีขาว', async () => {
+    const { svg, width, height } = await build('reported')
+    const found = svg.match(/<g transform="translate\((\d+) ([\d.]+)\)"><rect width="(\d+)" height="\d+" fill="#ffffff"\/><path transform="translate\((\d+) \d+\) scale\((\d+)\)"/)
+    assert.ok(found, 'หากลุ่ม QR ในภาพไม่เจอ')
+    const [gx, gy, side, quiet, module] = found.slice(1).map(Number)
+    const modules = createQr(REPORT_URL, { errorCorrectionLevel: 'M' }).modules
+    assert.equal(quiet, module * Qr.QUIET_MODULES)
+    assert.equal(side, module * (modules.size + Qr.QUIET_MODULES * 2))
+    const sampled = await page.evaluate(async ({ markup, w, h, gx: ox, gy: oy, quiet: q, module: m, size, side: s }) => {
+      const file = await InfoBundle.Info.svgToPngFile(markup, w, h, 'q.png')
+      const bitmap = await createImageBitmap(file)
+      const canvas = document.createElement('canvas')
+      canvas.width = bitmap.width; canvas.height = bitmap.height
+      const context = canvas.getContext('2d'); context.drawImage(bitmap, 0, 0)
+      const luminance = (x, y) => { const [r, g, b] = context.getImageData(Math.floor(x), Math.floor(y), 1, 1).data; return (r + g + b) / 3 }
+      const dark = []
+      for (let row = 0; row < size; row++) for (let col = 0; col < size; col++) dark.push(luminance(ox + q + col * m + m / 2, oy + q + row * m + m / 2) < 128)
+      // วงแหวนขอบสงบ: ขอบนอกสุด 4 มุม + กลางแต่ละด้าน ต้องขาว
+      const ring = [[1, 1], [s - 2, 1], [1, s - 2], [s - 2, s - 2], [s / 2, 1], [s / 2, s - 2], [1, s / 2], [s - 2, s / 2]].map(([dx, dy]) => luminance(ox + dx, oy + dy))
+      return { dark, ring }
+    }, { markup: svg, w: width, h: height, gx, gy, quiet, module, size: modules.size, side })
+    let wrong = 0
+    for (let row = 0; row < modules.size; row++) for (let col = 0; col < modules.size; col++) {
+      if (sampled.dark[row * modules.size + col] !== !!modules.get(row, col)) wrong++
+    }
+    assert.equal(wrong, 0, `โมดูลในไฟล์ PNG ไม่ตรง ${wrong} จุด`)
+    assert.ok(sampled.ring.every(value => value > 250), `ขอบสงบไม่ขาว: ${sampled.ring.join(',')}`)
   })
 } finally {
   await browser.close()
