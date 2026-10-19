@@ -2,18 +2,29 @@
 // ดีไซน์ฉบับปิด: docs/water-system.md — ถอดจากผังน้ำจังหวัดแพร่ + ผังน้ำตำบล (+ ตำบลเพื่อนบ้าน) ของศูนย์บริหารจัดการน้ำจังหวัดแพร่
 // ไม่โฮสต์ภาพผัง · ไม่คัดลอกความจุจากผัง · ไม่พยากรณ์ · ค่าว่างไม่เป็น 0
 import { NAMLAO_SYSTEM } from './namlao.js'
+import { TAMNAKTHAM_SYSTEM } from './tamnaktham.js'
+import { THUNGKAEW_SYSTEM } from './thungkaew.js'
 
 // อปท. ที่เห็นส่วนนี้ — เลือกชัดเจน ไม่เดา (ต้องถอดผังรายตำบลทีละแห่ง) · อปท. ที่ไม่อยู่ในรายการ = ไม่เห็นหัวข้อนี้เลย ไม่โหลดโค้ด
 //   preview: true = ดูระบบของ อปท. อื่นบน demo ได้ด้วย ?system=<id> (เฉพาะ demo — อปท. จริงที่ใส่พารามิเตอร์นี้ถูกเมินเสมอ)
 export const WATER_SYSTEM_TENANTS = {
   namlao: { system: 'namlao', scope: '' },
+  tamnaktham: { system: 'tamnaktham', scope: '' },
+  thungkaew: { system: 'thungkaew', scope: '' },
   demo: { system: 'namlao', scope: 'ข้อมูลจริงของน้ำเลา ใช้สาธิต', preview: true },
 }
 
-export const SYSTEMS = { [NAMLAO_SYSTEM.id]: NAMLAO_SYSTEM }
+export const SYSTEMS = {
+  [NAMLAO_SYSTEM.id]: NAMLAO_SYSTEM,
+  [TAMNAKTHAM_SYSTEM.id]: TAMNAKTHAM_SYSTEM,
+  [THUNGKAEW_SYSTEM.id]: THUNGKAEW_SYSTEM,
+}
 
+// ป้ายบนส่วนระบบน้ำเมื่อ demo ดูระบบของ อปท. อื่นผ่าน ?system= — สถานีที่ขึ้นค่าสดคือสถานีที่สนามซ้อมติดตามอยู่
 export const SYSTEM_PREVIEW_SCOPES = {
   namlao: 'ข้อมูลจริงของน้ำเลา ใช้สาธิต',
+  tamnaktham: 'ตัวอย่างบนสนามซ้อม · ค่าสดคือสถานีที่สนามซ้อมติดตาม ไม่ใช่ของตำหนักธรรม',
+  thungkaew: 'ตัวอย่างบนสนามซ้อม · ค่าสดคือสถานีที่สนามซ้อมติดตาม ไม่ใช่ของทุ่งแค้ว',
 }
 
 export function systemById(id) {
@@ -44,9 +55,28 @@ export const RELATIONS = {
 }
 export const RELATION_KEYS = Object.keys(RELATIONS)
 
-export const NODE_KINDS = ['stream', 'reservoir', 'weir', 'canal', 'pond', 'pump', 'supply', 'gauge', 'rain']
+export const NODE_KINDS = ['stream', 'reservoir', 'weir', 'canal', 'pond', 'pump', 'supply', 'gauge', 'rain', 'gate', 'other']
 export const NODE_STATUSES = ['existing', 'planned', 'repair', 'unconfirmed']
 export const NODE_ROLES = ['upstream', 'inside', 'downstream', 'side']
+
+// ระบบนี้มีอ่างเก็บน้ำขนาดกลางที่ต้องดึงแนวโน้ม 30 วันหรือไม่ — ตำบลที่ไม่มีอ่าง (ตำหนักธรรม ทุ่งแค้ว) ไม่เรียก get_public_dam_history เลย
+export function systemHasDams(system) {
+  return Object.keys(system?.relations ?? {}).some(key => key.startsWith('dam:'))
+}
+
+// สรุปบรรทัดเดียวของขั้น "ในตำบล" — เขียนเฉพาะที่ผังวาดไว้จริง (จำนวน 0 ไม่เขียน) · ตั้งแต่ 10 ขึ้นไปเขียน "ประมาณ" เพราะนับจากภาพ
+export function systemCountsText(counts) {
+  const c = counts ?? {}
+  const approx = n => (n >= 10 ? 'ประมาณ' : '')
+  const part = (n, text) => (Number.isFinite(n) && n > 0 ? text(n) : null)
+  return [
+    part(c.reservoirs, n => `อ่าง ${n} แห่ง`),
+    part(c.weirs, n => `ฝาย${approx(n)} ${n} แห่ง`),
+    part(c.ponds, n => `${c.pondLabel || 'สระ'} ${n} แห่ง`),
+    part(c.tributaries, n => `ห้วยสาขา${approx(n)} ${n} สาย`),
+    part(c.planned, n => `แผนก่อสร้าง ${n} รายการ`),
+  ].filter(Boolean).join(' · ')
+}
 
 // ความสัมพันธ์ของสถานี (ชนิด:รหัส) ใน อปท. นั้น — null เมื่อ อปท. ไม่มีระบบ/ไม่ได้ระบุสถานีนี้ (การ์ดคงของเดิม)
 export function relationOf(system, stationType, stationCode) {
@@ -180,8 +210,10 @@ export function trendFactText(facts) {
 // bind = { type: 'dam'|'waterlevel'|'rain'|'small-reservoir', code } → คืน 'live' | 'none'
 //   live = มีสถานีและมีค่า · none = ไม่มีสถานี/ไม่มีค่า → ป้าย "ไม่มีค่าสดในระบบ" (ข้อความเดียวทั้งระบบ ไม่เขียน "ปกติ")
 export function liveState(node, stations) {
-  // อ่าง/สถานีที่ควรมีค่าแต่ไม่ได้ผูกสถานี = ไม่มีค่าสดในระบบ · ฝาย ห้วย สระ ไม่ใช่ของที่วัดได้ → ไม่ขึ้นป้าย
-  if (!node?.bind) return node && (node.kind === 'reservoir' || node.kind === 'gauge') && node.status === 'existing' ? 'none' : null
+  // อ่าง/สถานีที่ควรมีค่าแต่ไม่ได้ผูกสถานี (ผังวาดไว้ จะยืนยันความสัมพันธ์หรือไม่ก็ตาม) = ไม่มีค่าสดในระบบ · ฝาย ห้วย สระ ไม่ใช่ของที่วัดได้ → ไม่ขึ้นป้าย
+  if (!node?.bind) return node && (node.kind === 'reservoir' || node.kind === 'gauge') && ['existing', 'unconfirmed'].includes(node.status) ? 'none' : null
+  // อ่างเล็กของศูนย์ฯ แพร่ = รายงานรายสัปดาห์พิมพ์มือ (ไม่ใช่ค่าสด) มีการ์ดของตัวเองบนหน้า → ไม่ขึ้นป้ายค่าสด/ไม่มีค่าสด (note ของโหนดบอกที่ดูรายงาน)
+  if (node.bind.type === 'small-reservoir') return null
   const s = (stations || []).find(x => x.station_type === node.bind.type && x.station_code === node.bind.code)
   if (!s || !s.recorded_at) return 'none'
   if (node.bind.type === 'dam') return num(s.dam_storage_mcm) === null ? 'none' : 'live'
