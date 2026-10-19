@@ -1,10 +1,13 @@
 import { useState } from 'react'
-import { buttonClass, primaryClass, inputClass, clockTime, minutes } from '../../lib/patientBooking'
+import { buttonClass, primaryClass, inputClass, clockTime, minutes, OTHER_PLACE_ID } from '../../lib/patientBooking'
 
+// ช่อง "อื่นๆ" (20261020150000) เก็บเป็นสถานที่พิเศษ id '__other__' ในกฎ — แยกออกจากรายการสถานที่ในร่าง (draft.other)
+// ไม่งั้นลำดับของรายการสถานที่ปนกับสวิตช์ และ "มีสถานที่อย่างน้อย 1 แห่ง" จะนับ "อื่นๆ" เป็นสถานที่ไปด้วย
 const draftFrom = rules => ({ revision: rules?.revision ?? 1, enabled: !!rules?.enabled,
   start: Number.isFinite(rules?.window_start) ? clockTime(rules.window_start) : '',
   end: Number.isFinite(rules?.window_end) ? clockTime(rules.window_end) : '',
-  places: rules?.places || [], activities: rules?.activities || [], rules_reference: rules?.rules_reference || '' })
+  places: (rules?.places || []).filter(p => p.id !== OTHER_PLACE_ID), other: (rules?.places || []).some(p => p.id === OTHER_PLACE_ID),
+  activities: rules?.activities || [], rules_reference: rules?.rules_reference || '' })
 
 export default function CommunitySettings({ rules, busy, onSave }) {
   const [draft, setDraft] = useState(() => draftFrom(rules))
@@ -17,7 +20,8 @@ export default function CommunitySettings({ rules, busy, onSave }) {
     e.preventDefault()
     if (busy || stale || (draft.enabled && missing)) return
     const ok = await onSave(draft.revision, { enabled: draft.enabled, window_start: draft.start ? minutes(draft.start) : null,
-      window_end: draft.end ? minutes(draft.end) : null, places: draft.places.map(p => ({ id: p.id, label: p.label.trim() })),
+      window_end: draft.end ? minutes(draft.end) : null,
+      places: [...draft.places.map(p => ({ id: p.id, label: p.label.trim() })), ...(draft.other ? [{ id: OTHER_PLACE_ID, label: 'อื่นๆ (พิมพ์ชื่อสถานที่เอง)' }] : [])],
       activities: draft.activities.map(a => ({ ...a, label: a.label.trim() })), rules_reference: draft.rules_reference.trim() })
     if (ok) setSaved(true)
   }}>
@@ -35,7 +39,15 @@ export default function CommunitySettings({ rules, busy, onSave }) {
         <label>สถานที่ชุมชน {index + 1}<input required maxLength={200} className={inputClass} value={p.label} onChange={e => updateRow('places', index, 'label', e.target.value)} /></label>
         <button type="button" className={`${buttonClass} self-end`} disabled={busy} onClick={() => change('places', draft.places.filter((_, i) => i !== index))}>นำสถานที่ {index + 1} ออก</button>
       </div>)}
-      <button type="button" className={buttonClass} disabled={busy || draft.places.length >= 100} onClick={() => change('places', [...draft.places, { id: `place_${crypto.randomUUID()}`, label: '' }])}>+ เพิ่มสถานที่ชุมชน</button>
+      <button type="button" className={buttonClass} disabled={busy || draft.places.length >= 99} onClick={() => change('places', [...draft.places, { id: `place_${crypto.randomUUID()}`, label: '' }])}>+ เพิ่มสถานที่ชุมชน</button>
+      <div className="space-y-3 rounded-xl border border-slate-200 p-3">
+        <label className="flex min-h-11 items-center gap-3"><input className="size-5" type="checkbox" checked={draft.other} onChange={e => change('other', e.target.checked)} />
+          เปิดช่อง “อื่นๆ” ให้ผู้ขอพิมพ์ชื่อสถานที่ที่ไม่อยู่ในรายการเอง</label>
+        {draft.other && <>
+          <p className="text-sm text-slate-700">เจ้าหน้าที่ตรวจชื่อสถานที่และประสานรอบรถก่อนยืนยัน · ผู้ขอยังต้องเลือกกิจกรรมจากรายการที่กองทุนอนุญาตเหมือนเดิม</p>
+          <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">⚠️ ระบบไม่ได้ตรวจว่าข้อบังคับกองทุนอนุญาตให้ใช้รถไปสถานที่ประเภทใด ผู้ประสานงานต้องตัดสินตามข้อบังคับฉบับปัจจุบันก่อนยืนยันรถทุกครั้ง · ผู้ขออาจพิมพ์ชื่อบุคคลลงในช่องชื่อสถานที่ ฟอร์มเตือนให้ใส่เฉพาะชื่อสถานที่</p>
+        </>}
+      </div>
     </fieldset>
     <fieldset className="space-y-3"><legend className="font-bold">กิจกรรมที่กองทุนอนุญาต</legend>
       {draft.activities.map((a, index) => <div key={a.code} className="flex flex-wrap items-end gap-2">

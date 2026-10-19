@@ -230,7 +230,7 @@ const plugin = {
  })},
 }
 await db.exec('RESET ROLE')
-for (const f of ['20261011120000_patient_booking_manual_settings_rpc.sql','20261011120100_patient_booking_manual_scheduler_rpc.sql','20261011120200_patient_booking_manual_workflow_rpc.sql']) await db.exec(await readFile(new URL(`../supabase/migrations/${f}`, import.meta.url), 'utf8'))
+for (const f of ['20261011120000_patient_booking_manual_settings_rpc.sql','20261011120100_patient_booking_manual_scheduler_rpc.sql','20261011120200_patient_booking_manual_workflow_rpc.sql','20261020150000_patient_booking_community_other_place.sql']) await db.exec(await readFile(new URL(`../supabase/migrations/${f}`, import.meta.url), 'utf8'))
 await actor(admin)
 const server=await createServer({configFile:false,plugins:[plugin,react(),tailwind()],server:{host:'127.0.0.1',port:0},logLevel:'error'})
 await server.listen();const address=server.httpServer.address();const base=`http://127.0.0.1:${address.port}`
@@ -2154,6 +2154,67 @@ try{
  const storedPin=await runSql(async()=>(await db.query('SELECT pickup_lat,pickup_lng FROM public.patient_bookings WHERE id=$1',[uiCommunityId])).rows[0])
  assert.deepEqual([Number(storedPin.pickup_lat).toFixed(5),Number(storedPin.pickup_lng).toFixed(5)],pinCoords.map(n=>n.toFixed(5)),'พิกัดในฐานข้อมูลต้องตรงกับที่ปักบนจอ')
  console.log('PASS community citizen form at 320px: separated fields, explicit consent, party validation, correct date month, lost response retry creates exactly one private group request')
+ // ── ช่อง "อื่นๆ" ของงานชุมชน (20261020150000, เจ้าของระบบสั่ง 2569-10-19) ──
+ // แอดมินเปิดสวิตช์ในหน้าตั้งค่า → ผู้ขอเลือก "อื่นๆ" แล้วพิมพ์ชื่อสถานที่เอง → หน้าทวนแสดงชื่อที่พิมพ์ → ฐานข้อมูลเก็บเป็น route_label · ปิดไว้เป็นค่าเริ่มต้น
+ {
+  const current=await runAs(admin,async()=>(await rpc('patient_booking_workspace',[tenant])).community_rules)
+  const listedPlaces=current.places.filter(p=>p.id!=='__other__').map(p=>({id:p.id,label:p.label}))
+  const readPlaces=()=>runSql(async()=>(await db.query('SELECT places FROM public.patient_booking_community_rules WHERE municipality_id=$1',[tenant])).rows[0].places)
+  const openCommunitySettings=async()=>{await visit('admin');await page.getByRole('button',{name:'ตั้งค่า',exact:true}).click();await page.getByRole('tab',{name:'รถรับ–ส่งชุมชน',exact:true}).click()}
+  await page.setViewportSize({width:390,height:900});await openCommunitySettings()
+  const settingsForm=page.getByRole('form',{name:'ตั้งค่าบริการชุมชน'}),otherSwitch=settingsForm.getByRole('checkbox',{name:/เปิดช่อง “อื่นๆ”/})
+  assert.equal(await otherSwitch.isChecked(),false,'ปิดไว้เป็นค่าเริ่มต้น')
+  await otherSwitch.check();await settingsForm.getByText('ระบบไม่ได้ตรวจว่าข้อบังคับกองทุนอนุญาต',{exact:false}).waitFor()
+  await settingsForm.getByRole('button',{name:'บันทึกกฎบริการชุมชน'}).click();await toast('บันทึกกฎบริการชุมชนแล้ว').waitFor()
+  const savedRules=await readPlaces()
+  assert.deepEqual(savedRules.map(p=>p.id),[...listedPlaces.map(p=>p.id),'__other__'],'สวิตช์เปิด = "อื่นๆ" ต่อท้ายรายการสถานที่')
+  assert.equal(savedRules.at(-1).label,'อื่นๆ (พิมพ์ชื่อสถานที่เอง)')
+  await visit('citizen')
+  await page.getByRole('button',{name:'🚐 ขอรถไปกิจกรรมชุมชน',exact:true}).click()
+  const otherForm=await fillCommunity({label:'[TEST] กลุ่มสถานที่อื่น'})
+  const placeSelect=otherForm.getByLabel('สถานที่ชุมชน',{exact:true})
+  assert.equal((await placeSelect.locator('option').allInnerTexts()).at(-1),'อื่นๆ (พิมพ์ชื่อสถานที่เอง)','"อื่นๆ" อยู่ท้ายรายการ')
+  assert.equal(await otherForm.getByLabel('ชื่อสถานที่ที่จะไป',{exact:true}).count(),0,'ยังไม่เลือก "อื่นๆ" ต้องไม่มีช่องพิมพ์')
+  await placeSelect.selectOption('__other__')
+  const otherName=otherForm.getByLabel('ชื่อสถานที่ที่จะไป',{exact:true});await otherName.waitFor()
+  await otherForm.getByRole('button',{name:'ตรวจทานคำขอชุมชน',exact:true}).click()
+  await otherForm.getByRole('alert').filter({hasText:'พิมพ์ชื่อสถานที่ที่จะไป (อย่างน้อย 2 ตัวอักษร)'}).waitFor()
+  await otherName.fill('[TEST] ศาลาประชาคมบ้านใหม่')
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
+  await otherForm.getByRole('button',{name:'ตรวจทานคำขอชุมชน',exact:true}).click()
+  const otherSheet=page.getByRole('dialog',{name:'ตรวจทานคำขอชุมชน',exact:true});await otherSheet.getByRole('button',{name:'ยืนยันส่งคำขอ',exact:true}).waitFor()
+  const reviewText=await otherSheet.innerText()
+  assert(reviewText.includes('[TEST] ศาลาประชาคมบ้านใหม่')&&!reviewText.includes('อื่นๆ (พิมพ์ชื่อสถานที่เอง)'),'หน้าทวนแสดงชื่อที่พิมพ์ ไม่ใช่ป้ายอื่นๆ')
+  await otherSheet.getByRole('checkbox',{name:'ยินยอมให้ใช้ข้อมูลตามข้อความข้างต้น',exact:true}).check()
+  let otherPayload
+  await page.route('**/__patient_rpc',route=>{const request=route.request().postDataJSON();if(request.name==='patient_booking_submit_community')otherPayload=request.args.p_data;return route.fallback()})
+  await otherSheet.getByRole('button',{name:'ยืนยันส่งคำขอ',exact:true}).click();await page.getByRole('heading',{name:'ส่งคำขอสำเร็จ',exact:true}).waitFor();await page.unroute('**/__patient_rpc')
+  assert.equal(otherPayload.route_id,'__other__');assert.equal(otherPayload.other_place,'[TEST] ศาลาประชาคมบ้านใหม่')
+  const storedOther=await runSql(async()=>(await db.query("SELECT route_id,route_label,status FROM public.patient_bookings WHERE group_label='[TEST] กลุ่มสถานที่อื่น'")).rows)
+  assert.deepEqual(storedOther,[{route_id:'__other__',route_label:'[TEST] ศาลาประชาคมบ้านใหม่',status:'submitted'}])
+  // เปลี่ยนกลับเป็นสถานที่ในรายการ: ช่องพิมพ์หายและไม่ส่งชื่อที่พิมพ์ค้างไว้ (ฐานข้อมูลปฏิเสธ other_place ที่มากับสถานที่ปกติ)
+  await visit('citizen');await page.getByRole('button',{name:'🚐 ขอรถไปกิจกรรมชุมชน',exact:true}).click()
+  const listedForm=await fillCommunity({label:'[TEST] กลุ่มสถานที่ปกติหลังอื่นๆ'})
+  await listedForm.getByLabel('สถานที่ชุมชน',{exact:true}).selectOption('__other__');await listedForm.getByLabel('ชื่อสถานที่ที่จะไป',{exact:true}).fill('[TEST] ชื่อที่พิมพ์ค้าง')
+  await listedForm.getByLabel('สถานที่ชุมชน',{exact:true}).selectOption('test-community-place')
+  assert.equal(await listedForm.getByLabel('ชื่อสถานที่ที่จะไป',{exact:true}).count(),0)
+  await listedForm.getByRole('button',{name:'ตรวจทานคำขอชุมชน',exact:true}).click()
+  const listedSheet=page.getByRole('dialog',{name:'ตรวจทานคำขอชุมชน',exact:true});await listedSheet.getByRole('button',{name:'ยืนยันส่งคำขอ',exact:true}).waitFor()
+  await listedSheet.getByRole('checkbox',{name:'ยินยอมให้ใช้ข้อมูลตามข้อความข้างต้น',exact:true}).check()
+  let listedPayload
+  await page.route('**/__patient_rpc',route=>{const request=route.request().postDataJSON();if(request.name==='patient_booking_submit_community')listedPayload=request.args.p_data;return route.fallback()})
+  await listedSheet.getByRole('button',{name:'ยืนยันส่งคำขอ',exact:true}).click();await page.getByRole('heading',{name:'ส่งคำขอสำเร็จ',exact:true}).waitFor();await page.unroute('**/__patient_rpc')
+  assert.equal(listedPayload.route_id,'test-community-place');assert.equal(Object.hasOwn(listedPayload,'other_place'),false,'สถานที่ปกติต้องไม่ส่ง other_place')
+  // ปิดสวิตช์คืน: ผู้ขอไม่เห็นตัวเลือกอีก
+  await openCommunitySettings()
+  assert.equal(await otherSwitch.isChecked(),true,'โหลดกฎแล้วสวิตช์สะท้อนค่าที่บันทึกไว้')
+  await otherSwitch.uncheck();await settingsForm.getByRole('button',{name:'บันทึกกฎบริการชุมชน'}).click();await toast('บันทึกกฎบริการชุมชนแล้ว').waitFor()
+  assert.deepEqual((await readPlaces()).map(p=>p.id),listedPlaces.map(p=>p.id),'ปิดสวิตช์ = เอา "อื่นๆ" ออกจากกฎ')
+  await visit('citizen');await page.getByRole('button',{name:'🚐 ขอรถไปกิจกรรมชุมชน',exact:true}).click()
+  const closedOptions=await page.getByRole('form',{name:'ขอรถรับ–ส่งชุมชน',exact:true}).getByLabel('สถานที่ชุมชน',{exact:true}).locator('option').allInnerTexts()
+  assert(!closedOptions.some(text=>text.includes('อื่นๆ')),'ปิดสวิตช์แล้วไม่มีตัวเลือก "อื่นๆ"')
+  console.log('PASS community other place: admin switch off by default, citizen picks other and types the name, review shows it, stored as route_label, listed place sends no name, switch off hides it')
+ }
  await staffDesk();await page.getByRole('group',{name:'กรองประเภทบริการ'}).getByRole('button',{name:/^ชุมชน/}).click()
  await row(uiCommunityId).waitFor();await row(uiCommunityId).click()
  await sheet.locator('summary').filter({hasText:'จัดการเพิ่มเติม'}).first().evaluate(node=>{node.parentElement.open=true})
@@ -2194,7 +2255,9 @@ try{
  console.log('PASS coordinator confirms one group with one action, community draft prints separately, staff intake does not leak into citizen mine/autofill')
  const communityAreaDate=new Date(staffDate);communityAreaDate.setUTCDate(communityAreaDate.getUTCDate()+1)
  const communityAreaId=randomUUID()
- await runAs(coordinator,()=>rpc('patient_booking_submit_community',[tenant,communityAreaId,{...sentCommunityPayload,
+ // ฉาก "อื่นๆ" ด้านบนเปิด/ปิดช่องในกฎ → rules_version เพิ่ม · payload ที่เก็บไว้ต้องใช้ค่าปัจจุบัน ไม่งั้นฐานข้อมูลปฏิเสธว่ากฎเปลี่ยนแล้ว
+ const communityAreaRules=(await runAs(coordinator,()=>rpc('patient_booking_info',[tenant]))).community.rules_version
+ await runAs(coordinator,()=>rpc('patient_booking_submit_community',[tenant,communityAreaId,{...sentCommunityPayload,rules_version:communityAreaRules,
   group_label:'[TEST] ตรวจเขตชุมชน',in_area:false,appointment_at:`${communityAreaDate.toISOString().slice(0,10)}T07:00:00+07:00`},true]))
  await page.getByRole('button',{name:'โหลดข้อมูลล่าสุด',exact:true}).click()
  await row(communityAreaId).getByRole('button',{name:'ยืนยันรถ',exact:true}).click()
