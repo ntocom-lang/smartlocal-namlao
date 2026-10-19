@@ -12,6 +12,7 @@ import {
   govPageCss, govPagePadding,
 } from './govDocStyle.js'
 import { formatCount, formatDecimal, formatPercent } from './complaintMonthlySummary.js'
+import { QUIET_MODULES, qrLayout } from './qrSvg.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -44,6 +45,11 @@ function pageCss() {
   .notes { margin-top: 2mm; }
   .notes p { padding-left: 5mm; text-indent: -5mm; }
   .notes p.section { padding-left: 0; text-indent: 0; margin-top: 0; }
+  .report { display: flex; align-items: center; gap: 4mm; margin-top: 3mm; break-inside: avoid; page-break-inside: avoid; }
+  .report svg { flex: none; width: 24mm; height: 24mm; }
+  .report-title { font-weight: 700; }
+  .report .origin { text-align: left; margin-top: 1mm; }
+  .report-url { overflow-wrap: anywhere; }
   .origin { ${GOV_ESERVICE_ORIGIN_CSS} text-align: center; margin-top: 4mm; }`
 }
 
@@ -82,12 +88,32 @@ ${summary.categories.map((c, i) => `<tr><td class="num">${i + 1}</td><td>${esc(c
   </table>`
 }
 
+// ท้ายใบ: ช่อง "แจ้งเรื่อง/ติดตามเรื่อง" พร้อม QR — ใบที่ติดบอร์ดหมู่บ้านต้องบอกชาวบ้านได้ว่าแจ้งที่ไหน
+// บรรทัดแหล่งที่มา (origin) ย้ายเข้ามาอยู่ในช่องนี้ ไม่ใช่เพิ่มต่อท้าย: ใบที่หมวดเยอะมีที่ว่างเหลือไม่ถึง 1 ซม.
+// QR 24 มม. + บรรทัดข้อความข้างๆ กินที่เพิ่มราว 1.7 ซม. แทนที่จะเป็น 3.2 ซม. ถ้าวางต่อท้าย (วัดแล้ว ดูเทสต์)
+// QR เป็นเวกเตอร์ฝังในใบ (ไม่โหลดอะไรจากเครือข่าย) สร้างไม่ได้ก็เหลือลิงก์ตัวอักษร ใบไม่ล้ม
+// ไม่ส่งลิงก์ = บรรทัดแหล่งที่มาเดิมกลางใบเหมือนก่อนมีช่องนี้
+function tailBlock(reportUrl, origin) {
+  const url = String(reportUrl ?? '').trim()
+  if (!url) return `<div class="origin">${esc(origin)}</div>`
+  const qr = qrLayout(url, 1000) // ด้านจริงของใบกำหนดด้วย CSS (24mm) ตรงนี้ใช้แค่เมทริกซ์
+  const box = qr ? qr.size + QUIET_MODULES * 2 : 0
+  const svg = qr
+    ? `<svg viewBox="0 0 ${box} ${box}" role="img" aria-label="QR code ลิงก์หน้าแจ้งเรื่อง"><rect width="${box}" height="${box}" fill="#fff"/><path transform="translate(${QUIET_MODULES} ${QUIET_MODULES})" d="${qr.d}" fill="#000"/></svg>`
+    : ''
+  return `<div class="report">
+    ${svg}
+    <div><p class="report-title">แจ้งเรื่อง/ติดตามเรื่องของท่าน</p><p class="report-url">${qr ? 'สแกน QR หรือเข้าที่ ' : 'เข้าที่ '}${esc(url.replace(/^https?:\/\//i, ''))}</p><p class="origin">${esc(origin)}</p></div>
+  </div>`
+}
+
 /**
  * @param {object} args
  * @param {{ name?: string }} args.tenant
  * @param {ReturnType<import('./complaintMonthlySummary.js').summarizeMonth>} args.summary
+ * @param {string} [args.reportUrl] ลิงก์หน้าแจ้งเรื่อง — ใส่แล้วท้ายใบมี QR + ข้อความชวนแจ้งเรื่อง
  */
-export function buildComplaintMonthlyHtml({ tenant, summary }) {
+export function buildComplaintMonthlyHtml({ tenant, summary, reportUrl = '' }) {
   const month = summary.period.label
   const origin = `${govEServiceOriginText(tenant)} · ข้อมูล ณ วันที่ ${summary.asOf}`
   const notes = [
@@ -114,7 +140,7 @@ ${summary.sentences.map(sentence => `  <p class="narrative">${esc(sentence)}</p>
     <p class="section">หมายเหตุ</p>
 ${notes.map((note, i) => `    <p>${i + 1}. ${esc(note)}</p>`).join('\n')}
   </div>
-  <div class="origin">${esc(origin)}</div>
+  ${tailBlock(reportUrl, origin)}
 </div>
 </body></html>`
 }

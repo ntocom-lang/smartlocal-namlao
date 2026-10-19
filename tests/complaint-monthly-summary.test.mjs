@@ -260,6 +260,36 @@ await test('ใบไม่มีข้อมูลส่วนบุคคล�
   assert.ok(html.includes('ผ่านระบบ E-Service เทศบาลตำบลสาธิต · ข้อมูล ณ วันที่ 18 ตุลาคม 2569'))
 })
 
+const REPORT_URL = 'https://namlao.rk-networks.com/complaint'
+
+await test('ใบ A4: ไม่ส่งลิงก์ = ไม่มีช่อง QR · ส่งแล้ว = QR เวกเตอร์ฝังในใบ + ข้อความชวนแจ้งเรื่อง + ลิงก์ไม่มี https://', () => {
+  const tenant = { name: 'เทศบาลตำบลสาธิต' }
+  const plainHtml = buildComplaintMonthlyHtml({ tenant, summary: summarize() })
+  assert.ok(!plainHtml.includes('class="report"') && !plainHtml.includes('<svg'), 'ไม่มีลิงก์ต้องไม่มีช่อง')
+  const html = buildComplaintMonthlyHtml({ tenant, summary: summarize(), reportUrl: REPORT_URL })
+  assert.equal(html.split('<svg').length - 1, 1)
+  assert.ok(html.includes('class="report"') && html.includes('แจ้งเรื่อง/ติดตามเรื่องของท่าน'))
+  assert.ok(html.includes('สแกน QR หรือเข้าที่ namlao.rk-networks.com/complaint') && !html.includes('https://namlao'))
+  // บรรทัดแหล่งที่มา/วันที่ของข้อมูลย้ายเข้าไปอยู่ในช่อง ไม่หายไปและไม่ซ้ำสองที่
+  assert.equal(html.split('ข้อมูล ณ วันที่ 18 ตุลาคม 2569').length - 1, 1, 'วันที่ของข้อมูลต้องมีบรรทัดเดียว')
+  assert.ok(html.includes('<p class="origin">ผ่านระบบ E-Service เทศบาลตำบลสาธิต · ข้อมูล ณ วันที่ 18 ตุลาคม 2569</p>'))
+  assert.ok(/<path transform="translate\(4 4\)" d="M[^"]+" fill="#000"\/>/.test(html), 'QR ต้องดำล้วน พร้อมขอบสงบ 4 โมดูล')
+  assert.ok(/<rect width="\d+" height="\d+" fill="#fff"\/>/.test(html), 'พื้นขาวหลัง QR')
+  // ไม่ดึงอะไรจากเครือข่าย (ใบพิมพ์จากหน้าต่างใหม่ที่ออฟไลน์ได้) และยังไม่มีข้อมูลส่วนบุคคล/ตารางเพิ่ม
+  assert.ok(!/<(img|link)[^>]+(src|href)=["']https?:\/\/namlao/.test(html))
+  assert.equal(html.split('<table>').length - 1, 2)
+  for (const banned of ['เบอร์', 'ที่อยู่', 'ผู้แจ้ง', 'ชื่อ-สกุล', 'ref_no', 'ES-69']) assert.ok(!html.includes(banned), `ใบไม่ควรมี "${banned}"`)
+})
+
+await test('ใบ A4: ลิงก์ที่มีแท็กถูกหนีอักขระ · สร้าง QR ไม่ได้ก็ยังเหลือลิงก์ตัวอักษร (ไม่ล้ม)', () => {
+  const tenant = { name: 'เทศบาลตำบลสาธิต' }
+  const evil = buildComplaintMonthlyHtml({ tenant, summary: summarize(), reportUrl: 'https://x.test/"><script>window.__pwned=1</script>' })
+  assert.ok(!evil.includes('<script'), 'ลิงก์หลุดเป็นโค้ด')
+  assert.ok(evil.includes('&lt;script&gt;'))
+  const tooLong = buildComplaintMonthlyHtml({ tenant, summary: summarize(), reportUrl: `https://x.test/${'a'.repeat(2500)}` })
+  assert.ok(!tooLong.includes('<svg') && tooLong.includes('เข้าที่ x.test/') && !tooLong.includes('สแกน QR'))
+})
+
 // channel: 'chrome' ใช้ Chrome ที่ลงในเครื่องอยู่แล้ว ไม่ต้อง playwright install เพิ่ม
 const browser = await chromium.launch({ channel: 'chrome' })
 try {
@@ -316,6 +346,59 @@ try {
       const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
       const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length
       assert.equal(pages, 1, `ใบของเดือนที่ล็อกพิมพ์ได้ ${pages} แผ่น`)
+    } finally { await page.close() }
+  })
+
+  // ช่อง QR (24 มม.) กินที่เพิ่มราว 1.3–1.8 ซม. — ใบที่หนาแน่นแต่เป็นไปได้จริง (หมวดพับครบ 8 แถว ชื่อหมวดยาว ~37 ตัวอักษร
+  // ชื่อ อปท. 2 บรรทัดในบรรทัดแหล่งที่มา หมายเหตุครบ ทั้งเดือนสดและเดือนที่ล็อก 12 ครั้ง) ต้องยังจบ 1 แผ่น
+  await test('ใบที่มีช่อง QR: จบ 1 แผ่น A4 เมื่อหนาแน่นแต่เป็นไปได้จริง (สดและล็อก) · QR กว้าง 24 มม. อยู่ในพื้นที่พิมพ์', async () => {
+    const spec = Object.fromEntries([200, 150, 130, 120, 100, 90, 80, 70, 50, 35, 20].map((n, i) => [`c${i}`, n]))
+    const tenantName = 'องค์การบริหารส่วนตำบลที่มีชื่อยาวพอสมควรมาก'
+    const stats = { total: 1045, open: 40, in_progress: 100, resolved: 890, rejected: 15, avg_days: 12.5 }
+    const labelOfDense = code => `หมวดเรื่องร้องเรียนที่ชื่อค่อนข้างยาว ${code}`
+    const dense = summarizeMonth({ stats, rows: rowsOf(spec), labelOf: labelOfDense, tenantName, period: monthPeriod(2569, 10), now: NOW })
+    const denseLocked = summarizeMonth({
+      stats, rows: [], categoryCounts: Object.entries(spec).map(([category, total]) => ({ category, total })),
+      labelOf: labelOfDense, tenantName, period: monthPeriod(2569, 9), now: NOW, lock: { publishedAt: '2026-10-02T01:30:00Z', revision: 12 },
+    })
+    for (const [name, summary] of [['สด', dense], ['ล็อก', denseLocked]]) {
+      const page = await browser.newPage()
+      try {
+        await page.route('**/*', route => route.abort())
+        await page.setContent(buildComplaintMonthlyHtml({ tenant: { name: tenantName }, summary, reportUrl: REPORT_URL }), { waitUntil: 'domcontentloaded' })
+        const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
+        const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length
+        assert.equal(pages, 1, `ใบหนาแน่น (${name}) พร้อม QR พิมพ์ได้ ${pages} แผ่น`)
+        const box = await page.evaluate(() => {
+          const svg = document.querySelector('.report svg').getBoundingClientRect()
+          const sheet = document.querySelector('.sheet').getBoundingClientRect()
+          return { w: svg.width, h: svg.height, right: svg.right, left: svg.left, sheetRight: sheet.right, sheetLeft: sheet.left, origin: document.querySelector('.report .origin').textContent }
+        })
+        const mm = px => px * 25.4 / 96
+        assert.ok(Math.abs(mm(box.w) - 24) < 0.5 && Math.abs(mm(box.h) - 24) < 0.5, `QR ${mm(box.w).toFixed(1)}×${mm(box.h).toFixed(1)} มม.`)
+        // ขอบซ้าย 3 ซม. ขอบขวา 2 ซม. (พื้นที่พิมพ์ 16 ซม.) — QR ต้องอยู่ในนั้น
+        assert.ok(mm(box.left - box.sheetLeft) >= 30 - 0.5 && mm(box.sheetRight - box.right) >= 20 - 0.5, 'QR ล้นขอบกระดาษ')
+        assert.ok(box.origin.includes('ข้อมูล ณ วันที่'), 'บรรทัดแหล่งที่มาต้องยังอยู่ท้ายใบ')
+      } finally { await page.close() }
+    }
+  })
+
+  // ใบสุดโต่งที่ไม่เกิดจริง (ชื่อหมวดทุกหมวด ~45 ตัวอักษร + ชื่อ อปท. 85 ตัวอักษร) พร้อม QR เกิน 1 แผ่นได้ — วัดแล้วเกินราว 5 มม.
+  // ยอมให้ลงแผ่นที่ 2 ได้ไม่เกิน 2 แผ่น (ช่อง QR มี break-inside: avoid ไม่ถูกตัดครึ่ง) ห้ามบานเกินนั้น
+  await test('ใบสุดโต่งที่ไม่เกิดจริง + QR: ไม่เกิน 2 แผ่น', async () => {
+    const spec = Object.fromEntries([200, 150, 130, 120, 100, 90, 80, 70, 50, 35, 20].map((n, i) => [`c${i}`, n]))
+    const tenantName = 'องค์การบริหารส่วนตำบลที่มีชื่อยาวมากพอสมควรสำหรับทดสอบการขึ้นบรรทัดใหม่ของข้อความ'
+    const worst = summarizeMonth({
+      stats: { total: 1045, open: 40, in_progress: 100, resolved: 890, rejected: 15, avg_days: 12.5 }, rows: rowsOf(spec),
+      labelOf: code => `หมวดคำร้องเรื่องที่มีชื่อค่อนข้างยาวมาก ${code}`, tenantName, period: monthPeriod(2569, 10), now: NOW,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.route('**/*', route => route.abort())
+      await page.setContent(buildComplaintMonthlyHtml({ tenant: { name: tenantName }, summary: worst, reportUrl: REPORT_URL }), { waitUntil: 'domcontentloaded' })
+      const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
+      const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length
+      assert.ok(pages <= 2, `ใบสุดโต่งพร้อม QR พิมพ์ได้ ${pages} แผ่น`)
     } finally { await page.close() }
   })
 } finally {
