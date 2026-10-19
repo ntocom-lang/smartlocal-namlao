@@ -111,6 +111,7 @@ jobs:
             patient-booking-db
             patient-booking-day-odometer
             patient-booking-wait-release
+            patient-booking-community-other-place
             public-assistance-print
             complaint-print-routing
             waste-cancel-print

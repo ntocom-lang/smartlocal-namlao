@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress, joinCandidates, sameDestinationGroup, destinationGroup, joinReturnChoices, suggestGroups, paginate, thaiDay, workspaceTruncated, WORKSPACE_ROW_LIMIT, loadPageSize, savePageSize, pickupLabel, pickupForBooking } from '../src/lib/patientBooking.js'
+import { communityPayload, isOtherPlace, cleanPlaceName, bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress, joinCandidates, sameDestinationGroup, destinationGroup, joinReturnChoices, suggestGroups, paginate, thaiDay, workspaceTruncated, WORKSPACE_ROW_LIMIT, loadPageSize, savePageSize, pickupLabel, pickupForBooking } from '../src/lib/patientBooking.js'
 
 const error = 'เวลารับ–ส่งอยู่นอกเวลาบริการ'
 const plan = { date: '2026-09-21', settings_revision: 3, booking_ids: ['one'], blocks: [{ start: '2026-09-21T00:00:00Z', end: '2026-09-21T09:00:00Z' }] }
@@ -229,4 +229,19 @@ test('page size preference: remembered per device, junk and missing storage fall
     savePageSize(10); assert.equal(loadPageSize(), 10)
     for (const junk of ['7', 'abc', '', '0', '-1']) { store.set('ptb-staff-page-size', junk); assert.equal(loadPageSize(), 20, `ค่าเพี้ยน ${JSON.stringify(junk)} ต้องใช้ค่าตั้งต้น`) }
   } finally { delete globalThis.localStorage }
+})
+
+// ช่อง "อื่นๆ" ของงานชุมชน (20261020150000): ส่งชื่อที่พิมพ์เฉพาะเมื่อเลือก "อื่นๆ" — ฐานข้อมูลปฏิเสธ other_place ที่มากับสถานที่ปกติ
+test('community payload: other_place goes only with the "other" place, cleaned like the database does', () => {
+  const info = { community: { rules_version: 4, consent_version: 'community-booking-v1', privacy_notice: 'TEST' }, owner_name: 'TEST' }
+  const base = { requester_name: 'ก', phone: '0800000000', pickup: 'x', appointment_at: 'a', return_at: null, return_mode: 'one_way', group_label: 'g', party_size: 3, purpose_code: 'meet' }
+  const listed = communityPayload({ ...base, route_id: 'temple', other_place: 'ชื่อที่พิมพ์ค้าง' }, info)
+  assert.equal(Object.hasOwn(listed, 'other_place'), false, 'สถานที่ปกติต้องไม่ส่งชื่อที่พิมพ์ค้างไว้')
+  assert.equal(listed.route_id, 'temple')
+  const other = communityPayload({ ...base, route_id: '__other__', other_place: '  วัด\n  บ้านนา\t' }, info)
+  assert.equal(other.other_place, 'วัด บ้านนา')
+  assert.equal(communityPayload({ ...base, route_id: '__other__' }, info).other_place, '', 'ยังไม่พิมพ์ = สตริงว่าง ให้ฐานข้อมูลบอกเหตุ')
+  assert.equal(communityPayload({ ...base, route_id: '__other__', other_place: 'ก'.repeat(300) }, info).other_place.length, 201, 'ตัดที่ 201 เพื่อให้ฐานข้อมูลปฏิเสธ ไม่ตัดเงียบเหลือ 200')
+  assert.equal(isOtherPlace('__other__'), true); assert.equal(isOtherPlace('temple'), false)
+  assert.equal(cleanPlaceName(' \u0007 ก\u0000 '), 'ก')
 })

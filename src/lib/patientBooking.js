@@ -30,6 +30,8 @@ export function communityPayload(booking, info, overrides = {}) {
   return {
     ...Object.fromEntries(['requester_name', 'phone', 'pickup', 'route_id', 'appointment_at', 'return_at', 'return_mode', 'group_label', 'party_size', 'purpose_code'].map(key => [key, booking[key]])),
     pickup_lat: booking.pickup_lat ?? null, pickup_lng: booking.pickup_lng ?? null, in_area: !!booking.in_area,
+    // สถานที่อื่น (20261020150000): ส่งชื่อที่พิมพ์เฉพาะเมื่อเลือก "อื่นๆ" — ฐานข้อมูลปฏิเสธ other_place ที่มากับสถานที่ปกติ
+    ...(isOtherPlace(booking.route_id) ? { other_place: cleanPlaceName(booking.other_place) } : {}),
     ...overrides, rules_version: info?.community?.rules_version, consent: true,
     consent_version: info?.community?.consent_version, privacy_notice: info?.community?.privacy_notice, owner_name: info?.owner_name,
   }

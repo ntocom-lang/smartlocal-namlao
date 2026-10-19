@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import MapPicker from '../MapPicker'
 import { addressFromMap } from '../../lib/pickupText'
 import BookingMonthPicker from './BookingMonthPicker'
 import { RETURN_MODES, DAY_BLOCKED, inputClass, buttonClass, primaryClass, thaiDay, bookingLastDay, clockTime, clockOf,
-  bangkokISO, freeTimeChoices, communityPayload, normalizeBookingPhone, dateTime, orgAbbr } from '../../lib/patientBooking'
+  bangkokISO, freeTimeChoices, communityPayload, normalizeBookingPhone, dateTime, orgAbbr, isOtherPlace, cleanPlaceName, OTHER_PLACE_MAX } from '../../lib/patientBooking'
 
 const policyKey = info => JSON.stringify([info?.community?.rules_version, info?.community?.privacy_notice, info?.owner_name])
 
@@ -22,6 +22,7 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
     return { requester_name: b?.requester_name || (staffEntry ? '' : profileName || ''), phone: b?.phone || (staffEntry ? '' : profilePhone || ''),
       group_label: b?.group_label || '', party_size: b?.party_size || 1, pickup: b?.pickup || '', in_area: initial ? !!initial.in_area : true,
       pickup_lat: b?.pickup_lat ?? null, pickup_lng: b?.pickup_lng ?? null, purpose_code: b?.purpose_code || '', route_id: b?.route_id || '',
+      other_place: isOtherPlace(b?.route_id) ? b.route_label || '' : '',
       day: initial?.appointment_at ? thaiDay(initial.appointment_at) : '', time: initial ? clockOf(initial.appointment_at) : '',
       return_mode: initial?.return_mode || 'one_way', back: initial ? clockOf(initial.return_at) : '', reason: '' }
   })
@@ -45,6 +46,11 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
   const draft = useMemo(() => ({ ...form, service_type: 'community' }), [form])
   const times = freeTimeChoices(draft, info, day, 15)
   const place = c?.places?.find(p => p.id === form.route_id), activity = c?.activities?.find(a => a.code === form.purpose_code)
+  // สถานที่อื่น (20261020150000): ผู้ขอพิมพ์ชื่อเอง · ช่อง "อื่นๆ" อยู่ท้ายรายการเสมอ ไม่ว่าแอดมินจะเรียงไว้ตรงไหน
+  const otherChosen = isOtherPlace(form.route_id), otherName = cleanPlaceName(form.other_place)
+  const placeChoices = [...(c?.places || []).filter(p => !isOtherPlace(p.id)), ...(c?.places || []).filter(p => isOtherPlace(p.id))]
+  const placeLabel = otherChosen ? otherName : place?.label
+  const otherInput = useRef(null)
   const change = (key, value) => { setForm(f => ({ ...f, [key]: value })); setMissing([]) }
   const pinned = Number.isFinite(form.pickup_lat) && Number.isFinite(form.pickup_lng)
   // เติมที่อยู่จากแผนที่ให้เฉพาะตอนช่องจุดรับยังว่าง ไม่ทับสิ่งที่ผู้จองพิมพ์เอง (เหมือนฟอร์มผู้ป่วย) · ช่องรับได้ไม่เกิน 500 ตัวอักษร
@@ -61,7 +67,7 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
     e.preventDefault()
     const errors = [
       !form.day && 'เลือกวันเดินทาง', !ready && 'รอตรวจเวลารถให้เสร็จ หรือกดโหลดใหม่เมื่อโหลดไม่สำเร็จ',
-      !place && 'เลือกสถานที่ชุมชน', !activity && 'เลือกกิจกรรมที่กองทุนอนุญาต',
+      !place && 'เลือกสถานที่ชุมชน', place && otherChosen && otherName.length < 2 && 'พิมพ์ชื่อสถานที่ที่จะไป (อย่างน้อย 2 ตัวอักษร)', !activity && 'เลือกกิจกรรมที่กองทุนอนุญาต',
       !form.time && 'เลือกเวลาที่ต้องถึง', form.time && !times.includes(form.time) && !staffEntry && 'คิวรถเปลี่ยนแล้ว กรุณาเลือกเวลาอื่น',
       form.time && c && (form.time < clockTime(c.window_start) || form.time > clockTime(c.window_end)) && 'เวลาที่ต้องถึงอยู่นอกช่วงบริการชุมชน',
       !staffEntry && day?.status !== 'open' && (DAY_BLOCKED[day?.status] || 'ยังตรวจวันว่างไม่ได้'),
@@ -95,7 +101,13 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
     </section>
     <section aria-label="วันเวลาและสถานที่ชุมชน" className="space-y-3 rounded-2xl border bg-white p-4">
       <h3 className="font-bold">2. สถานที่และวันเวลา</h3>
-      <label className="block">สถานที่ชุมชน<select aria-label="สถานที่ชุมชน" className={inputClass} value={form.route_id} onChange={e => change('route_id', e.target.value)}><option value="">เลือกสถานที่</option>{c.places.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select></label>
+      <label className="block">สถานที่ชุมชน<select aria-label="สถานที่ชุมชน" className={inputClass} value={form.route_id} onChange={e => { change('route_id', e.target.value); if (isOtherPlace(e.target.value)) setTimeout(() => otherInput.current?.focus(), 0) }}><option value="">เลือกสถานที่</option>{placeChoices.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select></label>
+      {otherChosen && <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <label className="block"><span className="text-base font-bold">ชื่อสถานที่ที่จะไป</span>
+          <input ref={otherInput} aria-label="ชื่อสถานที่ที่จะไป" className={`${inputClass} mt-1`} value={form.other_place} maxLength={OTHER_PLACE_MAX} autoComplete="off"
+            placeholder="เช่น วัด… หรือ ศาลาประชาคม… (พิมพ์ชื่อสถานที่)" onChange={e => change('other_place', e.target.value)} /></label>
+        <p className="text-sm text-slate-600">พิมพ์เฉพาะชื่อสถานที่ ไม่ต้องใส่ชื่อบุคคลหรือเลขที่บ้าน · เจ้าหน้าที่ตรวจสถานที่และประสานรอบรถก่อนยืนยัน</p>
+      </div>}
       <BookingMonthPicker serviceType="community" month={month} onMonth={value => { setMonth(value); change('day', ''); change('time', '') }}
         days={days} selected={form.day} onSelect={value => { setMonth(value.slice(0, 7)); change('day', value); change('time', '') }} info={info} draft={draft}
         first={today} last={lastDay} loading={!ready && !loadError} failed={!!loadError} onReload={() => { setLoadError(''); setRetry(n => n + 1) }} staffEntry={staffEntry} />
@@ -133,7 +145,7 @@ export default function CommunityBookingForm({ tenantId, info, initial, profileN
       <section role="dialog" aria-modal="true" aria-label="ตรวจทานคำขอชุมชน" className="mx-auto max-h-[92vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-t-3xl bg-white p-5 pb-8" onClick={e => e.stopPropagation()}>
         <h2 className="text-lg font-bold">ตรวจทานคำขอชุมชนก่อนส่ง</h2>
         <dl className="divide-y rounded-xl border">{[
-          ['กิจกรรม', activity?.label], ['ชื่อกลุ่ม', form.group_label], ['ผู้เดินทาง', `${form.party_size} คน`], ['สถานที่', place?.label],
+          ['กิจกรรม', activity?.label], ['ชื่อกลุ่ม', form.group_label], ['ผู้เดินทาง', `${form.party_size} คน`], ['สถานที่', placeLabel],
           ['เวลาที่ต้องถึง', dateTime(review.payload.appointment_at)], ['รับกลับ', form.return_mode === 'one_way' ? 'ขาไปอย่างเดียว' : dateTime(review.payload.return_at)],
           ['ผู้ติดต่อ', form.requester_name], ['เบอร์โทร', form.phone], ['จุดรับ', `${form.pickup}${Number.isFinite(review.payload.pickup_lat) && Number.isFinite(review.payload.pickup_lng) ? ' · ปักหมุดแล้ว' : ' · ไม่ได้ปักหมุด'}`],
         ].map(([label, value]) => <div key={label} className="flex gap-3 p-3"><dt className="w-24 shrink-0 text-sm text-slate-500">{label}</dt><dd className="min-w-0 break-words">{value}</dd></div>)}</dl>
