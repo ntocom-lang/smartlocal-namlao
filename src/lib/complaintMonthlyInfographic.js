@@ -156,6 +156,93 @@ function iconSvg(node, x, y, size) {
   return `<g transform="translate(${num(x)} ${num(y)}) scale(${num(size / 24)})" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${shapes}</g>`
 }
 
+// สีแถบหัวภาพ: พื้นเขียวเข้ม + คลื่นมุมซ้าย 2 ชั้น (เขียวมะนาว) + เดือนสีเหลือง — เจ้าของเลือกโทนเขียวตามภาพอ้างอิง 2569-10-19
+// คอนทราสต์ตัวอักษรบนพื้นนี้ (คำนวณแล้ว): ขาว 9.1:1 · เหลือง 6.5:1 — ทั้งคู่เกินเกณฑ์ตัวอักษรทั่วไป 4.5:1
+export const HEADER_BG = '#14532d'
+export const MONTH_COLOR = '#ffd54a'
+const WAVE_BACK = { fill: '#a3e635', opacity: 0.5 }
+const WAVE_FRONT = { fill: '#d9f99d', opacity: 0.38 }
+
+/**
+ * แถบหัวภาพ: คลื่นมุมซ้ายบน + จุดไข่ปลามุมขวาบน ชื่อเรื่อง (ขาว) กับเดือน (เหลือง) บรรทัดเดียวกันกลางภาพ
+ * ใต้ลงมาเป็นชื่อ อปท. มีเส้นขีดสองข้าง — คลื่น/จุดเป็นรูปทรงที่เราวาดเอง (ไม่ใช่งานศิลป์ของ อปท. ใด)
+ *
+ * ชื่อเรื่อง+เดือนยาวเกินความกว้าง (เดือนยาวๆ เช่น กุมภาพันธ์ + ปี) ลดขนาดตัวอักษรลงจนพอดีบรรทัดเดียว (ต่ำสุด 42)
+ * ยังไม่พอก็แยกเป็น 2 บรรทัด — ข้อความทุกชิ้นวัดด้วยตัววัดชุดเดียวกับที่ใช้ตัดบรรทัด จึงไม่ล้นขอบ
+ * ชื่อ อปท. ยาวหลายบรรทัดได้ (เส้นขีดสองข้างวาดเฉพาะเมื่อชื่ออยู่บรรทัดเดียวและมีที่พอ)
+ */
+function headerBand(model, measure) {
+  const cx = IMAGE_WIDTH / 2
+  const gap = 20
+  const titleWidth = size => measure(model.title, size, true)
+  const monthWidth = size => measure(model.monthLabel, size, true)
+  const oneLineWidth = size => titleWidth(size) + gap + monthWidth(size)
+  // กว้างสุดของบรรทัดเดียว: เหลือที่ว่างสองข้าง 130px ให้คลื่น/จุดไข่ปลาไม่ทับตัวอักษร (ชื่อเรื่องแบบยะลากินราว 2 ใน 3 ของแถบ)
+  const maxLine = IMAGE_WIDTH - 130 * 2
+  let size = 58
+  while (size > 42 && oneLineWidth(size) > maxLine) size -= 2
+  const oneLine = oneLineWidth(size) <= maxLine
+
+  const texts = []
+  const addText = (x, y, value, { size: fontSize, fill, anchor = 'start' }) => {
+    texts.push(`<text x="${num(x)}" y="${num(y)}" font-size="${fontSize}" font-weight="700" fill="${fill}" text-anchor="${anchor}">${esc(value)}</text>`)
+  }
+  let baseline = 46 + Math.round(size * 0.95)
+  if (oneLine) {
+    const startX = cx - oneLineWidth(size) / 2
+    addText(startX, baseline, model.title, { size, fill: '#ffffff' })
+    addText(startX + titleWidth(size) + gap, baseline, model.monthLabel, { size, fill: MONTH_COLOR })
+  } else {
+    baseline = 46 + 50
+    addText(cx, baseline, model.title, { size: 52, fill: '#ffffff', anchor: 'middle' })
+    baseline += 62
+    addText(cx, baseline, model.monthLabel, { size: 46, fill: MONTH_COLOR, anchor: 'middle' })
+  }
+
+  const tenantLines = wrapLines(model.tenantName, CONTENT_W, 32, true, measure)
+  baseline += 64
+  const rules = []
+  for (const [index, line] of tenantLines.entries()) {
+    addText(cx, baseline, line, { size: 32, fill: '#ffffff', anchor: 'middle' })
+    if (tenantLines.length === 1) {
+      const half = measure(line, 32, true) / 2
+      const length = Math.min(120, cx - half - 20 - MARGIN)
+      if (length >= 30) {
+        const lineY = baseline - 11
+        for (const [from, to] of [[cx - half - 20 - length, cx - half - 20], [cx + half + 20, cx + half + 20 + length]]) {
+          rules.push(`<rect x="${num(from)}" y="${num(lineY)}" width="${num(to - from)}" height="2" fill="#ffffff" fill-opacity="0.85"/>`)
+        }
+      }
+    }
+    if (index < tenantLines.length - 1) baseline += Math.round(32 * 1.4)
+  }
+  const height = baseline + 38
+
+  // คลื่นซ้ายบน (2 ชั้น) — สัดส่วนตามความสูงแถบ
+  const h = height
+  const wave = (width, { fill, opacity }, depth) => {
+    const px = value => num(value * width / 270)
+    const py = value => num(h * value * depth)
+    return `<path d="M0 0H${width}C${px(250)} ${py(0.2)} ${px(190)} ${py(0.27)} ${px(130)} ${py(0.34)}C${px(70)} ${py(0.42)} ${px(24)} ${py(0.57)} 0 ${py(0.79)}Z" fill="${fill}" fill-opacity="${opacity}"/>`
+  }
+  // จุดไข่ปลามุมขวาบน: ใหญ่ที่ขอบขวาบนแล้วเล็กลงไปทางซ้ายและลง
+  const dots = []
+  const columns = 8
+  const rows = 6
+  for (let column = 0; column < columns; column++) {
+    for (let row = 0; row < rows; row++) {
+      const radius = 3.6 * (1 - column / columns) * (1 - (row / rows) * 0.75)
+      if (radius < 0.8) continue
+      dots.push(`<circle cx="${IMAGE_WIDTH - 22 - column * 18}" cy="${16 + row * 18}" r="${num(radius)}"/>`)
+    }
+  }
+  const markup = `<defs><clipPath id="header-clip"><rect width="${IMAGE_WIDTH}" height="${num(height)}"/></clipPath></defs>`
+    + `<rect width="${IMAGE_WIDTH}" height="${num(height)}" fill="${HEADER_BG}"/>`
+    + `<g clip-path="url(#header-clip)" aria-hidden="true">${wave(270, WAVE_BACK, 1)}${wave(170, WAVE_FRONT, 0.66)}<g fill="#ffffff" fill-opacity="0.5">${dots.join('')}</g></g>`
+    + rules.join('') + texts.join('')
+  return { markup, height }
+}
+
 /**
  * @param {ReturnType<typeof buildInfographicModel>} model
  * @param {(text: string, size: number, bold: boolean) => number} measure วัดความกว้างข้อความ (px) ด้วยชุดฟอนต์ FONT_STACK
@@ -182,15 +269,9 @@ export function buildInfographicSvg(model, measure) {
   }
 
   // ── หัวภาพ ──
-  // ชื่อ อปท. อาจยาวหลายบรรทัด — นับบรรทัดก่อนเพื่อรู้ความสูงของแถบหัวภาพ แล้วค่อยวางพื้นก่อนตัวอักษร
-  const tenantStart = 216
-  const tenantLines = wrapLines(model.tenantName, CONTENT_W, 32, true, measure)
-  const headerHeight = tenantStart + Math.max(0, tenantLines.length - 1) * Math.round(32 * 1.4) + 36
-  rect(0, 0, IMAGE_WIDTH, headerHeight, INK)
-  rect(MARGIN, 44, 8, 128, '#38bdf8')
-  text(MARGIN + 32, 96, model.title, { size: 52, bold: true, fill: '#ffffff' })
-  text(MARGIN + 32, 154, model.monthLabel, { size: 40, fill: '#bae6fd' })
-  block(MARGIN, tenantStart, model.tenantName, CONTENT_W, { size: 32, bold: true, fill: '#ffffff' })
+  const header = headerBand(model, measure)
+  parts.push(header.markup)
+  const headerHeight = header.height
 
   let y = headerHeight + 56
 

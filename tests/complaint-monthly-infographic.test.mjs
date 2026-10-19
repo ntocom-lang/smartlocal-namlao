@@ -119,7 +119,8 @@ await test('แท็กในชื่อ อปท. และชื่อห�
 await test('เดือนที่ไม่มีเรื่อง: วงแหวนว่าง + ข้อความบอกตรงๆ ไม่มีชิ้นวงกลม', () => {
   const { svg } = render(summarize({ stats: { total: 0 }, rows: [] }))
   assert.ok(has(svg, 'ไม่มีเรื่องร้องเรียนที่รับผ่านระบบในเดือนนี้'))
-  assert.ok(!svg.includes('<path d="M'), 'ไม่มีไอคอน/ชิ้นวงกลมของหมวด')
+  // (คลื่นของแถบหัวภาพก็เป็น <path d="M…"> จึงเช็คจากลายเซ็นของชิ้นวงกลม/ไอคอนแทน)
+  assert.ok(!svg.includes('fill-rule="evenodd"') && !svg.includes('stroke-linecap="round"'), 'ไม่มีไอคอน/ชิ้นวงกลมของหมวด')
   assert.ok(svg.includes('0%'))
 })
 
@@ -254,6 +255,94 @@ await test('ไม่มีข้อมูลส่วนบุคคลแม�
   }
 })
 
+// ── แถบหัวภาพ (แนวเดียวกับภาพอ้างอิงที่เจ้าของเลือก: ชื่อเรื่องขาว + เดือนเหลืองบรรทัดเดียว · ชื่อ อปท. มีเส้นขีดสองข้าง ·
+//    คลื่นซ้ายบน · จุดไข่ปลาขวาบน · โทนเขียว) ──
+const textsOf = svg => [...svg.matchAll(/<text x="([\d.-]+)" y="([\d.-]+)" font-size="(\d+)" font-weight="\d+" fill="(#[0-9a-f]+)" text-anchor="(\w+)">([^<]*)<\/text>/g)]
+  .map(([, x, y, size, fill, anchor, value]) => ({ x: Number(x), y: Number(y), size: Number(size), fill, anchor, value }))
+const headerHeightOf = svg => Number(svg.match(/<rect width="1080" height="([\d.]+)" fill="#14532d"\/>/)?.[1])
+const rulesOf = svg => [...svg.matchAll(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="2" fill="#ffffff" fill-opacity="0.85"\/>/g)]
+  .map(([, x, y, width]) => ({ x: Number(x), y: Number(y), width: Number(width) }))
+// ตัววัดจำลองแบบแคบ (พอให้ชื่อเรื่อง+เดือนปกติลดขนาดลงมาแต่ยังเป็นบรรทัดเดียว) กับแบบกว้าง (บังคับให้ต้องแยก 2 บรรทัด)
+const narrow = (value, size, bold) => value.length * size * (bold ? 0.45 : 0.4)
+const wide = (value, size, bold) => value.length * size * (bold ? 0.62 : 0.55)
+const renderMeasured = (summary, measurer, tenantName = 'เทศบาลตำบลสาธิต') =>
+  Info.buildInfographicSvg(Info.buildInfographicModel(summary, { tenantName }), measurer)
+const luminance = hex => {
+  const channels = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+}
+const contrast = (a, b) => (Math.max(luminance(a), luminance(b)) + 0.05) / (Math.min(luminance(a), luminance(b)) + 0.05)
+
+await test('หัวภาพ: ชื่อเรื่อง (ขาว) กับเดือน (เหลือง) บรรทัดเดียวกันกึ่งกลางภาพ · ชื่อ อปท. กึ่งกลางพร้อมเส้นขีดสองข้างสมมาตร', () => {
+  const { svg } = renderMeasured(summarize(), narrow)
+  const [title, month, tenant] = textsOf(svg)
+  assert.deepEqual([title.value, title.fill], ['สรุปเรื่องร้องเรียน', '#ffffff'])
+  assert.deepEqual([month.value, month.fill], ['เดือนเมษายน 2569', '#ffd54a']) // เหลืองตามภาพอ้างอิง — เขียนค่าตรงๆ ไม่อ้างค่าคงที่ของตัววาด (ไม่งั้นเปลี่ยนสีแล้วเทสต์ไม่รู้)
+  assert.equal(title.y, month.y, 'ต้องอยู่บรรทัดเดียวกัน')
+  assert.equal(title.size, month.size)
+  assert.ok(title.size >= 42 && title.size <= 58, `ขนาด ${title.size}`)
+  const left = title.x
+  const right = month.x + narrow(month.value, month.size, true)
+  assert.ok(Math.abs((left + right) / 2 - 540) < 0.5, 'ทั้งบรรทัดต้องกึ่งกลางภาพ')
+  assert.ok(right - left <= 820.5, `บรรทัดกว้าง ${Math.round(right - left)} เกินพื้นที่ที่เว้นให้คลื่น/จุด`)
+  assert.deepEqual([tenant.value, tenant.anchor, tenant.x, tenant.fill], ['เทศบาลตำบลสาธิต', 'middle', 540, '#ffffff'])
+  const rules = rulesOf(svg)
+  assert.equal(rules.length, 2, 'เส้นขีดซ้าย-ขวาของชื่อ อปท.')
+  assert.ok(Math.abs((rules[0].x + rules[0].width) - (1080 - rules[1].x)) < 0.5, 'เส้นสองข้างต้องสมมาตรรอบกึ่งกลาง')
+  for (const rule of rules) assert.ok(rule.x >= 64 && rule.x + rule.width <= 1080 - 64 + 0.01 && rule.width >= 30 && rule.width <= 120)
+})
+
+await test('หัวภาพ: ชื่อเรื่อง+เดือนยาวเกินแถบ → ลดตัวอักษรให้พอดีบรรทัดเดียว (ไม่ต่ำกว่า 42) · ยังไม่พอ → แยก 2 บรรทัดกึ่งกลาง', () => {
+  const normalMonth = textsOf(renderMeasured(summarize(), narrow).svg)
+  const longMonth = textsOf(renderMeasured(summarize({ period: Sum.monthPeriod(2569, 2) }), narrow).svg) // กุมภาพันธ์ ยาวกว่าเมษายน
+  assert.equal(longMonth[1].value, 'เดือนกุมภาพันธ์ 2569')
+  assert.ok(longMonth[0].size < normalMonth[0].size && longMonth[0].size >= 42, `${longMonth[0].size} vs ${normalMonth[0].size}`)
+  assert.equal(longMonth[0].y, longMonth[1].y, 'ยังอยู่บรรทัดเดียวกัน')
+  const right = longMonth[1].x + narrow(longMonth[1].value, longMonth[1].size, true)
+  assert.ok(right - longMonth[0].x <= 820.5)
+
+  const stacked = textsOf(renderMeasured(summarize(), wide).svg)
+  assert.deepEqual(stacked.slice(0, 2).map(t => [t.value, t.anchor, t.x]), [['สรุปเรื่องร้องเรียน', 'middle', 540], ['เดือนเมษายน 2569', 'middle', 540]])
+  assert.ok(stacked[1].y > stacked[0].y + 40, 'เดือนต้องอยู่ใต้ชื่อเรื่อง')
+  assert.equal(stacked[1].fill, '#ffd54a')
+  for (const t of stacked.slice(0, 2)) assert.ok(wide(t.value, t.size, true) <= 952, `บรรทัดแยกกว้างเกิน: ${t.value}`)
+})
+
+await test('หัวภาพ: ชื่อ อปท. ยาวหลายบรรทัด = ไม่มีเส้นขีด วางกึ่งกลางทุกบรรทัด และแถบสูงขึ้นตามบรรทัด', () => {
+  const longName = 'องค์การบริหารส่วนตำบลที่มีชื่อยาวมากพอสมควรสำหรับทดสอบการขึ้นบรรทัดใหม่ของข้อความ'
+  const short = renderMeasured(summarize(), narrow)
+  const long = renderMeasured(summarize(), narrow, longName)
+  const tenantTexts = textsOf(long.svg).filter(t => t.size === 32 && t.fill === '#ffffff')
+  assert.ok(tenantTexts.length >= 2, 'ชื่อยาวต้องขึ้นหลายบรรทัด')
+  assert.ok(tenantTexts.every(t => t.anchor === 'middle' && t.x === 540))
+  assert.equal(tenantTexts.map(t => t.value).join('').replace(/\s/g, ''), longName.replace(/\s/g, ''), 'ตัดบรรทัดแล้วห้ามอักษรหาย')
+  assert.equal(rulesOf(long.svg).length, 0)
+  assert.ok(headerHeightOf(long.svg) >= headerHeightOf(short.svg) + 40)
+})
+
+await test('หัวภาพ: คลื่น 2 ชั้นซ้ายบน + จุดไข่ปลาขวาบน อยู่ในกลุ่มซ่อนจากโปรแกรมอ่านจอ ถูกตัดด้วย clip และวาดก่อนตัวอักษร · แถบเตี้ยกว่าแบบเดิม (252)', () => {
+  const { svg } = renderMeasured(summarize(), narrow)
+  assert.equal(Info.HEADER_BG, '#14532d')
+  const height = headerHeightOf(svg)
+  assert.ok(height >= 170 && height <= 200, `แถบสูง ${height}px`)
+  assert.ok(svg.includes(`<clipPath id="header-clip"><rect width="1080" height="${height}"/></clipPath>`))
+  const decor = svg.match(/<g clip-path="url\(#header-clip\)" aria-hidden="true">(.*?)<g fill="#ffffff" fill-opacity="0.5">(.*?)<\/g><\/g>/s)
+  assert.ok(decor, 'หากลุ่มคลื่น/จุดไม่เจอ')
+  const waves = [...decor[1].matchAll(/<path d="M0 0H(\d+)[^"]*" fill="(#[0-9a-f]+)" fill-opacity="([\d.]+)"\/>/g)]
+  assert.deepEqual(waves.map(w => Number(w[1])), [270, 170], 'คลื่น 2 ชั้น ชั้นหลังใหญ่กว่า')
+  assert.ok(waves.every(w => Number(w[3]) > 0 && Number(w[3]) < 1), 'คลื่นโปร่งแสง ไม่กลบตัวอักษรที่เลื่อนมาทับ')
+  const circles = [...decor[2].matchAll(/<circle cx="(\d+)" cy="(\d+)" r="([\d.]+)"\/>/g)].map(c => ({ x: Number(c[1]), y: Number(c[2]), r: Number(c[3]) }))
+  assert.ok(circles.length >= 20, `จุดไข่ปลา ${circles.length} จุด`)
+  assert.ok(circles.every(c => c.x >= 940 && c.x <= 1058 && c.y <= height && c.r >= 0.8 && c.r <= 3.6), 'จุดต้องอยู่มุมขวาบน ไม่ลามมาทับชื่อเรื่อง')
+  assert.ok(svg.indexOf('aria-hidden="true"') < svg.indexOf('<text'), 'คลื่น/จุดต้องวาดก่อนตัวอักษร (ตัวอักษรอยู่บน)')
+})
+
+await test('หัวภาพ: สีตัวอักษรบนพื้นเขียวคอนทราสต์ผ่านเกณฑ์ตัวอักษรทั่วไป 4.5:1 ทั้งสีขาวและสีเหลือง', () => {
+  assert.ok(contrast('#ffffff', Info.HEADER_BG) >= 4.5, `ขาว ${contrast('#ffffff', Info.HEADER_BG).toFixed(1)}`)
+  assert.ok(contrast(Info.MONTH_COLOR, Info.HEADER_BG) >= 4.5, `เหลือง ${contrast(Info.MONTH_COLOR, Info.HEADER_BG).toFixed(1)}`)
+})
+
 // ── ชั้นสอง: Chrome จริง ──
 const bundle = await bundleInfographic()
 const browser = await chromium.launch({ channel: 'chrome' })
@@ -307,6 +396,9 @@ try {
   CASES.reportedEmpty = { sample: { stats: { total: 0 }, categories: {}, labels: {} }, tenant: 'องค์การบริหารส่วนตำบลทุ่งแค้ว', reportUrl: REPORT_URL }
   // โฮสต์ยาว + มีพาธฐาน — บรรทัดลิงก์ต้องตัดขึ้นบรรทัดใหม่ ไม่ล้มกล่อง
   CASES.reportedLongUrl = { sample: WITH_AVG, tenant: 'เทศบาลตำบลสาธิต', reportUrl: 'https://smartlocal-demonstration-municipality.rk-networks.com/some-long-base-path/complaint' }
+  // เดือนที่ชื่อยาวที่สุด (กุมภาพันธ์/พฤศจิกายน/พฤษภาคม + ปี) ต้องพอดีบรรทัดเดียวด้วยฟอนต์จริง ไม่ล้น ไม่ทับคลื่น/จุด
+  CASES.longMonthFeb = { sample: WITH_AVG, tenant: 'องค์การบริหารส่วนตำบลน้ำเลา', month: 2 }
+  CASES.longMonthNov = { sample: WITH_AVG, tenant: 'เทศบาลตำบลสาธิต', month: 11 }
   CASES.reportedCrowded = { ...CASES.crowded, reportUrl: REPORT_URL }
   CASES.reportedLocked = { ...CASES.lockedCrowded, reportUrl: REPORT_URL }
 
@@ -315,7 +407,7 @@ try {
     const rows = Object.entries(spec.sample.categories).flatMap(([category, n]) => Array.from({ length: n }, () => ({ category })))
     const summary = Sum.summarizeMonth({
       stats: spec.sample.stats, rows, labelOf: c => spec.sample.labels[c] ?? c,
-      tenantName: spec.tenant, period: Sum.monthPeriod(2569, 4), issueBreakdown: spec.breakdown ?? null,
+      tenantName: spec.tenant, period: Sum.monthPeriod(2569, spec.month ?? 4), issueBreakdown: spec.breakdown ?? null,
       now: new Date('2026-10-18T05:00:00Z'), lock: spec.lock ?? null,
     })
     const model = Info.buildInfographicModel(summary, { tenantName: spec.tenant, reportUrl: spec.reportUrl ?? '' })
@@ -350,6 +442,24 @@ try {
     })
   }
 
+  await test('Chrome: ชื่อเรื่อง+เดือนอยู่บรรทัดเดียวและอยู่ในช่วง 130–950px ด้วยฟอนต์จริง (ไม่ทับคลื่น/จุด) แม้เดือนชื่อยาวสุด', async () => {
+    for (const name of ['april', 'longMonthFeb', 'longMonthNov']) {
+      const { svg } = await build(name)
+      const [title, month] = await page.evaluate(({ svg: markup }) => {
+        document.body.innerHTML = markup
+        return [...document.querySelectorAll('svg text')].slice(0, 2).map(el => {
+          const b = el.getBBox()
+          return { text: el.textContent, x: b.x, y: b.y, w: b.width, h: b.height }
+        })
+      }, { svg })
+      assert.equal(title.text, 'สรุปเรื่องร้องเรียน')
+      assert.ok(month.text.startsWith('เดือน'))
+      assert.ok(Math.abs(title.y - month.y) < 1.5, `${name}: ไม่อยู่บรรทัดเดียวกัน (${title.y} vs ${month.y})`)
+      assert.ok(title.x >= 129 && month.x + month.w <= 951, `${name}: บรรทัดกว้างเกินพื้นที่ ${Math.round(title.x)}–${Math.round(month.x + month.w)}`)
+      assert.ok(month.x >= title.x + title.w, `${name}: เดือนทับชื่อเรื่อง`)
+    }
+  })
+
   await test('ภาพของเดือนที่ล็อก: ท้ายภาพบอกวันที่ล็อก (2 พ.ค.) ไม่ใช่วันที่สร้างภาพ (18 ต.ค.) · มีหมายเหตุล็อกและครั้งที่แก้ไข', async () => {
     const plain = (await build('locked')).svg
     assert.ok(plain.includes('ข้อมูล ณ วันที่ 2 พฤษภาคม 2569'))
@@ -382,13 +492,18 @@ try {
       canvas.width = bitmap.width; canvas.height = bitmap.height
       const context = canvas.getContext('2d'); context.drawImage(bitmap, 0, 0)
       const pixel = (x, y) => [...context.getImageData(x, y, 1, 1).data]
-      return { name: file.name, type: file.type, size: file.size, w: bitmap.width, h: bitmap.height, topLeft: pixel(2, 2), bottomRight: pixel(w - 3, h - 3), body: pixel(w - 30, 600) }
+      return { name: file.name, type: file.type, size: file.size, w: bitmap.width, h: bitmap.height, topLeft: pixel(2, 2), topCenter: pixel(540, 3), topRight: pixel(1076, 3), bottomRight: pixel(w - 3, h - 3), body: pixel(w - 30, 600) }
     }, { markup: svg, w: width, h: height })
     assert.equal(result.type, 'image/png')
     assert.equal(result.name, 'complaints-2569-04.png')
     assert.ok(result.size > 20000, `ไฟล์เล็กผิดปกติ ${result.size} ไบต์ (ภาพว่าง?)`)
     assert.deepEqual([result.w, result.h], [width, height])
-    assert.deepEqual(result.topLeft, [22, 50, 79, 255], 'มุมบนซ้ายต้องเป็นสีหัวภาพทึบ')
+    // กลางขอบบนไม่มีคลื่น/จุด = สีพื้นแถบหัวภาพล้วน · มุมบนซ้ายเป็นคลื่น (ต้องทึบและไม่ใช่สีพื้น — พิสูจน์ว่าคลื่นถูกวาดลงไฟล์จริง)
+    const bg = [1, 3, 5].map(i => parseInt(Info.HEADER_BG.slice(i, i + 2), 16))
+    assert.deepEqual(result.topCenter, [...bg, 255], 'กลางขอบบนต้องเป็นสีพื้นหัวภาพทึบ')
+    assert.equal(result.topLeft[3], 255, 'มุมบนซ้ายต้องทึบ')
+    assert.notDeepEqual(result.topLeft.slice(0, 3), bg, 'มุมบนซ้ายต้องเป็นคลื่น ไม่ใช่สีพื้น')
+    assert.equal(result.topRight[3], 255)
     assert.deepEqual(result.bottomRight, [255, 255, 255, 255], 'มุมล่างขวาต้องเป็นขาวทึบ ไม่ใช่โปร่งใส')
   })
 
