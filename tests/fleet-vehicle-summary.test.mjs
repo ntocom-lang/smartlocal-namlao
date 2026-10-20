@@ -125,4 +125,20 @@ for (const text of ['อัตราสิ้นเปลืองเฉลี�
   assert.ok(e2e.includes(text), `เทสต์ E2E ไม่ได้ค้นหา "${text}" แล้ว — ข้อความในหน้าจอกับเทสต์ต้องตรงกัน`)
 }
 
+// ── ฟอร์มรถ: วันหมดอายุเอกสารแยกรายฉบับ (เจ้าของระบบสั่ง 2026-10-20) ──────────────────────────
+// เดิมช่องเดียวตั้ง insurance/act/registration/inspection พร้อมกัน — เอกสารแต่ละฉบับหมดอายุคนละวัน
+const vehiclesForm = readFileSync('src/components/fleet/FleetVehicles.jsx', 'utf8')
+const expiryKeys = ['insurance_expiry', 'act_expiry', 'registration_expiry', 'inspection_expiry']
+const fieldsBlock = vehiclesForm.slice(vehiclesForm.indexOf('const DOCUMENT_EXPIRY_FIELDS'), vehiclesForm.indexOf('function daysTo'))
+for (const key of expiryKeys) {
+  assert.ok(fieldsBlock.includes(`key: '${key}'`), `ฟอร์มต้องมีช่องกรอก ${key} แยกรายฉบับ`)
+  // String.raw — template ธรรมดากลืน \s \. \| กลายเป็นตัวอักษรเปล่า regex จะไม่ตรงกับอะไรเลย
+  assert.ok(new RegExp(String.raw`${key}:\s*form\.${key}\s*\|\|\s*null`).test(vehiclesForm), `${key} ที่ว่างต้องบันทึกเป็น null`)
+  assert.ok(new RegExp(String.raw`${key}:\s*v\.${key}\s*\?\?\s*''`).test(vehiclesForm), `เปิดแก้ไขรถต้องโหลดค่าเดิมของ ${key} ลงช่อง`)
+}
+assert.ok(/value=\{form\[key\]\}\s+onChange=\{set\(key\)\}/.test(vehiclesForm), 'ช่องวันหมดอายุแต่ละช่องต้องแก้เฉพาะค่าของตัวเอง')
+assert.equal(/act_expiry:\s*v,\s*registration_expiry:\s*v/.test(vehiclesForm), false,
+  'ห้ามมี handler ที่ตั้งวันหมดอายุทุกฉบับเป็นค่าเดียวกันพร้อมกันอีก')
+assert.equal(vehiclesForm.includes('ครอบคลุม: ประกันภัย · พรบ. · ทะเบียน · ตรวจสภาพ'), false, 'ข้อความช่องเดียวเดิมต้องถูกแทนที่')
+
 console.log('fleet vehicle summary assertions passed')
