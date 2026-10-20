@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import CategoryIcon from './CategoryIcon'
 import LeafletMapCanvas from '../common/LeafletMapCanvas'
+import MapTypeToggle from '../common/MapTypeToggle'
 import { resolveEntryEmoji, resolveGroupEmoji, isIconImage } from '../../lib/dataCenterGroupIcon'
 import { safeHttpUrl } from '../../lib/dataCenterExport'
 import { formatAgo } from '../../lib/dataCenterHealth'
@@ -45,6 +46,8 @@ export default function DataCenterDetailModal({
   const [previewPhoto, setPreviewPhoto] = useState(null)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [verifying, setVerifying] = useState(false)
+  // มุมมองของแผนที่เล็กนี้ — แยกจากแผนที่หลักของหน้า (เริ่มที่ดาวเทียมทุกครั้งที่เปิดการ์ด)
+  const [mapTypeId, setMapTypeId] = useState('hybrid')
 
   const isLight = theme === 'light'
 
@@ -372,15 +375,19 @@ export default function DataCenterDetailModal({
 
             <div className="h-48 sm:h-56 w-full relative">
               {hasCoords ? (
-                <LeafletMapCanvas
-                  center={mapCenter}
-                  zoom={isRoute ? 14 : 16}
-                  mapTypeId="hybrid"
-                  markers={markers}
-                  polylines={polylines}
-                  fitBounds={isRoute}
-                  className="w-full h-full"
-                />
+                <>
+                  <LeafletMapCanvas
+                    center={mapCenter}
+                    zoom={isRoute ? 14 : 16}
+                    mapTypeId={mapTypeId}
+                    markers={markers}
+                    polylines={polylines}
+                    fitBounds={isRoute}
+                    className="w-full h-full"
+                  />
+                  {/* แผนที่เล็กสูงแค่ 192–224px จึงเว้นขอบเล็กกว่าแผนที่หลัก · z-1000 พ้นชั้นหมุด/เส้นของ Leaflet */}
+                  <MapTypeToggle value={mapTypeId} onChange={setMapTypeId} className="absolute left-2 top-2 z-1000" />
+                </>
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-slate-400">
                   <MapPin size={24} className="opacity-40" />
