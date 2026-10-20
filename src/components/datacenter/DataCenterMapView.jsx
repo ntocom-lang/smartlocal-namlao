@@ -589,24 +589,22 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     return next
   })
   const groups = Array.from(new Set(entries.map(e => e.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
-  // ประเภทสถานที่ที่เปิดอยู่ตอนนี้ = ที่ผู้ใช้เลือกไว้ ถ้ายังไม่เคยเลือกใช้ค่าตั้งต้น: หน้าประชาชนที่หมุดไม่มาก = เปิดทุกประเภท (เหตุผลที่ adhocZones.js)
-  // นับเฉพาะหมุดจริง ไม่รวมเส้นทางถนน (มีปุ่มของตัวเอง) และกลุ่มปุ่มลอย (กล้อง ฯลฯ มีปุ่มลอยของตัวเอง)
+  // ประเภทสถานที่ที่เปิดอยู่ตอนนี้ = ที่ผู้ใช้เลือกไว้ ถ้ายังไม่เคยเลือกใช้ค่าตั้งต้นที่คำนวณจากข้อมูล (ดู shouldAutoOpenCategories)
+  // นับและเปิดให้เองเฉพาะหมุดของ "ศูนย์ข้อมูลดิจิทัล" (data_center_entries) ทั้งหน้าประชาชนและหน้าเจ้าหน้าที่ — ไม่รวมเส้นทางถนน
+  // (มีปุ่มของตัวเอง) และกลุ่มปุ่มลอย (กล้อง ฯลฯ มีปุ่มลอยของตัวเอง)
+  //
+  // ⚠️ ห้ามนับทุก source_table: RPC data_center_unified_pins คืนแถวตามสิทธิ์ผู้เรียก — ประชาชน/ไม่ล็อกอินได้เฉพาะศูนย์ข้อมูลฯ แต่เจ้าหน้าที่/แอดมินที่ล็อกอินอยู่
+  // ได้คำร้อง/สถานประกอบการ/โครงสร้างพื้นฐานปนมาด้วย (วัดบน demo: ไม่ล็อกอิน 5 แถว → ล็อกอินแอดมิน 32 แถว) แล้วหน้าประชาชนที่เปิดโดยคนล็อกอิน
+  // จะนับเกินเพดาน 60 → ไม่เปิดสักหมุด (เจ้าของระบบเจอ 2569-10-20) · ประเภทของแหล่งอื่นก็ไม่มีในแผงรายการของหน้าประชาชน กดเปิด/ปิดเองไม่ได้ด้วย
   const placeCategoryKeys = entries
-    .filter(e => !(e.route_points?.length >= 2) && !isFloatGroup(e.group_name))
+    .filter(e => e.source_table === 'data_center_entries' && !(e.route_points?.length >= 2) && !isFloatGroup(e.group_name))
     .map(e => categoryKey(e, resolveCategoryLabel))
-  // ชุดที่ "เปิดให้เอง": หน้าประชาชนเปิดทุกหมุดสถานที่ (เหมือนเดิม) · หน้าเจ้าหน้าที่เปิดเฉพาะหมุดของศูนย์ข้อมูลดิจิทัล
-  // เพราะ entries ฝั่งนี้ปนหมุดคำร้องที่เสร็จแล้วด้วย (ตัวกรองสถานะเริ่มที่ "เสร็จสิ้นแล้ว") ซึ่งไม่ใช่ของแท็บนี้
-  const autoOpenKeys = allowStatusFilter
-    ? entries
-      .filter(e => e.source_table === 'data_center_entries' && !(e.route_points?.length >= 2) && !isFloatGroup(e.group_name))
-      .map(e => categoryKey(e, resolveCategoryLabel))
-    : placeCategoryKeys
   const autoOpenCategories = shouldAutoOpenCategories({
     hasFocus: Boolean(initialGroup) || (Number.isFinite(focusLat) && Number.isFinite(focusLng)),
     adhocMode: Boolean(adhocMode),
-    pinCount: autoOpenKeys.length,
+    pinCount: placeCategoryKeys.length,
   })
-  const activeCategories = userCategories ?? (autoOpenCategories ? new Set(autoOpenKeys) : new Set())
+  const activeCategories = userCategories ?? (autoOpenCategories ? new Set(placeCategoryKeys) : new Set())
   const visible = entries.filter(e => {
     if (e.route_points?.length >= 2) {
       if (!showRoutes) return false
