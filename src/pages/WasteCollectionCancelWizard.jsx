@@ -539,6 +539,7 @@ export default function WasteCollectionCancelWizard({ tenant, session, onBack, s
                     onChange={point => setPendingPoint(point)}
                     defaultCenter={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
                     confirmDisabled={!pendingPoint}
+                    warnOutsideBoundary
                     confirmClassName="bg-rose-700"
                     onConfirm={() => {
                       setForm(current => ({

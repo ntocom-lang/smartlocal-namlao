@@ -772,6 +772,7 @@ export default function CitizenForm() {
         <MapPicker
           initialPos={geo.lat ? { lat: geo.lat, lng: geo.lng } : null}
           fallbackPos={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
+          warnOutsideBoundary
           onConfirm={handleMapConfirm}
           onClose={() => setShowMap(false)}
         />
