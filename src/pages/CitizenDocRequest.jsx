@@ -12,11 +12,13 @@ import WasteCollectionCancelWizard from './WasteCollectionCancelWizard'
 import WaterSupplyRequestWizard from './WaterSupplyRequestWizard'
 import PublicAssistanceWizard from './PublicAssistanceWizard'
 import AssetBorrowRequestWizard from './AssetBorrowRequestWizard'
+import CctvRequestWizard from './CctvRequestWizard'
 import {
   WATERWORKS_DOCUMENT_TYPES, WATERWORKS_MODULE_KEY, officialsOnlyDocumentTypes, selectableDocumentTypes, withoutRemovedTypes,
 } from '../lib/documentTypes'
 import { isOfficialRole } from '../lib/serviceAudience'
 import { PATIENT_TRANSPORT_TYPE, PATIENT_TRANSPORT_MODULE_KEY } from '../lib/patientTransport'
+import { CCTV_TYPE } from '../lib/cctvRequest'
 
 // ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
 // เลยไม่ต้องให้ประชาชนพิมพ์ตำบล/อำเภอ/จังหวัดเอง ให้กรอกแค่บ้านเลขที่ แล้วต่อท้ายด้วย
@@ -157,6 +159,18 @@ const BASE_DOC_TYPES = [
     color:   '#b91c1c',
     bg:      '#fef2f2',
     border:  '#fecaca',
+  },
+  {
+    value:   CCTV_TYPE,
+    label:   'ขอภาพจากกล้องวงจรปิด',
+    emoji:   '🎥',
+    desc:    'ขอภาพกล้องวงจรปิดของ อปท. กรณีเกิดเหตุ เช่น ของหาย อุบัติเหตุ ผู้ขอต้องเกี่ยวข้องกับเหตุการณ์ และ อปท. ไม่รับประกันว่าจะได้ภาพ',
+    // บังคับล็อกอิน — ภาพกล้องมีข้อมูลส่วนบุคคลของคนอื่นในภาพ ต้องรู้ว่าใครเป็นผู้ขอเสมอ (ด่านจริงที่ฐานข้อมูล:
+    // guard_cctv_footage_request ยิงตรงด้วย anon key ก็ผ่านไม่ได้) การ์ดนี้ปิดเป็นค่าเริ่มต้น แอดมิน อปท. เปิดเอง
+    requiresAuth: true,
+    color:   '#0e7490',
+    bg:      '#ecfeff',
+    border:  '#a5f3fc',
   },
   {
     value:   'building_permit',
@@ -308,6 +322,7 @@ export default function CitizenDocRequest() {
   const isPublicAssistanceRequest = selected?.value === 'public_assistance_request'
   const isAssetBorrowRequest = selected?.value === 'asset_borrow_request'
   const isPatientTransportRequest = selected?.value === PATIENT_TRANSPORT_TYPE
+  const isCctvRequest = selected?.value === CCTV_TYPE
   const addressSuffix = tenantAddressSuffix(tenant)
   const fullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
 
@@ -569,6 +584,12 @@ export default function CitizenDocRequest() {
   // จำนวนว่างตามช่วงวันที่ที่ขอ และเขียน 3 ตารางในธุรกรรมเดียวผ่าน RPC — ฟอร์มทั่วไปทำไม่ได้
   if (isAssetBorrowRequest) {
     return <AssetBorrowRequestWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
+  }
+
+  // ขอภาพกล้องวงจรปิดต้องมีวัน-เวลา จุดกล้อง และฐานะของผู้ขอ ซึ่งฟอร์มทั่วไป (วัตถุประสงค์บรรทัดเดียว) เก็บไม่ได้
+  // เจ้าหน้าที่จะต้องโทรถามกลับทุกเรื่อง จึงใช้ฟอร์มเฉพาะ เก็บลง permit_form_data
+  if (isCctvRequest) {
+    return <CctvRequestWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
   }
 
   // ─── Step 2: Form ──────────────────────────────────────────────────────────

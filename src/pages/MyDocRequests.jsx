@@ -32,6 +32,7 @@ const BASE_DOC_TYPES = {
   asset_borrow_request: 'ขอยืมพัสดุ/ครุภัณฑ์',
   patient_transport_request: 'ขออนุเคราะห์รถรับ-ส่งผู้ป่วย',
   building_permit:  'ขออนุญาตก่อสร้างบ้าน',
+  cctv_footage_request: 'ขอภาพจากกล้องวงจรปิด',
 }
 // ชื่อใบบนปุ่มพิมพ์และชื่อไฟล์ PDF ของงานประปา — ตรงกับหัวกระดาษของแต่ละใบ
 const WATER_PRINT_LABELS = {

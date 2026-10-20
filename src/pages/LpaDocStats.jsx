@@ -24,6 +24,7 @@ const DOC_LABELS = {
   asset_borrow_request: 'ขอยืมพัสดุ/ครุภัณฑ์',
   patient_transport_request: 'ขออนุเคราะห์รถรับ-ส่งผู้ป่วย',
   building_permit:  'ขออนุญาตก่อสร้างบ้าน',
+  cctv_footage_request: 'ขอภาพจากกล้องวงจรปิด',
 }
 
 const STATUS_META = {

@@ -37,6 +37,8 @@ import {
   WATERWORKS_DOCUMENT_TYPES, WATERWORKS_MODULE_KEY,
 } from '../lib/documentTypes'
 import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
+import CctvRequestInfo from '../components/staff/CctvRequestInfo'
+import { CCTV_TYPE, cctvBangkokToday, cctvHandoverDraft, cctvNoteForSave, isCctvHandoverFilled } from '../lib/cctvRequest'
 import { PERFORMANCE_ROLES } from '../lib/staffPerformanceData'
 import OdorReportPanel from '../components/staff/OdorReportPanel'
 import MonthlyComplaintShareCard from '../components/staff/MonthlyComplaintShareCard'
@@ -89,6 +91,12 @@ const StaffPerformanceModule = lazy(() => import('../components/staff/StaffPerfo
 //                 (ค่ากลางของ DOC_TITLES) อัปขึ้น Drive ทั้งที่คำขอประเภทนี้ไม่มีหนังสือรับรอง
 // เพิ่มประเภทใหม่ที่มีแผงเฉพาะเมื่อไหร่ ต้องมาเพิ่มในลิสต์นี้ด้วยเสมอ
 const PANEL_DOC_TYPES = ['asset_borrow_request', 'patient_transport_request']
+
+// ประเภทที่ "ไม่มีหนังสือรับรอง" แต่ใช้ปุ่มสถานะตัวกลาง (รับเรื่อง/เสร็จสิ้น/ปฏิเสธ) ตามปกติ
+// ⚠️ handleUpdate สร้างหนังสือรับรอง (buildDocHTML) จากข้อมูลผู้ขอแล้วอัปขึ้น Drive ทุกครั้งที่กดเสร็จสิ้น —
+// คำขอภาพกล้องวงจรปิดไม่ใช่เอกสารรับรอง ใบนั้นจะเอาเลขบัตร/เบอร์ของผู้ขอไปกองในที่เก็บไฟล์โดยไม่มีประโยชน์ (PDPA)
+// และปุ่มพิมพ์ใบรับรองหลังเสร็จงานก็ไม่มีความหมายกับประเภทนี้ จึงข้ามทั้งสองจุด
+const NO_CERTIFICATE_DOC_TYPES = [CCTV_TYPE]
 
 // ลิสต์ประเภทย้ายไป src/lib/documentTypes.js แล้ว — หน้าตั้งค่าของแอดมิน (กอง/ผู้รับผิดชอบ/SLA)
 // ต้องใช้ลิสต์เดียวกับหน้านี้เป๊ะ ไม่งั้นจะมีประเภทที่ประชาชนยื่นได้แต่แอดมินตั้งผู้รับผิดชอบไม่ได้
@@ -434,7 +442,13 @@ function TaskDetailSheet({
   req, onClose, onUpdate, acting, tenant, onInquiryUpdate, currentUserRole, onDelete,
   canAssign = false, assignees = [], assigning = false, assigneeName = null, onAssign,
 }) {
-  const [staffNote, setStaffNote]         = useState(req.staff_notes || '')
+  const isCctv = req.document_type === CCTV_TYPE
+  // คำขอภาพกล้องที่กำลังดำเนินการ: ระบบร่างบันทึกส่งมอบ (เติมวันที่ให้) เจ้าหน้าที่เติมแค่ชื่อผู้รับ — ปุ่ม "เสร็จสิ้น"
+  // กดได้หลังเติมชื่อแล้วเท่านั้น เพื่อให้ประวัติคำขอตอบได้ว่าภาพถูกส่งให้ใคร เมื่อไร
+  const [staffNote, setStaffNote]         = useState(() => req.staff_notes
+    || (isCctv && req.status === 'processing' ? cctvHandoverDraft(thaiDateFromDateInput(cctvBangkokToday())) : ''))
+  // บรรทัดร่างที่ยังไม่ได้เติมชื่อห้ามถูกบันทึกลงประวัติ (กดรับเรื่อง/ปฏิเสธระหว่างที่ร่างยังว่าง)
+  const noteOut = isCctv ? cctvNoteForSave(staffNote) : staffNote
   const [confirmReject, setConfirmReject] = useState(false)
   const [rejectReason, setRejectReason]   = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -486,6 +500,8 @@ function TaskDetailSheet({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+
+          {isCctv && <CctvRequestInfo req={req} tenant={tenant} />}
 
           {/* Requester info */}
           <div className="bg-gray-50 rounded-2xl p-4 space-y-2.5">
@@ -680,6 +696,11 @@ function TaskDetailSheet({
               <textarea value={staffNote} onChange={e => setStaffNote(e.target.value)} rows={3}
                 placeholder="บันทึกการดำเนินการ, หมายเหตุ, เอกสารที่ต้องการเพิ่มเติม..."
                 className={inputCls + ' resize-none'} />
+              {isCctv && req.status === 'processing' && !isCctvHandoverFilled(staffNote) && (
+                <p data-cctv-handover-hint className="mt-1.5 text-xs leading-relaxed text-amber-700">
+                  เติมชื่อผู้รับภาพแทน ________ แล้วปุ่ม "ดำเนินการเสร็จสิ้น" จะกดได้ — ถ้าไม่มีภาพหรือไม่อนุญาต ให้ใช้ "ปฏิเสธคำขอ" พร้อมเหตุผล
+                </p>
+              )}
             </div>
           )}
           {req.staff_notes && !isActive && (
@@ -707,7 +728,7 @@ function TaskDetailSheet({
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50">
                   ยกเลิก
                 </button>
-                <button onClick={() => onUpdate(req.id, 'rejected', staffNote, rejectReason)}
+                <button onClick={() => onUpdate(req.id, 'rejected', noteOut, rejectReason)}
                   disabled={acting || !rejectReason.trim()}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-500 text-white disabled:opacity-50 transition-opacity">
                   {acting ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'ยืนยันปฏิเสธ'}
@@ -871,7 +892,7 @@ function TaskDetailSheet({
                                 ซึ่งแผงพิมพ์ให้ได้ทุกสถานะอยู่แล้ว (รวมหลังปิดงาน)
             ใช้ลิสต์เดียวกับที่ซ่อนปุ่มเปลี่ยนสถานะ — เพิ่มประเภทที่มีแผงใหม่เมื่อไหร่ ปุ่มนี้ซ่อนตามเอง
             ไม่ต้องจำมาแก้ที่นี่อีก (ของเดิมเขียนชื่อประเภทตรงๆ ประเภทที่สองจึงหลุดไป) */}
-        {req.status === 'completed' && !PANEL_DOC_TYPES.includes(req.document_type) && (
+        {req.status === 'completed' && !PANEL_DOC_TYPES.includes(req.document_type) && !NO_CERTIFICATE_DOC_TYPES.includes(req.document_type) && (
           <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
             <button onClick={() => {
               const html = buildDocHTML({ req, tenant, docDate: new Date().toISOString().slice(0, 10) })
@@ -917,7 +938,7 @@ function TaskDetailSheet({
         {isActive && !confirmReject && !PANEL_DOC_TYPES.includes(req.document_type) && (
           <div className="px-4 pb-6 pt-3 border-t border-gray-100 space-y-2 shrink-0">
             {req.status === 'pending' && (
-              <button onClick={() => onUpdate(req.id, 'processing', staffNote, '')} disabled={acting}
+              <button onClick={() => onUpdate(req.id, 'processing', noteOut, '')} disabled={acting}
                 className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all text-sm"
                 style={{ backgroundColor: '#3b82f6' }}>
                 {acting ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
@@ -925,12 +946,18 @@ function TaskDetailSheet({
               </button>
             )}
             {req.status === 'processing' && (
-              <button onClick={() => onUpdate(req.id, 'completed', staffNote, '')} disabled={acting}
+              <button onClick={() => onUpdate(req.id, 'completed', noteOut, '')} disabled={acting || (isCctv && !isCctvHandoverFilled(staffNote))}
                 className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all text-sm"
                 style={{ backgroundColor: '#10b981' }}>
                 {acting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                 ดำเนินการเสร็จสิ้น
               </button>
+            )}
+            {/* ปุ่มเสร็จสิ้นเป็นสีจางเมื่อกดไม่ได้ แต่ช่องบันทึกอยู่ในส่วนที่เลื่อนอ่าน — บอกเหตุผลตรงปุ่มด้วยจะได้ไม่ต้องเดา */}
+            {isCctv && req.status === 'processing' && !isCctvHandoverFilled(staffNote) && (
+              <p data-cctv-handover-footer className="text-center text-xs text-amber-700">
+                เติมชื่อผู้รับภาพในช่อง "บันทึกเจ้าหน้าที่" ก่อน ปุ่มเสร็จสิ้นจึงจะกดได้
+              </p>
             )}
             <button onClick={() => setConfirmReject(true)} disabled={acting}
               className="w-full py-2.5 rounded-2xl font-semibold text-red-500 bg-red-50 hover:bg-red-100 flex items-center justify-center gap-2 text-sm transition-colors">
@@ -999,6 +1026,9 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuilding
                 // อปท. ที่ปิดโมดูลงานประปาต้องไม่เห็นตัวเลือกประปาที่เคาน์เตอร์ด้วย ไม่ใช่ซ่อนแค่
                 // ฝั่งประชาชน — ถ้าเหลือไว้ เจ้าหน้าที่จะกดแล้วโดนฐานข้อมูลปฏิเสธตอนกดส่ง
                 .filter(d => !WATERWORKS_DOCUMENT_TYPES.includes(d.value) || isWaterworksEnabled(tenant))
+                // ขอภาพกล้องวงจรปิดสร้างแทนผู้ขอที่เคาน์เตอร์ไม่ได้ในรอบแรก — ฟอร์มทั่วไปไม่มีช่องเหตุการณ์ และด่านฐานข้อมูล
+                // บังคับให้ผู้ขอล็อกอินยื่นในชื่อตัวเอง ถ้าเหลือไว้เจ้าหน้าที่จะกดแล้วโดนปฏิเสธทุกครั้ง
+                .filter(d => d.value !== CCTV_TYPE)
                 .map(d => {
                 const [emoji, ...rest] = d.label.split(' ')
                 const isSel = form.document_type === d.value
@@ -1147,7 +1177,7 @@ export function InboxModule({ tenant, staffId, currentUserRole, onRequestDeleted
     const req = requests.find(r => r.id === id)
 
     let document_url = null
-    if (newStatus === 'completed' && req) {
+    if (newStatus === 'completed' && req && !NO_CERTIFICATE_DOC_TYPES.includes(req.document_type)) {
       const docDate = new Date().toISOString().slice(0, 10)
       const completedRequest = { ...req, staff_notes: staffNote || req.staff_notes }
       const html = buildDocHTML({ req: completedRequest, tenant, docDate })
