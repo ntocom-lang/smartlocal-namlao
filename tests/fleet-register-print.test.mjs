@@ -55,12 +55,27 @@ for (const text of ['แบบ 1', 'ประเภทรถยนต์ปร�
 }
 assert.ok(html.includes('&lt;b&gt;รถยนต์นั่ง') && !html.includes('<b>รถยนต์นั่ง'), 'ข้อความจากผู้ใช้ต้อง escape')
 assert.ok(html.indexOf('แบบ 1') < html.indexOf('แบบ 2'), 'แบบ 1 ต้องมาก่อนแบบ 2')
-for (const thead of html.split('<thead>').slice(1).map(part => part.slice(0, part.indexOf('</thead>')))) {
+// thead ของตารางห่อนอก (แถวเว้นระยะ) ไม่ใช่หัวตารางทะเบียน — นับเฉพาะ thead ของ table.register ซึ่งต้องมีทุกแผ่น
+const registerHeads = html.split('<table class="register">').slice(1).map(part => {
+  const start = part.indexOf('<thead>')
+  return part.slice(start, part.indexOf('</thead>', start))
+})
+assert.equal(registerHeads.length, 2, 'แบบ 1 และแบบ 2 ต้องมีตารางทะเบียนแผ่นละตาราง')
+for (const thead of registerHeads) {
   const order = ['ลำดับที่', 'ชื่อของ', 'แบบ/รุ่นปี/', 'ขนาด (ซีซี)', 'หมายเลข', 'ทะเบียน', 'สังกัด', 'หน่วยงานใด',
     'ราคา', 'วันได้มา', 'วันจำหน่าย', 'หมายเหตุ'].map(text => thead.indexOf(text))
   assert.ok(order.every(index => index >= 0), 'หัวตารางไม่ครบตามแบบท้ายระเบียบ')
   assert.deepEqual([...order].sort((a, b) => a - b), order, 'ลำดับคอลัมน์ต้องตรงแบบท้ายระเบียบ')
 }
+// ขอบบน/ล่างต้องซ้ำทุกหน้า (เจ้าของระบบสั่งแก้ 2026-10-20): เดิม padding อยู่แค่หน้าแรก ทะเบียนที่ไหลเป็น 2 หน้า
+// จึงได้หน้า 2 ที่หัวตารางชิดขอบบนกระดาษตรงรูเจาะแฟ้ม — ตอนนี้ขอบมาจากแถวเว้นระยะใน thead/tfoot ของตารางห่อนอกทุกแผ่น
+assert.equal(html.split('<td class="space-top"></td>').length - 1, 2, 'ทุกแผ่น (แบบ 1 และแบบ 2) ต้องมีแถวเว้นระยะบน')
+assert.equal(html.split('<td class="space-bottom"></td>').length - 1, 2, 'ทุกแผ่นต้องมีแถวเว้นระยะล่าง')
+assert.ok(html.includes('td.space-top { height: 3cm; }') && html.includes('td.space-bottom { height: 1cm; }'),
+  'ขอบบน/ล่างต้องเป็นค่าแนวนอนตามมาตรฐาน govPagePadding (3cm / 1cm)')
+assert.ok(html.includes('table.register tr { page-break-inside: avoid; }') && html.includes('table.register thead { display: table-header-group; }'),
+  'ตารางทะเบียนต้องซ้ำหัวตารางและไม่ตัดแถวกลางคัน (เฉพาะ table.register ไม่ใช่ตารางห่อนอก)')
+assert.equal(html.includes('padding: 3cm 2cm 1cm 2cm'), false, '.sheet ห้ามใช้ padding บน/ล่างอีก (อยู่แค่หน้าแรก)')
 // ใบเดียวต้องเลือกพิมพ์แบบเดียวได้
 const onlyCentral = buildFleetRegisterHtml({ vehicles: [], forms: ['central'] })
 assert.ok(onlyCentral.includes('แบบ 2') && !onlyCentral.includes('แบบ 1<'), 'เลือกพิมพ์เฉพาะแบบ 2 ไม่ได้')
@@ -125,10 +140,10 @@ try {
       const tops = new Set([...range.getClientRects()].filter(r => r.width > 0).map(r => Math.round(r.top)))
       return tops.size
     }
-    const rows = [...document.querySelectorAll('section[data-form="central"] tbody tr')]
+    const rows = [...document.querySelectorAll('section[data-form="central"] table.register tbody tr')]
     const col = index => rows.map(row => row.children[index])
     return {
-      tableWidth: document.querySelector('section[data-form="central"] table').getBoundingClientRect().width / mm,
+      tableWidth: document.querySelector('section[data-form="central"] table.register').getBoundingClientRect().width / mm,
       overflowingHeaders: [...document.querySelectorAll('th')]
         .filter(th => th.scrollWidth > th.clientWidth + 1).map(th => th.textContent.trim()),
       headerLines: Math.max(...[...document.querySelectorAll('section[data-form="central"] th')].map(lineCount)),
@@ -150,6 +165,24 @@ try {
   assert.equal(measured.plateLines, 1, 'ทะเบียนต้องจบบรรทัดเดียว')
   assert.equal(measured.deptLines, 1, '"ใช้ร่วมทุกกอง" ต้องจบบรรทัดเดียว')
   assert.equal(measured.codeOverflow, 0, 'เลขครุภัณฑ์ล้นช่องหมายเหตุ')
+  // ทะเบียนยาวเกิน 1 หน้าต้องไหลข้ามหน้าได้ แถวไม่หาย (ตารางห่อนอกต้องไม่บังคับให้อยู่หน้าเดียว)
+  const many = Array.from({ length: 30 }, (_, i) => ({
+    id: String(i), name: `รถ ${i}`, license_plate: `กก ${i}`, is_pool: true, status: 'active', regulation_category: 'central',
+    asset_code: `001-52-${String(i + 1).padStart(4, '0')}`,
+  }))
+  const flowPage = await browser.newPage({ viewport: { width: Math.round(297 * MM), height: Math.round(210 * MM) } })
+  try {
+    await flowPage.setContent(buildFleetRegisterHtml({ vehicles: many, orgName: 'เทศบาลตำบลน้ำเลา', asOf: '2026-12-31', forms: ['central'] }),
+      { waitUntil: 'load' })
+    await flowPage.evaluate(() => document.fonts.ready)
+    await flowPage.emulateMedia({ media: 'print' })
+    const pdf = await flowPage.pdf({ preferCSSPageSize: true, printBackground: true })
+    const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length
+    assert.ok(pages >= 2, `ทะเบียน 30 คันต้องไหลไปหน้าถัดไป แต่ได้ ${pages} หน้า`)
+    assert.equal(await flowPage.locator('table.register tbody tr').count(), 30, 'ไหลข้ามหน้าแล้วแถวต้องไม่หาย')
+  } finally {
+    await flowPage.close()
+  }
   console.log(`fleet register (แบบ 1/2) assertions passed (ตาราง ${measured.tableWidth.toFixed(1)} มม., แถวสูงสุด ${measured.rowHeight.toFixed(1)} มม.)`)
 } finally {
   await browser.close()

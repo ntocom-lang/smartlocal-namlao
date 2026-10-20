@@ -9,7 +9,11 @@
 //
 // ตารางไหลข้ามหน้าเอง (หัวตารางซ้ำทุกหน้า) ไม่ตัดแถวทิ้ง — ทะเบียนทรัพย์สินห้ามมีรายการหายเงียบๆ
 
-import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN_LANDSCAPE, govDocFontCss, govEServiceOriginText, govPageCss, govPagePadding } from './govDocStyle.js'
+import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss, govPagePadding } from './govDocStyle.js'
+
+// ขอบกระดาษแนวนอนตามมาตรฐาน "บน ขวา ล่าง ซ้าย" (3cm 2cm 1cm 2cm) แยกเป็นรายด้านไว้ใช้กับแถวเว้นระยะ
+// (ดูคอมเมนต์ .sheet ใน buildFleetRegisterHtml ว่าทำไมไม่ใช้ padding บน/ล่างของ .sheet)
+const [PAD_TOP, PAD_RIGHT, PAD_BOTTOM, PAD_LEFT] = govPagePadding({ size: 'A4 landscape' }).split(/\s+/)
 
 export const REGISTER_FORMS = {
   position: {
@@ -176,10 +180,14 @@ function sheet({ categoryKey, vehicles, orgName, asOfText }) {
     : `<tr class="empty"><td colspan="9">— ไม่มี${esc(form.category.replace(/^ประเภท/, ''))} —</td></tr>`
   const origin = govEServiceOriginText(orgName)
   return `<section class="sheet" data-form="${esc(categoryKey)}">
+  <table class="page">
+    <thead><tr><td class="space-top"></td></tr></thead>
+    <tfoot><tr><td class="space-bottom"></td></tr></tfoot>
+    <tbody><tr><td>
     <p class="form-no">${esc(form.formNo)}</p>
     <h1>${esc(form.category)}</h1>
     <p class="register-of">${esc(form.registerOf)} <span class="fill">${esc(clean(orgName))}</span></p>
-    <table>
+    <table class="register">
       <colgroup>
         <col class="c-no"><col class="c-name"><col class="c-model"><col class="c-plate"><col class="c-dept">
         <col class="c-price"><col class="c-date"><col class="c-date"><col class="c-note">
@@ -188,6 +196,8 @@ function sheet({ categoryKey, vehicles, orgName, asOfText }) {
       <tbody>${body}</tbody>
     </table>
     <div class="eservice-origin">${esc(origin)}${asOfText ? ` · ข้อมูล ณ วันที่ ${esc(asOfText)}` : ''}</div>
+    </td></tr></tbody>
+  </table>
   </section>`
 }
 
@@ -210,28 +220,36 @@ export function buildFleetRegisterHtml({ vehicles = [], orgName = '', asOf = '',
     * { box-sizing: border-box; }
     html, body { margin: 0; }
     body { color: #000; ${govDocFontCss()} background: #fff; }
-    .sheet { width: 297mm; min-height: 210mm; padding: ${GOV_PAGE_MARGIN_LANDSCAPE}; }
+    /* ขอบบน/ล่างของ "ทุกหน้า" มาจากแถวเว้นระยะใน thead/tfoot ของตารางห่อนอก (table.page) ซึ่งเบราว์เซอร์ซ้ำทุกหน้า
+       ไม่ใช่ padding ของ .sheet — padding อยู่แค่หน้าแรก ทะเบียนที่ไหลเป็น 2 หน้าจึงเคยได้หน้า 2 ที่หัวตารางชิดขอบบน
+       กระดาษ (ตรงรูเจาะแฟ้มของแนวนอน) เพราะ @page margin เป็น 0 ตามมาตรฐานซ่อนหัวกระดาษของเบราว์เซอร์
+       (เจ้าของระบบสั่งแก้ 2026-10-20) ค่าขอบมาจาก govPagePadding() ค่าเดียวกับใบอื่น */
+    .sheet { width: 297mm; min-height: 210mm; padding: 0 ${PAD_RIGHT} 0 ${PAD_LEFT}; }
     .sheet + .sheet { page-break-before: always; }
+    table.page { width: 100%; border-collapse: collapse; table-layout: auto; }
+    table.page > thead > tr > td, table.page > tbody > tr > td, table.page > tfoot > tr > td { border: 0; padding: 0; text-align: left; vertical-align: top; }
+    td.space-top { height: ${PAD_TOP}; }
+    td.space-bottom { height: ${PAD_BOTTOM}; }
     .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 3mm; text-align: center; }
     @media print {
       html, body { height: auto; }
-      .sheet { width: auto; min-height: 0; height: auto; padding: ${govPagePadding({ size: 'A4 landscape' })}; }
-      /* ทะเบียนยาวเกินหน้าให้ไหลต่อพร้อมหัวตาราง ไม่ตัดแถวกลางคัน */
-      thead { display: table-header-group; }
-      tr { page-break-inside: avoid; }
+      .sheet { width: auto; min-height: 0; height: auto; }
+      /* ทะเบียนยาวเกินหน้าให้ไหลต่อพร้อมหัวตาราง ไม่ตัดแถวกลางคัน (เฉพาะตารางทะเบียน ไม่ใช่ตารางห่อนอกที่ต้องตัดข้ามหน้าได้) */
+      table.register thead { display: table-header-group; }
+      table.register tr { page-break-inside: avoid; }
     }
     p { margin: 0; }
     .form-no { text-align: right; }
     h1 { margin: 0; text-align: center; font-size: 14pt; font-weight: 700; line-height: 1.25; }
     .register-of { text-align: center; font-weight: 700; }
     .register-of .fill { display: inline-block; min-width: 60mm; border-bottom: 1px dotted #333; padding: 0 4px; font-weight: 400; }
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 4mm; }
-    th, td { border: 1px solid #000; vertical-align: top; text-align: center; overflow-wrap: anywhere; }
-    th { vertical-align: middle; font-weight: 700; line-height: 1.15; padding: 1mm 2px; }
-    td { padding: 1mm 3px; line-height: 1.15; height: 9mm; }
-    td.left { text-align: left; }
-    td.num { text-align: right; }
-    tr.empty td { color: #555; padding: 4mm; }
+    table.register { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 4mm; }
+    table.register th, table.register td { border: 1px solid #000; vertical-align: top; text-align: center; overflow-wrap: anywhere; }
+    table.register th { vertical-align: middle; font-weight: 700; line-height: 1.15; padding: 1mm 2px; }
+    table.register td { padding: 1mm 3px; line-height: 1.15; height: 9mm; }
+    table.register td.left { text-align: left; }
+    table.register td.num { text-align: right; }
+    table.register tr.empty td { color: #555; padding: 4mm; }
     .nowrap { white-space: nowrap; }
     /* ความกว้างรวม 100% ของ 257 มม. — วัดจากเบราว์เซอร์ที่ 14pt (2026-10-18) ความกว้างที่ข้อความ
        ต้องใช้ + padding ~2 มม.: วันที่ "30/12/2569" 25.2 · ราคา "1,234,567.89" 27.4 ·
