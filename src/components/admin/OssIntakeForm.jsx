@@ -8,6 +8,7 @@ import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 import { isMissingSignatoryError, prepareComplaintPrint } from '../../lib/complaintPrint'
 import { uploadFile } from '../../lib/driveStorage'
 import { complaintFolderPath, complaintFileName } from '../../lib/driveFolders'
+import TrackLinkCard from '../complaints/TrackLinkCard'
 
 const MAX_PHOTOS = 3
 
@@ -161,6 +162,8 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
           <div className="p-6 space-y-4 text-center">
             <p className="text-xs text-gray-400">บันทึกคำร้องสำเร็จ — เลขที่อ้างอิง</p>
             <p className="text-3xl font-black text-gray-800 tracking-widest font-mono">{result.ref_no}</p>
+            {/* รับแจ้งหน้าเคาน์เตอร์ผู้แจ้งไม่มีบัญชี — ส่งลิงก์ให้ทาง LINE ติดตามต่อได้เลย (เจ้าหน้าที่ อปท. เดียวกันขอโทเคนได้) */}
+            <TrackLinkCard complaintId={result.id} refNo={result.ref_no} className="text-left" />
             <div className="flex gap-3 pt-2">
               <button onClick={handlePrintReceipt}
                 className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">

@@ -11,6 +11,7 @@ import { workingDaysLeft } from '../lib/workingDays'
 import { odorRoutedAt, isAdhocComplaint, ODOR_INTAKE_LABEL } from '../lib/odorIntake'
 import ComplaintTextBlock from '../components/complaints/ComplaintTextBlock'
 import ReopenComplaintBox from '../components/complaints/ReopenComplaintBox'
+import TrackLinkCard from '../components/complaints/TrackLinkCard'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
@@ -453,6 +454,12 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
           {/* ยังไม่เรียบร้อย → เปิดเรื่องกลับ 7 วัน 1 ครั้ง (เฉพาะเจ้าของเรื่องที่ล็อกอิน) */}
           {currentUserId && !isAdhocComplaint(c) && (
             <ReopenComplaintBox complaint={c} userId={currentUserId} onReopened={onReopened} />
+          )}
+
+          {/* ลิงก์ติดตามสำหรับผู้แจ้งตัวจริง — เรื่องที่ สท./เจ้าหน้าที่ยื่นแทนชาวบ้าน ผู้แจ้งไม่มีบัญชีจึงดูหน้านี้ไม่ได้
+              เฉพาะเจ้าของเรื่อง (ผลค้นด้วยเลขอ้างอิงไม่มี user_id จึงไม่ขึ้นการ์ด) และไม่ใช่หมวดเฉพาะกิจ */}
+          {currentUserId && c.user_id === currentUserId && !isAdhocComplaint(c) && (
+            <TrackLinkCard complaintId={c.id} refNo={c.ref_no} />
           )}
 
           {/* เอกสารฉบับสมบูรณ์ (ลงนามจาก GDCC e-Office แล้ว) */}
