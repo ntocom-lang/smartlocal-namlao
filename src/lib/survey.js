@@ -156,6 +156,21 @@ export const SURVEY_MANAGE_ERRORS = {
 
 export const SURVEY_BUSY_MESSAGE = 'ส่งถี่เกินไป กรุณารอสักครู่แล้วลองใหม่'
 
+// ผู้ที่ลบแบบสำรวจได้ — ต้องตรงกับ survey_can_delete() ใน 20261021110000_survey_delete.sql (เทสต์เทียบให้)
+// แคบกว่าผู้ที่สร้าง/ปิดได้ (survey_can_manage) เพราะลบแล้วกู้คืนไม่ได้ · ฝั่งฐานข้อมูลบังคับจริง ตัวนี้แค่ซ่อนปุ่ม
+export const SURVEY_DELETE_ROLES = ['superadmin', 'admin']
+
+// ข้อความเตือนในขั้นยืนยันลบ — บอกสิ่งที่จะหายตามตัวเลขจริงของเรื่องนั้น (ไม่ให้กดลบโดยไม่รู้ว่าทิ้งอะไร)
+export function surveyDeleteWarning({ open, total, comments }) {
+  const parts = []
+  if (open) parts.push('ยังเปิดรับอยู่')
+  parts.push(total > 0
+    ? `ตอบแล้ว ${total} คน${comments > 0 ? ` ความเห็น ${comments} รายการ` : ''} จะหายทั้งหมด`
+    : 'ยังไม่มีผู้ตอบ')
+  parts.push('ลบแล้วกู้คืนไม่ได้ ลิงก์ที่แชร์ไว้จะขึ้น "ไม่พบแบบสำรวจนี้"')
+  return parts.join(' · ')
+}
+
 // ฐานข้อมูลตอบ PT429 เมื่อยิงถี่เกินโควตา — แยกออกจาก "ไม่พบ" และ "เครือข่ายล่ม"
 export function isSurveyBusy(error) {
   return error?.code === 'PT429' || String(error?.message ?? '').includes('ถี่เกินไป')

@@ -5,6 +5,7 @@
 // สิ่งที่ต้องไม่พัง: (1) หีบบัตรไม่มีทางโยงกลับไปหาตัวผู้ตอบ — ไม่มีคอลัมน์ผู้ใช้/เวลา และทะเบียนผู้ใช้สิทธิ์ไม่มีตัวเลือก
 // (2) 1 บัญชี 1 เสียง ข้าม อปท. ไม่ได้ ปิดแล้วตอบไม่ได้ (3) ผลรายตัวเลือกไม่โผล่ก่อนตอบ (4) ความเห็นเห็นเฉพาะเจ้าหน้าที่ ซ่อนเบอร์/เลขบัตร/อีเมล
 // และถูกลบหลัง 90 วัน (5) เฉพาะ admin/officer/staff ของ อปท. นั้น (กับ superadmin) สร้าง/ปิด/ลบความเห็นได้ (6) สิทธิ์เรียกฟังก์ชันตรงแบบ
+// (7) ลบทั้งแบบสำรวจ (20261021110000_survey_delete.sql): เฉพาะ admin ของ อปท. นั้น + superadmin · ลูกทุกตารางหายตาม · ลงประวัติก่อนลบในธุรกรรมเดียวกัน
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
@@ -17,6 +18,7 @@ const readMigration = name => readFile(new URL('../supabase/migrations/' + name,
 const rateLimitSql = await readMigration('20260905170000_rpc_rate_limit.sql')
 const tablesSql = await readMigration('20261020170000_community_survey_tables.sql')
 const functionsSql = await readMigration('20261020170100_community_survey_functions.sql')
+const deleteSql = await readMigration('20261021110000_survey_delete.sql')
 
 const A = '00000000-0000-4000-8000-00000000000a'
 const B = '00000000-0000-4000-8000-00000000000b'
@@ -48,6 +50,7 @@ INSERT INTO public.municipalities VALUES ('${A}', 'อปท. เอ'), ('${B}',
 await db.exec(rateLimitSql)
 await db.exec(tablesSql)
 await db.exec(functionsSql)
+await db.exec(deleteSql)
 
 const users = {
   admin: U(1), officer: U(2), staff: U(3), viewer: U(4), council: U(5), technician: U(6),
@@ -99,6 +102,12 @@ const staffView = async (who, sid) => { await as(who); return db.query('SELECT p
 const manageList = async (who, muni = A) => { await as(who); return db.query('SELECT public.list_surveys_manage($1) AS r', [muni]).then(r => r.rows[0].r) }
 const closeEarly = async (who, sid) => { await as(who); return db.query('SELECT public.close_survey_early($1) AS r', [sid]).then(r => r.rows[0].r) }
 const toggleComment = async (who, sid, on) => { await as(who); return db.query('SELECT public.set_survey_comment_enabled($1, $2) AS r', [sid, on]).then(r => r.rows[0].r) }
+const deleteSurvey = async (who, sid) => { await as(who); return db.query('SELECT public.delete_survey($1) AS r', [sid]).then(r => r.rows[0].r) }
+const countRows = async sid => (await db.query(`SELECT
+  (SELECT count(*)::int FROM public.surveys WHERE id = $1) AS surveys,
+  (SELECT count(*)::int FROM public.survey_options WHERE survey_id = $1) AS options,
+  (SELECT count(*)::int FROM public.survey_voters WHERE survey_id = $1) AS voters,
+  (SELECT count(*)::int FROM public.survey_ballots WHERE survey_id = $1) AS ballots`, [sid])).rows[0]
 const deleteComment = async (who, bid) => { await as(who); return db.query('SELECT public.delete_survey_comment($1) AS r', [bid]).then(r => r.rows[0].r) }
 const forceClosed = (sid, agoDays) =>
   db.query(`UPDATE public.surveys SET opens_at = now() - interval '${agoDays + 5} days', closes_at = now() - interval '${agoDays} days' WHERE id = $1`, [sid])
@@ -107,6 +116,7 @@ const columns = async table => (await db.query(`SELECT column_name FROM informat
 await test('ใช้ migration ซ้ำได้ (IF NOT EXISTS / CREATE OR REPLACE) ไม่พัง และงาน cron ถูกตั้งครั้งเดียว', async () => {
   await db.exec(tablesSql)
   await db.exec(functionsSql)
+  await db.exec(deleteSql)
   const { rows } = await db.query(`SELECT jobname, schedule, command FROM cron.job WHERE jobname = 'survey-comment-purge-daily'`)
   assert.equal(rows.length, 1)
   assert.equal(rows[0].schedule, '15 20 * * *')
@@ -145,9 +155,10 @@ await test('สิทธิ์เรียกฟังก์ชัน: ผู้
   const publicFns = ['public.list_surveys(uuid)', 'public.get_survey(uuid, uuid)']
   const memberFns = ['public.cast_survey_vote(uuid, uuid, uuid, text)']
   const staffFns = ['public.create_survey(uuid, text, text[], boolean, timestamptz)', 'public.close_survey_early(uuid)',
-    'public.set_survey_comment_enabled(uuid, boolean)', 'public.list_surveys_manage(uuid)', 'public.get_survey_staff(uuid)', 'public.delete_survey_comment(uuid)']
+    'public.set_survey_comment_enabled(uuid, boolean)', 'public.list_surveys_manage(uuid)', 'public.get_survey_staff(uuid)', 'public.delete_survey_comment(uuid)', 'public.delete_survey(uuid)']
   const internalFns = ['public.survey_voter_group()', 'public.survey_can_manage(uuid)', 'public.survey_comment_keep_days()',
-    'public.survey_mask_text(text)', 'public.survey_audit(uuid, text, uuid, text, jsonb)', 'public.survey_comment_purge_tick(timestamptz)']
+    'public.survey_mask_text(text)', 'public.survey_audit(uuid, text, uuid, text, jsonb)', 'public.survey_comment_purge_tick(timestamptz)',
+    'public.survey_can_delete(uuid)']
   for (const f of publicFns) { assert.equal(await can('anon', f), true, f); assert.equal(await can('authenticated', f), true, f) }
   for (const f of [...memberFns, ...staffFns]) { assert.equal(await can('anon', f), false, `anon เรียก ${f} ได้`); assert.equal(await can('authenticated', f), true, f) }
   for (const f of internalFns) { assert.equal(await can('anon', f), false, `anon เรียก ${f} ได้`); assert.equal(await can('authenticated', f), false, `authenticated เรียก ${f} ได้`) }
@@ -513,6 +524,107 @@ await test('ตอบถี่เกิน 20 ครั้ง/5 นาที →
   await as('staff')
   for (let i = 0; i < 20; i++) await create(A, 'ก', ['ก', 'ข'])
   await expectError(create(A, 'ก', ['ก', 'ข']), 'PT429')
+})
+
+await test('ลบแบบสำรวจ: เฉพาะ admin ของ อปท. นั้นกับ superadmin · officer/staff ที่สร้าง/ปิดได้ก็ลบไม่ได้ · ที่ลบไม่ได้ข้อมูลไม่หาย', async () => {
+  for (const who of ['admin', 'superadmin']) {
+    const id = await mk()
+    assert.deepEqual(await deleteSurvey(who, id), { ok: true }, who)
+    assert.equal((await countRows(id)).surveys, 0, who)
+  }
+  const id = await mk()
+  const [o1] = await optionIds(id)
+  await vote('citizen2', id, o1, 'ความเห็นต้องไม่หาย')
+  for (const who of ['officer', 'staff', 'viewer', 'council', 'technician', 'citizen', 'adminB', 'staffB', 'citizenB', 'anon']) {
+    assert.deepEqual(await deleteSurvey(who, id), { ok: false, code: 'forbidden' }, who)
+  }
+  assert.deepEqual(await countRows(id), { surveys: 1, options: 3, voters: 1, ballots: 1 }, 'ที่ลบไม่ได้ ข้อมูลต้องยังอยู่ครบ')
+  assert.deepEqual(await deleteSurvey('admin', '00000000-0000-4000-8000-0000000fffff'), { ok: false, code: 'not_found' })
+  assert.equal((await db.query(`SELECT count(*)::int AS n FROM public.audit_logs WHERE action = 'delete'`)).rows[0].n, 2, 'ลงประวัติเฉพาะที่ลบสำเร็จ')
+})
+
+await test('ลบแบบสำรวจ: ตัวเลือก ทะเบียนผู้ใช้สิทธิ์ ยอดโหวต ความเห็น หายครบ · เรื่องอื่นไม่ถูกแตะ · ผู้เข้าชมไม่เห็นและตอบเรื่องที่ลบแล้วไม่ได้', async () => {
+  const gone = await mk({ q: 'เรื่องที่จะถูกลบ ทดสอบ' })
+  const keep = await mk({ q: 'เรื่องที่ต้องอยู่ ทดสอบ' })
+  const goneOptions = await optionIds(gone)
+  for (const sid of [gone, keep]) {
+    const [o1, o2] = await optionIds(sid)
+    await vote('citizen', sid, o1, 'ความเห็นของเรื่อง')
+    await vote('citizen2', sid, o2, null)
+  }
+  const keepBefore = await countRows(keep)
+  assert.deepEqual(await countRows(gone), { surveys: 1, options: 3, voters: 2, ballots: 2 })
+  assert.deepEqual(await deleteSurvey('admin', gone), { ok: true })
+  assert.deepEqual(await countRows(gone), { surveys: 0, options: 0, voters: 0, ballots: 0 })
+  assert.deepEqual(await countRows(keep), keepBefore, 'เรื่องอื่นต้องไม่ถูกแตะ')
+  assert.deepEqual((await list('citizen')).map(s => s.id), [keep])
+  assert.equal((await view('citizen', gone)).found, false)
+  assert.equal((await staffView('admin', gone)).found, false)
+  assert.deepEqual((await manageList('admin')).map(s => s.id), [keep])
+  assert.equal((await vote('citizen3', gone, goneOptions[0])).ok, false, 'ตอบเรื่องที่ลบแล้วต้องไม่ได้')
+  assert.deepEqual(await deleteSurvey('admin', gone), { ok: false, code: 'not_found' }, 'ลบซ้ำ')
+})
+
+await test('ลบแบบสำรวจ: ลงประวัติ (ใคร เรื่องอะไร สถานะ ผู้ตอบ ความเห็น) ไม่เก็บเนื้อความเห็น · ประวัติอยู่ต่อหลังลบ', async () => {
+  const open = await mk({ q: 'เรื่องที่ยังเปิดอยู่ ทดสอบ' })
+  const closed = await mk({ q: 'เรื่องที่ปิดไปแล้ว ทดสอบ' })
+  const early = await mk({ q: 'เรื่องที่ปิดก่อนกำหนด ทดสอบ' })
+  for (const sid of [open, closed, early]) {
+    const [o1, o2] = await optionIds(sid)
+    await vote('citizen', sid, o1, 'ความเห็นลับ-77')
+    await vote('citizen2', sid, o2, null)
+    await vote('citizen3', sid, o1, 'อีกความเห็นหนึ่ง')
+  }
+  await forceClosed(closed, 1)
+  assert.deepEqual(await closeEarly('admin', early), { ok: true })
+  const expected = { [open]: 'open', [closed]: 'closed', [early]: 'closed' }
+  for (const sid of [open, closed, early]) assert.deepEqual(await deleteSurvey('admin', sid), { ok: true })
+  const { rows } = await db.query(`SELECT * FROM public.audit_logs WHERE action = 'delete' ORDER BY resource_label`)
+  assert.equal(rows.length, 3)
+  for (const row of rows) {
+    assert.equal(row.resource_type, 'survey')
+    assert.equal(row.actor_id, users.admin)
+    assert.equal(row.actor_role, 'admin')
+    assert.equal(row.municipality_id, A)
+    assert.deepEqual(row.metadata, { status: expected[row.resource_id], answers: 3, comments: 2 }, row.resource_label)
+    assert.match(row.resource_label, /ทดสอบ$/)
+  }
+  assert.deepEqual(rows.map(r => r.resource_id).sort(), [open, closed, early].sort())
+  assert.ok(!JSON.stringify(rows).includes('ความเห็นลับ-77') && !JSON.stringify(rows).includes('อีกความเห็นหนึ่ง'), 'ประวัติต้องไม่มีเนื้อความเห็น')
+  // ประวัติของ superadmin: ใช้ชื่อ/บทบาทของผู้กดจริง
+  const sid = await mk({ q: 'เรื่องที่ superadmin ลบ ทดสอบ' })
+  await deleteSurvey('superadmin', sid)
+  const last = (await db.query(`SELECT actor_id, actor_role, metadata FROM public.audit_logs WHERE resource_id = $1 AND action = 'delete'`, [sid])).rows[0]
+  assert.equal(last.actor_id, users.superadmin)
+  assert.equal(last.actor_role, 'superadmin')
+  assert.deepEqual(last.metadata, { status: 'open', answers: 0, comments: 0 })
+})
+
+await test('ลบแบบสำรวจ: ลงประวัติไม่สำเร็จ = ไม่ลบ (ประวัติกับการลบอยู่ธุรกรรมเดียวกัน)', async () => {
+  const id = await mk()
+  const [o1] = await optionIds(id)
+  await vote('citizen', id, o1, 'ต้องไม่หายถ้าลงประวัติไม่ได้')
+  await db.exec(`ALTER TABLE public.audit_logs ADD CONSTRAINT test_reject_delete CHECK (action <> 'delete')`)
+  try {
+    await as('admin')
+    await assert.rejects(db.query('SELECT public.delete_survey($1)', [id]))
+  } finally {
+    await db.exec('ALTER TABLE public.audit_logs DROP CONSTRAINT test_reject_delete')
+  }
+  assert.deepEqual(await countRows(id), { surveys: 1, options: 3, voters: 1, ballots: 1 })
+})
+
+await test('ลบแล้วได้ช่องคืน: เปิดครบ 3 เรื่อง → ลบ 1 → สร้างใหม่ได้ · ตั้งคำถามเดิมซ้ำได้', async () => {
+  const q = 'คำถามที่เคยถูกลบ ทดสอบ'
+  const first = await mk({ q })
+  await mk({ q: 'เรื่องที่สอง ทดสอบ' })
+  await mk({ q: 'เรื่องที่สาม ทดสอบ' })
+  await as('admin')
+  assert.equal((await create(A, 'เรื่องที่สี่ ทดสอบ', ['ก', 'ข'])).code, 'too_many_open')
+  assert.equal((await create(A, q, ['ก', 'ข'])).code, 'too_many_open')
+  assert.deepEqual(await deleteSurvey('admin', first), { ok: true })
+  await as('admin')
+  assert.equal((await create(A, q, ['ก', 'ข'])).ok, true, 'ลบแล้วถามคำถามเดิมได้อีก')
 })
 
 await test('ตั้งใจซ่อน: ทุกฟังก์ชันของผู้ถือสิทธิ์ตอบ "ผู้ตอบ" ให้เห็นแค่ตัวเองว่าตอบแล้ว ไม่ได้ว่าเลือกอะไร (ฝั่งเซิร์ฟเวอร์ไม่รู้)', async () => {
