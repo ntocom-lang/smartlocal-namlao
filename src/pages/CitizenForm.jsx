@@ -11,6 +11,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import ComplaintReviewSheet from '../components/complaints/ComplaintReviewSheet'
+import TrackLinkCard from '../components/complaints/TrackLinkCard'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { CategoryIcon } from '../lib/categoryIcon'
@@ -252,6 +253,12 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
           <p className="text-xs text-gray-400 mb-0.5">เลขที่อ้างอิง — บันทึกไว้เพื่อติดตาม</p>
           <p className="text-2xl font-black text-gray-800 tracking-widest font-mono">{complaintNumber}</p>
         </div>
+      )}
+
+      {/* ผู้ยื่นที่ล็อกอิน (เช่น สท. ยื่นแทนชาวบ้าน) ส่งลิงก์ติดตามต่อให้ผู้แจ้งตัวจริงได้เลย
+          ผู้ยื่นที่ไม่ล็อกอินไม่มีการ์ดนี้ — ติดตามด้วยเลขอ้างอิงด้านบนตามเดิม */}
+      {isLoggedIn && complaintId && (
+        <TrackLinkCard complaintId={complaintId} refNo={complaintNumber} className="w-full max-w-xs mb-5 text-left" />
       )}
 
       {hasItems && (
