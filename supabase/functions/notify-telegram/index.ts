@@ -177,6 +177,7 @@ const DOCUMENT_TYPE: Record<string, Labelled> = {
   asset_borrow_request: { emoji: '📦', label: 'ขอยืมพัสดุ/ครุภัณฑ์' },
   patient_transport_request: { emoji: '🚑', label: 'ขออนุเคราะห์รถรับ-ส่งผู้ป่วย' },
   building_permit: { emoji: '🏗️', label: 'ขออนุญาตก่อสร้างบ้าน' },
+  cctv_footage_request: { emoji: '🎥', label: 'ขอภาพจากกล้องวงจรปิด' },
   residence_cert: { emoji: '📄', label: 'ใบรับรองการอยู่อาศัย' },
   personal_cert: { emoji: '📄', label: 'หนังสือรับรองบุคคล' },
 }

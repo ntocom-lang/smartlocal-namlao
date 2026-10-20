@@ -5,6 +5,7 @@ import { useTenant } from '../../contexts/TenantContext'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../../lib/staffRoster'
 import { BASE_DOCUMENT_TYPES, defaultSlaDays, officialsOnlyDocumentTypes, removedDocumentTypes } from '../../lib/documentTypes'
 import { PATIENT_TRANSPORT_TYPE } from '../../lib/patientTransport'
+import { CCTV_RETENTION_KEY, CCTV_RETENTION_MAX, CCTV_RETENTION_MIN, CCTV_TYPE, cctvRetentionDays } from '../../lib/cctvRequest'
 import { logAction } from '../../lib/auditLog'
 import ReferralPartnersCard from './ReferralPartnersCard'
 
@@ -63,6 +64,12 @@ export default function DocumentTypeAssignments({ tenant }) {
   // remount แล้วอ่านค่าใหม่เอง ส่วน patchTenant ตอนบันทึกไม่เปลี่ยน id จึงไม่ remount
   const [customTypes, setCustomTypes] = useState(() => tenant?.fee_schedule?._custom_types || [])
   const [customDirty, setCustomDirty] = useState(false)
+  // กล้องเก็บภาพย้อนหลังกี่วัน (fee_schedule._cctv_retention_days) — ใช้ขึ้นป้ายเร่งคำขอภาพกล้องวงจรปิด
+  // ว่าง = ไม่ได้ตั้ง ระบบไม่โชว์ตัวเลขและไม่ขึ้นป้ายเร่ง (ไม่เดาให้) ตั้งผ่านการ์ดเดียวกับสวิตช์เปิด/ปิดบริการ
+  const [cctvDays, setCctvDays] = useState(() => {
+    const days = cctvRetentionDays(tenant)
+    return days === null ? '' : String(days)
+  })
   // ประเภทที่เคยบันทึกไว้แล้วและถูกกดลบ — เก็บไว้เพื่อตามไปลบแถวผังงานกับคีย์ค่าธรรมเนียมที่ค้าง
   // อยู่ตอนกดบันทึก ไม่งั้นเหลือแถวขยะที่ไม่มี UI ไหนมองเห็นอีกเลย
   const [removedCustom, setRemovedCustom] = useState([])
@@ -208,6 +215,10 @@ export default function DocumentTypeAssignments({ tenant }) {
         const fee_schedule = { ...(fresh?.fee_schedule || {}) }
         removedCustom.forEach(v => { delete fee_schedule[v] })
         fee_schedule._custom_types = customTypes
+        // ตัวเลขนอกช่วง/ไม่ใช่จำนวนเต็มถือว่าไม่ได้ตั้ง (เหมือนตัวอ่านฝั่งแสดงผล) ไม่ปัดเป็นค่าใกล้เคียงให้เงียบๆ
+        const nextCctvDays = cctvRetentionDays({ fee_schedule: { [CCTV_RETENTION_KEY]: cctvDays } })
+        if (nextCctvDays === null) delete fee_schedule[CCTV_RETENTION_KEY]
+        else fee_schedule[CCTV_RETENTION_KEY] = nextCctvDays
         // เขียนทับทั้งชุดเสมอ (ไม่ merge กับค่าที่อ่านมา) เพราะการเปิดกลับคือการเอาชื่อออกจากลิสต์นี้
         if (disabledTypes.length > 0) fee_schedule._removed_types = disabledTypes
         else delete fee_schedule._removed_types
@@ -235,6 +246,26 @@ export default function DocumentTypeAssignments({ tenant }) {
             resourceLabel: docTypes.find(t => t.value === value)?.label ?? value,
             municipalityId,
             metadata: { value, from: was ? 'officials' : 'public', to: now ? 'officials' : 'public' },
+          })
+        }
+
+        // ร่องรอยการเปิด/ปิดบริการ "ขอภาพกล้องวงจรปิด" และการเปลี่ยนรอบเก็บภาพ — บริการนี้เปิดเผยภาพของบุคคล
+        // ต้องตรวจย้อนได้ว่าใครเปิดเมื่อไร (สวิตช์ของประเภทอื่นไม่ลงร่องรอยมาแต่เดิม ไม่แตะ)
+        const cctvWasOn = !removedDocumentTypes({ fee_schedule: fresh?.fee_schedule }).includes(CCTV_TYPE)
+        const cctvNowOn = !disabledTypes.includes(CCTV_TYPE)
+        if (cctvWasOn !== cctvNowOn) {
+          logAction({
+            action: cctvNowOn ? 'enable_service' : 'disable_service',
+            resourceType: 'document_type', resourceId: CCTV_TYPE, resourceLabel: 'ขอภาพจากกล้องวงจรปิด',
+            municipalityId, metadata: { value: CCTV_TYPE },
+          })
+        }
+        const cctvDaysBefore = cctvRetentionDays({ fee_schedule: fresh?.fee_schedule })
+        if (cctvDaysBefore !== nextCctvDays) {
+          logAction({
+            action: 'update_cctv_retention',
+            resourceType: 'document_type', resourceId: CCTV_TYPE, resourceLabel: 'ขอภาพจากกล้องวงจรปิด',
+            municipalityId, metadata: { from: cctvDaysBefore, to: nextCctvDays },
           })
         }
 
@@ -375,6 +406,19 @@ export default function DocumentTypeAssignments({ tenant }) {
                             </span>
                           )}
                         </div>
+                        {value === CCTV_TYPE && (
+                          <label className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-gray-500">
+                            กล้องเก็บภาพย้อนหลัง
+                            <input type="number" min={CCTV_RETENTION_MIN} max={CCTV_RETENTION_MAX} disabled={!enabled}
+                              value={cctvDays} placeholder="ไม่ระบุ"
+                              onChange={e => { setCctvDays(e.target.value); setCustomDirty(true) }}
+                              aria-label="กล้องเก็บภาพย้อนหลังกี่วัน"
+                              className={'w-20 text-right text-xs text-gray-900 bg-white border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-300 '
+                                + (enabled ? '' : 'opacity-50 bg-gray-50')} />
+                            วัน
+                            <span className="basis-full text-[10px] text-gray-400">เว้นว่างได้ — ระบบจะไม่ขึ้นป้ายเร่งและไม่บอกตัวเลขกับประชาชน (ต้องเปิดบริการและยืนยันนโยบายกับ DPO ก่อน)</span>
+                          </label>
+                        )}
                       </td>
                       {/* ช่องผังงานของแถวที่ปิดอยู่ล็อกไว้ ค่าที่ตั้งไว้ยังอยู่ครบและกลับมาแก้ได้
                           ทันทีที่เปิดใหม่ — กันเจ้าหน้าที่เสียเวลาตั้งผู้รับผิดชอบให้บริการที่ปิดอยู่ */}

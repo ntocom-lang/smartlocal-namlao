@@ -28,6 +28,10 @@ export const BASE_DOCUMENT_TYPES = [
   { value: 'asset_borrow_request',     label: '📦 ขอยืมพัสดุ/ครุภัณฑ์' },
   { value: 'patient_transport_request', label: '🚑 ขออนุเคราะห์รถรับ-ส่งผู้ป่วย' },
   { value: 'building_permit',          label: '🏗️ ขออนุญาตก่อสร้างบ้าน' },
+  // ปิดเป็นค่าเริ่มต้นทุก อปท. (20261021100000 เติมไว้ใน _removed_types) — แอดมินกดสวิตช์เปิดเองหลังตัดสินนโยบาย
+  // ต้องล็อกอินยื่นเท่านั้น (ด่านจริงอยู่ที่ guard_cctv_footage_request) · ห้ามใช้ฟอร์มทั่วไป: รายละเอียดเหตุการณ์อยู่ใน
+  // permit_form_data ผ่าน CctvRequestWizard · ไม่มีหนังสือรับรอง (ดู NO_CERTIFICATE_DOC_TYPES ใน StaffDashboard)
+  { value: 'cctv_footage_request',     label: '🎥 ขอภาพจากกล้องวงจรปิด' },
 ]
 
 // คีย์โมดูลงานประปาใน municipalities.enabled_modules — อปท. ที่อยู่ในเขต กปภ. หรือไม่มีกิจการ
@@ -158,6 +162,9 @@ export const DEFAULT_SLA_DAYS = {
   patient_transport_request: 2,
   // ตรวจแบบแปลน/ตรวจพื้นที่จริงก่อนออกใบอนุญาต
   building_permit: 15,
+  // ภาพกล้องถูกบันทึกทับตามรอบของเครื่อง งานช้าคือภาพหาย จึงตั้งสั้นกว่าใบอื่น
+  // ⚠️ เป็นค่าที่ระบบใช้เตือนเจ้าหน้าที่ ไม่ใช่คำมั่นว่าจะได้ภาพ (ค่าจริงใช้ผังงานของ อปท. ถ้าตั้งไว้ ไม่งั้นฐานข้อมูลใช้ 3 วัน)
+  cctv_footage_request: 2,
 }
 export const FALLBACK_SLA_DAYS = 3
 
