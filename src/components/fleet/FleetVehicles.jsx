@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Plus, X, Pencil, AlertTriangle, Upload, Car, Tag } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import FleetImportModal from './FleetImportModal'
@@ -6,6 +6,7 @@ import FleetVehicleDetail from './FleetVehicleDetail'
 import FleetEmptyState from './FleetEmptyState'
 import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
+import { custodianSuggestions } from '../../lib/fleetCustodianRegisterPrint'
 import {
   ASSET_KIND_LABEL,
   ASSET_KIND_OPTIONS,
@@ -38,6 +39,7 @@ const EMPTY = {
   efficiency_min:'', efficiency_max:'', fuel_rate_standard_kml:'',
   insurance_expiry:'', act_expiry:'', registration_expiry:'', inspection_expiry:'',
   regulation_category:'central', engine_cc:'', purchase_price:'', acquired_date:'', disposed_date:'',
+  custodian_department_id:'', custodian_name:'', custodian_position:'',
 }
 
 // ประเภทตามระเบียบ มท. ยานพาหนะ อปท. 2569 ข้อ 7 — เลือกว่ารถอยู่ทะเบียนแบบ 1 หรือแบบ 2
@@ -199,6 +201,9 @@ const auditSnapshot = v => v ? {
   // ข้อมูลทะเบียนแบบ 1/2 — ราคา/วันได้มา/วันจำหน่ายเป็นหลักฐานทรัพย์สิน แก้แล้วต้องเห็นว่าใครแก้
   regulation_category: v.regulation_category, manufacture_year: v.manufacture_year, engine_cc: v.engine_cc,
   purchase_price: v.purchase_price, acquired_date: v.acquired_date, disposed_date: v.disposed_date,
+  // ทะเบียนคุมยานพาหนะส่วนกลาง — ผู้รับผิดชอบตามคำสั่ง อปท. เปลี่ยนแล้วต้องเห็นว่าใครแก้
+  custodian_department_id: v.custodian_department_id, custodian_name: v.custodian_name,
+  custodian_position: v.custodian_position,
 } : null
 
 export default function FleetVehicles({ tenant, depts, isAdmin }) {
@@ -284,11 +289,24 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
       registration_expiry: v.registration_expiry ?? '', inspection_expiry: v.inspection_expiry ?? '',
       regulation_category: v.regulation_category ?? 'central', engine_cc: v.engine_cc ?? '',
       purchase_price: v.purchase_price ?? '', acquired_date: v.acquired_date ?? '', disposed_date: v.disposed_date ?? '',
+      custodian_department_id: v.custodian_department_id ?? '',
+      custodian_name: v.custodian_name ?? '', custodian_position: v.custodian_position ?? '',
     })
     setModal(v)
   }
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
+
+  // คนเดียวดูแลหลายคัน: เลือกชื่อที่เคยกรอกไว้แล้วตำแหน่งขึ้นให้เอง (เฉพาะเมื่อช่องตำแหน่งยังว่าง
+  // ไม่เขียนทับสิ่งที่พิมพ์ไว้แล้ว) พิมพ์ชื่อใหม่ก็ได้ ไม่ต้องอยู่ในรายการ
+  const custodianList = useMemo(() => custodianSuggestions(vehicles), [vehicles])
+  const setCustodianName = e => {
+    const name = e.target.value
+    setForm(f => {
+      const known = custodianList.find(item => item.name === name.trim())
+      return { ...f, custodian_name: name, custodian_position: f.custodian_position || known?.position || '' }
+    })
+  }
 
   // ติ๊ก "ใช้ร่วมกันทุกกอง" แล้วต้องล้างกองทิ้งด้วย ไม่งั้นจะได้รถกลางที่ยังผูกกองค้างไว้
   // ซึ่งไม่กระทบสิทธิ์ (is_pool ชนะใน fleet_can_read_asset) แต่ป้ายในตารางกับตัวกรองจะแสดงผิด
@@ -341,6 +359,10 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
       purchase_price: price,
       acquired_date: form.acquired_date || null,
       disposed_date: form.disposed_date || null,
+      // ช่องว่าง = null (ไม่ใช่ '' — คอลัมน์ uuid รับสตริงว่างไม่ได้ และ CHECK ของชื่อ/ตำแหน่งห้ามว่าง)
+      custodian_department_id: form.custodian_department_id || null,
+      custodian_name: form.custodian_name.trim() || null,
+      custodian_position: form.custodian_position.trim() || null,
       tank_capacity:    form.tank_capacity    || null,
       odometer_initial: Number(form.odometer_initial) || 0,
       department_id:    form.department_id    || null,
@@ -811,6 +833,41 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                       <input type="date" value={form.disposed_date} onChange={set('disposed_date')} className={inp} />
                     </div>
                   )}
+                </div>
+              </div>}
+
+              {/* ทะเบียนคุมยานพาหนะส่วนกลาง (เอกสารแนบท้ายคำสั่ง อปท.) — ผู้ครอบครอง/ผู้รับผิดชอบตามคำสั่ง
+                  คนละเรื่องกับ "กอง/หน่วยงาน" ด้านบนซึ่งคือใครเบิกใช้ได้ (รถใช้ร่วมทุกกองก็ยังมีผู้ครอบครอง)
+                  ระบบไม่เดาผู้รับผิดชอบจากผู้ขับ — การมอบหมายเป็นคำสั่งผู้บริหาร กรอกตามคำสั่งเท่านั้น
+                  รถประจำตำแหน่ง (แบบ 1) ไม่อยู่ในทะเบียนนี้ จึงไม่แสดงช่อง */}
+              {isVehicleAsset(form) && form.regulation_category !== 'position' && <div className="border-t border-gray-100 pt-4 space-y-3">
+                <div>
+                  <p className="text-xs font-bold text-gray-600">👤 ผู้ครอบครอง / ผู้รับผิดชอบ (ตามคำสั่ง)</p>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    ใช้พิมพ์ "ทะเบียนคุมยานพาหนะส่วนกลาง" ในแท็บรายงาน กรอกตามคำสั่งของ อปท. ครั้งเดียวต่อคัน ไม่กรอกก็บันทึกได้
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">หน่วยงานผู้ครอบครอง</label>
+                    <select value={form.custodian_department_id} onChange={set('custodian_department_id')} className={sel}>
+                      <option value="">— ยังไม่ระบุ —</option>
+                      {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อผู้รับผิดชอบ</label>
+                    <input list="fleet-custodian-names" value={form.custodian_name} onChange={setCustodianName}
+                      maxLength={200} placeholder="เช่น นายสมชาย ใจดี" className={inp} />
+                    <datalist id="fleet-custodian-names">
+                      {custodianList.map(item => <option key={item.name} value={item.name} />)}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่ง</label>
+                    <input value={form.custodian_position} onChange={set('custodian_position')}
+                      maxLength={200} placeholder="เช่น พนักงานขับรถยนต์" className={inp} />
+                  </div>
                 </div>
               </div>}
 
