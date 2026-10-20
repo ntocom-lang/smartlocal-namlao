@@ -34,6 +34,13 @@ export default function LeafletMapPicker({
   const debounceTimerRef = useRef(null)
 
   const [locating, setLocating] = useState(false)
+  // มุมมองแผนที่ที่ผู้ใช้เลือกเอง — เก็บเป็น state ตรงนี้เพราะ LeafletMapCanvas จงใจไม่มีปุ่มสลับในตัว
+  // (มันอ่าน mapTypeId จาก prop ตรงๆ ไม่เก็บ state ซ้ำ) เจ้าของหน้าจอจึงต้องถือค่านี้เอง
+  //
+  // ทำไมต้องมี: ภาพดาวเทียมเห็นหลังคาบ้านแต่ไม่มีชื่อถนน/ซอย คนที่จำบ้านตัวเองจากหลังคาไม่ได้
+  // (บ้านเช่า ตึกแถว แปลงเปล่า) จะหาจุดไม่เจอเลย แผนที่ถนนมีชื่อซอยให้ไล่แทน
+  // ตั้งต้นที่ดาวเทียมเหมือนเดิม เพราะคนส่วนใหญ่ชี้จากภาพถ่ายได้เร็วกว่า
+  const [mapTypeId, setMapTypeId] = useState('hybrid')
   const [searchQuery, setSearchQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [searchResults, setSearchResults] = useState([])
@@ -312,7 +319,7 @@ export default function LeafletMapPicker({
         <LeafletMapCanvas
           center={viewCenter}
           zoom={zoom}
-          mapTypeId="hybrid"
+          mapTypeId={mapTypeId}
           boundaryGeoJson={showBoundary ? undefined : false}
           className={isModal ? 'w-full h-full min-h-[360px]' : mapClassName}
           onMapClick={readOnly ? undefined : (point) => {
@@ -322,6 +329,23 @@ export default function LeafletMapPicker({
           onMapReady={handleMapReady}
           markers={(readOnly || !fixedCenterPin) && validPoint(selected) ? [{ id: 'selected-location', position: selected, color: '#ef4444', scale: 17, title: 'ตำแหน่งที่เลือก' }] : []}
         />
+
+        {/* แถบสลับมุมมอง — มุมซ้ายบนเป็นที่ว่างเพียงจุดเดียวของแผนที่: ขวาบนมีปุ่มขยายเต็มจอของ
+            InlineMapPicker · ซ้ายล่างมีปุ่มตำแหน่งของฉัน · ขวาล่างมีปุ่มซูมกับบรรทัดเครดิตแผนที่
+            วางเป็น 2 ปุ่มติดกันแทน dropdown เพราะมีแค่ 2 ตัวเลือก กดครั้งเดียวจบ ไม่ต้องเปิดเมนู */}
+        <div className="absolute left-3 top-3 z-10 flex overflow-hidden rounded-xl border border-gray-200 bg-white/95 text-xs font-bold shadow-lg backdrop-blur">
+          {[['hybrid', 'ดาวเทียม'], ['roadmap', 'แผนที่ถนน']].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setMapTypeId(id)}
+              aria-pressed={mapTypeId === id}
+              className={`px-3 py-2 transition-colors ${mapTypeId === id ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
         {/* GPS Locate Button + overlayAction — กล่องครอบไม่รับคลิก ช่องว่างระหว่างปุ่มจึงยังลากแผนที่ได้
             เว้นขวา 3.5rem ไว้ให้ปุ่มซูม +/− มุมขวาล่าง ถ้าจอแคบจนล้นให้ขึ้นแถวใหม่ด้านบน (wrap-reverse) ไม่ลงไปทับ attribution */}
