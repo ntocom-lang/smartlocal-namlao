@@ -107,7 +107,7 @@ async function run(page, record) {
   await clickOrFail(page.getByRole('button', { name: /กลิ่นเหม็น/ }).first(), 'หมวดกลิ่นเหม็นรบกวน', 4_000)
 
   // ปิดเลเยอร์ของศูนย์ข้อมูลดิจิทัลที่ทับหมุดคำร้องอยู่ (ดูกับดักข้อ 2 ที่หัวไฟล์)
-  const layerToggle = page.locator('.absolute.right-3.top-3 button').first()
+  const layerToggle = page.locator('[data-map-float-buttons] button, .absolute.right-3.top-3 button').first()
   if (await layerToggle.isVisible().catch(() => false)) { await layerToggle.click(); await wait(page, 2_500) }
 
   // ซูมออกเพื่อให้หมุดที่ซ้อนกันแยกออกเป็นหลายกลุ่ม (กับดักข้อ 3)

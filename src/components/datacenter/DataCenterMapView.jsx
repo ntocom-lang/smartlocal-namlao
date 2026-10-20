@@ -1064,64 +1064,64 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
           {/* ตำแหน่งของฉัน: ปุ่มเดี่ยวมุมซ้ายบน แยกจากกลุ่มปุ่มขวา — ถ้าอยู่ในกลุ่มขวา ปุ่มที่ 3 ทำให้แถวปุ่มตกบรรทัดที่สองบนมือถือ
               แล้วการ์ดสถานที่ (top-16) ลอยทับปุ่ม · ไอคอนเป้าเล็ง = สัญลักษณ์มาตรฐานของแผนที่ทุกแอป (ไม่ต้องมีข้อความกำกับ) · ไม่อยู่ในกลุ่มขวา
               ปุ่มแรกของกลุ่มนั้นจึงยังเป็นปุ่มเดิมเสมอ (tests/map-click กดปุ่มแรก) */}
-          <div className="absolute left-3 top-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-col items-start gap-2">
-            {/* แถวบนสุดของแผนที่: ปุ่มตำแหน่งของฉัน + สลับมุมมอง [ดาวเทียม | แผนที่ถนน] (เจ้าของระบบสั่งให้ขึ้นมาอยู่บนสุด เดิมอยู่ใต้ปุ่มตำแหน่ง)
-                ตั้งแต่ sm (640px) ขึ้นไปวางข้างกันในแถวเดียว · จอแคบกว่านั้นยังซ้อนกันเหมือนเดิม เพราะแถวบนเต็มด้วยปุ่มขวาบน
-                (วัดบน production: น้ำเลา 360/390px ปุ่มขวาเริ่มที่ x=115/145 ส่วนแถบสลับกว้าง 159px จบที่ x=171 ถ้าวางแถวเดียวจะทับกัน)
-                ไม่ใช้แถวปุ่มขวาบน: ฝั่งเจ้าหน้าที่เป็นไอคอนเรียงแถวเดียวไม่ตัดบรรทัด ใส่แถบกว้างเพิ่มแล้วล้นจอมือถือ
-                แถวปุ่มขวาบนฝั่งประชาชน (ป้ายชื่อตัดบรรทัดได้) จำกัดความกว้างที่ sm ขึ้นไปให้เหลือที่ซ้าย 16rem ปุ่มหลายตัวจะตัดลงแถวสองแทนการวิ่งไปทับแถบสลับ
-                กล่องของแถวปุ่มขวา pointer-events-none (ปุ่มแต่ละตัวเปิดรับเอง): ตัดบรรทัดแล้วกล่องกว้างครอบพื้นที่ว่างฝั่งซ้ายด้วย (ปุ่ม 3 ตัวที่ 360px) บังการกดแถบสลับที่อยู่ใต้ */}
-            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-              <button type="button" onClick={toggleLocate} aria-pressed={Boolean(myPos)} disabled={locating}
-                aria-label={`${myPos ? 'ซ่อน' : 'แสดง'}ตำแหน่งของฉัน`} title="ตำแหน่งของฉัน"
-                className="flex size-11 shrink-0 items-center justify-center rounded-full border shadow-md transition-all active:scale-95 disabled:opacity-70"
-                style={myPos
-                  ? { backgroundColor: '#2563eb', borderColor: '#2563eb', color: '#ffffff' }
-                  : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: '#2563eb' }}>
-                {locating ? <Loader2 size={20} className="animate-spin" /> : <LocateFixed size={20} />}
-              </button>
-              {/* จอแคบ (<sm) แถบอยู่แถวสอง: การ์ด (หมุด/วงรัศมี/ผู้ได้รับผลกระทบ — ทั้ง 3 ใบวางที่ top-16 เหมือนกัน) ที่ขึ้นมาจะบังแถบนี้ จึงซ่อนไว้ชั่วคราว
-                  (invisible ไม่ใช่ hidden: ยังกินที่เท่าเดิม ปุ่มอื่นในคอลัมน์ไม่ขยับ · ไม่ซ่อนแล้วขอบน้ำเงินของแถบจะโผล่พ้นขอบการ์ด)
-                  ตั้งแต่ sm ขึ้นไปแถบอยู่แถวบน (y < 64px) การ์ดที่ top-16 ไม่ถึง จึงไม่ต้องซ่อน · บน PC การ์ดอยู่ล่างกลางจอ ไม่ชนอยู่แล้ว */}
-              <MapTypeToggle value={mapTypeId} onChange={setMapTypeId}
-                className={selectedEntry || selectedZone || selectedAffected ? 'max-sm:invisible' : ''} />
+          {/* แถวปุ่มบนสุดของแผนที่ (เจ้าของระบบสั่ง: ปุ่มสลับ ดาวเทียม/แผนที่ถนน ต้องอยู่แถวบนสุด ทั้ง PC และมือถือ)
+              ซ้าย = ปุ่มตำแหน่งของฉัน + สลับมุมมอง · ขวา = ปุ่มลอย (เส้นทางถนน/กล้อง/ชื่อสถานที่ ฯลฯ)
+              ตั้งแต่ sm (640px): ปุ่มซ้ายชิดซ้าย กลุ่มปุ่มขวา absolute ชิดขวา เหมือนเดิม — ป้ายชื่อตัดบรรทัดลงแถวสองได้ แต่จำกัดความกว้างไม่ให้วิ่งไปทับแถบสลับ
+              จอแคบ (<sm): วางเรียงในแถวเดียว เลื่อนแนวนอนได้ แทนการตัดบรรทัด — ปุ่มขวาของประชาชนมีป้ายชื่อถาวรและมีได้หลายตัว (น้ำเลา 2 · เพิ่มกล้องเป็น 3)
+              กว้างรวมกับแถบสลับ 159px เกินจอ 360–390px ถ้าตัดบรรทัดจะลงแถวสองซึ่งการ์ดสถานที่ (top-16) ลอยทับ · แถวเดียวสูงไม่เกิน 56px การ์ดจึงไม่ทับ ไม่ต้องซ่อนแถบอีก
+              ตัวเลื่อนเป็น pointer-events-none ให้พื้นที่ว่างระหว่างปุ่มยังลากแผนที่ได้ (ปุ่มแต่ละตัวเปิดรับเอง) · ซ่อนแถบเลื่อน ปุ่มที่โผล่ครึ่งตัวขอบขวาบอกว่ายังเลื่อนต่อได้
+              pb-10 (<sm) เผื่อที่ให้ป้ายชื่อใต้ปุ่มไอคอนของเจ้าหน้าที่ ตัวเลื่อนตัดส่วนที่ล้นทิ้ง ไม่เผื่อแล้วป้ายที่ขึ้นตอนแตะปุ่มจะขาดครึ่ง */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start gap-2 overflow-x-auto px-3 pb-10 pt-3 [scrollbar-width:none] sm:overflow-visible sm:pb-0 [&::-webkit-scrollbar]:hidden">
+            <div className="pointer-events-auto flex shrink-0 flex-col items-start gap-2">
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={toggleLocate} aria-pressed={Boolean(myPos)} disabled={locating}
+                  aria-label={`${myPos ? 'ซ่อน' : 'แสดง'}ตำแหน่งของฉัน`} title="ตำแหน่งของฉัน"
+                  className="flex size-11 shrink-0 items-center justify-center rounded-full border shadow-md transition-all active:scale-95 disabled:opacity-70"
+                  style={myPos
+                    ? { backgroundColor: '#2563eb', borderColor: '#2563eb', color: '#ffffff' }
+                    : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: '#2563eb' }}>
+                  {locating ? <Loader2 size={20} className="animate-spin" /> : <LocateFixed size={20} />}
+                </button>
+                <MapTypeToggle value={mapTypeId} onChange={setMapTypeId} />
+              </div>
+              {locateMsg && (
+                <p role="status" className="rounded-lg bg-gray-800/90 px-3 py-2 text-xs font-semibold text-white shadow-lg">{locateMsg}</p>
+              )}
             </div>
-            {locateMsg && (
-              <p role="status" className="rounded-lg bg-gray-800/90 px-3 py-2 text-xs font-semibold text-white shadow-lg">{locateMsg}</p>
+
+            {mapButtons.length > 0 && (
+              <div data-map-float-buttons
+                className={`flex h-11 shrink-0 items-center gap-2 sm:absolute sm:right-3 sm:top-3 sm:h-auto ${allowStatusFilter ? '' : 'sm:max-w-[calc(100%-16rem)] sm:flex-wrap sm:justify-end'}`}>
+                {mapButtons.map(({ id, label, Icon, icon, on, toggle, onColor = '#1e88c7' }) => (
+                  // group/relative: ให้ป้ายชื่อโผล่ใต้ปุ่มตอน hover/โฟกัสด้วยคีย์บอร์ด — ใช้ป้ายในหน้าเว็บเอง
+                  // ไม่ใช้ title ของเบราว์เซอร์ เพราะมันขึ้นช้า หน้าตาแล้วแต่ OS และแตะบนมือถือไม่ขึ้นเลย
+                  <div key={id} className="pointer-events-auto relative group">
+                    <button type="button" aria-label={`${on ? 'ซ่อน' : 'แสดง'}${label}`} aria-pressed={on}
+                      onClick={toggle}
+                      className={`h-10 rounded-full shadow-md border flex items-center justify-center transition-all active:scale-95 ${allowStatusFilter ? 'w-10' : 'gap-1.5 px-3 text-xs font-semibold'}`}
+                      style={on
+                        ? { backgroundColor: onColor, borderColor: onColor, color: '#ffffff' }
+                        : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: onColor }}>
+                      {/* เส้นทางถนนใช้ไอคอน SVG ในโค้ด ส่วนปุ่มจากกลุ่ม "ปุ่มลอยบนแผนที่" ใช้ไอคอนที่
+                          แอดมินตั้งให้ประเภทย่อยนั้น ซึ่งเป็นได้ทั้งอิโมจิและรูปแนบ (CategoryIcon จัดการให้) */}
+                      {Icon ? <Icon size={20} /> : <span className="text-xl leading-none"><CategoryIcon value={icon} alt="" /></span>}
+                      {/* ประชาชนเห็นชื่อปุ่มเป็นข้อความถาวร — ไอคอนล้วน (เช่นรูปไฟจราจร = เส้นทางถนน) ไม่มีใครรู้ว่าคืออะไร และป้ายตอน hover
+                          ไม่มีบนมือถือ · ฝั่งเจ้าหน้าที่ยังเป็นไอคอนล้วนเหมือนเดิม (เคยชิน + ปุ่มมีหลายตัว) */}
+                      {!allowStatusFilter && <span className="whitespace-nowrap">{label}</span>}
+                    </button>
+                    {/* ป้ายชื่อยึดขอบขวาของปุ่ม (ตามชุดปุ่มที่ย้ายมาอยู่มุมขวาบน) — ถ้ายังยึดซ้ายอยู่
+                        ป้ายของปุ่มขวาสุดจะยื่นทะลุขอบแผนที่ออกไป อ่านไม่ครบ */}
+                    {allowStatusFilter && (
+                      <span aria-hidden="true"
+                        className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-gray-800/90 px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                        {label}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-
-          {mapButtons.length > 0 && (
-            <div className={`pointer-events-none absolute right-3 top-3 z-20 flex items-center gap-2 ${allowStatusFilter ? '' : 'max-w-[calc(100%-4.5rem)] flex-wrap justify-end sm:max-w-[calc(100%-16rem)]'}`}>
-              {mapButtons.map(({ id, label, Icon, icon, on, toggle, onColor = '#1e88c7' }) => (
-                // group/relative: ให้ป้ายชื่อโผล่ใต้ปุ่มตอน hover/โฟกัสด้วยคีย์บอร์ด — ใช้ป้ายในหน้าเว็บเอง
-                // ไม่ใช้ title ของเบราว์เซอร์ เพราะมันขึ้นช้า หน้าตาแล้วแต่ OS และแตะบนมือถือไม่ขึ้นเลย
-                <div key={id} className="pointer-events-auto relative group">
-                  <button type="button" aria-label={`${on ? 'ซ่อน' : 'แสดง'}${label}`} aria-pressed={on}
-                    onClick={toggle}
-                    className={`h-10 rounded-full shadow-md border flex items-center justify-center transition-all active:scale-95 ${allowStatusFilter ? 'w-10' : 'gap-1.5 px-3 text-xs font-semibold'}`}
-                    style={on
-                      ? { backgroundColor: onColor, borderColor: onColor, color: '#ffffff' }
-                      : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: onColor }}>
-                    {/* เส้นทางถนนใช้ไอคอน SVG ในโค้ด ส่วนปุ่มจากกลุ่ม "ปุ่มลอยบนแผนที่" ใช้ไอคอนที่
-                        แอดมินตั้งให้ประเภทย่อยนั้น ซึ่งเป็นได้ทั้งอิโมจิและรูปแนบ (CategoryIcon จัดการให้) */}
-                    {Icon ? <Icon size={20} /> : <span className="text-xl leading-none"><CategoryIcon value={icon} alt="" /></span>}
-                    {/* ประชาชนเห็นชื่อปุ่มเป็นข้อความถาวร — ไอคอนล้วน (เช่นรูปไฟจราจร = เส้นทางถนน) ไม่มีใครรู้ว่าคืออะไร และป้ายตอน hover
-                        ไม่มีบนมือถือ · ฝั่งเจ้าหน้าที่ยังเป็นไอคอนล้วนเหมือนเดิม (เคยชิน + ปุ่มมีหลายตัว) */}
-                    {!allowStatusFilter && <span className="whitespace-nowrap">{label}</span>}
-                  </button>
-                  {/* ป้ายชื่อยึดขอบขวาของปุ่ม (ตามชุดปุ่มที่ย้ายมาอยู่มุมขวาบน) — ถ้ายังยึดซ้ายอยู่
-                      ป้ายของปุ่มขวาสุดจะยื่นทะลุขอบแผนที่ออกไป อ่านไม่ครบ */}
-                  {allowStatusFilter && (
-                    <span aria-hidden="true"
-                      className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-gray-800/90 px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                      {label}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
 
           {/* การ์ดรายละเอียดหมุด — ใบเดียวใช้กับทุกแหล่งข้อมูล เนื้อในเปลี่ยนตาม source_table
               ส่วนที่อ่อนไหว (free-text ของผู้แจ้ง) ถูกกรองที่ RPC ไปแล้วชั้นหนึ่ง และมี canSeeComplaintText
