@@ -65,12 +65,35 @@ for (const thead of html.split('<thead>').slice(1).map(part => part.slice(0, par
 const onlyCentral = buildFleetRegisterHtml({ vehicles: [], forms: ['central'] })
 assert.ok(onlyCentral.includes('แบบ 2') && !onlyCentral.includes('แบบ 1<'), 'เลือกพิมพ์เฉพาะแบบ 2 ไม่ได้')
 
+// ── ปุ่มแยกรายแบบ (เจ้าของระบบสั่ง 2569-10-20): แบบ 1 กับแบบ 2 คนละปุ่ม คนละใบ ─────────────
+const sheetsOf = html => [...html.matchAll(/<section class="sheet" data-form="([a-z]+)"/g)].map(match => match[1])
+assert.deepEqual(sheetsOf(buildFleetRegisterHtml({ vehicles: [], forms: ['position'] })), ['position'],
+  'ปุ่มแบบ 1 ต้องได้แผ่นแบบ 1 อย่างเดียว')
+assert.deepEqual(sheetsOf(onlyCentral), ['central'], 'ปุ่มแบบ 2 ต้องได้แผ่นแบบ 2 อย่างเดียว')
+assert.deepEqual(sheetsOf(buildFleetRegisterHtml({ vehicles: [] })), ['position', 'central'],
+  'ไม่ระบุแบบ = ได้ทั้งคู่ตามลำดับ (ใช้ซ้ำที่อื่นได้)')
+// แบบ 1 เฉพาะรถประจำตำแหน่ง · แบบ 2 เฉพาะส่วนกลาง — ปุ่มแยกแล้วรถต้องไม่ข้ามฝั่ง
+const mixed = [
+  { id: 'p', name: 'รถนายก', license_plate: 'นย 1', regulation_category: 'position', asset_kind: 'vehicle' },
+  { id: 'c', name: 'รถส่วนกลาง', license_plate: 'กก 2', regulation_category: 'central', asset_kind: 'vehicle' },
+]
+const form1Only = buildFleetRegisterHtml({ vehicles: mixed, forms: ['position'] })
+assert.ok(form1Only.includes('รถนายก') && !form1Only.includes('รถส่วนกลาง'), 'แบบ 1 ต้องมีเฉพาะรถประจำตำแหน่ง')
+const form2Only = buildFleetRegisterHtml({ vehicles: mixed, forms: ['central'] })
+assert.ok(form2Only.includes('รถส่วนกลาง') && !form2Only.includes('รถนายก'), 'แบบ 2 ต้องมีเฉพาะรถส่วนกลาง')
+
 // ── หน้าจอต้องส่งข้อมูลครบทุกช่องที่ใบพิมพ์ใช้ ─────────────────────────────────────
 const report = readFileSync('src/components/fleet/FleetReport.jsx', 'utf8')
 for (const column of ['regulation_category', 'engine_cc', 'purchase_price', 'acquired_date', 'disposed_date',
   'manufacture_year', 'brand', 'model', 'is_pool', 'status', 'departments(name)']) {
   assert.ok(report.includes(column), `FleetReport ต้องดึง ${column} ไปพิมพ์ทะเบียน`)
 }
+// ปุ่มต้องแยกสองปุ่ม ส่งแบบที่ต้องการเข้า forms จริง และไม่เหลือปุ่มรวม "แบบ 1 / แบบ 2" ให้กดพิมพ์ทั้งคู่
+assert.ok(report.includes("printRegister('position')") && report.includes("printRegister('central')"),
+  'ต้องมีปุ่มแยกแบบ 1 และแบบ 2')
+assert.ok(/buildFleetRegisterHtml\(\{[^}]*forms:\s*\[form\]/s.test(report), 'ปุ่มต้องส่ง forms: [form] ไม่ใช่พิมพ์ทั้งสองแบบ')
+assert.equal(report.includes('แบบ 1 / แบบ 2 (ทุกคัน)'), false, 'ปุ่มรวมแบบ 1 / แบบ 2 ต้องถูกแทนที่ด้วยปุ่มแยก')
+assert.ok(report.includes('REGISTER_FORMS[form]'), 'ต้องกันค่า form ที่ไม่รู้จัก ไม่ให้พิมพ์ใบเปล่า')
 const vehiclesForm = readFileSync('src/components/fleet/FleetVehicles.jsx', 'utf8')
 for (const column of ['regulation_category', 'engine_cc', 'purchase_price', 'acquired_date', 'disposed_date', 'manufacture_year']) {
   assert.ok(new RegExp(`value=\\{form\\.${column}\\}`).test(vehiclesForm), `ฟอร์มรถต้องมีช่องกรอก ${column}`)

@@ -7,7 +7,7 @@ import { buildFleetForm4Html } from '../../lib/fleetForm4Print'
 import { fuelRecordAmount } from '../../lib/fleetFuelAmount'
 import { buildFleetFuelLedgerHtml } from '../../lib/fleetFuelLedgerPrint'
 import { buildFleetForm6Html } from '../../lib/fleetForm6Print'
-import { buildFleetRegisterHtml } from '../../lib/fleetRegisterPrint'
+import { buildFleetRegisterHtml, REGISTER_FORMS } from '../../lib/fleetRegisterPrint'
 import {
   buildFleetFuelMemoHtml, buildMemoRows, defaultAddressee, memoMonthLabel,
 } from '../../lib/fleetFuelMemoPrint'
@@ -175,7 +175,8 @@ export default function FleetReport({ tenant }) {
   const [printingForm4, setPrintingForm4] = useState(false)
   const [printingLedger, setPrintingLedger] = useState(false)
   const [printingForm6, setPrintingForm6] = useState(false)
-  const [printingRegister, setPrintingRegister] = useState(false)
+  // null | 'position' (แบบ 1) | 'central' (แบบ 2) — จำว่าปุ่มไหนกำลังทำงาน ปุ่มคู่กันล็อกทั้งคู่ระหว่างรอ
+  const [printingRegister, setPrintingRegister] = useState(null)
   const [printingMemo, setPrintingMemo] = useState(false)
   const [memoForm, setMemoForm] = useState(null)
 
@@ -413,9 +414,12 @@ export default function FleetReport({ tenant }) {
   // แบบ 1 / แบบ 2 ทะเบียนยานพาหนะ (ระเบียบ มท. ยานพาหนะ อปท. พ.ศ. ๒๕๖๙ ข้อ ๗) = ทุกคันของ อปท.
   // ไม่ขึ้นกับช่วงเวลา/รถที่เลือกด้านบน — ทะเบียนคือสภาพ ณ วันที่พิมพ์ รวมรถที่จำหน่ายแล้ว
   // ดึงสดตอนกดพิมพ์ (รายการรถด้านบนดึงมาแค่บางคอลัมน์สำหรับตัวกรอง)
-  async function printRegister() {
+  // แยกปุ่มรายแบบ (เจ้าของระบบสั่ง 2569-10-20): form = 'position' พิมพ์แบบ 1 อย่างเดียว · 'central' พิมพ์แบบ 2 อย่างเดียว
+  // แต่ละแบบเป็นคนละหน้าอยู่แล้ว (ตัวสร้างใบขึ้นหน้าใหม่ให้ทุกแบบ) ที่แยกคือไม่ต้องพิมพ์ใบที่ไม่ต้องการทิ้ง
+  async function printRegister(form) {
     if (!tenant?.id) return alert('ไม่พบหน่วยงาน')
-    setPrintingRegister(true)
+    if (!REGISTER_FORMS[form]) return
+    setPrintingRegister(form)
     try {
       const { data, error } = await supabase.from('fleet_vehicles')
         .select('id,name,license_plate,asset_code,asset_kind,brand,model,manufacture_year,engine_cc,fuel_type,is_pool,status,regulation_category,purchase_price,acquired_date,disposed_date,departments(name)')
@@ -425,13 +429,13 @@ export default function FleetReport({ tenant }) {
         return
       }
       openPrintWindow(buildFleetRegisterHtml({
-        vehicles: data ?? [], orgName: tenant?.name ?? '', asOf: todayBangkok(),
+        vehicles: data ?? [], orgName: tenant?.name ?? '', asOf: todayBangkok(), forms: [form],
       }), { width: 1120, height: 760 })
     } catch (err) {
       console.error('[fleet-register] พิมพ์ทะเบียนยานพาหนะไม่สำเร็จ:', err?.message ?? err)
       alert('พิมพ์ไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
     } finally {
-      setPrintingRegister(false)
+      setPrintingRegister(null)
     }
   }
 
@@ -794,9 +798,16 @@ export default function FleetReport({ tenant }) {
             className="w-full md:w-auto px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
             🖨️ พิมพ์บันทึกข้อความสรุปน้ำมัน (ทุกคัน)
           </button>
-          <button onClick={printRegister} disabled={printingRegister}
+          {/* แบบ 1 กับแบบ 2 แยกปุ่ม แยกหน้า — แบบ 1 = รถยนต์ประจำตำแหน่ง · แบบ 2 = ยานพาหนะส่วนกลาง */}
+          <button onClick={() => printRegister('position')} disabled={Boolean(printingRegister)}
+            title="ทะเบียนรถยนต์ประจำตำแหน่ง ทุกคัน ณ วันที่พิมพ์"
             className="w-full md:w-auto px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
-            {printingRegister ? 'กำลังเตรียมทะเบียน...' : '🖨️ พิมพ์ทะเบียนยานพาหนะ แบบ 1 / แบบ 2 (ทุกคัน)'}
+            {printingRegister === 'position' ? 'กำลังเตรียมแบบ 1...' : '🖨️ พิมพ์ทะเบียนรถยนต์ประจำตำแหน่ง แบบ 1'}
+          </button>
+          <button onClick={() => printRegister('central')} disabled={Boolean(printingRegister)}
+            title="ทะเบียนยานพาหนะส่วนกลาง ทุกคัน ณ วันที่พิมพ์"
+            className="w-full md:w-auto px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
+            {printingRegister === 'central' ? 'กำลังเตรียมแบบ 2...' : '🖨️ พิมพ์ทะเบียนยานพาหนะส่วนกลาง แบบ 2'}
           </button>
           <button onClick={resetPeriod}
             className="px-3 py-1.5 text-[11px] font-semibold text-red-500 border border-red-200 rounded-lg hover:bg-red-50">
