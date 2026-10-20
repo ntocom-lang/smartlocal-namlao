@@ -83,7 +83,7 @@ const named = [
   v('b1', { name: 'รถจักรยานยนต์', asset_code: '024 39 0001', custodian_department_id: 'd-eng' }),
 ]
 const html = buildFleetCustodianRegisterHtml({ vehicles: named, departments, tenant, asOf: '2026-10-20' })
-for (const text of ['เอกสารแนบท้ายคำสั่งองค์การบริหารส่วนตำบลทุ่งแค้ว ที่', 'ลงวันที่', 'ทะเบียนคุมยานพาหนะส่วนกลาง',
+for (const text of ['ทะเบียนคุมยานพาหนะส่วนกลาง',
   'องค์การบริหารส่วนตำบลทุ่งแค้ว อำเภอหนองม่วงไข่ จังหวัดแพร่', 'ข้อมูล ณ วันที่ 20/10/2569', 'A4 landscape',
   'ที่อยู่ในครอบครองของ<span class="keep">สำนักปลัด</span> <span class="keep">อบต.ทุ่งแค้ว</span>',
   'ได้แก่ <span class="keep">หัวหน้าสำนักปลัด</span>)', 'ได้แก่ <span class="keep">ผู้อำนวยการกองช่าง</span>)',
@@ -99,9 +99,13 @@ assert.deepEqual([...order].sort((a, b) => a - b), order, 'ลำดับคอ
 // ลำดับเริ่ม 1 ใหม่ทุกกลุ่ม (สำนักปลัด 2 คัน → 1,2 · กองช่าง 1 คัน → 1)
 const numbers = [...html.matchAll(/<tr class="vehicle">\s*<td>(\d+)<\/td>/g)].map(match => Number(match[1]))
 assert.deepEqual(numbers, [1, 2, 1])
-// ตัวใบไม่อ้างเลขข้อของระเบียบ (ที่มาทางระเบียบของเอกสารนี้ยังไม่ยืนยัน) และเลขคำสั่งต้องเป็นเส้นประ ไม่มีเลขจริงติดมา
+// ตัวใบไม่อ้างเลขข้อของระเบียบ (ที่มาทางระเบียบของเอกสารนี้ยังไม่ยืนยัน)
 assert.equal(/ข้อ\s*[0-9๐-๙]/.test(html), false, 'ห้ามอ้างเลขข้อของระเบียบบนใบนี้')
-assert.equal((html.match(/class="fill">&nbsp;<\/span>/g) ?? []).length, 2, 'เลขที่คำสั่งและวันที่คำสั่งต้องเป็นเส้นประให้เขียนมือ')
+// เจ้าของระบบสั่งเอาบรรทัด "เอกสารแนบท้ายคำสั่ง… ที่ … ลงวันที่ …" ออกก่อน (2026-10-20) — หัวใบเริ่มที่ชื่อทะเบียนเลย
+assert.equal(html.includes('เอกสารแนบท้ายคำสั่ง') || html.includes('ลงวันที่') || html.includes('class="fill"'), false,
+  'บรรทัดเลขที่/ลงวันที่ของคำสั่งต้องไม่อยู่บนใบ (เจ้าของระบบสั่งเอาออก)')
+assert.ok(html.indexOf('<h1>') > 0 && html.indexOf('<h1>') < html.indexOf('<p class="place">') && html.indexOf('<p class="place">') < html.indexOf('<table class="register">'),
+  'หัวใบต้องเป็นชื่อทะเบียน แล้วชื่อหน่วยงาน แล้วตาราง')
 // หัวกลุ่มห้ามค้างท้ายหน้า + หัวตารางซ้ำทุกหน้า + ไม่ตัดแถวกลางคัน
 assert.ok(/tr\.group\s*\{[^}]*break-after:\s*avoid/.test(html), 'หัวกลุ่มต้องไม่ค้างท้ายหน้า')
 assert.ok(html.includes('thead { display: table-header-group; }') && /tr\s*\{[^}]*break-inside:\s*avoid/.test(html))
