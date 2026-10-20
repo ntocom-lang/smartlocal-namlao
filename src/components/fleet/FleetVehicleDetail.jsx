@@ -296,10 +296,13 @@ export default function FleetVehicleDetail({
                   sub={`${fmt(Math.round(totals.fuelLiters))} ลิตร · ${fmt(totals.fuelCount)} ครั้ง`} />
                 <KpiCard icon={Wrench} tone="#ef4444" label="ค่าซ่อมบำรุง" value={fmtB(totals.maintCost)}
                   sub={`${fmt(totals.maintCount)} ครั้ง`} />
-                <KpiCard icon={Gauge} tone="#10b981" label="อัตราสิ้นเปลือง"
+                {/* ชื่อการ์ดและบรรทัดวิธีคิดต้องอยู่บนหน้าจอเสมอ (เจ้าของระบบสั่งคืน 2026-10-20 หลัง #499 ตัดทิ้ง)
+                    ตัวเลขนี้คิดแบบ full-to-full ไม่ใช่ระยะทางใบเดินทาง ÷ ลิตรทั้งหมด — คนอ่านต้องเห็นที่มาของตัวเลข
+                    ไม่งั้นเทียบกับหน้าภาพรวมแล้วเข้าใจว่าสองหน้าไม่ตรงกัน (เทสต์ E2E admin-views ข้อ 5 บังคับข้อความนี้) */}
+                <KpiCard icon={Gauge} tone="#10b981" label="อัตราสิ้นเปลืองเฉลี่ย"
                   value={efficiency != null ? efficiency.toFixed(1) : '—'} unit={efficiency != null ? 'กม./ล.' : ''}
-                  sub={efficiency == null ? 'ต้องเติมเต็มถังติดกัน 2 ครั้ง'
-                    : vsStandard ? `อัตราที่กำหนด ${vsStandard.standard} · ${vsStandard.pct}%` : 'ยังไม่ได้ตั้งอัตราที่กำหนด'}>
+                  sub={efficiency == null ? 'ต้องเติมเต็มถังติดกันอย่างน้อย 2 ครั้ง'
+                    : `เฉลี่ยจากการเติมเต็มถัง · ${vsStandard ? `อัตราที่กำหนด ${vsStandard.standard} · ${vsStandard.pct}%` : 'ยังไม่ได้ตั้งอัตราที่กำหนด'}`}>
                   {vsStandard && (
                     <div className="mt-1.5 h-1.5 rounded-full bg-gray-100 overflow-hidden" title={`${vsStandard.pct}% ของอัตราที่กำหนด`}>
                       <div className="h-full rounded-full" style={{

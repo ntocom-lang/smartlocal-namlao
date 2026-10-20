@@ -114,4 +114,15 @@ assert.equal(/fuelCost\s*\/\s*totals\.distance|totals\.fuelCost\s*\/\s*totals\.d
 // เจอจริงตอนเปิดหน้าบนสนามซ้อม: fleet_maintenance ไม่มีคอลัมน์ other_type → คำขอ 400 รายการล่าสุดหายเงียบ
 assert.equal(/fleet_maintenance'\)\.select\([^)]*other_type/.test(ui), false, 'ห้าม select other_type (ไม่มีคอลัมน์นี้)')
 
+// เจ้าของระบบสั่งคืน 2026-10-20: #499 ตัดชื่อการ์ดและบรรทัดวิธีคิดทิ้ง ทำให้เทสต์ E2E admin-views ข้อ 5 ล้ม (CI ไม่ได้รันเทสต์นั้น
+// จึงไม่มีใครเห็น) — เทสต์นี้รันได้โดยไม่ล็อกอิน จึงเฝ้าข้อความเดียวกันไว้ที่นี่ด้วย
+// ข้อความต้องตรงกับที่ tests/fleet-workflow.playwright.mjs (checkAdminViews) ค้นหา
+assert.ok(ui.includes('label="อัตราสิ้นเปลืองเฉลี่ย"'), 'การ์ดอัตราสิ้นเปลืองต้องชื่อ "อัตราสิ้นเปลืองเฉลี่ย"')
+assert.ok(ui.includes('เฉลี่ยจากการเติมเต็มถัง'), 'ต้องบอกวิธีคิดว่าเฉลี่ยจากการเติมเต็มถัง (full-to-full)')
+assert.ok(ui.includes('ต้องเติมเต็มถังติดกันอย่างน้อย 2 ครั้ง'), 'ถ้ายังคำนวณไม่ได้ ต้องบอกเงื่อนไข: เติมเต็มถังติดกันอย่างน้อย 2 ครั้ง')
+const e2e = readFileSync('tests/fleet-workflow.playwright.mjs', 'utf8')
+for (const text of ['อัตราสิ้นเปลืองเฉลี่ย', 'เฉลี่ยจากการเติมเต็มถัง', 'ต้องเติมเต็มถังติดกันอย่างน้อย 2 ครั้ง']) {
+  assert.ok(e2e.includes(text), `เทสต์ E2E ไม่ได้ค้นหา "${text}" แล้ว — ข้อความในหน้าจอกับเทสต์ต้องตรงกัน`)
+}
+
 console.log('fleet vehicle summary assertions passed')
