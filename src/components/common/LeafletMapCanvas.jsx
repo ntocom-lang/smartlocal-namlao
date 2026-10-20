@@ -520,6 +520,11 @@ export default function LeafletMapCanvas({
           fillOpacity: 0.08,
         },
         interactive: false,
+        // แหล่งที่มาของเส้นขอบเขตตำบล (public/boundaries/*.geojson) — ชุด "Thailand - Subnational Administrative
+        // Boundaries" ของ OCHA ต้นทางกรมแผนที่ทหาร สัญญา CC BY-IGO ซึ่งบังคับให้ระบุแหล่งที่มา Leaflet แสดงข้อความนี้
+        // ในแถบเครดิตเฉพาะตอนชั้นนี้ถูกวาดอยู่บนแผนที่จริง (ตรวจแหล่ง/สัญญาจาก HDX API 2569-10-20)
+        // ⚠️ เป็นแนวอ้างอิงเชิงภูมิสารสนเทศ ไม่ใช่แนวเขตตามประกาศจัดตั้ง อปท. ซึ่งเป็นตัวที่มีผลทางกฎหมาย
+        attribution: 'เขตตำบล &copy; OCHA / กรมแผนที่ทหาร (CC BY-IGO)',
       })
       geoLayer.addTo(map)
       geojsonLayerRef.current = geoLayer
