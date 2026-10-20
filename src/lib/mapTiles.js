@@ -20,6 +20,24 @@ const ARCGIS_KEY = import.meta.env.VITE_ARCGIS_API_KEY?.trim() || ''
 const ESRI_ATTRIB = 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
 const OSM_ATTRIB = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors'
 
+// ระดับซูมสูงสุดที่ Esri "มีภาพถ่ายจริง" ในต่างจังหวัดไทย — เกินนี้ Esri ส่งใบสีเทาพิมพ์ว่า
+// "Map data not yet available" กลับมาพร้อม HTTP 200 กลไก fallback ข้างล่างจึงจับไม่ได้
+// (ไม่ใช่ tileerror) ประชาชนที่ซูมเข้าไปเล็งหลังคาบ้านเห็นจอเทาทั้งจอ เข้าใจว่าระบบพัง
+//
+// วัดจริง 2569-10-20 ด้วยการดึง tile มาเทียบ hash กับใบข้างเคียง (ใบ placeholder ซ้ำกันเป๊ะ):
+//   น้ำเลา / ทุ่งแค้ว / ตำหนักธรรม / ตัวเมืองแพร่ → มีภาพถึง z18 เท่านั้น
+//   สยามสแควร์ กทม. → มีภาพถึง z19
+// maxNativeZoom สั่งให้ Leaflet หยุดขอภาพที่ระดับนี้ แล้วขยายใบเดิมแทนเมื่อผู้ใช้ซูมต่อ
+//
+// ยังเปิดให้ซูมถึง maxZoom 19 (ขยาย 1 ระดับ) โดยตั้งใจ — ที่ z18 แผนที่สูง 320px เห็นกว้าง
+// ราว 180 ม. เลื่อนนิ้วนิดเดียวหมุดขยับหลายเมตร อีกระดับช่วยเล็งให้ตรงหลังคาได้ละเอียดขึ้น
+// เท่าตัวทั้งที่เป็นภาพเดิม ไม่ให้เกินนั้นเพราะขยายเกิน 2 เท่าภาพเละจนดูเหมือนระบบพัง
+//
+// ⚠️ แลกมาด้วย: พื้นที่ที่มีภาพจริงถึง z19 (เขตเมืองใหญ่) จะได้ภาพขยายแทนภาพคมที่ระดับนั้น
+//    ยอมรับได้เพราะ อปท. ทั้งหมดอยู่ในแพร่ ถ้าวันหนึ่งขายเข้าเขตเมืองใหญ่ค่อยทำเป็นค่ารายพื้นที่
+//    ห้ามแก้ด้วยการไล่ตรวจเนื้อภาพทุกใบ — เปลืองแรงเครื่องและพังเงียบเมื่อ Esri เปลี่ยนรูปนั้น
+const ESRI_MAX_NATIVE_ZOOM = 18
+
 // เดิมชั้นแผนที่ถนนใช้ CartoDB Voyager — เลิกใช้แล้วเพราะ CARTO เปลี่ยนไปบังคับ API key
 // ทุก tile ที่ได้กลับมาตอนนี้เป็นภาพพิมพ์ทับว่า "API KEY REQUIRED / carto.com/basemaps/apikey"
 // เต็มใบ (ยืนยันด้วยการดึงภาพจริงมาดู: 27 สี ขณะที่ tile ปกติของ OSM มี 163 สี)
@@ -41,14 +59,14 @@ function satelliteSources() {
     sources.push({
       name: 'arcgis-imagery',
       url: `https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}?token=${encodeURIComponent(ARCGIS_KEY)}`,
-      options: { attribution: ESRI_ATTRIB, maxZoom: 19 },
+      options: { attribution: ESRI_ATTRIB, maxZoom: 19, maxNativeZoom: ESRI_MAX_NATIVE_ZOOM },
     })
   }
 
   sources.push({
     name: 'esri-legacy',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    options: { attribution: ESRI_ATTRIB, maxZoom: 19 },
+    options: { attribution: ESRI_ATTRIB, maxZoom: 19, maxNativeZoom: ESRI_MAX_NATIVE_ZOOM },
   })
 
   sources.push({
@@ -92,7 +110,7 @@ export function createHybridLabelLayer() {
   const thaiLabels = {
     name: 'labels-thai',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-    options: { maxZoom: 19 },
+    options: { maxZoom: 19, maxNativeZoom: ESRI_MAX_NATIVE_ZOOM },
   }
 
   if (!ARCGIS_KEY) return createFallbackLayer([thaiLabels])
@@ -102,7 +120,7 @@ export function createHybridLabelLayer() {
     {
       name: 'labels-english-fallback',
       url: `https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1/arcgis/imagery/labels/static/tile/{z}/{y}/{x}?token=${encodeURIComponent(ARCGIS_KEY)}`,
-      options: { maxZoom: 19, tileSize: 512, zoomOffset: -1 },
+      options: { maxZoom: 19, maxNativeZoom: ESRI_MAX_NATIVE_ZOOM, tileSize: 512, zoomOffset: -1 },
     },
   ])
 }
