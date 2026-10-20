@@ -10,6 +10,13 @@ import { thaiDay, bookingTimingAdvice, normalizeBookingPhone, freeTimeChoices, l
 assert.equal(bookingLastDay('2028-02-29'), '2029-02-28')
 assert.equal(bookingLastDay('2026-09-25'), '2027-09-25')
 const day = thaiDay(Date.now() + 10 * 86400000)
+// ⚠️ เทสต์ฟอร์มนี้เคยล้มทุกครั้งที่รันช่วง 07:30–17:30 เวลาไทย (พบ 2026-10-14, พิสูจน์สาเหตุ 2026-10-17, #484 แก้ไม่ครบ ฉากหลักยังล้มที่ #489/#491):
+// ฟอร์มเลือก "วันแรกที่ยังมีเวลานัดเหลือ" เอง = วันนี้ (min_lead_days 0) แล้วกรองเวลาที่ผ่านไปแล้วทิ้งด้วย Date.now() ปุ่มแรกเลยเป็นเวลาถัดจาก
+// นาทีที่รันแทน 08:30/07:30 — ฟอร์มถูกแล้ว (ไม่ควรเสนอเวลาที่ผ่านไปแล้ว) ผิดที่เทสต์ไม่ตรึงวัน/เวลา
+// จึงตรึงสองชั้นให้ทุกฉากที่ตรวจเวลานัด: (1) ส่ง initial.day = วันล่วงหน้า (ที่ harness ด้านล่าง) ฟอร์มไม่เลือก "วันนี้" เอง
+// (2) ตรึงนาฬิกาเบราว์เซอร์เป็นเที่ยงวันนี้ ถ้าวันไหนมีคนถอด initial.day ออก เทสต์ต้องแดง "ทุกชั่วโมง" ไม่ใช่เฉพาะตอนรันกลางวัน
+// (ตรึงเฉพาะ Date ไม่หยุด timer ของหน้า · ฉากปฏิทินโหลดช้า/ล้มเหลวใช้ #hash ไม่ส่ง initial และไม่ตรวจเวลานัด)
+const noonToday = new Date(`${thaiDay(Date.now())}T12:00:00+07:00`)
 const info = { routes: [{ id: 'r', label: 'โรงพยาบาล TEST', minutes: 60 }], office_start: 510, office_end: 990, buffer_minutes: 15, boarding_minutes: 15, min_lead_days: 0, contact_phone: '050000000', privacy_notice: 'TEST ข้อความใช้ข้อมูล', owner_name: 'TEST กองทุน', consent_version: 'patient-booking-v1' }
 assert.equal(normalizeBookingPhone('+66 89-000-0000'), '0890000000')
 assert.equal(normalizeBookingPhone('๐๘๙ ๐๐๐ ๐๐๐๐'), '0890000000')
@@ -53,7 +60,7 @@ const server = await createServer({ configFile: false, envDir: false, server: { 
   load(id) {
     const file = id.replaceAll('\\', '/')
     // onSubmit คืน false = ส่งไม่สำเร็จ (เครือข่ายขัดข้อง) ฟอร์มต้องปิดแผ่นทวนแล้วบอกวิธีแก้
-    if (id === '\0guidance.js') return `import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import Form from '/src/components/patientTransport/BookingForm.jsx'; import Settings from '/src/components/patientTransport/BookingSettings.jsx'; import '/src/index.css'; function App(){const [error,setError]=useState(''); const info=${JSON.stringify(info)}; if(location.search.includes('extended')||location.search.includes('settings'))Object.assign(info,{office_start:450,office_end:1050,routes:[{id:'r',label:'โรงพยาบาล TEST',minutes:30}]}); if(location.search.includes('settings'))return React.createElement(Settings,{workspace:{settings:{...info,coordinator_ids:[],holidays:[]},partners:[],people:[]},busy:false,onSave:()=>{}}); return React.createElement(Form,{tenantId:"test",info,...(location.search.includes('extended')?{initial:{day:${JSON.stringify(day)}}}:{}),onBack:()=>{},onSubmit:()=>{setError('เครือข่ายขัดข้อง');return false},submitError:error})};createRoot(document.getElementById('root')).render(React.createElement(App));`
+    if (id === '\0guidance.js') return `import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import Form from '/src/components/patientTransport/BookingForm.jsx'; import Settings from '/src/components/patientTransport/BookingSettings.jsx'; import '/src/index.css'; function App(){const [error,setError]=useState(''); const info=${JSON.stringify(info)}; if(location.search.includes('extended')||location.search.includes('settings'))Object.assign(info,{office_start:450,office_end:1050,routes:[{id:'r',label:'โรงพยาบาล TEST',minutes:30}]}); if(location.search.includes('settings'))return React.createElement(Settings,{workspace:{settings:{...info,coordinator_ids:[],holidays:[]},partners:[],people:[]},busy:false,onSave:()=>{}}); return React.createElement(Form,{tenantId:"test",info,...(location.hash?{}:{initial:{day:${JSON.stringify(day)}}}),onBack:()=>{},onSubmit:()=>{setError('เครือข่ายขัดข้อง');return false},submitError:error})};createRoot(document.getElementById('root')).render(React.createElement(App));`
     // ปฏิทินสาธารณะ: ทุกวันเปิด รถว่างทั้งวัน · ทะเบียนสถานที่ของหน่วยงาน 2 แห่ง
     if (file.endsWith('/lib/supabase.js')) return `export const supabase={
       rpc:async(name,args)=>{const qs=location.hash;if(name==='patient_booking_calendar'&&qs.includes('calfail'))return{data:null,error:{message:'TEST calendar down'}};if(name==='patient_booking_calendar'&&qs.includes('slowcal'))await new Promise(r=>setTimeout(r,1500));const days=[];const to=new Date(args.p_to+'T12:00:00+07:00').getTime();for(let t=new Date(args.p_from+'T12:00:00+07:00').getTime();t<=to&&days.length<60;t+=86400000){const d=new Date(t+7*3600000).toISOString().slice(0,10);days.push({date:d,status:'open',free:[{start:d+'T03:30:00+07:00',end:d+'T21:30:00+07:00'}],trips:[]})}return {data:{days}}},
@@ -71,6 +78,7 @@ try {
     page.setDefaultTimeout(8000)
     const errors = []; page.on('pageerror', e => { errors.push(e.message); console.error(e.message) })
     await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+    await page.clock.setFixedTime(noonToday)
     await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__guidance`)
     const days = page.getByRole('group', { name: 'วันที่ไปโรงพยาบาล' }).getByRole('button')
     await days.first().waitFor()
@@ -125,12 +133,8 @@ try {
   // 07:30–17:30 คือช่วงเวลานัดแพทย์ตรงตามที่หน่วยงานตั้ง
   const extended = await browser.newPage({ viewport: { width: 390, height: 900 } })
   await extended.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
-  // ⚠️ เทสต์นี้เคยล้มทุกครั้งที่รันช่วง 07:30–17:30 เวลาไทย (พบ 2026-10-14, พิสูจน์สาเหตุ 2026-10-17): ฟอร์มเลือก "วันแรกที่ยังมีเวลานัดเหลือ" เอง
-  // = วันนี้ (min_lead_days 0) แล้วกรองเวลาที่ผ่านไปแล้วทิ้ง (Date.now()) ปุ่มแรกเลยเป็นเวลาถัดจากนาทีที่รันแทน 07:30 — ฟอร์มถูกแล้ว (ไม่ควรเสนอเวลา
-  // ที่ผ่านไปแล้ว) ผิดที่เทสต์ไม่ตรึงวัน จึงส่ง initial.day = วันล่วงหน้าให้ฟอร์ม (ที่ตัวสร้างฟอร์มด้านบน)
-  // และตรึงนาฬิกาเบราว์เซอร์เป็นเที่ยงวันนี้เพิ่มอีกชั้น: ถ้าวันไหนมีคนถอด initial.day ออก เทสต์ต้องแดง "ทุกชั่วโมง" ไม่ใช่เฉพาะตอนรันกลางวัน
-  // (ตรึงเฉพาะ Date ไม่หยุด timer ของหน้า)
-  await extended.clock.setFixedTime(new Date(`${thaiDay(Date.now())}T12:00:00+07:00`))
+  // ตรึงวัน/เวลาเหมือนฉากด้านบน (เหตุผลดูคอมเมนต์ที่ noonToday)
+  await extended.clock.setFixedTime(noonToday)
   await extended.goto(`http://127.0.0.1:${server.httpServer.address().port}/__guidance?extended`)
   const extendedSection = extended.getByRole('region', { name: 'เวลานัดแพทย์' })
   const extendedTimes = extended.getByRole('group', { name: 'เวลานัดแพทย์' }).getByRole('button')
