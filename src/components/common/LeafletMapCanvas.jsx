@@ -46,6 +46,9 @@ export default function LeafletMapCanvas({
   circles = [],
   flyTo = null,
   boundaryGeoJson = null,
+  // 'area' = เส้นประหนา + ระบายสีแดงจาง (ค่าเดิม ผู้เรียกอื่นไม่ต้องแก้อะไร)
+  // 'line' = เส้นประบางไม่ระบายสี — ใช้กับตัวปักหมุด เพราะผู้ใช้ต้องมองหลังคาบ้านใต้เส้น สีที่ทาทับภาพดาวเทียมบังรายละเอียด
+  boundaryStyle = 'area',
   fitBounds = false,
   // ระยะเผื่อของ fitBounds เป็น px: อ็อบเจ็กต์ { top, right, bottom, left } หรือฟังก์ชันที่คืนอ็อบเจ็กต์นั้น (เรียกตอนจะ fit จริง
   // ให้วัดแผงที่ลอยทับแผนที่ ณ ตอนนั้นได้) · ไม่ส่ง = 40 รอบด้านเหมือนเดิมทุกประการ — ผู้เรียกอื่นไม่ต้องแก้อะไร
@@ -512,13 +515,10 @@ export default function LeafletMapCanvas({
 
     try {
       const geoLayer = L.geoJSON(effectiveBoundaryGeoJson, {
-        style: {
-          color: '#dc2626',
-          weight: 3,
-          dashArray: '6, 6',
-          fillColor: '#ef4444',
-          fillOpacity: 0.08,
-        },
+        style: boundaryStyle === 'line'
+          ? { color: '#dc2626', weight: 2, dashArray: '6, 6', fill: false }
+          : { color: '#dc2626', weight: 3, dashArray: '6, 6', fillColor: '#ef4444', fillOpacity: 0.08 },
+        // interactive:false ทำให้คลิก/แตะทะลุเส้นไปถึงแผนที่ — ตัวปักหมุดที่รับ onMapClick จึงยังเลือกจุดได้ปกติแม้แตะบนเส้น
         interactive: false,
         // แหล่งที่มาของเส้นขอบเขตตำบล (public/boundaries/*.geojson) — ชุด "Thailand - Subnational Administrative
         // Boundaries" ของ OCHA ต้นทางกรมแผนที่ทหาร สัญญา CC BY-IGO ซึ่งบังคับให้ระบุแหล่งที่มา Leaflet แสดงข้อความนี้
@@ -531,7 +531,7 @@ export default function LeafletMapCanvas({
     } catch (err) {
       console.warn('[LeafletMapCanvas] Invalid municipality boundary GeoJSON:', err)
     }
-  }, [effectiveBoundaryGeoJson])
+  }, [effectiveBoundaryGeoJson, boundaryStyle])
 
   // 8. ResizeObserver for Auto Map Invalidation
   useEffect(() => {

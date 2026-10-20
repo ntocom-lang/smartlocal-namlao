@@ -19,7 +19,10 @@ export default function LeafletMapPicker({
   readOnly = false,
   modal,
   fixedCenterPin = true,
-  showBoundary = false,
+  // เปิดเป็นค่าเริ่มต้น (เจ้าของระบบอนุมัติ 2569-10-20): ประชาชนต้องเห็นว่าเขต อปท. สิ้นสุดตรงไหนก่อนปักหมุด
+  // ไม่งั้นไม่มีทางรู้ว่าจุดที่ชี้อยู่นอกพื้นที่ให้บริการ — เดิมปิดไว้เพื่อให้จอดาวเทียมสะอาด จึงใช้เส้นบางไม่ระบายสีแทน
+  // ตำบลที่ยังไม่มีไฟล์ขอบเขต (เช่น demo) ไม่ได้เส้น ไม่มี error: canvas ได้ HTML กลับมาแล้ว parse ไม่ผ่านจึงข้ามเงียบๆ
+  showBoundary = true,
   autoLocate = true,
   skipGeolocation = false,
   mapClassName = 'w-full h-80 min-h-[320px]',
@@ -300,6 +303,7 @@ export default function LeafletMapPicker({
           zoom={zoom}
           mapTypeId={mapTypeId}
           boundaryGeoJson={showBoundary ? undefined : false}
+          boundaryStyle="line"
           className={isModal ? 'w-full h-full min-h-[360px]' : mapClassName}
           onMapClick={readOnly ? undefined : (point) => {
             if (mapRef.current) mapRef.current.panTo([point.lat, point.lng])
