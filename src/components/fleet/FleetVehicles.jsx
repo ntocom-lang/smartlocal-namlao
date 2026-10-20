@@ -7,6 +7,7 @@ import FleetEmptyState from './FleetEmptyState'
 import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { custodianSuggestions } from '../../lib/fleetCustodianRegisterPrint'
+import { canCopyInsuranceDate, copyInsuranceDate } from '../../lib/fleetVehicleSummary'
 import {
   ASSET_KIND_LABEL,
   ASSET_KIND_OPTIONS,
@@ -898,6 +899,14 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                       </div>
                     ))}
                   </div>
+                  {/* ปุ่มลดงานกรอก (เจ้าของระบบสั่ง 2026-10-20): ขึ้นเมื่อกรอกประกันภัยแล้วและ พรบ./ทะเบียน ยังว่างอย่างน้อยหนึ่งช่อง
+                      เติมเฉพาะช่องที่ว่าง ไม่เขียนทับ และไม่เติมตรวจสภาพ (เหตุผลดู DOCUMENT_COPY_TO ใน fleetVehicleSummary.js) */}
+                  {canCopyInsuranceDate(form) && (
+                    <button type="button" onClick={() => setForm(f => ({ ...f, ...copyInsuranceDate(f) }))}
+                      className="mt-2 text-xs font-bold text-blue-700 hover:underline">
+                      ใช้วันเดียวกับประกันภัย (พรบ. · ทะเบียน ที่ยังว่าง)
+                    </button>
+                  )}
                   <p className="text-[10px] text-gray-400 mt-1">กรอกเฉพาะฉบับที่มี ฉบับที่เว้นว่างจะไม่ถูกแจ้งเตือน</p>
                 </div>
                 <div>
