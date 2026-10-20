@@ -7,11 +7,12 @@ import SurveyShare from '../survey/SurveyShare'
 import {
   SURVEY_BUSY_MESSAGE, SURVEY_DAY_CHOICES, SURVEY_DEFAULT_DAYS, SURVEY_MANAGE_ERRORS, SURVEY_NOT_A_VOTE_NOTICE,
   SURVEY_OPTIONS_MAX, SURVEY_OPTIONS_MIN, SURVEY_OPTION_MAX, SURVEY_QUESTION_MAX, SURVEY_TEMPLATES,
-  formatSurveyDate, isSurveyBusy, surveyClosesAt, surveyDaysLeft, validateSurveyDraft,
+  formatSurveyDate, isSurveyBusy, surveyClosesAt, surveyDaysLeft, surveyDeleteWarning, validateSurveyDraft,
 } from '../../lib/survey'
 
 // แท็บ "แบบสำรวจ" ในเมนูข่าวสาร/ภาพกิจกรรม — สร้าง ดูผล เปิด-ปิดช่องความเห็น ปิดก่อนกำหนด ลบความเห็น
 // กติกาและสิทธิ์ตัดสินที่ฐานข้อมูล (survey_can_manage: superadmin + admin/officer/staff ของ อปท. นั้น) หน้านี้แค่แสดงผลที่ได้
+// ลบทั้งแบบสำรวจ (ผลโหวต+ความเห็นหายหมด กู้คืนไม่ได้): เฉพาะผู้ดูแล (survey_can_delete) — ปุ่มอยู่ท้ายหน้ารายละเอียด มีขั้นยืนยันบอกจำนวนผู้ตอบ
 // งานของเจ้าหน้าที่มีแค่ "สร้าง" (พิมพ์คำถาม เลือกวัน กดเผยแพร่) — นับคะแนน ปิดเมื่อครบกำหนด ลบความเห็นเก่า ระบบทำเอง
 // ความเห็นไม่มีชื่อ/เวลา/บัญชีผู้พิมพ์ — ปุ่มลบมีไว้ให้เอาข้อความที่ไม่เหมาะสมออก (ยอดโหวตไม่เปลี่ยน)
 
@@ -148,12 +149,13 @@ function SurveyForm({ tenantId, onCancel, onCreated }) {
 }
 
 // ───────────────────────────── รายละเอียด/ผล ─────────────────────────────
-function SurveyDetail({ surveyId, justCreated, onBack }) {
+function SurveyDetail({ surveyId, justCreated, canDelete, onBack, onDeleted }) {
   const [phase, setPhase] = useState('loading') // loading | ready | notfound | error
   const [data, setData] = useState(null)
   const [busy, setBusy] = useState('')
-  const [confirm, setConfirm] = useState('') // '' | 'close' | <ballot id>
+  const [confirm, setConfirm] = useState('') // '' | 'close' | 'delete' | <ballot id>
   const [actionError, setActionError] = useState('')
+  const [deleteError, setDeleteError] = useState('') // แยกจาก actionError: ปุ่มลบอยู่ท้ายหน้า ข้อความที่ด้านบนจะพ้นจอมือถือ
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setPhase('loading')
@@ -175,6 +177,19 @@ function SurveyDetail({ surveyId, justCreated, onBack }) {
     setBusy(''); setConfirm('')
     if (error || !res?.ok) { setActionError(errorText(error, res, 'ทำรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')); if (res?.code === 'not_open') await load(true); return }
     await load(true)
+  }
+
+  // ลบสำเร็จ = แบบสำรวจไม่มีแล้ว ห้าม load ซ้ำ (จะเจอ notfound) — กลับหน้ารายการแทน
+  async function remove() {
+    setBusy('delete'); setDeleteError('')
+    const { data: res, error } = await supabase.rpc('delete_survey', { _survey_id: surveyId })
+    setBusy(''); setConfirm('')
+    if (error || !res?.ok) {
+      setDeleteError(errorText(error, res, 'ลบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'))
+      if (res?.code === 'not_found') await load(true)
+      return
+    }
+    onDeleted()
   }
 
   const open = data?.status === 'open'
@@ -279,6 +294,28 @@ function SurveyDetail({ surveyId, justCreated, onBack }) {
               · ระบบลบความเห็นทิ้งเอง {data.comment_keep_days} วันหลังปิดแบบสำรวจ เหลือแต่ยอดรวม
             </p>
           </section>
+
+          {canDelete && (
+            <section className={`${box} space-y-3`} aria-label="ลบแบบสำรวจ" data-survey-delete>
+              {confirm === 'delete' ? (
+                <>
+                  <p role="alert" data-survey-delete-warning className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-xl px-3 py-2 break-words">
+                    {surveyDeleteWarning({ open, total: data.split.total, comments: data.comments.length })}
+                  </p>
+                  <div className="grid grid-cols-[1fr_auto] gap-2">
+                    <button type="button" disabled={busy === 'delete'} onClick={remove}
+                      className="min-h-[44px] rounded-xl text-sm font-bold text-white bg-red-600 disabled:opacity-40">{busy === 'delete' ? 'กำลังลบ...' : 'ยืนยันลบถาวร'}</button>
+                    <button type="button" disabled={busy === 'delete'} onClick={() => setConfirm('')} className="min-h-[44px] px-4 rounded-xl text-sm font-semibold bg-gray-100 text-gray-600">ยกเลิก</button>
+                  </div>
+                </>
+              ) : (
+                <button type="button" onClick={() => { setDeleteError(''); setConfirm('delete') }}
+                  className="min-h-[44px] w-full inline-flex items-center justify-center gap-1.5 rounded-xl text-sm font-bold border-2 border-red-200 text-red-700 bg-red-50"><Trash2 size={16} /> ลบแบบสำรวจนี้</button>
+              )}
+              {deleteError && <p role="alert" className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">{deleteError}</p>}
+              <p className="text-xs text-gray-500">เฉพาะผู้ดูแลระบบลบได้ · ระบบบันทึกประวัติว่าใครลบเรื่องไหน มีผู้ตอบกี่คน (ไม่เก็บเนื้อความเห็น)</p>
+            </section>
+          )}
         </>
       )}
     </div>
@@ -286,7 +323,7 @@ function SurveyDetail({ surveyId, justCreated, onBack }) {
 }
 
 // ───────────────────────────── รายการ ─────────────────────────────
-function SurveyList({ tenantId, onOpen, onCreate }) {
+function SurveyList({ tenantId, notice, onOpen, onCreate }) {
   const [phase, setPhase] = useState('loading') // loading | ready | error
   const [items, setItems] = useState([])
 
@@ -312,6 +349,7 @@ function SurveyList({ tenantId, onOpen, onCreate }) {
         </button>
       </div>
 
+      {notice && <p role="status" data-survey-notice className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"><CheckCircle2 size={16} className="inline -mt-0.5 mr-1" />{notice}</p>}
       {phase === 'loading' && <div className={`${box} flex items-center justify-center gap-2 py-8 text-sm text-gray-500`} role="status"><Loader2 size={16} className="animate-spin" /> กำลังโหลด...</div>}
       {phase === 'error' && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
@@ -346,17 +384,20 @@ function SurveyList({ tenantId, onOpen, onCreate }) {
   )
 }
 
-export default function SurveyManager() {
+export default function SurveyManager({ canDelete = false }) {
   const { tenant } = useTenant()
   const tenantId = tenant?.id ?? null
-  const [view, setView] = useState({ name: 'list' }) // list | create | detail
+  const [view, setView] = useState({ name: 'list' }) // list (+ notice หลังลบ) | create | detail
 
   if (!tenantId) return null
   if (view.name === 'create') {
     return <SurveyForm tenantId={tenantId} onCancel={() => setView({ name: 'list' })} onCreated={id => setView({ name: 'detail', id, justCreated: true })} />
   }
   if (view.name === 'detail') {
-    return <SurveyDetail key={view.id} surveyId={view.id} justCreated={Boolean(view.justCreated)} onBack={() => setView({ name: 'list' })} />
+    return (
+      <SurveyDetail key={view.id} surveyId={view.id} justCreated={Boolean(view.justCreated)} canDelete={canDelete}
+        onBack={() => setView({ name: 'list' })} onDeleted={() => setView({ name: 'list', notice: 'ลบแบบสำรวจแล้ว' })} />
+    )
   }
-  return <SurveyList tenantId={tenantId} onOpen={id => setView({ name: 'detail', id })} onCreate={() => setView({ name: 'create' })} />
+  return <SurveyList tenantId={tenantId} notice={view.notice} onOpen={id => setView({ name: 'detail', id })} onCreate={() => setView({ name: 'create' })} />
 }

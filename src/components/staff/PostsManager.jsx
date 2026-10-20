@@ -11,6 +11,7 @@ import {
   CheckCircle2, ClipboardList,
 } from 'lucide-react'
 import SurveyManager from './SurveyManager'
+import { SURVEY_DELETE_ROLES } from '../../lib/survey'
 
 const TABS = [
   { key: 'news',     label: 'ข่าวสาร',  Icon: Newspaper },
@@ -264,6 +265,8 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
   const isNews = tab === 'news'
   // แบบสำรวจ: ผู้ที่สร้าง/ปิด/ดูความเห็นได้ (ชุดเดียวกับในฐานข้อมูล survey_can_manage) — ที่เหลือไม่เห็นแท็บนี้
   const canSurvey = ['superadmin', 'admin', 'officer', 'staff'].includes(currentUserRole)
+  // ปุ่มลบแบบสำรวจ: เฉพาะผู้ดูแล (ชุดเดียวกับ survey_can_delete ในฐานข้อมูล) — SurveyManager ไม่รู้จักบัญชีผู้ใช้เอง รับเป็นค่าเข้ามา
+  const canDeleteSurvey = SURVEY_DELETE_ROLES.includes(currentUserRole)
   const canCreate = ['superadmin', 'admin', 'staff'].includes(currentUserRole)
     || (currentUserRole === 'officer' && !!myDepartmentId)
   const canManagePost = (post) => {
@@ -303,7 +306,7 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
         )}
       </div>
 
-      {tab === 'survey' ? <SurveyManager /> : (<>
+      {tab === 'survey' ? <SurveyManager canDelete={canDeleteSurvey} /> : (<>
 
       {currentUserRole === 'officer' && !myDepartmentId && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">

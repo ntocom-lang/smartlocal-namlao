@@ -11,9 +11,9 @@ import { fileURLToPath } from 'node:url'
 import {
   SURVEY_BUSY_MESSAGE, SURVEY_COMMENT_KEEP_DAYS, SURVEY_COMMENT_MAX, SURVEY_DAY_CHOICES, SURVEY_DEFAULT_DAYS, SURVEY_HOME_RECENT_DAYS,
   SURVEY_MANAGE_ERRORS, SURVEY_MAX_DAYS, SURVEY_MAX_OPEN, SURVEY_NOT_A_VOTE_NOTICE, SURVEY_OPTIONS_MAX, SURVEY_OPTIONS_MIN, SURVEY_OPTION_MAX,
-  SURVEY_QUESTION_MAX, SURVEY_QUESTION_MIN, SURVEY_TEMPLATES, SURVEY_VOTE_ERRORS,
+  SURVEY_DELETE_ROLES, SURVEY_QUESTION_MAX, SURVEY_QUESTION_MIN, SURVEY_TEMPLATES, SURVEY_VOTE_ERRORS,
   formatSurveyDate, isSurveyBusy, isSurveyId, pickSurveyForHome, recallMyAnswer, rememberMyAnswer, surveyClosesAt, surveyDaysLeft,
-  surveyPath, surveyPercent, surveyShareText, surveyThanksText, validateSurveyDraft,
+  surveyDeleteWarning, surveyPath, surveyPercent, surveyShareText, surveyThanksText, validateSurveyDraft,
 } from '../src/lib/survey.js'
 import { OFFICIAL_ROLES } from '../src/lib/serviceAudience.js'
 import { moduleForPath } from '../src/lib/staffModules.js'
@@ -30,6 +30,9 @@ const test = async (label, run) => {
 
 const tablesSql = await read('supabase/migrations/20261020170000_community_survey_tables.sql')
 const functionsSql = await read('supabase/migrations/20261020170100_community_survey_functions.sql')
+// ลบแบบสำรวจ (20261021110000) แยกไฟล์ — sqlFunction() ค้นทั้งสองไฟล์
+const deleteSql = await read('supabase/migrations/20261021110000_survey_delete.sql')
+const allFunctionsSql = functionsSql + '\n' + deleteSql
 const surveySources = {
   'src/lib/survey.js': await read('src/lib/survey.js'),
   'src/pages/SurveyPage.jsx': await read('src/pages/SurveyPage.jsx'),
@@ -43,9 +46,9 @@ const surveySources = {
 
 // ฟังก์ชันหนึ่งตัวในไฟล์ SQL: คืนข้อความตั้งแต่ CREATE ถึง $$; (หรือถึงท้ายถ้ามีตัวเดียวสั้นๆ)
 const sqlFunction = (name) => {
-  const start = functionsSql.search(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${name}\\(`))
+  const start = allFunctionsSql.search(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${name}\\(`))
   assert.ok(start >= 0, `ไม่พบฟังก์ชัน ${name} ใน SQL`)
-  const rest = functionsSql.slice(start)
+  const rest = allFunctionsSql.slice(start)
   const end = rest.search(/\n\$\$;/)
   assert.ok(end > 0, `หาที่ปิด $$; ของ ${name} ไม่เจอ`)
   return rest.slice(0, end)
@@ -172,7 +175,7 @@ await test('pickSurveyForHome: ที่ยังไม่ตอบก่อน 
 await test('ข้อความ: ทุกรหัสผลลัพธ์ที่ฐานข้อมูลคืนมีข้อความไทยรองรับ · PT429 แยกจากข้อผิดพลาดอื่น', () => {
   const codes = fn => [...sqlFunction(fn).matchAll(/'code',\s*'([a-z_]+)'/g)].map(m => m[1])
   for (const code of new Set(codes('cast_survey_vote'))) assert.ok(SURVEY_VOTE_ERRORS[code], `cast_survey_vote คืน ${code} แต่หน้าเว็บไม่มีข้อความ`)
-  const manage = new Set(['create_survey', 'close_survey_early', 'set_survey_comment_enabled', 'delete_survey_comment'].flatMap(codes))
+  const manage = new Set(['create_survey', 'close_survey_early', 'set_survey_comment_enabled', 'delete_survey_comment', 'delete_survey'].flatMap(codes))
   for (const code of manage) assert.ok(SURVEY_MANAGE_ERRORS[code], `ฟังก์ชันจัดการคืน ${code} แต่หน้าเว็บไม่มีข้อความ`)
   // และห้ามมีข้อความของรหัสที่ฐานข้อมูลไม่เคยคืน (ตกค้าง)
   const used = new Set([...codes('cast_survey_vote'), ...manage])
@@ -235,7 +238,7 @@ await test('ชื่อ RPC และพารามิเตอร์ที่
   }
   assert.ok(calls.length >= 9, `พบการเรียก RPC แค่ ${calls.length}`)
   const names = new Set(calls.map(c => c.name))
-  for (const expected of ['list_surveys', 'get_survey', 'cast_survey_vote', 'create_survey', 'close_survey_early', 'set_survey_comment_enabled', 'list_surveys_manage', 'get_survey_staff', 'delete_survey_comment']) {
+  for (const expected of ['list_surveys', 'get_survey', 'cast_survey_vote', 'create_survey', 'close_survey_early', 'set_survey_comment_enabled', 'list_surveys_manage', 'get_survey_staff', 'delete_survey_comment', 'delete_survey']) {
     assert.ok(names.has(expected), `หน้าเว็บไม่เรียก ${expected}`)
   }
   for (const call of calls) {
@@ -304,10 +307,72 @@ await test('แท็บ "แบบสำรวจ" ใน PostsManager: เห�
   assert.match(posts, /TABS\.filter\(t => t\.key !== 'survey' \|\| canSurvey\)/)
   assert.match(posts, /if \(tab !== 'survey'\) fetchPosts\(\)/)
   assert.match(posts, /\{canCreate && tab !== 'survey' && \(/)
-  assert.match(posts, /\{tab === 'survey' \? <SurveyManager \/> : \(<>/)
+  assert.match(posts, /\{tab === 'survey' \? <SurveyManager canDelete=\{canDeleteSurvey\} \/> : \(<>/)
   // ต้องไม่ใช้ module key ใหม่ — ใช้เมนูข่าวสารเดิม ไม่ต้องเติม enabled_modules ให้ทุก อปท.
   const modules = await read('src/lib/staffModules.js')
   assert.doesNotMatch(modules, /survey/i, 'ไม่ควรเพิ่มคีย์โมดูล survey')
+})
+
+await test('ลบแบบสำรวจ (ฐานข้อมูล): ตรวจสิทธิ์ก่อน · ลงประวัติก่อนลบ · ลบแถวเดียว · ประวัติมีแต่ตัวเลข · สิทธิ์เรียกปิดจาก anon · ไม่ทับฟังก์ชันเดิม', () => {
+  const del = sqlFunction('delete_survey')
+  assert.match(del, /IF auth\.uid\(\) IS NULL OR NOT public\.survey_can_delete\(v_s\.municipality_id\) THEN/)
+  assert.ok(del.indexOf('survey_audit') > 0 && del.indexOf('survey_audit') < del.indexOf('DELETE FROM public.surveys'), 'ต้องลงประวัติก่อนลบ (ธุรกรรมเดียวกัน)')
+  assert.match(del, /survey_audit\(v_s\.municipality_id, 'delete', v_s\.id, v_s\.question,/)
+  assert.match(del, /jsonb_build_object\('status', v_status, 'answers', v_answers, 'comments', v_comments\)/)
+  assert.equal(del.split('DELETE FROM').length - 1, 1, 'ต้องมีคำสั่งลบเดียว')
+  assert.match(del, /DELETE FROM public\.surveys WHERE id = v_s\.id;/)
+  assert.match(deleteSql, /REVOKE ALL ON FUNCTION public\.delete_survey\(uuid\)\s+FROM PUBLIC, anon, authenticated;/)
+  assert.match(deleteSql, /GRANT EXECUTE ON FUNCTION public\.delete_survey\(uuid\)\s+TO authenticated;/)
+  assert.match(deleteSql, /REVOKE ALL ON FUNCTION public\.survey_can_delete\(uuid\) FROM PUBLIC, anon, authenticated;/)
+  assert.doesNotMatch(deleteSql, /GRANT EXECUTE ON FUNCTION public\.survey_can_delete/)
+  // ฟังก์ชันใหม่ล้วน — ห้ามมี CREATE OR REPLACE ทับฟังก์ชันเดิมของแบบสำรวจ (docs/ai/NOTES.md ข้อ 5)
+  const created = [...deleteSql.matchAll(/CREATE OR REPLACE FUNCTION public\.([a-z_]+)\(/g)].map(m => m[1]).sort()
+  assert.deepEqual(created, ['delete_survey', 'survey_can_delete'])
+  for (const name of created) assert.ok(!new RegExp(`CREATE OR REPLACE FUNCTION public\\.${name}\\(`).test(functionsSql), `${name} ซ้ำกับไฟล์เดิม`)
+})
+
+await test('ผู้ลบแบบสำรวจได้: ฐานข้อมูล (survey_can_delete) = SURVEY_DELETE_ROLES · แคบกว่าผู้จัดการ · แท็บแบบสำรวจเห็นได้ทุกคนที่ลบได้ · PostsManager ส่งสิทธิ์ให้ SurveyManager', async () => {
+  const roleList = sql => [...sql.matchAll(/'([a-z]+)'/g)].map(m => m[1])
+  assert.deepEqual(roleList(sqlFunction('survey_can_delete')).sort(), [...SURVEY_DELETE_ROLES].sort())
+  const manageRoles = ['superadmin', ...roleList(sqlFunction('survey_can_manage').match(/get_my_role\(\) IN \(([^)]*)\)/)[1])]
+  for (const role of SURVEY_DELETE_ROLES) assert.ok(manageRoles.includes(role), `${role} ลบได้แต่จัดการไม่ได้`)
+  assert.ok(SURVEY_DELETE_ROLES.length < manageRoles.length, 'ผู้ลบต้องแคบกว่าผู้จัดการ (ลบแล้วกู้คืนไม่ได้)')
+  assert.ok(!SURVEY_DELETE_ROLES.includes('officer') && !SURVEY_DELETE_ROLES.includes('staff'))
+  const posts = await read('src/components/staff/PostsManager.jsx')
+  assert.match(posts, /const canDeleteSurvey = SURVEY_DELETE_ROLES\.includes\(currentUserRole\)/)
+  assert.match(posts, /import \{ SURVEY_DELETE_ROLES \} from '\.\.\/\.\.\/lib\/survey'/)
+})
+
+await test('ปุ่มลบแบบสำรวจ: ขึ้นเฉพาะ canDelete (ค่าเริ่มต้น false) · กดครั้งแรกแค่ขอยืนยัน · ยืนยันแล้วค่อยเรียก RPC · ลบสำเร็จกลับหน้ารายการ ไม่โหลดเรื่องที่หายแล้วซ้ำ', () => {
+  const manager = surveySources['src/components/staff/SurveyManager.jsx']
+  assert.match(manager, /export default function SurveyManager\(\{ canDelete = false \}\)/)
+  assert.match(manager, /\{canDelete && \(\s*<section[^>]*data-survey-delete/)
+  assert.equal(manager.split("'delete_survey'").length - 1, 1, 'ต้องเรียก delete_survey จุดเดียว')
+  assert.match(manager, /supabase\.rpc\('delete_survey', \{ _survey_id: surveyId \}\)/)
+  assert.match(manager, /setConfirm\('delete'\)/)
+  assert.equal(manager.split('onClick={remove}').length - 1, 1, 'remove ผูกกับปุ่มยืนยันเท่านั้น')
+  const confirmBranch = manager.slice(manager.indexOf("confirm === 'delete' ? ("), manager.indexOf('ลบแบบสำรวจนี้</button>'))
+  assert.match(confirmBranch, /onClick=\{remove\}/, 'ปุ่ม remove ต้องอยู่ในขั้นยืนยัน')
+  assert.match(confirmBranch, /ยืนยันลบถาวร/)
+  assert.match(manager, /surveyDeleteWarning\(\{ open, total: data\.split\.total, comments: data\.comments\.length \}\)/)
+  const remove = manager.slice(manager.indexOf('async function remove()'), manager.indexOf("const open = data?.status === 'open'"))
+  assert.match(remove, /^async function remove\(\) \{/)
+  assert.equal(remove.split('load(true)').length - 1, 1)
+  assert.match(remove, /res\?\.code === 'not_found'\) await load\(true\)/, 'โหลดซ้ำเฉพาะตอน not_found')
+  assert.match(remove, /\n    onDeleted\(\)\n/)
+  assert.match(manager, /onDeleted=\{\(\) => setView\(\{ name: 'list', notice: 'ลบแบบสำรวจแล้ว' \}\)\}/)
+})
+
+await test('surveyDeleteWarning: บอกตัวเลขจริงของเรื่องที่จะลบ · เรื่องที่ยังเปิดอยู่ถูกเตือน · เรื่องว่างไม่อ้างว่ามีผู้ตอบ · ทุกกรณีบอกว่ากู้คืนไม่ได้', () => {
+  assert.equal(surveyDeleteWarning({ open: true, total: 12, comments: 3 }),
+    'ยังเปิดรับอยู่ · ตอบแล้ว 12 คน ความเห็น 3 รายการ จะหายทั้งหมด · ลบแล้วกู้คืนไม่ได้ ลิงก์ที่แชร์ไว้จะขึ้น "ไม่พบแบบสำรวจนี้"')
+  const closedNoComment = surveyDeleteWarning({ open: false, total: 5, comments: 0 })
+  assert.match(closedNoComment, /ตอบแล้ว 5 คน จะหายทั้งหมด/)
+  assert.doesNotMatch(closedNoComment, /ความเห็น|ยังเปิดรับอยู่/)
+  const empty = surveyDeleteWarning({ open: false, total: 0, comments: 0 })
+  assert.match(empty, /ยังไม่มีผู้ตอบ/)
+  assert.doesNotMatch(empty, /ตอบแล้ว|จะหายทั้งหมด/)
+  for (const w of [closedNoComment, empty, surveyDeleteWarning({ open: true, total: 1, comments: 1 })]) assert.match(w, /กู้คืนไม่ได้/)
 })
 
 await test('ฟอร์มเจ้าหน้าที่: งานที่เพิ่มมีแค่สร้าง · ค่าเริ่มต้นใช้ได้ทันที (แม่แบบแรก 14 วัน เปิดช่องความเห็น) · ส่งเวลาปิดเป็น null เมื่อใช้ค่าเริ่มต้นเพื่อไม่พึ่งนาฬิกาเครื่อง', () => {
