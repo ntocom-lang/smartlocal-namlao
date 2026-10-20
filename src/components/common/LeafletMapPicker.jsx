@@ -3,6 +3,7 @@ import { CheckCircle2, LocateFixed, MapPin, Search, X, Loader2 } from 'lucide-re
 import { createPortal } from 'react-dom'
 import { useTenant } from '../../contexts/TenantContext'
 import LeafletMapCanvas from './LeafletMapCanvas'
+import { searchPlaces, reverseGeocode as reverseGeocodeAddress } from '../../lib/nominatim'
 
 const validPoint = point => Number.isFinite(Number(point?.lat)) && Number.isFinite(Number(point?.lng))
 
@@ -89,28 +90,17 @@ export default function LeafletMapPicker({
       if (seq !== geocodeSeqRef.current || !isMountedRef.current) return
       commitSelection({ ...selectedRef.current, address })
     }
+    // 800ms = ขั้นต่ำที่ lib/nominatim.js กำหนดไว้ (เพดานจริงของ Nominatim สาธารณะคือ 1 คำขอ/วินาที/IP)
+    // เดิมตั้ง 600ms: ผู้ใช้ลากหมุดต่อเนื่องแล้วปล่อยทุก ~0.6 วิ ยิงถี่กว่าเพดานได้
     debounceTimerRef.current = setTimeout(async () => {
       const controller = new AbortController()
       geocodeAbortRef.current = controller
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${point.lat}&lon=${point.lng}&zoom=18&addressdetails=1&accept-language=th`,
-          { headers: { 'User-Agent': 'SmartLocal-GIS/1.1' }, signal: controller.signal }
-        )
-        if (res.ok) {
-          const data = await res.json()
-          const raw = data.display_name || ''
-          // Clean up excessively long OSM string
-          applyAddress(raw ? raw.split(',').slice(0, 4).join(',').trim() : coordsText)
-        } else {
-          applyAddress(coordsText)
-        }
-      } catch (err) {
-        if (err?.name === 'AbortError') return
-        console.warn('[LeafletMapPicker] Reverse geocoding failed:', err)
-        applyAddress(coordsText)
-      }
-    }, 600)
+      // reverseGeocodeAddress คืน '' เมื่อหาไม่ได้/เน็ตล่ม/ถูกยกเลิก ไม่โยน error — คำตอบที่ถูกยกเลิกมาถึงช้า
+      // จะตกที่เช็ก seq ใน applyAddress เอง จึงไม่เขียนทับจุดที่ใหม่กว่า
+      const raw = await reverseGeocodeAddress(point.lat, point.lng, { signal: controller.signal })
+      // ตัดชื่อ OSM ที่ยาวเกินให้เหลือ 4 ส่วนแรก
+      applyAddress(raw ? raw.split(',').slice(0, 4).join(',').trim() : coordsText)
+    }, 800)
   }, [commitSelection])
 
   // ผู้ใช้เลือกจุดใหม่ (ลากเสร็จ/แตะแผนที่): พิกัดเปลี่ยนทันที ชื่อที่อยู่ว่างไว้จนกว่าคำตอบของจุดนี้จะมา
@@ -134,19 +124,8 @@ export default function LeafletMapPicker({
     setSearching(true)
     setShowResults(true)
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=th&limit=5&accept-language=th`,
-        { headers: { 'User-Agent': 'SmartLocal-GIS/1.1' } }
-      )
-      if (res.ok) {
-        const data = await res.json()
-        setSearchResults(data || [])
-      } else {
-        setSearchResults([])
-      }
-    } catch (err) {
-      console.warn('[LeafletMapPicker] Place search error:', err)
-      setSearchResults([])
+      // searchPlaces คืน [] เสมอเมื่อค้นไม่เจอ/เน็ตล่ม/โดน rate limit และกรองแถวพิกัดเสียทิ้งให้แล้ว ไม่ต้อง try/catch เอง
+      setSearchResults(await searchPlaces(q))
     } finally {
       setSearching(false)
     }
@@ -154,12 +133,12 @@ export default function LeafletMapPicker({
 
   function handleSelectPlace(item) {
     const next = {
-      lat: Number(item.lat),
-      lng: Number(item.lon),
-      address: item.display_name || searchQuery,
+      lat: item.lat,
+      lng: item.lng,
+      address: item.label || searchQuery,
     }
     setShowResults(false)
-    setSearchQuery(item.display_name?.split(',')[0] || searchQuery)
+    setSearchQuery(item.shortLabel || searchQuery)
     if (mapRef.current) {
       mapRef.current.setView([next.lat, next.lng], 17)
     }
@@ -305,8 +284,8 @@ export default function LeafletMapPicker({
               >
                 <MapPin size={16} className="mt-0.5 shrink-0 text-blue-600" />
                 <div className="min-w-0 flex-1">
-                  <p className="font-bold text-gray-800 line-clamp-1">{item.name || item.display_name?.split(',')[0]}</p>
-                  <p className="text-[11px] text-gray-500 line-clamp-2">{item.display_name}</p>
+                  <p className="font-bold text-gray-800 line-clamp-1">{item.shortLabel}</p>
+                  <p className="text-[11px] text-gray-500 line-clamp-2">{item.label}</p>
                 </div>
               </button>
             ))}
