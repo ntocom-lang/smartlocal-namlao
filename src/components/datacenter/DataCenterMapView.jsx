@@ -5,6 +5,7 @@ import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation, Target, Tag, Tags, Users, Search, LocateFixed } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import LeafletMapCanvas from '../common/LeafletMapCanvas'
+import MapTypeToggle from '../common/MapTypeToggle'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, isIconImage } from '../../lib/dataCenterGroupIcon'
 import CategoryIcon from './CategoryIcon'
 import { odorTimeRangeLabel } from '../../lib/odorTimeRanges'
@@ -406,6 +407,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const [userCategories, setUserCategories] = useState(() =>
     initialGroup && initialCategory ? new Set([`${initialGroup}::${initialCategory}`]) : null)
   const mapAreaRef = useRef(null) // กรอบแผนที่ + แผงล่างมือถือ — ใช้วัดว่าแผงทับแผนที่เท่าไรตอน fit
+  // มุมมองแผนที่ที่ผู้ใช้เลือก (ดาวเทียม/แผนที่ถนน) — เริ่มที่ดาวเทียมเหมือนเดิม ไม่จำข้ามการเปิดหน้า
+  // เปลี่ยนค่านี้แค่สลับชั้นภาพ LeafletMapCanvas ไม่ refit และไม่ขยับกล้อง
+  const [mapTypeId, setMapTypeId] = useState('hybrid')
   const sheetRef = useRef(null)
   // รูปทรงหน้าเปลี่ยนหลัง fit ครั้งแรก (แถบสถิติหัวหน้าโหลดทีหลังดันกรอบลง ~60px → แผงล่างทับแผนที่ต่างจากตอน fit) → นับขึ้น 1 ให้แผนที่ fit ใหม่
   // สร้างใน effect ด้านล่าง · state ถูกตั้งใน callback ของ ResizeObserver ไม่ใช่ใน effect ตรงๆ จึงไม่ชน lint rule set-state-in-effect
@@ -958,7 +962,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
             <LeafletMapCanvas
               center={mapCenter}
               zoom={mapZoom}
-              mapTypeId="hybrid"
+              mapTypeId={mapTypeId}
               boundaryGeoJson={boundaryGeoJson}
               className="w-full h-full min-h-[70vh]"
               // หน้าประชาชน: ซูมให้พอดีกับหมุดที่เปิดอยู่ทุกครั้งที่ชุดหมุดเปลี่ยน และเผื่อพื้นที่ใต้แผงล่างบนมือถือ — ไม่งั้นหมุดจมใต้แผง
@@ -1061,6 +1065,13 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                 : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: '#2563eb' }}>
               {locating ? <Loader2 size={20} className="animate-spin" /> : <LocateFixed size={20} />}
             </button>
+            {/* สลับมุมมอง: วางต่อจากปุ่มตำแหน่งของฉัน (คอลัมน์ซ้ายบนเดียวกัน) แต่ก่อนข้อความสถานะ — ข้อความที่โผล่ทีหลังจะไม่ดันปุ่มขยับ
+                ไม่ใช้แถวปุ่มขวาบน: ฝั่งเจ้าหน้าที่เป็นไอคอนเรียงแถวเดียวไม่ตัดบรรทัด ใส่แถบกว้างเพิ่มแล้วล้นจอมือถือ
+                มือถือที่การ์ด (หมุด/วงรัศมี/ผู้ได้รับผลกระทบ — ทั้ง 3 ใบวางที่ top-16 เหมือนกัน) ขึ้นมาจะบังแถบนี้ จึงซ่อนไว้ชั่วคราว
+                (invisible ไม่ใช่ hidden: ยังกินที่เท่าเดิม ปุ่มอื่นในคอลัมน์ไม่ขยับ · ไม่ซ่อนแล้วขอบน้ำเงินของแถบจะโผล่พ้นขอบการ์ด)
+                ปิดการ์ดแล้วกลับมาใช้ได้ · บน PC การ์ดอยู่ล่างกลางจอ ไม่ชน จึงไม่ซ่อน */}
+            <MapTypeToggle value={mapTypeId} onChange={setMapTypeId}
+              className={selectedEntry || selectedZone || selectedAffected ? 'max-lg:invisible' : ''} />
             {locateMsg && (
               <p role="status" className="rounded-lg bg-gray-800/90 px-3 py-2 text-xs font-semibold text-white shadow-lg">{locateMsg}</p>
             )}
