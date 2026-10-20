@@ -3,6 +3,7 @@ import { CheckCircle2, LocateFixed, MapPin, Search, X, Loader2 } from 'lucide-re
 import { createPortal } from 'react-dom'
 import { useTenant } from '../../contexts/TenantContext'
 import LeafletMapCanvas from './LeafletMapCanvas'
+import MapTypeToggle from './MapTypeToggle'
 import { searchPlaces, reverseGeocode as reverseGeocodeAddress } from '../../lib/nominatim'
 import { loadTenantBoundary, evaluatePoint, describeDistance } from '../../lib/tenantBoundary'
 
@@ -347,19 +348,7 @@ export default function LeafletMapPicker({
         {/* แถบสลับมุมมอง — มุมซ้ายบนเป็นที่ว่างเพียงจุดเดียวของแผนที่: ขวาบนมีปุ่มขยายเต็มจอของ
             InlineMapPicker · ซ้ายล่างมีปุ่มตำแหน่งของฉัน · ขวาล่างมีปุ่มซูมกับบรรทัดเครดิตแผนที่
             วางเป็น 2 ปุ่มติดกันแทน dropdown เพราะมีแค่ 2 ตัวเลือก กดครั้งเดียวจบ ไม่ต้องเปิดเมนู */}
-        <div className="absolute left-3 top-3 z-10 flex overflow-hidden rounded-xl border border-gray-200 bg-white/95 text-xs font-bold shadow-lg backdrop-blur">
-          {[['hybrid', 'ดาวเทียม'], ['roadmap', 'แผนที่ถนน']].map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setMapTypeId(id)}
-              aria-pressed={mapTypeId === id}
-              className={`px-3 py-2 transition-colors ${mapTypeId === id ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <MapTypeToggle value={mapTypeId} onChange={setMapTypeId} className="absolute left-3 top-3 z-10" />
 
         {/* GPS Locate Button + overlayAction — กล่องครอบไม่รับคลิก ช่องว่างระหว่างปุ่มจึงยังลากแผนที่ได้
             เว้นขวา 3.5rem ไว้ให้ปุ่มซูม +/− มุมขวาล่าง ถ้าจอแคบจนล้นให้ขึ้นแถวใหม่ด้านบน (wrap-reverse) ไม่ลงไปทับ attribution */}
