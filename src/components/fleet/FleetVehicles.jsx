@@ -49,6 +49,14 @@ const REGULATION_CATEGORY_OPTIONS = [
   { value: 'position', label: 'รถยนต์ประจำตำแหน่ง (แบบ 1)' },
 ]
 
+// เอกสารรถ 4 ฉบับ ลำดับเดียวกับตารางรถ/ภาพรวม/แจ้งเตือน — key คือคอลัมน์ใน fleet_vehicles
+const DOCUMENT_EXPIRY_FIELDS = [
+  { key: 'insurance_expiry',    label: 'ประกันภัย' },
+  { key: 'act_expiry',          label: 'พรบ.' },
+  { key: 'registration_expiry', label: 'ทะเบียน' },
+  { key: 'inspection_expiry',   label: 'ตรวจสภาพ', hint: '(ถ้ามี)' },
+]
+
 function daysTo(dateStr) {
   if (!dateStr) return null
   return Math.ceil((new Date(dateStr) - new Date()) / 86400000)
@@ -873,16 +881,24 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
 
               {isVehicleAsset(form) && <div className="border-t border-gray-100 pt-4 space-y-3">
                 <p className="text-xs font-bold text-gray-600">📄 เอกสารสำคัญ</p>
+                {/* วันหมดอายุแยกรายเอกสาร (เจ้าของระบบสั่ง 2026-10-20) — เดิมช่องเดียวตั้งทั้ง 4 ค่าพร้อมกัน
+                    แต่เอกสารแต่ละฉบับหมดอายุคนละวัน (ประกัน/พรบ./ภาษี ต่อคนละรอบ) ส่วนอื่นของระบบ (ตารางรถ ภาพรวม
+                    หน้ารายละเอียด แจ้งเตือน Telegram) อ่านทีละคอลัมน์อยู่แล้ว จึงเปลี่ยนที่ฟอร์มจุดเดียว ไม่ต้อง migrate
+                    ช่องตรวจสภาพยังต้องมี: ถ้าตัดออก ค่าเดิมที่เคยถูกตั้งพร้อมกันจะค้างโดยไม่มีที่ให้แก้ แล้วหน้ารายละเอียด
+                    จะแยกเป็น 4 รายการโดยมี "ตรวจสภาพ" ผิดวันตลอดไป (ไม่บังคับกรอก — รถที่ไม่ถึงเกณฑ์ตรวจสภาพเว้นว่างได้) */}
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">วันหมดอายุเอกสาร</label>
-                  <input type="date"
-                    value={form.insurance_expiry}
-                    onChange={e => {
-                      const v = e.target.value
-                      setForm(f => ({ ...f, insurance_expiry: v, act_expiry: v, registration_expiry: v, inspection_expiry: v }))
-                    }}
-                    className={inp} />
-                  <p className="text-[10px] text-gray-400 mt-1">ครอบคลุม: ประกันภัย · พรบ. · ทะเบียน · ตรวจสภาพ</p>
+                  <p className="text-xs font-semibold text-gray-600 mb-1">วันหมดอายุเอกสาร</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {DOCUMENT_EXPIRY_FIELDS.map(({ key, label, hint }) => (
+                      <div key={key}>
+                        <label htmlFor={`fleet-${key}`} className="text-xs font-semibold text-gray-600 mb-1 block">
+                          {label}{hint && <span className="font-normal text-gray-400"> {hint}</span>}
+                        </label>
+                        <input id={`fleet-${key}`} type="date" value={form[key]} onChange={set(key)} className={inp} />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1">กรอกเฉพาะฉบับที่มี ฉบับที่เว้นว่างจะไม่ถูกแจ้งเตือน</p>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">อื่นๆ / หมายเหตุ</label>
