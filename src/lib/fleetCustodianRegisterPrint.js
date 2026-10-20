@@ -164,6 +164,35 @@ function keepHtml(text, max = KEEP_MAX) {
   return text.length > max ? esc(text) : `<span class="keep">${esc(text)}</span>`
 }
 
+// ชื่อรถ ("ประเภทรถ") ต้องอยู่บรรทัดเดียว ไม่แยกคำ (เจ้าของระบบสั่ง 2026-10-20 จากใบน้ำเลาจริง:
+// "รถยนต์นั่งส่วนบุคคลไม่เกิน 7 / คน" ตกบรรทัดเพราะช่องเดิมกว้างแค่ 56 มม.)
+// nowrap อย่างเดียวไม่พอ — ชื่อยาวหรือเป็นตัวอักษรอังกฤษล้นทับช่องข้างๆ ได้ จึงนับด้วย "ความกว้างโดยประมาณ" (มม.)
+// ไม่ใช่จำนวนตัวอักษร เพราะตัวอักษรไทยไม่ได้กว้างเท่ากัน (สระ/วรรณยุกต์บนล่างไม่กินที่) และตัวอังกฤษกว้างกว่า
+// ค่ากว้างต่อตัววัดจากเบราว์เซอร์ที่ 14pt (ไทย 2.78 · a-z 2.25 · A-Z 2.79 · เลข 2.51 · ช่องว่าง 1.73 มม.)
+// ประมาณเกินจริงราว 5-9% โดยเจตนา (ชื่อ 31 ตัวอักษรข้างบนวัดจริง 59.2 ได้ประมาณ 64.4) เทสต์เทียบกับค่าจริงทุกครั้ง
+// ยาวเกิน NAME_KEEP_MM ปล่อยให้ตัดบรรทัดได้ ดีกว่าล้นทับช่องข้างๆ
+const THAI_COMBINING = /[ัิ-ฺ็-๎]/
+const THAI_LETTER = /[ก-๛]/
+export const NAME_KEEP_MM = 67
+
+export function estimateTextWidthMm(text) {
+  let width = 0
+  for (const char of String(text ?? '')) {
+    if (THAI_COMBINING.test(char)) continue
+    if (THAI_LETTER.test(char)) width += 2.78
+    else if (/[a-z]/.test(char)) width += 2.25
+    else if (/[A-Z]/.test(char)) width += 2.79
+    else if (/[0-9]/.test(char)) width += 2.51
+    else if (/\s/.test(char)) width += 1.73
+    else width += 1.8
+  }
+  return width
+}
+
+function nameHtml(name) {
+  return estimateTextWidthMm(name) <= NAME_KEEP_MM ? `<span class="keep">${esc(name)}</span>` : esc(name)
+}
+
 function custodianHtml(vehicle) {
   const { name, position } = custodianOf(vehicle)
   const parts = []
@@ -176,7 +205,7 @@ function vehicleRow(vehicle, no) {
   return `<tr class="vehicle">
     <td>${no}</td>
     <td>${keepHtml(clean(vehicle?.asset_code), KEEP_CODE_MAX)}</td>
-    <td class="left">${esc(clean(vehicle?.name))}</td>
+    <td class="left">${nameHtml(clean(vehicle?.name))}</td>
     <td>${keepHtml(clean(vehicle?.license_plate), KEEP_PLATE_MAX)}</td>
     <td class="left">${custodianHtml(vehicle)}</td>
   </tr>`
@@ -243,14 +272,16 @@ export function buildFleetCustodianRegisterHtml({ vehicles = [], departments = [
     table.register tr.group td { text-align: left; font-weight: 700; padding: 1.2mm 3px; }
     table.register tr.empty td { color: #555; padding: 4mm; }
     .keep { white-space: nowrap; }
-    /* ความกว้างรวม 100% ของ 257 มม. — ช่องเลขครุภัณฑ์/ทะเบียนห้ามตัดบรรทัด (อ่านผิดได้)
-       ที่เหลือให้ช่องผู้รับผิดชอบ (ชื่อ + ตำแหน่ง) ซึ่งยาวที่สุด: ตามต้นฉบับชื่อ + "ตำแหน่ง …" ต้องจบบรรทัดเดียว
-       (ตำแหน่งยาวสุดในต้นฉบับ "นักป้องกันและบรรเทาสาธารณภัยชำนาญการ" 38 ตัวอักษร) ปรับแล้วต้องรัน npm run test:fleet:custodian */
-    col.c-no { width: 5.5%; }
+    /* ความกว้างรวม 100% ของ 257 มม. — ช่องเลขครุภัณฑ์/ทะเบียน/ชื่อรถห้ามตัดบรรทัด (อ่านผิดได้ / เจ้าของระบบสั่ง)
+       ช่องชื่อรถ 27% (~67 มม.) พอสำหรับ "รถยนต์นั่งส่วนบุคคลไม่เกิน 7 คน" (วัดจริง 59.2 มม.) ดู NAME_KEEP_MM
+       ที่เหลือให้ช่องผู้รับผิดชอบ (ชื่อ + "ตำแหน่ง …") ข้อมูลปกติจบบรรทัดเดียว ตำแหน่งยาวมาก
+       (เช่น "นักป้องกันและบรรเทาสาธารณภัยชำนาญการ" 38 ตัวอักษร) ตัดเป็น 2 บรรทัดระหว่างชื่อกับตำแหน่ง
+       ปรับแล้วต้องรัน npm run test:fleet:custodian */
+    col.c-no { width: 5%; }
     col.c-code { width: 12%; }
-    col.c-name { width: 22%; }
+    col.c-name { width: 27%; }
     col.c-plate { width: 13%; }
-    col.c-person { width: 47.5%; }
+    col.c-person { width: 43%; }
   </style>
 </head>
 <body>

@@ -6,8 +6,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { chromium } from 'playwright'
 import {
-  UNASSIGNED_GROUP_KEY, buildFleetCustodianRegisterHtml, custodianSuggestions, groupCustodianRegister,
-  groupTitleText, isCustodianRegisterVehicle, orgShortName,
+  NAME_KEEP_MM, UNASSIGNED_GROUP_KEY, buildFleetCustodianRegisterHtml, custodianSuggestions, estimateTextWidthMm,
+  groupCustodianRegister, groupTitleText, isCustodianRegisterVehicle, orgShortName,
 } from '../src/lib/fleetCustodianRegisterPrint.js'
 
 // ── ชื่อย่อหน่วยงานท้ายหัวกลุ่ม ────────────────────────────────────────────────────
@@ -74,6 +74,15 @@ assert.ok(groupTitleText({ department: { name: 'กองช่าง' }, orgNam
   .endsWith('ได้แก่ ผู้อำนวยการกองช่าง)'))
 assert.equal(groupTitleText({ department: null, orgName: 'อบต.' }), 'ยานพาหนะส่วนกลาง ที่ยังไม่ได้ระบุหน่วยงานผู้ครอบครอง')
 
+// ── ชื่อรถอยู่บรรทัดเดียว ไม่แยกคำ (เจ้าของระบบสั่ง 2026-10-20 จากใบน้ำเลาจริง) ───────────────
+// "รถยนต์นั่งส่วนบุคคลไม่เกิน 7 คน" เคยตกบรรทัด "…ไม่เกิน 7 / คน" เพราะช่องชื่อรถกว้างแค่ 22%
+const OWNER_NAME = 'รถยนต์นั่งส่วนบุคคลไม่เกิน 7 คน'
+assert.ok(estimateTextWidthMm(OWNER_NAME) <= NAME_KEEP_MM, 'ชื่อรถจากใบจริงต้องเข้าเกณฑ์ไม่ตัดบรรทัด')
+assert.equal(estimateTextWidthMm('รถยนต์'), estimateTextWidthMm('รถยนต์๎'), 'วรรณยุกต์/สระบนล่างไม่กินที่')
+assert.ok(estimateTextWidthMm('Mitsubishi Triton Double Cab 4x4 Hi-Rider') > NAME_KEEP_MM,
+  'ชื่ออังกฤษยาว (กว้างกว่าไทยต่อตัว) ต้องไม่ถูกบังคับบรรทัดเดียวจนล้นช่อง')
+assert.equal(estimateTextWidthMm(''), 0)
+
 // ── HTML: หัวตารางตามต้นฉบับ + escape + ลำดับเริ่ม 1 ใหม่ทุกกลุ่ม + เส้นประเลขคำสั่ง ──────────
 const tenant = { name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว', district: 'อำเภอหนองม่วงไข่', province: 'แพร่' }
 const named = [
@@ -87,7 +96,8 @@ for (const text of ['ทะเบียนคุมยานพาหนะส�
   'องค์การบริหารส่วนตำบลทุ่งแค้ว อำเภอหนองม่วงไข่ จังหวัดแพร่', 'ข้อมูล ณ วันที่ 20/10/2569', 'A4 landscape',
   'ที่อยู่ในครอบครองของ<span class="keep">สำนักปลัด</span> <span class="keep">อบต.ทุ่งแค้ว</span>',
   'ได้แก่ <span class="keep">หัวหน้าสำนักปลัด</span>)', 'ได้แก่ <span class="keep">ผู้อำนวยการกองช่าง</span>)',
-  '<span class="keep">นายสมชาย ใจดี</span> <span class="keep">ตำแหน่ง พนักงานขับรถยนต์</span>']) {
+  '<span class="keep">นายสมชาย ใจดี</span> <span class="keep">ตำแหน่ง พนักงานขับรถยนต์</span>',
+  '<td class="left"><span class="keep">รถบรรทุกขยะ</span></td>']) {
   assert.ok(html.includes(text), `ทะเบียนต้องมี "${text}"`)
 }
 assert.ok(html.includes('&lt;b&gt;รถบรรทุก') && !html.includes('<b>รถบรรทุก'), 'ข้อความจากผู้ใช้ต้อง escape')
@@ -172,6 +182,9 @@ try {
     v('plain', { asset_code: '024 63 0003', name: 'รถจักรยานยนต์ Honda Wave 125i', custodian_department_id: 'd-soc' }),
     // เลขครุภัณฑ์/ทะเบียนยาวผิดปกติ (ข้อมูลทดสอบจริงบนสนามซ้อมมีเลข 25 ตัวอักษร) ต้องตัดบรรทัด ไม่ล้นทับช่องข้างๆ
     v('longcode', { asset_code: 'TEST-ASSET-20260830051222', license_plate: 'TEST 20260830051222 แพร่', custodian_department_id: 'd-soc' }),
+    // ชื่อรถจากใบจริง (บรรทัดเดียว) + ชื่ออังกฤษยาว (ตัดบรรทัดได้ แต่ห้ามล้นทับช่องข้างๆ)
+    v('ownername', { name: OWNER_NAME, asset_code: '001-66-003', license_plate: 'กธ 3393 แพร่', custodian_department_id: 'd-soc' }),
+    v('longname', { name: 'Mitsubishi Triton Double Cab 4x4 Hi-Rider Plus', custodian_department_id: 'd-soc' }),
   ])
   try {
     const measured = await worstPage.evaluate(() => {
@@ -194,6 +207,10 @@ try {
         personLines: Math.max(...col(4).map(lineCount)),
         keepOverflow: rows.flatMap(row => [...row.querySelectorAll('.keep')]
           .filter(span => span.getBoundingClientRect().right > span.closest('td').getBoundingClientRect().right - 1)).length,
+        // ช่องชื่อรถที่ห่อ .keep (ชื่อเข้าเกณฑ์) ต้องจบบรรทัดเดียวทุกช่อง
+        keepNameLines: Math.max(...col(2).filter(td => td.querySelector('.keep')).map(lineCount)),
+        keepNameCells: col(2).filter(td => td.querySelector('.keep')).length,
+        ownerNameLines: lineCount(col(2).find(td => td.textContent.trim() === 'รถยนต์นั่งส่วนบุคคลไม่เกิน 7 คน')),
         groupRows: document.querySelectorAll('tr.group').length,
         vehicleRows: rows.length,
         titleSplit: [...document.querySelectorAll('tr.group .keep')].filter(span => {
@@ -213,10 +230,41 @@ try {
     assert.equal(measured.cellOverflow, 0, 'ข้อมูลยาวผิดปกติต้องตัดบรรทัด ไม่ล้นทับช่องข้างๆ')
     assert.equal(measured.groupRows, 2)
     assert.equal(measured.titleSplit, 0, 'ชื่อหน่วยงาน/ตำแหน่งหัวหน้าในหัวกลุ่มห้ามถูกตัดกลางคำ')
-    assert.equal(measured.vehicleRows, 10)
+    assert.equal(measured.vehicleRows, 12)
+    assert.ok(measured.keepNameCells >= 1, 'ต้องมีช่องชื่อรถที่บังคับบรรทัดเดียวอย่างน้อย 1 ช่อง (กันเทสต์ผ่านเพราะไม่มีอะไรให้วัด)')
+    assert.equal(measured.keepNameLines, 1, 'ชื่อรถที่เข้าเกณฑ์ต้องจบบรรทัดเดียว')
+    assert.equal(measured.ownerNameLines, 1, `"${OWNER_NAME}" ต้องอยู่บรรทัดเดียว ไม่แยก "คน" ลงบรรทัดถัดไป`)
     console.log(`fleet custodian register assertions passed (ตาราง ${measured.tableWidth.toFixed(1)} มม., ชื่อ+ตำแหน่งสูงสุด ${measured.personLines} บรรทัด)`)
   } finally {
     await worstPage.close()
+  }
+
+  // ค่าประมาณความกว้างต้อง "ไม่ต่ำกว่า" ความกว้างจริงของเบราว์เซอร์ — ประมาณต่ำไป = ชื่อที่ว่าเข้าเกณฑ์ล้นช่องจริง
+  const calibration = await open([])
+  try {
+    const samples = [OWNER_NAME, 'รถยนต์นั่งส่วนบุคคล', 'รถบรรทุกน้ำอเนกประสงค์', 'รถยนต์บรรทุกส่วนกลางขนาดใหญ่พิเศษ 6 ล้อ',
+      'รถจักรยานยนต์ Honda Wave 125i', 'Mitsubishi Triton Double Cab', 'TOYOTA HILUX REVO 2.4 4WD', 'รถกระเช้าไฟฟ้า 81-7417', 'ผู้ช่วยนายช่างโยธา']
+    const widths = await calibration.evaluate(list => list.map(text => {
+      const span = document.createElement('span')
+      span.style.cssText = 'white-space:nowrap;position:absolute'
+      span.textContent = text
+      document.querySelector('.place').appendChild(span)
+      const width = span.getBoundingClientRect().width / (96 / 25.4)
+      span.remove()
+      return width
+    }), samples)
+    samples.forEach((text, index) => {
+      assert.ok(estimateTextWidthMm(text) >= widths[index],
+        `ค่าประมาณ ${estimateTextWidthMm(text).toFixed(1)} มม. ต่ำกว่าความกว้างจริง ${widths[index].toFixed(1)} มม. ของ "${text}"`)
+    })
+    // ชื่อที่เข้าเกณฑ์ต้องพอดีช่อง (กว้างเนื้อหาช่องชื่อรถ ~ 27% ของ 257 มม. หักขอบ)
+    const available = await calibration.evaluate(() => {
+      const col = document.querySelector('col.c-name')
+      return col ? col.getBoundingClientRect().width / (96 / 25.4) : 0
+    })
+    assert.ok(NAME_KEEP_MM <= available - 1.6, `NAME_KEEP_MM ${NAME_KEEP_MM} มม. มากกว่าความกว้างเนื้อหาของช่องชื่อรถ ${(available - 1.6).toFixed(1)} มม.`)
+  } finally {
+    await calibration.close()
   }
 
   // ขนาดและข้อมูลแบบต้นฉบับ (9 คัน 3 กลุ่ม ตำแหน่งส่วนใหญ่สั้น มีตำแหน่งยาว 1 คัน) ต้องจบ 1 แผ่น
