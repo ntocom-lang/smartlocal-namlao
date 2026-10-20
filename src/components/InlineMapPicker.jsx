@@ -12,8 +12,13 @@ export default function InlineMapPicker({
   confirmDisabled = false,
   confirmLabel = 'ใช้ตำแหน่งนี้',
   confirmClassName = 'bg-blue-600',
+  // ส่งต่อให้ตัวปักหมุด — เตือนเมื่อหมุดดูเหมือนอยู่นอกเขต อปท. (ค่าเริ่มต้นปิด เปิดเฉพาะหน้าประชาชนที่จุดต้องอยู่ในเขต)
+  warnOutsideBoundary = false,
 }) {
   const [fullscreen, setFullscreen] = useState(false)
+  // ตัวปักหมุดบอกว่ากำลังแสดงคำเตือนนอกเขตอยู่ไหม — แถวคำเตือนสูงราว 66px ที่จอ 360px (3 บรรทัด) ต้องหักจากความสูงแผนที่
+  // ตอนเต็มจอ เฉพาะตอนที่แสดงอยู่เท่านั้น ไม่หักถาวรเพื่อไม่ให้เสียพื้นที่แผนที่ในกรณีปกติ (วัดแล้วถ้าไม่หัก ล้นขอบจอ 63px)
+  const [warningShown, setWarningShown] = useState(false)
 
   const confirmButton = onConfirm ? (
     <button type="button" disabled={confirmDisabled} onClick={onConfirm}
@@ -42,8 +47,12 @@ export default function InlineMapPicker({
           modal={false}
           skipGeolocation
           overlayAction={confirmButton}
+          warnOutsideBoundary={warnOutsideBoundary}
+          onOutsideChange={setWarningShown}
           mapClassName={fullscreen
-            ? 'w-full h-[calc(100vh-230px)] supports-[height:100dvh]:h-[calc(100dvh-230px)] min-h-[260px]'
+            ? (warningShown
+              ? 'w-full h-[calc(100vh-300px)] supports-[height:100dvh]:h-[calc(100dvh-300px)] min-h-[260px]'
+              : 'w-full h-[calc(100vh-230px)] supports-[height:100dvh]:h-[calc(100dvh-230px)] min-h-[260px]')
             : 'w-full h-80 min-h-[320px]'}
         />
       </div>

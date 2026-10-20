@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { useTenant } from '../../contexts/TenantContext'
 import LeafletMapCanvas from './LeafletMapCanvas'
 import { searchPlaces, reverseGeocode as reverseGeocodeAddress } from '../../lib/nominatim'
+import { loadTenantBoundary, evaluatePoint, describeDistance } from '../../lib/tenantBoundary'
 
 const validPoint = point => Number.isFinite(Number(point?.lat)) && Number.isFinite(Number(point?.lng))
 
@@ -23,6 +24,15 @@ export default function LeafletMapPicker({
   // ไม่งั้นไม่มีทางรู้ว่าจุดที่ชี้อยู่นอกพื้นที่ให้บริการ — เดิมปิดไว้เพื่อให้จอดาวเทียมสะอาด จึงใช้เส้นบางไม่ระบายสีแทน
   // ตำบลที่ยังไม่มีไฟล์ขอบเขต (เช่น demo) ไม่ได้เส้น ไม่มี error: canvas ได้ HTML กลับมาแล้ว parse ไม่ผ่านจึงข้ามเงียบๆ
   showBoundary = true,
+  // เตือนเมื่อหมุดดูเหมือนอยู่นอกเขต อปท. — "เปิดเป็นรายหน้า" ไม่ใช่ค่าเริ่มต้น เพราะตัวปักหมุดนี้ถูกใช้ในราว 20 หน้าและหลายหน้า
+  // จุดควรอยู่นอกเขตได้โดยชอบ (ฟอร์มเจ้าหน้าที่/ท่องเที่ยว/พื้นที่เฉพาะกิจ) หรือมีกติกาตรวจเขตของตัวเองอยู่แล้ว
+  // (รถรับ-ส่งผู้ป่วยมีคำรับรอง "จุดรับอยู่ในเขตพื้นที่ให้บริการ" ผูกกับเงื่อนไขกองทุน ซึ่งไม่จำเป็นต้องตรงกับเขตตำบล)
+  // เปิดเฉพาะหน้าประชาชนที่จุดต้องอยู่ในเขตเสมอ: ร้องเรียน · เก็บขยะ · ขอใช้น้ำประปา
+  // เตือนอย่างเดียว ไม่บล็อกปุ่มยืนยัน (ไฟล์ขอบเขตไม่ใช่แนวตามประกาศจัดตั้ง) — ดูข้อจำกัดเต็มที่ lib/tenantBoundary.js
+  warnOutsideBoundary = false,
+  // รายงาน true/false เมื่อคำเตือนแสดง/ซ่อน — สำหรับผู้เรียกที่กำหนดความสูงแผนที่เองแบบตายตัว (InlineMapPicker โหมดเต็มจอ)
+  // ต้องหักที่ให้แถวคำเตือน ไม่งั้นเนื้อหาล้นขอบจอ (วัดแล้ว ล้น 63px ที่จอ 360px)
+  onOutsideChange,
   autoLocate = true,
   skipGeolocation = false,
   mapClassName = 'w-full h-80 min-h-[320px]',
@@ -61,6 +71,27 @@ export default function LeafletMapPicker({
   }, [initialPos, fallbackPos, defaultLat, defaultLng, tenant?.latitude, tenant?.longitude])
 
   const [selected, setSelected] = useState(initialLocation)
+
+  // ขอบเขตสำหรับคำเตือน: ใช้ค่าจากตาราง municipalities ก่อน (ลำดับเดียวกับที่ LeafletMapCanvas ใช้วาดเส้น) ไม่มีค่อยโหลดไฟล์
+  // โหลดเฉพาะตอนเปิดคำเตือน และไม่รู้ slug = ไม่เดา (ไม่เหมือน canvas ที่ตกไป namlao) เพราะเตือนผิดตำบลแย่กว่าไม่เตือน
+  const [loadedBoundary, setLoadedBoundary] = useState(null)
+  useEffect(() => {
+    if (!warnOutsideBoundary || tenant?.boundary_geojson) return undefined
+    let active = true
+    loadTenantBoundary(tenant?.slug).then(data => { if (active) setLoadedBoundary(data) })
+    return () => { active = false }
+  }, [warnOutsideBoundary, tenant?.slug, tenant?.boundary_geojson])
+  const boundary = tenant?.boundary_geojson || loadedBoundary
+
+  // ประเมินจากพิกัดล่าสุดทุกครั้งที่หมุดเปลี่ยน (คำนวณหลักพันจุดยอด เบามาก) — ประเมินไม่ได้ (ไม่มีไฟล์/โหลดไม่สำเร็จ) = ไม่เตือน
+  const outsideInfo = useMemo(() => {
+    if (!warnOutsideBoundary || !boundary) return null
+    const result = evaluatePoint({ lat: selected.lat, lng: selected.lng }, boundary)
+    return result?.warn ? result : null
+  }, [warnOutsideBoundary, boundary, selected.lat, selected.lng])
+  const outsideShown = Boolean(outsideInfo)
+  useEffect(() => { onOutsideChange?.(outsideShown) }, [outsideShown, onOutsideChange])
+
   // จุดตั้งต้นของกล้อง — ต้องนิ่งตลอดอายุ component ห้ามส่ง `selected` เข้า LeafletMapCanvas เป็น center
   // เพราะ canvas สั่ง panTo ทุกครั้งที่ center เปลี่ยน: ชื่อที่อยู่จาก Nominatim ตอบช้า (0.5–2 วิ) พอมาถึงก็ดึงกล้องกลับ
   // ไปจุดที่ผู้ใช้ปัดผ่านมาแล้ว (เจ้าของระบบแจ้ง 2569-10-14 "เลื่อนแล้วเด้งคืน") กล้องขยับเฉพาะผู้ใช้ลากเอง
@@ -361,7 +392,7 @@ export default function LeafletMapPicker({
       </div>
 
       {/* Footer Address Info */}
-      <div className={`flex items-center gap-3 bg-white ${isModal ? 'shrink-0 border-t border-gray-100 p-3' : 'rounded-xl border border-gray-200 p-3'}`}>
+      <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 bg-white ${isModal ? 'shrink-0 border-t border-gray-100 p-3' : 'rounded-xl border border-gray-200 p-3'}`}>
         <MapPin size={20} className="shrink-0 text-red-500" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-gray-800">{selected.address || 'ตำแหน่งที่เลือกบนแผนที่'}</p>
@@ -375,6 +406,14 @@ export default function LeafletMapPicker({
           >
             <CheckCircle2 size={16} /> ยืนยันตำแหน่ง
           </button>
+        )}
+        {/* แถวคำเตือนอยู่ใต้แถวที่อยู่ เต็มความกว้างกล่อง (basis-full) — ไม่วางลอยบนแผนที่เพราะมุมแผนที่บนมือถือมีปุ่มเต็มทุกมุมแล้ว
+            และไม่ยัดในคอลัมน์ข้อความข้างปุ่มยืนยัน เพราะที่จอ 360px คอลัมน์นั้นแคบจนข้อความยาวเป็น 7 บรรทัด
+            ใช้คำว่า "ดูเหมือน" ไม่ยืนยันว่านอกเขตจริง และบอกทางออกทั้งสองฝั่ง (ผิดก็ลากใหม่ ถูกก็ไปต่อ) ผู้ใช้จะได้ไม่ต้องถามใคร */}
+        {outsideInfo && (
+          <p role="status" className="basis-full rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-semibold leading-snug text-amber-900">
+            ⚠️ ดูเหมือนอยู่นอกเขต{tenant?.name || 'พื้นที่ให้บริการ'} (ห่างประมาณ {describeDistance(outsideInfo.distanceM)}) ถ้ากดผิดลากหมุดใหม่ได้ ถ้าถูกแล้วส่งต่อได้เลย
+          </p>
         )}
       </div>
     </div>
