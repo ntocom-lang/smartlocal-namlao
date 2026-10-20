@@ -5,8 +5,10 @@
 // ⚠️ ไม่ใช่แบบ ๑–๖ ท้ายระเบียบ มท. ยานพาหนะ อปท. พ.ศ. ๒๕๖๙ (แบบ ๑/๒ อยู่ใน fleetRegisterPrint.js)
 // เป็นเอกสารแนบคำสั่งของ อปท. เอง ที่มาทางระเบียบยังต้องยืนยัน จึงห้ามใส่เลขข้อของระเบียบบนใบนี้
 //
-// ข้อมูลมาจาก fleet_vehicles ทั้งหมด ไม่มีการกรอกเพิ่มตอนพิมพ์ ยกเว้น "ที่ …… ลงวันที่ ……" ของคำสั่ง
-// ซึ่งเลขคำสั่งออกจากงานสารบรรณ ไม่อยู่ในระบบ จึงพิมพ์เป็นเส้นประให้เขียนเอง
+// ข้อมูลมาจาก fleet_vehicles ทั้งหมด ไม่มีการกรอกเพิ่มตอนพิมพ์
+//
+// บรรทัดหัว "เอกสารแนบท้ายคำสั่ง… ที่ …… ลงวันที่ ……" เจ้าของระบบสั่งเอาออกก่อน (2026-10-20) — เลขคำสั่งออกจาก
+// งานสารบรรณ ไม่อยู่ในระบบ ถ้าจะเอากลับมาให้พิมพ์เป็นเส้นประให้เขียนเอง ห้ามเดาเลข/วันที่ให้
 //
 // ระบบไม่เลือก "ผู้รับผิดชอบ" ให้ — การมอบหมายเป็นคำสั่งของผู้บริหาร (ดุลพินิจ) ระบบเก็บตามที่คำสั่งระบุ
 // ช่องที่ยังไม่กรอกพิมพ์เป็นช่องว่าง
@@ -232,8 +234,7 @@ export function buildFleetCustodianRegisterHtml({ vehicles = [], departments = [
     }
     p { margin: 0; }
     h1 { margin: 0; text-align: center; font-size: 14pt; font-weight: 700; line-height: 1.25; }
-    .order, .place { text-align: center; font-weight: 700; }
-    .order .fill { display: inline-block; min-width: 28mm; border-bottom: 1px dotted #333; padding: 0 4px; font-weight: 400; }
+    .place { text-align: center; font-weight: 700; }
     table.register { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 4mm; }
     table.register th, table.register td { border: 1px solid #000; vertical-align: middle; text-align: center; overflow-wrap: anywhere; }
     table.register th { font-weight: 700; line-height: 1.15; padding: 1mm 2px; }
@@ -258,7 +259,6 @@ export function buildFleetCustodianRegisterHtml({ vehicles = [], departments = [
   <thead><tr><td class="space-top"></td></tr></thead>
   <tfoot><tr><td class="space-bottom"></td></tr></tfoot>
   <tbody><tr><td>
-  <p class="order">เอกสารแนบท้ายคำสั่ง${esc(orgName)} ที่ <span class="fill">&nbsp;</span> ลงวันที่ <span class="fill">&nbsp;</span></p>
   <h1>ทะเบียนคุมยานพาหนะส่วนกลาง</h1>
   <p class="place">${esc(placeLine(tenant))}</p>
   <table class="register">
