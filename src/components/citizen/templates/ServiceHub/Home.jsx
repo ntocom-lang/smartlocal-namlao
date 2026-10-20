@@ -8,6 +8,7 @@ import { PATIENT_TRANSPORT_MODULE_KEY } from '../../../../lib/patientTransport'
 import { selectableDocumentTypes } from '../../../../lib/documentTypes'
 import BannerSlider from '../../../../components/home/BannerSlider'
 import WaterAlertBanner from '../../WaterAlertBanner'
+import SurveyHomeCard from '../../../survey/SurveyHomeCard'
 // ComplaintBand นำออกจากหน้าแรกตามคำขอ (เข้าใช้งานผ่านปุ่ม ร้องเรียน/ร้องทุกข์ ด้านบน)
 import ComplaintStatsWidget from '../../../../components/home/ComplaintStatsWidget'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
@@ -327,6 +328,8 @@ export default function ServiceHubHome() {
         {/* ขึ้นเฉพาะวันที่มีเรื่องเข้าเกณฑ์ วันปกติคืน null ไม่กินความสูงเลย — ระยะขอบอยู่ที่ตัวแถบเอง
             ไม่ใช่ที่กล่องครอบ ไม่งั้นวันปกติหน้าแรกจะเลื่อนลงเปล่าๆ */}
         <WaterAlertBanner className="mx-3 mb-2 sm:mx-4 lg:mx-6" />
+        {/* แบบสำรวจความเห็น — ขึ้นเฉพาะตอนมีแบบสำรวจเปิดอยู่/เพิ่งปิด วันปกติคืน null · อยู่ใต้แถบเตือนน้ำเสมอ */}
+        <SurveyHomeCard className="mx-3 mb-2 sm:mx-4 lg:mx-6" />
         <HeroBanner tenant={tenant} rounded="rounded-none" />
         <EServiceGrid docTypes={docTypes} rounded="rounded-none" />
       </div>

@@ -6,6 +6,7 @@ import { useAuth } from '../../../../contexts/AuthContext'
 import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import WaterAlertBanner from '../../WaterAlertBanner'
+import SurveyHomeCard from '../../../survey/SurveyHomeCard'
 import MiniEventCalendar from '../../../../components/MiniEventCalendar'
 import StaffSection from '../../../../components/home/StaffSection'
 import SmartCityBanner from '../../../../components/home/SmartCityBanner'
@@ -70,6 +71,8 @@ export default function Home() {
       <div className="px-4 -mt-10 relative z-20 max-w-6xl mx-auto">
         {/* ขึ้นเฉพาะวันที่มีเรื่องเข้าเกณฑ์ วันปกติคืน null ไม่กินความสูงเลย */}
         <WaterAlertBanner className="mb-3" />
+        {/* แบบสำรวจความเห็น — ขึ้นเฉพาะตอนมีแบบสำรวจเปิดอยู่/เพิ่งปิด วันปกติคืน null · อยู่ใต้แถบเตือนน้ำเสมอ */}
+        <SurveyHomeCard className="mb-3" />
         <h2 className="text-[17px] font-black mb-3 px-2 drop-shadow-sm" style={{ color: 'var(--color-primary-dark)' }}>บริการยอดนิยม</h2>
 
         {/* ย่อช่องจาก 72px เหลือ 62px (ไอคอน 60 → 50px) และตัดช่องไฟ ให้ 5 ช่องพอดีจอ 390px

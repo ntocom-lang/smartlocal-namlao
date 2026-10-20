@@ -8,12 +8,14 @@ import { driveFolderPath, driveMonthFolder, DRIVE_MODULES } from '../../lib/driv
 import {
   Plus, Trash2, Loader2, Newspaper, Camera, X, Upload,
   Eye, EyeOff, CalendarDays, Pencil, Check, Move, AlertCircle,
-  CheckCircle2,
+  CheckCircle2, ClipboardList,
 } from 'lucide-react'
+import SurveyManager from './SurveyManager'
 
 const TABS = [
   { key: 'news',     label: 'ข่าวสาร',  Icon: Newspaper },
   { key: 'activity', label: 'กิจกรรม', Icon: Camera },
+  { key: 'survey',   label: 'แบบสำรวจ', Icon: ClipboardList },
 ]
 
 const EMPTY_FORM = {
@@ -65,7 +67,8 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
     setLoading(false)
   }, [tenant?.id, tab])
 
-  useEffect(() => { fetchPosts() }, [fetchPosts])
+  // แท็บแบบสำรวจมีที่ดึงข้อมูลของตัวเอง (SurveyManager) ไม่ใช่ตาราง posts
+  useEffect(() => { if (tab !== 'survey') fetchPosts() }, [fetchPosts, tab])
 
   // ── Form open/close ────────────────────────────────────────────────────────
   function openNew() {
@@ -259,6 +262,8 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
     : ''
 
   const isNews = tab === 'news'
+  // แบบสำรวจ: ผู้ที่สร้าง/ปิด/ดูความเห็นได้ (ชุดเดียวกับในฐานข้อมูล survey_can_manage) — ที่เหลือไม่เห็นแท็บนี้
+  const canSurvey = ['superadmin', 'admin', 'officer', 'staff'].includes(currentUserRole)
   const canCreate = ['superadmin', 'admin', 'staff'].includes(currentUserRole)
     || (currentUserRole === 'officer' && !!myDepartmentId)
   const canManagePost = (post) => {
@@ -280,7 +285,7 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
 
       {/* Header row */}
       <div className="flex flex-wrap gap-2">
-        {TABS.map(({ key, label, Icon }) => (
+        {TABS.filter(t => t.key !== 'survey' || canSurvey).map(({ key, label, Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
               tab === key ? 'text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
@@ -289,7 +294,7 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
             <Icon size={14} /> {label}
           </button>
         ))}
-        {canCreate && (
+        {canCreate && tab !== 'survey' && (
           <button onClick={openNew}
             className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm"
             style={{ backgroundColor: 'var(--color-primary)' }}>
@@ -297,6 +302,8 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
           </button>
         )}
       </div>
+
+      {tab === 'survey' ? <SurveyManager /> : (<>
 
       {currentUserRole === 'officer' && !myDepartmentId && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
@@ -633,6 +640,7 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
           <button onClick={() => setDeleteError(null)} className="ml-2 opacity-70 hover:opacity-100"><X size={12} /></button>
         </div>
       )}
+      </>)}
     </div>
   )
 }

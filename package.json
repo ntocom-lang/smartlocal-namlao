@@ -96,6 +96,8 @@
     "test:complaint-finish": "node tests/complaint-finish.test.mjs",
     "test:complaint-track": "node tests/complaint-track.test.mjs",
     "test:complaint-track-browser": "node tests/complaint-track-browser.playwright.mjs",
+    "test:community-survey": "node tests/community-survey.test.mjs",
+    "test:community-survey-browser": "node tests/community-survey-browser.playwright.mjs",
     "test:complaint-polish": "node tests/complaint-text-polish.test.mjs",
     "test:complaint-list-print": "node tests/complaint-list-print.test.mjs",
     "test:complaint-monthly": "node tests/complaint-monthly-summary.test.mjs && node tests/complaint-monthly-infographic.test.mjs && node tests/report-entry-points.test.mjs && node tests/complaint-monthly-reminder.test.mjs && node tests/complaint-monthly-lock.test.mjs",

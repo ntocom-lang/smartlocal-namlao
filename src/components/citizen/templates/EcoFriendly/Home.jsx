@@ -10,6 +10,7 @@ import PostsHighlight, { PostDetailModal } from '../../../../components/home/Pos
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
 import WaterAlertBanner from '../../WaterAlertBanner'
+import SurveyHomeCard from '../../../survey/SurveyHomeCard'
 import {
   ChevronRight, Newspaper,
 } from 'lucide-react'
@@ -238,6 +239,8 @@ export default function HomePage() {
         {/* ขึ้นเฉพาะวันที่มีเรื่องเข้าเกณฑ์ วันปกติคืน null — อยู่บนสุดเพราะบนมือถือถ้าวางใต้แบนเนอร์
             จะตกไปอยู่นอกจอแรก คำเตือนที่ต้องเลื่อนหาไม่ช่วยอะไรตอนฝนตกหนัก */}
         <WaterAlertBanner className="mb-2" />
+        {/* แบบสำรวจความเห็น — ขึ้นเฉพาะตอนมีแบบสำรวจเปิดอยู่/เพิ่งปิด วันปกติคืน null · อยู่ใต้แถบเตือนน้ำเสมอ */}
+        <SurveyHomeCard className="mb-2" />
 
         {/* Mobile: สภาพอากาศอยู่ก่อนแบนเนอร์ / Desktop: แบนเนอร์ซ้าย ข้อมูลเมืองขวา */}
         <div className="grid lg:grid-cols-12 gap-2 lg:gap-4">
