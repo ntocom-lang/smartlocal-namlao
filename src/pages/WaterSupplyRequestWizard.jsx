@@ -602,6 +602,7 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
                     onChange={point => setPendingPoint(point)}
                     defaultCenter={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
                     confirmDisabled={!pendingPoint}
+                    warnOutsideBoundary
                     confirmClassName="bg-sky-700"
                     onConfirm={() => {
                       setForm(current => ({
