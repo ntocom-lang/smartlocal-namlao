@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2, LocateFixed, MapPin, Maximize2, Minimize2, Redo2, Search, Trash2, Undo2, X } from 'lucide-react'
 import LeafletMapCanvas from './common/LeafletMapCanvas'
+import MapTypeToggle from './common/MapTypeToggle'
 import { searchPlaces } from '../lib/nominatim'
 
 function haversine(a, b) {
@@ -48,6 +49,8 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
   const [searchError, setSearchError] = useState('')
   const [searching, setSearching] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
+  // มุมมองแผนที่ที่ผู้ใช้เลือก — เริ่มที่ดาวเทียมเหมือนเดิม · ดูถนนจริงตอนลากเส้นตามถนนได้ง่ายกว่าภาพถ่าย
+  const [mapTypeId, setMapTypeId] = useState('hybrid')
   const [redoStack, setRedoStack] = useState([])
   // เมนูคำสั่งตอนคลิกขวา — คลิกขวาพื้นที่ว่าง = เมนู "เพิ่มจุดตรงนี้", คลิกขวาที่หมุดเดิม = เมนู "ลบจุดนี้"
   const [contextMenu, setContextMenu] = useState(null) // { x, y, type: 'add'|'delete', point?, index? } | null
@@ -268,21 +271,27 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
           ระยะทางรวม <span className="font-mono text-sm text-blue-700">{distanceLabel}</span>
         </div>
       </div>
-      <LeafletMapCanvas
-        center={initialCenter}
-        zoom={17}
-        mapTypeId="hybrid"
-        markers={markers}
-        polylines={polylines}
-        fitBounds={false}
-        onMapClick={addPoint}
-        onMapRightClick={handleMapRightClick}
-        onFeatureRightClick={handleFeatureRightClick}
-        onPolylineRightClick={handlePolylineRightClick}
-        onMarkerDragEnd={handleMarkerDragEnd}
-        onMapReady={handleMapReady}
-        className={fullscreen ? 'w-full min-h-0 flex-1' : 'w-full h-[420px] min-h-[360px]'}
-      />
+      {/* ห่อด้วย relative เพื่อวางแถบสลับมุมมองทับมุมซ้ายบนของแผนที่ — ตัวห่อรับ flex-1 แทนแผนที่ตอนเต็มจอ
+          (แผนที่ข้างในยังเป็น flex-1 เหมือนเดิมในกล่อง flex ของตัวห่อ จึงสูงเต็มเท่าเดิม) · แถบเป็นพี่น้องของแผนที่
+          ไม่ได้อยู่ใน .leaflet-container คลิกแถบจึงไม่ถูกนับเป็นการเพิ่มจุด */}
+      <div className={fullscreen ? 'relative flex min-h-0 flex-1 flex-col' : 'relative'}>
+        <LeafletMapCanvas
+          center={initialCenter}
+          zoom={17}
+          mapTypeId={mapTypeId}
+          markers={markers}
+          polylines={polylines}
+          fitBounds={false}
+          onMapClick={addPoint}
+          onMapRightClick={handleMapRightClick}
+          onFeatureRightClick={handleFeatureRightClick}
+          onPolylineRightClick={handlePolylineRightClick}
+          onMarkerDragEnd={handleMarkerDragEnd}
+          onMapReady={handleMapReady}
+          className={fullscreen ? 'w-full min-h-0 flex-1' : 'w-full h-[420px] min-h-[360px]'}
+        />
+        <MapTypeToggle value={mapTypeId} onChange={setMapTypeId} className="absolute left-3 top-3 z-10" />
+      </div>
     </div>
   )
 

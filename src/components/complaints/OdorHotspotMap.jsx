@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Map as MapIcon, ChevronDown, ChevronUp, Info } from 'lucide-react'
 import LeafletMapCanvas from '../common/LeafletMapCanvas'
+import MapTypeToggle from '../common/MapTypeToggle'
 import { buildOdorPoints } from '../../lib/odorAnalytics'
 import { odorIntensityLabel, ODOR_SEVERE_FROM } from '../../lib/odorOptions'
 import { odorTimeRangeLabel } from '../../lib/odorTimeRanges'
@@ -77,6 +78,8 @@ function buildPopupHtml(point) {
 
 export default function OdorHotspotMap({ complaints }) {
   const [open, setOpen] = useState(true)
+  // มุมมองแผนที่ที่ผู้ใช้เลือก — เริ่มที่ดาวเทียมเหมือนเดิม สลับแล้วกล้องไม่ขยับ (ไม่ refit)
+  const [mapTypeId, setMapTypeId] = useState('hybrid')
   const data = useMemo(() => buildOdorPoints(complaints), [complaints])
 
   const markers = useMemo(() => data.points.map((point) => {
@@ -141,14 +144,15 @@ export default function OdorHotspotMap({ complaints }) {
 
       {open && (
         <>
-          <div className="h-[340px] w-full overflow-hidden rounded-xl border border-gray-100">
+          <div className="relative h-[340px] w-full overflow-hidden rounded-xl border border-gray-100">
             <LeafletMapCanvas
               markers={markers}
               fitBounds
               zoom={14}
-              mapTypeId="hybrid"
+              mapTypeId={mapTypeId}
               className="w-full h-full"
             />
+            <MapTypeToggle value={mapTypeId} onChange={setMapTypeId} className="absolute left-3 top-3 z-10" />
           </div>
 
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
