@@ -1065,32 +1065,38 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               แล้วการ์ดสถานที่ (top-16) ลอยทับปุ่ม · ไอคอนเป้าเล็ง = สัญลักษณ์มาตรฐานของแผนที่ทุกแอป (ไม่ต้องมีข้อความกำกับ) · ไม่อยู่ในกลุ่มขวา
               ปุ่มแรกของกลุ่มนั้นจึงยังเป็นปุ่มเดิมเสมอ (tests/map-click กดปุ่มแรก) */}
           <div className="absolute left-3 top-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-col items-start gap-2">
-            <button type="button" onClick={toggleLocate} aria-pressed={Boolean(myPos)} disabled={locating}
-              aria-label={`${myPos ? 'ซ่อน' : 'แสดง'}ตำแหน่งของฉัน`} title="ตำแหน่งของฉัน"
-              className="flex size-11 items-center justify-center rounded-full border shadow-md transition-all active:scale-95 disabled:opacity-70"
-              style={myPos
-                ? { backgroundColor: '#2563eb', borderColor: '#2563eb', color: '#ffffff' }
-                : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: '#2563eb' }}>
-              {locating ? <Loader2 size={20} className="animate-spin" /> : <LocateFixed size={20} />}
-            </button>
-            {/* สลับมุมมอง: วางต่อจากปุ่มตำแหน่งของฉัน (คอลัมน์ซ้ายบนเดียวกัน) แต่ก่อนข้อความสถานะ — ข้อความที่โผล่ทีหลังจะไม่ดันปุ่มขยับ
+            {/* แถวบนสุดของแผนที่: ปุ่มตำแหน่งของฉัน + สลับมุมมอง [ดาวเทียม | แผนที่ถนน] (เจ้าของระบบสั่งให้ขึ้นมาอยู่บนสุด เดิมอยู่ใต้ปุ่มตำแหน่ง)
+                ตั้งแต่ sm (640px) ขึ้นไปวางข้างกันในแถวเดียว · จอแคบกว่านั้นยังซ้อนกันเหมือนเดิม เพราะแถวบนเต็มด้วยปุ่มขวาบน
+                (วัดบน production: น้ำเลา 360/390px ปุ่มขวาเริ่มที่ x=115/145 ส่วนแถบสลับกว้าง 159px จบที่ x=171 ถ้าวางแถวเดียวจะทับกัน)
                 ไม่ใช้แถวปุ่มขวาบน: ฝั่งเจ้าหน้าที่เป็นไอคอนเรียงแถวเดียวไม่ตัดบรรทัด ใส่แถบกว้างเพิ่มแล้วล้นจอมือถือ
-                มือถือที่การ์ด (หมุด/วงรัศมี/ผู้ได้รับผลกระทบ — ทั้ง 3 ใบวางที่ top-16 เหมือนกัน) ขึ้นมาจะบังแถบนี้ จึงซ่อนไว้ชั่วคราว
-                (invisible ไม่ใช่ hidden: ยังกินที่เท่าเดิม ปุ่มอื่นในคอลัมน์ไม่ขยับ · ไม่ซ่อนแล้วขอบน้ำเงินของแถบจะโผล่พ้นขอบการ์ด)
-                ปิดการ์ดแล้วกลับมาใช้ได้ · บน PC การ์ดอยู่ล่างกลางจอ ไม่ชน จึงไม่ซ่อน */}
-            <MapTypeToggle value={mapTypeId} onChange={setMapTypeId}
-              className={selectedEntry || selectedZone || selectedAffected ? 'max-lg:invisible' : ''} />
+                แถวปุ่มขวาบนฝั่งประชาชน (ป้ายชื่อตัดบรรทัดได้) จำกัดความกว้างที่ sm ขึ้นไปให้เหลือที่ซ้าย 16rem ปุ่มหลายตัวจะตัดลงแถวสองแทนการวิ่งไปทับแถบสลับ
+                กล่องของแถวปุ่มขวา pointer-events-none (ปุ่มแต่ละตัวเปิดรับเอง): ตัดบรรทัดแล้วกล่องกว้างครอบพื้นที่ว่างฝั่งซ้ายด้วย (ปุ่ม 3 ตัวที่ 360px) บังการกดแถบสลับที่อยู่ใต้ */}
+            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+              <button type="button" onClick={toggleLocate} aria-pressed={Boolean(myPos)} disabled={locating}
+                aria-label={`${myPos ? 'ซ่อน' : 'แสดง'}ตำแหน่งของฉัน`} title="ตำแหน่งของฉัน"
+                className="flex size-11 shrink-0 items-center justify-center rounded-full border shadow-md transition-all active:scale-95 disabled:opacity-70"
+                style={myPos
+                  ? { backgroundColor: '#2563eb', borderColor: '#2563eb', color: '#ffffff' }
+                  : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: '#2563eb' }}>
+                {locating ? <Loader2 size={20} className="animate-spin" /> : <LocateFixed size={20} />}
+              </button>
+              {/* จอแคบ (<sm) แถบอยู่แถวสอง: การ์ด (หมุด/วงรัศมี/ผู้ได้รับผลกระทบ — ทั้ง 3 ใบวางที่ top-16 เหมือนกัน) ที่ขึ้นมาจะบังแถบนี้ จึงซ่อนไว้ชั่วคราว
+                  (invisible ไม่ใช่ hidden: ยังกินที่เท่าเดิม ปุ่มอื่นในคอลัมน์ไม่ขยับ · ไม่ซ่อนแล้วขอบน้ำเงินของแถบจะโผล่พ้นขอบการ์ด)
+                  ตั้งแต่ sm ขึ้นไปแถบอยู่แถวบน (y < 64px) การ์ดที่ top-16 ไม่ถึง จึงไม่ต้องซ่อน · บน PC การ์ดอยู่ล่างกลางจอ ไม่ชนอยู่แล้ว */}
+              <MapTypeToggle value={mapTypeId} onChange={setMapTypeId}
+                className={selectedEntry || selectedZone || selectedAffected ? 'max-sm:invisible' : ''} />
+            </div>
             {locateMsg && (
               <p role="status" className="rounded-lg bg-gray-800/90 px-3 py-2 text-xs font-semibold text-white shadow-lg">{locateMsg}</p>
             )}
           </div>
 
           {mapButtons.length > 0 && (
-            <div className={`absolute right-3 top-3 z-20 flex items-center gap-2 ${allowStatusFilter ? '' : 'max-w-[calc(100%-4.5rem)] flex-wrap justify-end'}`}>
+            <div className={`pointer-events-none absolute right-3 top-3 z-20 flex items-center gap-2 ${allowStatusFilter ? '' : 'max-w-[calc(100%-4.5rem)] flex-wrap justify-end sm:max-w-[calc(100%-16rem)]'}`}>
               {mapButtons.map(({ id, label, Icon, icon, on, toggle, onColor = '#1e88c7' }) => (
                 // group/relative: ให้ป้ายชื่อโผล่ใต้ปุ่มตอน hover/โฟกัสด้วยคีย์บอร์ด — ใช้ป้ายในหน้าเว็บเอง
                 // ไม่ใช้ title ของเบราว์เซอร์ เพราะมันขึ้นช้า หน้าตาแล้วแต่ OS และแตะบนมือถือไม่ขึ้นเลย
-                <div key={id} className="relative group">
+                <div key={id} className="pointer-events-auto relative group">
                   <button type="button" aria-label={`${on ? 'ซ่อน' : 'แสดง'}${label}`} aria-pressed={on}
                     onClick={toggle}
                     className={`h-10 rounded-full shadow-md border flex items-center justify-center transition-all active:scale-95 ${allowStatusFilter ? 'w-10' : 'gap-1.5 px-3 text-xs font-semibold'}`}
