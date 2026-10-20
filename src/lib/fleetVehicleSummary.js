@@ -133,6 +133,26 @@ const DOCUMENT_FIELDS = [
   { key: 'inspection_expiry', label: 'ตรวจสภาพ' },
 ]
 
+// ปุ่ม "ใช้วันเดียวกับประกันภัย" ในฟอร์มรถ (เจ้าของระบบสั่ง 2026-10-20) — ลดงานกรอกหลังแยกวันหมดอายุเป็นรายฉบับ
+// (เดิมกรอกวันเดียวได้ครบ 4 ฉบับ) คัดลอกเฉพาะ พ.ร.บ. กับทะเบียน และเฉพาะช่องที่ "ยังว่าง" — ไม่เขียนทับสิ่งที่กรอกไว้แล้ว
+// ⚠️ ไม่คัดลอกไปช่อง "ตรวจสภาพ" โดยเจตนา: ช่องนั้นไม่บังคับ (รถที่ไม่ถึงเกณฑ์ตรวจสภาพเว้นว่างได้) ถ้าปุ่มใส่วันให้
+// จะเกิดวันตรวจสภาพที่ไม่มีจริงในทะเบียนเงียบๆ แล้วระบบแจ้งเตือนทาง Telegram ตามวันปลอมนั้น — ช่องว่างที่ระบบบอกว่า
+// "ยังไม่กรอก" ดีกว่าวันผิดที่ดูเหมือนข้อมูลจริง
+export const DOCUMENT_COPY_FROM = 'insurance_expiry'
+export const DOCUMENT_COPY_TO = ['act_expiry', 'registration_expiry']
+
+// expiries = { insurance_expiry, act_expiry, registration_expiry, ... } ค่าเป็น 'YYYY-MM-DD' หรือ '' / null
+export function canCopyInsuranceDate(expiries) {
+  return Boolean(expiries?.[DOCUMENT_COPY_FROM]) && DOCUMENT_COPY_TO.some(key => !expiries?.[key])
+}
+
+// คืนเฉพาะช่องที่ต้องเปลี่ยน ({ act_expiry, registration_expiry } ที่ยังว่าง) ใช้ merge เข้า state ของฟอร์มได้เลย
+export function copyInsuranceDate(expiries) {
+  const source = expiries?.[DOCUMENT_COPY_FROM]
+  if (!source) return {}
+  return Object.fromEntries(DOCUMENT_COPY_TO.filter(key => !expiries?.[key]).map(key => [key, source]))
+}
+
 /**
  * ความพร้อมของเอกสารรถ · today = 'YYYY-MM-DD' เวลาไทย
  * วันเดียวกันหมด (หรือว่างหมด) รวมเป็นรายการเดียว ไม่งั้นได้ 4 จุดที่บอกเรื่องเดียวกัน — วันต่างกันจริงแยกแสดงรายฉบับ

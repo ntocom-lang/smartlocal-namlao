@@ -3,8 +3,9 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
-  buildMonthlySeries, costSplit, documentReadiness, DOCUMENT_SOON_DAYS, efficiencyVsStandard, fiscalYearRange,
-  fuelCostPerKm, maintenanceTitle, recentActivity, sumSeries, vehicleAgeText, vehicleCompleteness,
+  buildMonthlySeries, canCopyInsuranceDate, copyInsuranceDate, costSplit, documentReadiness, DOCUMENT_COPY_TO,
+  DOCUMENT_SOON_DAYS, efficiencyVsStandard, fiscalYearRange, fuelCostPerKm, maintenanceTitle, recentActivity,
+  sumSeries, vehicleAgeText, vehicleCompleteness,
 } from '../src/lib/fleetVehicleSummary.js'
 
 // ── ปีงบประมาณ ─────────────────────────────────────────────────────────────────────
@@ -140,5 +141,38 @@ assert.ok(/value=\{form\[key\]\}\s+onChange=\{set\(key\)\}/.test(vehiclesForm), 
 assert.equal(/act_expiry:\s*v,\s*registration_expiry:\s*v/.test(vehiclesForm), false,
   'ห้ามมี handler ที่ตั้งวันหมดอายุทุกฉบับเป็นค่าเดียวกันพร้อมกันอีก')
 assert.equal(vehiclesForm.includes('ครอบคลุม: ประกันภัย · พรบ. · ทะเบียน · ตรวจสภาพ'), false, 'ข้อความช่องเดียวเดิมต้องถูกแทนที่')
+
+// ── ปุ่ม "ใช้วันเดียวกับประกันภัย" (เจ้าของระบบสั่ง 2026-10-20) ─────────────────────────────
+const blank = { insurance_expiry: '', act_expiry: '', registration_expiry: '', inspection_expiry: '' }
+// ไม่มีวันประกันภัย = ไม่มีอะไรให้คัดลอก ปุ่มไม่ขึ้น
+assert.equal(canCopyInsuranceDate(blank), false)
+assert.deepEqual(copyInsuranceDate(blank), {})
+assert.equal(canCopyInsuranceDate(null), false)
+assert.deepEqual(copyInsuranceDate(undefined), {})
+// กรอกประกันภัยแล้ว พรบ./ทะเบียน ว่าง → ขึ้นปุ่ม และเติมทั้งสองช่อง
+const onlyInsurance = { ...blank, insurance_expiry: '2027-03-15' }
+assert.equal(canCopyInsuranceDate(onlyInsurance), true)
+assert.deepEqual(copyInsuranceDate(onlyInsurance), { act_expiry: '2027-03-15', registration_expiry: '2027-03-15' })
+// ⚠️ ไม่เติมตรวจสภาพ — ไม่บังคับ ถ้าปุ่มใส่วันให้จะเกิดวันตรวจสภาพปลอมในทะเบียนและแจ้งเตือนผิด
+assert.equal('inspection_expiry' in copyInsuranceDate(onlyInsurance), false)
+assert.equal(DOCUMENT_COPY_TO.includes('inspection_expiry'), false)
+// ไม่เขียนทับช่องที่กรอกไว้แล้ว (วันที่ต่างกันจริงเป็นข้อมูลที่ตั้งใจกรอก)
+const partlyFilled = { ...onlyInsurance, act_expiry: '2027-08-01' }
+assert.equal(canCopyInsuranceDate(partlyFilled), true)
+assert.deepEqual(copyInsuranceDate(partlyFilled), { registration_expiry: '2027-03-15' }, 'ช่องที่กรอกแล้วต้องไม่ถูกทับ')
+// กรอก พรบ./ทะเบียนครบแล้ว = ไม่มีอะไรให้เติม ปุ่มหาย (กดซ้ำไม่ได้)
+const allFilled = { ...onlyInsurance, act_expiry: '2027-08-01', registration_expiry: '2028-01-01' }
+assert.equal(canCopyInsuranceDate(allFilled), false)
+assert.deepEqual(copyInsuranceDate(allFilled), {})
+// ผลที่ merge กลับเข้าฟอร์มแล้ว ปุ่มต้องหาย และกดซ้ำไม่เปลี่ยนอะไร
+const afterCopy = { ...onlyInsurance, ...copyInsuranceDate(onlyInsurance) }
+assert.equal(canCopyInsuranceDate(afterCopy), false)
+assert.deepEqual({ ...afterCopy, ...copyInsuranceDate(afterCopy) }, afterCopy)
+// ตัวฟอร์มต้องใช้ฟังก์ชันชุดนี้จริง: ปุ่มไม่ใช่ submit และเติมผ่าน merge (ไม่ตั้งทุกช่องพร้อมกันเหมือนช่องเดียวเดิม)
+assert.ok(vehiclesForm.includes('canCopyInsuranceDate(form)'), 'ปุ่มต้องขึ้นตามเงื่อนไขจากฟังก์ชันกลาง')
+assert.ok(vehiclesForm.includes('...copyInsuranceDate(f)'), 'ปุ่มต้องเติมผ่าน copyInsuranceDate')
+assert.ok(/<button type="button" onClick=\{\(\) => setForm\(f => \(\{ \.\.\.f, \.\.\.copyInsuranceDate\(f\) \}\)\)\}/.test(vehiclesForm),
+  'ปุ่มคัดลอกต้องเป็น type="button" และอัปเดตผ่าน setForm แบบ functional')
+assert.ok(vehiclesForm.includes('ใช้วันเดียวกับประกันภัย'), 'ข้อความปุ่มต้องบอกว่าคัดลอกจากประกันภัย')
 
 console.log('fleet vehicle summary assertions passed')
