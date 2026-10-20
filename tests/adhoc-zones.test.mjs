@@ -374,18 +374,18 @@ const fakeStorage = (initial = {}) => {
   assert.equal(options.length, 4, 'ต้องไม่แก้อาร์เรย์เดิม (ค่าคงที่ของคอมโพเนนต์)')
 }
 
-// ── หน้าแรกของแผนที่ประชาชน: เปิดทุกประเภทให้เอง + fit ไม่ให้หมุดจมใต้แผงล่าง (เจ้าของสั่ง 2569-10-15) ──
+// ── หน้าแรกของแผนที่ศูนย์ข้อมูล: เปิดทุกประเภทให้เอง (ประชาชน + เจ้าหน้าที่) + fit ไม่ให้หมุดจมใต้แผงล่าง ──
 {
-  const base = { isPublic: true, hasFocus: false, pinCount: 20 }
-  assert.equal(shouldAutoOpenCategories(base), true, 'ประชาชน + หมุดไม่มาก (namlao 20) → เปิดเอง')
+  const base = { hasFocus: false, adhocMode: false, pinCount: 20 }
+  assert.equal(shouldAutoOpenCategories(base), true, 'หมุดไม่มาก (namlao 20) → เปิดเอง')
   assert.equal(shouldAutoOpenCategories({ ...base, pinCount: PUBLIC_AUTO_OPEN_MAX_PINS }), true, 'เท่าเพดานพอดียังเปิด')
-  assert.equal(shouldAutoOpenCategories({ ...base, pinCount: PUBLIC_AUTO_OPEN_MAX_PINS + 1 }), false, 'เกินเพดาน → เริ่มปิดเหมือนเดิม (กันรก)')
-  assert.equal(shouldAutoOpenCategories({ ...base, isPublic: false }), false, 'หน้าเจ้าหน้าที่ไม่ใช้กฎนี้ (ต้องคงหน้าตาเริ่มต้น โดยเฉพาะโหมดเฉพาะกิจ)')
-  assert.equal(shouldAutoOpenCategories({ ...base, hasFocus: true }), false, 'มาจากปุ่ม "ดูบนแผนที่" ต้องเปิดเฉพาะประเภทเป้าหมาย ห้ามเปิดทุกประเภทแทน')
+  assert.equal(shouldAutoOpenCategories({ ...base, pinCount: PUBLIC_AUTO_OPEN_MAX_PINS + 1 }), false, 'เกินเพดาน → เริ่มปิดเหมือนเดิม')
+  assert.equal(shouldAutoOpenCategories({ ...base, adhocMode: true }), false, 'โหมดเฉพาะกิจของเจ้าหน้าที่ต้องโล่ง ไม่ถมหมุดสถานที่')
+  assert.equal(shouldAutoOpenCategories({ ...base, hasFocus: true }), false, 'มาจากปุ่ม "ดูบนแผนที่" ต้องเปิดเฉพาะประเภทเป้าหมาย')
   assert.equal(shouldAutoOpenCategories({ ...base, pinCount: 0 }), false, 'ไม่มีหมุดเลย ไม่มีอะไรให้เปิด')
   assert.equal(shouldAutoOpenCategories({ ...base, pinCount: undefined }), false)
   assert.equal(shouldAutoOpenCategories({ ...base, pinCount: 'abc' }), false)
-  assert.equal(shouldAutoOpenCategories({ isPublic: true, pinCount: 5 }), true, 'ไม่ส่ง hasFocus = ไม่มีโฟกัส')
+  assert.equal(shouldAutoOpenCategories({ pinCount: 5 }), true, 'ไม่ส่ง hasFocus/adhocMode = ไม่มีโฟกัส ไม่ใช่เฉพาะกิจ')
   assert.equal(shouldAutoOpenCategories({ ...base, pinCount: 100, max: 200 }), true, 'ปรับเพดานได้ทางพารามิเตอร์')
 
   // fitPaddingFor: เผื่อเฉพาะส่วนที่แผงล่างทับแผนที่จริง

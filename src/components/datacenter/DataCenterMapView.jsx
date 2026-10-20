@@ -402,7 +402,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   // หัวข้อรอง (ประเภทย่อยในการ์ด) เริ่มต้นปิดไว้ก่อน (Set ว่าง) ต้องกดเปิดเองทีละประเภท — ยกเว้นกระโดดมาจาก
   // ปุ่ม "ดูบนแผนที่" ที่ต้องเปิดประเภทเป้าหมายให้เห็นหมุดทันที ไม่งั้นกดมาแล้วแผนที่จะว่างเปล่า
   // userCategories = ที่ผู้ใช้ (หรือปุ่ม "ดูบนแผนที่") เลือกแล้ว · null = ยังไม่แตะ ใช้ค่าตั้งต้นที่คำนวณจากข้อมูลแทน
-  // (หน้าประชาชนที่หมุดไม่มาก เปิดทุกประเภทให้เอง — ดู shouldAutoOpenCategories) · แยกแบบนี้เพราะค่าตั้งต้นรู้ได้หลังโหลดข้อมูลเสร็จ
+  // (หมุดไม่มาก เปิดทุกประเภทให้เองทั้งหน้าประชาชนและหน้าเจ้าหน้าที่ — ดู shouldAutoOpenCategories) · แยกแบบนี้เพราะค่าตั้งต้นรู้ได้หลังโหลดข้อมูลเสร็จ
   // ถ้าเก็บเป็น state เดียวต้องไปเติมใน useEffect ซึ่งชน lint rule react-hooks/set-state-in-effect ของโปรเจกต์
   const [userCategories, setUserCategories] = useState(() =>
     initialGroup && initialCategory ? new Set([`${initialGroup}::${initialCategory}`]) : null)
@@ -594,12 +594,19 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const placeCategoryKeys = entries
     .filter(e => !(e.route_points?.length >= 2) && !isFloatGroup(e.group_name))
     .map(e => categoryKey(e, resolveCategoryLabel))
+  // ชุดที่ "เปิดให้เอง": หน้าประชาชนเปิดทุกหมุดสถานที่ (เหมือนเดิม) · หน้าเจ้าหน้าที่เปิดเฉพาะหมุดของศูนย์ข้อมูลดิจิทัล
+  // เพราะ entries ฝั่งนี้ปนหมุดคำร้องที่เสร็จแล้วด้วย (ตัวกรองสถานะเริ่มที่ "เสร็จสิ้นแล้ว") ซึ่งไม่ใช่ของแท็บนี้
+  const autoOpenKeys = allowStatusFilter
+    ? entries
+      .filter(e => e.source_table === 'data_center_entries' && !(e.route_points?.length >= 2) && !isFloatGroup(e.group_name))
+      .map(e => categoryKey(e, resolveCategoryLabel))
+    : placeCategoryKeys
   const autoOpenCategories = shouldAutoOpenCategories({
-    isPublic: !allowStatusFilter,
     hasFocus: Boolean(initialGroup) || (Number.isFinite(focusLat) && Number.isFinite(focusLng)),
-    pinCount: placeCategoryKeys.length,
+    adhocMode: Boolean(adhocMode),
+    pinCount: autoOpenKeys.length,
   })
-  const activeCategories = userCategories ?? (autoOpenCategories ? new Set(placeCategoryKeys) : new Set())
+  const activeCategories = userCategories ?? (autoOpenCategories ? new Set(autoOpenKeys) : new Set())
   const visible = entries.filter(e => {
     if (e.route_points?.length >= 2) {
       if (!showRoutes) return false
@@ -764,6 +771,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
       : { lat: 13.7563, lng: 100.5018 }
   }, [hasFocusPoint, focusLat, focusLng, tenantLat, tenantLng])
   const mapZoom = hasFocusPoint ? 17 : 13
+  // ซูมให้พอดีหมุด: หน้าประชาชนทำเสมอ (เหมือนเดิม) · หน้าเจ้าหน้าที่ทำเฉพาะตอนหมุดมาจากการ "เปิดให้เอง" และยังไม่เคยกดเลือกประเภทเอง
+  // ไม่งั้นบนมือถือหมุดที่เปิดให้ไปจมใต้แผงล่าง (วัดแล้ว 16 จาก 17 หมุดถูกบัง) · พอเจ้าหน้าที่กดเลือกประเภทเองแล้วกล้องห้ามขยับตามอีก
+  const fitToPins = !hasFocusPoint && (!allowStatusFilter || (autoOpenCategories && userCategories === null))
   // แผงล่างบนมือถือลอยทับแผนที่ — วัดตอนจะ fit จริง (ไม่ใช่ตอน render) เพราะความสูงแผงเปลี่ยนตามการย่อ/ขยายและขนาดจอ
   // บน PC แผงนี้ซ่อน (display: none → ไม่มี client rects) จึงได้ระยะเผื่อปกติ
   const getFitPadding = () => {
@@ -966,9 +976,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               boundaryGeoJson={boundaryGeoJson}
               className="w-full h-full min-h-[70vh]"
               // หน้าประชาชน: ซูมให้พอดีกับหมุดที่เปิดอยู่ทุกครั้งที่ชุดหมุดเปลี่ยน และเผื่อพื้นที่ใต้แผงล่างบนมือถือ — ไม่งั้นหมุดจมใต้แผง
-              // (วัดบน namlao มือถือ: เปิดครบ 17 หมุด เห็นจริง 6) · หน้าเจ้าหน้าที่ไม่ fit (เคยชินกับกล้องที่ตัวเองวางไว้ + มีวงรัศมี)
+              // (วัดบน namlao มือถือ: เปิดครบ 17 หมุด เห็นจริง 6) · หน้าเจ้าหน้าที่ fit เฉพาะตอนหมุดมาจากการเปิดให้เอง (ดู fitToPins) แล้วห้ามขยับอีกหลังกดเลือกประเภทเอง · นอกนั้นไม่ fit (เคยชินกับกล้องที่ตัวเองวางไว้ + มีวงรัศมี)
               // และตอนกระโดดมาจากปุ่ม "ดูบนแผนที่" ต้องคงซูมที่ตั้งใจไว้ (ซูม 17 ที่หมุดเดียว)
-              fitBounds={!allowStatusFilter && !hasFocusPoint}
+              fitBounds={fitToPins}
               fitPadding={getFitPadding}
               refitSignal={layoutTick}
               fitAnimate={false}
