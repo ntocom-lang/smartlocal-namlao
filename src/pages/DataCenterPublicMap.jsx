@@ -4,7 +4,6 @@ import { ArrowLeft, Home, Database, Layers, CalendarClock } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 import { supabase } from '../lib/supabase'
 import DataCenterMapView from '../components/datacenter/DataCenterMapView'
-import OpenDataDownload from '../components/datacenter/OpenDataDownload'
 import { formatThaiDate } from '../lib/dataCenterHealth'
 
 // สถิติรวมสาธารณะ — นับที่ฐานข้อมูลด้วย RPC data_center_public_stats (เฉพาะรายการ active ตามนโยบาย RLS
@@ -67,13 +66,6 @@ export default function DataCenterPublicMap() {
             <StatChip Icon={Database} value={stats.total} label="ข้อมูลทั้งหมด" />
             <StatChip Icon={Layers} value={stats.groups} label="หมวดหมู่" />
             {stats.latestUpdate && <StatChip Icon={CalendarClock} value={formatThaiDate(stats.latestUpdate)} label="ปรับปรุงล่าสุด" />}
-          </div>
-        )}
-        {/* ข้อมูลเปิด: ชุดเดียวกับที่แสดงบนแผนที่นี้อยู่แล้ว (รายการที่เปิดใช้งาน) ให้นำไปใช้ต่อใน GIS/Excel ได้เอง */}
-        {tenant?.id && (
-          <div className="flex flex-wrap items-center gap-2 mt-2.5">
-            <span className="text-[10px] font-bold text-white/70">ดาวน์โหลดข้อมูลสถานที่เก็บไว้ใช้เอง:</span>
-            <OpenDataDownload tenant={tenant} variant="hero" />
           </div>
         )}
       </header>
