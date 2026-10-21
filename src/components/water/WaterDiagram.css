@@ -23,13 +23,21 @@
 .wd-root.wd-paused .wd-flow,
 .wd-root.wd-paused .wd-shimmer,
 .wd-root.wd-paused .wd-bob,
+.wd-root.wd-paused .wr-flow,
+.wd-root.wd-paused .wr-fall,
+.wd-root.wd-paused .wr-wave,
+.wd-root.wd-paused .wr-shim,
 .wd-root[data-offscreen] .wd-flow,
 .wd-root[data-offscreen] .wd-shimmer,
-.wd-root[data-offscreen] .wd-bob { animation-play-state: paused; }
+.wd-root[data-offscreen] .wd-bob,
+.wd-root[data-offscreen] .wr-flow,
+.wd-root[data-offscreen] .wr-fall,
+.wd-root[data-offscreen] .wr-wave,
+.wd-root[data-offscreen] .wr-shim { animation-play-state: paused; }
 
 /* ผู้ใช้ตั้งค่าลดการเคลื่อนไหวที่ระบบปฏิบัติการ → ไม่วิ่งเลย (ดูทิศจากลูกศร) — กฎของหน้าเดิมครอบแค่ transition */
 @media (prefers-reduced-motion: reduce) {
-  .wd-flow, .wd-shimmer, .wd-bob { animation: none !important; }
+  .wd-flow, .wd-shimmer, .wd-bob, .wr-flow, .wr-fall, .wr-wave, .wr-shim { animation: none !important; }
 }
 
 /* กล่องแผนที่: เลื่อนได้ทั้งสองแกน กว้างขั้นต่ำเพื่อให้ตัวหนังสือในผังอ่านออก ตัวซูมปรับความกว้างของ svg */
@@ -60,3 +68,17 @@
 .wd-sub { display: block; font-size: 12px; color: #64748b; }
 
 .wd-legend svg { width: 34px; height: 16px; flex-shrink: 0; }
+
+/* ── แผนภาพเส้นทางน้ำ (WaterRouteArt.jsx) ── */
+/* ลายสว่างวิ่งตามลำน้ำ (เฉพาะ stream.flow) · ระยะเลื่อน = ความยาวลาย 1 รอบ (3 + 11) วนต่อเนื่องไม่กระตุก */
+.wr-hl { stroke-opacity: 0.38; }
+.wr-flow { stroke-opacity: 0.85; animation: wr-dash 0.9s linear infinite; }
+.wr-fall { animation: wr-dash 0.9s linear infinite; }
+@keyframes wr-dash { to { stroke-dashoffset: -14; } }
+/* คลื่นแม่น้ำ: เลื่อน 1 คาบ (--p) วนต่อเนื่อง · ผืนน้ำระยิบเบาๆ (ไม่บอกทิศ — ผังไม่ระบุทิศน้ำในแม่น้ำ) */
+.wr-wave { animation: wr-wave 3.4s linear infinite; }
+.wr-wave-b { animation-duration: 5.2s; animation-direction: reverse; }
+@keyframes wr-wave { to { transform: translateX(calc(var(--p, 28px) * -1)); } }
+.wr-shim { animation: wr-shim 5s ease-in-out infinite alternate; }
+@keyframes wr-shim { from { opacity: 0.6; } to { opacity: 1; } }
+.wr-list .wd-tag { margin-left: 0; }

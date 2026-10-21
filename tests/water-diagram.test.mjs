@@ -6,9 +6,12 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { SMALL_RESERVOIRS } from '../src/lib/smallReservoirs.js'
 import {
-  DIAGRAM_PREVIEW_SCOPES, DIAGRAM_STATUSES, EDGE_STYLES, WATER_DIAGRAM_TENANTS, chipWidth, diagramTenant, isAnimated, isShimmer, liveBadges,
+  CHIP_TONES, DIAGRAM_PREVIEW_SCOPES, DIAGRAM_STATUSES, EDGE_STYLES, WATER_DIAGRAM_TENANTS, chipWidth, diagramTenant, isAnimated, isShimmer, liveBadges,
   resolveDiagram,
 } from '../src/lib/waterDiagram/model.js'
+import {
+  ISLAND_THICKNESS, PROP_KINDS, islandShape, labelPosition, pillFor, pillWidth, pinPosition, routeIssues, routeItems, smoothPath, wavePath,
+} from '../src/lib/waterDiagram/route.js'
 import { DIAGRAMS, diagramById } from '../src/lib/waterDiagram/diagrams.js'
 import { THUNGKAEW_BINDS } from '../src/lib/waterDiagram/thungkaew.js'
 import { ORIGINAL_DIAGRAM_FILES, ORIGINAL_FILE_BASE, originalDiagramUrl } from '../src/lib/waterDiagram/originalFiles.js'
@@ -409,10 +412,221 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     assert.equal(b['rain-RES038'].text, 'ไม่มีค่าในระบบ')
     assert.equal(b['level-YOM003'].text, 'ไม่มีค่าในระบบ')
   }
-  assert.deepEqual(liveBadges({ binds: { x: { type: 'unknown' } }, now }), { x: { tone: 'na', text: 'ไม่มีค่าในระบบ', detail: 'ไม่มีค่าในระบบ' } })
+  assert.deepEqual(liveBadges({ binds: { x: { type: 'unknown' } }, now }), { x: { tone: 'na', text: 'ไม่มีค่าในระบบ', detail: 'ไม่มีค่าในระบบ', short: 'ไม่มีค่า' } })
   assert.deepEqual(liveBadges({ now }), {})
+
+  // short/note สำหรับป้ายบนแผนภาพเส้นทางน้ำ (เพิ่มจาก text/detail เดิม) — ค้าง/ซ้ำเดิม/ไม่มีค่าต้องไม่กลายเป็นค่าปกติ
+  {
+    const sn = badge => [badge.short, badge.note ?? null]
+    b = badges({ 50: entry(report(2, [73.2, 71.5, 70])), 30: entry(report(2, [76.79, 75, 74])) }, [])
+    assert.deepEqual(sn(b['dam-50']), ['73.2%', null])
+    assert.deepEqual(sn(b['dam-30']), ['76.8%', null])
+    b = badges({ 50: entry(report(30, [73.2, 71.5])), 30: undefined }, [])
+    assert.deepEqual(sn(b['dam-50']), ['73.2%', 'ไม่มีรายงานใหม่'], 'รายงานค้าง = ยังเห็นเลขเดิมแต่มีหมายเหตุ')
+    assert.deepEqual(sn(b['dam-30']), ['กำลังโหลด', null])
+    b = badges({ 50: entry(report(2, [73.2, 73.2, 73.2, 73.2])), 30: entry(report(2, [70, 71])) }, [])
+    assert.deepEqual(sn(b['dam-50']), ['73.2%', 'ตัวเลขซ้ำเดิม'])
+    b = badges({ 50: { report: null, failed: true, done: true } }, [])
+    assert.deepEqual(sn(b['dam-50']), ['ไม่มีค่า', 'โหลดไม่ได้'], 'Worker ล่ม ไม่เคยมีของเดิม = ไม่มีเลข')
+    b = badges({}, [stationOf('rain', 'RES038', { rain_24h_mm: 0 }), stationOf('waterlevel', 'YOM003', { bank_diff_m: 6.02 })])
+    assert.deepEqual(sn(b['rain-RES038']), ['ฝน 0 มม.', null], 'ฝน 0 ที่วัดได้จริงแสดงเป็น 0')
+    assert.deepEqual(sn(b['level-YOM003']), ['ต่ำกว่าตลิ่ง 6.02 ม.', null])
+    b = badges({}, [stationOf('rain', 'RES038', { rain_24h_mm: 12.5, recorded_at: ago(4) }), stationOf('waterlevel', 'YOM003', { bank_diff_m: 6.02, recorded_at: ago(4) })])
+    assert.deepEqual(sn(b['rain-RES038']), ['ฝน', 'ไม่มีค่าใหม่'])
+    assert.deepEqual(sn(b['level-YOM003']), ['ระดับน้ำ', 'ไม่มีค่าใหม่'])
+    assert.ok(!sn(b['rain-RES038']).join(' ').includes('12.5') && !sn(b['level-YOM003']).join(' ').includes('6.02'), 'ค่าที่ค้างห้ามโผล่ในข้อความสั้น')
+    b = badges({}, [])
+    assert.deepEqual(sn(b['rain-RES038']), ['ไม่มีค่า', null])
+    assert.deepEqual(sn(b['level-YOM003']), ['ไม่มีค่า', null])
+    const damBinds = { d: { type: 'dam-station', code: '305' } }
+    const damOf = extra => ({ station_type: 'dam', station_code: '305', station_name: 'อ่างแม่คำปอง', distance_km: 3.6, recorded_at: ago(2), storage_percent: 84.5, ...extra })
+    const damShort = extra => sn(liveBadges({ binds: damBinds, reports: {}, stations: [damOf(extra)], now }).d)
+    assert.deepEqual(damShort({}), ['84.5%', null])
+    assert.deepEqual(damShort({ dam_same_count: 3, dam_same_since: ago(60), dam_same_capped: false }), ['84.5%', 'ตัวเลขซ้ำเดิม'])
+    assert.deepEqual(damShort({ recorded_at: ago(49) }), ['84.5%', 'ไม่มีรายงานใหม่'])
+    assert.deepEqual(damShort({ storage_percent: null }), ['ไม่มีค่า', null])
+  }
   for (const badge of Object.values(badges({ 50: entry(report(2, [70, 69])) }, [stationOf('rain', 'RES038', { rain_24h_mm: 1 })]))) {
     assert.ok(TONES.has(badge.tone) && badge.text && badge.detail)
+  }
+}
+
+// ── แผนภาพเส้นทางน้ำ (ผังที่มี route) — ข้อมูล · ตัวตรวจ · ป้ายค่าสด · คำกำกับ · แอนิเมชัน ──
+{
+  const withRoute = Object.entries(DIAGRAMS).filter(([, diagram]) => diagram.route).map(([id]) => id)
+  assert.deepEqual(withRoute, ['thungkaew'], 'PR 1: มีแผนภาพเฉพาะทุ่งแค้ว (ตำหนักธรรม/น้ำเลาใช้ผังเดิมไปก่อน เพิ่มใน PR ถัดไป)')
+
+  for (const id of withRoute) {
+    const diagram = DIAGRAMS[id]
+    const route = diagram.route
+    assert.deepEqual(routeIssues(route, diagram.binds), [], id + ': ข้อมูลเส้นทางต้องผ่านตัวตรวจ')
+    const items = routeItems(route)
+    assert.deepEqual(items.map(item => item.n), items.map((_, i) => i + 1), 'หมายเลขเรียง 1..N ต่อเนื่อง')
+    assert.equal(items.at(-1).isRiver, true, 'แม่น้ำเป็นจุดสุดท้าย')
+
+    // ทุกจุดต้องมาจากผังที่ตรวจแล้ว (lanes) ไม่เขียนจุดที่ผังไม่มี · วลีหลักของจุดต้องอยู่ทั้งในข้อมูลสายน้ำและในชื่อ/คำอธิบายของจุด
+    const lanesText = JSON.stringify(diagram.lanes)
+    const ANCHORS = {
+      1: 'อ่างเก็บน้ำห้วยเฮือ', 2: 'ฝายซอยซีเมนต์', 3: 'อ่างเก็บน้ำห้วยยอย', 4: 'ฝายกำนันอำพร', 5: 'โครงสร้างตามแผน', 6: 'หนองน้อย', 7: 'ประตูน้ำ',
+      8: 'ห้วย 4 เส้น', 9: 'รางส่งน้ำชำรุด', 10: 'สถานีสูบน้ำพลังงานแสงอาทิตย์', 11: 'หนองใหม่ก่อ', 12: 'อ่างห้วยปุ่ย', 13: 'ฝายปู่อ๋วน', 14: 'แม่น้ำยม',
+    }
+    for (const item of items) {
+      const anchor = ANCHORS[item.n]
+      assert.ok(anchor, 'จุด ' + item.n + ' ยังไม่มีวลีอ้างอิงผัง (ANCHORS)')
+      const own = item.name + ' ' + (item.sub ?? '')
+      if (item.n === 9) assert.ok(lanesText.includes('รางส่งน้ำชำรุด') && own.includes('รางส่งน้ำ'), 'จุด 9 ต้องตรงรายการ "รางส่งน้ำชำรุด (ตัดคลอง)" ในผัง')
+      else {
+        assert.ok(lanesText.includes(anchor), 'จุด ' + item.n + ': "' + anchor + '" ไม่อยู่ในรายการสายน้ำของผัง')
+        assert.ok(own.includes(anchor), 'จุด ' + item.n + ': ชื่อ/คำอธิบายต้องมี "' + anchor + '"')
+      }
+    }
+    // ชื่อห้วยที่ยังไม่ยืนยันกับ อบต. ห้ามโผล่ในแผนภาพ
+    const routeText = JSON.stringify(route)
+    for (const name of ['ห้วยจำค่า', 'ห้วยย่าเฟย', 'ห้วยจำ"']) assert.ok(!routeText.includes(name), '"' + name + '" ยังไม่ยืนยันกับ อบต. ห้ามขึ้นหน้า')
+    // ของในผังที่ไม่ได้ใส่ในแผนภาพ ต้องบอกในกล่องที่มา
+    assert.ok(diagram.omitted.some(text => text.includes('ตำแหน่งฝาย') && text.includes('ผังต้นฉบับ')), 'ต้องบอกว่าตำแหน่งฝาย/ห้วยไม่ตรงจริง ดูที่ผังต้นฉบับ')
+    assert.ok(['คลองชลประทานฝายแม่ยมฝั่งขวา', 'ประปาหมู่ 1', 'สถานีสูบน้ำไฟฟ้า', 'ผนัง สจ.'].every(word => diagram.omitted.some(text => text.includes(word))), 'ของใน "โครงสร้างอื่นในผัง" ที่ไม่ได้ใส่ต้องบอก')
+  }
+
+  // ทุ่งแค้ว: สถานะตามผัง
+  {
+    const route = DIAGRAMS.thungkaew.route
+    assert.equal(route.stops.length, 13)
+    assert.deepEqual(route.stops.filter(s => s.status === 'planned').map(s => s.n), [5, 10], 'แผนก่อสร้าง = โครงสร้างตามแผน + สถานีสูบน้ำพลังงานแสงอาทิตย์')
+    assert.deepEqual(route.stops.filter(s => s.status === 'repair').map(s => s.n), [9], 'ชำรุด = รางส่งน้ำ')
+    assert.deepEqual(route.streams.filter(s => s.flow).map(s => s.id).sort(), ['hue-divert', 'mid-creeks', 'mid-ponds'], 'เส้นวิ่งเฉพาะที่ผังวาดลูกศรทิศน้ำ')
+    for (const stop of route.stops.filter(s => s.status !== 'existing')) {
+      assert.ok(stop.pills.some(p => p.text && (p.tone === 'plan' || p.tone === 'fix')), 'จุด ' + stop.n + ' ต้องมีป้ายแผน/ชำรุดบนภาพ')
+      assert.ok(!stop.props.some(p => p.t === 'weir'), 'จุด ' + stop.n + ' ห้ามวาดฝายเป็นของที่มีอยู่')
+    }
+    assert.equal(route.stops[0].props[0].na, true, 'อ่างห้วยเฮือไม่มีข้อมูล = ผืนน้ำขอบประเทา ไม่ลงสีน้ำ')
+    assert.deepEqual(new Set(route.stops.flatMap(s => (s.live ?? []))).size, 3, 'ค่าสดในรายการ: dam-50 · rain-RES038 · dam-30 (แม่น้ำแยกที่ river.live)')
+    assert.deepEqual(route.river.live, ['level-YOM003'])
+  }
+
+  // ตัวตรวจต้องจับของเสียได้จริง (กันตัวตรวจหลวม)
+  {
+    const diagram = DIAGRAMS.thungkaew
+    const run = mutate => {
+      const route = structuredClone(diagram.route)
+      const binds = structuredClone(diagram.binds)
+      mutate(route, binds)
+      return routeIssues(route, binds)
+    }
+    assert.deepEqual(run(() => {}), [], 'ข้อมูลเดิมผ่าน')
+    const cases = [
+      ['หมายเลขซ้ำ', route => { route.stops[3].n = 3 }, /หมายเลข/],
+      ['แม่น้ำไม่ใช่เลขสุดท้าย', route => { route.river.n = 20 }, /แม่น้ำต้องเป็นหมายเลขสุดท้าย/],
+      ['เส้นวิ่งผ่านจุดแผนก่อสร้าง', route => { route.streams.find(s => s.id === 'mid-pump').flow = true }, /วิ่งผ่านจุด 10/],
+      ['เส้นวิ่งไม่ระบุ touches', route => { delete route.streams.find(s => s.id === 'hue-divert').touches }, /ต้องระบุ touches/],
+      ['จุดแผนก่อสร้างไม่มีแท็กในรายการ', route => { route.stops[4].tags = [] }, /แผนก่อสร้างต้องมีแท็ก plan/],
+      ['จุดแผนก่อสร้างไม่มีป้ายบนภาพ', route => { route.stops[4].pills = [] }, /ต้องมีป้ายบนภาพ/],
+      ['จุดชำรุดไม่มีแท็ก', route => { route.stops[8].tags = [] }, /ชำรุดต้องมีแท็ก fix/],
+      ['ฝายบนจุดแผนก่อสร้าง', route => { route.stops[4].props.push({ t: 'weir', x: 150, y: 620, s: 1 }) }, /ห้ามวาดฝายเป็นของที่มีอยู่/],
+      ['ช่องค่าสดไม่อยู่ใน binds', route => { route.stops[2].pills[0].slot = 'dam-99' }, /ไม่อยู่ใน binds/],
+      ['bind ที่ไม่ขึ้นหน้า', (route, binds) => { binds['dam-77'] = { type: 'small-dam', id: '77' } }, /ผูกไว้แต่ไม่ขึ้น/],
+      ['เกาะทับกัน', route => { route.stops[3].island.x = 186; route.stops[3].island.y = 745 }, /ทับกับ/],
+      ['เกาะล้นกรอบ', route => { route.stops[11].island.x = 470 }, /ล้นกรอบด้านข้าง/],
+      ['ชนิดสิ่งที่วางไม่รู้จัก', route => { route.stops[0].props.push({ t: 'ufo', x: 10, y: 10 }) }, /ไม่รู้จัก/],
+      ['ป้ายคงที่ไม่มี tone', route => { delete route.stops[4].pills[0].tone }, /ต้องมี text และ tone/],
+      ['ลำน้ำไม่ถึงตลิ่ง', route => { route.streams.find(s => s.id === 'yoi').pts.at(-1)[1] = 700 }, /ไหลลงขอบตลิ่ง/],
+      ['ลำน้ำอยู่นอกกรอบ', route => { route.streams[1].pts[0][0] = -5 }, /อยู่ในกรอบ/],
+      ['touches อ้างจุดที่ไม่มี', route => { route.streams[0].touches.push(99) }, /ที่ไม่มี/],
+      ['ลำน้ำ id ซ้ำ', route => { route.streams[1].id = route.streams[0].id }, /id ซ้ำ/],
+      ['status ผิด', route => { route.stops[0].status = 'maybe' }, /status/],
+      ['ไม่มีชื่อบนภาพ', route => { delete route.stops[0].label }, /label/],
+      ['ชื่อบนภาพออกนอกกรอบ', route => { route.stops[2].island.y = 30 }, /ชื่อบนภาพออกนอกกรอบ/],
+      ['ต้นไม้นอกกรอบ', route => { route.stops[0].trees.push([900, 10, 1]) }, /ต้นไม้อยู่นอกกรอบ/],
+      ['ไม่มีชื่อแม่น้ำ/ช่องค่าสด', route => { delete route.river.slot }, /แม่น้ำต้องมี name และ slot/],
+    ]
+    for (const [name, mutate, expected] of cases) {
+      const issues = run(mutate)
+      assert.ok(issues.some(issue => expected.test(issue)), 'ตัวตรวจต้องจับ "' + name + '" ได้ (ได้ ' + JSON.stringify(issues) + ')')
+    }
+    assert.deepEqual(routeIssues({ viewBox: {}, stops: [], streams: [] }), ['viewBox ต้องมี w และ h'])
+  }
+
+  // ป้ายค่าสดบนภาพ: ใช้ short/note จาก liveBadges · ไม่มีช่อง = ไม่วาดป้าย · ป้ายคงที่ใช้ tone ที่รู้จัก
+  {
+    const badge = { tone: 'stale', text: 'อ่าง 73.2% · ไม่มีรายงานใหม่', detail: 'x', short: '73.2%', note: 'ไม่มีรายงานใหม่' }
+    assert.deepEqual(pillFor({ slot: 'dam-50' }, { 'dam-50': badge }), { main: '73.2%', note: 'ไม่มีรายงานใหม่', tone: 'stale' })
+    assert.equal(pillFor({ slot: 'dam-50' }, {}), null)
+    assert.equal(pillFor({ slot: 'dam-50' }, undefined), null)
+    assert.deepEqual(pillFor({ text: 'แผน', tone: 'plan' }, {}), { main: 'แผน', note: null, tone: 'plan' })
+    assert.deepEqual(pillFor({ slot: 'a' }, { a: { tone: 'ok', text: 'ฝน 0 มม.', detail: 'x' } }), { main: 'ฝน 0 มม.', note: null, tone: 'ok' }, 'ไม่มี short ใช้ text')
+    for (const tone of ['ok', 'warn', 'stale', 'na', 'plan', 'fix']) assert.ok(CHIP_TONES[tone], 'โทนป้าย ' + tone)
+    assert.equal(CHIP_TONES.ok.dash, false)
+    assert.equal(CHIP_TONES.stale.dash, true, 'ค้าง = ขอบประ')
+    assert.equal(CHIP_TONES.na.dash, true, 'ไม่มีค่า = ขอบประ')
+    assert.equal(pillWidth('73.2%', 17), chipWidth('73.2%', 17))
+  }
+
+  // เรขาคณิต
+  {
+    assert.equal(smoothPath([[0, 0]]), '')
+    assert.equal(smoothPath(undefined), '')
+    const d = smoothPath([[0, 0], [10, 20]])
+    assert.ok(d.startsWith('M0 0 C') && d.endsWith('10 20'), d)
+    assert.equal((smoothPath([[0, 0], [10, 10], [20, 0], [30, 10]]).match(/C/g) ?? []).length, 3, 'จุด n → เส้นโค้ง n-1')
+    const shape = islandShape({ x: 100, y: 100, rx: 50, ry: 20 })
+    assert.equal(shape.drips.length, 3)
+    assert.ok(shape.side.includes(String(100 + ISLAND_THICKNESS)), 'ด้านข้างหนาตาม ISLAND_THICKNESS')
+    assert.ok(shape.shadow.cy > 100 + ISLAND_THICKNESS + 20, 'เงาอยู่ใต้เกาะ')
+    assert.ok(wavePath(0, 480, 934, 1004).startsWith('M-60 934'), 'คลื่นกว้างเกินกรอบ 60 หน่วย เลื่อน 1 คาบได้ไม่เห็นรอยขาด')
+    assert.deepEqual(pinPosition({ island: { x: 100, y: 100, rx: 50, ry: 20 } }), { x: 60, y: 96 })
+    assert.deepEqual(labelPosition({ island: { x: 100, y: 100, rx: 50, ry: 20 }, labelUp: 5 }), { x: 100, y: 65 })
+    assert.deepEqual(PROP_KINDS.slice().sort(), ['creeks', 'gate', 'ghost', 'lake', 'pond', 'pump', 'repair', 'weir'])
+  }
+
+  // ซอร์สหน้าจอ: คำกำกับ · ไม่ลงสีสถานการณ์ · ไม่มีเข็มทิศ · แอนิเมชันเฉพาะ flow · หยุด/นอกจอ/ลดการเคลื่อนไหวครอบทุกแอนิเมชัน
+  {
+    const art = read('src/components/water/WaterRouteArt.jsx')
+    const list = read('src/components/water/WaterRouteList.jsx')
+    const view = read('src/components/water/WaterDiagram.jsx')
+    const css = read('src/components/water/WaterDiagram.css')
+    const code = text => text.split('\n').filter(line => !line.trim().startsWith('//')).join('\n') // ตรวจเฉพาะโค้ด ไม่รวมคอมเมนต์ที่เขียนว่า "ไม่มีเข็มทิศ"
+    assert.ok(!/compass|เข็มทิศ|เหนือ/i.test(code(art + list)), 'ภาพไม่วาดเข็มทิศ/ทิศเหนือ (ผังต้นฉบับไม่ระบุทิศ)')
+    assert.ok(view.includes('ไม่มีเข็มทิศ'), 'หน้าต้องบอกเหตุผลที่ไม่มีเข็มทิศ')
+    for (const hex of ['#003CFA', '#FFC000', '#00B050', '#FF0000', '#C70000']) assert.ok(!(art + list).toUpperCase().includes(hex.toUpperCase()), 'ห้ามลงสีระดับอ่างทางการบนแผนภาพ ' + hex + ' (ป้ายใช้โทนเดิมของผัง)')
+    assert.match(art, /import \{ CHIP_TONES \} from '\.\.\/\.\.\/lib\/waterDiagram\/model'/, 'ป้ายใช้โทนเดียวกับผังเดิม')
+    assert.ok(!/const CHIP_TONES/.test(view), 'CHIP_TONES อยู่ที่ model.js ที่เดียว')
+    assert.ok(!/Math\.random|Date\.now|new Date/.test(art), 'ภาพต้องวาดเหมือนเดิมทุกครั้ง (ไม่สุ่ม ไม่ผูกเวลา)')
+    assert.match(art, /className=\{st\.flow \? 'wr-flow' : 'wr-hl'\}/, 'ลายวิ่งเฉพาะลำน้ำที่ flow')
+    assert.match(art, /strokeDasharray=\{st\.flow \? '3 11' : undefined\}/)
+    assert.match(art, /markerEnd=\{st\.flow \? 'url\(#wr-arrow\)' : undefined\}/, 'เส้นวิ่งมีหัวลูกศร (ดูทิศได้แม้ลดการเคลื่อนไหว) ลำน้ำที่ไม่วิ่งไม่มีหัวลูกศร (ไม่เดาทิศ)')
+    assert.ok((art.match(/wr-flow/g) ?? []).length === 1, 'wr-flow ใช้จุดเดียว (Stream)')
+    assert.ok(!/dangerouslySetInnerHTML|innerHTML/.test(art + list))
+    assert.ok(!/from ['"][^'"]*supabase[^'"]*['"]/.test(art + list) && !/\.rpc\(|supabase\.from\(/.test(art + list), 'ภาพ/รายการไม่เรียกฐานข้อมูลเอง')
+    for (const kind of PROP_KINDS) assert.ok(art.includes("case '" + kind + "'"), 'WaterRouteArt ต้องวาดชนิด ' + kind)
+    // ทุกสัญลักษณ์ที่ใช้ในข้อมูลมีคำอธิบายในหน้า
+    const LEGEND_TEXT = { lake: "text: 'อ่างเก็บน้ำ'", pond: "text: 'หนอง'", weir: "text: 'ฝาย'", gate: "text: 'ประตูระบายน้ำ'", ghost: 'แผนก่อสร้าง ไม่เคลื่อนไหว', pump: 'แผนก่อสร้าง ไม่เคลื่อนไหว', repair: 'ชำรุดตามผัง ไม่เคลื่อนไหว' }
+    const used = new Set(Object.values(DIAGRAMS).filter(d => d.route).flatMap(d => d.route.stops.flatMap(s => s.props.map(p => p.t))))
+    for (const kind of used) if (LEGEND_TEXT[kind]) assert.ok(view.includes(LEGEND_TEXT[kind]), 'สัญลักษณ์ ' + kind + ' ไม่มีคำอธิบายใน ROUTE_LEGEND')
+    assert.ok(view.includes('ขอบประ = ไม่มีค่า · ไม่มีรายงานใหม่ · ไม่ระบุ') && view.includes('เส้นวิ่ง + หัวลูกศร'), 'คำอธิบายขอบประ/เส้นวิ่ง')
+    // มุมมองใหม่ซ่อนปุ่มสลับโหมด/ซูม (ภาพพอดีจอ) แต่คงปุ่มหยุด · ผังเดิมของ อปท. อื่นยังทำงานเหมือนเดิม
+    assert.ok(view.includes('const route = diagram.route ?? null'))
+    assert.match(view, /\{!route && <span className="inline-flex overflow-hidden rounded-xl border border-slate-400" role="group" aria-label="โหมดแสดงผัง">/)
+    assert.match(view, /\{!route && mode === 'map' && \(\s*<span className="inline-flex gap-2">/)
+    assert.ok(view.includes("{route ? <RouteView route={route} badges={badges} diagram={diagram} tenantName={tenantName} /> : mode === 'map' ?"))
+    // แท็บ: แผนภาพ · รายการจุด · ที่มา (หน้ามือถือยาวเกือบ 3,000px — เจ้าของระบบสั่งแบ่งแท็บ 2569-10-21)
+    assert.match(view, /role="tablist"/)
+    assert.equal((view.match(/role="tabpanel"/g) ?? []).length, 3, 'ต้องมี 3 แผง (แผนภาพ · รายการ · ที่มา)')
+    assert.match(view, /key: 'art'[\s\S]*key: 'list'[\s\S]*key: 'source'/, 'ลำดับแท็บ: แผนภาพ → รายการจุด → ที่มา')
+    assert.ok(view.includes("{ key: 'list', label: `รายการจุด (${stopCount})`, extra: 'lg:hidden' }"), 'จอกว้างรายการอยู่ข้างภาพแล้ว ไม่ต้องมีแท็บรายการ')
+    assert.ok(view.includes("useState('art')"), 'เปิดมาที่แท็บแผนภาพ')
+    assert.ok(view.includes("className={tab === 'art' ? 'contents' : 'hidden'}") && view.includes("tab === 'source' ? '' : 'hidden'"), 'แผงที่ไม่ได้เลือกต้อง display:none (ไม่วิ่งแอนิเมชัน ไม่ซ้ำให้โปรแกรมอ่านจอ)')
+    assert.ok(view.includes('{!route && <SourceBox diagram={diagram} tenantName={tenantName} />}'), 'ผังเดิมยังแสดงกล่องที่มาท้ายส่วน')
+    assert.equal((view.match(/<SourceBox diagram=\{diagram\} tenantName=\{tenantName\} \/>/g) ?? []).length, 2, 'กล่องที่มา: ท้ายผังเดิม + แท็บที่มาของผังที่มี route')
+    assert.ok(view.includes("event.key === 'ArrowRight'") && view.includes("'Home', 'End'"), 'ใช้ลูกศรซ้าย/ขวา/Home/End สลับแท็บได้')
+    assert.ok(view.includes('{route?.heading ?? diagram.title}'))
+    assert.ok(view.includes('<b>ไม่ใช่แผนที่</b> ตำแหน่ง ทิศ และมาตราส่วนไม่ตรงจริง'), 'ต้องบอกว่าไม่ใช่แผนที่')
+    for (const klass of ['.wr-flow', '.wr-fall', '.wr-wave', '.wr-shim']) {
+      assert.ok(css.includes('.wd-root.wd-paused ' + klass), klass + ' ต้องหยุดเมื่อกดปุ่มหยุด')
+      assert.ok(css.includes('.wd-root[data-offscreen] ' + klass), klass + ' ต้องหยุดเมื่อนอกจอ/แท็บซ่อน')
+    }
+    const reduce = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'))
+    for (const klass of ['.wr-flow', '.wr-fall', '.wr-wave', '.wr-shim']) assert.ok(reduce.slice(0, 400).includes(klass), klass + ' ต้องปิดเมื่อลดการเคลื่อนไหว')
+    assert.ok(css.includes('stroke-dashoffset: -14') && /strokeDasharray=\{st\.flow \? '3 11'/.test(art), 'ระยะเลื่อน 14 = ความยาวลาย 3 + 11 วนต่อเนื่องไม่กระตุก')
   }
 }
 

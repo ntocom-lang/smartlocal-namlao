@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ExternalLink, Map as MapIcon, Pause, Play, ZoomIn, ZoomOut } from 'lucide-react'
 import './WaterDiagram.css'
 import { useReservoirReport } from './useReservoirReport'
 import { diagramById } from '../../lib/waterDiagram/diagrams'
 import { originalDiagramUrl } from '../../lib/waterDiagram/originalFiles'
-import { EDGE_STYLES, chipWidth, isAnimated, isShimmer, liveBadges, resolveDiagram } from '../../lib/waterDiagram/model'
+import { CHIP_TONES, EDGE_STYLES, chipWidth, isAnimated, isShimmer, liveBadges, resolveDiagram } from '../../lib/waterDiagram/model'
+import WaterRouteArt from './WaterRouteArt'
+import WaterRouteList from './WaterRouteList'
 
 const BLUE = '#4472c4'
 const DARK = '#1f3864'
@@ -14,15 +16,6 @@ const MIN_ZOOM = 1
 const MAX_ZOOM = 3
 const MAP_MIN_WIDTH = 820
 const FONT = "Sarabun,'Noto Sans Thai','Leelawadee UI',sans-serif"
-
-// สีป้ายตัวเลขบนผัง — ไม่ใช่สีสถานการณ์ (ฟ้า = มีค่า · เหลือง = ตัวเลขซ้ำเดิม · ขอบประเทา = ไม่มีค่า/ไม่มีรายงานใหม่/ไม่ระบุ)
-const CHIP_TONES = {
-  ok:    { stroke: '#0284c7', ink: '#0c4a6e', dash: false },
-  warn:  { stroke: '#d97706', ink: '#92400e', dash: false },
-  stale: { stroke: '#94a3b8', ink: '#64748b', dash: true },
-  na:    { stroke: '#94a3b8', ink: '#64748b', dash: true },
-  plan:  { stroke: RED, ink: '#991b1b', dash: true },
-}
 
 // เก็บโหมดที่เลือกไว้ในแท็บนี้ — storage ใช้ไม่ได้ (โหมดส่วนตัว/ปิดคุกกี้) ต้องไม่ทำหน้าพัง
 function readStoredMode() {
@@ -269,7 +262,153 @@ function LaneItem({ item, badges, last }) {
 
 const BUTTON = 'inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-xl border border-slate-400 bg-white px-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50'
 
+// ── แผนภาพเส้นทางน้ำ (ผังที่มี route) — แทนผังเคลื่อนไหวเดิมของ อปท. นั้น (เจ้าของระบบสั่ง 2569-10-21) ──
+const ROUTE_LEGEND = [
+  { key: 'lake', text: 'อ่างเก็บน้ำ', icon: (
+    <svg viewBox="0 0 34 16" aria-hidden="true"><ellipse cx="17" cy="7" rx="11" ry="6" fill="#5bb4ec" stroke="#fff" strokeWidth="1.5" /><path d="M8 10Q17 16 26 10" fill="none" stroke="#d6c19a" strokeWidth="3" strokeLinecap="round" /></svg>
+  ) },
+  { key: 'weir', text: 'ฝาย', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M9 6L25 6L28 2L12 2Z" fill="#eef2f6" /><rect x="9" y="6" width="16" height="7" fill="#8f9fb1" /></svg> },
+  { key: 'pond', text: 'หนอง', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><ellipse cx="17" cy="8" rx="10" ry="6" fill="#5b9bd5" stroke="#fff" strokeWidth="1.5" /></svg> },
+  { key: 'gate', text: 'ประตูระบายน้ำ', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M17 1L26 8L17 15L8 8Z" fill="#7c3aed" stroke="#5b21b6" strokeWidth="1.5" /></svg> },
+  { key: 'plan', text: 'กล่องแดงประ = แผนก่อสร้าง ไม่เคลื่อนไหว', icon: (
+    <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M9 4L17 1L25 4V12L17 15L9 12Z" fill="#fff" stroke={RED} strokeWidth="1.8" strokeDasharray="3 2.5" /></svg>
+  ) },
+  { key: 'repair', text: 'ลายขีดแดง = ชำรุดตามผัง ไม่เคลื่อนไหว', icon: (
+    <svg viewBox="0 0 34 16" aria-hidden="true">
+      <defs><pattern id="wd-route-legend-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fff" /><path d="M0 0V6" stroke={RED} strokeWidth="2.5" /></pattern></defs>
+      <rect x="8" y="2" width="18" height="12" fill="url(#wd-route-legend-hatch)" stroke={RED} strokeWidth="2" />
+    </svg>
+  ) },
+  { key: 'flow', text: 'เส้นวิ่ง + หัวลูกศร = ผังต้นฉบับวาดลูกศรทิศน้ำไว้', icon: (
+    <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M2 8H25" stroke="#2a78b5" strokeWidth="7" strokeLinecap="round" /><path d="M2 8H25" stroke="#63c0f2" strokeWidth="4" strokeLinecap="round" /><path d="M24 2L33 8L24 14Z" fill="#1d5f94" /></svg>
+  ) },
+  { key: 'na', text: 'ขอบประ = ไม่มีค่า · ไม่มีรายงานใหม่ · ไม่ระบุ', icon: (
+    <svg viewBox="0 0 34 16" aria-hidden="true"><rect x="1" y="2" width="30" height="12" rx="6" fill="#fff" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4 3" /></svg>
+  ) },
+]
+
+// ที่มา + ของที่ผังต้นฉบับมีแต่ไม่ได้วาด + ลิงก์ผังต้นฉบับ — ผังที่มี route เก็บไว้ในแท็บ "ที่มา" (ผังเดิมแสดงท้ายส่วนเหมือนเดิม)
+function SourceBox({ diagram, tenantName }) {
+  return (
+    <div className="rounded-2xl border border-slate-300 bg-slate-50 px-3.5 py-3 text-xs leading-relaxed text-slate-600" data-diagram-source>
+      <p>
+        <b>ที่มา:</b> {diagram.sourceTitle} ของศูนย์บริหารจัดการทรัพยากรน้ำจังหวัดแพร่
+        ({diagram.sourceDate}) — วาดใหม่ ไม่ได้คัดลอกภาพ ไม่ได้เป็นผลงานของ{tenantName || 'หน่วยงาน'} ·
+        สถานะโครงสร้างอาจเปลี่ยนไปหลังทำผัง · ป้ายตัวเลขบนผังคือค่าจากสถานี/รายงานตามที่ระบุ ไม่ใช่ประกาศเตือนภัย
+      </p>
+      {diagram.omitted?.length > 0 && (
+        <div className="mt-1.5" data-diagram-omitted>
+          <p className="font-semibold">ที่ผังต้นฉบับมีแต่เราวาดต่างไป หรือไม่ได้วาด:</p>
+          <ul className="ml-4 list-disc">
+            {diagram.omitted.map(text => <li key={text}>{text}</li>)}
+          </ul>
+        </div>
+      )}
+      <a href={originalDiagramUrl(diagram.id, diagram.sourceUrl)} target="_blank" rel="noopener noreferrer" data-original-link
+        className="mt-1 inline-flex min-h-[44px] items-center gap-1 font-semibold text-blue-700">
+        ดูผังต้นฉบับ <ExternalLink size={12} />
+      </a>
+    </div>
+  )
+}
+
+// จอ ≥ 1024px รายการอยู่ข้างภาพอยู่แล้ว จึงไม่มีแท็บ "รายการจุด" (ใช้ breakpoint เดียวกับ lg: ของ Tailwind)
+const WIDE_QUERY = '(min-width: 1024px)'
+
+// ── แผนภาพเส้นทางน้ำแบ่ง 3 แท็บ: แผนภาพ (ชื่อ + ภาพ + สัญลักษณ์) · รายการจุด · ที่มา — มือถือไม่ต้องเลื่อนยาวเกือบ 3,000px ──
+// แผงที่ไม่ได้เลือกใช้ display:none (ไม่ใช่แค่ซ่อนตา) ภาพที่ซ่อนจึงไม่วิ่งแอนิเมชันกินแบตและผู้ใช้โปรแกรมอ่านจอไม่ต้องอ่านซ้ำ
+function RouteView({ route, badges, diagram, tenantName }) {
+  const [tab, setTab] = useState('art')
+  const uid = useId()
+  const stopCount = route.stops.length + 1
+  const ariaLabel = `${route.heading} ภาพประกอบ ${stopCount} จุด ไม่ตรงตำแหน่ง ทิศ และมาตราส่วนจริง ดูรายละเอียดทั้งหมดในรายการจุดที่มีหมายเลข`
+
+  // ขยายจอจนรายการขึ้นข้างภาพแล้ว แต่แท็บค้างที่ "รายการจุด" (ซึ่งถูกซ่อนบนจอกว้าง) → กลับมาที่แผนภาพ
+  useEffect(() => {
+    const query = window.matchMedia?.(WIDE_QUERY)
+    if (!query) return undefined
+    const settle = () => { if (query.matches) setTab(current => (current === 'list' ? 'art' : current)) }
+    query.addEventListener('change', settle)
+    return () => query.removeEventListener('change', settle)
+  }, [])
+
+  const tabs = [
+    { key: 'art', label: <><span className="lg:hidden">แผนภาพ</span><span className="hidden lg:inline">แผนภาพและรายการ</span></> },
+    { key: 'list', label: `รายการจุด (${stopCount})`, extra: 'lg:hidden' },
+    { key: 'source', label: 'ที่มา' },
+  ]
+
+  // ลูกศรซ้าย/ขวา/Home/End ย้ายระหว่างแท็บ (เฉพาะแท็บที่เห็นอยู่ — แท็บ "รายการจุด" ซ่อนบนจอกว้าง)
+  function onKeyDown(event) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    const buttons = [...event.currentTarget.querySelectorAll('[role="tab"]')].filter(button => button.offsetParent !== null)
+    const at = buttons.indexOf(document.activeElement)
+    if (at < 0) return
+    event.preventDefault()
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : (at + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length
+    buttons[next].focus()
+    buttons[next].click()
+  }
+
+  return (
+    <div data-route-tabs className="space-y-3">
+      <div role="tablist" aria-label="ส่วนของแผนภาพเส้นทางน้ำ" onKeyDown={onKeyDown}
+        className="flex divide-x divide-slate-300 overflow-hidden rounded-xl border border-slate-400 lg:max-w-md">
+        {tabs.map(({ key, label, extra }) => {
+          const active = tab === key
+          return (
+            <button key={key} type="button" role="tab" id={`${uid}-tab-${key}`} aria-selected={active} aria-controls={`${uid}-panel-${key}`}
+              tabIndex={active ? 0 : -1} onClick={() => setTab(key)}
+              className={`min-h-[44px] flex-1 px-2 text-sm font-bold leading-tight ${extra ?? ''} ${active ? 'bg-sky-700 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
+              {label}
+            </button>
+          )
+        })}
+      </div>
+
+      <div data-route-view className={`wr-poster overflow-hidden rounded-3xl border border-sky-100 bg-gradient-to-b from-sky-50 to-white px-3 pb-4 pt-5 shadow-sm lg:px-7 lg:pt-7 ${tab === 'source' ? 'hidden' : ''}`}>
+        {/* จอใหญ่: ชื่อกว้างเต็มแถวบน · รายการซ้าย ภาพขวา (เหมือนภาพอ้างอิงที่เจ้าของระบบส่งมา) · สัญลักษณ์/หมายเหตุเต็มแถวล่าง
+            มือถือ: แท็บ "แผนภาพ" เรียงชื่อ → ภาพ → สัญลักษณ์ → หมายเหตุ · แท็บ "รายการจุด" เห็นเฉพาะรายการ */}
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:items-start lg:gap-x-7">
+          <div role="tabpanel" id={`${uid}-panel-art`} aria-labelledby={`${uid}-tab-art`} className={tab === 'art' ? 'contents' : 'hidden'}>
+            {/* ชื่อใหญ่บนภาพเป็นตกแต่ง (หัวข้อจริงคือ h2 ของส่วนนี้) */}
+            <div className="text-center lg:col-span-2 lg:row-start-1" aria-hidden="true">
+              <p className="text-[22px] font-semibold tracking-wide text-slate-600 lg:text-3xl">{route.eyebrow}</p>
+              <p className="text-[40px] font-extrabold leading-[1.1] text-sky-950 lg:text-6xl">{route.title}</p>
+              <p className="mt-1.5 text-[13px] text-slate-500 lg:text-[15px]">{route.place}</p>
+            </div>
+            <div className="lg:col-start-2 lg:row-start-2 lg:max-w-[640px]"><WaterRouteArt route={route} badges={badges} ariaLabel={ariaLabel} /></div>
+            <ul className="wd-legend m-0 flex list-none flex-wrap gap-x-3.5 gap-y-1.5 px-0.5 text-xs text-slate-600 lg:col-span-2 lg:row-start-3" data-route-legend>
+              {ROUTE_LEGEND.map(item => <li key={item.key} className="inline-flex items-center gap-1.5">{item.icon}{item.text}</li>)}
+            </ul>
+            <div className="flex items-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600 lg:col-span-2 lg:row-start-4" data-route-note>
+              <svg width="40" height="40" viewBox="0 0 44 44" aria-hidden="true" className="shrink-0">
+                <circle cx="22" cy="22" r="19" fill="#fff" stroke="#cbd5e1" strokeWidth="2" /><path d="M22 6L26 22L22 38L18 22Z" fill="#e2e8f0" />
+                <path d="M12 12L32 32M32 12L12 32" stroke="#dc2626" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+              <p>
+                <b>ไม่มีเข็มทิศ</b> เพราะผังต้นฉบับไม่ระบุทิศ · เกาะและต้นไม้ในภาพเป็นภาพประกอบ ไม่ได้หมายถึงสิ่งก่อสร้างหรือพื้นที่จริง ·
+                ตำแหน่งฝายและห้วยแต่ละแห่งบนแผนที่ดูได้ที่ผังต้นฉบับ
+              </p>
+            </div>
+          </div>
+          <div role="tabpanel" id={`${uid}-panel-list`} aria-labelledby={`${uid}-tab-list`}
+            className={`${tab === 'list' ? '' : 'hidden lg:block'} lg:col-start-1 lg:row-start-2`}>
+            <WaterRouteList route={route} badges={badges} />
+          </div>
+        </div>
+      </div>
+
+      <div role="tabpanel" id={`${uid}-panel-source`} aria-labelledby={`${uid}-tab-source`} className={tab === 'source' ? '' : 'hidden'}>
+        <SourceBox diagram={diagram} tenantName={tenantName} />
+      </div>
+    </div>
+  )
+}
+
 function DiagramBody({ diagram, scope, tenantName, stations, now }) {
+  const route = diagram.route ?? null
   const root = useRef(null)
   const [mode, setMode] = useState(initialMode)
   const [paused, setPaused] = useState(false)
@@ -319,7 +458,7 @@ function DiagramBody({ diagram, scope, tenantName, stations, now }) {
       <div className="water-section-heading flex items-start gap-2.5 px-1" style={{ background: 'linear-gradient(110deg,#ccfbf1,#f0fdfa)' }}>
         <MapIcon size={19} className="mt-0.5 shrink-0 text-teal-700" />
         <div>
-          <h2 id="water-diagram-title" className="text-sm font-bold text-gray-800">{diagram.title}</h2>
+          <h2 id="water-diagram-title" className="text-sm font-bold text-gray-800">{route?.heading ?? diagram.title}</h2>
           <p className="text-xs text-gray-500">
             {/* ล็อกแต่ละวลีไม่ให้ตัดกลางคำ (ไทยไม่มีช่องว่างคั่นคำ) แต่ต้องสั้นพอจะไม่ล้นจอแคบ — วลีเดียวยาว 60 ตัวอักษรเคยถูกตัดขอบขวาที่ 390px */}
             <span className="whitespace-nowrap">ทิศทางน้ำตามผัง</span> ·{' '}
@@ -337,18 +476,18 @@ function DiagramBody({ diagram, scope, tenantName, stations, now }) {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex overflow-hidden rounded-xl border border-slate-400" role="group" aria-label="โหมดแสดงผัง">
+        {!route && <span className="inline-flex overflow-hidden rounded-xl border border-slate-400" role="group" aria-label="โหมดแสดงผัง">
           {[['lanes', 'สายน้ำ (รายการ)'], ['map', 'ผังภาพ']].map(([value, label]) => (
             <button key={value} type="button" aria-pressed={mode === value} onClick={() => chooseMode(value)}
               className={`min-h-[44px] px-3.5 text-sm font-bold ${mode === value ? 'bg-sky-700 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
               {label}
             </button>
           ))}
-        </span>
+        </span>}
         <button type="button" className={BUTTON} aria-pressed={paused} onClick={() => setPaused(value => !value)}>
           {paused ? <Play size={16} /> : <Pause size={16} />} {paused ? 'เล่นเคลื่อนไหว' : 'หยุดเคลื่อนไหว'}
         </button>
-        {mode === 'map' && (
+        {!route && mode === 'map' && (
           <span className="inline-flex gap-2">
             <button type="button" className={BUTTON} aria-label="ย่อผัง" disabled={zoom <= MIN_ZOOM}
               onClick={() => setZoom(value => Math.max(MIN_ZOOM, value - 0.5))}><ZoomOut size={16} /></button>
@@ -362,35 +501,18 @@ function DiagramBody({ diagram, scope, tenantName, stations, now }) {
       <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-slate-700" data-diagram-disclaimer>
         <b>ภาพประกอบทิศทางน้ำตามผัง ({diagram.drawnLabel})</b> ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง — ฝาย คลอง หนอง ไม่มีเครื่องวัด
         · โครงสร้างที่ผังระบุว่าชำรุดหรือแผนก่อสร้าง<b>จะไม่เคลื่อนไหว</b>
+        {route && <> · <b>ไม่ใช่แผนที่</b> ตำแหน่ง ทิศ และมาตราส่วนไม่ตรงจริง</>}
       </p>
 
-      {mode === 'map' ? <DiagramMap diagram={diagram} badges={badges} zoom={zoom} /> : <DiagramLanes diagram={diagram} badges={badges} />}
+      {route ? <RouteView route={route} badges={badges} diagram={diagram} tenantName={tenantName} /> : mode === 'map' ? <DiagramMap diagram={diagram} badges={badges} zoom={zoom} /> : <DiagramLanes diagram={diagram} badges={badges} />}
 
-      {mode === 'map' && (
+      {!route && mode === 'map' && (
         <ul className="wd-legend m-0 flex list-none flex-wrap gap-x-3.5 gap-y-1.5 px-0.5 text-xs text-slate-600">
           {LEGEND.filter(item => item.when(diagram)).map(item => <li key={item.key} className="inline-flex items-center gap-1.5">{item.icon}{item.text}</li>)}
         </ul>
       )}
 
-      <div className="rounded-2xl border border-slate-300 bg-slate-50 px-3.5 py-3 text-xs leading-relaxed text-slate-600">
-        <p>
-          <b>ที่มา:</b> {diagram.sourceTitle} ของศูนย์บริหารจัดการทรัพยากรน้ำจังหวัดแพร่
-          ({diagram.sourceDate}) — วาดใหม่ ไม่ได้คัดลอกภาพ ไม่ได้เป็นผลงานของ{tenantName || 'หน่วยงาน'} ·
-          สถานะโครงสร้างอาจเปลี่ยนไปหลังทำผัง · ป้ายตัวเลขบนผังคือค่าจากสถานี/รายงานตามที่ระบุ ไม่ใช่ประกาศเตือนภัย
-        </p>
-        {diagram.omitted?.length > 0 && (
-          <div className="mt-1.5" data-diagram-omitted>
-            <p className="font-semibold">ที่ผังต้นฉบับมีแต่เราวาดต่างไป หรือไม่ได้วาด:</p>
-            <ul className="ml-4 list-disc">
-              {diagram.omitted.map(text => <li key={text}>{text}</li>)}
-            </ul>
-          </div>
-        )}
-        <a href={originalDiagramUrl(diagram.id, diagram.sourceUrl)} target="_blank" rel="noopener noreferrer" data-original-link
-          className="mt-1 inline-flex min-h-[44px] items-center gap-1 font-semibold text-blue-700">
-          ดูผังต้นฉบับ <ExternalLink size={12} />
-        </a>
-      </div>
+      {!route && <SourceBox diagram={diagram} tenantName={tenantName} />}
     </section>
   )
 }
