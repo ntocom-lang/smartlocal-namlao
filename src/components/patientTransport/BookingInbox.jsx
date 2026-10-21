@@ -57,15 +57,12 @@ function buildRows(workspace) {
   const trips = new Map(workspace.trips.map(t => [t.id, t]))
   const ridersOf = new Map(workspace.trips.filter(t => t.state !== 'cancelled').map(t => [t.id, tripPassengers(workspace.bookings, t)]))
   const groupOf = new Map()
-  // เลขไมล์เหมาเป็นวัน: "บันทึกเอกสาร" ค้างจนกว่าวันเดินทางมีเลขไมล์ปิดวัน (ไม่ใช่เลขไมล์รายเที่ยวแล้ว)
-  // วันที่อยู่นอกช่วงที่โหลด (45 วัน) ไม่มีแถว = ไม่ถือว่าค้าง ไม่เดาว่าขาด
-  const odometerDays = new Map((workspace.odometer?.days || []).map(d => [d.date, d]))
   for (const group of suggestGroups(workspace.bookings.filter(b => !b.requested_trip_id), workspace.settings)) for (const b of group) groupOf.set(b.id, group)
   const rows = workspace.bookings.map(booking => {
     // คนที่ถูกนำออกจากเที่ยวยังมี trip_id ค้างอยู่ — ไม่แสดงเที่ยวนั้นเป็นของเขาอีก (แบบการ์ดฝั่งประชาชน)
     const trip = booking.trip_id && booking.status !== 'cancelled' ? trips.get(booking.trip_id) || null : null
     const linked = linkedConfirmedBooking(booking, workspace.bookings, workspace.events)
-    const stage = bookingStage(booking, trip), next = staffNextAction(booking, trip, trip ? odometerDays.get(trip.plan?.date) || null : null)
+    const stage = bookingStage(booking, trip), next = staffNextAction(booking, trip)
     return { booking, trip, linked, stage, next, section: sectionOf(next, stage), group: groupOf.get(booking.id) || [booking], riders: (trip && ridersOf.get(trip.id)) || [] }
   })
   // เวลานัดเท่ากัน → คนในเที่ยวเดียวกันอยู่ติดกันก่อน (กรอบกลุ่มเที่ยว tripBlocks ตีได้เฉพาะแถวที่ติดกัน) แล้วค่อยเรียงตามเลขคำขอ
@@ -467,7 +464,7 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
   const canCorrectPickup = b.status === 'confirmed' && trip?.state === 'confirmed' && b.passenger_step === 0
   if (b.status === 'cancelled' || (!submitted && !trip) || trip?.state === 'cancelled') return null
   // ไม่มีงานเพิ่มเติมให้ทำ (เช่น เที่ยวจบแล้วแต่เอกสารยังเป็นงานหลักของแถว) = ไม่แสดงกล่องพับว่าง ๆ
-  if (!submitted && !tripOpen && !(trip && next.id !== 'docs') && !removable && !releasable) return null
+  if (!submitted && !tripOpen && !trip && !removable && !releasable) return null
   return <details className="rounded-xl border border-slate-200 px-3">
     <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-sky-800">จัดการเพิ่มเติม</summary>
     <div className="space-y-3 pb-3">
@@ -490,8 +487,8 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
       {canReschedule && scheduling === 'reschedule' && <RescheduleJourney key={`reschedule-${trip.id}`} trip={trip} booking={b} passengers={passengers} settings={workspace.settings} busy={busy} onReschedule={async args => { const out = await onReschedule(args); if (out?.saved) setScheduling(null); return out }} />}
       {canMoveIntoTrip && scheduling === 'move' && <MoveIntoTrip booking={b} trip={trip} passengers={passengers} workspace={workspace} busy={busy} onReload={onReload} />}
       {inService && scheduling === 'estimate' && <ScheduleUpdate key={trip.id} trip={trip} busy={busy} onUpdate={async (...args) => { const saved = await onUpdateSchedule(...args); if (saved) setScheduling(null); return saved }} />}
-      {trip && b.status !== 'cancelled' && trip.state !== 'cancelled' && next.id !== 'docs' && <BookingFundDocs booking={b} trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onPrintRequest={onPrintRequest} />}
-      {trip?.state === 'completed' && next.id !== 'docs' && <DayOdometerOfTrip trip={trip} odometer={workspace.odometer} busy={busy} onSave={onOdometer} />}
+      {trip && b.status !== 'cancelled' && trip.state !== 'cancelled' && <BookingFundDocs booking={b} trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onPrintRequest={onPrintRequest} />}
+      {trip?.state === 'completed' && <DayOdometerOfTrip trip={trip} odometer={workspace.odometer} busy={busy} onSave={onOdometer} />}
       {removable && <ReasonAction busy={busy} title="นำรายนี้ออกจากเที่ยว" hint="ใช้เมื่อประสานแล้วว่าไม่เดินทาง ผู้เดินทางคนอื่นในเที่ยวไม่เปลี่ยน · ถ้าเป็นคนสุดท้ายและรถยังไม่ออก ระบบคืนช่วงเวลารถให้ด้วย" placeholder="เช่น ผู้ป่วยแจ้งเลื่อนนัด" button="นำออกจากเที่ยว" seenByCitizen onRun={remove} />}
       {releasable && <ReasonAction busy={busy} title="คืนคิวทั้งเที่ยว" hint="ผู้เดินทางทุกคนในเที่ยวนี้กลับไปเป็น “รอยืนยันรถ” เพื่อจัดรถใหม่" placeholder="เช่น รถเสีย ต้องจัดรถใหม่" button="คืนคิวทั้งเที่ยว" onRun={note => act(trip, 'release', note)} />}
     </div>
@@ -549,7 +546,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
   const letterAvailable = trip && ['confirmed', 'completed'].includes(b.status) && trip.state !== 'cancelled'
   return <Sheet wide title={bookingName(b)} subtitle={`${issue ? 'เหตุขัดข้อง' : STAGES[stage].label} · เลขที่ ${ref(b.id)}`} onClose={onClose} onReload={onReload} busy={busy}>
     {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
-    {printable && next.id !== 'docs' && <section aria-label="เอกสารของผู้เดินทาง" className="space-y-3 rounded-xl border border-slate-200 p-4">
+    {printable && <section aria-label="เอกสารของผู้เดินทาง" className="space-y-3 rounded-xl border border-slate-200 p-4">
       <p className="font-bold">เอกสารของ {bookingName(b)}</p>
       <BookingPrintButtons booking={b} trip={trip} busy={busy} onPrintRequest={onPrintRequest} onPrintLetter={letterAvailable ? onPrintLetter : null} onRecordLetter={onRecordLetter} />
     </section>}
@@ -580,10 +577,6 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
       {/* คนขับกดส่งถึงได้เฉพาะเมื่อส่งครบทุกคน — ผู้ป่วยที่ไม่ได้ขึ้นรถต้องถูกนำออกจากเที่ยวก่อน */}
       {passengers.length > 0 && <p className="text-sm text-slate-700">ถ้ามีผู้ป่วยไม่ได้ขึ้นรถ: เปิด “จัดการเพิ่มเติม” ของรายนั้น นำออกจากเที่ยวก่อน แล้วค่อยกด “แก้ไขแล้ว เดินรถต่อ”</p>}
       <ReasonAction busy={busy} primary title="ประสานแก้ไขแล้ว" defaultReason="ประสานแก้ไขแล้ว เดินรถต่อได้" button="แก้ไขแล้ว เดินรถต่อ" onRun={note => act(trip, 'resolve', note)} />
-    </>}
-    {next.id === 'docs' && <>
-      <BookingFundDocs booking={b} trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onPrintRequest={onPrintRequest} />
-      <DayOdometerOfTrip trip={trip} odometer={workspace.odometer} busy={busy} onSave={onOdometer} />
     </>}
     {/* ผู้จองโทรมาแจ้งว่าพร้อมกลับ — คำขอที่รับจองทางโทรศัพท์ผู้จองไม่มีบัญชีให้กดเอง ใครรับสายก็กดแทนได้
         (ฐานข้อมูลให้สิทธิ์ผู้ประสานงานอยู่แล้ว) ระบบแจ้งคนขับให้และบันทึกว่าใครกด */}

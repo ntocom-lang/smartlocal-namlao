@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { communityPayload, isOtherPlace, cleanPlaceName, bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress, joinCandidates, sameDestinationGroup, destinationGroup, joinReturnChoices, suggestGroups, paginate, thaiDay, workspaceTruncated, WORKSPACE_ROW_LIMIT, loadPageSize, savePageSize, pickupLabel, pickupForBooking } from '../src/lib/patientBooking.js'
+import { communityPayload, isOtherPlace, cleanPlaceName, bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress, joinCandidates, sameDestinationGroup, destinationGroup, joinReturnChoices, suggestGroups, paginate, thaiDay, overdueOdometerDays, workspaceTruncated, WORKSPACE_ROW_LIMIT, loadPageSize, savePageSize, pickupLabel, pickupForBooking } from '../src/lib/patientBooking.js'
 
 const error = 'เวลารับ–ส่งอยู่นอกเวลาบริการ'
 const plan = { date: '2026-09-21', settings_revision: 3, booking_ids: ['one'], blocks: [{ start: '2026-09-21T00:00:00Z', end: '2026-09-21T09:00:00Z' }] }
@@ -130,30 +130,40 @@ test('inbox stage counts an incident under the step it happened in', () => {
 })
 test('one next-step button per row, most urgent first', () => {
   const done = { state: 'completed', forward_letter_no: 'พร 1/1' }
-  // เลขไมล์เหมาเป็นวัน (20261008100200): งานเอกสารรอ "เลขไมล์ของวัน" ไม่ใช่เลขไมล์รายเที่ยวแล้ว
-  const dayDone = { date: '2026-10-08', completed: 2, open: 0, odometer_start: 100, odometer_end: 160, odometer_issue: false }
-  const dayMissing = { ...dayDone, odometer_start: null, odometer_end: null }
   assert.equal(staffNextAction({ status: 'submitted' }, null).id, 'confirm')
   assert.equal(staffNextAction({ status: 'confirmed', cancel_requested: true }, { state: 'issue' }).id, 'issue')
   assert.equal(staffNextAction({ status: 'confirmed', cancel_requested: true }, { state: 'confirmed' }).id, 'cancel')
-  assert.equal(staffNextAction({ status: 'completed' }, { ...done, forward_letter_no: null }).id, 'docs')
-  assert.equal(staffNextAction({ status: 'completed' }, done, dayMissing).id, 'docs', 'วันนั้นยังไม่มีเลขไมล์ปิดวัน')
-  assert.equal(staffNextAction({ status: 'completed' }, done, { ...dayDone, odometer_issue: true }).id, 'docs', 'เลขไมล์ของวันรอตรวจสอบ')
-  assert.equal(staffNextAction({ status: 'completed' }, done, dayDone).id, 'view')
-  assert.equal(staffNextAction({ status: 'completed' }, { ...done, odometer_end: null }, dayDone).id, 'view', 'เลขไมล์รายเที่ยวไม่ใช้ตัดสินแล้ว')
-  assert.equal(staffNextAction({ status: 'completed' }, done, null).id, 'view', 'วันนอกช่วงที่โหลด ไม่เดาว่าเลขไมล์ขาด')
-  // เลขหนังสือแยกรายคน (2569-10-02): คำขอที่มีเลขของตัวเองไม่ต้องรอเลขของเที่ยว · ไม่มีทั้งเลขของคำขอและของเที่ยว = ยังต้องบันทึกเอกสาร
-  const noTripLetter = { ...done, forward_letter_no: null }
-  assert.equal(staffNextAction({ status: 'completed', forward_letter_no: 'พร 2/2', forward_letter_date: '2026-10-02' }, noTripLetter).id, 'view')
-  assert.equal(staffNextAction({ status: 'completed', forward_letter_no: null }, noTripLetter).id, 'docs')
-  assert.equal(staffNextAction({ status: 'completed', forward_letter_no: 'พร 2/2' }, noTripLetter, dayMissing).id, 'docs', 'เลขไมล์ของวันยังค้างอยู่ งานเอกสารต้องไม่หาย')
+  // คนขับจบเที่ยวแล้ว = จบงานของหน้าคำขอรถ (เจ้าของระบบสั่ง 2569-10-21) — ไม่ค้าง "บันทึกเอกสาร" เพราะยังไม่มีเลขหนังสือนำส่งหรือเลขไมล์ของวัน
+  // เดิม 'docs' (rank 3) ค้างจนบันทึกเลขหนังสือ + เลขไมล์ปิดวัน ห้ามเอากลับ: เลขหนังสือบันทึกตอนพิมพ์ได้เมื่อไรก็ได้ เลขไมล์เป็นงานคนขับ + แถบเตือนบรรทัดเดียว
+  for (const trip of [{ ...done, forward_letter_no: null }, done, { ...done, odometer_end: null }, { state: 'completed' }]) {
+    for (const booking of [{ status: 'completed' }, { status: 'completed', forward_letter_no: null }, { status: 'completed', forward_letter_no: 'พร 2/2' }]) {
+      assert.equal(staffNextAction(booking, trip).id, 'view', `จบเที่ยวแล้วต้องไม่มีงานค้างในหน้าคำขอรถ: ${JSON.stringify([booking, trip])}`)
+    }
+  }
   assert.equal(staffNextAction({ status: 'confirmed' }, { state: 'outbound' }).id, 'view')
   assert.equal(staffNextAction({ status: 'cancelled' }, null).id, 'view')
-  const ranks = ['issue', 'cancel', 'confirm', 'docs', 'view'].map(id => [
+  const ranks = ['issue', 'cancel', 'confirm', 'view'].map(id => [
     staffNextAction({ status: 'confirmed' }, { state: 'issue' }), staffNextAction({ status: 'confirmed', cancel_requested: true }, { state: 'confirmed' }),
-    staffNextAction({ status: 'submitted' }, null), staffNextAction({ status: 'completed' }, { ...done, forward_letter_no: null }), staffNextAction({ status: 'cancelled' }, null),
+    staffNextAction({ status: 'submitted' }, null), staffNextAction({ status: 'completed' }, { ...done, forward_letter_no: null }),
   ].find(a => a.id === id).rank)
   assert.deepEqual([...ranks].sort((x, y) => x - y), ranks)
+  assert.ok(!['issue', 'cancel', 'confirm'].includes(staffNextAction({ status: 'completed' }, done).id), 'งานที่จบแล้วต้องไม่อยู่ส่วน "ต้องดำเนินการ"')
+  assert.ok(staffNextAction({ status: 'completed' }, done).rank >= 9, 'rank >= 9 = ส่วน "เสร็จแล้ว / ยกเลิก" (sectionOf ใน BookingInbox)')
+})
+test('overdue odometer banner: only past days that still wait, within 30 days, oldest first', () => {
+  const day = (date, extra = {}) => ({ date, completed: 2, open: 0, odometer_start: null, odometer_end: null, odometer_issue: false, ...extra })
+  const recorded = { odometer_start: 100, odometer_end: 160 }
+  const days = [
+    day('2026-10-20'), day('2026-10-18'), day('2026-10-19', recorded), day('2026-10-17', { odometer_issue: true }),
+    day('2026-10-21'),                       // วันนี้ ไม่ทวง: คนขับยังวิ่ง/เพิ่งกลับ
+    day('2026-10-16', { open: 1 }),          // ยังมีเที่ยววิ่งอยู่ ไม่ใช่วันที่รอเลขไมล์ปิดวัน
+    day('2026-10-15', { completed: 0 }),     // ไม่มีเที่ยวจบ ไม่มีอะไรให้ใส่
+    day('2026-09-10'),                       // เกิน 30 วัน ผ่านช่วงแก้ย้อนหลังแล้ว
+  ]
+  assert.deepEqual(overdueOdometerDays(days, '2026-10-21', '2026-09-21'), ['2026-10-17', '2026-10-18', '2026-10-20'])
+  assert.deepEqual(overdueOdometerDays([], '2026-10-21', '2026-09-21'), [], 'ไม่มีแถวเลย = ไม่เดาว่าขาด')
+  assert.deepEqual(overdueOdometerDays(undefined, '2026-10-21', '2026-09-21'), [])
+  assert.deepEqual(overdueOdometerDays([day('2026-10-20', recorded)], '2026-10-21', '2026-09-21'), [], 'ใส่ครบแล้วแถบต้องหาย')
 })
 test('driver: two actions for all modes, legacy states finish atomically', () => {
   for (const mode of ['wait', 'later', 'one_way']) {

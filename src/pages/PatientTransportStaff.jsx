@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BarChart2, CalendarDays, Car, Inbox, RefreshCw, Settings, Users, X } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
@@ -16,7 +16,7 @@ import { buildCommunityRequestFormHtml, buildCommunityForwardLetterHtml } from '
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle } from '../lib/documentSignatories'
 import { resolvePatientRequestSignatories } from '../lib/patientRequestSignatories'
 import usePatientBooking from '../hooks/usePatientBooking'
-import { TRIP_STATUS, WORKSPACE_ROW_LIMIT, workspaceTruncated, dayPending, thaiDayAfter, buttonClass, primaryClass, driverSteps, joinCandidates, isCommunity, bookingName, bookingLetterMoment, servicePeriodReport } from '../lib/patientBooking'
+import { TRIP_STATUS, WORKSPACE_ROW_LIMIT, workspaceTruncated, dayPending, overdueOdometerDays, thaiDayAfter, buttonClass, primaryClass, driverSteps, joinCandidates, isCommunity, bookingName, bookingLetterMoment, servicePeriodReport } from '../lib/patientBooking'
 
 /**
  * หน้าทำงานของเจ้าหน้าที่ — คำขอรถ · ปฏิทิน · งานคนขับ · รายงาน · ตั้งค่า
@@ -49,6 +49,14 @@ export default function PatientTransportStaff({ onBack } = {}) {
   const recentFrom = thaiDayAfter(-30)
   const driverWorkCount = (workspace?.trips || []).filter(t => (isAdmin || t.driver_id === uid) && t.state !== 'cancelled' && t.state !== 'completed').length
     + (workspace?.odometer?.days || []).filter(d => (isAdmin || d.mine) && d.date >= recentFrom && dayPending(d)).length
+  // วันที่ผ่านมาแล้วแต่ยังไม่มีเลขไมล์ปิดวัน — แถบเตือนบรรทัดเดียวบนหน้าคำขอรถ (เจ้าของระบบสั่ง 2569-10-21)
+  // คำขอที่คนขับจบเที่ยวแล้วจบงานทันที ไม่ค้างเป็นงานรายแถว คนขับลืมใส่เลขไมล์จึงต้องมีที่ให้ผู้จัดคิวเห็น ไม่งั้นหายเงียบ
+  // แอดมินและคนขับมีแถบ "มีงานคนขับ N รายการ" ด้านบน (นับวันที่รอเลขไมล์ปิดวันอยู่แล้ว) จึงไม่ขึ้นซ้ำสองแถบ — แถบนี้เติมช่องว่างของ
+  // ผู้จัดคิวที่ไม่ใช่แอดมินและไม่มีงานคนขับของตัวเอง ซึ่งเดิมไม่เห็นอะไรเลย (ตัวเลขบนเมนูนับเฉพาะแอดมินกับคนขับของวันนั้น)
+  const overdueOdometer = isCoordinator && !isAdmin && !(isDriver && driverWorkCount > 0) ? overdueOdometerDays(workspace?.odometer?.days || []) : []
+  const overdueLabels = overdueOdometer.slice(0, 3)
+    .map(date => new Date(`${date}T12:00:00+07:00`).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' }))
+  const overdueMore = overdueOdometer.length > 3 ? ` และอีก ${overdueOdometer.length - 3} วัน` : ''
   const tabs = [
     { id: 'inbox', label: 'คำขอรถ', Icon: Inbox, show: isCoordinator },
     { id: 'calendar', label: 'ปฏิทิน', Icon: CalendarDays, show: isCoordinator },
@@ -271,6 +279,10 @@ export default function PatientTransportStaff({ onBack } = {}) {
         <p className="font-bold">รายการเกินที่หน้านี้แสดงได้</p>
         <p className="text-sm">หน้านี้แสดงได้สูงสุด {WORKSPACE_ROW_LIMIT.toLocaleString('th-TH')} คำขอและ {WORKSPACE_ROW_LIMIT.toLocaleString('th-TH')} เที่ยว ตอนนี้ถึงเพดานแล้ว คำขอที่นัดไกลที่สุดอาจไม่แสดง ข้อมูลในระบบยังอยู่ครบ กรุณาแจ้งผู้ดูแลระบบ</p>
       </div>}
+      {view === 'inbox' && overdueOdometer.length > 0 && <section data-odometer-overdue data-days={overdueOdometer.join(',')} aria-label="วันที่ยังไม่มีเลขไมล์ปิดวัน" className="mb-4 flex flex-col gap-3 rounded-2xl border-2 border-amber-400 bg-amber-50 p-4 text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+        <div><p className="font-bold">มี {overdueOdometer.length} วันที่ยังไม่มีเลขไมล์ปิดวัน ({overdueLabels.map((label, index) => <Fragment key={label}>{index > 0 && ', '}<span className="whitespace-nowrap">{label}</span></Fragment>)}{overdueMore})</p><p className="text-sm">คนขับของวันนั้นหรือผู้จัดคิวใส่แทนได้ที่แท็บงานคนขับ · แถบนี้หายเองเมื่อมีเลขไมล์ครบ</p></div>
+        <button type="button" className="min-h-11 w-full rounded-xl bg-amber-500 px-5 py-2 text-center font-bold text-slate-950 hover:bg-amber-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-950 disabled:opacity-50 sm:w-auto" disabled={busy} onClick={() => { setCalendarBookingId(null); setView('driver') }}>ไปแท็บงานคนขับ →</button>
+      </section>}
       {(view === 'inbox' || (view === 'calendar' && calendarBookingId)) && isCoordinator && <BookingInbox key={calendarBookingId || 'inbox'} workspace={{ ...workspace, public_info: info }} busy={busy} error={error} isAdmin={isAdmin} action={intakeButton}
         detailOnly={view === 'calendar'} initialOpenId={calendarBookingId} onCloseBooking={() => setCalendarBookingId(null)}
         currentUserId={uid} onOpenDriver={() => { setCalendarBookingId(null); setView('driver') }}

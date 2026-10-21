@@ -757,11 +757,37 @@ try{
  // เลขไมล์เหมาเป็นวัน: จบเที่ยวสุดท้ายของวันแล้วการ์ด "จบวันแล้ว รอเลขไมล์ตอนรถกลับ" ขึ้นเอง วันละ 1 การ์ด (ไม่ใช่รายเที่ยว)
  const odo=page.locator(`section[aria-label="จบวันแล้ว รอเลขไมล์ตอนรถกลับ"] article[data-odometer-day="${b1Day}"]`);await odo.waitFor()
  assert.equal(clicks.driverRound,2,'ไป-กลับ 2 ปุ่ม');const b1Done=await bookingRow(b1);assert.equal(b1Done.status,'completed');assert.equal(b1Done.passenger_step,4)
+ // ── จบเที่ยว = จบงานของหน้าคำขอรถ + แถบเตือนเลขไมล์ที่ค้าง (เจ้าของระบบสั่ง 2569-10-21 "ไม่เพิ่มงานให้ใคร ลดภาระงาน") ──
+ // คนขับจบเที่ยวแล้วแถวต้องไม่ค้างเป็นงานของหน้าคำขอรถ (เดิมค้าง "บันทึกเอกสาร" จนมีเลขหนังสือ + เลขไมล์ปิดวัน)
+ // แต่ถ้าวันที่ผ่านมาแล้วยังไม่มีเลขไมล์ปิดวัน ผู้จัดคิวต้องเห็นแถบบรรทัดเดียว (ไม่ใช่งานรายแถว) ไม่งั้นคนขับลืมแล้วหายเงียบ
+ {
+  const overdueDays=()=>page.evaluate(()=>document.querySelector('[data-odometer-overdue]')?.dataset.days??'')
+  const inboxReady=()=>page.locator('tr[data-booking]').first().waitFor()
+  const nextDay=thaiDay(Date.parse(`${b1Day}T12:00:00+07:00`)+86400000),viewportBefore=page.viewportSize()
+  // วันเดียวกัน (คนขับเพิ่งกลับ) ยังไม่ทวง · แถวของ b1 ไม่อยู่ส่วนต้องดำเนินการแม้ยังไม่มีเลขหนังสือและเลขไมล์
+  await page.clock.setFixedTime(new Date(`${b1Day}T18:00:00+07:00`));await staffDesk();await inboxReady()
+  assert(!(await overdueDays()).split(',').includes(b1Day),'วันเดินทางที่ยังไม่ผ่าน ต้องไม่ทวงเลขไมล์')
+  assert.equal(await page.locator(`tr[data-booking="${b1}"][data-section="action"]`).count(),0,'คนขับจบเที่ยวแล้วต้องไม่ค้างในส่วนต้องดำเนินการ')
+  // วันถัดไปยังไม่มีเลขไมล์ = แถบเตือนบรรทัดเดียวบนหน้าคำขอรถ + ปุ่มไปแท็บงานคนขับ
+  await page.clock.setFixedTime(new Date(`${nextDay}T09:00:00+07:00`));await staffDesk();await inboxReady()
+  assert((await overdueDays()).split(',').includes(b1Day),`ต้องมีแถบเตือนวัน ${b1Day} ที่ยังไม่มีเลขไมล์: "${await overdueDays()}"`)
+  assert.equal(await page.locator('[data-odometer-overdue]').count(),1,'แถบเตือนต้องมีแถบเดียว ไม่ใช่รายแถว')
+  assert.equal(await page.locator(`tr[data-booking="${b1}"][data-section="action"]`).count(),0,'แถบเตือนไม่ทำให้แถวคำขอกลับไปค้าง')
+  await page.locator('[data-odometer-overdue]').getByRole('button',{name:/ไปแท็บงานคนขับ/}).click()
+  // จอ PC แท็บงานคนขับแสดงวันที่รอเลขไมล์เป็นแถวในรายการ (li) ส่วนมือถือเป็นการ์ด (article) — ตรวจด้วย data-odometer-day ที่ทั้งสองแบบมี
+  await page.locator(`section[aria-label="จบวันแล้ว รอเลขไมล์ตอนรถกลับ"] [data-odometer-day="${b1Day}"]`).waitFor()
+  // กลับไปเป็นคนขับบนขนาดจอเดิม ใส่เลขไมล์ตามฉากเดิม
+  await page.setViewportSize(viewportBefore);await page.clock.setFixedTime(new Date(`${b1Day}T07:00:00+07:00`));await visit('driver');await odo.waitFor()
+ }
  let startOdo=15000
  if(await odo.getByLabel('เลขไมล์ออก',{exact:true}).count())await odo.getByLabel('เลขไมล์ออก',{exact:true}).fill(String(startOdo))
  else startOdo=Number((await odo.locator('strong').first().innerText()).replace(/\D/g,''))
  await odo.getByLabel('เลขไมล์กลับ',{exact:true}).fill(String(startOdo+33));await odo.getByText('ระยะทางทั้งวัน 33 กม.',{exact:true}).waitFor()
  await odo.getByRole('button',{name:/^บันทึกเลขไมล์/}).click();await toast('บันทึกเลขไมล์ประจำวันแล้ว').waitFor();await odo.waitFor({state:'detached'})
+ const viewportAfterOdo=page.viewportSize()
+ await page.clock.setFixedTime(new Date(`${thaiDay(Date.parse(`${b1Day}T12:00:00+07:00`)+86400000)}T09:00:00+07:00`));await staffDesk();await page.locator('tr[data-booking]').first().waitFor()
+ assert(!(await page.evaluate(()=>document.querySelector('[data-odometer-overdue]')?.dataset.days??'')).split(',').includes(b1Day),'ใส่เลขไมล์ของวันแล้ว แถบเตือนของวันนั้นต้องหาย')
+ await page.setViewportSize(viewportAfterOdo);await page.clock.setFixedTime(new Date(`${b1Day}T07:00:00+07:00`))
  await visit('newcomer');await page.getByRole('article').filter({hasText:b1.slice(0,8).toUpperCase()}).getByText('เดินทางเสร็จแล้ว',{exact:false}).waitFor()
  // ── ขาเดียว + แจ้งเหตุขัดข้อง → เจ้าหน้าที่แก้จากกล่องคำขอรถ → คนขับวิ่งต่อจนจบ (2 ปุ่ม) ──
  await page.clock.setFixedTime(new Date(`${helperDay}T07:00:00+07:00`))
@@ -789,7 +815,11 @@ try{
   assert.equal(dayDistance(days[0]),50);assert.equal(dayDistance(days[2]),null,'วันที่รอตรวจสอบไม่มีระยะทาง')
  }
  await page.clock.setFixedTime(new Date(`${b1Day}T18:00:00+07:00`))
- await staffDesk();await row(b1).getByRole('button',{name:'บันทึกเอกสาร',exact:true}).click()
+ // จบเที่ยวแล้วจบงาน: แถวอยู่ส่วน "เสร็จแล้ว / ยกเลิก" ตั้งแต่ก่อนบันทึกเลขหนังสือ ปุ่มแถวเป็น "ดูรายละเอียด" ไม่มีปุ่ม "บันทึกเอกสาร"
+ await staffDesk();await openDone();await row(b1).waitFor()
+ assert.equal(await row(b1).getAttribute('data-section'),'done','คำขอที่เที่ยวจบแล้วต้องอยู่ส่วนเสร็จแล้ว แม้ยังไม่มีเลขหนังสือนำส่ง')
+ assert.equal(await row(b1).getByRole('button',{name:'บันทึกเอกสาร'}).count(),0,'ห้ามมีปุ่ม "บันทึกเอกสาร" ค้างหลังจบเที่ยว')
+ await row(b1).getByRole('button',{name:'ดูรายละเอียด',exact:true}).click()
  // ── พิมพ์จากแผ่นของเที่ยวที่จบแล้ว (ส่วน "เอกสารคำขอและนำส่งกองทุน" ของงานที่ค้างเอกสาร) — 2 ปุ่มแยก: ใบคำขอ / หนังสือ + ใบคำขอรับสวัสดิการ ──
  {
   const [formWin]=await Promise.all([page.waitForEvent('popup'),click('printRequest',requestPrintBtn())])
@@ -815,9 +845,8 @@ try{
   assert.equal(clicks.printRequest,1);assert.equal(clicks.printLetter,1);await letterWin.close()
  }
  await letterNoField().fill('พร 72301/77');await saveLetterOnlyBtn().click();await toast('บันทึกเลขหนังสือนำส่งแล้ว').waitFor()
- // เอกสารครบแล้ว = แถวไม่มีงานค้าง ย้ายไปส่วน "เสร็จแล้ว / ยกเลิก" ที่พับไว้ (ปุ่มแถวเป็น "ดูรายละเอียด" ตรวจในฉาก inbox order)
- // แผ่นที่เปิดอยู่ไม่ปิดตาม และแบบฟอร์มย้ายไปอยู่ใต้ "จัดการเพิ่มเติม"
- await row(b1).waitFor({state:'detached'})
+ // บันทึกเลขหนังสือไม่เปลี่ยนส่วนของแถว (จบเที่ยวแล้วอยู่ส่วนเสร็จแล้วตั้งแต่ก่อนบันทึก) · แผ่นที่เปิดอยู่ไม่ปิดตาม และแบบฟอร์มย้ายไปอยู่ใต้ "จัดการเพิ่มเติม"
+ assert.equal(await row(b1).getAttribute('data-section'),'done','บันทึกเลขหนังสือแล้วแถวต้องอยู่ส่วนเสร็จแล้วเหมือนเดิม')
  await sheet.locator('summary').filter({hasText:'จัดการเพิ่มเติม'}).click()
  await sheet.getByText(/^ที่ พร 72301\/77 ลงวันที่/).waitFor()
  let docs=(await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))).trips.find(t=>t.id===b1Trip)
@@ -1892,16 +1921,14 @@ try{
   ?{header:tr.dataset.sectionHeader,text:tr.innerText.trim()}:{booking:tr.dataset.booking,section:tr.dataset.section,at:tr.dataset.at}))
  const orderWorkspace=await runAs(coordinator,()=>rpc('patient_booking_workspace',[tenant]))
  const orderTrips=new Map(orderWorkspace.trips.map(t=>[t.id,t]))
- // หน้าจอส่งเลขไมล์รายวันย้อน 45 วัน (ตามนาฬิกาของหน้า) ให้ staffNextAction — เทสต์ต้องใช้ช่วงเดียวกัน ไม่งั้นวันที่ยังไม่มีเลขไมล์จะถูกนับเป็น "เสร็จแล้ว"
- const orderNow=await page.evaluate(()=>Date.now())
- const orderDays=new Map((await runAs(coordinator,()=>rpc('patient_booking_odometer_days',[tenant,thaiDay(orderNow-45*86400000),thaiDay(orderNow)]))).days.map(d=>[d.date,d]))
+ // staffNextAction ไม่ดูเลขหนังสือ/เลขไมล์แล้ว (เจ้าของระบบสั่ง 2569-10-21 จบเที่ยว = จบงาน) เทสต์จึงไม่ต้องดึงเลขไมล์รายวันมาเทียบ
  const sectionRank={action:0,live:1,done:2}
  const bookingRows=listed.filter(item=>item.booking)
  assert.equal(bookingRows.length,orderWorkspace.bookings.length,'ทุกคำขอต้องอยู่ในตาราง')
  for(const [index,item] of bookingRows.entries()){
   const b=orderWorkspace.bookings.find(x=>x.id===item.booking)
   const trip=b.trip_id&&b.status!=='cancelled'?orderTrips.get(b.trip_id)||null:null
-  item.rank=staffNextAction(b,trip,trip?orderDays.get(trip.plan?.date)||null:null).rank
+  item.rank=staffNextAction(b,trip).rank
   assert.equal(item.section,item.rank<9?'action':['confirmed','running'].includes(bookingStage(b,trip))?'live':'done',`ส่วนของคำขอ ${item.booking.slice(0,8)} ไม่ถูก`)
   if(!index)continue
   const prev=bookingRows[index-1]
