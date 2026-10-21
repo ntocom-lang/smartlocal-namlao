@@ -1,10 +1,14 @@
 import { useMemo, useState } from 'react'
-import { AlertCircle, ArrowLeft, Check, Loader2, Pencil, Sparkles } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Check, Loader2, MapPin, Pencil, Sparkles } from 'lucide-react'
 import { polishComplaintText } from '../../lib/complaintTextPolish'
 
 // กล่องทวนคำร้องก่อนส่ง — แทนกล่องยินยอม PDPA เดิมที่มีแต่ข้อความยินยอม
 // เจ้าของระบบกำหนด 2569-09-17: ผู้ร้องต้องเห็นสิ่งที่จะส่งทั้งหมดก่อน กลับไปแก้ได้
 // และถ้าระบบเรียบเรียงข้อความให้ได้ ต้องแสดงให้เลือก — ห้ามเปลี่ยนข้อความให้เอง
+//
+// onAddPin: ส่งมาเฉพาะตอนผู้ร้องยังไม่ได้ปักหมุด → ขึ้นกล่องเตือนเบาๆ + ปุ่มกลับไปปักหมุด (2569-10-21)
+// ⚠️ ไม่บังคับ และต้องกดส่งต่อได้เสมอ: ฟอร์มประชาชนให้ปักหมุดเป็นตัวเลือกโดยตั้งใจ (ยกเว้นหมวดกลิ่น) คนที่ไม่มี GPS
+// หรือเรื่องที่ไม่ผูกกับจุดใดจุดหนึ่งจะถอดใจ/เลิกแจ้ง ถ้าบังคับ — ใบคำร้องที่พิมพ์ออกมาจะบอกตรงๆ ว่า "ไม่ได้ปักหมุด" อยู่แล้ว
 //
 // ตัวหนังสือในกล่องนี้ตั้งใจให้ใหญ่กว่าปกติ ผู้ใช้จำนวนมากเป็นผู้สูงอายุที่อ่านตัวเล็กไม่ออก
 // แล้วจะกดยืนยันผ่านโดยไม่อ่าน ซึ่งทำให้ขั้นตอนทวนนี้ไม่มีความหมาย
@@ -18,6 +22,7 @@ export default function ComplaintReviewSheet({
   onPdpaClick,
   onBack,
   onConfirm,
+  onAddPin,
 }) {
   const { polished, changes } = useMemo(() => polishComplaintText(detail), [detail])
   const hasSuggestion = changes.length > 0 && polished.trim() && polished.trim() !== String(detail ?? '').trim()
@@ -59,6 +64,22 @@ export default function ComplaintReviewSheet({
             </div>
           )}
         </dl>
+
+        {onAddPin && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 space-y-2" data-testid="pin-hint">
+            <p className="flex items-start gap-2 text-sm text-amber-900 leading-relaxed">
+              <MapPin size={16} className="mt-0.5 shrink-0 text-amber-600" />
+              <span>
+                ยังไม่ได้ปักหมุด — ถ้าเรื่องนี้เกิดที่จุดใดจุดหนึ่ง (เช่น เสาไฟ ถนน ต้นไม้)
+                การปักหมุดช่วยให้เจ้าหน้าที่ไปถูกที่โดยไม่ต้องโทรถามซ้ำ
+              </span>
+            </p>
+            <button type="button" onClick={onAddPin} disabled={submitting}
+              className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold text-amber-900 bg-white border border-amber-300 disabled:opacity-50">
+              <MapPin size={14} /> ปักหมุดตอนนี้
+            </button>
+          </div>
+        )}
 
         {/* ข้อความคำร้อง */}
         <div className="space-y-2">

@@ -1201,6 +1201,8 @@ export default function CitizenForm() {
           submitLabel={actionCopy.submit}
           onPdpaClick={() => { setShowConsent(false); setShowPdpa(true) }}
           onBack={() => setShowConsent(false)}
+          // ยังไม่ปักหมุด = เสนอทางกลับไปปักตอนนี้ (ไม่บังคับ — ยังกดส่งต่อได้) ปักแล้วกดส่งอีกครั้งจะเห็นพิกัดในหน้าทวน
+          onAddPin={geo.lat == null ? () => { setShowConsent(false); setShowMap(true) } : undefined}
           onConfirm={(choice) => { setShowConsent(false); handleSubmit(null, choice) }}
         />
       )}
