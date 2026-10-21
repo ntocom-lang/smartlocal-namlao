@@ -4,6 +4,7 @@ import {
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { orgClerkTitle, orgHeadTitle } from './orgTerms.js'
 import { printableCategoryLabel } from './complaintCategoryLabels.js'
+import { QUIET_MODULES, qrLayout } from './qrSvg.js'
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -167,6 +168,39 @@ function departmentHeadFallback(department) {
 }
 
 // ใบคำร้องทางการ — ใช้กับคำร้องทุกประเภท ไม่ว่าผู้แจ้งจะเป็นประชาชนทั่วไปหรือสมาชิกสภา
+// พิกัดที่ผู้ร้อง/เจ้าหน้าที่ปักหมุดไว้ — ใบคำร้องเดิมไม่พิมพ์เลยทั้งที่ระบบเก็บไว้ (91% ของเรื่องใน 120 วันที่ตรวจ 2569-10-21)
+// ผู้บริหารที่รับกระดาษจึงถามว่า "พิกัดอยู่ไหน" ทั้งที่ข้อมูลมีอยู่แล้ว
+// แยก 3 สถานะให้ชัด ห้ามรวม:
+//   - undefined = ไม่รู้ ("latitude" ไม่อยู่ในข้อมูลเลย) → ไม่พิมพ์อะไร
+//     get_complaint_private_detail ตัด latitude/longitude/location ออกสำหรับ viewer/council (ดูได้แต่ข้อมูลที่ปิดบังแล้ว)
+//     ถ้าพิมพ์ว่า "ไม่ได้ปักหมุด" ทั้งที่จริงมีหมุดแต่สิทธิ์ไม่ให้เห็น คือการให้ข้อมูลเท็จบนเอกสาร
+//   - null = ไม่ได้ปักหมุด (ผู้ร้องไม่ปัก — ฟอร์มประชาชนไม่บังคับ ยกเว้นหมวดกลิ่น) → บอกตรงๆ ไม่เดาพิกัดจากหมู่บ้าน
+//   - {lat,lng} = พิมพ์ตัวเลข + QR เปิดแผนที่ (ผู้บริหารสแกนจากกระดาษได้เลย)
+function pinOf(c) {
+  if (!c || !Object.hasOwn(c, 'latitude')) return undefined
+  if (c.latitude == null || c.longitude == null || c.latitude === '' || c.longitude === '') return null
+  const lat = Number(c.latitude)
+  const lng = Number(c.longitude)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return null
+  return { lat, lng }
+}
+
+function coordinatesBlock(c) {
+  const pin = pinOf(c)
+  if (pin === undefined) return { row: '', qr: '' }
+  if (pin === null) return { row: '<div>พิกัด &nbsp;ไม่ได้ปักหมุด (ระบุตามคำบรรยายสถานที่)</div>', qr: '' }
+  const text = `${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}`
+  const row = `<div>พิกัด &nbsp;${text}</div>`
+  // ลิงก์รูปแบบเดียวกับปุ่มเปิดแผนที่ในหน้าเจ้าหน้าที่ (ComplaintsManager) — ไม่ใช้ API/คีย์ ไม่มีค่าใช้จ่าย
+  const url = `https://maps.google.com/?q=${pin.lat.toFixed(6)},${pin.lng.toFixed(6)}`
+  const qr = qrLayout(url, 1000)
+  if (!qr) return { row, qr: '' }
+  const box = qr.size + QUIET_MODULES * 2
+  const svg = `<svg viewBox="0 0 ${box} ${box}" role="img" aria-label="QR code เปิดตำแหน่งในแผนที่"><rect width="${box}" height="${box}" fill="#fff"/><path transform="translate(${QUIET_MODULES} ${QUIET_MODULES})" d="${qr.d}" fill="#000"/></svg>`
+  return { row, qr: `<div class="geo-qr">${svg}<p>สแกน QR เพื่อเปิดตำแหน่งที่แจ้งในแผนที่</p></div>` }
+}
+
 // อ้างอิงจากแบบฟอร์มกระดาษจริงที่เทศบาลตำบลน้ำเลาใช้งานอยู่
 // terminology มาจาก useTenant() — ให้คำเรียกตำแหน่งถูกต้องตาม org_type ของแต่ละหน่วยงาน
 //
@@ -174,8 +208,12 @@ function departmentHeadFallback(department) {
 // ต้องไม่มีบล็อกลงชื่อ (กองช่าง/ปลัด/นายก) ในไฟล์ draft เลย เพราะผู้มีอำนาจจะลงนามที่ GDCC
 // โดยตรง ถ้าใส่บล็อกลงชื่อเปล่าไปด้วยจะสับสนว่าต้องเซ็นในไฟล์นี้หรือเซ็นที่ GDCC — ปุ่ม
 // "พิมพ์" ยังคงบล็อกลงชื่อไว้ตามเดิม (ใช้เป็นแบบฟอร์มกระดาษเวียนเซ็นในสำนักงานได้)
-export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, signatories = {}, includeStaffSignatures = true }) {
+//
+// includeCoordinates: พิมพ์พิกัด + QR แผนที่ (ค่าปริยายเปิด) — ปิดได้ที่จุดเรียกใช้เดียว ถ้า DPO ตัดสินว่าฉบับ Draft PDF ที่ส่งออก GDCC
+// ไม่ควรมีพิกัด (ระบบนับพิกัดละเอียดเป็นข้อมูลต้องรู้ใครเห็น: audit_logs 'exact_location' ตอนเปิดรายละเอียดคำร้อง)
+export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, signatories = {}, includeStaffSignatures = true, includeCoordinates = true }) {
   const loc = locationName(tenant)
+  const geo = includeCoordinates ? coordinatesBlock(c) : { row: '', qr: '' }
   const reporter = c.reporter_name || c.profiles?.full_name || '.................................................'
 
   // จ่าหน้า "เรียน" กับตำแหน่งใต้ช่องลงนามต้องเป็นชื่อหน่วยงานเต็ม (นายกองค์การบริหารส่วนตำบลทุ่งแค้ว)
@@ -269,6 +307,10 @@ ${govSignBlockCss()}
   .official-ref { min-width: 220px; text-align: right; white-space: nowrap; }
   .indent { text-indent: 2em; }
   .points div { margin: 4px 0; }
+  /* 11pt โดยตั้งใจ — คำอธิบายใต้ QR เป็นข้อความประกอบ ไม่ใช่เนื้อความ (ขนาดเดียวกับบล็อกเลขอ้างอิงมุมกระดาษ) */
+  .geo-qr { display: flex; align-items: center; gap: 4mm; margin: 6px 0 0 2em; break-inside: avoid; }
+  .geo-qr svg { width: 20mm; height: 20mm; flex: 0 0 auto; }
+  .geo-qr p { font-size: 11pt; line-height: 1.3; }
   @media print { button { display: none; } }
 </style></head><body>
 <div class="request-refs">
@@ -299,7 +341,9 @@ ${govSignBlockCss()}
   <div>อาการทางสุขภาพ &nbsp;${esc(c.extra_data.health_effect ?? 'ไม่มี')}</div>
   ` : ''}
   <div>สถานที่ &nbsp;${esc(point1)}</div>
+  ${geo.row}
 </div>
+${geo.qr}
 
 <p class="indent" style="margin-top:12px;">จึงเรียนมาเพื่อโปรดพิจารณาดำเนินการ</p>
 
