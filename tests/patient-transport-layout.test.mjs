@@ -1680,7 +1680,7 @@ const checks = [
                 range.selectNodeContents(p)
                 return new Set([...range.getClientRects()].filter(r => r.width > 0.5).map(r => Math.round(r.top))).size
               })(),
-              letterActingBoxes: letterSign.querySelector('.nb')?.getClientRects().length ?? 0,
+              letterActingBoxes: letterSign.querySelector('span[style*="nowrap"]')?.getClientRects().length ?? 0,
               fundBox: contentBox(fundSheet),
               fundText: extent(fundSign),
               fundLines: [...fundSign.querySelectorAll('.sign-below')].map(el => el.textContent.trim()),
