@@ -45,7 +45,7 @@ import {
   govPageCss, govPagePadding,
 } from './govDocStyle.js'
 import {
-  GOV_SIGN_LINE_W_WIDE, govNameBlank, govSignBlockCss, govSignRow,
+  GOV_SIGN_LINE_W_WIDE, govNameBlank, govSignBlockCss, govSignRow, govSplitActingTitle,
 } from './govSignBlock.js'
 import { govStaffSignBlockCss, govStaffSignBlockHtml } from './govStaffSignBlock.js'
 import { orgHeadTitle, orgNameParts, orgOfficeName } from './orgTerms.js'
@@ -139,6 +139,13 @@ const MAYOR_SIGN_MAX_MM = 140
 function mayorSignWidth(...texts) {
   const mm = text => [...String(text ?? '')].filter(char => !isThaiNonSpacing(char)).length * SIGN_MM_PER_THAI_CHAR
   return `${Math.min(MAYOR_SIGN_MAX_MM, Math.max(MAYOR_SIGN_MIN_MM, Math.ceil(Math.max(0, ...texts.map(mm)))))}mm`
+}
+
+// กล่องลงนามของหนังสือกว้างแค่ ~96 มม. (padding-left 40%) แต่ตำแหน่งบรรทัดแรกของ "รักษาราชการแทน" ยาวได้ ~110 มม. จึงตัดบรรทัดเองอีกชั้น
+// ต้องไม่ให้เบราว์เซอร์ตัดกลางคำ "รักษาราชการ|แทน" (เห็นจริง: "แทน" ตกบรรทัดเดียวโดดๆ) — ห่อคำนั้นเป็นก้อนเดียว
+// ผลคือ 3 บรรทัด: ตำแหน่งที่รักษาการ / รักษาราชการแทน / ตำแหน่งที่ถูกแทน
+function actingWordUnbroken(line) {
+  return esc(line).replace(/(รักษาราชการแทน|รักษาการแทน|ปฏิบัติราชการแทน|ทำการแทน)$/, '<span class="nb">$1</span>')
 }
 
 // "ตำแหน่ง …" ในย่อหน้าเปิดของใบคำขอรับสวัสดิการ — ขึ้นบรรทัดใหม่ได้เฉพาะที่ช่องว่างในตำแหน่งเอง ไม่ตัดกลางคำ
@@ -406,7 +413,7 @@ ${senderAddress.map(part => `      <p>${esc(part)}</p>`).join('\n')}
   <p class="regards">ขอแสดงความนับถือ</p>
   <div class="letter-sign sign-block">
     <p>${signatureName(mayor?.name)}</p>
-    <p>${esc(mayorTitle)}</p>
+    ${govSplitActingTitle(mayorTitle).map(line => `<p>${actingWordUnbroken(line)}</p>`).join('\n    ')}
   </div>
 
   <!-- ⚠️ ไม่มีบล็อก "ส่วนราชการเจ้าของเรื่อง / โทร. / โทรสาร" ท้ายหนังสือ โดยเจตนา — เจ้าของระบบสั่งตัดออก
@@ -499,7 +506,10 @@ function fundFormSheet({ header, form = {}, parent = {}, tenant, mayor = null, r
   // ผู้ขอของใบนี้คือนายก — ที่มาและค่าตั้งต้นเดียวกับช่องลงนามของหนังสือนำส่ง (letterSheet)
   // ช่องลงนามด้านล่างไม่ส่ง signed: นายกเซ็นปากกา ห้ามพิมพ์ชื่อเป็นลายมือชื่อ (คอมเมนต์อยู่ที่นี่ ไม่ใส่ใน HTML เพราะจะติดไปกับใบพิมพ์)
   const mayorTitle = textOr(mayor?.title, orgHeadTitle(tenant))
-  const mayorSignW = mayorSignWidth(mayorTitle, `(${textOr(mayor?.name)})`)
+  // ตำแหน่ง "รักษาราชการแทน" ตัดเป็น 2 บรรทัดหลังคำนั้น (กติกากลางเดียวกับใบคำร้อง) — ไม่ตัด บรรทัดเดียวยาวได้ ~175 มม. ซึ่งเกินพื้นที่พิมพ์
+  // 160 มม. (วัดแล้วล้นขอบขวา 8–12 มม.) ความกว้างเส้นคิดจากบรรทัดที่ยาวที่สุด ไม่ใช่ตำแหน่งทั้งก้อน
+  const mayorTitleLines = govSplitActingTitle(mayorTitle)
+  const mayorSignW = mayorSignWidth(...mayorTitleLines, `(${textOr(mayor?.name)})`)
   const introIndent = fundIntroIndentMm(mayor?.name, mayorTitle)
   const fundName = textOr(header?.partner_name_snapshot, 'กองทุนเจ้าของรถ')
   const recipient = textOr(header?.recipient_title_snapshot, `ประธาน${fundName}`)
@@ -538,7 +548,7 @@ function fundFormSheet({ header, form = {}, parent = {}, tenant, mayor = null, r
   <p class="fund-evidence">หลักฐาน ${box()} ใบนัดแพทย์ ${box()} อื่นๆ ${line('', '25mm')}</p>
   <div class="sign-block center-row fund-request-sign">${govSignRow({
     width: mayorSignW,
-    below: [signatureName(mayor?.name, mayorSignW), esc(mayorTitle)],
+    below: [signatureName(mayor?.name, mayorSignW), ...mayorTitleLines.map(esc)],
   })}</div>
   <div class="fund-committee sign-block">
     <p class="bold">สำหรับคณะกรรมการกองทุน</p>
