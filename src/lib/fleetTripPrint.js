@@ -1,5 +1,7 @@
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
-import { GOV_SIGN_LINE_W_WIDE, govNameBlank, govSignBlockCss, govSignRow, govSplitActingTitle } from './govSignBlock.js'
+import {
+  GOV_SIGN_LINE_W_WIDE, govKeepActingWordTogether, govNameBlank, govSignBlockCss, govSignRow, govSplitActingTitle,
+} from './govSignBlock.js'
 
 function esc(value) {
   return String(value ?? '')
@@ -63,14 +65,20 @@ function meterText(value) {
 // (ผู้อำนวยการสำนัก/กอง และผู้มีอำนาจสั่งใช้ ต้องลงวันที่กำกับลายเซ็นของตัวเอง)
 function signatureBlock({ role, name = '', title = '', suffix = '', dateRow = false }) {
   const inner = String(name ?? '').trim()
+  // ป้ายบทบาทขึ้นบรรทัดใหม่ได้ด้วย \n (pre-line) — ตำแหน่ง "รักษาราชการแทน" ตัดหลังคำนั้นตามกติกากลางของเจ้าของระบบ
+  // และห่อคำนั้นเป็นก้อนเดียว ไม่ให้เบราว์เซอร์ตัด "รักษาราชการ | แทน" (เห็นจริงในช่อง ผอ.กอง)
+  const roleParts = String(role ?? '').split('\n').map(part => govSplitActingTitle(part))
+  const roleHtml = roleParts.flat().map(line => govKeepActingWordTogether(esc(line))).join('\n')
+  // บล็อกที่ป้ายเป็น "รักษาราชการแทน" ขยายคอลัมน์ป้ายตามบรรทัดที่ยาวสุด (ดู .signature--acting) ไม่ใช่ตัดบรรทัดเพิ่ม
+  const hasActingRole = roleParts.some(lines => lines.length > 1)
   const nameText = inner
     ? `(${esc(inner)})`
     : '<span>(</span><span>)</span>'
-  return `<div class="signature">
+  return `<div class="signature${hasActingRole ? ' signature--acting' : ''}">
     <div class="signature-row">
       <span>(ลงชื่อ)</span>
       <span class="signature-line"></span>
-      <span class="signature-role">${esc(role)}</span>
+      <span class="signature-role">${roleHtml}</span>
     </div>
     <div class="signature-row signature-name-row">
       <span></span>
@@ -203,6 +211,14 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
       column-gap: 6px;
     }
     .signatures .signature:first-child { margin-top: 0; }
+    /* ป้ายบทบาท "ผอ.กอง รักษาราชการแทน / ปลัด…" สองบรรทัดตามกติกากลาง ยาว 262–280px (69–74 มม.) แต่คอลัมน์ป้ายปกติ 13em = 243px
+       ถ้าไม่ขยายจะตัดบรรทัดเพิ่มกลางชื่อสถานที่ ("…ส่วนตำบลทุ่งแค้|ว" — พจนานุกรมไทยของเบราว์เซอร์ไม่รู้จักชื่อ "ทุ่งแค้ว")
+       ขยายเฉพาะบล็อกนี้ตามบรรทัดที่ยาวสุด อย่างน้อย 13em (เท่าเดิม) แต่ไม่เกิน 15em (~280px) เส้นลงนามของบล็อกนี้จึงสั้นลงเท่าที่ป้ายกินเพิ่ม
+       (254 → ~235px) ตำแหน่งที่ยาวกว่านั้นยังตัดบรรทัดเองได้เหมือนเดิม
+       ⚠️ ไม่ขยายคอลัมน์ของทุกบล็อก: ใบที่ไม่ใช่รักษาราชการแทนต้องหน้าตาเดิมทุกพิกเซล
+       ⚠️ ใช้ max-width ที่ตัวป้ายคุมเพดาน ไม่ใช้ fit-content() เพราะ fit-content ไม่มีค่าต่ำสุด ป้ายสั้นๆ จะทำให้เส้นยาวกว่าบล็อกอื่น */
+    .signature--acting { grid-template-columns: max-content 1fr minmax(13em, max-content); }
+    .signature--acting .signature-role { max-width: 15em; }
     .signature-row {
       display: grid;
       grid-template-columns: subgrid;
