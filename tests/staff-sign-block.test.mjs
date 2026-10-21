@@ -7,6 +7,11 @@
 //   3. ยังไม่ได้ตั้งผู้ลงนาม = ได้เส้นประ + ชื่อตำแหน่งสำรอง ไม่ใช่ช่องหาย
 //   4. ช่องลงนามได้มาตรฐานกลาง (วัดด้วย Range + getClientRects ผ่าน assertSignBlockStandard)
 //
+// ⚠️ ข้อยกเว้น 1 ใบ: ขอรับการช่วยเหลือประชาชน (frame: true) ใช้กรอบ "สำหรับเจ้าหน้าที่" ของตัวเองแทนช่องลงนามชุดกลาง
+//   — เจ้าของระบบสั่ง 2569-10-21 พร้อมภาพแบบฟอร์มกระดาษจริง (กรอบ 3 ช่อง + ส่วนงานที่รับผิดชอบ + ผลการดำเนินการ)
+//   กรอบมี 3 คนชุดเดียวกัน (ผอ.กอง / ปลัด / นายก) จากทะเบียนเดียวกัน จึงตรวจด้วยเงื่อนไขเดียวกัน ต่างกันแค่
+//   เลย์เอาต์: ไม่มี .staff-sign แต่ใช้ .officer · เส้นลงนามในกรอบกว้างไม่เท่ากันโดยตั้งใจ (ช่องผู้รับเรื่องมีคำต่อท้าย)
+//   เลย์เอาต์ละเอียดของกรอบตรวจที่ tests/public-assistance-layout.test.mjs
 // ⚠️ เพิ่มคำขอประเภทใหม่เมื่อไหร่ ให้เพิ่มเข้า FORMS ที่นี่ด้วย
 // รันด้วย: npm run test:staff-sign
 
@@ -140,6 +145,7 @@ const FORMS = [
     headFallback: 'ผู้อำนวยการกองสวัสดิการสังคม',
     // ใบนี้มีบัญชีแนบท้ายเป็นแผ่นที่ 2 ตามปกติ ช่องลงนามต้องอยู่ในแผ่นแรกเสมอ
     extraSheets: 1,
+    frame: true,
     build: extra => buildPublicAssistanceRequestHtml({
       form: ASSISTANCE_FORM, tenant: TENANT, docDate: '2026-09-14T20:37:00',
       referenceNo: 'A1B2C3D4', ...extra,
@@ -183,6 +189,11 @@ async function main() {
         const html = form.build({})
         assert.doesNotMatch(html, /class="staff-sign"/,
           'ใบที่ประชาชนพิมพ์เองต้องไม่มีช่องลงนามของผู้บริหาร')
+        if (form.frame) {
+          // กรอบยังอยู่ครบให้เจ้าหน้าที่เซ็น แต่ไม่มีชื่อ/ตำแหน่งผู้บริหารสักช่อง (ประชาชนอ่านทะเบียนผู้ลงนามไม่ได้)
+          assert.match(html, /class="officer"/)
+          assert.doesNotMatch(html, /class="wrap-title"/, 'ฉบับประชาชนต้องไม่พิมพ์ตำแหน่งผู้ลงนามในกรอบ')
+        }
       })
 
       // ── ใบฝั่งเจ้าหน้าที่: ครบ 3 ช่อง จบ 1 แผ่น และได้มาตรฐานช่องลงนาม ──────
@@ -194,23 +205,26 @@ async function main() {
           assert.equal(pdfPageCount(pdf), 1 + (form.extraSheets ?? 0),
             `ใบ${form.label} ล้นไปอีกหน้า — ทบทวนระยะในโหมด .sheet--staff ของใบนี้`)
 
-          const seen = await page.evaluate(() => {
-            const block = document.querySelector('.staff-sign')
+          const seen = await page.evaluate(frame => {
+            const block = document.querySelector(frame ? '.officer' : '.staff-sign')
             if (!block) return null
             const sheet = block.closest('.sheet')
             return {
-              cells: block.querySelectorAll('.staff-sign-cell').length,
+              cells: block.querySelectorAll(frame ? '.cell-sign' : '.staff-sign-cell').length,
               lines: [...block.querySelectorAll('.sign-axis')]
                 .map(axis => Math.round(axis.getBoundingClientRect().width)),
               text: block.textContent.replace(/\s+/g, ' ').trim(),
               inFirstSheet: sheet === document.querySelector('.sheet'),
               overflows: block.getBoundingClientRect().bottom > sheet.getBoundingClientRect().bottom + 1,
             }
-          })
+          }, Boolean(form.frame))
           assert.ok(seen, `ใบ${form.label} ไม่พบช่องลงนามเจ้าหน้าที่`)
           assert.equal(seen.cells, 3, `ใบ${form.label} ต้องมีช่องลงนาม 3 ตำแหน่ง`)
-          assert.equal(new Set(seen.lines).size, 1,
-            `ใบ${form.label} เส้นลงนามกว้างไม่เท่ากัน (${seen.lines.join(', ')}px) — กติกากลางห้ามไล่ค่ารายจุด`)
+          // กรอบของใบช่วยเหลือประชาชนกว้างเท่ากันทั้ง 3 ช่องและเส้นลงนามสั้นกว่า (ช่องผู้รับเรื่องมีคำต่อท้าย) โดยตั้งใจ
+          if (!form.frame) {
+            assert.equal(new Set(seen.lines).size, 1,
+              `ใบ${form.label} เส้นลงนามกว้างไม่เท่ากัน (${seen.lines.join(', ')}px) — กติกากลางห้ามไล่ค่ารายจุด`)
+          }
           assert.ok(seen.inFirstSheet, `ใบ${form.label} ช่องลงนามต้องอยู่ในแผ่นแรก`)
           assert.ok(!seen.overflows, `ใบ${form.label} ช่องลงนามล้นขอบล่างของแผ่น`)
           for (const person of Object.values(SIGNATORIES)) {
@@ -222,7 +236,8 @@ async function main() {
           // ชื่อที่พิมพ์ต้องเป็นชื่อในวงเล็บเท่านั้น ห้ามกลายเป็นลายมือชื่ออิเล็กทรอนิกส์
           // (ใบพวกนี้เวียนเซ็นด้วยปากกา ต้องเหลือเส้นให้เซ็นเสมอ)
           const signedInBlock = await page.evaluate(
-            () => document.querySelectorAll('.staff-sign .sign-signed').length)
+            frame => document.querySelectorAll(frame ? '.officer .sign-signed' : '.staff-sign .sign-signed').length,
+            Boolean(form.frame))
           assert.equal(signedInBlock, 0,
             `ใบ${form.label} ช่องลงนามเจ้าหน้าที่ต้องเป็นเส้นให้เซ็นด้วยปากกา ไม่ใช่ชื่อพิมพ์แทนลายเซ็น`)
 
@@ -237,7 +252,7 @@ async function main() {
         const html = form.build({
           signatories: EMPTY_SIGNATORIES, departmentName: form.departmentName,
         })
-        assert.match(html, /class="staff-sign"/,
+        assert.match(html, form.frame ? /class="officer"/ : /class="staff-sign"/,
           'ยังไม่ตั้งผู้ลงนาม = ยังต้องมีช่องลงนามให้เวียนเซ็น')
         assert.ok(html.includes(form.headFallback),
           `ต้องใช้ชื่อตำแหน่งสำรองของกองที่ถือเรื่อง (${form.headFallback})`)
@@ -247,8 +262,9 @@ async function main() {
         const page = await render(browser, html)
         try {
           const blanks = await page.evaluate(
-            () => [...document.querySelectorAll('.staff-sign .sign-below')]
-              .filter(line => /^\(\.+\)$/.test(line.textContent.trim())).length)
+            frame => [...document.querySelectorAll(frame ? '.officer .sign-below' : '.staff-sign .sign-below')]
+              .filter(line => /^\(\.+\)$/.test(line.textContent.trim())).length,
+            Boolean(form.frame))
           assert.equal(blanks, 3, 'ทุกช่องต้องมีวงเล็บเว้นชื่อให้เขียนมือ')
         } finally {
           await page.close()

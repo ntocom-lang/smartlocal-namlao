@@ -210,7 +210,8 @@ const checks = [
         const lines = await blank.evaluate(() =>
           [...document.querySelectorAll('.sheet--request > .fill-lines')]
             .map(box => box.querySelectorAll('.dot-line').length))
-        assert.deepEqual(lines, [15, 6], 'ใบเปล่าต้องมีเส้นประให้เขียนมือครบตามที่ไล่ความสูงไว้')
+        // กรอบท้ายใบเปิดเป็นค่าปริยาย (2569-10-21) จึงใช้ชุด 7 + 3 บรรทัดที่ไล่ไว้สำหรับ "มีกรอบ" (ดูคอมเมนต์ใน publicAssistancePrint.js)
+        assert.deepEqual(lines, [7, 3], 'ใบเปล่าต้องมีเส้นประให้เขียนมือครบตามที่ไล่ความสูงไว้')
       } finally {
         await blank.close()
       }
@@ -317,6 +318,83 @@ const checks = [
       try {
         await assertSignBlockStandard(filled, { minRows: 4, minBelow: 4 })
       } finally { await filled.close() }
+    },
+  },
+  {
+    // เจ้าของระบบสั่ง 2569-10-21 (ภาพแบบฟอร์มจริง): กรอบ "สำหรับเจ้าหน้าที่" 3 ช่องกว้างเท่ากัน ชื่อ + ตำแหน่งที่จัดกึ่งกลางบนแกน
+    // เส้นลงนามต้องไม่ล้นเส้นกรอบของช่อง — ของเดิม (table-layout: auto) ให้ช่องซ้ายกว้าง 71 มม. เหลือช่องปลัด/นายก 44 มม.
+    name: 'officer-frame-text-stays-inside-cells',
+    reason: 'กรอบเจ้าหน้าที่: 3 ช่องกว้างเท่ากัน และชื่อ/ตำแหน่ง (รวมรักษาราชการแทนตัด 2 บรรทัด) ไม่ล้นเส้นกรอบของช่อง',
+    async run(browser) {
+      const staff = {
+        department_head: { name: 'นายเอกชัย รินทร์ นาเหล็ง', title: 'ผู้อำนวยการกองสวัสดิการสังคม' },
+        clerk: {
+          name: 'นายมาชัย ไพศาลธนสมบัติ',
+          title: 'ผู้อำนวยการกองช่าง รักษาราชการแทน ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว',
+          authority_reference: 'คำสั่งที่ 45/2569',
+        },
+        mayor: { name: 'นายกันตพงษ์ คำปลูก', title: 'นายกองค์การบริหารส่วนตำบลทุ่งแค้ว' },
+      }
+      const page = await render(browser, longForm(), { departments: DEPARTMENTS, signatories: staff, departmentName: 'กองสวัสดิการสังคม' })
+      try {
+        const seen = await page.evaluate(() => {
+          const cells = [...document.querySelectorAll('.officer tr:first-child > td')]
+          const widths = cells.map(cell => cell.getBoundingClientRect().width / 3.779527)
+          const outside = []
+          const titleLines = []
+          for (const cell of cells) {
+            const box = cell.getBoundingClientRect()
+            for (const el of cell.querySelectorAll('.sign-below')) {
+              const range = document.createRange()
+              range.selectNodeContents(el)
+              for (const rect of range.getClientRects()) {
+                if (rect.left < box.left - 0.5 || rect.right > box.right + 0.5) {
+                  outside.push(`${el.textContent.trim().slice(0, 28)} (${((rect.left - box.left) / 3.779527).toFixed(1)}..${((rect.right - box.right) / 3.779527).toFixed(1)}mm)`)
+                }
+              }
+            }
+            titleLines.push([...cell.querySelectorAll('.wrap-title')].map(el => {
+              const range = document.createRange(); range.selectNodeContents(el)
+              return new Set([...range.getClientRects()].map(rect => Math.round(rect.top / 4))).size
+            }))
+          }
+          return { widths, outside, titleLines }
+        })
+        assert.equal(seen.widths.length, 3)
+        assert.ok(Math.max(...seen.widths) - Math.min(...seen.widths) < 0.6,
+          `3 ช่องของกรอบต้องกว้างเท่ากัน แต่ได้ ${seen.widths.map(w => w.toFixed(1)).join(' / ')} มม.`)
+        assert.deepEqual(seen.outside, [], `ชื่อ/ตำแหน่งล้นเส้นกรอบของช่อง: ${seen.outside.join(' | ')}`)
+        // ตำแหน่งรักษาราชการแทนต้องได้ 2 บรรทัดตามแบบ (ท่อนแรกจบที่คำว่า รักษาราชการแทน) ที่เหลือบรรทัดเดียว
+        assert.deepEqual(seen.titleLines, [[1], [1, 1], [1]], 'ตำแหน่งต้องไม่ถูกตัดเกินที่แบบกำหนด')
+      } finally {
+        await page.close()
+      }
+    },
+  },
+  {
+    name: 'staff-frame-fits-one-page-worst-case',
+    reason: 'ฉบับเจ้าหน้าที่ที่หนักสุด (ข้อความเต็มเพดาน + รักษาราชการแทน + เลขที่คำสั่งยาว + ชื่อยาวสุด) ต้องจบหน้าแรกและเหลือที่เผื่อฟอนต์ต่างเครื่อง',
+    async run(browser) {
+      const worst = {
+        department_head: { name: 'นางสาวประกายมาศ ศรีวิชัยเลิศสกุล', title: 'ผู้อำนวยการกองสวัสดิการสังคม' },
+        clerk: {
+          name: 'นางสาวประกายมาศ ศรีวิชัยเลิศสกุล',
+          title: 'ผู้อำนวยการกองช่าง รักษาราชการแทน ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว',
+          authority_reference: 'คำสั่งองค์การบริหารส่วนตำบลทุ่งแค้ว ที่ 45/2569',
+        },
+        mayor: { name: 'นางสาวประกายมาศ ศรีวิชัยเลิศสกุล', title: 'นายกองค์การบริหารส่วนตำบลทุ่งแค้ว' },
+      }
+      const page = await render(browser, longForm(), { departments: DEPARTMENTS, signatories: worst, departmentName: 'กองสวัสดิการสังคม' })
+      try {
+        const mm = await contentHeightMm(page)
+        assert.ok(mm <= MAX_CONTENT_MM,
+          `ฉบับเจ้าหน้าที่ยาว ${mm.toFixed(1)} มม. เกินเพดาน ${MAX_CONTENT_MM} มม. — ตรวจความสูงกรอบท้ายใบ (ตำแหน่งตัดบรรทัด) ก่อนเพิ่มอะไรเข้าใบ`)
+        await page.emulateMedia({ media: 'print' })
+        const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
+        assert.equal(pdfPageCount(pdf), 2, 'ต้องได้ 2 แผ่นพอดี: หน้าคำร้อง 1 + บัญชีแนบท้าย 1 — กรอบท้ายใบห้ามดันคำร้องตกหน้า 2')
+      } finally {
+        await page.close()
+      }
     },
   },
   {

@@ -63,8 +63,8 @@ function render(form, extra = {}) {
   })
 }
 
-// ตารางท้ายใบถูกถอดออกชั่วคราว (ดู includeOfficerBlock ใน publicAssistancePrint.js)
-// เทสต์ของตารางยังต้องอยู่ครบ ไม่งั้นเปิดกลับมาแล้วไม่มีอะไรกันของพัง — ใช้ helper นี้แทน
+// กรอบท้ายใบ (includeOfficerBlock) เปิดเป็นค่าปริยายตั้งแต่ 2569-10-21 — helper นี้ยังส่ง true ชัดเจนไว้
+// เพื่อให้เทสต์ของกรอบยังตรวจกรอบจริง แม้วันหนึ่งมีคนเปลี่ยนค่าปริยาย (ตัวตรวจค่าปริยายอยู่ท้ายไฟล์)
 function renderWithOfficer(form, extra = {}) {
   return render(form, { ...extra, includeOfficerBlock: true })
 }
@@ -175,18 +175,56 @@ const legacy = render(baseForm({ signed_by: undefined }))
 assert.doesNotMatch(legacy, /class="sign-signed"/)
 
 // ── ผู้ลงนามฝั่งเจ้าหน้าที่ ────────────────────────────────────────────────────
-const signed = renderWithOfficer(baseForm(), {
-  signatories: {
-    clerk: { name: 'นายวิเชียร ทองสุขใส', title: 'ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว' },
-    mayor: { name: 'นางสาวประกายมาศ ศรีวิชัยเลิศสกุล', title: 'นายกองค์การบริหารส่วนตำบลทุ่งแค้ว' },
+// เจ้าของระบบสั่ง 2569-10-21 (ภาพแบบฟอร์มจริงที่ อบต.ทุ่งแค้วใช้ มีตราปั๊ม "ชื่อ + ตำแหน่ง" ในกรอบ):
+// ฉบับเจ้าหน้าที่ (ส่ง signatories) พิมพ์ชื่อ + ตำแหน่งใต้เส้นลงนามทั้ง 3 ช่อง · ฉบับประชาชนเว้นว่าง
+const SIGNED = {
+  department_head: { name: 'นายเอกชัย รินทร์ นาเหล็ง', title: 'ผู้อำนวยการกองสวัสดิการสังคม' },
+  clerk: {
+    name: 'นายมาชัย ไพศาลธนสมบัติ',
+    title: 'ผู้อำนวยการกองช่าง รักษาราชการแทน ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว',
+    authority_reference: 'คำสั่งที่ 45/2569',
   },
-})
-assert.match(signed, /นายวิเชียร/)
-assert.match(signed, /ประกายมาศ/)
-// ต้นฉบับมีแค่ชื่อในวงเล็บ ไม่มีบรรทัดตำแหน่ง (และตำแหน่งยาวจนดันบล็อกสูงขึ้น 17 มม.)
-assert.doesNotMatch(signed, /class="cell-title"/)
+  mayor: { name: 'นายกันตพงษ์ คำปลูก', title: 'นายกองค์การบริหารส่วนตำบลทุ่งแค้ว' },
+}
+const signed = render(baseForm(), { signatories: SIGNED, departmentName: 'กองสวัสดิการสังคม' })
+for (const person of Object.values(SIGNED)) {
+  assert.ok(signed.includes(`(${person.name})`), `ต้องพิมพ์ชื่อ ${person.name} ในวงเล็บใต้เส้นลงนาม`)
+}
+assert.match(signed, />ผู้อำนวยการกองสวัสดิการสังคม<\/span>/, 'ช่องผู้รับเรื่อง = หัวหน้าส่วนราชการที่ถือเรื่อง')
+assert.match(signed, />นายกองค์การบริหารส่วนตำบลทุ่งแค้ว<\/span>/)
+// ตำแหน่งรักษาราชการแทนตัดเป็น 2 บรรทัดหลังคำว่า "รักษาราชการแทน" (ตัวตัดตัวเดียวกับใบคำร้อง) ไม่ตัดกลางคำ
+assert.match(signed, />ผู้อำนวยการกองช่าง <span class="nb">รักษาราชการแทน<\/span><\/span>/)
+assert.match(signed, />ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว<\/span>/)
+// เลขที่คำสั่งมอบอำนาจต้องอยู่ใต้ตำแหน่งเมื่อมีค่า (ผู้ลงนามที่ไม่ใช่เจ้าของตำแหน่งต้องแสดงฐานอำนาจ)
+assert.match(signed, /\(คำสั่งที่ 45\/2569\)/)
 // ช่องความเห็น/คำสั่งต้องเว้นว่างเสมอ ระบบไม่เขียนความเห็นแทนปลัด/นายก
 assert.match(signed, /ความคิดเห็นปลัด อบต\.<\/div>\s*<div class="fill-lines"/)
+// ใบเดียวไม่พิมพ์ลงนามเจ้าหน้าที่สองชุด — กรอบแทนช่องลงนามกลาง
+assert.doesNotMatch(signed, /class="staff-sign"/, 'กรอบมี 3 คนอยู่แล้ว ห้ามมีช่องลงนามเจ้าหน้าที่ชุดกลางซ้ำ')
+// ระบบไม่ติ๊กส่วนงานแทนนายก (ดุลพินิจทางปกครอง) แม้รู้กองที่ถือเรื่อง
+assert.doesNotMatch(signed, /class="checkbox checked"|☑|✓/, 'ช่องติ๊กส่วนงานต้องว่างเสมอ')
+
+// ยังไม่ได้ตั้งผู้ลงนาม (signatories ส่งมาแต่ทุกช่อง null) = เส้นประ + ตำแหน่งสำรอง ไม่ใช่ช่องหาย
+const unset = render(baseForm(), {
+  signatories: { department_head: null, clerk: null, mayor: null }, departmentName: 'กองช่าง',
+})
+assert.match(unset, />ผู้อำนวยการกองช่าง<\/span>/)
+assert.match(unset, />ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว<\/span>/)
+assert.match(unset, />นายกองค์การบริหารส่วนตำบลทุ่งแค้ว<\/span>/)
+assert.equal((unset.match(/<span class="sign-below">\(\.{4,}\)<\/span>/g) ?? []).length, 3,
+  'ทั้งสามช่องต้องมีวงเล็บเว้นชื่อให้เขียนมือ')
+// เทศบาลได้คำเรียกตำแหน่งของเทศบาล ไม่ใช่ของ อบต.
+const unsetMunicipal = render(baseForm(), { tenant: MUNICIPALITY, signatories: {}, departmentName: 'สำนักปลัด' })
+assert.match(unsetMunicipal, />หัวหน้าสำนักปลัด<\/span>/)
+assert.match(unsetMunicipal, />ปลัดเทศบาลตำบลน้ำเลา<\/span>/)
+assert.match(unsetMunicipal, />นายกเทศมนตรีตำบลน้ำเลา<\/span>/)
+
+// ฉบับประชาชน (ไม่ส่ง signatories): กรอบอยู่ครบแต่ไม่มีชื่อ/ตำแหน่งผู้บริหารสักช่อง — ประชาชนอ่านทะเบียนผู้ลงนามไม่ได้
+// และกรอบนี้เป็นของเจ้าหน้าที่ ต้องเว้นให้ลงนามด้วยมือ
+const citizenSheet = render(baseForm(), { departments: DEPARTMENTS })
+assert.match(citizenSheet, /class="officer"/)
+assert.doesNotMatch(citizenSheet, /class="wrap-title"/, 'ฉบับประชาชนต้องไม่พิมพ์ตำแหน่งผู้ลงนามในกรอบ')
+assert.equal((citizenSheet.match(/<span class="sign-below">\(\.{4,}\)<\/span>/g) ?? []).length, 3)
 
 // ไม่มีทะเบียนผู้ลงนาม (อปท. ที่ยังไม่ได้ตั้ง) ต้องได้เส้นประ ไม่ใช่ "undefined"
 assert.doesNotMatch(online, /undefined/)
@@ -200,10 +238,15 @@ const xss = render(baseForm({
   affected: [{ name: '<script>evil()</script>', addr_no: '1', addr_moo: '2', note: '<i>x</i>' }],
 }), {
   departments: [{ name: '<script>dept()</script>' }],
-  signatories: { clerk: { name: '<script>clerk()</script>' } },
+  signatories: {
+    department_head: { name: '<b>head</b>', title: '<i>t</i>' },
+    clerk: { name: '<script>clerk()</script>', title: '<script>title()</script>', authority_reference: '<img src=y onerror=alert(2)>' },
+  },
+  departmentName: '<u>dept</u>',
 })
 assert.doesNotMatch(xss, /<script>/, 'ค่าที่คนกรอกเองต้องถูก escape ทุกจุด รวมชื่อกองและผู้ลงนาม')
 assert.doesNotMatch(xss, /<img src=x/)
+assert.doesNotMatch(xss, /<img src=y|<b>head<\/b>|<i>t<\/i>|<u>dept<\/u>/, 'ชื่อ/ตำแหน่ง/เลขที่คำสั่ง/ชื่อกองในกรอบต้องถูก escape')
 assert.doesNotMatch(xss, /<b>ตัวหนา<\/b>/)
 assert.match(xss, /&lt;script&gt;/)
 
@@ -236,18 +279,28 @@ assert.doesNotMatch(render(baseForm()), /นาย\/นาง\/นางสา�
 // ช่องที่มีข้อความแล้วต้องไม่เหลือเส้นประ ส่วนใบเปล่าต้องมีครบตามที่ไล่ความสูงไว้
 assert.match(render(baseForm()), /<div class="written">/,
   'ข้อความที่กรอกมาต้องพิมพ์เป็นข้อความธรรมดา ไม่ใช่ทับบนกล่องเส้นประ')
-assert.equal((blank.match(/<div class="fill-lines"/g) ?? []).length, 2,
+// นับเฉพาะส่วนเนื้อหา — ในกรอบท้ายใบมีเส้นประของช่องความเห็น/คำสั่งอีก 2 ก้อน (ต้องเว้นให้เขียนมือเสมอ)
+assert.equal((blank.split('<table class="officer">')[0].match(/<div class="fill-lines"/g) ?? []).length, 2,
   'ใบเปล่าต้องมีกล่องเส้นประ 2 ก้อน: ปัญหา + ความต้องการ')
+assert.equal((blank.match(/<div class="fill-lines"/g) ?? []).length, 4,
+  'ใบเปล่าที่มีกรอบ = เส้นประ 2 ก้อนของเนื้อหา + 2 ก้อนของช่องความเห็นปลัด/คำสั่งนายก')
 
-// ── ตารางท้ายใบถอดออกชั่วคราวตามคำสั่งผู้ใช้ระบบ 2569-09-09 ───────────────────
-// ค่าปริยายต้องไม่มีตาราง ทุกจุดเรียกใช้จึงได้ใบแบบเดียวกันโดยไม่ต้องส่งอะไรเพิ่ม
+// ── กรอบ "สำหรับเจ้าหน้าที่" ท้ายใบ ─────────────────────────────────────────────
+// ถอดชั่วคราว 2569-09-09 แล้วเปิดกลับเป็นค่าปริยาย 2569-10-21 หลังเจ้าของระบบส่งภาพแบบฟอร์มจริงที่ใช้อยู่
+// (กรอบ 3 ช่อง ความเห็นปลัด / คำอนุมัติ-คำสั่ง + ส่วนงานที่รับผิดชอบ + ผลการดำเนินการ) — ทุกจุดเรียกใช้ได้กรอบเดียวกันโดยไม่ต้องส่งอะไรเพิ่ม
 const defaultSheet = render(baseForm(), { departments: DEPARTMENTS })
-assert.doesNotMatch(defaultSheet, /class="officer"/,
-  'ค่าปริยายต้องไม่พิมพ์ตารางท้ายใบ — ถ้าจะเปิดกลับต้องแก้ที่ includeOfficerBlock ไม่ใช่ที่นี่')
-assert.doesNotMatch(defaultSheet, /ผลการดำเนินการ|ส่วนงานที่รับผิดชอบ|คำอนุมัติ\/คำสั่ง/)
-assert.doesNotMatch(defaultSheet, /class="checkbox"/,
-  'ช่องติ๊กส่วนงานอยู่ในตารางท้ายใบ ต้องหายไปพร้อมกัน')
-// เปิด flag แล้วต้องได้ตารางครบเหมือนเดิม
+assert.match(defaultSheet, /class="officer"/,
+  'ค่าปริยายต้องพิมพ์กรอบท้ายใบ — ถ้าจะถอดอีกต้องมีคำสั่งเจ้าของระบบ และแก้ที่ includeOfficerBlock ไม่ใช่ที่นี่')
+for (const text of ['สำหรับเจ้าหน้าที่', 'ความคิดเห็นปลัด', 'คำอนุมัติ/คำสั่ง', 'ส่วนงานที่รับผิดชอบ', 'ผลการดำเนินการ', 'ผู้รับเรื่อง']) {
+  assert.ok(defaultSheet.includes(text), `กรอบท้ายใบต้องมี "${text}" ตามแบบฟอร์มจริง`)
+}
+assert.equal((defaultSheet.match(/class="checkbox"/g) ?? []).length, DEPARTMENTS.length,
+  'ช่องติ๊กส่วนงานต้องมาจากกองจริงของ อปท. ทุกกอง (ไม่เกินเพดาน 6)')
+// ปิดด้วย flag ได้ — กลับไปใช้ช่องลงนามเจ้าหน้าที่ชุดกลาง ไม่พิมพ์ซ้ำสองชุด
+const frameOff = render(baseForm(), { includeOfficerBlock: false, signatories: SIGNED, departmentName: 'กองช่าง' })
+assert.doesNotMatch(frameOff, /class="officer"/)
+assert.match(frameOff, /class="staff-sign"/)
+assert.doesNotMatch(render(baseForm(), { includeOfficerBlock: false }), /ผลการดำเนินการ|class="checkbox"/)
 assert.match(renderWithOfficer(baseForm()), /class="officer"/)
 assert.match(renderWithOfficer(baseForm()), /ผลการดำเนินการ/)
 

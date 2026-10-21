@@ -1,7 +1,7 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
-import { govNameBlank, govSignBlockCss, govSignRow } from './govSignBlock.js'
-import { govStaffSignBlockCss, govStaffSignBlockHtml } from './govStaffSignBlock.js'
-import { getOrgTerms, orgHeadTitle, orgOfficeName } from './orgTerms.js'
+import { govNameBlank, govSignBlockCss, govSignRow, govSplitActingTitle } from './govSignBlock.js'
+import { govDepartmentHeadTitle, govStaffSignBlockCss, govStaffSignBlockHtml } from './govStaffSignBlock.js'
+import { getOrgTerms, orgClerkTitle, orgHeadTitle, orgOfficeName } from './orgTerms.js'
 import { MONTHS_TH } from './thaiDate.js'
 
 // ความกว้างเส้นลงนามของผู้ยื่น (ค่าเดิมของใบนี้ — ช่องเดี่ยวชิดขวา ไม่ต้องเรียงแนวกับช่องอื่น)
@@ -113,7 +113,9 @@ export function attachmentPageCount(rows) {
  *   2. ช่อง "ส่วนงานที่รับผิดชอบ" ต้นฉบับพิมพ์ตายตัว 4 กอง — ระบบดึงกองจริงของ อปท. นั้นมาแทน
  *      อปท. ที่ไม่มีกองสวัสดิการสังคมจะได้ไม่มีช่องที่ติ๊กไม่ได้ค้างอยู่บนใบ
  *   3. ช่องลงนามผู้ขอรองรับลายมือชื่ออิเล็กทรอนิกส์ (โหมด online/counter เหมือนใบประปา)
- *   4. ชื่อในวงเล็บของช่องปลัด/นายก เติมจากทะเบียนผู้ลงนามกลางถ้าส่งมา
+ *   4. ฉบับที่เจ้าหน้าที่พิมพ์ (ส่ง signatories มา) เติมชื่อ + ตำแหน่งใต้เส้นลงนามทั้ง 3 ช่อง
+ *      (ผู้รับเรื่อง = หัวหน้าส่วนราชการที่ถือเรื่อง / ปลัด / นายก) จากทะเบียนผู้ลงนามกลาง ตามตราปั๊มชื่อ-ตำแหน่ง
+ *      ของแบบฟอร์มจริง (เจ้าของระบบสั่ง 2569-10-21) · ฉบับที่ประชาชนพิมพ์เว้นกรอบว่างทั้งหมดให้เจ้าหน้าที่ลงนามด้วยมือ
  *
  * ⚠️ ช่อง "ความคิดเห็น" กับ "คำอนุมัติ/คำสั่ง" เว้นว่างให้เขียนด้วยปากกาเสมอ (ผู้ใช้ระบบสั่งเอง
  * 2569-09-08) ห้ามเปลี่ยนเป็นพิมพ์จากระบบโดยไม่ถามเจ้าของระบบก่อน — ความเห็นของปลัดและ
@@ -137,17 +139,20 @@ export function attachmentPageCount(rows) {
  * @param {string}   args.docDate     วันที่บนหัวใบ (ISO) = วันที่ยื่น ไม่ใช่วันที่กดพิมพ์
  * @param {string}   [args.referenceNo]
  * @param {Array<{name?: string}>} [args.departments] กองจริงของ อปท. สำหรับช่องติ๊กส่วนงาน
- * @param {{clerk?: {name?: string, title?: string}, mayor?: {name?: string, title?: string}}} [args.signatories]
- * @param {boolean}  [args.includeOfficerBlock] พิมพ์ตารางท้ายใบสำหรับเจ้าหน้าที่ (ดูค่าปริยายด้านล่าง)
+ * @param {{department_head?: object, clerk?: object, mayor?: object}|null} [args.signatories]
+ *   แต่ละช่องเป็น { name, title, authority_reference } หรือ null (= เส้นประให้เขียนมือ) · ไม่ส่ง = ฉบับประชาชน
+ * @param {string}   [args.departmentName] ชื่อกองที่ถือเรื่อง ใช้เป็นตำแหน่งสำรองของช่องผู้รับเรื่อง
+ * @param {boolean}  [args.includeOfficerBlock] พิมพ์กรอบ "สำหรับเจ้าหน้าที่" ท้ายใบ (ดูค่าปริยายด้านล่าง)
  */
 export function buildPublicAssistanceRequestHtml({
   form, tenant, docDate, referenceNo = '', departments = [], signatories = null,
   departmentName = '',
-  // ⚠️ ถอดตารางท้ายใบ (สำหรับเจ้าหน้าที่ / ความเห็นปลัด / คำอนุมัติ / ช่องติ๊กส่วนงาน /
-  // ผลการดำเนินการ) ออกชั่วคราวตามคำสั่งผู้ใช้ระบบ 2569-09-09 — โค้ดกับเทสต์ยังอยู่ครบ
-  // เปิดกลับด้วย includeOfficerBlock: true ที่จุดเรียกใช้ ไม่ต้องรื้อไฟล์นี้ใหม่
-  // ค่าปริยายเป็น false เพราะจุดเรียกใช้ทั้งหมด (StaffDashboard, MyDocRequests) ต้องเหมือนกัน
-  includeOfficerBlock = false,
+  // กรอบท้ายใบ (สำหรับเจ้าหน้าที่ / ความเห็นปลัด / คำอนุมัติ-คำสั่ง / ช่องติ๊กส่วนงาน / ผลการดำเนินการ)
+  // ถอดไปชั่วคราวตามคำสั่งเจ้าของระบบ 2569-09-09 แล้ว "เปิดกลับเป็นค่าปริยาย" 2569-10-21 หลังเจ้าของระบบส่งภาพ
+  // แบบฟอร์มกระดาษที่ อบต.ทุ่งแค้วใช้จริง (กรอบ 3 ช่อง + ส่วนงานที่รับผิดชอบ + ผลการดำเนินการ) ให้ใบพิมพ์มีกรอบเดียวกัน
+  // ⚠️ ใบนี้จึงใช้กรอบของตัวเองแทนช่องลงนามเจ้าหน้าที่ชุดกลาง (govStaffSignBlock.js) — กรอบมี 3 คนชุดเดียวกัน
+  // (ผอ.กอง / ปลัด / นายก) อยู่แล้ว ห้ามพิมพ์ซ้ำสองชุดในใบเดียว · ส่ง includeOfficerBlock: false = กลับไปใช้ชุดกลาง
+  includeOfficerBlock = true,
 }) {
   const data = form || {}
   // ช่องลงนามเจ้าหน้าที่ใช้เมื่อไม่ได้เปิดตารางท้ายใบ (ตารางนั้นมีช่องความเห็นปลัด/คำสั่งนายก
@@ -201,15 +206,42 @@ export function buildPublicAssistanceRequestHtml({
   // 2 บรรทัดเสมอ ดันบล็อกเจ้าหน้าที่สูงขึ้น 17 มม. เทียบกับใบเปล่า (วัดจริง 2569-09-08)
   // ช่องที่มีคำต่อท้าย ("ผู้รับเรื่อง") เหลือที่ให้เส้นประน้อยกว่าช่องที่ไม่มี — ช่องตารางกว้าง
   // แค่ ~47 มม. หลังหักขอบ ถ้าใช้ความกว้างเดียวกันทั้งสามช่อง ช่องซ้ายจะดันคำต่อท้ายตกบรรทัด
-  const signBlock = (role, person) => `<div class="cell-sign">
+  //
+  // 2569-10-21: ฉบับเจ้าหน้าที่ (ส่ง signatories มา) พิมพ์ตำแหน่งใต้ชื่อด้วย ตามตราปั๊ม "ชื่อ + ตำแหน่ง" ของแบบฟอร์มจริง
+  // เจ้าของระบบสั่งให้เติมตามความเหมาะสม — คำสั่งข้างบนที่ไม่พิมพ์ตำแหน่งเป็นของการเว้นที่ในกรอบที่ถอดไป ตอนนี้กรอบกว้าง
+  // เท่ากันทั้ง 3 ช่อง (table-layout: fixed) ตำแหน่งยาวที่เป็นการรักษาราชการแทนตัดเป็น 2 บรรทัดหลังคำว่า "รักษาราชการแทน"
+  // (govSplitActingTitle ตัวเดียวกับใบคำร้อง/ช่องลงนามกลาง) ยังไม่ได้ตั้งผู้ลงนาม = เส้นประ + ชื่อตำแหน่งสำรอง
+  // ฉบับประชาชน (signatories = null) เว้นว่างทั้งหมด: ประชาชนอ่านทะเบียนผู้ลงนามไม่ได้ และกรอบนี้เป็นของเจ้าหน้าที่
+  const staffVariant = Boolean(signatories)
+  const signBlock = (role, person, fallbackTitle = '') => {
+    // ความกว้างแกนต้องพอให้ชื่อ/ตำแหน่งที่จัดกึ่งกลางบนแกนไม่ล้นเส้นกรอบของช่อง (เทสต์ officer-text-stays-inside-cell)
+    const axis = role ? '24mm' : '30mm'
+    const nameLine = person?.name
+      ? `(${esc(String(person.name).trim())})`
+      : govNameBlank(axis, { fontPt: OFFICER_FONT_PT })
+    // ตำแหน่งตัดบรรทัดตามคำได้ภายในกล่อง (.wrap-title) — ช่องกรอบกว้างแค่ ~50 มม. แต่ชื่อตำแหน่งเต็มยศของ อบต. ยาว ~53 มม.
+    // ที่ 11pt (เคสจริง: "นายกองค์การบริหารส่วนตำบลทุ่งแค้ว") ถ้าห้ามตัดบรรทัดเหมือนช่องลงนามกลางจะล้นเส้นกรอบทั้งสองข้าง
+    // ⚠️ ต้องเป็น width ไม่ใช่ max-width — .sign-below เป็นลูก flex ที่กว้างได้ไม่เกินแกน (24-30 มม.) ถ้าใช้ max-width
+    // กล่องจะถูกบีบเหลือเท่าแกนแล้วตำแหน่งตัดเป็น 3-4 บรรทัด · ความกว้างตั้งให้กล่องสมมาตรรอบแกนเส้นลงนามพอดี (ป้ายหน้าเส้น "(ลงชื่อ)" กว้าง ~10 มม. · ช่องที่มีคำต่อท้ายแกนแคบกว่า)
+    // จึงยังกึ่งกลางบนแกนตามมาตรฐานกลาง · คำว่า "รักษาราชการแทน" ห้ามถูกตัดกลางคำ
+    const maxTitleMm = role ? 44 : 50
+    const titleLines = staffVariant
+      ? govSplitActingTitle(person?.title || fallbackTitle).map(line => `<span class="wrap-title" style="width:${maxTitleMm}mm">${
+        esc(line).replace(/(รักษาราชการแทน|รักษาการแทน|ปฏิบัติราชการแทน|ทำการแทน)$/, '<span class="nb">$1</span>')}</span>`)
+      : []
+    // เลขที่คำสั่งรักษาราชการแทนต้องอยู่ใต้ตำแหน่งเสมอเมื่อมีค่า — ผู้ลงนามที่ไม่ใช่เจ้าของตำแหน่งต้องแสดงฐานอำนาจ
+    const authority = staffVariant && person?.authority_reference
+      ? `<span style="font-size:10pt">(${esc(String(person.authority_reference).trim())})</span>` : ''
+    return `<div class="cell-sign">
           ${govSignRow({
-            width: role ? '20mm' : '26mm',
+            width: axis,
             label: '(ลงชื่อ)',
             role,
-            below: [person?.name ? `(${esc(String(person.name).trim())})` : govNameBlank(role ? '20mm' : '26mm', { fontPt: OFFICER_FONT_PT })],
+            below: [nameLine, ...titleLines, authority].filter(Boolean),
           })}
           <div class="cell-date">${field('วันที่', '', '7mm')} ${field('เดือน', '', '14mm')}<br>${field('พ.ศ.', '', '12mm')}</div>
         </div>`
+  }
 
   const attachmentPages = attachmentPageCount(affected)
   const attachmentHtml = Array.from({ length: attachmentPages }, (unusedPage, pageIndex) => {
@@ -361,7 +393,9 @@ ${govStaffSignBlockCss()}
        ตำแหน่งผู้ลงนามจะตัดเป็น 2-3 บรรทัดจนบล็อกดันใบตกหน้า 2 */
     /* margin-top: auto ดันบล็อกนี้ลงไปชิดขอบล่างของหน้า (ดู .sheet--request) ห้ามเปลี่ยนกลับ
        เป็นค่าคงที่ ไม่งั้นใบที่เขียนสั้นจะเหลือช่องว่างใต้ตารางครึ่งหน้า */
-    .officer { width: 100%; margin-top: auto; border-collapse: collapse; font-size: 11pt; break-inside: avoid; }
+    /* table-layout: fixed = 3 ช่องกว้างเท่ากันตามแบบฟอร์มจริง — แบบ auto เดิมให้ช่องซ้ายกว้าง 71 มม. (เพราะบรรทัด "เรียน…"
+       ไม่ตัดคำ) เหลือช่องปลัด/นายกแค่ 44 มม. ชื่อ-ตำแหน่งที่จัดกึ่งกลางบนแกนจึงล้นเส้นกรอบ */
+    .officer { width: 100%; margin-top: auto; border-collapse: collapse; table-layout: fixed; font-size: 11pt; break-inside: avoid; }
     .officer td { border: 1px solid #000; padding: 1mm 1.5mm; vertical-align: top; }
     .officer .cell-head { font-weight: 700; }
     /* ช่องเจ้าหน้าที่ใช้บรรทัดเส้นประที่เตี้ยกว่าเนื้อความหน้าแรก — เขียนด้วยปากกาในช่องแคบ */
@@ -379,6 +413,11 @@ ${govStaffSignBlockCss()}
        ตัวชื่อครอบ nowrap รายคำด้วย wordSafe() อยู่แล้ว จึงตัดได้เฉพาะที่ช่องว่าง ไม่ขาดกลางคำ */
     /* ช่องลงนามในตารางเจ้าหน้าที่ใช้ของกลางชุดเดียวกับช่องผู้ยื่น (.sign-row ด้านบน) */
     .cell-title, .cell-date { margin-top: 1mm; }
+    /* ตำแหน่งใต้ชื่อในกรอบ — ตัดบรรทัดตามคำได้ (ต่างจากชื่อที่ห้ามตัด) ความกว้างตั้งเป็น inline style ต่อช่อง */
+    /* 10pt: ชื่อตำแหน่งเต็มยศของ อบต. ยาว ~53 มม. ที่ 11pt เกินกล่อง 50 มม. ต้องตัดสองบรรทัดทุกช่อง · ที่ 10pt จบบรรทัดเดียว
+       และตำแหน่งรักษาราชการแทนตัดตามแบบที่เจ้าของระบบกำหนด (บรรทัดแรกจบที่คำว่า "รักษาราชการแทน") ได้พอดี
+       ชื่อคนยังเป็น 11pt เท่าส่วนอื่นของกรอบ — ตัวตำแหน่งเล็กกว่าชื่อหนึ่งระดับเท่าตราปั๊มในแบบฟอร์มจริง */
+    .officer .wrap-title { display: inline-block; white-space: normal; font-size: 10pt; }
     .cell-title { font-size: 11pt; }
     .checkbox { display: inline-block; width: 3.5mm; height: 3.5mm; border: 1px solid #000; margin-right: 1.5mm; vertical-align: -0.3mm; }
     .dept-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5mm 4mm; }
@@ -480,17 +519,17 @@ ${govStaffSignBlockCss()}
           <div>เรียน ${esc(headTitle)}</div>
           <div>- เพื่อโปรดทราบ</div>
           <div>- เพื่อพิจารณา/สั่งการต่อไป</div>
-          ${signBlock('ผู้รับเรื่อง', null)}
+          ${signBlock('ผู้รับเรื่อง', signatories?.department_head, govDepartmentHeadTitle(departmentName))}
         </td>
         <td>
           <div class="cell-head">ความคิดเห็น${esc(clerkTitle)}</div>
           ${writeLines('', 3)}
-          ${signBlock('', signatories?.clerk)}
+          ${signBlock('', signatories?.clerk, orgClerkTitle(tenant))}
         </td>
         <td>
           <div class="cell-head">คำอนุมัติ/คำสั่ง</div>
           ${writeLines('', 3)}
-          ${signBlock('', signatories?.mayor)}
+          ${signBlock('', signatories?.mayor, headTitle)}
         </td>
       </tr>
       <tr>
