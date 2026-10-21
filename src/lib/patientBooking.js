@@ -224,6 +224,12 @@ export function previousDayOdometer(date, days = [], before = null) {
 // วันที่ (เวลาไทย) ถัดจากวันนี้ n วัน (ติดลบ = ย้อนหลัง) — ใช้ตัดช่วง 30 วันที่แก้เลขไมล์ย้อนหลังได้
 export const thaiDayAfter = days => thaiDay(Date.now() + days * 86400000)
 export const dayPending = day => !!day && day.completed > 0 && day.open === 0 && !dayRecorded(day)
+// วันที่ "ผ่านมาแล้ว" แต่ยังไม่มีเลขไมล์ปิดวัน (ภายใน 30 วัน = ช่วงที่แก้ย้อนหลังได้) เรียงเก่า→ใหม่
+// ใช้ทำแถบเตือนบรรทัดเดียวบนหน้าคำขอรถ — เจ้าของระบบสั่ง 2569-10-21: เลขไมล์ไม่เป็นงานรายแถวของคำขอ แต่คนขับลืมแล้วต้องไม่หายเงียบ
+// วันนี้ไม่นับ: คนขับยังวิ่ง/เพิ่งกลับ ยังไม่ควรถูกทวง · วันนอกช่วงที่โหลดไม่มีแถว = ไม่ถือว่าค้าง (ไม่เดาว่าขาด)
+export function overdueOdometerDays(days = [], today = thaiDay(), recentFrom = thaiDayAfter(-30)) {
+  return days.filter(d => d.date < today && d.date >= recentFrom && dayPending(d)).map(d => d.date).sort()
+}
 
 // ── กล่อง "คำขอรถ" ของเจ้าหน้าที่: 1 แถว = 1 คำขอ แบบกล่องงานคำร้อง (เจ้าของระบบสั่ง 2569-09-21) ──
 
@@ -325,14 +331,14 @@ export function bookingLetterMoment(booking, trip) {
   return signatoryMoment({})
 }
 
-// day = แถวเลขไมล์ของวันเดินทาง (เลขไมล์เหมาเป็นวัน) · ไม่มีแถว = อยู่นอกช่วงที่โหลด ไม่ถือว่าค้าง (ไม่เดาว่าขาด)
-// เลขไมล์รายเที่ยวเดิมไม่ใช้ตัดสินแล้ว — เที่ยวใหม่ไม่มีเลขไมล์รายเที่ยว ถ้ายังดูอยู่ทุกคำขอจะค้าง "บันทึกเอกสาร" ตลอด
-export function staffNextAction(booking, trip, day = null) {
+// ⚠️ คนขับจบเที่ยวแล้ว = จบงานของหน้าคำขอรถ (เจ้าของระบบสั่ง 2569-10-21 "ไม่เพิ่มงานให้ใคร ลดภาระงาน")
+// เดิมคำขอที่จบแล้วค้างเป็นปุ่ม "บันทึกเอกสาร" (id 'docs') จนกว่าจะบันทึกเลขหนังสือนำส่งและวันนั้นมีเลขไมล์ปิดวัน
+// ห้ามเอากลับ — เลขหนังสือบันทึกตอนพิมพ์ได้เมื่อไรก็ได้ (ไม่บังคับ ช่อง "ที่" ว่างพิมพ์ได้) ส่วนเลขไมล์เป็นงานของคนขับ
+// ตามด้วยแถบเตือนบรรทัดเดียวเมื่อมีวันที่ผ่านมาแล้วยังไม่มีเลขไมล์ (overdueOdometerDays) ไม่ใช่งานรายแถว
+export function staffNextAction(booking, trip) {
   if (booking.status === 'submitted') return { id: 'confirm', label: 'ยืนยันรถ', color: '#0369a1', rank: 2 }
   if (booking.status === 'confirmed' && trip?.state === 'issue') return { id: 'issue', label: 'แก้เหตุขัดข้อง', color: '#b91c1c', rank: 0 }
   if (booking.status === 'confirmed' && booking.cancel_requested) return { id: 'cancel', label: 'ประสานยกเลิก', color: '#b45309', rank: 1 }
-  if (booking.status === 'completed' && trip && trip.state === 'completed'
-    && (!bookingLetter(booking, trip).no || (!!day && !dayRecorded(day)))) return { id: 'docs', label: 'บันทึกเอกสาร', color: '#047857', rank: 3 }
   return { id: 'view', label: 'ดูรายละเอียด', color: '', rank: 9 }
 }
 
