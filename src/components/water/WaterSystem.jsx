@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ExternalLink, Waves } from 'lucide-react'
+import { originalDiagramUrl } from '../../lib/waterDiagram/originalFiles'
 import {
   NO_LIVE_TEXT, STALE_DIAGRAM_MONTHS, SYSTEM_DISCLAIMER_LINE, UPSTREAM_DEPTH_NOTE, diagramAge, liveState,
   resolveSystem, systemById, systemCountsText, thaiDate,
@@ -110,7 +111,7 @@ export default function WaterSystem({ slug, stations, now, previewId }) {
           ถอดจากผังของศูนย์บริหารจัดการน้ำจังหวัดแพร่ โดยระบบ SmartLocal: {system.sources.map(s => `${s.name} (${s.fileDateOnly ? `ไฟล์ลงวันที่ ${thaiDate(s.date)} ภาพไม่ระบุวันที่` : thaiDate(s.date)})`).join(' · ')}
           {' '}· ยังไม่ผ่านการยืนยันโดย อบต. · ไม่ใช่เอกสารทางราชการ
         </p>
-        <a href={system.originalUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex min-h-[44px] items-center gap-1 font-bold text-sky-700">
+        <a href={originalDiagramUrl(system.id, system.originalUrl)} target="_blank" rel="noopener noreferrer" data-original-link className="mt-1 inline-flex min-h-[44px] items-center gap-1 font-bold text-sky-700">
           ดูผังต้นฉบับ <ExternalLink size={12} />
         </a>
       </div>

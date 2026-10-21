@@ -11,6 +11,8 @@ import {
 } from '../src/lib/waterDiagram/model.js'
 import { DIAGRAMS, diagramById } from '../src/lib/waterDiagram/diagrams.js'
 import { THUNGKAEW_BINDS } from '../src/lib/waterDiagram/thungkaew.js'
+import { ORIGINAL_DIAGRAM_FILES, ORIGINAL_FILE_BASE, originalDiagramUrl } from '../src/lib/waterDiagram/originalFiles.js'
+import { SYSTEMS, thaiDate } from '../src/lib/waterSystem/model.js'
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
@@ -422,6 +424,58 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
   assert.equal(chipWidth('ที่', 19), chipWidth('ท', 19), 'สระ+วรรณยุกต์ไม่เพิ่มความกว้าง')
   assert.equal(chipWidth('กี่', 20), chipWidth('ก', 20), 'สระบน+วรรณยุกต์ไม่กินที่')
   assert.ok(chipWidth('หนองม่วงไข่ ห่าง 4.8 กม. · ต่ำกว่าตลิ่ง 4.55 ม.', 15) < 450, 'ป้ายระดับน้ำต้องไม่ล้นไปชนวัตถุข้างเคียง')
+}
+
+// ── ปุ่ม "ดูผังต้นฉบับ" ต้องพาไปที่ไฟล์ภาพของตำบลตัวเองโดยตรง ไม่ใช่หน้ารวมของทั้งจังหวัด ──
+// (เจ้าของระบบสั่ง 2569-10-21: กดแล้วเด้งไปหน้ารวมของจังหวัดแพร่ ประชาชนต้องหาผังตำบลเอง)
+{
+  const PROVINCE_PAGE = 'https://www.phraepao.go.th/officechief/water/map_water_r.php'
+  const BASE = 'https://www.phraepao.go.th/officechief/water/upload_diagram_subd/'
+  assert.equal(ORIGINAL_FILE_BASE, BASE)
+  // ทุกผังมีลิงก์ตรงของตัวเอง และมีครบเท่ากับทะเบียนผัง/ระบบน้ำ (ตำบลใหม่ลืมเพิ่ม = เทสต์แดง ไม่ใช่ตกไปหน้ารวมเงียบๆ)
+  assert.deepEqual(Object.keys(ORIGINAL_DIAGRAM_FILES).sort(), Object.keys(DIAGRAMS).sort())
+  assert.deepEqual(Object.keys(ORIGINAL_DIAGRAM_FILES).sort(), Object.keys(SYSTEMS).sort())
+
+  // ตรึงคู่ ตำบล ↔ ไฟล์ ที่ตรวจจากหน้ารวม map_water_r.php เมื่อ 2026-10-21 (ป้ายชื่อตำบลตามด้วย popup ของไฟล์นั้น)
+  // ทุ่งแค้วกับตำหนักธรรมลงวันที่เดียวกัน (9 พ.ค. 2567) การสลับไฟล์กันจึงจับด้วยวันที่ไม่ได้ ต้องตรึงชื่อไฟล์ไว้
+  // เปลี่ยนไฟล์เป็นฉบับใหม่ = แก้ตรงนี้ด้วยมือหลังเปิดหน้ารวมดูแล้วเท่านั้น
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(ORIGINAL_DIAGRAM_FILES).map(([id, e]) => [id, e.file])),
+    {
+      thungkaew: '66598230820240509_181654.jpg',
+      tamnaktham: '82389834520240509_182321.jpg',
+      namlao: '171202098020240430_133004.jpg',
+    },
+  )
+
+  const seen = new Set()
+  for (const [id, entry] of Object.entries(ORIGINAL_DIAGRAM_FILES)) {
+    const url = originalDiagramUrl(id, PROVINCE_PAGE)
+    assert.equal(url, `${BASE}${entry.file}`, `${id}: ต้องได้ลิงก์ไฟล์ภาพของตำบลนี้`)
+    assert.notEqual(url, PROVINCE_PAGE, `${id}: ต้องไม่ใช่หน้ารวมของจังหวัด`)
+    assert.ok(!seen.has(entry.file), `${id}: ใช้ไฟล์ซ้ำกับตำบลอื่น`)
+    seen.add(entry.file)
+    // <เลขสุ่ม><YYYYMMDD>_<HHMMSS>.jpg — วันที่ในชื่อไฟล์ต้องตรงกับวันที่ผังที่เราประกาศบนหน้า
+    // (กันเปลี่ยนไฟล์เป็นฉบับใหม่แล้วลืมแก้วันที่ที่บอกประชาชนว่าผังนี้อายุเท่าไร)
+    const m = /^\d+(\d{4})(\d{2})(\d{2})_\d{6}\.jpg$/.exec(entry.file)
+    assert.ok(m, `${id}: รูปแบบชื่อไฟล์ผิด ${entry.file}`)
+    assert.equal(`${m[1]}-${m[2]}-${m[3]}`, entry.date, `${id}: วันที่ในชื่อไฟล์ไม่ตรง date ที่ลงทะเบียน`)
+    assert.ok(DIAGRAMS[id].sourceDate.includes(thaiDate(entry.date)), `${id}: sourceDate บนหน้า (${DIAGRAMS[id].sourceDate}) ไม่ตรงวันที่ในชื่อไฟล์ ${thaiDate(entry.date)}`)
+    const own = SYSTEMS[id].sources.find(s => s.id === id)
+    assert.equal(own?.date, entry.date, `${id}: sources[].date ของส่วนระบบน้ำไม่ตรงวันที่ในชื่อไฟล์`)
+  }
+
+  // ตำบลที่ไม่มีไฟล์ลงทะเบียน (รวมคีย์แปลกๆ) ต้องตกไปลิงก์หน้ารวมเท่านั้น ห้ามได้ undefined หรือค่าจาก prototype
+  for (const other of ['cmu', '', undefined, null, '__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+    assert.equal(originalDiagramUrl(other, PROVINCE_PAGE), PROVINCE_PAGE, `${String(other)} ต้องใช้ลิงก์สำรอง`)
+  }
+
+  // สองหน้าจอที่มีปุ่มนี้ต้องใช้ตัวเลือกลิงก์เดียวกัน ไม่ชี้ sourceUrl/originalUrl ตรงๆ
+  const diagramJsx = read('src/components/water/WaterDiagram.jsx')
+  const systemJsx = read('src/components/water/WaterSystem.jsx')
+  assert.ok(diagramJsx.includes('href={originalDiagramUrl(diagram.id, diagram.sourceUrl)}'), 'WaterDiagram.jsx ต้องลิงก์ผังต้นฉบับผ่าน originalDiagramUrl')
+  assert.ok(systemJsx.includes('href={originalDiagramUrl(system.id, system.originalUrl)}'), 'WaterSystem.jsx ต้องลิงก์ผังต้นฉบับผ่าน originalDiagramUrl')
+  assert.ok(!/href=\{diagram\.sourceUrl\}/.test(diagramJsx) && !/href=\{system\.originalUrl\}/.test(systemJsx), 'ห้ามกลับไปชี้หน้ารวมตรงๆ')
 }
 
 // ── ข้อความบังคับ · CSS · การต่อเข้าหน้า ──
