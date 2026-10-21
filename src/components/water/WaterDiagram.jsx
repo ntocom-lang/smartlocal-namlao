@@ -3,6 +3,7 @@ import { ExternalLink, Map as MapIcon, Pause, Play, ZoomIn, ZoomOut } from 'luci
 import './WaterDiagram.css'
 import { useReservoirReport } from './useReservoirReport'
 import { diagramById } from '../../lib/waterDiagram/diagrams'
+import { originalDiagramUrl } from '../../lib/waterDiagram/originalFiles'
 import { EDGE_STYLES, chipWidth, isAnimated, isShimmer, liveBadges, resolveDiagram } from '../../lib/waterDiagram/model'
 
 const BLUE = '#4472c4'
@@ -385,7 +386,7 @@ function DiagramBody({ diagram, scope, tenantName, stations, now }) {
             </ul>
           </div>
         )}
-        <a href={diagram.sourceUrl} target="_blank" rel="noopener noreferrer"
+        <a href={originalDiagramUrl(diagram.id, diagram.sourceUrl)} target="_blank" rel="noopener noreferrer" data-original-link
           className="mt-1 inline-flex min-h-[44px] items-center gap-1 font-semibold text-blue-700">
           ดูผังต้นฉบับ <ExternalLink size={12} />
         </a>
