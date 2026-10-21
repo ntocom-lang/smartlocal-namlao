@@ -1,5 +1,5 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
-import { govNameBlank, govSignBlockCss, govSignRow, govSplitActingTitle } from './govSignBlock.js'
+import { govKeepActingWordTogether, govNameBlank, govSignBlockCss, govSignRow, govSplitActingTitle } from './govSignBlock.js'
 import { govDepartmentHeadTitle, govStaffSignBlockCss, govStaffSignBlockHtml } from './govStaffSignBlock.js'
 import { getOrgTerms, orgClerkTitle, orgHeadTitle, orgOfficeName } from './orgTerms.js'
 import { MONTHS_TH } from './thaiDate.js'
@@ -227,7 +227,7 @@ export function buildPublicAssistanceRequestHtml({
     const maxTitleMm = role ? 44 : 50
     const titleLines = staffVariant
       ? govSplitActingTitle(person?.title || fallbackTitle).map(line => `<span class="wrap-title" style="width:${maxTitleMm}mm">${
-        esc(line).replace(/(รักษาราชการแทน|รักษาการแทน|ปฏิบัติราชการแทน|ทำการแทน)$/, '<span class="nb">$1</span>')}</span>`)
+        govKeepActingWordTogether(esc(line))}</span>`)
       : []
     // เลขที่คำสั่งรักษาราชการแทนต้องอยู่ใต้ตำแหน่งเสมอเมื่อมีค่า — ผู้ลงนามที่ไม่ใช่เจ้าของตำแหน่งต้องแสดงฐานอำนาจ
     const authority = staffVariant && person?.authority_reference

@@ -45,7 +45,7 @@ import {
   govPageCss, govPagePadding,
 } from './govDocStyle.js'
 import {
-  GOV_SIGN_LINE_W_WIDE, govNameBlank, govSignBlockCss, govSignRow, govSplitActingTitle,
+  GOV_SIGN_LINE_W_WIDE, govKeepActingWordTogether, govNameBlank, govSignBlockCss, govSignRow, govSplitActingTitle,
 } from './govSignBlock.js'
 import { govStaffSignBlockCss, govStaffSignBlockHtml } from './govStaffSignBlock.js'
 import { orgHeadTitle, orgNameParts, orgOfficeName } from './orgTerms.js'
@@ -139,13 +139,6 @@ const MAYOR_SIGN_MAX_MM = 140
 function mayorSignWidth(...texts) {
   const mm = text => [...String(text ?? '')].filter(char => !isThaiNonSpacing(char)).length * SIGN_MM_PER_THAI_CHAR
   return `${Math.min(MAYOR_SIGN_MAX_MM, Math.max(MAYOR_SIGN_MIN_MM, Math.ceil(Math.max(0, ...texts.map(mm)))))}mm`
-}
-
-// กล่องลงนามของหนังสือกว้างแค่ ~96 มม. (padding-left 40%) แต่ตำแหน่งบรรทัดแรกของ "รักษาราชการแทน" ยาวได้ ~110 มม. จึงตัดบรรทัดเองอีกชั้น
-// ต้องไม่ให้เบราว์เซอร์ตัดกลางคำ "รักษาราชการ|แทน" (เห็นจริง: "แทน" ตกบรรทัดเดียวโดดๆ) — ห่อคำนั้นเป็นก้อนเดียว
-// ผลคือ 3 บรรทัด: ตำแหน่งที่รักษาการ / รักษาราชการแทน / ตำแหน่งที่ถูกแทน
-function actingWordUnbroken(line) {
-  return esc(line).replace(/(รักษาราชการแทน|รักษาการแทน|ปฏิบัติราชการแทน|ทำการแทน)$/, '<span class="nb">$1</span>')
 }
 
 // "ตำแหน่ง …" ในย่อหน้าเปิดของใบคำขอรับสวัสดิการ — ขึ้นบรรทัดใหม่ได้เฉพาะที่ช่องว่างในตำแหน่งเอง ไม่ตัดกลางคำ
@@ -341,6 +334,8 @@ function letterSheet({
 }) {
   const orgName = tenant?.name?.trim() || 'หน่วยงาน'
   const mayorTitle = mayor?.title?.trim() || orgHeadTitle(tenant)
+  // ช่องลงนามกว้างแค่ ~96 มม. (padding-left 40%) แต่บรรทัดแรกของ "รักษาราชการแทน" ยาวได้ ~110 มม. จึงตัดบรรทัดเองอีกชั้น
+  // ห่อคำนั้นเป็นก้อนเดียวไม่ให้ "แทน" ตกบรรทัดโดดๆ ผลคือ 3 บรรทัด: ตำแหน่งที่รักษาการ / รักษาราชการแทน / ตำแหน่งที่ถูกแทน
   const senderAddress = senderAddressLines(tenant)
   const letterNo = String(header?.forward_letter_no ?? '').trim()
 
@@ -413,7 +408,7 @@ ${senderAddress.map(part => `      <p>${esc(part)}</p>`).join('\n')}
   <p class="regards">ขอแสดงความนับถือ</p>
   <div class="letter-sign sign-block">
     <p>${signatureName(mayor?.name)}</p>
-    ${govSplitActingTitle(mayorTitle).map(line => `<p>${actingWordUnbroken(line)}</p>`).join('\n    ')}
+    ${govSplitActingTitle(mayorTitle).map(line => `<p>${govKeepActingWordTogether(esc(line))}</p>`).join('\n    ')}
   </div>
 
   <!-- ⚠️ ไม่มีบล็อก "ส่วนราชการเจ้าของเรื่อง / โทร. / โทรสาร" ท้ายหนังสือ โดยเจตนา — เจ้าของระบบสั่งตัดออก
