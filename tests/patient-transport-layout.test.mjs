@@ -1624,6 +1624,102 @@ const checks = [
     },
   },
   {
+    // กติกากลางของเจ้าของระบบ (2569-10-06): ตำแหน่ง "รักษาราชการแทน" ที่ยาวให้ตัดเป็น 2 บรรทัดหลังคำว่า "รักษาราชการแทน"
+    // ตรวจจริง 2569-10-21: ใบคำขอรับสวัสดิการพิมพ์ตำแหน่งนายกบรรทัดเดียว ยาว ~175 มม. เกินพื้นที่พิมพ์ 160 มม. → ตัวอักษรล้นขอบขวา 8–12 มม.
+    // หนังสือนำส่งไม่ล้น (กล่องตัดบรรทัดเอง) แต่ "แทน" ตกบรรทัดเดียวโดดๆ เพราะบรรทัดแรก ~110 มม. ยาวกว่ากล่อง 96 มม.
+    name: 'mayor-acting-title-split-inside-print-area',
+    reason: 'ตำแหน่งนายกแบบรักษาราชการแทนต้องตัด 2 บรรทัดหลังคำนั้น อยู่ในพื้นที่พิมพ์ และไม่ทำให้เส้นลงนามยาวผิดปกติ'
+      + ' · หนังสือนำส่งต้องไม่มีบรรทัดที่เหลือแต่คำว่า "แทน" · ทั้งสองใบยังจบ 1 แผ่น',
+    async run(browser) {
+      const acting = 'รักษาราชการแทน'
+      const titles = [
+        ['รองนายกรักษาราชการแทนนายก', 'รองนายกองค์การบริหารส่วนตำบลทุ่งแค้ว รักษาราชการแทน นายกองค์การบริหารส่วนตำบลทุ่งแค้ว'],
+        ['ปลัดรักษาราชการแทนนายก', 'ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว รักษาราชการแทน นายกองค์การบริหารส่วนตำบลทุ่งแค้ว'],
+      ]
+      for (const [label, title] of titles) {
+        const first = title.slice(0, title.indexOf(acting) + acting.length)
+        const second = title.slice(title.indexOf(acting) + acting.length).trim()
+        const page = await render(browser, buildPatientTransportLetterHtml(args({ mayor: { name: MAYOR.name, title } })))
+        try {
+          const view = await page.evaluate(() => {
+            // ขอบพื้นที่พิมพ์ของแผ่น = กล่องแผ่นหักขอบกระดาษ (ขอบกระดาษเป็น padding ของ .sheet)
+            const contentBox = sheet => {
+              const r = sheet.getBoundingClientRect()
+              const css = getComputedStyle(sheet)
+              return { left: r.left + parseFloat(css.paddingLeft), right: r.right - parseFloat(css.paddingRight) }
+            }
+            // วัดกล่องตัวอักษรจริงด้วย Range ไม่ใช่กล่องของ element (กล่อง element อยู่กลางแกนเสมอแม้ตัวอักษรล้น)
+            const extent = root => {
+              const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+              let left = Infinity
+              let right = -Infinity
+              for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+                if (!node.textContent.trim()) continue
+                const range = document.createRange()
+                range.selectNodeContents(node)
+                for (const rect of range.getClientRects()) {
+                  if (rect.width < 0.5) continue
+                  left = Math.min(left, rect.left)
+                  right = Math.max(right, rect.right)
+                }
+              }
+              return { left, right }
+            }
+            const letterSign = document.querySelector('.letter-sign')
+            const fundSheet = document.querySelector('.fund-form-sheet')
+            const fundSign = fundSheet.querySelector('.fund-request-sign')
+            const axis = fundSign.querySelector('.sign-axis').getBoundingClientRect()
+            return {
+              letterBox: contentBox(letterSign.closest('.sheet')),
+              letterText: extent(letterSign),
+              letterLines: [...letterSign.querySelectorAll('p')].map(p => p.textContent.trim()),
+              // บรรทัดที่เห็นจริงของย่อหน้าตำแหน่งแรก (ตัดตามความกว้างกล่อง 96mm) และจำนวนกล่องของคำว่า "รักษาราชการแทน" (ต้อง 1 = ไม่ถูกตัดกลางคำ)
+              letterFirstTitleVisualLines: (() => {
+                const p = letterSign.querySelectorAll('p')[1]
+                const range = document.createRange()
+                range.selectNodeContents(p)
+                return new Set([...range.getClientRects()].filter(r => r.width > 0.5).map(r => Math.round(r.top))).size
+              })(),
+              letterActingBoxes: letterSign.querySelector('.nb')?.getClientRects().length ?? 0,
+              fundBox: contentBox(fundSheet),
+              fundText: extent(fundSign),
+              fundLines: [...fundSign.querySelectorAll('.sign-below')].map(el => el.textContent.trim()),
+              fundAxisMm: axis.width / 3.779527,
+              fundBelowCenters: [...fundSign.querySelectorAll('.sign-below')].map(el => {
+                const e = extent(el)
+                return (e.left + e.right) / 2 - (axis.left + axis.width / 2)
+              }),
+            }
+          })
+          const inside = (text, box, what) => {
+            assert.ok(text.left >= box.left - 1, `${label}: ${what}ล้นขอบซ้ายพื้นที่พิมพ์ ${((box.left - text.left) / 3.779527).toFixed(1)}mm`)
+            assert.ok(text.right <= box.right + 1, `${label}: ${what}ล้นขอบขวาพื้นที่พิมพ์ ${((text.right - box.right) / 3.779527).toFixed(1)}mm`)
+          }
+          // หนังสือนำส่ง: ชื่อ + ตำแหน่ง 2 ย่อหน้า (ตัดหลัง "รักษาราชการแทน") และไม่มีบรรทัดเหลือแค่ "แทน" —
+          // ย่อหน้าแรกยาวกว่ากล่อง 96mm จึงขึ้นบรรทัดใหม่ก่อนคำว่า "รักษาราชการแทน" ทั้งคำ ได้ 2 บรรทัดเห็นจริง (รวม 3 บรรทัดกับตำแหน่งที่ถูกแทน)
+          assert.deepEqual(view.letterLines, [`(${MAYOR.name})`, first, second],
+            `${label}: หนังสือนำส่งต้องตัดตำแหน่งเป็น 2 ย่อหน้าหลังคำว่ารักษาราชการแทน — ได้ ${JSON.stringify(view.letterLines)}`)
+          assert.equal(view.letterActingBoxes, 1, `${label}: คำว่า "${acting}" ถูกตัดกลางคำเป็น ${view.letterActingBoxes} ท่อน`)
+          assert.equal(view.letterFirstTitleVisualLines, 2, `${label}: ย่อหน้าตำแหน่งแรกต้องเห็น 2 บรรทัด (ได้ ${view.letterFirstTitleVisualLines})`)
+          inside(view.letterText, view.letterBox, 'หนังสือนำส่ง: ')
+          // ใบคำขอรับสวัสดิการ: ชื่อ + ตำแหน่ง 2 บรรทัด ตัดหลัง "รักษาราชการแทน"
+          assert.deepEqual(view.fundLines, [`(${MAYOR.name})`, first, second],
+            `${label}: ใบคำขอรับสวัสดิการต้องตัดตำแหน่ง 2 บรรทัดหลังคำว่ารักษาราชการแทน — ได้ ${JSON.stringify(view.fundLines)}`)
+          inside(view.fundText, view.fundBox, 'ใบคำขอรับสวัสดิการ: ')
+          // ทุกบรรทัดใต้เส้นอยู่กึ่งกลางบนแกนของเส้น (ผิดไม่เกิน 1mm) และเส้นไม่ยาวเกินเพดาน 140mm ของ mayorSignWidth
+          for (const offset of view.fundBelowCenters) {
+            assert.ok(Math.abs(offset) <= 3.78, `${label}: บรรทัดใต้เส้นเยื้องจากแกน ${(offset / 3.779527).toFixed(1)}mm`)
+          }
+          assert.ok(view.fundAxisMm <= 140.5, `${label}: เส้นลงนามยาว ${view.fundAxisMm.toFixed(1)}mm เกินเพดาน 140mm`)
+          for (const [index, kind] of (await sheetKinds(page)).entries()) {
+            const mm = await sheetContentMm(page, index)
+            assert.ok(mm <= ONE_PAGE_BUDGET_MM, `${label}: แผ่น ${kind} สูง ${mm.toFixed(1)}mm เกินงบ ${ONE_PAGE_BUDGET_MM}mm`)
+          }
+        } finally { await page.close() }
+      }
+    },
+  },
+  {
     name: 'letter-has-no-owner-block',
     reason: 'เจ้าของระบบสั่งตัดบล็อก "ส่วนราชการเจ้าของเรื่อง / โทร. / โทรสาร" ท้ายหนังสือนำส่งออก 2026-09-24 ทั้งสองทางที่พิมพ์หนังสือ',
     async run(browser) {

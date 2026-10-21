@@ -77,7 +77,7 @@ function signatureBlock({ role, name = '', title = '', suffix = '', dateRow = fa
       <span class="signature-name${inner ? '' : ' is-blank'}">${nameText}${suffix ? `<span class="signature-suffix"> ${esc(suffix)}</span>` : ''}</span>
       <span></span>
     </div>
-    ${title ? `<div class="signature-row"><span></span><span class="signature-title">${esc(title)}</span><span></span></div>` : ''}
+    ${title ? `<div class="signature-row"><span></span><span class="signature-title"><span class="signature-title-text">${govSplitActingTitle(title).map(esc).join('<br>')}</span></span><span></span></div>` : ''}
     ${dateRow ? `<div class="signature-row signature-date-row">
       <span></span>
       <span class="signature-line"></span>
@@ -223,6 +223,15 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     .signature-date-row { margin-top: 2pt; }
     .plate-line { margin-top: 2pt; text-align: center; }
     .signature-name, .signature-title { position: relative; text-align: center; }
+    /* ตำแหน่งใต้ชื่อผู้มีอำนาจ: ตำแหน่ง "รักษาราชการแทน" ยาวได้ถึง ~175 มม. แต่คอลัมน์เส้นกว้างแค่ ~67 มม. และสืบ nowrap
+       มาจากแถว ข้อความที่ล้นจึงชิดซ้ายของคอลัมน์แล้วหลุดออกนอกกระดาษทางขวา (วัดแล้วล้น 9–42 มม.) — ตัดเป็น 2 บรรทัดหลังคำว่า
+       "รักษาราชการแทน" (govSplitActingTitle) แล้วจัดกึ่งกลางบนเส้นด้วย flex (ล้นเท่ากันสองข้าง ต่างจาก text-align ที่ชิดซ้ายแล้วล้นขวา)
+       กล่องข้อความไม่หด (flex: 0 0 auto) และกว้างสุด 118 มม. = 2 × ระยะจากแกนเส้น (~60.6 มม.) ถึงขอบซ้ายพื้นที่พิมพ์
+       ตำแหน่งที่ยังยาวกว่านั้นให้ตัดบรรทัดตามช่องว่างแทนการล้น
+       ⚠️ ห้ามตั้ง width: max-content ที่ .signature-title เอง — คอลัมน์เส้น (1fr) จะถูกดันกว้างตามข้อความแล้วเส้นยาวผิดแบบ
+       (ค่าความกว้างที่ไม่ใช่ auto ทำให้ min-width: 0 ของแถวไม่มีผลต่อการคิดขนาดแทร็ก) */
+    .signature-title { display: flex; justify-content: center; white-space: normal; }
+    .signature-title-text { flex: 0 0 auto; max-width: 118mm; }
     .signature-name.is-blank { display: flex; justify-content: space-between; width: 100%; }
     .signature-suffix { position: absolute; left: 100%; top: 0; margin-left: 4px; white-space: nowrap; }
     .decision { margin-top: 22pt; page-break-inside: avoid; }

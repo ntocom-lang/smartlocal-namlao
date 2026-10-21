@@ -165,6 +165,73 @@ assert.ok(
   `ใบเกิน 1 หน้า A4 เมื่อชื่อตำแหน่งยาว: ${long.sheetHeight}px > ${A4_HEIGHT_PX}px`,
 )
 
+// ── 4. ตำแหน่งผู้มีอำนาจสั่งใช้เป็น "รักษาราชการแทน" ต้องอยู่ในพื้นที่พิมพ์ ──────────────────────────
+// ตรวจจริง 2569-10-21: ตำแหน่งใต้ชื่อผู้มีอำนาจเป็นบรรทัดเดียวที่สืบ nowrap จากแถว ข้อความยาวกว่าคอลัมน์เส้น (~67mm) จึงชิดซ้ายของคอลัมน์
+// แล้วหลุดออกนอกกระดาษทางขวา — วัดแล้วล้น 9.3mm ("ปลัด… ปฏิบัติหน้าที่นายก…") ถึง 41.7mm ("รองนายก… รักษาราชการแทน นายก…")
+// ⚠️ ต้องวัดที่ viewport 605px = 160mm พื้นที่พิมพ์จริง ไม่ใช่ 794px ของข้อ 3 (โหมดพิมพ์ของใบนี้ .sheet เป็น width:auto ขอบมาจาก @page)
+const printPage = await browser.newPage({ viewport: { width: 605, height: 1043 } })
+
+async function measureAuthority(title) {
+  const html = buildFleetTripRequestHtml({
+    trip,
+    tenant,
+    orderAuthority: resolveOrderAuthority({ manual_name: 'นายสมนึก ธนเดชากุล', title_override: title }, tenant, 'mayor'),
+    deptHead: resolveDeptHead(null),
+  })
+  await printPage.setContent(html, { waitUntil: 'domcontentloaded' })
+  await printPage.evaluate(() => document.fonts.ready)
+  await printPage.emulateMedia({ media: 'print' })
+  return printPage.evaluate(() => {
+    const block = document.querySelector('.decision .signature')
+    const line = block.querySelector('.signature-line').getBoundingClientRect()
+    const titleEl = block.querySelector('.signature-title')
+    // กล่องของตัวอักษรจริงด้วย Range — กล่องของ element อยู่กลางแกนเสมอแม้ตัวอักษรล้น
+    const walker = document.createTreeWalker(titleEl, NodeFilter.SHOW_TEXT)
+    let left = Infinity
+    let right = -Infinity
+    const tops = new Set()
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.textContent.trim()) continue
+      const range = document.createRange()
+      range.selectNodeContents(node)
+      for (const rect of range.getClientRects()) {
+        if (rect.width < 0.5) continue
+        left = Math.min(left, rect.left)
+        right = Math.max(right, rect.right)
+        tops.add(Math.round(rect.top))
+      }
+    }
+    const sheet = document.querySelector('.sheet')
+    return {
+      left, right, lines: tops.size, lineCenter: line.left + line.width / 2, lineWidth: line.width,
+      sheetLeft: sheet.getBoundingClientRect().left, sheetRight: sheet.getBoundingClientRect().right,
+      titleLines: [...titleEl.querySelectorAll('.signature-title-text')].map(el => el.innerText.replace(/\s+/g, ' ').trim()),
+      sheetHeight: sheet.getBoundingClientRect().height,
+    }
+  })
+}
+
+const baseline = await measureAuthority('นายกเทศมนตรีตำบลสาธิต')
+for (const [label, title, expectedLines] of [
+  ['ปฏิบัติหน้าที่ (ไม่มีคำตัดบรรทัดตามกติกา)', 'ปลัดองค์การบริหารส่วนตำบล ปฏิบัติหน้าที่นายกองค์การบริหารส่วนตำบลทุ่งแค้ว', null],
+  ['รองนายกรักษาราชการแทนนายก', 'รองนายกองค์การบริหารส่วนตำบลทุ่งแค้ว รักษาราชการแทน นายกองค์การบริหารส่วนตำบลทุ่งแค้ว', 2],
+  ['ปลัดรักษาราชการแทนนายก', 'ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว รักษาราชการแทน นายกองค์การบริหารส่วนตำบลทุ่งแค้ว', 2],
+  ['ตำแหน่งยาวสุดที่เจอจริง', 'รองนายกองค์การบริหารส่วนตำบลหนองม่วงไข่ ปฏิบัติราชการแทน นายกองค์การบริหารส่วนตำบลหนองม่วงไข่ อำเภอหนองม่วงไข่ จังหวัดแพร่', null],
+]) {
+  const m = await measureAuthority(title)
+  assert.ok(m.left >= m.sheetLeft - 1, `${label}: ตำแหน่งผู้มีอำนาจล้นขอบซ้ายพื้นที่พิมพ์ ${((m.sheetLeft - m.left) / 3.78).toFixed(1)}mm`)
+  assert.ok(m.right <= m.sheetRight + 1, `${label}: ตำแหน่งผู้มีอำนาจล้นขอบขวาพื้นที่พิมพ์ ${((m.right - m.sheetRight) / 3.78).toFixed(1)}mm`)
+  assert.ok(Math.abs((m.left + m.right) / 2 - m.lineCenter) <= 3.78,
+    `${label}: ตำแหน่งไม่อยู่กึ่งกลางเส้นลงนาม เยื้อง ${(Math.abs((m.left + m.right) / 2 - m.lineCenter) / 3.78).toFixed(1)}mm`)
+  // ข้อความยาวห้ามดันคอลัมน์เส้นให้ยาวผิดแบบ (width: max-content เคยทำให้เส้นขยายจาก 254px เป็น 446px)
+  assert.ok(Math.abs(m.lineWidth - baseline.lineWidth) < 1,
+    `${label}: เส้นลงนามยาวผิดปกติ ${Math.round(m.lineWidth)}px จากปกติ ${Math.round(baseline.lineWidth)}px`)
+  if (expectedLines) assert.equal(m.lines, expectedLines, `${label}: ต้องตัดเป็น ${expectedLines} บรรทัดหลังคำว่ารักษาราชการแทน ได้ ${m.lines} (${m.titleLines})`)
+  assert.ok(m.sheetHeight <= 1043, `${label}: ใบเกิน 1 หน้าพื้นที่พิมพ์ ${Math.round(m.sheetHeight)}px > 1043px`)
+}
+// ตำแหน่งปกติ (ไม่ใช่รักษาราชการแทน) ยังบรรทัดเดียวเหมือนเดิม
+assert.equal(baseline.lines, 1, 'ตำแหน่งปกติต้องบรรทัดเดียว')
+
 await browser.close()
 console.log(`fleet form 3 layout assertions passed `
   + `(ตำแหน่งยาวปกติ ${long.sheetHeight}px, ยาวสุด ${extreme.sheetHeight}px / A4 ${A4_HEIGHT_PX}px)`)
