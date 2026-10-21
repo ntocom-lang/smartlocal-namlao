@@ -86,6 +86,18 @@ export function govSplitActingTitle(title) {
 }
 
 /**
+ * ห่อคำ "รักษาราชการแทน" ท้ายบรรทัดแรกของ govSplitActingTitle ให้เป็นก้อนเดียว (รับข้อความที่ escape แล้ว คืน HTML)
+ * ทำไมต้องมี: ช่องที่แคบกว่าบรรทัดแรกจะตัดบรรทัดเองตามพจนานุกรมไทย ซึ่งตัด "รักษาราชการ | แทน" ได้ ทำให้คำว่า "แทน"
+ * ไปขึ้นต้นบรรทัดถัดไปปนกับตำแหน่งที่ถูกแทน (เห็นจริงในแบบ 3) — ห่อแล้วทั้งคำย้ายลงบรรทัดใหม่พร้อมกัน
+ * ใช้ style แบบ inline เพราะแต่ละใบมี CSS ของตัวเอง ไม่ต้องพึ่งคลาส .nb ที่บางใบไม่มี
+ */
+export function govKeepActingWordTogether(escapedLine) {
+  const text = String(escapedLine ?? '')
+  const word = ACTING_WORDS.find(candidate => text.endsWith(candidate))
+  return word ? `${text.slice(0, -word.length)}<span style="white-space:nowrap">${word}</span>` : text
+}
+
+/**
  * บล็อกลงนามหนึ่งจุด — "เส้นคือแกน" บรรทัดที่อยู่ใต้มันต้องอยู่กึ่งกลางบนแกนเดียวกันเสมอ
  *
  * ⚠️ ประวัติความผิดพลาดที่ห้ามทำซ้ำ (เจ้าของระบบจับได้จากใบพิมพ์จริงทั้งสองครั้ง):

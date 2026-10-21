@@ -232,6 +232,82 @@ for (const [label, title, expectedLines] of [
 // ตำแหน่งปกติ (ไม่ใช่รักษาราชการแทน) ยังบรรทัดเดียวเหมือนเดิม
 assert.equal(baseline.lines, 1, 'ตำแหน่งปกติต้องบรรทัดเดียว')
 
+// ── 5. ป้ายตำแหน่ง ผอ.กอง เป็น "รักษาราชการแทน" ต้องตัด 2 บรรทัดตามกติกา ไม่ตัดคำว่า "รักษาราชการแทน" และไม่ตัดกลางชื่อสถานที่ ──
+// เห็นจริง 2569-10-21 (ภาพจากเครื่องวัด): "ผู้อำนวยการกองช่าง รักษาราชการ | แทน ปลัดองค์การบริหารส่วนตำบล | ทุ่งแค้ว" — คำว่า "แทน" ไปอยู่ปนกับตำแหน่ง
+// ที่ถูกแทน เพราะคอลัมน์ป้ายกว้างแค่ 13em (243px) แต่บรรทัดตามกติกายาว 245–280px · พจนานุกรมไทยของเบราว์เซอร์ไม่รู้จักชื่อ "ทุ่งแค้ว"
+// จึงตัดเป็น "…ทุ่งแค้|ว" ได้ถ้าปล่อยให้ตัดเอง — แก้ด้วยการขยายคอลัมน์ป้ายเฉพาะบล็อกที่เป็นรักษาราชการแทน (.signature--acting)
+async function measureDeptRole(title) {
+  const html = buildFleetTripRequestHtml({
+    trip,
+    tenant,
+    orderAuthority: resolveOrderAuthority(null, tenant, 'mayor'),
+    deptHead: resolveDeptHead({ manual_name: 'นางสาวจันทร์จิรา คันธสังข์', title_override: title }),
+  })
+  await printPage.setContent(html, { waitUntil: 'domcontentloaded' })
+  await printPage.evaluate(() => document.fonts.ready)
+  await printPage.emulateMedia({ media: 'print' })
+  return printPage.evaluate(() => {
+    const blocks = [...document.querySelectorAll('.signatures .signature')]
+    const block = blocks[2]
+    const role = block.querySelector('.signature-role')
+    // แบ่งบรรทัดที่เห็นจริงทีละตัวอักษร (Range) — กล่องของ element บอกไม่ได้ว่าข้อความไปตกบรรทัดไหน
+    const lines = []
+    const walker = document.createTreeWalker(role, NodeFilter.SHOW_TEXT)
+    let right = -Infinity
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      for (let i = 0; i < node.textContent.length; i++) {
+        const range = document.createRange()
+        range.setStart(node, i)
+        range.setEnd(node, i + 1)
+        const rect = range.getClientRects()[0]
+        if (!rect || rect.width < 0.3) continue
+        const top = Math.round(rect.top)
+        let last = lines[lines.length - 1]
+        if (!last || Math.abs(last.top - top) > 4) { last = { top, text: '' }; lines.push(last) }
+        last.text += node.textContent[i]
+        right = Math.max(right, rect.right)
+      }
+    }
+    const nowrap = role.querySelector('span[style*="nowrap"]')
+    return {
+      lines: lines.map(line => line.text),
+      right,
+      sheetRight: document.querySelector('.sheet').getBoundingClientRect().right,
+      actingBoxes: nowrap ? nowrap.getClientRects().length : 0,
+      blockClass: block.className,
+      lineWidths: blocks.map(el => Math.round(el.querySelector('.signature-line').getBoundingClientRect().width)),
+      sheetHeight: document.querySelector('.sheet').getBoundingClientRect().height,
+    }
+  })
+}
+
+const plainRole = await measureDeptRole('ผู้อำนวยการกองช่าง')
+assert.deepEqual(plainRole.lines, ['ผู้อำนวยการกองช่าง'], 'ป้ายตำแหน่งปกติต้องเหมือนเดิม บรรทัดเดียว')
+assert.equal(plainRole.blockClass, 'signature', 'ตำแหน่งปกติต้องไม่ได้คลาส signature--acting (หน้าตาเดิมทุกพิกเซล)')
+assert.equal(new Set(plainRole.lineWidths).size, 1, `ตำแหน่งปกติ เส้นลงนามทุกบล็อกต้องยาวเท่ากัน (${plainRole.lineWidths})`)
+for (const [label, title, expected] of [
+  ['อบต.ทุ่งแค้ว (ตำแหน่ง 245px)', 'ผู้อำนวยการกองช่าง รักษาราชการแทน ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว',
+    ['ผู้อำนวยการกองช่าง รักษาราชการแทน', 'ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว']],
+  ['อบต.หนองม่วงไข่ (ตำแหน่ง 280px ยาวสุดที่เจอจริง)', 'ผู้อำนวยการกองช่าง รักษาราชการแทน ปลัดองค์การบริหารส่วนตำบลหนองม่วงไข่',
+    ['ผู้อำนวยการกองช่าง รักษาราชการแทน', 'ปลัดองค์การบริหารส่วนตำบลหนองม่วงไข่']],
+  ['รักษาการแทน ตำแหน่งสั้น', 'หัวหน้าสำนักปลัด รักษาการแทน ปลัดเทศบาล', ['หัวหน้าสำนักปลัด รักษาการแทน', 'ปลัดเทศบาล']],
+]) {
+  const m = await measureDeptRole(title)
+  assert.deepEqual(m.lines, expected, `${label}: ต้องตัด 2 บรรทัดหลังคำว่ารักษาราชการแทน ไม่ตัดกลางคำ/ชื่อสถานที่ — ได้ ${JSON.stringify(m.lines)}`)
+  assert.ok(m.right <= m.sheetRight + 1, `${label}: ป้ายล้นขอบขวาพื้นที่พิมพ์ ${((m.right - m.sheetRight) / 3.78).toFixed(1)}mm`)
+  assert.equal(m.blockClass, 'signature signature--acting', `${label}: บล็อกต้องได้คลาส signature--acting`)
+  // เส้นลงนามของ 2 บล็อกแรก (ผู้ขอ/ผู้ขับ) ต้องไม่ถูกกระทบ
+  assert.equal(m.lineWidths[0], plainRole.lineWidths[0], `${label}: เส้นของบล็อกอื่นเปลี่ยนความกว้าง`)
+  assert.equal(m.lineWidths[1], plainRole.lineWidths[1], `${label}: เส้นของบล็อกอื่นเปลี่ยนความกว้าง`)
+  assert.ok(m.lineWidths[2] >= 200, `${label}: เส้นลงนามของบล็อกสั้นเกินไป ${m.lineWidths[2]}px (ลงนามไม่ได้)`)
+  assert.ok(m.sheetHeight <= 1043, `${label}: ใบเกิน 1 หน้าพื้นที่พิมพ์ ${Math.round(m.sheetHeight)}px`)
+}
+// ตำแหน่งที่ยาวเกินเพดานคอลัมน์ ยังตัดบรรทัดเองได้ แต่คำว่า "รักษาราชการแทน" ต้องไม่ถูกตัดกลางคำ และไม่ล้นขอบ
+const veryLong = await measureDeptRole('ผู้อำนวยการกองสาธารณสุขและสิ่งแวดล้อม รักษาราชการแทน หัวหน้าสำนักปลัด')
+assert.equal(veryLong.actingBoxes, 1, `"รักษาราชการแทน" ถูกตัดกลางคำเป็น ${veryLong.actingBoxes} ท่อน (${JSON.stringify(veryLong.lines)})`)
+assert.ok(!veryLong.lines.some(line => line.startsWith('แทน')), `มีบรรทัดขึ้นต้นด้วย "แทน" โดดๆ: ${JSON.stringify(veryLong.lines)}`)
+assert.ok(veryLong.right <= veryLong.sheetRight + 1, 'ตำแหน่งยาวสุดล้นขอบขวาพื้นที่พิมพ์')
+
 await browser.close()
 console.log(`fleet form 3 layout assertions passed `
   + `(ตำแหน่งยาวปกติ ${long.sheetHeight}px, ยาวสุด ${extreme.sheetHeight}px / A4 ${A4_HEIGHT_PX}px)`)
