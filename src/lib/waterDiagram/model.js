@@ -86,36 +86,48 @@ export function chipWidth(text, size = 19) {
   return Math.ceil(visible * size * 0.56 + 22)
 }
 
-const MISSING = { tone: 'na', text: 'ไม่มีค่าในระบบ', detail: 'ไม่มีค่าในระบบ' }
+// สีป้ายตัวเลขบนผัง — ไม่ใช่สีสถานการณ์ (ฟ้า = มีค่า · เหลือง = ตัวเลขซ้ำเดิม · เทาประ = ไม่มี/ค้าง · แดงประ = แผนก่อสร้าง)
+// ใช้ร่วมกันทั้งผังเดิม (WaterDiagram.jsx) และแผนภาพเส้นทางน้ำ (WaterRouteArt.jsx) — ห้ามลงสีตามระดับน้ำ (ไม่ใช่ผู้ประเมินสถานการณ์)
+export const CHIP_TONES = {
+  ok:    { stroke: '#0284c7', ink: '#0c4a6e', dash: false },
+  warn:  { stroke: '#d97706', ink: '#92400e', dash: false },
+  stale: { stroke: '#94a3b8', ink: '#64748b', dash: true },
+  na:    { stroke: '#94a3b8', ink: '#64748b', dash: true },
+  plan:  { stroke: '#b91c1c', ink: '#991b1b', dash: true },
+  fix:   { stroke: '#d97706', ink: '#92400e', dash: false },
+}
+
+// short = ข้อความสั้นสำหรับป้ายบนภาพ · note = หมายเหตุสั้นใต้ป้าย (เฉพาะซ้ำเดิม/ค้าง/โหลดไม่ได้) — เพิ่มจาก text/detail เดิม ไม่แทนที่
+const MISSING = { tone: 'na', text: 'ไม่มีค่าในระบบ', detail: 'ไม่มีค่าในระบบ', short: 'ไม่มีค่า' }
 const findStation = (stations, type, code) =>
   (Array.isArray(stations) ? stations : []).find(s => s?.station_type === type && s?.station_code === code) ?? null
 
 function damBadge(entry, now) {
-  if (!entry || !entry.done) return { tone: 'na', text: 'กำลังโหลด', detail: 'กำลังโหลด' }
+  if (!entry || !entry.done) return { tone: 'na', text: 'กำลังโหลด', detail: 'กำลังโหลด', short: 'กำลังโหลด' }
   const summary = entry.report ? reservoirSummary(entry.report, now) : null
   const pct = toNum(summary?.latest?.pct)
-  if (!summary || pct === null) return { tone: 'na', text: 'ยังโหลดค่าไม่ได้', detail: 'ยังโหลดรายงานอ่างนี้ไม่ได้ในตอนนี้' }
+  if (!summary || pct === null) return { tone: 'na', text: 'ยังโหลดค่าไม่ได้', detail: 'ยังโหลดรายงานอ่างนี้ไม่ได้ในตอนนี้', short: 'ไม่มีค่า', note: 'โหลดไม่ได้' }
   const value = `${formatMm(pct)}%`
   const day = formatReportDay(summary.latest.d)
   const refreshed = entry.failed ? ' · ดึงข้อมูลใหม่ไม่สำเร็จ แสดงของเดิม' : ''
   if (summary.stale) {
-    return { tone: 'stale', text: `อ่าง ${value} · ไม่มีรายงานใหม่`, detail: `${value} · ไม่มีรายงานใหม่ตั้งแต่ ${day} (ผ่านมา ${summary.ageDays} วัน)${refreshed}` }
+    return { tone: 'stale', text: `อ่าง ${value} · ไม่มีรายงานใหม่`, detail: `${value} · ไม่มีรายงานใหม่ตั้งแต่ ${day} (ผ่านมา ${summary.ageDays} วัน)${refreshed}`, short: value, note: 'ไม่มีรายงานใหม่' }
   }
   if (summary.showSame) {
-    return { tone: 'warn', text: `อ่าง ${value} · ตัวเลขซ้ำเดิม`, detail: `${value} · รายงาน ${day} · ตัวเลขซ้ำเดิม ${summary.sameCount} รายงานติดกัน${refreshed}` }
+    return { tone: 'warn', text: `อ่าง ${value} · ตัวเลขซ้ำเดิม`, detail: `${value} · รายงาน ${day} · ตัวเลขซ้ำเดิม ${summary.sameCount} รายงานติดกัน${refreshed}`, short: value, note: 'ตัวเลขซ้ำเดิม' }
   }
-  return { tone: 'ok', text: `อ่าง ${value}`, detail: `${value} · รายงาน ${day}${refreshed}` }
+  return { tone: 'ok', text: `อ่าง ${value}`, detail: `${value} · รายงาน ${day}${refreshed}`, short: value }
 }
 
 function rainBadge(station, now) {
   const mm = toNum(station?.rain_24h_mm)
   if (!station || mm === null || !station.recorded_at) return MISSING
   if (isStale(station.recorded_at, now, STATION_STALE_HOURS)) {
-    return { tone: 'stale', text: 'ฝน ไม่มีค่าใหม่', detail: `ไม่มีค่าใหม่ (วัดล่าสุด ${measuredAtText(station.recorded_at, now)})` }
+    return { tone: 'stale', text: 'ฝน ไม่มีค่าใหม่', detail: `ไม่มีค่าใหม่ (วัดล่าสุด ${measuredAtText(station.recorded_at, now)})`, short: 'ฝน', note: 'ไม่มีค่าใหม่' }
   }
   const label = rainLevel(mm)?.label
   return {
-    tone: 'ok', text: `ฝน ${formatMm(mm)} มม.`,
+    tone: 'ok', text: `ฝน ${formatMm(mm)} มม.`, short: `ฝน ${formatMm(mm)} มม.`,
     detail: `ฝนสะสม 24 ชม. ${formatMm(mm)} มม.${label ? ` · ${label}` : ''}${station.station_name ? ` · สถานี${station.station_name}${distanceText(station.distance_km) ? ` ${distanceText(station.distance_km)}` : ''}` : ''} · วัดเมื่อ ${measuredAtText(station.recorded_at, now)}`,
   }
 }
@@ -133,13 +145,13 @@ function damStationBadge(station, now) {
   const over = pct > 100 ? ' · มากกว่า 100% = เกินความจุที่ระดับเก็บกักปกติ ตามที่ต้นทางรายงาน' : ''
   const where = [station.station_name, distanceText(station.distance_km)].filter(Boolean).join(' ')
   if (isStale(station.recorded_at, now, DAM_STALE_HOURS)) {
-    return { tone: 'stale', text: `อ่าง ${value} · ไม่มีรายงานใหม่`, detail: `${where} · ${value} · ไม่มีรายงานใหม่ (ล่าสุด ${day || 'ไม่ทราบวัน'})` }
+    return { tone: 'stale', text: `อ่าง ${value} · ไม่มีรายงานใหม่`, detail: `${where} · ${value} · ไม่มีรายงานใหม่ (ล่าสุด ${day || 'ไม่ทราบวัน'})`, short: value, note: 'ไม่มีรายงานใหม่' }
   }
   const same = damSameInfo(station)
   if (same) {
-    return { tone: 'warn', text: `อ่าง ${value} · ตัวเลขซ้ำเดิม`, detail: `${where} · ${value}${over} · ${damSameText(same, now)} — ต้นทางอาจยังไม่ได้ปรับข้อมูล ใช้ตัวเลขนี้อย่างระมัดระวัง` }
+    return { tone: 'warn', text: `อ่าง ${value} · ตัวเลขซ้ำเดิม`, detail: `${where} · ${value}${over} · ${damSameText(same, now)} — ต้นทางอาจยังไม่ได้ปรับข้อมูล ใช้ตัวเลขนี้อย่างระมัดระวัง`, short: value, note: 'ตัวเลขซ้ำเดิม' }
   }
-  return { tone: 'ok', text: `อ่าง ${value}`, detail: `${where} · ${value} ของความจุที่ระดับเก็บกัก${volume ? ` · ${volume}` : ''}${over} · ข้อมูลของ${day === 'วันนี้' ? 'วันนี้' : ` ${day || 'วันที่ไม่ทราบ'}`}` }
+  return { tone: 'ok', text: `อ่าง ${value}`, detail: `${where} · ${value} ของความจุที่ระดับเก็บกัก${volume ? ` · ${volume}` : ''}${over} · ข้อมูลของ${day === 'วันนี้' ? 'วันนี้' : ` ${day || 'วันที่ไม่ทราบ'}`}`, short: value }
 }
 
 // ระดับน้ำ: เขียนเป็นข้อเท็จจริงของ "สถานีนั้น" พร้อมระยะ — ไม่ลงสี ไม่อ้างเป็นสถานการณ์ของแม่น้ำในตำบล (สถานีอยู่ห่างตำบล)
@@ -148,11 +160,11 @@ function levelBadge(station, now) {
   if (!station || diff === null || !station.recorded_at) return MISSING
   const where = [station.station_name, distanceText(station.distance_km)].filter(Boolean).join(' ')
   if (isStale(station.recorded_at, now, STATION_STALE_HOURS)) {
-    return { tone: 'stale', text: `${where} ไม่มีค่าใหม่`, detail: `${where} · ไม่มีค่าใหม่ (วัดล่าสุด ${measuredAtText(station.recorded_at, now)})` }
+    return { tone: 'stale', text: `${where} ไม่มีค่าใหม่`, detail: `${where} · ไม่มีค่าใหม่ (วัดล่าสุด ${measuredAtText(station.recorded_at, now)})`, short: 'ระดับน้ำ', note: 'ไม่มีค่าใหม่' }
   }
   return {
     tone: 'ok', text: `${where} · ${bankText(diff)}`,
-    detail: `${where} · ${bankText(diff)} · วัดเมื่อ ${measuredAtText(station.recorded_at, now)}`,
+    detail: `${where} · ${bankText(diff)} · วัดเมื่อ ${measuredAtText(station.recorded_at, now)}`, short: bankText(diff),
   }
 }
 
@@ -161,7 +173,7 @@ function levelBadge(station, now) {
  * @param {{ binds: Record<string, {type: string, id?: string, code?: string}>, reports: Record<string, {report: object|null, failed: boolean, done: boolean}>,
  *           stations: object[], now: number|Date }} input
  *   binds = ตารางช่อง → แหล่งค่า (อยู่ในไฟล์ข้อมูลผัง) · reports = ผลของ useReservoirReport รายอ่าง · stations = สถานีจาก get_public_water_situation()
- * @returns {Record<string, {tone: 'ok'|'warn'|'stale'|'na', text: string, detail: string}>}
+ * @returns {Record<string, {tone: 'ok'|'warn'|'stale'|'na', text: string, detail: string, short: string, note?: string}>}
  */
 export function liveBadges({ binds, reports = {}, stations = [], now }) {
   const out = {}
