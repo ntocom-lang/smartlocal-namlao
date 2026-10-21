@@ -15,6 +15,7 @@ import process from 'node:process'
 import { chromium } from 'playwright'
 import { buildCouncilComplaintHtml } from '../src/lib/councilFormPrint.js'
 import { assertSignBlockStandard, assertSignLinesAligned } from './lib/signBlockChecks.mjs'
+import { qrLayout } from '../src/lib/qrSvg.js'
 
 const SIGNATORIES = {
   // ชื่อ+ตำแหน่งยาวสุดที่คาดว่าจะเจอจริง — เคสที่แกนกลางเลื่อนง่ายที่สุดเพราะกว้างกว่าเส้น
@@ -132,6 +133,80 @@ const checks = [
         await assertSignBlockStandard(page, { minRows: 3, minBelow: 7 })
         await assertSignLinesAligned(page)
       } finally { await page.close() }
+    },
+  },
+  {
+    // เจ้าของระบบถาม 2569-10-21: ใบคำร้องไม่มีพิกัด กลัวถูกถามว่า "พิกัดอยู่ไหน" ทั้งที่ระบบเก็บไว้ (91% ของเรื่องใน 120 วัน)
+    name: 'coordinates-printed-with-qr',
+    reason: 'เรื่องที่ปักหมุดไว้ต้องพิมพ์พิกัด + QR เปิดแผนที่ ขนาดสแกนได้ · เรื่องที่ไม่ได้ปักต้องบอกตรงๆ ว่าไม่ได้ปักหมุด · ใบยังจบ 1 แผ่นและไม่ล้นขอบ',
+    async run(browser) {
+      const pinned = { ...ARGS.c, latitude: 18.123456, longitude: 100.654321 }
+      const page = await render(browser, buildCouncilComplaintHtml({ ...ARGS, c: pinned, signatories: SIGNATORIES }))
+      try {
+        const seen = await page.evaluate(() => {
+          const svg = document.querySelector('.geo-qr svg')
+          const box = svg?.getBoundingClientRect()
+          const body = document.body.getBoundingClientRect()
+          const caption = document.querySelector('.geo-qr p')
+          const rect = caption?.getBoundingClientRect()
+          return {
+            rows: [...document.querySelectorAll('.points div')].map(el => el.textContent.replace(/\s+/g, ' ').trim()),
+            path: svg?.querySelector('path')?.getAttribute('d') ?? null,
+            sideMm: box ? box.width / 3.779527 : 0,
+            heightMm: box ? box.height / 3.779527 : 0,
+            right: Math.max(box?.right ?? 0, rect?.right ?? 0) - body.right,
+            captionText: caption?.textContent ?? '',
+            bodyHeight: body.height,
+          }
+        })
+        assert.ok(seen.rows.includes('พิกัด 18.12346, 100.65432'), `ไม่พบบรรทัดพิกัด (5 ทศนิยม) — ได้ ${JSON.stringify(seen.rows)}`)
+        // QR ต้องเข้ารหัสลิงก์แผนที่ของพิกัดนี้จริง (เทียบเมทริกซ์ที่สร้างจากลิงก์ที่คาดไว้ ไม่ใช่แค่ว่ามีรูป)
+        const expected = qrLayout('https://maps.google.com/?q=18.123456,100.654321', 1000)
+        assert.equal(seen.path, expected.d, 'QR ไม่ได้เข้ารหัสลิงก์แผนที่ของพิกัดที่พิมพ์')
+        // ขั้นต่ำที่สแกนจากกระดาษได้สบายคือราว 18mm สำหรับลิงก์ยาวขนาดนี้ (module ≥ 0.4mm)
+        assert.ok(seen.sideMm >= 18 && seen.sideMm <= 22, `QR ด้านละ ${seen.sideMm.toFixed(1)}mm ต้อง 18–22mm`)
+        assert.ok(Math.abs(seen.sideMm - seen.heightMm) < 0.1, 'QR ต้องเป็นสี่เหลี่ยมจัตุรัส')
+        assert.ok(seen.right <= 0.5, `QR/คำอธิบายล้นขอบขวา ${seen.right.toFixed(1)}px`)
+        assert.ok(seen.captionText.includes('สแกน QR'), 'ต้องมีคำอธิบายให้ผู้อ่านรู้ว่า QR คืออะไร')
+        // ใบต้องจบ 1 แผ่น (พื้นที่พิมพ์ 276mm = 1043px) แม้ชื่อ-ตำแหน่งผู้ลงนามยาวเต็มยศ
+        assert.ok(seen.bodyHeight <= 1043, `ใบสูง ${Math.round(seen.bodyHeight)}px เกิน 1 หน้า (1043px) เมื่อมี QR`)
+        await assertSignBlockStandard(page, { minRows: 3, minBelow: 7 })
+      } finally { await page.close() }
+    },
+  },
+  {
+    name: 'coordinates-states-never-lie',
+    reason: 'ไม่ได้ปักหมุด = บอกตรงๆ · ไม่มีสิทธิ์เห็นพิกัด (ข้อมูลไม่มีคีย์) = ไม่พิมพ์อะไร ห้ามเขียนว่า "ไม่ได้ปักหมุด" ทั้งที่มีหมุดแต่สิทธิ์ปิดไว้',
+    async run(browser) {
+      const noPin = ' ไม่ได้ปักหมุด'
+      const cases = [
+        ['ไม่ได้ปัก (null)', { ...ARGS.c, latitude: null, longitude: null }, { row: true, qr: false, text: noPin }],
+        ['หมุด 0,0 (ค่าเสีย)', { ...ARGS.c, latitude: 0, longitude: 0 }, { row: true, qr: false, text: noPin }],
+        ['พิกัดนอกช่วงโลก', { ...ARGS.c, latitude: 181, longitude: 400 }, { row: true, qr: false, text: noPin }],
+        ['ครึ่งเดียว', { ...ARGS.c, latitude: 18.1, longitude: null }, { row: true, qr: false, text: noPin }],
+        ['สิทธิ์ปิด (ไม่มีคีย์ latitude)', { ...ARGS.c }, { row: false, qr: false }],
+      ]
+      for (const [label, c, expected] of cases) {
+        const page = await render(browser, buildCouncilComplaintHtml({ ...ARGS, c, signatories: SIGNATORIES }))
+        try {
+          const seen = await page.evaluate(() => ({
+            rows: [...document.querySelectorAll('.points div')].map(el => el.textContent.replace(/\s+/g, ' ').trim()),
+            qr: document.querySelectorAll('.geo-qr svg').length,
+          }))
+          const row = seen.rows.find(text => text.startsWith('พิกัด'))
+          assert.equal(Boolean(row), expected.row, `${label}: บรรทัดพิกัด ${row ? `"${row}"` : 'ไม่มี'}`)
+          if (expected.row) assert.ok(row.includes(expected.text.trim()), `${label}: ข้อความ "${row}"`)
+          assert.equal(seen.qr > 0, expected.qr, `${label}: QR ${seen.qr}`)
+        } finally { await page.close() }
+      }
+      // ปิดด้วยตัวเลือก includeCoordinates: false (Draft PDF ถ้า DPO สั่งตัด) ต้องไม่เหลือทั้งแถวและ QR แม้มีหมุด
+      const off = await render(browser, buildCouncilComplaintHtml({
+        ...ARGS, c: { ...ARGS.c, latitude: 18.1, longitude: 100.6 }, signatories: SIGNATORIES, includeCoordinates: false,
+      }))
+      try {
+        const seen = await off.evaluate(() => ({ text: document.body.textContent, qr: document.querySelectorAll('.geo-qr').length }))
+        assert.ok(!seen.text.includes('พิกัด') && seen.qr === 0, 'includeCoordinates:false ต้องไม่พิมพ์พิกัด/QR')
+      } finally { await off.close() }
     },
   },
 ]

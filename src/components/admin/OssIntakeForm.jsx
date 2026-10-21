@@ -130,6 +130,9 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
         category: form.category,
         detail: form.detail,
         village: form.village,
+        // ใบรับเรื่องที่เคาน์เตอร์ต้องมีพิกัดเดียวกับที่เจ้าหน้าที่ปักไว้ในฟอร์มนี้ (เดิมทิ้งไป) — null = ไม่ได้ปัก ใบจะบอกตรงๆ
+        latitude: geo.lat ?? null,
+        longitude: geo.lng ?? null,
         reporter_name: form.reporter_name,
         department_id: printContextResult.data?.department_id,
         department: printContextResult.data?.department_name,
