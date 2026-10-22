@@ -10,7 +10,8 @@ import { todayBangkok } from '../../lib/documentSignatories'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
 
 // ตั้งค่า "ลงนามออนไลน์รายเรื่อง" ของ อปท. — ตั้งโดยแอดมินของหน่วยงานเท่านั้น (ฟังก์ชัน DB ตรวจสิทธิ์ซ้ำ)
-// เรียงตามสิ่งที่แอดมินต้องทำ: ประกาศ → ทดลอง → ผู้ลงนามผูกบัญชี → เลือกช่อง
+// เรียงตามสิ่งที่แอดมินต้องทำ: ทดลอง → ผู้ลงนามผูกบัญชี → เลือกช่อง · ประกาศอยู่ท้ายหน้าเป็นส่วนไม่บังคับ
+// (เจ้าของระบบสั่ง 2026-10-22 ให้ถอดประกาศ/หนังสือให้ความเห็นชอบออกจากเงื่อนไขเปิดใช้ — ห้ามเอากลับมาบังคับโดยไม่ได้รับคำสั่ง)
 // ไม่มีปุ่ม "เปิดทั้งหมด" โดยตั้งใจ และไม่เปิดให้เองเมื่อเงื่อนไขไม่ครบ (DB ปัดด้วย gate_* ถ้าข้ามหน้าจอมา)
 const FIELD_CLASS = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus:outline-none focus:border-indigo-400'
 const BUTTON_CLASS = 'inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-bold disabled:opacity-50'
@@ -124,16 +125,18 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
   const modesDirty = ESIGN_FLEET_SLOTS.some(slot => modes[slot.key] !== savedModes[slot.key])
   const blockers = esignBlockers(status, modes)
   const gateItems = esignGateItems(status, modes)
-  const policyReady = Boolean(status?.policy)
+  const authorityGate = gateItems.find(item => item.key === 'authority')
+  const deptHeadGate = gateItems.find(item => item.key === 'dept_head')
   const trialDone = Boolean(status?.policy?.trial_confirmed_at)
   const draftText = useMemo(() => esignAnnouncementDraft(tenant?.name), [tenant?.name])
 
-  const policyDirty = !status?.policy
-    || announcementNo.trim() !== status.policy.announcement_no
-    || announcementDate !== status.policy.announcement_date
-    || approvalRef.trim() !== status.policy.approval_ref
-    || announcementUrl.trim() !== (status.policy.announcement_url ?? '')
-  const policyComplete = announcementNo.trim() && announcementDate && approvalRef.trim().length >= 3
+  // ประกาศไม่บังคับ: ว่างทุกช่องก็บันทึกได้ (= ล้างที่เคยกรอก) ปุ่มบันทึกเปิดเมื่อมีการเปลี่ยนแปลงเท่านั้น
+  const savedPolicy = status?.policy
+  const policyRecorded = Boolean(savedPolicy?.announcement_no)
+  const policyDirty = announcementNo.trim() !== (savedPolicy?.announcement_no ?? '')
+    || announcementDate !== (savedPolicy?.announcement_date ?? '')
+    || approvalRef.trim() !== (savedPolicy?.approval_ref ?? '')
+    || announcementUrl.trim() !== (savedPolicy?.announcement_url ?? '')
 
   async function copyDraft() {
     try {
@@ -173,56 +176,7 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
         </div>
       </section>
 
-      <Step number={1} title="ประกาศของหน่วยงาน" done={policyReady}>
-        <p className="text-xs leading-5 text-gray-500">
-          พระราชกฤษฎีกากำหนดหลักเกณฑ์และวิธีการในการทำธุรกรรมทางอิเล็กทรอนิกส์ภาครัฐ พ.ศ. ๒๕๔๙ ข้อ ๗ ให้แนวนโยบายและแนวปฏิบัติความมั่นคงปลอดภัยทำเป็นประกาศ
-          และต้องได้รับความเห็นชอบจากคณะกรรมการหรือหน่วยงานที่คณะกรรมการมอบหมายจึงมีผลบังคับ
-          หน่วยงานที่ให้ความเห็นชอบสำหรับ อปท. ให้สอบถามท้องถิ่นจังหวัดหรือกรมส่งเสริมการปกครองท้องถิ่น แล้วบันทึกเลขที่ประกาศและหนังสือที่ได้รับที่นี่
-        </p>
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-no">เลขที่ประกาศ *
-            <input id="esign-no" className={`${FIELD_CLASS} mt-1`} value={announcementNo} maxLength={200}
-              onChange={event => setAnnouncementNo(event.target.value)} placeholder="เช่น ประกาศ อบต.… ที่ 5/2569" />
-          </label>
-          <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-date">ลงวันที่ *
-            <input id="esign-date" type="date" className={`${FIELD_CLASS} mt-1`} value={announcementDate} max={today}
-              onChange={event => setAnnouncementDate(event.target.value)} />
-            {announcementDate && <span className="mt-1 block text-[11px] font-normal text-gray-400">{thaiDateFromDateInput(announcementDate)}</span>}
-          </label>
-        </div>
-        <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-approval">หนังสือให้ความเห็นชอบ หรือคำชี้แจงว่าไม่ต้องขอ *
-          <textarea id="esign-approval" className={`${FIELD_CLASS} mt-1 min-h-20`} value={approvalRef} maxLength={500}
-            onChange={event => setApprovalRef(event.target.value)}
-            placeholder="เช่น หนังสือท้องถิ่นจังหวัด… ที่ มท …/… ลงวันที่ … (ถ้าได้รับคำตอบว่าไม่ต้องขอความเห็นชอบ ให้ใส่เลขที่หนังสือตอบนั้น)" />
-        </label>
-        <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-url">ลิงก์ไฟล์ประกาศ (ถ้ามี)
-          <input id="esign-url" className={`${FIELD_CLASS} mt-1`} value={announcementUrl} maxLength={1000} inputMode="url"
-            onChange={event => setAnnouncementUrl(event.target.value)} placeholder="https://…" />
-        </label>
-        <div className="flex flex-wrap items-center gap-3">
-          <button type="button" className={`${BUTTON_CLASS} bg-indigo-600 text-white hover:bg-indigo-700`}
-            disabled={busy === 'policy' || !policyDirty || !policyComplete}
-            onClick={() => run('policy', () => setEsignPolicy({
-              municipalityId, announcementNo: announcementNo.trim(), announcementDate, approvalRef: approvalRef.trim(), announcementUrl,
-            }), 'บันทึกประกาศแล้ว')}>
-            {busy === 'policy' ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} บันทึกประกาศ
-          </button>
-          <button type="button" className="text-xs font-bold text-indigo-700 underline underline-offset-2" onClick={copyDraft}>
-            <Copy size={13} className="mr-1 inline" />{copied ? 'คัดลอกแล้ว' : 'คัดลอกร่างข้อความประกาศ'}
-          </button>
-        </div>
-        <Notice notice={notices.policy} />
-        <Notice notice={notices.draft} />
-        <details className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-          <summary className="cursor-pointer text-xs font-bold text-gray-700">ดูร่างข้อความประกาศ (ให้นิติกรและผู้บริหารตรวจก่อนใช้)</summary>
-          <p className="mt-2 text-[11px] leading-5 text-gray-500">
-            เป็นร่างตั้งต้นที่อ้างเฉพาะตัวบทที่ตรวจกับสำเนาทางการแล้ว ไม่ใช่คำปรึกษากฎหมาย ส่วนในวงเล็บเหลี่ยม [ ] หน่วยงานต้องตัดสินใจและกรอกเอง
-          </p>
-          <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-gray-800">{draftText}</pre>
-        </details>
-      </Step>
-
-      <Step number={2} title="ผู้ลงนามทดลองใช้แล้ว" done={trialDone}>
+      <Step number={1} title="ผู้ลงนามทดลองใช้แล้ว" done={trialDone}>
         <p className="text-xs leading-5 text-gray-500">
           ให้ผู้ลงนามทุกช่องทดลองตั้งรหัสลงนามและลงนามบนระบบสาธิต (เว็บสาธิตของระบบ ไม่ใช่ข้อมูลจริงของหน่วยงาน) จนคุ้นก่อน แล้วกดยืนยันที่นี่
           ระบบเก็บเป็นคำยืนยันของแอดมิน ไม่ได้ตรวจว่าทดลองจริง จึงขึ้นกับความรับผิดชอบของผู้ยืนยัน
@@ -232,13 +186,12 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
         ) : (
           <div className="space-y-2">
             <label className="flex items-start gap-2 text-sm text-gray-700" htmlFor="esign-trial">
-              <input id="esign-trial" type="checkbox" className="mt-1" checked={trialChecked} disabled={!policyReady}
+              <input id="esign-trial" type="checkbox" className="mt-1" checked={trialChecked}
                 onChange={event => setTrialChecked(event.target.checked)} />
               <span>ผู้ลงนามทุกช่องที่จะใช้ได้ทดลองลงนามบนระบบสาธิตแล้ว</span>
             </label>
-            {!policyReady && <p className="text-xs text-amber-700">บันทึกประกาศในข้อ 1 ก่อน</p>}
             <button type="button" className={`${BUTTON_CLASS} bg-indigo-600 text-white hover:bg-indigo-700`}
-              disabled={busy === 'trial' || !policyReady || !trialChecked}
+              disabled={busy === 'trial' || !trialChecked}
               onClick={() => run('trial', () => confirmEsignTrial(municipalityId), 'บันทึกคำยืนยันแล้ว')}>
               {busy === 'trial' ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />} ยืนยัน
             </button>
@@ -247,13 +200,13 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
         <Notice notice={notices.trial} />
       </Step>
 
-      <Step number={3} title="ผู้ลงนามผูกกับบัญชีจริง" done={gateItems[2].ok && gateItems[3].ok}>
+      <Step number={2} title="ผู้ลงนามผูกกับบัญชีจริง" done={authorityGate.ok && deptHeadGate.ok}>
         <p className="text-xs leading-5 text-gray-500">
           ช่องผู้มีอำนาจสั่งใช้และหัวหน้ากองลงนามออนไลน์ได้เมื่อทะเบียนผู้ลงนามเอกสารเลือก “จากบัญชีบุคลากร”
           แถวที่กรอกชื่อพิมพ์เอง (คนที่ไม่มีบัญชี) ลงนามออนไลน์ไม่ได้ ช่องนั้นต้องเซ็นสดต่อ
         </p>
         <ul className="grid gap-2 sm:grid-cols-2">
-          {[gateItems[2], gateItems[3]].map(item => (
+          {[authorityGate, deptHeadGate].map(item => (
             <li key={item.key} className="flex items-center justify-between gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm">
               <span className="text-gray-700">{item.label}</span>
               <span className={`shrink-0 text-xs font-bold ${item.ok ? 'text-emerald-700' : 'text-amber-700'}`}>{item.detail}</span>
@@ -267,7 +220,7 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
         )}
       </Step>
 
-      <Step number={4} title="เลือกช่องที่ลงนามออนไลน์" done={enabled}>
+      <Step number={3} title="เลือกช่องที่ลงนามออนไลน์" done={enabled}>
         <p className="text-xs leading-5 text-gray-500">
           ใบขออนุญาตใช้ยานพาหนะส่วนกลาง (แบบ ๓) พร้อมบันทึกรับรอง สก.๑ — ช่องไหนที่ผู้ลงนามยังไม่พร้อม ปล่อยเป็นเซ็นสดได้
           เช่น ให้ผู้มีอำนาจเซ็นปากกาต่อ ส่วนผู้ขอและหัวหน้ากองลงนามออนไลน์
@@ -294,6 +247,11 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
             ))}
           </ul>
         )}
+        {esignAnyOnline(modes) && !policyRecorded && (
+          <p className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs leading-5 text-sky-900">
+            ควรมีประกาศของหน่วยงานตาม พ.ร.ฎ. ๒๕๔๙ มาตรา ๗ — ระบบไม่บังคับและเปิดใช้ได้เลย ร่างข้อความประกาศอยู่ในส่วน “ประกาศของหน่วยงาน” ด้านล่าง
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" className={`${BUTTON_CLASS} bg-indigo-600 text-white hover:bg-indigo-700`}
             disabled={busy === 'modes' || !modesDirty || blockers.length > 0}
@@ -311,6 +269,68 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
         </div>
         <Notice notice={notices.modes} />
       </Step>
+
+      <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm space-y-3">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <h3 className="text-sm font-bold text-gray-800">ประกาศของหน่วยงาน <span className="font-semibold text-gray-400">(ไม่บังคับ — ระบบเตรียมร่างให้)</span></h3>
+            <p className="text-xs leading-5 text-gray-500">
+              ระบบไม่บังคับให้มีประกาศก่อนเปิดใช้ แต่พระราชกฤษฎีกากำหนดหลักเกณฑ์และวิธีการในการทำธุรกรรมทางอิเล็กทรอนิกส์ภาครัฐ พ.ศ. ๒๕๔๙ มาตรา ๗
+              ให้แนวนโยบายและแนวปฏิบัติความมั่นคงปลอดภัยทำเป็นประกาศ และต้องได้รับความเห็นชอบจากคณะกรรมการหรือหน่วยงานที่คณะกรรมการมอบหมายจึงมีผลบังคับ
+              ควรสอบถามท้องถิ่นจังหวัดหรือกรมส่งเสริมการปกครองท้องถิ่นว่าต้องดำเนินการอย่างไร เป็นหน้าที่ของหน่วยงาน ระบบไม่ตรวจและไม่รับรองแทน
+            </p>
+          </div>
+          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${policyRecorded ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
+            {policyRecorded ? 'บันทึกไว้แล้ว' : 'ยังไม่ได้บันทึก'}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" className="text-xs font-bold text-indigo-700 underline underline-offset-2" onClick={copyDraft}>
+            <Copy size={13} className="mr-1 inline" />{copied ? 'คัดลอกแล้ว' : 'คัดลอกร่างข้อความประกาศ'}
+          </button>
+        </div>
+        <Notice notice={notices.draft} />
+        <details className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+          <summary className="cursor-pointer text-xs font-bold text-gray-700">ดูร่างข้อความประกาศ (ให้นิติกรและผู้บริหารตรวจก่อนใช้)</summary>
+          <p className="mt-2 text-[11px] leading-5 text-gray-500">
+            เป็นร่างตั้งต้นที่อ้างเฉพาะตัวบทที่ตรวจกับสำเนาทางการแล้ว ไม่ใช่คำปรึกษากฎหมาย ส่วนในวงเล็บเหลี่ยม [ ] หน่วยงานต้องตัดสินใจและกรอกเอง
+          </p>
+          <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-gray-800">{draftText}</pre>
+        </details>
+        <details className="rounded-xl border border-gray-200 px-4 py-3">
+          <summary className="cursor-pointer text-xs font-bold text-gray-700">บันทึกเลขที่ประกาศและหนังสือที่ได้รับ (ถ้ามี)</summary>
+          <div className="mt-3 space-y-3">
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-no">เลขที่ประกาศ
+                <input id="esign-no" className={`${FIELD_CLASS} mt-1`} value={announcementNo} maxLength={200}
+                  onChange={event => setAnnouncementNo(event.target.value)} placeholder="เช่น ประกาศ อบต.… ที่ 5/2569" />
+              </label>
+              <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-date">ลงวันที่
+                <input id="esign-date" type="date" className={`${FIELD_CLASS} mt-1`} value={announcementDate} max={today}
+                  onChange={event => setAnnouncementDate(event.target.value)} />
+                {announcementDate && <span className="mt-1 block text-[11px] font-normal text-gray-400">{thaiDateFromDateInput(announcementDate)}</span>}
+              </label>
+            </div>
+            <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-approval">หนังสือให้ความเห็นชอบ หรือคำชี้แจงว่าไม่ต้องขอ
+              <textarea id="esign-approval" className={`${FIELD_CLASS} mt-1 min-h-20`} value={approvalRef} maxLength={500}
+                onChange={event => setApprovalRef(event.target.value)}
+                placeholder="เช่น หนังสือท้องถิ่นจังหวัด… ที่ มท …/… ลงวันที่ … (ถ้าได้รับคำตอบว่าไม่ต้องขอความเห็นชอบ ให้ใส่เลขที่หนังสือตอบนั้น)" />
+            </label>
+            <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-url">ลิงก์ไฟล์ประกาศ
+              <input id="esign-url" className={`${FIELD_CLASS} mt-1`} value={announcementUrl} maxLength={1000} inputMode="url"
+                onChange={event => setAnnouncementUrl(event.target.value)} placeholder="https://…" />
+            </label>
+            <button type="button" className={`${BUTTON_CLASS} bg-indigo-600 text-white hover:bg-indigo-700`}
+              disabled={busy === 'policy' || !policyDirty}
+              onClick={() => run('policy', () => setEsignPolicy({
+                municipalityId, announcementNo, announcementDate, approvalRef, announcementUrl,
+              }), 'บันทึกแล้ว')}>
+              {busy === 'policy' ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} บันทึก
+            </button>
+            <Notice notice={notices.policy} />
+          </div>
+        </details>
+      </section>
 
       <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm space-y-3">
         <h3 className="text-sm font-bold text-gray-800">เปิดคืนผู้ลงนามที่ระงับการลงนามของตัวเอง</h3>
