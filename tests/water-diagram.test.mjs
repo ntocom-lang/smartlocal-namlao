@@ -833,7 +833,13 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
   assert.ok(css.includes('var(--period'), 'keyframes ต้องใช้ระยะต่อรอบจากสไตล์เส้น')
   // ผังโหลดเฉพาะ อปท. ที่อยู่ในทะเบียน และใช้สถานีระดับ อปท. ไม่ตามโหมดแชร์ ?scope=
   assert.match(page, /const WaterDiagram = lazy\(\(\) => import\('\.\.\/components\/water\/WaterDiagram'\)\)/)
-  assert.match(page, /diagramTenant\(tenant\?\.slug\) && \(/)
+  // แท็บ "เส้นทางน้ำ" บนสุดของหน้า: เกิดเมื่อ อปท. อยู่ในทะเบียนผัง + มีข้อมูลสถานีแล้วเท่านั้น (เงื่อนไขเดียวกับที่เคยแสดงส่วนผัง) · ผังอยู่ในแผงของแท็บนั้น
+  assert.match(page, /const tabsOn = Boolean\(diagramTenant\(tenant\?\.slug\)\) && !loading && data !== null && stations\.length > 0/)
+  assert.match(page, /\{tabsOn && \(\s*<div id="water-panel-route" role="tabpanel"[\s\S]*?<WaterDiagram /, 'WaterDiagram ต้องอยู่ในแผงแท็บเส้นทางน้ำที่ขึ้นเมื่อ tabsOn')
+  assert.equal((page.match(/<WaterDiagram /g) ?? []).length, 1, 'หน้าเรียก WaterDiagram จุดเดียว')
+  assert.match(page, /const activeTab = tabsOn \? tab : 'situation'/, 'ไม่มีแท็บ = หน้าเดิม (สถานการณ์เสมอ)')
+  assert.match(page, /hidden=\{activeTab !== 'situation'\}/, 'แท็บสถานการณ์ซ่อนด้วย hidden (ยังเมาท์ไว้ ไม่โหลดข้อมูลซ้ำ)')
+  assert.match(page, /\{activeTab === 'route' && \(\s*<AlertBanner /, 'แถบแจ้งเตือนต้องขึ้นบนแท็บเส้นทางน้ำด้วย')
   assert.match(page, /<WaterDiagram [^>]*stations=\{scopedData\?\.stations \?\? \[\]\}/)
   assert.ok(!/<WaterDiagram [^>]*visibleData/.test(page), 'ผังต้องไม่ผูกกับ visibleData (โหมดแชร์)')
   // ?diagram= ส่งต่อให้คอมโพเนนต์ — ตัวตัดสินว่าใครใช้ได้อยู่ที่ resolveDiagram (เฉพาะ demo) ไม่ใช่หน้านี้
