@@ -5,6 +5,7 @@ import { useReservoirReport } from './useReservoirReport'
 import { diagramById } from '../../lib/waterDiagram/diagrams'
 import { originalDiagramUrl } from '../../lib/waterDiagram/originalFiles'
 import { CHIP_TONES, EDGE_STYLES, chipWidth, isAnimated, isShimmer, liveBadges, resolveDiagram } from '../../lib/waterDiagram/model'
+import { routeKinds } from '../../lib/waterDiagram/route'
 import WaterRouteArt from './WaterRouteArt'
 import WaterRouteList from './WaterRouteList'
 
@@ -262,6 +263,33 @@ function LaneItem({ item, badges, last }) {
 
 const BUTTON = 'inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-xl border border-slate-400 bg-white px-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50'
 
+// บรรทัดคำบรรยายใต้หัว — ล็อกแต่ละวลีไม่ให้ตัดกลางคำ (ไทยไม่มีช่องว่างคั่นคำ) แต่ต้องสั้นพอจะไม่ล้นจอแคบ — วลีเดียวยาว 60 ตัวอักษรเคยถูกตัดขอบขวาที่ 390px
+function HeadingCaption({ scope, className }) {
+  return (
+    <p className={className}>
+      <span className="whitespace-nowrap">ทิศทางน้ำตามผัง</span> ·{' '}
+      <span className="whitespace-nowrap">ศูนย์บริหารจัดการทรัพยากรน้ำจังหวัดแพร่</span> ·{' '}
+      <span className="whitespace-nowrap">วาดใหม่</span>
+      {scope && <> · <span className="whitespace-nowrap font-semibold text-gray-600">{scope}</span></>}
+    </p>
+  )
+}
+
+// หัวโปสเตอร์ของแผนภาพเส้นทางน้ำ — อยู่บนสุดของส่วนนี้ ก่อนปุ่ม/คำกำกับ/แท็บ (เจ้าของระบบสั่ง: สวยแล้วต้องให้เห็นก่อน)
+// เป็น h2 จริงของส่วนนี้ (ชื่อที่โปรแกรมอ่านจอใช้ = "เส้นทางน้ำ ตำบล…")
+function RouteBanner({ route, scope }) {
+  return (
+    <header data-route-banner className="wr-poster rounded-3xl border border-sky-100 bg-gradient-to-b from-sky-50 to-white px-3 pb-4 pt-5 text-center shadow-sm lg:px-7 lg:pt-7">
+      <h2 id="water-diagram-title">
+        <span className="block text-[22px] font-semibold tracking-wide text-slate-600 lg:text-3xl">{route.eyebrow}</span>
+        <span className="block text-[40px] font-extrabold leading-[1.1] text-sky-950 lg:text-6xl">{route.title}</span>
+      </h2>
+      <p className="mt-1.5 text-[13px] text-slate-500 lg:text-[15px]">{route.place}</p>
+      <HeadingCaption scope={scope} className="mt-1 text-xs text-gray-500" />
+    </header>
+  )
+}
+
 // ── แผนภาพเส้นทางน้ำ (ผังที่มี route) — แทนผังเคลื่อนไหวเดิมของ อปท. นั้น (เจ้าของระบบสั่ง 2569-10-21) ──
 const ROUTE_LEGEND = [
   { key: 'lake', text: 'อ่างเก็บน้ำ', icon: (
@@ -270,6 +298,9 @@ const ROUTE_LEGEND = [
   { key: 'weir', text: 'ฝาย', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M9 6L25 6L28 2L12 2Z" fill="#eef2f6" /><rect x="9" y="6" width="16" height="7" fill="#8f9fb1" /></svg> },
   { key: 'pond', text: 'หนอง', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><ellipse cx="17" cy="8" rx="10" ry="6" fill="#5b9bd5" stroke="#fff" strokeWidth="1.5" /></svg> },
   { key: 'gate', text: 'ประตูระบายน้ำ', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M17 1L26 8L17 15L8 8Z" fill="#7c3aed" stroke="#5b21b6" strokeWidth="1.5" /></svg> },
+  { key: 'bridge', text: 'สะพาน', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M5 9L29 9L29 12L5 12Z" fill="#6b7b8e" /><path d="M5 6L29 6L29 9L5 9Z" fill="#dbe2ea" /><path d="M7 6V2M17 6V2M27 6V2M7 2H27" stroke="#8f9fb1" strokeWidth="1.6" fill="none" /></svg> },
+  { key: 'supply', text: 'ระบบประปา', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M12 9L10 15M22 9L24 15" stroke="#6b7b8e" strokeWidth="2" fill="none" /><rect x="9" y="1" width="16" height="9" rx="3.5" fill="#5bb4ec" /></svg> },
+  { key: 'village', text: 'หมู่บ้าน', icon: <svg viewBox="0 0 34 16" aria-hidden="true"><rect x="6" y="8" width="9" height="7" fill="#f6e7c8" /><path d="M4 8L10.5 2L17 8Z" fill="#8a6a4a" /><rect x="19" y="8" width="9" height="7" fill="#f6e7c8" /><path d="M17 8L23.5 2L30 8Z" fill="#7a5c3e" /></svg> },
   { key: 'plan', text: 'กล่องแดงประ = แผนก่อสร้าง ไม่เคลื่อนไหว', icon: (
     <svg viewBox="0 0 34 16" aria-hidden="true"><path d="M9 4L17 1L25 4V12L17 15L9 12Z" fill="#fff" stroke={RED} strokeWidth="1.8" strokeDasharray="3 2.5" /></svg>
   ) },
@@ -317,7 +348,11 @@ const WIDE_QUERY = '(min-width: 1024px)'
 
 // ── แผนภาพเส้นทางน้ำแบ่ง 3 แท็บ: แผนภาพ (ชื่อ + ภาพ + สัญลักษณ์) · รายการจุด · ที่มา — มือถือไม่ต้องเลื่อนยาวเกือบ 3,000px ──
 // แผงที่ไม่ได้เลือกใช้ display:none (ไม่ใช่แค่ซ่อนตา) ภาพที่ซ่อนจึงไม่วิ่งแอนิเมชันกินแบตและผู้ใช้โปรแกรมอ่านจอไม่ต้องอ่านซ้ำ
+// คำอธิบายสัญลักษณ์ข้อไหนต้องขึ้น = ผังนั้นมีสัญลักษณ์นั้นจริง (routeKinds) — ไม่โชว์ของที่ไม่มีในภาพ
+const ROUTE_LEGEND_NEEDS = { lake: 'lake', weir: 'weir', pond: 'pond', gate: 'gate', bridge: 'bridge', supply: 'supply', village: 'village', plan: 'planned', repair: 'repair', flow: 'flow', na: 'na' }
+
 function RouteView({ route, badges, diagram, tenantName }) {
+  const legend = ROUTE_LEGEND.filter(item => routeKinds(route).has(ROUTE_LEGEND_NEEDS[item.key]))
   const [tab, setTab] = useState('art')
   const uid = useId()
   const stopCount = route.stops.length + 1
@@ -367,22 +402,16 @@ function RouteView({ route, badges, diagram, tenantName }) {
         })}
       </div>
 
-      <div data-route-view className={`wr-poster overflow-hidden rounded-3xl border border-sky-100 bg-gradient-to-b from-sky-50 to-white px-3 pb-4 pt-5 shadow-sm lg:px-7 lg:pt-7 ${tab === 'source' ? 'hidden' : ''}`}>
-        {/* จอใหญ่: ชื่อกว้างเต็มแถวบน · รายการซ้าย ภาพขวา (เหมือนภาพอ้างอิงที่เจ้าของระบบส่งมา) · สัญลักษณ์/หมายเหตุเต็มแถวล่าง
-            มือถือ: แท็บ "แผนภาพ" เรียงชื่อ → ภาพ → สัญลักษณ์ → หมายเหตุ · แท็บ "รายการจุด" เห็นเฉพาะรายการ */}
+      <div data-route-view className={`wr-poster overflow-hidden rounded-3xl border border-sky-100 bg-gradient-to-b from-sky-50 to-white px-3 py-4 shadow-sm lg:px-7 lg:py-6 ${tab === 'source' ? 'hidden' : ''}`}>
+        {/* จอใหญ่: รายการซ้าย ภาพขวา (เหมือนภาพอ้างอิงที่เจ้าของระบบส่งมา) · สัญลักษณ์/หมายเหตุเต็มแถวล่าง
+            มือถือ: แท็บ "แผนภาพ" เรียงภาพ → สัญลักษณ์ → หมายเหตุ · แท็บ "รายการจุด" เห็นเฉพาะรายการ · ชื่อใหญ่อยู่ที่ RouteBanner บนสุดของส่วน */}
         <div className="grid gap-3 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:items-start lg:gap-x-7">
           <div role="tabpanel" id={`${uid}-panel-art`} aria-labelledby={`${uid}-tab-art`} className={tab === 'art' ? 'contents' : 'hidden'}>
-            {/* ชื่อใหญ่บนภาพเป็นตกแต่ง (หัวข้อจริงคือ h2 ของส่วนนี้) */}
-            <div className="text-center lg:col-span-2 lg:row-start-1" aria-hidden="true">
-              <p className="text-[22px] font-semibold tracking-wide text-slate-600 lg:text-3xl">{route.eyebrow}</p>
-              <p className="text-[40px] font-extrabold leading-[1.1] text-sky-950 lg:text-6xl">{route.title}</p>
-              <p className="mt-1.5 text-[13px] text-slate-500 lg:text-[15px]">{route.place}</p>
-            </div>
-            <div className="lg:col-start-2 lg:row-start-2 lg:max-w-[640px]"><WaterRouteArt route={route} badges={badges} ariaLabel={ariaLabel} /></div>
-            <ul className="wd-legend m-0 flex list-none flex-wrap gap-x-3.5 gap-y-1.5 px-0.5 text-xs text-slate-600 lg:col-span-2 lg:row-start-3" data-route-legend>
-              {ROUTE_LEGEND.map(item => <li key={item.key} className="inline-flex items-center gap-1.5">{item.icon}{item.text}</li>)}
+            <div className="lg:col-start-2 lg:row-start-1 lg:max-w-[640px]"><WaterRouteArt route={route} badges={badges} ariaLabel={ariaLabel} /></div>
+            <ul className="wd-legend m-0 flex list-none flex-wrap gap-x-3.5 gap-y-1.5 px-0.5 text-xs text-slate-600 lg:col-span-2 lg:row-start-2" data-route-legend>
+              {legend.map(item => <li key={item.key} className="inline-flex items-center gap-1.5">{item.icon}{item.text}</li>)}
             </ul>
-            <div className="flex items-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600 lg:col-span-2 lg:row-start-4" data-route-note>
+            <div className="flex items-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600 lg:col-span-2 lg:row-start-3" data-route-note>
               <svg width="40" height="40" viewBox="0 0 44 44" aria-hidden="true" className="shrink-0">
                 <circle cx="22" cy="22" r="19" fill="#fff" stroke="#cbd5e1" strokeWidth="2" /><path d="M22 6L26 22L22 38L18 22Z" fill="#e2e8f0" />
                 <path d="M12 12L32 32M32 12L12 32" stroke="#dc2626" strokeWidth="3" strokeLinecap="round" />
@@ -394,7 +423,7 @@ function RouteView({ route, badges, diagram, tenantName }) {
             </div>
           </div>
           <div role="tabpanel" id={`${uid}-panel-list`} aria-labelledby={`${uid}-tab-list`}
-            className={`${tab === 'list' ? '' : 'hidden lg:block'} lg:col-start-1 lg:row-start-2`}>
+            className={`${tab === 'list' ? '' : 'hidden lg:block'} lg:col-start-1 lg:row-start-1`}>
             <WaterRouteList route={route} badges={badges} />
           </div>
         </div>
@@ -455,19 +484,15 @@ function DiagramBody({ diagram, scope, tenantName, stations, now }) {
 
   return (
     <section id="water-diagram" ref={root} className={`wd-root mt-4 space-y-3 ${paused ? 'wd-paused' : ''}`} aria-labelledby="water-diagram-title">
-      <div className="water-section-heading flex items-start gap-2.5 px-1" style={{ background: 'linear-gradient(110deg,#ccfbf1,#f0fdfa)' }}>
-        <MapIcon size={19} className="mt-0.5 shrink-0 text-teal-700" />
-        <div>
-          <h2 id="water-diagram-title" className="text-sm font-bold text-gray-800">{route?.heading ?? diagram.title}</h2>
-          <p className="text-xs text-gray-500">
-            {/* ล็อกแต่ละวลีไม่ให้ตัดกลางคำ (ไทยไม่มีช่องว่างคั่นคำ) แต่ต้องสั้นพอจะไม่ล้นจอแคบ — วลีเดียวยาว 60 ตัวอักษรเคยถูกตัดขอบขวาที่ 390px */}
-            <span className="whitespace-nowrap">ทิศทางน้ำตามผัง</span> ·{' '}
-            <span className="whitespace-nowrap">ศูนย์บริหารจัดการทรัพยากรน้ำจังหวัดแพร่</span> ·{' '}
-            <span className="whitespace-nowrap">วาดใหม่</span>
-            {scope && <> · <span className="whitespace-nowrap font-semibold text-gray-600">{scope}</span></>}
-          </p>
+      {route ? <RouteBanner route={route} scope={scope} /> : (
+        <div className="water-section-heading flex items-start gap-2.5 px-1" style={{ background: 'linear-gradient(110deg,#ccfbf1,#f0fdfa)' }}>
+          <MapIcon size={19} className="mt-0.5 shrink-0 text-teal-700" />
+          <div>
+            <h2 id="water-diagram-title" className="text-sm font-bold text-gray-800">{diagram.title}</h2>
+            <HeadingCaption scope={scope} className="text-xs text-gray-500" />
+          </div>
         </div>
-      </div>
+      )}
 
       {reducedMotion && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">

@@ -152,6 +152,42 @@ function Creeks({ x, y, n = 4, weirs = 2 }) {
   )
 }
 
+// สะพาน: พื้นสะพาน + ราวกั้น + เสา
+function Bridge({ x, y, s = 1 }) {
+  return (
+    <g transform={`translate(${x} ${y}) scale(${s})`}>
+      <path d="M-24 4 L24 4 L24 10 L-24 10Z" fill="#6b7b8e" />
+      <path d="M-24 -2 L24 -2 L24 4 L-24 4Z" fill="#dbe2ea" />
+      <path d="M-22 -2 V-11 M-8 -2 V-11 M8 -2 V-11 M22 -2 V-11" stroke="#8f9fb1" strokeWidth="2" />
+      <path d="M-22 -11 H22" stroke="#8f9fb1" strokeWidth="2.6" strokeLinecap="round" />
+      <path d="M-17 10 v7 M17 10 v7" stroke="#6b7b8e" strokeWidth="3.2" />
+    </g>
+  )
+}
+
+// ระบบประปา: ถังน้ำบนขาตั้ง (สีฟ้า ไม่ใช้สีแดงเพราะแดงในแผนภาพนี้หมายถึงแผนก่อสร้างเท่านั้น)
+function Supply({ x, y }) {
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <path d="M-9 -3 L-12 17 M9 -3 L12 17 M-10.5 7 H10.5" stroke="#6b7b8e" strokeWidth="3" strokeLinecap="round" fill="none" />
+      <rect x="-15" y="-21" width="30" height="19" rx="6" fill="#5bb4ec" stroke="#fff" strokeWidth="2.2" />
+      <path d="M0 -17 C4 -12 5.5 -9.5 5.5 -7.5 A5.5 5.5 0 0 1 -5.5 -7.5 C-5.5 -9.5 -4 -12 0 -17Z" fill="#fff" opacity=".92" />
+    </g>
+  )
+}
+
+// หมู่บ้าน: บ้าน 3 หลัง (หลังคาสีน้ำตาล ไม่ใช้สีแดง)
+function Village({ x, y }) {
+  const house = (dx, dy, k, roof) => (
+    <g key={dx} transform={`translate(${x + dx} ${y + dy}) scale(${k})`}>
+      <rect x="-9" y="-6" width="18" height="13" fill="#f6e7c8" stroke="#fff" strokeWidth="1.2" />
+      <path d="M-12.5 -6 L0 -17 L12.5 -6Z" fill={roof} />
+      <rect x="-2.6" y="0" width="5.2" height="7" fill="#8b5e3c" />
+    </g>
+  )
+  return <g>{house(-21, 5, 0.9, '#8a6a4a')}{house(1, 0, 1.05, '#7a5c3e')}{house(25, 6, 0.85, '#9a7b57')}</g>
+}
+
 function Prop({ p }) {
   switch (p.t) {
     case 'lake': return <Lake x={p.x} y={p.y} rx={p.rx} ry={p.ry} na={p.na} />
@@ -162,6 +198,9 @@ function Prop({ p }) {
     case 'gate': return <Gate x={p.x} y={p.y} />
     case 'repair': return <Repair x={p.x} y={p.y} />
     case 'creeks': return <Creeks x={p.x} y={p.y} n={p.n} weirs={p.weirs} />
+    case 'bridge': return <Bridge x={p.x} y={p.y} s={p.s} />
+    case 'supply': return <Supply x={p.x} y={p.y} />
+    case 'village': return <Village x={p.x} y={p.y} />
     default: return null
   }
 }
@@ -219,7 +258,7 @@ function River({ route, badges }) {
   const water = top + 44
   const surface = top + 48
   const floor = h - 6
-  const pill = pillFor({ slot: route.river.slot }, badges)
+  const pill = route.river.slot ? pillFor({ slot: route.river.slot }, badges) : null
   return (
     <g data-river>
       <rect x="0" y={top} width={w} height="16" fill="url(#wr-grass)" />

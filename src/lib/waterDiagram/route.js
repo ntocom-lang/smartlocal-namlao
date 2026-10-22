@@ -12,7 +12,7 @@
 import { CHIP_TONES, DIAGRAM_STATUSES, chipWidth } from './model.js'
 
 // ชนิดของสิ่งที่วางบนเกาะ (props) — เพิ่มชนิดใหม่ต้องเพิ่มทั้งที่นี่และใน WaterRouteArt.jsx
-export const PROP_KINDS = ['lake', 'pond', 'weir', 'ghost', 'pump', 'gate', 'repair', 'creeks']
+export const PROP_KINDS = ['lake', 'pond', 'weir', 'ghost', 'pump', 'gate', 'repair', 'creeks', 'bridge', 'supply', 'village']
 
 // เกาะแต่ละเกาะหนา th และมีเงา — ใช้คำนวณทั้งตอนวาดและตอนเช็กว่าเกาะไม่ทับกัน
 export const ISLAND_THICKNESS = 14
@@ -52,6 +52,21 @@ export function wavePath(x0, x1, y, floor, period = 28) {
   let d = `M${x0 - 60} ${y}`
   for (let x = x0 - 60; x < x1 + 60; x += period) d += ` q${period / 4} -5 ${period / 2} 0 t${period / 2} 0`
   return `${d} V${floor} H${x0 - 60}Z`
+}
+
+// ชนิดสัญลักษณ์ที่แผนภาพนี้ใช้จริง — ให้คำอธิบายสัญลักษณ์ใต้ภาพขึ้นเฉพาะที่ผังนั้นมี (ไม่โชว์ของที่ไม่มีในภาพ)
+// 'planned' = มีจุดแผนก่อสร้าง · 'flow' = มีเส้นวิ่ง · 'na' = ป้ายขอบประ (ไม่มีค่า/ค้าง/ไม่ระบุ) ซึ่งเกิดได้ทุกผังที่มีป้ายค่าสด จึงมีเสมอ
+export function routeKinds(route) {
+  const kinds = new Set(['na'])
+  for (const stop of route.stops) {
+    if (stop.status === 'planned') kinds.add('planned')
+    for (const prop of stop.props ?? []) {
+      kinds.add(prop.t)
+      if (prop.t === 'creeks' && prop.weirs > 0) kinds.add('weir')
+    }
+  }
+  if ((route.streams ?? []).some(st => st.flow)) kinds.add('flow')
+  return kinds
 }
 
 export const pinPosition = stop => ({ x: stop.island.x - stop.island.rx + 10, y: stop.island.y - 4 })
@@ -159,8 +174,9 @@ export function routeIssues(route, binds = {}) {
   // แม่น้ำ
   const river = route.river ?? {}
   if (!finite(river.top) || river.top <= 0 || river.top + 60 > h) bad('river.top ต้องอยู่ในกรอบและเหลือที่ให้ผืนน้ำ')
-  if (!river.name || !river.slot) bad('แม่น้ำต้องมี name และ slot ค่าสด')
-  else markSlot(river.slot, 'แม่น้ำ')
+  // slot ค่าสดของแม่น้ำใส่หรือไม่ใส่ก็ได้ (แม่น้ำปลายทางของบางตำบลไม่มีสถานีวัด) แต่ถ้าใส่ต้องอยู่ใน binds
+  if (!river.name) bad('แม่น้ำต้องมี name')
+  if (river.slot) markSlot(river.slot, 'แม่น้ำ')
   for (const slot of river.live ?? []) markSlot(slot, 'รายการแม่น้ำ')
 
   // ลำน้ำ
