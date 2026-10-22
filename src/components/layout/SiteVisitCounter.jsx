@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Eye, ChevronRight } from 'lucide-react'
+import { useAuth } from '../../contexts/AuthContext'
 import { useTenant } from '../../contexts/TenantContext'
 import { withModule } from '../../lib/withModule'
 import { useSiteOpenSummary } from '../../lib/siteOpenCounter'
@@ -20,12 +21,17 @@ const ITEMS = [
 // right-4 กว้าง 44px) ลอยทับขวาของท้ายเว็บพอดีตอนเลื่อนถึงล่างสุด บรรทัดยาวบนจอ 360px เคยโดนบัง
 // ตรงยอด "ทั้งหมด" ซึ่งเป็นตัวเลขที่สำคัญที่สุด inline-block + grid ทำให้กล่องกว้างแค่เท่าเนื้อหา
 function SiteVisitCounter() {
-  const { tenant } = useTenant()
-  const summary = useSiteOpenSummary(tenant?.id)
+  const { session, role, profileLoading, profileError } = useAuth()
+  const { tenant, loading: tenantLoading } = useTenant()
+  // กล่องท้ายเว็บแสดงเฉพาะผู้บริหาร (viewer) ที่ยืนยันสิทธิ์แล้ว — ไม่เพิ่มสิทธิ์ให้ admin
+  // การนับของทุกคนยังทำผ่าน AppShell ตามเดิม ไม่ผูกกับการแสดงกล่องนี้
+  const canViewCounter = Boolean(session?.user) && role === 'viewer'
+    && !tenantLoading && !profileLoading && !profileError
+  const summary = useSiteOpenSummary(canViewCounter ? tenant?.id : null)
   const opens = summary?.opens
 
   // ยังไม่มียอด/อ่านไม่ได้ = ไม่แสดงทั้งกล่อง ดีกว่าขึ้น 0 หลอกๆ ระหว่างรอ
-  if (!opens) return null
+  if (!canViewCounter || !opens) return null
 
   return (
     <Link to="/reports/visitors" aria-label="ดูสถิติการเข้าชมเว็บไซต์"
