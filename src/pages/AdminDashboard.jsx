@@ -13,7 +13,7 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat, ArrowLeftRight, BookUser, ShieldQuestion,
-  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck, Menu
+  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck, FileSignature, Menu
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 // ไอคอนที่เป็นได้ทั้งอิโมจิและรูปแนบ — ของกลางชุดเดียวกับศูนย์ข้อมูลดิจิทัล ไม่ทำซ้ำอีกชุด
@@ -38,6 +38,7 @@ import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import SignatorySettings from '../components/admin/SignatorySettings'
+import EsignSettings from '../components/admin/EsignSettings'
 import DocumentTypeAssignments from '../components/admin/DocumentTypeAssignments'
 import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
@@ -5394,6 +5395,7 @@ const PAGE_LABELS = {
   report: 'รายงานสรุป',
   categories: 'ประเภทคำร้อง',
   signatories: 'ผู้ลงนามเอกสาร',
+  esign: 'ลงนามออนไลน์',
   emergency: 'เบอร์โทรสำคัญ',
   directory: 'เบอร์โทรสำคัญ',
   locations: 'สถานที่เกิดเหตุ',
@@ -5444,6 +5446,7 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       items: [
         { key: 'system-settings', label: 'ตั้งค่าระบบ', Icon: Settings, color: '#3b82f6', bg: '#dbeafe', show: canManageSystem, desc: 'ชื่อระบบ ข้อมูลหน่วยงาน ธีม และโมดูลที่เปิดใช้' },
         { key: 'signatories', label: 'ผู้ลงนามเอกสาร', Icon: UserRoundCheck, color: '#4338ca', bg: '#e0e7ff', show: canManageSystem, desc: 'ทะเบียนผู้ลงนามกลางที่ใช้ร่วมทุกแบบพิมพ์' },
+        { key: 'esign', label: 'ลงนามออนไลน์', Icon: FileSignature, color: '#0f766e', bg: '#ccfbf1', show: canManageSystem, desc: 'เลือกเรื่องและช่องที่ลงนามในระบบแทนเซ็นกระดาษ' },
         { key: 'users', label: 'จัดการผู้ใช้และการแต่งตั้ง', Icon: Shield, color: '#7c3aed', bg: '#ede9fe', show: canManageSystem, desc: 'บัญชีผู้ใช้ บทบาท กอง และการแต่งตั้ง' },
         { key: 'audit-log', label: 'บันทึกกิจกรรม', Icon: BookOpen, color: '#ef4444', bg: '#fee2e2', show: canManageSystem, desc: 'ประวัติการดำเนินการย้อนหลังสำหรับตรวจสอบ' },
       ],
@@ -6156,6 +6159,8 @@ export default function AdminDashboard() {
         <LocationManager tenant={tenant} />
       ) : activePage === 'signatories' ? (
         <SignatorySettings tenant={tenant} />
+      ) : activePage === 'esign' ? (
+        <EsignSettings tenant={tenant} onOpenSignatories={() => setActivePage('signatories')} />
       ) : activePage === 'categories' ? (
         // หน้า "ผู้รับผิดชอบแต่ละประเภทคำร้อง" (activePage 'assignments', AssignmentManager component)
         // ถูกลบไปแล้ว — เป็น UI ซ้ำซ้อนกับส่วนตั้งผู้รับผิดชอบ+SLA ที่ฝังอยู่ใน CategoryManager นี้อยู่แล้ว
@@ -6257,6 +6262,18 @@ export default function AdminDashboard() {
               </button>
             )}
             {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+              <button onClick={() => setActivePage('esign')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ccfbf1' }}>
+                  <FileSignature size={24} style={{ color: '#0f766e' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">ลงนามออนไลน์</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">เลือกเรื่องและช่อง</p>
+                </div>
+              </button>
+            )}
+            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
               <button onClick={() => setActivePage('system-settings')}
                 className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#dbeafe' }}>
@@ -6299,6 +6316,7 @@ export default function AdminDashboard() {
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'signatories',      Icon: UserRoundCheck, color: '#4338ca', bg: '#e0e7ff', label: 'ผู้ลงนามเอกสาร', desc: 'นายก ปลัด หัวหน้ากอง ใช้ร่วมทุกเอกสาร', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'esign',            Icon: FileSignature, color: '#0f766e', bg: '#ccfbf1', label: 'ลงนามออนไลน์', desc: 'เลือกเรื่องและช่องที่ลงนามในระบบแทนเซ็นกระดาษ', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้และการแต่งตั้ง', desc: 'ตำแหน่ง สังกัด บทบาท และสิทธิ์', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (
                   <tr key={key} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActivePage(key)}>
