@@ -4,7 +4,7 @@ import { lazy, Suspense, useCallback, useEffect, useId, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, CloudRain, Dam, ExternalLink,
-  MapPin, RefreshCw, Waves,
+  MapPin, RefreshCw, Route, Waves,
 } from 'lucide-react'
 import './WaterSituationPage.css'
 import WaterSituationShare from './WaterSituationShare'
@@ -35,6 +35,13 @@ const WaterSystem = lazy(() => import('../components/water/WaterSystem'))
 const THAIWATER_URL = 'https://www.thaiwater.net'
 const EWS_URL = 'https://ews.dwr.go.th/'
 
+// แท็บบนสุดของหน้า — สถานการณ์ = ค่าสถานีทั้งหมดเหมือนเดิม · เส้นทางน้ำ = แผนภาพของตำบล (เฉพาะ อปท. ที่มีแผนภาพ)
+// hint = บอกคนมาใหม่ว่าแต่ละแท็บมีอะไร (เขียนให้ตรงกับทุก อปท. — ไม่ระบุว่ามีฝน/อ่าง/ระดับน้ำครบ เพราะแต่ละที่มีไม่เท่ากัน)
+const WATER_TABS = [
+  { key: 'situation', label: 'สถานการณ์', hint: 'ค่าฝนและน้ำจากสถานี', Icon: CloudRain },
+  { key: 'route', label: 'เส้นทางน้ำ', hint: 'ภาพประกอบทิศทางน้ำ', Icon: Route },
+]
+
 function fetchSituation(municipalityId) {
   return supabase.rpc('get_public_water_situation', { _municipality_id: municipalityId })
 }
@@ -51,9 +58,15 @@ function fetchSituation(municipalityId) {
  */
 export default function WaterSituationPage() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const localOnly = searchParams.get('scope') === 'local'
   const nearbyOnly = searchParams.get('scope') === 'nearby5'
+  // เปิดแท็บเส้นทางน้ำตรงๆ ได้ด้วย ?tab=route · demo ที่ใส่ ?diagram= มาดูผังก็เปิดแท็บนี้ให้เอง · ค่าอื่น = สถานการณ์
+  const [tab, setTab] = useState(() => {
+    const wanted = searchParams.get('tab')
+    if (wanted === 'route' || wanted === 'situation') return wanted
+    return searchParams.get('diagram') ? 'route' : 'situation'
+  })
   const { tenant, loading: tenantLoading } = useTenant()
   const tenantId = tenant?.id
   // ประกาศของ อปท. ที่ผู้มีสิทธิ์ยืนยันแล้ว (ฤดูแล้ง/ฤดูฝน เฟส 2) — ขึ้นบนสุดของหน้า · ไม่มีประกาศ = null ไม่มีอะไรเปลี่ยน
@@ -139,6 +152,24 @@ export default function WaterSituationPage() {
   // ระบบน้ำของตำบล: อปท. ที่ยังไม่มีระบบที่ถอดแล้วไม่เห็นหัวข้อนี้เลย · ?system= ใช้ได้เฉพาะ demo (resolveSystem เมินที่อื่น)
   const systemSelection = resolveSystem(tenant?.slug, searchParams.get('system'))
   const waterSystem = systemSelection ? systemById(systemSelection.system) : null
+  // แท็บขึ้นเมื่อ อปท. นี้มีแผนภาพ และมีข้อมูลสถานีให้แสดงแล้ว (เงื่อนไขเดียวกับที่เคยแสดงส่วนแผนภาพ) — ไม่เข้าเงื่อนไข = หน้าเดิมไม่มีแท็บ
+  const tabsOn = Boolean(diagramTenant(tenant?.slug)) && !loading && data !== null && stations.length > 0
+  const activeTab = tabsOn ? tab : 'situation'
+  // เก็บแท็บไว้ใน URL (แทนที่รายการเดิม ไม่เพิ่มประวัติ) — รีเฟรช/ส่งลิงก์ต่อแล้วเปิดแท็บเดิม
+  const selectTab = next => {
+    setTab(next)
+    setSearchParams(prev => { const q = new URLSearchParams(prev); q.set('tab', next); return q }, { replace: true })
+  }
+  // ลูกศรซ้าย/ขวา · Home · End สลับแท็บ (แบบเดียวกับแท็บในแผนภาพ)
+  const onTabKeyDown = event => {
+    const keys = WATER_TABS.map(t => t.key)
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key]
+    const next = step ? keys[(keys.indexOf(activeTab) + step + keys.length) % keys.length] : event.key === 'Home' ? keys[0] : event.key === 'End' ? keys.at(-1) : null
+    if (!next) return
+    event.preventDefault()
+    selectTab(next)
+    document.getElementById(`water-tab-${next}`)?.focus()
+  }
 
   return (
     // จอกว้าง (lg ขึ้นไป) ขยายเป็น 2 คอลัมน์ — คอลัมน์เดียวกว้าง 512px ทิ้งพื้นที่ว่างสองข้างเกินครึ่งจอ
@@ -157,75 +188,101 @@ export default function WaterSituationPage() {
         <WaterLandscape />
       </header>
 
-      <div className="px-4 pt-1 md:pt-4 space-y-4">
-        <WaterAnnouncementCard view={announcement} />
-        <HydroHourlyPanel key={tenant?.slug} profile={hydroProfile} report={hydroReports[0]} failed={hydro?.failed} now={checkedAt} />
-        {loading ? (
-          <div className="space-y-3">
-            {[0, 1, 2].map(i => <div key={i} className="h-24 rounded-2xl bg-gray-100 animate-pulse" />)}
-          </div>
-        ) : data === null ? (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-            <p>โหลดข้อมูลสถานการณ์น้ำไม่สำเร็จ กรุณาลองใหม่อีกครั้ง</p>
-            <button onClick={refresh}
-              className="mt-3 inline-flex min-h-[44px] items-center gap-1.5 rounded-xl bg-white px-4 text-sm font-semibold text-rose-700 border border-rose-200">
-              <RefreshCw size={15} /> ลองใหม่
+      {tabsOn && (
+        <div role="tablist" aria-label="มุมมองของหน้าสถานการณ์น้ำ–ฝน" onKeyDown={onTabKeyDown} className="mx-4 mb-2 mt-1 grid grid-cols-2 gap-2.5 md:mt-3 md:max-w-lg">
+          {/* ปุ่มใหญ่เต็มแถว: ตัวที่เลือกอยู่ทึบสีเดียวกับหัวหน้า ตัวที่ยังไม่เลือกเป็นปุ่มขาวมีกรอบสี — เห็นชัดว่ากดได้ ไม่ใช่แค่หัวข้อ */}
+          {WATER_TABS.map(({ key, label, hint, Icon }) => (
+            <button key={key} id={`water-tab-${key}`} role="tab" type="button" aria-selected={activeTab === key} aria-controls={`water-panel-${key}`}
+              tabIndex={activeTab === key ? 0 : -1} onClick={() => selectTab(key)}
+              className={`flex min-h-[64px] flex-col items-start justify-center gap-0.5 rounded-2xl border-2 px-3.5 py-2 text-left transition ${activeTab === key
+                ? 'border-transparent bg-gradient-to-br from-[#0b4a6e] to-[#0e7490] text-white shadow-lg shadow-sky-900/25'
+                : 'border-sky-200 bg-white text-sky-900 shadow-sm hover:border-sky-400 hover:bg-sky-50'}`}>
+              <span className="flex items-center gap-2 text-base font-bold leading-tight"><Icon size={20} aria-hidden="true" />{label}</span>
+              <small className={`text-[11px] leading-tight ${activeTab === key ? 'text-sky-100' : 'text-slate-600'}`}>{hint}</small>
             </button>
-          </div>
-        ) : stations.length === 0 ? (
-          <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center">
-            <CloudRain size={32} className="mx-auto text-gray-300" />
-            <p className="mt-2 text-sm font-semibold text-gray-700">{nearbyOnly ? 'ไม่มีสถานีในตำบลหรือที่ยืนยันระยะไม่เกิน 5 กม. จากสำนักงาน ไม่ได้หมายความว่าสถานการณ์ปกติ' : localOnly ? 'ไม่มีสถานีที่ยืนยันตำบล อำเภอ และจังหวัดตรงกับหน่วยงานนี้ ไม่ได้หมายความว่าสถานการณ์ปกติ' : 'ยังไม่ได้ตั้งค่าสถานีตรวจวัดของหน่วยงานนี้'}</p>
-            <a href={THAIWATER_URL} target="_blank" rel="noopener noreferrer"
-              className="mt-2 inline-flex min-h-[44px] items-center gap-1 text-xs font-semibold text-sky-700">
-              ดูสถานการณ์น้ำทั่วประเทศที่ thaiwater.net <ExternalLink size={12} />
-            </a>
-          </div>
-        ) : (
-          <>
-            <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} />
-            <AlertBanner rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings}
-              homeAmphoe={tenant?.district} now={checkedAt} tenantName={tenant?.name} />
-            <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
-            <nav className="water-section-nav" aria-label="หมวดข้อมูลน้ำ–ฝน">
-              {rain.length > 0 && <a href="#water-rain"><CloudRain size={18} /><span>ฝน</span><small>{rain.length} สถานี</small></a>}
-              {dams.length > 0 && <a href="#water-dams"><Dam size={18} /><span>อ่างเก็บน้ำ</span><small>{dams.length} แห่ง</small></a>}
-              {levels.length > 0 && <a href="#water-levels"><Waves size={18} /><span>ระดับน้ำ</span><small>{levels.length} สถานี</small></a>}
-            </nav>
-            {/* ซ้าย: ฝน · ขวา: อ่างเก็บน้ำ แล้วระดับน้ำ — มือถือเรียงตามลำดับเดิม ฝน → อ่าง → ระดับน้ำ
-                จอ xl ขึ้นไปแยกเป็น 3 คอลัมน์ (xl:contents ปล่อยลูกของกล่องขวาไปเป็นช่องของกริดเอง)
-                เพราะพอใส่ภาพตัดขวางแล้วคอลัมน์ขวายาวกว่าซ้ายราว 660px เหลือขาวครึ่งจอ */}
-            <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0 xl:grid-cols-3">
-              {rain.length > 0 && (
-                <RainSection stations={rain} ewsByCode={ewsByCode} homeAmphoe={tenant?.district} now={checkedAt} />
-              )}
-              {(dams.length > 0 || levels.length > 0) && (
-                <div className="space-y-4 xl:contents xl:space-y-0">
-                  {dams.length > 0 && <DamSection stations={dams} homeAmphoe={tenant?.district} now={checkedAt} system={waterSystem} />}
-                  {levels.length > 0 && <WaterLevelSection stations={levels} homeAmphoe={tenant?.district} now={checkedAt} system={waterSystem} />}
-                </div>
-              )}
-            </div>
-            {/* อ่างขนาดเล็กจากผังน้ำออนไลน์แพร่ — ไม่พึ่งฐานข้อมูล/RPC ข้างบน (ดึงผ่าน Worker เอง) จึงอยู่นอกเงื่อนไข dams.length
-                ทุ่งแค้วไม่มีอ่างขนาดกลางในรัศมี 15 กม. แต่มีห้วยยอย/ห้วยปุยในผังน้ำตำบล */}
-            <SmallReservoirSection slug={tenant?.slug} tenantName={tenant?.name} now={checkedAt} />
-            {waterSystem && (
-              <Suspense fallback={null}>
-                <WaterSystem slug={tenant?.slug}
-                  stations={scopedData?.stations ?? []} now={checkedAt} previewId={searchParams.get('system')} />
-              </Suspense>
-            )}
-            {/* ผังน้ำตำบล (ภาพประกอบทิศทางน้ำตามผัง ไม่ใช่ค่าวัด) — ใช้สถานีระดับ อปท. ไม่ผูกกับโหมดแชร์ ?scope= */}
-            {diagramTenant(tenant?.slug) && (
-              <Suspense fallback={null}>
-                <WaterDiagram slug={tenant?.slug} tenantName={tenant?.name} stations={scopedData?.stations ?? []} now={checkedAt} previewId={searchParams.get('diagram')} />
-              </Suspense>
-            )}
-            <SourceNote tenantName={tenant?.name} />
+          ))}
+        </div>
+      )}
 
-          </>
+      <div className="px-4 pt-1 md:pt-4 space-y-4">
+        {/* ประกาศของ อปท. อยู่เหนือแท็บทั้งสอง — ไม่หายเมื่อสลับไปดูเส้นทางน้ำ */}
+        <WaterAnnouncementCard view={announcement} />
+        <div id="water-panel-situation" role={tabsOn ? 'tabpanel' : undefined} aria-labelledby={tabsOn ? 'water-tab-situation' : undefined} hidden={activeTab !== 'situation'} className="space-y-4">
+          <HydroHourlyPanel key={tenant?.slug} profile={hydroProfile} report={hydroReports[0]} failed={hydro?.failed} now={checkedAt} />
+          {loading ? (
+            <div className="space-y-3">
+              {[0, 1, 2].map(i => <div key={i} className="h-24 rounded-2xl bg-gray-100 animate-pulse" />)}
+            </div>
+          ) : data === null ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+              <p>โหลดข้อมูลสถานการณ์น้ำไม่สำเร็จ กรุณาลองใหม่อีกครั้ง</p>
+              <button onClick={refresh}
+                className="mt-3 inline-flex min-h-[44px] items-center gap-1.5 rounded-xl bg-white px-4 text-sm font-semibold text-rose-700 border border-rose-200">
+                <RefreshCw size={15} /> ลองใหม่
+              </button>
+            </div>
+          ) : stations.length === 0 ? (
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center">
+              <CloudRain size={32} className="mx-auto text-gray-300" />
+              <p className="mt-2 text-sm font-semibold text-gray-700">{nearbyOnly ? 'ไม่มีสถานีในตำบลหรือที่ยืนยันระยะไม่เกิน 5 กม. จากสำนักงาน ไม่ได้หมายความว่าสถานการณ์ปกติ' : localOnly ? 'ไม่มีสถานีที่ยืนยันตำบล อำเภอ และจังหวัดตรงกับหน่วยงานนี้ ไม่ได้หมายความว่าสถานการณ์ปกติ' : 'ยังไม่ได้ตั้งค่าสถานีตรวจวัดของหน่วยงานนี้'}</p>
+              <a href={THAIWATER_URL} target="_blank" rel="noopener noreferrer"
+                className="mt-2 inline-flex min-h-[44px] items-center gap-1 text-xs font-semibold text-sky-700">
+                ดูสถานการณ์น้ำทั่วประเทศที่ thaiwater.net <ExternalLink size={12} />
+              </a>
+            </div>
+          ) : (
+            <>
+              <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} />
+              <AlertBanner rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings}
+                homeAmphoe={tenant?.district} now={checkedAt} tenantName={tenant?.name} />
+              <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
+              <nav className="water-section-nav" aria-label="หมวดข้อมูลน้ำ–ฝน">
+                {rain.length > 0 && <a href="#water-rain"><CloudRain size={18} /><span>ฝน</span><small>{rain.length} สถานี</small></a>}
+                {dams.length > 0 && <a href="#water-dams"><Dam size={18} /><span>อ่างเก็บน้ำ</span><small>{dams.length} แห่ง</small></a>}
+                {levels.length > 0 && <a href="#water-levels"><Waves size={18} /><span>ระดับน้ำ</span><small>{levels.length} สถานี</small></a>}
+              </nav>
+              {/* ซ้าย: ฝน · ขวา: อ่างเก็บน้ำ แล้วระดับน้ำ — มือถือเรียงตามลำดับเดิม ฝน → อ่าง → ระดับน้ำ
+                  จอ xl ขึ้นไปแยกเป็น 3 คอลัมน์ (xl:contents ปล่อยลูกของกล่องขวาไปเป็นช่องของกริดเอง)
+                  เพราะพอใส่ภาพตัดขวางแล้วคอลัมน์ขวายาวกว่าซ้ายราว 660px เหลือขาวครึ่งจอ */}
+              <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0 xl:grid-cols-3">
+                {rain.length > 0 && (
+                  <RainSection stations={rain} ewsByCode={ewsByCode} homeAmphoe={tenant?.district} now={checkedAt} />
+                )}
+                {(dams.length > 0 || levels.length > 0) && (
+                  <div className="space-y-4 xl:contents xl:space-y-0">
+                    {dams.length > 0 && <DamSection stations={dams} homeAmphoe={tenant?.district} now={checkedAt} system={waterSystem} />}
+                    {levels.length > 0 && <WaterLevelSection stations={levels} homeAmphoe={tenant?.district} now={checkedAt} system={waterSystem} />}
+                  </div>
+                )}
+              </div>
+              {/* อ่างขนาดเล็กจากผังน้ำออนไลน์แพร่ — ไม่พึ่งฐานข้อมูล/RPC ข้างบน (ดึงผ่าน Worker เอง) จึงอยู่นอกเงื่อนไข dams.length
+                  ทุ่งแค้วไม่มีอ่างขนาดกลางในรัศมี 15 กม. แต่มีห้วยยอย/ห้วยปุยในผังน้ำตำบล */}
+              <SmallReservoirSection slug={tenant?.slug} tenantName={tenant?.name} now={checkedAt} />
+              {waterSystem && (
+                <Suspense fallback={null}>
+                  <WaterSystem slug={tenant?.slug}
+                    stations={scopedData?.stations ?? []} now={checkedAt} previewId={searchParams.get('system')} />
+                </Suspense>
+              )}
+              <SourceNote tenantName={tenant?.name} />
+
+            </>
+          )}
+          {(scopedData || hydroReports.length > 0) && <WaterSituationShare tenant={tenant} data={{ ...(scopedData || { stations: [] }), hydroReports }} now={checkedAt} refreshFailed={loadError} renderCards={WaterShareCards} />}
+        </div>
+        {tabsOn && (
+          <div id="water-panel-route" role="tabpanel" aria-labelledby="water-tab-route" hidden={activeTab !== 'route'} className="space-y-4">
+            {/* แถบแจ้งเตือนสถานการณ์ต้องเห็นบนแท็บนี้ด้วย — ตัวที่อยู่ในแท็บสถานการณ์ถูกซ่อนอยู่ */}
+            {activeTab === 'route' && (
+              <AlertBanner rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings}
+                homeAmphoe={tenant?.district} now={checkedAt} tenantName={tenant?.name} />
+            )}
+            {/* ผังน้ำตำบล (ภาพประกอบทิศทางน้ำตามผัง ไม่ใช่ค่าวัด) — ใช้สถานีระดับ อปท. ไม่ผูกกับโหมดแชร์ ?scope= · เมาท์ไว้ตลอด (แค่ซ่อน) สลับแท็บแล้วไม่ต้องโหลดใหม่ */}
+            <Suspense fallback={null}>
+              <WaterDiagram slug={tenant?.slug} tenantName={tenant?.name} stations={scopedData?.stations ?? []} now={checkedAt} previewId={searchParams.get('diagram')} />
+            </Suspense>
+          </div>
         )}
-        {(scopedData || hydroReports.length > 0) && <WaterSituationShare tenant={tenant} data={{ ...(scopedData || { stations: [] }), hydroReports }} now={checkedAt} refreshFailed={loadError} renderCards={WaterShareCards} />}
       </div>
     </div>
   )

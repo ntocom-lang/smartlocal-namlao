@@ -110,7 +110,10 @@ const SCENES = {
   },
 }
 
-async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 900, reducedMotion = 'no-preference', diagram = null } = {}) {
+// ฝนหนักมาก (≥ 90.1 มม.) ทำให้แถบแจ้งเตือนสถานการณ์ของหน้าขึ้น
+SCENES.heavyRain = { ...SCENES.normal, stations: [station('rain', 'RES038', 'อ่างเก็บน้ำห้วยยอย', { recorded_at: hoursAgo(0.5), rain_24h_mm: 95.5, distance_km: 1.8 })] }
+
+async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 900, reducedMotion = 'no-preference', diagram = null, tab = 'route', announcement = null } = {}) {
   const scene = SCENES[sceneName]
   const context = await browser.newContext({ viewport: { width, height }, locale: 'th-TH', reducedMotion })
   const page = await context.newPage()
@@ -128,8 +131,14 @@ async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 9
   })
   await page.route('**/rest/v1/rpc/get_public_water_situation', route =>
     route.fulfill({ json: { synced_at: hoursAgo(0.2), stations: scene.stations, warnings: [] } }))
-  await page.goto(`${baseUrl}/water-situation${diagram ? `?diagram=${diagram}` : ''}`, { waitUntil: 'domcontentloaded' })
-  await page.locator('#water-diagram').waitFor({ timeout: 30_000 })
+  await page.route('**/rest/v1/rpc/get_public_water_announcement', route => route.fulfill({ json: announcement }))
+  // tab: 'route' (ค่าเริ่มต้นของเทสต์แผนภาพ) | 'situation' | null = ไม่ใส่พารามิเตอร์ ให้หน้าเลือกเอง (ใส่ ?diagram= = เส้นทางน้ำ ไม่ใส่ = สถานการณ์)
+  const query = new URLSearchParams()
+  if (diagram) query.set('diagram', diagram)
+  if (tab) query.set('tab', tab)
+  await page.goto(`${baseUrl}/water-situation${query.size ? `?${query}` : ''}`, { waitUntil: 'domcontentloaded' })
+  const landing = tab ?? (diagram ? 'route' : 'situation')
+  await (landing === 'route' ? page.locator('#water-diagram') : page.locator('#water-rain')).waitFor({ timeout: 30_000 })
   await page.waitForTimeout(1200)
   return { context, page, problems, reservoirRequests }
 }
@@ -323,13 +332,14 @@ try {
   })
 
   await check('ปุ่ม "หยุดเคลื่อนไหว": หยุดแอนิเมชันจริง (เส้นวิ่ง + คลื่น) · กดอีกครั้งเล่นต่อ', async () => {
-    const { context, page } = await openScene(browser, baseUrl, 'normal')
+    // เริ่มที่แท็บสถานการณ์ → แผนภาพยังถูกซ่อนอยู่ (เมาท์ไว้แต่ไม่เห็น)
+    const { context, page } = await openScene(browser, baseUrl, 'normal', { tab: 'situation' })
     try {
-      await pill(page, '73.2%').waitFor({ timeout: 8000 })
+      await pill(page, '73.2%').waitFor({ state: 'attached', timeout: 8000 })
       const state = sel => routeSvg(page).locator(sel).first().evaluate(el => getComputedStyle(el).animationPlayState)
       // ภาพที่ยังอยู่นอกจอ (ตัวเฝ้าดู IntersectionObserver ตั้ง data-offscreen) ถูกหยุดโดยตั้งใจ — เลื่อนเข้าจอก่อนตรวจ
-      assert.equal(await section(page).getAttribute('data-offscreen'), 'true', 'ยังไม่เลื่อนเข้าจอ = หยุดอยู่ (ไม่กินแบต)')
-      await section(page).scrollIntoViewIfNeeded()
+      assert.equal(await section(page).getAttribute('data-offscreen'), 'true', 'แท็บเส้นทางน้ำยังไม่ถูกเปิด (ซ่อนอยู่) = หยุดอยู่ (ไม่กินแบต)')
+      await page.getByRole('tab', { name: 'เส้นทางน้ำ' }).click()
       await page.waitForFunction(() => !document.querySelector('#water-diagram')?.hasAttribute('data-offscreen'), null, { timeout: 5000 })
       assert.equal(await state('path.wr-flow'), 'running')
       assert.equal(await state('.wr-wave'), 'running')
@@ -471,6 +481,101 @@ try {
       await page.waitForFunction(() => document.querySelector('#water-diagram [role="tab"][aria-selected="true"]')?.innerText === 'แผนภาพและรายการ', null, { timeout: 5000 })
       assert.equal(await routeList(page).isVisible(), true)
       assert.equal(await routeSvg(page).isVisible(), true)
+    } finally { await context.close() }
+  })
+
+  // ── แท็บบนสุดของหน้า (สถานการณ์ | เส้นทางน้ำ) — เจ้าของระบบสั่ง 2569-10-22 "ทำเส้นทางน้ำเป็นอีกแท็บด้านบน จะได้ไม่ต้องเลื่อนลงมาก" ──
+  const pageTabs = page => page.getByRole('tablist', { name: /มุมมองของหน้า/ })
+  const pageTab = (page, name) => pageTabs(page).getByRole('tab', { name })
+  const visible = (page, selector) => page.locator(selector).first().isVisible()
+  for (const width of [390, 1280]) {
+    await check(`แท็บบนสุดของหน้า ${width}px: เริ่มที่สถานการณ์ · แท็บอยู่ใต้หัวหน้าทันที · กดเส้นทางน้ำเห็นแผนภาพในจอเดียวไม่ต้องเลื่อน · สลับกลับได้ · URL จำแท็บ`, async () => {
+      const { context, page, problems } = await openScene(browser, baseUrl, 'normal', { width, tab: null })
+      try {
+        const tabs = pageTabs(page)
+        const tabTexts = await tabs.getByRole('tab').allInnerTexts()
+        assert.deepEqual(tabTexts.map(t => t.split('\n')[0].trim()), ['สถานการณ์', 'เส้นทางน้ำ'])
+        assert.match(tabTexts[1], /ภาพประกอบ/, 'คำอธิบายใต้ชื่อแท็บ บอกคนมาใหม่ว่าแท็บนี้คือภาพประกอบ')
+        assert.equal(await pageTab(page, 'สถานการณ์').getAttribute('aria-selected'), 'true', 'เริ่มที่แท็บสถานการณ์ (เหมือนหน้าเดิม)')
+        assert.equal(await visible(page, '#water-rain'), true, 'แท็บสถานการณ์เห็นส่วนฝน')
+        assert.equal(await visible(page, '#water-diagram'), false, 'แผนภาพซ่อนอยู่จนกว่าจะกดแท็บ')
+        const boxes = await tabs.getByRole('tab').evaluateAll(els => els.map(el => { const r = el.getBoundingClientRect(); return { w: r.width, h: r.height, top: r.top } }))
+        assert.ok(boxes.every(b => b.h >= 60 && b.w >= 140), `แท็บต้องเป็นปุ่มใหญ่ (สูง ≥ 60px กว้าง ≥ 140px): ${JSON.stringify(boxes)}`)
+        // เห็นชัดว่ากดได้: ตัวที่เลือกอยู่ทึบ (ไล่สี) ตัวที่ไม่ได้เลือกเป็นปุ่มขาวมีกรอบหนา — ไม่ใช่ตัวหนังสือลอยๆ
+        const looks = await tabs.getByRole('tab').evaluateAll(els => els.map(el => { const c = getComputedStyle(el); return { filled: c.backgroundImage !== 'none', border: parseFloat(c.borderTopWidth), color: c.borderTopColor, radius: parseFloat(c.borderTopLeftRadius) } }))
+        assert.deepEqual(looks.map(l => l.filled), [true, false], 'ตัวที่เลือกอยู่ทึบ ตัวที่ไม่ได้เลือกเป็นปุ่มขาว')
+        assert.ok(looks.every(l => l.border >= 2 && l.radius >= 12), 'ทั้งสองปุ่มมีกรอบหนาและมุมมน (ดูเป็นปุ่ม)')
+        assert.notEqual(looks[1].color, 'rgba(0, 0, 0, 0)', 'ปุ่มที่ไม่ได้เลือกมีกรอบสีให้เห็น ไม่ใช่กรอบโปร่งใส')
+        assert.ok(boxes[0].top < 420, 'แท็บอยู่ต้นหน้า (ใต้หัวหน้า) ไม่ต้องเลื่อนหา')
+        assert.ok(boxes[0].top < await page.locator('#water-rain').evaluate(el => el.getBoundingClientRect().top), 'แท็บอยู่เหนือเนื้อหาของหน้า')
+        await pageTab(page, 'เส้นทางน้ำ').click()
+        await section(page).waitFor({ state: 'visible', timeout: 5000 })
+        assert.equal(await pageTab(page, 'เส้นทางน้ำ').getAttribute('aria-selected'), 'true')
+        assert.equal(await pageTab(page, 'สถานการณ์').getAttribute('aria-selected'), 'false', 'แท็บที่ไม่ได้เลือกต้องเป็น aria-selected=false')
+        assert.equal(await visible(page, '#water-rain'), false, 'แท็บเส้นทางน้ำไม่แสดงส่วนฝน')
+        const banner = await section(page).locator('[data-route-banner]').evaluate(el => ({ top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom, vh: window.innerHeight }))
+        assert.ok(banner.top >= 0 && banner.bottom <= banner.vh, `หัวโปสเตอร์เห็นครบในจอแรกโดยไม่เลื่อน (top ${Math.round(banner.top)} · bottom ${Math.round(banner.bottom)} · จอสูง ${banner.vh})`)
+        assert.equal(new URL(page.url()).searchParams.get('tab'), 'route', 'URL จำแท็บ')
+        await page.screenshot({ path: path.join(SHOT_DIR, `page-tab-route-${width}.png`) })
+        await pageTab(page, 'สถานการณ์').click()
+        assert.equal(await visible(page, '#water-rain'), true, 'สลับกลับแล้วเห็นส่วนฝนอีก')
+        assert.equal(await visible(page, '#water-diagram'), false)
+        assert.equal(new URL(page.url()).searchParams.get('tab'), 'situation')
+        await page.screenshot({ path: path.join(SHOT_DIR, `page-tab-situation-${width}.png`) })
+        assert.deepEqual(problems, [])
+      } finally { await context.close() }
+    })
+  }
+
+  await check('แท็บบนสุดของหน้า: ?tab=route เปิดเส้นทางน้ำตรงๆ · ?diagram= (demo) เปิดเส้นทางน้ำเอง · ค่าแท็บแปลกๆ = สถานการณ์ · ไม่แตะเมาส์ก็ใช้ลูกศร/Home/End สลับได้', async () => {
+    for (const [name, opts, expected] of [
+      ['?tab=route', { tab: 'route' }, 'เส้นทางน้ำ'],
+      ['?diagram=namlao', { tab: null, diagram: 'namlao' }, 'เส้นทางน้ำ'],
+      ['?tab=situation&diagram=namlao', { tab: 'situation', diagram: 'namlao' }, 'สถานการณ์'],
+    ]) {
+      const { context, page } = await openScene(browser, baseUrl, 'normal', { width: 390, ...opts })
+      try { assert.equal(await pageTab(page, expected).getAttribute('aria-selected'), 'true', `${name} ต้องเปิดแท็บ ${expected}`) } finally { await context.close() }
+    }
+    {
+      const { context, page } = await openScene(browser, baseUrl, 'normal', { width: 390, tab: 'bogus' })
+      try {
+        await pageTabs(page).waitFor({ timeout: 10_000 })
+        assert.equal(await pageTab(page, 'สถานการณ์').getAttribute('aria-selected'), 'true', 'ค่า tab ที่ไม่รู้จัก = สถานการณ์')
+      } finally { await context.close() }
+    }
+    const { context, page } = await openScene(browser, baseUrl, 'normal', { width: 1280, tab: null })
+    try {
+      await pageTab(page, 'สถานการณ์').focus()
+      assert.deepEqual(await pageTabs(page).getByRole('tab').evaluateAll(els => els.map(el => el.tabIndex)), [0, -1], 'tab stop เดียว (ตัวที่เลือก)')
+      await page.keyboard.press('ArrowRight')
+      assert.equal(await pageTab(page, 'เส้นทางน้ำ').getAttribute('aria-selected'), 'true')
+      assert.equal(await page.evaluate(() => document.activeElement?.id), 'water-tab-route', 'โฟกัสย้ายตามแท็บ')
+      await section(page).waitFor({ state: 'visible', timeout: 5000 })
+      await page.keyboard.press('ArrowRight')
+      assert.equal(await pageTab(page, 'สถานการณ์').getAttribute('aria-selected'), 'true', 'ลูกศรขวาที่แท็บสุดท้ายวนกลับตัวแรก')
+      await page.keyboard.press('End')
+      assert.equal(await pageTab(page, 'เส้นทางน้ำ').getAttribute('aria-selected'), 'true')
+      await page.keyboard.press('Home')
+      assert.equal(await pageTab(page, 'สถานการณ์').getAttribute('aria-selected'), 'true')
+    } finally { await context.close() }
+  })
+
+  await check('แท็บเส้นทางน้ำ: แถบแจ้งเตือนฝนหนักและประกาศของ อปท. ยังเห็น (ไม่หายตอนสลับแท็บ) · แผนภาพใช้ค่าสดเหมือนเดิม', async () => {
+    const ANN = {
+      id: '00000000-0000-4000-8000-0000000000a1', body: 'ประกาศจาก เทศบาลตำบลสาธิต\nทดสอบการแสดงบนแท็บเส้นทางน้ำ', issuer: 'เทศบาลตำบลสาธิต',
+      published_at: hoursAgo(2), expires_at: new Date(Date.now() + 6 * 3_600_000).toISOString(), server_now: new Date().toISOString(),
+    }
+    const { context, page } = await openScene(browser, baseUrl, 'heavyRain', { width: 390, tab: 'situation', announcement: ANN })
+    try {
+      const alertText = /แจ้งเตือนสถานการณ์น้ำ-ฝนใกล้พื้นที่/
+      const visibleAlerts = () => page.locator('[role="alert"]', { hasText: alertText }).evaluateAll(els => els.filter(el => el.getClientRects().length > 0).length)
+      assert.equal(await visibleAlerts(), 1, 'แท็บสถานการณ์เห็นแถบแจ้งเตือน 1 แถบ')
+      assert.equal(await visible(page, '[data-water-announcement]'), true, 'แท็บสถานการณ์เห็นประกาศ')
+      await pageTab(page, 'เส้นทางน้ำ').click()
+      await section(page).waitFor({ state: 'visible', timeout: 5000 })
+      assert.equal(await visibleAlerts(), 1, 'แท็บเส้นทางน้ำเห็นแถบแจ้งเตือน 1 แถบ (ไม่หาย ไม่ซ้ำ)')
+      assert.equal(await visible(page, '[data-water-announcement]'), true, 'แท็บเส้นทางน้ำเห็นประกาศ')
+      await pill(page, '73.2%').waitFor({ timeout: 8000 })
     } finally { await context.close() }
   })
 
