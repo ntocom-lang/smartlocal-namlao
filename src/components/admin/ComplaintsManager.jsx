@@ -21,10 +21,11 @@ import ComplaintTextBlock from '../complaints/ComplaintTextBlock'
 import { canFinishWork, isComplaintWorker, isFinishedLike, requiresResolvedPin } from '../../lib/complaintWorkflow'
 import { startComplaintWork } from '../../lib/complaintFinish'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
+import { complaintPhotoCount, loadPrintPhotos, printWhenImagesReady } from '../../lib/printPhotos'
 import { isMissingSignatoryError, prepareComplaintPrint } from '../../lib/complaintPrint'
 import { buildComplaintListHtml } from '../../lib/complaintListPrint'
 import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
-import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef, toReliableImageUrl } from '../../lib/driveStorage'
+import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef, toReliableImageUrl, fetchImageAsDataUrl } from '../../lib/driveStorage'
 import { complaintFolderPath, complaintFileName } from '../../lib/driveFolders'
 import { fetchAssignableStaff, groupStaffByDepartment, ROLE_LABELS } from '../../lib/staffRoster'
 import { workingDaysLeft } from '../../lib/workingDays'
@@ -725,7 +726,9 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
 
   if (!c) return null
 
-  async function handlePrintComplaint() {
+  // withPhotos: ต่อแผ่น "ภาพประกอบคำร้อง" ท้ายใบ (ปุ่ม "พิมพ์ + ภาพ") — ปุ่ม "พิมพ์" เดิมส่ง event เข้ามาเป็นอาร์กิวเมนต์
+  // ซึ่งไม่มีคีย์ withPhotos จึงได้ค่าเริ่มต้น false = ใบเดิมไม่เปลี่ยน
+  async function handlePrintComplaint({ withPhotos = false } = {}) {
     // ต้องเปิดหน้าต่างทันทีแบบ sync ในตอนคลิก ก่อน await ใดๆ — ถ้าเปิดหลัง await
     // เบราว์เซอร์จะตัดขาดจาก user gesture แล้ว popup blocker จะบล็อกเงียบๆ (ไม่ error
     // ให้เห็น) ครั้งแรกอาจหลุดผ่านมาได้ แต่ครั้งต่อไปจะกดไม่ติดเลย
@@ -734,6 +737,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
       alert('เบราว์เซอร์บล็อกป๊อปอัพ กรุณาอนุญาตป๊อปอัพสำหรับเว็บไซต์นี้แล้วลองใหม่')
       return
     }
+    if (withPhotos) w.document.body.textContent = 'กำลังเตรียมใบคำร้องและภาพประกอบ…'
 
     const d = new Date(c.created_at)
     const thDate = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -760,6 +764,8 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
       department_id: printContextResult.data?.department_id ?? c.department_id,
       department: printContextResult.data?.department_name ?? c.department,
     }
+    // รูปที่โหลดไม่ได้จะถูกพิมพ์เป็นกรอบแจ้ง ไม่ถูกตัดทิ้ง (ดู complaintPhotoSheet.js)
+    const photoSheet = withPhotos ? await loadPrintPhotos(c, fetchImageAsDataUrl, extraWorkPhotos) : null
     const html = buildCouncilComplaintHtml({
       c: printComplaint,
       tenant,
@@ -769,10 +775,12 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
       cat,
       phone,
       signatories: printContextResult.data?.signatories ?? {},
+      photoSheet,
     })
     w.document.write(html)
     w.document.close()
-    setTimeout(() => w.print(), 500)
+    if (photoSheet) await printWhenImagesReady(w)
+    else setTimeout(() => w.print(), 500)
   }
 
   async function handleExportDraftPdf() {
@@ -861,6 +869,16 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
 
   async function handleDownloadFinalDoc() { await openOfficialDoc(c.final_document_path) }
   async function handleDownloadDraftPdf() { await openOfficialDoc(c.draft_pdf_path) }
+
+  // ปุ่มที่สองขึ้นเฉพาะเรื่องที่มีรูป — ระบบตัดสินเอง เจ้าหน้าที่ไม่ต้องตั้งค่า (คีย์ที่ถูกตัดตามสิทธิ์ = นับเป็น 0 = ไม่มีปุ่ม)
+  const photoCount = complaintPhotoCount(c, extraWorkPhotos)
+  const printWithPhotosButton = photoCount > 0 ? (
+    <button onClick={() => handlePrintComplaint({ withPhotos: true })}
+      title="พิมพ์ใบคำร้อง ตามด้วยแผ่นภาพประกอบ (ภาพจากผู้แจ้ง + ภาพหลังดำเนินการ) ใช้แนบเป็นหลักฐานการเบิก"
+      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+      <Printer size={13} /> พิมพ์ + ภาพ ({photoCount})
+    </button>
+  ) : null
 
   const categoryLabel = categoryNameOf(CATEGORY_LABEL, c.category)
   const categoryEmoji = CATEGORY_EMOJI[c.category] || ''
@@ -1255,6 +1273,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
                 <Printer size={13} /> พิมพ์
               </button>
+              {printWithPhotosButton}
               <button onClick={onClose} className="ml-auto px-4 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
                 ปิดหน้าต่าง
               </button>
@@ -1278,6 +1297,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
                 <Printer size={13} /> พิมพ์
               </button>
+              {printWithPhotosButton}
               {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
                 <button onClick={handleDelete} disabled={deleting}
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50">
@@ -1321,6 +1341,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
                 <Printer size={13} /> พิมพ์
               </button>
+              {printWithPhotosButton}
               {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
                 <button onClick={handleDelete} disabled={deleting}
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50">
