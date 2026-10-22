@@ -6,7 +6,7 @@ import FleetVehicleDetail from './FleetVehicleDetail'
 import FleetEmptyState from './FleetEmptyState'
 import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
-import { custodianSuggestions } from '../../lib/fleetCustodianRegisterPrint'
+import { custodianChoicesForDepartment, custodianSuggestions } from '../../lib/fleetCustodianRegisterPrint'
 import { canCopyInsuranceDate, copyInsuranceDate } from '../../lib/fleetVehicleSummary'
 import {
   ASSET_KIND_LABEL,
@@ -42,6 +42,9 @@ const EMPTY = {
   regulation_category:'central', engine_cc:'', purchase_price:'', acquired_date:'', disposed_date:'',
   custodian_department_id:'', custodian_name:'', custodian_position:'',
 }
+
+// ค่าพิเศษของ <select> ชื่อผู้รับผิดชอบ = "อื่นๆ (พิมพ์ชื่อเอง)" ต้องไม่ชนกับชื่อคนจริง
+const CUSTODIAN_OTHER = '__other__'
 
 // ประเภทตามระเบียบ มท. ยานพาหนะ อปท. 2569 ข้อ 7 — เลือกว่ารถอยู่ทะเบียนแบบ 1 หรือแบบ 2
 // คนละเรื่องกับ "ใช้ร่วมกันทุกกอง" (is_pool = ใครเบิกใช้ได้) รถที่ผูกกองเดียวก็ยังเป็นรถส่วนกลาง
@@ -234,6 +237,22 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
   const [importOpen,   setImportOpen]   = useState(false)
   const [detailVeh,    setDetailVeh]    = useState(null)
   const [typesOpen,    setTypesOpen]    = useState(false)
+  // รายชื่อเจ้าหน้าที่ + กอง + ตำแหน่ง สำหรับช่อง "ชื่อผู้รับผิดชอบ" (เจ้าของระบบสั่ง 2026-10-22)
+  // ผู้ใช้ยานพาหนะอ่านโปรไฟล์ใน อปท. ตัวเองได้อยู่แล้ว (นโยบาย "fleet users read municipality profiles")
+  // กรองเฉพาะคนที่มีกอง + ไม่ใช่ประชาชน — ประชาชนปนอยู่ในตารางเดียวกัน ห้ามไปโผล่ในรายชื่อบนเอกสารราชการ
+  // โหลดไม่ได้/ว่าง = ฟอร์มกลับไปพิมพ์ชื่อเองเหมือนเดิม ไม่พัง
+  const [staff,        setStaff]        = useState([])
+  // กำลังพิมพ์ชื่อเอง (เลือก "อื่นๆ") — ชื่อที่ไม่อยู่ในรายการก็ถือเป็นโหมดพิมพ์เองโดยอัตโนมัติ (ดู custodianTyping ด้านล่าง)
+  const [pickOther,    setPickOther]    = useState(false)
+
+  useEffect(() => {
+    if (!tenant?.id || !isAdmin) return
+    let active = true
+    supabase.from('profiles').select('id,full_name,role,department_id,job_title,position:positions(name)')
+      .eq('municipality_id', tenant.id).not('department_id', 'is', null).neq('role', 'citizen').order('full_name')
+      .then(({ data, error }) => { if (active) setStaff(error ? [] : (data ?? [])) })
+    return () => { active = false }
+  }, [tenant?.id, isAdmin])
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -280,10 +299,12 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
   function openAdd() {
     setForm({ ...EMPTY, is_pool: true, department_id: '' })
     setShowAdvanced(false)
+    setPickOther(false)
     setModal('add')
   }
   function openEdit(v) {
     setShowAdvanced(v.efficiency_min != null || v.efficiency_max != null)
+    setPickOther(false)
     setForm({
       name: v.name, asset_kind: v.asset_kind ?? 'vehicle',
       license_plate: v.license_plate ?? '', asset_code: v.asset_code ?? '',
@@ -315,6 +336,44 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
       const known = custodianList.find(item => item.name === name.trim())
       return { ...f, custodian_name: name, custodian_position: f.custodian_position || known?.position || '' }
     })
+  }
+
+  // เลือกหน่วยงานผู้ครอบครองแล้ว ช่อง "ชื่อผู้รับผิดชอบ" แสดงรายชื่อเจ้าหน้าที่ของหน่วยงานนั้นให้เลือก
+  // เลือกชื่อแล้วตำแหน่งขึ้นตามโปรไฟล์ (เจ้าของระบบสั่ง 2026-10-22) · ไม่มีในรายการ (เช่น พนักงานขับรถที่ไม่มีบัญชี)
+  // เลือก "อื่นๆ" แล้วพิมพ์เอง — ไม่บังคับให้ตรงกับบัญชีในระบบ เพราะผู้ได้รับมอบหมายตามคำสั่งไม่จำเป็นต้องมีบัญชี
+  const custodianChoices = useMemo(
+    () => custodianChoicesForDepartment({ staff, vehicles, departmentId: form.custodian_department_id }),
+    [staff, vehicles, form.custodian_department_id])
+  const custodianByName = useMemo(
+    () => new Map([...custodianChoices.staff, ...custodianChoices.recent].map(choice => [choice.name, choice])),
+    [custodianChoices])
+  const hasCustodianChoices = custodianByName.size > 0
+  const custodianNameNow = form.custodian_name.trim()
+  const custodianPicked = custodianByName.has(custodianNameNow)
+  // ชื่อที่ไม่อยู่ในรายการ (เช่น รถที่เคยกรอกไว้ก่อนมีตัวเลือกนี้) เปิดเป็นโหมดพิมพ์เองให้เห็นและแก้ได้ ไม่ซ่อนค่าที่บันทึกไว้
+  const custodianTyping = pickOther || (custodianNameNow !== '' && !custodianPicked)
+  const custodianSelectValue = custodianTyping ? CUSTODIAN_OTHER : (custodianPicked ? custodianNameNow : '')
+  const pickCustodian = e => {
+    const value = e.target.value
+    if (value === CUSTODIAN_OTHER) {
+      setPickOther(true)
+      // จากคนในรายการเป็นพิมพ์เอง → ล้างชื่อ/ตำแหน่งของคนเดิม ไม่ให้ตำแหน่งของคนก่อนค้างไปกับชื่อใหม่
+      if (custodianPicked) setForm(f => ({ ...f, custodian_name: '', custodian_position: '' }))
+      return
+    }
+    setPickOther(false)
+    const choice = custodianByName.get(value)
+    setForm(f => ({ ...f, custodian_name: choice?.name ?? '', custodian_position: choice?.position ?? '' }))
+  }
+  // เปลี่ยนหน่วยงาน: ชื่อที่ "เลือกมาจากรายการของหน่วยงานเดิม" ล้างทิ้ง (ไม่ให้คนของกองหนึ่งค้างอยู่ใต้อีกกอง)
+  // ชื่อที่พิมพ์เองคงไว้ ไม่ทำข้อมูลที่กรอกไว้หาย
+  const setCustodianDepartment = e => {
+    const next = e.target.value
+    setPickOther(false)
+    setForm(f => ({
+      ...f, custodian_department_id: next,
+      ...(custodianPicked ? { custodian_name: '', custodian_position: '' } : {}),
+    }))
   }
 
   // ติ๊ก "ใช้ร่วมกันทุกกอง" แล้วต้องล้างกองทิ้งด้วย ไม่งั้นจะได้รถกลางที่ยังผูกกองค้างไว้
@@ -859,18 +918,41 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
                     <label className="text-xs font-semibold text-gray-600 mb-1 block">หน่วยงานผู้ครอบครอง</label>
-                    <select value={form.custodian_department_id} onChange={set('custodian_department_id')} className={sel}>
+                    <select value={form.custodian_department_id} onChange={setCustodianDepartment} className={sel}>
                       <option value="">— ยังไม่ระบุ —</option>
                       {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อผู้รับผิดชอบ</label>
-                    <input list="fleet-custodian-names" value={form.custodian_name} onChange={setCustodianName}
-                      maxLength={200} placeholder="เช่น นายสมชาย ใจดี" className={inp} />
-                    <datalist id="fleet-custodian-names">
-                      {custodianList.map(item => <option key={item.name} value={item.name} />)}
-                    </datalist>
+                    <label htmlFor="fleet-custodian-name" className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อผู้รับผิดชอบ</label>
+                    {hasCustodianChoices && (
+                      <select id="fleet-custodian-pick" value={custodianSelectValue} onChange={pickCustodian} className={sel}>
+                        <option value="">— เลือกผู้รับผิดชอบ —</option>
+                        {custodianChoices.staff.length > 0 && (
+                          <optgroup label="เจ้าหน้าที่ของหน่วยงานนี้">
+                            {custodianChoices.staff.map(choice => <option key={choice.name} value={choice.name}>{choice.name}</option>)}
+                          </optgroup>
+                        )}
+                        {custodianChoices.recent.length > 0 && (
+                          <optgroup label="เคยกรอกไว้ (ไม่มีบัญชีในระบบ)">
+                            {custodianChoices.recent.map(choice => <option key={choice.name} value={choice.name}>{choice.name}</option>)}
+                          </optgroup>
+                        )}
+                        <option value={CUSTODIAN_OTHER}>อื่นๆ (พิมพ์ชื่อเอง)</option>
+                      </select>
+                    )}
+                    {(!hasCustodianChoices || custodianTyping) && (
+                      <>
+                        <input id="fleet-custodian-name" list="fleet-custodian-names" value={form.custodian_name} onChange={setCustodianName}
+                          maxLength={200} placeholder="เช่น นายสมชาย ใจดี" className={inp + (hasCustodianChoices ? ' mt-2' : '')} />
+                        <datalist id="fleet-custodian-names">
+                          {custodianList.map(item => <option key={item.name} value={item.name} />)}
+                        </datalist>
+                      </>
+                    )}
+                    {!form.custodian_department_id && (
+                      <p className="text-[10px] text-gray-400 mt-1">เลือกหน่วยงานก่อน จะมีรายชื่อเจ้าหน้าที่ของหน่วยงานให้เลือก</p>
+                    )}
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่ง</label>

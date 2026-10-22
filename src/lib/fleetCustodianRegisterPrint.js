@@ -125,6 +125,47 @@ export function custodianSuggestions(vehicles) {
     .sort((a, b) => a.name.localeCompare(b.name, 'th'))
 }
 
+// ตำแหน่งของเจ้าหน้าที่ในโปรไฟล์: job_title (ข้อความที่ตั้งเอง) ก่อน แล้วตกไปตำแหน่งในตาราง positions — ลำดับเดียวกับ
+// FleetTrips.jsx / fleetTripPrint.js (แบบ 3) เอกสารสองใบของ อปท. เดียวกันจะเรียกตำแหน่งคนเดียวกันเหมือนกัน
+// ⚠️ ข้อมูลจริง (2026-10-22): job_title ว่างเกือบหมด (น้ำเลา 1/22) แต่ position_id มีครบทุกคน (น้ำเลา 22/22 ทุ่งแค้ว 30/30)
+// ตำแหน่งจึงมาจาก positions เป็นหลัก — เคยเข้าใจผิดว่าตำแหน่งว่างเพราะนับแค่ job_title
+export function staffPosition(profile) {
+  return clean(profile?.job_title) || clean(profile?.position?.name)
+}
+
+// ตัวเลือก "ชื่อผู้รับผิดชอบ" เมื่อเลือกหน่วยงานผู้ครอบครองแล้ว (เจ้าของระบบสั่ง 2026-10-22):
+//   staff  = เจ้าหน้าที่ที่ "สังกัดหน่วยงานนั้น" ในระบบ (profiles.department_id) + ตำแหน่งตามโปรไฟล์
+//   recent = คนที่เคยกรอกเป็นผู้รับผิดชอบรถคันอื่นในหน่วยงานเดียวกัน แต่ไม่มีบัญชีในระบบ (เช่น พนักงานขับรถ)
+//            พิมพ์ครั้งเดียวแล้วคันต่อไปเลือกได้ ตำแหน่งขึ้นตามที่เคยกรอก
+// ชื่อซ้ำกัน: เจ้าหน้าที่ในระบบชนะ (ตำแหน่งว่างจึงยืมจากที่เคยกรอก) · ประชาชน (role = citizen) ไม่เข้ารายการเด็ดขาด
+// แม้โดยปกติประชาชนไม่มีกองอยู่แล้ว — โปรไฟล์ตารางเดียวกันมีประชาชนปนอยู่ ห้ามหลุดไปอยู่ในรายชื่อบนเอกสารราชการ
+export function custodianChoicesForDepartment({ staff = [], vehicles = [], departmentId = '' } = {}) {
+  if (!departmentId) return { staff: [], recent: [] }
+  const staffByName = new Map()
+  for (const profile of staff ?? []) {
+    const name = clean(profile?.full_name)
+    if (!name || profile?.role === 'citizen' || profile?.department_id !== departmentId) continue
+    if (!staffByName.has(name)) staffByName.set(name, staffPosition(profile))
+  }
+  const recentByName = new Map()
+  for (const vehicle of vehicles ?? []) {
+    if (vehicle?.custodian_department_id !== departmentId) continue
+    const { name, position } = custodianOf(vehicle)
+    if (!name) continue
+    if (!recentByName.has(name) || (!recentByName.get(name) && position)) recentByName.set(name, position)
+  }
+  const byName = (a, b) => a.name.localeCompare(b.name, 'th')
+  return {
+    staff: [...staffByName.entries()]
+      .map(([name, position]) => ({ name, position: position || recentByName.get(name) || '' }))
+      .sort(byName),
+    recent: [...recentByName.entries()]
+      .filter(([name]) => !staffByName.has(name))
+      .map(([name, position]) => ({ name, position }))
+      .sort(byName),
+  }
+}
+
 // หัวกลุ่มแยกเป็นชิ้น เพื่อให้ชื่อหน่วยงาน/ชื่อย่อ/ตำแหน่งหัวหน้า (keep) ไม่ถูกตัดกลางคำตอนขึ้นบรรทัดใหม่
 // ("หัวหน้าสำนัก|ปลัด" ในภาพจริง) — ข้อความล้วนกับ HTML มาจากชิ้นส่วนชุดเดียวกัน
 function groupTitleParts({ department, orgName }) {
