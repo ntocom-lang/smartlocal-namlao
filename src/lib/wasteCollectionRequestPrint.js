@@ -1,4 +1,5 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { govMapQrCss, govPointWithMapQr } from './govMapQr.js'
 import { govNameBlank, govSignBlockCss } from './govSignBlock.js'
 import { govStaffSignBlockCss, govStaffSignBlockHtml } from './govStaffSignBlock.js'
 import { stripForeignParts } from './pickupText.js'
@@ -169,6 +170,7 @@ export function buildWasteCollectionRequestHtml({
     .sheet--staff .reference { margin-top: 6mm; }
 ${govSignBlockCss()}
 ${govStaffSignBlockCss()}
+${govMapQrCss()}
 
     @media screen {
       body { background: #e5e7eb; padding: 12px; }
@@ -197,7 +199,11 @@ ${govStaffSignBlockCss()}
       ตั้งแต่วันที่ ${line(serviceStartDate, '43mm')} เป็นต้นไป
     </p>
 
-    ${collectionPoint ? `<p class="point-copy">จุดวางถังตามพิกัดแผนที่ ${line(collectionPoint)}</p>` : ''}
+    ${/* QR เปิดแผนที่ชิดขวาข้างย่อหน้าพิกัด (เจ้าของระบบสั่ง 2569-10-21 ให้ผู้บริหารสแกนจากกระดาษได้) ไม่ได้ปักหมุด = ไม่มี QR ย่อหน้าเดิมทุกตัวอักษร */''}
+    ${collectionPoint ? govPointWithMapQr({
+    pointHtml: `<p class="point-copy">จุดวางถังตามพิกัดแผนที่ ${line(collectionPoint)}</p>`,
+    point: data.collection_point,
+  }) : ''}
 
     <p class="body-copy">
       โดยข้าพเจ้ายินยอมชำระค่าบริการเก็บขนขยะมูลฝอยและปฏิบัติตามข้อบัญญัติท้องถิ่นที่กำหนดทุกประการ

@@ -7,6 +7,7 @@
 
 import assert from 'node:assert/strict'
 import { buildWasteCollectionRequestHtml } from '../src/lib/wasteCollectionRequestPrint.js'
+import { qrLayout } from '../src/lib/qrSvg.js'
 import { thaiDateTimeText } from '../src/lib/thaiDate.js'
 
 const TENANT = { name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว', org_type: 'อบต.' }
@@ -91,5 +92,33 @@ assert.equal(thaiDateTimeText(''), '')
 assert.equal(thaiDateTimeText(null), '')
 assert.equal(thaiDateTimeText('ไม่ใช่วันที่'), '')
 assert.match(thaiDateTimeText('2026-09-07T10:32:00'), /^7 กันยายน พ\.ศ\. 2569 เวลา 10\.32 น\.$/)
+
+// ── QR เปิดแผนที่ข้างย่อหน้าพิกัด (เจ้าของระบบสั่ง 2569-10-21: ผู้บริหารสแกนจากกระดาษได้) ────────────────
+// ลิงก์เขียนตรงๆ ในเทสต์ ไม่เรียกฟังก์ชันสร้างลิงก์ของตัวใบซ้ำ — ถ้าตัวใบเข้ารหัสลิงก์ผิด path ต้องไม่ตรง
+{
+  const LINK = 'https://maps.google.com/?q=18.258742,100.308329'
+  const qrPath = qrLayout(LINK, 1000).d
+  const staff = render(baseForm(), { signatories: { department_head: null, clerk: null, mayor: null }, departmentName: 'กองช่าง' })
+  for (const [label, html] of [['ประชาชนพิมพ์เอง', online], ['เจ้าหน้าที่พิมพ์', staff]]) {
+    assert.ok(html.includes(qrPath), `${label}: QR ต้องเข้ารหัสลิงก์แผนที่ของพิกัดที่ปักไว้`)
+    assert.equal((html.match(/<svg/g) || []).length, 1, `${label}: มี QR เดียว`)
+    assert.match(html, /<div class="map-point"><div class="map-point__text"><p class="point-copy">จุดวางถังตามพิกัดแผนที่ /,
+      `${label}: QR ต้องอยู่ข้างย่อหน้าพิกัดเดิม`)
+    assert.match(html, /18\.258742, 100\.308329 \(บ้านทุ่งแค้ว\)/, `${label}: ย่อหน้าพิกัดเดิมต้องไม่ถูกแก้`)
+    assert.match(html, /สแกนเปิดแผนที่/)
+  }
+  // ไม่ปักหมุด/พิกัดเสีย = ไม่มี QR ไม่มีบรรทัดว่างคาใบ (ย่อหน้าเดิมหายทั้งก้อนเหมือนก่อนมี QR)
+  for (const point of [null, undefined, { lat: 'x', lng: null, address: 'ที่ไหนสักแห่ง' }]) {
+    const html = render(baseForm({ collection_point: point }))
+    assert.doesNotMatch(html, /map-point"|<svg/, `ไม่มีพิกัดต้องไม่มี QR: ${JSON.stringify(point)}`)
+    assert.doesNotMatch(html, /จุดวางถังตามพิกัดแผนที่/)
+  }
+  // 0,0 = ค่าตั้งต้นของแผนที่ ไม่ใช่ที่ที่ปักจริง — ห้ามมี QR ที่พาไปกลางมหาสมุทร
+  assert.doesNotMatch(render(baseForm({ collection_point: { lat: 0, lng: 0, address: 'x' } })), /<svg/)
+  // ที่อยู่ที่มีแท็กถูกหนีอักขระ และ QR ยังออกตามปกติ
+  const evil = render(baseForm({ collection_point: { lat: 18.258742, lng: 100.308329, address: '<img src=x onerror=alert(1)>' } }))
+  assert.doesNotMatch(evil, /<img src=x/)
+  assert.ok(evil.includes(qrPath))
+}
 
 console.log('waste-request-print.test.mjs PASS')

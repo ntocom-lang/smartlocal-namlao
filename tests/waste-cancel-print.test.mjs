@@ -11,6 +11,7 @@ import {
   cancelReasonText,
   signedAtText,
 } from '../src/lib/wasteCollectionCancelPrint.js'
+import { qrLayout } from '../src/lib/qrSvg.js'
 
 const TENANT = { name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว', org_type: 'อบต.' }
 
@@ -197,6 +198,35 @@ function render(form, extra = {}) {
   const brokenPin = render(baseForm({ collection_point: { lat: 'x', lng: null, address: 'ที่ไหนสักแห่ง' } }))
   assert.doesNotMatch(brokenPin, /จุดวางถังตามพิกัดแผนที่/)
   assert.doesNotMatch(brokenPin, /NaN/)
+}
+
+// ── QR เปิดแผนที่ข้างย่อหน้าพิกัด (เจ้าของระบบสั่ง 2569-10-21: ผู้บริหารสแกนจากกระดาษได้) ────────────────
+// ลิงก์เขียนตรงๆ ในเทสต์ (ทศนิยม 6 ตำแหน่งปัดจาก 18.2456789,100.1234567) ไม่เรียกฟังก์ชันสร้างลิงก์ของตัวใบซ้ำ
+{
+  const LINK = 'https://maps.google.com/?q=18.245679,100.123457'
+  const qrPath = qrLayout(LINK, 1000).d
+  const pinned = baseForm({ collection_point: { lat: 18.2456789, lng: 100.1234567, address: 'ถนนทดสอบ, ตำบลทุ่งแค้ว' } })
+  const staff = buildWasteCollectionCancelHtml({
+    form: pinned, tenant: TENANT, thDate: '7 กันยายน พ.ศ. 2569', referenceNo: 'A1B2C3D4',
+    signatories: { department_head: null, clerk: null, mayor: null }, departmentName: 'กองช่าง',
+  })
+  for (const [label, html] of [['ประชาชนพิมพ์เอง', render(pinned)], ['เจ้าหน้าที่พิมพ์', staff]]) {
+    assert.ok(html.includes(qrPath), `${label}: QR ต้องเข้ารหัสลิงก์แผนที่ของพิกัดที่ปักไว้`)
+    assert.equal((html.match(/<svg/g) || []).length, 1, `${label}: มี QR เดียว`)
+    assert.match(html, /<div class="map-point"><div class="map-point__text"><p class="point-copy">จุดวางถังตามพิกัดแผนที่ /,
+      `${label}: QR ต้องอยู่ข้างย่อหน้าพิกัดเดิม`)
+    assert.match(html, /18\.245679, 100\.123457 \(ถนนทดสอบ, ตำบลทุ่งแค้ว\)/, `${label}: ย่อหน้าพิกัดเดิมต้องไม่ถูกแก้`)
+    assert.match(html, /สแกนเปิดแผนที่/)
+  }
+  // ไม่ปักหมุด/พิกัดเสีย = ไม่มี QR ไม่มีบรรทัดว่างคาใบ
+  for (const point of [null, undefined, { lat: 'x', lng: null, address: 'ที่ไหนสักแห่ง' }]) {
+    const html = render(baseForm({ collection_point: point }))
+    assert.doesNotMatch(html, /map-point"|<svg/, `ไม่มีพิกัดต้องไม่มี QR: ${JSON.stringify(point)}`)
+  }
+  assert.doesNotMatch(render(baseForm({ collection_point: { lat: 0, lng: 0, address: 'x' } })), /<svg/, '0,0 ไม่ใช่ที่ที่ปักจริง')
+  const evil = render(baseForm({ collection_point: { lat: 18.2456789, lng: 100.1234567, address: '<img src=x onerror=alert(1)>' } }))
+  assert.doesNotMatch(evil, /<img src=x/)
+  assert.ok(evil.includes(qrPath))
 }
 
 // ── escape: ชื่อ อปท. มาจาก DB ที่แอดมินแก้ได้ ห้ามหลุดเป็น HTML ────────────

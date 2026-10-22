@@ -1,4 +1,5 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { govMapQrCss, govPointWithMapQr } from './govMapQr.js'
 import { govNameBlank, govSignBlockCss, govSignRow } from './govSignBlock.js'
 import { govStaffSignBlockCss, govStaffSignBlockHtml } from './govStaffSignBlock.js'
 import { orgHeadTitle, orgNameParts, orgOfficeName } from './orgTerms.js'
@@ -410,6 +411,7 @@ ${govStaffSignBlockCss()}
     .sheet--staff .body-copy { margin-bottom: 2mm; }
     .sheet--staff .signature { margin-top: 8mm; }
 ${govSignBlockCss()}
+${govMapQrCss()}
     /* 10pt: บรรทัดกำกับต้องอ่านออกแต่ต้องไม่แย่งน้ำหนักกับชื่อผู้ลงนาม และต้องไม่ดันใบตกหน้า 2
        white-space ปกติ (ไม่ nowrap) เพราะข้อความยาวกว่าความกว้างช่องลงนาม */
     .signed-note { margin-top: 3mm; font-size: 10pt; color: #333; white-space: normal; line-height: 1.2; }
@@ -458,7 +460,11 @@ ${enclosureHtml}    <p class="body-copy">
       ${variant.clause(orgNameTag)}
     </p>
 
-    ${accountHtml}${meterPoint ? `<p class="point-copy">${variant.pointLabel} ${line(meterPoint)}</p>` : ''}
+    ${/* QR เปิดแผนที่ชิดขวาข้างย่อหน้าพิกัด (เจ้าของระบบสั่ง 2569-10-21) ไม่ได้ปักหมุด = ไม่มี QR ย่อหน้าเดิมทุกตัวอักษร */''}
+    ${accountHtml}${meterPoint ? govPointWithMapQr({
+    pointHtml: `<p class="point-copy">${variant.pointLabel} ${line(meterPoint)}</p>`,
+    point: data.meter_point,
+  }) : ''}
 
     <section class="signature">
       ${govSignRow({
