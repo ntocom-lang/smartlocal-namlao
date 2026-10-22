@@ -6,8 +6,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { chromium } from 'playwright'
 import {
-  NAME_KEEP_MM, UNASSIGNED_GROUP_KEY, buildFleetCustodianRegisterHtml, custodianSuggestions, estimateTextWidthMm,
-  groupCustodianRegister, groupTitleText, isCustodianRegisterVehicle, orgShortName,
+  NAME_KEEP_MM, UNASSIGNED_GROUP_KEY, buildFleetCustodianRegisterHtml, custodianChoicesForDepartment, custodianSuggestions,
+  estimateTextWidthMm, groupCustodianRegister, groupTitleText, isCustodianRegisterVehicle, orgShortName, staffPosition,
 } from '../src/lib/fleetCustodianRegisterPrint.js'
 
 // ── ชื่อย่อหน่วยงานท้ายหัวกลุ่ม ────────────────────────────────────────────────────
@@ -65,6 +65,58 @@ assert.deepEqual(custodianSuggestions([
   { custodian_name: '', custodian_position: 'ไม่มีชื่อ' },
   { custodian_name: null },
 ]), [{ name: 'นายสมชาย ใจดี', position: 'พนักงานขับรถยนต์' }])
+
+// ── ชื่อผู้รับผิดชอบเลือกจากเจ้าหน้าที่ของหน่วยงาน + ตำแหน่งตามชื่อ (เจ้าของระบบสั่ง 2026-10-22) ──
+// ข้อมูลทดสอบสมมติทั้งหมด
+// ตำแหน่ง: job_title ก่อน แล้วตกไปตาราง positions (ลำดับเดียวกับแบบ 3) — ข้อมูลจริงมีแต่ positions เป็นหลัก
+assert.equal(staffPosition({ job_title: ' ช่างโยธา ', position: { name: 'ผู้ช่วยนายช่างโยธา' } }), 'ช่างโยธา')
+assert.equal(staffPosition({ job_title: '', position: { name: 'ผู้ช่วยนายช่างโยธา' } }), 'ผู้ช่วยนายช่างโยธา')
+assert.equal(staffPosition({ job_title: null, position: null }), '')
+assert.equal(staffPosition(undefined), '')
+const people = [
+  { id: '1', full_name: 'นายสมหมาย รักดี', role: 'staff', department_id: 'd-eng', job_title: null, position: { name: 'ผู้ช่วยนายช่างโยธา' } },
+  { id: '2', full_name: 'นางสาวใจดี มีสุข', role: 'officer', department_id: 'd-eng', job_title: 'นายช่างโยธาชำนาญงาน', position: { name: 'อื่น' } },
+  { id: '3', full_name: 'นายสมชาย ใจดี', role: 'staff', department_id: 'd-clerk', position: { name: 'พนักงานขับรถยนต์' } },
+  { id: '4', full_name: 'นายประชาชน ทดสอบ', role: 'citizen', department_id: 'd-eng', position: null },
+  { id: '5', full_name: '   ', role: 'staff', department_id: 'd-eng', position: { name: 'ไม่มีชื่อ' } },
+  { id: '6', full_name: 'นายไม่มีตำแหน่ง ทดสอบ', role: 'staff', department_id: 'd-eng', job_title: '', position: null },
+  { id: '7', full_name: 'นายสมหมาย รักดี', role: 'staff', department_id: 'd-eng', position: { name: 'ซ้ำชื่อ' } },
+]
+const driverVehicles = [
+  { custodian_department_id: 'd-eng', custodian_name: 'นายพนักงาน ขับรถ', custodian_position: 'พนักงานขับรถยนต์' },
+  { custodian_department_id: 'd-eng', custodian_name: 'นายไม่มีตำแหน่ง ทดสอบ', custodian_position: 'ช่างไฟฟ้า' },
+  { custodian_department_id: 'd-clerk', custodian_name: 'นายคนอื่นกอง ทดสอบ', custodian_position: 'ไม่ควรโผล่ในกองช่าง' },
+  { custodian_department_id: 'd-eng', custodian_name: '', custodian_position: 'ไม่มีชื่อ' },
+]
+const engChoices = custodianChoicesForDepartment({ staff: people, vehicles: driverVehicles, departmentId: 'd-eng' })
+assert.deepEqual(engChoices.staff.map(c => c.name), ['นางสาวใจดี มีสุข', 'นายไม่มีตำแหน่ง ทดสอบ', 'นายสมหมาย รักดี'],
+  'เจ้าหน้าที่ของกองช่างเท่านั้น: ไม่มีคนกองอื่น/ประชาชน/ชื่อว่าง และชื่อซ้ำเหลือคนเดียว เรียงตามชื่อ')
+assert.equal(engChoices.staff.find(c => c.name === 'นางสาวใจดี มีสุข').position, 'นายช่างโยธาชำนาญงาน', 'ตำแหน่งตามชื่อที่เลือก (job_title ก่อน)')
+assert.equal(engChoices.staff.find(c => c.name === 'นายสมหมาย รักดี').position, 'ผู้ช่วยนายช่างโยธา', 'ตกไปตำแหน่งจากตาราง positions')
+assert.equal(engChoices.staff.find(c => c.name === 'นายไม่มีตำแหน่ง ทดสอบ').position, 'ช่างไฟฟ้า',
+  'ตำแหน่งในโปรไฟล์ว่าง ยืมจากที่เคยกรอกเป็นผู้รับผิดชอบรถคันอื่น')
+assert.deepEqual(engChoices.recent, [{ name: 'นายพนักงาน ขับรถ', position: 'พนักงานขับรถยนต์' }],
+  'คนที่เคยกรอกแต่ไม่มีบัญชี (เช่น พนักงานขับรถ) อยู่กลุ่ม recent เฉพาะกองเดียวกัน และไม่ซ้ำกับคนในระบบ')
+assert.equal([...engChoices.staff, ...engChoices.recent].some(c => c.name.includes('ประชาชน')), false, 'ประชาชนห้ามเข้ารายการ')
+assert.equal([...engChoices.staff, ...engChoices.recent].some(c => c.name.includes('คนอื่นกอง')), false, 'คนกองอื่นห้ามโผล่')
+// ประชาชนต้องไม่เข้ารายการ แม้ถูกตั้งกองมาโดยผิดพลาด (role = citizen) — ข้อมูลทดสอบข้อ 4 ตั้งกองช่างไว้เพื่อพิสูจน์ข้อนี้
+const clerkChoices = custodianChoicesForDepartment({ staff: people, vehicles: driverVehicles, departmentId: 'd-clerk' })
+assert.deepEqual(clerkChoices.staff, [{ name: 'นายสมชาย ใจดี', position: 'พนักงานขับรถยนต์' }])
+assert.deepEqual(clerkChoices.recent.map(c => c.name), ['นายคนอื่นกอง ทดสอบ'])
+// ยังไม่เลือกหน่วยงาน/ไม่มีข้อมูล = รายการว่าง ฟอร์มกลับไปพิมพ์ชื่อเองเหมือนเดิม ไม่พัง
+assert.deepEqual(custodianChoicesForDepartment({ staff: people, vehicles: driverVehicles, departmentId: '' }), { staff: [], recent: [] })
+assert.deepEqual(custodianChoicesForDepartment({ departmentId: 'd-eng' }), { staff: [], recent: [] })
+assert.deepEqual(custodianChoicesForDepartment(undefined), { staff: [], recent: [] })
+// ตัวฟอร์ม: โหลดเฉพาะผู้ดูแล, กรองประชาชนใน query, เลือกชื่อแล้วตำแหน่งตามชื่อ, เลือกหน่วยงานใหม่ล้างชื่อที่เลือกจากรายการเดิม
+const picker = readFileSync('src/components/fleet/FleetVehicles.jsx', 'utf8')
+assert.ok(/from\('profiles'\)\.select\('id,full_name,role,department_id,job_title,position:positions\(name\)'\)/.test(picker),
+  'ต้องดึงโปรไฟล์พร้อมกอง/ตำแหน่ง (job_title + positions)')
+assert.ok(picker.includes(".neq('role', 'citizen')") && picker.includes(".not('department_id', 'is', null)"),
+  'query ต้องตัดประชาชนและคนที่ไม่มีกอง')
+assert.ok(picker.includes('if (!tenant?.id || !isAdmin) return'), 'โหลดรายชื่อเฉพาะผู้ดูแล (คนที่แก้ฟอร์มได้)')
+assert.ok(picker.includes('custodian_position: choice?.position ??'), 'เลือกชื่อแล้วตำแหน่งต้องขึ้นตามชื่อที่เลือก')
+assert.ok(picker.includes('onChange={setCustodianDepartment}') && picker.includes('onChange={pickCustodian}'), 'ช่องหน่วยงานและช่องชื่อต้องต่อกับตัวจัดการใหม่')
+assert.ok(picker.includes('อื่นๆ (พิมพ์ชื่อเอง)'), 'ต้องมีทางเลือกพิมพ์ชื่อเอง (ผู้ได้รับมอบหมายไม่จำเป็นต้องมีบัญชี)')
 
 // ── หัวกลุ่มตรงต้นฉบับ: "ในครอบครองของ…" + "หัวหน้าหน่วยงานผู้ครอบครองยานพาหนะส่วนกลางได้แก่ …" ──
 assert.equal(
