@@ -1,4 +1,4 @@
-// ลงนามออนไลน์รายเรื่อง (ชุด A) — supabase/migrations/20261022100000_esign_columns.sql, ..100100_esign_tables.sql, ..100200_esign_functions.sql
+// ลงนามออนไลน์รายเรื่อง (ชุด A) — supabase/migrations/20261022100000_esign_columns.sql, ..100100_esign_tables.sql, ..100200_esign_functions.sql, ชุด B1.5: ..110000_esign_policy_optional.sql, ..110100_esign_gate_relax_functions.sql
 //   node tests/esign-db.test.mjs --pglite <temp>/node_modules/@electric-sql/pglite/dist/index.js
 // รัน migration จริงสามไฟล์ใน PostgreSQL จำลอง (PGlite + pgcrypto) พร้อมฟังก์ชันจริงที่ตัวใหม่พึ่ง (rpc_rate_limit_hit,
 // fleet_can_read, fleet_is_manager) ไม่ใช้เน็ต ไม่ใช้บัญชี ไม่แตะข้อมูลจริง
@@ -26,6 +26,9 @@ const fleetHelpersSrc = await readMigration('20260816130000_harden_fleet_assets_
 const columnsSql = await readMigration('20261022100000_esign_columns.sql')
 const tablesSql = await readMigration('20261022100100_esign_tables.sql')
 const functionsSql = await readMigration('20261022100200_esign_functions.sql')
+// ชุด B1.5: ประกาศ/หนังสือให้ความเห็นชอบไม่เป็นเงื่อนไขเปิดใช้ (รันต่อจากชุด A ตามลำดับเดียวกับบนฐานจริง)
+const policyOptionalSql = await readMigration('20261022110000_esign_policy_optional.sql')
+const gateRelaxSql = await readMigration('20261022110100_esign_gate_relax_functions.sql')
 
 // ดึงฟังก์ชันตัวจริงออกจาก migration เดิมทั้งตัว (ไม่พิมพ์ซ้ำเอง)
 const extractFunction = (source, startPattern) => {
@@ -103,6 +106,8 @@ await db.exec(fleetIsManagerFn)
 await db.exec(columnsSql)
 await db.exec(tablesSql)
 await db.exec(functionsSql)
+await db.exec(policyOptionalSql)
+await db.exec(gateRelaxSql)
 
 const users = {
   adminA: { id: U(1), role: 'admin', muni: A, name: 'แอดมิน เอ' },
@@ -209,7 +214,7 @@ await test('สิทธิ์เรียกฟังก์ชัน/ตาร�
 })
 
 // ── (5) ประตู ─────────────────────────────────────────────────────────────────────────────────
-await test('ประตู G1: เฉพาะแอดมินของ อปท. นั้น (หรือ superadmin) ตั้งประกาศได้ · ข้อมูลต้องครบ/ถูกรูปแบบ', async () => {
+await test('ประกาศ (เดิม G1): เฉพาะแอดมินของ อปท. นั้น (หรือ superadmin) บันทึกได้ · ไม่บังคับกรอก แต่กรอกแล้วต้องถูกรูปแบบ', async () => {
   const set = (no = 'ประกาศ อบต.ทดสอบเอ ที่ 5/2569', date = '2026-10-20', ref = 'หนังสือท้องถิ่นจังหวัด ที่ มท 0810/123', url = null) =>
     rpc('public.set_esign_policy($1, $2, $3::date, $4, $5)', [A, no, date, ref, url])
   for (const alias of ['anon', 'citizen', 'requester', 'fleetAdmin', 'adminB', 'staffB']) {
@@ -217,23 +222,39 @@ await test('ประตู G1: เฉพาะแอดมินของ อ�
     assert.deepEqual(await set(), { ok: false, code: 'forbidden' }, alias)
   }
   await as('adminA')
-  assert.deepEqual(await set(''), { ok: false, code: 'invalid_announcement_no' })
+  assert.deepEqual(await set('x'.repeat(201)), { ok: false, code: 'invalid_announcement_no' })
   assert.deepEqual(await set(undefined, '2099-01-01'), { ok: false, code: 'invalid_announcement_date' })
   assert.deepEqual(await set(undefined, undefined, 'ab'), { ok: false, code: 'invalid_approval_ref' })
   assert.deepEqual(await set(undefined, undefined, undefined, 'javascript:alert(1)'), { ok: false, code: 'invalid_announcement_url' })
-  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_tenant_policy')).rows[0].n, 0, 'ข้อมูลไม่ครบต้องไม่สร้างแถว')
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_tenant_policy')).rows[0].n, 0, 'ข้อมูลผิดรูปแบบต้องไม่สร้างแถว')
+
+  // เว้นว่างได้ทุกช่อง (ช่องว่าง/ช่องว่างล้วนถือเป็นไม่กรอก) และกรอกบางช่องได้
+  assert.deepEqual(await set('', null, '   ', ''), { ok: true })
+  const empty = (await db.query('SELECT announcement_no, announcement_date, approval_ref, announcement_url FROM public.esign_tenant_policy')).rows
+  assert.deepEqual(empty, [{ announcement_no: null, announcement_date: null, approval_ref: null, announcement_url: null }])
+  assert.deepEqual(await set('ประกาศ อบต.ทดสอบเอ ที่ 5/2569', null, null, null), { ok: true })
+  assert.equal((await db.query('SELECT announcement_no FROM public.esign_tenant_policy')).rows[0].announcement_no, 'ประกาศ อบต.ทดสอบเอ ที่ 5/2569')
+  await db.query('DELETE FROM public.esign_tenant_policy')
 })
 
-await test('ประตูเปิดสวิตช์: ต้องมีประกาศ → ยืนยันทดลอง → ผู้ลงนามผูกบัญชี ตามลำดับ · ช่อง/ค่าผิดถูกปฏิเสธ · ปิดสวิตช์ลบแถว', async () => {
+await test('ประตูเปิดสวิตช์: ไม่ต้องมีประกาศ · ต้องยืนยันทดลอง → ผู้ลงนามผูกบัญชี ตามลำดับ · ช่อง/ค่าผิดถูกปฏิเสธ · ปิดสวิตช์ลบแถว', async () => {
   const enable = modes => rpc('public.set_esign_doc_type($1, $2, $3::jsonb)', [A, 'fleet_trip_request', modes === null ? null : JSON.stringify(modes)])
   const all = { requester: 'online', dept_head: 'online', authority: 'online', sk1: 'online' }
   await as('adminA')
-  assert.deepEqual(await enable(all), { ok: false, code: 'gate_policy_missing' })
-  assert.deepEqual(await rpc('public.esign_confirm_trial($1)', [A]), { ok: false, code: 'gate_policy_missing' })
-
-  assert.deepEqual(await rpc(`public.set_esign_policy($1, 'ประกาศ อบต.ทดสอบเอ ที่ 5/2569', '2026-10-20'::date, 'หนังสือท้องถิ่นจังหวัด ที่ มท 0810/123', 'https://example.go.th/p.pdf')`, [A]), { ok: true })
+  // ยังไม่มีแถวนโยบายเลย: ไม่ใช่ gate_policy_missing แล้ว — ติดที่ยังไม่ยืนยันทดลองอย่างเดียว
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_tenant_policy')).rows[0].n, 0)
   assert.deepEqual(await enable(all), { ok: false, code: 'gate_trial_missing' })
+  // ยืนยันทดลองได้เลยโดยไม่ต้องบันทึกประกาศก่อน (สร้างแถวให้เอง)
   assert.deepEqual(await rpc('public.esign_confirm_trial($1)', [A]), { ok: true })
+  const created = (await db.query('SELECT announcement_no, approval_ref, trial_confirmed_at IS NOT NULL AS trial FROM public.esign_tenant_policy')).rows
+  assert.deepEqual(created, [{ announcement_no: null, approval_ref: null, trial: true }])
+
+  // บันทึกประกาศทีหลัง (ไม่บังคับ) ต้องไม่ล้างคำยืนยันทดลอง · ล้างประกาศทั้งหมดก็ไม่ล้างคำยืนยัน
+  assert.deepEqual(await rpc(`public.set_esign_policy($1, 'ประกาศ อบต.ทดสอบเอ ที่ 5/2569', '2026-10-20'::date, 'หนังสือท้องถิ่นจังหวัด ที่ มท 0810/123', 'https://example.go.th/p.pdf')`, [A]), { ok: true })
+  assert.equal((await db.query('SELECT trial_confirmed_at IS NOT NULL AS trial FROM public.esign_tenant_policy')).rows[0].trial, true)
+  assert.deepEqual(await rpc(`public.set_esign_policy($1, NULL, NULL::date, NULL, NULL)`, [A]), { ok: true })
+  assert.deepEqual((await db.query('SELECT announcement_no, trial_confirmed_at IS NOT NULL AS trial FROM public.esign_tenant_policy')).rows, [{ announcement_no: null, trial: true }])
+  assert.deepEqual(await rpc(`public.set_esign_policy($1, 'ประกาศ อบต.ทดสอบเอ ที่ 5/2569', '2026-10-20'::date, 'หนังสือท้องถิ่นจังหวัด ที่ มท 0810/123', 'https://example.go.th/p.pdf')`, [A]), { ok: true })
 
   assert.deepEqual(await enable(all), { ok: false, code: 'gate_authority_unlinked' })
   // ทะเบียนที่เป็นชื่อพิมพ์เอง (ไม่ผูกบัญชี) ไม่นับ

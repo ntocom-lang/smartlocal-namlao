@@ -17,13 +17,16 @@ async function callEsign(name, args) {
 export const getEsignGateStatus = municipalityId =>
   callEsign('esign_gate_status', { p_municipality_id: municipalityId })
 
+// ประกาศ/หนังสือให้ความเห็นชอบไม่บังคับกรอก — ช่องว่างส่งเป็น null (วันที่ว่าง '' ส่งไปจะตก date cast error) ทุกช่องว่าง = ล้างที่เคยบันทึก
+const orNull = value => (String(value ?? '').trim() || null)
+
 export const setEsignPolicy = ({ municipalityId, announcementNo, announcementDate, approvalRef, announcementUrl }) =>
   callEsign('set_esign_policy', {
     p_municipality_id: municipalityId,
-    p_announcement_no: announcementNo,
-    p_announcement_date: announcementDate,
-    p_approval_ref: approvalRef,
-    p_announcement_url: announcementUrl?.trim() ? announcementUrl.trim() : null,
+    p_announcement_no: orNull(announcementNo),
+    p_announcement_date: orNull(announcementDate),
+    p_approval_ref: orNull(approvalRef),
+    p_announcement_url: orNull(announcementUrl),
   })
 
 export const confirmEsignTrial = municipalityId =>

@@ -11,8 +11,14 @@ import {
 } from '../src/lib/esign.js'
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8')
-const functionsSql = await read('../supabase/migrations/20261022100200_esign_functions.sql')
+const functionsOldSql = await read('../supabase/migrations/20261022100200_esign_functions.sql')
+// ชุด B1.5 ยกฟังก์ชันที่แก้มาเต็มตัวในไฟล์ใหม่ — นิยามหลังสุดชนะ (ลำดับเดียวกับที่ apply บนฐานจริง)
+const gateRelaxSql = await read('../supabase/migrations/20261022110100_esign_gate_relax_functions.sql')
+const functionsSql = functionsOldSql + '\n' + gateRelaxSql
 const apiSource = await read('../src/lib/esignApi.js')
+
+// รหัสที่ถูกถอดจากฟังก์ชันแล้ว (ยังค้างอยู่ในไฟล์ชุด A เพราะ migration ที่ apply แล้วแก้ย้อนไม่ได้) — หน้าจอไม่ต้องมีข้อความ
+const RETIRED_CODES = ['gate_policy_missing']
 
 let cases = 0
 const test = async (label, run) => { await run(); cases++; console.log('PASS ' + label) }
@@ -20,6 +26,12 @@ const test = async (label, run) => { await run(); cases++; console.log('PASS ' +
 await test('ทุกรหัสผลลัพธ์ (code/reason) ที่ฟังก์ชัน DB คืนได้ มีข้อความภาษาไทยในหน้าจอ', () => {
   const codes = new Set([...functionsSql.matchAll(/'(?:code|reason)',\s*'([a-z_]+)'/g)].map(match => match[1]))
   assert.ok(codes.size >= 30, `อ่านรหัสจาก migration ได้น้อยผิดปกติ (${codes.size})`)
+  for (const retired of RETIRED_CODES) {
+    assert.ok(codes.has(retired), `${retired} ไม่อยู่ในไฟล์ชุด A แล้ว — เอาออกจาก RETIRED_CODES`)
+    assert.ok(!gateRelaxSql.match(new RegExp(`'(?:code|reason)',\\s*'${retired}'`)), `${retired} ถูกถอดแล้ว แต่ไฟล์ B1.5 ยังคืนรหัสนี้`)
+    assert.equal(ESIGN_MESSAGES[retired], undefined, `${retired} ถูกถอดแล้ว ไม่ควรมีข้อความค้างในหน้าจอ`)
+    codes.delete(retired)
+  }
   const missing = [...codes].filter(code => !ESIGN_MESSAGES[code])
   assert.deepEqual(missing, [], `รหัสที่ยังไม่มีข้อความ: ${missing.join(', ')}`)
   // ข้อความที่เหลือเกินจาก DB ได้ (rate_limited/error มาจากฝั่งหน้าจอ) แต่ห้ามว่าง
@@ -85,31 +97,59 @@ await test('esignModesFromStatus: ไม่มีสถานะ/ไม่มี
   assert.equal(esignAnyOnline(null), false)
 })
 
-await test('ประตู: ปิดทั้งหมดไม่ติดอะไร · เปิดต้องมีประกาศ+ทดลอง · ช่องผู้มีอำนาจ/หัวหน้ากองต้องผูกบัญชีเมื่อเลือกออนไลน์เท่านั้น', () => {
+await test('ประตู: ปิดทั้งหมดไม่ติดอะไร · เปิดต้องยืนยันทดลองเท่านั้น (ประกาศไม่เป็นเงื่อนไข) · ช่องผู้มีอำนาจ/หัวหน้ากองต้องผูกบัญชีเมื่อเลือกออนไลน์เท่านั้น', () => {
   const none = { policy: null, authority_linked: 0, dept_head_linked: 0 }
   const wet = { requester: 'wet', dept_head: 'wet', authority: 'wet', sk1: 'wet' }
   assert.deepEqual(esignBlockers(none, wet), [], 'ปิดทั้งหมดเปิดได้เสมอ (ไม่ใช่การเปิด)')
-  assert.deepEqual(esignBlockers(none, { ...wet, requester: 'online' }), ['policy', 'trial'])
-  const policyOnly = { policy: { announcement_no: 'ก 1', trial_confirmed_at: null }, authority_linked: 0, dept_head_linked: 0 }
-  assert.deepEqual(esignBlockers(policyOnly, { ...wet, requester: 'online' }), ['trial'])
+  assert.deepEqual(esignBlockers(none, { ...wet, requester: 'online' }), ['trial'], 'ไม่มีประกาศต้องไม่ขวาง — ติดแค่ยังไม่ยืนยันทดลอง')
+  const announcedNoTrial = { policy: { announcement_no: 'ก 1', trial_confirmed_at: null }, authority_linked: 0, dept_head_linked: 0 }
+  assert.deepEqual(esignBlockers(announcedNoTrial, { ...wet, requester: 'online' }), ['trial'], 'มีประกาศก็ไม่แทนการยืนยันทดลอง')
+  // แถวนโยบายที่เกิดจากการกดยืนยันทดลองอย่างเดียว (ไม่มีเลขที่ประกาศ) = ผ่านประตู
+  const trialOnly = { policy: { announcement_no: null, trial_confirmed_at: '2026-10-22T05:00:00Z' }, authority_linked: 0, dept_head_linked: 0 }
+  assert.deepEqual(esignBlockers(trialOnly, { ...wet, requester: 'online' }), [])
   const ready = { policy: { announcement_no: 'ก 1', trial_confirmed_at: '2026-10-22T05:00:00Z' }, authority_linked: 1, dept_head_linked: 0 }
   assert.deepEqual(esignBlockers(ready, { ...wet, requester: 'online', authority: 'online' }), [])
   assert.deepEqual(esignBlockers(ready, { ...wet, dept_head: 'online' }), ['dept_head'])
   assert.deepEqual(esignBlockers(ready, { ...wet, authority: 'online', dept_head: 'online' }), ['dept_head'])
   const items = esignGateItems(ready, { ...wet, authority: 'online' })
   assert.deepEqual(items.map(item => [item.key, item.required, item.ok]),
-    [['policy', true, true], ['trial', true, true], ['authority', true, true], ['dept_head', false, false]])
+    [['trial', true, true], ['authority', true, true], ['dept_head', false, false]])
+  assert.ok(!items.some(item => item.key === 'policy'), 'ห้ามมีประตูประกาศกลับมาโดยไม่ได้รับคำสั่งเจ้าของระบบ')
 })
 
-await test('ร่างประกาศ: ใส่ชื่อหน่วยงาน · มีส่วนให้หน่วยงานกรอกเอง · อ้างตัวบทเท่าที่ตรวจแล้วเท่านั้น', () => {
+await test('บันทึกประกาศ: ทุกช่องส่งเป็น null เมื่อว่าง (วันที่ว่าง "" จะตก date cast error ที่ PostgREST) · หน้าตั้งค่าไม่บังคับกรอก', async () => {
+  const call = /callEsign\('set_esign_policy',\s*\{([^}]*)\}/.exec(apiSource)
+  assert.ok(call, 'ไม่พบ setEsignPolicy')
+  for (const arg of ['p_announcement_no', 'p_announcement_date', 'p_approval_ref', 'p_announcement_url']) {
+    assert.ok(new RegExp(`${arg}:\\s*orNull\\(`).test(call[1]), `${arg} ต้องผ่าน orNull`)
+  }
+  const component = await read('../src/components/admin/EsignSettings.jsx')
+  // ช่องประกาศต้องไม่มีเครื่องหมายบังคับ (*) และปุ่มบันทึกต้องไม่ถูกล็อกด้วยการกรอกไม่ครบ
+  assert.ok(!/htmlFor="esign-(?:no|date|approval)">[^<]*\*/.test(component), 'ช่องประกาศมี * บังคับกรอก')
+  assert.ok(!/policyComplete/.test(component), 'ปุ่มบันทึกประกาศยังผูกกับ policyComplete')
+  assert.ok(!/policyReady/.test(component), 'ข้อทดลอง/ข้ออื่นยังรอการบันทึกประกาศ (policyReady)')
+  // ปุ่มยืนยันทดลองและปุ่มบันทึกช่องลงนาม ต้องไม่ผูกกับสถานะประกาศแม้ใช้ชื่อตัวแปรอื่น
+  const trialDisabled = /disabled=\{busy === 'trial'([^}]*)\}/.exec(component)
+  assert.ok(trialDisabled, 'ไม่พบเงื่อนไข disabled ของปุ่มยืนยันทดลอง')
+  assert.ok(!/policy|announcement|approval/i.test(trialDisabled[1]), `ปุ่มยืนยันทดลองผูกกับประกาศ: ${trialDisabled[1]}`)
+  const modesDisabled = /disabled=\{busy === 'modes' \|\| !modesDirty([^}]*)\}/.exec(component)
+  assert.ok(modesDisabled, 'ไม่พบเงื่อนไข disabled ของปุ่มบันทึกช่องลงนาม')
+  assert.ok(!/policy|announcement|approval/i.test(modesDisabled[1]), `ปุ่มบันทึกช่องลงนามผูกกับประกาศ: ${modesDisabled[1]}`)
+})
+
+await test('ร่างประกาศ: ใส่ชื่อหน่วยงาน · มีส่วนให้หน่วยงานกรอกเอง · อ้างตัวบทเท่าที่ตรวจแล้วเท่านั้น', async () => {
   const text = esignAnnouncementDraft('องค์การบริหารส่วนตำบลทดสอบ')
   assert.ok(text.startsWith('ประกาศองค์การบริหารส่วนตำบลทดสอบ'))
   assert.ok(text.includes('[ระบุ'), 'ต้องมีช่อง [ระบุ…] ให้หน่วยงานตัดสินใจเอง (สำรอง/ความเห็นชอบ/DPO)')
   assert.ok(esignAnnouncementDraft('').includes('[ชื่อหน่วยงาน]'))
-  // ตัวบทที่ตรวจแล้ว: พ.ร.บ.ธุรกรรมฯ ๒๕๔๔ มาตรา ๙ · พ.ร.ฎ. ๒๕๔๙ ข้อ ๗ — ห้ามมีมาตราอื่นลอยมาจากความจำ
-  assert.deepEqual([...new Set([...text.matchAll(/มาตรา\s*([๐-๙0-9]+)/g)].map(match => match[1]))], ['๙'])
+  // ตัวบทที่ตรวจแล้ว (อ่านจากสำเนาทางการ): พ.ร.บ.ธุรกรรมฯ ๒๕๔๔ มาตรา ๙ · พ.ร.ฎ. ๒๕๔๙ มาตรา ๗ — ห้ามมีมาตราอื่นลอยมาจากความจำ
+  // พ.ร.ฎ. ฉบับนี้เรียก "มาตรา" ไม่ใช่ "ข้อ" (เคยเขียนผิดเป็น "ข้อ ๗" ใน PR #558 — ตรวจกับตัวบทแล้วแก้ใน B1.5)
+  assert.deepEqual([...new Set([...text.matchAll(/มาตรา\s*([๐-๙0-9]+)/g)].map(match => match[1]))].sort(), ['๗', '๙'])
   assert.ok(text.includes('พ.ศ. ๒๕๔๔'))
-  assert.ok(/พ\.ศ\. ๒๕๔๙ ข้อ ๗/.test(text))
+  assert.ok(/พ\.ศ\. ๒๕๔๙ มาตรา ๗/.test(text))
+  const wrongForm = new RegExp('๒๕๔๙ ' + 'ข้อ')
+  const uiSources = [text, await read('../src/components/admin/EsignSettings.jsx'), await read('../src/lib/esign.js')]
+  for (const source of uiSources) assert.ok(!wrongForm.test(source), 'อ้าง พ.ร.ฎ. ๒๕๔๙ เป็น "ข้อ" — ตัวบทใช้ "มาตรา"')
   for (const unverified of ['ข้อ ๑๒', 'ข้อ ๘๙', 'พ.ร.บ.การปฏิบัติราชการทางอิเล็กทรอนิกส์', 'คุ้มครองข้อมูลส่วนบุคคล พ.ศ.']) {
     assert.ok(!text.includes(unverified), `ร่างอ้างสิ่งที่ยังไม่ได้ตรวจตัวบท: ${unverified}`)
   }
