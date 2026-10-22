@@ -130,10 +130,11 @@ export function toReliableImageUrl(url) {
 }
 
 // ดึงรูป (public หรือ private 'drive:…') มาเป็น data URL เพื่อฝังในเอกสารพิมพ์ — ใช้กับแผ่นภาพประกอบคำร้อง
-// (printPhotos.js) คืน { dataUrl, error } ไม่ throw · ภาพที่เบราว์เซอร์ถอดรหัสไม่ได้ (เช่น HEIC) นับเป็น error
+// (printPhotos.js) คืน { dataUrl, width, height, error } ไม่ throw · width/height = ขนาดที่เบราว์เซอร์ถอดรหัสได้ (null ถ้าไม่มี
+// createImageBitmap) ใช้จัดกรอบภาพในแผ่นภาพประกอบให้ตรงสัดส่วนจริง · ภาพที่เบราว์เซอร์ถอดรหัสไม่ได้ (เช่น HEIC) นับเป็น error
 // เพื่อให้ใบพิมพ์แสดงกรอบแจ้ง "โหลดภาพนี้ไม่สำเร็จ" แทนไอคอนรูปเสีย · เกิน timeoutMs นับเป็น error เช่นกัน
 export async function fetchImageAsDataUrl(ref, { timeoutMs = 20000 } = {}) {
-  const fail = (error) => ({ dataUrl: null, error })
+  const fail = (error) => ({ dataUrl: null, width: null, height: null, error })
   const work = (async () => {
     let privateBlobUrl = null
     try {
@@ -149,8 +150,12 @@ export async function fetchImageAsDataUrl(ref, { timeoutMs = 20000 } = {}) {
       let blob = await response.blob()
       // เซิร์ฟเวอร์ตอบ content-type จากทะเบียนไฟล์ ถ้าว่าง/ไม่ใช่รูป data URL จะไม่ถูกเรนเดอร์เป็นรูป
       if (!blob.type.startsWith('image/')) blob = blob.slice(0, blob.size, 'image/jpeg')
+      let width = null
+      let height = null
       if (typeof createImageBitmap === 'function') {
         const bitmap = await createImageBitmap(blob)
+        width = bitmap.width
+        height = bitmap.height
         bitmap.close?.()
       }
       const dataUrl = await new Promise((resolve, reject) => {
@@ -159,7 +164,7 @@ export async function fetchImageAsDataUrl(ref, { timeoutMs = 20000 } = {}) {
         reader.onerror = () => reject(reader.error)
         reader.readAsDataURL(blob)
       })
-      return { dataUrl, error: null }
+      return { dataUrl, width, height, error: null }
     } catch (error) {
       return fail(error)
     } finally {
