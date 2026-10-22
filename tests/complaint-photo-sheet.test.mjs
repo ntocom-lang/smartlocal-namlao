@@ -158,12 +158,25 @@ await check('รูปที่โหลดไม่ได้พิมพ์เ�
   assert.match(html, /ภาพที่ 2 \(ไม่มีภาพ\)/)
 })
 
-await check('ยังไม่มีภาพหลังดำเนินการ / ผู้แจ้งไม่ได้แนบภาพ → พิมพ์ข้อความตรงๆ ไม่เว้นเงียบ', () => {
-  const noAfter = buildCouncilComplaintHtml({ ...ARGS, photoSheet: { before: photos('ก่อน', 2), after: [] } })
-  assert.match(noAfter, /ยังไม่มีภาพหลังดำเนินการในระบบ/)
-  assert.ok(!noAfter.includes('ผู้แจ้งไม่ได้แนบภาพ'))
-  const noBefore = buildCouncilComplaintHtml({ ...ARGS, photoSheet: { before: [], after: photos('หลัง', 1) } })
-  assert.match(noBefore, /ผู้แจ้งไม่ได้แนบภาพ/)
+await check('หมวดที่ไม่มีรูปเลยไม่พิมพ์ทั้งหัวข้อ (เจ้าของระบบสั่ง 2569-10-22) · รูปที่มีแต่โหลดไม่ได้ยังพิมพ์เป็นกรอบ', () => {
+  const sheetOf = (photoSheet) => {
+    const html = buildCouncilComplaintHtml({ ...ARGS, photoSheet })
+    return html.slice(html.indexOf('<section class="photo-sheet">'))
+  }
+  const noAfter = sheetOf({ before: photos('ก่อน', 2), after: [] })
+  assert.match(noAfter, /ภาพก่อนดำเนินการ \(ภาพจากผู้แจ้ง\) — 2 ภาพ/)
+  assert.ok(!noAfter.includes('ภาพหลังดำเนินการ'), 'ไม่มีภาพหลัง ต้องไม่มีหัวข้อภาพหลัง')
+  assert.ok(!noAfter.includes('ยังไม่มีภาพหลังดำเนินการในระบบ') && !noAfter.includes('ps-none'), 'ห้ามมีกล่องแจ้งว่าไม่มีภาพ')
+  assert.equal((noAfter.match(/<figure>/g) ?? []).length, 2)
+
+  const noBefore = sheetOf({ before: [], after: photos('หลัง', 1) })
+  assert.match(noBefore, /ภาพหลังดำเนินการ \(ภาพจากเจ้าหน้าที่\) — 1 ภาพ/)
+  assert.ok(!noBefore.includes('ภาพก่อนดำเนินการ') && !noBefore.includes('ผู้แจ้งไม่ได้แนบภาพ'))
+
+  // หมวดที่มีรูปแต่ทุกใบโหลดไม่ได้ ≠ ไม่มีรูป: ยังต้องมีหัวข้อ + กรอบแจ้ง
+  const allFailed = sheetOf({ before: [{ src: null }], after: [] })
+  assert.match(allFailed, /ภาพก่อนดำเนินการ/)
+  assert.match(allFailed, /โหลดภาพนี้ไม่สำเร็จ/)
 })
 
 await check('การเดินสาย: ปุ่มพิมพ์ + ภาพ ใน 2 หน้าจอ · รอรูปก่อนพิมพ์ · Draft PDF ส่ง GDCC ไม่ใส่ภาพ', async () => {
