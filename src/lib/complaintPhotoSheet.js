@@ -8,6 +8,8 @@
 //   รูปแต่ละใบ = { src: 'data:image/…' } หรือ { src: null } เมื่อโหลดไม่สำเร็จ
 // ⚠️ รูปที่โหลดไม่ได้ต้องพิมพ์เป็นกรอบ "โหลดภาพนี้ไม่สำเร็จ" ห้ามตัดทิ้งเงียบๆ — เอกสารประกอบการเบิกที่ภาพขาด
 //    โดยที่คนพิมพ์ไม่รู้ตัวแย่กว่ากรอบแจ้งตรงๆ ให้พิมพ์ซ้ำ
+// หมวดที่ไม่มีรูปเลย (เช่น ยังไม่มีภาพหลังดำเนินการ) ไม่พิมพ์ทั้งหัวข้อ — เจ้าของระบบสั่ง 2569-10-22 หลังเห็นใบจริง
+//    (ต่างจาก "รูปที่มีแต่โหลดไม่ได้" ซึ่งยังพิมพ์เป็นกรอบแจ้ง เพราะมีรูปอยู่จริงแต่ขาดไป)
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -33,7 +35,6 @@ export function complaintPhotoSheetCss() {
   /* 11pt โดยตั้งใจ — คำบรรยายใต้ภาพเป็นข้อความประกอบ ไม่ใช่เนื้อความ (ขนาดเดียวกับบล็อกเลขอ้างอิงมุมกระดาษของใบคำร้อง) */
   .photo-sheet figcaption { text-align: center; font-size: 11pt; line-height: 1.3; margin-top: 1mm; }
   .photo-sheet .ps-failed { text-align: center; font-size: 11pt; line-height: 1.3; padding: 0 3mm; border: 0.3mm dashed #888; width: 100%; height: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
-  .photo-sheet .ps-none { margin-top: 2mm; padding: 5mm; border: 0.3mm dashed #999; text-align: center; }
   .photo-sheet .ps-origin { margin-top: 8px; text-align: center; font-size: 11pt; }
 `
 }
@@ -50,9 +51,10 @@ function figuresHtml(list, kind) {
   return `<div class="ps-grid" style="grid-template-columns:repeat(${cols}, 1fr);">${figures}</div>`
 }
 
-function sectionHtml(title, list, kind, emptyText) {
-  return `<h2>${esc(title)}${list.length ? ` — ${list.length} ภาพ` : ''}</h2>
-  ${list.length ? figuresHtml(list, kind) : `<p class="ps-none">${esc(emptyText)}</p>`}`
+function sectionHtml(title, list, kind) {
+  if (!list.length) return ''
+  return `<h2>${esc(title)} — ${list.length} ภาพ</h2>
+  ${figuresHtml(list, kind)}`
 }
 
 // coordinates: ข้อความพิกัดที่ใบคำร้องตัดสินแล้ว ('' = ไม่พิมพ์บรรทัดนี้ — สิทธิ์ปิด/ปิดด้วย includeCoordinates)
@@ -64,8 +66,8 @@ export function complaintPhotoSheetHtml({ num, thDate, subject, place = '', coor
   <p class="ps-meta">เรื่อง &nbsp;${esc(subject)}</p>
   ${place ? `<p class="ps-meta">สถานที่ &nbsp;${esc(place)}</p>` : ''}
   ${coordinates ? `<p class="ps-meta">พิกัด &nbsp;${esc(coordinates)}</p>` : ''}
-  ${sectionHtml('ภาพก่อนดำเนินการ (ภาพจากผู้แจ้ง)', before, 'ก่อนดำเนินการ', 'ผู้แจ้งไม่ได้แนบภาพ')}
-  ${sectionHtml('ภาพหลังดำเนินการ (ภาพจากเจ้าหน้าที่)', after, 'หลังดำเนินการ', 'ยังไม่มีภาพหลังดำเนินการในระบบ')}
+  ${sectionHtml('ภาพก่อนดำเนินการ (ภาพจากผู้แจ้ง)', before, 'ก่อนดำเนินการ')}
+  ${sectionHtml('ภาพหลังดำเนินการ (ภาพจากเจ้าหน้าที่)', after, 'หลังดำเนินการ')}
   ${originText ? `<p class="ps-origin">${esc(originText)}</p>` : ''}
 </section>`
 }
