@@ -129,6 +129,54 @@ export function toReliableImageUrl(url) {
   return url
 }
 
+// ดึงรูป (public หรือ private 'drive:…') มาเป็น data URL เพื่อฝังในเอกสารพิมพ์ — ใช้กับแผ่นภาพประกอบคำร้อง
+// (printPhotos.js) คืน { dataUrl, error } ไม่ throw · ภาพที่เบราว์เซอร์ถอดรหัสไม่ได้ (เช่น HEIC) นับเป็น error
+// เพื่อให้ใบพิมพ์แสดงกรอบแจ้ง "โหลดภาพนี้ไม่สำเร็จ" แทนไอคอนรูปเสีย · เกิน timeoutMs นับเป็น error เช่นกัน
+export async function fetchImageAsDataUrl(ref, { timeoutMs = 20000 } = {}) {
+  const fail = (error) => ({ dataUrl: null, error })
+  const work = (async () => {
+    let privateBlobUrl = null
+    try {
+      let src = toReliableImageUrl(ref)
+      if (isPrivateDriveRef(ref)) {
+        const { url, error } = await resolvePrivateFileUrl(driveFileIdFromRef(ref))
+        if (error || !url) return fail(error ?? new Error('โหลดไฟล์ไม่สำเร็จ'))
+        privateBlobUrl = url
+        src = url
+      }
+      const response = await fetch(src)
+      if (!response.ok) return fail(new Error(`โหลดรูปไม่สำเร็จ (${response.status})`))
+      let blob = await response.blob()
+      // เซิร์ฟเวอร์ตอบ content-type จากทะเบียนไฟล์ ถ้าว่าง/ไม่ใช่รูป data URL จะไม่ถูกเรนเดอร์เป็นรูป
+      if (!blob.type.startsWith('image/')) blob = blob.slice(0, blob.size, 'image/jpeg')
+      if (typeof createImageBitmap === 'function') {
+        const bitmap = await createImageBitmap(blob)
+        bitmap.close?.()
+      }
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = () => reject(reader.error)
+        reader.readAsDataURL(blob)
+      })
+      return { dataUrl, error: null }
+    } catch (error) {
+      return fail(error)
+    } finally {
+      if (privateBlobUrl) URL.revokeObjectURL(privateBlobUrl)
+    }
+  })()
+  let timer
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(fail(new Error('โหลดรูปเกินเวลา'))), timeoutMs)
+  })
+  try {
+    return await Promise.race([work, timeout])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // ตัวช่วยแยกว่า url ที่เก็บไว้เป็นไฟล์ private ของ Drive หรือเป็น URL ปกติ (public/ของเดิมจาก Supabase)
 export function isPrivateDriveRef(url) {
   return typeof url === 'string' && url.startsWith('drive:')

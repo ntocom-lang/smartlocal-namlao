@@ -5,6 +5,7 @@ import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from 
 import { orgClerkTitle, orgHeadTitle } from './orgTerms.js'
 import { printableCategoryLabel } from './complaintCategoryLabels.js'
 import { QUIET_MODULES, qrLayout } from './qrSvg.js'
+import { complaintPhotoSheetCss, complaintPhotoSheetHtml } from './complaintPhotoSheet.js'
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -188,17 +189,17 @@ function pinOf(c) {
 
 function coordinatesBlock(c) {
   const pin = pinOf(c)
-  if (pin === undefined) return { row: '', qr: '' }
-  if (pin === null) return { row: '<div>พิกัด &nbsp;ไม่ได้ปักหมุด (ระบุตามคำบรรยายสถานที่)</div>', qr: '' }
+  if (pin === undefined) return { row: '', qr: '', text: '' }
+  if (pin === null) return { row: '<div>พิกัด &nbsp;ไม่ได้ปักหมุด (ระบุตามคำบรรยายสถานที่)</div>', qr: '', text: 'ไม่ได้ปักหมุด' }
   const text = `${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}`
   const row = `<div>พิกัด &nbsp;${text}</div>`
   // ลิงก์รูปแบบเดียวกับปุ่มเปิดแผนที่ในหน้าเจ้าหน้าที่ (ComplaintsManager) — ไม่ใช้ API/คีย์ ไม่มีค่าใช้จ่าย
   const url = `https://maps.google.com/?q=${pin.lat.toFixed(6)},${pin.lng.toFixed(6)}`
   const qr = qrLayout(url, 1000)
-  if (!qr) return { row, qr: '' }
+  if (!qr) return { row, qr: '', text }
   const box = qr.size + QUIET_MODULES * 2
   const svg = `<svg viewBox="0 0 ${box} ${box}" role="img" aria-label="QR code เปิดตำแหน่งในแผนที่"><rect width="${box}" height="${box}" fill="#fff"/><path transform="translate(${QUIET_MODULES} ${QUIET_MODULES})" d="${qr.d}" fill="#000"/></svg>`
-  return { row, qr: `<div class="geo-qr">${svg}<p>สแกน QR เพื่อเปิดตำแหน่งที่แจ้งในแผนที่</p></div>` }
+  return { row, qr: `<div class="geo-qr">${svg}<p>สแกน QR เพื่อเปิดตำแหน่งที่แจ้งในแผนที่</p></div>`, text }
 }
 
 // อ้างอิงจากแบบฟอร์มกระดาษจริงที่เทศบาลตำบลน้ำเลาใช้งานอยู่
@@ -211,9 +212,12 @@ function coordinatesBlock(c) {
 //
 // includeCoordinates: พิมพ์พิกัด + QR แผนที่ (ค่าปริยายเปิด) — ปิดได้ที่จุดเรียกใช้เดียว ถ้า DPO ตัดสินว่าฉบับ Draft PDF ที่ส่งออก GDCC
 // ไม่ควรมีพิกัด (ระบบนับพิกัดละเอียดเป็นข้อมูลต้องรู้ใครเห็น: audit_logs 'exact_location' ตอนเปิดรายละเอียดคำร้อง)
-export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, signatories = {}, includeStaffSignatures = true, includeCoordinates = true }) {
+//
+// photoSheet: { before, after } จาก loadPrintPhotos() (printPhotos.js) → ต่อแผ่น "ภาพประกอบคำร้อง" ท้ายใบเป็นหน้าใหม่
+// ไม่ส่ง = ใบเดิมทุกไบต์ (ปุ่ม "พิมพ์" ปกติ และ Draft PDF ที่ส่ง GDCC ไม่ใส่ภาพโดยเจตนา — รอเจ้าของ/DPO ตัดสิน)
+export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, signatories = {}, includeStaffSignatures = true, includeCoordinates = true, photoSheet = null }) {
   const loc = locationName(tenant)
-  const geo = includeCoordinates ? coordinatesBlock(c) : { row: '', qr: '' }
+  const geo = includeCoordinates ? coordinatesBlock(c) : { row: '', qr: '', text: '' }
   const reporter = c.reporter_name || c.profiles?.full_name || '.................................................'
 
   // จ่าหน้า "เรียน" กับตำแหน่งใต้ช่องลงนามต้องเป็นชื่อหน่วยงานเต็ม (นายกองค์การบริหารส่วนตำบลทุ่งแค้ว)
@@ -311,7 +315,7 @@ ${govSignBlockCss()}
   .geo-qr { display: flex; align-items: center; gap: 4mm; margin: 6px 0 0 2em; break-inside: avoid; }
   .geo-qr svg { width: 20mm; height: 20mm; flex: 0 0 auto; }
   .geo-qr p { font-size: 11pt; line-height: 1.3; }
-  @media print { button { display: none; } }
+  @media print { button { display: none; } }${photoSheet ? complaintPhotoSheetCss() : ''}
 </style></head><body>
 <div class="request-refs">
   <div class="e-service-ref">
@@ -366,6 +370,15 @@ ${geo.qr}
     ${signBlock(mayor, mayorTitle, '54%')}
   </div>` : ''}
 </div>
-
+${photoSheet ? complaintPhotoSheetHtml({
+    num,
+    thDate,
+    subject: requestCopy.subject,
+    place: location1,
+    coordinates: geo.text,
+    originText: govEServiceOriginText(tenant),
+    before: photoSheet.before,
+    after: photoSheet.after,
+  }) : ''}
 </body></html>`
 }

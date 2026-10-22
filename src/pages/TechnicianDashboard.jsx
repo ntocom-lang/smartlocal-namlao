@@ -13,8 +13,9 @@ import { useAuth } from '../contexts/AuthContext'
 import OdorReportPanel from '../components/staff/OdorReportPanel'
 import { compressImage } from '../lib/imageUtils'
 import { notifyTelegram } from '../lib/notifyTelegram'
-import { uploadFile } from '../lib/driveStorage'
+import { uploadFile, fetchImageAsDataUrl } from '../lib/driveStorage'
 import { buildCouncilComplaintHtml } from '../lib/councilFormPrint'
+import { complaintPhotoCount, loadPrintPhotos, printWhenImagesReady } from '../lib/printPhotos'
 import { isMissingSignatoryError, prepareComplaintPrint } from '../lib/complaintPrint'
 import MapPicker from '../components/MapPicker'
 import ReturnToIntakeButton from '../components/complaints/ReturnToIntakeButton'
@@ -175,12 +176,14 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
   const catLabel = categoryNameOf(CATEGORY_LABEL, c.category)
   const catEmoji = CATEGORY_EMOJI[c.category] ?? '📄'
 
-  async function handlePrint() {
+  // withPhotos: ต่อแผ่น "ภาพประกอบคำร้อง" ท้ายใบ (ปุ่ม "พิมพ์ + ภาพ") — ปุ่มเดิมส่ง event เข้ามา ไม่มีคีย์ withPhotos = ใบเดิมไม่เปลี่ยน
+  async function handlePrint({ withPhotos = false } = {}) {
     const popup = window.open('', '_blank', 'width=900,height=700')
     if (!popup) {
       alert('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาตป๊อปอัพสำหรับเว็บไซต์นี้แล้วลองใหม่')
       return
     }
+    if (withPhotos) popup.document.body.textContent = 'กำลังเตรียมใบคำร้องและภาพประกอบ…'
 
     const { data: privateComplaint, error: privateDetailError } = await fetchComplaintPrivateDetail(
       c.id,
@@ -213,6 +216,8 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
       department: printContextResult.data?.department_name ?? printableComplaint.department,
     }
 
+    // photos = รูปหลังดำเนินการที่เพิ่งอัปโหลดในหน้านี้ (รวมกับของเดิมโดยตัดซ้ำ) · รูปที่โหลดไม่ได้พิมพ์เป็นกรอบแจ้ง ไม่ถูกตัดทิ้ง
+    const photoSheet = withPhotos ? await loadPrintPhotos(printComplaint, fetchImageAsDataUrl, photos) : null
     popup.document.write(buildCouncilComplaintHtml({
       c: printComplaint,
       tenant,
@@ -222,8 +227,13 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
       cat: catLabel,
       phone,
       signatories: printContextResult.data?.signatories ?? {},
+      photoSheet,
     }))
     popup.document.close()
+    if (photoSheet) {
+      await printWhenImagesReady(popup)
+      return
+    }
     setTimeout(() => {
       popup.focus()
       popup.print()
@@ -292,12 +302,19 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
         {/* Header */}
         <div className="shrink-0 px-5 pt-6 pb-5"
              style={{ background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)' }}>
-          <div className="mb-3 flex justify-end gap-2">
+          <div className="mb-3 flex flex-wrap justify-end gap-2">
             <button onClick={handlePrint}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-colors"
               title="พิมพ์แบบคำร้องเดิมของหน่วยงาน">
               <Printer size={16} /> พิมพ์แบบคำร้อง
             </button>
+            {complaintPhotoCount(c, photos) > 0 && (
+              <button onClick={() => handlePrint({ withPhotos: true })}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-colors"
+                title="พิมพ์แบบคำร้อง ตามด้วยแผ่นภาพประกอบ (ภาพจากผู้แจ้ง + ภาพหลังดำเนินการ)">
+                <Printer size={16} /> พิมพ์ + ภาพ ({complaintPhotoCount(c, photos)})
+              </button>
+            )}
             <button onClick={onClose} aria-label="ปิด"
               className="inline-flex min-h-11 items-center gap-1 rounded-xl bg-white px-3 text-sm font-bold text-gray-800 shadow-lg transition-colors hover:bg-gray-100 active:scale-95">
               <X size={20} strokeWidth={2.5} /> ปิด
