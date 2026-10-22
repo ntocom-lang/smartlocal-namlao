@@ -1,4 +1,5 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { govMapQrCss, govPointWithMapQr } from './govMapQr.js'
 import { govNameBlank, govSignBlockCss } from './govSignBlock.js'
 import { govStaffSignBlockCss, govStaffSignBlockHtml } from './govStaffSignBlock.js'
 import { orgHeadTitle } from './orgTerms.js'
@@ -226,6 +227,7 @@ export function buildWasteCollectionCancelHtml({
     .sheet--staff { min-height: 0; }
 ${govSignBlockCss()}
 ${govStaffSignBlockCss()}
+${govMapQrCss()}
 
     @media screen {
       body { background: #e5e7eb; padding: 12px; }
@@ -261,7 +263,10 @@ ${govStaffSignBlockCss()}
     ${/* พิกัดจุดวางถัง — ไม่มีในต้นฉบับ แต่จำเป็นกว่าฝั่งใบขอรับบริการเสียอีก: คำร้องยกเลิก
          ส่วนใหญ่มาจากบ้านที่ไม่มีคนอยู่แล้ว พนักงานที่ไปถอนถังโทรถามเจ้าของบ้านหน้างานไม่ได้
          ตัดทิ้งเมื่อผู้ยื่นไม่ได้ปักหมุด (ไม่บังคับกรอก) จะได้ไม่เหลือบรรทัดว่างคาใบ */''}
-    ${collectionPoint ? `<p class="point-copy">จุดวางถังตามพิกัดแผนที่ ${line(collectionPoint)}</p>` : ''}
+    ${collectionPoint ? govPointWithMapQr({
+    pointHtml: `<p class="point-copy">จุดวางถังตามพิกัดแผนที่ ${line(collectionPoint)}</p>`,
+    point: data.collection_point,
+  }) : ''}
 
     ${/* ย่อหน้านี้ไม่มีในต้นฉบับ — เพิ่มเพราะการยกเลิกบริการคือการปิดภาระค่าธรรมเนียมรายเดือน
          ถ้าใบไม่ระบุว่าหนี้ที่ค้างอยู่ยังต้องชำระ และไม่ระบุว่าการยกเลิกมีผลเมื่อ อปท. ตรวจสอบแล้ว

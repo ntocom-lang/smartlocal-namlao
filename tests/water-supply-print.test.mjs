@@ -17,6 +17,7 @@ import {
 } from '../src/lib/waterSupplyRequestPrint.js'
 import { WATERWORKS_DOCUMENT_TYPES } from '../src/lib/documentTypes.js'
 import { orgOfficeName } from '../src/lib/orgTerms.js'
+import { qrLayout } from '../src/lib/qrSvg.js'
 
 const TENANT = {
   name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว',
@@ -273,5 +274,36 @@ for (const [label, full] of [['ขอใช้น้ำ', online], ['เปล�
 }
 const noName = bodyOf(render(baseForm({ applicant: { age: 45 } })))
 assert.match(noName, /ข้าพเจ้า \(นาย\/นาง\/นางสาว\)/, 'ใบที่ไม่มีชื่อต้องคงคำใบ้คำนำหน้าไว้ให้คนเขียนมือ')
+
+// ── QR เปิดแผนที่ข้างย่อหน้าพิกัดจุดติดตั้งมาตร — ครบทั้ง 3 ใบ (เจ้าของระบบสั่ง 2569-10-21: ผู้บริหารสแกนจากกระดาษได้) ──
+// ลิงก์เขียนตรงๆ ในเทสต์ ไม่เรียกฟังก์ชันสร้างลิงก์ของตัวใบซ้ำ
+{
+  const LINK = 'https://maps.google.com/?q=18.258742,100.308329'
+  const qrPath = qrLayout(LINK, 1000).d
+  const staffExtra = { signatories: { department_head: null, clerk: null, mayor: null }, departmentName: 'กองช่าง' }
+  for (const [label, build, type] of [
+    ['ขอใช้น้ำ', buildWaterSupplyRequestHtml, 'water_supply_request'],
+    ['เปลี่ยนมาตร', buildWaterMeterChangeHtml, 'water_meter_change'],
+    ['ยกเลิกใช้น้ำ', buildWaterSupplyCancelHtml, 'water_supply_cancel'],
+  ]) {
+    for (const [mode, extra] of [['ประชาชนพิมพ์เอง', {}], ['เจ้าหน้าที่พิมพ์', staffExtra]]) {
+      const html = renderWith(build, variantForm(type), extra)
+      assert.ok(html.includes(qrPath), `${label} (${mode}): QR ต้องเข้ารหัสลิงก์แผนที่ของพิกัดที่ปักไว้`)
+      assert.equal((html.match(/<svg/g) || []).length, 1, `${label} (${mode}): มี QR เดียว`)
+      assert.match(html, /<div class="map-point"><div class="map-point__text"><p class="point-copy">จุด(?:ติดตั้งมาตรวัดน้ำ|ที่ตั้งมาตร)ตามพิกัดแผนที่ /,
+        `${label} (${mode}): QR ต้องอยู่ข้างย่อหน้าพิกัดเดิม`)
+      assert.match(html, /18\.258742, 100\.308329 \(บ้านทุ่งแค้ว\)/, `${label} (${mode}): ย่อหน้าพิกัดเดิมต้องไม่ถูกแก้`)
+      assert.match(html, /สแกนเปิดแผนที่/)
+    }
+    // ไม่ปักหมุด/พิกัดเสีย/0,0 = ไม่มี QR ไม่มีบรรทัดว่างคาใบ
+    for (const point of [null, undefined, { lat: 'x', lng: null, address: 'ที่ไหนสักแห่ง' }, { lat: 0, lng: 0, address: 'x' }]) {
+      const html = renderWith(build, variantForm(type, { meter_point: point }))
+      assert.doesNotMatch(html, /<svg/, `${label}: ไม่มีพิกัดที่ใช้ได้ต้องไม่มี QR: ${JSON.stringify(point)}`)
+    }
+    const evil = renderWith(build, variantForm(type, { meter_point: { lat: 18.258742, lng: 100.308329, address: '<img src=x onerror=alert(1)>' } }))
+    assert.doesNotMatch(evil, /<img src=x/, `${label}: ที่อยู่ที่มีแท็กต้องถูกหนีอักขระ`)
+    assert.ok(evil.includes(qrPath))
+  }
+}
 
 console.log('water-supply-print.test.mjs PASS')
