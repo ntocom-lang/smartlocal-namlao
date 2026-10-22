@@ -1,0 +1,340 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CheckCircle2, Circle, Copy, Loader2, Save, ShieldCheck } from 'lucide-react'
+import { supabase } from '../../lib/supabase'
+import {
+  ESIGN_DRIVER_NOTE, ESIGN_FLEET_SLOTS, ESIGN_MODE_LABEL, esignAnnouncementDraft, esignAnyOnline, esignBlockers,
+  esignGateItems, esignMessage, esignModesFromStatus,
+} from '../../lib/esign'
+import { confirmEsignTrial, getEsignGateStatus, reinstateEsignSigner, setEsignDocType, setEsignPolicy } from '../../lib/esignApi'
+import { todayBangkok } from '../../lib/documentSignatories'
+import { thaiDateFromDateInput } from '../../lib/thaiDate'
+
+// ตั้งค่า "ลงนามออนไลน์รายเรื่อง" ของ อปท. — ตั้งโดยแอดมินของหน่วยงานเท่านั้น (ฟังก์ชัน DB ตรวจสิทธิ์ซ้ำ)
+// เรียงตามสิ่งที่แอดมินต้องทำ: ประกาศ → ทดลอง → ผู้ลงนามผูกบัญชี → เลือกช่อง
+// ไม่มีปุ่ม "เปิดทั้งหมด" โดยตั้งใจ และไม่เปิดให้เองเมื่อเงื่อนไขไม่ครบ (DB ปัดด้วย gate_* ถ้าข้ามหน้าจอมา)
+const FIELD_CLASS = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus:outline-none focus:border-indigo-400'
+const BUTTON_CLASS = 'inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-bold disabled:opacity-50'
+const STAFF_ROLES = ['admin', 'officer', 'staff', 'technician', 'viewer', 'council']
+
+// เวลาจาก DB เป็น ISO (UTC) — วันที่แสดงต้องเป็นวันตามเวลาไทย ไม่ใช่ 10 ตัวแรกของสตริง (หลังเที่ยงคืนไทยจะเลื่อนผิดวัน)
+const bangkokDate = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date(value))
+
+function Notice({ notice }) {
+  if (!notice) return null
+  const style = notice.ok
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+    : 'border-red-200 bg-red-50 text-red-700'
+  return <p role={notice.ok ? 'status' : 'alert'} className={`rounded-xl border px-4 py-2.5 text-sm ${style}`}>{notice.text}</p>
+}
+
+function Step({ number, title, done, children }) {
+  return (
+    <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm space-y-3">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 shrink-0" aria-hidden="true">
+          {done ? <CheckCircle2 size={22} className="text-emerald-600" /> : <Circle size={22} className="text-gray-300" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-bold text-gray-800">{number}. {title}</h3>
+          <p className="text-xs font-semibold text-gray-400">{done ? 'ผ่านแล้ว' : 'ยังไม่ผ่าน'}</p>
+        </div>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+export default function EsignSettings({ tenant, onOpenSignatories = null }) {
+  const [status, setStatus] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [people, setPeople] = useState([])
+
+  const [announcementNo, setAnnouncementNo] = useState('')
+  const [announcementDate, setAnnouncementDate] = useState('')
+  const [approvalRef, setApprovalRef] = useState('')
+  const [announcementUrl, setAnnouncementUrl] = useState('')
+  const [modes, setModes] = useState(() => esignModesFromStatus(null))
+  const [trialChecked, setTrialChecked] = useState(false)
+  const [reinstateId, setReinstateId] = useState('')
+
+  const [busy, setBusy] = useState('')
+  const [notices, setNotices] = useState({})
+  const [copied, setCopied] = useState(false)
+
+  const municipalityId = tenant?.id
+  const today = todayBangkok()
+
+  const applyStatus = useCallback(next => {
+    setStatus(next)
+    setAnnouncementNo(next?.policy?.announcement_no ?? '')
+    setAnnouncementDate(next?.policy?.announcement_date ?? '')
+    setApprovalRef(next?.policy?.approval_ref ?? '')
+    setAnnouncementUrl(next?.policy?.announcement_url ?? '')
+    setModes(esignModesFromStatus(next))
+  }, [])
+
+  const reload = useCallback(async () => {
+    if (!municipalityId) return
+    const next = await getEsignGateStatus(municipalityId)
+    if (next?.ok === false) {
+      setLoadError(esignMessage(next))
+      setStatus(null)
+    } else {
+      setLoadError('')
+      applyStatus(next)
+    }
+    setLoading(false)
+  }, [municipalityId, applyStatus])
+
+  useEffect(() => {
+    if (!municipalityId) return undefined
+    let active = true
+    Promise.all([
+      getEsignGateStatus(municipalityId),
+      supabase.from('profiles').select('id,full_name,job_title,role')
+        .eq('municipality_id', municipalityId).in('role', STAFF_ROLES).order('full_name'),
+    ]).then(([next, peopleResult]) => {
+      if (!active) return
+      if (next?.ok === false) setLoadError(esignMessage(next))
+      else applyStatus(next)
+      setPeople((peopleResult.data ?? []).filter(person => person.full_name?.trim()))
+      setLoading(false)
+    })
+    return () => { active = false }
+  }, [municipalityId, applyStatus])
+
+  const setNotice = (key, notice) => setNotices(current => ({ ...current, [key]: notice }))
+
+  async function run(key, action, successText) {
+    setBusy(key)
+    setNotice(key, null)
+    const result = await action()
+    if (result?.ok) {
+      setNotice(key, { ok: true, text: successText })
+      await reload()
+    } else {
+      setNotice(key, { ok: false, text: esignMessage(result) })
+    }
+    setBusy('')
+  }
+
+  const savedModes = useMemo(() => esignModesFromStatus(status), [status])
+  const enabled = esignAnyOnline(savedModes)
+  const modesDirty = ESIGN_FLEET_SLOTS.some(slot => modes[slot.key] !== savedModes[slot.key])
+  const blockers = esignBlockers(status, modes)
+  const gateItems = esignGateItems(status, modes)
+  const policyReady = Boolean(status?.policy)
+  const trialDone = Boolean(status?.policy?.trial_confirmed_at)
+  const draftText = useMemo(() => esignAnnouncementDraft(tenant?.name), [tenant?.name])
+
+  const policyDirty = !status?.policy
+    || announcementNo.trim() !== status.policy.announcement_no
+    || announcementDate !== status.policy.announcement_date
+    || approvalRef.trim() !== status.policy.approval_ref
+    || announcementUrl.trim() !== (status.policy.announcement_url ?? '')
+  const policyComplete = announcementNo.trim() && announcementDate && approvalRef.trim().length >= 3
+
+  async function copyDraft() {
+    try {
+      await navigator.clipboard.writeText(draftText)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    } catch {
+      setCopied(false)
+      setNotice('draft', { ok: false, text: 'คัดลอกอัตโนมัติไม่ได้ กรุณาเลือกข้อความแล้วคัดลอกเอง' })
+    }
+  }
+
+  if (loading) {
+    return <div className="flex justify-center py-10"><Loader2 size={24} className="animate-spin text-gray-400" /></div>
+  }
+  if (loadError) {
+    return <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">⚠️ {loadError}</p>
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm space-y-2">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <p className="text-xs leading-5 text-gray-500">
+              ให้ผู้ลงนามเซ็นใบขออนุญาตใช้ยานพาหนะส่วนกลาง (แบบ ๓) และบันทึกรับรอง สก.๑ ในระบบแทนเซ็นกระดาษ เลือกเปิดเป็นรายช่อง
+              ช่องที่ไม่เลือกยังเซ็นสดเหมือนเดิม {ESIGN_DRIVER_NOTE}
+            </p>
+            <p className="text-xs leading-5 text-gray-500">
+              เปิดแล้วมีผลกับคำขอที่สร้างหลังบันทึกเท่านั้น คำขอที่สร้างไปแล้วเซ็นสดต่อจนจบ ปิดสวิตช์แล้วลายเซ็นที่ลงไปแล้วยังตรวจสอบได้
+              ระบบไม่ลงนามแทนใคร ไม่เปลี่ยนการอนุมัติคิวรถอัตโนมัติ และไม่ตัดสินแทนผู้มีอำนาจ
+            </p>
+          </div>
+          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
+            {enabled ? 'เปิดใช้อยู่' : 'ยังไม่เปิด'}
+          </span>
+        </div>
+      </section>
+
+      <Step number={1} title="ประกาศของหน่วยงาน" done={policyReady}>
+        <p className="text-xs leading-5 text-gray-500">
+          พระราชกฤษฎีกากำหนดหลักเกณฑ์และวิธีการในการทำธุรกรรมทางอิเล็กทรอนิกส์ภาครัฐ พ.ศ. ๒๕๔๙ ข้อ ๗ ให้แนวนโยบายและแนวปฏิบัติความมั่นคงปลอดภัยทำเป็นประกาศ
+          และต้องได้รับความเห็นชอบจากคณะกรรมการหรือหน่วยงานที่คณะกรรมการมอบหมายจึงมีผลบังคับ
+          หน่วยงานที่ให้ความเห็นชอบสำหรับ อปท. ให้สอบถามท้องถิ่นจังหวัดหรือกรมส่งเสริมการปกครองท้องถิ่น แล้วบันทึกเลขที่ประกาศและหนังสือที่ได้รับที่นี่
+        </p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-no">เลขที่ประกาศ *
+            <input id="esign-no" className={`${FIELD_CLASS} mt-1`} value={announcementNo} maxLength={200}
+              onChange={event => setAnnouncementNo(event.target.value)} placeholder="เช่น ประกาศ อบต.… ที่ 5/2569" />
+          </label>
+          <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-date">ลงวันที่ *
+            <input id="esign-date" type="date" className={`${FIELD_CLASS} mt-1`} value={announcementDate} max={today}
+              onChange={event => setAnnouncementDate(event.target.value)} />
+            {announcementDate && <span className="mt-1 block text-[11px] font-normal text-gray-400">{thaiDateFromDateInput(announcementDate)}</span>}
+          </label>
+        </div>
+        <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-approval">หนังสือให้ความเห็นชอบ หรือคำชี้แจงว่าไม่ต้องขอ *
+          <textarea id="esign-approval" className={`${FIELD_CLASS} mt-1 min-h-20`} value={approvalRef} maxLength={500}
+            onChange={event => setApprovalRef(event.target.value)}
+            placeholder="เช่น หนังสือท้องถิ่นจังหวัด… ที่ มท …/… ลงวันที่ … (ถ้าได้รับคำตอบว่าไม่ต้องขอความเห็นชอบ ให้ใส่เลขที่หนังสือตอบนั้น)" />
+        </label>
+        <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-url">ลิงก์ไฟล์ประกาศ (ถ้ามี)
+          <input id="esign-url" className={`${FIELD_CLASS} mt-1`} value={announcementUrl} maxLength={1000} inputMode="url"
+            onChange={event => setAnnouncementUrl(event.target.value)} placeholder="https://…" />
+        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" className={`${BUTTON_CLASS} bg-indigo-600 text-white hover:bg-indigo-700`}
+            disabled={busy === 'policy' || !policyDirty || !policyComplete}
+            onClick={() => run('policy', () => setEsignPolicy({
+              municipalityId, announcementNo: announcementNo.trim(), announcementDate, approvalRef: approvalRef.trim(), announcementUrl,
+            }), 'บันทึกประกาศแล้ว')}>
+            {busy === 'policy' ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} บันทึกประกาศ
+          </button>
+          <button type="button" className="text-xs font-bold text-indigo-700 underline underline-offset-2" onClick={copyDraft}>
+            <Copy size={13} className="mr-1 inline" />{copied ? 'คัดลอกแล้ว' : 'คัดลอกร่างข้อความประกาศ'}
+          </button>
+        </div>
+        <Notice notice={notices.policy} />
+        <Notice notice={notices.draft} />
+        <details className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+          <summary className="cursor-pointer text-xs font-bold text-gray-700">ดูร่างข้อความประกาศ (ให้นิติกรและผู้บริหารตรวจก่อนใช้)</summary>
+          <p className="mt-2 text-[11px] leading-5 text-gray-500">
+            เป็นร่างตั้งต้นที่อ้างเฉพาะตัวบทที่ตรวจกับสำเนาทางการแล้ว ไม่ใช่คำปรึกษากฎหมาย ส่วนในวงเล็บเหลี่ยม [ ] หน่วยงานต้องตัดสินใจและกรอกเอง
+          </p>
+          <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-gray-800">{draftText}</pre>
+        </details>
+      </Step>
+
+      <Step number={2} title="ผู้ลงนามทดลองใช้แล้ว" done={trialDone}>
+        <p className="text-xs leading-5 text-gray-500">
+          ให้ผู้ลงนามทุกช่องทดลองตั้งรหัสลงนามและลงนามบนระบบสาธิต (เว็บสาธิตของระบบ ไม่ใช่ข้อมูลจริงของหน่วยงาน) จนคุ้นก่อน แล้วกดยืนยันที่นี่
+          ระบบเก็บเป็นคำยืนยันของแอดมิน ไม่ได้ตรวจว่าทดลองจริง จึงขึ้นกับความรับผิดชอบของผู้ยืนยัน
+        </p>
+        {trialDone ? (
+          <p className="text-sm font-semibold text-emerald-700">ยืนยันแล้วเมื่อ {thaiDateFromDateInput(bangkokDate(status.policy.trial_confirmed_at))}</p>
+        ) : (
+          <div className="space-y-2">
+            <label className="flex items-start gap-2 text-sm text-gray-700" htmlFor="esign-trial">
+              <input id="esign-trial" type="checkbox" className="mt-1" checked={trialChecked} disabled={!policyReady}
+                onChange={event => setTrialChecked(event.target.checked)} />
+              <span>ผู้ลงนามทุกช่องที่จะใช้ได้ทดลองลงนามบนระบบสาธิตแล้ว</span>
+            </label>
+            {!policyReady && <p className="text-xs text-amber-700">บันทึกประกาศในข้อ 1 ก่อน</p>}
+            <button type="button" className={`${BUTTON_CLASS} bg-indigo-600 text-white hover:bg-indigo-700`}
+              disabled={busy === 'trial' || !policyReady || !trialChecked}
+              onClick={() => run('trial', () => confirmEsignTrial(municipalityId), 'บันทึกคำยืนยันแล้ว')}>
+              {busy === 'trial' ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />} ยืนยัน
+            </button>
+          </div>
+        )}
+        <Notice notice={notices.trial} />
+      </Step>
+
+      <Step number={3} title="ผู้ลงนามผูกกับบัญชีจริง" done={gateItems[2].ok && gateItems[3].ok}>
+        <p className="text-xs leading-5 text-gray-500">
+          ช่องผู้มีอำนาจสั่งใช้และหัวหน้ากองลงนามออนไลน์ได้เมื่อทะเบียนผู้ลงนามเอกสารเลือก “จากบัญชีบุคลากร”
+          แถวที่กรอกชื่อพิมพ์เอง (คนที่ไม่มีบัญชี) ลงนามออนไลน์ไม่ได้ ช่องนั้นต้องเซ็นสดต่อ
+        </p>
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {[gateItems[2], gateItems[3]].map(item => (
+            <li key={item.key} className="flex items-center justify-between gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm">
+              <span className="text-gray-700">{item.label}</span>
+              <span className={`shrink-0 text-xs font-bold ${item.ok ? 'text-emerald-700' : 'text-amber-700'}`}>{item.detail}</span>
+            </li>
+          ))}
+        </ul>
+        {onOpenSignatories && (
+          <button type="button" className="text-xs font-bold text-indigo-700 underline underline-offset-2" onClick={onOpenSignatories}>
+            ไปหน้า “ผู้ลงนามเอกสาร”
+          </button>
+        )}
+      </Step>
+
+      <Step number={4} title="เลือกช่องที่ลงนามออนไลน์" done={enabled}>
+        <p className="text-xs leading-5 text-gray-500">
+          ใบขออนุญาตใช้ยานพาหนะส่วนกลาง (แบบ ๓) พร้อมบันทึกรับรอง สก.๑ — ช่องไหนที่ผู้ลงนามยังไม่พร้อม ปล่อยเป็นเซ็นสดได้
+          เช่น ให้ผู้มีอำนาจเซ็นปากกาต่อ ส่วนผู้ขอและหัวหน้ากองลงนามออนไลน์
+        </p>
+        <div className="divide-y divide-gray-100 rounded-xl border border-gray-200">
+          {ESIGN_FLEET_SLOTS.map(slot => (
+            <div key={slot.key} className="grid gap-2 px-3 py-2.5 md:grid-cols-[1fr_220px] md:items-center">
+              <div className="min-w-0">
+                <label className="block text-sm font-semibold text-gray-800" htmlFor={`esign-slot-${slot.key}`}>{slot.label}</label>
+                <p className="text-[11px] leading-4 text-gray-400">{slot.hint}</p>
+              </div>
+              <select id={`esign-slot-${slot.key}`} className={FIELD_CLASS} value={modes[slot.key]}
+                onChange={event => setModes(current => ({ ...current, [slot.key]: event.target.value }))}>
+                <option value="wet">{ESIGN_MODE_LABEL.wet}</option>
+                <option value="online">{ESIGN_MODE_LABEL.online}</option>
+              </select>
+            </div>
+          ))}
+        </div>
+        {blockers.length > 0 && (
+          <ul className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+            {gateItems.filter(item => blockers.includes(item.key)).map(item => (
+              <li key={item.key}>⚠️ ยังเปิดไม่ได้: {item.label} ({item.detail})</li>
+            ))}
+          </ul>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" className={`${BUTTON_CLASS} bg-indigo-600 text-white hover:bg-indigo-700`}
+            disabled={busy === 'modes' || !modesDirty || blockers.length > 0}
+            onClick={() => run('modes', () => setEsignDocType(municipalityId, esignAnyOnline(modes) ? modes : null),
+              esignAnyOnline(modes) ? 'บันทึกแล้ว มีผลกับคำขอที่สร้างจากนี้' : 'ปิดการลงนามออนไลน์แล้ว')}>
+            {busy === 'modes' ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} บันทึก
+          </button>
+          {enabled && (
+            <button type="button" className={`${BUTTON_CLASS} border border-gray-300 bg-white text-gray-700 hover:bg-gray-50`}
+              disabled={busy === 'modes'}
+              onClick={() => run('modes', () => setEsignDocType(municipalityId, null), 'ปิดการลงนามออนไลน์แล้ว')}>
+              ปิดการลงนามออนไลน์ทั้งเรื่อง
+            </button>
+          )}
+        </div>
+        <Notice notice={notices.modes} />
+      </Step>
+
+      <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm space-y-3">
+        <h3 className="text-sm font-bold text-gray-800">เปิดคืนผู้ลงนามที่ระงับการลงนามของตัวเอง</h3>
+        <p className="text-xs leading-5 text-gray-500">
+          ผู้ลงนามกด “ระงับการลงนามของฉัน” เองเมื่อสงสัยว่ารหัสรั่ว เมื่อตรวจสอบแล้วเลือกชื่อเพื่อเปิดคืน ผู้ที่ไม่ได้ถูกระงับกดแล้วไม่มีผลอะไร
+          ผู้ที่ตั้งรหัสใหม่ไม่ปลดระงับเอง ต้องให้ผู้ดูแลระบบเปิดคืนเสมอ
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block min-w-60 flex-1 text-xs font-semibold text-gray-600" htmlFor="esign-reinstate">ผู้ลงนาม
+            <select id="esign-reinstate" className={`${FIELD_CLASS} mt-1`} value={reinstateId} onChange={event => setReinstateId(event.target.value)}>
+              <option value="">เลือกบุคลากร</option>
+              {people.map(person => (
+                <option key={person.id} value={person.id}>{person.full_name}{person.job_title ? ` · ${person.job_title}` : ''}</option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className={`${BUTTON_CLASS} bg-indigo-600 text-white hover:bg-indigo-700`}
+            disabled={busy === 'reinstate' || !reinstateId}
+            onClick={() => run('reinstate', () => reinstateEsignSigner(reinstateId), 'เปิดคืนแล้ว')}>
+            {busy === 'reinstate' ? <Loader2 size={15} className="animate-spin" /> : null} เปิดคืน
+          </button>
+        </div>
+        <Notice notice={notices.reinstate} />
+      </section>
+    </div>
+  )
+}
