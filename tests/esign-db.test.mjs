@@ -12,6 +12,8 @@
 //  (5) ประตู (ประกาศ/ทดลอง/ผูกบัญชีผู้ลงนาม) ปิดสวิตช์ไว้จนครบ · ไม่แตะ approved_by/approval_method ของคิวรถอัตโนมัติ
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
+import zlib from 'node:zlib'
 import { pathToFileURL } from 'node:url'
 
 const modulePath = process.argv[process.argv.indexOf('--pglite') + 1]
@@ -29,6 +31,9 @@ const functionsSql = await readMigration('20261022100200_esign_functions.sql')
 // ชุด B1.5: ประกาศ/หนังสือให้ความเห็นชอบไม่เป็นเงื่อนไขเปิดใช้ (รันต่อจากชุด A ตามลำดับเดียวกับบนฐานจริง)
 const policyOptionalSql = await readMigration('20261022110000_esign_policy_optional.sql')
 const gateRelaxSql = await readMigration('20261022110100_esign_gate_relax_functions.sql')
+// ชุด S1: ภาพลายเซ็น (ตาราง → ฟังก์ชัน ตามลำดับเดียวกับที่ apply บนฐานจริง)
+const imageTablesSql = await readMigration('20261023100000_esign_image_tables.sql')
+const imageFunctionsSql = await readMigration('20261023100100_esign_image_functions.sql')
 
 // ดึงฟังก์ชันตัวจริงออกจาก migration เดิมทั้งตัว (ไม่พิมพ์ซ้ำเอง)
 const extractFunction = (source, startPattern) => {
@@ -108,6 +113,8 @@ await db.exec(tablesSql)
 await db.exec(functionsSql)
 await db.exec(policyOptionalSql)
 await db.exec(gateRelaxSql)
+await db.exec(imageTablesSql)
+await db.exec(imageFunctionsSql)
 
 const users = {
   adminA: { id: U(1), role: 'admin', muni: A, name: 'แอดมิน เอ' },
@@ -773,6 +780,332 @@ await test('ทริปที่ปฏิเสธ/ยกเลิกแล้�
   const r = await (async () => { await as('requester'); const x = await makeTrip(); await db.query(`UPDATE public.fleet_trips SET status = 'rejected' WHERE id = $1`, [x.id]); return x })()
   await as('anon')
   assert.equal((await rpc('public.esign_verify($1)', [r.esign_verify_code])).trip_status, 'rejected')
+})
+
+// ── ภาพลายเซ็น (ชุด S1) ───────────────────────────────────────────────────────────────────────
+// PNG จริงที่สร้างในเทสต์ (zlib + CRC) — ตัวตรวจฝั่ง DB ดูโครงสร้างจริง ไม่ใช่แค่นามสกุล
+const pngChunk = (type, data) => {
+  const len = Buffer.alloc(4)
+  len.writeUInt32BE(data.length)
+  const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
+  const crc = Buffer.alloc(4)
+  crc.writeUInt32BE(zlib.crc32(body) >>> 0)
+  return Buffer.concat([len, body, crc])
+}
+const makePng = ({ w = 40, h = 16, seed = 1, noisy = false } = {}) => {
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(w, 0)
+  ihdr.writeUInt32BE(h, 4)
+  ihdr[8] = 8 // bit depth
+  ihdr[9] = 6 // RGBA
+  const rows = []
+  for (let y = 0; y < h; y++) {
+    const row = Buffer.alloc(1 + w * 4)
+    for (let x = 0; x < w; x++) {
+      const at = 1 + x * 4
+      if (noisy) randomBytes(4).copy(row, at)
+      else row.set([(x * 7 + seed * 31) & 255, (y * 13 + seed * 17) & 255, seed & 255, 255], at)
+    }
+    rows.push(row)
+  }
+  return Buffer.concat([
+    Buffer.from('89504e470d0a1a0a', 'hex'),
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', zlib.deflateSync(Buffer.concat(rows), { level: noisy ? 0 : 9 })),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ])
+}
+const b64 = buffer => buffer.toString('base64')
+const png = n => b64(makePng({ seed: n }))
+const addImage = (label, data, makeDefault = false) => rpc('public.esign_my_signature_add($1, $2, $3)', [label, data, makeDefault])
+const myImages = async () => (await rpc('public.esign_my_signatures()')).items
+let imageTrip = null // ทริปที่ใช้ทดสอบลงนามพร้อมภาพ (ส่งต่อให้เคสถัดไป)
+
+await test('ภาพลายเซ็น: ตรวจโครงสร้างจริง — ไม่ใช่ PNG/ตัดท้าย/base64 เสีย/ใหญ่เกิน/กว้างเกิน ถูกปฏิเสธ · ไม่มีแถวเกิด', async () => {
+  const good = makePng()
+  await as('requester')
+  const cases = {
+    'ข้อความธรรมดา': b64(Buffer.from('hello')),
+    'SVG ฝังสคริปต์': b64(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')),
+    'JPEG (หัวไฟล์ JFIF)': b64(Buffer.concat([Buffer.from('ffd8ffe000104a46494600', 'hex'), Buffer.alloc(80)])),
+    'PNG หัวไฟล์ผิดไบต์เดียว (ส่วนที่เหลือครบ)': b64(Buffer.concat([Buffer.from('88504e470d0a1a0a', 'hex'), good.subarray(8)])),
+    'PNG ตัดท้าย (ไม่มี IEND)': b64(good.subarray(0, good.length - 12)),
+    'PNG ต่อท้ายขยะหลัง IEND': b64(Buffer.concat([good, Buffer.from('trailing')])),
+    'base64 มีช่องว่าง': b64(good).slice(0, 20) + ' ' + b64(good).slice(20),
+    'base64 ยาวไม่ลงตัว 4': b64(good).slice(0, -1),
+    'ข้อความว่าง': '',
+  }
+  for (const [name, data] of Object.entries(cases)) {
+    const r = await addImage('ทดสอบ', data)
+    assert.equal(r.ok, false, name)
+    assert.equal(r.code, 'invalid_image', name)
+  }
+  assert.deepEqual(await addImage('ทดสอบ', null), { ok: false, code: 'invalid_image' })
+  assert.deepEqual(await addImage('ทดสอบ', b64(makePng({ w: 200, h: 100, noisy: true }))), { ok: false, code: 'image_too_large' })
+  assert.deepEqual(await addImage('ทดสอบ', 'A'.repeat(70000)), { ok: false, code: 'image_too_large' })
+  assert.deepEqual(await addImage('ทดสอบ', b64(makePng({ w: 641, h: 10 }))), { ok: false, code: 'invalid_image_size' })
+  assert.deepEqual(await addImage('ทดสอบ', b64(makePng({ w: 20, h: 321 }))), { ok: false, code: 'invalid_image_size' })
+  assert.deepEqual(await addImage('ทดสอบ', b64(makePng({ w: 70000, h: 1 }))), { ok: false, code: 'invalid_image_size' })
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_signature_images')).rows[0].n, 0)
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_image_blobs')).rows[0].n, 0)
+})
+
+await test('ภาพลายเซ็น: คลังของฉัน — แบบแรกเป็นค่าเริ่มต้นเอง · เปลี่ยนค่าเริ่มต้น · ภาพซ้ำไม่เพิ่มแถว · เกิน 5 แบบไม่ได้ · base64 ไม่มีขึ้นบรรทัดใหม่', async () => {
+  await as('requester')
+  const first = await addImage('ลายเซ็นของฉัน', png(1))
+  assert.equal(first.ok, true)
+  assert.equal(first.is_default, true, 'แบบแรกต้องเป็นค่าเริ่มต้นเอง ผู้ใช้ไม่ต้องไปตั้ง')
+  const second = await addImage('  แบบสั้น  ', png(2))
+  assert.equal(second.is_default, false)
+  assert.deepEqual(await addImage('ซ้ำ', png(2)), { ok: true, id: second.id, already: true })
+  assert.equal((await myImages()).length, 2, 'ภาพเดียวกันต้องไม่เพิ่มแถว')
+  assert.equal((await myImages()).find(i => i.id === second.id).label, 'แบบสั้น', 'ตัดช่องว่างหัวท้ายชื่อ')
+
+  assert.deepEqual(await rpc('public.esign_my_signature_set_default($1)', [second.id]), { ok: true })
+  const list = await myImages()
+  assert.deepEqual(list.map(i => [i.id, i.is_default]), [[second.id, true], [first.id, false]], 'ค่าเริ่มต้นขึ้นก่อน และมีตัวเดียว')
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_signature_images WHERE user_id = $1 AND is_default', [users.requester.id])).rows[0].n, 1)
+
+  // ภาพที่อ่านกลับมาต้องเป็นไบต์เดิมเป๊ะ และไม่มีขึ้นบรรทัดใหม่ (นำไปใช้เป็น data URL ตรงๆ ได้)
+  for (const item of list) {
+    assert.ok(!item.png_base64.includes('\n'))
+    assert.deepEqual([item.width, item.height], [40, 16])
+  }
+  assert.equal(list[0].png_base64, png(2))
+
+  // ชื่อว่าง = ใช้ชื่อมาตรฐาน · make_default กับภาพที่ซ้ำ = ย้ายค่าเริ่มต้นให้
+  const third = await addImage('', png(3), true)
+  assert.equal((await myImages()).find(i => i.id === third.id).label, 'ลายเซ็นของฉัน')
+  assert.equal((await myImages()).find(i => i.is_default).id, third.id)
+  assert.deepEqual(await addImage('ซ้ำ', png(1), true), { ok: true, id: first.id, already: true })
+  assert.equal((await myImages()).find(i => i.is_default).id, first.id)
+
+  await addImage('ที่ 4', png(4))
+  await addImage('ที่ 5', png(5))
+  assert.deepEqual(await addImage('ที่ 6', png(6)), { ok: false, code: 'too_many_images', max: 5 })
+  assert.equal((await myImages()).length, 5)
+})
+
+await test('ภาพลายเซ็น: เห็นเฉพาะเจ้าของ · ตารางอ่าน/เขียนตรงไม่ได้ · anon/ประชาชนใช้ไม่ได้ · ลบ/ตั้งค่าเริ่มต้นของคนอื่นไม่ได้', async () => {
+  const can = async (role, fn) => (await db.query(`SELECT has_function_privilege($1, $2, 'execute') AS ok`, [role, fn])).rows[0].ok
+  for (const fn of ['public.esign_my_signatures()', 'public.esign_my_signature_add(text,text,boolean)', 'public.esign_my_signature_set_default(uuid)',
+    'public.esign_my_signature_delete(uuid)', 'public.esign_my_signer_overview()', 'public.esign_my_signature_history(integer)',
+    'public.esign_sign_fleet_trip_stamped(uuid,text,text,text,uuid,text)', 'public.esign_trip_stamps(uuid)']) {
+    assert.equal(await can('anon', fn), false, `anon ต้องเรียก ${fn} ไม่ได้`)
+    assert.equal(await can('authenticated', fn), true, `authenticated ต้องเรียก ${fn} ได้`)
+  }
+  for (const fn of ['public.esign_png_decode(text)', 'public.esign_is_staff_user()']) {
+    assert.equal(await can('anon', fn), false, fn)
+    assert.equal(await can('authenticated', fn), false, fn)
+  }
+  const tp = async (role, table, priv) => (await db.query(`SELECT has_table_privilege($1, $2, $3) AS ok`, [role, table, priv])).rows[0].ok
+  for (const table of ['esign_image_blobs', 'esign_signature_images', 'esign_signature_stamps']) {
+    for (const priv of ['select', 'insert', 'update', 'delete', 'truncate']) {
+      assert.equal(await tp('authenticated', `public.${table}`, priv), false, `${table} ${priv}`)
+      assert.equal(await tp('anon', `public.${table}`, priv), false, `${table} ${priv} (anon)`)
+    }
+  }
+  const rls = await db.query(`SELECT relname, relrowsecurity FROM pg_class WHERE relname IN ('esign_image_blobs','esign_signature_images','esign_signature_stamps')`)
+  assert.equal(rls.rows.length, 3)
+  assert.ok(rls.rows.every(r => r.relrowsecurity), 'ทั้งสามตารางต้องเปิด RLS')
+
+  await as('anon')
+  assert.deepEqual(await rpc('public.esign_my_signatures()'), { ok: false, code: 'not_authenticated' })
+  assert.deepEqual(await addImage('x', png(9)), { ok: false, code: 'not_authenticated' })
+  await as('citizen')
+  assert.deepEqual(await rpc('public.esign_my_signatures()'), { ok: false, code: 'forbidden' })
+  assert.deepEqual(await addImage('x', png(9)), { ok: false, code: 'forbidden' })
+  assert.deepEqual(await rpc('public.esign_my_signer_overview()'), { ok: false, code: 'forbidden' })
+
+  await as('requester')
+  const mine = (await myImages())[0]
+  await as('head')
+  assert.deepEqual(await myImages(), [], 'คนอื่นต้องไม่เห็นคลังของฉัน (แม้อยู่กองเดียวกัน)')
+  assert.deepEqual(await rpc('public.esign_my_signature_delete($1)', [mine.id]), { ok: false, code: 'image_not_found' })
+  assert.deepEqual(await rpc('public.esign_my_signature_set_default($1)', [mine.id]), { ok: false, code: 'image_not_found' })
+  await as('adminA')
+  assert.deepEqual(await myImages(), [], 'แอดมินก็ไม่เห็นคลังของคนอื่น')
+  await as('requester')
+  assert.equal((await myImages()).length, 5, 'ของฉันยังอยู่ครบ')
+})
+
+await test('ภาพลายเซ็น: ลบแบบที่เป็นค่าเริ่มต้นแล้วแบบล่าสุดขึ้นแทน · ภาพที่ไม่มีใครอ้างถูกลบจริง · จำกัดการยิงรัว (20 ครั้ง/5 นาที)', async () => {
+  await as('requester')
+  const before = await myImages()
+  const def = before.find(i => i.is_default)
+  const del = await rpc('public.esign_my_signature_delete($1)', [def.id])
+  assert.deepEqual(del, { ok: true, kept_as_evidence: false })
+  const after = await myImages()
+  assert.equal(after.length, 4)
+  assert.equal(after.filter(i => i.is_default).length, 1, 'ต้องมีค่าเริ่มต้นเหลือ 1 แบบเสมอเมื่อยังมีภาพ')
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_image_blobs WHERE sha256 = $1', [
+    (await db.query(`SELECT encode(sha256(decode($1, 'base64')), 'hex') AS h`, [def.png_base64])).rows[0].h])).rows[0].n, 0, 'ภาพที่ไม่มีใครอ้างต้องถูกลบจากฐาน')
+  assert.deepEqual(await rpc('public.esign_my_signature_delete($1)', [def.id]), { ok: false, code: 'image_not_found' })
+  for (const i of after) await rpc('public.esign_my_signature_delete($1)', [i.id])
+  assert.deepEqual(await myImages(), [])
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_image_blobs')).rows[0].n, 0)
+
+  await as('requester') // ล้างตัวนับ
+  let limited = 0
+  for (let i = 0; i < 25; i++) {
+    try { await addImage('รัว', png(100 + (i % 3))) } catch (e) { assert.match(String(e.message), /ลองถี่เกินไป/); limited++ }
+  }
+  assert.ok(limited >= 5, `ต้องโดนจำกัดหลัง 20 ครั้ง (โดน ${limited})`)
+  await as('requester')
+  for (const i of await myImages()) await rpc('public.esign_my_signature_delete($1)', [i.id])
+})
+
+await test('ลงนามพร้อมภาพ: ภาพเสียไม่เผารหัส · ภาพคนอื่น/ส่งซ้อนสองแบบไม่ได้ · ลงนามแล้วเก็บสำเนาภาพ ณ วันนั้น · กดซ้ำไม่เพิ่ม', async () => {
+  const signStamped = (id, slot, pin, imageId, data, decision = null) =>
+    rpc('public.esign_sign_fleet_trip_stamped($1, $2, $3, $4, $5, $6)', [id, slot, pin, decision, imageId, data])
+  const failedCount = async alias => (await db.query('SELECT failed_count FROM public.esign_signers WHERE user_id = $1', [users[alias].id])).rows[0]?.failed_count ?? 0
+
+  await as('requester')
+  const t = await makeTrip()
+  imageTrip = t
+  const mine = await addImage('ลายเซ็นของฉัน', png(11))
+  await as('head')
+  const theirs = await addImage('ของหัวหน้า', png(12))
+
+  await as('requester')
+  const failedBefore = await failedCount('requester')
+  // ภาพเสีย + รหัสผิด → ตอบเรื่องภาพ ไม่แตะรหัส (ไม่เพิ่มตัวนับครั้งผิด)
+  assert.deepEqual(await signStamped(t.id, 'requester', '000001', null, b64(Buffer.from('not a png'))), { ok: false, code: 'invalid_image' })
+  assert.deepEqual(await signStamped(t.id, 'requester', '000001', null, b64(makePng({ w: 641, h: 5 }))), { ok: false, code: 'invalid_image_size' })
+  assert.deepEqual(await signStamped(t.id, 'requester', '246810', mine.id, png(11)), { ok: false, code: 'invalid_image' }, 'ส่งสองแบบพร้อมกันกำกวม')
+  assert.deepEqual(await signStamped(t.id, 'requester', '000001', theirs.id, null), { ok: false, code: 'image_not_found' }, 'ภาพของคนอื่นใช้ไม่ได้')
+  assert.deepEqual(await signStamped(t.id, 'requester', '000001', '00000000-0000-4000-8000-0000000000ee', null), { ok: false, code: 'image_not_found' })
+  assert.equal(await failedCount('requester'), failedBefore, 'ภาพเสียต้องไม่นับเป็นรหัสผิด')
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_signatures WHERE doc_id = $1', [t.id])).rows[0].n, 0)
+
+  // รหัสผิด + ภาพดี → ผลของฟังก์ชันเดิมทุกประการ (ตัวนับรหัสผิดขึ้นและ commit)
+  const wrong = await signStamped(t.id, 'requester', '000001', mine.id, null)
+  assert.equal(wrong.ok, false)
+  assert.equal(wrong.code, 'bad_pin')
+  assert.equal(await failedCount('requester'), failedBefore + 1)
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_signature_stamps')).rows[0].n, 0)
+
+  const ok = await signStamped(t.id, 'requester', '246810', mine.id, null)
+  assert.equal(ok.ok, true)
+  assert.equal(ok.stamped, true)
+  assert.equal(ok.already, false)
+  const stamps = (await db.query('SELECT * FROM public.esign_signature_stamps WHERE signature_id = $1', [ok.signature_id])).rows
+  assert.equal(stamps.length, 1)
+  assert.equal(stamps[0].municipality_id, A)
+  assert.equal(stamps[0].sha256, (await db.query(`SELECT encode(sha256(decode($1, 'base64')), 'hex') AS h`, [png(11)])).rows[0].h)
+
+  // กดซ้ำ = already ไม่เพิ่มสำเนา
+  const again = await signStamped(t.id, 'requester', 'ไม่ต้องใช้', mine.id, null)
+  assert.deepEqual({ ok: again.ok, already: again.already, stamped: again.stamped }, { ok: true, already: true, stamped: false })
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_signature_stamps')).rows[0].n, 1)
+
+  // ผู้ลงนามช่องถัดไปวาดตอนลงนาม (ไม่บันทึกลงคลัง) และอีกคนลงโดยไม่แนบภาพ
+  await as('head')
+  const oneOff = await signStamped(t.id, 'dept_head', '482916', null, png(13))
+  assert.equal(oneOff.ok, true)
+  assert.equal(oneOff.stamped, true)
+  assert.equal((await myImages()).length, 1, 'ภาพที่วาดตอนลงนามต้องไม่เข้าคลังเอง (ผู้ใช้ติ๊ก "บันทึกไว้" เองผ่าน add)')
+  await as('mayor')
+  const noImage = await signStamped(t.id, 'authority', '928374', null, null, 'approve')
+  assert.equal(noImage.ok, true, JSON.stringify(noImage))
+  assert.equal(noImage.stamped, false)
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_signature_stamps')).rows[0].n, 2)
+  assert.equal(noImage.complete, true)
+})
+
+await test('ภาพบนใบพิมพ์ (esign_trip_stamps): ผู้เกี่ยวข้องเห็นเฉพาะลายเซ็นที่ยังไม่ถูกถอน · คนนอก/ประชาชน/อปท.อื่น/anon ไม่เห็น · ภาพ ณ วันลงนามไม่เปลี่ยนตามคลัง', async () => {
+  await as('requester')
+  const t = imageTrip
+  assert.ok(t, 'ต้องรันเคสลงนามพร้อมภาพก่อน')
+  const sigs = (await db.query('SELECT slot FROM public.esign_signatures WHERE doc_id = $1 ORDER BY signed_at', [t.id])).rows.map(r => r.slot)
+  assert.deepEqual(sigs, ['requester', 'dept_head', 'authority'])
+  const stampsOf = async alias => { await as(alias); return rpc('public.esign_trip_stamps($1)', [t.id]) }
+
+  const seen = await stampsOf('requester')
+  assert.equal(seen.ok, true)
+  assert.deepEqual(seen.items.map(i => i.slot), ['requester', 'dept_head'], 'authority ลงโดยไม่แนบภาพ ต้องไม่มีรายการ')
+  assert.equal(seen.items[0].png_base64, png(11))
+  assert.equal(seen.items[1].png_base64, png(13))
+  assert.ok(seen.items.every(i => !i.png_base64.includes('\n') && i.signature_id))
+  for (const alias of ['head', 'mayor', 'fleetAdmin', 'adminA']) assert.equal((await stampsOf(alias)).ok, true, alias)
+  for (const alias of ['outsider', 'citizen', 'adminB', 'staffB']) assert.deepEqual(await stampsOf(alias), { ok: false, code: 'not_found' }, alias)
+  assert.deepEqual(await stampsOf('anon'), { ok: false, code: 'not_authenticated' })
+  await as('requester')
+  assert.deepEqual(await rpc('public.esign_trip_stamps($1)', ['00000000-0000-4000-8000-0000000000ff']), { ok: false, code: 'not_found' })
+
+  // ผู้ขอลบภาพออกจากคลัง → ใบเดิมยังเห็นภาพเดิม (หลักฐาน) และแจ้งว่าเก็บไว้
+  const lib = (await myImages()).find(i => i.png_base64 === png(11))
+  assert.deepEqual(await rpc('public.esign_my_signature_delete($1)', [lib.id]), { ok: true, kept_as_evidence: true })
+  assert.equal((await stampsOf('requester')).items.find(i => i.slot === 'requester').png_base64, png(11))
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_image_blobs WHERE sha256 = $1', [
+    (await db.query(`SELECT encode(sha256(decode($1, 'base64')), 'hex') AS h`, [png(11)])).rows[0].h])).rows[0].n, 1, 'สำเนาที่ใบอ้างอยู่ต้องไม่ถูกลบ')
+
+  // สำเนาภาพแก้/ลบไม่ได้ (ทั้งโดยตรงและผ่าน FK)
+  await expectError(db.query(`UPDATE public.esign_signature_stamps SET sha256 = sha256 WHERE signature_id = (SELECT signature_id FROM public.esign_signature_stamps LIMIT 1)`), /ESIGN_APPEND_ONLY/)
+  await expectError(db.query('DELETE FROM public.esign_signature_stamps'), /ESIGN_APPEND_ONLY/)
+  await expectError(db.query('TRUNCATE public.esign_signature_stamps CASCADE'), /ESIGN_APPEND_ONLY/)
+  await expectError(db.query('DELETE FROM public.esign_image_blobs'), /violates (RESTRICT setting of )?foreign key/)
+  await expectError(db.query(`UPDATE public.esign_image_blobs SET width = 1`), /ESIGN_APPEND_ONLY/)
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_signature_stamps')).rows[0].n, 2)
+
+  // ถอนลายเซ็นผู้ขอ (ถอนช่องท้ายสายตาม) → ภาพของใบที่ถูกถอนไม่ขึ้นบนใบพิมพ์
+  assert.equal((await rpc('public.esign_revoke_fleet_trip($1, $2, $3)', [t.id, 'ขอแก้ไขข้อมูล', 'requester'])).ok, true)
+  assert.deepEqual((await stampsOf('requester')).items, [])
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_signature_stamps')).rows[0].n, 2, 'สำเนาเดิมยังอยู่เป็นหลักฐาน ถอนแค่ไม่แสดงบนใบ')
+
+  // เซ็นใหม่ด้วยภาพใหม่ → ใบใหม่ใช้ภาพใหม่ ไม่ปนกับของเดิม
+  await as('requester')
+  const fresh = await addImage('แบบใหม่', png(21))
+  const re = await rpc('public.esign_sign_fleet_trip_stamped($1, $2, $3, NULL, $4, NULL)', [t.id, 'requester', '246810', fresh.id])
+  assert.equal(re.ok, true)
+  assert.deepEqual((await stampsOf('requester')).items.map(i => [i.slot, i.png_base64]), [['requester', png(21)]])
+})
+
+await test('ศูนย์ลายมือชื่อของฉัน: ภาพรวม/ประวัติเป็นของตัวเองเท่านั้น · ประวัติไม่มีปลายทางหรือวัตถุประสงค์ · หน้าตรวจสอบสาธารณะไม่มีภาพ', async () => {
+  await as('requester')
+  const ov = await rpc('public.esign_my_signer_overview()')
+  assert.equal(ov.ok, true)
+  assert.equal(ov.pin_set, true)
+  assert.equal(ov.duty_acked, true)
+  assert.equal(ov.suspended, false)
+  assert.equal(ov.failed_count, 0)
+  assert.equal(ov.image_count, 1)
+  assert.ok(ov.pin_set_at)
+  const mineValid = (await db.query(`SELECT count(*)::int AS n FROM public.esign_signatures s WHERE s.signer_id = $1
+                                     AND NOT EXISTS (SELECT 1 FROM public.esign_revocations r WHERE r.signature_id = s.id)`, [users.requester.id])).rows[0].n
+  assert.equal(ov.signature_count, mineValid)
+  assert.ok(ov.signature_count_month <= ov.signature_count)
+
+  const hist = await rpc('public.esign_my_signature_history(50)')
+  assert.equal(hist.ok, true)
+  assert.ok(hist.items.length >= 2)
+  assert.ok(hist.items.every(i => i.slot && i.slot_label && i.signed_at && typeof i.revoked === 'boolean' && typeof i.with_image === 'boolean'))
+  assert.ok(hist.items.some(i => i.revoked === true), 'ใบที่ถูกถอนต้องขึ้นสถานะถอน')
+  assert.ok(hist.items.some(i => i.with_image === true))
+  const text = JSON.stringify(hist)
+  for (const secret of ['สำนักงานจังหวัดแพร่', 'อบรมเชิงปฏิบัติการลับ', 'png_base64']) assert.ok(!text.includes(secret), `ประวัติต้องไม่มี ${secret}`)
+  assert.equal((await rpc('public.esign_my_signature_history(1)')).items.length, 1)
+  assert.equal((await rpc('public.esign_my_signature_history(NULL)')).ok, true)
+
+  await as('outsider')
+  assert.equal((await rpc('public.esign_my_signature_history(50)')).items.length, 0, 'คนที่ไม่เคยลงนามต้องไม่เห็นของคนอื่น')
+  assert.equal((await rpc('public.esign_my_signer_overview()')).signature_count, 0)
+
+  // หน้าตรวจสอบสาธารณะ (anon) ต้องไม่มีภาพและไม่เผยว่าใบไหนแนบภาพ
+  await as('anon')
+  const pub = JSON.stringify(await rpc('public.esign_verify($1)', [imageTrip.esign_verify_code]))
+  assert.ok(!/png|base64|image|stamp/i.test(pub), 'หน้าสาธารณะต้องไม่มีภาพ')
+  const stampRows = (await db.query('SELECT count(*)::int AS n FROM public.esign_signature_stamps')).rows[0].n
+  assert.ok(stampRows >= 2)
+})
+
+await test('ภาพลายเซ็น: audit มีบรรทัดเพิ่ม/ลบ แต่ไม่มีตัวภาพ', async () => {
+  const { rows } = await db.query(`SELECT action, metadata::text AS m, resource_label AS l FROM public.audit_logs WHERE action LIKE 'esign_image_%'`)
+  const actions = new Set(rows.map(r => r.action))
+  assert.ok(actions.has('esign_image_add') && actions.has('esign_image_delete'))
+  const all = rows.map(r => r.m + (r.l ?? '')).join('\n')
+  for (const sample of [png(11), png(13), png(21), 'iVBOR']) assert.ok(!all.includes(sample), 'audit ต้องไม่มีตัวภาพ')
+  assert.ok(rows.filter(r => r.action === 'esign_image_delete').some(r => r.m.includes('"kept_as_evidence": true')), 'audit ต้องบอกว่าภาพที่ลบถูกเก็บเป็นหลักฐาน')
 })
 
 await test('หลักฐานตรวจย้อนได้: ทุกการลงนาม/ถอน/ตั้งค่า มีบรรทัดใน audit_logs · ไม่มีรหัสลงนามหรือเนื้อหาคำขอใน audit', async () => {
