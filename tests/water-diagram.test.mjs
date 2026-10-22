@@ -10,7 +10,7 @@ import {
   resolveDiagram,
 } from '../src/lib/waterDiagram/model.js'
 import {
-  ISLAND_THICKNESS, PROP_KINDS, islandShape, labelPosition, pillFor, pillWidth, pinPosition, routeIssues, routeItems, smoothPath, wavePath,
+  ISLAND_THICKNESS, PROP_KINDS, islandShape, labelPosition, pillFor, pillWidth, pinPosition, routeIssues, routeItems, routeKinds, smoothPath, wavePath,
 } from '../src/lib/waterDiagram/route.js'
 import { DIAGRAMS, diagramById } from '../src/lib/waterDiagram/diagrams.js'
 import { THUNGKAEW_BINDS } from '../src/lib/waterDiagram/thungkaew.js'
@@ -249,7 +249,10 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
   }
   // ของที่วาดต่างจากต้นฉบับต้องบอกเหตุผลในกล่องที่มา: เขตหมู่บ้านที่เปลี่ยนสีเป็นเทา
   if (elements.some(el => el.kind === 'outline' && el.cls === 'village')) {
-    assert.ok(diagram.omitted.some(text => text.includes('เขตหมู่บ้าน') && text.includes('เทา')), at('เขตหมู่บ้านวาดเป็นสีเทา ต้องบอกเหตุผลใน omitted'))
+    const villageNote = diagram.omitted.find(text => text.includes('เขตหมู่บ้าน'))
+    assert.ok(villageNote, at('เขตหมู่บ้านที่ผังวาดเส้นประแดง ต้องบอกใน omitted ว่าวาดต่างหรือไม่ได้วาด'))
+    if (diagram.route) assert.ok(villageNote.includes('ไม่ได้ใส่ในแผนภาพ'), at('ผังที่มีแผนภาพเส้นทางน้ำ: เขตหมู่บ้านไม่ได้วาด ต้องบอกว่าไม่ได้ใส่'))
+    else assert.ok(villageNote.includes('เทา'), at('เขตหมู่บ้านวาดเป็นสีเทา ต้องบอกเหตุผลใน omitted'))
   }
 }
 
@@ -279,7 +282,7 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
   for (const text of namlaoTexts) assert.ok(!/แล้ง|ท่วม/.test(text), `"${text}": ห้ามเขียนว่าแล้ง/ท่วม บนผัง (ผังต้นฉบับไม่ระบุความหมายของลายขีดแดง)`)
   for (const item of namlao.lanes.flatMap(lane => lane.items).filter(item => /แล้ง|ท่วม/.test(item.sub ?? ''))) assert.ok(item.sub.includes('ไม่ตีความ'), `${item.name}: พูดถึงแล้ง/ท่วมได้เฉพาะเพื่อบอกว่าไม่ตีความ`)
   assert.ok(namlao.omitted.some(text => text.includes('ลายขีดแดง') && text.includes('ไม่ตีความ')), 'ต้องบอกในกล่องที่มาว่าไม่ตีความลายขีดแดง')
-  assert.ok(namlao.omitted.some(text => text.includes('เส้นประแดง') && text.includes('เทา')), 'เส้นขอบเขตวาดเป็นสีเทา ต้องบอกเหตุผล')
+  assert.ok(namlao.omitted.some(text => text.includes('เส้นขอบเขต') && text.includes('ไม่ได้ใส่ในแผนภาพ') && text.includes('สีแดงในผังนี้ใช้หมายถึงแผนก่อสร้าง')), 'เส้นขอบเขตไม่ได้วาด ต้องบอกเหตุผล')
   assert.ok(namlao.omitted.some(text => text.includes('YOM003') && text.includes('นอกตำบล')), 'ต้องบอกว่าไม่แสดงระดับน้ำ YOM003 เพราะนอกตำบล')
   // ค่าสดของน้ำเลาต้องเป็นของในตำบล: ไม่มีระดับน้ำ YOM003 (14.1 กม. นอกตำบล) และไม่มีอ่างเล็กของ อบจ.
   assert.deepEqual(Object.keys(namlao.binds).sort(), ['dam-305', 'rain-RES040', 'rain-STN0911'])
@@ -454,38 +457,86 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
 // ── แผนภาพเส้นทางน้ำ (ผังที่มี route) — ข้อมูล · ตัวตรวจ · ป้ายค่าสด · คำกำกับ · แอนิเมชัน ──
 {
   const withRoute = Object.entries(DIAGRAMS).filter(([, diagram]) => diagram.route).map(([id]) => id)
-  assert.deepEqual(withRoute, ['thungkaew'], 'PR 1: มีแผนภาพเฉพาะทุ่งแค้ว (ตำหนักธรรม/น้ำเลาใช้ผังเดิมไปก่อน เพิ่มใน PR ถัดไป)')
+  assert.deepEqual(withRoute.slice().sort(), ['namlao', 'tamnaktham', 'thungkaew'], 'ทุกผังของ อปท. ที่มีผังน้ำใช้แผนภาพเส้นทางน้ำ (ทุ่งแค้ว #551 · ตำหนักธรรม + น้ำเลา)')
+
+  // วลีอ้างอิงรายจุด: ทุกจุดต้องมาจากรายการสายน้ำ (lanes) ของผังที่ตรวจแล้ว ไม่เขียนจุดที่ผังไม่มี
+  // ค่าเป็นอาร์เรย์ = ทุกวลีต้องอยู่ทั้งในข้อมูลสายน้ำและในชื่อ/คำอธิบายของจุด (จุดที่รวมหลายรายการ)
+  const ANCHORS_BY_ID = {
+    thungkaew: {
+      1: ['อ่างเก็บน้ำห้วยเฮือ'], 2: ['ฝายซอยซีเมนต์'], 3: ['อ่างเก็บน้ำห้วยยอย'], 4: ['ฝายกำนันอำพร'], 5: ['โครงสร้างตามแผน'], 6: ['หนองน้อย'], 7: ['ประตูน้ำ'],
+      8: ['ห้วย 4 เส้น'], 9: ['รางส่งน้ำชำรุด'], 10: ['สถานีสูบน้ำพลังงานแสงอาทิตย์'], 11: ['หนองใหม่ก่อ'], 12: ['อ่างห้วยปุ่ย'], 13: ['ฝายปู่อ๋วน'], 14: ['แม่น้ำยม'],
+    },
+    tamnaktham: {
+      1: ['น้ำแม่คำมี'], 2: ['ฝายเวียงม่วง'], 3: ['ฝายแม่คำมีหมู่ 1'], 4: ['ฝายแม่คำมี ม.5', 'ห้วยเคี่ยน'], 5: ['สถานีสูบน้ำ (ใกล้ห้วยเคี่ยน)'], 6: ['สะพานข้ามน้ำแม่คำมี'],
+      7: ['ประตูระบายน้ำ'], 8: ['สถานีสูบน้ำ (ฝั่งตะวันออก)'], 9: ['คลองชลประทานแม่ยมฝั่งซ้าย', 'ตัดผ่านน้ำแม่คำมี', 'ท่อลอดห้วยลึก'],
+      10: ['ฝายแม่คำมี ม.3', 'ร่องซิง', 'ห้วยหาด'], 11: ['สถานีสูบน้ำ (บ่อบาดาล)'], 12: ['ฝายแม่คำมีหมู่ 12'], 13: ['ร่องปู่แจ้'], 14: ['ระบบประปา (หมู่ 1)'], 15: ['แม่น้ำยม'],
+    },
+    namlao: {
+      1: ['ต้นน้ำแม่คำปอง', 'ห้วยฝั่งตะวันตกตอนบน 4 สาย', 'ห้วยฝั่งตะวันออกตอนบน 5 สาย'], 2: ['อ่างแม่คำปอง ตอน 2'], 3: ['อ่างเก็บน้ำแม่คำปอง'], 4: ['ฝายลุ่มบุญแจ่ม'],
+      5: ['ฝายบนลำน้ำ 2 แห่ง'], 6: ['ห้วยดงแก้ว', 'ห้วยหล่าย'], 7: ['ฝายบนห้วยหล่าย 1 แห่ง'], 8: ['ฝายลุ่มวัดบุญแจ่ม', 'ฝายหนองเฮ่ย'],
+      9: ['ห้วยคอกผา', 'ห้วยเตาปูน'], 10: ['ลำห้วยไม่ระบุชื่อ 3 สาย'], 11: ['ลำห้วยทรายขาว', 'อ่างห้วยทรายขาว', 'อ่างเด่นควาย'], 12: ['ลำห้วยหิน'],
+      13: ['ห้วยขึม (ม.3)', 'ฝายและอ่างห้วยขึม'], 14: ['อ่างห้วยขึมโยธินฯ'], 15: ['ทางน้ำแยกจากห้วยขึม', 'ห้วยน้ำชำ'], 16: ['ลำห้วยฝายอบจ', 'ฝายอบจ 6 แห่งเรียงซ้อน'],
+      17: ['สระหนองสะเลียม'], 18: ['ลำห้วยฝายท่าเรือ'], 19: ['สระ 50 ไร่'], 20: ['หมู่ 1 บุญแจ่ม'], 21: ['ลำน้ำแม่ถาง'],
+    },
+  }
 
   for (const id of withRoute) {
     const diagram = DIAGRAMS[id]
     const route = diagram.route
     assert.deepEqual(routeIssues(route, diagram.binds), [], id + ': ข้อมูลเส้นทางต้องผ่านตัวตรวจ')
     const items = routeItems(route)
-    assert.deepEqual(items.map(item => item.n), items.map((_, i) => i + 1), 'หมายเลขเรียง 1..N ต่อเนื่อง')
-    assert.equal(items.at(-1).isRiver, true, 'แม่น้ำเป็นจุดสุดท้าย')
+    assert.deepEqual(items.map(item => item.n), items.map((_, i) => i + 1), id + ': หมายเลขเรียง 1..N ต่อเนื่อง')
+    assert.equal(items.at(-1).isRiver, true, id + ': แม่น้ำเป็นจุดสุดท้าย')
 
-    // ทุกจุดต้องมาจากผังที่ตรวจแล้ว (lanes) ไม่เขียนจุดที่ผังไม่มี · วลีหลักของจุดต้องอยู่ทั้งในข้อมูลสายน้ำและในชื่อ/คำอธิบายของจุด
     const lanesText = JSON.stringify(diagram.lanes)
-    const ANCHORS = {
-      1: 'อ่างเก็บน้ำห้วยเฮือ', 2: 'ฝายซอยซีเมนต์', 3: 'อ่างเก็บน้ำห้วยยอย', 4: 'ฝายกำนันอำพร', 5: 'โครงสร้างตามแผน', 6: 'หนองน้อย', 7: 'ประตูน้ำ',
-      8: 'ห้วย 4 เส้น', 9: 'รางส่งน้ำชำรุด', 10: 'สถานีสูบน้ำพลังงานแสงอาทิตย์', 11: 'หนองใหม่ก่อ', 12: 'อ่างห้วยปุ่ย', 13: 'ฝายปู่อ๋วน', 14: 'แม่น้ำยม',
-    }
+    const anchors = ANCHORS_BY_ID[id]
+    assert.equal(Object.keys(anchors).length, items.length, id + ': วลีอ้างอิงต้องครบทุกจุด')
     for (const item of items) {
-      const anchor = ANCHORS[item.n]
-      assert.ok(anchor, 'จุด ' + item.n + ' ยังไม่มีวลีอ้างอิงผัง (ANCHORS)')
       const own = item.name + ' ' + (item.sub ?? '')
-      if (item.n === 9) assert.ok(lanesText.includes('รางส่งน้ำชำรุด') && own.includes('รางส่งน้ำ'), 'จุด 9 ต้องตรงรายการ "รางส่งน้ำชำรุด (ตัดคลอง)" ในผัง')
-      else {
-        assert.ok(lanesText.includes(anchor), 'จุด ' + item.n + ': "' + anchor + '" ไม่อยู่ในรายการสายน้ำของผัง')
-        assert.ok(own.includes(anchor), 'จุด ' + item.n + ': ชื่อ/คำอธิบายต้องมี "' + anchor + '"')
+      for (const anchor of anchors[item.n] ?? assert.fail(id + ' จุด ' + item.n + ' ยังไม่มีวลีอ้างอิงผัง (ANCHORS_BY_ID)')) {
+        assert.ok(lanesText.includes(anchor), id + ' จุด ' + item.n + ': "' + anchor + '" ไม่อยู่ในรายการสายน้ำของผัง')
+        // ทุ่งแค้วจุด 9: ผังเขียน "รางส่งน้ำชำรุด (ตัดคลอง)" ในรายการ จุดในแผนภาพเขียน "รางส่งน้ำ (ตัดคลอง)" + แท็กชำรุด
+        if (id === 'thungkaew' && item.n === 9) assert.ok(own.includes('รางส่งน้ำ'), 'จุด 9 ต้องตรงรายการ "รางส่งน้ำชำรุด (ตัดคลอง)" ในผัง')
+        else assert.ok(own.includes(anchor), id + ' จุด ' + item.n + ': ชื่อ/คำอธิบายต้องมี "' + anchor + '"')
       }
     }
+
+    // สถานะแผนก่อสร้าง/ชำรุดต้องตรงกับรายการสายน้ำของผังทั้งสองทาง (ไม่ตกหล่น ไม่เพิ่มเอง)
+    const laneItems = diagram.lanes.flatMap(lane => lane.items)
+    for (const stop of route.stops.filter(s => s.status !== 'existing')) {
+      const item = laneItems.find(it => it.name.includes(anchors[stop.n][0]))
+      assert.ok(item && item.status === stop.status, id + ' จุด ' + stop.n + ': ผังต้องระบุ ' + stop.status + ' เหมือนกัน')
+    }
+    for (const item of laneItems.filter(it => it.status && it.status !== 'existing' && !it.name.startsWith('แผนก่อสร้างทั้งหมด'))) {
+      // แผนก่อสร้าง/ชำรุดที่ไม่ได้ใส่ในแผนภาพ (เช่น สถานีสูบน้ำไฟฟ้าของทุ่งแค้ว) ต้องบอกในกล่องที่มา (omitted) ไม่ปล่อยให้หายเงียบ
+      const covered = route.stops.some(s => s.status === item.status && anchors[s.n].some(a => item.name.includes(a)))
+        || diagram.omitted.some(text => text.includes(item.name.split(' ')[0]))
+      assert.ok(covered, id + ': "' + item.name + '" ผังระบุ ' + item.status + ' แต่ไม่มีจุดตรงกันในแผนภาพและไม่ได้บอกใน omitted')
+    }
+
     // ชื่อห้วยที่ยังไม่ยืนยันกับ อบต. ห้ามโผล่ในแผนภาพ
     const routeText = JSON.stringify(route)
     for (const name of ['ห้วยจำค่า', 'ห้วยย่าเฟย', 'ห้วยจำ"']) assert.ok(!routeText.includes(name), '"' + name + '" ยังไม่ยืนยันกับ อบต. ห้ามขึ้นหน้า')
-    // ของในผังที่ไม่ได้ใส่ในแผนภาพ ต้องบอกในกล่องที่มา
-    assert.ok(diagram.omitted.some(text => text.includes('ตำแหน่งฝาย') && text.includes('ผังต้นฉบับ')), 'ต้องบอกว่าตำแหน่งฝาย/ห้วยไม่ตรงจริง ดูที่ผังต้นฉบับ')
-    assert.ok(['คลองชลประทานฝายแม่ยมฝั่งขวา', 'ประปาหมู่ 1', 'สถานีสูบน้ำไฟฟ้า', 'ผนัง สจ.'].every(word => diagram.omitted.some(text => text.includes(word))), 'ของใน "โครงสร้างอื่นในผัง" ที่ไม่ได้ใส่ต้องบอก')
+    // ลายขีดแดง/แล้ง/ท่วม: ไม่ตีความ (ผังต้นฉบับไม่นิยามความหมาย)
+    assert.ok(!/แล้ง|ท่วม/.test(routeText), id + ': ห้ามเขียนว่าแล้ง/ท่วมในแผนภาพ')
+    // ทุกจุดมีรายการ/ป้ายค่าสดตรงกับ binds ของผัง · หัวข้อกลุ่ม (ถ้ามี) ต้องตรงชื่อสายในผัง
+    const laneTitles = new Set(diagram.lanes.map(lane => lane.title))
+    const groups = items.map(item => item.group).filter(Boolean)
+    if (groups.length > 0) {
+      assert.equal(groups.length, items.length, id + ': ถ้ากำหนดกลุ่ม ทุกจุดต้องมีกลุ่ม')
+      for (const group of new Set(groups.slice(0, -1))) assert.ok(laneTitles.has(group), id + ': กลุ่ม "' + group + '" ไม่ตรงชื่อสายในผัง')
+      const order = [...new Set(groups)]
+      assert.deepEqual(groups, order.flatMap(g => groups.filter(x => x === g)), id + ': จุดของแต่ละกลุ่มต้องเรียงติดกัน')
+    }
+  }
+
+  // ของในผังที่ไม่ได้ใส่ในแผนภาพ ต้องบอกในกล่องที่มา (รายผัง)
+  {
+    const said = (id, words) => words.every(word => DIAGRAMS[id].omitted.some(text => text.includes(word)))
+    for (const id of withRoute) assert.ok(DIAGRAMS[id].omitted.some(text => text.includes('ตำแหน่งฝาย') && text.includes('ผังต้นฉบับ')), id + ': ต้องบอกว่าตำแหน่งฝาย/ห้วยไม่ตรงจริง ดูที่ผังต้นฉบับ')
+    assert.ok(said('thungkaew', ['คลองชลประทานฝายแม่ยมฝั่งขวา', 'ประปาหมู่ 1', 'สถานีสูบน้ำไฟฟ้า', 'ผนัง สจ.']), 'ทุ่งแค้ว: ของใน "โครงสร้างอื่นในผัง" ที่ไม่ได้ใส่ต้องบอก')
+    assert.ok(said('tamnaktham', ['เขตตำบล', 'เขตหมู่บ้าน', 'ห้วยหาด', 'ประตูระบายน้ำเล็ก']), 'ตำหนักธรรม: เขต/ห้วยหาด/ประตูเล็กที่รวมหรือไม่ได้วาดต้องบอก')
+    assert.ok(said('namlao', ['ลายขีดแดง', 'ไม่ตีความ', 'เส้นขอบเขต', 'ห้วยเหล็ก · ห้วยวัว', 'YOM003', '28 รายการเป็น 20 จุด']), 'น้ำเลา: ลายขีดแดง/เขต/ห้วยเหล็ก-วัว/YOM003/การย่อรายการต้องบอก')
   }
 
   // ทุ่งแค้ว: สถานะตามผัง
@@ -502,6 +553,50 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     assert.equal(route.stops[0].props[0].na, true, 'อ่างห้วยเฮือไม่มีข้อมูล = ผืนน้ำขอบประเทา ไม่ลงสีน้ำ')
     assert.deepEqual(new Set(route.stops.flatMap(s => (s.live ?? []))).size, 3, 'ค่าสดในรายการ: dam-50 · rain-RES038 · dam-30 (แม่น้ำแยกที่ river.live)')
     assert.deepEqual(route.river.live, ['level-YOM003'])
+  }
+
+  // ตำหนักธรรม: สถานะตามผัง · เส้นวิ่ง · ค่าสด
+  {
+    const { route, binds } = DIAGRAMS.tamnaktham
+    assert.equal(route.stops.length, 14)
+    assert.deepEqual(route.stops.filter(s => s.status === 'planned').map(s => s.n), [3, 5, 8, 11, 12], 'แผนก่อสร้าง = ฝายหมู่ 1 · สถานีสูบน้ำ 3 จุด · ฝายหมู่ 12 (สีแดงในผังต้นฉบับ)')
+    assert.equal(route.stops.filter(s => s.status === 'repair').length, 0)
+    for (const stop of route.stops.filter(s => s.status === 'planned')) {
+      assert.ok(stop.pills.some(p => p.text === 'แผน' && p.tone === 'plan'), 'จุด ' + stop.n + ' ต้องมีป้ายแผนบนภาพ')
+      assert.ok(!stop.props.some(p => p.t === 'weir'), 'จุด ' + stop.n + ' ห้ามวาดฝายเป็นของที่มีอยู่')
+    }
+    assert.deepEqual(route.stops.filter(s => s.props.some(p => p.t === 'pump')).map(s => s.n), [5, 8, 11], 'สถานีสูบน้ำทั้ง 3 จุดเป็นแผนก่อสร้างทั้งหมด')
+    assert.deepEqual(route.streams.filter(s => s.flow).map(s => s.id).sort(), ['canal', 'mkm'], 'เส้นวิ่ง = น้ำแม่คำมี + คลองชลประทาน (ผังวาดลูกศร) · ลำห้วยสาขาลูกศรนิ่ง · แม่น้ำยมแค่คลื่น')
+    assert.deepEqual(route.streams.find(s => s.id === 'canal').touches, [9])
+    assert.deepEqual(Object.keys(binds), ['level-Y.38'], 'ค่าสดมีช่องเดียว: ระดับน้ำ Y.38 (ไม่มีฝนในตำบล)')
+    assert.deepEqual(route.stops[0].live, ['level-Y.38'])
+    assert.ok(!route.river.slot && !route.river.live, 'แม่น้ำยมไม่มีสถานีวัด ห้ามผูกค่าสดให้ดูเหมือนวัดแม่น้ำยม')
+    assert.ok(!JSON.stringify(route).includes('ฝน'), 'ตำหนักธรรมไม่มีสถานีฝนในตำบล')
+  }
+
+  // น้ำเลา: สถานะตามผัง · เส้นวิ่ง · ค่าสด · อ่างที่ไม่มีข้อมูล
+  {
+    const { route, binds } = DIAGRAMS.namlao
+    assert.equal(route.stops.length, 20)
+    assert.deepEqual(route.stops.filter(s => s.status === 'planned').map(s => s.n), [2, 5, 7], 'แผนก่อสร้าง = อ่างแม่คำปอง ตอน 2 · ฝายบนลำน้ำ 2 แห่ง · ฝายบนห้วยหล่าย 1 แห่ง (สีแดงในผังต้นฉบับ)')
+    for (const stop of route.stops.filter(s => s.status === 'planned')) {
+      assert.ok(stop.pills.some(p => p.text === 'แผน' && p.tone === 'plan'), 'จุด ' + stop.n + ' ต้องมีป้ายแผนบนภาพ')
+      assert.ok(!stop.props.some(p => p.t === 'weir' || p.t === 'lake'), 'จุด ' + stop.n + ' ห้ามวาดฝาย/อ่างเป็นของที่มีอยู่')
+    }
+    assert.deepEqual(route.streams.filter(s => s.flow).map(s => s.id).sort(), ['hin', 'hsk', 'khuem', 'mkp', 'obj', 'sra50', 'tao', 'thare'], 'เส้นวิ่ง = ลำน้ำแม่คำปอง + ห้วยสาขาที่ผังวาดเป็นลำหลัก/ลำห้วยมีลูกศร (เท่ากับเส้นวิ่งของผังเดิม ยกเว้นลำน้ำแม่ถางที่เป็นแม่น้ำ)')
+    assert.deepEqual(Object.keys(binds).sort(), ['dam-305', 'rain-RES040', 'rain-STN0911'])
+    const liveOf = n => route.stops[n - 1].live
+    assert.deepEqual([liveOf(3), liveOf(14), liveOf(20)], [['dam-305'], ['rain-RES040'], ['rain-STN0911']])
+    assert.ok(!route.river.slot && !route.river.live, 'ไม่ใส่ระดับน้ำ YOM003 (นอกตำบล 14.1 กม.) — ลำน้ำแม่ถางไม่มีค่าสด')
+    assert.ok(!JSON.stringify(route).includes('YOM003'))
+    // อ่างที่ไม่มีในรายการอ่างเล็กของ อบจ. = ผืนน้ำขอบประเทา + แท็กไม่มีข้อมูล (ห้ามวาดเหมือนมีน้ำ)
+    for (const n of [11, 14]) {
+      const stop = route.stops[n - 1]
+      assert.ok(stop.props.filter(p => p.t === 'lake').every(p => p.na === true), 'จุด ' + n + ': อ่างไม่มีข้อมูลต้องวาดขอบประเทา')
+      assert.ok(stop.tags.some(tag => tag.k === 'na'), 'จุด ' + n + ': ต้องมีแท็กไม่มีข้อมูลในระบบ')
+    }
+    assert.ok(route.stops[2].props.every(p => !p.na), 'อ่างแม่คำปองมีค่าสด (dam-305) วาดเป็นผืนน้ำปกติ')
+    assert.equal(route.river.group, 'ปลายน้ำ')
   }
 
   // ตัวตรวจต้องจับของเสียได้จริง (กันตัวตรวจหลวม)
@@ -537,7 +632,9 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
       ['ไม่มีชื่อบนภาพ', route => { delete route.stops[0].label }, /label/],
       ['ชื่อบนภาพออกนอกกรอบ', route => { route.stops[2].island.y = 30 }, /ชื่อบนภาพออกนอกกรอบ/],
       ['ต้นไม้นอกกรอบ', route => { route.stops[0].trees.push([900, 10, 1]) }, /ต้นไม้อยู่นอกกรอบ/],
-      ['ไม่มีชื่อแม่น้ำ/ช่องค่าสด', route => { delete route.river.slot }, /แม่น้ำต้องมี name และ slot/],
+      ['ไม่มีชื่อแม่น้ำ', route => { delete route.river.name }, /แม่น้ำต้องมี name/],
+      // ช่องค่าสดของแม่น้ำไม่บังคับ (ตำหนักธรรม/น้ำเลาไม่มีสถานีบนแม่น้ำปลายทาง) แต่ที่ผูกไว้ใน binds ต้องขึ้นหน้าเสมอ
+      ['ถอดช่องค่าสดแม่น้ำออกแต่ binds ยังผูกไว้', route => { delete route.river.slot; delete route.river.live }, /level-YOM003 ผูกไว้แต่ไม่ขึ้น/],
     ]
     for (const [name, mutate, expected] of cases) {
       const issues = run(mutate)
@@ -575,7 +672,13 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     assert.ok(wavePath(0, 480, 934, 1004).startsWith('M-60 934'), 'คลื่นกว้างเกินกรอบ 60 หน่วย เลื่อน 1 คาบได้ไม่เห็นรอยขาด')
     assert.deepEqual(pinPosition({ island: { x: 100, y: 100, rx: 50, ry: 20 } }), { x: 60, y: 96 })
     assert.deepEqual(labelPosition({ island: { x: 100, y: 100, rx: 50, ry: 20 }, labelUp: 5 }), { x: 100, y: 65 })
-    assert.deepEqual(PROP_KINDS.slice().sort(), ['creeks', 'gate', 'ghost', 'lake', 'pond', 'pump', 'repair', 'weir'])
+    assert.deepEqual(PROP_KINDS.slice().sort(), ['bridge', 'creeks', 'gate', 'ghost', 'lake', 'pond', 'pump', 'repair', 'supply', 'village', 'weir'])
+    // routeKinds: คำอธิบายสัญลักษณ์ขึ้นเฉพาะที่ผังใช้จริง
+    const kindsOf = route => [...routeKinds(route)].sort()
+    assert.deepEqual(kindsOf({ stops: [], streams: [] }), ['na'], 'ผังว่างมีแค่ขอบประ (ป้ายไม่มีค่า)')
+    assert.deepEqual(kindsOf({ stops: [{ status: 'planned', props: [{ t: 'ghost' }, { t: 'creeks', weirs: 2 }, { t: 'bridge' }] }], streams: [{ flow: true }] }), ['bridge', 'creeks', 'flow', 'na', 'planned', 'weir', 'ghost'].sort())
+    assert.ok(!routeKinds({ stops: [{ status: 'existing', props: [{ t: 'creeks', weirs: 0 }] }], streams: [{ flow: false }] }).has('weir'), 'ห้วยไม่มีฝายไม่ทำให้ขึ้นคำอธิบายฝาย')
+    assert.ok(!routeKinds({ stops: [], streams: [{ flow: false }] }).has('flow'), 'ไม่มีเส้นวิ่ง = ไม่ขึ้นคำอธิบายเส้นวิ่ง')
   }
 
   // ซอร์สหน้าจอ: คำกำกับ · ไม่ลงสีสถานการณ์ · ไม่มีเข็มทิศ · แอนิเมชันเฉพาะ flow · หยุด/นอกจอ/ลดการเคลื่อนไหวครอบทุกแอนิเมชัน
@@ -599,7 +702,7 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     assert.ok(!/from ['"][^'"]*supabase[^'"]*['"]/.test(art + list) && !/\.rpc\(|supabase\.from\(/.test(art + list), 'ภาพ/รายการไม่เรียกฐานข้อมูลเอง')
     for (const kind of PROP_KINDS) assert.ok(art.includes("case '" + kind + "'"), 'WaterRouteArt ต้องวาดชนิด ' + kind)
     // ทุกสัญลักษณ์ที่ใช้ในข้อมูลมีคำอธิบายในหน้า
-    const LEGEND_TEXT = { lake: "text: 'อ่างเก็บน้ำ'", pond: "text: 'หนอง'", weir: "text: 'ฝาย'", gate: "text: 'ประตูระบายน้ำ'", ghost: 'แผนก่อสร้าง ไม่เคลื่อนไหว', pump: 'แผนก่อสร้าง ไม่เคลื่อนไหว', repair: 'ชำรุดตามผัง ไม่เคลื่อนไหว' }
+    const LEGEND_TEXT = { lake: "text: 'อ่างเก็บน้ำ'", pond: "text: 'หนอง'", weir: "text: 'ฝาย'", gate: "text: 'ประตูระบายน้ำ'", ghost: 'แผนก่อสร้าง ไม่เคลื่อนไหว', pump: 'แผนก่อสร้าง ไม่เคลื่อนไหว', repair: 'ชำรุดตามผัง ไม่เคลื่อนไหว', bridge: "text: 'สะพาน'", supply: "text: 'ระบบประปา'", village: "text: 'หมู่บ้าน'" }
     const used = new Set(Object.values(DIAGRAMS).filter(d => d.route).flatMap(d => d.route.stops.flatMap(s => s.props.map(p => p.t))))
     for (const kind of used) if (LEGEND_TEXT[kind]) assert.ok(view.includes(LEGEND_TEXT[kind]), 'สัญลักษณ์ ' + kind + ' ไม่มีคำอธิบายใน ROUTE_LEGEND')
     assert.ok(view.includes('ขอบประ = ไม่มีค่า · ไม่มีรายงานใหม่ · ไม่ระบุ') && view.includes('เส้นวิ่ง + หัวลูกศร'), 'คำอธิบายขอบประ/เส้นวิ่ง')
@@ -618,7 +721,19 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     assert.ok(view.includes('{!route && <SourceBox diagram={diagram} tenantName={tenantName} />}'), 'ผังเดิมยังแสดงกล่องที่มาท้ายส่วน')
     assert.equal((view.match(/<SourceBox diagram=\{diagram\} tenantName=\{tenantName\} \/>/g) ?? []).length, 2, 'กล่องที่มา: ท้ายผังเดิม + แท็บที่มาของผังที่มี route')
     assert.ok(view.includes("event.key === 'ArrowRight'") && view.includes("'Home', 'End'"), 'ใช้ลูกศรซ้าย/ขวา/Home/End สลับแท็บได้')
-    assert.ok(view.includes('{route?.heading ?? diagram.title}'))
+    // หัวโปสเตอร์ "เส้นทางน้ำ · ตำบล…" อยู่บนสุดของส่วน ก่อนปุ่มหยุด/คำกำกับบังคับ/แท็บ (เจ้าของระบบสั่ง 2569-10-22: สวยแล้วต้องให้เห็นก่อน)
+    assert.ok(view.includes('{route ? <RouteBanner route={route} scope={scope} /> : ('), 'ผังที่มี route ใช้หัวโปสเตอร์')
+    assert.ok(view.includes('<h2 id="water-diagram-title" className="text-sm font-bold text-gray-800">{diagram.title}</h2>'), 'ผังเดิมยังใช้หัวเดิม')
+    {
+      const at = needle => { const i = view.indexOf(needle); assert.ok(i >= 0, 'ไม่พบ ' + needle); return i }
+      assert.ok(at('<RouteBanner route={route} scope={scope} />') < at('data-diagram-disclaimer') && at('data-diagram-disclaimer') < at('<RouteView route={route}'),
+        'ลำดับต้องเป็น หัวโปสเตอร์ → คำกำกับบังคับ → แท็บ/แผนภาพ')
+      const banner = view.slice(at('function RouteBanner'), at('// ── แผนภาพเส้นทางน้ำ (ผังที่มี route)'))
+      assert.match(banner, /<h2 id="water-diagram-title"[\s\S]*route\.eyebrow[\s\S]*route\.title/, 'หัวโปสเตอร์คือ h2 ของส่วนนี้')
+      const routeView = view.slice(at('function RouteView'), at('function DiagramBody'))
+      assert.ok(!/route\.eyebrow|route\.title/.test(routeView), 'ชื่อใหญ่ต้องอยู่ที่หัวโปสเตอร์เท่านั้น ไม่ซ้ำในแผง')
+      assert.equal((view.match(/id="water-diagram-title"/g) ?? []).length, 2, 'h2 มี 2 ทางเลือก (โปสเตอร์ · ผังเดิม) เลือกทางเดียวต่อครั้ง')
+    }
     assert.ok(view.includes('<b>ไม่ใช่แผนที่</b> ตำแหน่ง ทิศ และมาตราส่วนไม่ตรงจริง'), 'ต้องบอกว่าไม่ใช่แผนที่')
     for (const klass of ['.wr-flow', '.wr-fall', '.wr-wave', '.wr-shim']) {
       assert.ok(css.includes('.wd-root.wd-paused ' + klass), klass + ' ต้องหยุดเมื่อกดปุ่มหยุด')

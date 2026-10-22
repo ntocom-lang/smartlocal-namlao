@@ -1,4 +1,4 @@
-// E2E: ผังน้ำตำบล (src/components/water/WaterDiagram.jsx) — ทุ่งแค้ว = แผนภาพเส้นทางน้ำ (WaterRouteArt) · ตำหนักธรรม/น้ำเลา = ผังเดิม (ย้ายเป็นแผนภาพใน PR ถัดไป)
+// E2E: ผังน้ำตำบล (src/components/water/WaterDiagram.jsx) — ทุ่งแค้ว · ตำหนักธรรม · น้ำเลา ใช้แผนภาพเส้นทางน้ำ (WaterRouteArt) ทั้งหมด
 // เดิม: ทุ่งแค้ว + ตำหนักธรรม + น้ำเลา บนหน้า /water-situation
 // ผังทุ่งแค้วเป็นค่าเริ่มต้นของ demo · ผังอื่นเปิดบน demo ด้วย ?diagram=tamnaktham | namlao
 //
@@ -20,7 +20,7 @@ import process from 'node:process'
 import { chromium } from 'playwright'
 import { THUNGKAEW_DIAGRAM } from '../src/lib/waterDiagram/thungkaew.js'
 import { DIAGRAMS } from '../src/lib/waterDiagram/diagrams.js'
-import { isAnimated, CHIP_TONES } from '../src/lib/waterDiagram/model.js'
+import { CHIP_TONES } from '../src/lib/waterDiagram/model.js'
 
 const DEFAULT_BASE_URL = 'http://localhost:5174'
 const ALLOWED_HOSTS = new Set(['demo.rk-networks.com', 'localhost', '127.0.0.1'])
@@ -135,11 +135,6 @@ async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 9
 }
 
 const section = page => page.locator('#water-diagram')
-const modeButton = (page, label) => section(page).getByRole('button', { name: label, exact: true })
-const mapSvg = page => section(page).locator('.wd-mapbox > svg')
-const slotText = (page, text) => mapSvg(page).locator('text', { hasText: text })
-// SVG ไม่มี innerText — ใช้ textContent ของตัวผังเท่านั้น (ไม่ปนไอคอนปุ่ม)
-const mapText = page => mapSvg(page).textContent()
 
 const results = []
 async function check(name, run) {
@@ -153,7 +148,7 @@ await mkdir(SHOT_DIR, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: !process.argv.includes('--headed') })
 
 try {
-  // ═══ ทุ่งแค้ว = แผนภาพเส้นทางน้ำ (มุมมองใหม่: มี route) · ตำหนักธรรม/น้ำเลา = ผังเดิม (ข้อ 7–8) ═══
+  // ═══ ทุ่งแค้ว = แผนภาพเส้นทางน้ำ (ข้อ 1–6 + แท็บ) · ตำหนักธรรม/น้ำเลา = แผนภาพเส้นทางน้ำเหมือนกัน (ข้อ 7–8 + เลย์เอาต์ในข้อ 4) ═══
   const route = THUNGKAEW_DIAGRAM.route
   const routeSvg = page => section(page).locator('svg[data-route-art]')
   const routeText = page => routeSvg(page).textContent()
@@ -163,6 +158,11 @@ try {
   // หน้าตาจริงของกรอบป้าย (สี + ขอบประ) แยกตามโทน — กันกรณีโทนในข้อมูลถูกต้องแต่วาดออกมาเหมือนกันหมด
   const pillLook = (page, tone) => routeSvg(page).locator(`g[data-pill="${tone}"] > rect`).evaluateAll(rects =>
     rects.map(r => ({ stroke: r.getAttribute('stroke'), dashed: r.hasAttribute('stroke-dasharray') })))
+
+  // ป้ายที่โทนไม่อยู่ในตาราง CHIP_TONES (เช่น undefined จากช่องที่ไม่มี) — ต้องไม่มีเลย
+  const unknownPillTones = page => routeSvg(page).locator('g[data-pill]').evaluateAll(
+    (els, known) => els.map(el => el.getAttribute('data-pill')).filter(tone => !known.includes(tone)),
+    Object.keys(CHIP_TONES))
 
   // ── 1) ค่าสดปกติ: ป้ายบนภาพ + รายการจุด ──
   await check('ค่าสดปกติ: ป้ายบนภาพ (อ่าง 2 แห่ง · ฝน · ระดับน้ำพร้อมระยะ) และรายการจุดมีหมายเลขตรงกัน', async () => {
@@ -180,7 +180,19 @@ try {
       for (const expected of ['73.2% · รายงาน', '76.8% · รายงาน', 'ฝนสะสม 24 ชม. 12.5 มม.', 'หนองม่วงไข่ ห่าง 4.8 กม. · ต่ำกว่าตลิ่ง 4.55 ม.']) {
         assert.ok(list.includes(expected), `รายการจุดต้องมี "${expected}"`)
       }
-      assert.match(await section(page).locator('h2').innerText(), /เส้นทางน้ำตำบลทุ่งแค้ว/)
+      assert.match(await section(page).locator('h2').innerText(), /เส้นทางน้ำ\s*ตำบลทุ่งแค้ว/)
+      // หัวโปสเตอร์ต้องอยู่บนสุด (เจ้าของระบบสั่ง 2569-10-22) ก่อนปุ่มหยุด → คำกำกับบังคับ → แท็บ → ภาพ
+      const top = async locator => (await locator.boundingBox()).y
+      const order = [
+        await top(section(page).locator('[data-route-banner]')),
+        await top(section(page).getByRole('button', { name: 'หยุดเคลื่อนไหว' })),
+        await top(section(page).locator('[data-diagram-disclaimer]')),
+        await top(section(page).getByRole('tablist')),
+        await top(routeSvg(page)),
+      ]
+      assert.deepEqual(order, [...order].sort((x, y) => x - y), `ลำดับบนลงล่างต้องเป็น หัวโปสเตอร์ → ปุ่มหยุด → คำกำกับ → แท็บ → ภาพ: ${order}`)
+      assert.equal(await section(page).locator('h2').count(), 1, 'ส่วนนี้มี h2 เดียว (หัวโปสเตอร์)')
+      assert.ok(Math.abs(order[0] - (await top(section(page)))) < 2, 'หัวโปสเตอร์ชิดบนสุดของส่วน')
       assert.match(await section(page).innerText(), /ข้อมูลจริงของทุ่งแค้ว ใช้สาธิต/)
       await section(page).screenshot({ path: path.join(SHOT_DIR, 'route-normal-1280.png') })
       assert.deepEqual(problems, [])
@@ -232,12 +244,12 @@ try {
   })
 
   // ── 4) เลย์เอาต์ ──
-  // ทุ่งแค้ว (แผนภาพเส้นทางน้ำ): ไม่มีปุ่มสลับโหมด/ซูม · มือถือภาพขึ้นก่อนรายการ · จอใหญ่รายการซ้ายภาพขวา
-  for (const width of [360, 390, 768, 1280]) {
-    await check(`เลย์เอาต์ ทุ่งแค้ว ${width}px: ไม่เลื่อนแนวนอน · ไม่ล้นขอบจอ · ปุ่ม/ลิงก์ ≥ 44px · ตัวหนังสือบนภาพไม่เล็กเกินไป · ลำดับภาพ/รายการถูก`, async () => {
-      const { context, page } = await openScene(browser, baseUrl, 'normal', { width })
+  // ทุกผัง (แผนภาพเส้นทางน้ำ): ไม่มีปุ่มสลับโหมด/ซูม · มือถือเริ่มที่แผนภาพ · จอใหญ่รายการซ้ายภาพขวา · ทุกแท็บไม่ล้นจอ
+  for (const [id, scene, waitText, shotName] of [['thungkaew', 'normal', '73.2%', 'route'], ['tamnaktham', 'tkNormal', 'ต่ำกว่าตลิ่ง 2.35 ม.', 'tk-route'], ['namlao', 'nlNormal', '84.5%', 'nl-route']]) for (const width of [360, 390, 768, 1280]) {
+    await check(`เลย์เอาต์ ${id} ${width}px: ไม่เลื่อนแนวนอน · ไม่ล้นขอบจอ · ปุ่ม/ลิงก์ ≥ 44px · ตัวหนังสือบนภาพไม่เล็กเกินไป · ภาพ/รายการ/ที่มาตามแท็บ`, async () => {
+      const { context, page } = await openScene(browser, baseUrl, scene, { width, diagram: id === 'thungkaew' ? null : id })
       try {
-        await pill(page, '73.2%').waitFor({ timeout: 8000 })
+        await pill(page, waitText).waitFor({ timeout: 8000 })
         assert.equal(await section(page).getByRole('group', { name: 'โหมดแสดงผัง' }).count(), 0, 'มุมมองใหม่ไม่มีปุ่มสลับโหมด')
         assert.equal(await section(page).getByRole('button', { name: 'ย่อผัง' }).count() + await section(page).getByRole('button', { name: 'ขยายผัง' }).count(), 0, 'ภาพพอดีจอ ไม่มีปุ่มซูม')
         // ตรวจเลย์เอาต์ของแท็บที่เปิดอยู่ตอนนี้ (เรียกซ้ำทุกแท็บ)
@@ -280,37 +292,7 @@ try {
         assert.equal(await routeSvg(page).isVisible(), false, 'แท็บที่มาต้องซ่อนภาพ')
         await layoutIssues('แท็บที่มา')
         await tabButton(page, /^แผนภาพ/).click()
-        await section(page).screenshot({ path: path.join(SHOT_DIR, `route-${width}.png`) })
-      } finally { await context.close() }
-    })
-  }
-  // ผังเดิม (ตำหนักธรรม · น้ำเลา): โหมดเริ่มต้นตามความกว้างจอ
-  for (const [diagram, scene, shotPrefix] of [['tamnaktham', 'tkNormal', 'tk-lanes'], ['namlao', 'nlNormal', 'nl-lanes']]) for (const width of [360, 390, 768, 1280]) {
-    await check(`เลย์เอาต์ ${diagram} ${width}px: โหมดเริ่มต้นถูก · ไม่เลื่อนแนวนอนทั้งหน้า · ปุ่มและลิงก์ ≥ 44px`, async () => {
-      const { context, page } = await openScene(browser, baseUrl, scene, { width, diagram })
-      try {
-        const expected = width >= 768 ? 'ผังภาพ' : 'สายน้ำ (รายการ)'
-        assert.equal(await modeButton(page, expected).getAttribute('aria-pressed'), 'true', `จอ ${width}px ต้องเริ่มที่โหมด ${expected}`)
-        for (const mode of ['ผังภาพ', 'สายน้ำ (รายการ)']) {
-          await modeButton(page, mode).click()
-          await page.waitForTimeout(400)
-          const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)
-          assert.equal(overflow, false, `โหมด ${mode} ทำให้หน้าเลื่อนแนวนอน`)
-          // ตรวจไม่ให้เนื้อหาถูกตัดขอบจอ: หน้าไม่เลื่อนแนวนอนก็ยังมีข้อความล้นกรอบแล้วโดน overflow ของกรอบแม่ตัดได้ (เจอที่ 390px)
-          // ยกเว้นตัวแผนที่ที่เลื่อนในกล่องของมันเองโดยตั้งใจ
-          const clipped = await section(page).evaluate((root, limit) => [...root.querySelectorAll('*')]
-            .filter(el => el.offsetParent !== null && !el.closest('.wd-mapbox') && !(el instanceof SVGElement && el.closest('svg')?.closest('.wd-mapbox')))
-            .map(el => ({ el, r: el.getBoundingClientRect() }))
-            .filter(({ r }) => r.width > 0 && r.right > limit + 1)
-            .map(({ el, r }) => `${el.tagName}.${String(el.className).slice(0, 20)} right=${Math.round(r.right)} "${(el.textContent || '').trim().slice(0, 20)}"`), width)
-          assert.deepEqual(clipped, [], `โหมด ${mode}: องค์ประกอบล้นขอบจอ ${width}px`)
-          const small = await section(page).evaluate(root => [...root.querySelectorAll('button, a[href]')]
-            .filter(el => el.offsetParent !== null)
-            .map(el => ({ t: (el.getAttribute('aria-label') || el.innerText || '').trim().slice(0, 24), h: Math.round(el.getBoundingClientRect().height), w: Math.round(el.getBoundingClientRect().width) }))
-            .filter(item => item.h < 44 || (item.w < 44 && item.t.length < 3)))
-          assert.deepEqual(small, [], `ปุ่ม/ลิงก์เล็กกว่า 44px: ${JSON.stringify(small)}`)
-        }
-        await section(page).screenshot({ path: path.join(SHOT_DIR, `${shotPrefix}-${width}.png`) })
+        await section(page).screenshot({ path: path.join(SHOT_DIR, `${shotName}-${width}.png`) })
       } finally { await context.close() }
     })
   }
@@ -492,107 +474,145 @@ try {
     } finally { await context.close() }
   })
 
+  // ═══ ตัวช่วยร่วมของตำหนักธรรม/น้ำเลา ═══
+  // เส้นวิ่ง: เฉพาะลำที่ผังวาดลูกศร + หัวลูกศร · ลำอื่นนิ่ง · แผนก่อสร้างไม่มีแอนิเมชัน · ปุ่มหยุดทำงาน
+  const checkFlows = async (diagramId, sceneName, flowIds, plannedStops, pumpCount) => {
+    const diagram = DIAGRAMS[diagramId]
+    const { context, page } = await openScene(browser, baseUrl, sceneName, { diagram: diagramId })
+    try {
+      await routeSvg(page).locator('g[data-pill]').first().waitFor({ timeout: 8000 })
+      const flowing = await routeSvg(page).locator('g[data-flow="true"]').evaluateAll(els => els.map(el => el.getAttribute('data-stream')).sort())
+      assert.deepEqual(flowing, flowIds)
+      const names = await routeSvg(page).locator('path.wr-flow').evaluateAll(els => els.map(el => getComputedStyle(el).animationName))
+      assert.deepEqual(names, flowIds.map(() => 'wr-dash'), 'เส้นวิ่งทุกเส้นต้องมีแอนิเมชัน')
+      const still = await routeSvg(page).locator('path.wr-hl').evaluateAll(els => els.map(el => getComputedStyle(el).animationName))
+      assert.equal(still.length, diagram.route.streams.length - flowIds.length)
+      assert.ok(still.every(name => name === 'none'), 'ลำที่ผังวาดลูกศรนิ่งต้องไม่วิ่ง')
+      assert.equal(await routeSvg(page).locator('g[data-flow="true"] > path[marker-end]').count(), flowIds.length, 'เส้นวิ่งมีหัวลูกศรปลายทาง')
+      assert.equal(await routeSvg(page).locator('g[data-flow="false"] path[marker-end]').count(), 0, 'ลำที่ไม่วิ่งไม่มีหัวลูกศร (ไม่เดาทิศ)')
+      assert.deepEqual(await routeSvg(page).locator('g[data-status="planned"]').evaluateAll(els => els.map(el => Number(el.getAttribute('data-stop')))), plannedStops, 'จุดแผนก่อสร้างบนภาพ')
+      const animatedInside = await routeSvg(page).evaluate(svg => [...svg.querySelectorAll('[data-status="planned"] *')].filter(el => getComputedStyle(el).animationName !== 'none').length)
+      assert.equal(animatedInside, 0, 'แผนก่อสร้างห้ามมีแอนิเมชัน')
+      assert.equal(await routeSvg(page).locator('g[data-status="planned"] text', { hasText: /^P$/ }).count(), pumpCount, 'สถานีสูบน้ำแผนก่อสร้าง')
+      const waves = await routeSvg(page).locator('.wr-wave').evaluateAll(els => els.map(el => getComputedStyle(el).animationName))
+      assert.ok(waves.length === 2 && waves.every(name => name === 'wr-wave'), 'แม่น้ำมีคลื่น 2 ชั้น')
+      // ภาพที่ยังอยู่นอกจอถูกหยุดโดยตั้งใจ — เลื่อนเข้าจอก่อนตรวจปุ่มหยุด
+      await section(page).scrollIntoViewIfNeeded()
+      await page.waitForFunction(() => !document.querySelector('#water-diagram')?.hasAttribute('data-offscreen'), null, { timeout: 5000 })
+      const state = () => routeSvg(page).locator('path.wr-flow').first().evaluate(el => getComputedStyle(el).animationPlayState)
+      assert.equal(await state(), 'running')
+      await section(page).getByRole('button', { name: 'หยุดเคลื่อนไหว' }).click()
+      assert.equal(await state(), 'paused')
+    } finally { await context.close() }
+  }
+
+  // ตรวจเทียบค่าสดทุกฉาก: scenes = [[ฉาก, ข้อความที่ต้องมีในป้ายบนภาพ[], ข้อความต้องห้ามบนภาพ(regex)]]
+  const checkScenes = async (diagramId, scenes) => {
+    for (const [sceneName, expectedPills, forbidden] of scenes) {
+      const { context, page } = await openScene(browser, baseUrl, sceneName, { diagram: diagramId })
+      try {
+        for (const text of expectedPills) await pill(page, text).first().waitFor({ timeout: 8000 })
+        assert.ok(!forbidden.test(await routeText(page)), `${sceneName}: ค่าที่ไม่สดต้องไม่โชว์เป็นค่าปัจจุบัน (${forbidden})`)
+      } finally { await context.close() }
+    }
+  }
+
   // ── 7) ผังตำหนักธรรม (?diagram=tamnaktham บน demo) ──
   const tk = DIAGRAMS.tamnaktham
-  await check('ตำหนักธรรม: ป้ายระดับน้ำ Y.38 พร้อมระยะ ในผังภาพและรายการ · ป้ายบอกว่าใช้ข้อมูลจริงของตำหนักธรรม · ไม่มีค่าฝน/อ่าง', async () => {
+  await check('ตำหนักธรรม: ป้ายระดับน้ำ Y.38 พร้อมระยะ ในภาพและรายการ · ใช้ข้อมูลจริงของตำหนักธรรม · ไม่มีค่าฝน/อ่าง · หมายเลข 1–15 ครบ', async () => {
     const { context, page, problems, reservoirRequests } = await openScene(browser, baseUrl, 'tkNormal', { diagram: 'tamnaktham' })
     try {
       // ผังนี้ไม่มีอ่างเล็ก: ห้ามมีคำขอรายงานอ่างที่ id ว่าง (null/undefined) — คำขอ 50/30 มาจากการ์ดอ่างเล็กด้านบนของ demo
       assert.deepEqual(reservoirRequests.filter(id => id !== '50' && id !== '30'), [], 'ผังไม่มีอ่างเล็กต้องไม่ยิงคำขอ id แปลก')
-      assert.match(await section(page).locator('h2').innerText(), /ผังน้ำตำบลตำหนักธรรม/)
+      assert.match(await section(page).locator('h2').innerText(), /เส้นทางน้ำ\s*ตำบลตำหนักธรรม/)
       assert.match(await section(page).innerText(), /ข้อมูลจริงของตำหนักธรรม ใช้สาธิต/)
-      await modeButton(page, 'ผังภาพ').click()
-      await slotText(page, 'บ้านแม่คำมีตำหนักธรรม ห่าง 0.7 กม. · ต่ำกว่าตลิ่ง 2.35 ม.').waitFor({ timeout: 8000 })
-      const text = await mapText(page)
-      assert.ok(!/อ่าง \d|ฝน \d/.test(text), 'ผังนี้ไม่มีป้ายอ่าง/ฝน')
-      await section(page).screenshot({ path: path.join(SHOT_DIR, 'tk-normal-map-1280.png') })
-      await modeButton(page, 'สายน้ำ (รายการ)').click()
-      assert.ok((await section(page).innerText()).includes('บ้านแม่คำมีตำหนักธรรม ห่าง 0.7 กม. · ต่ำกว่าตลิ่ง 2.35 ม.'))
-      await section(page).screenshot({ path: path.join(SHOT_DIR, 'tk-normal-lanes-1280.png') })
+      await pill(page, 'ต่ำกว่าตลิ่ง 2.35 ม.').waitFor({ timeout: 8000 })
+      assert.equal(await routeSvg(page).locator('g[data-pill="ok"]').count(), 1, 'ป้ายค่าสดช่องเดียว (Y.38)')
+      assert.deepEqual(await pillLook(page, 'ok'), [{ stroke: CHIP_TONES.ok.stroke, dashed: false }])
+      assert.equal(await routeSvg(page).locator('g[data-pill="plan"]').count(), 5, 'ป้าย "แผน" 5 จุด')
+      assert.equal(await routeSvg(page).locator('[data-river] g[aria-hidden="true"]').count(), 0, 'แม่น้ำยมไม่มีสถานีวัด = ไม่วาดลูกศรบอกระยะต่ำกว่าตลิ่ง')
+      assert.equal(await routeSvg(page).locator('[data-river] rect[rx], [data-river] g[data-pill]').count(), 0, 'แม่น้ำยมไม่มีช่องค่าสด = ไม่วาดป้ายเปล่าบนแม่น้ำ')
+      assert.deepEqual(await unknownPillTones(page), [], 'ป้ายทุกใบต้องมีโทนที่รู้จัก')
+      const text = await routeText(page)
+      assert.ok(!/อ่าง \d|ฝน/.test(text), 'ผังนี้ไม่มีป้ายอ่าง/ฝน')
+      assert.equal(await routeSvg(page).locator('[data-pin]').count(), 15)
+      assert.equal(await routeList(page).locator('li[data-stop]').count(), 15)
+      const list = await routeList(page).innerText()
+      assert.ok(list.includes('บ้านแม่คำมีตำหนักธรรม ห่าง 0.7 กม. · ต่ำกว่าตลิ่ง 2.35 ม.'))
+      for (const item of [...tk.route.stops, tk.route.river]) assert.ok(list.includes(item.name), `รายการขาดจุด ${item.n} ${item.name}`)
+      assert.equal(await routeList(page).locator('[data-group]').count(), 0, 'ตำหนักธรรมเรียงตามลำน้ำ ไม่มีหัวข้อกลุ่ม')
+      await section(page).screenshot({ path: path.join(SHOT_DIR, 'tk-normal-1280.png') })
       assert.deepEqual(problems, [])
     } finally { await context.close() }
   })
 
   await check('ตำหนักธรรม: ค่าค้าง/ค่าว่าง/ไม่มีสถานี = บอกตรงๆ ไม่ใช่ค่าสด ไม่เป็น 0', async () => {
-    for (const [scene, expected, forbidden] of [
-      ['tkStale', 'บ้านแม่คำมีตำหนักธรรม ห่าง 0.7 กม. ไม่มีค่าใหม่', /ต่ำกว่าตลิ่ง|2\.35/],
-      ['tkNull', 'ไม่มีค่าในระบบ', /ตลิ่ง|ปกติ/],
-      ['tkEmpty', 'ไม่มีค่าในระบบ', /ตลิ่ง|ปกติ|0 ม\./],
-    ]) {
-      const { context, page } = await openScene(browser, baseUrl, scene, { diagram: 'tamnaktham' })
-      try {
-        await modeButton(page, 'ผังภาพ').click()
-        await slotText(page, expected).waitFor({ timeout: 8000 })
-        assert.ok(!forbidden.test(await mapText(page)), `${scene}: ค่าที่ไม่สดต้องไม่โชว์เป็นค่าปัจจุบัน`)
-      } finally { await context.close() }
-    }
-  })
-
-  const tkAnimated = tk.elements.filter(isAnimated).length
-  await check(`ตำหนักธรรม: เส้นวิ่ง ${tkAnimated} เส้น (น้ำแม่คำมี + คลอง + แม่น้ำยม) · ฝาย/สถานีสูบแผนก่อสร้างสีแดงไม่มีแอนิเมชัน · ปุ่มหยุดทำงาน`, async () => {
-    const { context, page } = await openScene(browser, baseUrl, 'tkNormal', { diagram: 'tamnaktham' })
+    await checkScenes('tamnaktham', [
+      ['tkStale', ['ไม่มีค่าใหม่'], /ต่ำกว่าตลิ่ง|2\.35/],
+      ['tkNull', ['ไม่มีค่า'], /ตลิ่ง|ปกติ/],
+      ['tkEmpty', ['ไม่มีค่า'], /ตลิ่ง|ปกติ|0 ม\./],
+    ])
+    const { context, page } = await openScene(browser, baseUrl, 'tkStale', { diagram: 'tamnaktham' })
     try {
-      await modeButton(page, 'ผังภาพ').click()
-      assert.equal(await section(page).locator('path.wd-flow').count(), tkAnimated)
-      const redStatic = await section(page).evaluate(root => [...root.querySelectorAll('.wd-mapbox svg rect[fill="#b91c1c"], .wd-mapbox svg circle[stroke="#b91c1c"]')]
-        .filter(el => getComputedStyle(el).animationName !== 'none').length)
-      assert.equal(redStatic, 0)
-      assert.equal(await section(page).locator('.wd-mapbox svg rect[fill="#b91c1c"]').count(), 2, 'ฝายแผนก่อสร้าง 2 แท่ง (หมู่ 1 และหมู่ 12)')
-      assert.equal(await section(page).locator('.wd-mapbox svg circle[stroke="#b91c1c"]').count(), 3, 'สถานีสูบน้ำแผนก่อสร้าง 3 จุด')
-      assert.equal(await section(page).locator('path.wd-shimmer').count(), 0, 'ผังนี้ไม่มีคลองสองทิศ')
-      const state = () => section(page).locator('path.wd-flow').first().evaluate(el => getComputedStyle(el).animationPlayState)
-      assert.equal(await state(), 'running')
-      await section(page).getByRole('button', { name: 'หยุดเคลื่อนไหว' }).click()
-      assert.equal(await state(), 'paused')
+      await pill(page, 'ไม่มีค่าใหม่').first().waitFor({ timeout: 8000 })
+      assert.deepEqual(await pillLook(page, 'stale'), [{ stroke: CHIP_TONES.stale.stroke, dashed: true }], 'ป้ายที่ค้างต้องขอบประสีเทา')
+      assert.ok((await routeList(page).innerText()).includes('บ้านแม่คำมีตำหนักธรรม ห่าง 0.7 กม. · ไม่มีค่าใหม่'))
     } finally { await context.close() }
   })
 
-  await check('ตำหนักธรรม: ทุกสัญลักษณ์บนผังมีคำอธิบาย · กล่องที่มาบอกอายุผังและเขตหมู่บ้านที่วาดเป็นสีเทา · คำกำกับบังคับครบ · รายการสายน้ำครบ', async () => {
+  await check('ตำหนักธรรม: เส้นวิ่ง 2 เส้น (น้ำแม่คำมี + คลองชลประทาน) พร้อมหัวลูกศร · ห้วยสาขา/แม่น้ำยมไม่วิ่ง · ฝาย/สถานีสูบน้ำแผนก่อสร้าง 5 จุดไม่มีแอนิเมชัน · ปุ่มหยุดทำงาน', async () => {
+    await checkFlows('tamnaktham', 'tkNormal', ['canal', 'mkm'], [3, 5, 8, 11, 12], 3)
+  })
+
+  await check('ตำหนักธรรม: คำอธิบายสัญลักษณ์เฉพาะที่ใช้ · คำกำกับบังคับครบ · ที่มา/ของที่ไม่ได้วาด · รายการครบ · แผนก่อสร้างมีแท็ก', async () => {
     const { context, page } = await openScene(browser, baseUrl, 'tkNormal', { diagram: 'tamnaktham' })
     try {
-      await modeButton(page, 'ผังภาพ').click()
-      const legend = await section(page).locator('.wd-legend').innerText()
-      for (const needed of ['ประตูระบายน้ำ', 'สะพาน', 'ระบบประปา', 'สถานีสูบน้ำแผนก่อสร้าง', 'ฝายแผนก่อสร้าง', 'เขตตำบล', 'เขตหมู่บ้าน']) assert.ok(legend.includes(needed), `คำอธิบายสัญลักษณ์ขาด "${needed}"`)
-      assert.ok(!legend.includes('อ่างเก็บน้ำ') && !legend.includes('หนอง'), 'ผังนี้ไม่มีอ่าง/หนอง ต้องไม่มีบรรทัดอธิบาย')
-      for (const mode of ['ผังภาพ', 'สายน้ำ (รายการ)']) {
-        await modeButton(page, mode).click()
-        const text = await section(page).innerText()
-        for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ผังน้ำตำบลตำหนักธรรม อำเภอหนองม่วงไข่', 'ไฟล์ลงวันที่ 9 พ.ค. 2567', 'เขตหมู่บ้านริมน้ำแม่คำมี', 'เส้นประเทา']) {
-          assert.ok(text.includes(needed), `โหมด ${mode} ต้องมี "${needed}"`)
-        }
-        assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 1)
+      await pill(page, 'ต่ำกว่าตลิ่ง 2.35 ม.').waitFor({ timeout: 8000 })
+      const legend = await section(page).locator('[data-route-legend]').innerText()
+      for (const needed of ['ฝาย', 'ประตูระบายน้ำ', 'สะพาน', 'ระบบประปา', 'กล่องแดงประ = แผนก่อสร้าง ไม่เคลื่อนไหว', 'เส้นวิ่ง + หัวลูกศร', 'ขอบประ = ไม่มีค่า']) assert.ok(legend.includes(needed), `คำอธิบายสัญลักษณ์ขาด "${needed}"`)
+      for (const absent of ['อ่างเก็บน้ำ', 'หนอง', 'หมู่บ้าน', 'ลายขีดแดง']) assert.ok(!legend.includes(absent), `ผังนี้ไม่มี "${absent}" ต้องไม่มีบรรทัดอธิบาย`)
+      const artText = await section(page).innerText()
+      await tabButton(page, /^ที่มา$/).click()
+      const text = artText + '\n' + await section(page).innerText()
+      for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'ไม่ใช่แผนที่', 'ไม่มีเข็มทิศ', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ผังน้ำตำบลตำหนักธรรม อำเภอหนองม่วงไข่', 'ไฟล์ลงวันที่ 9 พ.ค. 2567', 'เขตหมู่บ้าน', 'ห้วยหาด']) {
+        assert.ok(text.includes(needed), `ต้องมี "${needed}"`)
       }
-      const text = await section(page).innerText()
-      for (const lane of tk.lanes) {
-        assert.ok(text.includes(lane.title), `ขาดสาย ${lane.title}`)
-        for (const item of lane.items) assert.ok(text.includes(item.name), `ขาดรายการ ${item.name}`)
-      }
-      for (const planned of tk.lanes.flatMap(lane => lane.items).filter(item => item.status === 'planned')) {
-        assert.ok(text.includes('แผนก่อสร้าง · ไม่เคลื่อนไหว'), `${planned.name}: ต้องบอกว่าแผนก่อสร้าง`)
-      }
+      assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 1)
+      assert.equal(await section(page).locator('[data-diagram-omitted] li').count(), tk.omitted.length)
+      await tabButton(page, /^แผนภาพ/).click()
+      const planned = routeList(page).locator('li[data-status="planned"]')
+      assert.equal(await planned.count(), 5)
+      for (const li of await planned.all()) assert.ok((await li.innerText()).includes('แผนก่อสร้าง · ไม่เคลื่อนไหว'))
     } finally { await context.close() }
   })
+
   // ── 8) ผังน้ำเลา (?diagram=namlao บน demo) ──
   const nl = DIAGRAMS.namlao
-  await check('น้ำเลา: ป้ายอ่างแม่คำปอง + ฝน 2 สถานี ในผังภาพและรายการ · บอกชื่อสถานีและระยะ · ไม่มีป้ายระดับน้ำ/อ่างเล็ก', async () => {
+  await check('น้ำเลา: ป้ายอ่างแม่คำปอง + ฝน 2 สถานี ในภาพและรายการ · บอกชื่อสถานีและระยะ · ไม่มีป้ายระดับน้ำ/อ่างเล็ก · หมายเลข 1–21 · หัวข้อกลุ่มตามสายในผัง', async () => {
     const { context, page, problems, reservoirRequests } = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao' })
     try {
       assert.deepEqual(reservoirRequests.filter(id => id !== '50' && id !== '30'), [], 'ผังไม่มีอ่างเล็กต้องไม่ยิงคำขอ id แปลก')
-      assert.match(await section(page).locator('h2').innerText(), /ผังน้ำตำบลน้ำเลา/)
+      assert.match(await section(page).locator('h2').innerText(), /เส้นทางน้ำ\s*ตำบลน้ำเลา/)
       assert.match(await section(page).innerText(), /ข้อมูลจริงของน้ำเลา ใช้สาธิต/)
-      await modeButton(page, 'ผังภาพ').click()
-      await slotText(page, 'อ่าง 84.5%').waitFor({ timeout: 8000 })
-      await slotText(page, 'ฝน 12.5 มม.').waitFor()
-      await slotText(page, 'ฝน 0 มม.').waitFor()
-      const text = await mapText(page)
+      await pill(page, '84.5%').waitFor({ timeout: 8000 })
+      await pill(page, 'ฝน 12.5 มม.').waitFor()
+      await pill(page, 'ฝน 0 มม.').waitFor()
+      assert.equal(await routeSvg(page).locator('g[data-pill="ok"]').count(), 3, 'ป้ายค่าสด 3 ช่อง')
+      assert.equal(await routeSvg(page).locator('g[data-pill="plan"]').count(), 3, 'ป้าย "แผน" 3 จุด')
+      const text = await routeText(page)
       assert.ok(!/ตลิ่ง|YOM003/.test(text), 'ผังนี้ไม่มีป้ายระดับน้ำ')
-      await section(page).screenshot({ path: path.join(SHOT_DIR, 'nl-normal-map-1280.png') })
-      await modeButton(page, 'สายน้ำ (รายการ)').click()
-      const lanes = await section(page).innerText()
+      assert.equal(await routeSvg(page).locator('[data-river] g[aria-hidden="true"]').count(), 0, 'ลำน้ำแม่ถางไม่มีสถานีวัด = ไม่วาดลูกศรบอกระยะต่ำกว่าตลิ่ง')
+      assert.equal(await routeSvg(page).locator('[data-river] rect[rx], [data-river] g[data-pill]').count(), 0, 'ลำน้ำแม่ถางไม่มีช่องค่าสด = ไม่วาดป้ายเปล่าบนแม่น้ำ')
+      assert.deepEqual(await unknownPillTones(page), [], 'ป้ายทุกใบต้องมีโทนที่รู้จัก')
+      assert.equal(await routeSvg(page).locator('[data-pin]').count(), 21)
+      assert.equal(await routeList(page).locator('li[data-stop]').count(), 21)
+      const list = await routeList(page).innerText()
       for (const expected of ['อ่างเก็บน้ำแม่คำปอง ห่าง 3.6 กม.', '84.5% ของความจุที่ระดับเก็บกัก', '5.71/6.76 ล้าน ลบ.ม.', 'สถานีบ้านบุญแจ่ม ห่าง 2.6 กม.', 'สถานีอ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา ห่าง 2.9 กม.']) {
-        assert.ok(lanes.includes(expected), `รายการสายน้ำต้องมี "${expected}"`)
+        assert.ok(list.includes(expected), `รายการต้องมี "${expected}"`)
       }
-      await section(page).screenshot({ path: path.join(SHOT_DIR, 'nl-normal-lanes-1280.png') })
+      const groups = await routeList(page).locator('[data-group]').allInnerTexts()
+      assert.deepEqual(groups, [...new Set(nl.route.stops.map(s => s.group)), nl.route.river.group], 'หัวข้อกลุ่มเรียงตามสายในผังต้นฉบับ')
+      await section(page).screenshot({ path: path.join(SHOT_DIR, 'nl-normal-1280.png') })
       assert.deepEqual(problems, [])
     } finally { await context.close() }
   })
@@ -600,80 +620,64 @@ try {
   await check('น้ำเลา: อ่างเกิน 100% อธิบายตัวเลขเอง · ตัวเลขซ้ำเดิมเป็นเหลือง · ค้างไม่ใช่ค่าสด · ว่าง/ไม่มีสถานีไม่เป็น 0', async () => {
     let r = await openScene(browser, baseUrl, 'nlOver', { diagram: 'namlao' })
     try {
-      await modeButton(r.page, 'ผังภาพ').click()
-      await slotText(r.page, 'อ่าง 100.4%').waitFor({ timeout: 8000 })
-      await modeButton(r.page, 'สายน้ำ (รายการ)').click()
-      assert.ok((await section(r.page).innerText()).includes('มากกว่า 100% = เกินความจุที่ระดับเก็บกักปกติ'))
+      await pill(r.page, '100.4%').waitFor({ timeout: 8000 })
+      assert.ok((await routeList(r.page).innerText()).includes('มากกว่า 100% = เกินความจุที่ระดับเก็บกักปกติ'))
     } finally { await r.context.close() }
     r = await openScene(browser, baseUrl, 'nlSame', { diagram: 'namlao' })
     try {
-      await modeButton(r.page, 'ผังภาพ').click()
-      await slotText(r.page, 'อ่าง 84.5% · ตัวเลขซ้ำเดิม').waitFor({ timeout: 8000 })
+      await pill(r.page, 'ตัวเลขซ้ำเดิม').first().waitFor({ timeout: 8000 })
+      assert.equal(await routeSvg(r.page).locator('g[data-pill="warn"]').count(), 1, 'ป้ายอ่างที่ตัวเลขซ้ำเดิมเป็นโทนเหลือง')
+      assert.deepEqual(await pillLook(r.page, 'warn'), [{ stroke: CHIP_TONES.warn.stroke, dashed: false }])
     } finally { await r.context.close() }
     r = await openScene(browser, baseUrl, 'nlStale', { diagram: 'namlao' })
     try {
-      await modeButton(r.page, 'ผังภาพ').click()
-      await slotText(r.page, 'อ่าง 84.5% · ไม่มีรายงานใหม่').waitFor({ timeout: 8000 })
-      await slotText(r.page, 'ฝน ไม่มีค่าใหม่').first().waitFor()
-      const text = await mapText(r.page)
-      assert.ok(!/ฝน 12\.5|ฝน 3 /.test(text), 'ฝนที่ค้างต้องไม่โชว์เป็นค่าปัจจุบัน')
+      await pill(r.page, 'ไม่มีรายงานใหม่').first().waitFor({ timeout: 8000 })
+      assert.equal(await pill(r.page, 'ไม่มีค่าใหม่').count(), 2, 'ฝน 2 สถานีค้าง')
+      assert.equal(await routeSvg(r.page).locator('g[data-pill="stale"]').count(), 3, 'อ่าง + ฝน 2 สถานี ค้างทั้งหมด')
+      assert.deepEqual(await pillLook(r.page, 'stale'), Array(3).fill({ stroke: CHIP_TONES.stale.stroke, dashed: true }))
+      const text = await routeText(r.page)
+      assert.ok(!/12\.5|ฝน 3 /.test(text), 'ฝนที่ค้างต้องไม่โชว์เป็นค่าปัจจุบัน')
     } finally { await r.context.close() }
     for (const scene of ['nlNull', 'nlEmpty']) {
       r = await openScene(browser, baseUrl, scene, { diagram: 'namlao' })
       try {
-        await modeButton(r.page, 'ผังภาพ').click()
-        await slotText(r.page, 'ไม่มีค่าในระบบ').first().waitFor({ timeout: 8000 })
-        assert.equal(await slotText(r.page, 'ไม่มีค่าในระบบ').count(), 3, `${scene}: ทั้ง 3 ช่องต้องบอกว่าไม่มีค่า`)
-        const text = await mapText(r.page)
+        await r.page.locator('g[data-pill="na"] text', { hasText: /^ไม่มีค่า$/ }).first().waitFor({ timeout: 8000 })
+        assert.equal(await routeSvg(r.page).locator('g[data-pill="na"] text', { hasText: /^ไม่มีค่า$/ }).count(), 3, `${scene}: ทั้ง 3 ช่องต้องบอกว่าไม่มีค่า`)
+        const text = await routeText(r.page)
         assert.ok(!/ปกติ|0 มม|0%/.test(text), `${scene}: ห้ามกลายเป็น 0 หรือ "ปกติ"`)
       } finally { await r.context.close() }
     }
   })
 
-  const nlAnimated = nl.elements.filter(isAnimated).length
-  await check(`น้ำเลา: เส้นวิ่ง ${nlAnimated} เส้นตามข้อมูล · ฝายแดง 3 แท่ง + อ่างแดง 1 ไม่มีแอนิเมชัน · ลายขีดแดงไม่ถูกวาดเป็นพื้นที่ · ปุ่มหยุดทำงาน`, async () => {
-    const { context, page } = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao' })
-    try {
-      await modeButton(page, 'ผังภาพ').click()
-      assert.equal(await section(page).locator('path.wd-flow').count(), nlAnimated)
-      assert.equal(await section(page).locator('.wd-mapbox svg rect[fill="#b91c1c"]').count(), 3, 'ฝายแผนก่อสร้าง 3 แท่ง')
-      assert.equal(await section(page).locator('.wd-mapbox svg > path[fill="#b91c1c"]').count(), 1, 'อ่างแผนก่อสร้าง 1 แห่ง')
-      const redStatic = await section(page).evaluate(root => [...root.querySelectorAll('.wd-mapbox svg rect[fill="#b91c1c"], .wd-mapbox svg > path[fill="#b91c1c"]')]
-        .filter(el => getComputedStyle(el).animationName !== 'none').length)
-      assert.equal(redStatic, 0)
-      assert.equal(await section(page).locator('.wd-mapbox svg rect[fill="url(#wd-hatch)"]').count(), 0, 'ลายขีดแดงต้องไม่ถูกวาดเป็นพื้นที่ (ผังไม่ระบุความหมาย)')
-      assert.ok((await mapText(page)).includes('ผังต้นฉบับวาดลายขีดแดงตรงนี้ ไม่ระบุความหมาย'))
-      const state = () => section(page).locator('path.wd-flow').first().evaluate(el => getComputedStyle(el).animationPlayState)
-      assert.equal(await state(), 'running')
-      await section(page).getByRole('button', { name: 'หยุดเคลื่อนไหว' }).click()
-      assert.equal(await state(), 'paused')
-    } finally { await context.close() }
+  await check('น้ำเลา: เส้นวิ่ง 8 เส้น (ลำน้ำแม่คำปอง + ห้วยสาขาที่ผังวาดลูกศร) พร้อมหัวลูกศร · ห้วยลูกศรนิ่งไม่วิ่ง · ฝาย/อ่างแผนก่อสร้าง 3 จุดไม่มีแอนิเมชัน · ปุ่มหยุดทำงาน', async () => {
+    await checkFlows('namlao', 'nlNormal', ['hin', 'hsk', 'khuem', 'mkp', 'obj', 'sra50', 'tao', 'thare'], [2, 5, 7], 0)
   })
 
-  await check('น้ำเลา: คำอธิบายสัญลักษณ์ครบ · กล่องที่มาบอกอายุผัง + ของที่ไม่ได้วาด/วาดต่าง (ลายขีดแดงไม่ตีความ · ขอบเขตเทา · YOM003 นอกตำบล) · คำกำกับบังคับ · ไม่เขียนว่าแล้ง/ท่วม', async () => {
+  await check('น้ำเลา: คำอธิบายสัญลักษณ์เฉพาะที่ใช้ · อ่างไม่มีข้อมูลขอบประ · ที่มา/ของที่ไม่ได้วาด (ลายขีดแดงไม่ตีความ · เส้นขอบเขต · YOM003 นอกตำบล) · คำกำกับบังคับ · ไม่เขียนว่าแล้ง/ท่วม', async () => {
     const { context, page } = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao' })
     try {
-      await modeButton(page, 'ผังภาพ').click()
-      const legend = await section(page).locator('.wd-legend').innerText()
-      for (const needed of ['อ่างเก็บน้ำ', 'อ่างแผนก่อสร้าง', 'ฝายแผนก่อสร้าง', 'แหล่งน้ำ', 'เขตตามผัง', 'ลำห้วยสาขา']) assert.ok(legend.includes(needed), `คำอธิบายสัญลักษณ์ขาด "${needed}"`)
-      assert.ok(!legend.includes('ชำรุด') && !legend.includes('สะพาน') && !legend.includes('ประปา'), 'ผังนี้ไม่มีของเหล่านี้ ต้องไม่มีบรรทัดอธิบาย')
-      for (const mode of ['ผังภาพ', 'สายน้ำ (รายการ)']) {
-        await modeButton(page, mode).click()
-        const text = await section(page).innerText()
-        for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ผังน้ำตำบลน้ำเลา อำเภอร้องกวาง', 'ไฟล์ลงวันที่ 30 เม.ย. 2567', 'ไม่ตีความ', 'เส้นประเทา', 'นอกตำบล']) {
-          assert.ok(text.includes(needed), `โหมด ${mode} ต้องมี "${needed}"`)
-        }
-        assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 1)
-        assert.equal(await section(page).locator('[data-diagram-omitted] li').count(), nl.omitted.length)
+      await pill(page, '84.5%').waitFor({ timeout: 8000 })
+      const legend = await section(page).locator('[data-route-legend]').innerText()
+      for (const needed of ['อ่างเก็บน้ำ', 'ฝาย', 'หนอง', 'หมู่บ้าน', 'กล่องแดงประ = แผนก่อสร้าง ไม่เคลื่อนไหว', 'เส้นวิ่ง + หัวลูกศร', 'ขอบประ = ไม่มีค่า']) assert.ok(legend.includes(needed), `คำอธิบายสัญลักษณ์ขาด "${needed}"`)
+      for (const absent of ['สะพาน', 'ระบบประปา', 'ประตูระบายน้ำ', 'ลายขีดแดง', 'ชำรุด']) assert.ok(!legend.includes(absent), `ผังนี้ไม่มี "${absent}" ต้องไม่มีบรรทัดอธิบาย`)
+      assert.equal(await routeSvg(page).locator('g[data-stop] ellipse[stroke-dasharray="5 4"]').count(), 3, 'อ่างไม่มีข้อมูล 3 ผืน (ห้วยทรายขาว 2 + ห้วยขึมโยธินฯ 1) วาดขอบประเทา')
+      const artText = await section(page).innerText()
+      await tabButton(page, /^ที่มา$/).click()
+      const text = artText + '\n' + await section(page).innerText()
+      for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'ไม่ใช่แผนที่', 'ไม่มีเข็มทิศ', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ผังน้ำตำบลน้ำเลา อำเภอร้องกวาง', 'ไฟล์ลงวันที่ 30 เม.ย. 2567', 'ไม่ตีความ', 'เส้นขอบเขต', 'นอกตำบล', '28 รายการเป็น 20 จุด']) {
+        assert.ok(text.includes(needed), `ต้องมี "${needed}"`)
       }
-      const text = await section(page).innerText()
-      for (const lane of nl.lanes) {
-        assert.ok(text.includes(lane.title), `ขาดสาย ${lane.title}`)
-        for (const item of lane.items) assert.ok(text.includes(item.name), `ขาดรายการ ${item.name}`)
-      }
-      // ข้อความบนตัวผังภาพ (ไม่นับกล่องที่มาที่ต้องพูดถึงคำอธิบายผังต้นฉบับ) ต้องไม่ตีความลายขีดแดงว่าเป็นพื้นที่แล้ง/ท่วม
-      await modeButton(page, 'ผังภาพ').click()
-      assert.ok(!/แล้ง|ท่วม/.test(await mapText(page)), 'ผังภาพห้ามเขียนว่าแล้ง/ท่วม')
+      assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 1)
+      assert.equal(await section(page).locator('[data-diagram-omitted] li').count(), nl.omitted.length)
+      await tabButton(page, /^แผนภาพ/).click()
+      // ข้อความบนตัวภาพ (ไม่นับกล่องที่มาที่ต้องพูดถึงคำอธิบายผังต้นฉบับ) ต้องไม่ตีความลายขีดแดงว่าเป็นพื้นที่แล้ง/ท่วม
+      assert.ok(!/แล้ง|ท่วม/.test(await routeText(page)), 'ภาพห้ามเขียนว่าแล้ง/ท่วม')
+      const list = await routeList(page).innerText()
+      assert.ok(!/แล้ง|ท่วม/.test(list), 'รายการห้ามเขียนว่าแล้ง/ท่วม')
+      for (const item of [...nl.route.stops, nl.route.river]) assert.ok(list.includes(item.name), `รายการขาดจุด ${item.n} ${item.name}`)
+      const planned = routeList(page).locator('li[data-status="planned"]')
+      assert.equal(await planned.count(), 3)
+      for (const li of await planned.all()) assert.ok((await li.innerText()).includes('แผนก่อสร้าง · ไม่เคลื่อนไหว'))
     } finally { await context.close() }
   })
 } finally {
