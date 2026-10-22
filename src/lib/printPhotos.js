@@ -38,15 +38,17 @@ export function complaintPhotoCount(c, extraWorkPhotos = []) {
   return before.length + after.length
 }
 
-// fetchImage(ref) → { dataUrl, error } (ดู fetchImageAsDataUrl ใน driveStorage.js)
-// คืน { before, after } ตามลำดับเดิม; รูปที่โหลดไม่ได้เป็น { src: null } ไม่ถูกตัดทิ้ง
+// fetchImage(ref) → { dataUrl, width, height, error } (ดู fetchImageAsDataUrl ใน driveStorage.js)
+// คืน { before, after } ตามลำดับเดิม รูปละ { src, width, height } (width/height เป็น null ถ้าไม่รู้ขนาด →
+// แผ่นภาพใช้กรอบ 4:3) · รูปที่โหลดไม่ได้เป็น { src: null } ไม่ถูกตัดทิ้ง
 export async function loadPrintPhotos(c, fetchImage, extraWorkPhotos = []) {
   const refs = complaintPhotoRefs(c, extraWorkPhotos)
   const load = async (ref) => {
     try {
-      const { dataUrl, error } = await fetchImage(ref)
+      const { dataUrl, width, height, error } = await fetchImage(ref)
       if (error || !dataUrl) return { src: null }
-      return { src: dataUrl }
+      const known = Number(width) > 0 && Number(height) > 0
+      return { src: dataUrl, width: known ? Number(width) : null, height: known ? Number(height) : null }
     } catch {
       return { src: null }
     }

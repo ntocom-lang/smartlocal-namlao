@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises'
 import process from 'node:process'
 import { chromium } from 'playwright'
 import { buildCouncilComplaintHtml } from '../src/lib/councilFormPrint.js'
-import { photoSheetColumns } from '../src/lib/complaintPhotoSheet.js'
+import { PHOTO_ROW_MAX_HEIGHT_MM, photoAspect, photoSheetColumns } from '../src/lib/complaintPhotoSheet.js'
 import {
   complaintPhotoCount, complaintPhotoRefs, loadPrintPhotos, printWhenImagesReady,
 } from '../src/lib/printPhotos.js'
@@ -61,6 +61,22 @@ await check('load: รักษาลำดับ · รูปที่โหล
     'data:image/png;base64,a', null, 'data:image/png;base64,b', null, null,
   ])
   assert.deepEqual(sheet.after.map(p => p.src), ['data:image/png;base64,w'])
+})
+
+await check('load: ส่งต่อขนาดภาพ (width/height) · ขนาดที่ไม่รู้/ใช้ไม่ได้เป็น null → แผ่นภาพใช้สัดส่วน 4:3', async () => {
+  const sizes = { tall: [480, 640], wide: [640, 480], zero: [0, 480], text: ['x', 'y'] }
+  const fetchImage = async (ref) => {
+    if (ref === 'none') return { dataUrl: 'data:image/png;base64,n', error: null }
+    const [width, height] = sizes[ref]
+    return { dataUrl: `data:image/png;base64,${ref}`, width, height, error: null }
+  }
+  const sheet = await loadPrintPhotos({ attachments: ['tall', 'wide', 'zero', 'text', 'none'] }, fetchImage)
+  assert.deepEqual(sheet.before.map(p => [p.width, p.height]), [[480, 640], [640, 480], [null, null], [null, null], [null, null]])
+  assert.equal(photoAspect({ width: 480, height: 640 }), 0.75)
+  assert.equal(photoAspect({ width: 640, height: 480 }), 4 / 3)
+  for (const bad of [null, {}, { src: null }, { width: 0, height: 5 }, { width: 5, height: -1 }, { width: NaN, height: 3 }]) {
+    assert.equal(photoAspect(bad), 4 / 3, `ขนาดใช้ไม่ได้ ${JSON.stringify(bad)} ต้องถอยไป 4:3`)
+  }
 })
 
 await check('columns: 3 ภาพเรียงแถวเดียว · 1/2/4 ภาพใช้ 2 คอลัมน์ · 5+ ภาพใช้ 3 คอลัมน์', () => {
@@ -119,9 +135,11 @@ const ARGS = {
 function scene(label, portrait = false) {
   const [w, h] = portrait ? [480, 640] : [640, 480]
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#7fae5b"/><rect x="0" y="${h * 0.55}" width="${w}" height="${h * 0.45}" fill="#9b7650"/><text x="20" y="40" font-size="28" fill="#fff">${label}</text></svg>`
-  return { src: 'data:image/svg+xml;utf8,' + encodeURIComponent(svg) }
+  return { src: 'data:image/svg+xml;utf8,' + encodeURIComponent(svg), width: w, height: h }
 }
 const photos = (prefix, n, portraitAt = -1) => Array.from({ length: n }, (_, i) => scene(`${prefix} ${i + 1}`, i === portraitAt))
+// ภาพถ่ายตั้งแนวตั้งทั้งชุด — เคสจริงที่เจ้าของระบบเจอ (มือถือถ่ายตั้ง แล้วเหลือแถบขาวข้างภาพ) 2569-10-22
+const portraits = (prefix, n) => Array.from({ length: n }, (_, i) => scene(`${prefix} ${i + 1}`, true))
 
 await check('ไม่ส่ง photoSheet = ใบเดิม ไม่มี CSS/แผ่นภาพหลุดเข้ามา', () => {
   const plain = buildCouncilComplaintHtml(ARGS)
@@ -153,7 +171,7 @@ await check('รูปที่โหลดไม่ได้พิมพ์เ�
     ...ARGS,
     photoSheet: { before: [scene('ก่อน 1'), { src: null }, scene('ก่อน 3')], after: [{ src: null }] },
   })
-  assert.equal((html.match(/<figure>/g) ?? []).length, 4)
+  assert.equal((html.match(/<figure[ >]/g) ?? []).length, 4)
   assert.equal((html.match(/โหลดภาพนี้ไม่สำเร็จ/g) ?? []).length, 2)
   assert.match(html, /ภาพที่ 2 \(ไม่มีภาพ\)/)
 })
@@ -167,7 +185,7 @@ await check('หมวดที่ไม่มีรูปเลยไม่พ�
   assert.match(noAfter, /ภาพก่อนดำเนินการ \(ภาพจากผู้แจ้ง\) — 2 ภาพ/)
   assert.ok(!noAfter.includes('ภาพหลังดำเนินการ'), 'ไม่มีภาพหลัง ต้องไม่มีหัวข้อภาพหลัง')
   assert.ok(!noAfter.includes('ยังไม่มีภาพหลังดำเนินการในระบบ') && !noAfter.includes('ps-none'), 'ห้ามมีกล่องแจ้งว่าไม่มีภาพ')
-  assert.equal((noAfter.match(/<figure>/g) ?? []).length, 2)
+  assert.equal((noAfter.match(/<figure[ >]/g) ?? []).length, 2)
 
   const noBefore = sheetOf({ before: [], after: photos('หลัง', 1) })
   assert.match(noBefore, /ภาพหลังดำเนินการ \(ภาพจากเจ้าหน้าที่\) — 1 ภาพ/)
@@ -221,6 +239,11 @@ try {
       const page = await render({ photoSheet: { before: photos('ก่อน', before, 1), after: photos('หลัง', after) } })
       try { assert.equal(await pagesOf(page), 2, `${label} ต้องจบที่ 2 หน้า`) } finally { await page.close() }
     }
+    // ภาพแนวตั้งสูงกว่าแนวนอนมาก (กรอบตามสัดส่วนจริง) — เคสที่ใช้พื้นที่มากสุดที่ยังต้องจบแผ่นเดียว
+    for (const [label, before, after] of [['แนวตั้ง 1+0', 1, 0], ['แนวตั้ง 3+0', 3, 0], ['แนวตั้ง 2+2', 2, 2], ['แนวตั้ง 3+3', 3, 3]]) {
+      const page = await render({ photoSheet: { before: portraits('ก่อน', before), after: portraits('หลัง', after) } })
+      try { assert.equal(await pagesOf(page), 2, `${label} ต้องจบที่ 2 หน้า (ใบ 1 + แผ่นภาพ 1)`) } finally { await page.close() }
+    }
   })
 
   await check('PDF: รูปมากเกินหน้าเดียว (9+9) ไหลไปหน้าถัดไป ไม่ถูกตัดทิ้ง และ figure ไม่ถูกฉีกครึ่ง', async () => {
@@ -232,29 +255,94 @@ try {
     } finally { await page.close() }
   })
 
-  await check('ภาพอยู่ในพื้นที่พิมพ์ 16 ซม. · ไม่ครอบตัดภาพ (contain) · กรอบ 4:3 สม่ำเสมอ', async () => {
-    const page = await render({ photoSheet: { before: [...photos('ก่อน', 2), scene('แนวตั้ง', true)], after: photos('หลัง', 3) } })
-    try {
-      const seen = await page.evaluate(() => {
-        const limit = document.body.getBoundingClientRect().right
-        const frames = [...document.querySelectorAll('.photo-sheet .ps-frame')].map(el => el.getBoundingClientRect())
-        const imgs = [...document.querySelectorAll('.photo-sheet img')]
-        return {
-          overflow: Math.max(...[...document.querySelectorAll('.photo-sheet *')].map(el => el.getBoundingClientRect().right - limit)),
-          ratios: frames.map(r => r.width / r.height),
-          widthsMm: frames.map(r => r.width / 3.7795),
-          fits: imgs.map(img => getComputedStyle(img).objectFit),
-          breakBefore: getComputedStyle(document.querySelector('.photo-sheet')).breakBefore,
-          loaded: imgs.map(img => img.naturalWidth > 0),
+  // วัดทุกแถวของแผ่นภาพ: กล่องของภาพแต่ละใบ (px) เทียบกับสัดส่วนจริงของไฟล์ภาพ
+  const measureRows = (page) => page.evaluate(() => {
+    const limit = document.body.getBoundingClientRect().right
+    return {
+      bodyWidth: document.body.getBoundingClientRect().width,
+      overflow: Math.max(...[...document.querySelectorAll('.photo-sheet *')].map(el => el.getBoundingClientRect().right - limit)),
+      breakBefore: getComputedStyle(document.querySelector('.photo-sheet')).breakBefore,
+      rows: [...document.querySelectorAll('.photo-sheet .ps-row')].map(row => ({
+        rowWidth: row.getBoundingClientRect().width,
+        cells: [...row.querySelectorAll('figure')].map(figure => {
+          const img = figure.querySelector('img')
+          const frame = (img ?? figure.querySelector('.ps-failed')).getBoundingClientRect()
+          const cell = figure.getBoundingClientRect()
+          return {
+            failed: !img,
+            width: frame.width,
+            height: frame.height,
+            cellWidth: cell.width,
+            natural: img ? img.naturalWidth / img.naturalHeight : null,
+            fit: img ? getComputedStyle(img).objectFit : null,
+          }
+        }),
+      })),
+    }
+  })
+  const MM = 3.7795
+
+  await check('ภาพไม่มีแถบว่างและไม่ถูกตัด: กรอบตรงสัดส่วนจริงของแต่ละภาพ · ทุกภาพในแถวสูงเท่ากัน · ไม่ล้นขอบ 16 ซม.', async () => {
+    // [ชื่อเคส, ก่อน, หลัง, ความกว้างภาพเล็กสุดที่ยอมรับ (มม.)]
+    // แนวตั้ง 3 ภาพ = เคสของเจ้าของระบบ: เดิมภาพกว้างแค่ ~29 มม. ในกรอบ 51 มม. (แถบขาวสองข้าง) ต้องใหญ่ขึ้นและไม่มีแถบ
+    const cases = [
+      ['แนวตั้งล้วน 3+3', portraits('ก่อน', 3), portraits('หลัง', 3), 48],
+      ['แนวนอนล้วน 3+2', photos('ก่อน', 3), photos('หลัง', 2), 48],
+      ['ผสมแนวตั้ง/แนวนอนในแถวเดียว', [scene('ตั้ง', true), scene('นอน'), scene('ตั้ง', true)], [], 38],
+      ['ภาพแนวตั้ง 2 ภาพ (2 ต่อแถว)', portraits('ก่อน', 2), [], 60],
+    ]
+    for (const [label, before, after, minMm] of cases) {
+      const page = await render({ photoSheet: { before, after } })
+      try {
+        const seen = await measureRows(page)
+        assert.ok(seen.overflow <= 0.5, `${label}: ล้นขอบขวา ${seen.overflow.toFixed(1)}px`)
+        assert.equal(seen.breakBefore, 'page', `${label}: แผ่นภาพต้องขึ้นหน้าใหม่เสมอ ไม่ต่อท้ายใบเดิมในหน้าเดียวกัน`)
+        for (const [index, row] of seen.rows.entries()) {
+          const heights = row.cells.map(cell => cell.height)
+          assert.ok(Math.max(...heights) - Math.min(...heights) <= 0.6, `${label} แถว ${index + 1}: ภาพสูงไม่เท่ากัน ${heights.map(h => h.toFixed(1))}`)
+          for (const cell of row.cells) {
+            assert.ok(!cell.failed && cell.natural > 0, `${label}: ภาพไม่ถูกถอดรหัส`)
+            // กล่องภาพ = สัดส่วนจริงของไฟล์ → object-fit: contain เติมเต็มกล่อง ไม่เหลือแถบว่าง และไม่ตัดภาพ
+            assert.ok(Math.abs(cell.width / cell.height - cell.natural) / cell.natural < 0.01,
+              `${label}: กรอบ ${(cell.width / cell.height).toFixed(3)} ไม่ตรงสัดส่วนภาพ ${cell.natural.toFixed(3)} (จะเหลือแถบว่าง)`)
+            assert.equal(cell.fit, 'contain', `${label}: ต้อง object-fit: contain (ห้ามครอบตัดภาพหลักฐาน)`)
+            assert.ok(Math.abs(cell.width - cell.cellWidth) < 0.5, `${label}: ภาพไม่เต็มความกว้างของช่อง`)
+            assert.ok(cell.width / MM >= minMm, `${label}: ภาพเล็กสุดกว้าง ${(cell.width / MM).toFixed(1)} มม. (ต้อง ≥ ${minMm})`)
+          }
         }
-      })
-      assert.ok(seen.overflow <= 0.5, `ภาพ/คำบรรยายล้นขอบขวา ${seen.overflow.toFixed(1)}px`)
-      assert.ok(seen.ratios.every(r => Math.abs(r - 4 / 3) < 0.02), `กรอบไม่ใช่ 4:3 ${seen.ratios.map(r => r.toFixed(2))}`)
-      assert.equal(seen.breakBefore, 'page', 'แผ่นภาพต้องขึ้นหน้าใหม่เสมอ ไม่ต่อท้ายใบเดิมในหน้าเดียวกัน')
-      assert.ok(seen.fits.every(fit => fit === 'contain'), 'ต้อง object-fit: contain (ห้ามครอบตัดภาพหลักฐาน)')
-      assert.ok(seen.loaded.every(Boolean), 'มีภาพที่ไม่ถูกถอดรหัส')
-      // 3 ภาพ/แถวต้องไม่เล็กจนใช้เป็นหลักฐานไม่ได้ (≥ 48 มม.) และ 2 ภาพ/แถวใหญ่กว่า
-      assert.ok(Math.min(...seen.widthsMm) >= 48, `ภาพเล็กสุด ${Math.min(...seen.widthsMm).toFixed(1)} มม.`)
+      } finally { await page.close() }
+    }
+  })
+
+  await check(`เพดานความสูงแถว ${PHOTO_ROW_MAX_HEIGHT_MM} มม.: ภาพแนวตั้งเดี่ยว/คู่ไม่ใหญ่จนดันแผ่นล้นหน้า · ภาพแถวเต็มความกว้างเมื่อหลายภาพ`, async () => {
+    for (const [label, before] of [['แนวตั้งเดี่ยว', portraits('ก่อน', 1)], ['แนวตั้ง 2 ภาพ', portraits('ก่อน', 2)]]) {
+      const page = await render({ photoSheet: { before, after: [] } })
+      try {
+        const seen = await measureRows(page)
+        const height = seen.rows[0].cells[0].height / MM
+        assert.ok(height <= PHOTO_ROW_MAX_HEIGHT_MM + 0.5, `${label}: ภาพสูง ${height.toFixed(1)} มม. เกินเพดาน`)
+        assert.ok(height >= PHOTO_ROW_MAX_HEIGHT_MM - 0.5, `${label}: ภาพสูง ${height.toFixed(1)} มม. ไม่ถึงเพดาน (ความกว้างแถวไม่ได้ถูกใช้เต็ม)`)
+      } finally { await page.close() }
+    }
+    // 3 ภาพแนวนอนต่อแถว กว้างเต็มพื้นที่พิมพ์ (ไม่ติดเพดานเพราะเตี้ยกว่า)
+    const wide = await render({ photoSheet: { before: photos('ก่อน', 3), after: [] } })
+    try {
+      const seen = await measureRows(wide)
+      assert.ok(Math.abs(seen.rows[0].rowWidth - seen.bodyWidth) <= 1, `แถวภาพแนวนอนต้องกว้างเต็มพื้นที่พิมพ์ ${seen.bodyWidth.toFixed(1)}px ได้ ${seen.rows[0].rowWidth.toFixed(1)}px`)
+    } finally { await wide.close() }
+  })
+
+  await check('รูปที่โหลดไม่ได้ในแถวเดียวกับภาพอื่น: กรอบแจ้ง 4:3 สูงเท่าภาพข้างเคียง ไม่ทำแถวเพี้ยน', async () => {
+    const page = await render({ photoSheet: { before: [scene('ตั้ง', true), { src: null }, scene('นอน')], after: [{ src: null }] } })
+    try {
+      const seen = await measureRows(page)
+      const [first, second] = seen.rows
+      const heights = first.cells.map(cell => cell.height)
+      assert.ok(Math.max(...heights) - Math.min(...heights) <= 0.6, `ภาพสูงไม่เท่ากัน ${heights.map(h => h.toFixed(1))}`)
+      const failed = first.cells.find(cell => cell.failed)
+      assert.ok(Math.abs(failed.width / failed.height - 4 / 3) < 0.02, 'กรอบแจ้งต้อง 4:3')
+      assert.equal(second.cells.length, 1)
+      assert.ok(second.cells[0].failed, 'หมวดที่มีแต่รูปเสียยังต้องมีกรอบแจ้ง')
     } finally { await page.close() }
   })
 
