@@ -177,6 +177,9 @@ async function checkPcChrome(page, where) {
   assert.equal(geo.profileHref, '/profile', `${where}: "โปรไฟล์ของฉัน" ต้องลิงก์ไป /profile`)
 
   await page.keyboard.press('ArrowDown')
+  assert.ok(await page.evaluate(() => document.activeElement?.hasAttribute('data-account-signature')), `${where}: ↓ ไม่ย้ายโฟกัสไป "ลายเซ็นของฉัน"`)
+  assert.equal(await page.locator('[data-account-signature]').getAttribute('href'), '/profile#signature', `${where}: "ลายเซ็นของฉัน" ต้องลิงก์ไป /profile#signature`)
+  await page.keyboard.press('ArrowDown')
   assert.ok(await page.evaluate(() => document.activeElement?.hasAttribute('data-account-logout')), `${where}: ↓ ไม่ย้ายโฟกัสไป "ออกจากระบบ"`)
   await page.keyboard.press('Escape')
   await menu.waitFor({ state: 'detached' })
