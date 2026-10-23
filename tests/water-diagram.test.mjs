@@ -966,6 +966,12 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     assert.ok(!/setPosterOpen|posterOpen|Presentation/.test(view), 'ปุ่มเปิดภาพนำเสนอย้ายเข้าไปอยู่เหนือภาพ (ในคอมโพเนนต์ภาพ) ไม่ใช่แถวปุ่มบนสุดของส่วนอีกแล้ว')
     assert.match(poster, /export default function WaterRoutePosterPanel\(/, 'ส่งออก default เป็นภาพในหน้า (WaterDiagram โหลดจุดเดียว)')
     assert.match(poster, /\{open && <WaterRoutePosterDialog /, 'หน้าต่างพิมพ์เปิดเฉพาะเมื่อกดปุ่ม')
+    // ปุ่มสลับโหมดมืด/สว่างของภาพในหน้า (เจ้าของระบบสั่ง 2569-10-23): สถานะอยู่ที่ Panel ส่งเข้าภาพในหน้า และเป็นโหมดเริ่มต้นของหน้าต่างพิมพ์
+    assert.match(poster, /const \[theme, setTheme\] = useState\(POSTER_THEMES\[0\]\)\s*const labelId = useId\(\)/, 'Panel เก็บโหมดของภาพในหน้า เริ่มที่โหมดมืด')
+    assert.match(poster, /<WaterRoutePoster route=\{route\} diagram=\{diagram\} badges=\{badges\} now=\{now\} theme=\{theme\} \/>\s*<\/div>\s*<\/div>\s*<p className="m-0 px-1 text-xs text-slate-500 lg:hidden">/, 'ภาพในหน้าใช้โหมดที่เลือก')
+    assert.match(poster, /initialTheme=\{theme\} onClose=/, 'หน้าต่างพิมพ์เปิดที่โหมดเดียวกับภาพในหน้า')
+    assert.match(poster, /data-poster-theme-option=\{key\}/); assert.match(poster, /const PAGE_THEME_LABELS = \{ dark: 'โหมดมืด', light: 'โหมดสว่าง' \}/, 'ชื่อปุ่ม "โหมดมืด"/"โหมดสว่าง" ตามคำของเจ้าของระบบ')
+    assert.ok(poster.includes('aria-pressed={theme === key}'), 'ปุ่มโหมดต้องบอกสถานะที่เลือกด้วย aria-pressed')
     assert.match(poster, /<button type="button"[\s\S]*?data-poster-open>/, 'ปุ่มพิมพ์/บันทึก PDF อยู่เหนือภาพ')
     assert.match(poster, /role="region"[^>]*tabIndex=\{0\}/, 'กรอบภาพที่เลื่อนแนวนอนได้ต้องโฟกัสด้วยคีย์บอร์ดได้')
     const diagramCss = read('src/components/water/WaterDiagram.css')

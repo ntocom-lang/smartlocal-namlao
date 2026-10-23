@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Printer, X } from 'lucide-react'
+import { Moon, Printer, Sun, X } from 'lucide-react'
 import './WaterRoutePoster.css'
 import { CHIP_TONES } from '../../lib/waterDiagram/model'
 import { pillFor, pillWidth, smoothPath } from '../../lib/waterDiagram/route'
@@ -14,7 +14,10 @@ import { GOV_FONT_SIZE_ADJUST, GOV_FONT_STACK } from '../../lib/govDocStyle'
 // ข้อมูล: ตำแหน่งจาก route.poster · ชื่อ/สถานะ/เส้นวิ่งจาก route เดิม · ค่าสดจาก badges (liveBadges) เท่านั้น
 // ⚠️ ไม่ใช่แผนที่ · ไม่มีเข็มทิศ · เส้นที่มีหัวลูกศร/วิ่งต้องเป็นลำที่ผังวาดลูกศรเท่านั้น (posterIssues ตรวจ)
 
-const THEME_LABELS = { dark: 'ธีมมืด', light: 'ธีมสว่าง (ประหยัดหมึก)' }
+// ชื่อปุ่มโหมดสี — ในหน้าต่างพิมพ์บอกด้วยว่าสว่างประหยัดหมึก
+const THEME_LABELS = { dark: 'โหมดมืด', light: 'โหมดสว่าง (ประหยัดหมึก)' }
+const PAGE_THEME_LABELS = { dark: 'โหมดมืด', light: 'โหมดสว่าง' }
+const THEME_ICONS = { dark: Moon, light: Sun }
 
 // ── สัญลักษณ์ในโนด (ตัดสินจาก posterIcon) ──
 function WeirIcon({ n }) {
@@ -322,8 +325,9 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
 
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
 
-export function WaterRoutePosterDialog({ route, diagram, badges, now, onClose }) {
-  const [theme, setTheme] = useState(POSTER_THEMES[0])
+export function WaterRoutePosterDialog({ route, diagram, badges, now, onClose, initialTheme = POSTER_THEMES[0] }) {
+  // เริ่มที่โหมดเดียวกับภาพในหน้า (ผู้ใช้เลือกสว่างไว้แล้วเปิดตัวอย่างพิมพ์ ไม่ต้องกดซ้ำ) · หลังเปิดแล้วเป็นอิสระต่อกัน
+  const [theme, setTheme] = useState(initialTheme)
   const overlay = useRef(null)
   const closeButton = useRef(null)
   const onCloseRef = useRef(onClose)
@@ -355,7 +359,7 @@ export function WaterRoutePosterDialog({ route, diagram, badges, now, onClose })
     <div ref={overlay} data-poster-overlay className="wp-overlay" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <div data-poster-toolbar className="wp-toolbar">
         <p id={titleId} className="wp-title">ภาพนำเสนอ A4 · {route.title}</p>
-        <div className="wp-group" role="group" aria-label="ธีมของภาพ">
+        <div className="wp-group" role="group" aria-label="โหมดสีของภาพ">
           {POSTER_THEMES.map(key => (
             <button key={key} type="button" aria-pressed={theme === key} onClick={() => setTheme(key)} className="wp-btn wp-seg">{THEME_LABELS[key]}</button>
           ))}
@@ -364,7 +368,7 @@ export function WaterRoutePosterDialog({ route, diagram, badges, now, onClose })
         <button ref={closeButton} type="button" className="wp-btn" onClick={onClose} aria-label="ปิดภาพนำเสนอ"><X size={16} aria-hidden="true" /> ปิด</button>
       </div>
       <p data-poster-hint className="wp-hint">
-        พิมพ์ 2 แผ่น: ภาพนำเสนอ + รายการจุด (เลือกพิมพ์เฉพาะแผ่นที่ต้องการได้ในช่อง "หน้า" ของหน้าต่างพิมพ์) · เลือกกระดาษ A4 แนวนอน และตั้งระยะขอบเป็น "ไม่มี" · พิมพ์ธีมสว่างจะประหยัดหมึกกว่า · บนมือถือเลื่อนภาพไปทางซ้าย/ขวาได้
+        พิมพ์ 2 แผ่น: ภาพนำเสนอ + รายการจุด (เลือกพิมพ์เฉพาะแผ่นที่ต้องการได้ในช่อง "หน้า" ของหน้าต่างพิมพ์) · เลือกกระดาษ A4 แนวนอน และตั้งระยะขอบเป็น "ไม่มี" · พิมพ์โหมดสว่างจะประหยัดหมึกกว่า · บนมือถือเลื่อนภาพไปทางซ้าย/ขวาได้
       </p>
       <div data-poster-stage className="wp-stage">
         <section data-poster-page className="wp-page" aria-label="แผ่นที่ 1 ภาพนำเสนอ">
@@ -388,26 +392,41 @@ export function WaterRoutePosterDialog({ route, diagram, badges, now, onClose })
 const PANEL_BUTTON = 'inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-slate-400 bg-white px-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50'
 
 // ภาพนำเสนอที่วางในหน้าแทนภาพเกาะลอย (เจ้าของระบบสั่ง 2569-10-23 "เอาภาพนำเสนอ A4 มาใส่แทนภาพแรกเลย")
-// ธีมมืดในหน้า · ปุ่ม "พิมพ์ / บันทึก PDF" เปิดหน้าต่างตัวอย่างหน้ากระดาษ (เลือกธีมสว่างประหยัดหมึกได้) — ตรรกะพิมพ์ที่ตรวจด้วย PDF จริงอยู่ในหน้าต่างนั้น
+// เริ่มที่โหมดมืด · ปุ่ม "โหมดมืด / โหมดสว่าง" เหนือภาพสลับสีของภาพในหน้า (เจ้าของระบบสั่ง 2569-10-23) แล้วหน้าต่างพิมพ์เปิดมาที่โหมดเดียวกัน
+// ปุ่ม "พิมพ์ / บันทึก PDF" เปิดหน้าต่างตัวอย่างหน้ากระดาษ — ตรรกะพิมพ์ที่ตรวจด้วย PDF จริงอยู่ในหน้าต่างนั้น · แผ่นรายการจุดเป็นสีสว่างเสมอ
 // มือถือ: ภาพกว้างขั้นต่ำ 900px เลื่อนแนวนอนในกรอบ (กรอบโฟกัสด้วยคีย์บอร์ดได้) · min-w-0 บนกรอบนอก: ไม่งั้นช่องกริดของหน้าขยายตามภาพ 900px แล้วดันทั้งหน้าให้ล้นจอ (เทสต์เลย์เอาต์ 360–768px ตรึงไว้)
 export default function WaterRoutePosterPanel({ route, diagram, badges, now }) {
   const [open, setOpen] = useState(false)
+  const [theme, setTheme] = useState(POSTER_THEMES[0])
   const labelId = useId()
   return (
     <div data-poster-panel className="min-w-0 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p id={labelId} className="m-0 px-1 text-sm font-bold text-sky-950">ภาพนำเสนอ · พิมพ์ลงกระดาษ A4 แนวนอนได้ (ภาพนำเสนอ 1 แผ่น + รายการจุด 1 แผ่น)</p>
-        <button type="button" className={PANEL_BUTTON} onClick={() => setOpen(true)} data-poster-open>
-          <Printer size={16} aria-hidden="true" /> พิมพ์ / บันทึก PDF
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div data-poster-theme className="inline-flex overflow-hidden rounded-xl border border-slate-400" role="group" aria-label="โหมดสีของภาพ">
+            {POSTER_THEMES.map(key => {
+              const Icon = THEME_ICONS[key]
+              return (
+                <button key={key} type="button" aria-pressed={theme === key} onClick={() => setTheme(key)} data-poster-theme-option={key}
+                  className={`inline-flex min-h-[44px] items-center gap-1.5 px-3.5 text-sm font-bold ${theme === key ? 'bg-sky-700 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
+                  <Icon size={16} aria-hidden="true" /> {PAGE_THEME_LABELS[key]}
+                </button>
+              )
+            })}
+          </div>
+          <button type="button" className={PANEL_BUTTON} onClick={() => setOpen(true)} data-poster-open>
+            <Printer size={16} aria-hidden="true" /> พิมพ์ / บันทึก PDF
+          </button>
+        </div>
       </div>
       <div data-poster-inline role="region" aria-labelledby={labelId} tabIndex={0} className="wp-inline">
         <div className="wp-inline-sheet">
-          <WaterRoutePoster route={route} diagram={diagram} badges={badges} now={now} theme={POSTER_THEMES[0]} />
+          <WaterRoutePoster route={route} diagram={diagram} badges={badges} now={now} theme={theme} />
         </div>
       </div>
       <p className="m-0 px-1 text-xs text-slate-500 lg:hidden">เลื่อนภาพไปทางซ้าย/ขวาเพื่อดูทั้งหมด</p>
-      {open && <WaterRoutePosterDialog route={route} diagram={diagram} badges={badges} now={now} onClose={() => setOpen(false)} />}
+      {open && <WaterRoutePosterDialog route={route} diagram={diagram} badges={badges} now={now} initialTheme={theme} onClose={() => setOpen(false)} />}
     </div>
   )
 }

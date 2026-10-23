@@ -837,7 +837,74 @@ try {
     } finally { await context.close() }
   })
 
-  await check('น้ำเลา: ภาพในหน้าเป็นธีมมืดเสมอ · เปิดหน้าต่างพิมพ์แล้ว id ของภาพสองใบไม่ซ้ำกันและแต่ละใบอ้างเฉพาะ id ของตัวเอง · สลับธีมในหน้าต่างไม่ทำให้ภาพในหน้าเปลี่ยน', async () => {
+  await check('น้ำเลา: ปุ่มสลับโหมดมืด/สว่างของภาพในหน้า · เริ่มที่โหมดมืด · กดสว่างแล้วภาพเปลี่ยนจริง (พื้นขาว ตัวอักษรเข้ม) กดกลับมืดได้ · หน้าต่างพิมพ์เปิดมาที่โหมดเดียวกัน · แผ่นรายการไม่เปลี่ยน', async () => {
+    const { context, page } = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao' })
+    try {
+      const svg = posterSvg(page)
+      await svg.locator('[data-poster-ring] text', { hasText: '84.5%' }).waitFor({ timeout: 10_000 })
+      const group = section(page).locator('[data-poster-theme]')
+      assert.equal(await group.getAttribute('role'), 'group'); assert.equal(await group.getAttribute('aria-label'), 'โหมดสีของภาพ')
+      const dark = group.getByRole('button', { name: 'โหมดมืด' })
+      const light = group.getByRole('button', { name: 'โหมดสว่าง' })
+      assert.equal(await dark.getAttribute('aria-pressed'), 'true'); assert.equal(await light.getAttribute('aria-pressed'), 'false')
+      const look = () => svg.evaluate(el => {
+        const style = getComputedStyle(el)
+        const lum = hex => { const n = parseInt(hex.trim().slice(1), 16); return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255 }
+        return { theme: el.getAttribute('data-theme'), bg: lum(style.getPropertyValue('--bg0')), ink: lum(style.getPropertyValue('--ink')) }
+      })
+      let now = await look()
+      assert.equal(now.theme, 'dark'); assert.ok(now.bg < 0.2 && now.ink > 0.8, `โหมดมืด: พื้นเข้ม ตัวอักษรอ่อน (${JSON.stringify(now)})`)
+      await light.click()
+      assert.equal(await light.getAttribute('aria-pressed'), 'true'); assert.equal(await dark.getAttribute('aria-pressed'), 'false')
+      now = await look()
+      assert.equal(now.theme, 'light'); assert.ok(now.bg > 0.9 && now.ink < 0.2, `โหมดสว่าง: พื้นขาว ตัวอักษรเข้ม (${JSON.stringify(now)})`)
+      // ค่าสด/จำนวนจุดยังเหมือนเดิม (สลับสีอย่างเดียว ไม่ทำให้ข้อมูลหาย)
+      assert.equal(await svg.locator('[data-poster-node]').count(), 21)
+      assert.equal(await svg.locator('[data-poster-ring] text').first().textContent(), '84.5%')
+      // แผ่นรายการเป็นสีสว่างเสมอ ไม่ขึ้นกับโหมด
+      const sheetBg = () => section(page).locator('.wl-sheet').evaluate(el => getComputedStyle(el).backgroundColor)
+      const before = await sheetBg(); assert.equal(before, 'rgb(255, 255, 255)')
+      // หน้าต่างพิมพ์เปิดมาที่โหมดสว่างเหมือนภาพในหน้า · สลับในหน้าต่างไม่ย้อนกลับมาเปลี่ยนภาพในหน้า
+      await page.locator('[data-poster-open]').click()
+      const dialog = page.locator('[data-poster-overlay] svg[data-poster]')
+      await dialog.waitFor({ timeout: 10_000 })
+      assert.equal(await dialog.getAttribute('data-theme'), 'light', 'หน้าต่างพิมพ์เริ่มที่โหมดเดียวกับภาพในหน้า')
+      assert.equal(await page.locator('[data-poster-overlay]').getByRole('button', { name: /โหมดสว่าง/ }).getAttribute('aria-pressed'), 'true')
+      await page.locator('[data-poster-overlay]').getByRole('button', { name: /โหมดมืด/ }).click()
+      assert.equal(await dialog.getAttribute('data-theme'), 'dark')
+      assert.equal(await svg.getAttribute('data-theme'), 'light', 'สลับในหน้าต่างไม่เปลี่ยนภาพในหน้า')
+      await page.keyboard.press('Escape')
+      await dialog.waitFor({ state: 'detached', timeout: 3000 })
+      assert.equal(await sheetBg(), before, 'แผ่นรายการไม่เปลี่ยนสี')
+      // กดกลับโหมดมืดได้ · แท็บอื่นแล้วกลับมาโหมดที่เลือกไว้ยังอยู่ (แผงไม่ถูกถอดทิ้ง)
+      await dark.click()
+      assert.equal((await look()).theme, 'dark')
+      await light.click()
+      await tabButton(page, /^ที่มา$/).click()
+      await tabButton(page, /^แผนภาพ/).click()
+      assert.equal((await look()).theme, 'light', 'สลับแท็บแล้วกลับมา โหมดที่เลือกไว้ต้องอยู่')
+      await section(page).locator('[data-poster-panel]').screenshot({ path: path.join(SHOT_DIR, 'nl-poster-light-1280.png') })
+    } finally { await context.close() }
+  })
+
+  await check('น้ำเลา: ปุ่มโหมดมืด/สว่างบนมือถือ 390px ไม่ล้นหน้า · แตะได้ ≥ 44px · ใช้คีย์บอร์ดกดได้', async () => {
+    const { context, page } = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao', width: 390, height: 800 })
+    try {
+      await posterSvg(page).locator('[data-poster-ring] text', { hasText: '84.5%' }).waitFor({ timeout: 10_000 })
+      const info = await page.evaluate(() => ({
+        docOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+        buttons: [...document.querySelectorAll('[data-poster-theme] button, [data-poster-open]')].map(b => { const r = b.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), r.right <= window.innerWidth + 0.5] }),
+      }))
+      assert.equal(info.docOverflow, false)
+      assert.equal(info.buttons.length, 3)
+      assert.ok(info.buttons.every(([w, h, inside]) => w >= 44 && h >= 44 && inside), `ปุ่มแตะได้และอยู่ในจอ: ${JSON.stringify(info.buttons)}`)
+      await section(page).locator('[data-poster-theme-option="light"]').focus()
+      await page.keyboard.press('Enter')
+      assert.equal(await posterSvg(page).getAttribute('data-theme'), 'light', 'กด Enter บนปุ่มโหมดสว่างได้')
+    } finally { await context.close() }
+  })
+
+  await check('น้ำเลา: ภาพในหน้าเริ่มที่โหมดมืด · เปิดหน้าต่างพิมพ์แล้ว id ของภาพสองใบไม่ซ้ำกันและแต่ละใบอ้างเฉพาะ id ของตัวเอง · สลับโหมดในหน้าต่างไม่ทำให้ภาพในหน้าเปลี่ยน', async () => {
     const { context, page } = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao' })
     try {
       const inline = posterSvg(page)
@@ -846,9 +913,9 @@ try {
       await page.locator('[data-poster-open]').click()
       const dialog = page.locator('[data-poster-overlay] svg[data-poster]')
       await dialog.waitFor({ timeout: 10_000 })
-      await page.locator('[data-poster-overlay]').getByRole('button', { name: /ธีมสว่าง/ }).click()
+      await page.locator('[data-poster-overlay]').getByRole('button', { name: /โหมดสว่าง/ }).click()
       assert.equal(await dialog.getAttribute('data-theme'), 'light')
-      assert.equal(await inline.getAttribute('data-theme'), 'dark', 'ธีมในหน้าต่างต้องไม่ไปเปลี่ยนภาพในหน้า')
+      assert.equal(await inline.getAttribute('data-theme'), 'dark', 'โหมดในหน้าต่างต้องไม่ไปเปลี่ยนภาพในหน้า')
       const idCheck = await page.evaluate(() => {
         const svgs = [...document.querySelectorAll('svg[data-poster]')]
         const ids = svgs.flatMap(svg => [...svg.querySelectorAll('[id]')].map(el => el.id))
@@ -933,10 +1000,10 @@ try {
       assert.equal(animatedInPlan, 0, 'แผนก่อสร้างไม่เคลื่อนไหว')
       // ธีม
       assert.equal(await dialog.locator('svg[data-poster]').getAttribute('data-theme'), 'dark')
-      await dialog.getByRole('button', { name: /ธีมสว่าง/ }).click()
+      await dialog.getByRole('button', { name: /โหมดสว่าง/ }).click()
       assert.equal(await dialog.locator('svg[data-poster]').getAttribute('data-theme'), 'light')
-      assert.equal(await dialog.getByRole('button', { name: /ธีมสว่าง/ }).getAttribute('aria-pressed'), 'true')
-      assert.equal(await dialog.getByRole('button', { name: /ธีมมืด/ }).getAttribute('aria-pressed'), 'false')
+      assert.equal(await dialog.getByRole('button', { name: /โหมดสว่าง/ }).getAttribute('aria-pressed'), 'true')
+      assert.equal(await dialog.getByRole('button', { name: /โหมดมืด/ }).getAttribute('aria-pressed'), 'false')
       // โฟกัสวนในหน้าต่าง (ไม่หลุดไปหน้าเว็บด้านหลัง)
       for (let i = 0; i < 8; i++) {
         await page.keyboard.press('Tab')
@@ -1099,7 +1166,7 @@ try {
     await check(`ใบพิมพ์ภาพนำเสนอ (${theme}): PDF 2 หน้า A4 แนวนอน · ซ่อนหน้าเว็บ/ปุ่ม/ป้ายแผ่น · แผ่น 1 โปสเตอร์ในพื้นที่พิมพ์ 257 × 170 มม. · แผ่น 2 รายการจุดเต็มพื้นที่พิมพ์ ไม่ล้น ตัวอักษรไม่เล็กกว่า 6pt`, async () => {
       const { context, page } = await openPoster('nlLong')
       try {
-        if (theme === 'light') await posterLook(page).getByRole('button', { name: /ธีมสว่าง/ }).click()
+        if (theme === 'light') await posterLook(page).getByRole('button', { name: /โหมดสว่าง/ }).click()
         await page.emulateMedia({ media: 'print' })
         const layout = await page.evaluate(() => {
           const mm = px => px * 25.4 / 96
