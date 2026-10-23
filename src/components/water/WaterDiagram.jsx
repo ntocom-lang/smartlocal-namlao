@@ -542,6 +542,14 @@ function DiagramBody({ diagram, scope, tenantName, stations, now }) {
         {route && <> · <b>ไม่ใช่แผนที่</b> ตำแหน่ง ทิศ และมาตราส่วนไม่ตรงจริง · เกาะและต้นไม้เป็นภาพประกอบ ไม่ได้หมายถึงสิ่งก่อสร้างหรือพื้นที่จริง</>}
       </p>
 
+      {/* ลิงก์ผังต้นฉบับ (ไฟล์ภาพของตำบลนี้ ไม่ใช่หน้ารวมของจังหวัด) อยู่ใต้คำกำกับเลย กดแล้วเห็นผังต้นฉบับได้ทันที — ย้ายมาจากกล่อง "ที่มาของข้อมูล" ของแท็บสถานการณ์ (เจ้าของระบบสั่ง 2569-10-23)
+          ผังเดิม (ไม่มี route) มีลิงก์นี้ในกล่องที่มาท้ายส่วนอยู่แล้ว */}
+      {route && (
+        <a href={originalDiagramUrl(diagram.id, diagram.sourceUrl)} target="_blank" rel="noopener noreferrer" data-original-link data-original-link-near className={`${BUTTON} w-fit`}>
+          <ExternalLink size={16} aria-hidden="true" /> ดูผังต้นฉบับ
+        </a>
+      )}
+
       {route ? <RouteView route={route} badges={badges} diagram={diagram} tenantName={tenantName} now={now} /> : mode === 'map' ? <DiagramMap diagram={diagram} badges={badges} zoom={zoom} /> : <DiagramLanes diagram={diagram} badges={badges} />}
 
       {!route && mode === 'map' && (

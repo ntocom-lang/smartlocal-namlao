@@ -21,7 +21,7 @@ import {
 import { GOV_PAGE_MARGIN_LANDSCAPE, govPageCss } from '../src/lib/govDocStyle.js'
 import { LIST_SHEET_COLUMNS, LIST_SHEET_MM, balanceRanges, listColumns, listItemWeight } from '../src/lib/waterDiagram/listSheet.js'
 import { ORIGINAL_DIAGRAM_FILES, ORIGINAL_FILE_BASE, originalDiagramUrl } from '../src/lib/waterDiagram/originalFiles.js'
-import { SYSTEMS, thaiDate } from '../src/lib/waterSystem/model.js'
+import { SYSTEMS, WATER_SYSTEM_TENANTS, thaiDate } from '../src/lib/waterSystem/model.js'
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
@@ -811,8 +811,17 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
   const diagramJsx = read('src/components/water/WaterDiagram.jsx')
   const systemJsx = read('src/components/water/WaterSystem.jsx')
   assert.ok(diagramJsx.includes('href={originalDiagramUrl(diagram.id, diagram.sourceUrl)}'), 'WaterDiagram.jsx ต้องลิงก์ผังต้นฉบับผ่าน originalDiagramUrl')
-  assert.ok(systemJsx.includes('href={originalDiagramUrl(system.id, system.originalUrl)}'), 'WaterSystem.jsx ต้องลิงก์ผังต้นฉบับผ่าน originalDiagramUrl')
-  assert.ok(!/href=\{diagram\.sourceUrl\}/.test(diagramJsx) && !/href=\{system\.originalUrl\}/.test(systemJsx), 'ห้ามกลับไปชี้หน้ารวมตรงๆ')
+  // ลิงก์ย้ายจากกล่อง "ที่มาของข้อมูล" (WaterSystem · แท็บสถานการณ์) ไปอยู่ใต้คำกำกับในแท็บเส้นทางน้ำ (เจ้าของระบบสั่ง 2569-10-23)
+  assert.ok(!systemJsx.includes('originalDiagramUrl') && !systemJsx.includes('data-original-link') && !systemJsx.includes('ExternalLink'), 'WaterSystem.jsx ต้องไม่มีลิงก์ผังต้นฉบับแล้ว (ย้ายไปแท็บเส้นทางน้ำ)')
+  assert.ok(systemJsx.includes('data-system-source') && systemJsx.includes('ถอดจากผังของศูนย์บริหารจัดการน้ำจังหวัดแพร่'), 'ข้อความที่มายังอยู่ในกล่อง')
+  assert.ok(!/href=\{diagram\.sourceUrl\}/.test(diagramJsx), 'ห้ามกลับไปชี้หน้ารวมตรงๆ')
+  assert.match(diagramJsx, /\{route && \(\s*<a href=\{originalDiagramUrl\(diagram\.id, diagram\.sourceUrl\)\} target="_blank" rel="noopener noreferrer" data-original-link data-original-link-near/, 'ลิงก์ใต้คำกำกับของผังเส้นทางน้ำ ผ่าน originalDiagramUrl')
+  assert.ok(diagramJsx.indexOf('data-diagram-disclaimer') < diagramJsx.indexOf('data-original-link-near') && diagramJsx.indexOf('data-original-link-near') < diagramJsx.indexOf('<RouteView route={route}'), 'ลำดับในหน้า: คำกำกับ → ลิงก์ → แท็บ/ภาพ')
+  // ทุก อปท. ที่เห็นกล่องระบบน้ำต้องมีแท็บเส้นทางน้ำด้วย (ไม่งั้นลิงก์ผังต้นฉบับหายไปเลย)
+  for (const slug of Object.keys(WATER_SYSTEM_TENANTS)) {
+    assert.ok(diagramTenant(slug), `${slug}: มีระบบน้ำของตำบลแต่ไม่มีแผนภาพเส้นทางน้ำ → ลิงก์ผังต้นฉบับจะไม่มีที่แสดง`)
+    assert.ok(diagramById(resolveDiagram(slug, null).diagram).route, `${slug}: ผังต้องเป็นแบบเส้นทางน้ำ (ลิงก์ใต้คำกำกับขึ้นเฉพาะผังที่มี route)`)
+  }
 }
 
 // ── ข้อความบังคับ · CSS · การต่อเข้าหน้า ──

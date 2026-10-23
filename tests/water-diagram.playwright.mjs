@@ -411,7 +411,7 @@ try {
       for (const needed of ['อ่างเก็บน้ำ', 'ฝาย', 'หนอง', 'ประตูระบายน้ำ', 'กล่องแดงประ = แผนก่อสร้าง ไม่เคลื่อนไหว', 'ลายขีดแดง = ชำรุดตามผัง ไม่เคลื่อนไหว', 'เส้นวิ่ง + หัวลูกศร', 'ขอบประ = ไม่มีค่า']) {
         assert.ok(legend.includes(needed), `คำอธิบายสัญลักษณ์ขาด "${needed}"`)
       }
-      assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 1)
+      assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 2, 'ลิงก์ผังต้นฉบับ 2 อัน: ใต้คำกำกับ + ในแท็บที่มา')
       assert.ok(!/แล้ง|ท่วม/.test(await routeText(page)), 'ภาพห้ามเขียนว่าแล้ง/ท่วม')
     } finally { await context.close() }
   })
@@ -474,7 +474,8 @@ try {
       assert.match(await section(page).locator('[data-diagram-source]').innerText(), /ไม่ใช่ประกาศเตือนภัย/)
 
       // เดิมทั้งหมดอยู่หน้าเดียวสูง ~2,930px ที่ 390px (วัดจริง) — แต่ละแท็บต้องไม่เกินครึ่งหนึ่งเศษ (ตอนนี้ ~1,480 / ~1,450 / ~760)
-      assert.ok(art < 1700 && list < 1700 && source < 900, `ความสูงแต่ละแท็บ: แผนภาพ ${art} · รายการ ${list} · ที่มา ${source}`)
+      // ที่มา < 960 (เดิม 900): ลิงก์ "ดูผังต้นฉบับ" ย้ายมาอยู่ใต้คำกำกับเหนือแท็บ (เจ้าของระบบสั่ง 2569-10-23) เพิ่มความสูงทุกแท็บราว 56px (ปุ่ม 44px + ช่องไฟ)
+      assert.ok(art < 1700 && list < 1700 && source < 960, `ความสูงแต่ละแท็บ: แผนภาพ ${art} · รายการ ${list} · ที่มา ${source}`)
 
       // คีย์บอร์ด: ลูกศร/Home/End สลับแท็บ (เลื่อนโฟกัสไปด้วย)
       await tabs.first().focus()
@@ -712,7 +713,7 @@ try {
       for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'ไม่ใช่แผนที่', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ผังน้ำตำบลตำหนักธรรม อำเภอหนองม่วงไข่', 'ไฟล์ลงวันที่ 9 พ.ค. 2567', 'เขตหมู่บ้าน', 'ห้วยหาด']) {
         assert.ok(text.includes(needed), `ต้องมี "${needed}"`)
       }
-      assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 1)
+      assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 2, 'ลิงก์ผังต้นฉบับ 2 อัน: ใต้คำกำกับ + ในแท็บที่มา')
       assert.equal(await section(page).locator('[data-diagram-omitted] li').count(), tk.omitted.length)
       await tabButton(page, /^แผนภาพ/).click()
       const planned = routeList(page).locator('li[data-status="planned"]')
@@ -823,7 +824,7 @@ try {
       for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'ไม่ใช่แผนที่', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ผังน้ำตำบลน้ำเลา อำเภอร้องกวาง', 'ไฟล์ลงวันที่ 30 เม.ย. 2567', 'ไม่ตีความ', 'เส้นขอบเขต', 'นอกตำบล', '28 รายการเป็น 20 จุด']) {
         assert.ok(text.includes(needed), `ต้องมี "${needed}"`)
       }
-      assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 1)
+      assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 2, 'ลิงก์ผังต้นฉบับ 2 อัน: ใต้คำกำกับ + ในแท็บที่มา')
       assert.equal(await section(page).locator('[data-diagram-omitted] li').count(), nl.omitted.length)
       await tabButton(page, /^แผนภาพ/).click()
       // ข้อความบนตัวภาพ (ไม่นับกล่องที่มาที่ต้องพูดถึงคำอธิบายผังต้นฉบับ) ต้องไม่ตีความลายขีดแดงว่าเป็นพื้นที่แล้ง/ท่วม
@@ -902,6 +903,47 @@ try {
       await page.keyboard.press('Enter')
       assert.equal(await posterSvg(page).getAttribute('data-theme'), 'light', 'กด Enter บนปุ่มโหมดสว่างได้')
     } finally { await context.close() }
+  })
+
+  await check('ลิงก์ "ดูผังต้นฉบับ" ย้ายมาอยู่ใต้กรอบคำกำกับสีฟ้าในแท็บเส้นทางน้ำ (ทุกตำบล) · ชี้ไฟล์ภาพของตำบลนั้น เปิดแท็บใหม่ · อยู่เหนือแท็บ ไม่ต้องเลื่อนหา · แท็บสถานการณ์ไม่มีลิงก์นี้แล้ว', async () => {
+    const FILES = { thungkaew: '66598230820240509_181654.jpg', tamnaktham: '82389834520240509_182321.jpg', namlao: '171202098020240430_133004.jpg' }
+    for (const [id, scene] of [['thungkaew', 'normal'], ['tamnaktham', 'tkNormal'], ['namlao', 'nlNormal']]) {
+      const { context, page } = await openScene(browser, baseUrl, scene, { diagram: id === 'thungkaew' ? null : id })
+      try {
+        await section(page).locator('[data-diagram-disclaimer]').waitFor({ timeout: 10_000 })
+        const near = section(page).locator('a[data-original-link-near]')
+        assert.equal(await near.count(), 1, `${id}: ต้องมีลิงก์ใต้คำกำกับ 1 อัน`)
+        assert.equal(await near.innerText(), 'ดูผังต้นฉบับ')
+        const href = await near.getAttribute('href')
+        assert.ok(href.endsWith(FILES[id]), `${id}: ต้องชี้ไฟล์ภาพของตำบลนี้ (${href})`)
+        assert.equal(await near.getAttribute('target'), '_blank'); assert.match(await near.getAttribute('rel'), /noopener/)
+        // ลิงก์ในแท็บ "ที่มา" ยังอยู่และชี้ที่เดียวกัน
+        assert.equal(await section(page).locator('[data-diagram-source] a[data-original-link]').getAttribute('href'), href, `${id}: ลิงก์ในแท็บที่มาต้องชี้ที่เดียวกัน`)
+        // ตำแหน่ง: ใต้กรอบคำกำกับ (ห่างไม่เกิน 24px) และเหนือแถบแท็บ — กดได้ทันทีไม่ต้องเลื่อนหา
+        const [cap, link, tabs] = await Promise.all([
+          section(page).locator('[data-diagram-disclaimer]').boundingBox(), near.boundingBox(), section(page).getByRole('tablist').boundingBox(),
+        ])
+        assert.ok(link.y >= cap.y + cap.height - 1 && link.y - (cap.y + cap.height) <= 24, `${id}: ลิงก์ต้องอยู่ใต้กรอบคำกำกับเลย (ห่าง ${Math.round(link.y - (cap.y + cap.height))}px)`)
+        assert.ok(link.y + link.height <= tabs.y + 1, `${id}: ลิงก์ต้องอยู่เหนือแท็บ`)
+        assert.ok(link.height >= 44 && link.width >= 44, `${id}: ขนาดกดได้ ≥ 44px (${Math.round(link.width)}×${Math.round(link.height)})`)
+        // เห็นได้ทุกแท็บของส่วนนี้ (อยู่เหนือแท็บ) — เปิดแท็บ "ที่มา" แล้วยังเห็น
+        await tabButton(page, /^ที่มา$/).click()
+        assert.equal(await near.isVisible(), true, `${id}: ลิงก์ยังเห็นเมื่ออยู่แท็บที่มา`)
+      } finally { await context.close() }
+    }
+    // แท็บสถานการณ์: กล่อง "ที่มาของข้อมูล" ของระบบน้ำของตำบลไม่มีลิงก์ผังต้นฉบับแล้ว (ย้ายไปแท็บเส้นทางน้ำ) แต่ข้อความที่มายังอยู่
+    for (const [id, scene] of [['thungkaew', 'normal'], ['tamnaktham', 'tkNormal'], ['namlao', 'nlNormal']]) {
+      // เปิดที่แท็บเส้นทางน้ำ (ทุกตำบลรอได้ด้วย #water-diagram) แล้วกดแท็บ "สถานการณ์" — ตำหนักธรรมไม่มีสถานีฝน หน้าสถานการณ์เลยไม่มี #water-rain ที่ openScene รอ
+      const { context, page } = await openScene(browser, baseUrl, scene, { diagram: id === 'thungkaew' ? null : id })
+      try {
+        await page.getByRole('tab', { name: 'สถานการณ์' }).click()
+        const box = page.locator('[data-system-source]')
+        await box.waitFor({ state: 'attached', timeout: 10_000 })
+        assert.ok((await box.innerText()).includes('ถอดจากผังของศูนย์บริหารจัดการน้ำจังหวัดแพร่'), `${id}: ข้อความที่มายังอยู่`)
+        assert.equal(await box.locator('a').count(), 0, `${id}: กล่องที่มาของแท็บสถานการณ์ต้องไม่มีลิงก์ผังต้นฉบับแล้ว`)
+        assert.equal(await page.locator('#water-panel-situation a[data-original-link]').count(), 0, `${id}: แท็บสถานการณ์ไม่มีลิงก์ผังต้นฉบับ`)
+      } finally { await context.close() }
+    }
   })
 
   await check('น้ำเลา: ภาพในหน้าเริ่มที่โหมดมืด · เปิดหน้าต่างพิมพ์แล้ว id ของภาพสองใบไม่ซ้ำกันและแต่ละใบอ้างเฉพาะ id ของตัวเอง · สลับโหมดในหน้าต่างไม่ทำให้ภาพในหน้าเปลี่ยน', async () => {

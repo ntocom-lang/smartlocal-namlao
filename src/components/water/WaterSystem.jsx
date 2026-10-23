@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { ExternalLink, Waves } from 'lucide-react'
-import { originalDiagramUrl } from '../../lib/waterDiagram/originalFiles'
+import { Waves } from 'lucide-react'
 import {
   NO_LIVE_TEXT, STALE_DIAGRAM_MONTHS, SYSTEM_DISCLAIMER_LINE, UPSTREAM_DEPTH_NOTE, diagramAge, liveState,
   resolveSystem, systemById, systemCountsText, thaiDate,
@@ -70,6 +69,8 @@ function Step({ index, title, nodes, stations, footnote, lead }) {
   )
 }
 
+// ⚠️ ไม่มีลิงก์ "ดูผังต้นฉบับ" ในกล่องที่มานี้แล้ว — ย้ายไปอยู่ใต้คำกำกับในแท็บเส้นทางน้ำ (เจ้าของระบบสั่ง 2569-10-23)
+//    ทุก อปท. ที่เห็นกล่องนี้ต้องมีแท็บเส้นทางน้ำด้วยเสมอ (เทสต์ตรึง: WATER_SYSTEM_TENANTS ⊆ WATER_DIAGRAM_TENANTS · ทั้งสองขึ้นเมื่อมีข้อมูลสถานี) ไม่งั้นลิงก์จะหายไป
 export default function WaterSystem({ slug, stations, now, previewId }) {
   const selection = resolveSystem(slug, previewId)
   const system = selection ? systemById(selection.system) : null
@@ -111,9 +112,6 @@ export default function WaterSystem({ slug, stations, now, previewId }) {
           ถอดจากผังของศูนย์บริหารจัดการน้ำจังหวัดแพร่ โดยระบบ SmartLocal: {system.sources.map(s => `${s.name} (${s.fileDateOnly ? `ไฟล์ลงวันที่ ${thaiDate(s.date)} ภาพไม่ระบุวันที่` : thaiDate(s.date)})`).join(' · ')}
           {' '}· ยังไม่ผ่านการยืนยันโดย อบต. · ไม่ใช่เอกสารทางราชการ
         </p>
-        <a href={originalDiagramUrl(system.id, system.originalUrl)} target="_blank" rel="noopener noreferrer" data-original-link className="mt-1 inline-flex min-h-[44px] items-center gap-1 font-bold text-sky-700">
-          ดูผังต้นฉบับ <ExternalLink size={12} />
-        </a>
       </div>
     </section>
   )
