@@ -71,3 +71,24 @@ export const setEsignPin = ({ pin, currentPin = null, ackDuty = false }) =>
   })
 
 export const suspendMyEsign = reason => callEsign('esign_suspend_me', { p_reason: String(reason ?? '').trim() || null })
+
+// ── แผงลงนามในหน้ารายละเอียดทริป (ฐานข้อมูลชุด S3a: ..20261023110000_esign_trip_panel_functions.sql) ──
+export const getTripEsignStatus = tripId => callEsign('esign_trip_status', { p_trip_id: tripId })
+
+// imageId = ภาพจากคลังของฉัน · ไม่แนบภาพ = null · decision: ช่องผู้มีอำนาจส่ง 'approve' ช่องอื่นส่ง null (DB กำหนดเอง)
+// ไม่ส่ง p_png_base64 (ภาพที่วาดตอนลงนามโดยไม่เข้าคลัง) — หน้าจอให้บันทึกเข้าคลังก่อนเสมอ ผู้ใช้เลือกใช้ซ้ำได้ ไม่ต้องเซ็นใหม่ทุกใบ
+export const signFleetTrip = ({ tripId, slot, pin, decision = null, imageId = null }) =>
+  callEsign('esign_sign_fleet_trip_stamped', {
+    p_trip_id: tripId,
+    p_slot: slot,
+    p_pin: pin,
+    p_decision: decision,
+    p_image_id: imageId,
+    p_png_base64: null,
+  })
+
+// slot = null ถอนทุกช่องเพื่อแก้คำขอ (ผู้ดูแลรถ/ผู้ขอตัวจริงเท่านั้น) · ระบุช่อง = ถอนช่องนั้นและช่องหลังในสาย
+export const revokeFleetTripSignatures = ({ tripId, reason, slot = null }) =>
+  callEsign('esign_revoke_fleet_trip', { p_trip_id: tripId, p_reason: String(reason ?? '').trim(), p_slot: slot })
+
+export const getMyPendingSignatures = () => callEsign('esign_my_pending', {})

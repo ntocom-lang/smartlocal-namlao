@@ -200,12 +200,15 @@ async function openProfile(page, auth, hash = '') {
   await page.goto(`${BASE}/profile${hash}`, { waitUntil: 'domcontentloaded', timeout: 45_000 })
   await waitForSettled(page, auth)
   if (new URL(page.url()).pathname !== '/profile') throw new BlockedError(`ถูกพาออกจาก /profile ไปที่ ${new URL(page.url()).pathname}`)
-  const skip = page.getByRole('button', { name: 'ข้ามไปก่อน' })
-  if (await skip.count()) await skip.first().click().catch(() => {})
+  // กล่อง "เพิ่มเบอร์มือถือ" เด้งทับหลังโหลดหน้า ~5 วิ — รอบแรกต้องรอให้เด้งแล้วกดข้าม (จำใน sessionStorage ไม่เขียน DB) ไม่งั้นบังปุ่มที่จะกดต่อ
+  // รอบหลังจำการข้ามไว้แล้ว ไม่ต้องรอ
+  await page.getByRole('button', { name: 'ข้ามไปก่อน' }).first().click({ timeout: phoneModalSkipped ? 800 : 9_000 }).catch(() => {})
+  phoneModalSkipped = true
   // หน้าพร้อมเมื่อปุ่ม "ออกจากระบบ" ท้ายหน้าโผล่ (ไม่กด) — ใช้ได้ทั้งเจ้าหน้าที่/ประชาชน ทั้ง PC และมือถือ (หัว PC ถูกซ่อนบนมือถือ)
   await page.getByRole('button', { name: 'ออกจากระบบ' }).last().waitFor({ timeout: 30_000 })
 }
 
+let phoneModalSkipped = false
 const section = page => page.locator('[data-my-esign]')
 const noOverflow = async (page, where) => {
   const m = await page.evaluate(() => ({ scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth }))

@@ -82,6 +82,34 @@ export function esignMessage(result) {
   return ESIGN_MESSAGES[code] ?? result.message ?? ESIGN_MESSAGES.error
 }
 
+// ข้อความเมื่อทำรายการไม่สำเร็จ — รหัสผ่านผิดต้องเตือนเรื่องล็อกเสมอ
+// ฟังก์ชันลงนามบอก remaining แต่ set_esign_pin (เปลี่ยนรหัส) ไม่บอก ทั้งที่นับเข้าตัวล็อกชุดเดียวกัน (ผิดสะสมครบ 5 ครั้ง ล็อก 15 นาที)
+// จึงต้องเตือนเองเมื่อไม่มีตัวเลข ไม่งั้นผู้ใช้โดนล็อกโดยไม่รู้ตัว (เจอตอนทดสอบกับฐานข้อมูลจริง ไม่ใช่ฐานข้อมูลจำลอง)
+export function esignFailureText(result) {
+  const base = esignMessage(result)
+  if (result?.code !== 'bad_pin') return base
+  return base + (Number.isInteger(result.remaining)
+    ? ` (เหลืออีก ${result.remaining} ครั้งก่อนระบบล็อก 15 นาที)`
+    : ' (ใส่รหัสผิดสะสมครบ 5 ครั้ง ระบบจะล็อกการลงนาม 15 นาที)')
+}
+
+// error ที่ trigger บน fleet_trips โยนตอนแก้/ลบทริปที่มีลายเซ็น (RAISE EXCEPTION 'ESIGN_…: …') — หน้ายานพาหนะแปลก่อนแสดง
+// ข้อความ DB เป็นภาษาไทยอยู่แล้ว แต่ไม่บอกว่าต้อง "ไปกดอะไรต่อ" และ FleetTrips เดิมโชว์ error ดิบของ DB บางจุด
+export const ESIGN_TRIP_EXCEPTIONS = {
+  ESIGN_TRIP_LOCKED: 'คำขอนี้มีลายเซ็นออนไลน์แล้ว จึงแก้ปลายทาง วัตถุประสงค์ วันเวลา จำนวนผู้ร่วมเดินทาง ตำแหน่งผู้ขอ หรือผู้ลงนามบนแบบไม่ได้'
+    + ' — ปิดหน้านี้แล้วกด "ถอนลายเซ็น" ในหน้ารายละเอียดคำขอก่อน แก้เสร็จแล้วให้ผู้ลงนามลงนามใหม่ (เปลี่ยนรถหรือผู้ขับรถทำได้ตามปกติ)',
+  ESIGN_TRIP_HAS_SIGNATURES: 'ทริปที่เคยมีลายเซ็นออนไลน์ลบไม่ได้ (เก็บไว้เป็นหลักฐาน) — ใช้ "ยกเลิกคำขอ" แทน',
+}
+
+// ถอนลายเซ็นช่องนี้แล้วช่องไหนถูกถอนตามไปด้วย — ต้องตรงกับ v_chain ใน esign_revoke_fleet_trip (tests/esign-lib.test.mjs เทียบกับ SQL)
+// ถอนช่องต้นสาย = ถอนช่องหลังๆ ในสายด้วย เพราะผู้ลงนามช่องหลังเห็นเนื้อหาชุดเก่า · ไม่ระบุช่อง = ถอนทุกช่อง
+const ESIGN_REVOKE_CHAIN = ['requester', 'dept_head', 'authority']
+export function esignRevokeTargets(slot) {
+  if (!slot) return ESIGN_FLEET_SLOTS.map(item => item.key)
+  const index = ESIGN_REVOKE_CHAIN.indexOf(slot)
+  return index < 0 ? [slot] : ESIGN_REVOKE_CHAIN.slice(index)
+}
+
 // โหมดรายช่องที่หน้าจอแสดง — ช่องที่ DB ไม่มีค่า = เซ็นสด
 export function esignModesFromStatus(status) {
   const saved = status?.slot_modes ?? {}
