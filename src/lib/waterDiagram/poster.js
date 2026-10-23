@@ -9,6 +9,11 @@ import { govPageCss, govPagePadding } from '../govDocStyle.js'
 
 export const POSTER_THEMES = ['dark', 'light']
 export const POSTER_PRINT_SIZE = 'A4 landscape'
+
+// วันที่-เวลาของข้อมูลสดบนภาพ/แผ่นรายการ (พ.ศ. เวลาไทย)
+export const posterDateTime = now => new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
+  dateStyle: 'long', timeStyle: 'short', timeZone: 'Asia/Bangkok',
+}).format(new Date(now))
 export const POSTER_ZONE_TONES = ['a2', 'a3', 'a4']
 
 // ข้อความบังคับบนโปสเตอร์ — ต้นฉบับอยู่ใน WaterDiagram.jsx (คำกำกับของส่วนแผนภาพ) เทสต์ตรวจทั้งสองที่ว่ามีคำเหล่านี้ครบ
@@ -160,9 +165,11 @@ ${govPageCss({ size: POSTER_PRINT_SIZE, hideBrowserHeader: true })}
   html, body { background: #fff !important; margin: 0 !important; }
   body > *:not([data-poster-overlay]) { display: none !important; }
   [data-poster-overlay] { position: static !important; inset: auto !important; display: block !important; background: none !important; overflow: visible !important; padding: 0 !important; }
-  [data-poster-toolbar], [data-poster-hint] { display: none !important; }
+  [data-poster-toolbar], [data-poster-hint], [data-poster-label] { display: none !important; }
+  [data-poster-page] { width: auto !important; min-width: 0 !important; max-width: none !important; margin: 0 !important; }
   [data-poster-stage] { display: block !important; padding: 0 !important; overflow: visible !important; }
   [data-poster-sheet] { width: 297mm !important; min-width: 0 !important; max-width: none !important; height: 208mm !important; aspect-ratio: auto !important; border-radius: 0 !important; box-shadow: none !important; box-sizing: border-box; padding: ${govPagePadding({ size: POSTER_PRINT_SIZE })}; margin: 0 !important; overflow: hidden; break-inside: avoid; background: #fff; }
+  [data-poster-sheet]:not([data-poster-sheet-list]) { break-after: page; }
   [data-poster-sheet] svg { width: 100%; height: 100%; display: block; }
 }`
 }

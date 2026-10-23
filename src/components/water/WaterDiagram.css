@@ -84,8 +84,4 @@
 .wr-shim { animation: wr-shim 5s ease-in-out infinite alternate; }
 @keyframes wr-shim { from { opacity: 0.6; } to { opacity: 1; } }
 .wr-list .wd-tag { margin-left: 0; }
-/* ผังที่มีโปสเตอร์ (รายการอยู่ใต้ภาพเต็มกว้าง): จอกว้างวางสองคอลัมน์ หัวข้อกลุ่มคร่อมทั้งแถว */
-@media (min-width: 1024px) {
-  .wr-list--wide { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
-  .wr-list--wide > [data-group] { grid-column: 1 / -1; }
-}
+

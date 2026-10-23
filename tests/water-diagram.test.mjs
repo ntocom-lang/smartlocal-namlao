@@ -19,8 +19,9 @@ import {
   POSTER_DISCLAIMER, POSTER_PRINT_SIZE, POSTER_THEMES, posterIcon, posterIssues, posterLiveRows, posterOmittedNames, posterPrintCss, posterStats,
 } from '../src/lib/waterDiagram/poster.js'
 import { GOV_PAGE_MARGIN_LANDSCAPE, govPageCss } from '../src/lib/govDocStyle.js'
+import { LIST_SHEET_COLUMNS, LIST_SHEET_MM, balanceRanges, listColumns, listItemWeight } from '../src/lib/waterDiagram/listSheet.js'
 import { ORIGINAL_DIAGRAM_FILES, ORIGINAL_FILE_BASE, originalDiagramUrl } from '../src/lib/waterDiagram/originalFiles.js'
-import { SYSTEMS, thaiDate } from '../src/lib/waterSystem/model.js'
+import { SYSTEMS, WATER_SYSTEM_TENANTS, thaiDate } from '../src/lib/waterSystem/model.js'
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
@@ -810,8 +811,17 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
   const diagramJsx = read('src/components/water/WaterDiagram.jsx')
   const systemJsx = read('src/components/water/WaterSystem.jsx')
   assert.ok(diagramJsx.includes('href={originalDiagramUrl(diagram.id, diagram.sourceUrl)}'), 'WaterDiagram.jsx ต้องลิงก์ผังต้นฉบับผ่าน originalDiagramUrl')
-  assert.ok(systemJsx.includes('href={originalDiagramUrl(system.id, system.originalUrl)}'), 'WaterSystem.jsx ต้องลิงก์ผังต้นฉบับผ่าน originalDiagramUrl')
-  assert.ok(!/href=\{diagram\.sourceUrl\}/.test(diagramJsx) && !/href=\{system\.originalUrl\}/.test(systemJsx), 'ห้ามกลับไปชี้หน้ารวมตรงๆ')
+  // ลิงก์ย้ายจากกล่อง "ที่มาของข้อมูล" (WaterSystem · แท็บสถานการณ์) ไปอยู่ใต้คำกำกับในแท็บเส้นทางน้ำ (เจ้าของระบบสั่ง 2569-10-23)
+  assert.ok(!systemJsx.includes('originalDiagramUrl') && !systemJsx.includes('data-original-link') && !systemJsx.includes('ExternalLink'), 'WaterSystem.jsx ต้องไม่มีลิงก์ผังต้นฉบับแล้ว (ย้ายไปแท็บเส้นทางน้ำ)')
+  assert.ok(systemJsx.includes('data-system-source') && systemJsx.includes('ถอดจากผังของศูนย์บริหารจัดการน้ำจังหวัดแพร่'), 'ข้อความที่มายังอยู่ในกล่อง')
+  assert.ok(!/href=\{diagram\.sourceUrl\}/.test(diagramJsx), 'ห้ามกลับไปชี้หน้ารวมตรงๆ')
+  assert.match(diagramJsx, /\{route && \(\s*<a href=\{originalDiagramUrl\(diagram\.id, diagram\.sourceUrl\)\} target="_blank" rel="noopener noreferrer" data-original-link data-original-link-near/, 'ลิงก์ใต้คำกำกับของผังเส้นทางน้ำ ผ่าน originalDiagramUrl')
+  assert.ok(diagramJsx.indexOf('data-diagram-disclaimer') < diagramJsx.indexOf('data-original-link-near') && diagramJsx.indexOf('data-original-link-near') < diagramJsx.indexOf('<RouteView route={route}'), 'ลำดับในหน้า: คำกำกับ → ลิงก์ → แท็บ/ภาพ')
+  // ทุก อปท. ที่เห็นกล่องระบบน้ำต้องมีแท็บเส้นทางน้ำด้วย (ไม่งั้นลิงก์ผังต้นฉบับหายไปเลย)
+  for (const slug of Object.keys(WATER_SYSTEM_TENANTS)) {
+    assert.ok(diagramTenant(slug), `${slug}: มีระบบน้ำของตำบลแต่ไม่มีแผนภาพเส้นทางน้ำ → ลิงก์ผังต้นฉบับจะไม่มีที่แสดง`)
+    assert.ok(diagramById(resolveDiagram(slug, null).diagram).route, `${slug}: ผังต้องเป็นแบบเส้นทางน้ำ (ลิงก์ใต้คำกำกับขึ้นเฉพาะผังที่มี route)`)
+  }
 }
 
 // ── ข้อความบังคับ · CSS · การต่อเข้าหน้า ──
@@ -963,15 +973,121 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     assert.ok(view.includes('const hasPoster = Boolean(route.poster)'), 'ใช้ภาพนำเสนอเฉพาะผังที่มี route.poster')
     assert.match(view, /\{hasPoster \? \(\s*<Suspense fallback=\{[\s\S]*?\}>\s*<WaterRoutePosterPanel route=\{route\} diagram=\{diagram\} badges=\{badges\} now=\{now\} \/>\s*<\/Suspense>\s*\) : \(\s*<>\s*<div[^>]*><WaterRouteArt /, 'ผังที่มี poster แสดงภาพนำเสนอแทน WaterRouteArt · ผังอื่นยังใช้ภาพเกาะลอย')
     assert.ok(!/setPosterOpen|posterOpen|Presentation/.test(view), 'ปุ่มเปิดภาพนำเสนอย้ายเข้าไปอยู่เหนือภาพ (ในคอมโพเนนต์ภาพ) ไม่ใช่แถวปุ่มบนสุดของส่วนอีกแล้ว')
-    assert.ok(view.includes('wide={hasPoster}'), 'รายการจุดใต้ภาพนำเสนอจัดสองคอลัมน์')
     assert.match(poster, /export default function WaterRoutePosterPanel\(/, 'ส่งออก default เป็นภาพในหน้า (WaterDiagram โหลดจุดเดียว)')
     assert.match(poster, /\{open && <WaterRoutePosterDialog /, 'หน้าต่างพิมพ์เปิดเฉพาะเมื่อกดปุ่ม')
+    // ปุ่มสลับโหมดมืด/สว่างของภาพในหน้า (เจ้าของระบบสั่ง 2569-10-23): สถานะอยู่ที่ Panel ส่งเข้าภาพในหน้า และเป็นโหมดเริ่มต้นของหน้าต่างพิมพ์
+    assert.match(poster, /const \[theme, setTheme\] = useState\(POSTER_THEMES\[0\]\)\s*const labelId = useId\(\)/, 'Panel เก็บโหมดของภาพในหน้า เริ่มที่โหมดมืด')
+    assert.match(poster, /<WaterRoutePoster route=\{route\} diagram=\{diagram\} badges=\{badges\} now=\{now\} theme=\{theme\} \/>\s*<\/div>\s*<\/div>\s*<p className="m-0 px-1 text-xs text-slate-500 lg:hidden">/, 'ภาพในหน้าใช้โหมดที่เลือก')
+    assert.match(poster, /initialTheme=\{theme\} onClose=/, 'หน้าต่างพิมพ์เปิดที่โหมดเดียวกับภาพในหน้า')
+    assert.match(poster, /data-poster-theme-option=\{key\}/); assert.match(poster, /const PAGE_THEME_LABELS = \{ dark: 'โหมดมืด', light: 'โหมดสว่าง' \}/, 'ชื่อปุ่ม "โหมดมืด"/"โหมดสว่าง" ตามคำของเจ้าของระบบ')
+    assert.ok(poster.includes('aria-pressed={theme === key}'), 'ปุ่มโหมดต้องบอกสถานะที่เลือกด้วย aria-pressed')
     assert.match(poster, /<button type="button"[\s\S]*?data-poster-open>/, 'ปุ่มพิมพ์/บันทึก PDF อยู่เหนือภาพ')
     assert.match(poster, /role="region"[^>]*tabIndex=\{0\}/, 'กรอบภาพที่เลื่อนแนวนอนได้ต้องโฟกัสด้วยคีย์บอร์ดได้')
     const diagramCss = read('src/components/water/WaterDiagram.css')
     assert.ok(diagramCss.includes('.wd-root.wd-paused .wp-flow') && diagramCss.includes('.wd-root[data-offscreen] .wp-flow'), 'ปุ่มหยุดเคลื่อนไหวและตัวหยุดตอนนอกจอต้องหยุดลายวิ่งของภาพนำเสนอด้วย')
     assert.ok(!read('src/lib/waterDiagram/routes/tamnaktham.js').includes('poster:') && !read('src/lib/waterDiagram/routes/thungkaew.js').includes('poster:'), 'ตำหนักธรรม/ทุ่งแค้วยังไม่มีโปสเตอร์ (ทำเฉพาะน้ำเลาก่อน)')
     assert.match(read('src/lib/waterDiagram/routes/namlao.js'), /poster: NAMLAO_POSTER,/)
+  }
+
+  // ═══ แผ่นรายการจุด A4 (listSheet.js) ═══
+  // บีบรายการเป็นคอลัมน์: ช่วงติดกัน ครอบคลุมทุกหน่วยครั้งเดียว และหนักสุดเบาสุดเท่าที่แบ่งได้ (เทียบกับวิธีไล่ทุกรอยตัด)
+  {
+    const bruteMax = (weights, k) => {
+      const n = weights.length
+      let best = Infinity
+      const go = (from, left, curMax) => {
+        if (left === 1) { best = Math.min(best, Math.max(curMax, weights.slice(from).reduce((a, b) => a + b, 0))); return }
+        for (let cut = from + 1; cut <= n - (left - 1); cut++) go(cut, left - 1, Math.max(curMax, weights.slice(from, cut).reduce((a, b) => a + b, 0)))
+      }
+      go(0, k, 0)
+      return best
+    }
+    let seed = 7
+    const rand = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648 }
+    for (let round = 0; round < 60; round++) {
+      const n = 3 + Math.floor(rand() * 7)
+      const weights = Array.from({ length: n }, () => 1 + Math.floor(rand() * 12))
+      const ranges = balanceRanges(weights, 3)
+      assert.equal(ranges.length, 3)
+      assert.equal(ranges[0][0], 0); assert.equal(ranges[2][1], n)
+      for (let i = 1; i < 3; i++) assert.equal(ranges[i][0], ranges[i - 1][1], 'ช่วงต้องติดกัน ไม่ซ้อน ไม่เว้น')
+      for (const [from, to] of ranges) assert.ok(to > from, 'ทุกคอลัมน์ต้องมีอย่างน้อย 1 หน่วยเมื่อหน่วย ≥ คอลัมน์')
+      const heaviest = Math.max(...ranges.map(([from, to]) => weights.slice(from, to).reduce((a, b) => a + b, 0)))
+      assert.equal(heaviest, bruteMax(weights, 3), `น้ำหนักที่หนักสุดต้องเบาที่สุดเท่าที่เป็นไปได้ (${weights})`)
+    }
+    assert.deepEqual(balanceRanges([5, 5], 3), [[0, 1], [1, 2], [2, 2]], 'หน่วยน้อยกว่าคอลัมน์ = คอลัมน์ท้ายว่าง')
+    assert.deepEqual(balanceRanges([], 3), [[0, 0], [0, 0], [0, 0]])
+  }
+
+  // น้ำเลา: คอลัมน์ละสายตามผัง (1–8 | 9–15 | 16–21) ไม่ฉีกกลุ่ม หัวข้อกลุ่มตามหลังกลุ่มเดิม · ครบทุกจุดครั้งเดียวตามลำดับ
+  {
+    const badges = {
+      'dam-305': { tone: 'warn', detail: 'อ่างเก็บน้ำแม่คำปอง ห่าง 3.6 กม. · 100.4% มากกว่า 100% = เกินความจุที่ระดับเก็บกักปกติ · ตัวเลขชุดนี้ซ้ำเดิมทุกวันมา 8 วัน ตั้งแต่ 16 ต.ค. — ต้นทางอาจยังไม่ได้ปรับข้อมูล ใช้ตัวเลขนี้อย่างระมัดระวัง' },
+      'rain-RES040': { tone: 'ok', detail: 'ฝนสะสม 24 ชม. 0 มม. · ไม่มีฝน · สถานีอ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา ห่าง 2.9 กม. · วัดเมื่อ 19:22 น.' },
+      'rain-STN0911': { tone: 'ok', detail: 'ฝนสะสม 24 ชม. 12.5 มม. · ฝนปานกลาง · สถานีบ้านบุญแจ่ม ห่าง 2.6 กม. · วัดเมื่อ 19:22 น.' },
+    }
+    const cols = listColumns(NAMLAO_ROUTE, badges)
+    assert.equal(cols.length, LIST_SHEET_COLUMNS)
+    const numbers = col => col.units.flatMap(unit => unit.items.map(item => item.n))
+    assert.deepEqual(cols.map(numbers), [[1, 2, 3, 4, 5, 6, 7, 8], [9, 10, 11, 12, 13, 14, 15], [16, 17, 18, 19, 20, 21]], 'คอลัมน์ละสาย/กลุ่มสายที่ติดกัน')
+    assert.deepEqual(cols.flatMap(numbers), Array.from({ length: 21 }, (_, i) => i + 1), 'ทุกจุดครั้งเดียว เรียงตามหมายเลข')
+    assert.deepEqual(cols.map(col => col.units.map(unit => unit.heading)), [
+      [NAMLAO_ROUTE.stops[0].group], [NAMLAO_ROUTE.stops[8].group, NAMLAO_ROUTE.stops[10].group],
+      [NAMLAO_ROUTE.stops[15].group, NAMLAO_ROUTE.stops[19].group, NAMLAO_ROUTE.river.group],
+    ], 'หัวข้อกลุ่มขึ้นหนึ่งครั้งต่อกลุ่ม อยู่คอลัมน์เดียวกับจุดแรกของกลุ่ม')
+    const weights = cols.map(col => col.weight)
+    assert.ok(Math.max(...weights) <= Math.min(...weights) * 1.35, `คอลัมน์ต้องสูงใกล้กัน (${weights.map(w => w.toFixed(1))})`)
+    // ข้อความค่าสดยาวทำให้น้ำหนักคอลัมน์ของจุดนั้นเพิ่ม (ไม่ใช่ตัวเลขตายตัวต่อจุด)
+    assert.ok(listItemWeight(NAMLAO_ROUTE.stops[2], badges) > listItemWeight(NAMLAO_ROUTE.stops[2], {}) + 2, 'ค่าสดยาวต้องถ่วงน้ำหนัก')
+    // ผังไม่มีกลุ่ม/มีกลุ่มเดียว: แบ่งทีละจุดให้ใช้ 3 คอลัมน์ได้ (หัวข้อขึ้นที่จุดแรกเท่านั้น)
+    const flat = { ...NAMLAO_ROUTE, stops: NAMLAO_ROUTE.stops.map(({ group, ...rest }) => rest), river: (({ group, ...rest }) => rest)(NAMLAO_ROUTE.river) }
+    const flatCols = listColumns(flat, {})
+    assert.ok(flatCols.every(col => col.units.length > 0), 'ผังไม่มีกลุ่ม: ยังกระจายเป็น 3 คอลัมน์')
+    assert.deepEqual(flatCols.flatMap(numbers), Array.from({ length: 21 }, (_, i) => i + 1))
+    assert.ok(flatCols.every(col => col.units.every(unit => unit.heading === null)), 'ผังไม่มีกลุ่ม = ไม่มีหัวข้อ')
+    const two = { ...NAMLAO_ROUTE, stops: NAMLAO_ROUTE.stops.map(stop => ({ ...stop, group: stop.n <= 10 ? 'ก' : 'ข' })), river: { ...NAMLAO_ROUTE.river, group: 'ข' } }
+    const twoCols = listColumns(two, {})
+    assert.deepEqual(twoCols.flatMap(col => col.units.filter(unit => unit.heading).map(unit => unit.heading)), ['ก', 'ข'], 'กลุ่มน้อยกว่าคอลัมน์: หัวข้อกลุ่มขึ้นที่จุดแรกของกลุ่มเท่านั้น')
+  }
+
+  // ขนาดแผ่นตรงกับพื้นที่พิมพ์จริงของใบพิมพ์ (กล่องหน้า 208 มม. − ขอบบน 3 ซม. − ขอบล่าง 1 ซม. · กว้าง 297 − 2 × 2 ซม.)
+  {
+    const [top, side, bottom] = GOV_PAGE_MARGIN_LANDSCAPE.split(' ').map(value => Number.parseFloat(value) * 10)
+    assert.deepEqual(LIST_SHEET_MM, { w: 297 - 2 * side, h: 208 - top - bottom }, 'LIST_SHEET_MM ต้องเท่าพื้นที่พิมพ์ที่ posterPrintCss ให้')
+    const css = posterPrintCss()
+    assert.match(css, /\[data-poster-sheet\]:not\(\[data-poster-sheet-list\]\) \{ break-after: page; \}/, 'แผ่นที่ 1 ขึ้นหน้าใหม่ก่อนแผ่นรายการ')
+    assert.match(css, /\[data-poster-label\][^}]*display: none/, 'ป้าย "แผ่นที่ N" ไม่ติดไปบนกระดาษ')
+    assert.match(css, /\[data-poster-page\] \{ width: auto !important; min-width: 0 !important; max-width: none !important; margin: 0 !important; \}/, 'กรอบหน้าบนจอ (กลางหน้า กว้างขั้นต่ำ 900px) ไม่ติดไปบนกระดาษ')
+  }
+
+  // ซอร์สของแผ่นรายการ: ขนาดตัวอักษรเป็น cqw ทั้งหมด (ไม่มี px/pt ตายตัว) · สัดส่วนจาก LIST_SHEET_MM · ฟอนต์ราชการ · ข้อความบังคับท้ายแผ่น · ไม่แตะฐานข้อมูล
+  {
+    const sheetSrc = read('src/components/water/WaterRouteListSheet.jsx')
+    const sheetCss = read('src/components/water/WaterRouteListSheet.css')
+    const view = read('src/components/water/WaterDiagram.jsx')
+    const poster = read('src/components/water/WaterRoutePoster.jsx')
+    const cssCode = sheetCss.replace(/\/\*[\s\S]*?\*\//g, '')
+    const sizes = [...cssCode.matchAll(/font-size:\s*([^;}]+)/g)].map(match => match[1].trim())
+    assert.ok(sizes.length >= 8, 'ต้องมีขนาดตัวอักษรหลายระดับ')
+    assert.deepEqual(sizes.filter(size => !/^[\d.]+cqw$/.test(size)), [], 'ขนาดตัวอักษรของแผ่นต้องเป็น cqw ทั้งหมด (ย่อ/ขยายตามความกว้างแผ่น เห็นบนจอเหมือนที่พิมพ์)')
+    assert.match(cssCode, /container-type:\s*inline-size/, 'cqw ต้องอ้างความกว้างของแผ่น ไม่ใช่ของหน้าจอ')
+    assert.match(cssCode, new RegExp(`aspect-ratio:\\s*${LIST_SHEET_MM.w}\\s*/\\s*${LIST_SHEET_MM.h}`), 'สัดส่วนแผ่นต้องเท่า LIST_SHEET_MM')
+    assert.match(cssCode, /\.wl-live[^}]*border-radius:\s*0\.6cqw/, 'ค่าสดหลายบรรทัดเป็นกล่องมุมมน ไม่ใช่แคปซูล')
+    assert.match(sheetSrc, /listColumns\(route, badges\)/); assert.match(sheetSrc, /GOV_FONT_STACK/)
+    assert.match(sheetSrc, /fontSizeAdjust: String\(GOV_FONT_SIZE_ADJUST\)/, 'font-size-adjust ต้องเป็นสตริง')
+    assert.ok(sheetSrc.includes('POSTER_DISCLAIMER[0]') && sheetSrc.includes('POSTER_DISCLAIMER[2]') && sheetSrc.includes('posterDateTime(now)'), 'ท้ายแผ่นต้องมีคำกำกับบังคับ + เวลาข้อมูลสด')
+    assert.ok(sheetSrc.includes('data-route-list') && sheetSrc.includes('data-group') && sheetSrc.includes('role="presentation"') && sheetSrc.includes('data-stop={item.n}'), 'โครงรายการเดิม (เทสต์/โปรแกรมอ่านจอใช้)')
+    assert.ok(!/dangerouslySetInnerHTML|innerHTML|Math\.random|Date\.now/.test(sheetSrc), 'แผ่นวาดเหมือนเดิมทุกครั้ง ไม่สุ่ม ไม่ผูกเวลาเครื่อง')
+    assert.ok(!/from ['"][^'"]*supabase[^'"]*['"]/.test(sheetSrc) && !/\.rpc\(|supabase\.from\(/.test(sheetSrc), 'แผ่นรายการไม่เรียกฐานข้อมูลเอง')
+    // หน้าเว็บ: จอ ≥ 1024px ของผังที่มีโปสเตอร์ใช้แผ่น · นอกนั้นรายการเดิม · โหลดแบบ lazy
+    assert.match(view, /const WaterRouteListSheet = lazy\(\(\) => import\('\.\/WaterRouteListSheet'\)\)/, 'แผ่นรายการโหลดแบบ lazy')
+    assert.match(view, /\{hasPoster && wide \? \(\s*<Suspense fallback=\{<WaterRouteList route=\{route\} badges=\{badges\} \/>\}>\s*<WaterRouteListSheet route=\{route\} diagram=\{diagram\} badges=\{badges\} now=\{now\} \/>/, 'แผ่นเฉพาะผังที่มีโปสเตอร์บนจอกว้าง · ระหว่างโหลดใช้รายการเดิม')
+    assert.ok(view.includes("const WIDE_QUERY = '(min-width: 1024px)'") && view.includes('setWide(query.matches)'), 'ย่อ/ขยายจอแล้วสลับแผ่น/รายการเดิมตามขอบเขต 1024px')
+    assert.ok(!/wide=\{hasPoster\}/.test(view) && !read('src/components/water/WaterRouteList.jsx').includes('wide'), 'โหมด wide เดิมของรายการถูกถอด (แผ่นรายการแทนแล้ว)')
+    assert.ok(!read('src/components/water/WaterDiagram.css').includes('wr-list--wide'), 'CSS ของโหมด wide เดิมต้องไม่เหลือ')
+    // หน้าต่างพิมพ์: 2 แผ่น (โปสเตอร์ + รายการจุด) แผ่นรายการสว่างเสมอ
+    assert.match(poster, /<section data-poster-page className="wp-page" aria-label="แผ่นที่ 1 ภาพนำเสนอ">/)
+    assert.match(poster, /<div data-poster-sheet data-poster-sheet-list className="wp-sheet">\s*<WaterRouteListSheet route=\{route\} diagram=\{diagram\} badges=\{badges\} now=\{now\} \/>/, 'แผ่นที่ 2 ของใบพิมพ์คือแผ่นรายการ')
   }
 }
 

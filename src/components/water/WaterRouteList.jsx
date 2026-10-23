@@ -3,11 +3,11 @@ import { routeItems } from '../../lib/waterDiagram/route'
 
 // รายการจุดมีหมายเลข (เหมือนรายการข้างภาพ) — เนื้อหาเต็มของแผนภาพอยู่ที่นี่: ผู้ใช้โปรแกรมอ่านจอใช้รายการนี้แทนภาพ
 // ค่าสดใช้ badge.detail จาก liveBadges (ชื่อสถานี ระยะ เวลาวัด ซ้ำเดิม/ค้าง ครบ) · แท็กแผนก่อสร้าง/ชำรุด/ไม่มีข้อมูลมาจากข้อมูลผัง
-export default function WaterRouteList({ route, badges, wide = false }) {
+export default function WaterRouteList({ route, badges }) {
   return (
     <div data-route-list>
       <p className="mb-2 px-1.5 text-sm font-extrabold text-sky-950">{route.listTitle}</p>
-      <ol className={`wr-list m-0 grid list-none gap-1.5 p-0 ${wide ? 'wr-list--wide' : ''}`}>
+      <ol className="wr-list m-0 grid list-none gap-1.5 p-0">
         {routeItems(route).map((item, index, items) => {
           // หัวข้อกลุ่ม (เช่น "สายที่ 2 · ...") ขึ้นที่จุดแรกของกลุ่ม — ผังที่ไม่กำหนด group ไม่มีหัวข้อ
           const heading = item.group && item.group !== items[index - 1]?.group ? item.group : null
