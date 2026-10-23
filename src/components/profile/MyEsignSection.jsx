@@ -98,7 +98,10 @@ export default function MyEsignSection() {
     const result = await action()
     setBusy('')
     if (!result?.ok) {
-      const extra = result?.code === 'bad_pin' && Number.isInteger(result.remaining) ? ` (เหลืออีก ${result.remaining} ครั้งก่อนระบบล็อก 15 นาที)` : ''
+      // ฝั่ง DB: ฟังก์ชันลงนามบอก remaining แต่ set_esign_pin (เปลี่ยนรหัส) ไม่บอก ทั้งที่นับเข้าตัวล็อกชุดเดียวกัน (ผิดสะสมครบ 5 ครั้ง → ล็อก 15 นาที)
+      // จึงต้องเตือนเองเมื่อไม่มีตัวเลข ไม่งั้นผู้ใช้โดนล็อกโดยไม่รู้ตัว (เจอตอนทดสอบกับฐานข้อมูลจริง ไม่ใช่ฐานข้อมูลจำลอง)
+      const lockWarning = Number.isInteger(result?.remaining) ? ` (เหลืออีก ${result.remaining} ครั้งก่อนระบบล็อก 15 นาที)` : ' (ใส่รหัสผิดสะสมครบ 5 ครั้ง ระบบจะล็อกการลงนาม 15 นาที)'
+      const extra = result?.code === 'bad_pin' ? lockWarning : ''
       setNotice(key, { ok: false, text: esignMessage(result) + extra })
       return null
     }

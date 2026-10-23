@@ -139,7 +139,8 @@ function makeBackend({ pinSet = false, suspended = false, library = [], history 
       if (!/^[0-9]{6}$/.test(args.p_pin)) return { ok: false, code: 'invalid_pin' }
       if (args.p_pin === '111111') return { ok: false, code: 'weak_pin' }
       if (state.pinSet) {
-        if (args.p_current_pin !== '246810') return { ok: false, code: 'bad_pin', remaining: 4 }
+        // เหมือน set_esign_pin จริง: รหัสเดิมผิดนับเข้าตัวล็อก แต่ไม่ส่ง remaining กลับ (ตรวจกับฐานข้อมูลจริง 2026-10-23)
+        if (args.p_current_pin !== '246810') return { ok: false, code: 'bad_pin' }
       } else if (!args.p_ack_duty) return { ok: false, code: 'duty_ack_required' }
       state.pinSet = true
       return { ok: true }
@@ -481,12 +482,14 @@ async function checkPinAndSuspend(page, auth, context) {
   await page.locator('#esign-pin-current').waitFor()
   assert.equal(await page.locator('#esign-duty-ack').count(), 0, 'ตั้งแล้วไม่ต้องรับทราบซ้ำ')
 
-  // เปลี่ยนรหัส: รหัสเดิมผิด → บอกจำนวนครั้งที่เหลือ
+  // เปลี่ยนรหัส: รหัสเดิมผิด → ต้องเตือนเรื่องล็อก (DB ฟังก์ชันนี้ไม่ส่งจำนวนที่เหลือ จึงเตือนแบบไม่มีตัวเลข)
   await page.locator('#esign-pin-current').fill('000001')
   await page.locator('#esign-pin-next').fill('135790')
   await page.locator('#esign-pin-confirm').fill('135790')
   await save.click()
-  await page.getByRole('alert').filter({ hasText: 'เหลืออีก 4 ครั้ง' }).waitFor()
+  const wrongAlert = page.getByRole('alert').filter({ hasText: 'รหัสลงนามไม่ถูกต้อง' })
+  await wrongAlert.waitFor()
+  assert.ok((await wrongAlert.innerText()).includes('ผิดสะสมครบ 5 ครั้ง ระบบจะล็อกการลงนาม 15 นาที'), 'รหัสเดิมผิดต้องเตือนเรื่องล็อก แม้ DB ไม่ส่ง remaining')
   await page.locator('#esign-pin-current').fill('246810')
   await save.click()
   await page.getByRole('status').filter({ hasText: 'เปลี่ยนรหัสลงนามแล้ว' }).waitFor()
