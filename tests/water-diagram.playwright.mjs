@@ -902,6 +902,8 @@ try {
         assert.ok(text.includes(needed), `โปสเตอร์ต้องมี "${needed}"`)
       }
       assert.ok(!/แล้ง|ท่วม/.test(text.replace('ไม่ใช่ประกาศ', '')), 'โปสเตอร์ห้ามเขียนว่าแล้ง/ท่วม')
+      // ฟอนต์ราชการ + font-size-adjust 0.45 ต้องถึงเบราว์เซอร์จริง (เคยหลุดเงียบๆ เพราะ React เขียนเลข 0.45 เป็น "0.45px")
+      assert.deepEqual(await dialog.locator('svg[data-poster]').evaluate(svg => [getComputedStyle(svg).fontFamily.startsWith('THSarabunPSK'), getComputedStyle(svg).fontSizeAdjust]), [true, '0.45'], 'ฟอนต์ราชการ + font-size-adjust ของโปสเตอร์')
       const minFont = await dialog.locator('svg[data-poster]').evaluate(svg => Math.min(...[...svg.querySelectorAll('text')].map(t => parseFloat(getComputedStyle(t).fontSize))))
       assert.ok(minFont >= 10, `ตัวอักษรเล็กสุดต้อง ≥ 10 หน่วย (${minFont})`)
       await page.keyboard.press('Escape')

@@ -950,7 +950,7 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     const code = text => text.split('\n').filter(line => !line.trim().startsWith('//')).join('\n')
     assert.ok(!/compass|เข็มทิศ|ทิศเหนือ/i.test(code(poster + posterLib)), 'โปสเตอร์ไม่วาดเข็มทิศ/ทิศเหนือ')
     assert.ok(!/Math\.random|Date\.now/.test(poster + posterLib), 'โปสเตอร์ไม่สุ่ม ไม่อ่านเวลาเครื่องเอง (เวลาข้อมูลมาจาก now ที่หน้าส่งมา)')
-    assert.match(poster, /GOV_FONT_STACK/); assert.match(poster, /GOV_FONT_SIZE_ADJUST/)
+    assert.match(poster, /GOV_FONT_STACK/); assert.match(poster, /fontSizeAdjust: String\(GOV_FONT_SIZE_ADJUST\)/, 'font-size-adjust ต้องเป็นสตริง (เลขเปล่า React เขียนเป็น 0.45px แล้วเบราว์เซอร์ทิ้ง)')
     assert.ok(!/font-family:/.test(posterLib.replace(/\/\/.*$/gm, '')), 'ห้ามเขียน font-family ซ้ำใน CSS หน้าพิมพ์ (ใช้ตัวกลาง)')
     assert.match(poster, /markerUnits="userSpaceOnUse"/, 'หัวลูกศรต้องไม่ขยายตามความหนาเส้น')
     assert.match(poster, /markerEnd=\{stream\.flow \? u\('arrow'\) : undefined\}/, 'หัวลูกศรเฉพาะเส้น flow')

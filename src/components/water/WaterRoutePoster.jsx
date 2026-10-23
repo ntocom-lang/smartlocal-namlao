@@ -184,7 +184,8 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
   return (
     <svg className="wp-poster" data-poster data-theme={theme} viewBox={`0 0 ${w} ${h}`} role="img"
       aria-label={`ภาพนำเสนอ ${route.heading} ภาพประกอบ ${stats.points} จุด ไม่ตรงตำแหน่ง ทิศ และมาตราส่วนจริง`}
-      style={{ fontFamily: GOV_FONT_STACK, fontSizeAdjust: GOV_FONT_SIZE_ADJUST }}>
+      /* ⚠️ fontSizeAdjust ต้องเป็นสตริง: React ต่อ "px" ท้ายตัวเลขที่ไม่อยู่ในรายการ unitless ("0.45px" ไม่ใช่ค่าที่ถูกต้อง เบราว์เซอร์ทิ้งเงียบๆ ฟอนต์ที่ตกมาแทนจะไม่ถูกปรับขนาด) */
+      style={{ fontFamily: GOV_FONT_STACK, fontSizeAdjust: String(GOV_FONT_SIZE_ADJUST) }}>
       <defs>
         <linearGradient id={id('bg')} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--bg0)" /><stop offset=".5" stopColor="var(--bg1)" /><stop offset="1" stopColor="var(--bg2)" /></linearGradient>
         <radialGradient id={id('center')}><stop offset="0" stopColor="var(--glow)" stopOpacity=".55" /><stop offset="1" stopColor="var(--glow)" stopOpacity="0" /></radialGradient>
