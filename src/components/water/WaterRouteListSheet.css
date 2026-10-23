@@ -1,0 +1,28 @@
+/* รายการจุดแบบแผ่น A4 แนวนอน (WaterRouteListSheet.jsx) — ทุกขนาดเป็น cqw ของความกว้างแผ่น: 100cqw = 257 มม. ตอนพิมพ์ (พื้นที่พิมพ์ตามขอบมาตรฐานของระบบ)
+   จึงเห็นบนจอสัดส่วนเดียวกับกระดาษ · เทียบกับกระดาษ: 1cqw = 2.57 มม. → 1.44cqw ≈ 10.4pt · 1.1cqw ≈ 7.9pt · 0.86cqw ≈ 6.2pt
+   สัดส่วนแผ่น 257 : 168 = พื้นที่พิมพ์ของกล่องหน้าสูง 208 มม. หักขอบบน 3 ซม./ล่าง 1 ซม. (LIST_SHEET_MM ใน listSheet.js ตรึงด้วยเทสต์) */
+
+.wl-sheet {
+  container-type: inline-size; display: flex; flex-direction: column; width: 100%; aspect-ratio: 257 / 168; overflow: hidden; box-sizing: border-box;
+  padding: 0.9cqw 1.1cqw 0.7cqw; background: #fff; color: #0f172a; border: 1px solid #cfe3f2; border-radius: 1.2cqw;
+  box-shadow: 0 10px 34px rgba(2, 40, 70, .18);
+}
+.wl-sheet * { box-sizing: border-box; }
+.wl-title { margin: 0 0 0.7cqw; font-size: 1.9cqw; font-weight: 800; line-height: 1.2; color: #0b2540; }
+.wl-cols { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 2.4cqw; align-items: start; }
+.wl-col { margin: 0; padding: 0.35cqw 0 0; list-style: none; border-top: 0.3cqw solid #0369a1; min-width: 0; }
+.wl-group { margin: 0.35cqw 0 0.1cqw; font-size: 1.36cqw; font-weight: 800; line-height: 1.25; color: #075985; }
+.wl-item { display: flex; gap: 0.8cqw; padding: 0.5cqw 0; border-bottom: 1px solid #dbe7f1; break-inside: avoid; }
+.wl-no { flex: none; display: grid; place-items: center; width: 2.1cqw; height: 2.1cqw; margin-top: 0.1cqw; border-radius: 50%; background: #0f172a; color: #fff; font-size: 1.15cqw; font-weight: 800; }
+.wl-body { min-width: 0; flex: 1 1 auto; }
+.wl-name { display: block; font-size: 1.44cqw; font-weight: 800; line-height: 1.22; color: #0f172a; }
+.wl-sub { display: block; margin-top: 0.1cqw; font-size: 1.1cqw; line-height: 1.28; color: #475569; }
+.wl-tags { display: flex; flex-wrap: wrap; gap: 0.4cqw; margin-top: 0.35cqw; }
+.wl-sheet .wd-tag { margin: 0; font-size: 1.02cqw; line-height: 1.3; padding: 0 0.7cqw; }
+/* ค่าสดจากสถานี: กล่องมุมมนสี่เหลี่ยม (ข้อความยาวหลายบรรทัดในแคปซูลดูเป็นก้อนรี) ขอบ/สีตามโทนเดิมของ wd-tag */
+.wl-sheet .wl-live { display: block; margin-top: 0.4cqw; padding: 0.25cqw 0.8cqw; border-radius: 0.6cqw; font-size: 1.02cqw; line-height: 1.3; }
+.wl-foot { margin: 0.5cqw 0 0; padding-top: 0.4cqw; border-top: 1px solid #dbe7f1; font-size: 0.86cqw; line-height: 1.3; color: #475569; }
+
+@media print {
+  .wl-sheet { border: 0; border-radius: 0; box-shadow: none; }
+}

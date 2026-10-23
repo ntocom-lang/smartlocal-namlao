@@ -61,8 +61,10 @@
 .wp-hint { margin: 0; padding: 8px 14px; font-size: 12px; color: #94a3b8; }
 /* flex: none = ให้ทั้งหน้าต่างเลื่อนเป็นก้อนเดียว (ไม่ให้เวทีกลายเป็นกล่องเลื่อนซ้อน) · ความกว้างพอดีให้เห็นทั้งภาพในจอเดียวเมื่อจอกว้างพอ */
 .wp-stage { flex: none; padding: 12px 14px 28px; overflow-x: auto; }
-.wp-sheet {
-  width: min(100%, calc((100vh - 150px) * 1.4146)); max-width: 1400px; min-width: 900px; margin: 0 auto; aspect-ratio: 1123 / 794; overflow: hidden;
-  border-radius: 14px; background: #fff; box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
-}
+/* 1 หน้า = ป้ายแผ่น + แผ่นกระดาษ · ความกว้างพอดีให้เห็นแผ่นโปสเตอร์ทั้งแผ่นในจอเดียว · แผ่นรายการใช้ความกว้างเดียวกัน */
+.wp-page { width: min(100%, calc((100vh - 150px) * 1.4146)); max-width: 1400px; min-width: 900px; margin: 0 auto 22px; }
+.wp-label { margin: 0 0 6px; font-size: 12px; font-weight: 700; color: #94a3b8; }
+.wp-sheet { width: 100%; aspect-ratio: 1123 / 794; overflow: hidden; border-radius: 14px; background: #fff; box-shadow: 0 20px 60px rgba(0, 0, 0, .5); }
+/* แผ่นรายการมีสัดส่วน/เงา/มุมของตัวเอง (.wl-sheet) */
+.wp-sheet[data-poster-sheet-list] { aspect-ratio: auto; overflow: visible; background: none; box-shadow: none; border-radius: 0; }
 .wp-sheet svg { display: block; width: 100%; height: 100%; }

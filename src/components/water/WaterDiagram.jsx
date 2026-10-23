@@ -11,6 +11,8 @@ import WaterRouteList from './WaterRouteList'
 
 // ภาพนำเสนอ A4 (โปสเตอร์) — ผังที่มี route.poster แสดงภาพนี้แทนภาพเกาะลอย · โหลดเฉพาะเมื่อผังนั้นถูกเปิด
 const WaterRoutePosterPanel = lazy(() => import('./WaterRoutePoster'))
+// รายการจุดแบบแผ่น A4 (จอ ≥ 1024px ของผังที่มี poster) — ใช้ร่วมกับหน้าต่างพิมพ์
+const WaterRouteListSheet = lazy(() => import('./WaterRouteListSheet'))
 
 const BLUE = '#4472c4'
 const DARK = '#1f3864'
@@ -358,6 +360,7 @@ function RouteView({ route, badges, diagram, tenantName, now }) {
   const hasPoster = Boolean(route.poster)
   const legend = ROUTE_LEGEND.filter(item => routeKinds(route).has(ROUTE_LEGEND_NEEDS[item.key]))
   const [tab, setTab] = useState('art')
+  const [wide, setWide] = useState(() => Boolean(window.matchMedia?.(WIDE_QUERY).matches))
   const uid = useId()
   const stopCount = route.stops.length + 1
   const ariaLabel = `${route.heading} ภาพประกอบ ${stopCount} จุด ไม่ตรงตำแหน่ง ทิศ และมาตราส่วนจริง ดูรายละเอียดทั้งหมดในรายการจุดที่มีหมายเลข`
@@ -366,7 +369,10 @@ function RouteView({ route, badges, diagram, tenantName, now }) {
   useEffect(() => {
     const query = window.matchMedia?.(WIDE_QUERY)
     if (!query) return undefined
-    const settle = () => { if (query.matches) setTab(current => (current === 'list' ? 'art' : current)) }
+    const settle = () => {
+      setWide(query.matches)
+      if (query.matches) setTab(current => (current === 'list' ? 'art' : current))
+    }
     query.addEventListener('change', settle)
     return () => query.removeEventListener('change', settle)
   }, [])
@@ -409,7 +415,7 @@ function RouteView({ route, badges, diagram, tenantName, now }) {
       <div data-route-view className={`wr-poster overflow-hidden rounded-3xl border border-sky-100 bg-gradient-to-b from-sky-50 to-white px-3 py-4 shadow-sm lg:px-7 lg:py-6 ${tab === 'source' ? 'hidden' : ''}`}>
         {/* จอใหญ่: รายการซ้าย ภาพขวา (เหมือนภาพอ้างอิงที่เจ้าของระบบส่งมา) · สัญลักษณ์/หมายเหตุเต็มแถวล่าง
             มือถือ: แท็บ "แผนภาพ" เรียงภาพ → สัญลักษณ์ → หมายเหตุ · แท็บ "รายการจุด" เห็นเฉพาะรายการ · ชื่อใหญ่อยู่ที่ RouteBanner บนสุดของส่วน */}
-        {/* ผังที่มีโปสเตอร์: ภาพนำเสนอเต็มความกว้างอยู่บน รายการจุดอยู่ล่าง (ภาพกว้างเกินกว่าจะวางเคียงรายการ) · คำอธิบายสัญลักษณ์อยู่ในภาพเอง */}
+        {/* ผังที่มีโปสเตอร์: ภาพนำเสนอเต็มความกว้างอยู่บน · จอกว้าง (≥ 1024px) รายการจุดอยู่ใต้ภาพเป็นแผ่น A4 3 คอลัมน์ตามสายน้ำ · มือถือ/แท็บเล็ตใช้รายการเดิมในแท็บ "รายการจุด" (แผ่น A4 แนวนอนบนจอแคบเล็กเกินอ่าน) · คำอธิบายสัญลักษณ์อยู่ในภาพเอง */}
         <div className={`grid gap-3 ${hasPoster ? '' : 'lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:items-start lg:gap-x-7'}`}>
           <div role="tabpanel" id={`${uid}-panel-art`} aria-labelledby={`${uid}-tab-art`} className={tab === 'art' ? 'contents' : 'hidden'}>
             {hasPoster ? (
@@ -427,7 +433,11 @@ function RouteView({ route, badges, diagram, tenantName, now }) {
           </div>
           <div role="tabpanel" id={`${uid}-panel-list`} aria-labelledby={`${uid}-tab-list`}
             className={`${tab === 'list' ? '' : 'hidden lg:block'} ${hasPoster ? '' : 'lg:col-start-1 lg:row-start-1'}`}>
-            <WaterRouteList route={route} badges={badges} wide={hasPoster} />
+            {hasPoster && wide ? (
+              <Suspense fallback={<WaterRouteList route={route} badges={badges} />}>
+                <WaterRouteListSheet route={route} diagram={diagram} badges={badges} now={now} />
+              </Suspense>
+            ) : <WaterRouteList route={route} badges={badges} />}
           </div>
         </div>
       </div>

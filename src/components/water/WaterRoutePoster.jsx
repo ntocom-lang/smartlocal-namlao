@@ -5,8 +5,9 @@ import './WaterRoutePoster.css'
 import { CHIP_TONES } from '../../lib/waterDiagram/model'
 import { pillFor, pillWidth, smoothPath } from '../../lib/waterDiagram/route'
 import {
-  POSTER_DISCLAIMER, POSTER_THEMES, posterIcon, posterLiveRows, posterOmittedNames, posterPrintCss, posterStats,
+  POSTER_DISCLAIMER, POSTER_THEMES, posterDateTime, posterIcon, posterLiveRows, posterOmittedNames, posterPrintCss, posterStats,
 } from '../../lib/waterDiagram/poster'
+import WaterRouteListSheet from './WaterRouteListSheet'
 import { GOV_FONT_SIZE_ADJUST, GOV_FONT_STACK } from '../../lib/govDocStyle'
 
 // โปสเตอร์ "ภาพนำเสนอ A4" ของแผนภาพเส้นทางน้ำ — ภาพประกอบอินโฟกราฟิกแนวนอนแผ่นเดียว ไว้ดูบนจอ/พิมพ์ไปนำเสนอ
@@ -142,10 +143,6 @@ function LivePill({ cx, cy, badge, slot }) {
     </g>
   )
 }
-
-const thaiDateTime = now => new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
-  dateStyle: 'long', timeStyle: 'short', timeZone: 'Asia/Bangkok',
-}).format(new Date(now))
 
 const CONTOURS = Array.from({ length: 9 }, (_, i) => {
   const y0 = 150 + i * 70
@@ -316,7 +313,7 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
       {/* ท้ายโปสเตอร์ — คำกำกับบังคับ · ที่มา · สิ่งที่ไม่ได้ใส่ */}
       <g data-poster-footer fontSize="10">
         <text x="48" y="767" className="wp-ink2"><tspan fontWeight="800">{POSTER_DISCLAIMER[0]}</tspan> · {POSTER_DISCLAIMER[1]} · {POSTER_DISCLAIMER[2]}</text>
-        <text x="48" y="778" className="wp-muted">ที่มา: ผังน้ำศูนย์บริหารจัดการทรัพยากรน้ำจังหวัดแพร่ ({diagram.drawnLabel}) วาดใหม่ · ยังไม่ผ่านการยืนยันโดย อบต. · ข้อมูลสด ณ {thaiDateTime(now)}</text>
+        <text x="48" y="778" className="wp-muted">ที่มา: ผังน้ำศูนย์บริหารจัดการทรัพยากรน้ำจังหวัดแพร่ ({diagram.drawnLabel}) วาดใหม่ · ยังไม่ผ่านการยืนยันโดย อบต. · ข้อมูลสด ณ {posterDateTime(now)}</text>
         <text x="48" y="789" className="wp-muted">ไม่ได้ใส่ในภาพนี้: {omitted.join(' · ')}</text>
       </g>
     </svg>
@@ -367,12 +364,21 @@ export function WaterRoutePosterDialog({ route, diagram, badges, now, onClose })
         <button ref={closeButton} type="button" className="wp-btn" onClick={onClose} aria-label="ปิดภาพนำเสนอ"><X size={16} aria-hidden="true" /> ปิด</button>
       </div>
       <p data-poster-hint className="wp-hint">
-        ในหน้าต่างพิมพ์เลือกกระดาษ A4 แนวนอน และตั้งระยะขอบเป็น "ไม่มี" · พิมพ์ธีมสว่างจะประหยัดหมึกกว่า · บนมือถือเลื่อนภาพไปทางซ้าย/ขวาได้
+        พิมพ์ 2 แผ่น: ภาพนำเสนอ + รายการจุด (เลือกพิมพ์เฉพาะแผ่นที่ต้องการได้ในช่อง "หน้า" ของหน้าต่างพิมพ์) · เลือกกระดาษ A4 แนวนอน และตั้งระยะขอบเป็น "ไม่มี" · พิมพ์ธีมสว่างจะประหยัดหมึกกว่า · บนมือถือเลื่อนภาพไปทางซ้าย/ขวาได้
       </p>
       <div data-poster-stage className="wp-stage">
-        <div data-poster-sheet className="wp-sheet">
-          <WaterRoutePoster route={route} diagram={diagram} badges={badges} now={now} theme={theme} />
-        </div>
+        <section data-poster-page className="wp-page" aria-label="แผ่นที่ 1 ภาพนำเสนอ">
+          <p data-poster-label className="wp-label">แผ่นที่ 1 · ภาพนำเสนอ</p>
+          <div data-poster-sheet className="wp-sheet">
+            <WaterRoutePoster route={route} diagram={diagram} badges={badges} now={now} theme={theme} />
+          </div>
+        </section>
+        <section data-poster-page className="wp-page" aria-label="แผ่นที่ 2 รายการจุด">
+          <p data-poster-label className="wp-label">แผ่นที่ 2 · รายการจุด (พิมพ์สีสว่างเสมอ)</p>
+          <div data-poster-sheet data-poster-sheet-list className="wp-sheet">
+            <WaterRouteListSheet route={route} diagram={diagram} badges={badges} now={now} />
+          </div>
+        </section>
       </div>
     </div>,
     document.body,
@@ -390,7 +396,7 @@ export default function WaterRoutePosterPanel({ route, diagram, badges, now }) {
   return (
     <div data-poster-panel className="min-w-0 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p id={labelId} className="m-0 px-1 text-sm font-bold text-sky-950">ภาพนำเสนอ · พิมพ์ลงกระดาษ A4 แนวนอนแผ่นเดียวได้</p>
+        <p id={labelId} className="m-0 px-1 text-sm font-bold text-sky-950">ภาพนำเสนอ · พิมพ์ลงกระดาษ A4 แนวนอนได้ (ภาพนำเสนอ 1 แผ่น + รายการจุด 1 แผ่น)</p>
         <button type="button" className={PANEL_BUTTON} onClick={() => setOpen(true)} data-poster-open>
           <Printer size={16} aria-hidden="true" /> พิมพ์ / บันทึก PDF
         </button>

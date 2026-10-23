@@ -96,6 +96,8 @@ const SCENES = {
   // น้ำเลา (?diagram=namlao): ไม่มีอ่างเล็ก · อ่างแม่คำปอง (dam 305) + ฝนบ้านบุญแจ่ม + ฝน RES040
   nlNormal: { dams: null, stations: [nlDam({}), nlRain('STN0911', 'บ้านบุญแจ่ม', 12.5, 2.6), nlRain('RES040', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 0, 2.9)] },
   nlOver: { dams: null, stations: [nlDam({ storage_percent: 100.4 }), nlRain('STN0911', 'บ้านบุญแจ่ม', 1, 2.6), nlRain('RES040', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 1, 2.9)] },
+  // ข้อความค่าสดยาวสุดที่ระบบสร้างได้ (เกิน 100% + ซ้ำเดิม 9 วัน + ชื่อสถานีฝนยาว) — ใช้ตรวจว่าแผ่นรายการ A4 ไม่ล้นในกรณีเลวร้ายสุด
+  nlLong: { dams: null, stations: [nlDam({ storage_percent: 100.4, dam_same_count: 9, dam_same_since: hoursAgo(24 * 8) }), nlRain('STN0911', 'บ้านบุญแจ่ม', 12.5, 2.6), nlRain('RES040', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 0, 2.9)] },
   nlSame: { dams: null, stations: [nlDam({ dam_same_count: 5, dam_same_since: hoursAgo(120) }), nlRain('STN0911', 'บ้านบุญแจ่ม', 1, 2.6), nlRain('RES040', 'x', 1, 2.9)] },
   nlStale: { dams: null, stations: [nlDam({ recorded_at: hoursAgo(60) }), nlRain('STN0911', 'บ้านบุญแจ่ม', 12.5, 2.6, 5), nlRain('RES040', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 3, 2.9, 5)] },
   nlNull: { dams: null, stations: [nlDam({ storage_percent: null }), nlRain('STN0911', 'บ้านบุญแจ่ม', null, 2.6), nlRain('RES040', 'x', null, 2.9)] },
@@ -748,10 +750,11 @@ try {
       assert.equal(await svg.locator('[data-poster-node]').count(), 21)
       assert.equal(await svg.locator('g[data-poster-node][data-status="planned"]').count(), 3, 'จุดแผนก่อสร้าง 3 จุด (ป้าย "แผน")')
       assert.equal(await routeList(page).locator('li[data-stop]').count(), 21)
-      // รายการจุดอยู่ใต้ภาพ (ภาพกว้างเกินกว่าจะวางเคียงรายการ)
+      // รายการจุดอยู่ใต้ภาพเป็นแผ่น A4 (รายละเอียดตรวจในเทสต์ "แผ่นรายการ A4" ด้านล่าง)
       const art = await svg.boundingBox()
       const listBox = await routeList(page).boundingBox()
       assert.ok(listBox.y >= art.y + art.height - 2, `รายการต้องอยู่ใต้ภาพ (ภาพล่าง ${Math.round(art.y + art.height)} · รายการบน ${Math.round(listBox.y)})`)
+      assert.equal(await routeList(page).getAttribute('data-list-sheet'), 'true', 'จอกว้างใช้แผ่นรายการ A4')
       const list = await routeList(page).innerText()
       for (const expected of ['อ่างเก็บน้ำแม่คำปอง ห่าง 3.6 กม.', '84.5% ของความจุที่ระดับเก็บกัก', '5.71/6.76 ล้าน ลบ.ม.', 'สถานีบ้านบุญแจ่ม ห่าง 2.6 กม.', 'สถานีอ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา ห่าง 2.9 กม.']) {
         assert.ok(list.includes(expected), `รายการต้องมี "${expected}"`)
@@ -873,6 +876,7 @@ try {
         assert.ok(!text.includes('เข็มทิศ'), 'หน้าไม่พูดถึงเข็มทิศ')
         assert.ok(text.includes('ไม่ใช่แผนที่') && text.includes('ตำแหน่ง ทิศ และมาตราส่วนไม่ตรงจริง'), 'คำกำกับบังคับต้องบอกว่าทิศไม่ตรงจริง')
         assert.equal(await section(page).locator('[data-poster-open]').count(), id === 'namlao' ? 1 : 0, 'ปุ่มภาพนำเสนอ A4 ขึ้นเฉพาะผังที่มีโปสเตอร์')
+        assert.equal(await section(page).locator('[data-list-sheet]').count(), id === 'namlao' ? 1 : 0, 'แผ่นรายการ A4 ขึ้นเฉพาะผังที่มีโปสเตอร์')
       } finally { await context.close() }
     })
   }
@@ -986,38 +990,167 @@ try {
     })
   }
 
-  // พิมพ์จริง: จำลองสื่อ print แล้วสั่ง PDF ตาม @page ที่หน้าฉีดไว้ → ต้อง 1 หน้า A4 แนวนอน ทั้งสองธีม
+  // ═══ แผ่นรายการจุด A4 (ใต้โปสเตอร์ จอ ≥ 1024px · แผ่นที่ 2 ของใบพิมพ์) — เจ้าของระบบสั่ง 2569-10-23 "ย่อให้เหลือเท่ากระดาษ A4 เหมือนกัน ขอเป็นระเบียบด้วย" ═══
+  // วัดว่าเนื้อหาทุกจุดอยู่ในแผ่นจริง (ไม่ถูกตัดด้วย overflow:hidden) และเหลือที่ว่างก่อนท้ายแผ่น — ข้อความค่าสดยาวสุด (nlLong) คือกรณีเลวร้ายสุดที่ระบบสร้างได้
+  const listSheetFit = locator => locator.evaluate(el => {
+    const box = el.getBoundingClientRect()
+    const foot = el.querySelector('[data-list-footer]').getBoundingClientRect()
+    const cols = [...el.querySelectorAll('[data-list-col]')]
+    const items = [...el.querySelectorAll('li[data-stop]')]
+    return {
+      w: box.width, h: box.height, cols: cols.length, items: items.length,
+      clipped: el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1,
+      itemsOutside: items.filter(li => { const b = li.getBoundingClientRect(); return b.bottom > foot.top + 0.5 || b.right > box.right + 0.5 }).map(li => li.getAttribute('data-stop')),
+      spare: Math.min(...cols.map(col => foot.top - col.getBoundingClientRect().bottom)),
+      colNumbers: cols.map(col => [...col.querySelectorAll('li[data-stop]')].map(li => Number(li.getAttribute('data-stop')))),
+    }
+  })
+  const SPARE_PX_MIN = 0.012 // เหลือที่ว่างอย่างน้อย 1.2% ของความสูงแผ่นระหว่างคอลัมน์ที่สูงสุดกับท้ายแผ่น (ข้อความค่าสดยาวขึ้นเล็กน้อยก็ยังไม่ล้น)
+
+  await check('แผ่นรายการ A4 น้ำเลา 1280px: อยู่ใต้โปสเตอร์ · สัดส่วน 257:168 เท่าพื้นที่พิมพ์ · 3 คอลัมน์ตามสาย (1–8 | 9–15 | 16–21) ไม่ฉีกกลุ่ม · ครบ 21 จุด ไม่ถูกตัด · มีคำกำกับบังคับ+ที่มา+เวลาข้อมูลท้ายแผ่น · ไม่มีรายการเดิมซ้ำ', async () => {
+    const { context, page, problems } = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao' })
+    try {
+      const sheet = section(page).locator('[data-list-sheet]')
+      await sheet.waitFor({ timeout: 10_000 })
+      assert.equal(await section(page).locator('[data-route-list]').count(), 1, 'มีรายการจุดชุดเดียวในหน้า (แผ่นรายการแทนรายการเดิม ไม่ใช่ซ้อนกัน)')
+      assert.equal(await section(page).locator('ol.wr-list').count(), 0, 'รายการเดิมต้องไม่ถูกวาดซ้ำบนจอกว้าง')
+      const fit = await listSheetFit(sheet)
+      assert.ok(Math.abs(fit.w / fit.h - 257 / 168) < 0.01, `สัดส่วนแผ่นต้อง 257:168 (ได้ ${(fit.w / fit.h).toFixed(3)})`)
+      assert.equal(fit.cols, 3); assert.equal(fit.items, 21)
+      assert.equal(fit.clipped, false, 'เนื้อหาล้นแผ่น (overflow:hidden ตัดทิ้ง)')
+      assert.deepEqual(fit.itemsOutside, [], 'จุดที่ตกนอกแผ่น/ทับท้ายแผ่น')
+      assert.ok(fit.spare >= fit.h * SPARE_PX_MIN, `ที่ว่างท้ายคอลัมน์ ${fit.spare.toFixed(1)}px น้อยเกินไป`)
+      const range = nums => [nums[0], nums[nums.length - 1]]
+      assert.deepEqual(fit.colNumbers.map(range), [[1, 8], [9, 15], [16, 21]], 'คอลัมน์ละสาย/กลุ่มสายที่ติดกัน')
+      for (const nums of fit.colNumbers) assert.deepEqual(nums, nums.map((_, i) => nums[0] + i), 'หมายเลขในคอลัมน์ต้องเรียงต่อเนื่อง')
+      // หัวข้อกลุ่มอยู่คอลัมน์เดียวกับจุดแรกของกลุ่ม · คอลัมน์ละอย่างน้อย 1 กลุ่ม
+      assert.deepEqual(await sheet.locator('[data-list-col]').evaluateAll(cols => cols.map(col => [...col.querySelectorAll('[data-group]')].length)), [1, 2, 3])
+      // ใต้โปสเตอร์ และอยู่ในแท็บเดียวกัน
+      const [art, box] = [await posterSvg(page).boundingBox(), await sheet.boundingBox()]
+      assert.ok(box.y >= art.y + art.height - 2, 'แผ่นรายการอยู่ใต้โปสเตอร์')
+      // ท้ายแผ่น: คำกำกับบังคับ + ที่มา + เวลาข้อมูลสด (แผ่นนี้พิมพ์แยกได้ และมีค่าวัดอยู่ในแผ่น)
+      const footer = await sheet.locator('[data-list-footer]').innerText()
+      for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'ไม่ใช่แผนที่', 'ที่มา', 'วาดใหม่', 'ยังไม่ผ่านการยืนยันโดย อบต.', 'ไม่ใช่ประกาศเตือนภัย', 'ข้อมูลสด ณ']) assert.ok(footer.includes(needed), `ท้ายแผ่นต้องมี "${needed}"`)
+      // ฟอนต์ราชการ + ขนาดตัวอักษรเป็นสัดส่วนของแผ่น (ไม่ตายตัวเป็น px)
+      const style = await sheet.evaluate(el => ({ family: getComputedStyle(el).fontFamily, adjust: getComputedStyle(el).fontSizeAdjust, container: getComputedStyle(el).containerType }))
+      assert.match(style.family, /THSarabunPSK/); assert.equal(style.adjust, '0.45'); assert.equal(style.container, 'inline-size')
+      await sheet.screenshot({ path: path.join(SHOT_DIR, 'nl-list-sheet-1280.png') })
+      assert.deepEqual(problems, [])
+    } finally { await context.close() }
+  })
+
+  for (const scene of ['nlNormal', 'nlOver', 'nlSame', 'nlStale', 'nlNull', 'nlEmpty', 'nlLong']) {
+    await check(`แผ่นรายการ A4 (${scene}) ที่ 1024/1280/1920px: ทุกจุดอยู่ในแผ่น ไม่ล้น เหลือที่ว่างท้ายคอลัมน์ · ค่าสดครบทุกจุดที่ผูกไว้ (ค้าง/ซ้ำเดิม/ไม่มีค่าก็บอกตรงๆ)`, async () => {
+      for (const width of [1024, 1280, 1920]) {
+        const { context, page } = await openScene(browser, baseUrl, scene, { diagram: 'namlao', width, height: 1000 })
+        try {
+          const sheet = section(page).locator('[data-list-sheet]')
+          await sheet.waitFor({ timeout: 10_000 })
+          const fit = await listSheetFit(sheet)
+          assert.equal(fit.clipped, false, `${scene}@${width}: เนื้อหาล้นแผ่น`)
+          assert.deepEqual(fit.itemsOutside, [], `${scene}@${width}: จุดที่ตกนอกแผ่น`)
+          assert.ok(fit.spare >= fit.h * SPARE_PX_MIN, `${scene}@${width}: ที่ว่างท้ายคอลัมน์ ${fit.spare.toFixed(1)}px (แผ่นสูง ${fit.h.toFixed(0)}px)`)
+          assert.deepEqual(await sheet.locator('[data-list-live]').evaluateAll(els => els.map(el => el.getAttribute('data-list-live')).sort()), ['dam-305', 'rain-RES040', 'rain-STN0911'], 'ช่องค่าสด 3 ช่องที่ผูกไว้ต้องอยู่ในแผ่นครบ')
+        } finally { await context.close() }
+      }
+    })
+  }
+
+  await check('แผ่นรายการ A4: ต้นฉบับเดียวกับรายการเดิม (ข้อความทุกจุดเหมือน WaterRouteList) · ผังที่ไม่มีโปสเตอร์ไม่มีแผ่น · ขอบเขต 1024px: ≥1024 ใช้แผ่น <1024 ใช้รายการเดิมในแท็บรายการจุด · ย่อ/ขยายจอสลับถูก', async () => {
+    // ผังที่ไม่มีโปสเตอร์ยังใช้รายการเดิมบนจอกว้าง
+    for (const [scene, id] of [['normal', 'thungkaew'], ['tkNormal', 'tamnaktham']]) {
+      const { context, page } = await openScene(browser, baseUrl, scene, { diagram: id === 'thungkaew' ? null : id })
+      try {
+        await routeList(page).waitFor({ timeout: 10_000 })
+        assert.equal(await section(page).locator('[data-list-sheet]').count(), 0, `${id}: ไม่มีแผ่นรายการ`)
+        assert.equal(await section(page).locator('ol.wr-list').count(), 1, `${id}: ใช้รายการเดิม`)
+      } finally { await context.close() }
+    }
+    const { context, page } = await openScene(browser, baseUrl, 'nlSame', { diagram: 'namlao', width: 1024, height: 900 })
+    try {
+      const sheet = section(page).locator('[data-list-sheet]')
+      await sheet.waitFor({ timeout: 10_000 })
+      // เนื้อหาเดียวกับรายการเดิม: เทียบข้อความของจุดทุกจุดกับรายการเดิม (ย่อจอแล้วอ่านจากแท็บรายการจุด)
+      const norm = text => text.replace(/\s+/g, ' ').trim()
+      const sheetTexts = await sheet.locator('li[data-stop]').evaluateAll(els => els.map(el => [el.getAttribute('data-stop'), el.innerText]))
+      await page.setViewportSize({ width: 1023, height: 900 })
+      await tabButton(page, /^รายการจุด/).waitFor({ timeout: 5000 })
+      assert.equal(await section(page).locator('[data-list-sheet]').count(), 0, '<1024px: ไม่ใช้แผ่นรายการ')
+      await tabButton(page, /^รายการจุด/).click()
+      await section(page).locator('ol.wr-list').waitFor({ timeout: 5000 })
+      const oldTexts = await section(page).locator('li[data-stop]').evaluateAll(els => els.map(el => [el.getAttribute('data-stop'), el.innerText]))
+      assert.equal(oldTexts.length, 21)
+      for (const [n, text] of oldTexts) {
+        const mine = sheetTexts.find(([m]) => m === n)
+        assert.ok(mine, `แผ่นขาดจุด ${n}`)
+        // ตัวเลขหมายเลข + ชื่อ + คำอธิบาย + แท็ก + ค่าสด ต้องเหมือนกัน (ลำดับ/ช่องว่างต่างได้เพราะจัดวางต่างกัน)
+        assert.deepEqual(norm(mine[1]).split(' ').sort(), norm(text).split(' ').sort(), `จุด ${n}: ข้อความในแผ่นต้องเท่ารายการเดิม`)
+      }
+      await page.setViewportSize({ width: 1280, height: 900 })
+      await tabButton(page, /^แผนภาพ/).waitFor({ timeout: 5000 })
+      await section(page).locator('[data-list-sheet]').waitFor({ timeout: 5000 })
+      assert.equal(await section(page).locator('ol.wr-list').count(), 0, 'ขยายจอแล้วรายการเดิมต้องหายไป ใช้แผ่นแทน')
+    } finally { await context.close() }
+  })
+
+  // พิมพ์จริง: จำลองสื่อ print แล้วสั่ง PDF ตาม @page ที่หน้าฉีดไว้ → ต้อง 2 หน้า A4 แนวนอน (แผ่น 1 ภาพนำเสนอ · แผ่น 2 รายการจุด) ทั้งสองธีม
+  // ใช้ฉาก nlLong (ข้อความค่าสดยาวสุด) เพื่อให้แผ่นรายการอยู่ในสภาพเลวร้ายสุด
   for (const theme of ['dark', 'light']) {
-    await check(`โปสเตอร์ A4 พิมพ์ (${theme}): PDF 1 หน้า A4 แนวนอน · ซ่อนหน้าเว็บ/ปุ่ม · ภาพอยู่ในพื้นที่พิมพ์ตามขอบมาตรฐาน (257 × 170 มม.)`, async () => {
-      const { context, page } = await openPoster('nlSame')
+    await check(`ใบพิมพ์ภาพนำเสนอ (${theme}): PDF 2 หน้า A4 แนวนอน · ซ่อนหน้าเว็บ/ปุ่ม/ป้ายแผ่น · แผ่น 1 โปสเตอร์ในพื้นที่พิมพ์ 257 × 170 มม. · แผ่น 2 รายการจุดเต็มพื้นที่พิมพ์ ไม่ล้น ตัวอักษรไม่เล็กกว่า 6pt`, async () => {
+      const { context, page } = await openPoster('nlLong')
       try {
         if (theme === 'light') await posterLook(page).getByRole('button', { name: /ธีมสว่าง/ }).click()
         await page.emulateMedia({ media: 'print' })
         const layout = await page.evaluate(() => {
           const mm = px => px * 25.4 / 96
-          const sheet = document.querySelector('[data-poster-sheet]').getBoundingClientRect()
-          const svg = document.querySelector('[data-poster-sheet] svg').getBoundingClientRect()
-          const root = document.getElementById('root')
-          const toolbar = document.querySelector('[data-poster-toolbar]')
+          const sheets = [...document.querySelectorAll('[data-poster-sheet]')]
+          const rect = el => el.getBoundingClientRect()
+          const sheet = rect(sheets[0])
+          const svg = rect(sheets[0].querySelector('svg'))
+          const list = sheets[1].querySelector('.wl-sheet')
+          const listBox = rect(list)
+          const listWrap = rect(sheets[1])
+          const foot = rect(list.querySelector('[data-list-footer]'))
+          const cols = [...list.querySelectorAll('[data-list-col]')]
+          const pt = el => parseFloat(getComputedStyle(el).fontSize) * 0.75
+          const smallest = Math.min(...[...list.querySelectorAll('li[data-stop] *, [data-list-footer], .wl-title')].filter(el => el.children.length === 0 || el.matches('[data-list-footer]')).map(pt))
+          const page1 = document.querySelector('[data-poster-page]')
           return {
-            rootDisplay: getComputedStyle(root).display, toolbarDisplay: getComputedStyle(toolbar).display,
-            sheetW: mm(sheet.width), sheetH: mm(sheet.height), svgW: mm(svg.width), svgH: mm(svg.height),
+            rootDisplay: getComputedStyle(document.getElementById('root')).display, toolbarDisplay: getComputedStyle(document.querySelector('[data-poster-toolbar]')).display,
+            labels: [...document.querySelectorAll('[data-poster-label]')].map(el => getComputedStyle(el).display),
+            sheetAbsLeft: mm(sheet.left), pageMargin: getComputedStyle(page1).margin,
+            sheets: sheets.length, sheetW: mm(sheet.width), sheetH: mm(sheet.height), svgW: mm(svg.width), svgH: mm(svg.height),
             left: mm(svg.left - sheet.left), top: mm(svg.top - sheet.top),
-            bodyScrollH: mm(document.documentElement.scrollHeight),
+            listSheetH: mm(listWrap.height), listW: mm(listBox.width), listH: mm(listBox.height), listLeft: mm(listBox.left - listWrap.left), listTop: mm(listBox.top - listWrap.top),
+            listClipped: list.scrollHeight > list.clientHeight + 1, listSpare: mm(Math.min(...cols.map(col => foot.top - rect(col).bottom))),
+            listOutside: [...list.querySelectorAll('li[data-stop]')].filter(li => rect(li).bottom > foot.top + 0.5).length,
+            namePt: pt(list.querySelector('.wl-name')), smallestPt: smallest,
           }
         })
         assert.equal(layout.rootDisplay, 'none', 'หน้าเว็บที่เหลือไม่ติดไปบนกระดาษ')
         assert.equal(layout.toolbarDisplay, 'none', 'ปุ่มไม่ติดไปบนกระดาษ')
+        assert.deepEqual(layout.labels, ['none', 'none'], 'ป้าย "แผ่นที่ N" ไม่ติดไปบนกระดาษ')
+        assert.ok(Math.abs(layout.sheetAbsLeft) < 0.6 && layout.pageMargin === '0px', `แผ่นต้องชิดขอบกระดาษซ้าย ไม่ถูกจัดกลางด้วยกรอบหน้าจอ (${layout.sheetAbsLeft.toFixed(1)} มม. margin ${layout.pageMargin})`)
+        assert.equal(layout.sheets, 2, 'ใบพิมพ์ 2 แผ่น')
         assert.ok(Math.abs(layout.sheetW - 297) < 0.6 && layout.sheetH <= 209.5, `กล่องหน้า ${layout.sheetW.toFixed(1)} × ${layout.sheetH.toFixed(1)} มม.`)
         assert.ok(Math.abs(layout.left - 20) < 0.8 && Math.abs(layout.top - 30) < 0.8, `ขอบแนวนอนของระบบ ซ้าย 2 ซม. บน 3 ซม. (ได้ ${layout.left.toFixed(1)} / ${layout.top.toFixed(1)} มม.)`)
         assert.ok(layout.svgW <= 257.6 && layout.svgH <= 170.6, `ภาพต้องอยู่ในพื้นที่พิมพ์ 257 × 170 มม. (ได้ ${layout.svgW.toFixed(1)} × ${layout.svgH.toFixed(1)})`)
         assert.ok(layout.svgW >= 200 && layout.svgH >= 160, 'ภาพต้องใหญ่เต็มพื้นที่ ไม่หดจนเล็ก')
+        // แผ่นรายการ: กล่องหน้า 208 มม. · เนื้อหาเต็มพื้นที่พิมพ์ 257 × 168 ที่ขอบ 2 ซม./3 ซม. · ไม่ถูกตัด · ตัวอักษรอ่านได้
+        assert.ok(layout.listSheetH <= 209.5, `กล่องหน้าแผ่นรายการ ${layout.listSheetH.toFixed(1)} มม.`)
+        assert.ok(Math.abs(layout.listW - 257) < 0.8 && Math.abs(layout.listH - 168) < 0.8, `แผ่นรายการ ${layout.listW.toFixed(1)} × ${layout.listH.toFixed(1)} มม. ต้องเท่าพื้นที่พิมพ์ 257 × 168`)
+        assert.ok(Math.abs(layout.listLeft - 20) < 0.8 && Math.abs(layout.listTop - 30) < 0.8, `ขอบแผ่นรายการ ซ้าย 2 ซม. บน 3 ซม. (ได้ ${layout.listLeft.toFixed(1)} / ${layout.listTop.toFixed(1)} มม.)`)
+        assert.equal(layout.listClipped, false, 'แผ่นรายการล้น (ถูกตัดทิ้งตอนพิมพ์)')
+        assert.equal(layout.listOutside, 0, 'มีจุดตกนอกแผ่น')
+        assert.ok(layout.listSpare >= 2, `ที่ว่างท้ายคอลัมน์ ${layout.listSpare.toFixed(1)} มม. น้อยเกินไป (ข้อความค่าสดยาวกว่านี้จะล้น)`)
+        assert.ok(layout.namePt >= 9.5, `ชื่อจุดบนกระดาษ ${layout.namePt.toFixed(1)}pt เล็กเกินไป`)
+        assert.ok(layout.smallestPt >= 6, `ตัวอักษรเล็กสุดบนกระดาษ ${layout.smallestPt.toFixed(1)}pt เล็กกว่า 6pt`)
         const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
         const text = pdf.toString('latin1')
         const pages = (text.match(/\/Type\s*\/Page(?![s\w])/g) ?? []).length
-        assert.equal(pages, 1, `ต้องจบ 1 แผ่น (ได้ ${pages})`)
-        const box = text.match(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/)
-        assert.ok(box && Math.abs(Number(box[1]) - 841.89) < 1.5 && Math.abs(Number(box[2]) - 595.28) < 1.5, `กระดาษต้องเป็น A4 แนวนอน (MediaBox ${box?.slice(1, 3)})`)
+        assert.equal(pages, 2, `ต้องจบ 2 แผ่น (ได้ ${pages})`)
+        const boxes = [...text.matchAll(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/g)]
+        assert.ok(boxes.length >= 1 && boxes.every(box => Math.abs(Number(box[1]) - 841.89) < 1.5 && Math.abs(Number(box[2]) - 595.28) < 1.5), `กระดาษทุกแผ่นต้องเป็น A4 แนวนอน (MediaBox ${boxes.map(b => `${b[1]}×${b[2]}`)})`)
       } finally { await context.close() }
     })
   }
