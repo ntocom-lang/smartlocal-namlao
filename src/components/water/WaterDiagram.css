@@ -27,13 +27,15 @@
 .wd-root.wd-paused .wr-fall,
 .wd-root.wd-paused .wr-wave,
 .wd-root.wd-paused .wr-shim,
+.wd-root.wd-paused .wp-flow,
 .wd-root[data-offscreen] .wd-flow,
 .wd-root[data-offscreen] .wd-shimmer,
 .wd-root[data-offscreen] .wd-bob,
 .wd-root[data-offscreen] .wr-flow,
 .wd-root[data-offscreen] .wr-fall,
 .wd-root[data-offscreen] .wr-wave,
-.wd-root[data-offscreen] .wr-shim { animation-play-state: paused; }
+.wd-root[data-offscreen] .wr-shim,
+.wd-root[data-offscreen] .wp-flow { animation-play-state: paused; }
 
 /* ผู้ใช้ตั้งค่าลดการเคลื่อนไหวที่ระบบปฏิบัติการ → ไม่วิ่งเลย (ดูทิศจากลูกศร) — กฎของหน้าเดิมครอบแค่ transition */
 @media (prefers-reduced-motion: reduce) {
@@ -82,3 +84,8 @@
 .wr-shim { animation: wr-shim 5s ease-in-out infinite alternate; }
 @keyframes wr-shim { from { opacity: 0.6; } to { opacity: 1; } }
 .wr-list .wd-tag { margin-left: 0; }
+/* ผังที่มีโปสเตอร์ (รายการอยู่ใต้ภาพเต็มกว้าง): จอกว้างวางสองคอลัมน์ หัวข้อกลุ่มคร่อมทั้งแถว */
+@media (min-width: 1024px) {
+  .wr-list--wide { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
+  .wr-list--wide > [data-group] { grid-column: 1 / -1; }
+}

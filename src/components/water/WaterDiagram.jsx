@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ExternalLink, Map as MapIcon, Pause, Play, ZoomIn, ZoomOut } from 'lucide-react'
 import './WaterDiagram.css'
 import { useReservoirReport } from './useReservoirReport'
@@ -8,6 +8,9 @@ import { CHIP_TONES, EDGE_STYLES, chipWidth, isAnimated, isShimmer, liveBadges, 
 import { routeKinds } from '../../lib/waterDiagram/route'
 import WaterRouteArt from './WaterRouteArt'
 import WaterRouteList from './WaterRouteList'
+
+// ภาพนำเสนอ A4 (โปสเตอร์) — ผังที่มี route.poster แสดงภาพนี้แทนภาพเกาะลอย · โหลดเฉพาะเมื่อผังนั้นถูกเปิด
+const WaterRoutePosterPanel = lazy(() => import('./WaterRoutePoster'))
 
 const BLUE = '#4472c4'
 const DARK = '#1f3864'
@@ -351,7 +354,8 @@ const WIDE_QUERY = '(min-width: 1024px)'
 // คำอธิบายสัญลักษณ์ข้อไหนต้องขึ้น = ผังนั้นมีสัญลักษณ์นั้นจริง (routeKinds) — ไม่โชว์ของที่ไม่มีในภาพ
 const ROUTE_LEGEND_NEEDS = { lake: 'lake', weir: 'weir', pond: 'pond', gate: 'gate', bridge: 'bridge', supply: 'supply', village: 'village', plan: 'planned', repair: 'repair', flow: 'flow', na: 'na' }
 
-function RouteView({ route, badges, diagram, tenantName }) {
+function RouteView({ route, badges, diagram, tenantName, now }) {
+  const hasPoster = Boolean(route.poster)
   const legend = ROUTE_LEGEND.filter(item => routeKinds(route).has(ROUTE_LEGEND_NEEDS[item.key]))
   const [tab, setTab] = useState('art')
   const uid = useId()
@@ -405,26 +409,25 @@ function RouteView({ route, badges, diagram, tenantName }) {
       <div data-route-view className={`wr-poster overflow-hidden rounded-3xl border border-sky-100 bg-gradient-to-b from-sky-50 to-white px-3 py-4 shadow-sm lg:px-7 lg:py-6 ${tab === 'source' ? 'hidden' : ''}`}>
         {/* จอใหญ่: รายการซ้าย ภาพขวา (เหมือนภาพอ้างอิงที่เจ้าของระบบส่งมา) · สัญลักษณ์/หมายเหตุเต็มแถวล่าง
             มือถือ: แท็บ "แผนภาพ" เรียงภาพ → สัญลักษณ์ → หมายเหตุ · แท็บ "รายการจุด" เห็นเฉพาะรายการ · ชื่อใหญ่อยู่ที่ RouteBanner บนสุดของส่วน */}
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:items-start lg:gap-x-7">
+        {/* ผังที่มีโปสเตอร์: ภาพนำเสนอเต็มความกว้างอยู่บน รายการจุดอยู่ล่าง (ภาพกว้างเกินกว่าจะวางเคียงรายการ) · คำอธิบายสัญลักษณ์อยู่ในภาพเอง */}
+        <div className={`grid gap-3 ${hasPoster ? '' : 'lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:items-start lg:gap-x-7'}`}>
           <div role="tabpanel" id={`${uid}-panel-art`} aria-labelledby={`${uid}-tab-art`} className={tab === 'art' ? 'contents' : 'hidden'}>
-            <div className="lg:col-start-2 lg:row-start-1 lg:max-w-[640px]"><WaterRouteArt route={route} badges={badges} ariaLabel={ariaLabel} /></div>
-            <ul className="wd-legend m-0 flex list-none flex-wrap gap-x-3.5 gap-y-1.5 px-0.5 text-xs text-slate-600 lg:col-span-2 lg:row-start-2" data-route-legend>
-              {legend.map(item => <li key={item.key} className="inline-flex items-center gap-1.5">{item.icon}{item.text}</li>)}
-            </ul>
-            <div className="flex items-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600 lg:col-span-2 lg:row-start-3" data-route-note>
-              <svg width="40" height="40" viewBox="0 0 44 44" aria-hidden="true" className="shrink-0">
-                <circle cx="22" cy="22" r="19" fill="#fff" stroke="#cbd5e1" strokeWidth="2" /><path d="M22 6L26 22L22 38L18 22Z" fill="#e2e8f0" />
-                <path d="M12 12L32 32M32 12L12 32" stroke="#dc2626" strokeWidth="3" strokeLinecap="round" />
-              </svg>
-              <p>
-                <b>ไม่มีเข็มทิศ</b> เพราะผังต้นฉบับไม่ระบุทิศ · เกาะและต้นไม้ในภาพเป็นภาพประกอบ ไม่ได้หมายถึงสิ่งก่อสร้างหรือพื้นที่จริง ·
-                ตำแหน่งฝายและห้วยแต่ละแห่งบนแผนที่ดูได้ที่ผังต้นฉบับ
-              </p>
-            </div>
+            {hasPoster ? (
+              <Suspense fallback={<div className="grid place-items-center rounded-2xl bg-slate-100 text-sm text-slate-500" style={{ aspectRatio: '1123 / 794' }} aria-busy="true">กำลังโหลดภาพนำเสนอ…</div>}>
+                <WaterRoutePosterPanel route={route} diagram={diagram} badges={badges} now={now} />
+              </Suspense>
+            ) : (
+              <>
+                <div className="lg:col-start-2 lg:row-start-1 lg:max-w-[640px]"><WaterRouteArt route={route} badges={badges} ariaLabel={ariaLabel} /></div>
+                <ul className="wd-legend m-0 flex list-none flex-wrap gap-x-3.5 gap-y-1.5 px-0.5 text-xs text-slate-600 lg:col-span-2 lg:row-start-2" data-route-legend>
+                  {legend.map(item => <li key={item.key} className="inline-flex items-center gap-1.5">{item.icon}{item.text}</li>)}
+                </ul>
+              </>
+            )}
           </div>
           <div role="tabpanel" id={`${uid}-panel-list`} aria-labelledby={`${uid}-tab-list`}
-            className={`${tab === 'list' ? '' : 'hidden lg:block'} lg:col-start-1 lg:row-start-1`}>
-            <WaterRouteList route={route} badges={badges} />
+            className={`${tab === 'list' ? '' : 'hidden lg:block'} ${hasPoster ? '' : 'lg:col-start-1 lg:row-start-1'}`}>
+            <WaterRouteList route={route} badges={badges} wide={hasPoster} />
           </div>
         </div>
       </div>
@@ -526,10 +529,10 @@ function DiagramBody({ diagram, scope, tenantName, stations, now }) {
       <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-slate-700" data-diagram-disclaimer>
         <b>ภาพประกอบทิศทางน้ำตามผัง ({diagram.drawnLabel})</b> ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง — ฝาย คลอง หนอง ไม่มีเครื่องวัด
         · โครงสร้างที่ผังระบุว่าชำรุดหรือแผนก่อสร้าง<b>จะไม่เคลื่อนไหว</b>
-        {route && <> · <b>ไม่ใช่แผนที่</b> ตำแหน่ง ทิศ และมาตราส่วนไม่ตรงจริง</>}
+        {route && <> · <b>ไม่ใช่แผนที่</b> ตำแหน่ง ทิศ และมาตราส่วนไม่ตรงจริง · เกาะและต้นไม้เป็นภาพประกอบ ไม่ได้หมายถึงสิ่งก่อสร้างหรือพื้นที่จริง</>}
       </p>
 
-      {route ? <RouteView route={route} badges={badges} diagram={diagram} tenantName={tenantName} /> : mode === 'map' ? <DiagramMap diagram={diagram} badges={badges} zoom={zoom} /> : <DiagramLanes diagram={diagram} badges={badges} />}
+      {route ? <RouteView route={route} badges={badges} diagram={diagram} tenantName={tenantName} now={now} /> : mode === 'map' ? <DiagramMap diagram={diagram} badges={badges} zoom={zoom} /> : <DiagramLanes diagram={diagram} badges={badges} />}
 
       {!route && mode === 'map' && (
         <ul className="wd-legend m-0 flex list-none flex-wrap gap-x-3.5 gap-y-1.5 px-0.5 text-xs text-slate-600">
@@ -538,6 +541,7 @@ function DiagramBody({ diagram, scope, tenantName, stations, now }) {
       )}
 
       {!route && <SourceBox diagram={diagram} tenantName={tenantName} />}
+
     </section>
   )
 }

@@ -14,6 +14,11 @@ import {
 } from '../src/lib/waterDiagram/route.js'
 import { DIAGRAMS, diagramById } from '../src/lib/waterDiagram/diagrams.js'
 import { THUNGKAEW_BINDS } from '../src/lib/waterDiagram/thungkaew.js'
+import { NAMLAO_ROUTE } from '../src/lib/waterDiagram/routes/namlao.js'
+import {
+  POSTER_DISCLAIMER, POSTER_PRINT_SIZE, POSTER_THEMES, posterIcon, posterIssues, posterLiveRows, posterOmittedNames, posterPrintCss, posterStats,
+} from '../src/lib/waterDiagram/poster.js'
+import { GOV_PAGE_MARGIN_LANDSCAPE, govPageCss } from '../src/lib/govDocStyle.js'
 import { ORIGINAL_DIAGRAM_FILES, ORIGINAL_FILE_BASE, originalDiagramUrl } from '../src/lib/waterDiagram/originalFiles.js'
 import { SYSTEMS, thaiDate } from '../src/lib/waterSystem/model.js'
 
@@ -689,7 +694,9 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     const css = read('src/components/water/WaterDiagram.css')
     const code = text => text.split('\n').filter(line => !line.trim().startsWith('//')).join('\n') // ตรวจเฉพาะโค้ด ไม่รวมคอมเมนต์ที่เขียนว่า "ไม่มีเข็มทิศ"
     assert.ok(!/compass|เข็มทิศ|เหนือ/i.test(code(art + list)), 'ภาพไม่วาดเข็มทิศ/ทิศเหนือ (ผังต้นฉบับไม่ระบุทิศ)')
-    assert.ok(view.includes('ไม่มีเข็มทิศ'), 'หน้าต้องบอกเหตุผลที่ไม่มีเข็มทิศ')
+    // เจ้าของระบบสั่ง 2569-10-22 "ไม่มีเข็มทิศก็ไม่ต้องแสดง" → ไม่มีกล่องหมายเหตุเข็มทิศ แต่คำกำกับบังคับยังบอกว่า "ไม่ใช่แผนที่ ตำแหน่ง ทิศ และมาตราส่วนไม่ตรงจริง"
+    assert.ok(!code(view).includes('ไม่มีเข็มทิศ') && !view.includes('data-route-note'), 'ห้ามแสดงกล่องหมายเหตุ "ไม่มีเข็มทิศ" (ถอดตามคำสั่งเจ้าของระบบ)')
+    assert.ok(view.includes('ไม่ใช่แผนที่') && view.includes('ตำแหน่ง ทิศ และมาตราส่วนไม่ตรงจริง'), 'คำกำกับบังคับต้องบอกว่าทิศไม่ตรงจริง')
     for (const hex of ['#003CFA', '#FFC000', '#00B050', '#FF0000', '#C70000']) assert.ok(!(art + list).toUpperCase().includes(hex.toUpperCase()), 'ห้ามลงสีระดับอ่างทางการบนแผนภาพ ' + hex + ' (ป้ายใช้โทนเดิมของผัง)')
     assert.match(art, /import \{ CHIP_TONES \} from '\.\.\/\.\.\/lib\/waterDiagram\/model'/, 'ป้ายใช้โทนเดียวกับผังเดิม')
     assert.ok(!/const CHIP_TONES/.test(view), 'CHIP_TONES อยู่ที่ model.js ที่เดียว')
@@ -710,7 +717,7 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     assert.ok(view.includes('const route = diagram.route ?? null'))
     assert.match(view, /\{!route && <span className="inline-flex overflow-hidden rounded-xl border border-slate-400" role="group" aria-label="โหมดแสดงผัง">/)
     assert.match(view, /\{!route && mode === 'map' && \(\s*<span className="inline-flex gap-2">/)
-    assert.ok(view.includes("{route ? <RouteView route={route} badges={badges} diagram={diagram} tenantName={tenantName} /> : mode === 'map' ?"))
+    assert.ok(view.includes("{route ? <RouteView route={route} badges={badges} diagram={diagram} tenantName={tenantName} now={now} /> : mode === 'map' ?"))
     // แท็บ: แผนภาพ · รายการจุด · ที่มา (หน้ามือถือยาวเกือบ 3,000px — เจ้าของระบบสั่งแบ่งแท็บ 2569-10-21)
     assert.match(view, /role="tablist"/)
     assert.equal((view.match(/role="tabpanel"/g) ?? []).length, 3, 'ต้องมี 3 แผง (แผนภาพ · รายการ · ที่มา)')
@@ -849,6 +856,123 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
   // hook ของอ่างเล็กใช้ร่วมกับการ์ด PR1 จากไฟล์เดียว ไม่ซ้ำ
   assert.match(read('src/components/water/SmallReservoirSection.jsx'), /import \{ useReservoirReport \} from '\.\/useReservoirReport'/)
   assert.match(jsx, /import \{ useReservoirReport \} from '\.\/useReservoirReport'/)
+}
+
+// ── โปสเตอร์ "ภาพนำเสนอ A4" (poster.js · routes/namlao.poster.js · WaterRoutePoster.jsx) ──
+{
+  const clone = () => structuredClone(NAMLAO_ROUTE)
+  assert.deepEqual(posterIssues(NAMLAO_ROUTE), [], 'ข้อมูลโปสเตอร์น้ำเลาต้องผ่านตัวตรวจ')
+  assert.deepEqual(posterIssues({ ...NAMLAO_ROUTE, poster: undefined }), ['route ไม่มี poster'])
+
+  // ตัวเลขบนหัวโปสเตอร์คำนวณจากผัง: 21 จุด (20 + แม่น้ำ) · 4 สายในผัง · 4 โครงสร้างแผนก่อสร้าง (อ่าง 1 + ฝาย 3 · จุดเดียวมีฝาย 2) · 3 ช่องค่าสด
+  assert.deepEqual(posterStats(NAMLAO_ROUTE), { points: 21, lanes: 4, planned: 4, gauges: 3 })
+
+  // สัญลักษณ์ตัดสินจาก props ไม่ใช่เลขจุด: แผนก่อสร้าง = ghost เสมอ · อ่างไม่มีข้อมูล = lake na
+  const icon = n => posterIcon(NAMLAO_ROUTE.stops.find(stop => stop.n === n))
+  assert.deepEqual([2, 5, 7].map(icon), Array(3).fill({ kind: 'plan' }))
+  assert.deepEqual(icon(1), { kind: 'creeks', n: 9 })
+  assert.deepEqual(icon(8), { kind: 'weir', n: 5 })
+  assert.deepEqual(icon(11), { kind: 'lake', na: true })
+  assert.deepEqual(icon(14), { kind: 'lake', na: true })
+  assert.deepEqual(icon(17), { kind: 'pond', n: 3 })
+  assert.deepEqual(icon(20), { kind: 'village' })
+
+  // ลำน้ำ: เส้นวิ่ง/หัวลูกศรต้องตรงกับผังทุกเส้น (ไม่เดาทิศ) · เส้นตกแต่งห้ามวิ่ง
+  {
+    const bad = clone(); bad.poster.streams.find(x => x.id === 'un').flow = true
+    assert.ok(posterIssues(bad).some(t => t.includes('ลำน้ำ un') && t.includes('flow ต้องตรงกับผัง')), 'ทำห้วยลูกศรนิ่งให้วิ่ง ต้องถูกจับ')
+    const bad2 = clone(); bad2.poster.streams.find(x => x.id === 'tao').flow = false
+    assert.ok(posterIssues(bad2).some(t => t.includes('ลำน้ำ tao')), 'ทำลำที่ผังวาดลูกศรให้นิ่ง ต้องถูกจับ')
+    const bad3 = clone(); bad3.poster.streams.find(x => x.id === 'tw0').flow = true
+    assert.ok(posterIssues(bad3).some(t => t.includes('เส้นตกแต่งห้ามวิ่ง')), 'เส้นตกแต่งวิ่งไม่ได้')
+    const bad4 = clone(); bad4.poster.streams = bad4.poster.streams.filter(x => x.id !== 'hin')
+    assert.ok(posterIssues(bad4).some(t => t.includes('ลำน้ำ hin ของผังไม่ปรากฏ')), 'ลำน้ำของผังหายจากโปสเตอร์ ต้องถูกจับ')
+    const bad5 = clone(); bad5.poster.streams.push({ id: 'ghostflow', pts: [[100, 100], [200, 200]], flow: true, w: 6 })
+    assert.ok(posterIssues(bad5).some(t => t.includes('ghostflow')), 'เส้นแต่งเองที่ไม่ใช่ deco ต้องถูกจับ')
+  }
+  // โนด/ช่องค่าสด/โซน/การ์ด
+  {
+    const bad = clone(); delete bad.poster.nodes[9]
+    assert.ok(posterIssues(bad).some(t => t.includes('จุด 9: ไม่มีตำแหน่ง')), 'จุดหาย')
+    const bad2 = clone(); delete bad2.poster.nodes[14].pill
+    assert.ok(posterIssues(bad2).some(t => t.includes('rain-RES040')), 'ช่องค่าสดที่ผังผูกไว้หายจากโปสเตอร์ ต้องถูกจับ')
+    const bad3 = clone(); bad3.poster.nodes[4].pill = { slot: 'rain-RES040', x: 10, y: 10 }
+    assert.ok(posterIssues(bad3).length > 0, 'ช่องค่าสดไปอยู่ผิดจุด ต้องถูกจับ')
+    const bad4 = clone(); delete bad4.poster.nodes[5].stem
+    assert.ok(posterIssues(bad4).some(t => t.includes('จุด 5') && t.includes('stem')), 'แผนก่อสร้างต้องมี stem')
+    const bad5 = clone(); bad5.poster.zones[0].group = 'สายที่ 9 · ที่ไม่มีในผัง'
+    assert.ok(posterIssues(bad5).some(t => t.includes('group ไม่ตรง')), 'โซนต้องตรงกับสายในผัง')
+    const bad6 = clone(); bad6.poster.callouts[0].lines[0].names.push('ห้วยที่ไม่มีในผัง')
+    assert.ok(posterIssues(bad6).some(t => t.includes('ห้วยที่ไม่มีในผัง')), 'ห้ามเขียนชื่อห้วยที่ผังไม่มี')
+    const bad7 = clone(); bad7.poster.nodes[3].x = 5000
+    assert.ok(posterIssues(bad7).some(t => t.includes('นอกกรอบ')), 'โนดนอกกรอบ')
+  }
+
+  // การ์ดค่าวัดล่าสุด: ข้อความจาก badge เท่านั้น · ค้าง/ไม่มีค่าบอกตรงๆ · หมายเหตุซ้ำกับค่าไม่พิมพ์สองรอบ
+  {
+    const badges = {
+      'dam-305': { tone: 'warn', short: '100%', note: 'ตัวเลขซ้ำเดิม', text: 'x', detail: 'x' },
+      'rain-RES040': { tone: 'stale', short: 'ฝน', note: 'ไม่มีค่าใหม่', text: 'x', detail: 'x' },
+      'rain-STN0911': { tone: 'ok', short: 'ฝน 12.5 มม.', text: 'x', detail: 'x' },
+    }
+    const rows = posterLiveRows(NAMLAO_ROUTE, badges)
+    assert.deepEqual(rows.map(r => r.slot), ['dam-305', 'rain-RES040', 'rain-STN0911'])
+    assert.equal(rows[0].value, '100%'); assert.equal(rows[0].note, 'ตัวเลขซ้ำเดิม')
+    assert.equal(rows[1].value, 'ไม่มีค่าใหม่'); assert.equal(rows[1].note, null, 'ค้าง: หมายเหตุซ้ำกับค่า ไม่พิมพ์ซ้ำ')
+    assert.equal(rows[2].value, 'ฝน 12.5 มม.')
+    assert.deepEqual(posterLiveRows(NAMLAO_ROUTE, {}), [], 'ไม่มี badge = ไม่มีแถว (ไม่เดาเป็น 0)')
+  }
+  assert.deepEqual(posterOmittedNames({ omitted: ['ชื่อ ก — เหตุผลยาว', 'ชื่อ ข'] }), ['ชื่อ ก', 'ชื่อ ข'])
+
+  // ข้อความบังคับบนโปสเตอร์ + ไม่มีเข็มทิศ
+  assert.equal(POSTER_DISCLAIMER.length, 3)
+  for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'ไม่ใช่แผนที่', 'ทิศ']) assert.ok(POSTER_DISCLAIMER.join(' ').includes(needed), `ข้อความบังคับขาด "${needed}"`)
+  assert.deepEqual(POSTER_THEMES, ['dark', 'light'])
+
+  // หน้าพิมพ์ใช้ตัวกลาง govDocStyle: A4 แนวนอน · ขอบแนวนอนของระบบ · ซ่อนหัวท้ายกระดาษด้วย padding · แผ่นเดียว
+  {
+    const css = posterPrintCss()
+    assert.equal(POSTER_PRINT_SIZE, 'A4 landscape')
+    assert.ok(css.includes(govPageCss({ size: POSTER_PRINT_SIZE, hideBrowserHeader: true })), 'ต้องใช้ govPageCss ตัวกลาง ไม่เขียน @page เอง')
+    assert.ok(css.includes(GOV_PAGE_MARGIN_LANDSCAPE), 'ขอบกระดาษต้องเป็นค่าแนวนอนของระบบ')
+    assert.match(css, /html, body \{ background: #fff !important/, 'พื้นหลังหน้าเว็บ (สีธีม อปท.) ต้องไม่ติดไปเป็นแถบสีท้ายกระดาษเมื่อเปิดพิมพ์พื้นหลัง')
+    assert.match(css, /@media print/); assert.match(css, /body > \*:not\(\[data-poster-overlay\]\) \{ display: none/, 'พิมพ์เฉพาะโปสเตอร์ ซ่อนหน้าเว็บที่เหลือ')
+    assert.match(css, /\[data-poster-toolbar\][^}]*display: none/, 'ปุ่มไม่ติดไปบนกระดาษ')
+    assert.match(css, /height: 208mm/, 'กล่องหน้าต้องเตี้ยกว่า 210mm เล็กน้อย ไม่ล้นเป็นแผ่นที่สอง')
+    assert.ok(!/@page[^}]*margin: (?!0)/.test(css), 'margin ของ @page ต้องเป็น 0 (ขอบย้ายไปเป็น padding)')
+  }
+
+  // ซอร์ส: ไม่เข็มทิศ · ไม่สุ่ม/ไม่ผูกเวลาเครื่อง · ฟอนต์ราชการจากตัวกลาง · หัวลูกศรขนาดคงที่ · ปุ่มขึ้นเฉพาะผังที่มี poster · โหลดแบบ lazy
+  {
+    const poster = read('src/components/water/WaterRoutePoster.jsx')
+    const posterLib = read('src/lib/waterDiagram/poster.js')
+    const view = read('src/components/water/WaterDiagram.jsx')
+    const code = text => text.split('\n').filter(line => !line.trim().startsWith('//')).join('\n')
+    assert.ok(!/compass|เข็มทิศ|ทิศเหนือ/i.test(code(poster + posterLib)), 'โปสเตอร์ไม่วาดเข็มทิศ/ทิศเหนือ')
+    assert.ok(!/Math\.random|Date\.now/.test(poster + posterLib), 'โปสเตอร์ไม่สุ่ม ไม่อ่านเวลาเครื่องเอง (เวลาข้อมูลมาจาก now ที่หน้าส่งมา)')
+    assert.match(poster, /GOV_FONT_STACK/); assert.match(poster, /fontSizeAdjust: String\(GOV_FONT_SIZE_ADJUST\)/, 'font-size-adjust ต้องเป็นสตริง (เลขเปล่า React เขียนเป็น 0.45px แล้วเบราว์เซอร์ทิ้ง)')
+    assert.ok(!/font-family:/.test(posterLib.replace(/\/\/.*$/gm, '')), 'ห้ามเขียน font-family ซ้ำใน CSS หน้าพิมพ์ (ใช้ตัวกลาง)')
+    assert.match(poster, /markerUnits="userSpaceOnUse"/, 'หัวลูกศรต้องไม่ขยายตามความหนาเส้น')
+    assert.match(poster, /markerEnd=\{stream\.flow \? u\('arrow'\) : undefined\}/, 'หัวลูกศรเฉพาะเส้น flow')
+    assert.ok(!/id="wpg-|url\(#wpg-/.test(poster), 'id/url ของ defs ต้องผูกกับ useId ของภาพใบนั้น — ภาพอยู่ในหน้า 1 ใบ + ในหน้าต่างพิมพ์ 1 ใบพร้อมกันได้ id ห้ามซ้ำ')
+    assert.match(poster, /const uid = useId\(\)\.replace\(\/:\/g, ''\)/, 'ภาพต้องมี uid ของตัวเอง')
+    assert.match(poster, /className=\{stream\.flow \? 'wp-flow' : undefined\}/, 'ลายวิ่งเฉพาะเส้น flow')
+    assert.match(read('src/components/water/WaterRoutePoster.css'), /@media \(prefers-reduced-motion: reduce\), print/, 'ลายวิ่งหยุดเมื่อลดการเคลื่อนไหวและตอนพิมพ์')
+    // น้ำเลา: ภาพนำเสนอแทนภาพเกาะลอยในหน้าเลย (เจ้าของระบบสั่ง 2569-10-23) — ผังที่ไม่มี route.poster ยังใช้ภาพเกาะลอยเดิม
+    assert.match(view, /const WaterRoutePosterPanel = lazy\(\(\) => import\('\.\/WaterRoutePoster'\)\)/, 'ภาพนำเสนอโหลดแบบ lazy (เฉพาะผังที่มี poster)')
+    assert.ok(view.includes('const hasPoster = Boolean(route.poster)'), 'ใช้ภาพนำเสนอเฉพาะผังที่มี route.poster')
+    assert.match(view, /\{hasPoster \? \(\s*<Suspense fallback=\{[\s\S]*?\}>\s*<WaterRoutePosterPanel route=\{route\} diagram=\{diagram\} badges=\{badges\} now=\{now\} \/>\s*<\/Suspense>\s*\) : \(\s*<>\s*<div[^>]*><WaterRouteArt /, 'ผังที่มี poster แสดงภาพนำเสนอแทน WaterRouteArt · ผังอื่นยังใช้ภาพเกาะลอย')
+    assert.ok(!/setPosterOpen|posterOpen|Presentation/.test(view), 'ปุ่มเปิดภาพนำเสนอย้ายเข้าไปอยู่เหนือภาพ (ในคอมโพเนนต์ภาพ) ไม่ใช่แถวปุ่มบนสุดของส่วนอีกแล้ว')
+    assert.ok(view.includes('wide={hasPoster}'), 'รายการจุดใต้ภาพนำเสนอจัดสองคอลัมน์')
+    assert.match(poster, /export default function WaterRoutePosterPanel\(/, 'ส่งออก default เป็นภาพในหน้า (WaterDiagram โหลดจุดเดียว)')
+    assert.match(poster, /\{open && <WaterRoutePosterDialog /, 'หน้าต่างพิมพ์เปิดเฉพาะเมื่อกดปุ่ม')
+    assert.match(poster, /<button type="button"[\s\S]*?data-poster-open>/, 'ปุ่มพิมพ์/บันทึก PDF อยู่เหนือภาพ')
+    assert.match(poster, /role="region"[^>]*tabIndex=\{0\}/, 'กรอบภาพที่เลื่อนแนวนอนได้ต้องโฟกัสด้วยคีย์บอร์ดได้')
+    const diagramCss = read('src/components/water/WaterDiagram.css')
+    assert.ok(diagramCss.includes('.wd-root.wd-paused .wp-flow') && diagramCss.includes('.wd-root[data-offscreen] .wp-flow'), 'ปุ่มหยุดเคลื่อนไหวและตัวหยุดตอนนอกจอต้องหยุดลายวิ่งของภาพนำเสนอด้วย')
+    assert.ok(!read('src/lib/waterDiagram/routes/tamnaktham.js').includes('poster:') && !read('src/lib/waterDiagram/routes/thungkaew.js').includes('poster:'), 'ตำหนักธรรม/ทุ่งแค้วยังไม่มีโปสเตอร์ (ทำเฉพาะน้ำเลาก่อน)')
+    assert.match(read('src/lib/waterDiagram/routes/namlao.js'), /poster: NAMLAO_POSTER,/)
+  }
 }
 
 console.log('✅ water-diagram: ผ่านทุกข้อ')

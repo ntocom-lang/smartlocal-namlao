@@ -1,0 +1,68 @@
+/* โปสเตอร์ "ภาพนำเสนอ A4" ของแผนภาพเส้นทางน้ำ (WaterRoutePoster.jsx) — สีรายธีมเป็นตัวแปร CSS บน svg · กฎหน้าพิมพ์ฉีดตอนเปิดหน้าต่างเท่านั้น (posterPrintCss) */
+
+.wp-poster[data-theme='dark'] {
+  --bg0: #020d1a; --bg1: #06223c; --bg2: #0a4467; --ink: #f8fafc; --ink2: #cbd5e1; --muted: #94a3b8; --halo: #031525;
+  --glass: rgba(255, 255, 255, .085); --glassStroke: rgba(255, 255, 255, .26); --tile: rgba(255, 255, 255, .1);
+  --w1: #67e8f9; --w2: #0ea5e9; --w3: #0369a1; --glow: rgba(34, 211, 238, .6);
+  --plan: #fb7185; --na: #94a3b8; --a2: #5eead4; --a3: #a5b4fc; --a4: #fcd34d;
+  --node: rgba(8, 28, 48, .82); --ring: rgba(255, 255, 255, .75); --contour: rgba(125, 211, 252, .075);
+  --riv1: #0e7490; --riv2: #075985;
+}
+.wp-poster[data-theme='light'] {
+  --bg0: #ffffff; --bg1: #eaf6ff; --bg2: #cfeaff; --ink: #0b1b2e; --ink2: #334155; --muted: #64748b; --halo: #ffffff;
+  --glass: rgba(255, 255, 255, .7); --glassStroke: rgba(2, 132, 199, .28); --tile: rgba(255, 255, 255, .85);
+  --w1: #38bdf8; --w2: #0284c7; --w3: #075985; --glow: rgba(2, 132, 199, .28);
+  --plan: #dc2626; --na: #94a3b8; --a2: #0f766e; --a3: #4338ca; --a4: #b45309;
+  --node: #ffffff; --ring: #38bdf8; --contour: rgba(2, 132, 199, .09);
+  --riv1: #38bdf8; --riv2: #0284c7;
+}
+
+.wp-poster { display: block; }
+.wp-poster .wp-ink { fill: var(--ink); }
+.wp-poster .wp-ink2 { fill: var(--ink2); }
+.wp-poster .wp-muted { fill: var(--muted); }
+.wp-poster .wp-lbl { fill: var(--ink); paint-order: stroke; stroke: var(--halo); stroke-width: 4; stroke-linejoin: round; }
+.wp-poster .wp-glass { fill: var(--glass); stroke: var(--glassStroke); stroke-width: 1.2; }
+.wp-poster .wp-tile { fill: var(--tile); stroke: var(--glassStroke); }
+.wp-poster .wp-node { fill: var(--node); }
+.wp-poster .wp-chip { fill: var(--node); stroke: var(--glassStroke); }
+
+/* ลายสว่างวิ่งบนเส้นที่ผังวาดลูกศร (เฉพาะ flow) — หยุดเมื่อผู้ใช้ลดการเคลื่อนไหว และตอนพิมพ์ */
+.wp-poster .wp-flow { animation: wp-dash 1.6s linear infinite; }
+@keyframes wp-dash { to { stroke-dashoffset: -30; } }
+@media (prefers-reduced-motion: reduce), print { .wp-poster .wp-flow { animation: none; } }
+
+/* ภาพที่วางในหน้า (WaterRoutePosterPanel) — มือถือกว้างขั้นต่ำ 900px แล้วเลื่อนแนวนอนในกรอบ ไม่ย่อจนตัวอักษรอ่านไม่ออก */
+.wp-inline { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 18px; box-shadow: 0 10px 34px rgba(2, 40, 70, .28); }
+.wp-inline:focus-visible { outline: 3px solid #0284c7; outline-offset: 3px; }
+.wp-inline-sheet { min-width: 900px; aspect-ratio: 1123 / 794; }
+.wp-inline-sheet svg { display: block; width: 100%; height: 100%; }
+
+/* หน้าต่างแสดงโปสเตอร์ */
+.wp-overlay {
+  position: fixed; inset: 0; z-index: 2000; display: flex; flex-direction: column; overflow: auto; overscroll-behavior: contain;
+  background: rgba(2, 8, 20, .93); color: #e2e8f0;
+}
+.wp-toolbar {
+  position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px;
+  background: rgba(2, 8, 20, .97); border-bottom: 1px solid rgba(255, 255, 255, .14);
+}
+.wp-title { margin: 0 auto 0 0; font-size: 15px; font-weight: 800; }
+.wp-group { display: inline-flex; overflow: hidden; border: 1px solid rgba(255, 255, 255, .35); border-radius: 12px; }
+.wp-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 1px solid rgba(255, 255, 255, .35);
+  border-radius: 12px; background: transparent; color: #fff; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.wp-btn:hover { background: rgba(255, 255, 255, .1); }
+.wp-btn:focus-visible { outline: 3px solid #38bdf8; outline-offset: 2px; }
+.wp-seg { border: 0; border-radius: 0; }
+.wp-seg[aria-pressed='true'] { background: #0369a1; }
+.wp-primary { background: #0284c7; border-color: #38bdf8; }
+.wp-hint { margin: 0; padding: 8px 14px; font-size: 12px; color: #94a3b8; }
+/* flex: none = ให้ทั้งหน้าต่างเลื่อนเป็นก้อนเดียว (ไม่ให้เวทีกลายเป็นกล่องเลื่อนซ้อน) · ความกว้างพอดีให้เห็นทั้งภาพในจอเดียวเมื่อจอกว้างพอ */
+.wp-stage { flex: none; padding: 12px 14px 28px; overflow-x: auto; }
+.wp-sheet {
+  width: min(100%, calc((100vh - 150px) * 1.4146)); max-width: 1400px; min-width: 900px; margin: 0 auto; aspect-ratio: 1123 / 794; overflow: hidden;
+  border-radius: 14px; background: #fff; box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+}
+.wp-sheet svg { display: block; width: 100%; height: 100%; }
