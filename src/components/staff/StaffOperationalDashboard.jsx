@@ -1,15 +1,18 @@
+import { useState } from 'react'
 import {
   ChevronRight, Plus, LayoutGrid, HeartHandshake, Megaphone, Layers, BookOpen,
   Building2, Banknote, Hammer, GraduationCap, ShieldCheck, CheckCircle2, Loader2, TriangleAlert, Zap,
   CircleAlert, Clock, CalendarClock, Users,
 } from 'lucide-react'
 import { activeOrgTerms } from '../../lib/orgTerms'
+import { esignPendingFromRpc } from '../../lib/esign'
 import { PATIENT_TRANSPORT_MODULE_KEY } from '../../lib/patientTransport'
 import { pickShortcuts, readUsage, safeLocalStorage } from '../../lib/staffHomeFrequent'
 import { useHomeRpc } from '../../lib/staffHomeData'
 import { bucketComplaintDue, groupMyEvents, normalizeWorkload, todoState } from '../../lib/staffHomeSummary'
 import { todoCount as waterAnnouncementTodoCount } from '../../lib/waterAnnouncements'
 import { MenuGroup } from '../common/MenuTileGrid'
+import MyPendingSignatures from '../esign/MyPendingSignatures'
 
 // ไอคอนหัวกลุ่มของหน้าเมนูแบบไอคอน — ผูกตามชื่อกลุ่มใน STANDALONE_GROUPS/MODULE_GROUPS (StaffDashboard.jsx)
 // ถ้าเปลี่ยนชื่อกลุ่มแล้วลืมมาแก้ที่นี่ แค่ได้ไอคอนกลางๆ (LayoutGrid) ไม่มีอะไรพัง
@@ -256,19 +259,29 @@ export default function StaffOperationalDashboard({
   const waterTodo = useHomeRpc({ rpc: 'water_announcement_todo', tenantId, profileId, enabled: Boolean(waterItem) })
   const waterPending = waterTodo.status === 'ok' && waterAnnouncementTodoCount(waterTodo.data) > 0
 
+  // ใบขอใช้รถที่ถึงคิว "ฉัน" ลงนามออนไลน์ (ชุด S3b) — ดึงให้เจ้าหน้าที่ทุกคน ไม่ผูกกับเมนูยานพาหนะ:
+  // ผู้มีอำนาจสั่งใช้รถ (นายก/ปลัด) อาจไม่มีสิทธิ์ยานพาหนะเต็ม เปิดทริปจากรายการไม่ได้ จึงต้องลงนามจากตรงนี้
+  // อปท. ที่ไม่ได้เปิดโหมดออนไลน์ได้ผล count 0 (ฟังก์ชันไม่แตะทริปที่ไม่มีช่องออนไลน์) · ดึงพลาดต้องไม่ขึ้นไฟเขียว เพราะอาจมีใบรอคุณอยู่
+  const esignRpc = useHomeRpc({ rpc: 'esign_my_pending', args: {}, tenantId, profileId, enabled: Boolean(profileId) })
+  const esignPending = esignPendingFromRpc(esignRpc)
+  // ลงนามใบสุดท้ายเสร็จแล้วรายการว่าง ส่วน "ต้องทำตอนนี้" จะหายทั้งก้อน — เก็บไว้จนกว่าจะออกจากหน้านี้ เพื่อให้ข้อความ "ลงนามแล้ว" ยังอยู่
+  const [esignTouched, setEsignTouched] = useState(false)
+
   // ภาระงานของกอง — เฉพาะหัวหน้ากอง (RPC ปฏิเสธบทบาทอื่นอยู่แล้ว ที่นี่แค่ไม่ยิงโดยไม่จำเป็น)
   const isDeptHead = profile?.role === 'officer' && Boolean(profile?.department_id) && Boolean(complaintsItem)
   const dept = useHomeRpc({ rpc: 'staff_dept_workload', tenantId, profileId, enabled: isDeptHead })
 
   const state = todoState({
-    badgeStatuses: [...workCards.map(card => card.status), waterTodo.status === 'loading' ? 'loading' : null],
-    badgeCounts: [...workCards.map(card => card.count), waterPending ? 1 : 0],
+    badgeStatuses: [...workCards.map(card => card.status), waterTodo.status === 'loading' ? 'loading' : null, ['loading', 'error'].includes(esignPending.status) ? esignPending.status : null],
+    badgeCounts: [...workCards.map(card => card.count), waterPending ? 1 : 0, esignPending.items.length],
     summaryStatus: summary.status === 'idle' ? null : summary.status,
     due,
   })
-  const hasTodo = workCards.length > 0 || summary.status !== 'idle' || waterPending
+  // ใบรอลงนามเปิดส่วนนี้เฉพาะเมื่อมีใบรอหรือดึงพลาด — คนที่ไม่เกี่ยวกับการลงนามไม่ต้องเห็นส่วน "ต้องทำตอนนี้" ว่างๆ เพิ่มขึ้นมา
+  const esignShown = esignPending.items.length > 0 || esignPending.status === 'error' || esignTouched
+  const hasTodo = workCards.length > 0 || summary.status !== 'idle' || waterPending || esignShown
   const hasAttention = due.overdue > 0 || due.soon > 0
-  const nothingShownYet = pendingCards.length === 0 && failedCards.length === 0 && !hasAttention && !waterPending
+  const nothingShownYet = pendingCards.length === 0 && failedCards.length === 0 && !hasAttention && !waterPending && !esignShown
 
   // ── ใช้บ่อย ── อ่านตอน mount (ออกจากหน้าแรกแล้วกลับมา component ถูกสร้างใหม่ จึงได้ลำดับล่าสุดเสมอ)
   // ไม่ใช้ useMemo: อ่าน localStorage ก้อนเล็กๆ + เรียงไม่เกิน 40 รายการ ถูกกว่าที่จะคอยดูแล dependency
@@ -320,6 +333,8 @@ export default function StaffOperationalDashboard({
                     <AttentionRow tone="amber" Icon={Clock} testId="soon" count={due.soon} onOpen={() => open(complaintsItem)}
                       text="คำร้องของคุณที่ใกล้ครบกำหนด" hint="ครบกำหนดภายใน 1 วันทำการ" />
                   )}
+                  <MyPendingSignatures variant="home" status={esignPending.status} items={esignPending.items} limit={5}
+                    moreHint="ที่เหลือดูได้ที่ ยานพาหนะและเชื้อเพลิง › การใช้รถ" onSigned={() => { setEsignTouched(true); esignRpc.reload() }} onRetry={esignRpc.reload} />
                   {waterPending && (
                     <WorkRow item={{ ...waterItem, label: 'ประกาศน้ำ-ฝนรอคุณยืนยัน' }} count={1} hint="ร่างประกาศรอคุณตัดสิน · ยืนยันได้ภายใน 3 ชั่วโมง" onOpen={() => open(waterItem)} />
                   )}

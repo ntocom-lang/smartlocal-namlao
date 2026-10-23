@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, Clock, FileSignature, Loader2, Lock, PenLine, ShieldAlert, Undo2 } from 'lucide-react'
 import { Chip, Notice } from './EsignBits'
 import SignTripDialog from './SignTripDialog'
-import { ESIGN_DECISION_LABEL, ESIGN_DRIVER_NOTE, ESIGN_FLEET_SLOTS, esignMessage, esignRevokeTargets } from '../../lib/esign'
+import { ESIGN_DECISION_LABEL, ESIGN_DRIVER_NOTE, ESIGN_FLEET_SLOTS, esignDepartWarning, esignMessage, esignRevokeTargets } from '../../lib/esign'
 import { getTripEsignStatus, revokeFleetTripSignatures } from '../../lib/esignApi'
 import { SMALL_BUTTON_CLASS } from '../../lib/esignUi'
+import { clearHomeRpcCache } from '../../lib/staffHomeData'
 import { thaiDateTimeText } from '../../lib/thaiDate'
 
 // แผง "ลงนามออนไลน์" ในหน้ารายละเอียดคำขอใช้รถ (แบบ ๓) — แสดงเฉพาะทริปที่ อปท. เปิดโหมดออนไลน์ไว้ตอนสร้างคำขอ (trip.esign_slots ไม่ว่าง)
@@ -121,6 +122,7 @@ export default function TripEsignPanel({ trip, onChanged }) {
     const result = await revokeFleetTripSignatures({ tripId: trip.id, reason: revoke.reason, slot: revoke.slot })
     if (!result?.ok) { setRevoke(current => ({ ...current, busy: false, error: esignMessage(result) })); return }
     setRevoke(null)
+    clearHomeRpcCache('esign_my_pending') // ถอนแล้วใครถึงคิวลงนามเปลี่ยน — กลับหน้าแรกภายใน 30 วินาทีต้องไม่เห็นรายการเก่า
     setNotice({ ok: true, text: result.revoked > 0 ? `ถอนลายเซ็นแล้ว ${result.revoked} ช่อง — แก้คำขอได้ แล้วให้ผู้ลงนามลงนามใหม่` : 'ไม่มีลายเซ็นที่ต้องถอนแล้ว' })
     reload()
     onChanged?.()
@@ -196,11 +198,35 @@ export default function TripEsignPanel({ trip, onChanged }) {
         <SignTripDialog tripId={trip.id} slot={signing.slot} slotLabel={signing.label} summary={summary} onClose={closeDialog}
           onSigned={result => {
             setSigning(null)
+            clearHomeRpcCache('esign_my_pending') // ลงนามแล้วใบนี้ต้องหายจากการ์ด "รอลงนามของฉัน" ที่แคชไว้บนหน้าแรก
             setNotice({ ok: true, text: `${ESIGN_DECISION_LABEL[signing.slot === 'authority' ? 'approve' : 'sign']}แล้ว${result.stamped ? ' พร้อมแนบภาพลายเซ็น' : ''}${result.complete ? ' — ลงนามครบทุกช่องแล้ว' : ''}` })
             reload()
             onChanged?.()
           }} />
       )}
     </section>
+  )
+}
+
+// เตือน "ไม่บล็อก" ในหน้าต่างบันทึกออกเดินทาง: ช่องผู้มีอำนาจเป็นออนไลน์แต่ยังไม่ลงนาม
+// ออกรถต้องไม่ถูกขวาง (รถออกก่อนเอกสารเสร็จเกิดจริงทุกวัน และคนขับยืนรออยู่หน้ารถ) แต่ต้องให้คนกดเห็นว่าใบนี้ยังขาดอะไร
+// อ่านสถานะไม่ได้ = เงียบ: ตัวเตือนนี้เป็นของเสริม ห้ามทำให้ขั้นตอนออกรถดูเหมือนพัง
+export function DepartEsignNotice({ tripId }) {
+  const [warning, setWarning] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    getTripEsignStatus(tripId).then(result => { if (!cancelled) setWarning(esignDepartWarning(result)) })
+    return () => { cancelled = true }
+  }, [tripId])
+  if (!warning) return null
+  const who = warning.blocked
+    ? `ผู้มีอำนาจลงนามออนไลน์ไม่ได้: ${esignMessage({ code: warning.blocked })}`
+    : warning.expectedName ? `รอ ${warning.expectedName} ลงนาม` : null
+  return (
+    <div role="status" data-depart-esign-warning className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
+      <p className="font-bold">⚠️ ใบขออนุญาตใช้รถนี้ลงนามออนไลน์ยังไม่ครบ — ยังขาด: {warning.missing.join(' · ')}</p>
+      {who && <p>{who}</p>}
+      <p>ออกเดินทางได้ตามปกติ (ระบบไม่บล็อก) แต่ใบนี้จะยังไม่มีลายเซ็นออนไลน์ครบ — ตามให้ผู้ลงนามลงนามภายหลังได้จากหน้ารายละเอียดคำขอ</p>
+    </div>
   )
 }
