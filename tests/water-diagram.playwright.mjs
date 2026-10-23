@@ -115,9 +115,10 @@ const SCENES = {
 // ฝนหนักมาก (≥ 90.1 มม.) ทำให้แถบแจ้งเตือนสถานการณ์ของหน้าขึ้น
 SCENES.heavyRain = { ...SCENES.normal, stations: [station('rain', 'RES038', 'อ่างเก็บน้ำห้วยยอย', { recorded_at: hoursAgo(0.5), rain_24h_mm: 95.5, distance_km: 1.8 })] }
 
-async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 900, reducedMotion = 'no-preference', diagram = null, tab = 'route', announcement = null } = {}) {
+async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 900, reducedMotion = 'no-preference', diagram = null, tab = 'route', announcement = null, initScript = null } = {}) {
   const scene = SCENES[sceneName]
   const context = await browser.newContext({ viewport: { width, height }, locale: 'th-TH', reducedMotion })
+  if (initScript) await context.addInitScript(initScript)
   const page = await context.newPage()
   const problems = []
   page.on('pageerror', error => problems.push(`pageerror: ${error.message}`))
@@ -903,6 +904,59 @@ try {
       await page.keyboard.press('Enter')
       assert.equal(await posterSvg(page).getAttribute('data-theme'), 'light', 'กด Enter บนปุ่มโหมดสว่างได้')
     } finally { await context.close() }
+  })
+
+  // จำโหมดมืด/สว่างที่ผู้ใช้เลือกไว้ในเครื่อง (เจ้าของระบบสั่ง 2569-10-23)
+  await check('น้ำเลา: จำโหมดที่เลือกไว้ในเครื่อง — กดสว่างแล้วเปิดหน้าใหม่ยังเป็นสว่าง · กดกลับมืดแล้วเปิดใหม่เป็นมืด · หน้าต่างพิมพ์เปิดมาที่โหมดที่จำไว้ · โหมดที่เลือกในหน้าต่างพิมพ์ไม่ถูกจำ', async () => {
+    const { context, page } = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao' })
+    const theme = () => posterSvg(page).getAttribute('data-theme')
+    const stored = () => page.evaluate(() => localStorage.getItem('water-route-poster-theme'))
+    const reload = async () => { await page.reload({ waitUntil: 'domcontentloaded' }); await posterSvg(page).locator('[data-poster-ring] text', { hasText: '84.5%' }).waitFor({ timeout: 15_000 }) }
+    try {
+      await posterSvg(page).locator('[data-poster-ring] text', { hasText: '84.5%' }).waitFor({ timeout: 10_000 })
+      assert.equal(await theme(), 'dark', 'ครั้งแรกที่ไม่เคยเลือก = โหมดมืด'); assert.equal(await stored(), null, 'แค่เปิดหน้าไม่เขียนอะไรลงเครื่อง')
+      await section(page).locator('[data-poster-theme-option="light"]').click()
+      assert.equal(await stored(), 'light')
+      await reload()
+      assert.equal(await theme(), 'light', 'เปิดหน้าใหม่ต้องยังเป็นโหมดสว่าง')
+      assert.equal(await section(page).locator('[data-poster-theme-option="light"]').getAttribute('aria-pressed'), 'true'); assert.equal(await section(page).locator('[data-poster-theme-option="dark"]').getAttribute('aria-pressed'), 'false')
+      // หน้าต่างพิมพ์เปิดมาที่โหมดที่จำไว้ · สลับในหน้าต่างแล้วปิด ไม่ไปเปลี่ยนค่าที่จำ
+      await page.locator('[data-poster-open]').click()
+      const dialog = page.locator('[data-poster-overlay] svg[data-poster]')
+      await dialog.waitFor({ timeout: 10_000 })
+      assert.equal(await dialog.getAttribute('data-theme'), 'light')
+      await page.locator('[data-poster-overlay]').getByRole('button', { name: /โหมดมืด/ }).click()
+      assert.equal(await dialog.getAttribute('data-theme'), 'dark'); assert.equal(await stored(), 'light', 'โหมดที่เลือกในหน้าต่างพิมพ์ไม่ถูกจำ')
+      await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'detached', timeout: 3000 })
+      await reload()
+      assert.equal(await theme(), 'light', 'เปิดใหม่หลังสลับในหน้าต่างพิมพ์ ภาพในหน้ายังเป็นสว่างที่จำไว้')
+      await section(page).locator('[data-poster-theme-option="dark"]').click()
+      assert.equal(await stored(), 'dark')
+      await reload()
+      assert.equal(await theme(), 'dark', 'กดกลับมืดแล้วเปิดใหม่ต้องเป็นมืด')
+    } finally { await context.close() }
+  })
+
+  await check('น้ำเลา: ค่าที่จำไว้แปลก หรือที่เก็บข้อมูลของเบราว์เซอร์ใช้ไม่ได้ — ภาพขึ้นโหมดมืด ปุ่มสลับยังใช้ได้ ไม่มี error ในหน้า', async () => {
+    const cases = [
+      ['ค่าแปลก', () => { localStorage.setItem('water-route-poster-theme', 'rainbow') }],
+      ['ค่าว่าง', () => { localStorage.setItem('water-route-poster-theme', '') }],
+      ['อ่านที่เก็บข้อมูลไม่ได้', () => { Object.defineProperty(window, 'localStorage', { configurable: true, get() { throw new DOMException('blocked', 'SecurityError') } }) }],
+      ['อ่านได้แต่เขียนไม่ได้', () => { Storage.prototype.setItem = () => { throw new DOMException('full', 'QuotaExceededError') } }],
+    ]
+    for (const [label, initScript] of cases) {
+      const { context, page, problems } = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao', initScript })
+      try {
+        const svg = posterSvg(page)
+        await svg.locator('[data-poster-ring] text', { hasText: '84.5%' }).waitFor({ timeout: 10_000 })
+        assert.equal(await svg.getAttribute('data-theme'), 'dark', `${label}: ต้องขึ้นโหมดมืด`)
+        await section(page).locator('[data-poster-theme-option="light"]').click()
+        assert.equal(await svg.getAttribute('data-theme'), 'light', `${label}: กดสว่างแล้วภาพต้องเปลี่ยนในรอบนี้`)
+        await section(page).locator('[data-poster-theme-option="dark"]').click()
+        assert.equal(await svg.getAttribute('data-theme'), 'dark')
+        assert.deepEqual(problems, [], `${label}: ต้องไม่มี error ในหน้า`)
+      } finally { await context.close() }
+    }
   })
 
   await check('ลิงก์ "ดูผังต้นฉบับ" ย้ายมาอยู่ใต้กรอบคำกำกับสีฟ้าในแท็บเส้นทางน้ำ (ทุกตำบล) · ชี้ไฟล์ภาพของตำบลนั้น เปิดแท็บใหม่ · อยู่เหนือแท็บ ไม่ต้องเลื่อนหา · แท็บสถานการณ์ไม่มีลิงก์นี้แล้ว', async () => {
