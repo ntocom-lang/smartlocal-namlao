@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Ban, ChevronDown, ChevronRight, KeyRound, Loader2, Plus, ShieldCheck, Star, Trash2 } from 'lucide-react'
+import { Ban, ChevronDown, ChevronRight, KeyRound, Loader2, Plus, Star, Trash2 } from 'lucide-react'
 import AddSignatureDialog from './AddSignatureDialog'
-import { ESIGN_DECISION_LABEL, ESIGN_DUTY_TEXT, esignMessage } from '../../lib/esign'
+import { Chip, Notice } from '../esign/EsignBits'
+import PinForm from '../esign/PinForm'
+import { ESIGN_DECISION_LABEL, esignFailureText, esignMessage } from '../../lib/esign'
 import {
-  deleteMySignature, getMySignatureHistory, getMySignatures, getMySignerOverview, setDefaultSignature, setEsignPin, suspendMyEsign,
+  deleteMySignature, getMySignatureHistory, getMySignatures, getMySignerOverview, setDefaultSignature, suspendMyEsign,
 } from '../../lib/esignApi'
+import { SIGNATURE_CHECKER, SMALL_BUTTON_CLASS as SMALL_BUTTON, signatureDataUrl } from '../../lib/esignUi'
 import { SIGNATURE_MAX_IMAGES } from '../../lib/signatureImage'
 import { thaiDateTimeText } from '../../lib/thaiDate'
 
@@ -13,32 +16,6 @@ import { thaiDateTimeText } from '../../lib/thaiDate'
 // ภาพลายเซ็น (วาด/อัปโหลด) · รหัสลงนาม 6 หลัก · ระงับการลงนามของฉัน · ประวัติการลงนามของฉัน
 // เปิดจากเมนูกดชื่อ → /profile#signature (เปิดส่วนนี้เองและเลื่อนมาให้) · พับไว้เป็นค่าเริ่มต้นและไม่ยิง RPC จนกว่าจะเปิด
 // หน้าตรวจสอบสาธารณะ/ใบพิมพ์ไม่เกี่ยวกับหน้านี้ — ที่นี่เห็นภาพของตัวเองเท่านั้น (ฐานข้อมูลคืนเฉพาะของผู้เรียก)
-const CHECKER = {
-  backgroundImage: 'linear-gradient(45deg, #eef0f3 25%, transparent 25%), linear-gradient(-45deg, #eef0f3 25%, transparent 25%), '
-    + 'linear-gradient(45deg, transparent 75%, #eef0f3 75%), linear-gradient(-45deg, transparent 75%, #eef0f3 75%)',
-  backgroundSize: '14px 14px',
-  backgroundPosition: '0 0, 0 7px, 7px -7px, -7px 0',
-}
-const PIN_INPUT = 'w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-center text-lg tracking-[0.5em] text-gray-800 outline-none focus:border-gray-400'
-const SMALL_BUTTON = 'inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-semibold disabled:opacity-50'
-
-function Notice({ notice }) {
-  if (!notice) return null
-  const style = notice.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-700'
-  return <p role={notice.ok ? 'status' : 'alert'} className={`rounded-xl border px-3.5 py-2 text-xs ${style}`}>{notice.text}</p>
-}
-
-function Chip({ tone, children }) {
-  const tones = {
-    ok: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    warn: 'border-amber-200 bg-amber-50 text-amber-700',
-    bad: 'border-red-200 bg-red-50 text-red-700',
-    mute: 'border-gray-200 bg-gray-50 text-gray-600',
-  }
-  return <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tones[tone]}`}>{children}</span>
-}
-
-const isPin = value => /^[0-9]{6}$/.test(value)
 
 export default function MyEsignSection() {
   const { hash } = useLocation()
@@ -55,7 +32,6 @@ export default function MyEsignSection() {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   const [busy, setBusy] = useState('')
   const [notices, setNotices] = useState({})
-  const [pinForm, setPinForm] = useState({ current: '', next: '', confirm: '', ack: false })
   const [suspendAsk, setSuspendAsk] = useState(false)
   const [suspendReason, setSuspendReason] = useState('')
   const rootRef = useRef(null)
@@ -98,11 +74,7 @@ export default function MyEsignSection() {
     const result = await action()
     setBusy('')
     if (!result?.ok) {
-      // ฝั่ง DB: ฟังก์ชันลงนามบอก remaining แต่ set_esign_pin (เปลี่ยนรหัส) ไม่บอก ทั้งที่นับเข้าตัวล็อกชุดเดียวกัน (ผิดสะสมครบ 5 ครั้ง → ล็อก 15 นาที)
-      // จึงต้องเตือนเองเมื่อไม่มีตัวเลข ไม่งั้นผู้ใช้โดนล็อกโดยไม่รู้ตัว (เจอตอนทดสอบกับฐานข้อมูลจริง ไม่ใช่ฐานข้อมูลจำลอง)
-      const lockWarning = Number.isInteger(result?.remaining) ? ` (เหลืออีก ${result.remaining} ครั้งก่อนระบบล็อก 15 นาที)` : ' (ใส่รหัสผิดสะสมครบ 5 ครั้ง ระบบจะล็อกการลงนาม 15 นาที)'
-      const extra = result?.code === 'bad_pin' ? lockWarning : ''
-      setNotice(key, { ok: false, text: esignMessage(result) + extra })
+      setNotice(key, { ok: false, text: esignFailureText(result) })
       return null
     }
     setNotice(key, { ok: true, text: typeof successText === 'function' ? successText(result) : successText })
@@ -113,16 +85,6 @@ export default function MyEsignSection() {
   const pinSet = Boolean(overview?.pin_set)
   const suspended = Boolean(overview?.suspended)
   const atLimit = library.length >= SIGNATURE_MAX_IMAGES
-  const pinMismatch = pinForm.confirm.length > 0 && pinForm.next !== pinForm.confirm
-  const pinReady = isPin(pinForm.next) && pinForm.next === pinForm.confirm
-    && (pinSet ? isPin(pinForm.current) : pinForm.ack)
-
-  async function handleSavePin() {
-    const done = await runAction('pin', () => setEsignPin({
-      pin: pinForm.next, currentPin: pinSet ? pinForm.current : null, ackDuty: !pinSet && pinForm.ack,
-    }), pinSet ? 'เปลี่ยนรหัสลงนามแล้ว' : 'ตั้งรหัสลงนามแล้ว — ใช้รหัสนี้ยืนยันทุกครั้งที่ลงนาม')
-    if (done) setPinForm({ current: '', next: '', confirm: '', ack: false })
-  }
 
   return (
     <div ref={rootRef} id="signature" className="scroll-mt-4 overflow-hidden rounded-2xl bg-white shadow-xs" data-my-esign>
@@ -173,8 +135,8 @@ export default function MyEsignSection() {
               <ul className="grid gap-3 sm:grid-cols-2">
                 {library.map(item => (
                   <li key={item.id} data-signature-card className={`space-y-2 rounded-xl border p-3 ${item.is_default ? 'border-emerald-400 bg-emerald-50/40' : 'border-gray-200'}`}>
-                    <div className="flex h-24 items-center justify-center overflow-hidden rounded-lg border border-gray-100 bg-white p-2" style={CHECKER}>
-                      <img src={`data:image/png;base64,${item.png_base64}`} alt={`ลายเซ็น ${item.label}`} className="max-h-full max-w-full object-contain" />
+                    <div className="flex h-24 items-center justify-center overflow-hidden rounded-lg border border-gray-100 bg-white p-2" style={SIGNATURE_CHECKER}>
+                      <img src={signatureDataUrl(item.png_base64)} alt={`ลายเซ็น ${item.label}`} className="max-h-full max-w-full object-contain" />
                     </div>
                     <div className="flex items-center gap-2">
                       <p className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-800">{item.label}</p>
@@ -186,7 +148,7 @@ export default function MyEsignSection() {
                           ลบแบบนี้ออกจากคลังของคุณ ใบที่เคยลงนามด้วยภาพนี้ไปแล้วจะยังแสดงภาพเดิม (เก็บไว้เป็นหลักฐาน แก้หรือลบไม่ได้)
                         </p>
                         <div className="flex gap-2">
-                          <button type="button" disabled={busy === 'delete'} data-confirm-delete
+                          <button type="button" disabled={busy === 'library'} data-confirm-delete
                             onClick={async () => {
                               const done = await runAction('library', () => deleteMySignature(item.id),
                                 result => (result.kept_as_evidence
@@ -226,38 +188,7 @@ export default function MyEsignSection() {
               <KeyRound size={16} className="text-gray-500" />
               <h3 id="my-pin-title" className="text-sm font-bold text-gray-800">{pinSet ? 'เปลี่ยนรหัสลงนาม' : 'ตั้งรหัสลงนาม'}</h3>
             </div>
-            <p className="text-xs leading-5 text-gray-500">
-              รหัสตัวเลข 6 หลักที่คุณตั้งเอง ใช้ยืนยันทุกครั้งที่ลงนาม แยกจากรหัสผ่านเข้าระบบ (บัญชี LINE/Google ก็ใช้ได้) ระบบเก็บแบบเข้ารหัส ผู้ดูแลระบบก็อ่านไม่ได้
-              ใส่ผิด 5 ครั้งติดกันระบบล็อก 15 นาที
-            </p>
-            <div className="grid gap-3 sm:grid-cols-3">
-              {pinSet && (
-                <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-pin-current">รหัสเดิม
-                  <input id="esign-pin-current" name="esign-pin-current" type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} autoComplete="off"
-                    value={pinForm.current} onChange={event => setPinForm(form => ({ ...form, current: event.target.value.replace(/\D/g, '') }))} className={`${PIN_INPUT} mt-1`} />
-                </label>
-              )}
-              <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-pin-next">รหัสใหม่ 6 หลัก
-                <input id="esign-pin-next" name="esign-pin-next" type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} autoComplete="off"
-                  value={pinForm.next} onChange={event => setPinForm(form => ({ ...form, next: event.target.value.replace(/\D/g, '') }))} className={`${PIN_INPUT} mt-1`} />
-              </label>
-              <label className="block text-xs font-semibold text-gray-600" htmlFor="esign-pin-confirm">ยืนยันรหัสใหม่
-                <input id="esign-pin-confirm" name="esign-pin-confirm" type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} autoComplete="off"
-                  value={pinForm.confirm} onChange={event => setPinForm(form => ({ ...form, confirm: event.target.value.replace(/\D/g, '') }))} className={`${PIN_INPUT} mt-1`} />
-              </label>
-            </div>
-            {pinMismatch && <p className="text-xs text-red-600" data-pin-mismatch>รหัสที่ยืนยันไม่ตรงกับรหัสใหม่</p>}
-            {!pinSet && (
-              <label className="flex items-start gap-2.5 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs leading-5 text-gray-700" htmlFor="esign-duty-ack">
-                <input id="esign-duty-ack" type="checkbox" checked={pinForm.ack} onChange={event => setPinForm(form => ({ ...form, ack: event.target.checked }))} className="mt-1 h-4 w-4 shrink-0" />
-                <span>{ESIGN_DUTY_TEXT}</span>
-              </label>
-            )}
-            <button type="button" onClick={handleSavePin} disabled={!pinReady || busy === 'pin'} data-save-pin
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl px-5 text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: 'var(--color-primary)' }}>
-              {busy === 'pin' ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />} {pinSet ? 'เปลี่ยนรหัส' : 'ตั้งรหัสลงนาม'}
-            </button>
-            <Notice notice={notices.pin} />
+            <PinForm pinSet={pinSet} onDone={reload} />
           </section>
 
           {/* ระงับ */}

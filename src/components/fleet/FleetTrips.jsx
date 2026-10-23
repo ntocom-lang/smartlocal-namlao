@@ -13,6 +13,8 @@ import {
 } from '../../lib/documentSignatories'
 import FleetEmptyState from './FleetEmptyState'
 import FleetIncidentModal from './FleetIncidentModal'
+import TripEsignPanel from '../esign/TripEsignPanel'
+import { ESIGN_TRIP_EXCEPTIONS } from '../../lib/esign'
 import ResponsiveSelect from '../common/ResponsiveSelect'
 
 const STATUS_LABEL = {
@@ -140,6 +142,7 @@ const TRIP_ERROR_TH = {
   FLEET_ODOMETER_FIX_REQUIRES_COMPLETED: 'แก้เลขไมล์ย้อนหลังได้เฉพาะทริปที่เสร็จสิ้นแล้ว — ทริปที่กำลังเดินทางให้แก้ตอนบันทึกกลับ',
   FLEET_ODOMETER_FIX_INVALID_RANGE: 'เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก และต้องไม่ติดลบ',
   FLEET_ODOMETER_FIX_REASON_TOO_LONG: 'เหตุผลที่แก้เลขไมล์ยาวเกิน 300 ตัวอักษร',
+  ...ESIGN_TRIP_EXCEPTIONS,
   FLEET_ODOMETER_FIX_NEGATIVE: 'ปรับตามแล้วเลขไมล์ของทริปถัดไปจะติดลบ — ตรวจเลขที่กรอกอีกครั้ง',
 }
 // UPDATE ที่ถูก RLS ปฏิเสธจะ "ไม่ตรงแถวใดเลย" ไม่ใช่ error — PostgREST คืน 204 และ error เป็น null
@@ -1600,7 +1603,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   async function handleDelete(t) {
     if (!confirm(`ลบรายการ "${t.vehicle?.name}" วันที่ ${t.planned_departure ? fmtDate(t.planned_departure) : '—'}?`)) return
     const { error } = await supabase.from('fleet_trips').delete().eq('id', t.id)
-    if (error) return alert('ลบไม่สำเร็จ: ' + error.message)
+    if (error) return alert('ลบไม่สำเร็จ: ' + tripErrorMessage(error))
     logAction({ action: 'delete', resourceType: 'fleet_trip', resourceId: t.id, resourceLabel: `${t.vehicle?.name} — ${t.destination}`, municipalityId: tenant.id, metadata: { status: t.status } })
     setTrips(prev => prev.filter(x => x.id !== t.id))
   }
@@ -2366,6 +2369,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                   {t.reject_reason && <div className="col-span-2"><p className="text-gray-400">เหตุผลปฏิเสธ/ยกเลิก</p><p className="font-semibold text-red-600">{t.reject_reason}</p></div>}
                   {t.notes && <div className="col-span-2"><p className="text-gray-400">หมายเหตุ</p><p className="font-semibold text-gray-700">{t.notes}</p></div>}
                 </div>
+                {/* ลงนามออนไลน์ — เฉพาะทริปที่ อปท. เปิดโหมดออนไลน์ไว้ตอนสร้างคำขอ (DB ตรึง esign_slots ไว้ที่ทริป) · อปท. ที่ไม่เปิดไม่เห็นอะไรเปลี่ยน */}
+                {t.esign_slots && <TripEsignPanel trip={t} onChanged={loadTrips} />}
               </div>
               <div className={`grid grid-cols-1 gap-2 px-5 pb-5 pt-3 border-t border-gray-100 ${canEdit || canFixOdometer || canReportIncident || canPrintSk1 ? 'sm:grid-cols-2' : ''}`}>
                 <button onClick={() => printTripRequest(t)}

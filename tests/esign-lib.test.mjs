@@ -6,8 +6,8 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
-  ESIGN_DECISION_LABEL, ESIGN_DUTY_TEXT, ESIGN_FLEET_SLOTS, ESIGN_MESSAGES, esignAnnouncementDraft, esignAnyOnline, esignBlockers, esignGateItems, esignMessage,
-  esignModesFromStatus,
+  ESIGN_DECISION_LABEL, ESIGN_DUTY_TEXT, ESIGN_FLEET_SLOTS, ESIGN_MESSAGES, ESIGN_TRIP_EXCEPTIONS, esignAnnouncementDraft, esignAnyOnline, esignBlockers,
+  esignFailureText, esignGateItems, esignMessage, esignModesFromStatus, esignRevokeTargets,
 } from '../src/lib/esign.js'
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8')
@@ -16,7 +16,9 @@ const functionsOldSql = await read('../supabase/migrations/20261022100200_esign_
 const gateRelaxSql = await read('../supabase/migrations/20261022110100_esign_gate_relax_functions.sql')
 // ชุด S1 (ภาพลายเซ็น) เป็นฟังก์ชันใหม่ล้วน ไม่ทับของเดิม
 const imageFunctionsSql = await read('../supabase/migrations/20261023100100_esign_image_functions.sql')
-const functionsSql = functionsOldSql + '\n' + gateRelaxSql + '\n' + imageFunctionsSql
+// ชุด S3a: แก้ esign_trip_status (ยกมาเต็มตัว) + เพิ่ม esign_my_pending — นิยามหลังสุดชนะ
+const tripPanelSql = await read('../supabase/migrations/20261023110000_esign_trip_panel_functions.sql')
+const functionsSql = functionsOldSql + '\n' + gateRelaxSql + '\n' + imageFunctionsSql + '\n' + tripPanelSql
 const apiSource = await read('../src/lib/esignApi.js')
 
 // รหัสที่ถูกถอดจากฟังก์ชันแล้ว (ยังค้างอยู่ในไฟล์ชุด A เพราะ migration ที่ apply แล้วแก้ย้อนไม่ได้) — หน้าจอไม่ต้องมีข้อความ
@@ -75,6 +77,7 @@ await test('หน้าจอเรียก RPC ครบทุก argument �
 await test('ทุกชื่อที่หน้าจอ import จาก lib/esign · esignApi · signatureImage · signatureCanvas มี export จริง (eslint ไม่จับ — เคยหลุดไปถึง build)', async () => {
   const libs = {
     esign: await import('../src/lib/esign.js'),
+    esignUi: await import('../src/lib/esignUi.js'),
     signatureImage: await import('../src/lib/signatureImage.js'),
   }
   // esignApi/signatureCanvas ต้องใช้ supabase/DOM จึง import ใน Node ไม่ได้ — อ่านรายชื่อ export จากซอร์ส
@@ -83,12 +86,13 @@ await test('ทุกชื่อที่หน้าจอ import จาก li
   const components = [
     '../src/components/admin/EsignSettings.jsx', '../src/components/profile/MyEsignSection.jsx',
     '../src/components/profile/AddSignatureDialog.jsx', '../src/components/profile/SignaturePad.jsx',
+    '../src/components/esign/PinForm.jsx', '../src/components/esign/SignTripDialog.jsx', '../src/components/esign/TripEsignPanel.jsx', '../src/components/fleet/FleetTrips.jsx',
   ]
   let checked = 0
   for (const path of components) {
     const component = await read(path)
-    for (const match of component.matchAll(/import \{([^}]*)\} from '(?:\.\.\/)+lib\/(esign|esignApi|signatureImage|signatureCanvas)'/g)) {
-      const names = match[1].split(',').map(name => name.trim()).filter(Boolean)
+    for (const match of component.matchAll(/import \{([^}]*)\} from '(?:\.\.\/)+lib\/(esign|esignApi|esignUi|signatureImage|signatureCanvas)'/g)) {
+      const names = match[1].split(',').map(name => name.trim().split(/\s+as\s+/)[0]).filter(Boolean)
       for (const name of names) {
         const exported = libs[match[2]] ? name in libs[match[2]] : sources[match[2]].has(name)
         assert.ok(exported, `${path}: lib/${match[2]} ไม่มี export ${name}`)
@@ -180,6 +184,69 @@ await test('ชื่อฟิลด์ที่หน้า "ลายเซ็
   for (const key of new Set([...fromOverview, ...explicit])) {
     assert.ok(sqlKeys.has(key), `หน้าจออ่านฟิลด์ "${key}" แต่ไม่มีใน jsonb ของฟังก์ชัน DB ที่คืนค่า`)
   }
+})
+
+await test('แผงลงนามในหน้าทริป: ตัวเรียก RPC ครบ · ชื่อฟิลด์ที่แผง/กล่องอ่านมีอยู่จริงใน SQL · ต่อเข้า FleetTrips เฉพาะทริปโหมดออนไลน์', async () => {
+  const wrappers = new Set([...apiSource.matchAll(/callEsign\('(\w+)'/g)].map(match => match[1]))
+  for (const name of ['esign_trip_status', 'esign_sign_fleet_trip_stamped', 'esign_revoke_fleet_trip', 'esign_my_pending']) assert.ok(wrappers.has(name), `esignApi ไม่มีตัวเรียก ${name}`)
+  const panel = await read('../src/components/esign/TripEsignPanel.jsx')
+  const dialog = await read('../src/components/esign/SignTripDialog.jsx')
+  const sqlKeys = new Set([...functionsSql.matchAll(/'([a-z0-9_]+)',\s/g)].map(match => match[1]))
+  // ฟิลด์ที่อ่านจากสถานะทริป (slot.xxx / signature.xxx / status.xxx) ต้องมีใน jsonb ของ esign_trip_status จริง
+  // (เทสต์เบราว์เซอร์ของแผงใช้ฐานข้อมูลจำลอง จึงต้องเทียบกับ SQL ตรงนี้)
+  const fromPanel = [...panel.matchAll(/\b(?:slot|signature|status)\.([a-z_]+)/g)].map(match => match[1])
+  assert.ok(fromPanel.length >= 15, `อ่านชื่อฟิลด์จากแผงได้น้อยผิดปกติ (${fromPanel.length})`)
+  const notFromStatusJson = new Set(['revoked', 'message', 'code', 'length', 'key']) // ฟิลด์ของผลฟังก์ชันถอน/ตัวช่วย JS (ESIGN_FLEET_SLOTS.key) ไม่ใช่ของสถานะทริป
+  for (const key of new Set(fromPanel)) {
+    if (notFromStatusJson.has(key)) continue
+    assert.ok(sqlKeys.has(key), `แผงอ่านฟิลด์ "${key}" แต่ไม่มีใน jsonb ของฟังก์ชัน DB`)
+  }
+  // ผลของ esign_sign_fleet_trip_stamped ที่หน้าจออ่าน และของ esign_my_signer_overview ที่กล่องอ่าน
+  for (const key of ['stamped', 'complete', 'already', 'remaining', 'revoked']) assert.ok(sqlKeys.has(key), `ไม่มีฟิลด์ ${key} ใน SQL`)
+  const fromOverview = [...dialog.matchAll(/overview\??\.([a-z_]+)/g)].map(match => match[1])
+  assert.ok(fromOverview.length >= 3)
+  for (const key of new Set(fromOverview)) assert.ok(sqlKeys.has(key), `กล่องลงนามอ่านฟิลด์ "${key}" แต่ไม่มีใน esign_my_signer_overview`)
+
+  // ห้ามอ้างเลขมาตราลอยๆ ในข้อความหน้าจอของแผง/กล่อง (ต้องตรวจกับตัวบทก่อน)
+  for (const source of [panel, dialog, await read('../src/components/esign/PinForm.jsx')]) assert.ok(!/มาตรา\s*[๐-๙0-9]/.test(source), 'หน้าจอลงนามห้ามอ้างเลขมาตราลอยๆ')
+
+  // FleetTrips: แผงขึ้นเฉพาะทริปที่ DB ตรึงโหมดออนไลน์ไว้ · ปุ่มลบแปลง error · แปล error ของ trigger ลงนาม
+  const fleet = await read('../src/components/fleet/FleetTrips.jsx')
+  assert.ok(/\{t\.esign_slots && <TripEsignPanel trip=\{t\}/.test(fleet), 'แผงต้องขึ้นเฉพาะทริปที่มี esign_slots')
+  assert.ok(/\.\.\.ESIGN_TRIP_EXCEPTIONS,/.test(fleet), 'TRIP_ERROR_TH ต้องรวมข้อความ error ของ trigger ลงนาม')
+  assert.ok(/'ลบไม่สำเร็จ: ' \+ tripErrorMessage\(error\)/.test(fleet), 'ปุ่มลบต้องแปล error ผ่าน tripErrorMessage ไม่โชว์ error ดิบของ DB')
+})
+
+await test('ข้อความ error ของ trigger บน fleet_trips: ทุกรหัส ESIGN_… ที่ migration โยนมีข้อความไทยพร้อมบอกว่าต้องทำอะไรต่อ · ถอนช่องไหนแล้วตามไปกี่ช่องตรงกับ SQL', () => {
+  const thrown = new Set([...functionsSql.matchAll(/RAISE EXCEPTION '(ESIGN_[A-Z_]+)/g)].map(match => match[1]))
+  assert.ok(thrown.has('ESIGN_TRIP_LOCKED') && thrown.has('ESIGN_TRIP_HAS_SIGNATURES'), 'ไม่พบ exception ของ trigger ใน migration')
+  // รหัสภายในที่หน้ายานพาหนะไม่มีวันเจอ: ESIGN_STAMP_MISMATCH เกิดในฟังก์ชัน RPC (ผ่าน callEsign ได้ข้อความกลาง)
+  // ESIGN_APPEND_ONLY เกิดเมื่อมีคนแก้/ลบตารางลายเซ็นตรงๆ (ไม่มีทางทำผ่านแอป)
+  const INTERNAL = ['ESIGN_STAMP_MISMATCH', 'ESIGN_APPEND_ONLY']
+  const viaFleetPage = [...thrown].filter(code => !INTERNAL.includes(code))
+  assert.deepEqual(viaFleetPage.sort(), Object.keys(ESIGN_TRIP_EXCEPTIONS).sort())
+  assert.ok(ESIGN_TRIP_EXCEPTIONS.ESIGN_TRIP_LOCKED.includes('ถอนลายเซ็น'), 'ต้องบอกให้ไปถอนลายเซ็น')
+  assert.ok(ESIGN_TRIP_EXCEPTIONS.ESIGN_TRIP_HAS_SIGNATURES.includes('ยกเลิก'), 'ต้องบอกทางเลือกแทนการลบ')
+
+  const chain = /v_chain\s+text\[\]\s*:=\s*ARRAY\[([^\]]+)\]/.exec(functionsSql)
+  assert.ok(chain, 'ไม่พบ v_chain ใน esign_revoke_fleet_trip')
+  const dbChain = [...chain[1].matchAll(/'([a-z0-9_]+)'/g)].map(match => match[1])
+  assert.deepEqual(esignRevokeTargets('requester'), dbChain)
+  assert.deepEqual(esignRevokeTargets('dept_head'), dbChain.slice(1))
+  assert.deepEqual(esignRevokeTargets('authority'), dbChain.slice(2))
+  assert.deepEqual(esignRevokeTargets('sk1'), ['sk1'], 'สก.๑ ไม่อยู่ในสาย ถอนเดี่ยว')
+  assert.deepEqual(esignRevokeTargets(null), ESIGN_FLEET_SLOTS.map(slot => slot.key), 'ไม่ระบุช่อง = ถอนทุกช่อง')
+})
+
+await test('esignFailureText: รหัสผิดเตือนเรื่องล็อกเสมอ (มี/ไม่มีจำนวนที่เหลือ) · ความผิดพลาดอื่นไม่ถูกเติมคำเตือน', () => {
+  assert.equal(esignFailureText({ ok: false, code: 'bad_pin', remaining: 3 }), ESIGN_MESSAGES.bad_pin + ' (เหลืออีก 3 ครั้งก่อนระบบล็อก 15 นาที)')
+  assert.equal(esignFailureText({ ok: false, code: 'bad_pin', remaining: 0 }), ESIGN_MESSAGES.bad_pin + ' (เหลืออีก 0 ครั้งก่อนระบบล็อก 15 นาที)')
+  // set_esign_pin ไม่ส่ง remaining กลับ แต่นับเข้าตัวล็อกเดียวกัน — ต้องเตือนแบบไม่มีตัวเลข
+  const noCount = esignFailureText({ ok: false, code: 'bad_pin' })
+  assert.ok(noCount.startsWith(ESIGN_MESSAGES.bad_pin) && noCount.includes('ครบ 5 ครั้ง') && noCount.includes('15 นาที'), noCount)
+  assert.equal(esignFailureText({ ok: false, code: 'pin_locked' }), ESIGN_MESSAGES.pin_locked)
+  assert.equal(esignFailureText({ ok: false, code: 'wait_previous' }), ESIGN_MESSAGES.wait_previous)
+  assert.equal(esignFailureText(null), ESIGN_MESSAGES.error)
 })
 
 await test('ร่างประกาศ: ใส่ชื่อหน่วยงาน · มีส่วนให้หน่วยงานกรอกเอง · อ้างตัวบทเท่าที่ตรวจแล้วเท่านั้น', async () => {

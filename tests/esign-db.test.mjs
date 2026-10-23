@@ -34,6 +34,8 @@ const gateRelaxSql = await readMigration('20261022110100_esign_gate_relax_functi
 // ชุด S1: ภาพลายเซ็น (ตาราง → ฟังก์ชัน ตามลำดับเดียวกับที่ apply บนฐานจริง)
 const imageTablesSql = await readMigration('20261023100000_esign_image_tables.sql')
 const imageFunctionsSql = await readMigration('20261023100100_esign_image_functions.sql')
+// ชุด S3a: ข้อมูลแผงลงนามในหน้าทริป (แก้ esign_trip_status + เพิ่ม esign_my_pending)
+const tripPanelSql = await readMigration('20261023110000_esign_trip_panel_functions.sql')
 
 // ดึงฟังก์ชันตัวจริงออกจาก migration เดิมทั้งตัว (ไม่พิมพ์ซ้ำเอง)
 const extractFunction = (source, startPattern) => {
@@ -65,6 +67,7 @@ CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULLIF(
 CREATE TABLE public.municipalities (id uuid PRIMARY KEY, name text);
 CREATE TABLE public.positions (id uuid PRIMARY KEY, name text);
 CREATE TABLE public.departments (id uuid PRIMARY KEY, municipality_id uuid, name text);
+CREATE TABLE public.fleet_vehicles (id uuid PRIMARY KEY, name text);
 CREATE TABLE public.profiles (
   id uuid PRIMARY KEY, full_name text, role text, municipality_id uuid, fleet_role text, job_title text, position_id uuid
 );
@@ -115,6 +118,7 @@ await db.exec(policyOptionalSql)
 await db.exec(gateRelaxSql)
 await db.exec(imageTablesSql)
 await db.exec(imageFunctionsSql)
+await db.exec(tripPanelSql)
 
 const users = {
   adminA: { id: U(1), role: 'admin', muni: A, name: 'แอดมิน เอ' },
@@ -1097,6 +1101,150 @@ await test('ศูนย์ลายมือชื่อของฉัน: ภ
   assert.ok(!/png|base64|image|stamp/i.test(pub), 'หน้าสาธารณะต้องไม่มีภาพ')
   const stampRows = (await db.query('SELECT count(*)::int AS n FROM public.esign_signature_stamps')).rows[0].n
   assert.ok(stampRows >= 2)
+})
+
+// ── ชุด S3a: ข้อมูลของแผงลงนามในหน้าทริป (..20261023110000_esign_trip_panel_functions.sql) ──────────────────
+await test('esign_trip_status (S3a): mine / can_revoke / locked / can_revoke_all / with_image ตรงกับกติกาถอนของ esign_revoke_fleet_trip', async () => {
+  const signStamped = (id, slot, pin, imageId) => rpc('public.esign_sign_fleet_trip_stamped($1, $2, $3, NULL, $4, NULL)', [id, slot, pin, imageId])
+  await as('requester')
+  const t = await makeTrip()
+  let st = await status(t.id)
+  assert.equal(st.locked, false)
+  assert.equal(st.can_revoke_all, false, 'ยังไม่มีลายเซ็นให้ถอน')
+  assert.ok(st.slots.every(s => s.can_revoke === false && s.signature === null))
+
+  const image = (await myImages())[0]
+  assert.ok(image, 'ผู้ขอต้องมีภาพในคลังจากเคสก่อนหน้า')
+  assert.equal((await signStamped(t.id, 'requester', '246810', image.id)).ok, true)
+  st = await status(t.id)
+  assert.equal(st.locked, true)
+  assert.equal(st.can_revoke_all, true)
+  assert.deepEqual([slotOf(st, 'requester').can_revoke, slotOf(st, 'requester').signature.mine, slotOf(st, 'requester').signature.with_image], [true, true, true])
+  assert.equal(slotOf(st, 'dept_head').can_revoke, false, 'ช่องที่ยังไม่มีลายเซ็นถอนไม่ได้')
+  // ส่งได้เฉพาะ "มีภาพไหม" ไม่ส่งตัวภาพ/รหัส hash ของภาพออกไปกับสถานะ
+  assert.ok(!/png|base64|sha256/i.test(JSON.stringify(st)), 'สถานะต้องไม่มีตัวภาพ')
+
+  await as('head')
+  st = await status(t.id)
+  assert.equal(st.locked, true, 'คนอื่นก็เห็นว่าทริปล็อกอยู่')
+  assert.deepEqual([slotOf(st, 'requester').can_revoke, slotOf(st, 'requester').signature.mine], [false, false], 'หัวหน้ากองถอนช่องของผู้ขอไม่ได้')
+  assert.equal(st.can_revoke_all, false)
+  assert.equal((await sign(t.id, 'dept_head', '482916')).ok, true)
+  st = await status(t.id)
+  assert.deepEqual([slotOf(st, 'dept_head').can_revoke, slotOf(st, 'dept_head').signature.mine, slotOf(st, 'dept_head').signature.with_image], [true, true, false])
+  assert.equal(slotOf(st, 'requester').can_revoke, false)
+
+  // นายกในเทสต์นี้มี role admin = fleet_is_manager ของ อปท. จึงถอนได้ทุกช่องตามกติกาเดิมของ esign_revoke_fleet_trip (ไม่ใช่เพราะเป็นผู้มีอำนาจลงนาม)
+  await as('mayor')
+  st = await status(t.id)
+  assert.equal(slotOf(st, 'authority').can_sign, true)
+  assert.deepEqual(st.slots.filter(s => s.signed).map(s => s.can_revoke), [true, true])
+
+  // ผู้ดูแลรถ และแอดมิน (fleet_is_manager) ถอนได้ทุกช่อง
+  for (const alias of ['fleetAdmin', 'adminA', 'mayor']) {
+    await as(alias)
+    st = await status(t.id)
+    assert.deepEqual(st.slots.filter(s => s.signed).map(s => s.can_revoke), [true, true], alias)
+    assert.equal(st.can_revoke_all, true, alias)
+  }
+  await as('outsider')
+  assert.deepEqual(await status(t.id), { found: false })
+
+  // สิ่งที่แผงโชว์ต้องตรงกับสิ่งที่ฟังก์ชันถอนยอมจริง: can_revoke = false ⇒ ฟังก์ชันถอนตอบ forbidden
+  await as('head')
+  assert.deepEqual(await rpc('public.esign_revoke_fleet_trip($1, $2, $3)', [t.id, 'ทดสอบ', 'requester']), { ok: false, code: 'forbidden' })
+  await as('outsider')
+  assert.deepEqual(await rpc('public.esign_revoke_fleet_trip($1, $2, $3)', [t.id, 'ทดสอบ', 'dept_head']), { ok: false, code: 'forbidden' })
+  // can_revoke = true ⇒ ถอนได้จริง และสถานะหลังถอนอัปเดตตาม (ถอน dept_head ไม่แตะ requester)
+  await as('head')
+  assert.deepEqual(await rpc('public.esign_revoke_fleet_trip($1, $2, $3)', [t.id, 'ทดสอบถอนของตัวเอง', 'dept_head']), { ok: true, revoked: 1 })
+  st = await status(t.id)
+  assert.deepEqual(st.slots.map(s => s.signed), [true, false, false, false])
+  assert.equal(st.locked, true, 'ผู้ขอยังมีลายเซ็นอยู่')
+  await as('requester')
+  assert.deepEqual(await rpc('public.esign_revoke_fleet_trip($1, $2, NULL)', [t.id, 'แก้คำขอ']), { ok: true, revoked: 1 })
+  st = await status(t.id)
+  assert.deepEqual([st.locked, st.can_revoke_all, st.signed_count], [false, false, 0], 'ถอนหมดแล้วทริปแก้เนื้อหาได้อีก')
+})
+
+await test('esign_my_pending (S3a): ใบที่ถึงคิวฉันเท่านั้น · ตามลำดับสาย · ไม่รวมใบที่ปิด/เซ็นสด/อปท.อื่น · ไม่เผยข้อมูลเกินที่ผู้ลงนามต้องเห็น', async () => {
+  const pending = async alias => { await as(alias); return rpc('public.esign_my_pending()') }
+  const mine = async (alias, id) => (await pending(alias)).items.filter(i => i.trip_id === id)
+  await db.query(`INSERT INTO public.fleet_vehicles (id, name) VALUES ('00000000-0000-4000-8000-0000000000c1', 'รถตู้ทดสอบ')`)
+
+  await as('requester')
+  const t = await makeTrip()
+  await db.query(`UPDATE public.fleet_trips SET vehicle_id = '00000000-0000-4000-8000-0000000000c1' WHERE id = $1`, [t.id])
+  // ตาแรก: เฉพาะผู้ขอ · หัวหน้ากอง/ผู้มีอำนาจยังไม่ถึงตา
+  const first = await mine('requester', t.id)
+  assert.equal(first.length, 1)
+  assert.deepEqual(
+    { slot: first[0].slot, slot_label: first[0].slot_label, decision: first[0].decision, trip_status: first[0].trip_status, requester_name: first[0].requester_name,
+      vehicle_name: first[0].vehicle_name, destination: first[0].destination, purpose: first[0].purpose },
+    { slot: 'requester', slot_label: 'ผู้ขออนุญาต', decision: 'sign', trip_status: 'pending', requester_name: 'สมหญิง ผู้ขอ',
+      vehicle_name: 'รถตู้ทดสอบ', destination: 'สำนักงานจังหวัดแพร่ ห้องประชุม 2', purpose: 'อบรมเชิงปฏิบัติการลับ-วัตถุประสงค์' })
+  assert.ok(first[0].planned_departure, 'ต้องมีวันเดินทาง')
+  assert.deepEqual(Object.keys(first[0]).sort(), ['decision', 'destination', 'planned_departure', 'purpose', 'requester_name', 'slot', 'slot_label', 'trip_id', 'trip_status', 'vehicle_name'])
+  assert.equal((await mine('head', t.id)).length, 0)
+  assert.equal((await mine('mayor', t.id)).length, 0)
+
+  await as('requester') // mine() สลับผู้ใช้ไปมา — ตั้งผู้ลงนามให้ชัดก่อนลงนามทุกครั้ง
+  assert.equal((await sign(t.id, 'requester', '246810')).ok, true)
+  assert.equal((await mine('requester', t.id)).length, 0, 'ลงแล้วต้องหายจากกล่อง')
+  assert.deepEqual((await mine('head', t.id)).map(i => [i.slot, i.decision]), [['dept_head', 'sign']])
+  assert.equal((await mine('mayor', t.id)).length, 0, 'ผู้มีอำนาจรอหัวหน้ากองลงก่อน')
+  await as('head')
+  assert.equal((await sign(t.id, 'dept_head', '482916')).ok, true)
+  assert.deepEqual((await mine('mayor', t.id)).map(i => [i.slot, i.slot_label, i.decision]), [['authority', 'ผู้มีอำนาจสั่งใช้ยานพาหนะ', 'approve']])
+  assert.equal((await mine('head', t.id)).length, 0)
+  await as('mayor')
+  assert.equal((await sign(t.id, 'authority', '928374', 'approve')).ok, true)
+  for (const alias of ['requester', 'head', 'mayor']) assert.equal((await mine(alias, t.id)).length, 0, `${alias} ลงครบแล้วต้องไม่ค้าง`)
+
+  // ถอนแล้วกลับมาถึงคิวอีกครั้ง
+  await as('requester')
+  await rpc('public.esign_revoke_fleet_trip($1, $2, NULL)', [t.id, 'แก้คำขอ'])
+  assert.equal((await mine('requester', t.id)).length, 1)
+  assert.equal((await mine('head', t.id)).length, 0, 'ต้นสายถูกถอน ต้องรอผู้ขอลงใหม่ก่อน')
+
+  // ใบของ อปท. อื่นต้องไม่แย่งโควตา 100 ใบของเรา: กรองตาม อปท. ก่อน LIMIT (ไม่ใช่หลัง) — ไม่งั้นใบของเราหลุดจากกล่องเมื่อ อปท. อื่นมีใบค้างเยอะ
+  await db.query('ALTER TABLE public.fleet_trips DISABLE TRIGGER trg_fleet_trips_esign_guard')
+  await db.query(`INSERT INTO public.fleet_trips (municipality_id, status, requested_by, created_by, planned_departure, esign_slots, esign_verify_code, destination)
+                  SELECT $1, 'approved', $2, $2, '2026-01-01'::timestamptz + (g || ' minutes')::interval, '{"requester":"online"}'::jsonb, md5('crowd' || g), 'CROWD-' || g
+                  FROM generate_series(1, 105) g`, [B, users.staffB.id])
+  await db.query('ALTER TABLE public.fleet_trips ENABLE TRIGGER trg_fleet_trips_esign_guard')
+  assert.equal((await mine('requester', t.id)).length, 1, 'ใบของ อปท. อื่น 105 ใบต้องไม่ดันใบของเราออกจากกล่อง')
+  assert.equal((await pending('staffB')).items.length, 100, 'กล่องคืนไม่เกิน 100 ใบ')
+  assert.ok((await pending('staffB')).items.every(i => i.destination.startsWith('CROWD-')), 'อปท. B เห็นเฉพาะใบของตัวเอง')
+  await db.query('ALTER TABLE public.fleet_trips DISABLE TRIGGER trg_fleet_trips_esign_guard')
+  await db.query("DELETE FROM public.fleet_trips WHERE destination LIKE 'CROWD-%'")
+  await db.query('ALTER TABLE public.fleet_trips ENABLE TRIGGER trg_fleet_trips_esign_guard')
+
+  // ใบที่ปิดแล้ว (ปฏิเสธ/ยกเลิก/เสร็จสิ้น) ไม่เข้ากล่อง · เซ็นสด/ทริปเก่าไม่เข้า
+  for (const closed of ['rejected', 'cancelled', 'completed']) {
+    await as('requester')
+    const c = await makeTrip()
+    assert.equal((await mine('requester', c.id)).length, 1, closed)
+    await db.query('UPDATE public.fleet_trips SET status = $1 WHERE id = $2', [closed, c.id])
+    assert.equal((await mine('requester', c.id)).length, 0, `${closed} ต้องไม่เข้ากล่อง`)
+  }
+  const all = (await pending('requester')).items
+  const wetIds = (await db.query('SELECT id FROM public.fleet_trips WHERE esign_slots IS NULL')).rows.map(r => r.id)
+  assert.ok(all.every(i => !wetIds.includes(i.trip_id)), 'ทริปเซ็นสดต้องไม่เข้ากล่อง')
+
+  // คนอื่นไม่เห็นใบที่ไม่ใช่ตา: ผู้ดูแลรถ/แอดมินอ่านทริปได้แต่ไม่ใช่ผู้ลงนาม · คนนอกกอง/ประชาชน/อปท.อื่น/superadmin ไม่เห็นเลย
+  for (const alias of ['fleetAdmin', 'adminA']) assert.equal((await mine(alias, t.id)).length, 0, alias)
+  for (const alias of ['outsider', 'citizen', 'staffB', 'adminB', 'superadmin']) {
+    const res = await pending(alias)
+    assert.equal(res.ok, true, alias)
+    assert.deepEqual(res.items, [], `${alias} ต้องไม่เห็นใบของ อปท. นี้`)
+    assert.equal(res.count, 0, alias)
+  }
+  await as('anon')
+  assert.deepEqual(await rpc('public.esign_my_pending()'), { ok: false, code: 'not_authenticated' })
+  const can = async role => (await db.query(`SELECT has_function_privilege($1, 'public.esign_my_pending()', 'execute') AS ok`, [role])).rows[0].ok
+  assert.equal(await can('anon'), false)
+  assert.equal(await can('authenticated'), true)
 })
 
 await test('ภาพลายเซ็น: audit มีบรรทัดเพิ่ม/ลบ แต่ไม่มีตัวภาพ', async () => {

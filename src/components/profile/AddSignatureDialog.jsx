@@ -35,7 +35,8 @@ export default function AddSignatureDialog({ onClose, onSaved, isFirst }) {
     const first = dialogRef.current?.querySelector('[data-first-focus]')
     first?.focus()
     const onKey = event => {
-      if (event.key === 'Escape') { event.preventDefault(); onClose() }
+      // stopPropagation: กล่องนี้ซ้อนอยู่ในกล่องลงนามบนหน้าที่มีตัวรับ Esc ระดับ window (หน้ายานพาหนะ) — Esc ต้องปิดเฉพาะกล่องบนสุด
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose() }
       if (event.key === 'Tab') {
         const items = [...dialogRef.current.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]')]
         if (!items.length) return
