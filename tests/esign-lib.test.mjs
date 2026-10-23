@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
-  ESIGN_FLEET_SLOTS, ESIGN_MESSAGES, esignAnnouncementDraft, esignAnyOnline, esignBlockers, esignGateItems, esignMessage,
+  ESIGN_DECISION_LABEL, ESIGN_DUTY_TEXT, ESIGN_FLEET_SLOTS, ESIGN_MESSAGES, esignAnnouncementDraft, esignAnyOnline, esignBlockers, esignGateItems, esignMessage,
   esignModesFromStatus,
 } from '../src/lib/esign.js'
 
@@ -14,7 +14,9 @@ const read = path => readFile(new URL(path, import.meta.url), 'utf8')
 const functionsOldSql = await read('../supabase/migrations/20261022100200_esign_functions.sql')
 // ชุด B1.5 ยกฟังก์ชันที่แก้มาเต็มตัวในไฟล์ใหม่ — นิยามหลังสุดชนะ (ลำดับเดียวกับที่ apply บนฐานจริง)
 const gateRelaxSql = await read('../supabase/migrations/20261022110100_esign_gate_relax_functions.sql')
-const functionsSql = functionsOldSql + '\n' + gateRelaxSql
+// ชุด S1 (ภาพลายเซ็น) เป็นฟังก์ชันใหม่ล้วน ไม่ทับของเดิม
+const imageFunctionsSql = await read('../supabase/migrations/20261023100100_esign_image_functions.sql')
+const functionsSql = functionsOldSql + '\n' + gateRelaxSql + '\n' + imageFunctionsSql
 const apiSource = await read('../src/lib/esignApi.js')
 
 // รหัสที่ถูกถอดจากฟังก์ชันแล้ว (ยังค้างอยู่ในไฟล์ชุด A เพราะ migration ที่ apply แล้วแก้ย้อนไม่ได้) — หน้าจอไม่ต้องมีข้อความ
@@ -70,20 +72,31 @@ await test('หน้าจอเรียก RPC ครบทุก argument �
   }
 })
 
-await test('ทุกชื่อที่หน้าตั้งค่า import จาก lib/esign และ lib/esignApi มี export จริง (eslint ไม่จับ — เคยหลุดไปถึง build)', async () => {
-  const component = await read('../src/components/admin/EsignSettings.jsx')
-  const esign = await import('../src/lib/esign.js')
-  const esignApiExports = new Set([...apiSource.matchAll(/export (?:const|async function|function) (\w+)/g)].map(match => match[1]))
+await test('ทุกชื่อที่หน้าจอ import จาก lib/esign · esignApi · signatureImage · signatureCanvas มี export จริง (eslint ไม่จับ — เคยหลุดไปถึง build)', async () => {
+  const libs = {
+    esign: await import('../src/lib/esign.js'),
+    signatureImage: await import('../src/lib/signatureImage.js'),
+  }
+  // esignApi/signatureCanvas ต้องใช้ supabase/DOM จึง import ใน Node ไม่ได้ — อ่านรายชื่อ export จากซอร์ส
+  const exportsOf = source => new Set([...source.matchAll(/export (?:const|async function|function) (\w+)/g)].map(match => match[1]))
+  const sources = { esignApi: exportsOf(apiSource), signatureCanvas: exportsOf(await read('../src/lib/signatureCanvas.js')) }
+  const components = [
+    '../src/components/admin/EsignSettings.jsx', '../src/components/profile/MyEsignSection.jsx',
+    '../src/components/profile/AddSignatureDialog.jsx', '../src/components/profile/SignaturePad.jsx',
+  ]
   let checked = 0
-  for (const match of component.matchAll(/import \{([^}]*)\} from '(\.\.\/\.\.\/lib\/esign(?:Api)?)'/g)) {
-    const names = match[1].split(',').map(name => name.trim()).filter(Boolean)
-    for (const name of names) {
-      const exported = match[2].endsWith('Api') ? esignApiExports.has(name) : name in esign
-      assert.ok(exported, `${match[2]} ไม่มี export ${name}`)
-      checked++
+  for (const path of components) {
+    const component = await read(path)
+    for (const match of component.matchAll(/import \{([^}]*)\} from '(?:\.\.\/)+lib\/(esign|esignApi|signatureImage|signatureCanvas)'/g)) {
+      const names = match[1].split(',').map(name => name.trim()).filter(Boolean)
+      for (const name of names) {
+        const exported = libs[match[2]] ? name in libs[match[2]] : sources[match[2]].has(name)
+        assert.ok(exported, `${path}: lib/${match[2]} ไม่มี export ${name}`)
+        checked++
+      }
     }
   }
-  assert.ok(checked >= 14, `ตรวจชื่อ import ได้น้อยผิดปกติ (${checked})`)
+  assert.ok(checked >= 30, `ตรวจชื่อ import ได้น้อยผิดปกติ (${checked})`)
 })
 
 await test('esignModesFromStatus: ไม่มีสถานะ/ไม่มีช่อง = เซ็นสดทุกช่อง · ค่าแปลกถือเป็นเซ็นสด', () => {
@@ -135,6 +148,38 @@ await test('บันทึกประกาศ: ทุกช่องส่ง
   const modesDisabled = /disabled=\{busy === 'modes' \|\| !modesDirty([^}]*)\}/.exec(component)
   assert.ok(modesDisabled, 'ไม่พบเงื่อนไข disabled ของปุ่มบันทึกช่องลงนาม')
   assert.ok(!/policy|announcement|approval/i.test(modesDisabled[1]), `ปุ่มบันทึกช่องลงนามผูกกับประกาศ: ${modesDisabled[1]}`)
+})
+
+await test('ลายเซ็นของฉัน: ทุกฟังก์ชัน DB ของหน้านี้มีตัวเรียกฝั่งหน้าจอ · ส่วนลายเซ็นในโปรไฟล์เห็นเฉพาะเจ้าหน้าที่ · เมนูกดชื่อลิงก์มาถูกที่', async () => {
+  const wrappers = new Set([...apiSource.matchAll(/callEsign\('(\w+)'/g)].map(match => match[1]))
+  for (const name of ['esign_my_signer_overview', 'esign_my_signatures', 'esign_my_signature_add', 'esign_my_signature_set_default',
+    'esign_my_signature_delete', 'esign_my_signature_history', 'set_esign_pin', 'esign_suspend_me']) {
+    assert.ok(wrappers.has(name), `esignApi ไม่มีตัวเรียก ${name}`)
+  }
+  const profile = await read('../src/pages/ProfilePage.jsx')
+  assert.ok(/STAFF_ROLES\.includes\(contextRole \?\? profile\.role\) && <MyEsignSection \/>/.test(profile), 'ส่วนลายเซ็นต้องแสดงเฉพาะเจ้าหน้าที่')
+  const menu = await read('../src/components/layout/StaffAccountMenu.jsx')
+  assert.ok(menu.includes('to="/profile#signature"') && menu.includes('data-account-signature'))
+  const section = await read('../src/components/profile/MyEsignSection.jsx')
+  assert.ok(/hash === '#signature'/.test(section), 'ส่วนลายเซ็นต้องเปิดเองเมื่อมาด้วย #signature')
+  // ห้ามอ้างเลขมาตราของ พ.ร.บ./พ.ร.ฎ. ในข้อความหน้าจอของส่วนนี้ (ต้องตรวจกับตัวบทก่อน — เคยผิดมาแล้ว)
+  for (const source of [section, await read('../src/components/profile/AddSignatureDialog.jsx')]) {
+    assert.ok(!/มาตรา\s*[๐-๙0-9]/.test(source), 'หน้าลายเซ็นของฉันห้ามอ้างเลขมาตราลอยๆ')
+  }
+  assert.ok(ESIGN_DUTY_TEXT.length > 40 && !/มาตรา/.test(ESIGN_DUTY_TEXT))
+  assert.deepEqual(Object.keys(ESIGN_DECISION_LABEL).sort(), ['approve', 'sign'])
+})
+
+await test('ชื่อฟิลด์ที่หน้า "ลายเซ็นของฉัน" อ่านจากผลของ RPC มีอยู่จริงใน SQL (หน้าจอใช้ฐานข้อมูลจำลองในเทสต์เบราว์เซอร์ จึงต้องเทียบกับ SQL ตรงนี้)', async () => {
+  const section = await read('../src/components/profile/MyEsignSection.jsx')
+  const sqlKeys = new Set([...functionsSql.matchAll(/'([a-z0-9_]+)',\s/g)].map(match => match[1]))
+  const fromOverview = [...section.matchAll(/overview\?\.([a-z_]+)/g)].map(match => match[1])
+  const explicit = ['items', 'png_base64', 'is_default', 'label', 'slot_label', 'decision', 'signed_at', 'revoked', 'with_image',
+    'signature_id', 'kept_as_evidence', 'remaining', 'width', 'height']
+  assert.ok(fromOverview.length >= 4, 'อ่านชื่อฟิลด์ของภาพรวมจากหน้าจอได้น้อยผิดปกติ')
+  for (const key of new Set([...fromOverview, ...explicit])) {
+    assert.ok(sqlKeys.has(key), `หน้าจออ่านฟิลด์ "${key}" แต่ไม่มีใน jsonb ของฟังก์ชัน DB ที่คืนค่า`)
+  }
 })
 
 await test('ร่างประกาศ: ใส่ชื่อหน่วยงาน · มีส่วนให้หน่วยงานกรอกเอง · อ้างตัวบทเท่าที่ตรวจแล้วเท่านั้น', async () => {

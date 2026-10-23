@@ -9,6 +9,7 @@ import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiNam
 import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf } from '../lib/thaiAddress'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import ActiveSessions from '../components/profile/ActiveSessions'
+import MyEsignSection from '../components/profile/MyEsignSection'
 import { validateNewPassword, PASSWORD_HINT } from '../lib/passwordPolicy'
 import { toHttps } from '../lib/basename'
 import { activeOrgTerms } from '../lib/orgTerms'
@@ -589,6 +590,9 @@ export default function ProfilePage() {
             )}
           </div>
         </div>
+
+        {/* ลายเซ็นของฉัน — รหัสลงนาม/ภาพลายเซ็น/ประวัติ เฉพาะเจ้าหน้าที่ (เมนูกดชื่อ → /profile#signature) */}
+        {STAFF_ROLES.includes(contextRole ?? profile.role) && <MyEsignSection />}
 
         {/* อุปกรณ์ที่ล็อกอินอยู่ — ให้เจ้าของบัญชีเตะ session ที่ลืมไว้บนเครื่องคนอื่นได้เอง */}
         <ActiveSessions />

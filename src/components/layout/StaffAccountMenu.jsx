@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, LogOut, UserRound } from 'lucide-react'
+import { ChevronDown, FileSignature, LogOut, UserRound } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ROLE_LABELS } from '../../lib/staffRoster'
 
@@ -8,6 +8,8 @@ import { ROLE_LABELS } from '../../lib/staffRoster'
 // แต่กดแล้วเปิดเมนู "โปรไฟล์ของฉัน / ออกจากระบบ" แทนที่จะพาไปหน้าโปรไฟล์ทันที
 // ปุ่ม "ออกจากระบบ" เดิมวางเด่นอยู่บนหัวจอ ทั้งที่การออกจากระบบเป็นของที่ไม่ควรกดพลาด (ออกจากทุกอุปกรณ์)
 // ไม่แก้ UserProfileBadge เพราะใช้ร่วมอีกหลายหน้า (ประชาชน/แอดมิน) — ไฟล์นี้ใช้เฉพาะหน้าเจ้าหน้าที่
+//
+// รายการ "ลายเซ็นของฉัน" พาไป /profile#signature (ส่วนลายเซ็นในหน้าโปรไฟล์ เปิดและเลื่อนมาให้เอง) — รหัสลงนาม/ภาพลายเซ็น/ประวัติอยู่ที่นั่น
 //
 // แป้นพิมพ์: เปิดแล้วโฟกัสรายการแรก · ↑ ↓ Home End เลื่อนรายการ · Esc ปิดแล้วคืนโฟกัสปุ่ม · Tab ปิดเมนู
 export default function StaffAccountMenu({ onLogout }) {
@@ -74,6 +76,10 @@ export default function StaffAccountMenu({ onLogout }) {
           <Link to="/profile" role="menuitem" data-account-profile onClick={() => setOpen(false)}
             className={`${itemCls} text-slate-700 hover:bg-slate-50`}>
             <UserRound size={16} aria-hidden="true" /> โปรไฟล์ของฉัน
+          </Link>
+          <Link to="/profile#signature" role="menuitem" data-account-signature onClick={() => setOpen(false)}
+            className={`${itemCls} text-slate-700 hover:bg-slate-50`}>
+            <FileSignature size={16} aria-hidden="true" /> ลายเซ็นของฉัน
           </Link>
           <div className="my-1 border-t border-slate-100" />
           <button type="button" role="menuitem" data-account-logout

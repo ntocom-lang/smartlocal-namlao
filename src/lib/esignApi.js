@@ -42,3 +42,32 @@ export const setEsignDocType = (municipalityId, modes) =>
 
 export const reinstateEsignSigner = userId =>
   callEsign('esign_reinstate_signer', { p_user_id: userId })
+
+// ── ลายเซ็นของฉัน (หน้าโปรไฟล์) — ฐานข้อมูลชุด S1 (ภาพ) และชุด A (รหัสลงนาม) ─────────────────────────────
+export const getMySignerOverview = () => callEsign('esign_my_signer_overview', {})
+
+export const getMySignatures = () => callEsign('esign_my_signatures', {})
+
+// pngBase64 = base64 ล้วนของ PNG (ไม่มี data: prefix) จาก signatureCanvas.js
+export const addMySignature = ({ label, pngBase64, makeDefault }) =>
+  callEsign('esign_my_signature_add', {
+    p_label: label,
+    p_png_base64: pngBase64,
+    p_make_default: Boolean(makeDefault),
+  })
+
+export const setDefaultSignature = id => callEsign('esign_my_signature_set_default', { p_id: id })
+
+export const deleteMySignature = id => callEsign('esign_my_signature_delete', { p_id: id })
+
+export const getMySignatureHistory = (limit = 10) => callEsign('esign_my_signature_history', { p_limit: limit })
+
+// ตั้งรหัสครั้งแรก: currentPin = null + ackDuty = true · เปลี่ยนรหัส: ต้องส่งรหัสเดิม
+export const setEsignPin = ({ pin, currentPin = null, ackDuty = false }) =>
+  callEsign('set_esign_pin', {
+    p_pin: pin,
+    p_current_pin: currentPin || null,
+    p_ack_duty: Boolean(ackDuty),
+  })
+
+export const suspendMyEsign = reason => callEsign('esign_suspend_me', { p_reason: String(reason ?? '').trim() || null })
