@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
   ESIGN_DECISION_LABEL, ESIGN_DUTY_TEXT, ESIGN_FLEET_SLOTS, ESIGN_MESSAGES, ESIGN_TRIP_EXCEPTIONS, esignAnnouncementDraft, esignAnyOnline, esignBlockers,
-  esignFailureText, esignGateItems, esignMessage, esignModesFromStatus, esignRevokeTargets,
+  esignDepartWarning, esignFailureText, esignGateItems, esignMessage, esignModesFromStatus, esignPendingFromRpc, esignPendingKey, esignPendingRow, esignRevokeTargets,
 } from '../src/lib/esign.js'
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8')
@@ -20,6 +20,7 @@ const imageFunctionsSql = await read('../supabase/migrations/20261023100100_esig
 const tripPanelSql = await read('../supabase/migrations/20261023110000_esign_trip_panel_functions.sql')
 const functionsSql = functionsOldSql + '\n' + gateRelaxSql + '\n' + imageFunctionsSql + '\n' + tripPanelSql
 const apiSource = await read('../src/lib/esignApi.js')
+const esignLibSource = await read('../src/lib/esign.js')
 
 // รหัสที่ถูกถอดจากฟังก์ชันแล้ว (ยังค้างอยู่ในไฟล์ชุด A เพราะ migration ที่ apply แล้วแก้ย้อนไม่ได้) — หน้าจอไม่ต้องมีข้อความ
 const RETIRED_CODES = ['gate_policy_missing']
@@ -87,6 +88,7 @@ await test('ทุกชื่อที่หน้าจอ import จาก li
     '../src/components/admin/EsignSettings.jsx', '../src/components/profile/MyEsignSection.jsx',
     '../src/components/profile/AddSignatureDialog.jsx', '../src/components/profile/SignaturePad.jsx',
     '../src/components/esign/PinForm.jsx', '../src/components/esign/SignTripDialog.jsx', '../src/components/esign/TripEsignPanel.jsx', '../src/components/fleet/FleetTrips.jsx',
+    '../src/components/esign/MyPendingSignatures.jsx', '../src/components/staff/StaffOperationalDashboard.jsx',
   ]
   let checked = 0
   for (const path of components) {
@@ -267,6 +269,84 @@ await test('ร่างประกาศ: ใส่ชื่อหน่วย
   }
   // ไม่สัญญาว่าระบบทำสิ่งที่ยังไม่มี (สำรองข้อมูลเป็นหน้าที่ที่หน่วยงานกำหนดเอง)
   assert.ok(!/ระบบ(จะ)?สำรองข้อมูล/.test(text))
+})
+
+await test('S3b รายการใบรอลงนาม: ดึงพลาด/ผลผิดรูปเป็น error ไม่ใช่ "ไม่มีใบรอ" · แถวมีข้อความและปุ่มตามช่อง · ชื่อฟิลด์ตรงกับ esign_my_pending ใน SQL', () => {
+  const item = { trip_id: 't1', slot: 'authority', slot_label: 'ผู้มีอำนาจสั่งใช้ยานพาหนะ', decision: 'approve', trip_status: 'approved', requester_name: 'สมหมาย', vehicle_name: 'กระบะ กข 1234', destination: 'อำเภอเมือง', purpose: 'ประชุม', planned_departure: '2026-10-25T01:00:00Z' }
+  // ยังไม่รู้ผล (idle/loading) ส่งต่อสถานะเดิม รายการว่าง
+  assert.deepEqual(esignPendingFromRpc({ status: 'loading', data: null }), { status: 'loading', items: [] })
+  assert.deepEqual(esignPendingFromRpc({ status: 'idle', data: null }), { status: 'idle', items: [] })
+  assert.deepEqual(esignPendingFromRpc(undefined), { status: 'idle', items: [] })
+  assert.deepEqual(esignPendingFromRpc({ status: 'error', data: null }), { status: 'error', items: [] })
+  // ดึงสำเร็จแต่ฟังก์ชันตอบ ok:false หรือรูปผิด = error (ไม่งั้นหน้าแรกขึ้นไฟเขียวทั้งที่อาจมีใบรอผู้ใช้อยู่)
+  assert.equal(esignPendingFromRpc({ status: 'ok', data: { ok: false, code: 'not_authenticated' } }).status, 'error')
+  assert.equal(esignPendingFromRpc({ status: 'ok', data: { ok: true, items: 'x' } }).status, 'error')
+  assert.equal(esignPendingFromRpc({ status: 'ok', data: [] }).status, 'error')
+  const ok = esignPendingFromRpc({ status: 'ok', data: { ok: true, count: 2, items: [item, { slot: 'x' }, null] } })
+  assert.equal(ok.status, 'ok')
+  assert.deepEqual(ok.items, [item], 'แถวที่ไม่มี trip_id/slot ถูกตัดทิ้ง')
+  assert.equal(esignPendingFromRpc({ status: 'ok', data: { ok: true, count: 0, items: [] } }).items.length, 0)
+
+  assert.equal(esignPendingKey(item), 't1:authority')
+  const row = esignPendingRow(item)
+  assert.equal(row.title, 'สมหมาย ขอใช้รถไป อำเภอเมือง')
+  assert.equal(row.actionLabel, 'อนุมัติ (ลงนาม)', 'ช่องผู้มีอำนาจคืออนุมัติ')
+  assert.equal(row.slotLabel, 'ผู้มีอำนาจสั่งใช้ยานพาหนะ')
+  assert.deepEqual(row.summary, { requesterName: 'สมหมาย', vehicleName: 'กระบะ กข 1234', destination: 'อำเภอเมือง', purpose: 'ประชุม', plannedDeparture: '2026-10-25T01:00:00Z' })
+  const bare = esignPendingRow({ trip_id: 't2', slot: 'dept_head', decision: 'sign' })
+  assert.equal(bare.title, 'ผู้ขอ ขอใช้รถ')
+  assert.equal(bare.actionLabel, 'ลงนาม')
+  assert.equal(bare.slotLabel, ESIGN_FLEET_SLOTS.find(slot => slot.key === 'dept_head').label, 'ไม่มี slot_label ใช้ชื่อช่องในหน้าจอ')
+
+  // ชื่อฟิลด์ที่ esignPendingRow/esignPendingKey อ่านต้องมีใน jsonb ของ esign_my_pending จริง (หน้าจอทดสอบด้วยข้อมูลจำลอง)
+  const body = /FUNCTION public\.esign_my_pending\(\)[\s\S]*?\n\$\$;/.exec(tripPanelSql)?.[0]
+  assert.ok(body, 'ไม่พบ esign_my_pending ใน migration')
+  const returned = new Set([...body.matchAll(/'([a-z_]+)',\s/g)].map(match => match[1]))
+  const lib = esignLibSource.replace(/\r\n/g, '\n')
+  const rowSource = /export function esignPendingRow[\s\S]*?\n}\n/.exec(lib)?.[0] ?? ''
+  const keySource = /export const esignPendingKey[^\n]*/.exec(lib)?.[0] ?? ''
+  const readFields = [...new Set([...rowSource.matchAll(/\bitem\.([a-z_]+)/g), ...keySource.matchAll(/\bitem\.([a-z_]+)/g)].map(match => match[1]))]
+  assert.ok(readFields.length >= 9, `อ่านชื่อฟิลด์ได้น้อยผิดปกติ (${readFields.join(',')})`)
+  for (const key of readFields) assert.ok(returned.has(key), `หน้าจออ่านฟิลด์ "${key}" แต่ esign_my_pending ไม่ส่งมา`)
+})
+
+await test('S3b เตือนตอนออกรถ: เตือนเฉพาะช่องผู้มีอำนาจออนไลน์ที่ยังไม่ลงนาม · ลงแล้ว/เซ็นสด/ทริปปิด/อ่านสถานะไม่ได้ = ไม่เตือน', () => {
+  const slot = (name, extra = {}) => ({ slot: name, label: name + '-label', mode: 'online', applicable: true, signed: false, expected_name: null, blocked: null, ...extra })
+  const base = (slots, extra = {}) => ({ found: true, trip_status: 'approved', slots, ...extra })
+  const w = esignDepartWarning(base([slot('requester', { signed: true }), slot('dept_head', { signed: true }), slot('authority', { expected_name: 'นายก ก.' }), slot('sk1', { applicable: false })]))
+  assert.deepEqual(w, { missing: ['authority-label'], expectedName: 'นายก ก.', blocked: null })
+  const all = esignDepartWarning(base([slot('requester'), slot('dept_head'), slot('authority')]))
+  assert.deepEqual(all.missing, ['requester-label', 'dept_head-label', 'authority-label'], 'ไล่ตามลำดับสายลงนาม')
+  assert.equal(esignDepartWarning(base([slot('authority', { blocked: 'signatory_not_linked' })])).blocked, 'signatory_not_linked')
+  assert.equal(esignDepartWarning(base([slot('authority', { signed: true })])), null, 'ลงนามแล้ว')
+  assert.equal(esignDepartWarning(base([slot('authority', { mode: 'wet' })])), null, 'เซ็นสด ไม่ใช่เรื่องของระบบ')
+  assert.equal(esignDepartWarning(base([slot('requester'), slot('authority', { signed: true })])), null, 'ช่องผู้มีอำนาจครบแล้ว ไม่เตือนเรื่องช่องอื่น')
+  assert.equal(esignDepartWarning(base([slot('authority')], { trip_status: 'cancelled' })), null)
+  assert.equal(esignDepartWarning({ found: false }), null)
+  assert.equal(esignDepartWarning({ ok: false, code: 'error' }), null)
+  assert.equal(esignDepartWarning(null), null)
+})
+
+await test('S3b การต่อสาย: esign_my_pending ไม่รับอาร์กิวเมนต์ ต้องส่ง args {} ทุกจุด (useHomeRpc ปกติส่ง p_muni → PGRST202) · แถบอยู่หน้าการใช้รถ · เตือนออกรถเฉพาะทริปโหมดออนไลน์', async () => {
+  assert.ok(/CREATE OR REPLACE FUNCTION public\.esign_my_pending\(\)/.test(tripPanelSql), 'esign_my_pending ต้องไม่รับอาร์กิวเมนต์ — ถ้าเปลี่ยนต้องแก้ args ที่หน้าจอ')
+  const home = await read('../src/components/staff/StaffOperationalDashboard.jsx')
+  const fleet = await read('../src/components/fleet/FleetTrips.jsx')
+  const homeData = await read('../src/lib/staffHomeData.js')
+  for (const [name, source] of [['StaffOperationalDashboard', home], ['FleetTrips', fleet]]) {
+    const calls = [...source.matchAll(/useHomeRpc\(\{[^\n]*rpc: 'esign_my_pending'[^\n]*\}\)/g)].map(match => match[0])
+    assert.equal(calls.length, 1, `${name}: ต้องเรียก useHomeRpc ของ esign_my_pending หนึ่งจุด`)
+    assert.ok(/args: \{\}/.test(calls[0]), `${name}: esign_my_pending ต้องส่ง args: {}`)
+  }
+  // ค่าเริ่มต้นของ useHomeRpc ยังเป็น p_muni (RPC หน้าแรกชุดเดิมไม่ถูกกระทบ)
+  assert.ok(/argsJson == null \? \{ p_muni: tenantId \}/.test(homeData), 'useHomeRpc ไม่ส่ง args ต้องยังส่ง p_muni เหมือนเดิม')
+  assert.ok(/variant="banner"/.test(fleet) && /\{selTrip\.esign_slots && <DepartEsignNotice tripId=\{selTrip\.id\} \/>\}/.test(fleet), 'แถบอยู่บนหน้าการใช้รถ · เตือนออกรถเฉพาะทริปที่มี esign_slots')
+  assert.ok(/onSigned=\{\(\) => \{ esignRpc\.reload\(\); loadTrips\(\) \}\}/.test(fleet), 'ลงนามจากแถบแล้วต้องโหลดทั้งแถบและรายการทริปใหม่')
+  // ไฟเขียว "ไม่มีงานค้าง" ต้องรู้เรื่องใบรอลงนาม: นับจำนวน + สถานะ loading/error เข้า todoState
+  assert.ok(/esignPending\.items\.length\]/.test(home) && /\['loading', 'error'\]\.includes\(esignPending\.status\)/.test(home), 'todoState ต้องรวมใบรอลงนามทั้งจำนวนและสถานะ')
+  // ลงใบสุดท้ายแล้วส่วน "ต้องทำตอนนี้" ต้องไม่หายทั้งก้อน (ข้อความ "ลงนามแล้ว" ต้องอยู่) — เทสต์เบราว์เซอร์ใช้บัญชีที่มีงานอื่นค้างอยู่เสมอ จึงจับกรณีนี้ไม่ได้ ตรวจที่ซอร์สแทน
+  assert.ok(/esignPending\.status === 'error' \|\| esignTouched/.test(home) && /setEsignTouched\(true\)/.test(home), 'ส่วน "ต้องทำตอนนี้" ต้องค้างอยู่หลังลงนามใบสุดท้าย (esignTouched)')
+  // กล่องลงนามที่ใช้ร่วม: ห้ามอ้างเลขมาตราลอยๆ
+  assert.ok(!/มาตรา\s*[๐-๙0-9]/.test(await read('../src/components/esign/MyPendingSignatures.jsx')))
 })
 
 console.log(`\nผ่านทั้งหมด ${cases} กรณี`)

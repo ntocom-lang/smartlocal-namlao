@@ -13,8 +13,10 @@ import {
 } from '../../lib/documentSignatories'
 import FleetEmptyState from './FleetEmptyState'
 import FleetIncidentModal from './FleetIncidentModal'
-import TripEsignPanel from '../esign/TripEsignPanel'
-import { ESIGN_TRIP_EXCEPTIONS } from '../../lib/esign'
+import TripEsignPanel, { DepartEsignNotice } from '../esign/TripEsignPanel'
+import MyPendingSignatures from '../esign/MyPendingSignatures'
+import { ESIGN_TRIP_EXCEPTIONS, esignPendingFromRpc } from '../../lib/esign'
+import { useHomeRpc } from '../../lib/staffHomeData'
 import ResponsiveSelect from '../common/ResponsiveSelect'
 
 const STATUS_LABEL = {
@@ -679,6 +681,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     return () => window.removeEventListener('keydown', onKey)
   }, [modal, saving])
   const loadTrips = () => setRefreshKey(k => k + 1)
+
+  // ใบขอใช้รถที่ถึงคิว "ฉัน" ลงนามออนไลน์ — แถบบนสุดของหน้านี้ (แคชชุดเดียวกับการ์ดบนหน้าแรก)
+  // อปท. ที่ไม่ได้เปิดโหมดออนไลน์ได้ count 0 แถบจึงไม่ขึ้น
+  const esignRpc = useHomeRpc({ rpc: 'esign_my_pending', args: {}, tenantId: tenant?.id, profileId: user?.id, enabled: Boolean(tenant?.id && user?.id) })
+  const esignPending = esignPendingFromRpc(esignRpc)
 
   // โหลดครั้งเดียวต่อ tenant — รายชื่อเจ้าหน้าที่/รถไม่เปลี่ยนตามการแก้ทริป
   useEffect(() => {
@@ -2174,6 +2181,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         </div>
       )}
 
+      <MyPendingSignatures variant="banner" status={esignPending.status} items={esignPending.items}
+        onSigned={() => { esignRpc.reload(); loadTrips() }} onRetry={esignRpc.reload} />
+
       {/* ── Action buttons ── */}
       <div className="flex items-center gap-1.5 md:gap-2 flex-nowrap md:flex-wrap">
         {canWrite && <button onClick={openReserve}
@@ -2796,6 +2806,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <p className="text-xs text-gray-600">{selTrip.destination} — {selTrip.purpose}</p>
             <p className="text-xs text-blue-500 mt-1">👤 {selTrip.driver?.full_name}</p>
           </div>
+          {selTrip.esign_slots && <DepartEsignNotice tripId={selTrip.id} />}
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">เวลาออกจริง *</label>
             <input type="datetime-local" value={form.started_at} onChange={set('started_at')} className={inp} />

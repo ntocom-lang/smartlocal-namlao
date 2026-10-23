@@ -7,12 +7,15 @@
 // มีแคชในหน่วยความจำ 30 วินาที (ต่อ อปท. + บัญชี): เจ้าหน้าที่สลับไปมาระหว่างหน้าแรกกับโมดูลทั้งวัน ทุกครั้งที่กลับมา
 // component ถูกสร้างใหม่ ถ้าไม่มีแคชจะยิง RPC ทุกครั้งที่กดกลับ · แคชหายเมื่อรีเฟรชหน้า และผูกกับ id บัญชี
 // จึงไม่ข้ามบัญชีเมื่อสลับผู้ใช้ในแท็บเดียวกัน
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from './supabase'
 
 const CACHE_TTL_MS = 30_000
 const REFOCUS_MIN_MS = 60_000
 const cache = new Map()
+// คำขอที่กำลังบินอยู่ (ต่อคีย์เดียวกัน) — หน้าที่เรนเดอร์เนื้อหาซ้ำสองชุดพร้อมกัน (หน้ายานพาหนะวางทั้งชุดมือถือและเดสก์ท็อป ซ่อนด้วย CSS)
+// เรียก hook เดียวกันสองครั้งในจังหวะเดียว ไม่ควรยิง RPC สองรอบ
+const inflight = new Map()
 
 /**
  * ล้างแคชของ RPC หนึ่งตัว (ทุก อปท./บัญชี) — เรียกหลังคนทำรายการที่เปลี่ยนตัวเลขบนหน้าแรก (เช่น ยืนยันประกาศน้ำ-ฝน)
@@ -23,12 +26,18 @@ export function clearHomeRpcCache(rpc) {
 }
 
 /**
- * @param {{ rpc: string, tenantId?: string, profileId?: string, enabled: boolean }} opts
- * @returns {{ status: 'idle'|'loading'|'ok'|'error', data: any }}
+ * @param {{ rpc: string, tenantId?: string, profileId?: string, enabled: boolean, args?: object }} opts
+ *   args = อาร์กิวเมนต์ของ RPC · ไม่ส่ง = { p_muni: tenantId } (RPC ของหน้าแรกชุดเดิม) · ส่ง {} สำหรับฟังก์ชันที่ไม่รับอาร์กิวเมนต์
+ *   (PostgREST หาฟังก์ชันจากชุดชื่ออาร์กิวเมนต์ ส่ง p_muni เกินไปให้ฟังก์ชันที่ไม่รับ = PGRST202)
+ * @returns {{ status: 'idle'|'loading'|'ok'|'error', data: any, reload: () => void }}
  *   status 'idle' = ไม่ได้เปิดใช้ (บทบาทนี้ไม่ต้องดึง) · ระหว่างรีเฟรชเบื้องหลังยังคงค่าเดิมไว้ ไม่กระพริบเป็น loading
+ *   reload = ทิ้งแคชแล้วดึงใหม่ทันที (ใช้หลังคนทำรายการที่เปลี่ยนตัวเลขของ RPC นี้ เช่น ลงนามเสร็จ) · ค่าเดิมยังโชว์ระหว่างรอ
  */
-export function useHomeRpc({ rpc, tenantId, profileId, enabled }) {
-  const key = tenantId && profileId ? `${rpc}:${tenantId}:${profileId}` : null
+export function useHomeRpc({ rpc, tenantId, profileId, enabled, args }) {
+  // อาร์กิวเมนต์เก็บเป็นสตริง: ผู้เรียกส่งอ็อบเจ็กต์ใหม่ทุกรอบเรนเดอร์ ถ้าใช้เป็น dependency ตรงๆ effect จะวนดึงซ้ำไม่จบ
+  const argsJson = args == null ? null : JSON.stringify(args)
+  const key = tenantId && profileId ? `${rpc}:${tenantId}:${profileId}${argsJson == null ? '' : `:${argsJson}`}` : null
+  const [reloadTick, setReloadTick] = useState(0)
   const active = Boolean(enabled && key)
   const [state, setState] = useState(() => {
     const hit = key && cache.get(key)
@@ -44,12 +53,15 @@ export function useHomeRpc({ rpc, tenantId, profileId, enabled }) {
     const load = async () => {
       const mine = ++latest
       lastFetchAt = Date.now()
-      let result
-      try {
-        result = await supabase.rpc(rpc, { p_muni: tenantId })
-      } catch (error) {
-        result = { error }
+      let request = inflight.get(key)
+      if (!request) {
+        // .then(() => …) ไม่ใช่ Promise.resolve(…): ถ้า supabase.rpc โยนทันที (ไม่ใช่ reject) ต้องถูก catch เหมือนเดิม
+        request = Promise.resolve().then(() => supabase.rpc(rpc, argsJson == null ? { p_muni: tenantId } : JSON.parse(argsJson)))
+          .catch(error => ({ error }))
+          .finally(() => { if (inflight.get(key) === request) inflight.delete(key) })
+        inflight.set(key, request)
       }
+      const result = await request
       if (cancelled || mine !== latest) return
       if (result.error || result.data == null) {
         console.error(`${rpc} error:`, result.error?.message ?? 'empty response')
@@ -72,9 +84,14 @@ export function useHomeRpc({ rpc, tenantId, profileId, enabled }) {
       window.removeEventListener('focus', onBack)
       document.removeEventListener('visibilitychange', onBack)
     }
-  }, [active, rpc, tenantId, key])
+  }, [active, rpc, tenantId, key, argsJson, reloadTick])
+
+  const reload = useCallback(() => {
+    if (key) { cache.delete(key); inflight.delete(key) } // คำขอที่ค้างอยู่เป็นของก่อนทำรายการ — ห้ามเอาผลมาใช้
+    setReloadTick(tick => tick + 1)
+  }, [key])
 
   // เปลี่ยน อปท./บัญชี ระหว่างที่ component ยังอยู่ → ห้ามแสดงค่าของบัญชีก่อนหน้า
-  if (state.key !== key) return { status: active ? 'loading' : 'idle', data: null }
-  return { status: active ? state.status : 'idle', data: active ? state.data : null }
+  if (state.key !== key) return { status: active ? 'loading' : 'idle', data: null, reload }
+  return { status: active ? state.status : 'idle', data: active ? state.data : null, reload }
 }

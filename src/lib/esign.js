@@ -164,3 +164,54 @@ export function esignAnnouncementDraft(orgName) {
     '[ชื่อผู้บริหารท้องถิ่น] [ตำแหน่ง]',
   ].join('\n')
 }
+
+// ── รายการ "ใบรอฉันลงนาม" (esign_my_pending → หน้าแรกเจ้าหน้าที่ + แถบในหน้าการใช้รถ) ───────────────────────────
+// แปลงผลของ useHomeRpc เป็นรูปที่หน้าจอใช้ · ok:false หรือรูปผิดต้องเป็น error ไม่ใช่ "ไม่มีใบรอ"
+// ถ้าเข้าใจว่าไม่มีใบรอทั้งที่ดึงไม่ได้ หน้าแรกจะขึ้นไฟเขียว "ไม่มีงานค้าง" และใบขอใช้รถค้างอยู่ที่ผู้มีอำนาจโดยไม่มีใครเห็น
+export function esignPendingFromRpc(rpcState) {
+  const status = rpcState?.status ?? 'idle'
+  if (status !== 'ok') return { status, items: [] }
+  const data = rpcState.data
+  if (data?.ok !== true || !Array.isArray(data.items)) return { status: 'error', items: [] }
+  return { status: 'ok', items: data.items.filter(item => item?.trip_id && item?.slot) }
+}
+
+// คนเดียวถือหลายช่องในทริปเดียวได้ (ได้หลายแถว) จึงใช้ทริป+ช่องเป็นคีย์
+export const esignPendingKey = item => `${item.trip_id}:${item.slot}`
+
+// ข้อมูลหนึ่งแถวของรายการใบรอลงนาม · ช่องผู้มีอำนาจเป็น "อนุมัติ" ส่วนช่องอื่นเป็น "ลงนาม" (ตามที่ DB บอกใน decision)
+export function esignPendingRow(item) {
+  const who = item.requester_name || 'ผู้ขอ'
+  const fallbackLabel = ESIGN_FLEET_SLOTS.find(slot => slot.key === item.slot)?.label ?? item.slot
+  return {
+    key: esignPendingKey(item),
+    tripId: item.trip_id,
+    slot: item.slot,
+    slotLabel: item.slot_label || fallbackLabel,
+    title: item.destination ? `${who} ขอใช้รถไป ${item.destination}` : `${who} ขอใช้รถ`,
+    vehicleName: item.vehicle_name || null,
+    plannedDeparture: item.planned_departure || null,
+    actionLabel: item.decision === 'approve' ? 'อนุมัติ (ลงนาม)' : 'ลงนาม',
+    summary: {
+      requesterName: item.requester_name,
+      vehicleName: item.vehicle_name,
+      destination: item.destination,
+      purpose: item.purpose,
+      plannedDeparture: item.planned_departure,
+    },
+  }
+}
+
+// เตือนแบบไม่บล็อกตอนบันทึกออกเดินทาง: ช่องผู้มีอำนาจเป็นออนไลน์แต่ยังไม่ลงนาม
+// คืน null = ไม่ต้องเตือน · missing = ช่องออนไลน์ที่ยังไม่ลงนามทั้งหมด (ผู้ขอ/ผอ.กอง/ผู้มีอำนาจ ตามลำดับ) · blocked = เหตุที่ช่องผู้มีอำนาจลงนามออนไลน์ไม่ได้ (ถ้ามี)
+export function esignDepartWarning(status) {
+  if (!status?.found || ['rejected', 'cancelled'].includes(status.trip_status)) return null
+  const pending = (status.slots ?? []).filter(slot => slot.mode === 'online' && slot.applicable && !slot.signed)
+  const authority = pending.find(slot => slot.slot === 'authority')
+  if (!authority) return null
+  return {
+    missing: pending.map(slot => slot.label),
+    expectedName: authority.expected_name || null,
+    blocked: authority.blocked || null,
+  }
+}
