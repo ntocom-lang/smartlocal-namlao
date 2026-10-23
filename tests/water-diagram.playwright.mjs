@@ -146,7 +146,10 @@ async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 9
 const section = page => page.locator('#water-diagram')
 
 const results = []
+// WD_ONLY="คำ1|คำ2" รันเฉพาะข้อที่ชื่อมีคำใดคำหนึ่ง (ไว้ใช้ตอนทำ red-check ทีละส่วน — รันปกติไม่ตั้งค่านี้ = ครบทุกข้อ)
+const ONLY = (process.env.WD_ONLY ?? '').split('|').filter(Boolean)
 async function check(name, run) {
+  if (ONLY.length > 0 && !ONLY.some(part => name.includes(part))) return
   try { await run(); results.push({ name, ok: true }); console.log(`PASS  ${name}`) } catch (error) {
     results.push({ name, ok: false }); console.log(`FAIL  ${name}\n      ${String(error.message).split('\n').slice(0, 4).join('\n      ')}`)
   }
@@ -164,6 +167,27 @@ try {
   const pill = (page, text) => routeSvg(page).locator('g[data-pill] text', { hasText: text })
   const routeList = page => section(page).locator('[data-route-list]')
   const tabButton = (page, name) => section(page).getByRole('tab', { name })
+  // น้ำเลาแสดง "ภาพนำเสนอ" (โปสเตอร์) แทนภาพเกาะลอย — ภาพในหน้า (ไม่ใช่ในหน้าต่างพิมพ์)
+  const posterSvg = page => section(page).locator('[data-poster-inline] svg[data-poster]')
+  // สภาพค่าสดบนโปสเตอร์ใบใดใบหนึ่ง (วงแหวนอ่าง + แคปซูลฝน + ช่องในการ์ดค่าวัด) ใช้เทียบภาพในหน้ากับหน้าต่างพิมพ์ได้
+  const posterState = svg => svg.evaluate(el => {
+    const ring = el.querySelector('[data-poster-ring]')
+    return {
+      ring: ring ? {
+        tone: ring.getAttribute('data-tone'),
+        text: ring.querySelector('text').textContent,
+        filled: [...ring.querySelectorAll('circle[stroke-dasharray]')].some(c => c.getAttribute('stroke') !== 'rgba(148,163,184,.3)'),
+        // หมายเหตุใต้ชื่ออ่าง (เช่น ตัวเลขซ้ำเดิม) อยู่ในกลุ่มวงแหวนเอง — ข้อความเดียวกันซ้ำในการ์ดค่าวัดด้วย เทสต์ที่ดูข้อความรวมของภาพจึงมองไม่ออกว่าหมายเหตุใต้อ่างหาย
+        note: ring.querySelectorAll('text')[1]?.textContent ?? null,
+      } : null,
+      pills: [...el.querySelectorAll('[data-poster-pill]')].map(p => ({
+        slot: p.getAttribute('data-poster-pill'), tone: p.getAttribute('data-tone'), text: p.querySelector('text').textContent,
+        dashed: p.querySelector('rect').hasAttribute('stroke-dasharray'),
+      })).sort((a, b) => a.slot.localeCompare(b.slot)),
+      liveRows: [...el.querySelectorAll('[data-poster-live-row]')].map(row => row.getAttribute('data-poster-live-row')),
+      text: el.textContent,
+    }
+  })
   // หน้าตาจริงของกรอบป้าย (สี + ขอบประ) แยกตามโทน — กันกรณีโทนในข้อมูลถูกต้องแต่วาดออกมาเหมือนกันหมด
   const pillLook = (page, tone) => routeSvg(page).locator(`g[data-pill="${tone}"] > rect`).evaluateAll(rects =>
     rects.map(r => ({ stroke: r.getAttribute('stroke'), dashed: r.hasAttribute('stroke-dasharray') })))
@@ -258,7 +282,9 @@ try {
     await check(`เลย์เอาต์ ${id} ${width}px: ไม่เลื่อนแนวนอน · ไม่ล้นขอบจอ · ปุ่ม/ลิงก์ ≥ 44px · ตัวหนังสือบนภาพไม่เล็กเกินไป · ภาพ/รายการ/ที่มาตามแท็บ`, async () => {
       const { context, page } = await openScene(browser, baseUrl, scene, { width, diagram: id === 'thungkaew' ? null : id })
       try {
-        await pill(page, waitText).waitFor({ timeout: 8000 })
+        const artSvg = id === 'namlao' ? posterSvg(page) : routeSvg(page)
+        if (id === 'namlao') await artSvg.locator('[data-poster-ring] text', { hasText: waitText }).waitFor({ timeout: 10_000 })
+        else await pill(page, waitText).waitFor({ timeout: 8000 })
         assert.equal(await section(page).getByRole('group', { name: 'โหมดแสดงผัง' }).count(), 0, 'มุมมองใหม่ไม่มีปุ่มสลับโหมด')
         assert.equal(await section(page).getByRole('button', { name: 'ย่อผัง' }).count() + await section(page).getByRole('button', { name: 'ขยายผัง' }).count(), 0, 'ภาพพอดีจอ ไม่มีปุ่มซูม')
         // ตรวจเลย์เอาต์ของแท็บที่เปิดอยู่ตอนนี้ (เรียกซ้ำทุกแท็บ)
@@ -266,7 +292,8 @@ try {
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `${label}: หน้าเลื่อนแนวนอน`)
           const clipped = await section(page).evaluate((root, limit) => [...root.querySelectorAll('*')]
             // ชิ้นส่วนภายใน SVG ข้าม (คลื่นแม่น้ำกว้างเกินกรอบโดยตั้งใจและถูกตัดด้วย clipPath) — ตรวจตัว svg เองพอ
-            .filter(el => (el.offsetParent !== null || el instanceof SVGElement) && !el.parentElement?.closest('svg'))
+            // ภาพนำเสนอกว้างขั้นต่ำ 900px เลื่อนแนวนอนในกรอบของมันเอง (ตั้งใจ) — ตรวจตัวกรอบว่าไม่ล้นจอ ไม่ตรวจชิ้นส่วนข้างใน
+            .filter(el => (el.offsetParent !== null || el instanceof SVGElement) && !el.parentElement?.closest('svg') && !el.parentElement?.closest('[data-poster-inline]'))
             .map(el => ({ el, r: el.getBoundingClientRect() }))
             .filter(({ r }) => r.width > 0 && r.right > limit + 1)
             .map(({ el, r }) => `${el.tagName}.${String(el.className?.baseVal ?? el.className).slice(0, 20)} right=${Math.round(r.right)}`), width)
@@ -279,26 +306,27 @@ try {
         }
         await layoutIssues('แท็บแผนภาพ')
         // ขนาดตัวหนังสือจริงบนจอ = font-size × สัดส่วนที่ภาพถูกย่อ (ภาพเป็น viewBox 480 หน่วย)
-        const minPx = await routeSvg(page).evaluate(svg => {
+        const minPx = await artSvg.evaluate((svg, selector) => {
           const scale = svg.getBoundingClientRect().width / svg.viewBox.baseVal.width
-          return Math.min(...[...svg.querySelectorAll('g[data-pill] text, [data-pin] text')].map(t => parseFloat(getComputedStyle(t).fontSize) * scale))
-        })
+          return Math.min(...[...svg.querySelectorAll(selector)].map(t => parseFloat(getComputedStyle(t).fontSize) * scale))
+        }, id === 'namlao' ? 'text.wp-lbl, g[data-poster-pill] text' : 'g[data-pill] text, [data-pin] text')
         assert.ok(minPx >= (width <= 360 ? 8.5 : 9.5), `ตัวหนังสือบนภาพเล็กเกินไป ${minPx.toFixed(1)}px ที่ ${width}px`)
-        const art = await routeSvg(page).boundingBox()
+        const art = await artSvg.boundingBox()
         if (width < 1024) {
           assert.equal(await routeList(page).isVisible(), false, 'มือถือ/แท็บเล็ต: เริ่มที่แท็บแผนภาพ ยังไม่เห็นรายการ')
           await tabButton(page, /^รายการจุด/).click()
           assert.equal(await routeList(page).isVisible(), true)
-          assert.equal(await routeSvg(page).isVisible(), false, 'แท็บรายการจุดต้องซ่อนภาพ')
+          assert.equal(await artSvg.isVisible(), false, 'แท็บรายการจุดต้องซ่อนภาพ')
           await layoutIssues('แท็บรายการจุด')
         } else {
           const list = await routeList(page).boundingBox()
-          assert.ok(list && list.x < art.x, 'จอใหญ่: รายการซ้าย ภาพขวา')
+          if (id === 'namlao') assert.ok(list && list.y >= art.y + art.height - 2, 'จอใหญ่: ภาพนำเสนอเต็มกว้างอยู่บน รายการจุดอยู่ใต้ภาพ')
+          else assert.ok(list && list.x < art.x, 'จอใหญ่: รายการซ้าย ภาพขวา')
           assert.equal(await section(page).getByRole('tab', { name: /^รายการจุด/ }).count(), 0, 'จอกว้างรายการอยู่ข้างภาพแล้ว ไม่มีแท็บรายการ')
         }
         await tabButton(page, /^ที่มา$/).click()
         assert.equal(await section(page).locator('[data-diagram-source]').isVisible(), true)
-        assert.equal(await routeSvg(page).isVisible(), false, 'แท็บที่มาต้องซ่อนภาพ')
+        assert.equal(await artSvg.isVisible(), false, 'แท็บที่มาต้องซ่อนภาพ')
         await layoutIssues('แท็บที่มา')
         await tabButton(page, /^แผนภาพ/).click()
         await section(page).screenshot({ path: path.join(SHOT_DIR, `${shotName}-${width}.png`) })
@@ -366,7 +394,7 @@ try {
   })
 
   // ── 6) ข้อความบังคับ + ชื่อที่ยังไม่ยืนยัน + ครบทุกจุด ──
-  await check('คำกำกับ "ไม่ได้แสดงว่ามีน้ำไหลจริง" + "ไม่ใช่แผนที่" + "ไม่มีเข็มทิศ" + คำอธิบายสัญลักษณ์ + ที่มา + ลิงก์ต้นฉบับ', async () => {
+  await check('คำกำกับ "ไม่ได้แสดงว่ามีน้ำไหลจริง" + "ไม่ใช่แผนที่" + คำอธิบายสัญลักษณ์ + ที่มา + ลิงก์ต้นฉบับ', async () => {
     const { context, page } = await openScene(browser, baseUrl, 'normal')
     try {
       await pill(page, '73.2%').waitFor({ timeout: 8000 })
@@ -374,7 +402,7 @@ try {
       await tabButton(page, /^ที่มา$/).click()
       const text = artText + '\n' + await section(page).innerText()
       await tabButton(page, /^แผนภาพ/).click()
-      for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ไม่ใช่แผนที่', 'ไม่มีเข็มทิศ', 'ไม่ได้หมายถึงสิ่งก่อสร้างหรือพื้นที่จริง']) {
+      for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ไม่ใช่แผนที่', 'ไม่ได้หมายถึงสิ่งก่อสร้างหรือพื้นที่จริง']) {
         assert.ok(text.includes(needed), `ต้องมี "${needed}"`)
       }
       const legend = await section(page).locator('[data-route-legend]').innerText()
@@ -679,7 +707,7 @@ try {
       const artText = await section(page).innerText()
       await tabButton(page, /^ที่มา$/).click()
       const text = artText + '\n' + await section(page).innerText()
-      for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'ไม่ใช่แผนที่', 'ไม่มีเข็มทิศ', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ผังน้ำตำบลตำหนักธรรม อำเภอหนองม่วงไข่', 'ไฟล์ลงวันที่ 9 พ.ค. 2567', 'เขตหมู่บ้าน', 'ห้วยหาด']) {
+      for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'ไม่ใช่แผนที่', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ผังน้ำตำบลตำหนักธรรม อำเภอหนองม่วงไข่', 'ไฟล์ลงวันที่ 9 พ.ค. 2567', 'เขตหมู่บ้าน', 'ห้วยหาด']) {
         assert.ok(text.includes(needed), `ต้องมี "${needed}"`)
       }
       assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 1)
@@ -691,98 +719,323 @@ try {
     } finally { await context.close() }
   })
 
-  // ── 8) ผังน้ำเลา (?diagram=namlao บน demo) ──
+  // ── 8) ผังน้ำเลา (?diagram=namlao บน demo) — แสดง "ภาพนำเสนอ" (โปสเตอร์) แทนภาพเกาะลอย (เจ้าของระบบสั่ง 2569-10-23) ──
   const nl = DIAGRAMS.namlao
-  await check('น้ำเลา: ป้ายอ่างแม่คำปอง + ฝน 2 สถานี ในภาพและรายการ · บอกชื่อสถานีและระยะ · ไม่มีป้ายระดับน้ำ/อ่างเล็ก · หมายเลข 1–21 · หัวข้อกลุ่มตามสายในผัง', async () => {
+  const NL = nl.route
+  const TONES = Object.keys(CHIP_TONES)
+  // จุดที่ผังต้นฉบับไม่มีข้อมูลระดับน้ำ/ไม่ได้ผูกช่องค่าสด (ห้วยทรายขาว–อ่าง · อ่างห้วยขึมโยธินฯ) วาดขอบประเทาในภาพนำเสนอ
+  const NA_NODES = 2
+  // ข้อความของส่วนที่เป็นค่าสดบนโปสเตอร์ (วงแหวน + แคปซูลฝน + การ์ดค่าวัด) — ไม่นับท้ายภาพที่เล่าชื่อ YOM003 ในรายการ "ไม่ได้ใส่ในภาพนี้"
+  const posterLiveText = svg => svg.locator('[data-poster-ring], [data-poster-pill], [data-poster-live-card]').allTextContents().then(parts => parts.join(' | '))
+
+  await check('น้ำเลา: ภาพนำเสนอ (โปสเตอร์) อยู่ในหน้าแทนภาพเกาะลอย · ป้ายอ่างแม่คำปอง + ฝน 2 สถานี · ไม่มีป้ายระดับน้ำ/อ่างเล็ก · หมายเลข 1–21 · รายการจุดอยู่ใต้ภาพ หัวข้อกลุ่มตามสายในผัง', async () => {
     const { context, page, problems, reservoirRequests } = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao' })
     try {
       assert.deepEqual(reservoirRequests.filter(id => id !== '50' && id !== '30'), [], 'ผังไม่มีอ่างเล็กต้องไม่ยิงคำขอ id แปลก')
       assert.match(await section(page).locator('h2').innerText(), /เส้นทางน้ำ\s*ตำบลน้ำเลา/)
       assert.match(await section(page).innerText(), /ข้อมูลจริงของน้ำเลา ใช้สาธิต/)
-      await pill(page, '84.5%').waitFor({ timeout: 8000 })
-      await pill(page, 'ฝน 12.5 มม.').waitFor()
-      await pill(page, 'ฝน 0 มม.').waitFor()
-      assert.equal(await routeSvg(page).locator('g[data-pill="ok"]').count(), 3, 'ป้ายค่าสด 3 ช่อง')
-      assert.equal(await routeSvg(page).locator('g[data-pill="plan"]').count(), 3, 'ป้าย "แผน" 3 จุด')
-      const text = await routeText(page)
-      assert.ok(!/ตลิ่ง|YOM003/.test(text), 'ผังนี้ไม่มีป้ายระดับน้ำ')
-      assert.equal(await routeSvg(page).locator('[data-river] g[aria-hidden="true"]').count(), 0, 'ลำน้ำแม่ถางไม่มีสถานีวัด = ไม่วาดลูกศรบอกระยะต่ำกว่าตลิ่ง')
-      assert.equal(await routeSvg(page).locator('[data-river] rect[rx], [data-river] g[data-pill]').count(), 0, 'ลำน้ำแม่ถางไม่มีช่องค่าสด = ไม่วาดป้ายเปล่าบนแม่น้ำ')
-      assert.deepEqual(await unknownPillTones(page), [], 'ป้ายทุกใบต้องมีโทนที่รู้จัก')
-      assert.equal(await routeSvg(page).locator('[data-pin]').count(), 21)
+      const svg = posterSvg(page)
+      await svg.locator('[data-poster-ring] text', { hasText: '84.5%' }).waitFor({ timeout: 10_000 })
+      assert.equal(await section(page).locator('svg[data-route-art]').count(), 0, 'น้ำเลาไม่แสดงภาพเกาะลอยแล้ว')
+      assert.equal(await section(page).locator('[data-route-legend]').count(), 0, 'คำอธิบายสัญลักษณ์ของภาพเกาะลอยไม่ติดมา (ภาพนำเสนอมีคำอธิบายในภาพเอง)')
+      const state = await posterState(svg)
+      assert.deepEqual(state.ring, { tone: 'ok', text: '84.5%', filled: true, note: null })
+      assert.deepEqual(state.pills.map(p => [p.slot, p.tone, p.text]), [['rain-RES040', 'ok', 'ฝน 0 มม.'], ['rain-STN0911', 'ok', 'ฝน 12.5 มม.']])
+      assert.ok([state.ring.tone, ...state.pills.map(p => p.tone)].every(tone => TONES.includes(tone)), 'ป้ายทุกใบต้องมีโทนที่รู้จัก')
+      const liveText = await posterLiveText(svg)
+      assert.ok(!/ตลิ่ง|YOM003/.test(liveText), 'ผังนี้ไม่มีป้ายระดับน้ำ')
+      assert.equal(await svg.locator('[data-poster-river] [data-poster-pill], [data-poster-river] [data-poster-ring]').count(), 0, 'ลำน้ำแม่ถางไม่มีสถานีวัด/ช่องค่าสด = ไม่วาดป้ายบนแม่น้ำ')
+      assert.equal(await svg.locator('[data-poster-node]').count(), 21)
+      assert.equal(await svg.locator('g[data-poster-node][data-status="planned"]').count(), 3, 'จุดแผนก่อสร้าง 3 จุด (ป้าย "แผน")')
       assert.equal(await routeList(page).locator('li[data-stop]').count(), 21)
+      // รายการจุดอยู่ใต้ภาพ (ภาพกว้างเกินกว่าจะวางเคียงรายการ)
+      const art = await svg.boundingBox()
+      const listBox = await routeList(page).boundingBox()
+      assert.ok(listBox.y >= art.y + art.height - 2, `รายการต้องอยู่ใต้ภาพ (ภาพล่าง ${Math.round(art.y + art.height)} · รายการบน ${Math.round(listBox.y)})`)
       const list = await routeList(page).innerText()
       for (const expected of ['อ่างเก็บน้ำแม่คำปอง ห่าง 3.6 กม.', '84.5% ของความจุที่ระดับเก็บกัก', '5.71/6.76 ล้าน ลบ.ม.', 'สถานีบ้านบุญแจ่ม ห่าง 2.6 กม.', 'สถานีอ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา ห่าง 2.9 กม.']) {
         assert.ok(list.includes(expected), `รายการต้องมี "${expected}"`)
       }
       const groups = await routeList(page).locator('[data-group]').allInnerTexts()
-      assert.deepEqual(groups, [...new Set(nl.route.stops.map(s => s.group)), nl.route.river.group], 'หัวข้อกลุ่มเรียงตามสายในผังต้นฉบับ')
+      assert.deepEqual(groups, [...new Set(NL.stops.map(s => s.group)), NL.river.group], 'หัวข้อกลุ่มเรียงตามสายในผังต้นฉบับ')
       await section(page).screenshot({ path: path.join(SHOT_DIR, 'nl-normal-1280.png') })
       assert.deepEqual(problems, [])
     } finally { await context.close() }
   })
 
-  await check('น้ำเลา: อ่างเกิน 100% อธิบายตัวเลขเอง · ตัวเลขซ้ำเดิมเป็นเหลือง · ค้างไม่ใช่ค่าสด · ว่าง/ไม่มีสถานีไม่เป็น 0', async () => {
-    let r = await openScene(browser, baseUrl, 'nlOver', { diagram: 'namlao' })
+  await check('น้ำเลา: เส้นวิ่งในภาพตรงผัง (ลำน้ำแม่คำปอง + ห้วยสาขาที่ผังวาดลูกศร) พร้อมหัวลูกศร · ห้วยลูกศรนิ่งไม่วิ่ง · แผนก่อสร้าง 3 จุดไม่มีแอนิเมชัน · ปุ่มหยุดเคลื่อนไหวหยุดลายวิ่ง · ลดการเคลื่อนไหว = ไม่วิ่งแต่หัวลูกศรยังอยู่', async () => {
+    const flowIds = NL.streams.filter(s => s.flow).map(s => s.id).sort()
+    let r = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao' })
     try {
-      await pill(r.page, '100.4%').waitFor({ timeout: 8000 })
-      assert.ok((await routeList(r.page).innerText()).includes('มากกว่า 100% = เกินความจุที่ระดับเก็บกักปกติ'))
+      const { page } = r
+      const svg = posterSvg(page)
+      await svg.locator('[data-poster-ring] text', { hasText: '84.5%' }).waitFor({ timeout: 10_000 })
+      assert.deepEqual(await svg.locator('g[data-poster-stream][data-flow="true"]').evaluateAll(els => els.map(el => el.getAttribute('data-poster-stream')).sort()), flowIds, 'เส้นวิ่งต้องเท่ากับลำที่ผังวาดลูกศรทุกเส้น ไม่เกิน ไม่ขาด')
+      const names = await svg.locator('g[data-poster-stream][data-flow="true"] .wp-flow').evaluateAll(els => els.map(el => getComputedStyle(el).animationName))
+      assert.deepEqual(names, flowIds.map(() => 'wp-dash'), 'เส้นวิ่งทุกเส้นต้องมีแอนิเมชัน')
+      assert.equal(await svg.locator('g[data-poster-stream][data-flow="false"] .wp-flow').count(), 0, 'เส้นนิ่งไม่มีลายวิ่ง')
+      assert.equal(await svg.locator('g[data-poster-stream][data-flow="true"] path[marker-end]').count(), flowIds.length, 'เส้นวิ่งมีหัวลูกศรปลายทาง')
+      assert.equal(await svg.locator('g[data-poster-stream][data-flow="false"] path[marker-end]').count(), 0, 'ลำที่ไม่วิ่งไม่มีหัวลูกศร (ไม่เดาทิศ)')
+      assert.deepEqual(await svg.locator('g[data-poster-node][data-status="planned"]').evaluateAll(els => els.map(el => Number(el.getAttribute('data-poster-node')))), NL.stops.filter(s => s.status === 'planned').map(s => s.n), 'จุดแผนก่อสร้างบนภาพ')
+      assert.equal(await svg.evaluate(el => [...el.querySelectorAll('g[data-status="planned"] *')].filter(node => getComputedStyle(node).animationName !== 'none').length), 0, 'แผนก่อสร้างห้ามมีแอนิเมชัน')
+      // เส้นประแดงจากแผนก่อสร้างไปลำน้ำ: เป็น "ความสัมพันธ์ตามผัง" ไม่ใช่ลำน้ำ — ต้องมีครบตามข้อมูล เป็นเส้นประ และไม่วิ่ง
+      const stemIds = Object.entries(NL.poster.nodes).filter(([, node]) => node.stem).map(([n]) => n).sort()
+      assert.ok(stemIds.length > 0, 'ข้อมูลน้ำเลามีเส้นประจากแผนก่อสร้าง')
+      assert.deepEqual(await svg.locator('[data-poster-stem]').evaluateAll(els => els.map(el => el.getAttribute('data-poster-stem')).sort()), stemIds, 'เส้นประจากแผนก่อสร้างไปลำน้ำต้องครบตามข้อมูล')
+      assert.equal(await svg.locator('[data-poster-stem][stroke-dasharray]').count(), stemIds.length, 'เส้นจากแผนก่อสร้างต้องเป็นเส้นประ (ไม่ใช่ลำน้ำ)')
+      assert.equal(await svg.locator('[data-poster-stem]').evaluateAll(els => els.filter(el => getComputedStyle(el).animationName !== 'none').length), 0, 'เส้นประไม่วิ่ง')
+      // ภาพที่ยังอยู่นอกจอถูกหยุดโดยตั้งใจ (ไม่กินแบต) — เลื่อนเข้าจอก่อนตรวจปุ่มหยุด
+      await section(page).scrollIntoViewIfNeeded()
+      await page.waitForFunction(() => !document.querySelector('#water-diagram')?.hasAttribute('data-offscreen'), null, { timeout: 5000 })
+      const state = () => svg.locator('.wp-flow').first().evaluate(el => getComputedStyle(el).animationPlayState)
+      assert.equal(await state(), 'running')
+      await section(page).getByRole('button', { name: 'หยุดเคลื่อนไหว' }).click()
+      assert.equal(await state(), 'paused', 'ปุ่มหยุดต้องหยุดลายวิ่งของภาพนำเสนอด้วย')
+      await section(page).getByRole('button', { name: 'เล่นเคลื่อนไหว' }).click()
+      assert.equal(await state(), 'running')
     } finally { await r.context.close() }
-    r = await openScene(browser, baseUrl, 'nlSame', { diagram: 'namlao' })
+    r = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao', reducedMotion: 'reduce' })
     try {
-      await pill(r.page, 'ตัวเลขซ้ำเดิม').first().waitFor({ timeout: 8000 })
-      assert.equal(await routeSvg(r.page).locator('g[data-pill="warn"]').count(), 1, 'ป้ายอ่างที่ตัวเลขซ้ำเดิมเป็นโทนเหลือง')
-      assert.deepEqual(await pillLook(r.page, 'warn'), [{ stroke: CHIP_TONES.warn.stroke, dashed: false }])
+      const svg = posterSvg(r.page)
+      await svg.locator('[data-poster-ring] text', { hasText: '84.5%' }).waitFor({ timeout: 10_000 })
+      const names = await svg.locator('.wp-flow').evaluateAll(els => els.map(el => getComputedStyle(el).animationName))
+      assert.ok(names.length === flowIds.length && names.every(name => name === 'none'), `ลดการเคลื่อนไหว: ลายวิ่งต้องหยุด (${[...new Set(names)]})`)
+      assert.equal(await svg.locator('g[data-poster-stream][data-flow="true"] path[marker-end]').count(), flowIds.length, 'ดูทิศจากหัวลูกศรได้แม้ไม่วิ่ง')
+      assert.match(await section(r.page).innerText(), /ตั้งค่าให้ลดการเคลื่อนไหว/)
     } finally { await r.context.close() }
-    r = await openScene(browser, baseUrl, 'nlStale', { diagram: 'namlao' })
-    try {
-      await pill(r.page, 'ไม่มีรายงานใหม่').first().waitFor({ timeout: 8000 })
-      assert.equal(await pill(r.page, 'ไม่มีค่าใหม่').count(), 2, 'ฝน 2 สถานีค้าง')
-      assert.equal(await routeSvg(r.page).locator('g[data-pill="stale"]').count(), 3, 'อ่าง + ฝน 2 สถานี ค้างทั้งหมด')
-      assert.deepEqual(await pillLook(r.page, 'stale'), Array(3).fill({ stroke: CHIP_TONES.stale.stroke, dashed: true }))
-      const text = await routeText(r.page)
-      assert.ok(!/12\.5|ฝน 3 /.test(text), 'ฝนที่ค้างต้องไม่โชว์เป็นค่าปัจจุบัน')
-    } finally { await r.context.close() }
-    for (const scene of ['nlNull', 'nlEmpty']) {
-      r = await openScene(browser, baseUrl, scene, { diagram: 'namlao' })
-      try {
-        await r.page.locator('g[data-pill="na"] text', { hasText: /^ไม่มีค่า$/ }).first().waitFor({ timeout: 8000 })
-        assert.equal(await routeSvg(r.page).locator('g[data-pill="na"] text', { hasText: /^ไม่มีค่า$/ }).count(), 3, `${scene}: ทั้ง 3 ช่องต้องบอกว่าไม่มีค่า`)
-        const text = await routeText(r.page)
-        assert.ok(!/ปกติ|0 มม|0%/.test(text), `${scene}: ห้ามกลายเป็น 0 หรือ "ปกติ"`)
-      } finally { await r.context.close() }
-    }
   })
 
-  await check('น้ำเลา: เส้นวิ่ง 8 เส้น (ลำน้ำแม่คำปอง + ห้วยสาขาที่ผังวาดลูกศร) พร้อมหัวลูกศร · ห้วยลูกศรนิ่งไม่วิ่ง · ฝาย/อ่างแผนก่อสร้าง 3 จุดไม่มีแอนิเมชัน · ปุ่มหยุดทำงาน', async () => {
-    await checkFlows('namlao', 'nlNormal', ['hin', 'hsk', 'khuem', 'mkp', 'obj', 'sra50', 'tao', 'thare'], [2, 5, 7], 0)
-  })
-
-  await check('น้ำเลา: คำอธิบายสัญลักษณ์เฉพาะที่ใช้ · อ่างไม่มีข้อมูลขอบประ · ที่มา/ของที่ไม่ได้วาด (ลายขีดแดงไม่ตีความ · เส้นขอบเขต · YOM003 นอกตำบล) · คำกำกับบังคับ · ไม่เขียนว่าแล้ง/ท่วม', async () => {
+  await check('น้ำเลา: คำอธิบายสัญลักษณ์ในภาพเฉพาะที่ใช้ · อ่างไม่มีข้อมูลขอบประ · ที่มา/ของที่ไม่ได้วาด (ลายขีดแดงไม่ตีความ · เส้นขอบเขต · YOM003 นอกตำบล) · คำกำกับบังคับ · ไม่เขียนว่าแล้ง/ท่วม', async () => {
     const { context, page } = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao' })
     try {
-      await pill(page, '84.5%').waitFor({ timeout: 8000 })
-      const legend = await section(page).locator('[data-route-legend]').innerText()
-      for (const needed of ['อ่างเก็บน้ำ', 'ฝาย', 'หนอง', 'หมู่บ้าน', 'กล่องแดงประ = แผนก่อสร้าง ไม่เคลื่อนไหว', 'เส้นวิ่ง + หัวลูกศร', 'ขอบประ = ไม่มีค่า']) assert.ok(legend.includes(needed), `คำอธิบายสัญลักษณ์ขาด "${needed}"`)
-      for (const absent of ['สะพาน', 'ระบบประปา', 'ประตูระบายน้ำ', 'ลายขีดแดง', 'ชำรุด']) assert.ok(!legend.includes(absent), `ผังนี้ไม่มี "${absent}" ต้องไม่มีบรรทัดอธิบาย`)
-      assert.equal(await routeSvg(page).locator('g[data-stop] ellipse[stroke-dasharray="5 4"]').count(), 3, 'อ่างไม่มีข้อมูล 3 ผืน (ห้วยทรายขาว 2 + ห้วยขึมโยธินฯ 1) วาดขอบประเทา')
+      const svg = posterSvg(page)
+      await svg.locator('[data-poster-ring] text', { hasText: '84.5%' }).waitFor({ timeout: 10_000 })
+      const legend = await svg.locator('[data-poster-legend]').evaluate(el => el.textContent)
+      for (const needed of ['เส้นวิ่ง = ผังวาดลูกศรทิศน้ำไว้', 'กรอบแดงประ = แผนก่อสร้าง ไม่เคลื่อนไหว', 'ขอบประเทา = ไม่มีข้อมูลในระบบ', 'ป้ายขาว = ค่าวัดจากสถานี']) assert.ok(legend.includes(needed), `คำอธิบายสัญลักษณ์ขาด "${needed}"`)
+      assert.ok(!legend.includes('ชำรุด'), 'ผังนี้ไม่มีโครงสร้างชำรุด ต้องไม่มีบรรทัดอธิบาย')
+      assert.equal(await svg.locator('g[data-poster-node]:not([data-status="planned"]) > circle.wp-node[stroke-dasharray]').count(), NA_NODES, 'อ่างที่ไม่มีข้อมูลวาดขอบประเทา')
       const artText = await section(page).innerText()
       await tabButton(page, /^ที่มา$/).click()
       const text = artText + '\n' + await section(page).innerText()
-      for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'ไม่ใช่แผนที่', 'ไม่มีเข็มทิศ', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ผังน้ำตำบลน้ำเลา อำเภอร้องกวาง', 'ไฟล์ลงวันที่ 30 เม.ย. 2567', 'ไม่ตีความ', 'เส้นขอบเขต', 'นอกตำบล', '28 รายการเป็น 20 จุด']) {
+      for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'ไม่ใช่แผนที่', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ผังน้ำตำบลน้ำเลา อำเภอร้องกวาง', 'ไฟล์ลงวันที่ 30 เม.ย. 2567', 'ไม่ตีความ', 'เส้นขอบเขต', 'นอกตำบล', '28 รายการเป็น 20 จุด']) {
         assert.ok(text.includes(needed), `ต้องมี "${needed}"`)
       }
       assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 1)
       assert.equal(await section(page).locator('[data-diagram-omitted] li').count(), nl.omitted.length)
       await tabButton(page, /^แผนภาพ/).click()
       // ข้อความบนตัวภาพ (ไม่นับกล่องที่มาที่ต้องพูดถึงคำอธิบายผังต้นฉบับ) ต้องไม่ตีความลายขีดแดงว่าเป็นพื้นที่แล้ง/ท่วม
-      assert.ok(!/แล้ง|ท่วม/.test(await routeText(page)), 'ภาพห้ามเขียนว่าแล้ง/ท่วม')
+      assert.ok(!/แล้ง|ท่วม/.test((await svg.evaluate(el => el.textContent)).replace('ไม่ใช่ประกาศ', '')), 'ภาพห้ามเขียนว่าแล้ง/ท่วม')
       const list = await routeList(page).innerText()
       assert.ok(!/แล้ง|ท่วม/.test(list), 'รายการห้ามเขียนว่าแล้ง/ท่วม')
-      for (const item of [...nl.route.stops, nl.route.river]) assert.ok(list.includes(item.name), `รายการขาดจุด ${item.n} ${item.name}`)
+      for (const item of [...NL.stops, NL.river]) assert.ok(list.includes(item.name), `รายการขาดจุด ${item.n} ${item.name}`)
       const planned = routeList(page).locator('li[data-status="planned"]')
       assert.equal(await planned.count(), 3)
       for (const li of await planned.all()) assert.ok((await li.innerText()).includes('แผนก่อสร้าง · ไม่เคลื่อนไหว'))
+    } finally { await context.close() }
+  })
+
+  await check('น้ำเลา: ภาพในหน้าเป็นธีมมืดเสมอ · เปิดหน้าต่างพิมพ์แล้ว id ของภาพสองใบไม่ซ้ำกันและแต่ละใบอ้างเฉพาะ id ของตัวเอง · สลับธีมในหน้าต่างไม่ทำให้ภาพในหน้าเปลี่ยน', async () => {
+    const { context, page } = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao' })
+    try {
+      const inline = posterSvg(page)
+      await inline.locator('[data-poster-ring] text', { hasText: '84.5%' }).waitFor({ timeout: 10_000 })
+      assert.equal(await inline.getAttribute('data-theme'), 'dark')
+      await page.locator('[data-poster-open]').click()
+      const dialog = page.locator('[data-poster-overlay] svg[data-poster]')
+      await dialog.waitFor({ timeout: 10_000 })
+      await page.locator('[data-poster-overlay]').getByRole('button', { name: /ธีมสว่าง/ }).click()
+      assert.equal(await dialog.getAttribute('data-theme'), 'light')
+      assert.equal(await inline.getAttribute('data-theme'), 'dark', 'ธีมในหน้าต่างต้องไม่ไปเปลี่ยนภาพในหน้า')
+      const idCheck = await page.evaluate(() => {
+        const svgs = [...document.querySelectorAll('svg[data-poster]')]
+        const ids = svgs.flatMap(svg => [...svg.querySelectorAll('[id]')].map(el => el.id))
+        const stray = svgs.flatMap(svg => [...svg.querySelectorAll('*')]
+          .flatMap(el => ['fill', 'stroke', 'filter', 'marker-end'].map(attr => el.getAttribute(attr)))
+          .map(value => value?.match(/^url\(#(.+)\)$/)?.[1]).filter(Boolean)
+          .filter(ref => !svg.querySelector('[id="' + ref + '"]')))
+        return { count: svgs.length, total: ids.length, unique: new Set(ids).size, stray }
+      })
+      assert.equal(idCheck.count, 2, 'ในหน้า 1 ใบ + ในหน้าต่าง 1 ใบ')
+      assert.equal(idCheck.unique, idCheck.total, 'id ของ defs ซ้ำกันข้ามภาพ (url(#…) จะชี้ไปใบแรกเสมอ ธีมของอีกใบเพี้ยน)')
+      assert.deepEqual(idCheck.stray, [], 'ทุก url(#…) ต้องชี้ id ที่อยู่ในภาพใบเดียวกัน')
+    } finally { await context.close() }
+  })
+
+  // ═══ ไม่มีกล่อง "ไม่มีเข็มทิศ" (เจ้าของระบบสั่ง 2569-10-22: ไม่มีก็ไม่ต้องแสดง) + โปสเตอร์ "ภาพนำเสนอ A4" ของน้ำเลา ═══
+  for (const [id, scene] of [['thungkaew', 'normal'], ['tamnaktham', 'tkNormal'], ['namlao', 'nlNormal']]) {
+    await check(`${id}: ไม่มีกล่องหมายเหตุเข็มทิศ · คำกำกับบังคับยังบอกว่าทิศไม่ตรงจริง · ผังที่ยังไม่มีโปสเตอร์ไม่มีปุ่ม`, async () => {
+      const { context, page } = await openScene(browser, baseUrl, scene, { diagram: id })
+      try {
+        await (id === 'namlao' ? posterSvg(page) : routeSvg(page)).waitFor({ timeout: 10_000 })
+        assert.equal(await section(page).locator('[data-route-note]').count(), 0, 'ไม่มีกล่องหมายเหตุเข็มทิศ')
+        await tabButton(page, /^ที่มา$/).click()
+        const text = await section(page).innerText()
+        assert.ok(!text.includes('เข็มทิศ'), 'หน้าไม่พูดถึงเข็มทิศ')
+        assert.ok(text.includes('ไม่ใช่แผนที่') && text.includes('ตำแหน่ง ทิศ และมาตราส่วนไม่ตรงจริง'), 'คำกำกับบังคับต้องบอกว่าทิศไม่ตรงจริง')
+        assert.equal(await section(page).locator('[data-poster-open]').count(), id === 'namlao' ? 1 : 0, 'ปุ่มภาพนำเสนอ A4 ขึ้นเฉพาะผังที่มีโปสเตอร์')
+      } finally { await context.close() }
+    })
+  }
+
+  const posterLook = page => page.locator('[data-poster-overlay]')
+  const openPoster = async (scene, opts = {}) => {
+    const opened = await openScene(browser, baseUrl, scene, { diagram: 'namlao', ...opts })
+    await opened.page.locator('[data-poster-open]').click()
+    await opened.page.locator('[data-poster-overlay] svg[data-poster]').waitFor({ timeout: 10_000 })
+    return opened
+  }
+
+  await check('โปสเตอร์ A4: เปิดเป็นหน้าต่าง (dialog) โฟกัสที่ปุ่มปิด · 21 จุด · ตัวเลขหัวโปสเตอร์คำนวณจากผัง · ไม่มีเข็มทิศ · ข้อความบังคับครบ · ปิดด้วย Esc แล้วโฟกัสกลับปุ่มเดิม', async () => {
+    const { context, page, problems } = await openPoster('nlNormal')
+    try {
+      const dialog = posterLook(page)
+      assert.equal(await dialog.getAttribute('role'), 'dialog'); assert.equal(await dialog.getAttribute('aria-modal'), 'true')
+      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'ปิดภาพนำเสนอ', 'โฟกัสเริ่มที่ปุ่มปิด')
+      assert.equal(await page.locator('style[data-poster-print]').count(), 1, 'กฎหน้าพิมพ์ถูกฉีดตอนเปิด')
+      assert.equal(await dialog.locator('[data-poster-node]').count(), NL.stops.length + 1, '20 จุด + ลำน้ำปลายทาง')
+      for (const stop of [...NL.stops, NL.river]) assert.equal(await dialog.locator(`[data-poster-node="${stop.n}"]`).count(), 1, `จุด ${stop.n} ต้องมีบนโปสเตอร์`)
+      const tiles = await dialog.locator('[data-poster-tile]').evaluateAll(els => els.map(el => [el.getAttribute('data-poster-tile'), el.querySelectorAll('text')[0].textContent]))
+      assert.deepEqual(tiles, [['จุดสำคัญ', '21'], ['สายน้ำในผัง', '4'], ['แผนก่อสร้าง', '4'], ['จุดวัดค่า', '3']])
+      const text = await dialog.locator('svg[data-poster]').evaluate(svg => svg.textContent)
+      assert.ok(!text.includes('เข็มทิศ'), 'ไม่มีเข็มทิศบนโปสเตอร์')
+      for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'ไม่ใช่แผนที่ ตำแหน่ง ทิศ และมาตราส่วนไม่ตรงจริง', 'ยังไม่ผ่านการยืนยันโดย อบต.', 'ไม่ได้ใส่ในภาพนี้', 'พื้นที่ลายขีดแดงทางซ้ายล่าง', 'วาดใหม่']) {
+        assert.ok(text.includes(needed), `โปสเตอร์ต้องมี "${needed}"`)
+      }
+      assert.ok(!/แล้ง|ท่วม/.test(text.replace('ไม่ใช่ประกาศ', '')), 'โปสเตอร์ห้ามเขียนว่าแล้ง/ท่วม')
+      const minFont = await dialog.locator('svg[data-poster]').evaluate(svg => Math.min(...[...svg.querySelectorAll('text')].map(t => parseFloat(getComputedStyle(t).fontSize))))
+      assert.ok(minFont >= 10, `ตัวอักษรเล็กสุดต้อง ≥ 10 หน่วย (${minFont})`)
+      await page.keyboard.press('Escape')
+      await dialog.waitFor({ state: 'detached', timeout: 3000 })
+      assert.equal(await page.locator('style[data-poster-print]').count(), 0, 'กฎหน้าพิมพ์ถูกถอดตอนปิด (ไม่ค้างไปกระทบการพิมพ์หน้าอื่น)')
+      assert.equal(await page.evaluate(() => document.activeElement?.hasAttribute('data-poster-open')), true, 'โฟกัสกลับปุ่มเดิม')
+      assert.deepEqual(problems, [])
+    } finally { await context.close() }
+  })
+
+  await check('โปสเตอร์ A4: เส้นวิ่ง/หัวลูกศรตรงกับผังทุกเส้น · แผนก่อสร้างเป็นกรอบประแดง 3 จุด ไม่มีแอนิเมชัน · ธีมมืด/สว่างสลับได้ · Tab วนอยู่ในหน้าต่าง', async () => {
+    const { context, page } = await openPoster('nlNormal')
+    try {
+      const dialog = posterLook(page)
+      const flowing = await dialog.locator('g[data-poster-stream][data-flow="true"]').evaluateAll(els => els.map(el => el.getAttribute('data-poster-stream')).sort())
+      assert.deepEqual(flowing, NL.streams.filter(x => x.flow).map(x => x.id).sort(), 'เส้นวิ่งต้องเท่ากับลำที่ผังวาดลูกศรทุกเส้น ไม่เกิน ไม่ขาด')
+      assert.equal(await dialog.locator('g[data-poster-stream][data-flow="true"] path[marker-end]').count(), flowing.length, 'เส้นวิ่งมีหัวลูกศรปลายทาง')
+      assert.equal(await dialog.locator('g[data-poster-stream][data-flow="false"] path[marker-end]').count(), 0, 'เส้นที่ผังวาดลูกศรนิ่ง/ตกแต่งไม่มีหัวลูกศร')
+      assert.equal(await dialog.locator('g[data-poster-stream][data-flow="false"] .wp-flow').count(), 0, 'เส้นนิ่งไม่มีลายวิ่ง')
+      const planned = await dialog.locator('g[data-poster-node][data-status="planned"]').evaluateAll(els => els.map(el => Number(el.getAttribute('data-poster-node'))))
+      assert.deepEqual(planned, NL.stops.filter(x => x.status === 'planned').map(x => x.n))
+      const animatedInPlan = await dialog.evaluate(root => [...root.querySelectorAll('g[data-status="planned"] *')].filter(el => getComputedStyle(el).animationName !== 'none').length)
+      assert.equal(animatedInPlan, 0, 'แผนก่อสร้างไม่เคลื่อนไหว')
+      // ธีม
+      assert.equal(await dialog.locator('svg[data-poster]').getAttribute('data-theme'), 'dark')
+      await dialog.getByRole('button', { name: /ธีมสว่าง/ }).click()
+      assert.equal(await dialog.locator('svg[data-poster]').getAttribute('data-theme'), 'light')
+      assert.equal(await dialog.getByRole('button', { name: /ธีมสว่าง/ }).getAttribute('aria-pressed'), 'true')
+      assert.equal(await dialog.getByRole('button', { name: /ธีมมืด/ }).getAttribute('aria-pressed'), 'false')
+      // โฟกัสวนในหน้าต่าง (ไม่หลุดไปหน้าเว็บด้านหลัง)
+      for (let i = 0; i < 8; i++) {
+        await page.keyboard.press('Tab')
+        assert.equal(await page.evaluate(() => !!document.activeElement?.closest('[data-poster-overlay]')), true, 'โฟกัสต้องอยู่ในหน้าต่างเสมอ')
+      }
+    } finally { await context.close() }
+  })
+
+  // ค่าสดบนภาพนำเสนอ 6 ฉาก: ค่า/โทน/ขอบประตรงกติกา · ค้าง/ซ้ำเดิม/ไม่มีค่า บอกตรงๆ ไม่ลงสีสถานการณ์ ไม่เป็น 0 · หน้าต่างพิมพ์แสดงค่าเดียวกับภาพในหน้า · รายการจุดบอกค่าเดียวกัน
+  const DAM_SLOTS = ['dam-305', 'rain-RES040', 'rain-STN0911']
+  for (const [scene, expect] of [
+    ['nlNormal', { ringNote: null, ring: ['ok', '84.5%', true], pills: [['rain-RES040', 'ok', 'ฝน 0 มม.'], ['rain-STN0911', 'ok', 'ฝน 12.5 มม.']], note: null, list: ['84.5% ของความจุที่ระดับเก็บกัก', 'ฝนสะสม 24 ชม. 12.5 มม.'] }],
+    ['nlOver', { ring: [null, '100.4%', true], pills: null, note: null, list: ['มากกว่า 100% = เกินความจุที่ระดับเก็บกักปกติ'] }],
+    ['nlSame', { ringNote: 'ตัวเลขซ้ำเดิม', ring: ['warn', '84.5%', true], pills: [['rain-RES040', 'ok', 'ฝน 1 มม.'], ['rain-STN0911', 'ok', 'ฝน 1 มม.']], note: 'ตัวเลขซ้ำเดิม', list: ['ต้นทางอาจยังไม่ได้ปรับข้อมูล'] }],
+    ['nlStale', { ring: ['stale', 'ค้าง', false], pills: [['rain-RES040', 'stale', 'ไม่มีค่าใหม่'], ['rain-STN0911', 'stale', 'ไม่มีค่าใหม่']], note: null, list: ['ไม่มีรายงานใหม่'], forbidden: /12\.5|ฝน 3 / }],
+    ['nlNull', { ring: ['na', 'ไม่มีค่า', false], pills: [['rain-RES040', 'na', 'ไม่มีค่า'], ['rain-STN0911', 'na', 'ไม่มีค่า']], note: null, list: [], forbidden: /ปกติ|0 มม|0%/ }],
+    ['nlEmpty', { ring: ['na', 'ไม่มีค่า', false], pills: [['rain-RES040', 'na', 'ไม่มีค่า'], ['rain-STN0911', 'na', 'ไม่มีค่า']], note: null, list: [], forbidden: /ปกติ|0 มม|0%/ }],
+  ]) {
+    await check(`ภาพนำเสนอ น้ำเลา ค่าสด (${scene}): ค่า/โทน/ขอบบนภาพตรงกติกา · ไม่ลงสีสถานการณ์ ไม่เป็น 0 · หน้าต่างพิมพ์ตรงกับภาพในหน้า · รายการจุดบอกค่าเดียวกัน`, async () => {
+      const { context, page } = await openScene(browser, baseUrl, scene, { diagram: 'namlao' })
+      try {
+        const svg = posterSvg(page)
+        await svg.locator('[data-poster-ring] text', { hasText: expect.ring[1] }).first().waitFor({ timeout: 10_000 })
+        const state = await posterState(svg)
+        if (expect.ring[0]) assert.equal(state.ring.tone, expect.ring[0], 'โทนวงแหวนอ่าง')
+        else assert.ok(['ok', 'warn'].includes(state.ring.tone), `โทนวงแหวนอ่าง (${state.ring.tone})`)
+        assert.equal(state.ring.text, expect.ring[1])
+        // วงแหวนไม่มีค่า/ค้าง = ไม่มีส่วนเติม (ไม่เป็น 0% ที่ดูเหมือนว่างเปล่าจริง) · มีค่า = มีส่วนเติม
+        assert.equal(state.ring.filled, expect.ring[2], 'วงแหวนเติมเฉพาะตอนมีค่า')
+        if (expect.ringNote !== undefined) assert.equal(state.ring.note, expect.ringNote, 'หมายเหตุใต้ชื่ออ่างบนภาพ (ตัวเลขซ้ำเดิมต้องบอกตรงนี้ ไม่ใช่แค่ในการ์ดค่าวัด)')
+        for (const pill of state.pills) assert.ok(TONES.includes(pill.tone), `${pill.slot}: โทนที่ไม่รู้จัก ${pill.tone}`)
+        if (expect.pills) {
+          assert.deepEqual(state.pills.map(p => [p.slot, p.tone, p.text]), expect.pills)
+          for (const pill of state.pills) assert.equal(pill.dashed, pill.tone === 'stale' || pill.tone === 'na', `${pill.slot}: ค้าง/ไม่มีค่าต้องขอบประ`)
+        }
+        const fullText = state.text
+        if (expect.note) assert.ok(fullText.includes(expect.note), `ต้องบอก "${expect.note}"`)
+        else assert.ok(!fullText.includes('ตัวเลขซ้ำเดิม'))
+        // การ์ดค่าวัดล่าสุด: ครบ 3 ช่องที่ผูกไว้ในผัง ไม่ว่าค่าจะเป็นอะไร
+        assert.deepEqual(state.liveRows, DAM_SLOTS)
+        if (expect.forbidden) assert.ok(!expect.forbidden.test(await posterLiveText(svg)), `${scene}: ค่าที่ไม่สดต้องไม่โชว์เป็นค่าปัจจุบัน (${expect.forbidden})`)
+        // รายการจุดใต้ภาพบอกค่าเดียวกัน (liveBadges ตัวเดียวกัน ไม่คิดค่าเอง)
+        const list = await routeList(page).innerText()
+        for (const needed of expect.list) assert.ok(list.includes(needed), `รายการจุดต้องมี "${needed}" (${scene})`)
+        // หน้าต่างพิมพ์ = ภาพเดียวกัน
+        await page.locator('[data-poster-open]').click()
+        const dialog = page.locator('[data-poster-overlay] svg[data-poster]')
+        await dialog.waitFor({ timeout: 10_000 })
+        assert.deepEqual(await posterState(dialog), state, 'หน้าต่างพิมพ์ต้องแสดงค่าเดียวกับภาพในหน้า')
+      } finally { await context.close() }
+    })
+  }
+
+  // พิมพ์จริง: จำลองสื่อ print แล้วสั่ง PDF ตาม @page ที่หน้าฉีดไว้ → ต้อง 1 หน้า A4 แนวนอน ทั้งสองธีม
+  for (const theme of ['dark', 'light']) {
+    await check(`โปสเตอร์ A4 พิมพ์ (${theme}): PDF 1 หน้า A4 แนวนอน · ซ่อนหน้าเว็บ/ปุ่ม · ภาพอยู่ในพื้นที่พิมพ์ตามขอบมาตรฐาน (257 × 170 มม.)`, async () => {
+      const { context, page } = await openPoster('nlSame')
+      try {
+        if (theme === 'light') await posterLook(page).getByRole('button', { name: /ธีมสว่าง/ }).click()
+        await page.emulateMedia({ media: 'print' })
+        const layout = await page.evaluate(() => {
+          const mm = px => px * 25.4 / 96
+          const sheet = document.querySelector('[data-poster-sheet]').getBoundingClientRect()
+          const svg = document.querySelector('[data-poster-sheet] svg').getBoundingClientRect()
+          const root = document.getElementById('root')
+          const toolbar = document.querySelector('[data-poster-toolbar]')
+          return {
+            rootDisplay: getComputedStyle(root).display, toolbarDisplay: getComputedStyle(toolbar).display,
+            sheetW: mm(sheet.width), sheetH: mm(sheet.height), svgW: mm(svg.width), svgH: mm(svg.height),
+            left: mm(svg.left - sheet.left), top: mm(svg.top - sheet.top),
+            bodyScrollH: mm(document.documentElement.scrollHeight),
+          }
+        })
+        assert.equal(layout.rootDisplay, 'none', 'หน้าเว็บที่เหลือไม่ติดไปบนกระดาษ')
+        assert.equal(layout.toolbarDisplay, 'none', 'ปุ่มไม่ติดไปบนกระดาษ')
+        assert.ok(Math.abs(layout.sheetW - 297) < 0.6 && layout.sheetH <= 209.5, `กล่องหน้า ${layout.sheetW.toFixed(1)} × ${layout.sheetH.toFixed(1)} มม.`)
+        assert.ok(Math.abs(layout.left - 20) < 0.8 && Math.abs(layout.top - 30) < 0.8, `ขอบแนวนอนของระบบ ซ้าย 2 ซม. บน 3 ซม. (ได้ ${layout.left.toFixed(1)} / ${layout.top.toFixed(1)} มม.)`)
+        assert.ok(layout.svgW <= 257.6 && layout.svgH <= 170.6, `ภาพต้องอยู่ในพื้นที่พิมพ์ 257 × 170 มม. (ได้ ${layout.svgW.toFixed(1)} × ${layout.svgH.toFixed(1)})`)
+        assert.ok(layout.svgW >= 200 && layout.svgH >= 160, 'ภาพต้องใหญ่เต็มพื้นที่ ไม่หดจนเล็ก')
+        const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
+        const text = pdf.toString('latin1')
+        const pages = (text.match(/\/Type\s*\/Page(?![s\w])/g) ?? []).length
+        assert.equal(pages, 1, `ต้องจบ 1 แผ่น (ได้ ${pages})`)
+        const box = text.match(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/)
+        assert.ok(box && Math.abs(Number(box[1]) - 841.89) < 1.5 && Math.abs(Number(box[2]) - 595.28) < 1.5, `กระดาษต้องเป็น A4 แนวนอน (MediaBox ${box?.slice(1, 3)})`)
+      } finally { await context.close() }
+    })
+  }
+
+  await check('โปสเตอร์ A4 บนมือถือ 390px: เปิดได้ ไม่ล้นหน้าเว็บ เลื่อนภาพแนวนอนในกรอบได้ ปุ่มแตะได้ ≥ 44px', async () => {
+    const { context, page } = await openPoster('nlNormal', { width: 390, height: 800 })
+    try {
+      const dialog = posterLook(page)
+      const info = await page.evaluate(() => {
+        const stage = document.querySelector('[data-poster-stage]')
+        return {
+          docOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+          stageScrolls: stage.scrollWidth > stage.clientWidth,
+          buttons: [...document.querySelectorAll('[data-poster-toolbar] button')].map(b => { const r = b.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)] }),
+        }
+      })
+      assert.equal(info.docOverflow, false, 'หน้าเว็บไม่เลื่อนแนวนอน')
+      assert.equal(info.stageScrolls, true, 'ภาพกว้างกว่าจอ เลื่อนในกรอบได้')
+      assert.ok(info.buttons.every(([w, h]) => w >= 44 && h >= 44), `ปุ่มแตะได้ ≥ 44px: ${JSON.stringify(info.buttons)}`)
+      assert.equal(await dialog.getByRole('button', { name: /พิมพ์/ }).isVisible(), true)
     } finally { await context.close() }
   })
 } finally {
