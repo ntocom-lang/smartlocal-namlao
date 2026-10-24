@@ -244,7 +244,13 @@ page.on('pageerror',e=>{errors.push(e.message);console.error('Browser error:',e.
 const vehiclePrompts=[];let dismissNextVehiclePrompt=false
 // กล่องทวนออกรถ/จบงานจากตารางงานคนขับบนจอ PC — ค่าเริ่มคือกด "ยกเลิก" ฉากที่ต้องบันทึกจริงตั้ง acceptNextTripPrompt เอง
 const tripPrompts=[];let acceptNextTripPrompt=false
+const cancelPrompts=[];let acceptNextCancelPrompt=false
 page.on('dialog',async dialog=>{
+ if(dialog.type()==='confirm'&&/^ยกเลิก(?:การเดินทาง|คำขอ)ให้ /.test(dialog.message())){
+  cancelPrompts.push(dialog.message())
+  if(acceptNextCancelPrompt){acceptNextCancelPrompt=false;await dialog.accept()}else await dialog.dismiss()
+  return
+ }
  if(dialog.type()==='confirm'&&dialog.message().startsWith('บันทึก “')){
   tripPrompts.push(dialog.message())
   if(acceptNextTripPrompt){acceptNextTripPrompt=false;await dialog.accept()}else await dialog.dismiss()
@@ -732,6 +738,7 @@ try{
  await toast('บันทึกแล้ว').waitFor();assert.equal((await bookingRow(areaC)).cancel_requested,true)
  const areaTrip=await tripOf(areaC)
  await staffDesk();await row(areaC).getByRole('button',{name:'ประสานยกเลิก',exact:true}).click()
+ acceptNextCancelPrompt=true
  await sheet.getByRole('button',{name:'ยกเลิกให้ตามที่ขอ',exact:true}).click();await sheet.waitFor({state:'detached'})
  assert.equal((await bookingRow(areaC)).status,'cancelled')
  assert.equal((await runSql(async()=>(await db.query('SELECT state FROM public.patient_booking_trips WHERE id=$1',[areaTrip])).rows[0])).state,'cancelled','ผู้เดินทางคนเดียวขอยกเลิก = คืนช่วงเวลารถทันที')

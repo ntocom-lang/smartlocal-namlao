@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { Printer, Users } from 'lucide-react'
+import { Ban, Printer, Users } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
@@ -197,6 +197,42 @@ function ReasonAction({ title, hint, defaultReason = '', placeholder = '', butto
     </label>
     <button type="button" className={primary ? primaryClass : buttonClass} disabled={busy || !note.trim()} onClick={() => onRun(note.trim())}>{button}</button>
   </div>
+}
+
+function CancelJourney({ booking, trip, others, allowed, busy, onCancel }) {
+  const [open, setOpen] = useState(!!booking.cancel_requested)
+  const [note, setNote] = useState(booking.cancel_requested ? 'ผู้จองขอยกเลิก' : '')
+  const submitted = booking.status === 'submitted'
+  const title = submitted ? 'ยกเลิกคำขอ' : 'ยกเลิกการเดินทาง'
+  const effect = submitted ? 'ยกเลิกเฉพาะคำขอนี้'
+    : others.length ? `ยกเลิกเฉพาะรายนี้ ผู้เดินทางอีก ${others.length} รายในเที่ยวไม่เปลี่ยน`
+      : trip?.state === 'confirmed' || (trip?.state === 'issue' && trip?.state_before_issue === 'confirmed')
+        ? 'รายนี้เป็นคนสุดท้าย ระบบปิดเที่ยวที่ยังไม่ออกรถให้ด้วย'
+        : 'ยกเลิกเฉพาะรายนี้ เจ้าหน้าที่ต้องประสานคนขับและแผนดูแลต่อ'
+  const submit = e => {
+    e.preventDefault()
+    if (busy || !allowed || !note.trim()) return
+    if (!window.confirm(`${title}ให้ ${bookingName(booking)} หรือไม่?\n\nนัด ${dateTime(booking.appointment_at)}\n${booking.route_label || ''}\nเหตุผล: ${note.trim()}\n\n${effect}\nระบบเก็บคำขอและประวัติไว้ตรวจสอบ`)) return
+    onCancel(note.trim())
+  }
+  return <section aria-label="ยกเลิกคำขอหรือการเดินทาง" className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-3 text-slate-900">
+    <button type="button" className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-red-700 bg-white px-4 py-2.5 font-bold text-red-800 hover:bg-red-100 disabled:opacity-50"
+      disabled={busy || !allowed} aria-expanded={open && allowed} onClick={() => setOpen(value => !value)}>
+      <Ban size={18} aria-hidden="true" />{title}
+    </button>
+    {!allowed ? <p className="text-sm text-red-900">ผู้เดินทางอยู่ระหว่างรับ–ส่ง ยกเลิกจากขั้นนี้ไม่ได้ กรุณาประสานคนขับและจัดการให้ผู้เดินทางปลอดภัยก่อน</p>
+      : open && <form className="space-y-3" onSubmit={submit}>
+        <p className="font-semibold">{bookingName(booking)} · นัด {dateTime(booking.appointment_at)}</p>
+        <p className="text-sm">{effect} · เก็บประวัติไว้ตามเดิม</p>
+        <label className="block text-sm">เหตุผล (ผู้จองจะเห็นข้อความนี้)
+          <textarea autoFocus required maxLength={500} disabled={busy} value={note} onChange={e => setNote(e.target.value)} aria-label="เหตุผลการยกเลิก" className={`${inputClass} mt-1 min-h-24`} placeholder="เช่น ผู้ป่วยแจ้งเลื่อนนัดและไม่เดินทาง" />
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <button type="submit" disabled={busy || !note.trim()} className="min-h-11 rounded-xl bg-red-700 px-4 py-2.5 font-bold text-white disabled:opacity-50">{booking.cancel_requested ? 'ยกเลิกให้ตามที่ขอ' : 'ยืนยันยกเลิกการเดินทาง'}</button>
+          <button type="button" disabled={busy} className={buttonClass} onClick={() => setOpen(false)}>เก็บรายการไว้</button>
+        </div>
+      </form>}
+  </section>
 }
 
 function Facts({ booking: b, trip, others, historical = false }) {
@@ -447,7 +483,7 @@ function PickupCorrection({ booking, busy, onSave, onBack }) {
   </form>
 }
 
-function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onPrintRequest, onOdometer, onReschedule, onUpdateSchedule, onReload }) {
+function MoreActions({ row, workspace, busy, onConfirm, act, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onPrintRequest, onOdometer, onReschedule, onUpdateSchedule, onReload }) {
   const { booking: b, trip, next, group } = row
   const [amending, setAmending] = useState(false)
   const [correctingPickup, setCorrectingPickup] = useState(false)
@@ -474,7 +510,6 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
           onSave={async (values, reason) => { if (await onAmend(b, values, reason)) setAmending(false) }} />}
         {group.length > 1 && <button type="button" className={buttonClass} disabled={busy} onClick={() => onConfirm(row, { ids: [b.id], separate: true })}>ยืนยันเฉพาะคำขอนี้ (ไม่ไปด้วยกัน)</button>}
         {b.requested_trip_id && <button type="button" className={buttonClass} disabled={busy} onClick={() => onConfirm(row, { ids: [b.id], separate: true })}>ยืนยันเป็นเที่ยวแยก (ไม่ร่วมเที่ยวที่ขอ)</button>}
-        <ReasonAction busy={busy} title="ยกเลิกคำขอ" placeholder="เช่น ผู้จองแจ้งยกเลิกทางโทรศัพท์" button="ยกเลิกคำขอ" seenByCitizen onRun={note => act(b, 'cancel', note)} />
       </>}
       {canCorrectPickup && !correctingPickup && <button type="button" className={buttonClass} disabled={busy} onClick={() => setCorrectingPickup(true)}>แก้จุดรับ / หมุด</button>}
       {!isCommunity(b) && canCorrectPickup && !changingHospital && <button type="button" className={buttonClass} disabled={busy} onClick={() => setChangingHospital(true)}>เปลี่ยนโรงพยาบาล</button>}
@@ -489,7 +524,6 @@ function MoreActions({ row, workspace, busy, onConfirm, act, remove, onAmend, on
       {inService && scheduling === 'estimate' && <ScheduleUpdate key={trip.id} trip={trip} busy={busy} onUpdate={async (...args) => { const saved = await onUpdateSchedule(...args); if (saved) setScheduling(null); return saved }} />}
       {trip && b.status !== 'cancelled' && trip.state !== 'cancelled' && <BookingFundDocs booking={b} trip={trip} busy={busy} onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onPrintRequest={onPrintRequest} />}
       {trip?.state === 'completed' && <DayOdometerOfTrip trip={trip} odometer={workspace.odometer} busy={busy} onSave={onOdometer} />}
-      {removable && <ReasonAction busy={busy} title="นำรายนี้ออกจากเที่ยว" hint="ใช้เมื่อประสานแล้วว่าไม่เดินทาง ผู้เดินทางคนอื่นในเที่ยวไม่เปลี่ยน · ถ้าเป็นคนสุดท้ายและรถยังไม่ออก ระบบคืนช่วงเวลารถให้ด้วย" placeholder="เช่น ผู้ป่วยแจ้งเลื่อนนัด" button="นำออกจากเที่ยว" seenByCitizen onRun={remove} />}
       {releasable && <ReasonAction busy={busy} title="คืนคิวทั้งเที่ยว" hint="ผู้เดินทางทุกคนในเที่ยวนี้กลับไปเป็น “รอยืนยันรถ” เพื่อจัดรถใหม่" placeholder="เช่น รถเสีย ต้องจัดรถใหม่" button="คืนคิวทั้งเที่ยว" onRun={note => act(trip, 'release', note)} />}
     </div>
   </details>
@@ -537,8 +571,12 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
   // ขอยกเลิกในเที่ยวที่มีคนเดียวและรถยังไม่ออก = คืนคิวทั้งเที่ยว ช่วงเวลารถจะว่างให้คนอื่นทันที
   const soloRelease = trip && passengers.length === 1 && (trip.state === 'confirmed' || (trip.state === 'issue' && trip.state_before_issue === 'confirmed')) && b.passenger_step === 0
   const removable = b.status === 'confirmed' && [0, 2].includes(b.passenger_step)
+  const cancelVisible = ['admin', 'coordinator'].includes(workspace.role) && (b.status === 'submitted' ||
+    (b.status === 'confirmed' && trip && !['completed', 'cancelled'].includes(trip.state)))
   const act = (entity, name, note) => onAction(entity, name, note).then(ok => { if (ok) onClose(); return ok })
   const remove = note => onRemove(b, trip, note).then(ok => { if (ok) onClose(); return ok })
+  const cancel = note => b.status === 'submitted' ? act(b, 'cancel', note)
+    : b.cancel_requested && soloRelease ? act(trip, 'release', note) : remove(note)
   const showProblem = problem && b.status === 'submitted'
   // เงื่อนไขเดียวกับปุ่ม "พร้อมให้มารับกลับ" ฝั่งประชาชน (BookingOperations) และที่ฐานข้อมูลตรวจ
   const readyReturn = b.status === 'confirmed' && ['outbound', 'hospital'].includes(trip?.state) && b.return_mode !== 'one_way' && !b.return_ready
@@ -546,6 +584,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
   const letterAvailable = trip && ['confirmed', 'completed'].includes(b.status) && trip.state !== 'cancelled'
   return <Sheet wide title={bookingName(b)} subtitle={`${issue ? 'เหตุขัดข้อง' : STAGES[stage].label} · เลขที่ ${ref(b.id)}`} onClose={onClose} onReload={onReload} busy={busy}>
     {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
+    {cancelVisible && <CancelJourney key={b.id} booking={b} trip={trip} others={others} allowed={b.status === 'submitted' || removable} busy={busy} onCancel={cancel} />}
     {printable && <section aria-label="เอกสารของผู้เดินทาง" className="space-y-3 rounded-xl border border-slate-200 p-4">
       <p className="font-bold">เอกสารของ {bookingName(b)}</p>
       <BookingPrintButtons booking={b} trip={trip} busy={busy} onPrintRequest={onPrintRequest} onPrintLetter={letterAvailable ? onPrintLetter : null} onRecordLetter={onRecordLetter} />
@@ -567,15 +606,10 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
       </div>
       {trip.driver_id !== currentUserId && <p className="text-sm text-slate-700">ถ้าคนขับใช้อีกบัญชี ให้เข้าหน้าเจ้าหน้าที่ด้วยบัญชีคนขับ แล้วเปิดแท็บ “งานคนขับ”</p>}
     </section>}
-    {next.id === 'cancel' && (soloRelease
-      ? <ReasonAction busy={busy} primary title="ผู้จองขอยกเลิก" hint="เที่ยวนี้มีผู้เดินทางคนเดียว ยกเลิกแล้วระบบปิดเที่ยวให้" defaultReason="ผู้จองขอยกเลิก" button="ยกเลิกให้ตามที่ขอ" onRun={note => act(trip, 'release', note)} />
-      : removable
-        ? <ReasonAction busy={busy} primary title="ผู้จองขอยกเลิก" hint="นำผู้เดินทางรายนี้ออกจากเที่ยว ผู้เดินทางคนอื่นไม่เปลี่ยน" defaultReason="ผู้จองขอยกเลิก" seenByCitizen button="ยกเลิกให้ตามที่ขอ" onRun={remove} />
-        : <p className="rounded-xl bg-amber-50 p-3">ผู้เดินทางอยู่บนรถ ยกเลิกระหว่างทางไม่ได้ ให้โทรประสานคนขับ</p>)}
     {next.id === 'issue' && <>
       <p className="rounded-xl bg-red-50 p-3"><strong>เหตุที่แจ้ง:</strong> {trip.issue_note || '—'}</p>
       {/* คนขับกดส่งถึงได้เฉพาะเมื่อส่งครบทุกคน — ผู้ป่วยที่ไม่ได้ขึ้นรถต้องถูกนำออกจากเที่ยวก่อน */}
-      {passengers.length > 0 && <p className="text-sm text-slate-700">ถ้ามีผู้ป่วยไม่ได้ขึ้นรถ: เปิด “จัดการเพิ่มเติม” ของรายนั้น นำออกจากเที่ยวก่อน แล้วค่อยกด “แก้ไขแล้ว เดินรถต่อ”</p>}
+      {passengers.length > 0 && <p className="text-sm text-slate-700">ถ้ามีผู้ป่วยไม่ได้ขึ้นรถ: กด “ยกเลิกการเดินทาง” ของรายนั้นก่อน แล้วค่อยกด “แก้ไขแล้ว เดินรถต่อ”</p>}
       <ReasonAction busy={busy} primary title="ประสานแก้ไขแล้ว" defaultReason="ประสานแก้ไขแล้ว เดินรถต่อได้" button="แก้ไขแล้ว เดินรถต่อ" onRun={note => act(trip, 'resolve', note)} />
     </>}
     {/* ผู้จองโทรมาแจ้งว่าพร้อมกลับ — คำขอที่รับจองทางโทรศัพท์ผู้จองไม่มีบัญชีให้กดเอง ใครรับสายก็กดแทนได้
@@ -585,7 +619,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
       <button type="button" className={primaryClass} disabled={busy} onClick={() => act(b, 'ready_return')}>แจ้งพร้อมให้มารับกลับแทนผู้จอง</button>
     </div>}
     <Facts booking={b} trip={trip} others={others} historical={!!linked} />
-    <MoreActions row={row} workspace={workspace} busy={busy} onConfirm={onConfirm} act={act} remove={remove} onAmend={onAmend} onUpdatePickup={onUpdatePickup}
+    <MoreActions row={row} workspace={workspace} busy={busy} onConfirm={onConfirm} act={act} onAmend={onAmend} onUpdatePickup={onUpdatePickup}
       onRecordLetter={onRecordLetter} onPrintLetter={onPrintLetter} onPrintRequest={onPrintRequest} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} onReload={onReload} />
     <BookingHistory booking={b} trip={trip} />
   </Sheet>
