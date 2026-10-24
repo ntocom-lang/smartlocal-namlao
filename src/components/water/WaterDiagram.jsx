@@ -8,6 +8,8 @@ import { CHIP_TONES, EDGE_STYLES, chipWidth, isAnimated, isShimmer, liveBadges, 
 import { routeKinds } from '../../lib/waterDiagram/route'
 import WaterRouteArt from './WaterRouteArt'
 import WaterRouteList from './WaterRouteList'
+import WaterDiagramEdges from './WaterDiagramEdges'
+import { STALE_DIAGRAM_MONTHS, SYSTEM_DISCLAIMER, diagramAge, systemById, systemCountsText, thaiDate } from '../../lib/waterSystem/model'
 
 // ภาพนำเสนอ A4 (โปสเตอร์) — ผังที่มี route.poster แสดงภาพนี้แทนภาพเกาะลอย · โหลดเฉพาะเมื่อผังนั้นถูกเปิด
 const WaterRoutePosterPanel = lazy(() => import('./WaterRoutePoster'))
@@ -280,8 +282,8 @@ function HeadingCaption({ scope, className }) {
   )
 }
 
-// หัวโปสเตอร์ของแผนภาพเส้นทางน้ำ — อยู่บนสุดของส่วนนี้ ก่อนปุ่ม/คำกำกับ/แท็บ (เจ้าของระบบสั่ง: สวยแล้วต้องให้เห็นก่อน)
-// เป็น h2 จริงของส่วนนี้ (ชื่อที่โปรแกรมอ่านจอใช้ = "เส้นทางน้ำ ตำบล…")
+// หัวโปสเตอร์ของผังน้ำตำบล — อยู่บนสุดของส่วนนี้ ก่อนปุ่ม/คำกำกับ/แท็บ (เจ้าของระบบสั่ง: สวยแล้วต้องให้เห็นก่อน)
+// เป็น h2 จริงของส่วนนี้ (ชื่อที่โปรแกรมอ่านจอใช้ = "ผังน้ำตำบล…")
 function RouteBanner({ route, scope }) {
   return (
     <header data-route-banner className="wr-poster rounded-3xl border border-sky-100 bg-gradient-to-b from-sky-50 to-white px-3 pb-4 pt-5 text-center shadow-sm lg:px-7 lg:pt-7">
@@ -295,7 +297,7 @@ function RouteBanner({ route, scope }) {
   )
 }
 
-// ── แผนภาพเส้นทางน้ำ (ผังที่มี route) — แทนผังเคลื่อนไหวเดิมของ อปท. นั้น (เจ้าของระบบสั่ง 2569-10-21) ──
+// ── ผังน้ำตำบล (ผังที่มี route) — แทนผังเคลื่อนไหวเดิมของ อปท. นั้น (เจ้าของระบบสั่ง 2569-10-21) ──
 const ROUTE_LEGEND = [
   { key: 'lake', text: 'อ่างเก็บน้ำ', icon: (
     <svg viewBox="0 0 34 16" aria-hidden="true"><ellipse cx="17" cy="7" rx="11" ry="6" fill="#5bb4ec" stroke="#fff" strokeWidth="1.5" /><path d="M8 10Q17 16 26 10" fill="none" stroke="#d6c19a" strokeWidth="3" strokeLinecap="round" /></svg>
@@ -324,7 +326,10 @@ const ROUTE_LEGEND = [
 ]
 
 // ที่มา + ของที่ผังต้นฉบับมีแต่ไม่ได้วาด + ลิงก์ผังต้นฉบับ — ผังที่มี route เก็บไว้ในแท็บ "ที่มา" (ผังเดิมแสดงท้ายส่วนเหมือนเดิม)
-function SourceBox({ diagram, tenantName }) {
+// ผังที่มีข้อมูล "ระบบน้ำ" ของตำบล (src/lib/waterSystem) เพิ่ม 2 บรรทัด: จำนวนที่ผังต้นฉบับวาด (ไม่นับ "แผนก่อสร้าง" — ตัวเลขนี้อยู่บนแถบหัวภาพแล้ว กันเลขสองชุดไม่ตรงกัน)
+// กับที่มาของส่วน "ก่อนถึงตำบล/ไหลต่อไปที่" (ผังจังหวัดไม่ได้ลงวันที่ในภาพ จึงบอกวันที่ไฟล์)
+function SourceBox({ diagram, tenantName, system = null, stopCount = null }) {
+  const drawn = system ? systemCountsText({ ...system.counts, planned: 0 }) : ''
   return (
     <div className="rounded-2xl border border-slate-300 bg-slate-50 px-3.5 py-3 text-xs leading-relaxed text-slate-600" data-diagram-source>
       <p>
@@ -332,6 +337,16 @@ function SourceBox({ diagram, tenantName }) {
         ({diagram.sourceDate}) — วาดใหม่ ไม่ได้คัดลอกภาพ ไม่ได้เป็นผลงานของ{tenantName || 'หน่วยงาน'} ·
         สถานะโครงสร้างอาจเปลี่ยนไปหลังทำผัง · ป้ายตัวเลขบนผังคือค่าจากสถานี/รายงานตามที่ระบุ ไม่ใช่ประกาศเตือนภัย
       </p>
+      {drawn && (
+        <p className="mt-1.5" data-diagram-counts>
+          <b>ผังต้นฉบับของตำบลนี้วาดไว้:</b> {drawn}{stopCount ? ` — ภาพนี้แสดงเฉพาะ ${stopCount} จุดสำคัญ` : ''}
+        </p>
+      )}
+      {system && (
+        <p className="mt-1.5" data-diagram-edges-source>
+          ส่วน "ก่อนถึงตำบล" และ "ไหลต่อไปที่" ถอดจาก: {system.sources.map(s => `${s.name} (${s.fileDateOnly ? `ไฟล์ลงวันที่ ${thaiDate(s.date)} ภาพไม่ระบุวันที่` : thaiDate(s.date)})`).join(' · ')}
+        </p>
+      )}
       {diagram.omitted?.length > 0 && (
         <div className="mt-1.5" data-diagram-omitted>
           <p className="font-semibold">ที่ผังต้นฉบับมีแต่เราวาดต่างไป หรือไม่ได้วาด:</p>
@@ -348,15 +363,18 @@ function SourceBox({ diagram, tenantName }) {
   )
 }
 
+// คำกำกับบังคับของส่วนระบบน้ำเดิม (SYSTEM_DISCLAIMER) ที่ประโยคหลักของผังยังไม่ได้พูด — "ไม่ได้แสดงว่ามีน้ำไหลจริง" ผังพูดไว้แล้วในประโยคหลัก ("…ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง")
+const SYSTEM_DISCLAIMER_EXTRA = SYSTEM_DISCLAIMER.filter(text => !text.includes('น้ำไหลจริง'))
+
 // จอ ≥ 1024px รายการอยู่ข้างภาพอยู่แล้ว จึงไม่มีแท็บ "รายการจุด" (ใช้ breakpoint เดียวกับ lg: ของ Tailwind)
 const WIDE_QUERY = '(min-width: 1024px)'
 
-// ── แผนภาพเส้นทางน้ำแบ่ง 3 แท็บ: แผนภาพ (ชื่อ + ภาพ + สัญลักษณ์) · รายการจุด · ที่มา — มือถือไม่ต้องเลื่อนยาวเกือบ 3,000px ──
+// ── ผังน้ำตำบลแบ่ง 3 แท็บ: แผนภาพ (ชื่อ + ภาพ + สัญลักษณ์) · รายการจุด · ที่มา — มือถือไม่ต้องเลื่อนยาวเกือบ 3,000px ──
 // แผงที่ไม่ได้เลือกใช้ display:none (ไม่ใช่แค่ซ่อนตา) ภาพที่ซ่อนจึงไม่วิ่งแอนิเมชันกินแบตและผู้ใช้โปรแกรมอ่านจอไม่ต้องอ่านซ้ำ
 // คำอธิบายสัญลักษณ์ข้อไหนต้องขึ้น = ผังนั้นมีสัญลักษณ์นั้นจริง (routeKinds) — ไม่โชว์ของที่ไม่มีในภาพ
 const ROUTE_LEGEND_NEEDS = { lake: 'lake', weir: 'weir', pond: 'pond', gate: 'gate', bridge: 'bridge', supply: 'supply', village: 'village', plan: 'planned', repair: 'repair', flow: 'flow', na: 'na' }
 
-function RouteView({ route, badges, diagram, tenantName, now }) {
+function RouteView({ route, badges, diagram, tenantName, now, system, stations }) {
   const hasPoster = Boolean(route.poster)
   const legend = ROUTE_LEGEND.filter(item => routeKinds(route).has(ROUTE_LEGEND_NEEDS[item.key]))
   const [tab, setTab] = useState('art')
@@ -398,7 +416,7 @@ function RouteView({ route, badges, diagram, tenantName, now }) {
 
   return (
     <div data-route-tabs className="space-y-3">
-      <div role="tablist" aria-label="ส่วนของแผนภาพเส้นทางน้ำ" onKeyDown={onKeyDown}
+      <div role="tablist" aria-label="ส่วนของผังน้ำตำบล" onKeyDown={onKeyDown}
         className="flex divide-x divide-slate-300 overflow-hidden rounded-xl border border-slate-400 lg:max-w-md">
         {tabs.map(({ key, label, extra }) => {
           const active = tab === key
@@ -442,8 +460,11 @@ function RouteView({ route, badges, diagram, tenantName, now }) {
         </div>
       </div>
 
+      {/* ต้นน้ำ/ปลายน้ำนอกตำบล — สิ่งที่ภาพไม่มี · อยู่ใต้ภาพเฉพาะแท็บ "แผนภาพ" (ภาพนำเสนอต้องเห็นก่อน ตามที่เจ้าของระบบสั่ง · แท็บรายการจุด/ที่มาไม่ต้องยาวขึ้น) */}
+      {tab === 'art' && <WaterDiagramEdges system={system} stations={stations} />}
+
       <div role="tabpanel" id={`${uid}-panel-source`} aria-labelledby={`${uid}-tab-source`} className={tab === 'source' ? '' : 'hidden'}>
-        <SourceBox diagram={diagram} tenantName={tenantName} />
+        <SourceBox diagram={diagram} tenantName={tenantName} system={system} stopCount={stopCount} />
       </div>
     </div>
   )
@@ -451,6 +472,9 @@ function RouteView({ route, badges, diagram, tenantName, now }) {
 
 function DiagramBody({ diagram, scope, tenantName, stations, now }) {
   const route = diagram.route ?? null
+  // ข้อมูล "ระบบน้ำ" ของตำบลเดียวกัน (id เดียวกับผัง · เทสต์ตรึงว่าทุกผังที่มี route มีระบบน้ำคู่กัน) — ก่อนถึงตำบล/ไหลต่อไปที่ + อายุผัง
+  const system = route ? systemById(diagram.id) : null
+  const age = system ? diagramAge(system, now) : null
   const root = useRef(null)
   const [mode, setMode] = useState(initialMode)
   const [paused, setPaused] = useState(false)
@@ -540,6 +564,13 @@ function DiagramBody({ diagram, scope, tenantName, stations, now }) {
         <b>ภาพประกอบทิศทางน้ำตามผัง ({diagram.drawnLabel})</b> ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง — ฝาย คลอง หนอง ไม่มีเครื่องวัด
         · โครงสร้างที่ผังระบุว่าชำรุดหรือแผนก่อสร้าง<b>จะไม่เคลื่อนไหว</b>
         {route && <> · <b>ไม่ใช่แผนที่</b> ตำแหน่ง ทิศ และมาตราส่วนไม่ตรงจริง · เกาะและต้นไม้เป็นภาพประกอบ ไม่ได้หมายถึงสิ่งก่อสร้างหรือพื้นที่จริง</>}
+        {system && (
+          <span className="mt-1 block" data-system-disclaimer>
+            <b>{SYSTEM_DISCLAIMER_EXTRA.join(' · ')}</b>
+            {age && <span className="block text-[11px]" data-diagram-age>ผังต้นฉบับอายุ {age.text} ({age.dateText})</span>}
+            {age?.stale && <span data-stale-band className="block font-bold text-amber-800">ผังต้นฉบับอายุเกิน {STALE_DIAGRAM_MONTHS / 12} ปี — โครงสร้างอาจเปลี่ยนไปแล้ว</span>}
+          </span>
+        )}
       </p>
 
       {/* ลิงก์ผังต้นฉบับ (ไฟล์ภาพของตำบลนี้ ไม่ใช่หน้ารวมของจังหวัด) อยู่ใต้คำกำกับเลย กดแล้วเห็นผังต้นฉบับได้ทันที — ย้ายมาจากกล่อง "ที่มาของข้อมูล" ของแท็บสถานการณ์ (เจ้าของระบบสั่ง 2569-10-23)
@@ -550,7 +581,7 @@ function DiagramBody({ diagram, scope, tenantName, stations, now }) {
         </a>
       )}
 
-      {route ? <RouteView route={route} badges={badges} diagram={diagram} tenantName={tenantName} now={now} /> : mode === 'map' ? <DiagramMap diagram={diagram} badges={badges} zoom={zoom} /> : <DiagramLanes diagram={diagram} badges={badges} />}
+      {route ? <RouteView route={route} badges={badges} diagram={diagram} tenantName={tenantName} now={now} system={system} stations={stations} /> : mode === 'map' ? <DiagramMap diagram={diagram} badges={badges} zoom={zoom} /> : <DiagramLanes diagram={diagram} badges={badges} />}
 
       {!route && mode === 'map' && (
         <ul className="wd-legend m-0 flex list-none flex-wrap gap-x-3.5 gap-y-1.5 px-0.5 text-xs text-slate-600">

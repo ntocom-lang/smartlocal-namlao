@@ -259,7 +259,7 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
   if (elements.some(el => el.kind === 'outline' && el.cls === 'village')) {
     const villageNote = diagram.omitted.find(text => text.includes('เขตหมู่บ้าน'))
     assert.ok(villageNote, at('เขตหมู่บ้านที่ผังวาดเส้นประแดง ต้องบอกใน omitted ว่าวาดต่างหรือไม่ได้วาด'))
-    if (diagram.route) assert.ok(villageNote.includes('ไม่ได้ใส่ในแผนภาพ'), at('ผังที่มีแผนภาพเส้นทางน้ำ: เขตหมู่บ้านไม่ได้วาด ต้องบอกว่าไม่ได้ใส่'))
+    if (diagram.route) assert.ok(villageNote.includes('ไม่ได้ใส่ในแผนภาพ'), at('ผังที่มีผังน้ำตำบล: เขตหมู่บ้านไม่ได้วาด ต้องบอกว่าไม่ได้ใส่'))
     else assert.ok(villageNote.includes('เทา'), at('เขตหมู่บ้านวาดเป็นสีเทา ต้องบอกเหตุผลใน omitted'))
   }
 }
@@ -426,7 +426,7 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
   assert.deepEqual(liveBadges({ binds: { x: { type: 'unknown' } }, now }), { x: { tone: 'na', text: 'ไม่มีค่าในระบบ', detail: 'ไม่มีค่าในระบบ', short: 'ไม่มีค่า' } })
   assert.deepEqual(liveBadges({ now }), {})
 
-  // short/note สำหรับป้ายบนแผนภาพเส้นทางน้ำ (เพิ่มจาก text/detail เดิม) — ค้าง/ซ้ำเดิม/ไม่มีค่าต้องไม่กลายเป็นค่าปกติ
+  // short/note สำหรับป้ายบนผังน้ำตำบล (เพิ่มจาก text/detail เดิม) — ค้าง/ซ้ำเดิม/ไม่มีค่าต้องไม่กลายเป็นค่าปกติ
   {
     const sn = badge => [badge.short, badge.note ?? null]
     b = badges({ 50: entry(report(2, [73.2, 71.5, 70])), 30: entry(report(2, [76.79, 75, 74])) }, [])
@@ -462,10 +462,10 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
   }
 }
 
-// ── แผนภาพเส้นทางน้ำ (ผังที่มี route) — ข้อมูล · ตัวตรวจ · ป้ายค่าสด · คำกำกับ · แอนิเมชัน ──
+// ── ผังน้ำตำบล (ผังที่มี route) — ข้อมูล · ตัวตรวจ · ป้ายค่าสด · คำกำกับ · แอนิเมชัน ──
 {
   const withRoute = Object.entries(DIAGRAMS).filter(([, diagram]) => diagram.route).map(([id]) => id)
-  assert.deepEqual(withRoute.slice().sort(), ['namlao', 'tamnaktham', 'thungkaew'], 'ทุกผังของ อปท. ที่มีผังน้ำใช้แผนภาพเส้นทางน้ำ (ทุ่งแค้ว #551 · ตำหนักธรรม + น้ำเลา)')
+  assert.deepEqual(withRoute.slice().sort(), ['namlao', 'tamnaktham', 'thungkaew'], 'ทุกผังของ อปท. ที่มีผังน้ำใช้ผังน้ำตำบล (ทุ่งแค้ว #551 · ตำหนักธรรม + น้ำเลา)')
 
   // วลีอ้างอิงรายจุด: ทุกจุดต้องมาจากรายการสายน้ำ (lanes) ของผังที่ตรวจแล้ว ไม่เขียนจุดที่ผังไม่มี
   // ค่าเป็นอาร์เรย์ = ทุกวลีต้องอยู่ทั้งในข้อมูลสายน้ำและในชื่อ/คำอธิบายของจุด (จุดที่รวมหลายรายการ)
@@ -720,7 +720,7 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     assert.ok(view.includes('const route = diagram.route ?? null'))
     assert.match(view, /\{!route && <span className="inline-flex overflow-hidden rounded-xl border border-slate-400" role="group" aria-label="โหมดแสดงผัง">/)
     assert.match(view, /\{!route && mode === 'map' && \(\s*<span className="inline-flex gap-2">/)
-    assert.ok(view.includes("{route ? <RouteView route={route} badges={badges} diagram={diagram} tenantName={tenantName} now={now} /> : mode === 'map' ?"))
+    assert.ok(view.includes("{route ? <RouteView route={route} badges={badges} diagram={diagram} tenantName={tenantName} now={now} system={system} stations={stations} /> : mode === 'map' ?"))
     // แท็บ: แผนภาพ · รายการจุด · ที่มา (หน้ามือถือยาวเกือบ 3,000px — เจ้าของระบบสั่งแบ่งแท็บ 2569-10-21)
     assert.match(view, /role="tablist"/)
     assert.equal((view.match(/role="tabpanel"/g) ?? []).length, 3, 'ต้องมี 3 แผง (แผนภาพ · รายการ · ที่มา)')
@@ -729,16 +729,17 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     assert.ok(view.includes("useState('art')"), 'เปิดมาที่แท็บแผนภาพ')
     assert.ok(view.includes("className={tab === 'art' ? 'contents' : 'hidden'}") && view.includes("tab === 'source' ? '' : 'hidden'"), 'แผงที่ไม่ได้เลือกต้อง display:none (ไม่วิ่งแอนิเมชัน ไม่ซ้ำให้โปรแกรมอ่านจอ)')
     assert.ok(view.includes('{!route && <SourceBox diagram={diagram} tenantName={tenantName} />}'), 'ผังเดิมยังแสดงกล่องที่มาท้ายส่วน')
-    assert.equal((view.match(/<SourceBox diagram=\{diagram\} tenantName=\{tenantName\} \/>/g) ?? []).length, 2, 'กล่องที่มา: ท้ายผังเดิม + แท็บที่มาของผังที่มี route')
+    assert.equal((view.match(/<SourceBox diagram=\{diagram\} tenantName=\{tenantName\} \/>/g) ?? []).length, 1, 'กล่องที่มา: ท้ายผังเดิม')
+    assert.equal((view.match(/<SourceBox diagram=\{diagram\} tenantName=\{tenantName\} system=\{system\} stopCount=\{stopCount\} \/>/g) ?? []).length, 1, 'กล่องที่มา: แท็บที่มาของผังที่มี route (รับข้อมูลระบบน้ำเพื่อบอกจำนวนที่ผังวาด + ที่มาของก่อนถึงตำบล/ไหลต่อไปที่)')
     assert.ok(view.includes("event.key === 'ArrowRight'") && view.includes("'Home', 'End'"), 'ใช้ลูกศรซ้าย/ขวา/Home/End สลับแท็บได้')
-    // หัวโปสเตอร์ "เส้นทางน้ำ · ตำบล…" อยู่บนสุดของส่วน ก่อนปุ่มหยุด/คำกำกับบังคับ/แท็บ (เจ้าของระบบสั่ง 2569-10-22: สวยแล้วต้องให้เห็นก่อน)
+    // หัวโปสเตอร์ "ผังน้ำ · ตำบล…" อยู่บนสุดของส่วน ก่อนปุ่มหยุด/คำกำกับบังคับ/แท็บ (เจ้าของระบบสั่ง 2569-10-22: สวยแล้วต้องให้เห็นก่อน)
     assert.ok(view.includes('{route ? <RouteBanner route={route} scope={scope} /> : ('), 'ผังที่มี route ใช้หัวโปสเตอร์')
     assert.ok(view.includes('<h2 id="water-diagram-title" className="text-sm font-bold text-gray-800">{diagram.title}</h2>'), 'ผังเดิมยังใช้หัวเดิม')
     {
       const at = needle => { const i = view.indexOf(needle); assert.ok(i >= 0, 'ไม่พบ ' + needle); return i }
       assert.ok(at('<RouteBanner route={route} scope={scope} />') < at('data-diagram-disclaimer') && at('data-diagram-disclaimer') < at('<RouteView route={route}'),
         'ลำดับต้องเป็น หัวโปสเตอร์ → คำกำกับบังคับ → แท็บ/แผนภาพ')
-      const banner = view.slice(at('function RouteBanner'), at('// ── แผนภาพเส้นทางน้ำ (ผังที่มี route)'))
+      const banner = view.slice(at('function RouteBanner'), at('// ── ผังน้ำตำบล (ผังที่มี route)'))
       assert.match(banner, /<h2 id="water-diagram-title"[\s\S]*route\.eyebrow[\s\S]*route\.title/, 'หัวโปสเตอร์คือ h2 ของส่วนนี้')
       const routeView = view.slice(at('function RouteView'), at('function DiagramBody'))
       assert.ok(!/route\.eyebrow|route\.title/.test(routeView), 'ชื่อใหญ่ต้องอยู่ที่หัวโปสเตอร์เท่านั้น ไม่ซ้ำในแผง')
@@ -811,18 +812,20 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
 
   // สองหน้าจอที่มีปุ่มนี้ต้องใช้ตัวเลือกลิงก์เดียวกัน ไม่ชี้ sourceUrl/originalUrl ตรงๆ
   const diagramJsx = read('src/components/water/WaterDiagram.jsx')
-  const systemJsx = read('src/components/water/WaterSystem.jsx')
+  const systemJsx = read('src/components/water/WaterDiagramEdges.jsx')
   assert.ok(diagramJsx.includes('href={originalDiagramUrl(diagram.id, diagram.sourceUrl)}'), 'WaterDiagram.jsx ต้องลิงก์ผังต้นฉบับผ่าน originalDiagramUrl')
-  // ลิงก์ย้ายจากกล่อง "ที่มาของข้อมูล" (WaterSystem · แท็บสถานการณ์) ไปอยู่ใต้คำกำกับในแท็บเส้นทางน้ำ (เจ้าของระบบสั่ง 2569-10-23)
-  assert.ok(!systemJsx.includes('originalDiagramUrl') && !systemJsx.includes('data-original-link') && !systemJsx.includes('ExternalLink'), 'WaterSystem.jsx ต้องไม่มีลิงก์ผังต้นฉบับแล้ว (ย้ายไปแท็บเส้นทางน้ำ)')
-  assert.ok(systemJsx.includes('data-system-source') && systemJsx.includes('ถอดจากผังของศูนย์บริหารจัดการน้ำจังหวัดแพร่'), 'ข้อความที่มายังอยู่ในกล่อง')
+  // ลิงก์ย้ายจากกล่อง "ที่มาของข้อมูล" (WaterSystem · แท็บสถานการณ์) ไปอยู่ใต้คำกำกับในแท็บผังน้ำตำบล (เจ้าของระบบสั่ง 2569-10-23)
+  assert.ok(!systemJsx.includes('originalDiagramUrl') && !systemJsx.includes('data-original-link') && !systemJsx.includes('ExternalLink'), 'WaterSystem.jsx ต้องไม่มีลิงก์ผังต้นฉบับแล้ว (ย้ายไปแท็บผังน้ำตำบล)')
+  // ข้อความที่มาของส่วนก่อนถึงตำบล/ไหลต่อไปที่ย้ายมารวมกับกล่องที่มาของผังน้ำตำบล (ชุดเดียว) — ส่วนระบบน้ำเดิมไม่มีกล่องที่มาของตัวเองแล้ว
+  assert.ok(!systemJsx.includes('data-system-source'), 'ไม่มีกล่องที่มาซ้ำสองชุด')
+  assert.ok(diagramJsx.includes('data-diagram-edges-source') && diagramJsx.includes('ถอดจาก:'), 'ที่มาของก่อนถึงตำบล/ไหลต่อไปที่อยู่ในกล่องที่มาของผังน้ำตำบล')
   assert.ok(!/href=\{diagram\.sourceUrl\}/.test(diagramJsx), 'ห้ามกลับไปชี้หน้ารวมตรงๆ')
   assert.match(diagramJsx, /\{route && \(\s*<a href=\{originalDiagramUrl\(diagram\.id, diagram\.sourceUrl\)\} target="_blank" rel="noopener noreferrer" data-original-link data-original-link-near/, 'ลิงก์ใต้คำกำกับของผังเส้นทางน้ำ ผ่าน originalDiagramUrl')
   assert.ok(diagramJsx.indexOf('data-diagram-disclaimer') < diagramJsx.indexOf('data-original-link-near') && diagramJsx.indexOf('data-original-link-near') < diagramJsx.indexOf('<RouteView route={route}'), 'ลำดับในหน้า: คำกำกับ → ลิงก์ → แท็บ/ภาพ')
-  // ทุก อปท. ที่เห็นกล่องระบบน้ำต้องมีแท็บเส้นทางน้ำด้วย (ไม่งั้นลิงก์ผังต้นฉบับหายไปเลย)
+  // ทุก อปท. ที่เห็นกล่องระบบน้ำต้องมีแท็บผังน้ำตำบลด้วย (ไม่งั้นลิงก์ผังต้นฉบับหายไปเลย)
   for (const slug of Object.keys(WATER_SYSTEM_TENANTS)) {
-    assert.ok(diagramTenant(slug), `${slug}: มีระบบน้ำของตำบลแต่ไม่มีแผนภาพเส้นทางน้ำ → ลิงก์ผังต้นฉบับจะไม่มีที่แสดง`)
-    assert.ok(diagramById(resolveDiagram(slug, null).diagram).route, `${slug}: ผังต้องเป็นแบบเส้นทางน้ำ (ลิงก์ใต้คำกำกับขึ้นเฉพาะผังที่มี route)`)
+    assert.ok(diagramTenant(slug), `${slug}: มีระบบน้ำของตำบลแต่ไม่มีผังน้ำตำบล → ลิงก์ผังต้นฉบับจะไม่มีที่แสดง`)
+    assert.ok(diagramById(resolveDiagram(slug, null).diagram).route, `${slug}: ผังต้องเป็นแบบผังน้ำตำบล (มี route) (ลิงก์ใต้คำกำกับขึ้นเฉพาะผังที่มี route)`)
   }
 }
 
@@ -852,13 +855,13 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
   assert.ok(css.includes('var(--period'), 'keyframes ต้องใช้ระยะต่อรอบจากสไตล์เส้น')
   // ผังโหลดเฉพาะ อปท. ที่อยู่ในทะเบียน และใช้สถานีระดับ อปท. ไม่ตามโหมดแชร์ ?scope=
   assert.match(page, /const WaterDiagram = lazy\(\(\) => import\('\.\.\/components\/water\/WaterDiagram'\)\)/)
-  // แท็บ "เส้นทางน้ำ" บนสุดของหน้า: เกิดเมื่อ อปท. อยู่ในทะเบียนผัง + มีข้อมูลสถานีแล้วเท่านั้น (เงื่อนไขเดียวกับที่เคยแสดงส่วนผัง) · ผังอยู่ในแผงของแท็บนั้น
+  // แท็บ "ผังน้ำตำบล" บนสุดของหน้า: เกิดเมื่อ อปท. อยู่ในทะเบียนผัง + มีข้อมูลสถานีแล้วเท่านั้น (เงื่อนไขเดียวกับที่เคยแสดงส่วนผัง) · ผังอยู่ในแผงของแท็บนั้น
   assert.match(page, /const tabsOn = Boolean\(diagramTenant\(tenant\?\.slug\)\) && !loading && data !== null && stations\.length > 0/)
-  assert.match(page, /\{tabsOn && \(\s*<div id="water-panel-route" role="tabpanel"[\s\S]*?<WaterDiagram /, 'WaterDiagram ต้องอยู่ในแผงแท็บเส้นทางน้ำที่ขึ้นเมื่อ tabsOn')
+  assert.match(page, /\{tabsOn && \(\s*<div id="water-panel-route" role="tabpanel"[\s\S]*?<WaterDiagram /, 'WaterDiagram ต้องอยู่ในแผงแท็บผังน้ำตำบลที่ขึ้นเมื่อ tabsOn')
   assert.equal((page.match(/<WaterDiagram /g) ?? []).length, 1, 'หน้าเรียก WaterDiagram จุดเดียว')
   assert.match(page, /const activeTab = tabsOn \? tab : 'situation'/, 'ไม่มีแท็บ = หน้าเดิม (สถานการณ์เสมอ)')
   assert.match(page, /hidden=\{activeTab !== 'situation'\}/, 'แท็บสถานการณ์ซ่อนด้วย hidden (ยังเมาท์ไว้ ไม่โหลดข้อมูลซ้ำ)')
-  assert.match(page, /\{activeTab === 'route' && \(\s*<AlertBanner /, 'แถบแจ้งเตือนต้องขึ้นบนแท็บเส้นทางน้ำด้วย')
+  assert.match(page, /\{activeTab === 'route' && \(\s*<AlertBanner /, 'แถบแจ้งเตือนต้องขึ้นบนแท็บผังน้ำตำบลด้วย')
   assert.match(page, /<WaterDiagram [^>]*stations=\{scopedData\?\.stations \?\? \[\]\}/)
   assert.ok(!/<WaterDiagram [^>]*visibleData/.test(page), 'ผังต้องไม่ผูกกับ visibleData (โหมดแชร์)')
   // ?diagram= ส่งต่อให้คอมโพเนนต์ — ตัวตัดสินว่าใครใช้ได้อยู่ที่ resolveDiagram (เฉพาะ demo) ไม่ใช่หน้านี้

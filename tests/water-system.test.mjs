@@ -1,5 +1,7 @@
 // ระบบน้ำของตำบล (ฤดูแล้ง เฟส 5 · PR 5.2 น้ำเลา + PR 5.3 ตำหนักธรรม/ทุ่งแค้ว) — ตรรกะ + ความสอดคล้องของทะเบียน + ข้อความบังคับ + ล็อกว่าไม่เพิ่มงานเจ้าหน้าที่
 // ดีไซน์ฉบับปิด: docs/water-system.md · รันด้วย: node tests/water-system.test.mjs
+// 2569-10-24 เจ้าของระบบสั่งจัดระเบียบ 2 แท็บ: ส่วน "ระบบน้ำของตำบล" ท้ายแท็บสถานการณ์ถูกรวมเข้าแท็บ "ผังน้ำตำบล" — เหลือ "ก่อนถึงตำบล/ไหลต่อไปที่" ใต้ภาพ
+//   (WaterDiagramEdges.jsx) ขั้น "ในตำบล" ตัดออก (ซ้ำกับภาพ) · คำกำกับ/อายุผัง/ที่มาไปรวมกับของผังน้ำตำบล · ป้ายความสัมพันธ์บนการ์ดอ่าง/ระดับน้ำยังอยู่แท็บสถานการณ์ · ข้อมูล inside ยังเก็บในทะเบียน (ไม่แสดง)
 //
 // จุดที่ต้องไม่พลาด:
 //  (1) อปท. ที่ไม่มีระบบไม่เห็นหัวข้อนี้ · ?system= ใช้ได้เฉพาะ demo · ตำหนักธรรม/ทุ่งแค้วเห็นระบบของตัวเอง ไม่เห็นของน้ำเลา
@@ -22,6 +24,8 @@ import { NAMLAO_DIAGRAM } from '../src/lib/waterDiagram/namlao.js'
 import { TAMNAKTHAM_DIAGRAM } from '../src/lib/waterDiagram/tamnaktham.js'
 import { THUNGKAEW_DIAGRAM } from '../src/lib/waterDiagram/thungkaew.js'
 import { SMALL_RESERVOIRS } from '../src/lib/smallReservoirs.js'
+import { diagramById } from '../src/lib/waterDiagram/diagrams.js'
+import { resolveDiagram } from '../src/lib/waterDiagram/model.js'
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
@@ -177,7 +181,8 @@ const allNodes = [...sys.upstream, ...sys.inside, ...sys.downstream]
 // ── 7) ตัดออกจากหน้า (เจ้าของระบบสั่ง 2026-10-19): การ์ดแนวโน้มอ่าง 30 วัน + กล่อง "ผังต้นฉบับมี แต่เราไม่ได้ใส่" ──
 //   เหตุผล: การ์ดแนวโน้มซ้ำกับการ์ดอ่างเดิมของหน้า (ป้ายต้นน้ำ + ปริมาตรอยู่ที่นั่นแล้ว) · กล่อง "ไม่ได้ใส่" เป็นภาษาเทคนิคเกินไปสำหรับชาวบ้าน
 {
-  const code = read('src/components/water/WaterSystem.jsx').split('\n').filter(l => !l.trim().startsWith('//')).join('\n')
+  const code = read('src/components/water/WaterDiagramEdges.jsx').split('\n').filter(l => !l.trim().startsWith('//')).join('\n')
+  assert.equal(existsSync(new URL('../src/components/water/WaterSystem.jsx', import.meta.url)), false, 'WaterSystem.jsx ถูกแทนด้วย WaterDiagramEdges.jsx (รวมเข้าแท็บผังน้ำตำบลแล้ว)')
   for (const gone of ['DamTrendCard', 'TrendChart', 'TrendPanel', 'useDamHistory', 'get_public_dam_history', 'data-related-dam', 'data-trend', 'data-system-omitted', 'omitted',
     'ผังต้นฉบับมี แต่เราไม่ได้ใส่', 'ดูตัวเลขล่าสุดของอ่างนี้', 'แนวโน้มปริมาณน้ำในอ่าง']) {
     assert.ok(!code.includes(gone), `หน้าห้ามมี "${gone}" อีก (ตัดออกตามที่เจ้าของระบบสั่ง)`)
@@ -327,7 +332,7 @@ const FORBIDDEN_WORDS = ['รับรอง', 'อพยพ', 'มาตรา'
 
 // ── 8) ส่วนหน้าจอ: ไม่เพิ่มงานเจ้าหน้าที่ + ต่อหน้าถูกจุด ──
 {
-  const comp = read('src/components/water/WaterSystem.jsx')
+  const comp = read('src/components/water/WaterDiagramEdges.jsx')
   const code = comp.split('\n').filter(l => !l.trim().startsWith('//')).join('\n')
   for (const tag of ['<input', '<textarea', '<select', '<form', 'contentEditable', 'contenteditable', 'onSubmit']) {
     assert.ok(!code.includes(tag), `ส่วนนี้อ่านอย่างเดียว ห้ามมี ${tag}`)
@@ -335,16 +340,19 @@ const FORBIDDEN_WORDS = ['รับรอง', 'อพยพ', 'มาตรา'
   const buttons = [...code.matchAll(/<button\b[\s\S]*?<\/button>/g)].map(m => m[0])
   assert.ok(buttons.length >= 1 && buttons.every(b => b.includes('type="button"') && b.includes('setOpen(')), 'ปุ่มมีแค่ย่อ/ขยายรายการ')
   assert.ok(!/supabase\.from|\.insert\(|\.update\(|\.delete\(|\.upsert\(/.test(code), 'ห้ามเขียนข้อมูล')
-  assert.ok(code.includes('SYSTEM_DISCLAIMER_LINE'), 'ต้องแสดงคำกำกับบังคับ')
   assert.ok(code.includes('UPSTREAM_DEPTH_NOTE') && code.includes('NO_LIVE_TEXT'))
-  assert.ok(code.includes('data-system-source'), 'ต้องมีกล่อง "ที่มาของข้อมูล"')
+  // คำกำกับ/อายุผัง/ที่มา ไม่ซ้ำในส่วนนี้ — มีชุดเดียวที่ WaterDiagram.jsx (เทสต์ด้านล่าง)
+  for (const gone of ['SYSTEM_DISCLAIMER', 'data-system-source', 'data-system-disclaimer', 'diagramAge', 'systemCountsText']) assert.ok(!code.includes(gone), `WaterDiagramEdges ห้ามมี ${gone} (รวมไว้ที่ WaterDiagram.jsx แล้ว)`)
+  assert.ok(!code.includes('system.inside'), 'ขั้น "ในตำบล" ตัดออกจากหน้าแล้ว (ซ้ำกับภาพ)')
+  assert.ok(code.includes('data-edge={edge}') && code.includes('title="ก่อนถึงตำบล"') && code.includes('title="ไหลต่อไปที่"'))
   for (const word of ['เหลืออีก', 'จะหมด', 'พยากรณ์ว่า', 'ปกติดี', 'ปลอดภัยแล้ว']) assert.ok(!code.includes(word), `คอมโพเนนต์ห้ามมี "${word}"`)
 
   const page = read('src/pages/WaterSituationPage.jsx')
-  assert.ok(/const WaterSystem = lazy\(\(\) => import\('\.\.\/components\/water\/WaterSystem'\)\)/.test(page), 'WaterSystem ต้องโหลดแบบ lazy')
-  assert.ok(!/^import WaterSystem/m.test(page), 'ห้าม import WaterSystem ตรงๆ (อปท. ที่ไม่มีระบบไม่ควรโหลดโค้ดนี้)')
+  // แท็บสถานการณ์ไม่มีส่วน "ระบบน้ำของตำบล" อีกแล้ว (ย้ายไปแท็บผังน้ำตำบล) — ระบบน้ำเหลือใช้ติดป้ายความสัมพันธ์บนการ์ดอ่าง/ระดับน้ำเท่านั้น
+  assert.ok(!page.includes("components/water/WaterSystem'") && !page.includes('<WaterSystem'), 'หน้าห้าม import/แสดง WaterSystem อีก')
+  assert.ok(!page.includes('id="water-system"') && !page.includes('water-system-title'))
   assert.ok(page.includes("resolveSystem(tenant?.slug, searchParams.get('system'))"))
-  assert.ok(/\{waterSystem && \(\s*<Suspense fallback=\{null\}>\s*<WaterSystem/.test(page), 'ส่วนนี้ขึ้นเฉพาะ อปท. ที่มีระบบ')
+  assert.ok(!/<WaterSystem[^>]*tenantId/.test(page), 'ไม่ต้องส่ง tenantId (ไม่มีอะไรให้ดึง)')
   assert.equal(page.split('system={waterSystem}').length - 1, 2, 'ส่ง system ให้ทั้งส่วนอ่างและส่วนระดับน้ำ เพื่อติดป้ายความสัมพันธ์')
   assert.ok(page.includes("relationOf(system, 'dam', s.station_code)") && page.includes("relationOf(system, 'waterlevel', s.station_code)"))
   assert.ok(page.includes('id={`water-dam-${s.station_code}`}'), 'การ์ดอ่างต้องมีจุดยึดให้ลิงก์จากส่วนระบบน้ำ')
@@ -354,11 +362,42 @@ const FORBIDDEN_WORDS = ['รับรอง', 'อพยพ', 'มาตรา'
   assert.ok(page.includes("s.station_code === 'Y.38'"))
   // หน้าไม่ดึงข้อมูลเพิ่ม (ค่าสดมาจาก stations ที่หน้าโหลดอยู่แล้ว) · สรุปจำนวนมาจากตัวช่วย (ไม่เขียน "อ่าง 0 แห่ง") · ทุกชนิดโหนดมีไอคอน
   assert.ok(!/supabase\.rpc\(|\.rpc\(/.test(code) && !code.includes('supabase'), 'ส่วนระบบน้ำไม่เรียกฐานข้อมูลเอง')
-  assert.ok(!/<WaterSystem[^>]*tenantId/.test(page), 'ไม่ต้องส่ง tenantId (ไม่มีอะไรให้ดึง)')
-  assert.ok(code.includes('systemCountsText(system.counts)') && !/system\.counts\.(reservoirs|weirs|ponds|tributaries|planned)/.test(code), 'สรุปจำนวนต้องมาจาก systemCountsText')
+  assert.ok(!/system\.counts\.(reservoirs|weirs|ponds|tributaries|planned)/.test(read('src/components/water/WaterDiagram.jsx')), 'สรุปจำนวนต้องมาจาก systemCountsText')
   const iconKeys = [...(/const KIND_ICON = \{([^}]*)\}/.exec(code)?.[1] ?? '').matchAll(/(\w+):/g)].map(m => m[1])
   assert.deepEqual([...iconKeys].sort(), [...NODE_KINDS].sort(), 'ไอคอนต้องมีครบทุกชนิดโหนด ไม่เกิน ไม่ขาด')
-  console.log('✓ หน้าจอ: อ่านอย่างเดียว (ไม่มี input/form/เขียนข้อมูล · ปุ่มแค่ย่อ/ขยาย) · lazy เฉพาะ อปท. ที่มีระบบ · ไม่เรียกฐานข้อมูลเอง · ภาพแชร์ไม่เปลี่ยน')
+  console.log('✓ หน้าจอ: อ่านอย่างเดียว (ไม่มี input/form/เขียนข้อมูล · ปุ่มแค่ย่อ/ขยาย) · ไม่เรียกฐานข้อมูลเอง · ภาพแชร์ไม่เปลี่ยน')
+}
+
+// ── 12) รวมเข้าแท็บ "ผังน้ำตำบล" (เจ้าของระบบสั่ง 2569-10-24): ผังทุกตัวที่มี route มีระบบน้ำคู่กัน · คำกำกับ/อายุผัง/ที่มา/ตัวเลข เหลือชุดเดียว ──
+//   เหตุผล: ส่วน "ระบบน้ำของตำบล" ท้ายแท็บสถานการณ์เล่าเรื่องเดียวกับภาพผังน้ำตำบลสองรอบ มีคำกำกับ/ที่มาแยกกันสองชุด และตัวเลขเริ่มไม่ตรงกัน
+//   (ทุ่งแค้ว: โปสเตอร์ "แผนก่อสร้าง 2 · ชำรุด 1" แต่ส่วนระบบน้ำ "แผนก่อสร้าง 3 · รางชำรุด 2 จุด" — นับคนละหน่วย)
+{
+  for (const slug of ['namlao', 'tamnaktham', 'thungkaew']) {
+    const diagram = diagramById(resolveDiagram(slug, null).diagram)
+    assert.ok(diagram?.route, `${slug}: ผังต้องเป็นแบบมี route`)
+    const system = systemById(diagram.id)
+    assert.ok(system, `${slug}: ผังที่มี route ต้องมีข้อมูลระบบน้ำ id เดียวกัน (ไม่งั้น "ก่อนถึงตำบล/ไหลต่อไปที่" หาย)`)
+    assert.ok(system.upstream.length > 0 && system.downstream.length > 0, `${slug}: ต้องมีทั้งก่อนถึงตำบลและไหลต่อไปที่`)
+    assert.ok(diagram.route.title.includes(system.tambon), `${slug}: ผังกับระบบน้ำต้องเป็นตำบลเดียวกัน`)
+    // ชื่อผังน้ำตำบลชุดเดียวทั้งหน้า: หัวโปสเตอร์ = "ผังน้ำ" + ชื่อตำบล
+    assert.equal(diagram.route.eyebrow, 'ผังน้ำ'); assert.equal(diagram.route.heading, `ผังน้ำตำบล${system.tambon}`)
+  }
+
+  const view = read('src/components/water/WaterDiagram.jsx')
+  assert.ok(view.includes('<WaterDiagramEdges system={system} stations={stations} />'), 'ก่อนถึงตำบล/ไหลต่อไปที่ ต้องอยู่ใต้ภาพของผังที่มี route')
+  // คำกำกับบังคับ: ทุกข้อของ SYSTEM_DISCLAIMER ต้องขึ้นบนหน้า — ข้อ "ไม่ได้แสดงว่ามีน้ำไหลจริง" ผังพูดไว้แล้วในประโยคหลัก ("…ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง") ไม่พูดซ้ำ
+  assert.deepEqual(SYSTEM_DISCLAIMER.filter(text => !text.includes('น้ำไหลจริง')), ['ไม่ใช่ประกาศ', 'ไม่บอกเวลาน้ำถึง', 'ไม่ได้รับรองว่าปลอดภัย'])
+  assert.ok(view.includes('SYSTEM_DISCLAIMER_EXTRA') && view.includes("SYSTEM_DISCLAIMER.filter(text => !text.includes('น้ำไหลจริง'))"))
+  assert.ok(view.includes('ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง'), 'ประโยคหลักของผังต้องยังพูดเรื่องน้ำไหลจริง')
+  // อายุผัง (คำนวณเอง) + แถบเหลืองเมื่อเกิน 36 เดือน + ที่มาของส่วนต้นน้ำ/ปลายน้ำ + จำนวนที่ผังต้นฉบับวาด
+  for (const marker of ['data-diagram-age', 'data-stale-band', 'data-diagram-counts', 'data-diagram-edges-source', 'diagramAge(system, now)', 'STALE_DIAGRAM_MONTHS']) assert.ok(view.includes(marker), `WaterDiagram ต้องมี ${marker}`)
+  // เลขชุดเดียว: บรรทัด "ผังต้นฉบับวาดไว้" ไม่นับแผนก่อสร้าง (ตัวเลขแผนก่อสร้างอยู่บนแถบหัวภาพ นับจากผังเดียวกับภาพ)
+  assert.ok(view.includes('{ ...system.counts, planned: 0 }'))
+  for (const sys of Object.values(SYSTEMS)) assert.ok(!/แผนก่อสร้าง/.test(systemCountsText({ ...sys.counts, planned: 0 })), `${sys.id}: บรรทัดจำนวนที่ผังวาดห้ามมีแผนก่อสร้าง`)
+  // ชื่อแท็บ: ใช้ "ผังน้ำตำบล" ชุดเดียวทั้งหน้า (ไม่ปนกับ "เส้นทางน้ำ" เดิม)
+  const page = read('src/pages/WaterSituationPage.jsx')
+  assert.ok(page.includes("label: 'ผังน้ำตำบล'") && !page.includes("label: 'เส้นทางน้ำ'"))
+  console.log('✓ รวมเข้าแท็บผังน้ำตำบล: ผัง route ทุกตัวมีระบบน้ำคู่กัน · คำกำกับบังคับครบชุดเดียว · อายุผัง/ที่มา/จำนวนที่ผังวาด · ชื่อแท็บชุดเดียว')
 }
 
 console.log('\n✅ water-system: ผ่านทุกข้อ')
