@@ -170,3 +170,77 @@ export function exportWithinBudget({ width, height, encode, maxBytes = SIGNATURE
   }
   return null
 }
+
+// ── เสริมความหนาเส้นตอนพิมพ์ ─────────────────────────────────────────────────────
+// ลายเซ็นถูกย่อมากตอนพิมพ์บนใบ (แบบ ๓: กว้างราว 22 มม. สูง 9 มม. จากภาพกว้าง 640 พิกเซล) เส้นปากกาปานกลาง 3 พิกเซล
+// เหลือราว 0.1 มม. จางจนอ่านไม่ออก (เจ้าของระบบพบบนใบจริงที่ทุ่งแค้ว 2569-10-24) · ปากกาจริงหนา 0.3–0.5 มม.
+// จึงเสริมความหนาเส้นที่ "ภาพที่ใช้พิมพ์" ให้ถึงขั้นต่ำ — ภาพต้นฉบับและแฮชในฐานข้อมูลไม่เปลี่ยน
+export const PRINT_MIN_STROKE_MM = 0.32
+export const PRINT_MAX_GROW_PX = 6 // เกินนี้ห่วงเล็กในลายเซ็นจะตัน
+const CSS_PX_MM = 25.4 / 96
+
+// ความหนาเส้นโดยประมาณ (พิกเซล) = ค่ามัธยฐานของ min(ช่วงตัดแนวนอน, ช่วงตัดแนวตั้ง) ของพิกเซลหมึก
+// เส้นเฉียงอ่านเกินจริงได้ไม่เกิน ~1.4 เท่า ซึ่งแค่ทำให้เสริมน้อยกว่าที่ควรเล็กน้อย (ปลอดภัยกว่าเสริมเกิน)
+export function estimateStrokePx(data, width, height, alphaMin = 110) {
+  const size = width * height
+  const horizontal = new Uint16Array(size)
+  const vertical = new Uint16Array(size)
+  const isInk = index => data[index * 4 + 3] >= alphaMin
+  for (let y = 0; y < height; y++) {
+    let x = 0
+    while (x < width) {
+      if (!isInk(y * width + x)) { x++; continue }
+      let end = x
+      while (end < width && isInk(y * width + end)) end++
+      for (let i = x; i < end; i++) horizontal[y * width + i] = end - x
+      x = end
+    }
+  }
+  for (let x = 0; x < width; x++) {
+    let y = 0
+    while (y < height) {
+      if (!isInk(y * width + x)) { y++; continue }
+      let end = y
+      while (end < height && isInk(end * width + x)) end++
+      for (let i = y; i < end; i++) vertical[i * width + x] = end - y
+      y = end
+    }
+  }
+  const runs = []
+  for (let index = 0; index < size; index++) {
+    if (horizontal[index]) runs.push(Math.min(horizontal[index], vertical[index]))
+  }
+  if (!runs.length) return 0
+  runs.sort((a, b) => a - b)
+  return runs[Math.floor(runs.length / 2)]
+}
+
+// มิลลิเมตรบนกระดาษต่อ 1 พิกเซลของภาพ — ตามกติกา CSS ของใบ: ภาพไม่ขยายเกินขนาดจริง ถูกบีบเข้ากรอบ max-height/max-width
+// box = { heightMm, widthMm } ต้องตรงกับ imageMaxHeight/imageMaxWidth ของ esignPrintCss (แหล่งเดียว: PRINT_SIGNATURE_BOX)
+export function printedMmPerPx(width, height, box) {
+  if (!(width > 0) || !(height > 0)) return 0
+  const scale = Math.min(1, box.widthMm / (width * CSS_PX_MM), box.heightMm / (height * CSS_PX_MM))
+  return CSS_PX_MM * scale
+}
+
+// รัศมี (พิกเซลของภาพ) ที่ต้องขยายเส้นออกด้านละเท่าไรให้เส้นบนกระดาษหนาถึงขั้นต่ำ · 0 = หนาพออยู่แล้ว/คำนวณไม่ได้
+export function strokeGrowRadius({ strokePx, mmPerPx, targetMm = PRINT_MIN_STROKE_MM, maxPx = PRINT_MAX_GROW_PX }) {
+  if (!(strokePx > 0) || !(mmPerPx > 0)) return 0
+  const targetPx = targetMm / mmPerPx
+  if (strokePx >= targetPx) return 0
+  return Math.min(maxPx, Math.round(((targetPx - strokePx) / 2) * 10) / 10)
+}
+
+// จุดชดเชย (dx, dy) สำหรับวาดภาพซ้อนเพื่อขยายเส้น = วงแหวนซ้อนกัน 3 ชั้นภายในรัศมี (ช่องห่างจุดไม่เกินราว 0.8 พิกเซล)
+export function dilationOffsets(radius) {
+  if (!(radius > 0)) return []
+  const offsets = [[0, 0]]
+  for (const ring of [radius, radius * 0.66, radius * 0.33]) {
+    const count = Math.max(8, Math.ceil((2 * Math.PI * ring) / 0.8))
+    for (let i = 0; i < count; i++) {
+      const angle = (2 * Math.PI * i) / count
+      offsets.push([Math.cos(angle) * ring, Math.sin(angle) * ring])
+    }
+  }
+  return offsets
+}

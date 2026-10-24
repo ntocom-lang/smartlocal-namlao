@@ -7,6 +7,7 @@ import {
   SIGNATURE_MAX_BYTES, SIGNATURE_MAX_H, SIGNATURE_MAX_W, SIGNATURE_PAD_H, SIGNATURE_PAD_W, SIGNATURE_PEN_COLORS, SIGNATURE_TARGET_BYTES,
   base64Bytes, checkSignatureFile, contentBounds, estimateBackgroundLuma, exportWithinBudget, fitSize, hasTransparency, padBounds,
   pngBase64FromDataUrl, signatureClientMessage, whiteToAlpha, SIGNATURE_CLIENT_MESSAGES, SIGNATURE_MAX_IMAGES,
+  PRINT_MIN_STROKE_MM, dilationOffsets, estimateStrokePx, printedMmPerPx, strokeGrowRadius,
 } from '../src/lib/signatureImage.js'
 
 let cases = 0
@@ -173,6 +174,91 @@ await test('checkSignatureFile: รับเฉพาะ PNG/JPG ≤ 8 MB · ข
     assert.ok(SIGNATURE_CLIENT_MESSAGES[code], `ไม่มีข้อความของรหัส ${code}`)
   }
   assert.ok(signatureClientMessage('ไม่รู้จัก').length > 5, 'รหัสไม่รู้จักต้องไม่คืนข้อความว่าง/รหัสดิบ')
+})
+
+// ── เสริมความหนาเส้นตอนพิมพ์ (เจ้าของระบบพบลายเซ็นบนใบจริงจางมาก 2569-10-24) ──────────────────────────
+// แถบหมึกสังเคราะห์: ความหนา t พิกเซล บนภาพพื้นโปร่งใส
+function makeBars(width, height, bars) {
+  const data = new Uint8ClampedArray(width * height * 4)
+  for (const { x, y, w, h } of bars) {
+    for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) data.set([30, 58, 138, 255], (j * width + i) * 4)
+  }
+  return data
+}
+
+await test('estimateStrokePx: แถบแนวนอน/แนวตั้ง/ตัดกันได้ความหนาตรง · เส้นเฉียงอ่านเกินจริงไม่เกิน 1.5 เท่า · ภาพว่าง = 0', () => {
+  for (const t of [2, 3, 6, 10]) {
+    assert.equal(estimateStrokePx(makeBars(200, 60, [{ x: 10, y: 20, w: 170, h: t }]), 200, 60), t, `แนวนอน ${t}`)
+    assert.equal(estimateStrokePx(makeBars(200, 60, [{ x: 50, y: 5, w: t, h: 50 }]), 200, 60), t, `แนวตั้ง ${t}`)
+    const cross = makeBars(200, 60, [{ x: 10, y: 28, w: 180, h: t }, { x: 90, y: 4, w: t, h: 52 }])
+    assert.equal(estimateStrokePx(cross, 200, 60), t, `ตัดกัน ${t}`)
+  }
+  // แถบเฉียง 45° ที่ความหนาตั้งฉากจริง ≈ 3.5 พิกเซล (ช่วงตัดแนวนอน 5 พิกเซล)
+  const diagonal = new Uint8ClampedArray(120 * 120 * 4)
+  for (let y = 0; y < 120; y++) for (let x = 0; x < 120; x++) if (Math.abs(x - y) <= 2) diagonal.set([0, 0, 0, 255], (y * 120 + x) * 4)
+  const estimate = estimateStrokePx(diagonal, 120, 120)
+  assert.ok(estimate >= 3.5 && estimate <= 3.5 * 1.5, `เส้นเฉียงได้ ${estimate}`)
+  assert.equal(estimateStrokePx(new Uint8ClampedArray(50 * 50 * 4), 50, 50), 0)
+  // พิกเซลจางกว่าเกณฑ์ไม่นับเป็นหมึก
+  const faint = makeBars(50, 50, [{ x: 5, y: 5, w: 40, h: 4 }])
+  for (let i = 3; i < faint.length; i += 4) if (faint[i]) faint[i] = 60
+  assert.equal(estimateStrokePx(faint, 50, 50), 0)
+})
+
+await test('printedMmPerPx: ภาพ 640×255 ในกรอบแบบ ๓ (9×40 มม.) กว้างราว 22.6 มม. · ไม่ขยายภาพเล็ก · สก.๑ ใหญ่กว่า', () => {
+  const form3 = { heightMm: 9, widthMm: 40 }
+  const perPx = printedMmPerPx(640, 255, form3)
+  assert.ok(Math.abs(perPx * 640 - 22.6) < 0.2, `กว้าง ${perPx * 640} มม.`)
+  assert.ok(Math.abs(perPx * 255 - 9) < 0.05, `สูง ${perPx * 255} มม.`)
+  assert.ok(Math.abs(printedMmPerPx(80, 30, form3) - 25.4 / 96) < 1e-9, 'ภาพเล็กต้องไม่ถูกขยาย')
+  assert.ok(printedMmPerPx(640, 320, { heightMm: 16, widthMm: 50 }) > printedMmPerPx(640, 320, form3))
+  assert.equal(printedMmPerPx(0, 10, form3), 0)
+  assert.equal(printedMmPerPx(10, 0, form3), 0)
+})
+
+await test('strokeGrowRadius: เส้น 3 พิกเซลของภาพเจ้าของ → เสริมราว 3 พิกเซลให้ถึง 0.32 มม. · หนาพอ/ข้อมูลเสีย = 0 · มีเพดาน', () => {
+  const perPx = printedMmPerPx(640, 255, { heightMm: 9, widthMm: 40 })
+  const radius = strokeGrowRadius({ strokePx: 3, mmPerPx: perPx })
+  assert.ok(radius > 2.5 && radius < 3.5, `รัศมี ${radius}`)
+  assert.ok((3 + 2 * radius) * perPx >= PRINT_MIN_STROKE_MM - 0.01, 'เส้นหลังเสริมต้องถึงขั้นต่ำ')
+  assert.ok(3 * perPx < 0.15, 'เส้นเดิมบนกระดาษต้องบางจริง (เงื่อนไขที่ทำให้เกิดบั๊ก)')
+  assert.equal(strokeGrowRadius({ strokePx: 12, mmPerPx: perPx }), 0)
+  assert.equal(strokeGrowRadius({ strokePx: 0, mmPerPx: perPx }), 0)
+  assert.equal(strokeGrowRadius({ strokePx: 3, mmPerPx: 0 }), 0)
+  assert.equal(strokeGrowRadius({ strokePx: Number.NaN, mmPerPx: perPx }), 0)
+  assert.equal(strokeGrowRadius({ strokePx: 1, mmPerPx: 0.01 }), 6, 'ต้องมีเพดาน ไม่ให้ห่วงเล็กตัน')
+})
+
+await test('dilationOffsets: ไม่เกินรัศมี · ครอบคลุมรอบทิศ · รัศมี 0 = ไม่มีอะไรต้องวาดซ้อน', () => {
+  assert.deepEqual(dilationOffsets(0), [])
+  assert.deepEqual(dilationOffsets(-1), [])
+  const offsets = dilationOffsets(3)
+  assert.ok(offsets.length >= 40, `จุดน้อยไป ${offsets.length}`)
+  assert.ok(offsets.some(([dx, dy]) => dx === 0 && dy === 0))
+  assert.ok(offsets.every(([dx, dy]) => Math.hypot(dx, dy) <= 3 + 1e-9))
+  const farthest = Math.max(...offsets.map(([dx, dy]) => Math.hypot(dx, dy)))
+  assert.ok(farthest > 2.99, `ไม่ถึงรัศมี ${farthest}`)
+  const sumX = offsets.reduce((total, [dx]) => total + dx, 0)
+  const sumY = offsets.reduce((total, [, dy]) => total + dy, 0)
+  assert.ok(Math.abs(sumX) < 1e-6 && Math.abs(sumY) < 1e-6, 'ต้องสมมาตร ไม่ให้เส้นเลื่อนไปทางใดทางหนึ่ง')
+})
+
+await test('ต่อสายพิมพ์จริง: กรอบภาพแหล่งเดียว · FleetTrips เสริมเส้นก่อนสร้างใบ · ใบที่ไม่ใช่โหมดออนไลน์ไม่ผ่านขั้นนี้', async () => {
+  const print = await read('../src/lib/esignPrint.js')
+  assert.ok(print.includes('export const PRINT_SIGNATURE_BOX'))
+  assert.ok(print.includes('form3: { heightMm: 9, widthMm: 40 }') && print.includes('sk1: { heightMm: 16, widthMm: 50 }'))
+  const form = await read('../src/lib/fleetTripPrint.js')
+  assert.ok(form.includes('PRINT_SIGNATURE_BOX.form3.heightMm') && form.includes('PRINT_SIGNATURE_BOX.sk1.heightMm'))
+  assert.ok(!form.includes("imageMaxHeight: '9mm'") && !form.includes("imageMaxHeight: '16mm'"), 'ห้ามฝังขนาดกรอบซ้ำอีกที่')
+  const trips = await read('../src/components/fleet/FleetTrips.jsx')
+  const prepare = trips.indexOf('prepareStampsForPrint(rawStamps, printSignatureBox)')
+  const build = trips.indexOf('esignPrintData({ status, stamps,')
+  assert.ok(prepare > 0 && build > prepare, 'ต้องเสริมเส้นก่อน esignPrintData')
+  const loader = trips.slice(trips.indexOf('async function loadEsignForPrint'), trips.indexOf('// แบบ สก. ๑'))
+  assert.ok(loader.includes('stamps?.ok'), 'ดึงภาพไม่ได้ยังต้องไม่พิมพ์')
+  assert.ok(trips.includes('t.esign_slots ? loadEsignForPrint(t)'), 'เฉพาะทริปโหมดออนไลน์เท่านั้นที่ผ่านขั้นนี้')
+  const canvas = await read('../src/lib/signatureCanvas.js')
+  assert.ok(canvas.includes('export async function prepareStampsForPrint') && canvas.includes('catch {\r\n    return original') || canvas.includes('catch {\n    return original'), 'ทำไม่ได้ต้องคืนภาพเดิม ห้ามขวางการพิมพ์')
 })
 
 console.log(`\nผ่านทั้งหมด ${cases} กรณี`)

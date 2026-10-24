@@ -2,8 +2,9 @@
 // ทุกทางออกคือ PNG โปร่งใส ตัดขอบเนื้อหา ≤ 640×320 ≤ ~44 KB ผ่าน canvas.toDataURL — จึงไม่มี metadata ติดมา (EXIF/ตำแหน่ง/กล้อง)
 import {
   SIGNATURE_PAD_W, SIGNATURE_PAD_H, SIGNATURE_PEN_WIDTHS,
-  checkSignatureFile, contentBounds, exportWithinBudget, padBounds, pngBase64FromDataUrl, whiteToAlpha,
-} from './signatureImage'
+  PNG_DATA_URL_PREFIX, checkSignatureFile, contentBounds, dilationOffsets, estimateStrokePx, exportWithinBudget, padBounds,
+  pngBase64FromDataUrl, printedMmPerPx, strokeGrowRadius, whiteToAlpha,
+} from './signatureImage.js'
 
 const EXPORT_SCALE = 2 // วาดตอนส่งออกที่ 1280×640 แล้วค่อยย่อ — เส้นเรียบกว่าวาดที่ขนาดหน้าจอ
 
@@ -138,3 +139,52 @@ export async function fileToSignature(file) {
   return canvasToSignature(canvas, visible)
 }
 
+// ── ภาพลายเซ็นสำหรับพิมพ์บนใบ (ใบแบบ ๓ / สก.๑) ───────────────────────────────────
+// เสริมความหนาเส้นให้ถึงขั้นต่ำบนกระดาษ (ดู PRINT_MIN_STROKE_MM) · ทำที่ภาพที่ใช้พิมพ์เท่านั้น ไม่แก้ภาพในฐานข้อมูล
+// ทำไม่ได้/ไม่ต้องทำ = คืนภาพเดิม — ห้ามขวางการพิมพ์ใบที่ลงนามแล้ว
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('image_unreadable'))
+    image.src = src
+  })
+}
+
+export async function signatureForPrint(base64, box) {
+  const original = { png: base64, width: 0, height: 0, strokePx: 0, radius: 0 }
+  try {
+    const image = await loadImageElement(`${PNG_DATA_URL_PREFIX}${base64}`)
+    const width = image.naturalWidth
+    const height = image.naturalHeight
+    if (!width || !height) return original
+    original.width = width
+    original.height = height
+    const probe = newCanvas(width, height)
+    const probeCtx = probe.getContext('2d', { willReadFrequently: true })
+    probeCtx.drawImage(image, 0, 0)
+    const strokePx = estimateStrokePx(probeCtx.getImageData(0, 0, width, height).data, width, height)
+    const radius = strokeGrowRadius({ strokePx, mmPerPx: printedMmPerPx(width, height, box) })
+    original.strokePx = strokePx
+    if (radius <= 0) return original
+    const pad = Math.ceil(radius)
+    const out = newCanvas(width + pad * 2, height + pad * 2)
+    const outCtx = out.getContext('2d')
+    for (const [dx, dy] of dilationOffsets(radius)) outCtx.drawImage(image, pad + dx, pad + dy)
+    const png = pngBase64FromDataUrl(out.toDataURL('image/png'))
+    return png ? { png, width: out.width, height: out.height, strokePx, radius } : original
+  } catch {
+    return original
+  }
+}
+
+// ผลของ getTripEsignStamps → ชุดเดียวกันแต่ภาพทุกช่องผ่าน signatureForPrint · boxFor(slot) → { heightMm, widthMm }
+export async function prepareStampsForPrint(stamps, boxFor) {
+  if (!stamps?.ok || !Array.isArray(stamps.items)) return stamps
+  const items = await Promise.all(stamps.items.map(async item => {
+    if (!item?.png_base64) return item
+    const result = await signatureForPrint(item.png_base64, boxFor(item.slot))
+    return { ...item, png_base64: result.png, width: result.width || item.width, height: result.height || item.height }
+  }))
+  return { ...stamps, items }
+}

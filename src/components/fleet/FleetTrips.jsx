@@ -18,7 +18,8 @@ import MyPendingSignatures from '../esign/MyPendingSignatures'
 import { ESIGN_TRIP_EXCEPTIONS, esignPendingFromRpc } from '../../lib/esign'
 import { useHomeRpc } from '../../lib/staffHomeData'
 import { getTripEsignStamps, getTripEsignStatus } from '../../lib/esignApi'
-import { esignPrintData } from '../../lib/esignPrint'
+import { esignPrintData, printSignatureBox } from '../../lib/esignPrint'
+import { prepareStampsForPrint } from '../../lib/signatureCanvas'
 import ResponsiveSelect from '../common/ResponsiveSelect'
 
 const STATUS_LABEL = {
@@ -885,7 +886,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
 
   // ลายเซ็นออนไลน์ของทริปสำหรับใบพิมพ์ — ดึงไม่ได้ = ไม่พิมพ์: ใบที่เส้นลงนามว่างทั้งที่ลงนามไปแล้วทำให้ผู้รับเอกสารเข้าใจผิดว่ายังไม่ได้ลงนาม
   async function loadEsignForPrint(t) {
-    const [status, stamps] = await Promise.all([getTripEsignStatus(t.id), getTripEsignStamps(t.id)])
+    const [status, rawStamps] = await Promise.all([getTripEsignStatus(t.id), getTripEsignStamps(t.id)])
+    // เสริมความหนาเส้นลายเซ็นให้ถึงขั้นต่ำบนกระดาษ (ภาพถูกย่อเหลือราว 22 มม. เส้นจางมาก) — ภาพในฐานข้อมูลไม่เปลี่ยน ทำไม่ได้ = ใช้ภาพเดิม
+    const stamps = await prepareStampsForPrint(rawStamps, printSignatureBox)
     const esign = esignPrintData({ status, stamps, verifyCode: t.esign_verify_code, origin: window.location.origin })
     const needsImages = (status?.slots ?? []).some(slot => slot.signed && slot.signature?.with_image)
     if (!esign || (needsImages && !stamps?.ok)) throw new Error('ดึงข้อมูลลายเซ็นออนไลน์ของคำขอนี้ไม่สำเร็จ จึงยังพิมพ์ใบไม่ได้ — ลองใหม่อีกครั้ง')
