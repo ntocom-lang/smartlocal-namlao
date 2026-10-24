@@ -31,6 +31,16 @@ import {
 const REFRESH_MS = 5 * 60 * 1000
 // ผังน้ำเคลื่อนไหวหนักกว่าส่วนอื่น (ข้อมูลผัง + SVG) และมีแค่ อปท. ในทะเบียน — โหลดเมื่อต้องแสดงจริง อปท. อื่นไม่ต้องโหลด
 const WaterDiagram = lazy(() => import('../components/water/WaterDiagram'))
+// กริดของส่วนข้อมูลบนจอกว้าง แยกตาม "จำนวนส่วนที่มีจริง" (เจ้าของระบบชี้ 2569-10-24: น้ำเลา/ตำหนักธรรม/ทุ่งแค้ว มีแค่ 2 ส่วน แต่กริดเดิมตายตัว 3 คอลัมน์ที่ xl → คอลัมน์ขวา 360px ว่างเปล่าทั้งแถบ)
+//   3 ส่วน: lg 2 คอลัมน์ (ซ้ายฝน · ขวาอ่างต่อระดับน้ำ) · xl 3 คอลัมน์ (xl:contents ปล่อยลูกของกล่องขวาไปเป็นช่องของกริดเอง เพราะพอใส่ภาพตัดขวางแล้วคอลัมน์ขวายาวกว่าซ้ายราว 660px)
+//   2 ส่วน: 2 คอลัมน์เท่ากันตั้งแต่ lg ขึ้นไป (lg:contents ให้ส่วนในกล่องขวาเป็นช่องของกริดเอง ไม่ว่าจะเป็นอ่างหรือระดับน้ำ)
+//   1 ส่วน: คอลัมน์เดียวกว้างพอดีอ่านและอยู่กลางหน้า (ไม่ยืดเต็ม 1,120px)
+//   มือถือ/แท็บเล็ตแคบ (ต่ำกว่า lg) คอลัมน์เดียวเรียง ฝน → อ่าง → ระดับน้ำ เหมือนเดิมทุกกรณี
+const WATER_GRID = {
+  3: { grid: 'space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0 xl:grid-cols-3', right: 'space-y-4 xl:contents xl:space-y-0' },
+  2: { grid: 'space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0', right: 'space-y-4 lg:contents lg:space-y-0' },
+  1: { grid: 'space-y-4 lg:mx-auto lg:max-w-3xl', right: 'space-y-4' },
+}
 const THAIWATER_URL = 'https://www.thaiwater.net'
 const EWS_URL = 'https://ews.dwr.go.th/'
 
@@ -147,6 +157,8 @@ export default function WaterSituationPage() {
   // (สถานีเตือนภัยในรัศมี 10 กม. ทุกแห่งเป็นสถานีฝนที่แสดงอยู่แล้ว ตรวจ 2569-09-19) + แถบเตือนบนสุด
   const ews = stations.filter(s => s.station_type === 'ews')
   const ewsByCode = new Map(ews.map(s => [s.station_code, s]))
+  // จำนวนส่วนข้อมูลที่ อปท. นี้มีจริง (ฝน · อ่างเก็บน้ำ · ระดับน้ำ) 0–3 — กริดบนจอกว้างต้องมีคอลัมน์เท่าจำนวนนี้ ไม่ใช่ 3 ตายตัว (ดู WATER_GRID)
+  const sectionCount = [rain, dams, levels].filter(list => list.length > 0).length
   const loading = tenantLoading || Boolean(tenantId && data === null && !loadError)
   // ระบบน้ำของตำบล (src/lib/waterSystem) ใช้ติดป้ายความสัมพันธ์บนการ์ดอ่าง/ระดับน้ำด้านล่าง (ต้นน้ำของตำบล · อยู่ในตำบล · สายข้างเคียง · ผังไม่ระบุ)
   // ส่วน "ก่อนถึงตำบล/ไหลต่อไปที่" ย้ายไปแท็บผังน้ำตำบลแล้ว (เจ้าของระบบสั่งรวม 2569-10-24) · อปท. ที่ไม่มีระบบ = ไม่ติดป้าย · ?system= ใช้ได้เฉพาะ demo (resolveSystem เมินที่อื่น)
@@ -246,15 +258,13 @@ export default function WaterSituationPage() {
                 {dams.length > 0 && <a href="#water-dams"><Dam size={18} /><span>อ่างเก็บน้ำ</span><small>{dams.length} แห่ง</small></a>}
                 {levels.length > 0 && <a href="#water-levels"><Waves size={18} /><span>ระดับน้ำ</span><small>{levels.length} สถานี</small></a>}
               </nav>
-              {/* ซ้าย: ฝน · ขวา: อ่างเก็บน้ำ แล้วระดับน้ำ — มือถือเรียงตามลำดับเดิม ฝน → อ่าง → ระดับน้ำ
-                  จอ xl ขึ้นไปแยกเป็น 3 คอลัมน์ (xl:contents ปล่อยลูกของกล่องขวาไปเป็นช่องของกริดเอง)
-                  เพราะพอใส่ภาพตัดขวางแล้วคอลัมน์ขวายาวกว่าซ้ายราว 660px เหลือขาวครึ่งจอ */}
-              <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0 xl:grid-cols-3">
+              {/* ซ้าย: ฝน · ขวา: อ่างเก็บน้ำ แล้วระดับน้ำ — มือถือเรียงตามลำดับเดิม ฝน → อ่าง → ระดับน้ำ · จำนวนคอลัมน์ตามจำนวนส่วนที่มีจริง (WATER_GRID) */}
+              <div className={(WATER_GRID[sectionCount] ?? WATER_GRID[1]).grid}>
                 {rain.length > 0 && (
                   <RainSection stations={rain} ewsByCode={ewsByCode} homeAmphoe={tenant?.district} now={checkedAt} />
                 )}
                 {(dams.length > 0 || levels.length > 0) && (
-                  <div className="space-y-4 xl:contents xl:space-y-0">
+                  <div className={(WATER_GRID[sectionCount] ?? WATER_GRID[1]).right}>
                     {dams.length > 0 && <DamSection stations={dams} homeAmphoe={tenant?.district} now={checkedAt} system={waterSystem} />}
                     {levels.length > 0 && <WaterLevelSection stations={levels} homeAmphoe={tenant?.district} now={checkedAt} system={waterSystem} />}
                   </div>

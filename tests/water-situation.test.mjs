@@ -587,4 +587,25 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
   assert.ok(!page.includes('ติดตามฝน อ่างเก็บน้ำ และระดับน้ำ'), 'ห้ามมีประโยคตายตัวเหลืออยู่ในหน้า')
 }
 
+// ── กริดส่วนข้อมูลบนจอกว้าง: จำนวนคอลัมน์ตามจำนวนส่วนที่มีจริง (เจ้าของระบบชี้ 2569-10-24 "หน้าโล่งมาก ไม่สมส่วน") ──
+//   เดิมกริดตายตัว 3 คอลัมน์ที่ xl ทั้งที่ตำบลจริงทั้ง 3 แห่งมีแค่ 2 ส่วน → คอลัมน์ขวา 360px ว่างเปล่า · ตรวจจริงในเบราว์เซอร์: tests/water-system.playwright.mjs ข้อ 9
+{
+  const page = readFileSync(new URL('../src/pages/WaterSituationPage.jsx', import.meta.url), 'utf8')
+  const table = /const WATER_GRID = \{([\s\S]*?)\n\}/.exec(page)?.[1] ?? ''
+  const row = key => new RegExp(`^\\s*${key}: \\{ grid: '([^']*)', right: '([^']*)' \\}`, 'm').exec(table)
+  for (const key of [1, 2, 3]) assert.ok(row(key), `WATER_GRID ต้องมีแถวสำหรับ ${key} ส่วน`)
+  // 3 คอลัมน์ (xl:grid-cols-3) ต้องเป็นของ 3 ส่วนเท่านั้น — 1–2 ส่วนห้ามมีคอลัมน์ว่าง
+  assert.match(row(3)[1], /lg:grid-cols-2/); assert.match(row(3)[1], /xl:grid-cols-3/); assert.match(row(3)[2], /xl:contents/)
+  assert.ok(!/grid-cols-3/.test(row(2)[1]) && !/grid-cols-3/.test(row(1)[1]), '1–2 ส่วนห้ามกริด 3 คอลัมน์')
+  assert.match(row(2)[1], /lg:grid-cols-2/, '2 ส่วน = 2 คอลัมน์ตั้งแต่ lg'); assert.match(row(2)[2], /lg:contents/, '2 ส่วน: ส่วนในกล่องขวาต้องเป็นช่องของกริดเอง (ไม่งั้นอ่าง+ระดับน้ำที่ไม่มีฝนเหลือคอลัมน์เดียว)')
+  assert.ok(!/lg:grid\b/.test(row(1)[1]) && /lg:max-w-3xl/.test(row(1)[1]) && /lg:mx-auto/.test(row(1)[1]), '1 ส่วน = คอลัมน์เดียวกว้างพออ่านอยู่กลางหน้า')
+  // ทุกกรณีเรียงเป็นคอลัมน์เดียวต่ำกว่า lg (ไม่มีคลาส grid/คอลัมน์ที่ไม่มี lg:/xl: นำหน้า)
+  for (const key of [1, 2, 3]) assert.ok(!/(^|\s)(grid|grid-cols-\d)(\s|$)/.test(row(key)[1]), `${key} ส่วน: มือถือต้องคอลัมน์เดียว`)
+  // หน้าต้องเลือกแถวตามจำนวนส่วนที่มีจริง (นับจากรายการสถานีที่แสดง) ไม่ใช่ตายตัว
+  assert.match(page, /const sectionCount = \[rain, dams, levels\]\.filter\(list => list\.length > 0\)\.length/)
+  assert.equal(page.split('WATER_GRID[sectionCount] ?? WATER_GRID[1]').length - 1, 2, 'ทั้งกริดและกล่องขวาต้องเลือกแถวตามจำนวนส่วน')
+  assert.ok(!/<div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0 xl:grid-cols-3">/.test(page), 'ห้ามกลับไปใช้กริด 3 คอลัมน์ตายตัว')
+  console.log('✓ กริดส่วนข้อมูลบนจอกว้าง: 3 คอลัมน์เฉพาะเมื่อมี 3 ส่วน · 2 ส่วน = 2 คอลัมน์เท่ากัน · 1 ส่วนอยู่กลางหน้า · มือถือคอลัมน์เดียว')
+}
+
 console.log('✅ water-situation: ผ่านทุกข้อ')
