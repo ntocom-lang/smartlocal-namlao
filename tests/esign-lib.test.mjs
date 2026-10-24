@@ -9,6 +9,7 @@ import {
   ESIGN_DECISION_LABEL, ESIGN_DUTY_TEXT, ESIGN_FLEET_SLOTS, ESIGN_MESSAGES, ESIGN_TRIP_EXCEPTIONS, esignAnnouncementDraft, esignAnyOnline, esignBlockers,
   esignDepartWarning, esignFailureText, esignGateItems, esignMessage, esignModesFromStatus, esignPendingFromRpc, esignPendingKey, esignPendingRow, esignRevokeTargets,
 } from '../src/lib/esign.js'
+import { isVerifyBusy, isVerifyCode, verifySlotRows, verifySummary } from '../src/lib/esignVerify.js'
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8')
 const functionsOldSql = await read('../supabase/migrations/20261022100200_esign_functions.sql')
@@ -80,6 +81,8 @@ await test('ทุกชื่อที่หน้าจอ import จาก li
     esign: await import('../src/lib/esign.js'),
     esignUi: await import('../src/lib/esignUi.js'),
     signatureImage: await import('../src/lib/signatureImage.js'),
+    esignPrint: await import('../src/lib/esignPrint.js'),
+    esignVerify: await import('../src/lib/esignVerify.js'),
   }
   // esignApi/signatureCanvas ต้องใช้ supabase/DOM จึง import ใน Node ไม่ได้ — อ่านรายชื่อ export จากซอร์ส
   const exportsOf = source => new Set([...source.matchAll(/export (?:const|async function|function) (\w+)/g)].map(match => match[1]))
@@ -88,12 +91,12 @@ await test('ทุกชื่อที่หน้าจอ import จาก li
     '../src/components/admin/EsignSettings.jsx', '../src/components/profile/MyEsignSection.jsx',
     '../src/components/profile/AddSignatureDialog.jsx', '../src/components/profile/SignaturePad.jsx',
     '../src/components/esign/PinForm.jsx', '../src/components/esign/SignTripDialog.jsx', '../src/components/esign/TripEsignPanel.jsx', '../src/components/fleet/FleetTrips.jsx',
-    '../src/components/esign/MyPendingSignatures.jsx', '../src/components/staff/StaffOperationalDashboard.jsx',
+    '../src/components/esign/MyPendingSignatures.jsx', '../src/components/staff/StaffOperationalDashboard.jsx', '../src/pages/VerifyEsign.jsx',
   ]
   let checked = 0
   for (const path of components) {
     const component = await read(path)
-    for (const match of component.matchAll(/import \{([^}]*)\} from '(?:\.\.\/)+lib\/(esign|esignApi|esignUi|signatureImage|signatureCanvas)'/g)) {
+    for (const match of component.matchAll(/import \{([^}]*)\} from '(?:\.\.\/)+lib\/(esign|esignApi|esignUi|signatureImage|signatureCanvas|esignPrint|esignVerify)'/g)) {
       const names = match[1].split(',').map(name => name.trim().split(/\s+as\s+/)[0]).filter(Boolean)
       for (const name of names) {
         const exported = libs[match[2]] ? name in libs[match[2]] : sources[match[2]].has(name)
@@ -347,6 +350,87 @@ await test('S3b การต่อสาย: esign_my_pending ไม่รับ
   assert.ok(/esignPending\.status === 'error' \|\| esignTouched/.test(home) && /setEsignTouched\(true\)/.test(home), 'ส่วน "ต้องทำตอนนี้" ต้องค้างอยู่หลังลงนามใบสุดท้าย (esignTouched)')
   // กล่องลงนามที่ใช้ร่วม: ห้ามอ้างเลขมาตราลอยๆ
   assert.ok(!/มาตรา\s*[๐-๙0-9]/.test(await read('../src/components/esign/MyPendingSignatures.jsx')))
+})
+
+await test('S4 หน้าตรวจสอบสาธารณะ: สรุปสถานะ/แถวช่อง/คำเตือนคำขอที่ปิดแล้ว · ถึงโควตาเปิดดูถี่ = busy · รหัสผิดรูปไม่ถูกส่งไปถาม DB', () => {
+  assert.equal(isVerifyCode('0123456789abcdef0123456789abcdef'), true)
+  for (const bad of ['', 'ABCDEF0123456789ABCDEF0123456789', '0123456789abcdef0123456789abcde', '0123456789abcdef0123456789abcdefg', null, undefined]) assert.equal(isVerifyCode(bad), false, String(bad))
+  assert.deepEqual(verifySummary({ state: 'complete', required: 3, signed_count: 3, trip_status: 'active' }), { tone: 'ok', title: 'ลงนามออนไลน์ครบทุกช่อง', detail: 'เนื้อหาตรงกับที่ลงนามไว้' })
+  const partial = verifySummary({ state: 'partial', required: 3, signed_count: 2, trip_status: 'active' })
+  assert.equal(partial.tone, 'warn')
+  assert.ok(partial.title.includes('2 จาก 3 ช่อง'))
+  assert.equal(verifySummary({ state: 'unsigned', required: 3, signed_count: 0 }).tone, 'mute')
+  const modified = verifySummary({ state: 'modified', required: 3, signed_count: 3, trip_status: 'active' })
+  assert.equal(modified.tone, 'bad')
+  assert.ok(modified.detail.includes('ห้ามใช้'))
+  // ลายเซ็นครบแต่คำขอถูกยกเลิก/ไม่อนุมัติ: ห้ามดูเหมือนเอกสารใช้ได้ (ไม่เป็นสีเขียว) และบอกชัด
+  const cancelled = verifySummary({ state: 'complete', required: 3, signed_count: 3, trip_status: 'cancelled' })
+  assert.equal(cancelled.tone, 'warn')
+  assert.ok(cancelled.closedNote.includes('ยกเลิก') && cancelled.closedNote.includes('ไม่ใช่เอกสารที่ใช้อนุมัติ'))
+  assert.ok(verifySummary({ state: 'complete', required: 3, signed_count: 3, trip_status: 'rejected' }).closedNote.includes('ไม่อนุมัติ'))
+  assert.equal(verifySummary({ state: 'modified', trip_status: 'cancelled' }).tone, 'bad', 'เนื้อหาไม่ตรงยังแดงแม้คำขอปิดแล้ว')
+  const rows = verifySlotRows({ slots: [
+    { slot: 'requester', label: 'ผู้ขออนุญาต', signed: true, signer_name: 'สมหญิง', signer_position: 'ตำแหน่งโปรไฟล์', signed_as: 'ตำแหน่งที่ลงนาม', decision: 'sign', signed_at: '2026-10-23T04:00:00Z' },
+    { slot: 'authority', label: 'ผู้มีอำนาจ', signed: true, signer_name: 'นายก', signer_position: 'ตำแหน่งโปรไฟล์', signed_as: '', decision: 'approve', signed_at: '2026-10-23T05:00:00Z' },
+    { slot: 'dept_head', label: 'ผอ.กอง', signed: false },
+  ] })
+  assert.equal(rows[0].position, 'ตำแหน่งที่ลงนาม', 'ตำแหน่งที่ลงนามจริงมาก่อนตำแหน่งในโปรไฟล์')
+  assert.equal(rows[0].decisionLabel, 'ลงนาม')
+  assert.equal(rows[1].position, 'ตำแหน่งโปรไฟล์')
+  assert.equal(rows[1].decisionLabel, 'อนุมัติ')
+  assert.deepEqual([rows[2].signed, rows[2].signerName, rows[2].position, rows[2].signedAt], [false, '', '', null], 'ช่องที่ยังไม่ลงนามไม่มีชื่อ/เวลา')
+  assert.deepEqual(verifySlotRows(null), [])
+  assert.equal(isVerifyBusy({ code: 'PT429' }), true)
+  assert.equal(isVerifyBusy({ message: 'เปิดดูถี่เกินไป กรุณารอสักครู่แล้วลองใหม่' }), true)
+  assert.equal(isVerifyBusy({ code: '500', message: 'boom' }), false)
+})
+
+await test('S4 ใบพิมพ์/หน้าตรวจสอบ: ตัวเรียก esign_trip_stamps · ชื่อฟิลด์ที่อ่านมีอยู่จริงใน SQL · ปุ่มพิมพ์ดึงลายเซ็นเฉพาะทริปโหมดออนไลน์ · หน้าตรวจสอบไม่มีรูป/ไม่อ้างเลขมาตรา', async () => {
+  const wrappers = new Set([...apiSource.matchAll(/callEsign\('(\w+)'/g)].map(match => match[1]))
+  assert.ok(wrappers.has('esign_trip_stamps'), 'esignApi ไม่มีตัวเรียก esign_trip_stamps')
+  assert.ok(/export const getTripEsignStamps = tripId => callEsign\('esign_trip_stamps', \{ p_trip_id: tripId \}\)/.test(apiSource), 'esign_trip_stamps ต้องส่ง p_trip_id ตรงชื่ออาร์กิวเมนต์ใน SQL')
+  assert.ok(/FUNCTION public\.esign_trip_stamps\(p_trip_id uuid\)/.test(imageFunctionsSql))
+
+  // ฟิลด์ที่ esignPrintData อ่านจาก esign_trip_status / esign_trip_stamps ต้องมีใน jsonb ของฟังก์ชันจริง
+  const sqlKeys = new Set([...functionsSql.matchAll(/'([a-z0-9_]+)',\s/g)].map(match => match[1]))
+  const printSource = (await read('../src/lib/esignPrint.js')).replace(/\r\n/g, '\n')
+  const printBody = /export function esignPrintData[\s\S]*?\n}\n/.exec(printSource)?.[0] ?? ''
+  const internal = new Set(['length']) // ของ JS ไม่ใช่ฟิลด์ DB
+  const printFields = [...new Set([...printBody.matchAll(/\b(?:status|slot|signature|item|stamps)\??\.([a-z]+(?:_[a-z0-9]+)*)\b/g)].map(match => match[1]))].filter(key => !internal.has(key))
+  assert.ok(printFields.length >= 14, `อ่านชื่อฟิลด์ของใบพิมพ์ได้น้อยผิดปกติ (${printFields.join(',')})`)
+  for (const key of printFields) assert.ok(sqlKeys.has(key), `ใบพิมพ์อ่านฟิลด์ "${key}" แต่ไม่มีใน jsonb ของฟังก์ชัน DB`)
+
+  // หน้าตรวจสอบ: ทุกฟิลด์ที่อ่านต้องมีใน esign_verify และไม่มีทางแสดงภาพ/เนื้อหาคำขอ
+  const verifyBody = /FUNCTION public\.esign_verify\(p_code text\)[\s\S]*?\n\$\$;/.exec(functionsOldSql)?.[0] ?? ''
+  const verifyKeys = new Set([...verifyBody.matchAll(/'([a-z0-9_]+)',\s/g)].map(match => match[1]))
+  assert.ok(verifyKeys.size >= 15, 'อ่านคีย์ของ esign_verify ไม่ได้')
+  const verifySources = [await read('../src/lib/esignVerify.js'), await read('../src/pages/VerifyEsign.jsx')]
+  const verifyFields = new Set()
+  for (const source of verifySources) for (const match of source.matchAll(/\b(?:data|result|slot)\??\.([a-z]+(?:_[a-z0-9]+)+|found|state|required|slots|signed|label|slot|decision)\b/g)) verifyFields.add(match[1])
+  assert.ok(verifyFields.size >= 12, `อ่านชื่อฟิลด์ของหน้าตรวจสอบได้น้อยผิดปกติ (${[...verifyFields].join(',')})`)
+  for (const key of verifyFields) assert.ok(verifyKeys.has(key), `หน้าตรวจสอบอ่านฟิลด์ "${key}" แต่ esign_verify ไม่ส่งมา`)
+  for (const secret of ['png_base64', 'esign_trip_stamps', '<img', 'destination', 'purpose', 'passengers']) {
+    for (const source of verifySources) assert.ok(!source.includes(secret), `หน้าตรวจสอบสาธารณะต้องไม่แตะ "${secret}" (ไม่แสดงภาพลายเซ็น/เนื้อหาคำขอ)`)
+  }
+  assert.ok(/esign_verify', \{ p_code: code \}/.test(verifySources[1]), 'หน้าตรวจสอบต้องเรียก esign_verify ด้วย p_code')
+  // รหัสผิดรูปไม่ถูกส่งไปถาม DB (ไม่เปลืองโควตา 30 ครั้ง/5 นาที) และหน้านี้ noindex
+  assert.ok(/useState\(codeOk \? 'loading' : 'notfound'\)/.test(verifySources[1]) && /if \(!codeOk\) return/.test(verifySources[1]))
+  assert.ok(/meta\.name = 'robots'[\s\S]*meta\.content = 'noindex'/.test(verifySources[1]), 'หน้าตรวจสอบต้อง noindex')
+  assert.ok(/<Route path="\/v\/:code" element=\{<VerifyEsign \/>\} \/>/.test(await read('../src/App.jsx')), 'ไม่มี route /v/:code')
+
+  // ปุ่มพิมพ์: ทริปโหมดออนไลน์ดึงลายเซ็นก่อน (ส่ง promise เข้า openPrintWindow — เปิดหน้าต่างก่อน await กัน pop-up ถูกบล็อก) · ทริปปกติสร้างใบเดิม
+  const fleet = await read('../src/components/fleet/FleetTrips.jsx')
+  assert.ok(/openPrintWindow\(t\.esign_slots \? loadEsignForPrint\(t\)\.then\(build\) : build\(null\)\)/.test(fleet), 'แบบ ๓ ต้องดึงลายเซ็นเฉพาะทริปที่มี esign_slots')
+  assert.ok(/loadEsignForPrint\(t\)\.then\(esign => buildFleetSk1Html\(\{ trip: t, tenant, esign \}\)\)/.test(fleet), 'สก.๑ ต้องดึงลายเซ็นเฉพาะทริปที่มี esign_slots')
+  assert.ok(/!esign \|\| \(needsImages && !stamps\?\.ok\)/.test(fleet), 'ดึงลายเซ็นไม่ได้ต้องไม่พิมพ์ (ใบเส้นว่างทั้งที่ลงนามแล้วทำให้เข้าใจผิด)')
+  assert.ok(/const win = window\.open\([^)]*\)\r?\n\s+if \(!win\)[^\n]*\r?\n\s+if \(typeof source === 'string'\)/.test(fleet), 'openPrintWindow ต้องเปิดหน้าต่างก่อนค่อยรอ promise')
+  // ข้อความหลังยื่นคำขอ: โหมดออนไลน์ไม่ให้พิมพ์ใบไปเวียนเซ็น
+  assert.ok(/\.select\('id,status,waitlist_reasons,esign_slots'\)/.test(fleet) && /alert\(saved\.esign_slots/.test(fleet), 'ข้อความหลังยื่นคำขอต้องแยกโหมดออนไลน์')
+  // ใบพิมพ์/หน้าตรวจสอบ/คู่มือ ไม่อ้างเลขมาตราลอยๆ (ต้องตรวจกับตัวบทก่อน)
+  for (const source of [printSource, ...verifySources]) assert.ok(!/มาตรา\s*[๐-๙0-9]/.test(source), 'ห้ามอ้างเลขมาตราลอยๆ')
+  const manual = await read('../public/manual-staff.html')
+  const esignManual = manual.slice(manual.indexOf('id="esign"'), manual.indexOf('12 — พัสดุ/ครุภัณฑ์'))
+  assert.ok(esignManual.length > 2000 && !/มาตรา\s*[๐-๙0-9]/.test(esignManual) && manual.includes('href="#esign"'), 'คู่มือต้องมีหัวข้อลงนามออนไลน์ในสารบัญ และไม่อ้างเลขมาตรา')
 })
 
 console.log(`\nผ่านทั้งหมด ${cases} กรณี`)

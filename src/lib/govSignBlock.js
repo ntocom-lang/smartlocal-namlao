@@ -117,6 +117,8 @@ export function govKeepActingWordTogether(escapedLine) {
  * @param {string[]} [args.below] บรรทัดใต้เส้น เรียงบนลงล่าง — **escape มาแล้ว**
  * @param {string} [args.signed] ชื่อที่พิมพ์แทนลายมือชื่อ (ยืนยันตัวตนผ่านระบบแล้ว escape มาแล้ว)
  *   มีค่า = ไม่พิมพ์เส้น เพราะลงชื่อแล้ว ไม่ต้องเว้นที่ให้เซ็นซ้ำ
+ * @param {string} [args.lineHtml] HTML ที่วางซ้อนบนเส้น (เช่น ภาพลายเซ็นออนไลน์ของ esignPrint.js) — ไม่ส่ง = เส้นว่างเหมือนเดิมทุกไบต์
+ *   ผู้เรียกต้องจัดตำแหน่งเอง (absolute) และใส่ position: relative ให้ .sign-line ในใบนั้น ไม่เพิ่มความสูงของบล็อก
  * @param {boolean} [args.grow] ให้แกนยืดตามชื่อที่ยาวกว่า `width` แทนที่จะปล่อยให้ล้นออกสองข้าง
  *   ⚠️ ใช้ได้เฉพาะ "ช่องลงนามเดี่ยว" ที่ไม่มีช่องอื่นต้องเรียงแนวด้วย — ในบล็อกหลายช่อง
  *   ห้ามใช้เด็ดขาด เพราะแกนที่ยืดไม่เท่ากันทำให้เส้นยาวไม่เท่ากันและคำต่อท้ายไม่ตรงแนว
@@ -124,7 +126,7 @@ export function govKeepActingWordTogether(escapedLine) {
  *   กว่าแกนแล้วปล่อยให้ล้น ตัวอักษรจะไปพิมพ์ทับคำต่อท้ายจนอ่านไม่ออก (เคสจริง ชื่อ 62mm
  *   ในแกน 54mm) การยืดแกนดันคำต่อท้ายออกไปแทน ยังคงกึ่งกลางบนแกนเดียวกันเหมือนเดิม
  */
-export function govSignRow({ width = GOV_SIGN_LINE_W, label = 'ลงชื่อ', role = '', below = [], signed = '', grow = false } = {}) {
+export function govSignRow({ width = GOV_SIGN_LINE_W, label = 'ลงชื่อ', role = '', below = [], signed = '', grow = false, lineHtml = '' } = {}) {
   return `<div class="sign-row">
       ${label ? `<span class="sign-label">${label}</span>` : ''}
       <span class="sign-axis" style="${grow ? 'min-width' : 'width'}:${width}">
@@ -132,7 +134,7 @@ export function govSignRow({ width = GOV_SIGN_LINE_W, label = 'ลงชื่�
              flex column แล้วเส้นจะลอยทับบรรทัดวงเล็บ ไม่ได้เป็นบรรทัดของตัวเอง -->
         ${signed
           ? `<span class="sign-signed">${signed}</span>`
-          : '<span class="sign-line">&nbsp;</span>'}
+          : `<span class="sign-line">&nbsp;${lineHtml}</span>`}
 ${below.map(text => `        <span class="sign-below">${text}</span>`).join('\n')}
       </span>
       ${role ? `<span class="sign-role">${role}</span>` : ''}
