@@ -17,6 +17,8 @@ import TripEsignPanel, { DepartEsignNotice } from '../esign/TripEsignPanel'
 import MyPendingSignatures from '../esign/MyPendingSignatures'
 import { ESIGN_TRIP_EXCEPTIONS, esignPendingFromRpc } from '../../lib/esign'
 import { useHomeRpc } from '../../lib/staffHomeData'
+import { getTripEsignStamps, getTripEsignStatus } from '../../lib/esignApi'
+import { esignPrintData } from '../../lib/esignPrint'
 import ResponsiveSelect from '../common/ResponsiveSelect'
 
 const STATUS_LABEL = {
@@ -870,23 +872,49 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       ? pickSignatory(signatories, { role: 'department_head', departmentId: deptHeadDeptId, at })
       : null
     const authorityRow = pickSignatory(signatories, { role: authorityRole, customLabel: authorityLabel, at })
-    openPrintWindow(buildFleetTripRequestHtml({
+    const build = esign => buildFleetTripRequestHtml({
       trip: t,
       tenant,
       orderAuthority: resolveOrderAuthority(authorityRow, tenant, authorityRole),
       deptHead: resolveDeptHead(deptHeadRow),
-    }))
+      esign,
+    })
+    // ทริปโหมดลงนามออนไลน์ต้องดึงลายเซ็นก่อนจึงสร้างใบได้ — ส่ง promise เข้าไป หน้าต่างพิมพ์เปิดทันทีตอนกด (กัน pop-up ถูกบล็อก)
+    openPrintWindow(t.esign_slots ? loadEsignForPrint(t).then(build) : build(null))
+  }
+
+  // ลายเซ็นออนไลน์ของทริปสำหรับใบพิมพ์ — ดึงไม่ได้ = ไม่พิมพ์: ใบที่เส้นลงนามว่างทั้งที่ลงนามไปแล้วทำให้ผู้รับเอกสารเข้าใจผิดว่ายังไม่ได้ลงนาม
+  async function loadEsignForPrint(t) {
+    const [status, stamps] = await Promise.all([getTripEsignStatus(t.id), getTripEsignStamps(t.id)])
+    const esign = esignPrintData({ status, stamps, verifyCode: t.esign_verify_code, origin: window.location.origin })
+    const needsImages = (status?.slots ?? []).some(slot => slot.signed && slot.signature?.with_image)
+    if (!esign || (needsImages && !stamps?.ok)) throw new Error('ดึงข้อมูลลายเซ็นออนไลน์ของคำขอนี้ไม่สำเร็จ จึงยังพิมพ์ใบไม่ได้ — ลองใหม่อีกครั้ง')
+    return esign
   }
 
   // แบบ สก. ๑ — นายกขอใช้รถ ใบนี้ให้นายกรับรองการใช้ของตัวเอง พิมพ์คู่กับแบบ 3 (ไม่ได้แทน)
   // ข้อมูลทั้งใบมาจากคำขอใบเดียวกัน ไม่มีช่องกรอกเพิ่ม
   function printSk1(t) {
-    openPrintWindow(buildFleetSk1Html({ trip: t, tenant }))
+    openPrintWindow(t.esign_slots
+      ? loadEsignForPrint(t).then(esign => buildFleetSk1Html({ trip: t, tenant, esign }))
+      : buildFleetSk1Html({ trip: t, tenant }))
   }
 
-  function openPrintWindow(html) {
+  // source = สตริง HTML หรือ promise ของมัน (ทริปโหมดออนไลน์) · เปิดหน้าต่างก่อนเสมอ — window.open หลัง await โดนบล็อกเป็น pop-up
+  function openPrintWindow(source) {
     const win = window.open('', '_blank', 'width=900,height=760')
     if (!win) return alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
+    if (typeof source === 'string') return writeAndPrint(win, source)
+    win.document.open()
+    win.document.write('<!doctype html><meta charset="utf-8"><title>กำลังเตรียมใบพิมพ์</title><body style="font-family:sans-serif;padding:2rem">กำลังเตรียมใบพิมพ์…</body>')
+    win.document.close()
+    source.then(html => writeAndPrint(win, html)).catch(error => {
+      win.close()
+      alert(error?.message || 'เตรียมใบพิมพ์ไม่สำเร็จ ลองใหม่อีกครั้ง')
+    })
+  }
+
+  function writeAndPrint(win, html) {
     win.document.open()
     win.document.write(html)
     win.document.close()
@@ -1012,7 +1040,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           municipality_id: tenant.id,
           created_by: user?.id,
           status: 'pending',
-        }).select('id,status,waitlist_reasons').single()
+        }).select('id,status,waitlist_reasons,esign_slots').single()
     setSaving(false)
     if (error) return alert(tripErrorMessage(error))
     if (isEdit && !saved) return alert(TRIP_NO_ROW_MSG)
@@ -1023,7 +1051,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       alert(`ส่งคำขอให้ผู้ดูแลระบบยานพาหนะจัดสรรรถแล้ว\nสถานะ: รอจัดสรรรถ${why ? `\n\n${why}` : ''}`)
     } else if (!isEdit && saved?.status === 'approved') {
       notifyTelegram('fleet_trip_created', saved.id)
-      alert('ระบบอนุมัติคิวรถให้แล้ว\nกรุณาพิมพ์ใบขออนุญาตใช้รถ (แบบ 3) ให้ผู้มีอำนาจลงนามก่อนนำรถออก')
+      // โหมดลงนามออนไลน์ (DB ตรึง esign_slots ไว้ที่ทริป): ผู้ลงนามลงนามในระบบ ไม่ต้องพิมพ์ใบไปเวียนเซ็น (ช่องผู้ขับรถยังเซ็นสดบนใบที่พิมพ์)
+      alert(saved.esign_slots
+        ? 'ระบบอนุมัติคิวรถให้แล้ว\nคำขอนี้ลงนามออนไลน์ — ผู้ลงนามแต่ละช่องลงนามได้ในหน้ารายละเอียดคำขอ หรือจากรายการ "รอลงนามของฉัน" ก่อนนำรถออก\n(ช่องผู้ขับรถยังเซ็นสดบนใบที่พิมพ์)'
+        : 'ระบบอนุมัติคิวรถให้แล้ว\nกรุณาพิมพ์ใบขออนุญาตใช้รถ (แบบ 3) ให้ผู้มีอำนาจลงนามก่อนนำรถออก')
     } else if (!isEdit && saved?.status === 'pending') {
       notifyTelegram('fleet_trip_created', saved.id)
     }

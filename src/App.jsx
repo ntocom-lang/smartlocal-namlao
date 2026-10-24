@@ -35,6 +35,7 @@ const DeviceLoginApprove = lazyWithRetry(() => import('./pages/DeviceLoginApprov
 
 const SatisfactionPage = lazyWithRetry(() => import('./pages/SatisfactionPage'))
 const TrackComplaint = lazyWithRetry(() => import('./pages/TrackComplaint'))
+const VerifyEsign = lazyWithRetry(() => import('./pages/VerifyEsign'))
 const SurveyPage = lazyWithRetry(() => import('./pages/SurveyPage'))
 const SurveysPage = lazyWithRetry(() => import('./pages/SurveysPage'))
 const TechnicianDashboard = lazyWithRetry(() => import('./pages/TechnicianDashboard'))
@@ -673,6 +674,8 @@ function AppShell() {
           {/* ลิงก์ติดตามเรื่องที่ สท./เจ้าหน้าที่ส่งให้ผู้แจ้ง — ไม่ต้องล็อกอิน ผู้ถือลิงก์ดูสถานะ ให้คะแนน และแจ้งกลับได้
               ไม่อยู่ในโมดูลใด (ไม่ขึ้นกับสวิตช์โมดูลของ อปท.) และไม่นับเป็นหน้าหลังบ้านในสถิติผู้เข้าชม */}
           <Route path="/t/:token" element={<TrackComplaint />} />
+          {/* ตรวจสอบเอกสารลงนามออนไลน์ (QR ท้ายใบพิมพ์แบบ ๓/สก.๑) — ไม่ต้องล็อกอิน ไม่อยู่ในโมดูลใด ไม่แสดงภาพลายเซ็น/เนื้อหาคำขอ (esign_verify ไม่ส่งมา) */}
+          <Route path="/v/:code" element={<VerifyEsign />} />
           {/* แบบสำรวจความเห็นประชาชน — ใครก็เปิดอ่านได้ ตอบได้เฉพาะผู้ล็อกอินที่สังกัดหน่วยงานนี้ (ฐานข้อมูลตัดสินใน get_survey)
               ไม่อยู่ในโมดูลใด (ไม่ขึ้นกับสวิตช์โมดูลของ อปท.) · ส่วนจัดการอยู่ที่แท็บ "แบบสำรวจ" ในเมนูข่าวสารของเจ้าหน้าที่ */}
           <Route path="/survey/:id" element={<SurveyPage />} />

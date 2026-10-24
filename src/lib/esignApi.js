@@ -75,6 +75,9 @@ export const suspendMyEsign = reason => callEsign('esign_suspend_me', { p_reason
 // ── แผงลงนามในหน้ารายละเอียดทริป (ฐานข้อมูลชุด S3a: ..20261023110000_esign_trip_panel_functions.sql) ──
 export const getTripEsignStatus = tripId => callEsign('esign_trip_status', { p_trip_id: tripId })
 
+// ภาพลายเซ็นที่แนบกับลายเซ็นที่ยังไม่ถูกถอน ของทริปนี้ (ใช้ใส่ใบพิมพ์แบบ ๓/สก.๑ เท่านั้น) — ผู้ที่มองเห็นทริปนี้ได้เท่านั้นที่ได้ภาพ
+export const getTripEsignStamps = tripId => callEsign('esign_trip_stamps', { p_trip_id: tripId })
+
 // imageId = ภาพจากคลังของฉัน · ไม่แนบภาพ = null · decision: ช่องผู้มีอำนาจส่ง 'approve' ช่องอื่นส่ง null (DB กำหนดเอง)
 // ไม่ส่ง p_png_base64 (ภาพที่วาดตอนลงนามโดยไม่เข้าคลัง) — หน้าจอให้บันทึกเข้าคลังก่อนเสมอ ผู้ใช้เลือกใช้ซ้ำได้ ไม่ต้องเซ็นใหม่ทุกใบ
 export const signFleetTrip = ({ tripId, slot, pin, decision = null, imageId = null }) =>

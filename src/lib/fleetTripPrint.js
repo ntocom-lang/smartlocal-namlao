@@ -1,4 +1,5 @@
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { esignApprovedMark, esignEvidenceHtml, esignPrintCss, esignSignatureImg, esignValidSlot } from './esignPrint.js'
 import {
   GOV_SIGN_LINE_W_WIDE, govKeepActingWordTogether, govNameBlank, govSignBlockCss, govSignRow, govSplitActingTitle,
 } from './govSignBlock.js'
@@ -41,6 +42,14 @@ function thaiDateParts(value) {
   }
 }
 
+// วันเวลาแบบย่อสำหรับเส้นหลักฐานท้ายใบลงนามออนไลน์ ("23 ต.ค. 2569 11:00 น.") — เส้นนั้นต้องอยู่ในพื้นที่ไม่กี่บรรทัด
+function thaiShortStamp(value) {
+  const parts = thaiDateParts(value)
+  if (!parts.day) return ''
+  const month = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', month: 'short' }).format(new Date(value))
+  return `${parts.day} ${month} ${parts.year} ${parts.time} น.`
+}
+
 function organizationHeadTitle(tenant) {
   const name = tenant?.name?.trim() || 'หน่วยงาน'
   if (tenant?.org_type === 'อบต.' || name.startsWith('องค์การบริหารส่วนตำบล')) {
@@ -63,8 +72,16 @@ function meterText(value) {
 
 // dateRow = บรรทัด "......... (วัน เดือน ปี)" ใต้ลายเซ็น ตามแบบ 3 ท้ายระเบียบ มท. พ.ศ. ๒๕๖๙
 // (ผู้อำนวยการสำนัก/กอง และผู้มีอำนาจสั่งใช้ ต้องลงวันที่กำกับลายเซ็นของตัวเอง)
-function signatureBlock({ role, name = '', title = '', suffix = '', dateRow = false }) {
+// signed = ข้อมูลช่องที่ลงนามออนไลน์ (esignValidSlot) · dateText = วันที่ลงนามภาษาไทย ใส่แทนเส้นประของบรรทัด "(วัน เดือน ปี)"
+function signatureBlock({ role, name = '', title = '', suffix = '', dateRow = false, signed = null, dateText = '' }) {
   const inner = String(name ?? '').trim()
+  // ลงนามออนไลน์แล้ว: ภาพลายเซ็นลอยเหนือเส้น (ไม่ได้แนบภาพ = ข้อความ "ลงนามออนไลน์" แทน) เส้นประยังอยู่ใต้ภาพ
+  const lineHtml = signed
+    ? `<span class="signature-line esign-line">${esignSignatureImg(signed) || '<span class="esign-typed">ลงนามออนไลน์</span>'}</span>`
+    : '<span class="signature-line"></span>'
+  const dateLineHtml = signed && dateText
+    ? `<span class="signature-line is-filled">${esc(dateText)}</span>`
+    : '<span class="signature-line"></span>'
   // ป้ายบทบาทขึ้นบรรทัดใหม่ได้ด้วย \n (pre-line) — ตำแหน่ง "รักษาราชการแทน" ตัดหลังคำนั้นตามกติกากลางของเจ้าของระบบ
   // และห่อคำนั้นเป็นก้อนเดียว ไม่ให้เบราว์เซอร์ตัด "รักษาราชการ | แทน" (เห็นจริงในช่อง ผอ.กอง)
   const roleParts = String(role ?? '').split('\n').map(part => govSplitActingTitle(part))
@@ -77,7 +94,7 @@ function signatureBlock({ role, name = '', title = '', suffix = '', dateRow = fa
   return `<div class="signature${hasActingRole ? ' signature--acting' : ''}">
     <div class="signature-row">
       <span>(ลงชื่อ)</span>
-      <span class="signature-line"></span>
+      ${lineHtml}
       <span class="signature-role">${roleHtml}</span>
     </div>
     <div class="signature-row signature-name-row">
@@ -88,7 +105,7 @@ function signatureBlock({ role, name = '', title = '', suffix = '', dateRow = fa
     ${title ? `<div class="signature-row"><span></span><span class="signature-title"><span class="signature-title-text">${govSplitActingTitle(title).map(esc).join('<br>')}</span></span><span></span></div>` : ''}
     ${dateRow ? `<div class="signature-row signature-date-row">
       <span></span>
-      <span class="signature-line"></span>
+      ${dateLineHtml}
       <span class="signature-role">(วัน เดือน ปี)</span>
     </div>` : ''}
   </div>`
@@ -128,7 +145,8 @@ export function resolveDeptHead(signatory) {
   }
 }
 
-export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null, deptHead = null }) {
+// esign = ผลของ esignPrintData (ทริปโหมดลงนามออนไลน์) · ไม่ส่ง/null = ใบเดิมทุกไบต์ (tests/esign-print.test.mjs เทียบ hash)
+export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null, deptHead = null, esign = null }) {
   // requester ผูกกับ requested_by (ผู้ขอตัวจริง) แล้ว — ทริปเก่าที่ยังไม่ถูก backfill ถอยไปใช้ผู้บันทึก
   const requesterName = trip?.requester?.full_name || trip?.creator?.full_name || ''
   const requesterPosition = trip?.requester_position || profilePosition(trip?.requester)
@@ -147,9 +165,16 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     ? orderAuthority
     : { name: '', title: organizationHeadTitle(tenant) }
   // รายการย้อนหลังถูกสร้างเป็น completed โดยไม่มีขั้นอนุมัติ ห้ามติ๊ก “อนุมัติ” ให้เอง
-  const approved = Boolean(trip?.approved_by || approverName)
+  const legacyApproved = Boolean(trip?.approved_by || approverName)
     && ['approved', 'in_progress', 'completed'].includes(trip?.status)
   const rejected = trip?.status === 'rejected'
+  // ช่องผู้มีอำนาจลงนามออนไลน์: ✓ อนุมัติ = ผู้มีอำนาจลงนามด้วยการอนุมัติ (ไม่ดู approved_by — ทริปออนไลน์อนุมัติคิวอัตโนมัติ approved_by ว่างโดยเจตนา)
+  const esignApproved = esignApprovedMark(esign)
+  const approved = esignApproved === null ? legacyApproved : esignApproved && !rejected
+  const signRequester = esignValidSlot(esign, 'requester')
+  const signDeptHead = esignValidSlot(esign, 'dept_head')
+  const signAuthority = esignValidSlot(esign, 'authority')
+  const signDate = iso => { const p = thaiDateParts(iso); return p.day ? `${p.day} ${p.month} ${p.year}` : '' }
   const destination = String(trip?.destination || '').trim()
   const purpose = String(trip?.purpose || '').trim()
   const rejectReason = rejected ? String(trip?.reject_reason || '').trim() : ''
@@ -251,7 +276,14 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     .signature-name.is-blank { display: flex; justify-content: space-between; width: 100%; }
     .signature-suffix { position: absolute; left: 100%; top: 0; margin-left: 4px; white-space: nowrap; }
     .decision { margin-top: 22pt; page-break-inside: avoid; }
-    .decision .signature { margin-top: 16pt; }
+    .decision .signature { margin-top: 16pt; }${esign ? `
+    /* บีบเฉพาะระยะเหนือกลุ่มลายเซ็น/ความเห็น (ระยะที่ภาพลายเซ็นไม่ได้ใช้) ชดเชยเส้นหลักฐานท้ายใบ — ใบเซ็นสดไม่ถูกแตะ */
+    .signatures { margin-top: 14pt; }
+    .decision { margin-top: 12pt; }
+    .signature-line.is-filled { border-bottom: none; text-align: center; }
+    .eservice-origin { margin-top: 3mm; }
+    .esign-line { position: relative; }
+    .esign-typed { position: absolute; left: 50%; bottom: 1px; transform: translateX(-50%); font-weight: 700; white-space: nowrap; }${esignPrintCss({ imageMaxHeight: '9mm', imageMaxWidth: '40mm' })}` : ''}
   </style>
 </head>
 <body>
@@ -294,15 +326,17 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
   <p class="body-line">รวมระยะทาง <span class="field${filledClass(distance)}">${distance}</span> กิโลเมตร</p>
 
   <div class="signatures">
-    ${signatureBlock({ role: 'ผู้ขออนุญาต', name: requesterName })}
+    ${signatureBlock({ role: 'ผู้ขออนุญาต', name: signRequester?.signerName || requesterName, signed: signRequester })}
     ${signatureBlock({ role: 'ผู้ขับรถ', name: driverName })}
     ${signatureBlock({
-      role: deptHead?.title?.trim() || 'ผู้อำนวยการสำนัก/กอง',
-      name: deptHead?.name || '',
+      role: signDeptHead?.signedAs?.trim() || deptHead?.title?.trim() || 'ผู้อำนวยการสำนัก/กอง',
+      name: signDeptHead?.signerName || deptHead?.name || '',
       // "หรือผู้แทน" มีไว้เผื่อตอนที่ป้ายเป็นคำกลางและยังไม่รู้ว่าใครจะเซ็น
       // พอทะเบียนระบุทั้งชื่อและตำแหน่งมาแล้วก็ไม่ต้องเผื่ออีก คงไว้เฉพาะกรณียังไม่ได้ตั้ง
-      suffix: deptHead?.title?.trim() ? '' : 'หรือผู้แทน',
+      suffix: signDeptHead?.signedAs?.trim() || deptHead?.title?.trim() ? '' : 'หรือผู้แทน',
       dateRow: true,
+      signed: signDeptHead,
+      dateText: signDate(signDeptHead?.signedAt),
     })}
   </div>
 
@@ -312,8 +346,15 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
       <span class="fill${filledClass(rejectReason)}">${fillText(rejectReason)}</span>
     </div>
     ${rejectReason ? '' : '<div class="continuation"></div>'}
-    ${signatureBlock({ role: 'ผู้มีอำนาจสั่งใช้ยานพาหนะ\nส่วนกลาง/รถรับรอง', name: authority.name, title: authority.title, dateRow: true })}
-  </div>
+    ${signatureBlock({
+      role: 'ผู้มีอำนาจสั่งใช้ยานพาหนะ\nส่วนกลาง/รถรับรอง',
+      name: signAuthority?.signerName || authority.name,
+      title: signAuthority ? (signAuthority.signedAs || signAuthority.signerPosition || authority.title) : authority.title,
+      dateRow: true,
+      signed: signAuthority,
+      dateText: signDate(signAuthority?.signedAt),
+    })}
+  </div>${esign ? `\n  ${esignEvidenceHtml(esign, thaiShortStamp, { only: ['requester', 'dept_head', 'authority'] })}` : ''}
   <div class="eservice-origin">${esc(govEServiceOriginText(tenant))}</div>
 </div>
 </body>
@@ -339,9 +380,13 @@ export function tripRequesterIsMayor(trip) {
   return isMayorPosition(trip?.requester_position?.trim() || profilePosition(trip?.requester))
 }
 
-export function buildFleetSk1Html({ trip, tenant }) {
-  const name = String(trip?.requester?.full_name || trip?.creator?.full_name || '').trim()
-  const position = String(trip?.requester_position || profilePosition(trip?.requester) || '').trim()
+// esign = ผลของ esignPrintData · ใช้เฉพาะเมื่อช่อง sk1 เป็นออนไลน์ (ไม่ใช่ = ใบเดิมทุกไบต์)
+export function buildFleetSk1Html({ trip, tenant, esign = null }) {
+  const sk1Slot = esign?.slots?.sk1 ? esign : null
+  const signSk1 = esignValidSlot(sk1Slot, 'sk1')
+  const signDay = signSk1 ? thaiDateParts(signSk1.signedAt) : null
+  const name = String(signSk1?.signerName || trip?.requester?.full_name || trip?.creator?.full_name || '').trim()
+  const position = String(signSk1 ? (signSk1.signedAs || signSk1.signerPosition || trip?.requester_position || profilePosition(trip?.requester)) : (trip?.requester_position || profilePosition(trip?.requester) || '')).trim()
   const writtenAt = String(tenant?.name || '').trim()
   // ใบนี้เขียนว่า "ได้ใช้" = รับรองหลังใช้รถแล้ว วันที่หัวใบจึงเป็นวันที่รถกลับจริง
   // ยังไม่กลับ = เว้นให้เขียนเอง ห้ามใช้วันกลับตามแผนเพราะจะรับรองล่วงหน้าในสิ่งที่ยังไม่เกิด
@@ -362,7 +407,7 @@ export function buildFleetSk1Html({ trip, tenant }) {
     // ผู้รับรองคือผู้ขอคนเดียวกัน — ตำแหน่งใต้ชื่อใช้ตำแหน่งของผู้ขอ ไม่มีค่อยใช้ชื่อตำแหน่งนายกของ อปท.
     ...govSplitActingTitle(position || organizationHeadTitle(tenant)).map(esc),
     // วันที่ลงนามผู้ลงนามเขียนเองเสมอ (ต้นฉบับเว้นจุดไว้) ห้ามเติมวันที่พิมพ์แทน
-    'วันที่............ เดือน....................... ปี...............',
+    signDay?.day ? `วันที่ ${esc(signDay.day)} เดือน ${esc(signDay.month)} ปี ${esc(signDay.year)}` : 'วันที่............ เดือน....................... ปี...............',
   ]
   // บรรทัดที่มีข้อความแล้วพิมพ์ "ไหลต่อ" เป็นย่อหน้า (ล้นแล้วขึ้นบรรทัดใหม่ชิดขอบซ้ายเหมือนพิมพ์ดีด)
   // ห้ามใช้ช่อง flex แบบแบบ 3 กับบรรทัดที่ป้ายยาว — "ได้ใช้ยานพาหนะส่วนกลาง หมายเลขทะเบียน …
@@ -447,7 +492,9 @@ export function buildFleetSk1Html({ trip, tenant }) {
     /* แกนเส้นลงนามอยู่ค่อนขวาตามต้นฉบับ ("(ลงชื่อ)" เริ่มราว 58 มม. จากขอบพื้นที่พิมพ์) */
     .sign-area { margin-top: 22mm; padding-left: 58mm; }
     .sign-below { margin-top: 2pt; }
-    .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 12mm; text-align: center; }
+    .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 12mm; text-align: center; }${sk1Slot ? `
+    .sign-line { position: relative; }
+    .esign-typed { position: absolute; left: 50%; bottom: 1px; transform: translateX(-50%); font-weight: 700; white-space: nowrap; }${esignPrintCss({ imageMaxHeight: '16mm', imageMaxWidth: '50mm' })}` : ''}
   </style>
 </head>
 <body>
@@ -472,8 +519,11 @@ export function buildFleetSk1Html({ trip, tenant }) {
   </div>
 
   <div class="sign-area sign-block">
-    ${govSignRow({ width: GOV_SIGN_LINE_W_WIDE, label: '(ลงชื่อ)', role: 'ผู้บริหารท้องถิ่น', below: signBelow })}
-  </div>
+    ${govSignRow({
+      width: GOV_SIGN_LINE_W_WIDE, label: '(ลงชื่อ)', role: 'ผู้บริหารท้องถิ่น', below: signBelow,
+      lineHtml: signSk1 ? (esignSignatureImg(signSk1) || '<span class="esign-typed">ลงนามออนไลน์</span>') : '',
+    })}
+  </div>${sk1Slot ? `\n  ${esignEvidenceHtml(sk1Slot, thaiShortStamp, { only: ['sk1'] })}` : ''}
   <div class="eservice-origin">${esc(govEServiceOriginText(tenant))}</div>
 </div>
 </body>
