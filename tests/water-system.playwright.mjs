@@ -7,6 +7,7 @@
 // ตรวจ: คำกำกับบังคับชุดเดียว + อายุผัง · ก่อนถึงตำบล/ไหลต่อไปที่ · ไม่มีขั้น "ในตำบล"/กล่องที่มา/คำกำกับซ้ำในแท็บสถานการณ์
 //   · ป้ายความสัมพันธ์ (305 ต้นน้ำ · 304 สายข้างเคียง · YOM003 ผังไม่ระบุ · Y.38 อยู่ในตำบล) · ค่าสดไม่มี = "ไม่มีค่าสดในระบบ" · ไม่มีช่องกรอก · เป้ากด ≥ 44px
 //   · ไม่ล้นจอ 360/390/768/1280 · ไม่มีคำขอเขียน · ?system= แปลก = กลับค่าเริ่มต้น · แท็บสถานการณ์เรียงภาพรวม → กราฟรายชั่วโมง
+//   · แท็บสถานการณ์บนจอกว้าง: จำนวนคอลัมน์ของกริดตามจำนวนส่วนที่มีจริง (ข้อ 9) — ไม่มีคอลัมน์ว่างเปล่า (เจ้าของระบบชี้ 2569-10-24 "หน้าโล่งมาก ไม่สมส่วน")
 //   · แถว "เกิดเหตุหรือต้องการความช่วยเหลือเรื่องน้ำ" ท้ายแท็บผังน้ำตำบล (WaterHelpRow.jsx · ข้อ 8): สายด่วนขึ้นเสมอ · ปุ่มหมวดขึ้นเฉพาะที่เปิดให้ผู้ใช้ยื่นได้จริง (จำลอง complaint_categories)
 //   · ล็อกว่าการ์ดแนวโน้มอ่าง 30 วัน + กล่อง "ผังต้นฉบับมี แต่เราไม่ได้ใส่" ไม่กลับมา และหน้าไม่เรียก get_public_dam_history อีก (เจ้าของระบบสั่งตัด 2026-10-19)
 //
@@ -75,6 +76,10 @@ const SCENES = {
   // ตำหนักธรรม: Y.38 อยู่ในตำบล + YOM003 · ไม่มีอ่างกลาง (PR 5.1 ปิดแล้ว) · ทุ่งแค้ว: YOM003 + ฝน RES038 · ไม่มีอ่างกลาง
   tamnaktham: { stations: [y38(), yom003({ distance_km: 6.6 }), rain('YOM003', 'หนองม่วงไข่', 1.5)] },
   thungkaew: { stations: [yom003({ distance_km: 4.8 }), rain('RES038', 'อ่างห้วยยอย', 0)] },
+  // สำหรับทดสอบกริดแท็บสถานการณ์ตามจำนวนส่วนที่มีจริง (ฝน · อ่าง · ระดับน้ำ)
+  rainDam: { stations: [dam305(), rain('STN0911', 'บ้านบุญแจ่ม', 3.5), rain('STN0912', 'บ้านห้วยขึม', 0), rain('STN0913', 'บ้านป่ากล้วย', 1.2)] },
+  damLevel: { stations: [dam305(), yom003()] },
+  rainOnly: { stations: [rain('STN0911', 'บ้านบุญแจ่ม', 3.5), rain('STN0912', 'บ้านห้วยขึม', 0)] },
 }
 
 // tab: 'route' (ค่าเริ่มต้น — ?diagram= ของ demo เปิดแท็บผังน้ำตำบลเอง) | 'situation'
@@ -449,6 +454,72 @@ try {
         await helpRow(page).screenshot({ path: path.join(SHOT_DIR, `help-row-${width}.png`) })
         assert.deepEqual(problems, [])
       } finally { await context.close() }
+    })
+  }
+  // ── 9) แท็บสถานการณ์บนจอกว้าง: จำนวนคอลัมน์ตามจำนวนส่วนที่มีจริง — ไม่มีคอลัมน์ว่างเปล่า ──
+  //   เดิมกริดตายตัว 3 คอลัมน์ที่ xl แต่ตำบลจริงทั้ง 3 แห่งมีแค่ 2 ส่วน (น้ำเลา ฝน+อ่าง · ตำหนักธรรม/ทุ่งแค้ว ฝน+ระดับน้ำ) → คอลัมน์ขวา 360px (ราวหนึ่งในสามของแถบ) ว่างเปล่า
+  async function gridInfo(page) {
+    return page.evaluate(() => {
+      const cells = ['water-rain', 'water-dams', 'water-levels'].map(id => document.getElementById(id)).filter(Boolean)
+      const box = el => { const r = el.getBoundingClientRect(); return { id: el.id, x: Math.round(r.left), right: Math.round(r.right), w: Math.round(r.width), top: Math.round(r.top + window.scrollY) } }
+      // กริด = บรรพบุรุษที่ใกล้ที่สุดซึ่งครอบทุกส่วน และไม่ใช่กล่อง display: contents
+      let grid = cells[0].parentElement
+      while (grid && (!cells.every(cell => grid.contains(cell)) || getComputedStyle(grid).display === 'contents')) grid = grid.parentElement
+      const g = grid.getBoundingClientRect()
+      const p = grid.parentElement.getBoundingClientRect()
+      return {
+        grid: { x: Math.round(g.left), right: Math.round(g.right), w: Math.round(g.width) },
+        parent: { x: Math.round(p.left), right: Math.round(p.right), w: Math.round(p.width) },
+        docOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        cells: cells.map(box),
+      }
+    })
+  }
+  const distinct = values => new Set(values).size
+  const SECTION_SCENES = [
+    ['ready', 3, ['water-rain', 'water-dams', 'water-levels']],
+    ['rainDam', 2, ['water-rain', 'water-dams']],
+    ['nodam', 2, ['water-rain', 'water-levels']],
+    ['damLevel', 2, ['water-dams', 'water-levels']],
+    ['rainOnly', 1, ['water-rain']],
+  ]
+  for (const [sceneName, count, ids] of SECTION_SCENES) {
+    await check(`กริดแท็บสถานการณ์ · ${count} ส่วน (${ids.map(id => id.replace('water-', '')).join('+')}): จอกว้างไม่มีคอลัมน์ว่าง · แคบ (ต่ำกว่า 1024px) เรียงคอลัมน์เดียว ฝน → อ่าง → ระดับน้ำ`, async () => {
+      for (const width of [1512, 1280, 1100, 800, 390]) {
+        const { context, page, problems } = await openScene(browser, baseUrl, sceneName, { width, diagram: 'namlao', tab: 'situation' })
+        try {
+          for (const id of ids) await page.locator(`#${id}`).waitFor({ state: 'visible', timeout: 10_000 })
+          const { grid, parent, cells, docOverflow } = await gridInfo(page)
+          assert.deepEqual(cells.map(c => c.id), ids, `${width}px: ส่วนที่แสดงต้องเป็น ${ids.join(', ')}`)
+          assert.ok(docOverflow <= 1, `${width}px: หน้าล้นแนวนอน ${docOverflow}px`)
+          const xs = cells.map(c => c.x)
+          const wide = width >= 1024
+          if (!wide) {
+            assert.equal(distinct(xs), 1, `${width}px: ต่ำกว่า lg ต้องเรียงคอลัมน์เดียว (x=${xs})`)
+            const tops = cells.map(c => c.top)
+            assert.deepEqual(tops, [...tops].sort((a, b) => a - b), `${width}px: เรียงฝน → อ่าง → ระดับน้ำ ตามลำดับเดิม`)
+          } else if (count === 1) {
+            const only = cells[0]
+            assert.ok(only.w >= 600 && only.w <= 780, `${width}px: ส่วนเดียวต้องกว้างพออ่านและไม่ยืดเต็มหน้า (กว้าง ${only.w})`)
+            assert.ok(Math.abs((only.x + only.right) / 2 - (parent.x + parent.right) / 2) <= 2, `${width}px: ส่วนเดียวต้องอยู่กลางหน้า`)
+          } else {
+            // กริดต้องกว้างเต็มพื้นที่ · ช่องขวาสุดชนขอบขวา (ไม่เหลือคอลัมน์ว่าง) · คอลัมน์ที่อยู่ข้างกันกว้างเท่ากัน
+            assert.ok(grid.w >= parent.w - 2, `${width}px: กริดต้องกว้างเต็มพื้นที่ (กริด ${grid.w} พื้นที่ ${parent.w})`)
+            assert.ok(Math.abs(Math.max(...cells.map(c => c.right)) - grid.right) <= 2, `${width}px: คอลัมน์ขวาสุดต้องชนขอบขวาของกริด — ไม่เหลือที่ว่างเปล่า`)
+            const columns = count === 3 && width >= 1280 ? 3 : 2
+            assert.equal(distinct(xs), columns, `${width}px: ${count} ส่วนต้องเป็น ${columns} คอลัมน์ (x=${xs})`)
+            const firstRow = cells.filter(c => c.top === Math.min(...cells.map(k => k.top)))
+            assert.ok(Math.max(...firstRow.map(c => c.w)) - Math.min(...firstRow.map(c => c.w)) <= 2, `${width}px: คอลัมน์แถวบนกว้างเท่ากัน ${firstRow.map(c => c.w)}`)
+          }
+          assert.deepEqual(problems, [], `${width}px: ต้องไม่มี JS error`)
+          if (width === 1512 || width === 1100) {
+            // หน้าเลื่อนในกรอบแอป: ขยายความสูงจอก่อนถ่ายทั้งแท็บ
+            await page.setViewportSize({ width, height: 2800 })
+            await page.waitForTimeout(500)
+            await page.locator('#water-panel-situation').screenshot({ path: path.join(SHOT_DIR, `columns-${sceneName}-${width}.png`) })
+          }
+        } finally { await context.close() }
+      }
     })
   }
 } finally {
