@@ -194,6 +194,21 @@ export function organizationSignatories(rows) {
 // - คนที่ไม่มีกองอยู่กลุ่ม "ไม่ระบุกอง" ท้ายสุด · กลุ่มว่างไม่คืนมา
 export const NO_DEPARTMENT_LABEL = 'ไม่ระบุกอง'
 
+// กอง "ผู้บริหาร" (นายก/รองนายก/เลขานุการ) — ผู้ลงนามของกองนี้คือแถว "นายก" ที่เป็นระดับหน่วยงานอยู่แล้ว
+// กติกาเดียวกับที่ trigger สีของกองใช้ (migration 20260913100100): รหัส exec หรือชื่อมีคำว่า "ผู้บริหาร"
+// เพราะกองที่ผู้ดูแลสร้างเองมีรหัสสุ่ม (เช่น ทุ่งแค้ว "คณะผู้บริหารท้องถิ่น" = dept_mt5uixc4) ดูรหัสอย่างเดียวไม่พอ
+export function isExecutiveDepartment(department) {
+  return department?.code === 'exec' || /ผู้บริหาร/.test(department?.name ?? '')
+}
+
+// กองที่ได้แถว "หัวหน้ากอง" ในทะเบียนผู้ลงนาม — ทุกกองยกเว้นกองผู้บริหารที่ยังไม่เคยตั้งผู้ลงนาม
+// (กองผู้บริหารที่มีแถวอยู่แล้วต้องยังเห็นและกดยกเลิกได้ ไม่ปล่อยเป็นแถวซ่อนที่ยังมีผลบนใบพิมพ์)
+export function signatoryDepartments(departments, assignments) {
+  const hasHead = id => (assignments ?? []).some(assignment =>
+    assignment.signatory_role === 'department_head' && assignment.department_id === id)
+  return (departments ?? []).filter(department => !isExecutiveDepartment(department) || hasHead(department.id))
+}
+
 export function groupPeopleByDepartment(people, departments, firstDepartmentId = null) {
   const groups = new Map((departments ?? []).map(department =>
     [department.id, { key: department.id, label: department.name, people: [] }]))

@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, Plus, Save, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import {
-  CUSTOM_ROLE, earliestEffectiveFrom, effectiveDateForForm, groupPeopleByDepartment,
-  SIGNATORY_BACKDATE_LIMIT_DAYS, SIGNATORY_SCOPE, todayBangkok,
+  CUSTOM_ROLE, earliestEffectiveFrom, effectiveDateForForm, groupPeopleByDepartment, isExecutiveDepartment,
+  SIGNATORY_BACKDATE_LIMIT_DAYS, SIGNATORY_SCOPE, signatoryDepartments, todayBangkok,
 } from '../../lib/documentSignatories'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
 
@@ -329,12 +329,15 @@ export default function SignatorySettings({ tenant }) {
   const slots = useMemo(() => [
     { key: assignmentKey('mayor'), role: 'mayor', municipalityId: tenant?.id, departmentId: null, label: 'นายก' },
     { key: assignmentKey('clerk'), role: 'clerk', municipalityId: tenant?.id, departmentId: null, label: 'ปลัด' },
-    ...departments
-      .filter((department) => department.code !== 'exec')
+    // กองผู้บริหารไม่มีแถวของตัวเอง (ผู้ลงนามคือแถว "นายก" ข้างบน) ยกเว้นกองที่เคยตั้งไว้แล้ว — ดู signatoryDepartments
+    ...signatoryDepartments(departments, assignments)
       .map((department) => ({
         key: assignmentKey('department_head', department.id),
         role: 'department_head', municipalityId: tenant?.id,
         departmentId: department.id, departmentName: department.name,
+        hint: isExecutiveDepartment(department)
+          ? 'กองผู้บริหาร — ใช้เป็นตัวเลือก “ผู้อำนวยการกอง” ของคนในกองนี้บนใบขอใช้รถ (แถว “นายก” เป็นคนละช่อง) ไม่ตั้งก็ได้'
+          : undefined,
         // ใช้ชื่อกองตรงๆ ห้ามเติมคำว่า "หัวหน้า" นำหน้า — หน่วยงานอย่าง "ตรวจสอบภายใน"
         // ส่วนใหญ่ขึ้นตรงกับปลัดและไม่มีตำแหน่งหัวหน้า ป้ายที่เติมเองจึงผิดกับ อปท. จำนวนมาก
         // ผลพลอยได้: ข้อความนี้กลายเป็นข้อมูล ไม่ใช่โค้ด ผู้ดูแลแก้เองได้ที่หน้าจัดการกอง/ส่วนราชการ
