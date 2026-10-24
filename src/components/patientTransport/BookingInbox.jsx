@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { Ban, Printer, Users } from 'lucide-react'
+import { Ban, Printer, RotateCcw, Users } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
@@ -230,6 +230,42 @@ function CancelJourney({ booking, trip, others, allowed, busy, onCancel }) {
         <div className="flex flex-wrap gap-2">
           <button type="submit" disabled={busy || !note.trim()} className="min-h-11 rounded-xl bg-red-700 px-4 py-2.5 font-bold text-white disabled:opacity-50">{booking.cancel_requested ? 'ยกเลิกให้ตามที่ขอ' : 'ยืนยันยกเลิกการเดินทาง'}</button>
           <button type="button" disabled={busy} className={buttonClass} onClick={() => setOpen(false)}>เก็บรายการไว้</button>
+        </div>
+      </form>}
+  </section>
+}
+
+function ReopenBooking({ booking, busy, onReopen }) {
+  const [open, setOpen] = useState(false)
+  const [note, setNote] = useState('')
+  const [snapshot, setSnapshot] = useState(booking)
+  const conflict = snapshot.revision !== booking.revision
+  const blocked = booking.passenger_step !== 0 || booking.return_ready || booking.contact_purged_at
+  const past = thaiDay(booking.appointment_at) < thaiDay()
+  return <section aria-label="คืนรายการที่ยกเลิก" className="space-y-3 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-slate-900">
+    <button type="button" className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-emerald-700 bg-white px-4 py-2.5 font-bold text-emerald-900 disabled:opacity-50"
+      disabled={busy || !!blocked} aria-expanded={open && !blocked} onClick={() => setOpen(value => !value)}>
+      <RotateCcw size={18} aria-hidden="true" />คืนรายการเป็นรอยืนยันรถ
+    </button>
+    {blocked ? <p className="text-sm">{booking.contact_purged_at ? 'ข้อมูลติดต่อถูกล้างตามอายุจัดเก็บแล้ว กรุณารับคำขอใหม่' : 'รายการนี้มีขั้นการรับ–ส่งแล้ว กรุณารับคำขอใหม่เพื่อรักษาประวัติการเดินทางจริง'}</p>
+      : open && <form className="space-y-3" onSubmit={async e => {
+        e.preventDefault()
+        if (busy || conflict || !note.trim()) return
+        if (!window.confirm(`คืนคำขอของ ${bookingName(snapshot)} เป็นรอยืนยันรถหรือไม่?\n\nเลขที่ ${ref(snapshot.id)} · นัด ${dateTime(snapshot.appointment_at)}\nเหตุผล: ${note.trim()}\n\nข้อมูลและประวัติเดิมยังอยู่ ต้องยืนยันรถใหม่ เที่ยวเดิมและผู้เดินทางคนอื่นไม่เปลี่ยน`)) return
+        await onReopen(snapshot, note.trim())
+      }}>
+        <p className="font-semibold">{bookingName(booking)} · นัด {dateTime(booking.appointment_at)}</p>
+        <p className="text-sm">ใช้คำขอและข้อมูลเดิม กลับไปรอยืนยันรถ ยังไม่ได้ยืนยันที่นั่งหรือเที่ยวใหม่</p>
+        {past && <p className="text-sm font-semibold text-amber-900">วันนัดเดิมผ่านมาแล้ว หลังคืนรายการให้แก้วันนัดก่อนยืนยันรถ</p>}
+        {conflict && <div role="alert" className="space-y-2 rounded-lg bg-amber-100 p-3 text-sm">คำขอเปลี่ยนแล้ว ตรวจข้อมูลล่าสุดก่อนคืนรายการ
+          <button type="button" className={buttonClass} disabled={busy} onClick={() => setSnapshot(booking)}>ตรวจแล้ว ใช้ข้อมูลล่าสุด</button>
+        </div>}
+        <label className="block text-sm">เหตุผลการคืนรายการ (บันทึกในประวัติ)
+          <textarea autoFocus required maxLength={500} disabled={busy} value={note} onChange={e => setNote(e.target.value)} className={`${inputClass} mt-1 min-h-24`} placeholder="เช่น ประสานผู้ป่วยแล้ว ต้องการเดินทางตามนัดเดิม" />
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <button type="submit" className={primaryClass} disabled={busy || conflict || !note.trim()}>ยืนยันคืนรายการ</button>
+          <button type="button" className={buttonClass} disabled={busy} onClick={() => setOpen(false)}>ยังไม่คืนรายการ</button>
         </div>
       </form>}
   </section>
@@ -563,7 +599,7 @@ function BookingHistory({ booking, trip }) {
   </section>
 }
 
-function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, currentUserId, onOpenDriver, onClose, onReload, onConfirm, onJoin, onOpen, onAction, onRemove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onPrintRequest, onOdometer, onReschedule, onUpdateSchedule, onSettings }) {
+function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, currentUserId, onOpenDriver, onClose, onReload, onConfirm, onJoin, onOpen, onAction, onRemove, onReopen, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onPrintRequest, onOdometer, onReschedule, onUpdateSchedule, onSettings }) {
   const { booking: b, trip, linked, stage, next, group } = row
   const passengers = trip ? workspace.bookings.filter(x => x.trip_id === trip.id && x.status !== 'cancelled') : []
   const others = (trip ? passengers : group).filter(x => x.id !== b.id)
@@ -584,6 +620,8 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
   const letterAvailable = trip && ['confirmed', 'completed'].includes(b.status) && trip.state !== 'cancelled'
   return <Sheet wide title={bookingName(b)} subtitle={`${issue ? 'เหตุขัดข้อง' : STAGES[stage].label} · เลขที่ ${ref(b.id)}`} onClose={onClose} onReload={onReload} busy={busy}>
     {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</div>}
+    {b.status === 'cancelled' && !isCommunity(b) && ['admin', 'coordinator'].includes(workspace.role) && onReopen &&
+      <ReopenBooking key={b.id} booking={b} busy={busy} onReopen={onReopen} />}
     {cancelVisible && <CancelJourney key={b.id} booking={b} trip={trip} others={others} allowed={b.status === 'submitted' || removable} busy={busy} onCancel={cancel} />}
     {printable && <section aria-label="เอกสารของผู้เดินทาง" className="space-y-3 rounded-xl border border-slate-200 p-4">
       <p className="font-bold">เอกสารของ {bookingName(b)}</p>
@@ -625,7 +663,7 @@ function BookingSheet({ row, rows, workspace, problem, busy, error, isAdmin, cur
   </Sheet>
 }
 
-export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, detailOnly = false, initialOpenId = null, currentUserId, onOpenDriver, onCloseBooking, onClearCreated, onDelete, onConfirm, onJoin, onAction, onRemove, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onPrintRequest, onOdometer, onReschedule, onUpdateSchedule, onReload, onSettings }) {
+export default function BookingInbox({ workspace, busy, error, isAdmin, action, created, detailOnly = false, initialOpenId = null, currentUserId, onOpenDriver, onCloseBooking, onClearCreated, onDelete, onConfirm, onJoin, onAction, onRemove, onReopen, onAmend, onUpdatePickup, onRecordLetter, onPrintLetter, onPrintRequest, onOdometer, onReschedule, onUpdateSchedule, onReload, onSettings }) {
   const [deleting, setDeleting] = useState(null)
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteAttempted, setDeleteAttempted] = useState(false)
@@ -722,7 +760,11 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
     <Pills value={filter} onChange={setFilter} label="กรองคำขอรถ" items={PILLS.map(([id, label, color]) => ({ id, label, color, count: count(id) }))} /></div>
   const sheet = open && <BookingSheet key={open.booking.id} row={open} rows={rows} workspace={workspace} problem={problem?.bookingId === open.booking.id ? problem : null}
     busy={busy} error={error} isAdmin={isAdmin} currentUserId={currentUserId} onOpenDriver={onOpenDriver} onClose={close} onReload={onReload} onConfirm={confirmRow} onJoin={joinRow}
-    onOpen={id => { setProblem(null); setOpenId(id) }} onAction={onAction} onRemove={onRemove} onAmend={onAmend} onUpdatePickup={onUpdatePickup} onRecordLetter={onRecordLetter}
+    onOpen={id => { setProblem(null); setOpenId(id) }} onAction={onAction} onRemove={onRemove} onReopen={onReopen ? async (booking, reason) => {
+      const ok = await onReopen(booking, reason)
+      if (ok) { setFilter('submitted'); setServiceFilter('patient'); setSearch(''); setProblem(null) }
+      return ok
+    } : null} onAmend={onAmend} onUpdatePickup={onUpdatePickup} onRecordLetter={onRecordLetter}
     onPrintLetter={onPrintLetter} onPrintRequest={onPrintRequest} onOdometer={onOdometer} onReschedule={onReschedule} onUpdateSchedule={onUpdateSchedule} onSettings={() => { close(); onSettings() }} />
   if (detailOnly) return sheet
   return <ListCard title="คำขอรถ" count={rows.length} search={search} onSearch={setSearch} searchLabel="ค้นหาชื่อ เบอร์ จุดรับ โรงพยาบาล เลขที่" action={action} pills={pills}>
