@@ -396,16 +396,24 @@ BEGIN
         WHEN 'technician' THEN 'ปฏิบัติงาน'
         WHEN 'staff' THEN 'เจ้าหน้าที่'
         WHEN 'viewer' THEN 'ผู้บริหาร'
-        WHEN 'council' THEN 'สภาท้องถิ่น'
+        WHEN 'council' THEN 'สมาชิกสภา'
         WHEN 'citizen' THEN 'ประชาชน'
         ELSE COALESCE(p.role, '')
       END AS role_sort,
       concat_ws(' ',
         CASE WHEN 'google' = ANY(identity_data.providers) THEN 'Google' END,
         CASE WHEN 'custom:line' = ANY(identity_data.providers) THEN 'LINE' END,
-        CASE WHEN 'email' = ANY(identity_data.providers) THEN 'อีเมล/รหัสผ่าน' END
+        CASE
+          WHEN COALESCE(NULLIF(p.email, ''), u.email) ILIKE '%@phone.smartlocal.app'
+            AND 'email' = ANY(identity_data.providers) THEN 'เบอร์โทร'
+        END,
+        CASE
+          WHEN COALESCE(NULLIF(p.email, ''), u.email) NOT ILIKE '%@phone.smartlocal.app'
+            AND 'email' = ANY(identity_data.providers) THEN 'อีเมล/รหัสผ่าน'
+        END,
+        CASE WHEN cardinality(identity_data.providers) = 0 THEN 'ไม่พบข้อมูล' END
       ) AS provider_sort,
-      COALESCE(dep.name, 'ไม่ระบุกอง') || ' ' || COALESCE(pos.name, 'ไม่ระบุตำแหน่ง') AS assignment_sort
+      COALESCE(dep.name, 'ไม่ระบุกอง') || ' ' || COALESCE(pos.name, 'ไม่ระบุตำแหน่งในทำเนียบ') AS assignment_sort
     FROM public.profiles p
     LEFT JOIN auth.users u ON u.id = p.id
     LEFT JOIN public.municipalities m ON m.id = p.municipality_id
@@ -445,8 +453,8 @@ BEGIN
     CASE WHEN v_sort_key = 'created_at' AND v_sort_direction = 'desc' THEN r.created_at END DESC NULLS LAST,
     CASE WHEN v_sort_key = 'full_name' AND v_sort_direction = 'asc' THEN lower(r.full_name) END ASC NULLS LAST,
     CASE WHEN v_sort_key = 'full_name' AND v_sort_direction = 'desc' THEN lower(r.full_name) END DESC NULLS LAST,
-    CASE WHEN v_sort_key = 'email' AND v_sort_direction = 'asc' THEN lower(COALESCE(r.email, '')) END ASC,
-    CASE WHEN v_sort_key = 'email' AND v_sort_direction = 'desc' THEN lower(COALESCE(r.email, '')) END DESC,
+    CASE WHEN v_sort_key = 'email' AND v_sort_direction = 'asc' THEN lower(COALESCE(r.email, 'ยังไม่ระบุ')) END ASC,
+    CASE WHEN v_sort_key = 'email' AND v_sort_direction = 'desc' THEN lower(COALESCE(r.email, 'ยังไม่ระบุ')) END DESC,
     CASE WHEN v_sort_key = 'providers' AND v_sort_direction = 'asc' THEN lower(r.provider_sort) END ASC,
     CASE WHEN v_sort_key = 'providers' AND v_sort_direction = 'desc' THEN lower(r.provider_sort) END DESC,
     CASE WHEN v_sort_key = 'role' AND v_sort_direction = 'asc' THEN lower(r.role_sort) END ASC,
