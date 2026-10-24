@@ -79,6 +79,7 @@ export function buildInfographicModel(summary, { tenantName = '', reportUrl = ''
     resolved: { count: summary.resolved, percent: summary.resolvedPercent },
     ongoing: { count: summary.ongoing, percent: summary.ongoingPercent },
     rejected: { count: summary.rejected, percent: summary.rejectedPercent },
+    parked: { count: summary.parked ?? 0, percent: summary.parkedPercent ?? 0 },
     reportUrl: String(reportUrl ?? '').trim(),
     notes,
     asOf: summary.asOf,
@@ -348,6 +349,11 @@ export function buildInfographicSvg(model, measure) {
   // ภาพนี้ "ไม่แสดงระยะเวลาเฉลี่ย" โดยเจตนา (เจ้าของระบบสั่ง 2569-10-19 หลังเห็น "8.9 วัน" ของน้ำเลา: ภาพที่ลงกลุ่มชาวบ้าน
   // เห็นแค่ตัวเลขเดียวแล้วถูกตีความเป็น "ช้า" โดยไม่เห็นบริบท) ค่านี้ยังอยู่ในหน้ารายงานและใบ A4 ที่มีคำอธิบายครบ
   // เทสต์ล็อกไว้ว่าภาพไม่มีข้อความนี้ ถ้าจะนำกลับมาต้องให้เจ้าของระบบสั่งใหม่
+  // เรื่องที่ขึ้นทะเบียนรอดำเนินการไม่อยู่ในสองช่องบน (ไม่ใช่งานค้างและไม่ใช่เสร็จ) — บอกในบรรทัดเดียวให้ตัวเลขครบยอดรวม
+  if (model.parked.count > 0) {
+    y += 44
+    text(MARGIN, y, `ขึ้นทะเบียนรอดำเนินการ ${formatCount(model.parked.count)} เรื่อง (ร้อยละ ${formatPercent(model.parked.percent)})`, { size: 28, fill: MUTED })
+  }
   if (model.rejected.count > 0) {
     y += 44
     text(MARGIN, y, `ไม่รับเรื่อง/ยกเลิก ${formatCount(model.rejected.count)} เรื่อง (ร้อยละ ${formatPercent(model.rejected.percent)})`, { size: 28, fill: MUTED })

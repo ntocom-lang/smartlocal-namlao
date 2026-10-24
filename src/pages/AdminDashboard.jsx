@@ -3809,7 +3809,27 @@ function ResolvedPinChip({ cat, onToggle, className = '' }) {
   )
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onToggleSubmitAudience, onToggleManualIntake, onToggleResolvedPin, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = DEFAULT_SLA_WORKING_DAYS, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
+// สวิตช์ "ขึ้นทะเบียนรอดำเนินการได้" รายหมวด (complaint_categories.allow_parking, 20261025100000)
+// เปิดเฉพาะหมวดที่รับเรื่องไว้แล้วแต่ อปท. อาจยังไม่พร้อมทำ (เช่น ซ่อมแซมถนนทางการเกษตร) — ค่าตั้งต้นปิด
+// หมวดเร่งด่วน (น้ำท่วม ไฟฟ้า) ต้องปิดไว้ ไม่งั้นหัวหน้ากองกดพักเรื่องที่ต้องรีบทำโดยพลาดได้
+function ParkingChip({ cat, onToggle, className = '' }) {
+  if (cat.is_adhoc) return null
+  const allowed = cat.allow_parking === true
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle?.(cat.id, allowed)}
+      title={allowed
+        ? 'หัวหน้ากองกด "ขึ้นทะเบียนรอดำเนินการ" ได้ (เรื่องจะไม่นับเป็นงานค้าง/เกินกำหนด) — กดเพื่อปิดสิทธิ์นี้'
+        : 'หมวดนี้ขึ้นทะเบียนรอดำเนินการไม่ได้ — กดเพื่อเปิดให้หัวหน้ากองใช้ได้'}
+      className={`px-2 py-1 rounded-full font-bold transition-colors ${allowed ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'} ${className}`}
+    >
+      {allowed ? '🗂️ ขึ้นทะเบียนรอได้' : 'ไม่ใช้ขึ้นทะเบียนรอ'}
+    </button>
+  )
+}
+
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onToggleSubmitAudience, onToggleManualIntake, onToggleResolvedPin, onToggleParking, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = DEFAULT_SLA_WORKING_DAYS, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -3902,6 +3922,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
         <SubmitAudienceChip cat={cat} onToggle={onToggleSubmitAudience} className="whitespace-nowrap text-[12px]" />
         <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="whitespace-nowrap text-[12px]" />
         <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="whitespace-nowrap text-[12px]" />
+        <ParkingChip cat={cat} onToggle={onToggleParking} className="whitespace-nowrap text-[12px]" />
       </div>
 
       {/* assignment row */}
@@ -3949,7 +3970,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
   )
 }
 
-function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [], techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onToggleSubmitAudience, onToggleManualIntake, onToggleResolvedPin, onDeleteCat, onEditEmoji, iconStyle }) {
+function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [], techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onToggleSubmitAudience, onToggleManualIntake, onToggleResolvedPin, onToggleParking, onDeleteCat, onEditEmoji, iconStyle }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const editingLabel = !!draft?.editingLabel
   const hasDraft = !!draft && !editingLabel
@@ -4070,6 +4091,7 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
           <SubmitAudienceChip cat={cat} onToggle={onToggleSubmitAudience} className="max-w-full text-center text-[11px] leading-tight" />
           <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="max-w-full text-center text-[11px] leading-tight" />
           <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="max-w-full text-center text-[11px] leading-tight" />
+          <ParkingChip cat={cat} onToggle={onToggleParking} className="max-w-full text-center text-[11px] leading-tight" />
         </div>
       </td>
       <td className="px-2 py-3">
@@ -4550,6 +4572,33 @@ function CategoryManager({ tenant }) {
     setError(null)
   }
 
+  // เปิด/ปิดสิทธิ์ "ขึ้นทะเบียนรอดำเนินการ" รายหมวด — เปิดแล้วหัวหน้ากอง/แอดมินกดพักเรื่องของหมวดนี้ได้
+  // (park_complaints ตรวจธงนี้ซ้ำที่ DB) ปิดภายหลังไม่กระทบเรื่องที่พักไว้แล้ว: นำกลับเข้าคิวได้เสมอ
+  async function toggleParking(id, current) {
+    const cat = cats.find((c) => c.id === id)
+    const label = cat?.label ?? ''
+    const message = current
+      ? `ปิดสิทธิ์ "ขึ้นทะเบียนรอดำเนินการ" ของ "${label}"?\n\nเรื่องที่ขึ้นทะเบียนไว้แล้วยังอยู่เหมือนเดิมและนำกลับเข้าคิวงานได้ แต่พักเรื่องใหม่ไม่ได้`
+      : `เปิดสิทธิ์ "ขึ้นทะเบียนรอดำเนินการ" ให้ "${label}"?\n\nหัวหน้ากองและแอดมินจะกดพักเรื่องของหมวดนี้ได้ (เก็บรูป/พิกัดไว้เป็นข้อมูลความต้องการ ไม่นับเป็นงานค้างหรือเกินกำหนด) ผู้ร้องจะเห็นสถานะ "ขึ้นทะเบียนรอดำเนินการ" ไม่ใช่ "ปฏิเสธ"\n\nไม่ควรเปิดกับหมวดเร่งด่วน เช่น น้ำท่วม`
+    if (!window.confirm(message)) return
+
+    // RLS ปัดตกเงียบได้ — อ่านค่ากลับมาเทียบ เหมือน toggleResolvedPin
+    const { data, error: err } = await supabase.from('complaint_categories')
+      .update({ allow_parking: !current }).eq('id', id).select('id, allow_parking')
+    if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
+    if (!data || data.length === 0) {
+      setError('ไม่มีสิทธิ์เปลี่ยนการตั้งค่านี้ (ต้องเป็นผู้ดูแลระบบของ อปท. นี้)')
+      return
+    }
+    const saved = data[0].allow_parking
+    setCats((prev) => prev.map((c) => c.id === id ? { ...c, allow_parking: saved } : c))
+    if (saved === current) {
+      setError('ฐานข้อมูลไม่ได้เปลี่ยนการตั้งค่าของหมวดนี้ กรุณาลองใหม่')
+      return
+    }
+    setError(null)
+  }
+
   async function moveCat(idx, dir) {
     const swapIdx = idx + dir
     if (swapIdx < 0 || swapIdx >= cats.length) return
@@ -4817,6 +4866,7 @@ function CategoryManager({ tenant }) {
                     onToggleSubmitAudience={toggleSubmitAudience}
                     onToggleManualIntake={toggleManualIntake}
                     onToggleResolvedPin={toggleResolvedPin}
+                    onToggleParking={toggleParking}
                     onEditEmoji={setIconPickerCat}
                     iconStyle={iconStyle}
                     departments={departments}
@@ -4881,6 +4931,7 @@ function CategoryManager({ tenant }) {
                         onToggleSubmitAudience={toggleSubmitAudience}
                         onToggleManualIntake={toggleManualIntake}
                         onToggleResolvedPin={toggleResolvedPin}
+                    onToggleParking={toggleParking}
                         onDeleteCat={deleteCat}
                         onEditEmoji={setIconPickerCat}
                         iconStyle={iconStyle}
@@ -5136,7 +5187,8 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
   // ทั้งที่สำนักงานยังไม่ได้เปิดทำการ
   // คำร้องค้างนานเกิน 15 วันทำการ
   const overdue = complaints
-    .filter(c => !['completed','rejected'].includes(c.status) &&
+    // parked = ขึ้นทะเบียนรอดำเนินการ: อปท. รับไว้แล้วแต่ยังไม่พร้อมทำ ไม่นับเป็นงานค้างนาน
+    .filter(c => !['completed','rejected','parked'].includes(c.status) &&
       workingDaysSince(c.created_at, now) > 15)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
     .slice(0, 6)

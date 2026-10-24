@@ -45,6 +45,85 @@ export function canFinishWork(complaint, userId, role, categoryMeta = {}, opts =
   return isComplaintWorker(complaint, userId, role, opts) && FINISHABLE_STATUSES.includes(complaint.status)
 }
 
+// ───── สถานะ "ขึ้นทะเบียนรอดำเนินการ" (parked) ─────
+// เรื่องที่รับไว้แล้วแต่ อปท. ยังไม่พร้อมดำเนินการ (เช่น ซ่อมถนนเกษตรที่ยังไม่มีงบ/ยังไม่บรรจุแผน)
+// เก็บรูป/พิกัดไว้เป็นข้อมูลความต้องการ ไม่นับเป็นงานค้างหรือเกินกำหนด ไม่ใช่ "ดำเนินการแล้ว" และไม่ใช่ "ปฏิเสธ"
+// กติกาจริงอยู่ที่ DB: 20261025100100_complaint_parked_functions.sql (ฝั่งนี้แค่ซ่อนปุ่มให้ตรง — DB ตรวจซ้ำเสมอ)
+export const PARKED_STATUS = 'parked'
+export const PARKED_LABEL = 'ขึ้นทะเบียนรอดำเนินการ'
+// พักได้เฉพาะเรื่องที่รับเรื่องแล้ว — เรื่องใหม่ต้องผ่านขั้นรับเรื่อง/มอบหมายก่อน
+export const PARKABLE_STATUSES = ['received', 'in_progress']
+// เฉพาะ role ที่ตัดสินใจจัดคิวงานได้ — ผู้รับผิดชอบทั่วไป (staff/technician) ไม่มีสิทธิ์
+export const PARK_ROLES = ['admin', 'superadmin', 'officer']
+export const PARK_NOTE_MAX = 500
+export const PARK_BULK_MAX = 200
+// รหัส/ป้ายต้องตรง park_complaints() และ CHECK complaints_parked_reason_check (tests/complaint-parked.test.mjs เทียบให้)
+export const PARK_REASONS = [
+  { code: 'plan',      label: 'รอบรรจุในแผนพัฒนาท้องถิ่น' },
+  { code: 'budget',    label: 'รองบประมาณ' },
+  { code: 'authority', label: 'รอตรวจสอบอำนาจหน้าที่/สิทธิ์ในที่ดิน' },
+  { code: 'season',    label: 'รอช่วงฤดูกาลที่เหมาะสม' },
+  { code: 'other',     label: 'เหตุผลอื่น' },
+]
+// ผู้ร้องเห็นข้อความนี้ — ไม่บอกเหตุผลภายใน ไม่สัญญากำหนดเวลา ไม่เรียกว่า "ปฏิเสธ"
+export const PARKED_PUBLIC_NOTE = 'ขึ้นทะเบียนความต้องการไว้แล้ว ยังไม่มีกำหนดดำเนินการ จะแจ้งให้ทราบเมื่อมีความคืบหน้า'
+
+// ผล skipped จาก park_complaints() → ข้อความไทย
+export const PARK_SKIP_MESSAGES = {
+  forbidden: 'ไม่มีสิทธิ์จัดการเรื่องนี้',
+  adhoc: 'หมวดเฉพาะกิจใช้ขั้นตอนนี้ไม่ได้',
+  category_not_allowed: 'หมวดนี้ยังไม่เปิดให้ขึ้นทะเบียนรอดำเนินการ',
+  bad_status: 'ขึ้นทะเบียนได้เฉพาะเรื่องที่รับเรื่องแล้วหรือกำลังดำเนินการ',
+  already_parked: 'อยู่ในทะเบียนอยู่แล้ว',
+}
+
+export function isParked(status) {
+  return status === PARKED_STATUS
+}
+
+export function parkReasonLabel(code) {
+  return PARK_REASONS.find((reason) => reason.code === code)?.label ?? ''
+}
+
+/**
+ * ผู้ใช้คนนี้พักเรื่องนี้ได้หรือไม่ — ต้องตรงกับ park_complaints()
+ * หมวดยังโหลดธงไม่เสร็จ/ไม่รู้ธง = ไม่แสดงปุ่ม (ต่างจาก requiresResolvedPin: พักเรื่องผิดหมวดเสียหายกว่าซ่อนปุ่มเกิน)
+ */
+export function canParkWork(complaint, userId, role, categoryMeta = {}, opts = {}) {
+  if (!complaint || !PARK_ROLES.includes(role)) return false
+  const meta = categoryMeta?.[complaint.category]
+  if (meta?.is_adhoc || meta?.allow_parking !== true) return false
+  return isComplaintWorker(complaint, userId, role, opts) && PARKABLE_STATUSES.includes(complaint.status)
+}
+
+/** นำกลับเข้าคิวงานได้หรือไม่ — ต้องตรง unpark_complaint() (ไม่ต้องดูธงหมวด: ปิดธงทีหลังก็ต้องดึงเรื่องกลับได้) */
+export function canUnparkWork(complaint, userId, role, opts = {}) {
+  if (!complaint || !PARK_ROLES.includes(role)) return false
+  return isComplaintWorker(complaint, userId, role, opts) && isParked(complaint.status)
+}
+
+/** @returns {string} ข้อความผิดพลาดภาษาไทย หรือ '' ถ้าใช้ได้ */
+export function validateParkInput({ reason, note } = {}) {
+  if (!PARK_REASONS.some((item) => item.code === reason)) return 'กรุณาเลือกเหตุผล'
+  const text = String(note ?? '').trim()
+  if (reason === 'other' && !text) return 'เลือก "เหตุผลอื่น" ต้องระบุรายละเอียด'
+  if (text.length > PARK_NOTE_MAX) return `หมายเหตุยาวได้ไม่เกิน ${PARK_NOTE_MAX} ตัวอักษร`
+  return ''
+}
+
+/**
+ * ผลจาก park_complaints() → สรุปให้เจ้าหน้าที่อ่าน
+ * @param {{ parked?: number, skipped?: Array<{ id: string, code: string }> } | null} result
+ * @returns {{ parked: number, skippedCount: number, lines: string[] }} lines = เหตุผลที่ข้าม รวมจำนวนต่อรหัส
+ */
+export function summarizeParkResult(result) {
+  const skipped = Array.isArray(result?.skipped) ? result.skipped : []
+  const byCode = new Map()
+  for (const item of skipped) byCode.set(item?.code, (byCode.get(item?.code) ?? 0) + 1)
+  const lines = [...byCode.entries()].map(([code, count]) => `${PARK_SKIP_MESSAGES[code] ?? 'ข้ามเรื่องที่ทำรายการไม่ได้'} (${count} เรื่อง)`)
+  return { parked: Number(result?.parked) || 0, skippedCount: skipped.length, lines }
+}
+
 /**
  * ต้องปักหมุดก่อนกด "ดำเนินการแล้ว" หรือไม่
  * ไม่รู้ธงของหมวด (ยังโหลดไม่เสร็จ/หมวดถูกลบ) = ขอหมุดไว้ก่อน — ปักเกินไม่เสียหาย แต่ไม่ปักแล้ว DB ปฏิเสธ

@@ -12,10 +12,11 @@ import { odorRoutedAt, isAdhocComplaint, ODOR_INTAKE_LABEL } from '../lib/odorIn
 import ComplaintTextBlock from '../components/complaints/ComplaintTextBlock'
 import ReopenComplaintBox from '../components/complaints/ReopenComplaintBox'
 import TrackLinkCard from '../components/complaints/TrackLinkCard'
+import { isParked, PARKED_LABEL, PARKED_PUBLIC_NOTE } from '../lib/complaintWorkflow'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
-  ChevronLeft, Clock, Search, ImagePlus, Upload, FileText, CheckCircle2,
+  ChevronLeft, Clock, Search, ImagePlus, Upload, FileText, CheckCircle2, Archive,
 } from 'lucide-react'
 
 const MAX_CITIZEN_PHOTOS = 3
@@ -29,6 +30,8 @@ const STATUS = {
   done:        { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', text: '#065f46' },
   closed:      { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',         bg: '#fee2e2', text: '#991b1b' },
+  // อปท. รับเรื่องไว้แล้วแต่ยังไม่พร้อมดำเนินการ — ไม่ใช่ปฏิเสธ และยังไม่มีกำหนด
+  parked:      { label: PARKED_LABEL,    bg: '#e2e8f0', text: '#334155' },
   // backward compat
   pending:     { label: 'คำร้องใหม่',      bg: '#fef3c7', text: '#92400e' },
   received:    { label: 'รับเรื่องแล้ว',   bg: '#e0f2fe', text: '#0369a1' },
@@ -47,7 +50,8 @@ const STATUS_FLOW_LABEL = {
 // นับเป็น "วันทำการ" ให้ตรงกับฝั่งเจ้าหน้าที่ (ComplaintsManager) — ประชาชนกับเจ้าหน้าที่
 // ต้องเห็นตัวเลขเดียวกัน ไม่งั้นจะเถียงกันว่าเรื่องเกินกำหนดแล้วหรือยัง
 function SlaBadge({ dueDate, status }) {
-  if (!dueDate || status === 'done' || status === 'closed' || status === 'rejected') return null
+  // ขึ้นทะเบียนรอดำเนินการ = ยังไม่มีกำหนด จึงไม่แสดงว่าเกินกำหนด (ผู้ร้องจะเข้าใจว่าเจ้าหน้าที่ละเลย)
+  if (!dueDate || status === 'done' || status === 'closed' || status === 'rejected' || isParked(status)) return null
   const days = workingDaysLeft(dueDate)
   if (days === null) return null
   const color = days < 0 ? { bg: '#fee2e2', text: '#991b1b' }
@@ -176,6 +180,19 @@ function findUnrated(list) {
 
 function StatusStepper({ status }) {
   const normalized = STATUS_COMPAT[status] ?? status
+  if (isParked(normalized)) {
+    return (
+      <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
+          <Archive size={20} className="text-slate-600" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-slate-800">{PARKED_LABEL}</p>
+          <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{PARKED_PUBLIC_NOTE}</p>
+        </div>
+      </div>
+    )
+  }
   if (normalized === 'rejected') {
     return (
       <div className="flex items-center gap-3 p-4 bg-red-50 rounded-2xl border border-red-100">

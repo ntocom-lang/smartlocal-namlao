@@ -6,6 +6,7 @@ import {
   ChevronRight, ChevronLeft, Filter, Search, Phone, Trash2, Wrench,
   MapPin, X, FileText, Camera, ChevronDown,
   Shield, Printer, Users, RefreshCw, AlertTriangle, Building2, BarChart3, List,
+  Archive, RotateCcw,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
@@ -17,9 +18,13 @@ import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../../li
 import { canReturnComplaint, complaintIntakeReason } from '../../lib/complaintIntake'
 import ReturnToIntakeButton from '../complaints/ReturnToIntakeButton'
 import FinishComplaintDialog from '../complaints/FinishComplaintDialog'
+import ParkComplaintDialog from '../complaints/ParkComplaintDialog'
 import ComplaintTextBlock from '../complaints/ComplaintTextBlock'
-import { canFinishWork, isComplaintWorker, isFinishedLike, requiresResolvedPin } from '../../lib/complaintWorkflow'
-import { startComplaintWork } from '../../lib/complaintFinish'
+import {
+  canFinishWork, canParkWork, canUnparkWork, isComplaintWorker, isFinishedLike, isParked, parkReasonLabel,
+  PARKED_LABEL, PARKED_PUBLIC_NOTE, requiresResolvedPin,
+} from '../../lib/complaintWorkflow'
+import { fetchParkingCategories, startComplaintWork, unparkComplaint } from '../../lib/complaintFinish'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 import { complaintPhotoCount, loadPrintPhotos, printWhenImagesReady } from '../../lib/printPhotos'
 import { isMissingSignatoryError, prepareComplaintPrint } from '../../lib/complaintPrint'
@@ -62,6 +67,8 @@ const STATUS = {
   done:        { label: 'ดำเนินการแล้ว',   color: '#10b981', bg: '#d1fae5', text: '#065f46' },
   closed:      { label: 'ดำเนินการแล้ว',   color: '#10b981', bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',          color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
+  // รับไว้แล้วแต่ อปท. ยังไม่พร้อมดำเนินการ — สีเทาเข้มแยกจากเหลือง (ใหม่) / เขียว (เสร็จ) / แดง (ปฏิเสธ)
+  parked:      { label: PARKED_LABEL,      color: '#64748b', bg: '#e2e8f0', text: '#334155' },
   // backward compat
   pending:     { label: 'คำร้องใหม่',      color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
   completed:   { label: 'ดำเนินการแล้ว',   color: '#10b981', bg: '#d1fae5', text: '#065f46' },
@@ -107,14 +114,15 @@ let CATEGORY_EMOJI = {
   tax: '📋', canal: '🏞️', animals: '🐕', water_supply: '🚿',
   borrow_equipment: '📦', grievance: '📣', disease: '🏥', other: '📝',
 }
-const STATUS_MAIN = ['new', 'received', 'in_progress', 'closed', 'rejected']
+const STATUS_MAIN = ['new', 'received', 'in_progress', 'closed', 'rejected', 'parked']
 
 // addWorkingDays/workingDaysLeft ย้ายไป src/lib/workingDays.js แล้ว — ของเดิมในไฟล์นี้
 // ตัดแค่เสาร์-อาทิตย์ ไม่ตัดวันหยุดนักขัตฤกษ์ และใช้ toISOString() ซึ่งทำให้ due_date
 // ที่ตั้งช่วง 00:00–06:59 น. เพี้ยนไป 1 วัน (ดูคำอธิบายใน src/lib/thaiDate.js)
 
 function SlaBadge({ dueDate, status, compact = false }) {
-  if (!dueDate || status === 'done' || status === 'closed' || status === 'rejected') return null
+  // ขึ้นทะเบียนรอดำเนินการ = ยังไม่มีกำหนด (กำหนดเสร็จนับใหม่ตอนนำกลับเข้าคิว) จึงไม่โชว์ว่าเกินกำหนด
+  if (!dueDate || status === 'done' || status === 'closed' || status === 'rejected' || isParked(status)) return null
   const days = workingDaysLeft(dueDate)
   if (days === null) return null
   const color = days < 0 ? { bg: '#fee2e2', text: '#991b1b' }
@@ -196,7 +204,25 @@ function AttachmentThumb({ url, alt, iconClassName }) {
   return <img src={toReliableImageUrl(url)} alt={alt} className="w-full h-full object-cover" onError={() => setFailed(true)} />
 }
 
-function StatusStepper({ status, note }) {
+function StatusStepper({ status, note, complaint }) {
+  if (isParked(status)) {
+    const reason = parkReasonLabel(complaint?.parked_reason)
+    return (
+      <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center shrink-0 mt-0.5">
+          <Archive size={20} className="text-slate-600" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-slate-800">{PARKED_LABEL}</p>
+          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+            {reason ? `เหตุผล: ${reason}` : 'ยังไม่พร้อมดำเนินการ'}
+            {complaint?.parked_at ? ` · ตั้งแต่ ${new Date(complaint.parked_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}` : ''}
+          </p>
+          <p className="text-[11px] text-slate-500 mt-1">ผู้ร้องเห็นข้อความ: {PARKED_PUBLIC_NOTE}</p>
+        </div>
+      </div>
+    )
+  }
   if (status === 'rejected') {
     return (
       <div className="flex items-start gap-3 p-4 bg-red-50 rounded-2xl border border-red-100">
@@ -292,19 +318,28 @@ function compareOpenComplaints(a, b) {
   return new Date(a.created_at) - new Date(b.created_at)
 }
 
+// เรื่องที่ขึ้นทะเบียนรอดำเนินการเป็นกลุ่มที่สามคั่นกลาง: ไม่ใช่งานค้าง (ไม่อยู่ปนกับเรื่องเกินกำหนด) และยังไม่จบ
+// (ไม่ลงไปกองกับเรื่องที่ดำเนินการแล้ว) · เรียงเรื่องที่รอมานานที่สุดก่อน เพราะนั่นคือข้อมูลความต้องการที่สะสมนานสุด
+const ROW_GROUP_RANK = { open: 0, parked: 1, settled: 2 }
+function rowGroupKey(c) {
+  if (isParked(c.status)) return 'parked'
+  return isSettledComplaint(c.status) ? 'settled' : 'open'
+}
+
 function compareComplaintRows(a, b) {
-  const settledA = isSettledComplaint(a.status)
-  const settledB = isSettledComplaint(b.status)
-  if (settledA !== settledB) return settledA ? 1 : -1
+  const groupA = rowGroupKey(a)
+  const groupB = rowGroupKey(b)
+  if (groupA !== groupB) return ROW_GROUP_RANK[groupA] - ROW_GROUP_RANK[groupB]
+  if (groupA === 'parked') return new Date(a.created_at) - new Date(b.created_at)
   // กลุ่มที่จบแล้วเรียงใหม่สุดก่อน เพราะใช้ดูย้อนหลังว่าเพิ่งปิดเรื่องอะไรไป
-  return settledA ? new Date(b.created_at) - new Date(a.created_at) : compareOpenComplaints(a, b)
+  return groupA === 'settled' ? new Date(b.created_at) - new Date(a.created_at) : compareOpenComplaints(a, b)
 }
 
 const ROW_GROUP = {
   open:    { label: 'ยังไม่เสร็จ',   dot: '#f59e0b', bg: '#fff7ed', text: '#92400e' },
+  parked:  { label: PARKED_LABEL,    dot: '#64748b', bg: '#f1f5f9', text: '#334155' },
   settled: { label: 'เสร็จสิ้นแล้ว', dot: '#10b981', bg: '#ecfdf5', text: '#065f46' },
 }
-function rowGroupKey(c) { return isSettledComplaint(c.status) ? 'settled' : 'open' }
 
 // รูปผลการดำเนินการลงโฟลเดอร์เดียวกับรูปที่ประชาชนแนบ (โฟลเดอร์ของเรื่องนั้น) แยกกันด้วยชื่อไฟล์
 // ที่มีคำว่า "ผลงาน" — เจ้าหน้าที่เปิดโฟลเดอร์เดือนเดียวก็เห็นครบทั้งก่อนและหลังซ่อม
@@ -597,7 +632,7 @@ function ReporterCard({ c }) {
   )
 }
 
-export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate, categoryMeta, onReturned, onFinished, onTextSaved }) {
+export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate, categoryMeta, onReturned, onFinished, onTextSaved, onParkChanged, departmentScoped = false }) {
   const { tenant, terminology } = useTenant()
   const isAdminRole = ['admin', 'superadmin'].includes(currentUserRole)
   const isTechAssigned = currentUserRole === 'technician' && c.assigned_to === currentUserId
@@ -613,10 +648,16 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
   // ผู้รับผิดชอบทุก role ส่งคืนได้ รวม staff ที่เปลี่ยนสถานะเองไม่ได้ (RPC เปิดช่องให้เฉพาะการส่งคืน)
   // แอดมินไม่ต้องใช้ปุ่มนี้ — มอบหมายใหม่ได้เองอยู่แล้ว
   const canReturn = !isAdminRole && canReturnComplaint(c, currentUserId, categoryMeta)
+  // ขึ้นทะเบียนรอดำเนินการ / นำกลับเข้าคิว: แอดมินกับหัวหน้ากองเท่านั้น (park_complaints / unpark_complaint ตรวจซ้ำที่ DB)
+  // departmentScoped = หน้าเจ้าหน้าที่ของหัวหน้ากองที่กรองมาเฉพาะเรื่องของกองตัวเองแล้ว
+  const canPark = canParkWork(c, currentUserId, currentUserRole, categoryMeta, { departmentScoped })
+  const canUnpark = canUnparkWork(c, currentUserId, currentUserRole, { departmentScoped })
   // จัดกลุ่มตามกอง ใช้ render dropdown มอบหมายเป็น <optgroup> — คนหลักสิบ/ร้อยคนจะได้ไม่ต้องไล่หาในลิสต์แบนราบ
   const technicianGroups = groupStaffByDepartment(technicians ?? [])
   const [assigning, setAssigning] = useState(false)
   const [showCloseJob, setShowCloseJob] = useState(false)
+  const [showPark, setShowPark] = useState(false)
+  const [unparking, setUnparking] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [overrideConfirm, setOverrideConfirm] = useState(null)
   const [overrideNote, setOverrideNote] = useState('')
@@ -721,6 +762,16 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
     setDeleting(false)
     if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
     onDelete(c.id)
+    onClose()
+  }
+
+  async function handleUnpark() {
+    if (!window.confirm('นำเรื่องนี้กลับเข้าคิวงาน?\n\nสถานะจะกลับเป็น "รับเรื่องแล้ว" และเริ่มนับกำหนดเสร็จใหม่ตั้งแต่วันนี้')) return
+    setUnparking(true)
+    const { error } = await unparkComplaint(c.id)
+    setUnparking(false)
+    if (error) { alert('นำกลับเข้าคิวไม่สำเร็จ: ' + error.message); return }
+    onParkChanged?.()
     onClose()
   }
 
@@ -936,7 +987,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
                 รอแอดมินรับเรื่อง — {intakeReason.text}
               </p>
             )}
-            <StatusStepper status={c.status} note={c.technician_note} />
+            <StatusStepper status={c.status} note={c.technician_note} complaint={c} />
           </div>
 
           {timelineRows.length > 0 && (
@@ -1265,8 +1316,25 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
           </div>
         )}
 
+        {(canPark || canUnpark) && (
+          <div className="px-5 pt-3 border-t border-gray-100 shrink-0 bg-gray-50 flex flex-wrap items-center gap-2">
+            {canPark && (
+              <button type="button" onClick={() => setShowPark(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors min-h-[36px]">
+                <Archive size={13} /> {PARKED_LABEL}
+              </button>
+            )}
+            {canUnpark && (
+              <button type="button" onClick={handleUnpark} disabled={unparking}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-white bg-slate-700 hover:bg-slate-800 transition-colors disabled:opacity-50 min-h-[36px]">
+                {unparking ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} นำกลับเข้าคิวงาน
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Footer actions */}
-        <div className={`px-5 py-4 shrink-0 bg-gray-50 ${canReturn ? '' : 'border-t border-gray-100'}`}>
+        <div className={`px-5 py-4 shrink-0 bg-gray-50 ${canReturn || canPark || canUnpark ? '' : 'border-t border-gray-100'}`}>
           {!canWork ? (
             <div className="flex gap-2">
               <button onClick={handlePrintComplaint}
@@ -1366,6 +1434,15 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
             />
           )}
 
+          {showPark && canPark && (
+            <ParkComplaintDialog
+              ids={[c.id]}
+              categoryLabel={categoryLabel}
+              onCancel={() => setShowPark(false)}
+              onDone={() => { setShowPark(false); onParkChanged?.(); onClose() }}
+            />
+          )}
+
           {(currentUserRole === 'superadmin' || currentUserRole === 'admin') && (
             <div className={`mt-3 pt-3 border-t border-dashed ${currentUserRole === 'superadmin' ? 'border-purple-200' : 'border-gray-200'}`}>
               <p className={`text-[13px] font-semibold uppercase tracking-wider mb-2 flex items-center gap-1 ${currentUserRole === 'superadmin' ? 'text-purple-400' : 'text-gray-400'}`}>
@@ -1374,9 +1451,11 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
               <div className="flex items-center gap-2">
                 <FixedSelect
                   value={c.status}
-                  onChange={(val) => { setOverrideNote(''); setOverrideConfirm(val) }}
+                  onChange={(val) => { if (val === 'parked') return; setOverrideNote(''); setOverrideConfirm(val) }}
                   // "ดำเนินการแล้ว" ต้องผ่านกล่องปักหมุด (finish_complaint) — DB ปฏิเสธการเปลี่ยนตรงถ้าหมวดบังคับหมุด
-                  options={STATUS_MAIN.filter((key) => key !== 'closed').map(key => ({ value: key, label: STATUS[key].label }))}
+                  // "ขึ้นทะเบียนรอดำเนินการ" เข้าได้ทางปุ่มพักเรื่อง (park_complaints) เท่านั้น — เลือกที่นี่ไม่ได้
+                  // แสดงเป็นตัวเลือกเฉพาะเมื่อเรื่องอยู่ในสถานะนี้อยู่ เพื่อให้ช่องแสดงสถานะปัจจุบันถูกต้อง
+                  options={STATUS_MAIN.filter((key) => key !== 'closed' && (key !== 'parked' || isParked(c.status))).map(key => ({ value: key, label: STATUS[key].label }))}
                 />
               </div>
             </div>
@@ -1484,6 +1563,8 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const [technicians, setTechnicians]             = useState([])
   const [selectedIds, setSelectedIds]             = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting]           = useState(false)
+  // รหัสเรื่องที่กำลังเปิดกล่อง "ขึ้นทะเบียนรอดำเนินการ" จากแถบเลือกหลายรายการ (null = ปิดอยู่)
+  const [parkIds, setParkIds]                     = useState(null)
   // เตือนเมื่อเปลี่ยนสถานะสำเร็จแต่เขียนประวัติ (complaint_timeline) ไม่ผ่าน RLS
   const [timelineWarning, setTimelineWarning]     = useState(null)
   // ชื่อผู้ใช้ปัจจุบัน ใช้ลง actor_name ของ timeline — ประวัติที่ไม่รู้ว่าใครทำใช้ตรวจสอบไม่ได้
@@ -1547,10 +1628,22 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
             if (c.emoji) CATEGORY_EMOJI[c.value] = c.emoji
             meta[c.value] = { is_adhoc: !!c.is_adhoc, requires_manual_intake: !!c.requires_manual_intake }
           }
-          setCategoryMeta(meta)
+          // คิวรีธง allow_parking อาจกลับมาก่อน — เก็บค่าที่เติมไว้แล้วไม่ให้ถูกเขียนทับ
+          setCategoryMeta((prev) => {
+            for (const [value, old] of Object.entries(prev)) if (old?.allow_parking) meta[value] = { ...meta[value], allow_parking: true }
+            return meta
+          })
           setCatVer(v => v + 1)
         }
       })
+    // ธงขึ้นทะเบียนรอดำเนินการดึงแยก (คิวรีพลาดได้โดยไม่พาชื่อหมวดหาย) แล้วเติมเข้า meta เดิม
+    fetchParkingCategories(tenant.id).then((flags) => {
+      setCategoryMeta((prev) => {
+        const next = { ...prev }
+        for (const value of Object.keys(flags)) next[value] = { ...next[value], allow_parking: true }
+        return next
+      })
+    })
   }, [tenant?.id])
 
   const fetchTechnicians = useCallback(async () => {
@@ -1970,10 +2063,18 @@ ${summaryHtml}
     return matchStatus && matchSearch && matchCategory && matchVillage && matchTech && matchDepartment
   }).sort(compareComplaintRows)
 
+  // เรื่องที่เลือกไว้และขึ้นทะเบียนรอดำเนินการได้จริง — เงื่อนไขเดียวกับ park_complaints() (DB ตรวจซ้ำรายเรื่อง)
+  const parkableSelectedIds = canBulkDelete
+    ? complaints
+        .filter((c) => selectedIds.has(c.id) && canParkWork(c, currentUserId, currentUserRole ?? 'staff', categoryMeta))
+        .map((c) => c.id)
+    : []
+
   // นับจากทั้งรายการที่กรองไว้ ไม่ใช่เฉพาะหน้าที่เปิดอยู่ — หัวกลุ่มจึงบอกยอดจริงของตัวกรองนั้น
   const groupCounts = {
-    open:    filtered.filter((c) => !isSettledComplaint(c.status)).length,
-    settled: filtered.filter((c) => isSettledComplaint(c.status)).length,
+    open:    filtered.filter((c) => rowGroupKey(c) === 'open').length,
+    parked:  filtered.filter((c) => rowGroupKey(c) === 'parked').length,
+    settled: filtered.filter((c) => rowGroupKey(c) === 'settled').length,
   }
 
   const baseFiltered = nonOdorComplaints.filter((c) => {
@@ -2035,6 +2136,8 @@ ${summaryHtml}
           { label: 'กำลังดำเนินการ',  value: counts.in_progress ?? 0,    color: '#6d28d9', bg: '#ede9fe' },
           { label: 'ดำเนินการแล้ว',   value: counts.closed ?? 0,          color: '#065f46', bg: '#d1fae5' },
           { label: 'ปฏิเสธ',           value: counts.rejected ?? 0,        color: '#991b1b', bg: '#fee2e2' },
+          // เฉพาะ อปท. ที่มีเรื่องขึ้นทะเบียนรอดำเนินการจริง — ไม่ให้ช่องเลขศูนย์ค้างในแถบสถิติของ อปท. ที่ไม่ได้ใช้
+          ...((counts.parked ?? 0) > 0 ? [{ label: PARKED_LABEL, value: counts.parked, color: '#334155', bg: '#e2e8f0' }] : []),
         ].map(s => (
           <div key={s.label} className="flex-1 px-4 py-3 text-center" style={{ backgroundColor: s.bg }}>
             <p className="text-2xl font-bold leading-none" style={{ color: s.color }}>{s.value}</p>
@@ -2100,6 +2203,9 @@ ${summaryHtml}
           <div className="flex flex-wrap gap-1.5 max-md:grid max-md:grid-cols-3">
             {FILTER_TABS.map((tab, i) => {
               const key = FILTER_KEYS[i]
+              // ป้าย "ขึ้นทะเบียนรอดำเนินการ" โผล่เมื่อมีเรื่องในสถานะนี้จริง (หรือกำลังเปิดดูอยู่) — อปท./หมวดที่ไม่ได้ใช้
+              // ไม่ต้องมีป้ายเลขศูนย์ค้างหน้าจอ และการ์ด 6 ใบบนมือถือคงแถวละ 3 เท่าเดิม
+              if (key === 'parked' && !(counts.parked > 0) && filterTab !== i) return null
               const active = filterTab === i && !odorTabActive
               const dotColor = key ? (STATUS[key]?.color ?? '#94a3b8') : '#64748b'
               // ตัวเลขใหญ่บนมือถือใช้เฉดเข้มของสถานะ (ชุดเดียวกับตัวอักษรในป้ายสถานะ) — เฉดสว่างของจุดสี
@@ -2107,7 +2213,7 @@ ${summaryHtml}
               const numColor = key ? (STATUS[key]?.text ?? '#334155') : '#334155'
               return (
                 <button key={i} type="button" aria-pressed={active} onClick={() => { setFilterTab(i); setOdorTabActive(false) }}
-                  className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors max-md:min-h-15 max-md:flex-col max-md:justify-center max-md:gap-1 max-md:px-0.5 max-md:py-2 max-md:text-center max-md:leading-tight max-md:text-balance ${
+                  className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors max-md:min-h-15 max-md:flex-col max-md:justify-center max-md:gap-1 max-md:px-0.5 max-md:py-2 max-md:text-center max-md:leading-tight max-md:text-balance ${key === 'parked' ? 'max-md:col-span-3' : ''} ${
                     active ? 'text-white border-transparent' : 'text-gray-600 bg-white border-gray-200 hover:bg-gray-50'
                   }`}
                   style={active ? { backgroundColor: 'var(--color-primary)' } : {}}>
@@ -2227,6 +2333,13 @@ ${summaryHtml}
                 className="text-xs font-medium text-gray-500 hover:text-gray-700 px-2 py-1">
                 ยกเลิกเลือก
               </button>
+              {/* ตัวเลขนับเฉพาะเรื่องที่ขึ้นทะเบียนได้จริง (หมวดเปิดธง + รับเรื่องแล้ว/กำลังดำเนินการ) — เห็นจำนวนก่อนกดยืนยัน */}
+              {parkableSelectedIds.length > 0 && (
+                <button onClick={() => setParkIds(parkableSelectedIds)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-slate-700 hover:bg-slate-800 transition-colors">
+                  <Archive size={12} /> {`${PARKED_LABEL} (${parkableSelectedIds.length})`}
+                </button>
+              )}
               <button onClick={handleBulkDelete} disabled={bulkDeleting}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-50">
                 {bulkDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
@@ -2600,6 +2713,19 @@ ${summaryHtml}
         </div>
       )}
 
+      {parkIds && (
+        <ParkComplaintDialog
+          ids={parkIds}
+          categoryLabel={(() => {
+            // ทุกเรื่องที่เลือกหมวดเดียวกัน = ใส่ชื่อหมวดให้เห็นว่ากำลังพักอะไร ปนหลายหมวดไม่ใส่
+            const cats = new Set(complaints.filter((c) => parkIds.includes(c.id)).map((c) => c.category))
+            return cats.size === 1 ? categoryNameOf(CATEGORY_LABEL, [...cats][0]) : ''
+          })()}
+          onCancel={() => setParkIds(null)}
+          onDone={() => { setParkIds(null); setSelectedIds(new Set()); fetchComplaints() }}
+        />
+      )}
+
       {/* Detail modal */}
       {selectedComplaint && (
         <ComplaintDetailModal
@@ -2618,6 +2744,7 @@ ${summaryHtml}
           categoryMeta={categoryMeta}
           onReturned={() => fetchComplaints()}
           onFinished={() => fetchComplaints()}
+          onParkChanged={() => fetchComplaints()}
           onTextSaved={(id, patch) => {
             setComplaints((prev) => prev.map((row) => row.id === id ? { ...row, ...patch } : row))
             setSelectedComplaint((prev) => prev?.id === id ? { ...prev, ...patch } : prev)

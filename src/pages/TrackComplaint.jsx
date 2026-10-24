@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, Search, XCircle } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 import { supabase } from '../lib/supabase'
-import { validateReopenReason, REOPEN_REASON_MAX } from '../lib/complaintWorkflow'
+import { validateReopenReason, REOPEN_REASON_MAX, PARKED_PUBLIC_NOTE } from '../lib/complaintWorkflow'
 import {
   TRACK_BUSY_MESSAGE, TRACK_RATE_ERRORS, TRACK_REOPEN_ERRORS,
   buildTrackSteps, formatTrackDateTime, isTrackBusy, isTrackFinished, isTrackToken,
@@ -29,6 +29,8 @@ function Dot({ state }) {
   const base = 'w-6 h-6 rounded-full grid place-items-center text-[11px] font-bold shrink-0 relative z-10'
   if (state === 'done') return <span className={`${base} bg-green-500 text-white`} aria-hidden="true">✓</span>
   if (state === 'stop') return <span className={`${base} bg-red-500 text-white`} aria-hidden="true">!</span>
+  // hold = ขึ้นทะเบียนรอดำเนินการ: สีเทาน้ำเงิน ไม่ใช่แดง (ไม่ใช่การปฏิเสธ) ไม่ใช่เขียว (ยังไม่เสร็จ)
+  if (state === 'hold') return <span className={`${base} bg-slate-500 text-white`} aria-hidden="true">⏸</span>
   if (state === 'now') {
     return (
       <span className={`${base} bg-white border-2`} style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)', boxShadow: '0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, white)' }} aria-hidden="true">●</span>
@@ -38,7 +40,7 @@ function Dot({ state }) {
 }
 
 function Steps({ steps }) {
-  const STATE_TEXT = { done: 'เสร็จแล้ว', now: 'ขั้นตอนปัจจุบัน', todo: 'ยังไม่ถึงขั้นนี้', stop: 'ไม่สามารถดำเนินการได้' }
+  const STATE_TEXT = { done: 'เสร็จแล้ว', now: 'ขั้นตอนปัจจุบัน', todo: 'ยังไม่ถึงขั้นนี้', stop: 'ไม่สามารถดำเนินการได้', hold: 'รับไว้ในทะเบียนแล้ว ยังไม่มีกำหนดดำเนินการ' }
   return (
     <ol className="space-y-0">
       {steps.map((step, i) => (
@@ -223,6 +225,7 @@ export default function TrackComplaint() {
   const steps = data ? buildTrackSteps(data) : []
   const finished = data ? isTrackFinished(data.status) : false
   const rejected = data?.status === 'rejected'
+  const parked = data?.status === 'parked'
 
   return (
     <div className="min-h-screen pb-28 md:pb-12" style={{ backgroundColor: '#eef2f7' }}>
@@ -282,6 +285,11 @@ export default function TrackComplaint() {
               <Steps steps={steps} />
               {data.is_adhoc && (
                 <p className="text-xs text-gray-500 mt-3">เรื่องประเภทนี้เจ้าหน้าที่รวบรวมไปวิเคราะห์ ไม่มีสถานะรายเรื่อง</p>
+              )}
+              {parked && (
+                <p className="mt-3 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 leading-relaxed">
+                  {PARKED_PUBLIC_NOTE}
+                </p>
               )}
               {rejected && data.reject_reason && (
                 <p className="mt-3 text-sm text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2 whitespace-pre-wrap break-words">

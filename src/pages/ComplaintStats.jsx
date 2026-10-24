@@ -40,6 +40,9 @@ const PIPELINE_STAGES = [
   { key: 'in_progress', label: 'กำลังดำเนินการ',            dot: '#0ea5e9', bar: '#38bdf8' },
   { key: 'resolved',    label: 'เสร็จสิ้น',                  dot: '#10b981', bar: '#34d399' },
   { key: 'rejected',    label: 'ยกเลิก / ไม่รับเรื่อง',       dot: '#ef4444', bar: '#f87171' },
+  // เรื่องที่ อปท. รับไว้แล้วแต่ยังไม่พร้อมดำเนินการ — complaint_stats ใส่คีย์นี้เฉพาะเมื่อมีจริง (ดู legend ที่ซ่อนเมื่อเป็น 0)
+  // ไม่นับรวมใน "ยกเลิก / ไม่รับเรื่อง" เพราะไม่ใช่การยกเลิก · ไม่ใช่การ์ดแยก เพื่อไม่ให้กริด 6 ใบเสียทรง
+  { key: 'parked',      label: 'ขึ้นทะเบียนรอดำเนินการ',      dot: '#64748b', bar: '#94a3b8' },
 ]
 
 const MONTH_SHORT_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
@@ -578,6 +581,7 @@ export default function ComplaintStats() {
             <div className="grid grid-cols-2 gap-x-3 gap-y-2 w-full">
               {PIPELINE_STAGES.map(stage => {
                 const value = stats?.[stage.key] ?? 0
+                if (stage.key === 'parked' && value === 0) return null
                 const share = sharePercent(value, stats?.total ?? 0)
                 return (
                   <div key={stage.key} className="flex items-start gap-2">

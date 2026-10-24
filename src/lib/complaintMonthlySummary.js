@@ -158,6 +158,9 @@ export function summarizeMonth({
   const resolved = Number(stats?.resolved) || 0
   const ongoing = (Number(stats?.open) || 0) + (Number(stats?.in_progress) || 0)
   const rejected = Number(stats?.rejected) || 0
+  // เรื่องที่ อปท. รับไว้แล้วแต่ยังไม่พร้อมดำเนินการ — complaint_stats_fy ใส่คีย์นี้เฉพาะเมื่อ > 0
+  // แยกจาก "อยู่ระหว่างดำเนินการ" (ไม่นับเป็นงานค้าง) และจาก "ไม่รับเรื่อง/ยกเลิก" (ไม่ได้ปฏิเสธ) ตัวเลขทุกช่องบวกกันได้เท่ายอดรวม
+  const parked = Number(stats?.parked) || 0
 
   // นับหมวดได้ก็ต่อเมื่อดึงรายการมาครบทุกเรื่อง — ถ้าถูกตัดที่ LIMIT สัดส่วนจะเพี้ยนเงียบๆ จึงไม่แสดงเลย
   // ชุดที่ล็อกไว้นับมาที่ฐานข้อมูลครบทุกเรื่องแล้ว (GROUP BY ไม่มีเพดาน) จึงไม่ติดเงื่อนไขนี้
@@ -203,6 +206,7 @@ export function summarizeMonth({
       sentences.push(`หมวดที่มีจำนวนเรื่องสูงสุดตามลำดับ ได้แก่ ${joinThai(top.map(c => `${c.label} ${formatCount(c.count)} เรื่อง (ร้อยละ ${formatPercent(c.percent)})`))}`)
     }
     const status = [`ดำเนินการแล้วเสร็จ ${formatCount(resolved)} เรื่อง (ร้อยละ ${formatPercent(resolvedPercent)})`, `อยู่ระหว่างดำเนินการ ${formatCount(ongoing)} เรื่อง`]
+    if (parked) status.push(`ขึ้นทะเบียนรอดำเนินการ ${formatCount(parked)} เรื่อง`)
     if (rejected) status.push(`ไม่รับเรื่อง/ยกเลิก ${formatCount(rejected)} เรื่อง`)
     sentences.push(joinThai(status))
   }
@@ -227,6 +231,8 @@ export function summarizeMonth({
     ongoingPercent: percentOf(ongoing, total),
     rejected,
     rejectedPercent: percentOf(rejected, total),
+    parked,
+    parkedPercent: percentOf(parked, total),
     avgDays: stats?.avg_days ?? null,
     categories,
     categoriesComplete,
