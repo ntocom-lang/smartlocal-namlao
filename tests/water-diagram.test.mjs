@@ -16,6 +16,7 @@ import { DIAGRAMS, diagramById } from '../src/lib/waterDiagram/diagrams.js'
 import { THUNGKAEW_BINDS } from '../src/lib/waterDiagram/thungkaew.js'
 import { NAMLAO_ROUTE } from '../src/lib/waterDiagram/routes/namlao.js'
 import { TAMNAKTHAM_ROUTE } from '../src/lib/waterDiagram/routes/tamnaktham.js'
+import { THUNGKAEW_ROUTE } from '../src/lib/waterDiagram/routes/thungkaew.js'
 import {
   POSTER_DISCLAIMER, POSTER_PRINT_SIZE, POSTER_ICON_OVERRIDES, POSTER_THEME_KEY, POSTER_THEMES, POSTER_TILES_MAX, loadPosterTheme, posterHeader, posterIcon, posterIssues, posterLiveRows, posterOmittedNames, posterPrintCss, posterStats, posterTiles, savePosterTheme,
 } from '../src/lib/waterDiagram/poster.js'
@@ -1077,7 +1078,7 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     assert.match(poster, /role="region"[^>]*tabIndex=\{0\}/, 'กรอบภาพที่เลื่อนแนวนอนได้ต้องโฟกัสด้วยคีย์บอร์ดได้')
     const diagramCss = read('src/components/water/WaterDiagram.css')
     assert.ok(diagramCss.includes('.wd-root.wd-paused .wp-flow') && diagramCss.includes('.wd-root[data-offscreen] .wp-flow'), 'ปุ่มหยุดเคลื่อนไหวและตัวหยุดตอนนอกจอต้องหยุดลายวิ่งของภาพนำเสนอด้วย')
-    assert.ok(!read('src/lib/waterDiagram/routes/thungkaew.js').includes('poster:'), 'ทุ่งแค้วยังไม่มีโปสเตอร์ (ยังใช้ภาพเกาะลอย)')
+    assert.match(read('src/lib/waterDiagram/routes/thungkaew.js'), /poster: THUNGKAEW_POSTER,/)
     assert.match(read('src/lib/waterDiagram/routes/tamnaktham.js'), /poster: TAMNAKTHAM_POSTER,/)
     assert.match(read('src/lib/waterDiagram/routes/namlao.js'), /poster: NAMLAO_POSTER,/)
   }
@@ -1175,6 +1176,87 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
       assert.ok(posterIssues(stem).some(t => t.includes('จุด 8') && t.includes('stem')))
       const wrongStem = TK(); wrongStem.poster.nodes[2].stem = [558, 240]
       assert.ok(posterIssues(wrongStem).some(t => t.includes('จุด 2') && t.includes('เฉพาะแผนก่อสร้างที่มี stem')))
+    }
+  }
+
+  // ═══ โปสเตอร์ทุ่งแค้ว (routes/thungkaew.poster.js) — มีจุดชำรุด · อ่าง 2 แห่งมีวงแหวน · ระดับน้ำที่สถานีนอกตำบลบนแม่น้ำ · อ่างห้วยเฮือไม่มีข้อมูล ═══
+  {
+    const TKW = () => structuredClone(THUNGKAEW_ROUTE)
+    assert.deepEqual(posterIssues(THUNGKAEW_ROUTE), [], 'ข้อมูลโปสเตอร์ทุ่งแค้วต้องผ่านตัวตรวจ')
+    // 13 จุด + แม่น้ำ = 14 · ไม่มีกลุ่ม "สายที่ N" · แผนก่อสร้าง 2 · ชำรุด 1 · ช่องค่าสด 4 (อ่าง 2 + ฝน 1 + ระดับน้ำของแม่น้ำ 1)
+    assert.deepEqual(posterStats(THUNGKAEW_ROUTE), { points: 14, lanes: 0, planned: 2, repairs: 1, gauges: 4 })
+    assert.deepEqual(posterTiles(posterStats(THUNGKAEW_ROUTE)), [[14, 'จุดสำคัญ'], [2, 'แผนก่อสร้าง'], [1, 'ชำรุดตามผัง'], [4, 'จุดวัดค่า']])
+    const icon = n => posterIcon(THUNGKAEW_ROUTE.stops.find(stop => stop.n === n))
+    assert.deepEqual(icon(9), { kind: 'repair' }, 'รางส่งน้ำชำรุดมีสัญลักษณ์ของตัวเอง ไม่ใช่สัญลักษณ์ทั่วไป')
+    assert.deepEqual([5, 10].map(icon), Array(2).fill({ kind: 'plan' }))
+    assert.deepEqual(icon(1), { kind: 'lake', na: true }, 'อ่างห้วยเฮือไม่มีข้อมูล = ขอบประเทา')
+    assert.deepEqual([icon(3), icon(12)], Array(2).fill({ kind: 'lake', na: false }))
+    assert.deepEqual([icon(4), icon(2), icon(13)], [{ kind: 'weir', n: 3 }, { kind: 'weir', n: 2 }, { kind: 'weir', n: 2 }])
+    assert.deepEqual([icon(6), icon(11), icon(7), icon(8)], [{ kind: 'pond', n: 1 }, { kind: 'pond', n: 2 }, { kind: 'gate' }, { kind: 'creeks', n: 4 }])
+
+    // เส้นวิ่ง = ทางผันห้วยเฮือ + ห้วย 4 เส้นช่วงบน + หนองใหม่ก่อ→หนองน้อย (ผังวาดลูกศร) · สายห้วยยอย/ห้วยปุ่ยที่ผังวาดเส้นหนาไม่มีลูกศรไม่วิ่ง
+    assert.deepEqual(THUNGKAEW_ROUTE.poster.streams.filter(x => x.flow).map(x => x.id).sort(), ['hue-divert', 'mid-creeks', 'mid-ponds'])
+    {
+      const bad = TKW(); bad.poster.streams.find(x => x.id === 'yoi').flow = true
+      assert.ok(posterIssues(bad).some(t => t.includes('ลำน้ำ yoi') && t.includes('flow ต้องตรงกับผัง')), 'ห้วยยอยผังวาดไม่มีลูกศร ทำให้วิ่งต้องถูกจับ')
+      const rev = TKW(); const divert = rev.poster.streams.find(x => x.id === 'hue-divert'); divert.pts = [...divert.pts].reverse()
+      assert.ok(posterIssues(rev).some(t => t.includes('ลำน้ำ hue-divert') && t.includes('จุด 2 อยู่ก่อนจุด 1') && t.includes('ทิศเส้นต้องเรียงตามที่ผังวาดลูกศร')), 'ทางผันวาดกลับด้าน (จากห้วยยอยไปห้วยเฮือ) ต้องถูกจับ')
+      const ponds = TKW(); const mp = ponds.poster.streams.find(x => x.id === 'mid-ponds'); mp.pts = [...mp.pts].reverse()
+      assert.ok(posterIssues(ponds).some(t => t.includes('ลำน้ำ mid-ponds') && t.includes('ทิศเส้นต้องเรียงตามที่ผังวาดลูกศร')), 'หนองใหม่ก่อ→หนองน้อยวาดกลับด้าน ต้องถูกจับ')
+      // สายที่ไม่วิ่งกลับด้านได้ (ไม่มีหัวลูกศร ไม่มีทิศให้ผิด)
+      const still = TKW(); const yoi = still.poster.streams.find(x => x.id === 'yoi'); yoi.pts = [...yoi.pts].reverse()
+      assert.deepEqual(posterIssues(still), [])
+    }
+    // แม่น้ำยม: ผังต้นฉบับวาดหัวลูกศรชี้ซ้าย (ปลายซ้ายของแม่น้ำ) — ระบุใน route.river.sub แล้ว โปสเตอร์ต้องวาดตาม
+    {
+      assert.match(THUNGKAEW_ROUTE.river.sub, /หัวลูกศรชี้ไปทางซ้าย/); assert.equal(THUNGKAEW_ROUTE.poster.river.arrow, 'left')
+      const bad = TKW(); bad.poster.river.arrow = 'right'
+      assert.ok(posterIssues(bad).some(t => t.includes('แม่น้ำวาดหัวลูกศรชี้ขวา แต่ผังต้นฉบับ')))
+      const none = TKW(); delete none.poster.river.arrow
+      assert.ok(posterIssues(none).some(t => t.includes('ระบุหัวลูกศรชี้ซ้าย แต่แม่น้ำบนโปสเตอร์ไม่ได้วาด')))
+      const cap = TKW(); cap.poster.river.caption = 'ตามขอบล่างของตำบล · หัวลูกศรชี้ไปทางตะวันออกตามผัง'
+      assert.ok(posterIssues(cap).some(t => t.includes('คำกำกับแม่น้ำพูดถึงทิศขวา/ตะวันออก')))
+    }
+    // ช่องค่าสด 4 ช่อง: อ่าง 2 (วงแหวน) · ฝน (ป้ายที่อ่างห้วยยอย) · ระดับน้ำ (ป้ายบนแม่น้ำ)
+    {
+      const nodes = THUNGKAEW_ROUTE.poster.nodes
+      assert.equal(nodes[3].ring, 'dam-50'); assert.equal(nodes[12].ring, 'dam-30'); assert.equal(nodes[3].pill.slot, 'rain-RES038')
+      assert.equal(THUNGKAEW_ROUTE.poster.river.pill.slot, 'level-YOM003')
+      const noRiver = TKW(); delete noRiver.poster.river.pill
+      assert.ok(posterIssues(noRiver).some(t => t.includes('level-YOM003') && t.includes('ไม่ปรากฏบนโปสเตอร์')), 'ระดับน้ำของแม่น้ำหายจากโปสเตอร์ ต้องถูกจับ')
+      const onNode = TKW(); onNode.poster.nodes[7].pill = THUNGKAEW_ROUTE.poster.river.pill; delete onNode.poster.river.pill
+      assert.ok(posterIssues(onNode).length > 0, 'ป้ายระดับน้ำแม่น้ำไปอยู่ที่จุดอื่น ต้องถูกจับ')
+      const noRing = TKW(); delete noRing.poster.nodes[12].ring
+      assert.ok(posterIssues(noRing).some(t => t.includes('dam-30')), 'อ่างห้วยปุ่ยไม่มีวงแหวน ต้องถูกจับ')
+      const dup = TKW(); dup.poster.nodes[12].pill = { slot: 'rain-RES038', x: 700, y: 100 }
+      assert.ok(posterIssues(dup).some(t => t.includes('rain-RES038') && t.includes('ซ้ำ')), 'ป้ายฝนซ้ำสองที่ ต้องถูกจับ')
+    }
+    // การ์ดค่าวัด: แถวของแม่น้ำมีชื่อ (แม่น้ำไม่มี label ใช้ name) + ข้อความเต็มของระดับน้ำ (สถานี + ระยะห่าง)
+    {
+      const badges = {
+        'dam-50': { tone: 'ok', short: '73.2%', text: 'x', detail: 'x' },
+        'rain-RES038': { tone: 'ok', short: 'ฝน 12.5 มม.', text: 'x', detail: 'x' },
+        'dam-30': { tone: 'ok', short: '76.8%', text: 'x', detail: 'x' },
+        'level-YOM003': { tone: 'ok', short: 'ต่ำกว่าตลิ่ง 4.55 ม.', text: 'หนองม่วงไข่ ห่าง 4.8 กม. · ต่ำกว่าตลิ่ง 4.55 ม.', detail: 'x' },
+      }
+      const rows = posterLiveRows(THUNGKAEW_ROUTE, badges)
+      assert.deepEqual(rows.map(r => r.slot), ['dam-50', 'rain-RES038', 'dam-30', 'level-YOM003'], 'เรียงตามหมายเลขจุด แม่น้ำเป็นแถวสุดท้าย')
+      assert.equal(rows[3].label, 'แม่น้ำยม', 'แถวของแม่น้ำต้องมีชื่อ (เดิมว่างเพราะแม่น้ำไม่มี label)')
+      assert.equal(rows[3].value, 'หนองม่วงไข่ ห่าง 4.8 กม. · ต่ำกว่าตลิ่ง 4.55 ม.')
+    }
+    // ผังเดียวกัน: ชื่อตำบลสั้น หัวโปสเตอร์ใช้ขนาดเดิม · แถบตัวเลข 4 ช่อง ชนเพดานพอดี ไม่เกิน
+    {
+      const header = posterHeader(THUNGKAEW_ROUTE)
+      assert.equal(header.titleSize, 58); assert.equal(header.tilesX, 596); assert.ok(header.fits)
+    }
+    // จุดแผนก่อสร้างต้องมีเส้นประ · จุดชำรุดไม่ต้องมี (ไม่ได้ต่อกับลำน้ำเพิ่ม) · จุดที่ไม่มีในผังต้องถูกจับ
+    {
+      const stem = TKW(); delete stem.poster.nodes[10].stem
+      assert.ok(posterIssues(stem).some(t => t.includes('จุด 10') && t.includes('stem')))
+      const repairStem = TKW(); repairStem.poster.nodes[9].stem = [640, 400]
+      assert.ok(posterIssues(repairStem).some(t => t.includes('จุด 9') && t.includes('เฉพาะแผนก่อสร้างที่มี stem')))
+      const gone = TKW(); delete gone.poster.nodes[9]
+      assert.ok(posterIssues(gone).some(t => t.includes('จุด 9: ไม่มีตำแหน่ง')))
     }
   }
 

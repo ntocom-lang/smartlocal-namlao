@@ -163,32 +163,31 @@ await mkdir(SHOT_DIR, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: !process.argv.includes('--headed') })
 
 try {
-  // ═══ ทุ่งแค้ว = แผนภาพเส้นทางน้ำ (ข้อ 1–6 + แท็บ) · ตำหนักธรรม/น้ำเลา = แผนภาพเส้นทางน้ำเหมือนกัน (ข้อ 7–8 + เลย์เอาต์ในข้อ 4) ═══
-  const route = THUNGKAEW_DIAGRAM.route
-  const routeSvg = page => section(page).locator('svg[data-route-art]')
-  const routeText = page => routeSvg(page).textContent()
-  const pill = (page, text) => routeSvg(page).locator('g[data-pill] text', { hasText: text })
+  // ═══ ผังทุกผังแสดง "ภาพนำเสนอ" (โปสเตอร์) แทนภาพเกาะลอยในหน้า — ทุ่งแค้ว (ข้อ 1–6 + แท็บ) · ตำหนักธรรม (ข้อ 7) · น้ำเลา (ข้อ 8) ═══
+  const route = DIAGRAMS.thungkaew.route
   const routeList = page => section(page).locator('[data-route-list]')
   const tabButton = (page, name) => section(page).getByRole('tab', { name })
-  // น้ำเลาแสดง "ภาพนำเสนอ" (โปสเตอร์) แทนภาพเกาะลอย — ภาพในหน้า (ไม่ใช่ในหน้าต่างพิมพ์)
+  // ภาพนำเสนอในหน้า (ไม่ใช่ในหน้าต่างพิมพ์)
   const posterSvg = page => section(page).locator('[data-poster-inline] svg[data-poster]')
-  // ผังที่แสดงภาพนำเสนอแทนภาพเกาะลอย (ทุ่งแค้วยังใช้ภาพเกาะลอย — เพิ่มผังใหม่ที่นี่)
-  const hasPosterArt = id => id === 'namlao' || id === 'tamnaktham'
-  // รอให้ค่าสดของภาพนำเสนอขึ้นแล้ว (น้ำเลา = วงแหวนอ่าง · ตำหนักธรรม = ป้ายระดับน้ำ Y.38)
-  const posterReady = (svg, id) => (id === 'namlao'
-    ? svg.locator('[data-poster-ring] text', { hasText: '84.5%' })
-    : svg.locator('[data-poster-pill] text', { hasText: 'ต่ำกว่าตลิ่ง 2.35 ม.' })).first().waitFor({ timeout: 10_000 })
-  // สภาพค่าสดบนโปสเตอร์ใบใดใบหนึ่ง (วงแหวนอ่าง + แคปซูลฝน + ช่องในการ์ดค่าวัด) ใช้เทียบภาพในหน้ากับหน้าต่างพิมพ์ได้
+  // รอให้ค่าสดของภาพนำเสนอขึ้นแล้ว (ทุ่งแค้ว = วงแหวนอ่างห้วยยอย · น้ำเลา = วงแหวนอ่างแม่คำปอง · ตำหนักธรรม = ป้ายระดับน้ำ Y.38)
+  const READY = { thungkaew: ['[data-poster-ring] text', '73.2%'], namlao: ['[data-poster-ring] text', '84.5%'], tamnaktham: ['[data-poster-pill] text', 'ต่ำกว่าตลิ่ง 2.35 ม.'] }
+  const posterReady = (svg, id) => svg.locator(READY[id][0], { hasText: READY[id][1] }).first().waitFor({ timeout: 10_000 })
+  const TONES = Object.keys(CHIP_TONES)
+  // ข้อความของส่วนที่เป็นค่าสดบนโปสเตอร์ (วงแหวน + แคปซูล + การ์ดค่าวัด) — ไม่นับท้ายภาพที่เล่าชื่อสถานีในรายการ "ไม่ได้ใส่ในภาพนี้"
+  const posterLiveText = svg => svg.locator('[data-poster-ring], [data-poster-pill], [data-poster-live-card]').allTextContents().then(parts => parts.join(' | '))
+  // สภาพค่าสดบนโปสเตอร์ใบใดใบหนึ่ง (วงแหวนอ่างทุกวง + แคปซูลทุกใบ + ช่องในการ์ดค่าวัด) ใช้เทียบภาพในหน้ากับหน้าต่างพิมพ์ได้
   const posterState = svg => svg.evaluate(el => {
-    const ring = el.querySelector('[data-poster-ring]')
+    const ringOf = ring => ({
+      tone: ring.getAttribute('data-tone'),
+      text: ring.querySelector('text').textContent,
+      filled: [...ring.querySelectorAll('circle[stroke-dasharray]')].some(c => c.getAttribute('stroke') !== 'rgba(148,163,184,.3)'),
+      // หมายเหตุใต้ชื่ออ่าง (เช่น ตัวเลขซ้ำเดิม) อยู่ในกลุ่มวงแหวนเอง — ข้อความเดียวกันซ้ำในการ์ดค่าวัดด้วย เทสต์ที่ดูข้อความรวมของภาพจึงมองไม่ออกว่าหมายเหตุใต้อ่างหาย
+      note: ring.querySelectorAll('text')[1]?.textContent ?? null,
+    })
+    const rings = [...el.querySelectorAll('[data-poster-ring]')]
     return {
-      ring: ring ? {
-        tone: ring.getAttribute('data-tone'),
-        text: ring.querySelector('text').textContent,
-        filled: [...ring.querySelectorAll('circle[stroke-dasharray]')].some(c => c.getAttribute('stroke') !== 'rgba(148,163,184,.3)'),
-        // หมายเหตุใต้ชื่ออ่าง (เช่น ตัวเลขซ้ำเดิม) อยู่ในกลุ่มวงแหวนเอง — ข้อความเดียวกันซ้ำในการ์ดค่าวัดด้วย เทสต์ที่ดูข้อความรวมของภาพจึงมองไม่ออกว่าหมายเหตุใต้อ่างหาย
-        note: ring.querySelectorAll('text')[1]?.textContent ?? null,
-      } : null,
+      ring: rings[0] ? ringOf(rings[0]) : null,
+      rings: rings.map(ring => ({ slot: ring.getAttribute('data-poster-ring'), ...ringOf(ring) })),
       pills: [...el.querySelectorAll('[data-poster-pill]')].map(p => ({
         slot: p.getAttribute('data-poster-pill'), tone: p.getAttribute('data-tone'), text: p.querySelector('text').textContent,
         dashed: p.querySelector('rect').hasAttribute('stroke-dasharray'),
@@ -197,29 +196,45 @@ try {
       text: el.textContent,
     }
   })
-  // หน้าตาจริงของกรอบป้าย (สี + ขอบประ) แยกตามโทน — กันกรณีโทนในข้อมูลถูกต้องแต่วาดออกมาเหมือนกันหมด
-  const pillLook = (page, tone) => routeSvg(page).locator(`g[data-pill="${tone}"] > rect`).evaluateAll(rects =>
-    rects.map(r => ({ stroke: r.getAttribute('stroke'), dashed: r.hasAttribute('stroke-dasharray') })))
+  const ringsOf = state => state.rings.map(r => [r.slot, r.tone, r.text, r.filled, r.note]).sort((a, b) => a[0].localeCompare(b[0]))
+  const pillsOf = state => state.pills.map(p => [p.slot, p.tone, p.text, p.dashed])
 
-  // ป้ายที่โทนไม่อยู่ในตาราง CHIP_TONES (เช่น undefined จากช่องที่ไม่มี) — ต้องไม่มีเลย
-  const unknownPillTones = page => routeSvg(page).locator('g[data-pill]').evaluateAll(
-    (els, known) => els.map(el => el.getAttribute('data-pill')).filter(tone => !known.includes(tone)),
-    Object.keys(CHIP_TONES))
-
-  // ── 1) ค่าสดปกติ: ป้ายบนภาพ + รายการจุด ──
-  await check('ค่าสดปกติ: ป้ายบนภาพ (อ่าง 2 แห่ง · ฝน · ระดับน้ำพร้อมระยะ) และรายการจุดมีหมายเลขตรงกัน', async () => {
-    const { context, page, problems } = await openScene(browser, baseUrl, 'normal')
+  // ── 1–4) ทุ่งแค้ว: ค่าสด ปกติ / ค้าง / ไม่มีสถานี+Worker ล่ม / ค่าว่าง ──
+  const TKW_SLOTS = ['dam-30', 'dam-50', 'level-YOM003', 'rain-RES038']
+  const TKW_WHERE = 'หนองม่วงไข่ ห่าง 4.8 กม.'
+  await check('ทุ่งแค้ว: ค่าสดปกติ — วงแหวนอ่าง 2 แห่ง + ป้ายฝน + ป้ายระดับน้ำที่แม่น้ำ · การ์ดค่าวัดบอกสถานีและระยะ · หมายเลข 1–14 · รายการจุดบอกค่าเดียวกัน · ลำดับหัวโปสเตอร์ → ปุ่มหยุด → คำกำกับ → แท็บ → ภาพ', async () => {
+    const { context, page, problems, reservoirRequests } = await openScene(browser, baseUrl, 'normal')
     try {
-      await pill(page, '73.2%').waitFor({ timeout: 8000 })
-      await pill(page, '76.8%').waitFor()
-      await pill(page, 'ฝน 12.5 มม.').waitFor()
-      await pill(page, 'ต่ำกว่าตลิ่ง 4.55 ม.').waitFor()
-      assert.equal(await routeSvg(page).locator('g[data-pill="ok"]').count(), 4, 'ป้ายค่าสดสด 4 ช่อง (โทนฟ้า)')
-      assert.deepEqual(await pillLook(page, 'ok'), Array(4).fill({ stroke: CHIP_TONES.ok.stroke, dashed: false }), 'ป้ายที่มีค่าสดต้องเป็นขอบทึบสีฟ้า')
-      assert.equal(await routeSvg(page).locator('[data-pin]').count(), 14)
-      assert.equal(await routeList(page).locator('li').count(), 14, 'รายการจุดต้องครบ 14 จุด (13 เกาะ + แม่น้ำ)')
+      const svg = posterSvg(page)
+      await posterReady(svg, 'thungkaew')
+      await svg.locator('[data-poster-ring] text', { hasText: '76.8%' }).first().waitFor({ timeout: 10_000 })
+      assert.deepEqual([...new Set(reservoirRequests)].sort(), ['30', '50'], 'ขอรายงานอ่างเล็กเฉพาะ 2 อ่างของผัง')
+      assert.equal(await section(page).locator('svg[data-route-art]').count(), 0, 'ทุ่งแค้วไม่แสดงภาพเกาะลอยแล้ว')
+      assert.equal(await section(page).locator('[data-route-legend]').count(), 0, 'คำอธิบายสัญลักษณ์ของภาพเกาะลอยไม่ติดมา (ภาพนำเสนอมีคำอธิบายในภาพเอง)')
+      const state = await posterState(svg)
+      assert.deepEqual(ringsOf(state), [['dam-30', 'ok', '76.8%', true, null], ['dam-50', 'ok', '73.2%', true, null]], 'วงแหวนอ่างห้วยปุ่ย/ห้วยยอย')
+      assert.deepEqual(pillsOf(state), [['level-YOM003', 'ok', 'ต่ำกว่าตลิ่ง 4.55 ม.', false], ['rain-RES038', 'ok', 'ฝน 12.5 มม.', false]], 'ป้ายระดับน้ำที่แม่น้ำ + ป้ายฝน ขอบทึบสีฟ้า')
+      assert.deepEqual([...state.liveRows].sort(), TKW_SLOTS, 'การ์ดค่าวัดครบ 4 ช่อง')
+      assert.ok([...state.rings, ...state.pills].every(item => TONES.includes(item.tone)), 'ป้ายทุกใบต้องมีโทนที่รู้จัก')
+      const liveText = await posterLiveText(svg)
+      assert.ok(liveText.includes(`${TKW_WHERE} · ต่ำกว่าตลิ่ง 4.55 ม.`), 'การ์ดค่าวัดบอกสถานีวัดระดับน้ำและระยะห่าง (สถานีอยู่นอกตำบล)')
+      assert.ok(liveText.includes('อ่างห้วยยอย: ฝน 12.5 มม.'), 'ฝนที่สถานีอ่างห้วยยอย')
+      assert.equal(await svg.locator('[data-poster-node]').count(), 14)
+      assert.deepEqual(await svg.locator('g[data-poster-node][data-status="planned"]').evaluateAll(els => els.map(el => Number(el.getAttribute('data-poster-node')))), [5, 10], 'จุดแผนก่อสร้าง (ป้าย "แผน")')
+      assert.deepEqual(await svg.locator('g[data-poster-node][data-status="repair"]').evaluateAll(els => els.map(el => Number(el.getAttribute('data-poster-node')))), [9], 'จุดชำรุด (ป้าย "ชำรุด")')
+      // จุดชำรุดมีป้าย "ชำรุด" ในภาพจริง + สัญลักษณ์ท่อขาด (ไม่ใช่วงเปล่า) · ป้ายนี้ไม่ขึ้นที่จุดอื่น
+      assert.equal(await svg.locator('g[data-poster-node="9"]').evaluate(el => el.textContent.includes('ชำรุด')), true, 'จุด 9 มีป้าย "ชำรุด"')
+      assert.equal(await svg.locator('g[data-poster-node="9"] path[d="M-4 -8L4 10"]').count(), 1, 'จุด 9 มีสัญลักษณ์ท่อขาด')
+      assert.equal(await svg.locator('g[data-poster-node]:not([data-poster-node="9"])').evaluateAll(els => els.filter(el => el.textContent.includes('ชำรุด')).length), 0, 'ไม่มีจุดอื่นที่ติดป้าย "ชำรุด"')
+      assert.deepEqual(await svg.locator('[data-poster-tile]').evaluateAll(els => els.map(el => [el.getAttribute('data-poster-tile'), el.querySelectorAll('text')[0].textContent])), [['จุดสำคัญ', '14'], ['แผนก่อสร้าง', '2'], ['ชำรุดตามผัง', '1'], ['จุดวัดค่า', '4']])
+      // แม่น้ำยม: หัวลูกศรชี้ซ้ายตามผังต้นฉบับ (วาดจริง 1 ตัว อยู่ปลายซ้ายของแถบ — ไม่ใช่แค่ค่าในข้อมูล)
+      assert.equal(await svg.locator('[data-poster-river]').getAttribute('data-poster-river-arrow'), 'left')
+      const tkwHead = await svg.locator('[data-poster-river] path[fill="#fff"]').evaluateAll(els => els.map(el => el.getBoundingClientRect()))
+      const tkwStrip = await svg.locator('[data-poster-river] rect').first().evaluate(el => el.getBoundingClientRect())
+      assert.equal(tkwHead.length, 1, 'หัวลูกศรแม่น้ำ 1 ตัว'); assert.ok(tkwHead[0].right < tkwStrip.left + tkwStrip.width * 0.1, 'หัวลูกศรอยู่ปลายซ้ายของแถบแม่น้ำ')
+      assert.equal(await routeList(page).locator('li').count(), 14, 'รายการจุดต้องครบ 14 จุด (13 จุด + แม่น้ำ)')
       const list = await routeList(page).innerText()
-      for (const expected of ['73.2% · รายงาน', '76.8% · รายงาน', 'ฝนสะสม 24 ชม. 12.5 มม.', 'หนองม่วงไข่ ห่าง 4.8 กม. · ต่ำกว่าตลิ่ง 4.55 ม.']) {
+      for (const expected of ['73.2% · รายงาน', '76.8% · รายงาน', 'ฝนสะสม 24 ชม. 12.5 มม.', `${TKW_WHERE} · ต่ำกว่าตลิ่ง 4.55 ม.`]) {
         assert.ok(list.includes(expected), `รายการจุดต้องมี "${expected}"`)
       }
       assert.match(await section(page).locator('h2').innerText(), /เส้นทางน้ำ\s*ตำบลทุ่งแค้ว/)
@@ -230,7 +245,7 @@ try {
         await top(section(page).getByRole('button', { name: 'หยุดเคลื่อนไหว' })),
         await top(section(page).locator('[data-diagram-disclaimer]')),
         await top(section(page).getByRole('tablist')),
-        await top(routeSvg(page)),
+        await top(svg),
       ]
       assert.deepEqual(order, [...order].sort((x, y) => x - y), `ลำดับบนลงล่างต้องเป็น หัวโปสเตอร์ → ปุ่มหยุด → คำกำกับ → แท็บ → ภาพ: ${order}`)
       assert.equal(await section(page).locator('h2').count(), 1, 'ส่วนนี้มี h2 เดียว (หัวโปสเตอร์)')
@@ -241,61 +256,66 @@ try {
     } finally { await context.close() }
   })
 
-  // ── 2) ค้าง: ไม่ใช่ "ปกติ" ──
-  await check('ค่าค้าง: ป้ายขอบประเทา + หมายเหตุ "ไม่มีรายงานใหม่/ไม่มีค่าใหม่" · ค่าฝน/ระดับน้ำที่ค้างไม่โชว์เป็นตัวเลข · ไม่วาดลูกศรบอกระยะ', async () => {
+  await check('ทุ่งแค้ว: ค่าค้าง — วงแหวน "ค้าง" ขอบประ + หมายเหตุ "ไม่มีรายงานใหม่" · ป้ายฝน/ระดับน้ำ "ไม่มีค่าใหม่" ขอบประเทา · ไม่โชว์ค่าที่ค้างเป็นตัวเลขปัจจุบัน · รายการจุดและหน้าต่างพิมพ์ตรงกัน', async () => {
     const { context, page } = await openScene(browser, baseUrl, 'stale')
     try {
-      await pill(page, 'ไม่มีรายงานใหม่').first().waitFor({ timeout: 8000 })
-      assert.equal(await routeSvg(page).locator('g[data-pill="stale"]').count(), 4, 'อ่าง 2 + ฝน + ระดับน้ำ ค้างทั้งหมด')
-      assert.deepEqual(await pillLook(page, 'stale'), Array(4).fill({ stroke: CHIP_TONES.stale.stroke, dashed: true }), 'ป้ายที่ค้างต้องเป็นขอบประสีเทา ไม่ใช่ขอบทึบสีฟ้าแบบมีค่าสด')
-      assert.equal(await pill(page, 'ไม่มีรายงานใหม่').count(), 2, 'อ่างทั้งสองต้องบอกว่าไม่มีรายงานใหม่')
-      assert.equal(await pill(page, 'ไม่มีค่าใหม่').count(), 2, 'ฝนและระดับน้ำต้องบอกว่าไม่มีค่าใหม่')
-      const text = await routeText(page)
-      assert.ok(!/12\.5|4\.55|ต่ำกว่าตลิ่ง/.test(text), 'ค่าฝน/ระดับน้ำที่ค้างต้องไม่โชว์เป็นค่าปัจจุบัน')
-      assert.equal(await routeSvg(page).locator('[data-river] g[aria-hidden="true"]').count(), 0, 'ไม่มีค่าสด = ไม่วาดลูกศรบอกระยะต่ำกว่าตลิ่ง')
+      const svg = posterSvg(page)
+      await svg.locator('[data-poster-pill] text', { hasText: 'ไม่มีค่าใหม่' }).first().waitFor({ timeout: 10_000 })
+      await svg.locator('[data-poster-ring] text', { hasText: 'ค้าง' }).first().waitFor({ timeout: 10_000 })
+      const state = await posterState(svg)
+      assert.deepEqual(ringsOf(state), [['dam-30', 'stale', 'ค้าง', false, 'ไม่มีรายงานใหม่'], ['dam-50', 'stale', 'ค้าง', false, 'ไม่มีรายงานใหม่']], 'อ่างทั้งสองค้าง: วงแหวนไม่มีส่วนเติม บอกว่าไม่มีรายงานใหม่')
+      assert.deepEqual(pillsOf(state), [['level-YOM003', 'stale', 'ไม่มีค่าใหม่', true], ['rain-RES038', 'stale', 'ไม่มีค่าใหม่', true]], 'ป้ายที่ค้างต้องขอบประสีเทา ไม่ใช่ขอบทึบสีฟ้า')
+      const liveText = await posterLiveText(svg)
+      assert.ok(!/12\.5|4\.55|ต่ำกว่าตลิ่ง|73\.2|76\.8/.test(liveText), 'ค่าที่ค้างต้องไม่โชว์เป็นค่าปัจจุบัน')
+      assert.equal(await svg.locator('[data-poster-ring] circle[stroke-dasharray^="4 4"]').count(), 2, 'วงแหวนที่ค้างเป็นเส้นประ')
       const list = await routeList(page).innerText()
       assert.ok(list.includes('ไม่มีรายงานใหม่ตั้งแต่') && list.includes('ไม่มีค่าใหม่ (วัดล่าสุด'))
+      await page.locator('[data-poster-open]').click()
+      const dialog = page.locator('[data-poster-overlay] svg[data-poster]')
+      await dialog.waitFor({ timeout: 10_000 })
+      assert.deepEqual(await posterState(dialog), state, 'หน้าต่างพิมพ์ต้องแสดงค่าเดียวกับภาพในหน้า')
       await section(page).screenshot({ path: path.join(SHOT_DIR, 'route-stale-1280.png') })
     } finally { await context.close() }
   })
 
-  // ── 3) ไม่มีสถานี/Worker ล่ม: บอกว่าไม่มี ไม่กลายเป็น 0 ──
-  await check('ไม่มีสถานี + Worker ล่ม: ป้าย "ไม่มีค่า" + "โหลดไม่ได้" ไม่มีเลข 0 หรือคำว่าปกติ · ไม่เกิด JS error', async () => {
+  await check('ทุ่งแค้ว: ไม่มีสถานี + Worker ล่ม — "ไม่มีค่า" + "โหลดไม่ได้" ไม่มีเลข 0 หรือคำว่าปกติ · การ์ดค่าวัดมีแถวเสมอ · ไม่เกิด JS error', async () => {
     const { context, page, problems } = await openScene(browser, baseUrl, 'empty')
     try {
-      await pill(page, 'โหลดไม่ได้').first().waitFor({ timeout: 8000 })
-      assert.equal(await pill(page, 'โหลดไม่ได้').count(), 2, 'อ่าง 2 แห่งโหลดไม่ได้')
-      assert.equal(await routeSvg(page).locator('g[data-pill="na"] text', { hasText: /^ไม่มีค่า$/ }).count(), 4, 'อ่าง 2 + ฝน + ระดับน้ำ = ไม่มีค่า')
-      assert.ok((await pillLook(page, 'na')).every(l => l.dashed && l.stroke === CHIP_TONES.na.stroke), 'ป้ายไม่มีค่าต้องเป็นขอบประสีเทา')
-      const text = await routeText(page)
-      assert.ok(!/ปกติ|0 มม\.|0%/.test(text), 'ห้ามมี "ปกติ" หรือ 0 เมื่อไม่มีค่า')
+      const svg = posterSvg(page)
+      await svg.locator('[data-poster-ring] text', { hasText: 'ไม่มีค่า' }).first().waitFor({ timeout: 10_000 })
+      await svg.locator('[data-poster-ring] text', { hasText: 'โหลดไม่ได้' }).first().waitFor({ timeout: 10_000 })
+      const state = await posterState(svg)
+      assert.deepEqual(ringsOf(state), [['dam-30', 'na', 'ไม่มีค่า', false, 'โหลดไม่ได้'], ['dam-50', 'na', 'ไม่มีค่า', false, 'โหลดไม่ได้']], 'อ่าง 2 แห่งโหลดไม่ได้')
+      assert.deepEqual(pillsOf(state), [['level-YOM003', 'na', 'ไม่มีค่า', true], ['rain-RES038', 'na', 'ไม่มีค่า', true]], 'ป้ายไม่มีค่าต้องขอบประสีเทา')
+      assert.deepEqual([...state.liveRows].sort(), TKW_SLOTS, 'การ์ดค่าวัดต้องมีแถวทุกช่องแม้ไม่มีค่า')
+      const liveText = await posterLiveText(svg)
+      assert.ok(!/ปกติ|0 มม|0%/.test(liveText), 'ห้ามมี "ปกติ" หรือ 0 เมื่อไม่มีค่า')
       const list = await routeList(page).innerText()
       assert.ok(list.includes('ยังโหลดรายงานอ่างนี้ไม่ได้ในตอนนี้') && list.includes('ไม่มีค่าในระบบ'))
       assert.deepEqual(problems, [], 'Worker ล่มต้องไม่ทำให้เกิด JS error')
     } finally { await context.close() }
   })
 
-  await check('ค่าว่างจากต้นทาง (rain/bank เป็น null) ไม่กลายเป็น 0 หรือ "ต่ำกว่าตลิ่ง 0"', async () => {
+  await check('ทุ่งแค้ว: ค่าว่างจากต้นทาง (rain/bank เป็น null) ไม่กลายเป็น 0 หรือ "ต่ำกว่าตลิ่ง 0"', async () => {
     const { context, page } = await openScene(browser, baseUrl, 'nullvalues')
     try {
-      await pill(page, '73.2%').waitFor({ timeout: 8000 })
-      assert.equal(await routeSvg(page).locator('g[data-pill="na"] text', { hasText: /^ไม่มีค่า$/ }).count(), 2, 'ฝนและระดับน้ำว่าง = ไม่มีค่า')
-      const text = await routeText(page)
-      assert.ok(!/ตลิ่ง|0 มม/.test(text))
+      const svg = posterSvg(page)
+      await posterReady(svg, 'thungkaew')
+      const state = await posterState(svg)
+      assert.deepEqual(pillsOf(state), [['level-YOM003', 'na', 'ไม่มีค่า', true], ['rain-RES038', 'na', 'ไม่มีค่า', true]], 'ฝนและระดับน้ำว่าง = ไม่มีค่า')
+      assert.ok(!/ตลิ่ง|0 มม/.test(await posterLiveText(svg)))
     } finally { await context.close() }
   })
 
   // ── 4) เลย์เอาต์ ──
-  // ทุกผัง (แผนภาพเส้นทางน้ำ): ไม่มีปุ่มสลับโหมด/ซูม · มือถือเริ่มที่แผนภาพ · จอใหญ่รายการซ้ายภาพขวา · ทุกแท็บไม่ล้นจอ
-  for (const [id, scene, waitText, shotName] of [['thungkaew', 'normal', '73.2%', 'route'], ['tamnaktham', 'tkNormal', 'ต่ำกว่าตลิ่ง 2.35 ม.', 'tk-route'], ['namlao', 'nlNormal', '84.5%', 'nl-route']]) for (const width of [360, 390, 768, 1280]) {
+  // ทุกผัง: ไม่มีปุ่มสลับโหมดผัง/ซูม · มือถือเริ่มที่แผนภาพ · จอใหญ่ภาพบนรายการล่าง · ทุกแท็บไม่ล้นจอ
+  for (const [id, scene, shotName] of [['thungkaew', 'normal', 'route'], ['tamnaktham', 'tkNormal', 'tk-route'], ['namlao', 'nlNormal', 'nl-route']]) for (const width of [360, 390, 768, 1280]) {
     await check(`เลย์เอาต์ ${id} ${width}px: ไม่เลื่อนแนวนอน · ไม่ล้นขอบจอ · ปุ่ม/ลิงก์ ≥ 44px · ตัวหนังสือบนภาพไม่เล็กเกินไป · ภาพ/รายการ/ที่มาตามแท็บ`, async () => {
       const { context, page } = await openScene(browser, baseUrl, scene, { width, diagram: id === 'thungkaew' ? null : id })
       try {
-        const artSvg = hasPosterArt(id) ? posterSvg(page) : routeSvg(page)
-        if (id === 'namlao') await artSvg.locator('[data-poster-ring] text', { hasText: waitText }).waitFor({ timeout: 10_000 })
-        else if (hasPosterArt(id)) await artSvg.locator('[data-poster-pill] text', { hasText: waitText }).waitFor({ timeout: 10_000 })
-        else await pill(page, waitText).waitFor({ timeout: 8000 })
-        assert.equal(await section(page).getByRole('group', { name: 'โหมดแสดงผัง' }).count(), 0, 'มุมมองใหม่ไม่มีปุ่มสลับโหมด')
+        const artSvg = posterSvg(page)
+        await posterReady(artSvg, id)
+        assert.equal(await section(page).getByRole('group', { name: 'โหมดแสดงผัง' }).count(), 0, 'มุมมองใหม่ไม่มีปุ่มสลับโหมดผัง')
         assert.equal(await section(page).getByRole('button', { name: 'ย่อผัง' }).count() + await section(page).getByRole('button', { name: 'ขยายผัง' }).count(), 0, 'ภาพพอดีจอ ไม่มีปุ่มซูม')
         // ตรวจเลย์เอาต์ของแท็บที่เปิดอยู่ตอนนี้ (เรียกซ้ำทุกแท็บ)
         const layoutIssues = async label => {
@@ -315,11 +335,11 @@ try {
           assert.deepEqual(small, [], `${label}: ปุ่ม/ลิงก์เล็กกว่า 44px: ${JSON.stringify(small)}`)
         }
         await layoutIssues('แท็บแผนภาพ')
-        // ขนาดตัวหนังสือจริงบนจอ = font-size × สัดส่วนที่ภาพถูกย่อ (ภาพเป็น viewBox 480 หน่วย)
-        const minPx = await artSvg.evaluate((svg, selector) => {
+        // ขนาดตัวหนังสือจริงบนจอ = font-size × สัดส่วนที่ภาพถูกย่อ (ภาพกว้างขั้นต่ำ 900px บนมือถือ)
+        const minPx = await artSvg.evaluate(svg => {
           const scale = svg.getBoundingClientRect().width / svg.viewBox.baseVal.width
-          return Math.min(...[...svg.querySelectorAll(selector)].map(t => parseFloat(getComputedStyle(t).fontSize) * scale))
-        }, hasPosterArt(id) ? 'text.wp-lbl, g[data-poster-pill] text' : 'g[data-pill] text, [data-pin] text')
+          return Math.min(...[...svg.querySelectorAll('text.wp-lbl, g[data-poster-pill] text')].map(t => parseFloat(getComputedStyle(t).fontSize) * scale))
+        })
         assert.ok(minPx >= (width <= 360 ? 8.5 : 9.5), `ตัวหนังสือบนภาพเล็กเกินไป ${minPx.toFixed(1)}px ที่ ${width}px`)
         const art = await artSvg.boundingBox()
         if (width < 1024) {
@@ -330,8 +350,7 @@ try {
           await layoutIssues('แท็บรายการจุด')
         } else {
           const list = await routeList(page).boundingBox()
-          if (hasPosterArt(id)) assert.ok(list && list.y >= art.y + art.height - 2, 'จอใหญ่: ภาพนำเสนอเต็มกว้างอยู่บน รายการจุดอยู่ใต้ภาพ')
-          else assert.ok(list && list.x < art.x, 'จอใหญ่: รายการซ้าย ภาพขวา')
+          assert.ok(list && list.y >= art.y + art.height - 2, 'จอใหญ่: ภาพนำเสนอเต็มกว้างอยู่บน รายการจุดอยู่ใต้ภาพ')
           assert.equal(await section(page).getByRole('tab', { name: /^รายการจุด/ }).count(), 0, 'จอกว้างรายการอยู่ข้างภาพแล้ว ไม่มีแท็บรายการ')
         }
         await tabButton(page, /^ที่มา$/).click()
@@ -344,70 +363,12 @@ try {
     })
   }
 
-  // ── 5) เส้นวิ่ง / หยุด / ลดการเคลื่อนไหว ──
-  const flowIds = route.streams.filter(s => s.flow).map(s => s.id).sort()
-  await check(`เส้นวิ่ง: เฉพาะลำน้ำที่ผังวาดลูกศร (${flowIds.length} เส้น) พร้อมหัวลูกศร · ลำน้ำอื่นนิ่งและไม่มีหัวลูกศร · แผนก่อสร้าง/ชำรุดไม่มีแอนิเมชัน`, async () => {
+  // ── 6) ข้อความบังคับ + ชื่อที่ยังไม่ยืนยัน + ครบทุกจุด (ทุ่งแค้ว) ──
+  await check('ทุ่งแค้ว: คำกำกับ "ไม่ได้แสดงว่ามีน้ำไหลจริง" + "ไม่ใช่แผนที่" + คำอธิบายสัญลักษณ์เฉพาะที่ใช้ + ที่มา + ลิงก์ต้นฉบับ', async () => {
     const { context, page } = await openScene(browser, baseUrl, 'normal')
     try {
-      await pill(page, '73.2%').waitFor({ timeout: 8000 })
-      const flowing = await routeSvg(page).locator('g[data-flow="true"]').evaluateAll(els => els.map(el => el.getAttribute('data-stream')).sort())
-      assert.deepEqual(flowing, flowIds)
-      const names = await routeSvg(page).locator('path.wr-flow').evaluateAll(els => els.map(el => getComputedStyle(el).animationName))
-      assert.equal(names.length, flowIds.length)
-      assert.ok(names.every(name => name === 'wr-dash'), 'เส้นวิ่งทุกเส้นต้องมีแอนิเมชัน')
-      const still = await routeSvg(page).locator('path.wr-hl').evaluateAll(els => els.map(el => getComputedStyle(el).animationName))
-      assert.equal(still.length, route.streams.length - flowIds.length)
-      assert.ok(still.every(name => name === 'none'), 'ลำน้ำที่ผังไม่วาดลูกศรต้องไม่วิ่ง')
-      assert.equal(await routeSvg(page).locator('g[data-flow="true"] > path[marker-end]').count(), flowIds.length, 'เส้นวิ่งมีหัวลูกศรปลายทาง')
-      assert.equal(await routeSvg(page).locator('g[data-flow="false"] path[marker-end]').count(), 0, 'ลำน้ำที่ไม่วิ่งไม่มีหัวลูกศร (ไม่เดาทิศ)')
-      // จุดแผนก่อสร้าง/ชำรุดทั้งกลุ่มต้องไม่มีแอนิเมชันเลย
-      const animatedInside = await routeSvg(page).evaluate(svg => [...svg.querySelectorAll('[data-status="planned"] *, [data-status="repair"] *')]
-        .filter(el => getComputedStyle(el).animationName !== 'none').length)
-      assert.equal(animatedInside, 0)
-      const waves = await routeSvg(page).locator('.wr-wave').evaluateAll(els => els.map(el => getComputedStyle(el).animationName))
-      assert.ok(waves.length === 2 && waves.every(name => name === 'wr-wave'), 'แม่น้ำมีคลื่น 2 ชั้น')
-    } finally { await context.close() }
-  })
-
-  await check('ปุ่ม "หยุดเคลื่อนไหว": หยุดแอนิเมชันจริง (เส้นวิ่ง + คลื่น) · กดอีกครั้งเล่นต่อ', async () => {
-    // เริ่มที่แท็บสถานการณ์ → แผนภาพยังถูกซ่อนอยู่ (เมาท์ไว้แต่ไม่เห็น)
-    const { context, page } = await openScene(browser, baseUrl, 'normal', { tab: 'situation' })
-    try {
-      await pill(page, '73.2%').waitFor({ state: 'attached', timeout: 8000 })
-      const state = sel => routeSvg(page).locator(sel).first().evaluate(el => getComputedStyle(el).animationPlayState)
-      // ภาพที่ยังอยู่นอกจอ (ตัวเฝ้าดู IntersectionObserver ตั้ง data-offscreen) ถูกหยุดโดยตั้งใจ — เลื่อนเข้าจอก่อนตรวจ
-      assert.equal(await section(page).getAttribute('data-offscreen'), 'true', 'แท็บเส้นทางน้ำยังไม่ถูกเปิด (ซ่อนอยู่) = หยุดอยู่ (ไม่กินแบต)')
-      await page.getByRole('tab', { name: 'เส้นทางน้ำ' }).click()
-      await page.waitForFunction(() => !document.querySelector('#water-diagram')?.hasAttribute('data-offscreen'), null, { timeout: 5000 })
-      assert.equal(await state('path.wr-flow'), 'running')
-      assert.equal(await state('.wr-wave'), 'running')
-      await section(page).getByRole('button', { name: 'หยุดเคลื่อนไหว' }).click()
-      assert.equal(await state('path.wr-flow'), 'paused')
-      assert.equal(await state('.wr-wave'), 'paused')
-      assert.equal(await section(page).getByRole('button', { name: 'เล่นเคลื่อนไหว' }).getAttribute('aria-pressed'), 'true')
-      await section(page).getByRole('button', { name: 'เล่นเคลื่อนไหว' }).click()
-      assert.equal(await state('path.wr-flow'), 'running')
-    } finally { await context.close() }
-  })
-
-  await check('ผู้ใช้ตั้งค่า "ลดการเคลื่อนไหว": เส้นและคลื่นไม่วิ่งเลย · มีข้อความบอก · หัวลูกศรยังบอกทิศ', async () => {
-    const { context, page } = await openScene(browser, baseUrl, 'normal', { reducedMotion: 'reduce' })
-    try {
-      await pill(page, '73.2%').waitFor({ timeout: 8000 })
-      for (const sel of ['path.wr-flow', '.wr-wave', '.wr-fall']) {
-        const names = await routeSvg(page).locator(sel).evaluateAll(els => els.map(el => getComputedStyle(el).animationName))
-        assert.ok(names.length > 0 && names.every(name => name === 'none'), `${sel}: animationName ต้องเป็น none: ${[...new Set(names)]}`)
-      }
-      assert.equal(await routeSvg(page).locator('g[data-flow="true"] > path[marker-end]').count(), flowIds.length, 'ดูทิศจากหัวลูกศรได้แม้ไม่วิ่ง')
-      assert.match(await section(page).innerText(), /ตั้งค่าให้ลดการเคลื่อนไหว/)
-    } finally { await context.close() }
-  })
-
-  // ── 6) ข้อความบังคับ + ชื่อที่ยังไม่ยืนยัน + ครบทุกจุด ──
-  await check('คำกำกับ "ไม่ได้แสดงว่ามีน้ำไหลจริง" + "ไม่ใช่แผนที่" + คำอธิบายสัญลักษณ์ + ที่มา + ลิงก์ต้นฉบับ', async () => {
-    const { context, page } = await openScene(browser, baseUrl, 'normal')
-    try {
-      await pill(page, '73.2%').waitFor({ timeout: 8000 })
+      const svg = posterSvg(page)
+      await posterReady(svg, 'thungkaew')
       const artText = await section(page).innerText()
       await tabButton(page, /^ที่มา$/).click()
       const text = artText + '\n' + await section(page).innerText()
@@ -415,12 +376,16 @@ try {
       for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'วาดใหม่ ไม่ได้คัดลอกภาพ', 'ไม่ใช่ประกาศเตือนภัย', 'ไม่ใช่แผนที่', 'ไม่ได้หมายถึงสิ่งก่อสร้างหรือพื้นที่จริง']) {
         assert.ok(text.includes(needed), `ต้องมี "${needed}"`)
       }
-      const legend = await section(page).locator('[data-route-legend]').innerText()
-      for (const needed of ['อ่างเก็บน้ำ', 'ฝาย', 'หนอง', 'ประตูระบายน้ำ', 'กล่องแดงประ = แผนก่อสร้าง ไม่เคลื่อนไหว', 'ลายขีดแดง = ชำรุดตามผัง ไม่เคลื่อนไหว', 'เส้นวิ่ง + หัวลูกศร', 'ขอบประ = ไม่มีค่า']) {
+      const legend = await svg.locator('[data-poster-legend]').evaluate(el => el.textContent)
+      for (const needed of ['เส้นวิ่ง = ผังวาดลูกศรทิศน้ำไว้', 'กรอบแดงประ = แผนก่อสร้าง ไม่เคลื่อนไหว', 'กรอบเหลือง = ชำรุดตามผัง ไม่เคลื่อนไหว', 'ขอบประเทา = ไม่มีข้อมูลในระบบ', 'ป้ายขาว = ค่าวัดจากสถานี']) {
         assert.ok(legend.includes(needed), `คำอธิบายสัญลักษณ์ขาด "${needed}"`)
       }
       assert.equal(await section(page).locator('a[href^="https://www.phraepao.go.th/"]').count(), 2, 'ลิงก์ผังต้นฉบับ 2 อัน: ใต้คำกำกับ + ในแท็บที่มา')
-      assert.ok(!/แล้ง|ท่วม/.test(await routeText(page)), 'ภาพห้ามเขียนว่าแล้ง/ท่วม')
+      assert.ok(!/แล้ง|ท่วม/.test((await svg.evaluate(el => el.textContent)).replace('ไม่ใช่ประกาศ', '')), 'ภาพห้ามเขียนว่าแล้ง/ท่วม')
+      // อ่างห้วยเฮือไม่มีข้อมูลในระบบ = ขอบประเทา (ไม่ใช่แผนก่อสร้าง) 1 จุด · ชำรุด/แผนก่อสร้างขอบสีของตัวเอง
+      assert.equal(await svg.locator('g[data-poster-node]:not([data-status="planned"]):not([data-status="repair"]) > circle.wp-node[stroke-dasharray]').count(), 1, 'อ่างห้วยเฮือขอบประเทา')
+      assert.equal(await svg.locator('g[data-poster-node][data-status="repair"] > circle.wp-node').evaluate(el => el.style.stroke), 'var(--fix)', 'จุดชำรุดขอบสีเหลือง')
+      assert.equal(await svg.locator('g[data-poster-node][data-status="repair"] > circle.wp-node').getAttribute('stroke-dasharray'), null, 'จุดชำรุดขอบทึบ (ต่างจากแผนก่อสร้างที่ขอบประ)')
     } finally { await context.close() }
   })
 
@@ -430,17 +395,18 @@ try {
       await tabButton(page, /^ที่มา$/).click()
       const text = await section(page).innerText()
       for (const needed of ['ไฟล์ลงวันที่ 9 พ.ค. 2567', 'ที่ผังต้นฉบับมีแต่เราวาดต่างไป หรือไม่ได้วาด', 'ไม่ขอเดาชื่อ', 'ตำแหน่งฝายและลำห้วยแต่ละแห่งบนแผนที่', 'ประปาหมู่ 1 และหมู่ 4']) assert.ok(text.includes(needed), `ต้องมี "${needed}"`)
-      assert.equal(await section(page).locator('[data-diagram-omitted] li').count(), THUNGKAEW_DIAGRAM.omitted.length)
+      assert.equal(await section(page).locator('[data-diagram-omitted] li').count(), DIAGRAMS.thungkaew.omitted.length)
     } finally { await context.close() }
   })
 
-  await check('ไม่มีชื่อห้วยแนวตั้ง 4 เส้นที่ยังไม่ยืนยัน (ห้วยจำค่า/ห้วยย่าเฟย) บนหน้า · รายการจุดครบทุกจุดของข้อมูล · แผนก่อสร้าง/ชำรุดมีแท็กในรายการ', async () => {
+  await check('ทุ่งแค้ว: ไม่มีชื่อห้วยแนวตั้ง 4 เส้นที่ยังไม่ยืนยัน (ห้วยจำค่า/ห้วยย่าเฟย) บนหน้า · รายการจุดครบทุกจุดของข้อมูล · ภาพมีชื่อทุกจุด · แผนก่อสร้าง/ชำรุดมีแท็กในรายการ', async () => {
     const { context, page } = await openScene(browser, baseUrl, 'normal')
     try {
-      await pill(page, '73.2%').waitFor({ timeout: 8000 })
+      const svg = posterSvg(page)
+      await posterReady(svg, 'thungkaew')
       const text = await section(page).innerText()
-      assert.ok(!/ห้วยจำค่า|ห้วยย่าเฟย/.test(text) && !/ห้วยจำค่า|ห้วยย่าเฟย/.test(await routeText(page)))
-      const svgText = await routeText(page)
+      const svgText = await svg.evaluate(el => el.textContent)
+      assert.ok(!/ห้วยจำค่า|ห้วยย่าเฟย/.test(text) && !/ห้วยจำค่า|ห้วยย่าเฟย/.test(svgText))
       for (const item of [...route.stops, route.river]) {
         const li = routeList(page).locator(`li[data-stop="${item.n}"]`)
         assert.ok((await li.innerText()).includes(item.name), `รายการขาดจุด ${item.n} ${item.name}`)
@@ -454,10 +420,11 @@ try {
   })
 
   // ── แท็บ: แผนภาพ · รายการจุด · ที่มา (หน้ามือถือเคยยาวเกือบ 3,000px — เจ้าของระบบสั่งแบ่งแท็บ 2569-10-21) ──
-  await check('แท็บ มือถือ 390px: เริ่มที่แผนภาพ · สลับรายการจุด/ที่มาได้ · แผงที่ไม่ได้เลือกถูกซ่อนจริง · ลูกศร/Home/End สลับแท็บ · ภาพเลิกวิ่งเมื่อซ่อน · หน้าสั้นลงมาก', async () => {
+  await check('แท็บ มือถือ 390px: เริ่มที่แผนภาพ · สลับรายการจุด/ที่มาได้ · แผงที่ไม่ได้เลือกถูกซ่อนจริง · ลูกศร/Home/End สลับแท็บ · หน้าสั้นลงมาก', async () => {
     const { context, page } = await openScene(browser, baseUrl, 'normal', { width: 390 })
     try {
-      await pill(page, '73.2%').waitFor({ timeout: 8000 })
+      const svg = posterSvg(page)
+      await posterReady(svg, 'thungkaew')
       const tabs = section(page).getByRole('tab')
       assert.deepEqual(await tabs.allInnerTexts(), ['แผนภาพ', 'รายการจุด (14)', 'ที่มา'])
       const selected = () => tabs.evaluateAll(els => els.filter(el => el.getAttribute('aria-selected') === 'true').map(el => el.innerText))
@@ -470,8 +437,7 @@ try {
       await tabButton(page, /^รายการจุด/).click()
       assert.deepEqual(await selected(), ['รายการจุด (14)'])
       assert.equal(await routeList(page).isVisible(), true)
-      assert.equal(await routeSvg(page).isVisible(), false)
-      assert.equal(await section(page).locator('[data-route-legend]').isVisible(), false)
+      assert.equal(await svg.isVisible(), false)
       const list = await height()
       assert.equal(await routeList(page).locator('li').count(), 14)
 
@@ -481,7 +447,7 @@ try {
       const source = await height()
       assert.match(await section(page).locator('[data-diagram-source]').innerText(), /ไม่ใช่ประกาศเตือนภัย/)
 
-      // เดิมทั้งหมดอยู่หน้าเดียวสูง ~2,930px ที่ 390px (วัดจริง) — แต่ละแท็บต้องไม่เกินครึ่งหนึ่งเศษ (ตอนนี้ ~1,480 / ~1,450 / ~760)
+      // เดิมทั้งหมดอยู่หน้าเดียวสูง ~2,930px ที่ 390px (วัดจริง) — แต่ละแท็บต้องไม่เกินครึ่งหนึ่งเศษ
       // ที่มา < 960 (เดิม 900): ลิงก์ "ดูผังต้นฉบับ" ย้ายมาอยู่ใต้คำกำกับเหนือแท็บ (เจ้าของระบบสั่ง 2569-10-23) เพิ่มความสูงทุกแท็บราว 56px (ปุ่ม 44px + ช่องไฟ)
       assert.ok(art < 1700 && list < 1700 && source < 960, `ความสูงแต่ละแท็บ: แผนภาพ ${art} · รายการ ${list} · ที่มา ${source}`)
 
@@ -498,28 +464,29 @@ try {
       await page.keyboard.press('Home')
       assert.deepEqual(await selected(), ['แผนภาพ'])
 
-      // กลับมาแท็บแผนภาพ ค่าสดยังอยู่ครบ
-      await pill(page, '73.2%').waitFor()
-      assert.equal(await routeSvg(page).locator('g[data-pill="ok"]').count(), 4)
+      // กลับมาแท็บแผนภาพ ค่าสดยังอยู่ครบ (วงแหวน 2 + ป้าย 2)
+      await posterReady(svg, 'thungkaew')
+      assert.equal(await svg.locator('g[data-tone="ok"]').count(), 4)
     } finally { await context.close() }
   })
 
-  await check('แท็บ จอกว้าง 1280px: ไม่มีแท็บรายการ (รายการอยู่ข้างภาพ) · แท็บที่มาใช้ได้ · ย่อจอจากกว้างเป็นมือถือแล้วกลับมา/ขยายจอตอนอยู่แท็บรายการ = กลับแท็บแผนภาพ', async () => {
+  await check('แท็บ จอกว้าง 1280px: ไม่มีแท็บรายการ (รายการอยู่ใต้ภาพ) · แท็บที่มาใช้ได้ · ย่อจอจากกว้างเป็นมือถือแล้วกลับมา/ขยายจอตอนอยู่แท็บรายการ = กลับแท็บแผนภาพ', async () => {
     const { context, page } = await openScene(browser, baseUrl, 'normal', { width: 1280 })
     try {
-      await pill(page, '73.2%').waitFor({ timeout: 8000 })
+      const svg = posterSvg(page)
+      await posterReady(svg, 'thungkaew')
       const tabs = section(page).getByRole('tab')
       assert.deepEqual(await tabs.allInnerTexts(), ['แผนภาพและรายการ', 'ที่มา'])
       assert.equal(await routeList(page).isVisible(), true)
-      assert.equal(await routeSvg(page).isVisible(), true)
-      // ย่อเป็นมือถือ → ไปแท็บรายการ → ขยายกลับ: รายการขึ้นข้างภาพ และแท็บที่เลือกเป็นแผนภาพ
+      assert.equal(await svg.isVisible(), true)
+      // ย่อเป็นมือถือ → ไปแท็บรายการ → ขยายกลับ: รายการขึ้นใต้ภาพ และแท็บที่เลือกเป็นแผนภาพ
       await page.setViewportSize({ width: 390, height: 900 })
       await tabButton(page, /^รายการจุด/).click()
-      assert.equal(await routeSvg(page).isVisible(), false)
+      assert.equal(await svg.isVisible(), false)
       await page.setViewportSize({ width: 1280, height: 900 })
       await page.waitForFunction(() => document.querySelector('#water-diagram [role="tab"][aria-selected="true"]')?.innerText === 'แผนภาพและรายการ', null, { timeout: 5000 })
       assert.equal(await routeList(page).isVisible(), true)
-      assert.equal(await routeSvg(page).isVisible(), true)
+      assert.equal(await svg.isVisible(), true)
     } finally { await context.close() }
   })
 
@@ -614,18 +581,15 @@ try {
       await section(page).waitFor({ state: 'visible', timeout: 5000 })
       assert.equal(await visibleAlerts(), 1, 'แท็บเส้นทางน้ำเห็นแถบแจ้งเตือน 1 แถบ (ไม่หาย ไม่ซ้ำ)')
       assert.equal(await visible(page, '[data-water-announcement]'), true, 'แท็บเส้นทางน้ำเห็นประกาศ')
-      await pill(page, '73.2%').waitFor({ timeout: 8000 })
+      await posterReady(posterSvg(page), 'thungkaew')
     } finally { await context.close() }
   })
 
   // ── 8) ผังน้ำเลา (?diagram=namlao บน demo) — แสดง "ภาพนำเสนอ" (โปสเตอร์) แทนภาพเกาะลอย (เจ้าของระบบสั่ง 2569-10-23) ──
   const nl = DIAGRAMS.namlao
   const NL = nl.route
-  const TONES = Object.keys(CHIP_TONES)
   // จุดที่ผังต้นฉบับไม่มีข้อมูลระดับน้ำ/ไม่ได้ผูกช่องค่าสด (ห้วยทรายขาว–อ่าง · อ่างห้วยขึมโยธินฯ) วาดขอบประเทาในภาพนำเสนอ
   const NA_NODES = 2
-  // ข้อความของส่วนที่เป็นค่าสดบนโปสเตอร์ (วงแหวน + แคปซูลฝน + การ์ดค่าวัด) — ไม่นับท้ายภาพที่เล่าชื่อ YOM003 ในรายการ "ไม่ได้ใส่ในภาพนี้"
-  const posterLiveText = svg => svg.locator('[data-poster-ring], [data-poster-pill], [data-poster-live-card]').allTextContents().then(parts => parts.join(' | '))
 
   // ── 7) ผังตำหนักธรรม (?diagram=tamnaktham บน demo) — แสดง "ภาพนำเสนอ" (โปสเตอร์) แทนภาพเกาะลอยเหมือนน้ำเลา ──
   const tk = DIAGRAMS.tamnaktham
@@ -782,7 +746,7 @@ try {
     } finally { await context.close() }
   })
 
-  for (const [id, scene, ROUTE, label] of [['namlao', 'nlNormal', NL, 'น้ำเลา'], ['tamnaktham', 'tkNormal', TK, 'ตำหนักธรรม']]) {
+  for (const [id, scene, ROUTE, label] of [['thungkaew', 'normal', route, 'ทุ่งแค้ว'], ['namlao', 'nlNormal', NL, 'น้ำเลา'], ['tamnaktham', 'tkNormal', TK, 'ตำหนักธรรม']]) {
     await check(`${label}: เส้นวิ่งในภาพตรงผัง (ลำที่ผังวาดลูกศร) พร้อมหัวลูกศร · ลำที่ผังวาดลูกศรนิ่งไม่วิ่ง · แผนก่อสร้างไม่มีแอนิเมชัน · เส้นประจากแผนก่อสร้างไม่วิ่ง · ปุ่มหยุดเคลื่อนไหวหยุดลายวิ่ง · ลดการเคลื่อนไหว = ไม่วิ่งแต่หัวลูกศรยังอยู่`, async () => {
       const flowIds = ROUTE.streams.filter(s => s.flow).map(s => s.id).sort()
       let r = await openScene(browser, baseUrl, scene, { diagram: id })
@@ -797,7 +761,7 @@ try {
         assert.equal(await svg.locator('g[data-poster-stream][data-flow="true"] path[marker-end]').count(), flowIds.length, 'เส้นวิ่งมีหัวลูกศรปลายทาง')
         assert.equal(await svg.locator('g[data-poster-stream][data-flow="false"] path[marker-end]').count(), 0, 'ลำที่ไม่วิ่งไม่มีหัวลูกศร (ไม่เดาทิศ)')
         assert.deepEqual(await svg.locator('g[data-poster-node][data-status="planned"]').evaluateAll(els => els.map(el => Number(el.getAttribute('data-poster-node')))), ROUTE.stops.filter(s => s.status === 'planned').map(s => s.n), 'จุดแผนก่อสร้างบนภาพ')
-        assert.equal(await svg.evaluate(el => [...el.querySelectorAll('g[data-status="planned"] *')].filter(node => getComputedStyle(node).animationName !== 'none').length), 0, 'แผนก่อสร้างห้ามมีแอนิเมชัน')
+        assert.equal(await svg.evaluate(el => [...el.querySelectorAll('g[data-status="planned"] *, g[data-status="repair"] *')].filter(node => getComputedStyle(node).animationName !== 'none').length), 0, 'แผนก่อสร้าง/ชำรุดห้ามมีแอนิเมชัน')
         // เส้นประแดงจากแผนก่อสร้างไปลำน้ำ: เป็น "ความสัมพันธ์ตามผัง" ไม่ใช่ลำน้ำ — ต้องมีครบตามข้อมูล เป็นเส้นประ และไม่วิ่ง
         const stemIds = Object.entries(ROUTE.poster.nodes).filter(([, node]) => node.stem).map(([n]) => n).sort()
         assert.ok(stemIds.length > 0, 'ข้อมูลผังมีเส้นประจากแผนก่อสร้าง')
@@ -1045,23 +1009,24 @@ try {
 
   // ═══ ไม่มีกล่อง "ไม่มีเข็มทิศ" (เจ้าของระบบสั่ง 2569-10-22: ไม่มีก็ไม่ต้องแสดง) + โปสเตอร์ "ภาพนำเสนอ A4" ของน้ำเลา ═══
   for (const [id, scene] of [['thungkaew', 'normal'], ['tamnaktham', 'tkNormal'], ['namlao', 'nlNormal']]) {
-    await check(`${id}: ไม่มีกล่องหมายเหตุเข็มทิศ · คำกำกับบังคับยังบอกว่าทิศไม่ตรงจริง · ผังที่ยังไม่มีโปสเตอร์ไม่มีปุ่ม`, async () => {
+    await check(`${id}: ไม่มีกล่องหมายเหตุเข็มทิศ · คำกำกับบังคับยังบอกว่าทิศไม่ตรงจริง · มีปุ่มภาพนำเสนอ + แผ่นรายการ`, async () => {
       const { context, page } = await openScene(browser, baseUrl, scene, { diagram: id })
       try {
-        await (hasPosterArt(id) ? posterSvg(page) : routeSvg(page)).waitFor({ timeout: 10_000 })
+        await posterSvg(page).waitFor({ timeout: 10_000 })
         assert.equal(await section(page).locator('[data-route-note]').count(), 0, 'ไม่มีกล่องหมายเหตุเข็มทิศ')
         await tabButton(page, /^ที่มา$/).click()
         const text = await section(page).innerText()
         assert.ok(!text.includes('เข็มทิศ'), 'หน้าไม่พูดถึงเข็มทิศ')
         assert.ok(text.includes('ไม่ใช่แผนที่') && text.includes('ตำแหน่ง ทิศ และมาตราส่วนไม่ตรงจริง'), 'คำกำกับบังคับต้องบอกว่าทิศไม่ตรงจริง')
-        assert.equal(await section(page).locator('[data-poster-open]').count(), hasPosterArt(id) ? 1 : 0, 'ปุ่มภาพนำเสนอ A4 ขึ้นเฉพาะผังที่มีโปสเตอร์')
-        assert.equal(await section(page).locator('[data-list-sheet]').count(), hasPosterArt(id) ? 1 : 0, 'แผ่นรายการ A4 ขึ้นเฉพาะผังที่มีโปสเตอร์')
+        assert.equal(await section(page).locator('[data-poster-open]').count(), 1, 'ปุ่มภาพนำเสนอ A4 อยู่เหนือภาพ')
+        assert.equal(await section(page).locator('[data-list-sheet]').count(), 1, 'จอกว้างใช้แผ่นรายการ A4')
       } finally { await context.close() }
     })
   }
 
   // ผังที่มีภาพนำเสนอ: ตารางความคาดหวังต่อผัง (เพิ่มผังใหม่ = เพิ่มแถว) — nodes = จำนวนจุดรวมลำน้ำปลายทาง · needs = ข้อความของที่ไม่ได้วาดที่ต้องขึ้นท้ายภาพ
   const POSTERS = [
+    { id: 'thungkaew', scene: 'normal', long: 'stale', ready: { normal: '73.2%', stale: 'ไม่มีค่าใหม่' }, nodes: 14, tiles: [['จุดสำคัญ', '14'], ['แผนก่อสร้าง', '2'], ['ชำรุดตามผัง', '1'], ['จุดวัดค่า', '4']], needs: ['ชื่อห้วยแนวตั้ง 4 เส้นกลางผัง'], liveSlots: ['dam-30', 'dam-50', 'level-YOM003', 'rain-RES038'], sheetScenes: ['normal', 'stale', 'empty', 'nullvalues'] },
     { id: 'namlao', scene: 'nlNormal', long: 'nlLong', ready: { nlNormal: '84.5%', nlLong: '100.4%' }, nodes: 21, tiles: [['จุดสำคัญ', '21'], ['สายน้ำในผัง', '4'], ['แผนก่อสร้าง', '4'], ['จุดวัดค่า', '3']], needs: ['พื้นที่ลายขีดแดงทางซ้ายล่าง'], liveSlots: ['dam-305', 'rain-RES040', 'rain-STN0911'], sheetScenes: ['nlNormal', 'nlOver', 'nlSame', 'nlStale', 'nlNull', 'nlEmpty', 'nlLong'] },
     { id: 'tamnaktham', scene: 'tkNormal', long: 'tkStale', ready: { tkNormal: 'ต่ำกว่าตลิ่ง 2.35 ม.', tkStale: 'ไม่มีค่าใหม่' }, nodes: 15, tiles: [['จุดสำคัญ', '15'], ['แผนก่อสร้าง', '5'], ['จุดวัดค่า', '1']], needs: ['เขตหมู่บ้าน'], liveSlots: ['level-Y.38'], sheetScenes: ['tkNormal', 'tkStale', 'tkNull', 'tkEmpty'] },
   ]
@@ -1288,16 +1253,7 @@ try {
     })
   }
 
-  await check('แผ่นรายการ A4: ต้นฉบับเดียวกับรายการเดิม (ข้อความทุกจุดเหมือน WaterRouteList) · ผังที่ไม่มีโปสเตอร์ไม่มีแผ่น · ขอบเขต 1024px: ≥1024 ใช้แผ่น <1024 ใช้รายการเดิมในแท็บรายการจุด · ย่อ/ขยายจอสลับถูก', async () => {
-    // ผังที่ไม่มีโปสเตอร์ยังใช้รายการเดิมบนจอกว้าง
-    for (const [scene, id] of [['normal', 'thungkaew']]) {
-      const { context, page } = await openScene(browser, baseUrl, scene, { diagram: id === 'thungkaew' ? null : id })
-      try {
-        await routeList(page).waitFor({ timeout: 10_000 })
-        assert.equal(await section(page).locator('[data-list-sheet]').count(), 0, `${id}: ไม่มีแผ่นรายการ`)
-        assert.equal(await section(page).locator('ol.wr-list').count(), 1, `${id}: ใช้รายการเดิม`)
-      } finally { await context.close() }
-    }
+  await check('แผ่นรายการ A4: ต้นฉบับเดียวกับรายการเดิม (ข้อความทุกจุดเหมือน WaterRouteList) · ขอบเขต 1024px: ≥1024 ใช้แผ่น <1024 ใช้รายการเดิมในแท็บรายการจุด · ย่อ/ขยายจอสลับถูก', async () => {
     const { context, page } = await openScene(browser, baseUrl, 'nlSame', { diagram: 'namlao', width: 1024, height: 900 })
     try {
       const sheet = section(page).locator('[data-list-sheet]')
