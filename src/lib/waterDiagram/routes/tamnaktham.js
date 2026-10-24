@@ -12,11 +12,15 @@
 // ไม่มีฝน (สถานีฝนใกล้สุดห่าง 6.5 กม. นอกตำบล) · ค่าสดมีช่องเดียว: level-Y.38 บนน้ำแม่คำมี (ดู TAMNAKTHAM_BINDS)
 // พิกัดอยู่ในระบบ 480 × 1124 (กว้าง × สูง) · เกาะ island = { x, y } กึ่งกลาง · rx ry รัศมีแนวนอน/แนวตั้ง
 
+import { TAMNAKTHAM_POSTER } from './tamnaktham.poster.js'
+
 const PLAN_TAG = { t: 'แผนก่อสร้าง · ไม่เคลื่อนไหว', k: 'plan' }
 const plan = (x, y) => ({ text: 'แผน', tone: 'plan', x, y, size: 15.5 })
 
 export const TAMNAKTHAM_ROUTE = {
   viewBox: { w: 480, h: 1124 },
+  // ภาพนำเสนอ A4 (แสดงแทนภาพเกาะลอยในหน้า + ปุ่มพิมพ์) — ตำแหน่งบนโปสเตอร์อยู่ในไฟล์แยก
+  poster: TAMNAKTHAM_POSTER,
   eyebrow: 'เส้นทางน้ำ',
   title: 'ตำบลตำหนักธรรม',
   place: 'อำเภอหนองม่วงไข่ จังหวัดแพร่ · ตามผังต้นฉบับ พ.ค. 2567',

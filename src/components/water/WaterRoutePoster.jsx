@@ -2,10 +2,10 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Moon, Printer, Sun, X } from 'lucide-react'
 import './WaterRoutePoster.css'
-import { CHIP_TONES } from '../../lib/waterDiagram/model'
+import { CHIP_TONES, chipWidth } from '../../lib/waterDiagram/model'
 import { pillFor, pillWidth, smoothPath } from '../../lib/waterDiagram/route'
 import {
-  POSTER_DISCLAIMER, POSTER_THEMES, posterDateTime, posterIcon, posterLiveRows, posterOmittedNames, posterPrintCss, posterStats,
+  POSTER_DISCLAIMER, POSTER_THEMES, loadPosterTheme, posterDateTime, posterHeader, posterIcon, posterLiveRows, posterOmittedNames, posterPrintCss, posterStats, posterTiles, savePosterTheme,
 } from '../../lib/waterDiagram/poster'
 import WaterRouteListSheet from './WaterRouteListSheet'
 import { GOV_FONT_SIZE_ADJUST, GOV_FONT_STACK } from '../../lib/govDocStyle'
@@ -76,6 +76,10 @@ function Icon({ icon, u }) {
       return <g><rect x="-12" y="-2" width="24" height="4" fill="#dbe2ea" /><rect x="-12" y="2" width="24" height="3" fill="#6b7b8e" /><path d="M-9 -2V-8M0 -2V-8M9 -2V-8" stroke="#dbe2ea" strokeWidth="1.6" /></g>
     case 'supply':
       return <g><rect x="-8" y="-9" width="16" height="9" rx="3" fill="#38bdf8" /><path d="M-6 0L-9 9M6 0L9 9" stroke="#94a3b8" strokeWidth="2" /></g>
+    // จุดที่ไม่มีสิ่งก่อสร้างวางอยู่ (เช่น ตัวลำน้ำสายหลักเอง) — ลายคลื่นน้ำ ไม่ใช่สัญลักษณ์ของสิ่งใดในผัง
+    case 'plain': return <path d="M-11 1Q-7.5 -4 -4 1T3 1T10 1" fill="none" stroke="#38bdf8" strokeWidth="2.4" strokeLinecap="round" />
+    case 'canal':
+      return <g fill="none" strokeLinecap="round"><path d="M-12 1H12" stroke="#38bdf8" strokeWidth="4.5" /><path d="M0 -10V10" stroke="#e0f2fe" strokeWidth="2.4" /></g>
     case 'plan':
       return (
         <g style={{ stroke: 'var(--plan)' }} strokeWidth="1.8" fill="none" strokeLinejoin="round">
@@ -117,7 +121,7 @@ function Node({ stop, node, badges, u }) {
               style={{ fill: CHIP_TONES[ringTone]?.stroke }}>{ringBadge.note}</text>
           )}
         </g>
-      ) : <Icon icon={posterIcon(stop)} u={u} />}
+      ) : <Icon icon={node.icon ? { kind: node.icon } : posterIcon(stop)} u={u} />}
       <g transform={`translate(${-r + 3} ${-r + 3})`}>
         <circle r="11" fill="#0ea5e9" stroke="#fff" strokeWidth="2" />
         <text y="4.4" textAnchor="middle" fontSize={stop.n > 9 ? 12 : 13} fontWeight="800" fill="#fff">{stop.n}</text>
@@ -161,6 +165,7 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
   const poster = route.poster
   const { w, h } = poster.viewBox
   const stats = posterStats(route)
+  const header = posterHeader(route)
   const rows = posterLiveRows(route, badges)
   const stopsByN = new Map(route.stops.map(stop => [stop.n, stop]))
   const omitted = posterOmittedNames(diagram)
@@ -174,12 +179,12 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
     hasNa && { key: 'na', text: 'ขอบประเทา = ไม่มีข้อมูลในระบบ' },
     hasLive && { key: 'live', text: 'ป้ายขาว = ค่าวัดจากสถานี' },
   ].filter(Boolean)
-  const tiles = [
-    [stats.points, 'จุดสำคัญ'], [stats.lanes, 'สายน้ำในผัง'], [stats.planned, 'แผนก่อสร้าง'], [stats.gauges, 'จุดวัดค่า'],
-  ]
+  const tiles = posterTiles(stats)
   const card = poster.callouts?.[0]
   const river = poster.river
   const riverStop = route.river
+  // หัวลูกศรซ้ายกินที่ปลายซ้ายของแถบ เลขจุดจึงขยับเข้าไป · ลูกศรขวา/ไม่มีลูกศร เลขจุดอยู่ชิดซ้าย
+  const riverLead = river?.arrow === 'left' ? 90 : 30
 
   return (
     <svg className="wp-poster" data-poster data-theme={theme} viewBox={`0 0 ${w} ${h}`} role="img"
@@ -205,14 +210,14 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
 
       {/* หัว */}
       <text x="48" y="32" fontSize="16" fontWeight="700" letterSpacing="3" fill="var(--w1)">{route.eyebrow}</text>
-      <text x="46" y="92" fontSize="58" fontWeight="800" fill={u('title')}>{route.title}</text>
+      <text data-poster-title x="46" y="92" fontSize={header.titleSize} fontWeight="800" fill={u('title')}>{route.title}</text>
       <text x="48" y="112" fontSize="12" className="wp-muted">{route.place}</text>
 
       {/* คำอธิบายสัญลักษณ์ (เฉพาะที่โปสเตอร์ใช้จริง) */}
       <g data-poster-legend>
-        <rect x="344" y="22" width="246" height={16 + legend.length * 17} rx="14" className="wp-glass" />
+        <rect x={header.legendX} y="22" width={header.legendW} height={16 + legend.length * 17} rx="14" className="wp-glass" />
         {legend.map((item, i) => (
-          <g key={item.key} transform={`translate(356 ${42 + i * 17})`}>
+          <g key={item.key} transform={`translate(${header.legendX + 12} ${42 + i * 17})`}>
             {item.key === 'flow' && <><path d="M0 0H18" stroke={u('stream')} strokeWidth="4.5" strokeLinecap="round" /><path d="M18 -5L26 0L18 5Z" fill="var(--w1)" /></>}
             {item.key === 'plan' && <path d="M12 -6L19 -3V4L12 7L5 4V-3Z" fill="none" strokeDasharray="2.5 2" style={{ stroke: 'var(--plan)' }} />}
             {item.key === 'na' && <ellipse cx="12" cy="0" rx="9" ry="5.5" fill="none" strokeDasharray="3 2" style={{ stroke: 'var(--na)' }} />}
@@ -223,7 +228,7 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
       </g>
 
       {tiles.map(([value, label], i) => (
-        <g key={label} data-poster-tile={label} transform={`translate(${596 + i * 124} 20)`}>
+        <g key={label} data-poster-tile={label} transform={`translate(${1092 - tiles.length * 124 + i * 124} 20)`}>
           <rect width="114" height="64" rx="16" className="wp-tile" />
           <text x="57" y="37" textAnchor="middle" fontSize="31" fontWeight="800" fill={u('title')}>{value}</text>
           <text x="57" y="55" textAnchor="middle" fontSize="12" fontWeight="700" className="wp-ink2">{label}</text>
@@ -243,12 +248,12 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
       )}
 
       {/* การ์ดค่าวัดล่าสุด */}
-      {rows.length > 0 && (
+      {rows.length > 0 && poster.liveCard && (
         <g data-poster-live-card>
-          <rect x="800" y={178 - (30 + rows.length * 16)} width="284" height={30 + rows.length * 16} rx="14" className="wp-glass" />
-          <text x="814" y={178 - (30 + rows.length * 16) + 19} fontSize="11.5" fontWeight="800" fill="var(--w1)">ค่าวัดล่าสุดจากสถานี</text>
+          <rect x={poster.liveCard.x} y={poster.liveCard.bottom - (30 + rows.length * 16)} width={poster.liveCard.w} height={30 + rows.length * 16} rx="14" className="wp-glass" />
+          <text x={poster.liveCard.x + 14} y={poster.liveCard.bottom - (30 + rows.length * 16) + 19} fontSize="11.5" fontWeight="800" fill="var(--w1)">ค่าวัดล่าสุดจากสถานี</text>
           {rows.map((row, i) => (
-            <text key={row.slot} data-poster-live-row={row.slot} x="814" y={178 - (30 + rows.length * 16) + 36 + i * 16} fontSize="11" className="wp-ink2">
+            <text key={row.slot} data-poster-live-row={row.slot} x={poster.liveCard.x + 14} y={poster.liveCard.bottom - (30 + rows.length * 16) + 36 + i * 16} fontSize="11" className="wp-ink2">
               {row.label}: {row.value}{row.note ? ` · ${row.note}` : ''}
             </text>
           ))}
@@ -256,7 +261,7 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
       )}
 
       {/* โซนแยกสาย */}
-      {poster.zones.map(zone => (
+      {(poster.zones ?? []).map(zone => (
         <g key={zone.group} data-poster-zone={zone.tone}>
           <rect x={zone.x} y={zone.y} width={zone.w} height={zone.h} rx="18" className="wp-glass" style={{ stroke: `var(--${zone.tone})` }} />
           <rect x={zone.x} y={zone.y + 8} width="5" height={zone.h - 16} rx="2.5" style={{ fill: `var(--${zone.tone})` }} />
@@ -264,20 +269,22 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
         </g>
       ))}
 
-      {/* ลำน้ำปลายทาง (จุดสุดท้าย) — หัวลูกศรชี้ซ้ายตามผัง */}
+      {/* ลำน้ำปลายทาง (จุดสุดท้าย) — หัวลูกศรตามที่ผังวาด (river.arrow: ซ้าย/ขวา/ไม่มี) · คำกำกับจากข้อมูล */}
       {riverStop && (
-        <g data-poster-node={riverStop.n} data-poster-river>
+        <g data-poster-node={riverStop.n} data-poster-river data-poster-river-arrow={river.arrow ?? 'none'}>
           <rect x={river.x} y={river.y} width={river.w} height={river.h} rx={river.h / 2} fill={u('river')} />
-          <path d={`M${river.x + 20} ${river.y + 20}Q${river.x + 50} ${river.y + 12} ${river.x + 80} ${river.y + 20}T${river.x + 140} ${river.y + 20}T${river.x + 200} ${river.y + 20}T${river.x + 260} ${river.y + 20}T${river.x + 320} ${river.y + 20}T${river.x + 380} ${river.y + 20}T${river.x + 440} ${river.y + 20}T${river.x + 500} ${river.y + 20}T${river.x + 560} ${river.y + 20}T${river.x + 620} ${river.y + 20}T${river.x + 680} ${river.y + 20}T${river.x + 740} ${river.y + 20}T${river.x + 800} ${river.y + 20}T${river.x + 860} ${river.y + 20}T${river.x + 920} ${river.y + 20}T${river.x + 980} ${river.y + 20}`}
+          <path d={`M${river.x + 20} ${river.y + 20}Q${river.x + 50} ${river.y + 12} ${river.x + 80} ${river.y + 20}${Array.from({ length: Math.floor((river.w - 63 - 140) / 60) + 1 }, (_, k) => `T${river.x + 140 + k * 60} ${river.y + 20}`).join('')}`}
             fill="none" stroke="#fff" strokeOpacity=".3" strokeWidth="2" />
-          <path d={`M${river.x + 56} ${river.y + 20}H${river.x + 10}`} stroke="#fff" strokeWidth="3.5" strokeLinecap="round" />
-          <path d={`M${river.x + 22} ${river.y + 8}L${river.x + 6} ${river.y + 20}L${river.x + 22} ${river.y + 32}Z`} fill="#fff" />
-          <g transform={`translate(${river.x + 90} ${river.y + 20})`}>
+          {river.arrow === 'left' && <path d={`M${river.x + 56} ${river.y + 20}H${river.x + 10}`} stroke="#fff" strokeWidth="3.5" strokeLinecap="round" />}
+          {river.arrow === 'left' && <path d={`M${river.x + 22} ${river.y + 8}L${river.x + 6} ${river.y + 20}L${river.x + 22} ${river.y + 32}Z`} fill="#fff" />}
+          {river.arrow === 'right' && <path d={`M${river.x + river.w - 56} ${river.y + 20}H${river.x + river.w - 10}`} stroke="#fff" strokeWidth="3.5" strokeLinecap="round" />}
+          {river.arrow === 'right' && <path d={`M${river.x + river.w - 22} ${river.y + 8}L${river.x + river.w - 6} ${river.y + 20}L${river.x + river.w - 22} ${river.y + 32}Z`} fill="#fff" />}
+          <g transform={`translate(${river.x + riverLead} ${river.y + 20})`}>
             <circle r="13" fill="#0ea5e9" stroke="#fff" strokeWidth="2" />
             <text y="4.8" textAnchor="middle" fontSize="13" fontWeight="800" fill="#fff">{riverStop.n}</text>
           </g>
-          <text x={river.x + 114} y={river.y + 27} fontSize="19" fontWeight="800" fill="#fff">{riverStop.name}</text>
-          <text x={river.x + 262} y={river.y + 25} fontSize="12" fill="#e0f2fe">ปลายทางของลำน้ำแม่คำปอง · หัวลูกศรชี้ไปทางตะวันตกตามผัง</text>
+          <text x={river.x + riverLead + 24} y={river.y + 27} fontSize="19" fontWeight="800" fill="#fff">{riverStop.name}</text>
+          <text x={river.x + riverLead + 24 + chipWidth(riverStop.name, 19) - 22 + 42} y={river.y + 25} fontSize="12" fill="#e0f2fe">{river.caption}</text>
         </g>
       )}
 
@@ -306,6 +313,11 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
         <text key={n} x={node.label[0]} y={node.label[1]} textAnchor={node.label[2]} fontSize="13.5" fontWeight="700" className="wp-lbl">
           {node.text ?? stopsByN.get(Number(n)).label}
         </text>
+      ))}
+
+      {/* ชื่อลำน้ำบนเส้น (ชื่อที่อยู่ในคำอธิบายจุดของผังเท่านั้น — ตัวตรวจเช็ก) */}
+      {poster.streams.filter(stream => stream.label).map(stream => (
+        <text key={stream.id} data-poster-stream-label={stream.id} x={stream.label.x} y={stream.label.y} textAnchor={stream.label.anchor} fontSize="12.5" fontWeight="700" className="wp-lbl">{stream.label.text}</text>
       ))}
 
       {Object.values(poster.nodes).filter(node => node.pill).map(node => {
@@ -392,12 +404,14 @@ export function WaterRoutePosterDialog({ route, diagram, badges, now, onClose, i
 const PANEL_BUTTON = 'inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-slate-400 bg-white px-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50'
 
 // ภาพนำเสนอที่วางในหน้าแทนภาพเกาะลอย (เจ้าของระบบสั่ง 2569-10-23 "เอาภาพนำเสนอ A4 มาใส่แทนภาพแรกเลย")
-// เริ่มที่โหมดมืด · ปุ่ม "โหมดมืด / โหมดสว่าง" เหนือภาพสลับสีของภาพในหน้า (เจ้าของระบบสั่ง 2569-10-23) แล้วหน้าต่างพิมพ์เปิดมาที่โหมดเดียวกัน
+// เริ่มที่โหมดมืด (หรือโหมดที่ผู้ใช้เลือกไว้ครั้งก่อน — จำในเครื่อง) · ปุ่ม "โหมดมืด / โหมดสว่าง" เหนือภาพสลับสีของภาพในหน้า (เจ้าของระบบสั่ง 2569-10-23) แล้วหน้าต่างพิมพ์เปิดมาที่โหมดเดียวกัน
 // ปุ่ม "พิมพ์ / บันทึก PDF" เปิดหน้าต่างตัวอย่างหน้ากระดาษ — ตรรกะพิมพ์ที่ตรวจด้วย PDF จริงอยู่ในหน้าต่างนั้น · แผ่นรายการจุดเป็นสีสว่างเสมอ
 // มือถือ: ภาพกว้างขั้นต่ำ 900px เลื่อนแนวนอนในกรอบ (กรอบโฟกัสด้วยคีย์บอร์ดได้) · min-w-0 บนกรอบนอก: ไม่งั้นช่องกริดของหน้าขยายตามภาพ 900px แล้วดันทั้งหน้าให้ล้นจอ (เทสต์เลย์เอาต์ 360–768px ตรึงไว้)
 export default function WaterRoutePosterPanel({ route, diagram, badges, now }) {
   const [open, setOpen] = useState(false)
-  const [theme, setTheme] = useState(POSTER_THEMES[0])
+  // เริ่มที่โหมดที่ผู้ใช้เลือกไว้ครั้งก่อน (อ่านครั้งเดียวตอนเปิดหน้า) · ไม่เคยเลือก/อ่านไม่ได้ = โหมดมืด
+  const [theme, setTheme] = useState(loadPosterTheme)
+  const chooseTheme = key => { setTheme(key); savePosterTheme(key) }
   const labelId = useId()
   return (
     <div data-poster-panel className="min-w-0 space-y-2">
@@ -408,7 +422,7 @@ export default function WaterRoutePosterPanel({ route, diagram, badges, now }) {
             {POSTER_THEMES.map(key => {
               const Icon = THEME_ICONS[key]
               return (
-                <button key={key} type="button" aria-pressed={theme === key} onClick={() => setTheme(key)} data-poster-theme-option={key}
+                <button key={key} type="button" aria-pressed={theme === key} onClick={() => chooseTheme(key)} data-poster-theme-option={key}
                   className={`inline-flex min-h-[44px] items-center gap-1.5 px-3.5 text-sm font-bold ${theme === key ? 'bg-sky-700 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
                   <Icon size={16} aria-hidden="true" /> {PAGE_THEME_LABELS[key]}
                 </button>
