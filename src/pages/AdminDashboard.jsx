@@ -317,7 +317,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
       })
   }, [currentUserRole, tenant])
 
-  useEffect(() => { reloadDepartmentCounts() }, [reloadDepartmentCounts])
+  useEffect(() => { reloadDepartmentCounts() }, [reloadDepartmentCounts, subTab])
 
   // จำนวนจริงทั้งหมดของแต่ละแท็บ (ไม่ใช่แค่ users.length ที่จำกัดแค่หน้าละ USER_PAGE_SIZE คน — ถ้ามีเกินนั้น
   // ตัวเลขในรายการจะน้อยกว่าความจริง) — ใช้ RPC get_user_role_counts แทนนับตรงจาก client เพราะต้อง mirror
