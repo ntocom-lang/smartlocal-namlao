@@ -1,4 +1,4 @@
-// ตรรกะล้วนของ "แผนภาพเส้นทางน้ำ" (src/components/water/WaterRouteArt.jsx + WaterRouteList.jsx) — ทดสอบใน node (tests/water-diagram.test.mjs)
+// ตรรกะล้วนของ "ผังน้ำตำบล" (src/components/water/WaterRouteArt.jsx + WaterRouteList.jsx) — ทดสอบใน node (tests/water-diagram.test.mjs)
 //
 // แผนภาพนี้เป็น "ภาพประกอบ" ของผังที่ศูนย์ฯ แพร่วาดไว้ ไม่ใช่แผนที่ (เจ้าของระบบสั่ง 2569-10-21 ให้ไม่ซ้ำกับผังต้นฉบับ):
 // เกาะลอย 1 จุด = 1 หมายเลข · ตำแหน่ง/ทิศ/มาตราส่วนไม่ตรงจริง · เกาะกับต้นไม้ที่ไม่มีหมายเลขเป็นของตกแต่ง ไม่ได้หมายถึงสิ่งใดในพื้นที่

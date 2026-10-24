@@ -1,4 +1,4 @@
-// E2E: ผังน้ำตำบล (src/components/water/WaterDiagram.jsx) — ทุ่งแค้ว · ตำหนักธรรม · น้ำเลา ใช้แผนภาพเส้นทางน้ำ (WaterRouteArt) ทั้งหมด
+// E2E: ผังน้ำตำบล (src/components/water/WaterDiagram.jsx) — ทุ่งแค้ว · ตำหนักธรรม · น้ำเลา ใช้ผังน้ำตำบล (WaterRouteArt) ทั้งหมด
 // เดิม: ทุ่งแค้ว + ตำหนักธรรม + น้ำเลา บนหน้า /water-situation
 // ผังทุ่งแค้วเป็นค่าเริ่มต้นของ demo · ผังอื่นเปิดบน demo ด้วย ?diagram=tamnaktham | namlao
 //
@@ -237,7 +237,7 @@ try {
       for (const expected of ['73.2% · รายงาน', '76.8% · รายงาน', 'ฝนสะสม 24 ชม. 12.5 มม.', `${TKW_WHERE} · ต่ำกว่าตลิ่ง 4.55 ม.`]) {
         assert.ok(list.includes(expected), `รายการจุดต้องมี "${expected}"`)
       }
-      assert.match(await section(page).locator('h2').innerText(), /เส้นทางน้ำ\s*ตำบลทุ่งแค้ว/)
+      assert.match(await section(page).locator('h2').innerText(), /ผังน้ำ\s*ตำบลทุ่งแค้ว/)
       // หัวโปสเตอร์ต้องอยู่บนสุด (เจ้าของระบบสั่ง 2569-10-22) ก่อนปุ่มหยุด → คำกำกับบังคับ → แท็บ → ภาพ
       const top = async locator => (await locator.boundingBox()).y
       const order = [
@@ -449,7 +449,10 @@ try {
 
       // เดิมทั้งหมดอยู่หน้าเดียวสูง ~2,930px ที่ 390px (วัดจริง) — แต่ละแท็บต้องไม่เกินครึ่งหนึ่งเศษ
       // ที่มา < 960 (เดิม 900): ลิงก์ "ดูผังต้นฉบับ" ย้ายมาอยู่ใต้คำกำกับเหนือแท็บ (เจ้าของระบบสั่ง 2569-10-23) เพิ่มความสูงทุกแท็บราว 56px (ปุ่ม 44px + ช่องไฟ)
-      assert.ok(art < 1700 && list < 1700 && source < 960, `ความสูงแต่ละแท็บ: แผนภาพ ${art} · รายการ ${list} · ที่มา ${source}`)
+      // เจ้าของระบบสั่งรวมส่วน "ระบบน้ำของตำบล" เข้าแท็บนี้ 2569-10-24 (แท็บสถานการณ์สั้นลงราว 1,400px) จึงเพิ่มงบแท็บนี้:
+      //   แผนภาพ < 2200 (เดิม 1700): ใต้ภาพมี "ก่อนถึงตำบล/ไหลต่อไปที่" (ย่อไว้แสดง 3 รายการ) — เฉพาะแท็บแผนภาพ
+      //   ที่มา < 1150 (เดิม 960): + บรรทัด "ผังต้นฉบับวาดไว้…" กับที่มาของก่อนถึงตำบล/ไหลต่อไปที่ · ทุกแท็บ + ราว 60px จากบรรทัดอายุผัง/คำกำกับที่รวมมา
+      assert.ok(art < 2200 && list < 1700 && source < 1150, `ความสูงแต่ละแท็บ: แผนภาพ ${art} · รายการ ${list} · ที่มา ${source}`)
 
       // คีย์บอร์ด: ลูกศร/Home/End สลับแท็บ (เลื่อนโฟกัสไปด้วย)
       await tabs.first().focus()
@@ -500,7 +503,7 @@ try {
       try {
         const tabs = pageTabs(page)
         const tabTexts = await tabs.getByRole('tab').allInnerTexts()
-        assert.deepEqual(tabTexts.map(t => t.split('\n')[0].trim()), ['สถานการณ์', 'เส้นทางน้ำ'])
+        assert.deepEqual(tabTexts.map(t => t.split('\n')[0].trim()), ['สถานการณ์', 'ผังน้ำตำบล'])
         assert.match(tabTexts[1], /ภาพประกอบ/, 'คำอธิบายใต้ชื่อแท็บ บอกคนมาใหม่ว่าแท็บนี้คือภาพประกอบ')
         assert.equal(await pageTab(page, 'สถานการณ์').getAttribute('aria-selected'), 'true', 'เริ่มที่แท็บสถานการณ์ (เหมือนหน้าเดิม)')
         assert.equal(await visible(page, '#water-rain'), true, 'แท็บสถานการณ์เห็นส่วนฝน')
@@ -514,11 +517,11 @@ try {
         assert.notEqual(looks[1].color, 'rgba(0, 0, 0, 0)', 'ปุ่มที่ไม่ได้เลือกมีกรอบสีให้เห็น ไม่ใช่กรอบโปร่งใส')
         assert.ok(boxes[0].top < 420, 'แท็บอยู่ต้นหน้า (ใต้หัวหน้า) ไม่ต้องเลื่อนหา')
         assert.ok(boxes[0].top < await page.locator('#water-rain').evaluate(el => el.getBoundingClientRect().top), 'แท็บอยู่เหนือเนื้อหาของหน้า')
-        await pageTab(page, 'เส้นทางน้ำ').click()
+        await pageTab(page, 'ผังน้ำตำบล').click()
         await section(page).waitFor({ state: 'visible', timeout: 5000 })
-        assert.equal(await pageTab(page, 'เส้นทางน้ำ').getAttribute('aria-selected'), 'true')
+        assert.equal(await pageTab(page, 'ผังน้ำตำบล').getAttribute('aria-selected'), 'true')
         assert.equal(await pageTab(page, 'สถานการณ์').getAttribute('aria-selected'), 'false', 'แท็บที่ไม่ได้เลือกต้องเป็น aria-selected=false')
-        assert.equal(await visible(page, '#water-rain'), false, 'แท็บเส้นทางน้ำไม่แสดงส่วนฝน')
+        assert.equal(await visible(page, '#water-rain'), false, 'แท็บผังน้ำตำบลไม่แสดงส่วนฝน')
         const banner = await section(page).locator('[data-route-banner]').evaluate(el => ({ top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom, vh: window.innerHeight }))
         assert.ok(banner.top >= 0 && banner.bottom <= banner.vh, `หัวโปสเตอร์เห็นครบในจอแรกโดยไม่เลื่อน (top ${Math.round(banner.top)} · bottom ${Math.round(banner.bottom)} · จอสูง ${banner.vh})`)
         assert.equal(new URL(page.url()).searchParams.get('tab'), 'route', 'URL จำแท็บ')
@@ -533,10 +536,10 @@ try {
     })
   }
 
-  await check('แท็บบนสุดของหน้า: ?tab=route เปิดเส้นทางน้ำตรงๆ · ?diagram= (demo) เปิดเส้นทางน้ำเอง · ค่าแท็บแปลกๆ = สถานการณ์ · ไม่แตะเมาส์ก็ใช้ลูกศร/Home/End สลับได้', async () => {
+  await check('แท็บบนสุดของหน้า: ?tab=route เปิดผังน้ำตำบลตรงๆ · ?diagram= (demo) เปิดผังน้ำตำบลเอง · ค่าแท็บแปลกๆ = สถานการณ์ · ไม่แตะเมาส์ก็ใช้ลูกศร/Home/End สลับได้', async () => {
     for (const [name, opts, expected] of [
-      ['?tab=route', { tab: 'route' }, 'เส้นทางน้ำ'],
-      ['?diagram=namlao', { tab: null, diagram: 'namlao' }, 'เส้นทางน้ำ'],
+      ['?tab=route', { tab: 'route' }, 'ผังน้ำตำบล'],
+      ['?diagram=namlao', { tab: null, diagram: 'namlao' }, 'ผังน้ำตำบล'],
       ['?tab=situation&diagram=namlao', { tab: 'situation', diagram: 'namlao' }, 'สถานการณ์'],
     ]) {
       const { context, page } = await openScene(browser, baseUrl, 'normal', { width: 390, ...opts })
@@ -554,21 +557,21 @@ try {
       await pageTab(page, 'สถานการณ์').focus()
       assert.deepEqual(await pageTabs(page).getByRole('tab').evaluateAll(els => els.map(el => el.tabIndex)), [0, -1], 'tab stop เดียว (ตัวที่เลือก)')
       await page.keyboard.press('ArrowRight')
-      assert.equal(await pageTab(page, 'เส้นทางน้ำ').getAttribute('aria-selected'), 'true')
+      assert.equal(await pageTab(page, 'ผังน้ำตำบล').getAttribute('aria-selected'), 'true')
       assert.equal(await page.evaluate(() => document.activeElement?.id), 'water-tab-route', 'โฟกัสย้ายตามแท็บ')
       await section(page).waitFor({ state: 'visible', timeout: 5000 })
       await page.keyboard.press('ArrowRight')
       assert.equal(await pageTab(page, 'สถานการณ์').getAttribute('aria-selected'), 'true', 'ลูกศรขวาที่แท็บสุดท้ายวนกลับตัวแรก')
       await page.keyboard.press('End')
-      assert.equal(await pageTab(page, 'เส้นทางน้ำ').getAttribute('aria-selected'), 'true')
+      assert.equal(await pageTab(page, 'ผังน้ำตำบล').getAttribute('aria-selected'), 'true')
       await page.keyboard.press('Home')
       assert.equal(await pageTab(page, 'สถานการณ์').getAttribute('aria-selected'), 'true')
     } finally { await context.close() }
   })
 
-  await check('แท็บเส้นทางน้ำ: แถบแจ้งเตือนฝนหนักและประกาศของ อปท. ยังเห็น (ไม่หายตอนสลับแท็บ) · แผนภาพใช้ค่าสดเหมือนเดิม', async () => {
+  await check('แท็บผังน้ำตำบล: แถบแจ้งเตือนฝนหนักและประกาศของ อปท. ยังเห็น (ไม่หายตอนสลับแท็บ) · แผนภาพใช้ค่าสดเหมือนเดิม', async () => {
     const ANN = {
-      id: '00000000-0000-4000-8000-0000000000a1', body: 'ประกาศจาก เทศบาลตำบลสาธิต\nทดสอบการแสดงบนแท็บเส้นทางน้ำ', issuer: 'เทศบาลตำบลสาธิต',
+      id: '00000000-0000-4000-8000-0000000000a1', body: 'ประกาศจาก เทศบาลตำบลสาธิต\nทดสอบการแสดงบนแท็บผังน้ำตำบล', issuer: 'เทศบาลตำบลสาธิต',
       published_at: hoursAgo(2), expires_at: new Date(Date.now() + 6 * 3_600_000).toISOString(), server_now: new Date().toISOString(),
     }
     const { context, page } = await openScene(browser, baseUrl, 'heavyRain', { width: 390, tab: 'situation', announcement: ANN })
@@ -577,10 +580,10 @@ try {
       const visibleAlerts = () => page.locator('[role="alert"]', { hasText: alertText }).evaluateAll(els => els.filter(el => el.getClientRects().length > 0).length)
       assert.equal(await visibleAlerts(), 1, 'แท็บสถานการณ์เห็นแถบแจ้งเตือน 1 แถบ')
       assert.equal(await visible(page, '[data-water-announcement]'), true, 'แท็บสถานการณ์เห็นประกาศ')
-      await pageTab(page, 'เส้นทางน้ำ').click()
+      await pageTab(page, 'ผังน้ำตำบล').click()
       await section(page).waitFor({ state: 'visible', timeout: 5000 })
-      assert.equal(await visibleAlerts(), 1, 'แท็บเส้นทางน้ำเห็นแถบแจ้งเตือน 1 แถบ (ไม่หาย ไม่ซ้ำ)')
-      assert.equal(await visible(page, '[data-water-announcement]'), true, 'แท็บเส้นทางน้ำเห็นประกาศ')
+      assert.equal(await visibleAlerts(), 1, 'แท็บผังน้ำตำบลเห็นแถบแจ้งเตือน 1 แถบ (ไม่หาย ไม่ซ้ำ)')
+      assert.equal(await visible(page, '[data-water-announcement]'), true, 'แท็บผังน้ำตำบลเห็นประกาศ')
       await posterReady(posterSvg(page), 'thungkaew')
     } finally { await context.close() }
   })
@@ -602,7 +605,7 @@ try {
     try {
       // ผังนี้ไม่มีอ่างเล็ก: ห้ามมีคำขอรายงานอ่างที่ id ว่าง (null/undefined) — คำขอ 50/30 มาจากการ์ดอ่างเล็กด้านบนของ demo
       assert.deepEqual(reservoirRequests.filter(id => id !== '50' && id !== '30'), [], 'ผังไม่มีอ่างเล็กต้องไม่ยิงคำขอ id แปลก')
-      assert.match(await section(page).locator('h2').innerText(), /เส้นทางน้ำ\s*ตำบลตำหนักธรรม/)
+      assert.match(await section(page).locator('h2').innerText(), /ผังน้ำ\s*ตำบลตำหนักธรรม/)
       assert.match(await section(page).innerText(), /ข้อมูลจริงของตำหนักธรรม ใช้สาธิต/)
       const svg = posterSvg(page)
       await posterReady(svg, 'tamnaktham')
@@ -709,7 +712,7 @@ try {
     const { context, page, problems, reservoirRequests } = await openScene(browser, baseUrl, 'nlNormal', { diagram: 'namlao' })
     try {
       assert.deepEqual(reservoirRequests.filter(id => id !== '50' && id !== '30'), [], 'ผังไม่มีอ่างเล็กต้องไม่ยิงคำขอ id แปลก')
-      assert.match(await section(page).locator('h2').innerText(), /เส้นทางน้ำ\s*ตำบลน้ำเลา/)
+      assert.match(await section(page).locator('h2').innerText(), /ผังน้ำ\s*ตำบลน้ำเลา/)
       assert.match(await section(page).innerText(), /ข้อมูลจริงของน้ำเลา ใช้สาธิต/)
       const svg = posterSvg(page)
       await svg.locator('[data-poster-ring] text', { hasText: '84.5%' }).waitFor({ timeout: 10_000 })
@@ -939,7 +942,7 @@ try {
     }
   })
 
-  await check('ลิงก์ "ดูผังต้นฉบับ" ย้ายมาอยู่ใต้กรอบคำกำกับสีฟ้าในแท็บเส้นทางน้ำ (ทุกตำบล) · ชี้ไฟล์ภาพของตำบลนั้น เปิดแท็บใหม่ · อยู่เหนือแท็บ ไม่ต้องเลื่อนหา · แท็บสถานการณ์ไม่มีลิงก์นี้แล้ว', async () => {
+  await check('ลิงก์ "ดูผังต้นฉบับ" ย้ายมาอยู่ใต้กรอบคำกำกับสีฟ้าในแท็บผังน้ำตำบล (ทุกตำบล) · ชี้ไฟล์ภาพของตำบลนั้น เปิดแท็บใหม่ · อยู่เหนือแท็บ ไม่ต้องเลื่อนหา · แท็บสถานการณ์ไม่มีลิงก์นี้แล้ว', async () => {
     const FILES = { thungkaew: '66598230820240509_181654.jpg', tamnaktham: '82389834520240509_182321.jpg', namlao: '171202098020240430_133004.jpg' }
     for (const [id, scene] of [['thungkaew', 'normal'], ['tamnaktham', 'tkNormal'], ['namlao', 'nlNormal']]) {
       const { context, page } = await openScene(browser, baseUrl, scene, { diagram: id === 'thungkaew' ? null : id })
@@ -965,16 +968,14 @@ try {
         assert.equal(await near.isVisible(), true, `${id}: ลิงก์ยังเห็นเมื่ออยู่แท็บที่มา`)
       } finally { await context.close() }
     }
-    // แท็บสถานการณ์: กล่อง "ที่มาของข้อมูล" ของระบบน้ำของตำบลไม่มีลิงก์ผังต้นฉบับแล้ว (ย้ายไปแท็บเส้นทางน้ำ) แต่ข้อความที่มายังอยู่
+    // แท็บสถานการณ์: ไม่มีส่วน "ระบบน้ำของตำบล" (กล่องที่มา/คำกำกับของมันรวมเข้าแท็บผังน้ำตำบลแล้ว) จึงไม่มีลิงก์ผังต้นฉบับ และข้อความที่มา (ถอดจากผังศูนย์ฯ) ไปอยู่ในกล่องที่มาของผังน้ำตำบล
     for (const [id, scene] of [['thungkaew', 'normal'], ['tamnaktham', 'tkNormal'], ['namlao', 'nlNormal']]) {
-      // เปิดที่แท็บเส้นทางน้ำ (ทุกตำบลรอได้ด้วย #water-diagram) แล้วกดแท็บ "สถานการณ์" — ตำหนักธรรมไม่มีสถานีฝน หน้าสถานการณ์เลยไม่มี #water-rain ที่ openScene รอ
+      // เปิดที่แท็บผังน้ำตำบล (ทุกตำบลรอได้ด้วย #water-diagram) แล้วกดแท็บ "สถานการณ์" — ตำหนักธรรมไม่มีสถานีฝน หน้าสถานการณ์เลยไม่มี #water-rain ที่ openScene รอ
       const { context, page } = await openScene(browser, baseUrl, scene, { diagram: id === 'thungkaew' ? null : id })
       try {
         await page.getByRole('tab', { name: 'สถานการณ์' }).click()
-        const box = page.locator('[data-system-source]')
-        await box.waitFor({ state: 'attached', timeout: 10_000 })
-        assert.ok((await box.innerText()).includes('ถอดจากผังของศูนย์บริหารจัดการน้ำจังหวัดแพร่'), `${id}: ข้อความที่มายังอยู่`)
-        assert.equal(await box.locator('a').count(), 0, `${id}: กล่องที่มาของแท็บสถานการณ์ต้องไม่มีลิงก์ผังต้นฉบับแล้ว`)
+        await page.locator('#water-panel-situation').waitFor({ state: 'visible', timeout: 10_000 })
+        assert.equal(await page.locator('#water-system, [data-system-source], [data-water-system]').count(), 0, `${id}: แท็บสถานการณ์ไม่มีส่วนระบบน้ำของตำบลแล้ว (รวมเข้าแท็บผังน้ำตำบล)`)
         assert.equal(await page.locator('#water-panel-situation a[data-original-link]').count(), 0, `${id}: แท็บสถานการณ์ไม่มีลิงก์ผังต้นฉบับ`)
       } finally { await context.close() }
     }

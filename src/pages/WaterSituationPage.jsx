@@ -30,16 +30,14 @@ import {
 const REFRESH_MS = 5 * 60 * 1000
 // ผังน้ำเคลื่อนไหวหนักกว่าส่วนอื่น (ข้อมูลผัง + SVG) และมีแค่ อปท. ในทะเบียน — โหลดเมื่อต้องแสดงจริง อปท. อื่นไม่ต้องโหลด
 const WaterDiagram = lazy(() => import('../components/water/WaterDiagram'))
-// ส่วน "ระบบน้ำของตำบล" (ฤดูแล้ง เฟส 5 · PR 5.2) — โหลดเฉพาะ อปท. ที่มีระบบที่ถอดแล้ว (ทะเบียน src/lib/waterSystem/model.js)
-const WaterSystem = lazy(() => import('../components/water/WaterSystem'))
 const THAIWATER_URL = 'https://www.thaiwater.net'
 const EWS_URL = 'https://ews.dwr.go.th/'
 
-// แท็บบนสุดของหน้า — สถานการณ์ = ค่าสถานีทั้งหมดเหมือนเดิม · เส้นทางน้ำ = แผนภาพของตำบล (เฉพาะ อปท. ที่มีแผนภาพ)
+// แท็บบนสุดของหน้า — สถานการณ์ = ค่าสถานีทั้งหมดเหมือนเดิม · ผังน้ำตำบล = ผังของตำบล (เฉพาะ อปท. ที่มีแผนภาพ)
 // hint = บอกคนมาใหม่ว่าแต่ละแท็บมีอะไร (เขียนให้ตรงกับทุก อปท. — ไม่ระบุว่ามีฝน/อ่าง/ระดับน้ำครบ เพราะแต่ละที่มีไม่เท่ากัน)
 const WATER_TABS = [
   { key: 'situation', label: 'สถานการณ์', hint: 'ค่าฝนและน้ำจากสถานี', Icon: CloudRain },
-  { key: 'route', label: 'เส้นทางน้ำ', hint: 'ภาพประกอบทิศทางน้ำ', Icon: Route },
+  { key: 'route', label: 'ผังน้ำตำบล', hint: 'ภาพประกอบ · ไม่ใช่แผนที่', Icon: Route },
 ]
 
 function fetchSituation(municipalityId) {
@@ -61,7 +59,7 @@ export default function WaterSituationPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const localOnly = searchParams.get('scope') === 'local'
   const nearbyOnly = searchParams.get('scope') === 'nearby5'
-  // เปิดแท็บเส้นทางน้ำตรงๆ ได้ด้วย ?tab=route · demo ที่ใส่ ?diagram= มาดูผังก็เปิดแท็บนี้ให้เอง · ค่าอื่น = สถานการณ์
+  // เปิดแท็บผังน้ำตำบลตรงๆ ได้ด้วย ?tab=route · demo ที่ใส่ ?diagram= มาดูผังก็เปิดแท็บนี้ให้เอง · ค่าอื่น = สถานการณ์
   const [tab, setTab] = useState(() => {
     const wanted = searchParams.get('tab')
     if (wanted === 'route' || wanted === 'situation') return wanted
@@ -149,7 +147,8 @@ export default function WaterSituationPage() {
   const ews = stations.filter(s => s.station_type === 'ews')
   const ewsByCode = new Map(ews.map(s => [s.station_code, s]))
   const loading = tenantLoading || Boolean(tenantId && data === null && !loadError)
-  // ระบบน้ำของตำบล: อปท. ที่ยังไม่มีระบบที่ถอดแล้วไม่เห็นหัวข้อนี้เลย · ?system= ใช้ได้เฉพาะ demo (resolveSystem เมินที่อื่น)
+  // ระบบน้ำของตำบล (src/lib/waterSystem) ใช้ติดป้ายความสัมพันธ์บนการ์ดอ่าง/ระดับน้ำด้านล่าง (ต้นน้ำของตำบล · อยู่ในตำบล · สายข้างเคียง · ผังไม่ระบุ)
+  // ส่วน "ก่อนถึงตำบล/ไหลต่อไปที่" ย้ายไปแท็บผังน้ำตำบลแล้ว (เจ้าของระบบสั่งรวม 2569-10-24) · อปท. ที่ไม่มีระบบ = ไม่ติดป้าย · ?system= ใช้ได้เฉพาะ demo (resolveSystem เมินที่อื่น)
   const systemSelection = resolveSystem(tenant?.slug, searchParams.get('system'))
   const waterSystem = systemSelection ? systemById(systemSelection.system) : null
   // แท็บขึ้นเมื่อ อปท. นี้มีแผนภาพ และมีข้อมูลสถานีให้แสดงแล้ว (เงื่อนไขเดียวกับที่เคยแสดงส่วนแผนภาพ) — ไม่เข้าเงื่อนไข = หน้าเดิมไม่มีแท็บ
@@ -205,10 +204,9 @@ export default function WaterSituationPage() {
       )}
 
       <div className="px-4 pt-1 md:pt-4 space-y-4">
-        {/* ประกาศของ อปท. อยู่เหนือแท็บทั้งสอง — ไม่หายเมื่อสลับไปดูเส้นทางน้ำ */}
+        {/* ประกาศของ อปท. อยู่เหนือแท็บทั้งสอง — ไม่หายเมื่อสลับไปดูผังน้ำตำบล */}
         <WaterAnnouncementCard view={announcement} />
         <div id="water-panel-situation" role={tabsOn ? 'tabpanel' : undefined} aria-labelledby={tabsOn ? 'water-tab-situation' : undefined} hidden={activeTab !== 'situation'} className="space-y-4">
-          <HydroHourlyPanel key={tenant?.slug} profile={hydroProfile} report={hydroReports[0]} failed={hydro?.failed} now={checkedAt} />
           {loading ? (
             <div className="space-y-3">
               {[0, 1, 2].map(i => <div key={i} className="h-24 rounded-2xl bg-gray-100 animate-pulse" />)}
@@ -236,6 +234,12 @@ export default function WaterSituationPage() {
               <AlertBanner rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings}
                 homeAmphoe={tenant?.district} now={checkedAt} tenantName={tenant?.name} />
               <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
+            </>
+          )}
+          {/* กราฟรายชั่วโมงของสถานีในตำบล (เฉพาะ อปท. ที่มีสถานี) — อยู่ใต้ภาพรวม · ตำแหน่งตายตัวในแผง (ไม่ย้ายตามสถานะโหลด) กราฟจะไม่ถูกสร้างใหม่ */}
+          <HydroHourlyPanel key={tenant?.slug} profile={hydroProfile} report={hydroReports[0]} failed={hydro?.failed} now={checkedAt} />
+          {!loading && data !== null && stations.length > 0 && (
+            <>
               <nav className="water-section-nav" aria-label="หมวดข้อมูลน้ำ–ฝน">
                 {rain.length > 0 && <a href="#water-rain"><CloudRain size={18} /><span>ฝน</span><small>{rain.length} สถานี</small></a>}
                 {dams.length > 0 && <a href="#water-dams"><Dam size={18} /><span>อ่างเก็บน้ำ</span><small>{dams.length} แห่ง</small></a>}
@@ -258,12 +262,6 @@ export default function WaterSituationPage() {
               {/* อ่างขนาดเล็กจากผังน้ำออนไลน์แพร่ — ไม่พึ่งฐานข้อมูล/RPC ข้างบน (ดึงผ่าน Worker เอง) จึงอยู่นอกเงื่อนไข dams.length
                   ทุ่งแค้วไม่มีอ่างขนาดกลางในรัศมี 15 กม. แต่มีห้วยยอย/ห้วยปุยในผังน้ำตำบล */}
               <SmallReservoirSection slug={tenant?.slug} tenantName={tenant?.name} now={checkedAt} />
-              {waterSystem && (
-                <Suspense fallback={null}>
-                  <WaterSystem slug={tenant?.slug}
-                    stations={scopedData?.stations ?? []} now={checkedAt} previewId={searchParams.get('system')} />
-                </Suspense>
-              )}
               <SourceNote tenantName={tenant?.name} />
 
             </>

@@ -87,7 +87,7 @@ export function chipWidth(text, size = 19) {
 }
 
 // สีป้ายตัวเลขบนผัง — ไม่ใช่สีสถานการณ์ (ฟ้า = มีค่า · เหลือง = ตัวเลขซ้ำเดิม · เทาประ = ไม่มี/ค้าง · แดงประ = แผนก่อสร้าง)
-// ใช้ร่วมกันทั้งผังเดิม (WaterDiagram.jsx) และแผนภาพเส้นทางน้ำ (WaterRouteArt.jsx) — ห้ามลงสีตามระดับน้ำ (ไม่ใช่ผู้ประเมินสถานการณ์)
+// ใช้ร่วมกันทั้งผังเดิม (WaterDiagram.jsx) และผังน้ำตำบล (WaterRouteArt.jsx) — ห้ามลงสีตามระดับน้ำ (ไม่ใช่ผู้ประเมินสถานการณ์)
 export const CHIP_TONES = {
   ok:    { stroke: '#0284c7', ink: '#0c4a6e', dash: false },
   warn:  { stroke: '#d97706', ink: '#92400e', dash: false },

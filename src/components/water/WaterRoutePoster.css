@@ -1,4 +1,4 @@
-/* โปสเตอร์ "ภาพนำเสนอ A4" ของแผนภาพเส้นทางน้ำ (WaterRoutePoster.jsx) — สีรายธีมเป็นตัวแปร CSS บน svg · กฎหน้าพิมพ์ฉีดตอนเปิดหน้าต่างเท่านั้น (posterPrintCss) */
+/* โปสเตอร์ "ภาพนำเสนอ A4" ของผังน้ำตำบล (WaterRoutePoster.jsx) — สีรายธีมเป็นตัวแปร CSS บน svg · กฎหน้าพิมพ์ฉีดตอนเปิดหน้าต่างเท่านั้น (posterPrintCss) */
 
 .wp-poster[data-theme='dark'] {
   --bg0: #020d1a; --bg1: #06223c; --bg2: #0a4467; --ink: #f8fafc; --ink2: #cbd5e1; --muted: #94a3b8; --halo: #031525;

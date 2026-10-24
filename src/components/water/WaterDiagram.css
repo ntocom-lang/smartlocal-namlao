@@ -71,7 +71,7 @@
 
 .wd-legend svg { width: 34px; height: 16px; flex-shrink: 0; }
 
-/* ── แผนภาพเส้นทางน้ำ (WaterRouteArt.jsx) ── */
+/* ── ผังน้ำตำบล (WaterRouteArt.jsx) ── */
 /* ลายสว่างวิ่งตามลำน้ำ (เฉพาะ stream.flow) · ระยะเลื่อน = ความยาวลาย 1 รอบ (3 + 11) วนต่อเนื่องไม่กระตุก */
 .wr-hl { stroke-opacity: 0.38; }
 .wr-flow { stroke-opacity: 0.85; animation: wr-dash 0.9s linear infinite; }

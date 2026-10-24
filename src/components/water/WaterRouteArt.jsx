@@ -3,7 +3,7 @@ import {
   ISLAND_THICKNESS, islandShape, labelPosition, pillFor, pillWidth, pinPosition, smoothPath, wavePath,
 } from '../../lib/waterDiagram/route'
 
-// แผนภาพเส้นทางน้ำ — ภาพประกอบเวกเตอร์ที่วาดจากข้อมูล (src/lib/waterDiagram/routes/*.js) ไม่ใช้รูปสำเร็จ ไม่มีค่าที่ใส่มือ
+// ผังน้ำตำบล — ภาพประกอบเวกเตอร์ที่วาดจากข้อมูล (src/lib/waterDiagram/routes/*.js) ไม่ใช้รูปสำเร็จ ไม่มีค่าที่ใส่มือ
 // ⚠️ ไม่ใช่แผนที่ ไม่มีเข็มทิศ · เส้นวิ่งเฉพาะ stream.flow (ผังวาดลูกศร) · ค่าสดทุกตัวมาจาก badges (liveBadges) ไม่ลงสีตามระดับน้ำ
 // แอนิเมชันอยู่ใน WaterDiagram.css (คลาส wr-*) ใช้ปุ่มหยุด/นอกจอ/ลดการเคลื่อนไหวชุดเดียวกับผังเดิม
 

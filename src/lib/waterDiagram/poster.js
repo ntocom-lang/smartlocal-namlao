@@ -1,4 +1,4 @@
-// ตรรกะล้วน (ไม่มี React) ของโปสเตอร์ "ภาพนำเสนอ A4" ของแผนภาพเส้นทางน้ำ — วาดด้วย src/components/water/WaterRoutePoster.jsx
+// ตรรกะล้วน (ไม่มี React) ของโปสเตอร์ "ภาพนำเสนอ A4" ของผังน้ำตำบล — วาดด้วย src/components/water/WaterRoutePoster.jsx
 // ข้อมูลตำแหน่งต่อตำบลอยู่ใน route.poster (เช่น routes/namlao.poster.js) · ชื่อจุด/สถานะ/กลุ่ม/เส้นวิ่งมาจาก route เดิมเสมอ ไม่เขียนซ้ำ
 //
 // ⚠️ กติกาเดียวกับแผนภาพบนหน้าเว็บ (เทสต์ posterIssues ตรึง): เส้นวิ่ง/หัวลูกศรเฉพาะลำที่ route.streams ระบุ · ไม่มีเข็มทิศ ·
