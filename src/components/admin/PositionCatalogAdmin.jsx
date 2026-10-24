@@ -31,7 +31,7 @@ const ROLE_TH = {
 }
 
 const EMPTY_FORM = { name: '', category: 'operating_staff', role: 'staff', department_id: '', sort_order: 0 }
-const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
+const inputCls = 'min-h-11 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
 export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
   const [positions, setPositions] = useState([])
@@ -43,6 +43,8 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
   const [saving, setSaving] = useState(false)
   const [importing, setImporting] = useState(false)
   const [search, setSearch] = useState('')
+  const [loadError, setLoadError] = useState('')
+  const [saveError, setSaveError] = useState('')
 
   const canManage = ['admin', 'superadmin'].includes(currentUserRole)
 
@@ -53,16 +55,26 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
     const query = tenant?.id
       ? Promise.all([
           supabase.from('positions').select('*').eq('municipality_id', tenant.id).order('sort_order'),
-          supabase.from('profiles').select('position_id').eq('municipality_id', tenant.id).not('position_id', 'is', null),
+          supabase.rpc('get_position_holder_counts', { p_municipality_id: tenant.id }),
           supabase.from('departments').select('id, name, short_name, sort_order, is_active')
             .eq('municipality_id', tenant.id).order('sort_order'),
         ])
       : Promise.resolve([{ data: [] }, { data: [] }, { data: [] }])
-    query.then(([{ data: pos }, { data: holders }, { data: departmentRows }]) => {
+    query.then(([positionResult, holderResult, departmentResult]) => {
+      const error = positionResult.error || holderResult.error || departmentResult.error
+      if (error) {
+        setLoadError('โหลดโครงสร้างตำแหน่งไม่สำเร็จ กรุณาลองใหม่')
+        setLoading(false)
+        return
+      }
+      setLoadError('')
+      const pos = positionResult.data
+      const holders = holderResult.data
+      const departmentRows = departmentResult.data
       setPositions(pos ?? [])
       setDepartments(departmentRows ?? [])
       const counts = {}
-      for (const row of holders ?? []) counts[row.position_id] = (counts[row.position_id] ?? 0) + 1
+      for (const row of holders ?? []) counts[row.position_id] = Number(row.holder_count)
       setUsage(counts)
       setLoading(false)
     })
@@ -71,10 +83,12 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
   useEffect(() => { reload() }, [reload])
 
   function openCreate(departmentId = '') {
+    setSaveError('')
     setForm({ ...EMPTY_FORM, department_id: departmentId })
     setEditing({})
   }
   function openEdit(p) {
+    setSaveError('')
     setForm({
       name: p.name,
       category: p.category,
@@ -86,31 +100,40 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
   }
 
   async function handleSave() {
-    if (!form.name.trim() || !tenant?.id) return
-    const holderCount = editing?.id ? (usage[editing.id] ?? 0) : 0
-    if (holderCount > 0 && form.department_id !== (editing.department_id ?? '')) {
-      alert(`เปลี่ยนกองไม่ได้: ยังมีบุคลากร ${holderCount} คนถือตำแหน่งนี้อยู่\n\n` +
-        'ให้ย้ายบุคลากรไปตำแหน่งอื่นก่อน เพื่อไม่ให้สังกัดเดิมกับกฎของตำแหน่งขัดกัน')
-      return
-    }
+    if (saving || !form.name.trim() || !tenant?.id) return
     setSaving(true)
+    setSaveError('')
     const payload = {
       name: form.name.trim(),
       category: form.category,
       role: form.role,
       department_id: form.department_id || null,
-      department_hint: departments.find((department) => department.id === form.department_id)?.name || null,
       sort_order: Number(form.sort_order) || 0,
     }
-    const { error } = editing?.id
-      ? await supabase.from('positions').update(payload).eq('id', editing.id)
-      : await supabase.from('positions').insert({ ...payload, municipality_id: tenant.id })
+    const { data, error } = editing?.id
+      ? await supabase.rpc('admin_save_position', {
+          p_position_id: editing.id,
+          p_changes: payload,
+          p_expected_department_id: editing.department_id || null,
+          p_expected_holder_count: usage[editing.id] ?? 0,
+          p_confirm_move: departmentChanged && editingHolderCount > 0,
+        })
+      : await supabase.from('positions').insert({ ...payload, municipality_id: tenant.id }).select('id').single()
     setSaving(false)
     if (error) {
       // 23505 = ชน UNIQUE (municipality_id, name) — ข้อความดิบของ Postgres อ่านไม่รู้เรื่องสำหรับแอดมิน
-      alert(error.code === '23505'
+      const stale = error.code === '40001' || /changed|reload|concurrent/i.test(error.message)
+      const protectedAccount = /own account|Only superadmin|superadmin account/i.test(error.message)
+      setSaveError(error.code === '23505'
         ? `มีตำแหน่งชื่อ "${payload.name}" อยู่แล้วในหน่วยงานนี้`
-        : 'บันทึกไม่สำเร็จ: ' + error.message)
+        : stale ? 'ข้อมูลเปลี่ยนระหว่างแก้ไข กรุณาปิดหน้าต่างแล้วเปิดตำแหน่งนี้ใหม่เพื่อตรวจจำนวนคนก่อนยืนยัน'
+          : protectedAccount ? 'มีบัญชีผู้ดูแลระบบที่คุณไม่มีสิทธิ์ย้าย กรุณาให้ Super Admin ดำเนินการ'
+            : 'บันทึกไม่สำเร็จ: ' + error.message)
+      if (stale) reload()
+      return
+    }
+    if (editing?.id ? data?.position_id !== editing.id : !data?.id) {
+      setSaveError('ไม่พบตำแหน่งที่บันทึก กรุณาโหลดข้อมูลใหม่')
       return
     }
     setEditing(null)
@@ -144,6 +167,9 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
   }
 
   const searchQ = search.trim().toLowerCase()
+  const editingHolderCount = editing?.id ? (usage[editing.id] ?? 0) : 0
+  const departmentChanged = Boolean(editing?.id && form.department_id !== (editing.department_id ?? ''))
+  const targetDepartmentName = departments.find(department => department.id === form.department_id)?.name
   const grouped = useMemo(() => {
     const visible = searchQ
       ? positions.filter(p => p.name.toLowerCase().includes(searchQ) || (p.department_hint ?? '').toLowerCase().includes(searchQ))
@@ -153,6 +179,12 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
   }, [departments, positions, searchQ])
 
   if (loading) return <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-gray-200" /></div>
+  if (loadError) return (
+    <div className="m-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" role="alert">
+      <p>{loadError}</p>
+      <button type="button" onClick={reload} className="mt-2 min-h-11 rounded-xl bg-white px-4 font-bold">ลองใหม่</button>
+    </div>
+  )
 
   return (
     <div className="space-y-4 px-4 py-4 md:px-5">
@@ -270,11 +302,13 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
       )}
 
       {editing !== null && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center"
+          role="dialog" aria-modal="true" aria-labelledby="position-edit-title">
           <div className="bg-white w-full md:max-w-md md:rounded-3xl rounded-t-3xl max-h-[93vh] flex flex-col overflow-hidden shadow-2xl">
             <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
-              <button onClick={() => setEditing(null)} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500"><X size={18} /></button>
-              <p className="font-bold text-gray-800">{editing?.id ? 'แก้ไขตำแหน่ง' : 'เพิ่มตำแหน่งใหม่'}</p>
+              <button onClick={() => setEditing(null)} disabled={saving} aria-label="ปิด"
+                className="flex min-h-11 min-w-11 items-center justify-center rounded-xl hover:bg-gray-100 text-gray-500"><X size={18} /></button>
+              <p id="position-edit-title" className="font-bold text-gray-800">{editing?.id ? 'แก้ไขตำแหน่ง' : 'เพิ่มตำแหน่งใหม่'}</p>
             </div>
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3.5">
               <div>
@@ -283,10 +317,10 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
                   className={inputCls} placeholder="เช่น ผู้อำนวยการกองสาธารณสุขและสิ่งแวดล้อม" />
               </div>
               <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">กอง / หน่วยงาน</label>
-                <select value={form.department_id} onChange={e => setForm(f => ({ ...f, department_id: e.target.value }))}
-                  disabled={Boolean(editing?.id && (usage[editing.id] ?? 0) > 0)}
-                  className={`${inputCls} disabled:bg-gray-100 disabled:text-gray-500`}>
+                <label htmlFor="position-department" className="text-xs font-semibold text-gray-500 mb-1 block">กอง / หน่วยงาน</label>
+                <select id="position-department" value={form.department_id}
+                  onChange={e => setForm(f => ({ ...f, department_id: e.target.value }))}
+                  disabled={saving} className={inputCls}>
                   <option value="">ส่วนกลาง / ยังไม่ผูกกอง</option>
                   {departments.map(department => (
                     <option key={department.id} value={department.id} disabled={department.is_active === false}>
@@ -295,11 +329,19 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
                   ))}
                 </select>
                 <p className="mt-1 text-[11px] leading-5 text-gray-400">
-                  {editing?.id && (usage[editing.id] ?? 0) > 0
-                    ? `ล็อกไว้เพราะมีบุคลากร ${usage[editing.id]} คนใช้อยู่ ต้องย้ายคนออกก่อนจึงเปลี่ยนกองได้`
-                    : 'เมื่อตั้งกองแล้ว การแต่งตั้งคนเข้าตำแหน่งนี้จะใส่กองให้อัตโนมัติ'}
+                  เลือกย้ายกองได้แม้มีผู้ถือตำแหน่ง ระบบจะแสดงผลที่จะเกิดขึ้นก่อนบันทึก
                 </p>
               </div>
+              {departmentChanged && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-xs leading-5 text-amber-800" role="status">
+                  <p className="font-bold">{targetDepartmentName ? `ย้ายตำแหน่งไป ${targetDepartmentName}` : 'กลับเป็นตำแหน่งส่วนกลาง / ยังไม่ผูกกอง'}</p>
+                  <p className="mt-1">
+                    {form.department_id
+                      ? `ผู้ถือตำแหน่ง ${editingHolderCount} คนจะใช้กองนี้ โดยบทบาทระบบเดิมคงไว้ คนที่ย้ายกองจะถูกยกเลิกสถานะหัวหน้ากองเดิม`
+                      : `ผู้ถือตำแหน่ง ${editingHolderCount} คนยังคงกองปัจจุบัน ไม่ล้างสังกัดเดิม`}
+                  </p>
+                </div>
+              )}
               <details className="rounded-2xl border border-gray-100 bg-gray-50 px-3 py-2">
                 <summary className="min-h-11 cursor-pointer py-3 text-xs font-bold text-gray-500">ตัวเลือกขั้นสูง: ระดับ สิทธิ์แนะนำ และลำดับ</summary>
                 <div className="space-y-3 pb-2">
@@ -322,13 +364,16 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
                   </div>
                 </div>
               </details>
+              {saveError && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">{saveError}</p>}
             </div>
             <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
               <button onClick={handleSave} disabled={saving || !form.name.trim()}
                 className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 text-sm active:scale-[0.98] transition-all"
                 style={{ backgroundColor: '#1e293b' }}>
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                {editing?.id ? 'บันทึกการแก้ไข' : 'บันทึก'}
+                {departmentChanged
+                  ? (form.department_id ? 'ยืนยันย้ายตำแหน่งและบุคลากร' : 'ยืนยันกลับเป็นตำแหน่งส่วนกลาง')
+                  : editing?.id ? 'บันทึกการแก้ไข' : 'บันทึก'}
               </button>
             </div>
           </div>
