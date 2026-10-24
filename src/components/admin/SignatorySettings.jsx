@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, Plus, Save, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import {
-  CUSTOM_ROLE, earliestEffectiveFrom, effectiveDateForForm, groupPeopleByDepartment, isExecutiveDepartment,
-  SIGNATORY_BACKDATE_LIMIT_DAYS, SIGNATORY_SCOPE, signatoryDepartments, todayBangkok,
+  CUSTOM_ROLE, departmentSlotMeta, earliestEffectiveFrom, effectiveDateForForm, groupPeopleByDepartment,
+  SIGNATORY_BACKDATE_LIMIT_DAYS, SIGNATORY_SCOPE, todayBangkok,
 } from '../../lib/documentSignatories'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
 
@@ -17,9 +17,9 @@ function personTitle(person) {
   return person?.job_title || person?.position?.name || 'ไม่ระบุตำแหน่ง'
 }
 
-function assignmentState(assignment, optional = false) {
+function assignmentState(assignment, optional = false, emptyLabel = 'ไม่ได้มอบอำนาจ') {
   // แถวที่ไม่บังคับยังไม่ตั้ง = ปกติ ไม่ใช่ปัญหา จึงไม่ขึ้นสีเตือนและไม่ถูกนับว่าขาด
-  if (!assignment) return { ready: optional, label: optional ? 'ไม่ได้มอบอำนาจ' : 'ยังไม่ตั้ง' }
+  if (!assignment) return { ready: optional, label: optional ? emptyLabel : 'ยังไม่ตั้ง' }
   const today = todayBangkok()
   if (assignment.effective_from > today) return { ready: false, label: 'ยังไม่ถึงวันเริ่ม' }
   if (assignment.effective_to && assignment.effective_to < today) return { ready: false, label: 'หมดอายุ' }
@@ -80,7 +80,7 @@ function SignatoryRow({ slot, people, departments, assignment, onSaved, onDiscar
   // ขึ้นคำเตือน 'อยู่นอกกอง' ตั้งแต่ยังไม่ได้เลือกใครเลย
   const crossDepartment = sourceMode === 'profile' && Boolean(slot.departmentId) && Boolean(selected)
     && selected.department_id !== slot.departmentId
-  const status = assignmentState(assignment, slot.optional)
+  const status = assignmentState(assignment, slot.optional, slot.emptyLabel)
   const identityReady = sourceMode === 'manual' ? Boolean(manualName.trim() && titleOverride.trim()) : Boolean(profileId)
 
   // title_override ใช้ร่วมสองโหมดแต่มีความหมายต่างกัน: โหมด manual คือตำแหน่งบังคับของคนนอกระบบ
@@ -329,15 +329,13 @@ export default function SignatorySettings({ tenant }) {
   const slots = useMemo(() => [
     { key: assignmentKey('mayor'), role: 'mayor', municipalityId: tenant?.id, departmentId: null, label: 'นายก' },
     { key: assignmentKey('clerk'), role: 'clerk', municipalityId: tenant?.id, departmentId: null, label: 'ปลัด' },
-    // กองผู้บริหารไม่มีแถวของตัวเอง (ผู้ลงนามคือแถว "นายก" ข้างบน) ยกเว้นกองที่เคยตั้งไว้แล้ว — ดู signatoryDepartments
-    ...signatoryDepartments(departments, assignments)
+    // ทุกกองมีแถวหัวหน้ากอง · กองผู้บริหารเป็นแบบไม่บังคับ + มีคำอธิบาย (ดู departmentSlotMeta)
+    ...departments
       .map((department) => ({
         key: assignmentKey('department_head', department.id),
         role: 'department_head', municipalityId: tenant?.id,
         departmentId: department.id, departmentName: department.name,
-        hint: isExecutiveDepartment(department)
-          ? 'กองผู้บริหาร — ใช้เป็นตัวเลือก “ผู้อำนวยการกอง” ของคนในกองนี้บนใบขอใช้รถ (แถว “นายก” เป็นคนละช่อง) ไม่ตั้งก็ได้'
-          : undefined,
+        ...departmentSlotMeta(department),
         // ใช้ชื่อกองตรงๆ ห้ามเติมคำว่า "หัวหน้า" นำหน้า — หน่วยงานอย่าง "ตรวจสอบภายใน"
         // ส่วนใหญ่ขึ้นตรงกับปลัดและไม่มีตำแหน่งหัวหน้า ป้ายที่เติมเองจึงผิดกับ อปท. จำนวนมาก
         // ผลพลอยได้: ข้อความนี้กลายเป็นข้อมูล ไม่ใช่โค้ด ผู้ดูแลแก้เองได้ที่หน้าจัดการกอง/ส่วนราชการ
@@ -362,7 +360,7 @@ export default function SignatorySettings({ tenant }) {
     ]),
   ), [assignments])
 
-  const missingCount = slots.filter((slot) => !assignmentState(assignmentMap[slot.key], slot.optional).ready).length
+  const missingCount = slots.filter((slot) => !assignmentState(assignmentMap[slot.key], slot.optional, slot.emptyLabel).ready).length
 
   // ชื่อแถวเป็นตัวระบุแถว ซ้ำกันไม่ได้ (unique index ฝั่ง DB บังคับอีกชั้น แต่ต้องกัน
   // ตั้งแต่หน้าจอ ไม่งั้นผู้ใช้กรอกจนเสร็จแล้วค่อยเจอ error 23505 ที่อ่านไม่ออก)

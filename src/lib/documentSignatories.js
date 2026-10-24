@@ -194,19 +194,25 @@ export function organizationSignatories(rows) {
 // - คนที่ไม่มีกองอยู่กลุ่ม "ไม่ระบุกอง" ท้ายสุด · กลุ่มว่างไม่คืนมา
 export const NO_DEPARTMENT_LABEL = 'ไม่ระบุกอง'
 
-// กอง "ผู้บริหาร" (นายก/รองนายก/เลขานุการ) — ผู้ลงนามของกองนี้คือแถว "นายก" ที่เป็นระดับหน่วยงานอยู่แล้ว
+// กอง "ผู้บริหาร" (นายก/รองนายก/เลขานุการ)
 // กติกาเดียวกับที่ trigger สีของกองใช้ (migration 20260913100100): รหัส exec หรือชื่อมีคำว่า "ผู้บริหาร"
 // เพราะกองที่ผู้ดูแลสร้างเองมีรหัสสุ่ม (เช่น ทุ่งแค้ว "คณะผู้บริหารท้องถิ่น" = dept_mt5uixc4) ดูรหัสอย่างเดียวไม่พอ
 export function isExecutiveDepartment(department) {
   return department?.code === 'exec' || /ผู้บริหาร/.test(department?.name ?? '')
 }
 
-// กองที่ได้แถว "หัวหน้ากอง" ในทะเบียนผู้ลงนาม — ทุกกองยกเว้นกองผู้บริหารที่ยังไม่เคยตั้งผู้ลงนาม
-// (กองผู้บริหารที่มีแถวอยู่แล้วต้องยังเห็นและกดยกเลิกได้ ไม่ปล่อยเป็นแถวซ่อนที่ยังมีผลบนใบพิมพ์)
-export function signatoryDepartments(departments, assignments) {
-  const hasHead = id => (assignments ?? []).some(assignment =>
-    assignment.signatory_role === 'department_head' && assignment.department_id === id)
-  return (departments ?? []).filter(department => !isExecutiveDepartment(department) || hasHead(department.id))
+// แถว "หัวหน้ากอง" ของกองผู้บริหารในทะเบียนผู้ลงนาม: แสดงทุก อปท. แบบ "ไม่บังคับ"
+// - ไม่บังคับ = ไม่ถูกนับเป็น "ขาด n ตำแหน่ง" (ผู้มีอำนาจของใบคือแถว "นายก" ไม่ใช่แถวนี้)
+// - แต่ต้องตั้งได้เสมอ: แถวนี้คือตัวเลือก "ผู้อำนวยการกอง" ของคนในกองผู้บริหารบนใบขอใช้รถ และเป็นผู้ลงนามช่อง
+//   dept_head ของลงนามออนไลน์เมื่อทริปนั้นชี้มาที่กองนี้ (esign_expected_signer) ถ้าซ่อนไว้ ผู้ดูแลจะแก้เองไม่ได้
+// - ไม่ใช่แถวเดียวกับ "นายก" แม้ตัวคนเป็นคนเดียวกัน — ข้อความคำอธิบายบอกให้ชัดเพื่อไม่ให้ต้องถามซ้ำ
+export const EXECUTIVE_SLOT_EMPTY_LABEL = 'ไม่ได้ตั้ง (ไม่บังคับ)'
+export const EXECUTIVE_SLOT_HINT =
+  'กองผู้บริหาร — ไม่บังคับ ใช้เป็นตัวเลือก “ผู้อำนวยการกอง” ของคนในกองนี้บนใบขอใช้รถ (คนละช่องกับแถว “นายก”)'
+
+export function departmentSlotMeta(department) {
+  if (!isExecutiveDepartment(department)) return {}
+  return { optional: true, emptyLabel: EXECUTIVE_SLOT_EMPTY_LABEL, hint: EXECUTIVE_SLOT_HINT }
 }
 
 export function groupPeopleByDepartment(people, departments, firstDepartmentId = null) {
