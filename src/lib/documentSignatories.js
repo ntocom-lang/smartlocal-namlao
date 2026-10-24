@@ -186,6 +186,34 @@ export function organizationSignatories(rows) {
     .filter(row => row.signatory_role !== 'department_head' && isSignatoryActiveToday(row, today))
 }
 
+// จัดบุคลากรเป็นกลุ่มตามกอง สำหรับ <optgroup> ของช่อง "เลือกจากบุคลากร" ในทะเบียนผู้ลงนาม
+// (เดิมเทรวมเป็นรายการเดียวเรียงตามชื่อ — อปท. ที่มีบุคลากรหลายสิบคนหาไม่เจอว่าใครอยู่กองไหน)
+// - กองเรียงตามลำดับที่ส่งมา (ทะเบียนกองเรียง sort_order อยู่แล้ว) ส่วนคนในกองคงลำดับเดิมของ people
+// - firstDepartmentId ขึ้นก่อนสุด: แถวหัวหน้ากองเลือกจากกองของตัวเองบ่อยที่สุด
+// - คนที่สังกัดกองที่ปิดใช้แล้ว (ไม่อยู่ใน departments) ได้กลุ่มชื่อกองเดิมต่อท้าย ไม่หายจากรายการ
+// - คนที่ไม่มีกองอยู่กลุ่ม "ไม่ระบุกอง" ท้ายสุด · กลุ่มว่างไม่คืนมา
+export const NO_DEPARTMENT_LABEL = 'ไม่ระบุกอง'
+
+export function groupPeopleByDepartment(people, departments, firstDepartmentId = null) {
+  const groups = new Map((departments ?? []).map(department =>
+    [department.id, { key: department.id, label: department.name, people: [] }]))
+  const retired = new Map()
+  const unassigned = { key: 'none', label: NO_DEPARTMENT_LABEL, people: [] }
+  for (const person of people ?? []) {
+    const id = person?.department_id
+    if (!id) unassigned.people.push(person)
+    else if (groups.has(id)) groups.get(id).people.push(person)
+    else {
+      if (!retired.has(id)) retired.set(id, { key: id, label: person.department?.name || NO_DEPARTMENT_LABEL, people: [] })
+      retired.get(id).people.push(person)
+    }
+  }
+  const ordered = [...groups.values(), ...retired.values(), unassigned].filter(group => group.people.length > 0)
+  const first = firstDepartmentId ? ordered.findIndex(group => group.key === firstDepartmentId) : -1
+  if (first > 0) ordered.unshift(...ordered.splice(first, 1))
+  return ordered
+}
+
 // ชื่อที่จะพิมพ์ — ผู้ลงนามที่ไม่มีบัญชีในระบบเก็บชื่อไว้ที่ manual_name
 export function signatoryName(row) {
   return row?.manual_name?.trim() || row?.profile?.full_name?.trim() || ''

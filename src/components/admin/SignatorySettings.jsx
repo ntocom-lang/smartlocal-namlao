@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, Plus, Save, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import {
-  CUSTOM_ROLE, earliestEffectiveFrom, effectiveDateForForm, SIGNATORY_BACKDATE_LIMIT_DAYS, SIGNATORY_SCOPE, todayBangkok,
+  CUSTOM_ROLE, earliestEffectiveFrom, effectiveDateForForm, groupPeopleByDepartment,
+  SIGNATORY_BACKDATE_LIMIT_DAYS, SIGNATORY_SCOPE, todayBangkok,
 } from '../../lib/documentSignatories'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
 
@@ -44,7 +45,7 @@ async function fetchSignatorySettings(municipalityId) {
 const FIELD_CLASS = 'w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-indigo-400'
 const GRID_CLASS = 'grid gap-2 md:grid-cols-[minmax(160px,1.2fr)_minmax(210px,1.6fr)_minmax(150px,1.2fr)_auto]'
 
-function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
+function SignatoryRow({ slot, people, departments, assignment, onSaved, onDiscard = null }) {
   const [sourceMode, setSourceMode] = useState(assignment?.manual_name ? 'manual' : 'profile')
   const [profileId, setProfileId] = useState(assignment?.profile_id ?? '')
   const [manualName, setManualName] = useState(assignment?.manual_name ?? '')
@@ -71,6 +72,10 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
     savedFrom: assignment?.effective_from ?? null, changed: changedFromSaved, picked: pickedDate, today,
   })
   const selected = sourceMode === 'profile' ? people.find((person) => person.id === profileId) : null
+  // แยกกลุ่มตามกอง แถวหัวหน้ากองเริ่มที่กองของตัวเอง — ชื่อกองอยู่ที่หัวกลุ่ม จึงไม่ต้องซ้ำท้ายชื่อทุกคน
+  const peopleGroups = useMemo(
+    () => groupPeopleByDepartment(people, departments, slot.departmentId),
+    [people, departments, slot.departmentId])
   // ต้องมี selected ก่อน มิฉะนั้น undefined !== departmentId จะทำให้แถวหัวหน้ากอง
   // ขึ้นคำเตือน 'อยู่นอกกอง' ตั้งแต่ยังไม่ได้เลือกใครเลย
   const crossDepartment = sourceMode === 'profile' && Boolean(slot.departmentId) && Boolean(selected)
@@ -197,10 +202,14 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
           <select value={profileId} onChange={(event) => setProfileId(event.target.value)}
             aria-label={`ผู้ลงนาม ${slot.label}`} className={FIELD_CLASS}>
             <option value="">— เลือกบุคลากร —</option>
-            {people.map((person) => (
-              <option key={person.id} value={person.id}>
-                {person.full_name} · {personTitle(person)}{person.department?.name ? ` · ${person.department.name}` : ''}
-              </option>
+            {peopleGroups.map((group) => (
+              <optgroup key={group.key} label={`${group.label} (${group.people.length} คน)`}>
+                {group.people.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.full_name} · {personTitle(person)}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         ) : (
@@ -403,6 +412,7 @@ export default function SignatorySettings({ tenant }) {
             </div>
             {slots.map((slot) => (
               <SignatoryRow key={`${slot.key}:${assignmentMap[slot.key]?.id ?? 'empty'}`} slot={slot} people={people}
+                departments={departments}
                 assignment={assignmentMap[slot.key]} onSaved={reload}
                 onDiscard={slot.removable && !assignmentMap[slot.key]
                   ? () => setDraftRows((rows) => rows.filter((label) => label !== slot.customLabel))
