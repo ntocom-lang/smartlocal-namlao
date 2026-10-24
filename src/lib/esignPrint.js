@@ -13,6 +13,14 @@ const CODE_RE = /^[0-9a-f]{32}$/
 const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/
 const SLOT_ORDER = ESIGN_FLEET_SLOTS.map(slot => slot.key)
 
+// กรอบภาพลายเซ็นบนใบ (มม.) — แหล่งเดียวของ CSS ใน fleetTripPrint.js และของการเสริมความหนาเส้นก่อนพิมพ์ (signatureCanvas.js)
+// ขนาดจริงของภาพบนกระดาษต้องตรงกับที่คำนวณ ไม่งั้นเส้นที่เสริมจะหนาผิดสัดส่วน
+export const PRINT_SIGNATURE_BOX = {
+  form3: { heightMm: 9, widthMm: 40 },
+  sk1: { heightMm: 16, widthMm: 50 },
+}
+export const printSignatureBox = slot => (slot === 'sk1' ? PRINT_SIGNATURE_BOX.sk1 : PRINT_SIGNATURE_BOX.form3)
+
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[character])

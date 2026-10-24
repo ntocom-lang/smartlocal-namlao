@@ -1,5 +1,5 @@
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
-import { esignApprovedMark, esignEvidenceHtml, esignPrintCss, esignSignatureImg, esignValidSlot } from './esignPrint.js'
+import { PRINT_SIGNATURE_BOX, esignApprovedMark, esignEvidenceHtml, esignPrintCss, esignSignatureImg, esignValidSlot } from './esignPrint.js'
 import {
   GOV_SIGN_LINE_W_WIDE, govKeepActingWordTogether, govNameBlank, govSignBlockCss, govSignRow, govSplitActingTitle,
 } from './govSignBlock.js'
@@ -283,7 +283,7 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     .signature-line.is-filled { border-bottom: none; text-align: center; }
     .eservice-origin { margin-top: 3mm; }
     .esign-line { position: relative; }
-    .esign-typed { position: absolute; left: 50%; bottom: 1px; transform: translateX(-50%); font-weight: 700; white-space: nowrap; }${esignPrintCss({ imageMaxHeight: '9mm', imageMaxWidth: '40mm' })}` : ''}
+    .esign-typed { position: absolute; left: 50%; bottom: 1px; transform: translateX(-50%); font-weight: 700; white-space: nowrap; }${esignPrintCss({ imageMaxHeight: `${PRINT_SIGNATURE_BOX.form3.heightMm}mm`, imageMaxWidth: `${PRINT_SIGNATURE_BOX.form3.widthMm}mm` })}` : ''}
   </style>
 </head>
 <body>
@@ -494,7 +494,7 @@ export function buildFleetSk1Html({ trip, tenant, esign = null }) {
     .sign-below { margin-top: 2pt; }
     .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 12mm; text-align: center; }${sk1Slot ? `
     .sign-line { position: relative; }
-    .esign-typed { position: absolute; left: 50%; bottom: 1px; transform: translateX(-50%); font-weight: 700; white-space: nowrap; }${esignPrintCss({ imageMaxHeight: '16mm', imageMaxWidth: '50mm' })}` : ''}
+    .esign-typed { position: absolute; left: 50%; bottom: 1px; transform: translateX(-50%); font-weight: 700; white-space: nowrap; }${esignPrintCss({ imageMaxHeight: `${PRINT_SIGNATURE_BOX.sk1.heightMm}mm`, imageMaxWidth: `${PRINT_SIGNATURE_BOX.sk1.widthMm}mm` })}` : ''}
   </style>
 </head>
 <body>

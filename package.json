@@ -63,6 +63,7 @@
     "test:staff-sign": "node tests/staff-sign-block.test.mjs",
     "test:esign": "node tests/esign-lib.test.mjs && node tests/signature-image.test.mjs && node tests/esign-print.test.mjs",
     "test:esign:print": "node tests/esign-print-layout.test.mjs",
+    "test:esign:weight": "node tests/esign-signature-weight.test.mjs",
     "test:gov-map-qr": "node tests/gov-map-qr.test.mjs",
     "test:menu-tiles": "node tests/menu-tile-color.test.mjs && node tests/menu-tiles-layout.playwright.mjs",
     "test:portal-drawer": "node tests/portal-drawer-layout.playwright.mjs",
