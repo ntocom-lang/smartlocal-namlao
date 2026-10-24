@@ -1,8 +1,10 @@
-// ช่อง "เลือกจากบุคลากร" ในทะเบียนผู้ลงนามต้องแยกกลุ่มตามกอง (เจ้าของระบบสั่ง 2569-10-24)
+// ทะเบียนผู้ลงนาม: ช่อง "เลือกจากบุคลากร" แยกกลุ่มตามกอง + กองผู้บริหารไม่มีแถวซ้ำกับ "นายก" (เจ้าของระบบสั่ง 2569-10-24)
 //   node tests/signatory-people-groups.test.mjs
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { groupPeopleByDepartment, NO_DEPARTMENT_LABEL } from '../src/lib/documentSignatories.js'
+import {
+  groupPeopleByDepartment, isExecutiveDepartment, NO_DEPARTMENT_LABEL, signatoryDepartments,
+} from '../src/lib/documentSignatories.js'
 
 const departments = [
   { id: 'd-exec', name: 'คณะผู้บริหารท้องถิ่น' },
@@ -80,6 +82,39 @@ assert.deepEqual(groupPeopleByDepartment([], departments), [])
   assert.match(source, /<optgroup /)
   // ห้ามมี <option> ที่ map ตรงจาก people ทั้งก้อน (group.people.map ข้างใน optgroup ไม่นับ — ตัวอักษรหน้า people ต้องไม่ใช่ "." หรือตัวอักษร)
   assert.doesNotMatch(source, /[^.\w]people\.map\(\(person\) => \(\s*<option/)
+}
+
+// 8) กองผู้บริหาร: รหัส exec หรือชื่อมีคำว่า "ผู้บริหาร" (กองที่ผู้ดูแลสร้างเองมีรหัสสุ่ม — ทุ่งแค้วเคยหลุดตัวกรองเดิมที่ดูรหัสอย่างเดียว)
+assert.equal(isExecutiveDepartment({ code: 'exec', name: 'ผู้บริหาร' }), true)
+assert.equal(isExecutiveDepartment({ code: 'dept_mt5uixc4', name: 'คณะผู้บริหารท้องถิ่น' }), true)
+assert.equal(isExecutiveDepartment({ code: 'exec', name: 'อะไรก็ได้' }), true)
+assert.equal(isExecutiveDepartment({ code: 'finance', name: 'กองคลัง' }), false)
+assert.equal(isExecutiveDepartment({ code: 'general', name: 'สำนักปลัด' }), false)
+assert.equal(isExecutiveDepartment(null), false)
+
+// 9) แถวหัวหน้ากอง: ซ่อนกองผู้บริหารที่ยังไม่เคยตั้ง · กองผู้บริหารที่ตั้งไว้แล้วต้องยังเห็น (ยกเลิกได้) · กองปกติไม่ถูกซ่อนเลย
+{
+  const depts = [
+    { id: 'a', code: 'exec', name: 'ผู้บริหาร' },
+    { id: 'b', code: 'dept_x', name: 'คณะผู้บริหารท้องถิ่น' },
+    { id: 'c', code: 'finance', name: 'กองคลัง' },
+    { id: 'd', code: 'general', name: 'สำนักปลัด' },
+  ]
+  assert.deepEqual(signatoryDepartments(depts, []).map(d => d.id), ['c', 'd'])
+  assert.deepEqual(signatoryDepartments(depts, null).map(d => d.id), ['c', 'd'])
+  const set = [{ signatory_role: 'department_head', department_id: 'b' }]
+  assert.deepEqual(signatoryDepartments(depts, set).map(d => d.id), ['b', 'c', 'd'])
+  // แถวของบทบาทอื่น (นายก/ปลัดไม่มี department_id) ไม่ทำให้กองผู้บริหารโผล่
+  const others = [{ signatory_role: 'mayor', department_id: null }, { signatory_role: 'custom', department_id: 'a' }]
+  assert.deepEqual(signatoryDepartments(depts, others).map(d => d.id), ['c', 'd'])
+  assert.deepEqual(signatoryDepartments(null, []), [])
+}
+
+// 10) หน้าจอใช้ตัวกรองนี้จริง ไม่กลับไปดูรหัส exec อย่างเดียว
+{
+  const source = await readFile(new URL('../src/components/admin/SignatorySettings.jsx', import.meta.url), 'utf8')
+  assert.match(source, /signatoryDepartments\(departments, assignments\)/)
+  assert.doesNotMatch(source, /department\.code !== 'exec'/)
 }
 
 console.log('signatory-people-groups: ผ่านทั้งหมด')
