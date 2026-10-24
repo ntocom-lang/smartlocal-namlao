@@ -3824,7 +3824,7 @@ function ParkingChip({ cat, onToggle, className = '' }) {
         : 'หมวดนี้ขึ้นทะเบียนรอดำเนินการไม่ได้ — กดเพื่อเปิดให้หัวหน้ากองใช้ได้'}
       className={`px-2 py-1 rounded-full font-bold transition-colors ${allowed ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'} ${className}`}
     >
-      {allowed ? '🗂️ ขึ้นทะเบียนรอได้' : 'ไม่ใช้ขึ้นทะเบียนรอ'}
+      {allowed ? '🗂️ ขึ้นทะเบียนรอ' : 'ไม่ขึ้นทะเบียนรอ'}
     </button>
   )
 }
@@ -4079,7 +4079,7 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
         />
       </td>
       <td className="px-2 py-3 text-center">
-        <div className="flex flex-col items-center gap-1">
+        <div className="flex flex-wrap items-center justify-center gap-1">
           <button
             onClick={() => onToggleAdhoc(cat.id, !!cat.is_adhoc)}
             title="สลับปกติ/เฉพาะกิจ"
@@ -4087,11 +4087,11 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
           >
             {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
           </button>
-          {/* คอลัมน์นี้ได้ 9% ของตาราง table-fixed แคบกว่าข้อความชิป — ให้ตัดบรรทัดในกรอบ ไม่ล้นออกไปทับไอคอนแก้ไข */}
-          <SubmitAudienceChip cat={cat} onToggle={onToggleSubmitAudience} className="max-w-full text-center text-[11px] leading-tight" />
-          <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="max-w-full text-center text-[11px] leading-tight" />
-          <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="max-w-full text-center text-[11px] leading-tight" />
-          <ParkingChip cat={cat} onToggle={onToggleParking} className="max-w-full text-center text-[11px] leading-tight" />
+          {/* ชิปไม่ตัดบรรทัด เรียงข้างกันตามความกว้างคอลัมน์ (20% ≈ 2 ตัวต่อบรรทัดบนจอ 1000px ขึ้นไป) — จอแคบเหลือ 1 ตัวต่อบรรทัด */}
+          <SubmitAudienceChip cat={cat} onToggle={onToggleSubmitAudience} className="max-w-full whitespace-nowrap text-[11px] leading-tight" />
+          <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="max-w-full whitespace-nowrap text-[11px] leading-tight" />
+          <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="max-w-full whitespace-nowrap text-[11px] leading-tight" />
+          <ParkingChip cat={cat} onToggle={onToggleParking} className="max-w-full whitespace-nowrap text-[11px] leading-tight" />
         </div>
       </td>
       <td className="px-2 py-3">
@@ -4887,15 +4887,18 @@ function CategoryManager({ tenant }) {
             <SortableContext items={visibleCats.map((c) => c.id)} strategy={verticalListSortingStrategy}>
               <div className="hidden md:block overflow-hidden rounded-xl border border-gray-200">
                 <table className="w-full table-fixed text-sm">
+                  {/* คอลัมน์ 'ประเภทงาน' เก็บชิปตั้งค่า 5 ตัว (ปกติ/ใครแจ้ง/ใครรับเรื่อง/ปักหมุด/ขึ้นทะเบียนรอ) — ให้ 23% ชิปเรียงข้างกัน
+                      2 ตัวต่อบรรทัด (ตารางกว้าง 935px แถวสูง ~98px) · เดิม 9% ชิปซ้อนตั้งตัวละ 2-3 บรรทัด แถวสูงเกิน 200px
+                      ส่วนที่เพิ่มดึงจากคอลัมน์ที่เหลือพื้นที่ (ประเภท/กอง/ช่าง/ระยะเวลา/สถานะ) */}
                   <colgroup>
                     <col className="w-[4%]" />
                     <col className="w-[4%]" />
-                    <col className="w-[19%]" />
-                    <col className="w-[17%]" />
-                    <col className="w-[16%]" />
-                    <col className="w-[9%]" />
+                    <col className="w-[15%]" />
                     <col className="w-[14%]" />
-                    <col className="w-[9%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[8%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[23%]" />
                     <col className="w-[8%]" />
                   </colgroup>
                   <thead className="bg-gray-50 border-b border-gray-200">
