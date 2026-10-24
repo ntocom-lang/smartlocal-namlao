@@ -17,7 +17,7 @@ import { THUNGKAEW_BINDS } from '../src/lib/waterDiagram/thungkaew.js'
 import { NAMLAO_ROUTE } from '../src/lib/waterDiagram/routes/namlao.js'
 import { TAMNAKTHAM_ROUTE } from '../src/lib/waterDiagram/routes/tamnaktham.js'
 import {
-  POSTER_DISCLAIMER, POSTER_PRINT_SIZE, POSTER_ICON_OVERRIDES, POSTER_THEMES, POSTER_TILES_MAX, posterHeader, posterIcon, posterIssues, posterLiveRows, posterOmittedNames, posterPrintCss, posterStats, posterTiles,
+  POSTER_DISCLAIMER, POSTER_PRINT_SIZE, POSTER_ICON_OVERRIDES, POSTER_THEME_KEY, POSTER_THEMES, POSTER_TILES_MAX, loadPosterTheme, posterHeader, posterIcon, posterIssues, posterLiveRows, posterOmittedNames, posterPrintCss, posterStats, posterTiles, savePosterTheme,
 } from '../src/lib/waterDiagram/poster.js'
 import { GOV_PAGE_MARGIN_LANDSCAPE, govPageCss } from '../src/lib/govDocStyle.js'
 import { LIST_SHEET_COLUMNS, LIST_SHEET_MM, balanceRanges, listColumns, listItemWeight } from '../src/lib/waterDiagram/listSheet.js'
@@ -1004,6 +1004,31 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
   for (const needed of ['ไม่ได้แสดงว่าขณะนี้มีน้ำไหลจริง', 'จะไม่เคลื่อนไหว', 'ไม่ใช่แผนที่', 'ทิศ']) assert.ok(POSTER_DISCLAIMER.join(' ').includes(needed), `ข้อความบังคับขาด "${needed}"`)
   assert.deepEqual(POSTER_THEMES, ['dark', 'light'])
 
+  // จำโหมดมืด/สว่างที่ผู้ใช้เลือกไว้ในเครื่อง (เจ้าของระบบสั่ง 2569-10-23)
+  {
+    const fake = (initial = {}) => {
+      const data = { ...initial }
+      return { data, getItem: key => (key in data ? data[key] : null), setItem: (key, value) => { data[key] = String(value) } }
+    }
+    assert.equal(POSTER_THEME_KEY, 'water-route-poster-theme')
+    assert.equal(loadPosterTheme(fake()), 'dark', 'ไม่เคยเลือก = โหมดมืด')
+    assert.equal(loadPosterTheme(fake({ [POSTER_THEME_KEY]: 'light' })), 'light'); assert.equal(loadPosterTheme(fake({ [POSTER_THEME_KEY]: 'dark' })), 'dark')
+    for (const junk of ['', 'LIGHT', 'blue', '1', 'null', '{"theme":"light"}', ' light']) assert.equal(loadPosterTheme(fake({ [POSTER_THEME_KEY]: junk })), 'dark', `ค่าที่ไม่รู้จัก (${JSON.stringify(junk)}) = กลับโหมดมืด`)
+    const store = fake()
+    savePosterTheme('light', store); assert.equal(store.data[POSTER_THEME_KEY], 'light'); assert.equal(loadPosterTheme(store), 'light', 'เก็บแล้วอ่านกลับได้')
+    savePosterTheme('dark', store); assert.equal(loadPosterTheme(store), 'dark')
+    for (const bad of ['rainbow', '', null, undefined, 1]) { const other = fake(); savePosterTheme(bad, other); assert.deepEqual(other.data, {}, `ไม่เก็บโหมดที่ไม่รู้จัก (${String(bad)})`) }
+    // ที่เก็บข้อมูลใช้ไม่ได้ (โหมดส่วนตัว/บล็อก/เต็ม) ต้องไม่พัง
+    const broken = { getItem() { throw new Error('SecurityError') }, setItem() { throw new Error('QuotaExceededError') } }
+    assert.equal(loadPosterTheme(broken), 'dark'); assert.doesNotThrow(() => savePosterTheme('light', broken))
+    assert.equal(loadPosterTheme(null), 'dark'); assert.doesNotThrow(() => savePosterTheme('light', null))
+    // ไม่มี localStorage เลย (รันใน Node) หรือการหยิบตัวแปรโยน error — ใช้ค่าเริ่มต้น
+    assert.equal(loadPosterTheme(), 'dark'); assert.doesNotThrow(() => savePosterTheme('light'))
+    const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('SecurityError: blocked') } })
+    try { assert.equal(loadPosterTheme(), 'dark'); assert.doesNotThrow(() => savePosterTheme('light')) } finally { if (had) Object.defineProperty(globalThis, 'localStorage', had); else delete globalThis.localStorage }
+  }
+
   // หน้าพิมพ์ใช้ตัวกลาง govDocStyle: A4 แนวนอน · ขอบแนวนอนของระบบ · ซ่อนหัวท้ายกระดาษด้วย padding · แผ่นเดียว
   {
     const css = posterPrintCss()
@@ -1041,7 +1066,9 @@ for (const [diagramId, diagram] of Object.entries(DIAGRAMS)) {
     assert.match(poster, /export default function WaterRoutePosterPanel\(/, 'ส่งออก default เป็นภาพในหน้า (WaterDiagram โหลดจุดเดียว)')
     assert.match(poster, /\{open && <WaterRoutePosterDialog /, 'หน้าต่างพิมพ์เปิดเฉพาะเมื่อกดปุ่ม')
     // ปุ่มสลับโหมดมืด/สว่างของภาพในหน้า (เจ้าของระบบสั่ง 2569-10-23): สถานะอยู่ที่ Panel ส่งเข้าภาพในหน้า และเป็นโหมดเริ่มต้นของหน้าต่างพิมพ์
-    assert.match(poster, /const \[theme, setTheme\] = useState\(POSTER_THEMES\[0\]\)\s*const labelId = useId\(\)/, 'Panel เก็บโหมดของภาพในหน้า เริ่มที่โหมดมืด')
+    assert.match(poster, /const \[theme, setTheme\] = useState\(loadPosterTheme\)\s*const chooseTheme = key => \{ setTheme\(key\); savePosterTheme\(key\) \}\s*const labelId = useId\(\)/, 'Panel เก็บโหมดของภาพในหน้า เริ่มที่โหมดที่จำไว้ (ไม่เคยเลือก = มืด) และจำทุกครั้งที่กด')
+    assert.match(poster, /onClick=\{\(\) => chooseTheme\(key\)\} data-poster-theme-option=\{key\}/, 'ปุ่มโหมดในหน้าจำค่าที่กด')
+    assert.equal((poster.match(/savePosterTheme\(/g) ?? []).length, 1, 'จำเฉพาะปุ่มในหน้า (chooseTheme จุดเดียว) — โหมดที่เลือกในหน้าต่างพิมพ์ไม่ถูกจำ เพราะเป็นการเลือกตอนจะพิมพ์')
     assert.match(poster, /<WaterRoutePoster route=\{route\} diagram=\{diagram\} badges=\{badges\} now=\{now\} theme=\{theme\} \/>\s*<\/div>\s*<\/div>\s*<p className="m-0 px-1 text-xs text-slate-500 lg:hidden">/, 'ภาพในหน้าใช้โหมดที่เลือก')
     assert.match(poster, /initialTheme=\{theme\} onClose=/, 'หน้าต่างพิมพ์เปิดที่โหมดเดียวกับภาพในหน้า')
     assert.match(poster, /data-poster-theme-option=\{key\}/); assert.match(poster, /const PAGE_THEME_LABELS = \{ dark: 'โหมดมืด', light: 'โหมดสว่าง' \}/, 'ชื่อปุ่ม "โหมดมืด"/"โหมดสว่าง" ตามคำของเจ้าของระบบ')

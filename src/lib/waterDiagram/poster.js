@@ -11,6 +11,28 @@ import { govPageCss, govPagePadding } from '../govDocStyle.js'
 export const POSTER_THEMES = ['dark', 'light']
 export const POSTER_PRINT_SIZE = 'A4 landscape'
 
+// จำโหมดมืด/สว่างที่ผู้ใช้เลือกไว้ในเครื่อง (เจ้าของระบบสั่ง 2569-10-23) — เก็บเฉพาะค่า 'dark' | 'light' ที่ผู้ใช้กดเองในหน้า ไม่มีข้อมูลส่วนบุคคล
+// ที่เก็บข้อมูลของเบราว์เซอร์เป็นต่อโดเมน (แต่ละ อปท. เป็นโดเมนย่อยของตัวเอง) และไม่ข้ามเครื่อง · เบราว์เซอร์ที่ปิด/บล็อกที่เก็บข้อมูล (โหมดส่วนตัว) ใช้โหมดมืดตามค่าเริ่มต้น ไม่พัง
+// ค่าที่อ่านมาต้องเป็นโหมดที่รู้จักเท่านั้น (ค่าแปลก/เก่า/ถูกแก้ = กลับค่าเริ่มต้น) · ไม่จำโหมดที่เลือกในหน้าต่างพิมพ์ (นั่นเป็นการเลือกตอนจะพิมพ์ ไม่ใช่ที่ผู้ใช้อยากให้ภาพในหน้าเป็น)
+export const POSTER_THEME_KEY = 'water-route-poster-theme'
+
+// การเข้าถึง localStorage เองก็โยน SecurityError ได้ในบางเบราว์เซอร์ จึงห่อ try ตั้งแต่ตอนหยิบตัวแปร ไม่ใช่เฉพาะตอนอ่าน/เขียน
+function browserStorage() {
+  try { return globalThis.localStorage ?? null } catch { return null }
+}
+
+export function loadPosterTheme(storage = browserStorage()) {
+  try {
+    const saved = storage?.getItem(POSTER_THEME_KEY)
+    return POSTER_THEMES.includes(saved) ? saved : POSTER_THEMES[0]
+  } catch { return POSTER_THEMES[0] }
+}
+
+export function savePosterTheme(theme, storage = browserStorage()) {
+  if (!POSTER_THEMES.includes(theme)) return
+  try { storage?.setItem(POSTER_THEME_KEY, theme) } catch { /* เก็บไม่ได้ก็ใช้แค่รอบนี้ */ }
+}
+
 // วันที่-เวลาของข้อมูลสดบนภาพ/แผ่นรายการ (พ.ศ. เวลาไทย)
 export const posterDateTime = now => new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
   dateStyle: 'long', timeStyle: 'short', timeZone: 'Asia/Bangkok',

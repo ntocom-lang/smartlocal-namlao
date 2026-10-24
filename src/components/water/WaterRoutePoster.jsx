@@ -5,7 +5,7 @@ import './WaterRoutePoster.css'
 import { CHIP_TONES, chipWidth } from '../../lib/waterDiagram/model'
 import { pillFor, pillWidth, smoothPath } from '../../lib/waterDiagram/route'
 import {
-  POSTER_DISCLAIMER, POSTER_THEMES, posterDateTime, posterHeader, posterIcon, posterLiveRows, posterOmittedNames, posterPrintCss, posterStats, posterTiles,
+  POSTER_DISCLAIMER, POSTER_THEMES, loadPosterTheme, posterDateTime, posterHeader, posterIcon, posterLiveRows, posterOmittedNames, posterPrintCss, posterStats, posterTiles, savePosterTheme,
 } from '../../lib/waterDiagram/poster'
 import WaterRouteListSheet from './WaterRouteListSheet'
 import { GOV_FONT_SIZE_ADJUST, GOV_FONT_STACK } from '../../lib/govDocStyle'
@@ -404,12 +404,14 @@ export function WaterRoutePosterDialog({ route, diagram, badges, now, onClose, i
 const PANEL_BUTTON = 'inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-slate-400 bg-white px-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50'
 
 // ภาพนำเสนอที่วางในหน้าแทนภาพเกาะลอย (เจ้าของระบบสั่ง 2569-10-23 "เอาภาพนำเสนอ A4 มาใส่แทนภาพแรกเลย")
-// เริ่มที่โหมดมืด · ปุ่ม "โหมดมืด / โหมดสว่าง" เหนือภาพสลับสีของภาพในหน้า (เจ้าของระบบสั่ง 2569-10-23) แล้วหน้าต่างพิมพ์เปิดมาที่โหมดเดียวกัน
+// เริ่มที่โหมดมืด (หรือโหมดที่ผู้ใช้เลือกไว้ครั้งก่อน — จำในเครื่อง) · ปุ่ม "โหมดมืด / โหมดสว่าง" เหนือภาพสลับสีของภาพในหน้า (เจ้าของระบบสั่ง 2569-10-23) แล้วหน้าต่างพิมพ์เปิดมาที่โหมดเดียวกัน
 // ปุ่ม "พิมพ์ / บันทึก PDF" เปิดหน้าต่างตัวอย่างหน้ากระดาษ — ตรรกะพิมพ์ที่ตรวจด้วย PDF จริงอยู่ในหน้าต่างนั้น · แผ่นรายการจุดเป็นสีสว่างเสมอ
 // มือถือ: ภาพกว้างขั้นต่ำ 900px เลื่อนแนวนอนในกรอบ (กรอบโฟกัสด้วยคีย์บอร์ดได้) · min-w-0 บนกรอบนอก: ไม่งั้นช่องกริดของหน้าขยายตามภาพ 900px แล้วดันทั้งหน้าให้ล้นจอ (เทสต์เลย์เอาต์ 360–768px ตรึงไว้)
 export default function WaterRoutePosterPanel({ route, diagram, badges, now }) {
   const [open, setOpen] = useState(false)
-  const [theme, setTheme] = useState(POSTER_THEMES[0])
+  // เริ่มที่โหมดที่ผู้ใช้เลือกไว้ครั้งก่อน (อ่านครั้งเดียวตอนเปิดหน้า) · ไม่เคยเลือก/อ่านไม่ได้ = โหมดมืด
+  const [theme, setTheme] = useState(loadPosterTheme)
+  const chooseTheme = key => { setTheme(key); savePosterTheme(key) }
   const labelId = useId()
   return (
     <div data-poster-panel className="min-w-0 space-y-2">
@@ -420,7 +422,7 @@ export default function WaterRoutePosterPanel({ route, diagram, badges, now }) {
             {POSTER_THEMES.map(key => {
               const Icon = THEME_ICONS[key]
               return (
-                <button key={key} type="button" aria-pressed={theme === key} onClick={() => setTheme(key)} data-poster-theme-option={key}
+                <button key={key} type="button" aria-pressed={theme === key} onClick={() => chooseTheme(key)} data-poster-theme-option={key}
                   className={`inline-flex min-h-[44px] items-center gap-1.5 px-3.5 text-sm font-bold ${theme === key ? 'bg-sky-700 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
                   <Icon size={16} aria-hidden="true" /> {PAGE_THEME_LABELS[key]}
                 </button>
