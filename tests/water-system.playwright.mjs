@@ -7,6 +7,7 @@
 // ตรวจ: คำกำกับบังคับชุดเดียว + อายุผัง · ก่อนถึงตำบล/ไหลต่อไปที่ · ไม่มีขั้น "ในตำบล"/กล่องที่มา/คำกำกับซ้ำในแท็บสถานการณ์
 //   · ป้ายความสัมพันธ์ (305 ต้นน้ำ · 304 สายข้างเคียง · YOM003 ผังไม่ระบุ · Y.38 อยู่ในตำบล) · ค่าสดไม่มี = "ไม่มีค่าสดในระบบ" · ไม่มีช่องกรอก · เป้ากด ≥ 44px
 //   · ไม่ล้นจอ 360/390/768/1280 · ไม่มีคำขอเขียน · ?system= แปลก = กลับค่าเริ่มต้น · แท็บสถานการณ์เรียงภาพรวม → กราฟรายชั่วโมง
+//   · แถว "เกิดเหตุหรือต้องการความช่วยเหลือเรื่องน้ำ" ท้ายแท็บผังน้ำตำบล (WaterHelpRow.jsx · ข้อ 8): สายด่วนขึ้นเสมอ · ปุ่มหมวดขึ้นเฉพาะที่เปิดให้ผู้ใช้ยื่นได้จริง (จำลอง complaint_categories)
 //   · ล็อกว่าการ์ดแนวโน้มอ่าง 30 วัน + กล่อง "ผังต้นฉบับมี แต่เราไม่ได้ใส่" ไม่กลับมา และหน้าไม่เรียก get_public_dam_history อีก (เจ้าของระบบสั่งตัด 2026-10-19)
 //
 // อ่านอย่างเดียว ไม่เขียนข้อมูลใด · RPC สถานี (get_public_water_situation) ถูกจำลองในเบราว์เซอร์ · get_public_dam_history ถูกดักไว้นับเท่านั้น (ต้องเป็น 0)
@@ -77,7 +78,7 @@ const SCENES = {
 }
 
 // tab: 'route' (ค่าเริ่มต้น — ?diagram= ของ demo เปิดแท็บผังน้ำตำบลเอง) | 'situation'
-async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 900, diagram = 'namlao', system = diagram, tab = 'route', query = null } = {}) {
+async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 900, diagram = 'namlao', system = diagram, tab = 'route', query = null, categories = [], categoriesStatus = 200 } = {}) {
   const scene = SCENES[sceneName]
   const context = await browser.newContext({ viewport: { width, height }, locale: 'th-TH' })
   const page = await context.newPage()
@@ -95,6 +96,10 @@ async function openScene(browser, baseUrl, sceneName, { width = 1280, height = 9
     route.fulfill({ json: { synced_at: hoursAgo(0.2), stations: scene.stations, warnings: [] } }))
   await page.route('**/api/small-reservoir*', route => route.fulfill({ status: 503, json: { error: 'RESERVOIR_UNAVAILABLE' } }))
   await page.route('**/api/hydro-hourly*', route => route.fulfill({ status: 503, json: { error: 'UNAVAILABLE' } }))
+  // หมวดคำร้องของ อปท. (แถวแจ้งเหตุอ่านตารางนี้) — จำลองให้ผลคงที่ ไม่พึ่งข้อมูลจริงของ demo
+  await page.route('**/rest/v1/complaint_categories*', route => (categoriesStatus === 200
+    ? route.fulfill({ json: categories })
+    : route.fulfill({ status: categoriesStatus, json: { message: 'error' } })))
   await page.route('**/rest/v1/rpc/get_public_dam_history', route => {
     historyCalls.push(route.request().postData())
     return route.fulfill({ json: { days: 30, radius_km: 10, dams: [] } })
@@ -354,6 +359,98 @@ try {
       } finally { await context.close() }
     }
   })
+  // ── 8) แถวแจ้งเหตุ/ขอความช่วยเหลือเรื่องน้ำ ท้ายแท็บผังน้ำตำบล ──
+  //   ข้อมูลจริง production 2569-10-24: ไม่มี อปท. ไหนมีหมวด flood · water_supply เปิดให้ประชาชนที่ตำหนักธรรม/ทุ่งแค้ว แต่ปิด+เฉพาะผู้มีตำแหน่งที่น้ำเลา
+  const CAT = (value, extra = {}) => ({ value, label: value === 'flood' ? 'น้ำท่วม/ระบายน้ำ' : 'สนับสนุนน้ำอุปโภค', emoji: value === 'flood' ? '🌊' : '🚿', is_active: true, submit_audience: 'public', ...extra })
+  const helpRow = page => page.locator('[data-water-help]')
+  const helpButtons = page => helpRow(page).locator('[data-help-category]')
+  const helpValues = page => helpButtons(page).evaluateAll(els => els.map(el => el.getAttribute('data-help-category')))
+
+  async function assertHelpBasics(page, id) {
+    await helpRow(page).waitFor({ state: 'visible', timeout: 10_000 })
+    const emergency = helpRow(page).locator('[data-help-emergency]')
+    assert.equal(await emergency.getAttribute('href'), '/emergency', `${id}: สายด่วนต้องพาไปหน้า /emergency`)
+    assert.ok((await emergency.innerText()).includes('สายด่วนฉุกเฉิน'))
+    const text = await helpRow(page).innerText()
+    assert.ok(text.includes('เกิดเหตุหรือต้องการความช่วยเหลือเรื่องน้ำ') && text.includes('หากเกิดเหตุฉุกเฉิน ให้ติดต่อสายด่วนก่อน'), `${id}: ต้องมีหัวข้อและข้อความนำ`)
+    assert.ok(!/\b(191|1669|1784|199|1196)\b|tel:/.test(text + (await helpRow(page).innerHTML())), `${id}: ห้ามฝังเบอร์โทรในแถว (เบอร์อยู่ในฐานข้อมูล หน้า /emergency แสดงให้)`)
+    // อยู่ท้ายแท็บผังน้ำตำบล: ใต้ภาพ/ก่อนถึงตำบล/ไหลต่อไปที่ · อยู่ในแผงของแท็บนี้ ไม่อยู่ในแท็บสถานการณ์
+    const [diagram, row] = await Promise.all([diagramSection(page).boundingBox(), helpRow(page).boundingBox()])
+    assert.ok(row.y >= diagram.y + diagram.height - 1, `${id}: แถวต้องอยู่ใต้ผังทั้งส่วน (แถว y=${Math.round(row.y)} ผังจบ y=${Math.round(diagram.y + diagram.height)})`)
+    assert.equal(await page.locator('#water-panel-route [data-water-help]').count(), 1)
+    assert.equal(await page.locator('#water-panel-situation [data-water-help]').count(), 0, `${id}: ไม่อยู่ในแท็บสถานการณ์`)
+    assert.equal(await helpRow(page).locator('input, textarea, select, form, [contenteditable]').count(), 0, 'แถวนี้อ่านอย่างเดียว')
+  }
+
+  await check('แถวแจ้งเหตุ · น้ำเลา (หมวดน้ำอุปโภคปิด/เฉพาะผู้มีตำแหน่ง): ประชาชนเห็นแต่สายด่วนฉุกเฉิน ไม่มีปุ่มที่พาไปฟอร์มที่ยื่นไม่ได้', async () => {
+    const { context, page, problems, writes } = await openScene(browser, baseUrl, 'ready', { diagram: 'namlao', categories: [CAT('water_supply', { is_active: false, submit_audience: 'officials' })] })
+    try {
+      await assertHelpBasics(page, 'namlao')
+      assert.deepEqual(await helpValues(page), [], 'หมวดปิด/เฉพาะผู้มีตำแหน่ง ต้องไม่ขึ้นปุ่มให้ประชาชน')
+      assert.deepEqual(writes, []); assert.deepEqual(problems, [])
+      await shootDiagram(page, 'help-namlao-1280.png')
+    } finally { await context.close() }
+  })
+  await check('แถวแจ้งเหตุ · ตำหนักธรรม/ทุ่งแค้ว (หมวดน้ำอุปโภคเปิดให้ทุกคน): ขึ้นปุ่มพาไปฟอร์มรับเรื่องพร้อมเลือกหมวด · กดแล้วไปหน้าฟอร์มจริง', async () => {
+    const { context, page, problems, writes } = await openScene(browser, baseUrl, 'tamnaktham', { diagram: 'tamnaktham', categories: [CAT('water_supply')] })
+    try {
+      await assertHelpBasics(page, 'tamnaktham')
+      assert.deepEqual(await helpValues(page), ['water_supply'])
+      const button = helpButtons(page).first()
+      assert.equal(await button.getAttribute('href'), '/request?category=water_supply')
+      assert.ok((await button.innerText()).includes('สนับสนุนน้ำอุปโภค'))
+      await button.click()
+      await page.waitForURL(/\/request\?category=water_supply/, { timeout: 15_000 })
+      assert.deepEqual(writes, [])
+      assert.deepEqual(problems, [])
+    } finally { await context.close() }
+  })
+  await check('แถวแจ้งเหตุ · เมื่อ อปท. มีหมวดรหัส flood ปุ่มขึ้นเอง (flood ก่อน water_supply) · หมวดอื่น/ซ่อมประปาไม่ขึ้น', async () => {
+    const { context, page, problems } = await openScene(browser, baseUrl, 'thungkaew', { diagram: 'thungkaew', categories: [CAT('water_supply'), CAT('road'), CAT('water_repair'), CAT('flood')] })
+    try {
+      await assertHelpBasics(page, 'thungkaew')
+      assert.deepEqual(await helpValues(page), ['flood', 'water_supply'])
+      assert.equal(await helpButtons(page).first().getAttribute('href'), '/request?category=flood')
+      assert.deepEqual(problems, [])
+    } finally { await context.close() }
+  })
+  await check('แถวแจ้งเหตุ · หมวดที่เปิดแต่เฉพาะผู้มีตำแหน่ง/ปิดอยู่/โหลดตารางไม่ได้: ไม่ขึ้นปุ่ม เหลือสายด่วนเสมอ ไม่พัง', async () => {
+    for (const [name, options] of [
+      ['เฉพาะผู้มีตำแหน่ง', { categories: [CAT('flood', { submit_audience: 'officials' }), CAT('water_supply', { submit_audience: 'officials' })] }],
+      ['ปิดอยู่', { categories: [CAT('flood', { is_active: false }), CAT('water_supply', { is_active: false })] }],
+      ['ไม่มีแถวเลย', { categories: [] }],
+      ['ตารางตอบ 500', { categories: [], categoriesStatus: 500 }],
+    ]) {
+      const { context, page, problems } = await openScene(browser, baseUrl, 'ready', { diagram: 'namlao', ...options })
+      try {
+        await assertHelpBasics(page, name)
+        assert.deepEqual(await helpValues(page), [], `${name}: ต้องไม่ขึ้นปุ่มหมวด`)
+        assert.deepEqual(problems, [], `${name}: ต้องไม่มี JS error`)
+      } finally { await context.close() }
+    }
+  })
+  for (const width of [360, 390, 768, 1280]) {
+    await check(`แถวแจ้งเหตุ ${width}px: ไม่ล้นจอ · เป้ากด ≥ ${MIN_TAP}px · ปุ่มไม่ซ้อนกัน`, async () => {
+      const { context, page, problems } = await openScene(browser, baseUrl, 'thungkaew', { width, diagram: 'thungkaew', categories: [CAT('water_supply'), CAT('flood')] })
+      try {
+        await assertHelpBasics(page, `${width}px`)
+        await assertNoHorizontalOverflow(page, `แถวแจ้งเหตุ ${width}px`)
+        const boxes = await helpRow(page).locator('a[href]').evaluateAll((nodes, min) => nodes.map(n => {
+          const r = n.getBoundingClientRect()
+          return { text: (n.textContent || '').trim().slice(0, 24), h: Math.round(r.height), x: r.x, y: r.y, right: r.right, bottom: r.bottom, small: r.height < min }
+        }), MIN_TAP)
+        assert.equal(boxes.length, 3, 'สายด่วน + 2 หมวด')
+        assert.deepEqual(boxes.filter(b => b.small).map(b => b.text), [], `เป้ากดเล็กกว่า ${MIN_TAP}px`)
+        for (let i = 0; i < boxes.length; i += 1) for (let j = i + 1; j < boxes.length; j += 1) {
+          const a = boxes[i]; const b = boxes[j]
+          assert.ok(a.right <= b.x + 1 || b.right <= a.x + 1 || a.bottom <= b.y + 1 || b.bottom <= a.y + 1, `ปุ่ม "${a.text}" ซ้อนกับ "${b.text}"`)
+        }
+        await helpRow(page).scrollIntoViewIfNeeded()
+        await helpRow(page).screenshot({ path: path.join(SHOT_DIR, `help-row-${width}.png`) })
+        assert.deepEqual(problems, [])
+      } finally { await context.close() }
+    })
+  }
 } finally {
   await browser.close()
 }

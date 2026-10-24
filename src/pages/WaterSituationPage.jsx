@@ -13,6 +13,7 @@ import SmallReservoirSection from '../components/water/SmallReservoirSection'
 import { diagramTenant } from '../lib/waterDiagram/model'
 import RelationPill from '../components/water/RelationPill'
 import WaterAnnouncementCard from '../components/water/WaterAnnouncementCard'
+import WaterHelpRow from '../components/water/WaterHelpRow'
 import { useWaterAnnouncement } from '../components/water/useWaterAnnouncement'
 import { relationOf, resolveSystem, systemById } from '../lib/waterSystem/model'
 import { supabase } from '../lib/supabase'
@@ -279,6 +280,8 @@ export default function WaterSituationPage() {
             <Suspense fallback={null}>
               <WaterDiagram slug={tenant?.slug} tenantName={tenant?.name} stations={scopedData?.stations ?? []} now={checkedAt} previewId={searchParams.get('diagram')} />
             </Suspense>
+            {/* แจ้งเหตุ/ขอความช่วยเหลือเรื่องน้ำ — ท้ายแท็บ (เจ้าของระบบสั่ง 2569-10-24 "ครบ จบ เรื่องน้ำ") · สายด่วนขึ้นเสมอ ปุ่มหมวดคำร้องขึ้นเองเมื่อ อปท. เปิดหมวดนั้นให้ผู้ใช้ยื่นได้ */}
+            <WaterHelpRow />
           </div>
         )}
       </div>
