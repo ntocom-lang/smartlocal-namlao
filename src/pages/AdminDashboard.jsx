@@ -13,7 +13,7 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat, ArrowLeftRight, BookUser, ShieldQuestion,
-  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck, FileSignature, Menu
+  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck, UserPlus, FileSignature, Menu
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 // ไอคอนที่เป็นได้ทั้งอิโมจิและรูปแนบ — ของกลางชุดเดียวกับศูนย์ข้อมูลดิจิทัล ไม่ทำซ้ำอีกชุด
@@ -41,6 +41,7 @@ import SignatorySettings from '../components/admin/SignatorySettings'
 import EsignSettings from '../components/admin/EsignSettings'
 import DocumentTypeAssignments from '../components/admin/DocumentTypeAssignments'
 import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
+import PersonnelQuickAssignDialog from '../components/admin/PersonnelQuickAssignDialog'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
 import ResetPasswordModal from '../components/admin/ResetPasswordModal'
 // โหลดแบบ lazy — EventsManager เป็น chunk 60KB ที่ของเดิม import แบบ static ทำให้ถูกดาวน์โหลด
@@ -67,6 +68,7 @@ import UserProfileBadge from '../components/layout/UserProfileBadge'
 import PortalDrawer from '../components/common/PortalDrawer'
 import FleetSetup from '../components/fleet/FleetSetup'
 import { adminUpdateUser } from '../lib/adminUpdateUser'
+import { departmentFilterParams } from '../lib/personnelStructure'
 import { logAction } from '../lib/auditLog'
 import { CategoryIcon } from '../lib/categoryIcon'
 import { isOfficialsOnlyCategory, SUBMIT_AUDIENCE_OFFICIALS, SUBMIT_AUDIENCE_PUBLIC } from '../lib/serviceAudience'
@@ -257,9 +259,10 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   // บัญชีที่จะ "เก็บไว้" เมื่อรวมบัญชีซ้ำ (คนเดียวสมัคร 2 ครั้งด้วยคนละ provider) — บัญชีที่จะยุบ
   // เลือกในโมดัลอีกที ดู MergeDuplicateModal
   const [mergeKeepUser, setMergeKeepUser] = useState(null)
-  // ค่าเริ่มต้นต้องตรงกับ ORDER BY จริงใน get_users_with_email() (full_name ASC) ไม่งั้นลูกศร
-  // บนหัวตารางจะขึ้นผิดทิศทาง (ข้อมูลที่ได้มาเรียงตามชื่อแล้ว แต่ลูกศรจะโชว์ว่ายังไม่ได้กดเรียง)
-  const [sortConfig, setSortConfig] = useState({ key: 'full_name', direction: 'asc' })
+  // ค่าเริ่มต้นส่งไปเรียงที่ RPC ก่อน LIMIT/OFFSET เสมอ ลูกศรบนหัวตารางจึงตรงกับข้อมูลทุกหน้า
+  // หน้าเจ้าหน้าที่เรียงตามกอง/ตำแหน่งก่อนโดยปริยาย เพื่อให้คนตำแหน่งเดียวกันอยู่ติดกัน
+  // ส่วนแท็บประชาชนจะสลับกลับไปเรียงชื่อใน handler ของแท็บด้านล่าง
+  const [sortConfig, setSortConfig] = useState({ key: 'assignment', direction: 'asc' })
   const [serverSortReady, setServerSortReady] = useState(true)
 
   const [search, setSearch] = useState('')
@@ -269,38 +272,68 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   const [pageSize, setPageSize] = useState(USER_PAGE_SIZE)
   const [citizenCount, setCitizenCount] = useState(null)
   const [staffCount, setStaffCount] = useState(null)
+  const [departmentCounts, setDepartmentCounts] = useState([])
+  const [quickAssignDepartment, setQuickAssignDepartment] = useState(null)
   const fetchSequence = useRef(0)
+  const initialDepartmentTenant = useRef(null)
 
-  useEffect(() => {
+  const reloadStructure = useCallback(() => {
     if (!tenant?.id) return
-    Promise.all([
+    return Promise.all([
       supabase.from('departments').select('id, name, short_name')
         .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order'),
       // positions เป็นของแต่ละ อปท. แล้ว (20260831140000_positions_per_municipality.sql)
       // RLS กรองให้อยู่แล้วสำหรับ admin แต่ superadmin อ่านได้ทุกแถวข้าม อปท. จึงต้องกรองเองด้วย
-      supabase.from('positions').select('id, name, role, category, department_hint')
+      supabase.from('positions').select('id, name, role, category, department_id, department_hint, sort_order')
         .eq('municipality_id', tenant.id).order('sort_order'),
     ]).then(([{ data: departmentRows }, { data: positionRows }]) => {
-      setDepts(departmentRows ?? [])
-      setPositions(positionRows ?? [])
+      const nextDepartments = departmentRows ?? []
+      setDepts(nextDepartments)
+      const activeDepartmentIds = new Set(nextDepartments.map((department) => department.id))
+      setPositions((positionRows ?? []).filter((position) => !position.department_id || activeDepartmentIds.has(position.department_id)))
+      // เปิดมาเห็นเพียงกองแรกทันที ไม่เทรายชื่อทั้งองค์กรเป็นแถวยาว แต่ยังมีการ์ด "ทุกกอง" ให้เลือก
+      if (initialDepartmentTenant.current !== tenant.id) {
+        initialDepartmentTenant.current = tenant.id
+        setFilterDept(nextDepartments[0]?.id ?? 'none')
+        setPage(0)
+      }
     })
     // subTab อยู่ใน deps เพื่อให้ dropdown "ตำแหน่ง" ในแท็บเจ้าหน้าที่เห็นตำแหน่งที่เพิ่งเพิ่มจาก
     // แท็บแบบตำแหน่งทันทีที่สลับกลับมา ไม่ต้องรีเฟรชหน้าเอง
-  }, [tenant?.id, subTab])
+  }, [tenant])
+
+  useEffect(() => { reloadStructure() }, [reloadStructure, subTab])
+
+  const reloadDepartmentCounts = useCallback(() => {
+    if (!tenant?.id || !['admin', 'superadmin'].includes(currentUserRole)) return
+    return supabase.rpc('get_staff_department_counts', { p_municipality_id: tenant.id })
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('get_staff_department_counts:', error.message)
+          setDepartmentCounts([])
+          return
+        }
+        setDepartmentCounts(data ?? [])
+      })
+  }, [currentUserRole, tenant])
+
+  useEffect(() => { reloadDepartmentCounts() }, [reloadDepartmentCounts])
 
   // จำนวนจริงทั้งหมดของแต่ละแท็บ (ไม่ใช่แค่ users.length ที่จำกัดแค่หน้าละ USER_PAGE_SIZE คน — ถ้ามีเกินนั้น
   // ตัวเลขในรายการจะน้อยกว่าความจริง) — ใช้ RPC get_user_role_counts แทนนับตรงจาก client เพราะต้อง mirror
   // เงื่อนไขเดียวกับ get_users_with_email (รวมบัญชี municipality_id เป็น NULL ที่ผูกผ่านคำร้อง) ไม่งั้น
   // ตัวเลข badge จะไม่ตรงกับรายการจริงที่กดเข้าไปดู (เจอจริงตอนทดสอบ: นับตรงได้ 37 แต่รายการจริงมี 38)
-  useEffect(() => {
+  const reloadRoleCounts = useCallback(() => {
     if (!tenant?.id || !['admin', 'superadmin'].includes(currentUserRole)) return
-    supabase.rpc('get_user_role_counts', { p_municipality_id: tenant.id })
+    return supabase.rpc('get_user_role_counts', { p_municipality_id: tenant.id })
       .then(({ data, error }) => {
         if (error) return
         setStaffCount(data?.staff ?? 0)
         setCitizenCount(data?.citizen ?? 0)
       })
   }, [tenant?.id, currentUserRole])
+
+  useEffect(() => { reloadRoleCounts() }, [reloadRoleCounts])
 
   const fetchUsers = useCallback(async (opts = {}) => {
     if (!['admin', 'superadmin'].includes(currentUserRole) || !tenant?.id) return
@@ -325,14 +358,22 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         p_offset: requestedPage * pageSize,
       }
       let usedLegacyRpc = false
-      let { data, error } = await supabase.rpc('get_users_with_email_sorted', {
+      const sortedParams = {
         ...rpcParams,
         p_sort_key: requestedSortKey,
         p_sort_direction: requestedSortDirection,
-      })
+      }
+      let result = subTab === 'staff'
+        ? await supabase.rpc('get_users_with_email_sorted_filtered', {
+            ...sortedParams,
+            ...departmentFilterParams(filterDept),
+          })
+        : await supabase.rpc('get_users_with_email_sorted', sortedParams)
+      let { data, error } = result
       // ระหว่าง deploy แบบ DB-first หาก schema cache ยังไม่เห็น RPC ใหม่ ให้รายการเดิมยังเปิดได้
-      // (แต่จะเรียงได้ถูกต้องเฉพาะข้อมูลในหน้าปัจจุบันจนกว่า migration จะถูก apply)
-      if (error?.code === 'PGRST202') {
+      // เฉพาะมุม "ทุกกอง" เท่านั้นที่ fallback ได้โดยไม่แสดงข้อมูลผิดกอง กรณีเลือกกองแล้ว
+      // ต้องรอ migration ก่อน มิฉะนั้นการกรองหลัง LIMIT จะทำให้คนหายและจำนวนผิดเหมือนบั๊กเดิม
+      if (error?.code === 'PGRST202' && (subTab !== 'staff' || !filterDept)) {
         usedLegacyRpc = true
         const legacyResult = await supabase.rpc('get_users_with_email', rpcParams)
         data = legacyResult.data
@@ -349,7 +390,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     } finally {
       if (requestId === fetchSequence.current) setLoading(false)
     }
-  }, [tenant?.id, currentUserRole, subTab, filterRole, pageSize, sortConfig])
+  }, [tenant?.id, currentUserRole, subTab, filterRole, filterDept, pageSize, sortConfig])
 
   // ค้นหา/กรอง/แบ่งหน้าใน SQL เพื่อไม่ดึง PII ทั้งหมดมาที่ Browser — RPC จำกัดหน้าละ
   // USER_PAGE_SIZE อยู่แล้ว ทั้งสองแท็บจึงโหลดหน้าแรกได้ทันทีโดยไม่ต้องรอพิมพ์ค้นหาก่อน
@@ -414,6 +455,8 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
       department_name: dept?.name ?? null,
       position_name: clearsAssignment ? null : (position?.name ?? null),
     } : u))
+    reloadDepartmentCounts()
+    reloadRoleCounts()
     return { ok: true }
   }
 
@@ -472,32 +515,38 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
 
   // การ์ดกลุ่ม "กอง/หน่วยงาน" แทนกลุ่มตำแหน่งเดิม — เข้าใจง่ายกว่า เพราะตรงกับโครงสร้างหน่วยงานจริง
   // ที่แอดมินคุ้นเคยอยู่แล้ว (กองคลัง, กองช่าง, สำนักปลัด ฯลฯ) ไม่ต้องแปลจากหมวดตำแหน่งนามธรรม
+  const departmentCountMap = new Map(departmentCounts.map((row) => [row.department_id ?? 'none', Number(row.staff_count)]))
   const deptCards = [
+    {
+      value: '', label: 'ทุกกอง / หน่วยงาน', shortName: 'ค้นหาทั้งองค์กร',
+      count: staffCount,
+      palette: { color: '#1d4ed8', soft: '#eff6ff', border: '#bfdbfe' },
+    },
     ...depts.map((d, index) => ({
       value: d.id,
       label: d.name,
       shortName: d.short_name,
-      count: users.filter(u => u.department_id === d.id).length,
+      count: departmentCountMap.get(d.id) ?? 0,
       palette: PERSONNEL_CARD_PALETTES[index % PERSONNEL_CARD_PALETTES.length],
     })),
     {
       value: 'none', label: 'ไม่ระบุกอง', shortName: 'รอตรวจสอบ',
-      count: users.filter(u => !u.department_id).length,
+      count: departmentCountMap.get('none') ?? 0,
       palette: { color: '#64748b', soft: '#f8fafc', border: '#cbd5e1' },
     },
   ]
 
-  const activeTabCount = subTab === 'citizen' ? citizenCount : staffCount
+  const selectedDepartment = depts.find((department) => department.id === filterDept) ?? null
+  const selectedDepartmentCount = selectedDepartment
+    ? (departmentCountMap.get(selectedDepartment.id) ?? 0)
+    : filterDept === 'none' ? (departmentCountMap.get('none') ?? 0) : staffCount
+  const activeTabCount = subTab === 'citizen' ? citizenCount : selectedDepartmentCount
   const assignedOnPage = users.filter(u => u.department_id).length
   const departmentHeadOnPage = users.filter(u => u.is_dept_head).length
 
-  const filteredOnPage = users.filter((u) => {
-    const q = search.toLowerCase()
-    const matchSearch = !q || (u.full_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || (u.phone || '').includes(q)
-    const matchRole = !filterRole || u.role === filterRole
-    const matchDept = !filterDept || (filterDept === 'none' ? !u.department_id : u.department_id === filterDept)
-    return matchSearch && matchRole && matchDept
-  })
+  // RPC กรองคำค้น/บทบาท/กองก่อนแบ่งหน้าแล้ว ห้ามกรองซ้ำใน browser เพราะเงื่อนไขอาจ
+  // ต่างจาก SQL (เช่นเลขบัตรหรือช่องว่างรอบคำค้น) แล้วทำให้แสดงคนน้อยกว่าผลจริง
+  const filteredOnPage = users
   const filtered = serverSortReady ? filteredOnPage : [...filteredOnPage].sort((a, b) => {
     const { key, direction } = sortConfig;
     let aVal = userSortValue(a, key)
@@ -566,7 +615,13 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         {subTab !== 'positions' && (
         <div className="relative mt-5 grid grid-cols-3 gap-2 md:max-w-xl md:gap-3">
           {[
-            { label: subTab === 'staff' ? 'เจ้าหน้าที่ทั้งหมด' : 'ประชาชนทั้งหมด', value: activeTabCount ?? '—', color: 'text-cyan-200' },
+            {
+              label: subTab === 'staff'
+                ? (selectedDepartment ? `บุคลากรใน${selectedDepartment.name}` : (filterDept === 'none' ? 'ยังไม่ระบุกอง' : 'เจ้าหน้าที่ทั้งหมด'))
+                : 'ประชาชนทั้งหมด',
+              value: activeTabCount ?? '—',
+              color: 'text-cyan-200',
+            },
             { label: subTab === 'staff' ? 'มีสังกัดในหน้านี้' : 'บัญชีในหน้านี้', value: subTab === 'staff' ? assignedOnPage : users.length, color: 'text-emerald-200' },
             { label: subTab === 'staff' ? 'หัวหน้ากองในหน้านี้' : 'ผลการค้นหา', value: subTab === 'staff' ? departmentHeadOnPage : filtered.length, color: 'text-violet-200' },
           ].map(item => (
@@ -596,9 +651,10 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
             setSubTab(key)
             setSearch('')
             setFilterRole('')
+            setSortConfig({ key: key === 'staff' ? 'assignment' : 'full_name', direction: 'asc' })
             setPage(0)
             setUsers([])
-            setFilterDept('')
+            setFilterDept(key === 'staff' ? (depts[0]?.id ?? 'none') : '')
             setLoading(true)
           }}
             aria-current={subTab === key ? 'page' : undefined}
@@ -624,12 +680,20 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
       {/* การ์ดกลุ่ม "กอง/หน่วยงาน" (เฉพาะแท็บเจ้าหน้าที่) */}
       {subTab === 'staff' && (
         <div className="px-4 pt-4 md:px-5">
-          <div className="mb-2.5 flex items-center justify-between">
+          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-xs font-extrabold text-slate-700">เลือกกอง / หน่วยงาน</p>
-              <p className="text-[10px] text-slate-400">กรองรายชื่อจากโครงสร้างหน่วยงานจริง</p>
+              <p className="text-[10px] text-slate-400">แสดงทีละกอง จำนวนมาจากข้อมูลทั้งองค์กร ไม่ใช่เฉพาะหน้าปัจจุบัน</p>
             </div>
-            {filterDept && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-600">กำลังกรอง</span>}
+            <div className="flex flex-wrap items-center gap-2">
+              {filterDept && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-600">กำลังกรอง</span>}
+              {selectedDepartment && (
+                <button type="button" onClick={() => setQuickAssignDepartment(selectedDepartment)}
+                  className="flex min-h-11 items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700">
+                  <UserPlus size={15} /> เพิ่มบุคลากรใน{selectedDepartment.name}
+                </button>
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
           {deptCards.map(c => {
@@ -658,7 +722,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                 </span>
                 <span className="min-w-7 shrink-0 rounded-full px-2 py-1 text-center text-[11px] font-black"
                   style={{ backgroundColor: isActive ? c.palette.color : c.palette.soft, color: isActive ? '#fff' : c.palette.color }}>
-                  {c.count}
+                  {c.count ?? '—'}
                 </span>
               </button>
             )
@@ -677,7 +741,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
               setSearch(e.target.value)
               setPage(0)
             }}
-            placeholder={subTab === 'citizen' ? 'ค้นหาชื่อ, เบอร์โทร, เลขบัตร (ไม่บังคับ)...' : 'ค้นหาชื่อ, อีเมล, เบอร์...'}
+            placeholder={subTab === 'citizen' ? 'ค้นหาชื่อ, เบอร์โทร, เลขบัตร (ไม่บังคับ)...' : 'ค้นหาชื่อ, ตำแหน่ง, อีเมล หรือเบอร์...'}
             className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
           />
         </div>
@@ -725,7 +789,11 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           </span>
           <p className="text-sm font-extrabold text-slate-700">
             {users.length === 0
-              ? (subTab === 'citizen' ? 'ยังไม่มีประชาชนสมัครใช้งาน' : 'ยังไม่มีรายชื่อเจ้าหน้าที่')
+              ? (subTab === 'citizen'
+                  ? 'ยังไม่มีประชาชนสมัครใช้งาน'
+                  : selectedDepartment
+                    ? `${selectedDepartment.name}ยังไม่มีบุคลากร`
+                    : filterDept === 'none' ? 'ไม่มีบุคลากรที่รอตรวจสอบสังกัด' : 'ยังไม่มีรายชื่อเจ้าหน้าที่')
               : 'ไม่พบผู้ใช้ที่ค้นหา'}
           </p>
           <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-400">
@@ -960,8 +1028,10 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
       {!loading && users.length > 0 && (() => {
         // มี count ที่แม่นยำ (จาก get_user_role_counts) เฉพาะตอนไม่มีตัวกรองแคบผลลัพธ์ลง —
         // ถ้ากรองอยู่ ไม่รู้จำนวนจริงหลังกรอง เลยใช้ heuristic "ได้ครบหน้าพอดีไหม" แทนแค่เปิด/ปิดปุ่มถัดไป
-        const filtersActive = Boolean(search.trim() || filterRole || (subTab === 'staff' && filterDept))
-        const tabTotal = subTab === 'citizen' ? citizenCount : staffCount
+        // ตัวนับรายกองมาจากฐานข้อมูลทั้งชุดแล้ว จึงยังคำนวณจำนวนหน้าได้เมื่อเลือกกอง
+        // มีเพียงคำค้น/role ที่ยังไม่มี count แยก จึงใช้ heuristic เฉพาะสองกรณีนั้น
+        const filtersActive = Boolean(search.trim() || filterRole)
+        const tabTotal = subTab === 'citizen' ? citizenCount : selectedDepartmentCount
         const totalPages = !filtersActive && tabTotal != null ? Math.max(1, Math.ceil(tabTotal / pageSize)) : null
         const canGoNext = totalPages != null ? page + 1 < totalPages : users.length === pageSize
         return (
@@ -998,6 +1068,23 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
       </>)}
 
       </section>
+      {quickAssignDepartment && (
+        <PersonnelQuickAssignDialog
+          tenant={tenant}
+          department={quickAssignDepartment}
+          positions={positions}
+          currentUserId={currentUserId}
+          onClose={() => setQuickAssignDepartment(null)}
+          onSaved={() => {
+            setQuickAssignDepartment(null)
+            reloadStructure()
+            reloadDepartmentCounts()
+            reloadRoleCounts()
+            fetchUsers({ search, page: 0 })
+            setPage(0)
+          }}
+        />
+      )}
       <DeleteUserConfirmModal
         deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
         deleteBlockedReason={deleteBlockedReason}
@@ -1586,6 +1673,8 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
 
   function handlePositionChange(positionId) {
     const position = positions.find(item => item.id === positionId)
+    const nextDepartmentId = position?.department_id || draft.department_id
+    const nextDepartmentHead = nextDepartmentId === draft.department_id ? draft.is_dept_head : false
     const suggestedRole = position?.role
     const maySuggestRole = suggestedRole
       && suggestedRole !== draft.role
@@ -1606,12 +1695,19 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
       setDraft(current => ({
         ...current,
         position_id: positionId,
+        department_id: nextDepartmentId,
+        is_dept_head: nextDepartmentHead,
         role: confirmed ? suggestedRole : current.role,
       }))
       return
     }
 
-    setDraft(current => ({ ...current, position_id: positionId }))
+    setDraft(current => ({
+      ...current,
+      position_id: positionId,
+      department_id: nextDepartmentId,
+      is_dept_head: nextDepartmentHead,
+    }))
   }
 
   return (
@@ -1634,7 +1730,10 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
           <p className="text-sm text-gray-800">{user.position_name || 'ยังไม่แต่งตั้งตำแหน่ง'}</p>
         )}
         {selectedPosition?.department_hint && (
-          <p className="mt-1 text-xs text-gray-400">กองที่มักสังกัด: {selectedPosition.department_hint}</p>
+          <p className="mt-1 text-xs text-gray-400">
+            {selectedPosition.department_id ? 'ระบบกำหนดกองให้อัตโนมัติ: ' : 'กองที่มักสังกัด: '}
+            {selectedPosition.department_hint}
+          </p>
         )}
         {selectedPosition?.role && (
           <p className="mt-1 text-xs text-indigo-500">บทบาทแนะนำ: {ROLE_LABELS[selectedPosition.role]?.label ?? selectedPosition.role}</p>
@@ -1644,13 +1743,17 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">กอง/หน่วยงาน</p>
         {isEditing ? (
           <select value={draft.department_id}
-            onChange={(e) => setDraft(d => ({ ...d, department_id: e.target.value }))}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white">
+            onChange={(e) => setDraft(d => ({ ...d, department_id: e.target.value, is_dept_head: false }))}
+            disabled={Boolean(selectedPosition?.department_id)}
+            className="min-h-11 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white disabled:bg-gray-100 disabled:text-gray-500">
             <option value="">— ไม่ระบุกอง —</option>
             {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
         ) : (
           <p className="text-sm text-gray-800">{user.department_name || 'ไม่ระบุกอง'}</p>
+        )}
+        {isEditing && selectedPosition?.department_id && (
+          <p className="mt-1 text-xs text-gray-400">ตำแหน่งนี้กำหนดกองไว้แล้ว ระบบจึงใส่ให้และล็อกไม่ให้เลือกผิดกอง</p>
         )}
       </div>
       {activeDeptId && (

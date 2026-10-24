@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Briefcase, Plus, Pencil, Trash2, X, Loader2, Search, AlertCircle, Users, DownloadCloud } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { activeOrgTerms } from '../../lib/orgTerms'
+import { groupPositionsByDepartment } from '../../lib/personnelStructure'
 
 // แบบตำแหน่งของหน่วยงาน (ตาราง positions) — ย้ายมาจากเมนู "ทำเนียบตำแหน่ง" ฝั่งเจ้าหน้าที่ที่ถอดออก
 // 2026-08-31 (ซ้ำซ้อนกับหน้าจัดการผู้ใช้ในสายตาแอดมิน) ตาราง positions ยังจำเป็นเพราะเป็น dependency
@@ -29,11 +30,12 @@ const ROLE_TH = {
   get council() { return activeOrgTerms().councilOrg },
 }
 
-const EMPTY_FORM = { name: '', category: 'operating_staff', role: 'staff', department_hint: '', sort_order: 0 }
+const EMPTY_FORM = { name: '', category: 'operating_staff', role: 'staff', department_id: '', sort_order: 0 }
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
 export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
   const [positions, setPositions] = useState([])
+  const [departments, setDepartments] = useState([])
   const [usage, setUsage] = useState({}) // position_id -> จำนวนคนในหน่วยงานนี้ที่ถืออยู่
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null) // null=ปิด, {}=สร้างใหม่, {...position}=แก้ไข
@@ -52,10 +54,13 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
       ? Promise.all([
           supabase.from('positions').select('*').eq('municipality_id', tenant.id).order('sort_order'),
           supabase.from('profiles').select('position_id').eq('municipality_id', tenant.id).not('position_id', 'is', null),
+          supabase.from('departments').select('id, name, short_name, sort_order, is_active')
+            .eq('municipality_id', tenant.id).order('sort_order'),
         ])
-      : Promise.resolve([{ data: [] }, { data: [] }])
-    query.then(([{ data: pos }, { data: holders }]) => {
+      : Promise.resolve([{ data: [] }, { data: [] }, { data: [] }])
+    query.then(([{ data: pos }, { data: holders }, { data: departmentRows }]) => {
       setPositions(pos ?? [])
+      setDepartments(departmentRows ?? [])
       const counts = {}
       for (const row of holders ?? []) counts[row.position_id] = (counts[row.position_id] ?? 0) + 1
       setUsage(counts)
@@ -65,23 +70,36 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
 
   useEffect(() => { reload() }, [reload])
 
-  function openCreate() {
-    setForm(EMPTY_FORM)
+  function openCreate(departmentId = '') {
+    setForm({ ...EMPTY_FORM, department_id: departmentId })
     setEditing({})
   }
   function openEdit(p) {
-    setForm({ name: p.name, category: p.category, role: p.role, department_hint: p.department_hint ?? '', sort_order: p.sort_order })
+    setForm({
+      name: p.name,
+      category: p.category,
+      role: p.role,
+      department_id: p.department_id ?? '',
+      sort_order: p.sort_order,
+    })
     setEditing(p)
   }
 
   async function handleSave() {
     if (!form.name.trim() || !tenant?.id) return
+    const holderCount = editing?.id ? (usage[editing.id] ?? 0) : 0
+    if (holderCount > 0 && form.department_id !== (editing.department_id ?? '')) {
+      alert(`เปลี่ยนกองไม่ได้: ยังมีบุคลากร ${holderCount} คนถือตำแหน่งนี้อยู่\n\n` +
+        'ให้ย้ายบุคลากรไปตำแหน่งอื่นก่อน เพื่อไม่ให้สังกัดเดิมกับกฎของตำแหน่งขัดกัน')
+      return
+    }
     setSaving(true)
     const payload = {
       name: form.name.trim(),
       category: form.category,
       role: form.role,
-      department_hint: form.department_hint.trim() || null,
+      department_id: form.department_id || null,
+      department_hint: departments.find((department) => department.id === form.department_id)?.name || null,
       sort_order: Number(form.sort_order) || 0,
     }
     const { error } = editing?.id
@@ -130,10 +148,9 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
     const visible = searchQ
       ? positions.filter(p => p.name.toLowerCase().includes(searchQ) || (p.department_hint ?? '').toLowerCase().includes(searchQ))
       : positions
-    return CATEGORIES
-      .map(c => ({ ...c, items: visible.filter(p => p.category === c.value) }))
-      .filter(c => c.items.length > 0)
-  }, [positions, searchQ])
+    return groupPositionsByDepartment(visible, departments)
+      .filter(group => group.items.length > 0 || (!searchQ && group.department))
+  }, [departments, positions, searchQ])
 
   if (loading) return <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-gray-200" /></div>
 
@@ -155,7 +172,7 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
               {importing ? <Loader2 size={14} className="animate-spin" /> : <DownloadCloud size={14} />}
               <span>ชุดมาตรฐาน</span>
             </button>
-            <button onClick={openCreate}
+            <button onClick={() => openCreate()}
               className="flex min-h-11 items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white shadow-sm active:scale-95 transition-all"
               style={{ backgroundColor: '#1e293b' }}>
               <Plus size={14} /> เพิ่มตำแหน่ง
@@ -167,8 +184,8 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
       <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-700 flex gap-2">
         <AlertCircle size={15} className="shrink-0 mt-0.5" />
         <span>
-          ตำแหน่งชุดนี้เป็น<strong>ของหน่วยงานนี้เท่านั้น</strong> แก้แล้วไม่กระทบ อปท. อื่น —
-          การแต่งตั้งคนเข้าตำแหน่งทำที่แท็บ <strong>เจ้าหน้าที่</strong>
+          เลือกกองครั้งเดียวตอนสร้างตำแหน่ง จากนั้นเมื่อแต่งตั้ง ระบบจะใส่กองให้เอง —
+          ตำแหน่ง “ส่วนกลาง” เท่านั้นที่ผู้ดูแลต้องเลือกกองตอนแต่งตั้ง
         </span>
       </div>
 
@@ -190,24 +207,39 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
           )}
         </div>
       ) : (
-        grouped.map(cat => (
-          <div key={cat.value} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2">
-              <p className="min-w-0 break-words text-xs font-bold text-gray-600">{cat.label}</p>
-              <p className="shrink-0 text-xs font-semibold text-gray-500">{cat.items.length} ตำแหน่ง</p>
-            </div>
-            <div className="divide-y divide-gray-50">
-              {cat.items.map(p => {
+        grouped.map((group, index) => (
+          <details key={group.key} open={Boolean(searchQ) || index === 0}
+            className="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+              <div className="min-w-0">
+                <p className="break-words text-sm font-bold text-gray-700">{group.label}</p>
+                <p className="mt-0.5 text-xs text-gray-400">{group.items.length} ตำแหน่ง</p>
+              </div>
+              {canManage && group.department && group.department.is_active !== false && (
+                <button type="button" onClick={(event) => { event.preventDefault(); openCreate(group.department.id) }}
+                  className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100">
+                  <Plus size={14} /> เพิ่มในกองนี้
+                </button>
+              )}
+            </summary>
+            <div className="divide-y divide-gray-50 border-t border-gray-50">
+              {group.items.length === 0 && (
+                <p className="px-4 py-5 text-center text-xs text-gray-400">กองนี้ยังไม่มีแบบตำแหน่ง</p>
+              )}
+              {group.items.map(p => {
                 const count = usage[p.id] ?? 0
                 return (
                   <div key={p.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
                     <div className="w-full min-w-0 md:w-auto md:flex-1">
                       <p className="text-sm font-semibold leading-relaxed text-gray-800 break-words">{p.name}</p>
+                      {!p.department_id && p.department_hint && (
+                        <p className="mt-1 text-xs leading-5 text-amber-600">
+                          ข้อมูลเดิมระบุ “{p.department_hint}” — ยังไม่ผูกกอง กรุณาตรวจสังกัดก่อนแก้ไข
+                        </p>
+                      )}
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600">{ROLE_TH[p.role] ?? p.role}</span>
-                        {p.department_hint && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">{p.department_hint}</span>
-                        )}
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">{group.label}</span>
                         <span className="text-[10px] font-semibold text-gray-300">ลำดับ {p.sort_order}</span>
                       </div>
                     </div>
@@ -233,7 +265,7 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
                 )
               })}
             </div>
-          </div>
+          </details>
         ))
       )}
 
@@ -251,26 +283,45 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
                   className={inputCls} placeholder="เช่น ผู้อำนวยการกองสาธารณสุขและสิ่งแวดล้อม" />
               </div>
               <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">ระดับ</label>
-                <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className={inputCls}>
-                  {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">กอง / หน่วยงาน</label>
+                <select value={form.department_id} onChange={e => setForm(f => ({ ...f, department_id: e.target.value }))}
+                  disabled={Boolean(editing?.id && (usage[editing.id] ?? 0) > 0)}
+                  className={`${inputCls} disabled:bg-gray-100 disabled:text-gray-500`}>
+                  <option value="">ส่วนกลาง / ยังไม่ผูกกอง</option>
+                  {departments.map(department => (
+                    <option key={department.id} value={department.id} disabled={department.is_active === false}>
+                      {department.name}{department.is_active === false ? ' (ปิดใช้งาน)' : ''}
+                    </option>
+                  ))}
                 </select>
+                <p className="mt-1 text-[11px] leading-5 text-gray-400">
+                  {editing?.id && (usage[editing.id] ?? 0) > 0
+                    ? `ล็อกไว้เพราะมีบุคลากร ${usage[editing.id]} คนใช้อยู่ ต้องย้ายคนออกก่อนจึงเปลี่ยนกองได้`
+                    : 'เมื่อตั้งกองแล้ว การแต่งตั้งคนเข้าตำแหน่งนี้จะใส่กองให้อัตโนมัติ'}
+                </p>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">บทบาท (role) ที่ควรได้</label>
-                <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className={inputCls}>
-                  {Object.entries(ROLE_TH).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">กองที่มักสังกัด (ถ้ามี)</label>
-                <input type="text" value={form.department_hint} onChange={e => setForm(f => ({ ...f, department_hint: e.target.value }))}
-                  className={inputCls} placeholder="เช่น กองช่าง — เว้นว่างได้ถ้าไม่ผูกกองใดกองหนึ่ง" />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">ลำดับการแสดงผล</label>
-                <input type="number" value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))} className={inputCls} />
-              </div>
+              <details className="rounded-2xl border border-gray-100 bg-gray-50 px-3 py-2">
+                <summary className="min-h-11 cursor-pointer py-3 text-xs font-bold text-gray-500">ตัวเลือกขั้นสูง: ระดับ สิทธิ์แนะนำ และลำดับ</summary>
+                <div className="space-y-3 pb-2">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">ระดับ</label>
+                    <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className={inputCls}>
+                      {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">บทบาทที่แนะนำ</label>
+                    <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className={inputCls}>
+                      {Object.entries(ROLE_TH).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                    <p className="mt-1 text-[11px] leading-5 text-gray-400">เป็นคำแนะนำเท่านั้น ระบบไม่เพิ่มสิทธิ์ให้บุคลากรโดยอัตโนมัติ</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">ลำดับการแสดงผล</label>
+                    <input type="number" value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))} className={inputCls} />
+                  </div>
+                </div>
+              </details>
             </div>
             <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
               <button onClick={handleSave} disabled={saving || !form.name.trim()}
