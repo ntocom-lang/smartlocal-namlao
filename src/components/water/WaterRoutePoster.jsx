@@ -80,6 +80,9 @@ function Icon({ icon, u }) {
     case 'plain': return <path d="M-11 1Q-7.5 -4 -4 1T3 1T10 1" fill="none" stroke="#38bdf8" strokeWidth="2.4" strokeLinecap="round" />
     case 'canal':
       return <g fill="none" strokeLinecap="round"><path d="M-12 1H12" stroke="#38bdf8" strokeWidth="4.5" /><path d="M0 -10V10" stroke="#e0f2fe" strokeWidth="2.4" /></g>
+    // รางส่งน้ำชำรุดตามผัง: ท่อน้ำขาดเป็นสองท่อน + รอยขีดเหลือง (ไม่ใช่ของที่ใช้งานได้ ไม่เคลื่อนไหว)
+    case 'repair':
+      return <g fill="none" strokeLinecap="round"><path d="M-12 3H-3M3 3H12" stroke="#38bdf8" strokeWidth="3.6" /><path d="M-4 -8L4 10" strokeWidth="2.8" style={{ stroke: 'var(--fix)' }} /></g>
     case 'plan':
       return (
         <g style={{ stroke: 'var(--plan)' }} strokeWidth="1.8" fill="none" strokeLinejoin="round">
@@ -94,6 +97,7 @@ function Icon({ icon, u }) {
 // ── โนดของจุด: วงเรืองแสง + วงกลม + สัญลักษณ์ + หมายเลข (+ ป้าย "แผน" ถ้าแผนก่อสร้าง) ──
 function Node({ stop, node, badges, u }) {
   const plan = stop.status === 'planned'
+  const fix = stop.status === 'repair'
   const na = (stop.tags ?? []).some(tag => tag.k === 'na') || posterIcon(stop).na === true
   const r = node.big ? 38 : node.r ?? 19
   const ringBadge = node.ring ? badges[node.ring] : null
@@ -107,7 +111,7 @@ function Node({ stop, node, badges, u }) {
     <g data-poster-node={stop.n} data-status={stop.status} transform={`translate(${node.x} ${node.y})`}>
       <circle r={r + 14} fill={u('glow')} opacity={plan ? 0.35 : 0.9} />
       <circle r={r} className="wp-node" strokeWidth="2.2" strokeDasharray={plan || na ? '4 3' : undefined}
-        style={{ stroke: plan ? 'var(--plan)' : na ? 'var(--na)' : 'var(--ring)' }} />
+        style={{ stroke: plan ? 'var(--plan)' : fix ? 'var(--fix)' : na ? 'var(--na)' : 'var(--ring)' }} />
       {node.big ? (
         <g data-poster-ring={node.ring} data-tone={ringTone}>
           <circle r={r - 6} fill="none" stroke="rgba(148,163,184,.3)" strokeWidth="6" strokeDasharray={ringTone === 'stale' || ringTone === 'na' ? '4 4' : undefined} />
@@ -126,10 +130,10 @@ function Node({ stop, node, badges, u }) {
         <circle r="11" fill="#0ea5e9" stroke="#fff" strokeWidth="2" />
         <text y="4.4" textAnchor="middle" fontSize={stop.n > 9 ? 12 : 13} fontWeight="800" fill="#fff">{stop.n}</text>
       </g>
-      {plan && (
+      {(plan || fix) && (
         <g transform={`translate(${r + 20} 0)`}>
-          <rect x="-18" y="-10" width="36" height="20" rx="10" className="wp-chip" strokeDasharray="3 2" style={{ stroke: 'var(--plan)' }} />
-          <text y="4.5" textAnchor="middle" fontSize="12" fontWeight="800" style={{ fill: 'var(--plan)' }}>แผน</text>
+          <rect x="-18" y="-10" width="36" height="20" rx="10" className="wp-chip" strokeDasharray={plan ? '3 2' : undefined} style={{ stroke: plan ? 'var(--plan)' : 'var(--fix)' }} />
+          <text y="4.5" textAnchor="middle" fontSize="12" fontWeight="800" style={{ fill: plan ? 'var(--plan)' : 'var(--fix)' }}>{plan ? 'แผน' : 'ชำรุด'}</text>
         </g>
       )}
     </g>
@@ -171,11 +175,13 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
   const omitted = posterOmittedNames(diagram)
   const hasFlow = poster.streams.some(s => s.flow)
   const hasPlan = route.stops.some(s => s.status === 'planned')
+  const hasRepair = route.stops.some(s => s.status === 'repair')
   const hasNa = route.stops.some(s => posterIcon(s).na === true || (s.tags ?? []).some(tag => tag.k === 'na'))
   const hasLive = Object.values(poster.nodes).some(n => n.ring || n.pill)
   const legend = [
     hasFlow && { key: 'flow', text: 'เส้นวิ่ง = ผังวาดลูกศรทิศน้ำไว้' },
     hasPlan && { key: 'plan', text: 'กรอบแดงประ = แผนก่อสร้าง ไม่เคลื่อนไหว' },
+    hasRepair && { key: 'repair', text: 'กรอบเหลือง = ชำรุดตามผัง ไม่เคลื่อนไหว' },
     hasNa && { key: 'na', text: 'ขอบประเทา = ไม่มีข้อมูลในระบบ' },
     hasLive && { key: 'live', text: 'ป้ายขาว = ค่าวัดจากสถานี' },
   ].filter(Boolean)
@@ -211,7 +217,7 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
       {/* หัว */}
       <text x="48" y="32" fontSize="16" fontWeight="700" letterSpacing="3" fill="var(--w1)">{route.eyebrow}</text>
       <text data-poster-title x="46" y="92" fontSize={header.titleSize} fontWeight="800" fill={u('title')}>{route.title}</text>
-      <text x="48" y="112" fontSize="12" className="wp-muted">{route.place}</text>
+      <text x="48" y="122" fontSize="12" className="wp-muted">{route.place}</text>
 
       {/* คำอธิบายสัญลักษณ์ (เฉพาะที่โปสเตอร์ใช้จริง) */}
       <g data-poster-legend>
@@ -220,6 +226,7 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
           <g key={item.key} transform={`translate(${header.legendX + 12} ${42 + i * 17})`}>
             {item.key === 'flow' && <><path d="M0 0H18" stroke={u('stream')} strokeWidth="4.5" strokeLinecap="round" /><path d="M18 -5L26 0L18 5Z" fill="var(--w1)" /></>}
             {item.key === 'plan' && <path d="M12 -6L19 -3V4L12 7L5 4V-3Z" fill="none" strokeDasharray="2.5 2" style={{ stroke: 'var(--plan)' }} />}
+            {item.key === 'repair' && <path d="M12 -6L19 -3V4L12 7L5 4V-3Z" fill="none" style={{ stroke: 'var(--fix)' }} />}
             {item.key === 'na' && <ellipse cx="12" cy="0" rx="9" ry="5.5" fill="none" strokeDasharray="3 2" style={{ stroke: 'var(--na)' }} />}
             {item.key === 'live' && <rect x="2" y="-6" width="22" height="12" rx="6" fill="#fff" stroke="#0284c7" strokeWidth="1.6" />}
             <text x="30" y="4" fontSize="10.5" className="wp-ink2">{item.text}</text>
@@ -320,9 +327,10 @@ export function WaterRoutePoster({ route, diagram, badges, now, theme = 'dark' }
         <text key={stream.id} data-poster-stream-label={stream.id} x={stream.label.x} y={stream.label.y} textAnchor={stream.label.anchor} fontSize="12.5" fontWeight="700" className="wp-lbl">{stream.label.text}</text>
       ))}
 
-      {Object.values(poster.nodes).filter(node => node.pill).map(node => {
-        const info = pillFor({ slot: node.pill.slot }, badges)
-        return info ? <LivePill key={node.pill.slot} slot={node.pill.slot} cx={node.pill.x} cy={node.pill.y} badge={{ tone: info.tone, short: info.main, note: info.note }} /> : null
+      {/* ป้ายค่าสดทุกช่อง: ที่จุด (node.pill) + ที่แม่น้ำปลายทาง (river.pill) */}
+      {[...Object.values(poster.nodes).filter(node => node.pill).map(node => node.pill), ...(river?.pill ? [river.pill] : [])].map(pill => {
+        const info = pillFor({ slot: pill.slot }, badges)
+        return info ? <LivePill key={pill.slot} slot={pill.slot} cx={pill.x} cy={pill.y} badge={{ tone: info.tone, short: info.main, note: info.note }} /> : null
       })}
 
       {/* ท้ายโปสเตอร์ — คำกำกับบังคับ · ที่มา · สิ่งที่ไม่ได้ใส่ */}

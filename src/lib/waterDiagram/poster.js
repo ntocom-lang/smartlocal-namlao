@@ -71,7 +71,7 @@ export function posterIcon(stop) {
   const of = type => props.filter(p => p.t === type)
   const creeks = of('creeks')[0]
   if (creeks) return { kind: 'creeks', n: creeks.n }
-  for (const kind of ['village', 'supply', 'bridge', 'gate']) if (of(kind).length) return { kind }
+  for (const kind of ['village', 'supply', 'bridge', 'gate', 'repair']) if (of(kind).length) return { kind }
   const lakes = of('lake')
   if (lakes.length) return { kind: 'lake', na: lakes.every(l => l.na === true) }
   const ponds = of('pond')
@@ -117,7 +117,7 @@ export function posterLiveRows(route, badges = {}) {
       // ระดับน้ำ (level-*): ใช้ข้อความเต็มที่มีชื่อสถานี + ระยะ — สถานีอยู่ห่างตำบล ผู้อ่านต้องรู้ว่าตัวเลขมาจากไหน (ข้อความของ liveBadges ไม่คิดเอง)
       const value = slot.startsWith('level-') ? badge.text : badge.tone === 'stale' ? 'ไม่มีค่าใหม่' : (badge.short ?? badge.text)
       // หมายเหตุที่ซ้ำกับค่าที่แสดงอยู่แล้ว (เช่น ค้าง = "ไม่มีค่าใหม่" ทั้งค่าและหมายเหตุ) ไม่พิมพ์สองรอบ
-      rows.push({ slot, n: stop.n, label: stop.label, tone: badge.tone, value, note: badge.note && badge.note !== value ? badge.note : null })
+      rows.push({ slot, n: stop.n, label: stop.label ?? stop.name, tone: badge.tone, value, note: badge.note && badge.note !== value ? badge.note : null })
     }
   }
   return rows
