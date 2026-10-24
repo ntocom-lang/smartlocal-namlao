@@ -20,6 +20,7 @@ const STATUS = {
   completed:   { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
   closed:      { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
+  parked:      { label: 'ขึ้นทะเบียนรอดำเนินการ', color: '#64748b', bg: '#e2e8f0', text: '#334155' },
 }
 const CLOSED_STATUSES = new Set(['completed', 'closed', 'done'])
 const isClosedStatus = status => CLOSED_STATUSES.has(status)
@@ -37,7 +38,7 @@ const MONTHS_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.',
 const MONTHS_FULL_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
   'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 
-function handlePrint({ view, viewLabel, total, completed, rejected, active, rate, avgDays, catData, trend, tenant }) {
+function handlePrint({ view, viewLabel, total, completed, rejected, parked = 0, active, rate, avgDays, catData, trend, tenant }) {
   const today = new Date()
   const thaiDate = `${today.getDate()} ${MONTHS_FULL_TH[today.getMonth()]} ${today.getFullYear() + 543}`
   const trendRows = trend.map(t => `
@@ -96,6 +97,7 @@ function handlePrint({ view, viewLabel, total, completed, rejected, active, rate
     <div class="stat-box"><div class="num" style="color:#f59e0b">${active}</div><div class="lbl">อยู่ระหว่างดำเนินการ</div></div>
     <div class="stat-box"><div class="num" style="color:#ef4444">${rejected}</div><div class="lbl">ปฏิเสธคำร้อง</div></div>
   </div>
+  ${parked > 0 ? `<p>หมายเหตุ: ไม่นับรวมในช่อง "อยู่ระหว่างดำเนินการ" ข้างต้น — มีเรื่องที่ขึ้นทะเบียนรอดำเนินการไว้แล้ว <b>${parked}</b> เรื่อง (รับเรื่องไว้เป็นข้อมูลความต้องการ ยังไม่พร้อมดำเนินการ)</p>` : ''}
   <p>อัตราการปิดงาน <b>${rate}%</b>${avgDays !== null ? ` &nbsp;|&nbsp; เฉลี่ยระยะเวลาดำเนินการ <b>${avgDays} วันทำการ</b>` : ''}</p>
   <div class="section">๒. แนวโน้มการรับคำร้อง</div>
   <table><thead><tr><th>${trendHeader}</th><th>คำร้องที่รับ</th><th>ดำเนินการแล้วเสร็จ</th><th>คงค้าง</th></tr></thead><tbody>${trendRows}</tbody></table>
@@ -165,7 +167,9 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
   const total     = viewData.length
   const completed = viewData.filter(c => isClosedStatus(c.status)).length
   const rejected  = viewData.filter(c => c.status === 'rejected').length
-  const active    = total - completed - rejected
+  // ขึ้นทะเบียนรอดำเนินการไม่ใช่งานที่กำลังทำ — แยกออกจาก "อยู่ระหว่างดำเนินการ" (ใบรายงานพิมพ์หมายเหตุบอกจำนวนไว้)
+  const parked    = viewData.filter(c => c.status === 'parked').length
+  const active    = total - completed - rejected - parked
   const rate      = total > 0 ? Math.round(completed / total * 100) : 0
 
   const closedData = scoped.filter(c => {
@@ -245,7 +249,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
   // เกณฑ์ค้างงานนับเป็นวันทำการเช่นกัน — คำร้องที่ยื่นก่อนวันหยุดยาวจะไม่ถูกตีว่าค้าง
   // ทั้งที่สำนักงานยังไม่ได้เปิดทำการ
   const overdue = scoped
-    .filter(c => !['completed', 'closed', 'done', 'rejected'].includes(c.status) && workingDaysSince(c.created_at, now) > 15)
+    .filter(c => !['completed', 'closed', 'done', 'rejected', 'parked'].includes(c.status) && workingDaysSince(c.created_at, now) > 15)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).slice(0, 6)
   const noTechAction = scoped
     .filter(c => c.status === 'received' && workingDaysSince(c.updated_at, now) > 7)
@@ -321,7 +325,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
             className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/15 px-3 text-xs font-bold text-white backdrop-blur transition hover:bg-white/25 active:scale-[0.98]">
             <Download size={15} /> ดาวน์โหลด CSV
           </button>
-          <button onClick={() => handlePrint({ view, month, year, viewLabel, total, completed, rejected, active, rate, avgDays, catData, trend, tenant })}
+          <button onClick={() => handlePrint({ view, month, year, viewLabel, total, completed, rejected, parked, active, rate, avgDays, catData, trend, tenant })}
             className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-3 text-xs font-extrabold text-blue-700 shadow-sm transition hover:bg-blue-50 active:scale-[0.98]">
             <Printer size={15} /> พิมพ์รายงาน
           </button>

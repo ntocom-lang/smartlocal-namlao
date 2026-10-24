@@ -7,7 +7,7 @@
 // ⚠️ ไฟล์นี้ต้องไม่ import supabase หรือ basename (ใช้ import.meta.env) — เทสต์รันด้วย node ตรงๆ
 //    ส่วนที่ต้องรู้โดเมนให้หน้าเว็บส่ง url เข้ามาเอง
 
-import { REOPEN_WINDOW_DAYS } from './complaintWorkflow.js'
+import { PARKED_LABEL, REOPEN_WINDOW_DAYS } from './complaintWorkflow.js'
 
 // ต้องตรงกับ CHECK complaints_track_token_format ในฐานข้อมูล (สุ่ม 32 ตัวอักษรฐาน 16)
 export const TRACK_TOKEN_PATTERN = /^[0-9a-f]{32}$/
@@ -101,7 +101,7 @@ export function closedOnTime(closedAt, dueDate) {
 
 // ───── ขั้นความคืบหน้า ─────
 // 3 ขั้นตามที่ผู้ร้องเข้าใจ: รับเรื่อง → กำลังดำเนินการ → ดำเนินการแล้ว
-// state: done = ผ่านแล้ว · now = อยู่ขั้นนี้ · todo = ยังไม่ถึง · stop = ไม่ดำเนินการ
+// state: done = ผ่านแล้ว · now = อยู่ขั้นนี้ · todo = ยังไม่ถึง · stop = ไม่ดำเนินการ · hold = รับไว้แล้วแต่ยังไม่มีกำหนด
 const RANK = { new: 1, pending: 1, received: 1, in_progress: 2, done: 3, closed: 3, completed: 3 }
 const FINISHED = new Set(['done', 'closed', 'completed'])
 
@@ -129,6 +129,15 @@ export function buildTrackSteps(complaint) {
     return [
       { key: 'received', label: 'รับเรื่องแล้ว', at: createdAt ?? null, state: 'done', note: '' },
       { key: 'rejected', label: 'ไม่สามารถดำเนินการได้', at: closedAt ?? latestAt(timeline, ['rejected']), state: 'stop', note: '' },
+    ]
+  }
+
+  // ขึ้นทะเบียนรอดำเนินการ: ไม่แสดงขั้น "ดำเนินการแล้ว" พร้อมวันกำหนดเสร็จ — ยังไม่มีกำหนด ถ้าโชว์วันที่เดิม
+  // ผู้แจ้งจะเข้าใจว่าเลยกำหนดแล้วไม่มีใครทำ · ไม่ใช้ state 'stop' เพราะไม่ใช่การปฏิเสธ
+  if (status === 'parked') {
+    return [
+      { key: 'received', label: 'รับเรื่องแล้ว', at: latestAt(timeline, ['received']) ?? createdAt ?? null, state: 'done', note: '' },
+      { key: 'parked', label: PARKED_LABEL, at: latestAt(timeline, ['parked']), state: 'hold', note: 'ยังไม่มีกำหนดดำเนินการ' },
     ]
   }
 

@@ -584,6 +584,9 @@ export default function TechnicianDashboard() {
         .eq('assigned_to', session.session.user.id)
         .neq('status', 'pending')
         .neq('status', 'rejected')
+        // ขึ้นทะเบียนรอดำเนินการ = หัวหน้าจัดคิวไว้แล้วว่ายังไม่ถึงเวลาลงมือ ไม่ใช่งานของช่างตอนนี้
+        // (ไม่งั้นนับเป็นงานค้างและขึ้นเตือน) — กลับเข้ามาเองเมื่อนำกลับเข้าคิวเป็น "รับเรื่องแล้ว"
+        .neq('status', 'parked')
         .order('created_at', { ascending: false })
       setComplaints(data ?? [])
       emitTechBadge(data ?? [])

@@ -16,8 +16,8 @@ import { recordUsage, safeLocalStorage } from '../lib/staffHomeFrequent'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import FinishComplaintDialog from '../components/complaints/FinishComplaintDialog'
-import { isComplaintWorker, requiresResolvedPin } from '../lib/complaintWorkflow'
-import { startComplaintWork } from '../lib/complaintFinish'
+import { isComplaintWorker, PARKED_LABEL, requiresResolvedPin } from '../lib/complaintWorkflow'
+import { fetchParkingCategories, startComplaintWork } from '../lib/complaintFinish'
 import { logAction } from '../lib/auditLog'
 import { govDocFontCss, govEServiceOriginText, govPageCss } from '../lib/govDocStyle.js'
 import { thaiDate, thaiDateFromDateInput } from '../lib/thaiDate'
@@ -1833,6 +1833,8 @@ const C_STATUS = {
   completed:   { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
   closed:      { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
+  // รับไว้แล้วแต่ อปท. ยังไม่พร้อมดำเนินการ (ชุดเดียวกับ ComplaintsManager.jsx) — เทาเข้ม แยกจากสถานะอื่น
+  parked:      { label: PARKED_LABEL,    color: '#64748b', bg: '#e2e8f0', text: '#334155' },
 }
 // 'done' ขั้นเก่า + 'completed' legacy แสดงและกรองรวมกับ 'closed' ("ดำเนินการแล้ว")
 function normalizeFinished(status) {
@@ -1934,8 +1936,10 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
     supabase.from('complaint_categories').select('value, label, emoji, color, text_color, is_adhoc, requires_resolved_location').eq('municipality_id', tenant.id)
       .then(({ data }) => {
         if (data && data.length > 0) {
-          setCatMeta(Object.fromEntries(data.map((c) => [c.value, {
+          // allow_parking มาจากคิวรีแยก (fetchParkingCategories) ซึ่งอาจกลับมาก่อน — เก็บค่าที่เติมไว้ไม่ให้ถูกเขียนทับ
+          setCatMeta((prev) => Object.fromEntries(data.map((c) => [c.value, {
             is_adhoc: !!c.is_adhoc, requires_resolved_location: c.requires_resolved_location !== false,
+            ...(prev[c.value]?.allow_parking ? { allow_parking: true } : {}),
           }])))
           for (const c of data) {
             C_CAT[c.value] = c.label
@@ -1948,6 +1952,14 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
           setCatVer(v => v + 1)
         }
       })
+    // ธงขึ้นทะเบียนรอดำเนินการดึงแยก — คิวรีพลาด (ยังไม่ apply migration) = ไม่แสดงปุ่ม ไม่กระทบชื่อหมวด
+    fetchParkingCategories(tenant.id).then((flags) => {
+      setCatMeta((prev) => {
+        const next = { ...prev }
+        for (const value of Object.keys(flags)) next[value] = { ...next[value], allow_parking: true }
+        return next
+      })
+    })
   }, [tenant?.id])
   const [search, setSearch]         = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
@@ -2091,7 +2103,8 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
     })
   }, [tenantId, seesWholeDepartment])
 
-  const filterItems = ['all', 'received', 'in_progress', 'closed', 'rejected']
+  // 'parked' โผล่เมื่อมีเรื่องในสถานะนี้จริง (ตัวกรองด้านล่าง) — อปท./กองที่ไม่ได้ใช้ไม่เห็นป้ายเลขศูนย์
+  const filterItems = ['all', 'received', 'in_progress', 'closed', 'rejected', 'parked']
     .filter(status => status === 'all' || complaints.some(c => normalizeFinished(c.status) === status))
   const statusCount = status => status === 'all'
     ? complaints.length
@@ -2363,7 +2376,9 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
             // ส่งคืนแล้ว status กลับเป็น pending — รายการนี้กรอง pending ออกอยู่แล้ว ตัดออกทันทีไม่ต้องรอ realtime
             onReturned={(id) => setComplaints((prev) => prev.filter((row) => row.id !== id))}
             categoryMeta={catMeta}
+            departmentScoped={seesWholeDepartment}
             onFinished={() => loadAssignedComplaints()}
+            onParkChanged={() => loadAssignedComplaints()}
             onTextSaved={(id, patch) => setComplaints((prev) => prev.map((row) => row.id === id ? { ...row, ...patch } : row))}
           />
         </Suspense>

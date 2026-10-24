@@ -12,6 +12,47 @@ export async function startComplaintWork(complaintId) {
 }
 
 /**
+ * ขึ้นทะเบียนรอดำเนินการ (ทีละเรื่องหรือหลายเรื่อง) — กติกาอยู่ที่ park_complaints() ใน DB
+ * ไม่ยิง Telegram/push: เป็นการจัดคิวภายใน กลุ่ม Telegram ไม่ต้องทำอะไรต่อ (ชุดหลายสิบเรื่องจะท่วมกลุ่ม)
+ * ผู้ร้องเห็นสถานะใหม่ที่หน้าติดตามเรื่อง/คำร้องของฉันเอง
+ * @returns {Promise<{ result: { parked: number, skipped: Array<{ id: string, code: string }> } | null, error: Error | null }>}
+ */
+export async function parkComplaints(ids, reason, note = '') {
+  const { data, error } = await supabase.rpc('park_complaints', {
+    p_complaint_ids: ids,
+    p_reason: reason,
+    p_note: String(note ?? '').trim() || null,
+  })
+  return { result: error ? null : (data ?? null), error }
+}
+
+/** นำเรื่องที่ขึ้นทะเบียนไว้กลับเข้าคิวงาน (received + เริ่มนับกำหนดเสร็จใหม่) — แจ้งกลุ่ม Telegram เหมือนรับเรื่องใหม่ */
+export async function unparkComplaint(complaintId) {
+  const { error } = await supabase.rpc('unpark_complaint', { p_complaint_id: complaintId })
+  if (!error) notifyTelegram('complaint_status_updated', complaintId)
+  return { error }
+}
+
+/**
+ * หมวดที่เปิด allow_parking — แยกจากคิวรีหมวดหลักโดยเจตนา: ถ้าหน้าเว็บ deploy ก่อน apply migration
+ * (คอลัมน์ยังไม่มี) คิวรีนี้พลาดแล้วได้ {} = ไม่แสดงปุ่ม แทนที่จะพาคิวรีหมวดหลักพังทั้งหน้า (ชื่อหมวดหาย)
+ * @returns {Promise<Record<string, boolean>>} รหัสหมวด → true
+ */
+export async function fetchParkingCategories(municipalityId) {
+  if (!municipalityId) return {}
+  try {
+    const { data, error } = await supabase
+      .from('complaint_categories')
+      .select('value, allow_parking')
+      .eq('municipality_id', municipalityId)
+    if (error) return {}
+    return Object.fromEntries((data ?? []).filter((row) => row.allow_parking === true).map((row) => [row.value, true]))
+  } catch {
+    return {}
+  }
+}
+
+/**
  * กด "ดำเนินการแล้ว": อัปโหลดรูป (ถ้ามี) → RPC finish_complaint → แจ้งผู้ร้อง + Telegram
  * @param {object} p
  * @param {object} p.complaint แถวคำร้อง (ใช้ id, ref_no, created_at, work_photos)
