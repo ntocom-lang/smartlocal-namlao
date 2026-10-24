@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MapPin, Phone, ChevronDown, ChevronRight,
   Loader2, CheckCircle2, ArrowLeft, X, User,
@@ -952,6 +952,16 @@ export default function CitizenForm() {
               </select>
               <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             </div>
+          </div>
+        )}
+
+        {/* หมวดน้ำท่วม/ระบายน้ำ: คำร้องออนไลน์ไม่ใช่ช่องทางช่วยเหลือเร่งด่วน — เหตุที่เป็นอันตรายต่อชีวิตให้ติดต่อสายด่วนก่อน (เบอร์อยู่ที่หน้า /emergency ของแต่ละ อปท. ไม่ฝังเบอร์ในโค้ด) */}
+        {form.category === 'flood' && (
+          <div data-flood-notice className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs leading-relaxed text-amber-900">
+            <p>
+              <b>หากน้ำท่วมจนเป็นอันตรายต่อชีวิตหรือทรัพย์สิน ให้ติดต่อสายด่วนก่อน</b> — ฟอร์มนี้ใช้แจ้งให้เจ้าหน้าที่ตรวจสอบ ไม่ใช่ช่องทางช่วยเหลือเร่งด่วน
+            </p>
+            <Link to="/emergency" className="mt-1 inline-flex min-h-[44px] items-center font-bold text-amber-950 underline">สายด่วนฉุกเฉิน</Link>
           </div>
         )}
 

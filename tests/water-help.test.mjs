@@ -101,4 +101,30 @@ const values = list => list.map(item => item.value)
   console.log('✓ หน้าจอ: อ่านอย่างเดียว · ไม่ฝังเบอร์โทร · อ่านเฉพาะหมวดน้ำของ อปท. นี้ · กรองโมดูล/role · อยู่ท้ายแท็บผังน้ำตำบลที่เดียว')
 }
 
+// ── 5) หมวด flood เป็นหมวดมาตรฐาน: รหัสเดียวกันทั้งปุ่มหน้าสถานการณ์น้ำ · หมวดตั้งต้นของแอดมิน · migration · ฟอร์มแจ้งเรื่อง ──
+//   เดิมไม่มี อปท. ไหนมี flood และแอดมินสร้างรหัสนี้เองไม่ได้ (เมนูให้รหัสสุ่ม cat_xxxx) ปุ่มแจ้งน้ำท่วมจึงไม่มีวันขึ้น (เจ้าของระบบสั่งเพิ่ม 2569-10-24)
+{
+  const admin = read('src/pages/AdminDashboard.jsx')
+  const seed = admin.slice(admin.indexOf('const DEFAULT_SEED'), admin.indexOf('const EMOJI_HINTS'))
+  assert.match(seed, /value: 'flood',\s+label: 'น้ำท่วม\/ระบายน้ำ'/, 'หมวดตั้งต้นของแอดมินต้องมี flood (อปท. ใหม่ได้ครบเหมือนกัน)')
+  assert.ok(WATER_HELP_CATEGORIES.includes('flood'), 'ปุ่มหน้าสถานการณ์น้ำต้องดูรหัส flood')
+  assert.match(admin, /const engineering = new Set\(\[[^\]]*'flood'[^\]]*\]\)/, 'หมวดตั้งต้น flood ตกกองช่าง (engineering) ตามกติกาเดิม')
+  assert.equal(admin.split("value: 'flood'").length - 1, 1, 'flood อยู่ในหมวดตั้งต้นที่เดียว')
+
+  const migration = read('supabase/migrations/20261024120000_flood_standard_category.sql')
+  const sql = migration.split('\n').filter(line => !line.trim().startsWith('--')).join('\n')
+  assert.match(sql, /'flood',\s+'น้ำท่วม\/ระบายน้ำ'/); assert.match(sql, /resolve_work_department\(municipality\.id, 'engineering', 'กองช่าง'\)/)
+  assert.match(sql, /water_supply\.value = 'water_supply'/, 'นโยบายเปิด/ผู้ยื่นต้องคัดลอกจาก water_supply ของ อปท. เดียวกัน')
+  assert.match(sql, /NOT EXISTS[\s\S]*existing\.value = 'flood'/, 'ต้องข้าม อปท. ที่มี flood อยู่แล้ว (รันซ้ำได้)')
+  assert.ok(!/UPDATE|DELETE|DROP|ALTER|TRUNCATE/i.test(sql), 'migration นี้เพิ่มข้อมูลอย่างเดียว ไม่แก้/ลบของเดิม')
+  assert.ok(!/slug|namlao|tamnaktham|thungkaew/i.test(sql), 'ไม่ฝังชื่อ อปท. ในเงื่อนไข (หลังบ้านทุก อปท. ต้องเหมือนกัน)')
+
+  const form = read('src/pages/CitizenForm.jsx')
+  assert.match(form, /form\.category === 'flood' && \(\s*<div data-flood-notice/, 'ฟอร์มหมวดน้ำท่วมต้องมีข้อความเหตุฉุกเฉินโทรสายด่วนก่อน')
+  assert.match(form, /<Link to="\/emergency"[^>]*>สายด่วนฉุกเฉิน<\/Link>/, 'ลิงก์ไปหน้าสายด่วน (ไม่ฝังเบอร์)')
+  const notice = form.slice(form.indexOf('data-flood-notice'), form.indexOf('data-flood-notice') + 700)
+  assert.ok(!/\b(191|1669|1784|199|1196)\b|tel:/.test(notice), 'ห้ามฝังเบอร์โทรในข้อความ')
+  console.log('✓ หมวด flood มาตรฐาน: รหัสเดียวกันทั้งปุ่มหน้าสถานการณ์น้ำ · หมวดตั้งต้นแอดมิน (กองช่าง) · migration (เพิ่มอย่างเดียว ไม่ฝังชื่อ อปท.) · ฟอร์มมีข้อความเหตุฉุกเฉิน')
+}
+
 console.log('\n✅ water-help: ผ่านทุกข้อ')
