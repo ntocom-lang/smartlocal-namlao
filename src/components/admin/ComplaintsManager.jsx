@@ -22,7 +22,7 @@ import ParkComplaintDialog from '../complaints/ParkComplaintDialog'
 import ComplaintTextBlock from '../complaints/ComplaintTextBlock'
 import {
   canFinishWork, canParkWork, canUnparkWork, isComplaintWorker, isFinishedLike, isParked, parkReasonLabel,
-  PARKED_LABEL, PARKED_PUBLIC_NOTE, requiresResolvedPin,
+  PARKED_LABEL, PARKED_PUBLIC_NOTE, PARKED_STATUS, requiresResolvedPin,
 } from '../../lib/complaintWorkflow'
 import { fetchParkingCategories, startComplaintWork, unparkComplaint } from '../../lib/complaintFinish'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
@@ -339,6 +339,27 @@ const ROW_GROUP = {
   open:    { label: 'ยังไม่เสร็จ',   dot: '#f59e0b', bg: '#fff7ed', text: '#92400e' },
   parked:  { label: PARKED_LABEL,    dot: '#64748b', bg: '#f1f5f9', text: '#334155' },
   settled: { label: 'เสร็จสิ้นแล้ว', dot: '#10b981', bg: '#ecfdf5', text: '#065f46' },
+}
+
+// ข้อความหัวกลุ่ม · collapsible = กลุ่มนี้พับเก็บได้ (ตอนนี้มีเฉพาะ "ขึ้นทะเบียนรอดำเนินการ") แสดงเป็นปุ่มเต็มแถบ
+// ใช้ <button> จริงเพื่อให้กดด้วยคีย์บอร์ดได้ และบอกสถานะพับ/กางด้วย aria-expanded
+function RowGroupLabel({ groupKey, count, collapsible = false, collapsed = false, onToggle, padClass = '' }) {
+  const g = ROW_GROUP[groupKey]
+  const dot = <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: g.dot }} />
+  if (!collapsible) {
+    // ไม่พับได้ → ระยะขอบอยู่ที่แถบที่ครอบอยู่ (padClass ใช้เฉพาะปุ่ม ที่ต้องกดได้เต็มแถบ)
+    return <span className="inline-flex items-center gap-2">{dot}{g.label} ({count})</span>
+  }
+  const Chevron = collapsed ? ChevronRight : ChevronDown
+  return (
+    <button type="button" onClick={onToggle} aria-expanded={!collapsed}
+            className={`flex w-full items-center gap-2 text-left font-bold hover:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${padClass}`}>
+      <Chevron size={14} className="shrink-0" />
+      {dot}
+      <span>{g.label} ({count})</span>
+      <span className="font-normal opacity-70">{collapsed ? '· กดเพื่อดูรายการ' : '· กดเพื่อพับเก็บ'}</span>
+    </button>
+  )
 }
 
 // รูปผลการดำเนินการลงโฟลเดอร์เดียวกับรูปที่ประชาชนแนบ (โฟลเดอร์ของเรื่องนั้น) แยกกันด้วยชื่อไฟล์
@@ -1562,6 +1583,9 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const [showOssIntake, setShowOssIntake]         = useState(false)
   const [technicians, setTechnicians]             = useState([])
   const [selectedIds, setSelectedIds]             = useState(() => new Set())
+  // กลุ่ม "ขึ้นทะเบียนรอดำเนินการ" พับเก็บไว้ตั้งแต่เปิดหน้า (เจ้าของระบบสั่ง 2569-10-25) — เป็นข้อมูลความต้องการที่เก็บไว้
+  // ไม่ใช่งานประจำวัน จึงไม่ควรกินพื้นที่รายการที่ต้องทำ · ไม่จำข้ามการเปิดหน้าโดยเจตนา (กลับมาเปิดใหม่ก็พับเหมือนเดิม)
+  const [parkedCollapsed, setParkedCollapsed]     = useState(true)
   const [bulkDeleting, setBulkDeleting]           = useState(false)
   // รหัสเรื่องที่กำลังเปิดกล่อง "ขึ้นทะเบียนรอดำเนินการ" จากแถบเลือกหลายรายการ (null = ปิดอยู่)
   const [parkIds, setParkIds]                     = useState(null)
@@ -2110,12 +2134,35 @@ ${summaryHtml}
     return { opts, unassignedCount: unassigned.length }
   })()
 
-  const perPage             = complaintsPerPage === 'all' ? filtered.length : complaintsPerPage
-  const complaintTotalPages = perPage > 0 ? Math.max(1, Math.ceil(filtered.length / perPage)) : 1
+  // พับเก็บใช้เฉพาะมุมมองรายการปกติ: ถ้ากรองสถานะเป็น "ขึ้นทะเบียนรอ" หรือกำลังค้นหา ผู้ใช้ตั้งใจหาเรื่องในกลุ่มนี้อยู่
+  // ซ่อนไว้จะดูเหมือน "ไม่เจอ" จึงกางเสมอ และหัวกลุ่มไม่เป็นปุ่ม
+  const parkedCollapsible = FILTER_KEYS[filterTab] !== PARKED_STATUS && search === ''
+  const parkedHidden      = parkedCollapsible && parkedCollapsed && groupCounts.parked > 0
+  // แบ่งหน้าจากแถวที่มองเห็นจริง — ไม่งั้นหน้าที่มีเรื่องพับอยู่ด้านในจะโล่งเป็นช่วงๆ
+  const listRows            = parkedHidden ? filtered.filter((c) => rowGroupKey(c) !== 'parked') : filtered
+  const perPage             = complaintsPerPage === 'all' ? listRows.length : complaintsPerPage
+  const complaintTotalPages = perPage > 0 ? Math.max(1, Math.ceil(listRows.length / perPage)) : 1
   const complaintStartIdx   = (complaintPage - 1) * perPage
-  const paginatedFiltered   = complaintsPerPage === 'all' ? filtered : filtered.slice(complaintStartIdx, complaintStartIdx + perPage)
+  const paginatedFiltered   = complaintsPerPage === 'all' ? listRows : listRows.slice(complaintStartIdx, complaintStartIdx + perPage)
+  // แถบ "ขึ้นทะเบียนรอดำเนินการ (N)" ที่พับอยู่แทรกตรงรอยต่อกลุ่ม: ก่อนแถวแรกของกลุ่ม "เสร็จสิ้นแล้ว"
+  // (หรือท้ายรายการถ้าไม่มี) · อยู่หน้าที่แถวตำแหน่งนั้นตกอยู่ ไม่ซ้ำทุกหน้า
+  const parkedStubAt        = listRows.filter((c) => rowGroupKey(c) === 'open').length - complaintStartIdx
+  const parkedStubAtEnd     = parkedHidden && parkedStubAt === paginatedFiltered.length && complaintPage >= complaintTotalPages
+  const parkedStubBefore    = (i) => parkedHidden && i === parkedStubAt
 
-  useEffect(() => { setComplaintPage(1) }, [filterTab, search, complaintsPerPage, filterCategory, filterVillage, filterTechnician])
+  // พับเก็บ: เอาเรื่องกลุ่มนี้ออกจากรายการที่ติ๊กไว้ด้วย ไม่งั้นปุ่มทำหลายรายการ (เช่น ลบ) จะกระทบเรื่องที่มองไม่เห็น
+  const toggleParkedGroup = () => {
+    if (!parkedCollapsed) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        for (const c of filtered) if (rowGroupKey(c) === 'parked') next.delete(c.id)
+        return next
+      })
+    }
+    setParkedCollapsed((v) => !v)
+  }
+
+  useEffect(() => { setComplaintPage(1) }, [filterTab, search, complaintsPerPage, filterCategory, filterVillage, filterTechnician, parkedCollapsed])
 
   const counts = STATUS_MAIN.reduce((acc, k) => {
     acc[k] = nonOdorComplaints.filter((c) => normalizeStatus(c.status) === k).length
@@ -2417,13 +2464,21 @@ ${summaryHtml}
             <div className="md:hidden divide-y divide-gray-100">
               {paginatedFiltered.map((c, i) => (
                 <Fragment key={c.id}>
+                {parkedStubBefore(i) && (
+                  <div className="text-[11px] font-bold"
+                       style={{ backgroundColor: ROW_GROUP.parked.bg, color: ROW_GROUP.parked.text }}>
+                    <RowGroupLabel groupKey="parked" count={groupCounts.parked} collapsible collapsed
+                                   onToggle={toggleParkedGroup} padClass="px-4 py-2" />
+                  </div>
+                )}
                 {/* หัวกลุ่มโผล่ที่แถวแรกของหน้าเสมอ ไม่ใช่เฉพาะตอนกลุ่มเปลี่ยน — หน้า 2 ที่เป็น
                     "เสร็จสิ้นแล้ว" ล้วนจะได้รู้ว่ากำลังดูกลุ่มไหนอยู่ */}
                 {(i === 0 || rowGroupKey(paginatedFiltered[i - 1]) !== rowGroupKey(c)) && (
-                  <div className="flex items-center gap-2 px-4 py-2 text-[11px] font-bold"
+                  <div className={`text-[11px] font-bold ${rowGroupKey(c) === 'parked' && parkedCollapsible ? '' : 'flex items-center gap-2 px-4 py-2'}`}
                        style={{ backgroundColor: ROW_GROUP[rowGroupKey(c)].bg, color: ROW_GROUP[rowGroupKey(c)].text }}>
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ROW_GROUP[rowGroupKey(c)].dot }} />
-                    {ROW_GROUP[rowGroupKey(c)].label} ({groupCounts[rowGroupKey(c)]})
+                    <RowGroupLabel groupKey={rowGroupKey(c)} count={groupCounts[rowGroupKey(c)]}
+                                   collapsible={rowGroupKey(c) === 'parked' && parkedCollapsible} collapsed={false}
+                                   onToggle={toggleParkedGroup} padClass="px-4 py-2" />
                   </div>
                 )}
                 <div className="px-4 py-3.5 space-y-2 cursor-pointer flex items-start gap-2"
@@ -2490,6 +2545,13 @@ ${summaryHtml}
                 </div>
                 </Fragment>
               ))}
+              {parkedStubAtEnd && (
+                <div className="text-[11px] font-bold"
+                     style={{ backgroundColor: ROW_GROUP.parked.bg, color: ROW_GROUP.parked.text }}>
+                  <RowGroupLabel groupKey="parked" count={groupCounts.parked} collapsible collapsed
+                                 onToggle={toggleParkedGroup} padClass="px-4 py-2" />
+                </div>
+              )}
             </div>
 
             {/* Desktop table */}
@@ -2534,15 +2596,23 @@ ${summaryHtml}
                 <tbody className="divide-y divide-gray-200">
                   {paginatedFiltered.map((c, i) => (
                     <Fragment key={c.id}>
+                    {parkedStubBefore(i) && (
+                      <tr>
+                        <td colSpan={canBulkDelete ? 10 : 9} className="p-0 text-xs font-bold border-y border-gray-200"
+                            style={{ backgroundColor: ROW_GROUP.parked.bg, color: ROW_GROUP.parked.text }}>
+                          <RowGroupLabel groupKey="parked" count={groupCounts.parked} collapsible collapsed
+                                         onToggle={toggleParkedGroup} padClass="px-3 py-1.5" />
+                        </td>
+                      </tr>
+                    )}
                     {(i === 0 || rowGroupKey(paginatedFiltered[i - 1]) !== rowGroupKey(c)) && (
                       <tr>
                         <td colSpan={canBulkDelete ? 10 : 9}
-                            className="px-3 py-1.5 text-xs font-bold border-y border-gray-200"
+                            className={`${rowGroupKey(c) === 'parked' && parkedCollapsible ? 'p-0' : 'px-3 py-1.5'} text-xs font-bold border-y border-gray-200`}
                             style={{ backgroundColor: ROW_GROUP[rowGroupKey(c)].bg, color: ROW_GROUP[rowGroupKey(c)].text }}>
-                          <span className="inline-flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ROW_GROUP[rowGroupKey(c)].dot }} />
-                            {ROW_GROUP[rowGroupKey(c)].label} ({groupCounts[rowGroupKey(c)]})
-                          </span>
+                          <RowGroupLabel groupKey={rowGroupKey(c)} count={groupCounts[rowGroupKey(c)]}
+                                         collapsible={rowGroupKey(c) === 'parked' && parkedCollapsible} collapsed={false}
+                                         onToggle={toggleParkedGroup} padClass="px-3 py-1.5" />
                         </td>
                       </tr>
                     )}
@@ -2634,6 +2704,15 @@ ${summaryHtml}
                     </tr>
                     </Fragment>
                   ))}
+                  {parkedStubAtEnd && (
+                    <tr>
+                      <td colSpan={canBulkDelete ? 10 : 9} className="p-0 text-xs font-bold border-y border-gray-200"
+                          style={{ backgroundColor: ROW_GROUP.parked.bg, color: ROW_GROUP.parked.text }}>
+                        <RowGroupLabel groupKey="parked" count={groupCounts.parked} collapsible collapsed
+                                       onToggle={toggleParkedGroup} padClass="px-3 py-1.5" />
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -2650,7 +2729,7 @@ ${summaryHtml}
                   <option value="all">ทั้งหมด</option>
                 </select>
                 <span className="text-gray-400">
-                  ({complaintStartIdx + 1}–{Math.min(complaintStartIdx + perPage, filtered.length)} จาก {filtered.length})
+                  ({listRows.length === 0 ? 0 : complaintStartIdx + 1}–{Math.min(complaintStartIdx + perPage, listRows.length)} จาก {listRows.length})
                 </span>
               </div>
               {complaintTotalPages > 1 && (

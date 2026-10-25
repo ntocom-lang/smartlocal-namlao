@@ -208,4 +208,16 @@ const parkFn = /export async function parkComplaints[\s\S]*?\n}\n/.exec(finishLi
 assert(parkFn.includes("rpc('park_complaints'") && !parkFn.includes('notifyTelegram'))
 assert(/export async function unparkComplaint[\s\S]*?notifyTelegram/.test(finishLib))
 
+// ── หัวกลุ่ม "ขึ้นทะเบียนรอดำเนินการ" พับเก็บได้ (เจ้าของระบบสั่ง 2569-10-25) ──
+assert(/useState\(true\)/.test(/const \[parkedCollapsed, setParkedCollapsed\][^\n]*/.exec(manager)?.[0] ?? ''), 'กลุ่มที่พักไว้ต้องพับเก็บเป็นค่าเริ่มต้น')
+assert(/const parkedCollapsible = FILTER_KEYS\[filterTab\] !== PARKED_STATUS && search === ''/.test(manager),
+  'กรองสถานะ "ขึ้นทะเบียนรอ" หรือกำลังค้นหาต้องกางเสมอ — ซ่อนไว้จะดูเหมือนค้นไม่เจอ')
+assert(/const listRows\s+= parkedHidden \? filtered\.filter\(\(c\) => rowGroupKey\(c\) !== 'parked'\) : filtered/.test(manager)
+  && /listRows\.slice\(complaintStartIdx/.test(manager), 'แบ่งหน้าต้องนับจากแถวที่มองเห็นจริง')
+assert(/const toggleParkedGroup/.test(manager) && /for \(const c of filtered\) if \(rowGroupKey\(c\) === 'parked'\) next\.delete\(c\.id\)/.test(manager),
+  'พับเก็บต้องเอาเรื่องที่ซ่อนออกจากรายการที่ติ๊กไว้ (กันลบ/ทำหลายรายการโดยมองไม่เห็น)')
+assert(/aria-expanded=\{!collapsed\}/.test(manager) && /function RowGroupLabel/.test(manager), 'หัวกลุ่มพับได้ต้องเป็นปุ่มจริง กดด้วยคีย์บอร์ดได้')
+assert((manager.match(/parkedStubBefore\(i\)/g) ?? []).length === 2 && (manager.match(/parkedStubAtEnd &&/g) ?? []).length === 2,
+  'แถบที่พับอยู่ต้องแสดงทั้งมือถือและตารางจอใหญ่ ทั้งตรงรอยต่อกลุ่มและท้ายรายการ')
+
 console.log('ALL PASS complaint-parked')
