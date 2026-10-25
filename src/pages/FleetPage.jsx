@@ -229,7 +229,8 @@ export default function FleetPage({ onBack } = {}) {
     </div>
   )
 
-  const ctx = { tenant, fleetInfo, depts, setDepts, isAdmin, isStaff, isViewer }
+  // Super Admin (เจ้าของระบบ) ลบได้ทุกอย่างรวมรถที่มีประวัติ (2569-10-25) — แยกจาก isAdmin ที่รวมผู้ดูแลยานพาหนะของ อปท. ด้วย
+  const ctx = { tenant, fleetInfo, depts, setDepts, isAdmin, isStaff, isViewer, isSuperAdmin: role === 'superadmin' }
 
   // desktop default to 'dashboard' when tab is null
   const activeTab = tab ?? 'dashboard'
