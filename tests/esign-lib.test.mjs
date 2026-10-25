@@ -19,7 +19,9 @@ const gateRelaxSql = await read('../supabase/migrations/20261022110100_esign_gat
 const imageFunctionsSql = await read('../supabase/migrations/20261023100100_esign_image_functions.sql')
 // ชุด S3a: แก้ esign_trip_status (ยกมาเต็มตัว) + เพิ่ม esign_my_pending — นิยามหลังสุดชนะ
 const tripPanelSql = await read('../supabase/migrations/20261023110000_esign_trip_panel_functions.sql')
-const functionsSql = functionsOldSql + '\n' + gateRelaxSql + '\n' + imageFunctionsSql + '\n' + tripPanelSql
+// 2569-10-25: แอดมินลบทริปที่มีลายเซ็นได้ — ยก esign_fleet_trip_guard มาเต็มตัวในไฟล์ใหม่ (นิยามหลังสุดชนะ)
+const adminDeleteSql = await read('../supabase/migrations/20261025120000_esign_trip_admin_delete.sql')
+const functionsSql = functionsOldSql + '\n' + gateRelaxSql + '\n' + imageFunctionsSql + '\n' + tripPanelSql + '\n' + adminDeleteSql
 const apiSource = await read('../src/lib/esignApi.js')
 const esignLibSource = await read('../src/lib/esign.js')
 
@@ -431,6 +433,21 @@ await test('S4 ใบพิมพ์/หน้าตรวจสอบ: ตั�
   const manual = await read('../public/manual-staff.html')
   const esignManual = manual.slice(manual.indexOf('id="esign"'), manual.indexOf('12 — พัสดุ/ครุภัณฑ์'))
   assert.ok(esignManual.length > 2000 && !/มาตรา\s*[๐-๙0-9]/.test(esignManual) && manual.includes('href="#esign"'), 'คู่มือต้องมีหัวข้อลงนามออนไลน์ในสารบัญ และไม่อ้างเลขมาตรา')
+})
+
+await test('แอดมินลบทริปที่มีลายเซ็นได้: migration เช็กแอดมินก่อนผ่าน + เขียน audit · หน้าจอเตือนก่อนลบทริปโหมดออนไลน์ · ข้อความ error บอกว่าลบได้เฉพาะแอดมิน', async () => {
+  const guard = adminDeleteSql.slice(adminDeleteSql.indexOf('CREATE OR REPLACE FUNCTION public.esign_fleet_trip_guard'))
+  const del = guard.slice(guard.indexOf('-- DELETE:'))
+  assert.ok(del.includes('esign_is_tenant_admin(OLD.municipality_id)'), 'ต้องเช็กแอดมินของ อปท. ของทริป')
+  assert.ok(del.indexOf('esign_is_tenant_admin') < del.indexOf("'esign_trip_deleted'"), 'ต้องเช็กสิทธิ์ก่อนเขียน audit/ลบ')
+  assert.ok(del.includes("esign_audit(OLD.municipality_id, 'esign_trip_deleted'"), 'ต้องเขียน audit ก่อนลบ')
+  assert.ok(!/OLD\.(destination|purpose|esign_verify_code)/.test(del), 'audit การลบห้ามมีปลายทาง/วัตถุประสงค์/รหัสตรวจสอบ')
+  assert.ok(del.trimEnd().endsWith('RETURN OLD;\nEND;\n$$;\n\nREVOKE ALL ON FUNCTION public.esign_fleet_trip_guard() FROM PUBLIC, anon, authenticated;') || del.includes('RETURN OLD;'), 'ทุกเส้นทางต้องมี RETURN')
+  assert.ok(ESIGN_TRIP_EXCEPTIONS.ESIGN_TRIP_HAS_SIGNATURES.includes('ผู้ดูแลระบบ') && ESIGN_TRIP_EXCEPTIONS.ESIGN_TRIP_HAS_SIGNATURES.includes('ยกเลิก'))
+  const fleet = await read('../src/components/fleet/FleetTrips.jsx')
+  const handler = fleet.slice(fleet.indexOf('async function handleDelete'), fleet.indexOf('/* ── Derived ── */'))
+  assert.ok(handler.includes('t.esign_slots') && handler.includes('esignWarning') && handler.includes('ไม่พบ'), 'ลบทริปโหมดออนไลน์ต้องเตือนผลก่อนยืนยัน')
+  assert.ok(/confirm\(`[^\n]*\$\{esignWarning\}/.test(handler), 'คำเตือนต้องอยู่ในกล่องยืนยัน')
 })
 
 console.log(`\nผ่านทั้งหมด ${cases} กรณี`)

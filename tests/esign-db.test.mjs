@@ -36,6 +36,8 @@ const imageTablesSql = await readMigration('20261023100000_esign_image_tables.sq
 const imageFunctionsSql = await readMigration('20261023100100_esign_image_functions.sql')
 // ชุด S3a: ข้อมูลแผงลงนามในหน้าทริป (แก้ esign_trip_status + เพิ่ม esign_my_pending)
 const tripPanelSql = await readMigration('20261023110000_esign_trip_panel_functions.sql')
+// แอดมินลบทริปที่มีลายเซ็นได้ (2569-10-25) — แทน esign_fleet_trip_guard ทั้งตัว (CREATE OR REPLACE)
+const adminDeleteSql = await readMigration('20261025120000_esign_trip_admin_delete.sql')
 
 // ดึงฟังก์ชันตัวจริงออกจาก migration เดิมทั้งตัว (ไม่พิมพ์ซ้ำเอง)
 const extractFunction = (source, startPattern) => {
@@ -119,6 +121,7 @@ await db.exec(gateRelaxSql)
 await db.exec(imageTablesSql)
 await db.exec(imageFunctionsSql)
 await db.exec(tripPanelSql)
+await db.exec(adminDeleteSql)
 
 const users = {
   adminA: { id: U(1), role: 'admin', muni: A, name: 'แอดมิน เอ' },
@@ -628,6 +631,91 @@ await test('hash ไม่เพี้ยนตาม timezone ของ session
   await db.query('SET TIME ZONE DEFAULT')
   assert.equal(h1, h2)
   assert.equal(h1, h3)
+})
+
+// ── ลบทริปที่มีลายเซ็น (เจ้าของสั่ง 2569-10-25: แอดมินลบได้) ─────────────────────────────────
+await test('ลบทริปที่มีลายเซ็น: เฉพาะแอดมิน อปท. นั้น/superadmin · คนอื่นลบไม่ได้ · หลักฐานลายเซ็นไม่หาย · audit บอกว่าใครลบ · ลบ audit ไม่ได้ = ลบไม่ผ่าน', async () => {
+  // ทริปหนึ่งใบ: ผู้ขอลงนามแล้ว (ใช้ได้) + ผอ.กองลงนามแล้วถอน (ถอนแล้ว) → ลายเซ็น 2 แถว ใช้ได้ 1 ถอน 1
+  await as('requester')
+  const t = await makeTrip()
+  await sign(t.id, 'requester', '246810')
+  await as('head')
+  await sign(t.id, 'dept_head', '482916')
+  assert.equal((await rpc('public.esign_revoke_fleet_trip($1, $2, $3)', [t.id, 'ทดสอบถอนก่อนลบ', 'dept_head'])).revoked, 1)
+
+  // คนอื่นลบไม่ได้ ทุกแบบ (รวมผู้ดูแลรถที่ไม่ใช่แอดมิน และแอดมินของ อปท. อื่น และผู้ไม่ล็อกอิน)
+  for (const who of ['requester', 'head', 'clerk', 'fleetAdmin', 'outsider', 'citizen', 'adminB', 'anon']) {
+    await as(who)
+    await expectError(db.query('DELETE FROM public.fleet_trips WHERE id = $1', [t.id]), /ESIGN_TRIP_HAS_SIGNATURES/)
+  }
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.fleet_trips WHERE id = $1', [t.id])).rows[0].n, 1, 'ลบผิดคนแล้วทริปต้องยังอยู่')
+
+  const countOf = async table => (await db.query(`SELECT count(*)::int AS n FROM public.${table}`)).rows[0].n
+  const before = {
+    signatures: (await db.query(`SELECT count(*)::int AS n FROM public.esign_signatures WHERE doc_id = $1`, [t.id])).rows[0].n,
+    allSignatures: await countOf('esign_signatures'),
+    revocations: await countOf('esign_revocations'),
+    stamps: await countOf('esign_signature_stamps'),
+    blobs: await countOf('esign_image_blobs'),
+  }
+  assert.equal(before.signatures, 2)
+
+  // audit เขียนไม่ได้ = ลบไม่ผ่านด้วย (ไม่มีทางลบโดยไม่มีร่องรอย) แล้วทริปต้องยังอยู่
+  await as('adminA')
+  await db.exec('ALTER TABLE public.audit_logs RENAME TO audit_logs_broken')
+  try {
+    await expectError(db.query('DELETE FROM public.fleet_trips WHERE id = $1', [t.id]), /audit_logs/)
+  } finally {
+    await db.exec('ALTER TABLE public.audit_logs_broken RENAME TO audit_logs')
+  }
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.fleet_trips WHERE id = $1', [t.id])).rows[0].n, 1)
+
+  // แอดมินของ อปท. เดียวกันลบได้
+  await db.query('DELETE FROM public.fleet_trips WHERE id = $1', [t.id])
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.fleet_trips WHERE id = $1', [t.id])).rows[0].n, 0)
+
+  // หลักฐานไม่หายสักแถว: ลายเซ็น/การถอน/ภาพ/คลังภาพ + สำเนาเนื้อหาที่ลงนามยังอยู่ในแถวลายเซ็น
+  assert.equal((await db.query(`SELECT count(*)::int AS n FROM public.esign_signatures WHERE doc_id = $1`, [t.id])).rows[0].n, 2)
+  assert.equal(await countOf('esign_signatures'), before.allSignatures)
+  assert.equal(await countOf('esign_revocations'), before.revocations)
+  assert.equal(await countOf('esign_signature_stamps'), before.stamps)
+  assert.equal(await countOf('esign_image_blobs'), before.blobs)
+  const snap = (await db.query(`SELECT content_snapshot, content_hash FROM public.esign_signatures WHERE doc_id = $1 AND slot = 'requester'`, [t.id])).rows[0]
+  assert.equal(snap.content_snapshot.destination, 'สำนักงานจังหวัดแพร่ ห้องประชุม 2')
+  assert.match(snap.content_hash, /^[0-9a-f]{64}$/)
+
+  // audit: ใครลบ/อปท./id ทริป/จำนวนลายเซ็น — ไม่มีปลายทาง วัตถุประสงค์ หรือรหัสตรวจสอบ
+  const audit = (await db.query(`SELECT actor_id, actor_role, municipality_id, resource_type, resource_id, metadata, metadata::text AS m
+    FROM public.audit_logs WHERE action = 'esign_trip_deleted' AND resource_id = $1`, [t.id])).rows
+  assert.equal(audit.length, 1)
+  assert.equal(audit[0].actor_id, users.adminA.id)
+  assert.equal(audit[0].municipality_id, A)
+  assert.equal(audit[0].resource_type, 'fleet_trip')
+  assert.deepEqual({ signatures: audit[0].metadata.signatures, valid: audit[0].metadata.valid, revoked: audit[0].metadata.revoked },
+    { signatures: 2, valid: 1, revoked: 1 })
+  assert.equal(audit[0].metadata.signature_ids.length, 2)
+  for (const secret of ['สำนักงานจังหวัดแพร่', 'อบรมเชิงปฏิบัติการลับ', t.esign_verify_code, '246810', '482916']) {
+    assert.ok(!audit[0].m.includes(secret), `audit ต้องไม่มี ${secret}`)
+  }
+
+  // หลังลบ: หน้าตรวจสอบสาธารณะไม่พบ (รหัสอยู่ที่แถวทริป) · รายการ "รอลงนามของฉัน" ไม่มีทริปนี้
+  await as('anon')
+  assert.equal((await rpc('public.esign_verify($1)', [t.esign_verify_code])).found, false)
+  await as('mayor')
+  const pending = await rpc('public.esign_my_pending()')
+  assert.ok(!(pending.items ?? []).some(item => item.trip_id === t.id), 'ทริปที่ลบแล้วต้องไม่อยู่ในรายการรอลงนาม')
+
+  // superadmin ลบทริปของ อปท. ใดก็ได้ · ทริปที่ไม่มีลายเซ็นยังลบได้โดยไม่ผ่านด่าน/ไม่เขียน audit ลบ
+  await as('requester')
+  const t2 = await makeTrip()
+  await sign(t2.id, 'requester', '246810')
+  await as('superadmin')
+  await db.query('DELETE FROM public.fleet_trips WHERE id = $1', [t2.id])
+  assert.equal((await db.query(`SELECT count(*)::int AS n FROM public.audit_logs WHERE action = 'esign_trip_deleted' AND resource_id = $1`, [t2.id])).rows[0].n, 1)
+  await as('requester')
+  const plain = await makeTrip({ status: 'draft' })
+  await db.query('DELETE FROM public.fleet_trips WHERE id = $1', [plain.id])
+  assert.equal((await db.query(`SELECT count(*)::int AS n FROM public.audit_logs WHERE action = 'esign_trip_deleted' AND resource_id = $1`, [plain.id])).rows[0].n, 0)
 })
 
 // ── ถอนลายเซ็น ────────────────────────────────────────────────────────────────────────────────
@@ -1259,7 +1347,7 @@ await test('ภาพลายเซ็น: audit มีบรรทัดเพ
 await test('หลักฐานตรวจย้อนได้: ทุกการลงนาม/ถอน/ตั้งค่า มีบรรทัดใน audit_logs · ไม่มีรหัสลงนามหรือเนื้อหาคำขอใน audit', async () => {
   const { rows } = await db.query(`SELECT action, metadata::text AS m FROM public.audit_logs WHERE action LIKE 'esign_%'`)
   const actions = new Set(rows.map(r => r.action))
-  for (const a of ['esign_sign', 'esign_revoke', 'esign_set_pin', 'esign_suspend', 'esign_reinstate', 'esign_set_policy', 'esign_enable', 'esign_disable', 'esign_confirm_trial']) {
+  for (const a of ['esign_sign', 'esign_revoke', 'esign_set_pin', 'esign_suspend', 'esign_reinstate', 'esign_set_policy', 'esign_enable', 'esign_disable', 'esign_confirm_trial', 'esign_trip_deleted']) {
     assert.ok(actions.has(a), `audit ต้องมี ${a}`)
   }
   const all = rows.map(r => r.m).join('\n')

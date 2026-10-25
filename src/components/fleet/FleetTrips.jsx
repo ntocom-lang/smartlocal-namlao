@@ -1642,7 +1642,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   }
 
   async function handleDelete(t) {
-    if (!confirm(`ลบรายการ "${t.vehicle?.name}" วันที่ ${t.planned_departure ? fmtDate(t.planned_departure) : '—'}?`)) return
+    // ทริปโหมดลงนามออนไลน์อาจมีลายเซ็นแล้ว — แอดมินลบได้ (2569-10-25) แต่ต้องรู้ผลก่อนกดยืนยัน:
+    // หลักฐานลายเซ็นและบันทึกว่าใครลบอยู่ในตาราง esign_* ไม่หาย แต่ QR/ลิงก์บนใบที่พิมพ์ไปแล้วจะขึ้น "ไม่พบ" และกู้ทริปคืนไม่ได้
+    const esignWarning = t.esign_slots
+      ? '\n\n⚠️ ทริปนี้ใช้ลงนามออนไลน์ ถ้ามีลายเซ็นแล้ว: ลิงก์/QR ตรวจสอบบนใบที่พิมพ์ไปแล้วจะขึ้น "ไม่พบ" และกู้ทริปคืนไม่ได้ (ระบบเก็บหลักฐานลายเซ็นและบันทึกว่าใครลบไว้) — ถ้าแค่ไม่ใช้แล้ว ให้ใช้ "ยกเลิกคำขอ" แทน'
+      : ''
+    if (!confirm(`ลบรายการ "${t.vehicle?.name}" วันที่ ${t.planned_departure ? fmtDate(t.planned_departure) : '—'}?${esignWarning}`)) return
     const { error } = await supabase.from('fleet_trips').delete().eq('id', t.id)
     if (error) return alert('ลบไม่สำเร็จ: ' + tripErrorMessage(error))
     logAction({ action: 'delete', resourceType: 'fleet_trip', resourceId: t.id, resourceLabel: `${t.vehicle?.name} — ${t.destination}`, municipalityId: tenant.id, metadata: { status: t.status } })
