@@ -5,7 +5,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { chromium } from 'playwright'
-import { buildFleetSk1Html, isMayorPosition, tripRequesterIsMayor } from '../src/lib/fleetTripPrint.js'
+import { buildFleetSk1Html, buildFleetTripRequestHtml, isMayorPosition, tripRequesterIsMayor } from '../src/lib/fleetTripPrint.js'
+import { PRINT_WINDOW_CLOSE_CLASS, addMobileCloseButton } from '../src/lib/printWindowClose.js'
 import { assertSignBlockStandard } from './lib/signBlockChecks.mjs'
 
 // ── ใครได้แบบ สก. ๑: นายกเท่านั้น (เจ้าของระบบเลือก 2569-10-18 ไม่รวมรองนายก) ─────────────
@@ -95,6 +96,42 @@ const longTrip = {
   destination: 'สำนักงานส่งเสริมการปกครองท้องถิ่นจังหวัดแพร่ และศาลากลางจังหวัดแพร่ (อาคารหลังใหม่) ห้องประชุมชั้น 3',
   purpose: 'เข้าร่วมประชุมชี้แจงแนวทางการจัดทำแผนพัฒนาท้องถิ่นและการบริหารงบประมาณประจำปี พ.ศ. 2570 ตามหนังสือจังหวัดแพร่',
 }
+// ── ปุ่ม "ปิดหน้าต่าง" บนหน้าต่างใบพิมพ์ เฉพาะมือถือ (เจ้าของระบบแจ้ง 2569-10-25 บนมือถือกดพิมพ์แล้วปิดไม่ได้) ──
+// บนมือถือใบที่เปิดด้วย window.open เป็นแท็บใหม่ที่ไม่มีแถบปิด/ย้อนกลับ — ใบรถรับ-ส่งผู้ป่วยแก้ไว้แล้ว (#375) ใบยานพาหนะยังไม่มี
+const wrapped = addMobileCloseButton(html)
+assert.equal((wrapped.match(new RegExp(`class="${PRINT_WINDOW_CLOSE_CLASS}"`, 'g')) ?? []).length, 1, 'ต้องมีปุ่มปิดหน้าต่างปุ่มเดียว')
+assert.ok(wrapped.includes('onclick="window.close()"'), 'ปุ่มต้องปิดหน้าต่างด้วย window.close()')
+assert.ok(wrapped.indexOf(PRINT_WINDOW_CLOSE_CLASS) < wrapped.indexOf('</head>') && wrapped.lastIndexOf(PRINT_WINDOW_CLOSE_CLASS) < wrapped.lastIndexOf('</body>'),
+  'CSS อยู่ใน <head> และปุ่มอยู่ก่อน </body>')
+assert.ok(wrapped.includes('(hover: none) and (pointer: coarse)'), 'ต้องแสดงเฉพาะอุปกรณ์สัมผัส ไม่ใช่ตามความกว้างจอ (หน้า document.write ไม่มี viewport meta มือถือจึงได้ ~980px)')
+assert.ok(/@media print \{[^}]*display: none !important/.test(wrapped), 'ปุ่มต้องไม่ติดไปกับกระดาษ')
+assert.equal(addMobileCloseButton(wrapped), wrapped, 'ใส่ซ้ำต้องไม่ได้ปุ่มที่สอง')
+assert.ok(wrapped.includes('visualViewport'), 'ปุ่มต้องจัดตำแหน่ง/ขนาดตามส่วนที่มองเห็นจริง (visualViewport) — หน้าเอกสารไม่มี viewport meta มือถือย่อหน้ากว้าง 980px ปุ่มติดขอบขวาของหน้าเคยหลุดจอ')
+assert.equal(/right:\s*10px/.test(wrapped), false, 'ห้ามกลับไปใช้ปุ่มติดขอบขวาของหน้า (หลุดจอบนมือถือจริง)')
+assert.equal(addMobileCloseButton(html).replace(/<style data-print-window-close>[\s\S]*?<\/style>/, '').replace(/<div class="print-window-close-touch">[\s\S]*?<\/div><script>[\s\S]*?<\/script>/, ''), html,
+  'นอกจากปุ่มกับ CSS ของปุ่ม เนื้อใบต้องไม่เปลี่ยนแม้แต่ตัวอักษรเดียว')
+// หน้า "กำลังเตรียมใบพิมพ์" (ไม่มี <head>/<body> ครบ) ก็ต้องได้ปุ่ม — ใบลงนามออนไลน์รอดึงลายเซ็นนาน
+const loading = addMobileCloseButton('<!doctype html><meta charset="utf-8"><title>กำลังเตรียมใบพิมพ์</title><body style="padding:2rem">กำลังเตรียมใบพิมพ์…</body>')
+assert.ok(loading.startsWith('<!doctype html><style data-print-window-close>') && loading.includes('onclick="window.close()"'), 'หน้ากำลังเตรียมต้องมีปุ่มปิดด้วย')
+const fragment = addMobileCloseButton('<p>ชิ้นส่วนเปล่า</p>')
+assert.ok(fragment.startsWith('<style data-print-window-close>') && fragment.includes('<p>ชิ้นส่วนเปล่า</p><div class=') && fragment.includes('</button></div><script>'),
+  'ชิ้นส่วนที่ไม่มี head/body: CSS นำหน้า เนื้อเดิมอยู่กลาง ปุ่มต่อท้าย')
+assert.ok(addMobileCloseButton(null).includes('window.close()'), 'ค่าว่างต้องไม่พัง')
+// ตัวพิมพ์ในหน้ารถต้องใช้ตัวช่วยนี้จริงทั้งสองทาง (ใบทันที + หน้ากำลังเตรียม) และไม่เด้งหน้าต่างพิมพ์ใส่หน้าต่างที่ปิดไปแล้ว
+const tripsPage = readFileSync('src/components/fleet/FleetTrips.jsx', 'utf8')
+assert.equal((tripsPage.match(/addMobileCloseButton\(/g) ?? []).length, 2, 'ต้องห่อทั้งใบพิมพ์และหน้ากำลังเตรียม')
+assert.ok(tripsPage.includes('win.document.write(addMobileCloseButton(html))'), 'ใบที่เขียนลงหน้าต่างต้องผ่านตัวช่วย')
+assert.ok((tripsPage.match(/if \(win\.closed\) return/g) ?? []).length >= 3, 'ปิดหน้าต่างระหว่างรอแล้วต้องไม่เขียน/ไม่สั่งพิมพ์/ไม่ alert ตามหลัง')
+// หน้าต่างรายละเอียดการใช้รถต้องอยู่เหนือแถบเมนูล่างบนมือถือ (BottomNav fixed bottom-0 z-50 วาดทีหลัง) — ไม่งั้นแถบเมนูทับท้ายหน้าต่างและ
+// รับการแตะแทนปุ่มพิมพ์ แบบ 3 / สก. ๑ ที่อยู่ล่างสุด (วัดจริงบนจอ 390×844: Playwright รายงาน "intercepts pointer events") — เจ้าของระบบแจ้ง 2569-10-25
+const modalTitleAt = tripsPage.indexOf('>รายละเอียดการใช้รถ</h2>')
+assert.ok(modalTitleAt > 0, 'ไม่พบหัวหน้าต่างรายละเอียดการใช้รถ')
+const modalWrapper = tripsPage.slice(modalTitleAt - 700, modalTitleAt)
+const wrapperClass = [...modalWrapper.matchAll(/className="(fixed inset-0 [^"]*)"/g)].at(-1)?.[1] ?? ''
+assert.ok(wrapperClass.split(' ').includes('z-[55]') && !wrapperClass.split(' ').includes('z-50'),
+  `หน้าต่างรายละเอียดการใช้รถต้องเป็น z-[55] (เหนือ BottomNav z-50 ต่ำกว่าหน้าต่างย่อย z-[60]/z-[80]) ได้ "${wrapperClass}"`)
+const request3 = buildFleetTripRequestHtml({ trip: {}, tenant, orderAuthority: {}, deptHead: {}, esign: null })
+
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 try {
   // โหมดพิมพ์ .sheet ไม่มี padding (ขอบมาจาก @page) — viewport ต้องเท่าพื้นที่พิมพ์ 160 × 276 มม.
@@ -152,6 +189,98 @@ try {
     await assertSignBlockStandard(view, { minRows: 1, minBelow })
   }
   console.log(`fleet แบบ สก. ๑ print assertions passed (${results.join(' · ')} มม. / 276)`)
+
+  // ── ปุ่มปิดหน้าต่างบน Chrome จริง: คอมพิวเตอร์ไม่เห็น · มือถือเห็นและกดปิดได้ · กระดาษไม่มี ───────────
+  // เปิดเป็นหน้าต่างใหม่ด้วย window.open เหมือนปุ่มพิมพ์ในระบบ — ปัญหาเกิดเฉพาะหน้าต่างแบบนี้บนมือถือ (page.setContent ไม่เหมือน: ผลวัดลวง)
+  const openPopup = async (context, source) => {
+    const opener = await context.newPage()
+    await opener.setContent('<p>opener</p>')
+    const popupPromise = opener.waitForEvent('popup')
+    await opener.evaluate(markup => { window.__printWin = window.open('', '_blank'); window.__printWin.document.write(markup); window.__printWin.document.close() }, source)
+    const popup = await popupPromise
+    await popup.waitForLoadState('load')
+    return { opener, popup }
+  }
+  // ตำแหน่ง/ขนาดปุ่ม "บนหน้าจอจริง" (คิดตามส่วนที่มองเห็น) + ทดสอบกดตรงกลางปุ่มแล้วได้ปุ่มจริง ไม่ใช่ตัวอื่นบัง
+  // มือถือคิดสเกลย่อพอดีจอหลังจัดหน้าเสร็จ ปุ่มจึงปรับตัวตามหลังโหลด — รอจนสเกลของปุ่มตรงกับ 1/สเกลของส่วนที่มองเห็น (ไม่ตรงเลย = ปุ่มไม่เคยปรับ → หมดเวลาแล้วเทสต์ล้ม)
+  const measureButton = async popup => {
+    await popup.waitForFunction(cls => {
+      const wrap = document.querySelector(`.${cls}`)
+      if (!wrap || getComputedStyle(wrap).display === 'none') return true
+      const match = /scale\(([\d.]+)\)/.exec(wrap.style.transform || '')
+      return Boolean(match) && Math.abs(parseFloat(match[1]) - 1 / window.visualViewport.scale) < 0.02
+    }, PRINT_WINDOW_CLOSE_CLASS, { timeout: 4000 })
+    return measureOnce(popup)
+  }
+  const measureOnce = popup => popup.evaluate(cls => {
+    const wrap = document.querySelector(`.${cls}`)
+    if (!wrap || getComputedStyle(wrap).display === 'none') return { displayed: false }
+    const box = wrap.querySelector('button').getBoundingClientRect()
+    const vv = window.visualViewport
+    const screen = {
+      left: (box.left - vv.offsetLeft) * vv.scale, top: (box.top - vv.offsetTop) * vv.scale,
+      width: box.width * vv.scale, height: box.height * vv.scale,
+    }
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    return { displayed: true, screen, scale: vv.scale, deviceWidth: vv.width * vv.scale, hitsButton: Boolean(hit?.closest(`.${cls} button`)) }
+  }, PRINT_WINDOW_CLOSE_CLASS)
+  const desktop = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  const touch = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+  try {
+    for (const [name, source] of [['แบบ สก. ๑', addMobileCloseButton(html)], ['แบบ 3', addMobileCloseButton(request3)]]) {
+      const onDesktop = await openPopup(desktop, source)
+      assert.equal((await measureOnce(onDesktop.popup)).displayed, false, `${name}: คอมพิวเตอร์ (มีเมาส์) ต้องไม่เห็นปุ่ม — เจ้าของระบบสั่ง "เฉพาะมือถือ"`)
+      await onDesktop.opener.close()
+      const onTouch = await openPopup(touch, source)
+      const m = await measureButton(onTouch.popup)
+      assert.equal(m.displayed, true, `${name}: มือถือต้องเห็นปุ่มปิดหน้าต่าง`)
+      // ⚠️ วัดเป็นพิกเซลบนจอจริง (คูณสเกลของส่วนที่มองเห็น) — หน้าไม่มี viewport meta ถูกย่อ ~0.5 เท่า ปุ่ม CSS 44px เหลือ ~22px บนจอ
+      assert.ok(m.screen.height >= 43 && m.screen.width >= 43, `${name}: ปุ่มบนจอต้องกดด้วยนิ้วได้ (≥44px) ได้ ${m.screen.width.toFixed(0)}×${m.screen.height.toFixed(0)} (สเกล ${m.scale.toFixed(2)})`)
+      assert.ok(m.screen.left >= 0 && m.screen.top >= 0 && m.screen.left + m.screen.width <= m.deviceWidth + 1,
+        `${name}: ปุ่มต้องอยู่ในจอ (เคยหลุดไปทางขวา) ได้ ซ้าย ${m.screen.left.toFixed(0)} กว้าง ${m.screen.width.toFixed(0)} / จอ ${m.deviceWidth.toFixed(0)}`)
+      assert.equal(m.hitsButton, true, `${name}: จุดกลางปุ่มต้องกดโดนปุ่ม ไม่มีองค์ประกอบอื่นบัง`)
+      await onTouch.popup.emulateMedia({ media: 'print' })
+      assert.equal(await onTouch.popup.evaluate(cls => getComputedStyle(document.querySelector(`.${cls}`)).display, PRINT_WINDOW_CLOSE_CLASS), 'none',
+        `${name}: ตอนพิมพ์ต้องไม่มีปุ่ม (แม้เป็นอุปกรณ์สัมผัส)`)
+      await onTouch.opener.close()
+    }
+    // ผู้ใช้ซูมเข้า/เลื่อนดูใบ → ปุ่มต้องตามมา ขนาดบนจอคงที่ ไม่ตกขอบ
+    {
+      const { opener, popup } = await openPopup(touch, addMobileCloseButton(html))
+      const cdp = await touch.newCDPSession(popup)
+      await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 2.5 })
+      await popup.evaluate(() => window.scrollTo(300, 400))
+      await popup.waitForTimeout(300)
+      const zoomed = await measureButton(popup)
+      assert.ok(zoomed.screen.height >= 43 && zoomed.screen.left >= 0 && zoomed.screen.top >= 0 && zoomed.screen.left + zoomed.screen.width <= zoomed.deviceWidth + 1 && zoomed.hitsButton,
+        `ซูมเข้า/เลื่อนแล้วปุ่มต้องยังอยู่มุมจอและกดได้: ${JSON.stringify(zoomed)}`)
+      await opener.close()
+    }
+    // ใส่ปุ่มแล้วเลย์เอาต์ใบเดิมทุกมิลลิเมตร (เนื้อกับปุ่มแยกกัน) — ยังจบ 1 แผ่นและไม่ล้นพื้นที่พิมพ์เท่าเดิม
+    const printView = await browser.newPage({ viewport: { width: 605, height: 1043 } })
+    await printView.setContent(addMobileCloseButton(html), { waitUntil: 'load' })
+    await printView.evaluate(() => document.fonts.ready)
+    await printView.emulateMedia({ media: 'print' })
+    const withButtonPdf = await printView.pdf({ preferCSSPageSize: true, printBackground: true })
+    assert.equal((withButtonPdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length, 1, 'ใส่ปุ่มแล้วใบต้องยังจบ 1 แผ่น')
+    const bottomWith = await printView.evaluate(() => document.querySelector('.eservice-origin').getBoundingClientRect().bottom)
+    await printView.setContent(html, { waitUntil: 'load' })
+    await printView.evaluate(() => document.fonts.ready)
+    await printView.emulateMedia({ media: 'print' })
+    const bottomWithout = await printView.evaluate(() => document.querySelector('.eservice-origin').getBoundingClientRect().bottom)
+    assert.equal(bottomWith, bottomWithout, 'ใส่ปุ่มแล้วตำแหน่งท้ายใบต้องไม่ขยับ')
+    await printView.close()
+
+    // กดปุ่มบนมือถือแล้วหน้าต่างปิดจริง
+    const closing = await openPopup(touch, addMobileCloseButton(html))
+    await closing.popup.locator('button', { hasText: 'ปิดหน้าต่าง' }).click()
+    await closing.opener.waitForFunction(() => window.__printWin.closed, null, { timeout: 5000 })
+    await closing.opener.close()
+    console.log('fleet print-window close button passed (คอมพิวเตอร์ไม่เห็น · มือถืออยู่ในจอ ≥44px กดโดน ปิดได้ · ซูมแล้วปุ่มตาม · ตอนพิมพ์ไม่มี · เลย์เอาต์ใบไม่เปลี่ยน)')
+  } finally {
+    await desktop.close()
+    await touch.close()
+  }
 } finally {
   await browser.close()
 }

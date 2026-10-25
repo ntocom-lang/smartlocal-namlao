@@ -20,6 +20,7 @@ import { useHomeRpc } from '../../lib/staffHomeData'
 import { getTripEsignStamps, getTripEsignStatus } from '../../lib/esignApi'
 import { esignPrintData, printSignatureBox } from '../../lib/esignPrint'
 import { prepareStampsForPrint } from '../../lib/signatureCanvas'
+import { addMobileCloseButton } from '../../lib/printWindowClose'
 import ResponsiveSelect from '../common/ResponsiveSelect'
 
 const STATUS_LABEL = {
@@ -908,10 +909,13 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const win = window.open('', '_blank', 'width=900,height=760')
     if (!win) return alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
     if (typeof source === 'string') return writeAndPrint(win, source)
+    // หน้า "กำลังเตรียมใบพิมพ์" ก็ต้องปิดได้ — ใบลงนามออนไลน์ดึงลายเซ็นก่อนจึงรอนาน บนมือถือแท็บนี้ไม่มีแถบปิด
     win.document.open()
-    win.document.write('<!doctype html><meta charset="utf-8"><title>กำลังเตรียมใบพิมพ์</title><body style="font-family:sans-serif;padding:2rem">กำลังเตรียมใบพิมพ์…</body>')
+    win.document.write(addMobileCloseButton('<!doctype html><meta charset="utf-8"><title>กำลังเตรียมใบพิมพ์</title><body style="font-family:sans-serif;padding:2rem">กำลังเตรียมใบพิมพ์…</body>'))
     win.document.close()
-    source.then(html => writeAndPrint(win, html)).catch(error => {
+    // ผู้ใช้ปิดหน้าต่างระหว่างรอไปแล้ว (ปุ่มปิดบนมือถือ) = เลิกเงียบๆ ไม่เขียนลงหน้าต่างที่ปิดแล้ว และไม่เด้ง alert ตามหลัง
+    source.then(html => { if (!win.closed) writeAndPrint(win, html) }).catch(error => {
+      if (win.closed) return
       win.close()
       alert(error?.message || 'เตรียมใบพิมพ์ไม่สำเร็จ ลองใหม่อีกครั้ง')
     })
@@ -919,9 +923,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
 
   function writeAndPrint(win, html) {
     win.document.open()
-    win.document.write(html)
+    // ปุ่ม "ปิดหน้าต่าง" เฉพาะอุปกรณ์สัมผัส (เจ้าของระบบแจ้ง 2569-10-25 บนมือถือกดพิมพ์แล้วปิดไม่ได้) ไม่ติดไปกับกระดาษ
+    win.document.write(addMobileCloseButton(html))
     win.document.close()
     const printWhenReady = async () => {
+      if (win.closed) return
       try {
         if (win.document.fonts?.ready) {
           await Promise.race([
@@ -930,6 +936,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           ])
         }
       } catch { /* โหลดฟอนต์ไม่ทันก็พิมพ์ด้วยฟอนต์บนเครื่อง */ }
+      // ปิดหน้าต่างระหว่างรอฟอนต์ไปแล้ว = ไม่เด้งหน้าต่างพิมพ์ให้ (บนมือถือเด้งทับหน้าที่ผู้ใช้กลับไปแล้ว)
+      if (win.closed) return
       win.focus()
       win.print()
     }
@@ -2352,7 +2360,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         // แบบ สก. ๑ เฉพาะคำขอของนายกที่ได้รถแล้ว — ถูกปฏิเสธ/ยกเลิก/ยังรอ = ไม่มีการใช้รถให้รับรอง
         const canPrintSk1 = tripRequesterIsMayor(t) && ['approved', 'in_progress', 'completed'].includes(t.status)
         return (
-          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-4">
+          // z-[55] ไม่ใช่ z-50: บนมือถือแถบเมนูล่าง (BottomNav, fixed bottom-0 z-50 วาดทีหลัง) ทับท้ายหน้าต่างนี้และรับการแตะแทน
+          // ปุ่มพิมพ์ แบบ 3 / สก. ๑ ที่อยู่ล่างสุดจึงกดไม่โดน (วัดจริงบนจอ 390×844: ปุ่มอยู่ y 762–808 แถบเมนูเริ่ม ~780 — Playwright
+          // รายงาน "intercepts pointer events") · ยังต่ำกว่าหน้าต่างย่อยที่เปิดจากที่นี่ (ลงนามออนไลน์ z-[80] · รายงานเหตุ z-[60])
+          // เจ้าของระบบแจ้ง 2569-10-25 · กับดักเดียวกับหน้ารายละเอียดรถ (#499)
+          <div className="fixed inset-0 z-[55] flex items-end md:items-center justify-center bg-black/40 p-4">
             <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <h2 className="text-base font-black text-gray-800">รายละเอียดการใช้รถ</h2>
