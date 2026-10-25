@@ -8,6 +8,7 @@ import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { custodianChoicesForDepartment, custodianSuggestions } from '../../lib/fleetCustodianRegisterPrint'
 import { canCopyInsuranceDate, copyInsuranceDate } from '../../lib/fleetVehicleSummary'
+import { vehicleDeleteConfirmed, vehicleDeleteErrorText, vehicleDeletePlan } from '../../lib/fleetVehicleDelete'
 import {
   ASSET_KIND_LABEL,
   ASSET_KIND_OPTIONS,
@@ -218,7 +219,7 @@ const auditSnapshot = v => v ? {
   custodian_position: v.custodian_position,
 } : null
 
-export default function FleetVehicles({ tenant, depts, isAdmin }) {
+export default function FleetVehicles({ tenant, depts, isAdmin, isSuperAdmin = false }) {
   const [vehicles,     setVehicles]     = useState([])
   // เก็บเฉพาะแถวจริงจากฐานข้อมูล (มี id เสมอ) — ใช้เป็นแหล่งข้อมูลตรงให้โมดัล "จัดการประเภท"
   // ส่วนดรอปดาวน์เพิ่ม/แก้ไขทรัพย์สินค่อยไป fallback เป็นชุดมาตรฐานเองตอนแสดงผล (ดู typeOptions)
@@ -479,27 +480,30 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
   }
 
   async function handleDelete(v) {
-    const [{ count: fuelCount }, { count: tripCount }, { count: maintenanceCount }] = await Promise.all([
+    const [{ count: fuelCount }, { count: tripCount }, { count: maintenanceCount }, { count: signedTripCount }] = await Promise.all([
       supabase.from('fleet_fuel_records').select('id', { count: 'exact', head: true }).eq('vehicle_id', v.id),
       supabase.from('fleet_trips').select('id', { count: 'exact', head: true }).eq('vehicle_id', v.id),
       supabase.from('fleet_maintenance').select('id', { count: 'exact', head: true }).eq('vehicle_id', v.id),
+      supabase.from('fleet_trips').select('id', { count: 'exact', head: true }).eq('vehicle_id', v.id).not('esign_slots', 'is', null),
     ])
-    const historyCount = (fuelCount ?? 0) + (tripCount ?? 0) + (maintenanceCount ?? 0)
-    if (historyCount > 0) {
-      alert(`ไม่สามารถลบได้ เพราะมีประวัติที่เกี่ยวข้อง ${historyCount} รายการ\nให้แก้ไขสถานะเป็น “ปลดระวาง” เพื่อรักษาประวัติราชการ`)
-      return
-    }
-    if (!confirm(`ลบ "${v.name}" (${assetIdentifier(v)})?`)) return
+    const history = { trips: tripCount ?? 0, fuel: fuelCount ?? 0, maintenance: maintenanceCount ?? 0, signedTrips: signedTripCount ?? 0 }
+    // มีประวัติ: ผู้ดูแลทั่วไปลบไม่ได้ (ตั้ง "ปลดระวาง" แทน) · Super Admin ลบได้แต่ต้องพิมพ์คำยืนยัน — ดู fleetVehicleDelete.js
+    const plan = vehicleDeletePlan({ name: `${v.name} (${assetIdentifier(v)})`, ...history, isSuperAdmin })
+    if (plan.kind === 'blocked') { alert(plan.message); return }
+    if (plan.kind === 'typed') {
+      if (!vehicleDeleteConfirmed(window.prompt(plan.prompt))) return
+    } else if (!confirm(`ลบ "${v.name}" (${assetIdentifier(v)})?`)) return
     const { error } = await supabase.from('fleet_vehicles').delete().eq('id', v.id)
     if (!error) {
       setVehicles(prev => prev.filter(x => x.id !== v.id))
       logAction({
         action: 'delete', resourceType: 'fleet_vehicle', resourceId: v.id,
         resourceLabel: `${v.name} (${assetIdentifier(v)})`,
-        municipalityId: tenant.id, metadata: { deleted: auditSnapshot(v) },
+        municipalityId: tenant.id,
+        metadata: { deleted: auditSnapshot(v), ...(plan.kind === 'typed' ? { withHistory: history, override: 'superadmin' } : {}) },
       })
     }
-    else alert('ลบไม่สำเร็จ: ' + error.message)
+    else alert(vehicleDeleteErrorText(error))
   }
 
   const filtered = vehicles.filter(v => {
