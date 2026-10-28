@@ -41,6 +41,7 @@ const SurveysPage = lazyWithRetry(() => import('./pages/SurveysPage'))
 const TechnicianDashboard = lazyWithRetry(() => import('./pages/TechnicianDashboard'))
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'))
 const MySignaturesPage = lazyWithRetry(() => import('./pages/MySignaturesPage'))
+const AccountNotificationSettingsPage = lazyWithRetry(() => import('./pages/AccountNotificationSettingsPage'))
 const MyComplaints = lazyWithRetry(() => import('./pages/MyComplaints'))
 const MorePage = lazyWithRetry(() => import('./pages/MorePage'))
 const NotificationsPage = lazyWithRetry(() => import('./pages/NotificationsPage'))
@@ -364,6 +365,15 @@ function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly 
   return children
 }
 
+// คง bookmark แบบ hash และรองรับ query tab โดยให้แต่ละหน้าจัดการข้อมูลเฉพาะส่วนที่เปิด
+function AccountProfileRoute() {
+  const { search, hash } = useLocation()
+  const tab = new URLSearchParams(search).get('tab')
+  if (tab === 'notifications') return <Navigate to="/profile/notifications" replace />
+  if (tab === 'signatures') return <RequireAuth staffOnly><Navigate to="/staff/my-signatures" state={{ returnTo: '/profile' }} replace /></RequireAuth>
+  return <ProfilePage key={tab === 'security' || hash === '#security' ? 'security' : 'account'} />
+}
+
 function EventManagementPage() {
   const { tenant } = useTenant()
   const { role } = useAuth()
@@ -397,6 +407,7 @@ function AppShell() {
   useEffect(() => { navigateRef.current = navigate }, [navigate])
   const location = useLocation()
   const isBackOffice = ['/admin', '/staff', '/technician', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
+  const isAccountPage = location.pathname === '/profile' || location.pathname === '/profile/notifications'
   // ช่างมีเมนูบนสุด/แถบข้างมาตรฐานอยู่แล้วในทุกธีม (NAV_TECH) แต่ต้องเปิดเฉพาะจอ PC
   // มือถือยังใช้หัวจอ/เมนูล่างของ TechnicianDashboard เองตามเดิม กันซ้อนกับของที่มีอยู่แล้ว
   const isTechnician = location.pathname.startsWith('/technician')
@@ -629,10 +640,10 @@ function AppShell() {
           onClose={() => { markReminderSkipped('phone', reminderUid); setShowPhoneReminder(false) }} />
       )}
       <NotificationsProvider>
-        {!isBackOffice && <Header />}
+        {!isBackOffice && !isAccountPage && <Header />}
         {isTechnician && <div className="hidden md:block"><Header /></div>}
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          {(!isBackOffice || isTechnician) && <CitizenSidebar />}
+          {((!isBackOffice && !isAccountPage) || isTechnician) && <CitizenSidebar />}
           <main className="flex-1 min-w-0 overflow-y-auto">
           <SuspenseErrorBoundary>
           <Suspense fallback={
@@ -667,7 +678,12 @@ function AppShell() {
           <Route path="/satisfaction" element={<SatisfactionPage />} />
           <Route path="/profile" element={
             <RequireAuth>
-              <ProfilePage />
+              <AccountProfileRoute />
+            </RequireAuth>
+          } />
+          <Route path="/profile/notifications" element={
+            <RequireAuth>
+              <AccountNotificationSettingsPage />
             </RequireAuth>
           } />
           <Route path="/staff/my-signatures" element={

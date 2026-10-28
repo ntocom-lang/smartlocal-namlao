@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY
@@ -16,40 +16,58 @@ export function usePushNotification({ userId, municipalityId } = {}) {
   )
   const [subscribed, setSubscribed] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [supported, setSupported] = useState(false)
+  const [checking, setChecking] = useState(true)
+  const [error, setError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
+  const operation = useRef({ version: 0, busy: false })
+  const configured = Boolean(VAPID_PUBLIC_KEY)
+  const deviceSupported = typeof window !== 'undefined' && window.isSecureContext &&
+    'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window
+  const supported = configured && deviceSupported
 
   useEffect(() => {
-    setSupported(
-      'serviceWorker' in navigator &&
-        'PushManager' in window &&
-        Boolean(VAPID_PUBLIC_KEY),
-    )
+    const refresh = () => {
+      if (operation.current.busy) return
+      if ('Notification' in window) setPermission(Notification.permission)
+      setReloadKey(key => key + 1)
+    }
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
   }, [])
 
-  // ตรวจว่า user นี้มี subscription อยู่แล้วหรือไม่
+  // อ่านอย่างเดียวตอนเปิดหน้า ไม่ขอ permission/สมัครแทนผู้ใช้ และไม่รอ serviceWorker.ready ค้างไม่สิ้นสุด
   useEffect(() => {
-    if (!userId || !supported) return
+    let cancelled = false
+    if (operation.current.busy) return
+    const version = operation.current.version
+    const current = () => !cancelled && operation.current.version === version && !operation.current.busy
     ;(async () => {
-      const reg = await navigator.serviceWorker.ready
-      const existing = await reg.pushManager.getSubscription()
-      if (!existing) { setSubscribed(false); return }
-
-      const { data } = await supabase
-        .from('push_subscriptions')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('endpoint', existing.endpoint)
-        .maybeSingle()
-
-      setSubscribed(Boolean(data))
+      try {
+        if (current()) { setChecking(true); setError(''); setSubscribed(false) }
+        if (current() && 'Notification' in window) setPermission(Notification.permission)
+        if (!userId || !supported) return
+        const reg = await navigator.serviceWorker.getRegistration()
+        const existing = reg?.active && await reg.pushManager.getSubscription()
+        if (!existing) return
+        const { data, error: readError } = await supabase.from('push_subscriptions').select('id')
+          .eq('user_id', userId).eq('municipality_id', municipalityId).eq('endpoint', existing.endpoint).maybeSingle()
+        if (readError) throw readError
+        if (current()) setSubscribed(Boolean(data))
+      } catch {
+        if (current()) setError('ตรวจสอบการแจ้งเตือนของเครื่องนี้ไม่สำเร็จ กรุณาลองใหม่')
+      } finally {
+        if (current()) setChecking(false)
+      }
     })()
-  }, [userId, supported])
+    return () => { cancelled = true }
+  }, [userId, municipalityId, supported, reloadKey])
 
   const subscribe = useCallback(async () => {
     if (!supported || !userId || !municipalityId) return
-    setLoading(true)
+    let created = null
     try {
-      const reg = await navigator.serviceWorker.ready
+      const reg = await navigator.serviceWorker.getRegistration()
+      if (!reg?.active) throw new Error('service_worker_not_ready')
       let sub = await reg.pushManager.getSubscription()
 
       if (!sub) {
@@ -57,12 +75,13 @@ export function usePushNotification({ userId, municipalityId } = {}) {
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
         })
+        created = sub
       }
 
       const key = sub.getKey('p256dh')
       const auth = sub.getKey('auth')
 
-      await supabase.from('push_subscriptions').upsert(
+      const { error: saveError } = await supabase.from('push_subscriptions').upsert(
         {
           user_id: userId,
           municipality_id: municipalityId,
@@ -72,44 +91,64 @@ export function usePushNotification({ userId, municipalityId } = {}) {
         },
         { onConflict: 'user_id,endpoint' },
       )
-
+      if (saveError) throw saveError
       setPermission(Notification.permission)
       setSubscribed(true)
-    } catch (err) {
-      console.error('push subscribe error', err)
-    } finally {
-      setLoading(false)
+    } catch {
+      if (created) await created.unsubscribe().catch(() => {})
+      setError('เปิดการแจ้งเตือนไม่สำเร็จ กรุณาตรวจการเชื่อมต่อแล้วลองใหม่ หากเพิ่งติดตั้งแอปให้เปิดหน้านี้ใหม่')
     }
   }, [supported, userId, municipalityId])
 
   const unsubscribe = useCallback(async () => {
-    if (!supported || !userId) return
+    if (!supported || !userId || operation.current.busy) return
+    operation.current = { version: operation.current.version + 1, busy: true }
+    setChecking(false)
     setLoading(true)
+    setError('')
     try {
-      const reg = await navigator.serviceWorker.ready
-      const sub = await reg.pushManager.getSubscription()
+      const reg = await navigator.serviceWorker.getRegistration()
+      const sub = await reg?.pushManager.getSubscription()
       if (sub) {
-        await supabase
+        const { error: deleteError } = await supabase
           .from('push_subscriptions')
           .delete()
           .eq('user_id', userId)
+          .eq('municipality_id', municipalityId)
           .eq('endpoint', sub.endpoint)
-        await sub.unsubscribe()
+        if (deleteError) throw deleteError
+        // ปิดเฉพาะบัญชีนี้ในฐาน ไม่ unsubscribe เบราว์เซอร์ทั้งเครื่อง เพราะ endpoint เดียวกัน
+        // อาจมีอีกบัญชีที่เจ้าตัวเปิดรับไว้ การปิดของบัญชีนี้ต้องไม่ทำให้บัญชีอื่นรับไม่ได้
+        setSubscribed(false)
       }
       setSubscribed(false)
-    } catch (err) {
-      console.error('push unsubscribe error', err)
+    } catch {
+      setError('ปิดการแจ้งเตือนไม่สำเร็จครบทุกขั้นตอน กรุณาตรวจสอบสถานะอีกครั้ง')
     } finally {
+      operation.current.busy = false
       setLoading(false)
     }
-  }, [supported, userId])
+  }, [supported, userId, municipalityId])
 
   const requestAndSubscribe = useCallback(async () => {
-    if (!supported) return
-    const perm = await Notification.requestPermission()
-    setPermission(perm)
-    if (perm === 'granted') await subscribe()
-  }, [supported, subscribe])
+    if (!supported || !userId || !municipalityId || operation.current.busy) return
+    operation.current = { version: operation.current.version + 1, busy: true }
+    setChecking(false)
+    setLoading(true)
+    setError('')
+    try {
+      const perm = await Notification.requestPermission()
+      setPermission(perm)
+      if (perm === 'granted') await subscribe()
+      else setError(perm === 'denied' ? 'เบราว์เซอร์บล็อกการแจ้งเตือน กรุณาแก้สิทธิ์ของเว็บไซต์ในการตั้งค่าเบราว์เซอร์' : 'ยังไม่ได้อนุญาตการแจ้งเตือน สามารถกดเปิดใหม่ได้เมื่อพร้อม')
+    } catch {
+      setError('ขออนุญาตการแจ้งเตือนไม่สำเร็จ กรุณาลองใหม่')
+    } finally {
+      operation.current.busy = false
+      setLoading(false)
+    }
+  }, [supported, userId, municipalityId, subscribe])
 
-  return { supported, permission, subscribed, loading, requestAndSubscribe, unsubscribe }
+  const refresh = useCallback(() => setReloadKey(key => key + 1), [])
+  return { configured, deviceSupported, supported, permission, subscribed, checking, loading, error, refresh, requestAndSubscribe, unsubscribe }
 }

@@ -167,11 +167,11 @@ export default function StaffAccountMenu({ onLogout, onSystemSettings, tone = 'o
           <div role="presentation" className="space-y-0.5 px-1 py-2">
             <Link to="/profile" role="menuitem" data-account-profile onClick={close} className={itemCls}><UserRound size={18} aria-hidden="true" />โปรไฟล์ของฉัน</Link>
             {canAccessStaffPortal(role) && <Link to="/staff/my-signatures" state={{ returnTo: location.pathname }} role="menuitem" data-account-signature onClick={close} className={itemCls}><FileSignature size={18} aria-hidden="true" />ลายเซ็นของฉัน</Link>}
-            <Link to="/notifications" role="menuitem" data-account-notifications onClick={close} className={itemCls}>
-              <Bell size={18} aria-hidden="true" /><span className="flex-1">การแจ้งเตือน</span>
+            <Link to="/profile/notifications" role="menuitem" data-account-notifications onClick={close} className={itemCls}>
+              <Bell size={18} aria-hidden="true" /><span className="flex-1">ตั้งค่าการแจ้งเตือน</span>
               {unreadCount > 0 && <span className="rounded-full bg-red-50 px-2 text-xs font-bold text-red-600">{unreadCount > 99 ? '99+' : unreadCount}</span>}
             </Link>
-            <Link to="/profile#security" role="menuitem" data-account-security onClick={close} className={itemCls}><ShieldCheck size={18} aria-hidden="true" />ความปลอดภัย</Link>
+            <Link to="/profile?tab=security" role="menuitem" data-account-security onClick={close} className={itemCls}><ShieldCheck size={18} aria-hidden="true" />ความปลอดภัย</Link>
             {(role === 'admin' || role === 'superadmin') && <Link to="/admin" state={{ page: 'system-settings' }} role="menuitem" data-account-settings
               onClick={e => { close(); if (onSystemSettings) { e.preventDefault(); onSystemSettings() } }} className={itemCls}><Settings size={18} aria-hidden="true" />ตั้งค่าระบบ</Link>}
           </div>
