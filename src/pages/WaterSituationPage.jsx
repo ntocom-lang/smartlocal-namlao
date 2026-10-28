@@ -1,6 +1,7 @@
 import HydroHourlyPanel from './HydroHourlyPanel'
 import { HYDRO_TENANTS } from '../lib/hydroHourly'
-import { lazy, Suspense, useCallback, useEffect, useId, useState } from 'react'
+import { browserStorage, readHydroCache, readSituationCache, saveHydroCache, saveSituationCache } from '../lib/waterCache'
+import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, CloudRain, Dam, ExternalLink,
@@ -43,6 +44,12 @@ const WATER_GRID = {
 }
 const THAIWATER_URL = 'https://www.thaiwater.net'
 const EWS_URL = 'https://ews.dwr.go.th/'
+// เรดาร์ฝน: ลิงก์ออกไปหน้าทางการเท่านั้น (ตรวจ 2569-10-28 ว่าเปิดได้และเป็นหน้าเรดาร์จริง) — ไม่ฝังตัวเล่นของบริษัทอื่นในหน้า
+// เพราะต้องโหลดสคริปต์บุคคลที่สามและส่งข้อมูลผู้ชมออกนอกระบบ · ภาพเรดาร์ไม่ได้ผ่านการตรวจของ อปท. จึงไม่ใช่ค่าที่หน้านี้รับรอง
+const RADAR_LINKS = [
+  { href: 'https://www.thaiwater.net/weather/radar', label: 'เรดาร์ฝนและภาพดาวเทียม', source: 'ThaiWater · ข้อมูลกรมอุตุนิยมวิทยา' },
+  { href: 'https://weather.tmd.go.th/', label: 'เรดาร์ฝนกรมอุตุนิยมวิทยา', source: 'weather.tmd.go.th' },
+]
 
 // แท็บบนสุดของหน้า — สถานการณ์ = ค่าสถานีทั้งหมดเหมือนเดิม · ผังน้ำตำบล = ผังของตำบล (เฉพาะ อปท. ที่มีแผนภาพ)
 // hint = บอกคนมาใหม่ว่าแต่ละแท็บมีอะไร (เขียนให้ตรงกับทุก อปท. — ไม่ระบุว่ามีฝน/อ่าง/ระดับน้ำครบ เพราะแต่ละที่มีไม่เท่ากัน)
@@ -95,8 +102,12 @@ export default function WaterSituationPage() {
         const report = await response.json()
         if (report.station !== hydroCode || !Array.isArray(report.points)) throw new Error('Invalid report')
         if (alive) setHydroState({ code: hydroCode, report, failed: false })
+        saveHydroCache(browserStorage(), hydroCode, report)
       } catch {
-        if (alive) setHydroState(previous => ({ code: hydroCode, report: previous?.code === hydroCode ? previous.report : null, failed: true }))
+        // ดึงไม่สำเร็จ: ค้างรายงานที่มีอยู่ในหน้า ถ้ายังไม่เคยได้เลยในรอบนี้ใช้ที่เครื่องเก็บไว้ (ไม่เกิน 24 ชม. ของเวลาข้อมูล)
+        // failed: true ทุกกรณี → แผงขึ้น "ข้อมูลอาจไม่เป็นปัจจุบัน · ระดับน้ำล่าสุดที่ได้รับ" และไม่คำนวณเทียบชั่วโมงก่อน
+        const cached = readHydroCache(browserStorage(), hydroCode)?.value ?? null
+        if (alive) setHydroState(previous => ({ code: hydroCode, report: (previous?.code === hydroCode ? previous.report : null) ?? cached, failed: true }))
       }
     }
     load()
@@ -118,11 +129,29 @@ export default function WaterSituationPage() {
   }, [])
 
   // รอบที่โหลดพลาดแต่เคยมีข้อมูลแล้ว ให้แสดงของเดิมต่อ — ตัวเตือน "ข้อมูลไม่เป็นปัจจุบัน" ทำงานเองถ้าค้างนาน
+  //
+  // ค่าที่เครื่องเก็บไว้ (waterCache) ใช้เฉพาะตอน "ยังไม่เคยได้ค่าจากระบบเลยในครั้งนี้ และรอบนี้ดึงไม่สำเร็จ" เท่านั้น
+  // ห้ามเอาขึ้นจอระหว่างรอ (คนจะเห็นตัวเลขเก่าวาบก่อนค่าจริง) · fromCache = ป้ายบอกว่าตัวเลขที่เห็นมาจากเครื่อง ไม่ใช่ระบบตอนนี้
+  const gotLiveData = useRef(false)
+  const [fromCache, setFromCache] = useState(false)
   const applyResult = useCallback((result, error) => {
     setCheckedAt(Date.now())
     setLoadError(Boolean(error))
-    if (!error) setData(result ?? { stations: [] })
-  }, [])
+    if (!error) {
+      const fresh = result ?? { stations: [] }
+      gotLiveData.current = true
+      setData(fresh)
+      setFromCache(false)
+      saveSituationCache(browserStorage(), tenantId, fresh)
+      return
+    }
+    if (gotLiveData.current) return
+    const cached = readSituationCache(browserStorage(), tenantId)
+    if (cached) {
+      setData(cached.value)
+      setFromCache(true)
+    }
+  }, [tenantId])
 
   useEffect(() => {
     if (!tenantId) return
@@ -243,7 +272,7 @@ export default function WaterSituationPage() {
             </div>
           ) : (
             <>
-              <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} />
+              <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} fromCache={fromCache} onRetry={refresh} />
               <AlertBanner rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings}
                 homeAmphoe={tenant?.district} now={checkedAt} tenantName={tenant?.name} />
               <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
@@ -273,6 +302,7 @@ export default function WaterSituationPage() {
               {/* อ่างขนาดเล็กจากผังน้ำออนไลน์แพร่ — ไม่พึ่งฐานข้อมูล/RPC ข้างบน (ดึงผ่าน Worker เอง) จึงอยู่นอกเงื่อนไข dams.length
                   ทุ่งแค้วไม่มีอ่างขนาดกลางในรัศมี 15 กม. แต่มีห้วยยอย/ห้วยปุยในผังน้ำตำบล */}
               <SmallReservoirSection slug={tenant?.slug} tenantName={tenant?.name} now={checkedAt} />
+              <RadarLinks tenantName={tenant?.name} />
               <SourceNote tenantName={tenant?.name} />
 
             </>
@@ -299,7 +329,29 @@ export default function WaterSituationPage() {
   )
 }
 
-function SyncStatus({ syncedAt, now, refreshFailed }) {
+function SyncStatus({ syncedAt, now, refreshFailed, fromCache = false, onRetry }) {
+  // ตัวเลขทั้งหน้ามาจากที่เครื่องนี้เก็บไว้ (ระบบไม่ตอบ) — บอกก่อนอย่างอื่น พร้อมเวลาของข้อมูลเอง ไม่ใช่เวลาที่เปิดหน้า
+  if (fromCache) {
+    return (
+      <div role="alert" data-water-from-cache className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+        <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+        <div>
+          <p>
+            ตอนนี้ยังเชื่อมต่อระบบไม่ได้ จึงแสดงค่าที่เครื่องนี้เก็บไว้ — ข้อมูลเมื่อ{' '}
+            <span className="font-semibold">{measuredAtText(syncedAt, now)}</span> ค่าจริงตอนนี้อาจต่างจากที่เห็น
+          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-x-4">
+            {onRetry && (
+              <button type="button" onClick={onRetry} className="inline-flex min-h-[44px] items-center gap-1.5 font-semibold underline">
+                <RefreshCw size={14} /> ลองใหม่
+              </button>
+            )}
+            <a href={THAIWATER_URL} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center font-semibold underline">ดูค่าล่าสุดที่ thaiwater.net</a>
+          </div>
+        </div>
+      </div>
+    )
+  }
   if (!syncedAt) {
     // ตั้งค่าสถานีแล้วแต่ระบบยังไม่เคยดึงสำเร็จ (เพิ่งเปิดใช้ หรือ Edge Function ยังไม่ได้ deploy)
     return (
@@ -1025,6 +1077,27 @@ function Metric({ label, value, hint }) {
       <p className="text-sm font-bold text-gray-800">{value}</p>
       {hint && <p className="text-[11px] text-gray-400">{hint}</p>}
     </div>
+  )
+}
+
+// ปุ่มไปดูเรดาร์ฝน (หน้าทางการ เปิดแท็บใหม่) — ค่าสถานีด้านบนบอกว่าฝนตกแล้วเท่าไร ส่วนเรดาร์บอกว่ากลุ่มฝนอยู่ตรงไหน
+// ไม่ได้ผ่านการตรวจของ อปท. และไม่ใช่ประกาศเตือนภัย จึงเขียนกำกับไว้ใต้ปุ่ม
+function RadarLinks({ tenantName }) {
+  return (
+    <section data-water-radar aria-label="เรดาร์ฝน" className="rounded-2xl border border-sky-100 bg-white p-4 shadow-sm">
+      <h2 className="flex items-center gap-2 text-sm font-bold text-gray-800"><CloudRain size={18} className="text-sky-600" /> ดูเรดาร์ฝนล่าสุด</h2>
+      <p className="mt-1 text-xs text-gray-500">ดูกลุ่มฝนที่กำลังเคลื่อนเข้าใกล้ — เปิดหน้าของหน่วยงานทางการในแท็บใหม่</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {RADAR_LINKS.map(link => (
+          <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer" data-radar-link
+            className="flex min-h-[48px] items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-left text-sm font-semibold text-sky-900 hover:bg-sky-100">
+            <span>{link.label}<small className="block text-[11px] font-normal text-gray-600">{link.source}</small></span>
+            <ExternalLink size={14} className="shrink-0" aria-hidden="true" />
+          </a>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-gray-500">ภาพเรดาร์ไม่ใช่ประกาศเตือนภัยของ{tenantName || 'หน่วยงาน'} และไม่บอกเวลาที่น้ำจะมา — ใช้ประกอบกับค่าสถานีด้านบน</p>
+    </section>
   )
 }
 

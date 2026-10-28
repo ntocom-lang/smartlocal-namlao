@@ -72,6 +72,8 @@
     "test:signatory-groups": "node tests/signatory-people-groups.test.mjs",
     "test:waste-schedule": "node tests/waste-schedule.test.mjs && node tests/waste-schedule-poster.test.mjs",
     "test:water-situation": "node tests/water-situation.test.mjs",
+    "test:water-cache": "node tests/water-cache.test.mjs",
+    "test:water-cache-browser": "node tests/water-cache.playwright.mjs",
     "test:water-diagram": "node tests/water-diagram.test.mjs && node tests/water-diagram.playwright.mjs",
     "test:water-system": "node tests/water-system.test.mjs",
     "test:water-system-browser": "node tests/water-system.playwright.mjs",
