@@ -3,12 +3,14 @@ import {
   Home, ClipboardList, FileText, CalendarDays, Newspaper,
   MapPin, FileSearch, FolderOpen, Bell,
   Phone, AlertCircle, BookUser, LogIn, LogOut, LayoutGrid, Database, Trash2, CloudRain, FileBarChart, ChartColumn,
+  UserRound, FileSignature, ShieldCheck, Briefcase,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTenant } from '../../contexts/TenantContext'
 import { useNotifications } from '../../contexts/NotificationsContext'
 import { signOutSafely } from '../../lib/supabase'
 import { moduleForPath } from '../../lib/staffModules'
+import { canAccessStaffPortal } from '../../lib/portalAccess'
 import PortalDrawer from '../common/PortalDrawer'
 
 const NAV_GROUPS = [
@@ -62,10 +64,10 @@ const INACTIVE = 'rgba(255,255,255,0.6)'
 const DIVIDER  = 'rgba(255,255,255,0.08)'
 const LABEL    = 'rgba(255,255,255,0.35)'
 
-export default function CitizenSidebar({ showOnAccount = false, drawerOpen = false, onDrawerClose, onBeforeNavigate } = {}) {
+export default function CitizenSidebar({ showOnAccount = false, accountActive, accountHome = '/', drawerOpen = false, onDrawerClose, onBeforeNavigate } = {}) {
   const location         = useLocation()
   const navigate         = useNavigate()
-  const { session, displayName, avatarUrl } = useAuth()
+  const { session, role, profileLoading, profileError, displayName, avatarUrl } = useAuth()
   const { tenant, isModuleEnabled } = useTenant()
   const { unreadCount }  = useNotifications()
 
@@ -74,7 +76,21 @@ export default function CitizenSidebar({ showOnAccount = false, drawerOpen = fal
   if (!accountPage && HIDDEN_PATHS.some(p => location.pathname.startsWith(p))) return null
   if (!accountPage && tenant?.ui_style === 'kledkaew') return null
 
-  const visibleGroups = NAV_GROUPS.map(group => ({
+  // หน้าบัญชีใช้รายการเฉพาะงานนี้ ไม่ดึงเมนูบริการประชาชนทั้งเว็บมาซ้ำกับหน้าแรก
+  const accountGroups = [
+    { label: 'จัดการบัญชี', items: [
+      { id: 'account', label: 'ข้อมูลบัญชี', href: '/profile', Icon: UserRound },
+      ...(!profileLoading && !profileError && canAccessStaffPortal(role)
+        ? [{ id: 'signatures', label: 'ลายเซ็นของฉัน', href: '/staff/my-signatures', Icon: FileSignature, state: { returnTo: '/profile' } }] : []),
+      { id: 'notifications', label: 'ตั้งค่าการแจ้งเตือน', href: '/profile/notifications', Icon: Bell, badge: true },
+      { id: 'security', label: 'ความปลอดภัย', href: '/profile?tab=security', Icon: ShieldCheck },
+    ] },
+    { label: 'กลับไปใช้งาน', items: [
+      { label: 'กลับหน้าหลัก', href: '/', Icon: Home, exact: true },
+      ...(accountHome !== '/' ? [{ label: accountHome === '/admin' ? 'กลับหน้า Admin' : accountHome === '/technician' ? 'กลับหน้าช่าง' : 'กลับหน้าเจ้าหน้าที่', href: accountHome, Icon: Briefcase }] : []),
+    ] },
+  ]
+  const visibleGroups = (accountPage ? accountGroups : NAV_GROUPS).map(group => ({
     ...group,
     items: group.items.filter(item => {
       const key = moduleForPath(item.href)
@@ -85,7 +101,7 @@ export default function CitizenSidebar({ showOnAccount = false, drawerOpen = fal
   function openFromDrawer(item) {
     if (onBeforeNavigate?.(item.href) === false) return
     onDrawerClose?.()
-    navigate(item.href)
+    navigate(item.href, { state: item.state })
   }
 
   function isActive(href, exact) {
@@ -96,21 +112,21 @@ export default function CitizenSidebar({ showOnAccount = false, drawerOpen = fal
 
   return (
     <>
-    {accountPage && <PortalDrawer open={drawerOpen} onClose={onDrawerClose} tenant={tenant} portalLabel="บัญชีของฉัน" ariaLabel="เมนูหลัก"
-      homeItem={{ key: '/', href: '/', label: 'หน้าแรก', Icon: Home }} homeGroupLabel="เว็บหลัก"
-      groups={visibleGroups.map(group => ({ group: group.label, items: group.items.filter(item => item.href !== '/').map(item => ({ ...item, key: item.href })) })).filter(group => group.items.length > 0)}
-      activeKey={location.pathname} badges={{ '/notifications': unreadCount }} onSelect={openFromDrawer} />}
+    {accountPage && <PortalDrawer open={drawerOpen} onClose={onDrawerClose} tenant={tenant} portalLabel="บัญชีของฉัน" ariaLabel="เมนูบัญชี"
+      homeItem={{ key: '/', href: '/', label: 'กลับหน้าหลัก', Icon: Home }} homeGroupLabel="เว็บหลัก"
+      groups={visibleGroups.map(group => ({ group: group.label, items: group.items.filter(item => item.href !== '/').map(item => ({ ...item, key: item.id || item.href })) })).filter(group => group.items.length > 0)}
+      activeKey={accountActive} badges={{ notifications: unreadCount }} onSelect={openFromDrawer} />}
     <aside aria-label="เมนูหลักด้านซ้าย" data-account-sidebar={accountPage ? '' : undefined}
       className={`flex-col w-56 shrink-0 shadow-lg overflow-y-auto ${accountPage ? 'hidden md:flex h-full max-h-full [&_a]:min-h-11 [&_button]:min-h-11' : 'hidden lg:flex self-start sticky top-0 max-h-screen'}`}
       style={{ backgroundColor: BG, borderRight: `1px solid ${BORDER}` }}>
 
       {/* Brand */}
       <div className="px-4 py-4 border-b" style={{ borderColor: DIVIDER }}>
-        <Link to="/" className="flex items-center w-full hover:opacity-80 transition-opacity">
+        {accountPage ? <p className="text-xs font-semibold text-blue-200">บัญชีของฉัน</p> : <Link to="/" className="flex items-center w-full hover:opacity-80 transition-opacity">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold" style={{ color: 'rgba(147,197,253,0.85)' }}>ระบบบริการประชาชน</p>
           </div>
-        </Link>
+        </Link>}
       </div>
 
       {/* Nav */}
@@ -123,8 +139,8 @@ export default function CitizenSidebar({ showOnAccount = false, drawerOpen = fal
               {group.label}
             </p>
             <div className="space-y-0.5">
-              {group.items.map(({ label, href, Icon, exact, badge, newTab }) => {
-                const active = isActive(href, exact)
+              {group.items.map(({ id, label, href, Icon, exact, badge, newTab, state }) => {
+                const active = accountPage ? id === accountActive : isActive(href, exact)
                 const content = (
                   <>
                     <Icon size={15} strokeWidth={active ? 2.2 : 1.5} className="shrink-0" />
@@ -146,7 +162,7 @@ export default function CitizenSidebar({ showOnAccount = false, drawerOpen = fal
                   </a>
                 )
                 return (
-                  <Link key={href} to={href}
+                  <Link key={href} to={href} state={state} aria-current={active ? 'page' : undefined}
                     className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
                     style={active
                       ? { backgroundColor: ACTIVE, color: '#fff' }
@@ -161,7 +177,7 @@ export default function CitizenSidebar({ showOnAccount = false, drawerOpen = fal
       </nav>
 
       {/* User block */}
-      <div className="px-2.5 py-3 border-t space-y-1" style={{ borderColor: DIVIDER }}>
+      {!accountPage && <div className="px-2.5 py-3 border-t space-y-1" style={{ borderColor: DIVIDER }}>
         {session ? (
           <>
             <Link to="/profile" title="โปรไฟล์ของคุณ (คลิกเพื่อดูและแก้ไข)"
@@ -192,7 +208,7 @@ export default function CitizenSidebar({ showOnAccount = false, drawerOpen = fal
             <LogIn size={13} /> เข้าสู่ระบบ
           </Link>
         )}
-      </div>
+      </div>}
     </aside>
     </>
   )
