@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Sun, Moon, ClipboardCheck, Database, HeartPulse, LogOut, Menu } from 'lucide-react'
+import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Sun, Moon, ClipboardCheck, Database, HeartPulse, Menu } from 'lucide-react'
 import { supabase, getSessionResilient, signOutSafely } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
@@ -397,13 +397,10 @@ export default function DataCenterDashboard() {
             <span className="text-[9px]">แจ้งเตือน</span>
             {unreadCount > 0 && <span className="absolute top-0 right-0 rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>}
           </button>
+          <UserProfileBadge compact onLogout={handleLogout} className="md:hidden" />
           <div className="hidden md:flex items-center gap-2 flex-wrap justify-end">
-            <UserProfileBadge tone="onDark" className="min-h-11" />
             <PortalSwitcher className="flex flex-wrap [&>a]:min-h-11" />
-            <button type="button" onClick={handleLogout}
-              className="flex min-h-11 items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
-              <LogOut size={13} /> ออกจากระบบ
-            </button>
+            <UserProfileBadge tone="onDark" onLogout={handleLogout} />
           </div>
         </div>
         <PortalSwitcher className="relative z-10 flex flex-wrap px-4 pb-3 md:hidden [&>a]:min-h-11" />

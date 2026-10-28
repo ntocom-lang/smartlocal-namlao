@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
 import { ChevronLeft, ChevronRight, Pencil, Loader2, X, Eye, EyeOff, Smartphone } from 'lucide-react'
 import { compressImage } from '../lib/imageUtils'
@@ -31,6 +31,7 @@ const ROLE_LABEL = {
 
 export default function ProfilePage() {
   const navigate = useNavigate()
+  const { hash } = useLocation()
   const { role: contextRole, refreshProfile } = useAuth()
   const { tenant } = useTenant()
   const [session, setSession] = useState(null)
@@ -57,6 +58,14 @@ export default function ProfilePage() {
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [changingPassword, setChangingPassword] = useState(false)
   const fileRef = useRef()
+  const securityRef = useRef(null)
+
+  // ลิงก์เมนูบัญชีพามายังส่วนที่เกี่ยวข้องโดยตรง ไม่เปิดฟอร์มเปลี่ยนรหัสผ่านให้เอง
+  useEffect(() => {
+    if (loading || hash !== '#security') return
+    securityRef.current?.scrollIntoView({ block: 'start' })
+    securityRef.current?.focus({ preventScroll: true })
+  }, [loading, hash])
 
   useEffect(() => {
     // getSessionResilient: เน็ตสะดุดตอนต่ออายุ token ต้องไม่พาออกจากระบบ (ดูเหตุผลที่ src/lib/supabase.js)
@@ -537,7 +546,8 @@ export default function ProfilePage() {
           </div>
 
           {/* เปลี่ยนรหัสผ่าน */}
-          <div className="px-5 py-4">
+          <div ref={securityRef} id="security" tabIndex={-1} aria-labelledby="account-security-title" className="scroll-mt-4 px-5 py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400">
+            <h2 id="account-security-title" className="mb-3 text-sm font-bold text-gray-800">ความปลอดภัย</h2>
             {showChangePassword ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

@@ -1,8 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Phone, LogIn, LogOut, Bell, User } from 'lucide-react'
+import { Phone, LogIn, Bell, User } from 'lucide-react'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { useAuth } from '../../../../contexts/AuthContext'
-import { signOutSafely } from '../../../../lib/supabase'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
 import PortalSwitcher from '../../../layout/PortalSwitcher'
 import UserProfileBadge from '../../../layout/UserProfileBadge'
@@ -11,12 +10,8 @@ export default function Header() {
   const { tenant } = useTenant()
   const navigate = useNavigate()
   const { unreadCount } = useNotifications()
-  const { session, role, displayName, avatarUrl } = useAuth()
+  const { session, role } = useAuth()
 
-  async function logout() {
-    await signOutSafely('/')
-    navigate('/')
-  }
   return (
     <header className="shadow-xl" style={tenant?.header_image_url ? { position: 'relative', zIndex: 2 } : {}}>
       {/* Top strip — hidden on mobile */}
@@ -57,12 +52,8 @@ export default function Header() {
 
           {session ? (
             <div className="hidden md:flex items-center gap-2">
-              <UserProfileBadge tone="onLight" />
               <PortalSwitcher className="flex" tone="onLight" />
-              <button onClick={logout}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors border border-slate-200">
-                <LogOut size={13} /> ออกจากระบบ
-              </button>
+              <UserProfileBadge tone="onLight" />
             </div>
           ) : (
             <Link to="/auth"
@@ -86,19 +77,7 @@ export default function Header() {
 
             {/* ขวา: Avatar */}
             {session ? (
-              <Link to="/profile" className="p-1 shrink-0">
-                {avatarUrl && (
-                  <img
-                    src={avatarUrl}
-                    alt=""
-                    onError={(e) => { e.currentTarget.style.display = 'none'; if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'flex'; }}
-                    className="w-10 h-10 rounded-full object-cover border border-gray-200"
-                  />
-                )}
-                <div className={`w-10 h-10 rounded-full bg-gray-100 border border-gray-200 ${avatarUrl ? 'hidden' : 'flex'} items-center justify-center text-[var(--color-primary)] text-sm font-bold`}>
-                  {(displayName || session.user?.email || '?')[0].toUpperCase()}
-                </div>
-              </Link>
+              <UserProfileBadge compact tone="onLight" />
             ) : (
               <Link to="/auth" className="p-2 text-gray-400 hover:text-[var(--color-primary)] transition-colors">
                 <User size={22} />

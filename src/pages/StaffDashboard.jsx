@@ -2816,15 +2816,7 @@ export default function StaffDashboard() {
               </span>
             )}
           </button>
-          <button onClick={() => navigate('/profile')} className="p-1 shrink-0">
-            {profile?.avatar_url ? (
-              <img src={profile.avatar_url} alt="โปรไฟล์" className="w-7 h-7 rounded-full object-cover border-2 border-white/60" />
-            ) : (
-              <div className="w-7 h-7 rounded-full bg-white/20 border-2 border-white/60 flex items-center justify-center text-white text-xs font-bold">
-                {(profile?.full_name || '?')[0].toUpperCase()}
-              </div>
-            )}
-          </button>
+          <StaffAccountMenu compact onLogout={handleLogout} />
         </div>
       </header>
 
