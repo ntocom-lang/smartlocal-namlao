@@ -6,7 +6,7 @@ import {
   Phone, AlertTriangle, Cloud, BookUser,
   Store, FileText, CalendarDays, Luggage, Info,
   UserCircle, LogOut, Globe, UserCog, Settings, RefreshCw,
-  Database, BookOpen, Monitor, Check, UploadIcon, Wrench, Trash2, CloudRain,
+  Database, BookOpen, Monitor, Check, UploadIcon, Wrench, Trash2, CloudRain, ChartColumn,
 } from 'lucide-react'
 import { MenuGroup } from '../../../common/MenuTileGrid'
 import { useAuth } from '../../../../contexts/AuthContext'
@@ -109,6 +109,8 @@ export default function KledkaewMore() {
       icon: UserCircle, color: '#475569',
       items: [
         { label: 'การแจ้งเตือน', icon: Bell, href: '/notifications', color: '#9333ea', badge: unreadCount },
+        // ธีมนี้ไม่มีเมนูข้างจอ PC (CitizenSidebar คืน null) ทางเข้าหน้ารวมรายงานบน PC จึงอยู่ที่นี่
+        { label: 'รายงานทั้งหมด', icon: ChartColumn, href: '/reports', color: '#059669' },
         { label: 'รายงานการออกเอกสาร', icon: ShieldCheck, href: '/doc-stats', color: '#059669' },
         { label: 'รายงานร้องเรียน/ร้องทุกข์', icon: ClipboardList, href: '/reports/complaints', color: '#059669' },
         { label: 'ประเมินความพึงพอใจ', icon: Info, href: '/satisfaction', color: '#ca8a04' },

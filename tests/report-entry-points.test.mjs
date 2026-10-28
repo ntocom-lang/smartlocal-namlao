@@ -1,4 +1,5 @@
 // ทางเข้าหน้า "รายงานเรื่องร้องเรียน/สรุปรายเดือน" (/reports/complaints) — เจ้าหน้าที่ใช้แชร์ลงกลุ่มทุกเดือน
+// และทางเข้าหน้ารวมรายงาน (/reports) ของประชาชน — ทางเดียวไปสถิติการเข้าชมเว็บไซต์ เพราะกล่องท้ายเว็บเห็นแค่ผู้บริหาร (#562)
 //   ชั้นแรก: อ่านซอร์สเทียบกัน (ชื่อเมนูตรงกันทุกที่ · ตัดตามโมดูล · ลำดับการ์ดภาพ · การต่อสาย wrapper ฝั่งเจ้าหน้าที่)
 //   ชั้นสอง: เรนเดอร์การ์ดฝั่งเจ้าหน้าที่จริงใน Chrome — ลิงก์ต้องพาไปเดือนล่าสุดที่จบครบตามเวลาไทย
 import assert from 'node:assert/strict'
@@ -30,6 +31,34 @@ const kledkaewMore = await read('src/components/citizen/templates/Kledkaew/More.
 const stats = await read('src/pages/ComplaintStats.jsx')
 const hub = await read('src/pages/ReportsHub.jsx')
 const staffDashboard = await read('src/pages/StaffDashboard.jsx')
+const navData = await read('src/components/citizen/templates/navData.js')
+const BOTTOM_NAV_THEMES = ['CivicFriendly', 'CleanMinimal', 'EcoFriendly', 'Kledkaew', 'ServiceHub', 'SmartModern', 'WaveFluid']
+
+// บรรทัดเมนูที่ชี้ไปหน้ารวมรายงาน /reports พอดี (ไม่ใช่หน้าลูก /reports/*)
+const HUB = '/reports'
+const hubMenuLine = source => source.split('\n').find(text => text.includes(`'${HUB}'`) && text.includes('label:'))
+
+await test('ทางเข้าหน้ารวมรายงาน: ปุ่ม "รายงาน" เมนูล่างทุกธีม + "รายงานทั้งหมด" ในเมนูข้างจอ PC · เมนูทั้งหมด · Kledkaew', async () => {
+  const bottom = hubMenuLine(navData)
+  assert.ok(bottom && /label:\s*'รายงาน'/.test(bottom), 'ปุ่ม "รายงาน" ของเมนูล่างต้องพาไป /reports')
+  assert.ok(!navData.includes(`'${ROUTE}'`), 'เมนูล่างต้องไม่กลับไปชี้หน้าคำร้องตรงๆ (สถิติการเข้าชมจะไม่มีทางเข้าบนมือถือ)')
+
+  const lines = [sidebar, more, kledkaewMore].map(hubMenuLine)
+  assert.ok(lines.every(Boolean), 'ต้องเจอรายการ /reports ครบทั้ง 3 ไฟล์')
+  const labels = lines.map(line => /label:\s*'([^']+)'/.exec(line)[1])
+  assert.deepEqual([...new Set(labels)], ['รายงานทั้งหมด'], `ชื่อไม่ตรงกัน: ${JSON.stringify(labels)}`)
+  // เมนูข้างเทียบแบบ startsWith ถ้าไม่ exact อยู่หน้า /reports/complaints จะติดไฟสองรายการพร้อมกัน
+  assert.ok(lines[0].includes('exact: true'), 'เมนูข้างจอ PC ต้องติดไฟเฉพาะหน้า /reports พอดี')
+
+  // ไฮไลต์ปุ่ม "รายงาน" ต้องติดต่อในหน้าลูก (/reports/visitors, /reports/complaints) ทุกธีม
+  for (const theme of BOTTOM_NAV_THEMES) {
+    const source = await read(`src/components/citizen/templates/${theme}/BottomNav.jsx`)
+    assert.ok(source.includes('location.pathname.startsWith(item.href)'), `${theme}: เมนูล่างต้องเทียบเส้นทางแบบ startsWith`)
+  }
+
+  assert.equal(moduleForPath(HUB), 'report')
+  assert.equal(moduleForPath('/reports/visitors'), 'report')
+})
 
 await test('ชื่อเมนูที่ชี้ไปหน้ารายงานเรื่องร้องเรียนตรงกันทุกที่ (เมนูข้างจอ PC · เมนูทั้งหมด · เทมเพลต Kledkaew)', () => {
   const labels = [menuLabel(sidebar), menuLabel(more), menuLabel(kledkaewMore)]

@@ -24,7 +24,10 @@ export function getNavItems(role, isModuleEnabled = null) {
   const items = [
     { label: 'หน้าแรก',       icon: Home,         href: '/' },
     roleNavItem,
-    { label: 'รายงาน',        icon: FileBarChart, href: '/reports/complaints' },
+    // หน้ารวมรายงาน (หัวหน้าเขียนว่า "รายงาน" ตรงกับชื่อปุ่ม) — ทางเข้าเดียวบนมือถือของรายงานที่ไม่มีเมนูของตัวเอง
+    // เช่น สถิติการเข้าชมเว็บไซต์ · ไฮไลต์ยังติดในหน้าลูก /reports/* เพราะทุกธีมเทียบแบบ startsWith
+    // ตัดตามโมดูล 'report' (เดิม /reports/complaints ผูกกับ 'complaints')
+    { label: 'รายงาน',        icon: FileBarChart, href: '/reports' },
     { label: 'ปฏิทินกิจกรรม', icon: CalendarDays, href: '/events' },
     { label: 'เมนูอื่นๆ',    icon: LayoutGrid,   href: '/more' },
   ]
