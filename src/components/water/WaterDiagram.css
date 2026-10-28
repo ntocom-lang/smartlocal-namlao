@@ -60,7 +60,7 @@
 .wd-lane li.wd-fix .wd-dot { border-color: #d97706; }
 .wd-lane li.wd-next { padding-top: 0; padding-bottom: 0; min-height: 20px; font-size: 12px; color: #3b82f6; }
 
-.wd-tag { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 0 8px; border: 1px solid #cbd5e1; color: #475569; background: #f8fafc; }
+.wd-tag { display: inline-block; margin-left: 6px; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 0 8px; border: 1px solid #cbd5e1; color: #475569; background: #f8fafc; }
 .wd-tag.wd-t-plan { border-style: dashed; border-color: #b91c1c; color: #991b1b; background: #fef2f2; }
 .wd-tag.wd-t-fix { border-color: #fbbf24; color: #92400e; background: #fffbeb; }
 .wd-tag.wd-t-ok { border-color: #7dd3fc; color: #075985; background: #f0f9ff; }

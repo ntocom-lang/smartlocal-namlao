@@ -5,14 +5,22 @@ import './HydroHourlyPanel.css'
 const number = value => value == null ? '—' : value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const clock = at => new Date(at).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })
 function HourlyChart({ points, hours, now }) {
-  const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 640px)').matches)
+  // ความกว้าง viewBox = ความกว้างที่แสดงจริงของกราฟ (สเกล 1:1) ตัวอักษรในกราฟจึงเป็นขนาด px จริงเสมอ
+  // เดิมใช้ viewBox ตายตัว 400/740 ตามความกว้างหน้าจอ แต่กราฟแสดงในคอลัมน์ที่แคบกว่าหน้าจอ (แท็บเล็ต 768px คอลัมน์ ~440px ย่อ 740 → ~0.6 เท่า)
+  // ตัวอักษร 16 หน่วยจึงเหลือ ~9.5px ที่แท็บเล็ต และ ~11.8px ที่ 360px (วัดเทียบ ทต.หนองหอย 2569-10-28)
+  const [svgEl, setSvgEl] = useState(null)
+  const [shown, setShown] = useState(() => (window.matchMedia('(max-width: 640px)').matches ? 330 : 700))
   useEffect(() => {
-    const media = window.matchMedia('(max-width: 640px)')
-    const update = () => setCompact(media.matches)
-    media.addEventListener('change', update)
-    return () => media.removeEventListener('change', update)
-  }, [])
-  const width = compact ? 400 : 740, plotWidth = width - 100
+    if (!svgEl) return undefined
+    const read = () => { const w = Math.round(svgEl.getBoundingClientRect().width); if (w > 0) setShown(w) }
+    read()
+    if (typeof ResizeObserver !== 'function') return undefined
+    const observer = new ResizeObserver(read)
+    observer.observe(svgEl)
+    return () => observer.disconnect()
+  }, [svgEl])
+  // 300 = ต่ำสุดที่ป้ายวันเวลาซ้าย-ขวา (กว้างราว 90px ที่ 13px) ไม่ชนกัน · ต่ำกว่า 520 แสดงป้ายแกนเวลาแค่ต้น-ท้าย
+  const width = Math.max(300, shown), plotWidth = width - 100, compact = width < 520
 
   const rows = points.filter(p => p.at >= now - hours * 3600000 && p.at <= now)
   const values = rows.filter(p => p.level !== null)
@@ -22,11 +30,11 @@ function HourlyChart({ points, hours, now }) {
   const max = Math.ceil((Math.max(...values.map(p => p.level)) + 0.1) * 10) / 10
   const x = p => 62 + (p.at - start) / (end - start) * plotWidth
   const y = p => 195 - (p.level - min) / (max - min) * 155
-  return <svg viewBox={`0 0 ${width} 245`} role="img" aria-label={`กราฟระดับน้ำ ${hours} ชั่วโมง แกนตั้ง ${min.toFixed(1)} ถึง ${max.toFixed(1)} เมตร ช่องว่างคือข้อมูลขาด`}>
-    {[0, 0.5, 1].map(t => <g key={t}><line x1="62" x2={width - 38} y1={195 - t * 155} y2={195 - t * 155} stroke="#d8e7ef" strokeDasharray="4 5"/><text x="52" y={200 - t * 155} textAnchor="end" fill="#64748b" fontSize="16">{(min + t * (max - min)).toFixed(2)}</text></g>)}
-    <text x="62" y="22" fill="#64748b" fontSize="15">ระดับน้ำ (ม.) · แกนปรับตามข้อมูล</text>
+  return <svg ref={setSvgEl} viewBox={`0 0 ${width} 245`} role="img" aria-label={`กราฟระดับน้ำ ${hours} ชั่วโมง แกนตั้ง ${min.toFixed(1)} ถึง ${max.toFixed(1)} เมตร ช่องว่างคือข้อมูลขาด`}>
+    {[0, 0.5, 1].map(t => <g key={t}><line x1="62" x2={width - 38} y1={195 - t * 155} y2={195 - t * 155} stroke="#d8e7ef" strokeDasharray="4 5"/><text x="52" y={200 - t * 155} textAnchor="end" fill="#64748b" fontSize="13">{(min + t * (max - min)).toFixed(2)}</text></g>)}
+    <text x="62" y="22" fill="#64748b" fontSize="13">ระดับน้ำ (ม.) · แกนปรับตามข้อมูล</text>
     {hydroSegments(rows).map((segment, i) => <g key={i}><polyline points={segment.map(p => `${x(p)},${y(p)}`).join(' ')} fill="none" stroke="#0284c7" strokeWidth="3" strokeLinejoin="round"/>{segment.map(p => <circle key={p.at} cx={x(p)} cy={y(p)} r="3" fill="#0284c7"/>)}</g>)}
-    {(compact ? [0, 1] : [0, 0.5, 1]).map(t => <text key={t} x={62 + t * plotWidth} y="228" textAnchor={t === 0 ? 'start' : t === 1 ? 'end' : 'middle'} fill="#64748b" fontSize="16">{new Date(start + t * (end - start)).toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok',day:'numeric',month:'short'})} {clock(start + t * (end - start))}</text>)}
+    {(compact ? [0, 1] : [0, 0.5, 1]).map(t => <text key={t} x={62 + t * plotWidth} y="228" textAnchor={t === 0 ? 'start' : t === 1 ? 'end' : 'middle'} fill="#64748b" fontSize="13">{new Date(start + t * (end - start)).toLocaleDateString('th-TH',{timeZone:'Asia/Bangkok',day:'numeric',month:'short'})} {clock(start + t * (end - start))}</text>)}
   </svg>
 }
 export default function HydroHourlyPanel({ profile, report, failed, now }) {

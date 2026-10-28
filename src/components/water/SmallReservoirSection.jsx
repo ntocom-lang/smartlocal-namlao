@@ -26,10 +26,10 @@ function ReservoirSpark({ rows }) {
   const label = `ระดับน้ำเป็นเปอร์เซ็นต์ของความจุ ${series.length} รายงานล่าสุด ตั้งแต่ ${formatReportDay(series[0].d)} ถึง ${formatReportDay(last.d)} ต่ำสุด ${formatMm(Math.min(...pcts))}% สูงสุด ${formatMm(Math.max(...pcts))}%`
   return (
     <div className="mt-2">
-      <p className="text-[11px] text-gray-500">{series.length} รายงานล่าสุด (ค่าตามต้นฉบับ ไม่ปรับแก้)</p>
+      {/* คำอธิบายเส้นประ 100% อยู่ในบรรทัดนี้ ไม่ใส่ในกราฟ: กราฟใช้ preserveAspectRatio="none" และเส้นประอยู่ชิดขอบบน ตัวอักษรในกราฟจึงเล็กกว่า 10px และถ้าขยายเป็น 12px จะล้นขอบ/ทับจุดข้อมูลที่มักอยู่ใกล้ 100% */}
+      <p className="text-[12px] text-gray-500">{series.length} รายงานล่าสุด · เส้นประ = 100% ของความจุ (ค่าตามต้นฉบับ ไม่ปรับแก้)</p>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="mt-1 block h-[72px] w-full" role="img" aria-label={label}>
         <line x1="0" x2={W} y1={y(100)} y2={y(100)} stroke="#94a3b8" strokeDasharray="4 4" strokeWidth="1" />
-        <text x={W - 2} y={y(100) - 3} textAnchor="end" fontSize="9" fill="#94a3b8">100%</text>
         <polyline points={series.map(row => `${x(row).toFixed(1)},${y(row.pct).toFixed(1)}`).join(' ')}
           fill="none" stroke={NEUTRAL_BLUE} strokeWidth="2" strokeLinejoin="round" />
         {series.map(row => <circle key={row.d} cx={x(row).toFixed(1)} cy={y(row.pct).toFixed(1)} r="2" fill={NEUTRAL_BLUE} />)}
@@ -79,7 +79,7 @@ function ReservoirCardView({ meta, link, scope, report, failed, done, id, now })
         <p className="text-base font-bold leading-tight text-gray-900">
           {meta.name}
           {scope && (
-            <span className="ml-1.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-bold text-emerald-700">{scope}</span>
+            <span className="ml-1.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[12px] font-bold text-emerald-700">{scope}</span>
           )}
         </p>
         <p className="mt-0.5 text-xs text-gray-500">
@@ -112,7 +112,7 @@ function ReservoirCardView({ meta, link, scope, report, failed, done, id, now })
               <span className="text-lg font-bold text-gray-900">{formatMcm(latest.vol)}</span>
               {report.capacity != null && <> จาก {formatMcm(report.capacity)}</>} ล้าน ลบ.ม.
             </p>
-            <p className="mt-1 text-[11px] text-gray-500">เทียบความจุของอ่าง</p>
+            <p className="mt-1 text-[12px] text-gray-500">เทียบความจุของอ่าง</p>
           </div>
         </div>
         <div className="mt-1.5">
@@ -123,13 +123,13 @@ function ReservoirCardView({ meta, link, scope, report, failed, done, id, now })
                 style={{ left: `${tick}%`, backgroundColor: tick <= barWidth ? 'rgba(255,255,255,0.8)' : 'rgba(120,113,108,0.35)' }} />
             ))}
           </div>
-          <div className="relative mt-1 h-3.5 text-[10px] font-semibold text-gray-400" aria-hidden="true">
+          <div className="relative mt-1 h-4 text-[12px] font-semibold text-gray-400" aria-hidden="true">
             {QUARTERS.map(tick => <span key={tick} className="absolute -translate-x-1/2" style={{ left: `${tick}%` }}>{tick}</span>)}
             <span className="absolute right-0">100%</span>
           </div>
         </div>
         <div className="water-metric mt-2 rounded-xl bg-gray-50 px-3 py-2">
-          <p className="text-[11px] font-semibold text-gray-500">เทียบกับรายงานก่อนหน้า</p>
+          <p className="text-[12px] font-semibold text-gray-500">เทียบกับรายงานก่อนหน้า</p>
           <p className={`inline-flex items-center gap-1 text-sm font-bold ${showSame ? 'text-gray-800' : TREND_CLASS[summary.trend?.dir] ?? 'text-gray-800'}`}>
             {!showSame && summary.trend && <TrendIcon size={15} />} {trendText(summary)}
           </p>
@@ -176,7 +176,7 @@ export default function SmallReservoirSection({ slug, tenantName, now }) {
       <div className="grid gap-3 lg:grid-cols-2">
         {tenant.ids.map(id => <ReservoirCard key={id} id={id} scope={tenant.scope} now={now} />)}
       </div>
-      <div className="rounded-xl border border-gray-100 bg-white px-3 py-2.5 text-[11px] leading-relaxed text-gray-500">
+      <div className="rounded-xl border border-gray-100 bg-white px-3 py-2.5 text-[12px] leading-relaxed text-gray-500">
         <p>
           เปอร์เซ็นต์คิดเทียบความจุของอ่างตามที่ต้นทางรายงาน ระบบ<b>ไม่ใช้ป้าย "น้ำดี/น้ำมาก" ของต้นทาง</b> เพราะป้ายกับตัวเลขไม่สอดคล้องกันบางรายงาน
           และ<b>ไม่ลงสีสถานการณ์เอง</b> · ค่าบันทึกด้วยมือ อาจพิมพ์ผิดหรือซ้ำเดิมได้ · ไม่ใช่ประกาศเตือนภัยของ{tenantName || 'หน่วยงาน'}
