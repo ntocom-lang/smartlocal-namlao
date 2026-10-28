@@ -11,6 +11,7 @@ import {
   BACKOFFICE_EXCLUDED_SINCE,
   BACKOFFICE_PATHS,
   MENU_PAGE_KEYS,
+  MIN_MENU_OPENS,
   OTHER_PAGE,
   PAGE_CATALOG,
   UNCOUNTED_ROUTES,
@@ -246,7 +247,7 @@ test('ตัวรองรายหน้า: นับครั้งแรก
   assert.equal(addSeenPageKey('d', many, 'd', 'x').length, 80, 'ค่าใน localStorage ต้องไม่โตไม่สิ้นสุด')
 })
 
-test('อันดับเมนู: รวมชื่อที่ไม่รู้จักเป็น other · ครบทุกเมนูรวมที่ 0 ครั้ง · เมนูนำทางแยกจากแท่ง · เรียงมากไปน้อย · สัดส่วนรวม 1', () => {
+test('อันดับเมนู: รวมชื่อที่ไม่รู้จักเป็น other · ซ่อนเมนูที่ไม่มีคนเปิดแต่นับจำนวนที่ซ่อน · เมนูนำทางแยกจากแท่ง · เรียงมากไปน้อย · สัดส่วนรวม 1', () => {
   const rows = [
     { page_key: 'home', opens: '500', visitors: '120' },
     { page_key: 'complaint', opens: '90', visitors: '40' },
@@ -262,25 +263,44 @@ test('อันดับเมนู: รวมชื่อที่ไม่ร
   assert.equal(ranking.rows.find(r => r.key === 'other').visitors, 5)
   assert.ok(Math.abs(ranking.rows.reduce((sum, r) => sum + r.share, 0) - 1) < 1e-9)
 
-  // เมนูในแถบข้าง (ไม่นับหน้านำทาง) ต้องมาครบทุกเมนู — รวมที่ไม่มีใครเปิดเลยซึ่งอยู่ท้ายสุดเป็น 0
+  // แท่งเมนู = เมนูแถบข้าง (ไม่นับหน้านำทาง) ที่ถูกเปิดอย่างน้อย MIN_MENU_OPENS ครั้งเท่านั้น (เจ้าของระบบสั่งซ่อนเมนูที่ไม่มีคนดู)
+  // เมนูที่ซ่อนต้องไม่หายเงียบ — hiddenMenus บอกจำนวนให้หน้ารายงานเขียนไว้บรรทัดเล็กๆ
   const menuCount = MENU_PAGE_KEYS.filter(k => PAGE_CATALOG.find(p => p.key === k).kind !== 'transit').length
-  assert.equal(ranking.menus.length, menuCount)
-  assert.deepEqual(ranking.menus.slice(0, 2).map(r => r.key), ['waste', 'complaint'])
-  assert.ok(ranking.menus.slice(2).every(r => r.opens === 0 && r.visitors === 0 && r.share === 0))
+  assert.equal(MIN_MENU_OPENS, 1, 'เจ้าของระบบสั่ง "แสดงเฉพาะที่มีคนดู" = อย่างน้อย 1 ครั้ง เปลี่ยนเลขนี้ต้องถามก่อน')
+  assert.deepEqual(ranking.menus.map(r => r.key), ['waste', 'complaint'])
+  assert.ok(ranking.menus.every(r => r.opens >= MIN_MENU_OPENS), 'ห้ามมีเมนูที่ 0 ครั้งในแท่ง')
+  assert.equal(ranking.hiddenMenus, menuCount - 2)
+  assert.equal(ranking.menus.length + ranking.hiddenMenus, menuCount, 'แท่ง + ที่ซ่อน ต้องครบทุกเมนูในแถบข้าง')
   assert.ok(ranking.menus.every(r => r.kind !== 'transit' && r.key !== OTHER_PAGE.key), 'หน้านำทางและ other ห้ามปนในแท่งเมนู')
+  // เมนูที่ถูกเปิดครั้งเดียวต้องขึ้น (ขอบล่างของเกณฑ์) และเรียงต่อท้าย
+  const edge = pageRanking([...rows, { page_key: 'news', opens: '1', visitors: '1' }])
+  assert.deepEqual(edge.menus.map(r => r.key), ['waste', 'complaint', 'news'])
+  assert.equal(edge.hiddenMenus, menuCount - 3)
   // เมนูนำทางแยกไว้ครบ 3 ตัว (หน้าแรก เมนูทั้งหมด รายงานทั้งหมด) เรียงตามยอด
   assert.deepEqual(ranking.nav.map(r => r.key), ['home', 'more', 'reports'])
   assert.deepEqual(ranking.nav.map(r => r.opens), [500, 80, 0])
   // หน้าที่ไม่ใช่เมนูแต่มีข้อมูล (เช่น 'other') อยู่ในตารางเต็ม ไม่อยู่ในแท่งเมนู
   assert.ok(ranking.rows.some(r => r.key === 'other'))
 
-  // ไม่มีข้อมูล = ไม่ error ไม่หารศูนย์ และยังเห็นทุกเมนูเป็น 0
+  // ไม่มีข้อมูล = ไม่ error ไม่หารศูนย์ แท่งว่าง (ทุกเมนูถูกซ่อน)
   for (const empty of [pageRanking([]), pageRanking(null)]) {
     assert.equal(empty.total, 0)
     assert.deepEqual(empty.rows, [])
-    assert.equal(empty.menus.length, menuCount)
-    assert.ok(empty.menus.every(r => r.opens === 0 && r.share === 0))
+    assert.deepEqual(empty.menus, [])
+    assert.equal(empty.hiddenMenus, menuCount)
   }
+  // มีแต่เมนูนำทาง (เช่น เปิดแต่หน้าแรก): แท่งว่างแต่ total > 0 — หน้ารายงานต้องมีข้อความของกรณีนี้ ไม่ปล่อยกรอบเปล่า
+  const onlyNav = pageRanking([{ page_key: 'home', opens: '9', visitors: '3' }])
+  assert.equal(onlyNav.total, 9)
+  assert.deepEqual(onlyNav.menus, [])
+  assert.deepEqual(onlyNav.nav.map(r => r.opens), [9, 0, 0])
+})
+
+test('หน้ารายงาน: อันดับเมนูแสดงเฉพาะที่มีคนเปิด มีข้อความกรณีมีแต่เมนูนำทาง และบอกจำนวนที่ซ่อนไว้', async () => {
+  const page = await read('src/pages/VisitorStats.jsx')
+  assert.match(page, /rank\.menus\.map\(/, 'แท่งต้องวาดจาก rank.menus (ที่กรองแล้ว)')
+  assert.match(page, /rank\.menus\.length === 0/, 'กรณี total > 0 แต่ไม่มีเมนูให้แสดง ต้องมีข้อความ ไม่ปล่อยกรอบเปล่า')
+  assert.match(page, /rank\.hiddenMenus/, 'ต้องบอกจำนวนเมนูที่ซ่อน')
 })
 
 test('เมนูแถบข้าง: MENU_PAGE_KEYS และชื่อตรงกับ CitizenSidebar.jsx ทุกรายการ (เปลี่ยนเมนูแล้วลืมแก้ที่นี่ รายงานจะแสดงเมนูผิด)', async () => {
