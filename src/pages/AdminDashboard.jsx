@@ -3755,7 +3755,8 @@ function CategoryActiveSwitch({ active, onToggle, compact = false }) {
 
 // สวิตช์ "ใครแจ้งได้" รายหมวด (complaint_categories.submit_audience, 20260925100000)
 // ต่างจาก 2 ชิปข้างล่างตรงที่ใช้กับหมวดเฉพาะกิจด้วย — เป็นเรื่องของผู้ยื่น ไม่ใช่ขั้นตอนหลังรับเรื่อง
-function SubmitAudienceChip({ cat, onToggle, className = '' }) {
+// short = ป้ายสั้นไม่มีอีโมจิ ใช้ในตารางจอกว้างที่หัวคอลัมน์บอกความหมายแล้ว (ข้อความเต็มยังอยู่ใน title)
+function SubmitAudienceChip({ cat, onToggle, className = '', short = false }) {
   const officialsOnly = isOfficialsOnlyCategory(cat)
   return (
     <button
@@ -3766,14 +3767,14 @@ function SubmitAudienceChip({ cat, onToggle, className = '' }) {
         : 'ทุกคนแจ้งได้ รวมผู้ไม่ล็อกอิน — กดเพื่อให้แจ้งได้เฉพาะผู้มีตำแหน่ง'}
       className={`px-2 py-1 rounded-full font-bold transition-colors ${officialsOnly ? 'bg-violet-100 text-violet-700 hover:bg-violet-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'} ${className}`}
     >
-      {officialsOnly ? '🏛️ เฉพาะผู้มีตำแหน่ง' : '🌐 ทุกคนแจ้งได้'}
+      {officialsOnly ? (short ? 'ผู้มีตำแหน่ง' : '🏛️ เฉพาะผู้มีตำแหน่ง') : (short ? 'ทุกคน' : '🌐 ทุกคนแจ้งได้')}
     </button>
   )
 }
 
 // สวิตช์ "ใครรับเรื่อง" รายหมวด (complaint_categories.requires_manual_intake, 20260915100000)
 // หมวดเฉพาะกิจไม่ใช้ขั้นตอนรับเรื่องเลย จึงไม่แสดง
-function ManualIntakeChip({ cat, onToggle, className = '' }) {
+function ManualIntakeChip({ cat, onToggle, className = '', short = false }) {
   if (cat.is_adhoc) return null
   const manual = !!cat.requires_manual_intake
   return (
@@ -3785,14 +3786,14 @@ function ManualIntakeChip({ cat, onToggle, className = '' }) {
         : 'ระบบรับเรื่องและส่งถึงผู้รับผิดชอบทันทีเมื่อตั้งกองและผู้รับผิดชอบครบ — กดเพื่อให้แอดมินรับเรื่องเอง'}
       className={`px-2 py-1 rounded-full font-bold transition-colors ${manual ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : 'bg-sky-100 text-sky-700 hover:bg-sky-200'} ${className}`}
     >
-      {manual ? '🛡️ แอดมินรับเรื่อง' : '⚡ ระบบรับเรื่อง'}
+      {manual ? (short ? 'แอดมิน' : '🛡️ แอดมินรับเรื่อง') : (short ? 'ระบบ' : '⚡ ระบบรับเรื่อง')}
     </button>
   )
 }
 
 // สวิตช์ "ต้องปักหมุดจุดที่ดำเนินการ" รายหมวด (complaint_categories.requires_resolved_location, 20260915110000)
 // หมวดที่เรื่องไม่มีจุดบนแผนที่ (ภาษี ร้องทุกข์ทั่วไป แจ้งทุจริต) ปิดไว้ ไม่งั้นผู้รับผิดชอบกด "ดำเนินการแล้ว" ไม่ได้
-function ResolvedPinChip({ cat, onToggle, className = '' }) {
+function ResolvedPinChip({ cat, onToggle, className = '', short = false }) {
   if (cat.is_adhoc) return null
   const required = cat.requires_resolved_location !== false
   return (
@@ -3804,7 +3805,7 @@ function ResolvedPinChip({ cat, onToggle, className = '' }) {
         : 'หมวดนี้กด "ดำเนินการแล้ว" ได้โดยไม่ต้องปักหมุด — กดเพื่อบังคับปักหมุด'}
       className={`px-2 py-1 rounded-full font-bold transition-colors ${required ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'} ${className}`}
     >
-      {required ? '📍 ต้องปักหมุด' : 'ไม่ต้องปักหมุด'}
+      {required ? (short ? 'ต้อง' : '📍 ต้องปักหมุด') : (short ? 'ไม่ต้อง' : 'ไม่ต้องปักหมุด')}
     </button>
   )
 }
@@ -3812,7 +3813,7 @@ function ResolvedPinChip({ cat, onToggle, className = '' }) {
 // สวิตช์ "ขึ้นทะเบียนรอดำเนินการได้" รายหมวด (complaint_categories.allow_parking, 20261025100000)
 // เปิดเฉพาะหมวดที่รับเรื่องไว้แล้วแต่ อปท. อาจยังไม่พร้อมทำ (เช่น ซ่อมแซมถนนทางการเกษตร) — ค่าตั้งต้นปิด
 // หมวดเร่งด่วน (น้ำท่วม ไฟฟ้า) ต้องปิดไว้ ไม่งั้นหัวหน้ากองกดพักเรื่องที่ต้องรีบทำโดยพลาดได้
-function ParkingChip({ cat, onToggle, className = '' }) {
+function ParkingChip({ cat, onToggle, className = '', short = false }) {
   if (cat.is_adhoc) return null
   const allowed = cat.allow_parking === true
   return (
@@ -3824,7 +3825,7 @@ function ParkingChip({ cat, onToggle, className = '' }) {
         : 'หมวดนี้ขึ้นทะเบียนรอดำเนินการไม่ได้ — กดเพื่อเปิดให้หัวหน้ากองใช้ได้'}
       className={`px-2 py-1 rounded-full font-bold transition-colors ${allowed ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'} ${className}`}
     >
-      {allowed ? '🗂️ ขึ้นทะเบียนรอได้' : 'ไม่ใช้ขึ้นทะเบียนรอ'}
+      {allowed ? (short ? 'ได้' : '🗂️ ขึ้นทะเบียนรอได้') : (short ? 'ไม่ได้' : 'ไม่ใช้ขึ้นทะเบียนรอ')}
     </button>
   )
 }
@@ -3984,17 +3985,17 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
       className={`transition-colors ${cat.is_active === false ? 'opacity-50' : ''} ${editingLabel ? 'bg-amber-50' : hasDraft ? 'bg-amber-50/60' : 'hover:bg-gray-50'}`}
     >
-      <td className="px-2 py-3 w-8">
+      <td className="px-1 py-3">
         <button
           {...attributes} {...listeners}
-          className="cursor-grab active:cursor-grabbing p-1 rounded text-gray-300 hover:text-gray-500 transition-colors touch-none"
+          className="cursor-grab active:cursor-grabbing p-0.5 rounded text-gray-300 hover:text-gray-500 transition-colors touch-none"
           title="ลากเพื่อเปลี่ยนลำดับ"
         >
           <GripVertical size={15} />
         </button>
       </td>
-      <td className="px-2 py-3 text-xs text-gray-400 w-8">{idx + 1}</td>
-      <td className="px-4 py-3">
+      <td className="px-1 py-3 text-xs text-gray-400">{idx + 1}</td>
+      <td className="px-2 py-3">
         {editingLabel ? (
           <input
             autoFocus
@@ -4013,7 +4014,17 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
               title="เปลี่ยนไอคอน"
               className="hover:bg-gray-100 rounded-lg p-1 transition-colors active:scale-90 shrink-0"
             ><CategoryIcon emoji={cat.emoji} size={22} style={iconStyle} /></button>
-            <span className="min-w-0 break-words font-medium leading-snug text-gray-800">{cat.label}</span>
+            <div className="min-w-0">
+              <span className="block break-words font-medium leading-snug text-gray-800">{cat.label}</span>
+              {/* ปกติ/เฉพาะกิจ มีแท็บแยกให้อยู่แล้ว ป้ายนี้จึงเป็นแค่ปุ่มย้ายแท็บ ย่อไว้ใต้ชื่อ ไม่กินคอลัมน์ */}
+              <button
+                onClick={() => onToggleAdhoc(cat.id, !!cat.is_adhoc)}
+                title={cat.is_adhoc ? 'ประเภทงานเฉพาะกิจ — กดเพื่อย้ายไปประเภทงานปกติ' : 'ประเภทงานปกติ — กดเพื่อย้ายไปประเภทงานเฉพาะกิจ'}
+                className={`mt-0.5 rounded-full px-1.5 py-px text-[10px] font-bold whitespace-nowrap transition-colors ${cat.is_adhoc ? 'bg-lime-100 text-lime-700 hover:bg-gray-200 hover:text-gray-500' : 'bg-gray-100 text-gray-400 hover:bg-lime-100 hover:text-lime-700'}`}
+              >
+                {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
+              </button>
+            </div>
           </div>
         )}
       </td>
@@ -4060,16 +4071,15 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
           </select>
         </div>
       </td>
-      <td className="px-2 py-2.5">
-        <div className="flex items-center gap-1 justify-center">
-          <input
-            type="number" min="1" max="365"
-            value={currentSla}
-            onChange={(e) => onSetDraft(cat.value, { sla_days: e.target.value })}
-            className="w-12 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-900 text-center focus:outline-none focus:border-amber-400"
-          />
-          <span className="text-xs text-gray-400">วันทำการ</span>
-        </div>
+      <td className="px-1 py-2.5 text-center">
+        {/* หน่วย "วันทำการ" อยู่ที่หัวคอลัมน์ ไม่ซ้ำทุกแถว */}
+        <input
+          type="number" min="1" max="365"
+          value={currentSla}
+          onChange={(e) => onSetDraft(cat.value, { sla_days: e.target.value })}
+          title="จำนวนวันทำการที่ต้องดำเนินการให้เสร็จ"
+          className="w-12 text-xs border border-gray-200 rounded-lg px-1 py-1.5 bg-white text-gray-900 text-center focus:outline-none focus:border-amber-400"
+        />
       </td>
       <td className="px-1 py-3 text-center">
         <CategoryActiveSwitch
@@ -4078,25 +4088,26 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
           onToggle={() => onToggleActive(cat.id, cat.is_active !== false)}
         />
       </td>
-      <td className="px-2 py-3 text-center">
-        <div className="flex flex-col items-center gap-1">
-          <button
-            onClick={() => onToggleAdhoc(cat.id, !!cat.is_adhoc)}
-            title="สลับปกติ/เฉพาะกิจ"
-            className={`max-w-full px-2 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${cat.is_adhoc ? 'bg-lime-100 text-lime-700 hover:bg-gray-200 hover:text-gray-500' : 'bg-gray-200 text-gray-500 hover:bg-lime-100 hover:text-lime-700'}`}
-          >
-            {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
-          </button>
-          {/* คอลัมน์นี้ได้ 9% ของตาราง table-fixed แคบกว่าข้อความชิป — ให้ตัดบรรทัดในกรอบ ไม่ล้นออกไปทับไอคอนแก้ไข */}
-          <SubmitAudienceChip cat={cat} onToggle={onToggleSubmitAudience} className="max-w-full text-center text-[11px] leading-tight" />
-          <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="max-w-full text-center text-[11px] leading-tight" />
-          <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="max-w-full text-center text-[11px] leading-tight" />
-          <ParkingChip cat={cat} onToggle={onToggleParking} className="max-w-full text-center text-[11px] leading-tight" />
-        </div>
+      {/* ตั้งค่ารายหมวดแยกคอลัมน์ละเรื่อง ไล่สายตาลงตามคอลัมน์ได้ — เดิมซ้อน 5 ชิปในช่องเดียว แถวสูง ~200px
+          ป้ายสั้นเพราะหัวคอลัมน์บอกความหมายแล้ว (ข้อความเต็มอยู่ใน title) · หมวดเฉพาะกิจไม่มี 3 ขั้นหลังรับเรื่อง จึงเป็น — */}
+      <td className="px-1 py-3 text-center">
+        <SubmitAudienceChip short cat={cat} onToggle={onToggleSubmitAudience} className="!px-1.5 max-w-full text-[11px] leading-tight" />
       </td>
-      <td className="px-2 py-3">
+      <td className="px-1 py-3 text-center">
+        {cat.is_adhoc ? <span className="text-xs text-gray-300">—</span>
+          : <ManualIntakeChip short cat={cat} onToggle={onToggleManualIntake} className="!px-1.5 max-w-full text-[11px] leading-tight" />}
+      </td>
+      <td className="px-1 py-3 text-center">
+        {cat.is_adhoc ? <span className="text-xs text-gray-300">—</span>
+          : <ResolvedPinChip short cat={cat} onToggle={onToggleResolvedPin} className="!px-1.5 max-w-full text-[11px] leading-tight" />}
+      </td>
+      <td className="px-1 py-3 text-center">
+        {cat.is_adhoc ? <span className="text-xs text-gray-300">—</span>
+          : <ParkingChip short cat={cat} onToggle={onToggleParking} className="!px-1.5 max-w-full text-[11px] leading-tight" />}
+      </td>
+      <td className="px-1 py-3">
         {editingLabel ? (
-          <div className="flex justify-end gap-0.5">
+          <div className="flex flex-col items-end gap-1">
             <button onClick={() => onSaveRow(cat)} disabled={isSaving}
               className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 transition-colors">
               {isSaving ? <Loader2 size={12} className="animate-spin" /> : 'บันทึก'}
@@ -4107,7 +4118,7 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
             </button>
           </div>
         ) : (
-          <div className="flex justify-end gap-1.5">
+          <div className="flex justify-end gap-0.5">
             <button onClick={() => onStartLabelEdit(cat)}
               className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไขชื่อ">
               <Pencil size={14} />
@@ -4885,30 +4896,37 @@ function CategoryManager({ tenant }) {
           {/* Desktop table — DnD sortable */}
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={visibleCats.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-              <div className="hidden md:block overflow-hidden rounded-xl border border-gray-200">
-                <table className="w-full table-fixed text-sm">
+              {/* 12 คอลัมน์ต้องการ ~820px — แคบกว่านั้นให้เลื่อนแนวนอน ดีกว่าบีบจนชิปล้นทับช่องข้างๆ */}
+              <div className="hidden md:block overflow-x-auto rounded-xl border border-gray-200">
+                <table className="w-full min-w-[820px] table-fixed text-sm">
                   <colgroup>
-                    <col className="w-[4%]" />
-                    <col className="w-[4%]" />
-                    <col className="w-[19%]" />
-                    <col className="w-[17%]" />
-                    <col className="w-[16%]" />
-                    <col className="w-[9%]" />
+                    <col className="w-[3.5%]" />
+                    <col className="w-[3%]" />
                     <col className="w-[14%]" />
-                    <col className="w-[9%]" />
-                    <col className="w-[8%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[7%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[7.5%]" />
+                    <col className="w-[6.5%]" />
+                    <col className="w-[6.5%]" />
+                    <col className="w-[6.5%]" />
+                    <col className="w-[7%]" />
                   </colgroup>
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="px-2 py-3 w-8" />
-                      <th className="px-2 py-3 text-left text-xs font-semibold text-gray-500 w-8">#</th>
+                      <th className="px-1 py-3" />
+                      <th className="px-1 py-3 text-left text-xs font-semibold text-gray-500">#</th>
                       <th className="px-2 py-3 text-left text-xs font-semibold text-gray-500">ประเภท</th>
                       <th className="px-2 py-3 text-left text-xs font-semibold text-gray-500">กองรับผิดชอบ</th>
                       <th className="px-2 py-3 text-left text-xs font-semibold text-gray-500">ช่างรับผิดชอบ</th>
-                      <th className="px-2 py-3 text-center text-xs font-semibold text-gray-500">ระยะเวลา</th>
-                      <th className="px-2 py-3 text-center text-xs font-semibold text-gray-500 whitespace-nowrap">สถานะ</th>
-                      <th className="px-2 py-3 text-center text-xs font-semibold leading-tight text-gray-500">ประเภทงาน</th>
-                      <th className="px-2 py-3 text-right text-xs font-semibold text-gray-500">จัดการ</th>
+                      <th className="px-1 py-3 text-center text-xs font-semibold leading-tight text-gray-500">ระยะเวลา<span className="block text-[10px] font-normal text-gray-400">(วันทำการ)</span></th>
+                      <th className="px-1 py-3 text-center text-xs font-semibold text-gray-500 whitespace-nowrap">สถานะ</th>
+                      <th className="px-1 py-3 text-center text-xs font-semibold leading-tight text-gray-500" title="ใครแจ้งเรื่องประเภทนี้ได้">ผู้แจ้ง</th>
+                      <th className="px-1 py-3 text-center text-xs font-semibold leading-tight text-gray-500" title="ใครรับเรื่องเมื่อมีคำร้องใหม่">รับเรื่อง</th>
+                      <th className="px-1 py-3 text-center text-xs font-semibold leading-tight text-gray-500" title='ต้องปักหมุดจุดที่ดำเนินการก่อนกด "ดำเนินการแล้ว" หรือไม่'>ปักหมุด<span className="block text-[10px] font-normal text-gray-400">ตอนปิดงาน</span></th>
+                      <th className="px-1 py-3 text-center text-xs font-semibold leading-tight text-gray-500" title='หัวหน้ากองกด "ขึ้นทะเบียนรอดำเนินการ" ได้หรือไม่'>ขึ้นทะเบียน<span className="block text-[10px] font-normal text-gray-400">รอ</span></th>
+                      <th className="px-1 py-3 text-right text-xs font-semibold text-gray-500">จัดการ</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -4931,7 +4949,7 @@ function CategoryManager({ tenant }) {
                         onToggleSubmitAudience={toggleSubmitAudience}
                         onToggleManualIntake={toggleManualIntake}
                         onToggleResolvedPin={toggleResolvedPin}
-                    onToggleParking={toggleParking}
+                        onToggleParking={toggleParking}
                         onDeleteCat={deleteCat}
                         onEditEmoji={setIconPickerCat}
                         iconStyle={iconStyle}
