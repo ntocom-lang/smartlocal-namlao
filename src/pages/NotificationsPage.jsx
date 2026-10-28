@@ -9,6 +9,8 @@ import { useNotifications } from '../contexts/NotificationsContext'
 import { useTenant } from '../contexts/TenantContext'
 import { CategoryIcon } from '../lib/categoryIcon'
 import { supabase } from '../lib/supabase'
+// ข้อความสถานะ + เลขที่ ใช้ชุดเดียวกับป๊อปอัปแจ้งเตือน (NotificationsContext)
+import { CITIZEN_STATUS_MSG, STAFF_STATUS_MSG, complaintShortRef } from '../lib/notificationAlerts'
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
@@ -21,24 +23,6 @@ const STATUS_INFO = {
   completed:   { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', color: '#065f46', Icon: CheckCircle2 },
   closed:      { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', color: '#065f46', Icon: CheckCircle2 },
   rejected:    { label: 'ปฏิเสธ',         bg: '#fee2e2', color: '#991b1b', Icon: XCircle },
-}
-
-const CITIZEN_STATUS_MSG = {
-  received:    'เจ้าหน้าที่รับเรื่องของคุณแล้ว',
-  in_progress: 'เจ้าหน้าที่อยู่ระหว่างดำเนินการ',
-  done:        'เจ้าหน้าที่ดำเนินการเสร็จแล้ว 🎉',
-  completed:   'เจ้าหน้าที่ดำเนินการเสร็จแล้ว 🎉',
-  closed:      'ดำเนินการแล้ว ✅ ถ้ายังไม่เรียบร้อยแจ้งกลับได้ภายใน 7 วัน',
-  rejected:    'ขออภัย คำร้องของคุณถูกปฏิเสธ',
-}
-
-const STAFF_STATUS_MSG = {
-  new:         'มีคำร้องใหม่รอรับเรื่อง',
-  pending:     'มีคำร้องใหม่รอรับเรื่อง',
-  received:    'งานรอเริ่มดำเนินการ',
-  in_progress: 'งานกำลังดำเนินการ',
-  done:        'ดำเนินการแล้ว',
-  completed:   'ดำเนินการแล้ว',
 }
 
 let CATEGORY_LABEL = {
@@ -209,14 +193,7 @@ export default function NotificationsPage() {
                 const Icon = s.Icon
                 const catLabel = categoryNameOf(CATEGORY_LABEL, n.category)
                 const catEmoji = CATEGORY_EMOJI[n.category] ?? '📄'
-                const cno = n.complaint_number
-                  ? (() => {
-                      const d = new Date(n.created_at)
-                      const yy = String(d.getFullYear() + 543).slice(-2)
-                      const mm = String(d.getMonth() + 1).padStart(2, '0')
-                      return `${yy}${mm}${String(n.complaint_number).padStart(3, '0')}`
-                    })()
-                  : null
+                const cno = complaintShortRef(n)
 
                 return (
                   <button

@@ -1,16 +1,19 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from './TenantContext'
 import { useAuth } from './AuthContext'
 import { fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
+import { MAX_ALERTS_AT_ONCE, alertText, freshUnreadItems, notificationKey as notifKey } from '../lib/notificationAlerts'
+import { deviceCanVibrate, syncAppBadge, vibrateForNotification } from '../lib/notificationPrefs'
+import { playNotificationSound } from '../lib/notificationSound'
+import { useNotificationDevicePrefs } from '../hooks/useNotificationDevicePrefs'
+import NotificationToasts from '../components/notifications/NotificationToasts'
 
 const LEGACY_SEEN_KEY = 'smartlocal_notif_read_ids'
 const LEGACY_CLEARED_KEY = 'smartlocal_notif_cleared_at'
 const CITIZEN_HIDDEN = new Set(['pending', 'new'])
 const STAFF_ROLES = new Set(['superadmin', 'admin', 'officer', 'staff', 'technician', 'viewer', 'council', 'kamnan'])
-
-const notifKey = (item) => `${item.id}_${item.status}`
 
 const NotificationsCtx = createContext({
   unreadCount: 0,
@@ -20,6 +23,7 @@ const NotificationsCtx = createContext({
   markRead: () => {},
   markAllRead: () => {},
   openPanel: () => {},
+  previewAlert: () => {},
 })
 
 export function useNotifications() {
@@ -104,6 +108,47 @@ export function NotificationsProvider({ children }) {
   const [clearedAt, setClearedAt] = useState(0)
   const [readIds, setReadIds] = useState(() => new Set())
 
+  // ── ป๊อปอัป/เสียง/สั่น เมื่อมีรายการใหม่เข้ากระดิ่งระหว่างเปิดระบบอยู่ (ตั้งรายเครื่องในหน้า /profile/notifications) ──
+  const [devicePrefs] = useNotificationDevicePrefs(uid)
+  const [toasts, setToasts] = useState([])
+  const prefsRef = useRef(devicePrefs)
+  const readStateRef = useRef({ readIds, clearedAt })
+  // รอบดึงก่อนหน้าของบัญชี/หน่วยงาน/มุมมองเดียวกัน — เปลี่ยนบัญชีแล้วรอบแรกต้องไม่เด้งของค้างเดิม
+  const alertRoundRef = useRef({ scope: null, previous: null })
+  useEffect(() => { prefsRef.current = devicePrefs }, [devicePrefs])
+  useEffect(() => { readStateRef.current = { readIds, clearedAt } }, [readIds, clearedAt])
+
+  const dismissToast = useCallback((id) => {
+    setToasts((list) => list.filter((toast) => toast.id !== id))
+  }, [])
+
+  const showToasts = useCallback((entries) => {
+    setToasts((list) => [...entries, ...list.filter((toast) => !entries.some((entry) => entry.id === toast.id))]
+      .slice(0, MAX_ALERTS_AT_ONCE))
+  }, [])
+
+  const announce = useCallback((fresh, view) => {
+    const list = fresh.slice(0, MAX_ALERTS_AT_ONCE)
+    if (list.length === 0) return
+    const prefs = prefsRef.current
+    if (prefs.popup) {
+      showToasts(list.map((item) => ({
+        id: notifKey(item),
+        itemId: item.id,
+        href: item._href,
+        hrefState: item._hrefState,
+        ...alertText(item, view),
+      })))
+    }
+    if (prefs.sound) playNotificationSound()
+    if (prefs.vibrate && deviceCanVibrate()) vibrateForNotification()
+  }, [showToasts])
+
+  // ปุ่ม "ทดลองป๊อปอัป" ในหน้าตั้งค่า — โชว์หน้าตากล่องโดยไม่ต้องรอรายการจริง
+  const previewAlert = useCallback(() => {
+    showToasts([{ id: `preview-${Date.now()}`, title: 'ตัวอย่างการแจ้งเตือน', body: 'กล่องแบบนี้จะขึ้นเมื่อมีรายการใหม่เข้ากระดิ่ง', href: null }])
+  }, [showToasts])
+
   useEffect(() => {
     if (!uid) {
       setItems([])
@@ -152,16 +197,16 @@ export function NotificationsProvider({ children }) {
     }
     setLoading(true)
     try {
+      let rows
       if (audience === 'staff') {
         const { data, error } = await fetchRoleScopedComplaints(tenantId)
         if (error) throw error
         const allowed = staffQueueStatuses(role)
-        const rows = (data ?? [])
+        rows = (data ?? [])
           .filter((row) => allowed.has(row.status))
           .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
           .slice(0, 50)
           .map((row) => mapComplaint(row, 'staff', role))
-        setItems(rows)
       } else {
         const { data, error } = await supabase
           .from('complaints')
@@ -171,16 +216,25 @@ export function NotificationsProvider({ children }) {
           .order('updated_at', { ascending: false })
           .limit(50)
         if (error) throw error
-        setItems((data ?? [])
+        rows = (data ?? [])
           .filter((row) => !CITIZEN_HIDDEN.has(row.status))
-          .map((row) => mapComplaint(row, 'citizen', role)))
+          .map((row) => mapComplaint(row, 'citizen', role))
       }
+      setItems(rows)
+
+      // เทียบกับรอบดึงก่อนหน้า (ยิงจาก realtime ทุกครั้งที่คำร้องเปลี่ยน) — รายการที่เพิ่งเข้ามาใหม่จึงเด้งเตือน
+      const scope = `${uid}|${tenantId}|${audience}`
+      const round = alertRoundRef.current
+      const previous = round.scope === scope ? round.previous : null
+      alertRoundRef.current = { scope, previous: { keys: new Set(rows.map(notifKey)), at: Date.now() } }
+      const { readIds: readKeys, clearedAt: cleared } = readStateRef.current
+      announce(freshUnreadItems(previous, rows, { readKeys, clearedAt: cleared }), audience)
     } catch (err) {
       console.error('[notifications] โหลดการแจ้งเตือนไม่สำเร็จ:', err?.message ?? err)
     } finally {
       setLoading(false)
     }
-  }, [uid, tenantId, role, profileLoading, audience])
+  }, [uid, tenantId, role, profileLoading, audience, announce])
 
   useEffect(() => { fetchItems() }, [fetchItems])
 
@@ -206,6 +260,9 @@ export function NotificationsProvider({ children }) {
     _unread: new Date(n.updated_at).getTime() > clearedAt && !readIds.has(notifKey(n)),
   }))
   const unreadCount = tagged.filter((n) => n._unread).length
+
+  // ตัวเลขบนไอคอนแอป = จำนวนเดียวกับกระดิ่ง (เครื่องที่ไม่รองรับข้ามเงียบ) · ออกจากระบบแล้วล้าง
+  useEffect(() => { syncAppBadge(uid ? unreadCount : 0) }, [uid, unreadCount])
 
   function persistRead(nextKeys, nextClearedAt) {
     writeLocalState(uid, nextKeys, nextClearedAt)
@@ -262,9 +319,16 @@ export function NotificationsProvider({ children }) {
     navigate('/notifications')
   }
 
+  function openToast(toast) {
+    dismissToast(toast.id)
+    if (toast.itemId) markRead(toast.itemId)
+    if (toast.href) navigate(toast.href, toast.hrefState ? { state: toast.hrefState } : undefined)
+  }
+
   return (
-    <NotificationsCtx.Provider value={{ unreadCount, items: tagged, loading, audience, markRead, markAllRead, openPanel }}>
+    <NotificationsCtx.Provider value={{ unreadCount, items: tagged, loading, audience, markRead, markAllRead, openPanel, previewAlert }}>
       {children}
+      <NotificationToasts toasts={toasts} onOpen={openToast} onDismiss={dismissToast} />
     </NotificationsCtx.Provider>
   )
 }
