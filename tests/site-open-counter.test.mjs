@@ -14,7 +14,9 @@ import {
   OTHER_PAGE,
   PAGE_CATALOG,
   UNCOUNTED_ROUTES,
+  AUTO_RELOAD_WINDOW_MS,
   addSeenPageKey,
+  autoReloadMark,
   bangkokDay,
   fiscalMonthSeries,
   fiscalYearSeries,
@@ -24,6 +26,7 @@ import {
   isFirstTodayVisitor,
   pageKeyForPath,
   pageRanking,
+  shouldSkipCountAfterAutoReload,
 } from '../src/lib/siteOpenStats.js'
 import { FISCAL_MONTHS_TH, fiscalYearBounds } from '../src/lib/fiscalYear.js'
 
@@ -333,4 +336,61 @@ test('migration สถิติรายหน้า: คงฟังก์ช�
     'ทุกฟังก์ชัน SECURITY DEFINER ต้องตั้ง search_path')
   // อ่านอันดับได้ไม่เกิน 200 แถว ต่ำกว่าเพดาน 1,000 แถวของ PostgREST
   assert.match(code(sql), /LIMIT 200/)
+})
+
+// ─── หน้าที่ระบบโหลดซ้ำเอง (service worker ใหม่รับช่วง) ไม่นับซ้ำ ─────────────────────────────────
+// ผู้ใช้ใหม่เปิดหน้าเดียวเคยนับ 2 ครั้ง: นับตอนเปิด + src/main.jsx สั่งโหลดซ้ำที่ ~9 วินาที แล้วนับอีกรอบ (วัดบน demo 2569-10-28)
+
+test('หลังระบบโหลดซ้ำ: ข้ามการนับเฉพาะเมื่อหน้าก่อนหน้านับไปแล้ว และธงยังใหม่', () => {
+  const now = 1_800_000_000_000
+  // หน้าก่อนโหลดซ้ำนับแล้ว + ธงใหม่ → ข้าม (กันนับ 2 ครั้ง)
+  assert.equal(shouldSkipCountAfterAutoReload(autoReloadMark(true, now), now + 400), true)
+  assert.equal(shouldSkipCountAfterAutoReload(autoReloadMark(true, now), now + AUTO_RELOAD_WINDOW_MS), true, 'ขอบหน้าต่างยังข้าม')
+  // โหลดซ้ำก่อนทันนับ (ยังไม่ครบ SITE_OPEN_SETTLE_MS) → ต้องนับ ไม่งั้นการเข้าชมครั้งนั้นหายทั้งครั้ง
+  assert.equal(shouldSkipCountAfterAutoReload(autoReloadMark(false, now), now + 400), false)
+  // ธงเก่าที่ค้างอยู่ (เกินหน้าต่าง) หรือนาฬิกาเดินถอยหลัง → ไม่ข้าม ผู้ใช้ที่เปิดหน้าทีหลังจริงๆ ต้องถูกนับ
+  assert.equal(shouldSkipCountAfterAutoReload(autoReloadMark(true, now), now + AUTO_RELOAD_WINDOW_MS + 1), false)
+  assert.equal(shouldSkipCountAfterAutoReload(autoReloadMark(true, now), now - 1), false)
+  // ไม่มีธง/ค่าเสีย/รูปแบบผิด → ไม่ข้าม (นับตามปกติ)
+  for (const raw of [null, undefined, '', 'not json', '{}', '[]', '{"counted":true}', '{"at":"x","counted":true}', '{"at":1,"counted":"yes"}']) {
+    assert.equal(shouldSkipCountAfterAutoReload(raw, now), false, `raw=${JSON.stringify(raw)}`)
+  }
+  // ค่าที่ autoReloadMark สร้างต้องอ่านกลับได้ และ counted ถูกบังคับเป็น boolean
+  assert.deepEqual(JSON.parse(autoReloadMark(1, now)), { at: now, counted: true })
+  assert.deepEqual(JSON.parse(autoReloadMark(undefined, now)), { at: now, counted: false })
+})
+
+test('ตัวนับ: จดธงตอน controllerchange · อ่านแล้วลบธงทันทีหลังรู้ tenant · ข้ามการนับเมื่อนับแล้ว · ไม่แตะปุ่มโหลดใหม่ของผู้ใช้', async () => {
+  const counter = await read('src/lib/siteOpenCounter.js')
+  const code = counter.replace(/\/\/.*$/gm, '')
+
+  // ฟังเหตุการณ์เดียวกับที่ main.jsx ใช้สั่งโหลดซ้ำ (ตัวที่สั่ง reload ยังต้องอยู่ — ถอดออกแล้วมือถือจะกลับไปรันโค้ดเก่า)
+  assert.match(code, /serviceWorker\.addEventListener\('controllerchange', writeAutoReloadMark\)/)
+  const main = await read('src/main.jsx')
+  assert.match(main, /addEventListener\('controllerchange', \(\) => window\.location\.reload\(\)\)/, 'main.jsx ต้องยังโหลดซ้ำเมื่อ SW เปลี่ยนมือ')
+
+  // ธงบอกว่า "หน้าปัจจุบันนับแล้วหรือยัง" ไม่ใช่ true ตายตัว
+  assert.match(code, /autoReloadMark\(currentPageCounted\)/)
+
+  const body = code.slice(code.indexOf('export function scheduleSiteOpen'))
+  const at = needle => body.indexOf(needle)
+  // ลำดับใน scheduleSiteOpen: รีเซ็ต → รอ tenant → อ่านและลบธง → ตรวจหน้า/สภาพแวดล้อม → ข้ามถ้านับแล้ว → ตั้งเวลานับ
+  const order = ['currentPageCounted = false', '!tenantId', 'consumeAutoReloadSkip()', 'isCountablePath(pathname)', 'if (skipAfterAutoReload)', 'setTimeout(']
+  const positions = order.map(at)
+  assert.ok(positions.every(p => p >= 0), `ไม่เจอ: ${order.filter((_, i) => positions[i] < 0).join(', ')}`)
+  assert.deepEqual(positions, [...positions].sort((a, b) => a - b), 'ลำดับใน scheduleSiteOpen ผิด')
+  // ห้ามอ่านธงก่อนรู้ tenant (รอบแรกของ effect tenantId ยังว่าง) และต้องอ่านก่อนตรวจหน้าหลังบ้าน (ธงไม่ค้างข้ามหน้า)
+  assert.ok(at('!tenantId') < at('consumeAutoReloadSkip()') && at('consumeAutoReloadSkip()') < at('isCountablePath(pathname)'))
+  // อ่านธงแล้วต้องลบ (ใช้ครั้งเดียว)
+  assert.match(code, /sessionStorage\.removeItem\(AUTO_RELOAD_KEY\)/)
+  // เมื่อข้าม ต้องไม่ตั้งตัวจับเวลา และจำว่าหน้านี้ถือว่านับแล้ว (โหลดซ้ำซ้อนอีกรอบก็ข้ามได้)
+  const skipBlock = body.slice(at('if (skipAfterAutoReload)'), at('setTimeout('))
+  assert.match(skipBlock, /currentPageCounted = true[\s\S]*return undefined/)
+  // ตัวจับเวลาต้องตั้ง "นับแล้ว" ก่อนยิง RPC
+  assert.match(body, /setTimeout\(\(\) => \{\s*currentPageCounted = true[\s\S]*countNow\(tenantId, pathname\)/)
+
+  // ปุ่ม "โหลดหน้าใหม่" ที่ผู้ใช้กดเอง (error boundary ใน App.jsx) ไม่จดธง — ยังนับเป็นการรีเฟรชตามเดิม
+  const app = await read('src/App.jsx')
+  assert.ok(app.includes('window.location.reload()'))
+  assert.doesNotMatch(app, /sl_site_auto_reload|writeAutoReloadMark/)
 })
