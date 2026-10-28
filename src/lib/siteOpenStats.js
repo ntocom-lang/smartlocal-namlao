@@ -115,3 +115,134 @@ export function fiscalYearSeries(rows, currentFiscalYearBE) {
   }
   return series
 }
+
+// ─── สถิติรายหน้า (เจ้าของระบบขอ 2569-10-28: "หน้าไหนที่คนสนใจ/เข้ามาใช้บริการมากที่สุด" ไว้พัฒนาต่อ) ───
+//
+// ทุกครั้งที่นับการเข้าชม ฝั่งเว็บส่งชื่อกลุ่มของหน้า (page_key) ไปด้วย ผลรวมรายหน้าของวัน = ยอดรวมของวันนั้น
+// (นับตั้งแต่วัน apply — ไม่มีการเติมย้อนหลัง) · supabase/migrations/20261028100100_site_page_daily_rpc.sql
+//
+// ⚠️ ส่งเฉพาะ "ชื่อกลุ่มจากตารางนี้" ห้ามส่ง pathname หรือส่วนใดของ URL ขึ้นไป — URL มีโทเคนติดตามเรื่อง
+// (/t/<โทเคน>) และรหัสตรวจสอบลายเซ็น (/v/<รหัส>) ซึ่งเป็นข้อมูลที่ไม่ควรไปอยู่ในสถิติ หน้าที่ไม่รู้จักตกเป็น 'other'
+// ⚠️ เพิ่ม route ใหม่ใน App.jsx แล้วลืมเพิ่มที่นี่ = หน้านั้นไปรวมอยู่ใน 'other' เงียบๆ — เทสต์ตรวจให้ครบทุก route
+//
+// kind: service = ยื่น/จอง/ให้ความเห็น · info = ดูข้อมูล · mine = ของฉัน/ติดตามเรื่อง
+//       transit = หน้านำทาง (หน้าแรก เมนูทั้งหมด รายงานทั้งหมด เข้าสู่ระบบ) คนผ่านทุกคนอยู่แล้ว ไม่ได้บอกว่า "สนใจเรื่องไหน"
+//       จึงแยกไว้ต่างหากจากแท่งอันดับเมนู (ไม่งั้นหน้าแรกชนะทุกครั้งและแท่งอื่นสั้นจนเทียบกันไม่ออก)
+// label ของหน้าที่เป็นเมนูในแถบข้าง (MENU_PAGE_KEYS) ต้องตรงกับชื่อในแถบข้างตัวอักษรต่อตัวอักษร —
+// เจ้าของระบบเปิดดูแล้วต้องเห็นชื่อเดียวกับที่ประชาชนกดจริง เทสต์ตรวจกับ CitizenSidebar.jsx ให้
+export const PAGE_CATALOG = [
+  { key: 'home',               path: '/',                    label: 'หน้าแรก',                              kind: 'transit' },
+  { key: 'more',               path: '/more',                label: 'เมนูทั้งหมด',                          kind: 'transit' },
+  { key: 'auth',               path: '/auth',                label: 'เข้าสู่ระบบ/สมัครสมาชิก',               kind: 'transit' },
+  { key: 'reset-password',     path: '/reset-password',      label: 'ตั้งรหัสผ่านใหม่',                      kind: 'transit' },
+  { key: 'profile',            path: '/profile',             label: 'โปรไฟล์ของฉัน',                        kind: 'transit' },
+  { key: 'reports',            path: '/reports',             label: 'รายงานทั้งหมด',                        kind: 'transit' },
+  { key: 'complaint',          path: '/complaint',           label: 'ร้องเรียน/ร้องทุกข์',                   kind: 'service' },
+  { key: 'complaint-legacy',   path: '/complaint-legacy',    label: 'ร้องเรียน (หน้าแบบเดิม)',               kind: 'service' },
+  { key: 'request',            path: '/request',             label: 'แบบฟอร์มคำร้อง',                       kind: 'service' },
+  { key: 'doc-request',        path: '/doc-request',         label: 'งานบริการประชาชน',                      kind: 'service' },
+  { key: 'patient-transport',  path: '/patient-transport',   label: 'จองรถรับ-ส่งผู้ป่วย',                   kind: 'service' },
+  { key: 'business-register',  path: '/business-register',   label: 'ลงทะเบียนร้านค้า',                      kind: 'service' },
+  { key: 'satisfaction',       path: '/satisfaction',        label: 'ประเมินความพึงพอใจ',                   kind: 'service' },
+  { key: 'surveys',            path: '/surveys',             label: 'แบบสำรวจความเห็น (รายการ)',             kind: 'service' },
+  { key: 'survey',             path: '/survey/:id',          label: 'ทำแบบสำรวจความเห็น',                   kind: 'service' },
+  { key: 'my-complaints',      path: '/my-complaints',       label: 'คำร้องของฉัน',                         kind: 'mine' },
+  { key: 'my-docs',            path: '/my-docs',             label: 'เอกสารของฉัน',                         kind: 'mine' },
+  { key: 'notifications',      path: '/notifications',       label: 'การแจ้งเตือน',                         kind: 'mine' },
+  { key: 'track',              path: '/t/:token',            label: 'ติดตามเรื่องด้วยลิงก์',                 kind: 'mine' },
+  { key: 'waste',              path: '/waste',               label: 'ตารางวันเก็บขยะ',                      kind: 'info' },
+  { key: 'water-situation',    path: '/water-situation',     label: 'สถานการณ์น้ำ-ฝน',                      kind: 'info' },
+  { key: 'weather',            path: '/weather',             label: 'สภาพอากาศ',                            kind: 'info' },
+  { key: 'pm25',               path: '/pm25',                label: 'สถานการณ์ PM2.5',                      kind: 'info' },
+  { key: 'events',             path: '/events',              label: 'ปฏิทินกิจกรรม',                        kind: 'info' },
+  { key: 'news',               path: '/news',                label: 'ข่าวสาร/ประกาศ',                       kind: 'info' },
+  { key: 'tourism',            path: '/tourism',             label: 'เที่ยว กิน พัก ช้อป บริการ',            kind: 'info' },
+  { key: 'tourism-detail',     path: '/tourism/:id',         label: 'รายละเอียดสถานที่ (เที่ยว กิน พัก ช้อป)', kind: 'info' },
+  { key: 'emergency',          path: '/emergency',           label: 'สายด่วนฉุกเฉิน',                       kind: 'info' },
+  { key: 'directory',          path: '/directory',           label: 'เบอร์โทรสำคัญ',                        kind: 'info' },
+  { key: 'contact',            path: '/contact',             label: 'ติดต่อเรา',                            kind: 'info' },
+  { key: 'data-center',        path: '/data-center',         label: 'ศูนย์ข้อมูลดิจิทัล',                    kind: 'info' },
+  { key: 'data-center-public', path: '/data-center/public',  label: 'แผนที่ศูนย์ข้อมูลดิจิทัล',               kind: 'info' },
+  { key: 'doc-stats',          path: '/doc-stats',           label: 'รายงานการออกเอกสารดิจิทัล',             kind: 'info' },
+  { key: 'reports-complaints', path: '/reports/complaints',  label: 'รายงานร้องเรียน/ร้องทุกข์',             kind: 'info' },
+  { key: 'reports-visitors',   path: '/reports/visitors',    label: 'สถิติการเข้าชมเว็บไซต์',                kind: 'info' },
+  { key: 'verify',             path: '/v/:code',             label: 'ตรวจสอบลายเซ็นออนไลน์',                kind: 'info' },
+]
+
+export const OTHER_PAGE = { key: 'other', label: 'หน้าอื่นๆ / ไม่ระบุ', kind: 'info' }
+
+// เมนูในแถบข้างของหน้าประชาชน (src/components/layout/CitizenSidebar.jsx) — เจ้าของระบบขอดูทีละเมนูตามรายการนี้
+// (2569-10-28 "ใครเข้ามาใช้บริการเมนูไหนมากที่สุด กี่ครั้ง") นับจากการเปิดหน้านั้นไม่ว่าเข้าทางไหน
+// (เมนูข้าง ปุ่มหน้าแรก แถบล่างมือถือ หรือลิงก์) แยกไม่ได้ว่ากดมาจากปุ่มไหน และไม่รู้ว่าใครเป็นคนกด
+export const MENU_PAGE_KEYS = [
+  'home', 'complaint', 'doc-request', 'waste', 'water-situation', 'events', 'news', 'tourism', 'data-center',
+  'my-complaints', 'my-docs', 'notifications',
+  'reports', 'reports-complaints', 'contact', 'emergency', 'directory', 'more',
+]
+
+// route ที่ไม่เคยถูกนับเป็นหน้าของตัวเอง: เป็นแค่ทางผ่านที่ redirect ต่อ (นับที่ปลายทาง) หรือหน้า 404
+export const UNCOUNTED_ROUTES = ['/search', '/chatbot', '/market', '/map', '*']
+
+const PAGE_BY_KEY = new Map([...PAGE_CATALOG, OTHER_PAGE].map(p => [p.key, p]))
+
+// pattern แบบ react-router: ส่วนที่ขึ้นต้นด้วย ':' ตรงกับ 1 ส่วนอะไรก็ได้ ส่วนอื่นเทียบตรงตัว
+function matchesPattern(pattern, segments) {
+  const parts = pattern.split('/').filter(Boolean)
+  if (parts.length !== segments.length) return false
+  return parts.every((part, i) => part.startsWith(':') || part === segments[i])
+}
+
+// pathname → ชื่อกลุ่มของหน้า ('other' เมื่อไม่รู้จัก) — เทียบแบบไม่สนตัวพิมพ์และตัด / ท้ายออกตาม react-router
+export function pageKeyForPath(pathname) {
+  const segments = String(pathname || '/').toLowerCase().split('/').filter(Boolean)
+  return PAGE_CATALOG.find(p => matchesPattern(p.path, segments))?.key ?? OTHER_PAGE.key
+}
+
+// เครื่องนี้เพิ่งเปิดหน้านี้เป็นครั้งแรกของวันไหม (ตัวรองของสถิติรายหน้า)
+//   storedDay/storedKeys   — ที่จำไว้ใน localStorage (ชื่อหน้าที่เปิดแล้วของวัน ไม่เคยถูกส่งขึ้น server)
+//   claimedDay/claimedKeys — ที่แท็บนี้จองไว้ระหว่างรอ RPC ตอบ กันเปลี่ยนหน้ารัวๆ แล้วนับหน้าเดิมซ้ำ
+//   อ่าน localStorage ไม่ได้ตอบ false — ยอมให้ตัวรองขาด ดีกว่านับทุกครั้งเป็นเครื่องใหม่ (หลักเดียวกับ isFirstTodayVisitor)
+export function isFirstPageToday({ storageOk, storedDay, storedKeys, claimedDay, claimedKeys, today, pageKey }) {
+  if (!storageOk) return false
+  const seenStored = storedDay === today && (storedKeys ?? []).includes(pageKey)
+  const seenClaimed = claimedDay === today && (claimedKeys ?? []).includes(pageKey)
+  return !seenStored && !seenClaimed
+}
+
+// ชื่อหน้าที่เปิดแล้วของวัน ข้ามวันแล้วเริ่มรายการใหม่ · จำกัดความยาวไม่ให้ค่าใน localStorage โตไม่สิ้นสุด
+const MAX_STORED_PAGE_KEYS = 80
+export function addSeenPageKey(day, keys, today, pageKey) {
+  const base = day === today ? (keys ?? []) : []
+  if (base.includes(pageKey)) return base
+  return [...base, pageKey].slice(-MAX_STORED_PAGE_KEYS)
+}
+
+// ผลของ get_site_page_ranking → ข้อมูลพร้อมแสดง
+//   menus — เมนูในแถบข้าง (MENU_PAGE_KEYS) ที่ไม่ใช่หน้านำทาง เรียงมากไปน้อย "ครบทุกเมนู" รวมเมนูที่ยังไม่มีใครเปิด (0 ครั้ง)
+//           เมนูที่ไม่มีใครใช้เลยเป็นข้อมูลเหมือนกัน ถ้าตัดทิ้งเจ้าของจะนึกว่าเมนูนั้นไม่อยู่ในรายงาน
+//   nav   — เมนูนำทางในแถบข้าง (หน้าแรก เมนูทั้งหมด รายงานทั้งหมด) แยกไว้ ไม่ปนในแท่งอันดับ
+//   rows  — ทุกชื่อหน้าที่มีข้อมูล (รวมหน้าที่ไม่ใช่เมนู และ 'other') เรียงมากไปน้อย พร้อมสัดส่วนของยอดรายหน้ารวม — ตารางเต็ม
+//   total — ผลรวมรายหน้า (ฐานของสัดส่วน — ไม่ใช่ยอดสะสมทั้งหมดบนการ์ด เพราะรายหน้าเริ่มนับทีหลัง)
+// ชื่อที่ไม่อยู่ในตาราง (ถูกยิงตรงด้วยชื่อมั่ว หรือหน้าที่ลบออกจากแอปแล้ว) รวมเป็น 'other'
+export function pageRanking(rows) {
+  const sums = new Map()
+  for (const r of rows ?? []) {
+    const key = PAGE_BY_KEY.has(r.page_key) ? r.page_key : OTHER_PAGE.key
+    const prev = sums.get(key) ?? { opens: 0, visitors: 0 }
+    sums.set(key, { opens: prev.opens + Number(r.opens ?? 0), visitors: prev.visitors + Number(r.visitors ?? 0) })
+  }
+  const total = [...sums.values()].reduce((sum, v) => sum + v.opens, 0)
+  const byOpensThenName = (a, b) => b.opens - a.opens || a.label.localeCompare(b.label, 'th')
+  const entry = key => {
+    const page = PAGE_BY_KEY.get(key)
+    const v = sums.get(key) ?? { opens: 0, visitors: 0 }
+    return { key, label: page.label, kind: page.kind, opens: v.opens, visitors: v.visitors, share: total ? v.opens / total : 0 }
+  }
+  const menuEntries = MENU_PAGE_KEYS.map(entry)
+  return {
+    total,
+    rows: [...sums.keys()].map(entry).sort(byOpensThenName),
+    menus: menuEntries.filter(p => p.kind !== 'transit').sort(byOpensThenName),
+    nav: menuEntries.filter(p => p.kind === 'transit').sort(byOpensThenName),
+  }
+}
