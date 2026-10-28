@@ -136,7 +136,8 @@ export const PAGE_CATALOG = [
   { key: 'auth',               path: '/auth',                label: 'เข้าสู่ระบบ/สมัครสมาชิก',               kind: 'transit' },
   { key: 'reset-password',     path: '/reset-password',      label: 'ตั้งรหัสผ่านใหม่',                      kind: 'transit' },
   { key: 'profile',            path: '/profile',             label: 'โปรไฟล์ของฉัน',                        kind: 'transit' },
-  { key: 'reports',            path: '/reports',             label: 'รายงานทั้งหมด',                        kind: 'transit' },
+  { key: 'profile-notifications', path: '/profile/notifications', label: 'ตั้งค่าการแจ้งเตือน',             kind: 'transit' },
+  { key: 'reports',            path: '/reports',           label: 'รายงานทั้งหมด',                        kind: 'transit' },
   { key: 'complaint',          path: '/complaint',           label: 'ร้องเรียน/ร้องทุกข์',                   kind: 'service' },
   { key: 'complaint-legacy',   path: '/complaint-legacy',    label: 'ร้องเรียน (หน้าแบบเดิม)',               kind: 'service' },
   { key: 'request',            path: '/request',             label: 'แบบฟอร์มคำร้อง',                       kind: 'service' },
@@ -246,10 +247,14 @@ export function addSeenPageKey(day, keys, today, pageKey) {
   return [...base, pageKey].slice(-MAX_STORED_PAGE_KEYS)
 }
 
+// เมนูต้องถูกเปิดอย่างน้อยกี่ครั้งในช่วงที่เลือกถึงจะขึ้นแท่งอันดับ — เจ้าของระบบสั่ง 2569-10-28 ให้ซ่อนเมนูที่ไม่มีคนดู
+// ("แสดงเฉพาะที่มีคนดูพอ") ตั้ง 1 = เปิดอย่างน้อย 1 ครั้ง ถ้ายอดโตจนเมนูที่ถูกเปิดครั้งสองครั้งทำให้แท่งรก ค่อยปรับเลขนี้ตัวเดียว
+export const MIN_MENU_OPENS = 1
+
 // ผลของ get_site_page_ranking → ข้อมูลพร้อมแสดง
-//   menus — เมนูในแถบข้าง (MENU_PAGE_KEYS) ที่ไม่ใช่หน้านำทาง เรียงมากไปน้อย "ครบทุกเมนู" รวมเมนูที่ยังไม่มีใครเปิด (0 ครั้ง)
-//           เมนูที่ไม่มีใครใช้เลยเป็นข้อมูลเหมือนกัน ถ้าตัดทิ้งเจ้าของจะนึกว่าเมนูนั้นไม่อยู่ในรายงาน
-//   nav   — เมนูนำทางในแถบข้าง (หน้าแรก เมนูทั้งหมด รายงานทั้งหมด) แยกไว้ ไม่ปนในแท่งอันดับ
+//   menus       — เมนูในแถบข้าง (MENU_PAGE_KEYS) ที่ไม่ใช่หน้านำทาง และถูกเปิดอย่างน้อย MIN_MENU_OPENS ครั้ง เรียงมากไปน้อย
+//   hiddenMenus — จำนวนเมนูที่ไม่ขึ้นแท่งเพราะยังไม่มีคนเปิด (หน้ารายงานบอกจำนวนไว้บรรทัดเล็กๆ จะได้ไม่เข้าใจว่าเมนูนั้นหายไปจากระบบ)
+//   nav         — เมนูนำทางในแถบข้าง (หน้าแรก เมนูทั้งหมด รายงานทั้งหมด) แยกไว้ ไม่ปนในแท่งอันดับ
 //   rows  — ทุกชื่อหน้าที่มีข้อมูล (รวมหน้าที่ไม่ใช่เมนู และ 'other') เรียงมากไปน้อย พร้อมสัดส่วนของยอดรายหน้ารวม — ตารางเต็ม
 //   total — ผลรวมรายหน้า (ฐานของสัดส่วน — ไม่ใช่ยอดสะสมทั้งหมดบนการ์ด เพราะรายหน้าเริ่มนับทีหลัง)
 // ชื่อที่ไม่อยู่ในตาราง (ถูกยิงตรงด้วยชื่อมั่ว หรือหน้าที่ลบออกจากแอปแล้ว) รวมเป็น 'other'
@@ -268,10 +273,13 @@ export function pageRanking(rows) {
     return { key, label: page.label, kind: page.kind, opens: v.opens, visitors: v.visitors, share: total ? v.opens / total : 0 }
   }
   const menuEntries = MENU_PAGE_KEYS.map(entry)
+  const allMenus = menuEntries.filter(p => p.kind !== 'transit').sort(byOpensThenName)
+  const menus = allMenus.filter(p => p.opens >= MIN_MENU_OPENS)
   return {
     total,
     rows: [...sums.keys()].map(entry).sort(byOpensThenName),
-    menus: menuEntries.filter(p => p.kind !== 'transit').sort(byOpensThenName),
+    menus,
+    hiddenMenus: allMenus.length - menus.length,
     nav: menuEntries.filter(p => p.kind === 'transit').sort(byOpensThenName),
   }
 }
