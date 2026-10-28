@@ -69,7 +69,7 @@ async function fixture(role = 'staff', options = {}) {
       let data = []
       let status = 200
       if (url.pathname.includes('/auth/v1/user')) data = user
-      else if (url.pathname.includes('/rest/v1/municipalities')) data = { id: mid, slug: 'demo', name: 'TEST หน่วยงานทดสอบ', org_type: 'เทศบาลตำบล', ui_style: 'eco-friendly', theme_color: '#0f766e', enabled_modules: null }
+      else if (url.pathname.includes('/rest/v1/municipalities')) data = { id: mid, slug: 'demo', name: options.longName ? 'องค์การบริหารส่วนตำบลทดสอบระบบบัญชีผู้ใช้และบริการประชาชน' : 'TEST หน่วยงานทดสอบ', org_type: 'เทศบาลตำบล', ui_style: options.uiStyle || 'eco_friendly', theme_color: '#0f766e', enabled_modules: options.enabledModules || null, logo_url: options.noLogo ? null : '/test-agency-logo.svg' }
       else if (url.pathname.includes('/rest/v1/profiles')) {
         if (write) Object.assign(profile, req.postDataJSON())
         data = req.headers().accept?.includes('object+json') ? profile : [profile]
@@ -85,7 +85,9 @@ async function fixture(role = 'staff', options = {}) {
       else if (req.headers().accept?.includes('object+json')) data = null
       return route.fulfill({ status, headers: { ...headers, 'content-range': '0-0/0' }, contentType: 'application/json', body: JSON.stringify(data) })
     }
-    if (req.resourceType() === 'image') return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>' })
+    if (req.resourceType() === 'image') return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: url.pathname === '/test-agency-logo.svg'
+      ? '<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><circle cx="36" cy="36" r="35" fill="#e0f2fe"/><path d="M15 27 36 15 57 27H15Zm5 5h5v18h-5zm13 0h6v18h-6zm14 0h5v18h-5zM15 53h42v5H15z" fill="#075985"/><text x="36" y="66" text-anchor="middle" fill="#075985" font-family="Arial" font-size="8">TEST</text></svg>'
+      : '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>' })
     if (url.origin !== base) return route.abort()
     assert(['GET', 'HEAD'].includes(req.method()), 'non-GET outside fixture')
     return route.continue()
@@ -108,6 +110,11 @@ async function geometry(page, label) {
     tabs: [...n.querySelectorAll('a')].map(a => { const r = a.getBoundingClientRect(); const s = a.querySelector('span'); const range = document.createRange(); range.selectNodeContents(s); const t = range.getBoundingClientRect(); return { text: s.textContent, x: r.x, y: r.y, right: r.right, w: r.width, h: r.height, textRight: t.right, textLeft: t.left } }),
     overflow: [...document.querySelectorAll('[data-account-page],main')].some(x => x.scrollWidth > x.clientWidth + 1) }))
   assert(geo.scroll <= geo.client + 1 && !geo.overflow, label + ' overflow ' + JSON.stringify(geo))
+  const sidebar = page.locator('[data-account-sidebar]')
+  assert.equal(await sidebar.isVisible(), geo.width >= 768, label + ' sidebar breakpoint')
+  assert.equal(await page.locator('[data-account-nav-toggle]').isVisible(), geo.width < 768, label + ' drawer trigger breakpoint')
+  assert.equal(await page.locator('[data-account-site-header] header').count(), 1, label + ' duplicated site header')
+  assert(await page.locator('[data-account-site-header] img[src="/test-agency-logo.svg"]').count() > 0, label + ' missing tenant logo')
   for (const t of geo.tabs) assert(t.w >= 44 && t.h >= 44 && t.x >= 0 && t.right <= geo.width + 1 && t.textLeft >= t.x && t.textRight <= t.right + 1, label + ' clipped tab ' + JSON.stringify(t))
   if (geo.width < 640 && geo.tabs.length === 4) assert(geo.tabs[2].y > geo.tabs[0].y, label + ' mobile must use two rows')
   results.push({ label, width: geo.width, tabs: geo.tabs.length })
@@ -120,6 +127,19 @@ async function test(name, run) {
 }
 
 try {
+  for (const uiStyle of ['eco_friendly', 'clean_minimal', 'wave_fluid', 'civic_friendly', 'smart_modern', 'kledkaew', 'service_hub']) {
+    const f = await fixture('staff', { uiStyle })
+    try {
+      await go(f.page, '/profile', 'account')
+      for (const width of [390, 1366]) {
+        await f.page.setViewportSize({ width, height: 900 })
+        await geometry(f.page, uiStyle)
+        assert(await f.page.locator('[data-account-site-header] img[src="/test-agency-logo.svg"]').first().evaluate(img => img.complete && img.naturalWidth > 0))
+        await f.page.screenshot({ path: path.join(output, `${engine}-${uiStyle}-${width}.png`), fullPage: false })
+      }
+      assert.deepEqual(f.errors, [])
+    } finally { await f.context.close() }
+  }
   await test('4 account tabs, responsive layouts, lazy reads and history', async ({ page, state }) => {
     for (const [route, active] of [['/profile', 'account'], ['/profile?tab=security', 'security'], ['/profile/notifications', 'notifications'], ['/staff/my-signatures', 'signatures']]) {
       await go(page, route, active)
@@ -153,6 +173,17 @@ try {
     await page.locator('[data-account-tab="security"]').click()
     assert.equal(new URL(page.url()).search, '')
     assert.equal(await page.getByPlaceholder('ชื่อ', { exact: true }).inputValue(), 'ทดสอบแก้ชื่อ')
+    page.once('dialog', d => d.dismiss())
+    await page.locator('[data-account-site-header]').getByRole('button', { name: 'การแจ้งเตือน', exact: true }).click()
+    assert.equal(new URL(page.url()).pathname, '/profile', 'shared header bell must not discard unsaved edits')
+    await page.locator('[data-account-nav-toggle]').click()
+    const drawer = page.getByRole('dialog', { name: 'เมนูหลัก', exact: true })
+    await drawer.waitFor()
+    page.once('dialog', d => d.dismiss())
+    await drawer.locator('[data-drawer-item="/complaint"]').click()
+    assert.equal(new URL(page.url()).pathname, '/profile', 'drawer must retain an unsaved profile when leaving is cancelled')
+    await page.keyboard.press('Escape')
+    await page.waitForFunction(() => document.activeElement?.hasAttribute('data-account-nav-toggle'))
     await page.getByRole('button', { name: 'ปิดช่องแก้ไขชื่อ-สกุล', exact: true }).click()
     assert(await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).isVisible(), 'collapsed editor must retain unsaved-change state')
     page.once('dialog', d => d.accept())
@@ -181,6 +212,40 @@ try {
     assert(new URL(page.url()).pathname === '/staff/my-signatures')
     await pin.fill('')
   })
+  {
+    const f = await fixture('staff', { longName: true, enabledModules: ['events'] })
+    try {
+      await go(f.page, '/profile/notifications', 'notifications')
+      for (const width of [320, 767, 768, 1024, 1920]) {
+        await f.page.setViewportSize({ width, height: 900 })
+        await geometry(f.page, 'long agency name')
+      }
+      assert.equal(await f.page.locator('[data-account-sidebar] a[href="/complaint"]').count(), 0, 'disabled complaint module must stay hidden')
+      await f.page.setViewportSize({ width: 390, height: 844 })
+      await f.page.locator('[data-account-nav-toggle]').click()
+      const drawer = f.page.getByRole('dialog', { name: 'เมนูหลัก', exact: true })
+      await drawer.waitFor()
+      assert.equal(await drawer.locator('[data-drawer-item="/complaint"]').count(), 0)
+      const calendar = drawer.locator('[data-drawer-item="/events"]')
+      await calendar.scrollIntoViewIfNeeded()
+      assert(await calendar.evaluate(el => { const r = el.getBoundingClientRect(); return r.width >= 44 && r.height >= 44 }))
+      await calendar.click()
+      await f.page.waitForURL(u => u.pathname === '/events')
+      assert.equal(f.state.writes.length, 0)
+      assert.deepEqual(f.errors, [])
+      results.push({ name: 'mobile drawer navigation, module visibility and long agency name', passed: true })
+    } finally { await f.context.close() }
+  }
+  {
+    const f = await fixture('citizen', { noLogo: true })
+    try {
+      await go(f.page, '/profile', 'account')
+      assert.equal(await f.page.locator('[data-account-site-header] img[src="/test-agency-logo.svg"]').count(), 0)
+      assert((await f.page.locator('[data-account-site-header]').innerText()).includes('TEST หน่วยงานทดสอบ'))
+      assert.deepEqual(f.errors, [])
+      results.push({ name: 'agency without logo keeps the existing header fallback', passed: true })
+    } finally { await f.context.close() }
+  }
   await test('push opt-in, opt-out, API failure and retry', async ({ page, state }) => {
     await go(page, '/profile/notifications', 'notifications')
     assert.deepEqual(await page.evaluate(() => window.__pushCalls), { permission: 0, subscribe: 0, unsubscribe: 0 })
