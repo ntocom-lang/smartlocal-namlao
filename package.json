@@ -104,6 +104,7 @@
     "test:telegram": "node tests/telegram-notification-message.test.mjs",
     "test:complaint-intake": "node tests/complaint-intake.test.mjs",
     "test:complaint-finish": "node tests/complaint-finish.test.mjs",
+    "test:complaint-push": "node tests/complaint-push.test.mjs",
     "test:complaint-parked": "node tests/complaint-parked.test.mjs",
     "test:complaint-parked-db": "node tests/complaint-parked-db.test.mjs",
     "test:complaint-track":"node tests/complaint-track.test.mjs",
