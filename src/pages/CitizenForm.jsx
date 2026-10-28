@@ -427,9 +427,6 @@ export default function CitizenForm() {
   // — ใช้กลไกเดิมทั้งชุด: ซ่อนจากตัวเลือก + ลิงก์เก่า ?category=water_repair ขึ้นแถบเตือนและส่งไม่ได้
   // คำนวณตอน render ไม่ใช่ใน effect ที่โหลดหมวด เพราะสถานะโมดูลอาจมาทีหลังรายการหมวด
   const moduleHiddenValues = moduleHiddenCategoryValues(isModuleEnabled)
-  const categories = moduleHiddenValues.length
-    ? dbCategories.filter((c) => !moduleHiddenValues.includes(c.value))
-    : dbCategories
   const disabledCategoryValues = moduleHiddenValues.length
     ? new Set([...dbDisabledCategoryValues, ...moduleHiddenValues])
     : dbDisabledCategoryValues
@@ -716,10 +713,10 @@ export default function CitizenForm() {
         })
       }
 
-      const allCats = [...(ftConfig?.categories ?? []), ...categories]
-      const catLabel = allCats.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
+      // ส่งแค่เลขคำร้อง — server หาเจ้าหน้าที่ที่ดูแลเรื่องนี้และประกอบข้อความเอง
+      // ห้ามส่งรายละเอียดที่ประชาชนพิมพ์ไปกับแจ้งเตือน (ขึ้นจอล็อก) — เดิมส่งไปถึงทุกเครื่องของ อปท. รวมประชาชน
       supabase.functions.invoke('send-push', {
-        body: { municipality_id: tenant.id, title: `คำร้องใหม่: ${catLabel}`, body: finalDetail.slice(0, 100), url: '/admin' },
+        body: { complaint_id: complaintId, kind: 'complaint_created' },
       }).catch(() => {})
       notifyTelegram('complaint_created', complaintId)
     } catch (err) {

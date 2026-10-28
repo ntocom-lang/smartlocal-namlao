@@ -1878,15 +1878,11 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
       }
 
       // push "ดำเนินการแล้ว" ส่งจาก finishComplaint() (src/lib/complaintFinish.js)
-      if (techNote && techNote !== (c?.technician_note ?? '') && c?.user_id) {
-        // แจ้งประชาชนเมื่อเจ้าหน้าที่บันทึกข้อความใหม่ (เดิมไม่มี push เลย ต้องเข้าแอปมาเช็คเอง)
+      if (techNote && techNote !== (c?.technician_note ?? '')) {
+        // แจ้งประชาชนเมื่อเจ้าหน้าที่บันทึกข้อความใหม่ — ส่งแค่เลขคำร้อง server หาผู้ร้องและประกอบข้อความเอง
+        // (officer/staff ไม่ได้ user_id มากับรายการตาม PDPA เดิมจึงไม่เคยแจ้ง · เรื่องลับไม่ขึ้นชื่อหมวดบนจอล็อก)
         supabase.functions.invoke('send-push', {
-          body: {
-            user_id: c.user_id,
-            title: 'เจ้าหน้าที่บันทึกข้อความถึงคุณ',
-            body: `มีบันทึกใหม่ในคำร้อง${categoryNameOf(CATEGORY_LABEL, c?.category)}`,
-            url: '/my-complaints',
-          },
+          body: { complaint_id: id, kind: 'complaint_note' },
         }).catch(() => {})
       }
 

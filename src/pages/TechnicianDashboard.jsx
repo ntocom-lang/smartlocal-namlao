@@ -254,15 +254,11 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
     if (!upErr) {
       const newPhotos = [...photos, url]
       setPhotos(newPhotos)
-      await supabase.from('complaints').update({ work_photos: newPhotos }).eq('id', c.id)
-      if (c.user_id) {
+      const { error: saveError } = await supabase.from('complaints').update({ work_photos: newPhotos }).eq('id', c.id)
+      if (!saveError) {
+        // ส่งแค่เลขคำร้อง — server หาผู้ร้องและประกอบข้อความเอง (เรื่องลับไม่ขึ้นชื่อหมวดบนจอล็อก)
         supabase.functions.invoke('send-push', {
-          body: {
-            user_id: c.user_id,
-            title: 'มีรูปหลักฐานการทำงานใหม่',
-            body: `เจ้าหน้าที่เพิ่มรูปความคืบหน้าในคำร้อง${categoryNameOf(CATEGORY_LABEL, c.category)}`,
-            url: '/my-complaints',
-          },
+          body: { complaint_id: c.id, kind: 'complaint_photo' },
         }).catch(() => {})
       }
     }
