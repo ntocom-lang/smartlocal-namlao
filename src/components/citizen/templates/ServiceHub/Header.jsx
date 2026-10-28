@@ -1,22 +1,16 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Bell, User, LogIn, LogOut } from 'lucide-react'
+import { Bell, LogIn } from 'lucide-react'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { useAuth } from '../../../../contexts/AuthContext'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
-import { signOutSafely } from '../../../../lib/supabase'
 import PortalSwitcher from '../../../layout/PortalSwitcher'
 import UserProfileBadge from '../../../layout/UserProfileBadge'
 
 export default function ServiceHubHeader() {
   const { tenant } = useTenant()
-  const { session, avatarUrl } = useAuth()
+  const { session } = useAuth()
   const { unreadCount } = useNotifications()
   const navigate = useNavigate()
-
-  async function logout() {
-    await signOutSafely('/')
-    navigate('/')
-  }
 
   // สีพื้นหลังฟ้าอมเขียวคงที่ตัวนี้ตั้งใจไม่ผูกกับ --color-primary ของแต่ละ อปท. — เป็นเอกลักษณ์ของธีมนี้
   // โดยเฉพาะ (ตามภาพต้นแบบ) ต่างจากธีมอื่นที่ให้ header ไล่สีตาม theme_color ที่แอดมินตั้งเอง
@@ -39,12 +33,8 @@ export default function ServiceHubHeader() {
 
         {session ? (
           <div className="hidden lg:flex items-center gap-2">
-            <UserProfileBadge tone="onLight" />
             <PortalSwitcher className="flex" tone="onLight" />
-            <button onClick={logout}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/60 hover:bg-white/90 text-slate-700 transition-colors border border-white/80">
-              <LogOut size={13} /> ออกจากระบบ
-            </button>
+            <UserProfileBadge tone="onLight" />
           </div>
         ) : (
           <Link to="/auth"
@@ -63,17 +53,9 @@ export default function ServiceHubHeader() {
           )}
         </button>
 
-        {/* Mobile profile link */}
+        {/* เมนูบัญชีบนมือถือ */}
         {session ? (
-          <Link to="/profile" className="lg:hidden shrink-0">
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover border-2 border-white/80" />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-white/70 border-2 border-white/80 flex items-center justify-center text-gray-700">
-                <User size={16} />
-              </div>
-            )}
-          </Link>
+          <UserProfileBadge compact tone="onLight" className="lg:hidden" />
         ) : (
           <Link to="/auth" className="lg:hidden p-1.5 text-gray-700 hover:text-gray-900 transition-colors shrink-0" aria-label="เข้าสู่ระบบ">
             <LogIn size={20} />

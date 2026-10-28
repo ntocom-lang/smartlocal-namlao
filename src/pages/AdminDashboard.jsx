@@ -5834,7 +5834,6 @@ export default function AdminDashboard() {
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
   const [currentUserRole, setCurrentUserRole] = useState(null)
   const [currentUserId, setCurrentUserId] = useState(null)
-  const [currentUserAvatar, setCurrentUserAvatar] = useState(null)
   const [currentUserName, setCurrentUserName] = useState(null)
   const [technicians, setTechnicians] = useState([])
 
@@ -5858,11 +5857,10 @@ export default function AdminDashboard() {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) return
       setCurrentUserId(data.session.user.id)
-      supabase.from('profiles').select('role, avatar_url, full_name').eq('id', data.session.user.id).single()
+      supabase.from('profiles').select('role, full_name').eq('id', data.session.user.id).single()
         .then(({ data: p }) => {
           const r = p?.role ?? 'citizen'
           setCurrentUserRole(r)
-          setCurrentUserAvatar(p?.avatar_url ?? null)
           setCurrentUserName(p?.full_name ?? null)
           if (r === 'viewer' && !location.state?.page) setActivePage('dashboard')
           if (r === 'council' && !location.state?.page) setActivePage('dashboard')
@@ -5971,13 +5969,8 @@ export default function AdminDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            <UserProfileBadge tone="onDark" />
             <PortalSwitcher className="flex" />
-            <button onClick={handleLogout}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
-              <LogOut size={13} />
-              ออกจากระบบ
-            </button>
+            <UserProfileBadge tone="onDark" onLogout={handleLogout} onSystemSettings={() => setActivePage('system-settings')} />
           </div>
         </div>
 
@@ -6010,15 +6003,7 @@ export default function AdminDashboard() {
               </span>
             )}
           </button>
-          <button onClick={() => navigate('/profile')} className="p-1 shrink-0">
-            {currentUserAvatar ? (
-              <img src={currentUserAvatar} alt="โปรไฟล์" className="w-7 h-7 rounded-full object-cover border-2 border-white/60" />
-            ) : (
-              <div className="w-7 h-7 rounded-full bg-white/20 border-2 border-white/60 flex items-center justify-center text-white text-xs font-bold">
-                {(currentUserName || '?')[0].toUpperCase()}
-              </div>
-            )}
-          </button>
+          <UserProfileBadge compact onLogout={handleLogout} onSystemSettings={() => setActivePage('system-settings')} />
         </div>
       </header>
 

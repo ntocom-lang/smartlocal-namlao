@@ -1,9 +1,8 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Bell, User, Home, Newspaper, ClipboardList, LayoutGrid, CalendarDays, Luggage, LogOut } from 'lucide-react'
+import { Bell, User, Home, Newspaper, ClipboardList, LayoutGrid, CalendarDays, Luggage } from 'lucide-react'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
 import { useAuth } from '../../../../contexts/AuthContext'
-import { signOutSafely } from '../../../../lib/supabase'
 import { moduleForPath } from '../../../../lib/staffModules'
 import PortalSwitcher from '../../../layout/PortalSwitcher'
 import UserProfileBadge from '../../../layout/UserProfileBadge'
@@ -22,12 +21,8 @@ export default function Header() {
   const navigate = useNavigate()
   const location = useLocation()
   const { unreadCount } = useNotifications()
-  const { session, displayName, avatarUrl } = useAuth()
+  const { session } = useAuth()
 
-  async function logout() {
-    await signOutSafely('/')
-    navigate('/')
-  }
   const pcNav = PC_NAV.filter(({ href }) => {
     const key = moduleForPath(href)
     return !key || isModuleEnabled(key)
@@ -57,23 +52,7 @@ export default function Header() {
         style={{ background: 'linear-gradient(to top, var(--color-primary-dark), transparent)' }}></div>
       
       <div className="relative z-10 px-4 pt-3 pb-1 flex justify-between items-center max-w-6xl mx-auto">
-        <button onClick={() => navigate(session ? '/profile' : '/auth')}
-          aria-label={session ? 'บัญชีของฉัน' : 'เข้าสู่ระบบ'}
-          className="p-1.5 text-white hover:bg-white/10 rounded-full transition-colors -ml-1">
-          {session ? (
-            <div className="w-8 h-8 rounded-full bg-white/20 border border-white/60 flex items-center justify-center font-bold text-white shadow-sm overflow-hidden">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-sm">{displayName?.[0] ?? <User size={18} />}</span>
-              )}
-            </div>
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-white/20 border border-white/60 flex items-center justify-center shadow-sm text-white">
-              <User size={18} />
-            </div>
-          )}
-        </button>
+        <Link to="/" aria-label="กลับหน้าแรก" className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-white/10"><Home size={20} /></Link>
         
         <Link to="/" className="flex flex-col items-center">
           <div className="flex items-center gap-2">
@@ -87,6 +66,7 @@ export default function Header() {
           </div>
         </Link>
         
+        <div className="flex items-center gap-2">
         <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน"
           className="relative p-2 text-white/90 hover:text-white transition-colors -mr-2">
           <Bell size={24} />
@@ -96,6 +76,11 @@ export default function Header() {
             </span>
           )}
         </button>
+          {session ? <>
+            <UserProfileBadge compact className="md:hidden" />
+            <UserProfileBadge className="hidden md:block" />
+          </> : <Link to="/auth" aria-label="เข้าสู่ระบบ" className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-white/10"><User size={20} /></Link>}
+        </div>
       </div>
 
       <div className="relative z-10 max-w-6xl mx-auto px-4 mt-2 flex flex-col items-center text-center">
@@ -132,12 +117,7 @@ export default function Header() {
       <div className="hidden md:flex flex-col items-center gap-3 relative z-10 pb-3 px-4 max-w-6xl mx-auto mt-3">
         {session ? (
           <div className="flex items-center gap-2 flex-wrap justify-center">
-            <UserProfileBadge tone="onDark" />
             <PortalSwitcher className="flex" />
-            <button onClick={logout}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
-              <LogOut size={13} /> ออกจากระบบ
-            </button>
           </div>
         ) : (
           <PortalSwitcher className="flex" />

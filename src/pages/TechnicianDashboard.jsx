@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase'
 import { fetchComplaintPrivateDetail } from '../lib/complaintPrivacy'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
+import UserProfileBadge from '../components/layout/UserProfileBadge'
 import OdorReportPanel from '../components/staff/OdorReportPanel'
 import { compressImage } from '../lib/imageUtils'
 import { notifyTelegram } from '../lib/notifyTelegram'
@@ -537,7 +538,6 @@ export default function TechnicianDashboard() {
   const [selected, setSelected] = useState(null)
   const [catMeta, setCatMeta] = useState({})
   const [myName, setMyName] = useState('')
-  const [myAvatar, setMyAvatar] = useState(null)
   const [seenIds, setSeenIds] = useState(getSeenIds)
 
   // ดึงหมวดหมู่ที่ Admin สร้างเอง merge เข้า CATEGORY_LABEL/EMOJI
@@ -560,11 +560,10 @@ export default function TechnicianDashboard() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) return
-      supabase.from('profiles').select('full_name, role, avatar_url').eq('id', data.session.user.id).single()
+      supabase.from('profiles').select('full_name, role').eq('id', data.session.user.id).single()
         .then(({ data: p }) => {
           if (p?.role !== 'technician') navigate('/')
           setMyName(p?.full_name ?? 'ช่าง')
-          setMyAvatar(p?.avatar_url ?? null)
         })
     })
   }, [navigate])
@@ -831,6 +830,7 @@ export default function TechnicianDashboard() {
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
               รีเฟรช
             </button>
+            <UserProfileBadge tone="onLight" />
           </div>
         </div>
       </div>
@@ -857,15 +857,7 @@ export default function TechnicianDashboard() {
               className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0 disabled:opacity-50">
               <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
             </button>
-            <button onClick={() => navigate('/profile')} className="p-1 shrink-0">
-              {myAvatar ? (
-                <img src={myAvatar} alt="โปรไฟล์" className="w-7 h-7 rounded-full object-cover border-2 border-white/60" />
-              ) : (
-                <div className="w-7 h-7 rounded-full bg-white/20 border-2 border-white/60 flex items-center justify-center text-white text-xs font-bold">
-                  {(myName || '?')[0].toUpperCase()}
-                </div>
-              )}
-            </button>
+            <UserProfileBadge compact />
           </div>
           <p className="text-white/70 text-[11px] mt-2 relative z-10">{myName}</p>
         </div>
