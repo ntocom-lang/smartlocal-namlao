@@ -57,7 +57,7 @@ export const supabase = {
 }
 `
 const entry = `
-import React, { useState } from 'react'
+import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, useLocation } from 'react-router-dom'
 import Badge from '/src/components/layout/UserProfileBadge.jsx'
@@ -69,17 +69,15 @@ if (${JSON.stringify(themes)}.includes(target)) Component = (await import('/src/
 if (${JSON.stringify(portals)}.includes(target) || target === 'ProfilePage') Component = (await import('/src/pages/' + target + '.jsx')).default
 function Fixture() {
   const location = useLocation()
-  const [settings, setSettings] = useState(false)
   return <>
     {Component ? <Component /> : <header style={{ overflow: 'hidden', height: 64, padding: 8, background: '#0f766e', display: 'flex', justifyContent: query.has('left') ? 'flex-start' : 'flex-end' }}>
       <button data-before>ก่อนหน้า</button>
-      <Badge compact={query.has('compact')} onSystemSettings={query.has('callback') ? () => setSettings(true) : undefined} />
+      <Badge compact={query.has('compact')} />
       <button data-after>ถัดไป</button>
     </header>}
     <main style={{ minHeight: 1200, padding: 24, background: '#eef2f7' }}>
       <h1>พื้นที่ทดสอบเมนูบัญชี</h1><button data-outside>พื้นที่ด้านนอก</button>
-      <p data-location style={{ overflowWrap: 'anywhere' }}>{location.pathname + location.search + location.hash}</p><p data-route-state>{location.state?.page || ''}</p>
-      {settings && <p data-settings-open>ตั้งค่าระบบ</p>}
+      <p data-location style={{ overflowWrap: 'anywhere' }}>{location.pathname + location.search + location.hash}</p>
     </main>
   </>
 }
@@ -162,6 +160,7 @@ try {
       const before = page.url()
       await button().tap()
       await menu().waitFor()
+      assert.equal(await menu().getByRole('menuitem', { name: 'ตั้งค่าระบบ', exact: true }).count(), 0, `${target}/${width}: system settings must not appear in account menu`)
       assert.equal(page.url(), before, 'opening account must not navigate')
       await assertGeometry(`${target}/${width}`)
       assert.deepEqual(failures, [], `${target}/${width}: page errors`)
@@ -178,7 +177,7 @@ try {
     await load('generic', role)
     await button().click()
     assert.equal(await menu().locator('[data-account-signature]').count(), role === 'citizen' ? 0 : 1, role)
-    assert.equal(await menu().locator('[data-account-settings]').count(), ['admin', 'superadmin'].includes(role) ? 1 : 0, role)
+    assert.equal(await menu().getByRole('menuitem', { name: 'ตั้งค่าระบบ', exact: true }).count(), 0, role)
     await page.keyboard.press('End')
     assert(await page.locator('[data-account-logout]').evaluate(el => el === document.activeElement))
     await page.keyboard.press('ArrowDown')
@@ -198,7 +197,7 @@ try {
     await page.locator('[data-outside]').click()
     assert.equal(await menu().count(), 0)
   }
-  for (const [attr, url] of [['profile', '/profile'], ['signature', '/staff/my-signatures'], ['notifications', '/profile/notifications'], ['security', '/profile?tab=security'], ['settings', '/admin']]) {
+  for (const [attr, url] of [['profile', '/profile'], ['signature', '/staff/my-signatures'], ['notifications', '/profile/notifications'], ['security', '/profile?tab=security']]) {
     await load('generic', 'admin')
     await button().click()
     await page.locator(`[data-account-${attr}]`).click()
@@ -206,22 +205,9 @@ try {
     await page.waitForFunction(expected => document.querySelector('[data-location]')?.textContent === expected, url)
     assert.equal(await page.locator('[data-location]').textContent(), url)
     assert.equal(await menu().count(), 0)
-    if (attr === 'settings') assert.equal(await page.locator('[data-route-state]').textContent(), 'system-settings')
-  }
-  for (const width of [390, 1366]) {
-    await page.setViewportSize({ width, height: 900 })
-    await load('AdminDashboard', 'admin')
-    await button().click()
-    await page.locator('[data-account-settings]').click()
-    await page.getByRole('heading', { name: 'ชื่อและคำอธิบายระบบ', exact: true }).waitFor()
-    assert.equal(await menu().count(), 0)
-    assert.deepEqual(failures, [])
   }
   await page.setViewportSize({ width: 390, height: 844 })
-  await load('generic', 'admin', '&callback')
-  await button().click()
-  await page.locator('[data-account-settings]').click()
-  await page.locator('[data-settings-open]').waitFor()
+  await load('generic', 'admin')
   await button().click()
   await page.locator('[data-account-logout]').click()
   assert.equal(await page.evaluate(() => window.__signOutCalls), 1)
@@ -255,7 +241,7 @@ try {
   await button().tap()
   await assertGeometry('resize from PC to mobile')
   assert.equal(remoteRequests, 0, `fixture attempted an external request: ${JSON.stringify(blockedUrls)}`)
-  await writeFile(path.join(output, 'results.json'), JSON.stringify({ engine: engineName, version: browser.version(), results, extraChecks: ['role permissions', 'keyboard', 'outside dismiss', 'navigation', 'settings callback', 'logout', 'broken avatar', 'long name', 'security hash', 'anonymous', 'breakpoint resize'], remoteRequests }, null, 2))
+  await writeFile(path.join(output, 'results.json'), JSON.stringify({ engine: engineName, version: browser.version(), results, extraChecks: ['role permissions', 'keyboard', 'outside dismiss', 'navigation', 'no system settings entry', 'logout', 'broken avatar', 'long name', 'security hash', 'anonymous', 'breakpoint resize'], remoteRequests }, null, 2))
   console.log(`PASS ${results.length} layout cases + role/keyboard/navigation checks; no external requests`)
 } catch (error) {
   await page.screenshot({ path: path.join(output, 'failure.png') }).catch(() => {})
