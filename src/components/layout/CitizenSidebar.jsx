@@ -9,6 +9,7 @@ import { useTenant } from '../../contexts/TenantContext'
 import { useNotifications } from '../../contexts/NotificationsContext'
 import { signOutSafely } from '../../lib/supabase'
 import { moduleForPath } from '../../lib/staffModules'
+import PortalDrawer from '../common/PortalDrawer'
 
 const NAV_GROUPS = [
   {
@@ -61,15 +62,31 @@ const INACTIVE = 'rgba(255,255,255,0.6)'
 const DIVIDER  = 'rgba(255,255,255,0.08)'
 const LABEL    = 'rgba(255,255,255,0.35)'
 
-export default function CitizenSidebar() {
+export default function CitizenSidebar({ showOnAccount = false, drawerOpen = false, onDrawerClose, onBeforeNavigate } = {}) {
   const location         = useLocation()
   const navigate         = useNavigate()
   const { session, displayName, avatarUrl } = useAuth()
   const { tenant, isModuleEnabled } = useTenant()
   const { unreadCount }  = useNotifications()
 
-  if (HIDDEN_PATHS.some(p => location.pathname.startsWith(p))) return null
-  if (tenant?.ui_style === 'kledkaew') return null
+  // ใช้เฉพาะหน้าบัญชีที่ครอบด้วย layout กลาง ไม่เปิดแถบประชาชนทับหน้า staff/admin อื่น
+  const accountPage = showOnAccount && ['/profile', '/profile/notifications', '/staff/my-signatures'].includes(location.pathname)
+  if (!accountPage && HIDDEN_PATHS.some(p => location.pathname.startsWith(p))) return null
+  if (!accountPage && tenant?.ui_style === 'kledkaew') return null
+
+  const visibleGroups = NAV_GROUPS.map(group => ({
+    ...group,
+    items: group.items.filter(item => {
+      const key = moduleForPath(item.href)
+      return !key || isModuleEnabled(key)
+    }),
+  })).filter(group => group.items.length > 0)
+
+  function openFromDrawer(item) {
+    if (onBeforeNavigate?.(item.href) === false) return
+    onDrawerClose?.()
+    navigate(item.href)
+  }
 
   function isActive(href, exact) {
     return exact ? location.pathname === href : location.pathname.startsWith(href)
@@ -78,7 +95,13 @@ export default function CitizenSidebar() {
   async function logout() { await signOutSafely('/'); navigate('/') }
 
   return (
-    <aside className="hidden lg:flex flex-col w-56 shrink-0 shadow-lg self-start sticky top-0 max-h-screen overflow-y-auto"
+    <>
+    {accountPage && <PortalDrawer open={drawerOpen} onClose={onDrawerClose} tenant={tenant} portalLabel="บัญชีของฉัน" ariaLabel="เมนูหลัก"
+      homeItem={{ key: '/', href: '/', label: 'หน้าแรก', Icon: Home }} homeGroupLabel="เว็บหลัก"
+      groups={visibleGroups.map(group => ({ group: group.label, items: group.items.filter(item => item.href !== '/').map(item => ({ ...item, key: item.href })) })).filter(group => group.items.length > 0)}
+      activeKey={location.pathname} badges={{ '/notifications': unreadCount }} onSelect={openFromDrawer} />}
+    <aside aria-label="เมนูหลักด้านซ้าย" data-account-sidebar={accountPage ? '' : undefined}
+      className={`flex-col w-56 shrink-0 shadow-lg overflow-y-auto ${accountPage ? 'hidden md:flex h-full max-h-full [&_a]:min-h-11 [&_button]:min-h-11' : 'hidden lg:flex self-start sticky top-0 max-h-screen'}`}
       style={{ backgroundColor: BG, borderRight: `1px solid ${BORDER}` }}>
 
       {/* Brand */}
@@ -94,13 +117,7 @@ export default function CitizenSidebar() {
       {/* ตัดเมนูของโมดูลที่ อปท. ไม่ได้เปิดออก แล้วซ่อนหัวข้อกลุ่มที่ไม่เหลือเมนูเลย
           (ไม่งั้นจะเห็นหัวข้อ "ของฉัน" ลอยอยู่โดยไม่มีอะไรอยู่ข้างใต้) */}
       <nav className="flex-1 px-2.5 py-2 space-y-3">
-        {NAV_GROUPS.map(group => ({
-          ...group,
-          items: group.items.filter(item => {
-            const key = moduleForPath(item.href)
-            return !key || isModuleEnabled(key)
-          }),
-        })).filter(group => group.items.length > 0).map(group => (
+        {visibleGroups.map(group => (
           <div key={group.label}>
             <p className="px-3 mb-1 text-[9px] font-bold uppercase tracking-widest" style={{ color: LABEL }}>
               {group.label}
@@ -111,7 +128,7 @@ export default function CitizenSidebar() {
                 const content = (
                   <>
                     <Icon size={15} strokeWidth={active ? 2.2 : 1.5} className="shrink-0" />
-                    <span className="flex-1 truncate text-xs">
+                    <span className={`flex-1 text-xs ${accountPage ? 'leading-5' : 'truncate'}`}>
                       {label}
                     </span>
                     {badge && unreadCount > 0 && (
@@ -177,5 +194,6 @@ export default function CitizenSidebar() {
         )}
       </div>
     </aside>
+    </>
   )
 }
