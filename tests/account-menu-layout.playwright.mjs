@@ -198,7 +198,7 @@ try {
     await page.locator('[data-outside]').click()
     assert.equal(await menu().count(), 0)
   }
-  for (const [attr, url] of [['profile', '/profile'], ['signature', '/profile#signature'], ['notifications', '/notifications'], ['security', '/profile#security'], ['settings', '/admin']]) {
+  for (const [attr, url] of [['profile', '/profile'], ['signature', '/staff/my-signatures'], ['notifications', '/notifications'], ['security', '/profile#security'], ['settings', '/admin']]) {
     await load('generic', 'admin')
     await button().click()
     await page.locator(`[data-account-${attr}]`).click()

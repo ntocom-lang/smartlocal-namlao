@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
-import { ChevronLeft, ChevronRight, Pencil, Loader2, X, Eye, EyeOff, Smartphone } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FileSignature, Pencil, Loader2, X, Eye, EyeOff, Smartphone } from 'lucide-react'
 import { compressImage } from '../lib/imageUtils'
 import { useAuth } from '../contexts/AuthContext'
 import { useTenant } from '../contexts/TenantContext'
@@ -9,7 +9,6 @@ import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiNam
 import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf } from '../lib/thaiAddress'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import ActiveSessions from '../components/profile/ActiveSessions'
-import MyEsignSection from '../components/profile/MyEsignSection'
 import { validateNewPassword, PASSWORD_HINT } from '../lib/passwordPolicy'
 import { toHttps } from '../lib/basename'
 import { activeOrgTerms } from '../lib/orgTerms'
@@ -32,7 +31,7 @@ const ROLE_LABEL = {
 export default function ProfilePage() {
   const navigate = useNavigate()
   const { hash } = useLocation()
-  const { role: contextRole, refreshProfile } = useAuth()
+  const { role: contextRole, profileLoading, profileError, refreshProfile } = useAuth()
   const { tenant } = useTenant()
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState({
@@ -268,6 +267,11 @@ export default function ProfilePage() {
       setError(`เชื่อมต่อ ${label} ไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่`)
     }
     setLinking('')
+  }
+
+  // คงลิงก์/บุ๊กมาร์กเดิมให้ไปหน้าจัดการเฉพาะ โดยไม่เริ่มโหลดคลังในหน้าโปรไฟล์
+  if (hash === '#signature' && !profileLoading && !profileError && STAFF_ROLES.includes(contextRole)) {
+    return <Navigate to="/staff/my-signatures" state={{ returnTo: '/profile' }} replace />
   }
 
   if (loading) {
@@ -601,8 +605,15 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* ลายเซ็นของฉัน — รหัสลงนาม/ภาพลายเซ็น/ประวัติ เฉพาะเจ้าหน้าที่ (เมนูกดชื่อ → /profile#signature) */}
-        {STAFF_ROLES.includes(contextRole ?? profile.role) && <MyEsignSection />}
+        {/* ทางลัดเท่านั้น: หน้าโปรไฟล์ไม่โหลดข้อมูลหรือรูปจากคลังลายเซ็น */}
+        {STAFF_ROLES.includes(contextRole ?? profile.role) && (
+          <Link to="/staff/my-signatures" state={{ returnTo: '/profile' }} data-profile-signatures
+            className="flex min-h-14 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-xs hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+            <FileSignature size={20} className="shrink-0 text-slate-500" aria-hidden="true" />
+            <span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-800">ลายเซ็นของฉัน</span><span className="mt-1 block text-xs text-slate-500">จัดการภาพลายเซ็น รหัสลงนาม และประวัติในหน้าเฉพาะ</span></span>
+            <ChevronRight size={18} className="shrink-0 text-slate-400" aria-hidden="true" />
+          </Link>
+        )}
 
         {/* อุปกรณ์ที่ล็อกอินอยู่ — ให้เจ้าของบัญชีเตะ session ที่ลืมไว้บนเครื่องคนอื่นได้เอง */}
         <ActiveSessions />

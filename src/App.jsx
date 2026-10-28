@@ -40,6 +40,7 @@ const SurveyPage = lazyWithRetry(() => import('./pages/SurveyPage'))
 const SurveysPage = lazyWithRetry(() => import('./pages/SurveysPage'))
 const TechnicianDashboard = lazyWithRetry(() => import('./pages/TechnicianDashboard'))
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'))
+const MySignaturesPage = lazyWithRetry(() => import('./pages/MySignaturesPage'))
 const MyComplaints = lazyWithRetry(() => import('./pages/MyComplaints'))
 const MorePage = lazyWithRetry(() => import('./pages/MorePage'))
 const NotificationsPage = lazyWithRetry(() => import('./pages/NotificationsPage'))
@@ -667,6 +668,11 @@ function AppShell() {
           <Route path="/profile" element={
             <RequireAuth>
               <ProfilePage />
+            </RequireAuth>
+          } />
+          <Route path="/staff/my-signatures" element={
+            <RequireAuth staffOnly>
+              <MySignaturesPage />
             </RequireAuth>
           } />
           <Route path="/request" element={<CitizenForm />} />
