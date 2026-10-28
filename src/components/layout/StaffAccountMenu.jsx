@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Bell, ChevronDown, FileSignature, LogOut, Settings, ShieldCheck, UserRound, UsersRound } from 'lucide-react'
+import { Bell, ChevronDown, FileSignature, LogOut, ShieldCheck, UserRound, UsersRound } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useNotifications } from '../../contexts/NotificationsContext'
 import { ROLE_LABELS } from '../../lib/staffRoster'
@@ -10,7 +10,7 @@ import { signOutSafely } from '../../lib/supabase'
 
 // เมนูชุดเดียวกันทุกพอร์ทัล/ขนาดจอ คงชื่อ export เดิมให้หน้าเจ้าหน้าที่ใช้ต่อได้
 // วางเมนูใน body เพื่อไม่ถูก overflow-hidden ของหัวจอตัด แล้วจำกัดให้อยู่ในจอ
-export default function StaffAccountMenu({ onLogout, onSystemSettings, tone = 'onDark', compact = false, showRole = true, className = '' }) {
+export default function StaffAccountMenu({ onLogout, tone = 'onDark', compact = false, showRole = true, className = '' }) {
   const { session, role, displayName, avatarUrl } = useAuth()
   const { unreadCount } = useNotifications()
   const location = useLocation()
@@ -172,8 +172,6 @@ export default function StaffAccountMenu({ onLogout, onSystemSettings, tone = 'o
               {unreadCount > 0 && <span className="rounded-full bg-red-50 px-2 text-xs font-bold text-red-600">{unreadCount > 99 ? '99+' : unreadCount}</span>}
             </Link>
             <Link to="/profile?tab=security" role="menuitem" data-account-security onClick={close} className={itemCls}><ShieldCheck size={18} aria-hidden="true" />ความปลอดภัย</Link>
-            {(role === 'admin' || role === 'superadmin') && <Link to="/admin" state={{ page: 'system-settings' }} role="menuitem" data-account-settings
-              onClick={e => { close(); if (onSystemSettings) { e.preventDefault(); onSystemSettings() } }} className={itemCls}><Settings size={18} aria-hidden="true" />ตั้งค่าระบบ</Link>}
           </div>
           <div role="separator" className="mx-3 border-t border-slate-200" />
           <div role="presentation" className="p-1 pt-2">

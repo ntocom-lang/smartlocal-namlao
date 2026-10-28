@@ -5970,7 +5970,7 @@ export default function AdminDashboard() {
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <PortalSwitcher className="flex" />
-            <UserProfileBadge tone="onDark" onLogout={handleLogout} onSystemSettings={() => setActivePage('system-settings')} />
+            <UserProfileBadge tone="onDark" onLogout={handleLogout} />
           </div>
         </div>
 
@@ -6003,7 +6003,7 @@ export default function AdminDashboard() {
               </span>
             )}
           </button>
-          <UserProfileBadge compact onLogout={handleLogout} onSystemSettings={() => setActivePage('system-settings')} />
+          <UserProfileBadge compact onLogout={handleLogout} />
         </div>
       </header>
 
