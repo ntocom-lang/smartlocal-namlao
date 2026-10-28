@@ -1,8 +1,8 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { supabase } from './supabase'
 import {
-  addSeenPageKey, bangkokDay, isCountableEnvironment, isCountablePath, isFirstPageToday, isFirstTodayVisitor,
-  pageKeyForPath,
+  addSeenPageKey, autoReloadMark, bangkokDay, isCountableEnvironment, isCountablePath, isFirstPageToday,
+  isFirstTodayVisitor, pageKeyForPath, shouldSkipCountAfterAutoReload,
 } from './siteOpenStats.js'
 
 // ─── ตัวนับการเข้าชมเว็บไซต์: ยิง RPC + ถือยอดล่าสุดไว้ให้ท้ายเว็บ/หน้ารายงาน ───
@@ -18,6 +18,8 @@ const VISITOR_DAY_KEY = 'sl_site_visitor_day'
 // ชื่อกลุ่มหน้าที่เครื่องนี้เปิดแล้วของวัน เก็บเป็น JSON {day, keys} — ไว้ตอบ "เครื่องนี้เพิ่งเปิดหน้านี้ครั้งแรกของวันไหม"
 // ไม่เคยถูกส่งขึ้น server (server รู้แค่ true/false ของหน้าที่เปิดอยู่ตอนนั้น ไม่มีประวัติรายเครื่อง)
 const PAGE_KEYS_KEY = 'sl_site_page_keys'
+// ธง "หน้านี้กำลังจะถูกระบบโหลดซ้ำ" ใน sessionStorage (อยู่รอดการ reload ของแท็บเดียวกัน หายเมื่อปิดแท็บ) — ดู autoReloadMark
+const AUTO_RELOAD_KEY = 'sl_site_auto_reload'
 
 // รอให้หน้าอยู่นิ่งก่อนนับ — route ที่ redirect ต่อทันที (เช่น /map → /data-center/public)
 // เปลี่ยน pathname 2 รอบติดกัน ถ้านับทันทีจะได้ 2 ครั้งจากการเปิดหน้าเดียว
@@ -32,6 +34,35 @@ let claimedVisitorDay = null
 // เช่นเดียวกันของรายหน้า: ชื่อหน้าที่แท็บนี้จองไว้แล้วระหว่างรอ RPC ตอบ
 let claimedPages = { day: null, keys: [] }
 let inflight = 0
+// หน้าปัจจุบัน (pathname ที่ scheduleSiteOpen เรียกล่าสุด) เริ่มนับแล้วหรือยัง — ไว้ตัดสินว่าหน้าที่ระบบโหลดซ้ำให้ต้องนับอีกไหม
+let currentPageCounted = false
+
+function writeAutoReloadMark() {
+  try {
+    window.sessionStorage.setItem(AUTO_RELOAD_KEY, autoReloadMark(currentPageCounted))
+  } catch {
+    // เขียนไม่ได้ (โหมดส่วนตัวบางตัว/storage ถูกบล็อก) = หน้าที่โหลดซ้ำนับอีกครั้งเหมือนก่อนแก้ — นับเกิน 1 ไม่ใช่นับขาด
+  }
+}
+
+// ฟังเหตุการณ์เดียวกับที่ src/main.jsx ใช้สั่งโหลดซ้ำ (controllerchange) แล้วจดธงก่อนหน้าจะถูกโหลดใหม่ —
+// ตัวฟังทุกตัวรันในรอบเดียวกันก่อนหน้าถูกแทนที่ ลำดับที่ลงทะเบียนจึงไม่สำคัญ · ไม่ต้องแก้ main.jsx
+// ทำตอนโหลดโมดูล (ไม่ผูกกับ React) ให้ครอบทุกหน้า รวมหน้าที่ยังไม่ได้ render AppShell
+if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', writeAutoReloadMark)
+}
+
+// อ่านธงแล้วลบทิ้งทันที (ใช้ครั้งเดียว) — true = หน้านี้เพิ่งถูกระบบโหลดซ้ำและหน้าก่อนหน้านับไปแล้ว ให้ข้าม
+function consumeAutoReloadSkip() {
+  try {
+    const raw = window.sessionStorage.getItem(AUTO_RELOAD_KEY)
+    if (raw === null) return false
+    window.sessionStorage.removeItem(AUTO_RELOAD_KEY)
+    return shouldSkipCountAfterAutoReload(raw)
+  } catch {
+    return false
+  }
+}
 
 function publish(tenantId, summary) {
   const prev = snapshot.tenantId === tenantId ? snapshot.summary : null
@@ -141,8 +172,27 @@ async function countNow(tenantId, pathname) {
 // ถ้าเปลี่ยนหน้าอีกก่อนครบ SITE_OPEN_SETTLE_MS ตัวจับเวลาเดิมถูกยกเลิก นับเฉพาะหน้าที่อยู่จริง
 // หน้าหลังบ้าน (isCountablePath) ไม่ตั้งตัวจับเวลาเลย แต่ยังยกเลิกตัวของหน้าก่อนหน้าผ่าน cleanup ตามปกติ
 export function scheduleSiteOpen(tenantId, pathname) {
-  if (!tenantId || !isCountablePath(pathname) || !isCountableEnvironment(currentEnvironment())) return undefined
-  const timer = setTimeout(() => { countNow(tenantId, pathname) }, SITE_OPEN_SETTLE_MS)
+  currentPageCounted = false
+  // effect นี้รันรอบแรกตอน tenant ยังโหลดไม่เสร็จ (tenantId ว่าง) — อย่าอ่านธงรอบนั้น ไม่งั้นทิ้งธงก่อนหน้าแรกจะได้ใช้
+  if (!tenantId) return undefined
+  // อ่านแล้วลบธงทันทีทุกครั้งที่รู้ tenant ไม่ว่าหน้านี้จะนับหรือไม่ — ไม่งั้นหน้าที่ไม่นับ (หลังบ้าน/localhost) ทำให้ธงค้างอยู่
+  // แล้วไปทำให้หน้าสาธารณะหน้าถัดไปที่ผู้ใช้เปิดภายใน AUTO_RELOAD_WINDOW_MS ถูกข้ามผิดๆ
+  const skipAfterAutoReload = consumeAutoReloadSkip()
+  if (!isCountablePath(pathname) || !isCountableEnvironment(currentEnvironment())) return undefined
+  // หน้านี้ถูกระบบโหลดซ้ำเอง (service worker ใหม่รับช่วง) และหน้าก่อนโหลดซ้ำนับไปแล้ว → ไม่นับซ้ำ
+  if (skipAfterAutoReload) {
+    currentPageCounted = true
+    return undefined
+  }
+  const timer = setTimeout(() => {
+    currentPageCounted = true
+    // ถ้าระบบเพิ่งสั่งโหลดซ้ำช่วงที่ตัวจับเวลาเดินพอดี ธงที่จดไว้ยังเป็น "ยังไม่นับ" ทั้งที่กำลังนับอยู่ — ปรับให้ตรง
+    // ไม่งั้นหน้าที่โหลดซ้ำจะนับอีกครั้ง (เกิดในช่วงไม่กี่มิลลิวินาที แต่แก้ได้ถูก)
+    try {
+      if (window.sessionStorage.getItem(AUTO_RELOAD_KEY) !== null) writeAutoReloadMark()
+    } catch { /* ไม่มี storage = ไม่มีธงให้ปรับ */ }
+    countNow(tenantId, pathname)
+  }, SITE_OPEN_SETTLE_MS)
   return () => clearTimeout(timer)
 }
 

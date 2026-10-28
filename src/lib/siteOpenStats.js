@@ -209,6 +209,35 @@ export function isFirstPageToday({ storageOk, storedDay, storedKeys, claimedDay,
   return !seenStored && !seenClaimed
 }
 
+// ─── หน้าที่ระบบโหลดซ้ำเอง ไม่ใช่ผู้ใช้กดรีเฟรช ───
+//
+// src/main.jsx สั่ง window.location.reload() ทุกครั้งที่ service worker ใหม่รับช่วง (controllerchange) —
+// ตั้งไว้แก้มือถือที่ค้างรันโค้ดเก่า เกิดกับ "ผู้ใช้ใหม่ที่เปิดเว็บครั้งแรก" (วัดบน demo 2569-10-28: โหลดซ้ำที่ ~9 วินาที)
+// และกับผู้ใช้เดิมที่เปิดหน้าค้างไว้ตอน deploy ใหม่ — ถ้านับ ผู้ใช้เปิดหน้าเดียวได้ 2 ครั้ง
+// กติกา: ถ้าหน้าก่อนโหลดซ้ำ "ถูกนับไปแล้ว" ให้ข้ามการนับของหน้าที่โหลดซ้ำ · ถ้ายังไม่ทันนับ (โหลดซ้ำก่อนครบ
+// SITE_OPEN_SETTLE_MS) ต้องนับตามปกติ ไม่งั้นการเข้าชมครั้งนั้นหายไปทั้งครั้ง
+// ปุ่ม "โหลดหน้าใหม่" ที่ผู้ใช้กดเอง (App.jsx) ไม่เกี่ยวกับกติกานี้ — ยังนับเป็นการรีเฟรชตามเดิม
+export const AUTO_RELOAD_WINDOW_MS = 60 * 1000
+
+// ค่าที่เก็บใน sessionStorage ก่อนโหลดซ้ำ — counted = หน้าปัจจุบันถูกนับไปแล้วหรือยัง
+export function autoReloadMark(counted, now = Date.now()) {
+  return JSON.stringify({ at: now, counted: Boolean(counted) })
+}
+
+// หน้าที่เพิ่งโหลดซ้ำควรข้ามการนับไหม — raw คือค่าที่อ่านจาก sessionStorage (null = ไม่มีธง)
+// ข้ามเฉพาะธงที่ใหม่ (ภายใน AUTO_RELOAD_WINDOW_MS) และจดไว้ว่านับแล้ว · ธงเก่าค้าง/เสีย/นาฬิกาเดินถอยหลัง = ไม่ข้าม
+export function shouldSkipCountAfterAutoReload(raw, now = Date.now()) {
+  let mark
+  try {
+    mark = JSON.parse(raw)
+  } catch {
+    return false
+  }
+  if (!mark || mark.counted !== true || !Number.isFinite(mark.at)) return false
+  const age = now - mark.at
+  return age >= 0 && age <= AUTO_RELOAD_WINDOW_MS
+}
+
 // ชื่อหน้าที่เปิดแล้วของวัน ข้ามวันแล้วเริ่มรายการใหม่ · จำกัดความยาวไม่ให้ค่าใน localStorage โตไม่สิ้นสุด
 const MAX_STORED_PAGE_KEYS = 80
 export function addSeenPageKey(day, keys, today, pageKey) {
