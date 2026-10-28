@@ -27,6 +27,7 @@ import {
   isFirstTodayVisitor,
   pageKeyForPath,
   pageRanking,
+  periodRowsWithData,
   shouldSkipCountAfterAutoReload,
 } from '../src/lib/siteOpenStats.js'
 import { FISCAL_MONTHS_TH, fiscalYearBounds } from '../src/lib/fiscalYear.js'
@@ -413,4 +414,49 @@ test('ตัวนับ: จดธงตอน controllerchange · อ่าน
   const app = await read('src/App.jsx')
   assert.ok(app.includes('window.location.reload()'))
   assert.doesNotMatch(app, /sl_site_auto_reload|writeAutoReloadMark/)
+})
+
+// ─── ตารางรายเดือน/รายปีงบ: แสดงเฉพาะแถวที่มีข้อมูล (เจ้าของระบบสั่ง 2569-10-28) ───────────────────────
+
+test('ตารางรายเดือน/ปีงบ: ซ่อนแถวที่ 0 แต่นับจำนวนที่ซ่อน · กราฟยังได้ครบทุกช่วง · ผลรวมไม่เปลี่ยน', () => {
+  const bounds = fiscalYearBounds(2570)
+  const monthly = [{ month_start: '2026-10-01', opens: '3503', visitors: '400' }]
+  const series = fiscalMonthSeries(monthly, bounds, FISCAL_MONTHS_TH)
+  assert.equal(series.length, 12, 'ข้อมูลที่ส่งให้กราฟต้องครบ 12 เดือนเสมอ (แกนเวลา)')
+
+  const { rows, hidden } = periodRowsWithData(series)
+  assert.deepEqual(rows.map(r => [r.key, r.opens]), [['2026-10', 3503]], 'เหลือเฉพาะเดือนที่มีข้อมูล')
+  assert.equal(hidden, 11)
+  assert.equal(rows.length + hidden, series.length, 'แถว + ที่ซ่อน ต้องครบทุกเดือน')
+  assert.equal(rows.reduce((s, r) => s + r.opens, 0), series.reduce((s, r) => s + r.opens, 0), 'ซ่อนแถว 0 ไม่ทำให้ผลรวมเปลี่ยน')
+
+  // เดือนว่างกลางปี (ม.ค. ไม่มีใครเข้า แต่ ธ.ค. กับ ก.พ. มี) ก็ซ่อน และเรียงตามเดือนเดิม
+  const gap = fiscalMonthSeries([
+    { month_start: '2026-12-01', opens: 7 }, { month_start: '2027-02-01', opens: 5 },
+  ], bounds, FISCAL_MONTHS_TH)
+  const gapRows = periodRowsWithData(gap)
+  assert.deepEqual(gapRows.rows.map(r => r.key), ['2026-12', '2027-02'])
+  assert.equal(gapRows.hidden, 10)
+
+  // รายปีงบ ("ทุกปีงบประมาณ"): ปีงบที่อยู่ระหว่างกลางแต่ไม่มีข้อมูลก็ซ่อน
+  // พ.ย. 2024 = ปีงบ 2568 (ต.ค. 2024–ก.ย. 2025) · ม.ค. 2027 = ปีงบ 2570 · ปีงบ 2569 ไม่มีข้อมูลคั่นกลาง
+  const years = fiscalYearSeries([{ month_start: '2024-11-01', opens: 4 }, { month_start: '2027-01-01', opens: 9 }], 2570)
+  assert.deepEqual(years.map(y => [y.key, y.opens]), [['2568', 4], ['2569', 0], ['2570', 9]], 'ข้อมูลรายปีงบยังเติม 0 ให้ครบ (กราฟ)')
+  assert.deepEqual(periodRowsWithData(years).rows.map(y => y.key), ['2568', '2570'])
+  assert.equal(periodRowsWithData(years).hidden, 1)
+
+  // ไม่มีข้อมูลเลย / ไม่มีอะไรส่งมา = ไม่ error ไม่มีแถว
+  assert.deepEqual(periodRowsWithData(fiscalMonthSeries([], bounds, FISCAL_MONTHS_TH)), { rows: [], hidden: 12 })
+  assert.deepEqual(periodRowsWithData(null), { rows: [], hidden: 0 })
+  assert.deepEqual(periodRowsWithData(undefined), { rows: [], hidden: 0 })
+})
+
+test('หน้ารายงาน: ตารางรายเดือนวาดจากแถวที่มีข้อมูล · กราฟแท่งยังวาดจากครบทุกช่วง · มีข้อความเมื่อว่างและบอกจำนวนที่ซ่อน', async () => {
+  const page = await read('src/pages/VisitorStats.jsx')
+  assert.match(page, /periodRows\.rows\.map\(/, 'ตารางต้องวาดจาก periodRows.rows (ที่กรองแล้ว)')
+  assert.match(page, /<BarChart data=\{periodSeries\}/, 'กราฟแท่งต้องใช้ periodSeries ครบทุกเดือน ห้ามใช้ที่กรอง ไม่งั้นแกนเวลาเพี้ยน')
+  assert.match(page, /periodRows\.rows\.length === 0/, 'ช่วงที่ไม่มีข้อมูลเลยต้องมีข้อความ ไม่ปล่อยตารางเปล่า')
+  assert.match(page, /periodRows\.hidden/, 'ต้องบอกจำนวนแถวที่ซ่อน')
+  // ผลรวมท้ายตารางยังเป็นผลรวมของทุกช่วง ไม่ใช่เฉพาะแถวที่แสดง (ค่าเท่ากันอยู่แล้ว แต่ห้ามเปลี่ยนที่มาโดยไม่ตั้งใจ)
+  assert.match(page, /formatCount\(periodTotal\)/)
 })
