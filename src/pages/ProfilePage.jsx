@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
-import { ChevronLeft, ChevronRight, FileSignature, Pencil, Loader2, X, Eye, EyeOff, Smartphone } from 'lucide-react'
+import { ChevronRight, FileSignature, Pencil, Loader2, X, Eye, EyeOff, Smartphone } from 'lucide-react'
 import { compressImage } from '../lib/imageUtils'
 import { useAuth } from '../contexts/AuthContext'
 import { useTenant } from '../contexts/TenantContext'
@@ -9,6 +9,7 @@ import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiNam
 import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf } from '../lib/thaiAddress'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import ActiveSessions from '../components/profile/ActiveSessions'
+import AccountPageLayout from '../components/profile/AccountPageLayout'
 import { validateNewPassword, PASSWORD_HINT } from '../lib/passwordPolicy'
 import { toHttps } from '../lib/basename'
 import { activeOrgTerms } from '../lib/orgTerms'
@@ -30,7 +31,8 @@ const ROLE_LABEL = {
 
 export default function ProfilePage() {
   const navigate = useNavigate()
-  const { hash } = useLocation()
+  const { hash, search } = useLocation()
+  const isSecurity = hash === '#security' || new URLSearchParams(search).get('tab') === 'security'
   const { role: contextRole, profileLoading, profileError, refreshProfile } = useAuth()
   const { tenant } = useTenant()
   const [session, setSession] = useState(null)
@@ -39,6 +41,7 @@ export default function ProfilePage() {
     address_province: '', address_district: '', address_subdistrict: '', address_moo: '', address_detail: '',
   })
   const [nameParts, setNameParts] = useState({ title: '', first: '', last: '' })
+  const [savedProfile, setSavedProfile] = useState('')
   const [avatarUrl, setAvatarUrl] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -91,7 +94,7 @@ export default function ProfilePage() {
       // เดียวกันจะได้ค่าเริ่มต้นถูกต้องตามพื้นที่ตัวเอง (สูตรเดียวกับที่ AdminDashboard.jsx ใช้)
       if (p) {
         const fullName = p.full_name || meta?.full_name || ''
-        setProfile({
+        const loadedProfile = {
           full_name: fullName,
           phone: p.phone || meta?.phone || '',
           role: p.role || '',
@@ -101,19 +104,23 @@ export default function ProfilePage() {
           address_subdistrict: p.address_subdistrict || tenantDefaultSubdistrict(tenant),
           address_moo: p.address_moo || '',
           address_detail: p.address_detail || '',
-        })
+        }
+        setProfile(loadedProfile)
+        setSavedProfile(JSON.stringify(loadedProfile))
         setNameParts(splitThaiFullName(fullName))
         setAvatarUrl(p.avatar_url || meta?.avatar_url || meta?.picture || null)
       } else {
         const fullName = meta?.full_name || ''
-        setProfile({
+        const loadedProfile = {
           full_name: fullName,
           phone: meta?.phone || '',
           role: '',
           id_card: '',
           address_province: tenant?.province || '', address_district: tenant?.district || '',
           address_subdistrict: tenantDefaultSubdistrict(tenant), address_moo: '', address_detail: '',
-        })
+        }
+        setProfile(loadedProfile)
+        setSavedProfile(JSON.stringify(loadedProfile))
         setNameParts(splitThaiFullName(fullName))
       }
       setLoading(false)
@@ -153,6 +160,7 @@ export default function ProfilePage() {
     setSaving(false)
     if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
     setMsg('บันทึกข้อมูลเรียบร้อยแล้ว')
+    setSavedProfile(JSON.stringify(profile))
     setEditName(false)
     setEditPhone(false)
     setEditIdCard(false)
@@ -284,33 +292,14 @@ export default function ProfilePage() {
 
   const displayName = profile.full_name || session?.user?.email?.split('@')[0] || 'ผู้ใช้'
   const roleLabel = ROLE_LABEL[contextRole ?? profile.role] ?? 'ประชาชนทั่วไป'
+  const profileDirty = Boolean(savedProfile) && savedProfile !== JSON.stringify(profile)
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
-      {/* Mobile top bar */}
-      <div className="md:hidden flex items-center px-4 py-4 text-white"
-           style={{ background: 'linear-gradient(90deg, var(--color-primary-dark), var(--color-primary))' }}>
-        <button onClick={() => navigate(-1)} className="p-1 mr-3">
-          <ChevronLeft size={24} />
-        </button>
-        <h1 className="flex-1 text-center font-semibold text-base">ข้อมูลผู้ใช้</h1>
-        <div className="w-8" />
-      </div>
-
-      {/* PC header */}
-      <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-xs">
-        <div>
-          <h1 className="text-lg font-bold text-gray-800">ข้อมูลบัญชีของฉัน</h1>
-          <p className="text-xs text-gray-400 mt-0.5">จัดการข้อมูลส่วนตัวและความปลอดภัย</p>
-        </div>
-        <button onClick={() => navigate(-1)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors">
-          <ChevronLeft size={15} />
-          ย้อนกลับ
-        </button>
-      </div>
-
-      <div className="max-w-lg mx-auto px-4 py-6 md:py-8 pb-28 md:pb-8 space-y-4">
+    <AccountPageLayout active={isSecurity ? 'security' : 'account'} title={isSecurity ? 'ความปลอดภัยของฉัน' : 'ข้อมูลบัญชีของฉัน'}
+      hasUnsavedChanges={profileDirty || Boolean(newPassword || confirmPassword)}
+      busy={saving || changingPassword || Boolean(linking)}>
+      <div className="mx-auto max-w-xl space-y-4 [&_button]:min-h-11 [&_button]:min-w-11 [&_input:not([type=file])]:min-h-11 [&_select]:min-h-11" data-profile-panel={isSecurity ? 'security' : 'account'}>
+        {!isSecurity && <>
         {/* Avatar */}
         <div className="flex flex-col items-center gap-2 mb-2">
           <div className="relative">
@@ -322,16 +311,16 @@ export default function ProfilePage() {
             <div className={`w-24 h-24 rounded-full bg-blue-100 text-blue-600 border-4 border-white shadow-md ${avatarUrl ? 'hidden' : 'flex'} items-center justify-center text-3xl font-bold`}>
               {(displayName || '?')[0]?.toUpperCase()}
             </div>
-            <button onClick={() => fileRef.current?.click()}
-              className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all">
+            <button onClick={() => fileRef.current?.click()} aria-label="เปลี่ยนรูปโปรไฟล์"
+              className="absolute bottom-0 right-0 h-11 w-11 rounded-full bg-white shadow-md flex items-center justify-center border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all">
               <Pencil size={14} className="text-blue-600" />
             </button>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
           </div>
-          <span className="text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1 rounded-full cursor-pointer hover:bg-blue-100 transition-colors"
+          <button type="button" className="min-h-11 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1 rounded-full hover:bg-blue-100 transition-colors"
                 onClick={() => fileRef.current?.click()}>
             คลิกเพื่อเปลี่ยนรูปโปรไฟล์
-          </span>
+          </button>
         </div>
 
         {/* Fields */}
@@ -342,7 +331,7 @@ export default function ProfilePage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-700">ชื่อ-สกุล</span>
-                  <button onClick={() => setEditName(false)} className="text-blue-400">
+                  <button onClick={() => setEditName(false)} aria-label="ปิดช่องแก้ไขชื่อ-สกุล" className="flex items-center justify-center text-blue-400">
                     <Pencil size={16} />
                   </button>
                 </div>
@@ -364,7 +353,7 @@ export default function ProfilePage() {
               <div className="flex items-center gap-3">
                 <span className="text-sm text-gray-700 flex-1">ชื่อ-สกุล</span>
                 <span className="text-sm text-gray-500 flex-1 text-right truncate">{profile.full_name || 'ยังไม่ได้ระบุ'}</span>
-                <button onClick={() => setEditName(true)} className="ml-2 text-blue-400">
+                <button onClick={() => setEditName(true)} aria-label="แก้ไขชื่อ-สกุล" className="ml-1 flex h-11 w-11 shrink-0 items-center justify-center text-blue-400">
                   <Pencil size={16} />
                 </button>
               </div>
@@ -406,7 +395,7 @@ export default function ProfilePage() {
             ) : (
               <span className="text-sm text-gray-500 flex-1 text-right">{profile.phone || 'ยังไม่ได้ระบุ'}</span>
             )}
-            <button onClick={() => setEditPhone((v) => !v)} className="ml-2 text-blue-400">
+            <button onClick={() => setEditPhone((v) => !v)} aria-label="แก้ไขเบอร์โทรศัพท์" className="ml-1 flex h-11 w-11 shrink-0 items-center justify-center text-blue-400">
               <Pencil size={16} />
             </button>
           </div>
@@ -438,7 +427,7 @@ export default function ProfilePage() {
                   : 'ยังไม่ได้ระบุ'}
               </span>
             )}
-            <button onClick={() => setEditIdCard((v) => !v)} className="ml-2 text-blue-400">
+            <button onClick={() => setEditIdCard((v) => !v)} aria-label="แก้ไขเลขบัตรประชาชน" className="ml-1 flex h-11 w-11 shrink-0 items-center justify-center text-blue-400">
               <Pencil size={16} />
             </button>
           </div>
@@ -449,7 +438,7 @@ export default function ProfilePage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm text-gray-700">ที่อยู่</span>
-                  <button onClick={() => setEditAddress(false)} className="text-blue-400">
+                  <button onClick={() => setEditAddress(false)} aria-label="ปิดช่องแก้ไขที่อยู่" className="flex items-center justify-center text-blue-400">
                     <Pencil size={16} />
                   </button>
                 </div>
@@ -490,7 +479,7 @@ export default function ProfilePage() {
               <div className="flex items-center gap-3">
                 <span className="text-sm text-gray-700 flex-1">ที่อยู่</span>
                 <span className="text-sm text-gray-500 flex-1 text-right truncate">{formatAddress(profile) || 'ยังไม่ได้ระบุ'}</span>
-                <button onClick={() => setEditAddress(true)} className="ml-2 text-blue-400">
+                <button onClick={() => setEditAddress(true)} aria-label="แก้ไขที่อยู่" className="ml-1 flex h-11 w-11 shrink-0 items-center justify-center text-blue-400">
                   <Pencil size={16} />
                 </button>
               </div>
@@ -498,6 +487,10 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white px-5 py-4 text-sm shadow-xs"><span className="text-gray-700">อีเมล</span><span className="min-w-0 break-all text-gray-500">{session?.user?.email}</span></div>
+        </>}
+
+        {isSecurity && <>
         {/* บัญชีที่เชื่อมต่อ */}
         <div className="bg-white rounded-2xl divide-y divide-gray-100 shadow-xs overflow-hidden">
           <div className="flex items-center px-5 py-4 justify-between">
@@ -556,7 +549,7 @@ export default function ProfilePage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-700">เปลี่ยนรหัสผ่าน</span>
-                  <button onClick={() => { setShowChangePassword(false); setNewPassword(''); setConfirmPassword(''); setError('') }} className="text-blue-400">
+                  <button onClick={() => { setShowChangePassword(false); setNewPassword(''); setConfirmPassword(''); setError('') }} aria-label="ยกเลิกการเปลี่ยนรหัสผ่าน" className="flex items-center justify-center text-blue-400">
                     <X size={16} />
                   </button>
                 </div>
@@ -570,8 +563,8 @@ export default function ProfilePage() {
                     autoFocus
                     className="w-full text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 pr-9 outline-none"
                   />
-                  <button type="button" onClick={() => setShowNewPassword((v) => !v)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
+                  <button type="button" onClick={() => setShowNewPassword((v) => !v)} aria-label={showNewPassword ? 'ซ่อนรหัสผ่านใหม่' : 'แสดงรหัสผ่านใหม่'}
+                    className="absolute right-0 top-1/2 flex -translate-y-1/2 items-center justify-center text-gray-400">
                     {showNewPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
                 </div>
@@ -605,8 +598,11 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        <ActiveSessions />
+        </>}
+
         {/* ทางลัดเท่านั้น: หน้าโปรไฟล์ไม่โหลดข้อมูลหรือรูปจากคลังลายเซ็น */}
-        {STAFF_ROLES.includes(contextRole ?? profile.role) && (
+        {!isSecurity && STAFF_ROLES.includes(contextRole ?? profile.role) && (
           <Link to="/staff/my-signatures" state={{ returnTo: '/profile' }} data-profile-signatures
             className="flex min-h-14 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-xs hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
             <FileSignature size={20} className="shrink-0 text-slate-500" aria-hidden="true" />
@@ -615,16 +611,13 @@ export default function ProfilePage() {
           </Link>
         )}
 
-        {/* อุปกรณ์ที่ล็อกอินอยู่ — ให้เจ้าของบัญชีเตะ session ที่ลืมไว้บนเครื่องคนอื่นได้เอง */}
-        <ActiveSessions />
-
         {/* Message */}
         {msg && <p className="text-xs text-emerald-600 text-center font-semibold bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl">{msg}</p>}
         {error && <p className="text-xs text-red-500 text-center font-semibold bg-red-50 border border-red-200 p-2.5 rounded-xl">{error}</p>}
 
         {/* Actions */}
         <div className="space-y-2 pt-2">
-          {(editName || editPhone || editIdCard || editAddress) && (
+          {profileDirty && (
             <button
               onClick={handleSave}
               disabled={saving}
@@ -644,6 +637,6 @@ export default function ProfilePage() {
           </button>
         </div>
       </div>
-    </div>
+    </AccountPageLayout>
   )
 }

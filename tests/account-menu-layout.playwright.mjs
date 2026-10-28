@@ -78,7 +78,7 @@ function Fixture() {
     </header>}
     <main style={{ minHeight: 1200, padding: 24, background: '#eef2f7' }}>
       <h1>พื้นที่ทดสอบเมนูบัญชี</h1><button data-outside>พื้นที่ด้านนอก</button>
-      <p data-location>{location.pathname + location.hash}</p><p data-route-state>{location.state?.page || ''}</p>
+      <p data-location style={{ overflowWrap: 'anywhere' }}>{location.pathname + location.search + location.hash}</p><p data-route-state>{location.state?.page || ''}</p>
       {settings && <p data-settings-open>ตั้งค่าระบบ</p>}
     </main>
   </>
@@ -130,7 +130,7 @@ const menu = () => page.locator('[data-account-menu]')
 async function load(target = 'generic', role = 'staff', extras = '') {
   failures.length = 0
   await page.goto(`${base}/__account-menu-test?target=${target}&role=${role}${extras}`)
-  if (target === 'ProfilePage') await page.locator('#security').waitFor({ timeout: 20000 })
+  if (target === 'ProfilePage') await page.locator('[data-profile-panel]').waitFor({ timeout: 20000 })
   else await button().waitFor({ timeout: 60000 })
   await page.evaluate(() => document.fonts.ready)
 }
@@ -198,11 +198,11 @@ try {
     await page.locator('[data-outside]').click()
     assert.equal(await menu().count(), 0)
   }
-  for (const [attr, url] of [['profile', '/profile'], ['signature', '/staff/my-signatures'], ['notifications', '/notifications'], ['security', '/profile#security'], ['settings', '/admin']]) {
+  for (const [attr, url] of [['profile', '/profile'], ['signature', '/staff/my-signatures'], ['notifications', '/profile/notifications'], ['security', '/profile?tab=security'], ['settings', '/admin']]) {
     await load('generic', 'admin')
     await button().click()
     await page.locator(`[data-account-${attr}]`).click()
-    await page.waitForURL(u => u.pathname + u.hash === url)
+    await page.waitForURL(u => u.pathname + u.search + u.hash === url)
     await page.waitForFunction(expected => document.querySelector('[data-location]')?.textContent === expected, url)
     assert.equal(await page.locator('[data-location]').textContent(), url)
     assert.equal(await menu().count(), 0)
