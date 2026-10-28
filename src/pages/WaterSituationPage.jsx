@@ -239,7 +239,7 @@ export default function WaterSituationPage() {
                 ? 'border-transparent bg-gradient-to-br from-[#0b4a6e] to-[#0e7490] text-white shadow-lg shadow-sky-900/25'
                 : 'border-sky-200 bg-white text-sky-900 shadow-sm hover:border-sky-400 hover:bg-sky-50'}`}>
               <span className="flex items-center gap-2 text-base font-bold leading-tight"><Icon size={20} aria-hidden="true" />{label}</span>
-              <small className={`text-[11px] leading-tight ${activeTab === key ? 'text-sky-100' : 'text-slate-600'}`}>{hint}</small>
+              <small className={`text-[12px] leading-tight ${activeTab === key ? 'text-sky-100' : 'text-slate-600'}`}>{hint}</small>
             </button>
           ))}
         </div>
@@ -430,9 +430,9 @@ function HeroStats({ rain, dams, levels, now }) {
   return (
     <div className={`grid gap-2 md:gap-3 ${HERO_COLS[cards.length] ?? 'grid-cols-3'}`}>
       {cards.map(c => (
-        <div key={c.key} className={`water-summary water-summary--${c.key} relative overflow-hidden rounded-2xl border border-gray-100 bg-white px-3 py-3 shadow-sm md:px-4`}>
+        <div key={c.key} className={`water-summary water-summary--${c.key} relative overflow-hidden rounded-2xl border border-gray-100 bg-white px-2.5 py-3 shadow-sm sm:px-3 md:px-4`}>
           <span className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: c.color }} aria-hidden="true" />
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold leading-tight text-gray-500 md:text-xs">
+          <p className="flex items-center gap-1.5 text-[12px] font-semibold leading-tight text-gray-500 md:text-xs">
             <span className="water-summary-icon"><c.Icon size={19} /></span>
             {c.label}
           </p>
@@ -440,17 +440,18 @@ function HeroStats({ rain, dams, levels, now }) {
             <span className="text-2xl font-extrabold tracking-tight text-gray-900 md:text-3xl">{c.value}</span>
             <span className="text-xs font-bold text-gray-500 md:text-sm">{c.unit}</span>
           </p>
+          {/* จอแคบ (360px การ์ดละ ~105px): ขอบการ์ดและป้ายแคบลงเพื่อให้ "น้ำปานกลาง" อยู่บรรทัดเดียวที่ตัวอักษร 12px */}
           {c.badge && (
-            <span className="mt-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold md:text-[11px]"
+            <span className="mt-1.5 inline-block rounded-full px-1.5 py-0.5 text-[12px] font-bold sm:px-2"
               style={{ backgroundColor: `${c.color}1a`, color: '#1e293b' }}>
               <span className="water-status-dot" style={{ backgroundColor: c.color }} />{c.badge}
             </span>
           )}
-          <p className="mt-1 text-[11px] leading-relaxed text-gray-600 md:text-xs">
+          <p className="mt-1 text-[12px] leading-relaxed text-gray-600 md:text-xs">
             {c.caption}{c.detail && <span className="hidden md:inline"> · {c.detail}</span>}
           </p>
           {c.warn && (
-            <p className="mt-0.5 flex items-start gap-1 text-[11px] font-semibold leading-snug text-amber-700 md:text-xs">
+            <p className="mt-0.5 flex items-start gap-1 text-[12px] font-semibold leading-snug text-amber-700 md:text-xs">
               <AlertTriangle size={12} className="mt-0.5 shrink-0" />{c.warn}
             </p>
           )}
@@ -621,7 +622,7 @@ function RainSection({ stations, ewsByCode, homeAmphoe, now, snapshot = false })
             now={now} barMax={barMax} />
         ))}
       </ul>
-      {snapshot ? <p className="px-4 pb-3 text-[10px] text-gray-500">สเกล 0–{barMax} มม. · เส้นแนวตั้ง: ฝนหนักมาก {RAIN_VERY_HEAVY_MM} มม.</p> : <div className="space-y-1 border-t border-gray-50 px-4 py-3 text-[11px] leading-relaxed text-gray-400">
+      {snapshot ? <p className="px-4 pb-3 text-[12px] text-gray-500">สเกล 0–{barMax} มม. · เส้นแนวตั้ง: ฝนหนักมาก {RAIN_VERY_HEAVY_MM} มม.</p> : <div className="space-y-1 border-t border-gray-50 px-4 py-3 text-[12px] leading-relaxed text-gray-400">
         <p>
           แท่งเทียบใช้สเกลเดียวกันทุกสถานี <span className="whitespace-nowrap">(0–{barMax} มม.)</span> ·{' '}
           <span className="whitespace-nowrap">เส้นแนวตั้งคือเกณฑ์ฝนหนักมาก {RAIN_VERY_HEAVY_MM} มม.</span>
@@ -654,7 +655,7 @@ function RainRow({ station: s, ews, homeAmphoe, now, barMax }) {
         <p className="text-sm font-semibold leading-tight text-gray-800">
           {s.station_name}
           {s.is_primary && (
-            <span className="ml-1.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-bold text-emerald-700">
+            <span className="ml-1.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[12px] font-bold text-emerald-700">
               ในตำบล
             </span>
           )}
@@ -662,7 +663,7 @@ function RainRow({ station: s, ews, homeAmphoe, now, barMax }) {
         <p className="mt-0.5 text-xs text-gray-500">{meta}</p>
         {s.note && <p className="mt-0.5 text-xs text-amber-700">{s.note}</p>}
         {warning && (
-          <p className={`mt-1 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold text-gray-800 ${warning.stale ? 'opacity-60' : ''}`}
+          <p className={`mt-1 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[12px] font-bold text-gray-800 ${warning.stale ? 'opacity-60' : ''}`}
             style={{ borderColor: warning.color }}>
             <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: warning.color }} />
             น้ำหลาก-ดินถล่ม: {warning.text} ·{' '}
@@ -685,7 +686,7 @@ function RainRow({ station: s, ews, homeAmphoe, now, barMax }) {
             <p className="text-lg font-bold leading-none text-gray-900">
               {formatMm(s.rain_24h_mm)} <span className="text-xs font-semibold text-gray-500">มม.</span>
             </p>
-            <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-bold ${level.chip}`}>{level.label}</span>
+            <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[12px] font-bold ${level.chip}`}>{level.label}</span>
           </>
         ) : (
           <p className="text-xs text-gray-400">ไม่มีข้อมูลล่าสุด</p>
@@ -762,7 +763,7 @@ function WaterLevelCard({ station: s, homeAmphoe, now, relation = null }) {
             สถานี{s.station_name}
             {relation && <span className="ml-1.5"><RelationPill relation={relation} /></span>}
             {!relation && s.is_primary && (
-              <span className="ml-1.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-bold text-emerald-700">
+              <span className="ml-1.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[12px] font-bold text-emerald-700">
                 ในตำบล
               </span>
             )}
@@ -868,19 +869,19 @@ function ChannelCrossSection({ fill, percent, bankLabel, color, stationName }) {
           {/* เส้นระดับตลิ่ง */}
           <line x1="8" y1={CH.bankY} x2="312" y2={CH.bankY} stroke="#78716c" strokeWidth="1" strokeDasharray="5 4" />
         </svg>
-        <span className="absolute left-2 top-1 text-[10px] font-semibold text-gray-500">ระดับตลิ่ง</span>
+        <span className="absolute left-2 top-1 text-[12px] font-semibold text-gray-500">ระดับตลิ่ง</span>
         {bankLabel && (
-          <span className="absolute right-2 top-1 rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">
+          <span className="absolute right-2 top-1 rounded-full bg-white/90 px-1.5 py-0.5 text-[12px] font-bold text-gray-700">
             {bankLabel}
           </span>
         )}
         {percentText && (
-          <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">
+          <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-1.5 py-0.5 text-[12px] font-bold text-gray-700">
             ความจุลำน้ำ {percentText}
           </span>
         )}
       </div>
-      <p className="px-2 pb-1.5 text-[10px] text-gray-500">
+      <p className="px-2 pb-1.5 text-[12px] text-gray-500">
         {overCapacity && <span className="font-bold text-rose-700">เกินความจุลำน้ำ · </span>}
         ภาพประกอบสัดส่วน ไม่ใช่หน้าตัดจริง
       </p>
@@ -905,7 +906,7 @@ function DamSection({ stations, homeAmphoe, now, snapshot = false, system = null
         </div>
       </div>
       {stations.map(s => <DamCard key={s.station_code} station={s} homeAmphoe={homeAmphoe} now={now} relation={relationOf(system, 'dam', s.station_code)} />)}
-      <div className="rounded-xl border border-gray-100 bg-white px-3 py-2.5 text-[11px] leading-relaxed text-gray-500">
+      <div className="rounded-xl border border-gray-100 bg-white px-3 py-2.5 text-[12px] leading-relaxed text-gray-500">
         <p>ป้ายเทียบเกณฑ์ % ของความจุที่ระดับเก็บกัก ตามรายงานของ สสน. และกรมชลประทาน:</p>
         <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
           {DAM_LEVELS.map(l => (
@@ -949,7 +950,7 @@ function DamCard({ station: s, homeAmphoe, now, relation = null }) {
             {s.station_name}
             {relation && <span className="ml-1.5"><RelationPill relation={relation} /></span>}
             {!relation && s.is_primary && (
-              <span className="ml-1.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-bold text-emerald-700">
+              <span className="ml-1.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[12px] font-bold text-emerald-700">
                 ในตำบล
               </span>
             )}
@@ -984,7 +985,7 @@ function DamCard({ station: s, homeAmphoe, now, relation = null }) {
               <span className="text-lg font-bold text-gray-900">{formatMcm(storage)}</span>
               {capacity !== null && <> จาก {formatMcm(capacity)}</>} ล้าน ลบ.ม.
             </p>
-            <p className="mt-1 text-[11px] text-gray-500">เทียบความจุที่ระดับเก็บกัก</p>
+            <p className="mt-1 text-[12px] text-gray-500">เทียบความจุที่ระดับเก็บกัก</p>
             </div>
           </div>
           {percent !== null && (
@@ -998,7 +999,7 @@ function DamCard({ station: s, homeAmphoe, now, relation = null }) {
                     style={{ left: `${tick}%`, backgroundColor: tick <= barWidth ? 'rgba(255,255,255,0.8)' : 'rgba(120,113,108,0.35)' }} />
                 ))}
               </div>
-              <div className="relative mt-1 h-3.5 text-[10px] font-semibold text-gray-400" aria-hidden="true">
+              <div className="relative mt-1 h-4 text-[12px] font-semibold text-gray-400" aria-hidden="true">
                 {damTicks().map(tick => (
                   <span key={tick} className="absolute -translate-x-1/2" style={{ left: `${tick}%` }}>{tick}</span>
                 ))}
@@ -1051,21 +1052,21 @@ function FlowBars({ inflow, released }) {
   ]
   return (
     <div className="water-metric rounded-xl bg-gray-50 px-3 py-2">
-      <p className="text-[11px] font-semibold text-gray-500">น้ำเข้า-ออกต่อวัน (ล้าน ลบ.ม.)</p>
+      <p className="text-[12px] font-semibold text-gray-500">น้ำเข้า-ออกต่อวัน (ล้าน ลบ.ม.)</p>
       <div className="mt-1.5 space-y-1.5">
         {rows.map(r => (
           <div key={r.key} className="flex items-center gap-2">
-            <span className="w-16 shrink-0 text-[11px] text-gray-500">{r.label}</span>
+            <span className="w-16 shrink-0 text-[12px] text-gray-500">{r.label}</span>
             <span className="h-2 flex-1 overflow-hidden rounded-full bg-gray-200">
               <span className="block h-full rounded-full" style={{ width: `${r.percent}%`, backgroundColor: r.color }} />
             </span>
-            <span className="w-11 shrink-0 text-right text-[11px] font-bold text-gray-800">
+            <span className="w-11 shrink-0 text-right text-[12px] font-bold text-gray-800">
               {r.value === null ? '–' : formatMcm(r.value)}
             </span>
           </div>
         ))}
       </div>
-      {flow.netLabel && <p className="mt-1.5 text-[11px] text-gray-500">{flow.netLabel}</p>}
+      {flow.netLabel && <p className="mt-1.5 text-[12px] text-gray-500">{flow.netLabel}</p>}
     </div>
   )
 }
@@ -1073,9 +1074,9 @@ function FlowBars({ inflow, released }) {
 function Metric({ label, value, hint }) {
   return (
     <div className="water-metric rounded-xl bg-gray-50 px-3 py-2">
-      <p className="text-[11px] font-semibold text-gray-500">{label}</p>
+      <p className="text-[12px] font-semibold text-gray-500">{label}</p>
       <p className="text-sm font-bold text-gray-800">{value}</p>
-      {hint && <p className="text-[11px] text-gray-400">{hint}</p>}
+      {hint && <p className="text-[12px] text-gray-400">{hint}</p>}
     </div>
   )
 }
@@ -1091,12 +1092,12 @@ function RadarLinks({ tenantName }) {
         {RADAR_LINKS.map(link => (
           <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer" data-radar-link
             className="flex min-h-[48px] items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-left text-sm font-semibold text-sky-900 hover:bg-sky-100">
-            <span>{link.label}<small className="block text-[11px] font-normal text-gray-600">{link.source}</small></span>
+            <span>{link.label}<small className="block text-[12px] font-normal text-gray-600">{link.source}</small></span>
             <ExternalLink size={14} className="shrink-0" aria-hidden="true" />
           </a>
         ))}
       </div>
-      <p className="mt-2 text-[11px] leading-relaxed text-gray-500">ภาพเรดาร์ไม่ใช่ประกาศเตือนภัยของ{tenantName || 'หน่วยงาน'} และไม่บอกเวลาที่น้ำจะมา — ใช้ประกอบกับค่าสถานีด้านบน</p>
+      <p className="mt-2 text-[12px] leading-relaxed text-gray-500">ภาพเรดาร์ไม่ใช่ประกาศเตือนภัยของ{tenantName || 'หน่วยงาน'} และไม่บอกเวลาที่น้ำจะมา — ใช้ประกอบกับค่าสถานีด้านบน</p>
     </section>
   )
 }

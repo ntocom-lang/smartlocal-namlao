@@ -12,7 +12,7 @@ export default function RelationPill({ relation }) {
   if (!relation) return null
   return (
     <span data-relation={relation.key}
-      className={`inline-block whitespace-nowrap rounded-full border px-2 py-0.5 align-middle text-[11px] font-bold ${TONES[relation.tone] ?? TONES.unk}`}>
+      className={`inline-block whitespace-nowrap rounded-full border px-2 py-0.5 align-middle text-[12px] font-bold ${TONES[relation.tone] ?? TONES.unk}`}>
       {relation.label}
     </span>
   )

@@ -567,7 +567,7 @@ function DiagramBody({ diagram, scope, tenantName, stations, now }) {
         {system && (
           <span className="mt-1 block" data-system-disclaimer>
             <b>{SYSTEM_DISCLAIMER_EXTRA.join(' · ')}</b>
-            {age && <span className="block text-[11px]" data-diagram-age>ผังต้นฉบับอายุ {age.text} ({age.dateText})</span>}
+            {age && <span className="block text-[12px]" data-diagram-age>ผังต้นฉบับอายุ {age.text} ({age.dateText})</span>}
             {age?.stale && <span data-stale-band className="block font-bold text-amber-800">ผังต้นฉบับอายุเกิน {STALE_DIAGRAM_MONTHS / 12} ปี — โครงสร้างอาจเปลี่ยนไปแล้ว</span>}
           </span>
         )}

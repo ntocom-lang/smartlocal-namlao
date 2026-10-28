@@ -19,7 +19,7 @@ function Tag({ tone, children }) {
     plan: 'border-red-300 bg-red-50 text-red-700',
     unk: 'border-amber-300 bg-amber-50 text-amber-900',
   }
-  return <span className={`ml-1.5 inline-block whitespace-nowrap rounded-full border px-2 py-0 align-middle text-[11px] font-bold ${tones[tone]}`}>{children}</span>
+  return <span className={`ml-1.5 inline-block whitespace-nowrap rounded-full border px-2 py-0 align-middle text-[12px] font-bold ${tones[tone]}`}>{children}</span>
 }
 
 function NodeItem({ node, stations }) {
