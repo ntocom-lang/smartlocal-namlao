@@ -126,45 +126,41 @@ assert.match(ddl, /WHERE value IN \('corruption', 'grievance', 'tax', 'borrow_eq
 // ประวัติข้อความแก้/ลบผ่าน API ไม่ได้
 assert.match(ddl, /REVOKE ALL ON TABLE public\.complaint_text_revisions FROM PUBLIC, anon, authenticated;\s*GRANT SELECT ON TABLE public\.complaint_text_revisions TO authenticated;/)
 
-// ── แจ้งผู้ร้องว่า "ดำเนินการแล้ว" (send-push โหมด complaint_id) ────────────────
+// ── แจ้งผู้ร้องว่า "ดำเนินการแล้ว" (send-push ชนิด complaint_finished) ──────────────
 // list_complaints_for_staff ตัด user_id ทิ้งสำหรับ officer/staff (PDPA) หน้าเว็บจึงส่งแค่เลขคำร้อง
 // ให้ server หาเจ้าของเอง — ค่าที่ server ใช้ตัดสินต้องตรงกับกติกาฝั่งหน้าเว็บ
+// (ผู้รับ/ข้อความของชนิดอื่น + ด่านถอดโหมดข้อความอิสระ อยู่ใน tests/complaint-push.test.mjs)
+const Push = await import('../supabase/functions/_shared/complaintPush.ts')
 const push = readText('supabase/functions/send-push/index.ts')
-assert.match(push, new RegExp(`const FINISHED_STATUSES = \\[${FINISHED_STATUSES.map((st) => `'${st}'`).join(', ')}\\]`))
-assert.match(push, new RegExp(`const REOPEN_WINDOW_DAYS = ${REOPEN_WINDOW_DAYS}\\n`))
-assert.match(push, /if \(kind !== 'complaint_finished'\) return/)
-// ข้อความประกอบที่ server เท่านั้น — ผู้เรียกกำหนด title/body เองไม่ได้ในโหมดนี้
-assert.match(push, /title: 'คำร้องของคุณดำเนินการแล้ว',/)
-assert.match(push, /แจ้งกลับได้ภายใน \$\{REOPEN_WINDOW_DAYS\} วัน/)
-assert.match(push, /url: '\/my-complaints',/)
-assert.match(push, /if \(complaint_id\) \{[\s\S]{0,400}?message = target\.message/)
+assert.deepEqual(Push.FINISHED_STATUSES, FINISHED_STATUSES)
+assert.equal(Push.REOPEN_WINDOW_DAYS, REOPEN_WINDOW_DAYS)
+// ข้อความประกอบที่ server เท่านั้น — ผู้เรียกกำหนด title/body เองไม่ได้
+const finishedPush = Push.complaintPushMessage('complaint_finished', { label: '💡 ไฟฟ้าส่องสว่าง' })
+assert.equal(finishedPush.title, 'คำร้องของคุณดำเนินการแล้ว')
+assert.equal(finishedPush.body, `คำร้องไฟฟ้าส่องสว่าง ดำเนินการแล้ว — แตะเพื่อดูผลและให้คะแนน ถ้ายังไม่เรียบร้อยแจ้งกลับได้ภายใน ${REOPEN_WINDOW_DAYS} วัน`)
+assert.equal(finishedPush.url, '/my-complaints')
+// ปิดงานต้องเป็นสถานะจบจริงและเพิ่งปิด — ผู้เรียกต้องเป็นเจ้าหน้าที่ของ อปท. เดียวกัน
+assert.match(push, /pushKind === 'complaint_finished'\s*&& \(!FINISHED_STATUSES\.includes\(String\(row\.status \?\? ''\)\) \|\| !isFreshTimestamp\(row\.closed_at, Date\.now\(\)\)\)/)
+assert.match(push, /const denied = await denyUnlessComplaintStaff\(supabase, req, row\)/)
 // ห้ามคืน user_id ของผู้ร้องกลับไปให้ผู้เรียก
 assert.doesNotMatch(push, /jsonResponse\(\{[^)]*user/)
 // ชื่อหมวดใน DB มีอีโมจินำหน้า — ตัดทิ้งแต่ต้องไม่กินตัวเลข (\p{Emoji} รวม 0-9 ไว้ด้วย)
-const labelRe = push.match(/replace\(\/(\^\[\\p\{Extended_Pictographic\}[^/]+)\/u,/)
-assert.ok(labelRe, 'ไม่เจอตัวตัดอีโมจิของชื่อหมวดใน send-push')
-const stripLabel = (label) => label.replace(new RegExp(labelRe[1], 'u'), '').trim()
-assert.equal(stripLabel('💡 ไฟฟ้าส่องสว่าง'), 'ไฟฟ้าส่องสว่าง')
-assert.equal(stripLabel('🛠️ ซ่อมประปา'), 'ซ่อมประปา')
-assert.equal(stripLabel('ตัดต้นไม้'), 'ตัดต้นไม้')
-assert.equal(stripLabel('3 แยกไฟดับ'), '3 แยกไฟดับ')
+assert.equal(Push.stripCategoryEmoji('💡 ไฟฟ้าส่องสว่าง'), 'ไฟฟ้าส่องสว่าง')
+assert.equal(Push.stripCategoryEmoji('🛠️ ซ่อมประปา'), 'ซ่อมประปา')
+assert.equal(Push.stripCategoryEmoji('ตัดต้นไม้'), 'ตัดต้นไม้')
+assert.equal(Push.stripCategoryEmoji('3 แยกไฟดับ'), '3 แยกไฟดับ')
 // หน้าเว็บต้องส่งแค่เลขคำร้องทุก role — ห้ามกลับไปพึ่ง complaint.user_id ที่ officer/staff ไม่ได้มากับรายการ
 const finishLib = readText('src/lib/complaintFinish.js').replace(/^\s*\/\/.*$/gm, '')
 assert.match(finishLib, /invoke\('send-push', \{\s*body: \{ complaint_id: complaint\.id, kind: 'complaint_finished' \},/)
 assert.doesNotMatch(finishLib, /complaint\.user_id/)
 // เรื่องลับ: ไม่ใส่ชื่อหมวดในแจ้งเตือน (ขึ้นหน้าจอล็อกผู้แจ้ง) — ชุดหมวดต้องเท่ากับ notify-telegram
 const confidentialSet = (src) => src.match(/const CONFIDENTIAL_COMPLAINT_CATEGORIES = new Set\(\[([^\]]*)\]\)/)?.[1]
+const pushShared = readText('supabase/functions/_shared/complaintPush.ts')
 const telegramFn = readText('supabase/functions/notify-telegram/index.ts')
-assert.ok(confidentialSet(push), 'send-push ต้องมีชุดหมวดเรื่องลับ')
-assert.equal(confidentialSet(push), confidentialSet(telegramFn), 'หมวดเรื่องลับของ send-push กับ notify-telegram ต้องชุดเดียวกัน')
-assert.match(push, /body: confidential \? reopenHint : `คำร้อง\$\{label\} ดำเนินการแล้ว — \$\{reopenHint\}`/)
-// ลิงก์ในแจ้งเตือนต้องเป็น path ภายในเว็บ — sw.js เปิดลิงก์ตรงๆ "//host" พาออกไปเว็บอื่นได้
-const urlGuard = push.match(/url: typeof url === 'string' && \/(.+?)\/\.test\(url\)/)
-assert.ok(urlGuard, 'ไม่เจอด่านตรวจ url ของ send-push')
-const isInternalPath = (u) => new RegExp(urlGuard[1]).test(u)
-for (const ok of ['/', '/my-complaints', '/admin?tab=complaints']) assert.equal(isInternalPath(ok), true, ok)
-for (const bad of ['//evil.example', '/\\evil.example', 'https://evil.example', 'evil.example', 'javascript:alert(1)']) {
-  assert.equal(isInternalPath(bad), false, `ต้องไม่ยอม ${bad}`)
-}
+assert.ok(confidentialSet(pushShared), 'send-push ต้องมีชุดหมวดเรื่องลับ')
+assert.equal(confidentialSet(pushShared), confidentialSet(telegramFn), 'หมวดเรื่องลับของ send-push กับ notify-telegram ต้องชุดเดียวกัน')
+const finishedSecret = Push.complaintPushMessage('complaint_finished', { label: 'ทุจริต', confidential: true })
+assert.doesNotMatch(finishedSecret.body, /ทุจริต/)
+assert.match(finishedSecret.body, /^แตะเพื่อดูผลและให้คะแนน/)
 
 console.log('✓ complaint-finish: ผ่านทุกข้อ')
