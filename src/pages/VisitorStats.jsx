@@ -7,7 +7,9 @@ import {
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useSiteOpenSummary } from '../lib/siteOpenCounter'
-import { BACKOFFICE_EXCLUDED_SINCE, bangkokDay, fiscalMonthSeries, fiscalYearSeries } from '../lib/siteOpenStats.js'
+import {
+  BACKOFFICE_EXCLUDED_SINCE, bangkokDay, fiscalMonthSeries, fiscalYearSeries, pageRanking,
+} from '../lib/siteOpenStats.js'
 import { thaiDateFromDateInput } from '../lib/thaiDate.js'
 import FiscalYearPicker from '../components/common/FiscalYearPicker'
 import { FY_ALL, useFiscalYearParam, fiscalPeriodParts } from '../lib/fiscalYearParam'
@@ -27,6 +29,22 @@ const TOOLTIP_STYLE = { borderRadius: 12, border: '1px solid #f3f4f6', fontSize:
 const AXIS_TICK = { fontSize: 11, fill: '#898781' }
 
 const formatCount = value => Number(value ?? 0).toLocaleString('th-TH')
+
+// ช่วงเวลาของอันดับหน้า — ไม่ผูกกับตัวเลือกปีงบของกราฟรายเดือนด้านล่าง (คนละส่วน ถ้าผูกกันจะงงว่าตัวไหนคุมตัวไหน)
+const RANK_PERIODS = [
+  { key: '30d', label: '30 วันล่าสุด' },
+  { key: 'fy', label: 'ปีงบนี้' },
+  { key: 'all', label: 'ทั้งหมด' },
+]
+const KIND_LABEL = { service: 'บริการ', info: 'ข้อมูล', mine: 'ของฉัน', transit: 'ทางผ่าน' }
+
+function KindTag({ kind }) {
+  return (
+    <span className="ml-1.5 inline-block whitespace-nowrap rounded bg-gray-100 px-1.5 py-px align-middle text-[10px] font-semibold text-gray-500">
+      {KIND_LABEL[kind] ?? kind}
+    </span>
+  )
+}
 
 // 'YYYY-MM-DD' → '29 ก.ย.' — แยกตัวเลขเอง ไม่ผ่าน new Date(str) ที่ parse เป็นเที่ยงคืน UTC
 // แล้ววันเลื่อนบนเครื่องที่ตั้ง timezone ติดลบ (เหตุผลเดียวกับ thaiDateFromDateInput)
@@ -78,8 +96,11 @@ export default function VisitorStats() {
 
   const [daily, setDaily] = useState(null)
   const [monthly, setMonthly] = useState(null)
+  const [rankPeriod, setRankPeriod] = useState('30d')
+  const [ranking, setRanking] = useState(null)
   // โหลดไม่สำเร็จต้องบอกตรงๆ ไม่ปล่อย "กำลังโหลด…" ค้างไปตลอดจนดูเหมือนหน้าค้าง
   const [loadFailed, setLoadFailed] = useState(false)
+  const [rankFailed, setRankFailed] = useState(false)
 
   // total อยู่ใน deps โดยตั้งใจ: การเปิดหน้านี้เองก็ถูกนับ (หลังหน่วง ~1 วินาที) พอยอดสะสมขยับ
   // ให้ดึงกราฟใหม่ จุด "วันนี้" ในกราฟจะได้ตรงกับการ์ดด้านบน ไม่ต่างกันอยู่ 1
@@ -114,6 +135,35 @@ export default function VisitorStats() {
     }, () => { if (!cancelled) setLoadFailed(true) })
     return () => { cancelled = true }
   }, [tenantId, fiscalRange, total])
+
+  // อันดับหน้า: total อยู่ใน deps ด้วยเหตุผลเดียวกับกราฟด้านบน (การเปิดหน้านี้เองก็ถูกนับ)
+  // ตัวช่วงเวลา 30 วัน/ปีงบ คำนวณตอนยิง ไม่ใช่ตอน render — ไม่งั้น effect ยิงใหม่ทุก render เพราะวันที่เป็นค่าใหม่เสมอ
+  useEffect(() => {
+    if (!tenantId) return undefined
+    let cancelled = false
+    const now = Date.now()
+    let range = { from: null, to: null }
+    if (rankPeriod === '30d') {
+      range = { from: bangkokDay(new Date(now - (DAYS_SHOWN - 1) * DAY_MS)), to: bangkokDay(new Date(now)) }
+    } else if (rankPeriod === 'fy') {
+      const bounds = fiscalYearBounds(currentFiscalYear)
+      range = { from: bounds.from, to: bounds.to }
+    }
+    supabase.rpc('get_site_page_ranking', {
+      _municipality_id: tenantId,
+      _from: range.from,
+      _to: range.to,
+    }).then(({ data, error }) => {
+      if (cancelled) return
+      if (error) setRankFailed(true)
+      else { setRanking(data ?? { since: null, rows: [] }); setRankFailed(false) }
+    }, () => { if (!cancelled) setRankFailed(true) })
+    return () => { cancelled = true }
+  }, [tenantId, rankPeriod, currentFiscalYear, total])
+
+  const rank = useMemo(() => (ranking ? pageRanking(ranking.rows) : null), [ranking])
+  const rankSince = ranking?.since ? thaiDateFromDateInput(ranking.since) : ''
+  const rankMax = rank?.menus[0]?.opens ?? 0
 
   const dailySeries = useMemo(
     () => (daily ?? []).map(r => ({
@@ -249,6 +299,122 @@ export default function VisitorStats() {
           )}
         </div>
 
+        {/* ── อันดับเมนู: เมนูไหนถูกเปิดมากที่สุด (ไว้ดูว่าประชาชนสนใจเรื่องไหน) ──
+            รายการเดียวกับเมนูในแถบข้างของหน้าประชาชน ครบทุกเมนู (รวมที่ 0 ครั้ง) แท่งเดียวสี เรียงมากไปน้อย
+            ใส่ตัวเลขทุกแถว (ไม่กี่สิบแถว อ่านได้ ไม่ได้แน่นแบบกราฟเวลา) ตารางคู่กราฟอยู่ใน details
+            เมนูนำทาง (หน้าแรก/เมนูทั้งหมด/รายงานทั้งหมด) แยกเป็นตัวเลขด้านล่าง ไม่ใส่แท่ง: หน้าแรกชนะทุกครั้งโดยธรรมชาติ
+            ถ้าปนในแท่งเดียวกัน แท่งของเมนูบริการจะสั้นจนเทียบกันไม่ออก */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+          <p className="text-sm font-bold text-gray-700">เมนูไหนถูกใช้มากที่สุด</p>
+          <div role="group" aria-label="ช่วงเวลาของอันดับหน้า"
+            className="inline-flex rounded-xl border border-gray-200 bg-white p-0.5 text-xs">
+            {RANK_PERIODS.map(p => (
+              <button key={p.key} type="button" aria-pressed={rankPeriod === p.key}
+                onClick={() => setRankPeriod(p.key)}
+                className={`rounded-[10px] px-2.5 py-1 font-semibold transition-colors ${
+                  rankPeriod === p.key ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-700'}`}>
+                {p.key === 'fy' ? `${p.label} ${currentFiscalYear}` : p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-100 p-3 md:p-4">
+          <p className="text-[10px] text-gray-400 mb-2">
+            จำนวนครั้งที่เปิดแต่ละเมนู ตามรายการเมนูด้านข้างของเว็บ · นับทุกทางที่เข้า ทั้งเมนูข้าง ปุ่มบนหน้าแรก แถบล่างบนมือถือ และลิงก์
+          </p>
+          {!rank ? (
+            <ChartPlaceholder failed={rankFailed} />
+          ) : rank.total === 0 ? (
+            <p className="py-8 text-center text-xs text-gray-400">
+              ยังไม่มีข้อมูลรายเมนูในช่วงนี้ — ระบบเริ่มสะสมตั้งแต่วันที่เพิ่มส่วนนี้ ข้อมูลจะค่อยๆ เพิ่มขึ้นทุกวัน
+            </p>
+          ) : (
+            <ol className="space-y-2.5">
+              {rank.menus.map((p, i) => (
+                <li key={p.key}>
+                  <div className="flex items-baseline justify-between gap-3 text-xs">
+                    <span className="min-w-0 leading-snug text-gray-700">
+                      <span className="mr-1.5 tabular-nums text-gray-400">{i + 1}</span>
+                      {p.label}
+                      <KindTag kind={p.kind} />
+                    </span>
+                    <span className="shrink-0 font-bold text-gray-800 tabular-nums">{formatCount(p.opens)}</span>
+                  </div>
+                  <div className="mt-1 h-2 rounded-full bg-gray-100" aria-hidden="true">
+                    {/* 0 ครั้ง = รางว่าง ไม่ใส่แท่งสั้นๆ ให้ดูเหมือนมีคนเปิด */}
+                    {p.opens > 0 && (
+                      <div className="h-2 rounded-full"
+                        style={{ width: `${Math.max(2, Math.round((p.opens / rankMax) * 100))}%`, backgroundColor: 'var(--color-primary)' }} />
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+
+          {rank && rank.total > 0 && (
+            <div className="mt-3 rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-500">
+              <p className="font-semibold text-gray-600">เมนูนำทาง (ทุกคนต้องผ่าน จึงไม่นำมาจัดอันดับ)</p>
+              <p className="mt-0.5 leading-relaxed">
+                {rank.nav.map((p, i) => (
+                  <span key={p.key}>
+                    {i > 0 && <span className="text-gray-300"> · </span>}
+                    <span className="whitespace-nowrap">{p.label} <b className="tabular-nums text-gray-700">{formatCount(p.opens)}</b> ครั้ง</span>
+                  </span>
+                ))}
+              </p>
+            </div>
+          )}
+
+          {rank && rank.rows.length > 0 && (
+            <details className="mt-3">
+              <summary className="cursor-pointer select-none text-xs font-semibold text-gray-500 hover:text-gray-700">
+                ดูทุกเมนูและหน้าอื่นเป็นตาราง
+              </summary>
+              <table className="mt-2 w-full text-xs">
+                <thead>
+                  <tr className="text-gray-400 border-b border-gray-100">
+                    <th className="text-left font-semibold py-1">เมนู / หน้า</th>
+                    <th className="text-right font-semibold py-1 pl-3">ครั้ง</th>
+                    <th className="text-right font-semibold py-1 pl-3">เครื่อง*</th>
+                    <th className="text-right font-semibold py-1 pl-3">สัดส่วน</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rank.rows.map(p => (
+                    <tr key={p.key} className="border-b border-gray-50">
+                      <td className="py-1 pr-2 text-gray-600">{p.label}<KindTag kind={p.kind} /></td>
+                      <td className="py-1 pl-3 text-right font-semibold text-gray-800 tabular-nums">{formatCount(p.opens)}</td>
+                      <td className="py-1 pl-3 text-right text-gray-600 tabular-nums">{formatCount(p.visitors)}</td>
+                      <td className="py-1 pl-3 text-right text-gray-600 tabular-nums">{(p.share * 100).toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td className="pt-1.5 font-bold text-gray-700">รวม</td>
+                    <td className="pt-1.5 text-right font-black text-gray-800 tabular-nums">{formatCount(rank.total)}</td>
+                    <td />
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+              <p className="mt-1.5 text-[10px] leading-snug text-gray-400">
+                * เครื่อง = จำนวนครั้งแรกของวันที่เครื่องหนึ่งเปิดหน้านั้น เครื่องเดียวที่กลับมาหลายวันนับทุกวัน
+              </p>
+            </details>
+          )}
+
+          <p className="mt-3 text-[10px] leading-snug text-gray-400">
+            {rankSince ? `เริ่มนับรายหน้าเมื่อ ${rankSince} · ` : ''}
+            ตัวเลขนี้คือครั้งที่หน้าถูกเปิด ไม่ใช่จำนวนเรื่องที่ยื่นจริง — ดูจำนวนที่ยื่นจริงได้ที่{' '}
+            <Link to="/reports/complaints" className="underline hover:text-gray-600">รายงานร้องเรียน/ร้องทุกข์</Link>
+            {' '}และ{' '}
+            <Link to="/doc-stats" className="underline hover:text-gray-600">รายงานการออกเอกสารดิจิทัล</Link>
+          </p>
+        </div>
+
         {/* ── รายเดือนตามปีงบ: ตัวเลือกปีงบอยู่เหนือสิ่งที่มันคุม (การ์ดกราฟ + ตาราง) ไม่ยัดไว้ในการ์ด ── */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
           <p className="text-sm font-bold text-gray-700">
@@ -330,6 +496,10 @@ export default function VisitorStats() {
               {countedBackofficeBefore
                 ? ` ตั้งแต่ ${thaiDateFromDateInput(BACKOFFICE_EXCLUDED_SINCE)} · ยอดก่อนหน้านั้นนับรวมหน้าเหล่านี้ด้วย`
                 : ''}
+            </li>
+            <li>
+              อันดับหน้านับเป็นกลุ่มของหน้า (เช่น ทุกเรื่องที่เปิดจากลิงก์ติดตามนับเป็น "ติดตามเรื่องด้วยลิงก์") ไม่เก็บที่อยู่หน้าเว็บจริง
+              {rankSince ? ` · เริ่มนับรายหน้าเมื่อ ${rankSince} ยอดก่อนหน้านั้นไม่ถูกแยกตามหน้า` : ''}
             </li>
             <li>ไม่เก็บข้อมูลส่วนบุคคล เก็บเฉพาะยอดรวมรายวันของหน่วยงาน</li>
             <li>วันตามเวลาประเทศไทย · ปีงบประมาณเริ่ม 1 ต.ค. สิ้นสุด 30 ก.ย.{since ? ` · เริ่มนับเมื่อ ${since}` : ''}</li>
