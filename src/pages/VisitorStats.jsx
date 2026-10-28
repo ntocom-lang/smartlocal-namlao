@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useSiteOpenSummary } from '../lib/siteOpenCounter'
 import {
-  BACKOFFICE_EXCLUDED_SINCE, bangkokDay, fiscalMonthSeries, fiscalYearSeries, pageRanking,
+  BACKOFFICE_EXCLUDED_SINCE, bangkokDay, fiscalMonthSeries, fiscalYearSeries, pageRanking, periodRowsWithData,
 } from '../lib/siteOpenStats.js'
 import { thaiDateFromDateInput } from '../lib/thaiDate.js'
 import FiscalYearPicker from '../components/common/FiscalYearPicker'
@@ -188,6 +188,9 @@ export default function VisitorStats() {
   }, [monthly, fiscalRange, currentFiscalYear])
 
   const periodTotal = periodSeries?.reduce((sum, p) => sum + p.opens, 0) ?? 0
+  // ตารางใต้กราฟแสดงเฉพาะเดือน/ปีงบที่มีข้อมูล (เจ้าของระบบสั่ง) — กราฟด้านบนยังใช้ periodSeries ครบทุกช่วง
+  const periodRows = useMemo(() => periodRowsWithData(periodSeries), [periodSeries])
+  const periodUnit = fiscalRange ? 'เดือน' : 'ปีงบ'
   // "ทุกปีงบ" ช่วงปีแรกมีปีงบเดียว = กราฟแท่งเดียวที่ไม่ได้เทียบอะไร ตัวเลขในตารางบอกได้ครบกว่า
   const showPeriodChart = !periodSeries || fiscalRange || periodSeries.length > 1
   // ป้ายตัวเลขบนแท่งเฉพาะแท่งที่สูงสุด (ไม่ใส่ทุกแท่ง อ่านไม่ออก) ค่าที่เหลืออยู่ในตารางใต้กราฟ
@@ -469,30 +472,39 @@ export default function VisitorStats() {
             </ResponsiveContainer>
           )}
 
-          {periodSeries && (
-            <table className="mt-3 w-full text-xs">
-              <thead>
-                <tr className="text-gray-400 border-b border-gray-100">
-                  <th className="text-left font-semibold py-1">{fiscalRange ? 'เดือน' : 'ปีงบประมาณ'}</th>
-                  <th className="text-right font-semibold py-1">การเข้าชม (ครั้ง)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {periodSeries.map(p => (
-                  <tr key={p.key} className="border-b border-gray-50">
-                    <td className="py-1 text-gray-600">{p.fullLabel}</td>
-                    <td className="py-1 text-right font-semibold text-gray-800 tabular-nums">{formatCount(p.opens)}</td>
+          {periodSeries && (periodRows.rows.length === 0 ? (
+            <p className="mt-3 py-4 text-center text-xs text-gray-400">ยังไม่มีข้อมูลในช่วงนี้</p>
+          ) : (
+            <>
+              <table className="mt-3 w-full text-xs">
+                <thead>
+                  <tr className="text-gray-400 border-b border-gray-100">
+                    <th className="text-left font-semibold py-1">{fiscalRange ? 'เดือน' : 'ปีงบประมาณ'}</th>
+                    <th className="text-right font-semibold py-1">การเข้าชม (ครั้ง)</th>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td className="pt-1.5 font-bold text-gray-700">รวม</td>
-                  <td className="pt-1.5 text-right font-black text-gray-800 tabular-nums">{formatCount(periodTotal)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          )}
+                </thead>
+                <tbody>
+                  {periodRows.rows.map(p => (
+                    <tr key={p.key} className="border-b border-gray-50">
+                      <td className="py-1 text-gray-600">{p.fullLabel}</td>
+                      <td className="py-1 text-right font-semibold text-gray-800 tabular-nums">{formatCount(p.opens)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td className="pt-1.5 font-bold text-gray-700">รวม</td>
+                    <td className="pt-1.5 text-right font-black text-gray-800 tabular-nums">{formatCount(periodTotal)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+              {periodRows.hidden > 0 && (
+                <p className="mt-1.5 text-[10px] text-gray-400">
+                  ไม่แสดง{periodUnit}ที่ยังไม่มีข้อมูล ({formatCount(periodRows.hidden)} {periodUnit})
+                </p>
+              )}
+            </>
+          ))}
         </div>
 
         {/* ── วิธีนับ — ต้องบอกให้ชัดว่าเป็น "ครั้ง" ไม่ใช่ "คน" ใครยกตัวเลขไปอ้างต่อจะได้ไม่เข้าใจผิด ── */}
