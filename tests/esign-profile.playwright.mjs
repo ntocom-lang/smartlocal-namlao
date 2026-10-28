@@ -1,11 +1,11 @@
-// หน้า "ลายเซ็นของฉัน" ในโปรไฟล์ของเจ้าหน้าที่ (/profile#signature) — ทดสอบในเบราว์เซอร์จริง
+// หน้า "ลายเซ็นของฉัน" แยกที่ /staff/my-signatures และลิงก์เก่า /profile#signature — ทดสอบในเบราว์เซอร์จริง
 //
 // ใช้ "ฐานข้อมูลจำลอง" (ดักเฉพาะ RPC ลายเซ็น 8 ตัวที่ /rest/v1/rpc/…) จึงรันได้ก่อนที่ migration จะ apply บนฐานจริง
 // และไม่เขียนข้อมูลอะไรของสนามซ้อม — ส่วนล็อกอิน/โปรไฟล์ใช้ของจริงตามปกติ ความถูกต้องของฟังก์ชันฝั่ง DB ดูที่
 // tests/esign-db.test.mjs (PGlite) · ไม่กด "ออกจากระบบ" (signOut ออกทุกอุปกรณ์)
 //
 // ตรวจ:
-//   - ปิดไว้เป็นค่าเริ่มต้นและไม่ยิง RPC จนกว่าจะเปิด · มาด้วย #signature แล้วเปิดเองและเลื่อนมาให้
+//   - หน้าเฉพาะโหลดทันที · หน้าโปรไฟล์ไม่โหลดคลัง · ลิงก์เก่า redirect · route ป้องกันสิทธิ์
 //   - เซ็นสด: PNG ที่ส่งไปเป็น PNG จริง โปร่งใส ตัดขอบแน่น ≤ 640×320 ≤ 50,000 ไบต์ สีหมึกตรงที่เลือก · ย้อน/ล้าง
 //   - อัปโหลด PNG/JPG: ลบพื้นขาว/เทาเป็นโปร่งใส · ไฟล์ผิดชนิด/ภาพว่างถูกปฏิเสธด้วยข้อความไทย (ไม่ยิง RPC)
 //   - คลัง: ค่าเริ่มต้น · ลบสองขั้นพร้อมข้อความ "เก็บไว้เป็นหลักฐาน" · ครบ 5 แบบเพิ่มไม่ได้
@@ -16,8 +16,10 @@
 //   ES_TEST_BASE_URL=http://demo.localhost:5176 node tests/esign-profile.playwright.mjs
 //   ES_ONLY=รหัส,ประวัติ  รันเฉพาะชุดที่ชื่อมีคำนี้ · ES_SHOTS=<โฟลเดอร์>  ถ่ายภาพหน้าจอตอนชุดไหนล้ม
 //   ES_PROFILE=TEST-officer (ค่าเริ่มต้น) · ES_CITIZEN_PROFILE=TEST-citizen · ES_PROFILE_ROOT=<.chrome-test-profiles>
+//   ES_FIXTURE_AUTH=1 node tests/esign-profile.playwright.mjs  ใช้บัญชีจำลองทั้งหมด ไม่เชื่อม backend จริง
 import assert from 'node:assert/strict'
 import { access } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import zlib from 'node:zlib'
@@ -25,11 +27,65 @@ import { chromium } from 'playwright'
 import { BlockedError, safeEvaluate, trackProfileResolution, waitForSettled } from './lib/appReady.mjs'
 
 const PROFILE_ROOT = process.env.ES_PROFILE_ROOT || path.join(process.cwd(), '.chrome-test-profiles')
-const BASE = (process.env.ES_TEST_BASE_URL || 'http://demo.localhost:5174').replace(/\/$/, '')
+let BASE = (process.env.ES_TEST_BASE_URL || 'http://demo.localhost:5174').replace(/\/$/, '')
 const STAFF_PROFILE = process.env.ES_PROFILE || 'TEST-officer'
 const CITIZEN_PROFILE = process.env.ES_CITIZEN_PROFILE || 'TEST-citizen'
 const SESSION_SOURCE_URL = 'https://demo.rk-networks.com'
 const ALLOWED_HOSTS = new Set(['demo.rk-networks.com', 'demo.localhost', 'localhost', '127.0.0.1'])
+// ES_FIXTURE_AUTH=1 ใช้บัญชีจำลองทั้งหมดและ dev server ชั่วคราว ไม่อ่าน Chrome profile หรือส่ง request ออกนอกเครื่อง
+const FIXTURE_AUTH = process.env.ES_FIXTURE_AUTH === '1'
+const SIGNATURE_PATH = '/staff/my-signatures'
+const fixtureRoles = new WeakMap()
+let fixtureServer = null
+if (FIXTURE_AUTH && !process.env.ES_TEST_BASE_URL) {
+  const { createServer } = await import('vite')
+  process.env.SKIP_SYNC_CHECK = '1'
+  fixtureServer = await createServer({
+    root: process.cwd(), cacheDir: path.join(tmpdir(), 'smartlocal-signature-page-vite', path.basename(process.cwd())),
+    define: { 'import.meta.env.VITE_SUPABASE_URL': JSON.stringify('https://fixture.supabase.co'), 'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify('local-fixture-only'), 'import.meta.env.VITE_TENANT_SLUG': JSON.stringify('demo') },
+    server: { host: '127.0.0.1', port: 0, hmr: false },
+  })
+  await fixtureServer.listen()
+  BASE = `http://127.0.0.1:${fixtureServer.httpServer.address().port}`
+}
+async function installFixtureRoutes(context, role) {
+  const uid = '00000000-0000-4000-8000-000000000001'
+  const municipalityId = '00000000-0000-4000-8000-000000000002'
+  const user = { id: uid, aud: 'authenticated', role: 'authenticated', email: 'test@example.invalid', user_metadata: { full_name: 'TEST เจ้าหน้าที่ทดสอบลายเซ็น' }, app_metadata: { provider: 'email', providers: ['email'] }, identities: [] }
+  const profile = { id: uid, municipality_id: municipalityId, role, full_name: user.user_metadata.full_name, phone: '0800000000', avatar_url: null }
+  const tenant = { id: municipalityId, slug: 'demo', name: 'TEST หน่วยงานทดสอบ', org_type: 'เทศบาลตำบล', ui_style: 'eco-friendly', theme_color: '#0f766e', enabled_modules: null }
+  await context.route('**/*', async route => {
+    const req = route.request(); const url = new URL(req.url())
+    if (url.hostname.endsWith('.supabase.co')) {
+      const cors = { 'access-control-allow-origin': req.headers().origin || '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*', 'access-control-allow-credentials': 'true' }
+      if (req.method() === 'OPTIONS') { await route.fulfill({ status: 204, headers: cors }); return }
+      let data = []
+      if (url.pathname.includes('/auth/v1/user')) data = user
+      else if (url.pathname.includes('/rest/v1/municipalities')) data = tenant
+      else if (url.pathname.includes('/rest/v1/profiles')) data = req.headers().accept?.includes('object+json') ? profile : [profile]
+      else if (req.headers().accept?.includes('object+json')) data = null
+      await route.fulfill({ status: 200, contentType: 'application/json', headers: { ...cors, 'content-range': '0-0/0' }, body: JSON.stringify(data) }); return
+    }
+    if (req.resourceType() === 'image') { await route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>' }); return }
+    if (url.origin !== new URL(BASE).origin) { await route.fulfill({ status: 200, contentType: url.pathname.endsWith('.css') ? 'text/css' : 'application/json', body: url.pathname.endsWith('.css') ? '' : '{}' }); return }
+    if (!['GET', 'HEAD'].includes(req.method())) throw new Error('Fixture blocked a non-GET request outside mock backend')
+    await route.continue()
+  })
+}
+async function prepareFixture(context, name) {
+  const role = name === 'ANONYMOUS' ? null : ['superadmin', 'admin', 'officer', 'technician', 'staff', 'viewer', 'council', 'citizen'].find(r => name.toLowerCase().endsWith(r)) || 'officer'
+  fixtureRoles.set(context, role)
+  if (context.routeWebSocket) await context.routeWebSocket('**/*', socket => socket.close())
+  if (role) {
+    const b64 = value => Buffer.from(JSON.stringify(value)).toString('base64url')
+    const exp = Math.floor(Date.now() / 1000) + 3600
+    const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'test@example.invalid', user_metadata: {}, identities: [] }
+    const accessToken = b64({ alg: 'HS256', typ: 'JWT' }) + '.' + b64({ sub: user.id, aud: 'authenticated', role: 'authenticated', exp, iat: exp - 3600, session_id: user.id }) + '.local-fixture-only'
+    await context.addInitScript(session => localStorage.setItem('sb-fixture-auth-token', JSON.stringify(session)), { access_token: accessToken, refresh_token: 'local-fixture-only', token_type: 'bearer', expires_at: exp, expires_in: 3600, user })
+  }
+  await installFixtureRoutes(context, role)
+}
+
 const MIN_TAP = 44
 const RPC_NAMES = ['esign_my_signer_overview', 'esign_my_signatures', 'esign_my_signature_add', 'esign_my_signature_set_default',
   'esign_my_signature_delete', 'esign_my_signature_history', 'set_esign_pin', 'esign_suspend_me']
@@ -157,6 +213,7 @@ function makeBackend({ pinSet = false, suspended = false, library = [], history 
 
 async function installBackend(context, backend) {
   await context.unrouteAll({ behavior: 'ignoreErrors' })
+  if (fixtureRoles.has(context)) await installFixtureRoutes(context, fixtureRoles.get(context))
   const pattern = new RegExp(`/rest/v1/rpc/(${RPC_NAMES.join('|')})(\\?|$)`)
   await context.route(pattern, async route => {
     const request = route.request()
@@ -181,6 +238,16 @@ async function transferDemoSession(page) {
 }
 
 async function withProfile(name, fn) {
+  if (FIXTURE_AUTH || name === 'ANONYMOUS') {
+    const browser = await chromium.launch({ channel: 'chrome', headless: !process.argv.includes('--headed') })
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' })
+    try {
+      if (FIXTURE_AUTH) await prepareFixture(context, name)
+      const page = await context.newPage()
+      const auth = trackProfileResolution(page)
+      return await fn(page, auth, context)
+    } finally { await context.close(); await browser.close() }
+  }
   const dir = path.join(PROFILE_ROOT, name)
   try { await access(dir) } catch { throw new BlockedError(`ไม่พบโปรไฟล์ ${name}`) }
   let context
@@ -195,17 +262,16 @@ async function withProfile(name, fn) {
   } finally { await context.close().catch(() => {}) }
 }
 
-async function openProfile(page, auth, hash = '') {
+async function openSignatures(page, auth) {
   await page.goto('about:blank')
-  await page.goto(`${BASE}/profile${hash}`, { waitUntil: 'domcontentloaded', timeout: 45_000 })
+  await page.goto(`${BASE}${SIGNATURE_PATH}`, { waitUntil: 'domcontentloaded', timeout: 45_000 })
   await waitForSettled(page, auth)
-  if (new URL(page.url()).pathname !== '/profile') throw new BlockedError(`ถูกพาออกจาก /profile ไปที่ ${new URL(page.url()).pathname}`)
+  if (new URL(page.url()).pathname !== SIGNATURE_PATH) throw new BlockedError(`ถูกพาออกจากหน้าลายเซ็นไปที่ ${new URL(page.url()).pathname}`)
   // กล่อง "เพิ่มเบอร์มือถือ" เด้งทับหลังโหลดหน้า ~5 วิ — รอบแรกต้องรอให้เด้งแล้วกดข้าม (จำใน sessionStorage ไม่เขียน DB) ไม่งั้นบังปุ่มที่จะกดต่อ
   // รอบหลังจำการข้ามไว้แล้ว ไม่ต้องรอ
-  await page.getByRole('button', { name: 'ข้ามไปก่อน' }).first().click({ timeout: phoneModalSkipped ? 800 : 9_000 }).catch(() => {})
+  if (!FIXTURE_AUTH) await page.getByRole('button', { name: 'ข้ามไปก่อน' }).first().click({ timeout: phoneModalSkipped ? 800 : 9_000 }).catch(() => {})
   phoneModalSkipped = true
-  // หน้าพร้อมเมื่อปุ่ม "ออกจากระบบ" ท้ายหน้าโผล่ (ไม่กด) — ใช้ได้ทั้งเจ้าหน้าที่/ประชาชน ทั้ง PC และมือถือ (หัว PC ถูกซ่อนบนมือถือ)
-  await page.getByRole('button', { name: 'ออกจากระบบ' }).last().waitFor({ timeout: 30_000 })
+  await page.locator('[data-my-signatures-page]').waitFor({ timeout: 30_000 })
 }
 
 let phoneModalSkipped = false
@@ -220,7 +286,6 @@ const tapSize = async (locator, where) => {
   assert.ok(box.height >= MIN_TAP - 0.5 && box.width >= MIN_TAP - 0.5, `${where}: ปุ่มเล็กกว่า ${MIN_TAP}px (${Math.round(box.width)}×${Math.round(box.height)})`)
 }
 async function openSection(page) {
-  if ((await page.locator('[data-my-esign-toggle]').getAttribute('aria-expanded')) !== 'true') await page.locator('[data-my-esign-toggle]').click()
   await page.locator('[data-esign-status]').waitFor({ timeout: 15_000 })
 }
 async function drawStrokes(page, strokes) {
@@ -236,44 +301,50 @@ const SCRIBBLE = [[[0.15, 0.55], [0.3, 0.3], [0.45, 0.7], [0.6, 0.35], [0.8, 0.6
 const lastCall = (backend, name) => backend.calls.filter(call => call.name === name).at(-1)
 
 // ── ตรวจ ──────────────────────────────────────────────────────────────────────────────────────
-async function checkCollapsedAndHash(page, auth, context) {
-  const backend = makeBackend({ pinSet: true, library: [], history: [] })
+async function checkDedicatedAndLegacy(page, auth, context) {
+  const backend = makeBackend({ pinSet: true })
   await installBackend(context, backend)
-  await openProfile(page, auth)
-  assert.equal(await page.locator('[data-my-esign-toggle]').getAttribute('aria-expanded'), 'false', 'ต้องพับไว้เป็นค่าเริ่มต้น')
-  await page.waitForTimeout(800)
-  assert.equal(backend.calls.length, 0, `พับอยู่ต้องไม่ยิง RPC ลายเซ็น (ยิง ${backend.calls.map(c => c.name)})`)
-  await page.locator('[data-my-esign-toggle]').click()
-  await page.locator('[data-esign-status]').waitFor()
+  await page.goto(`${BASE}/profile`, { waitUntil: 'domcontentloaded' })
+  await waitForSettled(page, auth)
+  await page.locator('[data-profile-signatures]').waitFor()
+  assert.equal(await section(page).count(), 0, 'โปรไฟล์ต้องเหลือเฉพาะทางลัด')
+  assert.equal(backend.calls.length, 0, 'หน้าโปรไฟล์ต้องไม่โหลดข้อมูลลายเซ็น')
+  await page.locator('[data-profile-signatures]').click()
+  await page.waitForURL(url => url.pathname === SIGNATURE_PATH)
+  await openSection(page)
+  assert.equal(await page.getByRole('link', { name: 'กลับหน้าก่อนหน้า', exact: true }).getAttribute('href'), '/profile')
+  assert.equal(await page.locator('[data-my-esign-toggle]').count(), 0, 'หน้าเฉพาะต้องเปิดส่วนจัดการทันที')
   assert.deepEqual([...new Set(backend.calls.map(c => c.name))].sort(), ['esign_my_signature_history', 'esign_my_signatures', 'esign_my_signer_overview'])
-  await page.locator('[data-my-esign-toggle]').click()
-  assert.equal(await page.locator('[data-my-esign-toggle]').getAttribute('aria-expanded'), 'false')
-  // อยู่หน้าโปรไฟล์อยู่แล้วแล้วกดเมนู "ลายเซ็นของฉัน" (เปลี่ยนแค่ hash ไม่โหลดหน้าใหม่) ต้องเปิดส่วนนี้ให้
-  await page.evaluate(() => { window.location.hash = '#signature' })
-  await page.locator('[data-esign-status]').waitFor({ timeout: 10_000 })
-  assert.equal(await page.locator('[data-my-esign-toggle]').getAttribute('aria-expanded'), 'true', 'เปลี่ยน hash ขณะอยู่หน้านี้ต้องเปิดส่วนลายเซ็น')
-
-  // มาด้วย #signature → เปิดเองและเลื่อนมาให้ · ระหว่างรอข้อมูลต้องไม่แวบข้อความสถานะผิดๆ
-  // (ตั้งรหัสไว้แล้ว แต่ก่อนข้อมูลมาห้ามขึ้น "ยังไม่ได้ตั้งรหัสลงนาม"/"ยังไม่มีลายเซ็นภาพ" ให้ผู้ใช้ตกใจหรือไปตั้งซ้ำ)
+  await page.getByRole('link', { name: 'กลับหน้าก่อนหน้า', exact: true }).click()
+  await page.waitForURL(url => url.pathname === '/profile')
+  await waitForSettled(page, auth)
+  await page.locator('[data-account-menu-button]:visible').click()
+  await page.locator('[data-account-signature]').click()
+  await page.waitForURL(url => url.pathname === SIGNATURE_PATH)
+  await openSection(page)
   backend.delayMs = 1800
-  await openProfile(page, auth, '#signature')
-  assert.equal(await page.locator('[data-esign-status]').count(), 0, 'ระหว่างรอข้อมูลต้องยังไม่ขึ้นแถบสถานะ')
+  await page.goto('about:blank')
+  await page.goto(`${BASE}/profile#signature`, { waitUntil: 'domcontentloaded' })
+  await page.waitForURL(url => url.pathname === SIGNATURE_PATH)
+  await section(page).waitFor()
+  assert.equal(await page.locator('[data-esign-status]').count(), 0, 'ระหว่างโหลดต้องไม่แสดงสถานะ PIN ที่เดาเอง')
   const pending = await section(page).innerText()
-  assert.ok(!pending.includes('ยังไม่ได้ตั้งรหัสลงนาม') && !pending.includes('ยังไม่มีลายเซ็นภาพ'), `แวบข้อความสถานะผิดก่อนข้อมูลมา: ${JSON.stringify(pending.slice(0, 120))}`)
-  await page.locator('[data-esign-status]').waitFor({ timeout: 15_000 })
+  assert(!pending.includes('ยังไม่ได้ตั้งรหัสลงนาม') && !pending.includes('ยังไม่มีลายเซ็นภาพ'))
+  await openSection(page)
   backend.delayMs = 0
-  assert.equal(await page.locator('[data-my-esign-toggle]').getAttribute('aria-expanded'), 'true', '#signature ต้องเปิดส่วนนี้เอง')
-  await page.waitForTimeout(900)
-  const place = await section(page).evaluate(element => ({ top: element.getBoundingClientRect().top, height: innerHeight }))
-  assert.ok(place.top >= -2 && place.top < place.height - 120, `เลื่อนมาให้แล้วหัวส่วนต้องอยู่ในจอ (top=${Math.round(place.top)} จอสูง ${place.height})`)
-  assert.equal(await page.locator('[data-signature-empty]').count(), 1, 'ไม่มีลายเซ็นต้องขึ้นข้อความอธิบายว่าไม่บังคับ')
-  return 'พับ+ไม่ยิง RPC · #signature เปิดเองและเลื่อนมา'
+  assert.equal(await page.locator('[data-signature-empty]').count(), 1)
+  await page.goto(`${BASE}/profile`, { waitUntil: 'domcontentloaded' })
+  await page.locator('[data-profile-signatures]').waitFor()
+  await page.evaluate(() => { window.location.hash = '#signature' })
+  await page.waitForURL(url => url.pathname === SIGNATURE_PATH)
+  await openSection(page)
+  return 'หน้าเฉพาะโหลดทันที · โปรไฟล์ไม่อ่านคลัง · ลิงก์เก่า redirect โดยไม่เปลี่ยนสิทธิ์'
 }
 
 async function checkDrawFlow(page, auth, context) {
   const backend = makeBackend({ pinSet: true })
   await installBackend(context, backend)
-  await openProfile(page, auth, '#signature')
+  await openSignatures(page, auth)
   await openSection(page)
   const add = page.locator('[data-add-signature]')
   await tapSize(add, 'ปุ่มเพิ่มลายเซ็น')
@@ -363,7 +434,7 @@ async function jpegBytesInPage(page) {
 async function checkUploadFlow(page, auth, context) {
   const backend = makeBackend({ pinSet: true })
   await installBackend(context, backend)
-  await openProfile(page, auth, '#signature')
+  await openSignatures(page, auth)
   await openSection(page)
   await page.locator('[data-add-signature]').click()
   const dialog = page.locator('[data-add-signature-dialog]')
@@ -417,7 +488,7 @@ async function checkLibrary(page, auth, context) {
   const seeds = [1, 2, 3, 4, 5].map(n => ({ id: `00000000-0000-4000-8000-00000000010${n}`, label: `แบบที่ ${n}`, is_default: n === 1, created_at: '2026-10-2' + n + 'T03:00:00Z', width: 40, height: 16, png_base64: seedPng(n).toString('base64') }))
   const backend = makeBackend({ pinSet: true, library: seeds, usedIds: [seeds[1].id] })
   await installBackend(context, backend)
-  await openProfile(page, auth, '#signature')
+  await openSignatures(page, auth)
   await openSection(page)
   assert.equal(await page.locator('[data-signature-card]').count(), 5)
   assert.equal(await page.locator('[data-add-signature]').isDisabled(), true, 'ครบ 5 แบบต้องเพิ่มไม่ได้')
@@ -451,7 +522,7 @@ async function checkLibrary(page, auth, context) {
 async function checkPinAndSuspend(page, auth, context) {
   const backend = makeBackend({ pinSet: false })
   await installBackend(context, backend)
-  await openProfile(page, auth, '#signature')
+  await openSignatures(page, auth)
   await openSection(page)
   const save = page.locator('[data-save-pin]')
   await tapSize(save, 'ปุ่มตั้งรหัส')
@@ -520,7 +591,7 @@ async function checkHistory(page, auth, context) {
   ]
   const backend = makeBackend({ pinSet: true, history })
   await installBackend(context, backend)
-  await openProfile(page, auth, '#signature')
+  await openSignatures(page, auth)
   await openSection(page)
   const text = await page.locator('[data-history-list]').innerText()
   for (const expected of ['ลงนาม: ผู้ขออนุญาต', 'อนุมัติ: ผู้มีอำนาจสั่งใช้ยานพาหนะ', 'แนบภาพ', 'ถอนแล้ว']) assert.ok(text.includes(expected), `ประวัติไม่มี "${expected}"`)
@@ -532,7 +603,10 @@ async function checkHistory(page, auth, context) {
   await page.locator('[data-my-esign]').waitFor()
   await page.getByRole('alert').filter({ hasText: 'ไม่มีสิทธิ์ทำรายการนี้' }).waitFor({ timeout: 15_000 })
   backend.failAll = null
-  return 'ประวัติ 2 รายการ · ข้อผิดพลาดเป็นข้อความไทย'
+  await page.getByRole('button', { name: 'ลองใหม่', exact: true }).click()
+  await openSection(page)
+  assert.equal(await page.getByRole('alert').count(), 0)
+  return 'ประวัติ 2 รายการ · ข้อผิดพลาดเป็นข้อความไทย · ลองโหลดใหม่ได้'
 }
 
 async function checkLayout(page, auth, context, width, height) {
@@ -540,10 +614,15 @@ async function checkLayout(page, auth, context, width, height) {
   const backend = makeBackend({ pinSet: false, library: seeds })
   await installBackend(context, backend)
   await page.setViewportSize({ width, height })
-  await openProfile(page, auth, '#signature')
+  await openSignatures(page, auth)
   await openSection(page)
-  await noOverflow(page, `${width}px หน้าโปรไฟล์`)
-  if (process.env.ES_SHOTS) await section(page).screenshot({ path: path.join(process.env.ES_SHOTS, `section-${width}.png`) })
+  await noOverflow(page, `${width}px หน้าลายเซ็น`)
+  assert(await page.locator('[data-my-signatures-page]').evaluate(el => el.scrollWidth <= el.clientWidth), 'เนื้อหาหน้าลายเซ็นถูกตัดแนวนอน')
+  await tapSize(page.getByRole('link', { name: 'กลับหน้าก่อนหน้า', exact: true }), 'ปุ่มกลับหน้าก่อนหน้า')
+  assert.equal(await page.getByRole('link', { name: 'กลับหน้าก่อนหน้า', exact: true }).getAttribute('href'), '/staff', 'เปิดตรงต้องมีปลายทางกลับที่ใช้ได้')
+  if (process.env.ES_SHOTS) await page.screenshot({ path: path.join(process.env.ES_SHOTS, `page-${width}.png`) })
+  // AppShell เลื่อนใน main การถ่าย element ยาวนอก scrollport จะได้ส่วนล่างว่าง ให้เก็บภาพ viewport จริง
+  if (process.env.ES_SHOTS) await page.screenshot({ path: path.join(process.env.ES_SHOTS, `section-${width}.png`) })
   for (const selector of ['[data-add-signature]', '[data-save-pin]', '[data-suspend-me]', '[data-delete-signature]']) await tapSize(page.locator(selector).first(), `${width}px ${selector}`)
   const imgs = await page.locator('[data-signature-card] img').evaluateAll(list => list.map(img => img.getBoundingClientRect().width))
   assert.ok(imgs.every(w => w > 20), 'ภาพในการ์ดเล็กเกินไป')
@@ -577,11 +656,10 @@ async function checkCitizen() {
   return withProfile(CITIZEN_PROFILE, async (page, auth, context) => {
     const backend = makeBackend({})
     await installBackend(context, backend)
-    await page.goto(`${BASE}/profile#signature`, { waitUntil: 'domcontentloaded', timeout: 45_000 })
+    await page.goto(`${BASE}${SIGNATURE_PATH}`, { waitUntil: 'domcontentloaded', timeout: 45_000 })
     await waitForSettled(page, auth)
-    if (new URL(page.url()).pathname !== '/profile') throw new BlockedError('ประชาชนเปิด /profile ไม่ได้')
-    await page.getByText('ข้อมูลบัญชีของฉัน').first().waitFor({ timeout: 30_000 })
-    await page.waitForTimeout(1_000)
+    await page.waitForURL(url => url.pathname === '/')
+    assert.notEqual(new URL(page.url()).pathname, SIGNATURE_PATH, 'ประชาชนต้องถูกกันที่ route')
     assert.equal(await page.locator('[data-my-esign]').count(), 0, 'ประชาชนต้องไม่เห็นส่วนลายเซ็นของฉัน')
     assert.equal(backend.calls.length, 0, 'ประชาชนต้องไม่ยิง RPC ลายเซ็น')
     return 'ประชาชนไม่เห็นส่วนนี้และไม่ยิง RPC'
@@ -609,7 +687,7 @@ async function main() {
   }
   await withProfile(STAFF_PROFILE, async (page, auth, context) => {
     shotPage = page
-    await run('พับ/ไม่ยิง RPC/#signature', () => checkCollapsedAndHash(page, auth, context))
+    await run('หน้าเฉพาะ/ลิงก์เก่า/โปรไฟล์ไม่โหลด RPC', () => checkDedicatedAndLegacy(page, auth, context))
     await run('เซ็นสด → PNG ที่ส่งไปฐานข้อมูล', () => checkDrawFlow(page, auth, context))
     await run('อัปโหลด PNG/JPG', () => checkUploadFlow(page, auth, context))
     await run('คลังลายเซ็น', () => checkLibrary(page, auth, context))
@@ -618,13 +696,45 @@ async function main() {
     await run('เค้าโครง PC 1280', () => checkLayout(page, auth, context, 1280, 900))
     await run('เค้าโครงมือถือ 390', () => checkLayout(page, auth, context, 390, 844))
     await run('เค้าโครงมือถือ 360', () => checkLayout(page, auth, context, 360, 740))
+    await run('เค้าโครงมือถือ 320', () => checkLayout(page, auth, context, 320, 568))
   })
   await run('ประชาชนไม่เห็นส่วนลายเซ็น', checkCitizen)
+  await run('ผู้ไม่ล็อกอินเข้าไม่ได้', async () => withProfile('ANONYMOUS', async (page, auth, context) => {
+    const backend = makeBackend()
+    await installBackend(context, backend)
+    await page.goto(`${BASE}${SIGNATURE_PATH}`, { waitUntil: 'domcontentloaded' })
+    await waitForSettled(page, auth)
+    assert.equal(new URL(page.url()).pathname, '/auth')
+    assert.equal(await section(page).count(), 0)
+    assert.equal(backend.calls.length, 0)
+  }))
+  if (FIXTURE_AUTH) await run('สิทธิ์เจ้าหน้าที่ทั้ง 7 บทบาท', async () => {
+    for (const role of ['staff', 'officer', 'admin', 'superadmin', 'viewer', 'council', 'technician']) {
+      await withProfile(`TEST-${role}`, async (page, auth, context) => {
+        const backend = makeBackend({ pinSet: true })
+        await installBackend(context, backend)
+        await openSignatures(page, auth)
+        await openSection(page)
+        assert.equal(new URL(page.url()).pathname, SIGNATURE_PATH)
+        assert.equal(await page.locator('[data-my-signatures-page]').count(), 1)
+        if (role === 'admin' || role === 'technician') {
+          const previous = role === 'admin' ? '/admin' : '/technician'
+          await page.goto(`${BASE}${previous}`, { waitUntil: 'domcontentloaded' })
+          await waitForSettled(page, auth)
+          await page.locator('[data-account-menu-button]:visible').last().click()
+          await page.locator('[data-account-signature]').click()
+          await page.waitForURL(url => url.pathname === SIGNATURE_PATH)
+          await openSection(page)
+          assert.equal(await page.getByRole('link', { name: 'กลับหน้าก่อนหน้า', exact: true }).getAttribute('href'), previous)
+        }
+      })
+    }
+  })
   console.log(`\n${total - failed}/${total} ผ่าน`)
-  process.exit(failed ? 1 : 0)
+  process.exitCode = failed ? 1 : 0
 }
 
 main().catch(error => {
   console.log(`${error instanceof BlockedError ? 'BLOCKED' : 'ERROR'}: ${String(error.message).split('\n')[0]}`)
-  process.exit(2)
-})
+  process.exitCode = 2
+}).finally(async () => { await fixtureServer?.close() })

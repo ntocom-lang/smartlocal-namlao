@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
-import { Ban, ChevronDown, ChevronRight, KeyRound, Loader2, Plus, Star, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Ban, KeyRound, Loader2, Plus, Star, Trash2 } from 'lucide-react'
 import AddSignatureDialog from './AddSignatureDialog'
 import { Chip, Notice } from '../esign/EsignBits'
 import PinForm from '../esign/PinForm'
@@ -12,20 +11,17 @@ import { SIGNATURE_CHECKER, SMALL_BUTTON_CLASS as SMALL_BUTTON, signatureDataUrl
 import { SIGNATURE_MAX_IMAGES } from '../../lib/signatureImage'
 import { thaiDateTimeText } from '../../lib/thaiDate'
 
-// "ลายเซ็นของฉัน" ในหน้าโปรไฟล์ของเจ้าหน้าที่ — รวมของส่วนตัวของผู้ลงนามไว้ที่เดียว:
+// เนื้อหาหน้า /staff/my-signatures — รวมของส่วนตัวของผู้ลงนามไว้ที่เดียว:
 // ภาพลายเซ็น (วาด/อัปโหลด) · รหัสลงนาม 6 หลัก · ระงับการลงนามของฉัน · ประวัติการลงนามของฉัน
-// เปิดจากเมนูกดชื่อ → /profile#signature (เปิดส่วนนี้เองและเลื่อนมาให้) · พับไว้เป็นค่าเริ่มต้นและไม่ยิง RPC จนกว่าจะเปิด
+// เข้าหน้าแล้วโหลดข้อมูลทันที ไม่ซ่อนการจัดการไว้ในส่วนพับของหน้าโปรไฟล์
 // หน้าตรวจสอบสาธารณะ/ใบพิมพ์ไม่เกี่ยวกับหน้านี้ — ที่นี่เห็นภาพของตัวเองเท่านั้น (ฐานข้อมูลคืนเฉพาะของผู้เรียก)
 
 export default function MyEsignSection() {
-  const { hash } = useLocation()
-  const wantsOpen = hash === '#signature'
-  const [open, setOpen] = useState(wantsOpen)
   const [overview, setOverview] = useState(null)
   const [library, setLibrary] = useState([])
   const [history, setHistory] = useState([])
-  // เปิดมาด้วย #signature = กำลังโหลดตั้งแต่แรก (ไม่งั้นแวบหนึ่งขึ้น "ยังไม่ได้ตั้งรหัสลงนาม" ทั้งที่ตั้งไว้แล้ว)
-  const [loading, setLoading] = useState(wantsOpen)
+  // ยังไม่แสดงสถานะ PIN/คลังจนกว่าจะได้ผลอ่านจริง ป้องกันข้อความสถานะว่างแวบก่อนข้อมูลมา
+  const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
   const [showAdd, setShowAdd] = useState(false)
@@ -34,20 +30,7 @@ export default function MyEsignSection() {
   const [notices, setNotices] = useState({})
   const [suspendAsk, setSuspendAsk] = useState(false)
   const [suspendReason, setSuspendReason] = useState('')
-  const rootRef = useRef(null)
-
-  // เมนู "ลายเซ็นของฉัน" ลิงก์มาที่ /profile#signature — เปิดส่วนนี้และเลื่อนมาให้ (ทั้งตอนเข้าหน้าใหม่และตอนอยู่หน้านี้แล้ว)
-  const [lastHash, setLastHash] = useState(hash)
-  if (hash !== lastHash) {
-    setLastHash(hash)
-    if (wantsOpen) { setOpen(true); setLoading(true) }
-  }
   useEffect(() => {
-    if (wantsOpen) rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [wantsOpen, hash])
-
-  useEffect(() => {
-    if (!open) return undefined
     let cancelled = false
     Promise.all([getMySignerOverview(), getMySignatures(), getMySignatureHistory(10)]).then(([ov, lib, hist]) => {
       if (cancelled) return
@@ -63,7 +46,7 @@ export default function MyEsignSection() {
       setLoading(false)
     })
     return () => { cancelled = true }
-  }, [open, reloadKey])
+  }, [reloadKey])
 
   const reload = useCallback(() => { setLoading(true); setReloadKey(key => key + 1) }, [])
   const setNotice = (key, notice) => setNotices(current => ({ ...current, [key]: notice }))
@@ -87,22 +70,21 @@ export default function MyEsignSection() {
   const atLimit = library.length >= SIGNATURE_MAX_IMAGES
 
   return (
-    <div ref={rootRef} id="signature" className="scroll-mt-4 overflow-hidden rounded-2xl bg-white shadow-xs" data-my-esign>
-      <div className={`flex items-center gap-2 px-5 py-4 ${open ? 'border-b border-gray-100' : ''}`}>
-        <button type="button" onClick={() => { if (!open) setLoading(true); setOpen(!open) }} aria-expanded={open} data-my-esign-toggle
-          className="flex min-h-6 flex-1 items-center gap-2 text-left">
-          {open ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
-          <span className="text-sm font-semibold text-gray-700">ลายเซ็นของฉัน</span>
-          <span className="text-xs text-gray-400">รหัสลงนาม · ภาพลายเซ็น · ประวัติ</span>
-        </button>
+    <div id="signature" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" data-my-esign>
+      <div className="border-b border-slate-100 px-4 py-4 sm:px-5">
+        <h2 className="text-sm font-bold text-slate-800">จัดการลายเซ็นและรหัสลงนาม</h2>
+        <p className="mt-1 text-xs leading-5 text-slate-500">ภาพลายเซ็น · รหัสลงนาม · สถานะการใช้งาน · ประวัติของฉัน</p>
       </div>
 
-      {open && (loading && !overview ? (
-        <div className="flex items-center justify-center px-5 py-8 text-gray-400"><Loader2 size={18} className="animate-spin" /></div>
+      {loading && !overview ? (
+        <div role="status" aria-label="กำลังโหลดลายเซ็นของฉัน" className="flex items-center justify-center gap-2 px-5 py-8 text-sm text-gray-500"><Loader2 size={18} className="animate-spin" /> กำลังโหลดข้อมูลลายเซ็น</div>
       ) : loadError ? (
-        <p role="alert" className="m-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">⚠️ {loadError}</p>
+        <div className="space-y-3 p-5">
+          <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">⚠️ {loadError}</p>
+          <button type="button" onClick={reload} disabled={loading} className={`${SMALL_BUTTON} border-slate-200 text-slate-700`}>{loading ? 'กำลังโหลด…' : 'ลองใหม่'}</button>
+        </div>
       ) : (
-        <div className="space-y-6 px-5 py-5">
+        <div className="space-y-6 px-4 py-5 sm:px-5">
           {/* สถานะ */}
           <div className="flex flex-wrap gap-2" data-esign-status>
             {suspended ? <Chip tone="bad">ระงับการลงนามอยู่</Chip>
@@ -114,13 +96,13 @@ export default function MyEsignSection() {
 
           {/* คลังลายเซ็น */}
           <section className="space-y-3" aria-labelledby="my-signatures-title">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <h3 id="my-signatures-title" className="text-sm font-bold text-gray-800">ลายเซ็นที่บันทึกไว้</h3>
                 <p className="text-xs leading-5 text-gray-500">ตอนลงนามระบบแนบภาพค่าเริ่มต้นให้เอง (ปิดหรือเลือกแบบอื่นได้ทุกครั้ง) ภาพนี้เห็นเฉพาะคุณ และผู้ที่เปิดดูใบขอใช้รถใบที่คุณลงนาม</p>
               </div>
               <button type="button" onClick={() => setShowAdd(true)} disabled={atLimit} data-add-signature
-                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl px-4 text-sm font-bold text-white disabled:opacity-50"
+                className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-bold text-white disabled:opacity-50 sm:w-auto"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 <Plus size={16} /> เพิ่มลายเซ็น
               </button>
@@ -271,7 +253,7 @@ export default function MyEsignSection() {
             ))}
           </section>
         </div>
-      ))}
+      )}
 
       {showAdd && (
         <AddSignatureDialog isFirst={library.length === 0} onClose={() => setShowAdd(false)}

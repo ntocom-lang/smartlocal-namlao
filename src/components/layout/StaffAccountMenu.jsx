@@ -166,7 +166,7 @@ export default function StaffAccountMenu({ onLogout, onSystemSettings, tone = 'o
           </div>
           <div role="presentation" className="space-y-0.5 px-1 py-2">
             <Link to="/profile" role="menuitem" data-account-profile onClick={close} className={itemCls}><UserRound size={18} aria-hidden="true" />โปรไฟล์ของฉัน</Link>
-            {canAccessStaffPortal(role) && <Link to="/profile#signature" role="menuitem" data-account-signature onClick={close} className={itemCls}><FileSignature size={18} aria-hidden="true" />ลายเซ็นของฉัน</Link>}
+            {canAccessStaffPortal(role) && <Link to="/staff/my-signatures" state={{ returnTo: location.pathname }} role="menuitem" data-account-signature onClick={close} className={itemCls}><FileSignature size={18} aria-hidden="true" />ลายเซ็นของฉัน</Link>}
             <Link to="/notifications" role="menuitem" data-account-notifications onClick={close} className={itemCls}>
               <Bell size={18} aria-hidden="true" /><span className="flex-1">การแจ้งเตือน</span>
               {unreadCount > 0 && <span className="rounded-full bg-red-50 px-2 text-xs font-bold text-red-600">{unreadCount > 99 ? '99+' : unreadCount}</span>}
