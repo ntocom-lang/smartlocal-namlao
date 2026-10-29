@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, useSyncExternalStore
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   ClipboardList, CheckCircle2, RefreshCw, XCircle, Inbox,
-  TrendingUp, Printer, ArrowLeft, CalendarDays,
+  TrendingUp, Printer, ArrowLeft, CalendarDays, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -20,6 +20,10 @@ import {
   formatPercent, isCurrentMonth, lastFullMonth, parseMonthParam, recentMonthOptions, summarizeMonth, thaiLongDate,
 } from '../lib/complaintMonthlySummary.js'
 import { canLockMonth, categoryCountsOf, issueRowsOf } from '../lib/complaintMonthlyLock.js'
+import {
+  PERIOD_PARAMS, addDays, bangkokIsoDate, dayParamFromInput, dayPeriod, earliestDay, fiscalYearPeriod, isCurrentPeriod,
+  lastFullDay, lastFullQuarter, lastFullWeek, parsePeriodParams, periodTrend, recentQuarterOptions, recentWeekOptions,
+} from '../lib/complaintReportPeriods.js'
 import { buildComplaintMonthlyHtml } from '../lib/complaintMonthlyPrint.js'
 import { appUrl } from '../lib/basename'
 import ComplaintMonthlyInfographic from '../components/reports/ComplaintMonthlyInfographic'
@@ -46,6 +50,10 @@ const PIPELINE_STAGES = [
 ]
 
 const MONTH_SHORT_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
+
+// คำเรียกช่วงในการ์ด/ป้ายตัวเลือก (ช่วงวัน/สัปดาห์/ไตรมาส — รายเดือนมีถ้อยคำของตัวเองอยู่แล้ว)
+const PERIOD_NOUN = { day: 'วัน', week: 'สัปดาห์', quarter: 'ไตรมาส' }
+const PERIOD_CURRENT = { day: 'วันนี้', week: 'สัปดาห์นี้', quarter: 'ไตรมาสนี้' }
 
 // สำรองไว้กรณีเทศบาลยังไม่ตั้งค่า complaint_categories ของตัวเอง (ตรงกับ DEFAULT_CATEGORIES ใน ComplaintCategory.jsx)
 const FALLBACK_CATEGORY_LABELS = {
@@ -149,11 +157,33 @@ export default function ComplaintStats() {
   const [searchParams, setSearchParams] = useSearchParams()
   const monthParam = searchParams.get('m')
   const selectedMonth = useMemo(() => parseMonthParam(monthParam), [monthParam])
+  // ไตรมาส (?q=2570-1) / สัปดาห์ (?w=2569-10-26) / วัน (?d=2569-10-28) — RPC ชุด _fy เดิมเหมือนรายเดือน ไม่มี migration
+  // มีภาพ PNG + ข้อความสรุป + ใบ A4 ชุดเดียวกับรายเดือน แต่ไม่มีล็อกตัวเลข (ของรายเดือนเท่านั้น) · ค่าผิดตกกลับโหมดปีงบเหมือน ?m=
+  const quarterParam = searchParams.get(PERIOD_PARAMS.quarter)
+  const weekParam = searchParams.get(PERIOD_PARAMS.week)
+  const dayParam = searchParams.get(PERIOD_PARAMS.day)
+  const selectedPeriod = useMemo(() => {
+    if (selectedMonth) return null
+    const values = { [PERIOD_PARAMS.quarter]: quarterParam, [PERIOD_PARAMS.week]: weekParam, [PERIOD_PARAMS.day]: dayParam }
+    return parsePeriodParams(name => values[name])
+  }, [selectedMonth, quarterParam, weekParam, dayParam])
   const activeRange = useMemo(
-    () => (selectedMonth ? { from: selectedMonth.from, to: selectedMonth.to } : fiscalRange),
-    [selectedMonth, fiscalRange],
+    () => (selectedMonth ? { from: selectedMonth.from, to: selectedMonth.to }
+      : selectedPeriod ? { from: selectedPeriod.from, to: selectedPeriod.to }
+        : fiscalRange),
+    [selectedMonth, selectedPeriod, fiscalRange],
+  )
+  // ช่วงที่มีภาพ PNG / ข้อความสรุป / ใบ A4 — ทุกโหมดยกเว้น "ทุกปีงบประมาณ" (ยอดสะสม ไม่มีช่วงวันที่ให้สรุป)
+  // ปีงบไม่ใช้ selectedPeriod เพราะการ์ด/กราฟแนวโน้มของปีงบมีถ้อยคำและกราฟรายเดือนของตัวเองอยู่แล้ว
+  const summaryPeriod = useMemo(
+    () => selectedMonth ?? selectedPeriod ?? (fiscalRange ? fiscalYearPeriod(fiscalYear) : null),
+    [selectedMonth, selectedPeriod, fiscalRange, fiscalYear],
   )
   const monthOptions = useMemo(() => recentMonthOptions(), [])
+  const quarterOptions = useMemo(() => recentQuarterOptions(), [])
+  const weekOptions = useMemo(() => recentWeekOptions(), [])
+  const todayIso = bangkokIsoDate()
+  const minDayIso = earliestDay()
 
   // ตัวเลขที่อยู่บนจอต้องเป็นของช่วงเวลาที่เลือกอยู่เสมอ — สลับโหมด/ช่วงแล้วยังไม่ทันโหลดให้แสดงตัวหมุน
   // ไม่ใช่เลขเดิมใต้หัวข้อใหม่ (ปีงบ → "เมษายน 2569" จะเห็นยอดทั้งปีผิดหัวข้อ)
@@ -164,10 +194,11 @@ export default function ComplaintStats() {
   useEffect(() => { latestRangeKey.current = rangeKey }, [rangeKey])
 
   // replace: true — เปลี่ยนช่วงเวลาไม่ควรถมประวัติเบราว์เซอร์ ปุ่ม back ต้องกลับไปหน้าก่อนหน้า
-  function setMonthParam(key) {
+  // ล้างค่าช่วงอื่นทุกครั้ง ลิงก์ต้องมีช่วงเดียว (name = null → กลับโหมดปีงบ)
+  function setPeriodParam(name, key) {
     const params = new URLSearchParams(searchParams)
-    if (key) params.set('m', key)
-    else params.delete('m')
+    ;['m', ...Object.values(PERIOD_PARAMS)].forEach(param => params.delete(param))
+    if (name && key) params.set(name, key)
     setSearchParams(params, { replace: true })
   }
 
@@ -188,9 +219,9 @@ export default function ComplaintStats() {
             _municipality_id: tenantId, _limit: AGGREGATE_LIMIT,
             _from: activeRange.from, _to: activeRange.to,
           }),
-          // รายการย่อยใต้หมวดใช้แค่ภาพสรุปรายเดือน โหมดปีงบไม่ยิง · ถ้าฟังก์ชันยังไม่มีบนฐานข้อมูลนั้น/ผิดพลาด
+          // รายการย่อยใต้หมวดใช้แค่ภาพสรุป (ทุกช่วงที่มี summaryPeriod) · ถ้าฟังก์ชันยังไม่มีบนฐานข้อมูลนั้น/ผิดพลาด
           // ได้ data เป็น null แล้วภาพก็แค่ไม่มีรายการย่อย (ไม่ทำให้ทั้งหน้าพัง)
-          ...(selectedMonth ? [supabase.rpc('complaint_issue_breakdown_fy', {
+          ...(summaryPeriod ? [supabase.rpc('complaint_issue_breakdown_fy', {
             _municipality_id: tenantId, _category: ISSUE_BREAKDOWN_CATEGORY,
             _from: activeRange.from, _to: activeRange.to,
           })] : []),
@@ -213,7 +244,7 @@ export default function ComplaintStats() {
       setSnapshot(locked ? { supported: !locked.error, data: locked.error ? null : (locked.data ?? null) } : { supported: false, data: null })
       setLoadedKey(rangeKey)
     }).catch(() => {})
-  }, [tenantId, activeRange, rangeKey, selectedMonth])
+  }, [tenantId, activeRange, rangeKey, selectedMonth, summaryPeriod])
 
   // ป้ายชื่อหมวดหมู่แยกออกจากรอบรีเฟรช — แอดมินแก้ปีละครั้ง ไม่ต้องดึงซ้ำทุกนาที
   useEffect(() => {
@@ -254,12 +285,12 @@ export default function ComplaintStats() {
     return { unchanged: data?.unchanged === true }
   }
 
-  // ร้อยละบนจอ — โหมดรายเดือนใช้ทศนิยม 1 ตำแหน่งให้ตรงกับข้อความสรุปและใบพิมพ์
-  // (ไม่งั้นหน้าเดียวกันขึ้น "ร้อยละ 66.7" ในข้อความ แต่ "67%" ที่การ์ด) · โหมดปีงบคงจำนวนเต็มเหมือนเดิม
+  // ร้อยละบนจอ — ทุกโหมดที่มีภาพ/ข้อความสรุป (summaryPeriod) ใช้ทศนิยม 1 ตำแหน่งให้ตรงกับข้อความสรุปและใบพิมพ์
+  // (ไม่งั้นหน้าเดียวกันขึ้น "ร้อยละ 66.7" ในข้อความ แต่ "67%" ที่การ์ด) · "ทุกปีงบประมาณ" ไม่มีสรุป คงจำนวนเต็มเหมือนเดิม
   function sharePercent(part, whole) {
     if (!(whole > 0)) return '0'
     const percent = (part / whole) * 100
-    return selectedMonth ? formatPercent(Math.round(percent * 10) / 10) : String(Math.round(percent))
+    return summaryPeriod ? formatPercent(Math.round(percent * 10) / 10) : String(Math.round(percent))
   }
   const completionText = sharePercent(stats?.resolved ?? 0, stats?.total ?? 0)
 
@@ -276,23 +307,29 @@ export default function ComplaintStats() {
     [categoryLabels],
   )
 
-  // ใบสรุปประจำเดือน — คำนวณล้วนจากตัวเลขที่ RPC สาธารณะคืนมา (ไม่มีชื่อ เบอร์ ที่อยู่ หรือพิกัด)
+  // ใบสรุป/ภาพประจำช่วง — คำนวณล้วนจากตัวเลขที่ RPC สาธารณะคืนมา (ไม่มีชื่อ เบอร์ ที่อยู่ หรือพิกัด)
+  // วัน/สัปดาห์/ไตรมาส/ปีงบใช้ชุดเดียวกับรายเดือน (เจ้าของระบบสั่ง 2569-10-29) แต่เป็นตัวเลขสดเสมอ — ล็อกตัวเลขมีเฉพาะรายเดือน
+  // (lockedSnapshot/lockedCategoryCounts เป็น null เองเมื่อไม่ใช่โหมดรายเดือน) · summaryPeriod กำหนดไว้ใกล้ activeRange
   const monthlySummary = useMemo(
-    () => (selectedMonth && settled
+    () => (summaryPeriod && settled
       ? summarizeMonth({
-        stats, rows, labelOf: categoryLabel, tenantName: tenant?.name ?? 'หน่วยงาน', period: selectedMonth,
+        stats, rows, labelOf: categoryLabel, tenantName: tenant?.name ?? 'หน่วยงาน', period: summaryPeriod,
         issueBreakdown: effectiveIssueRows ? { category: ISSUE_BREAKDOWN_CATEGORY, rows: effectiveIssueRows } : null,
         categoryCounts: lockedCategoryCounts,
         lock: lockedSnapshot ? { publishedAt: lockedSnapshot.published_at, revision: lockedSnapshot.revision } : null,
       })
       : null),
-    [selectedMonth, settled, stats, rows, effectiveIssueRows, lockedCategoryCounts, lockedSnapshot, categoryLabel, tenant?.name],
+    [summaryPeriod, settled, stats, rows, effectiveIssueRows, lockedCategoryCounts, lockedSnapshot, categoryLabel, tenant?.name],
   )
 
   // ป้ายช่วงเวลาของหัวรายงาน/ข้อความไม่มีข้อมูล — โหมดรายเดือนใช้เดือนที่เลือกแทนปีงบ
-  const periodMain = selectedMonth ? `เดือน${selectedMonth.label}` : fiscalPeriod.main
+  const periodMain = selectedMonth ? `เดือน${selectedMonth.label}` : selectedPeriod ? selectedPeriod.label : fiscalPeriod.main
   const monthRangeText = selectedMonth ? `1 – ${Number(selectedMonth.to.slice(8))} ${selectedMonth.label}` : ''
-  const periodRange = selectedMonth ? ` (${monthRangeText})` : fiscalPeriod.range
+  // วัน/สัปดาห์มีวันที่อยู่ในชื่อช่วงแล้ว ไม่ต้องวงเล็บซ้ำ · ไตรมาสบอกวันที่จริงในวงเล็บ
+  const periodRange = selectedMonth ? ` (${monthRangeText})`
+    : selectedPeriod ? (selectedPeriod.kind === 'quarter' ? ` (${selectedPeriod.rangeText})` : '')
+      : fiscalPeriod.range
+  const periodIsOpen = selectedPeriod ? isCurrentPeriod(selectedPeriod) : false
 
   function printMonthly() {
     if (!monthlySummary) return
@@ -357,6 +394,15 @@ export default function ComplaintStats() {
     return buckets
   }, [rows, fiscalRange])
 
+  // กราฟของช่วงที่เลือก — สัปดาห์ = รายวัน · ไตรมาส = รายสัปดาห์ · วันเดียว/เดือนเดียวไม่มีกราฟ (null)
+  const trend = useMemo(
+    () => (selectedPeriod ? periodTrend(selectedPeriod, rows) : selectedMonth ? null : monthlyTrend),
+    [selectedPeriod, selectedMonth, rows, monthlyTrend],
+  )
+  const trendCaption = selectedPeriod?.kind === 'week' ? 'รายวัน (จันทร์–อาทิตย์)'
+    : selectedPeriod?.kind === 'quarter' ? 'รายสัปดาห์ (ป้ายคือวันแรกของสัปดาห์)'
+      : fiscalRange ? `รายเดือน ปีงบประมาณ ${fiscalYear} (ต.ค.–ก.ย.)` : '6 เดือนล่าสุด'
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -379,13 +425,34 @@ export default function ComplaintStats() {
               className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600">
               <ArrowLeft size={14} /> กลับ
             </Link>
-            {/* โหมดรายเดือนพิมพ์ใบสรุป A4 หน้าเดียว (ไม่ใช่ตัวหน้าเว็บทั้งหน้า) */}
-            <button
-              onClick={selectedMonth ? printMonthly : () => window.print()}
-              disabled={!settled}
-              className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-gray-800 border border-gray-200 rounded-xl px-3 py-1.5 transition-colors shrink-0 disabled:opacity-50">
-              <Printer size={15} /> {selectedMonth ? 'พิมพ์สรุปรายเดือน (A4)' : 'พิมพ์'}
-            </button>
+            {/* ทุกโหมดที่มีสรุปพิมพ์ใบสรุป A4 หน้าเดียว (ไม่ใช่ตัวหน้าเว็บทั้งหน้า) · "ทุกปีงบประมาณ" ไม่มีสรุป พิมพ์หน้าเว็บ */}
+            {/* ทุกโหมดที่มีใบสรุปมีปุ่ม "พิมพ์หน้านี้" คู่กัน — พิมพ์ตัวหน้าเว็บทั้งหน้า (กราฟ + การ์ด) แบบที่ปีงบเคยพิมพ์ได้ */}
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={summaryPeriod ? printMonthly : () => window.print()}
+                disabled={!settled}
+                className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-gray-800 border border-gray-200 rounded-xl px-3 py-1.5 transition-colors shrink-0 disabled:opacity-50">
+                {/* สองปุ่มคู่กันกว้างเกินจอ 390px (วัดได้ขอบขวา 399px) — จอเล็กย่อชื่อปุ่มสรุปเหลือ "พิมพ์สรุป (A4)" */}
+                <Printer size={15} />
+                {summaryPeriod ? (
+                  <>
+                    <span className="sm:hidden">พิมพ์สรุป (A4)</span>
+                    <span className="hidden sm:inline">
+                      {selectedMonth ? 'พิมพ์สรุปรายเดือน (A4)'
+                        : selectedPeriod ? `พิมพ์สรุปราย${PERIOD_NOUN[selectedPeriod.kind]} (A4)` : 'พิมพ์สรุปปีงบประมาณ (A4)'}
+                    </span>
+                  </>
+                ) : 'พิมพ์'}
+              </button>
+              {summaryPeriod && (
+                <button
+                  onClick={() => window.print()}
+                  disabled={!settled}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-gray-800 border border-gray-200 rounded-xl px-3 py-1.5 transition-colors shrink-0 disabled:opacity-50">
+                  <Printer size={15} /> พิมพ์หน้านี้
+                </button>
+              )}
+            </div>
           </div>
 
           <span className="inline-block text-[10px] sm:text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
@@ -413,16 +480,24 @@ export default function ComplaintStats() {
           {/* ตัวกรองช่วงเวลา — ซ่อนตอนพิมพ์ เพราะช่วงเวลาที่เลือกพิมพ์ติดไปกับหัวรายงานอยู่แล้ว
               ปีงบประมาณ = หลักฐาน ITA (ค่าตั้งต้น) · รายเดือน = สรุปแบบที่เทศบาลนครยะลาเผยแพร่ทุกเดือน */}
           <div className="print:hidden mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            {/* ชื่อเต็ม 5 ปุ่มกว้างกว่าจอมือถือ 390px (วัดได้ ~440px) — จอเล็กใช้ชื่อสั้นแถวเดียวเต็มกว้าง
+                (ลองแถบเลื่อนแนวนอนแล้ว ปุ่ม "รายวัน" ตกนอกจอ + Windows โชว์ scrollbar ใต้แถบ)
+                ค่าตั้งต้นของแต่ละช่วงคือช่วงล่าสุดที่จบครบแล้ว (ช่วงปัจจุบันตัวเลขยังขยับ) */}
             <div role="group" aria-label="ช่วงเวลาของรายงาน"
-              className="inline-flex rounded-xl border border-gray-200 bg-gray-50 p-0.5 text-sm font-bold">
+              className="flex w-full sm:inline-flex sm:w-auto rounded-xl border border-gray-200 bg-gray-50 p-0.5 text-sm font-bold">
               {[
-                { label: 'ปีงบประมาณ', active: !selectedMonth, onSelect: () => setMonthParam(null) },
-                { label: 'รายเดือน', active: !!selectedMonth, onSelect: () => setMonthParam(lastFullMonth().key) },
+                { label: 'ปีงบประมาณ', short: 'ปีงบ', active: !selectedMonth && !selectedPeriod, onSelect: () => setPeriodParam(null) },
+                { label: 'ไตรมาส', short: 'ไตรมาส', active: selectedPeriod?.kind === 'quarter', onSelect: () => setPeriodParam(PERIOD_PARAMS.quarter, lastFullQuarter().key) },
+                { label: 'รายเดือน', short: 'เดือน', active: !!selectedMonth, onSelect: () => setPeriodParam('m', lastFullMonth().key) },
+                { label: 'รายสัปดาห์', short: 'สัปดาห์', active: selectedPeriod?.kind === 'week', onSelect: () => setPeriodParam(PERIOD_PARAMS.week, lastFullWeek().key) },
+                { label: 'รายวัน', short: 'วัน', active: selectedPeriod?.kind === 'day', onSelect: () => setPeriodParam(PERIOD_PARAMS.day, lastFullDay().key) },
               ].map(option => (
                 <button key={option.label} type="button" aria-pressed={option.active} onClick={option.onSelect}
-                  className={`min-h-11 px-3.5 rounded-[10px] transition-colors ${option.active
+                  aria-label={option.label}
+                  className={`min-h-11 flex-1 sm:flex-none px-1.5 sm:px-3.5 rounded-[10px] whitespace-nowrap transition-colors ${option.active
                     ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                  {option.label}
+                  <span className="sm:hidden">{option.short}</span>
+                  <span className="hidden sm:inline">{option.label}</span>
                 </button>
               ))}
             </div>
@@ -431,13 +506,49 @@ export default function ComplaintStats() {
                 <label htmlFor="month-picker" className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 shrink-0">
                   <CalendarDays size={14} aria-hidden="true" /> เดือน
                 </label>
-                <select id="month-picker" value={selectedMonth.key} onChange={e => setMonthParam(e.target.value)}
+                <select id="month-picker" value={selectedMonth.key} onChange={e => setPeriodParam('m', e.target.value)}
                   className="text-sm font-bold text-gray-800 bg-white border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-offset-0"
                   style={{ '--tw-ring-color': 'var(--color-primary)' }}>
                   {monthOptions.map(option => (
                     <option key={option.key} value={option.key}>{option.label}</option>
                   ))}
                 </select>
+              </div>
+            ) : selectedPeriod?.kind === 'quarter' || selectedPeriod?.kind === 'week' ? (
+              <div className="flex items-center gap-2 min-w-0">
+                <label htmlFor="period-picker" className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 shrink-0">
+                  <CalendarDays size={14} aria-hidden="true" /> {PERIOD_NOUN[selectedPeriod.kind]}
+                </label>
+                <select id="period-picker" value={selectedPeriod.key}
+                  onChange={e => setPeriodParam(PERIOD_PARAMS[selectedPeriod.kind], e.target.value)}
+                  className="min-w-0 text-sm font-bold text-gray-800 bg-white border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-offset-0"
+                  style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+                  {(selectedPeriod.kind === 'quarter' ? quarterOptions : weekOptions).map(option => (
+                    <option key={option.key} value={option.key}>{option.optionLabel ?? option.rangeText}</option>
+                  ))}
+                </select>
+              </div>
+            ) : selectedPeriod?.kind === 'day' ? (
+              /* ปุ่ม ‹ › เลื่อนทีละวัน (ใช้บ่อยที่สุด) + ช่องปฏิทินไว้กระโดดไปวันไกลๆ
+                 ช่องปฏิทินของเบราว์เซอร์แสดงปี ค.ศ. — ชื่อวันแบบ พ.ศ. อยู่ที่หัวรายงานแล้ว */
+              <div className="flex items-center gap-1.5">
+                <button type="button" aria-label="วันก่อนหน้า" disabled={selectedPeriod.from <= minDayIso}
+                  onClick={() => setPeriodParam(PERIOD_PARAMS.day, dayPeriod(addDays(selectedPeriod.from, -1)).key)}
+                  className="min-h-11 min-w-11 flex items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 hover:text-gray-800 disabled:opacity-40">
+                  <ChevronLeft size={18} aria-hidden="true" />
+                </button>
+                <input type="date" aria-label="เลือกวันที่" value={selectedPeriod.from} min={minDayIso} max={todayIso}
+                  onChange={e => {
+                    const key = dayParamFromInput(e.target.value)
+                    if (key) setPeriodParam(PERIOD_PARAMS.day, key)
+                  }}
+                  className="min-h-11 text-sm font-bold text-gray-800 bg-white border border-gray-200 rounded-xl px-3 focus:outline-none focus:ring-2 focus:ring-offset-0"
+                  style={{ '--tw-ring-color': 'var(--color-primary)' }} />
+                <button type="button" aria-label="วันถัดไป" disabled={selectedPeriod.from >= todayIso}
+                  onClick={() => setPeriodParam(PERIOD_PARAMS.day, dayPeriod(addDays(selectedPeriod.from, 1)).key)}
+                  className="min-h-11 min-w-11 flex items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 hover:text-gray-800 disabled:opacity-40">
+                  <ChevronRight size={18} aria-hidden="true" />
+                </button>
               </div>
             ) : (
               <FiscalYearPicker value={fiscalYear} options={fiscalOptions} onChange={setFiscalYear} />
@@ -497,11 +608,15 @@ export default function ComplaintStats() {
         {/* ── Stats grid ── */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
           <StatCard
-            label={selectedMonth ? 'รวมเรื่องที่รับในเดือน' : fiscalRange ? 'รวมเรื่องในปีงบนี้' : 'รวมเรื่องทั้งหมด'}
+            label={selectedMonth ? 'รวมเรื่องที่รับในเดือน'
+              : selectedPeriod ? `รวมเรื่องที่รับใน${PERIOD_NOUN[selectedPeriod.kind]}`
+                : fiscalRange ? 'รวมเรื่องในปีงบนี้' : 'รวมเรื่องทั้งหมด'}
             value={stats?.total ?? 0}
             // ปีงบที่ปิดไปแล้วไม่มี "เดือนนี้" อยู่ในช่วง จะขึ้น 0 เสมอ — โชว์ช่วงวันที่แทนจะตรงกว่า
             sub={selectedMonth
               ? (monthlySummary?.isCurrentMonth ? 'เดือนนี้ยังไม่สิ้นสุด' : monthRangeText)
+              : selectedPeriod
+                ? (periodIsOpen ? `${PERIOD_CURRENT[selectedPeriod.kind]}ยังไม่สิ้นสุด` : selectedPeriod.rangeText)
               : isPastFiscalYear
                 ? `1 ต.ค. ${fiscalYear - 1} – 30 ก.ย. ${fiscalYear}`
                 : `เดือนนี้ ${stats?.this_month ?? 0} เรื่อง`}
@@ -604,9 +719,9 @@ export default function ComplaintStats() {
           </p>
         )}
 
-        {/* ── หมวดหมู่ยอดนิยม + แนวโน้มรายเดือน (โหมดรายเดือนไม่มีกราฟแนวโน้ม: เดือนเดียวจะมีจุดเดียว) ── */}
+        {/* ── หมวดหมู่ยอดนิยม + แนวโน้ม (รายเดือน/รายวันไม่มีกราฟแนวโน้ม: ช่วงเดียวจะมีจุดเดียว) ── */}
         {stats?.total > 0 && (
-          <div className={`grid gap-3 ${selectedMonth ? '' : 'md:grid-cols-2'}`}>
+          <div className={`grid gap-3 ${trend ? 'md:grid-cols-2' : ''}`}>
 
             {/* Compare magnitude → bar, single hue (var(--color-primary)) — ไม่ใช้สีแยกตามหมวด
                 เพราะแต่ละหมวดแยกกันด้วยตำแหน่ง/label อยู่แล้ว ไม่ต้องพึ่งสีบอก identity ซ้ำ */}
@@ -655,14 +770,12 @@ export default function ComplaintStats() {
             </div>
 
             {/* Trend over time → area, single series, sequential hue */}
-            {!selectedMonth && (
+            {trend && (
             <div className="bg-white rounded-2xl border border-gray-100 p-3 md:p-4">
               <p className="text-sm font-bold text-gray-700 mb-1">แนวโน้มจำนวนคำร้อง</p>
-              <p className="text-[10px] text-gray-400 mb-1.5">
-                {fiscalRange ? `รายเดือน ปีงบประมาณ ${fiscalYear} (ต.ค.–ก.ย.)` : '6 เดือนล่าสุด'}
-              </p>
+              <p className="text-[10px] text-gray-400 mb-1.5">{trendCaption}</p>
               <ResponsiveContainer width="100%" height={160}>
-                <AreaChart data={monthlyTrend} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                <AreaChart data={trend} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.12} />
@@ -670,11 +783,11 @@ export default function ComplaintStats() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="#e5e7eb" />
-                  {/* จอแคบใส่ป้าย 12 เดือนไม่พอ recharts จะหล่นเดือนทิ้งเองแบบไม่สม่ำเสมอ
-                      (เคยหล่น เม.ย. กับ ส.ค. ทิ้งจนอ่านช่วงเวลาผิด) — บังคับเว้นเดือนเว้นเดือนแทน
-                      จุดข้อมูลยังครบ 12 เดือนเหมือนเดิม หายแค่ป้ายกำกับ */}
+                  {/* จอแคบใส่ป้าย 12 เดือน (หรือ ~13 สัปดาห์ของไตรมาส) ไม่พอ recharts จะหล่นป้ายทิ้งเองแบบไม่สม่ำเสมอ
+                      (เคยหล่น เม.ย. กับ ส.ค. ทิ้งจนอ่านช่วงเวลาผิด) — บังคับเว้นช่องเว้นช่องแทน
+                      จุดข้อมูลยังครบทุกช่องเหมือนเดิม หายแค่ป้ายกำกับ · 6 เดือน/7 วันพอดีจอ ไม่ต้องเว้น */}
                   <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: '#c3c2b7' }}
-                    interval={isNarrow && fiscalRange ? 1 : 'preserveEnd'}
+                    interval={isNarrow && trend.length > 7 ? 1 : 'preserveEnd'}
                     tick={{ fontSize: isNarrow ? 10 : 11, fill: '#898781' }} />
                   <YAxis allowDecimals={false} width={24} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#898781' }} />
                   <Tooltip cursor={{ stroke: '#c3c2b7', strokeWidth: 1 }} formatter={(value) => [`${value} เรื่อง`, null]}

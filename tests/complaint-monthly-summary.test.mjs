@@ -383,6 +383,28 @@ try {
     }
   })
 
+  // ใบของไตรมาส/สัปดาห์/วัน (เจ้าของระบบสั่ง 2569-10-29): หัวใบยาวกว่ารายเดือน — ไตรมาสปัจจุบัน (หมายเหตุครบ) หนาแน่นพร้อม QR
+  // ต้องยังจบ 1 แผ่นเท่าเงื่อนไขของใบรายเดือนข้างบน
+  await test('ใบของไตรมาส/สัปดาห์/วัน: จบ 1 แผ่น A4 เมื่อหนาแน่นพร้อม QR · หัวใบใช้ชื่อช่วงของตัวเอง', async () => {
+    const { quarterPeriod, weekPeriod, dayPeriod, fiscalYearPeriod } = await import('../src/lib/complaintReportPeriods.js')
+    const spec = Object.fromEntries([200, 150, 130, 120, 100, 90, 80, 70, 50, 35, 20].map((n, i) => [`c${i}`, n]))
+    const tenantName = 'องค์การบริหารส่วนตำบลที่มีชื่อยาวพอสมควรมาก'
+    const stats = { total: 1045, open: 40, in_progress: 100, resolved: 890, rejected: 15, avg_days: 12.5 }
+    const labelOfDense = code => `หมวดเรื่องร้องเรียนที่ชื่อค่อนข้างยาว ${code}`
+    for (const period of [quarterPeriod(2570, 1), weekPeriod('2025-12-29'), dayPeriod('2026-10-18'), fiscalYearPeriod(2570)]) {
+      const summary = summarizeMonth({ stats, rows: rowsOf(spec), labelOf: labelOfDense, tenantName, period, now: NOW })
+      const page = await browser.newPage()
+      try {
+        await page.route('**/*', route => route.abort())
+        await page.setContent(buildComplaintMonthlyHtml({ tenant: { name: tenantName }, summary, reportUrl: REPORT_URL }), { waitUntil: 'domcontentloaded' })
+        assert.equal(await page.locator('.title').innerText(), `สรุปเรื่องร้องเรียน/ร้องทุกข์ประจำ${period.label}`)
+        const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
+        const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length
+        assert.equal(pages, 1, `ใบ${period.label} พิมพ์ได้ ${pages} แผ่น`)
+      } finally { await page.close() }
+    }
+  })
+
   // ใบสุดโต่งที่ไม่เกิดจริง (ชื่อหมวดทุกหมวด ~45 ตัวอักษร + ชื่อ อปท. 85 ตัวอักษร) พร้อม QR เกิน 1 แผ่นได้ — วัดแล้วเกินราว 5 มม.
   // ยอมให้ลงแผ่นที่ 2 ได้ไม่เกิน 2 แผ่น (ช่อง QR มี break-inside: avoid ไม่ถูกตัดครึ่ง) ห้ามบานเกินนั้น
   await test('ใบสุดโต่งที่ไม่เกิดจริง + QR: ไม่เกิน 2 แผ่น', async () => {

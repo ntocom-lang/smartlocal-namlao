@@ -114,7 +114,8 @@ function tailBlock(reportUrl, origin) {
  * @param {string} [args.reportUrl] ลิงก์หน้าแจ้งเรื่อง — ใส่แล้วท้ายใบมี QR + ข้อความชวนแจ้งเรื่อง
  */
 export function buildComplaintMonthlyHtml({ tenant, summary, reportUrl = '' }) {
-  const month = summary.period.label
+  // ชื่อช่วงเต็ม — รายเดือน "เดือนกันยายน 2569" (ถ้อยคำเดิม) · ช่วงอื่น "วันที่ 28 ตุลาคม 2569" / "สัปดาห์ …" / "ไตรมาสที่ …"
+  const periodTitle = summary.periodTitle ?? `เดือน${summary.period.label}`
   const origin = `${govEServiceOriginText(tenant)} · ข้อมูล ณ วันที่ ${summary.asOf}`
   const notes = [
     ...summary.notes,
@@ -124,13 +125,13 @@ export function buildComplaintMonthlyHtml({ tenant, summary, reportUrl = '' }) {
   return `<!DOCTYPE html>
 <html lang="th"><head>
 <meta charset="UTF-8">
-<title>${esc(`สรุปเรื่องร้องเรียนประจำเดือน${month}`)}</title>
+<title>${esc(`สรุปเรื่องร้องเรียนประจำ${periodTitle}`)}</title>
 ${GOV_FONT_LINK}
 <style>${pageCss()}
 </style>
 </head><body>
 <div class="sheet">
-  <p class="title">สรุปเรื่องร้องเรียน/ร้องทุกข์ประจำเดือน${esc(month)}</p>
+  <p class="title">สรุปเรื่องร้องเรียน/ร้องทุกข์ประจำ${esc(periodTitle)}</p>
   <p class="sub">${esc(tenant?.name ?? '')}</p>
 ${summary.sentences.map(sentence => `  <p class="narrative">${esc(sentence)}</p>`).join('\n')}
   <p class="section">ผลการดำเนินงาน</p>

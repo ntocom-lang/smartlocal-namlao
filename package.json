@@ -116,7 +116,7 @@
     "test:cctv-request": "node tests/cctv-request.test.mjs",
     "test:complaint-polish": "node tests/complaint-text-polish.test.mjs",
     "test:complaint-list-print": "node tests/complaint-list-print.test.mjs",
-    "test:complaint-monthly": "node tests/complaint-monthly-summary.test.mjs && node tests/complaint-monthly-infographic.test.mjs && node tests/report-entry-points.test.mjs && node tests/complaint-monthly-reminder.test.mjs && node tests/complaint-monthly-lock.test.mjs",
+    "test:complaint-monthly": "node tests/complaint-monthly-summary.test.mjs && node tests/complaint-monthly-infographic.test.mjs && node tests/report-entry-points.test.mjs && node tests/complaint-monthly-reminder.test.mjs && node tests/complaint-monthly-lock.test.mjs && node tests/complaint-report-periods.test.mjs",
     "test:staff-performance": "node tests/staff-performance.test.mjs && node tests/staff-performance-print.test.mjs && node tests/staff-performance-layout.test.mjs",
     "test:service-audience": "node tests/service-audience.test.mjs",
     "test:admin-update-user": "node tests/admin-update-user-guard.test.mjs",

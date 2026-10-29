@@ -21,7 +21,12 @@ export default function ComplaintMonthlyInfographic({ summary, tenantName }) {
     }
   }, [summary, tenantName, reportUrl])
   const imageKey = image ? image.svg : ''
-  const fileName = `complaints-${summary.period.key}.png`
+  // ชื่อไฟล์รายเดือนคงเดิม (complaints-2569-09.png) · ช่วงอื่นใส่ชนิดกำกับ ไม่งั้นไตรมาส "2569-4" ปนกับเดือน "2569-04"
+  const fileName = summary.period.kind
+    ? `complaints-${summary.period.kind}-${summary.period.key}.png`
+    : `complaints-${summary.period.key}.png`
+  const periodTitle = summary.periodTitle ?? `เดือน${summary.period.label}`
+  const periodNoun = summary.periodNoun ?? 'เดือน'
 
   const [prepared, setPrepared] = useState(null)
   const [retry, setRetry] = useState(0)
@@ -62,7 +67,7 @@ export default function ComplaintMonthlyInfographic({ summary, tenantName }) {
       setSharing(true)
       await navigator.share({
         files: [file],
-        title: `สรุปเรื่องร้องเรียน เดือน${summary.period.label} | ${tenantName}`,
+        title: `สรุปเรื่องร้องเรียน ${periodTitle} | ${tenantName}`,
         text: `${summary.sentences.join('\n')}\n\nแจ้งเรื่อง/ติดตามเรื่อง: ${reportUrl}`,
       })
     } catch (cause) {
@@ -76,8 +81,8 @@ export default function ComplaintMonthlyInfographic({ summary, tenantName }) {
 
   const buttonClass = 'flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50 max-sm:w-full'
   return (
-    <section aria-label="ภาพสรุปประจำเดือนสำหรับเผยแพร่" className="bg-white rounded-2xl border border-gray-100 p-3 md:p-4 print:hidden">
-      <p className="text-sm font-bold text-gray-700">ภาพสรุปประจำเดือน</p>
+    <section aria-label={`ภาพสรุปประจำ${periodNoun}สำหรับเผยแพร่`} className="bg-white rounded-2xl border border-gray-100 p-3 md:p-4 print:hidden">
+      <p className="text-sm font-bold text-gray-700">ภาพสรุปประจำ{periodNoun}</p>
       <p className="text-xs text-gray-500 mt-0.5">ดาวน์โหลดไปโพสต์ใน LINE หรือ Facebook ได้ · ระบบวาดจากตัวเลขรวม ไม่มีข้อมูลระบุตัวบุคคล</p>
       {/* ปุ่มอยู่เหนือภาพ ไม่ใช่ใต้ภาพ: ภาพสูงราว 500px ปุ่มที่อยู่ใต้ภาพตกนอกจอแรกทั้งมือถือและ PC
           เจ้าหน้าที่ที่มาเอาไปแชร์ต้องเลื่อนหา ทั้งที่ปุ่มเป็นสิ่งเดียวที่เขาต้องการ */}
