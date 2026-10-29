@@ -255,22 +255,11 @@ function DevJournalWorkspace() {
     setActiveTopic('all') // เปลี่ยนเมนูหลักแล้วต้องล้างหัวข้อเดิม กันหัวข้อของ module อื่นค้าง
     setActiveEntryId(null)
   }
-  function selectTopic(m, t) {
-    setShowModuleManager(false)
-    setActiveModule(m)
-    setActiveTopic(t)
-    setActiveEntryId(null)
-  }
   // เข้าเมนูหลักแล้วยังไม่ได้เลือกหัวข้อ -> โชว์แค่รายการหัวข้อ (สารบัญ) ไม่โชว์เนื้อหาเต็ม
   // พิมพ์ค้นหาจะข้ามหน้าสารบัญไปโชว์ผลลัพธ์ที่ตรงเลย
   const showTopicIndex = activeTopic === 'all' && topics.length > 0 && !search.trim()
-  // หัวข้อของแต่ละส่วนของระบบ — ใช้ทำสารบัญในไซด์บาร์ (แสดงทุกหัวข้อของทุก module พร้อมกัน)
-  function topicsByModule(m) {
-    return Array.from(new Set(entries.filter(e => e.module === m).map(e => e.topic).filter(Boolean)))
-      .sort((a, b) => a.localeCompare(b, 'th'))
-  }
-
-  // เมนูหลัก (ส่วนของระบบ) — ใช้ร่วมกันทั้ง sidebar (PC) และ bottom tab bar (มือถือ)
+  // เมนูซ้าย/ลิ้นชักแสดงเฉพาะส่วนของระบบ หัวข้อทั้งหมดเลือกจากสารบัญในเนื้อหา
+  // จำนวนหัวข้อเพิ่มจึงไม่ทำให้เมนูซ้ายยาวขึ้น และไม่ต้องเลื่อนรายการเดิมซ้ำสองที่
   const MODULE_ITEMS = [
     { key: 'all', label: 'ทั้งหมด', Icon: LayoutGrid, count: entries.length },
     ...modules.map(m => ({ key: m, label: m, Icon: Folder, count: entries.filter(e => e.module === m).length })),
@@ -312,36 +301,17 @@ function DevJournalWorkspace() {
         <GroupLabel count={entries.length}>ส่วนของระบบ</GroupLabel>
         {MODULE_ITEMS.map(({ key, label, Icon, count }) => {
           const isActive = !showModuleManager && activeModule === key
-          const subTopics = key === 'all' ? [] : topicsByModule(key)
           return (
-            <div key={key}>
-              <button type="button" onClick={() => { selectModule(key); onSelected() }}
-                aria-current={isActive && activeTopic === 'all' ? 'page' : undefined}
-                className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive && activeTopic === 'all' ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
-                <Icon size={16} className="shrink-0" />
-                <span className="min-w-0 flex-1 text-left break-words">{label}</span>
-                <span className="shrink-0 rounded-full bg-white/15 px-1.5 py-0.5 text-[10px]">{count}</span>
-              </button>
-              {subTopics.length > 0 && (
-                <div className="my-1 ml-5 space-y-0.5 border-l border-white/15 pl-2">
-                  {subTopics.map(t => {
-                    const topicActive = isActive && activeTopic === t
-                    const topicCount = entries.filter(e => e.module === key && e.topic === t).length
-                    return (
-                      <button key={t} type="button" onClick={() => { selectTopic(key, t); onSelected() }}
-                        aria-current={topicActive ? 'page' : undefined}
-                        className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-2 py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${topicActive ? 'bg-white/20 font-semibold text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'}`}>
-                        <span aria-hidden="true" className="h-1 w-1 shrink-0 rounded-full bg-current" />
-                        <span className="min-w-0 flex-1 text-left break-words leading-relaxed">{t}</span>
-                        <span className="shrink-0 text-[10px] opacity-75">{topicCount}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
+            <button key={key} type="button" onClick={() => { selectModule(key); onSelected() }}
+              aria-current={isActive ? 'page' : undefined}
+              className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
+              <Icon size={16} className="shrink-0" />
+              <span className="min-w-0 flex-1 text-left break-words">{label}</span>
+              <span className="shrink-0 rounded-full bg-white/15 px-1.5 py-0.5 text-[10px]">{count}</span>
+            </button>
           )
         })}
+        <p className="px-3 pt-3 text-[11px] leading-relaxed text-white/60">เลือกหัวข้อจากสารบัญในหน้าเนื้อหา</p>
       </>
     )
   }
@@ -411,7 +381,7 @@ function DevJournalWorkspace() {
       <div className="md:flex">
         <aside data-dev-aside className="sticky hidden w-60 shrink-0 self-start flex-col shadow-lg md:flex"
           style={{ backgroundColor: '#1a3a5c', top: stickyBox.top ?? undefined, height: stickyBox.height ?? undefined }}>
-          <nav aria-label="เมนูผู้พัฒนาระบบ" className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+          <nav aria-label="เมนูผู้พัฒนาระบบ" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 [scrollbar-color:rgba(255,255,255,0.35)_transparent] [scrollbar-width:thin]">
             {renderModuleNavigation()}
           </nav>
           <div className="border-t border-white/10 px-3 py-3">
@@ -527,7 +497,7 @@ function DevJournalWorkspace() {
             </div>
           ) : showTopicIndex ? (
             /* สารบัญหัวข้อ — โชว์แค่ชื่อหัวข้อ+จำนวน ไม่โชว์เนื้อหาเต็ม จนกว่าจะคลิกเข้าไป */
-            <section>
+            <section aria-label="สารบัญหัวข้อ">
               <div className="flex items-end justify-between gap-4 mb-3">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-500">Knowledge Modules</p>
@@ -541,7 +511,7 @@ function DevJournalWorkspace() {
                   const cats = Array.from(new Set(topicEntries.map(e => e.category)))
                   const latest = topicEntries.reduce((a, b) => (a.created_at > b.created_at ? a : b))
                   return (
-                    <button key={t} onClick={() => setActiveTopic(t)}
+                    <button key={t} aria-label={t} onClick={() => setActiveTopic(t)}
                       className="group relative min-h-44 text-left bg-white/90 rounded-3xl border border-slate-200/80 shadow-sm hover:shadow-xl hover:shadow-blue-900/10 hover:-translate-y-1 hover:border-blue-200 transition-all p-5 overflow-hidden">
                       <div className="absolute -top-14 -right-12 w-36 h-36 rounded-full bg-gradient-to-br from-blue-100/80 to-indigo-100/30 group-hover:scale-125 transition-transform duration-500" />
                       <span className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500" />
@@ -556,7 +526,7 @@ function DevJournalWorkspace() {
                       </div>
                       <div className="relative mt-4">
                         <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">NODE {String(index + 1).padStart(2, '0')}</p>
-                        <p className="text-base font-black text-slate-800 mt-1 group-hover:text-blue-700 transition-colors leading-snug line-clamp-2">{t}</p>
+                        <p className="text-base font-black text-slate-800 mt-1 group-hover:text-blue-700 transition-colors leading-snug">{t}</p>
                       </div>
                       <div className="relative flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
                         <div className="flex items-center gap-1.5">

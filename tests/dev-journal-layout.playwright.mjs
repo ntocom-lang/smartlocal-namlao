@@ -11,7 +11,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { chromium } from 'playwright'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const output = path.join(tmpdir(), 'dev-journal-ui-20261029')
+const output = path.join(tmpdir(), 'dev-journal-sidebar-20261029')
 const mockId = '\0dev-journal-mock'
 const entryId = path.join(root, '__dev-journal-entry.jsx').replaceAll('\\', '/')
 const mock = `
@@ -122,17 +122,25 @@ try {
       await page.getByRole('button', { name: 'เปิดเมนู', exact: true }).click()
       const drawer = page.getByRole('dialog', { name: 'เมนูผู้พัฒนาระบบ' })
       await drawer.waitFor({ state: 'visible' })
-      assert.equal(await drawer.getByRole('button', { name: /\[TEST\] หัวข้อที่/ }).count(), 28)
-      if (width === 320) await page.screenshot({ path: path.join(output, '320-menu.png') })
-      await drawer.getByRole('button', { name: /\[TEST\] หัวข้อที่ 28 / }).click()
+      assert.equal(await drawer.getByRole('button', { name: /\[TEST\] หัวข้อที่/ }).count(), 0)
+      assert.equal(await drawer.locator('nav button').count(), 5, 'drawer: home + manager + three modules only')
+      if (width === 320) await page.screenshot({ animations: 'disabled', path: path.join(output, '320-menu.png') })
+      await drawer.getByRole('button', { name: /^ข้อมูลระบบ/ }).click()
       await drawer.waitFor({ state: 'hidden' })
+      const catalog = page.getByRole('region', { name: 'สารบัญหัวข้อ' })
+      assert.equal(await catalog.getByRole('button').count(), 29, 'all topics stay available in content')
+      await catalog.getByRole('button', { name: '[TEST] หัวข้อที่ 28 ชื่อยาวสำหรับตรวจเมนูซ้ายและมือถือ', exact: true }).click()
       await page.getByRole('heading', { name: '[TEST] บันทึกตัวอย่าง 28' }).waitFor()
+      assert.match(await page.locator('#portal-drawer nav [aria-current="page"]').textContent(), /ข้อมูลระบบ/)
       await shortcuts.getByRole('button', { name: 'ทั้งหมด', exact: true }).click()
       await shortcuts.getByRole('button', { name: 'เพิ่มบันทึก', exact: true }).click()
       await page.getByText('บันทึกองค์ความรู้และประเด็นทางเทคนิคให้ค้นคืนได้ง่าย', { exact: true }).waitFor()
       await page.goto(`${base}/dev-journal`)
       await page.getByRole('heading', { name: 'ศูนย์ควบคุมงานพัฒนาระบบ' }).waitFor()
     } else {
+      const nav = page.locator('[data-dev-aside] nav')
+      assert.equal(await nav.locator('button').count(), 4, 'sidebar does not grow with topic count')
+      assert.equal(await nav.evaluate(el => el.scrollHeight > el.clientHeight + 1), false, `${width}: unnecessary sidebar scroll`)
       const positions = await page.evaluate(async () => {
         const scroller = document.querySelector('[data-scroll]')
         scroller.scrollTop = 700
@@ -145,10 +153,16 @@ try {
       assert(positions.scroll > 100, `${width}: fixture did not scroll`)
       assert(Math.abs(positions.headerTop) <= 1 && Math.abs(positions.asideTop - positions.headerBottom) <= 1, `${width}: sticky chrome ${JSON.stringify(positions)}`)
       assert(Math.abs(positions.asideWidth - 240) <= 1 && Math.abs(positions.asideBottom - positions.scrollerBottom) <= 1)
-      const topic = page.locator('[data-dev-aside]').getByRole('button', { name: /\[TEST\] หัวข้อที่ 28 / })
-      await topic.click()
+      const module = nav.getByRole('button', { name: /^ข้อมูลระบบ/ })
+      await module.click()
+      const catalog = page.getByRole('region', { name: 'สารบัญหัวข้อ' })
+      assert.equal(await catalog.getByRole('button').count(), 29)
+      await catalog.getByRole('button', { name: '[TEST] หัวข้อที่ 28 ชื่อยาวสำหรับตรวจเมนูซ้ายและมือถือ', exact: true }).click()
       await page.getByRole('heading', { name: '[TEST] บันทึกตัวอย่าง 28' }).waitFor()
-      assert.equal(await topic.getAttribute('aria-current'), 'page')
+      assert.equal(await module.getAttribute('aria-current'), 'page', 'module stays selected while viewing a topic')
+      assert.equal(await nav.locator('button').count(), 4)
+      await nav.getByRole('button', { name: /^โครงสร้าง/ }).click()
+      assert.equal(await page.getByRole('region', { name: 'สารบัญหัวข้อ' }).getByRole('button').count(), 1, 'switching modules clears the previous topic')
       await page.locator('[data-dev-aside]').getByRole('button', { name: /^ทั้งหมด/ }).click()
       await page.evaluate(() => {
         document.querySelector('[data-scroll]').scrollTop = 0
@@ -167,8 +181,25 @@ try {
       await page.getByRole('button', { name: 'กลับหน้าผู้พัฒนาระบบ', exact: true }).click()
       assert.equal(await page.locator('[data-dev-manager]').count(), 0)
     }
-    await page.screenshot({ path: path.join(output, `${width}.png`) })
+    await page.screenshot({ animations: 'disabled', path: path.join(output, `${width}.png`) })
     console.log(`PASS ${width}px: navigation, account, ${width < 768 ? 'drawer + actions' : 'sticky sidebar + filters'}`)
+  }
+  for (const [width, height] of [[768, 600], [1024, 600], [1280, 480]]) {
+    await page.setViewportSize({ width, height })
+    await page.goto(`${base}/dev-journal`)
+    await page.getByRole('heading', { name: 'ศูนย์ควบคุมงานพัฒนาระบบ' }).waitFor()
+    const geometry = await page.locator('[data-dev-aside]').evaluate(el => {
+      const nav = el.querySelector('nav')
+      const footer = el.lastElementChild.getBoundingClientRect()
+      const box = el.getBoundingClientRect()
+      return { bottom: box.bottom, footerBottom: footer.bottom, scroll: nav.scrollHeight > nav.clientHeight + 1 }
+    })
+    assert(geometry.bottom <= height + 1 && geometry.footerBottom <= height + 1, 'short viewport: footer outside screen')
+    assert.equal(geometry.scroll, false, `${width}x${height}: topic count must not require sidebar scrolling`)
+    await page.locator('[data-dev-aside]').getByRole('button', { name: /^ข้อมูลระบบ/ }).click()
+    assert.equal(await page.getByRole('region', { name: 'สารบัญหัวข้อ' }).getByRole('button').count(), 29)
+    await page.screenshot({ animations: 'disabled', path: path.join(output, `${width}x${height}.png`) })
+    console.log(`PASS ${width}x${height}: compact sidebar fits without scrolling; all 29 topics available`)
   }
   await page.goto(`${base}/dev-journal?denied=1`)
   await page.getByText('Unauthorized fixture').waitFor()
