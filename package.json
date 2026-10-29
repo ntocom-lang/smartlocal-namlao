@@ -105,6 +105,8 @@
     "test:complaint-intake": "node tests/complaint-intake.test.mjs",
     "test:complaint-finish": "node tests/complaint-finish.test.mjs",
     "test:complaint-push": "node tests/complaint-push.test.mjs",
+    "test:notification-prefs": "node tests/notification-device-prefs.test.mjs",
+    "test:notification-prefs-browser": "node tests/notification-device-prefs.playwright.mjs",
     "test:complaint-parked": "node tests/complaint-parked.test.mjs",
     "test:complaint-parked-db": "node tests/complaint-parked-db.test.mjs",
     "test:complaint-track":"node tests/complaint-track.test.mjs",
