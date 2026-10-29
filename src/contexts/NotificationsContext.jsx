@@ -7,6 +7,8 @@ import { fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
 import { MAX_ALERTS_AT_ONCE, alertText, freshUnreadItems, notificationKey as notifKey } from '../lib/notificationAlerts'
 import { deviceCanVibrate, syncAppBadge, vibrateForNotification } from '../lib/notificationPrefs'
 import { playNotificationSound } from '../lib/notificationSound'
+import { FEED_REFRESH_MS, feedRound, freshFeedItems, isFeedItem, isMissingFeedFunction, mapFeedItem } from '../lib/notificationFeed'
+import { allDocumentTypes } from '../lib/documentTypes'
 import { useNotificationDevicePrefs } from '../hooks/useNotificationDevicePrefs'
 import NotificationToasts from '../components/notifications/NotificationToasts'
 
@@ -15,11 +17,16 @@ const LEGACY_CLEARED_KEY = 'smartlocal_notif_cleared_at'
 const CITIZEN_HIDDEN = new Set(['pending', 'new'])
 const STAFF_ROLES = new Set(['superadmin', 'admin', 'officer', 'staff', 'technician', 'viewer', 'council', 'kamnan'])
 
+// คีย์สถานะอ่านแล้ว: คำร้องใช้ "รหัส_สถานะ" เดิม · ฟีดงานของฉันใช้ key ที่ฐานข้อมูลประกอบมา (≤80 ตัวอักษร)
+const itemKey = (item) => (isFeedItem(item) ? item.key : notifKey(item))
+const kindOf = (item) => item?._kind ?? 'complaint'
+
 const NotificationsCtx = createContext({
   unreadCount: 0,
   items: [],
   loading: false,
   audience: 'citizen',
+  categories: ['complaint'],
   markRead: () => {},
   markAllRead: () => {},
   openPanel: () => {},
@@ -107,6 +114,11 @@ export function NotificationsProvider({ children }) {
   const [loading, setLoading] = useState(false)
   const [clearedAt, setClearedAt] = useState(0)
   const [readIds, setReadIds] = useState(() => new Set())
+  // งานของฉันหมวดอื่น (รอลงนาม/กิจกรรมที่มอบหมาย/คำขอ E-Service/รถผู้ป่วย) — เฉพาะบุคลากร จาก my_notification_feed
+  const [feed, setFeed] = useState({ scope: null, categories: [], items: [] })
+  const feedRoundRef = useRef({ scope: null, previous: null })
+  const docTypesRef = useRef([])
+  useEffect(() => { docTypesRef.current = allDocumentTypes(tenant) }, [tenant])
 
   // ── ป๊อปอัป/เสียง/สั่น เมื่อมีรายการใหม่เข้ากระดิ่งระหว่างเปิดระบบอยู่ (ตั้งรายเครื่องในหน้า /profile/notifications) ──
   const [devicePrefs] = useNotificationDevicePrefs(uid)
@@ -128,12 +140,13 @@ export function NotificationsProvider({ children }) {
   }, [])
 
   const announce = useCallback((fresh, view) => {
-    const list = fresh.slice(0, MAX_ALERTS_AT_ONCE)
-    if (list.length === 0) return
     const prefs = prefsRef.current
+    // หมวดที่ผู้ใช้ปิดเด้งไว้: ยังอยู่ในกระดิ่ง แต่ไม่มีป๊อปอัป/เสียง/สั่น
+    const list = fresh.filter((item) => !prefs.muted?.includes(kindOf(item))).slice(0, MAX_ALERTS_AT_ONCE)
+    if (list.length === 0) return
     if (prefs.popup) {
       showToasts(list.map((item) => ({
-        id: notifKey(item),
+        id: itemKey(item),
         itemId: item.id,
         href: item._href,
         hrefState: item._hrefState,
@@ -238,6 +251,36 @@ export function NotificationsProvider({ children }) {
 
   useEffect(() => { fetchItems() }, [fetchItems])
 
+  // งานของฉันหมวดอื่น — ฐานข้อมูลตัดสินสิทธิ์และหมวดที่ได้รับ (my_notification_feed) หน้าเว็บแค่แปลข้อความ
+  const fetchFeed = useCallback(async () => {
+    if (!uid || !tenantId || audience !== 'staff' || profileLoading) return
+    // ฟังก์ชันอ่านอย่างเดียว (STABLE) — เรียกแบบ GET ไม่ใช่ POST
+    const { data, error } = await supabase.rpc('my_notification_feed', { p_municipality_id: tenantId }, { get: true })
+    if (error) {
+      if (!isMissingFeedFunction(error)) console.error('[notifications] โหลดงานของฉันไม่สำเร็จ:', error.message)
+      return
+    }
+    if (!data?.ok) return
+    const docTypes = docTypesRef.current
+    const docTypeLabel = (code) => docTypes.find((type) => type.value === code)?.label ?? code
+    const feedItems = (Array.isArray(data.items) ? data.items : []).map((raw) => mapFeedItem(raw, docTypeLabel)).filter(Boolean)
+    const scope = `${uid}|${tenantId}`
+    const round = feedRoundRef.current
+    const previous = round.scope === scope ? round.previous : null
+    feedRoundRef.current = { scope, previous: feedRound(feedItems) }
+    announce(freshFeedItems(previous, feedItems, readStateRef.current.readIds), audience)
+    setFeed({ scope, categories: Array.isArray(data.categories) ? data.categories : [], items: feedItems })
+  }, [uid, tenantId, audience, profileLoading, announce])
+
+  // คำขอ/รถผู้ป่วย/ลายเซ็นไม่อยู่ใน realtime — ดึงซ้ำเป็นรอบเฉพาะตอนหน้าเปิดอยู่ ไม่ดึงทันทีตอนสลับกลับมาหน้าเว็บ
+  // (เคยทำ supabase ค้างทั้งแอปบนมือถือ ดู src/lib/supabase.js)
+  useEffect(() => {
+    if (!uid || !tenantId || audience !== 'staff' || profileLoading) return
+    fetchFeed()
+    const timer = window.setInterval(() => { if (!document.hidden) fetchFeed() }, FEED_REFRESH_MS)
+    return () => window.clearInterval(timer)
+  }, [uid, tenantId, audience, profileLoading, fetchFeed])
+
   useEffect(() => {
     if (!uid || !tenantId || !role || profileLoading) return
     const filter = audience === 'staff'
@@ -250,14 +293,21 @@ export function NotificationsProvider({ children }) {
         schema: 'public',
         table: 'complaints',
         filter,
-      }, () => fetchItems())
+      }, () => { fetchItems(); fetchFeed() })
       .subscribe()
     return () => supabase.removeChannel(channel)
-  }, [uid, tenantId, role, profileLoading, audience, fetchItems])
+  }, [uid, tenantId, role, profileLoading, audience, fetchItems, fetchFeed])
 
-  const tagged = items.map((n) => ({
+  // งานหมวดอื่นขึ้นก่อน (ต้องลงมือ) แล้วตามด้วยคำร้อง · ฟีดของบัญชี/หน่วยงานอื่นที่ค้างอยู่ไม่นับ
+  const feedItems = audience === 'staff' && feed.scope === `${uid}|${tenantId}` ? feed.items : []
+  const feedCategories = audience === 'staff' && feed.scope === `${uid}|${tenantId}` ? feed.categories : []
+  const allItems = [...feedItems, ...items]
+  const tagged = allItems.map((n) => ({
     ...n,
-    _unread: new Date(n.updated_at).getTime() > clearedAt && !readIds.has(notifKey(n)),
+    // ฟีดใช้สถานะอ่านแล้วรายรายการอย่างเดียว (เวลาของฟีดไม่ใช่ "เวลาที่เปลี่ยน" จึงไม่เทียบกับปุ่มอ่านทั้งหมด)
+    _unread: isFeedItem(n)
+      ? !readIds.has(itemKey(n))
+      : new Date(n.updated_at).getTime() > clearedAt && !readIds.has(notifKey(n)),
   }))
   const unreadCount = tagged.filter((n) => n._unread).length
 
@@ -292,9 +342,9 @@ export function NotificationsProvider({ children }) {
   }
 
   function markRead(id) {
-    const item = items.find((n) => n.id === id)
+    const item = allItems.find((n) => n.id === id)
     if (!item) return
-    const key = notifKey(item)
+    const key = itemKey(item)
     setReadIds((prev) => {
       const next = new Set(prev)
       next.add(key)
@@ -305,7 +355,7 @@ export function NotificationsProvider({ children }) {
 
   function markAllRead() {
     const now = Date.now()
-    const allKeys = items.map(notifKey)
+    const allKeys = allItems.map(itemKey)
     setClearedAt(now)
     setReadIds((prev) => {
       const next = new Set(prev)
@@ -326,7 +376,7 @@ export function NotificationsProvider({ children }) {
   }
 
   return (
-    <NotificationsCtx.Provider value={{ unreadCount, items: tagged, loading, audience, markRead, markAllRead, openPanel, previewAlert }}>
+    <NotificationsCtx.Provider value={{ unreadCount, items: tagged, loading, audience, categories: ['complaint', ...feedCategories], markRead, markAllRead, openPanel, previewAlert }}>
       {children}
       <NotificationToasts toasts={toasts} onOpen={openToast} onDismiss={dismissToast} />
     </NotificationsCtx.Provider>

@@ -3,17 +3,26 @@
 // แยกรายเครื่อง: คอมที่ทำงานอยากได้ยินเสียง มือถือส่วนตัวอยากเงียบ (ระบบอ้างอิงใช้ค่าเดียวทุกเครื่อง)
 // แยกรายบัญชี: คอมในสำนักงานหลายคนใช้ร่วมกัน
 // ค่าเริ่มต้น: ป๊อปอัปเปิด · เสียงปิด · สั่นปิด — ไม่ให้ดังทั้งห้องโดยไม่มีใครเลือก (เจ้าของระบบอนุมัติ 2569-10-28)
+// muted = หมวดที่ไม่เด้ง/ไม่มีเสียง/ไม่สั่น แต่ยังอยู่ในกระดิ่ง (ข้อ 3 อนุมัติ 2569-10-29)
+
+import { NOTIFICATION_CATEGORY_KEYS } from './notificationFeed.js'
 
 export const NOTIFICATION_PREFS_EVENT = 'smartlocal:notification-prefs'
-export const DEFAULT_NOTIFICATION_PREFS = Object.freeze({ popup: true, sound: false, vibrate: false })
+export const DEFAULT_NOTIFICATION_PREFS = Object.freeze({ popup: true, sound: false, vibrate: false, muted: Object.freeze([]) })
+const BOOLEAN_PREFS = ['popup', 'sound', 'vibrate']
 const KEY_PREFIX = 'smartlocal_notif_device_prefs_v1'
 
 export const notificationPrefsKey = (uid) => `${KEY_PREFIX}_${uid || 'guest'}`
 
 export function sanitizeNotificationPrefs(raw) {
   const value = raw && typeof raw === 'object' ? raw : {}
-  return Object.fromEntries(Object.entries(DEFAULT_NOTIFICATION_PREFS)
-    .map(([key, fallback]) => [key, typeof value[key] === 'boolean' ? value[key] : fallback]))
+  const prefs = Object.fromEntries(BOOLEAN_PREFS
+    .map((key) => [key, typeof value[key] === 'boolean' ? value[key] : DEFAULT_NOTIFICATION_PREFS[key]]))
+  // เก็บเฉพาะรหัสหมวดที่รู้จัก ไม่ซ้ำ — ค่าพัง/หมวดที่เลิกใช้หายไปเอง
+  prefs.muted = Array.isArray(value.muted)
+    ? [...new Set(value.muted.filter((key) => NOTIFICATION_CATEGORY_KEYS.includes(key)))]
+    : []
+  return prefs
 }
 
 /** ข้อความดิบใน localStorage (สตริงคงที่ — ใช้เป็น snapshot ของ useSyncExternalStore ได้) */

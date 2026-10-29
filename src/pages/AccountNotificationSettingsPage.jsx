@@ -9,6 +9,7 @@ import { useNotificationDevicePrefs } from '../hooks/useNotificationDevicePrefs'
 import { appBadgeSupported, deviceCanVibrate } from '../lib/notificationPrefs'
 import { playNotificationSound } from '../lib/notificationSound'
 import AccountPageLayout from '../components/profile/AccountPageLayout'
+import CategoryMuteSettings from '../components/notifications/CategoryMuteSettings'
 
 function SwitchRow({ id, label, hint, checked, onChange }) {
   return (
@@ -26,7 +27,7 @@ function SwitchRow({ id, label, hint, checked, onChange }) {
 }
 
 // ป๊อปอัป/เสียง/สั่น ตอนมีรายการใหม่เข้ากระดิ่งระหว่างเปิดระบบอยู่ — ตั้งรายเครื่อง เก็บในเครื่อง ไม่ขึ้นเซิร์ฟเวอร์
-function DeviceAlertSettings({ uid, previewAlert }) {
+function DeviceAlertSettings({ uid, previewAlert, categories }) {
   const [prefs, update] = useNotificationDevicePrefs(uid)
   const [note, setNote] = useState('')
   // ความสามารถของเครื่องไม่เปลี่ยนระหว่างเปิดหน้า — อ่านครั้งเดียว
@@ -59,6 +60,10 @@ function DeviceAlertSettings({ uid, previewAlert }) {
         <SwitchRow id="sound" label="เสียงแจ้งเตือน" hint="เสียงสั้นเบาๆ เบราว์เซอร์จะเล่นได้หลังแตะหน้าเว็บอย่างน้อยหนึ่งครั้ง" checked={prefs.sound} onChange={change} />
         {device.vibrate && <SwitchRow id="vibrate" label="สั่นบนมือถือ" hint="สั่นสั้นๆ เมื่อมีรายการใหม่" checked={prefs.vibrate} onChange={change} />}
       </div>
+      <CategoryMuteSettings categories={categories} muted={prefs.muted} onChange={(muted) => {
+        const { saved } = update({ muted })
+        setNote(saved ? 'บันทึกแล้ว ใช้เฉพาะบัญชีนี้บนเครื่องนี้' : 'บันทึกไม่สำเร็จ เบราว์เซอร์อาจปิดการเก็บข้อมูลไว้ (เช่น โหมดไม่ระบุตัวตน)')
+      }} />
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" onClick={previewAlert} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50">ทดลองป๊อปอัป</button>
         <button type="button" onClick={testSound} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"><Volume2 size={15} aria-hidden="true" />ทดลองฟังเสียง</button>
@@ -73,7 +78,7 @@ function DeviceAlertSettings({ uid, previewAlert }) {
 export default function AccountNotificationSettingsPage() {
   const { session } = useAuth()
   const { tenant } = useTenant()
-  const { unreadCount, audience, previewAlert } = useNotifications()
+  const { unreadCount, audience, previewAlert, categories } = useNotifications()
   const push = usePushNotification({ userId: session?.user?.id, municipalityId: tenant?.id })
   const status = push.checking ? 'กำลังตรวจสอบ…' : !push.configured ? 'ระบบยังไม่เปิดการแจ้งเตือนนอกเว็บ'
     : !push.deviceSupported ? 'เบราว์เซอร์นี้ยังไม่รองรับ'
@@ -88,7 +93,7 @@ export default function AccountNotificationSettingsPage() {
           <p className="mt-2 text-sm leading-6 text-slate-500">{audience === 'staff' ? 'งานที่เกี่ยวข้องแสดงในกล่องงานตามสิทธิ์ของคุณโดยอัตโนมัติ' : 'ดูความคืบหน้าคำร้องของคุณได้ในรายการแจ้งเตือน'} การเปิดหน้าตั้งค่านี้ไม่เปลี่ยนรายการเป็นอ่านแล้ว</p>
           <Link to="/notifications" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2">{audience === 'staff' ? 'เปิดกล่องงาน' : 'ดูรายการแจ้งเตือน'}{unreadCount > 0 && <span className="rounded-full bg-white/20 px-2 text-xs">{unreadCount} ยังไม่อ่าน</span>}</Link>
         </section>
-        <DeviceAlertSettings uid={session?.user?.id} previewAlert={previewAlert} />
+        <DeviceAlertSettings uid={session?.user?.id} previewAlert={previewAlert} categories={categories} />
         <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5" aria-labelledby="account-push-title">
           <h2 id="account-push-title" className="flex items-center gap-2 text-sm font-bold text-slate-800"><Bell size={19} aria-hidden="true" />แจ้งเตือนบนอุปกรณ์นี้</h2>
           <p className="mt-2 text-sm leading-6 text-slate-500">รับการแจ้งเตือนจากระบบผ่านเบราว์เซอร์ แม้ไม่ได้เปิดหน้ารายการอยู่ การตั้งค่านี้ใช้กับบัญชีและเบราว์เซอร์บนเครื่องนี้</p>

@@ -3,7 +3,7 @@ import { categoryNameOf } from '../lib/complaintCategoryLabels.js'
 import { useNavigate } from 'react-router-dom'
 import {
   Bell, ChevronLeft, CheckCircle2, XCircle, Loader2,
-  Clock, RefreshCw, ChevronRight,
+  Clock, RefreshCw, ChevronRight, PenLine, CalendarCheck, FileText, Ambulance,
 } from 'lucide-react'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { useTenant } from '../contexts/TenantContext'
@@ -11,8 +11,18 @@ import { CategoryIcon } from '../lib/categoryIcon'
 import { supabase } from '../lib/supabase'
 // ข้อความสถานะ + เลขที่ ใช้ชุดเดียวกับป๊อปอัปแจ้งเตือน (NotificationsContext)
 import { CITIZEN_STATUS_MSG, STAFF_STATUS_MSG, complaintShortRef } from '../lib/notificationAlerts'
+import { NOTIFICATION_CATEGORIES, isFeedItem } from '../lib/notificationFeed'
 
 // ─── constants ────────────────────────────────────────────────────────────────
+
+// งานของฉันหมวดอื่น (my_notification_feed) — ข้อความประกอบไว้แล้ว แถวนี้แค่จัดหน้า
+const FEED_STYLE = {
+  esign:    { Icon: PenLine,       bg: '#fef3c7', color: '#92400e' },
+  event:    { Icon: CalendarCheck, bg: '#dbeafe', color: '#1e40af' },
+  eservice: { Icon: FileText,      bg: '#ede9fe', color: '#5b21b6' },
+  patient:  { Icon: Ambulance,     bg: '#d1fae5', color: '#065f46' },
+}
+const CATEGORY_NAME = Object.fromEntries(NOTIFICATION_CATEGORIES.map((c) => [c.key, c.label]))
 
 const STATUS_INFO = {
   new:         { label: 'คำร้องใหม่',      bg: '#fef3c7', color: '#92400e', Icon: Clock },
@@ -188,6 +198,46 @@ export default function NotificationsPage() {
           <div className="bg-white mt-2 rounded-2xl mx-3 overflow-hidden shadow-sm">
             <div className="divide-y divide-gray-50">
               {items.map((n) => {
+                if (isFeedItem(n)) {
+                  const feedStyle = FEED_STYLE[n._kind]
+                  const FeedIcon = feedStyle.Icon
+                  return (
+                    <button
+                      key={n.id}
+                      data-feed-item={n._kind}
+                      onClick={() => {
+                        markRead(n.id)
+                        navigate(n._href ?? '/staff', n._hrefState ? { state: n._hrefState } : undefined)
+                      }}
+                      className={`w-full flex items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-gray-50 active:bg-gray-100 ${
+                        n._unread ? 'bg-blue-50/40' : ''
+                      }`}
+                    >
+                      <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 mt-0.5"
+                           style={{ backgroundColor: feedStyle.bg, color: feedStyle.color }}>
+                        <FeedIcon size={24} aria-hidden="true" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-bold text-gray-800 leading-tight">{n.title}</p>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {n._unread && (
+                              <span className="w-2 h-2 rounded-full shrink-0 mt-1" style={{ backgroundColor: 'var(--color-primary)' }} />
+                            )}
+                            <ChevronRight size={14} className="text-gray-300 mt-0.5" />
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1 leading-snug">{n.body}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="inline-flex items-center text-[13px] font-semibold px-2 py-0.5 rounded-full"
+                                style={{ backgroundColor: feedStyle.bg, color: feedStyle.color }}>
+                            {CATEGORY_NAME[n._kind]}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  )
+                }
                 const s = STATUS_INFO[n.status]
                 if (!s) return null
                 const Icon = s.Icon
