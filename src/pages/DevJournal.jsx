@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Plus, X, Loader2, Search, Pencil, Trash2, Bug, Wrench, BookOpen, Map,
-  LayoutGrid, LogOut, Folder, Activity, Database, Cpu, ShieldCheck, Sparkles,
+  LayoutGrid, Folder, Database, ShieldCheck, Sparkles, Menu, Bell,
   Clock3, CheckCircle2, CircleDot, Layers3, Command, ChevronRight,
 } from 'lucide-react'
 import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
@@ -10,11 +10,13 @@ import { thaiDate } from '../lib/thaiDate'
 import { useTenant } from '../contexts/TenantContext'
 import SuperAdminPanel from '../components/admin/SuperAdminPanel'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
-import UserProfileBadge from '../components/layout/UserProfileBadge'
+import StaffAccountMenu from '../components/layout/StaffAccountMenu'
+import PortalDrawer, { GroupLabel } from '../components/common/PortalDrawer'
+import { useNotifications } from '../contexts/NotificationsContext'
+import useStickyChrome from '../hooks/useStickyChrome'
 import { DEV_USER_ID } from '../lib/portalAccess'
 
-// สีธีมของหน้านี้ตั้งใจใช้ slate เข้ม (ไม่ใช่ var(--color-primary) ของ tenant) เพราะ
-// dev_journal เป็นข้อมูลข้ามทุกเทศบาล ไม่ผูกกับธีมของเทศบาลใดเทศบาลหนึ่ง
+// บันทึกครอบคลุมทุกหน่วยงาน แต่ใช้หัวเว็บ/เมนูธีมเดียวกับพอร์ทัลที่กำลังเปิดอยู่
 const CATEGORIES = [
   { value: 'bug',   label: 'ปัญหา',     Icon: Bug,      color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
   { value: 'fix',   label: 'แก้ไข',     Icon: Wrench,   color: '#059669', bg: '#f0fdf4', border: '#bbf7d0' },
@@ -120,10 +122,32 @@ const BUILTIN_DEV_ENTRIES = [
 ]
 
 export default function DevJournal() {
-  const { tenant } = useTenant()
   const navigate = useNavigate()
-  const [authChecked, setAuthChecked] = useState(false)
   const [authorized, setAuthorized] = useState(false)
+
+  useEffect(() => {
+    // getSessionResilient: เน็ตสะดุดตอนต่ออายุ token ต้องไม่พาออกจากระบบ
+    getSessionResilient().then(({ data }) => {
+      if (data.session?.user?.id !== DEV_USER_ID) {
+        navigate('/admin/login', { replace: true })
+        return
+      }
+      setAuthorized(true)
+    })
+  }, [navigate])
+
+  // Mount หลังตรวจสิทธิ์ เพื่อให้ useStickyChrome วัดหัวเว็บที่มีอยู่จริงตั้งแต่รอบแรก
+  return authorized ? <DevJournalWorkspace /> : null
+}
+
+function DevJournalWorkspace() {
+  const { tenant } = useTenant()
+  const { unreadCount } = useNotifications()
+  const navigate = useNavigate()
+  const headerRef = useRef(null)
+  const stickyBox = useStickyChrome(headerRef)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const closeDrawer = useCallback(() => setDrawerOpen(false), [])
 
   const [entries, setEntries] = useState([])
   const [municipalities, setMunicipalities] = useState([])
@@ -139,24 +163,10 @@ export default function DevJournal() {
   const [showModuleManager, setShowModuleManager] = useState(false)
 
   useEffect(() => {
-    // getSessionResilient: เน็ตสะดุดตอนต่ออายุ token ต้องไม่พาออกจากระบบ (ดูเหตุผลที่ src/lib/supabase.js)
-    getSessionResilient().then(({ data }) => {
-      const uid = data.session?.user?.id
-      if (uid !== DEV_USER_ID) {
-        navigate('/admin/login', { replace: true })
-        return
-      }
-      setAuthorized(true)
-      setAuthChecked(true)
-    })
-  }, [navigate])
-
-  useEffect(() => {
-    if (!authorized) return
     reload()
     supabase.from('municipalities').select('id, name').order('name')
       .then(({ data }) => setMunicipalities(data ?? []))
-  }, [authorized])
+  }, [])
 
   function reload() {
     setLoading(true)
@@ -219,9 +229,6 @@ export default function DevJournal() {
     if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
     setEntries(prev => prev.filter(e => e.id !== id))
   }
-
-  if (!authChecked) return null
-  if (!authorized) return null
 
   // SEED_MODULES เรียงตามลำดับที่กำหนดไว้ตายตัว (ไม่ sort) ส่วน module ที่งอกเองจาก
   // ข้อมูลจริงจะถูก sort ตามตัวอักษรแล้วต่อท้ายมาอีกที
@@ -287,157 +294,146 @@ export default function DevJournal() {
     { label: 'เสร็จสมบูรณ์', value: doneCount, Icon: CheckCircle2, tone: 'from-emerald-400 to-teal-500' },
   ]
 
+  async function handleLogout() {
+    await signOutSafely('/')
+    navigate('/')
+  }
+
+  // ใช้รายการ/ตัวกรองเดียวกันทั้ง PC และลิ้นชักมือถือ ไม่ต้องดูแลเมนูสองชุด
+  function renderModuleNavigation(onSelected = () => {}) {
+    return (
+      <>
+        <GroupLabel>งานพัฒนาระบบ</GroupLabel>
+        <button type="button" onClick={() => { setShowModuleManager(true); onSelected() }}
+          aria-current={showModuleManager ? 'page' : undefined}
+          className={`mb-2 flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${showModuleManager ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
+          <ShieldCheck size={16} className="shrink-0" /> จัดการโมดูล
+        </button>
+        <GroupLabel count={entries.length}>ส่วนของระบบ</GroupLabel>
+        {MODULE_ITEMS.map(({ key, label, Icon, count }) => {
+          const isActive = !showModuleManager && activeModule === key
+          const subTopics = key === 'all' ? [] : topicsByModule(key)
+          return (
+            <div key={key}>
+              <button type="button" onClick={() => { selectModule(key); onSelected() }}
+                aria-current={isActive && activeTopic === 'all' ? 'page' : undefined}
+                className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive && activeTopic === 'all' ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
+                <Icon size={16} className="shrink-0" />
+                <span className="min-w-0 flex-1 text-left break-words">{label}</span>
+                <span className="shrink-0 rounded-full bg-white/15 px-1.5 py-0.5 text-[10px]">{count}</span>
+              </button>
+              {subTopics.length > 0 && (
+                <div className="my-1 ml-5 space-y-0.5 border-l border-white/15 pl-2">
+                  {subTopics.map(t => {
+                    const topicActive = isActive && activeTopic === t
+                    const topicCount = entries.filter(e => e.module === key && e.topic === t).length
+                    return (
+                      <button key={t} type="button" onClick={() => { selectTopic(key, t); onSelected() }}
+                        aria-current={topicActive ? 'page' : undefined}
+                        className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-2 py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${topicActive ? 'bg-white/20 font-semibold text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'}`}>
+                        <span aria-hidden="true" className="h-1 w-1 shrink-0 rounded-full bg-current" />
+                        <span className="min-w-0 flex-1 text-left break-words leading-relaxed">{t}</span>
+                        <span className="shrink-0 text-[10px] opacity-75">{topicCount}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-slate-50 md:flex text-slate-900">
-      {/* ─── Sidebar เมนูหลัก: ส่วนของระบบ (PC) ─── */}
-      <aside className="hidden md:flex md:w-72 md:h-screen md:sticky md:top-0 md:flex-col md:shrink-0 overflow-hidden relative"
-        style={{ background: 'linear-gradient(165deg, #111827 0%, #0f2547 52%, #071426 100%)' }}>
-        <div className="absolute -top-20 -right-16 w-52 h-52 rounded-full bg-cyan-400/10 blur-3xl pointer-events-none" />
-        <div className="absolute bottom-24 -left-20 w-56 h-56 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
-
-        <div className="relative px-5 py-5 flex items-center gap-3 border-b border-white/10">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-950/30 shrink-0">
-            <Command size={21} className="text-white" strokeWidth={2.2} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-black text-white leading-tight">Developer Console</p>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]" />
-            </div>
-            <p className="text-[11px] text-sky-200/55 mt-1">SmartLocal · System Workspace</p>
-          </div>
-          <button onClick={() => navigate('/admin')} title="กลับหน้าแอดมิน"
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/50 hover:text-white transition-all shrink-0">
-            <ArrowLeft size={16} />
+    <div className="min-h-full text-slate-900" style={{ backgroundColor: '#eef2f7' }}>
+      {/* หัวเว็บและเมนูบัญชีใช้รูปแบบเดียวกับหน้าเจ้าหน้าที่ */}
+      <header className="relative px-4 pt-3 pb-3 text-white md:hidden"
+        style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => setDrawerOpen(true)} aria-label="เปิดเมนู"
+            aria-expanded={drawerOpen} aria-controls="portal-drawer"
+            className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white/90 active:bg-white/15">
+            <Menu size={22} aria-hidden="true" />
           </button>
-        </div>
-
-        <div className="relative mx-4 mt-4 rounded-2xl border border-white/10 bg-white/[0.055] p-3.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-semibold text-white/75">
-              <Activity size={14} className="text-emerald-400" /> Developer Workspace
-            </div>
-            <span className="text-[10px] font-bold text-emerald-300 bg-emerald-400/10 border border-emerald-400/20 px-2 py-0.5 rounded-full">ACTIVE</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2 mt-3">
-            <div className="rounded-xl bg-black/15 px-2.5 py-2">
-              <p className="text-lg font-black text-white">{entries.length}</p>
-              <p className="text-[10px] text-white/40">บันทึกทั้งหมด</p>
-            </div>
-            <div className="rounded-xl bg-black/15 px-2.5 py-2">
-              <p className="text-lg font-black text-cyan-300">{modules.length}</p>
-              <p className="text-[10px] text-white/40">ส่วนของระบบ</p>
-            </div>
-          </div>
-        </div>
-
-        <p className="relative px-5 pt-5 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">System Modules</p>
-        <nav className="relative flex-1 px-3 pb-3 space-y-1 overflow-y-auto">
-          <button onClick={() => setShowModuleManager(true)}
-            className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-violet-200 bg-violet-400/10 border border-violet-300/10 hover:text-white hover:bg-violet-400/20 hover:border-violet-300/20 transition-all">
-            <span className="w-8 h-8 rounded-lg bg-violet-400/15 flex items-center justify-center text-violet-300 group-hover:text-white transition-colors">
-              <ShieldCheck size={16} />
-            </span>
-            <span className="flex-1 text-left">จัดการโมดูล</span>
-            <ChevronRight size={13} className="opacity-40" />
+          <button type="button" onClick={() => navigate('/')} aria-label="กลับหน้าแรก" className="shrink-0">
+            {tenant?.logo_url
+              ? <img src={tenant.logo_url} alt="" className="h-11 w-11 rounded-full border border-white/20 bg-white/10 object-contain p-0.5" />
+              : <span className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-white/40 bg-white/20 text-lg font-bold">{tenant?.name?.[0] ?? 'S'}</span>}
           </button>
-          {MODULE_ITEMS.map(({ key, label, Icon, count }) => {
-            const isActive = activeModule === key
-            const subTopics = key === 'all' ? [] : topicsByModule(key)
-            return (
-              <div key={key}>
-                <button onClick={() => selectModule(key)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all border ${
-                    isActive && activeTopic === 'all'
-                      ? 'bg-gradient-to-r from-blue-500/25 to-cyan-400/10 border-cyan-300/20 text-white shadow-lg shadow-blue-950/20'
-                      : 'border-transparent text-white/55 hover:text-white hover:bg-white/[0.06]'
-                  }`}>
-                  <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${isActive ? 'bg-cyan-300/15 text-cyan-300' : 'bg-white/[0.04]'}`}>
-                    <Icon size={15} />
-                  </span>
-                  <span className="flex-1 text-left truncate">{label}</span>
-                  {count > 0 && (
-                    <span className="text-[10px] font-bold min-w-5 h-5 px-1.5 rounded-full bg-white/10 flex items-center justify-center">{count}</span>
-                  )}
-                </button>
-                {/* สารบัญ — หัวข้อ (เมนูรอง) ของส่วนนี้ แสดงซ้อนไว้เสมอ ไม่ต้องคลิกเปิดก่อน */}
-                {subTopics.length > 0 && (
-                  <div className="ml-7 pl-3 border-l border-white/10 space-y-0.5 my-1">
-                    {subTopics.map(t => {
-                      const topicActive = activeModule === key && activeTopic === t
-                      const topicCount = entries.filter(e => e.module === key && e.topic === t).length
-                      return (
-                        <button key={t} onClick={() => selectTopic(key, t)}
-                          className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium transition-all truncate ${
-                            topicActive ? 'bg-white/10 text-cyan-200' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.04]'
-                          }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${topicActive ? 'bg-cyan-300' : 'bg-white/20'}`} />
-                          <span className="flex-1 text-left truncate">{t}</span>
-                          {topicCount > 0 && <span className="text-[9px] opacity-70">{topicCount}</span>}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </nav>
-        <div className="relative px-3 py-3 border-t border-white/10">
-          <button onClick={() => navigate('/admin')}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/50 hover:text-white hover:bg-white/[0.06] transition-all">
-            <LogOut size={16} />
-            กลับหน้าแอดมิน
-          </button>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold leading-tight break-words">{tenant?.name ?? 'SmartLocal'}</p>
+            <span className="mt-1 inline-block rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-black tracking-widest">ผู้พัฒนาระบบ</span>
+          </div>
+          <StaffAccountMenu compact onLogout={handleLogout} />
         </div>
-      </aside>
+        <PortalSwitcher className="mt-3 flex flex-wrap [&_a]:min-h-11" />
+      </header>
 
-      {/* ─── Mobile header ─── */}
-      <div className="md:hidden sticky top-0 z-30 px-4 py-3 flex items-center gap-3 shadow-lg shadow-slate-900/10"
-        style={{ background: 'linear-gradient(135deg, #0f172a 0%, #14345f 100%)' }}>
-        <button onClick={() => navigate('/admin')} className="p-2 rounded-xl bg-white/10 text-white/70 transition-colors">
-          <ArrowLeft size={18} />
-        </button>
-        <div className="flex-1 min-w-0">
-          <p className="font-black text-white">Developer Console</p>
-          <p className="text-[11px] text-cyan-200/60">SmartLocal System Workspace</p>
+      <PortalDrawer open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="ผู้พัฒนาระบบ"
+        ariaLabel="เมนูผู้พัฒนาระบบ" homeItem={{ key: 'back-to-admin', label: 'กลับหน้าแอดมิน', Icon: ArrowLeft }}
+        groups={[]} activeKey={null} onSelect={() => { closeDrawer(); navigate('/admin') }}>
+        {renderModuleNavigation(closeDrawer)}
+      </PortalDrawer>
+
+      <header ref={headerRef} data-dev-header className="sticky top-0 z-30 hidden w-full text-white md:block"
+        style={{ background: 'linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+          {tenant?.header_image_url && <div className="absolute inset-0 bg-cover bg-center opacity-25" style={{ backgroundImage: `url("${tenant.header_image_url}")` }} />}
+          <div className="absolute inset-x-0 bottom-0 h-12" style={{ background: 'linear-gradient(to top, var(--color-primary-dark), transparent)' }} />
         </div>
-        <button onClick={() => setShowModuleManager(true)}
-          aria-label="เปิดหน้าจัดการโมดูล" title="จัดการโมดูล"
-          className="w-9 h-9 rounded-xl bg-violet-400/15 border border-violet-300/20 text-violet-200 flex items-center justify-center active:scale-90 transition-all">
-          <ShieldCheck size={17} />
-        </button>
-        <span className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-300 bg-emerald-400/10 border border-emerald-300/20 px-2 py-1 rounded-full">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> ACTIVE
-        </span>
-      </div>
-
-      {/* ─── Main content ─── */}
-      <div className="flex-1 min-w-0 pb-24 md:pb-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.08),transparent_30%),linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)]">
-        <div className="hidden md:flex sticky top-0 z-20 items-center justify-between gap-3 px-7 py-3.5 bg-white/85 backdrop-blur-xl border-b border-slate-200/70">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center shadow-sm">
-              <Cpu size={17} className="text-cyan-300" />
-            </div>
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 px-6 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <button type="button" onClick={() => navigate('/')} aria-label="กลับหน้าแรก" className="shrink-0">
+              {tenant?.logo_url
+                ? <img src={tenant.logo_url} alt="" className="h-11 w-11 rounded-full border-2 border-white/40 bg-white/10 object-contain" />
+                : <span className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-white/40 bg-white/20 text-lg font-bold">🏛️</span>}
+            </button>
             <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">System Workspace</p>
-              <p className="text-sm font-black text-slate-800 truncate">{activeModule === 'all' ? 'ทุกส่วนของระบบ' : activeModule}</p>
+              <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-black tracking-widest">ผู้พัฒนาระบบ</span>
+              <p className="mt-0.5 text-sm font-bold leading-tight break-words">{tenant?.name ?? 'SmartLocal'}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <UserProfileBadge tone="onLight" />
-            <PortalSwitcher className="flex" tone="onLight" />
-            <button onClick={async () => { await signOutSafely('/'); navigate('/') }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors border border-slate-200">
-              <LogOut size={13} />
-              ออกจากระบบ
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button type="button" onClick={() => navigate('/notifications')}
+              aria-label={unreadCount > 0 ? `การแจ้งเตือน ${unreadCount} รายการใหม่` : 'การแจ้งเตือน'}
+              className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70">
+              <Bell size={18} aria-hidden="true" />
+              {unreadCount > 0 && <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold">{unreadCount > 9 ? '9+' : unreadCount}</span>}
             </button>
-            <button onClick={openCreate}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 shadow-md shadow-blue-600/20 hover:shadow-blue-600/30 hover:-translate-y-0.5 active:scale-95 transition-all">
-              <Plus size={14} /> เพิ่มบันทึกใหม่
-            </button>
+            <PortalSwitcher className="flex flex-wrap" />
+            <StaffAccountMenu onLogout={handleLogout} />
           </div>
         </div>
+      </header>
+
+      <div className="md:flex">
+        <aside data-dev-aside className="sticky hidden w-60 shrink-0 self-start flex-col shadow-lg md:flex"
+          style={{ backgroundColor: '#1a3a5c', top: stickyBox.top ?? undefined, height: stickyBox.height ?? undefined }}>
+          <nav aria-label="เมนูผู้พัฒนาระบบ" className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+            {renderModuleNavigation()}
+          </nav>
+          <div className="border-t border-white/10 px-3 py-3">
+            <button type="button" onClick={() => navigate('/admin')}
+              className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white">
+              <ArrowLeft size={16} /> กลับหน้าแอดมิน
+            </button>
+          </div>
+        </aside>
+
+        <div className="min-w-0 flex-1 pb-24 md:pb-0">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4 sm:px-6 lg:px-8">
+            <div className="min-w-0">
+              <p className="text-xs text-slate-500">ผู้พัฒนาระบบ · ข้อมูลทุกหน่วยงาน</p>
+              <h2 className="mt-1 text-base font-bold break-words">{activeModule === 'all' ? 'ทุกส่วนของระบบ' : activeModule}</h2>
+            </div>
+            <button type="button" onClick={openCreate}
+              className="flex min-h-11 items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-white shadow-sm transition-opacity hover:opacity-90"
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              <Plus size={17} /> เพิ่มบันทึกใหม่
+            </button>
+          </div>
 
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 lg:py-7 space-y-5">
           <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-950 text-white p-5 sm:p-6 lg:p-7 shadow-2xl shadow-slate-900/15">
@@ -687,64 +683,42 @@ export default function DevJournal() {
         </div>
       </div>
 
-      {/* ─── Bottom tab bar เมนูหลัก: ส่วนของระบบ (มือถือ) ─── */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch overflow-x-auto"
-        style={{
-          background: 'linear-gradient(180deg, rgba(15,35,67,0.98) 0%, rgba(7,20,38,0.99) 100%)',
-          borderTop: '1px solid rgba(103,232,249,0.16)',
-          boxShadow: '0 -8px 30px rgba(15,23,42,0.32)',
-          borderTopLeftRadius: '24px',
-          borderTopRightRadius: '24px',
-          paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 6px)',
-          scrollbarWidth: 'none',
-        }}>
-        {MODULE_ITEMS.map(({ key, label, Icon }) => {
-          const isActive = activeModule === key
-          return (
-            <button key={key} onClick={() => selectModule(key)}
-              className="flex-1 min-w-[76px] flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
-              <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
-                style={{ background: isActive ? 'linear-gradient(135deg, rgba(34,211,238,0.28), rgba(59,130,246,0.28))' : 'transparent' }}>
-                {isActive && (
-                  <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.8)]" />
-                )}
-                <Icon size={19} strokeWidth={isActive ? 2.2 : 1.6}
-                  style={{ color: isActive ? '#a5f3fc' : 'rgba(255,255,255,0.4)' }} />
-              </div>
-              <span className="text-[10px] font-bold leading-tight truncate max-w-[70px]"
-                style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.4)' }}>
-                {label}
-              </span>
-            </button>
-          )
-        })}
-        <button onClick={() => setShowModuleManager(true)}
-          className="flex-1 min-w-[86px] flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
-          <div className="relative w-10 h-9 rounded-xl flex items-center justify-center bg-violet-400/15">
-            <ShieldCheck size={19} strokeWidth={1.8} className="text-violet-300" />
-          </div>
-          <span className="text-[10px] font-bold leading-tight text-violet-200">จัดการโมดูล</span>
-        </button>
       </div>
 
+      {/* ทางลัดมือถือคงที่ — รายการส่วนของระบบทั้งหมดเปิดจากลิ้นชักได้โดยไม่เลื่อนหาแนวนอน */}
+      <nav aria-label="ทางลัดผู้พัฒนาระบบ" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 rounded-t-2xl border-t border-white/10 text-white shadow-lg md:hidden"
+        style={{ backgroundColor: 'var(--color-primary-dark)', paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 6px)' }}>
+        {[
+          { key: 'all', label: 'ทั้งหมด', Icon: LayoutGrid, active: !showModuleManager && activeModule === 'all', action: () => selectModule('all') },
+          { key: 'create', label: 'เพิ่มบันทึก', Icon: Plus, action: openCreate },
+          { key: 'manage', label: 'จัดการโมดูล', Icon: ShieldCheck, active: showModuleManager, action: () => setShowModuleManager(true) },
+          { key: 'menu', label: 'เมนู', Icon: Menu, active: drawerOpen, action: () => setDrawerOpen(true) },
+        ].map(({ key, label, Icon, active, action }) => (
+          <button key={key} type="button" onClick={action} aria-current={active ? 'page' : undefined}
+            className={`flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 px-1 py-2 text-[10px] font-bold ${active ? 'bg-white/15 text-white' : 'text-white/70 hover:bg-white/10'}`}>
+            <Icon size={20} aria-hidden="true" /> {label}
+          </button>
+        ))}
+      </nav>
+
       {showModuleManager && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-slate-100 md:left-72">
+        <div data-dev-manager className="fixed inset-0 z-50 flex flex-col bg-slate-100 md:left-60" style={{ top: stickyBox.top ?? 0 }}>
           <header className="shrink-0 border-b border-white/10 px-4 py-3 text-white shadow-lg md:px-6"
-            style={{ background: 'linear-gradient(135deg, #0f172a 0%, #172554 55%, #312e81 100%)' }}>
+            style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
             <div className="mx-auto flex w-full max-w-7xl items-center gap-3">
               <button onClick={() => setShowModuleManager(false)} aria-label="กลับหน้าผู้พัฒนาระบบ"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/10 text-white/75 transition-all hover:bg-white/20 hover:text-white active:scale-90">
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/10 text-white/75 transition-all hover:bg-white/20 hover:text-white active:scale-90">
                 <ArrowLeft size={18} />
               </button>
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-400/15 text-violet-200">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-white">
                 <ShieldCheck size={19} />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-black">จัดการโมดูล</p>
-                <p className="truncate text-[11px] text-violet-200/60">Developer Console · System Configuration</p>
+                <p className="text-[11px] text-white/70">ผู้พัฒนาระบบ · ตั้งค่าโมดูล</p>
               </div>
               <button onClick={() => setShowModuleManager(false)} aria-label="ปิดหน้าจัดการโมดูล"
-                className="hidden h-9 w-9 items-center justify-center rounded-xl text-white/50 transition-colors hover:bg-white/10 hover:text-white md:flex">
+                className="hidden h-11 w-11 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/10 hover:text-white md:flex">
                 <X size={17} />
               </button>
             </div>
