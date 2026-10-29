@@ -18,7 +18,15 @@ import {
   isFreshTimestamp,
   pickNewComplaintRecipients,
   type ComplaintPushKind,
+  type PushMessage,
 } from '../_shared/complaintPush.ts'
+import {
+  SELF_TEST_KIND,
+  SELF_TEST_WINDOW_MS,
+  isPushEndpoint,
+  selfTestAllowed,
+  selfTestMessage,
+} from '../_shared/pushSelfTest.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -113,8 +121,105 @@ async function newComplaintRecipients(supabase: Supabase, complaint: ComplaintRo
   )
 }
 
-// ผู้เรียกส่งได้แค่ { complaint_id, kind } — server หาผู้รับและประกอบข้อความเองทุกชนิด
+type Subscription = { endpoint: string; p256dh: string; auth_key: string }
+type SendResult = { sent: number; failed: number }
+
+// ส่งถึงทุกเครื่องในรายการ แล้วลบเครื่องที่บริการ push ตอบว่าหมดอายุ (HTTP 410 Gone)
+async function sendToSubscriptions(supabase: Supabase, subs: Subscription[], message: PushMessage): Promise<SendResult> {
+  const payload = JSON.stringify(message)
+  const results = await Promise.allSettled(
+    subs.map((sub) =>
+      webpush.sendNotification(
+        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth_key } },
+        payload,
+      )
+    ),
+  )
+  const sent = results.filter((r) => r.status === 'fulfilled').length
+  const failed = results.filter((r) => r.status === 'rejected').length
+  const expiredEndpoints: string[] = []
+  results.forEach((r, i) => {
+    if (r.status === 'rejected') {
+      const err = r.reason as { statusCode?: number }
+      if (err?.statusCode === 410 && subs[i]) expiredEndpoints.push(subs[i].endpoint)
+    }
+  })
+  if (expiredEndpoints.length > 0) {
+    await supabase.from('push_subscriptions').delete().in('endpoint', expiredEndpoints)
+  }
+  return { sent, failed }
+}
+
+// บันทึกการส่งใน notification_deliveries (ช่องทาง push) — idempotency_key ซ้ำ = เคยส่งแล้ว คืน null
+// เป็นทั้งตัวกันส่งซ้ำและหลักฐานย้อนตรวจ (แอดมินของ อปท. อ่านได้ตาม policy เดิม)
+async function openDelivery(supabase: Supabase, values: Record<string, unknown>): Promise<{ id: string } | null> {
+  const { data, error } = await supabase
+    .from('notification_deliveries')
+    .insert({ ...values, channel: 'push', status: 'pending' })
+    .select('id')
+    .maybeSingle()
+  if (error?.code === '23505') return null
+  if (error) throw error
+  return data as { id: string }
+}
+
+async function closeDelivery(supabase: Supabase, id: string, { sent, failed }: SendResult) {
+  const now = new Date().toISOString()
+  const status = sent > 0 ? 'sent' : failed > 0 ? 'failed' : 'skipped'
+  await supabase.from('notification_deliveries').update({
+    status,
+    attempt_count: sent + failed,
+    sent_at: sent > 0 ? now : null,
+    updated_at: now,
+    last_error: status === 'failed' ? 'push service rejected every device' : status === 'skipped' ? 'no subscribed device' : null,
+  }).eq('id', id)
+}
+
+// ปุ่ม "ส่งทดสอบถึงเครื่องนี้" — ต้องล็อกอิน · endpoint ต้องเป็นแถวของบัญชีนี้ · ข้อความตายตัว · จำกัดครั้งต่อช่วงเวลา
+async function handleSelfTest(supabase: Supabase, req: Request, endpoint: unknown) {
+  if (!isPushEndpoint(endpoint)) return jsonResponse({ error: 'invalid endpoint' }, 400)
+  const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  const { data: callerData } = await supabase.auth.getUser(jwt)
+  const caller = callerData?.user
+  if (!caller) return jsonResponse({ error: 'unauthorized' }, 401)
+
+  const { data: device, error: deviceError } = await supabase
+    .from('push_subscriptions')
+    .select('endpoint, p256dh, auth_key, municipality_id')
+    .eq('user_id', caller.id)
+    .eq('endpoint', endpoint)
+    .maybeSingle()
+  if (deviceError) throw deviceError
+  if (!device?.municipality_id) return jsonResponse({ error: 'device not registered' }, 404)
+
+  const since = new Date(Date.now() - SELF_TEST_WINDOW_MS).toISOString()
+  const { count, error: countError } = await supabase
+    .from('notification_deliveries')
+    .select('id', { count: 'exact', head: true })
+    .eq('channel', 'push')
+    .eq('notification_type', SELF_TEST_KIND)
+    .eq('requested_by', caller.id)
+    .gte('created_at', since)
+  if (countError) throw countError
+  if (!selfTestAllowed(count)) return jsonResponse({ error: 'too many tests' }, 429)
+
+  const delivery = await openDelivery(supabase, {
+    municipality_id: device.municipality_id,
+    notification_type: SELF_TEST_KIND,
+    resource_type: 'user',
+    resource_id: caller.id,
+    idempotency_key: `${SELF_TEST_KIND}:${crypto.randomUUID()}`,
+    requested_by: caller.id,
+  })
+  const result = await sendToSubscriptions(supabase, [device as Subscription], selfTestMessage())
+  if (delivery) await closeDelivery(supabase, delivery.id, result)
+  return jsonResponse(result)
+}
+
+// ผู้เรียกส่งได้แค่ { complaint_id, kind } (หรือ { kind: 'self_test', endpoint } ส่งทดสอบถึงเครื่องตัวเอง)
+// — server หาผู้รับและประกอบข้อความเองทุกชนิด
 //   complaint_created  ประชาชนเพิ่งยื่นคำร้อง (ยื่นได้โดยไม่ล็อกอิน จึงไม่ตรวจผู้เรียก) → เจ้าหน้าที่ที่ดูแลเรื่องนี้
+//                      ส่งครั้งเดียวต่อคำร้อง (notification_deliveries) กันยิงซ้ำภายในช่วงเพิ่งยื่น
 //   complaint_finished เจ้าหน้าที่เพิ่งปิดงาน → ผู้ร้อง
 //   complaint_note     เจ้าหน้าที่บันทึกข้อความถึงผู้ร้อง → ผู้ร้อง
 //   complaint_photo    ช่างเพิ่มรูปความคืบหน้า → ผู้ร้อง
@@ -127,21 +232,23 @@ serve(async (req) => {
   }
 
   try {
-    const { complaint_id, kind } = (await req.json().catch(() => null) ?? {}) as { complaint_id?: unknown; kind?: unknown }
+    const { complaint_id, kind, endpoint } = (await req.json().catch(() => null) ?? {}) as { complaint_id?: unknown; kind?: unknown; endpoint?: unknown }
 
     if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
       return jsonResponse({ error: 'VAPID keys not configured' }, 503)
     }
-    if (!isComplaintPushKind(kind)) return jsonResponse({ error: 'unknown kind' }, 400)
-    if (typeof complaint_id !== 'string' || !UUID_RE.test(complaint_id)) {
-      return jsonResponse({ error: 'invalid complaint_id' }, 400)
-    }
-    const pushKind: ComplaintPushKind = kind
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
+    if (kind === SELF_TEST_KIND) return await handleSelfTest(supabase, req, endpoint)
+
+    if (!isComplaintPushKind(kind)) return jsonResponse({ error: 'unknown kind' }, 400)
+    if (typeof complaint_id !== 'string' || !UUID_RE.test(complaint_id)) {
+      return jsonResponse({ error: 'invalid complaint_id' }, 400)
+    }
+    const pushKind: ComplaintPushKind = kind
 
     const { data: complaint, error: complaintError } = await supabase
       .from('complaints')
@@ -186,39 +293,23 @@ serve(async (req) => {
     const { data: subs, error } = await query
 
     if (error) throw error
+    if (!subs?.length) return jsonResponse({ sent: 0, failed: 0 })
 
-    const payload = JSON.stringify(message)
+    // คำร้องใหม่ส่งได้ครั้งเดียวต่อคำร้อง — complaint_created เรียกได้โดยไม่ล็อกอิน คนที่เพิ่งยื่นจึงกดยิงซ้ำได้ถ้าไม่กันไว้
+    const delivery = pushKind === 'complaint_created'
+      ? await openDelivery(supabase, {
+        municipality_id: row.municipality_id,
+        notification_type: pushKind,
+        resource_type: 'complaint',
+        resource_id: row.id,
+        idempotency_key: `${pushKind}:${row.id}`,
+      })
+      : null
+    if (pushKind === 'complaint_created' && !delivery) return jsonResponse({ sent: 0, failed: 0, duplicate: true })
 
-    const results = await Promise.allSettled(
-      (subs ?? []).map((sub) =>
-        webpush.sendNotification(
-          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth_key } },
-          payload,
-        )
-      ),
-    )
-
-    const sent = results.filter((r) => r.status === 'fulfilled').length
-    const failed = results.filter((r) => r.status === 'rejected').length
-
-    // ลบ subscription ที่ expired (HTTP 410 Gone)
-    const expiredEndpoints: string[] = []
-    results.forEach((r, i) => {
-      if (r.status === 'rejected') {
-        const err = r.reason as { statusCode?: number }
-        if (err?.statusCode === 410 && subs?.[i]) {
-          expiredEndpoints.push(subs[i].endpoint)
-        }
-      }
-    })
-    if (expiredEndpoints.length > 0) {
-      await supabase
-        .from('push_subscriptions')
-        .delete()
-        .in('endpoint', expiredEndpoints)
-    }
-
-    return jsonResponse({ sent, failed })
+    const result = await sendToSubscriptions(supabase, subs as Subscription[], message)
+    if (delivery) await closeDelivery(supabase, delivery.id, result)
+    return jsonResponse(result)
   } catch (err) {
     console.error(err)
     return jsonResponse({ error: String(err) }, 500)

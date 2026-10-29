@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Bell, Inbox, Loader2, RefreshCw, Volume2 } from 'lucide-react'
+import { Bell, ChevronDown, Inbox, Loader2, RefreshCw, Send, Smartphone, Volume2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
@@ -8,7 +8,91 @@ import { usePushNotification } from '../hooks/usePushNotification'
 import { useNotificationDevicePrefs } from '../hooks/useNotificationDevicePrefs'
 import { appBadgeSupported, deviceCanVibrate } from '../lib/notificationPrefs'
 import { playNotificationSound } from '../lib/notificationSound'
+import { listMyPushDevices, removePushDevice, selfTestResultText, sendSelfTest } from '../lib/pushDevices'
 import AccountPageLayout from '../components/profile/AccountPageLayout'
+
+// ส่งผ่านเส้นทางจริง (server → บริการ push ของเบราว์เซอร์ → เครื่อง) ไม่ใช่แค่โชว์ในหน้า — พิสูจน์ได้ว่าปิดเว็บแล้วยังได้รับ
+function SelfTestButton({ endpoint }) {
+  const [state, setState] = useState({ busy: false, note: '' })
+  const run = async () => {
+    setState({ busy: true, note: '' })
+    const result = await sendSelfTest(endpoint).catch(() => ({ ok: false, status: 0 }))
+    setState({ busy: false, note: selfTestResultText(result) })
+  }
+  return (
+    <>
+      <button type="button" disabled={state.busy} onClick={run} data-push-self-test
+        className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50 disabled:opacity-50">
+        {state.busy ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Send size={15} aria-hidden="true" />}ส่งทดสอบถึงเครื่องนี้
+      </button>
+      {state.note && <p role="status" className="basis-full text-xs leading-6 text-slate-600" data-push-self-test-result>{state.note}</p>}
+    </>
+  )
+}
+
+const formatThaiDate = (value) => {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+// เครื่องที่บัญชีนี้เปิดรับไว้ทั้งหมด — โหลดเมื่อกดดูเท่านั้น (ไม่เพิ่มการอ่านฐานข้อมูลตอนเปิดหน้า)
+// ใช้นำเครื่องเก่า/เครื่องที่ไม่ได้ใช้แล้วออก เพราะแจ้งเตือนขึ้นจอได้แม้ออกจากระบบแล้ว
+function PushDeviceList({ userId, currentEndpoint, onChanged }) {
+  const [state, setState] = useState({ open: false, loading: false, error: '', devices: [] })
+  const load = async () => {
+    setState((s) => ({ ...s, open: true, loading: true, error: '' }))
+    try {
+      const devices = await listMyPushDevices(userId)
+      setState((s) => ({ ...s, loading: false, devices }))
+    } catch {
+      setState((s) => ({ ...s, loading: false, error: 'โหลดรายการเครื่องไม่สำเร็จ กรุณาลองใหม่' }))
+    }
+  }
+  const remove = async (device) => {
+    const current = device.endpoint === currentEndpoint
+    const name = device.device_label || 'อุปกรณ์ไม่ทราบชื่อ'
+    if (!window.confirm(current
+      ? 'นำเครื่องนี้ออก? เครื่องนี้จะไม่ได้รับแจ้งเตือนจนกว่าจะกดเปิดรับใหม่'
+      : `นำ "${name}" ออก? เครื่องนั้นจะไม่ได้รับแจ้งเตือนจากบัญชีนี้อีก`)) return
+    try {
+      await removePushDevice(userId, device.id)
+      if (current) onChanged()
+      await load()
+    } catch {
+      setState((s) => ({ ...s, error: 'นำเครื่องออกไม่สำเร็จ กรุณาลองใหม่' }))
+    }
+  }
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-3" data-push-devices>
+      <button type="button" aria-expanded={state.open} onClick={() => (state.open ? setState((s) => ({ ...s, open: false })) : load())}
+        className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl text-left text-sm font-semibold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600">
+        <span className="flex items-center gap-2"><Smartphone size={16} aria-hidden="true" />เครื่องที่เปิดรับไว้{state.open && !state.loading && !state.error ? ` (${state.devices.length})` : ''}</span>
+        <ChevronDown size={16} aria-hidden="true" className={`transition-transform ${state.open ? 'rotate-180' : ''}`} />
+      </button>
+      {state.open && (
+        <div className="mt-1">
+          {state.loading && <p className="py-2 text-xs text-slate-500">กำลังโหลด…</p>}
+          {state.error && <p role="alert" className="py-2 text-xs text-red-700">{state.error}</p>}
+          {!state.loading && !state.error && state.devices.length === 0 && <p className="py-2 text-xs leading-6 text-slate-500">ยังไม่มีเครื่องที่เปิดรับไว้</p>}
+          <ul className="divide-y divide-slate-100">
+            {state.devices.map((device) => (
+              <li key={device.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2" data-push-device>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-slate-800">
+                    {device.device_label || 'อุปกรณ์ไม่ทราบชื่อ'}
+                    {device.endpoint === currentEndpoint && <span className="ml-2 rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-800" data-push-device-current>เครื่องนี้</span>}
+                  </span>
+                  <span className="block text-xs text-slate-500">เปิดรับเมื่อ {formatThaiDate(device.created_at)}</span>
+                </span>
+                <button type="button" onClick={() => remove(device)} className="inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-red-700 hover:bg-red-50">นำออก</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function SwitchRow({ id, label, hint, checked, onChange }) {
   return (
@@ -101,9 +185,11 @@ export default function AccountNotificationSettingsPage() {
                 {push.permission !== 'denied' && <button type="button" disabled={push.checking || push.loading || Boolean(push.error)} onClick={push.subscribed ? push.unsubscribe : push.requestAndSubscribe}
                   className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50 disabled:opacity-50">{push.loading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}{push.subscribed ? 'ปิดรับบนเครื่องนี้' : 'เปิดรับบนเครื่องนี้'}</button>}
                 <button type="button" disabled={push.loading || push.checking} onClick={push.refresh} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 disabled:opacity-50"><RefreshCw size={15} aria-hidden="true" />ตรวจสอบอีกครั้ง</button>
+                {push.subscribed && push.endpoint && !push.loading && <SelfTestButton endpoint={push.endpoint} />}
               </div>}
           {push.permission === 'denied' && push.configured && <p className="mt-3 text-xs leading-6 text-slate-500">เปิดสิทธิ์การแจ้งเตือนของเว็บไซต์ในการตั้งค่าเบราว์เซอร์ แล้วกลับมากด “ตรวจสอบอีกครั้ง”</p>}
           {push.supported && <p className="mt-3 text-xs leading-6 text-slate-500">การส่งถึงเครื่องขึ้นกับเครือข่ายและการตั้งค่าของอุปกรณ์ การปิดรับที่นี่ไม่เปลี่ยนสิทธิ์ที่เคยอนุญาตในเบราว์เซอร์</p>}
+          {push.configured && session?.user?.id && <PushDeviceList userId={session.user.id} currentEndpoint={push.endpoint} onChanged={push.refresh} />}
         </section>
       </div>
     </AccountPageLayout>
