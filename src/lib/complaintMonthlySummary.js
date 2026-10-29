@@ -173,9 +173,13 @@ function issueSubItems(category, breakdownRows) {
  *   ยอดรายหมวดที่นับมาแล้ว (ชุดที่ล็อกไว้) — ส่งมา = ใช้แทน rows และถือว่าครบ ไม่ติดเพดานของ rows
  * @param {{ publishedAt: string | Date, revision: number } | null} [args.lock]
  *   ชุดตัวเลขนี้ถูกล็อกไว้ (เฟส 2) — "ณ วันที่" เป็นวันที่ล็อก ไม่ใช่วันที่เปิดดู และหมายเหตุบอกว่าล็อกเมื่อไร
+ * @param {Iterable<string> | null} [args.hiddenCategories]
+ *   รหัสหมวดที่เจ้าหน้าที่เลือก "ไม่แสดงชื่อ" ในภาพ/ใบที่ส่งออก (เจ้าของระบบสั่ง 2569-10-29) — ยอดของหมวดเหล่านี้ไม่หาย
+ *   ถูกรวมเข้า "หมวดที่เหลือ" ให้วงกลมยังบวกกันได้เท่ายอดรวม และมีหมายเหตุบอกผู้อ่านเสมอ (ไม่ซ่อนตัวเลขเงียบๆ)
  */
 export function summarizeMonth({
   stats, rows, labelOf, tenantName, period, issueBreakdown = null, now = new Date(), categoryCounts = null, lock = null,
+  hiddenCategories = null,
 }) {
   const total = Number(stats?.total) || 0
   const resolved = Number(stats?.resolved) || 0
@@ -197,8 +201,12 @@ export function summarizeMonth({
   const sorted = [...counts.entries()]
     .map(([code, count]) => ({ code, label: labelOf(code), count }))
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'th'))
-  const shown = sorted.length > MAX_CATEGORY_ROWS ? sorted.slice(0, MAX_CATEGORY_ROWS - 1) : sorted
-  const folded = sorted.slice(shown.length)
+  // หมวดที่เลือกไม่แสดงชื่อไปอยู่ใน "หมวดที่เหลือ" เสมอ — แถวนั้นกินที่ 1 แถว หมวดที่แสดงได้จึงเหลือ MAX - 1
+  const hidden = new Set(hiddenCategories ?? [])
+  const visible = sorted.filter(c => !hidden.has(c.code))
+  const hiddenRows = sorted.filter(c => hidden.has(c.code))
+  const shown = visible.length + (hiddenRows.length ? 1 : 0) > MAX_CATEGORY_ROWS ? visible.slice(0, MAX_CATEGORY_ROWS - 1) : visible
+  const folded = [...visible.slice(shown.length), ...hiddenRows]
   const categories = shown.map(c => {
     const category = { ...c, percent: percentOf(c.count, total) }
     const subItems = issueBreakdown && c.code === issueBreakdown.category ? issueSubItems(c, issueBreakdown.rows) : null
@@ -224,10 +232,12 @@ export function summarizeMonth({
   } else {
     sentences.push(`ใน${words.title} ${tenantName}รับเรื่องร้องเรียน/ร้องทุกข์ผ่านระบบ e-Service ทั้งหมด ${formatCount(total)} เรื่อง`)
     const top = categories.filter(c => c.code !== null).slice(0, 3)
-    if (categoriesComplete && top.length === 1) {
+    // "ทุกเรื่องอยู่ในหมวด X" จริงเฉพาะเมื่อมีหมวดเดียวจริงๆ — ถ้าหมวดอื่นถูกซ่อนไว้ ประโยคนี้จะกลายเป็นข้อความเท็จ
+    if (categoriesComplete && top.length === 1 && sorted.length === 1) {
       sentences.push(`ทุกเรื่องอยู่ในหมวด${top[0].label}`)
-    } else if (categoriesComplete && top.length > 1) {
-      sentences.push(`หมวดที่มีจำนวนเรื่องสูงสุดตามลำดับ ได้แก่ ${joinThai(top.map(c => `${c.label} ${formatCount(c.count)} เรื่อง (ร้อยละ ${formatPercent(c.percent)})`))}`)
+    } else if (categoriesComplete && top.length > 0) {
+      // มีหมวดที่ไม่แสดงชื่อ = หมวดที่ซ่อนอาจมีเรื่องมากกว่า ต้องบอกว่า "สูงสุด" นับเฉพาะหมวดที่แสดงชื่อ
+      sentences.push(`หมวดที่มีจำนวนเรื่องสูงสุดตามลำดับ${hiddenRows.length ? ' (เฉพาะหมวดที่แสดงชื่อ)' : ''} ได้แก่ ${joinThai(top.map(c => `${c.label} ${formatCount(c.count)} เรื่อง (ร้อยละ ${formatPercent(c.percent)})`))}`)
     }
     const status = [`ดำเนินการแล้วเสร็จ ${formatCount(resolved)} เรื่อง (ร้อยละ ${formatPercent(resolvedPercent)})`, `อยู่ระหว่างดำเนินการ ${formatCount(ongoing)} เรื่อง`]
     if (parked) status.push(`ขึ้นทะเบียนรอดำเนินการ ${formatCount(parked)} เรื่อง`)
@@ -244,6 +254,9 @@ export function summarizeMonth({
     notes.push(`ร้อยละที่แล้วเสร็จนับจากสถานะ ณ วันที่ ${asOf} ของเรื่องที่รับใน${words.thisOne} ตัวเลขอาจเปลี่ยนเมื่อมีเรื่องแล้วเสร็จภายหลัง`)
   }
   if (current) notes.push(`${words.current}ยังไม่สิ้นสุด ตัวเลขเป็นยอดสะสมจนถึงวันที่ข้างต้น`)
+  if (categoriesComplete && hiddenRows.length) {
+    notes.push(`มี ${formatCount(hiddenRows.length)} หมวดที่ไม่แสดงชื่อ จำนวนเรื่องรวมอยู่ใน "หมวดที่เหลือ" ยอดรวมทั้งหมดไม่เปลี่ยน`)
+  }
   if (!categoriesComplete) notes.push(`ไม่แสดงสัดส่วนตามหมวด เพราะจำนวนเรื่องเกินที่ดึงมาคำนวณได้ในครั้งเดียว (${formatCount(rows?.length ?? 0)} จาก ${formatCount(total)} เรื่อง)`)
 
   return {
@@ -260,6 +273,9 @@ export function summarizeMonth({
     avgDays: stats?.avg_days ?? null,
     categories,
     categoriesComplete,
+    // ทุกหมวดเรียงมาก→น้อย ไม่พับ ไม่ซ่อน — ให้หน้าจอทำรายการปุ่ม "แสดง/ไม่แสดงชื่อ" ได้ครบทุกหมวด
+    allCategories: sorted,
+    hiddenCount: hiddenRows.length,
     narrative: sentences.join(' '),
     sentences,
     notes,

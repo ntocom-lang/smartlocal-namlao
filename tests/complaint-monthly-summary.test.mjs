@@ -290,6 +290,71 @@ await test('ใบ A4: ลิงก์ที่มีแท็กถูกหน
   assert.ok(!tooLong.includes('<svg') && tooLong.includes('เข้าที่ x.test/') && !tooLong.includes('สแกน QR'))
 })
 
+// ── ไม่แสดงชื่อหมวดในภาพ/ใบที่ส่งออก (เจ้าของระบบสั่ง 2569-10-29) ──
+const sumOf = categories => categories.reduce((total, c) => total + c.count, 0)
+const textOf = s => [...s.sentences, ...s.notes, ...s.categories.map(c => c.label)].join(' ')
+
+await test('ไม่แสดงชื่อหมวด: ไม่ส่ง/ส่งรหัสที่ไม่มีในช่วงนี้ = เหมือนเดิมทุกอย่าง · allCategories มีครบทุกหมวด', () => {
+  const base = summarize()
+  assert.equal(base.hiddenCount, 0)
+  assert.deepEqual(base.allCategories.map(c => c.code), ['light', 'other', 'trash', 'water', 'road'])
+  const unknown = summarize({ hiddenCategories: ['corruption'] })
+  assert.deepEqual([unknown.sentences, unknown.notes, unknown.categories], [base.sentences, base.notes, base.categories])
+})
+
+await test('ไม่แสดงชื่อหมวด: ยอดรวมเข้า "หมวดที่เหลือ" (วงกลมยังบวกได้เท่ายอดรวม) · ชื่อหายจากทุกข้อความ · มีหมายเหตุบอกผู้อ่าน', () => {
+  const s = summarize({ hiddenCategories: ['light'] })
+  assert.equal(s.hiddenCount, 1)
+  assert.equal(sumOf(s.categories), 39, 'ผลรวมทุกแถวต้องเท่ายอดรวม')
+  assert.deepEqual(s.categories.at(-1), { code: null, label: 'หมวดที่เหลือ (1 หมวด)', count: 13, percent: 33.3 })
+  assert.ok(!textOf(s).includes('ไฟฟ้าสาธารณะ'), 'ชื่อหมวดที่ซ่อนหลุด')
+  assert.ok(s.sentences.some(x => x.startsWith('หมวดที่มีจำนวนเรื่องสูงสุดตามลำดับ (เฉพาะหมวดที่แสดงชื่อ) ได้แก่ อื่นๆ 11 เรื่อง')))
+  assert.ok(s.notes.includes('มี 1 หมวดที่ไม่แสดงชื่อ จำนวนเรื่องรวมอยู่ใน "หมวดที่เหลือ" ยอดรวมทั้งหมดไม่เปลี่ยน'))
+  assert.equal(s.total, 39)
+  assert.deepEqual(s.allCategories.map(c => c.code), ['light', 'other', 'trash', 'water', 'road'], 'รายการปุ่มยังครบเพื่อกดกลับมาแสดงได้')
+  const html = buildComplaintMonthlyHtml({ tenant: { name: 'เทศบาลตำบลสาธิต' }, summary: s })
+  assert.ok(!html.includes('ไฟฟ้าสาธารณะ') && html.includes('หมวดที่เหลือ (1 หมวด)'))
+})
+
+await test('ไม่แสดงชื่อหมวด: เหลือหมวดเดียวที่แสดงชื่อ → ห้ามพูดว่า "ทุกเรื่องอยู่ในหมวด…" (เป็นข้อความเท็จ) · ซ่อนทุกหมวด → ไม่มีประโยคหมวด', () => {
+  const one = summarize({ hiddenCategories: ['light', 'other', 'trash', 'water'] })
+  assert.ok(!one.sentences.some(x => x.includes('ทุกเรื่องอยู่ในหมวด')))
+  assert.ok(one.sentences.some(x => x.includes('(เฉพาะหมวดที่แสดงชื่อ) ได้แก่ ถนน/ทางสาธารณะ 1 เรื่อง')))
+  const all = summarize({ hiddenCategories: ['light', 'other', 'trash', 'water', 'road'] })
+  assert.deepEqual(all.categories, [{ code: null, label: 'หมวดที่เหลือ (5 หมวด)', count: 39, percent: 100 }])
+  assert.ok(!all.sentences.some(x => x.includes('หมวด')))
+  const single = summarizeMonth({
+    stats: { total: 6, resolved: 6 }, rows: rowsOf({ light: 6 }), labelOf, tenantName: 'เทศบาลตำบลสาธิต', period: APRIL, now: NOW,
+  })
+  assert.ok(single.sentences.includes('ทุกเรื่องอยู่ในหมวดไฟฟ้าสาธารณะ'), 'หมวดเดียวจริงยังพูดแบบเดิม')
+})
+
+await test(`ไม่แสดงชื่อหมวด + หมวดเกิน ${MAX_CATEGORY_ROWS}: รวมทั้งหมดไม่เกิน ${MAX_CATEGORY_ROWS} แถว · หมวดที่ซ่อนไม่ถูกนับเป็นหมวดที่แสดง`, () => {
+  const spec = Object.fromEntries([200, 150, 130, 120, 100, 90, 80, 70, 50, 35, 20].map((n, i) => [`c${i}`, n]))
+  const s = summarizeMonth({
+    stats: { total: 1045, resolved: 1045 }, rows: rowsOf(spec), labelOf: code => `หมวด ${code}`,
+    tenantName: 'เทศบาลตำบลสาธิต', period: APRIL, now: NOW, hiddenCategories: ['c0'],
+  })
+  assert.equal(s.categories.length, MAX_CATEGORY_ROWS)
+  assert.equal(sumOf(s.categories), 1045)
+  assert.ok(!s.categories.some(c => c.code === 'c0'))
+  assert.equal(s.categories.at(-1).label, `หมวดที่เหลือ (${11 - (MAX_CATEGORY_ROWS - 1)} หมวด)`)
+})
+
+await test('ไม่แสดงชื่อหมวด: หมวดไฟฟ้าที่ซ่อนไม่มีรายการย่อยหลุดออกมา · ใช้กับชุดที่ล็อกได้ (นับจาก categoryCounts)', () => {
+  const breakdown = { category: 'light', rows: [{ issue_label: 'ไฟดับทั้งดวง', total: 13 }] }
+  const s = summarize({ hiddenCategories: ['light'], issueBreakdown: breakdown })
+  assert.ok(!s.categories.some(c => c.subItems), 'รายการย่อยของหมวดที่ซ่อนต้องไม่อยู่ในภาพ')
+  assert.ok(!textOf(s).includes('ไฟดับ'))
+  const locked = summarize({
+    rows: [], hiddenCategories: ['other'],
+    categoryCounts: [{ category: 'light', total: '13' }, { category: 'other', total: '11' }, { category: 'water', total: '15' }],
+    lock: { publishedAt: '2026-05-02T01:30:00Z', revision: 1 },
+  })
+  assert.equal(sumOf(locked.categories), 39)
+  assert.equal(locked.categories.at(-1).label, 'หมวดที่เหลือ (1 หมวด)')
+})
+
 // channel: 'chrome' ใช้ Chrome ที่ลงในเครื่องอยู่แล้ว ไม่ต้อง playwright install เพิ่ม
 const browser = await chromium.launch({ channel: 'chrome' })
 try {
