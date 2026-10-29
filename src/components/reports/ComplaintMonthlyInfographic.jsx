@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, Share2 } from 'lucide-react'
+import { Download, Eye, EyeOff, Share2 } from 'lucide-react'
 import {
   buildInfographicModel, buildInfographicSvg, createCanvasMeasure, svgDataUrl, svgToPngFile,
 } from '../../lib/complaintMonthlyInfographic'
@@ -10,7 +10,12 @@ import { appUrl } from '../../lib/basename'
 //
 // เตรียมไฟล์ PNG ไว้ล่วงหน้าตั้งแต่ภาพขึ้นจอ ไม่ใช่ตอนกดปุ่ม: navigator.share() ต้องถูกเรียกในจังหวะที่ผู้ใช้เพิ่งกด
 // ถ้าต้องรอวาดภาพก่อน เบราว์เซอร์มือถือจะปฏิเสธการแชร์ (แบบเดียวกับ ReportInfographic ของรถรับ-ส่งผู้ป่วย)
-export default function ComplaintMonthlyInfographic({ summary, tenantName }) {
+//
+// categoryOptions (เฉพาะเจ้าหน้าที่) = ทุกหมวดของช่วงนี้ ใช้ทำปุ่ม "แสดง/ไม่แสดงชื่อ" — summary ที่ส่งเข้ามาคำนวณตามที่เลือกไว้แล้ว
+// ไม่ส่ง (ประชาชน) = ไม่มีปุ่ม ภาพเต็มเหมือนเดิม
+export default function ComplaintMonthlyInfographic({
+  summary, tenantName, categoryOptions = null, hiddenCategories = [], onToggleCategory,
+}) {
   // หน้าแจ้งเรื่องของ อปท. นี้ (ผ่าน appUrl เพื่อให้ถูกทุกโหมด deploy) — ใส่เป็น QR ท้ายภาพ และต่อท้ายข้อความตอนแชร์
   const reportUrl = useMemo(() => appUrl('/complaint'), [])
   const image = useMemo(() => {
@@ -102,6 +107,30 @@ export default function ComplaintMonthlyInfographic({ summary, tenantName }) {
         </p>
       )}
       {message && <p role="status" className="mt-2 rounded-xl bg-sky-50 p-3 text-xs text-sky-900">{message}</p>}
+      {/* เลือกหมวดที่ไม่สมควรเผยแพร่ชื่อ (เช่น แจ้งการทุจริต) — ค่าตั้งต้นแสดงทุกหมวด จึงไม่เพิ่มงานถ้าไม่ต้องซ่อนอะไร
+          ซ่อนแล้วยอดไม่หาย รวมเข้า "หมวดที่เหลือ" และภาพมีหมายเหตุบอกเสมอ · ไม่มีผลกับกราฟบนหน้าเว็บ */}
+      {categoryOptions?.length > 0 && summary.categoriesComplete && (
+        <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+          <p className="text-xs font-bold text-gray-700">ชื่อหมวดในภาพและใบ A4 <span className="font-normal text-gray-500">(เห็นเฉพาะเจ้าหน้าที่ · เครื่องนี้จำไว้)</span></p>
+          <p className="mt-0.5 text-xs text-gray-500">กดเพื่อไม่แสดงชื่อหมวดที่ไม่สมควรเผยแพร่ จำนวนเรื่องจะรวมอยู่ใน "หมวดที่เหลือ" ยอดรวมไม่เปลี่ยน</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {categoryOptions.map(category => {
+              const shown = !hiddenCategories.includes(category.code)
+              return (
+                <button key={category.code} type="button" aria-pressed={shown}
+                  aria-label={`${category.label} ${category.count} เรื่อง — ${shown ? 'แสดงชื่อในภาพ กดเพื่อไม่แสดง' : 'ไม่แสดงชื่อในภาพ กดเพื่อแสดง'}`}
+                  onClick={() => onToggleCategory?.(category.code)}
+                  className={`flex min-h-11 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition-colors ${shown
+                    ? 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
+                    : 'border-dashed border-gray-300 bg-gray-100 text-gray-500 line-through'}`}>
+                  {shown ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}
+                  {category.label} <span className="font-normal">({category.count})</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
       <img
         src={svgDataUrl(image.svg)}
         alt={summary.sentences.join(' ')}

@@ -67,6 +67,25 @@ const FALLBACK_CATEGORY_LABELS = {
   animals: 'สุนัขจรจัด', phone_complaint: 'ร้องเรียนเสียง', other: 'อื่นๆ',
 }
 
+// หมวดที่ไม่แสดงชื่อในภาพ/ใบที่ส่งออก — เก็บในเครื่อง (ค่าความสะดวกของเครื่องนั้น ไม่ใช่ข้อมูลที่ต้องอยู่ถาวร)
+// localStorage อาจใช้ไม่ได้ (โหมดส่วนตัว/บล็อก) → ได้รายการว่าง = แสดงทุกหมวดเหมือนเดิม ไม่ใช่หน้าพัง
+const hiddenCategoriesKey = tenantId => `smartlocal:complaint-image-hidden-categories:${tenantId}`
+
+function readHiddenCategories(tenantId) {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(hiddenCategoriesKey(tenantId)) ?? '[]')
+    return Array.isArray(value) ? value.filter(code => typeof code === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function writeHiddenCategories(tenantId, codes) {
+  try {
+    window.localStorage.setItem(hiddenCategoriesKey(tenantId), JSON.stringify(codes))
+  } catch { /* เก็บไม่ได้ก็ใช้ได้เฉพาะรอบนี้ */ }
+}
+
 // เปิดหน้าต่างพิมพ์ใบสรุปรายเดือน — เปิดก่อนแล้วค่อยเขียน HTML ลงไป (เบราว์เซอร์มือถือไม่บล็อก pop-up)
 // แล้วรอฟอนต์ราชการโหลดก่อนสั่งพิมพ์ แบบเดียวกับ StaffPerformanceModule / FleetReport
 function openPrintWindow(html) {
@@ -310,16 +329,37 @@ export default function ComplaintStats() {
   // ใบสรุป/ภาพประจำช่วง — คำนวณล้วนจากตัวเลขที่ RPC สาธารณะคืนมา (ไม่มีชื่อ เบอร์ ที่อยู่ หรือพิกัด)
   // วัน/สัปดาห์/ไตรมาส/ปีงบใช้ชุดเดียวกับรายเดือน (เจ้าของระบบสั่ง 2569-10-29) แต่เป็นตัวเลขสดเสมอ — ล็อกตัวเลขมีเฉพาะรายเดือน
   // (lockedSnapshot/lockedCategoryCounts เป็น null เองเมื่อไม่ใช่โหมดรายเดือน) · summaryPeriod กำหนดไว้ใกล้ activeRange
-  const monthlySummary = useMemo(
+  const summaryArgs = useMemo(
     () => (summaryPeriod && settled
-      ? summarizeMonth({
+      ? {
         stats, rows, labelOf: categoryLabel, tenantName: tenant?.name ?? 'หน่วยงาน', period: summaryPeriod,
         issueBreakdown: effectiveIssueRows ? { category: ISSUE_BREAKDOWN_CATEGORY, rows: effectiveIssueRows } : null,
         categoryCounts: lockedCategoryCounts,
         lock: lockedSnapshot ? { publishedAt: lockedSnapshot.published_at, revision: lockedSnapshot.revision } : null,
-      })
+      }
       : null),
     [summaryPeriod, settled, stats, rows, effectiveIssueRows, lockedCategoryCounts, lockedSnapshot, categoryLabel, tenant?.name],
+  )
+  // ฉบับบนหน้าเว็บ — ทุกหมวดแสดงชื่อเสมอ (หน้านี้เป็นหน้าสาธารณะ/หลักฐาน ITA อยู่แล้ว ซ่อนที่นี่ไม่ได้ปิดอะไรจริง)
+  const monthlySummary = useMemo(() => (summaryArgs ? summarizeMonth(summaryArgs) : null), [summaryArgs])
+
+  // หมวดที่เจ้าหน้าที่เลือก "ไม่แสดงชื่อ" ในของที่ส่งออกจากหน้า (ภาพ PNG / ข้อความแชร์ / ใบ A4) — เจ้าของระบบสั่ง 2569-10-29
+  // จำไว้ในเครื่องแยกตาม อปท. (ตั้งครั้งเดียว ไม่ต้องเลือกใหม่ทุกรอบ) · ประชาชนไม่เห็นปุ่มและได้ภาพเต็มเสมอ
+  // ยอดของหมวดที่ซ่อนไม่หาย ถูกรวมเข้า "หมวดที่เหลือ" พร้อมหมายเหตุในภาพ (ดู summarizeMonth hiddenCategories)
+  const canHideCategories = canLockMonth(role)
+  const [hiddenByTenant, setHiddenByTenant] = useState({})
+  const hiddenCategories = useMemo(
+    () => (canHideCategories && tenantId ? (hiddenByTenant[tenantId] ?? readHiddenCategories(tenantId)) : []),
+    [canHideCategories, tenantId, hiddenByTenant],
+  )
+  function toggleHiddenCategory(code) {
+    const next = hiddenCategories.includes(code) ? hiddenCategories.filter(c => c !== code) : [...hiddenCategories, code]
+    setHiddenByTenant(prev => ({ ...prev, [tenantId]: next }))
+    writeHiddenCategories(tenantId, next)
+  }
+  const exportSummary = useMemo(
+    () => (summaryArgs && hiddenCategories.length ? summarizeMonth({ ...summaryArgs, hiddenCategories }) : monthlySummary),
+    [summaryArgs, hiddenCategories, monthlySummary],
   )
 
   // ป้ายช่วงเวลาของหัวรายงาน/ข้อความไม่มีข้อมูล — โหมดรายเดือนใช้เดือนที่เลือกแทนปีงบ
@@ -332,8 +372,8 @@ export default function ComplaintStats() {
   const periodIsOpen = selectedPeriod ? isCurrentPeriod(selectedPeriod) : false
 
   function printMonthly() {
-    if (!monthlySummary) return
-    openPrintWindow(buildComplaintMonthlyHtml({ tenant, summary: monthlySummary, reportUrl: appUrl('/complaint') }))
+    if (!exportSummary) return
+    openPrintWindow(buildComplaintMonthlyHtml({ tenant, summary: exportSummary, reportUrl: appUrl('/complaint') }))
   }
 
   // rows ดึงมาสูงสุด AGGREGATE_LIMIT รายการ (เรียงใหม่→เก่า) ใช้คำนวณกราฟหมวดหมู่/แนวโน้มรายเดือน
@@ -581,7 +621,13 @@ export default function ComplaintStats() {
         {/* ภาพสรุปสำหรับเผยแพร่ (ดาวน์โหลด PNG/แชร์) — วาดจากยอดรวมชุดเดียวกับข้อความด้านล่าง
             อยู่บนสุดเพราะเป็นของที่เจ้าหน้าที่มาเอาไปแชร์ทุกเดือน (เดิมอยู่หลังข้อความสรุป ต้องเลื่อนหาปุ่ม) */}
         {monthlySummary && (
-          <ComplaintMonthlyInfographic summary={monthlySummary} tenantName={tenant?.name ?? 'หน่วยงาน'} />
+          <ComplaintMonthlyInfographic
+            summary={exportSummary}
+            tenantName={tenant?.name ?? 'หน่วยงาน'}
+            categoryOptions={canHideCategories ? monthlySummary.allCategories : null}
+            hiddenCategories={hiddenCategories}
+            onToggleCategory={toggleHiddenCategory}
+          />
         )}
 
         {/* ── สรุปประจำเดือน (โหมดรายเดือนเท่านั้น) — ข้อความจากแม่แบบตายตัว มีแต่ตัวเลข ไม่ประเมินผลงานตัวเอง
