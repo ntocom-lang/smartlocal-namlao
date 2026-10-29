@@ -70,8 +70,10 @@ export function buildInfographicModel(summary, { tenantName = '', reportUrl = ''
   ]
   return {
     title: 'สรุปเรื่องร้องเรียน',
-    monthLabel: `เดือน${summary.period.label}`,
+    // ชื่อช่วงบนแถบหัว (ตัวเหลือง) — วัน/สัปดาห์/ไตรมาสได้ชื่อของตัวเองจาก summarizeMonth ชื่อคีย์ month* คงไว้เพราะเทสต์อ่านอยู่
+    monthLabel: summary.periodTitle ?? `เดือน${summary.period.label}`,
     monthKey: summary.period.key,
+    periodThisOne: summary.periodThisOne ?? 'เดือนนี้',
     tenantName: tenantName || 'หน่วยงาน',
     total,
     slices,
@@ -284,7 +286,7 @@ export function buildInfographicSvg(model, measure) {
     parts.push(`<circle cx="${MARGIN + 200}" cy="${cy}" r="${(R + r) / 2}" fill="none" stroke="#e2e8f0" stroke-width="${R - r}"/>`)
     text(MARGIN + 200, cy + 12, '0', { size: 80, bold: true, anchor: 'middle' })
     text(MARGIN + 200, cy + 54, 'เรื่อง', { size: 28, fill: MUTED, anchor: 'middle' })
-    y = block(MARGIN + 440, cy - 8, 'ไม่มีเรื่องร้องเรียนที่รับผ่านระบบในเดือนนี้', CONTENT_W - 440, { size: 32, bold: true, fill: MUTED })
+    y = block(MARGIN + 440, cy - 8, `ไม่มีเรื่องร้องเรียนที่รับผ่านระบบใน${model.periodThisOne}`, CONTENT_W - 440, { size: 32, bold: true, fill: MUTED })
     y = Math.max(y, cy + R) + 56
   } else if (!model.categoriesComplete) {
     y = block(MARGIN, y + 36, 'ไม่แสดงสัดส่วนตามหมวด เพราะจำนวนเรื่องมากเกินกว่าที่ดึงมาคำนวณได้ในครั้งเดียว', CONTENT_W, { size: 30, fill: MUTED }) + 20

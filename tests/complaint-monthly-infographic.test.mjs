@@ -11,6 +11,7 @@ import { bundleInfographic, YALA_APRIL, LIGHT_BREAKDOWN } from './lib/infographi
 process.env.TZ = 'America/Los_Angeles'
 const Info = await import('../src/lib/complaintMonthlyInfographic.js')
 const Sum = await import('../src/lib/complaintMonthlySummary.js')
+const Periods = await import('../src/lib/complaintReportPeriods.js')
 const Icons = await import('../src/lib/complaintCategoryIcons.js')
 const { STANDARD_CATEGORY_LABEL } = await import('../src/lib/complaintCategoryLabels.js')
 const Qr = await import('../src/lib/qrSvg.js')
@@ -406,13 +407,20 @@ try {
   CASES.longMonthNov = { sample: WITH_AVG, tenant: 'เทศบาลตำบลสาธิต', month: 11 }
   CASES.reportedCrowded = { ...CASES.crowded, reportUrl: REPORT_URL }
   CASES.reportedLocked = { ...CASES.lockedCrowded, reportUrl: REPORT_URL }
+  // ช่วงวัน/สัปดาห์/ไตรมาส (เจ้าของระบบสั่ง 2569-10-29) — ชื่อช่วงยาวกว่าชื่อเดือน หัวภาพต้องยังไม่ล้น/ไม่ทับ
+  // ไตรมาส = ชื่อยาวสุด · สัปดาห์คร่อมปี = มีปีสองฝั่ง · วันที่เดือนชื่อยาว · วันที่ไม่มีเรื่อง (ข้อความ "ในวันดังกล่าว")
+  CASES.quarter = { sample: WITH_AVG, tenant: 'องค์การบริหารส่วนตำบลน้ำเลา', period: Periods.quarterPeriod(2569, 4), reportUrl: REPORT_URL, breakdown: LIGHT_BREAKDOWN }
+  CASES.weekCrossYear = { sample: WITH_AVG, tenant: 'องค์การบริหารส่วนตำบลน้ำเลา', period: Periods.weekPeriod('2025-12-29'), reportUrl: REPORT_URL }
+  CASES.dayLongMonth = { sample: WITH_AVG, tenant: 'เทศบาลตำบลสาธิต', period: Periods.dayPeriod('2025-11-30'), reportUrl: REPORT_URL }
+  CASES.fiscal = { sample: WITH_AVG, tenant: 'องค์การบริหารส่วนตำบลน้ำเลา', period: Periods.fiscalYearPeriod(2569), reportUrl: REPORT_URL, breakdown: LIGHT_BREAKDOWN }
+  CASES.dayEmpty = { sample: { stats: { total: 0 }, categories: {}, labels: {} }, tenant: 'เทศบาลตำบลสาธิต', period: Periods.dayPeriod('2026-10-17') }
 
   const build = (name) => page.evaluate(({ spec }) => {
     const { Info, Sum } = InfoBundle
     const rows = Object.entries(spec.sample.categories).flatMap(([category, n]) => Array.from({ length: n }, () => ({ category })))
     const summary = Sum.summarizeMonth({
       stats: spec.sample.stats, rows, labelOf: c => spec.sample.labels[c] ?? c,
-      tenantName: spec.tenant, period: Sum.monthPeriod(2569, spec.month ?? 4), issueBreakdown: spec.breakdown ?? null,
+      tenantName: spec.tenant, period: spec.period ?? Sum.monthPeriod(2569, spec.month ?? 4), issueBreakdown: spec.breakdown ?? null,
       now: new Date('2026-10-18T05:00:00Z'), lock: spec.lock ?? null,
     })
     const model = Info.buildInfographicModel(summary, { tenantName: spec.tenant, reportUrl: spec.reportUrl ?? '' })
@@ -463,6 +471,38 @@ try {
       assert.ok(title.x >= 129 && month.x + month.w <= 951, `${name}: บรรทัดกว้างเกินพื้นที่ ${Math.round(title.x)}–${Math.round(month.x + month.w)}`)
       assert.ok(month.x >= title.x + title.w, `${name}: เดือนทับชื่อเรื่อง`)
     }
+  })
+
+  await test('Chrome: หัวภาพของวัน/สัปดาห์/ไตรมาสใช้ชื่อช่วงของตัวเอง (ไม่มีคำว่าเดือน) และอยู่ในช่วง 130–950px ด้วยฟอนต์จริง', async () => {
+    const expected = {
+      quarter: 'ไตรมาสที่ 4 ปีงบประมาณ 2569',
+      weekCrossYear: 'สัปดาห์ 29 ธ.ค. 2568 – 4 ม.ค. 2569',
+      dayLongMonth: 'วันที่ 30 พฤศจิกายน 2568',
+      fiscal: 'ปีงบประมาณ พ.ศ. 2569',
+    }
+    for (const [name, label] of Object.entries(expected)) {
+      const { svg } = await build(name)
+      const [title, period] = await page.evaluate(({ svg: markup }) => {
+        document.body.innerHTML = markup
+        return [...document.querySelectorAll('svg text')].slice(0, 2).map(el => {
+          const b = el.getBBox()
+          return { text: el.textContent, x: b.x, y: b.y, w: b.width, h: b.height }
+        })
+      }, { svg })
+      assert.equal(title.text, 'สรุปเรื่องร้องเรียน')
+      assert.equal(period.text, label, name)
+      for (const box of [title, period]) {
+        assert.ok(box.x >= 129 && box.x + box.w <= 951, `${name}: "${box.text}" กว้างเกินพื้นที่ ${Math.round(box.x)}–${Math.round(box.x + box.w)}`)
+      }
+      // บรรทัดเดียว: ช่วงอยู่ขวาชื่อเรื่อง · แยก 2 บรรทัด: ช่วงอยู่ใต้ชื่อเรื่อง — ทั้งสองแบบห้ามทับกัน
+      assert.ok(period.x >= title.x + title.w || period.y >= title.y + title.h - 8, `${name}: ชื่อช่วงทับชื่อเรื่อง`)
+    }
+  })
+
+  await test('ภาพของวันที่ไม่มีเรื่อง: บอก "ในวันดังกล่าว" ไม่ใช่ "ในเดือนนี้"', async () => {
+    const { svg } = await build('dayEmpty')
+    assert.ok(has(svg, 'ไม่มีเรื่องร้องเรียนที่รับผ่านระบบในวันดังกล่าว'))
+    assert.ok(!has(svg, 'เดือนนี้'))
   })
 
   await test('ภาพของเดือนที่ล็อก: ท้ายภาพบอกวันที่ล็อก (2 พ.ค.) ไม่ใช่วันที่สร้างภาพ (18 ต.ค.) · มีหมายเหตุล็อกและครั้งที่แก้ไข', async () => {

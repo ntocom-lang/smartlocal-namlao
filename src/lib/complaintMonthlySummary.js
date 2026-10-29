@@ -49,6 +49,29 @@ function bangkokYearMonth(now) {
   return { ceYear: Number(parts.find(p => p.type === 'year').value), month: Number(parts.find(p => p.type === 'month').value) }
 }
 
+// ช่วงวัน/สัปดาห์/ไตรมาส/ปีงบประมาณ (complaintReportPeriods.js) ใช้สรุป ภาพ และใบ A4 ชุดเดียวกับรายเดือน (เจ้าของระบบสั่ง 2569-10-29)
+// period ของช่วงเหล่านั้นมี kind กำกับ — period ของเดือน (monthPeriod) ไม่มี kind จึงถือเป็น month และได้ถ้อยคำเดิมทุกตัวอักษร
+// thisOne = คำที่ชี้กลับไปหาช่วงของรายงาน · current = คำเรียกช่วงที่ยังไม่จบ (วันที่ผ่านไปแล้วจะพูด "ในวันนี้" ไม่ได้)
+const PERIOD_WORDS = {
+  month: { noun: 'เดือน', thisOne: 'เดือนนี้', current: 'เดือนนี้' },
+  quarter: { noun: 'ไตรมาส', thisOne: 'ไตรมาสนี้', current: 'ไตรมาสนี้' },
+  week: { noun: 'สัปดาห์', thisOne: 'สัปดาห์นี้', current: 'สัปดาห์นี้' },
+  day: { noun: 'วัน', thisOne: 'วันดังกล่าว', current: 'วันนี้' },
+  fiscal: { noun: 'ปีงบประมาณ', thisOne: 'ปีงบประมาณนี้', current: 'ปีงบประมาณนี้' },
+}
+
+/** ถ้อยคำของช่วงรายงาน — title เป็นชื่อเต็ม ("เดือนกันยายน 2569" · "สัปดาห์ 19 – 25 ต.ค. 2569" · "วันที่ 28 ตุลาคม 2569") */
+export function periodWords(period) {
+  const kind = PERIOD_WORDS[period?.kind] ? period.kind : 'month'
+  return { kind, ...PERIOD_WORDS[kind], title: kind === 'month' ? `เดือน${period.label}` : period.label }
+}
+
+// ช่วงที่ยังไม่จบตามเวลาไทย — from/to เป็น YYYY-MM-DD จึงเทียบเป็นสตริงได้ตรงๆ
+function rangeIncludesToday(period, now) {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+  return period.from <= today && today <= period.to
+}
+
 /**
  * ช่วงของเดือน — from/to เป็น YYYY-MM-DD (to = วันสุดท้ายที่นับรวม ตามที่ RPC _fy คาดหวัง)
  * @param {number} beYear ปี พ.ศ.
@@ -189,16 +212,17 @@ export function summarizeMonth({
 
   const lockedAt = lock ? new Date(lock.publishedAt) : null
   const lockValid = lockedAt !== null && !Number.isNaN(lockedAt.getTime())
-  const current = lockValid ? false : isCurrentMonth(period, now)
+  const words = periodWords(period)
+  const current = lockValid ? false : words.kind === 'month' ? isCurrentMonth(period, now) : rangeIncludesToday(period, now)
   // ชุดที่ล็อก: "ณ วันที่" คือวันที่ล็อก (ตัวเลขนิ่งตั้งแต่วันนั้น) — วันที่เปิดดูไม่เกี่ยว
   const asOf = thaiLongDate(lockValid ? lockedAt : now)
   const resolvedPercent = percentOf(resolved, total)
 
   const sentences = []
   if (total === 0) {
-    sentences.push(`ในเดือน${period.label} ไม่มีเรื่องร้องเรียน/ร้องทุกข์ที่รับผ่านระบบ e-Service ของ${tenantName}`)
+    sentences.push(`ใน${words.title} ไม่มีเรื่องร้องเรียน/ร้องทุกข์ที่รับผ่านระบบ e-Service ของ${tenantName}`)
   } else {
-    sentences.push(`ในเดือน${period.label} ${tenantName}รับเรื่องร้องเรียน/ร้องทุกข์ผ่านระบบ e-Service ทั้งหมด ${formatCount(total)} เรื่อง`)
+    sentences.push(`ใน${words.title} ${tenantName}รับเรื่องร้องเรียน/ร้องทุกข์ผ่านระบบ e-Service ทั้งหมด ${formatCount(total)} เรื่อง`)
     const top = categories.filter(c => c.code !== null).slice(0, 3)
     if (categoriesComplete && top.length === 1) {
       sentences.push(`ทุกเรื่องอยู่ในหมวด${top[0].label}`)
@@ -217,9 +241,9 @@ export function summarizeMonth({
     const revisionText = Number(lock.revision) > 1 ? ` (แก้ไขครั้งที่ ${Number(lock.revision) - 1})` : ''
     notes.push(`ตัวเลขชุดนี้ล็อกไว้เมื่อวันที่ ${asOf}${revisionText} ร้อยละที่แล้วเสร็จนับจากสถานะ ณ วันนั้นของเรื่องที่รับในเดือนนี้ จึงอาจต่างจากสถานะปัจจุบัน`)
   } else if (total > 0) {
-    notes.push(`ร้อยละที่แล้วเสร็จนับจากสถานะ ณ วันที่ ${asOf} ของเรื่องที่รับในเดือนนี้ ตัวเลขอาจเปลี่ยนเมื่อมีเรื่องแล้วเสร็จภายหลัง`)
+    notes.push(`ร้อยละที่แล้วเสร็จนับจากสถานะ ณ วันที่ ${asOf} ของเรื่องที่รับใน${words.thisOne} ตัวเลขอาจเปลี่ยนเมื่อมีเรื่องแล้วเสร็จภายหลัง`)
   }
-  if (current) notes.push('เดือนนี้ยังไม่สิ้นสุด ตัวเลขเป็นยอดสะสมจนถึงวันที่ข้างต้น')
+  if (current) notes.push(`${words.current}ยังไม่สิ้นสุด ตัวเลขเป็นยอดสะสมจนถึงวันที่ข้างต้น`)
   if (!categoriesComplete) notes.push(`ไม่แสดงสัดส่วนตามหมวด เพราะจำนวนเรื่องเกินที่ดึงมาคำนวณได้ในครั้งเดียว (${formatCount(rows?.length ?? 0)} จาก ${formatCount(total)} เรื่อง)`)
 
   return {
@@ -240,7 +264,11 @@ export function summarizeMonth({
     sentences,
     notes,
     asOf,
+    // ชื่อคงเดิมเพราะหน้า/ภาพ/ใบ A4 อ่านอยู่ — ความหมายจริงคือ "ช่วงของรายงานยังไม่จบ" (ใช้กับวัน/สัปดาห์/ไตรมาสด้วย)
     isCurrentMonth: current,
+    periodTitle: words.title,
+    periodNoun: words.noun,
+    periodThisOne: words.thisOne,
     locked: lockValid ? { asOf, revision: Number(lock.revision) || 1 } : null,
   }
 }
