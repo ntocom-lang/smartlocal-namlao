@@ -24,11 +24,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const read = (rel) => readFileSync(path.join(root, rel), 'utf8')
 
 // ── ค่าตั้งรายเครื่อง ─────────────────────────────────────────────────────────
-assert.deepEqual({ ...DEFAULT_NOTIFICATION_PREFS }, { popup: true, sound: false, vibrate: false }, 'เสียง/สั่นต้องปิดเป็นค่าเริ่มต้น')
+assert.deepEqual({ ...DEFAULT_NOTIFICATION_PREFS }, { popup: true, sound: false, vibrate: false, muted: [] }, 'เสียง/สั่นต้องปิดเป็นค่าเริ่มต้น')
 assert.equal(Object.isFrozen(DEFAULT_NOTIFICATION_PREFS), true)
-assert.deepEqual(sanitizeNotificationPrefs(null), { popup: true, sound: false, vibrate: false })
-assert.deepEqual(sanitizeNotificationPrefs({ sound: true, vibrate: 'yes', extra: 1 }), { popup: true, sound: true, vibrate: false })
-assert.deepEqual(parseNotificationPrefs('{พัง'), { popup: true, sound: false, vibrate: false })
+assert.deepEqual(sanitizeNotificationPrefs(null), { popup: true, sound: false, vibrate: false, muted: [] })
+assert.deepEqual(sanitizeNotificationPrefs({ sound: true, vibrate: 'yes', extra: 1 }), { popup: true, sound: true, vibrate: false, muted: [] })
+assert.deepEqual(parseNotificationPrefs('{พัง'), { popup: true, sound: false, vibrate: false, muted: [] })
 // แยกรายบัญชี — คอมในสำนักงานใช้ร่วมกันหลายคน
 assert.notEqual(notificationPrefsKey('user-a'), notificationPrefsKey('user-b'))
 assert.equal(notificationPrefsKey(null), notificationPrefsKey(undefined))
@@ -40,15 +40,15 @@ function memoryStorage() {
 const store = memoryStorage()
 const events = []
 globalThis.addEventListener?.(NOTIFICATION_PREFS_EVENT, (event) => events.push(event.detail))
-assert.deepEqual(readNotificationPrefs('user-a', store), { popup: true, sound: false, vibrate: false })
-assert.deepEqual(writeNotificationPrefs('user-a', { popup: false, sound: true }, store), { prefs: { popup: false, sound: true, vibrate: false }, saved: true })
-assert.deepEqual(readNotificationPrefs('user-a', store), { popup: false, sound: true, vibrate: false })
-assert.deepEqual(readNotificationPrefs('user-b', store), { popup: true, sound: false, vibrate: false }, 'บัญชีอื่นบนเครื่องเดียวกันต้องได้ค่าเริ่มต้น')
-assert.equal(readNotificationPrefsRaw('user-a', store), JSON.stringify({ popup: false, sound: true, vibrate: false }))
+assert.deepEqual(readNotificationPrefs('user-a', store), { popup: true, sound: false, vibrate: false, muted: [] })
+assert.deepEqual(writeNotificationPrefs('user-a', { popup: false, sound: true }, store), { prefs: { popup: false, sound: true, vibrate: false, muted: [] }, saved: true })
+assert.deepEqual(readNotificationPrefs('user-a', store), { popup: false, sound: true, vibrate: false, muted: [] })
+assert.deepEqual(readNotificationPrefs('user-b', store), { popup: true, sound: false, vibrate: false, muted: [] }, 'บัญชีอื่นบนเครื่องเดียวกันต้องได้ค่าเริ่มต้น')
+assert.equal(readNotificationPrefsRaw('user-a', store), JSON.stringify({ popup: false, sound: true, vibrate: false, muted: [] }))
 if (globalThis.addEventListener) assert.equal(events.at(-1)?.key, notificationPrefsKey('user-a'), 'หน้าที่เปิดอยู่ต้องรู้ว่าค่าเปลี่ยน')
 // localStorage ใช้ไม่ได้ (โหมดไม่ระบุตัวตน/ถูกบล็อก) — ไม่พัง และบอกว่าไม่ได้บันทึก
 const broken = { getItem() { throw new Error('blocked') }, setItem() { throw new Error('blocked') } }
-assert.deepEqual(readNotificationPrefs('user-a', broken), { popup: true, sound: false, vibrate: false })
+assert.deepEqual(readNotificationPrefs('user-a', broken), { popup: true, sound: false, vibrate: false, muted: [] })
 assert.equal(writeNotificationPrefs('user-a', { sound: true }, broken).saved, false)
 
 // ── ความสามารถของเครื่อง ────────────────────────────────────────────────────

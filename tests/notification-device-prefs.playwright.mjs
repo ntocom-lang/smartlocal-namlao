@@ -170,7 +170,7 @@ try {
     await switchOf(page, 'sound').click()
     await page.waitForFunction(() => window.__sound === 2)
     assert.match(await page.locator('[data-device-pref-status]').textContent(), /เล่นเสียงตัวอย่างแล้ว/)
-    assert.deepEqual(JSON.parse(await page.evaluate((k) => localStorage.getItem(k), prefsKey)), { popup: true, sound: true, vibrate: false })
+    assert.deepEqual(JSON.parse(await page.evaluate((k) => localStorage.getItem(k), prefsKey)), { popup: true, sound: true, vibrate: false, muted: [] })
     await page.reload()
     await page.locator('[data-device-alert-settings]').waitFor()
     assert.equal(await switchOf(page, 'sound').getAttribute('aria-checked'), 'true', 'โหลดหน้าใหม่ต้องจำค่าเดิม')

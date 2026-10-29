@@ -53,6 +53,8 @@ export function freshUnreadItems(previous, items, { readKeys = new Set(), cleare
 }
 
 export function alertText(item, audience) {
+  // งานหมวดอื่น (ฟีดงานของฉัน) ประกอบข้อความไว้แล้วใน notificationFeed.js — ไม่มีชื่อคน/รายละเอียด
+  if (item?._kind && item._kind !== 'complaint') return { title: item.title, body: item.body }
   const messages = audience === 'staff' ? STAFF_STATUS_MSG : CITIZEN_STATUS_MSG
   const ref = complaintShortRef(item)
   return {
