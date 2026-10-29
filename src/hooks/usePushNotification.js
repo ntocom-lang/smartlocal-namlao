@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { describeDevice } from '../lib/pushDevices'
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY
 
@@ -15,6 +16,8 @@ export function usePushNotification({ userId, municipalityId } = {}) {
     typeof Notification !== 'undefined' ? Notification.permission : 'default',
   )
   const [subscribed, setSubscribed] = useState(false)
+  // endpoint ของเครื่องนี้ที่ผูกกับบัญชีนี้แล้ว — ใช้กับปุ่มส่งทดสอบและป้าย "เครื่องนี้" ในรายการเครื่อง
+  const [endpoint, setEndpoint] = useState(null)
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
   const [error, setError] = useState('')
@@ -43,7 +46,7 @@ export function usePushNotification({ userId, municipalityId } = {}) {
     const current = () => !cancelled && operation.current.version === version && !operation.current.busy
     ;(async () => {
       try {
-        if (current()) { setChecking(true); setError(''); setSubscribed(false) }
+        if (current()) { setChecking(true); setError(''); setSubscribed(false); setEndpoint(null) }
         if (current() && 'Notification' in window) setPermission(Notification.permission)
         if (!userId || !supported) return
         const reg = await navigator.serviceWorker.getRegistration()
@@ -52,7 +55,7 @@ export function usePushNotification({ userId, municipalityId } = {}) {
         const { data, error: readError } = await supabase.from('push_subscriptions').select('id')
           .eq('user_id', userId).eq('municipality_id', municipalityId).eq('endpoint', existing.endpoint).maybeSingle()
         if (readError) throw readError
-        if (current()) setSubscribed(Boolean(data))
+        if (current()) { setSubscribed(Boolean(data)); setEndpoint(data ? existing.endpoint : null) }
       } catch {
         if (current()) setError('ตรวจสอบการแจ้งเตือนของเครื่องนี้ไม่สำเร็จ กรุณาลองใหม่')
       } finally {
@@ -81,19 +84,21 @@ export function usePushNotification({ userId, municipalityId } = {}) {
       const key = sub.getKey('p256dh')
       const auth = sub.getKey('auth')
 
-      const { error: saveError } = await supabase.from('push_subscriptions').upsert(
-        {
-          user_id: userId,
-          municipality_id: municipalityId,
-          endpoint: sub.endpoint,
-          p256dh: btoa(String.fromCharCode(...new Uint8Array(key))),
-          auth_key: btoa(String.fromCharCode(...new Uint8Array(auth))),
-        },
-        { onConflict: 'user_id,endpoint' },
-      )
+      const row = {
+        user_id: userId,
+        municipality_id: municipalityId,
+        endpoint: sub.endpoint,
+        p256dh: btoa(String.fromCharCode(...new Uint8Array(key))),
+        auth_key: btoa(String.fromCharCode(...new Uint8Array(auth))),
+      }
+      const save = (values) => supabase.from('push_subscriptions').upsert(values, { onConflict: 'user_id,endpoint' })
+      let { error: saveError } = await save({ ...row, device_label: describeDevice() })
+      // ฐานข้อมูลยังไม่มีคอลัมน์ชื่อเครื่อง (ยังไม่ได้ apply 20261029100000) — เปิดรับต้องไม่พังเพราะเรื่องชื่อ
+      if (saveError?.code === 'PGRST204') ({ error: saveError } = await save(row))
       if (saveError) throw saveError
       setPermission(Notification.permission)
       setSubscribed(true)
+      setEndpoint(sub.endpoint)
     } catch {
       if (created) await created.unsubscribe().catch(() => {})
       setError('เปิดการแจ้งเตือนไม่สำเร็จ กรุณาตรวจการเชื่อมต่อแล้วลองใหม่ หากเพิ่งติดตั้งแอปให้เปิดหน้านี้ใหม่')
@@ -122,6 +127,7 @@ export function usePushNotification({ userId, municipalityId } = {}) {
         setSubscribed(false)
       }
       setSubscribed(false)
+      setEndpoint(null)
     } catch {
       setError('ปิดการแจ้งเตือนไม่สำเร็จครบทุกขั้นตอน กรุณาตรวจสอบสถานะอีกครั้ง')
     } finally {
@@ -150,5 +156,5 @@ export function usePushNotification({ userId, municipalityId } = {}) {
   }, [supported, userId, municipalityId, subscribe])
 
   const refresh = useCallback(() => setReloadKey(key => key + 1), [])
-  return { configured, deviceSupported, supported, permission, subscribed, checking, loading, error, refresh, requestAndSubscribe, unsubscribe }
+  return { configured, deviceSupported, supported, permission, subscribed, endpoint, checking, loading, error, refresh, requestAndSubscribe, unsubscribe }
 }

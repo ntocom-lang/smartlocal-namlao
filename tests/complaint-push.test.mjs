@@ -111,10 +111,19 @@ assert.equal(Push.isFreshTimestamp(minutesAgo(-0.5), now), true, 'นาฬิ�
 assert.equal(Push.isFreshTimestamp(minutesAgo(-5), now), false, 'เวลาในอนาคตไกลไม่ใช่ "เพิ่งเกิด"')
 for (const bad of [null, undefined, '', 'not-a-date', 1730000000000]) assert.equal(Push.isFreshTimestamp(bad, now), false, String(bad))
 
-// ── index.ts: ถอดโหมดข้อความอิสระ — อ่านจากคำขอแค่ complaint_id + kind ─────────────
+// ── index.ts: ถอดโหมดข้อความอิสระ — อ่านจากคำขอแค่ complaint_id + kind (+ endpoint ของปุ่มส่งทดสอบ) ──
 const edge = stripComments(read('supabase/functions/send-push/index.ts'))
 const requestKeys = edge.match(/const \{ ([^}]+) \} = \(await req\.json\(\)/)?.[1]
-assert.equal(requestKeys, 'complaint_id, kind', 'send-push ต้องอ่านจากคำขอแค่ complaint_id และ kind')
+assert.equal(requestKeys, 'complaint_id, kind, endpoint', 'send-push ต้องอ่านจากคำขอแค่ complaint_id, kind และ endpoint')
+// endpoint ส่งต่อได้ที่เดียวคือชนิดส่งทดสอบ (ส่งถึงเครื่องของผู้กดเอง — tests/push-test-devices.test.mjs)
+assert.match(edge, /if \(kind === SELF_TEST_KIND\) return await handleSelfTest\(supabase, req, endpoint\)/)
+// (ไม่นับคำว่า endpoint ในสตริงชื่อคอลัมน์)
+const endpointLines = edge.slice(edge.indexOf('\nserve(')).replace(/\r\n/g, '\n').split('\n')
+  .filter((line) => /\bendpoint\b/.test(line.replace(/'[^']*'/g, "''")))
+  .map((line) => line.trim())
+assert.equal(endpointLines.length, 2, `endpoint จากคำขอต้องไปที่ handleSelfTest ที่เดียว: ${endpointLines.join(' | ')}`)
+assert.ok(endpointLines[0].startsWith('const { complaint_id, kind, endpoint } = '))
+assert.equal(endpointLines[1], 'if (kind === SELF_TEST_KIND) return await handleSelfTest(supabase, req, endpoint)')
 assert.doesNotMatch(edge, /\b(title|body|url|user_id|municipality_id)\s*\?:\s*(string|unknown)/, 'ห้ามรับ title/body/url/user_id/municipality_id จากผู้เรียก')
 assert.match(edge, /if \(!isComplaintPushKind\(kind\)\) return jsonResponse\(\{ error: 'unknown kind' \}, 400\)/)
 // ยื่นคำร้องได้โดยไม่ล็อกอิน: complaint_created ไม่ตรวจผู้เรียก แต่ต้องเป็นคำร้องที่เพิ่งยื่น
@@ -137,13 +146,17 @@ function walk(dir) {
     return statSync(full).isDirectory() ? walk(full) : [full]
   })
 }
-const callers = walk(path.join(root, 'src'))
+const allCallers = walk(path.join(root, 'src'))
   .filter((file) => /\.(jsx?|tsx?)$/.test(file))
   .flatMap((file) => {
     const source = stripComments(readFileSync(file, 'utf8'))
-    return [...source.matchAll(/invoke\('send-push', \{\s*body: \{([^}]*)\}/g)].map((m) => ({ file: path.relative(root, file), body: m[1].trim() }))
+    return [...source.matchAll(/invoke\('send-push', \{\s*body: \{([^}]*)\}/g)].map((m) => ({ file: path.relative(root, file).replace(/\\/g, '/'), body: m[1].trim() }))
   })
-const callerFiles = callers.map((c) => c.file.replace(/\\/g, '/')).sort()
+// ปุ่มส่งทดสอบถึงเครื่องตัวเองเป็นจุดเรียกเดียวที่ไม่ใช่คำร้อง — ส่งได้แค่ kind + endpoint ของตัวเอง
+const selfTestCallers = allCallers.filter((c) => c.file === 'src/lib/pushDevices.js')
+assert.deepEqual(selfTestCallers.map((c) => c.body), ["kind: 'self_test', endpoint"])
+const callers = allCallers.filter((c) => c.file !== 'src/lib/pushDevices.js')
+const callerFiles = callers.map((c) => c.file).sort()
 assert.deepEqual(callerFiles, [
   'src/components/admin/ComplaintsManager.jsx',
   'src/lib/complaintFinish.js',
