@@ -11,6 +11,8 @@ import { playNotificationSound } from '../lib/notificationSound'
 import { listMyPushDevices, removePushDevice, selfTestResultText, sendSelfTest } from '../lib/pushDevices'
 import AccountPageLayout from '../components/profile/AccountPageLayout'
 import CategoryMuteSettings from '../components/notifications/CategoryMuteSettings'
+import TelegramLinkSettings from '../components/notifications/TelegramLinkSettings'
+import { canLinkTelegram } from '../lib/telegramLink'
 
 // ส่งผ่านเส้นทางจริง (server → บริการ push ของเบราว์เซอร์ → เครื่อง) ไม่ใช่แค่โชว์ในหน้า — พิสูจน์ได้ว่าปิดเว็บแล้วยังได้รับ
 function SelfTestButton({ endpoint }) {
@@ -160,7 +162,7 @@ function DeviceAlertSettings({ uid, previewAlert, categories }) {
 }
 
 export default function AccountNotificationSettingsPage() {
-  const { session } = useAuth()
+  const { session, role } = useAuth()
   const { tenant } = useTenant()
   const { unreadCount, audience, previewAlert, categories } = useNotifications()
   const push = usePushNotification({ userId: session?.user?.id, municipalityId: tenant?.id })
@@ -178,6 +180,7 @@ export default function AccountNotificationSettingsPage() {
           <Link to="/notifications" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2">{audience === 'staff' ? 'เปิดกล่องงาน' : 'ดูรายการแจ้งเตือน'}{unreadCount > 0 && <span className="rounded-full bg-white/20 px-2 text-xs">{unreadCount} ยังไม่อ่าน</span>}</Link>
         </section>
         <DeviceAlertSettings uid={session?.user?.id} previewAlert={previewAlert} categories={categories} />
+        {canLinkTelegram(role) && <TelegramLinkSettings userId={session?.user?.id} isSuperadmin={role === 'superadmin'} />}
         <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5" aria-labelledby="account-push-title">
           <h2 id="account-push-title" className="flex items-center gap-2 text-sm font-bold text-slate-800"><Bell size={19} aria-hidden="true" />แจ้งเตือนบนอุปกรณ์นี้</h2>
           <p className="mt-2 text-sm leading-6 text-slate-500">รับการแจ้งเตือนจากระบบผ่านเบราว์เซอร์ แม้ไม่ได้เปิดหน้ารายการอยู่ การตั้งค่านี้ใช้กับบัญชีและเบราว์เซอร์บนเครื่องนี้</p>
