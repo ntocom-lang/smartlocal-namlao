@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ArrowLeft, ClipboardList, ShieldCheck, Database, ChevronRight, FileBarChart, Eye } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
+import { moduleForPath } from '../lib/staffModules'
 
 // ชื่อการ์ด 2 อันแรกตั้งตามถ้อยคำในแบบวัด OIT ของ ITA ข้อ e-Service ("รายงานสถิติข้อมูล
 // การขอรับบริการผ่านช่องทางออนไลน์ (e-Service)") ไม่ใช่คำเรียกภายในของเรา — ผู้ตรวจ ITA
@@ -38,7 +39,9 @@ const REPORTS = [
 ]
 
 export default function ReportsHub() {
-  const { tenant } = useTenant()
+  const { tenant, isModuleEnabled } = useTenant()
+  // หน้านี้เป็นทางเข้าเดียวของรายงานสาธารณะ — การ์ดของโมดูลที่ อปท. ปิดอยู่ต้องไม่โผล่ ไม่งั้นกดแล้วเจอหน้าที่ปิด
+  const reports = REPORTS.filter(r => isModuleEnabled(moduleForPath(r.href)))
 
   return (
     <div className="min-h-screen pb-28 md:pb-8" style={{ backgroundColor: '#eef2f7' }}>
@@ -64,7 +67,7 @@ export default function ReportsHub() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-3">
-        {REPORTS.map(r => (
+        {reports.map(r => (
           <Link key={r.href} to={r.href}
             className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-4 hover:border-gray-200 hover:shadow-sm active:scale-[0.99] transition-all">
             <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${r.iconBg}`}>

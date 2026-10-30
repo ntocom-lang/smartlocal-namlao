@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   Home, ClipboardList, FileText, CalendarDays, Newspaper,
   MapPin, FileSearch, FolderOpen, Bell,
-  Phone, AlertCircle, BookUser, LogIn, LogOut, LayoutGrid, Database, Trash2, CloudRain, FileBarChart, ChartColumn,
+  Phone, AlertCircle, BookUser, LogIn, LogOut, LayoutGrid, Database, Trash2, CloudRain, ChartColumn,
   UserRound, FileSignature, ShieldCheck, Briefcase,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
@@ -39,13 +39,9 @@ const NAV_GROUPS = [
   {
     label: 'ข้อมูลองค์กร',
     items: [
-      // หน้ารวมรายงาน (e-Service ทั้งสองตัว · ภาพรวมระบบ · สถิติการเข้าชม) ชื่อเดียวกับ MorePage/Kledkaew More
-      // exact: อยู่หน้า /reports/complaints แล้วรายการนี้ต้องไม่ติดไฟคู่กับ "รายงานร้องเรียน/ร้องทุกข์" ด้านล่าง
-      { label: 'รายงานทั้งหมด', href: '/reports', Icon: ChartColumn, exact: true },
-      // ทางเข้าหน้าสถิติ/สรุปรายเดือนที่เจ้าหน้าที่ใช้แชร์ลงกลุ่ม — เดิมบนจอ PC ต้องเข้า "เมนูทั้งหมด" → ความโปร่งใส
-      // ชื่อเดียวกับรายการใน MorePage/Kledkaew More (ส่วนหัวของหน้า /reports/complaints คงถ้อยคำ ITA ไว้เหมือนเดิม)
-      // ตัดตามโมดูล: moduleForPath('/reports/complaints') = 'complaints' อปท. ที่ปิดโมดูลคำร้องจึงไม่เห็น
-      { label: 'รายงานร้องเรียน/ร้องทุกข์', href: '/reports/complaints', Icon: FileBarChart },
+      // ทางเข้าเดียวของรายงานสาธารณะ ชื่อเดียวกับ MorePage/Kledkaew More/เมนูล่าง — รายงานย่อยอยู่เป็นการ์ดในหน้านี้
+      // ไม่ exact: อยู่หน้าลูก (/reports/complaints, /reports/visitors) รายการนี้ต้องติดไฟต่อ
+      { label: 'รายงาน', href: '/reports', Icon: ChartColumn },
       { label: 'ติดต่อเรา',   href: '/contact',   Icon: Phone },
       { label: 'สายด่วนฉุกเฉิน', href: '/emergency', Icon: AlertCircle },
       { label: 'เบอร์โทรสำคัญ', href: '/directory', Icon: BookUser },
