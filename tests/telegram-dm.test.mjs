@@ -6,7 +6,8 @@
 // (1) ส่งผิดคน — คนกดเอง / คนต่าง อปท. / คนที่ปิดหมวดนั้น / คนที่ไม่ได้ผูก ต้องไม่ได้รับ
 // (2) ส่งซ้ำ — คนเดียวได้ครั้งเดียวต่อเรื่อง (กิจกรรมแก้รายชื่อกี่รอบก็ตาม)
 // (3) ผู้ใช้บล็อกบอต (403) ต้องเลิกผูกเอง ไม่งั้นทุกเรื่องยิงซ้ำไปที่แชทตาย
-// (4) ⚠️ PDPA — เรื่องลับไม่บอกหมวด/สถานที่แม้เป็นแชทส่วนตัว
+// (4) ⚠️ PDPA — เรื่องลับไม่บอกหมวด/สถานที่แม้เป็นแชทส่วนตัว · ข้อความลงนามไม่มีชื่อคนและปลายทาง
+// (5) คำร้องทางหลัก — ระบบรับเรื่องเอง/สายเฉพาะกิจ/แอดมินกดรับเรื่อง ต้องได้ข้อความ โดยไม่ทำข้อความเข้ากลุ่มพัง
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -31,8 +32,8 @@ const work = mkdtempSync(path.join(tmpdir(), 'telegram-dm-'))
 let mod
 try {
   const stubbed = source
-    .replace(/^import \{ serve \}.*$/m, 'const serve = () => {}')
-    .replace(/^import \{ createClient \}.*$/m, 'const createClient = () => ({})')
+    .replace(/^import \{ serve \}.*$/m, 'const serve = (handler: unknown) => { (globalThis as any).__handler = handler }')
+    .replace(/^import \{ createClient \}.*$/m, 'const createClient = (_url: string, key: string) => (globalThis as any).__createClient(key)')
     .replace(/^import \{ sendTelegramMessage.*$/m,
       'const sendTelegramMessage = (chatId: string, text: string) => (globalThis as any).__sendTelegram(chatId, text)\n'
       + 'type TelegramSendResult = { ok: boolean; attempts: number; error?: string; status?: number; messageId?: unknown }')
@@ -40,7 +41,8 @@ try {
   writeFileSync(probe, `${stubbed}\nexport {\n`
     + '  sendDirectMessages, buildComplaintAssignedDm, buildEventAssignedDm, buildEsignTurnDm,\n'
     + '  eventIsPast, notificationMatchesResource, DM_CATEGORY, EVENT_TASK_LABEL,\n}\n')
-  globalThis.Deno = { env: { get: (key) => (key === 'TELEGRAM_BOT_TOKEN' ? 'test-token' : '') } }
+  const ENV = { TELEGRAM_BOT_TOKEN: 'test-token', SUPABASE_URL: 'https://fixture.supabase.co', SUPABASE_ANON_KEY: 'anon-key', SUPABASE_SERVICE_ROLE_KEY: 'service-key' }
+  globalThis.Deno = { env: { get: (key) => ENV[key] ?? '' } }
   mod = await import(pathToFileURL(probe).href)
 } finally {
   rmSync(work, { recursive: true, force: true })
@@ -60,17 +62,22 @@ const CLERK = uid(3)
 const OUTSIDER = uid(4)
 const UNLINKED = uid(5)
 
-function fakeDb({ links, profiles, assignments = [], turns = [] }) {
+function fakeDb({ links, profiles, assignments = [], turns = [], complaints = [], municipalities = [], brokenTables = [] }) {
   const state = { links: links.map((l) => ({ ...l })), deliveries: [], deleted: [] }
   const rows = {
     telegram_user_links: () => state.links,
     profiles: () => profiles,
     event_assignments: () => assignments,
     notification_deliveries: () => state.deliveries,
+    complaints: () => complaints,
+    municipalities: () => municipalities,
   }
   function builder(table) {
     const q = { table, op: 'select', filters: [], values: null }
     const run = () => {
+      if (brokenTables.includes(table)) return { data: null, error: { message: `${table} is down` } }
+      const badId = q.filters.find(([kind, , val]) => kind === 'in' && val.some((v) => !/^[0-9a-f-]{36}$/.test(String(v))))
+      if (badId) return { data: null, error: { message: 'invalid input syntax for type uuid' } }
       const match = (row) => q.filters.every(([kind, col, val]) =>
         kind === 'eq' ? row[col] === val : kind === 'in' ? val.includes(row[col]) : row[col] != null)
       if (q.op === 'insert') {
@@ -318,6 +325,170 @@ assert.equal(notificationMatchesResource('complaint_assigned_dm', { assigned_to:
   assert.match(rpc, /REVOKE ALL ON FUNCTION public\.esign_trip_turns\(uuid\) FROM PUBLIC, anon, authenticated;/)
   assert.match(rpc, /GRANT EXECUTE ON FUNCTION public\.esign_trip_turns\(uuid\) TO service_role;/)
   assert.equal(/GRANT EXECUTE ON FUNCTION public\.esign_trip_turns\(uuid\) TO authenticated/.test(rpc), false)
+}
+
+// ── ข้อความลงนาม: มีแค่ช่อง รถ เวลาออก เลขอ้างอิง · ไม่มีชื่อคนและปลายทาง ─────────────────────────────
+{
+  const text = buildEsignTurnDm({
+    ...trip,
+    driver: { full_name: 'สมชาย ขับรถ' },
+    requester: { full_name: 'สมหญิง ขอใช้' },
+    planned_return: '2026-11-02T16:00:00+07:00',
+  }, 'หัวหน้าส่วนราชการ')
+  for (const leak of ['สมชาย', 'สมหญิง', 'ผู้ขับ', 'ผู้ขอ', 'ปลายทาง', 'ศาลากลาง', 'กลับ:']) {
+    assert.equal(text.includes(leak), false, `ข้อความลงนามห้ามมี '${leak}'`)
+  }
+  assert.match(text, /ช่อง: <b>หัวหน้าส่วนราชการ<\/b>/)
+  assert.match(text, /รถ: รถกระบะ \(กข 1234\)/)
+  assert.match(text, /ออก: 2 พ\.ย\. 2569 08:00 น\./)
+  assert.match(text, /อ้างอิง: #/)
+}
+
+// คำแจ้งก่อนเชื่อมต้องบอกครบทุกอย่างที่ข้อความมีจริง
+{
+  const notice = read('src/components/notifications/TelegramLinkSettings.jsx').match(/ข้อความมีแค่[^<]+/)[0]
+  for (const word of ['เลขที่เรื่อง', 'ประเภท', 'ชื่องาน', 'หน้าที่', 'วันเวลา', 'สถานที่', 'กอง', 'รถที่ขอใช้', 'ไม่มีชื่อหรือเบอร์โทรของประชาชน']) {
+    assert.ok(notice.includes(word), `คำแจ้งก่อนเชื่อมขาด '${word}'`)
+  }
+}
+
+// ── (5) คำร้องทางหลัก: รันผ่าน handler จริงของ Edge Function ──────────────────────────────────────
+const GROUP = -5000
+const MUNICIPALITY = { id: MUNI, telegram_group_id: GROUP, org_type: 'เทศบาลตำบล', fee_schedule: null }
+const freshComplaint = (extra = {}) => ({ ...complaint, user_id: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...extra })
+
+async function callHandler(db, type, resourceId, user = null) {
+  globalThis.__createClient = (key) => (key === 'anon-key'
+    ? { auth: { getUser: async () => ({ data: { user: user ? { id: user } : null } }) } }
+    : db)
+  const response = await globalThis.__handler(new Request('https://fixture.invalid/', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ notification_type: type, resource_id: resourceId }),
+  }))
+  return { ...(await response.json()), http: response.status }
+}
+const chats = () => sent.map((m) => m.chatId).sort()
+const dmRows = (db) => db.state.deliveries.filter((d) => d.channel === 'telegram_dm')
+const handlerDb = (row, extra = {}) => fakeDb({ links: LINKS, profiles: PROFILES, complaints: [row], municipalities: [MUNICIPALITY], ...extra })
+
+// อ่าน is_adhoc จากตารางหมวด ไม่ดึง extra_data ที่อาจมีข้อมูลผู้แจ้ง
+{
+  const complaintSelect = source.match(/'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to[^']*'/)[0]
+  assert.match(complaintSelect, /complaint_categories\(label,emoji,is_adhoc\)/)
+  assert.equal(complaintSelect.includes('extra_data'), false, '⚠️ PDPA: ห้ามดึง extra_data')
+}
+
+// ระบบรับเรื่องเอง (ประชาชนไม่ล็อกอิน) → ได้ทั้งกลุ่มและผู้รับผิดชอบ
+{
+  reset()
+  const row = freshComplaint()
+  const db = handlerDb(row)
+  const res = await callHandler(db, 'complaint_created', row.id)
+  assert.equal(res.http, 200)
+  assert.deepEqual(chats(), [String(GROUP), '1002'])
+  assert.match(sent.find((m) => m.chatId === '1002').text, /มีคำร้องมอบหมายให้คุณ/)
+  assert.equal(dmRows(db)[0].idempotency_key, `complaint_assigned_dm:${row.id}:${TECH}`)
+  assert.equal(dmRows(db)[0].notification_type, 'complaint_assigned_dm', 'บันทึกเป็นชนิดส่วนตัว ไม่ปนกับชนิดเข้ากลุ่ม')
+  assert.equal(dmRows(db)[0].status, 'sent')
+  assert.equal(dmRows(db)[0].requested_by, null)
+
+  // เรียกซ้ำ → ไม่ส่งซ้ำทั้งสองทาง
+  await callHandler(db, 'complaint_created', row.id)
+  assert.equal(sent.length, 2)
+}
+
+// สายเฉพาะกิจ: สถานะยัง pending แต่ส่งตรงถึงผู้รับผิดชอบแล้ว
+{
+  reset()
+  const row = freshComplaint({ status: 'pending', category: 'odor', category_ref: { label: 'กลิ่นเหม็น', emoji: '👃', is_adhoc: true } })
+  await callHandler(handlerDb(row), 'complaint_created', row.id)
+  assert.deepEqual(chats(), [String(GROUP), '1002'])
+}
+
+// รอแอดมินรับเรื่อง → ยังไม่ส่งถึงผู้รับผิดชอบ · แอดมินกดรับเรื่องแล้วค่อยส่ง ครั้งเดียว
+{
+  reset()
+  const row = freshComplaint({ status: 'pending' })
+  const db = handlerDb(row)
+  await callHandler(db, 'complaint_created', row.id)
+  assert.deepEqual(chats(), [String(GROUP)], 'ยังรอแอดมิน')
+  assert.equal(dmRows(db).length, 0)
+
+  row.status = 'received'
+  row.updated_at = new Date(Date.now() + 1000).toISOString()
+  await callHandler(db, 'complaint_status_updated', row.id, ADMIN)
+  assert.equal(chats().filter((c) => c === '1002').length, 1, 'กดรับเรื่องแล้วได้ข้อความ')
+
+  // แอดมินเปลี่ยนสถานะกลับไปกลับมา หรือกดปุ่มมอบหมายคนเดิม → ไม่ซ้ำ (คีย์ชุดเดียวกัน)
+  row.updated_at = new Date(Date.now() + 2000).toISOString()
+  await callHandler(db, 'complaint_status_updated', row.id, ADMIN)
+  await callHandler(db, 'complaint_assigned_dm', row.id, ADMIN)
+  assert.equal(chats().filter((c) => c === '1002').length, 1)
+
+  // เปลี่ยนผู้รับผิดชอบเป็นคนใหม่ → คนใหม่ได้
+  row.assigned_to = ADMIN
+  await callHandler(db, 'complaint_assigned_dm', row.id, TECH)
+  assert.equal(chats().filter((c) => c === '1001').length, 1)
+}
+
+// สถานะอื่นไม่ส่ง · ยังไม่มีผู้รับผิดชอบไม่ส่ง · ผู้รับผิดชอบกดเองไม่ส่ง
+for (const [extra, user, label] of [
+  [{ status: 'in_progress' }, ADMIN, 'เริ่มดำเนินการ'],
+  [{ status: 'closed' }, ADMIN, 'ปิดเรื่อง'],
+  [{ status: 'pending' }, ADMIN, 'ส่งคืนให้แอดมิน'],
+  [{ status: 'received', assigned_to: null }, ADMIN, 'ยังไม่มีผู้รับผิดชอบ'],
+  [{ status: 'received' }, TECH, 'ผู้รับผิดชอบกดรับเอง'],
+]) {
+  reset()
+  const row = freshComplaint(extra)
+  const errors = []
+  const originalError = console.error
+  console.error = (...args) => errors.push(args)
+  try {
+    await callHandler(handlerDb(row), 'complaint_status_updated', row.id, user)
+  } finally {
+    console.error = originalError
+  }
+  assert.equal(sent.some((m) => m.chatId === '1002'), false, label)
+  assert.equal(errors.length, 0, `${label}: ต้องไม่ยิงคำสั่งเสียเข้าฐานข้อมูล`)
+}
+
+// อปท. ที่ไม่ได้ผูกกลุ่ม → ผู้รับผิดชอบยังได้ข้อความ
+{
+  reset()
+  const row = freshComplaint()
+  const res = await callHandler(handlerDb(row, { municipalities: [{ ...MUNICIPALITY, telegram_group_id: null }] }), 'complaint_created', row.id)
+  assert.equal(res.reason, 'not_configured')
+  assert.deepEqual(chats(), ['1002'])
+}
+
+// เรื่องลับ: กลุ่มไม่ได้รับการเปลี่ยนสถานะ แต่ผู้รับผิดชอบได้ข้อความกลางๆ
+{
+  reset()
+  const row = freshComplaint({ category: 'corruption', category_ref: { label: 'แจ้งการทุจริต', emoji: '⚖️', is_adhoc: false } })
+  const res = await callHandler(handlerDb(row), 'complaint_status_updated', row.id, ADMIN)
+  assert.equal(res.reason, 'confidential')
+  assert.deepEqual(chats(), ['1002'])
+  assert.match(sent[0].text, /เรื่องลับ/)
+  assert.equal(/ทุจริต|หมู่ 3/.test(sent[0].text), false)
+}
+
+// ส่วนตัวพัง (อ่านตารางผูกบัญชีไม่ได้) → ข้อความเข้ากลุ่มต้องไม่หายตาม
+{
+  reset()
+  const errors = []
+  const originalError = console.error
+  console.error = (...args) => errors.push(args)
+  try {
+    const row = freshComplaint()
+    const res = await callHandler(handlerDb(row, { brokenTables: ['telegram_user_links'] }), 'complaint_created', row.id)
+    assert.equal(res.http, 200)
+    assert.deepEqual(chats(), [String(GROUP)])
+    assert.equal(errors.length, 1, 'ต้องจด log ไว้ตรวจย้อน')
+  } finally {
+    console.error = originalError
+  }
 }
 
 console.log('telegram-dm: ผ่านทั้งหมด')

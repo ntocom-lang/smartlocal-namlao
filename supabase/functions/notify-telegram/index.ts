@@ -1039,12 +1039,28 @@ function buildEventAssignedDm(event: Record<string, unknown>, task: unknown) {
   ])
 }
 
+// ไม่ใช้ tripSummaryLines: ไม่ใส่ชื่อผู้ขอ/ผู้ขับ และปลายทางที่เป็นช่องพิมพ์อิสระ (เจ้าของระบบอนุมัติ 2569-10-30)
+// ผู้ลงนามเปิดดูรายละเอียดในระบบก่อนลงนามอยู่แล้ว ⚠️ แก้ช่องในข้อความนี้ต้องแก้คำแจ้งใน TelegramLinkSettings.jsx ด้วย
 function buildEsignTurnDm(trip: Record<string, unknown>, slotLabel: unknown) {
+  const departure = formatThaiDateTime(trip.planned_departure)
   return framedMessage(trip, '✍️', 'ถึงคิวลงนามใบขอใช้รถ', [
     slotLabel ? `ช่อง: <b>${escapeHtml(slotLabel, 60)}</b>` : '',
-    ...tripSummaryLines(trip),
+    `รถ: ${vehicleLabel(trip.vehicle as { name?: string; license_plate?: string } | null)}`,
+    departure ? `ออก: ${escapeHtml(departure, 60)}` : '',
     tripRef(trip),
   ])
+}
+
+// คำร้องส่วนใหญ่ไม่ผ่านปุ่มมอบหมาย: trigger เติม assigned_to ตั้งแต่ INSERT แล้วระบบรับเรื่องเอง (status = received)
+// สายเฉพาะกิจส่งตรงถึงผู้รับผิดชอบทั้งที่สถานะยัง pending (route_adhoc_complaint ไม่เปลี่ยนสถานะ)
+// ส่วนเรื่องที่รอแอดมิน ผู้รับผิดชอบเริ่มงานได้เมื่อรับเรื่องแล้ว จึงส่งตอนเปลี่ยนเป็น received
+// คีย์กันซ้ำชุดเดียวกับปุ่มมอบหมาย: เรื่องเดียวคนเดียวได้ครั้งเดียวไม่ว่าเข้าทางไหน
+function complaintDmDue(type: NotificationType, complaint: Record<string, unknown>) {
+  if (!isUuid(complaint.assigned_to)) return false
+  if (type === 'complaint_status_updated') return complaint.status === 'received'
+  if (type !== 'complaint_created') return false
+  const category = complaint.category_ref as { is_adhoc?: boolean } | null
+  return complaint.status === 'received' || category?.is_adhoc === true
 }
 
 function dmMuted(muted: unknown, category: DmCategory) {
@@ -1207,7 +1223,7 @@ serve(async (req) => {
     const selectColumns = spec.table === 'events'
       ? 'id,municipality_id,created_by,created_at,title,description,event_date,end_date,event_time,end_time,location,audiences,is_all_day'
       : spec.table === 'complaints'
-        ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to,ref_no,village,due_date,department:departments(name,color),category_ref:complaint_categories(label,emoji)'
+        ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to,ref_no,village,due_date,department:departments(name,color),category_ref:complaint_categories(label,emoji,is_adhoc)'
         : spec.table === 'fleet_trips'
           // fleet_trips มี FK ไป departments 2 เส้น (department_id กับ dept_head_department_id)
           // embed ต้องระบุชื่อ FK ไม่งั้น PostgREST ตอบ 300 ambiguous แล้วแจ้งเตือนทุกชนิดของทริปพัง
@@ -1246,6 +1262,13 @@ serve(async (req) => {
 
     const dmCategory = DM_CATEGORY[notificationType]
     if (dmCategory) return await sendDirectMessages(admin, notificationType, dmCategory, resource, userId)
+
+    // ส่งก่อนขั้นเข้ากลุ่ม เพราะขั้นนั้นคืนค่าออกได้หลายทาง (กันซ้ำ/เรื่องลับ/ไม่ได้ผูกกลุ่ม) ข้อความส่วนตัวต้องไม่หายตามไปด้วย
+    // ส่งส่วนตัวพลาด = จดลง log แล้วไปต่อ ไม่ให้ข้อความเข้ากลุ่มหายตาม
+    if (complaintDmDue(notificationType, resource)) {
+      await sendDirectMessages(admin, 'complaint_assigned_dm', 'complaint', resource, userId)
+        .catch((error) => console.error('complaint direct message failed:', error))
+    }
     const { data: municipality, error: municipalityError } = await admin
       .from('municipalities')
       .select('id,telegram_group_id,org_type,fee_schedule')
