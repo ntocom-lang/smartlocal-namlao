@@ -205,7 +205,7 @@ export default function TelegramLinkSettings({ userId, isSuperadmin }) {
                 <p className="flex items-center gap-1.5 font-semibold text-slate-700"><ShieldCheck size={15} aria-hidden="true" />ก่อนเชื่อม</p>
                 <ul className="mt-1 list-disc space-y-0.5 pl-5">
                   <li>ระบบเก็บรหัสแชทและชื่อที่แสดงใน Telegram ของคุณ เพื่อส่งงานที่มอบหมายให้คุณเท่านั้น</li>
-                  <li>ข้อความมีแค่เลขที่เรื่อง ประเภท วันเวลา และสถานที่ ไม่มีชื่อหรือเบอร์โทรของประชาชน</li>
+                  <li>ข้อความมีแค่เลขที่เรื่อง ประเภท ชื่องาน หน้าที่ วันเวลา สถานที่ กอง และรถที่ขอใช้ ไม่มีชื่อหรือเบอร์โทรของประชาชน</li>
                   <li>Telegram เป็นบริการของต่างประเทศ ข้อความผ่านเซิร์ฟเวอร์ของ Telegram</li>
                   <li>ยกเลิกได้ทุกเมื่อจากหน้านี้ หรือพิมพ์ /stop ในแชท</li>
                 </ul>
