@@ -5,7 +5,9 @@ import { adminUpdateUser } from '../../lib/adminUpdateUser'
 import { loginIdentifier } from '../../lib/authProviders'
 import { ROLE_LABELS } from '../../lib/staffRoster'
 import {
+  isUnitHeadPositionName,
   leastPrivilegeRole,
+  makePositionShared,
   normalizePositionName,
   positionMatchesDepartment,
   resolvedDepartmentId,
@@ -19,6 +21,7 @@ export default function PersonnelQuickAssignDialog({
   currentUserId,
   onClose,
   onSaved,
+  onPositionsChanged,
 }) {
   const [accountQuery, setAccountQuery] = useState('')
   const [candidates, setCandidates] = useState([])
@@ -29,6 +32,9 @@ export default function PersonnelQuickAssignDialog({
   const [localPositions, setLocalPositions] = useState(positions)
   const [saving, setSaving] = useState(false)
   const [creatingPosition, setCreatingPosition] = useState(false)
+  const [sharingPositionId, setSharingPositionId] = useState('')
+  // null = ให้ระบบตัดสินจากชื่อ (หัวหน้าหน่วยงานระดับกอง = ล็อก) แอดมินติ๊กกลับได้เสมอ
+  const [lockOverride, setLockOverride] = useState(null)
   const [error, setError] = useState('')
   const requestSequence = useRef(0)
 
@@ -81,9 +87,18 @@ export default function PersonnelQuickAssignDialog({
   const exactPosition = localPositions.find(
     (position) => normalizePositionName(position.name) === normalizePositionName(positionQuery),
   )
-  const exactPositionElsewhere = exactPosition?.department_id
-    && exactPosition.department_id !== department.id
+  // ตำแหน่งชื่อเดียวกันที่ถูกล็อกไว้กองอื่น (เช่น ธุรการติดสำนักปลัด) — ให้ปลดเป็นใช้ได้ทุกกองได้ทันที
+  // แทนการบอกให้ไปแก้ที่แท็บแบบตำแหน่ง
+  const lockedElsewhere = useMemo(() => {
+    const query = normalizePositionName(positionQuery)
+    if (!query) return []
+    return localPositions
+      .filter((position) => position.department_id && position.department_id !== department.id)
+      .filter((position) => normalizePositionName(position.name).includes(query))
+      .slice(0, 4)
+  }, [department.id, localPositions, positionQuery])
   const canCreatePosition = positionQuery.trim().length >= 2 && !exactPosition
+  const lockNewPosition = lockOverride ?? isUnitHeadPositionName(positionQuery)
 
   function chooseUser(user) {
     setSelectedUser(user)
@@ -114,9 +129,11 @@ export default function PersonnelQuickAssignDialog({
 
     setCreatingPosition(true)
     setError('')
+    // ค่าตั้งต้น = ใช้ได้ทุกกอง โดยจำกองนี้ไว้เป็นกองแนะนำ ล็อกเฉพาะเมื่อเป็นหัวหน้าหน่วยงาน
+    // (เดิมล็อกทุกตำแหน่งที่สร้างจากที่นี่ คนกองอื่นจึงใช้ตำแหน่งชื่อเดียวกันไม่ได้)
     const { data, error: createError } = await supabase.from('positions').insert({
       municipality_id: tenant.id,
-      department_id: department.id,
+      department_id: lockNewPosition ? department.id : null,
       department_hint: department.name,
       name,
       category: 'operating_staff',
@@ -134,6 +151,26 @@ export default function PersonnelQuickAssignDialog({
     setLocalPositions((current) => [...current, data])
     setSelectedPositionId(data.id)
     setPositionQuery(data.name)
+    onPositionsChanged?.()
+  }
+
+  async function sharePosition(position) {
+    if (!tenant?.id || sharingPositionId) return
+    setSharingPositionId(position.id)
+    setError('')
+    const { error: shareError } = await makePositionShared(supabase, tenant.id, position)
+    setSharingPositionId('')
+    if (shareError) {
+      setError(/changed|reload|concurrent/i.test(shareError.message)
+        ? 'ข้อมูลตำแหน่งเปลี่ยนระหว่างทำรายการ กรุณาปิดหน้าต่างแล้วลองใหม่'
+        : 'เปลี่ยนเป็นใช้ได้ทุกกองไม่สำเร็จ: ' + shareError.message)
+      return
+    }
+    const shared = { ...position, department_id: null }
+    setLocalPositions((current) => current.map((item) => (item.id === position.id ? shared : item)))
+    setSelectedPositionId(shared.id)
+    setPositionQuery(shared.name)
+    onPositionsChanged?.()
   }
 
   async function saveAssignment() {
@@ -225,12 +262,12 @@ export default function PersonnelQuickAssignDialog({
             <div className="relative">
               <Briefcase size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input id="quick-position-search" value={positionQuery}
-                onChange={(event) => { setPositionQuery(event.target.value); setSelectedPositionId(''); setError('') }}
+                onChange={(event) => { setPositionQuery(event.target.value); setSelectedPositionId(''); setLockOverride(null); setError('') }}
                 placeholder={`พิมพ์ตำแหน่งใน${department.name}`}
                 className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100" />
             </div>
             {positionQuery.trim() && !selectedPosition && (
-              <div className="mt-2 max-h-52 space-y-1 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-lg">
+              <div className="mt-2 max-h-80 space-y-1 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-lg">
                 {availablePositions.map((position) => (
                   <button key={position.id} type="button" onClick={() => choosePosition(position)}
                     className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left hover:bg-blue-50">
@@ -240,18 +277,36 @@ export default function PersonnelQuickAssignDialog({
                     </span>
                   </button>
                 ))}
+                {lockedElsewhere.map((position) => (
+                  <div key={position.id} className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                    <p>
+                      <span className="font-bold">{position.name}</span> ล็อกไว้ที่ {position.department_hint || 'กองอื่น'}
+                    </p>
+                    <button type="button" onClick={() => sharePosition(position)} disabled={Boolean(sharingPositionId)}
+                      className="mt-1.5 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+                      {sharingPositionId === position.id && <Loader2 size={14} className="animate-spin" />}
+                      ตำแหน่งนี้มีหลายกอง — เปลี่ยนเป็นใช้ได้ทุกกองแล้วเลือก
+                    </button>
+                  </div>
+                ))}
                 {canCreatePosition && (
-                  <button type="button" onClick={createPosition} disabled={creatingPosition}
-                    className="flex min-h-11 w-full items-center gap-2 rounded-xl bg-indigo-50 px-3 py-2 text-left text-sm font-bold text-indigo-700 disabled:opacity-50">
-                    {creatingPosition ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                    สร้างตำแหน่ง “{positionQuery.trim()}” ใน{department.name}
-                  </button>
-                )}
-                {exactPositionElsewhere && (
-                  <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
-                    มีชื่อตำแหน่งนี้ในกองอื่นแล้ว หากต้องใช้ร่วมหลายกอง ให้เปลี่ยนตำแหน่งนั้นเป็น “ส่วนกลาง”
-                    หรือใช้ชื่อที่ระบุสายงานให้ชัดเจนขึ้น
-                  </p>
+                  <div className="rounded-xl bg-indigo-50 p-1">
+                    <button type="button" onClick={createPosition} disabled={creatingPosition}
+                      className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-bold text-indigo-700 disabled:opacity-50">
+                      {creatingPosition ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                      สร้างตำแหน่ง “{positionQuery.trim()}”
+                    </button>
+                    <label className="flex min-h-11 cursor-pointer items-center gap-2 px-3 text-xs leading-5 text-indigo-700">
+                      <input type="checkbox" checked={lockNewPosition}
+                        onChange={(event) => setLockOverride(event.target.checked)} className="h-4 w-4 shrink-0" />
+                      ล็อกไว้เฉพาะ{department.name} (ติ๊กเฉพาะหัวหน้าหน่วยงาน เช่น ผู้อำนวยการกอง)
+                    </label>
+                    {!lockNewPosition && (
+                      <p className="px-3 pb-2 text-[11px] leading-5 text-indigo-500">
+                        ใช้ได้ทุกกอง — {department.name} จะเป็นกองที่ระบบเติมให้เมื่อแต่งตั้งคนที่ยังไม่มีกอง
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}

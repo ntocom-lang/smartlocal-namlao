@@ -3,13 +3,17 @@ import { readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
+  SHARED_POSITION_LABEL,
+  UNIT_HEAD_POSITION_PATTERN,
   departmentFilterParams,
   groupPositionsByDepartment,
+  isUnitHeadPositionName,
   leastPrivilegeRole,
   normalizePositionName,
   positionMatchesDepartment,
   resolvedDepartmentId,
   shouldKeepDepartmentHead,
+  suggestedDepartmentId,
 } from '../src/lib/personnelStructure.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -57,6 +61,38 @@ assert.equal(shouldKeepDepartmentHead({ department_id: 'general', is_dept_head: 
 assert.equal(shouldKeepDepartmentHead({ department_id: 'general', is_dept_head: true }, 'general'), true)
 assert.equal(normalizePositionName('  นักจัดการ   งานทั่วไป '), 'นักจัดการ งานทั่วไป')
 
+// ตำแหน่งใช้ได้ทุกกองเป็นค่าตั้งต้น ล็อกเฉพาะหัวหน้าหน่วยงานระดับกอง (ทุกประเภท อปท.)
+for (const head of ['ผู้อำนวยการกองคลัง', 'ผู้อำนวยการ กองช่าง', 'รองผู้อำนวยการสำนักการช่าง',
+  'ผู้อำนวยการสำนักการคลัง', 'หัวหน้าสำนักปลัด', 'หัวหน้าสำนักปลัดองค์การบริหารส่วนจังหวัด',
+  'หัวหน้าหน่วยตรวจสอบภายใน']) {
+  assert.equal(isUnitHeadPositionName(head), true, `${head} ต้องล็อกกองได้`)
+}
+for (const shared of ['เจ้าหน้าที่ธุรการชำนาญงาน', 'เจ้าพนักงานจ้างเหมาปฏิบัติหน้าที่ธุรการ', 'นายช่างโยธา',
+  'หัวหน้าฝ่ายบริหารงานทั่วไป', 'ผู้อำนวยการโรงเรียน', 'ปลัดเทศบาล', 'ผู้ช่วยผู้อำนวยการกองคลัง', '', null]) {
+  assert.equal(isUnitHeadPositionName(shared), false, `${shared} ต้องใช้ได้ทุกกอง`)
+}
+const hintDepartments = [
+  { id: 'general', name: 'สำนักปลัด', short_name: 'ปลัด' },
+  { id: 'works', name: 'กองช่าง', short_name: 'ช่าง' },
+  { id: 'dup-1', name: 'กองหนึ่ง', short_name: 'ซ้ำ' },
+  { id: 'dup-2', name: 'กองสอง', short_name: 'ซ้ำ' },
+]
+assert.equal(suggestedDepartmentId({ department_id: 'works', department_hint: 'สำนักปลัด' }, hintDepartments), 'works',
+  'ตำแหน่งล็อกกองต้องใช้กองที่ล็อก')
+assert.equal(suggestedDepartmentId({ department_id: null, department_hint: ' กองช่าง ' }, hintDepartments), 'works')
+assert.equal(suggestedDepartmentId({ department_id: null, department_hint: 'ปลัด' }, hintDepartments), 'general')
+assert.equal(suggestedDepartmentId({ department_id: null, department_hint: 'ซ้ำ' }, hintDepartments), null, 'ชื่อกำกวมห้ามเดา')
+assert.equal(suggestedDepartmentId({ department_id: null, department_hint: 'สำนักการช่าง' }, hintDepartments), null,
+  'ชื่อกองไม่ตรง (เช่น ทม./อบจ.) ต้องไม่เดา')
+assert.equal(suggestedDepartmentId(null, hintDepartments), null)
+assert.equal(groupPositionsByDepartment([], []).at(-1).label, SHARED_POSITION_LABEL)
+
+const sharedMigration = await read('supabase/migrations/20261030100000_position_shared_by_default.sql')
+const sharedBackfill = await read('supabase/migrations/20261030100100_position_shared_backfill.sql')
+assert.ok(sharedMigration.includes(`'${UNIT_HEAD_POSITION_PATTERN}'`), 'รูปแบบชื่อหัวหน้าหน่วยงานฝั่ง DB ต้องตรงกับฝั่งหน้าจอ')
+assert.doesNotMatch(sharedBackfill, /UPDATE public\.profiles/, 'ปรับตำแหน่งเป็นใช้ได้ทุกกองห้ามย้ายบุคลากร')
+assert.match(sharedBackfill, /Personnel departments changed during backfill/)
+
 const migration = await read('supabase/migrations/20261024200000_personnel_structure_departments.sql')
 const columnMigration = await read('supabase/migrations/20261024195900_positions_department_column.sql')
 assert.match(columnMigration, /ADD COLUMN IF NOT EXISTS department_id uuid REFERENCES public\.departments/)
@@ -92,7 +128,11 @@ const quickAssign = await read('src/components/admin/PersonnelQuickAssignDialog.
 assert.match(quickAssign, /leastPrivilegeRole\(selectedUser\?\.role\)/)
 assert.match(quickAssign, /search_users_for_staff_assignment/)
 assert.doesNotMatch(quickAssign, /get_users_with_email_sorted/)
-assert.match(quickAssign, /exactPositionElsewhere/)
+assert.match(quickAssign, /lockedElsewhere/)
+assert.match(quickAssign, /makePositionShared\(supabase, tenant\.id, position\)/, 'ตำแหน่งที่ล็อกกองอื่นต้องปลดได้จากหน้าต่างนี้')
+assert.match(quickAssign, /department_id: lockNewPosition \? department\.id : null/, 'ตำแหน่งใหม่ต้องใช้ได้ทุกกองเป็นค่าตั้งต้น')
+assert.match(dashboard, /makePositionShared\(supabase, tenant\.id, selectedPosition\)/, 'หน้าแต่งตั้งต้องปลดล็อกกองได้')
+assert.match(dashboard, /suggestedDepartmentId\(position, depts\)/)
 assert.match(quickAssign, /ระบบไม่ยกระดับให้อัตโนมัติ/)
 assert.match(quickAssign, /ยืนยันการย้ายและแต่งตั้ง/, 'การย้ายข้ามกองต้องบอกผลก่อนบันทึก')
 assert.match(quickAssign, /min-h-11/, 'ปุ่มและช่องกรอกบนมือถือควรสูงอย่างน้อย 44px')
@@ -315,6 +355,81 @@ if (process.argv.includes('--pglite')) {
       assert.equal(result.moved_count,2,'Super Admin ย้ายบัญชี admin ได้ตามขอบเขตเดิม')
     })
     console.log('position-department-move PostgreSQL: confirmation/stale guards, exact counts, atomic move, unchanged roles, audit and return-to-central passed')
+
+    // ── ตำแหน่งใช้ได้ทุกกองเป็นค่าตั้งต้น (20261030100000 + 20261030100100) ──
+    const HEAD = id(205), CLERK = id(206), CLERK_HOLDER = id(107), HEAD_HOLDER = id(108)
+    await db.exec(`
+      CREATE OR REPLACE FUNCTION public.get_my_role() RETURNS text LANGUAGE sql STABLE AS
+        $$ SELECT role FROM public.profiles WHERE id = auth.uid() $$;
+      CREATE OR REPLACE FUNCTION public.get_my_municipality_id() RETURNS uuid LANGUAGE sql STABLE AS
+        $$ SELECT municipality_id FROM public.profiles WHERE id = auth.uid() $$;
+      -- production มีตัวจริงจาก 20260831142000 อยู่แล้ว migration ใหม่ตรวจว่ามีก่อนแทนที่
+      CREATE FUNCTION public.import_default_positions(uuid) RETURNS integer LANGUAGE sql AS $$ SELECT 0 $$;
+      CREATE TABLE public.position_templates (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL UNIQUE, category text NOT NULL,
+        role text NOT NULL, department_hint text, sort_order int NOT NULL DEFAULT 0
+      );
+      INSERT INTO public.position_templates (name,category,role,department_hint,sort_order) VALUES
+        ('ผู้อำนวยการกองช่าง','dept_head','officer','กองช่าง',10),
+        ('นายช่างโยธา','field_technician','technician','กองช่าง',20),
+        ('ผู้อำนวยการกองไม่มีจริง','dept_head','officer','กองไม่มีจริง',30),
+        ('หัวหน้าหน่วยกำกวม','dept_head','officer','ซ้ำ',40);
+      INSERT INTO public.positions (id,municipality_id,name,department_id,category,role) VALUES
+        ('${HEAD}','${M1}','หัวหน้าสำนักปลัด','${D1}','dept_head','officer'),
+        ('${CLERK}','${M1}','เจ้าหน้าที่ธุรการชำนาญงาน','${D1}','operating_staff','staff');
+      INSERT INTO public.profiles (id,full_name,role,municipality_id,department_id,position_id) VALUES
+        ('${CLERK_HOLDER}','[TEST] ธุรการ','staff','${M1}','${D1}','${CLERK}'),
+        ('${HEAD_HOLDER}','[TEST] หัวหน้าสำนัก','officer','${M1}','${D1}','${HEAD}');
+      SELECT set_config('app.position_department_move','','false');
+    `)
+    // ก่อนแก้: ธุรการล็อกไว้สำนักปลัด แต่งตั้งคนกองช่างแล้วฐานข้อมูลดึงกลับสำนักปลัดเงียบๆ
+    assert.equal((await applyAssignment(CITIZEN,{role:'staff',department_id:D2,position_id:CLERK})).profile.department_id,D1)
+
+    const profilesBeforeShared = (await db.query('SELECT id,department_id,role,is_dept_head FROM public.profiles ORDER BY id')).rows
+    await db.exec(sharedMigration)
+    await db.query('INSERT INTO public.positions (municipality_id,name,department_hint,category) VALUES ($1,$2,$3,$4)',
+      [M1,'[TEST] ช่างไฟฟ้า','ช่าง','field_technician'])
+    assert.deepEqual((await db.query('SELECT department_id,department_hint FROM public.positions WHERE name=$1',['[TEST] ช่างไฟฟ้า'])).rows[0],
+      {department_id:null,department_hint:'ช่าง'},'guard ต้องเลิกเดาผูกกองจากกองแนะนำ')
+
+    await db.exec(sharedBackfill)
+    assert.deepEqual((await db.query('SELECT id,department_id,role,is_dept_head FROM public.profiles ORDER BY id')).rows,profilesBeforeShared,
+      'ปรับตำแหน่งเป็นใช้ได้ทุกกองห้ามย้ายกองหรือเปลี่ยนสิทธิ์ของใคร')
+    assert.deepEqual((await db.query('SELECT department_id,department_hint FROM public.positions WHERE id=$1',[CLERK])).rows[0],
+      {department_id:null,department_hint:'สำนักปลัด'},'ธุรการต้องใช้ได้ทุกกองโดยจำกองเดิมเป็นกองแนะนำ')
+    assert.equal((await db.query('SELECT department_id FROM public.positions WHERE id=$1',[HEAD])).rows[0].department_id,D1,
+      'หัวหน้าหน่วยงานต้องล็อกกองเหมือนเดิม')
+    const backfillAudit = (await db.query("SELECT actor_id,metadata FROM public.audit_logs WHERE resource_id=$1 AND metadata->>'reason'='position_shared_by_default_backfill'",[CLERK])).rows
+    assert.equal(backfillAudit.length,1)
+    assert.equal(backfillAudit[0].actor_id,null)
+    assert.equal(backfillAudit[0].metadata.department_before,D1)
+    assert.equal((await db.query("SELECT current_setting('app.position_department_move',true) flag")).rows[0].flag,'')
+
+    // หลังแก้: แต่งตั้งธุรการเข้ากองช่างได้ และแก้กองที่ใส่ผิดได้
+    assert.equal((await applyAssignment(CITIZEN,{role:'staff',department_id:D2,position_id:CLERK})).profile.department_id,D2)
+    assert.equal((await applyAssignment(CLERK_HOLDER,{department_id:D2})).profile.department_id,D2)
+    assert.equal((await applyAssignment(HEAD_HOLDER,{department_id:D2})).profile.department_id,D1,'ตำแหน่งที่ล็อกกองยังบังคับกองเดิม')
+
+    await asUser(ADMIN,async()=>{
+      // ล็อกแล้วปลดกลับ: กองแนะนำต้องเป็นกองล่าสุด ไม่ถูกล้างเป็นค่าว่าง
+      const lockChanges = {name:'เจ้าหน้าที่ธุรการชำนาญงาน',category:'operating_staff',role:'staff',department_id:D2,sort_order:0}
+      await db.query(moveSql,[CLERK,JSON.stringify(lockChanges),null,true,1])
+      await db.query(moveSql,[CLERK,JSON.stringify({department_id:null}),D2,true,1])
+      assert.deepEqual((await db.query('SELECT department_id,department_hint FROM public.positions WHERE id=$1',[CLERK])).rows[0],
+        {department_id:null,department_hint:'กองช่าง'})
+
+      assert.equal((await db.query('SELECT public.import_default_positions($1) n',[M1])).rows[0].n,4)
+      const imported = Object.fromEntries((await db.query(`SELECT name,department_id,department_hint FROM public.positions
+        WHERE name IN ('ผู้อำนวยการกองช่าง','นายช่างโยธา','ผู้อำนวยการกองไม่มีจริง','หัวหน้าหน่วยกำกวม')`)).rows
+        .map(row=>[row.name,[row.department_id,row.department_hint]]))
+      assert.deepEqual(imported['ผู้อำนวยการกองช่าง'],[D2,'กองช่าง'],'หัวหน้าหน่วยงานที่ชื่อกองตรงต้องล็อกกอง')
+      assert.deepEqual(imported['นายช่างโยธา'],[null,'กองช่าง'],'ตำแหน่งสายงานต้องใช้ได้ทุกกองพร้อมกองแนะนำ')
+      assert.deepEqual(imported['ผู้อำนวยการกองไม่มีจริง'],[null,'กองไม่มีจริง'],'ชื่อกองไม่ตรงต้องไม่ผูก')
+      assert.deepEqual(imported['หัวหน้าหน่วยกำกวม'],[null,'ซ้ำ'])
+      assert.equal((await db.query('SELECT public.import_default_positions($1) n',[M1])).rows[0].n,0,'กดซ้ำต้องไม่สร้างของซ้ำ')
+    })
+    await assert.rejects(asUser(OTHER_ADMIN,'SELECT public.import_default_positions($1)',[M1]),/ไม่มีสิทธิ์/)
+    console.log('position-shared-by-default PostgreSQL: shared default, backfill keeps personnel/heads, hint kept, audited, import binds heads only')
   } finally { await db.close() }
 }
 
@@ -396,6 +511,7 @@ if (process.env.PERSONNEL_VISUAL === '1') {
   })
   const writes = []
   const positionWrites = []
+  const positionInserts = []
   let catalogPosition = {id:'p1',name:'[TEST] ตำแหน่งใช้ร่วม',department_id:null,role:'viewer',category:'operating_staff',sort_order:0}
   let candidate = { id: 'citizen-test', full_name: '[TEST] สมชาย', role: 'citizen', municipality_id: 'municipality-test' }
   await page.route('**/*', async (route) => {
@@ -426,6 +542,7 @@ if (process.env.PERSONNEL_VISUAL === '1') {
     }
     if (url.pathname.endsWith('/positions') && route.request().method() === 'POST') {
       const payload = route.request().postDataJSON()
+      positionInserts.push(payload)
       return route.fulfill({ json: { ...payload, id: 'new-position-test' } })
     }
     return route.abort()
@@ -453,10 +570,13 @@ if (process.env.PERSONNEL_VISUAL === '1') {
     assert.equal(writes[1].p_changes.role, 'officer')
     assert.equal(writes[1].p_changes.is_dept_head, false)
     assert.equal(writes[1].p_changes.position_id, 'new-position-test')
+    assert.equal(writes[1].p_changes.department_id, 'general', 'คนต้องได้กองที่กำลังเพิ่ม แม้ตำแหน่งใช้ได้ทุกกอง')
+    assert.equal(positionInserts[0].department_id, null, 'ตำแหน่งธุรการที่สร้างใหม่ต้องใช้ได้ทุกกอง')
+    assert.equal(positionInserts[0].department_hint, 'สำนักปลัด', 'จำกองนี้ไว้เป็นกองแนะนำ')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     console.log('personnel-structure browser: citizen assignment, inline position creation and department transfer passed (mocked DB)')
     await page.goto(`${fixtureVite.resolvedUrls.local[0]}__catalog-fixture`)
-    await page.locator('summary').filter({hasText:'ส่วนกลาง / ยังไม่ผูกกอง'}).click()
+    await page.locator('summary').filter({hasText:SHARED_POSITION_LABEL}).click()
     await page.getByRole('button',{name:'แก้ไขตำแหน่ง [TEST] ตำแหน่งใช้ร่วม',exact:true}).click()
     const catalogDialog=page.getByRole('dialog')
     const departmentSelect=catalogDialog.getByLabel('กอง / หน่วยงาน')

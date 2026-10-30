@@ -68,7 +68,7 @@ import UserProfileBadge from '../components/layout/UserProfileBadge'
 import PortalDrawer from '../components/common/PortalDrawer'
 import FleetSetup from '../components/fleet/FleetSetup'
 import { adminUpdateUser } from '../lib/adminUpdateUser'
-import { departmentFilterParams } from '../lib/personnelStructure'
+import { departmentFilterParams, makePositionShared, suggestedDepartmentId } from '../lib/personnelStructure'
 import { logAction } from '../lib/auditLog'
 import { CategoryIcon } from '../lib/categoryIcon'
 import { isOfficialsOnlyCategory, SUBMIT_AUDIENCE_OFFICIALS, SUBMIT_AUDIENCE_PUBLIC } from '../lib/serviceAudience'
@@ -581,6 +581,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         tenant={tenant}
         depts={depts}
         positions={positions}
+        onPositionsChanged={reloadStructure}
         saving={saving}
         deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
         deleteBlockedReason={deleteBlockedReason} setDeleteBlockedReason={setDeleteBlockedReason}
@@ -1074,6 +1075,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           department={quickAssignDepartment}
           positions={positions}
           currentUserId={currentUserId}
+          onPositionsChanged={reloadStructure}
           onClose={() => setQuickAssignDepartment(null)}
           onSaved={() => {
             setQuickAssignDepartment(null)
@@ -1666,14 +1668,40 @@ function PersonalInfoTab(props) {
   )
 }
 
-function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, draft, setDraft }) {
+function AppointmentTab({ user, tenant, depts, positions, currentUserRole, isEditing, draft, setDraft, onPositionsChanged }) {
   const activeDeptId = isEditing ? draft.department_id : (user.department_id ?? '')
   const activePositionId = isEditing ? draft.position_id : (user.position_id ?? '')
   const selectedPosition = positions.find(position => position.id === activePositionId)
+  const [sharingPosition, setSharingPosition] = useState(false)
+  const [shareError, setShareError] = useState('')
+
+  // ตำแหน่งที่ล็อกกองแต่จริงๆ มีหลายกอง (เช่น ธุรการ) ปลดได้ในคลิกเดียวจากหน้านี้ ไม่ต้องไปแท็บแบบตำแหน่ง
+  async function handleMakePositionShared() {
+    if (!selectedPosition?.department_id || !tenant?.id) return
+    const ok = confirm(
+      `เปลี่ยน "${selectedPosition.name}" เป็นตำแหน่งที่ใช้ได้ทุกกอง?\n\n` +
+      `ผู้ถือตำแหน่งนี้ทุกคนยังอยู่กองเดิม ไม่มีใครถูกย้าย\n` +
+      `"${selectedPosition.department_hint || 'กองเดิม'}" จะเป็นกองที่ระบบเติมให้ แต่เปลี่ยนได้`
+    )
+    if (!ok) return
+    setSharingPosition(true)
+    setShareError('')
+    const { error } = await makePositionShared(supabase, tenant.id, selectedPosition)
+    setSharingPosition(false)
+    if (error) {
+      setShareError(/changed|reload|concurrent/i.test(error.message)
+        ? 'ข้อมูลตำแหน่งเปลี่ยนระหว่างทำรายการ กรุณาลองใหม่อีกครั้ง'
+        : 'เปลี่ยนไม่สำเร็จ: ' + error.message)
+      onPositionsChanged?.()
+      return
+    }
+    await onPositionsChanged?.()
+  }
 
   function handlePositionChange(positionId) {
     const position = positions.find(item => item.id === positionId)
-    const nextDepartmentId = position?.department_id || draft.department_id
+    // ตำแหน่งล็อกกอง = กองนั้น / ใช้ได้ทุกกอง = คงกองเดิมของคน ถ้ายังไม่มีกองจึงเติมกองแนะนำ
+    const nextDepartmentId = position?.department_id || draft.department_id || suggestedDepartmentId(position, depts) || ''
     const nextDepartmentHead = nextDepartmentId === draft.department_id ? draft.is_dept_head : false
     const suggestedRole = position?.role
     const maySuggestRole = suggestedRole
@@ -1731,7 +1759,7 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
         )}
         {selectedPosition?.department_hint && (
           <p className="mt-1 text-xs text-gray-400">
-            {selectedPosition.department_id ? 'ระบบกำหนดกองให้อัตโนมัติ: ' : 'กองที่มักสังกัด: '}
+            {selectedPosition.department_id ? 'ตำแหน่งนี้ล็อกไว้ที่: ' : 'ใช้ได้ทุกกอง · กองที่มักสังกัด: '}
             {selectedPosition.department_hint}
           </p>
         )}
@@ -1753,7 +1781,17 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
           <p className="text-sm text-gray-800">{user.department_name || 'ไม่ระบุกอง'}</p>
         )}
         {isEditing && selectedPosition?.department_id && (
-          <p className="mt-1 text-xs text-gray-400">ตำแหน่งนี้กำหนดกองไว้แล้ว ระบบจึงใส่ให้และล็อกไม่ให้เลือกผิดกอง</p>
+          <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800">
+            <p>ตำแหน่งนี้ล็อกกองไว้ (ใช้กับหัวหน้าหน่วยงานที่มีได้กองเดียว) จึงเลือกกองอื่นไม่ได้</p>
+            {tenant?.id && (
+              <button type="button" onClick={handleMakePositionShared} disabled={sharingPosition}
+                className="mt-2 flex min-h-11 items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+                {sharingPosition && <Loader2 size={14} className="animate-spin" />}
+                ตำแหน่งนี้มีหลายกอง — เปลี่ยนเป็นใช้ได้ทุกกอง
+              </button>
+            )}
+            {shareError && <p role="alert" className="mt-1.5 font-semibold text-rose-700">{shareError}</p>}
+          </div>
         )}
       </div>
       {activeDeptId && (
