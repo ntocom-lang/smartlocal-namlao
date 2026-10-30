@@ -71,6 +71,7 @@
     "test:signatory-as-of": "node tests/signatory-as-of-document.test.mjs",
     "test:signatory-groups": "node tests/signatory-people-groups.test.mjs",
     "test:signing-menu": "node tests/admin-signing-menu.test.mjs",
+    "test:departments-tab": "node tests/admin-departments-tab.test.mjs",
     "test:waste-schedule": "node tests/waste-schedule.test.mjs && node tests/waste-schedule-poster.test.mjs",
     "test:water-situation": "node tests/water-situation.test.mjs",
     "test:water-cache": "node tests/water-cache.test.mjs",

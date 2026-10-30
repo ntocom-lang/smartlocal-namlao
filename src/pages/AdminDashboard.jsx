@@ -13,7 +13,7 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat, ArrowLeftRight, BookUser, ShieldQuestion,
-  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck, UserPlus, FileSignature, Menu
+  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck, UserPlus, FileSignature, Menu, Building2
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 // ไอคอนที่เป็นได้ทั้งอิโมจิและรูปแนบ — ของกลางชุดเดียวกับศูนย์ข้อมูลดิจิทัล ไม่ทำซ้ำอีกชุด
@@ -40,6 +40,7 @@ import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import DocumentSigningSettings from '../components/admin/DocumentSigningSettings'
 import DocumentTypeAssignments from '../components/admin/DocumentTypeAssignments'
 import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
+import DepartmentManager from '../components/admin/DepartmentManager'
 import PersonnelQuickAssignDialog from '../components/admin/PersonnelQuickAssignDialog'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
 import ResetPasswordModal from '../components/admin/ResetPasswordModal'
@@ -231,8 +232,12 @@ function canManageUser(currentUserRole, currentUserId, targetUser) {
   return false
 }
 
-function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = null }) {
-  const [subTab, setSubTab] = useState('staff') // 'staff' | 'citizen' | 'positions'
+function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = null, initialSubTab = 'staff' }) {
+  const [subTab, setSubTab] = useState(initialSubTab) // 'staff' | 'citizen' | 'departments' | 'positions'
+  // แท็บโครงสร้างหน่วยงาน (กอง / แบบตำแหน่ง) ไม่ได้แสดงรายชื่อคน
+  const isStructureTab = subTab === 'departments' || subTab === 'positions'
+  // false จนโหลดรายชื่อกองรอบแรกเสร็จ — กันกล่อง "ยังไม่มีกอง" กะพริบขึ้นก่อนข้อมูลมา
+  const [structureLoaded, setStructureLoaded] = useState(false)
   const [users, setUsers] = useState([])
   const [depts, setDepts] = useState([])
   const [positions, setPositions] = useState([])
@@ -289,6 +294,7 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
     ]).then(([{ data: departmentRows }, { data: positionRows }]) => {
       const nextDepartments = departmentRows ?? []
       setDepts(nextDepartments)
+      setStructureLoaded(true)
       const activeDepartmentIds = new Set(nextDepartments.map((department) => department.id))
       setPositions((positionRows ?? []).filter((position) => !position.department_id || activeDepartmentIds.has(position.department_id)))
       // เปิดมาเห็นเพียงกองแรกทันที ไม่เทรายชื่อทั้งองค์กรเป็นแถวยาว แต่ยังมีการ์ด "ทุกกอง" ให้เลือก
@@ -337,8 +343,8 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
 
   const fetchUsers = useCallback(async (opts = {}) => {
     if (!['admin', 'superadmin'].includes(currentUserRole) || !tenant?.id) return
-    // แท็บ "แบบตำแหน่ง" ไม่ได้แสดงรายชื่อคน ไม่ต้องยิง RPC ดึง PII มาทิ้งเปล่าๆ
-    if (subTab === 'positions') return
+    // แท็บกอง / แบบตำแหน่งไม่ได้แสดงรายชื่อคน ไม่ต้องยิง RPC ดึง PII มาทิ้งเปล่าๆ
+    if (subTab === 'departments' || subTab === 'positions') return
     const searchTerm = (opts.search ?? '').trim()
     const requestedPage = Math.max(0, opts.page ?? 0)
     const requestedSortKey = USER_SORT_KEYS.has(opts.sortKey ?? sortConfig.key) ? (opts.sortKey ?? sortConfig.key) : 'full_name'
@@ -516,6 +522,19 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
   // การ์ดกลุ่ม "กอง/หน่วยงาน" แทนกลุ่มตำแหน่งเดิม — เข้าใจง่ายกว่า เพราะตรงกับโครงสร้างหน่วยงานจริง
   // ที่แอดมินคุ้นเคยอยู่แล้ว (กองคลัง, กองช่าง, สำนักปลัด ฯลฯ) ไม่ต้องแปลจากหมวดตำแหน่งนามธรรม
   const departmentCountMap = new Map(departmentCounts.map((row) => [row.department_id ?? 'none', Number(row.staff_count)]))
+  // ทางเดียวที่ใช้สลับแท็บย่อย — ปุ่มแท็บด้านบน, ปุ่ม "แก้รายชื่อกอง" และ "สร้างกอง" ใช้ตัวเดียวกัน
+  function switchSubTab(key) {
+    fetchSequence.current += 1
+    setSubTab(key)
+    setSearch('')
+    setFilterRole('')
+    setSortConfig({ key: key === 'staff' ? 'assignment' : 'full_name', direction: 'asc' })
+    setPage(0)
+    setUsers([])
+    setFilterDept(key === 'staff' ? (depts[0]?.id ?? 'none') : '')
+    setLoading(true)
+  }
+
   const deptCards = [
     {
       value: '', label: 'ทุกกอง / หน่วยงาน', shortName: 'ค้นหาทั้งองค์กร',
@@ -612,9 +631,9 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
           </button>
         </div>
 
-        {/* การ์ดสถิติเป็นตัวเลขของ "รายชื่อคน" ล้วน แท็บแบบตำแหน่งไม่มีรายชื่อจึงซ่อนไว้
-            ไม่งั้นจะโชว์ค่าค้างจากแท็บก่อนหน้าซึ่งอ่านแล้วเข้าใจผิดว่าเป็นตัวเลขของตำแหน่ง */}
-        {subTab !== 'positions' && (
+        {/* การ์ดสถิติเป็นตัวเลขของ "รายชื่อคน" ล้วน แท็บกอง / แบบตำแหน่งไม่มีรายชื่อจึงซ่อนไว้
+            ไม่งั้นจะโชว์ค่าค้างจากแท็บก่อนหน้าซึ่งอ่านแล้วเข้าใจผิดว่าเป็นตัวเลขของกองหรือตำแหน่ง */}
+        {!isStructureTab && (
         <div className="relative mt-5 grid grid-cols-3 gap-2 md:max-w-xl md:gap-3">
           {[
             {
@@ -644,21 +663,14 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
         {[
           { key: 'staff', label: 'เจ้าหน้าที่', count: staffCount, Icon: Briefcase },
           { key: 'citizen', label: 'ประชาชน', count: citizenCount, Icon: UserCircle2 },
+          // กอง/หน่วยงาน — ย้ายมาจากเมนู "ตั้งค่าระบบ" 2026-10-30 ให้โครงสร้างองค์กรอยู่ที่เดียว
+          // (สร้างกอง → สร้างตำแหน่ง → แต่งตั้งคน) รายชื่อกองชุดนี้ยังใช้ร่วมกันทั้งระบบเหมือนเดิม
+          { key: 'departments', label: 'กอง/หน่วยงาน', count: null, Icon: Building2 },
           // แบบตำแหน่งของหน่วยงาน — ย้ายมาจากเมนู "ทำเนียบตำแหน่ง" ฝั่งเจ้าหน้าที่ที่ถอดออก 2026-08-31
           // อยู่หน้าเดียวกับการแต่งตั้งเพราะเป็นของคู่กัน (สร้างตำแหน่ง → แต่งตั้งคนเข้าตำแหน่ง)
           { key: 'positions', label: 'แบบตำแหน่ง', count: null, Icon: ClipboardList },
         ].map(({ key, label, count, Icon }) => (
-          <button key={key} onClick={() => {
-            fetchSequence.current += 1
-            setSubTab(key)
-            setSearch('')
-            setFilterRole('')
-            setSortConfig({ key: key === 'staff' ? 'assignment' : 'full_name', direction: 'asc' })
-            setPage(0)
-            setUsers([])
-            setFilterDept(key === 'staff' ? (depts[0]?.id ?? 'none') : '')
-            setLoading(true)
-          }}
+          <button key={key} onClick={() => switchSubTab(key)}
             aria-current={subTab === key ? 'page' : undefined}
             className={`flex min-h-11 min-w-0 items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-bold transition-all md:px-4 ${
               subTab === key
@@ -675,9 +687,15 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
         </div>
       </div>
 
+      {subTab === 'departments' && (
+        <div className="px-4 py-4 md:px-5" data-user-manager-departments>
+          <DepartmentManager tenant={tenant} />
+        </div>
+      )}
+
       {subTab === 'positions' && <PositionCatalogAdmin tenant={tenant} currentUserRole={currentUserRole} />}
 
-      {subTab !== 'positions' && (<>
+      {!isStructureTab && (<>
 
       {/* การ์ดกลุ่ม "กอง/หน่วยงาน" (เฉพาะแท็บเจ้าหน้าที่) */}
       {subTab === 'staff' && (
@@ -688,6 +706,10 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
               <p className="text-[10px] text-slate-400">แสดงทีละกอง จำนวนมาจากข้อมูลทั้งองค์กร ไม่ใช่เฉพาะหน้าปัจจุบัน</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => switchSubTab('departments')} data-open-departments
+                className="flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:border-blue-200 hover:text-blue-700 md:min-h-0">
+                <Building2 size={14} /> แก้รายชื่อกอง
+              </button>
               {filterDept && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-600">กำลังกรอง</span>}
               {selectedDepartment && (
                 <button type="button" onClick={() => setQuickAssignDepartment(selectedDepartment)}
@@ -697,6 +719,17 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
               )}
             </div>
           </div>
+          {structureLoaded && depts.length === 0 && (
+            <div data-no-departments className="mb-2.5 flex flex-col gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-amber-800">
+                <strong>ยังไม่มีกอง/หน่วยงาน</strong> — สร้างกองก่อน แล้วจึงแต่งตั้งเจ้าหน้าที่เข้ากอง
+              </p>
+              <button type="button" onClick={() => switchSubTab('departments')}
+                className="flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-4 text-sm font-bold text-white hover:bg-amber-700">
+                <Building2 size={15} /> สร้างกอง
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
           {deptCards.map(c => {
             const isActive = filterDept === c.value
@@ -5676,6 +5709,13 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
 }
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
+// คีย์หน้าเก่า/ทางเข้าตรงแท็บ → เมนูที่เป็นเจ้าของหน้านั้น (ใช้ไฮไลต์เมนูซ้ายและหัวเรื่อง)
+const PAGE_MENU_ALIASES = {
+  signatories: 'signing',
+  esign: 'signing',
+  departments: 'users',
+}
+
 const PAGE_LABELS = {
   dashboard: 'หน้าหลัก',
   complaints: 'รายการคำร้อง',
@@ -5692,6 +5732,8 @@ const PAGE_LABELS = {
   locations: 'สถานที่เกิดเหตุ',
   'system-settings': 'ตั้งค่าระบบ',
   users: 'จัดการผู้ใช้และการแต่งตั้ง',
+  // กอง/หน่วยงานย้ายจากตั้งค่าระบบมาเป็นแท็บในหน้าจัดการผู้ใช้ 2569-10-30
+  departments: 'จัดการผู้ใช้และการแต่งตั้ง',
   'civil-project': 'โครงการโยธา',
   'civil-report': 'รายงานโยธา',
   'audit-log': 'บันทึกกิจกรรม',
@@ -5735,10 +5777,10 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       description: 'การตั้งค่าหลัก บัญชีผู้ใช้ สิทธิ์ และประวัติการดำเนินการ',
       accent: '#6366f1',
       items: [
-        { key: 'system-settings', label: 'ตั้งค่าระบบ', Icon: Settings, color: '#3b82f6', bg: '#dbeafe', show: canManageSystem, desc: 'ชื่อระบบ ข้อมูลหน่วยงาน ธีม และโมดูลที่เปิดใช้' },
+        { key: 'system-settings', label: 'ตั้งค่าระบบ', Icon: Settings, color: '#3b82f6', bg: '#dbeafe', show: canManageSystem, desc: 'ชื่อระบบ ข้อมูลติดต่อ รูปภาพ โลโก้และ QR Code' },
         // เรียงตามลำดับที่ต้องทำ: คน → ผู้ลงนาม (เสนอชื่อจากการแต่งตั้ง) · เดิมแยก 3 เมนูที่ดูซ้ำกัน
         // (ผู้ลงนามเอกสาร / ลงนามออนไลน์ / จัดการผู้ใช้) เจ้าของระบบให้รวมเหลือ 2 เมนู 2569-10-30
-        { key: 'users', label: 'จัดการผู้ใช้และการแต่งตั้ง', Icon: Shield, color: '#7c3aed', bg: '#ede9fe', show: canManageSystem, desc: 'ใครเข้าระบบได้ · อยู่กองไหน · ตำแหน่งอะไร · เข้าเมนูไหนได้' },
+        { key: 'users', label: 'จัดการผู้ใช้และการแต่งตั้ง', Icon: Shield, color: '#7c3aed', bg: '#ede9fe', show: canManageSystem, desc: 'กอง/หน่วยงาน · แบบตำแหน่ง · ใครอยู่กองไหน · เข้าเมนูไหนได้' },
         { key: 'signing', label: 'การลงนามเอกสาร', Icon: FileSignature, color: '#0f766e', bg: '#ccfbf1', show: canManageSystem, desc: 'ใครลงชื่อในช่องลงนาม · เซ็นกระดาษหรือลงนามในระบบ' },
         { key: 'audit-log', label: 'บันทึกกิจกรรม', Icon: BookOpen, color: '#ef4444', bg: '#fee2e2', show: canManageSystem, desc: 'ประวัติการดำเนินการย้อนหลังสำหรับตรวจสอบ' },
       ],
@@ -6067,6 +6109,8 @@ export default function AdminDashboard() {
   const adminMenuGroups = getAdminMenuGroups(currentUserRole, currentUserId)
     .map(group => ({ ...group, items: group.items.filter(item => item.show) }))
     .filter(group => group.items.length > 0)
+  // คีย์ที่เปิดหน้าเดียวกับเมนูอื่น (คนละแท็บ) — ไฮไลต์เมนูและหัวเรื่องตามเมนูเจ้าของหน้า
+  const menuKey = PAGE_MENU_ALIASES[activePage] ?? activePage
 
   // กดเมนูในลิ้นชักมือถือ = ทำเหมือนเมนูซ้ายบน PC: คู่มือ (ไฟล์ static) เปิดแท็บใหม่ · หน้าแยก (ศูนย์ข้อมูล/
   // ผู้พัฒนา) navigate · นอกนั้นสลับหน้าในแผงควบคุม · แล้วปิดลิ้นชักทุกกรณี
@@ -6147,7 +6191,7 @@ export default function AdminDashboard() {
         ariaLabel="เมนูผู้ดูแลระบบ" homeItem={{ key: 'dashboard', label: 'หน้าหลัก', Icon: LayoutGrid }}
         extraItems={(currentUserRole === 'admin' || currentUserRole === 'superadmin')
           ? [{ key: 'to-staff', label: 'แดชบอร์ดสำหรับเจ้าหน้าที่', Icon: Users, navTo: '/staff' }] : []}
-        groups={adminMenuGroups} activeKey={activePage} onSelect={openFromDrawer} />
+        groups={adminMenuGroups} activeKey={menuKey} onSelect={openFromDrawer} />
 
       {/* Desktop sidebar + content */}
       <div className="md:flex">
@@ -6181,7 +6225,7 @@ export default function AdminDashboard() {
                   </div>
                   <div className="space-y-0.5">
                     {items.map(({ key, label, Icon, color, isExternal, href, isDevLink, navTo, newTab }) => {
-                      const isActive = activePage === key
+                      const isActive = menuKey === key
                       if (isExternal) return (
                         <a key={key} href={href} target="_blank" rel="noopener noreferrer"
                           className="w-full flex min-h-9 items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors hover:bg-white/10"
@@ -6308,7 +6352,7 @@ export default function AdminDashboard() {
           { key: 'data-center', label: 'ข้อมูลดิจิทัล',   Icon: Database,    show: true, navTo: '/data-center/staff' },
           { key: 'dev-journal', label: 'ผู้พัฒนา',         Icon: Terminal,    show: currentUserId === DEV_USER_ID, isDevLink: true },
         ].filter(i => i.show).map(({ key, label, Icon, isDevLink, navTo, newTab }) => {
-          const isActive = activePage === key
+          const isActive = menuKey === key
           return (
             <button key={key} onClick={() => newTab ? window.open(navTo, '_blank') : (isDevLink || navTo) ? navigate(navTo ?? '/dev-journal') : setActivePage(key)}
               className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
@@ -6334,7 +6378,7 @@ export default function AdminDashboard() {
           ข้าม 'dashboard' เพราะหน้านั้นคือตัวแผงควบคุมเอง มีหัว "แผงควบคุมผู้ดูแลระบบ" อยู่แล้ว
           และข้าม 'more' ที่เป็นหน้ารวมเมนูเหมือนกัน */}
       {!['dashboard', 'more'].includes(activePage) && (() => {
-        const meta = adminMenuGroups.flatMap(g => g.items).find(m => m.key === activePage)
+        const meta = adminMenuGroups.flatMap(g => g.items).find(m => m.key === menuKey)
         return meta
           ? <div className="mb-4"><ModuleHeader Icon={meta.Icon} label={meta.label} desc={meta.desc} color={meta.color} eyebrow="ผู้ดูแลระบบ" /></div>
           : null
@@ -6431,8 +6475,10 @@ export default function AdminDashboard() {
       ) : activePage === 'directory' ? (
         // ไม่มีในเมนูแล้ว แต่คงไว้รับ deep link จากปุ่มบนหน้า /directory
         <EmergencyManager tenant={tenant} initialBook="directory" />
-      ) : activePage === 'users' ? (
-        <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId}
+      ) : activePage === 'users' || activePage === 'departments' ? (
+        // key = activePage ให้ทางเข้า 'departments' (ปุ่มจากตั้งค่าระบบ) เปิดตรงแท็บกองเสมอ
+        <UserManager key={activePage} tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId}
+          initialSubTab={activePage === 'departments' ? 'departments' : 'staff'}
           onOpenSigning={() => setActivePage('signing')} />
       ) : activePage === 'locations' ? (
         <LocationManager tenant={tenant} />
@@ -6461,7 +6507,8 @@ export default function AdminDashboard() {
       ) : activePage === 'holidays' ? (
         <HolidaysAdmin tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'system-settings' ? (
-        <SystemSettingsAdmin tenant={tenant} onUpdateTenant={() => window.location.reload()} />
+        <SystemSettingsAdmin tenant={tenant} onUpdateTenant={() => window.location.reload()}
+          onOpenDepartments={() => setActivePage('departments')} />
       ) : activePage === 'audit-log' ? (
         <AuditLogViewer tenant={tenant} />
       ) : activePage === 'fleet-setup' ? (
@@ -6539,7 +6586,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <p className="text-sm font-bold text-gray-800">ตั้งค่ายานพาหนะ</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">กอง งบประมาณ สิทธิ์</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">สิทธิ์ผู้ใช้ คนขับ</p>
                 </div>
               </button>
             )}
@@ -6583,7 +6630,7 @@ export default function AdminDashboard() {
                   { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'เบอร์โทรสำคัญ',    desc: 'สายด่วนฉุกเฉิน และเบอร์โทรสำคัญ', show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
                   { key: 'holidays',    Icon: CalendarDays, color: '#0d9488', bg: '#ccfbf1', label: 'วันหยุดราชการ',  desc: 'ใช้คำนวณ SLA คำร้องเป็นวันทำการ',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'สิทธิ์ผู้ใช้และทะเบียนคนขับ', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้และการแต่งตั้ง', desc: 'ใครเข้าระบบได้ อยู่กองไหน ตำแหน่ง และเมนูที่เข้าได้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'signing',          Icon: FileSignature, color: '#0f766e', bg: '#ccfbf1', label: 'การลงนามเอกสาร', desc: 'ใครลงชื่อในช่องลงนาม และเซ็นกระดาษหรือลงนามในระบบ', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },

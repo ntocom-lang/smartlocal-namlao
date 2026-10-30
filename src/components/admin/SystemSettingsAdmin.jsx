@@ -4,7 +4,6 @@ import { supabase } from '../../lib/supabase'
 import { uploadFile, toReliableImageUrl } from '../../lib/driveStorage'
 import { buildAppIconBlob } from '../../lib/appIcon'
 import { useTenant } from '../../contexts/TenantContext'
-import DepartmentManager from './DepartmentManager'
 
 const inputCls = 'w-full px-4 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all'
 
@@ -57,7 +56,7 @@ function resizeImage(file, maxPx = 600, { type = 'image/png', quality = 0.92 } =
   })
 }
 
-export default function SystemSettingsAdmin() {
+export default function SystemSettingsAdmin({ onOpenDepartments = null }) {
   const { tenant, patchTenant } = useTenant()
   const [pwaShortName, setPwaShortName] = useState(() => tenant?.pwa_short_name || '')
   const [subtitle, setSubtitle] = useState(() => tenant?.system_subtitle || '')
@@ -621,6 +620,20 @@ export default function SystemSettingsAdmin() {
 
       {/* ชื่อหน้าอยู่ที่ ModuleHeader ตัวกลางของแผงควบคุมแล้ว */}
 
+      {/* กอง/หน่วยงานย้ายไปเป็นแท็บในหน้าจัดการผู้ใช้และการแต่งตั้ง 2569-10-30 — ชี้ทางไว้ให้แอดมินที่เคยมาหาที่นี่ */}
+      <div data-departments-moved className="flex flex-col gap-2 rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-slate-600">
+          <Building2 size={15} className="mr-1 inline align-[-2px] text-blue-600" />
+          <strong className="text-slate-800">กอง/หน่วยงาน</strong> ย้ายไปอยู่ที่เมนู “จัดการผู้ใช้และการแต่งตั้ง” แล้ว
+        </p>
+        {onOpenDepartments && (
+          <button type="button" onClick={onOpenDepartments}
+            className="flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-700 md:min-h-9">
+            ไปที่กอง/หน่วยงาน
+          </button>
+        )}
+      </div>
+
       {/* Tab bar */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-2 flex gap-1 overflow-x-auto">
         {SETTINGS_TABS.map(t => (
@@ -643,7 +656,6 @@ const SETTINGS_TABS = [
   { key: 'general',      label: 'ข้อมูลทั่วไป',       icon: Settings,  Component: GeneralInfoTab },
   { key: 'branding',     label: 'แบรนด์และรูปภาพ',    icon: Wallpaper, Component: BrandingTab },
   { key: 'qr',           label: 'โลโก้/QR Code',      icon: QrCode,    Component: QrCodeTab },
-  { key: 'departments',  label: 'กอง/หน่วยงาน',      icon: Building2, Component: DepartmentsTab },
   // ซ่อนไว้ 2569-08-31: ตัวเลขบนแท็บนี้จะเป็น 0 ไปจนถึงราวปี 2573 (เรื่องแรกที่ปิด + 5 ปี)
   // จึงยังไม่มีอะไรให้แอดมินตัดสินใจ กลไกฝั่ง DB ยังอยู่ครบและยังเรียกได้จาก SQL Editor
   // เปิดกลับ = ลบคอมเมนต์บรรทัดล่างนี้ออก + เติม ShieldCheck กลับใน import บรรทัดบนสุด
@@ -793,14 +805,6 @@ function DataRetentionTab() {
           )}
         </>
       )}
-    </div>
-  )
-}
-
-function DepartmentsTab({ tenant }) {
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <DepartmentManager tenant={tenant} />
     </div>
   )
 }
