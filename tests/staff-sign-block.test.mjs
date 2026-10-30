@@ -135,6 +135,8 @@ const FORMS = [
   },
   {
     label: 'ขอยกเลิกเก็บขนขยะ', departmentName: 'สำนักปลัด', headFallback: 'หัวหน้าสำนักปลัด',
+    // ใบนี้เต็มแผ่น: วัดแล้ว 15mm ล้นเป็น 2 แผ่น จึงได้แค่ 13mm (ใบอื่น 18mm) — ดู wasteCollectionCancelPrint.js
+    minMayorGapMm: 12.5,
     build: extra => buildWasteCollectionCancelHtml({
       form: WASTE_FORM, tenant: TENANT, thDate: '14 กันยายน 2569', referenceNo: 'A1B2C3D4',
       signedAt: '2026-09-14T20:37:00', ...extra,
@@ -240,6 +242,17 @@ async function main() {
             Boolean(form.frame))
           assert.equal(signedInBlock, 0,
             `ใบ${form.label} ช่องลงนามเจ้าหน้าที่ต้องเป็นเส้นให้เซ็นด้วยปากกา ไม่ใช่ชื่อพิมพ์แทนลายเซ็น`)
+
+          // ที่ว่างเหนือเส้นนายกต้องพอให้เขียน "อนุมัติ" + ลงนาม (เจ้าของระบบส่งภาพใบจริงที่เซ็นแล้ว 2569-10-30:
+          // ลายเซ็นทับชื่อปลัดเพราะเหลือที่ ~8mm) → ≥ 18mm · ใบช่วยเหลือใช้กรอบ .officer ของตัวเอง ไม่อยู่ในกติกานี้
+          if (!form.frame) {
+            const gapMm = await page.evaluate(() => {
+              const rows = [...document.querySelectorAll('.staff-sign-row')]
+              return (rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().bottom) / 3.7795
+            })
+            const minGap = form.minMayorGapMm ?? 17.5
+            assert.ok(gapMm >= minGap, `ใบ${form.label} ที่ว่างเหนือเส้นนายกเหลือ ${gapMm.toFixed(1)}mm (ต้อง ≥ ${minGap}mm)`)
+          }
 
           await assertSignBlockStandard(page, { minRows: 3, minBelow: 6 })
         } finally {

@@ -85,7 +85,11 @@ export function govStaffSignBlockCss() {
   /* ── ช่องลงนามเจ้าหน้าที่ (govStaffSignBlock.js) ── */
   .staff-sign { margin-top: 8mm; break-inside: avoid; page-break-inside: avoid; }
   .staff-sign-row { display: flex; justify-content: space-between; }
-  .staff-sign-row--last { justify-content: flex-end; margin-top: 8mm; }
+  /* ช่องว่างเหนือเส้นนายก 18mm (เดิม 8mm): นายกเขียนคำว่า "อนุมัติ" + ลงนามเหนือเส้น ใบจริงที่เซ็นแล้ว
+     (เจ้าของระบบส่งภาพมา 2569-10-30) ลายเซ็นทับชื่อปลัดที่อยู่ด้านบน เพราะเหลือที่แค่ ~8mm
+     ⚠️ 18mm คือค่าที่มากสุดที่ทุกใบยังจบ 1 แผ่นในเคสสุดโต่ง (ปลัดรักษาราชการแทน 4 บรรทัด + ที่อยู่ยาวสุด) — วัดแล้ว 20mm
+     ใบน้ำประปาล้นเป็น 2 แผ่น (tests/staff-sign-block.test.mjs) จะเพิ่มอีกต้องบีบส่วนอื่นของใบก่อน ห้ามลดฟอนต์/ขอบกระดาษ */
+  .staff-sign-row--last { justify-content: flex-end; margin-top: 18mm; }
   .staff-sign-cell { width: 48%; }
   /* ⚠️ แถวบนแบ่ง 46/54 ไม่ใช่ 48/48 — คอลัมน์ขวาเป็นของปลัด ซึ่งบางครั้งเป็นผู้รักษาราชการแทนที่ตำแหน่งยาวที่สุด
      ("ผู้อำนวยการกองช่าง รักษาราชการแทน" วัดแล้วล้นขอบขวา 4px เมื่อคอลัมน์ 48%) คอลัมน์ซ้ายตำแหน่งสั้นเหลือที่เหลือเฟือ */
