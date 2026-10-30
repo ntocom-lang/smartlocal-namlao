@@ -1,4 +1,8 @@
 export const SHARED_POSITION_LABEL = 'ใช้ได้ทุกกอง (ส่วนกลาง)'
+export const EXECUTIVE_POSITION_LABEL = 'ผู้บริหาร · ปลัด · สภา'
+export const EXECUTIVE_POSITION_GROUP = 'executive'
+// ตำแหน่งระดับองค์กรที่ไม่ได้อยู่ใต้กองใด — ถ้าไม่มีกองหลักให้รวมไว้กลุ่มบนสุด ไม่ปนกับตำแหน่งทั่วไป
+const EXECUTIVE_CATEGORIES = new Set(['political_exec', 'top_admin', 'council'])
 export const ALL_DEPARTMENTS = ''
 export const UNASSIGNED_DEPARTMENT = 'none'
 
@@ -79,19 +83,30 @@ export async function makePositionShared(client, tenantId, position) {
   return { error, holderCount }
 }
 
+// จัดกลุ่มตาม "กองหลัก" ของตำแหน่ง = กองที่ล็อก หรือกองที่มักสังกัด (department_hint) ที่ตรงกองเดียว
+// แยกจากการล็อก: ตำแหน่งใช้ได้ทุกกองก็อยู่ใต้กองของมันได้ (ดู item.department_id ว่าล็อกหรือไม่)
+// เดิมจัดกลุ่มตามกองที่ล็อกอย่างเดียว ตำแหน่งใช้ได้ทุกกองเลยกองรวมเป็นก้อนเดียว
+// แอดมินที่อยากจัดให้เป็นกองๆ จึงไปล็อกกองแทน (ทุ่งแค้ว 2569-10-30) ซึ่งทำให้คนกองอื่นใช้ตำแหน่งนั้นไม่ได้
+// ใช้ทั้งหน้าแบบตำแหน่งและช่องเลือกตำแหน่งตอนแต่งตั้ง ลำดับ: ผู้บริหาร → กองตาม sort_order → ใช้ได้ทุกกอง
 export function groupPositionsByDepartment(positions, departments) {
+  const homeOf = new Map(positions.map((position) => [position.id, suggestedDepartmentId(position, departments)]))
   const knownDepartmentIds = new Set(departments.map((department) => department.id))
   const groups = departments.map((department) => ({
     key: department.id,
     label: department.is_active === false ? `${department.name} (ปิดใช้งาน)` : department.name,
     department,
-    items: positions.filter((position) => position.department_id === department.id),
+    items: positions.filter((position) => homeOf.get(position.id) === department.id),
   }))
+  const homeless = positions.filter((position) => !knownDepartmentIds.has(homeOf.get(position.id)))
+  const executives = homeless.filter((position) => EXECUTIVE_CATEGORIES.has(position.category))
+  if (executives.length > 0) {
+    groups.unshift({ key: EXECUTIVE_POSITION_GROUP, label: EXECUTIVE_POSITION_LABEL, department: null, items: executives })
+  }
   groups.push({
     key: UNASSIGNED_DEPARTMENT,
     label: SHARED_POSITION_LABEL,
     department: null,
-    items: positions.filter((position) => !position.department_id || !knownDepartmentIds.has(position.department_id)),
+    items: homeless.filter((position) => !EXECUTIVE_CATEGORIES.has(position.category)),
   })
   return groups
 }
