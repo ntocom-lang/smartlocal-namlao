@@ -107,6 +107,7 @@ jobs:
       - name: รันเทสต์ทั้งชุด
         run: |
           tests=(
+            esign-lib
             patient-booking-guidance
             patient-booking-db
             patient-booking-day-odometer

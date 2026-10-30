@@ -161,20 +161,29 @@ await test('บันทึกประกาศ: ทุกช่องส่ง
   assert.ok(!/policy|announcement|approval/i.test(modesDisabled[1]), `ปุ่มบันทึกช่องลงนามผูกกับประกาศ: ${modesDisabled[1]}`)
 })
 
-await test('ลายเซ็นของฉัน: ทุกฟังก์ชัน DB ของหน้านี้มีตัวเรียกฝั่งหน้าจอ · ส่วนลายเซ็นในโปรไฟล์เห็นเฉพาะเจ้าหน้าที่ · เมนูกดชื่อลิงก์มาถูกที่', async () => {
+await test('ลายเซ็นของฉัน: RPC ครบ · หน้าเฉพาะคุมด้วย staffOnly · โปรไฟล์/เมนู/แท็บไปเส้นทางเดียวกัน · ลิงก์เก่ายัง redirect', async () => {
   const wrappers = new Set([...apiSource.matchAll(/callEsign\('(\w+)'/g)].map(match => match[1]))
   for (const name of ['esign_my_signer_overview', 'esign_my_signatures', 'esign_my_signature_add', 'esign_my_signature_set_default',
     'esign_my_signature_delete', 'esign_my_signature_history', 'set_esign_pin', 'esign_suspend_me']) {
     assert.ok(wrappers.has(name), `esignApi ไม่มีตัวเรียก ${name}`)
   }
+  const app = await read('../src/App.jsx')
+  assert.match(app, /<Route\s+path="\/staff\/my-signatures"\s+element=\{\s*<RequireAuth\s+staffOnly>\s*<MySignaturesPage\s*\/>\s*<\/RequireAuth>\s*\}\s*\/>/, 'หน้าเฉพาะต้องอยู่ใต้ RequireAuth staffOnly')
+  const page = await read('../src/pages/MySignaturesPage.jsx')
+  assert.match(page, /<AccountPageLayout\s+active="signatures"/, 'หน้าเฉพาะต้องเลือกแท็บลายเซ็น')
+  assert.match(page, /<MyEsignSection\s*\/>/, 'หน้าเฉพาะต้องแสดงคลังลายเซ็นโดยตรง')
   const profile = await read('../src/pages/ProfilePage.jsx')
-  assert.ok(/STAFF_ROLES\.includes\(contextRole \?\? profile\.role\) && <MyEsignSection \/>/.test(profile), 'ส่วนลายเซ็นต้องแสดงเฉพาะเจ้าหน้าที่')
+  assert.doesNotMatch(profile, /<MyEsignSection\b/, 'หน้าโปรไฟล์ต้องไม่ mount หรืออ่านคลังลายเซ็นของแท็บที่ไม่ได้เปิด')
+  assert.match(profile, /STAFF_ROLES\.includes\(contextRole \?\? profile\.role\) && \(\s*<Link to="\/staff\/my-signatures"[^>]*data-profile-signatures/, 'ทางเข้าจากโปรไฟล์ต้องแสดงเฉพาะเจ้าหน้าที่')
+  assert.match(profile, /if \(hash === '#signature' && !profileLoading && !profileError && STAFF_ROLES\.includes\(contextRole\)\) \{\s*return <Navigate to="\/staff\/my-signatures"/, 'ลิงก์เก่า #signature ต้องรอสิทธิ์พร้อมแล้ว redirect ไปหน้าเฉพาะ')
   const menu = await read('../src/components/layout/StaffAccountMenu.jsx')
-  assert.ok(menu.includes('to="/profile#signature"') && menu.includes('data-account-signature'))
+  assert.match(menu, /canAccessStaffPortal\(role\) && <Link to="\/staff\/my-signatures"[^>]*data-account-signature/, 'เมนูบัญชีต้องไปหน้าเฉพาะและแสดงเฉพาะผู้มีสิทธิ์')
+  const tabs = await read('../src/components/profile/AccountTabs.jsx')
+  assert.match(tabs, /!profileLoading && !profileError && canAccessStaffPortal\(role\)/, 'แท็บลายเซ็นต้องรอสิทธิ์พร้อมก่อนแสดง')
+  assert.match(tabs, /id: 'signatures', label: 'ลายเซ็นของฉัน', to: '\/staff\/my-signatures'/, 'แท็บต้องใช้เส้นทางเดียวกับหน้าเฉพาะ')
   const section = await read('../src/components/profile/MyEsignSection.jsx')
-  assert.ok(/hash === '#signature'/.test(section), 'ส่วนลายเซ็นต้องเปิดเองเมื่อมาด้วย #signature')
   // ห้ามอ้างเลขมาตราของ พ.ร.บ./พ.ร.ฎ. ในข้อความหน้าจอของส่วนนี้ (ต้องตรวจกับตัวบทก่อน — เคยผิดมาแล้ว)
-  for (const source of [section, await read('../src/components/profile/AddSignatureDialog.jsx')]) {
+  for (const source of [page, section, await read('../src/components/profile/AddSignatureDialog.jsx')]) {
     assert.ok(!/มาตรา\s*[๐-๙0-9]/.test(source), 'หน้าลายเซ็นของฉันห้ามอ้างเลขมาตราลอยๆ')
   }
   assert.ok(ESIGN_DUTY_TEXT.length > 40 && !/มาตรา/.test(ESIGN_DUTY_TEXT))
