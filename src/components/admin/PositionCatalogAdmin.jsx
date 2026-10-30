@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Briefcase, Plus, Pencil, Trash2, X, Loader2, Search, AlertCircle, Users, DownloadCloud } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { activeOrgTerms } from '../../lib/orgTerms'
-import { groupPositionsByDepartment } from '../../lib/personnelStructure'
+import { SHARED_POSITION_LABEL, groupPositionsByDepartment, isUnitHeadPositionName } from '../../lib/personnelStructure'
 
 // แบบตำแหน่งของหน่วยงาน (ตาราง positions) — ย้ายมาจากเมนู "ทำเนียบตำแหน่ง" ฝั่งเจ้าหน้าที่ที่ถอดออก
 // 2026-08-31 (ซ้ำซ้อนกับหน้าจัดการผู้ใช้ในสายตาแอดมิน) ตาราง positions ยังจำเป็นเพราะเป็น dependency
@@ -30,7 +30,12 @@ const ROLE_TH = {
   get council() { return activeOrgTerms().councilOrg },
 }
 
-const EMPTY_FORM = { name: '', category: 'operating_staff', role: 'staff', department_id: '', sort_order: 0 }
+// hint_department_id = กองที่กด "เพิ่มในกองนี้" มา: หัวหน้าหน่วยงานล็อกกองนั้น ตำแหน่งอื่นใช้ได้ทุกกอง
+// โดยจำกองนั้นเป็นกองแนะนำ (department_touched = แอดมินเลือกเองแล้ว ระบบเลิกตัดสินแทน)
+const EMPTY_FORM = {
+  name: '', category: 'operating_staff', role: 'staff', department_id: '', sort_order: 0,
+  hint_department_id: '', department_touched: false,
+}
 const inputCls = 'min-h-11 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
 export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
@@ -84,19 +89,30 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
 
   function openCreate(departmentId = '') {
     setSaveError('')
-    setForm({ ...EMPTY_FORM, department_id: departmentId })
+    setForm({ ...EMPTY_FORM, hint_department_id: departmentId })
     setEditing({})
   }
   function openEdit(p) {
     setSaveError('')
     setForm({
+      ...EMPTY_FORM,
       name: p.name,
       category: p.category,
       role: p.role,
       department_id: p.department_id ?? '',
       sort_order: p.sort_order,
+      department_touched: true,
     })
     setEditing(p)
+  }
+  function changeName(name) {
+    setForm(f => ({
+      ...f,
+      name,
+      department_id: f.department_touched || !f.hint_department_id
+        ? f.department_id
+        : (isUnitHeadPositionName(name) ? f.hint_department_id : ''),
+    }))
   }
 
   async function handleSave() {
@@ -118,7 +134,13 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
           p_expected_holder_count: usage[editing.id] ?? 0,
           p_confirm_move: departmentChanged && editingHolderCount > 0,
         })
-      : await supabase.from('positions').insert({ ...payload, municipality_id: tenant.id }).select('id').single()
+      : await supabase.from('positions').insert({
+          ...payload,
+          // ใช้ได้ทุกกองที่สร้างจาก "เพิ่มในกองนี้" จำกองนั้นไว้เป็นกองแนะนำ (ล็อกกองแล้ว DB ใส่ชื่อกองให้เอง)
+          department_hint: payload.department_id ? null
+            : departments.find(department => department.id === form.hint_department_id)?.name ?? null,
+          municipality_id: tenant.id,
+        }).select('id').single()
     setSaving(false)
     if (error) {
       // 23505 = ชน UNIQUE (municipality_id, name) — ข้อความดิบของ Postgres อ่านไม่รู้เรื่องสำหรับแอดมิน
@@ -216,8 +238,8 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
       <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-700 flex gap-2">
         <AlertCircle size={15} className="shrink-0 mt-0.5" />
         <span>
-          เลือกกองครั้งเดียวตอนสร้างตำแหน่ง จากนั้นเมื่อแต่งตั้ง ระบบจะใส่กองให้เอง —
-          ตำแหน่ง “ส่วนกลาง” เท่านั้นที่ผู้ดูแลต้องเลือกกองตอนแต่งตั้ง
+          ตำแหน่งส่วนใหญ่ “ใช้ได้ทุกกอง” เช่น ธุรการ จ้างเหมา นักวิชาการ — กองเป็นของคน เลือกตอนแต่งตั้ง
+          (ระบบเติมกองแนะนำให้) ล็อกกองเฉพาะหัวหน้าหน่วยงานที่มีได้กองเดียว เช่น ผู้อำนวยการกอง หัวหน้าสำนักปลัด
         </span>
       </div>
 
@@ -265,8 +287,8 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
                     <div className="w-full min-w-0 md:w-auto md:flex-1">
                       <p className="text-sm font-semibold leading-relaxed text-gray-800 break-words">{p.name}</p>
                       {!p.department_id && p.department_hint && (
-                        <p className="mt-1 text-xs leading-5 text-amber-600">
-                          ข้อมูลเดิมระบุ “{p.department_hint}” — ยังไม่ผูกกอง กรุณาตรวจสังกัดก่อนแก้ไข
+                        <p className="mt-1 text-xs leading-5 text-gray-400">
+                          กองที่มักสังกัด: {p.department_hint} (ระบบเติมให้ตอนแต่งตั้ง เปลี่ยนได้)
                         </p>
                       )}
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -313,15 +335,15 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3.5">
               <div>
                 <label className="text-xs font-semibold text-gray-500 mb-1 block">ชื่อตำแหน่ง *</label>
-                <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  className={inputCls} placeholder="เช่น ผู้อำนวยการกองสาธารณสุขและสิ่งแวดล้อม" />
+                <input type="text" value={form.name} onChange={e => changeName(e.target.value)}
+                  className={inputCls} placeholder="เช่น เจ้าพนักงานธุรการชำนาญงาน" />
               </div>
               <div>
                 <label htmlFor="position-department" className="text-xs font-semibold text-gray-500 mb-1 block">กอง / หน่วยงาน</label>
                 <select id="position-department" value={form.department_id}
-                  onChange={e => setForm(f => ({ ...f, department_id: e.target.value }))}
+                  onChange={e => setForm(f => ({ ...f, department_id: e.target.value, department_touched: true }))}
                   disabled={saving} className={inputCls}>
-                  <option value="">ส่วนกลาง / ยังไม่ผูกกอง</option>
+                  <option value="">{SHARED_POSITION_LABEL}</option>
                   {departments.map(department => (
                     <option key={department.id} value={department.id} disabled={department.is_active === false}>
                       {department.name}{department.is_active === false ? ' (ปิดใช้งาน)' : ''}
@@ -329,16 +351,23 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
                   ))}
                 </select>
                 <p className="mt-1 text-[11px] leading-5 text-gray-400">
-                  เลือกย้ายกองได้แม้มีผู้ถือตำแหน่ง ระบบจะแสดงผลที่จะเกิดขึ้นก่อนบันทึก
+                  เลือกกอง = ล็อกให้ผู้ถือตำแหน่งทุกคนอยู่กองนั้น ใช้เฉพาะหัวหน้าหน่วยงานที่มีได้กองเดียว
+                  · แก้ได้แม้มีผู้ถือตำแหน่ง ระบบแสดงผลที่จะเกิดขึ้นก่อนบันทึก
                 </p>
+                {form.department_id && form.name.trim() && !isUnitHeadPositionName(form.name) && (
+                  <p className="mt-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] leading-5 text-amber-800">
+                    ชื่อนี้ไม่ใช่หัวหน้าหน่วยงานระดับกอง ถ้าตำแหน่งนี้มีได้หลายกอง (เช่น ธุรการ จ้างเหมา)
+                    ให้เลือก “{SHARED_POSITION_LABEL}” ไม่งั้นคนกองอื่นจะใช้ตำแหน่งนี้ไม่ได้
+                  </p>
+                )}
               </div>
               {departmentChanged && (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-xs leading-5 text-amber-800" role="status">
-                  <p className="font-bold">{targetDepartmentName ? `ย้ายตำแหน่งไป ${targetDepartmentName}` : 'กลับเป็นตำแหน่งส่วนกลาง / ยังไม่ผูกกอง'}</p>
+                  <p className="font-bold">{targetDepartmentName ? `ย้ายตำแหน่งไป ${targetDepartmentName}` : 'เปลี่ยนเป็นตำแหน่งที่ใช้ได้ทุกกอง'}</p>
                   <p className="mt-1">
                     {form.department_id
                       ? `ผู้ถือตำแหน่ง ${editingHolderCount} คนจะใช้กองนี้ โดยบทบาทระบบเดิมคงไว้ คนที่ย้ายกองจะถูกยกเลิกสถานะหัวหน้ากองเดิม`
-                      : `ผู้ถือตำแหน่ง ${editingHolderCount} คนยังคงกองปัจจุบัน ไม่ล้างสังกัดเดิม`}
+                      : `ผู้ถือตำแหน่ง ${editingHolderCount} คนยังคงกองปัจจุบัน ไม่ล้างสังกัดเดิม — กองเดิมจะเป็นกองที่ระบบเติมให้ตอนแต่งตั้ง`}
                   </p>
                 </div>
               )}
@@ -372,7 +401,7 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
                 style={{ backgroundColor: '#1e293b' }}>
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
                 {departmentChanged
-                  ? (form.department_id ? 'ยืนยันย้ายตำแหน่งและบุคลากร' : 'ยืนยันกลับเป็นตำแหน่งส่วนกลาง')
+                  ? (form.department_id ? 'ยืนยันย้ายตำแหน่งและบุคลากร' : 'ยืนยันเปลี่ยนเป็นใช้ได้ทุกกอง')
                   : editing?.id ? 'บันทึกการแก้ไข' : 'บันทึก'}
               </button>
             </div>
