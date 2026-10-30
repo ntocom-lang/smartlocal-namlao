@@ -35,11 +35,11 @@ const mid = '00000000-0000-4000-8000-000000000202'
 const TOKEN = 'A'.repeat(43)
 const LINK_URL = `https://t.me/SmartLocalTestBot?start=${TOKEN}`
 
-async function fixture({ role = 'staff', linked = null, linkStatus = 200, tableMissing = false, webhook = { configured: false, other: true, otherHost: 'old.example' }, viewport = { width: 1366, height: 900 } } = {}) {
+async function fixture({ role = 'staff', linked = null, linkStatus = 200, tableMissing = false, dmColumnMissing = false, webhook = { configured: false, other: true, otherHost: 'old.example' }, viewport = { width: 1366, height: 900 } } = {}) {
   const context = await browser.newContext({ viewport, serviceWorkers: 'block', hasTouch: viewport.width < 600 })
   const user = { id: uid, aud: 'authenticated', role: 'authenticated', email: 'test@example.invalid', user_metadata: { full_name: 'TEST เชื่อม Telegram' }, app_metadata: { provider: 'email', providers: ['email'] }, identities: [] }
   const profile = { id: uid, municipality_id: mid, role, full_name: user.user_metadata.full_name, phone: '0800000000', avatar_url: null }
-  const state = { linked, linkReads: 0, deletes: [], calls: [], linkStatus, webhook }
+  const state = { linked, linkReads: 0, deletes: [], calls: [], mutedCalls: [], linkStatus, webhook }
   await context.routeWebSocket(/.*/, (ws) => ws.close())
 
   const encode = (x) => Buffer.from(JSON.stringify(x)).toString('base64url')
@@ -70,11 +70,21 @@ async function fixture({ role = 'staff', linked = null, linkStatus = 200, tableM
           state.deletes.push(url.searchParams.get('user_id'))
           state.linked = null
           data = null
+        } else if (dmColumnMissing && /dm_muted/.test(url.searchParams.get('select') ?? '')) {
+          // ยังไม่ apply migration ส่วนที่ 2 — PostgREST ตอบ 42703 แล้วหน้าเว็บต้องขอใหม่แบบไม่มีคอลัมน์นี้
+          status = 400
+          data = { code: '42703', message: 'column telegram_user_links.dm_muted does not exist' }
         } else {
           state.linkReads += 1
           assert.doesNotMatch(url.searchParams.get('select') ?? '', /chat_id/, 'หน้าเว็บต้องไม่ขอ chat_id')
-          data = single ? state.linked : (state.linked ? [state.linked] : [])
+          const row = state.linked && (dmColumnMissing ? { tg_display: state.linked.tg_display, linked_at: state.linked.linked_at } : state.linked)
+          data = single ? row : (row ? [row] : [])
         }
+      } else if (url.pathname === '/rest/v1/rpc/set_my_telegram_dm_muted') {
+        const muted = req.postDataJSON().p_muted
+        state.mutedCalls.push(muted)
+        state.linked = { ...state.linked, dm_muted: [...new Set(muted)].sort() }
+        data = state.linked.dm_muted
       } else if (url.pathname === '/functions/v1/telegram-webhook') {
         const body = req.postDataJSON()
         state.calls.push(body)
@@ -197,6 +207,32 @@ try {
     await page.locator('[data-telegram-link-start]').waitFor()
     assert.deepEqual(state.deletes, [`eq.${uid}`])
     assert.match(await page.locator('[data-telegram-link-note]').textContent(), /ยกเลิกการเชื่อมแล้ว/)
+  })
+
+  await test('เชื่อมแล้ว: สวิตช์ 3 หมวด ปิดหมวดแล้วบันทึกขึ้น server', { linked: { tg_display: 'สมชาย ใจดี', linked_at: '2026-10-29T03:00:00Z', dm_muted: [] } }, async ({ page, state }) => {
+    await openSettings(page)
+    const switches = page.locator('[data-telegram-dm-category]')
+    await switches.first().waitFor()
+    assert.deepEqual(await switches.evaluateAll((els) => els.map((el) => [el.dataset.telegramDmCategory, el.getAttribute('aria-checked')])),
+      [['complaint', 'true'], ['event', 'true'], ['esign', 'true']], 'ค่าเริ่มต้นรับครบ')
+    await page.locator('[data-telegram-dm-category="event"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-telegram-dm-category="event"]')?.getAttribute('aria-checked') === 'false')
+    assert.deepEqual(state.mutedCalls, [['event']])
+    await page.locator('[data-telegram-dm-category="esign"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-telegram-dm-category="esign"]')?.getAttribute('aria-checked') === 'false')
+    await page.locator('[data-telegram-dm-category="event"]').click()
+    await page.waitForFunction(() => document.querySelector('[data-telegram-dm-category="event"]')?.getAttribute('aria-checked') === 'true')
+    assert.deepEqual(state.mutedCalls, [['event'], ['event', 'esign'], ['esign']])
+    const box = await page.locator('[data-telegram-dm-category="complaint"]').boundingBox()
+    assert.ok(box.height >= 44, 'สวิตช์สูงพอให้นิ้วกด')
+  })
+
+  await test('ยังไม่ apply migration ส่วนที่ 2: เชื่อมแล้วยังใช้ได้ แค่ไม่มีสวิตช์', { linked: { tg_display: 'สมชาย ใจดี', linked_at: '2026-10-29T03:00:00Z', dm_muted: [] }, dmColumnMissing: true }, async ({ page }) => {
+    await openSettings(page)
+    await page.locator('[data-telegram-linked]').waitFor()
+    assert.match(await page.locator('[data-telegram-linked]').textContent(), /กับ สมชาย ใจดี/)
+    assert.equal(await page.locator('[data-telegram-dm-categories]').count(), 0)
+    assert.equal(await page.locator('[data-telegram-link-settings] [role="alert"]').count(), 0, 'ไม่ขึ้น error')
   })
 
   await test('ประชาชน: ไม่มีส่วน Telegram และไม่อ่านตาราง', { role: 'citizen' }, async ({ page, state }) => {

@@ -1,6 +1,7 @@
 // ลงนามออนไลน์รายเรื่อง — เรียกฟังก์ชันฐานข้อมูล (แยกจาก esign.js เพื่อให้ตัวช่วยล้วนทดสอบใน Node ได้โดยไม่ต้องพึ่ง supabase client)
 import { supabase } from './supabase'
 import { ESIGN_DOC_FLEET } from './esign'
+import { notifyTelegram } from './notifyTelegram'
 
 // เรียกฟังก์ชัน DB ทุกตัวผ่านที่นี่: ส่งครบทุก argument เสมอ (PostgREST เลือกฟังก์ชันจากชุดชื่อ argument ที่ส่งไป
 // ถ้าละตัวที่มี DEFAULT จะเสี่ยง PGRST202 — ดูหมายเหตุใน components/admin/SignatorySettings.jsx)
@@ -80,8 +81,9 @@ export const getTripEsignStamps = tripId => callEsign('esign_trip_stamps', { p_t
 
 // imageId = ภาพจากคลังของฉัน · ไม่แนบภาพ = null · decision: ช่องผู้มีอำนาจส่ง 'approve' ช่องอื่นส่ง null (DB กำหนดเอง)
 // ไม่ส่ง p_png_base64 (ภาพที่วาดตอนลงนามโดยไม่เข้าคลัง) — หน้าจอให้บันทึกเข้าคลังก่อนเสมอ ผู้ใช้เลือกใช้ซ้ำได้ ไม่ต้องเซ็นใหม่ทุกใบ
-export const signFleetTrip = ({ tripId, slot, pin, decision = null, imageId = null }) =>
-  callEsign('esign_sign_fleet_trip_stamped', {
+// ลงสำเร็จ → แจ้งคนถัดไปในสายทาง Telegram ส่วนตัว (ฟังก์ชันหาเองว่าใครถึงคิว ไม่รอผล)
+export const signFleetTrip = async ({ tripId, slot, pin, decision = null, imageId = null }) => {
+  const result = await callEsign('esign_sign_fleet_trip_stamped', {
     p_trip_id: tripId,
     p_slot: slot,
     p_pin: pin,
@@ -89,6 +91,9 @@ export const signFleetTrip = ({ tripId, slot, pin, decision = null, imageId = nu
     p_image_id: imageId,
     p_png_base64: null,
   })
+  if (result?.ok) notifyTelegram('esign_turn_dm', tripId)
+  return result
+}
 
 // slot = null ถอนทุกช่องเพื่อแก้คำขอ (ผู้ดูแลรถ/ผู้ขอตัวจริงเท่านั้น) · ระบุช่อง = ถอนช่องนั้นและช่องหลังในสาย
 export const revokeFleetTripSignatures = ({ tripId, reason, slot = null }) =>

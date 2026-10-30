@@ -2,6 +2,7 @@
 // และจากไฟล์คอมโพเนนต์ (ไฟล์คอมโพเนนต์ต้อง export แต่คอมโพเนนต์ ไม่งั้น fast refresh ของ Vite ใช้ไม่ได้)
 import { supabase } from './supabase'
 import { toAssigneePayload } from './eventAssignment'
+import { notifyTelegram } from './notifyTelegram'
 
 // รายชื่อไม่เปลี่ยนบ่อย โหลดครั้งเดียวต่อ อปท. ต่อการเปิดเว็บ — พลาดแล้วลบออกให้ลองใหม่ได้ครั้งหน้า
 const candidateCache = new Map()
@@ -21,12 +22,15 @@ export function loadAssigneeCandidates(tenantId) {
 
 // บันทึก/เปลี่ยน/ล้างการมอบหมาย — ไม่มีผู้รับมอบหมาย = ล้าง (ไม่ต้องส่งภารกิจ)
 // สิทธิ์ การตรวจข้อมูล และประวัติ ตัดสินที่ RPC set_event_assignments ฝั่งเซิร์ฟเวอร์ทั้งหมด
+// มีผู้รับมอบหมาย → แจ้งทาง Telegram ส่วนตัว (คนละคนส่งครั้งเดียวต่อกิจกรรม ฝั่ง Edge Function กันซ้ำให้)
 export async function saveEventAssignments(eventId, value) {
   const people = toAssigneePayload(value?.assignees)
-  return supabase.rpc('set_event_assignments', {
+  const result = await supabase.rpc('set_event_assignments', {
     p_event_id: eventId,
     p_task: people.length ? value.task : null,
     p_on_behalf_of: people.length ? (String(value.onBehalfOf ?? '').trim() || null) : null,
     p_assignees: people,
   })
+  if (!result.error && people.length) notifyTelegram('event_assigned_dm', eventId)
+  return result
 }

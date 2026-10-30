@@ -4,7 +4,8 @@
 
 export type TelegramSendResult =
   | { ok: true; attempts: number; messageId: unknown }
-  | { ok: false; attempts: number; error: string }
+  // status = HTTP ของ Telegram ครั้งสุดท้าย (0 = ต่อไม่ติด) — 403 ในแชทส่วนตัว = ผู้ใช้บล็อกบอต
+  | { ok: false; attempts: number; error: string; status: number }
 
 export function cleanText(value: unknown, maxLength = 500) {
   return String(value ?? '')
@@ -37,6 +38,7 @@ export async function sendTelegramMessage(
   botToken: string,
 ): Promise<TelegramSendResult> {
   let lastError = 'Telegram request failed'
+  let lastStatus = 0
   let attempts = 0
 
   for (let index = 0; index < 3; index += 1) {
@@ -54,6 +56,7 @@ export async function sendTelegramMessage(
       }
 
       lastError = cleanText(result.description ?? `Telegram HTTP ${response.status}`, 500)
+      lastStatus = response.status
       const retryAfter = Number((result.parameters as Record<string, unknown> | undefined)?.retry_after ?? 0)
       const transient = response.status === 429 || response.status >= 500
       if (!transient || index === 2) break
@@ -61,9 +64,10 @@ export async function sendTelegramMessage(
       await new Promise((resolve) => setTimeout(resolve, delayMs))
     } catch (error) {
       lastError = cleanText(error instanceof Error ? error.message : error, 500)
+      lastStatus = 0
       if (index < 2) await new Promise((resolve) => setTimeout(resolve, 500 * (2 ** index)))
     }
   }
 
-  return { ok: false, attempts, error: lastError }
+  return { ok: false, attempts, error: lastError, status: lastStatus }
 }

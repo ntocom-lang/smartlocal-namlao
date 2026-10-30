@@ -1812,6 +1812,8 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
       .update({ assigned_to: technicianId })
       .eq('id', complaintId)
     if (!error) {
+      // ผู้รับผิดชอบที่ผูก Telegram ส่วนตัวได้ข้อความทันที (ข้อ 3b ส่วนที่ 2)
+      if (technicianId) notifyTelegram('complaint_assigned_dm', complaintId)
       setComplaints((prev) => prev.map((c) =>
         c.id === complaintId ? { ...c, assigned_to: technicianId } : c
       ))

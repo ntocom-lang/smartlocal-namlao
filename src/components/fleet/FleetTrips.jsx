@@ -1055,6 +1055,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     setSaving(false)
     if (error) return alert(tripErrorMessage(error))
     if (isEdit && !saved) return alert(TRIP_NO_ROW_MSG)
+    // ลงนามออนไลน์: แจ้งช่องแรกที่ถึงคิวทาง Telegram ส่วนตัว (ผู้ขอที่สร้างใบเองไม่ได้รับ — ฟังก์ชันข้ามคนกด)
+    if (!isEdit && saved?.esign_slots) notifyTelegram('esign_turn_dm', saved.id)
     if (!isEdit && saved?.status === 'waitlisted') {
       notifyTelegram('fleet_trip_waitlisted', saved.id)
       // บอกเหตุผลจริงที่ DB ตัดสิน ไม่ใช่ข้อความรวมๆ — ผู้ขอจะได้รู้ว่าเปลี่ยนอะไรแล้วได้คิวเร็วขึ้น
