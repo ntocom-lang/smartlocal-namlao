@@ -100,7 +100,7 @@ export default function DepartmentManager({ tenant }) {
     <div className="space-y-4 max-w-2xl">
       <div>
         <h3 className="font-semibold text-gray-700">จัดการกอง/หน่วยงาน</h3>
-        <p className="text-xs text-gray-400 mt-0.5">ใช้ร่วมกันทั้งระบบ — เจ้าหน้าที่, ยานพาหนะ, งบประมาณ ดึงรายชื่อกองจากหน้านี้ที่เดียว</p>
+        <p className="text-xs text-gray-400 mt-0.5">ใช้ร่วมกันทั้งระบบ — การแต่งตั้งเจ้าหน้าที่, คำร้องที่ส่งเข้ากอง, ยานพาหนะ และแถวผู้ลงนามของแต่ละกอง ดึงรายชื่อกองจากหน้านี้ที่เดียว</p>
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
