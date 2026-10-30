@@ -157,7 +157,7 @@ let CATEGORY_EMOJI = {
 
 const NON_CITIZEN_ROLES = ['staff', 'officer', 'technician', 'admin', 'superadmin', 'council', 'viewer']
 const USER_PAGE_SIZE = 50
-const USER_SORT_KEYS = new Set(['created_at', 'full_name', 'email', 'providers', 'role', 'assignment'])
+const USER_SORT_KEYS = new Set(['created_at', 'last_active_at', 'full_name', 'email', 'providers', 'role', 'assignment'])
 const PERSONNEL_CARD_PALETTES = [
   { color: '#2563eb', soft: '#eff6ff', border: '#bfdbfe' },
   { color: '#7c3aed', soft: '#f5f3ff', border: '#ddd6fe' },
@@ -222,7 +222,25 @@ function userSortValue(user, key) {
   if (key === 'role') return ROLE_LABELS[user.role]?.label ?? user.role ?? ''
   if (key === 'assignment') return `${user.department_name ?? ''} ${user.position_name ?? ''}`.trim()
   if (key === 'created_at') return user.created_at ? new Date(user.created_at).getTime() : 0
+  if (key === 'last_active_at') {
+    const lastActive = userLastActiveAt(user)
+    return lastActive ? new Date(lastActive).getTime() : 0
+  }
   return user[key] ?? ''
+}
+
+// last_sign_in_at เปลี่ยนเฉพาะตอนล็อกอิน คนที่จำการเข้าสู่ระบบไว้จะดูเหมือนหายไปนาน ต้องใช้ last_active_at
+// ที่รวมเวลาต่ออายุ session ด้วย (20261030150000) ส่วน RPC รุ่นเก่าที่ยังไม่มีคอลัมน์นี้ให้ใช้เวลาล็อกอินแทน
+function userLastActiveAt(user) {
+  return user.last_active_at ?? user.last_sign_in_at ?? null
+}
+
+function userDateLabel(value) {
+  return value ? new Date(value).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : null
+}
+
+function userTimeLabel(value) {
+  return value ? `${new Date(value).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.` : null
 }
 
 function canManageUser(currentUserRole, currentUserId, targetUser) {
@@ -845,6 +863,10 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
         </div>
       ) : (
         <>
+        {/* PDPA: เจ้าของระบบเปิดให้แอดมินเห็นเฉพาะ "เวลา" ของทุกบัญชี (2026-10-30) ต้องบอกข้อจำกัดและขอบเขตการใช้บนหน้าจอเสมอ */}
+        <p className="mx-3 mb-2 text-xs leading-5 text-gray-500 md:mx-5">
+          ใช้งานล่าสุด = ครั้งล่าสุดที่บัญชีนี้เปิดระบบ คลาดเคลื่อนได้ราว 1 ชั่วโมง และเปิดหน้าเว็บค้างไว้ก็นับ ใช้เพื่อดูแลบัญชีเท่านั้น ไม่ใช่เครื่องวัดการทำงาน
+        </p>
         <div className="space-y-2.5 px-3 pb-4 md:hidden">
           {filtered.map((u, i) => {
             const rs = ROLE_LABELS[u.role] ?? ROLE_LABELS.citizen
@@ -898,6 +920,14 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
                 )}
                 <div className="mt-1">
                   <ProviderChips user={u} compact />
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                  <span>ลงทะเบียน {userDateLabel(u.created_at) ?? '—'}</span>
+                  <span>
+                    ใช้งานล่าสุด {userLastActiveAt(u)
+                      ? `${userDateLabel(userLastActiveAt(u))} ${userTimeLabel(userLastActiveAt(u))}`
+                      : 'ยังไม่เคยเข้าใช้'}
+                  </span>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <button onClick={() => setViewingUserId(u.id)} className="min-h-11 rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-600 transition-colors hover:bg-blue-100 hover:text-blue-700">
@@ -979,15 +1009,18 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
         
         <div className="mx-5 mb-5 hidden overflow-hidden rounded-2xl border border-slate-200 md:block">
           <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left text-gray-600 table-fixed border-collapse">
+          <table className="w-full min-w-[840px] text-sm text-left text-gray-600 table-fixed border-collapse">
             <thead>
               <tr className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-900">
-                <UserSortHeader label="ลำดับ" sortKey="created_at" sortConfig={sortConfig} onSort={handleSort} className="w-[5%] text-[11px]" />
-                <UserSortHeader label="ชื่อ-นามสกุล" sortKey="full_name" sortConfig={sortConfig} onSort={handleSort} className="w-[22%] text-[13px]" />
-                <UserSortHeader label="อีเมล" sortKey="email" sortConfig={sortConfig} onSort={handleSort} className="w-[22%] text-[11px]" />
-                <UserSortHeader label="เชื่อมต่อบัญชี" sortKey="providers" sortConfig={sortConfig} onSort={handleSort} className="w-[13%] text-[11px]" />
-                <UserSortHeader label="บทบาท/สิทธิ์" sortKey="role" sortConfig={sortConfig} onSort={handleSort} className="w-[15%] text-[13px]" />
-                <UserSortHeader label="สังกัดและตำแหน่ง" sortKey="assignment" sortConfig={sortConfig} onSort={handleSort} className="w-[23%] border-r-0 text-[11px]" />
+                {/* ลำดับเป็นแค่เลขแถว การเรียงตามวันสมัครย้ายไปที่คอลัมน์ "ลงทะเบียน" */}
+                <th className="w-[5%] border-r border-white/10 px-2 py-2.5 text-[11px] font-bold text-white">ลำดับ</th>
+                <UserSortHeader label="ชื่อ-นามสกุล" sortKey="full_name" sortConfig={sortConfig} onSort={handleSort} className="w-[18%] text-[13px]" />
+                <UserSortHeader label="อีเมล" sortKey="email" sortConfig={sortConfig} onSort={handleSort} className="w-[16%] text-[11px]" />
+                <UserSortHeader label="เชื่อมต่อบัญชี" sortKey="providers" sortConfig={sortConfig} onSort={handleSort} className="w-[11%] text-[11px]" />
+                <UserSortHeader label="บทบาท/สิทธิ์" sortKey="role" sortConfig={sortConfig} onSort={handleSort} className="w-[11%] text-[11px]" />
+                <UserSortHeader label="สังกัดและตำแหน่ง" sortKey="assignment" sortConfig={sortConfig} onSort={handleSort} className="w-[17%] text-[11px]" />
+                <UserSortHeader label="ลงทะเบียน" sortKey="created_at" sortConfig={sortConfig} onSort={handleSort} className="w-[10%] text-[11px]" />
+                <UserSortHeader label="ใช้งานล่าสุด" sortKey="last_active_at" sortConfig={sortConfig} onSort={handleSort} className="w-[12%] border-r-0 text-[11px]" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -1048,6 +1081,19 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
                         </div>
                       ) : (
                         <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-3 text-xs text-gray-600 border-r border-gray-200">
+                      {userDateLabel(u.created_at) ?? <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-2 py-3 text-xs text-gray-600">
+                      {userLastActiveAt(u) ? (
+                        <>
+                          <span className="block">{userDateLabel(userLastActiveAt(u))}</span>
+                          <span className="block text-[11px] text-gray-400">{userTimeLabel(userLastActiveAt(u))}</span>
+                        </>
+                      ) : (
+                        <span className="italic text-gray-300">ยังไม่เคยเข้าใช้</span>
                       )}
                     </td>
                   </tr>
@@ -1564,11 +1610,17 @@ function AccountInfoTab(props) {
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ช่องทางเชื่อมต่อบัญชี</p>
         <ProviderChips user={user} />
       </div>
-      <div className="flex gap-6 text-xs text-gray-400 border-t border-gray-100 pt-4">
+      <div className="flex flex-wrap gap-x-6 gap-y-3 text-xs text-gray-400 border-t border-gray-100 pt-4">
         <div>
           <span className="block text-gray-300 mb-0.5">ลงทะเบียน</span>
           <span className="text-gray-500">
             {user.created_at ? new Date(user.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+          </span>
+        </div>
+        <div>
+          <span className="block text-gray-300 mb-0.5">ใช้งานล่าสุด</span>
+          <span className="text-gray-500">
+            {userLastActiveAt(user) ? `${userDateLabel(userLastActiveAt(user))} ${userTimeLabel(userLastActiveAt(user))}` : '—'}
           </span>
         </div>
         <div>

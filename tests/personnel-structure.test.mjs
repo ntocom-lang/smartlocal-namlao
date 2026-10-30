@@ -161,6 +161,34 @@ assert.doesNotMatch(
   'จำนวนรายกองห้ามนับจากรายการเฉพาะหน้าที่โหลดมา',
 )
 
+// คอลัมน์ "ลงทะเบียน" + "ใช้งานล่าสุด": ทั้งแท็บเจ้าหน้าที่และแท็บประชาชนใช้คนละ RPC ต้องได้เหมือนกัน
+const activityMigration = (await read('supabase/migrations/20261030150000_user_list_activity_columns.sql')).replace(/\r\n/g, '\n')
+const activityCode = activityMigration.split('\n').map((line) => line.replace(/--.*$/, '')).join('\n')
+for (const name of ['get_users_with_email_sorted', 'get_users_with_email_sorted_filtered']) {
+  const from = activityCode.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`)
+  assert.ok(from > 0, `${name}: ต้องสร้างใหม่ในไฟล์นี้`)
+  const body = activityCode.slice(from, activityCode.indexOf('$function$;', from))
+  assert.match(body, /position_name text, last_active_at timestamp with time zone\)/, `${name}: ต้องคืน last_active_at`)
+  assert.match(body, /v_sort_key NOT IN \('created_at', 'last_active_at',/, `${name}: คีย์เรียงต้องผ่านด่าน`)
+  assert.match(body, /GREATEST\(u\.last_sign_in_at, session_data\.last_session_at\) AS last_active_at/)
+  assert.match(body, /COALESCE\(u\.created_at, p\.created_at\) AS created_at/, `${name}: วันสมัครจริงอยู่ที่ auth.users`)
+  assert.match(body, /r\.position_name, r\.last_active_at\n/, `${name}: SELECT ท้ายคำสั่งต้องคืนคอลัมน์ใหม่`)
+  assert.match(body, /v_sort_key = 'last_active_at' AND v_sort_direction = 'asc' THEN r\.last_active_at END ASC NULLS FIRST/)
+  assert.match(body, /v_sort_key = 'last_active_at' AND v_sort_direction = 'desc' THEN r\.last_active_at END DESC NULLS LAST/)
+  // PDPA: เปิดให้แอดมินเห็นแค่เวลา ห้ามคืนหรือเรียงด้วย ip / อุปกรณ์
+  assert.doesNotMatch(body, /\b(?:user_agent|sess\.ip)\b/, `${name}: ห้ามแตะ ip / user_agent`)
+  assert.match(body, /p_municipality_id IS DISTINCT FROM/, `${name}: ด่าน อปท. ต้องยังอยู่`)
+  // สร้างฟังก์ชันใหม่แล้ว default privileges ของ Supabase จะเปิดให้ anon ถ้าไม่ถอนเอง
+  assert.match(activityCode, new RegExp(`REVOKE ALL ON FUNCTION public\\.${name}\\([^)]*\\) FROM PUBLIC, anon;`), `${name}: ต้องถอนสิทธิ์ anon`)
+  assert.match(activityCode, new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${name}\\([^)]*\\) TO authenticated, service_role;`))
+}
+assert.match(activityCode, /NOTIFY pgrst, 'reload schema'/)
+assert.match(dashboard, /USER_SORT_KEYS = new Set\(\['created_at', 'last_active_at',/)
+assert.match(dashboard, /label="ลงทะเบียน" sortKey="created_at"/)
+assert.match(dashboard, /label="ใช้งานล่าสุด" sortKey="last_active_at"/)
+assert.match(dashboard, /user\.last_active_at \?\? user\.last_sign_in_at/, 'RPC รุ่นเก่าที่ยังไม่มีคอลัมน์ใหม่ต้องใช้เวลาล็อกอินแทน')
+assert.match(dashboard, /ไม่ใช่เครื่องวัดการทำงาน/, 'ต้องบอกขอบเขตการใช้บนหน้าจอ')
+
 const quickAssign = await read('src/components/admin/PersonnelQuickAssignDialog.jsx')
 assert.match(quickAssign, /leastPrivilegeRole\(selectedUser\?\.role\)/)
 assert.match(quickAssign, /search_users_for_staff_assignment/)
