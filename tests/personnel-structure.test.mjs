@@ -87,8 +87,8 @@ assert.equal(suggestedDepartmentId({ department_id: null, department_hint: 'ส�
 assert.equal(suggestedDepartmentId(null, hintDepartments), null)
 assert.equal(groupPositionsByDepartment([], []).at(-1).label, SHARED_POSITION_LABEL)
 
-const sharedMigration = await read('supabase/migrations/20261030100000_position_shared_by_default.sql')
-const sharedBackfill = await read('supabase/migrations/20261030100100_position_shared_backfill.sql')
+const sharedMigration = await read('supabase/migrations/20261030110000_position_shared_by_default.sql')
+const sharedBackfill = await read('supabase/migrations/20261030110100_position_shared_backfill.sql')
 assert.ok(sharedMigration.includes(`'${UNIT_HEAD_POSITION_PATTERN}'`), 'รูปแบบชื่อหัวหน้าหน่วยงานฝั่ง DB ต้องตรงกับฝั่งหน้าจอ')
 assert.doesNotMatch(sharedBackfill, /UPDATE public\.profiles/, 'ปรับตำแหน่งเป็นใช้ได้ทุกกองห้ามย้ายบุคลากร')
 assert.match(sharedBackfill, /Personnel departments changed during backfill/)
@@ -356,7 +356,7 @@ if (process.argv.includes('--pglite')) {
     })
     console.log('position-department-move PostgreSQL: confirmation/stale guards, exact counts, atomic move, unchanged roles, audit and return-to-central passed')
 
-    // ── ตำแหน่งใช้ได้ทุกกองเป็นค่าตั้งต้น (20261030100000 + 20261030100100) ──
+    // ── ตำแหน่งใช้ได้ทุกกองเป็นค่าตั้งต้น (20261030110000 + 20261030110100) ──
     const HEAD = id(205), CLERK = id(206), CLERK_HOLDER = id(107), HEAD_HOLDER = id(108)
     await db.exec(`
       CREATE OR REPLACE FUNCTION public.get_my_role() RETURNS text LANGUAGE sql STABLE AS
