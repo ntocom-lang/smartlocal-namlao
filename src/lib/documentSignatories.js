@@ -235,6 +235,63 @@ export function groupPeopleByDepartment(people, departments, firstDepartmentId =
   return ordered
 }
 
+// ── เสนอผู้ลงนามจากการแต่งตั้ง (เจ้าของระบบอนุมัติ 2569-10-30) ─────────────────────────────
+// หน้าแต่งตั้งกับทะเบียนผู้ลงนามเก็บ "ใครเป็นนายก/ปลัด/หัวหน้ากอง" ซ้ำสองที่ เปลี่ยนตัวคนทีต้องแก้สองรอบ
+// (น้ำเลา 2569-10-30: 7/9 ช่องเป็น "กรอกชื่อเอง" ทั้งที่ 3 ช่องมีบัญชีที่แต่งตั้งตรงตำแหน่งอยู่แล้ว)
+// ระบบจึงเสนอชื่อจากการแต่งตั้งให้ แต่ไม่บันทึกเอง — เปลี่ยนผู้ลงนาม = ชื่อบนเรื่องค้างทุกเรื่องเปลี่ยนตาม
+// และอำนาจลงนามต้องให้ผู้ดูแลยืนยัน (เส้นที่ห้ามทำอัตโนมัติใน docs/ai/DOMAIN.md)
+// กฎตรงไปตรงมา ตรวจย้อนได้ ไม่ใช้ AI:
+//   หัวหน้ากอง = คนในกองนั้นที่ติ๊ก "เป็นหัวหน้ากอง" ในหน้าการแต่งตั้ง
+//   นายก     = ตำแหน่ง (ทำเนียบ) ขึ้นต้นด้วย "นายก" ไม่รวมนายกรัฐมนตรี — รองนายกขึ้นต้นคำอื่นจึงไม่นับ
+//   ปลัด      = ตำแหน่งขึ้นต้นด้วย "ปลัด" — รองปลัด/ผู้ช่วยปลัดขึ้นต้นคำอื่นจึงไม่นับ
+//   เจอคนเดียว = เสนอ · ไม่เจอหรือเจอหลายคน = ไม่เดา
+export const APPOINTED_MAYOR_PATTERN = /^นายก(?!รัฐมนตรี)/
+export const APPOINTED_CLERK_PATTERN = /^ปลัด/
+
+// people จากหน้าทะเบียนมี position.name ส่วนผู้ใช้จาก get_users_with_email มี position_name
+function appointedPositionName(person) {
+  return String(person?.position?.name ?? person?.position_name ?? '').trim()
+}
+
+// ช่องผู้ลงนามที่การแต่งตั้งของคนนี้ชี้ไป — ใช้ทั้งหน้าทะเบียน (เสนอชื่อ) และหน้าแต่งตั้งรายคน (เตือนว่ายังไม่ได้ตั้ง)
+export function appointedSignatorySlots(person) {
+  const position = appointedPositionName(person)
+  const slots = []
+  if (APPOINTED_MAYOR_PATTERN.test(position)) slots.push({ role: 'mayor', departmentId: null })
+  if (APPOINTED_CLERK_PATTERN.test(position)) slots.push({ role: 'clerk', departmentId: null })
+  if (person?.is_dept_head && person?.department_id) slots.push({ role: 'department_head', departmentId: person.department_id })
+  return slots
+}
+
+// คนที่การแต่งตั้งระบุให้เป็นผู้ลงนามช่องนี้ · แถวที่แอดมินสร้างเอง (custom) ไม่มีในการแต่งตั้ง จึงไม่เสนอ
+export function appointmentSuggestion(slot, people) {
+  if (!slot || !SYSTEM_SIGNATORY_ROLES.includes(slot.role)) return { status: 'none' }
+  const matches = (people ?? []).filter(person => appointedSignatorySlots(person).some(appointed =>
+    appointed.role === slot.role && (appointed.departmentId ?? null) === (slot.departmentId ?? null)))
+  if (matches.length === 1) return { status: 'one', person: matches[0] }
+  return matches.length > 1 ? { status: 'many', count: matches.length } : { status: 'none' }
+}
+
+// ตำแหน่งที่พิมพ์มีคำว่า "แทน" (รักษาราชการแทน / ปฏิบัติราชการแทน) = ตั้งใจให้ต่างจากการแต่งตั้ง ไม่ต้องเสนอ
+export function isActingSignatory(row) {
+  return /แทน/.test(row?.title_override ?? '')
+}
+
+// เทียบทะเบียนกับการแต่งตั้งของช่องหนึ่ง
+//   match    = ทะเบียนเลือกบัญชีเดียวกับการแต่งตั้งแล้ว
+//   empty / manual / differs = ควรเสนอชื่อ (ยังไม่ตั้ง / กรอกชื่อเอง / เลือกคนอื่นไว้)
+//   acting   = รักษาราชการแทนอยู่ ไม่เสนอ · ambiguous = การแต่งตั้งมีหลายคน · none = การแต่งตั้งไม่ระบุใคร
+export const SUGGESTABLE_KINDS = ['empty', 'manual', 'differs']
+export function signatorySuggestionState(assignment, suggestion) {
+  if (suggestion?.status === 'many') return { kind: 'ambiguous', count: suggestion.count }
+  if (suggestion?.status !== 'one') return { kind: 'none' }
+  const person = suggestion.person
+  if (assignment?.profile_id && assignment.profile_id === person.id) return { kind: 'match', person }
+  if (!assignment) return { kind: 'empty', person }
+  if (isActingSignatory(assignment)) return { kind: 'acting', person }
+  return { kind: assignment.manual_name?.trim() ? 'manual' : 'differs', person }
+}
+
 // ชื่อที่จะพิมพ์ — ผู้ลงนามที่ไม่มีบัญชีในระบบเก็บชื่อไว้ที่ manual_name
 export function signatoryName(row) {
   return row?.manual_name?.trim() || row?.profile?.full_name?.trim() || ''

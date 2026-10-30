@@ -37,8 +37,7 @@ import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 // lazy: หน้ารายงานโครงการเปิดเฉพาะตอนเลือกเมนู ไม่ต้องโหลดมาพร้อมแผงควบคุม
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
-import SignatorySettings from '../components/admin/SignatorySettings'
-import EsignSettings from '../components/admin/EsignSettings'
+import DocumentSigningSettings from '../components/admin/DocumentSigningSettings'
 import DocumentTypeAssignments from '../components/admin/DocumentTypeAssignments'
 import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
 import PersonnelQuickAssignDialog from '../components/admin/PersonnelQuickAssignDialog'
@@ -69,6 +68,7 @@ import PortalDrawer from '../components/common/PortalDrawer'
 import FleetSetup from '../components/fleet/FleetSetup'
 import { adminUpdateUser } from '../lib/adminUpdateUser'
 import { departmentFilterParams, makePositionShared, suggestedDepartmentId } from '../lib/personnelStructure'
+import { appointedSignatorySlots, isActingSignatory, isSignatoryActiveToday, SIGNATORY_SCOPE } from '../lib/documentSignatories'
 import { logAction } from '../lib/auditLog'
 import { CategoryIcon } from '../lib/categoryIcon'
 import { isOfficialsOnlyCategory, SUBMIT_AUDIENCE_OFFICIALS, SUBMIT_AUDIENCE_PUBLIC } from '../lib/serviceAudience'
@@ -231,7 +231,7 @@ function canManageUser(currentUserRole, currentUserId, targetUser) {
   return false
 }
 
-function UserManager({ tenant, currentUserRole, currentUserId }) {
+function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = null }) {
   const [subTab, setSubTab] = useState('staff') // 'staff' | 'citizen' | 'positions'
   const [users, setUsers] = useState([])
   const [depts, setDepts] = useState([])
@@ -582,6 +582,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         depts={depts}
         positions={positions}
         onPositionsChanged={reloadStructure}
+        onOpenSigning={onOpenSigning}
         saving={saving}
         deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
         deleteBlockedReason={deleteBlockedReason} setDeleteBlockedReason={setDeleteBlockedReason}
@@ -1668,7 +1669,7 @@ function PersonalInfoTab(props) {
   )
 }
 
-function AppointmentTab({ user, tenant, depts, positions, currentUserRole, isEditing, draft, setDraft, onPositionsChanged }) {
+function AppointmentTab({ user, tenant, depts, positions, currentUserRole, isEditing, draft, setDraft, onPositionsChanged, onOpenSigning = null }) {
   const activeDeptId = isEditing ? draft.department_id : (user.department_id ?? '')
   const activePositionId = isEditing ? draft.position_id : (user.position_id ?? '')
   const selectedPosition = positions.find(position => position.id === activePositionId)
@@ -1816,11 +1817,86 @@ function AppointmentTab({ user, tenant, depts, positions, currentUserRole, isEdi
           )}
         </div>
       )}
+      {user.role !== 'citizen' && tenant?.id && (
+        <SigningRoleNote user={user} tenant={tenant} depts={depts} onOpenSigning={onOpenSigning} />
+      )}
       {user.staff_name && (
         <div className="border-t border-gray-100 pt-4">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ผูกกับข้อมูลสาธารณะ (หน้าเว็บ)</p>
           <p className="text-sm text-gray-800">{user.staff_name}{user.staff_title ? ` (${user.staff_title})` : ''}</p>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ชื่อช่องลงนามสำหรับแสดงผล — ห้ามเติม "หัวหน้า" หน้าชื่อกอง (บาง อปท. ไม่มีตำแหน่งหัวหน้าหน่วยตรวจสอบภายใน)
+function signingSlotLabel(slot, depts) {
+  if (slot.role === 'mayor') return 'นายก'
+  if (slot.role === 'clerk') return 'ปลัด'
+  if (slot.role === 'department_head') return depts.find(dept => dept.id === slot.departmentId)?.name ?? 'กองที่ปิดใช้แล้ว'
+  return slot.customLabel || 'ผู้ลงนามที่เพิ่มเอง'
+}
+
+// การแต่งตั้งกับผู้ลงนามเก็บคนละที่ (การลงนามเอกสาร = ทะเบียนที่เอกสารใช้พิมพ์ชื่อจริง) — ส่วนนี้บอกให้เห็นตรงนี้เลยว่า
+// คนนี้พิมพ์ชื่อในช่องลงนามไหน และถ้าการแต่งตั้งชี้ว่าควรเป็นผู้ลงนามแต่ทะเบียนยังเป็นชื่ออื่น ก็เตือนพร้อมปุ่มไปแก้
+// (กฎเดียวกับปุ่ม "ใช้ชื่อนี้" ในหน้าการลงนามเอกสาร — appointedSignatorySlots) ไม่เปลี่ยนผู้ลงนามให้เอง
+function SigningRoleNote({ user, tenant, depts, onOpenSigning }) {
+  const [registry, setRegistry] = useState({ key: null, rows: [], error: '' })
+
+  useEffect(() => {
+    let active = true
+    supabase.from('document_signatories')
+      .select('signatory_role,department_id,custom_label,profile_id,title_override,effective_from,effective_to,is_active')
+      .eq('municipality_id', tenant.id).eq('document_type', SIGNATORY_SCOPE).eq('is_active', true)
+      .then(({ data, error }) => {
+        if (active) setRegistry({ key: tenant.id, rows: data ?? [], error: error ? 'ตรวจทะเบียนผู้ลงนามไม่สำเร็จ' : '' })
+      })
+    return () => { active = false }
+  }, [tenant.id])
+
+  const loading = registry.key !== tenant.id
+  const rows = registry.rows.filter(row => isSignatoryActiveToday(row))
+  const sameSlot = (row, slot) => row.signatory_role === slot.role
+    && (row.department_id ?? null) === (slot.departmentId ?? null)
+    && (row.custom_label ?? null) === (slot.customLabel ?? null)
+  const mySlots = rows.filter(row => row.profile_id === user.id)
+    .map(row => ({ role: row.signatory_role, departmentId: row.department_id, customLabel: row.custom_label }))
+  // ตามการแต่งตั้งควรเป็นผู้ลงนาม แต่ทะเบียนยังไม่ใช่คนนี้ · ช่องที่ตั้งผู้ "แทน" ไว้ถือว่าตั้งใจ ไม่เตือน
+  const missing = appointedSignatorySlots(user).filter(slot => {
+    const row = rows.find(candidate => sameSlot(candidate, slot))
+    return row?.profile_id !== user.id && !isActingSignatory(row)
+  })
+
+  return (
+    <div className="border-t border-gray-100 pt-4" data-signing-role-note>
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">การลงนามเอกสาร</p>
+      {loading ? (
+        <p className="text-xs text-gray-400">กำลังตรวจทะเบียนผู้ลงนาม…</p>
+      ) : registry.error ? (
+        <p className="text-xs text-rose-600" role="alert">{registry.error}</p>
+      ) : (
+        <>
+          <p className="flex items-start gap-1.5 text-sm text-gray-800">
+            <UserRoundCheck size={16} className="mt-0.5 shrink-0 text-teal-600" />
+            {mySlots.length > 0
+              ? <span>ชื่อนี้พิมพ์ในช่องลงนาม: <strong>{mySlots.map(slot => signingSlotLabel(slot, depts)).join(' · ')}</strong></span>
+              : <span className="text-gray-500">ไม่ได้เป็นผู้ลงนามในเอกสาร</span>}
+          </p>
+          {missing.length > 0 && (
+            <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-2 text-xs leading-5 text-amber-800" data-signing-role-missing>
+              ตามการแต่งตั้ง คนนี้เป็นผู้ลงนามช่อง <strong>{missing.map(slot => signingSlotLabel(slot, depts)).join(' · ')}</strong>
+              {' '}แต่ทะเบียนผู้ลงนามยังเป็นชื่ออื่นหรือยังไม่ได้ตั้ง — เอกสารจะพิมพ์ชื่อตามทะเบียน
+              ไปที่การลงนามเอกสารแล้วกด “ใช้ชื่อนี้” ในช่องนั้น
+            </p>
+          )}
+        </>
+      )}
+      {onOpenSigning && (
+        <button type="button" onClick={onOpenSigning}
+          className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-1 text-xs font-bold text-teal-700 hover:underline">
+          <FileSignature size={14} /> ไปที่การลงนามเอกสาร
+        </button>
       )}
     </div>
   )
@@ -5607,8 +5683,10 @@ const PAGE_LABELS = {
   'doc-requests': 'คำขอเอกสาร',
   report: 'รายงานสรุป',
   categories: 'ประเภทคำร้อง',
-  signatories: 'ผู้ลงนามเอกสาร',
-  esign: 'ลงนามออนไลน์',
+  // รวม "ผู้ลงนามเอกสาร" + "ลงนามออนไลน์" เป็นเมนูเดียว 2569-10-30 — คีย์เก่ายังเปิดหน้าเดียวกัน (คนละแท็บ)
+  signing: 'การลงนามเอกสาร',
+  signatories: 'การลงนามเอกสาร',
+  esign: 'การลงนามเอกสาร',
   emergency: 'เบอร์โทรสำคัญ',
   directory: 'เบอร์โทรสำคัญ',
   locations: 'สถานที่เกิดเหตุ',
@@ -5658,9 +5736,10 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       accent: '#6366f1',
       items: [
         { key: 'system-settings', label: 'ตั้งค่าระบบ', Icon: Settings, color: '#3b82f6', bg: '#dbeafe', show: canManageSystem, desc: 'ชื่อระบบ ข้อมูลหน่วยงาน ธีม และโมดูลที่เปิดใช้' },
-        { key: 'signatories', label: 'ผู้ลงนามเอกสาร', Icon: UserRoundCheck, color: '#4338ca', bg: '#e0e7ff', show: canManageSystem, desc: 'ทะเบียนผู้ลงนามกลางที่ใช้ร่วมทุกแบบพิมพ์' },
-        { key: 'esign', label: 'ลงนามออนไลน์', Icon: FileSignature, color: '#0f766e', bg: '#ccfbf1', show: canManageSystem, desc: 'เลือกเรื่องและช่องที่ลงนามในระบบแทนเซ็นกระดาษ' },
-        { key: 'users', label: 'จัดการผู้ใช้และการแต่งตั้ง', Icon: Shield, color: '#7c3aed', bg: '#ede9fe', show: canManageSystem, desc: 'บัญชีผู้ใช้ บทบาท กอง และการแต่งตั้ง' },
+        // เรียงตามลำดับที่ต้องทำ: คน → ผู้ลงนาม (เสนอชื่อจากการแต่งตั้ง) · เดิมแยก 3 เมนูที่ดูซ้ำกัน
+        // (ผู้ลงนามเอกสาร / ลงนามออนไลน์ / จัดการผู้ใช้) เจ้าของระบบให้รวมเหลือ 2 เมนู 2569-10-30
+        { key: 'users', label: 'จัดการผู้ใช้และการแต่งตั้ง', Icon: Shield, color: '#7c3aed', bg: '#ede9fe', show: canManageSystem, desc: 'ใครเข้าระบบได้ · อยู่กองไหน · ตำแหน่งอะไร · เข้าเมนูไหนได้' },
+        { key: 'signing', label: 'การลงนามเอกสาร', Icon: FileSignature, color: '#0f766e', bg: '#ccfbf1', show: canManageSystem, desc: 'ใครลงชื่อในช่องลงนาม · เซ็นกระดาษหรือลงนามในระบบ' },
         { key: 'audit-log', label: 'บันทึกกิจกรรม', Icon: BookOpen, color: '#ef4444', bg: '#fee2e2', show: canManageSystem, desc: 'ประวัติการดำเนินการย้อนหลังสำหรับตรวจสอบ' },
       ],
     },
@@ -6345,20 +6424,23 @@ export default function AdminDashboard() {
       ) : activePage === 'staff' ? (
         LEGACY_STAFF_PAGE_ENABLED
           ? <StaffManager tenant={tenant} />
-          : <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId} />
+          : <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId}
+              onOpenSigning={() => setActivePage('signing')} />
       ) : activePage === 'emergency' ? (
         <EmergencyManager tenant={tenant} initialBook="urgent" />
       ) : activePage === 'directory' ? (
         // ไม่มีในเมนูแล้ว แต่คงไว้รับ deep link จากปุ่มบนหน้า /directory
         <EmergencyManager tenant={tenant} initialBook="directory" />
       ) : activePage === 'users' ? (
-        <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId} />
+        <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId}
+          onOpenSigning={() => setActivePage('signing')} />
       ) : activePage === 'locations' ? (
         <LocationManager tenant={tenant} />
-      ) : activePage === 'signatories' ? (
-        <SignatorySettings tenant={tenant} />
-      ) : activePage === 'esign' ? (
-        <EsignSettings tenant={tenant} onOpenSignatories={() => setActivePage('signatories')} />
+      ) : activePage === 'signing' || activePage === 'signatories' || activePage === 'esign' ? (
+        // key = activePage ให้คีย์เก่า ('esign') เปิดตรงแท็บของมันเสมอ แม้กำลังอยู่หน้านี้อยู่แล้ว
+        <DocumentSigningSettings key={activePage} tenant={tenant}
+          initialTab={activePage === 'esign' ? 'esign' : 'signatories'}
+          onOpenUsers={() => setActivePage('users')} />
       ) : activePage === 'categories' ? (
         // หน้า "ผู้รับผิดชอบแต่ละประเภทคำร้อง" (activePage 'assignments', AssignmentManager component)
         // ถูกลบไปแล้ว — เป็น UI ซ้ำซ้อนกับส่วนตั้งผู้รับผิดชอบ+SLA ที่ฝังอยู่ใน CategoryManager นี้อยู่แล้ว
@@ -6411,7 +6493,21 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <p className="text-sm font-bold text-gray-800">จัดการผู้ใช้และการแต่งตั้ง</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">ตำแหน่ง สังกัด บทบาท และสิทธิ์</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">ใครอยู่กองไหน ตำแหน่ง และสิทธิ์</p>
+                </div>
+              </button>
+            )}
+            {/* วางต่อจากผู้ใช้เพราะเป็นของคู่กัน (แท็บผู้ลงนามเสนอชื่อจากการแต่งตั้ง) — เดิม 2 การ์ด
+                "ผู้ลงนามเอกสาร" + "ลงนามออนไลน์" รวมเป็นใบเดียว 2569-10-30 */}
+            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+              <button onClick={() => setActivePage('signing')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ccfbf1' }}>
+                  <FileSignature size={24} style={{ color: '#0f766e' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">การลงนามเอกสาร</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">ผู้ลงนาม · ลงนามออนไลน์</p>
                 </div>
               </button>
             )}
@@ -6444,30 +6540,6 @@ export default function AdminDashboard() {
                 <div>
                   <p className="text-sm font-bold text-gray-800">ตั้งค่ายานพาหนะ</p>
                   <p className="text-[13px] text-gray-400 mt-0.5">กอง งบประมาณ สิทธิ์</p>
-                </div>
-              </button>
-            )}
-            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
-              <button onClick={() => setActivePage('signatories')}
-                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#e0e7ff' }}>
-                  <UserRoundCheck size={24} style={{ color: '#4338ca' }} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-800">ผู้ลงนามเอกสาร</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">นายก ปลัด หัวหน้ากอง</p>
-                </div>
-              </button>
-            )}
-            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
-              <button onClick={() => setActivePage('esign')}
-                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ccfbf1' }}>
-                  <FileSignature size={24} style={{ color: '#0f766e' }} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-800">ลงนามออนไลน์</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">เลือกเรื่องและช่อง</p>
                 </div>
               </button>
             )}
@@ -6513,9 +6585,8 @@ export default function AdminDashboard() {
                   { key: 'holidays',    Icon: CalendarDays, color: '#0d9488', bg: '#ccfbf1', label: 'วันหยุดราชการ',  desc: 'ใช้คำนวณ SLA คำร้องเป็นวันทำการ',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'signatories',      Icon: UserRoundCheck, color: '#4338ca', bg: '#e0e7ff', label: 'ผู้ลงนามเอกสาร', desc: 'นายก ปลัด หัวหน้ากอง ใช้ร่วมทุกเอกสาร', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'esign',            Icon: FileSignature, color: '#0f766e', bg: '#ccfbf1', label: 'ลงนามออนไลน์', desc: 'เลือกเรื่องและช่องที่ลงนามในระบบแทนเซ็นกระดาษ', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้และการแต่งตั้ง', desc: 'ตำแหน่ง สังกัด บทบาท และสิทธิ์', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้และการแต่งตั้ง', desc: 'ใครเข้าระบบได้ อยู่กองไหน ตำแหน่ง และเมนูที่เข้าได้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'signing',          Icon: FileSignature, color: '#0f766e', bg: '#ccfbf1', label: 'การลงนามเอกสาร', desc: 'ใครลงชื่อในช่องลงนาม และเซ็นกระดาษหรือลงนามในระบบ', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (
                   <tr key={key} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActivePage(key)}>
                     <td className="px-5 py-3.5">

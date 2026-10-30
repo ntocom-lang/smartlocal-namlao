@@ -201,7 +201,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
     const mayorRow = pickSignatory(signRes.data ?? [], { role: 'mayor', at })
     return { partner: partnerRes.data, mayor: mayorRow ? { name: signatoryName(mayorRow), title: signatoryTitle(mayorRow) } : null }
   }
-  // ช่องลงนามท้ายใบคำขอถึงนายก (ผอ.กองสวัสดิการสังคม / ปลัด / นายก) — ชื่อดึงจากทะเบียน "ผู้ลงนามเอกสาร" เหมือนใบคำขอบริการอื่น
+  // ช่องลงนามท้ายใบคำขอถึงนายก (ผอ.กองสวัสดิการสังคม / ปลัด / นายก) — ชื่อดึงจากทะเบียนผู้ลงนาม (เมนูแอดมิน "การลงนามเอกสาร") เหมือนใบคำขอบริการอื่น
   // (loadPrintSignatories ใน StaffDashboard.jsx) โหลดตอนกดพิมพ์ ไม่ใช่ตอนเปิดรายการ · กองที่ถือเรื่อง: กองสวัสดิการสังคม ถ้าไม่มีใช้สำนักปลัด
   // อ่านไม่ได้หรือยังไม่ได้ตั้งผู้ลงนาม = ช่องลงนามเปล่าให้เขียนมือ ไม่ใช่ไม่มีช่อง และไม่ขวางการพิมพ์ (ใบเวียนเซ็นด้วยปากกาทุกใบ)
   async function requestSignContext(at = null) {

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Loader2, Plus, Save, Trash2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, Plus, Save, Sparkles, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import {
-  CUSTOM_ROLE, departmentSlotMeta, earliestEffectiveFrom, effectiveDateForForm, groupPeopleByDepartment,
-  SIGNATORY_BACKDATE_LIMIT_DAYS, SIGNATORY_SCOPE, todayBangkok,
+  appointmentSuggestion, CUSTOM_ROLE, departmentSlotMeta, earliestEffectiveFrom, effectiveDateForForm, groupPeopleByDepartment,
+  SIGNATORY_BACKDATE_LIMIT_DAYS, SIGNATORY_SCOPE, signatorySuggestionState, SUGGESTABLE_KINDS, todayBangkok,
 } from '../../lib/documentSignatories'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
 
@@ -29,8 +29,9 @@ function assignmentState(assignment, optional = false, emptyLabel = 'ไม่�
 async function fetchSignatorySettings(municipalityId) {
   const [departmentResult, peopleResult, assignmentResult] = await Promise.all([
     supabase.from('departments').select('id,code,name,sort_order').eq('municipality_id', municipalityId).eq('is_active', true).order('sort_order'),
+    // is_dept_head + ชื่อตำแหน่ง ใช้เสนอชื่อตามการแต่งตั้ง (appointmentSuggestion)
     supabase.from('profiles')
-      .select('id,full_name,job_title,role,department_id,position:positions(name,category),department:departments(name)')
+      .select('id,full_name,job_title,role,department_id,is_dept_head,position:positions(name,category),department:departments(name)')
       .eq('municipality_id', municipalityId)
       .in('role', ['admin', 'officer', 'staff', 'technician', 'viewer'])
       .order('full_name'),
@@ -45,7 +46,7 @@ async function fetchSignatorySettings(municipalityId) {
 const FIELD_CLASS = 'w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-indigo-400'
 const GRID_CLASS = 'grid gap-2 md:grid-cols-[minmax(160px,1.2fr)_minmax(210px,1.6fr)_minmax(150px,1.2fr)_auto]'
 
-function SignatoryRow({ slot, people, departments, assignment, onSaved, onDiscard = null }) {
+function SignatoryRow({ slot, people, departments, assignment, suggestion, onSaved, onDiscard = null }) {
   const [sourceMode, setSourceMode] = useState(assignment?.manual_name ? 'manual' : 'profile')
   const [profileId, setProfileId] = useState(assignment?.profile_id ?? '')
   const [manualName, setManualName] = useState(assignment?.manual_name ?? '')
@@ -82,6 +83,9 @@ function SignatoryRow({ slot, people, departments, assignment, onSaved, onDiscar
     && selected.department_id !== slot.departmentId
   const status = assignmentState(assignment, slot.optional, slot.emptyLabel)
   const identityReady = sourceMode === 'manual' ? Boolean(manualName.trim() && titleOverride.trim()) : Boolean(profileId)
+  // เสนอชื่อจากการแต่งตั้ง — ระบบเติมให้ในฟอร์มเท่านั้น แอดมินต้องกดบันทึกเอง (ไม่บันทึกแทน)
+  const suggested = signatorySuggestionState(assignment, suggestion)
+  const suggestionPicked = Boolean(suggested.person) && sourceMode === 'profile' && profileId === suggested.person.id
 
   // title_override ใช้ร่วมสองโหมดแต่มีความหมายต่างกัน: โหมด manual คือตำแหน่งบังคับของคนนอกระบบ
   // ส่วนโหมด profile คือการ "ทับ" ตำแหน่งจริงในโปรไฟล์ ถ้าไม่ล้างตอนสลับโหมด ตำแหน่งที่พิมพ์ไว้
@@ -94,6 +98,12 @@ function SignatoryRow({ slot, people, departments, assignment, onSaved, onDiscar
     setTitleOverride(nextMode === (assignment?.manual_name ? 'manual' : 'profile')
       ? (assignment?.title_override ?? '')
       : '')
+  }
+
+  function applySuggestion() {
+    if (!suggested.person) return
+    switchMode('profile')
+    setProfileId(suggested.person.id)
   }
 
   async function save() {
@@ -226,6 +236,36 @@ function SignatoryRow({ slot, people, departments, assignment, onSaved, onDiscar
             ในช่องตำแหน่งที่พิมพ์ได้ (คนละกรณีกัน ตรวจถ้อยคำกับคำสั่งจริงก่อน)
           </p>
         )}
+        {/* ชื่อตามการแต่งตั้ง (เมนูจัดการผู้ใช้และการแต่งตั้ง) — กดแล้วเติมในฟอร์ม ยังไม่บันทึกจนกว่าจะกดบันทึก */}
+        {suggestionPicked ? (
+          <p className="mt-1 flex items-center gap-1 text-[10px] font-semibold leading-tight text-emerald-700" data-signatory-suggestion="picked">
+            <CheckCircle2 size={11} className="shrink-0" />
+            {suggested.kind === 'match' ? 'ตรงกับการแต่งตั้ง' : 'เลือกตามการแต่งตั้งแล้ว — กดบันทึกเพื่อใช้ชื่อนี้'}
+          </p>
+        ) : suggested.person && suggested.kind !== 'acting' ? (
+          <div className="mt-1 rounded-lg border border-indigo-100 bg-indigo-50/70 px-2 py-1.5" data-signatory-suggestion="offer">
+            <p className="flex items-start gap-1 text-[10px] leading-tight text-indigo-800">
+              <Sparkles size={11} className="mt-px shrink-0" />
+              <span>
+                ตามการแต่งตั้ง: <strong>{suggested.person.full_name}</strong> · {personTitle(suggested.person)}
+                {suggested.kind === 'manual' && ' — เลือกจากบัญชีแล้วลงนามออนไลน์ได้'}
+              </span>
+            </p>
+            {/* มือถือสูง 44px ให้กดถูกด้วยนิ้ว · PC เป็นตารางแน่น ใช้ขนาดเล็กเท่าปุ่มอื่นในแถว */}
+            <button type="button" onClick={applySuggestion}
+              className="mt-1 min-h-11 rounded-md bg-white px-3 py-1 text-xs font-bold text-indigo-700 shadow-sm ring-1 ring-indigo-200 hover:bg-indigo-100 md:min-h-0 md:px-2 md:text-[10px]">
+              ใช้ชื่อนี้
+            </button>
+          </div>
+        ) : suggested.kind === 'acting' ? (
+          <p className="mt-1 text-[10px] leading-tight text-gray-400" data-signatory-suggestion="acting">
+            ตั้งเป็นผู้ “แทน” ไว้ ระบบจึงไม่เสนอชื่อตามการแต่งตั้ง
+          </p>
+        ) : suggested.kind === 'ambiguous' ? (
+          <p className="mt-1 text-[10px] leading-tight text-gray-400" data-signatory-suggestion="ambiguous">
+            การแต่งตั้งมี {suggested.count} คนในช่องนี้ ระบบจึงไม่เดา — เลือกเอง
+          </p>
+        ) : null}
       </div>
 
       <div className="min-w-0">
@@ -361,6 +401,11 @@ export default function SignatorySettings({ tenant }) {
   ), [assignments])
 
   const missingCount = slots.filter((slot) => !assignmentState(assignmentMap[slot.key], slot.optional, slot.emptyLabel).ready).length
+  const suggestions = useMemo(
+    () => Object.fromEntries(slots.map((slot) => [slot.key, appointmentSuggestion(slot, people)])),
+    [slots, people])
+  const suggestionCount = slots.filter((slot) =>
+    SUGGESTABLE_KINDS.includes(signatorySuggestionState(assignmentMap[slot.key], suggestions[slot.key]).kind)).length
 
   // ชื่อแถวเป็นตัวระบุแถว ซ้ำกันไม่ได้ (unique index ฝั่ง DB บังคับอีกชั้น แต่ต้องกัน
   // ตั้งแต่หน้าจอ ไม่งั้นผู้ใช้กรอกจนเสร็จแล้วค่อยเจอ error 23505 ที่อ่านไม่ออก)
@@ -377,25 +422,30 @@ export default function SignatorySettings({ tenant }) {
   return (
     <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm space-y-3">
       {/* ชื่อหน้าอยู่ที่ ModuleHeader ตัวกลางของแผงควบคุมแล้ว */}
-      <div className="flex items-start gap-3">
+      {/* มือถือ: ป้ายขึ้นก่อนข้อความ ไม่วางข้างกัน (เคยเบียดข้อความเหลือคอลัมน์แคบ ~130px ที่ 390px) */}
+      <div className="flex flex-col-reverse gap-2 md:flex-row md:items-start md:gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-xs leading-5 text-gray-500">
-            ทะเบียนกลางที่ทุกโมดูลดึงไปใช้ ตั้งที่นี่ที่เดียวแล้วมีผลกับทุกเอกสารที่ต้องลงนาม
-            ปัจจุบันใช้กับ แบบพิมพ์คำร้อง และ ใบขออนุญาตใช้รถส่วนกลาง (แบบ 3)
-            นายก/ปลัด ใช้กับทุกใบ ส่วนแถวของแต่ละกองใช้เฉพาะเอกสารที่ route เข้ากองนั้น
-            (ชื่อแถวมาจากหน้าจัดการกอง/ส่วนราชการ แก้ที่นั่นแล้วเปลี่ยนตามทันที)
-            เลือกจากบัญชีบุคลากรหรือกรอกชื่อและตำแหน่งเองสำหรับผู้ที่ไม่มีบัญชี
-            โดยไม่เกี่ยวกับผู้รับผิดชอบลงพื้นที่หรือสิทธิ์เข้าเมนู
+            ใช้กับทุกเอกสารที่มีช่องลงนาม (คำร้อง คำขอบริการประชาชน ใบขอใช้รถ ใบยืมพัสดุ รถรับ-ส่งผู้ป่วย รายงาน)
+            · นายก/ปลัดใช้กับทุกใบ แถวของแต่ละกองใช้กับเอกสารที่เข้ากองนั้น
           </p>
           <p className="mt-1 text-xs leading-5 text-gray-500">
-            เปลี่ยนผู้ลงนามแล้ว เอกสารที่เสร็จไปก่อนหน้าคงชื่อเดิม เรื่องที่ยังไม่เสร็จใช้ชื่อใหม่
-            ถ้าคำสั่งแต่งตั้งมีผลก่อนวันที่มาตั้งในระบบ เลือก “มีผลตั้งแต่” ย้อนหลังได้ไม่เกิน {SIGNATORY_BACKDATE_LIMIT_DAYS} วัน
+            กรอบ “ตามการแต่งตั้ง” คือชื่อที่ระบบเสนอ — กด “ใช้ชื่อนี้” แล้วกดบันทึกเอง ระบบไม่เปลี่ยนผู้ลงนามแทน
+            · ไม่มีบัญชีในระบบ เลือก “กรอกชื่อเอง” · เปลี่ยนคนแล้ว เอกสารที่เสร็จไปแล้วคงชื่อเดิม
+            · คำสั่งมีผลก่อนวันที่มาตั้ง เลือก “มีผลตั้งแต่” ย้อนหลังได้ไม่เกิน {SIGNATORY_BACKDATE_LIMIT_DAYS} วัน
           </p>
         </div>
         {!loading && (
-          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${missingCount ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-            {missingCount ? `ขาด ${missingCount} ตำแหน่ง` : 'พร้อมใช้งาน'}
-          </span>
+          <div className="flex shrink-0 flex-wrap gap-1 md:flex-col md:items-end">
+            <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${missingCount ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+              {missingCount ? `ขาด ${missingCount} ตำแหน่ง` : 'พร้อมใช้งาน'}
+            </span>
+            {suggestionCount > 0 && (
+              <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700" data-signatory-suggestion-count>
+                เสนอชื่อตามการแต่งตั้ง {suggestionCount} ช่อง
+              </span>
+            )}
+          </div>
         )}
       </div>
 
@@ -414,7 +464,7 @@ export default function SignatorySettings({ tenant }) {
             {slots.map((slot) => (
               <SignatoryRow key={`${slot.key}:${assignmentMap[slot.key]?.id ?? 'empty'}`} slot={slot} people={people}
                 departments={departments}
-                assignment={assignmentMap[slot.key]} onSaved={reload}
+                assignment={assignmentMap[slot.key]} suggestion={suggestions[slot.key]} onSaved={reload}
                 onDiscard={slot.removable && !assignmentMap[slot.key]
                   ? () => setDraftRows((rows) => rows.filter((label) => label !== slot.customLabel))
                   : null} />
