@@ -1,5 +1,7 @@
 -- ล้างข้อมูลเดิมครั้งเดียวทุก อปท.: ตำแหน่งที่ผูกกองแต่ไม่ใช่หัวหน้าหน่วยงาน → ใช้ได้ทุกกอง
--- (เจ้าของระบบอนุมัติ 2569-10-30) ต้องรันหลัง 20261030100000_position_shared_by_default.sql
+-- (เจ้าของระบบอนุมัติ 2569-10-30) ต้องรันหลัง 20261030110000_position_shared_by_default.sql
+-- เดิม merge มาในชื่อ 20261030100100 (#615) ซึ่งชนเลขกับ telegram_dm_functions (#616) จึงเปลี่ยนเลข
+-- apply กับ production แล้ว 2569-10-30 (63 ตำแหน่ง ไม่มีบุคลากรถูกย้าย) — schema_migrations บันทึกไว้ที่เลขใหม่นี้
 --
 -- ผลที่เกิด
 -- - positions.department_id → NULL, department_hint = ชื่อกองเดิม (ระบบยังเติมกองนี้ให้ตอนแต่งตั้ง)
@@ -23,7 +25,7 @@ BEGIN;
 DO $$
 BEGIN
   IF to_regprocedure('public.is_unit_head_position_name(text)') IS NULL THEN
-    RAISE EXCEPTION 'Apply 20261030100000_position_shared_by_default first';
+    RAISE EXCEPTION 'Apply 20261030110000_position_shared_by_default first';
   END IF;
 END;
 $$;

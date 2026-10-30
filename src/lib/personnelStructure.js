@@ -39,7 +39,7 @@ export function normalizePositionName(value) {
 // กองเป็นของคน ไม่ใช่ของตำแหน่ง (เจ้าของระบบอนุมัติ 2569-10-30): ตำแหน่งสายงานอย่างธุรการ/จ้างเหมา
 // มีแทบทุกกอง จึง "ใช้ได้ทุกกอง" เป็นค่าตั้งต้น ล็อกกองเฉพาะหัวหน้าหน่วยงานระดับกองที่มีได้กองเดียว
 // "หัวหน้าฝ่าย..." ไม่นับ เพราะฝ่ายชื่อเดียวกันมีได้หลายกอง
-// ต้องตรงกับ public.is_unit_head_position_name() ใน 20261030100000_position_shared_by_default.sql
+// ต้องตรงกับ public.is_unit_head_position_name() ใน 20261030110000_position_shared_by_default.sql
 export const UNIT_HEAD_POSITION_PATTERN =
   String.raw`^\s*(รอง)?ผู้อำนวยการ\s*(กอง|สำนัก)|^\s*หัวหน้า\s*สำนัก|^\s*หัวหน้า\s*หน่วย\s*ตรวจสอบภายใน`
 const UNIT_HEAD_POSITION_RE = new RegExp(UNIT_HEAD_POSITION_PATTERN)
