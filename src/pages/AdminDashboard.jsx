@@ -68,7 +68,7 @@ import UserProfileBadge from '../components/layout/UserProfileBadge'
 import PortalDrawer from '../components/common/PortalDrawer'
 import FleetSetup from '../components/fleet/FleetSetup'
 import { adminUpdateUser } from '../lib/adminUpdateUser'
-import { departmentFilterParams, makePositionShared, suggestedDepartmentId } from '../lib/personnelStructure'
+import { departmentFilterParams, groupPositionsByDepartment, makePositionShared, suggestedDepartmentId } from '../lib/personnelStructure'
 import { appointedSignatorySlots, isActingSignatory, isSignatoryActiveToday, SIGNATORY_SCOPE } from '../lib/documentSignatories'
 import { logAction } from '../lib/auditLog'
 import { CategoryIcon } from '../lib/categoryIcon'
@@ -1706,6 +1706,9 @@ function AppointmentTab({ user, tenant, depts, positions, currentUserRole, isEdi
   const activeDeptId = isEditing ? draft.department_id : (user.department_id ?? '')
   const activePositionId = isEditing ? draft.position_id : (user.position_id ?? '')
   const selectedPosition = positions.find(position => position.id === activePositionId)
+  // แยกตามกองหลักเป็น <optgroup> — ทำเนียบหลักสิบตำแหน่งไล่หาในลิสต์แบนราบยาก
+  const positionGroups = useMemo(() => groupPositionsByDepartment(positions, depts)
+    .filter(group => group.items.length > 0), [positions, depts])
   const [sharingPosition, setSharingPosition] = useState(false)
   const [shareError, setShareError] = useState('')
 
@@ -1786,10 +1789,19 @@ function AppointmentTab({ user, tenant, depts, positions, currentUserRole, isEdi
           <select value={draft.position_id} onChange={(e) => handlePositionChange(e.target.value)}
             className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white">
             <option value="">— ยังไม่แต่งตั้งตำแหน่ง —</option>
-            {positions.map(position => <option key={position.id} value={position.id}>{position.name}</option>)}
+            {positionGroups.map(group => (
+              <optgroup key={group.key} label={group.label}>
+                {group.items.map(position => (
+                  <option key={position.id} value={position.id}>{position.name}{position.department_id ? ' 🔒' : ''}</option>
+                ))}
+              </optgroup>
+            ))}
           </select>
         ) : (
           <p className="text-sm text-gray-800">{user.position_name || 'ยังไม่แต่งตั้งตำแหน่ง'}</p>
+        )}
+        {isEditing && (
+          <p className="mt-1 text-xs text-gray-400">แยกตามกองหลักของตำแหน่ง · 🔒 = ล็อกกอง (หัวหน้าหน่วยงาน) · ตำแหน่งอื่นใช้ได้ทุกกอง</p>
         )}
         {selectedPosition?.department_hint && (
           <p className="mt-1 text-xs text-gray-400">
