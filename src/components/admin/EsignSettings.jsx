@@ -202,8 +202,9 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
 
       <Step number={2} title="ผู้ลงนามผูกกับบัญชีจริง" done={authorityGate.ok && deptHeadGate.ok}>
         <p className="text-xs leading-5 text-gray-500">
-          ช่องผู้มีอำนาจสั่งใช้และหัวหน้ากองลงนามออนไลน์ได้เมื่อทะเบียนผู้ลงนามเอกสารเลือก “จากบัญชีบุคลากร”
+          ช่องผู้มีอำนาจสั่งใช้และหัวหน้ากองลงนามออนไลน์ได้เมื่อแท็บ “ผู้ลงนามแต่ละช่อง” เลือก “จากบัญชีบุคลากร”
           แถวที่กรอกชื่อพิมพ์เอง (คนที่ไม่มีบัญชี) ลงนามออนไลน์ไม่ได้ ช่องนั้นต้องเซ็นสดต่อ
+          — แท็บนั้นเสนอบัญชีตามการแต่งตั้งให้ กด “ใช้ชื่อนี้” แล้วบันทึก
         </p>
         <ul className="grid gap-2 sm:grid-cols-2">
           {[authorityGate, deptHeadGate].map(item => (
@@ -215,7 +216,7 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
         </ul>
         {onOpenSignatories && (
           <button type="button" className="text-xs font-bold text-indigo-700 underline underline-offset-2" onClick={onOpenSignatories}>
-            ไปหน้า “ผู้ลงนามเอกสาร”
+            ไปแท็บ “ผู้ลงนามแต่ละช่อง”
           </button>
         )}
       </Step>

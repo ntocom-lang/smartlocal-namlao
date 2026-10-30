@@ -1595,7 +1595,7 @@ const checks = [
               continue
             }
             assert.ok(printed.note, `${label}: ไม่มีแถบเตือนว่ายังไม่ได้ตั้งชื่อนายก`)
-            assert.ok(printed.note.text.includes('ผู้ลงนามเอกสาร') && printed.note.text.includes('ไม่ถูกพิมพ์'),
+            assert.ok(printed.note.text.includes('การลงนามเอกสาร') && printed.note.text.includes('ไม่ถูกพิมพ์'),
               `${label}: แถบเตือนไม่ได้บอกว่าต้องไปตั้งที่ไหน — "${printed.note.text}"`)
             assert.equal(printed.note.inSheet, false, `${label}: แถบเตือนอยู่ในแผ่นกระดาษ`)
             assert.equal(printed.note.display, 'none', `${label}: แถบเตือนถูกพิมพ์ลงกระดาษ`)

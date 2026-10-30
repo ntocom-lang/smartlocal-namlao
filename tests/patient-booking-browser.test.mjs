@@ -848,7 +848,7 @@ try{
   assert.deepEqual(letter.kinds,['letter','other'],`ปุ่มหนังสือต้องได้หนังสือนำส่ง → ใบคำขอรับสวัสดิการ: ${letter.kinds}`)
   // หนังสือนำส่ง: นายกเซ็นปากกา ระบบไม่พิมพ์ชื่อเป็นลายมือชื่อ · ฐานทดสอบไม่มีทะเบียนผู้ลงนาม = ต้องเตือนบนจอว่าไปตั้งที่ไหน
   assert.equal(letter.mayorSigned,0,'หนังสือนำส่งต้องไม่มีชื่อพิมพ์แทนลายมือชื่อของนายก')
-  assert.ok(letter.notice?.text.includes('ผู้ลงนามเอกสาร')&&letter.notice.display==='block','ยังไม่ได้ตั้งชื่อนายก หน้าต่างพิมพ์ต้องขึ้นแถบเตือนบนจอ')
+  assert.ok(letter.notice?.text.includes('การลงนามเอกสาร')&&letter.notice.display==='block','ยังไม่ได้ตั้งชื่อนายก หน้าต่างพิมพ์ต้องขึ้นแถบเตือนบนจอ')
   assert.equal(clicks.printRequest,1);assert.equal(clicks.printLetter,1);await letterWin.close()
  }
  await letterNoField().fill('พร 72301/77');await saveLetterOnlyBtn().click();await toast('บันทึกเลขหนังสือนำส่งแล้ว').waitFor()

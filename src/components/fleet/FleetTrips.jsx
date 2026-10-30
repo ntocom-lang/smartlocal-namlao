@@ -1848,7 +1848,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       {deptHeadOptions.length === 0 && authorityOptions.length === 0 && (
         <p className="text-[10px] leading-relaxed text-amber-700">
           ยังไม่ได้ตั้งทะเบียนผู้ลงนาม — ใบที่พิมพ์จะเว้นช่องลงนามไว้ให้เขียนสด
-          (ผู้ดูแลระบบตั้งได้ที่แผงควบคุมแอดมิน &gt; ผู้ลงนามเอกสาร)
+          (ผู้ดูแลระบบตั้งได้ที่แผงควบคุมแอดมิน &gt; การลงนามเอกสาร)
         </p>
       )}
     </div>
