@@ -202,7 +202,7 @@ const STANDALONE_GROUPS = [
       // 'projects' (แผนงาน/โครงการ) กับ 'civil-report' (รายงานโครงการ) ถอดออกจากเมนูชั่วคราว
       // รอออกแบบใหม่ — คอมโพเนนต์ CivilProjectAdmin/CivilProjectReport กับ branch ที่ render
       // มันยังอยู่ครบ เอากลับมาแค่ใส่ 2 บรรทัดนี้คืน
-      { key: 'report',        label: 'รายงาน',           Icon: TrendingUp,    color: '#f59e0b', bg: '#fef3c7', desc: 'สรุปสถิติและรายงานของหน่วยงาน' },
+      { key: 'report',        label: 'รายงานคำร้อง',     Icon: TrendingUp,    color: '#f59e0b', bg: '#fef3c7', desc: 'สรุปสถิติคำร้องตามขอบเขตสิทธิ์และพิมพ์รายงาน' },
       // ไม่อยู่ใน MANAGED_MODULE_KEYS จึงเปิดให้ทุก อปท. เหมือนกันโดยไม่ต้องเขียน enabled_modules
       // แล้วคุมด้วยบทบาทและโมดูลคำร้องอีกชั้น (hasPerformanceAccess ด้านล่าง)
       { key: 'performance',   label: 'ผลการปฏิบัติงาน',   Icon: ClipboardCheck, color: '#7c3aed', bg: '#ede9fe', desc: 'ผลงานรายคนจากคำร้อง รายเดือน ไตรมาส ปี และรอบการประเมิน' },

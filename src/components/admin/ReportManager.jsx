@@ -5,6 +5,9 @@ import { supabase } from '../../lib/supabase'
 import { workingDaysBetween, workingDaysSince } from '../../lib/workingDays'
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from '../../lib/govDocStyle.js'
 import { printableCategoryLabel, categoryNameOf } from '../../lib/complaintCategoryLabels.js'
+import { FISCAL_MONTHS_TH, fiscalYearOf } from '../../lib/fiscalYear'
+import { fiscalPeriodLabel } from '../../lib/fiscalYearParam'
+import { isInFiscalMonth, isInReportPeriod, reportFiscalYears } from '../../lib/complaintReportPeriod.js'
 
 // ระยะเวลาดำเนินการของคำร้อง 1 เรื่อง นับเป็น "วันทำการ" (ตัดเสาร์-อาทิตย์และวันหยุดนักขัตฤกษ์)
 // เดิมนับเป็นวันปฏิทิน ทำให้เรื่องที่คร่อมสงกรานต์/ปีใหม่ดูเหมือนช้ากว่าความเป็นจริงหลายวัน
@@ -55,7 +58,7 @@ function handlePrint({ view, viewLabel, total, completed, rejected, parked = 0, 
       <td style="padding:6px 12px;border:1px solid #ddd;text-align:center">${c.count}</td>
       <td style="padding:6px 12px;border:1px solid #ddd;text-align:center">${total > 0 ? Math.round(c.count / total * 100) : 0}%</td>
     </tr>`).join('')
-  const trendHeader = view === 'month' ? 'สัปดาห์' : view === 'year' ? 'เดือน' : 'ปี'
+  const trendHeader = view === 'month' ? 'สัปดาห์' : view === 'year' ? 'เดือน' : 'ปีงบประมาณ'
   const html = `<!DOCTYPE html><html lang="th"><head>
   <meta charset="UTF-8"><title>รายงาน ${viewLabel} - ${tenant?.name}</title>
   ${GOV_FONT_LINK}
@@ -127,7 +130,9 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
   const [view, setView]   = useState('month')
   const [month, setMonth] = useState(now.getMonth())
   const [year, setYear]   = useState(now.getFullYear())
+  const [fiscalYear, setFiscalYear] = useState(() => fiscalYearOf(now))
   const [cat, setCat]     = useState('all')
+  const period = { view, month, year, fiscalYear }
 
   // ดึงหมวดหมู่ที่ Admin สร้างเอง merge เข้า CATEGORY_LABEL/EMOJI
   const [, setCatVer] = useState(0)
@@ -148,6 +153,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
   const years = [...new Set(complaints.map(c => new Date(c.created_at).getFullYear()))]
   if (!years.includes(now.getFullYear())) years.push(now.getFullYear())
   years.sort((a, b) => b - a)
+  const fiscalYears = reportFiscalYears(complaints, now)
 
   // รายการประเภทสำหรับ dropdown — เอาเฉพาะประเภทที่มีคำร้องจริง เรียงตามจำนวนมาก→น้อย
   const catTotals = {}
@@ -157,12 +163,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
   const catLabel = cat === 'all' ? null : printableCategoryLabel(cat, CATEGORY_LABEL[cat] ?? cat)
   const scoped = cat === 'all' ? complaints : complaints.filter(c => c.category === cat)
 
-  const viewData = scoped.filter(c => {
-    const d = new Date(c.created_at)
-    if (view === 'month') return d.getMonth() === month && d.getFullYear() === year
-    if (view === 'year')  return d.getFullYear() === year
-    return true
-  })
+  const viewData = scoped.filter(c => isInReportPeriod(c.created_at, period))
 
   const total     = viewData.length
   const completed = viewData.filter(c => isClosedStatus(c.status)).length
@@ -172,13 +173,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
   const active    = total - completed - rejected - parked
   const rate      = total > 0 ? Math.round(completed / total * 100) : 0
 
-  const closedData = scoped.filter(c => {
-    if (!isClosedStatus(c.status)) return false
-    const d = new Date(c.updated_at)
-    if (view === 'month') return d.getMonth() === month && d.getFullYear() === year
-    if (view === 'year')  return d.getFullYear() === year
-    return true
-  })
+  const closedData = scoped.filter(c => isClosedStatus(c.status) && isInReportPeriod(c.updated_at, period))
   const avgDays = closedData.length > 0
     ? Math.round(closedData.reduce((s, c) => s + resolutionDays(c), 0) / closedData.length)
     : null
@@ -220,14 +215,14 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
     .sort((a, b) => b.completed - a.completed).slice(0, 5)
 
   const trend = view === 'all'
-    ? years.slice().reverse().map(y => {
-        const cs = scoped.filter(c => new Date(c.created_at).getFullYear() === y)
-        return { label: String(y + 543), submitted: cs.length, completed: cs.filter(c => isClosedStatus(c.status)).length }
+    ? fiscalYears.slice().reverse().map(fy => {
+        const cs = scoped.filter(c => fiscalYearOf(new Date(c.created_at)) === fy)
+        return { label: String(fy), submitted: cs.length, completed: cs.filter(c => isClosedStatus(c.status)).length }
       })
     : view === 'year'
-    ? Array.from({ length: 12 }, (_, i) => {
-        const cs = scoped.filter(c => { const d = new Date(c.created_at); return d.getMonth() === i && d.getFullYear() === year })
-        return { label: MONTHS_TH[i], submitted: cs.length, completed: cs.filter(c => isClosedStatus(c.status)).length }
+    ? FISCAL_MONTHS_TH.map(({ label, month: calendarMonth }) => {
+        const cs = scoped.filter(c => isInFiscalMonth(c.created_at, fiscalYear, calendarMonth))
+        return { label, submitted: cs.length, completed: cs.filter(c => isClosedStatus(c.status)).length }
       })
     : Array.from({ length: 4 }, (_, i) => {
         const weekStart = i * 7 + 1
@@ -256,7 +251,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
     .sort((a, b) => new Date(a.updated_at) - new Date(b.updated_at)).slice(0, 6)
 
   const rateColor = rate >= 70 ? '#10b981' : rate >= 40 ? '#f59e0b' : '#ef4444'
-  const periodLabel = view === 'month' ? `${MONTHS_FULL_TH[month]} ${year + 543}` : view === 'year' ? `ปี ${year + 543}` : 'ทั้งหมด'
+  const periodLabel = view === 'month' ? `${MONTHS_FULL_TH[month]} ${year + 543}` : view === 'year' ? fiscalPeriodLabel(fiscalYear) : 'ทั้งหมด'
   const viewLabel = catLabel ? `${periodLabel} เฉพาะประเภท${catLabel}` : periodLabel
 
   // เลือกประเภทเดียวแล้ว การ์ดสัดส่วน "ประเภท" ไม่มีความหมาย → สลับไปดูสัดส่วนสถานะแทน
@@ -268,7 +263,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
   const breakdown = catLabel
     ? { title: `สถานะคำร้อง${catLabel}`, pie: statusData, list: statusData, colorOf: d => d.color }
     : {
-        title: view === 'all' ? 'ประเภทคำร้องทั้งหมด' : view === 'year' ? `ประเภทคำร้องปี ${year + 543}` : `ประเภทคำร้อง${MONTHS_FULL_TH[month]}นี้`,
+        title: view === 'all' ? 'ประเภทคำร้องทั้งหมด' : view === 'year' ? `ประเภทคำร้องปีงบประมาณ ${fiscalYear}` : `ประเภทคำร้อง${MONTHS_FULL_TH[month]}นี้`,
         pie: catPieData, list: catData, colorOf: (d, i) => CAT_COLORS[i % CAT_COLORS.length],
       }
 
@@ -314,8 +309,9 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
                 <h2 className="mt-0.5 text-xl font-extrabold tracking-tight">รายงานผลการดำเนินงาน</h2>
               </>
             )}
+            {/* ไม่ตัดบรรทัด: ช่วงวันที่ของปีงบต้องเห็นครบบนมือถือ คนจะได้รู้ว่าตัวเลขนับถึงเมื่อไร */}
             {/* ขอบเขตของตัวเลข (เดือน/ปี · ชื่อหน่วยงาน) — หัวเรื่องกลางไม่มีข้อมูลนี้ จึงต้องคงไว้เสมอ */}
-            <p className={hideTitle ? 'truncate text-sm font-bold text-white' : 'mt-1 truncate text-xs text-white/75'}>
+            <p className={hideTitle ? 'text-sm font-bold leading-snug text-white' : 'mt-1 text-xs leading-snug text-white/75'}>
               {viewLabel} · {tenant?.name}
             </p>
           </div>
@@ -334,7 +330,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
 
       <section className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
         <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
-          {[['month', 'รายเดือน'], ['year', 'รายปี'], ['all', 'ทั้งหมด']].map(([value, label]) => (
+          {[['month', 'รายเดือน'], ['year', 'ปีงบประมาณ'], ['all', 'ทั้งหมด']].map(([value, label]) => (
             <button key={value} onClick={() => setView(value)}
               className={`min-h-9 rounded-lg px-2 text-xs font-bold transition-all ${view === value ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>
               {label}
@@ -358,14 +354,21 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
               {MONTHS_TH.map((label, index) => <option key={label} value={index}>{label}</option>)}
             </select>
           )}
-          {view !== 'all' && (
+          {view === 'month' && (
             <select value={year} onChange={event => setYear(+event.target.value)}
               className="min-h-10 min-w-0 flex-1 basis-28 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400">
               {years.map(value => <option key={value} value={value}>พ.ศ. {value + 543}</option>)}
             </select>
           )}
+          {view === 'year' && (
+            <select value={fiscalYear} onChange={event => setFiscalYear(+event.target.value)}
+              aria-label="ปีงบประมาณ"
+              className="min-h-10 min-w-0 flex-1 basis-28 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400">
+              {fiscalYears.map(value => <option key={value} value={value}>ปีงบ {value}</option>)}
+            </select>
+          )}
           {(view !== 'month' || month !== now.getMonth() || year !== now.getFullYear() || cat !== 'all') && (
-            <button onClick={() => { setView('month'); setMonth(now.getMonth()); setYear(now.getFullYear()); setCat('all') }}
+            <button onClick={() => { setView('month'); setMonth(now.getMonth()); setYear(now.getFullYear()); setFiscalYear(fiscalYearOf(now)); setCat('all') }}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 transition hover:bg-red-50 hover:text-red-500"
               aria-label="ล้างตัวกรอง" title="ล้างตัวกรอง กลับไปเดือนปัจจุบัน">
               <X size={15} />
@@ -432,7 +435,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
       <div className="grid gap-4 xl:grid-cols-[1.25fr_.75fr]">
       <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm md:p-5">
         <h3 className="mb-4 text-sm font-extrabold text-slate-800">
-          {view === 'all' ? 'แนวโน้มรายปี' : view === 'year' ? `แนวโน้มรายเดือน ปี ${year + 543}` : `แนวโน้มรายสัปดาห์ ${MONTHS_FULL_TH[month]} ${year + 543}`}
+          {view === 'all' ? 'แนวโน้มรายปีงบประมาณ' : view === 'year' ? `แนวโน้มรายเดือน ปีงบประมาณ ${fiscalYear}` : `แนวโน้มรายสัปดาห์ ${MONTHS_FULL_TH[month]} ${year + 543}`}
         </h3>
         {scoped.length === 0 ? (
           <div className="flex items-center justify-center h-40 text-gray-400 text-sm">ยังไม่มีข้อมูล</div>

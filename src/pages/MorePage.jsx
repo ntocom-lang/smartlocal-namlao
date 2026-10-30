@@ -349,9 +349,7 @@ function NamlaoMorePage() {
       { key: 'manual', label: 'คู่มือการใช้งาน', desc: 'วิธีการยื่นคำร้องสำหรับประชาชน', Icon: BookOpen, color: '#4f46e5', href: '/manual-citizen.html', external: true },
     ] },
     { id: 'transparency', title: 'ความโปร่งใส (LPA / ITA)', Icon: ShieldCheck, color: '#059669', items: [
-      { key: 'reports-hub', label: 'รายงานทั้งหมด', desc: 'สถิติ e-Service · การเข้าชมเว็บไซต์ · ภาพรวมระบบ', Icon: ChartColumn, color: '#059669', to: '/reports' },
-      { key: 'doc-stats', label: 'รายงานการออกเอกสารดิจิทัล', desc: 'สถิติคำขอ อัตราเสร็จสิ้น ระยะเวลาดำเนินการ — LPA ๑.๗', Icon: ShieldCheck, color: '#059669', to: '/doc-stats' },
-      { key: 'complaint-report', label: 'รายงานร้องเรียน/ร้องทุกข์', desc: 'สรุปรายเดือน ภาพสำหรับแชร์ และสถิติรายปีงบประมาณ', Icon: ClipboardList, color: '#059669', to: '/reports/complaints' },
+      { key: 'reports-hub', label: 'รายงาน', desc: 'ร้องเรียน/ร้องทุกข์ · การออกเอกสาร · การเข้าชมเว็บไซต์ · ภาพรวมระบบ', Icon: ChartColumn, color: '#059669', to: '/reports' },
     ] },
     { id: 'contact', title: 'ติดต่อหน่วยงาน', Icon: Phone, color: '#059669', items: [
       { key: 'contact', label: 'ติดต่อเรา', desc: 'เบอร์โทรศัพท์ สถานที่ตั้ง และช่องทางโซเชียลมีเดีย', Icon: Phone, color: '#059669', to: '/contact' },

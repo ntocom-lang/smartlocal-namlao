@@ -223,7 +223,7 @@ async function checkStaff(baseUrl) {
         const report = page.locator('[data-menu-tile="report"]')
         if (await report.count()) {
           await report.click()
-          await page.getByRole('heading', { name: 'รายงาน', exact: true }).first().waitFor({ timeout: 20_000 })
+          await page.getByRole('heading', { name: 'รายงานคำร้อง', exact: true }).first().waitFor({ timeout: 20_000 })
           assert.deepEqual(await activeTabs(), ['เมนู'], `เจ้าหน้าที่ ${width}px: เปิดรายงานแล้วแถบล่างต้องไฮไลต์ "เมนู" (รายงานไม่มีปุ่มของตัวเองบนแถบ)`)
         }
         console.log(`PASS  เจ้าหน้าที่ ${width}px — ${m.groups.length} กลุ่ม ${m.tiles.length} ปุ่ม · ${m.columns} คอลัมน์ · แถบล่าง ${bar.length} ปุ่ม`)

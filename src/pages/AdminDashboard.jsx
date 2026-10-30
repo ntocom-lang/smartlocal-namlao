@@ -5733,7 +5733,7 @@ const PAGE_LABELS = {
   complaints: 'รายการคำร้อง',
   events: 'ปฏิทินกิจกรรม',
   'doc-requests': 'คำขอเอกสาร',
-  report: 'รายงานสรุป',
+  report: 'รายงานคำร้อง',
   categories: 'ประเภทคำร้อง',
   // รวม "ผู้ลงนามเอกสาร" + "ลงนามออนไลน์" เป็นเมนูเดียว 2569-10-30 — คีย์เก่ายังเปิดหน้าเดียวกัน (คนละแท็บ)
   signing: 'การลงนามเอกสาร',
@@ -5763,7 +5763,7 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       description: 'รายงานผลการให้บริการและเสียงสะท้อนจากประชาชน',
       accent: '#22c55e',
       items: [
-        { key: 'report', label: 'รายงาน', Icon: TrendingUp, color: '#059669', bg: '#d1fae5', show: true, desc: 'สรุปสถิติการให้บริการและพิมพ์รายงาน' },
+        { key: 'report', label: 'รายงานคำร้อง', Icon: TrendingUp, color: '#059669', bg: '#d1fae5', show: true, desc: 'สรุปสถิติคำร้องทั้งหน่วยงานและพิมพ์รายงาน' },
         { key: 'satisfaction', label: 'ผลการประเมิน', Icon: Star, color: '#d97706', bg: '#fef3c7', show: true, desc: 'เสียงสะท้อนความพึงพอใจจากประชาชน' },
       ],
     },
@@ -6313,7 +6313,7 @@ export default function AdminDashboard() {
           <button onClick={() => setActivePage('report')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'report' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
             style={activePage === 'report' ? { backgroundColor: '#10b981' } : {}}>
-            <TrendingUp size={15} /> รายงาน
+            <TrendingUp size={15} /> รายงานคำร้อง
           </button>
         )}
         {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
@@ -6334,7 +6334,7 @@ export default function AdminDashboard() {
           <button onClick={() => setActivePage('report')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'report' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
             style={activePage === 'report' ? { backgroundColor: '#10b981' } : {}}>
-            <TrendingUp size={15} /> รายงาน
+            <TrendingUp size={15} /> รายงานคำร้อง
           </button>
         )}
         {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
@@ -6358,7 +6358,7 @@ export default function AdminDashboard() {
         }}>
         {[
           { key: 'dashboard',   label: 'หน้าหลัก',        Icon: Home,        show: true },
-          { key: 'report',      label: 'รายงาน',           Icon: TrendingUp,  show: true },
+          { key: 'report',      label: 'รายงานคำร้อง',     Icon: TrendingUp,  show: true },
           { key: 'satisfaction',label: 'ประเมิน',          Icon: Star,        show: true },
           { key: 'audit-log',   label: 'บันทึกกิจกรรม',   Icon: BookOpen,    show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
           { key: 'data-center', label: 'ข้อมูลดิจิทัล',   Icon: Database,    show: true, navTo: '/data-center/staff' },

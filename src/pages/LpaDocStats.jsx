@@ -131,7 +131,7 @@ export default function LpaDocStats() {
           {/* "กลับ" กับ "พิมพ์" อยู่แถวเดียวกัน — ปุ่มพิมพ์ที่เคยยืนข้างหัวเรื่องบีบ h1 เหลือ 249px
               จากพื้นที่ 358px บนจอ 390px จนหัวเรื่องตกเป็น 3 บรรทัด (ชุดเดียวกับ ComplaintStats) */}
           <div className="print:hidden flex items-center justify-between gap-3 mb-3">
-            <Link to="/more"
+            <Link to="/reports"
               className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600">
               <ArrowLeft size={14} /> กลับ
             </Link>

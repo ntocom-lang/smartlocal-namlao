@@ -2,7 +2,7 @@ import { useState } from 'react'
 import ModuleLink from '../../../common/ModuleLink'
 import { useNavigate } from 'react-router-dom'
 import {
-  Bell, FileSearch, ClipboardList, ShieldCheck,
+  Bell, FileSearch, ClipboardList,
   Phone, AlertTriangle, Cloud, BookUser,
   Store, FileText, CalendarDays, Luggage, Info,
   UserCircle, LogOut, Globe, UserCog, Settings, RefreshCw,
@@ -110,9 +110,7 @@ export default function KledkaewMore() {
       items: [
         { label: 'การแจ้งเตือน', icon: Bell, href: '/notifications', color: '#9333ea', badge: unreadCount },
         // ธีมนี้ไม่มีเมนูข้างจอ PC (CitizenSidebar คืน null) ทางเข้าหน้ารวมรายงานบน PC จึงอยู่ที่นี่
-        { label: 'รายงานทั้งหมด', icon: ChartColumn, href: '/reports', color: '#059669' },
-        { label: 'รายงานการออกเอกสาร', icon: ShieldCheck, href: '/doc-stats', color: '#059669' },
-        { label: 'รายงานร้องเรียน/ร้องทุกข์', icon: ClipboardList, href: '/reports/complaints', color: '#059669' },
+        { label: 'รายงาน', icon: ChartColumn, href: '/reports', color: '#059669' },
         { label: 'ประเมินความพึงพอใจ', icon: Info, href: '/satisfaction', color: '#ca8a04' },
         { label: 'ติดต่อเรา', icon: Phone, href: '/contact', color: '#059669' },
         { label: 'คู่มือการใช้งาน', icon: BookOpen, href: '/manual-citizen.html', external: true, color: '#4f46e5' },

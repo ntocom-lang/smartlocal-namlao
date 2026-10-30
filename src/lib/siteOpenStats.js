@@ -135,7 +135,7 @@ export function periodRowsWithData(series) {
 // ⚠️ เพิ่ม route ใหม่ใน App.jsx แล้วลืมเพิ่มที่นี่ = หน้านั้นไปรวมอยู่ใน 'other' เงียบๆ — เทสต์ตรวจให้ครบทุก route
 //
 // kind: service = ยื่น/จอง/ให้ความเห็น · info = ดูข้อมูล · mine = ของฉัน/ติดตามเรื่อง
-//       transit = หน้านำทาง (หน้าแรก เมนูทั้งหมด รายงานทั้งหมด เข้าสู่ระบบ) คนผ่านทุกคนอยู่แล้ว ไม่ได้บอกว่า "สนใจเรื่องไหน"
+//       transit = หน้านำทาง (หน้าแรก เมนูทั้งหมด รายงาน เข้าสู่ระบบ) คนผ่านทุกคนอยู่แล้ว ไม่ได้บอกว่า "สนใจเรื่องไหน"
 //       จึงแยกไว้ต่างหากจากแท่งอันดับเมนู (ไม่งั้นหน้าแรกชนะทุกครั้งและแท่งอื่นสั้นจนเทียบกันไม่ออก)
 // label ของหน้าที่เป็นเมนูในแถบข้าง (MENU_PAGE_KEYS) ต้องตรงกับชื่อในแถบข้างตัวอักษรต่อตัวอักษร —
 // เจ้าของระบบเปิดดูแล้วต้องเห็นชื่อเดียวกับที่ประชาชนกดจริง เทสต์ตรวจกับ CitizenSidebar.jsx ให้
@@ -146,7 +146,7 @@ export const PAGE_CATALOG = [
   { key: 'reset-password',     path: '/reset-password',      label: 'ตั้งรหัสผ่านใหม่',                      kind: 'transit' },
   { key: 'profile',            path: '/profile',             label: 'โปรไฟล์ของฉัน',                        kind: 'transit' },
   { key: 'profile-notifications', path: '/profile/notifications', label: 'ตั้งค่าการแจ้งเตือน',             kind: 'transit' },
-  { key: 'reports',            path: '/reports',           label: 'รายงานทั้งหมด',                        kind: 'transit' },
+  { key: 'reports',            path: '/reports',           label: 'รายงาน',                               kind: 'transit' },
   { key: 'complaint',          path: '/complaint',           label: 'ร้องเรียน/ร้องทุกข์',                   kind: 'service' },
   { key: 'complaint-legacy',   path: '/complaint-legacy',    label: 'ร้องเรียน (หน้าแบบเดิม)',               kind: 'service' },
   { key: 'request',            path: '/request',             label: 'แบบฟอร์มคำร้อง',                       kind: 'service' },
@@ -187,7 +187,7 @@ export const OTHER_PAGE = { key: 'other', label: 'หน้าอื่นๆ / 
 export const MENU_PAGE_KEYS = [
   'home', 'complaint', 'doc-request', 'waste', 'water-situation', 'events', 'news', 'tourism', 'data-center',
   'my-complaints', 'my-docs', 'notifications',
-  'reports', 'reports-complaints', 'contact', 'emergency', 'directory', 'more',
+  'reports', 'contact', 'emergency', 'directory', 'more',
 ]
 
 // route ที่ไม่เคยถูกนับเป็นหน้าของตัวเอง: เป็นแค่ทางผ่านที่ redirect ต่อ (นับที่ปลายทาง) หรือหน้า 404
@@ -263,7 +263,7 @@ export const MIN_MENU_OPENS = 1
 // ผลของ get_site_page_ranking → ข้อมูลพร้อมแสดง
 //   menus       — เมนูในแถบข้าง (MENU_PAGE_KEYS) ที่ไม่ใช่หน้านำทาง และถูกเปิดอย่างน้อย MIN_MENU_OPENS ครั้ง เรียงมากไปน้อย
 //   hiddenMenus — จำนวนเมนูที่ไม่ขึ้นแท่งเพราะยังไม่มีคนเปิด (หน้ารายงานบอกจำนวนไว้บรรทัดเล็กๆ จะได้ไม่เข้าใจว่าเมนูนั้นหายไปจากระบบ)
-//   nav         — เมนูนำทางในแถบข้าง (หน้าแรก เมนูทั้งหมด รายงานทั้งหมด) แยกไว้ ไม่ปนในแท่งอันดับ
+//   nav         — เมนูนำทางในแถบข้าง (หน้าแรก เมนูทั้งหมด รายงาน) แยกไว้ ไม่ปนในแท่งอันดับ
 //   rows  — ทุกชื่อหน้าที่มีข้อมูล (รวมหน้าที่ไม่ใช่เมนู และ 'other') เรียงมากไปน้อย พร้อมสัดส่วนของยอดรายหน้ารวม — ตารางเต็ม
 //   total — ผลรวมรายหน้า (ฐานของสัดส่วน — ไม่ใช่ยอดสะสมทั้งหมดบนการ์ด เพราะรายหน้าเริ่มนับทีหลัง)
 // ชื่อที่ไม่อยู่ในตาราง (ถูกยิงตรงด้วยชื่อมั่ว หรือหน้าที่ลบออกจากแอปแล้ว) รวมเป็น 'other'

@@ -58,7 +58,7 @@ const PORTALS = [
         return [...title.parentElement.querySelectorAll('section p.text-center')].map(p => ({ label: p.textContent.trim(), badge: null }))
       })
     },
-    pick: { key: 'report', heading: 'รายงาน' },
+    pick: { key: 'report', heading: 'รายงานคำร้อง' },
   },
   {
     name: 'ศูนย์ข้อมูล', file: 'data-center', path: '/data-center/staff', homeKey: 'back-to-staff',

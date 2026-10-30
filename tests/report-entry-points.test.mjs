@@ -19,12 +19,6 @@ const test = async (label, run) => {
   console.log('PASS ' + label)
 }
 
-// ชื่อเมนูที่ชี้ไป /reports/complaints ในไฟล์นั้น (บรรทัดที่มีทั้ง label: และเส้นทาง)
-const menuLabel = source => {
-  const line = source.split('\n').find(text => text.includes(`'${ROUTE}'`) && text.includes('label:'))
-  return line ? /label:\s*'([^']+)'/.exec(line)?.[1] : undefined
-}
-
 const sidebar = await read('src/components/layout/CitizenSidebar.jsx')
 const more = await read('src/pages/MorePage.jsx')
 const kledkaewMore = await read('src/components/citizen/templates/Kledkaew/More.jsx')
@@ -38,7 +32,7 @@ const BOTTOM_NAV_THEMES = ['CivicFriendly', 'CleanMinimal', 'EcoFriendly', 'Kled
 const HUB = '/reports'
 const hubMenuLine = source => source.split('\n').find(text => text.includes(`'${HUB}'`) && text.includes('label:'))
 
-await test('ทางเข้าหน้ารวมรายงาน: ปุ่ม "รายงาน" เมนูล่างทุกธีม + "รายงานทั้งหมด" ในเมนูข้างจอ PC · เมนูทั้งหมด · Kledkaew', async () => {
+await test('ทางเข้าเดียวของรายงานสาธารณะ: ปุ่ม "รายงาน" เมนูล่างทุกธีม + "รายงาน" ในเมนูข้างจอ PC · เมนูทั้งหมด · Kledkaew', async () => {
   const bottom = hubMenuLine(navData)
   assert.ok(bottom && /label:\s*'รายงาน'/.test(bottom), 'ปุ่ม "รายงาน" ของเมนูล่างต้องพาไป /reports')
   assert.ok(!navData.includes(`'${ROUTE}'`), 'เมนูล่างต้องไม่กลับไปชี้หน้าคำร้องตรงๆ (สถิติการเข้าชมจะไม่มีทางเข้าบนมือถือ)')
@@ -46,9 +40,9 @@ await test('ทางเข้าหน้ารวมรายงาน: ปุ
   const lines = [sidebar, more, kledkaewMore].map(hubMenuLine)
   assert.ok(lines.every(Boolean), 'ต้องเจอรายการ /reports ครบทั้ง 3 ไฟล์')
   const labels = lines.map(line => /label:\s*'([^']+)'/.exec(line)[1])
-  assert.deepEqual([...new Set(labels)], ['รายงานทั้งหมด'], `ชื่อไม่ตรงกัน: ${JSON.stringify(labels)}`)
-  // เมนูข้างเทียบแบบ startsWith ถ้าไม่ exact อยู่หน้า /reports/complaints จะติดไฟสองรายการพร้อมกัน
-  assert.ok(lines[0].includes('exact: true'), 'เมนูข้างจอ PC ต้องติดไฟเฉพาะหน้า /reports พอดี')
+  assert.deepEqual([...new Set(labels)], ['รายงาน'], `ชื่อไม่ตรงกัน: ${JSON.stringify(labels)}`)
+  // เมนูข้างเทียบแบบ startsWith — เหลือรายการเดียวแล้ว อยู่หน้าลูกก็ต้องติดไฟต่อ
+  assert.ok(!lines[0].includes('exact: true'), 'เมนูข้างจอ PC ต้องติดไฟต่อในหน้าลูกของรายงาน')
 
   // ไฮไลต์ปุ่ม "รายงาน" ต้องติดต่อในหน้าลูก (/reports/visitors, /reports/complaints) ทุกธีม
   for (const theme of BOTTOM_NAV_THEMES) {
@@ -60,13 +54,30 @@ await test('ทางเข้าหน้ารวมรายงาน: ปุ
   assert.equal(moduleForPath('/reports/visitors'), 'report')
 })
 
-await test('ชื่อเมนูที่ชี้ไปหน้ารายงานเรื่องร้องเรียนตรงกันทุกที่ (เมนูข้างจอ PC · เมนูทั้งหมด · เทมเพลต Kledkaew)', () => {
-  const labels = [menuLabel(sidebar), menuLabel(more), menuLabel(kledkaewMore)]
-  assert.ok(labels.every(Boolean), `ต้องเจอรายการเมนูครบทั้ง 3 ไฟล์: ${JSON.stringify(labels)}`)
-  assert.equal(new Set(labels).size, 1, `ชื่อไม่ตรงกัน: ${JSON.stringify(labels)}`)
-  // สั้นพอให้ไม่ถูกตัดคำในเมนูข้างกว้าง 224px (ฉบับ "รายงานเรื่องร้องเรียน/ร้องทุกข์" วัดจริงได้ 164px > 154px ที่มี)
-  // และใช้คำเดียวกับเมนู "ร้องเรียน/ร้องทุกข์" ที่ประชาชนคุ้นอยู่แล้ว
-  assert.equal(labels[0], 'รายงานร้องเรียน/ร้องทุกข์')
+await test('เมนูไม่กลับไปวางรายงานย่อยข้างหน้ารวม (เมนูข้างจอ PC · เมนูทั้งหมด · Kledkaew) — สารบัญกับบทเดียวกันอยู่ชั้นเดียวกันทำคนงง', () => {
+  for (const source of [sidebar, more, kledkaewMore, navData]) {
+    assert.ok(!source.includes(`'${ROUTE}'`), `เมนูต้องไม่ชี้ ${ROUTE} ตรงๆ`)
+    assert.ok(!source.includes("'/doc-stats'"), 'เมนูต้องไม่ชี้ /doc-stats ตรงๆ')
+    assert.ok(!source.includes("'/reports/visitors'"), 'เมนูต้องไม่ชี้ /reports/visitors ตรงๆ')
+  }
+})
+
+await test('เมนูรายงานฝั่งเจ้าหน้าที่/แอดมินตั้งชื่อตามของข้างใน: "รายงานคำร้อง" ไม่ใช่ "รายงาน" เฉยๆ', async () => {
+  const admin = await read('src/pages/AdminDashboard.jsx')
+  for (const [name, source] of [['เจ้าหน้าที่', staffDashboard], ['แอดมิน', admin]]) {
+    const line = source.split('\n').find(text => /key: 'report',\s*label:/.test(text))
+    assert.ok(line, `${name}: ไม่เจอเมนู report`)
+    assert.equal(/label:\s*'([^']+)'/.exec(line)[1], 'รายงานคำร้อง', name)
+  }
+})
+
+await test('หน้า /reports ซ่อนการ์ดของโมดูลที่ อปท. ปิด: ทุกการ์ดผูกกับโมดูลตามเส้นทาง และแสดงผ่านตัวกรอง', () => {
+  assert.equal(moduleForPath(ROUTE), 'complaints')
+  assert.equal(moduleForPath('/doc-stats'), 'report')
+  assert.equal(moduleForPath('/data-center/public'), 'data-center')
+  assert.equal(moduleForPath('/reports/visitors'), 'report')
+  assert.ok(hub.includes('REPORTS.filter(r => isModuleEnabled(moduleForPath(r.href)))'))
+  assert.ok(hub.includes('{reports.map(r => ('), 'ต้องวาดจากรายการที่กรองแล้ว ไม่ใช่ REPORTS ตรงๆ')
 })
 
 await test('การ์ดภาพ: ปุ่มดาวน์โหลด/แชร์อยู่เหนือรูป (ภาพสูงจนปุ่มใต้รูปตกนอกจอแรก)', async () => {
@@ -84,11 +95,10 @@ await test('ถ้อยคำ ITA ไม่ถูกแตะ: หัวหน�
   assert.ok(hubLabel, 'การ์ดร้องเรียนใน ReportsHub ต้องคงคำว่า e-Service')
 })
 
-await test('เมนูข้างจอ PC ตัดตามโมดูลคำร้อง: เส้นทางนี้ผูกกับโมดูล complaints และเมนูข้างกรองด้วย moduleForPath', () => {
+await test('เมนูข้างจอ PC ตัดตามโมดูล: หน้าคำร้องผูกกับโมดูล complaints ที่ตั้งค่าได้ และเมนูข้างกรองด้วย moduleForPath', () => {
   assert.equal(moduleForPath(ROUTE), 'complaints')
   assert.ok(MANAGED_MODULE_KEYS.includes('complaints'), 'complaints ต้องเป็นโมดูลที่ตั้งค่าได้ ไม่งั้นปิดโมดูลแล้วเมนูไม่หาย')
   assert.ok(sidebar.includes('moduleForPath(item.href)') && sidebar.includes('isModuleEnabled(key)'))
-  assert.ok(sidebar.includes(`href: '${ROUTE}'`))
 })
 
 await test('โหมดรายเดือน: การ์ดภาพ (ปุ่มดาวน์โหลด/แชร์) อยู่เหนือข้อความสรุป และมีการ์ดเดียว', () => {
