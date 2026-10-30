@@ -6,8 +6,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ExternalLink, Loader2, MessageCircle, ShieldCheck } from 'lucide-react'
 import { QUIET_MODULES, qrLayout } from '../../lib/qrSvg'
 import {
-  getMyTelegramLink, isMissingTelegramLinkTable, linkExpired, minutesLeft, requestTelegramLink,
-  setupTelegramWebhook, telegramBotStatus, unlinkMyTelegram,
+  TELEGRAM_DM_CATEGORIES, getMyTelegramLink, isMissingTelegramLinkTable, linkExpired, minutesLeft, requestTelegramLink,
+  setMyTelegramDmMuted, setupTelegramWebhook, telegramBotStatus, unlinkMyTelegram,
 } from '../../lib/telegramLink'
 
 const POLL_MS = 5000
@@ -28,6 +28,32 @@ function LinkQr({ url }) {
       <rect width={box} height={box} fill="#fff" />
       <path transform={`translate(${QUIET_MODULES} ${QUIET_MODULES})`} d={qr.d} fill="#000" shapeRendering="crispEdges" />
     </svg>
+  )
+}
+
+// หมวดที่ส่งทาง Telegram ส่วนตัว — เก็บบน server (ฝั่งส่งอ่านได้) คนละชุดกับ "เด้งเตือนรายหมวด" ที่เก็บในเครื่อง
+// รูปสวิตช์ชุดเดียวกับ CategoryMuteSettings
+function DmCategorySwitches({ muted, disabled, onToggle }) {
+  return (
+    <div className="border-t border-slate-100 pt-3" data-telegram-dm-categories>
+      <p className="text-sm font-semibold text-slate-800">ส่งทาง Telegram</p>
+      <p className="text-xs leading-5 text-slate-500">ปิดหมวดไหน แชทนี้จะไม่ได้รับเรื่องหมวดนั้น (ยังเห็นในกระดิ่งของระบบตามปกติ)</p>
+      <div className="mt-1">
+        {TELEGRAM_DM_CATEGORIES.map((category) => {
+          const on = !muted.includes(category.key)
+          return (
+            <button key={category.key} type="button" role="switch" aria-checked={on} disabled={disabled}
+              data-telegram-dm-category={category.key} onClick={() => onToggle(category.key, !on)}
+              className="flex min-h-11 w-full items-center gap-3 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 disabled:opacity-60">
+              <span className="min-w-0 flex-1 text-sm text-slate-700">{category.label}</span>
+              <span aria-hidden="true" className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${on ? 'bg-teal-700' : 'bg-slate-300'}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? 'left-[22px]' : 'left-0.5'}`} />
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -137,6 +163,21 @@ export default function TelegramLinkSettings({ userId, isSuperadmin }) {
     setBusy(false)
   }
 
+  const toggleCategory = async (key, enabled) => {
+    const current = state.link?.dm_muted ?? []
+    const next = enabled ? current.filter((k) => k !== key) : [...current, key]
+    setBusy(true)
+    setNote('')
+    try {
+      const saved = await setMyTelegramDmMuted(next)
+      setState((s) => ({ ...s, link: s.link && { ...s.link, dm_muted: saved } }))
+    } catch {
+      setNote('บันทึกการตั้งค่าไม่สำเร็จ กรุณาลองใหม่')
+      await load()
+    }
+    setBusy(false)
+  }
+
   const expired = Boolean(pending) && linkExpired(pending.expires_at, now)
 
   return (
@@ -151,6 +192,9 @@ export default function TelegramLinkSettings({ userId, isSuperadmin }) {
               <p role="status" className="rounded-xl bg-teal-50 p-3 text-sm font-semibold text-teal-900">
                 เชื่อมแล้ว{state.link.tg_display ? ` กับ ${state.link.tg_display}` : ''} · {formatThaiDateTime(state.link.linked_at)}
               </p>
+              {Array.isArray(state.link.dm_muted) && (
+                <DmCategorySwitches muted={state.link.dm_muted} disabled={busy} onToggle={toggleCategory} />
+              )}
               <p className="text-xs leading-6 text-slate-500">ถ้าชื่อนี้ไม่ใช่ Telegram ของคุณ ให้กดยกเลิกทันทีแล้วเชื่อมใหม่ · พิมพ์ /stop ในแชทกับบอตก็ยกเลิกได้</p>
               <button type="button" disabled={busy} onClick={unlink} data-telegram-unlink
                 className="inline-flex min-h-11 items-center rounded-xl border border-red-200 px-4 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">ยกเลิกการเชื่อม</button>
@@ -161,7 +205,7 @@ export default function TelegramLinkSettings({ userId, isSuperadmin }) {
                 <p className="flex items-center gap-1.5 font-semibold text-slate-700"><ShieldCheck size={15} aria-hidden="true" />ก่อนเชื่อม</p>
                 <ul className="mt-1 list-disc space-y-0.5 pl-5">
                   <li>ระบบเก็บรหัสแชทและชื่อที่แสดงใน Telegram ของคุณ เพื่อส่งงานที่มอบหมายให้คุณเท่านั้น</li>
-                  <li>ข้อความมีแค่เลขที่เรื่อง ประเภท และลิงก์เข้าระบบ ไม่มีชื่อหรือเบอร์โทรของประชาชน</li>
+                  <li>ข้อความมีแค่เลขที่เรื่อง ประเภท วันเวลา และสถานที่ ไม่มีชื่อหรือเบอร์โทรของประชาชน</li>
                   <li>Telegram เป็นบริการของต่างประเทศ ข้อความผ่านเซิร์ฟเวอร์ของ Telegram</li>
                   <li>ยกเลิกได้ทุกเมื่อจากหน้านี้ หรือพิมพ์ /stop ในแชท</li>
                 </ul>

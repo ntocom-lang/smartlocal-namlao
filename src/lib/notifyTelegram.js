@@ -27,6 +27,10 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   'fleet_vehicle_repair_finished',
   'fleet_maintenance_created',
   'fleet_incident_reported',
+  // Telegram ส่วนตัวของผู้รับมอบหมาย — ผู้รับหาจากฐานข้อมูลฝั่ง Edge Function (ข้อ 3b ส่วนที่ 2)
+  'complaint_assigned_dm',
+  'event_assigned_dm',
+  'esign_turn_dm',
 ])
 
 /**

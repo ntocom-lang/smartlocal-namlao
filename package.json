@@ -116,6 +116,8 @@
     "test:telegram-link": "node tests/telegram-link.test.mjs",
     "test:telegram-link-db": "node tests/telegram-link-db.test.mjs",
     "test:telegram-link-browser": "node tests/telegram-link.playwright.mjs",
+    "test:telegram-dm": "node tests/telegram-dm.test.mjs",
+    "test:telegram-dm-db": "node tests/telegram-dm-db.test.mjs",
     "test:complaint-parked": "node tests/complaint-parked.test.mjs",
     "test:complaint-parked-db": "node tests/complaint-parked-db.test.mjs",
     "test:complaint-track":"node tests/complaint-track.test.mjs",

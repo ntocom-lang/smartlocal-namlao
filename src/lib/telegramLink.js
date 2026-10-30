@@ -14,15 +14,36 @@ export function isMissingTelegramLinkTable(error) {
     || (/telegram_user_links/.test(message) && /not find|does not exist/.test(message))
 }
 
-/** null = ยังไม่ผูก · { tg_display, linked_at } = ผูกแล้ว (หน้าเว็บไม่เห็น chat_id — สิทธิ์ระดับคอลัมน์) */
+/** หมวดที่ส่งทาง Telegram ส่วนตัว — ตรงกับ DM_CATEGORY ใน notify-telegram และ CHECK ใน migration 20261030100000 */
+export const TELEGRAM_DM_CATEGORIES = Object.freeze([
+  { key: 'complaint', label: 'คำร้องที่มอบหมายให้ฉัน' },
+  { key: 'event', label: 'กิจกรรมที่มอบหมายให้ฉัน' },
+  { key: 'esign', label: 'ถึงคิวลงนามใบขอใช้รถ' },
+])
+
+// ยังไม่ apply migration ส่วนที่ 2 (ไม่มีคอลัมน์ dm_muted) — PostgREST ตอบ 42703
+const isMissingDmColumn = (error) => String(error?.code ?? '') === '42703' || /dm_muted/.test(String(error?.message ?? ''))
+
+/**
+ * null = ยังไม่ผูก · { tg_display, linked_at, dm_muted } = ผูกแล้ว (หน้าเว็บไม่เห็น chat_id — สิทธิ์ระดับคอลัมน์)
+ * dm_muted = null เมื่อฐานข้อมูลยังไม่มีคอลัมน์ → หน้าเว็บซ่อนสวิตช์รายหมวด
+ */
 export async function getMyTelegramLink(userId) {
-  const { data, error } = await supabase
-    .from('telegram_user_links')
-    .select('tg_display, linked_at')
-    .eq('user_id', userId)
-    .maybeSingle()
+  const query = (columns) => supabase.from('telegram_user_links').select(columns).eq('user_id', userId).maybeSingle()
+  let { data, error } = await query('tg_display, linked_at, dm_muted')
+  if (error && isMissingDmColumn(error)) {
+    ({ data, error } = await query('tg_display, linked_at'))
+    if (data) data = { ...data, dm_muted: null }
+  }
   if (error) throw error
   return data ?? null
+}
+
+/** บันทึกหมวดที่ปิดรับ — คืนค่าที่ฐานข้อมูลเก็บจริง (กรองคีย์ที่ไม่รู้จักทิ้งแล้ว) */
+export async function setMyTelegramDmMuted(muted) {
+  const { data, error } = await supabase.rpc('set_my_telegram_dm_muted', { p_muted: muted })
+  if (error) throw error
+  return Array.isArray(data) ? data : []
 }
 
 export async function unlinkMyTelegram(userId) {

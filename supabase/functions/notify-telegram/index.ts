@@ -43,9 +43,22 @@ const notificationSpecs = {
   fleet_maintenance_created: { table: 'fleet_maintenance', resourceType: 'fleet_maintenance', access: 'staff' },
   // แบบ 5 (ระเบียบ มท. ยานพาหนะ อปท. 2569 ข้อ 18 ให้รายงานผู้บริหารทราบทันที) — ส่งครั้งเดียวต่อรายงาน
   fleet_incident_reported: { table: 'fleet_incidents', resourceType: 'fleet_incident', access: 'staff' },
+  // Telegram ส่วนตัว (ข้อ 3b ส่วนที่ 2) — ส่งถึงผู้รับมอบหมายที่ผูก Telegram แล้ว ไม่ส่งเข้ากลุ่ม (ดู DM_CATEGORY)
+  complaint_assigned_dm: { table: 'complaints', resourceType: 'complaint', access: 'staff' },
+  event_assigned_dm: { table: 'events', resourceType: 'event', access: 'staff' },
+  esign_turn_dm: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
 } as const
 
 type NotificationType = keyof typeof notificationSpecs
+
+// ชนิดที่ส่งแชทส่วนตัว → หมวดที่ผู้รับปิดได้ (telegram_user_links.dm_muted)
+// ต้องตรงกับ TELEGRAM_DM_CATEGORIES ใน src/lib/telegramLink.js และ CHECK ใน migration 20261030100000
+type DmCategory = 'complaint' | 'event' | 'esign'
+const DM_CATEGORY: Partial<Record<NotificationType, DmCategory>> = {
+  complaint_assigned_dm: 'complaint',
+  event_assigned_dm: 'event',
+  esign_turn_dm: 'esign',
+}
 
 type DeliveryRow = {
   id: string
@@ -920,6 +933,9 @@ function notificationMatchesResource(type: NotificationType, resource: Record<st
   // ความเสียหายจำกัด: ต้องเป็นเจ้าหน้าที่ อปท. เดียวกัน และได้ครั้งเดียวต่อการแก้ข้อมูลรถ 1 ครั้ง (updated_at)
   if (type === 'fleet_vehicle_repair_started') return resource.status === 'under_repair'
   if (type === 'fleet_vehicle_repair_finished') return resource.status === 'active'
+  if (type === 'complaint_assigned_dm') return isUuid(resource.assigned_to)
+  // สถานะชุดเดียวกับ esign_trip_turns() — ใบที่ปิดแล้วไม่มีคิวลงนาม
+  if (type === 'esign_turn_dm') return ['pending', 'waitlisted', 'approved', 'in_progress'].includes(String(resource.status))
   return true
 }
 
@@ -974,6 +990,187 @@ async function sendTelegram(chatId: string, text: string): Promise<TelegramSendR
   return sendTelegramMessage(chatId, text, BOT_TOKEN as string)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Telegram ส่วนตัว (ข้อ 3b ส่วนที่ 2, เจ้าของระบบอนุมัติ 2569-10-30)
+// ผู้รับหาจากฐานข้อมูลเองทั้งหมด (client ส่งมาแค่ชนิด + รหัสเรื่อง) · ไม่ส่งถึงคนที่กดเอง
+// ส่งครั้งเดียวต่อคนต่อเรื่อง (ต่อช่องลงนาม) — คีย์ใน notification_deliveries channel 'telegram_dm'
+// ⚠️ PDPA: กติกาเดียวกับข้อความเข้ากลุ่ม ห้ามชื่อ/เบอร์/ข้อความที่ประชาชนพิมพ์ · ไม่มีลิงก์เข้าระบบ
+// ─────────────────────────────────────────────────────────────────────────────
+// ต้องตรงกับ ASSIGNMENT_TASKS ใน src/lib/eventAssignment.js
+const EVENT_TASK_LABEL: Record<string, string> = {
+  attend: 'ไปประชุมแทน',
+  preside: 'เป็นประธาน/เปิดงานแทน',
+  join: 'ร่วมงานแทน',
+}
+
+function buildComplaintAssignedDm(complaint: Record<string, unknown>) {
+  const ref = complaint.ref_no ? `เลขที่: ${escapeHtml(complaint.ref_no, 40)}` : ''
+  // เรื่องลับ: ไม่บอกหมวด/สถานที่แม้เป็นแชทส่วนตัว — ข้อความค้างบนเครื่องและเซิร์ฟเวอร์ Telegram
+  if (isConfidentialComplaint(complaint)) {
+    return ['🔒 <b>มีเรื่องลับมอบหมายให้คุณ</b>', ref, 'กรุณาเข้าสู่ระบบเพื่อตรวจสอบตามสิทธิ์']
+      .filter(Boolean).join('\n')
+  }
+  const category = complaintCategory(complaint)
+  const due = formatThaiDate(complaint.due_date)
+  const department = departmentName(complaint)
+  return framedMessage(complaint, category.emoji, 'มีคำร้องมอบหมายให้คุณ', [
+    ref,
+    `ประเภท: ${escapeHtml(category.label, 60)}`,
+    complaint.village ? `สถานที่: ${escapeHtml(complaint.village, 120)}` : '',
+    due ? `กำหนดเสร็จ: <b>${escapeHtml(due, 80)}</b>` : '',
+    department ? `กอง: ${escapeHtml(department, 80)}` : '',
+  ])
+}
+
+function buildEventAssignedDm(event: Record<string, unknown>, task: unknown) {
+  const date = formatThaiDate(event.event_date)
+  const startTime = cleanText(event.event_time, 5)
+  const endTime = cleanText(event.end_time, 5)
+  const time = event.is_all_day || !/^\d{2}:\d{2}$/.test(startTime)
+    ? ''
+    : `${startTime}${/^\d{2}:\d{2}$/.test(endTime) ? ` – ${endTime}` : ''} น.`
+  const taskLabel = EVENT_TASK_LABEL[String(task ?? '')] ?? ''
+  return framedMessage(event, '📌', 'มีกิจกรรมมอบหมายให้คุณ', [
+    `<b>${escapeHtml(event.title, 300) || 'ไม่ระบุชื่อกิจกรรม'}</b>`,
+    taskLabel ? `หน้าที่: <b>${escapeHtml(taskLabel, 60)}</b>` : '',
+    date ? `วันที่: ${escapeHtml(date, 120)}` : '',
+    time ? `เวลา: ${escapeHtml(time, 30)}` : '',
+    event.location ? `สถานที่: ${escapeHtml(event.location, 200)}` : '',
+  ])
+}
+
+function buildEsignTurnDm(trip: Record<string, unknown>, slotLabel: unknown) {
+  return framedMessage(trip, '✍️', 'ถึงคิวลงนามใบขอใช้รถ', [
+    slotLabel ? `ช่อง: <b>${escapeHtml(slotLabel, 60)}</b>` : '',
+    ...tripSummaryLines(trip),
+    tripRef(trip),
+  ])
+}
+
+function dmMuted(muted: unknown, category: DmCategory) {
+  return Array.isArray(muted) && muted.includes(category)
+}
+
+// กิจกรรมที่ผ่านไปแล้ว (นับวันสุดท้าย) ไม่ส่ง — มอบหมายย้อนหลังเพื่อบันทึกประวัติเท่านั้น
+function eventIsPast(event: Record<string, unknown>, now = new Date()) {
+  const last = cleanText(event.end_date || event.event_date, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(last)) return false
+  return last < now.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
+}
+
+type DmRecipient = { userId: string; key: string; message: string }
+
+async function dmRecipients(
+  admin: ReturnType<typeof createClient>,
+  type: NotificationType,
+  resource: Record<string, unknown>,
+): Promise<DmRecipient[]> {
+  if (type === 'complaint_assigned_dm') {
+    const userId = String(resource.assigned_to)
+    return [{ userId, key: `${type}:${resource.id}:${userId}`, message: buildComplaintAssignedDm(resource) }]
+  }
+  if (type === 'event_assigned_dm') {
+    if (eventIsPast(resource)) return []
+    const { data, error } = await admin
+      .from('event_assignments')
+      .select('profile_id,task')
+      .eq('event_id', resource.id)
+      .not('profile_id', 'is', null)
+    if (error) throw error
+    return (data ?? [])
+      .filter((row: Record<string, unknown>) => isUuid(row.profile_id))
+      .map((row: Record<string, unknown>) => ({
+        userId: String(row.profile_id),
+        key: `${type}:${resource.id}:${row.profile_id}`,
+        message: buildEventAssignedDm(resource, row.task),
+      }))
+  }
+  // esign_turn_dm — ใครถึงคิวตัดสินในฐานข้อมูล (esign_trip_turns ตรรกะคู่กับ esign_trip_status)
+  const { data, error } = await admin.rpc('esign_trip_turns', { p_trip_id: resource.id })
+  if (error) throw error
+  return (Array.isArray(data) ? data : [])
+    .filter((turn: Record<string, unknown>) => isUuid(turn?.user_id))
+    .map((turn: Record<string, unknown>) => ({
+      userId: String(turn.user_id),
+      key: `${type}:${resource.id}:${cleanText(turn.slot, 20)}:${turn.user_id}`,
+      message: buildEsignTurnDm(resource, turn.label),
+    }))
+}
+
+async function sendDirectMessages(
+  admin: ReturnType<typeof createClient>,
+  type: NotificationType,
+  category: DmCategory,
+  resource: Record<string, unknown>,
+  requesterId: string | null,
+) {
+  const recipients = (await dmRecipients(admin, type, resource)).filter((r) => r.userId !== requesterId)
+  if (!recipients.length) return json({ ok: true, skipped: true, reason: 'no_recipient' })
+
+  const ids = [...new Set(recipients.map((r) => r.userId))]
+  const [linkResult, peopleResult] = await Promise.all([
+    admin.from('telegram_user_links').select('user_id,chat_id,dm_muted').in('user_id', ids),
+    admin.from('profiles').select('id,role,municipality_id').in('id', ids),
+  ])
+  if (linkResult.error || peopleResult.error) throw linkResult.error ?? peopleResult.error
+  const links = new Map((linkResult.data ?? []).map((link: Record<string, unknown>) => [String(link.user_id), link]))
+  // ผู้รับต้องเป็นบุคลากรของ อปท. เดียวกับเรื่อง — กันข้อมูลข้ามหน่วยงานแม้ข้อมูลในตารางจะผิดพลาด
+  const staff = new Set((peopleResult.data ?? [])
+    .filter((p: Record<string, unknown>) => INTERNAL_ROLES.has(String(p.role)) && p.municipality_id === resource.municipality_id)
+    .map((p: Record<string, unknown>) => String(p.id)))
+
+  const targets = recipients.filter((r) => {
+    const link = links.get(r.userId)
+    return link && staff.has(r.userId) && !dmMuted(link.dm_muted, category)
+  })
+  // ไม่ผูก Telegram / ปิดหมวดนี้ = ข้ามเงียบๆ ไม่สร้างแถวบันทึก (คนส่วนใหญ่ไม่ได้ผูก)
+  if (!targets.length) return json({ ok: true, skipped: true, reason: 'not_linked' })
+  if (!BOT_TOKEN) return json({ ok: false, error: 'Telegram bot is not configured' }, 500)
+
+  const counts = { sent: 0, failed: 0, duplicate: 0 }
+  for (const target of targets) {
+    const link = links.get(target.userId) as Record<string, unknown>
+    const claim = await claimDelivery(admin, {
+      municipality_id: resource.municipality_id,
+      channel: 'telegram_dm',
+      notification_type: type,
+      resource_type: notificationSpecs[type].resourceType,
+      resource_id: resource.id,
+      idempotency_key: target.key,
+      requested_by: requesterId,
+    })
+    if (!claim.claimed) {
+      counts.duplicate += 1
+      continue
+    }
+    const finish = (status: 'sent' | 'failed', values: Record<string, unknown>) => admin
+      .from('notification_deliveries')
+      .update({ status, claim_token: null, updated_at: new Date().toISOString(), ...values })
+      .eq('id', claim.delivery.id)
+      .eq('claim_token', claim.claimToken)
+
+    const result = await sendTelegram(String(link.chat_id), target.message)
+    const attempts = Number(claim.delivery.attempt_count ?? 0) + result.attempts
+    if (result.ok) {
+      await finish('sent', {
+        attempt_count: attempts,
+        provider_message_id: result.messageId == null ? null : String(result.messageId),
+        last_error: null,
+        sent_at: new Date().toISOString(),
+      })
+      counts.sent += 1
+      continue
+    }
+    // 403 = ผู้ใช้บล็อกบอต/ลบแชท — เลิกผูกเอง (ผูกไว้ก็ส่งไม่ถึงอีก) หน้าเว็บขึ้น "ยังไม่เชื่อม" ให้เชื่อมใหม่ได้
+    if (result.status === 403) {
+      await admin.from('telegram_user_links').delete().eq('user_id', target.userId).eq('chat_id', link.chat_id)
+    }
+    await finish('failed', { attempt_count: attempts, last_error: result.error })
+    counts.failed += 1
+  }
+  return json({ ok: true, ...counts })
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return json({ ok: false, error: 'method not allowed' }, 405)
@@ -1008,9 +1205,9 @@ serve(async (req) => {
 
     const spec = notificationSpecs[notificationType]
     const selectColumns = spec.table === 'events'
-      ? 'id,municipality_id,created_by,created_at,title,description,event_date,event_time,end_time,location,audiences,is_all_day'
+      ? 'id,municipality_id,created_by,created_at,title,description,event_date,end_date,event_time,end_time,location,audiences,is_all_day'
       : spec.table === 'complaints'
-        ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to,ref_no,village,department:departments(name,color),category_ref:complaint_categories(label,emoji)'
+        ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to,ref_no,village,due_date,department:departments(name,color),category_ref:complaint_categories(label,emoji)'
         : spec.table === 'fleet_trips'
           // fleet_trips มี FK ไป departments 2 เส้น (department_id กับ dept_head_department_id)
           // embed ต้องระบุชื่อ FK ไม่งั้น PostgREST ตอบ 300 ambiguous แล้วแจ้งเตือนทุกชนิดของทริปพัง
@@ -1046,6 +1243,9 @@ serve(async (req) => {
 
     const municipalityId = resource.municipality_id
     if (!isUuid(municipalityId)) return json({ ok: false, error: 'resource municipality is invalid' }, 422)
+
+    const dmCategory = DM_CATEGORY[notificationType]
+    if (dmCategory) return await sendDirectMessages(admin, notificationType, dmCategory, resource, userId)
     const { data: municipality, error: municipalityError } = await admin
       .from('municipalities')
       .select('id,telegram_group_id,org_type,fee_schedule')
