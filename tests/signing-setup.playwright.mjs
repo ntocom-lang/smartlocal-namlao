@@ -950,12 +950,23 @@ await scenario('ชื่อจาก LINE ไม่ครบ: กางช่�
   assert.equal(updates[0].changes.full_name, 'นาย สมชายไลน์ ตัวอย่าง')
 })
 
-await scenario('บันทึก แล้วเพิ่มคนต่อ: ขึ้นผลที่ทำ ฟอร์มเริ่มใหม่', { fixture: 'users' }, async (page) => {
+// จอเตี้ยกว่าผลที่บันทึก + ฟอร์มเปล่า (~560px) เบราว์เซอร์จึงไม่ดึงหน้าขึ้นให้เอง
+await scenario('บันทึก แล้วเพิ่มคนต่อ: ขึ้นผลที่ทำ ฟอร์มเริ่มใหม่', { fixture: 'users', viewport: { width: 1280, height: 420 } }, async (page) => {
   await openAdd(page)
   await pickAccount(page, 'เจ้าหน้าที่ธรรมดา')
   await pickPosition(page, 'นายช่างโยธา')
+  // หน้าจริงมีหัวแผงควบคุมกับหัวเมนูอยู่เหนือกรอบนี้ ใส่ที่ว่างแทน ไม่งั้นหน้าสั้นจนเบราว์เซอร์ดึงขึ้นบนเองและเทสต์ผ่านลวง
+  // แล้วเลื่อนลงไปตรวจท้ายฟอร์มก่อนกด เหมือนคนใช้จริง
+  await page.evaluate(() => {
+    document.getElementById('root').style.paddingTop = '320px'
+    window.scrollTo(0, document.documentElement.scrollHeight)
+  })
+  assert.ok(await page.evaluate(() => window.scrollY) > 100, 'ฟอร์มต้องยาวกว่าจอ ไม่งั้นเทสต์นี้ไม่ได้ตรวจการเลื่อน')
   await form(page).locator('[data-person-save-next]').click()
   await savedOk(page)
+  // ฟอร์มเต็มกรอบหน้า: ผลที่บันทึกต้องอยู่บนจอเหนือฟอร์มใหม่ ไม่ใช่ซ่อนอยู่ในรายชื่อหรือเลยขอบบน
+  const flash = await page.locator('[data-person-saved]').evaluate(element => element.getBoundingClientRect().toJSON())
+  assert.ok(flash.top >= 0 && flash.bottom <= 420, `ข้อความบันทึกแล้วต้องอยู่บนจอ (top ${Math.round(flash.top)}px)`)
   await page.locator('#person-account-search').waitFor()
   assert.equal(await page.locator('#person-position').inputValue(), '')
   assert.match(await page.locator('[data-person-reason]').innerText(), /เลือกคนก่อน/)
@@ -1146,10 +1157,11 @@ await scenario('แก้คนเดิม: บัญชีไม่มีช�
 
 await scenario('แก้คนเดิม: ฟังก์ชันเดิมครบ — ย้อนกลับ โอนงาน รวมบัญชี ตั้งรหัส ลบ ข้อมูลบัญชี ข้อมูลส่วนตัว และกล่องซ้อนอยู่เหนือฟอร์ม', { fixture: 'users' }, async (page) => {
   await openUser(page, '[TEST] เจ้าหน้าที่ธรรมดา')
-  // เจ้าของระบบสั่ง 2569-10-31: จอใหญ่ต้องอยู่กลางจอ ไม่ชิดขวา
-  const box = await form(page).getByRole('dialog').boundingBox()
-  assert.ok(Math.abs(box.x + box.width / 2 - 640) <= 2, `กล่องต้องอยู่กลางจอ (กึ่งกลางอยู่ที่ ${Math.round(box.x + box.width / 2)}px)`)
-  assert.ok(box.y > 0 && box.y + box.height < 900, 'กล่องต้องไม่ชิดขอบบนล่าง')
+  // เจ้าของระบบสั่ง 2569-10-31: ฟอร์มเต็มกรอบหน้าจัดการผู้ใช้แทนรายชื่อ ไม่ใช่กล่องลอย
+  assert.equal(await form(page).getByRole('dialog').count(), 0, 'ต้องไม่เป็นกล่องลอย')
+  assert.equal(await page.locator('[data-user-manager-list]').isVisible(), false, 'รายชื่อต้องหลบให้ฟอร์ม')
+  const [box, frame] = await Promise.all([form(page).boundingBox(), form(page).evaluate(element => element.parentElement.getBoundingClientRect().toJSON())])
+  assert.ok(Math.abs(box.x - frame.x) <= 1 && Math.abs(box.width - frame.width) <= 1, `ฟอร์มต้องกว้างเต็มกรอบ (${Math.round(box.width)} จาก ${Math.round(frame.width)}px)`)
   const actions = page.locator('[data-person-actions]')
   for (const label of ['โอนงานให้ผู้อื่น', 'รวมบัญชีซ้ำ', 'ตั้งรหัสผ่านใหม่', 'ลบผู้ใช้งาน']) {
     await actions.getByRole('button', { name: label }).waitFor()
@@ -1176,6 +1188,26 @@ await scenario('แก้คนเดิม: ฟังก์ชันเดิ�
   assert.equal(onTop, true, 'กล่องยืนยันต้องอยู่เหนือฟอร์ม')
   await page.keyboard.press('Escape')
   assert.equal(await form(page).count(), 1, 'Esc ขณะมีกล่องซ้อนต้องไม่ปิดฟอร์ม')
+})
+
+await scenario('ฟอร์มเต็มกรอบ: เปิดจากแถวล่างแล้วเห็นหัวฟอร์ม · ปุ่มบันทึกติดล่างจอ · ย้อนกลับมาที่แถวเดิม', { fixture: 'users', viewport: { width: 1280, height: 560 } }, async (page) => {
+  await page.getByRole('button', { name: /ทุกกอง \/ หน่วยงาน/ }).first().waitFor({ timeout: 60000 })
+  await page.getByRole('button', { name: /ทุกกอง \/ หน่วยงาน/ }).first().click()
+  const line = page.locator('tr:visible', { hasText: '[TEST] เจ้าหน้าที่ธรรมดา' }).first()
+  await line.waitFor()
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  await line.scrollIntoViewIfNeeded()
+  const listY = await page.evaluate(() => window.scrollY)
+  assert.ok(listY > 100, `รายชื่อต้องเลื่อนลงมาก่อน (${listY}px) ไม่งั้นเทสต์นี้ไม่ได้ตรวจอะไร`)
+  await line.locator('td').nth(1).click()
+  await form(page).waitFor()
+  const top = await form(page).evaluate(element => element.getBoundingClientRect().top)
+  assert.ok(top >= 0 && top < 40, `หัวฟอร์มต้องอยู่บนจอ (top ${Math.round(top)}px)`)
+  const saveBox = await form(page).locator('[data-person-save]').boundingBox()
+  assert.ok(saveBox && saveBox.y + saveBox.height <= 560, 'ปุ่มบันทึกต้องเห็นโดยไม่ต้องเลื่อนลงสุดฟอร์ม')
+  await form(page).getByRole('button', { name: 'ย้อนกลับ' }).click()
+  await form(page).waitFor({ state: 'detached' })
+  assert.ok(Math.abs(await page.evaluate(() => window.scrollY) - listY) <= 2, 'ย้อนกลับต้องกลับมาที่ตำแหน่งเดิมของรายชื่อ')
 })
 
 await scenario('แก้คนเดิม: บัญชีตัวเองดูได้อย่างเดียว บอกเหตุ ไม่มีปุ่มบันทึก', {
@@ -1430,6 +1462,13 @@ await scenario('วิธีลงนาม: หน่วยงานเปิ�
 await scenario('มือถือ 390px: ฟอร์มไม่ล้นแนวนอน · ปุ่มสูงพอกด · ตัวอักษรไม่เล็กกว่า 12px · ปุ่มบันทึกไม่ถูกบัง', { fixture: 'users', viewport: { width: 390, height: 844 } }, async (page) => {
   await page.locator('[data-add-person]').first().waitFor({ timeout: 60000 })
   assert.equal(await noOverflow(page), true, 'หน้ารายชื่อต้องไม่ล้น')
+  // แทนแถบเมนูล่างของแผงควบคุม (เทสต์นี้เรนเดอร์เฉพาะหน้าจัดการผู้ใช้) สูงตอนชื่อเมนูตัด 2 บรรทัด
+  await page.evaluate(() => {
+    const bar = document.createElement('div')
+    bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;height:83px;z-index:50;background:#1e3a8a'
+    document.body.append(bar)
+    document.documentElement.style.setProperty('--admin-bottom-nav-h', '83px')
+  })
   await openAdd(page)
   await pickAccount(page, 'คนใหม่ย้ายมา')
   await pickPosition(page, 'ผู้อำนวยการกองช่าง')

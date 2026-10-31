@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
+import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
@@ -300,6 +300,27 @@ export function UserManager({ tenant, currentUserRole, currentUserId, onOpenSign
   // ค่าตั้งต้นของฟอร์มเพิ่มเจ้าหน้าที่ · null = ปิดอยู่ · key เปลี่ยนเมื่อกด "บันทึก แล้วเพิ่มคนต่อ" ให้ฟอร์มเริ่มใหม่
   const [addingPerson, setAddingPerson] = useState(null)
   const [personFormKey, setPersonFormKey] = useState(0)
+  // ฟอร์มเปิดเต็มกรอบหน้านี้แทนรายชื่อ (เจ้าของระบบสั่ง 2569-10-31) รายชื่อแค่ซ่อนไว้ ตัวกรองและหน้าที่เลือกจึงอยู่ครบ
+  // จำตำแหน่งเลื่อนของรายชื่อไว้ ย้อนกลับแล้วต้องกลับมาที่แถวเดิม ไม่ใช่ขึ้นบนสุด
+  const personFormOpen = Boolean(viewingUser || addingPerson)
+  const personFormTopRef = useRef(null)
+  const listScrollY = useRef(0)
+  const personFormWasOpen = useRef(false)
+  useLayoutEffect(() => {
+    const wasOpen = personFormWasOpen.current
+    personFormWasOpen.current = personFormOpen
+    if (personFormOpen) {
+      const top = personFormTopRef.current?.getBoundingClientRect().top ?? 0
+      if (top < 0) window.scrollTo({ top: window.scrollY + top - 16 })
+      return undefined
+    }
+    if (wasOpen) window.scrollTo({ top: listScrollY.current })
+    // layout effect: เลิกฟังก่อนเบราว์เซอร์ส่ง scroll ที่เกิดจากหน้าหดตอนซ่อนรายชื่อ
+    const remember = () => { listScrollY.current = window.scrollY }
+    window.addEventListener('scroll', remember, { passive: true })
+    return () => window.removeEventListener('scroll', remember)
+    // personFormKey: "บันทึก แล้วเพิ่มคนต่อ" ขึ้นฟอร์มใหม่ ต้องเลื่อนขึ้นไปเห็นผลที่บันทึก (จอเตี้ยเบราว์เซอร์ไม่ดึงให้เอง)
+  }, [personFormOpen, personFormKey])
   const [savedFlash, setSavedFlash] = useState(null)
   const registry = useSignatoryRegistry(tenant?.id)
   const fetchSequence = useRef(0)
@@ -677,8 +698,26 @@ export function UserManager({ tenant, currentUserRole, currentUserId, onOpenSign
     return (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '', 'th')
   })
 
+  const savedFlashBox = margin => savedFlash && (
+    <div className={`${margin} flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900`} role="status" data-person-saved>
+      <CheckCircle2 size={17} className="mt-0.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="font-bold">บันทึกแล้ว: {savedFlash.name}</p>
+        <ul className="mt-1 list-disc pl-5 text-xs leading-5">
+          {savedFlash.items.map(item => <li key={item}>{item}</li>)}
+        </ul>
+        {savedFlash.after && <p className="mt-1 text-xs font-semibold leading-5 text-amber-800">{savedFlash.after}</p>}
+      </div>
+      <button type="button" onClick={() => setSavedFlash(null)} aria-label="ปิดข้อความ"
+        className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-emerald-700 hover:bg-emerald-100">
+        <X size={16} />
+      </button>
+    </div>
+  )
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" ref={personFormTopRef}>
+      <div className={personFormOpen ? 'hidden' : 'space-y-4'} data-user-manager-list>
       <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-800 px-5 py-5 text-white shadow-xl shadow-blue-950/15 md:px-7 md:py-6">
         <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-cyan-400/20 blur-3xl" />
         <div className="pointer-events-none absolute bottom-0 left-1/3 h-28 w-56 rounded-full bg-violet-500/20 blur-3xl" />
@@ -747,22 +786,7 @@ export function UserManager({ tenant, currentUserRole, currentUserId, onOpenSign
         </div>
       </div>
 
-      {savedFlash && (
-        <div className="mx-4 mt-4 flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 md:mx-5" role="status" data-person-saved>
-          <CheckCircle2 size={17} className="mt-0.5 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <p className="font-bold">บันทึกแล้ว: {savedFlash.name}</p>
-            <ul className="mt-1 list-disc pl-5 text-xs leading-5">
-              {savedFlash.items.map(item => <li key={item}>{item}</li>)}
-            </ul>
-            {savedFlash.after && <p className="mt-1 text-xs font-semibold leading-5 text-amber-800">{savedFlash.after}</p>}
-          </div>
-          <button type="button" onClick={() => setSavedFlash(null)} aria-label="ปิดข้อความ"
-            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-emerald-700 hover:bg-emerald-100">
-            <X size={16} />
-          </button>
-        </div>
-      )}
+      {!personFormOpen && savedFlashBox('mx-4 mt-4 md:mx-5')}
 
       {subTab === 'structure' && (
         <div data-user-manager-structure>
@@ -1211,7 +1235,10 @@ export function UserManager({ tenant, currentUserRole, currentUserId, onOpenSign
       </>)}
 
       </section>
-      {(viewingUser || addingPerson) && (
+      </div>
+      {/* "บันทึก แล้วเพิ่มคนต่อ" ฟอร์มยังเปิดอยู่ ผลที่บันทึกต้องขึ้นเหนือฟอร์ม ไม่ใช่ในรายชื่อที่ซ่อนอยู่ */}
+      {personFormOpen && savedFlashBox('')}
+      {personFormOpen && (
         <PersonSetupForm
           key={viewingUser ? viewingUser.id : `add-${personFormKey}`}
           tenant={tenant}
@@ -1236,7 +1263,7 @@ export function UserManager({ tenant, currentUserRole, currentUserId, onOpenSign
           onOpenSigning={onOpenSigning}
         />
       )}
-      {/* ฟอร์มอยู่ที่ body ถ้ากล่องพวกนี้อยู่ในหน้า อาจถูกฟอร์มบัง เพราะชั้นซ้อนนับแยกกัน */}
+      {/* กล่องยืนยันพวกนี้อยู่ที่ body ให้ลอยเหนือทุกชั้นของแผงควบคุม ไม่ขึ้นกับชั้นซ้อนของหน้านี้ */}
       {createPortal(
         <>
           <DeleteUserConfirmModal
@@ -5582,6 +5609,19 @@ export default function AdminDashboard() {
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading] = useState(true)
   const [activePage, setActivePage] = useState(location.state?.page ?? 'dashboard')
+  // ความสูงจริงของแถบเมนูล่างมือถือ ชื่อเมนูตัดบรรทัดได้ จึงวัดเอา ไม่เดาเป็นตัวเลข
+  // ฟอร์มเจ้าหน้าที่ใช้ค่านี้ยกแถบปุ่มบันทึกให้พ้นแถบเมนู (--admin-bottom-nav-h)
+  const bottomNavRef = useRef(null)
+  useLayoutEffect(() => {
+    const nav = bottomNavRef.current
+    if (!nav || typeof ResizeObserver === 'undefined') return undefined
+    const root = document.documentElement
+    const update = () => root.style.setProperty('--admin-bottom-nav-h', `${nav.offsetHeight}px`)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(nav)
+    return () => { observer.disconnect(); root.style.removeProperty('--admin-bottom-nav-h') }
+  }, [])
   const [drawerOpen, setDrawerOpen] = useState(false)
   // closeDrawer ต้อง useCallback — effect ในลิ้นชักผูกกับมัน ถ้าเปลี่ยนทุกรอบ render โฟกัสจะถูกดึงกลับทุกครั้ง
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
@@ -5911,7 +5951,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* ─── Mobile Admin Bottom Tab Bar ─── */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch"
+      <div ref={bottomNavRef} className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch"
         style={{
           background: 'linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
           borderTop: '2px solid rgba(255,255,255,0.15)',
