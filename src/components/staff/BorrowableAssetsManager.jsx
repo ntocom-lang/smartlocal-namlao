@@ -320,7 +320,7 @@ export default function BorrowableAssetsManager({ tenant, assetRole, myDepartmen
 
       {showForm && (
         // ฟอร์มเป็นโมดอล: bottom sheet บนมือถือ / กล่องกลางจอบนเดสก์ท็อป ตามแบบเดียวกับ
-        // PositionCatalogAdmin.jsx และ InfraWorkAdmin.jsx — ของเดิมเป็นแผงแทรกกลางหน้า
+        // StructureManager.jsx และ InfraWorkAdmin.jsx — ของเดิมเป็นแผงแทรกกลางหน้า
         // ซึ่งบนมือถือดันรายการที่กำลังแก้หลุดออกนอกจอจนไม่เห็นว่ากำลังแก้ตัวไหนอยู่
         //
         // ⚠️ ไม่ปิดเมื่อคลิกฉากหลังโดยตั้งใจ — กรอกค้างไว้แล้วเผลอแตะนอกกล่องจะเสียที่พิมพ์ไป

@@ -204,7 +204,7 @@ assert.match(personForm, /min-h-11/, 'ปุ่มและช่องกรอ
 assert.match(personForm, /query\.length < 2/, 'ห้ามดึงรายชื่อบุคลากรทั้งหมดก่อนมีคำค้น')
 assert.doesNotMatch(personForm, /item\.id_card/, 'ผลค้นหาบัญชีไม่ควรแสดงเลขบัตรประชาชน')
 
-const catalog = await read('src/components/admin/PositionCatalogAdmin.jsx')
+const catalog = await read('src/components/admin/StructureManager.jsx')
 assert.match(catalog, /groupPositionsByDepartment/)
 assert.match(catalog, /data-position-scope="locked"/, 'หน้าแบบตำแหน่งต้องบอกว่าตำแหน่งไหนล็อกกอง')
 assert.match(catalog, /data-position-scope="shared"/, 'ตำแหน่งใช้ได้ทุกกองที่อยู่ใต้กองต้องบอกว่ายังใช้ได้ทุกกอง')
@@ -576,7 +576,7 @@ if (process.env.PERSONNEL_VISUAL === '1') {
       const html = await fixtureVite.transformIndexHtml('/__catalog-fixture', `
         <!doctype html><html><head></head><body><div id="root"></div><script type="module">
           import React from 'react'; import {createRoot} from 'react-dom/client';
-          import Catalog from '/src/components/admin/PositionCatalogAdmin.jsx'; import '/src/index.css';
+          import Catalog from '/src/components/admin/StructureManager.jsx'; import '/src/index.css';
           createRoot(document.getElementById('root')).render(React.createElement(Catalog, {
             tenant:{id:'municipality-test'},currentUserRole:'admin'
           }));
@@ -613,7 +613,7 @@ if (process.env.PERSONNEL_VISUAL === '1') {
   try {
     await fixtureVite.listen()
     await page.goto(`${fixtureVite.resolvedUrls.local[0]}__catalog-fixture`)
-    await page.locator('summary').filter({hasText:SHARED_POSITION_LABEL}).click()
+    await page.locator('[data-structure-group]').filter({hasText:SHARED_POSITION_LABEL}).locator('[data-structure-toggle]').click()
     await page.getByRole('button',{name:'แก้ไขตำแหน่ง [TEST] ตำแหน่งใช้ร่วม',exact:true}).click()
     const catalogDialog=page.getByRole('dialog')
     // 1) ตั้งกองหลักอย่างเดียว = ย้ายไปอยู่ใต้กองในหน้าจอ แต่ไม่ล็อก ไม่ย้ายใคร ไม่ต้องยืนยันจำนวนคน
@@ -629,7 +629,8 @@ if (process.env.PERSONNEL_VISUAL === '1') {
     assert.equal(positionWrites[0].p_changes.department_id,null,'ตั้งกองหลักต้องไม่ล็อก')
     assert.equal(positionWrites[0].p_changes.department_hint,'สำนักปลัด')
     assert.equal(positionWrites[0].p_confirm_move,false)
-    const homeGroup=page.locator('details').filter({has:page.locator('summary',{hasText:'สำนักปลัด'})})
+    // บันทึกแล้วกางกองที่ตำแหน่งไปอยู่ให้เอง ไม่ต้องไล่หา
+    const homeGroup=page.locator('[data-structure-group="general"]')
     await homeGroup.getByRole('button',{name:'แก้ไขตำแหน่ง [TEST] ตำแหน่งใช้ร่วม',exact:true}).waitFor({state:'visible'})
     assert.equal(await homeGroup.locator('[data-position-scope="shared"]').count(),1,'อยู่ใต้กองแล้วต้องยังบอกว่าใช้ได้ทุกกอง')
     // 2) ล็อกกอง = ย้ายผู้ถือ 9 คน ต้องเห็นผลกระทบและยืนยันครั้งเดียว

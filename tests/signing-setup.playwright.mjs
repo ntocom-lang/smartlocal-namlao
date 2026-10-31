@@ -75,7 +75,7 @@ const DEPARTMENTS = [
   { id: D.exec, code: 'exec', name: 'คณะผู้บริหาร', short_name: 'บห.', sort_order: 5, is_active: true },
 ]
 
-const positionsOf = db => [...positions(), ...db.extraPositions]
+const positionsOf = db => [...positions(), ...db.extraPositions].filter(item => !db.deletedPositions?.has(item.id))
 const departmentsOf = db => [...DEPARTMENTS, ...db.extraDepartments]
 const positionById = (db, id) => positionsOf(db).find(item => item.id === id)
 const withPosition = (db, row) => {
@@ -143,8 +143,21 @@ function installDb(page, db) {
     if (bare.endsWith('/rpc/esign_gate_status')) return json(db.esign ?? { ok: true, slot_modes: {} })
     if (bare.endsWith('/rpc/get_user_role_counts')) return json({ staff: db.profiles.filter(item => item.role !== 'citizen').length, citizen: db.profiles.filter(item => item.role === 'citizen').length })
     if (bare.endsWith('/rpc/get_staff_department_counts')) return json(DEPARTMENTS.map(item => ({ department_id: item.id, staff_count: db.profiles.filter(row => row.department_id === item.id).length })))
-    if (bare.endsWith('/rpc/get_position_holder_counts')) return json([])
+    if (bare.endsWith('/rpc/get_position_holder_counts')) return json(db.holderCounts ?? [])
     if (bare.endsWith('/rest/v1/departments')) {
+      // แก้/ลบได้เฉพาะกองที่เทสต์สร้างเอง (กองตั้งต้นใช้ร่วมทุกชุด ห้ามเปลี่ยน)
+      const targetId = url.searchParams.get('id')?.replace('eq.', '')
+      if (request.method() === 'PATCH') {
+        const target = db.extraDepartments.find(item => item.id === targetId)
+        Object.assign(target, request.postDataJSON())
+        db.writes.push({ rpc: 'update-department', ...target })
+        return json(target)
+      }
+      if (request.method() === 'DELETE') {
+        db.extraDepartments = db.extraDepartments.filter(item => item.id !== targetId)
+        db.writes.push({ rpc: 'delete-department', id: targetId })
+        return route.fulfill({ status: 204, body: '' })
+      }
       if (request.method() !== 'POST') return json(departmentsOf(db))
       const body = request.postDataJSON()
       const created = { ...body, id: `d-new-${db.writes.length}`, is_active: true }
@@ -153,6 +166,12 @@ function installDb(page, db) {
       return json(created)
     }
     if (bare.endsWith('/rest/v1/positions')) {
+      if (request.method() === 'DELETE') {
+        const targetId = url.searchParams.get('id')?.replace('eq.', '')
+        db.deletedPositions = new Set([...(db.deletedPositions ?? []), targetId])
+        db.writes.push({ rpc: 'delete-position', id: targetId })
+        return route.fulfill({ status: 204, body: '' })
+      }
       if (request.method() !== 'POST') return json(positionsOf(db))
       const body = request.postDataJSON()
       const created = { ...body, id: `p-new-${db.writes.length}` }
@@ -1221,6 +1240,148 @@ await scenario('หน้ารายชื่อ: ปุ่มเพิ่ม�
   await page.getByRole('button', { name: /ชุดมาตรฐาน/ }).waitFor()
   assert.match(await page.locator('[data-user-manager-structure]').innerText(), /เพิ่มเจ้าหน้าที่ไม่ต้องมาหน้านี้ก่อน/)
   assert.equal(await page.locator('[data-add-person]').count(), 0)
+})
+
+// ── แท็บกองและตำแหน่ง: รายการเดียวจัดตามกอง (เจ้าของระบบสั่ง 2569-10-31 เพราะหน้ายาว 3-4 จอ) ──────
+// 12 กอง 120 ตำแหน่ง — มากกว่าสนามซ้อม (7 กอง 28 ตำแหน่ง) ราว 4 เท่า
+function manyDb() {
+  const db = freshDb()
+  for (let index = 1; index <= 7; index += 1) {
+    db.extraDepartments.push({ id: `d-extra-${index}`, code: `dept_x${index}`, name: `กองทดสอบที่ ${index}`, short_name: `ทส.${index}`, sort_order: 10 + index, is_active: true })
+  }
+  const homes = [...DEPARTMENTS.filter(item => item.id !== D.exec), ...db.extraDepartments]
+  for (let index = 1; index <= 111; index += 1) {
+    const home = homes[index % homes.length]
+    db.extraPositions.push({ id: `p-extra-${index}`, name: `ตำแหน่งทดสอบลำดับ ${index}`, role: 'staff', category: 'operating_staff', department_id: null, department_hint: home.name, sort_order: 100 + index })
+  }
+  return db
+}
+const structure = page => page.locator('[data-structure-manager]')
+const structureGroup = (page, key) => structure(page).locator(`[data-structure-group="${key}"]`)
+async function openStructure(page) {
+  await page.locator('[data-open-structure]').click({ timeout: 60000 })
+  await structure(page).locator('[data-structure-group]').first().waitFor()
+}
+const tabHeight = page => page.locator('[data-user-manager-structure]').evaluate(element => Math.round(element.getBoundingClientRect().height))
+
+await scenario('กองและตำแหน่ง: ยาวตามจำนวนกอง ไม่ใช่จำนวนตำแหน่ง · เปิดทีละกอง · ค้นหากางเฉพาะที่เจอ', { fixture: 'users', db: manyDb() }, async (page) => {
+  await openStructure(page)
+  const groups = structure(page).locator('[data-structure-group]')
+  assert.equal(await groups.count(), 13, '12 กอง + กลุ่มผู้บริหาร (กลุ่มใช้ได้ทุกกองไม่มีตำแหน่งจึงไม่ขึ้น)')
+  assert.match(await structure(page).innerText(), /12 กอง · 120 ตำแหน่ง/)
+  assert.equal(await structure(page).locator('[data-structure-position]').count(), 0, 'เปิดหน้ามาทุกกองต้องพับ')
+  const height = await tabHeight(page)
+  assert.ok(height < 1200, `120 ตำแหน่งต้องไม่ทำให้หน้ายาว (ได้ ${height}px · ของเดิมสนามซ้อม 28 ตำแหน่งยาว 2,705px)`)
+  const finance = structureGroup(page, D.fin)
+  await finance.locator('[data-structure-toggle]').click()
+  assert.ok(await finance.locator('[data-structure-position]').count() > 5)
+  const engineering = structureGroup(page, D.eng)
+  await engineering.locator('[data-structure-toggle]').click()
+  assert.equal(await finance.locator('[data-structure-position]').count(), 0, 'เปิดได้ทีละกอง กองเดิมต้องพับเอง')
+  assert.ok(await engineering.locator('[data-structure-position]').count() > 5)
+  await engineering.locator('[data-structure-toggle]').click()
+  assert.equal(await structure(page).locator('[data-structure-position]').count(), 0, 'กดซ้ำต้องพับ')
+  // ค้นหาชื่อตำแหน่ง: ขึ้นเฉพาะกองที่มี และกางให้เลย
+  const search = structure(page).locator('[data-structure-search]')
+  await search.fill('นายช่างโยธา')
+  assert.equal(await groups.count(), 1)
+  assert.equal(await structure(page).locator('[data-structure-position]').count(), 1)
+  // ค้นหาชื่อย่อกอง: ขึ้นทั้งกอง แม้ชื่อตำแหน่งไม่มีคำนั้น
+  await search.fill('ทส.3')
+  assert.equal(await groups.count(), 1)
+  assert.ok(await structure(page).locator('[data-structure-position]').count() > 5, 'เจอชื่อกองต้องเห็นตำแหน่งทั้งกอง')
+  await search.fill('')
+  assert.equal(await groups.count(), 13)
+  assert.equal(await structure(page).locator('[data-structure-position]').count(), 0)
+  await shot(page, '11-structure-desktop')
+})
+
+await scenario('กองและตำแหน่ง: เพิ่ม แก้ ลบกองในหน้าต่าง · ไม่มีฟอร์มค้างบนหน้า · กองชื่อซ้ำเพิ่มไม่ได้', { fixture: 'users' }, async (page, db) => {
+  const asked = []
+  page.on('dialog', dialog => { asked.push(dialog.message()); dialog.accept() })
+  await openStructure(page)
+  assert.equal(await page.locator('#department-name').count(), 0, 'ฟอร์มเพิ่มกองต้องไม่ค้างบนหน้า')
+  await structure(page).locator('[data-structure-add-department]').click()
+  const dialog = page.locator('[data-department-dialog]')
+  await dialog.locator('#department-name').fill('กองคลัง')
+  assert.match(await dialog.locator('[data-department-reason]').innerText(), /มีกองชื่อ “กองคลัง” อยู่แล้ว/)
+  assert.equal(await dialog.locator('[data-department-save]').isDisabled(), true)
+  await dialog.locator('#department-name').fill('กองสาธารณสุข')
+  await dialog.locator('#department-short-name').fill('สธ.')
+  assert.equal(db.writes.length, 0, 'ยังไม่กดบันทึกห้ามเขียน')
+  await dialog.locator('[data-department-save]').click()
+  await dialog.waitFor({ state: 'detached' })
+  const created = db.writes.find(write => write.rpc === 'insert-department')
+  assert.equal(created.name, 'กองสาธารณสุข')
+  assert.equal(created.short_name, 'สธ.')
+  assert.equal(created.color, null, 'ไม่เลือกสี = ให้ trigger เลือก')
+  assert.match(created.code, /^dept_/)
+  assert.equal(created.sort_order, DEPARTMENTS.length)
+  const group = structureGroup(page, created.id)
+  await group.locator('[data-structure-add-position]').waitFor({ timeout: 10000 })
+  await group.locator('[data-structure-edit-department]').click()
+  assert.equal(await dialog.getByRole('radio', { name: 'อัตโนมัติ' }).count(), 0, 'แก้กองต้องเลือกสีจริง')
+  await dialog.locator('#department-name').fill('กองสาธารณสุขและสิ่งแวดล้อม')
+  await dialog.locator('[data-department-save]').click()
+  await dialog.waitFor({ state: 'detached' })
+  const updated = db.writes.find(write => write.rpc === 'update-department')
+  assert.equal(updated.id, created.id)
+  assert.equal(updated.name, 'กองสาธารณสุขและสิ่งแวดล้อม')
+  await group.getByText('กองสาธารณสุขและสิ่งแวดล้อม').waitFor()
+  await group.locator('[data-structure-edit-department]').click()
+  await dialog.locator('[data-department-delete]').click()
+  await dialog.waitFor({ state: 'detached' })
+  assert.ok(asked.some(message => message.includes('ลบกอง "กองสาธารณสุขและสิ่งแวดล้อม"')), 'ลบกองต้องถามก่อน')
+  assert.equal(db.writes.at(-1).rpc, 'delete-department')
+  await group.waitFor({ state: 'detached' })
+})
+
+await scenario('กองและตำแหน่ง: ลบตำแหน่งอยู่ในหน้าต่างแก้ · มีคนถืออยู่ลบไม่ได้ บอกเหตุ', {
+  fixture: 'users', db: Object.assign(freshDb(), { holderCounts: [{ position_id: P.finHead, holder_count: 2 }] }),
+}, async (page, db) => {
+  const asked = []
+  page.on('dialog', dialog => { asked.push(dialog.message()); dialog.accept() })
+  await openStructure(page)
+  const finance = structureGroup(page, D.fin)
+  await finance.locator('[data-structure-toggle]').click()
+  assert.equal(await finance.getByRole('button', { name: /^ลบ/ }).count(), 0, 'แถวตำแหน่งไม่มีปุ่มลบแล้ว')
+  await finance.getByRole('button', { name: 'แก้ไขตำแหน่ง ผู้อำนวยการกองคลัง', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  assert.match(await dialog.locator('[data-position-delete-blocked]').innerText(), /ยังมีบุคลากร 2 คนถือตำแหน่งนี้/)
+  assert.equal(await dialog.locator('[data-position-delete]').count(), 0)
+  await dialog.getByRole('button', { name: 'ปิด' }).click()
+  await finance.getByRole('button', { name: 'แก้ไขตำแหน่ง รองผู้อำนวยการกองคลัง', exact: true }).click()
+  await dialog.locator('[data-position-delete]').click()
+  await dialog.waitFor({ state: 'detached' })
+  assert.ok(asked.some(message => message.includes('ลบตำแหน่ง "รองผู้อำนวยการกองคลัง"')), 'ลบตำแหน่งต้องถามก่อน')
+  assert.deepEqual(db.writes.map(write => write.rpc), ['delete-position'])
+  await finance.getByRole('button', { name: 'แก้ไขตำแหน่ง รองผู้อำนวยการกองคลัง', exact: true }).waitFor({ state: 'detached' })
+  assert.equal(await finance.locator('[data-structure-position]').count() > 0, true, 'กองที่เปิดอยู่ต้องยังเปิด')
+})
+
+await scenario('กองและตำแหน่ง มือถือ 390px: สั้นกว่าเดิม · ไม่ล้นแนวนอน · ปุ่มสูงพอกด · ตัวอักษรไม่เล็กกว่า 12px', {
+  fixture: 'users', db: manyDb(), viewport: { width: 390, height: 844 },
+}, async (page) => {
+  await openStructure(page)
+  const height = await tabHeight(page)
+  assert.ok(height < 1500, `มือถือ 120 ตำแหน่งต้องไม่ยาว (ได้ ${height}px · ของเดิมสนามซ้อม 28 ตำแหน่งยาว 3,628px)`)
+  await structureGroup(page, D.fin).locator('[data-structure-toggle]').click()
+  assert.equal(await noOverflow(page), true, 'ต้องไม่ล้นแนวนอน')
+  const shortControls = list => list.evaluateAll(items => items
+    .filter(item => item.getBoundingClientRect().height < 44)
+    .map(item => item.textContent?.trim() || item.getAttribute('aria-label') || item.id))
+  assert.deepEqual(await shortControls(structure(page).locator('button:visible, input:visible')), [], 'ปุ่มและช่องกรอกต้องสูงอย่างน้อย 44px')
+  const smallText = await structure(page).evaluate(root => [...root.querySelectorAll('*')]
+    .filter(item => item.children.length === 0 && item.textContent.trim() && parseFloat(getComputedStyle(item).fontSize) < 12)
+    .map(item => item.textContent.trim().slice(0, 30)))
+  assert.deepEqual(smallText, [], 'ตัวอักษรต้องไม่เล็กกว่า 12px')
+  await shot(page, '12-structure-mobile')
+  await structure(page).locator('[data-structure-add-department]').click()
+  const dialog = page.locator('[data-department-dialog]')
+  await dialog.locator('#department-name').waitFor()
+  assert.equal(await noOverflow(page), true, 'หน้าต่างกองต้องไม่ล้น')
+  assert.deepEqual(await shortControls(dialog.locator('button:visible, input:visible')), [], 'ปุ่มสีและปุ่มในหน้าต่างต้องสูงอย่างน้อย 44px')
+  await shot(page, '13-department-dialog-mobile')
 })
 
 await scenario('แถบผู้ลงนาม: บอกช่องที่ขาด กดตั้งเลยเปิดฟอร์มพร้อมตำแหน่ง · ครบแล้วบอกว่าครบ', { fixture: 'users' }, async (page, db) => {

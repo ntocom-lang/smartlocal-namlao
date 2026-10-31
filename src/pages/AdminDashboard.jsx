@@ -37,8 +37,7 @@ const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectRe
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import DocumentSigningSettings from '../components/admin/DocumentSigningSettings'
 import DocumentTypeAssignments from '../components/admin/DocumentTypeAssignments'
-import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
-import DepartmentManager from '../components/admin/DepartmentManager'
+import StructureManager from '../components/admin/StructureManager'
 import PersonSetupForm from '../components/admin/PersonSetupForm'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
 import ResetPasswordModal from '../components/admin/ResetPasswordModal'
@@ -767,13 +766,7 @@ export function UserManager({ tenant, currentUserRole, currentUserId, onOpenSign
 
       {subTab === 'structure' && (
         <div data-user-manager-structure>
-          <p className="mx-4 mt-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold leading-6 text-blue-800 md:mx-5">
-            เพิ่มเจ้าหน้าที่ไม่ต้องมาหน้านี้ก่อน ฟอร์มเพิ่มกองและตำแหน่งให้ได้เลย หน้านี้ไว้เตรียมรายชื่อล่วงหน้า แก้ชื่อ และลบ
-          </p>
-          <div className="px-4 py-4 md:px-5" data-user-manager-departments>
-            <DepartmentManager tenant={tenant} />
-          </div>
-          <PositionCatalogAdmin tenant={tenant} currentUserRole={currentUserRole} />
+          <StructureManager tenant={tenant} currentUserRole={currentUserRole} onChanged={reloadStructure} />
         </div>
       )}
 

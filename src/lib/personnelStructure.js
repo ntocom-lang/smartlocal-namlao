@@ -158,16 +158,17 @@ export function proposedRoleForAppointment({ currentRole, position, asHead, appo
   return leastPrivilegeRole(current)
 }
 
-// รหัสกองสุ่มแบบเดียวกับหน้าจัดการกอง · สีปล่อยว่างให้ trigger departments_fill_color เลือก
-export function createDepartment(client, tenantId, { name, sortOrder = 0 }) {
+// เพิ่มกอง ใช้ทั้งฟอร์มเจ้าหน้าที่และหน้าต่างเพิ่มกอง · รหัสสุ่ม dept_<เวลา> · สีว่าง = ให้ trigger
+// departments_fill_color เลือกให้ตอน INSERT
+export function createDepartment(client, tenantId, { name, shortName = null, color = null, sortOrder = 0 }) {
   return client.from('departments').insert({
     municipality_id: tenantId,
     name,
-    short_name: null,
+    short_name: shortName,
     code: `dept_${Date.now().toString(36)}`,
     sort_order: sortOrder,
-    color: null,
-  }).select('id, code, name, short_name').single()
+    color,
+  }).select('id, code, name, short_name, color, sort_order, is_active').single()
 }
 
 // ใช้ได้ทุกกองเป็นค่าตั้งต้นโดยจำกองนี้ไว้เป็นกองแนะนำ ล็อกกองเฉพาะหัวหน้าหน่วยงาน

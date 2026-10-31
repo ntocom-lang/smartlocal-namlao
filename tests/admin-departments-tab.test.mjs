@@ -14,16 +14,16 @@ const check = async (name, fn) => {
 const dashboard = await read('src/pages/AdminDashboard.jsx')
 const settings = await read('src/components/admin/SystemSettingsAdmin.jsx')
 
-await check('หน้าจัดการผู้ใช้: แท็บ เจ้าหน้าที่ → ประชาชน → กองและตำแหน่ง ใช้หน้าจัดการกองและตำแหน่งเดิม', async () => {
+await check('หน้าจัดการผู้ใช้: แท็บ เจ้าหน้าที่ → ประชาชน → กองและตำแหน่ง เป็นรายการเดียวจัดตามกอง', async () => {
   const order = ["key: 'staff'", "key: 'citizen'", "key: 'structure'"]
     .map((needle) => dashboard.indexOf(`{ ${needle}`))
   assert.ok(order.every((index) => index > 0), `หาแท็บไม่ครบ: ${order}`)
   assert.deepEqual([...order].sort((a, b) => a - b), order, 'ลำดับแท็บต้องเป็น เจ้าหน้าที่ ประชาชน กองและตำแหน่ง')
   assert.doesNotMatch(dashboard, /\{ key: 'departments'|\{ key: 'positions'/, 'รวมเป็นแท็บเดียวแล้ว')
-  assert.match(dashboard, /import DepartmentManager from '\.\.\/components\/admin\/DepartmentManager'/)
-  assert.match(dashboard, /subTab === 'structure' && \(\s*<div data-user-manager-structure>/)
-  assert.match(dashboard, /<div[^>]*data-user-manager-departments>\s*<DepartmentManager tenant=\{tenant\} \/>/)
-  assert.match(dashboard, /<PositionCatalogAdmin tenant=\{tenant\} currentUserRole=\{currentUserRole\} \/>/)
+  // เจ้าของระบบสั่ง 2569-10-31: เดิมวางหน้ากองต่อหน้าตำแหน่ง ชื่อกองซ้ำ 2 รอบ ยาว 3-4 จอ
+  assert.match(dashboard, /import StructureManager from '\.\.\/components\/admin\/StructureManager'/)
+  assert.doesNotMatch(dashboard, /import (DepartmentManager|PositionCatalogAdmin) /, 'ห้ามกลับไปวางสองหน้าต่อกัน')
+  assert.match(dashboard, /subTab === 'structure' && \(\s*<div data-user-manager-structure>\s*<StructureManager tenant=\{tenant\} currentUserRole=\{currentUserRole\} onChanged=\{reloadStructure\} \/>/)
 })
 
 await check('แท็บกองไม่ยิง RPC รายชื่อคน (ไม่ดึง PII มาทิ้ง) และซ่อนการ์ดสถิติรายชื่อ', async () => {
