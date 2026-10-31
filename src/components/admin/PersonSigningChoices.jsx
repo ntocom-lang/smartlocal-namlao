@@ -30,8 +30,9 @@ function rowWarning(row) {
 // ระบบเสนอจากตำแหน่ง แอดมินเห็นชื่อเดิมก่อนบันทึก และเอาติ๊กออกได้ ระบบไม่ตั้งผู้ลงนามเองเงียบๆ
 //   rows     = จาก personSigningRows · pickable = ช่องอื่นที่เลือกเพิ่มได้ · titles = ตำแหน่งที่พิมพ์ใต้ชื่อของคนที่ตำแหน่งไม่ตรงช่อง
 //   signMode = 'wet' | 'online' | null (ยังไม่รู้) ตั้งที่เมนูการลงนามเอกสาร ฟอร์มแค่บอกผล
+//   signerReadiness = ความพร้อมของคนนี้ (ESIGN_READINESS) เมื่อหน่วยงานเปิดออนไลน์ · null = ยังไม่รู้/คนใหม่ ใช้ข้อความกลาง
 export default function PersonSigningChoices({
-  rows, pickable, positionName, titles, signMode, onToggle, onTitleChange, onPick, onAddCustom, onOpenSigning,
+  rows, pickable, positionName, titles, signMode, signerReadiness = null, onToggle, onTitleChange, onPick, onAddCustom, onOpenSigning,
 }) {
   const [addingCustom, setAddingCustom] = useState(false)
   const [customLabel, setCustomLabel] = useState('')
@@ -110,11 +111,20 @@ export default function PersonSigningChoices({
       )}
       {changing && <p className="text-xs font-semibold leading-5 text-teal-900">{SIGNING_EFFECT_TEXT}</p>}
       {signMode === 'wet' && <p className="text-xs leading-5 text-slate-600" data-person-sign-mode="wet">หน่วยงานนี้เซ็นสด ระบบพิมพ์ชื่อบนเอกสาร แล้วเซ็นบนกระดาษ</p>}
-      {signMode === 'online' && (
-        <p className="text-xs font-semibold leading-5 text-amber-800" data-person-sign-mode="online">
-          หน่วยงานนี้เปิดลงนามออนไลน์ เจ้าตัวต้องตั้งรหัสลงนามและเพิ่มลายเซ็นเองที่เมนูลายเซ็นของฉัน
+      {signMode === 'online' && (signerReadiness === 'ready' ? (
+        <p className="text-xs font-semibold leading-5 text-emerald-800" data-person-sign-mode="online" data-person-signer-readiness="ready">
+          หน่วยงานนี้เปิดลงนามออนไลน์ · คนนี้ตั้งรหัสลงนามแล้ว ลงนามออนไลน์ได้
         </p>
-      )}
+      ) : signerReadiness === 'suspended' ? (
+        <p className="text-xs font-semibold leading-5 text-amber-800" data-person-sign-mode="online" data-person-signer-readiness="suspended">
+          หน่วยงานนี้เปิดลงนามออนไลน์ · คนนี้ระงับการลงนามอยู่ คำขอที่ถึงช่องของคนนี้เซ็นสดไปก่อน จนกว่าจะเปิดคืนที่เมนูการลงนามเอกสาร
+        </p>
+      ) : (
+        <p className="text-xs font-semibold leading-5 text-amber-800" data-person-sign-mode="online" data-person-signer-readiness={signerReadiness ?? 'unknown'}>
+          หน่วยงานนี้เปิดลงนามออนไลน์ เจ้าตัวต้องตั้งรหัสลงนามและเพิ่มลายเซ็นเองที่เมนูลายเซ็นของฉัน
+          {signerReadiness === 'pin_not_set' ? ' · คนนี้ยังไม่ได้ตั้ง ระหว่างนี้คำขอที่ถึงช่องของคนนี้เซ็นสดไปก่อน' : ''}
+        </p>
+      ))}
       {onOpenSigning && (
         <button type="button" onClick={onOpenSigning} className="min-h-11 rounded-lg px-1 text-xs font-bold text-teal-700 hover:underline">
           ดูทุกช่องและกรณีพิเศษที่เมนูการลงนามเอกสาร

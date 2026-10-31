@@ -38,6 +38,9 @@ const imageFunctionsSql = await readMigration('20261023100100_esign_image_functi
 const tripPanelSql = await readMigration('20261023110000_esign_trip_panel_functions.sql')
 // แอดมินลบทริปที่มีลายเซ็นได้ (2569-10-25) — แทน esign_fleet_trip_guard ทั้งตัว (CREATE OR REPLACE)
 const adminDeleteSql = await readMigration('20261025120000_esign_trip_admin_delete.sql')
+// เฟส 2 (2569-10-31): ช่องที่ผู้ลงนามไม่พร้อมตกเป็นเซ็นสด — apply ท้ายสุด (กรณีชุดท้ายไฟล์)
+const fallbackColumnSql = await readMigration('20261031100000_esign_fallback_column.sql')
+const fallbackFunctionsSql = await readMigration('20261031100100_esign_fallback_functions.sql')
 
 // ดึงฟังก์ชันตัวจริงออกจาก migration เดิมทั้งตัว (ไม่พิมพ์ซ้ำเอง)
 const extractFunction = (source, startPattern) => {
@@ -1352,6 +1355,185 @@ await test('หลักฐานตรวจย้อนได้: ทุกก
   }
   const all = rows.map(r => r.m).join('\n')
   for (const secret of ['246810', '482916', '369258', 'สำนักงานจังหวัดแพร่', 'อบรมเชิงปฏิบัติการลับ']) assert.ok(!all.includes(secret), `audit ต้องไม่มี ${secret}`)
+})
+
+// ── เฟส 2 (2569-10-31): ช่องที่ผู้ลงนามไม่พร้อมตกเป็นเซ็นสด · ถอดด่านทดลอง · ความพร้อมรายคน ─────────────
+// apply ต่อท้ายลำดับเดียวกับฐานจริง กรณีข้างบนคือสภาพก่อนเฟส 2 (ทริปสร้างก่อนผู้ลงนามตั้งรหัส จึงยังออนไลน์)
+// ใช้ อปท. ใหม่ (ซี) และคนชุดใหม่ ไม่ปนสถานะรหัส/ระงับของกรณีข้างบน
+await db.exec(fallbackColumnSql)
+await db.exec(fallbackFunctionsSql)
+const C = '00000000-0000-4000-8000-00000000000c'
+const DC = '00000000-0000-4000-8000-0000000000dc'
+const DC2 = '00000000-0000-4000-8000-0000000000dd'
+await db.query(`INSERT INTO public.municipalities VALUES ($1, 'อบต.ทดสอบซี')`, [C])
+await db.query(`INSERT INTO public.departments VALUES ($1, $3, 'กองช่าง'), ($2, $3, 'กองคลัง')`, [DC, DC2, C])
+Object.assign(users, {
+  adminC: { id: U(31), role: 'admin', muni: C, name: 'แอดมิน ซี' },
+  reqC: { id: U(32), role: 'staff', muni: C, name: 'ผู้ขอ ซี', fleetRole: 'fleet_staff', job: 'นักวิชาการศึกษา' },
+  headC: { id: U(33), role: 'staff', muni: C, name: 'หัวหน้ากอง ซี', fleetRole: 'fleet_staff', job: 'ผู้อำนวยการกองช่าง' },
+  mayorC: { id: U(34), role: 'staff', muni: C, name: 'นายก ซี', job: 'นายกองค์การบริหารส่วนตำบลทดสอบซี' },
+  head2C: { id: U(35), role: 'staff', muni: C, name: 'หัวหน้ากองคลัง ซี', job: 'ผู้อำนวยการกองคลัง' },
+  mayorReqC: { id: U(36), role: 'staff', muni: C, name: 'นายกขอรถ ซี', fleetRole: 'fleet_staff', job: 'นายกองค์การบริหารส่วนตำบลทดสอบซี' },
+})
+for (const alias of ['adminC', 'reqC', 'headC', 'mayorC', 'head2C', 'mayorReqC']) {
+  const u = users[alias]
+  await db.query('INSERT INTO auth.users VALUES ($1)', [u.id])
+  await db.query('INSERT INTO public.profiles (id, full_name, role, municipality_id, fleet_role, job_title) VALUES ($1,$2,$3,$4,$5,$6)',
+    [u.id, u.name, u.role, u.muni, u.fleetRole ?? null, u.job ?? null])
+}
+const tripC = (extra = {}) => makeTrip({ muni: C, requester: 'reqC', dept: DC, ...extra })
+const readyPin = async (alias, pin) => { await as(alias); assert.deepEqual(await rpc('public.set_esign_pin($1, NULL, true)', [pin]), { ok: true }, alias) }
+const ALL_ONLINE = { requester: 'online', dept_head: 'online', authority: 'online', sk1: 'online' }
+
+await test('เฟส 2 ถอดด่านทดลอง: อปท. ที่ไม่เคยยืนยันทดลอง (ไม่มีแถวนโยบาย) เปิดได้ · ด่านผูกบัญชียังอยู่ · ฟังก์ชันยืนยันทดลองเดิมยังเรียกได้', async () => {
+  await as('adminC')
+  const enable = modes => rpc('public.set_esign_doc_type($1, $2, $3::jsonb)', [C, 'fleet_trip_request', JSON.stringify(modes)])
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_tenant_policy WHERE municipality_id = $1', [C])).rows[0].n, 0)
+  assert.deepEqual(await enable(ALL_ONLINE), { ok: false, code: 'gate_authority_unlinked' })
+  await addRegistry('mayor', 'mayorC', { muni: C })
+  assert.deepEqual(await enable(ALL_ONLINE), { ok: false, code: 'gate_dept_head_unlinked' })
+  await addRegistry('department_head', 'headC', { dept: DC, muni: C })
+  assert.deepEqual(await enable(ALL_ONLINE), { ok: true, enabled: true, slot_modes: ALL_ONLINE })
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.esign_tenant_policy WHERE municipality_id = $1', [C])).rows[0].n, 0, 'เปิดได้โดยไม่ต้องมีแถวนโยบาย')
+  // หน้าเว็บรุ่นก่อนที่ยังเปิดค้างอยู่กดยืนยันทดลองได้ไม่ error
+  assert.deepEqual(await rpc('public.esign_confirm_trial($1)', [C]), { ok: true })
+  const def = (await db.query(`SELECT pg_get_functiondef('public.set_esign_doc_type(uuid,text,jsonb)'::regprocedure) AS d`)).rows[0].d
+  assert.doesNotMatch(def, /gate_trial_missing|trial_confirmed_at/)
+})
+
+let F0 = null // ใบที่สร้างตอนยังไม่มีใครพร้อม
+await test('เฟส 2 ยังไม่มีใครพร้อม: ใบเซ็นสดทั้งใบ (esign_slots NULL ไม่มีรหัสตรวจสอบ) · เก็บเหตุผลทุกช่อง · มี audit · สก.๑ ไม่ใช่นายกไม่นับ', async () => {
+  await as('reqC')
+  F0 = await tripC()
+  assert.equal(F0.esign_slots, null)
+  assert.equal(F0.esign_verify_code, null)
+  assert.deepEqual(F0.esign_fallback, { requester: 'pin_not_set', dept_head: 'pin_not_set', authority: 'pin_not_set' })
+  const { rows } = await db.query(`SELECT actor_id, metadata FROM public.audit_logs WHERE action = 'esign_slot_fallback' AND resource_id = $1`, [F0.id])
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].actor_id, users.reqC.id)
+  assert.deepEqual(rows[0].metadata, { fallback: F0.esign_fallback, online: false })
+  assert.ok(!JSON.stringify(rows[0].metadata).includes('สำนักงานจังหวัดแพร่'), 'audit ต้องไม่มีปลายทาง')
+  const st = await rpc('public.esign_trip_status($1)', [F0.id])
+  assert.equal(st.mode, 'wet')
+  assert.deepEqual(st.slots.map(s => [s.slot, s.mode, s.fallback]),
+    [['requester', 'wet', 'pin_not_set'], ['dept_head', 'wet', 'pin_not_set'], ['authority', 'wet', 'pin_not_set'], ['sk1', 'wet', null]])
+  assert.deepEqual(await rpc('public.esign_sign_fleet_trip($1, $2, $3, NULL)', [F0.id, 'requester', '246810']), { ok: false, code: 'not_online' })
+})
+
+await test('เฟส 2 พร้อมบางคน: ผู้ขอพร้อม → ช่องผู้ขอออนไลน์ ช่องอื่นเซ็นสด · ผู้ขอลงนามได้ไม่ต้องรอใคร · ใบที่สร้างไปแล้วไม่เปลี่ยน', async () => {
+  await readyPin('reqC', '246810')
+  await as('reqC')
+  const t = await tripC()
+  assert.deepEqual(t.esign_slots, { requester: 'online', dept_head: 'wet', authority: 'wet', sk1: 'online' })
+  assert.match(t.esign_verify_code, /^[0-9a-f]{32}$/)
+  assert.deepEqual(t.esign_fallback, { dept_head: 'pin_not_set', authority: 'pin_not_set' })
+  const signed = await rpc('public.esign_sign_fleet_trip($1, $2, $3, NULL)', [t.id, 'requester', '246810'])
+  assert.equal(signed.ok, true)
+  assert.equal(signed.complete, true, 'ช่องออนไลน์ที่เหลือมีแค่ของผู้ขอ ลงแล้วครบ')
+  const st = await rpc('public.esign_trip_status($1)', [t.id])
+  assert.equal(st.mode, 'online')
+  assert.deepEqual(st.slots.map(s => [s.slot, s.mode, s.fallback]),
+    [['requester', 'online', null], ['dept_head', 'wet', 'pin_not_set'], ['authority', 'wet', 'pin_not_set'], ['sk1', 'online', null]])
+  // ใบแรกตรึงไว้ ผู้ขอตั้งรหัสทีหลังก็ยังเซ็นสด (เจ้าของระบบเลือก)
+  const again = await trip(F0.id)
+  assert.equal(again.esign_slots, null)
+  assert.deepEqual(again.esign_fallback, { requester: 'pin_not_set', dept_head: 'pin_not_set', authority: 'pin_not_set' })
+})
+
+await test('เฟส 2 เหตุผลแต่ละแบบ: ถูกระงับ · ไม่มีในทะเบียน (กองอื่น) · ชื่อพิมพ์เอง · ล็อกรหัสผิดนับว่าพร้อม · พร้อมครบ = ออนไลน์ทุกช่อง ไม่มี fallback', async () => {
+  await readyPin('headC', '482916')
+  await readyPin('mayorC', '369258')
+  await as('mayorC')
+  assert.deepEqual(await rpc(`public.esign_suspend_me('ทดสอบ')`), { ok: true })
+  await db.query(`UPDATE public.esign_signers SET failed_count = 5, locked_until = now() + interval '10 minutes' WHERE user_id = $1`, [users.headC.id])
+  await as('reqC')
+  const t1 = await tripC()
+  assert.deepEqual(t1.esign_slots, { requester: 'online', dept_head: 'online', authority: 'wet', sk1: 'online' })
+  assert.deepEqual(t1.esign_fallback, { authority: 'suspended' })
+  const t2 = await tripC({ dept: DC2 })
+  assert.deepEqual(t2.esign_fallback, { dept_head: 'signatory_missing', authority: 'suspended' })
+  await addRegistry('department_head', null, { dept: DC2, manual: 'นายพิมพ์ ชื่อเอง', muni: C })
+  const t3 = await tripC({ dept: DC2 })
+  assert.equal(t3.esign_fallback.dept_head, 'signatory_not_linked')
+
+  await as('adminC')
+  assert.deepEqual(await rpc('public.esign_reinstate_signer($1)', [users.mayorC.id]), { ok: true })
+  await db.query(`UPDATE public.esign_signers SET failed_count = 0, locked_until = NULL WHERE user_id = $1`, [users.headC.id])
+  await as('reqC')
+  const t4 = await tripC()
+  assert.deepEqual(t4.esign_slots, { requester: 'online', dept_head: 'online', authority: 'online', sk1: 'online' })
+  assert.equal(t4.esign_fallback, null)
+  assert.equal((await db.query(`SELECT count(*)::int AS n FROM public.audit_logs WHERE action = 'esign_slot_fallback' AND resource_id = $1`, [t4.id])).rows[0].n, 0)
+})
+
+await test('เฟส 2 สก.๑: ผู้ขอเป็นนายกแต่ยังไม่ตั้งรหัส → ช่องผู้ขอและ สก.๑ เซ็นสดทั้งคู่', async () => {
+  await as('mayorReqC')
+  const t = await tripC({ requester: 'mayorReqC', position: 'นายกองค์การบริหารส่วนตำบลทดสอบซี' })
+  assert.deepEqual(t.esign_fallback, { requester: 'pin_not_set', sk1: 'pin_not_set' })
+  assert.deepEqual(t.esign_slots, { requester: 'wet', dept_head: 'online', authority: 'online', sk1: 'wet' })
+})
+
+await test('เฟส 2 ปลอม esign_fallback ไม่ได้: INSERT ส่งมาเองไม่รับ · UPDATE แก้/ล้างไม่ได้', async () => {
+  await as('reqC')
+  const { rows } = await db.query(
+    `INSERT INTO public.fleet_trips (municipality_id, status, requested_by, created_by, department_id, esign_fallback)
+     VALUES ($1, 'pending', $2, $2, $3, '{"requester":"suspended"}'::jsonb) RETURNING *`, [C, users.reqC.id, DC])
+  assert.equal(rows[0].esign_fallback, null)
+  await db.query(`UPDATE public.fleet_trips SET esign_fallback = '{"x":"y"}'::jsonb WHERE id = $1`, [rows[0].id])
+  assert.equal((await trip(rows[0].id)).esign_fallback, null)
+  await db.query(`UPDATE public.fleet_trips SET esign_fallback = NULL, notes = 'แก้หมายเหตุ' WHERE id = $1`, [F0.id])
+  assert.deepEqual((await trip(F0.id)).esign_fallback, { requester: 'pin_not_set', dept_head: 'pin_not_set', authority: 'pin_not_set' })
+})
+
+await test('เฟส 2 ระบบลงนามเสียตอนตรวจความพร้อม: ยังสร้างทริปได้ เป็นเซ็นสด ไม่มี fallback ค้าง', async () => {
+  await db.exec('ALTER TABLE public.esign_signers RENAME TO esign_signers_broken')
+  try {
+    await as('reqC')
+    const t = await tripC()
+    assert.equal(t.esign_slots, null)
+    assert.equal(t.esign_fallback, null)
+  } finally {
+    await db.exec('ALTER TABLE public.esign_signers_broken RENAME TO esign_signers')
+  }
+})
+
+await test('เฟส 2 esign_signer_readiness: แอดมิน อปท. นั้น/superadmin เท่านั้น · คนในทะเบียน + คนที่ขอดู (เฉพาะ อปท. นี้) · ไม่มีรหัส/เวลา/เหตุผลระงับ', async () => {
+  const read = (ids = null, muni = C) => rpc('public.esign_signer_readiness($1, $2::uuid[])', [muni, ids])
+  await as('mayorC')
+  await rpc(`public.esign_suspend_me('ไปราชการ')`)
+  await as('adminC')
+  const r = await read([users.reqC.id, users.head2C.id, users.requester.id])
+  assert.equal(r.ok, true)
+  const states = Object.fromEntries(r.people.map(p => [p.profile_id, p.state]))
+  assert.deepEqual(states, {
+    [users.reqC.id]: 'ready', [users.headC.id]: 'ready', [users.mayorC.id]: 'suspended', [users.head2C.id]: 'pin_not_set',
+  }, 'คนของ อปท. อื่นที่ขอดูต้องไม่ออกมา')
+  for (const p of r.people) assert.deepEqual(Object.keys(p).sort(), ['profile_id', 'state'])
+  const onlyRegistry = await read(null)
+  assert.deepEqual(onlyRegistry.people.map(p => p.profile_id).sort(), [users.headC.id, users.mayorC.id].sort())
+  assert.deepEqual(await read(Array.from({ length: 201 }, (_, i) => U(50 + (i % 40)))), { ok: false, code: 'too_many' })
+  await as('superadmin')
+  assert.equal((await read(null)).ok, true)
+  for (const alias of ['reqC', 'headC', 'adminA', 'anon']) {
+    await as(alias)
+    assert.deepEqual(await read(null), { ok: false, code: 'forbidden' }, alias)
+  }
+  const can = async (role, fn) => (await db.query(`SELECT has_function_privilege($1, $2, 'execute') AS ok`, [role, fn])).rows[0].ok
+  assert.equal(await can('anon', 'public.esign_signer_readiness(uuid,uuid[])'), false)
+  assert.equal(await can('authenticated', 'public.esign_signer_readiness(uuid,uuid[])'), true)
+  assert.equal(await can('authenticated', 'public.esign_signer_unready_reason(uuid)'), false)
+  assert.equal(await can('anon', 'public.esign_signer_unready_reason(uuid)'), false)
+})
+
+await test('เฟส 2 ของเดิมยังอยู่: แก้ทริปที่มีลายเซ็นยังล็อก · ลบทริปที่มีลายเซ็นยังต้องเป็นแอดมิน', async () => {
+  await as('reqC')
+  const t = await tripC()
+  assert.equal((await rpc('public.esign_sign_fleet_trip($1, $2, $3, NULL)', [t.id, 'requester', '246810'])).ok, true)
+  await expectError(db.query(`UPDATE public.fleet_trips SET destination = 'แก้ปลายทาง' WHERE id = $1`, [t.id]), /ESIGN_TRIP_LOCKED/)
+  await expectError(db.query(`DELETE FROM public.fleet_trips WHERE id = $1`, [t.id]), /ESIGN_TRIP_HAS_SIGNATURES/)
+  await as('adminC')
+  await db.query(`DELETE FROM public.fleet_trips WHERE id = $1`, [t.id])
+  assert.equal(await trip(t.id), undefined)
 })
 
 console.log(`\nผ่านทั้งหมด ${cases} กรณี`)

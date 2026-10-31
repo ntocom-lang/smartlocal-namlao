@@ -8,6 +8,8 @@ import {
 } from '../../lib/documentSignatories'
 import { clearSignatory, fetchActiveSignatories, saveSignatory } from '../../lib/signatoryApi'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
+import { esignReadinessMap } from '../../lib/esign'
+import { getSignerReadiness } from '../../lib/esignApi'
 import SignatoryApplyDialog from './SignatoryApplyDialog'
 import SigningDialogShell from './SigningDialogShell'
 
@@ -382,7 +384,14 @@ function SuggestionCell({ slot, assignment, suggested, change, onApply }) {
   )
 }
 
-function SignatoryRow({ slot, assignment, suggestion, change, onEdit, onApply }) {
+// ผู้ลงนามที่มีบัญชี: บอกความพร้อมลงนามออนไลน์ (เฟส 2) · ไม่รู้ = ข้อความเดิม
+const PROFILE_SOURCE_TEXT = {
+  ready: 'มีบัญชี · ตั้งรหัสลงนามแล้ว ลงนามในระบบได้',
+  pin_not_set: 'มีบัญชี · ยังไม่ได้ตั้งรหัสลงนาม ลงนามออนไลน์ไม่ได้จนกว่าจะตั้ง (ใบเซ็นสดไปก่อน)',
+  suspended: 'มีบัญชี · ระงับการลงนามอยู่ (ใบเซ็นสดไปก่อน)',
+}
+
+function SignatoryRow({ slot, assignment, readiness = null, suggestion, change, onEdit, onApply }) {
   const status = assignmentState(assignment, slot.optional, slot.emptyLabel)
   const suggested = signatorySuggestionState(assignment, suggestion)
   const manual = Boolean(assignment?.manual_name?.trim())
@@ -410,8 +419,9 @@ function SignatoryRow({ slot, assignment, suggestion, change, onEdit, onApply })
           <>
             <p className="break-words text-sm font-semibold text-gray-900">{signatoryName(assignment)}</p>
             {title && <p className="break-words text-xs leading-5 text-gray-600">{title}</p>}
-            <p className={`text-xs leading-5 ${manual ? 'text-amber-800' : 'text-gray-500'}`} data-signatory-source={manual ? 'manual' : 'profile'}>
-              {manual ? 'พิมพ์ชื่อเอง · เซ็นปากกาเท่านั้น' : 'มีบัญชี · ลงนามในระบบได้'}
+            <p className={`text-xs leading-5 ${manual || (readiness && readiness !== 'ready') ? 'text-amber-800' : 'text-gray-500'}`}
+              data-signatory-source={manual ? 'manual' : 'profile'} data-signatory-readiness={manual ? undefined : (readiness ?? 'unknown')}>
+              {manual ? 'พิมพ์ชื่อเอง · เซ็นปากกาเท่านั้น' : (PROFILE_SOURCE_TEXT[readiness] ?? 'มีบัญชี · ลงนามในระบบได้')}
             </p>
             {assignment.effective_from && (
               <p className="text-xs leading-5 text-gray-400">มีผลตั้งแต่ {thaiDateFromDateInput(assignment.effective_from)}</p>
@@ -511,6 +521,17 @@ export default function SignatorySettings({ tenant, onOpenUsers = null }) {
     return () => { active = false }
   }, [tenant?.id])
 
+  // เฟส 2: ผู้ลงนามที่มีบัญชีพร้อมลงนามออนไลน์ไหม — โหลดใหม่เมื่อทะเบียนเปลี่ยน · ดึงไม่ได้ = null ใช้ข้อความเดิม
+  const [readiness, setReadiness] = useState(null)
+  useEffect(() => {
+    if (!tenant?.id) return undefined
+    let active = true
+    getSignerReadiness(tenant.id, null).then((result) => {
+      if (active) setReadiness(esignReadinessMap(result))
+    })
+    return () => { active = false }
+  }, [tenant?.id, assignments])
+
   // draftRows คือแถวที่เพิ่งกด "เพิ่มผู้ลงนาม" แต่ยังไม่ได้บันทึก จึงยังไม่มีใน assignments
   const slots = useMemo(() => buildSignatorySlots(departments, assignments, draftRows)
     .map((slot) => ({ ...slot, municipalityId: tenant?.id })), [departments, tenant?.id, assignments, draftRows])
@@ -595,6 +616,7 @@ export default function SignatorySettings({ tenant, onOpenUsers = null }) {
             <ul>
               {slots.map((slot) => (
                 <SignatoryRow key={slot.key} slot={slot} assignment={assignmentMap[slot.key]}
+                  readiness={readiness?.get(assignmentMap[slot.key]?.profile_id) ?? null}
                   suggestion={suggestions[slot.key]} change={changeByKey[slot.key]}
                   onEdit={() => setEditingKey(slot.key)}
                   onApply={() => setApplying([changeByKey[slot.key]])} />

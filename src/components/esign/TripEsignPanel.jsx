@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, Clock, FileSignature, Loader2, Lock, PenLine, ShieldAlert, Undo2 } from 'lucide-react'
 import { Chip, Notice } from './EsignBits'
 import SignTripDialog from './SignTripDialog'
-import { ESIGN_DECISION_LABEL, ESIGN_DRIVER_NOTE, ESIGN_FLEET_SLOTS, esignDepartWarning, esignMessage, esignRevokeTargets } from '../../lib/esign'
+import { ESIGN_DECISION_LABEL, ESIGN_DRIVER_NOTE, ESIGN_FLEET_SLOTS, esignDepartWarning, esignFallbackText, esignMessage, esignRevokeTargets } from '../../lib/esign'
 import { getTripEsignStatus, revokeFleetTripSignatures } from '../../lib/esignApi'
 import { SMALL_BUTTON_CLASS } from '../../lib/esignUi'
 import { clearHomeRpcCache } from '../../lib/staffHomeData'
@@ -12,6 +12,22 @@ import { thaiDateTimeText } from '../../lib/thaiDate'
 // ทุกอย่างที่แผงตัดสินมาจาก esign_trip_status ฝั่ง DB: ใครถึงตา (can_sign) · ใครถอนได้ (can_revoke / can_revoke_all) · ทริปล็อกไหม (locked)
 // หน้าจอไม่เดาสิทธิ์เอง — ถ้าเดาผิดจะมีปุ่มที่กดแล้วขึ้น "ไม่มีสิทธิ์" หรือปุ่มที่ควรมีกลับหายไป
 const SLOT_LABEL = Object.fromEntries(ESIGN_FLEET_SLOTS.map(slot => [slot.key, slot.label]))
+
+// ช่องที่ตกเป็นเซ็นสดเพราะผู้ลงนามไม่พร้อมตอนสร้างคำขอ — บอกเหตุผลรายช่อง และบอกว่าแก้แล้วมีผลกับใบถัดไป ไม่ใช่ใบนี้
+function FallbackList({ slots }) {
+  return (
+    <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5" data-trip-esign-fallback>
+      <ul className="space-y-1 text-xs leading-5 text-amber-900">
+        {slots.map(slot => (
+          <li key={slot.slot} data-trip-esign-fallback-slot={slot.slot}>
+            <span className="font-semibold">{slot.label}</span>: เซ็นสดบนกระดาษ — {esignFallbackText(slot.fallback)}
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs leading-5 text-amber-800">ผู้ลงนามตั้งรหัสหรือเปิดคืนแล้ว คำขอใบถัดไปลงนามออนไลน์ได้ ใบนี้เซ็นสดต่อ</p>
+    </div>
+  )
+}
 
 function SlotRow({ slot, trip, onSign, onAskRevoke }) {
   const signed = slot.signed
@@ -102,7 +118,27 @@ export default function TripEsignPanel({ trip, onChanged }) {
 
   const online = (status.slots ?? []).filter(slot => slot.mode === 'online' && slot.applicable)
   const wet = (status.slots ?? []).filter(slot => slot.mode !== 'online' && slot.applicable)
+  // เฟส 2: ช่องที่หน่วยงานเปิดออนไลน์ แต่ผู้ลงนามไม่พร้อมตอนสร้างคำขอ จึงเซ็นสด (เหตุผลตรึงไว้ที่ทริป)
+  const fallbacks = wet.filter(slot => slot.fallback)
+  const plainWet = wet.filter(slot => !slot.fallback)
   const closed = ['rejected', 'cancelled'].includes(status.trip_status)
+
+  if (status.mode !== 'online') {
+    if (!fallbacks.length) return null
+    return (
+      <section className="space-y-2 rounded-2xl border border-gray-200 bg-white p-4" aria-labelledby="trip-esign-title" data-trip-esign data-trip-esign-all-wet>
+        <div className="flex flex-wrap items-center gap-2">
+          <FileSignature size={16} className="text-gray-500" />
+          <h3 id="trip-esign-title" className="text-sm font-bold text-gray-800">ลงนามออนไลน์</h3>
+          <Chip tone="mute">ใบนี้เซ็นสด</Chip>
+        </div>
+        <p className="text-xs leading-5 text-gray-600">
+          หน่วยงานเปิดลงนามออนไลน์ไว้ แต่ตอนสร้างคำขอนี้ผู้ลงนามยังไม่พร้อม ใบนี้จึงเซ็นสดทุกช่อง — พิมพ์ใบไปเวียนเซ็นตามเดิม
+        </p>
+        <FallbackList slots={fallbacks} />
+      </section>
+    )
+  }
   const summary = {
     requesterName: trip.requester?.full_name || trip.creator?.full_name,
     vehicleName: trip.vehicle?.name,
@@ -150,8 +186,9 @@ export default function TripEsignPanel({ trip, onChanged }) {
           <SlotRow key={slot.slot} slot={slot} trip={{ closed }} onSign={setSigning} onAskRevoke={key => { setNotice(null); setRevoke({ slot: key, reason: '', busy: false, error: '' }) }} />
         ))}
       </ul>
+      {fallbacks.length > 0 && <FallbackList slots={fallbacks} />}
       <p className="text-[11px] leading-5 text-gray-400" data-trip-esign-wet>
-        {wet.length > 0 ? `ช่องที่ยังเซ็นสดบนกระดาษ: ${wet.map(slot => slot.label).join(' · ')} · ` : ''}{ESIGN_DRIVER_NOTE}
+        {plainWet.length > 0 ? `ช่องที่ยังเซ็นสดบนกระดาษ: ${plainWet.map(slot => slot.label).join(' · ')} · ` : ''}{ESIGN_DRIVER_NOTE}
       </p>
 
       {status.locked && (
