@@ -2432,8 +2432,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                   {t.reject_reason && <div className="col-span-2"><p className="text-gray-400">เหตุผลปฏิเสธ/ยกเลิก</p><p className="font-semibold text-red-600">{t.reject_reason}</p></div>}
                   {t.notes && <div className="col-span-2"><p className="text-gray-400">หมายเหตุ</p><p className="font-semibold text-gray-700">{t.notes}</p></div>}
                 </div>
-                {/* ลงนามออนไลน์ — เฉพาะทริปที่ อปท. เปิดโหมดออนไลน์ไว้ตอนสร้างคำขอ (DB ตรึง esign_slots ไว้ที่ทริป) · อปท. ที่ไม่เปิดไม่เห็นอะไรเปลี่ยน */}
-                {t.esign_slots && <TripEsignPanel trip={t} onChanged={loadTrips} />}
+                {/* ลงนามออนไลน์ — เฉพาะทริปที่ อปท. เปิดโหมดออนไลน์ไว้ตอนสร้างคำขอ (DB ตรึง esign_slots ไว้ที่ทริป) · อปท. ที่ไม่เปิดไม่เห็นอะไรเปลี่ยน
+                    esign_fallback (เฟส 2): ผู้ลงนามไม่พร้อมจนทั้งใบเป็นเซ็นสด — แผงบอกเหตุผล ไม่ให้คนงงว่าทำไมไม่ได้ลงนามออนไลน์
+                    (SELECT เป็น * ฐานที่ยังไม่มีคอลัมน์นี้ได้ undefined ไม่ error) */}
+                {(t.esign_slots || t.esign_fallback) && <TripEsignPanel trip={t} onChanged={loadTrips} />}
               </div>
               <div className={`grid grid-cols-1 gap-2 px-5 pb-5 pt-3 border-t border-gray-100 ${canEdit || canFixOdometer || canReportIncident || canPrintSk1 ? 'sm:grid-cols-2' : ''}`}>
                 <button onClick={() => printTripRequest(t)}

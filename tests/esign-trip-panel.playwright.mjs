@@ -39,6 +39,10 @@ const ONLINE_TRIP_ID = '00000000-0000-4000-8000-0000000a0001'
 const WET_TRIP_ID = '00000000-0000-4000-8000-0000000a0002'
 const ONLINE_DEST = 'ทดสอบลงนามออนไลน์ ศาลากลางจังหวัดแพร่'
 const WET_DEST = 'ทดสอบเซ็นสด ที่ว่าการอำเภอเมือง'
+// เฟส 2: เปิดออนไลน์ไว้แต่ผู้ลงนามไม่พร้อมตอนสร้างคำขอ ทั้งใบจึงเซ็นสด (esign_slots ว่าง แต่มี esign_fallback)
+const FALLBACK_TRIP_ID = '00000000-0000-4000-8000-0000000a0003'
+const FALLBACK_DEST = 'ทดสอบผู้ลงนามไม่พร้อม เทศบาลเมืองแพร่'
+const FALLBACK_ALL = { requester: 'pin_not_set', dept_head: 'signatory_not_linked', authority: 'suspended' }
 
 if (!ALLOWED_HOSTS.has(new URL(BASE).hostname)) throw new BlockedError(`ปฏิเสธการยิงไปที่ ${new URL(BASE).hostname} — ทดสอบได้เฉพาะสนามซ้อมหรือ dev server ในเครื่อง`)
 
@@ -63,7 +67,7 @@ const seedPng = seed => encodePng(40, 16, (x, y) => [(x * 7 + seed * 31) & 255, 
 const imageItem = (n, isDefault) => ({ id: `00000000-0000-4000-8000-00000000030${n}`, label: `แบบที่ ${n}`, is_default: isDefault, created_at: '2026-10-2' + n + 'T03:00:00Z', width: 40, height: 16, png_base64: seedPng(n).toString('base64') })
 
 // ── ทริปจำลอง ────────────────────────────────────────────────────────────────────────────────────
-const fabricateTrip = (id, destination, esignSlots) => ({
+const fabricateTrip = (id, destination, esignSlots, esignFallback = null) => ({
   id, municipality_id: DEMO_MUNICIPALITY, vehicle_id: '00000000-0000-4000-8000-0000000b0001', department_id: null, driver_id: null, status: 'approved',
   requested_by: '00000000-0000-4000-8000-0000000c0001', created_by: '00000000-0000-4000-8000-0000000c0001', requester_position: 'นักวิชาการศึกษา',
   destination, destination_locality: 'อำเภอเมือง', destination_province: 'แพร่', purpose: 'ประชุมทดสอบระบบลงนามออนไลน์', passengers: 2,
@@ -71,7 +75,7 @@ const fabricateTrip = (id, destination, esignSlots) => ({
   created_at: '2026-10-23T03:00:00+00:00', started_at: null, returned_at: null, odometer_start: null, odometer_end: null, distance_km: null,
   approved_by: null, approved_at: null, approval_method: 'auto_queue', notes: null, waitlist_reasons: [], reject_reason: null, backdated_reason: null,
   dept_head_department_id: null, order_authority_role: null, order_authority_label: null,
-  esign_slots: esignSlots, esign_verify_code: esignSlots ? 'a'.repeat(32) : null,
+  esign_slots: esignSlots, esign_verify_code: esignSlots ? 'a'.repeat(32) : null, esign_fallback: esignFallback,
   vehicle: { id: '00000000-0000-4000-8000-0000000b0001', name: '[TEST] กระบะลงนามออนไลน์', license_plate: 'ทด 1234', asset_code: null, asset_kind: 'vehicle', meter_unit: 'km' },
   driver: null,
   requester: { id: '00000000-0000-4000-8000-0000000c0001', full_name: 'สมหญิง ผู้ขอ', job_title: 'นักวิชาการศึกษา', position: null },
@@ -81,30 +85,47 @@ const fabricateTrip = (id, destination, esignSlots) => ({
 
 // ── ฐานข้อมูลจำลองของลงนามออนไลน์: ตัดสินสิทธิ์ตามกติกาเดียวกับ esign_trip_status / esign_sign_fleet_trip_stamped / esign_revoke_fleet_trip ──
 // me: ผู้ที่ล็อกอินอยู่ในมุมของ DB — requester | head | mayor | manager (ผู้ดูแลรถ/แอดมิน ไม่ใช่ผู้ลงนามช่องใด) | stranger (ไม่เกี่ยวข้อง)
-function makeBackend({ me = 'requester', pinSet = true, suspended = false, lockedUntil = null, library = [], signed = {}, tripStatus = 'approved' } = {}) {
+// fallback: ช่องของทริปออนไลน์ที่ตกเป็นเซ็นสดตอนสร้าง (เฟส 2) เช่น { dept_head: 'pin_not_set' } — ลำดับสายข้ามช่องที่ไม่ออนไลน์เหมือน DB
+function makeBackend({ me = 'requester', pinSet = true, suspended = false, lockedUntil = null, library = [], signed = {}, tripStatus = 'approved', fallback = {} } = {}) {
+  const onlineSlots = Object.fromEntries(SLOT_ORDER.map(slot => [slot, slot === 'sk1' ? 'wet' : fallback[slot] ? 'wet' : 'online']))
   const state = {
     me, pinSet, suspended, lockedUntil, library: [...library], signed: { ...signed }, tripStatus, pin: PIN, failedCount: 0, calls: [], nextId: 1, delayMs: 0,
-    trips: [fabricateTrip(ONLINE_TRIP_ID, ONLINE_DEST, { requester: 'online', dept_head: 'online', authority: 'online', sk1: 'wet' }), fabricateTrip(WET_TRIP_ID, WET_DEST, null)],
+    trips: [
+      fabricateTrip(ONLINE_TRIP_ID, ONLINE_DEST, onlineSlots, Object.keys(fallback).length ? fallback : null),
+      fabricateTrip(WET_TRIP_ID, WET_DEST, null),
+      fabricateTrip(FALLBACK_TRIP_ID, FALLBACK_DEST, null, FALLBACK_ALL),
+    ],
   }
   const isManager = () => state.me === 'manager'
   const isRequester = () => state.me === 'requester'
+  const isOnline = slot => onlineSlots[slot] === 'online'
   const activeSigned = () => SLOT_ORDER.filter(slot => state.signed[slot])
-  const prereqOk = slot => (slot === 'dept_head' ? Boolean(state.signed.requester) : slot === 'authority' ? Boolean(state.signed.requester && state.signed.dept_head) : true)
-  const status = () => {
+  const passed = slot => !isOnline(slot) || Boolean(state.signed[slot])
+  const prereqOk = slot => (slot === 'dept_head' ? passed('requester') : slot === 'authority' ? passed('requester') && passed('dept_head') : true)
+  // ทริปที่ทั้งใบตกเป็นเซ็นสด: DB ตอบ mode wet ทุกช่องพร้อมเหตุผล (esign_trip_status เฟส 2)
+  const allWetStatus = () => ({
+    found: true, mode: 'wet', verify_code: null, trip_status: 'approved', required: 0, signed_count: 0, complete: false, integrity: 'none', locked: false, can_revoke_all: false,
+    slots: SLOT_ORDER.map(slot => ({
+      slot, label: SLOT_LABEL[slot], mode: 'wet', applicable: slot !== 'sk1', signed: false, waiting_for_previous: false, can_sign: false, can_revoke: false,
+      blocked: null, expected_name: EXPECTED_NAME[slot] ?? null, signature: null, fallback: FALLBACK_ALL[slot] ?? null,
+    })),
+  })
+  const status = args => {
     if (state.me === 'stranger') return { found: false }
+    if (args?.p_trip_id === FALLBACK_TRIP_ID) return allWetStatus()
     const slots = SLOT_ORDER.map(slot => {
-      const online = slot !== 'sk1'
+      const online = isOnline(slot)
       const sig = state.signed[slot]
       const canSign = online && !sig && prereqOk(slot) && OWNER_OF[slot] === state.me && !['rejected', 'cancelled'].includes(state.tripStatus)
       return {
         slot, label: SLOT_LABEL[slot], mode: online ? 'online' : 'wet', applicable: slot !== 'sk1', signed: Boolean(sig),
         waiting_for_previous: online && !sig && !prereqOk(slot), can_sign: canSign, can_revoke: Boolean(sig) && (isManager() || isRequester() || sig.by === state.me),
-        blocked: null, expected_name: EXPECTED_NAME[slot] ?? null,
+        blocked: null, expected_name: EXPECTED_NAME[slot] ?? null, fallback: fallback[slot] ?? null,
         signature: sig ? { signer_name: EXPECTED_NAME[slot], signer_position: 'ตำแหน่งทดสอบ', signed_as: '', decision: slot === 'authority' ? 'approve' : 'sign', signed_at: '2026-10-23T04:00:00Z',
           content_matches: true, mine: sig.by === state.me, with_image: sig.withImage } : null,
       }
     })
-    const required = 3
+    const required = SLOT_ORDER.filter(isOnline).length
     return {
       found: true, mode: 'online', verify_code: 'a'.repeat(32), trip_status: state.tripStatus, slots, required, signed_count: activeSigned().length,
       complete: activeSigned().length === required, integrity: activeSigned().length ? 'ok' : 'none', locked: activeSigned().length > 0,
@@ -112,7 +133,7 @@ function makeBackend({ me = 'requester', pinSet = true, suspended = false, locke
     }
   }
   const handlers = {
-    esign_trip_status: () => status(),
+    esign_trip_status: args => status(args),
     esign_my_signer_overview: () => ({
       ok: true, pin_set: state.pinSet, pin_set_at: state.pinSet ? '2026-10-20T03:00:00Z' : null, duty_acked: state.pinSet, suspended: state.suspended, suspended_at: null,
       locked_until: state.lockedUntil, failed_count: state.failedCount, image_count: state.library.length, signature_count: 0, signature_count_month: 0,
@@ -142,7 +163,7 @@ function makeBackend({ me = 'requester', pinSet = true, suspended = false, locke
       if (args.p_pin !== state.pin) { state.failedCount += 1; return { ok: false, code: 'bad_pin', remaining: Math.max(0, 5 - state.failedCount) } }
       state.failedCount = 0
       state.signed[slot] = { by: state.me, withImage: Boolean(args.p_image_id) }
-      return { ok: true, already: false, signature_id: `sig-${slot}`, signed_at: '2026-10-23T04:00:00Z', complete: activeSigned().length === 3, stamped: Boolean(args.p_image_id) }
+      return { ok: true, already: false, signature_id: `sig-${slot}`, signed_at: '2026-10-23T04:00:00Z', complete: activeSigned().length === SLOT_ORDER.filter(isOnline).length, stamped: Boolean(args.p_image_id) }
     },
     esign_revoke_fleet_trip: args => {
       const reason = String(args.p_reason ?? '').trim()
@@ -316,6 +337,44 @@ async function checkOnlyOnlineTrips(page, auth, context) {
   assert.equal(await page.locator('[data-revoke-slot], [data-revoke-all]').count(), 0, 'ยังไม่มีลายเซ็น ต้องไม่มีปุ่มถอน')
   assert.equal(await page.locator('[data-trip-esign-locked]').count(), 0)
   return 'ทริปเซ็นสดไม่มีแผงและไม่ยิง RPC · ทริปออนไลน์เห็น 3 ช่อง ปุ่มลงนามเฉพาะช่องที่ถึงตา'
+}
+
+// เฟส 2: ผู้ลงนามไม่พร้อมตอนสร้างคำขอ → ช่องนั้นเซ็นสด แผงบอกเหตุผลรายช่อง ไม่ค้างรอคนที่ลงนามไม่ได้
+async function checkFallback(page, auth, context) {
+  const backend = makeBackend({ me: 'requester', library: [imageItem(1, true)], fallback: { dept_head: 'pin_not_set' } })
+  await installBackend(context, backend)
+  await openFleetTrips(page, auth)
+  // ทั้งใบเซ็นสด: แผงขึ้นแบบย่อ บอกเหตุผลทุกช่อง ไม่มีปุ่มลงนาม/ตัวนับช่อง
+  await openTripDetail(page, FALLBACK_DEST)
+  await page.locator('[data-trip-esign-all-wet]').waitFor({ timeout: 10_000 })
+  const allWet = await panel(page).innerText()
+  assert.ok(allWet.includes('ใบนี้เซ็นสด'), allWet.slice(0, 160))
+  assert.ok(allWet.includes('พิมพ์ใบไปเวียนเซ็นตามเดิม'), 'ต้องบอกว่าทำอะไรต่อ')
+  assert.deepEqual(await page.locator('[data-trip-esign-fallback-slot]').evaluateAll(items => items.map(item => item.dataset.tripEsignFallbackSlot)),
+    ['requester', 'dept_head', 'authority'], 'สก.๑ ที่ไม่เข้าเงื่อนไขต้องไม่ขึ้น')
+  for (const text of ['ยังไม่ได้ตั้งรหัสลงนาม', 'ชื่อที่พิมพ์เอง ไม่มีบัญชีในระบบ', 'ระงับการลงนามอยู่']) assert.ok(allWet.includes(text), `ต้องมีเหตุผล "${text}"`)
+  assert.ok(!/fallback|pin_not_set|signatory_not_linked|suspended/.test(allWet), 'ห้ามมีรหัสดิบหลุดถึงผู้ใช้')
+  assert.equal(await page.locator('[data-sign-slot-button], [data-esign-slot]').count(), 0)
+  assert.ok(!allWet.includes('ลงนามแล้ว'), 'ใบเซ็นสดทั้งใบต้องไม่มีตัวนับช่อง')
+  if (process.env.ES_SHOTS) await panel(page).screenshot({ path: path.join(process.env.ES_SHOTS, 'fallback-all-wet.png') })
+  await closeTripDetail(page)
+  // ทริปปกติที่เซ็นสดตั้งแต่ต้น (หน่วยงานไม่ได้เปิด) ยังไม่มีแผงและไม่ยิง RPC
+  const before = sentCalls(backend, 'esign_trip_status').length
+  await openTripDetail(page, WET_DEST)
+  await page.waitForTimeout(1_000)
+  assert.equal(await panel(page).count(), 0)
+  assert.equal(sentCalls(backend, 'esign_trip_status').length, before, 'ทริปเซ็นสดปกติต้องไม่ยิง RPC ลงนาม')
+  await closeTripDetail(page)
+  // บางช่องเซ็นสด: เหลือ 2 ช่องออนไลน์ · ช่องหัวหน้ากองบอกเหตุผล · ไม่ซ้ำในบรรทัด "ช่องที่ยังเซ็นสด"
+  await openTripDetail(page, ONLINE_DEST)
+  await panel(page).waitFor()
+  assert.deepEqual(await page.locator('[data-esign-slot]').evaluateAll(items => items.map(item => item.dataset.esignSlot)), ['requester', 'authority'])
+  assert.ok((await panel(page).innerText()).includes('ลงนามแล้ว 0/2 ช่อง'))
+  const fallbackText = await page.locator('[data-trip-esign-fallback]').innerText()
+  assert.ok(fallbackText.includes('ผู้อำนวยการสำนัก/กอง') && fallbackText.includes('ยังไม่ได้ตั้งรหัสลงนาม'), fallbackText)
+  assert.ok(!(await page.locator('[data-trip-esign-wet]').innerText()).includes('ผู้อำนวยการสำนัก/กอง'), 'ช่องที่บอกเหตุผลแล้วต้องไม่ซ้ำในบรรทัดเซ็นสด')
+  if (process.env.ES_SHOTS) await panel(page).screenshot({ path: path.join(process.env.ES_SHOTS, 'fallback-partial.png') })
+  return 'ทั้งใบเซ็นสดบอกเหตุผลทุกช่อง · บางช่องเซ็นสดเหลือ 2 ช่องออนไลน์ บอกเหตุผล ไม่ซ้ำ'
 }
 
 async function checkStranger(page, auth, context) {
@@ -607,6 +666,7 @@ async function main() {
     shotPage = page
     page.on('dialog', dialog => { dialogs.push({ type: dialog.type(), message: dialog.message() }); dialog.accept().catch(() => {}) })
     await run('แผงขึ้นเฉพาะทริปออนไลน์', () => checkOnlyOnlineTrips(page, auth, context))
+    await run('ผู้ลงนามไม่พร้อม → เซ็นสดพร้อมเหตุผล', () => checkFallback(page, auth, context))
     await run('ผู้ที่ไม่เกี่ยวข้องไม่เห็นแผง', () => checkStranger(page, auth, context))
     await run('ลงนามครบสาย', () => checkSignFlow(page, auth, context))
     await run('ไม่มีภาพ → เซ็นสดในกล่องลงนาม', () => checkNoImageDrawFlow(page, auth, context))

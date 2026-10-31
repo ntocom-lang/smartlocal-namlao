@@ -1,24 +1,68 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, Circle, Copy, Loader2, Save, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, Circle, Copy, Loader2, Save } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import {
-  ESIGN_DRIVER_NOTE, ESIGN_FLEET_SLOTS, ESIGN_MODE_LABEL, esignAnnouncementDraft, esignAnyOnline, esignBlockers,
-  esignGateItems, esignMessage, esignModesFromStatus,
+  ESIGN_DRIVER_NOTE, ESIGN_FLEET_SLOTS, ESIGN_MODE_LABEL, ESIGN_READINESS, esignAnnouncementDraft, esignAnyOnline, esignBlockers,
+  esignGateItems, esignMessage, esignModesFromStatus, esignReadinessMap,
 } from '../../lib/esign'
-import { confirmEsignTrial, getEsignGateStatus, reinstateEsignSigner, setEsignDocType, setEsignPolicy } from '../../lib/esignApi'
+import { getEsignGateStatus, getSignerReadiness, reinstateEsignSigner, setEsignDocType, setEsignPolicy } from '../../lib/esignApi'
 import { todayBangkok } from '../../lib/documentSignatories'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
 
 // ตั้งค่า "ลงนามออนไลน์รายเรื่อง" ของ อปท. — ตั้งโดยแอดมินของหน่วยงานเท่านั้น (ฟังก์ชัน DB ตรวจสิทธิ์ซ้ำ)
-// เรียงตามสิ่งที่แอดมินต้องทำ: ทดลอง → ผู้ลงนามผูกบัญชี → เลือกช่อง · ประกาศอยู่ท้ายหน้าเป็นส่วนไม่บังคับ
+// เรียงตามสิ่งที่แอดมินต้องทำ: ผู้ลงนามผูกบัญชี (+ ดูว่าใครพร้อม) → เลือกช่อง · ประกาศอยู่ท้ายหน้าเป็นส่วนไม่บังคับ
 // (เจ้าของระบบสั่ง 2026-10-22 ให้ถอดประกาศ/หนังสือให้ความเห็นชอบออกจากเงื่อนไขเปิดใช้ — ห้ามเอากลับมาบังคับโดยไม่ได้รับคำสั่ง)
+// ข้อ "ยืนยันว่าทดลองแล้ว" ถอดแล้ว 2569-10-31 (เฟส 2): ช่องที่ผู้ลงนามยังไม่พร้อม ระบบให้เซ็นสดเองตอนสร้างคำขอ
 // ไม่มีปุ่ม "เปิดทั้งหมด" โดยตั้งใจ และไม่เปิดให้เองเมื่อเงื่อนไขไม่ครบ (DB ปัดด้วย gate_* ถ้าข้ามหน้าจอมา)
 const FIELD_CLASS = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus:outline-none focus:border-indigo-400'
 const BUTTON_CLASS = 'inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-bold disabled:opacity-50'
 const STAFF_ROLES = ['admin', 'officer', 'staff', 'technician', 'viewer', 'council']
+const READINESS_ORDER = { suspended: 0, pin_not_set: 1, ready: 2 }
 
-// เวลาจาก DB เป็น ISO (UTC) — วันที่แสดงต้องเป็นวันตามเวลาไทย ไม่ใช่ 10 ตัวแรกของสตริง (หลังเที่ยงคืนไทยจะเลื่อนผิดวัน)
-const bangkokDate = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date(value))
+// ใครในทะเบียนผู้ลงนามพร้อมลงนามออนไลน์ — คนที่ยังไม่พร้อมขึ้นก่อน พร้อมบอกว่าต้องทำอะไร
+// ดึงไม่ได้ (readiness = null) บอกตรงๆ ว่ายังไม่รู้ ไม่เดาว่าไม่พร้อม
+function ReadinessList({ readiness, people, busy, onReinstate }) {
+  if (!readiness) {
+    return <p className="text-xs text-gray-500" data-esign-readiness="unknown">ยังดูความพร้อมรายคนไม่ได้ ลองรีเฟรชหน้าอีกครั้ง</p>
+  }
+  const names = new Map(people.map(person => [person.id, person]))
+  const rows = [...readiness.entries()]
+    .map(([id, state]) => ({ id, state, person: names.get(id) }))
+    .sort((a, b) => READINESS_ORDER[a.state] - READINESS_ORDER[b.state]
+      || (a.person?.full_name ?? '').localeCompare(b.person?.full_name ?? '', 'th'))
+  if (!rows.length) {
+    return <p className="text-xs text-gray-500" data-esign-readiness="empty">ยังไม่มีผู้ลงนามที่ผูกบัญชี</p>
+  }
+  const ready = rows.filter(row => row.state === 'ready').length
+  return (
+    <div className="space-y-2" data-esign-readiness="list">
+      <p className="text-sm font-semibold text-gray-800">พร้อมลงนามออนไลน์ {ready} จาก {rows.length} คน</p>
+      <ul className="divide-y divide-gray-100 rounded-xl border border-gray-200">
+        {rows.map(row => {
+          const info = ESIGN_READINESS[row.state]
+          return (
+            <li key={row.id} className="flex flex-wrap items-center gap-2 px-3 py-2.5" data-esign-readiness-person={row.state}>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-gray-800">{row.person?.full_name ?? 'บุคลากร (ไม่พบชื่อ)'}</p>
+                {row.person?.job_title && <p className="text-xs text-gray-500">{row.person.job_title}</p>}
+                {info.todo && <p className="text-xs text-gray-600">{info.todo}</p>}
+              </div>
+              <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${info.tone === 'ok' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                {info.label}
+              </span>
+              {row.state === 'suspended' && (
+                <button type="button" className={`${BUTTON_CLASS} min-h-11 border border-gray-300 bg-white text-gray-700 hover:bg-gray-50`}
+                  disabled={busy === 'reinstateInline'} onClick={() => onReinstate(row.id)}>
+                  เปิดคืน
+                </button>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
 
 function Notice({ notice }) {
   if (!notice) return null
@@ -56,7 +100,7 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
   const [approvalRef, setApprovalRef] = useState('')
   const [announcementUrl, setAnnouncementUrl] = useState('')
   const [modes, setModes] = useState(() => esignModesFromStatus(null))
-  const [trialChecked, setTrialChecked] = useState(false)
+  const [readiness, setReadiness] = useState(null)
   const [reinstateId, setReinstateId] = useState('')
 
   const [busy, setBusy] = useState('')
@@ -77,7 +121,7 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
 
   const reload = useCallback(async () => {
     if (!municipalityId) return
-    const next = await getEsignGateStatus(municipalityId)
+    const [next, ready] = await Promise.all([getEsignGateStatus(municipalityId), getSignerReadiness(municipalityId, null)])
     if (next?.ok === false) {
       setLoadError(esignMessage(next))
       setStatus(null)
@@ -85,6 +129,7 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
       setLoadError('')
       applyStatus(next)
     }
+    setReadiness(esignReadinessMap(ready))
     setLoading(false)
   }, [municipalityId, applyStatus])
 
@@ -95,11 +140,13 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
       getEsignGateStatus(municipalityId),
       supabase.from('profiles').select('id,full_name,job_title,role')
         .eq('municipality_id', municipalityId).in('role', STAFF_ROLES).order('full_name'),
-    ]).then(([next, peopleResult]) => {
+      getSignerReadiness(municipalityId, null),
+    ]).then(([next, peopleResult, ready]) => {
       if (!active) return
       if (next?.ok === false) setLoadError(esignMessage(next))
       else applyStatus(next)
       setPeople((peopleResult.data ?? []).filter(person => person.full_name?.trim()))
+      setReadiness(esignReadinessMap(ready))
       setLoading(false)
     })
     return () => { active = false }
@@ -127,7 +174,6 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
   const gateItems = esignGateItems(status, modes)
   const authorityGate = gateItems.find(item => item.key === 'authority')
   const deptHeadGate = gateItems.find(item => item.key === 'dept_head')
-  const trialDone = Boolean(status?.policy?.trial_confirmed_at)
   const draftText = useMemo(() => esignAnnouncementDraft(tenant?.name), [tenant?.name])
 
   // ประกาศไม่บังคับ: ว่างทุกช่องก็บันทึกได้ (= ล้างที่เคยกรอก) ปุ่มบันทึกเปิดเมื่อมีการเปลี่ยนแปลงเท่านั้น
@@ -176,31 +222,7 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
         </div>
       </section>
 
-      <Step number={1} title="ผู้ลงนามทดลองใช้แล้ว" done={trialDone}>
-        <p className="text-xs leading-5 text-gray-500">
-          ให้ผู้ลงนามทุกช่องทดลองตั้งรหัสลงนามและลงนามบนระบบสาธิต (เว็บสาธิตของระบบ ไม่ใช่ข้อมูลจริงของหน่วยงาน) จนคุ้นก่อน แล้วกดยืนยันที่นี่
-          ระบบเก็บเป็นคำยืนยันของแอดมิน ไม่ได้ตรวจว่าทดลองจริง จึงขึ้นกับความรับผิดชอบของผู้ยืนยัน
-        </p>
-        {trialDone ? (
-          <p className="text-sm font-semibold text-emerald-700">ยืนยันแล้วเมื่อ {thaiDateFromDateInput(bangkokDate(status.policy.trial_confirmed_at))}</p>
-        ) : (
-          <div className="space-y-2">
-            <label className="flex items-start gap-2 text-sm text-gray-700" htmlFor="esign-trial">
-              <input id="esign-trial" type="checkbox" className="mt-1" checked={trialChecked}
-                onChange={event => setTrialChecked(event.target.checked)} />
-              <span>ผู้ลงนามทุกช่องที่จะใช้ได้ทดลองลงนามบนระบบสาธิตแล้ว</span>
-            </label>
-            <button type="button" className={`${BUTTON_CLASS} bg-indigo-600 text-white hover:bg-indigo-700`}
-              disabled={busy === 'trial' || !trialChecked}
-              onClick={() => run('trial', () => confirmEsignTrial(municipalityId), 'บันทึกคำยืนยันแล้ว')}>
-              {busy === 'trial' ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />} ยืนยัน
-            </button>
-          </div>
-        )}
-        <Notice notice={notices.trial} />
-      </Step>
-
-      <Step number={2} title="ผู้ลงนามผูกกับบัญชีจริง" done={authorityGate.ok && deptHeadGate.ok}>
+      <Step number={1} title="ผู้ลงนามผูกกับบัญชีจริง" done={authorityGate.ok && deptHeadGate.ok}>
         <p className="text-xs leading-5 text-gray-500">
           ช่องผู้มีอำนาจสั่งใช้และหัวหน้ากองลงนามออนไลน์ได้เมื่อผู้ลงนามในแท็บ “ผู้ลงนามแต่ละช่อง” มีบัญชีในระบบ
           ช่องที่พิมพ์ชื่อเอง (คนที่ไม่มีบัญชี) ลงนามออนไลน์ไม่ได้ ต้องเซ็นปากกาต่อ
@@ -219,12 +241,16 @@ export default function EsignSettings({ tenant, onOpenSignatories = null }) {
             ไปแท็บ “ผู้ลงนามแต่ละช่อง”
           </button>
         )}
+        <ReadinessList readiness={readiness} people={people} busy={busy}
+          onReinstate={id => run('reinstateInline', () => reinstateEsignSigner(id), 'เปิดคืนแล้ว')} />
+        <Notice notice={notices.reinstateInline} />
       </Step>
 
-      <Step number={3} title="เลือกช่องที่ลงนามออนไลน์" done={enabled}>
+      <Step number={2} title="เลือกช่องที่ลงนามออนไลน์" done={enabled}>
         <p className="text-xs leading-5 text-gray-500">
-          ใบขออนุญาตใช้ยานพาหนะส่วนกลาง (แบบ ๓) พร้อมบันทึกรับรอง สก.๑ — ช่องไหนที่ผู้ลงนามยังไม่พร้อม ปล่อยเป็นเซ็นสดได้
-          เช่น ให้ผู้มีอำนาจเซ็นปากกาต่อ ส่วนผู้ขอและหัวหน้ากองลงนามออนไลน์
+          ใบขออนุญาตใช้ยานพาหนะส่วนกลาง (แบบ ๓) พร้อมบันทึกรับรอง สก.๑ — ผู้ลงนามไม่ต้องพร้อมครบก่อนเปิด
+          ตอนสร้างคำขอ ช่องที่ผู้ลงนามยังไม่ได้ตั้งรหัสหรือระงับอยู่ ระบบให้ใบนั้นเซ็นสดช่องนั้นแทนเอง ไม่ค้าง
+          ตั้งรหัสแล้ว คำขอใบถัดไปลงนามออนไลน์ได้ ใบที่สร้างไปแล้วเซ็นสดต่อ
         </p>
         <div className="divide-y divide-gray-100 rounded-xl border border-gray-200">
           {ESIGN_FLEET_SLOTS.map(slot => (

@@ -30,8 +30,7 @@ export const setEsignPolicy = ({ municipalityId, announcementNo, announcementDat
     p_announcement_url: orNull(announcementUrl),
   })
 
-export const confirmEsignTrial = municipalityId =>
-  callEsign('esign_confirm_trial', { p_municipality_id: municipalityId })
+// ยืนยันทดลอง (esign_confirm_trial) เลิกใช้แล้ว 2569-10-31 — ฟังก์ชัน DB ยังอยู่ให้หน้าเว็บรุ่นก่อนที่เปิดค้าง
 
 // modes = {requester:'online'|'wet', ...} หรือ null = ปิดทั้งเรื่อง
 export const setEsignDocType = (municipalityId, modes) =>
@@ -43,6 +42,14 @@ export const setEsignDocType = (municipalityId, modes) =>
 
 export const reinstateEsignSigner = userId =>
   callEsign('esign_reinstate_signer', { p_user_id: userId })
+
+// ความพร้อมรายคน (แอดมินเท่านั้น) → { ok, people: [{ profile_id, state }] } · state ดู ESIGN_READINESS
+// ได้คนในทะเบียนผู้ลงนามเสมอ + profileIds ที่ขอดูเพิ่ม (ไม่เกิน 200) · ส่งครบสอง argument เสมอ (ไม่มี DEFAULT)
+export const getSignerReadiness = (municipalityId, profileIds) =>
+  callEsign('esign_signer_readiness', {
+    p_municipality_id: municipalityId,
+    p_profile_ids: profileIds?.length ? profileIds : null,
+  })
 
 // ── ลายเซ็นของฉัน (หน้าโปรไฟล์) — ฐานข้อมูลชุด S1 (ภาพ) และชุด A (รหัสลงนาม) ─────────────────────────────
 export const getMySignerOverview = () => callEsign('esign_my_signer_overview', {})

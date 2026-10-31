@@ -6,8 +6,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
-  ESIGN_DECISION_LABEL, ESIGN_DUTY_TEXT, ESIGN_FLEET_SLOTS, ESIGN_MESSAGES, ESIGN_TRIP_EXCEPTIONS, esignAnnouncementDraft, esignAnyOnline, esignBlockers,
-  esignDepartWarning, esignFailureText, esignGateItems, esignMessage, esignModesFromStatus, esignPendingFromRpc, esignPendingKey, esignPendingRow, esignRevokeTargets,
+  ESIGN_DECISION_LABEL, ESIGN_DUTY_TEXT, ESIGN_FALLBACK_REASON, ESIGN_FLEET_SLOTS, ESIGN_MESSAGES, ESIGN_READINESS, ESIGN_TRIP_EXCEPTIONS, esignAnnouncementDraft, esignAnyOnline, esignBlockers,
+  esignDepartWarning, esignFailureText, esignFallbackText, esignGateItems, esignMessage, esignModesFromStatus, esignPendingFromRpc, esignPendingKey, esignPendingRow,
+  esignReadinessMap, esignRevokeTargets,
 } from '../src/lib/esign.js'
 import { isVerifyBusy, isVerifyCode, verifySlotRows, verifySummary } from '../src/lib/esignVerify.js'
 
@@ -21,12 +22,18 @@ const imageFunctionsSql = await read('../supabase/migrations/20261023100100_esig
 const tripPanelSql = await read('../supabase/migrations/20261023110000_esign_trip_panel_functions.sql')
 // 2569-10-25: แอดมินลบทริปที่มีลายเซ็นได้ — ยก esign_fleet_trip_guard มาเต็มตัวในไฟล์ใหม่ (นิยามหลังสุดชนะ)
 const adminDeleteSql = await read('../supabase/migrations/20261025120000_esign_trip_admin_delete.sql')
-const functionsSql = functionsOldSql + '\n' + gateRelaxSql + '\n' + imageFunctionsSql + '\n' + tripPanelSql + '\n' + adminDeleteSql
+// เฟส 2 (2569-10-31): ยก guard / set_esign_doc_type / esign_trip_status มาเต็มตัว + ฟังก์ชันความพร้อมใหม่ (นิยามหลังสุดชนะ)
+const fallbackFunctionsSql = await read('../supabase/migrations/20261031100100_esign_fallback_functions.sql')
+const functionsSql = functionsOldSql + '\n' + gateRelaxSql + '\n' + imageFunctionsSql + '\n' + tripPanelSql + '\n' + adminDeleteSql + '\n' + fallbackFunctionsSql
 const apiSource = await read('../src/lib/esignApi.js')
 const esignLibSource = await read('../src/lib/esign.js')
 
-// รหัสที่ถูกถอดจากฟังก์ชันแล้ว (ยังค้างอยู่ในไฟล์ชุด A เพราะ migration ที่ apply แล้วแก้ย้อนไม่ได้) — หน้าจอไม่ต้องมีข้อความ
-const RETIRED_CODES = ['gate_policy_missing']
+// รหัสที่ถูกถอดจากฟังก์ชันแล้ว (ยังค้างอยู่ในไฟล์เก่าเพราะ migration ที่ apply แล้วแก้ย้อนไม่ได้) — หน้าจอไม่ต้องมีข้อความ
+// latest = ไฟล์ที่ถอดรหัสนั้นออก (นิยามล่าสุดของฟังก์ชันที่เคยคืนรหัสนี้)
+const RETIRED_CODES = [
+  { code: 'gate_policy_missing', latest: gateRelaxSql },
+  { code: 'gate_trial_missing', latest: fallbackFunctionsSql },
+]
 
 let cases = 0
 const test = async (label, run) => { await run(); cases++; console.log('PASS ' + label) }
@@ -34,9 +41,9 @@ const test = async (label, run) => { await run(); cases++; console.log('PASS ' +
 await test('ทุกรหัสผลลัพธ์ (code/reason) ที่ฟังก์ชัน DB คืนได้ มีข้อความภาษาไทยในหน้าจอ', () => {
   const codes = new Set([...functionsSql.matchAll(/'(?:code|reason)',\s*'([a-z_]+)'/g)].map(match => match[1]))
   assert.ok(codes.size >= 30, `อ่านรหัสจาก migration ได้น้อยผิดปกติ (${codes.size})`)
-  for (const retired of RETIRED_CODES) {
-    assert.ok(codes.has(retired), `${retired} ไม่อยู่ในไฟล์ชุด A แล้ว — เอาออกจาก RETIRED_CODES`)
-    assert.ok(!gateRelaxSql.match(new RegExp(`'(?:code|reason)',\\s*'${retired}'`)), `${retired} ถูกถอดแล้ว แต่ไฟล์ B1.5 ยังคืนรหัสนี้`)
+  for (const { code: retired, latest } of RETIRED_CODES) {
+    assert.ok(codes.has(retired), `${retired} ไม่อยู่ในไฟล์เก่าแล้ว — เอาออกจาก RETIRED_CODES`)
+    assert.ok(!latest.match(new RegExp(`'(?:code|reason)',\\s*'${retired}'`)), `${retired} ถูกถอดแล้ว แต่ไฟล์ที่ถอดยังคืนรหัสนี้`)
     assert.equal(ESIGN_MESSAGES[retired], undefined, `${retired} ถูกถอดแล้ว ไม่ควรมีข้อความค้างในหน้าจอ`)
     codes.delete(retired)
   }
@@ -121,24 +128,52 @@ await test('esignModesFromStatus: ไม่มีสถานะ/ไม่มี
   assert.equal(esignAnyOnline(null), false)
 })
 
-await test('ประตู: ปิดทั้งหมดไม่ติดอะไร · เปิดต้องยืนยันทดลองเท่านั้น (ประกาศไม่เป็นเงื่อนไข) · ช่องผู้มีอำนาจ/หัวหน้ากองต้องผูกบัญชีเมื่อเลือกออนไลน์เท่านั้น', () => {
+await test('ประตู: ปิดทั้งหมดไม่ติดอะไร · ไม่ต้องมีประกาศหรือยืนยันทดลอง (ถอดแล้ว 2569-10-31) · ช่องผู้มีอำนาจ/หัวหน้ากองต้องผูกบัญชีเมื่อเลือกออนไลน์เท่านั้น', () => {
   const none = { policy: null, authority_linked: 0, dept_head_linked: 0 }
   const wet = { requester: 'wet', dept_head: 'wet', authority: 'wet', sk1: 'wet' }
   assert.deepEqual(esignBlockers(none, wet), [], 'ปิดทั้งหมดเปิดได้เสมอ (ไม่ใช่การเปิด)')
-  assert.deepEqual(esignBlockers(none, { ...wet, requester: 'online' }), ['trial'], 'ไม่มีประกาศต้องไม่ขวาง — ติดแค่ยังไม่ยืนยันทดลอง')
-  const announcedNoTrial = { policy: { announcement_no: 'ก 1', trial_confirmed_at: null }, authority_linked: 0, dept_head_linked: 0 }
-  assert.deepEqual(esignBlockers(announcedNoTrial, { ...wet, requester: 'online' }), ['trial'], 'มีประกาศก็ไม่แทนการยืนยันทดลอง')
-  // แถวนโยบายที่เกิดจากการกดยืนยันทดลองอย่างเดียว (ไม่มีเลขที่ประกาศ) = ผ่านประตู
-  const trialOnly = { policy: { announcement_no: null, trial_confirmed_at: '2026-10-22T05:00:00Z' }, authority_linked: 0, dept_head_linked: 0 }
-  assert.deepEqual(esignBlockers(trialOnly, { ...wet, requester: 'online' }), [])
-  const ready = { policy: { announcement_no: 'ก 1', trial_confirmed_at: '2026-10-22T05:00:00Z' }, authority_linked: 1, dept_head_linked: 0 }
+  assert.deepEqual(esignBlockers(none, { ...wet, requester: 'online' }), [], 'ไม่มีประกาศ ไม่เคยยืนยันทดลอง ก็เปิดช่องผู้ขอได้')
+  const ready = { policy: null, authority_linked: 1, dept_head_linked: 0 }
   assert.deepEqual(esignBlockers(ready, { ...wet, requester: 'online', authority: 'online' }), [])
   assert.deepEqual(esignBlockers(ready, { ...wet, dept_head: 'online' }), ['dept_head'])
   assert.deepEqual(esignBlockers(ready, { ...wet, authority: 'online', dept_head: 'online' }), ['dept_head'])
   const items = esignGateItems(ready, { ...wet, authority: 'online' })
   assert.deepEqual(items.map(item => [item.key, item.required, item.ok]),
-    [['trial', true, true], ['authority', true, true], ['dept_head', false, false]])
-  assert.ok(!items.some(item => item.key === 'policy'), 'ห้ามมีประตูประกาศกลับมาโดยไม่ได้รับคำสั่งเจ้าของระบบ')
+    [['authority', true, true], ['dept_head', false, false]])
+  assert.ok(!items.some(item => ['policy', 'trial'].includes(item.key)), 'ห้ามมีประตูประกาศ/ทดลองกลับมาโดยไม่ได้รับคำสั่งเจ้าของระบบ')
+  // ฝั่ง DB ต้องตรงกัน: set_esign_doc_type ล่าสุดไม่ตรวจการทดลองแล้ว (ถ้าหน้าจอเปิดได้แต่ DB ปัด แอดมินจะงง)
+  const docType = fallbackFunctionsSql.slice(fallbackFunctionsSql.indexOf('CREATE OR REPLACE FUNCTION public.set_esign_doc_type('))
+  assert.doesNotMatch(docType.slice(0, docType.indexOf('\n$$;')), /trial_confirmed_at|gate_trial_missing/)
+})
+
+await test('เฟส 2: ทุกเหตุผลที่ trigger ใส่ใน esign_fallback มีข้อความภาษาคน · ความพร้อมรายคนครบทุกสถานะที่ DB คืน · ดึงไม่ได้ = ยังไม่รู้', () => {
+  // นิยามล่าสุด = ตัวท้ายสุดในชุดไฟล์ที่ต่อกันตามลำดับ apply
+  const fnBody = head => {
+    const start = functionsSql.lastIndexOf(head)
+    assert.ok(start >= 0, `ไม่พบ ${head}`)
+    return functionsSql.slice(start, functionsSql.indexOf('\n$$;', start))
+  }
+  const expectedBody = fnBody('CREATE OR REPLACE FUNCTION public.esign_expected_signer(')
+  const unready = fnBody('CREATE OR REPLACE FUNCTION public.esign_signer_unready_reason(')
+  const reasons = new Set([
+    ...[...expectedBody.matchAll(/'reason',\s*'([a-z_]+)'/g)].map(match => match[1]).filter(code => code !== 'bad_slot'),
+    ...[...unready.matchAll(/RETURN '([a-z_]+)'/g)].map(match => match[1]),
+  ])
+  assert.ok(reasons.size >= 6, `อ่านเหตุผลได้น้อยผิดปกติ (${[...reasons]})`)
+  for (const reason of reasons) assert.ok(ESIGN_FALLBACK_REASON[reason], `เหตุผล ${reason} ไม่มีข้อความ`)
+  assert.equal(esignFallbackText('pin_not_set'), ESIGN_FALLBACK_REASON.pin_not_set)
+  assert.ok(!/[a-z_]{6,}/.test(esignFallbackText('รหัสใหม่ไม่รู้จัก')), 'เหตุผลที่ไม่รู้จักต้องไม่คืนรหัสดิบ')
+
+  const states = new Set([...unready.matchAll(/RETURN '([a-z_]+)'/g)].map(match => match[1]).filter(code => code !== 'signatory_missing'))
+  states.add('ready')
+  assert.deepEqual([...states].sort(), Object.keys(ESIGN_READINESS).sort(), 'สถานะความพร้อมบนหน้าจอต้องตรงกับที่ DB คืน')
+  for (const info of Object.values(ESIGN_READINESS)) assert.ok(info.label && (info.tone === 'ok' || info.todo), 'สถานะที่ไม่พร้อมต้องบอกว่าทำอะไรต่อ')
+
+  const map = esignReadinessMap({ ok: true, people: [{ profile_id: 'a', state: 'ready' }, { profile_id: 'b', state: 'pin_not_set' }, { profile_id: 'c', state: 'อะไรไม่รู้' }] })
+  assert.deepEqual([...map.entries()], [['a', 'ready'], ['b', 'pin_not_set']])
+  for (const bad of [null, undefined, { ok: false, code: 'forbidden' }, { ok: false, code: 'error' }, { ok: true }, { ok: true, people: 'x' }]) {
+    assert.equal(esignReadinessMap(bad), null, `${JSON.stringify(bad)} ต้องเป็น "ยังไม่รู้" ไม่ใช่ "ไม่มีใครพร้อม"`)
+  }
 })
 
 await test('บันทึกประกาศ: ทุกช่องส่งเป็น null เมื่อว่าง (วันที่ว่าง "" จะตก date cast error ที่ PostgREST) · หน้าตั้งค่าไม่บังคับกรอก', async () => {
@@ -152,10 +187,9 @@ await test('บันทึกประกาศ: ทุกช่องส่ง
   assert.ok(!/htmlFor="esign-(?:no|date|approval)">[^<]*\*/.test(component), 'ช่องประกาศมี * บังคับกรอก')
   assert.ok(!/policyComplete/.test(component), 'ปุ่มบันทึกประกาศยังผูกกับ policyComplete')
   assert.ok(!/policyReady/.test(component), 'ข้อทดลอง/ข้ออื่นยังรอการบันทึกประกาศ (policyReady)')
-  // ปุ่มยืนยันทดลองและปุ่มบันทึกช่องลงนาม ต้องไม่ผูกกับสถานะประกาศแม้ใช้ชื่อตัวแปรอื่น
-  const trialDisabled = /disabled=\{busy === 'trial'([^}]*)\}/.exec(component)
-  assert.ok(trialDisabled, 'ไม่พบเงื่อนไข disabled ของปุ่มยืนยันทดลอง')
-  assert.ok(!/policy|announcement|approval/i.test(trialDisabled[1]), `ปุ่มยืนยันทดลองผูกกับประกาศ: ${trialDisabled[1]}`)
+  // ข้อยืนยันทดลองถอดแล้ว (เฟส 2) — ห้ามกลับมาเป็นขั้นตอนบังคับ · ปุ่มบันทึกช่องลงนามต้องไม่ผูกกับสถานะประกาศแม้ใช้ชื่อตัวแปรอื่น
+  assert.ok(!/confirmEsignTrial|esign-trial|trial_confirmed_at|busy === 'trial'/.test(component), 'หน้าตั้งค่ายังมีข้อยืนยันทดลอง')
+  assert.ok(!/callEsign\('esign_confirm_trial'/.test(apiSource), 'esignApi ยังเรียกยืนยันทดลอง')
   const modesDisabled = /disabled=\{busy === 'modes' \|\| !modesDirty([^}]*)\}/.exec(component)
   assert.ok(modesDisabled, 'ไม่พบเงื่อนไข disabled ของปุ่มบันทึกช่องลงนาม')
   assert.ok(!/policy|announcement|approval/i.test(modesDisabled[1]), `ปุ่มบันทึกช่องลงนามผูกกับประกาศ: ${modesDisabled[1]}`)
@@ -226,9 +260,12 @@ await test('แผงลงนามในหน้าทริป: ตัวเ
   // ห้ามอ้างเลขมาตราลอยๆ ในข้อความหน้าจอของแผง/กล่อง (ต้องตรวจกับตัวบทก่อน)
   for (const source of [panel, dialog, await read('../src/components/esign/PinForm.jsx')]) assert.ok(!/มาตรา\s*[๐-๙0-9]/.test(source), 'หน้าจอลงนามห้ามอ้างเลขมาตราลอยๆ')
 
-  // FleetTrips: แผงขึ้นเฉพาะทริปที่ DB ตรึงโหมดออนไลน์ไว้ · ปุ่มลบแปลง error · แปล error ของ trigger ลงนาม
+  // FleetTrips: แผงขึ้นเฉพาะทริปที่ DB ตรึงโหมดออนไลน์ไว้ หรือที่ตกเป็นเซ็นสดเพราะผู้ลงนามไม่พร้อม (เฟส 2 บอกเหตุผล)
+  // · ปุ่มลบแปลง error · แปล error ของ trigger ลงนาม
   const fleet = await read('../src/components/fleet/FleetTrips.jsx')
-  assert.ok(/\{t\.esign_slots && <TripEsignPanel trip=\{t\}/.test(fleet), 'แผงต้องขึ้นเฉพาะทริปที่มี esign_slots')
+  assert.ok(/\{\(t\.esign_slots \|\| t\.esign_fallback\) && <TripEsignPanel trip=\{t\}/.test(fleet), 'แผงต้องขึ้นเฉพาะทริปที่มี esign_slots หรือ esign_fallback')
+  // esign_fallback อ่านจาก SELECT * เท่านั้น — ห้ามระบุชื่อคอลัมน์ใน select ของ insert/รายการ (เว็บขึ้นก่อน migration จะพังทั้งหน้า)
+  assert.ok(!/select\([^)]*esign_fallback/.test(fleet), 'ห้ามใส่ esign_fallback ใน select ที่ระบุชื่อคอลัมน์')
   assert.ok(/\.\.\.ESIGN_TRIP_EXCEPTIONS,/.test(fleet), 'TRIP_ERROR_TH ต้องรวมข้อความ error ของ trigger ลงนาม')
   assert.ok(/'ลบไม่สำเร็จ: ' \+ tripErrorMessage\(error\)/.test(fleet), 'ปุ่มลบต้องแปล error ผ่าน tripErrorMessage ไม่โชว์ error ดิบของ DB')
 })

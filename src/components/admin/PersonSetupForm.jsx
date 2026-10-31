@@ -15,8 +15,8 @@ import {
 import {
   buildSignatorySlots, isSignatoryActiveToday, personSigningRows, signatoryChangeFor, signatoryName, signatorySlotKey,
 } from '../../lib/documentSignatories'
-import { esignAnyOnline, esignModesFromStatus } from '../../lib/esign'
-import { getEsignGateStatus } from '../../lib/esignApi'
+import { esignAnyOnline, esignModesFromStatus, esignReadinessMap } from '../../lib/esign'
+import { getEsignGateStatus, getSignerReadiness } from '../../lib/esignApi'
 import { fetchOtherDepartmentHeads, finishAppointment } from '../../lib/signatoryApi'
 import PersonSigningChoices, { OtherHeadsChoices } from './PersonSigningChoices'
 import SigningDialogShell from './SigningDialogShell'
@@ -253,6 +253,19 @@ export default function PersonSetupForm({
     })
     return () => { active = false }
   }, [tenant.id])
+
+  // เฟส 2: หน่วยงานเปิดออนไลน์ → บอกว่าคนนี้พร้อมลงนามออนไลน์ไหม (ไม่พร้อม = คำขอใหม่ช่องของคนนี้เซ็นสดไปก่อน ระบบทำเอง)
+  // ดึงไม่ได้ = null (ยังไม่รู้) ฟอร์มใช้ข้อความกลางเหมือนเดิม ไม่เดาว่าไม่พร้อม
+  const [signerState, setSignerState] = useState({ id: null, state: null })
+  useEffect(() => {
+    if (signMode !== 'online' || !person?.id) return undefined
+    let active = true
+    getSignerReadiness(tenant.id, [person.id]).then(result => {
+      if (active) setSignerState({ id: person.id, state: esignReadinessMap(result)?.get(person.id) ?? null })
+    })
+    return () => { active = false }
+  }, [signMode, person?.id, tenant.id])
+  const signerReadiness = signMode === 'online' && signerState.id === person?.id ? signerState.state : null
 
   useEffect(() => {
     function closeLists(event) {
@@ -704,7 +717,10 @@ export default function PersonSetupForm({
       flash: {
         name: trimmedName || person.email || 'บัญชีนี้',
         items,
-        after: signMode === 'online' && offers.length > 0 ? 'ลงนามออนไลน์: เจ้าตัวต้องตั้งรหัสลงนามและเพิ่มลายเซ็นเองที่เมนูลายเซ็นของฉัน' : '',
+        // คนที่ตั้งรหัสแล้วไม่ต้องบอกซ้ำ · ยังไม่ตั้ง = บอกว่าระหว่างนี้ใบเซ็นสดไปก่อน (เฟส 2) ไม่ใช่ใบค้าง
+        after: signMode === 'online' && offers.length > 0 && signerReadiness !== 'ready'
+          ? 'ลงนามออนไลน์: เจ้าตัวต้องตั้งรหัสลงนามและเพิ่มลายเซ็นเองที่เมนูลายเซ็นของฉัน ระหว่างนี้คำขอที่ถึงช่องของคนนี้เซ็นสดไปก่อน'
+          : '',
       },
     })
   }
@@ -1123,7 +1139,7 @@ export default function PersonSetupForm({
             <p className="text-xs font-semibold leading-5 text-rose-700" role="alert">ตรวจผู้ลงนามไม่สำเร็จ แก้ที่เมนูการลงนามเอกสารแทน</p>
           )}
           {showSigning && (hasPosition || !isAdd) && (
-            <PersonSigningChoices rows={signingRows} pickable={pickableSlots} positionName={positionName} titles={titles} signMode={signMode}
+            <PersonSigningChoices rows={signingRows} pickable={pickableSlots} positionName={positionName} titles={titles} signMode={signMode} signerReadiness={signerReadiness}
               onToggle={(key, value) => setSignChoices(current => ({ ...current, [key]: value }))}
               onTitleChange={(key, value) => setTitles(current => ({ ...current, [key]: value }))}
               onPick={pickSlot} onAddCustom={addCustomSlot} onOpenSigning={onOpenSigning} />

@@ -1,6 +1,7 @@
 // ลงนามออนไลน์รายเรื่อง — ตัวช่วยฝั่งหน้าจอ
 // ฐานข้อมูล: supabase/migrations/20261022100000_esign_columns.sql, ..100100_esign_tables.sql, ..100200_esign_functions.sql
 //   + ชุด B1.5 (ประกาศไม่เป็นเงื่อนไขเปิดใช้): ..110000_esign_policy_optional.sql, ..110100_esign_gate_relax_functions.sql
+//   + เฟส 2 (ถอดด่านทดลอง + ช่องที่ผู้ลงนามไม่พร้อมตกเป็นเซ็นสด): 20261031100000_esign_fallback_column.sql, ..100100_esign_fallback_functions.sql
 // ออกแบบ: หน้า "ลงนามออนไลน์รายเรื่อง" (ตัวบทที่ตรวจแล้วอยู่ในหัวข้อ 2 ของหน้านั้น) · ความจำ project_esign_per_doctype_design
 
 export const ESIGN_DOC_FLEET = 'fleet_trip_request'
@@ -18,6 +19,34 @@ export const ESIGN_DRIVER_NOTE = 'ช่อง "ผู้ขับรถ" ยั
 
 export const ESIGN_MODE_LABEL = { online: 'ลงนามออนไลน์', wet: 'เซ็นสด (เหมือนเดิม)' }
 
+// ความพร้อมรายคน (esign_signer_readiness) — "พร้อม" = ตั้งรหัสลงนาม + รับทราบหน้าที่ + ไม่ถูกระงับ
+// ล็อกเพราะใส่รหัสผิดนับว่าพร้อม (หายเองใน 15 นาที) · ผู้ลงนามตั้งรหัสเองที่เมนู "ลายเซ็นของฉัน"
+export const ESIGN_READINESS = {
+  ready: { label: 'ลงนามออนไลน์ได้', tone: 'ok' },
+  pin_not_set: { label: 'ยังไม่ได้ตั้งรหัสลงนาม', tone: 'warn', todo: 'ให้เจ้าตัวตั้งรหัสที่เมนู “ลายเซ็นของฉัน”' },
+  suspended: { label: 'ระงับการลงนามอยู่', tone: 'warn', todo: 'เจ้าตัวกดระงับไว้เอง ตรวจแล้วกด “เปิดคืน”' },
+}
+
+// ผล getSignerReadiness → Map profile_id → state
+// ดึงไม่ได้ (ฐานยังไม่ apply/ไม่มีสิทธิ์/เน็ต) = null แปลว่า "ยังไม่รู้" ห้ามตีเป็น "ไม่พร้อม" (จะบอกแอดมินผิดว่าทุกคนยังไม่ตั้งรหัส)
+export const esignReadinessMap = result => (result?.ok === true && Array.isArray(result.people)
+  ? new Map(result.people.filter(person => ESIGN_READINESS[person?.state]).map(person => [person.profile_id, person.state]))
+  : null)
+
+// เหตุผลที่ช่องเปิดออนไลน์ไว้ แต่ใบนี้เซ็นสดแทน (fleet_trips.esign_fallback ตรึงไว้ตอนสร้างคำขอ)
+// รหัสมาจาก esign_expected_signer (ไม่มี/ไม่ผูกบัญชี) และ esign_signer_unready_reason (รหัส/ระงับ)
+// tests/esign-lib.test.mjs อ่านรหัสจาก migration แล้วเทียบกับตารางนี้
+export const ESIGN_FALLBACK_REASON = {
+  pin_not_set: 'ผู้ลงนามยังไม่ได้ตั้งรหัสลงนามตอนสร้างคำขอ',
+  suspended: 'ผู้ลงนามระงับการลงนามอยู่ตอนสร้างคำขอ',
+  signatory_missing: 'ยังไม่ได้ตั้งผู้ลงนามช่องนี้',
+  signatory_not_linked: 'ผู้ลงนามช่องนี้เป็นชื่อที่พิมพ์เอง ไม่มีบัญชีในระบบ',
+  dept_head_missing: 'คำขอนี้ไม่ได้ระบุกอง',
+  requester_missing: 'คำขอนี้ไม่มีผู้ขอ',
+}
+
+export const esignFallbackText = reason => ESIGN_FALLBACK_REASON[reason] ?? 'ผู้ลงนามยังไม่พร้อมตอนสร้างคำขอ'
+
 // รหัสผลลัพธ์จากฟังก์ชันฝั่ง DB (คอลัมน์ code/reason) → ข้อความภาษาคน
 // tests/esign-lib.test.mjs อ่านรหัสทุกตัวจาก migration แล้วเทียบกับตารางนี้ — เพิ่มรหัสใหม่ใน DB แล้วลืมตรงนี้เทสต์แดง
 export const ESIGN_MESSAGES = {
@@ -31,12 +60,12 @@ export const ESIGN_MESSAGES = {
   invalid_announcement_date: 'วันที่ประกาศต้องไม่เกินวันนี้',
   invalid_approval_ref: 'หนังสือให้ความเห็นชอบหรือคำชี้แจงต้องยาว 3–500 ตัวอักษร (หรือเว้นว่างไว้ก็ได้)',
   invalid_announcement_url: 'ลิงก์ไฟล์ประกาศต้องขึ้นต้นด้วย http:// หรือ https://',
-  // ประตูก่อนเปิดสวิตช์ (ประกาศไม่เป็นประตูแล้ว — เจ้าของระบบสั่ง 2026-10-22)
-  gate_trial_missing: 'ยังไม่ได้ยืนยันว่าผู้ลงนามทดลองใช้แล้ว — ยืนยันในข้อ 1 ก่อน',
+  // ประตูก่อนเปิดสวิตช์ (ประกาศไม่เป็นประตูแล้ว 2026-10-22 · ยืนยันทดลองไม่เป็นประตูแล้ว 2026-10-31)
   gate_authority_unlinked: 'ผู้มีอำนาจสั่งใช้ยังไม่ผูกกับบัญชีในแท็บ “ผู้ลงนามแต่ละช่อง” (แถวที่กรอกชื่อพิมพ์เองลงนามออนไลน์ไม่ได้ — เลือกจากบัญชีบุคลากรแทน)',
   gate_dept_head_unlinked: 'หัวหน้ากองยังไม่ผูกกับบัญชีในแท็บ “ผู้ลงนามแต่ละช่อง” (แถวที่กรอกชื่อพิมพ์เองลงนามออนไลน์ไม่ได้ — เลือกจากบัญชีบุคลากรแทน)',
   invalid_slot_modes: 'ค่าที่เลือกไม่ถูกต้อง กรุณารีเฟรชหน้าแล้วลองใหม่',
   unknown_doc_type: 'ไม่รู้จักประเภทเอกสารนี้',
+  too_many: 'ขอดูความพร้อมพร้อมกันมากเกินไป กรุณาลองใหม่',
   // รหัสลงนาม
   invalid_pin: 'รหัสลงนามต้องเป็นตัวเลข 6 หลัก',
   weak_pin: 'รหัสเดาง่ายเกินไป (เลขซ้ำทั้งชุด หรือเรียงติดกัน) กรุณาตั้งรหัสอื่น',
@@ -123,14 +152,13 @@ export const esignAnyOnline = modes => Object.values(modes ?? {}).some(mode => m
 // authority/dept_head ต้องผ่านเฉพาะเมื่อช่องนั้นเลือก "ออนไลน์" (DB ตรวจแบบเดียวกันใน set_esign_doc_type)
 // ประกาศ/หนังสือให้ความเห็นชอบ (พ.ร.ฎ. ๒๕๔๙ มาตรา ๗) ไม่อยู่ในรายการนี้แล้ว: เป็นหน้าที่ของ อปท. ที่ระบบไม่บังคับแทน
 // ห้ามเติม 'policy' กลับมาโดยไม่ได้รับคำสั่งจากเจ้าของระบบ — ฝั่ง DB ก็ถอดออกแล้ว (20261022110100) หน้าจอที่บังคับเองจะขัดกับ DB
+// 'trial' (ยืนยันว่าทดลองแล้ว) ถอดแล้ว 2569-10-31 (เฟส 2): ระบบไม่เคยตรวจว่าทดลองจริง และช่องที่ผู้ลงนามไม่พร้อมตกเป็นเซ็นสดเองแล้ว
 export function esignGateItems(status, modes) {
-  const policy = status?.policy ?? null
   const authorityNeeded = modes?.authority === 'online'
   const deptHeadNeeded = modes?.dept_head === 'online'
   const authorityLinked = status?.authority_linked ?? 0
   const deptHeadLinked = status?.dept_head_linked ?? 0
   return [
-    { key: 'trial', required: true, ok: Boolean(policy?.trial_confirmed_at), label: 'ผู้ลงนามทดลองใช้แล้ว', detail: policy?.trial_confirmed_at ? 'ยืนยันแล้ว' : 'ยังไม่ได้ยืนยัน' },
     { key: 'authority', required: authorityNeeded, ok: authorityLinked > 0, label: 'ผู้มีอำนาจสั่งใช้ผูกบัญชีแล้ว', detail: `${authorityLinked} ราย` },
     { key: 'dept_head', required: deptHeadNeeded, ok: deptHeadLinked > 0, label: 'หัวหน้ากองผูกบัญชีแล้ว', detail: `${deptHeadLinked} ราย` },
   ]

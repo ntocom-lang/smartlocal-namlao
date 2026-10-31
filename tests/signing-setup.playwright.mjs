@@ -141,6 +141,12 @@ function installDb(page, db) {
       return json(db.profiles.filter(item => (!dept || item.department_id === dept) && (!roles || roles.includes(item.role))).map(row => usersRow(db, row)))
     }
     if (bare.endsWith('/rpc/esign_gate_status')) return json(db.esign ?? { ok: true, slot_modes: {} })
+    // เฟส 2: ไม่ตั้ง db.readiness = เหมือนฐานที่ยังไม่ apply (หน้าจอต้องถือว่า "ยังไม่รู้")
+    if (bare.endsWith('/rpc/esign_signer_readiness')) {
+      if (!db.readiness) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST202', message: 'not found' }) })
+      db.readinessCalls = [...(db.readinessCalls ?? []), request.postDataJSON()]
+      return json({ ok: true, people: Object.entries(db.readiness).map(([profileId, state]) => ({ profile_id: profileId, state })) })
+    }
     if (bare.endsWith('/rpc/get_user_role_counts')) return json({ staff: db.profiles.filter(item => item.role !== 'citizen').length, citizen: db.profiles.filter(item => item.role === 'citizen').length })
     if (bare.endsWith('/rpc/get_staff_department_counts')) return json(DEPARTMENTS.map(item => ({ department_id: item.id, staff_count: db.profiles.filter(row => row.department_id === item.id).length })))
     if (bare.endsWith('/rpc/get_position_holder_counts')) return json(db.holderCounts ?? [])
@@ -1457,6 +1463,103 @@ await scenario('วิธีลงนาม: หน่วยงานเปิ�
   await save(page)
   await savedOk(page)
   assert.match(await page.locator('[data-person-saved]').innerText(), /เจ้าตัวต้องตั้งรหัสลงนามและเพิ่มลายเซ็นเอง/)
+})
+
+// เฟส 2 (2569-10-31): ความพร้อมรายคน — ไม่พร้อมบอกว่าใบเซ็นสดไปก่อน (ไม่ค้าง) · พร้อมแล้วไม่บอกให้ตั้งรหัสซ้ำ · ดึงไม่ได้ใช้ข้อความกลาง
+await scenario('ความพร้อมรายคน (ฟอร์ม): ยังไม่ตั้งรหัส → บอกว่าใบเซ็นสดไปก่อน · ตั้งแล้ว → บอกว่าลงนามออนไลน์ได้ ไม่บอกให้ตั้งซ้ำ', {
+  fixture: 'users',
+  db: Object.assign(freshDb(), { esign: { slot_modes: { authority: 'online', dept_head: 'online' } }, readiness: { 'u-staff': 'pin_not_set', 'u-new': 'ready' } }),
+}, async (page, db) => {
+  await openAdd(page)
+  await pickAccount(page, 'เจ้าหน้าที่ธรรมดา')
+  await pickPosition(page, 'ผู้อำนวยการกองช่าง')
+  const notReady = page.locator('[data-person-signer-readiness="pin_not_set"]')
+  await notReady.waitFor()
+  assert.match(await notReady.innerText(), /คนนี้ยังไม่ได้ตั้ง ระหว่างนี้คำขอที่ถึงช่องของคนนี้เซ็นสดไปก่อน/)
+  await notReady.scrollIntoViewIfNeeded()
+  if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '15-person-readiness.png') })
+  assert.ok(db.readinessCalls.some(call => call.p_profile_ids?.includes('u-staff') && 'p_municipality_id' in call), 'ต้องขอดูคนนี้และส่งครบสอง argument')
+  await save(page)
+  await savedOk(page)
+  assert.match(await page.locator('[data-person-saved]').innerText(), /ระหว่างนี้คำขอที่ถึงช่องของคนนี้เซ็นสดไปก่อน/)
+
+  await openUser(page, '[TEST] คนใหม่ย้ายมา')
+  await pickPosition(page, 'ผู้อำนวยการกองคลัง')
+  const ready = page.locator('[data-person-signer-readiness="ready"]')
+  await ready.waitFor()
+  assert.match(await ready.innerText(), /คนนี้ตั้งรหัสลงนามแล้ว ลงนามออนไลน์ได้/)
+  assert.doesNotMatch(await ready.innerText(), /ต้องตั้งรหัส/)
+  await save(page)
+  // ข้อความของคนแรกยังค้างอยู่ — รอข้อความของคนนี้ ไม่งั้นอ่านของเก่า
+  const flash = page.locator('[data-person-saved]', { hasText: 'คนใหม่ย้ายมา' })
+  await flash.waitFor()
+  assert.doesNotMatch(await flash.innerText(), /ต้องตั้งรหัสลงนาม/, 'คนที่ตั้งรหัสแล้วไม่ต้องบอกซ้ำ')
+})
+
+await scenario('ความพร้อมรายคน (ฟอร์ม): ฐานยังไม่มีฟังก์ชัน/ดึงไม่ได้ → ข้อความกลางเดิม ไม่บอกว่าคนนี้ยังไม่ตั้ง', {
+  fixture: 'users',
+  db: Object.assign(freshDb(), { esign: { slot_modes: { authority: 'online', dept_head: 'online' } } }),
+}, async (page) => {
+  await openAdd(page)
+  await pickAccount(page, 'เจ้าหน้าที่ธรรมดา')
+  await pickPosition(page, 'ผู้อำนวยการกองช่าง')
+  const line = page.locator('[data-person-signer-readiness="unknown"]')
+  await line.waitFor()
+  assert.doesNotMatch(await line.innerText(), /คนนี้ยังไม่ได้ตั้ง|คนนี้ตั้งรหัส/)
+})
+
+await scenario('ความพร้อมรายคน (หน้าผู้ลงนาม): ผู้ลงนามที่มีบัญชีบอกว่าตั้งรหัสแล้วไหม · ชื่อพิมพ์เองยังเป็นเซ็นปากกา · ดึงไม่ได้ใช้ข้อความเดิม', {
+  fixture: 'signatories',
+  db: Object.assign(freshDb(), { readiness: { 'u-mayor': 'ready', 'u-eng-other': 'pin_not_set' } }),
+}, async (page) => {
+  await page.locator('[data-signatory-next-step]').waitFor({ timeout: 60000 })
+  const source = (role, dept) => row(page, role, dept).locator('[data-signatory-source]')
+  await page.locator('[data-signatory-readiness="ready"]').waitFor()
+  assert.match(await source('mayor').innerText(), /ตั้งรหัสลงนามแล้ว ลงนามในระบบได้/)
+  assert.match(await source('department_head', D.eng).innerText(), /ยังไม่ได้ตั้งรหัสลงนาม .*ใบเซ็นสดไปก่อน/)
+  assert.match(await source('clerk').innerText(), /พิมพ์ชื่อเอง · เซ็นปากกาเท่านั้น/)
+  assert.equal(await source('clerk').getAttribute('data-signatory-readiness'), null)
+})
+
+await scenario('หน้าลงนามออนไลน์ (เฟส 2): ไม่มีข้อยืนยันทดลอง · ความพร้อมรายคน คนไม่พร้อมขึ้นก่อนพร้อมบอกสิ่งที่ต้องทำ · ระงับอยู่กดเปิดคืนได้ในรายการ', {
+  fixture: 'signatories',
+  db: Object.assign(freshDb(), {
+    esign: { ok: true, policy: null, slot_modes: {}, authority_linked: 1, dept_head_linked: 1 },
+    readiness: { 'u-mayor': 'ready', 'u-eng-other': 'pin_not_set', 'u-fin-head': 'suspended' },
+  }),
+}, async (page, db) => {
+  await page.locator('#signing-tab-esign').click({ timeout: 60000 })
+  const list = page.locator('[data-esign-readiness="list"]')
+  await list.waitFor()
+  assert.equal(await page.locator('#esign-trial').count(), 0, 'ต้องไม่มีข้อยืนยันทดลองแล้ว')
+  assert.doesNotMatch(await page.locator('#signing-panel').innerText(), /ทดลองใช้แล้ว|ทดลองลงนาม/)
+  assert.match(await list.innerText(), /พร้อมลงนามออนไลน์ 1 จาก 3 คน/)
+  assert.deepEqual(await list.locator('[data-esign-readiness-person]').evaluateAll(items => items.map(item => item.dataset.esignReadinessPerson)),
+    ['suspended', 'pin_not_set', 'ready'], 'คนที่ยังไม่พร้อมต้องขึ้นก่อน')
+  const notReady = list.locator('[data-esign-readiness-person="pin_not_set"]')
+  assert.match(await notReady.innerText(), /\[TEST\] นายช่างที่เคยตั้ง[\s\S]*ให้เจ้าตัวตั้งรหัสที่เมนู “ลายเซ็นของฉัน”/)
+  assert.match(await page.locator('#signing-panel').innerText(), /ระบบให้ใบนั้นเซ็นสดช่องนั้นแทนเอง ไม่ค้าง/)
+  await shot(page, '14-esign-readiness')
+  // เปิดคืนจากรายการ: เรียก RPC เดิมด้วย id คนนั้น
+  const reinstated = []
+  await page.route(/\/rpc\/esign_reinstate_signer/, async route => {
+    reinstated.push(route.request().postDataJSON())
+    db.readiness['u-fin-head'] = 'ready'
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) })
+  })
+  await list.locator('[data-esign-readiness-person="suspended"]').getByRole('button', { name: 'เปิดคืน' }).click()
+  await page.getByText('เปิดคืนแล้ว').waitFor()
+  assert.deepEqual(reinstated, [{ p_user_id: 'u-fin-head' }])
+  await page.locator('[data-esign-readiness="list"]', { hasText: 'พร้อมลงนามออนไลน์ 2 จาก 3 คน' }).waitFor()
+})
+
+await scenario('หน้าลงนามออนไลน์ (เฟส 2): ดึงความพร้อมไม่ได้ บอกว่ายังไม่รู้ ไม่ขึ้นว่าทุกคนไม่พร้อม', {
+  fixture: 'signatories',
+  db: Object.assign(freshDb(), { esign: { ok: true, policy: null, slot_modes: {}, authority_linked: 1, dept_head_linked: 1 } }),
+}, async (page) => {
+  await page.locator('#signing-tab-esign').click({ timeout: 60000 })
+  await page.locator('[data-esign-readiness="unknown"]').waitFor()
+  assert.equal(await page.locator('[data-esign-readiness-person]').count(), 0)
 })
 
 await scenario('มือถือ 390px: ฟอร์มไม่ล้นแนวนอน · ปุ่มสูงพอกด · ตัวอักษรไม่เล็กกว่า 12px · ปุ่มบันทึกไม่ถูกบัง', { fixture: 'users', viewport: { width: 390, height: 844 } }, async (page) => {
