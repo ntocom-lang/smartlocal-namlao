@@ -48,21 +48,21 @@ export function clearSignatory({ municipalityId, slot }) {
 }
 
 // บันทึกตามรายการจาก signatoryChangeFor ทีละช่อง คืน { key: ข้อความผิดพลาด | null } — ช่องหนึ่งล้มต้องไม่ทำให้ช่องอื่นไม่ถูกบันทึก
-// ผูกบัญชีเท่านั้น ไม่ทับตำแหน่ง มีผลวันนี้ และคงเครื่องหมายผู้มีอำนาจสั่งใช้รถของแถวเดิมไว้
+// ผูกบัญชี มีผลวันนี้ และคงเครื่องหมายผู้มีอำนาจสั่งใช้รถของแถวเดิมไว้ · titleOverride ส่งมาเฉพาะคนที่ตำแหน่งไม่ตรงช่อง เช่น "รักษาราชการแทน..."
 export async function applySignatoryChanges(municipalityId, changes) {
   const results = {}
   for (const change of changes) {
     const { error } = await saveSignatory({
-      municipalityId, slot: change.slot, profileId: change.person.id, vehicleDefault: change.vehicleDefault,
+      municipalityId, slot: change.slot, profileId: change.person.id, titleOverride: change.titleOverride ?? null, vehicleDefault: change.vehicleDefault,
     })
     results[change.key] = error ? error.message : null
   }
   return results
 }
 
-// งานต่อเนื่องหลังบันทึกการแต่งตั้งสำเร็จ: เอาติ๊กหัวหน้าของคนเดิมออก แล้วตั้งผู้ลงนามตามที่แอดมินเลือก
+// งานต่อเนื่องหลังบันทึกการแต่งตั้งสำเร็จ: เอาติ๊กหัวหน้าของคนเดิมออก ตั้งผู้ลงนาม และเอาชื่อออกจากช่องตามที่แอดมินเลือก
 // คืน problems = ข้อความของข้อที่ไม่สำเร็จ (ว่าง = สำเร็จหมด) — การแต่งตั้งบันทึกไปแล้ว ข้อนี้ล้มต้องไม่ย้อนการแต่งตั้ง
-export async function finishAppointment({ municipalityId, offers = [], clearHeads = [] }) {
+export async function finishAppointment({ municipalityId, offers = [], clearHeads = [], clearSlots = [] }) {
   const problems = []
   const clearedHeadIds = []
   for (const head of clearHeads) {
@@ -73,6 +73,10 @@ export async function finishAppointment({ municipalityId, offers = [], clearHead
   const results = await applySignatoryChanges(municipalityId, offers)
   for (const offer of offers) {
     if (results[offer.key]) problems.push(`ตั้งผู้ลงนามช่อง “${offer.label}” ไม่สำเร็จ (${results[offer.key]})`)
+  }
+  for (const slot of clearSlots) {
+    const { error } = await clearSignatory({ municipalityId, slot })
+    if (error) problems.push(`เอาชื่อออกจากช่อง “${slot.label}” ไม่สำเร็จ (${error.message})`)
   }
   return { problems, clearedHeadIds }
 }

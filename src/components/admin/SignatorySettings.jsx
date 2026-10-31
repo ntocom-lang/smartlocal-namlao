@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ArrowRight, CheckCircle2, Loader2, PenLine, Plus, Save, Sparkles, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import {
-  appointmentSuggestion, CUSTOM_ROLE, departmentSlotMeta, earliestEffectiveFrom, effectiveDateForForm, groupPeopleByDepartment,
+  appointmentSuggestion, buildSignatorySlots, CUSTOM_ROLE, earliestEffectiveFrom, effectiveDateForForm, groupPeopleByDepartment,
   SIGNATORY_BACKDATE_LIMIT_DAYS, SIGNING_EFFECT_TEXT, signatoryChangeFor, signatoryName, signatorySlotKey, signatorySuggestionState, signatoryTitle,
   SUGGESTABLE_KINDS, todayBangkok,
 } from '../../lib/documentSignatories'
@@ -511,33 +511,9 @@ export default function SignatorySettings({ tenant, onOpenUsers = null }) {
     return () => { active = false }
   }, [tenant?.id])
 
-  const slots = useMemo(() => [
-    { key: assignmentKey('mayor'), role: 'mayor', municipalityId: tenant?.id, departmentId: null, label: 'นายก' },
-    { key: assignmentKey('clerk'), role: 'clerk', municipalityId: tenant?.id, departmentId: null, label: 'ปลัด' },
-    // ทุกกองมีแถวหัวหน้ากอง · กองผู้บริหารเป็นแบบไม่บังคับ + มีคำอธิบาย (ดู departmentSlotMeta)
-    ...departments
-      .map((department) => ({
-        key: assignmentKey('department_head', department.id),
-        role: 'department_head', municipalityId: tenant?.id,
-        departmentId: department.id, departmentName: department.name,
-        ...departmentSlotMeta(department),
-        // ใช้ชื่อกองตรงๆ ห้ามเติมคำว่า "หัวหน้า" นำหน้า — หน่วยงานอย่าง "ตรวจสอบภายใน"
-        // ส่วนใหญ่ขึ้นตรงกับปลัดและไม่มีตำแหน่งหัวหน้า ป้ายที่เติมเองจึงผิดกับ อปท. จำนวนมาก
-        // ผลพลอยได้: ข้อความนี้กลายเป็นข้อมูล ไม่ใช่โค้ด ผู้ดูแลแก้เองได้ที่หน้าจัดการกอง/ส่วนราชการ
-        label: department.name,
-      })),
-    // แถวที่แอดมินสร้างเอง — มาจากข้อมูลในทะเบียน ไม่ใช่รายการตายตัวในโค้ด
-    // draftRows คือแถวที่เพิ่งกด "เพิ่มผู้ลงนาม" แต่ยังไม่ได้บันทึก จึงยังไม่มีใน assignments
-    ...[...new Set([
-      ...assignments.filter((a) => a.signatory_role === CUSTOM_ROLE).map((a) => a.custom_label),
-      ...draftRows,
-    ])].filter(Boolean).map((customLabel) => ({
-      key: assignmentKey(CUSTOM_ROLE, null, customLabel),
-      role: CUSTOM_ROLE, municipalityId: tenant?.id, departmentId: null,
-      customLabel, label: customLabel, optional: true, removable: true,
-      hint: 'เพิ่มเอง · ใช้กับใบขออนุญาตใช้รถเท่านั้น',
-    })),
-  ], [departments, tenant?.id, assignments, draftRows])
+  // draftRows คือแถวที่เพิ่งกด "เพิ่มผู้ลงนาม" แต่ยังไม่ได้บันทึก จึงยังไม่มีใน assignments
+  const slots = useMemo(() => buildSignatorySlots(departments, assignments, draftRows)
+    .map((slot) => ({ ...slot, municipalityId: tenant?.id })), [departments, tenant?.id, assignments, draftRows])
 
   const assignmentMap = useMemo(() => Object.fromEntries(
     assignments.map((assignment) => [

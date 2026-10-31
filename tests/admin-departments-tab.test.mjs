@@ -14,32 +14,35 @@ const check = async (name, fn) => {
 const dashboard = await read('src/pages/AdminDashboard.jsx')
 const settings = await read('src/components/admin/SystemSettingsAdmin.jsx')
 
-await check('หน้าจัดการผู้ใช้: แท็บ เจ้าหน้าที่ → ประชาชน → กอง/หน่วยงาน → แบบตำแหน่ง ใช้หน้าจัดการกองเดิม', async () => {
-  const order = ["key: 'staff'", "key: 'citizen'", "key: 'departments'", "key: 'positions'"]
+await check('หน้าจัดการผู้ใช้: แท็บ เจ้าหน้าที่ → ประชาชน → กองและตำแหน่ง ใช้หน้าจัดการกองและตำแหน่งเดิม', async () => {
+  const order = ["key: 'staff'", "key: 'citizen'", "key: 'structure'"]
     .map((needle) => dashboard.indexOf(`{ ${needle}`))
   assert.ok(order.every((index) => index > 0), `หาแท็บไม่ครบ: ${order}`)
-  assert.deepEqual([...order].sort((a, b) => a - b), order, 'ลำดับแท็บต้องเป็น เจ้าหน้าที่ ประชาชน กอง แบบตำแหน่ง')
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'ลำดับแท็บต้องเป็น เจ้าหน้าที่ ประชาชน กองและตำแหน่ง')
+  assert.doesNotMatch(dashboard, /\{ key: 'departments'|\{ key: 'positions'/, 'รวมเป็นแท็บเดียวแล้ว')
   assert.match(dashboard, /import DepartmentManager from '\.\.\/components\/admin\/DepartmentManager'/)
-  assert.match(dashboard, /subTab === 'departments' && \(\s*<div[^>]*data-user-manager-departments>\s*<DepartmentManager tenant=\{tenant\} \/>/)
+  assert.match(dashboard, /subTab === 'structure' && \(\s*<div data-user-manager-structure>/)
+  assert.match(dashboard, /<div[^>]*data-user-manager-departments>\s*<DepartmentManager tenant=\{tenant\} \/>/)
+  assert.match(dashboard, /<PositionCatalogAdmin tenant=\{tenant\} currentUserRole=\{currentUserRole\} \/>/)
 })
 
 await check('แท็บกองไม่ยิง RPC รายชื่อคน (ไม่ดึง PII มาทิ้ง) และซ่อนการ์ดสถิติรายชื่อ', async () => {
-  assert.match(dashboard, /if \(subTab === 'departments' \|\| subTab === 'positions'\) return/)
-  assert.match(dashboard, /const isStructureTab = subTab === 'departments' \|\| subTab === 'positions'/)
+  assert.match(dashboard, /if \(subTab === 'structure'\) return/)
+  assert.match(dashboard, /const isStructureTab = subTab === 'structure'/)
   assert.match(dashboard, /\{!isStructureTab && \(\s*<div className="relative mt-5 grid/)
   assert.match(dashboard, /\{!isStructureTab && \(<>/)
 })
 
-await check('แท็บเจ้าหน้าที่มีทางไปแท็บกอง: ปุ่ม "แก้รายชื่อกอง" + กล่อง "ยังไม่มีกอง" หลังโหลดเสร็จเท่านั้น', async () => {
+await check('แท็บเจ้าหน้าที่มีทางไปแท็บกอง: ปุ่ม "เพิ่มกองหรือตำแหน่ง" + กล่อง "ยังไม่มีกอง" หลังโหลดเสร็จเท่านั้น', async () => {
   assert.match(dashboard, /function switchSubTab\(key\)/)
-  assert.match(dashboard, /onClick=\{\(\) => switchSubTab\('departments'\)\} data-open-departments/)
+  assert.match(dashboard, /onClick=\{\(\) => switchSubTab\('structure'\)\} data-open-structure/)
   assert.match(dashboard, /\{structureLoaded && depts\.length === 0 && \(/, 'ห้ามขึ้นกล่องยังไม่มีกองก่อนโหลดรายชื่อกองเสร็จ')
   assert.match(dashboard, /onClick=\{\(\) => switchSubTab\(key\)\}/, 'ปุ่มแท็บด้านบนต้องใช้ฟังก์ชันสลับแท็บตัวเดียวกัน')
 })
 
 await check('ทางเข้า departments เปิดหน้าจัดการผู้ใช้ตรงแท็บกอง และไฮไลต์เมนูจัดการผู้ใช้', async () => {
   assert.match(dashboard, /activePage === 'users' \|\| activePage === 'departments' \? \(/)
-  assert.match(dashboard, /initialSubTab=\{activePage === 'departments' \? 'departments' : 'staff'\}/)
+  assert.match(dashboard, /initialSubTab=\{activePage === 'departments' \? 'structure' : 'staff'\}/)
   assert.match(dashboard, /onOpenDepartments=\{\(\) => setActivePage\('departments'\)\}/)
   const aliases = dashboard.match(/const PAGE_MENU_ALIASES = \{([\s\S]*?)\n\}/)?.[1] ?? ''
   assert.match(aliases, /departments: 'users'/)

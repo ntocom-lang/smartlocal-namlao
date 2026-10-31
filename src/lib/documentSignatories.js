@@ -304,6 +304,41 @@ export function signatorySlotLabel(slot, departments) {
   return slot.customLabel || 'ผู้ลงนามที่เพิ่มเอง'
 }
 
+// รายการช่องลงนามทั้งหมดของ อปท. — หน้าผู้ลงนาม แถบสถานะในหน้าจัดการผู้ใช้ และฟอร์มเจ้าหน้าที่ใช้ชุดเดียวกัน
+// draftLabels = แถวที่แอดมินเพิ่งตั้งชื่อแต่ยังไม่ได้บันทึก
+export function buildSignatorySlots(departments, rows, draftLabels = []) {
+  return [
+    { key: signatorySlotKey({ role: 'mayor' }), role: 'mayor', departmentId: null, label: 'นายก' },
+    { key: signatorySlotKey({ role: 'clerk' }), role: 'clerk', departmentId: null, label: 'ปลัด' },
+    // ทุกกองมีแถวหัวหน้ากอง · กองผู้บริหารเป็นแบบไม่บังคับ + มีคำอธิบาย (ดู departmentSlotMeta)
+    ...(departments ?? []).map(department => ({
+      key: signatorySlotKey({ role: 'department_head', departmentId: department.id }),
+      role: 'department_head',
+      departmentId: department.id,
+      departmentName: department.name,
+      ...departmentSlotMeta(department),
+      // ใช้ชื่อกองตรงๆ ห้ามเติมคำว่า "หัวหน้า" นำหน้า — หน่วยงานอย่าง "ตรวจสอบภายใน"
+      // ส่วนใหญ่ขึ้นตรงกับปลัดและไม่มีตำแหน่งหัวหน้า ป้ายที่เติมเองจึงผิดกับ อปท. จำนวนมาก
+      // ผลพลอยได้: ข้อความนี้กลายเป็นข้อมูล ไม่ใช่โค้ด ผู้ดูแลแก้เองได้ที่หน้าจัดการกอง/ส่วนราชการ
+      label: department.name,
+    })),
+    // แถวที่แอดมินสร้างเอง — มาจากข้อมูลในทะเบียน ไม่ใช่รายการตายตัวในโค้ด
+    ...[...new Set([
+      ...(rows ?? []).filter(row => row.signatory_role === CUSTOM_ROLE).map(row => row.custom_label),
+      ...draftLabels,
+    ])].filter(Boolean).map(customLabel => ({
+      key: signatorySlotKey({ role: CUSTOM_ROLE, customLabel }),
+      role: CUSTOM_ROLE,
+      departmentId: null,
+      customLabel,
+      label: customLabel,
+      optional: true,
+      removable: true,
+      hint: 'เพิ่มเอง · ใช้กับใบขออนุญาตใช้รถเท่านั้น',
+    })),
+  ]
+}
+
 // ผลของการเปลี่ยนผู้ลงนาม — กติกาเจ้าของระบบ 2569-10-06 ต้องเห็นก่อนกดยืนยันทุกจุด (signatoryMoment / pickSignatory)
 export const SIGNING_EFFECT_TEXT = 'เรื่องที่ยังไม่เสร็จจะพิมพ์ชื่อใหม่ทันที · เรื่องที่เสร็จแล้วคงชื่อเดิม'
 
@@ -355,6 +390,36 @@ export function newlyAppointedSlots(before, after, rows, personId) {
 // ตำแหน่งที่พิมพ์มีคำว่า "แทน" (รักษาราชการแทน / ปฏิบัติราชการแทน) = ตั้งใจให้ต่างจากการแต่งตั้ง ไม่ต้องเสนอ
 export function isActingSignatory(row) {
   return /แทน/.test(row?.title_override ?? '')
+}
+
+// แถวในส่วน "การลงนามเอกสาร" ของฟอร์มเจ้าหน้าที่ — ทุกตำแหน่งเลือกช่องลงนามได้ ไม่ขึ้นกับติ๊กหัวหน้ากอง (เจ้าของระบบสั่ง 2569-10-31)
+//   held     = ช่องที่คนนี้ลงนามอยู่ · เอาติ๊กออก = เอาชื่อออกจากช่อง
+//   proposed = ช่องที่ตำแหน่งชี้มา · newly = ตำแหน่งเพิ่งเปลี่ยนมา
+//   picked   = แอดมินเลือกเอง (key จาก extraKeys)
+//   matches  = ตำแหน่งตรงกับช่องนี้ · ไม่ตรงให้ฟอร์มเตือนตรวจคำสั่งมอบอำนาจ
+// ติ๊กให้ก่อนเฉพาะช่องที่ถืออยู่และช่องที่ตำแหน่งเพิ่งเปลี่ยนมา (ยกเว้นตั้งผู้แทนไว้) แก้เบอร์โทรจึงไม่เขียนทับใคร
+// ช่องที่ตำแหน่งชี้มาแต่ไม่ได้เพิ่งเปลี่ยน ขึ้นให้เห็นแบบยังไม่ติ๊ก · ช่องที่ตั้งผู้แทนไว้ถือว่าตั้งใจ จึงไม่ขึ้น
+export function personSigningRows({ personId, before, after, rows, slots, extraKeys = [], choices = {} }) {
+  const active = rows ?? []
+  const rowFor = slot => active.find(row => isSameSignatorySlot(row, slot))
+  const proposedKeys = new Set(appointedSignatorySlots(after).map(signatorySlotKey))
+  const newlyKeys = new Set(newlyAppointedSlots(before, after, active, personId).map(signatorySlotKey))
+  return (slots ?? []).flatMap(slot => {
+    const key = signatorySlotKey(slot)
+    const assignment = rowFor(slot)
+    const held = Boolean(personId) && assignment?.profile_id === personId
+    const proposed = proposedKeys.has(key)
+    const newly = newlyKeys.has(key)
+    const picked = extraKeys.includes(key)
+    const hiddenActing = proposed && !newly && !held && !picked && isActingSignatory(assignment)
+    if (hiddenActing || !(held || proposed || picked)) return []
+    const defaultChecked = held || picked || (newly && !isActingSignatory(assignment))
+    return [{
+      key, slot, assignment, held, proposed, newly, picked,
+      matches: proposed || slot.role === CUSTOM_ROLE,
+      checked: choices[key] ?? defaultChecked,
+    }]
+  }).sort((a, b) => Number(b.held) - Number(a.held))
 }
 
 // เทียบทะเบียนกับการแต่งตั้งของช่องหนึ่ง

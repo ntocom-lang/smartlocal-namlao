@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFile, readdir } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
@@ -154,7 +154,7 @@ const dashboard = await read('src/pages/AdminDashboard.jsx')
 assert.match(dashboard, /get_users_with_email_sorted_filtered/)
 assert.match(dashboard, /departmentFilterParams\(filterDept\)/)
 assert.match(dashboard, /get_staff_department_counts/)
-assert.match(dashboard, /เพิ่มบุคลากรใน\{selectedDepartment\.name\}/)
+assert.match(dashboard, /data-add-person/, 'ปุ่มเพิ่มเจ้าหน้าที่ต้องไม่ขึ้นกับการเลือกกอง')
 assert.doesNotMatch(
   dashboard,
   /count:\s*users\.filter\(u => u\.department_id/,
@@ -189,23 +189,20 @@ assert.match(dashboard, /label="ใช้งานล่าสุด" sortKey="l
 assert.match(dashboard, /user\.last_active_at \?\? user\.last_sign_in_at/, 'RPC รุ่นเก่าที่ยังไม่มีคอลัมน์ใหม่ต้องใช้เวลาล็อกอินแทน')
 assert.match(dashboard, /ไม่ใช่เครื่องวัดการทำงาน/, 'ต้องบอกขอบเขตการใช้บนหน้าจอ')
 
-const quickAssign = await read('src/components/admin/PersonnelQuickAssignDialog.jsx')
-assert.match(quickAssign, /leastPrivilegeRole\(selectedUser\?\.role\)/)
-assert.match(quickAssign, /search_users_for_staff_assignment/)
-assert.doesNotMatch(quickAssign, /get_users_with_email_sorted/)
-assert.match(quickAssign, /lockedElsewhere/)
-assert.match(quickAssign, /makePositionShared\(supabase, tenant\.id, position\)/, 'ตำแหน่งที่ล็อกกองอื่นต้องปลดได้จากหน้าต่างนี้')
-assert.match(quickAssign, /department_id: lockNewPosition \? department\.id : null/, 'ตำแหน่งใหม่ต้องใช้ได้ทุกกองเป็นค่าตั้งต้น')
-assert.match(dashboard, /makePositionShared\(supabase, tenant\.id, selectedPosition\)/, 'หน้าแต่งตั้งต้องปลดล็อกกองได้')
-assert.match(dashboard, /suggestedDepartmentId\(position, depts\)/)
-assert.match(dashboard, /groupPositionsByDepartment\(positions, depts\)/, 'ช่องเลือกตำแหน่งตอนแต่งตั้งต้องแยกตามกองหลัก')
-assert.match(dashboard, /<optgroup key=\{group\.key\} label=\{group\.label\}>\s*\{group\.items\.map\(position => \(\s*<option key=\{position\.id\} value=\{position\.id\}>/)
-assert.doesNotMatch(dashboard, /\{positions\.map\(position => <option key=\{position\.id\}/, 'ห้ามกลับไปเป็นลิสต์แบนราบ')
-assert.match(quickAssign, /ระบบไม่ยกระดับให้อัตโนมัติ/)
-assert.match(quickAssign, /ยืนยันการย้ายและแต่งตั้ง/, 'การย้ายข้ามกองต้องบอกผลก่อนบันทึก')
-assert.match(quickAssign, /min-h-11/, 'ปุ่มและช่องกรอกบนมือถือควรสูงอย่างน้อย 44px')
-assert.match(quickAssign, /accountQuery\.trim\(\)\.length >= 2/, 'ห้ามดึงรายชื่อบุคลากรทั้งหมดก่อนมีคำค้น')
-assert.doesNotMatch(quickAssign, /id_card/, 'หน้าค้นหาเร็วไม่ควรแสดงเลขบัตรประชาชน')
+const personForm = await read('src/components/admin/PersonSetupForm.jsx')
+const personLib = await read('src/lib/personnelStructure.js')
+assert.match(personForm, /proposedRoleForAppointment\(/)
+assert.match(personLib, /return leastPrivilegeRole\(current\)/, 'คำแนะนำสิทธิ์ของตำแหน่งธรรมดาต้องไม่ยกระดับอัตโนมัติ')
+assert.match(personForm, /search_users_for_staff_assignment/)
+assert.doesNotMatch(personForm, /get_users_with_email_sorted/)
+assert.match(personForm, /makePositionShared\(supabase, tenant\.id, position\)/, 'ตำแหน่งที่ล็อกกองต้องปลดได้จากฟอร์ม')
+assert.match(personLib, /department_id: locked \? departmentId : null/, 'ตำแหน่งใหม่ต้องใช้ได้ทุกกองเป็นค่าตั้งต้น')
+assert.match(personForm, /suggestedDepartmentId\(next, localDepts\)/)
+assert.match(personForm, /groupPositionsByDepartment\(localPositions, localDepts\)/, 'รายการตำแหน่งตอนแต่งตั้งต้องแยกตามกองหลัก')
+assert.match(personForm, /การบันทึกครั้งนี้จะย้ายมา/, 'การย้ายข้ามกองต้องบอกผลก่อนบันทึก')
+assert.match(personForm, /min-h-11/, 'ปุ่มและช่องกรอกบนมือถือควรสูงอย่างน้อย 44px')
+assert.match(personForm, /query\.length < 2/, 'ห้ามดึงรายชื่อบุคลากรทั้งหมดก่อนมีคำค้น')
+assert.doesNotMatch(personForm, /item\.id_card/, 'ผลค้นหาบัญชีไม่ควรแสดงเลขบัตรประชาชน')
 
 const catalog = await read('src/components/admin/PositionCatalogAdmin.jsx')
 assert.match(catalog, /groupPositionsByDepartment/)
@@ -566,51 +563,14 @@ if (process.argv.includes('--pglite')) {
 }
 
 if (process.env.PERSONNEL_VISUAL === '1') {
-  const React = (await import('react')).default
-  const { renderToStaticMarkup } = await import('react-dom/server')
   const { createServer } = await import('vite')
   const { chromium } = await import('playwright')
 
-  const vite = await createServer({ root, appType: 'custom', server: { middlewareMode: true } })
-  const module = await vite.ssrLoadModule('/src/components/admin/PersonnelQuickAssignDialog.jsx')
-  const markup = renderToStaticMarkup(React.createElement(module.default, {
-    tenant: { id: '00000000-0000-0000-0000-000000000001', name: 'เทศบาลทดสอบ' },
-    department: { id: '00000000-0000-0000-0000-000000000002', name: 'สำนักปลัด' },
-    positions,
-    currentUserRole: 'admin',
-    currentUserId: '00000000-0000-0000-0000-000000000003',
-    onClose: () => {},
-    onSaved: () => {},
-  }))
-  await vite.close()
-
-  const cssFile = (await readdir(path.join(root, 'dist/assets'))).find((name) => /^index-.*\.css$/.test(name))
-  assert.ok(cssFile, 'ไม่พบ CSS จาก production build สำหรับ visual test')
-  const css = await readFile(path.join(root, 'dist/assets', cssFile), 'utf8')
+  // ฟอร์มเจ้าหน้าที่ทดสอบบนเบราว์เซอร์ที่ tests/signing-setup.playwright.mjs ส่วนนี้เหลือหน้ารายชื่อตำแหน่ง
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 })
-  await page.setContent(`<style>${css}</style>${markup}`)
-
-  const layout = await page.evaluate(() => ({
-    viewportWidth: window.innerWidth,
-    documentWidth: document.documentElement.scrollWidth,
-    dialogWidth: Math.ceil(document.querySelector('[role="dialog"] > div').getBoundingClientRect().width),
-    titleVisible: Boolean(document.querySelector('#quick-assign-title')?.getBoundingClientRect().height),
-    shortControls: [...document.querySelectorAll('button, input')]
-      .filter((element) => element.getBoundingClientRect().height < 44)
-      .map((element) => element.textContent?.trim() || element.getAttribute('aria-label') || element.id),
-  }))
-  assert.equal(layout.documentWidth, layout.viewportWidth, 'หน้าต่างเพิ่มบุคลากรห้ามล้นแนวนอนที่ 390px')
-  assert.ok(layout.dialogWidth <= layout.viewportWidth)
-  assert.equal(layout.titleVisible, true)
-  assert.deepEqual(layout.shortControls, [], `พบ touch target ต่ำกว่า 44px: ${layout.shortControls.join(', ')}`)
-
-  const screenshotPath = path.join(process.env.TEMP || process.cwd(), 'personnel-quick-assign-mobile.png')
-  await page.screenshot({ path: screenshotPath, fullPage: true })
-  console.log(`personnel-structure visual: ${screenshotPath}`)
 
   const fixtureVite = await createServer({ root, appType: 'custom', server: { host: '127.0.0.1', port: 0 } })
-  const fixturePositions = [{ id: 'p1', name: 'นักจัดการงานทั่วไป', department_id: 'general', role: 'viewer' }]
   fixtureVite.middlewares.use(async (request, response, next) => {
     if (request.url?.startsWith('/__catalog-fixture')) {
       const html = await fixtureVite.transformIndexHtml('/__catalog-fixture', `
@@ -625,38 +585,14 @@ if (process.env.PERSONNEL_VISUAL === '1') {
       response.end(html)
       return
     }
-    if (!request.url?.startsWith('/__personnel-fixture')) return next()
-    const html = await fixtureVite.transformIndexHtml('/__personnel-fixture', `
-      <!doctype html><html><head></head><body><div id="root"></div><script type="module">
-        import React from 'react';
-        import {createRoot} from 'react-dom/client';
-        import Dialog from '/src/components/admin/PersonnelQuickAssignDialog.jsx';
-        import '/src/index.css';
-        createRoot(document.getElementById('root')).render(React.createElement(Dialog, {
-          tenant:{id:'municipality-test'}, department:{id:'general',name:'สำนักปลัด'},
-          currentUserId:'admin-test', positions:${JSON.stringify(fixturePositions)},
-          onClose:()=>{}, onSaved:()=>{document.body.dataset.saved='yes';}
-        }));
-      </script></body></html>`)
-    response.setHeader('Content-Type', 'text/html')
-    response.end(html)
+    return next()
   })
-  const writes = []
   const positionWrites = []
-  const positionInserts = []
   let catalogPosition = {id:'p1',name:'[TEST] ตำแหน่งใช้ร่วม',department_id:null,role:'viewer',category:'operating_staff',sort_order:0}
-  let candidate = { id: 'citizen-test', full_name: '[TEST] สมชาย', role: 'citizen', municipality_id: 'municipality-test' }
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url())
     if (url.hostname === '127.0.0.1') return route.continue()
     // ทุก endpoint ภายนอกถูก mock จึงไม่มีเส้นทางออกไปอ่าน/เขียน DB จริง
-    if (url.pathname.endsWith('/rpc/search_users_for_staff_assignment')) {
-      return route.fulfill({ json: [candidate] })
-    }
-    if (url.pathname.endsWith('/rpc/admin_update_user')) {
-      writes.push(route.request().postDataJSON())
-      return route.fulfill({ json: null })
-    }
     if (url.pathname.endsWith('/rpc/get_position_holder_counts')) {
       return route.fulfill({ json:[{position_id:'p1',holder_count:9}] })
     }
@@ -672,41 +608,10 @@ if (process.env.PERSONNEL_VISUAL === '1') {
     if (url.pathname.endsWith('/departments')) {
       return route.fulfill({json:[{id:'general',name:'สำนักปลัด',is_active:true},{id:'works',name:'กองช่าง',is_active:true}]})
     }
-    if (url.pathname.endsWith('/positions') && route.request().method() === 'POST') {
-      const payload = route.request().postDataJSON()
-      positionInserts.push(payload)
-      return route.fulfill({ json: { ...payload, id: 'new-position-test' } })
-    }
     return route.abort()
   })
   try {
     await fixtureVite.listen()
-    const fixtureUrl = `${fixtureVite.resolvedUrls.local[0]}__personnel-fixture`
-    await page.goto(fixtureUrl)
-    await page.locator('#quick-account-search').fill('สมชาย')
-    await page.getByRole('button', { name: /\[TEST\] สมชาย/ }).click()
-    await page.locator('#quick-position-search').fill('นักจัดการ')
-    await page.getByRole('button', { name: /นักจัดการงานทั่วไป/ }).click()
-    await page.getByRole('button', { name: 'ยืนยันการแต่งตั้ง', exact: true }).click()
-    await page.waitForFunction(() => document.body.dataset.saved === 'yes')
-    assert.equal(writes[0].p_changes.role, 'staff', 'คำแนะนำ viewer ต้องไม่ยกระดับสิทธิ์อัตโนมัติ')
-    assert.equal(writes[0].p_changes.department_id, 'general')
-    candidate = { ...candidate, id:'staff-test', role:'officer', department_id:'works', department_name:'กองช่าง', is_dept_head:true }
-    await page.goto(fixtureUrl)
-    await page.locator('#quick-account-search').fill('สมชาย')
-    await page.getByRole('button', { name: /\[TEST\] สมชาย/ }).click()
-    await page.locator('#quick-position-search').fill('[TEST] ธุรการใหม่')
-    await page.getByRole('button', { name: /สร้างตำแหน่ง/ }).click()
-    await page.getByRole('button', { name:'ยืนยันการย้ายและแต่งตั้ง', exact:true }).click()
-    await page.waitForFunction(() => document.body.dataset.saved === 'yes')
-    assert.equal(writes[1].p_changes.role, 'officer')
-    assert.equal(writes[1].p_changes.is_dept_head, false)
-    assert.equal(writes[1].p_changes.position_id, 'new-position-test')
-    assert.equal(writes[1].p_changes.department_id, 'general', 'คนต้องได้กองที่กำลังเพิ่ม แม้ตำแหน่งใช้ได้ทุกกอง')
-    assert.equal(positionInserts[0].department_id, null, 'ตำแหน่งธุรการที่สร้างใหม่ต้องใช้ได้ทุกกอง')
-    assert.equal(positionInserts[0].department_hint, 'สำนักปลัด', 'จำกองนี้ไว้เป็นกองแนะนำ')
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-    console.log('personnel-structure browser: citizen assignment, inline position creation and department transfer passed (mocked DB)')
     await page.goto(`${fixtureVite.resolvedUrls.local[0]}__catalog-fixture`)
     await page.locator('summary').filter({hasText:SHARED_POSITION_LABEL}).click()
     await page.getByRole('button',{name:'แก้ไขตำแหน่ง [TEST] ตำแหน่งใช้ร่วม',exact:true}).click()
