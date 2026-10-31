@@ -3,12 +3,12 @@ import { createPortal } from 'react-dom'
 import { ChevronLeft, X } from 'lucide-react'
 
 // กรอบกล่องของงานตั้งผู้ลงนาม (แก้รายช่อง / ยืนยันการตั้ง) และฟอร์มเจ้าหน้าที่ — มือถือเป็นแผ่นล่าง จอใหญ่เป็นกล่องกลางจอ
-// variant="drawer" เป็นแผงด้านขวาบนจอใหญ่ ตารางยังอยู่ด้านหลัง ไม่ต้องเปลี่ยนหน้า
+// ฟอร์มเจ้าหน้าที่เคยเป็นแผงชิดขวา เจ้าของระบบสั่งให้อยู่กลางจอ (2569-10-31) จึงเหลือแบบเดียว
 // เรนเดอร์ที่ body: ถ้าซ้อนอยู่ในหน้าแอดมิน แถบเมนูล่างของมือถือจะบังปุ่มยืนยัน (เคยเจอกับกล่องลงนามทริป)
 // ปุ่มยืนยันอยู่ใน footer ที่ไม่เลื่อนตามเนื้อหา รายการยาวแค่ไหนก็ยังเห็นปุ่ม
 export default function SigningDialogShell({
   title, subtitle, closeDisabled = false, onClose, footer, children, testId,
-  variant = 'dialog', backLabel = null, headerExtra = null,
+  backLabel = null, headerExtra = null,
 }) {
   const dialogRef = useRef(null)
   const closeRef = useRef({ onClose, closeDisabled })
@@ -41,11 +41,10 @@ export default function SigningDialogShell({
     }
   }, [])
 
-  const drawer = variant === 'drawer'
   return createPortal(
-    <div className={`fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/50 p-0 backdrop-blur-sm ${drawer ? 'md:items-stretch md:justify-end' : 'md:items-center md:p-4'}`} data-testid={testId}>
+    <div className={`fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/50 p-0 backdrop-blur-sm md:items-center md:p-4`} data-testid={testId}>
       <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="signing-dialog-title"
-        className={`flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl outline-none ${drawer ? 'md:max-h-none md:w-[540px] md:max-w-[92vw] md:rounded-none md:rounded-l-3xl' : 'md:max-w-2xl md:rounded-3xl'}`}>
+        className={`flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl outline-none md:max-w-2xl md:rounded-3xl`}>
         <div className="flex items-start gap-2 border-b border-slate-100 px-4 py-3 md:px-5">
           {backLabel && (
             <button type="button" onClick={onClose} disabled={closeDisabled}

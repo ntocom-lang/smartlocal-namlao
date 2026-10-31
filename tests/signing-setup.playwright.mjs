@@ -1146,6 +1146,10 @@ await scenario('แก้คนเดิม: บัญชีไม่มีช�
 
 await scenario('แก้คนเดิม: ฟังก์ชันเดิมครบ — ย้อนกลับ โอนงาน รวมบัญชี ตั้งรหัส ลบ ข้อมูลบัญชี ข้อมูลส่วนตัว และกล่องซ้อนอยู่เหนือฟอร์ม', { fixture: 'users' }, async (page) => {
   await openUser(page, '[TEST] เจ้าหน้าที่ธรรมดา')
+  // เจ้าของระบบสั่ง 2569-10-31: จอใหญ่ต้องอยู่กลางจอ ไม่ชิดขวา
+  const box = await form(page).getByRole('dialog').boundingBox()
+  assert.ok(Math.abs(box.x + box.width / 2 - 640) <= 2, `กล่องต้องอยู่กลางจอ (กึ่งกลางอยู่ที่ ${Math.round(box.x + box.width / 2)}px)`)
+  assert.ok(box.y > 0 && box.y + box.height < 900, 'กล่องต้องไม่ชิดขอบบนล่าง')
   const actions = page.locator('[data-person-actions]')
   for (const label of ['โอนงานให้ผู้อื่น', 'รวมบัญชีซ้ำ', 'ตั้งรหัสผ่านใหม่', 'ลบผู้ใช้งาน']) {
     await actions.getByRole('button', { name: label }).waitFor()

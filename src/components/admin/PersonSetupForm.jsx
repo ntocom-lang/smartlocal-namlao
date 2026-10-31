@@ -803,7 +803,6 @@ export default function PersonSetupForm({
 
   return (
     <SigningDialogShell
-      variant="drawer"
       testId="person-setup-form"
       title={isAdd ? 'เพิ่มเจ้าหน้าที่' : 'รายละเอียดผู้ใช้งาน'}
       subtitle={isAdd ? 'ใส่คนกับตำแหน่ง ระบบเติมที่เหลือให้ตรวจก่อนบันทึก' : null}
