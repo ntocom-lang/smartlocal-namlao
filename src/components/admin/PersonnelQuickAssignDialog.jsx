@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, Briefcase, Check, Loader2, Plus, Search, UserPlus, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { adminUpdateUser } from '../../lib/adminUpdateUser'
+import { adminAppointUser } from '../../lib/adminUpdateUser'
 import { loginIdentifier } from '../../lib/authProviders'
 import { ROLE_LABELS } from '../../lib/staffRoster'
 import {
+  canClearDepartmentHead,
+  canOfferOfficerRole,
+  isDepartmentHeadPosition,
   isUnitHeadPositionName,
   leastPrivilegeRole,
   makePositionShared,
@@ -13,12 +16,22 @@ import {
   resolvedDepartmentId,
   shouldKeepDepartmentHead,
 } from '../../lib/personnelStructure'
+import {
+  isSameSignatorySlot,
+  isSignatoryActiveToday,
+  newlyAppointedSlots,
+  signatoryChangeFor,
+  signatorySlotLabel,
+} from '../../lib/documentSignatories'
+import { fetchActiveSignatories, fetchOtherDepartmentHeads, finishAppointment } from '../../lib/signatoryApi'
+import AppointmentSigningChoices, { OtherHeadsChoices } from './AppointmentSigningChoices'
 
 export default function PersonnelQuickAssignDialog({
   tenant,
   department,
   positions,
   currentUserId,
+  currentUserRole,
   onClose,
   onSaved,
   onPositionsChanged,
@@ -35,8 +48,26 @@ export default function PersonnelQuickAssignDialog({
   const [sharingPositionId, setSharingPositionId] = useState('')
   // null = ให้ระบบตัดสินจากชื่อ (หัวหน้าหน่วยงานระดับกอง = ล็อก) แอดมินติ๊กกลับได้เสมอ
   const [lockOverride, setLockOverride] = useState(null)
+  // null = ให้ระบบตัดสินจากตำแหน่ง (ตำแหน่งหัวหน้าหน่วยงาน = ติ๊กให้) แอดมินเห็นก่อนบันทึกและเอาออกได้เสมอ
+  const [headOverride, setHeadOverride] = useState(null)
+  const [officerOverride, setOfficerOverride] = useState(null)
+  const [declinedSlots, setDeclinedSlots] = useState([])
+  const [keptHeads, setKeptHeads] = useState([])
+  // null = ยังไม่รู้ว่าช่องลงนามตอนนี้เป็นใคร (โหลดอยู่หรือโหลดไม่ได้) จึงยังไม่ถาม เพราะบอกสถานะช่องผิดได้
+  const [registryRows, setRegistryRows] = useState(null)
+  const [loadedHeads, setLoadedHeads] = useState({ department: null, rows: [] })
+  // แต่งตั้งบันทึกแล้วแต่งานต่อเนื่องบางข้อไม่สำเร็จ — เหลือแค่ปุ่มปิด ไม่ให้กดยืนยันซ้ำจนเขียนการแต่งตั้งซ้ำ
+  const [savedWithProblems, setSavedWithProblems] = useState(false)
   const [error, setError] = useState('')
   const requestSequence = useRef(0)
+
+  useEffect(() => {
+    let active = true
+    fetchActiveSignatories(tenant.id).then(({ data, error: loadError }) => {
+      if (active) setRegistryRows(loadError ? null : (data ?? []))
+    })
+    return () => { active = false }
+  }, [tenant.id])
 
   useEffect(() => {
     const query = accountQuery.trim()
@@ -80,7 +111,38 @@ export default function PersonnelQuickAssignDialog({
 
   const selectedPosition = localPositions.find((position) => position.id === selectedPositionId) ?? null
   const nextDepartmentId = resolvedDepartmentId(selectedPosition, department.id, selectedUser?.department_id)
-  const nextRole = leastPrivilegeRole(selectedUser?.role)
+  const asHead = Boolean(selectedPosition) && (headOverride
+    ?? (isDepartmentHeadPosition(selectedPosition) || shouldKeepDepartmentHead(selectedUser, nextDepartmentId)))
+  // ไม่ยกระดับสิทธิ์เงียบๆ: เสนอเฉพาะคนที่กำลังจะเป็นหัวหน้ากอง และแสดงเป็นช่องติ๊กให้เห็นก่อนบันทึก
+  const offerOfficer = asHead && canOfferOfficerRole(selectedUser?.role)
+  const nextRole = offerOfficer && (officerOverride ?? true) ? 'officer' : leastPrivilegeRole(selectedUser?.role)
+  // ช่องลงนามที่ตำแหน่งนี้ชี้ไป (ไม่ดูติ๊กหัวหน้ากอง) — ถามในหน้าต่างนี้ให้จบ ไม่ต้องไปอีกเมนู
+  const signingOffers = useMemo(() => {
+    if (!selectedUser?.full_name?.trim() || !selectedPosition || !registryRows) return []
+    const appointed = {
+      id: selectedUser.id,
+      full_name: selectedUser.full_name,
+      position: { name: selectedPosition.name, category: selectedPosition.category },
+      department_id: nextDepartmentId,
+    }
+    const rows = registryRows.filter((row) => isSignatoryActiveToday(row))
+    return newlyAppointedSlots(selectedUser, appointed, rows, selectedUser.id).map((slot) => signatoryChangeFor(
+      { ...slot, label: signatorySlotLabel(slot, [department]) },
+      rows.find((row) => isSameSignatorySlot(row, slot)),
+      appointed,
+    ))
+  }, [selectedUser, selectedPosition, registryRows, nextDepartmentId, department])
+  // คนอื่นในกองที่ติ๊กเป็นหัวหน้าอยู่ — เก็บคู่กับกองที่โหลดแล้วค่อยเทียบตอนอ่าน กันเห็นชื่อของกองก่อนหน้าค้างอยู่
+  const headCheckDepartment = asHead && selectedUser ? nextDepartmentId : null
+  useEffect(() => {
+    let active = true
+    fetchOtherDepartmentHeads(headCheckDepartment, selectedUser?.id ?? null).then((rows) => {
+      if (active) setLoadedHeads({ department: headCheckDepartment, rows })
+    })
+    return () => { active = false }
+  }, [headCheckDepartment, selectedUser?.id])
+  const otherHeads = (headCheckDepartment && loadedHeads.department === headCheckDepartment ? loadedHeads.rows : [])
+    .map((head) => ({ ...head, canClear: canClearDepartmentHead(head, currentUserId, currentUserRole) }))
   const movingDepartment = Boolean(
     selectedUser?.department_id && selectedUser.department_id !== nextDepartmentId,
   )
@@ -114,6 +176,8 @@ export default function PersonnelQuickAssignDialog({
     }
     setSelectedPositionId(position.id)
     setPositionQuery(position.name)
+    setHeadOverride(null)
+    setOfficerOverride(null)
     setError('')
   }
 
@@ -177,20 +241,35 @@ export default function PersonnelQuickAssignDialog({
     if (!selectedUser || !selectedPosition || !nextDepartmentId) return
     setSaving(true)
     setError('')
-    const { error: saveError } = await adminUpdateUser(selectedUser.id, {
+    const { error: saveError, headTickFailed } = await adminAppointUser(selectedUser.id, {
       role: nextRole,
       municipality_id: selectedUser.municipality_id || tenant.id,
       department_id: nextDepartmentId,
       position_id: selectedPosition.id,
-      is_dept_head: shouldKeepDepartmentHead(selectedUser, nextDepartmentId),
+      is_dept_head: asHead,
+    }, selectedUser.department_id ?? null)
+    if (saveError && !headTickFailed) {
+      setSaving(false)
+      setError('บันทึกการแต่งตั้งไม่สำเร็จ: ' + saveError.message)
+      return
+    }
+    // แต่งตั้งบันทึกแล้ว ข้อต่อไปนี้ล้มต้องบอกเฉพาะส่วนที่ล้ม ไม่ให้ดูเหมือนแต่งตั้งไม่สำเร็จ
+    const { problems } = await finishAppointment({
+      municipalityId: tenant.id,
+      offers: signingOffers.filter((offer) => !declinedSlots.includes(offer.key)),
+      clearHeads: otherHeads.filter((head) => head.canClear && !keptHeads.includes(head.id)),
     })
     setSaving(false)
-    if (saveError) {
-      setError('บันทึกการแต่งตั้งไม่สำเร็จ: ' + saveError.message)
+    const unfinished = [...(headTickFailed ? ['ติ๊กหัวหน้ากองไม่สำเร็จ'] : []), ...problems]
+    if (unfinished.length) {
+      setSavedWithProblems(true)
+      setError(`แต่งตั้งแล้ว แต่ ${unfinished.join(' · ')} — ทำต่อได้ที่หน้ารายละเอียดของคนนี้ แท็บการแต่งตั้ง`)
       return
     }
     onSaved?.({ userId: selectedUser.id, position: selectedPosition })
   }
+
+  const toggleIn = (list, value) => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value])
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/50 p-0 backdrop-blur-sm md:items-center md:p-4"
@@ -326,12 +405,38 @@ export default function PersonnelQuickAssignDialog({
                 <dt className="text-blue-500">ตำแหน่ง</dt><dd className="font-bold text-blue-900">{selectedPosition.name}</dd>
                 <dt className="text-blue-500">สิทธิ์ระบบ</dt><dd className="font-bold text-blue-900">{ROLE_LABELS[nextRole]?.label ?? nextRole}</dd>
               </dl>
-              {selectedPosition.role && selectedPosition.role !== nextRole && (
-                <p className="mt-2 text-[11px] leading-5 text-blue-600">
+              <label className="mt-3 flex min-h-11 cursor-pointer items-start gap-2.5 text-sm leading-5 text-blue-950" data-quick-head>
+                <input type="checkbox" checked={asHead} onChange={(event) => setHeadOverride(event.target.checked)}
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-blue-600" />
+                <span className="min-w-0">
+                  <span className="font-semibold">เป็นหัวหน้ากองนี้ ({department.name})</span>
+                  <span className="block text-xs leading-5 text-blue-700">
+                    {isDepartmentHeadPosition(selectedPosition) ? 'ระบบติ๊กให้ตามตำแหน่ง เอาออกได้ · ' : ''}อนุมัติกิจกรรมของกองนี้ได้ ไม่เกี่ยวกับการลงนามเอกสาร
+                  </span>
+                </span>
+              </label>
+              <OtherHeadsChoices otherHeads={otherHeads} keptHeads={keptHeads}
+                onToggleHead={(id) => setKeptHeads((current) => toggleIn(current, id))} />
+              {offerOfficer && (
+                <label className="mt-1 flex min-h-11 cursor-pointer items-start gap-2.5 text-sm leading-5 text-blue-950" data-quick-officer>
+                  <input type="checkbox" checked={nextRole === 'officer'} onChange={(event) => setOfficerOverride(event.target.checked)}
+                    className="mt-0.5 h-5 w-5 shrink-0 accent-blue-600" />
+                  <span className="min-w-0">
+                    <span className="font-semibold">ให้สิทธิ์ระบบ “หัวหน้ากอง”</span>
+                    <span className="block text-xs leading-5 text-blue-700">เห็นและจัดการคำร้องของทั้งกอง เปลี่ยนภายหลังได้ที่แท็บ “สิทธิ์การใช้งาน”</span>
+                  </span>
+                </label>
+              )}
+              {!offerOfficer && selectedPosition.role && selectedPosition.role !== nextRole && (
+                <p className="mt-2 text-xs leading-5 text-blue-700">
                   ตำแหน่งนี้แนะนำสิทธิ์ “{ROLE_LABELS[selectedPosition.role]?.label ?? selectedPosition.role}” แต่ระบบไม่ยกระดับให้อัตโนมัติ
                   สามารถตรวจและเปลี่ยนภายหลังที่แท็บ “สิทธิ์การใช้งาน”
                 </p>
               )}
+              <div className="mt-2.5">
+                <AppointmentSigningChoices offers={signingOffers} declinedSlots={declinedSlots}
+                  onToggleSlot={(key) => setDeclinedSlots((current) => toggleIn(current, key))} />
+              </div>
               {movingDepartment && (
                 <p className="mt-2 rounded-lg bg-amber-100 px-2.5 py-2 text-[11px] font-semibold leading-5 text-amber-800">
                   บุคคลนี้สังกัด {selectedUser.department_name || 'กองอื่น'} อยู่แล้ว การบันทึกครั้งนี้จะย้ายมาที่ {department.name}
@@ -349,16 +454,25 @@ export default function PersonnelQuickAssignDialog({
         </div>
 
         <div className="flex gap-2 border-t border-slate-100 px-4 pb-6 pt-3">
-          <button type="button" onClick={onClose}
-            className="min-h-11 flex-1 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-500 hover:bg-slate-50">
-            ยกเลิก
-          </button>
-          <button type="button" onClick={saveAssignment}
-            disabled={saving || !selectedUser || !selectedPosition || !nextDepartmentId}
-            className="flex min-h-11 flex-[1.5] items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm disabled:opacity-40">
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-            {movingDepartment ? 'ยืนยันการย้ายและแต่งตั้ง' : 'ยืนยันการแต่งตั้ง'}
-          </button>
+          {savedWithProblems ? (
+            <button type="button" onClick={() => onSaved?.({ userId: selectedUser.id, position: selectedPosition })}
+              className="min-h-11 flex-1 rounded-xl bg-slate-800 px-4 text-sm font-bold text-white">
+              ปิด
+            </button>
+          ) : (
+            <>
+              <button type="button" onClick={onClose}
+                className="min-h-11 flex-1 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-500 hover:bg-slate-50">
+                ยกเลิก
+              </button>
+              <button type="button" onClick={saveAssignment}
+                disabled={saving || !selectedUser || !selectedPosition || !nextDepartmentId}
+                className="flex min-h-11 flex-[1.5] items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm disabled:opacity-40">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                {movingDepartment ? 'ยืนยันการย้ายและแต่งตั้ง' : 'ยืนยันการแต่งตั้ง'}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

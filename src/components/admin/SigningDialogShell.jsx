@@ -1,0 +1,60 @@
+import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { X } from 'lucide-react'
+
+// กรอบกล่องของงานตั้งผู้ลงนาม (แก้รายช่อง / ยืนยันการตั้ง) — มือถือเป็นแผ่นเลื่อนจากล่าง จอใหญ่อยู่กลางจอ
+// เรนเดอร์ที่ body: ถ้าซ้อนอยู่ในหน้าแอดมิน แถบเมนูล่างของมือถือจะบังปุ่มยืนยัน (เจอแล้วกับกล่องลงนาม S3a)
+// ปุ่มยืนยันอยู่ใน footer ที่ไม่เลื่อนตามเนื้อหา รายการยาวแค่ไหนก็กดได้โดยไม่ต้องเลื่อนหา
+export default function SigningDialogShell({ title, subtitle, closeDisabled = false, onClose, footer, children, testId }) {
+  const dialogRef = useRef(null)
+  const closeRef = useRef({ onClose, closeDisabled })
+  useEffect(() => { closeRef.current = { onClose, closeDisabled } }, [onClose, closeDisabled])
+
+  useEffect(() => {
+    const opener = document.activeElement
+    dialogRef.current?.focus()
+    const onKey = event => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        if (!closeRef.current.closeDisabled) closeRef.current.onClose()
+      }
+      if (event.key === 'Tab') {
+        const items = [...dialogRef.current.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled])')]
+        if (!items.length) return
+        const first = items[0]
+        const last = items[items.length - 1]
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) { event.preventDefault(); last.focus() }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = ''
+      opener?.focus?.()
+    }
+  }, [])
+
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/50 p-0 backdrop-blur-sm md:items-center md:p-4" data-testid={testId}>
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="signing-dialog-title"
+        className="flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl outline-none md:max-w-2xl md:rounded-3xl">
+        <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3.5 md:px-5">
+          <div className="min-w-0 flex-1">
+            <h2 id="signing-dialog-title" className="text-base font-extrabold text-slate-800">{title}</h2>
+            {subtitle && <p className="mt-0.5 text-xs leading-5 text-slate-500">{subtitle}</p>}
+          </div>
+          <button type="button" onClick={onClose} disabled={closeDisabled} aria-label="ปิด"
+            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 disabled:opacity-40">
+            <X size={19} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 md:px-5">{children}</div>
+        <div className="border-t border-slate-100 px-4 pb-6 pt-3 md:px-5 md:pb-4">{footer}</div>
+      </div>
+    </div>,
+    document.body,
+  )
+}

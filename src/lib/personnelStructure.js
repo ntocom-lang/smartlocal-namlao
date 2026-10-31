@@ -52,6 +52,35 @@ export function isUnitHeadPositionName(name) {
   return UNIT_HEAD_POSITION_RE.test(String(name || ''))
 }
 
+// หัวหน้าหน่วยงาน "ตัวจริง" ของกอง — ใช้ติ๊ก "เป็นหัวหน้ากอง" ให้เองและเสนอผู้ลงนาม (เจ้าของระบบอนุมัติ 2569-10-30)
+// ต่างจาก isUnitHeadPositionName (กฎล็อกกอง ต้องตรงกับฟังก์ชันฝั่ง DB) ตรงที่ไม่นับ "รอง..." และ "ผู้ช่วย..."
+// เพราะรองผู้อำนวยการล็อกกองได้ แต่ไม่ใช่คนลงนามช่องหัวหน้ากอง
+// แบบตำแหน่งมาตรฐานมี category = dept_head ส่วนตำแหน่งที่สร้างจากปุ่มเพิ่มบุคลากรเป็น category ทั่วไปเสมอ จึงต้องดูชื่อด้วย
+export function isDepartmentHeadPosition(position) {
+  const name = String((typeof position === 'string' ? position : position?.name) || '')
+  if (!name.trim() || /^\s*(รอง|ผู้ช่วย)/.test(name)) return false
+  return position?.category === 'dept_head' || isUnitHeadPositionName(name)
+}
+
+// บทบาทที่แนะนำตามตำแหน่ง — ตำแหน่งที่สร้างจากปุ่มเพิ่มบุคลากรมี role = staff เสมอ แม้ชื่อเป็นผู้อำนวยการกอง
+// ถ้าเชื่อค่าในตาราง หัวหน้ากองคนใหม่จะไม่เคยถูกเสนอสิทธิ์ที่ต้องใช้จริง
+export function recommendedRoleForPosition(position) {
+  if (!position) return null
+  return isDepartmentHeadPosition(position) ? 'officer' : (position.role ?? null)
+}
+
+// เสนอสิทธิ์หัวหน้ากองเฉพาะบัญชีที่สิทธิ์ต่ำกว่า — ผู้บริหาร สภา และแอดมินเป็นคนละสายงาน ระบบไม่ไปเปลี่ยนให้
+export function canOfferOfficerRole(currentRole) {
+  return !currentRole || ['citizen', 'staff', 'technician'].includes(currentRole)
+}
+
+// เอาติ๊กหัวหน้าของคนเดิมออกได้ไหม — ตรงกับที่ admin_update_user ปฏิเสธ:
+// แก้บัญชีตัวเอง · แก้ Super Admin · แอดมินแก้แอดมินด้วยกัน (ถ้าไม่กันตรงนี้ แอดมินจะกดแล้วเจอข้อความภาษาอังกฤษจากฐานข้อมูล)
+export function canClearDepartmentHead(head, currentUserId, currentUserRole) {
+  return head?.id !== currentUserId && head?.role !== 'superadmin'
+    && (currentUserRole === 'superadmin' || head?.role !== 'admin')
+}
+
 // กองที่ระบบเติมให้ตอนเลือกตำแหน่ง: ตำแหน่งล็อกกอง = กองนั้น / ใช้ได้ทุกกอง = กองแนะนำ
 // (department_hint) เมื่อชื่อตรงกับชื่อเต็มหรือชื่อย่อของกองเพียงกองเดียว ไม่ตรง = ไม่เดา
 export function suggestedDepartmentId(position, departments = []) {

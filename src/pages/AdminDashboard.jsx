@@ -42,6 +42,8 @@ import DocumentTypeAssignments from '../components/admin/DocumentTypeAssignments
 import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
 import DepartmentManager from '../components/admin/DepartmentManager'
 import PersonnelQuickAssignDialog from '../components/admin/PersonnelQuickAssignDialog'
+import AppointmentSigningChoices, { OtherHeadsChoices } from '../components/admin/AppointmentSigningChoices'
+import SignatoryApplyDialog from '../components/admin/SignatoryApplyDialog'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
 import ResetPasswordModal from '../components/admin/ResetPasswordModal'
 // โหลดแบบ lazy — EventsManager เป็น chunk 60KB ที่ของเดิม import แบบ static ทำให้ถูกดาวน์โหลด
@@ -67,9 +69,16 @@ import PortalSwitcher from '../components/layout/PortalSwitcher'
 import UserProfileBadge from '../components/layout/UserProfileBadge'
 import PortalDrawer from '../components/common/PortalDrawer'
 import FleetSetup from '../components/fleet/FleetSetup'
-import { adminUpdateUser } from '../lib/adminUpdateUser'
-import { departmentFilterParams, groupPositionsByDepartment, makePositionShared, suggestedDepartmentId } from '../lib/personnelStructure'
-import { appointedSignatorySlots, isActingSignatory, isSignatoryActiveToday, SIGNATORY_SCOPE } from '../lib/documentSignatories'
+import { adminAppointUser, adminUpdateUser } from '../lib/adminUpdateUser'
+import {
+  canClearDepartmentHead, departmentFilterParams, groupPositionsByDepartment, isDepartmentHeadPosition, makePositionShared,
+  recommendedRoleForPosition, suggestedDepartmentId,
+} from '../lib/personnelStructure'
+import {
+  appointedSignatorySlots, isActingSignatory, isSameSignatorySlot, isSignatoryActiveToday, newlyAppointedSlots,
+  signatoryChangeFor, signatorySlotLabel,
+} from '../lib/documentSignatories'
+import { fetchActiveSignatories, fetchOtherDepartmentHeads, finishAppointment } from '../lib/signatoryApi'
 import { logAction } from '../lib/auditLog'
 import { CategoryIcon } from '../lib/categoryIcon'
 import { isOfficialsOnlyCategory, SUBMIT_AUDIENCE_OFFICIALS, SUBMIT_AUDIENCE_PUBLIC } from '../lib/serviceAudience'
@@ -250,7 +259,8 @@ function canManageUser(currentUserRole, currentUserId, targetUser) {
   return false
 }
 
-function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = null, initialSubTab = 'staff' }) {
+// export เพื่อให้เทสต์เบราว์เซอร์ (tests/signing-setup.playwright.mjs) เปิดหน้านี้เดี่ยวๆ ด้วยฐานข้อมูลจำลองได้
+export function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = null, initialSubTab = 'staff' }) {
   const [subTab, setSubTab] = useState(initialSubTab) // 'staff' | 'citizen' | 'departments' | 'positions'
   // แท็บโครงสร้างหน่วยงาน (กอง / แบบตำแหน่ง) ไม่ได้แสดงรายชื่อคน
   const isStructureTab = subTab === 'departments' || subTab === 'positions'
@@ -465,23 +475,37 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
     const effectivePayload = clearsAssignment
       ? { ...payload, department_id: null, position_id: null, is_dept_head: false }
       : payload
-    const { error } = await updateManagedUser(user.id, effectivePayload)
-    setSaving(null)
-    if (error) {
+    const { error, headTickFailed } = await adminAppointUser(user.id, effectivePayload, user.department_id ?? null)
+    if (error && !headTickFailed) {
+      setSaving(null)
       const msg = error.code === '23505' ? 'เลขบัตรประชาชนนี้ถูกใช้กับบัญชีอื่นแล้ว' : error.message
       return { ok: false, error: msg }
     }
-    const dept = depts.find(d => d.id === effectivePayload.department_id)
-    const position = positions.find(p => p.id === effectivePayload.position_id)
+    // อ่านค่าจริงกลับจากฐานข้อมูล: trigger อาจเปลี่ยนกองตามตำแหน่งที่ล็อก หรือล้างติ๊กหัวหน้ากอง
+    // ถ้าแสดงค่าที่ส่งไป หน้าจอจะขึ้น "เป็นหัวหน้ากอง" ทั้งที่ของจริงไม่ใช่ จนกว่าจะโหลดหน้าใหม่
+    const { data: stored } = await supabase.from('profiles')
+      .select('department_id,position_id,is_dept_head').eq('id', user.id).maybeSingle()
+    setSaving(null)
+    const saved = { ...effectivePayload, ...(stored ?? {}) }
+    const dept = depts.find(d => d.id === saved.department_id)
+    const position = positions.find(p => p.id === saved.position_id)
     setUsers((prev) => prev.map((u) => u.id === user.id ? {
       ...u,
-      ...effectivePayload,
+      ...saved,
       department_name: dept?.name ?? null,
       position_name: clearsAssignment ? null : (position?.name ?? null),
     } : u))
     reloadDepartmentCounts()
     reloadRoleCounts()
+    if (headTickFailed) {
+      return { ok: false, error: `ย้ายกองแล้ว แต่ติ๊กหัวหน้ากองไม่สำเร็จ กรุณากดบันทึกอีกครั้ง (${error.message})` }
+    }
     return { ok: true }
+  }
+
+  // เอาติ๊กหัวหน้าของคนเดิมออกแล้ว รายการที่แสดงอยู่ต้องตรงกัน ไม่งั้นป้าย "หัวหน้ากอง" ค้างจนกว่าจะโหลดหน้าใหม่
+  function markHeadsCleared(ids) {
+    setUsers((prev) => prev.map((u) => ids.includes(u.id) ? { ...u, is_dept_head: false } : u))
   }
 
   // แยกออกจาก saveUserEdits เพราะ auth.users.email เปลี่ยนผ่าน edge function
@@ -626,6 +650,7 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
         handoverStaff={handoverStaff} setHandoverStaff={setHandoverStaff}
         mergeKeepUser={mergeKeepUser} setMergeKeepUser={setMergeKeepUser} onMerged={handleMerged}
         saveUserEdits={saveUserEdits}
+        onHeadsCleared={markHeadsCleared}
         updateUserEmail={updateUserEmail}
         resetPasswordUser={resetPasswordUser} setResetPasswordUser={setResetPasswordUser}
       />
@@ -1155,6 +1180,7 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
           department={quickAssignDepartment}
           positions={positions}
           currentUserId={currentUserId}
+          currentUserRole={currentUserRole}
           onPositionsChanged={reloadStructure}
           onClose={() => setQuickAssignDepartment(null)}
           onSaved={() => {
@@ -1754,7 +1780,9 @@ function PersonalInfoTab(props) {
   )
 }
 
-function AppointmentTab({ user, tenant, depts, positions, currentUserRole, isEditing, draft, setDraft, onPositionsChanged, onOpenSigning = null }) {
+const toggleInList = (list, value) => (list.includes(value) ? list.filter(item => item !== value) : [...list, value])
+
+function AppointmentTab({ user, tenant, depts, positions, currentUserRole, isEditing, draft, setDraft, onPositionsChanged, onOpenSigning = null, signatoryRegistry, signingOffers = [], otherHeads = [] }) {
   const activeDeptId = isEditing ? draft.department_id : (user.department_id ?? '')
   const activePositionId = isEditing ? draft.position_id : (user.position_id ?? '')
   const selectedPosition = positions.find(position => position.id === activePositionId)
@@ -1789,10 +1817,14 @@ function AppointmentTab({ user, tenant, depts, positions, currentUserRole, isEdi
 
   function handlePositionChange(positionId) {
     const position = positions.find(item => item.id === positionId)
+    const previous = positions.find(item => item.id === draft.position_id)
     // ตำแหน่งล็อกกอง = กองนั้น / ใช้ได้ทุกกอง = คงกองเดิมของคน ถ้ายังไม่มีกองจึงเติมกองแนะนำ
     const nextDepartmentId = position?.department_id || draft.department_id || suggestedDepartmentId(position, depts) || ''
-    const nextDepartmentHead = nextDepartmentId === draft.department_id ? draft.is_dept_head : false
-    const suggestedRole = position?.role
+    // ตำแหน่งหัวหน้าหน่วยงาน = ติ๊กให้เอง (เห็นในฟอร์มและเอาออกได้ก่อนบันทึก) · ออกจากตำแหน่งหัวหน้า = เอาติ๊กออก
+    // นอกนั้นคงค่าเดิมถ้ากองไม่เปลี่ยน
+    const nextDepartmentHead = isDepartmentHeadPosition(position)
+      || (nextDepartmentId === draft.department_id && !isDepartmentHeadPosition(previous) && draft.is_dept_head)
+    const suggestedRole = recommendedRoleForPosition(position)
     const maySuggestRole = suggestedRole
       && suggestedRole !== draft.role
       && (!['admin', 'superadmin'].includes(suggestedRole) || currentUserRole === 'superadmin')
@@ -1861,15 +1893,21 @@ function AppointmentTab({ user, tenant, depts, positions, currentUserRole, isEdi
             {selectedPosition.department_hint}
           </p>
         )}
-        {selectedPosition?.role && (
-          <p className="mt-1 text-xs text-indigo-500">บทบาทแนะนำ: {ROLE_LABELS[selectedPosition.role]?.label ?? selectedPosition.role}</p>
+        {recommendedRoleForPosition(selectedPosition) && (
+          <p className="mt-1 text-xs text-indigo-500">บทบาทแนะนำ: {ROLE_LABELS[recommendedRoleForPosition(selectedPosition)]?.label ?? recommendedRoleForPosition(selectedPosition)}</p>
+        )}
+        {/* บทบาทอยู่อีกแท็บ ถ้าต่างจากที่แนะนำต้องบอกตรงนี้ ไม่งั้นแอดมินนึกว่าได้สิทธิ์แล้วจากการเลือกตำแหน่ง */}
+        {isEditing && recommendedRoleForPosition(selectedPosition) && recommendedRoleForPosition(selectedPosition) !== draft.role && (
+          <p className="mt-1 text-xs text-amber-700" data-appointment-role-kept>
+            จะบันทึกสิทธิ์เป็น “{ROLE_LABELS[draft.role]?.label ?? draft.role}” เปลี่ยนได้ที่แท็บสิทธิ์การใช้งาน
+          </p>
         )}
       </div>
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">กอง/หน่วยงาน</p>
         {isEditing ? (
           <select value={draft.department_id}
-            onChange={(e) => setDraft(d => ({ ...d, department_id: e.target.value, is_dept_head: false }))}
+            onChange={(e) => setDraft(d => ({ ...d, department_id: e.target.value, is_dept_head: isDepartmentHeadPosition(selectedPosition) }))}
             disabled={Boolean(selectedPosition?.department_id)}
             className="min-h-11 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white disabled:bg-gray-100 disabled:text-gray-500">
             <option value="">— ไม่ระบุกอง —</option>
@@ -1903,19 +1941,26 @@ function AppointmentTab({ user, tenant, depts, positions, currentUserRole, isEdi
                 เป็นหัวหน้ากอง
               </label>
               {/* แยกจากบทบาท "หัวหน้ากอง" ชัดๆ กันสับสนหลังเปลี่ยนชื่อ role — ตัวติ๊กนี้ไม่เกี่ยวกับ
-                  สิทธิ์เห็นคำร้อง (บทบาทเป็นตัวกำหนด) ใช้กับปฏิทินกิจกรรมและการเรียงลำดับเท่านั้น */}
-              <p className="mt-1.5 text-[11px] leading-relaxed text-gray-400">
-                ใช้กับการอนุมัติกิจกรรมของกอง และทำให้ชื่อขึ้นก่อนในรายการมอบหมายงาน
-                — สิทธิ์เห็นคำร้องทั้งกองมาจากบทบาท "หัวหน้ากอง" ไม่ได้มาจากช่องนี้
+                  สิทธิ์เห็นคำร้อง (บทบาทเป็นตัวกำหนด) และไม่เกี่ยวกับการลงนาม ใช้อนุมัติกิจกรรมและเรียงลำดับเท่านั้น */}
+              <p className="mt-1.5 text-xs leading-5 text-gray-500">
+                ระบบติ๊กให้เมื่อเลือกตำแหน่งหัวหน้าหน่วยงาน เอาออกได้ · ใช้อนุมัติกิจกรรมของกอง และขึ้นชื่อก่อนในรายการมอบหมายงาน
+                ไม่เกี่ยวกับการลงนามเอกสาร — สิทธิ์เห็นคำร้องทั้งกองมาจากบทบาท "หัวหน้ากอง" ที่แท็บสิทธิ์การใช้งาน
               </p>
+              <OtherHeadsChoices otherHeads={otherHeads} keptHeads={draft.kept_head_ids}
+                onToggleHead={id => setDraft(d => ({ ...d, kept_head_ids: toggleInList(d.kept_head_ids, id) }))} />
             </>
           ) : (
             <p className="text-sm text-gray-800">{user.is_dept_head ? 'ใช่' : 'ไม่ใช่'}</p>
           )}
         </div>
       )}
-      {user.role !== 'citizen' && tenant?.id && (
-        <SigningRoleNote user={user} tenant={tenant} depts={depts} onOpenSigning={onOpenSigning} />
+      {isEditing && (
+        <AppointmentSigningChoices offers={signingOffers} declinedSlots={draft.declined_signing_slots}
+          onToggleSlot={key => setDraft(d => ({ ...d, declined_signing_slots: toggleInList(d.declined_signing_slots, key) }))} />
+      )}
+      {/* ตอนแก้ฟอร์มใช้ส่วนด้านบนแทน ถ้าโชว์คู่กันจะเห็นทั้งสถานะเก่าและตัวเลือกใหม่จนสับสน */}
+      {!isEditing && user.role !== 'citizen' && tenant?.id && (
+        <SigningRoleNote user={user} position={selectedPosition} tenant={tenant} depts={depts} registry={signatoryRegistry} onOpenSigning={onOpenSigning} />
       )}
       {user.staff_name && (
         <div className="border-t border-gray-100 pt-4">
@@ -1927,49 +1972,48 @@ function AppointmentTab({ user, tenant, depts, positions, currentUserRole, isEdi
   )
 }
 
-// ชื่อช่องลงนามสำหรับแสดงผล — ห้ามเติม "หัวหน้า" หน้าชื่อกอง (บาง อปท. ไม่มีตำแหน่งหัวหน้าหน่วยตรวจสอบภายใน)
-function signingSlotLabel(slot, depts) {
-  if (slot.role === 'mayor') return 'นายก'
-  if (slot.role === 'clerk') return 'ปลัด'
-  if (slot.role === 'department_head') return depts.find(dept => dept.id === slot.departmentId)?.name ?? 'กองที่ปิดใช้แล้ว'
-  return slot.customLabel || 'ผู้ลงนามที่เพิ่มเอง'
+// ผู้ลงนามที่ใช้อยู่ของ อปท. — แท็บการแต่งตั้งใช้ทั้งบอกสถานะและคำนวณว่าต้องถามอะไรตอนบันทึก
+function useSignatoryRegistry(tenantId) {
+  const [registry, setRegistry] = useState({ key: null, rows: [], error: '' })
+  const [version, setVersion] = useState(0)
+
+  useEffect(() => {
+    if (!tenantId) return undefined
+    let active = true
+    fetchActiveSignatories(tenantId).then(({ data, error }) => {
+      if (active) setRegistry({ key: tenantId, rows: data ?? [], error: error ? 'ตรวจผู้ลงนามไม่สำเร็จ' : '' })
+    })
+    return () => { active = false }
+  }, [tenantId, version])
+
+  const reload = useCallback(() => setVersion(current => current + 1), [])
+  return { ...registry, loading: registry.key !== tenantId, reload }
 }
 
 // การแต่งตั้งกับผู้ลงนามเก็บคนละที่ (การลงนามเอกสาร = ทะเบียนที่เอกสารใช้พิมพ์ชื่อจริง) — ส่วนนี้บอกให้เห็นตรงนี้เลยว่า
-// คนนี้พิมพ์ชื่อในช่องลงนามไหน และถ้าการแต่งตั้งชี้ว่าควรเป็นผู้ลงนามแต่ทะเบียนยังเป็นชื่ออื่น ก็เตือนพร้อมปุ่มไปแก้
-// (กฎเดียวกับปุ่ม "ใช้ชื่อนี้" ในหน้าการลงนามเอกสาร — appointedSignatorySlots) ไม่เปลี่ยนผู้ลงนามให้เอง
-function SigningRoleNote({ user, tenant, depts, onOpenSigning }) {
-  const [registry, setRegistry] = useState({ key: null, rows: [], error: '' })
-
-  useEffect(() => {
-    let active = true
-    supabase.from('document_signatories')
-      .select('signatory_role,department_id,custom_label,profile_id,title_override,effective_from,effective_to,is_active')
-      .eq('municipality_id', tenant.id).eq('document_type', SIGNATORY_SCOPE).eq('is_active', true)
-      .then(({ data, error }) => {
-        if (active) setRegistry({ key: tenant.id, rows: data ?? [], error: error ? 'ตรวจทะเบียนผู้ลงนามไม่สำเร็จ' : '' })
-      })
-    return () => { active = false }
-  }, [tenant.id])
-
-  const loading = registry.key !== tenant.id
+// คนนี้พิมพ์ชื่อในช่องลงนามไหน และถ้าการแต่งตั้งชี้ว่าควรเป็นผู้ลงนามแต่ทะเบียนยังเป็นชื่ออื่น ก็ตั้งได้จากตรงนี้
+// (กฎเดียวกับปุ่ม "ใช้ชื่อนี้" ในหน้าการลงนามเอกสาร — appointedSignatorySlots) ระบบไม่เปลี่ยนผู้ลงนามให้เอง ต้องกดยืนยันก่อนเสมอ
+function SigningRoleNote({ user, position, tenant, depts, registry, onOpenSigning }) {
+  const [applying, setApplying] = useState(false)
   const rows = registry.rows.filter(row => isSignatoryActiveToday(row))
-  const sameSlot = (row, slot) => row.signatory_role === slot.role
-    && (row.department_id ?? null) === (slot.departmentId ?? null)
-    && (row.custom_label ?? null) === (slot.customLabel ?? null)
   const mySlots = rows.filter(row => row.profile_id === user.id)
     .map(row => ({ role: row.signatory_role, departmentId: row.department_id, customLabel: row.custom_label }))
+  // แถวผู้ใช้มีแค่ชื่อตำแหน่ง ต้องใช้ตำแหน่งจากทำเนียบด้วย เพราะแบบมาตรฐานบางชื่อรู้ว่าเป็นหัวหน้าจากหมวดเท่านั้น
+  const appointed = position ? { ...user, position: { name: position.name, category: position.category } } : user
   // ตามการแต่งตั้งควรเป็นผู้ลงนาม แต่ทะเบียนยังไม่ใช่คนนี้ · ช่องที่ตั้งผู้ "แทน" ไว้ถือว่าตั้งใจ ไม่เตือน
-  const missing = appointedSignatorySlots(user).filter(slot => {
-    const row = rows.find(candidate => sameSlot(candidate, slot))
+  const missing = appointedSignatorySlots(appointed).filter(slot => {
+    const row = rows.find(candidate => isSameSignatorySlot(candidate, slot))
     return row?.profile_id !== user.id && !isActingSignatory(row)
   })
+  const hasName = Boolean(user.full_name?.trim())
+  // ถือตำแหน่งหัวหน้าแต่ยังไม่ติ๊ก: การลงนามไม่กระทบ แต่การอนุมัติกิจกรรมของกองดูจากติ๊ก
+  const headNotTicked = !user.is_dept_head && Boolean(user.department_id) && isDepartmentHeadPosition(position ?? { name: user.position_name })
 
   return (
     <div className="border-t border-gray-100 pt-4" data-signing-role-note>
       <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">การลงนามเอกสาร</p>
-      {loading ? (
-        <p className="text-xs text-gray-400">กำลังตรวจทะเบียนผู้ลงนาม…</p>
+      {registry.loading ? (
+        <p className="text-xs text-gray-400">กำลังตรวจผู้ลงนาม…</p>
       ) : registry.error ? (
         <p className="text-xs text-rose-600" role="alert">{registry.error}</p>
       ) : (
@@ -1977,17 +2021,41 @@ function SigningRoleNote({ user, tenant, depts, onOpenSigning }) {
           <p className="flex items-start gap-1.5 text-sm text-gray-800">
             <UserRoundCheck size={16} className="mt-0.5 shrink-0 text-teal-600" />
             {mySlots.length > 0
-              ? <span>ชื่อนี้พิมพ์ในช่องลงนาม: <strong>{mySlots.map(slot => signingSlotLabel(slot, depts)).join(' · ')}</strong></span>
+              ? <span>ชื่อนี้พิมพ์ในช่องลงนาม: <strong>{mySlots.map(slot => signatorySlotLabel(slot, depts)).join(' · ')}</strong></span>
               : <span className="text-gray-500">ไม่ได้เป็นผู้ลงนามในเอกสาร</span>}
           </p>
           {missing.length > 0 && (
-            <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-2 text-xs leading-5 text-amber-800" data-signing-role-missing>
-              ตามการแต่งตั้ง คนนี้เป็นผู้ลงนามช่อง <strong>{missing.map(slot => signingSlotLabel(slot, depts)).join(' · ')}</strong>
-              {' '}แต่ทะเบียนผู้ลงนามยังเป็นชื่ออื่นหรือยังไม่ได้ตั้ง — เอกสารจะพิมพ์ชื่อตามทะเบียน
-              ไปที่การลงนามเอกสารแล้วกด “ใช้ชื่อนี้” ในช่องนั้น
+            <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900" data-signing-role-missing>
+              <p>
+                ตามการแต่งตั้ง คนนี้เป็นผู้ลงนามช่อง <strong>{missing.map(slot => signatorySlotLabel(slot, depts)).join(' · ')}</strong>
+                {' '}แต่ช่องนั้นยังเป็นชื่ออื่นหรือยังไม่ได้ตั้ง เอกสารจึงยังไม่พิมพ์ชื่อคนนี้
+              </p>
+              {hasName ? (
+                <button type="button" onClick={() => setApplying(true)} data-signing-role-apply
+                  className="mt-2 min-h-11 rounded-lg bg-amber-600 px-3.5 text-sm font-bold text-white hover:bg-amber-700">
+                  ตั้งคนนี้เป็นผู้ลงนาม
+                </button>
+              ) : (
+                <p className="mt-1 font-semibold">บัญชีนี้ยังไม่มีชื่อ-นามสกุล กด “แก้ไขข้อมูล” เพื่อใส่ชื่อก่อน จึงเป็นผู้ลงนามได้</p>
+              )}
+            </div>
+          )}
+          {headNotTicked && (
+            <p className="mt-2 text-xs leading-5 text-gray-500" data-signing-head-not-ticked>
+              ตำแหน่งนี้เป็นหัวหน้าหน่วยงาน แต่ยังไม่ได้ติ๊ก “เป็นหัวหน้ากอง” จึงยังอนุมัติกิจกรรมของกองไม่ได้ — กด “แก้ไขการแต่งตั้ง” แล้วติ๊ก
             </p>
           )}
         </>
+      )}
+      {applying && (
+        <SignatoryApplyDialog municipalityId={tenant.id}
+          changes={missing.map(slot => signatoryChangeFor(
+            { ...slot, label: signatorySlotLabel(slot, depts) },
+            rows.find(row => isSameSignatorySlot(row, slot)),
+            user,
+          ))}
+          onClose={() => setApplying(false)}
+          onApplied={() => { setApplying(false); registry.reload() }} />
       )}
       {onOpenSigning && (
         <button type="button" onClick={onOpenSigning}
@@ -2096,13 +2164,55 @@ function UserDetailPage(props) {
     user, onBack, currentUserRole, currentUserId, tenant, saving, deletingUser, setDeletingUser, deleteLoading, deleteUser,
     deleteBlockedReason, setDeleteBlockedReason, handoverStaff, setHandoverStaff,
     mergeKeepUser, setMergeKeepUser, onMerged,
-    saveUserEdits, updateUserEmail,
+    saveUserEdits, updateUserEmail, onHeadsCleared,
     resetPasswordUser, setResetPasswordUser,
+    depts, positions,
   } = props
   const [activeTab, setActiveTab] = useState('appointment')
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(null)
   const [saveError, setSaveError] = useState('')
+  // ช่วงตั้งผู้ลงนามหลังบันทึกการแต่งตั้ง ปุ่มบันทึกต้องกดซ้ำไม่ได้
+  const [finishing, setFinishing] = useState(false)
+  const signatoryRegistry = useSignatoryRegistry(tenant?.id)
+  // คนอื่นในกองที่ติ๊กเป็นหัวหน้าอยู่ — โหลดเฉพาะตอนกำลังแก้และติ๊กหัวหน้า เก็บคู่กับกองที่โหลดแล้วค่อยเทียบตอนอ่าน
+  const headCheckDepartment = isEditing && draft?.is_dept_head ? (draft.department_id || null) : null
+  const [loadedHeads, setLoadedHeads] = useState({ department: null, rows: [] })
+  useEffect(() => {
+    let cancelled = false
+    fetchOtherDepartmentHeads(headCheckDepartment, user.id).then(rows => {
+      if (!cancelled) setLoadedHeads({ department: headCheckDepartment, rows })
+    })
+    return () => { cancelled = true }
+  }, [headCheckDepartment, user.id])
+  const otherHeads = useMemo(() => (
+    headCheckDepartment && loadedHeads.department === headCheckDepartment ? loadedHeads.rows : []
+  ).map(head => ({
+    ...head,
+    canClear: canClearDepartmentHead(head, currentUserId, currentUserRole),
+  })), [headCheckDepartment, loadedHeads, currentUserId, currentUserRole])
+  // ช่องลงนามที่ตำแหน่งเพิ่งเปลี่ยนมาหาคนนี้ (ไม่ดูติ๊กหัวหน้ากอง) — ถามในฟอร์มให้จบในการบันทึกครั้งเดียว
+  const signingOffers = useMemo(() => {
+    if (!isEditing || !draft || !draft.full_name?.trim() || ['citizen', 'superadmin'].includes(draft.role)) return []
+    // ยังไม่รู้ว่าช่องลงนามตอนนี้เป็นใคร ยังไม่ถาม — ถ้าถามจะบอก "ยังไม่มีผู้ลงนาม" ผิดความจริง
+    if (signatoryRegistry.loading || signatoryRegistry.error) return []
+    const position = positions.find(item => item.id === draft.position_id)
+    const appointed = {
+      id: user.id,
+      full_name: draft.full_name,
+      job_title: user.job_title,
+      position: position ? { name: position.name, category: position.category } : null,
+      department_id: draft.department_id || null,
+    }
+    const current = positions.find(item => item.id === user.position_id)
+    const before = current ? { ...user, position: { name: current.name, category: current.category } } : user
+    const rows = signatoryRegistry.rows.filter(row => isSignatoryActiveToday(row))
+    return newlyAppointedSlots(before, appointed, rows, user.id).map(slot => signatoryChangeFor(
+      { ...slot, label: signatorySlotLabel(slot, depts) },
+      rows.find(row => isSameSignatorySlot(row, slot)),
+      appointed,
+    ))
+  }, [isEditing, draft, user, positions, depts, signatoryRegistry.rows, signatoryRegistry.loading, signatoryRegistry.error])
   // asset_role ไม่ได้อยู่ในชุดคอลัมน์ที่ get_users_with_email คืนมา และการเพิ่มคอลัมน์
   // ให้ RETURNS TABLE ต้อง DROP ฟังก์ชันที่ทั้งหน้าจัดการผู้ใช้พึ่งอยู่ จึงอ่านแยกทีละคน
   // ตอนเปิดหน้ารายละเอียดแทน — คนละ query แต่ไม่ต้องแตะของที่ใช้งานอยู่
@@ -2120,10 +2230,10 @@ function UserDetailPage(props) {
   }, [user.id])
   const rs = ROLE_LABELS[user.role] || ROLE_LABELS.citizen
   const ActiveComponent = USER_DETAIL_TABS.find(t => t.key === activeTab)?.Component ?? AccountInfoTab
-  const permissionExtras = { assetRole }
+  const permissionExtras = { assetRole, signatoryRegistry, signingOffers, otherHeads }
   const canEdit = canManageUser(currentUserRole, currentUserId, user)
   const canDelete = canEdit
-  const isSaving = saving === user.id
+  const isSaving = saving === user.id || finishing
 
   function startEdit() {
     setDraft({
@@ -2143,6 +2253,9 @@ function UserDetailPage(props) {
       department_id: user.department_id || '',
       is_dept_head: !!user.is_dept_head,
       asset_role: assetRole ?? '',
+      // ตัวเลือก "ผลต่อการลงนามเอกสาร" — ค่าเริ่มต้นคือทำให้ เก็บเฉพาะข้อที่แอดมินเอาติ๊กออก
+      declined_signing_slots: [],
+      kept_head_ids: [],
     })
     setSaveError('')
     setIsEditing(true)
@@ -2218,14 +2331,22 @@ function UserDetailPage(props) {
         : (draft.asset_role || null),
     }
     const result = await saveUserEdits(user, changes)
-    if (result.ok) {
-      setLoadedAssetRole({ id: user.id, value: changes.asset_role ?? '' })
-      setIsEditing(false)
-      setDraft(null)
-      setSaveError('')
-    } else {
+    if (!result.ok) {
       setSaveError(result.error)
+      return
     }
+    setLoadedAssetRole({ id: user.id, value: changes.asset_role ?? '' })
+    // การแต่งตั้งบันทึกแล้ว ขั้นนี้ล้มต้องบอกเฉพาะส่วนที่ล้ม ไม่ให้ดูเหมือนแต่งตั้งไม่สำเร็จ
+    const offers = signingOffers.filter(offer => !draft.declined_signing_slots.includes(offer.key))
+    const clearHeads = otherHeads.filter(head => head.canClear && !draft.kept_head_ids.includes(head.id))
+    setFinishing(true)
+    const { problems, clearedHeadIds } = await finishAppointment({ municipalityId: tenant?.id, offers, clearHeads })
+    setFinishing(false)
+    if (clearedHeadIds.length) onHeadsCleared(clearedHeadIds)
+    if (offers.length) signatoryRegistry.reload()
+    setIsEditing(false)
+    setDraft(null)
+    setSaveError(problems.length ? `แต่งตั้งแล้ว แต่ ${problems.join(' · ')} — ทำต่อได้ที่ส่วน “การลงนามเอกสาร” ด้านล่าง` : '')
   }
 
   return (

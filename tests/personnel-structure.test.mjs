@@ -355,6 +355,17 @@ if (process.argv.includes('--pglite')) {
     const moved = await applyAssignment(STAFF, {department_id:D1, position_id:P1, is_dept_head:true})
     assert.equal(moved.profile.department_id, D1)
     assert.equal(moved.profile.is_dept_head, false, 'ย้ายกองต้องไม่พกอำนาจหัวหน้ากองเดิมไปด้วย')
+    // adminAppointUser: รอบแรกย้ายกอง (trigger ล้างติ๊กเสมอ) รอบสองติ๊กหัวหน้าในกองใหม่ ต้องติดจริงกับ trigger ตัวจริง
+    await db.exec('BEGIN')
+    try {
+      await db.query("SELECT set_config('request.jwt.claim.sub',$1,true), set_config('request.jwt.claim.role','authenticated',true)", [ADMIN])
+      await db.query('SELECT public.admin_update_user($1,$2::jsonb)', [STAFF, JSON.stringify({department_id:D1, position_id:P1, is_dept_head:true})])
+      assert.equal((await db.query('SELECT is_dept_head FROM public.profiles WHERE id=$1', [STAFF])).rows[0].is_dept_head, false,
+        'รอบแรกติ๊กต้องหาย — ถ้า trigger เลิกล้างแล้ว ตัวบันทึก 2 รอบหมดความจำเป็น ต้องกลับมาทบทวน')
+      await db.query('SELECT public.admin_update_user($1,$2::jsonb)', [STAFF, JSON.stringify({is_dept_head:true})])
+      const appointed = (await db.query('SELECT department_id,is_dept_head FROM public.profiles WHERE id=$1', [STAFF])).rows[0]
+      assert.deepEqual(appointed, {department_id:D1, is_dept_head:true}, 'รอบสองต้องติ๊กติดในกองใหม่')
+    } finally { await db.exec('ROLLBACK') }
     await assert.rejects(db.query('UPDATE public.positions SET department_id=$1 WHERE id=$2', [D1,CONFLICT]), /personnel hold/)
     await assert.rejects(db.query('DELETE FROM public.positions WHERE id=$1', [CONFLICT]), /personnel hold/)
     await assert.rejects(db.query('INSERT INTO public.positions (municipality_id,name,department_id) VALUES ($1,$2,$3)', [M1,'[TEST] ข้าม อปท.',D3]), /does not belong/)

@@ -294,9 +294,10 @@ assert.ok(regrantMigration.includes('GRANT EXECUTE ON FUNCTION public.set_docume
 assert.ok(regrantMigration.includes('GRANT EXECUTE ON FUNCTION public.clear_document_signatory(uuid, text, uuid)'))
 
 // UI: ต้องเรียก RPC เวอร์ชันที่รองรับชื่อแถว และมีทางเพิ่มแถวเอง
+// ตัวเรียก RPC ย้ายไปไฟล์กลาง signatoryApi.js (หน้าจอหลายจุดใช้ร่วมกัน) จึงตรวจรวมกับหน้าตั้งค่า
 const settingsSource = await readFile(
   new URL('../src/components/admin/SignatorySettings.jsx', import.meta.url), 'utf8',
-)
+) + await readFile(new URL('../src/lib/signatoryApi.js', import.meta.url), 'utf8')
 // v3 ถูกแทนด้วย v4 แล้ว (รองรับเครื่องหมายค่าตั้งต้น) ต้องไม่มีใครเรียกตัวเก่าอีก
 assert.ok(!settingsSource.includes("supabase.rpc('set_document_signatory_v3'"))
 assert.ok(settingsSource.includes("supabase.rpc('clear_document_signatory_v2'"))

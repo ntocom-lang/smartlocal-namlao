@@ -155,7 +155,9 @@ const ossFormSource = await readFile(new URL('../src/components/admin/OssIntakeF
 const printSource = await readFile(new URL('../src/lib/councilFormPrint.js', import.meta.url), 'utf8')
 const migrationSource = await readFile(new URL('../supabase/migrations/20260901160000_complaint_routing_and_signatories.sql', import.meta.url), 'utf8')
 const manualSignatoryMigrationSource = await readFile(new URL('../supabase/migrations/20260901170000_manual_document_signatories.sql', import.meta.url), 'utf8')
+// ตัวเรียก RPC อยู่ที่ signatoryApi.js ไฟล์กลาง จึงตรวจรวมกับหน้าตั้งค่า
 const signatorySettingsSource = await readFile(new URL('../src/components/admin/SignatorySettings.jsx', import.meta.url), 'utf8')
+  + await readFile(new URL('../src/lib/signatoryApi.js', import.meta.url), 'utf8')
 // ทะเบียนผู้ลงนามเป็นของกลาง ไม่ได้ผูกกับคำร้องแล้ว — วันที่/scope ย้ายมารวมที่ helper ตัวนี้
 const signatoryLibSource = await readFile(new URL('../src/lib/documentSignatories.js', import.meta.url), 'utf8')
 
@@ -231,7 +233,8 @@ assert.ok(!manualSignatoryMigrationSource.includes("ผู้ลงนามอ�
 assert.ok(signatorySettingsSource.includes("p_authority_reference: null"))
 // ช่อง "มีผลตั้งแต่" กลับมาแล้ว (เจ้าของระบบสั่ง 2569-10-07) แต่ส่งวันจริงเฉพาะตอนเลือกย้อนหลัง
 // มีผลวันนี้ยังส่ง null ให้ DB เติมวันตามเวลาไทยเหมือนเดิม — นาฬิกาเครื่องที่ล้ำไปวันหน้าจะได้ไม่โดน 22007
-assert.ok(signatorySettingsSource.includes("p_effective_from: backdated ? effectiveFrom : null"))
+assert.ok(signatorySettingsSource.includes("effectiveFrom: backdated ? effectiveFrom : null"))
+assert.ok(signatorySettingsSource.includes("p_effective_from: effectiveFrom"))
 assert.ok(signatorySettingsSource.includes("p_effective_to: null"))
 assert.ok(signatorySettingsSource.includes("PGRST202"))
 // วันเริ่มมีผลที่ไม่ได้เลือกย้อนหลังต้องมาจาก DB ไม่ใช่นาฬิกาเครื่องผู้ใช้
