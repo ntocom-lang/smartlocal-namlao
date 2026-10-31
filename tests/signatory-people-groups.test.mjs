@@ -109,9 +109,12 @@ assert.equal(isExecutiveDepartment(null), false)
 // 10) หน้าจอ: ทุกกองมีแถว (ไม่ซ่อนกองไหน — ซ่อนแล้วผู้ดูแลแก้เองไม่ได้) · ใช้ departmentSlotMeta · ป้ายและตัวนับ "ขาด" ใช้ค่าไม่บังคับเดียวกัน
 {
   const source = await readFile(new URL('../src/components/admin/SignatorySettings.jsx', import.meta.url), 'utf8')
-  assert.match(source, /\.\.\.departmentSlotMeta\(department\)/)
-  assert.doesNotMatch(source, /\.\.\.departments\s*\.filter/)
-  assert.doesNotMatch(source, /department\.code !== 'exec'/)
+  // รายการช่องอยู่ที่ buildSignatorySlots เพราะหน้าจัดการผู้ใช้และฟอร์มเจ้าหน้าที่ใช้ชุดเดียวกัน
+  const lib = await readFile(new URL('../src/lib/documentSignatories.js', import.meta.url), 'utf8')
+  assert.match(source, /buildSignatorySlots\(departments, assignments, draftRows\)/)
+  assert.match(lib, /\.\.\.departmentSlotMeta\(department\)/)
+  assert.doesNotMatch(lib, /\.\.\.\(departments \?\? \[\]\)\s*\.filter/)
+  assert.doesNotMatch(lib, /department\.code !== 'exec'/)
   assert.match(source, /assignmentState\(assignment, slot\.optional, slot\.emptyLabel\)/)
   assert.match(source, /assignmentState\(assignmentMap\[slot\.key\], slot\.optional, slot\.emptyLabel\)\.ready/)
 }

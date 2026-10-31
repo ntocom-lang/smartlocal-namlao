@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
+import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
@@ -10,10 +10,10 @@ import {
 } from 'recharts'
 import {
   RefreshCw, Clock, Loader2, Check,
-  CheckCircle2, ChevronRight, ChevronLeft,
+  CheckCircle2, ChevronRight,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat, ArrowLeftRight, BookUser, ShieldQuestion,
-  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck, UserPlus, FileSignature, Menu, Building2
+  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, FileText, UserPlus, FileSignature, Menu, Building2
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 // ไอคอนที่เป็นได้ทั้งอิโมจิและรูปแนบ — ของกลางชุดเดียวกับศูนย์ข้อมูลดิจิทัล ไม่ทำซ้ำอีกชุด
@@ -26,11 +26,9 @@ import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { workingDaysBetween, workingDaysSince } from '../lib/workingDays'
 import { uploadFile } from '../lib/driveStorage'
 import { driveFolderPath, DRIVE_MODULES } from '../lib/driveFolders'
-import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
-import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import { EMERGENCY_CATEGORIES, EMERGENCY_CATEGORY_MAP, emergencyCategoryOf, guessCategory } from '../lib/emergencyCategories'
 import { CONTACT_BOOKS, CONTACT_BOOK_MAP, DEFAULT_CONTACT_BOOK, bookOf, guessBook, looksLikePersonalMobile } from '../lib/contactBooks'
-import { accountProviders, providerLabel, phoneToLoginEmail, normalizeThaiPhone, loginIdentifier } from '../lib/authProviders'
+import { accountProviders, providerLabel, normalizeThaiPhone, loginIdentifier } from '../lib/authProviders'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
@@ -39,9 +37,8 @@ const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectRe
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import DocumentSigningSettings from '../components/admin/DocumentSigningSettings'
 import DocumentTypeAssignments from '../components/admin/DocumentTypeAssignments'
-import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
-import DepartmentManager from '../components/admin/DepartmentManager'
-import PersonnelQuickAssignDialog from '../components/admin/PersonnelQuickAssignDialog'
+import StructureManager from '../components/admin/StructureManager'
+import PersonSetupForm from '../components/admin/PersonSetupForm'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
 import ResetPasswordModal from '../components/admin/ResetPasswordModal'
 // โหลดแบบ lazy — EventsManager เป็น chunk 60KB ที่ของเดิม import แบบ static ทำให้ถูกดาวน์โหลด
@@ -61,15 +58,18 @@ const InboxModule = lazy(() => import('./StaffDashboard').then(m => ({ default: 
 import ModuleHeader from '../components/common/ModuleHeader'
 const ReportManagerComponent = lazy(() => import('../components/admin/ReportManager'))
 import AuditLogViewer from '../components/admin/AuditLogViewer'
-import { ROLE_LABELS, ROLE_DESCRIPTIONS, fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
+import { ROLE_LABELS, fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
 import { DEV_USER_ID } from '../lib/portalAccess'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
 import UserProfileBadge from '../components/layout/UserProfileBadge'
 import PortalDrawer from '../components/common/PortalDrawer'
 import FleetSetup from '../components/fleet/FleetSetup'
-import { adminUpdateUser } from '../lib/adminUpdateUser'
-import { departmentFilterParams, groupPositionsByDepartment, makePositionShared, suggestedDepartmentId } from '../lib/personnelStructure'
-import { appointedSignatorySlots, isActingSignatory, isSignatoryActiveToday, SIGNATORY_SCOPE } from '../lib/documentSignatories'
+import { adminAppointUser, adminUpdateUser } from '../lib/adminUpdateUser'
+import { defaultHeadPositionName, departmentFilterParams, isDepartmentHeadPosition } from '../lib/personnelStructure'
+import {
+  APPOINTED_CLERK_PATTERN, APPOINTED_MAYOR_PATTERN, buildSignatorySlots, isSameSignatorySlot, isSignatoryActiveToday, signatorySlotLabel,
+} from '../lib/documentSignatories'
+import { fetchActiveSignatories } from '../lib/signatoryApi'
 import { logAction } from '../lib/auditLog'
 import { CategoryIcon } from '../lib/categoryIcon'
 import { isOfficialsOnlyCategory, SUBMIT_AUDIENCE_OFFICIALS, SUBMIT_AUDIENCE_PUBLIC } from '../lib/serviceAudience'
@@ -250,10 +250,11 @@ function canManageUser(currentUserRole, currentUserId, targetUser) {
   return false
 }
 
-function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = null, initialSubTab = 'staff' }) {
-  const [subTab, setSubTab] = useState(initialSubTab) // 'staff' | 'citizen' | 'departments' | 'positions'
-  // แท็บโครงสร้างหน่วยงาน (กอง / แบบตำแหน่ง) ไม่ได้แสดงรายชื่อคน
-  const isStructureTab = subTab === 'departments' || subTab === 'positions'
+// export เพื่อให้เทสต์เบราว์เซอร์ (tests/signing-setup.playwright.mjs) เปิดหน้านี้เดี่ยวๆ ด้วยฐานข้อมูลจำลองได้
+export function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = null, initialSubTab = 'staff' }) {
+  const [subTab, setSubTab] = useState(initialSubTab) // 'staff' | 'citizen' | 'structure'
+  // แท็บโครงสร้างหน่วยงาน (กองและตำแหน่ง) ไม่ได้แสดงรายชื่อคน
+  const isStructureTab = subTab === 'structure'
   // false จนโหลดรายชื่อกองรอบแรกเสร็จ — กันกล่อง "ยังไม่มีกอง" กะพริบขึ้นก่อนข้อมูลมา
   const [structureLoaded, setStructureLoaded] = useState(false)
   const [users, setUsers] = useState([])
@@ -263,7 +264,7 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
   const [saving, setSaving] = useState(null)
   const [editingNameId, setEditingNameId] = useState(null)
   const [editingNameValue, setEditingNameValue] = useState('')
-  // การแต่งตั้งบุคลากรทำที่หน้ารายละเอียดผู้ใช้เพียงจุดเดียว
+  // เพิ่มและแก้คนใช้ฟอร์มเดียวกัน (PersonSetupForm)
   const [editingAddressId, setEditingAddressId] = useState(null)
   const [editingAddressValue, setEditingAddressValue] = useState('')
   const [viewingUserId, setViewingUserId] = useState(null)
@@ -296,14 +297,40 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
   const [citizenCount, setCitizenCount] = useState(null)
   const [staffCount, setStaffCount] = useState(null)
   const [departmentCounts, setDepartmentCounts] = useState([])
-  const [quickAssignDepartment, setQuickAssignDepartment] = useState(null)
+  // ค่าตั้งต้นของฟอร์มเพิ่มเจ้าหน้าที่ · null = ปิดอยู่ · key เปลี่ยนเมื่อกด "บันทึก แล้วเพิ่มคนต่อ" ให้ฟอร์มเริ่มใหม่
+  const [addingPerson, setAddingPerson] = useState(null)
+  const [personFormKey, setPersonFormKey] = useState(0)
+  // ฟอร์มเปิดเต็มกรอบหน้านี้แทนรายชื่อ (เจ้าของระบบสั่ง 2569-10-31) รายชื่อแค่ซ่อนไว้ ตัวกรองและหน้าที่เลือกจึงอยู่ครบ
+  // จำตำแหน่งเลื่อนของรายชื่อไว้ ย้อนกลับแล้วต้องกลับมาที่แถวเดิม ไม่ใช่ขึ้นบนสุด
+  const personFormOpen = Boolean(viewingUser || addingPerson)
+  const personFormTopRef = useRef(null)
+  const listScrollY = useRef(0)
+  const personFormWasOpen = useRef(false)
+  useLayoutEffect(() => {
+    const wasOpen = personFormWasOpen.current
+    personFormWasOpen.current = personFormOpen
+    if (personFormOpen) {
+      const top = personFormTopRef.current?.getBoundingClientRect().top ?? 0
+      if (top < 0) window.scrollTo({ top: window.scrollY + top - 16 })
+      return undefined
+    }
+    if (wasOpen) window.scrollTo({ top: listScrollY.current })
+    // layout effect: เลิกฟังก่อนเบราว์เซอร์ส่ง scroll ที่เกิดจากหน้าหดตอนซ่อนรายชื่อ
+    const remember = () => { listScrollY.current = window.scrollY }
+    window.addEventListener('scroll', remember, { passive: true })
+    return () => window.removeEventListener('scroll', remember)
+    // personFormKey: "บันทึก แล้วเพิ่มคนต่อ" ขึ้นฟอร์มใหม่ ต้องเลื่อนขึ้นไปเห็นผลที่บันทึก (จอเตี้ยเบราว์เซอร์ไม่ดึงให้เอง)
+  }, [personFormOpen, personFormKey])
+  const [savedFlash, setSavedFlash] = useState(null)
+  const registry = useSignatoryRegistry(tenant?.id)
   const fetchSequence = useRef(0)
   const initialDepartmentTenant = useRef(null)
 
   const reloadStructure = useCallback(() => {
     if (!tenant?.id) return
     return Promise.all([
-      supabase.from('departments').select('id, name, short_name')
+      // code ใช้แยกกองผู้บริหารซึ่งช่องลงนามไม่บังคับ (isExecutiveDepartment)
+      supabase.from('departments').select('id, code, name, short_name')
         .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order'),
       // positions เป็นของแต่ละ อปท. แล้ว (20260831140000_positions_per_municipality.sql)
       // RLS กรองให้อยู่แล้วสำหรับ admin แต่ superadmin อ่านได้ทุกแถวข้าม อปท. จึงต้องกรองเองด้วย
@@ -361,8 +388,8 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
 
   const fetchUsers = useCallback(async (opts = {}) => {
     if (!['admin', 'superadmin'].includes(currentUserRole) || !tenant?.id) return
-    // แท็บกอง / แบบตำแหน่งไม่ได้แสดงรายชื่อคน ไม่ต้องยิง RPC ดึง PII มาทิ้งเปล่าๆ
-    if (subTab === 'departments' || subTab === 'positions') return
+    // แท็บกองและตำแหน่งไม่ได้แสดงรายชื่อคน ไม่ต้องยิง RPC ดึง PII มาทิ้งเปล่าๆ
+    if (subTab === 'structure') return
     const searchTerm = (opts.search ?? '').trim()
     const requestedPage = Math.max(0, opts.page ?? 0)
     const requestedSortKey = USER_SORT_KEYS.has(opts.sortKey ?? sortConfig.key) ? (opts.sortKey ?? sortConfig.key) : 'full_name'
@@ -452,7 +479,7 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
     setSaving(null)
   }
 
-  // บันทึกทุกแท็บ (บัญชี/ส่วนตัว/การแต่งตั้ง) ในหน้ารายละเอียดพร้อมกันครั้งเดียว
+  // บันทึกทุกส่วนของฟอร์มเจ้าหน้าที่ (บัญชี/ส่วนตัว/การแต่งตั้ง/สิทธิ์) พร้อมกันครั้งเดียว
   async function saveUserEdits(user, changes) {
     if (changes.role === 'officer' && !changes.department_id) {
       return { ok: false, error: 'หัวหน้ากองต้องระบุกอง/หน่วยงานที่สังกัดก่อนบันทึก' }
@@ -465,23 +492,76 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
     const effectivePayload = clearsAssignment
       ? { ...payload, department_id: null, position_id: null, is_dept_head: false }
       : payload
-    const { error } = await updateManagedUser(user.id, effectivePayload)
-    setSaving(null)
-    if (error) {
+    const { error, headTickFailed } = await adminAppointUser(user.id, effectivePayload, user.department_id ?? null)
+    if (error && !headTickFailed) {
+      setSaving(null)
       const msg = error.code === '23505' ? 'เลขบัตรประชาชนนี้ถูกใช้กับบัญชีอื่นแล้ว' : error.message
       return { ok: false, error: msg }
     }
-    const dept = depts.find(d => d.id === effectivePayload.department_id)
-    const position = positions.find(p => p.id === effectivePayload.position_id)
+    // อ่านค่าจริงกลับจากฐานข้อมูล: trigger อาจเปลี่ยนกองตามตำแหน่งที่ล็อก หรือล้างติ๊กหัวหน้ากอง
+    // ถ้าแสดงค่าที่ส่งไป หน้าจอจะขึ้น "เป็นหัวหน้ากอง" ทั้งที่ของจริงไม่ใช่ จนกว่าจะโหลดหน้าใหม่
+    const { data: stored } = await supabase.from('profiles')
+      .select('department_id,position_id,is_dept_head').eq('id', user.id).maybeSingle()
+    setSaving(null)
+    const saved = { ...effectivePayload, ...(stored ?? {}) }
+    const dept = depts.find(d => d.id === saved.department_id)
+    const position = positions.find(p => p.id === saved.position_id)
     setUsers((prev) => prev.map((u) => u.id === user.id ? {
       ...u,
-      ...effectivePayload,
+      ...saved,
       department_name: dept?.name ?? null,
       position_name: clearsAssignment ? null : (position?.name ?? null),
     } : u))
     reloadDepartmentCounts()
     reloadRoleCounts()
+    if (headTickFailed) {
+      return { ok: false, error: `ย้ายกองแล้ว แต่ติ๊กหัวหน้ากองไม่สำเร็จ กรุณากดบันทึกอีกครั้ง (${error.message})` }
+    }
     return { ok: true }
+  }
+
+  // เอาติ๊กหัวหน้าของคนเดิมออกแล้ว รายการที่แสดงอยู่ต้องตรงกัน ไม่งั้นป้าย "หัวหน้ากอง" ค้างจนกว่าจะโหลดหน้าใหม่
+  function markHeadsCleared(ids) {
+    setUsers((prev) => prev.map((u) => ids.includes(u.id) ? { ...u, is_dept_head: false } : u))
+  }
+
+  function openAddPerson(initial = {}) {
+    setViewingUserId(null)
+    setPersonFormKey(current => current + 1)
+    setAddingPerson({ departmentId: selectedDepartment?.id, ...initial })
+  }
+
+  // ช่องลงนามที่ยังขาด: เปิดฟอร์มเพิ่มเจ้าหน้าที่พร้อมเติมตำแหน่งของช่องนั้นให้ เหลือแค่เลือกคน
+  function openAddForSlot(slot) {
+    if (slot.role === 'department_head') {
+      const department = depts.find(item => item.id === slot.departmentId)
+      const held = positions.find(item => item.department_id === slot.departmentId && isDepartmentHeadPosition(item))
+      openAddPerson({
+        departmentId: slot.departmentId,
+        ...(held ? { positionId: held.id } : { positionName: defaultHeadPositionName(department) }),
+      })
+      return
+    }
+    const pattern = slot.role === 'mayor' ? APPOINTED_MAYOR_PATTERN : APPOINTED_CLERK_PATTERN
+    const match = positions.find(item => pattern.test(item.name))
+    openAddPerson({ departmentId: undefined, ...(match ? { positionId: match.id } : {}) })
+  }
+
+  function closePersonForm() {
+    setViewingUserId(null)
+    setAddingPerson(null)
+  }
+
+  function handlePersonSaved({ next, flash }) {
+    if (flash) setSavedFlash(flash)
+    reloadStructure()
+    reloadDepartmentCounts()
+    reloadRoleCounts()
+    registry.reload()
+    fetchUsers({ search, page })
+    setViewingUserId(null)
+    if (next) openAddPerson()
+    else setAddingPerson(null)
   }
 
   // แยกออกจาก saveUserEdits เพราะ auth.users.email เปลี่ยนผ่าน edge function
@@ -574,6 +654,16 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
   ]
 
   const selectedDepartment = depts.find((department) => department.id === filterDept) ?? null
+  // ช่องลงนามของแต่ละคน ขึ้นในตารางให้เห็นโดยไม่ต้องเปิดอีกเมนู
+  const signingLabelsByPerson = useMemo(() => {
+    const labels = new Map()
+    for (const row of registry.rows) {
+      if (!row.profile_id || !isSignatoryActiveToday(row)) continue
+      const label = signatorySlotLabel({ role: row.signatory_role, departmentId: row.department_id, customLabel: row.custom_label }, depts)
+      labels.set(row.profile_id, [...(labels.get(row.profile_id) ?? []), label])
+    }
+    return labels
+  }, [registry.rows, depts])
   const selectedDepartmentCount = selectedDepartment
     ? (departmentCountMap.get(selectedDepartment.id) ?? 0)
     : filterDept === 'none' ? (departmentCountMap.get('none') ?? 0) : staffCount
@@ -608,32 +698,26 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
     return (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '', 'th')
   })
 
-  if (viewingUser) {
-    return (
-      <UserDetailPage
-        user={viewingUser}
-        onBack={() => setViewingUserId(null)}
-        currentUserRole={currentUserRole}
-        currentUserId={currentUserId}
-        tenant={tenant}
-        depts={depts}
-        positions={positions}
-        onPositionsChanged={reloadStructure}
-        onOpenSigning={onOpenSigning}
-        saving={saving}
-        deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
-        deleteBlockedReason={deleteBlockedReason} setDeleteBlockedReason={setDeleteBlockedReason}
-        handoverStaff={handoverStaff} setHandoverStaff={setHandoverStaff}
-        mergeKeepUser={mergeKeepUser} setMergeKeepUser={setMergeKeepUser} onMerged={handleMerged}
-        saveUserEdits={saveUserEdits}
-        updateUserEmail={updateUserEmail}
-        resetPasswordUser={resetPasswordUser} setResetPasswordUser={setResetPasswordUser}
-      />
-    )
-  }
+  const savedFlashBox = margin => savedFlash && (
+    <div className={`${margin} flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900`} role="status" data-person-saved>
+      <CheckCircle2 size={17} className="mt-0.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="font-bold">บันทึกแล้ว: {savedFlash.name}</p>
+        <ul className="mt-1 list-disc pl-5 text-xs leading-5">
+          {savedFlash.items.map(item => <li key={item}>{item}</li>)}
+        </ul>
+        {savedFlash.after && <p className="mt-1 text-xs font-semibold leading-5 text-amber-800">{savedFlash.after}</p>}
+      </div>
+      <button type="button" onClick={() => setSavedFlash(null)} aria-label="ปิดข้อความ"
+        className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-emerald-700 hover:bg-emerald-100">
+        <X size={16} />
+      </button>
+    </div>
+  )
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" ref={personFormTopRef}>
+      <div className={personFormOpen ? 'hidden' : 'space-y-4'} data-user-manager-list>
       <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-800 px-5 py-5 text-white shadow-xl shadow-blue-950/15 md:px-7 md:py-6">
         <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-cyan-400/20 blur-3xl" />
         <div className="pointer-events-none absolute bottom-0 left-1/3 h-28 w-56 rounded-full bg-violet-500/20 blur-3xl" />
@@ -675,18 +759,15 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
 
       <section className="overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-lg shadow-slate-200/60">
 
-      {/* แท็บย่อย: เจ้าหน้าที่ / ประชาชน / แบบตำแหน่ง — แยก query กันโหลดผู้ใช้ทั้งหมดมาทีเดียว */}
+      {/* แท็บย่อย: เจ้าหน้าที่ / ประชาชน / กองและตำแหน่ง — แยก query กันโหลดผู้ใช้ทั้งหมดมาทีเดียว */}
       <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-blue-50/60 px-4 py-3 md:px-5">
         <div aria-label="เมนูจัดการผู้ใช้และการแต่งตั้ง" className="grid grid-cols-1 gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm sm:inline-flex">
         {[
           { key: 'staff', label: 'เจ้าหน้าที่', count: staffCount, Icon: Briefcase },
           { key: 'citizen', label: 'ประชาชน', count: citizenCount, Icon: UserCircle2 },
-          // กอง/หน่วยงาน — ย้ายมาจากเมนู "ตั้งค่าระบบ" 2026-10-30 ให้โครงสร้างองค์กรอยู่ที่เดียว
-          // (สร้างกอง → สร้างตำแหน่ง → แต่งตั้งคน) รายชื่อกองชุดนี้ยังใช้ร่วมกันทั้งระบบเหมือนเดิม
-          { key: 'departments', label: 'กอง/หน่วยงาน', count: null, Icon: Building2 },
-          // แบบตำแหน่งของหน่วยงาน — ย้ายมาจากเมนู "ทำเนียบตำแหน่ง" ฝั่งเจ้าหน้าที่ที่ถอดออก 2026-08-31
-          // อยู่หน้าเดียวกับการแต่งตั้งเพราะเป็นของคู่กัน (สร้างตำแหน่ง → แต่งตั้งคนเข้าตำแหน่ง)
-          { key: 'positions', label: 'แบบตำแหน่ง', count: null, Icon: ClipboardList },
+          // รวมกองกับแบบตำแหน่งไว้แท็บเดียว (เจ้าของระบบอนุมัติ 2569-10-31): เพิ่มคนไม่ต้องมาหน้านี้ก่อน ฟอร์มเจ้าหน้าที่เพิ่มให้ได้
+          // รายชื่อกองชุดนี้ยังใช้ร่วมกันทั้งระบบเหมือนเดิม
+          { key: 'structure', label: 'กองและตำแหน่ง', count: null, Icon: Building2 },
         ].map(({ key, label, count, Icon }) => (
           <button key={key} onClick={() => switchSubTab(key)}
             aria-current={subTab === key ? 'page' : undefined}
@@ -705,44 +786,43 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
         </div>
       </div>
 
-      {subTab === 'departments' && (
-        <div className="px-4 py-4 md:px-5" data-user-manager-departments>
-          <DepartmentManager tenant={tenant} />
+      {!personFormOpen && savedFlashBox('mx-4 mt-4 md:mx-5')}
+
+      {subTab === 'structure' && (
+        <div data-user-manager-structure>
+          <StructureManager tenant={tenant} currentUserRole={currentUserRole} onChanged={reloadStructure} />
         </div>
       )}
-
-      {subTab === 'positions' && <PositionCatalogAdmin tenant={tenant} currentUserRole={currentUserRole} />}
 
       {!isStructureTab && (<>
 
       {/* การ์ดกลุ่ม "กอง/หน่วยงาน" (เฉพาะแท็บเจ้าหน้าที่) */}
       {subTab === 'staff' && (
         <div className="px-4 pt-4 md:px-5">
+          <div className="mb-3 flex flex-wrap items-center gap-2" data-user-manager-actions>
+            <button type="button" onClick={() => openAddPerson()} data-add-person
+              className="flex min-h-11 items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700">
+              <UserPlus size={16} /> เพิ่มเจ้าหน้าที่
+            </button>
+            <button type="button" onClick={() => switchSubTab('structure')} data-open-structure
+              className="flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-bold text-slate-700 hover:border-blue-200 hover:text-blue-700">
+              <Plus size={15} /> เพิ่มกองหรือตำแหน่ง
+            </button>
+          </div>
+          <SigningStatusBar depts={depts} registry={registry} onSetSlot={openAddForSlot} onOpenSigning={onOpenSigning} />
           <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-xs font-extrabold text-slate-700">เลือกกอง / หน่วยงาน</p>
               <p className="text-[10px] text-slate-400">แสดงทีละกอง จำนวนมาจากข้อมูลทั้งองค์กร ไม่ใช่เฉพาะหน้าปัจจุบัน</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => switchSubTab('departments')} data-open-departments
-                className="flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:border-blue-200 hover:text-blue-700 md:min-h-0">
-                <Building2 size={14} /> แก้รายชื่อกอง
-              </button>
-              {filterDept && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-600">กำลังกรอง</span>}
-              {selectedDepartment && (
-                <button type="button" onClick={() => setQuickAssignDepartment(selectedDepartment)}
-                  className="flex min-h-11 items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700">
-                  <UserPlus size={15} /> เพิ่มบุคลากรใน{selectedDepartment.name}
-                </button>
-              )}
-            </div>
+            {filterDept && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-600">กำลังกรอง</span>}
           </div>
           {structureLoaded && depts.length === 0 && (
             <div data-no-departments className="mb-2.5 flex flex-col gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-amber-800">
                 <strong>ยังไม่มีกอง/หน่วยงาน</strong> — สร้างกองก่อน แล้วจึงแต่งตั้งเจ้าหน้าที่เข้ากอง
               </p>
-              <button type="button" onClick={() => switchSubTab('departments')}
+              <button type="button" onClick={() => switchSubTab('structure')}
                 className="flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-4 text-sm font-bold text-white hover:bg-amber-700">
                 <Building2 size={15} /> สร้างกอง
               </button>
@@ -916,6 +996,9 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
                     <span className="text-xs text-gray-400">
                       {u.position_name || <span className="italic text-gray-300">ไม่ระบุตำแหน่งในทำเนียบ</span>}
                     </span>
+                    {signingLabelsByPerson.has(u.id) && (
+                      <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-700">ลงนาม: {signingLabelsByPerson.get(u.id).join(' · ')}</span>
+                    )}
                   </div>
                 )}
                 <div className="mt-1">
@@ -1078,6 +1161,9 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
                           <span className="text-[11px] text-gray-500 truncate">{u.department_name || 'ไม่ระบุกอง'}</span>
                           {u.is_dept_head && <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full">หัวหน้ากอง</span>}
                           <span className="text-[11px] text-gray-400 truncate">{u.position_name || 'ไม่ระบุตำแหน่งในทำเนียบ'}</span>
+                          {signingLabelsByPerson.has(u.id) && (
+                            <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">ลงนาม: {signingLabelsByPerson.get(u.id).join(' · ')}</span>
+                          )}
                         </div>
                       ) : (
                         <span className="text-xs text-gray-300">—</span>
@@ -1149,39 +1235,68 @@ function UserManager({ tenant, currentUserRole, currentUserId, onOpenSigning = n
       </>)}
 
       </section>
-      {quickAssignDepartment && (
-        <PersonnelQuickAssignDialog
+      </div>
+      {/* "บันทึก แล้วเพิ่มคนต่อ" ฟอร์มยังเปิดอยู่ ผลที่บันทึกต้องขึ้นเหนือฟอร์ม ไม่ใช่ในรายชื่อที่ซ่อนอยู่ */}
+      {personFormOpen && savedFlashBox('')}
+      {personFormOpen && (
+        <PersonSetupForm
+          key={viewingUser ? viewingUser.id : `add-${personFormKey}`}
           tenant={tenant}
-          department={quickAssignDepartment}
+          user={viewingUser ?? null}
+          initial={viewingUser ? null : addingPerson}
+          depts={depts}
           positions={positions}
+          currentUserRole={currentUserRole}
           currentUserId={currentUserId}
-          onPositionsChanged={reloadStructure}
-          onClose={() => setQuickAssignDepartment(null)}
-          onSaved={() => {
-            setQuickAssignDepartment(null)
-            reloadStructure()
-            reloadDepartmentCounts()
-            reloadRoleCounts()
-            fetchUsers({ search, page: 0 })
-            setPage(0)
-          }}
+          canEdit={viewingUser ? canManageUser(currentUserRole, currentUserId, viewingUser) : true}
+          registry={registry}
+          saveUserEdits={saveUserEdits}
+          updateUserEmail={updateUserEmail}
+          nestedOpen={Boolean(deletingUser || handoverStaff || mergeKeepUser || resetPasswordUser)}
+          actions={{ onHandover: setHandoverStaff, onMerge: setMergeKeepUser, onResetPassword: setResetPasswordUser, onDelete: setDeletingUser }}
+          renderAccount={viewingUser ? (props) => <AccountInfoTab {...props} user={viewingUser} /> : null}
+          renderPersonal={viewingUser ? (props) => <PersonalInfoTab {...props} user={viewingUser} /> : null}
+          onClose={closePersonForm}
+          onSaved={handlePersonSaved}
+          onStructureChanged={reloadStructure}
+          onHeadsCleared={markHeadsCleared}
+          onOpenSigning={onOpenSigning}
         />
       )}
-      <DeleteUserConfirmModal
-        deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
-        deleteBlockedReason={deleteBlockedReason}
-        onOpenHandover={(u) => { setHandoverStaff(u); setDeletingUser(null); setDeleteBlockedReason('') }}
-        onClose={() => { setDeletingUser(null); setDeleteBlockedReason('') }}
-      />
-      {handoverStaff && (
-        <HandoverWorkloadModal oldStaff={handoverStaff} tenant={tenant} onClose={() => setHandoverStaff(null)} />
+      {/* กล่องยืนยันพวกนี้อยู่ที่ body ให้ลอยเหนือทุกชั้นของแผงควบคุม ไม่ขึ้นกับชั้นซ้อนของหน้านี้ */}
+      {createPortal(
+        <>
+          <DeleteUserConfirmModal
+            deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
+            deleteBlockedReason={deleteBlockedReason}
+            onOpenHandover={(u) => { setHandoverStaff(u); setDeletingUser(null); setDeleteBlockedReason('') }}
+            onClose={() => { setDeletingUser(null); setDeleteBlockedReason('') }}
+          />
+          {handoverStaff && (
+            <HandoverWorkloadModal oldStaff={handoverStaff} tenant={tenant} onClose={() => setHandoverStaff(null)} />
+          )}
+          {mergeKeepUser && (
+            <MergeDuplicateModal
+              keepUser={mergeKeepUser}
+              tenant={tenant}
+              currentUserRole={currentUserRole}
+              currentUserId={currentUserId}
+              onClose={() => setMergeKeepUser(null)}
+              onMerged={handleMerged}
+            />
+          )}
+          {resetPasswordUser && (
+            <ResetPasswordModal user={resetPasswordUser} onClose={() => setResetPasswordUser(null)} />
+          )}
+        </>,
+        document.body,
       )}
 
     </div>
   )
 }
 
-// ─── User Detail Page (แท็บ, ต่อเพิ่มได้เรื่อยๆ แค่เพิ่ม entry ใน USER_DETAIL_TABS) ─────
+// ─── ส่วนประกอบของฟอร์มเจ้าหน้าที่ (PersonSetupForm) ─────
 
 // ใช้ร่วมกันทั้งจากตารางและหน้ารายละเอียด กันเขียนซ้ำ
 // deleteBlockedReason มาจาก guard ฝั่ง DB (delete_user_by_id, 20260827100000) เมื่อผู้ใช้นี้ยังเป็น
@@ -1697,41 +1812,8 @@ function AddressField({ user, isEditing, draft, setDraft }) {
 
 function PersonalInfoTab(props) {
   const { user, isEditing, draft, setDraft } = props
-  // ชื่อที่ auto-fill มาจาก Google/LINE login ไม่มีคำนำหน้าไทยติดมาด้วย — เอกสาร/คำร้องที่พิมพ์
-  // ใช้ full_name ตรงๆ ไม่มีคำนำหน้าก็จะไม่โชว์บนกระดาษ ใช้ตัวแยก/รวมเดียวกับ ProfilePage.jsx
-  // (หน้าแก้โปรไฟล์ของประชาชนเอง) ให้แอดมินกรอกแยกช่องคำนำหน้า/ชื่อ/นามสกุล กันลืมใส่คำนำหน้า
-  const nameParts = splitThaiFullName(draft?.full_name ?? '')
-  function setNamePart(key, value) {
-    const next = { ...nameParts, [key]: value }
-    setDraft(d => ({ ...d, full_name: joinThaiFullName(next.title, next.first, next.last) }))
-  }
-  const missingTitle = !splitThaiFullName(user.full_name ?? '').title && !!(user.full_name ?? '').trim()
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ชื่อ-นามสกุล</p>
-        {isEditing ? (
-          <div className="flex gap-1.5">
-            <select value={nameParts.title} onChange={(e) => setNamePart('title', e.target.value)}
-              className="w-20 shrink-0 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg px-2 py-2 focus:outline-none focus:border-blue-400">
-              <option value="">เลือก</option>
-              {NAME_TITLES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <input value={nameParts.first} onChange={(e) => setNamePart('first', e.target.value)} placeholder="ชื่อ"
-              className="flex-1 min-w-0 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400" />
-            <input value={nameParts.last} onChange={(e) => setNamePart('last', e.target.value)} placeholder="นามสกุล"
-              className="flex-1 min-w-0 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400" />
-          </div>
-        ) : (
-          <p className="text-sm text-gray-800">{user.full_name || <span className="italic text-gray-300">—</span>}</p>
-        )}
-        {!isEditing && missingTitle && (
-          <p className="mt-1 text-xs font-semibold text-amber-600">⚠️ ยังไม่มีคำนำหน้า — จะไม่แสดงบนเอกสาร/คำร้องที่พิมพ์</p>
-        )}
-        {isEditing && !nameParts.title && (nameParts.first || nameParts.last) && (
-          <p className="mt-1 text-xs font-semibold text-amber-600">⚠️ ยังไม่ได้เลือกคำนำหน้า</p>
-        )}
-      </div>
       <PersonalInfoField
         label="เบอร์โทรศัพท์"
         isEditing={isEditing}
@@ -1754,591 +1836,48 @@ function PersonalInfoTab(props) {
   )
 }
 
-function AppointmentTab({ user, tenant, depts, positions, currentUserRole, isEditing, draft, setDraft, onPositionsChanged, onOpenSigning = null }) {
-  const activeDeptId = isEditing ? draft.department_id : (user.department_id ?? '')
-  const activePositionId = isEditing ? draft.position_id : (user.position_id ?? '')
-  const selectedPosition = positions.find(position => position.id === activePositionId)
-  // แยกตามกองหลักเป็น <optgroup> — ทำเนียบหลักสิบตำแหน่งไล่หาในลิสต์แบนราบยาก
-  const positionGroups = useMemo(() => groupPositionsByDepartment(positions, depts)
-    .filter(group => group.items.length > 0), [positions, depts])
-  const [sharingPosition, setSharingPosition] = useState(false)
-  const [shareError, setShareError] = useState('')
-
-  // ตำแหน่งที่ล็อกกองแต่จริงๆ มีหลายกอง (เช่น ธุรการ) ปลดได้ในคลิกเดียวจากหน้านี้ ไม่ต้องไปแท็บแบบตำแหน่ง
-  async function handleMakePositionShared() {
-    if (!selectedPosition?.department_id || !tenant?.id) return
-    const ok = confirm(
-      `เปลี่ยน "${selectedPosition.name}" เป็นตำแหน่งที่ใช้ได้ทุกกอง?\n\n` +
-      `ผู้ถือตำแหน่งนี้ทุกคนยังอยู่กองเดิม ไม่มีใครถูกย้าย\n` +
-      `"${selectedPosition.department_hint || 'กองเดิม'}" จะเป็นกองที่ระบบเติมให้ แต่เปลี่ยนได้`
-    )
-    if (!ok) return
-    setSharingPosition(true)
-    setShareError('')
-    const { error } = await makePositionShared(supabase, tenant.id, selectedPosition)
-    setSharingPosition(false)
-    if (error) {
-      setShareError(/changed|reload|concurrent/i.test(error.message)
-        ? 'ข้อมูลตำแหน่งเปลี่ยนระหว่างทำรายการ กรุณาลองใหม่อีกครั้ง'
-        : 'เปลี่ยนไม่สำเร็จ: ' + error.message)
-      onPositionsChanged?.()
-      return
-    }
-    await onPositionsChanged?.()
-  }
-
-  function handlePositionChange(positionId) {
-    const position = positions.find(item => item.id === positionId)
-    // ตำแหน่งล็อกกอง = กองนั้น / ใช้ได้ทุกกอง = คงกองเดิมของคน ถ้ายังไม่มีกองจึงเติมกองแนะนำ
-    const nextDepartmentId = position?.department_id || draft.department_id || suggestedDepartmentId(position, depts) || ''
-    const nextDepartmentHead = nextDepartmentId === draft.department_id ? draft.is_dept_head : false
-    const suggestedRole = position?.role
-    const maySuggestRole = suggestedRole
-      && suggestedRole !== draft.role
-      && (!['admin', 'superadmin'].includes(suggestedRole) || currentUserRole === 'superadmin')
-      && !['admin', 'superadmin'].includes(draft.role)
-
-    // เดิม auto-apply บทบาทแนะนำเงียบๆ ทันทีที่เลือกตำแหน่ง (แค่มีข้อความเล็กๆ บอกไว้) ทำให้แอดมิน
-    // ไม่ทันสังเกตว่า "บทบาทและสิทธิ์ระบบ" ที่แท็บอื่นถูกเปลี่ยนไปด้วย กว่าจะรู้ตัวก็หลังบันทึกไปแล้ว
-    // เปลี่ยนเป็นต้องกดยืนยันก่อนเสมอ (แพทเทิร์นเดียวกับ HR-triggered provisioning ของระบบ IAM ทั่วไป
-    // เช่น SAP GRC ที่ตำแหน่งใหม่ "เสนอ" สิทธิ์ได้ แต่ต้องผ่านขั้นตอนอนุมัติ ไม่ auto-apply ทันที)
-    if (maySuggestRole) {
-      const roleLabel = ROLE_LABELS[suggestedRole]?.label ?? suggestedRole
-      const confirmed = confirm(
-        `ตำแหน่ง "${position.name}" มักมีบทบาทและสิทธิ์ระบบเป็น "${roleLabel}"\n\n` +
-        `ต้องการเปลี่ยนบทบาทและสิทธิ์ระบบตามคำแนะนำนี้ด้วยหรือไม่?\n` +
-        `(เลือก "ยกเลิก" เพื่อคงบทบาทเดิมไว้ก่อน ไปปรับเองทีหลังได้ที่แท็บ "สิทธิ์การใช้งาน")`
-      )
-      setDraft(current => ({
-        ...current,
-        position_id: positionId,
-        department_id: nextDepartmentId,
-        is_dept_head: nextDepartmentHead,
-        role: confirmed ? suggestedRole : current.role,
-      }))
-      return
-    }
-
-    setDraft(current => ({
-      ...current,
-      position_id: positionId,
-      department_id: nextDepartmentId,
-      is_dept_head: nextDepartmentHead,
-    }))
-  }
-
-  return (
-    <div className="space-y-5">
-      <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
-        <p className="text-sm font-bold text-indigo-800">การแต่งตั้ง = ตำแหน่งในหน่วยงาน</p>
-        <p className="mt-1 text-xs leading-5 text-indigo-600">
-          ส่วนสิทธิ์การเข้าใช้งานแอป ย้ายไปแท็บ "สิทธิ์การใช้งาน" แล้ว — บันทึกครั้งเดียวรวมทุกแท็บ
-        </p>
-      </div>
-      <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ตำแหน่ง (ทำเนียบกลาง)</p>
-        {isEditing ? (
-          <select value={draft.position_id} onChange={(e) => handlePositionChange(e.target.value)}
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white">
-            <option value="">— ยังไม่แต่งตั้งตำแหน่ง —</option>
-            {positionGroups.map(group => (
-              <optgroup key={group.key} label={group.label}>
-                {group.items.map(position => (
-                  <option key={position.id} value={position.id}>{position.name}{position.department_id ? ' 🔒' : ''}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        ) : (
-          <p className="text-sm text-gray-800">{user.position_name || 'ยังไม่แต่งตั้งตำแหน่ง'}</p>
-        )}
-        {isEditing && (
-          <p className="mt-1 text-xs text-gray-400">แยกตามกองหลักของตำแหน่ง · 🔒 = ล็อกกอง (หัวหน้าหน่วยงาน) · ตำแหน่งอื่นใช้ได้ทุกกอง</p>
-        )}
-        {selectedPosition?.department_hint && (
-          <p className="mt-1 text-xs text-gray-400">
-            {selectedPosition.department_id ? 'ตำแหน่งนี้ล็อกไว้ที่: ' : 'ใช้ได้ทุกกอง · กองที่มักสังกัด: '}
-            {selectedPosition.department_hint}
-          </p>
-        )}
-        {selectedPosition?.role && (
-          <p className="mt-1 text-xs text-indigo-500">บทบาทแนะนำ: {ROLE_LABELS[selectedPosition.role]?.label ?? selectedPosition.role}</p>
-        )}
-      </div>
-      <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">กอง/หน่วยงาน</p>
-        {isEditing ? (
-          <select value={draft.department_id}
-            onChange={(e) => setDraft(d => ({ ...d, department_id: e.target.value, is_dept_head: false }))}
-            disabled={Boolean(selectedPosition?.department_id)}
-            className="min-h-11 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white disabled:bg-gray-100 disabled:text-gray-500">
-            <option value="">— ไม่ระบุกอง —</option>
-            {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-        ) : (
-          <p className="text-sm text-gray-800">{user.department_name || 'ไม่ระบุกอง'}</p>
-        )}
-        {isEditing && selectedPosition?.department_id && (
-          <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800">
-            <p>ตำแหน่งนี้ล็อกกองไว้ (ใช้กับหัวหน้าหน่วยงานที่มีได้กองเดียว) จึงเลือกกองอื่นไม่ได้</p>
-            {tenant?.id && (
-              <button type="button" onClick={handleMakePositionShared} disabled={sharingPosition}
-                className="mt-2 flex min-h-11 items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50">
-                {sharingPosition && <Loader2 size={14} className="animate-spin" />}
-                ตำแหน่งนี้มีหลายกอง — เปลี่ยนเป็นใช้ได้ทุกกอง
-              </button>
-            )}
-            {shareError && <p role="alert" className="mt-1.5 font-semibold text-rose-700">{shareError}</p>}
-          </div>
-        )}
-      </div>
-      {activeDeptId && (
-        <div>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">หัวหน้ากอง</p>
-          {isEditing ? (
-            <>
-              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                <input type="checkbox" checked={!!draft.is_dept_head}
-                  onChange={() => setDraft(d => ({ ...d, is_dept_head: !d.is_dept_head }))} className="w-4 h-4" />
-                เป็นหัวหน้ากอง
-              </label>
-              {/* แยกจากบทบาท "หัวหน้ากอง" ชัดๆ กันสับสนหลังเปลี่ยนชื่อ role — ตัวติ๊กนี้ไม่เกี่ยวกับ
-                  สิทธิ์เห็นคำร้อง (บทบาทเป็นตัวกำหนด) ใช้กับปฏิทินกิจกรรมและการเรียงลำดับเท่านั้น */}
-              <p className="mt-1.5 text-[11px] leading-relaxed text-gray-400">
-                ใช้กับการอนุมัติกิจกรรมของกอง และทำให้ชื่อขึ้นก่อนในรายการมอบหมายงาน
-                — สิทธิ์เห็นคำร้องทั้งกองมาจากบทบาท "หัวหน้ากอง" ไม่ได้มาจากช่องนี้
-              </p>
-            </>
-          ) : (
-            <p className="text-sm text-gray-800">{user.is_dept_head ? 'ใช่' : 'ไม่ใช่'}</p>
-          )}
-        </div>
-      )}
-      {user.role !== 'citizen' && tenant?.id && (
-        <SigningRoleNote user={user} tenant={tenant} depts={depts} onOpenSigning={onOpenSigning} />
-      )}
-      {user.staff_name && (
-        <div className="border-t border-gray-100 pt-4">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ผูกกับข้อมูลสาธารณะ (หน้าเว็บ)</p>
-          <p className="text-sm text-gray-800">{user.staff_name}{user.staff_title ? ` (${user.staff_title})` : ''}</p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ชื่อช่องลงนามสำหรับแสดงผล — ห้ามเติม "หัวหน้า" หน้าชื่อกอง (บาง อปท. ไม่มีตำแหน่งหัวหน้าหน่วยตรวจสอบภายใน)
-function signingSlotLabel(slot, depts) {
-  if (slot.role === 'mayor') return 'นายก'
-  if (slot.role === 'clerk') return 'ปลัด'
-  if (slot.role === 'department_head') return depts.find(dept => dept.id === slot.departmentId)?.name ?? 'กองที่ปิดใช้แล้ว'
-  return slot.customLabel || 'ผู้ลงนามที่เพิ่มเอง'
-}
-
-// การแต่งตั้งกับผู้ลงนามเก็บคนละที่ (การลงนามเอกสาร = ทะเบียนที่เอกสารใช้พิมพ์ชื่อจริง) — ส่วนนี้บอกให้เห็นตรงนี้เลยว่า
-// คนนี้พิมพ์ชื่อในช่องลงนามไหน และถ้าการแต่งตั้งชี้ว่าควรเป็นผู้ลงนามแต่ทะเบียนยังเป็นชื่ออื่น ก็เตือนพร้อมปุ่มไปแก้
-// (กฎเดียวกับปุ่ม "ใช้ชื่อนี้" ในหน้าการลงนามเอกสาร — appointedSignatorySlots) ไม่เปลี่ยนผู้ลงนามให้เอง
-function SigningRoleNote({ user, tenant, depts, onOpenSigning }) {
+// ผู้ลงนามที่ใช้อยู่ของ อปท. — แท็บการแต่งตั้งใช้ทั้งบอกสถานะและคำนวณว่าต้องถามอะไรตอนบันทึก
+function useSignatoryRegistry(tenantId) {
   const [registry, setRegistry] = useState({ key: null, rows: [], error: '' })
+  const [version, setVersion] = useState(0)
 
   useEffect(() => {
+    if (!tenantId) return undefined
     let active = true
-    supabase.from('document_signatories')
-      .select('signatory_role,department_id,custom_label,profile_id,title_override,effective_from,effective_to,is_active')
-      .eq('municipality_id', tenant.id).eq('document_type', SIGNATORY_SCOPE).eq('is_active', true)
-      .then(({ data, error }) => {
-        if (active) setRegistry({ key: tenant.id, rows: data ?? [], error: error ? 'ตรวจทะเบียนผู้ลงนามไม่สำเร็จ' : '' })
-      })
-    return () => { active = false }
-  }, [tenant.id])
-
-  const loading = registry.key !== tenant.id
-  const rows = registry.rows.filter(row => isSignatoryActiveToday(row))
-  const sameSlot = (row, slot) => row.signatory_role === slot.role
-    && (row.department_id ?? null) === (slot.departmentId ?? null)
-    && (row.custom_label ?? null) === (slot.customLabel ?? null)
-  const mySlots = rows.filter(row => row.profile_id === user.id)
-    .map(row => ({ role: row.signatory_role, departmentId: row.department_id, customLabel: row.custom_label }))
-  // ตามการแต่งตั้งควรเป็นผู้ลงนาม แต่ทะเบียนยังไม่ใช่คนนี้ · ช่องที่ตั้งผู้ "แทน" ไว้ถือว่าตั้งใจ ไม่เตือน
-  const missing = appointedSignatorySlots(user).filter(slot => {
-    const row = rows.find(candidate => sameSlot(candidate, slot))
-    return row?.profile_id !== user.id && !isActingSignatory(row)
-  })
-
-  return (
-    <div className="border-t border-gray-100 pt-4" data-signing-role-note>
-      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">การลงนามเอกสาร</p>
-      {loading ? (
-        <p className="text-xs text-gray-400">กำลังตรวจทะเบียนผู้ลงนาม…</p>
-      ) : registry.error ? (
-        <p className="text-xs text-rose-600" role="alert">{registry.error}</p>
-      ) : (
-        <>
-          <p className="flex items-start gap-1.5 text-sm text-gray-800">
-            <UserRoundCheck size={16} className="mt-0.5 shrink-0 text-teal-600" />
-            {mySlots.length > 0
-              ? <span>ชื่อนี้พิมพ์ในช่องลงนาม: <strong>{mySlots.map(slot => signingSlotLabel(slot, depts)).join(' · ')}</strong></span>
-              : <span className="text-gray-500">ไม่ได้เป็นผู้ลงนามในเอกสาร</span>}
-          </p>
-          {missing.length > 0 && (
-            <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-2 text-xs leading-5 text-amber-800" data-signing-role-missing>
-              ตามการแต่งตั้ง คนนี้เป็นผู้ลงนามช่อง <strong>{missing.map(slot => signingSlotLabel(slot, depts)).join(' · ')}</strong>
-              {' '}แต่ทะเบียนผู้ลงนามยังเป็นชื่ออื่นหรือยังไม่ได้ตั้ง — เอกสารจะพิมพ์ชื่อตามทะเบียน
-              ไปที่การลงนามเอกสารแล้วกด “ใช้ชื่อนี้” ในช่องนั้น
-            </p>
-          )}
-        </>
-      )}
-      {onOpenSigning && (
-        <button type="button" onClick={onOpenSigning}
-          className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-1 text-xs font-bold text-teal-700 hover:underline">
-          <FileSignature size={14} /> ไปที่การลงนามเอกสาร
-        </button>
-      )}
-    </div>
-  )
-}
-
-// แยกออกจาก AppointmentTab ตามที่ขอ — การแต่งตั้ง (ตำแหน่งในหน่วยงาน) กับสิทธิ์ (การเข้าใช้งานแอป)
-// เป็นคนละเรื่องกัน แอดมินสับสนว่าทำไมอยู่หน้าเดียวกัน ค่า draft.role ยังใช้ร่วมกับ AppointmentTab
-// (การเลือกตำแหน่งมี "บทบาทแนะนำ" เสนอ role มาให้อัตโนมัติ) แต่แก้ไข/แสดงผลแยกกันคนละแท็บ
-const ASSET_ROLE_OPTIONS = [
-  { value: '',             label: 'ไม่มีสิทธิ์ — ไม่เห็นเมนูพัสดุ/ครุภัณฑ์' },
-  { value: 'asset_staff',  label: 'เจ้าหน้าที่พัสดุของกอง — เพิ่ม/แก้ของและดำเนินการคำขอ เฉพาะกองที่สังกัด' },
-  { value: 'asset_admin',  label: 'ผู้ดูแลพัสดุของ อปท. — ทุกกอง รวมของที่ยังไม่ผูกกอง' },
-  { value: 'asset_viewer', label: 'ผู้ดูรายงาน — อ่านอย่างเดียว' },
-]
-
-function PermissionsTab({ user, currentUserRole, isEditing, draft, setDraft, assetRole }) {
-  return (
-    <div className="space-y-5">
-      <div className="rounded-xl border border-purple-100 bg-purple-50 px-4 py-3">
-        <p className="text-sm font-bold text-purple-800">สิทธิ์ = การเข้าใช้งานแอป</p>
-        <p className="mt-1 text-xs leading-5 text-purple-600">
-          กำหนดว่าเข้าเมนูไหนได้บ้าง แยกจากตำแหน่งในหน่วยงาน (แท็บ "การแต่งตั้ง") — บันทึกครั้งเดียวรวมทุกแท็บ
-        </p>
-      </div>
-      <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">บทบาทและสิทธิ์ระบบ</p>
-        {isEditing ? (
-          <select value={draft.role} onChange={(e) => setDraft(current => ({ ...current, role: e.target.value }))}
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white">
-            <option value="citizen">ประชาชน — ใช้บริการประชาชนเท่านั้น</option>
-            <option value="staff">เจ้าหน้าที่ — ใช้เมนูงานที่ได้รับมอบหมาย</option>
-            <option value="viewer">ผู้บริหาร — ดูภาพรวมและข้อมูลประกอบการตัดสินใจ</option>
-            <option value="council">{ROLE_LABELS.council.label} — ดูงานที่เกี่ยวข้องกับสภา</option>
-            <option value="officer">หัวหน้ากอง — จัดการงานของกองที่สังกัด</option>
-            <option value="technician">ปฏิบัติงาน — บันทึกงานที่รับผิดชอบ</option>
-            {currentUserRole === 'superadmin' && <option value="admin">แอดมินระบบ — ดูแลทั้งเทศบาล</option>}
-            {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin — ดูแลทุกเทศบาล</option>}
-          </select>
-        ) : (
-          <p className="text-sm text-gray-800">{ROLE_LABELS[user.role]?.label ?? user.role}</p>
-        )}
-        <p className="mt-1 text-xs leading-5 text-gray-500">
-          {ROLE_DESCRIPTIONS[isEditing ? draft.role : user.role] ?? 'ระบบเสนอค่าตามตำแหน่ง แต่ผู้ดูแลตรวจและปรับได้ก่อนบันทึก'}
-        </p>
-        {isEditing && draft.role === 'officer' && !draft.department_id && (
-          <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-            ต้องเลือกกอง/หน่วยงานก่อนแต่งตั้งเป็นหัวหน้ากอง (ไปเลือกที่แท็บ "การแต่งตั้ง")
-          </p>
-        )}
-      </div>
-
-      {/* สิทธิ์รายโมดูล — แยกจากบทบาทหลักโดยตั้งใจ บทบาทหลักบอกระดับในองค์กร ไม่ได้บอกว่า
-          ใครคือเจ้าหน้าที่พัสดุของกองนั้น ถ้าผูกกับบทบาทหลัก หัวหน้ากองทุกคนจะแก้ทะเบียนของ
-          ได้ทันทีโดยไม่มีใครมอบสิทธิ์ ตรวจย้อนหลังไม่ได้ว่าใครควรเป็นคนทำ */}
-      <div className="border-t border-gray-100 pt-5">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">สิทธิ์โมดูลยืมพัสดุ/ครุภัณฑ์</p>
-        {user.role === 'citizen' || user.role === 'superadmin' ? (
-          <p className="text-sm text-gray-400">ไม่ใช้กับบทบาทนี้</p>
-        ) : isEditing ? (
-          <>
-            <select value={draft.asset_role ?? ''}
-              onChange={(e) => setDraft(current => ({ ...current, asset_role: e.target.value }))}
-              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white">
-              {ASSET_ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            {draft.asset_role === 'asset_staff' && !draft.department_id && (
-              <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-                ต้องเลือกกอง/หน่วยงานก่อน เพราะสิทธิ์นี้จำกัดอยู่ที่กองที่สังกัด (ไปเลือกที่แท็บ &quot;การแต่งตั้ง&quot;)
-              </p>
-            )}
-            <p className="mt-1 text-xs leading-5 text-gray-500">
-              แอดมินของ อปท. ดูแลทะเบียนได้ทุกกองอยู่แล้วโดยไม่ต้องตั้งค่านี้
-            </p>
-          </>
-        ) : (
-          <p className="text-sm text-gray-800">
-            {assetRole === null
-              ? 'กำลังโหลด…'
-              : (ASSET_ROLE_OPTIONS.find(o => o.value === (assetRole || ''))?.label ?? assetRole)}
-          </p>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// เพิ่มแท็บใหม่ในอนาคต: เพิ่ม entry ตรงนี้ + เขียน component ใหม่ ไม่ต้องแก้โครงสร้าง UserDetailPage เลย
-const USER_DETAIL_TABS = [
-  { key: 'account',     label: 'ข้อมูลบัญชี',    Component: AccountInfoTab },
-  { key: 'personal',    label: 'ข้อมูลส่วนตัว',   Component: PersonalInfoTab },
-  { key: 'appointment', label: 'การแต่งตั้ง',    Component: AppointmentTab },
-  { key: 'permissions', label: 'สิทธิ์การใช้งาน', Component: PermissionsTab },
-]
-
-// tenantDefaultSubdistrict ย้ายไป src/lib/thaiAddress.js แล้ว (ใช้ร่วมกับ ProfilePage.jsx) — import ไว้
-// ด้านบนของไฟล์แทน กันตรรกะเพี้ยนไปคนละแบบระหว่าง 2 หน้าที่ต้องเดาตำบลของ tenant เหมือนกัน
-
-function UserDetailPage(props) {
-  const {
-    user, onBack, currentUserRole, currentUserId, tenant, saving, deletingUser, setDeletingUser, deleteLoading, deleteUser,
-    deleteBlockedReason, setDeleteBlockedReason, handoverStaff, setHandoverStaff,
-    mergeKeepUser, setMergeKeepUser, onMerged,
-    saveUserEdits, updateUserEmail,
-    resetPasswordUser, setResetPasswordUser,
-  } = props
-  const [activeTab, setActiveTab] = useState('appointment')
-  const [isEditing, setIsEditing] = useState(false)
-  const [draft, setDraft] = useState(null)
-  const [saveError, setSaveError] = useState('')
-  // asset_role ไม่ได้อยู่ในชุดคอลัมน์ที่ get_users_with_email คืนมา และการเพิ่มคอลัมน์
-  // ให้ RETURNS TABLE ต้อง DROP ฟังก์ชันที่ทั้งหน้าจัดการผู้ใช้พึ่งอยู่ จึงอ่านแยกทีละคน
-  // ตอนเปิดหน้ารายละเอียดแทน — คนละ query แต่ไม่ต้องแตะของที่ใช้งานอยู่
-  // เก็บคู่กับ id ที่โหลดมา แล้วค่อยเทียบตอนอ่าน — ถ้าล้างค่าด้วย setState ตรงๆ ในตัว effect
-  // จะได้ค่าของคนก่อนหน้าค้างอยู่หนึ่งเฟรมตอนสลับผู้ใช้ และผิดกฎ react-hooks ด้วย
-  const [loadedAssetRole, setLoadedAssetRole] = useState({ id: null, value: null })
-  const assetRole = loadedAssetRole.id === user.id ? loadedAssetRole.value : null
-  useEffect(() => {
-    let cancelled = false
-    supabase.from('profiles').select('asset_role').eq('id', user.id).maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled) setLoadedAssetRole({ id: user.id, value: data?.asset_role ?? '' })
-      })
-    return () => { cancelled = true }
-  }, [user.id])
-  const rs = ROLE_LABELS[user.role] || ROLE_LABELS.citizen
-  const ActiveComponent = USER_DETAIL_TABS.find(t => t.key === activeTab)?.Component ?? AccountInfoTab
-  const permissionExtras = { assetRole }
-  const canEdit = canManageUser(currentUserRole, currentUserId, user)
-  const canDelete = canEdit
-  const isSaving = saving === user.id
-
-  function startEdit() {
-    setDraft({
-      full_name: user.full_name || '',
-      // ซ่อน @phone.smartlocal.app ซึ่งเป็น implementation detail — เจ้าหน้าที่แก้เฉพาะ
-      // ชื่อผู้ใช้จริงที่ประชาชนต้องพิมพ์ (เบอร์มือถือหรืออีเมล)
-      email: loginIdentifier(user.email).value,
-      phone: user.phone || '',
-      id_card: user.id_card || '',
-      address_province: user.address_province || tenant?.province || '',
-      address_district: user.address_district || tenant?.district || '',
-      address_subdistrict: user.address_subdistrict || tenantDefaultSubdistrict(tenant),
-      address_moo: user.address_moo || '',
-      address_detail: user.address_detail || '',
-      role: user.role,
-      position_id: user.position_id || '',
-      department_id: user.department_id || '',
-      is_dept_head: !!user.is_dept_head,
-      asset_role: assetRole ?? '',
+    fetchActiveSignatories(tenantId).then(({ data, error }) => {
+      if (active) setRegistry({ key: tenantId, rows: data ?? [], error: error ? 'ตรวจผู้ลงนามไม่สำเร็จ' : '' })
     })
-    setSaveError('')
-    setIsEditing(true)
-  }
+    return () => { active = false }
+  }, [tenantId, version])
 
-  function cancelEdit() {
-    setIsEditing(false)
-    setDraft(null)
-    setSaveError('')
-  }
+  const reload = useCallback(() => setVersion(current => current + 1), [])
+  return { ...registry, loading: registry.key !== tenantId, reload }
+}
 
-  async function confirmSave() {
-    if (draft.id_card && !/^\d{13}$/.test(draft.id_card)) {
-      setSaveError('เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก')
-      return
-    }
-
-    // Supabase Auth ใช้อีเมลเป็น identifier ภายใน บัญชีที่ประชาชนกรอกเบอร์จึงต้องแปลงเป็น
-    // <เบอร์>@phone.smartlocal.app ก่อนส่ง Edge Function โดยไม่เปิดเผยรูปแบบนี้บนหน้าจอ
-    const loginInput = draft.email.trim()
-    const isEmailLogin = loginInput.includes('@')
-    const normalizedLoginPhone = isEmailLogin ? '' : normalizeThaiPhone(loginInput)
-    if (loginInput && isEmailLogin && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginInput) || loginInput.length > 254)) {
-      setSaveError('กรุณากรอกอีเมลสำหรับเข้าสู่ระบบให้ถูกต้อง')
-      return
-    }
-    if (loginInput && !isEmailLogin && !/^0\d{8,9}$/.test(normalizedLoginPhone)) {
-      setSaveError('ชื่อผู้ใช้ต้องเป็นเบอร์มือถือ 9–10 หลัก หรืออีเมลที่ถูกต้อง')
-      return
-    }
-    const newEmail = isEmailLogin
-      ? loginInput.toLowerCase()
-      : loginInput ? phoneToLoginEmail(normalizedLoginPhone) : ''
-    const newLoginLabel = isEmailLogin ? newEmail : normalizedLoginPhone
-    if (newEmail && newEmail !== (user.email || '').toLowerCase()) {
-      // บัญชีที่ยังไม่เคยมีอีเมล (สมัครด้วย LINE) ไม่มี "อีเมลเดิม" ให้เสีย — เป็นการเพิ่มทางเข้า
-      // ไม่ใช่การเปลี่ยน ถ้าใช้ข้อความเตือนอันเดียวกันเจ้าหน้าที่จะลังเลไม่กล้ากดทั้งที่ไม่มีอะไรเสีย
-      const label = user.full_name || user.email || 'บัญชีนี้'
-      const message = user.email
-        ? `ยืนยันเปลี่ยนชื่อผู้ใช้สำหรับเข้าสู่ระบบของ "${label}" เป็น "${newLoginLabel}"?\n\nชื่อผู้ใช้เดิมจะใช้เข้าสู่ระบบไม่ได้อีกทันที`
-        : `ยืนยันตั้งชื่อผู้ใช้ของ "${label}" เป็น "${newLoginLabel}"?\n\nช่องทางเดิม (LINE/Google) ยังใช้เข้าได้ตามปกติ\nขั้นถัดไปให้กด "ตั้งรหัสผ่านใหม่" แล้วพิมพ์บัตรให้เจ้าตัว`
-      if (!confirm(message)) return
-
-      const emailResult = await updateUserEmail(user, newEmail)
-      if (!emailResult.ok) {
-        // ข้อความจาก GoTrue เป็นภาษาอังกฤษ เคสที่เจ้าหน้าที่เจอบ่อยสุดคือเบอร์ซ้ำกับบัญชีอื่น
-        // (คนเดียวกันมีทั้งบัญชี LINE และบัญชีเบอร์โทร) ซึ่งต้องไปยุบบัญชีรวมกันแทน ไม่ใช่ตั้งซ้ำ
-        const dup = /already been registered|already exists|duplicate/i.test(emailResult.error || '')
-        setSaveError(dup
-          ? 'ชื่อผู้ใช้นี้มีบัญชีอื่นใช้อยู่แล้ว — น่าจะเป็นคนเดียวกันที่มีสองบัญชี ให้ใช้ "ยุบบัญชีซ้ำ" รวมกันแทน'
-          : 'เปลี่ยนชื่อผู้ใช้ไม่สำเร็จ: ' + emailResult.error)
-        return
-      }
-    }
-
-    const changes = {
-      full_name: draft.full_name.trim() || null,
-      phone: draft.phone.trim() || null,
-      id_card: draft.id_card.trim() || null,
-      address_province: draft.address_province.trim() || null,
-      address_district: draft.address_district.trim() || null,
-      address_subdistrict: draft.address_subdistrict.trim() || null,
-      address_moo: draft.address_moo.trim() || null,
-      address_detail: draft.address_detail.trim() || null,
-      role: draft.role,
-      position_id: draft.position_id || null,
-      department_id: draft.department_id || null,
-      is_dept_head: draft.department_id ? draft.is_dept_head : false,
-      // asset_staff ต้องมีสังกัด ไม่งั้นถือสิทธิ์แต่มองไม่เห็นของสักชิ้น — ฐานข้อมูลปฏิเสธอยู่แล้ว
-      // แต่ปัดให้เป็นค่าว่างตรงนี้ด้วย เพื่อไม่ให้แอดมินเจอ error ที่แก้ไม่ถูกจุด
-      asset_role: (draft.asset_role === 'asset_staff' && !draft.department_id)
-        ? null
-        : (draft.asset_role || null),
-    }
-    const result = await saveUserEdits(user, changes)
-    if (result.ok) {
-      setLoadedAssetRole({ id: user.id, value: changes.asset_role ?? '' })
-      setIsEditing(false)
-      setDraft(null)
-      setSaveError('')
-    } else {
-      setSaveError(result.error)
-    }
-  }
-
+// แถบบอกผู้ลงนามที่ยังขาดในหน้ารายชื่อ — กด "ตั้งเลย" เข้าฟอร์มเจ้าหน้าที่ฟอร์มเดียวกัน ไม่ต้องไปอีกเมนู
+function SigningStatusBar({ depts, registry, onSetSlot, onOpenSigning }) {
+  if (registry.loading || registry.error) return null
+  const rows = registry.rows.filter(row => isSignatoryActiveToday(row))
+  const required = buildSignatorySlots(depts, rows).filter(slot => !slot.optional)
+  const missing = required.filter(slot => !rows.some(row => isSameSignatorySlot(row, slot)))
+  const shown = missing.slice(0, 3)
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className="px-4 py-4 sm:px-5 border-b border-gray-100 flex flex-col items-stretch gap-4 xl:flex-row xl:items-center xl:justify-between xl:gap-3">
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 font-medium px-2 sm:px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors shrink-0">
-            <ChevronLeft size={16} /> ย้อนกลับ
+    <div className={`mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border px-3.5 py-2 text-sm ${missing.length ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-teal-200 bg-teal-50 text-teal-900'}`} data-signing-bar>
+      <span className="font-bold">
+        {missing.length ? `ผู้ลงนาม ${required.length - missing.length} จาก ${required.length} ช่อง` : `ผู้ลงนามครบทุกช่อง (${required.length})`}
+      </span>
+      {shown.map(slot => (
+        <span key={slot.key} className="flex items-center gap-1.5">
+          <span>ยังไม่มี: <strong>{slot.label}</strong></span>
+          <button type="button" onClick={() => onSetSlot(slot)} data-signing-bar-set={slot.key}
+            className="min-h-11 rounded-xl border border-amber-400 bg-white px-3 text-xs font-bold text-amber-900 hover:bg-amber-100">
+            ตั้งเลย
           </button>
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            {user.avatar_url ? (
-              <img src={user.avatar_url} alt="avatar" className="w-9 h-9 rounded-full object-cover shrink-0 border border-gray-100" />
-            ) : (
-              <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0" style={{ backgroundColor: rs.color }}>
-                {(user.full_name || user.email || '?')[0].toUpperCase()}
-              </div>
-            )}
-            <h3 className="text-sm sm:text-base font-semibold text-gray-800 leading-snug line-clamp-2 xl:line-clamp-1">รายละเอียดข้อมูลผู้ใช้งาน: {user.full_name || user.email || '—'}</h3>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 w-full xl:flex xl:items-center xl:w-auto xl:shrink-0">
-          {isEditing ? (
-            <>
-              <button onClick={cancelEdit} disabled={isSaving} className="flex min-h-11 w-full items-center justify-center text-xs font-medium text-gray-600 hover:text-gray-700 px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors disabled:opacity-50 xl:min-h-0 xl:w-auto xl:rounded-lg xl:border-transparent xl:bg-transparent xl:py-1.5">
-                ยกเลิก
-              </button>
-              <button onClick={confirmSave} disabled={isSaving} className="flex min-h-11 w-full items-center justify-center gap-1.5 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded-xl transition-colors disabled:opacity-50 xl:min-h-0 xl:w-auto xl:rounded-lg xl:py-1.5">
-                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {isSaving ? 'กำลังบันทึก...' : 'บันทึก'}
-              </button>
-            </>
-          ) : (
-            <>
-              {canEdit && (
-                <button onClick={startEdit} className="flex min-h-11 w-full items-center justify-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50/70 hover:bg-blue-50 px-3 py-2 rounded-xl border border-blue-100 transition-colors xl:min-h-0 xl:w-auto xl:rounded-lg xl:border-transparent xl:bg-transparent xl:py-1.5">
-                  <Pencil size={14} /> {activeTab === 'appointment' ? 'แก้ไขการแต่งตั้ง' : 'แก้ไขข้อมูล'}
-                </button>
-              )}
-              {canDelete && user.role !== 'citizen' && (
-                <button
-                  onClick={() => setHandoverStaff(user)}
-                  className="flex min-h-11 w-full items-center justify-center gap-1.5 text-xs font-medium text-orange-600 hover:text-orange-700 bg-orange-50/70 hover:bg-orange-50 px-3 py-2 rounded-xl border border-orange-100 transition-colors xl:min-h-0 xl:w-auto xl:rounded-lg xl:border-transparent xl:bg-transparent xl:py-1.5"
-                >
-                  <Repeat size={14} /> โอนงานให้ผู้อื่น
-                </button>
-              )}
-              {/* ปุ่มนี้ผูกกับบัญชีที่ "เก็บไว้" จึงไม่ใช้ canManageUser กับ user คนนี้ (บัญชีนี้ไม่ถูกลบ)
-                  — สิทธิ์จัดการถูกเช็คกับบัญชีที่จะยุบในโมดัลและซ้ำอีกชั้นที่ RPC */}
-              {['admin', 'superadmin'].includes(currentUserRole) && (
-                <button
-                  onClick={() => setMergeKeepUser(user)}
-                  className="flex min-h-11 w-full items-center justify-center gap-1.5 text-xs font-medium text-violet-600 hover:text-violet-700 bg-violet-50/70 hover:bg-violet-50 px-3 py-2 rounded-xl border border-violet-100 transition-colors xl:min-h-0 xl:w-auto xl:rounded-lg xl:border-transparent xl:bg-transparent xl:py-1.5"
-                >
-                  <Users size={14} /> รวมบัญชีซ้ำ
-                </button>
-              )}
-              {canEdit && (
-                <button
-                  onClick={() => setResetPasswordUser(user)}
-                  className="flex min-h-11 w-full items-center justify-center gap-1.5 text-xs font-medium text-amber-700 hover:text-amber-800 bg-amber-50/70 hover:bg-amber-50 px-3 py-2 rounded-xl border border-amber-100 transition-colors xl:min-h-0 xl:w-auto xl:rounded-lg xl:border-transparent xl:bg-transparent xl:py-1.5"
-                >
-                  <KeyRound size={14} /> ตั้งรหัสผ่านใหม่
-                </button>
-              )}
-              {canDelete && (
-                <button
-                  onClick={() => setDeletingUser(user)}
-                  className="flex min-h-11 w-full items-center justify-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50/70 hover:bg-red-50 px-3 py-2 rounded-xl border border-red-100 transition-colors xl:min-h-0 xl:w-auto xl:rounded-lg xl:border-transparent xl:bg-transparent xl:py-1.5"
-                >
-                  <Trash2 size={14} /> ลบผู้ใช้งาน
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-      <div className="grid grid-cols-2 border-b border-gray-100 bg-gray-50/50 sm:flex sm:gap-1 sm:overflow-x-auto sm:bg-white sm:px-5">
-        {USER_DETAIL_TABS.map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)} aria-current={activeTab === t.key ? 'page' : undefined}
-            className={`min-h-12 px-3 sm:px-4 py-3 text-sm text-center font-semibold border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === t.key ? 'border-blue-500 bg-blue-50/70 text-blue-600 sm:bg-transparent' : 'border-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-700 sm:hover:bg-transparent'
-            }`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-      <div className="p-4 sm:p-6 max-w-xl">
-        {saveError && (
-          <div className="mb-4 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{saveError}</div>
-        )}
-        <ActiveComponent {...props} {...permissionExtras} isEditing={isEditing} draft={draft} setDraft={setDraft} clearSaveError={() => setSaveError('')} />
-      </div>
-      <DeleteUserConfirmModal
-        deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
-        deleteBlockedReason={deleteBlockedReason}
-        onOpenHandover={(u) => { setHandoverStaff(u); setDeletingUser(null); setDeleteBlockedReason('') }}
-        onClose={() => { setDeletingUser(null); setDeleteBlockedReason('') }}
-      />
-      {handoverStaff && (
-        <HandoverWorkloadModal oldStaff={handoverStaff} tenant={tenant} onClose={() => setHandoverStaff(null)} />
-      )}
-      {mergeKeepUser && (
-        <MergeDuplicateModal
-          keepUser={mergeKeepUser}
-          tenant={tenant}
-          currentUserRole={currentUserRole}
-          currentUserId={currentUserId}
-          onClose={() => setMergeKeepUser(null)}
-          onMerged={onMerged}
-        />
-      )}
-      {resetPasswordUser && (
-        <ResetPasswordModal user={resetPasswordUser} onClose={() => setResetPasswordUser(null)} />
+        </span>
+      ))}
+      {missing.length > shown.length && <span>และอีก {missing.length - shown.length} ช่อง</span>}
+      {onOpenSigning && (
+        <button type="button" onClick={onOpenSigning} className="ml-auto min-h-11 rounded-lg px-1 text-xs font-bold underline">ดูทุกช่อง</button>
       )}
     </div>
   )
@@ -6070,6 +5609,19 @@ export default function AdminDashboard() {
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading] = useState(true)
   const [activePage, setActivePage] = useState(location.state?.page ?? 'dashboard')
+  // ความสูงจริงของแถบเมนูล่างมือถือ ชื่อเมนูตัดบรรทัดได้ จึงวัดเอา ไม่เดาเป็นตัวเลข
+  // ฟอร์มเจ้าหน้าที่ใช้ค่านี้ยกแถบปุ่มบันทึกให้พ้นแถบเมนู (--admin-bottom-nav-h)
+  const bottomNavRef = useRef(null)
+  useLayoutEffect(() => {
+    const nav = bottomNavRef.current
+    if (!nav || typeof ResizeObserver === 'undefined') return undefined
+    const root = document.documentElement
+    const update = () => root.style.setProperty('--admin-bottom-nav-h', `${nav.offsetHeight}px`)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(nav)
+    return () => { observer.disconnect(); root.style.removeProperty('--admin-bottom-nav-h') }
+  }, [])
   const [drawerOpen, setDrawerOpen] = useState(false)
   // closeDrawer ต้อง useCallback — effect ในลิ้นชักผูกกับมัน ถ้าเปลี่ยนทุกรอบ render โฟกัสจะถูกดึงกลับทุกครั้ง
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
@@ -6399,7 +5951,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* ─── Mobile Admin Bottom Tab Bar ─── */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch"
+      <div ref={bottomNavRef} className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch"
         style={{
           background: 'linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
           borderTop: '2px solid rgba(255,255,255,0.15)',
@@ -6542,7 +6094,7 @@ export default function AdminDashboard() {
       ) : activePage === 'users' || activePage === 'departments' ? (
         // key = activePage ให้ทางเข้า 'departments' (ปุ่มจากตั้งค่าระบบ) เปิดตรงแท็บกองเสมอ
         <UserManager key={activePage} tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId}
-          initialSubTab={activePage === 'departments' ? 'departments' : 'staff'}
+          initialSubTab={activePage === 'departments' ? 'structure' : 'staff'}
           onOpenSigning={() => setActivePage('signing')} />
       ) : activePage === 'locations' ? (
         <LocationManager tenant={tenant} />

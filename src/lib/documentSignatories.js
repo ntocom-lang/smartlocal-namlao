@@ -7,6 +7,9 @@
 // อย่างเดียว ไม่ใช่ตัวแยกประเภทเอกสารอีกต่อไป — ผูกไว้เป็นค่าคงที่ตัวเดียวตรงนี้
 // เพื่อไม่ให้ magic string กระจายไปตามโมดูล ถ้าวันหนึ่งต้องแยกผู้ลงนามรายเอกสารจริง
 // ต้องแก้ CHECK constraint + RPC set_document_signatory_v2 ที่ hardcode ค่านี้ไว้ด้วย
+import { isDepartmentHeadPosition } from './personnelStructure.js'
+import { splitThaiFullName } from './thaiName.js'
+
 export const SIGNATORY_SCOPE = 'complaint'
 
 // select ที่ join โปรไฟล์มาให้พร้อมพิมพ์ — ต้องระบุชื่อ FK ให้ชัดเพราะตารางนี้มี
@@ -241,10 +244,12 @@ export function groupPeopleByDepartment(people, departments, firstDepartmentId =
 // ระบบจึงเสนอชื่อจากการแต่งตั้งให้ แต่ไม่บันทึกเอง — เปลี่ยนผู้ลงนาม = ชื่อบนเรื่องค้างทุกเรื่องเปลี่ยนตาม
 // และอำนาจลงนามต้องให้ผู้ดูแลยืนยัน (เส้นที่ห้ามทำอัตโนมัติใน docs/ai/DOMAIN.md)
 // กฎตรงไปตรงมา ตรวจย้อนได้ ไม่ใช้ AI:
-//   หัวหน้ากอง = คนในกองนั้นที่ติ๊ก "เป็นหัวหน้ากอง" ในหน้าการแต่งตั้ง
+//   กอง      = คนในกองนั้นที่ถือตำแหน่งหัวหน้าหน่วยงาน (ไม่นับรอง/ผู้ช่วย)
 //   นายก     = ตำแหน่ง (ทำเนียบ) ขึ้นต้นด้วย "นายก" ไม่รวมนายกรัฐมนตรี — รองนายกขึ้นต้นคำอื่นจึงไม่นับ
 //   ปลัด      = ตำแหน่งขึ้นต้นด้วย "ปลัด" — รองปลัด/ผู้ช่วยปลัดขึ้นต้นคำอื่นจึงไม่นับ
 //   เจอคนเดียว = เสนอ · ไม่เจอหรือเจอหลายคน = ไม่เดา
+// "เป็นหัวหน้ากอง" กับ "เป็นผู้ลงนาม" คนละเรื่อง (เจ้าของระบบสั่ง 2569-10-31): ใบพิมพ์และลงนามออนไลน์อ่านทะเบียนนี้ ไม่เคยอ่าน is_dept_head
+// ติ๊กหัวหน้าอย่างเดียวจึงไม่ทำให้ถูกเสนอเป็นผู้ลงนาม และเอาติ๊กออกก็ไม่ทำให้หลุดจากข้อเสนอ · ตำแหน่งอื่นเป็นผู้ลงนามได้โดยแอดมินเลือกเอง
 export const APPOINTED_MAYOR_PATTERN = /^นายก(?!รัฐมนตรี)/
 export const APPOINTED_CLERK_PATTERN = /^ปลัด/
 
@@ -253,28 +258,168 @@ function appointedPositionName(person) {
   return String(person?.position?.name ?? person?.position_name ?? '').trim()
 }
 
-// ช่องผู้ลงนามที่การแต่งตั้งของคนนี้ชี้ไป — ใช้ทั้งหน้าทะเบียน (เสนอชื่อ) และหน้าแต่งตั้งรายคน (เตือนว่ายังไม่ได้ตั้ง)
+// ช่องผู้ลงนามที่ตำแหน่งของคนนี้ชี้ไป — ใช้ทั้งหน้าทะเบียน (เสนอชื่อ) และหน้าแต่งตั้งรายคน (เตือนว่ายังไม่ได้ตั้ง)
+// ตำแหน่งแบบมาตรฐานบางชื่อรู้ว่าเป็นหัวหน้าจากหมวดเท่านั้น ผู้เรียกจึงควรส่ง position ที่มี category ถ้ามี
 export function appointedSignatorySlots(person) {
   const position = appointedPositionName(person)
   const slots = []
   if (APPOINTED_MAYOR_PATTERN.test(position)) slots.push({ role: 'mayor', departmentId: null })
   if (APPOINTED_CLERK_PATTERN.test(position)) slots.push({ role: 'clerk', departmentId: null })
-  if (person?.is_dept_head && person?.department_id) slots.push({ role: 'department_head', departmentId: person.department_id })
+  const headPosition = isDepartmentHeadPosition({ name: position, category: person?.position?.category })
+  if (headPosition && person?.department_id) slots.push({ role: 'department_head', departmentId: person.department_id })
   return slots
 }
 
 // คนที่การแต่งตั้งระบุให้เป็นผู้ลงนามช่องนี้ · แถวที่แอดมินสร้างเอง (custom) ไม่มีในการแต่งตั้ง จึงไม่เสนอ
+// มีผู้ถือตำแหน่งหลายคน (คนเก่ายังไม่ได้เปลี่ยนตำแหน่ง) ถ้าติ๊กหัวหน้าไว้คนเดียวใช้คนนั้น เพราะเป็นข้อมูลเดียวที่แอดมินบอกไว้ว่าใครคือตัวจริง
 export function appointmentSuggestion(slot, people) {
   if (!slot || !SYSTEM_SIGNATORY_ROLES.includes(slot.role)) return { status: 'none' }
   const matches = (people ?? []).filter(person => appointedSignatorySlots(person).some(appointed =>
     appointed.role === slot.role && (appointed.departmentId ?? null) === (slot.departmentId ?? null)))
-  if (matches.length === 1) return { status: 'one', person: matches[0] }
-  return matches.length > 1 ? { status: 'many', count: matches.length } : { status: 'none' }
+  const ticked = slot.role === 'department_head' ? matches.filter(person => person.is_dept_head) : []
+  const pool = ticked.length > 0 ? ticked : matches
+  if (pool.length === 1) return { status: 'one', person: pool[0] }
+  return pool.length > 1 ? { status: 'many', count: pool.length, people: pool } : { status: 'none' }
+}
+
+// ── เปลี่ยนผู้ลงนามตามการแต่งตั้ง (กล่องยืนยัน + แท็บการแต่งตั้ง) ────────────────────────────────
+// ตัวระบุช่อง — รูปแบบเดียวกับที่หน้าทะเบียนใช้จับคู่แถว ต้องรวม customLabel เพราะบทบาท custom มีได้หลายแถวต่อ อปท.
+export function signatorySlotKey({ role, departmentId = null, customLabel = null }) {
+  return `${role}:${departmentId ?? 'organization'}:${customLabel ?? ''}`
+}
+
+export function isSameSignatorySlot(row, slot) {
+  return row?.signatory_role === slot.role
+    && (row?.department_id ?? null) === (slot.departmentId ?? null)
+    && (row?.custom_label ?? null) === (slot.customLabel ?? null)
+}
+
+// ชื่อช่องลงนามสำหรับแสดงผล — ห้ามเติม "หัวหน้า" หน้าชื่อกอง (บาง อปท. ไม่มีตำแหน่งหัวหน้าหน่วยตรวจสอบภายใน)
+export function signatorySlotLabel(slot, departments) {
+  if (slot.role === 'mayor') return 'นายก'
+  if (slot.role === 'clerk') return 'ปลัด'
+  if (slot.role === 'department_head') {
+    return (departments ?? []).find(department => department.id === slot.departmentId)?.name ?? 'กองที่ปิดใช้แล้ว'
+  }
+  return slot.customLabel || 'ผู้ลงนามที่เพิ่มเอง'
+}
+
+// รายการช่องลงนามทั้งหมดของ อปท. — หน้าผู้ลงนาม แถบสถานะในหน้าจัดการผู้ใช้ และฟอร์มเจ้าหน้าที่ใช้ชุดเดียวกัน
+// draftLabels = แถวที่แอดมินเพิ่งตั้งชื่อแต่ยังไม่ได้บันทึก
+export function buildSignatorySlots(departments, rows, draftLabels = []) {
+  return [
+    { key: signatorySlotKey({ role: 'mayor' }), role: 'mayor', departmentId: null, label: 'นายก' },
+    { key: signatorySlotKey({ role: 'clerk' }), role: 'clerk', departmentId: null, label: 'ปลัด' },
+    // ทุกกองมีแถวหัวหน้ากอง · กองผู้บริหารเป็นแบบไม่บังคับ + มีคำอธิบาย (ดู departmentSlotMeta)
+    ...(departments ?? []).map(department => ({
+      key: signatorySlotKey({ role: 'department_head', departmentId: department.id }),
+      role: 'department_head',
+      departmentId: department.id,
+      departmentName: department.name,
+      ...departmentSlotMeta(department),
+      // ใช้ชื่อกองตรงๆ ห้ามเติมคำว่า "หัวหน้า" นำหน้า — หน่วยงานอย่าง "ตรวจสอบภายใน"
+      // ส่วนใหญ่ขึ้นตรงกับปลัดและไม่มีตำแหน่งหัวหน้า ป้ายที่เติมเองจึงผิดกับ อปท. จำนวนมาก
+      // ผลพลอยได้: ข้อความนี้กลายเป็นข้อมูล ไม่ใช่โค้ด ผู้ดูแลแก้เองได้ที่หน้าจัดการกอง/ส่วนราชการ
+      label: department.name,
+    })),
+    // แถวที่แอดมินสร้างเอง — มาจากข้อมูลในทะเบียน ไม่ใช่รายการตายตัวในโค้ด
+    ...[...new Set([
+      ...(rows ?? []).filter(row => row.signatory_role === CUSTOM_ROLE).map(row => row.custom_label),
+      ...draftLabels,
+    ])].filter(Boolean).map(customLabel => ({
+      key: signatorySlotKey({ role: CUSTOM_ROLE, customLabel }),
+      role: CUSTOM_ROLE,
+      departmentId: null,
+      customLabel,
+      label: customLabel,
+      optional: true,
+      removable: true,
+      hint: 'เพิ่มเอง · ใช้กับใบขออนุญาตใช้รถเท่านั้น',
+    })),
+  ]
+}
+
+// ผลของการเปลี่ยนผู้ลงนาม — กติกาเจ้าของระบบ 2569-10-06 ต้องเห็นก่อนกดยืนยันทุกจุด (signatoryMoment / pickSignatory)
+export const SIGNING_EFFECT_TEXT = 'เรื่องที่ยังไม่เสร็จจะพิมพ์ชื่อใหม่ทันที · เรื่องที่เสร็จแล้วคงชื่อเดิม'
+
+// เทียบชื่อคนโดยไม่นับคำนำหน้าและช่องว่าง — ชื่อที่พิมพ์เองมักมีหรือไม่มีคำนำหน้าต่างจากบัญชี ("นายสมชาย ใจดี" กับ "สมชาย ใจดี")
+const compactName = (value) => {
+  const { first, last } = splitThaiFullName(value)
+  return `${first}${last}`.replace(/\s+/g, '')
+}
+
+// สิ่งที่จะเกิดขึ้นถ้าตั้ง person เป็นผู้ลงนามช่องนี้ — แสดงในกล่องยืนยันให้แอดมินเห็นชื่อเดิม → ชื่อใหม่ก่อนกด
+//   assignment ต้องมี profile ติดมาด้วย (fetchActiveSignatories) จึงจะรู้ชื่อเดิมของแถวที่ผูกบัญชี
+//   sameName = คนเดิมที่เคยพิมพ์ชื่อเอง การเปลี่ยนครั้งนี้แค่ผูกบัญชี ชื่อบนเอกสารไม่เปลี่ยนคน
+//   defaultChecked = ติ๊กให้เฉพาะช่องว่าง หรือคนเดียวกันที่แค่ผูกบัญชี · ชื่อคนละคน (แม้พิมพ์เอง) หรือตั้งผู้แทนไว้ แอดมินต้องตัดสินเอง
+//     เพราะกดยืนยันครั้งเดียวจะเปลี่ยนชื่อคนบนเรื่องค้างทุกเรื่อง (ลองกับสนามซ้อม 2569-10-31: ชื่อที่พิมพ์ไว้ 3 ช่องเป็นคนละคนกับบัญชี)
+//   vehicleDefault = ค่าเดิมของแถว ต้องส่งกลับตอนบันทึก ไม่งั้นเครื่องหมายผู้มีอำนาจสั่งใช้รถหายไปกับการเปลี่ยนคน
+export function signatoryChangeFor(slot, assignment, person) {
+  const currentName = signatoryName(assignment)
+  const name = person?.full_name?.trim() ?? ''
+  const manual = Boolean(assignment?.manual_name?.trim())
+  const sameName = Boolean(assignment) && compactName(currentName) === compactName(name)
+  return {
+    key: signatorySlotKey(slot),
+    slot: { role: slot.role, departmentId: slot.departmentId ?? null, customLabel: slot.customLabel ?? null },
+    label: slot.label,
+    person: {
+      id: person?.id,
+      name,
+      // ลำดับเดียวกับ signatoryTitle ที่ใบพิมพ์ใช้ แถวใหม่ไม่มี title_override จึงเริ่มที่ job_title
+      title: person?.job_title?.trim() || appointedPositionName(person),
+    },
+    appointedTitle: appointedPositionName(person),
+    current: assignment ? { name: currentName, title: signatoryTitle(assignment), manual } : null,
+    sameName,
+    vehicleDefault: Boolean(assignment?.is_vehicle_order_default),
+    defaultChecked: !assignment || (manual && sameName && !isActingSignatory(assignment)),
+  }
+}
+
+// ช่องที่ต้องถามว่า "ตั้งเป็นผู้ลงนามด้วยไหม" ตอนบันทึกการแต่งตั้ง: เฉพาะช่องที่ตำแหน่งเพิ่งเปลี่ยนมาหาคนนี้ และยังไม่ใช่คนนี้
+// แก้เบอร์โทรหรือข้อมูลอื่นจึงไม่ถาม — ไม่งั้นบันทึกครั้งเดียวอาจทับผู้รักษาราชการแทนโดยไม่ตั้งใจ
+// before กับ after ต้องรู้หมวดตำแหน่งเท่ากัน ไม่งั้นตำแหน่งเดิมที่นับจากหมวดจะดูเหมือนเพิ่งเปลี่ยน แล้วถามทุกครั้งที่แก้อะไรก็ตาม
+export function newlyAppointedSlots(before, after, rows, personId) {
+  const had = new Set(appointedSignatorySlots(before).map(signatorySlotKey))
+  return appointedSignatorySlots(after)
+    .filter(slot => !had.has(signatorySlotKey(slot)))
+    .filter(slot => !(rows ?? []).some(row => isSameSignatorySlot(row, slot) && row.profile_id === personId))
 }
 
 // ตำแหน่งที่พิมพ์มีคำว่า "แทน" (รักษาราชการแทน / ปฏิบัติราชการแทน) = ตั้งใจให้ต่างจากการแต่งตั้ง ไม่ต้องเสนอ
 export function isActingSignatory(row) {
   return /แทน/.test(row?.title_override ?? '')
+}
+
+// แถวในส่วน "การลงนามเอกสาร" ของฟอร์มเจ้าหน้าที่ — ทุกตำแหน่งเลือกช่องลงนามได้ ไม่ขึ้นกับติ๊กหัวหน้ากอง (เจ้าของระบบสั่ง 2569-10-31)
+//   held     = ช่องที่คนนี้ลงนามอยู่ · เอาติ๊กออก = เอาชื่อออกจากช่อง
+//   proposed = ช่องที่ตำแหน่งชี้มา · newly = ตำแหน่งเพิ่งเปลี่ยนมา
+//   picked   = แอดมินเลือกเอง (key จาก extraKeys)
+//   matches  = ตำแหน่งตรงกับช่องนี้ · ไม่ตรงให้ฟอร์มเตือนตรวจคำสั่งมอบอำนาจ
+// ติ๊กให้ก่อนเฉพาะช่องที่ถืออยู่และช่องที่ตำแหน่งเพิ่งเปลี่ยนมา (ยกเว้นตั้งผู้แทนไว้) แก้เบอร์โทรจึงไม่เขียนทับใคร
+// ช่องที่ตำแหน่งชี้มาแต่ไม่ได้เพิ่งเปลี่ยน ขึ้นให้เห็นแบบยังไม่ติ๊ก · ช่องที่ตั้งผู้แทนไว้ถือว่าตั้งใจ จึงไม่ขึ้น
+export function personSigningRows({ personId, before, after, rows, slots, extraKeys = [], choices = {} }) {
+  const active = rows ?? []
+  const rowFor = slot => active.find(row => isSameSignatorySlot(row, slot))
+  const proposedKeys = new Set(appointedSignatorySlots(after).map(signatorySlotKey))
+  const newlyKeys = new Set(newlyAppointedSlots(before, after, active, personId).map(signatorySlotKey))
+  return (slots ?? []).flatMap(slot => {
+    const key = signatorySlotKey(slot)
+    const assignment = rowFor(slot)
+    const held = Boolean(personId) && assignment?.profile_id === personId
+    const proposed = proposedKeys.has(key)
+    const newly = newlyKeys.has(key)
+    const picked = extraKeys.includes(key)
+    const hiddenActing = proposed && !newly && !held && !picked && isActingSignatory(assignment)
+    if (hiddenActing || !(held || proposed || picked)) return []
+    const defaultChecked = held || picked || (newly && !isActingSignatory(assignment))
+    return [{
+      key, slot, assignment, held, proposed, newly, picked,
+      matches: proposed || slot.role === CUSTOM_ROLE,
+      checked: choices[key] ?? defaultChecked,
+    }]
+  }).sort((a, b) => Number(b.held) - Number(a.held))
 }
 
 // เทียบทะเบียนกับการแต่งตั้งของช่องหนึ่ง
@@ -283,7 +428,7 @@ export function isActingSignatory(row) {
 //   acting   = รักษาราชการแทนอยู่ ไม่เสนอ · ambiguous = การแต่งตั้งมีหลายคน · none = การแต่งตั้งไม่ระบุใคร
 export const SUGGESTABLE_KINDS = ['empty', 'manual', 'differs']
 export function signatorySuggestionState(assignment, suggestion) {
-  if (suggestion?.status === 'many') return { kind: 'ambiguous', count: suggestion.count }
+  if (suggestion?.status === 'many') return { kind: 'ambiguous', count: suggestion.count, people: suggestion.people ?? [] }
   if (suggestion?.status !== 'one') return { kind: 'none' }
   const person = suggestion.person
   if (assignment?.profile_id && assignment.profile_id === person.id) return { kind: 'match', person }

@@ -154,7 +154,7 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, onClo
             <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" data-sign-load-error>⚠️ {loadError}</p>
           ) : suspended ? (
             <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs leading-5 text-red-800" data-sign-blocked>
-              การลงนามของคุณถูกระงับอยู่ — ลงนามไม่ได้จนกว่าผู้ดูแลระบบของหน่วยงานจะเปิดคืนให้ (เมนู ผู้ดูแล → ลงนามออนไลน์)
+              การลงนามของคุณถูกระงับอยู่ — ลงนามไม่ได้จนกว่าผู้ดูแลระบบของหน่วยงานจะเปิดคืนให้ (เมนู การลงนามเอกสาร → แท็บลงนามออนไลน์)
             </p>
           ) : !pinSet ? (
             <section className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3.5" data-sign-setup-pin>

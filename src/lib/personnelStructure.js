@@ -18,7 +18,7 @@ export function departmentFilterParams(filterDepartment) {
 
 // การแต่งตั้งไม่ควรยกระดับสิทธิ์เงียบ ๆ ตำแหน่งเป็นเพียงคำแนะนำเรื่องสิทธิ์
 // บัญชีประชาชนที่ถูกเพิ่มเป็นบุคลากรจึงเริ่มที่ staff ซึ่งเป็นสิทธิ์ต่ำสุดของเจ้าหน้าที่
-// ส่วนบัญชีบุคลากรเดิมคง role ไว้จนกว่าแอดมินจะเปลี่ยนที่แท็บ "สิทธิ์การใช้งาน"
+// ส่วนบัญชีบุคลากรเดิมคง role ไว้จนกว่าแอดมินจะเปลี่ยนในฟอร์มเจ้าหน้าที่
 export function leastPrivilegeRole(currentRole) {
   return !currentRole || currentRole === 'citizen' ? 'staff' : currentRole
 }
@@ -50,6 +50,140 @@ const UNIT_HEAD_POSITION_RE = new RegExp(UNIT_HEAD_POSITION_PATTERN)
 
 export function isUnitHeadPositionName(name) {
   return UNIT_HEAD_POSITION_RE.test(String(name || ''))
+}
+
+// หัวหน้าหน่วยงาน "ตัวจริง" ของกอง — ใช้ติ๊ก "เป็นหัวหน้ากอง" ให้เองและเสนอผู้ลงนาม (เจ้าของระบบอนุมัติ 2569-10-30)
+// ต่างจาก isUnitHeadPositionName (กฎล็อกกอง ต้องตรงกับฟังก์ชันฝั่ง DB) ตรงที่ไม่นับ "รอง..." และ "ผู้ช่วย..."
+// เพราะรองผู้อำนวยการล็อกกองได้ แต่ไม่ใช่คนลงนามช่องหัวหน้ากอง
+// แบบตำแหน่งมาตรฐานมี category = dept_head ส่วนตำแหน่งที่สร้างจากปุ่มเพิ่มบุคลากรเป็น category ทั่วไปเสมอ จึงต้องดูชื่อด้วย
+export function isDepartmentHeadPosition(position) {
+  const name = String((typeof position === 'string' ? position : position?.name) || '')
+  if (!name.trim() || /^\s*(รอง|ผู้ช่วย)/.test(name)) return false
+  return position?.category === 'dept_head' || isUnitHeadPositionName(name)
+}
+
+// บทบาทที่แนะนำตามตำแหน่ง — ตำแหน่งที่สร้างจากปุ่มเพิ่มบุคลากรมี role = staff เสมอ แม้ชื่อเป็นผู้อำนวยการกอง
+// ถ้าเชื่อค่าในตาราง หัวหน้ากองคนใหม่จะไม่เคยถูกเสนอสิทธิ์ที่ต้องใช้จริง
+export function recommendedRoleForPosition(position) {
+  if (!position) return null
+  return isDepartmentHeadPosition(position) ? 'officer' : (position.role ?? null)
+}
+
+// เสนอสิทธิ์หัวหน้ากองเฉพาะบัญชีที่สิทธิ์ต่ำกว่า — ผู้บริหาร สภา และแอดมินเป็นคนละสายงาน ระบบไม่ไปเปลี่ยนให้
+export function canOfferOfficerRole(currentRole) {
+  return !currentRole || ['citizen', 'staff', 'technician'].includes(currentRole)
+}
+
+// เอาติ๊กหัวหน้าของคนเดิมออกได้ไหม — ตรงกับที่ admin_update_user ปฏิเสธ:
+// แก้บัญชีตัวเอง · แก้ Super Admin · แอดมินแก้แอดมินด้วยกัน (ถ้าไม่กันตรงนี้ แอดมินจะกดแล้วเจอข้อความภาษาอังกฤษจากฐานข้อมูล)
+export function canClearDepartmentHead(head, currentUserId, currentUserRole) {
+  return head?.id !== currentUserId && head?.role !== 'superadmin'
+    && (currentUserRole === 'superadmin' || head?.role !== 'admin')
+}
+
+// ── ฟอร์มเจ้าหน้าที่หน้าเดียว (เจ้าของระบบอนุมัติ 2569-10-31): พิมพ์ตำแหน่งและกองใหม่ในฟอร์มได้ ไม่ต้องไปสร้างที่แท็บอื่นก่อน ──
+// แอดมินพิมพ์ย่อ "ผอ." บ่อย ถ้าไม่ขยายจะหาตำแหน่งเดิมไม่เจอ แล้วได้ตำแหน่งซ้ำที่ขึ้นหน้าบุคลากรฝั่งประชาชนด้วย
+export function positionSearchKey(value) {
+  return normalizePositionName(value).replace(/\s+/g, '').replace(/^ผอ\.?/, 'ผู้อำนวยการ')
+}
+
+export function prettyPositionName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').replace(/^ผอ\.?\s*/, 'ผู้อำนวยการ')
+}
+
+// กองที่ชื่ออยู่ในชื่อตำแหน่งเพียงกองเดียว เช่น ผู้อำนวยการกองคลัง → กองคลัง · ไม่เจอหรือเจอหลายกอง = ไม่เดา
+export function departmentFromPositionName(name, departments = []) {
+  const key = positionSearchKey(name)
+  const found = departments.filter((department) => key.includes(positionSearchKey(department.name)))
+  return found.length === 1 ? found[0].id : null
+}
+
+// ตำแหน่งหัวหน้าของกองที่ยังไม่มีในระบบ เช่น ผู้อำนวยการกองสาธารณสุข → เสนอเพิ่ม "กองสาธารณสุข" แอดมินแก้ชื่อหรือเลือกกองอื่นได้
+export function proposedDepartmentName(name) {
+  if (!isDepartmentHeadPosition(name)) return ''
+  return String(name).match(/(กอง|สำนัก|หน่วย)\S+/)?.[0] ?? ''
+}
+
+// ชื่อตำแหน่งหัวหน้าที่เสนอเมื่อกดตั้งผู้ลงนามของกองที่ยังไม่มีตำแหน่ง · ชื่อกองไม่ขึ้นต้นด้วยกอง/สำนัก/หน่วย = ไม่เดา
+export function defaultHeadPositionName(department) {
+  const name = String(department?.name ?? '').trim()
+  if (/^สำนักปลัด/.test(name) || /^หน่วย/.test(name)) return `หัวหน้า${name}`
+  return /^(กอง|สำนัก)/.test(name) ? `ผู้อำนวยการ${name}` : ''
+}
+
+// หมวดและสิทธิ์แนะนำของตำแหน่งที่พิมพ์ใหม่ ไม่งั้นหัวหน้าหรือผู้บริหารที่สร้างจากฟอร์มจะตกไปอยู่หมวดเจ้าหน้าที่
+// ค่าตรงกับตำแหน่งมาตรฐาน (20260729171006_positions_personnel.sql) · ไม่เคยแนะนำแอดมินระบบ
+export function positionTraitsFromName(name) {
+  const text = String(name || '').trim()
+  if (/^(นายก(?!รัฐมนตรี)|รองนายก|ที่ปรึกษานายก|เลขานุการนายก)/.test(text)) return { category: 'political_exec', role: 'viewer' }
+  if (/^(ประธานสภา|รองประธานสภา|เลขานุการสภา|สมาชิกสภา)/.test(text)) return { category: 'council', role: 'council' }
+  if (/^(ปลัด|รองปลัด)/.test(text)) return { category: 'top_admin', role: 'officer' }
+  if (isDepartmentHeadPosition(text)) return { category: 'dept_head', role: 'officer' }
+  if (/^(นายช่าง|ช่าง|พนักงานขับ)/.test(text)) return { category: 'field_technician', role: 'technician' }
+  return { category: 'operating_staff', role: 'staff' }
+}
+
+// ระดับผู้บริหาร ไม่จำเป็นต้องสังกัดกอง
+export function isExecutivePosition(position) {
+  const category = position?.category ?? positionTraitsFromName(position?.name).category
+  return EXECUTIVE_CATEGORIES.has(category)
+}
+
+// ค่าเริ่มต้นของ "เป็นหัวหน้ากอง" ตามที่แอดมินเลือกอยู่ — เอาออกหรือติ๊กเองได้ ระบบไม่บังคับ
+//   ตำแหน่งและกองไม่เปลี่ยน = ค่าเดิม (แก้เบอร์โทรแล้วติ๊กต้องไม่ขยับ)
+//   เปลี่ยนตำแหน่งในกองเดิม = ตำแหน่งหัวหน้าติ๊กให้ · ออกจากตำแหน่งหัวหน้าเอาออก · ตำแหน่งธรรมดาทั้งคู่คงค่าเดิม
+//   ย้ายกอง = ดูจากตำแหน่งเท่านั้น ไม่พกสถานะหัวหน้าจากกองเดิมไป
+export function defaultDepartmentHead({ person, previousPosition, position, departmentId }) {
+  if (!departmentId) return false
+  const sameDepartment = person?.department_id === departmentId
+  if (!position) return sameDepartment && Boolean(person?.is_dept_head)
+  const positionIsHead = isDepartmentHeadPosition(position)
+  const samePosition = previousPosition?.id && previousPosition.id === position.id
+  if (samePosition && sameDepartment) return Boolean(person?.is_dept_head)
+  if (!sameDepartment) return positionIsHead
+  return positionIsHead || (!isDepartmentHeadPosition(previousPosition) && Boolean(person?.is_dept_head))
+}
+
+// สิทธิ์ที่ฟอร์มเสนอเมื่อการแต่งตั้งเปลี่ยน: เสนอเพิ่มตามตำแหน่งหัวหน้าหรือผู้บริหาร ไม่ลดเอง และไม่เคยเสนอแอดมินระบบ
+// ทุกข้อขึ้นให้เห็นก่อนบันทึก ไม่มีการยกระดับเงียบๆ · คนที่ไม่ได้เปลี่ยนการแต่งตั้ง สิทธิ์ไม่ขยับ
+export function proposedRoleForAppointment({ currentRole, position, asHead, appointmentChanged }) {
+  const current = currentRole || 'citizen'
+  if (!appointmentChanged || !position) return current
+  if (['admin', 'superadmin'].includes(current)) return current
+  if (asHead && canOfferOfficerRole(current)) return 'officer'
+  if (isExecutivePosition(position) && ['citizen', 'staff'].includes(current)) {
+    const suggested = position.role ?? positionTraitsFromName(position.name).role
+    return ['admin', 'superadmin'].includes(suggested) ? 'staff' : suggested
+  }
+  return leastPrivilegeRole(current)
+}
+
+// เพิ่มกอง ใช้ทั้งฟอร์มเจ้าหน้าที่และหน้าต่างเพิ่มกอง · รหัสสุ่ม dept_<เวลา> · สีว่าง = ให้ trigger
+// departments_fill_color เลือกให้ตอน INSERT
+export function createDepartment(client, tenantId, { name, shortName = null, color = null, sortOrder = 0 }) {
+  return client.from('departments').insert({
+    municipality_id: tenantId,
+    name,
+    short_name: shortName,
+    code: `dept_${Date.now().toString(36)}`,
+    sort_order: sortOrder,
+    color,
+  }).select('id, code, name, short_name, color, sort_order, is_active').single()
+}
+
+// ใช้ได้ทุกกองเป็นค่าตั้งต้นโดยจำกองนี้ไว้เป็นกองแนะนำ ล็อกกองเฉพาะหัวหน้าหน่วยงาน
+export function createPosition(client, tenantId, { name, departmentId = null, departmentName = null }) {
+  const traits = positionTraitsFromName(name)
+  const locked = Boolean(departmentId) && isUnitHeadPositionName(name)
+  return client.from('positions').insert({
+    municipality_id: tenantId,
+    department_id: locked ? departmentId : null,
+    department_hint: departmentName,
+    name,
+    category: traits.category,
+    role: traits.role,
+    sort_order: 0,
+  }).select('id, name, role, category, department_id, department_hint, sort_order').single()
 }
 
 // กองที่ระบบเติมให้ตอนเลือกตำแหน่ง: ตำแหน่งล็อกกอง = กองนั้น / ใช้ได้ทุกกอง = กองแนะนำ

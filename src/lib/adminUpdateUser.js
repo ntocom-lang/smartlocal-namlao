@@ -12,3 +12,17 @@ export async function adminUpdateUser(userId, changes) {
   }
   return res
 }
+
+// บันทึกการแต่งตั้ง: ฐานข้อมูลล้าง is_dept_head เสมอเมื่อกองเปลี่ยนในการบันทึกเดียวกัน (trigger
+// sync_profile_department_from_position กันการพกอำนาจหัวหน้ากองเดิมไปกองใหม่) แม้แอดมินตั้งใจติ๊กหัวหน้ากองใหม่
+// จึงต้องติ๊กซ้ำอีกรอบหลังย้ายกองแล้ว ไม่งั้นติ๊กหายเงียบๆ และหน้าลงนามไม่เสนอชื่อคนนี้
+// headTickFailed = ย้ายกองสำเร็จแล้วแต่ติ๊กไม่ติด ผู้เรียกต้องบอกให้ติ๊กซ้ำ ไม่ใช่บอกว่าบันทึกไม่สำเร็จทั้งก้อน
+export async function adminAppointUser(userId, changes, previousDepartmentId = null) {
+  const moved = await adminUpdateUser(userId, changes)
+  if (moved.error) return moved
+  const needsSecondWrite = changes.is_dept_head && changes.department_id
+    && changes.department_id !== previousDepartmentId
+  if (!needsSecondWrite) return moved
+  const ticked = await adminUpdateUser(userId, { is_dept_head: true })
+  return ticked.error ? { ...ticked, headTickFailed: true } : ticked
+}

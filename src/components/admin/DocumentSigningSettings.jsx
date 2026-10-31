@@ -31,8 +31,7 @@ export default function DocumentSigningSettings({ tenant, initialTab = 'signator
       <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:p-5">
         <p className="text-sm font-bold text-gray-800">ช่องลงนามท้ายเอกสาร — ใครลงชื่อ และลงบนกระดาษหรือในระบบ</p>
         <p className="mt-1 text-xs leading-5 text-gray-500">
-          ย้ายคนเข้ากอง ตั้งตำแหน่ง ติ๊กหัวหน้ากอง หรือให้สิทธิ์เข้าเมนู ทำที่ “จัดการผู้ใช้และการแต่งตั้ง”
-          แล้วแท็บที่ 1 จะเสนอชื่อตามการแต่งตั้งให้เอง ไม่ต้องพิมพ์ซ้ำ
+          ใครอยู่กองไหน ตำแหน่งอะไร เข้าเมนูไหนได้ ตั้งที่ “จัดการผู้ใช้และการแต่งตั้ง” แล้วแท็บที่ 1 จะเสนอชื่อให้เอง ไม่ต้องพิมพ์ซ้ำ
         </p>
         {onOpenUsers && (
           <button type="button" onClick={onOpenUsers}
@@ -58,7 +57,7 @@ export default function DocumentSigningSettings({ tenant, initialTab = 'signator
                   <span className="flex items-center gap-1.5 text-sm font-bold">
                     <Icon size={15} className="shrink-0" /> {label}
                   </span>
-                  <span className={`mt-0.5 block text-[11px] leading-4 ${active ? 'text-white/80' : 'text-slate-500'}`}>{desc}</span>
+                  <span className={`mt-0.5 block text-xs leading-5 ${active ? 'text-white/80' : 'text-slate-500'}`}>{desc}</span>
                 </span>
               </button>
             )
@@ -68,7 +67,7 @@ export default function DocumentSigningSettings({ tenant, initialTab = 'signator
 
       <div role="tabpanel" id="signing-panel" aria-labelledby={`signing-tab-${tab}`}>
         {tab === 'signatories'
-          ? <SignatorySettings tenant={tenant} />
+          ? <SignatorySettings tenant={tenant} onOpenUsers={onOpenUsers} />
           : <EsignSettings tenant={tenant} onOpenSignatories={() => setTab('signatories')} />}
       </div>
     </div>
