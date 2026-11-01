@@ -63,6 +63,8 @@
     "test:privacy:browser": "node tests/privacy-policy.playwright.mjs",
     "test:platform": "node tests/platform.test.mjs",
     "test:platform:browser": "node tests/platform-host.playwright.mjs",
+    "test:android-twa": "node tests/android-twa.test.mjs",
+    "twa:build": "node scripts/twa-build.mjs",
     "test:tourism": "node tests/tourism-hours.test.mjs && node tests/tourism-service-url.test.mjs",
     "test:fleet:form3": "node tests/fleet-form3-signatories.test.mjs && node tests/fleet-form3-layout.test.mjs",
     "test:waste-request": "node tests/waste-request-print.test.mjs",

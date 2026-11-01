@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="ไอคอนแอป SmartLocal">
+  <!-- maskable: พื้นเต็มกรอบไม่มีมุมโค้ง (Android ตัดรูปทรงเอง) ภาพอาคารย่อ 0.8 ให้อยู่ในวงกลมรัศมี 40% ที่ไม่ถูกขลิบ
+       จุดไกลสุด (มุมฐาน) ห่างกลาง 190px < 204.8px · ภาพเดียวกับ app-icon.svg · แปลงเป็น PNG ด้วย scripts/render-app-icons.mjs -->
+  <rect width="512" height="512" fill="#1d4ed8"/>
+  <g fill="#ffffff" transform="translate(256 256) scale(0.8) translate(-256 -271)">
+    <path d="M256 96 424 216 88 216 Z"/>
+    <rect x="112" y="238" width="288" height="26" rx="8"/>
+    <rect x="128" y="286" width="40" height="112" rx="6"/>
+    <rect x="200" y="286" width="40" height="112" rx="6"/>
+    <rect x="272" y="286" width="40" height="112" rx="6"/>
+    <rect x="344" y="286" width="40" height="112" rx="6"/>
+    <rect x="96" y="416" width="320" height="30" rx="10"/>
+  </g>
+</svg>
