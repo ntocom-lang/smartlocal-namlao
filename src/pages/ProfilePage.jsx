@@ -13,6 +13,7 @@ import AccountPageLayout from '../components/profile/AccountPageLayout'
 import { validateNewPassword, PASSWORD_HINT } from '../lib/passwordPolicy'
 import { toHttps } from '../lib/basename'
 import { activeOrgTerms } from '../lib/orgTerms'
+import { canSelfDeleteRole } from '../lib/accountDeletion'
 
 // role ที่ใช้การเข้าสู่ระบบด้วย QR ได้ ต้องตรงกับ STAFF_ROLES ใน edge function device-login
 const STAFF_ROLES = ['superadmin', 'admin', 'officer', 'technician', 'staff', 'viewer', 'council']
@@ -635,6 +636,15 @@ export default function ProfilePage() {
           >
             ออกจากระบบ
           </button>
+
+          {/* สโตร์บังคับให้ลบบัญชีเองได้ในแอป — ยืนยันที่หน้า /account/delete หน้าเดียวกับลิงก์เว็บที่ส่ง Google
+              เจ้าหน้าที่ไม่เห็นลิงก์นี้ (บัญชีผูกงาน/ลายเซ็น แอดมินเป็นคนลบ) */}
+          {!isSecurity && canSelfDeleteRole(contextRole ?? profile.role) && (
+            <Link to="/account/delete" data-profile-delete-account
+              className="flex min-h-11 w-full items-center justify-center rounded-xl text-sm font-semibold text-red-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
+              ลบบัญชี
+            </Link>
+          )}
         </div>
       </div>
     </AccountPageLayout>
