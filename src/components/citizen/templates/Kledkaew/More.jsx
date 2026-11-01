@@ -6,7 +6,7 @@ import {
   Phone, AlertTriangle, Cloud, BookUser,
   Store, FileText, CalendarDays, Luggage, Info,
   UserCircle, LogOut, Globe, UserCog, Settings, RefreshCw,
-  Database, BookOpen, Monitor, Check, UploadIcon, Wrench, Trash2, CloudRain, ChartColumn,
+  Database, BookOpen, Monitor, Check, UploadIcon, Wrench, Trash2, CloudRain, ChartColumn, ShieldCheck, ArrowLeftRight,
 } from 'lucide-react'
 import { MenuGroup } from '../../../common/MenuTileGrid'
 import { useAuth } from '../../../../contexts/AuthContext'
@@ -15,6 +15,7 @@ import { useTenant } from '../../../../contexts/TenantContext'
 import { signOutSafely } from '../../../../lib/supabase'
 import { clearCacheAndReload } from '../../../../lib/clearCache'
 import { moduleForPath } from '../../../../lib/staffModules'
+import { CHANGE_TENANT_PARAM, openedViaApp, platformHref } from '../../../../lib/platform'
 import { canAccessAdminPortal, canAccessStaffPortal } from '../../../../lib/portalAccess'
 import { useInstallPrompt } from '../../../../hooks/useInstallPrompt'
 import { IOSGuide, AndroidGuide } from '../../../InstallPrompt'
@@ -113,6 +114,10 @@ export default function KledkaewMore() {
         { label: 'รายงาน', icon: ChartColumn, href: '/reports', color: '#059669' },
         { label: 'ประเมินความพึงพอใจ', icon: Info, href: '/satisfaction', color: '#ca8a04' },
         { label: 'ติดต่อเรา', icon: Phone, href: '/contact', color: '#059669' },
+        // สโตร์บังคับให้เปิดนโยบายได้ง่ายจากในแอป — ชุดเดียวกับหน้าเมนูธีมอื่น (MorePage.jsx)
+        { label: 'นโยบายความเป็นส่วนตัว', icon: ShieldCheck, href: '/privacy', color: '#475569' },
+        // เฉพาะเครื่องที่เข้ามาทางแอปจากสโตร์ (src/lib/platform.js) — ลิงก์ข้ามโดเมน เปิดในหน้าเดิม (ดู toTile)
+        openedViaApp() && { label: 'เปลี่ยนหน่วยงาน', icon: ArrowLeftRight, href: platformHref(`/?${CHANGE_TENANT_PARAM}=1`), color: '#475569' },
         { label: 'คู่มือการใช้งาน', icon: BookOpen, href: '/manual-citizen.html', external: true, color: '#4f46e5' },
         pwaItem,
         {
@@ -137,12 +142,14 @@ export default function KledkaewMore() {
     }),
   })).filter(group => group.items.length > 0)
 
-  // แปลงเป็นรูปแบบของ MenuTile: ลิงก์ภายใน = to · ลิงก์นอก = href+external · ปุ่ม = onClick · ไม่มีเลย (กดไม่ได้) = ป้ายสถานะ
+  // แปลงเป็นรูปแบบของ MenuTile: ลิงก์ภายใน = to · ลิงก์นอก = href+external · ลิงก์ข้ามโดเมนที่เปิดในหน้าเดิม = href
+  // · ปุ่ม = onClick · ไม่มีเลย (กดไม่ได้) = ป้ายสถานะ
   const toTile = item => ({
     key: item.href ?? item.label, label: item.label, Icon: item.icon, color: item.color, badge: item.badge, danger: item.danger,
     ...(item.action ? { onClick: item.action }
       : item.external ? { href: item.href, external: true }
-        : item.href ? { to: item.href } : {}),
+        : /^https?:\/\//.test(item.href ?? '') ? { href: item.href }
+          : item.href ? { to: item.href } : {}),
   })
 
   return (

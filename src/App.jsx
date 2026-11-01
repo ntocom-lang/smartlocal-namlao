@@ -21,6 +21,7 @@ import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from './lib/thaiName
 import { recordVisit } from './lib/menuUsage'
 import { scheduleSiteOpen } from './lib/siteOpenCounter'
 import { BASENAME } from './lib/basename'
+import { platformPageFor } from './lib/platform'
 
 const HomePage = lazyWithRetry(() => import('./pages/HomePage'))
 const CitizenForm = lazyWithRetry(() => import('./pages/CitizenForm'))
@@ -38,6 +39,7 @@ const TrackComplaint = lazyWithRetry(() => import('./pages/TrackComplaint'))
 const VerifyEsign = lazyWithRetry(() => import('./pages/VerifyEsign'))
 const AccountDeletePage = lazyWithRetry(() => import('./pages/AccountDeletePage'))
 const PrivacyPolicyPage = lazyWithRetry(() => import('./pages/PrivacyPolicyPage'))
+const PlatformInfoPage = lazyWithRetry(() => import('./pages/PlatformInfoPage'))
 const SurveyPage = lazyWithRetry(() => import('./pages/SurveyPage'))
 const SurveysPage = lazyWithRetry(() => import('./pages/SurveysPage'))
 const TechnicianDashboard = lazyWithRetry(() => import('./pages/TechnicianDashboard'))
@@ -615,6 +617,22 @@ function AppShell() {
   // เปิดเว็บที่ไม่ได้ระบุหน่วยงาน หรือระบุผิด → ให้เลือกหน่วยงานของตัวเอง แทนข้อความ "กรุณาติดต่อผู้ดูแลระบบ"
   // ที่ผู้ใช้แก้เองไม่ได้ (เหตุผลเต็มที่ TenantPicker) error ชนิดอื่น (เน็ต/สิทธิ์) ยังขึ้นหน้าเดิมด้านล่าง
   if (error && (errorKind === 'no-slug' || errorKind === 'not-found')) {
+    // โดเมนกลาง (app.rk-networks.com = แอปจากสโตร์) มีหน้ากลาง 3 หน้าที่ต้องกรอก URL ในสโตร์:
+    // /privacy, /account/delete, /support (src/lib/platform.js) path อื่นยังเป็นหน้าเลือกหน่วยงาน
+    const platformPage = errorKind === 'no-slug' ? platformPageFor(location.pathname) : null
+    if (platformPage) {
+      return (
+        <SuspenseErrorBoundary>
+          <Suspense fallback={
+            <div className="flex items-center justify-center min-h-screen bg-gray-50" role="status" aria-label="กำลังโหลดหน้า">
+              <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin" style={{ borderTopColor: 'var(--color-primary)' }} />
+            </div>
+          }>
+            <PlatformInfoPage kind={platformPage} />
+          </Suspense>
+        </SuspenseErrorBoundary>
+      )
+    }
     return <TenantPicker notice={errorKind === 'not-found' ? error : null} />
   }
 

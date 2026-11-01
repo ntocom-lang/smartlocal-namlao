@@ -8,16 +8,33 @@
 //   - ข้อความ Telegram ถึงเจ้าหน้าที่ไม่มีชื่อ/เบอร์/รายละเอียดผู้แจ้ง (supabase/functions/notify-telegram)
 //   - ฐานข้อมูล Supabase อยู่ภูมิภาค ap-northeast-1 (โตเกียว) · ไม่มีโฆษณา/ตัวติดตามบุคคลภายนอกในหน้าเว็บ
 // ⚠️ ไม่อ้างเลขมาตรา — การจับคู่วัตถุประสงค์กับฐานทางกฎหมาย และระยะเก็บเอกสารราชการ ต้องให้ อปท./DPO
-//   ยืนยันกับ PDPA และระเบียบงานสารบรรณฉบับปัจจุบัน แก้เนื้อหาแล้วต้องเปลี่ยน PRIVACY_POLICY_VERSION/วันที่มีผล
+//   ยืนยันกับ PDPA และระเบียบงานสารบรรณฉบับปัจจุบัน แก้สาระเรื่องข้อมูล (สิ่งที่เก็บ ผู้รับ ระยะเก็บ สิทธิ)
+//   แล้วต้องเปลี่ยน PRIVACY_POLICY_VERSION/วันที่มีผล
+// ⚠️ ชื่อผู้พัฒนามาจาก PLATFORM_DEVELOPER (src/lib/platform.js) จุดเดียว ห้ามกลับไปใช้ tenant.developer_name
+//   ช่องนั้นคือข้อความท้ายเว็บที่ อปท. กรอกเอง (น้ำเลาใส่คำขวัญ) รุ่นแรกเคยดึงมาจนนโยบายระบุผู้พัฒนาเป็นคำขวัญ
+import { PLATFORM_APP_NAME, PLATFORM_DEVELOPER, tenantArea, tenantContacts, tenantHref } from './platform.js'
 
 export const PRIVACY_POLICY_VERSION = '1.0'
 export const PRIVACY_POLICY_EFFECTIVE = '1 พฤศจิกายน 2569'
 
+// Play บังคับให้นโยบายมีข้อมูลผู้พัฒนา และชื่อผู้พัฒนาบนหน้าสโตร์ต้องปรากฏในนโยบาย (หรือระบุชื่อแอป)
+// ยังไม่มีชื่อนิติบุคคล = ไม่เอ่ยชื่อ แต่ยังระบุชื่อแอปเสมอ
+function developerLine() {
+  const role = `ผู้พัฒนาและดูแลระบบและแอป ${PLATFORM_APP_NAME}`
+  const duty = 'ประมวลผลข้อมูลตามที่หน่วยงานกำหนดเพื่อให้ระบบทำงานได้เท่านั้น'
+  return PLATFORM_DEVELOPER.name ? `${PLATFORM_DEVELOPER.name} เป็น${role} ${duty}` : `${role} ${duty}`
+}
+
+function developerContacts() {
+  return PLATFORM_DEVELOPER.email ? [{ kind: 'email', label: 'อีเมลผู้พัฒนา', value: PLATFORM_DEVELOPER.email }] : []
+}
+
 /**
- * @param {object} [tenant] แถว municipalities จาก TenantContext (ใช้ name, address, phone, email, developer_name, system_name)
+ * @param {object} [tenant] แถว municipalities จาก TenantContext (ใช้ name, address, phone, email, system_name)
  * @returns {{ title: string, intro: string, sections: Array<{
  *   id: string, title: string, paragraphs?: string[], items?: string[], note?: string,
  *   contacts?: Array<{ kind: 'address'|'phone'|'email', label: string, value: string }>,
+ *   orgs?: Array<{ key: string, name: string, area: string, contacts: Array<object>, href: string, hrefLabel: string }>,
  *   links?: Array<{ to: string, label: string }>
  * }> }}
  */
@@ -26,24 +43,19 @@ export function buildPrivacyPolicy(tenant) {
   const system = tenant?.system_name || 'ระบบบริการประชาชนออนไลน์'
   // ชื่อระบบภาษาอังกฤษ (เช่น SmartLocal) ต่อท้ายคำไทยตรงๆ จะติดกันอ่านยาก เว้นวรรคให้เฉพาะกรณีนั้น
   const systemPhrase = /^[฀-๿]/.test(system) ? system : ` ${system}`
-  const developer = tenant?.developer_name || 'ผู้พัฒนาและดูแลระบบ'
   // ช่องทางติดต่อดึงจากข้อมูลหน่วยงานในระบบเอง (ไม่ต้องกรอกเพิ่ม) — ช่องไหนว่างก็ไม่แสดง
-  const contacts = [
-    tenant?.address && { kind: 'address', label: 'ที่อยู่', value: String(tenant.address) },
-    tenant?.phone && { kind: 'phone', label: 'โทร', value: String(tenant.phone) },
-    tenant?.email && { kind: 'email', label: 'อีเมล', value: String(tenant.email) },
-  ].filter(Boolean)
+  const contacts = tenantContacts(tenant)
 
   return {
     title: 'นโยบายความเป็นส่วนตัว',
-    intro: `${org} อธิบายในนโยบายนี้ว่าเก็บ ใช้ เปิดเผย และดูแลข้อมูลส่วนบุคคลของท่านอย่างไร เมื่อท่านใช้${systemPhrase} ทั้งบนเว็บไซต์และแอปพลิเคชัน`,
+    intro: `${org} อธิบายในนโยบายนี้ว่าเก็บ ใช้ เปิดเผย และดูแลข้อมูลส่วนบุคคลของท่านอย่างไร เมื่อท่านใช้${systemPhrase} ทั้งบนเว็บไซต์และแอปพลิเคชัน ${PLATFORM_APP_NAME}`,
     sections: [
       {
         id: 'controller',
         title: '1. ผู้ควบคุมข้อมูลส่วนบุคคล',
         paragraphs: [
           `${org} เป็นผู้ควบคุมข้อมูลส่วนบุคคลของบริการในระบบนี้`,
-          `${developer} เป็นผู้พัฒนาและดูแลระบบ ประมวลผลข้อมูลตามที่หน่วยงานกำหนดเพื่อให้ระบบทำงานได้เท่านั้น`,
+          developerLine(),
         ],
         contacts,
       },
@@ -150,5 +162,45 @@ export function buildPrivacyPolicy(tenant) {
         ],
       },
     ],
+  }
+}
+
+/**
+ * นโยบายฉบับรวมของแอปบนโดเมนกลาง (app.rk-networks.com/privacy) — URL ที่กรอกในหน้าข้อมูลแอปบนสโตร์
+ * สาระเรื่องข้อมูล (ข้อ 2–8, 10) ใช้ชุดเดียวกับฉบับของ อปท. ทุกคำ ต่างแค่ผู้ควบคุมข้อมูลและช่องทางติดต่อ
+ * ซึ่งเป็นรายการ อปท. ทุกแห่งที่ใช้ระบบ (ดึงจากฐานข้อมูล มีแห่งใหม่ก็ขึ้นเอง) + ลิงก์ไปนโยบายฉบับของแต่ละแห่ง
+ * @param {Array<object>} tenants จาก fetchActiveTenants (src/lib/platform.js) — สนามซ้อมถูกตัดออกที่นี่
+ * @param {string} [hostname] ไว้ให้เทสต์ส่งเอง (ค่าเริ่มคือโดเมนที่เปิดอยู่)
+ */
+export function buildPlatformPrivacyPolicy(tenants = [], hostname) {
+  const base = buildPrivacyPolicy(null)
+  const orgs = tenants.filter((t) => !t.isDemo).map((t) => ({
+    key: t.slug, name: t.name, area: tenantArea(t), contacts: tenantContacts(t),
+    href: tenantHref(t.slug, '/privacy', hostname), hrefLabel: 'นโยบายฉบับของหน่วยงานนี้',
+  }))
+  const replaced = {
+    controller: {
+      id: 'controller',
+      title: '1. ผู้ควบคุมข้อมูลส่วนบุคคล',
+      paragraphs: [
+        'องค์กรปกครองส่วนท้องถิ่นที่ท่านเลือกในแอปเป็นผู้ควบคุมข้อมูลส่วนบุคคลของบริการของหน่วยงานนั้น แต่ละแห่งประกาศนโยบายฉบับของตัวเองซึ่งมีสาระเดียวกับหน้านี้ พร้อมช่องทางติดต่อตามรายการด้านล่าง',
+        developerLine(),
+      ],
+      orgs,
+      contacts: developerContacts(),
+    },
+    contact: {
+      id: 'contact',
+      title: '9. ช่องทางติดต่อเรื่องข้อมูลส่วนบุคคล',
+      paragraphs: ['ติดต่อหน่วยงานที่ท่านใช้บริการเพื่อใช้สิทธิ์หรือสอบถามเรื่องข้อมูลส่วนบุคคล ช่องทางติดต่อของแต่ละแห่งอยู่ในข้อ 1'],
+      contacts: developerContacts(),
+      links: [{ to: '/support', label: 'ช่วยเหลือและติดต่อ' }],
+    },
+  }
+  return {
+    title: base.title,
+    intro: `แอป ${PLATFORM_APP_NAME} เป็นช่องทางบริการประชาชนออนไลน์ขององค์กรปกครองส่วนท้องถิ่นที่ใช้ระบบนี้ นโยบายนี้อธิบายว่าเก็บ ใช้ เปิดเผย และดูแลข้อมูลส่วนบุคคลของท่านอย่างไร เมื่อท่านใช้แอปและเว็บไซต์ของหน่วยงานเหล่านี้`,
+    // โดเมนกลางไม่มีหน้าบัญชีของฉัน (/profile) — แก้ข้อมูลตัวเองทำที่เว็บของหน่วยงาน
+    sections: base.sections.map((s) => replaced[s.id] ?? (s.links ? { ...s, links: s.links.filter((l) => l.to !== '/profile') } : s)),
   }
 }
