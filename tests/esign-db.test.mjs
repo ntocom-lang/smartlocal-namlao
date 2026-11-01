@@ -41,6 +41,9 @@ const adminDeleteSql = await readMigration('20261025120000_esign_trip_admin_dele
 // เฟส 2 (2569-10-31): ช่องที่ผู้ลงนามไม่พร้อมตกเป็นเซ็นสด — apply ท้ายสุด (กรณีชุดท้ายไฟล์)
 const fallbackColumnSql = await readMigration('20261031100000_esign_fallback_column.sql')
 const fallbackFunctionsSql = await readMigration('20261031100100_esign_fallback_functions.sql')
+// ส่งคืนผู้ขอ + ใบที่รถกลับแล้ว (2569-11-01) — apply ท้ายสุด ต่อจากกรณีเฟส 2
+const returnTableSql = await readMigration('20261101120000_esign_trip_returns_table.sql')
+const returnFunctionsSql = await readMigration('20261101120100_esign_trip_return_functions.sql')
 
 // ดึงฟังก์ชันตัวจริงออกจาก migration เดิมทั้งตัว (ไม่พิมพ์ซ้ำเอง)
 const extractFunction = (source, startPattern) => {
@@ -64,6 +67,7 @@ const db = new PGlite({ extensions: { pgcrypto } })
 await db.exec(`
 CREATE ROLE anon;
 CREATE ROLE authenticated;
+CREATE ROLE service_role;
 CREATE SCHEMA extensions;
 CREATE EXTENSION pgcrypto WITH SCHEMA extensions;
 CREATE SCHEMA auth;
@@ -1534,6 +1538,382 @@ await test('เฟส 2 ของเดิมยังอยู่: แก้ท
   await as('adminC')
   await db.query(`DELETE FROM public.fleet_trips WHERE id = $1`, [t.id])
   assert.equal(await trip(t.id), undefined)
+})
+
+// ── ส่งคืนผู้ขอ + ใบที่รถกลับแล้ว (เจ้าของระบบอนุมัติ 2569-11-01) ─────────────────────────────
+// ใช้ อปท. ใหม่ (อี) และคนชุดใหม่ apply ท้ายสุด: กรณีข้างบนตรวจนิยามก่อนหน้า กรณีต่อไปนี้ตรวจนิยามล่าสุดซึ่งเป็นตัวที่ขึ้นระบบจริง
+await db.exec(returnTableSql)
+await db.exec(returnFunctionsSql)
+const E = '00000000-0000-4000-8000-00000000000e'
+const DE = '00000000-0000-4000-8000-0000000000de'
+await db.query(`INSERT INTO public.municipalities VALUES ($1, 'อบต.ทดสอบอี')`, [E])
+await db.query(`INSERT INTO public.departments VALUES ($1, $2, 'กองช่าง')`, [DE, E])
+Object.assign(users, {
+  adminE: { id: U(41), role: 'admin', muni: E, name: 'แอดมิน อี' },
+  reqE: { id: U(42), role: 'staff', muni: E, name: 'ผู้ขอ อี', fleetRole: 'fleet_staff', job: 'นักวิชาการศึกษา' },
+  headE: { id: U(43), role: 'staff', muni: E, name: 'หัวหน้ากอง อี', fleetRole: 'fleet_staff', job: 'ผู้อำนวยการกองช่าง' },
+  mayorE: { id: U(44), role: 'staff', muni: E, name: 'นายก อี', job: 'นายกองค์การบริหารส่วนตำบลทดสอบอี' },
+  fleetE: { id: U(45), role: 'staff', muni: E, name: 'ผู้ดูแลรถ อี', fleetRole: 'fleet_admin' },
+  outE: { id: U(46), role: 'staff', muni: E, name: 'คนนอก อี' },
+  noPinE: { id: U(47), role: 'staff', muni: E, name: 'ผู้ขอไม่มีรหัส อี', fleetRole: 'fleet_staff', job: 'เจ้าพนักงานธุรการ' },
+  mayorReqE: { id: U(48), role: 'staff', muni: E, name: 'นายกขอรถ อี', fleetRole: 'fleet_staff', job: 'นายกองค์การบริหารส่วนตำบลทดสอบอี' },
+})
+for (const alias of ['adminE', 'reqE', 'headE', 'mayorE', 'fleetE', 'outE', 'noPinE', 'mayorReqE']) {
+  const u = users[alias]
+  await db.query('INSERT INTO auth.users VALUES ($1)', [u.id])
+  await db.query('INSERT INTO public.profiles (id, full_name, role, municipality_id, fleet_role, job_title) VALUES ($1,$2,$3,$4,$5,$6)',
+    [u.id, u.name, u.role, u.muni, u.fleetRole ?? null, u.job ?? null])
+}
+await addRegistry('mayor', 'mayorE', { muni: E })
+await addRegistry('department_head', 'headE', { dept: DE, muni: E })
+await as('adminE')
+assert.equal((await rpc('public.set_esign_doc_type($1, $2, $3::jsonb)', [E, 'fleet_trip_request', JSON.stringify(ALL_ONLINE)])).ok, true)
+const PIN_E = { reqE: '246810', headE: '482916', mayorE: '928374', mayorReqE: '371946' }
+for (const [alias, pin] of Object.entries(PIN_E)) await readyPin(alias, pin)
+
+const tripE = async (extra = {}) => { await as(extra.requester ?? 'reqE'); return makeTrip({ muni: E, requester: 'reqE', dept: DE, ...extra }) }
+const signE = async (alias, id, slot) => { await as(alias); return sign(id, slot, PIN_E[alias], slot === 'authority' ? 'approve' : null) }
+const returnE = async (alias, id, slot, reason = 'ขอให้แก้วันเดินทางให้ตรงหนังสือเชิญ') => { await as(alias); return rpc('public.esign_return_fleet_trip($1, $2, $3)', [id, slot, reason]) }
+const resubmitE = async (alias, id) => { await as(alias); return rpc('public.esign_resubmit_fleet_trip($1)', [id]) }
+const statusE = async (alias, id) => { await as(alias); return rpc('public.esign_trip_status($1)', [id]) }
+const slotE = (st, name) => st.slots.find(s => s.slot === name)
+const pendingE = async alias => { await as(alias); return rpc('public.esign_my_pending()') }
+const turnsE = async id => (await rpc('public.esign_trip_turns($1)', [id])).map(t => `${t.slot}:${t.round}`)
+const eventsE = async id => (await db.query(`SELECT kind, slot FROM public.esign_trip_returns WHERE doc_id = $1 ORDER BY seq`, [id])).rows.map(r => (r.slot ? `${r.kind}:${r.slot}` : r.kind))
+
+await test('ส่งคืน สิทธิ์: anon เรียกไม่ได้ · ตัวช่วยภายในปิด · ตารางอ่านตรงไม่ได้ · Telegram เรียกได้แค่ service role', async () => {
+  const fnPriv = async (role, sig) => (await db.query(`SELECT has_function_privilege($1, $2, 'execute') AS ok`, [role, sig])).rows[0].ok
+  for (const sig of ['public.esign_return_fleet_trip(uuid,text,text)', 'public.esign_resubmit_fleet_trip(uuid)']) {
+    assert.equal(await fnPriv('anon', sig), false, sig)
+    assert.equal(await fnPriv('authenticated', sig), true, sig)
+  }
+  for (const sig of ['public.esign_trip_open_return(uuid)', 'public.esign_trip_return_round(uuid)', 'public.esign_slot_signed(uuid,text)',
+    'public.esign_trip_may_need_me(public.fleet_trips,uuid,boolean)', 'public.esign_trip_return_dm(uuid)', 'public.esign_trip_turns(uuid)']) {
+    assert.equal(await fnPriv('anon', sig), false, sig)
+    assert.equal(await fnPriv('authenticated', sig), false, sig)
+  }
+  for (const sig of ['public.esign_trip_return_dm(uuid)', 'public.esign_trip_turns(uuid)']) assert.equal(await fnPriv('service_role', sig), true, sig)
+  for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) {
+    for (const role of ['anon', 'authenticated']) {
+      assert.equal((await db.query(`SELECT has_table_privilege($1, 'public.esign_trip_returns', $2) AS ok`, [role, privilege])).rows[0].ok, false, `${role} ${privilege}`)
+    }
+  }
+  assert.equal((await db.query(`SELECT relrowsecurity AS ok FROM pg_class WHERE oid = 'public.esign_trip_returns'::regclass`)).rows[0].ok, true)
+})
+
+await test('ส่งคืนจาก ผอ.กอง: ตรวจสิทธิ์/ลำดับ/เหตุผล · ถอนลายเซ็น · คิวรถไม่เปลี่ยน · ผู้ขอลงนามใหม่แล้วสายเดินต่อ', async () => {
+  const t = await tripE()
+  assert.equal((await signE('reqE', t.id, 'requester')).ok, true)
+
+  await as('anon')
+  assert.deepEqual(await rpc('public.esign_return_fleet_trip($1, $2, $3)', [t.id, 'dept_head', 'เหตุผลทดสอบ']), { ok: false, code: 'not_authenticated' })
+  assert.deepEqual(await returnE('outE', t.id, 'dept_head'), { ok: false, code: 'not_your_slot' }, 'ส่งคืนแทนคนอื่นไม่ได้')
+  assert.deepEqual(await returnE('mayorE', t.id, 'authority'), { ok: false, code: 'wait_previous' }, 'ยังไม่ถึงคิวส่งคืนไม่ได้')
+  assert.deepEqual(await returnE('headE', t.id, 'dept_head', ' ก '), { ok: false, code: 'invalid_reason' })
+  assert.deepEqual(await returnE('headE', t.id, 'dept_head', 'ก'.repeat(501)), { ok: false, code: 'invalid_reason' })
+  assert.deepEqual(await returnE('reqE', t.id, 'requester'), { ok: false, code: 'bad_slot' }, 'ช่องผู้ขอไม่มีการส่งคืน')
+  assert.deepEqual(await returnE('headE', t.id, 'sk1'), { ok: false, code: 'bad_slot' })
+  assert.deepEqual(await eventsE(t.id), [], 'กรณีที่ถูกปฏิเสธต้องไม่เกิดแถว')
+
+  const before = await statusE('headE', t.id)
+  assert.equal(slotE(before, 'dept_head').can_return, true)
+  assert.equal(slotE(before, 'dept_head').can_sign, true)
+  assert.equal(slotE(before, 'requester').can_return, false)
+  assert.equal(before.last_return, null)
+  assert.equal(before.returns_count, 0)
+
+  const result = await returnE('headE', t.id, 'dept_head', '  ขอให้แก้วันเดินทาง  ')
+  assert.equal(result.ok, true)
+  assert.equal(result.revoked, 1)
+  assert.equal(result.already, false)
+  assert.deepEqual(await returnE('headE', t.id, 'dept_head'), { ok: true, already: true, return_id: result.return_id, revoked: 0 }, 'กดซ้ำไม่เกิดแถวใหม่')
+  assert.deepEqual(await eventsE(t.id), ['returned:dept_head'])
+  const revoked = (await db.query(`SELECT r.reason, r.revoked_by_name FROM public.esign_revocations r JOIN public.esign_signatures s ON s.id = r.signature_id WHERE s.doc_id = $1`, [t.id])).rows
+  assert.deepEqual(revoked, [{ reason: 'ส่งคืนผู้ขอ: ขอให้แก้วันเดินทาง', revoked_by_name: 'หัวหน้ากอง อี' }])
+  assert.equal((await db.query(`SELECT count(*)::int AS n FROM public.esign_signatures WHERE doc_id = $1`, [t.id])).rows[0].n, 1, 'ลายเซ็นเดิมยังอยู่เป็นหลักฐาน')
+
+  const afterTrip = await trip(t.id)
+  assert.equal(afterTrip.status, t.status, 'สถานะคำขอไม่เปลี่ยน')
+  assert.equal(afterTrip.approved_by, t.approved_by)
+  assert.equal(afterTrip.vehicle_id, t.vehicle_id)
+
+  const seenByRequester = await statusE('reqE', t.id)
+  assert.deepEqual({ ...seenByRequester.last_return, at: null }, { slot: 'dept_head', label: 'ผู้อำนวยการสำนัก/กอง หรือผู้แทน', by_name: 'หัวหน้ากอง อี', by_position: 'ผู้อำนวยการกองช่าง', reason: 'ขอให้แก้วันเดินทาง', at: null, open: true })
+  assert.equal(seenByRequester.returns_count, 1)
+  assert.equal(seenByRequester.can_resubmit, false, 'ช่องผู้ขอออนไลน์ต้องลงนามใหม่ ไม่ใช่กดส่งต่อ')
+  assert.equal(seenByRequester.locked, false, 'ถอนหมดแล้วต้องแก้คำขอได้')
+  assert.equal(slotE(seenByRequester, 'requester').can_sign, true)
+  const seenByHead = await statusE('headE', t.id)
+  assert.equal(slotE(seenByHead, 'dept_head').can_sign, false)
+  assert.equal(slotE(seenByHead, 'dept_head').can_return, false)
+  assert.equal(slotE(seenByHead, 'dept_head').waiting_for_return, true)
+  assert.deepEqual(await signE('headE', t.id, 'dept_head'), { ok: false, code: 'returned_open' }, 'ผอ.กองลงนามข้ามการส่งคืนไม่ได้')
+  await as('headE')
+  assert.deepEqual(await rpc('public.esign_sign_fleet_trip_stamped($1, $2, $3, NULL, NULL, NULL)', [t.id, 'dept_head', PIN_E.headE]), { ok: false, code: 'returned_open', stamped: false }, 'ทางลงนามพร้อมภาพก็ติดด่านเดียวกัน')
+  assert.deepEqual(await returnE('mayorE', t.id, 'authority'), { ok: false, code: 'already_returned' })
+  assert.deepEqual(await resubmitE('reqE', t.id), { ok: false, code: 'sign_instead' }, 'กดส่งต่อข้ามลายเซ็นผู้ขอไม่ได้')
+  assert.deepEqual(await turnsE(t.id), ['requester:1'], 'Telegram แจ้งเฉพาะผู้ขอ')
+
+  await as('reqE')
+  await db.query(`UPDATE public.fleet_trips SET destination = 'แก้ปลายทางหลังส่งคืน' WHERE id = $1`, [t.id])
+  assert.equal((await trip(t.id)).destination, 'แก้ปลายทางหลังส่งคืน')
+
+  assert.equal((await signE('reqE', t.id, 'requester')).ok, true)
+  assert.deepEqual(await eventsE(t.id), ['returned:dept_head', 'resubmitted'], 'ลงนามใหม่นับเป็นการส่งกลับ')
+  const resumed = await statusE('headE', t.id)
+  assert.equal(resumed.last_return.open, false)
+  assert.equal(resumed.last_return.reason, 'ขอให้แก้วันเดินทาง', 'ผู้ลงนามรอบใหม่เห็นเหตุผลเดิม')
+  assert.equal(slotE(resumed, 'dept_head').can_sign, true)
+  assert.equal(slotE(resumed, 'dept_head').waiting_for_return, false)
+  assert.deepEqual(await turnsE(t.id), ['dept_head:1'], 'เลขรอบเปลี่ยน Telegram จึงแจ้งซ้ำได้')
+  assert.deepEqual(await rpc('public.esign_trip_return_dm($1)', [t.id]), null, 'ไม่ค้างแล้วไม่มีผู้รับ')
+
+  // ผู้มีอำนาจส่งคืน: ถอนสองช่องก่อนหน้า สายเริ่มใหม่ทั้งหมด
+  assert.equal((await signE('headE', t.id, 'dept_head')).ok, true)
+  assert.equal(slotE(await statusE('mayorE', t.id), 'authority').can_return, true)
+  const second = await returnE('mayorE', t.id, 'authority', 'ไม่อนุญาต ให้ใช้รถคันอื่น')
+  assert.equal(second.revoked, 2)
+  const third = await statusE('reqE', t.id)
+  assert.equal(third.returns_count, 2)
+  assert.equal(third.last_return.slot, 'authority')
+  assert.equal(third.signed_count, 0)
+  assert.equal((await signE('reqE', t.id, 'requester')).ok, true)
+  assert.deepEqual(await turnsE(t.id), ['dept_head:2'])
+  assert.equal((await signE('headE', t.id, 'dept_head')).ok, true)
+  const done = await signE('mayorE', t.id, 'authority')
+  assert.equal(done.ok, true)
+  assert.equal(done.complete, true, 'ลงครบแล้วใบจบได้ตามปกติ')
+  assert.equal((await statusE('reqE', t.id)).complete, true)
+  assert.deepEqual(await eventsE(t.id), ['returned:dept_head', 'resubmitted', 'returned:authority', 'resubmitted'])
+})
+
+await test('ส่งคืนเมื่อช่องผู้ขอเซ็นสด: ทุกช่องหยุดรอ · ผู้ขอ/ผู้ดูแลรถกดส่งต่อได้ · คนอื่นกดไม่ได้', async () => {
+  const t = await tripE({ requester: 'noPinE' })
+  assert.deepEqual(t.esign_slots, { ...ALL_ONLINE, requester: 'wet' }, 'ผู้ขอไม่มีรหัส ช่องผู้ขอตกเป็นเซ็นสด')
+  assert.equal(slotE(await statusE('headE', t.id), 'dept_head').can_return, true, 'ช่องผู้ขอเซ็นสด ผอ.กองถึงคิวทันที')
+  const result = await returnE('headE', t.id, 'dept_head')
+  assert.equal(result.revoked, 0, 'ยังไม่มีลายเซ็นให้ถอน')
+
+  assert.deepEqual(await signE('headE', t.id, 'dept_head'), { ok: false, code: 'returned_open' }, 'เซ็นสดไม่มีลำดับหยุดเอง ด่านนี้ต้องกันแทน')
+  assert.deepEqual(await turnsE(t.id), [])
+  const seen = await statusE('noPinE', t.id)
+  assert.equal(seen.can_resubmit, true)
+  assert.equal(seen.last_return.open, true)
+  for (const alias of ['headE', 'mayorE']) assert.equal((await statusE(alias, t.id)).can_resubmit, false, alias)
+  assert.equal((await statusE('fleetE', t.id)).can_resubmit, true, 'ผู้ดูแลรถทำแทนได้')
+
+  const box = await pendingE('noPinE')
+  assert.deepEqual(box.items.filter(i => i.trip_id === t.id), [])
+  const row = box.returned.find(i => i.trip_id === t.id)
+  assert.equal(row.last_return.reason, 'ขอให้แก้วันเดินทางให้ตรงหนังสือเชิญ')
+  assert.equal(row.round, 1)
+  const headBox = await pendingE('headE')
+  assert.deepEqual(headBox.items.filter(i => i.trip_id === t.id), [], 'ผู้ส่งคืนไม่ต้องเห็นใบนี้ค้างอยู่')
+  assert.deepEqual(headBox.returned.filter(i => i.trip_id === t.id), [], 'รายการส่งคืนเป็นของผู้ขอเท่านั้น')
+  // ผู้ลงนามที่เป็นผู้ดูแลรถด้วย (กดส่งต่อแทนได้ในหน้าทริป) ก็ไม่ได้แถวนี้ในรายการของตัวเอง
+  await db.query(`UPDATE public.profiles SET role = 'admin' WHERE id = $1`, [users.headE.id])
+  assert.equal((await statusE('headE', t.id)).can_resubmit, true, 'ผู้ดูแลรถกดส่งต่อแทนได้')
+  assert.deepEqual((await pendingE('headE')).returned.filter(i => i.trip_id === t.id), [], 'แต่ไม่ขึ้นเป็นงานของตัวเอง')
+  await db.query(`UPDATE public.profiles SET role = 'staff' WHERE id = $1`, [users.headE.id])
+
+  assert.deepEqual(await resubmitE('outE', t.id), { ok: false, code: 'forbidden' })
+  assert.deepEqual(await resubmitE('headE', t.id), { ok: false, code: 'forbidden' })
+  await as('anon')
+  assert.deepEqual(await rpc('public.esign_resubmit_fleet_trip($1)', [t.id]), { ok: false, code: 'not_authenticated' })
+
+  assert.deepEqual(await resubmitE('noPinE', t.id), { ok: true, already: false })
+  assert.deepEqual(await resubmitE('noPinE', t.id), { ok: true, already: true }, 'กดซ้ำไม่เกิดแถวใหม่')
+  assert.deepEqual(await eventsE(t.id), ['returned:dept_head', 'resubmitted'])
+  assert.deepEqual(await turnsE(t.id), ['dept_head:1'])
+  assert.equal(slotE(await statusE('headE', t.id), 'dept_head').can_sign, true)
+  assert.equal((await pendingE('noPinE')).returned.filter(i => i.trip_id === t.id).length, 0)
+
+  // ผู้ดูแลรถกดแทน
+  await returnE('headE', t.id, 'dept_head')
+  assert.deepEqual(await resubmitE('fleetE', t.id), { ok: true, already: false })
+  assert.equal(slotE(await statusE('headE', t.id), 'dept_head').can_sign, true)
+})
+
+await test('ส่งคืน กรณีกันไว้: ผู้ขอถือช่องเอง · ใบปิดแล้ว · ใบเซ็นสด · ช่องเซ็นสด · สก.๑ ถูกถอนตาม', async () => {
+  // ผู้ขอเป็น ผอ.กองเอง ส่งคืนให้ตัวเองไม่มีความหมาย
+  const own = await tripE({ requester: 'headE' })
+  assert.equal((await signE('headE', own.id, 'requester')).ok, true)
+  const ownStatus = await statusE('headE', own.id)
+  assert.equal(slotE(ownStatus, 'dept_head').can_sign, true)
+  assert.equal(slotE(ownStatus, 'dept_head').can_return, false)
+  assert.deepEqual(await returnE('headE', own.id, 'dept_head'), { ok: false, code: 'self_return' })
+
+  // ใบปิดแล้ว: ส่งคืนไม่ได้ · ส่งคืนค้างไม่นับ · Telegram ไม่แจ้ง
+  const closed = await tripE({ requester: 'noPinE' })
+  await returnE('headE', closed.id, 'dept_head')
+  await db.query(`UPDATE public.fleet_trips SET status = 'cancelled' WHERE id = $1`, [closed.id])
+  assert.deepEqual(await returnE('headE', closed.id, 'dept_head'), { ok: false, code: 'trip_closed' })
+  assert.deepEqual(await resubmitE('noPinE', closed.id), { ok: false, code: 'trip_closed' })
+  const closedStatus = await statusE('noPinE', closed.id)
+  assert.equal(closedStatus.last_return.open, false)
+  assert.equal(closedStatus.can_resubmit, false)
+  assert.deepEqual(await rpc('public.esign_trip_return_dm($1)', [closed.id]), null)
+  assert.deepEqual(await turnsE(closed.id), [])
+  assert.equal((await pendingE('noPinE')).returned.filter(i => i.trip_id === closed.id).length, 0)
+
+  // ใบเซ็นสดทั้งใบ / ช่องเซ็นสด
+  await db.query('ALTER TABLE public.fleet_trips DISABLE TRIGGER trg_fleet_trips_esign_guard')
+  const wet = (await db.query(`INSERT INTO public.fleet_trips (municipality_id, status, requested_by, created_by, department_id) VALUES ($1, 'approved', $2, $2, $3) RETURNING id`, [E, users.reqE.id, DE])).rows[0].id
+  const mixed = (await db.query(`INSERT INTO public.fleet_trips (municipality_id, status, requested_by, created_by, department_id, esign_slots, esign_verify_code)
+    VALUES ($1, 'approved', $2, $2, $3, '{"requester":"wet","dept_head":"online","authority":"wet","sk1":"wet"}'::jsonb, md5('mixed-slot')) RETURNING id`, [E, users.reqE.id, DE])).rows[0].id
+  await db.query('ALTER TABLE public.fleet_trips ENABLE TRIGGER trg_fleet_trips_esign_guard')
+  assert.deepEqual(await returnE('headE', wet, 'dept_head'), { ok: false, code: 'not_online' })
+  assert.deepEqual(await resubmitE('reqE', wet), { ok: false, code: 'not_online' })
+  assert.deepEqual(await returnE('mayorE', mixed, 'authority'), { ok: false, code: 'slot_not_online' })
+  await as('headE')
+  assert.deepEqual(await rpc('public.esign_return_fleet_trip($1, $2, $3)', ['00000000-0000-4000-8000-000000000999', 'dept_head', 'เหตุผลทดสอบ']), { ok: false, code: 'not_found' })
+
+  // ช่องที่เซ็นไปแล้วส่งคืนไม่ได้ (ใช้ถอนลายเซ็นตามเดิม)
+  const signed = await tripE()
+  assert.equal((await signE('reqE', signed.id, 'requester')).ok, true)
+  assert.equal((await signE('headE', signed.id, 'dept_head')).ok, true)
+  assert.deepEqual(await returnE('headE', signed.id, 'dept_head'), { ok: false, code: 'already_signed' })
+
+  // ผู้ขอเป็นนายก: สก.๑ ถูกถอนตาม และลงใหม่ได้หลังผู้ขอลงนามใหม่
+  const mayorTrip = await tripE({ requester: 'mayorReqE', position: 'นายกองค์การบริหารส่วนตำบลทดสอบอี' })
+  assert.equal((await signE('mayorReqE', mayorTrip.id, 'requester')).ok, true)
+  assert.equal((await signE('mayorReqE', mayorTrip.id, 'sk1')).ok, true)
+  assert.equal((await returnE('headE', mayorTrip.id, 'dept_head')).revoked, 2, 'ถอนทั้งช่องผู้ขอและ สก.๑')
+  const mayorStatus = await statusE('mayorReqE', mayorTrip.id)
+  assert.equal(slotE(mayorStatus, 'requester').can_sign, true)
+  assert.equal(slotE(mayorStatus, 'sk1').can_sign, false, 'ต้องลงช่องผู้ขอก่อน')
+  assert.deepEqual(await signE('mayorReqE', mayorTrip.id, 'sk1'), { ok: false, code: 'returned_open' })
+  assert.equal((await signE('mayorReqE', mayorTrip.id, 'requester')).ok, true)
+  assert.equal(slotE(await statusE('mayorReqE', mayorTrip.id), 'sk1').can_sign, true)
+})
+
+await test('เหตุผลส่งคืนเห็นเฉพาะผู้เกี่ยวข้อง · หน้าสาธารณะ/Telegram ไม่เห็น · แก้ลบไม่ได้ · มีบันทึกตรวจย้อน · จำกัดการยิงรัว', async () => {
+  const SECRET = 'เหตุผลลับ-ห้ามออกนอกระบบ'
+  const t = await tripE()
+  assert.equal((await signE('reqE', t.id, 'requester')).ok, true)
+  const { return_id: returnId } = await returnE('headE', t.id, 'dept_head', SECRET)
+
+  assert.deepEqual(await statusE('outE', t.id), { found: false }, 'คนนอกไม่เห็นใบ จึงไม่เห็นเหตุผล')
+  await as('anon')
+  const verified = await rpc('public.esign_verify($1)', [t.esign_verify_code])
+  assert.equal(verified.found, true)
+  assert.doesNotMatch(JSON.stringify(verified), new RegExp(SECRET), 'หน้าตรวจสอบสาธารณะห้ามมีเหตุผล')
+  const dm = await rpc('public.esign_trip_return_dm($1)', [t.id])
+  assert.deepEqual(dm, { return_id: returnId, label: 'ผู้อำนวยการสำนัก/กอง หรือผู้แทน', user_id: users.reqE.id }, 'Telegram ได้แค่รหัสกับป้ายช่อง')
+  assert.doesNotMatch(JSON.stringify(await rpc('public.esign_trip_turns($1)', [t.id])), new RegExp(SECRET))
+
+  await expectError(db.query(`UPDATE public.esign_trip_returns SET reason = 'แก้เหตุผลย้อนหลัง' WHERE id = $1`, [returnId]), /ESIGN_APPEND_ONLY/)
+  await expectError(db.query(`DELETE FROM public.esign_trip_returns WHERE id = $1`, [returnId]), /ESIGN_APPEND_ONLY/)
+  await expectError(db.query(`TRUNCATE public.esign_trip_returns`), /ESIGN_APPEND_ONLY/)
+
+  const audit = (await db.query(`SELECT action, metadata FROM public.audit_logs WHERE resource_id = $1 AND action = 'esign_return'`, [t.id])).rows
+  assert.equal(audit.length, 1)
+  assert.equal(audit[0].metadata.reason, SECRET)
+  assert.equal(audit[0].metadata.return_id, returnId)
+  assert.equal((await signE('reqE', t.id, 'requester')).ok, true)
+  assert.equal((await db.query(`SELECT count(*)::int AS n FROM public.audit_logs WHERE resource_id = $1 AND action = 'esign_resubmit'`, [t.id])).rows[0].n, 1)
+
+  await as('headE')
+  for (let i = 0; i < 20; i++) assert.equal((await rpc('public.esign_return_fleet_trip($1, $2, $3)', [t.id, 'dept_head', 'x'])).code, 'invalid_reason')
+  await expectError(rpc('public.esign_return_fleet_trip($1, $2, $3)', [t.id, 'dept_head', 'x']), /ถี่เกินไป/)
+})
+
+await test('ใบที่รถกลับแล้ว: อยู่ในรายการรอลงนามจนลงครบ · ลงนามและส่งคืนได้ · ใบปิดไม่เข้า · Telegram ยังแจ้งคนถัดไป', async () => {
+  const t = await tripE()
+  assert.equal((await signE('reqE', t.id, 'requester')).ok, true)
+  await db.query(`UPDATE public.fleet_trips SET status = 'completed' WHERE id = $1`, [t.id])
+
+  const headRow = (await pendingE('headE')).items.find(i => i.trip_id === t.id)
+  assert.deepEqual([headRow.slot, headRow.trip_status, headRow.can_return, headRow.round], ['dept_head', 'completed', true, 0])
+  assert.equal((await rpc('public.esign_trip_turns($1)', [t.id])).length, 1)
+  assert.equal((await signE('headE', t.id, 'dept_head')).ok, true)
+  assert.equal((await pendingE('headE')).items.filter(i => i.trip_id === t.id).length, 0, 'ลงแล้วต้องหาย')
+  const mayorRow = (await pendingE('mayorE')).items.find(i => i.trip_id === t.id)
+  assert.deepEqual([mayorRow.slot, mayorRow.decision, mayorRow.trip_status], ['authority', 'approve', 'completed'], 'นายกเปิดใบเองไม่ได้ ต้องลงจากรายการนี้')
+  assert.equal((await signE('mayorE', t.id, 'authority')).complete, true)
+  for (const alias of ['reqE', 'headE', 'mayorE']) assert.equal((await pendingE(alias)).items.filter(i => i.trip_id === t.id).length, 0, `${alias} ลงครบแล้วต้องไม่ค้าง`)
+
+  for (const status of ['rejected', 'cancelled']) {
+    const c = await tripE()
+    await db.query('UPDATE public.fleet_trips SET status = $1 WHERE id = $2', [status, c.id])
+    assert.equal((await pendingE('reqE')).items.filter(i => i.trip_id === c.id).length, 0, status)
+    assert.deepEqual(await turnsE(c.id), [], status)
+  }
+
+  // ส่งคืนใบที่จบทริปแล้ว: บันทึกความเห็นไว้ได้ ใบออกจากรายการผู้ส่งคืน
+  const late = await tripE()
+  assert.equal((await signE('reqE', late.id, 'requester')).ok, true)
+  await db.query(`UPDATE public.fleet_trips SET status = 'completed' WHERE id = $1`, [late.id])
+  assert.equal((await returnE('headE', late.id, 'dept_head', 'ทริปนี้ไม่ได้ขออนุญาตล่วงหน้า')).ok, true)
+  assert.equal((await pendingE('headE')).items.filter(i => i.trip_id === late.id).length, 0)
+  const lateRow = (await pendingE('reqE')).items.find(i => i.trip_id === late.id)
+  assert.equal(lateRow.last_return.open, true)
+  assert.equal(lateRow.round, 1)
+})
+
+await test('รายการรอลงนาม: คัดเฉพาะใบของผู้เรียกก่อนนับเพดาน · ใบที่ยังไม่จบทริปขึ้นก่อน · ใบเก่าไม่ดันใบใหม่ตก', async () => {
+  const crowd = async (status, alias, n, label, base) => db.query(`INSERT INTO public.fleet_trips (municipality_id, status, requested_by, created_by, department_id, planned_departure, esign_slots, esign_verify_code, destination)
+    SELECT $1, $2, $3, $3, $4, $8::timestamptz + (g || ' minutes')::interval, $5::jsonb, md5($6 || g), $6 || g FROM generate_series(1, $7::int) g`,
+  [E, status, users[alias].id, DE, JSON.stringify(ALL_ONLINE), label, n, base])
+  // ใบที่ถึงคิวนายกแต่เก่ากว่าใบค้างทั้งหมด (ลงสองช่องแรกครบ แล้วรถกลับ) — ต้องไม่ถูกใบที่ยังไม่ถึงคิวนายกดันตก
+  const oldTurn = await tripE({ destination: 'OLD-AT-MAYOR' })
+  await db.query(`UPDATE public.fleet_trips SET planned_departure = '2025-12-01 09:00+07' WHERE id = $1`, [oldTurn.id])
+  assert.equal((await signE('reqE', oldTurn.id, 'requester')).ok, true)
+  assert.equal((await signE('headE', oldTurn.id, 'dept_head')).ok, true)
+  await db.query(`UPDATE public.fleet_trips SET status = 'completed' WHERE id = $1`, [oldTurn.id])
+  await db.query('ALTER TABLE public.fleet_trips DISABLE TRIGGER trg_fleet_trips_esign_guard')
+  await crowd('completed', 'reqE', 320, 'STALE-REQ-', '2026-01-01') // ผู้ขอคนนี้ไม่เคยลงนาม 320 ใบ
+  // ของคนอื่น วันเดินทางใหม่กว่าจึงมาก่อนในลำดับ และเกินเพดาน 300 — ถ้าไม่คัดก่อน ใบของผู้ขอคนแรกตกหมด
+  await crowd('completed', 'noPinE', 320, 'STALE-OTHER-', '2026-06-01')
+  await db.query('ALTER TABLE public.fleet_trips ENABLE TRIGGER trg_fleet_trips_esign_guard')
+
+  const fresh = await tripE({ destination: 'FRESH-ACTIVE' })
+  const box = await pendingE('reqE')
+  assert.equal(box.items.length, 100, 'คืนไม่เกิน 100 แถว')
+  assert.equal(box.count, 100)
+  assert.equal(box.items[0].trip_id, fresh.id, 'ใบที่ยังไม่จบทริปต้องขึ้นก่อนใบเก่าทั้งหมด')
+  const staleOnly = box.items.filter(i => i.destination.startsWith('STALE-'))
+  assert.ok(staleOnly.every(i => i.destination.startsWith('STALE-REQ-')), 'ไม่ปนใบของคนอื่น')
+  assert.equal(staleOnly[0].destination, 'STALE-REQ-320', 'ใบที่จบแล้วเอาล่าสุดก่อน')
+
+  // ผู้มีอำนาจมีใบเก่าที่ยังรอ ผอ.กอง เป็นร้อย ใบที่ถึงคิวจริงต้องยังขึ้น
+  const atMayor = await tripE({ destination: 'FRESH-MAYOR' })
+  assert.equal((await signE('reqE', atMayor.id, 'requester')).ok, true)
+  assert.equal((await signE('headE', atMayor.id, 'dept_head')).ok, true)
+  const mayorBox = await pendingE('mayorE')
+  assert.ok(mayorBox.items.some(i => i.trip_id === atMayor.id), 'ใบที่ถึงคิวนายกหายเพราะใบเก่าไม่ได้')
+  assert.ok(mayorBox.items.some(i => i.trip_id === oldTurn.id), 'ใบเก่าที่ถึงคิวนายก ต้องไม่ถูกใบที่ผู้ขอยังไม่ลงนาม 640 ใบดันตก')
+  assert.ok(mayorBox.items.every(i => i.slot === 'authority'), 'ใบที่ยังไม่ถึงคิวไม่ขึ้น')
+
+  const outsider = await pendingE('outE')
+  assert.deepEqual([outsider.items, outsider.returned, outsider.count], [[], [], 0], 'คนไม่เกี่ยวไม่เห็นอะไร')
+  const superBox = await pendingE('superadmin')
+  assert.deepEqual([superBox.items, superBox.returned, superBox.count], [[], [], 0], 'ไม่มีสังกัด ตอบว่าง')
+  await as('anon')
+  assert.deepEqual(await rpc('public.esign_my_pending()'), { ok: false, code: 'not_authenticated' })
+
+  await db.query('ALTER TABLE public.fleet_trips DISABLE TRIGGER trg_fleet_trips_esign_guard')
+  await db.query(`DELETE FROM public.fleet_trips WHERE destination LIKE 'STALE-%'`)
+  await db.query('ALTER TABLE public.fleet_trips ENABLE TRIGGER trg_fleet_trips_esign_guard')
+})
+
+await test('นิยามล่าสุด ของเดิมยังอยู่: ถอนลายเซ็น · ข้ามลำดับ · ลงซ้ำ · ล็อกเนื้อหา · ไม่แตะ approved_by', async () => {
+  const t = await tripE()
+  assert.deepEqual(await signE('headE', t.id, 'dept_head'), { ok: false, code: 'wait_previous', waiting: ['requester'] })
+  const first = await signE('reqE', t.id, 'requester')
+  assert.equal(first.ok, true)
+  assert.equal((await signE('reqE', t.id, 'requester')).already, true)
+  await expectError(db.query(`UPDATE public.fleet_trips SET destination = 'แก้ปลายทาง' WHERE id = $1`, [t.id]), /ESIGN_TRIP_LOCKED/)
+  assert.equal((await signE('headE', t.id, 'dept_head')).ok, true)
+  await as('reqE')
+  assert.equal((await rpc('public.esign_revoke_fleet_trip($1, $2, $3)', [t.id, 'แก้คำขอ', 'dept_head'])).revoked, 1)
+  const afterRevoke = await statusE('headE', t.id)
+  assert.equal(slotE(afterRevoke, 'dept_head').can_sign, true, 'ถอนเฉยๆ ไม่นับเป็นการส่งคืน')
+  assert.equal(afterRevoke.last_return, null)
+  assert.deepEqual(await eventsE(t.id), [])
+  assert.equal((await trip(t.id)).approved_by, null)
+  const keys = Object.keys((await pendingE('headE')).items.find(i => i.trip_id === t.id)).sort()
+  assert.deepEqual(keys, ['can_return', 'decision', 'destination', 'last_return', 'planned_departure', 'purpose', 'requester_name', 'round', 'slot', 'slot_label', 'trip_id', 'trip_status', 'vehicle_name'])
 })
 
 console.log(`\nผ่านทั้งหมด ${cases} กรณี`)

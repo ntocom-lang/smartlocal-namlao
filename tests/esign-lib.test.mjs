@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises'
 import {
   ESIGN_DECISION_LABEL, ESIGN_DUTY_TEXT, ESIGN_FALLBACK_REASON, ESIGN_FLEET_SLOTS, ESIGN_MESSAGES, ESIGN_READINESS, ESIGN_TRIP_EXCEPTIONS, esignAnnouncementDraft, esignAnyOnline, esignBlockers,
   esignDepartReturn, esignFailureText, esignFallbackText, esignGateItems, esignMessage, esignModesFromStatus, esignPendingFromRpc, esignPendingKey, esignPendingRow,
-  esignReadinessMap, esignRevokeTargets,
+  esignReadinessMap, esignReturnHint, esignReturnedRow, esignReturnedText, esignRevokeTargets,
 } from '../src/lib/esign.js'
 import { isVerifyBusy, isVerifyCode, verifySlotRows, verifySummary } from '../src/lib/esignVerify.js'
 
@@ -24,7 +24,9 @@ const tripPanelSql = await read('../supabase/migrations/20261023110000_esign_tri
 const adminDeleteSql = await read('../supabase/migrations/20261025120000_esign_trip_admin_delete.sql')
 // เฟส 2 (2569-10-31): ยก guard / set_esign_doc_type / esign_trip_status มาเต็มตัว + ฟังก์ชันความพร้อมใหม่ (นิยามหลังสุดชนะ)
 const fallbackFunctionsSql = await read('../supabase/migrations/20261031100100_esign_fallback_functions.sql')
-const functionsSql = functionsOldSql + '\n' + gateRelaxSql + '\n' + imageFunctionsSql + '\n' + tripPanelSql + '\n' + adminDeleteSql + '\n' + fallbackFunctionsSql
+// ส่งคืนผู้ขอ: แก้ esign_trip_status / esign_my_pending ทั้งตัว + เพิ่มฟังก์ชันส่งคืน — นิยามหลังสุดชนะ
+const returnFunctionsSql = await read('../supabase/migrations/20261101120100_esign_trip_return_functions.sql')
+const functionsSql = functionsOldSql + '\n' + gateRelaxSql + '\n' + imageFunctionsSql + '\n' + tripPanelSql + '\n' + adminDeleteSql + '\n' + fallbackFunctionsSql + '\n' + returnFunctionsSql
 const apiSource = await read('../src/lib/esignApi.js')
 const esignLibSource = await read('../src/lib/esign.js')
 
@@ -325,10 +327,14 @@ await test('ร่างประกาศ: ใส่ชื่อหน่วย
 await test('S3b รายการใบรอลงนาม: ดึงพลาด/ผลผิดรูปเป็น error ไม่ใช่ "ไม่มีใบรอ" · แถวมีข้อความและปุ่มตามช่อง · ชื่อฟิลด์ตรงกับ esign_my_pending ใน SQL', () => {
   const item = { trip_id: 't1', slot: 'authority', slot_label: 'ผู้มีอำนาจสั่งใช้ยานพาหนะ', decision: 'approve', trip_status: 'approved', requester_name: 'สมหมาย', vehicle_name: 'กระบะ กข 1234', destination: 'อำเภอเมือง', purpose: 'ประชุม', planned_departure: '2026-10-25T01:00:00Z' }
   // ยังไม่รู้ผล (idle/loading) ส่งต่อสถานะเดิม รายการว่าง
-  assert.deepEqual(esignPendingFromRpc({ status: 'loading', data: null }), { status: 'loading', items: [] })
-  assert.deepEqual(esignPendingFromRpc({ status: 'idle', data: null }), { status: 'idle', items: [] })
-  assert.deepEqual(esignPendingFromRpc(undefined), { status: 'idle', items: [] })
-  assert.deepEqual(esignPendingFromRpc({ status: 'error', data: null }), { status: 'error', items: [] })
+  assert.deepEqual(esignPendingFromRpc({ status: 'loading', data: null }), { status: 'loading', items: [], returned: [] })
+  assert.deepEqual(esignPendingFromRpc({ status: 'idle', data: null }), { status: 'idle', items: [], returned: [] })
+  assert.deepEqual(esignPendingFromRpc(undefined), { status: 'idle', items: [], returned: [] })
+  assert.deepEqual(esignPendingFromRpc({ status: 'error', data: null }), { status: 'error', items: [], returned: [] })
+  // ฐานรุ่นก่อนไม่ส่ง returned ต้องไม่พัง · แถวผิดรูปถูกตัดทิ้ง
+  assert.deepEqual(esignPendingFromRpc({ status: 'ok', data: { ok: true, items: [] } }).returned, [])
+  const withReturned = esignPendingFromRpc({ status: 'ok', data: { ok: true, items: [], returned: [{ trip_id: 't9', last_return: { reason: 'x' } }, { trip_id: 't8' }, null] } })
+  assert.deepEqual(withReturned.returned.map(item => item.trip_id), ['t9'])
   // ดึงสำเร็จแต่ฟังก์ชันตอบ ok:false หรือรูปผิด = error (ไม่งั้นหน้าแรกขึ้นไฟเขียวทั้งที่อาจมีใบรอผู้ใช้อยู่)
   assert.equal(esignPendingFromRpc({ status: 'ok', data: { ok: false, code: 'not_authenticated' } }).status, 'error')
   assert.equal(esignPendingFromRpc({ status: 'ok', data: { ok: true, items: 'x' } }).status, 'error')
@@ -350,15 +356,47 @@ await test('S3b รายการใบรอลงนาม: ดึงพล�
   assert.equal(bare.slotLabel, ESIGN_FLEET_SLOTS.find(slot => slot.key === 'dept_head').label, 'ไม่มี slot_label ใช้ชื่อช่องในหน้าจอ')
 
   // ชื่อฟิลด์ที่ esignPendingRow/esignPendingKey อ่านต้องมีใน jsonb ของ esign_my_pending จริง (หน้าจอทดสอบด้วยข้อมูลจำลอง)
-  const body = /FUNCTION public\.esign_my_pending\(\)[\s\S]*?\n\$\$;/.exec(tripPanelSql)?.[0]
+  const body = /FUNCTION public\.esign_my_pending\(\)[\s\S]*?\n\$\$;/.exec(returnFunctionsSql)?.[0]
   assert.ok(body, 'ไม่พบ esign_my_pending ใน migration')
   const returned = new Set([...body.matchAll(/'([a-z_]+)',\s/g)].map(match => match[1]))
   const lib = esignLibSource.replace(/\r\n/g, '\n')
-  const rowSource = /export function esignPendingRow[\s\S]*?\n}\n/.exec(lib)?.[0] ?? ''
+  const rowSource = (/export function esignPendingRow[\s\S]*?\n}\n/.exec(lib)?.[0] ?? '') + (/export function esignReturnedRow[\s\S]*?\n}\n/.exec(lib)?.[0] ?? '')
   const keySource = /export const esignPendingKey[^\n]*/.exec(lib)?.[0] ?? ''
   const readFields = [...new Set([...rowSource.matchAll(/\bitem\.([a-z_]+)/g), ...keySource.matchAll(/\bitem\.([a-z_]+)/g)].map(match => match[1]))]
   assert.ok(readFields.length >= 9, `อ่านชื่อฟิลด์ได้น้อยผิดปกติ (${readFields.join(',')})`)
   for (const key of readFields) assert.ok(returned.has(key), `หน้าจออ่านฟิลด์ "${key}" แต่ esign_my_pending ไม่ส่งมา`)
+})
+
+await test('ส่งคืนผู้ขอ: แถว/ข้อความบอกทางไปต่อ · ฐานรุ่นก่อนไม่มีปุ่ม · ตัวเรียก RPC ส่งครบทุก argument', async () => {
+  const open = { reason: 'ขอให้แก้', open: true }
+  const row = esignPendingRow({ trip_id: 't1', slot: 'dept_head', decision: 'sign', can_return: true, last_return: open, trip_status: 'completed' })
+  assert.deepEqual([row.canReturn, row.lastReturn], [true, open])
+  assert.equal(row.tripNote, 'รถกลับแล้ว')
+  assert.equal(esignPendingRow({ trip_id: 't1', slot: 'dept_head', trip_status: 'in_progress' }).tripNote, 'รถออกแล้ว')
+  const legacy = esignPendingRow({ trip_id: 't1', slot: 'dept_head', decision: 'sign', trip_status: 'approved' })
+  assert.deepEqual([legacy.canReturn, legacy.lastReturn, legacy.tripNote], [false, null, null], 'ฐานรุ่นก่อนไม่ส่งช่องใหม่ ต้องไม่มีปุ่มส่งคืน')
+  const returned = esignReturnedRow({ trip_id: 't2', destination: 'อำเภอเมือง', vehicle_name: 'กระบะ', planned_departure: 'x', trip_status: 'approved', last_return: open })
+  assert.equal(returned.title, 'คำขอใช้รถไป อำเภอเมือง')
+  assert.equal(returned.lastReturn, open)
+  assert.match(returned.hint, /ส่งให้ลงนามต่อ/)
+  assert.equal(esignReturnedRow({ trip_id: 't2', last_return: open }).title, 'คำขอใช้รถ')
+
+  assert.match(esignReturnHint('pending', true), /ปุ่มแก้ไข.*ลงนามใหม่/)
+  assert.match(esignReturnHint('waitlisted', false), /ปุ่มแก้ไข.*ส่งให้ลงนามต่อ/)
+  assert.match(esignReturnHint('approved', true), /ยกเลิกคำขอแล้วสร้างใหม่.*ผู้ดูแลรถ.*ลงนามใหม่/)
+  for (const status of ['in_progress', 'completed']) assert.match(esignReturnHint(status, false), /รถออกไปแล้ว/)
+  assert.equal(esignReturnedText({ revoked: 2 }), 'ส่งคืนผู้ขอแล้ว — ถอนลายเซ็นในใบนี้ 2 ช่อง')
+  assert.equal(esignReturnedText({ revoked: 0 }), 'ส่งคืนผู้ขอแล้ว')
+
+  assert.match(apiSource, /callEsign\('esign_return_fleet_trip', \{ p_trip_id: tripId, p_slot: slot, p_reason: String\(reason \?\? ''\)\.trim\(\) \}\)/)
+  assert.match(apiSource, /callEsign\('esign_resubmit_fleet_trip', \{ p_trip_id: tripId \}\)/)
+  // เหตุผลห้ามหลุดไปหน้าสาธารณะ/Telegram/กระดิ่ง
+  const verify = /FUNCTION public\.esign_verify\([\s\S]*?\n\$\$;/.exec(functionsSql)?.[0] ?? ''
+  assert.ok(verify.length > 200 && !verify.includes('esign_trip_returns'), 'หน้าตรวจสอบสาธารณะต้องไม่อ่านตารางส่งคืน')
+  const dm = /FUNCTION public\.esign_trip_return_dm\([\s\S]*?\n\$\$;/.exec(returnFunctionsSql)?.[0] ?? ''
+  assert.ok(dm.length > 100 && !dm.includes("'reason'"), 'ผู้รับ Telegram ต้องไม่ได้เหตุผล')
+  const feed = /FUNCTION public\.my_notification_feed\([\s\S]*?\n\$\$;/.exec(returnFunctionsSql)?.[0] ?? ''
+  assert.ok(feed.length > 200 && !/->> 'reason'/.test(feed), 'กระดิ่งต้องไม่ได้เหตุผล')
 })
 
 await test('ออกรถ: ใบที่แค่ลงนามไม่ครบไม่เตือน (เจ้าของระบบสั่งถอด 2569-11-01) · เหลือบรรทัดเหตุผลของใบที่ถูกส่งคืนค้างอยู่', async () => {
@@ -399,7 +437,7 @@ await test('S3b การต่อสาย: esign_my_pending ไม่รับ
   assert.ok(/variant="banner"/.test(fleet) && /\{selTrip\.esign_slots && <DepartEsignNotice tripId=\{selTrip\.id\} \/>\}/.test(fleet), 'แถบอยู่บนหน้าการใช้รถ · เตือนออกรถเฉพาะทริปที่มี esign_slots')
   assert.ok(/onSigned=\{\(\) => \{ esignRpc\.reload\(\); loadTrips\(\) \}\}/.test(fleet), 'ลงนามจากแถบแล้วต้องโหลดทั้งแถบและรายการทริปใหม่')
   // ไฟเขียว "ไม่มีงานค้าง" ต้องรู้เรื่องใบรอลงนาม: นับจำนวน + สถานะ loading/error เข้า todoState
-  assert.ok(/esignPending\.items\.length\]/.test(home) && /\['loading', 'error'\]\.includes\(esignPending\.status\)/.test(home), 'todoState ต้องรวมใบรอลงนามทั้งจำนวนและสถานะ')
+  assert.ok(/esignPending\.items\.length \+ esignPending\.returned\.length\]/.test(home) && /\['loading', 'error'\]\.includes\(esignPending\.status\)/.test(home), 'todoState ต้องรวมใบรอลงนาม ใบที่ถูกส่งคืน และสถานะ')
   // ลงใบสุดท้ายแล้วส่วน "ต้องทำตอนนี้" ต้องไม่หายทั้งก้อน (ข้อความ "ลงนามแล้ว" ต้องอยู่) — เทสต์เบราว์เซอร์ใช้บัญชีที่มีงานอื่นค้างอยู่เสมอ จึงจับกรณีนี้ไม่ได้ ตรวจที่ซอร์สแทน
   assert.ok(/esignPending\.status === 'error' \|\| esignTouched/.test(home) && /setEsignTouched\(true\)/.test(home), 'ส่วน "ต้องทำตอนนี้" ต้องค้างอยู่หลังลงนามใบสุดท้าย (esignTouched)')
   // กล่องลงนามที่ใช้ร่วม: ห้ามอ้างเลขมาตราลอยๆ

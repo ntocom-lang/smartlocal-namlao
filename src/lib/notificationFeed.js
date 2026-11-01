@@ -40,6 +40,14 @@ export function mapFeedItem(raw, docTypeLabel = (code) => code) {
   const base = { id: raw.key, key: raw.key, _kind: kind, status: raw.status ?? null, updated_at: raw.at ?? null, _href: '/staff', _hrefState: null }
   if (kind === 'esign') {
     const when = thaiDate(raw.at)
+    // ใบถูกส่งคืนมาหาผู้ขอ — ไม่แสดงเหตุผลในกระดิ่ง (ข้อความที่เจ้าหน้าที่พิมพ์เอง) ผู้ขอเปิดอ่านจากการ์ดรอลงนาม
+    if (raw.status === 'returned') {
+      return {
+        ...base,
+        title: 'ใบขอใช้รถถูกส่งคืน',
+        body: [raw.detail ? `ส่งคืนโดย ${raw.detail}` : '', when ? `ออกเดินทาง ${when}` : ''].filter(Boolean).join(' · ') || 'เปิดดูเหตุผลในระบบ',
+      }
+    }
     return {
       ...base,
       title: raw.status === 'approve' ? 'รออนุมัติของคุณ' : 'รอลงนามของคุณ',

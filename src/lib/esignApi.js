@@ -106,4 +106,18 @@ export const signFleetTrip = async ({ tripId, slot, pin, decision = null, imageI
 export const revokeFleetTripSignatures = ({ tripId, reason, slot = null }) =>
   callEsign('esign_revoke_fleet_trip', { p_trip_id: tripId, p_reason: String(reason ?? '').trim(), p_slot: slot })
 
+// ส่งคืนผู้ขอ: ไม่ใช้รหัสลงนาม เพราะไม่ใช่การลงลายมือชื่อ · สำเร็จแล้วแจ้งผู้ขอทาง Telegram ส่วนตัว (ไม่ส่งเหตุผล ไม่รอผล)
+export const returnFleetTrip = async ({ tripId, slot, reason }) => {
+  const result = await callEsign('esign_return_fleet_trip', { p_trip_id: tripId, p_slot: slot, p_reason: String(reason ?? '').trim() })
+  if (result?.ok && !result.already) notifyTelegram('esign_returned_dm', tripId)
+  return result
+}
+
+// ช่องผู้ขอเซ็นสด: ผู้ขอหรือผู้ดูแลรถกดส่งให้ลงนามต่อ (ช่องออนไลน์ต้องลงนามใหม่แทน) · สำเร็จแล้วแจ้งคนถัดไปในสาย
+export const resubmitFleetTrip = async tripId => {
+  const result = await callEsign('esign_resubmit_fleet_trip', { p_trip_id: tripId })
+  if (result?.ok && !result.already) notifyTelegram('esign_turn_dm', tripId)
+  return result
+}
+
 export const getMyPendingSignatures = () => callEsign('esign_my_pending', {})

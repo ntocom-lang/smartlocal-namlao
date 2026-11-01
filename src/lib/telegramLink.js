@@ -18,7 +18,7 @@ export function isMissingTelegramLinkTable(error) {
 export const TELEGRAM_DM_CATEGORIES = Object.freeze([
   { key: 'complaint', label: 'คำร้องที่มอบหมายให้ฉัน' },
   { key: 'event', label: 'กิจกรรมที่มอบหมายให้ฉัน' },
-  { key: 'esign', label: 'ถึงคิวลงนามใบขอใช้รถ' },
+  { key: 'esign', label: 'ใบขอใช้รถถึงคิวลงนามหรือถูกส่งคืน' },
 ])
 
 // ยังไม่ apply migration ส่วนที่ 2 (ไม่มีคอลัมน์ dm_muted) — PostgREST ตอบ 42703

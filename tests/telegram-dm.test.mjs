@@ -39,7 +39,7 @@ try {
       + 'type TelegramSendResult = { ok: boolean; attempts: number; error?: string; status?: number; messageId?: unknown }')
   const probe = path.join(work, 'probe.mts')
   writeFileSync(probe, `${stubbed}\nexport {\n`
-    + '  sendDirectMessages, buildComplaintAssignedDm, buildEventAssignedDm, buildEsignTurnDm,\n'
+    + '  sendDirectMessages, buildComplaintAssignedDm, buildEventAssignedDm, buildEsignTurnDm, buildEsignReturnedDm,\n'
     + '  eventIsPast, notificationMatchesResource, DM_CATEGORY, EVENT_TASK_LABEL,\n}\n')
   const ENV = { TELEGRAM_BOT_TOKEN: 'test-token', SUPABASE_URL: 'https://fixture.supabase.co', SUPABASE_ANON_KEY: 'anon-key', SUPABASE_SERVICE_ROLE_KEY: 'service-key' }
   globalThis.Deno = { env: { get: (key) => ENV[key] ?? '' } }
@@ -48,7 +48,7 @@ try {
   rmSync(work, { recursive: true, force: true })
 }
 const {
-  sendDirectMessages, buildComplaintAssignedDm, buildEventAssignedDm, buildEsignTurnDm,
+  sendDirectMessages, buildComplaintAssignedDm, buildEventAssignedDm, buildEsignTurnDm, buildEsignReturnedDm,
   eventIsPast, notificationMatchesResource, DM_CATEGORY, EVENT_TASK_LABEL,
 } = mod
 
@@ -62,7 +62,7 @@ const CLERK = uid(3)
 const OUTSIDER = uid(4)
 const UNLINKED = uid(5)
 
-function fakeDb({ links, profiles, assignments = [], turns = [], complaints = [], municipalities = [], brokenTables = [] }) {
+function fakeDb({ links, profiles, assignments = [], turns = [], returned = null, complaints = [], municipalities = [], brokenTables = [] }) {
   const state = { links: links.map((l) => ({ ...l })), deliveries: [], deleted: [] }
   const rows = {
     telegram_user_links: () => state.links,
@@ -120,8 +120,9 @@ function fakeDb({ links, profiles, assignments = [], turns = [], complaints = []
     state,
     from: builder,
     rpc: async (name, args) => {
-      assert.equal(name, 'esign_trip_turns')
       assert.ok(args.p_trip_id)
+      if (name === 'esign_trip_return_dm') return { data: returned, error: null }
+      assert.equal(name, 'esign_trip_turns')
       return { data: turns, error: null }
     },
   }
@@ -277,9 +278,48 @@ const trip = {
     `esign_turn_dm:${trip.id}:sk1:${TECH}`,
   ])
 }
-assert.equal(notificationMatchesResource('esign_turn_dm', { status: 'approved' }), true)
-for (const status of ['rejected', 'cancelled', 'completed']) {
-  assert.equal(notificationMatchesResource('esign_turn_dm', { status }), false, status)
+// รถกลับแล้วยังตามลงนามได้ ใบที่ปิดแล้วไม่มีคิว
+for (const type of ['esign_turn_dm', 'esign_returned_dm']) {
+  for (const status of ['pending', 'waitlisted', 'approved', 'in_progress', 'completed']) {
+    assert.equal(notificationMatchesResource(type, { status }), true, `${type} ${status}`)
+  }
+  for (const status of ['rejected', 'cancelled']) {
+    assert.equal(notificationMatchesResource(type, { status }), false, `${type} ${status}`)
+  }
+}
+
+// ── รอบใหม่หลังส่งคืน: คีย์ต่อเลขรอบจึงแจ้งผู้ลงนามคนเดิมได้อีกครั้ง · รอบแรกคีย์รูปเดิม ─────────────────────
+{
+  reset()
+  const db = fakeDb({ links: LINKS, profiles: PROFILES, turns: [{ slot: 'dept_head', label: 'หัวหน้าส่วนราชการ', user_id: CLERK, round: 0 }] })
+  assert.equal((await body(await sendDirectMessages(db, 'esign_turn_dm', 'esign', trip, ADMIN))).sent, 1)
+  assert.equal((await body(await sendDirectMessages(db, 'esign_turn_dm', 'esign', trip, ADMIN))).duplicate, 1, 'รอบเดิมไม่ส่งซ้ำ')
+  const again = fakeDb({ links: LINKS, profiles: PROFILES, turns: [{ slot: 'dept_head', label: 'หัวหน้าส่วนราชการ', user_id: CLERK, round: 1 }] })
+  again.state.deliveries.push(...db.state.deliveries)
+  assert.equal((await body(await sendDirectMessages(again, 'esign_turn_dm', 'esign', trip, ADMIN))).sent, 1, 'รอบใหม่ต้องส่งถึงคนเดิม')
+  assert.deepEqual(again.state.deliveries.map((d) => d.idempotency_key).sort(), [
+    `esign_turn_dm:${trip.id}:dept_head:${CLERK}`,
+    `esign_turn_dm:${trip.id}:dept_head:${CLERK}:r1`,
+  ])
+}
+
+// ── ใบถูกส่งคืน: ส่งถึงผู้ขอครั้งเดียวต่อการส่งคืน · ไม่มีเหตุผลในข้อความ ───────────────────────────────
+{
+  reset()
+  const RETURN_ID = uid(310)
+  const db = fakeDb({ links: LINKS, profiles: PROFILES, returned: { return_id: RETURN_ID, label: 'ผู้มีอำนาจสั่งใช้', user_id: TECH } })
+  const res = await body(await sendDirectMessages(db, 'esign_returned_dm', 'esign', trip, CLERK))
+  assert.equal(res.sent, 1)
+  assert.match(sent[0].text, /ใบขอใช้รถถูกส่งคืน/)
+  assert.match(sent[0].text, /ส่งคืนโดยช่อง: <b>ผู้มีอำนาจสั่งใช้<\/b>/)
+  assert.match(sent[0].text, /เปิดดูเหตุผลในระบบ/)
+  assert.deepEqual(db.state.deliveries.map((d) => d.idempotency_key), [`esign_returned_dm:${trip.id}:${RETURN_ID}`])
+  assert.equal((await body(await sendDirectMessages(db, 'esign_returned_dm', 'esign', trip, CLERK))).duplicate, 1, 'การส่งคืนครั้งเดิมไม่แจ้งซ้ำ')
+  // ไม่มีการส่งคืนค้างอยู่ = ไม่มีผู้รับ · ผู้ขอกดเองไม่ต้องแจ้งตัวเอง · ปิดหมวดลงนาม = ไม่ส่ง
+  assert.equal((await body(await sendDirectMessages(fakeDb({ links: LINKS, profiles: PROFILES, returned: null }), 'esign_returned_dm', 'esign', trip, CLERK))).reason, 'no_recipient')
+  assert.equal((await body(await sendDirectMessages(db, 'esign_returned_dm', 'esign', trip, TECH))).reason, 'no_recipient')
+  const muted = LINKS.map((link) => (link.user_id === TECH ? { ...link, dm_muted: ['esign'] } : link))
+  assert.equal((await body(await sendDirectMessages(fakeDb({ links: muted, profiles: PROFILES, returned: { return_id: RETURN_ID, label: 'x', user_id: TECH } }), 'esign_returned_dm', 'esign', trip, CLERK))).reason, 'not_linked')
 }
 assert.equal(notificationMatchesResource('complaint_assigned_dm', { assigned_to: null }), false)
 assert.equal(notificationMatchesResource('complaint_assigned_dm', { assigned_to: TECH }), true)
@@ -290,6 +330,7 @@ assert.equal(notificationMatchesResource('complaint_assigned_dm', { assigned_to:
     buildComplaintAssignedDm(complaint),
     buildEventAssignedDm({ ...event, title: '<b>x</b> & y' }, 'join'),
     buildEsignTurnDm(trip, 'ผู้ขอ'),
+    buildEsignReturnedDm(trip, 'ผู้มีอำนาจ'),
   ]
   for (const text of texts) assert.equal(/https?:\/\//.test(text), false, 'ห้ามมีลิงก์เข้าระบบ')
   assert.match(texts[1], /&lt;b&gt;x&lt;\/b&gt; &amp; y/)

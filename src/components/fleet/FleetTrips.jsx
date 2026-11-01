@@ -2230,7 +2230,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         </div>
       )}
 
-      <MyPendingSignatures variant="banner" status={esignPending.status} items={esignPending.items}
+      <MyPendingSignatures variant="banner" status={esignPending.status} items={esignPending.items} returned={esignPending.returned}
         onSigned={() => { esignRpc.reload(); loadTrips() }} onRetry={esignRpc.reload} />
 
       {/* ── Action buttons ── */}

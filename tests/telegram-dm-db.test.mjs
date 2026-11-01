@@ -4,6 +4,7 @@
 // ฟังก์ชันลงนามตัวจริง (esign_expected_signer ฯลฯ) พึ่งตารางทะเบียนผู้ลงนามทั้งชุด — เทสต์นี้แทนด้วย stub
 // ที่คืนผู้ลงนามจากตาราง test_signers เพื่อตรวจ "ลำดับคิว" ของ esign_trip_turns อย่างเดียว
 // ⚠️ ลำดับคิวต้องตรงกับ can_sign ใน esign_trip_status() — ถ้าแก้ฝั่งนั้น ต้องแก้ทั้งฟังก์ชันและเทสต์นี้
+// ไฟล์นี้ตรวจนิยามของ 20261030100100 · นิยามล่าสุด (รวมใบที่รถกลับแล้ว + ด่านส่งคืน + เลขรอบ) อยู่ 20261101120100 ตรวจใน tests/esign-db.test.mjs
 
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'

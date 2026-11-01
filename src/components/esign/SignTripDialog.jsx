@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Loader2, PenLine, Plus, ShieldCheck, X } from 'lucide-react'
+import { Loader2, PenLine, Plus, ShieldCheck, Undo2, X } from 'lucide-react'
 import AddSignatureDialog from '../profile/AddSignatureDialog'
-import { Chip, Notice } from './EsignBits'
+import { Chip, Notice, ReturnNote } from './EsignBits'
 import PinForm from './PinForm'
 import { ESIGN_DECISION_LABEL, esignFailureText, esignMessage } from '../../lib/esign'
-import { getMySignatures, getMySignerOverview, signFleetTrip } from '../../lib/esignApi'
+import { getMySignatures, getMySignerOverview, returnFleetTrip, signFleetTrip } from '../../lib/esignApi'
 import { PIN_INPUT_CLASS, SIGNATURE_CHECKER, isPin, signatureDataUrl } from '../../lib/esignUi'
 import { SIGNATURE_MAX_IMAGES } from '../../lib/signatureImage'
 import { thaiDateTimeText } from '../../lib/thaiDate'
@@ -14,8 +14,11 @@ import { thaiDateTimeText } from '../../lib/thaiDate'
 // ไม่ผูกกับตัวทริปใน FleetTrips: รับแค่ { tripId, slot, summary } เพื่อให้แถบ "รอลงนามของฉัน" (ชุด S3b) เปิดกล่องเดียวกันได้โดยไม่ต้องเปิดทริปก่อน
 // ค่าเริ่มต้น: แนบภาพที่ตั้งเป็น "ค่าเริ่มต้น" ให้เอง (ปิดหรือเลือกแบบอื่นได้ทุกครั้ง) — ผู้ลงนามกรอกแค่รหัส
 // ยังไม่ได้ตั้งรหัส = ตั้งในกล่องนี้ได้เลย ไม่ต้องไปหน้าโปรไฟล์ก่อน
-export default function SignTripDialog({ tripId, slot, slotLabel, summary, onClose, onSigned }) {
+// canReturn มาจาก DB (can_return) · ปุ่มส่งคืนอยู่ในกล่องนี้ เพราะนายก/ปลัดที่ไม่มีสิทธิ์ยานพาหนะเต็มเปิดทริปไม่ได้ เข้าได้ทางนี้ทางเดียว
+export default function SignTripDialog({ tripId, slot, slotLabel, summary, canReturn = false, lastReturn = null, onClose, onSigned, onReturned }) {
   const decision = slot === 'authority' ? 'approve' : 'sign'
+  const [returning, setReturning] = useState(false)
+  const [reason, setReason] = useState('')
   const [overview, setOverview] = useState(null)
   const [loadedAt, setLoadedAt] = useState(0) // เวลาตอนโหลดสถานะรหัส ใช้ตัดสินว่าล็อกหมดอายุหรือยัง (เรนเดอร์ห้ามเรียก Date.now)
   const [library, setLibrary] = useState([])
@@ -52,7 +55,7 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, onClo
         if (!busyRef.current) onCloseRef.current()
       }
       if (event.key === 'Tab') {
-        const items = [...dialogRef.current.querySelectorAll('button:not([disabled]), input:not([disabled]), [tabindex="0"]')]
+        const items = [...dialogRef.current.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex="0"]')]
         if (!items.length) return
         const first = items[0]
         const last = items[items.length - 1]
@@ -113,6 +116,21 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, onClo
     onSigned(result)
   }
 
+  const reasonOk = reason.trim().length >= 3
+
+  async function handleReturn() {
+    if (!canReturn || !reasonOk || busy) return
+    setBusy(true)
+    setError('')
+    const result = await returnFleetTrip({ tripId, slot, reason })
+    setBusy(false)
+    if (!result?.ok) {
+      setError(esignMessage(result))
+      return
+    }
+    onReturned?.(result)
+  }
+
   const summaryRows = [
     ['ผู้ขอใช้รถ', summary?.requesterName],
     ['รถ', summary?.vehicleName],
@@ -128,7 +146,7 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, onClo
       <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="sign-trip-title" data-sign-dialog
         className="flex max-h-[100dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl outline-none sm:rounded-2xl">
         <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
-          <h2 id="sign-trip-title" className="min-w-0 text-base font-bold text-gray-800">{ESIGN_DECISION_LABEL[decision]}: {slotLabel}</h2>
+          <h2 id="sign-trip-title" className="min-w-0 text-base font-bold text-gray-800">{returning ? 'ส่งคืนผู้ขอ' : ESIGN_DECISION_LABEL[decision]}: {slotLabel}</h2>
           <button type="button" onClick={onClose} disabled={busy} aria-label="ปิด" data-sign-close
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50">
             <X size={18} />
@@ -144,11 +162,28 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, onClo
               </div>
             ))}
           </dl>
-          <p className="text-xs leading-5 text-gray-500">
-            ลงนามด้วยบัญชีและรหัสของคุณเท่านั้น ห้ามลงนามแทนผู้อื่น · ลายเซ็นผูกกับเนื้อหาข้างต้น ถ้าคำขอถูกแก้ภายหลังต้องถอนลายเซ็นแล้วลงนามใหม่
-          </p>
+          <ReturnNote item={lastReturn} />
+          {!returning && (
+            <p className="text-xs leading-5 text-gray-500">
+              ลงนามด้วยบัญชีและรหัสของคุณเท่านั้น ห้ามลงนามแทนผู้อื่น · ลายเซ็นผูกกับเนื้อหาข้างต้น ถ้าคำขอถูกแก้ภายหลังต้องถอนลายเซ็นแล้วลงนามใหม่
+            </p>
+          )}
 
-          {loading ? (
+          {returning ? (
+            <section className="space-y-2.5 rounded-xl border border-red-200 bg-red-50 p-3.5" aria-labelledby="sign-return-title" data-sign-return-form>
+              <h3 id="sign-return-title" className="text-sm font-bold text-red-900">ไม่ลงนาม ส่งคืนผู้ขอ</h3>
+              <p className="text-xs leading-5 text-red-800" data-sign-return-impact>
+                ลายเซ็นที่ลงแล้วในใบนี้จะถูกถอน (ประวัติยังอยู่) ผู้ลงนามต้องลงใหม่ตามลำดับเมื่อผู้ขอส่งกลับ · สถานะคำขอและคิวรถไม่เปลี่ยน ผู้ขอเป็นคนเลือกว่าจะแก้หรือยกเลิก
+              </p>
+              <label className="block text-xs font-semibold text-red-900" htmlFor="sign-return-reason">เหตุผล (3–500 ตัวอักษร) ผู้ขอจะเห็นข้อความนี้
+                <textarea id="sign-return-reason" data-sign-return-reason rows={3} maxLength={500} value={reason} disabled={busy}
+                  placeholder="เช่น ขอให้แก้วันเดินทางให้ตรงหนังสือเชิญ"
+                  onChange={event => setReason(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-red-200 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none" />
+              </label>
+              {error && <p role="alert" className="text-xs leading-5 text-red-700" data-sign-error>{error}</p>}
+            </section>
+          ) : loading ? (
             <div className="flex items-center justify-center py-6 text-gray-400"><Loader2 size={18} className="animate-spin" /></div>
           ) : loadError ? (
             <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" data-sign-load-error>⚠️ {loadError}</p>
@@ -226,16 +261,35 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, onClo
               {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-xs leading-5 text-red-700" data-sign-error>{error}</p>}
             </>
           )}
+
+          {canReturn && !returning && (
+            <button type="button" disabled={busy} data-sign-return-open
+              onClick={() => { setError(''); setPin(''); setReturning(true) }}
+              className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-red-200 px-4 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">
+              <Undo2 size={15} aria-hidden="true" /> ไม่ลงนาม ส่งคืนผู้ขอ
+            </button>
+          )}
         </div>
 
-        <div className="flex gap-2 border-t border-gray-100 px-5 py-4">
-          <button type="button" onClick={onClose} disabled={busy}
-            className="min-h-11 rounded-xl border border-gray-200 px-5 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">ยกเลิก</button>
-          <button type="button" onClick={handleSign} disabled={!ready} data-sign-submit
-            className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-5 text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: 'var(--color-primary)' }}>
-            {busy ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />} {decision === 'approve' ? 'อนุมัติ (ลงนาม)' : 'ลงนาม'}
-          </button>
-        </div>
+        {returning ? (
+          <div className="flex gap-2 border-t border-gray-100 px-5 py-4">
+            <button type="button" onClick={() => { setError(''); setReturning(false) }} disabled={busy} data-sign-return-back
+              className="min-h-11 rounded-xl border border-gray-200 px-5 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">กลับ</button>
+            <button type="button" onClick={handleReturn} disabled={!reasonOk || busy} data-sign-return-submit
+              className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 px-5 text-sm font-bold text-white disabled:opacity-50">
+              {busy ? <Loader2 size={15} className="animate-spin" /> : <Undo2 size={15} />} ยืนยันส่งคืนผู้ขอ
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2 border-t border-gray-100 px-5 py-4">
+            <button type="button" onClick={onClose} disabled={busy}
+              className="min-h-11 rounded-xl border border-gray-200 px-5 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">ยกเลิก</button>
+            <button type="button" onClick={handleSign} disabled={!ready} data-sign-submit
+              className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-5 text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: 'var(--color-primary)' }}>
+              {busy ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />} {decision === 'approve' ? 'อนุมัติ (ลงนาม)' : 'ลงนาม'}
+            </button>
+          </div>
+        )}
       </div>
 
       {showAdd && (
