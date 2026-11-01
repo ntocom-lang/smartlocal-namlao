@@ -36,6 +36,7 @@ const DeviceLoginApprove = lazyWithRetry(() => import('./pages/DeviceLoginApprov
 const SatisfactionPage = lazyWithRetry(() => import('./pages/SatisfactionPage'))
 const TrackComplaint = lazyWithRetry(() => import('./pages/TrackComplaint'))
 const VerifyEsign = lazyWithRetry(() => import('./pages/VerifyEsign'))
+const AccountDeletePage = lazyWithRetry(() => import('./pages/AccountDeletePage'))
 const SurveyPage = lazyWithRetry(() => import('./pages/SurveyPage'))
 const SurveysPage = lazyWithRetry(() => import('./pages/SurveysPage'))
 const TechnicianDashboard = lazyWithRetry(() => import('./pages/TechnicianDashboard'))
@@ -698,6 +699,9 @@ function AppShell() {
           <Route path="/t/:token" element={<TrackComplaint />} />
           {/* ตรวจสอบเอกสารลงนามออนไลน์ (QR ท้ายใบพิมพ์แบบ ๓/สก.๑) — ไม่ต้องล็อกอิน ไม่อยู่ในโมดูลใด ไม่แสดงภาพลายเซ็น/เนื้อหาคำขอ (esign_verify ไม่ส่งมา) */}
           <Route path="/v/:code" element={<VerifyEsign />} />
+          {/* ลบบัญชีด้วยตนเอง (App Store 5.1.1(v) / Google Play) — เปิดได้โดยไม่ต้องล็อกอิน เพราะเป็นลิงก์เว็บที่ต้องกรอกใน
+              Play Console ด้วย หน้าเองแยกสถานะ ยังไม่ล็อกอิน/ประชาชน/เจ้าหน้าที่ ไม่อยู่ในโมดูลใด */}
+          <Route path="/account/delete" element={<AccountDeletePage />} />
           {/* แบบสำรวจความเห็นประชาชน — ใครก็เปิดอ่านได้ ตอบได้เฉพาะผู้ล็อกอินที่สังกัดหน่วยงานนี้ (ฐานข้อมูลตัดสินใน get_survey)
               ไม่อยู่ในโมดูลใด (ไม่ขึ้นกับสวิตช์โมดูลของ อปท.) · ส่วนจัดการอยู่ที่แท็บ "แบบสำรวจ" ในเมนูข่าวสารของเจ้าหน้าที่ */}
           <Route path="/survey/:id" element={<SurveyPage />} />
