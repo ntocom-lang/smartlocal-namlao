@@ -17,6 +17,7 @@ import { airQualityResponse } from './airQuality.js'
 import { pm25DetailsResponse } from './pm25Details.js'
 import { httpsRedirectResponse } from './httpsRedirect.js'
 import { IMAGE_ROUTE_PREFIX, imageProxyResponse } from './imageProxy.js'
+import { ASSET_LINKS_PATH, assetLinksResponse, buildPlatformManifest, isPlatformHostname } from './storeApp.js'
 
 const SHELL_PATH = '/_template.html'
 
@@ -208,6 +209,11 @@ export default {
       })
     }
 
+    // ไฟล์ยืนยันว่าแอป Android จากสโตร์เป็นของเจ้าของเดียวกับเว็บ — ทุกโดเมนตอบไฟล์เดียวกัน (worker/storeApp.js)
+    // ต้องมาก่อน isFileRequest() ที่ตอบ 404 ให้ .json · ไม่วางเป็นไฟล์ static เพราะต้องคุมให้ตอบแน่นอนทุกโดเมน
+    // และเทสต์ตรวจได้ (tests/android-twa.test.mjs)
+    if (url.pathname === ASSET_LINKS_PATH) return assetLinksResponse()
+
     // manifest ต่อ อปท. — ต้องเช็คก่อน isFileRequest() ซึ่งตอบ 404 ให้ทุกนามสกุลไฟล์
     //
     // เสิร์ฟจาก worker ไม่ใช่ไฟล์ static เพราะเนื้อในต่างกันทุก อปท. (ชื่อ โลโก้ สีธีม) แต่
@@ -221,6 +227,13 @@ export default {
         if (slug) tenant = await fetchTenant(slug, env)
       } catch {
         // Supabase ล่ม — ตกไป 404 ด้านล่าง ผู้ใช้ยังเปิดเว็บได้ แค่ติดตั้งไม่ได้ชั่วคราว
+      }
+
+      // โดเมนกลางของแอปจากสโตร์ไม่มี อปท. — ตอบข้อมูลแอปกลางแทน 404 (Bubblewrap/Chrome ใช้ทำแอป Android)
+      if (!tenant && isPlatformHostname(url.hostname)) {
+        return new Response(JSON.stringify(buildPlatformManifest()), {
+          headers: { 'Content-Type': 'application/manifest+json; charset=UTF-8', 'Cache-Control': 'public, max-age=3600' },
+        })
       }
 
       if (!tenant) {

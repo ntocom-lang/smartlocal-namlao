@@ -55,3 +55,8 @@ scratch/
 # settings.json = ของกลางของโปรเจกต์ commit ได้ / settings.local.json = ของเครื่องใครเครื่องมัน
 .claude/settings.local.json
 .claude/worktrees/
+
+# กุญแจเซ็นแอป Android (upload key) — เก็บนอก repo ที่ D:\keys เสมอ บรรทัดนี้กันเผลอคัดลอกเข้ามาแล้ว commit
+# (ใครได้ไฟล์นี้ + รหัสผ่าน = ส่งแอปปลอมในชื่อเราขึ้น Play ได้) ดู scripts/twa-build.mjs
+*.jks
+*.keystore
