@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, Clock, FileSignature, Loader2, Lock, PenLine, ShieldAlert, Undo2 } from 'lucide-react'
 import { Chip, Notice } from './EsignBits'
 import SignTripDialog from './SignTripDialog'
-import { ESIGN_DECISION_LABEL, ESIGN_DRIVER_NOTE, ESIGN_FLEET_SLOTS, esignDepartWarning, esignFallbackText, esignMessage, esignRevokeTargets } from '../../lib/esign'
+import { ESIGN_DECISION_LABEL, ESIGN_DRIVER_NOTE, ESIGN_FLEET_SLOTS, esignDepartReturn, esignFallbackText, esignMessage, esignRevokeTargets } from '../../lib/esign'
 import { getTripEsignStatus, revokeFleetTripSignatures } from '../../lib/esignApi'
 import { SMALL_BUTTON_CLASS } from '../../lib/esignUi'
 import { clearHomeRpcCache } from '../../lib/staffHomeData'
@@ -245,25 +245,19 @@ export default function TripEsignPanel({ trip, onChanged }) {
   )
 }
 
-// เตือน "ไม่บล็อก" ในหน้าต่างบันทึกออกเดินทาง: ช่องผู้มีอำนาจเป็นออนไลน์แต่ยังไม่ลงนาม
-// ออกรถต้องไม่ถูกขวาง (รถออกก่อนเอกสารเสร็จเกิดจริงทุกวัน และคนขับยืนรออยู่หน้ารถ) แต่ต้องให้คนกดเห็นว่าใบนี้ยังขาดอะไร
-// อ่านสถานะไม่ได้ = เงียบ: ตัวเตือนนี้เป็นของเสริม ห้ามทำให้ขั้นตอนออกรถดูเหมือนพัง
+// บรรทัดเดียวในหน้าต่างบันทึกออกเดินทาง เฉพาะใบที่ผู้ลงนามส่งคืนค้างอยู่ — คนออกรถควรรู้เหตุผล ไม่บล็อก ไม่เพิ่มขั้นตอน
+// ใบที่แค่ยังลงนามไม่ครบไม่แสดงอะไร (ดู esignDepartReturn) · อ่านสถานะไม่ได้ = เงียบ ห้ามทำให้ขั้นตอนออกรถดูเหมือนพัง
 export function DepartEsignNotice({ tripId }) {
-  const [warning, setWarning] = useState(null)
+  const [returned, setReturned] = useState(null)
   useEffect(() => {
     let cancelled = false
-    getTripEsignStatus(tripId).then(result => { if (!cancelled) setWarning(esignDepartWarning(result)) })
+    getTripEsignStatus(tripId).then(result => { if (!cancelled) setReturned(esignDepartReturn(result)) })
     return () => { cancelled = true }
   }, [tripId])
-  if (!warning) return null
-  const who = warning.blocked
-    ? `ผู้มีอำนาจลงนามออนไลน์ไม่ได้: ${esignMessage({ code: warning.blocked })}`
-    : warning.expectedName ? `รอ ${warning.expectedName} ลงนาม` : null
+  if (!returned) return null
   return (
-    <div role="status" data-depart-esign-warning className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
-      <p className="font-bold">⚠️ ใบขออนุญาตใช้รถนี้ลงนามออนไลน์ยังไม่ครบ — ยังขาด: {warning.missing.join(' · ')}</p>
-      {who && <p>{who}</p>}
-      <p>ออกเดินทางได้ตามปกติ (ระบบไม่บล็อก) แต่ใบนี้จะยังไม่มีลายเซ็นออนไลน์ครบ — ตามให้ผู้ลงนามลงนามภายหลังได้จากหน้ารายละเอียดคำขอ</p>
-    </div>
+    <p role="status" data-depart-esign-returned className="break-words rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
+      ใบนี้ถูกส่งคืนผู้ขอ เหตุผล: {returned.reason}
+    </p>
   )
 }

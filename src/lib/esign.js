@@ -231,16 +231,9 @@ export function esignPendingRow(item) {
   }
 }
 
-// เตือนแบบไม่บล็อกตอนบันทึกออกเดินทาง: ช่องผู้มีอำนาจเป็นออนไลน์แต่ยังไม่ลงนาม
-// คืน null = ไม่ต้องเตือน · missing = ช่องออนไลน์ที่ยังไม่ลงนามทั้งหมด (ผู้ขอ/ผอ.กอง/ผู้มีอำนาจ ตามลำดับ) · blocked = เหตุที่ช่องผู้มีอำนาจลงนามออนไลน์ไม่ได้ (ถ้ามี)
-export function esignDepartWarning(status) {
+// หน้าต่างบันทึกออกเดินทางบอกเฉพาะใบที่ผู้ลงนามส่งคืนค้างอยู่ ใบที่แค่ยังลงนามไม่ครบไม่เตือน
+// (เจ้าของระบบสั่งถอด 2569-11-01: ออกรถก่อนลงนาม เอาคำเตือนออกไปก่อน กลัวเขาไม่ซื้อ หาว่าเรื่องมาก)
+export function esignDepartReturn(status) {
   if (!status?.found || ['rejected', 'cancelled'].includes(status.trip_status)) return null
-  const pending = (status.slots ?? []).filter(slot => slot.mode === 'online' && slot.applicable && !slot.signed)
-  const authority = pending.find(slot => slot.slot === 'authority')
-  if (!authority) return null
-  return {
-    missing: pending.map(slot => slot.label),
-    expectedName: authority.expected_name || null,
-    blocked: authority.blocked || null,
-  }
+  return status.last_return?.open ? status.last_return : null
 }
