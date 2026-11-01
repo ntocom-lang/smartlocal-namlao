@@ -9,7 +9,7 @@
 //   - ดึงพลาดต้องเตือน ไม่ขึ้นไฟเขียว "ไม่มีงานค้าง" + ลองใหม่ได้
 //   - ลงนามจากการ์ดโดยไม่เปิดทริป: ส่งช่อง/ภาพ/approve ถูก · แถวหาย · ข้อความ "ลงนามแล้ว" ยังอยู่หลังใบสุดท้าย · คนถือหลายช่อง ช่องถัดไปโผล่หลังลงช่องแรก
 //   - แถบหน้าการใช้รถ: ครบทุกใบ · ลงนามแล้วโหลดรายการทริปใหม่ · ไม่มีใบรอ = ไม่มีแถบ
-//   - ออกรถ: ทริปออนไลน์ที่ผู้มีอำนาจยังไม่ลงนาม = มีกรอบเตือน แต่ยังออกได้ (PATCH ไป) · ลงนามแล้ว/เซ็นสด = ไม่เตือน (เซ็นสดไม่ยิง RPC ลงนาม)
+//   - ออกรถ: ลงนามไม่ครบไม่มีกรอบเตือน (เจ้าของระบบสั่งถอด 2569-11-01) · ออกรถได้ทุกกรณี
 //   - เค้าโครงมือถือ 390/360 ไม่ล้น ปุ่ม ≥ 44px
 //
 //   ES_TEST_BASE_URL=http://demo.localhost:5176 node tests/esign-pending.playwright.mjs
@@ -413,22 +413,30 @@ const submitDepart = async page => {
   await page.getByRole('button', { name: 'ยืนยันออกเดินทาง' }).click()
 }
 
-async function checkDepartWarning(page, auth, context) {
+// ข้อความเตือนชุดเดิมที่เจ้าของระบบสั่งถอด — ตรวจจากข้อความบนจอ เพราะแค่เช็ก attribute ที่ลบไปแล้วจะผ่านเสมอ
+const DEPART_OLD_WARNING = ['ลงนามออนไลน์ยังไม่ครบ', 'ยังขาด:', 'ไม่บล็อก', 'ตามให้ผู้ลงนาม']
+async function departBoxText(page) {
+  return page.getByRole('button', { name: 'ยืนยันออกเดินทาง' }).evaluate(button => button.closest('.fixed')?.innerText ?? document.body.innerText)
+}
+
+async function checkDepartNoWarningUnsigned(page, auth, context) {
   const backend = makeBackend({ items: [], statusSigned: { requester: true, dept_head: true } })
   await installBackend(context, backend)
   await openFleetTrips(page, auth)
   await openDepart(page, ONLINE_DEST)
-  await page.locator('[data-depart-esign-warning]').waitFor({ timeout: 10_000 })
-  const warning = await page.locator('[data-depart-esign-warning]').innerText()
-  for (const expected of ['ลงนามออนไลน์ยังไม่ครบ', 'ยังขาด: ผู้มีอำนาจสั่งใช้ยานพาหนะ', 'รอ สมศักดิ์ นายก ลงนาม', 'ไม่บล็อก']) assert.ok(warning.includes(expected), `คำเตือนไม่มี "${expected}"`)
-  // เตือนแล้วต้องออกรถได้: PATCH ไปที่ทริปนี้จริง สถานะ in_progress
+  await page.waitForTimeout(1_500)
+  assert.ok(backend.calls.some(call => call.name === 'esign_trip_status'), 'ต้องอ่านสถานะมาแล้วจริง ไม่งั้นผลนี้ไม่มีความหมาย')
+  const text = await departBoxText(page)
+  for (const phrase of DEPART_OLD_WARNING) assert.ok(!text.includes(phrase), `ยังมีคำเตือน "${phrase}"`)
+  assert.equal(await page.locator('[data-depart-esign-returned]').count(), 0)
+  // ออกรถได้ตามปกติ: PATCH ไปที่ทริปนี้จริง สถานะ in_progress
   await submitDepart(page)
   await page.waitForFunction(() => !document.body.innerText.includes('ยืนยันออกเดินทาง'), null, { timeout: 10_000 })
   assert.equal(backend.tripPatches.length, 1, `ต้อง PATCH ทริป 1 ครั้ง (ได้ ${backend.tripPatches.length})`)
   assert.equal(backend.tripPatches[0].id, ONLINE_TRIP_ID)
   assert.equal(backend.tripPatches[0].body.status, 'in_progress')
   assert.deepEqual(dialogs.filter(d => d.type === 'alert'), [], 'ออกรถต้องไม่มี alert')
-  return 'ผู้มีอำนาจยังไม่ลงนาม = มีกรอบเตือน แต่ออกรถได้ (PATCH in_progress)'
+  return 'ผู้มีอำนาจยังไม่ลงนาม = ไม่มีกรอบเตือน และออกรถได้ (PATCH in_progress)'
 }
 
 async function checkDepartNoWarning(page, auth, context) {
@@ -440,14 +448,14 @@ async function checkDepartNoWarning(page, auth, context) {
   await page.waitForFunction(count => count > 0, signedAll.calls.filter(call => call.name === 'esign_trip_status').length).catch(() => {})
   await page.waitForTimeout(1_500)
   assert.ok(signedAll.calls.some(call => call.name === 'esign_trip_status'), 'ทริปโหมดออนไลน์ต้องอ่านสถานะลงนาม')
-  assert.equal(await page.locator('[data-depart-esign-warning]').count(), 0, 'ลงนามครบแล้วต้องไม่เตือน')
+  assert.equal(await page.locator('[data-depart-esign-returned]').count(), 0, 'ลงนามครบแล้วต้องไม่มีบรรทัดส่งคืน')
   // ทริปเซ็นสด → ไม่เตือน และไม่ยิง RPC ลงนามเลย
   const wet = makeBackend({ items: [] })
   await installBackend(context, wet)
   await openFleetTrips(page, auth)
   await openDepart(page, WET_DEST)
   await page.waitForTimeout(1_500)
-  assert.equal(await page.locator('[data-depart-esign-warning]').count(), 0)
+  assert.equal(await page.locator('[data-depart-esign-returned]').count(), 0)
   assert.equal(wet.calls.filter(call => call.name === 'esign_trip_status').length, 0, 'ทริปเซ็นสดต้องไม่อ่านสถานะลงนาม')
   return 'ลงนามครบ = ไม่เตือน · ทริปเซ็นสด = ไม่เตือนและไม่ยิง RPC ลงนาม'
 }
@@ -515,7 +523,7 @@ async function main() {
     await run('หน้าแรก: ถือหลายช่อง', () => checkHomeChain(page, auth, context))
     await run('หน้าการใช้รถ: แถบรอลงนาม', () => checkFleetBanner(page, auth, context))
     await run('หน้าการใช้รถ: ไม่มีใบรอ = ไม่มีแถบ', () => checkFleetNoBanner(page, auth, context))
-    await run('ออกรถ: เตือนแต่ไม่บล็อก', () => checkDepartWarning(page, auth, context))
+    await run('ออกรถ: ลงนามไม่ครบไม่เตือนและออกได้', () => checkDepartNoWarningUnsigned(page, auth, context))
     await run('ออกรถ: ไม่เตือนเมื่อไม่ควร', () => checkDepartNoWarning(page, auth, context))
     await run('เค้าโครงมือถือ 390', () => checkMobile(page, auth, context, 390, 844))
     await run('เค้าโครงมือถือ 360', () => checkMobile(page, auth, context, 360, 740))

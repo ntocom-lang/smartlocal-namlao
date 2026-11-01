@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
   ESIGN_DECISION_LABEL, ESIGN_DUTY_TEXT, ESIGN_FALLBACK_REASON, ESIGN_FLEET_SLOTS, ESIGN_MESSAGES, ESIGN_READINESS, ESIGN_TRIP_EXCEPTIONS, esignAnnouncementDraft, esignAnyOnline, esignBlockers,
-  esignDepartWarning, esignFailureText, esignFallbackText, esignGateItems, esignMessage, esignModesFromStatus, esignPendingFromRpc, esignPendingKey, esignPendingRow,
+  esignDepartReturn, esignFailureText, esignFallbackText, esignGateItems, esignMessage, esignModesFromStatus, esignPendingFromRpc, esignPendingKey, esignPendingRow,
   esignReadinessMap, esignRevokeTargets,
 } from '../src/lib/esign.js'
 import { isVerifyBusy, isVerifyCode, verifySlotRows, verifySummary } from '../src/lib/esignVerify.js'
@@ -361,21 +361,27 @@ await test('S3b รายการใบรอลงนาม: ดึงพล�
   for (const key of readFields) assert.ok(returned.has(key), `หน้าจออ่านฟิลด์ "${key}" แต่ esign_my_pending ไม่ส่งมา`)
 })
 
-await test('S3b เตือนตอนออกรถ: เตือนเฉพาะช่องผู้มีอำนาจออนไลน์ที่ยังไม่ลงนาม · ลงแล้ว/เซ็นสด/ทริปปิด/อ่านสถานะไม่ได้ = ไม่เตือน', () => {
+await test('ออกรถ: ใบที่แค่ลงนามไม่ครบไม่เตือน (เจ้าของระบบสั่งถอด 2569-11-01) · เหลือบรรทัดเหตุผลของใบที่ถูกส่งคืนค้างอยู่', async () => {
   const slot = (name, extra = {}) => ({ slot: name, label: name + '-label', mode: 'online', applicable: true, signed: false, expected_name: null, blocked: null, ...extra })
   const base = (slots, extra = {}) => ({ found: true, trip_status: 'approved', slots, ...extra })
-  const w = esignDepartWarning(base([slot('requester', { signed: true }), slot('dept_head', { signed: true }), slot('authority', { expected_name: 'นายก ก.' }), slot('sk1', { applicable: false })]))
-  assert.deepEqual(w, { missing: ['authority-label'], expectedName: 'นายก ก.', blocked: null })
-  const all = esignDepartWarning(base([slot('requester'), slot('dept_head'), slot('authority')]))
-  assert.deepEqual(all.missing, ['requester-label', 'dept_head-label', 'authority-label'], 'ไล่ตามลำดับสายลงนาม')
-  assert.equal(esignDepartWarning(base([slot('authority', { blocked: 'signatory_not_linked' })])).blocked, 'signatory_not_linked')
-  assert.equal(esignDepartWarning(base([slot('authority', { signed: true })])), null, 'ลงนามแล้ว')
-  assert.equal(esignDepartWarning(base([slot('authority', { mode: 'wet' })])), null, 'เซ็นสด ไม่ใช่เรื่องของระบบ')
-  assert.equal(esignDepartWarning(base([slot('requester'), slot('authority', { signed: true })])), null, 'ช่องผู้มีอำนาจครบแล้ว ไม่เตือนเรื่องช่องอื่น')
-  assert.equal(esignDepartWarning(base([slot('authority')], { trip_status: 'cancelled' })), null)
-  assert.equal(esignDepartWarning({ found: false }), null)
-  assert.equal(esignDepartWarning({ ok: false, code: 'error' }), null)
-  assert.equal(esignDepartWarning(null), null)
+  assert.equal(esignDepartReturn(base([slot('requester'), slot('dept_head'), slot('authority', { expected_name: 'นายก ก.' })])), null, 'ลงนามไม่ครบต้องไม่เตือน')
+  assert.equal(esignDepartReturn(base([slot('authority', { blocked: 'signatory_not_linked' })])), null, 'ผู้มีอำนาจลงนามไม่ได้ก็ไม่เตือน')
+  assert.equal(esignDepartReturn(base([slot('authority', { signed: true })])), null)
+  const open = { reason: 'ขอให้แก้', open: true }
+  assert.equal(esignDepartReturn(base([slot('authority', { mode: 'wet' })], { last_return: open })), open, 'ส่งคืนค้างอยู่ต้องบอก')
+  assert.equal(esignDepartReturn(base([slot('authority')], { last_return: { reason: 'ขอให้แก้', open: false } })), null, 'ส่งคืนจบแล้วไม่บอก')
+  assert.equal(esignDepartReturn(base([slot('authority')], { trip_status: 'cancelled', last_return: open })), null)
+  assert.equal(esignDepartReturn({ found: false }), null)
+  assert.equal(esignDepartReturn({ ok: false, code: 'error' }), null)
+  assert.equal(esignDepartReturn(null), null)
+  // ข้อความเตือนชุดเดิมต้องไม่เหลือในหน้าต่างบันทึกออกเดินทาง
+  const notice = /export function DepartEsignNotice[\s\S]*$/.exec(await read('../src/components/esign/TripEsignPanel.jsx'))?.[0] ?? ''
+  assert.ok(notice.includes('data-depart-esign-returned'), 'ไม่พบ DepartEsignNotice')
+  for (const phrase of ['ยังไม่ครบ', 'ยังขาด', 'ตามให้ผู้ลงนาม', 'ไม่บล็อก</']) assert.ok(!notice.includes(phrase), `ยังมีคำเตือน "${phrase}"`)
+  // ออกรถต้องไม่มีด่านใหม่: หน้าต่างออกเดินทางไม่รอสถานะลงนาม
+  const fleet = await read('../src/components/fleet/FleetTrips.jsx')
+  const submit = /async function submitDepart\(\) \{[\s\S]*?\n {2}\}\n/.exec(fleet.replace(/\r\n/g, '\n'))?.[0] ?? ''
+  assert.ok(submit.length > 100 && !/esign|getTripEsignStatus/i.test(submit), 'บันทึกออกเดินทางต้องไม่ขึ้นกับสถานะลงนาม')
 })
 
 await test('S3b การต่อสาย: esign_my_pending ไม่รับอาร์กิวเมนต์ ต้องส่ง args {} ทุกจุด (useHomeRpc ปกติส่ง p_muni → PGRST202) · แถบอยู่หน้าการใช้รถ · เตือนออกรถเฉพาะทริปโหมดออนไลน์', async () => {
