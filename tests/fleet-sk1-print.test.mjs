@@ -142,6 +142,14 @@ try {
     ['ข้อมูลครบ', { trip, tenant }, 3],
     ['ข้อความยาวสุด', { trip: longTrip, tenant }, 3],
     ['ใบเปล่า', { trip: {}, tenant }, 3],
+    // ชื่อ+ตำแหน่งนายกต้องอยู่บรรทัดเดียว (เจ้าของระบบสั่ง 2569-11-01) — อบต.ที่ชื่อยาวกว่าทุ่งแค้วด้วย
+    ['ผู้ขอบรรทัดเดียว (อบต.ตำหนักธรรม)', {
+      trip: { ...trip, requester: { full_name: 'นาย กันตพงษ์ คำปลุก' }, requester_position: 'นายกองค์การบริหารส่วนตำบลตำหนักธรรม' },
+      tenant: { name: 'องค์การบริหารส่วนตำบลตำหนักธรรม' }, oneLineRequester: true,
+    }, 3],
+    ['ผู้ขอบรรทัดเดียว (ทุ่งแค้ว ตามใบจริง)', {
+      trip: { ...trip, requester: { full_name: 'นาย กันตพงษ์ คำปลุก' } }, tenant, oneLineRequester: true,
+    }, 3],
   ]) {
     await view.setContent(buildFleetSk1Html(args), { waitUntil: 'load' })
     await view.evaluate(() => document.fonts.ready)
@@ -171,6 +179,10 @@ try {
         // ช่องวันที่/เวลาต้องเหลือที่ให้เขียนด้วยมือ
         narrowFills: [...document.querySelectorAll('.fill:not(.is-filled)')]
           .filter(el => el.getBoundingClientRect().width < 8 * mm).length,
+        requesterLines: (() => {
+          const el = document.querySelector('.flow.first')
+          return el ? Math.round(el.getBoundingClientRect().height / lineHeight) : 0
+        })(),
         headDateOneLine: document.querySelectorAll('.head .line-row')[1].getBoundingClientRect().height < lineHeight * 1.6,
         // ชื่อ/ตำแหน่ง/ทะเบียนห้ามถูกตัดกลางคำ (เคยได้ "…ตำบลทุ่งแค้|ว")
         keeps: document.querySelectorAll('.keep').length,
@@ -184,6 +196,7 @@ try {
     assert.deepEqual(measured.wrappedLabels, [], `แบบ สก. ๑ (${name}) ป้ายคำถูกบีบจนตกบรรทัด`)
     assert.equal(measured.narrowFills, 0, `แบบ สก. ๑ (${name}) มีช่องว่างแคบเกินเขียนด้วยมือ`)
     assert.ok(measured.headDateOneLine, `แบบ สก. ๑ (${name}) บรรทัดวันที่หัวใบต้องอยู่บรรทัดเดียว`)
+    if (args.oneLineRequester) assert.equal(measured.requesterLines, 1, `แบบ สก. ๑ (${name}) "ข้าพเจ้า … ตำแหน่ง …" ต้องอยู่บรรทัดเดียว ได้ ${measured.requesterLines} บรรทัด`)
     assert.deepEqual(measured.brokenKeeps, [], `แบบ สก. ๑ (${name}) ชื่อ/ตำแหน่ง/ทะเบียนถูกตัดกลางคำ`)
     if (args.trip.requester_position) assert.equal(measured.keeps, 3, `แบบ สก. ๑ (${name}) ชื่อ ตำแหน่ง ทะเบียน ต้องห้ามตัดคำทั้ง 3 ช่อง`)
     await assertSignBlockStandard(view, { minRows: 1, minBelow })

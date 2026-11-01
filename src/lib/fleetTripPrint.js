@@ -388,9 +388,11 @@ export function buildFleetSk1Html({ trip, tenant, esign = null }) {
   const name = String(signSk1?.signerName || trip?.requester?.full_name || trip?.creator?.full_name || '').trim()
   const position = String(signSk1 ? (signSk1.signedAs || signSk1.signerPosition || trip?.requester_position || profilePosition(trip?.requester)) : (trip?.requester_position || profilePosition(trip?.requester) || '')).trim()
   const writtenAt = String(tenant?.name || '').trim()
-  // ใบนี้เขียนว่า "ได้ใช้" = รับรองหลังใช้รถแล้ว วันที่หัวใบจึงเป็นวันที่รถกลับจริง
-  // ยังไม่กลับ = เว้นให้เขียนเอง ห้ามใช้วันกลับตามแผนเพราะจะรับรองล่วงหน้าในสิ่งที่ยังไม่เกิด
-  const certifiedAt = thaiDateParts(trip?.returned_at)
+  // วันที่หัวใบ = วันที่เขียนหนังสือรับรอง (เจ้าของระบบสั่ง 2569-11-01 หลังเห็นใบที่ลงนามออนไลน์แล้วหัวใบยังว่าง):
+  //   1) ลงนามออนไลน์แล้ว → วันที่ลงนามจริงของระบบ (ตัวเดียวกับบรรทัด "วันที่ … เดือน … ปี …" ใต้ลายเซ็น ไม่ให้สองที่ขัดกัน)
+  //   2) ยังเซ็นสด แต่รถกลับแล้ว → วันที่รถกลับจริง (ใบนี้เขียนว่า "ได้ใช้" = รับรองหลังใช้รถ)
+  //   3) ยังไม่ลงนามและรถยังไม่กลับ → เว้นให้เขียนเอง ห้ามใช้วันกลับตามแผน/วันที่พิมพ์ เพราะจะรับรองล่วงหน้าแทนผู้ลงนาม
+  const certifiedAt = signDay?.day ? signDay : thaiDateParts(trip?.returned_at)
   // ช่วงเวลาที่ใช้รถใช้ชุดเดียวกับแบบ 3 (เวลาจริงก่อน ไม่มีค่อยใช้ตามคำขอ) สองใบจะได้ไม่ขัดกัน
   const departure = thaiDateParts(trip?.started_at || trip?.planned_departure)
   const returned = thaiDateParts(trip?.returned_at || trip?.planned_return)
@@ -422,7 +424,7 @@ export function buildFleetSk1Html({ trip, tenant, esign = null }) {
       : `<span class="dots" style="width:${blankWidth}"></span>`
   }
   const requesterRow = position
-    ? `<p class="flow first">ข้าพเจ้า ${slot(name, '60mm', true)} <span class="pair">ตำแหน่ง ${slot(position, '', true)}</span></p>`
+    ? `<p class="flow first"><span class="first-gap"></span><span class="first-text">ข้าพเจ้า ${slot(name, '60mm', true)} <span class="pair">ตำแหน่ง ${slot(position, '', true)}</span></span></p>`
     : `<div class="line-row"><span class="indent">ข้าพเจ้า</span><span class="fill${filledClass(name)}">${fillText(name)}</span>
       <span>ตำแหน่ง</span><span class="fill"></span></div>`
   const destinationRow = destination
@@ -480,7 +482,14 @@ export function buildFleetSk1Html({ trip, tenant, esign = null }) {
     .indent { margin-left: 2cm; }
     .continuation { height: 1.15em; margin-top: 7pt; border-bottom: 1px dotted #333; }
     .flow { margin-top: 7pt; }
-    .flow.first { text-indent: 2cm; }
+    /* "ข้าพเจ้า <ชื่อ> ตำแหน่ง<นายก…>" ต้องอยู่บรรทัดเดียว (เจ้าของระบบสั่ง 2569-11-01) — เดิมย่อหน้า 2 ซม. (text-indent)
+       แต่ชื่อ+ตำแหน่งยาว 142–152 มม. จากพื้นที่ 160 มม. (ทุ่งแค้ว 142 · ตำหนักธรรม 152) ตำแหน่งจึงตกบรรทัดใหม่ทั้งก้อน
+       จึงเปลี่ยนย่อหน้าเป็นช่องว่างที่ "หดได้": อยู่ได้ถึง 2 ซม. เมื่อข้อความสั้นพอ หดลงตามความยาวข้อความ (ชื่อยาวขึ้นย่อหน้าลดลง
+       จนเหลือ 0) และถ้าข้อความยาวกว่าพื้นที่จริง กล่องข้อความถูกจำกัดที่ 100% แล้วตัดบรรทัดเองเหมือนเดิม ไม่ล้นขอบ
+       flex-shrink 1000 ทำให้ช่องว่างยอมหดก่อน ส่วนข้อความ flex-shrink 0 ไม่ถูกบีบจนตกบรรทัดเพราะขาดไปเศษมิลลิเมตร */
+    .flow.first { display: flex; }
+    .flow.first .first-gap { flex: 0 1000 2cm; min-width: 0; }
+    .flow.first .first-text { flex: 0 0 auto; max-width: 100%; }
     .flow .val { padding: 0 4px; }
     .flow .keep { white-space: nowrap; }
     /* ป้าย "ตำแหน่ง" ต้องไปกับค่าของมัน ไม่ค้างท้ายบรรทัดบนแล้วค่าไปขึ้นบรรทัดล่าง */
