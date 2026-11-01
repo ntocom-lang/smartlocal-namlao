@@ -31,8 +31,12 @@ function detectTenantSlug() {
     hostname !== 'localhost' &&
     !hostname.match(/^\d/)   // ไม่ใช่ IP
 
-  if (isCustomDomain && parts.length >= 2 && !excluded.includes(parts[0])) {
-    return parts[0]
+  if (isCustomDomain && parts.length >= 2) {
+    // โดเมนกลาง (www, app = โดเมนของแอปจากสโตร์, admin) ไม่ใช่ของ อปท. ใด → ไม่มี slug แล้วจบตรงนี้
+    // ห้ามไหลลงไปเดาจาก path ข้างล่าง: เคยทำให้ app.rk-networks.com/privacy กลายเป็นหน่วยงานรหัส "privacy"
+    // แทนที่จะเป็นหน้ากลางของแอป (path mode ใช้บนโดเมนจริงไม่ได้อยู่แล้ว — computeBasename() คืน '' เสมอ)
+    // ตรงกับ detectSlug ใน worker/index.js ที่คืน null ให้โดเมนกลางเหมือนกัน
+    return excluded.includes(parts[0]) ? null : parts[0]
   }
 
   // Vercel project name: smartlocal-{slug}.vercel.app

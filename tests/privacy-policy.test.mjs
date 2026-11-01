@@ -34,7 +34,9 @@ check('ครบ 10 หัวข้อตามลำดับ และหั�
 })
 check('ผู้ควบคุมข้อมูล + ผู้พัฒนา + ช่องทางติดต่อมาจากข้อมูลหน่วยงาน (Google: ข้อมูลผู้พัฒนาและช่องทางติดต่อ)', () => {
   assert.match(textOf(section('controller')), /เทศบาลตำบลทดสอบ เป็นผู้ควบคุมข้อมูลส่วนบุคคล/)
-  assert.match(textOf(section('controller')), /TEST ผู้พัฒนาระบบ เป็นผู้พัฒนาและดูแลระบบ/)
+  // ผู้พัฒนามาจากค่ากลาง (src/lib/platform.js) ไม่ใช่ developer_name ซึ่งเป็นข้อความท้ายเว็บที่ อปท. กรอกเอง
+  assert.match(textOf(section('controller')), /ผู้พัฒนาและดูแลระบบและแอป SmartLocal/)
+  assert.ok(!textOf(policy).includes('TEST ผู้พัฒนาระบบ'), 'ห้ามดึง developer_name มาเป็นชื่อผู้พัฒนา')
   for (const id of ['controller', 'contact']) {
     assert.deepEqual(section(id).contacts.map(c => c.kind), ['address', 'phone', 'email'], id)
   }

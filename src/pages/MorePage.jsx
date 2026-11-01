@@ -6,13 +6,14 @@ import {
   Phone, Globe, Share2, MessageCircle,
   ChevronRight, Star, Copy, Download, Check, Monitor, X,
   UploadIcon, PlusSquare, BookOpen, Store, FileText, Briefcase,
-  CalendarDays, Luggage, AlertTriangle, Cloud, CloudRain, Wind, RefreshCw, Database, Trash2, LayoutGrid, ChartColumn,
+  CalendarDays, Luggage, AlertTriangle, Cloud, CloudRain, Wind, RefreshCw, Database, Trash2, LayoutGrid, ChartColumn, ArrowLeftRight,
 } from 'lucide-react'
 import qrCodeImage from '../assets/qr-code.png'
 import { supabase, signOutSafely } from '../lib/supabase'
 import { clearCacheAndReload } from '../lib/clearCache'
 import { getRankedPaths } from '../lib/menuUsage'
 import { moduleForPath } from '../lib/staffModules'
+import { CHANGE_TENANT_PARAM, openedViaApp, platformHref } from '../lib/platform'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotificationsContext'
@@ -355,6 +356,9 @@ function NamlaoMorePage() {
       { key: 'contact', label: 'ติดต่อเรา', desc: 'เบอร์โทรศัพท์ สถานที่ตั้ง และช่องทางโซเชียลมีเดีย', Icon: Phone, color: '#059669', to: '/contact' },
       // สโตร์บังคับให้เปิดนโยบายได้ง่ายจากในแอป — ทุกคนเห็น ไม่ต้องล็อกอิน
       { key: 'privacy', label: 'นโยบายความเป็นส่วนตัว', desc: 'การเก็บและใช้ข้อมูลส่วนบุคคล สิทธิของท่าน และการลบบัญชี', Icon: ShieldCheck, color: '#475569', to: '/privacy' },
+      // เฉพาะเครื่องที่เข้ามาทางแอปจากสโตร์ (src/lib/platform.js) — คนเปิดเว็บปกติไม่เห็น กันกดพลาดไปแจ้งเรื่องผิด อปท.
+      // href ไม่ใส่ external = เปิดในหน้าเดิม (โดเมนกลางของแอป แล้วเลือกหน่วยงานใหม่)
+      openedViaApp() && { key: 'switch-tenant', label: 'เปลี่ยนหน่วยงาน', desc: 'เลือกองค์กรปกครองส่วนท้องถิ่นอื่นในแอป แล้วเข้าสู่ระบบที่นั่นใหม่', Icon: ArrowLeftRight, color: '#475569', href: platformHref(`/?${CHANGE_TENANT_PARAM}=1`) },
     ] },
     { id: 'account', title: 'บัญชีของฉัน', Icon: UserCircle2, color: '#475569', items: session ? [
       { key: 'profile', label: 'โปรไฟล์', desc: 'ข้อมูลส่วนตัวและการตั้งค่า', Icon: UserCircle2, color: '#475569', to: '/profile' },

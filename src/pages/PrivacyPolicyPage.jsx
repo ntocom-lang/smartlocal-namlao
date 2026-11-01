@@ -1,11 +1,12 @@
 import { useEffect, useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Mail, MapPin, Phone } from 'lucide-react'
+import { Loader2, Mail, MapPin, Phone, RefreshCw } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 import { PRIVACY_POLICY_EFFECTIVE, PRIVACY_POLICY_VERSION, buildPrivacyPolicy } from '../lib/privacyPolicy'
 
 // นโยบายความเป็นส่วนตัวของ อปท. ที่เปิดอยู่ — เปิดได้โดยไม่ต้องล็อกอิน เพราะเป็นลิงก์ที่ต้องกรอกในหน้าข้อมูลแอป
 // บนสโตร์ด้วย เนื้อหาทั้งหมดอยู่ที่ src/lib/privacyPolicy.js หน้านี้แค่วาด (แก้ข้อความที่นั่นที่เดียว)
+// InfoArticle ใช้ร่วมกับหน้ากลางบนโดเมนของแอป (PlatformInfoPage.jsx) หน้าตาเอกสารทุกหน้าจึงเป็นชุดเดียวกัน
 const card = 'bg-white rounded-2xl border border-gray-100 shadow-sm p-4'
 const CONTACT_ICON = { address: MapPin, phone: Phone, email: Mail }
 
@@ -37,18 +38,65 @@ function ContactList({ contacts }) {
   )
 }
 
-export default function PrivacyPolicyPage() {
+// รายชื่อ อปท. บนหน้ากลางของแอป — แต่ละแห่งมีช่องทางติดต่อและลิงก์ไปเว็บของหน่วยงานนั้น (คนละโดเมน จึงเป็น <a> ธรรมดา)
+// orgsStatus: 'loading' | 'failed' | 'ready' (หน้าของ อปท. ไม่มีรายการนี้ ไม่ต้องส่ง)
+function OrgList({ orgs, status, onRetry }) {
+  if (status === 'loading') {
+    return (
+      <p className="flex items-center gap-2 text-sm text-gray-500" role="status">
+        <Loader2 size={16} className="animate-spin" aria-hidden="true" /> กำลังโหลดรายชื่อหน่วยงาน...
+      </p>
+    )
+  }
+  if (status === 'failed') {
+    return (
+      <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
+        โหลดรายชื่อหน่วยงานไม่สำเร็จ อาจเกิดจากสัญญาณขาดช่วง
+        <button type="button" onClick={onRetry}
+          className="mt-2 flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 font-semibold text-red-600 border border-red-100">
+          <RefreshCw size={16} aria-hidden="true" /> ลองใหม่
+        </button>
+      </div>
+    )
+  }
+  if (!orgs?.length) return null
+  return (
+    <ul className="space-y-3">
+      {orgs.map(org => (
+        <li key={org.key} data-org={org.key} className="space-y-2 rounded-xl border border-gray-100 p-3">
+          <div>
+            <p className="text-sm font-bold text-gray-800">{org.name}</p>
+            {org.area && <p className="text-xs text-gray-500">{org.area}</p>}
+          </div>
+          <ContactList contacts={org.contacts} />
+          <a href={org.href} data-org-link
+            className="inline-flex min-h-11 items-center rounded-xl border border-gray-200 px-3 text-sm font-semibold hover:bg-gray-50"
+            style={{ color: 'var(--color-primary)' }}>
+            {org.hrefLabel}
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * เอกสารหน้าเดียวแบบการ์ดเรียงหัวข้อ (นโยบาย / ลบบัญชี / ช่วยเหลือ)
+ * @param {{ doc: object, eyebrow: string, attr?: 'privacy'|'platform', version?: boolean, toc?: boolean,
+ *   orgsStatus?: string, onRetry?: () => void, footer?: import('react').ReactNode }} props
+ *   attr = ชื่อ data attribute ของหน้าและหัวข้อ (data-privacy-page / data-platform-page) ที่เทสต์ใช้หา
+ */
+export function InfoArticle({ doc, eyebrow, attr = 'privacy', version = false, toc = false, orgsStatus, onRetry, footer }) {
   const { hash } = useLocation()
-  const { tenant } = useTenant()
-  const policy = useMemo(() => buildPrivacyPolicy(tenant), [tenant])
 
   // ลิงก์จากหน้าอื่นชี้หัวข้อตรงๆ (เช่น /privacy#retention จากหน้าลบบัญชี) — หน้าโหลดแบบ lazy เบราว์เซอร์จึง
   // เลื่อนเองไม่ทัน ต้องเลื่อนหลังวาดเสร็จ (เนื้อหาอยู่ในกล่อง main ที่เลื่อนได้ของแอป scrollIntoView จัดการให้)
+  // doc อยู่ใน deps: ข้อมูลหน่วยงาน/รายชื่อหน่วยงานมาถึงทีหลังแล้วหน้ายืดออก ต้องเลื่อนให้ตรงหัวข้ออีกครั้ง
   useEffect(() => {
     const id = decodeURIComponent(hash.replace(/^#/, ''))
     if (!id) return
     document.getElementById(id)?.scrollIntoView({ block: 'start' })
-  }, [hash, tenant])
+  }, [hash, doc])
 
   function jumpTo(event, id) {
     event.preventDefault()
@@ -59,35 +107,50 @@ export default function PrivacyPolicyPage() {
     <div className="min-h-screen pb-12" style={{ backgroundColor: '#eef2f7' }}>
       <header style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
         <div className="mx-auto max-w-lg px-4 py-5 text-white">
-          <p className="text-xs text-white/75">{tenant?.name || 'หน่วยงาน'}</p>
-          <h1 className="text-lg font-bold leading-tight">{policy.title}</h1>
+          <p className="text-xs text-white/75">{eyebrow}</p>
+          <h1 className="text-lg font-bold leading-tight">{doc.title}</h1>
         </div>
       </header>
 
-      <article data-privacy-page className="mx-auto max-w-lg space-y-3 px-4 py-4">
+      <article {...{ [`data-${attr}-page`]: '' }} className="mx-auto max-w-lg space-y-3 px-4 py-4">
         <section className={`${card} space-y-2`}>
-          <p className="text-sm leading-6 text-gray-700">{policy.intro}</p>
-          <p data-privacy-version className="text-xs text-gray-500">รุ่น {PRIVACY_POLICY_VERSION} · มีผลตั้งแต่วันที่ {PRIVACY_POLICY_EFFECTIVE}</p>
+          <p className="text-sm leading-6 text-gray-700">{doc.intro}</p>
+          {version && (
+            <p data-privacy-version className="text-xs text-gray-500">รุ่น {PRIVACY_POLICY_VERSION} · มีผลตั้งแต่วันที่ {PRIVACY_POLICY_EFFECTIVE}</p>
+          )}
         </section>
 
-        <nav aria-label="หัวข้อในนโยบาย" className={card}>
-          <ol className="space-y-1">
-            {policy.sections.map(section => (
-              <li key={section.id}>
-                <a href={`#${section.id}`} onClick={(e) => jumpTo(e, section.id)}
-                  className="flex min-h-10 items-center text-sm font-semibold hover:underline" style={{ color: 'var(--color-primary)' }}>
-                  {section.title}
-                </a>
-              </li>
-            ))}
-          </ol>
-        </nav>
+        {toc && (
+          <nav aria-label="หัวข้อในนโยบาย" className={card}>
+            <ol className="space-y-1">
+              {doc.sections.map(section => (
+                <li key={section.id}>
+                  <a href={`#${section.id}`} onClick={(e) => jumpTo(e, section.id)}
+                    className="flex min-h-10 items-center text-sm font-semibold hover:underline" style={{ color: 'var(--color-primary)' }}>
+                    {section.title}
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+        )}
 
-        {policy.sections.map(section => (
-          <section key={section.id} id={section.id} data-privacy-section={section.id}
-            className={`${card} scroll-mt-4 space-y-3`} aria-labelledby={`privacy-${section.id}`}>
-            <h2 id={`privacy-${section.id}`} className="text-sm font-bold text-gray-800">{section.title}</h2>
+        {doc.sections.map(section => (
+          <section key={section.id} id={section.id} {...{ [`data-${attr}-section`]: section.id }}
+            className={`${card} scroll-mt-4 space-y-3`} aria-labelledby={`${attr}-${section.id}`}>
+            <h2 id={`${attr}-${section.id}`} className="text-sm font-bold text-gray-800">{section.title}</h2>
             {section.paragraphs?.map(text => <p key={text} className="text-sm leading-6 text-gray-700">{text}</p>)}
+            {section.steps?.length > 0 && (
+              <ol className="space-y-2">
+                {section.steps.map((text, i) => (
+                  <li key={text} className="flex items-start gap-3 text-sm leading-6 text-gray-700">
+                    <span aria-hidden="true" className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                      style={{ backgroundColor: 'var(--color-primary)' }}>{i + 1}</span>
+                    <span>{text}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
             {section.items?.length > 0 && (
               <ul className="space-y-2">
                 {section.items.map(text => (
@@ -99,6 +162,7 @@ export default function PrivacyPolicyPage() {
               </ul>
             )}
             <ContactList contacts={section.contacts} />
+            {section.orgs && <OrgList orgs={section.orgs} status={orgsStatus} onRetry={onRetry} />}
             {section.note && <p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-gray-600">{section.note}</p>}
             {section.links?.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -113,7 +177,15 @@ export default function PrivacyPolicyPage() {
             )}
           </section>
         ))}
+
+        {footer}
       </article>
     </div>
   )
+}
+
+export default function PrivacyPolicyPage() {
+  const { tenant } = useTenant()
+  const policy = useMemo(() => buildPrivacyPolicy(tenant), [tenant])
+  return <InfoArticle doc={policy} eyebrow={tenant?.name || 'หน่วยงาน'} version toc />
 }
