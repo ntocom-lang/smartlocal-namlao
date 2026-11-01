@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
 import { useTenant } from '../contexts/TenantContext'
@@ -562,6 +562,17 @@ export default function AuthPage() {
               : mode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'
             }
           </button>
+
+          {/* แจ้งนโยบายความเป็นส่วนตัวก่อนสมัคร (สโตร์ + PDPA) — เป็นการแจ้งให้ทราบ ไม่ใช่ช่องขอความยินยอม
+              เปิดแท็บใหม่ ข้อมูลที่กรอกค้างไว้ในฟอร์มจะได้ไม่หาย */}
+          {mode === 'register' && (
+            <p data-auth-privacy-link className="text-center text-xs leading-5 text-gray-500">
+              ดูวิธีที่หน่วยงานเก็บและใช้ข้อมูลของคุณได้ใน{' '}
+              <Link to="/privacy" target="_blank" rel="noopener noreferrer" className="font-semibold underline" style={{ color: 'var(--color-primary)' }}>
+                นโยบายความเป็นส่วนตัว
+              </Link>
+            </p>
+          )}
         </form>
 
         {/* Divider */}
