@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, Clock, FileSignature, Loader2, Lock, PenLine, ShieldAlert, Undo2 } from 'lucide-react'
-import { Chip, Notice } from './EsignBits'
+import { Chip, Notice, ReturnNote } from './EsignBits'
 import SignTripDialog from './SignTripDialog'
-import { ESIGN_DECISION_LABEL, ESIGN_DRIVER_NOTE, ESIGN_FLEET_SLOTS, esignDepartWarning, esignFallbackText, esignMessage, esignRevokeTargets } from '../../lib/esign'
-import { getTripEsignStatus, revokeFleetTripSignatures } from '../../lib/esignApi'
+import { ESIGN_DECISION_LABEL, ESIGN_DRIVER_NOTE, ESIGN_FLEET_SLOTS, esignDepartReturn, esignFallbackText, esignMessage, esignReturnHint, esignReturnedText, esignRevokeTargets } from '../../lib/esign'
+import { getTripEsignStatus, resubmitFleetTrip, revokeFleetTripSignatures } from '../../lib/esignApi'
 import { SMALL_BUTTON_CLASS } from '../../lib/esignUi'
 import { clearHomeRpcCache } from '../../lib/staffHomeData'
 import { thaiDateTimeText } from '../../lib/thaiDate'
@@ -55,6 +55,8 @@ function SlotRow({ slot, trip, onSign, onAskRevoke }) {
             <p className="text-xs font-semibold text-amber-700">ถึงคิวของคุณ — ตรวจเนื้อหาแล้วลงนามได้เลย</p>
           ) : slot.blocked ? (
             <p className="text-xs leading-5 text-red-600">ลงนามออนไลน์ไม่ได้: {esignMessage({ code: slot.blocked })}</p>
+          ) : slot.waiting_for_return ? (
+            <p className="text-xs text-gray-500" data-esign-slot-waiting-return>รอผู้ขอส่งกลับ{slot.expected_name ? ` · ผู้ลงนามช่องนี้: ${slot.expected_name}` : ''}</p>
           ) : slot.waiting_for_previous ? (
             <p className="text-xs text-gray-500">รอผู้ลงนามช่องก่อนหน้า{slot.expected_name ? ` · ผู้ลงนามช่องนี้: ${slot.expected_name}` : ''}</p>
           ) : (
@@ -90,6 +92,7 @@ export default function TripEsignPanel({ trip, onChanged }) {
   const [signing, setSigning] = useState(null)
   const [revoke, setRevoke] = useState(null) // { slot: 'dept_head' | null (ทั้งหมด), reason, busy, error }
   const [notice, setNotice] = useState(null)
+  const [resubmitting, setResubmitting] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -164,6 +167,19 @@ export default function TripEsignPanel({ trip, onChanged }) {
     onChanged?.()
   }
 
+  async function handleResubmit() {
+    setResubmitting(true)
+    const result = await resubmitFleetTrip(trip.id)
+    setResubmitting(false)
+    if (!result?.ok) { setNotice({ ok: false, text: esignMessage(result) }); return }
+    clearHomeRpcCache('esign_my_pending')
+    setNotice({ ok: true, text: 'ส่งให้ลงนามต่อแล้ว' })
+    reload()
+    onChanged?.()
+  }
+
+  const requesterOnline = (status.slots ?? []).some(slot => slot.slot === 'requester' && slot.mode === 'online')
+
   return (
     <section className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4" aria-labelledby="trip-esign-title" data-trip-esign>
       <div className="flex flex-wrap items-center gap-2">
@@ -180,6 +196,17 @@ export default function TripEsignPanel({ trip, onChanged }) {
       )}
 
       <Notice notice={notice} />
+
+      {status.last_return && <ReturnNote item={status.last_return} />}
+      {status.last_return?.open && (
+        <p className="text-xs leading-5 text-gray-600" data-trip-esign-return-hint>{esignReturnHint(status.trip_status, requesterOnline)}</p>
+      )}
+      {status.can_resubmit && (
+        <button type="button" onClick={handleResubmit} disabled={resubmitting} data-esign-resubmit
+          className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: 'var(--color-primary)' }}>
+          {resubmitting && <Loader2 size={15} className="animate-spin" />} ส่งให้ลงนามต่อ
+        </button>
+      )}
 
       <ul className="space-y-2">
         {online.map(slot => (
@@ -233,10 +260,18 @@ export default function TripEsignPanel({ trip, onChanged }) {
 
       {signing && (
         <SignTripDialog tripId={trip.id} slot={signing.slot} slotLabel={signing.label} summary={summary} onClose={closeDialog}
+          canReturn={Boolean(signing.can_return)} lastReturn={status.last_return ?? null}
           onSigned={result => {
             setSigning(null)
             clearHomeRpcCache('esign_my_pending') // ลงนามแล้วใบนี้ต้องหายจากการ์ด "รอลงนามของฉัน" ที่แคชไว้บนหน้าแรก
             setNotice({ ok: true, text: `${ESIGN_DECISION_LABEL[signing.slot === 'authority' ? 'approve' : 'sign']}แล้ว${result.stamped ? ' พร้อมแนบภาพลายเซ็น' : ''}${result.complete ? ' — ลงนามครบทุกช่องแล้ว' : ''}` })
+            reload()
+            onChanged?.()
+          }}
+          onReturned={result => {
+            setSigning(null)
+            clearHomeRpcCache('esign_my_pending')
+            setNotice({ ok: true, text: esignReturnedText(result) })
             reload()
             onChanged?.()
           }} />
@@ -245,25 +280,19 @@ export default function TripEsignPanel({ trip, onChanged }) {
   )
 }
 
-// เตือน "ไม่บล็อก" ในหน้าต่างบันทึกออกเดินทาง: ช่องผู้มีอำนาจเป็นออนไลน์แต่ยังไม่ลงนาม
-// ออกรถต้องไม่ถูกขวาง (รถออกก่อนเอกสารเสร็จเกิดจริงทุกวัน และคนขับยืนรออยู่หน้ารถ) แต่ต้องให้คนกดเห็นว่าใบนี้ยังขาดอะไร
-// อ่านสถานะไม่ได้ = เงียบ: ตัวเตือนนี้เป็นของเสริม ห้ามทำให้ขั้นตอนออกรถดูเหมือนพัง
+// บรรทัดเดียวในหน้าต่างบันทึกออกเดินทาง เฉพาะใบที่ผู้ลงนามส่งคืนค้างอยู่ — คนออกรถควรรู้เหตุผล ไม่บล็อก ไม่เพิ่มขั้นตอน
+// ใบที่แค่ยังลงนามไม่ครบไม่แสดงอะไร (ดู esignDepartReturn) · อ่านสถานะไม่ได้ = เงียบ ห้ามทำให้ขั้นตอนออกรถดูเหมือนพัง
 export function DepartEsignNotice({ tripId }) {
-  const [warning, setWarning] = useState(null)
+  const [returned, setReturned] = useState(null)
   useEffect(() => {
     let cancelled = false
-    getTripEsignStatus(tripId).then(result => { if (!cancelled) setWarning(esignDepartWarning(result)) })
+    getTripEsignStatus(tripId).then(result => { if (!cancelled) setReturned(esignDepartReturn(result)) })
     return () => { cancelled = true }
   }, [tripId])
-  if (!warning) return null
-  const who = warning.blocked
-    ? `ผู้มีอำนาจลงนามออนไลน์ไม่ได้: ${esignMessage({ code: warning.blocked })}`
-    : warning.expectedName ? `รอ ${warning.expectedName} ลงนาม` : null
+  if (!returned) return null
   return (
-    <div role="status" data-depart-esign-warning className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
-      <p className="font-bold">⚠️ ใบขออนุญาตใช้รถนี้ลงนามออนไลน์ยังไม่ครบ — ยังขาด: {warning.missing.join(' · ')}</p>
-      {who && <p>{who}</p>}
-      <p>ออกเดินทางได้ตามปกติ (ระบบไม่บล็อก) แต่ใบนี้จะยังไม่มีลายเซ็นออนไลน์ครบ — ตามให้ผู้ลงนามลงนามภายหลังได้จากหน้ารายละเอียดคำขอ</p>
-    </div>
+    <p role="status" data-depart-esign-returned className="break-words rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
+      ใบนี้ถูกส่งคืนผู้ขอ เหตุผล: {returned.reason}
+    </p>
   )
 }

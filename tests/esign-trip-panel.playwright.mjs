@@ -29,7 +29,7 @@ const ALLOWED_HOSTS = new Set(['demo.rk-networks.com', 'demo.localhost', 'localh
 const DEMO_MUNICIPALITY = 'adff0caf-aed5-4469-9c2a-899643a5cf9a'
 const MIN_TAP = 44
 const RPC_NAMES = ['esign_trip_status', 'esign_sign_fleet_trip_stamped', 'esign_revoke_fleet_trip', 'esign_my_signer_overview', 'esign_my_signatures',
-  'esign_my_signature_add', 'set_esign_pin']
+  'esign_my_signature_add', 'set_esign_pin', 'esign_return_fleet_trip', 'esign_resubmit_fleet_trip']
 const SLOT_ORDER = ['requester', 'dept_head', 'authority', 'sk1']
 const SLOT_LABEL = { requester: 'ผู้ขออนุญาต', dept_head: 'ผู้อำนวยการสำนัก/กอง หรือผู้แทน', authority: 'ผู้มีอำนาจสั่งใช้ยานพาหนะ', sk1: 'ผู้บริหารท้องถิ่น (บันทึกรับรอง สก.๑)' }
 const EXPECTED_NAME = { requester: 'สมหญิง ผู้ขอ', dept_head: 'สมชาย หัวหน้ากอง', authority: 'สมศักดิ์ นายก' }
@@ -86,10 +86,11 @@ const fabricateTrip = (id, destination, esignSlots, esignFallback = null) => ({
 // ── ฐานข้อมูลจำลองของลงนามออนไลน์: ตัดสินสิทธิ์ตามกติกาเดียวกับ esign_trip_status / esign_sign_fleet_trip_stamped / esign_revoke_fleet_trip ──
 // me: ผู้ที่ล็อกอินอยู่ในมุมของ DB — requester | head | mayor | manager (ผู้ดูแลรถ/แอดมิน ไม่ใช่ผู้ลงนามช่องใด) | stranger (ไม่เกี่ยวข้อง)
 // fallback: ช่องของทริปออนไลน์ที่ตกเป็นเซ็นสดตอนสร้าง (เฟส 2) เช่น { dept_head: 'pin_not_set' } — ลำดับสายข้ามช่องที่ไม่ออนไลน์เหมือน DB
-function makeBackend({ me = 'requester', pinSet = true, suspended = false, lockedUntil = null, library = [], signed = {}, tripStatus = 'approved', fallback = {} } = {}) {
+function makeBackend({ me = 'requester', pinSet = true, suspended = false, lockedUntil = null, library = [], signed = {}, tripStatus = 'approved', fallback = {}, lastReturn = null } = {}) {
   const onlineSlots = Object.fromEntries(SLOT_ORDER.map(slot => [slot, slot === 'sk1' ? 'wet' : fallback[slot] ? 'wet' : 'online']))
   const state = {
     me, pinSet, suspended, lockedUntil, library: [...library], signed: { ...signed }, tripStatus, pin: PIN, failedCount: 0, calls: [], nextId: 1, delayMs: 0,
+    lastReturn, returnsCount: lastReturn ? 1 : 0, notified: [],
     trips: [
       fabricateTrip(ONLINE_TRIP_ID, ONLINE_DEST, onlineSlots, Object.keys(fallback).length ? fallback : null),
       fabricateTrip(WET_TRIP_ID, WET_DEST, null),
@@ -116,10 +117,12 @@ function makeBackend({ me = 'requester', pinSet = true, suspended = false, locke
     const slots = SLOT_ORDER.map(slot => {
       const online = isOnline(slot)
       const sig = state.signed[slot]
-      const canSign = online && !sig && prereqOk(slot) && OWNER_OF[slot] === state.me && !['rejected', 'cancelled'].includes(state.tripStatus)
+      const returnOpen = Boolean(state.lastReturn?.open)
+      const canSign = online && !sig && prereqOk(slot) && OWNER_OF[slot] === state.me && !['rejected', 'cancelled'].includes(state.tripStatus) && !(returnOpen && slot !== 'requester')
       return {
         slot, label: SLOT_LABEL[slot], mode: online ? 'online' : 'wet', applicable: slot !== 'sk1', signed: Boolean(sig),
-        waiting_for_previous: online && !sig && !prereqOk(slot), can_sign: canSign, can_revoke: Boolean(sig) && (isManager() || isRequester() || sig.by === state.me),
+        waiting_for_previous: online && !sig && !prereqOk(slot), can_sign: canSign,
+        can_return: canSign && ['dept_head', 'authority'].includes(slot), waiting_for_return: returnOpen && online && !sig && slot !== 'requester', can_revoke: Boolean(sig) && (isManager() || isRequester() || sig.by === state.me),
         blocked: null, expected_name: EXPECTED_NAME[slot] ?? null, fallback: fallback[slot] ?? null,
         signature: sig ? { signer_name: EXPECTED_NAME[slot], signer_position: 'ตำแหน่งทดสอบ', signed_as: '', decision: slot === 'authority' ? 'approve' : 'sign', signed_at: '2026-10-23T04:00:00Z',
           content_matches: true, mine: sig.by === state.me, with_image: sig.withImage } : null,
@@ -130,6 +133,8 @@ function makeBackend({ me = 'requester', pinSet = true, suspended = false, locke
       found: true, mode: 'online', verify_code: 'a'.repeat(32), trip_status: state.tripStatus, slots, required, signed_count: activeSigned().length,
       complete: activeSigned().length === required, integrity: activeSigned().length ? 'ok' : 'none', locked: activeSigned().length > 0,
       can_revoke_all: activeSigned().length > 0 && (isManager() || isRequester()),
+      returns_count: state.returnsCount, last_return: state.lastReturn,
+      can_resubmit: Boolean(state.lastReturn?.open) && !isOnline('requester') && (isManager() || isRequester()),
     }
   }
   const handlers = {
@@ -159,11 +164,29 @@ function makeBackend({ me = 'requester', pinSet = true, suspended = false, locke
       if (args.p_image_id && !state.library.some(item => item.id === args.p_image_id)) return { ok: false, code: 'image_not_found' }
       const slot = args.p_slot
       if (OWNER_OF[slot] !== state.me) return { ok: false, code: 'not_your_slot' }
+      if (state.lastReturn?.open && slot !== 'requester') return { ok: false, code: 'returned_open' }
       if (!prereqOk(slot)) return { ok: false, code: 'wait_previous' }
       if (args.p_pin !== state.pin) { state.failedCount += 1; return { ok: false, code: 'bad_pin', remaining: Math.max(0, 5 - state.failedCount) } }
       state.failedCount = 0
       state.signed[slot] = { by: state.me, withImage: Boolean(args.p_image_id) }
+      if (slot === 'requester' && state.lastReturn?.open) state.lastReturn = { ...state.lastReturn, open: false }
       return { ok: true, already: false, signature_id: `sig-${slot}`, signed_at: '2026-10-23T04:00:00Z', complete: activeSigned().length === SLOT_ORDER.filter(isOnline).length, stamped: Boolean(args.p_image_id) }
+    },
+    esign_return_fleet_trip: args => {
+      const reason = String(args.p_reason ?? '').trim()
+      if (reason.length < 3 || reason.length > 500) return { ok: false, code: 'invalid_reason' }
+      if (OWNER_OF[args.p_slot] !== state.me) return { ok: false, code: 'not_your_slot' }
+      const revoked = activeSigned().length
+      state.signed = {}
+      state.returnsCount += 1
+      state.lastReturn = { slot: args.p_slot, label: SLOT_LABEL[args.p_slot], by_name: EXPECTED_NAME[args.p_slot], by_position: 'ตำแหน่งทดสอบ', reason, at: '2026-10-24T02:00:00Z', open: true }
+      return { ok: true, already: false, return_id: 'ret-1', returned_at: '2026-10-24T02:00:00Z', revoked }
+    },
+    esign_resubmit_fleet_trip: () => {
+      if (!(isManager() || isRequester())) return { ok: false, code: 'forbidden' }
+      if (isOnline('requester')) return { ok: false, code: 'sign_instead' }
+      state.lastReturn = { ...state.lastReturn, open: false }
+      return { ok: true, already: false }
     },
     esign_revoke_fleet_trip: args => {
       const reason = String(args.p_reason ?? '').trim()
@@ -197,6 +220,14 @@ async function installBackend(context, backend) {
     const body = backend.handle(rpcPattern.exec(request.url())[1], request.postDataJSON() ?? {})
     if (backend.delayMs) await new Promise(resolve => setTimeout(resolve, backend.delayMs))
     await route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify(body) })
+  })
+  // แจ้งเตือน Telegram: จดไว้ตรวจ ห้ามยิงจริง (ทริปจำลองไม่มีในฐานข้อมูล)
+  await context.route(/\/functions\/v1\/notify-telegram/, async route => {
+    const request = route.request()
+    const cors = corsFor(request)
+    if (request.method() === 'OPTIONS') { await route.fulfill({ status: 204, headers: cors }); return }
+    backend.notified.push(request.postDataJSON()?.notification_type)
+    await route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify({ skipped: true, reason: 'test' }) })
   })
   // ทริปที่กำลังดำเนินอยู่ = ทริปจำลองของเรา (ประวัติ/คำขออื่นๆ เป็นของจริง) · DELETE/PATCH ของทริป = error ของ trigger ลงนามออนไลน์
   await context.route(/\/rest\/v1\/fleet_trips\?/, async route => {
@@ -644,6 +675,112 @@ async function checkLayout(page, auth, context, width, height) {
   return `${width}px ไม่ล้น · ปุ่ม ≥ 44px · กล่องอยู่ในจอ`
 }
 
+// ── ส่งคืนผู้ขอ ──────────────────────────────────────────────────────────────────────────────
+const OPEN_RETURN = { slot: 'dept_head', label: SLOT_LABEL.dept_head, by_name: EXPECTED_NAME.dept_head, by_position: 'ผู้อำนวยการกองช่าง', reason: 'ขอให้แก้วันเดินทางให้ตรงหนังสือเชิญ', at: '2026-10-24T02:00:00Z', open: true }
+
+async function checkReturnBySigner(page, auth, context) {
+  const backend = makeBackend({ me: 'head', library: [imageItem(1, true)], signed: { requester: { by: 'requester', withImage: false } } })
+  await openOnlineTrip(page, auth, context, backend)
+  await openSignDialog(page, 'dept_head')
+  await page.locator('[data-sign-return-open]').click()
+  await page.locator('[data-sign-return-form]').waitFor()
+  assert.ok((await page.locator('#sign-trip-title').innerText()).startsWith('ส่งคืนผู้ขอ'), 'หัวกล่องต้องบอกว่ากำลังส่งคืน')
+  assert.equal(await page.locator('[data-sign-pin]').count(), 0, 'ส่งคืนไม่ใช้รหัสลงนาม')
+  const impact = await page.locator('[data-sign-return-impact]').innerText()
+  for (const expected of ['ถูกถอน', 'ประวัติยังอยู่', 'คิวรถไม่เปลี่ยน']) assert.ok(impact.includes(expected), `ต้องบอกผล "${expected}"`)
+  const submit = page.locator('[data-sign-return-submit]')
+  assert.equal(await submit.isDisabled(), true, 'ยังไม่มีเหตุผลต้องกดไม่ได้')
+  await page.locator('[data-sign-return-reason]').fill('กข')
+  assert.equal(await submit.isDisabled(), true, 'เหตุผลสั้นเกินต้องกดไม่ได้')
+  // กลับไปหน้าลงนามได้ เหตุผลที่พิมพ์ไว้ไม่หาย
+  await page.locator('[data-sign-return-reason]').fill('ขอให้แก้วันเดินทาง')
+  await page.locator('[data-sign-return-back]').click()
+  await page.locator('[data-sign-pin]').waitFor()
+  assert.equal(sentCalls(backend, 'esign_return_fleet_trip').length, 0)
+  await page.locator('[data-sign-return-open]').click()
+  assert.equal(await page.locator('[data-sign-return-reason]').inputValue(), 'ขอให้แก้วันเดินทาง')
+  await submit.click()
+  await page.locator('[data-sign-dialog]').waitFor({ state: 'detached', timeout: 10_000 })
+  assert.deepEqual(lastCall(backend, 'esign_return_fleet_trip').args, { p_trip_id: ONLINE_TRIP_ID, p_slot: 'dept_head', p_reason: 'ขอให้แก้วันเดินทาง' })
+  assert.equal(sentCalls(backend, 'esign_sign_fleet_trip_stamped').length, 0, 'ส่งคืนต้องไม่ลงนาม')
+  assert.ok((await panel(page).innerText()).includes('ส่งคืนผู้ขอแล้ว — ถอนลายเซ็นในใบนี้ 1 ช่อง'))
+  await page.locator('[data-esign-return-note="open"]').waitFor({ timeout: 10_000 })
+  assert.ok((await page.locator('[data-esign-return-note="open"]').innerText()).includes('เหตุผล: ขอให้แก้วันเดินทาง'))
+  await slotRow(page, 'dept_head').locator('[data-esign-slot-waiting-return]').waitFor()
+  assert.equal(await page.locator('[data-sign-slot-button]').count(), 0, 'ผู้ส่งคืนต้องไม่มีปุ่มลงนามค้าง')
+  assert.deepEqual(backend.notified.filter(type => type === 'esign_returned_dm'), ['esign_returned_dm'], 'ต้องแจ้งผู้ขอครั้งเดียว')
+  assert.equal(backend.notified.includes('esign_turn_dm'), false)
+  return 'ส่งคืนในกล่องลงนาม · ไม่ใช้รหัส · เหตุผลขึ้นในแผง · แจ้งผู้ขอครั้งเดียว'
+}
+
+async function checkReturnRequesterResigns(page, auth, context) {
+  const backend = makeBackend({ me: 'requester', library: [imageItem(1, true)], lastReturn: { ...OPEN_RETURN } })
+  await openOnlineTrip(page, auth, context, backend)
+  await page.locator('[data-esign-return-note="open"]').waitFor()
+  assert.ok((await page.locator('[data-esign-return-note="open"]').innerText()).includes('ขอให้แก้วันเดินทางให้ตรงหนังสือเชิญ'))
+  const hint = await page.locator('[data-trip-esign-return-hint]').innerText()
+  for (const expected of ['ยกเลิกคำขอแล้วสร้างใหม่', 'ลงนามใหม่ในช่องผู้ขอ']) assert.ok(hint.includes(expected), `ต้องบอกทางไปต่อ "${expected}"`)
+  assert.equal(await page.locator('[data-esign-resubmit]').count(), 0, 'ช่องผู้ขอออนไลน์ต้องลงนามใหม่ ไม่ใช่กดส่งต่อ')
+  await slotRow(page, 'dept_head').locator('[data-esign-slot-waiting-return]').waitFor()
+  await openSignDialog(page, 'requester')
+  assert.ok(await page.locator('[data-sign-dialog] [data-esign-return-note="open"]').isVisible(), 'กล่องลงนามต้องเห็นเหตุผลก่อนลงนาม')
+  assert.equal(await page.locator('[data-sign-return-open]').count(), 0, 'ช่องผู้ขอไม่มีปุ่มส่งคืน')
+  await enterPin(page, PIN)
+  await page.locator('[data-sign-submit]').click()
+  await page.locator('[data-sign-dialog]').waitFor({ state: 'detached', timeout: 10_000 })
+  await page.locator('[data-esign-return-note="past"]').waitFor({ timeout: 10_000 })
+  assert.ok((await page.locator('[data-esign-return-note="past"]').innerText()).includes('ใบนี้เคยถูกส่งคืน'))
+  assert.equal(await page.locator('[data-trip-esign-return-hint]').count(), 0, 'ส่งกลับแล้วไม่ต้องบอกทางไปต่อ')
+  assert.equal(await slotRow(page, 'dept_head').locator('[data-esign-slot-waiting-return]').count(), 0)
+  assert.ok(backend.notified.includes('esign_turn_dm'), 'ลงนามใหม่แล้วต้องแจ้งคนถัดไป')
+  return 'ผู้ขอเห็นเหตุผล + ทางไปต่อ · ลงนามใหม่แล้วการส่งคืนจบ · แจ้งคนถัดไป'
+}
+
+async function checkResubmitWetRequester(page, auth, context) {
+  const backend = makeBackend({ me: 'requester', fallback: { requester: 'pin_not_set' }, lastReturn: { ...OPEN_RETURN } })
+  await openOnlineTrip(page, auth, context, backend)
+  assert.ok((await page.locator('[data-trip-esign-return-hint]').innerText()).includes('ส่งให้ลงนามต่อ'))
+  await page.locator('[data-esign-resubmit]').click()
+  await page.locator('[data-esign-return-note="past"]').waitFor({ timeout: 10_000 })
+  assert.equal(sentCalls(backend, 'esign_resubmit_fleet_trip').length, 1)
+  assert.deepEqual(lastCall(backend, 'esign_resubmit_fleet_trip').args, { p_trip_id: ONLINE_TRIP_ID })
+  assert.ok((await panel(page).innerText()).includes('ส่งให้ลงนามต่อแล้ว'))
+  assert.equal(await page.locator('[data-esign-resubmit]').count(), 0, 'กดแล้วปุ่มต้องหาย')
+  assert.ok(backend.notified.includes('esign_turn_dm'), 'ส่งต่อแล้วต้องแจ้งคนถัดไป')
+  // ผู้ลงนามคนอื่นไม่เห็นปุ่มนี้
+  backend.me = 'head'
+  backend.lastReturn = { ...OPEN_RETURN }
+  await reopenOnlineTrip(page)
+  await page.locator('[data-esign-return-note="open"]').waitFor()
+  assert.equal(await page.locator('[data-esign-resubmit]').count(), 0)
+  return 'ช่องผู้ขอเซ็นสด: ผู้ขอกดส่งต่อได้ คนอื่นไม่เห็นปุ่ม'
+}
+
+async function checkReturnLayout(page, auth, context, width, height) {
+  const backend = makeBackend({ me: 'head', library: [imageItem(1, true)], signed: { requester: { by: 'requester', withImage: false } }, lastReturn: { ...OPEN_RETURN, open: false } })
+  await page.setViewportSize({ width, height })
+  await openOnlineTrip(page, auth, context, backend)
+  await noOverflow(page, `${width} แผง`)
+  await openSignDialog(page, 'dept_head')
+  await tapSize(page.locator('[data-sign-return-open]'), 'ปุ่มส่งคืน')
+  await page.locator('[data-sign-return-open]').click()
+  await page.locator('[data-sign-return-reason]').fill('ขอให้แก้วันเดินทาง'.repeat(8))
+  await noOverflow(page, `${width} กล่องส่งคืน`)
+  await tapSize(page.locator('[data-sign-return-submit]'), 'ปุ่มยืนยันส่งคืน')
+  await tapSize(page.locator('[data-sign-return-back]'), 'ปุ่มกลับ')
+  const box = await page.locator('[data-sign-return-submit]').boundingBox()
+  assert.ok(box.y + box.height <= height + 1, `ปุ่มยืนยันต้องอยู่ในจอ (${box.y + box.height} > ${height})`)
+  const covered = await page.locator('[data-sign-return-submit]').evaluate(button => {
+    const rect = button.getBoundingClientRect()
+    const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    return top && !button.contains(top) ? (top.outerHTML || '').slice(0, 120) : null
+  })
+  assert.equal(covered, null, `ปุ่มยืนยันถูกบังด้วย ${covered}`)
+  if (process.env.ES_SHOTS) await page.screenshot({ path: path.join(process.env.ES_SHOTS, `return-dialog-${width}.png`) })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  return `${width}px ไม่ล้น · ปุ่ม ≥ 44px · ปุ่มยืนยันอยู่ในจอ`
+}
+
 async function main() {
   let failed = 0
   let total = 0
@@ -674,6 +811,10 @@ async function main() {
     await run('ระงับ/ล็อก', () => checkBlocked(page, auth, context))
     await run('ถอนลายเซ็น', () => checkRevoke(page, auth, context))
     await run('error ของ trigger ตอนลบ', () => checkTriggerErrors(page, auth, context))
+    await run('ส่งคืน: ผู้ลงนามกดในกล่องลงนาม', () => checkReturnBySigner(page, auth, context))
+    await run('ส่งคืน: ผู้ขอเห็นเหตุผลแล้วลงนามใหม่', () => checkReturnRequesterResigns(page, auth, context))
+    await run('ส่งคืน: ช่องผู้ขอเซ็นสดกดส่งต่อ', () => checkResubmitWetRequester(page, auth, context))
+    await run('ส่งคืน เค้าโครงมือถือ 390', () => checkReturnLayout(page, auth, context, 390, 844))
     await run('เค้าโครง PC 1280', () => checkLayout(page, auth, context, 1280, 900))
     await run('เค้าโครงมือถือ 390', () => checkLayout(page, auth, context, 390, 844))
     await run('เค้าโครงมือถือ 360', () => checkLayout(page, auth, context, 360, 740))

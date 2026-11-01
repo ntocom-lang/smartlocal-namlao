@@ -159,6 +159,47 @@ const esign = signer.items.filter((i) => i.category === 'esign')
 assert.deepEqual(esign.map((i) => [i.key, i.status, i.detail]), [[`esign:${id(71)}:dept_head`, 'sign', 'ผอ.กอง']])
 assert.equal((await feed(U.suspended)).categories.includes('esign'), false, 'ถูกระงับต้องไม่ขึ้นหมวดรอลงนาม')
 
+// ── ส่งคืนผู้ขอ: นิยามล่าสุดจาก 20261101120100 (ดึงเฉพาะฟังก์ชันนี้ ตัวอื่นพึ่งตารางจริงที่เทสต์นี้ไม่มี) ─────────
+{
+  const source = (await readFile(new URL('../supabase/migrations/20261101120100_esign_trip_return_functions.sql', import.meta.url), 'utf8')).replace(/\r\n/g, '\n')
+  const start = source.indexOf('CREATE OR REPLACE FUNCTION public.my_notification_feed(p_municipality_id uuid)')
+  assert.ok(start > 0, 'ไม่พบ my_notification_feed ใน migration')
+  await db.exec(source.slice(start, source.indexOf('\n$$;', start) + 4))
+  const OPEN = { label: 'ผอ.กอง', reason: 'เหตุผลลับห้ามออกกระดิ่ง', open: true }
+  await db.exec(`
+    CREATE OR REPLACE FUNCTION public.esign_my_pending() RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public'
+      AS $fn$ SELECT public.stub_pending_override() $fn$;`.replace('public.stub_pending_override()', "COALESCE(current_setting('test.pending', true), '{}')::jsonb"))
+  const withPending = async (user, pending) => {
+    await db.query("SELECT set_config('test.pending', $1, false)", [JSON.stringify(pending)])
+    return (await feed(user)).items.filter((i) => i.category === 'esign')
+  }
+  const item = (extra) => ({ trip_id: id(71), slot: 'dept_head', slot_label: 'ช่องของฉัน', decision: 'sign', planned_departure: '2026-11-03T02:00:00Z', ...extra })
+
+  // รอบแรก key รูปเดิม (ใบค้างเดิมต้องไม่เด้งซ้ำทั้งระบบตอน apply)
+  assert.deepEqual((await withPending(U.signer, { items: [item({ round: 0 })] })).map((i) => [i.key, i.status, i.detail]),
+    [[`esign:${id(71)}:dept_head`, 'sign', 'ช่องของฉัน']])
+  // รอบหลังส่งคืน key ใหม่ คนที่เคยอ่านแล้วจึงเห็นอีกครั้ง
+  assert.deepEqual((await withPending(U.signer, { items: [item({ round: 2, last_return: { ...OPEN, open: false } })] })).map((i) => [i.key, i.status, i.detail]),
+    [[`esign:${id(71)}:dept_head:r2`, 'sign', 'ช่องของฉัน']])
+  // ถูกส่งคืนมาหาผู้ขอที่ต้องลงนามใหม่: ขึ้นว่าใครส่งคืน
+  const back = await withPending(U.signer, { items: [item({ slot: 'requester', slot_label: 'ผู้ขอ', round: 1, last_return: OPEN })] })
+  assert.deepEqual(back.map((i) => [i.key, i.status, i.detail]), [[`esign:${id(71)}:requester:r1`, 'returned', 'ผอ.กอง']])
+  // ช่องผู้ขอเซ็นสด: ได้รับแม้ไม่มีรหัสลงนาม หมวดลงนามต้องโชว์สวิตช์ปิดเสียงด้วย · ไม่มีเหตุผลในกระดิ่ง
+  await db.query("SELECT set_config('test.pending', $1, false)", [JSON.stringify({ items: [], returned: [{ trip_id: id(72), round: 1, planned_departure: '2026-11-03T02:00:00Z', last_return: OPEN }] })])
+  const noPin = await feed(U.suspended)
+  assert.ok(noPin.categories.includes('esign'), 'ผู้ขอที่ไม่มีรหัสลงนามต้องได้หมวดนี้เมื่อถูกส่งคืน')
+  const noPinItems = noPin.items.filter((i) => i.category === 'esign')
+  assert.deepEqual(noPinItems.map((i) => [i.key, i.status, i.detail]), [[`esign-return:${id(72)}:r1`, 'returned', 'ผอ.กอง']])
+  assert.equal(JSON.stringify(noPin).includes('เหตุผลลับ'), false, 'เหตุผลห้ามออกกระดิ่ง')
+  // ไม่มีอะไรถูกส่งคืน: คนไม่มีรหัสลงนามยังไม่มีหมวดนี้เหมือนเดิม
+  await db.query("SELECT set_config('test.pending', $1, false)", [JSON.stringify({ items: [item({ round: 0 })], returned: [] })])
+  const none = await feed(U.suspended)
+  assert.equal(none.categories.includes('esign'), false)
+  assert.deepEqual(none.items.filter((i) => i.category === 'esign'), [])
+  // ฐานรุ่นก่อน (ไม่มี round/last_return/returned) ยังใช้ได้
+  assert.deepEqual((await withPending(U.signer, { items: [item({})] })).map((i) => i.key), [`esign:${id(71)}:dept_head`])
+}
+
 // ── superadmin: ได้ทุก อปท. · รถผู้ป่วยของ อปท. ที่ปิดบริการไม่ขึ้น ─────────────────────
 const superA = await feed(U.super, A)
 assert.ok(superA.categories.includes('eservice'))

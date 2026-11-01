@@ -2,6 +2,7 @@
 // ฐานข้อมูล: supabase/migrations/20261022100000_esign_columns.sql, ..100100_esign_tables.sql, ..100200_esign_functions.sql
 //   + ชุด B1.5 (ประกาศไม่เป็นเงื่อนไขเปิดใช้): ..110000_esign_policy_optional.sql, ..110100_esign_gate_relax_functions.sql
 //   + เฟส 2 (ถอดด่านทดลอง + ช่องที่ผู้ลงนามไม่พร้อมตกเป็นเซ็นสด): 20261031100000_esign_fallback_column.sql, ..100100_esign_fallback_functions.sql
+//   + ส่งคืนผู้ขอ + ใบที่รถกลับแล้ว: 20261101120000_esign_trip_returns_table.sql, ..120100_esign_trip_return_functions.sql
 // ออกแบบ: หน้า "ลงนามออนไลน์รายเรื่อง" (ตัวบทที่ตรวจแล้วอยู่ในหัวข้อ 2 ของหน้านั้น) · ความจำ project_esign_per_doctype_design
 
 export const ESIGN_DOC_FLEET = 'fleet_trip_request'
@@ -84,6 +85,11 @@ export const ESIGN_MESSAGES = {
   already_signed: 'ช่องนี้มีผู้ลงนามแล้ว',
   wait_previous: 'ต้องให้ผู้ลงนามก่อนหน้าลงนามก่อน',
   bad_decision: 'ค่าการตัดสินใจไม่ถูกต้อง',
+  // ส่งคืนผู้ขอ
+  returned_open: 'คำขอนี้ถูกส่งคืนผู้ขออยู่ ต้องรอผู้ขอส่งกลับก่อนจึงลงนามได้',
+  already_returned: 'คำขอนี้ถูกส่งคืนผู้ขอไปแล้ว',
+  self_return: 'คุณเป็นผู้ขอใบนี้เอง ส่งคืนตัวเองไม่ได้ ใช้ถอนลายเซ็นหรือยกเลิกคำขอแทน',
+  sign_instead: 'ช่องผู้ขอของใบนี้ลงนามออนไลน์ ผู้ขอต้องลงนามใหม่เพื่อส่งกลับ',
   profile_name_missing: 'บัญชีของคุณยังไม่มีชื่อ-นามสกุล กรุณาแก้ที่หน้าโปรไฟล์ก่อนลงนาม',
   invalid_reason: 'กรุณาระบุเหตุผล (3–500 ตัวอักษร)',
   requester_missing: 'คำขอนี้ไม่มีผู้ขอ',
@@ -197,12 +203,17 @@ export function esignAnnouncementDraft(orgName) {
 // ── รายการ "ใบรอฉันลงนาม" (esign_my_pending → หน้าแรกเจ้าหน้าที่ + แถบในหน้าการใช้รถ) ───────────────────────────
 // แปลงผลของ useHomeRpc เป็นรูปที่หน้าจอใช้ · ok:false หรือรูปผิดต้องเป็น error ไม่ใช่ "ไม่มีใบรอ"
 // ถ้าเข้าใจว่าไม่มีใบรอทั้งที่ดึงไม่ได้ หน้าแรกจะขึ้นไฟเขียว "ไม่มีงานค้าง" และใบขอใช้รถค้างอยู่ที่ผู้มีอำนาจโดยไม่มีใครเห็น
+// returned = ใบที่ถูกส่งคืนมาหาผู้ขอแต่ช่องผู้ขอเซ็นสด จึงไม่มีแถวให้ลงนาม · ฐานรุ่นก่อนไม่ส่งช่องนี้ ถือว่าว่าง
 export function esignPendingFromRpc(rpcState) {
   const status = rpcState?.status ?? 'idle'
-  if (status !== 'ok') return { status, items: [] }
+  if (status !== 'ok') return { status, items: [], returned: [] }
   const data = rpcState.data
-  if (data?.ok !== true || !Array.isArray(data.items)) return { status: 'error', items: [] }
-  return { status: 'ok', items: data.items.filter(item => item?.trip_id && item?.slot) }
+  if (data?.ok !== true || !Array.isArray(data.items)) return { status: 'error', items: [], returned: [] }
+  return {
+    status: 'ok',
+    items: data.items.filter(item => item?.trip_id && item?.slot),
+    returned: Array.isArray(data.returned) ? data.returned.filter(item => item?.trip_id && item?.last_return) : [],
+  }
 }
 
 // คนเดียวถือหลายช่องในทริปเดียวได้ (ได้หลายแถว) จึงใช้ทริป+ช่องเป็นคีย์
@@ -221,6 +232,9 @@ export function esignPendingRow(item) {
     vehicleName: item.vehicle_name || null,
     plannedDeparture: item.planned_departure || null,
     actionLabel: item.decision === 'approve' ? 'อนุมัติ (ลงนาม)' : 'ลงนาม',
+    canReturn: item.can_return === true,
+    lastReturn: item.last_return || null,
+    tripNote: ESIGN_TRIP_NOTE[item.trip_status] ?? null,
     summary: {
       requesterName: item.requester_name,
       vehicleName: item.vehicle_name,
@@ -231,16 +245,37 @@ export function esignPendingRow(item) {
   }
 }
 
-// เตือนแบบไม่บล็อกตอนบันทึกออกเดินทาง: ช่องผู้มีอำนาจเป็นออนไลน์แต่ยังไม่ลงนาม
-// คืน null = ไม่ต้องเตือน · missing = ช่องออนไลน์ที่ยังไม่ลงนามทั้งหมด (ผู้ขอ/ผอ.กอง/ผู้มีอำนาจ ตามลำดับ) · blocked = เหตุที่ช่องผู้มีอำนาจลงนามออนไลน์ไม่ได้ (ถ้ามี)
-export function esignDepartWarning(status) {
-  if (!status?.found || ['rejected', 'cancelled'].includes(status.trip_status)) return null
-  const pending = (status.slots ?? []).filter(slot => slot.mode === 'online' && slot.applicable && !slot.signed)
-  const authority = pending.find(slot => slot.slot === 'authority')
-  if (!authority) return null
+// ออกรถก่อนลงนามครบได้ (เจ้าของระบบตัดสิน 2569-11-01) ใบจึงค้างในรายการได้หลังรถออก — เวลาลงนามเป็นเวลาจริงเสมอ ระบบไม่ย้อนให้
+const ESIGN_TRIP_NOTE = { in_progress: 'รถออกแล้ว', completed: 'รถกลับแล้ว' }
+
+// แถวของใบที่ถูกส่งคืนมาหาผู้ขอ (ช่องผู้ขอเซ็นสด) — ผู้ขอกดส่งให้ลงนามต่อ
+export function esignReturnedRow(item) {
   return {
-    missing: pending.map(slot => slot.label),
-    expectedName: authority.expected_name || null,
-    blocked: authority.blocked || null,
+    key: `returned:${item.trip_id}`,
+    tripId: item.trip_id,
+    title: item.destination ? `คำขอใช้รถไป ${item.destination}` : 'คำขอใช้รถ',
+    vehicleName: item.vehicle_name || null,
+    plannedDeparture: item.planned_departure || null,
+    lastReturn: item.last_return,
+    hint: esignReturnHint(item.trip_status, false),
   }
+}
+
+// ข้อความยืนยันหลังผู้ลงนามกดส่งคืน
+export const esignReturnedText = result => `ส่งคืนผู้ขอแล้ว${result?.revoked > 0 ? ` — ถอนลายเซ็นในใบนี้ ${result.revoked} ช่อง` : ''}`
+
+// บอกผู้ขอว่าทำอะไรต่อหลังถูกส่งคืน · ใบที่ได้คิวแล้วผู้ขอแก้เองไม่ได้ (canEdit ใน FleetTrips) เพราะรถว่างได้คิวทันที
+// ถ้าแก้ได้เท่ากับเปลี่ยนรถ/เวลาโดยไม่มีใครเห็น จึงไม่เปิดสิทธิ์เพิ่มให้กรณีนี้
+export function esignReturnHint(tripStatus, requesterOnline) {
+  const send = requesterOnline ? 'ลงนามใหม่ในช่องผู้ขอเพื่อส่งกลับ' : 'กด “ส่งให้ลงนามต่อ” เพื่อส่งกลับ'
+  if (['pending', 'waitlisted'].includes(tripStatus)) return `แก้คำขอได้จากปุ่มแก้ไข แล้ว${send}`
+  if (tripStatus === 'approved') return `ถ้าต้องแก้เนื้อหา ให้ยกเลิกคำขอแล้วสร้างใหม่ หรือแจ้งผู้ดูแลรถแก้ให้ ถ้าไม่ต้องแก้ ${send}`
+  return `รถออกไปแล้ว แก้เนื้อหาคำขอไม่ได้ ${send}`
+}
+
+// หน้าต่างบันทึกออกเดินทางบอกเฉพาะใบที่ผู้ลงนามส่งคืนค้างอยู่ ใบที่แค่ยังลงนามไม่ครบไม่เตือน
+// (เจ้าของระบบสั่งถอด 2569-11-01: ออกรถก่อนลงนาม เอาคำเตือนออกไปก่อน กลัวเขาไม่ซื้อ หาว่าเรื่องมาก)
+export function esignDepartReturn(status) {
+  if (!status?.found || ['rejected', 'cancelled'].includes(status.trip_status)) return null
+  return status.last_return?.open ? status.last_return : null
 }

@@ -9,7 +9,7 @@
 //   - ดึงพลาดต้องเตือน ไม่ขึ้นไฟเขียว "ไม่มีงานค้าง" + ลองใหม่ได้
 //   - ลงนามจากการ์ดโดยไม่เปิดทริป: ส่งช่อง/ภาพ/approve ถูก · แถวหาย · ข้อความ "ลงนามแล้ว" ยังอยู่หลังใบสุดท้าย · คนถือหลายช่อง ช่องถัดไปโผล่หลังลงช่องแรก
 //   - แถบหน้าการใช้รถ: ครบทุกใบ · ลงนามแล้วโหลดรายการทริปใหม่ · ไม่มีใบรอ = ไม่มีแถบ
-//   - ออกรถ: ทริปออนไลน์ที่ผู้มีอำนาจยังไม่ลงนาม = มีกรอบเตือน แต่ยังออกได้ (PATCH ไป) · ลงนามแล้ว/เซ็นสด = ไม่เตือน (เซ็นสดไม่ยิง RPC ลงนาม)
+//   - ออกรถ: ลงนามไม่ครบไม่มีกรอบเตือน (เจ้าของระบบสั่งถอด 2569-11-01) · ใบที่ถูกส่งคืนค้างอยู่มีบรรทัดเหตุผล · ออกรถได้ทุกกรณี
 //   - เค้าโครงมือถือ 390/360 ไม่ล้น ปุ่ม ≥ 44px
 //
 //   ES_TEST_BASE_URL=http://demo.localhost:5176 node tests/esign-pending.playwright.mjs
@@ -29,7 +29,7 @@ const SESSION_SOURCE_URL = 'https://demo.rk-networks.com'
 const ALLOWED_HOSTS = new Set(['demo.rk-networks.com', 'demo.localhost', 'localhost', '127.0.0.1'])
 const DEMO_MUNICIPALITY = 'adff0caf-aed5-4469-9c2a-899643a5cf9a'
 const MIN_TAP = 44
-const RPC_NAMES = ['esign_my_pending', 'esign_trip_status', 'esign_sign_fleet_trip_stamped', 'esign_my_signer_overview', 'esign_my_signatures',
+const RPC_NAMES = ['esign_my_pending', 'esign_trip_status', 'esign_sign_fleet_trip_stamped', 'esign_my_signer_overview', 'esign_my_signatures', 'esign_return_fleet_trip', 'esign_resubmit_fleet_trip',
   'fleet_vehicle_last_odometer', 'fleet_vehicle_odometer_gaps']
 const SLOT_LABEL = { requester: 'ผู้ขออนุญาต', dept_head: 'ผู้อำนวยการสำนัก/กอง หรือผู้แทน', authority: 'ผู้มีอำนาจสั่งใช้ยานพาหนะ' }
 const PIN = '246810'
@@ -88,24 +88,32 @@ const fabricateTrip = (id, destination, esignSlots) => ({
 })
 
 // สถานะทริปตามรูปของ esign_trip_status — signed = ช่องที่ลงนามแล้ว
-function tripStatus(signed = {}) {
+function tripStatus(signed = {}, lastReturn = null) {
   const slots = ['requester', 'dept_head', 'authority', 'sk1'].map(slot => ({
     slot, label: SLOT_LABEL[slot] ?? 'ผู้บริหารท้องถิ่น (บันทึกรับรอง สก.๑)', mode: slot === 'sk1' ? 'wet' : 'online', applicable: slot !== 'sk1', signed: Boolean(signed[slot]),
     waiting_for_previous: false, can_sign: false, can_revoke: false, blocked: null, expected_name: slot === 'authority' ? 'สมศักดิ์ นายก' : null,
     signature: signed[slot] ? { signer_name: 'ผู้ลงนาม', signer_position: 'ตำแหน่ง', signed_as: '', decision: 'sign', signed_at: '2026-10-23T04:00:00Z', content_matches: true, mine: false, with_image: false } : null,
   }))
   const done = Object.values(signed).filter(Boolean).length
-  return { found: true, mode: 'online', verify_code: 'a'.repeat(32), trip_status: 'approved', slots, required: 3, signed_count: done, complete: done === 3, integrity: done ? 'ok' : 'none', locked: done > 0, can_revoke_all: false }
+  return { found: true, mode: 'online', verify_code: 'a'.repeat(32), trip_status: 'approved', slots, required: 3, signed_count: done, complete: done === 3, integrity: done ? 'ok' : 'none', locked: done > 0, can_revoke_all: false, last_return: lastReturn, returns_count: lastReturn ? 1 : 0, can_resubmit: false }
 }
 
-function makeBackend({ items = [], library = [], pendingMode = 'ok', statusSigned = {} } = {}) {
+function makeBackend({ items = [], returned = [], library = [], pendingMode = 'ok', statusSigned = {}, statusReturn = null } = {}) {
   const state = {
-    items: [...items], library: [...library], pendingMode, statusSigned, pin: PIN, calls: [], tripReads: 0, tripPatches: [], afterSign: {},
+    items: [...items], returned: [...returned], library: [...library], pendingMode, statusSigned, statusReturn, pin: PIN, calls: [], tripReads: 0, tripPatches: [], afterSign: {}, notified: [],
     trips: [fabricateTrip(ONLINE_TRIP_ID, ONLINE_DEST, { requester: 'online', dept_head: 'online', authority: 'online', sk1: 'wet' }), fabricateTrip(WET_TRIP_ID, WET_DEST, null)],
   }
   const handlers = {
-    esign_my_pending: () => (state.pendingMode === 'fail' ? { ok: false, code: 'error' } : { ok: true, count: state.items.length, items: state.items }),
-    esign_trip_status: () => tripStatus(state.statusSigned),
+    esign_my_pending: () => (state.pendingMode === 'fail' ? { ok: false, code: 'error' } : { ok: true, count: state.items.length, items: state.items, returned: state.returned }),
+    esign_trip_status: () => tripStatus(state.statusSigned, state.statusReturn),
+    esign_return_fleet_trip: args => {
+      state.items = state.items.filter(item => item.trip_id !== args.p_trip_id)
+      return { ok: true, already: false, return_id: 'ret-1', returned_at: '2026-10-24T02:00:00Z', revoked: 2 }
+    },
+    esign_resubmit_fleet_trip: args => {
+      state.returned = state.returned.filter(item => item.trip_id !== args.p_trip_id)
+      return { ok: true, already: false }
+    },
     esign_my_signer_overview: () => ({
       ok: true, pin_set: true, pin_set_at: '2026-10-20T03:00:00Z', duty_acked: true, suspended: false, suspended_at: null, locked_until: null, failed_count: 0,
       image_count: state.library.length, signature_count: 0, signature_count_month: 0,
@@ -148,6 +156,7 @@ async function installBackend(context, backend) {
   await context.route(/\/functions\/v1\/notify-telegram/, async route => {
     const cors = corsFor(route.request())
     if (route.request().method() === 'OPTIONS') { await route.fulfill({ status: 204, headers: cors }); return }
+    backend.notified.push(route.request().postDataJSON()?.notification_type)
     await route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify({ skipped: true, reason: 'test' }) })
   })
   await context.route(/\/rest\/v1\/fleet_trips\?/, async route => {
@@ -413,22 +422,103 @@ const submitDepart = async page => {
   await page.getByRole('button', { name: 'ยืนยันออกเดินทาง' }).click()
 }
 
-async function checkDepartWarning(page, auth, context) {
+// ข้อความเตือนชุดเดิมที่เจ้าของระบบสั่งถอด — ตรวจจากข้อความบนจอ เพราะแค่เช็ก attribute ที่ลบไปแล้วจะผ่านเสมอ
+const DEPART_OLD_WARNING = ['ลงนามออนไลน์ยังไม่ครบ', 'ยังขาด:', 'ไม่บล็อก', 'ตามให้ผู้ลงนาม']
+async function departBoxText(page) {
+  return page.getByRole('button', { name: 'ยืนยันออกเดินทาง' }).evaluate(button => button.closest('.fixed')?.innerText ?? document.body.innerText)
+}
+
+async function checkDepartNoWarningUnsigned(page, auth, context) {
   const backend = makeBackend({ items: [], statusSigned: { requester: true, dept_head: true } })
   await installBackend(context, backend)
   await openFleetTrips(page, auth)
   await openDepart(page, ONLINE_DEST)
-  await page.locator('[data-depart-esign-warning]').waitFor({ timeout: 10_000 })
-  const warning = await page.locator('[data-depart-esign-warning]').innerText()
-  for (const expected of ['ลงนามออนไลน์ยังไม่ครบ', 'ยังขาด: ผู้มีอำนาจสั่งใช้ยานพาหนะ', 'รอ สมศักดิ์ นายก ลงนาม', 'ไม่บล็อก']) assert.ok(warning.includes(expected), `คำเตือนไม่มี "${expected}"`)
-  // เตือนแล้วต้องออกรถได้: PATCH ไปที่ทริปนี้จริง สถานะ in_progress
+  await page.waitForTimeout(1_500)
+  assert.ok(backend.calls.some(call => call.name === 'esign_trip_status'), 'ต้องอ่านสถานะมาแล้วจริง ไม่งั้นผลนี้ไม่มีความหมาย')
+  const text = await departBoxText(page)
+  for (const phrase of DEPART_OLD_WARNING) assert.ok(!text.includes(phrase), `ยังมีคำเตือน "${phrase}"`)
+  assert.equal(await page.locator('[data-depart-esign-returned]').count(), 0)
+  // ออกรถได้ตามปกติ: PATCH ไปที่ทริปนี้จริง สถานะ in_progress
   await submitDepart(page)
   await page.waitForFunction(() => !document.body.innerText.includes('ยืนยันออกเดินทาง'), null, { timeout: 10_000 })
   assert.equal(backend.tripPatches.length, 1, `ต้อง PATCH ทริป 1 ครั้ง (ได้ ${backend.tripPatches.length})`)
   assert.equal(backend.tripPatches[0].id, ONLINE_TRIP_ID)
   assert.equal(backend.tripPatches[0].body.status, 'in_progress')
   assert.deepEqual(dialogs.filter(d => d.type === 'alert'), [], 'ออกรถต้องไม่มี alert')
-  return 'ผู้มีอำนาจยังไม่ลงนาม = มีกรอบเตือน แต่ออกรถได้ (PATCH in_progress)'
+  return 'ผู้มีอำนาจยังไม่ลงนาม = ไม่มีกรอบเตือน และออกรถได้ (PATCH in_progress)'
+}
+
+const LAST_RETURN = { slot: 'authority', label: SLOT_LABEL.authority, by_name: 'สมศักดิ์ นายก', by_position: 'นายก', reason: 'ไม่อนุญาต ให้ใช้รถคันอื่น', at: '2026-10-24T02:00:00Z', open: true }
+
+async function checkDepartReturned(page, auth, context) {
+  const backend = makeBackend({ items: [], statusReturn: LAST_RETURN })
+  await installBackend(context, backend)
+  await openFleetTrips(page, auth)
+  await openDepart(page, ONLINE_DEST)
+  await page.locator('[data-depart-esign-returned]').waitFor({ timeout: 10_000 })
+  assert.ok((await page.locator('[data-depart-esign-returned]').innerText()).includes('ไม่อนุญาต ให้ใช้รถคันอื่น'))
+  const text = await departBoxText(page)
+  for (const phrase of DEPART_OLD_WARNING) assert.ok(!text.includes(phrase), `ยังมีคำเตือน "${phrase}"`)
+  await submitDepart(page)
+  await page.waitForFunction(() => !document.body.innerText.includes('ยืนยันออกเดินทาง'), null, { timeout: 10_000 })
+  assert.equal(backend.tripPatches.at(-1).body.status, 'in_progress', 'ใบที่ถูกส่งคืนยังออกรถได้')
+  return 'ใบที่ถูกส่งคืน: มีบรรทัดเหตุผลบรรทัดเดียว และออกรถได้ตามที่เจ้าของระบบตัดสิน'
+}
+
+async function checkHomeReturnFromCard(page, auth, context) {
+  const backend = makeBackend({ items: [{ ...pendingItem(1, 'authority'), can_return: true, round: 0, last_return: null, trip_status: 'completed' }], library: [imageItem(1, true)] })
+  await installBackend(context, backend)
+  await openHome(page, auth)
+  await card(page).waitFor({ timeout: 20_000 })
+  assert.equal((await card(page).locator('[data-pending-sign-trip-note]').innerText()).trim(), 'รถกลับแล้ว', 'ใบที่รถกลับแล้วต้องบอกสถานะ')
+  await openSignDialog(page, card(page))
+  await page.locator('[data-sign-return-open]').click()
+  await page.locator('[data-sign-return-reason]').fill('ทริปนี้ไม่ได้ขออนุญาตล่วงหน้า')
+  await page.locator('[data-sign-return-submit]').click()
+  await page.locator('[data-sign-dialog]').waitFor({ state: 'detached', timeout: 10_000 })
+  const call = backend.calls.filter(item => item.name === 'esign_return_fleet_trip').at(-1)
+  assert.deepEqual(call.args, { p_trip_id: TRIP_ID(1), p_slot: 'authority', p_reason: 'ทริปนี้ไม่ได้ขออนุญาตล่วงหน้า' })
+  await page.locator('[data-pending-sign-notice]').waitFor({ timeout: 10_000 })
+  assert.ok((await page.locator('[data-pending-sign-notice]').innerText()).includes('ส่งคืนผู้ขอแล้ว — ถอนลายเซ็นในใบนี้ 2 ช่อง'))
+  assert.equal(await rows(card(page)).count(), 0, 'ส่งคืนแล้วแถวต้องหาย')
+  assert.deepEqual(backend.notified.filter(type => type === 'esign_returned_dm'), ['esign_returned_dm'])
+  return 'นายก/ปลัดส่งคืนจากการ์ดได้โดยไม่ต้องเปิดทริป · ใบที่รถกลับแล้วยังอยู่ในการ์ด'
+}
+
+async function checkHomeNoReturnButton(page, auth, context) {
+  // DB ไม่อนุญาต (can_return ไม่จริง/ฐานรุ่นก่อนไม่ส่ง) ต้องไม่มีปุ่ม หน้าจอไม่เดาสิทธิ์เอง
+  const backend = makeBackend({ items: [pendingItem(1, 'dept_head')] })
+  await installBackend(context, backend)
+  await openHome(page, auth)
+  await card(page).waitFor({ timeout: 20_000 })
+  await openSignDialog(page, card(page))
+  assert.equal(await page.locator('[data-sign-return-open]').count(), 0)
+  await page.locator('[data-sign-close]').click()
+  return 'DB ไม่ส่ง can_return = ไม่มีปุ่มส่งคืน'
+}
+
+async function checkHomeReturnedRows(page, auth, context) {
+  const open = { ...LAST_RETURN, slot: 'dept_head', label: SLOT_LABEL.dept_head, by_name: 'สมชาย หัวหน้ากอง', reason: 'ขอให้แก้วันเดินทาง' }
+  const backend = makeBackend({
+    items: [{ ...pendingItem(2, 'requester'), can_return: false, round: 1, last_return: open }],
+    returned: [{ trip_id: TRIP_ID(1), round: 1, trip_status: 'approved', vehicle_name: '[TEST] กระบะลงนามออนไลน์', destination: 'ทดสอบใบถูกส่งคืน', purpose: 'ประชุม', planned_departure: '2026-11-02T02:00:00+00:00', last_return: open }],
+  })
+  await installBackend(context, backend)
+  await openHome(page, auth)
+  await card(page).waitFor({ timeout: 20_000 })
+  assert.ok((await card(page).locator('[data-pending-sign-count]').innerText()).trim().startsWith('2'), 'ป้ายจำนวนต้องนับใบที่ถูกส่งคืนด้วย')
+  const row = card(page).locator('[data-pending-returned-row]')
+  const text = await row.innerText()
+  for (const expected of ['ทดสอบใบถูกส่งคืน', 'ใบนี้ถูกส่งคืนผู้ขอ', 'สมชาย หัวหน้ากอง', 'เหตุผล: ขอให้แก้วันเดินทาง', 'ยกเลิกคำขอแล้วสร้างใหม่']) assert.ok(text.includes(expected), `แถวไม่มี "${expected}"`)
+  assert.ok((await rows(card(page)).first().locator('[data-pending-sign-returned]').innerText()).includes('ขอให้แก้วันเดินทาง'), 'แถวที่ต้องลงนามใหม่ต้องเห็นเหตุผล')
+  assert.equal(await page.locator('[data-home-clear]').count(), 0, 'มีใบถูกส่งคืนต้องไม่ขึ้นไฟเขียว')
+  await tapSize(row.locator('[data-pending-resubmit]'), 'ปุ่มส่งให้ลงนามต่อ')
+  await row.locator('[data-pending-resubmit]').click()
+  await row.waitFor({ state: 'detached', timeout: 10_000 })
+  assert.deepEqual(backend.calls.filter(item => item.name === 'esign_resubmit_fleet_trip').at(-1).args, { p_trip_id: TRIP_ID(1) })
+  assert.ok((await page.locator('[data-pending-sign-notice]').innerText()).includes('ส่งให้ลงนามต่อแล้ว'))
+  assert.ok(backend.notified.includes('esign_turn_dm'))
+  return 'ใบถูกส่งคืน: นับรวม · เห็นเหตุผลและทางไปต่อ · กดส่งต่อแล้วแถวหาย'
 }
 
 async function checkDepartNoWarning(page, auth, context) {
@@ -440,14 +530,14 @@ async function checkDepartNoWarning(page, auth, context) {
   await page.waitForFunction(count => count > 0, signedAll.calls.filter(call => call.name === 'esign_trip_status').length).catch(() => {})
   await page.waitForTimeout(1_500)
   assert.ok(signedAll.calls.some(call => call.name === 'esign_trip_status'), 'ทริปโหมดออนไลน์ต้องอ่านสถานะลงนาม')
-  assert.equal(await page.locator('[data-depart-esign-warning]').count(), 0, 'ลงนามครบแล้วต้องไม่เตือน')
+  assert.equal(await page.locator('[data-depart-esign-returned]').count(), 0, 'ลงนามครบแล้วต้องไม่มีบรรทัดส่งคืน')
   // ทริปเซ็นสด → ไม่เตือน และไม่ยิง RPC ลงนามเลย
   const wet = makeBackend({ items: [] })
   await installBackend(context, wet)
   await openFleetTrips(page, auth)
   await openDepart(page, WET_DEST)
   await page.waitForTimeout(1_500)
-  assert.equal(await page.locator('[data-depart-esign-warning]').count(), 0)
+  assert.equal(await page.locator('[data-depart-esign-returned]').count(), 0)
   assert.equal(wet.calls.filter(call => call.name === 'esign_trip_status').length, 0, 'ทริปเซ็นสดต้องไม่อ่านสถานะลงนาม')
   return 'ลงนามครบ = ไม่เตือน · ทริปเซ็นสด = ไม่เตือนและไม่ยิง RPC ลงนาม'
 }
@@ -515,8 +605,12 @@ async function main() {
     await run('หน้าแรก: ถือหลายช่อง', () => checkHomeChain(page, auth, context))
     await run('หน้าการใช้รถ: แถบรอลงนาม', () => checkFleetBanner(page, auth, context))
     await run('หน้าการใช้รถ: ไม่มีใบรอ = ไม่มีแถบ', () => checkFleetNoBanner(page, auth, context))
-    await run('ออกรถ: เตือนแต่ไม่บล็อก', () => checkDepartWarning(page, auth, context))
+    await run('ออกรถ: ลงนามไม่ครบไม่เตือนและออกได้', () => checkDepartNoWarningUnsigned(page, auth, context))
     await run('ออกรถ: ไม่เตือนเมื่อไม่ควร', () => checkDepartNoWarning(page, auth, context))
+    await run('ออกรถ: ใบที่ถูกส่งคืนมีบรรทัดเหตุผล', () => checkDepartReturned(page, auth, context))
+    await run('หน้าแรก: ส่งคืนจากการ์ด', () => checkHomeReturnFromCard(page, auth, context))
+    await run('หน้าแรก: DB ไม่อนุญาตไม่มีปุ่มส่งคืน', () => checkHomeNoReturnButton(page, auth, context))
+    await run('หน้าแรก: ใบที่ถูกส่งคืน', () => checkHomeReturnedRows(page, auth, context))
     await run('เค้าโครงมือถือ 390', () => checkMobile(page, auth, context, 390, 844))
     await run('เค้าโครงมือถือ 360', () => checkMobile(page, auth, context, 360, 740))
   })

@@ -47,6 +47,7 @@ const notificationSpecs = {
   complaint_assigned_dm: { table: 'complaints', resourceType: 'complaint', access: 'staff' },
   event_assigned_dm: { table: 'events', resourceType: 'event', access: 'staff' },
   esign_turn_dm: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
+  esign_returned_dm: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
 } as const
 
 type NotificationType = keyof typeof notificationSpecs
@@ -58,6 +59,7 @@ const DM_CATEGORY: Partial<Record<NotificationType, DmCategory>> = {
   complaint_assigned_dm: 'complaint',
   event_assigned_dm: 'event',
   esign_turn_dm: 'esign',
+  esign_returned_dm: 'esign',
 }
 
 type DeliveryRow = {
@@ -934,8 +936,10 @@ function notificationMatchesResource(type: NotificationType, resource: Record<st
   if (type === 'fleet_vehicle_repair_started') return resource.status === 'under_repair'
   if (type === 'fleet_vehicle_repair_finished') return resource.status === 'active'
   if (type === 'complaint_assigned_dm') return isUuid(resource.assigned_to)
-  // สถานะชุดเดียวกับ esign_trip_turns() — ใบที่ปิดแล้วไม่มีคิวลงนาม
-  if (type === 'esign_turn_dm') return ['pending', 'waitlisted', 'approved', 'in_progress'].includes(String(resource.status))
+  // สถานะชุดเดียวกับ esign_trip_turns() — ใบที่ถูกปฏิเสธ/ยกเลิกไม่มีคิวลงนาม · รถกลับแล้วยังตามลงนามได้
+  if (type === 'esign_turn_dm' || type === 'esign_returned_dm') {
+    return ['pending', 'waitlisted', 'approved', 'in_progress', 'completed'].includes(String(resource.status))
+  }
   return true
 }
 
@@ -1051,6 +1055,18 @@ function buildEsignTurnDm(trip: Record<string, unknown>, slotLabel: unknown) {
   ])
 }
 
+// ไม่ส่งเหตุผลส่งคืน: เป็นข้อความที่เจ้าหน้าที่พิมพ์เอง อาจมีข้อมูลบุคคล ผู้ขอเปิดอ่านในระบบ
+function buildEsignReturnedDm(trip: Record<string, unknown>, slotLabel: unknown) {
+  const departure = formatThaiDateTime(trip.planned_departure)
+  return framedMessage(trip, '↩️', 'ใบขอใช้รถถูกส่งคืน', [
+    slotLabel ? `ส่งคืนโดยช่อง: <b>${escapeHtml(slotLabel, 60)}</b>` : '',
+    `รถ: ${vehicleLabel(trip.vehicle as { name?: string; license_plate?: string } | null)}`,
+    departure ? `ออก: ${escapeHtml(departure, 60)}` : '',
+    'เปิดดูเหตุผลในระบบ',
+    tripRef(trip),
+  ])
+}
+
 // คำร้องส่วนใหญ่ไม่ผ่านปุ่มมอบหมาย: trigger เติม assigned_to ตั้งแต่ INSERT แล้วระบบรับเรื่องเอง (status = received)
 // สายเฉพาะกิจส่งตรงถึงผู้รับผิดชอบทั้งที่สถานะยัง pending (route_adhoc_complaint ไม่เปลี่ยนสถานะ)
 // ส่วนเรื่องที่รอแอดมิน ผู้รับผิดชอบเริ่มงานได้เมื่อรับเรื่องแล้ว จึงส่งตอนเปลี่ยนเป็น received
@@ -1101,14 +1117,22 @@ async function dmRecipients(
         message: buildEventAssignedDm(resource, row.task),
       }))
   }
+  if (type === 'esign_returned_dm') {
+    const { data, error } = await admin.rpc('esign_trip_return_dm', { p_trip_id: resource.id })
+    if (error) throw error
+    const row = data as Record<string, unknown> | null
+    if (!row || !isUuid(row.user_id) || !isUuid(row.return_id)) return []
+    return [{ userId: String(row.user_id), key: `${type}:${resource.id}:${row.return_id}`, message: buildEsignReturnedDm(resource, row.label) }]
+  }
   // esign_turn_dm — ใครถึงคิวตัดสินในฐานข้อมูล (esign_trip_turns ตรรกะคู่กับ esign_trip_status)
+  // รอบแรกคงคีย์รูปเดิม · รอบหลังส่งคืนต่อเลขรอบ ไม่งั้นผู้ลงนามที่เคยได้รับแล้วจะไม่ได้ข้อความอีก
   const { data, error } = await admin.rpc('esign_trip_turns', { p_trip_id: resource.id })
   if (error) throw error
   return (Array.isArray(data) ? data : [])
     .filter((turn: Record<string, unknown>) => isUuid(turn?.user_id))
     .map((turn: Record<string, unknown>) => ({
       userId: String(turn.user_id),
-      key: `${type}:${resource.id}:${cleanText(turn.slot, 20)}:${turn.user_id}`,
+      key: `${type}:${resource.id}:${cleanText(turn.slot, 20)}:${turn.user_id}${Number(turn.round) > 0 ? `:r${Number(turn.round)}` : ''}`,
       message: buildEsignTurnDm(resource, turn.label),
     }))
 }

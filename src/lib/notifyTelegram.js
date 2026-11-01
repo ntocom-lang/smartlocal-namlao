@@ -31,6 +31,7 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   'complaint_assigned_dm',
   'event_assigned_dm',
   'esign_turn_dm',
+  'esign_returned_dm',
 ])
 
 /**

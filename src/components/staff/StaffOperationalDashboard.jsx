@@ -273,12 +273,12 @@ export default function StaffOperationalDashboard({
 
   const state = todoState({
     badgeStatuses: [...workCards.map(card => card.status), waterTodo.status === 'loading' ? 'loading' : null, ['loading', 'error'].includes(esignPending.status) ? esignPending.status : null],
-    badgeCounts: [...workCards.map(card => card.count), waterPending ? 1 : 0, esignPending.items.length],
+    badgeCounts: [...workCards.map(card => card.count), waterPending ? 1 : 0, esignPending.items.length + esignPending.returned.length],
     summaryStatus: summary.status === 'idle' ? null : summary.status,
     due,
   })
   // ใบรอลงนามเปิดส่วนนี้เฉพาะเมื่อมีใบรอหรือดึงพลาด — คนที่ไม่เกี่ยวกับการลงนามไม่ต้องเห็นส่วน "ต้องทำตอนนี้" ว่างๆ เพิ่มขึ้นมา
-  const esignShown = esignPending.items.length > 0 || esignPending.status === 'error' || esignTouched
+  const esignShown = esignPending.items.length > 0 || esignPending.returned.length > 0 || esignPending.status === 'error' || esignTouched
   const hasTodo = workCards.length > 0 || summary.status !== 'idle' || waterPending || esignShown
   const hasAttention = due.overdue > 0 || due.soon > 0
   const nothingShownYet = pendingCards.length === 0 && failedCards.length === 0 && !hasAttention && !waterPending && !esignShown
@@ -333,7 +333,7 @@ export default function StaffOperationalDashboard({
                     <AttentionRow tone="amber" Icon={Clock} testId="soon" count={due.soon} onOpen={() => open(complaintsItem)}
                       text="คำร้องของคุณที่ใกล้ครบกำหนด" hint="ครบกำหนดภายใน 1 วันทำการ" />
                   )}
-                  <MyPendingSignatures variant="home" status={esignPending.status} items={esignPending.items} limit={5}
+                  <MyPendingSignatures variant="home" status={esignPending.status} items={esignPending.items} returned={esignPending.returned} limit={5}
                     moreHint="ที่เหลือดูได้ที่ ยานพาหนะและเชื้อเพลิง › การใช้รถ" onSigned={() => { setEsignTouched(true); esignRpc.reload() }} onRetry={esignRpc.reload} />
                   {waterPending && (
                     <WorkRow item={{ ...waterItem, label: 'ประกาศน้ำ-ฝนรอคุณยืนยัน' }} count={1} hint="ร่างประกาศรอคุณตัดสิน · ยืนยันได้ภายใน 3 ชั่วโมง" onOpen={() => open(waterItem)} />
