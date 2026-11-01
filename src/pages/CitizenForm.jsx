@@ -803,6 +803,12 @@ export default function CitizenForm() {
               </ul>
               <p><strong>ระยะเวลาเก็บรักษา</strong> ข้อมูลติดต่อ (ชื่อ-นามสกุล เบอร์โทรศัพท์) เก็บไว้ 5 ปีนับจากวันปิดเรื่อง</p>
               <p>ข้อมูลจะถูกใช้ตามวัตถุประสงค์ข้างต้นเท่านั้น และจะไม่ถูกเปิดเผยให้บุคคลภายนอก เว้นแต่เป็นการปฏิบัติตามกฎหมาย</p>
+              {/* เปิดแท็บใหม่ — คำร้องที่กรอกค้างไว้จะได้ไม่หาย */}
+              <p>
+                <Link to="/privacy" target="_blank" rel="noopener noreferrer" data-pdpa-full-policy className="font-semibold underline" style={{ color: 'var(--color-primary)' }}>
+                  อ่านนโยบายความเป็นส่วนตัวฉบับเต็ม
+                </Link>
+              </p>
             </div>
             <button onClick={() => setShowPdpa(false)}
               className="mt-5 w-full py-3 rounded-2xl font-semibold text-white text-sm"

@@ -39,6 +39,9 @@ function DeletionScope() {
       <section className={`${card} space-y-3`} aria-labelledby="account-delete-kept">
         <h2 id="account-delete-kept" className="text-sm font-bold text-gray-800">สิ่งที่หน่วยงานยังเก็บไว้</h2>
         <ItemList items={ACCOUNT_DELETION_KEPT} tone="kept" />
+        <Link to="/privacy#retention" data-account-delete-privacy-link className="inline-flex min-h-11 items-center text-sm font-semibold underline" style={{ color: 'var(--color-primary)' }}>
+          ดูระยะเวลาเก็บรักษาในนโยบายความเป็นส่วนตัว
+        </Link>
       </section>
     </>
   )

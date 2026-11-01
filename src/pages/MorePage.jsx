@@ -353,6 +353,8 @@ function NamlaoMorePage() {
     ] },
     { id: 'contact', title: 'ติดต่อหน่วยงาน', Icon: Phone, color: '#059669', items: [
       { key: 'contact', label: 'ติดต่อเรา', desc: 'เบอร์โทรศัพท์ สถานที่ตั้ง และช่องทางโซเชียลมีเดีย', Icon: Phone, color: '#059669', to: '/contact' },
+      // สโตร์บังคับให้เปิดนโยบายได้ง่ายจากในแอป — ทุกคนเห็น ไม่ต้องล็อกอิน
+      { key: 'privacy', label: 'นโยบายความเป็นส่วนตัว', desc: 'การเก็บและใช้ข้อมูลส่วนบุคคล สิทธิของท่าน และการลบบัญชี', Icon: ShieldCheck, color: '#475569', to: '/privacy' },
     ] },
     { id: 'account', title: 'บัญชีของฉัน', Icon: UserCircle2, color: '#475569', items: session ? [
       { key: 'profile', label: 'โปรไฟล์', desc: 'ข้อมูลส่วนตัวและการตั้งค่า', Icon: UserCircle2, color: '#475569', to: '/profile' },
