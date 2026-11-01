@@ -22,7 +22,8 @@ const GOLDEN = {
   form3Full: '02f0099b49988bc043d29c3e6c6a17854790182b32a80d9ee80ceb95a3962f9f',
   form3Blank: '7f187d187a2ef2d177468aba37fae88c8115adf1a0c540c283a8a82dbcb4b087',
   form3Rejected: '57fb69870aacb06fecbd31c76e58c4874a739702377688b9bde69f90eac881c3',
-  sk1: '9965afa8516b2c8d0e033e92907ce09635b9d5261d72f80d504f85198f4c3661',
+  // เปลี่ยนโดยตั้งใจ 2569-11-01: ย่อหน้าบรรทัด "ข้าพเจ้า…ตำแหน่ง…" เป็นช่องว่างที่หดได้ (เดิม 2 ซม. ตายตัว) (เจ้าของระบบสั่งให้อยู่บรรทัดเดียว) — ไม่เกี่ยวกับลายเซ็นออนไลน์
+  sk1: '17d7ca4f6441f367ba594a080f4f75020dddfb2bd63b72e0600232651b4184a9',
 }
 
 const build = (status, stamps, extra = {}) => esignPrintData({ status, stamps, verifyCode: VERIFY_CODE, origin: 'https://demo.example.go.th', ...extra })
@@ -153,6 +154,29 @@ test('แบบ สก. ๑ ช่อง sk1 ออนไลน์: ภาพบ
   // ไม่แนบภาพ → ข้อความแทน
   const noImage = buildFleetSk1Html({ trip, tenant, esign: build(status, stampsFor([])) })
   assert.ok(noImage.includes('class="esign-typed">ลงนามออนไลน์<'))
+})
+
+test('แบบ สก. ๑ วันที่หัวใบ: ลงนามออนไลน์ = วันที่ลงนามจริง (ตรงกับใต้ลายเซ็น แม้รถกลับคนละวัน) · เซ็นสด = วันที่รถกลับ · ยังไม่ทั้งสองอย่าง = เว้นว่าง', () => {
+  const head = html => html.slice(html.indexOf('class="head"'), html.indexOf('class="body"'))
+  const dateFilled = html => /fill-(?:day|month|year) is-filled/.test(head(html))
+  const filled = (html, text) => new RegExp(`class="fill fill-(?:day|month|year) is-filled">${text}<`).test(head(html))
+  const status = fullStatus({ slots: [slotStatus('sk1', { signed: true, signature: signature('นายกเทศมนตรีทดสอบ', { signed_as: 'นายกเทศมนตรีตำบลสาธิต', signed_at: '2026-10-29T02:16:00Z' }) })] })
+  const esign = build(status, stampsFor(['sk1']))
+  // ใบจริงที่เจ้าของระบบส่งมา: ลงนาม 29 ต.ค. แต่รถกลับ 30 ต.ค. (หรือยังไม่กลับ) — หัวใบต้องเป็น 29 ตามที่ลงนาม
+  for (const returned_at of ['2026-10-30T05:00:00Z', null]) {
+    const html = buildFleetSk1Html({ trip: { ...trip, returned_at }, tenant, esign })
+    assert.ok(filled(html, '29') && filled(html, 'ตุลาคม') && filled(html, '2569'), `returned_at=${returned_at}: หัวใบต้องเป็นวันที่ลงนาม 29 ตุลาคม 2569`)
+    assert.ok(html.includes('วันที่ 29 เดือน ตุลาคม ปี 2569'), 'ใต้ลายเซ็นยังเป็นวันที่ลงนามเดิม')
+  }
+  // เซ็นสด + รถกลับแล้ว = วันที่กลับจริง (ไม่เปลี่ยนจากเดิม)
+  const wet = buildFleetSk1Html({ trip: { ...trip, returned_at: '2026-10-30T05:00:00Z' }, tenant })
+  assert.ok(filled(wet, '30') && filled(wet, 'ตุลาคม'))
+  // ยังไม่ลงนามและรถยังไม่กลับ = เว้นให้เขียนเอง ห้ามเติมวันที่พิมพ์/วันตามแผนแทนผู้ลงนาม
+  const pending = buildFleetSk1Html({ trip: { ...trip, returned_at: null, planned_return: '2026-10-30T05:00:00Z' }, tenant })
+  assert.equal(dateFilled(pending), false)
+  // ช่อง sk1 ลงนามแล้วแต่เนื้อหาไม่ตรง (matches=false) ไม่ถือว่าลงนาม → ไม่ใช้วันที่ลงนาม
+  const modified = build(fullStatus({ slots: [slotStatus('sk1', { signed: true, signature: signature('นายกเทศมนตรีทดสอบ', { content_matches: false, signed_at: '2026-10-29T02:16:00Z' }) })] }), stampsFor(['sk1']))
+  assert.equal(dateFilled(buildFleetSk1Html({ trip: { ...trip, returned_at: null }, tenant, esign: modified })), false)
 })
 
 test('esignEvidenceHtml: ไม่มีข้อมูล/ไม่มีช่องที่เกี่ยวข้อง = ว่าง · ไม่มีลิงก์ (ไม่มีรหัส) = ไม่มี QR', () => {
