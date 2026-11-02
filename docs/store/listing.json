@@ -1,0 +1,36 @@
+{
+  "_comment": "ข้อความหน้าแอปบน Google Play (ร่าง 2569-11-03) — แหล่งเดียวของข้อความ ตรวจความยาว/ลิงก์/ฟีเจอร์ด้วย npm run test:store-listing · ยังไม่ใส่ชื่อนิติบุคคล (รอเจ้าของระบบ) จึงเขียนว่า 'ผู้พัฒนาระบบ' ไว้ก่อน",
+  "app": {
+    "name": "ท้องถิ่นของเรา",
+    "package": "com.rknetworks.smartlocal",
+    "defaultLanguage": "th"
+  },
+  "urls": {
+    "privacyPolicy": "https://app.rk-networks.com/privacy",
+    "accountDeletion": "https://app.rk-networks.com/account/delete",
+    "support": "https://app.rk-networks.com/support"
+  },
+  "features": [
+    { "route": "/complaint", "th": "ร้องเรียน/ร้องทุกข์ แนบรูป ปักหมุดตำแหน่ง และติดตามสถานะเรื่อง", "en": "Submit complaints with photos and a map pin, and track their status" },
+    { "route": "/doc-request", "th": "ยื่นคำขอบริการประชาชน (E-Service) ออนไลน์", "en": "Apply for local government services (E-Service) online" },
+    { "route": "/waste", "th": "ดูตารางวันเก็บขยะของหมู่บ้าน", "en": "Check your village's garbage collection schedule" },
+    { "route": "/water-situation", "th": "ดูสถานการณ์น้ำ-ฝนและสภาพอากาศใกล้พื้นที่", "en": "See rainfall, water levels and weather near you" },
+    { "route": "/patient-transport", "th": "จองรถรับ-ส่งผู้ป่วยไปสถานพยาบาล", "en": "Book patient transport to a health facility" },
+    { "route": "/events", "th": "ดูปฏิทินกิจกรรมและข่าวประชาสัมพันธ์ของหน่วยงาน", "en": "View the event calendar and announcements" },
+    { "route": "/emergency", "th": "โทรสายด่วนฉุกเฉินและเบอร์โทรสำคัญได้ทันที", "en": "Call emergency lines and key local numbers in one tap" },
+    { "route": "/tourism", "th": "ค้นหาที่เที่ยว ร้านอาหาร ที่พัก และร้านค้าในพื้นที่", "en": "Find local attractions, food, lodging and shops" },
+    { "route": "/profile/notifications", "th": "รับแจ้งเตือนความคืบหน้าของเรื่องที่ยื่น (เมื่อท่านอนุญาต)", "en": "Get progress notifications (only if you allow them)" }
+  ],
+  "th": {
+    "title": "ท้องถิ่นของเรา",
+    "shortDescription": "แจ้งเรื่อง ขอบริการ ดูตารางขยะและน้ำ-ฝน ของ อปท. ที่ท่านเลือก ในแอปเดียว",
+    "fullDescription": "ท้องถิ่นของเรา คือช่องทางบริการประชาชนออนไลน์ขององค์กรปกครองส่วนท้องถิ่น (อปท.) ที่ใช้ระบบ SmartLocal เลือกหน่วยงานของท่านเพียงครั้งเดียว ครั้งต่อไปแอปจะเปิดหน่วยงานนั้นให้เอง\n\nสิ่งที่ทำได้ (บริการที่เปิดใช้อาจต่างกันตามแต่ละหน่วยงาน)\n• ร้องเรียน/ร้องทุกข์ แนบรูป ปักหมุดตำแหน่ง และติดตามสถานะเรื่อง\n• ยื่นคำขอบริการประชาชน (E-Service) ออนไลน์\n• ดูตารางวันเก็บขยะของหมู่บ้าน\n• ดูสถานการณ์น้ำ-ฝนและสภาพอากาศใกล้พื้นที่\n• จองรถรับ-ส่งผู้ป่วยไปสถานพยาบาล\n• ดูปฏิทินกิจกรรมและข่าวประชาสัมพันธ์ของหน่วยงาน\n• โทรสายด่วนฉุกเฉินและเบอร์โทรสำคัญได้ทันที\n• ค้นหาที่เที่ยว ร้านอาหาร ที่พัก และร้านค้าในพื้นที่\n• รับแจ้งเตือนความคืบหน้าของเรื่องที่ยื่น (เมื่อท่านอนุญาต)\n\nการเข้าสู่ระบบ\nดูข้อมูลทั่วไปได้โดยไม่ต้องเข้าสู่ระบบ หากต้องการยื่นเรื่องและติดตามสถานะ เข้าสู่ระบบด้วยเบอร์โทรศัพท์ LINE หรือ Google\n\nข้อมูลส่วนบุคคลของท่าน\nหน่วยงานที่ท่านเลือกเป็นผู้ควบคุมข้อมูลส่วนบุคคลของบริการนั้น ท่านลบบัญชีของตัวเองได้ทุกเมื่อในแอป ที่หน้าบัญชีของฉัน โดยไม่ต้องรอเจ้าหน้าที่ ดูรายละเอียดได้ในนโยบายความเป็นส่วนตัว\n\nเกี่ยวกับแอปนี้\nแอปนี้จัดทำและดูแลโดยผู้พัฒนาระบบ SmartLocal เพื่อให้ อปท. ที่ใช้ระบบเปิดบริการแก่ประชาชน ไม่ใช่แอปของกรมส่งเสริมการปกครองท้องถิ่นหรือหน่วยงานของรัฐส่วนกลาง",
+    "releaseNotes": "เปิดตัวแอปครั้งแรก"
+  },
+  "en": {
+    "title": "ท้องถิ่นของเรา",
+    "shortDescription": "Report issues, request services, check waste schedule and rain for your area.",
+    "fullDescription": "ท้องถิ่นของเรา (\"Our Local\") is an online public-service channel for Thai local administrative organisations (อปท.) that use the SmartLocal system. Choose your organisation once and the app opens it for you next time.\n\nWhat you can do (available services may differ by organisation)\n• Submit complaints with photos and a map pin, and track their status\n• Apply for local government services (E-Service) online\n• Check your village's garbage collection schedule\n• See rainfall, water levels and weather near you\n• Book patient transport to a health facility\n• View the event calendar and announcements\n• Call emergency lines and key local numbers in one tap\n• Find local attractions, food, lodging and shops\n• Get progress notifications (only if you allow them)\n\nSigning in\nGeneral information is available without signing in. To submit a request and follow its status, sign in with your phone number, LINE or Google.\n\nYour personal data\nThe organisation you choose is the data controller for its services. You can delete your account at any time inside the app, on the My Account page, without waiting for staff. See the privacy policy for details.\n\nAbout this app\nThis app is built and operated by the developer of the SmartLocal system so that local authorities using it can serve residents. It is not an app of the Department of Local Administration or of any central government agency.",
+    "releaseNotes": "First release."
+  }
+}
