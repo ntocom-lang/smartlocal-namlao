@@ -10,6 +10,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PRIVACY_POLICY_EFFECTIVE, PRIVACY_POLICY_VERSION, buildPrivacyPolicy } from '../src/lib/privacyPolicy.js'
 import { ACCOUNT_DELETION_KEPT } from '../src/lib/accountDeletion.js'
+import { PLATFORM_APP_NAME } from '../src/lib/platform.js'
 
 const root = new URL('..', import.meta.url)
 const read = (path) => readFileSync(new URL(path, root), 'utf8')
@@ -35,7 +36,7 @@ check('ครบ 10 หัวข้อตามลำดับ และหั�
 check('ผู้ควบคุมข้อมูล + ผู้พัฒนา + ช่องทางติดต่อมาจากข้อมูลหน่วยงาน (Google: ข้อมูลผู้พัฒนาและช่องทางติดต่อ)', () => {
   assert.match(textOf(section('controller')), /เทศบาลตำบลทดสอบ เป็นผู้ควบคุมข้อมูลส่วนบุคคล/)
   // ผู้พัฒนามาจากค่ากลาง (src/lib/platform.js) ไม่ใช่ developer_name ซึ่งเป็นข้อความท้ายเว็บที่ อปท. กรอกเอง
-  assert.match(textOf(section('controller')), /ผู้พัฒนาและดูแลระบบและแอป SmartLocal/)
+  assert.ok(textOf(section('controller')).includes(`ผู้พัฒนาและดูแลระบบและแอป ${PLATFORM_APP_NAME}`), 'Play: นโยบายต้องระบุชื่อแอปตามหน้าสโตร์')
   assert.ok(!textOf(policy).includes('TEST ผู้พัฒนาระบบ'), 'ห้ามดึง developer_name มาเป็นชื่อผู้พัฒนา')
   for (const id of ['controller', 'contact']) {
     assert.deepEqual(section(id).contacts.map(c => c.kind), ['address', 'phone', 'email'], id)

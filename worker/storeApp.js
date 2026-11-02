@@ -43,7 +43,7 @@ export function assetLinksResponse() {
 // ── ข้อมูลแอปของโดเมนกลาง (/manifest.webmanifest บน app.*) ─────────────────────────────
 // โดเมน อปท. ได้ manifest ราย อปท. จาก worker/index.js ส่วนโดเมนกลางไม่มี อปท. เดิมจึงตอบ 404
 // Bubblewrap อ่านชื่อ สี และไอคอนของแอปจากไฟล์นี้ และ Chrome ใช้ทำหน้าจอเปิดแอป
-export const PLATFORM_APP_NAME = 'SmartLocal' // ต้องตรงกับ src/lib/platform.js (เทสต์ตรวจคู่กัน)
+export const PLATFORM_APP_NAME = 'ท้องถิ่นของเรา' // ต้องตรงกับ src/lib/platform.js (เทสต์ตรวจคู่กัน)
 export const PLATFORM_THEME_COLOR = '#1d4ed8' // สีพื้นของไอคอน public/icons/app-icon.svg
 
 // ไอคอนกลางของระบบ (อาคารราชการพื้นน้ำเงิน) — แอปเดียวใช้ร่วมทุก อปท. จึงใช้ตราของแห่งใดแห่งหนึ่งไม่ได้
