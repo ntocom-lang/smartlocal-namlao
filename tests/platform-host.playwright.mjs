@@ -14,6 +14,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
+import { PLATFORM_APP_NAME } from '../src/lib/platform.js'
 
 process.env.SKIP_SYNC_CHECK = '1'
 const server = await createServer({
@@ -150,7 +151,7 @@ try {
     await page.locator('[data-privacy-page] [data-org]').first().waitFor({ timeout: 30000 })
     assert.equal(await page.getByText('ไม่พบหน่วยงานรหัส').count(), 0)
     assert.equal(await page.locator('[data-privacy-section]').count(), 10)
-    assert.match(await page.locator('[data-privacy-page]').textContent(), /แอป SmartLocal เป็นช่องทางบริการประชาชนออนไลน์/)
+    assert.ok((await page.locator('[data-privacy-page]').textContent()).includes(`แอป ${PLATFORM_APP_NAME} เป็นช่องทางบริการประชาชนออนไลน์`))
     const orgLinks = await page.locator('[data-privacy-section="controller"] [data-org-link]').evaluateAll(els => els.map(a => a.getAttribute('href')))
     assert.deepEqual(orgLinks.sort(), ['https://namlao.rk-networks.com/privacy', 'https://thungkaew.rk-networks.com/privacy'], 'ไม่มีสาธิต')
     assert.equal(await page.locator('a[href="tel:054000002"]').count(), 1, 'เบอร์แรกของหน่วยงานที่กรอกหลายเบอร์')

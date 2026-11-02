@@ -71,6 +71,8 @@ await check('ชื่อแอปตรงกับฝั่งหน้าเ�
   const manifest = buildPlatformManifest()
   assert.equal(PLATFORM_APP_NAME, CLIENT_APP_NAME)
   assert.equal(manifest.name, CLIENT_APP_NAME)
+  // ชื่อบนหน้า Google Play ยาวได้ไม่เกิน 30 ตัวอักษร (นับสระ/วรรณยุกต์ด้วย) — เกินแล้วส่งแอปไม่ผ่าน
+  assert.ok([...PLATFORM_APP_NAME].length <= 30, PLATFORM_APP_NAME)
   assert.equal(manifest.id, '/')
   assert.equal(manifest.start_url, '/')
   assert.equal(manifest.scope, '/')
