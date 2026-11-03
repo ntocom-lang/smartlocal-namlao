@@ -199,6 +199,7 @@ export default function TenantPicker({ notice }) {
 
         {onPlatform && status !== 'opening' && (
           <nav aria-label="ข้อมูลของแอป" className="mt-8 flex flex-wrap justify-center gap-x-4 gap-y-1">
+            <Link to="/download" className="inline-flex min-h-11 items-center text-sm text-gray-500 underline">ติดตั้งแอป</Link>
             <Link to="/privacy" className="inline-flex min-h-11 items-center text-sm text-gray-500 underline">นโยบายความเป็นส่วนตัว</Link>
             <Link to="/account/delete" className="inline-flex min-h-11 items-center text-sm text-gray-500 underline">ลบบัญชีผู้ใช้</Link>
             <Link to="/support" className="inline-flex min-h-11 items-center text-sm text-gray-500 underline">ช่วยเหลือและติดต่อ</Link>

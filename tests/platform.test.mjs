@@ -63,11 +63,12 @@ check('โดเมนกลางของแอป = app.* เท่านั�
     assert.equal(isPlatformHost(host), false, host)
   }
 })
-check('หน้ากลาง 3 หน้า: /privacy /account/delete /support (ทับ / ท้ายได้) — path อื่นเป็นหน้าเลือกหน่วยงาน', () => {
+check('หน้ากลาง 4 หน้า: /privacy /account/delete /support /download (ทับ / ท้ายได้) — path อื่นเป็นหน้าเลือกหน่วยงาน', () => {
   assert.equal(platformPageFor('/privacy'), 'privacy')
   assert.equal(platformPageFor('/privacy/'), 'privacy')
   assert.equal(platformPageFor('/account/delete'), 'account-delete')
   assert.equal(platformPageFor('/support'), 'support')
+  assert.equal(platformPageFor('/download'), 'download')
   for (const path of ['/', '', '/profile', '/account', '/privacy/x', '/complaint', undefined]) {
     assert.equal(platformPageFor(path), null, String(path))
   }

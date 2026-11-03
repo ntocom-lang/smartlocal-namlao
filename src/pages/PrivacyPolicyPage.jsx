@@ -1,8 +1,9 @@
 import { useEffect, useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Loader2, Mail, MapPin, Phone, RefreshCw } from 'lucide-react'
+import { Download, Loader2, Mail, MapPin, Phone, RefreshCw } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 import { PRIVACY_POLICY_EFFECTIVE, PRIVACY_POLICY_VERSION, buildPrivacyPolicy } from '../lib/privacyPolicy'
+import { QUIET_MODULES, qrLayout } from '../lib/qrSvg'
 
 // นโยบายความเป็นส่วนตัวของ อปท. ที่เปิดอยู่ — เปิดได้โดยไม่ต้องล็อกอิน เพราะเป็นลิงก์ที่ต้องกรอกในหน้าข้อมูลแอป
 // บนสโตร์ด้วย เนื้อหาทั้งหมดอยู่ที่ src/lib/privacyPolicy.js หน้านี้แค่วาด (แก้ข้อความที่นั่นที่เดียว)
@@ -80,8 +81,39 @@ function OrgList({ orgs, status, onRetry }) {
   )
 }
 
+// ปุ่มโหลดไฟล์ (หน้า /download) — ไฟล์อยู่โดเมนเดียวกัน จึงใช้ attribute download ได้ (ข้ามโดเมนเบราว์เซอร์จะเมิน)
+function DownloadButton({ download }) {
+  return (
+    <div className="space-y-1.5">
+      <a href={download.href} download data-download-link
+        className="flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold text-white"
+        style={{ backgroundColor: 'var(--color-primary)' }}>
+        <Download size={18} aria-hidden="true" /> {download.label}
+      </a>
+      {download.meta && <p className="text-center text-xs text-gray-500">{download.meta}</p>}
+    </div>
+  )
+}
+
+// QR เวกเตอร์ (ตัวสร้างเดียวกับใบพิมพ์/แจ้งเตือน Telegram) — ข้อความที่เข้ารหัสเป็นลิงก์สาธารณะเท่านั้น
+function QrBlock({ qr }) {
+  const layout = useMemo(() => qrLayout(qr.text, 168), [qr.text])
+  if (!layout) return null
+  const box = layout.size + QUIET_MODULES * 2
+  return (
+    <figure className="flex flex-col items-center gap-1" data-download-qr>
+      <svg viewBox={`0 0 ${box} ${box}`} width={layout.side} height={layout.side} role="img" aria-label={qr.label}
+        className="rounded-lg border border-slate-200 bg-white">
+        <rect width={box} height={box} fill="#fff" />
+        <path transform={`translate(${QUIET_MODULES} ${QUIET_MODULES})`} d={layout.d} fill="#000" shapeRendering="crispEdges" />
+      </svg>
+      <figcaption className="text-xs text-gray-500">{qr.label}</figcaption>
+    </figure>
+  )
+}
+
 /**
- * เอกสารหน้าเดียวแบบการ์ดเรียงหัวข้อ (นโยบาย / ลบบัญชี / ช่วยเหลือ)
+ * เอกสารหน้าเดียวแบบการ์ดเรียงหัวข้อ (นโยบาย / ลบบัญชี / ช่วยเหลือ / ติดตั้งแอป)
  * @param {{ doc: object, eyebrow: string, attr?: 'privacy'|'platform', version?: boolean, toc?: boolean,
  *   orgsStatus?: string, onRetry?: () => void, footer?: import('react').ReactNode }} props
  *   attr = ชื่อ data attribute ของหน้าและหัวข้อ (data-privacy-page / data-platform-page) ที่เทสต์ใช้หา
@@ -163,7 +195,15 @@ export function InfoArticle({ doc, eyebrow, attr = 'privacy', version = false, t
             )}
             <ContactList contacts={section.contacts} />
             {section.orgs && <OrgList orgs={section.orgs} status={orgsStatus} onRetry={onRetry} />}
-            {section.note && <p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-gray-600">{section.note}</p>}
+            {section.download && <DownloadButton download={section.download} />}
+            {section.qr && <QrBlock qr={section.qr} />}
+            {section.details && (
+              <details className="rounded-xl border border-gray-100 p-3 text-xs text-gray-600" data-download-details>
+                <summary className="min-h-8 cursor-pointer font-semibold">{section.details.summary}</summary>
+                <p className="mt-2 break-all font-mono leading-5">{section.details.text}</p>
+              </details>
+            )}
+            {section.note &&<p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-gray-600">{section.note}</p>}
             {section.links?.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {section.links.map(link => (

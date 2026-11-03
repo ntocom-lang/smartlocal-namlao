@@ -30,6 +30,8 @@ const FILE_EXTENSIONS = new Set([
   'woff', 'woff2', 'ttf', 'otf', 'eot',
   'mp4', 'webm', 'mp3', 'wav', 'ogg',
   'pdf', 'txt', 'xml', 'csv', 'zip', 'wasm',
+  // ไฟล์แอป Android ที่หน้า /download ให้โหลด — ถ้าไฟล์หาย ต้องได้ 404 ไม่ใช่หน้า HTML ที่มือถือโหลดไปเป็น "apk" เสีย
+  'apk',
 ])
 
 // request นี้ขอ "ไฟล์" หรือขอ "หน้าเว็บ"

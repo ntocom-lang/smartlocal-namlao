@@ -113,7 +113,7 @@ function run(cmd, args, options) {
   if (result.status !== 0) die(`คำสั่งล้ม: ${path.basename(cmd)} ${args[0]} (exit ${result.status})`)
 }
 
-function apkFingerprints(apk) {
+export function apkFingerprints(apk) {
   const config = JSON.parse(readFileSync(path.join(homedir(), '.bubblewrap', 'config.json'), 'utf8'))
   const apksigner = path.join(config.androidSdkPath, 'build-tools', '36.1.0', 'apksigner.bat')
   const result = spawnSync(apksigner, ['verify', '--print-certs', apk], {
