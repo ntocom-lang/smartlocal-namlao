@@ -13,7 +13,7 @@ import { supabase, signOutSafely } from '../lib/supabase'
 import { clearCacheAndReload } from '../lib/clearCache'
 import { getRankedPaths } from '../lib/menuUsage'
 import { moduleForPath } from '../lib/staffModules'
-import { CHANGE_TENANT_PARAM, openedViaApp, platformHref } from '../lib/platform'
+import { CHANGE_TENANT_PARAM, openedViaApp, platformHref, shouldOfferAppDownload } from '../lib/platform'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotificationsContext'
@@ -330,6 +330,12 @@ function NamlaoMorePage() {
         key: 'install', label: isIOS ? 'เพิ่มไปยังหน้าจอโฮม' : 'ติดตั้งแอปพลิเคชัน',
         desc: isIOS ? 'เพิ่มหน้าเว็บนี้ไปยังหน้าจอโฮม' : 'ติดตั้งระบบลงในเครื่องเพื่อเข้าถึงอย่างรวดเร็ว',
         Icon: isIOS ? UploadIcon : Monitor, color: '#2563eb', onClick: handleInstall,
+      },
+      // ไฟล์ติดตั้งแอป "ท้องถิ่นของเรา" (APK Android + วิธีบน iPhone) ที่หน้า /download ของโดเมนกลาง — ต่างจากปุ่มติดตั้งด้านบน
+      // ซึ่งลงเว็บของ อปท. นี้เป็นไอคอน · ซ่อนเมื่อใช้ผ่านแอปหรือติดตั้งเป็นแอปแล้ว (shouldOfferAppDownload)
+      shouldOfferAppDownload({ installed: installState === 'installed' }) && {
+        key: 'app-download', label: 'ดาวน์โหลดแอป ท้องถิ่นของเรา', desc: 'ไฟล์ติดตั้งสำหรับ Android และวิธีติดตั้งบน iPhone',
+        Icon: Download, color: '#2563eb', href: platformHref('/download'),
       },
       {
         key: 'clear-cache', label: clearingCache ? 'กำลังล้างแคช...' : 'ล้างแคช / อัปเดตเวอร์ชั่นล่าสุด',

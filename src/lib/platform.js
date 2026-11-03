@@ -130,6 +130,15 @@ export function openedViaApp(storage = safeStorage()) {
   try { return storage?.getItem(VIA_APP_KEY) === '1' } catch { return false }
 }
 
+/**
+ * เมนู "ดาวน์โหลดแอป" บนเว็บของ อปท. (ลิงก์ไปหน้า /download ของโดเมนกลาง) — ให้เห็นเฉพาะคนที่ยังไม่ได้ใช้ผ่านแอป
+ * ซ่อนเมื่อเปิดอยู่ในแอปจากสโตร์/APK (?via=app) หรือติดตั้งเว็บเป็นแอปบนหน้าจอหลักแล้ว (installed) — ไม่ต้องชวนติดตั้งซ้ำ
+ * @param {{ installed?: boolean, storage?: Storage }} [options] installed = โหมดแอปจาก useInstallPrompt (mode === 'installed')
+ */
+export function shouldOfferAppDownload({ installed = false, storage = safeStorage() } = {}) {
+  return !installed && !openedViaApp(storage)
+}
+
 // ── รายชื่อหน่วยงาน ──────────────────────────────────────────────────────────────
 // คอลัมน์ที่ anon อ่านได้ (municipalities ใช้ column-level grant — ตรวจด้วย anon key จริง 2569-11-01)
 // RLS ให้เห็นเฉพาะ is_active ห้ามเพิ่มคอลัมน์โดยไม่เช็คสิทธิ์ ไม่งั้นทั้ง query ล้มด้วย 42501
