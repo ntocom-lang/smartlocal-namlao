@@ -29,6 +29,8 @@ const APP = `http://app.rk-networks.com:${port}`
 const WWW = `http://www.rk-networks.com:${port}`
 const DEMO_SITE = `http://demo.rk-networks.com:${port}`
 const LOCAL_ORIGINS = new Set([APP, WWW, DEMO_SITE])
+// เมนู "ดาวน์โหลดแอป ท้องถิ่นของเรา" บนเว็บ อปท. → หน้า /download ของโดเมนกลาง (เห็นเฉพาะคนที่ยังไม่ได้ใช้ผ่านแอป)
+const DOWNLOAD_LINK = 'a[href="https://app.rk-networks.com/download"]'
 const browser = await chromium.launch({ headless: true, channel: 'chrome', args: ['--host-resolver-rules=MAP *.rk-networks.com 127.0.0.1'] })
 
 const LIST = [
@@ -258,6 +260,7 @@ try {
     await link.waitFor({ timeout: 30000 })
     assert.match(await link.textContent(), /เปลี่ยนหน่วยงาน/)
     assert.equal(await link.getAttribute('target'), null, 'ต้องเปิดในหน้าเดิม ไม่ใช่แท็บใหม่')
+    assert.equal(await page.locator(DOWNLOAD_LINK).count(), 0, 'ใช้ผ่านแอปอยู่แล้ว ไม่ต้องชวนดาวน์โหลดแอป')
     await shot(page, 'more-switch-tenant')
     await link.click()
     await page.waitForURL('https://app.rk-networks.com/?change=1')
@@ -265,11 +268,18 @@ try {
     await context.close()
   })
 
-  await check('เปิดเว็บ อปท. ตรงๆ (ไม่ผ่านแอป): ไม่มีเมนูเปลี่ยนหน่วยงาน', async () => {
+  await check('เปิดเว็บ อปท. ตรงๆ (ไม่ผ่านแอป): ไม่มีเมนูเปลี่ยนหน่วยงาน · มีเมนู "ดาวน์โหลดแอป" ไปหน้า /download ของโดเมนกลาง', async () => {
     const { context, page, errors } = await fixture()
     await page.goto(DEMO_SITE + '/more')
     await page.locator('a[href="/privacy"]').first().waitFor({ timeout: 30000 })
-    assert.equal(await page.locator('a[href*="app.rk-networks.com"]').count(), 0)
+    assert.equal(await page.locator('a[href="https://app.rk-networks.com/?change=1"]').count(), 0)
+    const download = page.locator(DOWNLOAD_LINK)
+    assert.equal(await download.count(), 1)
+    assert.match(await download.textContent(), /ดาวน์โหลดแอป ท้องถิ่นของเรา/)
+    assert.equal(await download.getAttribute('target'), null, 'เปิดในหน้าเดิม')
+    assert.equal(await page.locator('a[href*="app.rk-networks.com"]').count(), 1, 'ลิงก์โดเมนกลางมีแค่ดาวน์โหลดแอป')
+    await download.scrollIntoViewIfNeeded()
+    await shot(page, 'more-download')
     assert.deepEqual(errors, [])
     await context.close()
   })
@@ -278,13 +288,15 @@ try {
     const { context, page, errors } = await fixture({ uiStyle: 'kledkaew' })
     await page.goto(DEMO_SITE + '/more')
     await page.locator('a[href="/privacy"]').first().waitFor({ timeout: 30000 })
-    assert.equal(await page.locator('a[href*="app.rk-networks.com"]').count(), 0, 'ยังไม่ผ่านแอป')
+    assert.equal(await page.locator('a[href="https://app.rk-networks.com/?change=1"]').count(), 0, 'ยังไม่ผ่านแอป')
+    assert.equal(await page.locator(DOWNLOAD_LINK).count(), 1, 'ยังไม่ผ่านแอป ต้องเห็นเมนูดาวน์โหลดแอป')
     await page.goto(DEMO_SITE + '/?via=app')
     await page.waitForFunction(() => !location.search.includes('via='), null, { timeout: 30000 })
     await page.goto(DEMO_SITE + '/more')
     const link = page.locator('a[href="https://app.rk-networks.com/?change=1"]')
     await link.waitFor({ timeout: 30000 })
     assert.equal(await link.getAttribute('target'), null)
+    assert.equal(await page.locator(DOWNLOAD_LINK).count(), 0, 'ผ่านแอปแล้ว ไม่ต้องชวนดาวน์โหลดแอป')
     assert.deepEqual(errors, [])
     await context.close()
   })

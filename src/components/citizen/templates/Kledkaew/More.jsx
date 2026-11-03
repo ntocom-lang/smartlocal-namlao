@@ -6,7 +6,7 @@ import {
   Phone, AlertTriangle, Cloud, BookUser,
   Store, FileText, CalendarDays, Luggage, Info,
   UserCircle, LogOut, Globe, UserCog, Settings, RefreshCw,
-  Database, BookOpen, Monitor, Check, UploadIcon, Wrench, Trash2, CloudRain, ChartColumn, ShieldCheck, ArrowLeftRight,
+  Database, BookOpen, Monitor, Check, UploadIcon, Wrench, Trash2, CloudRain, ChartColumn, ShieldCheck, ArrowLeftRight, Download,
 } from 'lucide-react'
 import { MenuGroup } from '../../../common/MenuTileGrid'
 import { useAuth } from '../../../../contexts/AuthContext'
@@ -15,7 +15,7 @@ import { useTenant } from '../../../../contexts/TenantContext'
 import { signOutSafely } from '../../../../lib/supabase'
 import { clearCacheAndReload } from '../../../../lib/clearCache'
 import { moduleForPath } from '../../../../lib/staffModules'
-import { CHANGE_TENANT_PARAM, openedViaApp, platformHref } from '../../../../lib/platform'
+import { CHANGE_TENANT_PARAM, openedViaApp, platformHref, shouldOfferAppDownload } from '../../../../lib/platform'
 import { canAccessAdminPortal, canAccessStaffPortal } from '../../../../lib/portalAccess'
 import { useInstallPrompt } from '../../../../hooks/useInstallPrompt'
 import { IOSGuide, AndroidGuide } from '../../../InstallPrompt'
@@ -119,6 +119,10 @@ export default function KledkaewMore() {
         // เฉพาะเครื่องที่เข้ามาทางแอปจากสโตร์ (src/lib/platform.js) — ลิงก์ข้ามโดเมน เปิดในหน้าเดิม (ดู toTile)
         openedViaApp() && { label: 'เปลี่ยนหน่วยงาน', icon: ArrowLeftRight, href: platformHref(`/?${CHANGE_TENANT_PARAM}=1`), color: '#475569' },
         { label: 'คู่มือการใช้งาน', icon: BookOpen, href: '/manual-citizen.html', external: true, color: '#4f46e5' },
+        // ไฟล์ติดตั้งแอป "ท้องถิ่นของเรา" ที่หน้า /download ของโดเมนกลาง (ลิงก์ข้ามโดเมน เปิดในหน้าเดิม) — ชุดเดียวกับ MorePage.jsx
+        // ต่างจาก pwaItem ด้านล่างที่ลงเว็บของ อปท. นี้เป็นไอคอน · ซ่อนเมื่อใช้ผ่านแอปหรือติดตั้งเป็นแอปแล้ว
+        shouldOfferAppDownload({ installed: installState === 'installed' })
+          && { label: 'ดาวน์โหลดแอป ท้องถิ่นของเรา', icon: Download, href: platformHref('/download'), color: '#2563eb' },
         pwaItem,
         {
           label: clearingCache ? 'กำลังล้างแคช...' : 'ล้างแคช / อัปเดตเวอร์ชั่นล่าสุด', icon: RefreshCw, color: '#0d9488',

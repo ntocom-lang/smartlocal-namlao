@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import {
   CHANGE_TENANT_PARAM, PLATFORM_APP_NAME, PLATFORM_DEVELOPER, PUBLIC_TENANT_COLUMNS, VIA_APP_PATH,
   autoOpenSlug, captureViaApp, fetchActiveTenants, forgetRememberedTenant, isPlatformHost, openedViaApp,
-  platformHref, platformPageFor, readRememberedTenant, rememberTenant, sortTenants, tenantArea, tenantHref,
+  platformHref, platformPageFor, readRememberedTenant, rememberTenant, shouldOfferAppDownload, sortTenants, tenantArea, tenantHref,
 } from '../src/lib/platform.js'
 import { buildPlatformPrivacyPolicy, buildPrivacyPolicy } from '../src/lib/privacyPolicy.js'
 import { buildPlatformAccountDeletion, buildPlatformSupport } from '../src/lib/platformInfo.js'
@@ -120,6 +120,12 @@ check('ไม่มี ?via=app (หรือค่าอื่น) = ไม่�
   assert.equal(calls.length, 1)
   assert.equal(openedViaApp(brokenStorage), false)
   assert.equal(captureViaApp(undefined, undefined, storage), false, 'node/ไม่มี window')
+})
+check('เมนู "ดาวน์โหลดแอป" บนเว็บ อปท.: เห็นเฉพาะคนที่ยังไม่ได้ใช้ผ่านแอปและยังไม่ได้ติดตั้งเป็นแอป', () => {
+  assert.equal(shouldOfferAppDownload({ storage: memoryStorage() }), true, 'เปิดเว็บปกติ')
+  assert.equal(shouldOfferAppDownload({ storage: memoryStorage({ sl_via_app: '1' }) }), false, 'ใช้ผ่านแอปจากสโตร์/APK')
+  assert.equal(shouldOfferAppDownload({ installed: true, storage: memoryStorage() }), false, 'ติดตั้งเป็นแอปบนหน้าจอหลักแล้ว')
+  assert.equal(shouldOfferAppDownload({ storage: brokenStorage }), true, 'storage พังยังเห็นเมนู ไม่ทำให้หน้าล้ม')
 })
 
 console.log('รายชื่อหน่วยงาน')
@@ -248,6 +254,12 @@ check('main.jsx จำ ?via=app ก่อน render · เมนูเปลี�
     assert.match(read(file), /openedViaApp\(\) && \{[^}]*'เปลี่ยนหน่วยงาน'[^}]*platformHref\(`\/\?\$\{CHANGE_TENANT_PARAM\}=1`\)/, file)
   }
   assert.match(read('src/components/citizen/templates/Kledkaew/More.jsx'), /'นโยบายความเป็นส่วนตัว'[^}]*href: '\/privacy'/)
+  // เมนู "ดาวน์โหลดแอป ท้องถิ่นของเรา" ไปหน้า /download ของโดเมนกลาง ทั้งสองธีม และซ่อนเมื่อใช้ผ่านแอป/ติดตั้งแล้ว
+  for (const file of ['src/pages/MorePage.jsx', 'src/components/citizen/templates/Kledkaew/More.jsx']) {
+    const src = read(file)
+    assert.match(src, /shouldOfferAppDownload\(\{ installed: installState === 'installed' \}\)/, file)
+    assert.match(src, /ดาวน์โหลดแอป ท้องถิ่นของเรา[^}]*platformHref\('\/download'\)/, file)
+  }
   assert.match(read('src/App.jsx'), /platformPageFor\(location\.pathname\)/)
 })
 
