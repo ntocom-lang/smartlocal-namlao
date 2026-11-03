@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Download, Loader2, Mail, MapPin, Phone, RefreshCw } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
@@ -82,15 +82,31 @@ function OrgList({ orgs, status, onRetry }) {
 }
 
 // ปุ่มโหลดไฟล์ (หน้า /download) — ไฟล์อยู่โดเมนเดียวกัน จึงใช้ attribute download ได้ (ข้ามโดเมนเบราว์เซอร์จะเมิน)
+// หลังกดโหลดขึ้นกรอบ "ขั้นต่อไป" ทันที: Android ไม่ให้เว็บติดตั้งแอปเอง ผู้ใช้ต้องแตะไฟล์ที่โหลดแล้วกดยืนยันเสมอ
+// ผู้สูงอายุที่โหลดเสร็จแล้วไม่รู้ว่าต้องทำอะไรต่อคือจุดที่หลุดบ่อยที่สุด จึงบอกขั้นต่อไปตรงจุดที่เพิ่งกด
 function DownloadButton({ download }) {
+  const [tapped, setTapped] = useState(false)
   return (
     <div className="space-y-1.5">
-      <a href={download.href} download data-download-link
+      <a href={download.href} download data-download-link onClick={() => setTapped(true)}
         className="flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold text-white"
         style={{ backgroundColor: 'var(--color-primary)' }}>
         <Download size={18} aria-hidden="true" /> {download.label}
       </a>
       {download.meta && <p className="text-center text-xs text-gray-500">{download.meta}</p>}
+      {tapped && download.after && (
+        <div role="status" data-download-next className="space-y-2 rounded-xl border-2 border-amber-300 bg-amber-50 p-3">
+          <p className="text-sm font-bold text-amber-900">{download.after.title}</p>
+          <ol className="space-y-1.5">
+            {download.after.steps.map((text, i) => (
+              <li key={text} className="flex items-start gap-2 text-sm leading-6 text-amber-900">
+                <span aria-hidden="true" className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-600 text-xs font-bold text-white">{i + 1}</span>
+                <span>{text}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
     </div>
   )
 }

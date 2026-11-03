@@ -207,6 +207,12 @@ try {
     assert.ok(/SHA-256: [0-9a-f]{64}/.test(await page.locator('[data-download-details]').textContent()))
     assert.equal(await page.title(), 'ติดตั้งแอป ท้องถิ่นของเรา — ท้องถิ่นของเรา')
     assert.equal(listCalls.count, 0, 'หน้านี้ไม่ต้องใช้รายชื่อหน่วยงาน')
+    // กรอบ "ขั้นต่อไป" ขึ้นเฉพาะหลังกดโหลด ไม่ขึ้นตอนเปิดหน้า
+    assert.equal(await page.locator('[data-download-next]').count(), 0)
+    await Promise.all([page.waitForEvent('download'), page.locator('[data-download-link]').click()])
+    await page.locator('[data-download-next]').waitFor({ timeout: 5000 })
+    assert.equal(await page.locator('[data-download-next] li').count(), 4)
+    assert.ok((await page.locator('[data-download-next]').textContent()).includes('ติดตั้ง'))
     await noHorizontalOverflow(page)
     await shot(page, 'platform-download')
     assert.deepEqual(errors, [])
