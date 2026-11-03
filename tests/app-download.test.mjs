@@ -69,6 +69,13 @@ await check('ชื่อแอปตรงกับสโตร์ · ปุ่
   assert.ok(android.steps.some((s) => s.includes('Play Protect')))
   assert.ok(android.steps.some((s) => s.includes(`"${PLATFORM_APP_NAME}"`)))
 })
+await check('หลังกดโหลดมีขั้นต่อไปที่ผู้ใช้ต้องทำเอง และไม่อ้างว่าติดตั้งให้อัตโนมัติ (Android ไม่ให้เว็บติดตั้งแอปเอง)', () => {
+  const { after } = section(doc, 'android').download
+  assert.ok(after.title && after.steps.length >= 3 && after.steps.length <= 5, 'สั้นพอให้ผู้สูงอายุอ่านจบ')
+  const text = after.steps.join(' ')
+  for (const word of ['เปิด', 'ติดตั้ง', 'อนุญาตจากแหล่งนี้', 'เก็บไว้']) assert.ok(text.includes(word), word)
+  assert.doesNotMatch(textOf(doc), /ติดตั้ง(ให้)?อัตโนมัติ|ติดตั้งเอง/)
+})
 await check('มีวิธีของ iPhone (ไม่มี APK บน iOS) และ QR ชี้หน้านี้บนโดเมนกลาง', () => {
   const iphone = section(doc, 'iphone')
   assert.ok(iphone.steps.length >= 3)
