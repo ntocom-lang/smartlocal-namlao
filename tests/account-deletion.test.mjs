@@ -10,7 +10,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
   ACCOUNT_DELETION_KEPT, ACCOUNT_DELETION_REMOVED, accountDeletionErrorText, canSelfDeleteRole,
-  deleteMyAccount, isDeleteConfirmed,
+  deleteMyAccount, isDeleteConfirmed, listAvatarPaths, removeOrphanAvatars,
 } from '../src/lib/accountDeletion.js'
 
 const UID = '11111111-2222-3333-4444-555555555555'
@@ -169,6 +169,59 @@ await check('delete_my_account รับเฉพาะประชาชน ไ
   assert.match(body, /PERFORM set_config\('app\.account_delete', '1', true\); BEGIN DELETE FROM auth\.users WHERE id = v_uid;/)
   assert.match(fnSql, /REVOKE ALL ON FUNCTION public\.delete_my_account\(\) FROM PUBLIC, anon;/)
   assert.match(fnSql, /GRANT EXECUTE ON FUNCTION public\.delete_my_account\(\) TO authenticated;/)
+})
+
+// แอดมินลบบัญชีคนอื่น (delete_user_by_id) เดิมไม่ลบรูปโปรไฟล์ — ภาพใบหน้าค้างใน bucket สาธารณะตลอดไป
+// ลบด้วย SQL ไม่ได้ (ไฟล์จริงค้างเป็นกำพร้า) ต้องผ่าน Storage API ซึ่งตัดสินด้วยนโยบายของ storage.objects
+console.log('แอดมินลบบัญชีคนอื่น: รูปไม่ค้างใน bucket')
+await check('จำชื่อไฟล์ไว้ก่อนลบบัญชี อ่านรายการไม่ได้ไม่โยน error (ต้องไม่ขวางการลบบัญชีที่แอดมินสั่ง)', async () => {
+  const client = fakeClient({ files: ['avatar.jpg'] })
+  assert.deepEqual(await listAvatarPaths(client, UID), { paths: [`${UID}/avatar.jpg`], ok: true })
+  assert.deepEqual(client.calls, [['bucket', 'avatars'], ['list', UID]])
+  assert.deepEqual(await listAvatarPaths(fakeClient(), UID), { paths: [], ok: true })
+  assert.deepEqual(await listAvatarPaths(fakeClient({ listError: { message: 'network' } }), UID), { paths: [], ok: false })
+  assert.deepEqual(await listAvatarPaths(fakeClient(), ''), { paths: [], ok: false })
+})
+await check('ลบไฟล์ที่จำไว้ นับเองว่าครบไหม — Storage ตอบ 200 แต่ไม่ลบ (นโยบายไม่ให้) ต้องไม่เงียบ', async () => {
+  const paths = [`${UID}/avatar.jpg`, `${UID}/avatar.png`]
+  assert.equal(await removeOrphanAvatars(fakeClient(), paths), 0)
+  assert.equal(await removeOrphanAvatars(fakeClient({ removedCount: 1 }), paths), 1)
+  assert.equal(await removeOrphanAvatars(fakeClient({ removedCount: 0 }), paths), 2)
+  assert.equal(await removeOrphanAvatars(fakeClient({ removeError: { message: 'denied' } }), paths), 2)
+  const none = fakeClient()
+  assert.equal(await removeOrphanAvatars(none, []), 0)
+  assert.deepEqual(none.calls, [], 'ไม่มีไฟล์ ไม่แตะ Storage')
+})
+await check('AdminDashboard.deleteUser: อ่านรายการรูปก่อนลบบัญชี ลบไฟล์หลังบัญชีหาย และไม่ลบถ้าลบบัญชีไม่ผ่าน', () => {
+  const src = readFileSync(new URL('../src/pages/AdminDashboard.jsx', import.meta.url), 'utf8')
+  const start = src.indexOf('async function deleteUser(userId) {')
+  assert.ok(start >= 0, 'ไม่พบ deleteUser')
+  const body = src.slice(start, src.indexOf('\n  }\n', start))
+  const list = body.indexOf('listAvatarPaths(supabase, userId)')
+  const rpc = body.indexOf("rpc('delete_user_by_id'")
+  const remove = body.indexOf('removeOrphanAvatars(')
+  assert.ok(list >= 0 && list < rpc && rpc < remove, 'ลำดับต้องเป็น list → rpc → remove')
+  assert.match(body, /const avatarsLeft = error \? 0 : await removeOrphanAvatars\(supabase, avatars\.paths\)/,
+    'ลบบัญชีไม่ผ่านต้องไม่ลบรูป (รูปของคนที่ยังอยู่ห้ามหาย)')
+})
+const avatarFnSql = migration('20261103100000_admin_delete_orphan_avatars_fn.sql')
+const avatarPolicySql = migration('20261103100100_admin_delete_orphan_avatars_policy.sql')
+await check('ฟังก์ชันตัดสินสิทธิ์: เฉพาะแอดมิน + โฟลเดอร์ที่ไม่มีเจ้าของ · ปิดทาง anon · ไม่ใช่ตัวไล่ถามว่ามีผู้ใช้ไหม', () => {
+  const body = normalize(functionBody(avatarFnSql.replace('admin_may_delete_avatar(p_folder text)', 'admin_may_delete_avatar()'), 'admin_may_delete_avatar'))
+  assert.match(body, /coalesce\(public\.get_my_role\(\) IN \('admin', 'superadmin'\), false\)/)
+  assert.match(body, /AND p_folder IS NOT NULL/)
+  assert.match(body, /AND NOT EXISTS \(SELECT 1 FROM auth\.users u WHERE u\.id::text = p_folder\)/)
+  assert.match(avatarFnSql, /SECURITY DEFINER[\s\S]*SET search_path = public, pg_temp/)
+  assert.match(avatarFnSql, /REVOKE ALL ON FUNCTION public\.admin_may_delete_avatar\(text\) FROM PUBLIC, anon;/)
+  assert.match(avatarFnSql, /GRANT EXECUTE ON FUNCTION public\.admin_may_delete_avatar\(text\) TO authenticated;/)
+})
+await check('นโยบายลบรูป: เฉพาะ bucket avatars ผ่านฟังก์ชัน เป็นนโยบายเพิ่ม ไม่แตะนโยบายลบรูปตัวเอง · ไม่แตะ delete_user_by_id', () => {
+  assert.match(avatarPolicySql, /CREATE POLICY "Admins can delete orphan avatars" ON storage\.objects\s+FOR DELETE TO authenticated\s+USING \(bucket_id = 'avatars' AND public\.admin_may_delete_avatar\(\(storage\.foldername\(name\)\)\[1\]\)\);/)
+  assert.ok(!/Users can delete own avatar/.test(avatarPolicySql.replace(/--[^\n]*/g, '')), 'ห้ามแตะนโยบายเดิม')
+  for (const sql of [avatarFnSql, avatarPolicySql]) {
+    assert.ok(!/delete_user_by_id/.test(sql.replace(/--[^\n]*/g, '')), 'ฟังก์ชันนั้นถูกเขียนทับมา 7 รุ่น ไม่แตะซ้ำ')
+    assert.ok(!/DELETE FROM storage\.objects/i.test(sql.replace(/--[^\n]*/g, '')), 'ลบด้วย SQL ไม่ได้ ไฟล์จริงค้าง')
+  }
 })
 
 console.log(`\nผ่านทั้งหมด ${passed} ข้อ`)

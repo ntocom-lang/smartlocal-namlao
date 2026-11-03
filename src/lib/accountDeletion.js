@@ -71,6 +71,43 @@ export async function deleteMyAccount(client, userId) {
   if (error) throw new AccountDeletionError('rpc', error.message)
 }
 
+/**
+ * ส่วนของแอดมินลบบัญชีคนอื่น (AdminDashboard.deleteUser) — ไฟล์รูปอยู่ในโฟลเดอร์ของเจ้าของบัญชี
+ * แอดมินลบไฟล์ของคนที่ยังมีบัญชีไม่ได้ (นโยบายอนุญาตเฉพาะโฟลเดอร์ที่เจ้าของไม่อยู่แล้ว:
+ * 20261103100100) จึงต้องแยกเป็น 2 จังหวะ: จำชื่อไฟล์ก่อนลบบัญชี แล้วลบหลังบัญชีหายสำเร็จ
+ * ลำดับนี้ยังกันกรณีลบบัญชีไม่ผ่านเพราะมีงานค้าง — รูปของคนที่ยังอยู่ต้องไม่หายตามไปด้วย
+ */
+
+/**
+ * อ่านชื่อไฟล์รูปของผู้ใช้ก่อนลบบัญชี — ไม่โยน error เพราะต้องไม่ขวางการลบบัญชีที่แอดมินสั่ง
+ * @returns {Promise<{ paths: string[], ok: boolean }>} ok=false = อ่านรายการไม่ได้ (ไม่รู้ว่ามีรูปค้างไหม)
+ */
+export async function listAvatarPaths(client, userId) {
+  if (!userId) return { paths: [], ok: false }
+  try {
+    const { data, error } = await client.storage.from('avatars').list(userId)
+    if (error) return { paths: [], ok: false }
+    return { paths: (data ?? []).map((file) => `${userId}/${file.name}`), ok: true }
+  } catch {
+    return { paths: [], ok: false }
+  }
+}
+
+/**
+ * ลบรูปที่จำไว้หลังบัญชีหายแล้ว — Storage ตอบ 200 พร้อมรายการว่างเมื่อนโยบายไม่ให้ลบ จึงนับเองว่าครบไหม
+ * @returns {Promise<number>} จำนวนไฟล์ที่ลบไม่สำเร็จ (0 = ไม่เหลือรูปค้าง)
+ */
+export async function removeOrphanAvatars(client, paths) {
+  if (!paths?.length) return 0
+  try {
+    const { data, error } = await client.storage.from('avatars').remove(paths)
+    if (error) return paths.length
+    return Math.max(0, paths.length - (data?.length ?? 0))
+  } catch {
+    return paths.length
+  }
+}
+
 export function accountDeletionErrorText(err) {
   if (err?.step === 'avatar') return 'ลบรูปโปรไฟล์ไม่สำเร็จ บัญชีของคุณยังไม่ถูกลบ กรุณาลองใหม่อีกครั้ง'
   if (err?.step === 'session') return 'ไม่พบการเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่แล้วลองอีกครั้ง'

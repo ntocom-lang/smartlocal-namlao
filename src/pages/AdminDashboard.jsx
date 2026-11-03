@@ -65,6 +65,7 @@ import UserProfileBadge from '../components/layout/UserProfileBadge'
 import PortalDrawer from '../components/common/PortalDrawer'
 import FleetSetup from '../components/fleet/FleetSetup'
 import { adminAppointUser, adminUpdateUser } from '../lib/adminUpdateUser'
+import { listAvatarPaths, removeOrphanAvatars } from '../lib/accountDeletion'
 import { defaultHeadPositionName, departmentFilterParams, isDepartmentHeadPosition } from '../lib/personnelStructure'
 import {
   APPOINTED_CLERK_PATTERN, APPOINTED_MAYOR_PATTERN, buildSignatorySlots, isSameSignatorySlot, isSignatoryActiveToday, signatorySlotLabel,
@@ -581,7 +582,11 @@ export function UserManager({ tenant, currentUserRole, currentUserId, onOpenSign
 
   async function deleteUser(userId) {
     setDeleteLoading(true)
+    // รูปโปรไฟล์ = ภาพใบหน้า ต้องไม่ค้างใน bucket สาธารณะหลังลบบัญชี แต่แอดมินลบไฟล์ของคนที่ยังมีบัญชีไม่ได้
+    // จึงจำชื่อไฟล์ไว้ก่อน (บัญชียังอยู่ list ได้) แล้วลบหลัง RPC สำเร็จ — ถ้าถูกบล็อกด้วยงานค้าง รูปไม่หาย
+    const avatars = await listAvatarPaths(supabase, userId)
     const { error } = await supabase.rpc('delete_user_by_id', { p_user_id: userId })
+    const avatarsLeft = error ? 0 : await removeOrphanAvatars(supabase, avatars.paths)
     setDeleteLoading(false)
     if (error) {
       // guard ฝั่ง DB (20260827100000) โยน exception ที่ขึ้นต้นด้วยข้อความนี้เสมอเมื่อบล็อกเพราะมีงาน
@@ -596,6 +601,10 @@ export function UserManager({ tenant, currentUserRole, currentUserId, onOpenSign
       setDeletingUser(null)
       setDeleteBlockedReason('')
       if (viewingUserId === userId) setViewingUserId(null) // กันหน้ารายละเอียดค้างชี้ user ที่ลบไปแล้ว
+      // บัญชีหายแล้วแต่รูปค้าง (หรืออ่านรายการรูปไม่ได้) — ไม่ขวางงานแอดมิน แจ้งให้รู้เพื่อส่งต่อผู้ดูแลระบบ
+      if (avatarsLeft > 0 || !avatars.ok) {
+        alert('ลบบัญชีเรียบร้อยแล้ว แต่ระบบยืนยันไม่ได้ว่ารูปโปรไฟล์ของผู้ใช้นี้ถูกลบครบ กรุณาแจ้งผู้ดูแลระบบให้ตรวจรูปที่ค้าง')
+      }
     }
   }
 
