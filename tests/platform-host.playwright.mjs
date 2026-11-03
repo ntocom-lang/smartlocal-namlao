@@ -102,7 +102,7 @@ try {
       ['demo', 'https://demo.rk-networks.com/?via=app'],
     ], 'เรียงตามชื่อ สาธิตอยู่ท้ายสุดในกลุ่มแยก')
     assert.ok(await page.getByText('ทดลองใช้ — เรื่องที่แจ้งไม่ถึงหน่วยงานจริง').isVisible())
-    for (const to of ['/privacy', '/account/delete', '/support']) {
+    for (const to of ['/download', '/privacy', '/account/delete', '/support']) {
       assert.equal(await page.locator(`nav[aria-label="ข้อมูลของแอป"] a[href="${to}"]`).count(), 1, to)
     }
     await noHorizontalOverflow(page)
@@ -191,6 +191,24 @@ try {
     assert.deepEqual(links.sort(), ['https://namlao.rk-networks.com/contact', 'https://thungkaew.rk-networks.com/contact'])
     await noHorizontalOverflow(page)
     await shot(page, 'platform-support')
+    assert.deepEqual(errors, [])
+    await context.close()
+  })
+
+  await check('/download บนโดเมนกลาง: ปุ่มโหลด APK + QR + วิธีของ iPhone · ไม่ยิงฐานข้อมูลรายชื่อหน่วยงาน · ไม่ล้นจอ', async () => {
+    const { context, page, errors, listCalls } = await fixture()
+    await page.goto(APP + '/download')
+    await page.locator('[data-platform-page] [data-download-link]').waitFor({ timeout: 30000 })
+    assert.equal(await page.locator('[data-download-link]').getAttribute('href'), '/downloads/thongthin-khong-rao.apk')
+    assert.equal(await page.locator('[data-download-link]').getAttribute('download'), '')
+    assert.ok((await page.locator('[data-platform-section="android"]').textContent()).includes('เวอร์ชัน 1.0.0'))
+    assert.equal(await page.locator('[data-download-qr] svg path').count(), 1)
+    assert.ok(await page.locator('[data-platform-section="iphone"]').getByText('เพิ่มไปยังหน้าจอโฮม').count() > 0)
+    assert.ok(/SHA-256: [0-9a-f]{64}/.test(await page.locator('[data-download-details]').textContent()))
+    assert.equal(await page.title(), 'ติดตั้งแอป ท้องถิ่นของเรา — ท้องถิ่นของเรา')
+    assert.equal(listCalls.count, 0, 'หน้านี้ไม่ต้องใช้รายชื่อหน่วยงาน')
+    await noHorizontalOverflow(page)
+    await shot(page, 'platform-download')
     assert.deepEqual(errors, [])
     await context.close()
   })

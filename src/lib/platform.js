@@ -61,9 +61,9 @@ export function isPlatformHost(hostname = currentHostname()) {
   return !isVendorHost(hostname) && hostname.split('.')[0] === PLATFORM_HOST_LABEL
 }
 
-// ── หน้ากลางบนโดเมนกลาง — URL ที่กรอกในสโตร์ (นโยบาย / ลบบัญชี / ช่วยเหลือ) ──────────────────────
+// ── หน้ากลางบนโดเมนกลาง — URL ที่กรอกในสโตร์ (นโยบาย / ลบบัญชี / ช่วยเหลือ) + หน้าติดตั้งแอปให้ลองก่อนขึ้นสโตร์ ──
 // แสดงเฉพาะเมื่อ URL ไม่ได้ระบุหน่วยงาน (App.jsx) โดเมนของ อปท. ยังใช้หน้า /privacy และ /account/delete ของตัวเอง
-const PLATFORM_PAGES = { '/privacy': 'privacy', '/account/delete': 'account-delete', '/support': 'support' }
+const PLATFORM_PAGES = { '/privacy': 'privacy', '/account/delete': 'account-delete', '/support': 'support', '/download': 'download' }
 
 export function platformPageFor(pathname) {
   const path = String(pathname ?? '').replace(/\/+$/, '') || '/'

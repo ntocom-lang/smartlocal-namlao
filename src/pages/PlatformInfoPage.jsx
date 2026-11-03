@@ -3,19 +3,24 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { CHANGE_TENANT_PARAM, PLATFORM_APP_NAME, fetchActiveTenants } from '../lib/platform'
 import { buildPlatformPrivacyPolicy } from '../lib/privacyPolicy'
-import { buildPlatformAccountDeletion, buildPlatformSupport } from '../lib/platformInfo'
+import { buildPlatformAccountDeletion, buildPlatformDownload, buildPlatformSupport } from '../lib/platformInfo'
 import { InfoArticle } from './PrivacyPolicyPage'
 
-// หน้ากลางบนโดเมนของแอป (app.rk-networks.com/privacy, /account/delete, /support) — URL ที่กรอกในสโตร์
-// แสดงแทนหน้าเลือกหน่วยงานเฉพาะ 3 path นี้ (App.jsx) เนื้อหาอยู่ที่ privacyPolicy.js / platformInfo.js
+// หน้ากลางบนโดเมนของแอป (app.rk-networks.com/privacy, /account/delete, /support, /download)
+// 3 หน้าแรกคือ URL ที่กรอกในสโตร์ · /download ให้ลองติดตั้งก่อนขึ้นสโตร์ — แสดงแทนหน้าเลือกหน่วยงานเฉพาะ path เหล่านี้
+// (App.jsx) เนื้อหาอยู่ที่ privacyPolicy.js / platformInfo.js
 const BUILDERS = {
   privacy: buildPlatformPrivacyPolicy,
   'account-delete': buildPlatformAccountDeletion,
   support: buildPlatformSupport,
+  download: buildPlatformDownload,
 }
+// หน้าที่ไม่แสดงรายชื่อหน่วยงาน ไม่ต้องยิงฐานข้อมูล (หน้าติดตั้งต้องเปิดได้แม้ฐานข้อมูลช้า)
+const NEEDS_TENANTS = new Set(['privacy', 'account-delete', 'support'])
 
 const FOOTER_LINKS = [
   { to: `/?${CHANGE_TENANT_PARAM}=1`, label: 'เลือกหน่วยงาน' },
+  { to: '/download', label: 'ติดตั้งแอป' },
   { to: '/privacy', label: 'นโยบายความเป็นส่วนตัว' },
   { to: '/account/delete', label: 'ลบบัญชีผู้ใช้' },
   { to: '/support', label: 'ช่วยเหลือและติดต่อ' },
@@ -26,8 +31,10 @@ export default function PlatformInfoPage({ kind }) {
   const [status, setStatus] = useState('loading')
   const [tenants, setTenants] = useState([])
   const [attempt, setAttempt] = useState(0)
+  const needsTenants = NEEDS_TENANTS.has(kind)
 
   useEffect(() => {
+    if (!needsTenants) return undefined
     let alive = true
     fetchActiveTenants(supabase).then(
       (list) => { if (alive) { setTenants(list); setStatus('ready') } },
@@ -37,7 +44,7 @@ export default function PlatformInfoPage({ kind }) {
       },
     )
     return () => { alive = false }
-  }, [attempt])
+  }, [attempt, needsTenants])
 
   const doc = useMemo(() => BUILDERS[kind](tenants), [kind, tenants])
 
@@ -63,7 +70,7 @@ export default function PlatformInfoPage({ kind }) {
       attr={kind === 'privacy' ? 'privacy' : 'platform'}
       version={kind === 'privacy'}
       toc={kind === 'privacy'}
-      orgsStatus={status}
+      orgsStatus={needsTenants ? status : 'ready'}
       onRetry={() => { setStatus('loading'); setAttempt((n) => n + 1) }}
       footer={footer}
     />

@@ -618,7 +618,8 @@ function AppShell() {
   // ที่ผู้ใช้แก้เองไม่ได้ (เหตุผลเต็มที่ TenantPicker) error ชนิดอื่น (เน็ต/สิทธิ์) ยังขึ้นหน้าเดิมด้านล่าง
   if (error && (errorKind === 'no-slug' || errorKind === 'not-found')) {
     // โดเมนกลาง (app.rk-networks.com = แอปจากสโตร์) มีหน้ากลาง 3 หน้าที่ต้องกรอก URL ในสโตร์:
-    // /privacy, /account/delete, /support (src/lib/platform.js) path อื่นยังเป็นหน้าเลือกหน่วยงาน
+    // /privacy, /account/delete, /support + หน้า /download ให้ลองติดตั้งก่อนขึ้นสโตร์ (src/lib/platform.js)
+    // path อื่นยังเป็นหน้าเลือกหน่วยงาน
     const platformPage = errorKind === 'no-slug' ? platformPageFor(location.pathname) : null
     if (platformPage) {
       return (
