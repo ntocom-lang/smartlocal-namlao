@@ -54,7 +54,10 @@ import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
 import {
   APPOINTMENT_KINDS, MOBILITY_LEVELS, REQUESTER_RELATIONS, TRIP_TYPES, optionLabel,
 } from './patientTransport.js'
-import { RETURN_MODES as BOOKING_RETURN_MODES, TRIP_STATUS, thaiDay, monthReportSummary, bookingLetter, isCommunity, serviceLabel, serviceReportSummary, dayDistance } from './patientBooking.js'
+import { RETURN_MODES as BOOKING_RETURN_MODES, TRIP_STATUS, thaiDay, monthReportSummary, bookingLetter, isCommunity, isReturnOnly, serviceLabel, serviceReportSummary, dayDistance } from './patientBooking.js'
+
+// ป้ายชนิดเที่ยวของคำขอรับกลับอย่างเดียวบนใบพิมพ์ (ไม่ใส่ใน TRIP_TYPES ของ patientTransport.js เพราะตัวนั้นเป็นตัวเลือกของฟอร์มคำขอแบบเดิม)
+const RETURN_ONLY_TRIP_LABEL = 'ขากลับอย่างเดียว'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -360,7 +363,8 @@ function letterSheet({
   const para1 = passengerSummary || `ด้วย ${textOr(parent?.requester_name, 'ผู้ยื่นคำขอ')} ได้ยื่นคำขอต่อ${orgName} `
     + `${viaEService ? 'ผ่านระบบบริการอิเล็กทรอนิกส์ ' : ''}ตามเลขอ้างอิง ${referenceNo || '-'} `
     + `เพื่อขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย สำหรับ ${patientName || '-'}${patientAge} `
-    + `ไปยัง ${destination || '-'} ในวันที่ ${appointmentText(header?.appointment_at) || '-'} `
+    // รับกลับอย่างเดียว (เจ้าของระบบสั่ง 2569-11-04): ผู้ป่วยนอนโรงพยาบาลอยู่ ไม่ได้ไปยังโรงพยาบาล — ถ้อยคำร่างรอเจ้าของอนุมัติ (คำขอเดิมได้ข้อความเท่าเดิมทุกตัวอักษร)
+    + `${form?.trip_type === 'return_only' ? 'รับกลับจาก' : 'ไปยัง'} ${destination || '-'} ในวันที่ ${appointmentText(header?.appointment_at) || '-'} `
     + `${mobility ? `ลักษณะการเคลื่อนไหวของผู้ป่วย ${mobility} ` : ''}`
     + 'รายละเอียดปรากฏตามสิ่งที่ส่งมาด้วย'
 
@@ -513,13 +517,14 @@ function fundFormSheet({ header, form = {}, parent = {}, tenant, mayor = null, r
   const destination = [form.destination, form.destination_detail].map(value => textOr(value)).filter(Boolean).join(' ')
   const appointmentKind = form.appointment_kind === 'other' ? textOr(form.appointment_kind_note) : optionLabel(APPOINTMENT_KINDS, form.appointment_kind)
   const relation = form.requester_relation === 'other' ? textOr(form.requester_relation_note) : optionLabel(REQUESTER_RELATIONS, form.requester_relation)
-  const travel = [optionLabel(TRIP_TYPES, form.trip_type), `ผู้ติดตาม ${Number(form.companions) || 0} คน`, textOr(form.return_note)].filter(Boolean).join(' · ')
+  const returnOnly = form.trip_type === 'return_only'
+  const travel = [returnOnly ? RETURN_ONLY_TRIP_LABEL : optionLabel(TRIP_TYPES, form.trip_type), `ผู้ติดตาม ${Number(form.companions) || 0} คน`, textOr(form.return_note)].filter(Boolean).join(' · ')
   const coordinator = [requesterName, relation, parent?.requester_phone ? `โทร. ${parent.requester_phone}` : ''].filter(Boolean).join(' · ')
   const rows = [
     ['ผู้ป่วย', patientName + patientAge],
-    ['จุดรับ', pickupSentence(form.pickup_address, form.pickup_landmark)],
-    ['ปลายทาง', destination],
-    ['วันเวลานัด', appointmentText(header?.appointment_at)],
+    [returnOnly ? 'ส่งที่บ้าน' : 'จุดรับ', pickupSentence(form.pickup_address, form.pickup_landmark)],
+    [returnOnly ? 'รับกลับจาก' : 'ปลายทาง', destination],
+    [returnOnly ? 'วันเวลาที่พร้อมออก' : 'วันเวลานัด', appointmentText(header?.appointment_at)],
     ['ประเภทการนัด', appointmentKind],
     ['การเคลื่อนไหว', optionLabel(MOBILITY_LEVELS, header?.mobility ?? form.mobility)],
     ['การเดินทาง', travel],
@@ -631,7 +636,9 @@ function formSheet({
   const landmark = clean(form.pickup_landmark)
   const mobility = optionLabel(MOBILITY_LEVELS, header?.mobility ?? form.mobility)
   const companions = Number(form.companions) || 0
-  const tripLabel = optionLabel(TRIP_TYPES, form.trip_type)
+  // รับกลับอย่างเดียว (2569-11-04): ไม่มีขาไปจากบ้าน — ไม่ใส่ใน TRIP_TYPES เพราะตัวนั้นเป็นตัวเลือกของฟอร์มคำขอแบบเดิม
+  const returnOnly = form.trip_type === 'return_only'
+  const tripLabel = returnOnly ? RETURN_ONLY_TRIP_LABEL : optionLabel(TRIP_TYPES, form.trip_type)
   // ระบบจองคิวส่ง "ขาไปอย่างเดียว" มาทั้งสองช่อง — ไม่พิมพ์ซ้ำในวงเล็บ
   const returnNote = clean(form.return_note) === tripLabel ? '' : clean(form.return_note)
   // เวลา "14.00 น." ในข้อความที่ผู้ยื่นพิมพ์เอง ห้ามขาดคนละบรรทัดระหว่างตัวเลขกับ "น." (รับ html ที่ escape แล้ว)
@@ -655,12 +662,14 @@ function formSheet({
 
   // วันเวลานัดไม่ตัดบรรทัดกลางค่า — "5 ตุลาคม 2569 เวลา" ท้ายบรรทัดแล้ว "08.00 น." ไปอยู่บรรทัดใหม่ อ่านพลาดง่าย
   const appointment = appointmentText(header?.appointment_at)
+  const appointmentValue = appointment ? `<span class="fill-value nb">${esc(appointment)}</span>` : line('', '55mm')
   const travelPara = [
-    `${who}มีนัดที่ ${line(destination, '70mm')} ในวันที่ ${
-      appointment ? `<span class="fill-value nb">${esc(appointment)}</span>` : line('', '55mm')}`,
+    // ถ้อยคำของรับกลับอย่างเดียวเป็นร่างรอเจ้าของระบบอนุมัติ — คำขอไป–กลับ/ไปอย่างเดียวได้ข้อความเท่าเดิมทุกตัวอักษร
+    returnOnly ? `${who}พักรักษาตัวอยู่ที่ ${line(destination, '70mm')} คาดว่าจะออกจากโรงพยาบาลในวันที่ ${appointmentValue}`
+      : `${who}มีนัดที่ ${line(destination, '70mm')} ในวันที่ ${appointmentValue}`,
     purpose && `เพื่อ${keepTimes(esc(purpose))}`,
     // pickupSentence ตัดส่วนที่แทรกมา (ชื่ออังกฤษ รหัสทางหลวง จุลภาค " · ") ให้อ่านเป็นประโยคไทย — ดู pickupText.js
-    `จึงขอให้รถมารับที่ ${line(pickupSentence(form.pickup_address), '80mm')}${landmark ? ` (${nb('จุดสังเกต')} ${esc(landmark)})` : ''}`,
+    `${returnOnly ? `จึงขอให้รถไปรับกลับจาก${nb('โรงพยาบาลดังกล่าว')} และไปส่งที่` : 'จึงขอให้รถมารับที่'} ${line(pickupSentence(form.pickup_address), '80mm')}${landmark ? ` (${nb('จุดสังเกต')} ${esc(landmark)})` : ''}`,
     // เงื่อนไขการเดินทางต่อด้วย "โดย" ให้อ่านเป็นประโยคเดียวกับคำขอให้มารับ ไม่ใช่ข้อความลอยต่อท้าย
     `โดย${[mobility && `${who}${esc(mobility)}`, companions > 0 ? `มีผู้ติดตาม ${companions} คน` : 'ไม่มีผู้ติดตาม']
       .filter(Boolean).join(' ')}`,
@@ -866,7 +875,7 @@ function bookingPacket(args, b, trip) {
       patient_name: b.patient_name, pickup_address: b.pickup,
       destination: b.route_label || trip?.plan?.route_label,
       requester_relation: b.relation, companions: b.companions,
-      trip_type: b.return_mode === 'one_way' ? 'one_way' : 'round_trip',
+      trip_type: isReturnOnly(b) ? 'return_only' : b.return_mode === 'one_way' ? 'one_way' : 'round_trip',
       return_note: BOOKING_RETURN_MODES[b.return_mode],
       // created_at = เวลาที่คำขอถูกส่งเข้าระบบ: ผู้จองส่งเอง (online) หรือเจ้าหน้าที่กดบันทึกแทน (staff)
       signed_by: { channel }, signed_at: channel === 'booking' ? null : b.created_at,
@@ -903,6 +912,16 @@ export function buildBookingForwardLetterHtml(args) {
   return buildPatientTransportLetterHtml({ ...bookingPacket(args, booking, trip), attachmentCount: 1 })
 }
 
+// วัตถุประสงค์ในหนังสือของเที่ยวหลายคน: ไปอย่างเดียว/ไป–กลับ = "เพื่อเดินทางไปยัง …" (เท่าเดิม) · รับกลับอย่างเดียวล้วน = "เพื่อรับผู้ป่วยกลับจาก …"
+// เที่ยวผสม = ข้อความเดิม + จำนวนผู้ที่รับกลับอย่างเดียว (ถ้อยคำร่างรอเจ้าของระบบอนุมัติ 2569-11-04)
+function tripPurposeText(people, trip) {
+  const place = trip.plan?.route_label || '-'
+  const back = people.filter(isReturnOnly).length
+  if (back === 0) return `เพื่อเดินทางไปยัง ${place}`
+  if (back === people.length) return `เพื่อรับผู้ป่วยกลับจาก ${place}`
+  return `เพื่อเดินทางไปยัง ${place} และรับผู้ป่วยกลับจากโรงพยาบาลดังกล่าวอีก ${back} ราย`
+}
+
 export function buildTripForwardLetterHtml(args) {
   const { trip, bookings } = args
   const people = tripPassengers(bookings, trip)
@@ -913,7 +932,7 @@ export function buildTripForwardLetterHtml(args) {
     letter.referenceNo = ''
     letter.header = { ...letter.header, consent_at: null }
     letter.passengerSummary = `ด้วย ${args.tenant?.name || 'หน่วยงาน'} ได้รับคำขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย จำนวน ${people.length} ราย `
-      + `เพื่อเดินทางไปยัง ${trip.plan?.route_label || '-'} ในวันที่ ${letterDateText(trip.plan?.date) || '-'} `
+      + `${tripPurposeText(people, trip)} ในวันที่ ${letterDateText(trip.plan?.date) || '-'} `
       + 'รายละเอียดผู้ยื่นคำขอ ผู้ป่วย และวันเวลานัด ปรากฏตามใบคำขอรถรับ-ส่งผู้ป่วยที่แนบมาครบทุกฉบับ'
   }
   return page(

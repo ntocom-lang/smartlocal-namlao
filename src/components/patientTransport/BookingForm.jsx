@@ -5,7 +5,7 @@ import MapPicker from '../MapPicker'
 import { addressFromMap, joinPickup } from '../../lib/pickupText'
 import BookingMonthPicker from './BookingMonthPicker'
 import BookingReviewSheet from './BookingReviewSheet'
-import { RETURN_MODES, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, orgAbbr, normalizeBookingPhone, clockOf, pickupLabel, bookingLastDay, sameDestinationGroup, destinationGroup, joinReturnChoices, OTHER_PLACE_MAX, isOtherPlace, cleanPlaceName } from '../../lib/patientBooking'
+import { RETURN_MODES, returnModeLabel, MOBILITY, DAY_BLOCKED, inputClass, buttonClass, thaiDay, bangkokISO, clockTime, minutes, freeTimeChoices, latestReturnClock, orgAbbr, normalizeBookingPhone, clockOf, pickupLabel, bookingLastDay, sameDestinationGroup, destinationGroup, joinReturnChoices, OTHER_PLACE_MAX, isOtherPlace, cleanPlaceName } from '../../lib/patientBooking'
 
 /**
  * ฟอร์มขอจองรถ — หน้าเดียวจบ แล้วจบด้วยหน้าทวนก่อนส่งแบบ "คำร้อง" (BookingReviewSheet)
@@ -72,7 +72,7 @@ function seedFromLast(last) {
   return {
     requester_name: last.requester_name || '', phone: last.phone || '',
     relation: last.relation || 'self', patient_name: last.relation === 'self' ? '' : (last.patient_name || ''),
-    route_id: last.route_id || '', other_place: isOtherPlace(last.route_id) ? last.route_label || '' : '', return_mode: last.return_mode || 'wait',
+    route_id: last.route_id || '', other_place: isOtherPlace(last.route_id) ? last.route_label || '' : '', return_mode: last.return_mode === 'return_only' ? 'wait' : last.return_mode || 'wait',
     mobility: last.mobility || 'walk', companions: Number(last.companions) || 0, share: !!last.share,
     pickup_lat: last.pickup_lat ?? null, pickup_lng: last.pickup_lng ?? null, ...splitPickup(last.pickup || ''),
   }
@@ -141,6 +141,17 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
 
   const days = useMemo(() => (calendar?.month === month ? calendar.days : []) || [], [calendar, month])
   const { route_id: routeId, return_mode: returnMode, back } = form
+  // รับกลับอย่างเดียว: ผู้ป่วยนอนโรงพยาบาลอยู่ ไม่มีขาไป — ใช้กล่อง 1–7 ชุดเดิม เปลี่ยนเฉพาะถ้อยคำ (เจ้าของระบบสั่ง 2569-11-04)
+  const returnOnly = returnMode === 'return_only'
+  const words = returnOnly ? {
+    day: 'วันที่ผู้ป่วยออกจากโรงพยาบาล', dayHint: 'เลือกเดือนและวันเพื่อดูรถที่ไปโรงพยาบาลวันนั้น',
+    time: 'เวลาที่ผู้ป่วยพร้อมออก', timeHint: 'ประมาณการได้ เจ้าหน้าที่จะโทรประสานอีกครั้งก่อนรถไปรับ',
+    hospital: 'โรงพยาบาลที่ผู้ป่วยพักอยู่', pickup: 'บ้านที่จะไปส่ง', pickupHint: 'บอกให้ชัดว่าคนขับต้องไปส่งที่ไหน',
+  } : {
+    day: 'วันที่ไปโรงพยาบาล', dayHint: 'เลือกเดือนและวันเพื่อดูเที่ยวรถ ที่ว่าง และขอร่วมเที่ยว',
+    time: 'เวลานัดแพทย์', timeHint: 'เลือกเวลาตามใบนัดในช่วงที่หน่วยงานเปิดรับคำขอ',
+    hospital: 'โรงพยาบาลที่จะไป', pickup: 'จุดรับ', pickupHint: 'บอกให้ชัดว่าคนขับต้องไปรับที่ไหน',
+  }
   // วันที่จองได้ = วันที่เปิดรับคำขอและยังมีเวลานัดให้เลือก (เจ้าหน้าที่รับเรื่องแทนดูแค่วันเปิด)
   const bookable = useMemo(() => {
     const draft = { route_id: routeId, return_mode: returnMode, back }
@@ -157,7 +168,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       ? { date: day, status: 'open', free: [] }
       : null
     const source = staffEntry ? wholeDay : (dayInfo?.status === 'open' ? dayInfo : null)
-    return source ? freeTimeChoices(draft, info, source, step).filter(time => !joinTrip || Math.abs(minutes(time) - minutes(clockOf(joinTrip.appointment_at))) <= 30) : []
+    return source ? freeTimeChoices(draft, info, source, step).filter(time => !joinTrip || returnMode === 'return_only' || Math.abs(minutes(time) - minutes(clockOf(joinTrip.appointment_at))) <= 30) : []
   }, [staffEntry, dayInfo, day, routeId, returnMode, back, info, step, joinTrip])
   const dayBlocked = !day ? ''
     : day < first ? (leadDays ? `ต้องจองล่วงหน้าอย่างน้อย ${leadDays} วัน คือตั้งแต่ ${fullDate(first)} เป็นต้นไป` : 'วันที่เลือกผ่านมาแล้ว กรุณาเลือกวันถัดไป')
@@ -187,6 +198,8 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   // เวลารับกลับเริ่มที่ "กลับพร้อมเที่ยว" เสมอ เที่ยวรอรับกลับเลือกกลับก่อนได้ในข้อ 4
   const joinWith = trip => {
     setJoinTrip(trip); setMissing([])
+    // รับกลับอย่างเดียว: คงวัน เวลา และรูปแบบของผู้จองไว้ (ไม่ใช้เวลานัด/ขากลับของเที่ยวนั้น) ปรับแค่โรงพยาบาลให้อยู่กลุ่มเดียวกับเที่ยว
+    if (returnOnly) { setForm(f => ({ ...f, route_id: sameDestinationGroup(info.routes, f.route_id, trip.route_id) ? f.route_id : trip.route_id, share: true })); return }
     setForm(f => ({ ...f, day: trip.date, time: '', route_id: sameDestinationGroup(info.routes, f.route_id, trip.route_id) ? f.route_id : trip.route_id,
       return_mode: trip.return_mode, back: clockOf(trip.return_at), share: true }))
   }
@@ -195,7 +208,8 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   // ช่อง "อื่นๆ" ต่อท้ายรายการเสมอ ไม่ว่าแอดมินจะเรียงไว้ตรงไหน · ขอร่วมเที่ยวแล้วไม่มีช่องนี้ (สถานที่อื่นไม่ร่วมเที่ยว)
   const routeChoices = tripGroup.length ? tripGroup : [...(info.routes || []).filter(r => !isOtherPlace(r.id)), ...(info.routes || []).filter(r => isOtherPlace(r.id))]
   // เสนอเที่ยววันเดียวกันที่ไปทางเดียวกัน แม้ยังมีเวลานัดให้เลือก เจ้าหน้าที่เป็นผู้ยืนยัน
-  const rideAlong = !staffEntry && !joinTrip && dayInfo?.status === 'open' ? (dayInfo.trips || []).filter(t => t.joinable && sameDestinationGroup(info.routes, t.route_id, form.route_id)) : []
+  const rideTrips = !staffEntry && dayInfo?.status === 'open' ? (dayInfo.trips || []).filter(t => t.joinable && sameDestinationGroup(info.routes, t.route_id, form.route_id)) : []
+  const rideAlong = joinTrip ? [] : rideTrips
   const contact = info.contact_phone && <p className="mt-2 text-sm">ติดต่อเจ้าหน้าที่ <a className="font-semibold underline" href={`tel:${info.contact_phone}`}>{info.contact_phone}</a></p>
   const submissionAdvice = /ข้อความใช้ข้อมูลเปลี่ยน/.test(submitError)
     ? 'ข้อความการใช้ข้อมูลของหน่วยงานเปลี่ยนระหว่างกรอก กดส่งคำขอใหม่อีกครั้งเพื่ออ่านข้อความล่าสุด'
@@ -209,16 +223,16 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   // key ใช้ทำกรอบแดงที่กล่องซึ่งยังไม่ครบ ผู้ใช้จะได้รู้ว่าต้องกลับไปแก้กล่องไหน
   function incomplete() {
     const list = []
-    if (!day) list.push({ key: 'day', label: 'วันที่ไปโรงพยาบาล', advice: 'กดเลือกวันจากปุ่มวันที่เปิดรับคำขอในข้อ 1' })
-    if (!form.time || timeMissing) list.push({ key: 'time', label: 'เวลานัดแพทย์', advice: 'กดเลือกเวลาตามใบนัดแพทย์ในข้อ 2 ถ้าไม่มีเวลาที่ต้องการให้เลือกวันอื่น' })
-    if (!form.route_id) list.push({ key: 'route', label: 'โรงพยาบาลที่จะไป', advice: 'กดเลือกโรงพยาบาลปลายทางในข้อ 3' })
+    if (!day) list.push({ key: 'day', label: words.day, advice: 'กดเลือกวันจากปุ่มวันที่เปิดรับคำขอในข้อ 1' })
+    if (!form.time || timeMissing) list.push({ key: 'time', label: words.time, advice: returnOnly ? 'กดเลือกเวลาที่ผู้ป่วยพร้อมออกในข้อ 2 (ประมาณก็ได้) ถ้าไม่มีเวลาที่ต้องการให้เลือกวันอื่น' : 'กดเลือกเวลาตามใบนัดแพทย์ในข้อ 2 ถ้าไม่มีเวลาที่ต้องการให้เลือกวันอื่น' })
+    if (!form.route_id) list.push({ key: 'route', label: words.hospital, advice: returnOnly ? 'กดเลือกโรงพยาบาลที่ผู้ป่วยพักอยู่ในข้อ 3' : 'กดเลือกโรงพยาบาลปลายทางในข้อ 3' })
     else if (otherChosen && otherName.length < 2) list.push({ key: 'route', label: 'ชื่อสถานที่ที่จะไป', advice: 'พิมพ์ชื่อสถานที่ที่จะไปในข้อ 3 (อย่างน้อย 2 ตัวอักษร)' })
     if (!String(form.requester_name).trim()) list.push({ key: 'who', label: 'ชื่อ–สกุลผู้จอง', advice: 'กรอกชื่อและนามสกุลของผู้ที่ติดต่อกลับได้ในข้อ 5' })
     if (!/^0[0-9]{8,9}$/.test(form.phone)) list.push({ key: 'who', label: 'เบอร์ติดต่อกลับ', advice: 'กรอกเบอร์โทรที่ขึ้นต้นด้วย 0 จำนวน 9–10 หลักในข้อ 5' })
     if (form.relation !== 'self' && !String(form.patient_name).trim()) list.push({ key: 'who', label: 'ชื่อ–สกุลผู้เดินทาง', advice: 'กรอกชื่อผู้ป่วยที่จะเดินทางในข้อ 5' })
-    if (!pickupText()) list.push({ key: 'pickup', label: 'จุดรับ', advice: places.length ? 'กดเลือกหมู่บ้าน/สถานที่ หรือพิมพ์บ้านเลขที่และจุดสังเกตในข้อ 6' : 'พิมพ์บ้านเลขที่ หมู่บ้าน และจุดสังเกตของจุดรับในข้อ 6' })
-    if (joinTrip && (!dayInfo?.trips.some(t => t.id === joinTrip.id && t.joinable) || !sameDestinationGroup(info.routes, form.route_id, joinTrip.route_id) || form.return_mode !== joinTrip.return_mode)) list.push({ key: 'day', label: 'เที่ยวที่ขอร่วม', advice: 'ข้อมูลเที่ยวหรือเส้นทางขากลับเปลี่ยน กรุณาเลือกเที่ยวจากปฏิทินอีกครั้ง หรือเลือกจองเที่ยวใหม่' })
-    else if (joinTrip && joinTrip.return_mode !== 'one_way' && !joinBacks.includes(form.back)) list.push({ key: 'back', label: 'เวลารับกลับ', advice: 'กดเลือกเวลารับกลับจากปุ่มในข้อ 4' })
+    if (!pickupText()) list.push({ key: 'pickup', label: words.pickup, advice: returnOnly ? 'พิมพ์หรือเลือกบ้านที่จะไปส่ง พร้อมจุดสังเกตในข้อ 6' : places.length ? 'กดเลือกหมู่บ้าน/สถานที่ หรือพิมพ์บ้านเลขที่และจุดสังเกตในข้อ 6' : 'พิมพ์บ้านเลขที่ หมู่บ้าน และจุดสังเกตของจุดรับในข้อ 6' })
+    if (joinTrip && (!dayInfo?.trips.some(t => t.id === joinTrip.id && t.joinable) || !sameDestinationGroup(info.routes, form.route_id, joinTrip.route_id) || (!returnOnly && form.return_mode !== joinTrip.return_mode))) list.push({ key: 'day', label: 'เที่ยวที่ขอร่วม', advice: 'ข้อมูลเที่ยวหรือเส้นทางขากลับเปลี่ยน กรุณาเลือกเที่ยวจากปฏิทินอีกครั้ง หรือเลือกจองเที่ยวใหม่' })
+    else if (joinTrip && !returnOnly && joinTrip.return_mode !== 'one_way' && !joinBacks.includes(form.back)) list.push({ key: 'back', label: 'เวลารับกลับ', advice: 'กดเลือกเวลารับกลับจากปุ่มในข้อ 4' })
     return list
   }
   const payload = () => ({
@@ -235,7 +249,8 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
     ...(otherChosen ? { other_place: otherName } : {}),
     share: otherChosen ? false : !!form.share, return_mode: form.return_mode,
     appointment_at: bangkokISO(day, form.time),
-    return_at: form.return_mode === 'one_way' ? null : bangkokISO(day, form.back || backLatest),
+    // รับกลับอย่างเดียว: เวลาเดียว = เวลาที่ผู้ป่วยพร้อมออก (เวลานัดกับเวลารับกลับเท่ากัน ตรงกับตัวกระตุ้นในฐานข้อมูล)
+    return_at: form.return_mode === 'one_way' ? null : returnOnly ? bangkokISO(day, form.time) : bangkokISO(day, form.back || backLatest),
     is_emergency: false, consent: true, representative_authorized: form.relation !== 'self',
     privacy_notice: info.privacy_notice, owner_name: info.owner_name, consent_version: info.consent_version,
   })
@@ -251,18 +266,29 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
   const warn = key => missing.some(item => item.key === key)
   return <form noValidate onSubmit={submit} className="space-y-4">
     <button type="button" className={buttonClass} disabled={busy} onClick={onBack}>← ย้อนกลับ</button>
-    <h2 className="text-xl font-bold">{staffEntry ? 'รับจองแทนทางโทรศัพท์/หน้าเคาน์เตอร์' : 'ขอรถไปโรงพยาบาล'}</h2>
+    <h2 className="text-xl font-bold">{staffEntry ? 'รับจองแทนทางโทรศัพท์/หน้าเคาน์เตอร์' : returnOnly ? 'ขอรถรับกลับจากโรงพยาบาล' : 'ขอรถไปโรงพยาบาล'}</h2>
     <p className="rounded-xl bg-amber-50 p-3">เจ็บป่วยฉุกเฉิน <a className="font-bold underline" href="tel:1669">โทร 1669</a> อย่ารอคิวจองรถ</p>
     {last && <p role="status" className="rounded-xl bg-sky-50 p-3">เติมข้อมูลจากการจองครั้งก่อนให้แล้ว ({last.route_label}) ตรวจแล้วแก้ได้ทุกช่อง</p>}
+    {/* ทางเข้า "รับกลับอย่างเดียว" (ผู้ป่วยนอนโรงพยาบาลอยู่) — ฟอร์มไป–กลับเดิมไม่เปลี่ยน กดแล้วสลับถ้อยคำของกล่อง 1–7 */}
+    {returnOnly
+      ? <div data-return-only-mode className="space-y-2 rounded-xl border-2 border-sky-700 bg-sky-50 p-3">
+        <p className="font-semibold">กำลังขอรถ “รับกลับอย่างเดียว” — รถไปรับผู้ป่วยที่โรงพยาบาลแล้วไปส่งที่บ้าน</p>
+        <button type="button" className={buttonClass} onClick={() => { setJoinTrip(null); setMissing([]); setForm(f => ({ ...f, return_mode: 'wait', time: '', back: '' })) }}>← กลับไปจองไป–กลับ</button>
+      </div>
+      : <div data-return-only-entry className="space-y-2 rounded-xl border border-slate-300 bg-white p-3">
+        <p className="font-semibold">ผู้ป่วยนอนโรงพยาบาลอยู่ ต้องการรถ “รับกลับ” อย่างเดียว?</p>
+        {last?.return_mode === 'one_way' && <p className="text-sm text-slate-600">ครั้งก่อนจองไปอย่างเดียว กดปุ่มนี้เมื่อแพทย์ให้กลับบ้าน ระบบเติมข้อมูลครั้งก่อนไว้ให้แล้ว เหลือเลือกวันและเวลา</p>}
+        <button type="button" className={buttonClass} onClick={() => { setJoinTrip(null); setMissing([]); setForm(f => ({ ...f, return_mode: 'return_only', time: '', back: '', share: true })) }}>ต้องการรถรับกลับอย่างเดียว</button>
+      </div>}
 
-    <Section step={1} title="วันที่ไปโรงพยาบาล" done={!!day && !dayBlocked} warn={warn('day')}
-      hint="เลือกเดือนและวันเพื่อดูเที่ยวรถ ที่ว่าง และขอร่วมเที่ยว">
+    <Section step={1} title={words.day} done={!!day && !dayBlocked} warn={warn('day')}
+      hint={words.dayHint}>
       <BookingMonthPicker month={month} onMonth={value => { if (value < first.slice(0, 7) || value > lastDay.slice(0, 7)) return; setMonth(value); setJoinTrip(null); setForm(f => ({ ...f, day: '', time: '', back: '' })) }}
         days={days} selected={day} info={info} draft={form} first={first} last={lastDay} staffEntry={staffEntry}
         loading={calendar?.month !== month} failed={calendar?.month === month && calendar.failed} onReload={() => setRefresh(n => n + 1)}
         onSelect={value => { setMonth(value.slice(0, 7)); setJoinTrip(null); setForm(f => ({ ...f, day: value, time: '', back: '' })) }}
         onJoin={joinWith} />
-      {joinTrip && <p role="status" className="rounded-xl bg-sky-50 p-3">ขอร่วมเที่ยว: {joinTrip.route_label}{tripGroup.length > 1 && ` · ไปคนละแห่งได้ถ้าอยู่ในกลุ่มเดียวกัน: ${tripGroup.map(r => r.label).join(', ')} (เลือกในข้อ 3)`} · ใช้ได้เมื่อผู้เดินทางเดินได้ ยินดีนั่งร่วม และมีที่นั่งพอ กรุณาเลือกเวลานัดตามใบนัดจริง ระบบจะตรวจอีกครั้งก่อนรับคำขอ <button type="button" className={buttonClass} onClick={() => { setJoinTrip(null); set('back', '') }}>เปลี่ยนเป็นจองเที่ยวใหม่</button></p>}
+      {joinTrip && !returnOnly && <p role="status" className="rounded-xl bg-sky-50 p-3">ขอร่วมเที่ยว: {joinTrip.route_label}{tripGroup.length > 1 && ` · ไปคนละแห่งได้ถ้าอยู่ในกลุ่มเดียวกัน: ${tripGroup.map(r => r.label).join(', ')} (เลือกในข้อ 3)`} · ใช้ได้เมื่อผู้เดินทางเดินได้ ยินดีนั่งร่วม และมีที่นั่งพอ กรุณาเลือกเวลานัดตามใบนัดจริง ระบบจะตรวจอีกครั้งก่อนรับคำขอ <button type="button" className={buttonClass} onClick={() => { setJoinTrip(null); set('back', '') }}>เปลี่ยนเป็นจองเที่ยวใหม่</button></p>}
       <p className="rounded-xl bg-slate-100 p-3">วันที่เลือก: <strong>{fullDate(day)}</strong></p>
       {dayBlocked && <div role="alert" className={`rounded-xl p-3 ${staffEntry ? 'bg-amber-50' : 'bg-red-50 text-red-900'}`}>
         <p className="font-semibold">วันที่เลือกจองไม่ได้: {dayBlocked}</p>
@@ -270,20 +296,20 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       </div>}
     </Section>
 
-    <Section step={2} title="เวลานัดแพทย์" done={!!form.time && !timeMissing} warn={warn('time')}
-      hint="เลือกเวลาตามใบนัดในช่วงที่หน่วยงานเปิดรับคำขอ">
+    <Section step={2} title={words.time} done={!!form.time && !timeMissing} warn={warn('time')}
+      hint={words.timeHint}>
       <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-950">
-        หน่วยงานเปิดรับเวลานัดแพทย์ {clockTime(info.office_start)}–{clockTime(info.office_end)} น.
-        {' '}เจ้าหน้าที่และคนขับประสานเวลารับ–ส่งเองหลังรับคำขอ
+        {returnOnly ? 'หน่วยงานรับเวลาที่ผู้ป่วยพร้อมออก' : 'หน่วยงานเปิดรับเวลานัดแพทย์'} {clockTime(info.office_start)}–{clockTime(info.office_end)} น.
+        {' '}เจ้าหน้าที่และคนขับประสานเวลา{returnOnly ? 'รับกลับ' : 'รับ–ส่ง'}เองหลังรับคำขอ
       </p>
-      <Choice label="เวลานัดแพทย์" hideLabel value={form.time} onChange={value => set('time', value)} cols="grid-cols-3 sm:grid-cols-4"
+      <Choice label={words.time} hideLabel value={form.time} onChange={value => set('time', value)} cols="grid-cols-3 sm:grid-cols-4"
         compact items={times.map(time => ({ value: time, label: `${time} น.` }))} />
       {times.length > 0 && step === 30 && <button type="button" className={buttonClass} onClick={() => setAllTimes(true)}>ดูเวลาทุก 15 นาที</button>}
       {noTimes && <div role="alert" className="rounded-xl bg-amber-50 p-3">
         <p className="font-semibold">ยังไม่มีเวลานัดให้เลือกตามข้อมูลนี้</p>
         <p className="mt-1 text-sm">ตรวจวันและเวลารับกลับที่เลือก หรือกดเลือกวันอื่นในข้อ 1</p>
       </div>}
-      {rideAlong.length > 0 && <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
+      {rideAlong.length > 0 && !returnOnly && <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
           <p className="font-semibold">มีรถไปทางเดียวกันในวันนี้ ขอนั่งไปด้วยได้</p>
           {rideAlong.map(t => <button key={t.id} type="button" className={`${buttonClass} block w-full text-left`} onClick={() => joinWith(t)}>
             ขอไปพร้อมเที่ยว {t.route_label} · {pickupLabel(t)} · เหลือ {t.remaining} ที่นั่ง
@@ -293,9 +319,9 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       {timeMissing && <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-900">เวลา {form.time} น. ไม่อยู่ในตัวเลือกปัจจุบัน กรุณาตรวจวันและเลือกเวลาใหม่</p>}
     </Section>
 
-    <Section step={3} title="โรงพยาบาลที่จะไป" done={!!form.route_id && (!otherChosen || otherName.length >= 2)} warn={warn('route')}
+    <Section step={3} title={words.hospital} done={!!form.route_id && (!otherChosen || otherName.length >= 2)} warn={warn('route')}
       hint={joinTrip ? 'ขอร่วมเที่ยวได้เฉพาะปลายทางเดียวกันหรืออยู่กลุ่มเดียวกับเที่ยวนั้น' : undefined}>
-      <Choice label="โรงพยาบาลที่จะไป" hideLabel value={form.route_id}
+      <Choice label={words.hospital} hideLabel value={form.route_id}
         onChange={value => { set('route_id', value); if (isOtherPlace(value)) setTimeout(() => otherInput.current?.focus(), 0) }}
         cols={routeChoices.length === 1 ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'}
         items={routeChoices.map(r => isOtherPlace(r.id)
@@ -311,7 +337,15 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       </div>}
     </Section>
 
-    {joinTrip ? <Section step={4} title="ขากลับ" done={joinTrip.return_mode === 'one_way' || joinBacks.includes(form.back)} warn={warn('back')}
+    {returnOnly ? <Section step={4} title="วิธีกลับ" done hint="ร่วมกลับกับรถที่ไปโรงพยาบาลเดียวกันวันนั้น หรือให้รถไปรับโดยเฉพาะ — ไม่เลือกอะไร ระบบถือว่าให้รถไปรับโดยเฉพาะ">
+      <div data-return-only-ways className="grid grid-cols-1 gap-2" role="group" aria-label="วิธีกลับ">
+        <Chip chosen={!joinTrip} onClick={() => { setJoinTrip(null); setMissing([]) }}>ให้รถไปรับโดยเฉพาะ<span className="block text-xs font-normal">เจ้าหน้าที่โทรประสานเวลาอีกครั้ง</span></Chip>
+        {rideTrips.map(t => <Chip key={t.id} chosen={joinTrip?.id === t.id} onClick={() => joinWith(t)}>ขอร่วมกลับกับรถที่ไป {t.route_label}<span className="block text-xs font-normal">{pickupLabel(t)} · เหลือ {t.remaining} ที่นั่ง</span></Chip>)}
+      </div>
+      <p className="text-sm text-slate-600">{rideTrips.length
+        ? 'ร่วมกลับได้เมื่อผู้เดินทางเดินได้ ยินดีนั่งร่วม และมีที่นั่งพอ เจ้าหน้าที่ตรวจและยืนยันอีกครั้ง'
+        : 'ยังไม่มีรถที่ไปโรงพยาบาลเดียวกันและเปิดให้ร่วมในวันที่เลือก · ถ้ามีรถไปส่งผู้ป่วยรายอื่นวันเดียวกัน เจ้าหน้าที่อาจจัดให้ร่วมกลับได้ (ติ๊ก “นั่งรถคันเดียวกับผู้ป่วยคนอื่นได้” ในข้อ 7)'}</p>
+    </Section> : joinTrip ? <Section step={4} title="ขากลับ" done={joinTrip.return_mode === 'one_way' || joinBacks.includes(form.back)} warn={warn('back')}
       hint={`ใช้แบบเดียวกับเที่ยวที่ขอร่วม: ${RETURN_MODES[joinTrip.return_mode] || ''}`}>
       {/* เวลาที่พร้อมรับกลับให้ผู้จัดคิวใช้ประสานแยกรอบหรือรับพร้อมเที่ยวเดิม */}
       {joinTrip.return_mode !== 'one_way' && <Choice label="เวลารับกลับ" value={form.back} onChange={value => set('back', value)} cols="grid-cols-2 sm:grid-cols-4" compact
@@ -322,7 +356,8 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
         items={[
           { value: 'wait', label: 'ให้รถรอรับกลับ', note: 'ถ้าอยู่ไม่นาน รถรอที่โรงพยาบาล · ถ้านาน รถกลับมารับตามเวลาที่ระบุ' },
           { value: 'later', label: 'ให้รถมารับกลับทีหลัง', note: 'รถกลับไปก่อนแล้วมารับ' },
-          { value: 'one_way', label: 'ไปอย่างเดียว', note: 'ไม่ต้องรับกลับ' },
+          // ใช้กับ "ไปนอนโรงพยาบาล" ได้ (เจ้าของระบบสั่ง 2569-11-04) — พอหมอให้กลับ ญาติจองรถรับกลับแยกอีกคำขอหนึ่ง (ปุ่มด้านบนของฟอร์ม)
+          { value: 'one_way', label: 'ไปอย่างเดียว', note: 'เช่น ไปนอนโรงพยาบาล · ไม่ต้องรับกลับ' },
         ]} />
       {form.return_mode !== 'one_way' && <>
         <p className="rounded-xl bg-slate-100 p-3">เวลารับกลับ: <strong>{form.back ? `${form.back} น.` : `ยังไม่ทราบ — ระบบสมมติว่ารับกลับ ${backLatest || 'เวลาปิดบริการ'} น.`}</strong></p>
@@ -350,10 +385,10 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       {phoneNotice && <p role="status" className="text-sm text-sky-800">{phoneNotice}</p>}
     </Section>
 
-    <Section step={6} title="จุดรับ" done={!!pickupText()} warn={warn('pickup')} hint="บอกให้ชัดว่าคนขับต้องไปรับที่ไหน">
+    <Section step={6} title={words.pickup} done={!!pickupText()} warn={warn('pickup')} hint={words.pickupHint}>
       {placeChoices.length > 0 && <Choice label="หมู่บ้าน/สถานที่" value={form.place} onChange={value => set('place', value === form.place ? '' : value)}
         hint="กดเลือกจากทะเบียนสถานที่ของหน่วยงาน กดซ้ำเพื่อยกเลิกการเลือก" items={placeChoices.map(name => ({ value: name, label: name }))} />}
-      <label className="block">{places.length ? 'บ้านเลขที่ / จุดสังเกต' : 'จุดรับและจุดสังเกต'}
+      <label className="block">{places.length ? 'บ้านเลขที่ / จุดสังเกต' : returnOnly ? 'จุดส่งและจุดสังเกต' : 'จุดรับและจุดสังเกต'}
         <input className={inputClass} maxLength={400} value={form.spot} onChange={change('spot')} placeholder={places.length ? 'เช่น บ้านเลขที่ 99 ข้างวัด' : 'เช่น บ้านเลขที่ 99 หมู่ 4 ข้างวัด'} />
       </label>
       {/* หมุดไม่บังคับตามที่เจ้าของระบบสั่งไว้ 2569-09-19 (ผู้สูงอายุปักไม่เป็น) แต่ต้องขึ้นให้เห็นเต็มความกว้าง
@@ -366,7 +401,7 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
           </button>
           <button type="button" className={buttonClass} onClick={() => setForm(f => ({ ...f, pickup_lat: null, pickup_lng: null }))}>เอาหมุดออก</button>
         </div>}
-      <p className="text-sm text-slate-600">{form.pickup_lat === null ? 'ปักหมุดช่วยให้คนขับไปรับถูกจุด ถ้าไม่ปักเจ้าหน้าที่จะโทรถามทาง' : 'คนขับกดนำทางไปหมุดนี้ได้เลย'}</p>
+      <p className="text-sm text-slate-600">{form.pickup_lat === null ? `ปักหมุดช่วยให้คนขับไป${returnOnly ? 'ส่ง' : 'รับ'}ถูกจุด ถ้าไม่ปักเจ้าหน้าที่จะโทรถามทาง` : 'คนขับกดนำทางไปหมุดนี้ได้เลย'}</p>
     </Section>
 
     {/* กางให้เห็นทั้งหมด ไม่ซ่อนในกล่องพับ (เจ้าของระบบสั่ง 2569-09-21) — ค่าปกติเลือกไว้ให้แล้ว
@@ -401,10 +436,19 @@ export default function BookingForm({ tenantId, initial = {}, info, profileName,
       }}
       onClose={() => setShowMap(false)} />}
     {review && <BookingReviewSheet
-      privacyNotice={info.privacy_notice} ownerName={info.owner_name} forOther={form.relation !== 'self'} staffEntry={staffEntry}
+      privacyNotice={info.privacy_notice} ownerName={info.owner_name} forOther={form.relation !== 'self'} staffEntry={staffEntry} returnOnly={returnOnly}
       // ส่งไม่สำเร็จต้องปิดแผ่นนี้ ไม่งั้นแผ่นบังกล่อง "ส่งคำขอยังไม่สำเร็จ" ที่อยู่ด้านหลัง ผู้จองไม่รู้ว่าต้องทำอะไรต่อ
       submitting={busy} onBack={() => setReview(false)} onConfirm={async () => { if (!(await onSubmit(id.current, payload(), joinTrip?.id))) setReview(false) }}
-      summary={[
+      summary={returnOnly ? [
+        ...(joinTrip ? [{ label: 'การจอง', value: `ขอร่วมกลับกับรถที่ไป ${joinTrip.route_label} · รอเจ้าหน้าที่ยืนยัน` }] : []),
+        { label: 'วันที่กลับ', value: fullDate(day) },
+        { label: 'เวลาพร้อมออก', value: form.time && `${form.time} น.` },
+        { label: 'ผู้ป่วยอยู่ที่', value: routeLabel },
+        { label: 'ผู้เดินทาง', value: `${payload().patient_name}${form.mobility === 'walk' ? '' : ` · ${MOBILITY[form.mobility]}`}${Number(form.companions) ? ` · ผู้ติดตาม ${form.companions} คน` : ''}` },
+        { label: 'ส่งที่บ้าน', value: `${pickupText()}${form.pickup_lat === null ? ' · ไม่ได้ปักหมุด' : ' · ปักหมุดแล้ว'}` },
+        { label: 'ขากลับ', value: `${returnModeLabel('return_only')} · ไม่มีขาไปจากบ้าน` },
+        { label: 'เบอร์ติดต่อ', value: form.phone },
+      ] : [
         ...(joinTrip ? [{ label: 'การจอง', value: `ขอร่วมเที่ยว ${joinTrip.route_label} · รอเจ้าหน้าที่ยืนยัน` }] : []),
         { label: 'วันนัด', value: fullDate(day) },
         { label: 'เวลานัด', value: form.time && `${form.time} น.` },

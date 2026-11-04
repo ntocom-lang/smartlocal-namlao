@@ -1922,6 +1922,57 @@ const checks = [
       return offsets.join(' · ')
     },
   },
+  {
+    name: 'return-only-print-wording',
+    reason: 'คำขอรับกลับอย่างเดียว (ผู้ป่วยนอนโรงพยาบาลอยู่ 2569-11-04) ต้องไม่เขียนว่า "มีนัดที่…จึงขอให้รถมารับที่…ไปยัง…" ซึ่งผิดข้อเท็จจริง'
+      + ' · ถ้อยคำเป็นร่างรอเจ้าของระบบอนุมัติ · คำขอไป–กลับ/ไปอย่างเดียวต้องได้ข้อความเท่าเดิมทุกตัวอักษร · ใบต้องจบหน้าเดียวเหมือนเดิม',
+    async run(browser) {
+      const rider = (id, patch = {}) => ({ ...TRIP_BOOKINGS[0], id, return_mode: 'return_only', appointment_at: '2026-10-05T11:00:00+07:00', return_at: '2026-10-05T11:00:00+07:00', ...patch })
+      const plain = text => text.replace(/\s+/g, ' ')
+      // 1) คำขอเดียว: ใบคำขอ + หนังสือนำส่ง
+      const single = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings: [rider('r-1', { companions: 0, mobility: 'walk' })] }))
+      try {
+        assert.deepEqual(await sheetKinds(single), ['form', 'letter'])
+        const form = plain(await formSheetsOf(single).innerText())
+        const letter = plain(await letterSheetOf(single).innerText())
+        for (const word of ['พักรักษาตัวอยู่ที่', 'คาดว่าจะออกจากโรงพยาบาลในวันที่', 'จึงขอให้รถไปรับกลับจากโรงพยาบาลดังกล่าว และไปส่งที่', 'และขอเดินทางขากลับอย่างเดียว'])
+          assert.ok(form.includes(word), `ใบคำขอต้องมี “${word}”: ${form.slice(0, 700)}`)
+        for (const word of ['มีนัดที่', 'จึงขอให้รถมารับที่', 'ไป-กลับ', 'ขาไปอย่างเดียว'])
+          assert.ok(!form.includes(word), `ใบคำขอรับกลับอย่างเดียวต้องไม่มี “${word}”`)
+        assert.ok(letter.includes('รับกลับจาก') && !letter.includes('ไปยัง'), `หนังสือต้องเขียน “รับกลับจาก” ไม่ใช่ “ไปยัง”: ${letter.slice(0, 700)}`)
+        for (const index of [0, 1]) assert.ok(await sheetContentMm(single, index) <= ONE_PAGE_BUDGET_MM, `แผ่นที่ ${index + 1} ต้องจบหน้าเดียว`)
+      } finally { await single.close() }
+      // 2) คำขอเดิมไม่เปลี่ยนทุกตัวอักษร (ไป–กลับและไปอย่างเดียว)
+      for (const mode of ['wait', 'one_way']) {
+        const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings: [{ ...TRIP_BOOKINGS[1], return_mode: mode }] }))
+        try {
+          const form = plain(await formSheetsOf(page).innerText())
+          const letter = plain(await letterSheetOf(page).innerText())
+          assert.ok(form.includes('มีนัดที่') && form.includes('จึงขอให้รถมารับที่') && !form.includes('พักรักษาตัว') && !form.includes('ขากลับอย่างเดียว'), `${mode}: ใบคำขอต้องคงถ้อยคำเดิม`)
+          assert.ok(letter.includes('ไปยัง') && !letter.includes('รับกลับจาก'), `${mode}: หนังสือต้องคงถ้อยคำเดิม`)
+        } finally { await page.close() }
+      }
+      // 3) เที่ยวหลายคน: ล้วนรับกลับ / ผสม / ไม่มีรับกลับ (ข้อความเดิม)
+      const summary = async bookings => {
+        const page = await render(browser, buildTripForwardLetterHtml({ ...tripArgs(), bookings }))
+        try { return plain(await letterSheetOf(page).innerText()) } finally { await page.close() }
+      }
+      const allBack = await summary([rider('r-2'), rider('r-3')])
+      assert.ok(allBack.includes('จำนวน 2 ราย') && allBack.includes('เพื่อรับผู้ป่วยกลับจาก') && !allBack.includes('เพื่อเดินทางไปยัง'), `ล้วนรับกลับ: ${allBack.slice(0, 600)}`)
+      const mixed = await summary([TRIP_BOOKINGS[1], rider('r-4')])
+      assert.ok(mixed.includes('เพื่อเดินทางไปยัง') && mixed.includes('และรับผู้ป่วยกลับจากโรงพยาบาลดังกล่าวอีก 1 ราย'), `ผสม: ${mixed.slice(0, 600)}`)
+      const none = await summary([TRIP_BOOKINGS[1], TRIP_BOOKINGS[2]])
+      assert.ok(none.includes('เพื่อเดินทางไปยัง') && !none.includes('รับผู้ป่วยกลับจาก') && !none.includes('อีก'), `ไม่มีรับกลับ ต้องเป็นข้อความเดิม: ${none.slice(0, 600)}`)
+      // 4) หนังสือต่อคำขอ + ใบคำขอรับสวัสดิการ (ชุดส่งกองทุน): ป้ายแถวเปลี่ยนเฉพาะรับกลับอย่างเดียว
+      const packet = await render(browser, buildBookingForwardLetterHtml({ ...tripArgs(), booking: rider('r-5'), trip: TRIP, partner: PARTNER }))
+      try {
+        const text = plain(await packet.locator('body').innerText())
+        for (const word of ['ส่งที่บ้าน', 'รับกลับจาก', 'วันเวลาที่พร้อมออก', 'ขากลับอย่างเดียว'])
+          assert.ok(text.includes(word), `ใบคำขอรับสวัสดิการต้องมี “${word}”: ${text.slice(0, 900)}`)
+      } finally { await packet.close() }
+      return 'ถ้อยคำร่าง 4 จุด (ใบคำขอ · หนังสือคำขอเดียว · หนังสือหลายคน · ใบรับสวัสดิการ) + คำขอเดิมเท่าเดิม'
+    },
+  },
 ]
 
 // channel: 'chrome' ใช้ Chrome ที่ลงในเครื่องอยู่แล้ว ไม่ต้อง playwright install เพิ่ม

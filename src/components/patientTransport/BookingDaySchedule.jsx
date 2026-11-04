@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { bangkokISO, inputClass, buttonClass, primaryClass, thaiDay, bookingName, isCommunity, coordinatedPickup } from '../../lib/patientBooking'
+import { bangkokISO, inputClass, buttonClass, primaryClass, thaiDay, bookingName, isCommunity, isReturnOnly, coordinatedPickup } from '../../lib/patientBooking'
 
 const time = value => value ? new Date(value).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) : ''
 const noticeLabels = { normal: 'ไม่มีประกาศเพิ่มเติม', delayed: 'รถล่าช้า', contact: 'ติดต่อเจ้าหน้าที่ก่อนเดินทาง' }
@@ -22,7 +22,7 @@ export function RescheduleJourney({ trip, booking, passengers, settings, busy, o
     e.preventDefault()
     if (busy || stale) return
     const out = await onReschedule({ p_booking: booking.id, p_scope: draft.scope, p_expected: draft.expected,
-      p_appointment: bangkokISO(draft.date, draft.appointment), p_return: booking.return_mode === 'one_way' ? null : bangkokISO(draft.date, draft.back), p_not_departed: draft.notDeparted })
+      p_appointment: bangkokISO(draft.date, isReturnOnly(booking) ? draft.back : draft.appointment), p_return: booking.return_mode === 'one_way' ? null : bangkokISO(draft.date, draft.back), p_not_departed: draft.notDeparted })
     if (out && !out.saved) setResult(out)
   }}>
     <p className="font-semibold">เปลี่ยนวันและเวลาเดินทาง</p>
@@ -31,10 +31,10 @@ export function RescheduleJourney({ trip, booking, passengers, settings, busy, o
       <p className="text-sm">{draft.scope === 'all' ? `เลื่อนทั้งเที่ยว: ${passengers.map(b => bookingName(b)).join(' · ')} โดยคงระยะห่างเวลานัดของแต่ละคน` : 'ผู้เดินทางคนอื่นยังใช้วันเวลาเดิม ให้เจ้าหน้าที่จัดรอบรับ–ส่งเอง'}</p></>}
     <div className="grid min-w-0 gap-3 sm:grid-cols-2">
       <label className="min-w-0">วันเดินทางใหม่<input required type="date" className={inputClass} value={draft.date} onChange={e => set('date', e.target.value)} /></label>
-      <label className="min-w-0">{isCommunity(booking) ? 'เวลาที่ต้องถึงใหม่' : 'เวลานัดแพทย์ใหม่'}<input required type="time" className={inputClass} value={draft.appointment} onChange={e => set('appointment', e.target.value)} /></label>
-      {booking.return_mode !== 'one_way' && <label className="min-w-0">เวลารับกลับใหม่<input required type="time" className={inputClass} value={draft.back} onChange={e => set('back', e.target.value)} /></label>}
+      {!isReturnOnly(booking) && <label className="min-w-0">{isCommunity(booking) ? 'เวลาที่ต้องถึงใหม่' : 'เวลานัดแพทย์ใหม่'}<input required type="time" className={inputClass} value={draft.appointment} onChange={e => set('appointment', e.target.value)} /></label>}
+      {booking.return_mode !== 'one_way' && <label className="min-w-0">{isReturnOnly(booking) ? 'เวลาที่ผู้ป่วยพร้อมออกใหม่' : 'เวลารับกลับใหม่'}<input required type="time" className={inputClass} value={draft.back} onChange={e => set('back', e.target.value)} /></label>}
     </div>
-    <p className="text-sm">เวลานัดกับเวลารับเป็นคนละเวลา ให้แจ้งเวลารับที่ประสานกับคนขับแล้ว</p>
+    {!isReturnOnly(booking) && <p className="text-sm">เวลานัดกับเวลารับเป็นคนละเวลา ให้แจ้งเวลารับที่ประสานกับคนขับแล้ว</p>}
     {trip.state === 'outbound' && <label className="flex min-h-11 items-center gap-2 rounded-lg bg-amber-50 p-3"><input required type="checkbox" checked={draft.notDeparted} onChange={e => set('notDeparted', e.target.checked)} />กดออกรถผิด ยืนยันว่าทั้งเที่ยวยังไม่ได้ออกรถจริง</label>}
     {stale && <p role="alert">ข้อมูลคิวเปลี่ยนแล้ว กรุณาปิดและเปิดฟอร์มใหม่ก่อนบันทึก</p>}
     {result && <div role="alert" className="space-y-2 rounded-lg bg-amber-50 p-3"><p className="font-semibold">ยังไม่ได้ย้ายคิว · คิวเดิมยังอยู่</p>{result.errors.map(message => <p key={message}>{message}</p>)}<p>เลือกวันหรือเวลาอื่นแล้วบันทึกใหม่ ระบบจะตรวจคิวให้อีกครั้ง</p>

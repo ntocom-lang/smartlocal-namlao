@@ -8,6 +8,11 @@ export function orgAbbr() { return activeOrgTerms().abbr || 'หน่วยง�
 export const BOOKING_STATUS = { submitted: 'รับคำขอแล้ว รอยืนยันรถ', confirmed: 'ยืนยันรถแล้ว', completed: 'จบเที่ยวแล้ว', cancelled: 'ยกเลิกแล้ว' }
 export const TRIP_STATUS = { confirmed: 'ยืนยันรถแล้ว', outbound: 'กำลังให้บริการ', hospital: 'กำลังให้บริการ', returning: 'กำลังให้บริการ', completed: 'จบเที่ยวแล้ว', issue: 'ต้องประสานเหตุขัดข้อง', cancelled: 'ยกเลิกแผนเที่ยว' }
 export const RETURN_MODES = { wait: 'รอรับกลับ', later: 'กลับมารับภายหลัง', one_way: 'ขาไปอย่างเดียว' }
+// รับกลับอย่างเดียว (20261104100000 · เจ้าของระบบสั่ง 2569-11-04): ผู้ป่วยนอนโรงพยาบาลอยู่ ไม่มีขาไปจากบ้าน รถรับที่โรงพยาบาลแล้วไปส่งที่บ้าน
+// ⚠️ ไม่ใส่ใน RETURN_MODES: ตัวนั้นถูกวนทำตัวเลือกในฟอร์มชุมชน (ฐานข้อมูลชุมชนปฏิเสธค่านี้) · แสดงชื่อผ่าน returnModeLabel
+// ฐานข้อมูลบังคับ appointment_at = return_at (ตัวกระตุ้น ptb_return_only_time) จึงมีเวลาเดียว = เวลาที่ผู้ป่วยพร้อมออก
+export const isReturnOnly = booking => booking?.return_mode === 'return_only'
+export const returnModeLabel = mode => mode === 'return_only' ? 'รับกลับอย่างเดียว' : RETURN_MODES[mode] || mode || ''
 export const MOBILITY = { walk: 'เดินได้เอง', wheelchair: 'ใช้รถเข็น', stretcher: 'ใช้เปล' }
 export const inputClass = 'w-full min-h-11 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-900'
 export const buttonClass = 'min-h-11 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 disabled:opacity-50'
@@ -79,8 +84,12 @@ export function coordinatedPickup(trip) {
 }
 export function pickupForBooking(trip) { return coordinatedPickup(trip) }
 export function returnForBooking(trip, booking) { return trip?.estimated_return_at || booking?.return_at || trip?.plan?.return_at || null }
+// เที่ยวที่ไม่มีรอบไปเลย (มีแต่คำขอรับกลับอย่างเดียว) — ฐานข้อมูลเก็บ outbound_waves เป็นอาร์เรย์ว่าง · เที่ยวเก่า/ที่ไม่มีคีย์นี้ไม่เข้าเงื่อนไข
+// (เที่ยวในปฏิทินสาธารณะส่งมาไว้ที่ outbound_waves ชั้นนอก ไม่มี plan — ตรวจทั้งสองที่)
+export const returnOnlyTrip = trip => { const waves = trip?.plan?.outbound_waves ?? trip?.outbound_waves; return Array.isArray(waves) && waves.length === 0 }
 export function pickupLabel(trip, full = false) {
   const at = coordinatedPickup(trip)
+  if (returnOnlyTrip(trip)) return at ? `รถออกประมาณ ${full ? dateTime(at) : `${clockOf(at)} น.`}` : 'รอประสานเวลารถออก'
   return at ? `รับประมาณ ${full ? dateTime(at) : `${clockOf(at)} น.`}` : 'รอประสานเวลารับ'
 }
 export function tripOrderTime(trip) {
@@ -387,10 +396,12 @@ const CONFIRM_BLOCKERS = {
 // Legacy guidance may still contain an overlap error; it must never create a reservation.
 export function overlappingTrips() { return [] }
 // Existing confirmed trips for the same day/destination. Staff choose whether to combine.
-export function joinCandidates(plan, trips = [], routes = []) {
+// คำขอรับกลับอย่างเดียวไปกับเที่ยวโหมดไหนก็ได้ (รวมเที่ยวไปอย่างเดียวที่รถกลับมาว่าง) — ต้องส่ง bookings มาให้รู้ว่าแผนนี้เป็นของใคร
+export function joinCandidates(plan, trips = [], routes = [], bookings = []) {
   if ((plan?.service_type || 'patient') !== 'patient') return []
+  const returnOnlyPlan = (plan?.booking_ids || []).length > 0 && plan.booking_ids.every(id => isReturnOnly(bookings.find(b => b.id === id)))
   return trips.filter(t => !(t.booking_ids || []).some(id => plan?.booking_ids?.includes(id)) && t.plan?.date === plan?.date && (t.plan?.service_type || 'patient') === 'patient' && t.state === 'confirmed' && sameDestinationGroup(routes, t.plan?.route_id, plan?.route_id)
-    && (t.plan?.return_mode === plan?.return_mode ||
+    && (returnOnlyPlan || t.plan?.return_mode === plan?.return_mode ||
       (['wait', 'later'].includes(t.plan?.return_mode) && ['wait', 'later'].includes(plan?.return_mode)))).slice(0, 3)
 }
 // เหตุที่ไปคันเดียวกันไม่ได้ เป็นภาษาเจ้าหน้าที่ — ข้อความจากฐานข้อมูลเขียนไว้ให้ประชาชน ("กรุณาประสานเจ้าหน้าที่")

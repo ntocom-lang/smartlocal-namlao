@@ -118,7 +118,7 @@ export default function PatientTransportStaff({ onBack } = {}) {
       if (!requested && !separate) {
         // ตรวจเที่ยววันเดียวกันเพื่อเสนอแผน "ไปคันเดียวกัน" ไว้ก่อน (อ่านอย่างเดียว ไม่จองอะไร)
         // ให้เจ้าหน้าที่เลือกการร่วมเที่ยวและประสานเวลารับเอง · ลองไม่ได้ก็ยังมีทางแก้อื่นครบ
-        for (const trip of joinCandidates(plan, workspace.trips, workspace.settings?.routes)) {
+        for (const trip of joinCandidates(plan, workspace.trips, workspace.settings?.routes, workspace.bookings)) {
           try {
             const multi = ids.length > 1
             joins.push({ trip, ids, plan: await call(multi ? 'patient_booking_preview_multiwave' : 'patient_booking_preview_into_trip',

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { communityPayload, isOtherPlace, cleanPlaceName, bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress, joinCandidates, sameDestinationGroup, destinationGroup, joinReturnChoices, suggestGroups, paginate, thaiDay, overdueOdometerDays, workspaceTruncated, WORKSPACE_ROW_LIMIT, loadPageSize, savePageSize, pickupLabel, pickupForBooking } from '../src/lib/patientBooking.js'
+import { isReturnOnly, returnModeLabel, returnOnlyTrip, communityPayload, isOtherPlace, cleanPlaceName, bookingPlanGuidance, bookingStage, staffNextAction, driverNext, driverSteps, driverProgress, joinCandidates, sameDestinationGroup, destinationGroup, joinReturnChoices, suggestGroups, paginate, thaiDay, overdueOdometerDays, workspaceTruncated, WORKSPACE_ROW_LIMIT, loadPageSize, savePageSize, pickupLabel, pickupForBooking } from '../src/lib/patientBooking.js'
 
 const error = 'เวลารับ–ส่งอยู่นอกเวลาบริการ'
 const plan = { date: '2026-09-21', settings_revision: 3, booking_ids: ['one'], blocks: [{ start: '2026-09-21T00:00:00Z', end: '2026-09-21T09:00:00Z' }] }
@@ -254,4 +254,29 @@ test('community payload: other_place goes only with the "other" place, cleaned l
   assert.equal(communityPayload({ ...base, route_id: '__other__', other_place: 'ก'.repeat(300) }, info).other_place.length, 201, 'ตัดที่ 201 เพื่อให้ฐานข้อมูลปฏิเสธ ไม่ตัดเงียบเหลือ 200')
   assert.equal(isOtherPlace('__other__'), true); assert.equal(isOtherPlace('temple'), false)
   assert.equal(cleanPlaceName(' \u0007 ก\u0000 '), 'ก')
+})
+
+// รับกลับอย่างเดียว (20261104100000 · เจ้าของระบบสั่ง 2569-11-04): ผู้ป่วยนอนโรงพยาบาลอยู่ รถรับที่โรงพยาบาลแล้วไปส่งบ้าน
+test('return-only: label, trip label and join candidates', () => {
+  assert.equal(isReturnOnly({ return_mode: 'return_only' }), true)
+  for (const mode of ['wait', 'later', 'one_way']) assert.equal(isReturnOnly({ return_mode: mode }), false)
+  assert.equal(returnModeLabel('return_only'), 'รับกลับอย่างเดียว')
+  assert.equal(returnModeLabel('one_way'), 'ขาไปอย่างเดียว'); assert.equal(returnModeLabel('wait'), 'รอรับกลับ'); assert.equal(returnModeLabel('nope'), 'nope')
+  // ตัวเลือกฟอร์มชุมชนวนจาก RETURN_MODES — ค่าใหม่ต้องไม่หลุดเข้าไป (ฐานข้อมูลชุมชนปฏิเสธ)
+  assert.equal(readFileSync(new URL('../src/lib/patientBooking.js', import.meta.url), 'utf8').match(/export const RETURN_MODES = \{[^}]*\}/)[0].includes('return_only'), false)
+  // เที่ยวที่ไม่มีรอบไป = เที่ยวรับกลับอย่างเดียว · เที่ยวเก่าที่ไม่มีคีย์ outbound_waves ได้ป้ายเดิม
+  const only = { schedule_revision: 1, plan: { outbound_waves: [] } }
+  assert.equal(returnOnlyTrip(only), true); assert.equal(returnOnlyTrip({ plan: {} }), false); assert.equal(returnOnlyTrip({ plan: { outbound_waves: [{}] } }), false)
+  assert.equal(pickupLabel(only), 'รอประสานเวลารถออก')
+  assert.equal(pickupLabel({ ...only, schedule_revision: 2, estimated_pickup_at: '2026-10-20T09:15:00+07:00' }), 'รถออกประมาณ 09:15 น.')
+  assert.equal(pickupLabel({ schedule_revision: 1, plan: { outbound_waves: [{}] } }), 'รอประสานเวลารับ')
+  // ไปเที่ยวโหมดไหนก็ได้ ถ้าแผนนี้เป็นของคำขอรับกลับอย่างเดียวล้วน · แผนอื่นเงื่อนไขเดิม
+  const day = { date: '2026-10-20', route_id: 'a', booking_ids: ['ro'], service_type: 'patient', return_mode: 'later' }
+  const trip = mode => ({ id: 't-' + mode, state: 'confirmed', booking_ids: ['x'], plan: { date: '2026-10-20', route_id: 'a', service_type: 'patient', return_mode: mode } })
+  const trips = ['wait', 'later', 'one_way'].map(trip)
+  const riders = [{ id: 'ro', return_mode: 'return_only' }]
+  assert.deepEqual(joinCandidates(day, trips, [], riders).map(t => t.id), ['t-wait', 't-later', 't-one_way'])
+  assert.deepEqual(joinCandidates(day, trips, [], [{ id: 'ro', return_mode: 'later' }]).map(t => t.id), ['t-wait', 't-later'], 'คำขอไป–กลับยังข้ามเที่ยวไปอย่างเดียวเหมือนเดิม')
+  assert.deepEqual(joinCandidates(day, trips).map(t => t.id), ['t-wait', 't-later'], 'ไม่ส่ง bookings มา = เงื่อนไขเดิม')
+  assert.deepEqual(joinCandidates({ ...day, booking_ids: ['ro', 'other'] }, trips, [], [...riders, { id: 'other', return_mode: 'later' }]).map(t => t.id), ['t-wait', 't-later'], 'ผสมกับคำขอไป–กลับ = เงื่อนไขเดิม')
 })
