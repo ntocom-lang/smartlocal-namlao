@@ -7,7 +7,7 @@ import { ListCard, Pager, Pills, SectionBand, Sheet } from './StaffShell'
 import { MONTHS_TH, thaiDateFromDateInput } from '../../lib/thaiDate'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
-import { SECTION_TONES, loadPageSize, paginate, savePageSize, BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousDayOdometer, dayRecorded, dayDistance, dayPending, thaiDayAfter, returnForBooking, pickupLabel, tripOrderTime, reportEvent, bookingLetter, bookingName, bookingTravel, serviceLabel, isCommunity, servicePeriodReport, isOtherPlace, cleanPlaceName, OTHER_PLACE_MAX } from '../../lib/patientBooking'
+import { SECTION_TONES, loadPageSize, paginate, savePageSize, BOOKING_STATUS, BOOKING_STEPS, TRIP_STATUS, RETURN_MODES, returnModeLabel, isReturnOnly, returnOnlyTrip, MOBILITY, DRIVER_STEPS, bookingStep, driverProgress, driverNext, dateTime, clockOf, whenLabel, thaiDay, bangkokISO, buttonClass, primaryClass, inputClass, previousDayOdometer, dayRecorded, dayDistance, dayPending, thaiDayAfter, returnForBooking, pickupLabel, tripOrderTime, reportEvent, bookingLetter, bookingName, bookingTravel, serviceLabel, isCommunity, servicePeriodReport, isOtherPlace, cleanPlaceName, OTHER_PLACE_MAX } from '../../lib/patientBooking'
 
 // ป้ายสถานะสีแบบเดียวกับการ์ดในแท็บ "การใช้รถ" ของยานพาหนะ — ผู้จองต้องเห็นสถานะก่อนอ่านรายละเอียด
 const BOOKING_CHIP = { submitted: 'bg-amber-100 text-amber-900', confirmed: 'bg-sky-100 text-sky-900', completed: 'bg-emerald-100 text-emerald-900', cancelled: 'bg-slate-200 text-slate-700' }
@@ -53,7 +53,7 @@ export function BookingCards({ bookings, allBookings = bookings, trips, onAction
         <p className="font-bold text-sky-950">คิวที่ใช้เดินทาง: นัด {dateTime(linked.appointment_at)} · เลขที่ {linked.id.slice(0, 8).toUpperCase()}</p>
         <p className="text-sm text-slate-700">{linked.route_label || b.route_label} · {BOOKING_STATUS[linked.status]}</p>
         <p className="text-sm text-slate-600">คำขอนี้ปิดเป็นคิวซ้ำ · นัดเดิม {dateTime(b.appointment_at)}</p>
-      </div> : <p>{b.route_label} · {b.status === 'cancelled' ? 'นัดเดิม (ยกเลิก)' : 'นัด'} {dateTime(b.appointment_at)}</p>}
+      </div> : <p>{isReturnOnly(b) ? `รับกลับจาก ${b.route_label}` : b.route_label} · {b.status === 'cancelled' ? 'นัดเดิม (ยกเลิก)' : isReturnOnly(b) ? 'พร้อมออก' : 'นัด'} {dateTime(b.appointment_at)}</p>}
       <p className="text-xs text-slate-500">เลขที่คำขอ {b.id.slice(0, 8).toUpperCase()}</p>
       {step > 0 && <StepBar step={step} />}
       {/* บรรทัดเดียวที่บอกว่า "ตอนนี้ถึงไหนและต้องรออะไร" — ของเดิมให้ผู้จองอ่านสถานะเที่ยวเอาความหมายเอง */}
@@ -215,14 +215,14 @@ export function AmendBooking({ booking, routes, busy, onBack, onSave, saveLabel 
   // ไม่งั้น select แสดงเส้นทางแรกแต่ส่งค่าเดิม ผู้แก้เข้าใจผิดว่าเปลี่ยนแล้ว — ฐานข้อมูลจะปฏิเสธและให้เลือกเส้นทางใหม่
   const choices = routes.some(r => r.id === booking.route_id) ? routes : [{ id: booking.route_id, label: `${booking.route_label} (ไม่อยู่ในตั้งค่าแล้ว)` }, ...routes]
   const change = key => e => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
-  return <form className="space-y-3 rounded-xl border-2 border-sky-700 p-4" onSubmit={e => { e.preventDefault(); onSave({ appointment_at: bangkokISO(form.day, form.time), return_at: form.return_mode === 'one_way' ? null : bangkokISO(form.day, form.back), route_id: form.route_id, pickup: form.pickup, in_area: form.in_area, return_mode: form.return_mode, ...(other ? { other_place: otherName } : {}) }, form.note) }}>
+  return <form className="space-y-3 rounded-xl border-2 border-sky-700 p-4" onSubmit={e => { e.preventDefault(); onSave({ appointment_at: bangkokISO(form.day, form.return_mode === 'return_only' ? form.back : form.time), return_at: form.return_mode === 'one_way' ? null : bangkokISO(form.day, form.back), route_id: form.route_id, pickup: form.pickup, in_area: form.in_area, return_mode: form.return_mode, ...(other ? { other_place: otherName } : {}) }, form.note) }}>
     <h3 className="font-bold">แก้ข้อมูลตามที่ประสานกับ {bookingName(booking)}</h3><div className="grid gap-3 sm:grid-cols-2">
-      <label>วันนัด<input className={inputClass} type="date" required value={form.day} onChange={change('day')} /></label><label>เวลานัด<input className={inputClass} type="time" required value={form.time} onChange={change('time')} /></label>
+      <label>วันนัด<input className={inputClass} type="date" required value={form.day} onChange={change('day')} /></label>{form.return_mode !== 'return_only' && <label>เวลานัด<input className={inputClass} type="time" required value={form.time} onChange={change('time')} /></label>}
       <label>เส้นทาง<select className={inputClass} value={form.route_id} onChange={change('route_id')}>{choices.map(r => <option key={r.id} value={r.id}>{isOtherPlace(r.id) && routes.some(x => x.id === r.id) ? 'อื่นๆ (พิมพ์ชื่อสถานที่เอง)' : r.label}</option>)}</select></label>
       {other && <label>ชื่อสถานที่ที่จะไป<input className={inputClass} required minLength={2} maxLength={OTHER_PLACE_MAX} autoComplete="off" value={form.other_place} onChange={change('other_place')} /></label>}
-      <label>ขากลับ<select className={inputClass} value={form.return_mode} onChange={change('return_mode')}>{Object.entries(RETURN_MODES).map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></label>
-      {form.return_mode !== 'one_way' && <label>เวลาพร้อมรับกลับ<input className={inputClass} type="time" value={form.back} onChange={change('back')} /></label>}
-      <label>จุดรับ<input className={inputClass} required maxLength={500} value={form.pickup} onChange={change('pickup')} /></label>
+      <label>ขากลับ<select className={inputClass} value={form.return_mode} onChange={change('return_mode')}>{Object.entries({ ...RETURN_MODES, return_only: returnModeLabel('return_only') }).map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></label>
+      {form.return_mode !== 'one_way' && <label>{form.return_mode === 'return_only' ? 'เวลาที่ผู้ป่วยพร้อมออก' : 'เวลาพร้อมรับกลับ'}<input className={inputClass} type="time" required={form.return_mode === 'return_only'} value={form.back} onChange={change('back')} /></label>}
+      <label>{form.return_mode === 'return_only' ? 'บ้านที่จะไปส่ง' : 'จุดรับ'}<input className={inputClass} required maxLength={500} value={form.pickup} onChange={change('pickup')} /></label>
     </div><label className="flex min-h-11 items-center gap-3"><input className="size-5" type="checkbox" checked={form.in_area} onChange={change('in_area')} />ตรวจสอบว่าอยู่ในพื้นที่แล้ว</label>
     <label className="block">เหตุผลและผลประสาน<input className={inputClass} required maxLength={500} value={form.note} onChange={change('note')} /></label>
     <div className="flex flex-wrap gap-2"><button className={primaryClass} disabled={busy}>{saveLabel}</button><button type="button" className={buttonClass} onClick={onBack} disabled={busy}>ปิด</button></div>
@@ -292,16 +292,16 @@ function DriverCard({ trip: t, bookings, busy, upcoming, contactPhone, onAdvance
       const pin = Number.isFinite(b.pickup_lat) && Number.isFinite(b.pickup_lng) && Math.abs(b.pickup_lat) <= 90 && Math.abs(b.pickup_lng) <= 180
       return <li key={b.id} className="rounded-xl bg-slate-50 p-3">
         <p className="font-bold">{people.length > 1 ? `${index + 1}. ` : ''}{bookingName(b)}</p>
-        <p className="text-sm font-semibold text-sky-900">{isCommunity(b) ? 'ต้องถึง' : 'นัดแพทย์'} {dateTime(b.appointment_at)}</p>
+        <p className="text-sm font-semibold text-sky-900">{isReturnOnly(b) ? 'พร้อมออกจากโรงพยาบาล' : isCommunity(b) ? 'ต้องถึง' : 'นัดแพทย์'} {dateTime(b.appointment_at)}</p>
         <p className="text-sm">{bookingTravel(b)}</p>
         {manyStops && <p className="text-sm font-semibold text-sky-900">ลงที่: {b.route_label}</p>}
         {manyRuns && <p className="text-sm font-semibold text-sky-900">{pickupLabel(t)}{b.return_mode !== 'one_way' ? ` · รับกลับประมาณ ${clockOf(returnForBooking(t, b))} น.` : ''}</p>}
-        <p className="text-sm">จุดรับ: {pickupSentence(b.pickup)}</p>
+        <p className="text-sm">{isReturnOnly(b) ? `รับที่ ${b.route_label} → ส่งที่บ้าน` : 'จุดรับ'}: {pickupSentence(b.pickup)}</p>
         {b.cancel_requested && <p className="text-sm font-semibold text-amber-800">ผู้จองขอยกเลิก รอเจ้าหน้าที่ประสาน · ถ้าไม่ได้ขึ้นรถ กด “แจ้งเหตุขัดข้อง”</p>}
         {b.return_ready && ['outbound', 'hospital'].includes(t.state) && <p className="text-sm font-bold text-sky-800">🔔 แจ้งพร้อมให้รับกลับแล้ว</p>}
         <div className="mt-2 flex flex-wrap gap-2">
           {b.phone && <a href={`tel:${b.phone}`} className={`${buttonClass} inline-flex items-center`}>📞 โทร {b.phone}</a>}
-          {pin && <a href={`https://www.google.com/maps/dir/?api=1&destination=${b.pickup_lat},${b.pickup_lng}`} target="_blank" rel="noopener noreferrer" className={`${buttonClass} inline-flex items-center`}>📍 นำทางไปจุดรับ</a>}
+          {pin && <a href={`https://www.google.com/maps/dir/?api=1&destination=${b.pickup_lat},${b.pickup_lng}`} target="_blank" rel="noopener noreferrer" className={`${buttonClass} inline-flex items-center`}>📍 {isReturnOnly(b) ? 'นำทางไปบ้านที่ส่ง' : 'นำทางไปจุดรับ'}</a>}
         </div>
       </li>
     })}</ol>
@@ -554,7 +554,7 @@ function DriverDesk({ rows, workspace, odometer, pendingDays, dayNote, busy, err
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'} onMouseLeave={e => e.currentTarget.style.backgroundColor = shade}
                 onClick={() => setOpenId(t.id)}>
                 <td className={`${cell} text-center text-xs text-gray-500`} style={{ boxShadow: `inset 5px 0 0 ${DESK_SECTIONS[section].bar}` }}>{index + 1}</td>
-                <td className={`${cell} whitespace-nowrap text-center`}><span className="block font-semibold">{whenLabel(at)}</span><span className="block text-sm">{isCommunity(t.plan) ? 'ต้องถึง' : 'นัดแรก'} {clockOf(t.plan?.appointment_at || t.plan?.outbound_waves?.[0]?.appointment_start || riders[0]?.appointment_at) || 'ยังไม่ทราบ'}</span><span className="block">{pickupLabel(t)}</span>{t.plan?.return_mode !== 'one_way' && back && <span className="block text-[11px] text-gray-500">รับกลับประมาณ {clockOf(back)} น.</span>}</td>
+                <td className={`${cell} whitespace-nowrap text-center`}><span className="block font-semibold">{whenLabel(at)}</span><span className="block text-sm">{isCommunity(t.plan) ? 'ต้องถึง' : returnOnlyTrip(t) ? 'พร้อมออก' : 'นัดแรก'} {clockOf(t.plan?.appointment_at || t.plan?.outbound_waves?.[0]?.appointment_start || riders[0]?.appointment_at) || 'ยังไม่ทราบ'}</span><span className="block">{pickupLabel(t)}</span>{t.plan?.return_mode !== 'one_way' && back && <span className="block text-[11px] text-gray-500">รับกลับประมาณ {clockOf(back)} น.</span>}</td>
                 <td className={cell}><span className="block max-w-[220px] truncate font-semibold" title={t.plan?.route_label}>{t.plan?.route_label || '—'}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[t.plan?.return_mode]}{t.plan?.multiwave ? ' · รับหลายรอบ' : ''}</span></td>
                 <td className={cell}>{riders.length ? riders.map((b, i) => <span key={b.id} className={`block ${i ? 'mt-1.5' : ''}`}><span className="block font-semibold">{bookingName(b)}</span><span className="block text-[11px] text-gray-500">{bookingTravel(b)}</span></span>)
                   // ฐานข้อมูลไม่ส่งข้อมูลผู้เดินทางให้คนขับเมื่อเที่ยวจบแล้ว (patient_booking_workspace) — บอกเหตุ ไม่ใช่ขีดว่างเหมือนไม่มีคนนั่ง

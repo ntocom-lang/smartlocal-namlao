@@ -13,12 +13,15 @@ import { buttonClass, primaryClass, orgAbbr } from '../../lib/patientBooking'
  * ตัวหนังสือตั้งใจให้ใหญ่กว่าปกติ ผู้ใช้ส่วนใหญ่เป็นผู้สูงอายุ ถ้าอ่านไม่ออกก็จะกดผ่านโดยไม่อ่าน
  * แล้วขั้นทวนนี้จะไม่มีความหมาย
  */
-export default function BookingReviewSheet({ summary = [], privacyNotice, ownerName, forOther, staffEntry, submitting, onBack, onConfirm }) {
+export default function BookingReviewSheet({ summary = [], privacyNotice, ownerName, forOther, staffEntry, returnOnly = false, submitting, onBack, onConfirm }) {
   const [consent, setConsent] = useState(false)
   const org = orgAbbr()
   const promises = [
-    'เป็นการเดินทางไปตามนัดของแพทย์ ไม่ใช่เจ็บป่วยฉุกเฉิน (ฉุกเฉินให้โทร 1669)',
-    staffEntry ? `ตรวจแล้วว่าจุดรับอยู่ในเขตพื้นที่ให้บริการของ${org}` : `จุดรับอยู่ในเขตพื้นที่ให้บริการของ${org}`,
+    // รับกลับอย่างเดียว (2569-11-04): ผู้ป่วยไม่ได้เดินทางไปตามนัด แต่กลับบ้านหลังแพทย์อนุญาต · ถ้อยคำรับรองนี้รอเจ้าของระบบอนุมัติ
+    returnOnly ? 'เป็นการเดินทางกลับบ้านหลังแพทย์อนุญาตให้ออกจากโรงพยาบาล ไม่ใช่เจ็บป่วยฉุกเฉิน (ฉุกเฉินให้โทร 1669)'
+      : 'เป็นการเดินทางไปตามนัดของแพทย์ ไม่ใช่เจ็บป่วยฉุกเฉิน (ฉุกเฉินให้โทร 1669)',
+    returnOnly ? (staffEntry ? `ตรวจแล้วว่าบ้านที่ไปส่งอยู่ในเขตพื้นที่ให้บริการของ${org}` : `บ้านที่ไปส่งอยู่ในเขตพื้นที่ให้บริการของ${org}`)
+      : staffEntry ? `ตรวจแล้วว่าจุดรับอยู่ในเขตพื้นที่ให้บริการของ${org}` : `จุดรับอยู่ในเขตพื้นที่ให้บริการของ${org}`,
     forOther && (staffEntry ? 'ผู้จองยืนยันว่าได้รับอนุญาตจากผู้ป่วยหรือมีอำนาจกระทำการแทน' : 'ได้รับอนุญาตจากผู้ป่วย หรือมีอำนาจกระทำการแทนผู้ป่วยแล้ว'),
   ].filter(Boolean)
   return <div className="fixed inset-0 z-200 flex items-end bg-black/40" onClick={submitting ? undefined : onBack}>

@@ -8,7 +8,7 @@ import { addressFromMap, pickupSentence } from '../../lib/pickupText'
 import { ListCard, Pager, Pills, SectionBand, Sheet } from './StaffShell'
 import { AmendBooking, BookingFundDocs, BookingPrintButtons, DayOdometerOfTrip } from './BookingOperations'
 import { ScheduleUpdate, RescheduleJourney } from './BookingDaySchedule'
-import { SECTION_TONES, STAGES, loadPageSize, paginate, savePageSize, TRIP_STATUS, RETURN_MODES, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, pickupLabel, describeHistory, bookingName, bookingPeople, bookingTravel, isCommunity, serviceLabel, isOtherPlace } from '../../lib/patientBooking'
+import { SECTION_TONES, STAGES, loadPageSize, paginate, savePageSize, TRIP_STATUS, RETURN_MODES, returnModeLabel, isReturnOnly, bookingStage, staffNextAction, bookingPlanGuidance, joinRefusal, suggestGroups, dateTime, clockOf, whenLabel, thaiDay, inputClass, buttonClass, primaryClass, pickupForBooking, returnForBooking, pickupLabel, describeHistory, bookingName, bookingPeople, bookingTravel, isCommunity, serviceLabel, isOtherPlace } from '../../lib/patientBooking'
 import { tripPassengers } from '../../lib/patientTransportPrint'
 
 /**
@@ -274,20 +274,21 @@ function ReopenBooking({ booking, busy, onReopen }) {
 function Facts({ booking: b, trip, others, historical = false }) {
   const pin = Number.isFinite(b.pickup_lat) && Number.isFinite(b.pickup_lng)
   const items = [
-    [isCommunity(b) ? 'เวลาที่ต้องถึง' : historical ? 'วันเวลานัดเดิม (ยกเลิก)' : 'วันเวลานัด', dateTime(b.appointment_at)],
-    [isCommunity(b) ? 'สถานที่ชุมชน' : historical ? 'โรงพยาบาลในคำขอเดิม' : 'โรงพยาบาล', b.route_label],
+    [isCommunity(b) ? 'เวลาที่ต้องถึง' : historical ? 'วันเวลานัดเดิม (ยกเลิก)' : isReturnOnly(b) ? 'วันเวลาที่ผู้ป่วยพร้อมออก' : 'วันเวลานัด', dateTime(b.appointment_at)],
+    [isCommunity(b) ? 'สถานที่ชุมชน' : historical ? 'โรงพยาบาลในคำขอเดิม' : isReturnOnly(b) ? 'โรงพยาบาลที่พักอยู่' : 'โรงพยาบาล', b.route_label],
     // สถานที่อื่น (20261007170000): ชื่อนี้ผู้จองพิมพ์เอง เจ้าหน้าที่จัดรอบรับ–ส่งเอง ไม่ใช่ระยะทางจริง
     // เจ้าหน้าที่ต้องตรวจก่อนกดยืนยันรถ (ห้ามให้ระบบตัดสินแทน) — แถวนี้ไม่ขึ้นกับคำขอที่ปิดแล้ว
     ...(isOtherPlace(b.route_id) && !historical ? [['สถานที่อื่น', 'ผู้จองพิมพ์ชื่อเอง · เจ้าหน้าที่จัดรอบรับ–ส่งเอง ไม่ร่วมเที่ยวกับใคร · ตรวจระยะทางและเวลาจริงก่อนยืนยันรถ']] : []),
-    [historical ? 'ขากลับในคำขอเดิม' : 'ขากลับ', b.return_mode === 'one_way' ? 'ขาไปอย่างเดียว' : `${RETURN_MODES[b.return_mode]} · ${b.return_at ? `ประมาณ ${clockOf(b.return_at)} น.` : 'ยังไม่ทราบเวลา'}`],
-    ['จุดรับ', <>{pickupSentence(b.pickup)}{pin && <a className="ml-2 font-semibold text-sky-800 underline" target="_blank" rel="noopener noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${b.pickup_lat},${b.pickup_lng}`}>📍 นำทาง</a>}</>],
+    [historical ? 'ขากลับในคำขอเดิม' : 'ขากลับ', b.return_mode === 'one_way' ? 'ขาไปอย่างเดียว' : isReturnOnly(b) ? 'รับกลับอย่างเดียว · ไม่มีขาไปจากบ้าน รถรับที่โรงพยาบาลแล้วไปส่งที่บ้าน' : `${RETURN_MODES[b.return_mode]} · ${b.return_at ? `ประมาณ ${clockOf(b.return_at)} น.` : 'ยังไม่ทราบเวลา'}`],
+    [isReturnOnly(b) ? 'ส่งที่บ้าน' : 'จุดรับ', <>{pickupSentence(b.pickup)}{pin && <a className="ml-2 font-semibold text-sky-800 underline" target="_blank" rel="noopener noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${b.pickup_lat},${b.pickup_lng}`}>📍 นำทาง</a>}</>],
     ['การเดินทาง', `${bookingTravel(b)}${b.share ? ' · นั่งร่วมกับผู้ป่วยอื่นได้' : ''}`],
     [isCommunity(b) ? 'ผู้ติดต่อ' : 'ผู้จอง', isCommunity(b) ? b.requester_name : b.relation === 'self' ? RELATIONS.self : `${b.requester_name || '—'} (${RELATIONS[b.relation] || 'จองแทน'})`],
     ['เบอร์ติดต่อ', b.phone ? <a className="font-semibold text-sky-800 underline" href={`tel:${b.phone}`}>{b.phone}</a> : '—'],
     ['รับเรื่องทาง', b.entry_channel === 'staff' ? 'เจ้าหน้าที่รับแทน (โทรศัพท์/เคาน์เตอร์)' : 'ออนไลน์'],
     ...(trip ? [
       ['สถานะเที่ยว', TRIP_STATUS[trip.state]],
-      ['รถมารับ', pickupLabel(trip)],
+      // คำขอรับกลับอย่างเดียวไม่มีเวลา "รถมารับ" ที่บ้าน — มีแต่เวลารับกลับด้านล่าง
+      ...(!isReturnOnly(b) ? [['รถมารับ', pickupLabel(trip)]] : []),
       ...(b.return_mode !== 'one_way' ? [['รับกลับ', `ประมาณ ${clockOf(returnForBooking(trip, b))} น.`]] : []),
       ['คนขับ', trip.driver_name || '—'],
       ...(trip.helper_name ? [['ผู้ช่วย', trip.helper_name]] : []),
@@ -811,7 +812,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
                 <td className="border-r border-gray-200 px-2 py-2.5 text-center text-xs text-gray-500" style={{ boxShadow: `inset 5px 0 0 ${SECTIONS[row.section].bar}`, ...(block.framed && { borderLeft: TRIP_EDGE }), ...closes }}>{index + 1}</td>
                 <td className="whitespace-nowrap border-r border-gray-200 px-2 py-2.5 text-center" style={closes}><span className="block font-semibold">{whenLabel((linked || b).appointment_at)}</span><span className="block">{clockOf((linked || b).appointment_at)} น.</span>{linked && <span className="block text-[11px] text-sky-800">คิวจริง {ref(linked.id)}</span>}{linked && <span className="block text-[11px] text-gray-500">เดิม {dateTime(b.appointment_at)}</span>}{trip && b.status !== 'cancelled' && <span className="block text-[11px] text-gray-500">{pickupLabel(trip)}</span>}</td>
                 <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="font-semibold">{bookingName(b)}</span><span className="block text-[11px] text-gray-500">{bookingTravel(b)}</span>{b.status === 'submitted' && group.length > 1 && <span className="block text-[11px] font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => bookingName(x)).join(', ')}</span>}{mates.length > 0 && <span className="block text-[11px] font-semibold text-sky-800">{matesText(mates)}</span>}</td>
-                <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={pickupSentence(b.pickup)}>รับที่ {pickupSentence(b.pickup)}</span><span className="block text-[11px] text-gray-500">{RETURN_MODES[b.return_mode]}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
+                <td className="border-r border-gray-200 px-2 py-2.5" style={closes}><span className="block max-w-[260px] truncate" title={b.route_label}>{b.route_label}</span><span className="block max-w-[260px] truncate text-[11px] text-gray-500" title={pickupSentence(b.pickup)}>{isReturnOnly(b) ? 'ส่งที่' : 'รับที่'} {pickupSentence(b.pickup)}</span><span className="block text-[11px] text-gray-500">{returnModeLabel(b.return_mode)}{Number.isFinite(b.pickup_lat) && <span className="text-emerald-700"> · 📍 มีหมุด</span>}</span></td>
                 <td className="border-r border-gray-200 px-2 py-2.5 text-center" style={closes}><StatusChips row={row} /></td>
                 <td className="sticky right-0 z-10 px-2 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]" style={{ background: 'inherit', ...(block.framed && { borderRight: TRIP_EDGE }), ...closes }}><div className="flex flex-nowrap items-center justify-center gap-1.5"><RowButton row={row} busy={busy} onPress={press} /><RowPrint printer={printerOf(row, id => { setProblem(null); setOpenId(id) })} name={bookingName(b)} busy={busy} compact />{deleteButton(row, true)}</div></td>
               </tr>
@@ -829,7 +830,7 @@ export default function BookingInbox({ workspace, busy, error, isAdmin, action, 
             <div className="flex items-start justify-between gap-2"><h3 className="font-bold">{bookingName(b)}</h3><StatusChips row={row} /></div>
             <p><strong>{whenLabel((linked || b).appointment_at)} {clockOf((linked || b).appointment_at)} น.</strong> · {linked ? linked.route_label : b.route_label}</p>
             {linked && <p className="text-sm text-sky-800">คิวที่ใช้เดินทาง {ref(linked.id)} · นัดเดิมที่ยกเลิก {dateTime(b.appointment_at)}</p>}
-            <p className="text-sm text-slate-600">จุดรับ: {pickupSentence(b.pickup)}{Number.isFinite(b.pickup_lat) ? ' · 📍 มีหมุด' : ''}</p>
+            <p className="text-sm text-slate-600">{isReturnOnly(b) ? 'ส่งที่บ้าน' : 'จุดรับ'}: {pickupSentence(b.pickup)}{Number.isFinite(b.pickup_lat) ? ' · 📍 มีหมุด' : ''}</p>
             <p className="text-sm text-slate-600">{bookingTravel(b)}{trip && b.status !== 'cancelled' ? ` · ${pickupLabel(trip)}` : ''}</p>
             {b.status === 'submitted' && group.length > 1 && <p className="text-sm font-semibold text-sky-800">ไปด้วยกันกับ {group.filter(x => x.id !== b.id).map(x => bookingName(x)).join(', ')}</p>}
             {mates.length > 0 && <p className="text-sm font-semibold text-sky-800">{matesText(mates)}</p>}
