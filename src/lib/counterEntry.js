@@ -5,15 +5,42 @@
 // "ผู้รับผิดชอบ" (assigned_to) ซึ่งแอดมิน/หัวหน้ากองมอบหมายใหม่ได้ เมื่อเปลี่ยนตัวแล้วจะดูไม่ออกว่าใครกรอกตั้งแต่แรก
 // (เจ้าของระบบถาม 2569-11-05 "ถ้ามาทำที่เคาน์เตอร์ จะดูตรงไหนว่าเจ้าหน้าที่คนไหนเขียนให้")
 //
-// ⚠️ ค่านี้เบราว์เซอร์ของเจ้าหน้าที่เขียนมาเอง ฐานข้อมูลยังไม่ได้ประทับรหัสผู้ล็อกอินจริงทับ — ใช้แสดงให้เห็นว่าใครกรอก
-// ไม่ใช่หลักฐานตรวจสอบเมื่อมีข้อพิพาท (ถ้าต้องใช้ทางนั้นต้องเพิ่มการประทับฝั่งฐานข้อมูลแยกต่างหาก)
+// แหล่งข้อมูล 2 ชั้น (เจ้าของระบบสั่งเพิ่มชั้นที่ 1 2569-11-05):
+//   1) document_requests.created_by_uid — ฐานข้อมูลประทับ auth.uid() จริงตอน INSERT (migration 20261105110000/20261105110100)
+//      ไม่เชื่อค่าจากเบราว์เซอร์ แก้ภายหลังไม่ได้ → ใช้เป็นหลักฐานได้ (ยืนยันแล้ว: verified)
+//   2) permit_form_data.signed_by.entered_by_staff_id — เบราว์เซอร์ของเจ้าหน้าที่เขียนมาเอง ใครแก้ฟอร์มก่อนส่งก็ใส่ชื่อคนอื่นได้
+//      ใช้เฉพาะแถวเก่าก่อนมี created_by_uid เท่านั้น และต้องบอกบนหน้าจอว่ายังไม่ได้ยืนยัน (verified: false)
+// ถ้าสองชั้นขัดกัน เชื่อชั้นที่ 1 และเตือน (mismatch) — ฟอร์มอ้างชื่อหนึ่งแต่บัญชีที่กดบันทึกจริงเป็นอีกคน
+//
+// ⚠️ รอยนี้บอกว่า "บัญชีไหนกดบันทึก" เท่านั้น ถ้าเจ้าหน้าที่ยืมบัญชีกันกรอก รอยจะชี้เจ้าของบัญชี
 //
 // ไฟล์นี้ไม่ import supabase เพื่อให้เทสต์ด้วย node ได้ — ตัวดึงชื่อรับ client เข้ามา
 
-/** รหัสเจ้าหน้าที่ผู้กรอกแทน หรือ null ถ้าไม่ใช่คำขอที่กรอกที่เคาน์เตอร์ (ยื่นออนไลน์เอง/คำขอเก่าที่ไม่มีบันทึก) */
-export function counterEntryStaffId(req) {
-  const id = req?.permit_form_data?.signed_by?.entered_by_staff_id
-  return typeof id === 'string' && id.trim() ? id.trim() : null
+const asId = value => (typeof value === 'string' && value.trim() ? value.trim() : null)
+
+/**
+ * ข้อมูลผู้กรอกแทนที่เคาน์เตอร์ของคำขอ หรือ null ถ้าไม่ใช่คำขอที่กรอกแทน (ยื่นออนไลน์เอง/คำขอเก่าที่ไม่มีบันทึก)
+ * @returns {{staffId: string, verified: boolean, mismatch: boolean}|null}
+ */
+export function counterEntryOf(req) {
+  const stamped = asId(req?.created_by_uid)
+  const claimed = asId(req?.permit_form_data?.signed_by?.entered_by_staff_id)
+  if (stamped) {
+    // บัญชีที่กดบันทึกคือเจ้าของคำขอเอง = ผู้ขอยื่นเอง (ล็อกอินยื่นออนไลน์) ไม่ใช่กรอกแทน
+    if (asId(req?.user_id) === stamped) return null
+    return { staffId: stamped, verified: true, mismatch: Boolean(claimed && claimed !== stamped) }
+  }
+  // แถวเก่าก่อนมีการประทับ (หรือฐานยังไม่ได้ apply migration) — ใช้ค่าที่ฟอร์มอ้าง พร้อมบอกว่ายังไม่ยืนยัน
+  if (claimed) return { staffId: claimed, verified: false, mismatch: false }
+  return null
+}
+
+/** บรรทัดเล็กใต้ชื่อผู้กรอก — บอกระดับความเชื่อถือของชื่อ ไม่ให้แถวเก่าดูเหมือนฐานข้อมูลยืนยันแล้ว */
+export function counterEntryNote(entry) {
+  if (!entry) return ''
+  if (!entry.verified) return 'ที่เคาน์เตอร์ · ⚠️ บันทึกก่อนระบบประทับรหัส ชื่อนี้ยังไม่ได้ยืนยันโดยระบบ'
+  if (entry.mismatch) return 'ที่เคาน์เตอร์ · ⚠️ ฟอร์มอ้างชื่ออีกคน แต่ระบบประทับจากบัญชีที่กดบันทึกจริง (แสดงตามบัญชีจริง)'
+  return 'ที่เคาน์เตอร์ · ระบบประทับจากบัญชีที่กดบันทึกจริง'
 }
 
 /** ข้อความแสดงผู้กรอก — staff = ผลของ fetchCounterEntryStaff (undefined = กำลังโหลด, null = หาไม่เจอ) */

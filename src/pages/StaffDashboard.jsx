@@ -32,7 +32,7 @@ import {
 } from '../lib/documentSignatories'
 import { uploadFile } from '../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
-import { counterEntryLabel, counterEntryStaffId, fetchCounterEntryStaff } from '../lib/counterEntry'
+import { counterEntryLabel, counterEntryNote, counterEntryOf, fetchCounterEntryStaff } from '../lib/counterEntry'
 import {
   BASE_DOCUMENT_TYPES, removedDocumentTypes, displayDocStatus,
   WATERWORKS_DOCUMENT_TYPES, WATERWORKS_MODULE_KEY,
@@ -460,7 +460,8 @@ function TaskDetailSheet({
 
   // คำขอที่เจ้าหน้าที่กรอกแทนที่เคาน์เตอร์ — ดึงชื่อผู้กรอกมาแสดง (ดูเหตุผลที่ lib/counterEntry.js)
   // เก็บคู่กับรหัสที่ดึงมา ไม่ใช่ค่าลอยๆ — เปิดคำขอใบอื่นต่อกันแล้วจะไม่เห็นชื่อของใบก่อนค้างอยู่ระหว่างโหลด
-  const enteredById = counterEntryStaffId(req)
+  const counterEntry = counterEntryOf(req)
+  const enteredById = counterEntry?.staffId ?? null
   const [enteredBy, setEnteredBy] = useState({ id: null, staff: undefined })
   useEffect(() => {
     if (!enteredById) return undefined
@@ -621,7 +622,10 @@ function TaskDetailSheet({
                   <span data-testid="counter-entry-by" className="font-semibold text-gray-800">
                     {counterEntryLabel(enteredBy.id === enteredById ? enteredBy.staff : undefined, enteredById)}
                   </span>
-                  <span className="block text-[11px] text-gray-400">ที่เคาน์เตอร์ · ผู้ยื่นไม่ได้ยื่นออนไลน์เอง</span>
+                  <span data-testid="counter-entry-note"
+                    className={`block text-[11px] ${counterEntry.verified && !counterEntry.mismatch ? 'text-gray-400' : 'font-semibold text-amber-700'}`}>
+                    {counterEntryNote(counterEntry)}
+                  </span>
                 </>
               } />
             )}
@@ -1483,7 +1487,7 @@ export function InboxModule({ tenant, staffId, currentUserRole, onRequestDeleted
                           )}
                           {/* ป้ายอยู่ในคอลัมน์สถานะ (ซ้อนบรรทัด) ไม่ใช่คอลัมน์ใหม่ — ตารางนี้กว้างเกือบเต็มพื้นที่แล้ว
                               (ดู tests/staff-inbox-layout.playwright.mjs) ชื่อผู้กรอกดูได้ในแผ่นรายละเอียด */}
-                          {counterEntryStaffId(req) && (
+                          {counterEntryOf(req) && (
                             <span title="เจ้าหน้าที่กรอกแทนที่เคาน์เตอร์ — ดูชื่อผู้กรอกในรายละเอียด"
                               className="whitespace-nowrap rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700 border border-sky-200/60">
                               เคาน์เตอร์
