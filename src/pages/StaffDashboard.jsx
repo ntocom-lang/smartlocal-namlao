@@ -32,6 +32,7 @@ import {
 } from '../lib/documentSignatories'
 import { uploadFile } from '../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
+import { counterEntryLabel, counterEntryStaffId, fetchCounterEntryStaff } from '../lib/counterEntry'
 import {
   BASE_DOCUMENT_TYPES, removedDocumentTypes, displayDocStatus,
   WATERWORKS_DOCUMENT_TYPES, WATERWORKS_MODULE_KEY,
@@ -457,6 +458,19 @@ function TaskDetailSheet({
   const [feeInput, setFeeInput]           = useState(initialFee > 0 ? String(initialFee) : '')
   const [settingFee, setSettingFee]       = useState(false)
 
+  // คำขอที่เจ้าหน้าที่กรอกแทนที่เคาน์เตอร์ — ดึงชื่อผู้กรอกมาแสดง (ดูเหตุผลที่ lib/counterEntry.js)
+  // เก็บคู่กับรหัสที่ดึงมา ไม่ใช่ค่าลอยๆ — เปิดคำขอใบอื่นต่อกันแล้วจะไม่เห็นชื่อของใบก่อนค้างอยู่ระหว่างโหลด
+  const enteredById = counterEntryStaffId(req)
+  const [enteredBy, setEnteredBy] = useState({ id: null, staff: undefined })
+  useEffect(() => {
+    if (!enteredById) return undefined
+    let cancelled = false
+    fetchCounterEntryStaff(supabase, enteredById).then(staff => {
+      if (!cancelled) setEnteredBy({ id: enteredById, staff })
+    })
+    return () => { cancelled = true }
+  }, [enteredById])
+
   const docType     = getAllDocTypes().find(d => d.value === req.document_type)
   const isActive    = req.status === 'pending' || req.status === 'processing'
   const isFeeInquiry = FEE_INQUIRY_TYPES.includes(req.document_type)
@@ -601,6 +615,16 @@ function TaskDetailSheet({
             )}
             <InfoRow icon={<Hash size={14} />}       label="เลขอ้างอิง"    value={<span className="font-mono font-bold tracking-widest">{req.id?.slice(0, 8)?.toUpperCase() ?? '—'}</span>} />
             <InfoRow icon={<Calendar size={14} />}  label="วันที่ยื่น"     value={dateTH(req.created_at)} />
+            {enteredById && (
+              <InfoRow icon={<User size={14} />} label="กรอกแทนโดย" value={
+                <>
+                  <span data-testid="counter-entry-by" className="font-semibold text-gray-800">
+                    {counterEntryLabel(enteredBy.id === enteredById ? enteredBy.staff : undefined, enteredById)}
+                  </span>
+                  <span className="block text-[11px] text-gray-400">ที่เคาน์เตอร์ · ผู้ยื่นไม่ได้ยื่นออนไลน์เอง</span>
+                </>
+              } />
+            )}
             {req.due_date && (
               <InfoRow icon={<Clock size={14} />} label="กำหนดเสร็จ" value={
                 <span className={isOverdue(req) ? 'font-bold text-red-600' : ''}>
@@ -1455,6 +1479,14 @@ export function InboxModule({ tenant, staffId, currentUserRole, onRequestDeleted
                           {isOverdue(req) && (
                             <span className="whitespace-nowrap rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600 border border-red-200/60">
                               เกินกำหนด
+                            </span>
+                          )}
+                          {/* ป้ายอยู่ในคอลัมน์สถานะ (ซ้อนบรรทัด) ไม่ใช่คอลัมน์ใหม่ — ตารางนี้กว้างเกือบเต็มพื้นที่แล้ว
+                              (ดู tests/staff-inbox-layout.playwright.mjs) ชื่อผู้กรอกดูได้ในแผ่นรายละเอียด */}
+                          {counterEntryStaffId(req) && (
+                            <span title="เจ้าหน้าที่กรอกแทนที่เคาน์เตอร์ — ดูชื่อผู้กรอกในรายละเอียด"
+                              className="whitespace-nowrap rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700 border border-sky-200/60">
+                              เคาน์เตอร์
                             </span>
                           )}
                         </div>
