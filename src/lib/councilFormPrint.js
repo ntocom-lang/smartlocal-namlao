@@ -3,6 +3,7 @@ import {
 } from './govSignBlock.js'
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { orgClerkTitle, orgHeadTitle } from './orgTerms.js'
+import { STAFF_SIGN_ROW1_GAP_MM as COUNCIL_SIGN_GAP_MM } from './govStaffSignBlock.js'
 import { printableCategoryLabel } from './complaintCategoryLabels.js'
 import { QUIET_MODULES, qrLayout } from './qrSvg.js'
 import { complaintPhotoSheetCss, complaintPhotoSheetHtml } from './complaintPhotoSheet.js'
@@ -357,14 +358,16 @@ ${geo.qr}
   <p class="center" style="margin-top:2px;">(${esc(reporter)})</p>
 
   ${includeStaffSignatures ? `
-  <div style="display:flex;justify-content:space-between;margin-top:24px;">
-    ${/* แถวบนแบ่ง 46/54 ไม่ใช่ 48/48 — คอลัมน์ขวาเป็นของปลัดซึ่งอาจเป็นผู้รักษาราชการแทนที่ตำแหน่งยาวสุด
+  <div style="display:flex;justify-content:space-between;margin-top:${COUNCIL_SIGN_GAP_MM}mm;">
+    ${/* ที่ว่างเหนือเส้นลงนามเว้นให้เขียนความเห็น/รับทราบด้วยมือ (เจ้าของระบบสั่ง 2569-11-05
+       เดิม 24px ≈ 6.4 มม. น้อยเกินไป) ใช้ค่าเดียวกับช่องลงนามกลางของคำขอ
+       แถวบนแบ่ง 46/54 ไม่ใช่ 48/48 — คอลัมน์ขวาเป็นของปลัดซึ่งอาจเป็นผู้รักษาราชการแทนที่ตำแหน่งยาวสุด
        (ล้นขอบขวาเมื่อ 48%) เหมือนช่องลงนามเจ้าหน้าที่ใน govStaffSignBlock.js */''}
     ${signBlock(departmentHead, departmentHeadFallback(c.department), '46%')}
     ${signBlock(clerk, clerkTitle, '54%')}
   </div>
 
-  <div style="display:flex;justify-content:flex-end;margin-top:28px;">
+  <div style="display:flex;justify-content:flex-end;margin-top:${COUNCIL_SIGN_GAP_MM}mm;">
     ${/* แถวนี้มีบล็อกเดียว จึงกว้างกว่าแถวบนได้ — ชื่อตำแหน่งนายกยาวกว่าปลัด ถ้าใช้ 48%
        เท่าแถวบน ตัวอักษรที่ล้นออกจากแกนจะเลยขอบขวาของพื้นที่พิมพ์ไป 4px (วัดจริง) */''}
     ${signBlock(mayor, mayorTitle, '54%')}

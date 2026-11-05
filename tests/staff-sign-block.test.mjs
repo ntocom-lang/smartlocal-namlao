@@ -24,6 +24,7 @@ import { buildWasteCollectionCancelHtml } from '../src/lib/wasteCollectionCancel
 import { buildPublicAssistanceRequestHtml } from '../src/lib/publicAssistancePrint.js'
 import { buildBookingRequestFormHtml } from '../src/lib/patientTransportPrint.js'
 import { govSplitActingTitle } from '../src/lib/govSignBlock.js'
+import { staffSignRow1GapMm } from '../src/lib/govStaffSignBlock.js'
 import { assertSignBlockStandard } from './lib/signBlockChecks.mjs'
 
 const TENANT = {
@@ -137,6 +138,8 @@ const FORMS = [
     label: 'ขอยกเลิกเก็บขนขยะ', departmentName: 'สำนักปลัด', headFallback: 'หัวหน้าสำนักปลัด',
     // ใบนี้เต็มแผ่น: วัดแล้ว 15mm ล้นเป็น 2 แผ่น จึงได้แค่ 13mm (ใบอื่น 18mm) — ดู wasteCollectionCancelPrint.js
     minMayorGapMm: 12.5,
+    // ใบนี้บีบระยะเหนือแถว ผอ./ปลัด เองเหลือ 5 มม. (.sheet--staff .staff-sign) เพราะเต็มแผ่น — ดู wasteCollectionCancelPrint.js
+    minRow1GapMm: 4.5,
     build: extra => buildWasteCollectionCancelHtml({
       form: WASTE_FORM, tenant: TENANT, thDate: '14 กันยายน 2569', referenceNo: 'A1B2C3D4',
       signedAt: '2026-09-14T20:37:00', ...extra,
@@ -252,6 +255,11 @@ async function main() {
             })
             const minGap = form.minMayorGapMm ?? 17.5
             assert.ok(gapMm >= minGap, `ใบ${form.label} ที่ว่างเหนือเส้นนายกเหลือ ${gapMm.toFixed(1)}mm (ต้อง ≥ ${minGap}mm)`)
+            // ที่ว่างเหนือเส้น ผอ./ปลัด ต้องพอเขียน "รับทราบ"/ความเห็น (เจ้าของระบบสั่ง 2569-11-05: เดิมเหลือ 8mm) → ≥ 17.5mm
+            // เมื่อตำแหน่งไม่ยาว (ชุด SIGNATORIES ปกติ) · ระยะนี้คือ margin-top ของ .staff-sign (ระยะจากเนื้อหาด้านบนถึงแถวลงนาม)
+            const row1Mm = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.staff-sign')).marginTop) / 3.7795)
+            const minRow1 = form.minRow1GapMm ?? 17.5
+            assert.ok(row1Mm >= minRow1, `ใบ${form.label} ที่ว่างเหนือเส้น ผอ./ปลัด เหลือ ${row1Mm.toFixed(1)}mm (ต้อง ≥ ${minRow1}mm)`)
           }
 
           await assertSignBlockStandard(page, { minRows: 3, minBelow: 6 })
@@ -324,6 +332,38 @@ async function main() {
       } finally {
         await page.close()
       }
+    })
+
+    // ── ที่ว่างเหนือเส้น ผอ./ปลัด หดตามความสูงบล็อก (2569-11-05): บล็อกสูงขึ้นทุกรูปแบบต้องยังจบ 1 แผ่น ──
+    // ใบน้ำประปา (FORMS[1]) เต็มที่สุด: ที่ 18mm ตายตัวเคสปลัดรักษาราชการแทน + เลขคำสั่งล้นเป็น 2 แผ่น (วัดจริง)
+    await check('ที่ว่างเหนือเส้น ผอ./ปลัด หดตามจำนวนบรรทัดของบล็อก และทุกแบบยังจบ 1 แผ่น', async () => {
+      const longClerk = { name: 'นายมาชัย ไพศาลธนสมบัติ', title: 'ผู้อำนวยการกองช่าง รักษาราชการแทน ปลัดเทศบาลตำบลสาธิต' }
+      const variants = [
+        ['ปกติ', SIGNATORIES, 17.5, 18.1],
+        ['ปลัดรักษาราชการแทน (ตำแหน่ง 2 บรรทัด)', { ...SIGNATORIES, clerk: longClerk }, 11, 13],
+        ['นายกมีเลขที่คำสั่ง (+1 บรรทัด)', { ...SIGNATORIES, mayor: { ...SIGNATORIES.mayor, authority_reference: 'คำสั่งที่ 9/2569' } }, 11, 13],
+        ['ปลัดรักษาราชการแทน + เลขที่คำสั่ง', { ...SIGNATORIES, clerk: { ...longClerk, authority_reference: 'คำสั่งที่ 123/2569' } }, 7.5, 8.5],
+        // ผอ.กับปลัดรักษาราชการแทนพร้อมเลขคำสั่งทั้งคู่ (นายกปกติ) — ตำแหน่งยาวสุดที่เป็นไปได้จริงของแถวบน
+        ['ผอ.และปลัดรักษาราชการแทน + เลขที่คำสั่งทั้งคู่', {
+          department_head: { ...longClerk, authority_reference: 'คำสั่งที่ 1/2569' },
+          clerk: { ...longClerk, authority_reference: 'คำสั่งที่ 2/2569' },
+          mayor: SIGNATORIES.mayor,
+        }, 7.5, 8.5],
+      ]
+      for (const [label, signatories, minMm, maxMm] of variants) {
+        const page = await render(browser, FORMS[1].build({ signatories, departmentName: 'กองช่าง' }))
+        try {
+          const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
+          assert.equal(pdfPageCount(pdf), 1, `${label}: ใบล้นไปอีกหน้า`)
+          const row1Mm = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.staff-sign')).marginTop) / 3.7795)
+          assert.ok(row1Mm >= minMm && row1Mm <= maxMm, `${label}: ที่ว่างเหนือเส้น ผอ./ปลัด ${row1Mm.toFixed(1)}mm ต้องอยู่ใน ${minMm}–${maxMm}mm`)
+        } finally {
+          await page.close()
+        }
+      }
+      // ไม่ต่ำกว่า 8mm เดิมเด็ดขาด (กติกากลางไม่ให้แย่ลงกว่าเดิม)
+      assert.equal(staffSignRow1GapMm({ signatories: { clerk: { title: 'ก รักษาราชการแทน ข', authority_reference: 'x' }, mayor: { title: 'ค รักษาราชการแทน ง', authority_reference: 'y' } }, tenant: TENANT }), 8)
+      assert.equal(staffSignRow1GapMm({ signatories: SIGNATORIES, tenant: TENANT }), 18)
     })
   } finally {
     await browser.close()
