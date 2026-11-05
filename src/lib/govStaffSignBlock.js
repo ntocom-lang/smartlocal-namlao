@@ -47,8 +47,31 @@ export function govDepartmentHeadTitle(departmentName) {
  * @param {object} args.tenant       ใช้หาชื่อตำแหน่งปลัด/นายกพร้อมชื่อหน่วยงาน
  * @param {string} [args.departmentName] ชื่อกองที่ถือเรื่อง ใช้เป็นตำแหน่งสำรองของช่องแรก
  */
+
+// ที่ว่างเหนือเส้นลงนามของ ผอ./ปลัด (แถวบน): เจ้าของระบบสั่ง 2569-11-05 หลังเห็นใบน้ำประปาจริง — ช่องว่างเหนือเส้นเหลือแค่ 8 มม.
+// เขียน "รับทราบ"/ความเห็นไม่พอ (นายกได้ 18 มม. ตั้งแต่ #622 แล้ว) → แถวบนได้เท่านายก
+// ⚠️ แต่ตำแหน่ง "รักษาราชการแทน" (2 บรรทัด) และเลขที่คำสั่ง (อีก 1 บรรทัด) ทำให้บล็อกสูงขึ้น วัดแล้วเคสสุดโต่งของใบน้ำประปา
+// (ปลัดรักษาราชการแทน + เลขคำสั่ง) เหลือขอบแค่ ~1 มม. ที่ 8 มม. ถ้าเพิ่มตายตัวใบล้นเป็น 2 แผ่น จึงลดที่ว่างลงบรรทัดละ ~5.8 มม.
+// ตามจำนวนบรรทัดที่เพิ่ม (ไม่ต่ำกว่า 8 มม. เดิม) — กฎตรงไปตรงมา ไม่ต้องตั้งค่า
+export const STAFF_SIGN_ROW1_GAP_MM = 18
+export const STAFF_SIGN_ROW1_MIN_GAP_MM = 8
+const STAFF_SIGN_LINE_MM = 5.8
+
+export function staffSignRow1GapMm({ signatories, tenant, departmentName = '' }) {
+  // จำนวนบรรทัดใต้ชื่อของแต่ละช่อง = ตำแหน่ง (ตัดหลัง "รักษาราชการแทน" เป็น 2 บรรทัด) + เลขที่คำสั่งมอบอำนาจ
+  const lines = (person, fallbackTitle) => govSplitActingTitle(person?.title || fallbackTitle).length + (person?.authority_reference ? 1 : 0)
+  const topRow = Math.max(
+    lines(signatories?.department_head, govDepartmentHeadTitle(departmentName)),
+    lines(signatories?.clerk, orgClerkTitle(tenant)),
+  )
+  const extraLines = Math.max(0, topRow - 1) + Math.max(0, lines(signatories?.mayor, orgHeadTitle(tenant)) - 1)
+  const gap = STAFF_SIGN_ROW1_GAP_MM - extraLines * STAFF_SIGN_LINE_MM
+  return Math.round(Math.max(STAFF_SIGN_ROW1_MIN_GAP_MM, gap) * 10) / 10
+}
+
 export function govStaffSignBlockHtml({ signatories, tenant, departmentName = '' }) {
   if (!signatories) return ''
+  const row1Gap = staffSignRow1GapMm({ signatories, tenant, departmentName })
   const cell = (person, fallbackTitle) => `
       <div class="center-row staff-sign-cell">
         ${govSignRow({
@@ -65,7 +88,7 @@ export function govStaffSignBlockHtml({ signatories, tenant, departmentName = ''
   })}
       </div>`
   return `
-    <section class="staff-sign">
+    <section class="staff-sign" style="--staff-sign-gap:${row1Gap}mm">
       <div class="staff-sign-row">
         ${cell(signatories.department_head, govDepartmentHeadTitle(departmentName))}
         ${cell(signatories.clerk, orgClerkTitle(tenant))}
@@ -83,7 +106,8 @@ export function govStaffSignBlockHtml({ signatories, tenant, departmentName = ''
 export function govStaffSignBlockCss() {
   return `
   /* ── ช่องลงนามเจ้าหน้าที่ (govStaffSignBlock.js) ── */
-  .staff-sign { margin-top: 8mm; break-inside: avoid; page-break-inside: avoid; }
+  /* ระยะเหนือแถว ผอ./ปลัด มาจาก --staff-sign-gap (คำนวณตามความสูงบล็อก ดู staffSignRow1GapMm) · ใบที่บีบระยะเอง (.sheet--staff .staff-sign) ชนะตามเดิม */
+  .staff-sign { margin-top: var(--staff-sign-gap, 8mm); break-inside: avoid; page-break-inside: avoid; }
   .staff-sign-row { display: flex; justify-content: space-between; }
   /* ช่องว่างเหนือเส้นนายก 18mm (เดิม 8mm): นายกเขียนคำว่า "อนุมัติ" + ลงนามเหนือเส้น ใบจริงที่เซ็นแล้ว
      (เจ้าของระบบส่งภาพมา 2569-10-30) ลายเซ็นทับชื่อปลัดที่อยู่ด้านบน เพราะเหลือที่แค่ ~8mm

@@ -136,6 +136,44 @@ const checks = [
     },
   },
   {
+    // เจ้าของระบบสั่ง 2569-11-05: ผอ./ปลัด/นายก ต้องมีที่ว่างเหนือเส้นลงนามพอเขียน "รับทราบ"/ความเห็นด้วยมือ
+    // เดิม 24px/28px (≈ 6.4/7.4 มม.) แคบเกินไป — ใช้ค่าเดียวกับช่องลงนามกลางของคำขอ (18 มม.)
+    name: 'handwriting-room-above-sign-lines',
+    reason: 'ที่ว่างเหนือเส้น ผอ./ปลัด และนายก ไม่ต่ำกว่า 17.5 มม. (เดิม ~6–7 มม.) และใบยังจบ 1 แผ่นแม้ชื่อเต็มยศ + พิกัด/QR + รายละเอียดยาว',
+    async run(browser) {
+      const pinned = { ...ARGS.c, latitude: 18.123456, longitude: 100.654321 }
+      // 5 ท่อน ≈ 340 ตัวอักษร ≈ เพิ่ม 5 บรรทัด — ยาวกว่าเรื่องจริงทั่วไป แต่ยังต้องจบ 1 แผ่น
+      const longDetail = 'ไฟฟ้าสาธารณะริมถนนสายบ้านทุ่งแค้ว-บ้านหนองม่วงไข่ ชำรุดดับทั้งสาย '.repeat(5)
+      const cases = [
+        ['ทะเบียนผู้ลงนามว่าง', { ...ARGS, c: pinned, signatories: {} }],
+        ['ชื่อ+ตำแหน่งเต็มยศ+เลขคำสั่ง', { ...ARGS, c: pinned, signatories: SIGNATORIES }],
+        ['รายละเอียดยาว 5 บรรทัด', { ...ARGS, c: { ...pinned, detail: longDetail }, signatories: SIGNATORIES }],
+      ]
+      for (const [label, args] of cases) {
+        const html = buildCouncilComplaintHtml(args)
+        const page = await render(browser, html)
+        try {
+          const seen = await page.evaluate(() => {
+            const px2mm = px => parseFloat(px) / 3.7795
+            const rows = [...document.querySelectorAll('.center-row')]
+            return {
+              topRowMm: px2mm(getComputedStyle(rows[0].parentElement).marginTop),
+              mayorMm: px2mm(getComputedStyle(rows[2].parentElement).marginTop),
+              bodyHeight: document.body.getBoundingClientRect().height,
+            }
+          })
+          assert.ok(seen.topRowMm >= 17.5, `${label}: เหนือ ผอ./ปลัด ${seen.topRowMm.toFixed(1)} มม. ต้อง ≥ 17.5`)
+          assert.ok(seen.mayorMm >= 17.5, `${label}: เหนือนายก ${seen.mayorMm.toFixed(1)} มม. ต้อง ≥ 17.5`)
+          assert.ok(seen.bodyHeight <= 1043, `${label}: ใบสูง ${Math.round(seen.bodyHeight)}px เกิน 1 หน้า (1043px)`)
+          const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
+          const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length
+          assert.equal(pages, 1, `${label}: พิมพ์จริงได้ ${pages} แผ่น (ต้อง 1)`)
+          await assertSignBlockStandard(page, { minRows: 3, minBelow: 6 })
+        } finally { await page.close() }
+      }
+    },
+  },
+  {
     // เจ้าของระบบถาม 2569-10-21: ใบคำร้องไม่มีพิกัด กลัวถูกถามว่า "พิกัดอยู่ไหน" ทั้งที่ระบบเก็บไว้ (91% ของเรื่องใน 120 วัน)
     name: 'coordinates-printed-with-qr',
     reason: 'เรื่องที่ปักหมุดไว้ต้องพิมพ์พิกัด + QR เปิดแผนที่ ขนาดสแกนได้ · เรื่องที่ไม่ได้ปักต้องบอกตรงๆ ว่าไม่ได้ปักหมุด · ใบยังจบ 1 แผ่นและไม่ล้นขอบ',
