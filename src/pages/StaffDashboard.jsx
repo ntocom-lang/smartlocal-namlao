@@ -6,7 +6,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, Users, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
-  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid, Menu, ArrowLeft, CloudRain,
+  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid, Menu, ArrowLeft, CloudRain, HardHat,
 } from 'lucide-react'
 import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -48,8 +48,8 @@ import StaffAccountMenu from '../components/layout/StaffAccountMenu'
 import PortalDrawer from '../components/common/PortalDrawer'
 import useStickyChrome from '../hooks/useStickyChrome'
 
-const CivilProjectAdmin = lazy(() => import('../components/admin/CivilProjectAdmin'))
 const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
+const ConstructionProjectsModule = lazy(() => import('../components/staff/construction/ConstructionProjectsModule'))
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 const EventsManager = lazy(() => import('../components/admin/EventsManager'))
 const ComplaintsManager = lazy(() => import('../components/admin/ComplaintsManager'))
@@ -200,9 +200,8 @@ const STANDALONE_GROUPS = [
   {
     group: 'แผนงานและทรัพยากรกลาง',
     items: [
-      // 'projects' (แผนงาน/โครงการ) กับ 'civil-report' (รายงานโครงการ) ถอดออกจากเมนูชั่วคราว
-      // รอออกแบบใหม่ — คอมโพเนนต์ CivilProjectAdmin/CivilProjectReport กับ branch ที่ render
-      // มันยังอยู่ครบ เอากลับมาแค่ใส่ 2 บรรทัดนี้คืน
+      // 'civil-report' (รายงานโครงการ) ยังถอดอยู่ · 'projects' กลับมาแล้วในกลุ่มกองช่างเป็นโมดูลโครงการก่อสร้าง + รายงานสัปดาห์ (2569-11-06)
+      // คอมโพเนนต์เดิม CivilProjectAdmin/CivilProjectReport ยังอยู่ในโฟลเดอร์ admin แต่ไม่มีเมนูหรือ branch เรียกแล้ว
       { key: 'report',        label: 'รายงานคำร้อง',     Icon: TrendingUp,    color: '#f59e0b', bg: '#fef3c7', desc: 'สรุปสถิติคำร้องตามขอบเขตสิทธิ์และพิมพ์รายงาน' },
       // ไม่อยู่ใน MANAGED_MODULE_KEYS จึงเปิดให้ทุก อปท. เหมือนกันโดยไม่ต้องเขียน enabled_modules
       // แล้วคุมด้วยบทบาทและโมดูลคำร้องอีกชั้น (hasPerformanceAccess ด้านล่าง)
@@ -255,6 +254,10 @@ const MODULE_GROUPS = [
     group: 'กองช่าง',
     items: [
       { key: 'infra', label: 'บันทึกงานซ่อม', Icon: Hammer, color: '#0891b2', bg: '#e0f2fe', desc: 'ช่างปักหมุดหน้างาน · ธุรการบันทึกรายละเอียด' },
+      // คีย์ 'projects' เดิม (เคยเป็น "แผนงาน/โครงการ" ที่ถอดออกรอออกแบบใหม่) — ออกแบบใหม่เป็นโครงการก่อสร้าง + รายงานผลประจำสัปดาห์
+      // ต้องมีคีย์ 'projects' ใน municipalities.enabled_modules ของ อปท. นั้นถึงจะเห็นเมนู (ตรวจ 2569-11-06: demo/ตำหนักธรรมมี น้ำเลา/ทุ่งแก้วยังไม่มี)
+      // สิทธิ์จริงตัดสินที่ RLS ของ civil_* (บทบาท+กอง+ผู้ถูกระบุเป็นผู้ควบคุมงาน) ไม่ใช่ที่นี่
+      { key: 'projects', label: 'โครงการก่อสร้าง', Icon: HardHat, color: '#b45309', bg: '#fef3c7', desc: 'ตั้งโครงการครั้งเดียว รายงานผลรายสัปดาห์ ระบบคำนวณและพิมพ์ให้' },
     ],
   },
   { group: 'กองการศึกษา', items: [] },
@@ -276,6 +279,7 @@ const MODULES = [...STANDALONE_GROUPS.flatMap(g => g.items), ...MODULE_GROUPS.fl
 const TECHNICIAN_MODULE_KEYS = [
   'complaints',    // คำร้อง — RLS: complaints select by role scope ครอบ technician อยู่แล้ว
   'infra',         // บันทึกงานซ่อม — งานหลักของกองช่าง
+  'projects',      // โครงการก่อสร้าง/รายงานสัปดาห์ — ผู้ควบคุมงานมักเป็นช่าง · RLS civil_* ให้ช่างเห็นเฉพาะโครงการที่ตนสร้าง/ถูกระบุชื่อ/กองเดียวกัน
   'events',        // ปฏิทินกิจกรรม
   'data-center',   // ศูนย์ข้อมูลดิจิทัล
   'fleet',         // ยานพาหนะและเชื้อเพลิง
@@ -3033,7 +3037,7 @@ export default function StaffDashboard() {
                     currentUserRole={profile?.role} />
             )}
             {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} autoEditEventId={autoEditEventId} onAutoEditHandled={() => setAutoEditEventId(null)} autoCreateSignal={autoCreateEventSignal} autoCreateAudience="management" onAutoCreateHandled={() => setAutoCreateEventSignal(0)} />}
-            {activeModule === 'projects'      && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
+            {activeModule === 'projects'      && <ConstructionProjectsModule tenant={tenant} profile={profile} />}
             {activeModule === 'infra'      && <InfraWorkAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
             {/* เข้าหน้านี้ได้ทาง router state (ปุ่มจากหน้าช่าง) ซึ่งไม่ผ่านตัวกรองเมนู จึงต้องเช็คสิทธิ์ซ้ำ */}
