@@ -213,7 +213,8 @@ export default function ConstructionProjectsModule({ tenant, profile }) {
                     </div>
                     <div className="flex gap-2">
                       <button type="button" className={btnGhost} onClick={() => { selectProject(p.id); setTab('reports') }}><FileText size={15} />รายงานสัปดาห์</button>
-                      <button type="button" className={btnGhost} onClick={() => openProjectSheet('edit', p)} aria-label={`ตั้งค่า ${p.title}`}><Pencil size={15} />ตั้งค่า</button>
+                      {/* คนที่อ่านได้อย่างเดียว (เจ้าหน้าที่กองเดียวกันที่ไม่ใช่ผู้สร้าง/ผู้ควบคุมงาน) ไม่เห็นปุ่มนี้ — ฐานข้อมูลปฏิเสธการบันทึกอยู่แล้ว ปุ่มที่กดแล้วล้มคือภาระเปล่า (เจอกับ TEST-staff บนสนามซ้อม 2569-11-07) */}
+                      {access(p).write && <button type="button" className={btnGhost} onClick={() => openProjectSheet('edit', p)} aria-label={`ตั้งค่า ${p.title}`}><Pencil size={15} />ตั้งค่า</button>}
                     </div>
                   </li>
                 )

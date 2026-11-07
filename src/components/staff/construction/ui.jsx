@@ -9,8 +9,10 @@ export function Field({ label, children, className = '' }) {
 
 /** ส่วนพับได้ของฟอร์มยาว — เปิดเฉพาะส่วนที่ต้องกรอกบ่อย ที่เหลือพับไว้ ไม่ให้หน้ายาวเกินจอมือถือ */
 export function Section({ title, hint, open = false, children }) {
+  // text-gray-800 ต้องกำหนดเอง: เนื้อในแผ่น Sheet สืบทอดสีตัวอักษรขาวจากหัวแผ่น (rgb 248,250,252) ตัวเลขในตารางที่ไม่ได้ใส่สี
+  // (สัดส่วน/สะสม/รวม) จึงเป็นขาวบนขาว มองไม่เห็น — เทสต์ SSR ไม่เห็น เจอตอนดูหน้าจริงบนสนามซ้อม 2569-11-07
   return (
-    <details open={open} className="group rounded-2xl border border-gray-200 bg-white">
+    <details open={open} className="group rounded-2xl border border-gray-200 bg-white text-gray-800">
       <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-2 px-4 py-2.5 text-sm font-bold text-gray-800 [&::-webkit-details-marker]:hidden">
         <span aria-hidden="true" className="text-gray-400 transition-transform group-open:rotate-90">▸</span>
         {title}

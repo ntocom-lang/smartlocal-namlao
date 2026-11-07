@@ -61,6 +61,18 @@ try {
     assert.deepEqual(open.map(i => i.slice(0, 90)), [])
   })
 
+  test('สีตัวอักษร: ทุกส่วนพับกำหนดสีเข้มเอง — เนื้อในแผ่น Sheet สืบทอดสีขาวจากหัวแผ่น ตัวเลขในตารางเป็นขาวบนขาว (เจอบนสนามซ้อม 2569-11-07)', () => {
+    // เทสต์ SSR วัดสีจริงไม่ได้ จึงล็อกที่ตัวการ: ทุก <details> ต้องมี text-gray-800 · วัดสีจริงด้วยเบราว์เซอร์ตอนทดสอบหน้าจอ
+    for (const [name, out] of [
+      ['แผ่นรายงาน', sheet(fixture({ final: false }), WRITE)],
+      ['แผ่นตั้งค่า', renderToStaticMarkup(h(ProjectSheet, { tenant, profile: { id: 'u1', role: 'officer', department_id: 'd1' }, mode: 'create', project: null, bundle: null, access: MANAGE, departments: [], staffChoices: [], onClose: noop, onSaved: noop }))],
+    ]) {
+      const sections = out.match(/<details[^>]*>/g) ?? []
+      assert.ok(sections.length >= 3, name + ' ควรมีส่วนพับหลายส่วน')
+      assert.deepEqual(sections.filter(s => !s.includes('text-gray-800')), [], name + ': มีส่วนพับที่ไม่ได้กำหนดสีตัวอักษร')
+    }
+  })
+
   test('แผ่นรายงาน: ข้อมูลที่เสียหาย (progress/crew/weather/finance เป็น null, ช่วงวันผิด) ไม่ทำให้หน้าพัง และล็อกไม่ได้', () => {
     const f = fixture({ final: false })
     const broken = { ...f.report, progress: null, crew: null, machinery: null, weather: null, daily_log: null, issues: null, finance: null, period_end: '2026-08-20' }
