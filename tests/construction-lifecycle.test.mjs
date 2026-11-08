@@ -368,6 +368,12 @@ await test('ราคากลาง: กรรมการ ≥ 3 · วงเ�
   const today = '2026-10-05'
   assert.ok(codes(L.priceAlerts(mk({ people: committee(2) }), today)).includes('price_committee_size'))
   assert.deepEqual(L.priceAlerts(mk(), today), [])
+  // หลังลงนามสัญญา (เช่น โครงการเดิมที่ migration เติมเป็น construction) ไม่เตือนกรรมการ/เลข e-GP ย้อนหลัง
+  for (const stage of ['contracted', 'construction', 'warranty']) {
+    const late = codes(L.priceAlerts(mk({ project: { stage, budget_amount: 5_000_000 }, people: [] }), today))
+    assert.ok(!late.includes('price_committee_size') && !late.includes('price_calc_egp'), stage)
+  }
+  assert.ok(codes(L.priceAlerts(mk({ project: { stage: 'procuring', budget_amount: 5_000_000 }, people: [] }), today)).includes('price_committee_size'))
   for (const [budget, expect] of [[1_000_000, true], [20_000_000, true], [20_000_001, false], [999_999.99, false]]) {
     assert.equal(codes(L.priceAlerts(mk({ project: { budget_amount: budget } }), today)).includes('price_calc_egp'), expect, String(budget))
   }

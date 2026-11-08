@@ -96,6 +96,14 @@ export const stageForStatus = status => STAGE_FOR_STATUS[status] ?? null
 /** ขั้นที่ใช้วัดจริงของโครงการ — ระงับอยู่ใช้ขั้นที่จำไว้ */
 export const baseStage = project => (project?.stage === 'suspended' ? (project.stage_before_hold ?? null) : (project?.stage ?? null))
 
+/**
+ * ขั้นเริ่มต้นที่เลือกได้ตอน "สร้าง" โครงการ (ลงทะเบียนโครงการที่เดินมาแล้ว — เจ้าของระบบเลือก 2569-11-08)
+ *   = trigger civil_projects_stage_guard ตอน INSERT: เฉพาะ 9 ขั้นหลัก · warranty/closed เฉพาะผู้จัดการ
+ */
+export const initialStageOptions = manager => MAIN_STAGES.filter(s => manager || (s !== 'warranty' && s !== 'closed'))
+/** ค่าที่ส่งใน INSERT — ค่าที่ไม่อยู่ในเส้นหลักตกเป็น budgeted (ฐานข้อมูลตรวจซ้ำอยู่ดี) */
+export const initialStage = value => (MAIN_STAGES.includes(value) ? value : 'budgeted')
+
 // ── ค่าที่ฐานข้อมูลตรวจ (CHECK) — เทสต์เทียบกับ migration ─────────────────────────────
 
 export const WORK_GROUPS = { building: 'งานอาคาร', road_bridge: 'งานทาง สะพาน และท่อเหลี่ยม', irrigation: 'งานชลประทาน' }
@@ -137,7 +145,7 @@ const B_CONTRACT = 'แบบสัญญาจ้างก่อสร้าง
 const B_W117 = 'หนังสือ กค (กวจ) 0405.2/ว 117 ลว. 12 มี.ค. 2562'
 const B_OPEVAL = 'ระเบียบกระทรวงการคลังฯ (ฉบับที่ 3) พ.ศ. 2569 หมวด 7'
 
-export const MILESTONES = [
+const MILESTONE_CATALOG = [
   // 1 ตั้งงบ — แหล่งงบเลือก 1 คีย์ (done_on = วันประกาศใช้/วันสภาอนุมัติ · amount = วงเงิน)
   { key: 'budget_annual', stage: 'budgeted', label: 'งบประมาณรายจ่ายประจำปี (ข้อบัญญัติ/เทศบัญญัติ)', budgetSource: true },
   { key: 'budget_supplementary', stage: 'budgeted', label: 'งบประมาณรายจ่ายเพิ่มเติม', budgetSource: true },
@@ -177,6 +185,27 @@ export const MILESTONES = [
   { key: 'guarantee_returned', stage: 'closed', label: 'คืนหลักประกันสัญญา', basis: `${B_PROC} ข้อ 170(2)`, managerOnly: true },
   { key: 'operator_eval_done', stage: 'closed', label: 'ประเมินผลการปฏิบัติงานของผู้ประกอบการใน e-GP แล้ว', basis: B_OPEVAL },
 ]
+
+// ช่องที่หน้าจอ (PR-C) ต้องโชว์ให้กรอกของแต่ละจุดตรวจ — ชื่อช่องตรงกับคอลัมน์ civil_project_milestones
+//   ค่าเริ่มต้น = วันที่เกิดขึ้นจริง + เลขที่หนังสือ + ลงวันที่ · amount = ยอดเงิน · link = ลิงก์ประกาศบนเว็บ · note = ข้อความ
+export const MILESTONE_FIELDS = ['done_on', 'ref_no', 'ref_date', 'amount', 'link', 'note']
+const BASE_FIELDS = ['done_on', 'ref_no', 'ref_date']
+const FIELD_OVERRIDES = {
+  budget_annual: [...BASE_FIELDS, 'amount'],
+  budget_supplementary: [...BASE_FIELDS, 'amount'],
+  budget_accumulated: [...BASE_FIELDS, 'amount'],
+  budget_subsidy: [...BASE_FIELDS, 'amount'],
+  budget_carryover: [...BASE_FIELDS, 'amount'],
+  median_price_approved: [...BASE_FIELDS, 'amount'],
+  median_price_reviewed: [...BASE_FIELDS, 'amount'],
+  bid_price: [...BASE_FIELDS, 'amount'],
+  median_price_published: [...BASE_FIELDS, 'link'],
+  invitation_published: [...BASE_FIELDS, 'link'],
+  local_plan_ref: ['note'],   // ปี/ยุทธศาสตร์/ลำดับโครงการ = ข้อความอิสระ ไม่มีวันที่
+}
+// ออกจากระบบ e-GP แล้วเจ้าหน้าที่แค่บันทึกเลขที่/วันที่ (ป้าย "ออกจาก e-GP — บันทึกเลขที่" ในหน้าจอ) · ใบพิมพ์จากระบบนี้ยังไม่มี (PR-E)
+const EGP_KEYS = new Set(['egp_price_calc', 'procurement_report', 'invitation_published', 'median_price_published', 'winner_announced'])
+export const MILESTONES = MILESTONE_CATALOG.map(m => ({ ...m, fields: FIELD_OVERRIDES[m.key] ?? BASE_FIELDS, egp: EGP_KEYS.has(m.key) }))
 export const MILESTONE_BY_KEY = Object.fromEntries(MILESTONES.map(m => [m.key, m]))
 /** คีย์ที่ฐานข้อมูลจำกัดให้ผู้จัดการโครงการบันทึก (ตรงกับ civil_milestones_guard) */
 export const MANAGER_ONLY_MILESTONES = MILESTONES.filter(m => m.managerOnly).map(m => m.key)
@@ -521,14 +550,18 @@ export function priceAlerts(bundle, today = bangkokIsoDate()) {
   const inPriceWork = ord >= 2 || isDone(bundle, 'price_committee_order') || isDone(bundle, 'median_price_approved')
   if (!inPriceWork) return out
 
+  // องค์ประกอบกรรมการ + เลขระบบคำนวณราคากลาง เตือนเฉพาะก่อนลงนามสัญญา (ord ≤ 3) — หลังลงนามแก้ย้อนหลังไม่ได้แล้ว
+  // และโครงการเดิมที่ migration เติมขั้นให้ (ไม่มีรายชื่อกรรมการราคากลางในระบบ) จะถูกเตือนค้างตลอดจนปิดโครงการ
+  // ส่วนราคาต่าง ≥ 15% ยังเตือนต่อหลังลงนาม เพราะหน้าที่แจ้ง สตง. ยังค้างจนกว่าจะบันทึกหนังสือแจ้ง
+  const beforeContract = ord <= 3
   const committee = (bundle?.people ?? []).filter(x => x?.grp === 'price_committee').length
-  if (committee < RULES.priceCommitteeMin) {
+  if (beforeContract && committee < RULES.priceCommitteeMin) {
     out.push(alert('warn', 'price_committee_size', `คณะกรรมการกำหนดราคากลางมี ${committee} คน — ต้องมีประธาน 1 คนและกรรมการอย่างน้อย 2 คน`,
       { basis: `${B_PRICE} ข้อ 16.1` }))
   }
 
   const budget = numOrNull(p.budget_amount)
-  if (budget !== null && budget >= RULES.priceCalcMin && budget <= RULES.priceCalcMax && !milestoneOf(bundle, 'egp_price_calc')?.ref_no) {
+  if (beforeContract && budget !== null && budget >= RULES.priceCalcMin && budget <= RULES.priceCalcMax && !milestoneOf(bundle, 'egp_price_calc')?.ref_no) {
     out.push(alert('warn', 'price_calc_egp', 'วงเงิน 1–20 ล้านบาท ต้องคำนวณราคากลางในระบบคำนวณราคากลางงานก่อสร้างอิเล็กทรอนิกส์ (e-GP) — ยังไม่ได้บันทึกเลขโครงการ',
       { basis: MILESTONE_BY_KEY.egp_price_calc.basis, verify: true }))
   }

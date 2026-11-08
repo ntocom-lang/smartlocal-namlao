@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ClipboardList, FileText, LineChart, Loader2, Pencil, Plus, Printer } from 'lucide-react'
+import { ClipboardList, FileText, LayoutGrid, LineChart, ListChecks, Loader2, Pencil, Plus, Printer } from 'lucide-react'
 import { ListCard, Pills, TabBar } from '../../patientTransport/StaffShell'
 import { addDays, bangkokIsoDate, thaiDateRange, thaiShortDate } from '../../../lib/complaintReportPeriods'
 import {
@@ -9,20 +9,26 @@ import {
   createReport, fetchBundle, fetchDepartments, fetchLatestFinals, fetchProjects, fetchStaffChoices, friendlyError,
   projectStatusLabel, projectTypeLabel,
 } from '../../../lib/constructionReportApi'
+import { STAGE_LABELS } from '../../../lib/constructionLifecycle'
+import { fetchLifecycleData } from '../../../lib/constructionLifecycleApi'
 import { printConstructionReport } from '../../../lib/constructionReportPrint'
+import LifecycleOverview from './LifecycleOverview'
 import ProgressChart from './ProgressChart'
+import ProjectLifecycleSheet from './ProjectLifecycleSheet'
 import ProjectSheet from './ProjectSheet'
 import WeeklyReportSheet from './WeeklyReportSheet'
 import { ScheduleBadge } from './ui'
 import { btnGhost, btnPrimary } from './uiStyles'
 
 const TABS = [
+  { id: 'overview', label: 'ภาพรวม', Icon: LayoutGrid },
   { id: 'projects', label: 'โครงการ', Icon: ClipboardList },
   { id: 'reports', label: 'รายงานสัปดาห์', Icon: FileText },
   { id: 'summary', label: 'สรุป', Icon: LineChart },
 ]
 const CAN_CREATE = ['superadmin', 'admin', 'officer', 'staff', 'technician']
 const ACTIVE_STATUSES = ['planned', 'approved', 'in_progress']
+const EMPTY_LIFE = { contract: null, people: [], milestones: [], installments: [], changes: [], defects: [], events: [] }
 
 /**
  * โครงการก่อสร้าง + รายงานผลการก่อสร้างประจำสัปดาห์ (เมนูกองช่าง ฝั่งเจ้าหน้าที่)
@@ -32,10 +38,14 @@ const ACTIVE_STATUSES = ['planned', 'approved', 'in_progress']
 export default function ConstructionProjectsModule({ tenant, profile }) {
   const role = profile?.role
   const userId = profile?.id
-  const [tab, setTab] = useState('projects')
+  const [tab, setTab] = useState('overview')
   const [projects, setProjects] = useState([])
   const [listedBy, setListedBy] = useState({})
   const [latest, setLatest] = useState({})
+  // ข้อมูลวงจรของทุกโครงการที่เห็น (จุดตรวจ งวด ประวัติ ฯลฯ) โหลดครั้งเดียวต่อรอบ — null = ยังไม่โหลด/โหลดไม่สำเร็จ (ห้ามคำนวณคำเตือนจากข้อมูลว่าง)
+  const [lifecycle, setLifecycle] = useState(null)
+  const [lifecycleError, setLifecycleError] = useState('')
+  const [lifecycleId, setLifecycleId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useState('')
@@ -78,8 +88,17 @@ export default function ConstructionProjectsModule({ tenant, profile }) {
       const visible = result.projects.filter(p => projectAccess({
         role, userId, departmentId, project: p, listed: result.listedBy[p.id] ?? {},
       }).read)
-      const finals = await fetchLatestFinals(visible.map(p => p.id))
-      if (alive && !finals.error) setLatest(finals.latest)
+      const ids = visible.map(p => p.id)
+      const [finals, life] = await Promise.all([fetchLatestFinals(ids), fetchLifecycleData(ids)])
+      if (!alive) return
+      if (!finals.error) setLatest(finals.latest)
+      if (life.error) {
+        setLifecycle(null)
+        setLifecycleError(life.message)
+      } else {
+        setLifecycleError('')
+        setLifecycle(life.byProject)
+      }
     })()
     return () => { alive = false }
   }, [tenant?.id, userId, role, departmentId, reloadKey])
@@ -108,6 +127,18 @@ export default function ConstructionProjectsModule({ tenant, profile }) {
   }, [loadBundle])
 
   const visibleProjects = useMemo(() => projects.filter(p => access(p).read), [projects, access])
+  // 1 โครงการ = 1 bundle ที่ตรรกะวงจร (constructionLifecycle.js) ใช้ทุกฟังก์ชัน · useMemo เพื่อไม่คำนวณคำเตือนซ้ำทุกครั้งที่พิมพ์ค้นหา
+  const rows = useMemo(() => visibleProjects.map(p => ({ project: p, bundle: { project: p, ...EMPTY_LIFE, ...(lifecycle?.[p.id] ?? {}) } })), [visibleProjects, lifecycle])
+  const lifeRow = lifecycleId ? rows.find(r => r.project.id === lifecycleId) ?? null : null
+  const openLifecycle = async projectId => {
+    setActionError('')
+    if (!lifecycle) return setActionError(lifecycleError || 'ข้อมูลวงจรโครงการยังโหลดไม่เสร็จ — รอสักครู่แล้วลองใหม่')
+    setLifecycleId(projectId)
+    if (!aux.staff.length) {
+      const staff = await fetchStaffChoices(tenant.id)
+      setAux(a => ({ ...a, staff: staff.staff }))
+    }
+  }
   const selected = visibleProjects.find(p => p.id === selectedId) ?? null
   const selectedAccess = selected ? access(selected) : null
   const extendedUntil = bundle?.contract?.extended_until ?? null
@@ -181,6 +212,12 @@ export default function ConstructionProjectsModule({ tenant, profile }) {
       <TabBar tab={tab} setTab={setTab} tabs={TABS} busy={busy} />
       {loadError && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{loadError}</p>}
       {actionError && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</p>}
+      {lifecycleError && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">โหลดข้อมูลวงจรโครงการไม่สำเร็จ — {lifecycleError} (คำเตือนในแท็บภาพรวมจึงยังไม่แสดง)</p>}
+
+      {tab === 'overview' && (
+        <LifecycleOverview rows={rows} latest={latest} canCreate={CAN_CREATE.includes(role)} onCreate={() => openProjectSheet('create', null)}
+          onOpen={openLifecycle} alertsReady={Boolean(lifecycle)} loadError={loadError} />
+      )}
 
       {tab === 'projects' && (
         <ListCard title="โครงการก่อสร้าง" count={shown.length} search={search} onSearch={setSearch} searchLabel="ค้นหาชื่อโครงการ ผู้รับจ้าง เลขสัญญา"
@@ -204,14 +241,15 @@ export default function ConstructionProjectsModule({ tenant, profile }) {
                     <div className="min-w-0 flex-1 basis-64">
                       <p className="font-semibold text-gray-900">{p.title}</p>
                       <p className="text-xs text-gray-500">
-                        {projectTypeLabel(p.project_type)} · ปีงบ {p.fiscal_year} · {projectStatusLabel(p.status)}
+                        {projectTypeLabel(p.project_type)} · ปีงบ {p.fiscal_year} · {STAGE_LABELS[p.stage] ?? projectStatusLabel(p.status)}
                         {p.contractor_name ? ` · ${p.contractor_name}` : ''}
                       </p>
                       {overall
                         ? <p className="mt-1 text-xs text-gray-700">สัปดาห์ที่ {final.week_no} (ถึง {thaiShortDate(final.period_end)}): จริง <b>{formatPct(overall.actual)}</b> · แผน {formatPct(overall.plan)} <ScheduleBadge label={overall.label} /></p>
                         : <p className="mt-1 text-xs text-gray-400">ยังไม่มีรายงานที่ล็อก</p>}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" className={btnGhost} onClick={() => openLifecycle(p.id)} aria-label={`วงจรโครงการ ${p.title}`}><ListChecks size={15} />วงจรโครงการ</button>
                       <button type="button" className={btnGhost} onClick={() => { selectProject(p.id); setTab('reports') }}><FileText size={15} />รายงานสัปดาห์</button>
                       {/* คนที่อ่านได้อย่างเดียว (เจ้าหน้าที่กองเดียวกันที่ไม่ใช่ผู้สร้าง/ผู้ควบคุมงาน) ไม่เห็นปุ่มนี้ — ฐานข้อมูลปฏิเสธการบันทึกอยู่แล้ว ปุ่มที่กดแล้วล้มคือภาระเปล่า (เจอกับ TEST-staff บนสนามซ้อม 2569-11-07) */}
                       {access(p).write && <button type="button" className={btnGhost} onClick={() => openProjectSheet('edit', p)} aria-label={`ตั้งค่า ${p.title}`}><Pencil size={15} />ตั้งค่า</button>}
@@ -224,7 +262,7 @@ export default function ConstructionProjectsModule({ tenant, profile }) {
         </ListCard>
       )}
 
-      {tab !== 'projects' && (
+      {tab !== 'projects' && tab !== 'overview' && (
         <div className="space-y-4">
           {picker}
           {!selected && <p className="rounded-xl bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">เลือกโครงการด้านบนเพื่อดู{tab === 'reports' ? 'รายงานรายสัปดาห์' : 'สรุปความก้าวหน้า'}</p>}
@@ -309,6 +347,15 @@ export default function ConstructionProjectsModule({ tenant, profile }) {
             </div>
           )}
         </div>
+      )}
+
+      {lifeRow && lifecycle && (
+        <ProjectLifecycleSheet
+          key={lifeRow.project.id}
+          bundle={lifeRow.bundle} access={access(lifeRow.project)} latest={latest[lifeRow.project.id] ?? null} staffChoices={aux.staff}
+          onClose={() => setLifecycleId(null)} onChanged={loadList}
+          onOpenSettings={() => { const project = lifeRow.project; setLifecycleId(null); openProjectSheet('edit', project) }}
+        />
       )}
 
       {projectSheet && (

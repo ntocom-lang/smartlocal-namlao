@@ -5,11 +5,16 @@ import { fiscalYearOf } from '../../../lib/fiscalYear'
 import {
   PEOPLE_GROUPS, ROAD_WORK_PRESETS, round2, validateItems,
 } from '../../../lib/constructionReport'
+import { GUARANTEE_TYPES, PRICE_KINDS, STAGE_LABELS, WORK_GROUPS, initialStageOptions } from '../../../lib/constructionLifecycle'
+import { lifecycleFormDefaults, validateLifecycleForm } from '../../../lib/constructionContractForm'
 import {
-  PROJECT_STATUSES, PROJECT_TYPES, ROAD_SURFACES, friendlyError, saveProject,
+  PROJECT_TYPES, ROAD_SURFACES, friendlyError, saveProject,
 } from '../../../lib/constructionReportApi'
 import { Field, Problems, Section } from './ui'
 import { btnGhost, btnPrimary, inp } from './uiStyles'
+
+const Hint = ({ children }) => <span className="mt-1 block text-[11px] font-normal text-teal-700">{children}</span>
+const ExternalTag = () => <span className="ml-1 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700">ออกจาก e-GP</span>
 
 const emptyPerson = (grp, index) => ({
   key: `new-${grp}-${index}-${Math.random().toString(36).slice(2, 7)}`,
@@ -22,10 +27,10 @@ function initialForm(project, contract) {
   while (sections.length < 3) sections.push({ name: '', length_km: '', surface: '' })
   return {
     title: project?.title ?? '',
+    initial_stage: 'budgeted',   // ใช้เฉพาะตอนสร้าง (saveProject ส่งค่านี้ใน INSERT เท่านั้น)
     project_no: project?.project_no ?? '',
     fiscal_year: project?.fiscal_year ?? String(fiscalYearOf()),
     project_type: project?.project_type ?? 'road',
-    status: project?.status ?? 'in_progress',
     location_desc: project?.location_desc ?? '',
     contract_no: project?.contract_no ?? '',
     contractor_name: project?.contractor_name ?? '',
@@ -40,6 +45,7 @@ function initialForm(project, contract) {
     designer_name: contract?.designer_name ?? '',
     attach_no: contract?.attach_no ?? '',
     attach_date: contract?.attach_date ?? '',
+    ...lifecycleFormDefaults(project, contract),
     road_type: spec.road_type ?? '',
     length_km: spec.length_km ?? '',
     width_m: spec.width_m ?? '',
@@ -84,6 +90,8 @@ export default function ProjectSheet({ tenant, profile, mode, project, bundle, a
     if (items.some(i => !i.name.trim() && (Number(i.weight_pct) || i.plan_start || i.plan_end))) {
       return setError('มีรายการงานที่กรอกสัดส่วนหรือวันแล้วแต่ยังไม่ได้ตั้งชื่อ')
     }
+    const invalid = validateLifecycleForm(form, { editBase })
+    if (invalid) return setError(invalid)
     setBusy(true)
     const result = await saveProject({
       mode, tenantId: tenant.id, userId: profile.id, projectId: project?.id, form,
@@ -114,9 +122,31 @@ export default function ProjectSheet({ tenant, profile, mode, project, bundle, a
             {PROJECT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             {!PROJECT_TYPES.some(t => t.value === form.project_type) && <option value={form.project_type}>{form.project_type}</option>}
           </select></Field>
-          <Field label="สถานะโครงการ"><select className={inp} value={form.status} onChange={e => set('status', e.target.value)} disabled={!editBase}>
-            {PROJECT_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select></Field>
+          {/* ตอนสร้าง: เลือกขั้นเริ่มต้นได้ (ลงทะเบียนโครงการที่เดินมาแล้วโดยไม่ต้องกดเลื่อนทีละขั้น — เจ้าของระบบเลือก 2569-11-08)
+              ฐานข้อมูลรับเฉพาะ 9 ขั้นหลัก + warranty/closed ต้องเป็นผู้จัดการ (civil_projects_stage_guard) และบันทึกประวัติ "สร้างที่ขั้น X" เอง
+              ตอนแก้ไข: แสดงอย่างเดียว — เปลี่ยนขั้นที่ปุ่มในหน้าโครงการ (RPC ตรวจสิทธิ์และบันทึกประวัติ) */}
+          {mode === 'create' ? (
+            <Field label="ขั้นเริ่มต้นของโครงการ">
+              <select className={inp} value={form.initial_stage} onChange={e => set('initial_stage', e.target.value)} data-testid="project-initial-stage">
+                {initialStageOptions(['superadmin', 'admin', 'officer'].includes(profile?.role)).map(s => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}
+              </select>
+              <span className="mt-1 block text-xs text-gray-500">โครงการที่ดำเนินการมาแล้ว เลือกขั้นที่เป็นอยู่จริง จุดตรวจของขั้นก่อนหน้ากรอกย้อนหลังได้ในหน้าโครงการ</span>
+              {/* civil_projects_delete_guard: ขั้นตั้งแต่ลงนามสัญญา = บันทึกทางราชการ ลบไม่ได้ (เจ้าของสั่ง) — บอกก่อนกดบันทึก ไม่ให้สร้างผิดแล้วลบไม่ได้ */}
+              {['contracted', 'started', 'construction', 'final_inspection', 'warranty', 'closed'].includes(form.initial_stage) && (
+                <span className="mt-1 block rounded-lg bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800" data-testid="initial-stage-permanent">
+                  ⚠️ โครงการที่ลงนามสัญญาแล้วเป็นบันทึกทางราชการ บันทึกแล้วลบไม่ได้ — ตรวจชื่อและขั้นให้ถูกก่อนกดบันทึก
+                </span>
+              )}
+            </Field>
+          ) : (
+            <div>
+              <span className="mb-1 block text-xs font-semibold text-gray-500">ขั้นของโครงการ</span>
+              <p className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm font-semibold text-gray-800" data-testid="project-stage-readonly">
+                {STAGE_LABELS[project?.stage] ?? '—'}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">เปลี่ยนขั้นที่หน้าโครงการ ไม่ใช่ที่นี่</p>
+            </div>
+          )}
           <Field label="ปีงบประมาณ (พ.ศ.)"><input className={inp} inputMode="numeric" value={form.fiscal_year} onChange={e => set('fiscal_year', e.target.value)} disabled={!editBase} maxLength={4} /></Field>
           <Field label="เลขที่โครงการ"><input className={inp} value={form.project_no} onChange={e => set('project_no', e.target.value)} disabled={!editBase} maxLength={60} /></Field>
           <Field label="สถานที่ก่อสร้าง" className="sm:col-span-2"><input className={inp} value={form.location_desc} onChange={e => set('location_desc', e.target.value)} disabled={!editBase} maxLength={300} placeholder="เช่น ซอยข้างวัด หมู่ 3 ต.…" /></Field>
@@ -148,6 +178,86 @@ export default function ProjectSheet({ tenant, profile, mode, project, bundle, a
           <Field label="บันทึกแนบท้าย ลงวันที่"><input type="date" className={inp} value={form.attach_date} onChange={e => set('attach_date', e.target.value)} /></Field>
         </div>
         <p className="text-xs text-gray-500">วันที่ต่อสัญญาให้กรอกตามที่ได้รับอนุมัติจริง — ระบบไม่ตัดสินเรื่องต่อสัญญา ค่าปรับ หรืองวดเงิน</p>
+      </Section>
+
+      <Section title="สัญญาและหลักประกัน (ตามแบบสัญญาจ้างก่อสร้าง)" hint="ระบบใช้คำนวณวันครบกำหนด ระยะประกัน และรายการตรวจก่อนปิดโครงการ">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="ชนิดราคา">
+            <select className={inp} value={form.price_kind} onChange={e => set('price_kind', e.target.value)}>
+              <option value="">— ไม่ระบุ —</option>
+              {Object.entries(PRICE_KINDS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <Hint>แสดงในหน้าโครงการ (เก็บตามสัญญา)</Hint>
+          </Field>
+          <Field label="กลุ่มงาน (หลักเกณฑ์ราคากลาง)">
+            <select className={inp} value={form.work_group} onChange={e => set('work_group', e.target.value)} disabled={!editBase}>
+              <option value="">— ไม่ระบุ —</option>
+              {Object.entries(WORK_GROUPS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <Hint>เก็บเป็นข้อมูลทะเบียน แก้ได้เฉพาะผู้สร้างโครงการ หัวหน้ากอง หรือผู้ดูแลระบบ</Hint>
+          </Field>
+
+          <Field label="ชนิดหลักประกันสัญญา">
+            <select className={inp} value={form.guarantee_type} onChange={e => set('guarantee_type', e.target.value)}>
+              <option value="">— ไม่ระบุ —</option>
+              {Object.entries(GUARANTEE_TYPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <Hint>เลือก "ไม่มีหลักประกัน" ถ้าสัญญาไม่เรียกหลักประกัน — รายการตรวจก่อนปิดโครงการจะไม่รอ "คืนหลักประกัน"</Hint>
+          </Field>
+          <Field label="จำนวนเงินหลักประกัน (บาท)"><input className={inp} inputMode="decimal" value={form.guarantee_amount} onChange={e => set('guarantee_amount', e.target.value)} /></Field>
+          <Field label="เลขที่หลักประกัน / หนังสือค้ำประกัน"><input className={inp} value={form.guarantee_ref} onChange={e => set('guarantee_ref', e.target.value)} maxLength={200} /></Field>
+          <Field label="หลักประกันหมดอายุวันที่">
+            <input type="date" className={inp} value={form.guarantee_expires_on} onChange={e => set('guarantee_expires_on', e.target.value)} />
+            <Hint>ใช้เตือนเมื่อหมดอายุก่อนพ้นข้อผูกพัน (ข้อ 171)</Hint>
+          </Field>
+
+          <Field label="เงินล่วงหน้า (ร้อยละ)"><input className={inp} inputMode="decimal" value={form.advance_pct} onChange={e => set('advance_pct', e.target.value)} /></Field>
+          <Field label="เงินล่วงหน้า (บาท)">
+            <input className={inp} inputMode="decimal" value={form.advance_amount} onChange={e => set('advance_amount', e.target.value)} />
+            <Hint>เก็บตามสัญญา ระบบยังไม่นำไปคำนวณ</Hint>
+          </Field>
+          <Field label="เงินประกันผลงาน (ร้อยละ)">
+            <input className={inp} inputMode="decimal" value={form.retention_pct} onChange={e => set('retention_pct', e.target.value)} />
+            <Hint>ถ้ามากกว่า 0 รายการตรวจก่อนปิดโครงการจะรอ "คืนเงินประกันผลงาน"</Hint>
+          </Field>
+          <Field label="ค่าควบคุมงานต่อวัน (บาท)">
+            <input className={inp} inputMode="decimal" value={form.supervision_fee_per_day} onChange={e => set('supervision_fee_per_day', e.target.value)} />
+            <Hint>ใช้ประมาณการค่าปรับ (ค่าปรับต่อวัน + ค่าควบคุมงานต่อวัน) เพื่อเตือนเมื่อใกล้เกินร้อยละ 10 — ไม่ใช่ยอดทางการ</Hint>
+          </Field>
+
+          <Field label="ระยะประกันผลงาน (เดือน)">
+            <input className={inp} inputMode="numeric" value={form.warranty_months} onChange={e => set('warranty_months', e.target.value)} />
+            <Hint>ใช้คำนวณระยะประกัน และเลือกช่วงตรวจความชำรุดครั้งสุดท้าย (ตั้งแต่ 6 เดือน = ก่อนครบ 30 วัน · ต่ำกว่า = 15 วัน)</Hint>
+          </Field>
+          <div className="hidden sm:block" aria-hidden="true" />
+          <Field label="ระยะประกันเริ่มวันที่">
+            <input type="date" className={inp} value={form.warranty_starts_on} onChange={e => set('warranty_starts_on', e.target.value)} />
+            <Hint>เว้นว่างให้ระบบคำนวณ = วันถัดจากวันส่งมอบงวดสุดท้ายที่ตรวจรับแล้ว · ถ้ากรอกเอง ค่าที่กรอกชนะ</Hint>
+          </Field>
+          <Field label="ระยะประกันสิ้นสุดวันที่">
+            <input type="date" className={inp} value={form.warranty_ends_on} onChange={e => set('warranty_ends_on', e.target.value)} />
+            <Hint>เว้นว่างให้ระบบคำนวณ = วันเริ่ม + จำนวนเดือน − 1 วัน · ใช้คำนวณกำหนดตรวจครั้งสุดท้าย พ้นข้อผูกพัน และกำหนดคืนหลักประกัน</Hint>
+          </Field>
+
+          <Field label={<>หนังสือแจ้งให้เริ่มทำงาน — เลขที่ <ExternalTag /></>}>
+            <input className={inp} value={form.notice_to_proceed_no} onChange={e => set('notice_to_proceed_no', e.target.value)} maxLength={200} />
+          </Field>
+          <Field label={<>หนังสือแจ้งให้เริ่มทำงาน — ลงวันที่ <ExternalTag /></>}>
+            <input type="date" className={inp} value={form.notice_to_proceed_date} onChange={e => set('notice_to_proceed_date', e.target.value)} />
+            <Hint>ต้องมีวันนี้ โครงการจึงพร้อมเลื่อนจาก "ลงนามสัญญา" เป็น "เริ่มงาน" ตามรายการตรวจ และใช้เป็นฐานคำนวณวันเริ่ม/สิ้นสุดสัญญา</Hint>
+          </Field>
+          <Field label="เริ่มงานภายใน (วัน นับถัดจากวันที่หนังสือแจ้ง)"><input className={inp} inputMode="numeric" value={form.start_within_days} onChange={e => set('start_within_days', e.target.value)} /></Field>
+          <Field label="แล้วเสร็จภายใน (วัน นับถัดจากวันที่หนังสือแจ้ง)"><input className={inp} inputMode="numeric" value={form.finish_within_days} onChange={e => set('finish_within_days', e.target.value)} /></Field>
+        </div>
+        <p className="text-xs text-gray-500">ระบบคำนวณวันเริ่ม/สิ้นสุดสัญญาจาก "วันที่หนังสือแจ้งให้เริ่มทำงาน + จำนวนวัน" ให้เมื่อไม่ได้กรอกวันเริ่ม/สิ้นสุดสัญญาในส่วน "สัญญา" ด้านบน (ถ้ากรอกวันที่เองแล้ว ค่าที่กรอกชนะ) วันที่ที่ระบบคำนวณเองจะมีคำกำกับ "ต้องยืนยันกับระเบียบฉบับปัจจุบัน" เพราะถ้อยคำนับวันของสัญญาแต่ละฉบับต่างกันได้</p>
+        <label className="flex min-h-11 items-start gap-2 rounded-xl border border-gray-200 p-3 text-sm">
+          <input type="checkbox" className="mt-0.5 size-5 shrink-0" checked={form.operator_eval_required} disabled={!editBase}
+            onChange={e => set('operator_eval_required', e.target.checked)} />
+          <span>
+            <span className="font-semibold">เข้าเกณฑ์ประเมินผู้ประกอบการ (ฉบับที่ 3 พ.ศ. 2569 หมวด 7) — ผู้มีอำนาจตัดสิน</span>
+            <span className="block text-xs text-gray-500">ติ๊กแล้วรายการตรวจก่อนปิดโครงการจะรอ "ประเมินผู้ประกอบการใน e-GP แล้ว" · แก้ได้เฉพาะผู้สร้างโครงการ หัวหน้ากอง หรือผู้ดูแลระบบ</span>
+          </span>
+        </label>
       </Section>
 
       {form.project_type === 'road' && (

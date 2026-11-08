@@ -215,7 +215,7 @@ export function contractTiming(contract, asOfIso) {
  * ผู้ใช้คนนี้ทำอะไรกับโครงการนี้ได้ — ต้องตรงกับฟังก์ชัน civil_can_manage/read/write_project และ policy ของ civil_projects ใน
  * supabase/migrations/20261106100100_civil_reports_rls_triggers.sql + 20260802060000 (ตัวตัดสินจริงคือฐานข้อมูล ตรงนี้แค่ซ่อนปุ่มที่กดไปก็ไม่ผ่าน)
  *   manage   = superadmin · admin ของ อปท. · officer ของกองที่ถือโครงการ (ปลดล็อกรายงาน ลบ ย้ายกอง)
- *   read     = manage หรือ staff/technician ที่กองเดียวกัน/เป็นผู้สร้าง/ถูกระบุชื่อในโครงการ
+ *   read     = manage หรือ viewer (อ่านอย่างเดียว) หรือ staff/technician ที่กองเดียวกัน/เป็นผู้สร้าง/ถูกระบุชื่อในโครงการ
  *   write    = manage หรือ staff/technician ที่เป็นผู้สร้าง หรือถูกระบุเป็น "ผู้ควบคุมงาน"
  *   editBase = แก้แถวทะเบียนโครงการเดิม (civil_projects) ได้ — policy เดิมให้ staff/technician แก้ได้เฉพาะโครงการที่ตนสร้าง
  * @param {{ role?: string, userId?: string, departmentId?: string|null, project: object, listed?: { any?: boolean, supervisor?: boolean } }} args
@@ -224,6 +224,8 @@ export function projectAccess({ role, userId, departmentId = null, project, list
   const none = { read: false, write: false, manage: false, editBase: false }
   if (!project) return none
   if (role === 'superadmin' || role === 'admin') return { read: true, write: true, manage: true, editBase: true }
+  // viewer = อ่านได้ทุกโครงการของ อปท. ตัวเอง อ่านอย่างเดียว (civil_projects_select + civil_can_read_project) · รายการโครงการดึงเฉพาะ municipality_id ของผู้ใช้อยู่แล้ว
+  if (role === 'viewer') return { read: true, write: false, manage: false, editBase: false }
   const sameDepartment = Boolean(departmentId) && project.department_id === departmentId
   if (role === 'officer') {
     return sameDepartment ? { read: true, write: true, manage: true, editBase: true } : none

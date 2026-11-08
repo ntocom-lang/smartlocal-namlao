@@ -350,7 +350,10 @@ test('สิทธิ์ฝั่งหน้าจอ ตรงกับ policy
   assert.deepEqual(access('technician', { departmentId: 'D2', listed: { any: true, supervisor: true } }), { read: true, write: true, manage: false, editBase: false })
   assert.deepEqual(access('technician', { departmentId: 'D2', listed: { any: true, supervisor: false } }), { read: true, write: false, manage: false, editBase: false })
   assert.deepEqual(access('technician', { departmentId: 'D2' }), none)
-  for (const role of ['viewer', 'council', 'citizen', undefined]) assert.deepEqual(access(role, { departmentId: 'D1' }), none, String(role))
+  const readOnly = { read: true, write: false, manage: false, editBase: false }
+  assert.deepEqual(access('viewer', { departmentId: 'D2' }), readOnly, 'viewer อ่านได้ทุกโครงการของ อปท. อ่านอย่างเดียว (RLS ให้อ่านทั้ง อปท.)')
+  assert.deepEqual(access('viewer', { departmentId: null, userId: 'creator' }), readOnly, 'viewer ไม่ได้สิทธิ์เขียนแม้เป็นผู้สร้าง')
+  for (const role of ['council', 'citizen', undefined]) assert.deepEqual(access(role, { departmentId: 'D1' }), none, String(role))
   assert.deepEqual(projectAccess({ role: 'admin', project: null }), none)
   assert.deepEqual(projectAccess({ role: 'staff', project: { department_id: null, created_by: null }, departmentId: null, userId: null }), none, 'กอง/ผู้สร้างเป็น null ต้องไม่ตรงกับ null ของผู้ใช้')
 })
