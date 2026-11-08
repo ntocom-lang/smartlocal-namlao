@@ -1,11 +1,13 @@
 // โมดูลรายงานผลการก่อสร้างประจำสัปดาห์ — รัน migration จริง 2 ไฟล์ใน PostgreSQL จำลอง (PGlite)
 //   node tests/construction-report-db.test.mjs --pglite <temp>/node_modules/@electric-sql/pglite/dist/index.js
 //   supabase/migrations/20261106100000_civil_reports_tables.sql + 20261106100100_civil_reports_rls_triggers.sql
+//   + 20261108120000_civil_weekly_reports_created_by_drop_fk.sql (ใส่ --without-fk-fix เพื่อดูบั๊กเดิมของ #647)
 // ไม่ใช้เน็ต ไม่ใช้บัญชี ไม่แตะข้อมูลจริง
 //
 // ตรวจ: (1) ใครอ่าน/เขียนได้ (บทบาท+กองเดิม ไม่มีสิทธิ์พิเศษ) (2) anon / ประชาชน / ผู้บริหาร เข้าไม่ได้
 // (3) ตัวกระตุ้นล็อกรายงาน: ล็อกต้องมีตัวเลขแช่แข็ง + ต่อเนื่อง · ล็อกแล้วแก้ไม่ได้ · ปลดล็อกได้เฉพาะหัวหน้ากอง/แอดมินและเฉพาะฉบับล่าสุด
 // (4) รหัสผู้สร้าง/ผู้ล็อก/เวลาล็อก ประทับโดยฐานข้อมูล ไม่เชื่อค่าจากเบราว์เซอร์ (5) ลบรายงาน = แอดมินเท่านั้น และลบโครงการที่มีรายงานไม่ได้
+// (6) ลบ/รวมบัญชีที่เคยสร้างรายงานได้ รายงานอยู่ครบและเก็บรหัสผู้สร้างเดิม
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
@@ -17,6 +19,8 @@ const { PGlite } = await import(pathToFileURL(modulePath).href)
 const readMigration = name => readFile(new URL('../supabase/migrations/' + name, import.meta.url), 'utf8')
 const tablesSql = await readMigration('20261106100000_civil_reports_tables.sql')
 const rlsSql = await readMigration('20261106100100_civil_reports_rls_triggers.sql')
+const withFkFix = !process.argv.includes('--without-fk-fix')
+const fkFixSql = await readMigration('20261108120000_civil_weekly_reports_created_by_drop_fk.sql')
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const MA = id(1)
@@ -86,9 +90,11 @@ await db.query('INSERT INTO public.civil_projects (id, municipality_id, created_
 // migration จริง — ไฟล์ตารางก่อน แล้วไฟล์สิทธิ์/ตัวกระตุ้น (ไฟล์ 2 มีด่านตรวจว่าไฟล์ 1 รันแล้ว)
 await db.exec(tablesSql)
 await db.exec(rlsSql)
+if (withFkFix) await db.exec(fkFixSql)
 // รันซ้ำต้องไม่พัง (CREATE OR REPLACE / DROP POLICY IF EXISTS / IF NOT EXISTS)
 await db.exec(tablesSql)
 await db.exec(rlsSql)
+if (withFkFix) await db.exec(fkFixSql)
 
 const actor = async alias => {
   await db.exec('RESET ROLE')
@@ -332,6 +338,31 @@ await test('ลบโครงการที่ไม่มีรายงา�
   }
   await db.query('INSERT INTO public.civil_projects (id, municipality_id, created_by, department_id, title, start_date, end_date) VALUES ($1,$2,$3,$4,$5,$6,$7)',
     [P1, MA, U.techCreator, D1, 'ถนน คสล. สายทดสอบ', '2026-10-01', '2026-12-29'])
+})
+
+await test('ลบ/รวมบัญชีที่เคยสร้างรายงานได้ — รายงานอยู่ครบ เก็บรหัสผู้สร้างเดิม ตัวกระตุ้นยังกันแก้ผู้สร้าง (บั๊กเดิม #647)', async () => {
+  // merge_duplicate_profile ย้ายข้อมูลแล้วจบด้วย DELETE auth.users ของบัญชีซ้ำ = ทางเดียวกับลบบัญชี
+  await seedP1()
+  await asRoot()
+  const GONE = id(199)
+  await db.query('INSERT INTO auth.users VALUES ($1)', [GONE])
+  const { rows: [w1] } = await insertReport(1, { over: { created_by: GONE } })
+  const { rows: [w2] } = await insertReport(2, { over: { created_by: GONE } })
+  await finalize(w1.id) // ฉบับที่ล็อกแล้วชนกติกา "แก้ฉบับ final ไม่ได้" อีกชั้น ต้องลบบัญชีได้เหมือนกัน
+  await db.query('DELETE FROM auth.users WHERE id = $1', [GONE])
+  const after = await rows(`SELECT week_no, status, created_by FROM public.civil_weekly_reports ORDER BY week_no`)
+  assert.deepEqual(after.map(r => [r.week_no, r.status, r.created_by]), [[1, 'final', GONE], [2, 'draft', GONE]])
+  const fk = await rows(`SELECT 1 FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+    WHERE c.conrelid = 'public.civil_weekly_reports'::regclass AND c.contype = 'f' AND a.attname = 'created_by'`)
+  assert.equal(fk.length, 0, 'created_by ต้องไม่มี FK')
+  // ด่านเดิมยังอยู่: เบราว์เซอร์แก้/ล้างผู้สร้างไม่ได้ แม้เป็นแอดมิน
+  await actor('adminA')
+  await rejects(db.query('UPDATE public.civil_weekly_reports SET created_by = $2 WHERE id = $1', [w2.id, U.adminA]), { message: /ผู้สร้าง/ })
+  await rejects(db.query('UPDATE public.civil_weekly_reports SET created_by = NULL WHERE id = $1', [w2.id]), { message: /ผู้สร้าง/ })
+  // ฉบับใหม่ยังประทับผู้สร้างจาก auth.uid() ไม่เชื่อค่าที่ส่งมา
+  await actor('techSup')
+  const { rows: [w3] } = await insertReport(3, { over: { created_by: GONE } })
+  assert.equal(w3.created_by, U.techSup)
 })
 
 await test('anon / authenticated ไม่มีสิทธิ์ TRUNCATE และ anon ไม่มีสิทธิ์ใดๆ บนตารางและฟังก์ชันสิทธิ์', async () => {
