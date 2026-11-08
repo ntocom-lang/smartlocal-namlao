@@ -1,4 +1,8 @@
--- 20261108120000_civil_weekly_reports_created_by_drop_fk.sql
+-- 20261108120100_civil_weekly_reports_created_by_drop_fk.sql
+--
+-- [เปลี่ยนเลขไฟล์ 2569-11-08] เดิมชื่อ 20261108120000_… (PR #658) ซึ่งชนกับ 20261108120000_revoke_authenticated_truncate.sql (#657)
+-- ใน schema_migrations เลขหนึ่งจดได้แถวเดียว จึงย้ายมาเลขนี้ · เนื้อ SQL ไม่เปลี่ยน (ฐานจริงรันไปแล้วก่อนเปลี่ยนเลข)
+-- ข้อความ COMMENT ON COLUMN ข้างล่างยังอ้างเลขเดิมโดยตั้งใจ ให้ตรงกับค่าที่อยู่บนฐานจริง
 --
 -- [บั๊กที่แก้] (มาตั้งแต่ #647 / 20261106100000 + 20261106100100)
 -- civil_weekly_reports.created_by มี FK ไป auth.users แบบ ON DELETE SET NULL

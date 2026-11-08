@@ -1,7 +1,7 @@
 // โมดูลรายงานผลการก่อสร้างประจำสัปดาห์ — รัน migration จริง 2 ไฟล์ใน PostgreSQL จำลอง (PGlite)
 //   node tests/construction-report-db.test.mjs --pglite <temp>/node_modules/@electric-sql/pglite/dist/index.js
 //   supabase/migrations/20261106100000_civil_reports_tables.sql + 20261106100100_civil_reports_rls_triggers.sql
-//   + 20261108120000_civil_weekly_reports_created_by_drop_fk.sql (ใส่ --without-fk-fix เพื่อดูบั๊กเดิมของ #647)
+//   + 20261108120100_civil_weekly_reports_created_by_drop_fk.sql (ใส่ --without-fk-fix เพื่อดูบั๊กเดิมของ #647)
 // ไม่ใช้เน็ต ไม่ใช้บัญชี ไม่แตะข้อมูลจริง
 //
 // ตรวจ: (1) ใครอ่าน/เขียนได้ (บทบาท+กองเดิม ไม่มีสิทธิ์พิเศษ) (2) anon / ประชาชน / ผู้บริหาร เข้าไม่ได้
@@ -20,7 +20,7 @@ const readMigration = name => readFile(new URL('../supabase/migrations/' + name,
 const tablesSql = await readMigration('20261106100000_civil_reports_tables.sql')
 const rlsSql = await readMigration('20261106100100_civil_reports_rls_triggers.sql')
 const withFkFix = !process.argv.includes('--without-fk-fix')
-const fkFixSql = await readMigration('20261108120000_civil_weekly_reports_created_by_drop_fk.sql')
+const fkFixSql = await readMigration('20261108120100_civil_weekly_reports_created_by_drop_fk.sql')
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const MA = id(1)
