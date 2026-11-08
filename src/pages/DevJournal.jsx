@@ -293,6 +293,10 @@ function DevJournalWorkspace() {
     return (
       <>
         <GroupLabel>งานพัฒนาระบบ</GroupLabel>
+        <button type="button" onClick={() => { navigate('/dev-journal/advisor'); onSelected() }}
+          className="mb-1 flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs font-semibold text-white/80 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60">
+          <Sparkles size={16} className="shrink-0" /> ที่ปรึกษา AI
+        </button>
         <button type="button" onClick={() => { setShowModuleManager(true); onSelected() }}
           aria-current={showModuleManager ? 'page' : undefined}
           className={`mb-2 flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${showModuleManager ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>

@@ -13,7 +13,7 @@ import {
   CheckCircle2, ChevronRight,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat, ArrowLeftRight, BookUser, ShieldQuestion,
-  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, FileText, UserPlus, FileSignature, Menu, Building2, Sparkles
+  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, FileText, UserPlus, FileSignature, Menu, Building2
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 // ไอคอนที่เป็นได้ทั้งอิโมจิและรูปแนบ — ของกลางชุดเดียวกับศูนย์ข้อมูลดิจิทัล ไม่ทำซ้ำอีกชุด
@@ -34,8 +34,6 @@ import { useNotifications } from '../contexts/NotificationsContext'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 // lazy: หน้ารายงานโครงการเปิดเฉพาะตอนเลือกเมนู ไม่ต้องโหลดมาพร้อมแผงควบคุม
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
-// lazy: ที่ปรึกษา AI ใช้เฉพาะ Super Admin เท่านั้น ไม่ต้องโหลดให้ผู้ใช้ role อื่น
-const SuperAdminAdvisor = lazy(() => import('../components/admin/SuperAdminAdvisor'))
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import DocumentSigningSettings from '../components/admin/DocumentSigningSettings'
 import DocumentTypeAssignments from '../components/admin/DocumentTypeAssignments'
@@ -5352,7 +5350,6 @@ const PAGE_LABELS = {
   'civil-project': 'โครงการโยธา',
   'civil-report': 'รายงานโยธา',
   'audit-log': 'บันทึกกิจกรรม',
-  'ai-advisor': 'ที่ปรึกษา AI',
   'satisfaction': 'ผลการประเมิน',
   'fleet-setup': 'ตั้งค่ายานพาหนะ',
 }
@@ -5399,7 +5396,6 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
         { key: 'users', label: 'จัดการผู้ใช้และการแต่งตั้ง', Icon: Shield, color: '#7c3aed', bg: '#ede9fe', show: canManageSystem, desc: 'กอง/หน่วยงาน · แบบตำแหน่ง · ใครอยู่กองไหน · เข้าเมนูไหนได้' },
         { key: 'signing', label: 'การลงนามเอกสาร', Icon: FileSignature, color: '#0f766e', bg: '#ccfbf1', show: canManageSystem, desc: 'ใครลงชื่อในช่องลงนาม · เซ็นกระดาษหรือลงนามในระบบ' },
         { key: 'audit-log', label: 'บันทึกกิจกรรม', Icon: BookOpen, color: '#ef4444', bg: '#fee2e2', show: canManageSystem, desc: 'ประวัติการดำเนินการย้อนหลังสำหรับตรวจสอบ' },
-        { key: 'ai-advisor', label: 'ที่ปรึกษา AI', Icon: Sparkles, color: '#7c3aed', bg: '#ede9fe', show: currentUserRole === 'superadmin', desc: 'ผู้ช่วยคิด วิเคราะห์ ให้คำแนะนำ (เฉพาะ Super Admin)' },
       ],
     },
     {
@@ -6141,14 +6137,6 @@ export default function AdminDashboard() {
           onOpenDepartments={() => setActivePage('departments')} />
       ) : activePage === 'audit-log' ? (
         <AuditLogViewer tenant={tenant} />
-      ) : activePage === 'ai-advisor' && currentUserRole === 'superadmin' ? (
-        <Suspense fallback={
-          <div className="flex items-center justify-center py-10">
-            <Loader2 size={24} className="animate-spin text-gray-400" />
-          </div>
-        }>
-          <SuperAdminAdvisor currentUserRole={currentUserRole} />
-        </Suspense>
       ) : activePage === 'fleet-setup' ? (
         <FleetSetup tenant={tenant} />
       ) : activePage === 'more' ? (
@@ -6240,18 +6228,6 @@ export default function AdminDashboard() {
                 </div>
               </button>
             )}
-            {currentUserRole === 'superadmin' && (
-              <button onClick={() => setActivePage('ai-advisor')}
-                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ede9fe' }}>
-                  <Sparkles size={24} style={{ color: '#7c3aed' }} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-800">ที่ปรึกษา AI</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">เฉพาะ Super Admin</p>
-                </div>
-              </button>
-            )}
             <a href="/manual-admin.html" target="_blank" rel="noopener noreferrer"
               className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#d1fae5' }}>
@@ -6284,7 +6260,6 @@ export default function AdminDashboard() {
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้และการแต่งตั้ง', desc: 'ใครเข้าระบบได้ อยู่กองไหน ตำแหน่ง และเมนูที่เข้าได้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'signing',          Icon: FileSignature, color: '#0f766e', bg: '#ccfbf1', label: 'การลงนามเอกสาร', desc: 'ใครลงชื่อในช่องลงนาม และเซ็นกระดาษหรือลงนามในระบบ', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'ai-advisor',       Icon: Sparkles,    color: '#7c3aed', bg: '#ede9fe', label: 'ที่ปรึกษา AI', desc: 'ผู้ช่วยคิด วิเคราะห์ ให้คำแนะนำ (เฉพาะ Super Admin)', show: currentUserRole === 'superadmin' },
                 ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (
                   <tr key={key} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActivePage(key)}>
                     <td className="px-5 py-3.5">

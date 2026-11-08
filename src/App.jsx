@@ -30,6 +30,7 @@ const OneDataLanding = lazyWithRetry(() => import('./pages/OneDataLanding'))
 const BusinessRegisterPage = lazyWithRetry(() => import('./pages/BusinessRegisterPage'))
 const AdminLogin = lazyWithRetry(() => import('./pages/AdminLogin'))
 const DevJournal = lazyWithRetry(() => import('./pages/DevJournal'))
+const DevAdvisor = lazyWithRetry(() => import('./pages/DevAdvisor'))
 const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'))
 const ResetPasswordPage = lazyWithRetry(() => import('./pages/ResetPasswordPage'))
 const DeviceLoginApprove = lazyWithRetry(() => import('./pages/DeviceLoginApprove'))
@@ -771,6 +772,7 @@ function AppShell() {
           } />
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/dev-journal" element={<DevJournal />} />
+          <Route path="/dev-journal/advisor" element={<DevAdvisor />} />
           <Route path="/staff" element={
             <RequireAuth staffOnly>
               <SuspenseErrorBoundary>

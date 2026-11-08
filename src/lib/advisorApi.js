@@ -10,7 +10,8 @@ const LOAD_LIMIT = 1000 // PostgREST คืนได้สูงสุด 1000 �
 
 // ⚠️ ห้ามใช้ supabase.functions.invoke — client ใน supabase.js ครอบ fetch ด้วย timeout 25 วิ
 // แต่คำตอบ AI ยาวอาจใช้เวลาเกินนั้น จึง fetch เองพร้อม timeout 120 วิ
-export async function sendAdvisorMessage({ conversationId, message }) {
+// overviewDays: 30/90 = แนบภาพรวมระบบ (ตัวเลขรวม) ไปกับคำถามนี้ · ไม่ส่ง = ไม่แนบ
+export async function sendAdvisorMessage({ conversationId, message, overviewDays = null }) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session?.access_token) throw new Error('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่')
 
@@ -25,7 +26,7 @@ export async function sendAdvisorMessage({ conversationId, message }) {
         apikey: supabaseAnonKey,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ conversation_id: conversationId, message }),
+      body: JSON.stringify({ conversation_id: conversationId, message, ...(overviewDays ? { overview_days: overviewDays } : {}) }),
       signal: controller.signal,
     })
   } catch (e) {
@@ -38,7 +39,11 @@ export async function sendAdvisorMessage({ conversationId, message }) {
   let data = null
   try { data = await res.json() } catch { /* ไม่ใช่ JSON — ใช้ข้อความสำรองด้านล่าง */ }
   if (!res.ok || !data?.ok) {
-    throw new Error(data?.error || `ที่ปรึกษา AI ตอบกลับผิดปกติ (รหัส ${res.status})`)
+    // 503 ส่ง notes[] มาด้วย (แต่ละช่องติดอะไร) — แนบไปกับ error ให้หน้าจอแสดงทีละข้อ
+    const err = new Error(data?.error || `ที่ปรึกษา AI ตอบกลับผิดปกติ (รหัส ${res.status})`)
+    err.status = res.status
+    err.notes = Array.isArray(data?.notes) ? data.notes.map(String) : []
+    throw err
   }
   return data
 }
@@ -57,7 +62,7 @@ export async function loadConversations() {
 export async function loadMessages(conversationId) {
   const { data, error } = await supabase
     .from('advisor_messages')
-    .select('id, role, content, created_at')
+    .select('id, role, content, created_at, provider, slot, model, route_note')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: true })
     .order('id', { ascending: true })
@@ -70,36 +75,75 @@ export async function deleteConversation(conversationId) {
   if (error) throw new Error(error.message)
 }
 
+// สวิตช์ปิดทั้งเมนู (advisor_settings.enabled) — model/daily_cap ของตารางนี้เลิกใช้แล้วตั้งแต่รอบ 2 (ย้ายไปอยู่ที่ช่อง) ห้ามเขียน/ห้ามเลือกมาแสดง
 export async function loadSettings() {
   const { data, error } = await supabase
     .from('advisor_settings')
-    .select('enabled, model, daily_cap, updated_at')
+    .select('enabled, updated_at')
     .eq('id', 1)
     .maybeSingle()
   if (error) throw new Error(error.message)
   return data
 }
 
-// เขียนได้เฉพาะ 3 คอลัมน์นี้ (updated_at/updated_by ถูก trigger ประทับเอง)
-export async function saveSettings({ enabled, model, daily_cap }) {
+export async function saveSettings({ enabled }) {
   const { data, error } = await supabase
     .from('advisor_settings')
-    .update({ enabled, model: String(model).trim(), daily_cap: Number(daily_cap) })
+    .update({ enabled: Boolean(enabled) })
     .eq('id', 1)
-    .select('enabled, model, daily_cap, updated_at')
+    .select('enabled, updated_at')
     .maybeSingle()
   if (error) throw new Error(error.message)
   if (!data) throw new Error('บันทึกไม่สำเร็จ (ไม่มีสิทธิ์หรือไม่พบแถวตั้งค่า)')
   return data
 }
 
-// ยอดที่ผู้ใช้คนนี้ถามวันนี้ (นับแถว role = 'user' ตั้งแต่เที่ยงคืนเวลาไทย)
-export async function countToday() {
-  const { count, error } = await supabase
-    .from('advisor_messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('role', 'user')
-    .gte('created_at', bangkokDayStartIso(new Date()))
+// ช่องผู้ให้บริการ 3 ช่อง — ระบุคอลัมน์ชัด (key_secret_id ไม่ได้ขอ และสิทธิ์ก็ไม่ให้อ่านตัว key อยู่แล้ว)
+const SLOT_COLUMNS = 'slot, provider, tier, enabled, model, daily_cap, key_last4, key_set_at, key_invalid_at, paused_until, pause_reason, updated_at'
+
+export async function loadSlots() {
+  const { data, error } = await supabase
+    .from('advisor_provider_slots')
+    .select(SLOT_COLUMNS)
+    .order('slot', { ascending: true })
   if (error) throw new Error(error.message)
-  return count ?? 0
+  return data ?? []
+}
+
+// สิทธิ์ UPDATE ของ authenticated มีแค่ enabled / model / daily_cap (+ paused_until/pause_reason คู่กัน) — ห้ามส่งคอลัมน์อื่น
+export async function saveSlot(slot, { enabled, model, daily_cap }) {
+  const { data, error } = await supabase
+    .from('advisor_provider_slots')
+    .update({ enabled: Boolean(enabled), model: String(model).trim(), daily_cap })
+    .eq('slot', slot)
+    .select(SLOT_COLUMNS)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error('บันทึกไม่สำเร็จ (ไม่มีสิทธิ์หรือไม่พบช่อง)')
+  return data
+}
+
+// ปลดพัก: ต้องส่งสองคอลัมน์พร้อมกัน (CHECK advisor_provider_slots_pause_pair)
+export async function unpauseSlot(slot) {
+  const { data, error } = await supabase
+    .from('advisor_provider_slots')
+    .update({ paused_until: null, pause_reason: null })
+    .eq('slot', slot)
+    .select(SLOT_COLUMNS)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error('ปลดพักไม่สำเร็จ (ไม่มีสิทธิ์หรือไม่พบช่อง)')
+  return data
+}
+
+// ใส่/เปลี่ยน key (p_key ว่าง = ลบ) — key เก็บใน Vault ฝั่งฐานข้อมูล ฟังก์ชันคืนแค่ 4 ตัวท้าย
+// ⚠️ ห้ามใส่ { get: true }: GET จะเอา key ไปไว้ใน URL ซึ่งติด log ของ gateway · ค่าเริ่มต้นของ rpc เป็น POST
+// ⚠️ ห้าม log/เก็บ key ที่ไหนทั้งสิ้น — error ที่คืนมามีเฉพาะข้อความภาษาไทยจากฐาน (รหัส 22023/42501) ไม่มีค่า key
+export async function setSlotKey(slot, key) {
+  const { data, error } = await supabase.rpc('advisor_set_slot_key', { p_slot: slot, p_key: key })
+  if (error) {
+    if (error.code === '22023' || error.code === '42501') throw new Error(error.message)
+    throw new Error('บันทึก key ไม่สำเร็จ ลองใหม่อีกครั้ง')
+  }
+  return { key_last4: data?.key_last4 ?? null }
 }
