@@ -88,6 +88,7 @@
     "test:waste-schedule": "node tests/waste-schedule.test.mjs && node tests/waste-schedule-poster.test.mjs",
     "test:construction": "node tests/construction-report.test.mjs && node tests/construction-report-print.test.mjs && node tests/construction-report-ui.test.mjs",
     "test:construction:layout": "node tests/construction-report-layout.test.mjs",
+    "test:construction:lifecycle": "node tests/construction-lifecycle.test.mjs",
     "test:water-situation": "node tests/water-situation.test.mjs",
     "test:water-cache": "node tests/water-cache.test.mjs",
     "test:water-cache-browser": "node tests/water-cache.playwright.mjs",
