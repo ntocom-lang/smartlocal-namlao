@@ -90,6 +90,7 @@
     "test:construction:layout": "node tests/construction-report-layout.test.mjs",
     "test:construction:print-layout": "node tests/construction-lifecycle-print-layout.test.mjs",
     "test:construction:lifecycle": "node tests/construction-lifecycle.test.mjs",
+    "test:local-plan:db": "node tests/local-plan-db.test.mjs",
     "test:water-situation": "node tests/water-situation.test.mjs",
     "test:water-cache": "node tests/water-cache.test.mjs",
     "test:water-cache-browser": "node tests/water-cache.playwright.mjs",
