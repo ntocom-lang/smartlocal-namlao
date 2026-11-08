@@ -8,6 +8,7 @@ import {
   createOpPlan, fetchOpItems, friendlyError, saveItemOrder, saveOpPlan, setOpPlanStatus, updateOpItem,
 } from '../../../lib/localPlanApi'
 import { BASIS_LABELS, opPlanDeadline, warningText } from '../../../lib/localPlanDeadlines'
+import { effectiveItemSet, effectivePlans } from '../../../lib/localPlanProgress'
 import { buildOpPlanPrintHtml, openOpPlanPrintWindow } from '../../../lib/localPlanPrint'
 import {
   fiscalYearOfIso, latestOpPlan, nextRevisionNo, reorderItems, sortItems, versionLabel,
@@ -172,7 +173,7 @@ function NextRevisionBox({ revisionNo, busy, onCreate }) {
       </div>
       <label className="flex min-h-11 items-start gap-2 text-sm">
         <input type="checkbox" className="mt-0.5 size-5 shrink-0" checked={copy} onChange={e => setCopy(e.target.checked)} />
-        <span><span className="font-semibold">คัดรายการจากฉบับล่าสุดของปีนี้</span><span className="block text-xs text-gray-500">คัดแล้วแก้ต่อจากของเดิม · ไม่คัด = เริ่มจากฉบับว่าง</span></span>
+        <span><span className="font-semibold">คัดรายการจากฉบับล่าสุดของปีนี้</span><span className="block text-xs text-gray-500">คัดแล้วแก้ต่อจากของเดิม · ฉบับแก้ไขคัดรายการทั้งปี (ฉบับหลัก + ฉบับเพิ่มเติม) · ไม่คัด = เริ่มจากฉบับว่าง</span></span>
       </label>
       <div className="flex flex-wrap gap-2">
         <button type="button" className={btnPrimary} style={{ backgroundColor: 'var(--color-primary)' }} disabled={busy} onClick={() => onCreate({ kind, copy })}>
@@ -241,8 +242,20 @@ export default function OpPlanTab({ tenant, profile, plan, isManager, department
 
   const createNext = async ({ kind, copy }) => {
     setBusy(true); setError('')
+    // ฉบับแก้ไขต้องคัด "ชุดรายการที่มีผลทั้งปี" (ฉบับหลัก/แก้ไขล่าสุด + ฉบับเพิ่มเติมที่ตามมา) ไม่ใช่เฉพาะรายการในฉบับล่าสุด
+    // บั๊กเดิม: ถ้าฉบับล่าสุดเป็นฉบับเพิ่มเติม (มีแต่รายการใหม่) ฉบับแก้ไขที่คัดจากมันจะไม่มีรายการของฉบับหลักเลย
+    // ฉบับเพิ่มเติมที่เลือกคัดยังคัดจากฉบับล่าสุดตามเดิม (ผู้ใช้ตั้งใจเริ่มจากชุดเล็กอยู่แล้ว)
+    let copyItems = null
+    if (copy && kind === 'amendment') {
+      const needed = effectivePlans(opPlans, fiscalYear, { publishedOnly: false })
+      const loaded = await Promise.all(needed.map(p => fetchOpItems(tenant.id, p.id)))
+      const failed = loaded.find(r => r.error)
+      if (failed) { setBusy(false); return setError(friendlyError(failed.error)) }
+      copyItems = effectiveItemSet(opPlans, loaded.flatMap(r => r.items), fiscalYear, { publishedOnly: false })
+    }
     const { opPlan: created, error: createError } = await createOpPlan({
-      municipalityId: tenant.id, devPlanId: plan.id, fiscalYear, kind, revisionNo: nextRevisionNo(opPlans, fiscalYear), copyFromId: copy ? latest.id : null,
+      municipalityId: tenant.id, devPlanId: plan.id, fiscalYear, kind, revisionNo: nextRevisionNo(opPlans, fiscalYear),
+      copyFromId: copy ? latest.id : null, copyItems,
     })
     setBusy(false)
     if (createError) return setError(friendlyError(createError))

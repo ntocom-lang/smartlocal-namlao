@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CalendarRange, ClipboardList, Info, Loader2, Pencil, Plus } from 'lucide-react'
+import { AlertTriangle, CalendarRange, ClipboardList, Info, ListChecks, Loader2, Pencil, Plus } from 'lucide-react'
 import { bangkokIsoDate, thaiShortDate } from '../../../lib/complaintReportPeriods'
 import { fetchDepartments, fetchDevPlans, fetchIsManager, fetchPlanData, friendlyError } from '../../../lib/localPlanApi'
 import { buildAttention, menuLabel } from '../../../lib/localPlanView'
@@ -9,11 +9,13 @@ import { btnGhost, btnPrimary } from '../construction/uiStyles'
 import DevPlanSheet from './DevPlanSheet'
 import DevProjectSheet from './DevProjectSheet'
 import OpPlanTab from './OpPlanTab'
+import ProgressTab from './ProgressTab'
 import ProjectRegistryTab from './ProjectRegistryTab'
 
 const TABS = [
   { id: 'registry', label: 'ทะเบียนโครงการ', Icon: ClipboardList },
   { id: 'op', label: 'แผนดำเนินงาน', Icon: CalendarRange },
+  { id: 'progress', label: 'ติดตามผล', Icon: ListChecks },
 ]
 
 const TONES = {
@@ -26,7 +28,7 @@ const TONES = {
 const defaultPlanOf = plans => plans.find(p => p.is_current) ?? plans[0] ?? null
 
 /**
- * เมนู "แผนพัฒนาท้องถิ่น" (ฝั่งเจ้าหน้าที่): ทะเบียนโครงการ + แผนการดำเนินงานรายปี
+ * เมนู "แผนพัฒนาท้องถิ่น" (ฝั่งเจ้าหน้าที่): ทะเบียนโครงการ + แผนการดำเนินงานรายปี + ติดตามผล
  * อ่านได้ตามบทบาท (officer/staff/technician/viewer ของ อปท.) · แก้ได้เฉพาะผู้จัดการแผน (admin/superadmin/plan_admin) และกองผู้รับผิดชอบ (เดือน+หมายเหตุ)
  * ตัวบังคับสิทธิ์จริงคือ RLS + trigger — ปุ่มที่ซ่อนเป็นแค่ความสะดวก
  */
@@ -193,6 +195,11 @@ export default function LocalPlanModule({ tenant, profile }) {
       {data && tab === 'op' && (
         <OpPlanTab key={plan.id} tenant={tenant} profile={profile} plan={plan} isManager={isManager} departments={departments}
           projects={data.projects} years={data.years} opPlans={data.opPlans} lightItems={data.items} holidaysVersion={holidaysVersion} onChanged={reload} />
+      )}
+
+      {data && tab === 'progress' && (
+        <ProgressTab key={plan.id} tenant={tenant} profile={profile} isManager={isManager} departments={departments}
+          projects={data.projects} opPlans={data.opPlans} />
       )}
 
       {planSheetNode}
