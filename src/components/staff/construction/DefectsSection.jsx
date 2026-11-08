@@ -2,12 +2,14 @@
 // แสดงเมื่อมีวันครบระยะประกัน หรือมีผลตรวจแล้ว หรือโครงการอยู่ขั้นประกันผลงาน/ปิดแล้ว · ผู้ดูเห็นรายการอย่างเดียว
 // ระบบแค่บันทึกผลตรวจ + นับกำหนด (ตรวจครั้งสุดท้ายภายใน 30/15 วันก่อนครบ · กำหนดแก้ไขของผู้รับจ้าง) — ไม่ตัดสินว่าชำรุดหรือไม่
 import { useMemo, useState } from 'react'
-import { AlertOctagon, ChevronDown, Loader2, Plus } from 'lucide-react'
+import { AlertOctagon, ChevronDown, Loader2, Plus, Printer } from 'lucide-react'
 import { bangkokIsoDate } from '../../../lib/complaintReportPeriods'
 import { DEFECT_KINDS, DEFECT_RESULTS, baseStage, warrantyWindow } from '../../../lib/constructionLifecycle'
 import { deleteDefect, recordHistory, saveDefect } from '../../../lib/constructionLifecycleApi'
+import { buildDefectNoticeLetterHtml, buildWarrantyInspectionReportHtml } from '../../../lib/constructionLifecyclePrint'
 import { DEFECT_FIELDS, DEFECT_ONLY_FIELDS, defectDraft, historyNote } from '../../../lib/constructionInstallmentForm'
 import SpecGrid from './LifecycleFields'
+import useLifecyclePrint, { PRINT_BUTTON_CLASS } from './useLifecyclePrint'
 import { btnGhost, btnPrimary } from './uiStyles'
 import { VERIFY_TEXT, thaiDay } from './lifecycleFormat'
 
@@ -71,6 +73,10 @@ export default function DefectsSection({ bundle, access, today = bangkokIsoDate(
   const canWrite = Boolean(access.write || access.manage)
   const [openId, setOpenId] = useState(initialOpenId)
   const warranty = warrantyWindow(bundle)
+  const { print, printable } = useLifecyclePrint(project)
+  // P11 รายงานผลตรวจก่อนครบประกัน (ภายใน) / P12 หนังสือแจ้งผู้รับจ้างแก้ไข (ภายนอก) — ร่างจากข้อมูลในระบบ ผลตรวจกรอกมือโดยผู้ตรวจสอบ
+  const printReport = () => print(ctx => buildWarrantyInspectionReportHtml({ ...ctx, project, contract: bundle.contract, warranty }))
+  const printNotice = row => print(ctx => buildDefectNoticeLetterHtml({ ...ctx, project, contract: bundle.contract, defect: row }))
   const rows = [...(bundle.defects ?? [])].sort((a, b) => String(a.inspected_on ?? '').localeCompare(String(b.inspected_on ?? '')))
   const stage = baseStage(project)
   if (!warranty.end && !rows.length && stage !== 'warranty' && stage !== 'closed') return null
@@ -78,7 +84,14 @@ export default function DefectsSection({ bundle, access, today = bangkokIsoDate(
   return (
     <section className="rounded-2xl border border-gray-200" aria-label="ตรวจความชำรุดบกพร่อง">
       <div className="space-y-0.5 border-b border-gray-100 px-4 py-3">
-        <b className="text-sm text-gray-900">ตรวจความชำรุดบกพร่อง</b>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <b className="text-sm text-gray-900">ตรวจความชำรุดบกพร่อง</b>
+          {warranty.end && (
+            <button type="button" className={PRINT_BUTTON_CLASS} disabled={!printable} onClick={printReport}>
+              <Printer size={13} aria-hidden="true" />พิมพ์รายงานผลตรวจก่อนครบประกัน
+            </button>
+          )}
+        </div>
         {warranty.end ? (
           <p className="text-xs text-gray-600">
             ระยะประกันผลงาน {warranty.start ? thaiDay(warranty.start) : '…'} – {thaiDay(warranty.end)}
@@ -111,6 +124,13 @@ export default function DefectsSection({ bundle, access, today = bangkokIsoDate(
               {canWrite
                 ? <button type="button" aria-expanded={open} onClick={() => setOpenId(open ? null : row.id)} className="flex min-h-11 w-full items-start gap-2 text-left">{head}</button>
                 : <div className="flex items-start gap-2">{head}</div>}
+              {row.result === 'defect' && (
+                <div className="mt-1 flex">
+                  <button type="button" className={PRINT_BUTTON_CLASS} disabled={!printable} onClick={() => printNotice(row)}>
+                    <Printer size={13} aria-hidden="true" />พิมพ์หนังสือแจ้งแก้ไข
+                  </button>
+                </div>
+              )}
               {canWrite && open && (
                 <div className="mt-2 rounded-xl bg-gray-50 p-3">
                   <DefectForm key={`${row.id}-${row.updated_at ?? ''}`} project={project} row={row} today={today} canDelete={Boolean(access.manage)} onClose={() => setOpenId(null)} onChanged={onChanged} />

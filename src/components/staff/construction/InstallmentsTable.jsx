@@ -3,15 +3,17 @@
 // ผลตรวจรับ (inspection_*) = ผู้จัดการเท่านั้น และล็อกช่องข้อเท็จจริงของงวดเมื่อบันทึกผลแล้ว — ฐานข้อมูลบังคับซ้ำที่ civil_manage_columns_guard
 // ⚠️ ระบบไม่ตัดสินผลตรวจรับ/ค่าปรับเอง: ตารางแค่นับวันตามระเบียบให้ · ค่าปรับที่แสดงเป็น "ประมาณการ" ยอดทางการใช้ตัวคำนวณของ e-GP
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertOctagon, CheckCircle2, ChevronDown, Loader2, Plus } from 'lucide-react'
+import { AlertOctagon, CheckCircle2, ChevronDown, Loader2, Plus, Printer } from 'lucide-react'
 import { daysBetween } from '../../../lib/constructionReport'
 import { fineEstimate } from '../../../lib/constructionLifecycle'
+import { buildInstallmentCertificateHtml } from '../../../lib/constructionLifecyclePrint'
 import { deleteInstallment, recordHistory, saveInstallment } from '../../../lib/constructionLifecycleApi'
 import {
   INSTALLMENT_GROUPS, INSTALLMENT_LOCKED_COLUMNS, INSTALLMENT_MANAGER_COLUMNS, historyNote, installmentDraft, installmentSlots,
   MANAGER_ONLY_NOTE, netWarning, suggestedAmount, suggestedNet,
 } from '../../../lib/constructionInstallmentForm'
 import SpecGrid from './LifecycleFields'
+import useLifecyclePrint, { PRINT_BUTTON_CLASS } from './useLifecyclePrint'
 import { btnGhost, btnPrimary } from './uiStyles'
 import { moneyTh, thaiDay } from './lifecycleFormat'
 
@@ -120,6 +122,11 @@ export default function InstallmentsTable({ bundle, access, deadlines = [], toda
   const manage = Boolean(access.manage)
   const [added, setAdded] = useState([])      // เลขงวดที่กด "เพิ่มงวด" แต่ยังไม่ได้บันทึก (ไม่มีแถวในฐาน)
   const [openNo, setOpenNo] = useState(initialOpenNo)
+  const { print, printable } = useLifecyclePrint(project)
+  // P8 ใบรับรองผลการปฏิบัติงาน (มอบผู้รับจ้าง) — ร่างจากข้อมูลงวดนี้ ผลตรวจ/วันที่ตรวจเว้นให้กรรมการกรอกมือเสมอ
+  const printCertificate = slot => print(({ tenant }) => buildInstallmentCertificateHtml({
+    tenant, project, contract: bundle.contract, installment: slot, people: bundle.people,
+  }))
 
   const slots = useMemo(() => {
     const base = installmentSlots(bundle)
@@ -204,6 +211,13 @@ export default function InstallmentsTable({ bundle, access, deadlines = [], toda
                       <td className="px-2 text-gray-700">
                         {slot.delivered_on ? thaiDay(slot.delivered_on) : <span className="text-gray-400">{slot.saved && slot.due_on ? 'ยังไม่ส่ง' : '—'}</span>}
                         {lateDays > 0 && <div className="text-[11px] font-bold text-red-600">ช้า {lateDays} วัน</div>}
+                        {slot.saved && slot.delivered_on && (
+                          <button type="button" className={`${PRINT_BUTTON_CLASS} mt-1`} disabled={!printable}
+                            aria-label={`พิมพ์ใบรับรองผลการปฏิบัติงานงวดที่ ${no}`}
+                            onClick={e => { e.stopPropagation(); printCertificate(slot) }}>
+                            <Printer size={13} aria-hidden="true" />ใบรับรอง
+                          </button>
+                        )}
                       </td>
                       <td className="px-2">
                         {slot.inspection_result === 'accepted' ? <span className={`${BADGE} bg-green-100 text-green-700`}>รับ {thaiDay(slot.inspected_on)}</span>

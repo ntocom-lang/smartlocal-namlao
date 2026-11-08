@@ -2,14 +2,16 @@
 // ⚠️ ระบบไม่อนุมัติเอง: "ผลพิจารณา" คือข้อเท็จจริงตามหนังสือที่ผู้มีอำนาจลงนามแล้ว บันทึกได้เฉพาะหัวหน้ากอง/ผู้ดูแลระบบ (ฐานข้อมูลบังคับที่ civil_manage_columns_guard)
 //    วันสิ้นสุดใหม่ที่ระบบคำนวณให้เป็นแค่ข้อเสนอ แก้ได้ · ไม่เขียนทับค่าที่กรอกแล้ว · ขยายเวลาที่อนุมัติแล้วจะไปนับใน contractSchedule() เอง
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertOctagon, ChevronDown, Loader2 } from 'lucide-react'
+import { AlertOctagon, ChevronDown, Loader2, Printer } from 'lucide-react'
 import { addDays } from '../../../lib/complaintReportPeriods'
 import { CHANGE_KINDS, RULES, contractSchedule } from '../../../lib/constructionLifecycle'
 import { deleteChange, recordHistory, saveChange } from '../../../lib/constructionLifecycleApi'
+import { buildChangeRequestMemoHtml, buildContractAmendMemoHtml } from '../../../lib/constructionLifecyclePrint'
 import {
   CHANGE_DECISIONS, CHANGE_FIELDS, CHANGE_LOCKED_COLUMNS, CHANGE_MANAGER_COLUMNS, MANAGER_ONLY_NOTE, changeDraft, changeFieldApplies, historyNote, suggestedNewEnd,
 } from '../../../lib/constructionInstallmentForm'
 import SpecGrid from './LifecycleFields'
+import useLifecyclePrint, { PRINT_BUTTON_CLASS } from './useLifecyclePrint'
 import { btnGhost, btnPrimary } from './uiStyles'
 import { deadlineStatusText, moneyTh, thaiDay } from './lifecycleFormat'
 
@@ -123,6 +125,11 @@ export default function ContractChangesPanel({ bundle, access, deadlines = [], a
   const manage = Boolean(access.manage)
   const [openId, setOpenId] = useState(initialOpenId)
   const topRef = useRef(null)
+  const { print, printable } = useLifecyclePrint(project)
+  // P9 (ขยายเวลา/งดค่าปรับ/ลดค่าปรับ) / P10 (แก้ไขสัญญา) — บันทึกข้อความร่างจากข้อมูลรายการนี้ ผลพิจารณาเว้นให้ผู้มีอำนาจกรอกมือเสมอ
+  const printMemo = ch => print(ctx => (ch.kind === 'amend_contract' ? buildContractAmendMemoHtml : buildChangeRequestMemoHtml)({
+    ...ctx, project, contract: bundle.contract, change: ch, people: bundle.people,
+  }))
   // กดปุ่มเพิ่มจากท้ายหน้า ฟอร์มอยู่สูงกว่าปุ่มหลายส่วน — เลื่อนให้เห็น
   useEffect(() => { if (adding) topRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }) }, [adding])
   const changes = [...(bundle.changes ?? [])].sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')))
@@ -173,6 +180,11 @@ export default function ContractChangesPanel({ bundle, access, deadlines = [], a
               {canWrite
                 ? <button type="button" aria-expanded={open} onClick={() => setOpenId(open ? null : ch.id)} className="flex min-h-11 w-full items-start gap-2 text-left">{head}</button>
                 : <div className="flex items-start gap-2">{head}</div>}
+              <div className="mt-1 flex">
+                <button type="button" className={PRINT_BUTTON_CLASS} disabled={!printable} onClick={() => printMemo(ch)}>
+                  <Printer size={13} aria-hidden="true" />{ch.kind === 'amend_contract' ? 'พิมพ์บันทึกเสนอแก้ไขสัญญา' : `พิมพ์บันทึกเสนอ${CHANGE_KINDS[ch.kind] ?? ''}`}
+                </button>
+              </div>
               {canWrite && open && (
                 <div className="mt-2 rounded-xl bg-gray-50 p-3">
                   <ChangeForm key={`${ch.id}-${ch.updated_at ?? ''}`} project={project} bundle={bundle} row={ch} manage={manage} onClose={() => setOpenId(null)} onChanged={onChanged} />
