@@ -2,11 +2,13 @@
 //   node tests/civil-lifecycle-db.test.mjs --pglite <temp>/node_modules/@electric-sql/pglite/dist/index.js
 //   ไฟล์ที่รัน (ตามลำดับฐานจริง): 20261106100000 → 20261106100100 → 20261107100000 (#647–#649)
 //                                 → 20261108100000 (คอลัมน์) → 20261108100100 (ตาราง) → 20261108100200 (ฟังก์ชัน/trigger/policy)
+//                                 → 20261108160000 (ปิดทางเมนูเดิมแก้ status ตรง — รันก่อนหมวด 9 เพราะหมวด 9 รันไฟล์ 3 ซ้ำ)
 //
 // ตรวจ: (1) เติม stage จาก status เดิมถูกทุกค่า + status ตาม stage เสมอ (2) เปลี่ยนขั้นได้ทางเดียวผ่าน RPC ตามกติกาสิทธิ์/เหตุผล/เลขหนังสือ
 // (3) เมนูเดิมที่แก้ status ตรงยังทำงาน + ลงประวัติ (4) เลื่อนเองเมื่อล็อกรายงานสัปดาห์ (5) ประวัติเขียนเพิ่มอย่างเดียว ปลอมไม่ได้
 // (6) viewer อ่านได้เฉพาะ อปท. ตัวเอง · council/citizen/anon ไม่ได้ · policy ตรงกับ civil_can_read_project ทุกคู่
 // (7) ช่องผลการตัดสินบันทึกได้เฉพาะผู้จัดการ (8) ลบ/สิทธิ์ตาราง (9) ด่านตรวจหัว/ท้ายไฟล์ + รันซ้ำได้
+// (10) หลังปิดทางเมนูเดิม: ผู้ใช้แก้ status ตรงไม่ได้ทุกบทบาท · RPC / ผู้ดูแลฐานข้อมูล / INSERT แบบส่งแค่ status ยังใช้ได้
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
@@ -22,6 +24,7 @@ const restrictSql = await readMigration('20261107100000_civil_projects_restrict_
 const colsSql = await readMigration('20261108100000_civil_lifecycle_columns.sql')
 const tablesSql = await readMigration('20261108100100_civil_lifecycle_tables.sql')
 const lifeSql = await readMigration('20261108100200_civil_lifecycle_rls_triggers.sql')
+const closeLegacySql = await readMigration('20261108160000_civil_projects_close_legacy_status.sql')
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const MA = id(1)
@@ -641,6 +644,74 @@ await test('โครงการที่ลงนามสัญญาแล�
   await rejects(db.query('TRUNCATE public.civil_projects CASCADE'), DENIED)
   await asRoot()
   assert.equal((await db.query('DELETE FROM public.civil_projects WHERE id IN ($1, $2, $3)', [PY, PZ, PW])).affectedRows, 3)
+})
+
+// ── 10) ปิดทางเมนูเดิมแก้ status ตรง (20261108160000) ──
+// วางก่อนหมวด 9: หมวด 9 รันไฟล์ 3 ซ้ำ ซึ่งคืนฟังก์ชันรุ่นเปิดทางเดิม (ไฟล์นี้บันทึกไว้แล้วว่าต้องรันตามซ้ำ)
+const stageGuardDef = (() => {
+  const i = lifeSql.indexOf('CREATE OR REPLACE FUNCTION public.civil_projects_stage_guard()')
+  const j = lifeSql.indexOf('$;', lifeSql.indexOf('AS $', i) + 5)
+  return lifeSql.slice(i, j + 3)
+})()
+await test('ไฟล์ปิดทางเมนูเดิม: ด่านหัวไฟล์ไม่เขียนทับฟังก์ชันรุ่นที่ไม่รู้จัก · รันซ้ำได้ · ตัดคอมเมนต์/ขึ้นบรรทัดต่างกันยังนับเป็นรุ่นเดิม', async () => {
+  // มีคนแก้ stage_guard ไปเป็นรุ่นอื่นแล้ว → ไฟล์ต้องหยุดทั้งก้อน
+  const tampered = stageGuardDef.replace(/BEGIN(\r?\n)  IF TG_OP = 'INSERT' THEN/, "BEGIN$1  PERFORM 1;$1  IF TG_OP = 'INSERT' THEN")
+  assert.notEqual(tampered, stageGuardDef)
+  await db.exec(tampered)
+  await rejects(db.exec(closeLegacySql), { message: /ไม่ตรงกับรุ่นที่รู้จัก/ })
+  await db.exec('ROLLBACK').catch(() => {})
+  // รุ่นเดิมที่ถูกตัดคอมเมนต์ + เปลี่ยน CRLF/LF (เช่น SQL Editor ตัดคอมเมนต์ให้) ยังต้องผ่าน
+  const stripped = stageGuardDef.replace(/\r\n/g, '\n').replace(/^[ ]*--.*$/gm, '')
+  await db.exec(stripped)
+  await db.exec(closeLegacySql)
+  await db.exec(closeLegacySql)   // รันซ้ำ = รุ่นของไฟล์นี้ ผ่าน
+  const { rows: [p] } = await db.query(`SELECT position('ปุ่มเปลี่ยนขั้นในหน้าโครงการ' IN prosrc) > 0 AS closed, prosecdef
+    FROM pg_proc WHERE oid = 'public.civil_projects_stage_guard()'::regprocedure`)
+  assert.deepEqual([p.closed, p.prosecdef], [true, true])
+})
+
+await test('หลังปิดทางเมนูเดิม: ทุกบทบาท (รวมหัวหน้ากอง/แอดมิน/superadmin) แก้ status ตรงไม่ได้ ไม่ลงประวัติ · ส่ง status ค่าเดิมพร้อมช่องอื่นผ่าน · RPC/ผู้ดูแลฐานข้อมูล/INSERT แบบส่งแค่ status ยังใช้ได้', async () => {
+  await setStageRoot(P1, 'started')
+  const countEvents = async () => { await asRoot(); return (await rows('SELECT count(*)::int AS n FROM public.civil_project_events WHERE project_id = $1', [P1]))[0].n }
+  const n0 = await countEvents()
+  for (const alias of ['techCreator', 'officerD1', 'adminA', 'superadmin']) {
+    for (const to of ['planned', 'approved', 'completed', 'suspended', 'cancelled']) {
+      await actor(alias)
+      await rejects(db.query('UPDATE public.civil_projects SET status = $2 WHERE id = $1', [P1, to]),
+        { code: '42501', message: /ปุ่มเปลี่ยนขั้นในหน้าโครงการ/ })
+    }
+  }
+  let r = await stageOf(P1)
+  assert.deepEqual([r.stage, r.status], ['started', 'in_progress'])
+  assert.equal(await countEvents(), n0, 'ถูกปฏิเสธแล้วต้องไม่มีประวัติค้าง')
+  // ฟอร์มที่ส่งทั้งแถวพร้อม status ค่าเดิม → ไม่ใช่การเปลี่ยนสถานะ ต้องผ่าน
+  await actor('techCreator')
+  await db.query(`UPDATE public.civil_projects SET note = 'หลังปิดทางเมนูเดิม', status = 'in_progress' WHERE id = $1`, [P1])
+  await asRoot()
+  assert.equal((await rows('SELECT note FROM public.civil_projects WHERE id = $1', [P1]))[0].note, 'หลังปิดทางเมนูเดิม')
+  assert.equal(await countEvents(), n0)
+  // RPC ยังเปลี่ยนขั้นได้ตามกติกาเดิม
+  await actor('techCreator')
+  await rpc(P1, 'construction')
+  r = await stageOf(P1)
+  assert.deepEqual([r.stage, r.status], ['construction', 'in_progress'])
+  assert.equal((await lastEvent(P1)).kind, 'stage_change')
+  await actor('officerD1')
+  await rpc(P1, 'suspended', 'รอผลตรวจสอบแบบ', 'ชท 9')
+  assert.deepEqual(Object.values(await stageOf(P1)), ['suspended', 'suspended', 'construction'])
+  // ผู้ดูแลฐานข้อมูล (ไม่มีผู้ล็อกอิน) แก้ status ตรงได้ · กลับจากระงับ = กลับขั้นที่จำไว้ · ประวัติไม่ใช่ legacy_status
+  await asRoot()
+  await db.query(`UPDATE public.civil_projects SET status = 'in_progress' WHERE id = $1`, [P1])
+  assert.deepEqual(Object.values(await stageOf(P1)), ['construction', 'in_progress', null])
+  const ev = await lastEvent(P1)
+  assert.deepEqual([ev.kind, ev.actor], ['stage_change', null])
+  // INSERT ที่ส่งแค่ status (งาน GPS ของช่าง) ไม่เปลี่ยน
+  await actor('techCreator')
+  const { rows: [g] } = await db.query(`INSERT INTO public.civil_projects (municipality_id, created_by, department_id, title, status)
+    VALUES ($1,$2,$3,'งาน GPS ช่าง','in_progress') RETURNING id, stage, status`, [MA, U.techCreator, D1])
+  assert.deepEqual([g.stage, g.status], ['construction', 'in_progress'])
+  await asRoot()
+  await db.query('DELETE FROM public.civil_projects WHERE id = $1', [g.id])
 })
 
 // ── 9) ด่านตรวจท้ายไฟล์ ──
