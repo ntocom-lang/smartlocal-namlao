@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Loader2, Plus, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link2, Loader2, Plus, Trash2, Unlink } from 'lucide-react'
 import { Sheet } from '../../patientTransport/StaffShell'
 import { fiscalYearOf } from '../../../lib/fiscalYear'
 import {
@@ -10,8 +10,10 @@ import { lifecycleFormDefaults, validateLifecycleForm } from '../../../lib/const
 import {
   PROJECT_TYPES, ROAD_SURFACES, friendlyError, saveProject,
 } from '../../../lib/constructionReportApi'
+import { fetchRegistryForLinking } from '../../../lib/localPlanApi'
+import { normalizeProjectName, suggestRegistryMatches } from '../../../lib/localPlanProgress'
 import { Field, Problems, Section } from './ui'
-import { btnGhost, btnPrimary, inp } from './uiStyles'
+import { btnGhost, btnPrimary, inp, lbl } from './uiStyles'
 
 const Hint = ({ children }) => <span className="mt-1 block text-[11px] font-normal text-teal-700">{children}</span>
 const ExternalTag = () => <span className="ml-1 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700">ออกจาก e-GP</span>
@@ -32,6 +34,7 @@ function initialForm(project, contract) {
     fiscal_year: project?.fiscal_year ?? String(fiscalYearOf()),
     project_type: project?.project_type ?? 'road',
     location_desc: project?.location_desc ?? '',
+    registry_ref: project?.registry_ref ?? '',   // ผูกทะเบียนโครงการแผนพัฒนาท้องถิ่น (ว่าง = ไม่ผูก)
     contract_no: project?.contract_no ?? '',
     contractor_name: project?.contractor_name ?? '',
     contract_amount: project?.contract_amount ?? '',
@@ -51,6 +54,90 @@ function initialForm(project, contract) {
     width_m: spec.width_m ?? '',
     sections,
   }
+}
+
+/**
+ * ผูกโครงการนี้กับทะเบียนโครงการของแผนพัฒนาท้องถิ่น — ผูกแล้วแท็บ "ติดตามผล" ของเมนูแผนพัฒนาฯ อ่านขั้นของโครงการนี้เป็นผลดำเนินการเอง
+ * (กองไม่ต้องกรอกซ้ำ 2 ที่) · ทะเบียนโหลดเฉพาะของ อปท. ตัวเอง · โหลดไม่ได้ (ยังไม่มีแผน/ไม่มีสิทธิ์อ่าน) = ซ่อนช่องพร้อมข้อความเล็ก ไม่กระทบการบันทึก
+ * ระบบเดาคู่จากชื่อ+ปีงบให้ แต่คนกดเลือกเอง (ไม่ผูกให้โดยอัตโนมัติ)
+ */
+function RegistryLinkField({ tenantId, form, onChange }) {
+  const [state, setState] = useState({ status: 'loading', projects: [], years: [] })
+  const [query, setQuery] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const result = await fetchRegistryForLinking(tenantId)
+      if (!alive) return
+      setState(result.error || !result.projects.length
+        ? { status: 'unavailable', projects: [], years: [] }
+        : { status: 'ready', projects: result.projects, years: result.years })
+    })()
+    return () => { alive = false }
+  }, [tenantId])
+
+  const linked = form.registry_ref ? state.projects.find(p => p.id === form.registry_ref) : null
+  const suggestions = useMemo(
+    () => (form.registry_ref ? [] : suggestRegistryMatches({ title: form.title, fiscal_year: form.fiscal_year }, state.projects, state.years)),
+    [form.registry_ref, form.title, form.fiscal_year, state.projects, state.years],
+  )
+  const found = useMemo(() => {
+    const q = normalizeProjectName(query)
+    if (!q) return []
+    return state.projects
+      .filter(p => p.status !== 'dropped' && (normalizeProjectName(p.official_name).includes(q) || String(p.project_code ?? '').toLowerCase().includes(q)))
+      .slice(0, 8)
+  }, [query, state.projects])
+
+  if (state.status === 'loading') return null
+  if (state.status === 'unavailable') {
+    return <p className="text-xs text-gray-500 sm:col-span-2">ผูกทะเบียนโครงการแผนพัฒนาท้องถิ่นไม่ได้ในตอนนี้ (ยังไม่มีแผน หรืออ่านทะเบียนไม่ได้) — ข้ามได้ ไม่กระทบการบันทึกโครงการ</p>
+  }
+
+  const pick = id => { onChange(id); setQuery('') }
+  const label = p => [p.project_code, p.official_name].filter(Boolean).join(' · ')
+  // RPC ฝั่งแผนกรองปีด้วยข้อความตรงตัว: ปีที่ไม่ใช่เลข 4 หลักตรงๆ (เช่น เลขไทย/มีคำนำหน้า) จะจับคู่ไม่เจอ ผลจึงไม่ขึ้นในแท็บติดตามผล
+  const yearWarn = Boolean(form.registry_ref) && !/^\d{4}$/.test(String(form.fiscal_year ?? '').trim())
+
+  return (
+    <div className="sm:col-span-2" data-testid="registry-link">
+      <span className={lbl}>ผูกทะเบียนโครงการ (แผนพัฒนาท้องถิ่น)</span>
+      {form.registry_ref ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+          <Link2 size={15} className="shrink-0 text-emerald-700" aria-hidden="true" />
+          <span className="min-w-0 flex-1 break-words text-sm font-semibold text-gray-800">{linked ? label(linked) : 'โครงการในทะเบียน (ไม่พบในแผนที่เมนูแสดงอยู่ตอนนี้)'}</span>
+          <button type="button" className={btnGhost} onClick={() => pick('')}><Unlink size={15} />เลิกผูก</button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {suggestions.length > 0 && (
+            <div className="space-y-1.5" aria-label="ระบบเดาคู่ให้">
+              <p className="text-xs font-semibold text-teal-700">ระบบเดาคู่ให้ (กดเลือกถ้าถูก)</p>
+              {suggestions.map(({ project, score }) => (
+                <button key={project.id} type="button" onClick={() => pick(project.id)}
+                  className="flex min-h-11 w-full items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-left text-sm text-gray-800 hover:bg-teal-100">
+                  <Link2 size={15} className="shrink-0 text-teal-700" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 break-words">{label(project)}</span>
+                  <span className="shrink-0 text-xs text-teal-700">ใกล้เคียง {Math.round(score * 100)}%</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <input className={inp} value={query} onChange={e => setQuery(e.target.value)} maxLength={100} placeholder="ค้นหาโครงการในทะเบียน (ชื่อหรือรหัส)" aria-label="ค้นหาโครงการในทะเบียน" />
+          {found.map(project => (
+            <button key={project.id} type="button" onClick={() => pick(project.id)}
+              className="flex min-h-11 w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50">
+              <span className="min-w-0 flex-1 break-words">{label(project)}</span>
+            </button>
+          ))}
+          {query.trim() && found.length === 0 && <p className="text-xs text-gray-500">ไม่พบโครงการที่ตรงกับคำค้น</p>}
+        </div>
+      )}
+      <Hint>ผูกแล้ว แท็บ "ติดตามผล" ของเมนูแผนพัฒนาท้องถิ่นอ่านขั้นของโครงการนี้เป็นผลดำเนินการเอง กองไม่ต้องกรอกซ้ำ</Hint>
+      {yearWarn && <span className="mt-1 block rounded-lg bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">⚠️ ปีงบประมาณของโครงการนี้ต้องเป็นเลข พ.ศ. 4 หลักแบบอารบิก (เช่น 2570) ไม่งั้นระบบแผนจับคู่ไม่เจอและผลจะไม่ขึ้น</span>}
+    </div>
+  )
 }
 
 /**
@@ -150,6 +237,7 @@ export default function ProjectSheet({ tenant, profile, mode, project, bundle, a
           <Field label="ปีงบประมาณ (พ.ศ.)"><input className={inp} inputMode="numeric" value={form.fiscal_year} onChange={e => set('fiscal_year', e.target.value)} disabled={!editBase} maxLength={4} /></Field>
           <Field label="เลขที่โครงการ"><input className={inp} value={form.project_no} onChange={e => set('project_no', e.target.value)} disabled={!editBase} maxLength={60} /></Field>
           <Field label="สถานที่ก่อสร้าง" className="sm:col-span-2"><input className={inp} value={form.location_desc} onChange={e => set('location_desc', e.target.value)} disabled={!editBase} maxLength={300} placeholder="เช่น ซอยข้างวัด หมู่ 3 ต.…" /></Field>
+          {editBase && <RegistryLinkField tenantId={tenant.id} form={form} onChange={id => set('registry_ref', id)} />}
           {isAdmin && (
             <Field label="กองที่รับผิดชอบ" className="sm:col-span-2">
               <select className={inp} value={departmentId} onChange={e => setDepartmentId(e.target.value)}>

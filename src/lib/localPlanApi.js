@@ -33,7 +33,10 @@ export function friendlyError(error) {
     return 'คุณไม่มีสิทธิ์แก้ข้อมูลนี้ (ต้องเป็นนักวิเคราะห์ฯ ที่ได้รับสิทธิ์จัดการแผน หรือแอดมิน)'
   }
   if (code === '23505') return 'มีข้อมูลนี้อยู่แล้ว (ซ้ำ)'
-  if (code === '23503') return 'ลบไม่ได้เพราะมีข้อมูลอื่นอ้างถึงอยู่ (เช่น โครงการที่ถูกรายการในแผนการดำเนินงานอ้าง)'
+  // ฐานจริงคืน 23503 (ไม่ใช่ 23001) ตอนลบทะเบียนที่ civil_projects.registry_ref อ้างอยู่ — ตรวจบน demo 2569-11-09 → ข้อความนี้ครอบคลุมทั้งแผนดำเนินงานและงานก่อสร้าง
+  if (code === '23503') return 'ลบไม่ได้เพราะมีข้อมูลอื่นอ้างถึงอยู่ (เช่น โครงการที่ถูกรายการในแผนการดำเนินงานอ้าง หรือถูกผูกกับโครงการก่อสร้างของกองช่าง — ให้กองช่างเลิกผูกก่อน)'
+  // เผื่อฐานบางตัวคืน restrict_violation (23001) สำหรับ FK เดียวกัน
+  if (code === '23001') return 'ลบไม่ได้เพราะโครงการนี้ถูกผูกกับงานก่อสร้างของกองช่างอยู่ — ให้กองช่างเลิกผูกก่อน'
   if (code === 'PGRST205' || code === '42P01') return 'ระบบยังไม่ได้ติดตั้งตารางของเมนูนี้ในฐานข้อมูล — แจ้งผู้ดูแลระบบ'
   if (isThai) return message
   return `เกิดข้อผิดพลาด${message ? ` (${message})` : ''}`
@@ -90,7 +93,7 @@ export async function fetchPlanData(municipalityId, devPlanId) {
       .eq('municipality_id', municipalityId).order('project_id').order('fiscal_year')),
     opIds.length
       ? fetchAll(() => supabase.from('local_op_plan_items')
-        .select('id, op_plan_id, dev_project_id, source, department_id, amount').eq('municipality_id', municipalityId)
+        .select('id, op_plan_id, origin_item_id, dev_project_id, source, department_id, amount').eq('municipality_id', municipalityId)
         .in('op_plan_id', opIds).order('id'))
       : Promise.resolve({ data: [], error: null }),
   ])
@@ -221,8 +224,10 @@ export async function saveOpPlan(id, columns) {
  * ถ้าคัดรายการล้มเหลว ลบฉบับที่เพิ่งสร้างทิ้ง (ไม่ให้เหลือฉบับเปล่าที่ทำให้เลขครั้งถัดไปข้าม)
  * คัดแล้วจำต้นทาง: ฉบับ → source_op_plan_id · แต่ละแถว → origin_item_id (ต้นสาย) ให้ผลติดตามที่กองกดไว้ตามมาด้วย
  * (ฐานข้อมูลแปลง id แถวใดในสายเป็นต้นสายเอง และบังคับว่าต้นทางต้องเป็นฉบับครั้งก่อนของปีเดียวกัน — 20261110100100)
+ * copyItems = รายการเต็มที่จะคัด (ถ้าส่งมาใช้แทนการอ่านจาก copyFromId) — ฉบับแก้ไขต้องคัด "ชุดรวมทั้งปี" (ฉบับหลัก + เพิ่มเติม)
+ *   ไม่ใช่เฉพาะรายการในฉบับล่าสุด (ถ้าล่าสุดเป็นฉบับเพิ่มเติม มีแต่รายการใหม่ → รายการหลักจะหายจากฉบับแก้ไข) · copyFromId ยังเป็นฉบับล่าสุด
  */
-export async function createOpPlan({ municipalityId, devPlanId, fiscalYear, kind = 'main', revisionNo = 0, copyFromId = null }) {
+export async function createOpPlan({ municipalityId, devPlanId, fiscalYear, kind = 'main', revisionNo = 0, copyFromId = null, copyItems = null }) {
   const { data: plan, error } = await supabase.from('local_op_plans')
     .insert({ municipality_id: municipalityId, dev_plan_id: devPlanId, fiscal_year: fiscalYear, kind, revision_no: revisionNo,
       source_op_plan_id: copyFromId || null })
@@ -230,7 +235,7 @@ export async function createOpPlan({ municipalityId, devPlanId, fiscalYear, kind
   if (error) return { opPlan: null, error }
   if (!copyFromId) return { opPlan: plan, error: null }
 
-  const source = await fetchOpItems(municipalityId, copyFromId)
+  const source = Array.isArray(copyItems) ? { items: copyItems, error: null } : await fetchOpItems(municipalityId, copyFromId)
   if (source.error) {
     await supabase.from('local_op_plans').delete().eq('id', plan.id)
     return { opPlan: null, error: source.error }
@@ -324,4 +329,103 @@ export async function deleteOpItem(id) {
 export async function saveItemOrder(changes) {
   const results = await Promise.all(changes.map(c => supabase.from('local_op_plan_items').update({ sort_order: c.sort_order }).eq('id', c.id)))
   return { error: results.find(r => r.error)?.error ?? null }
+}
+
+// ── ติดตามผล (แท็บ "ติดตามผล") ─────────────────────────────────────────────
+
+/** ผลดำเนินการรายสายของปีงบ (1 แถวต่อ 1 สาย) · ไม่มีแถว = ยังไม่ได้ดำเนินการ */
+export async function fetchProgress(municipalityId, fiscalYear) {
+  const { data, error } = await fetchAll(() => supabase.from('local_op_item_progress').select('*')
+    .eq('municipality_id', municipalityId).eq('fiscal_year', fiscalYear).order('lineage_id'))
+  return { progress: data ?? [], error }
+}
+
+/**
+ * บันทึกผลของสาย (upsert) — lineageItemId = id แถวใดก็ได้ในสาย (ฐานข้อมูลแปลงเป็นต้นสายเอง · ผู้เรียกควรส่งต้นสายตรงๆ)
+ * ส่งครบ 5 ช่องเสมอ (ช่องที่ว่างส่ง null เพื่อล้างค่าเดิม) · อปท./ปีงบ/กอง ฐานข้อมูลคัดเองจากรายการ ไม่ต้องส่ง
+ * columns: { status, started_on, done_on, reason, note }
+ */
+export async function saveProgress(lineageItemId, columns) {
+  const row = {
+    lineage_id: lineageItemId,
+    status: columns.status,
+    started_on: text(columns.started_on),
+    done_on: text(columns.done_on),
+    reason: text(columns.reason),
+    note: text(columns.note),
+  }
+  const { data, error } = await supabase.from('local_op_item_progress').upsert(row, { onConflict: 'lineage_id' }).select().single()
+  return { progress: data, error }
+}
+
+/** ลบผล = กลับเป็น "ยังไม่ดำเนินการ" · RLS ปฏิเสธแล้วไม่มีแถวถูกลบ (ไม่ error) จึงนับแถวที่ลบจริง */
+export async function deleteProgress(lineageId) {
+  const { data, error } = await supabase.from('local_op_item_progress').delete().eq('lineage_id', lineageId).select('lineage_id')
+  if (error) return { error }
+  if (!data?.length) return { error: { code: '42501', message: 'ลบผลไม่ได้ — ไม่มีสิทธิ์ หรือมีผู้อื่นลบไปแล้ว' } }
+  return { error: null }
+}
+
+/** ข้อมูลรายงานติดตามและประเมินผลของปีงบ (มีได้ 1 แถวต่อปี) — ยังไม่มี = null */
+export async function fetchEvaluation(municipalityId, fiscalYear) {
+  const { data, error } = await supabase.from('local_plan_evaluations').select('*')
+    .eq('municipality_id', municipalityId).eq('fiscal_year', fiscalYear).maybeSingle()
+  return { evaluation: error ? null : data, error }
+}
+
+/**
+ * บันทึกข้อมูลรายงานประจำปี (ผู้จัดการเท่านั้น — RLS) · existingId มี = แก้ · ไม่มี = เพิ่ม (UNIQUE อปท.+ปีงบ)
+ * columns: disbursed_total, disbursed_as_of, disbursed_source, committee_met_on, reported_to_exec_on, presented_on, announced_on,
+ *          announce_ref_no, observations, recommendations, note — ผู้เรียกตรวจแล้ว ที่นี่แปลงช่องว่างเป็น null
+ */
+export async function saveEvaluation(municipalityId, fiscalYear, columns, existingId = null) {
+  const row = {
+    disbursed_total: columns.disbursed_total === '' || columns.disbursed_total === undefined ? null : columns.disbursed_total,
+    disbursed_as_of: text(columns.disbursed_as_of),
+    disbursed_source: text(columns.disbursed_source),
+    committee_met_on: text(columns.committee_met_on),
+    reported_to_exec_on: text(columns.reported_to_exec_on),
+    presented_on: text(columns.presented_on),
+    announced_on: text(columns.announced_on),
+    announce_ref_no: text(columns.announce_ref_no),
+    observations: text(columns.observations),
+    recommendations: text(columns.recommendations),
+    note: text(columns.note),
+  }
+  if (!existingId) {
+    const { data, error } = await supabase.from('local_plan_evaluations')
+      .insert({ ...row, municipality_id: municipalityId, fiscal_year: fiscalYear }).select().single()
+    return { evaluation: data, error }
+  }
+  const { data, error } = await supabase.from('local_plan_evaluations').update(row).eq('id', existingId).select().single()
+  return { evaluation: data, error }
+}
+
+/**
+ * ขั้นของโครงการก่อสร้างที่ผูกทะเบียนโครงการ (RPC — ไม่คืน id โครงการก่อสร้าง) · fiscalYear ว่าง = ทุกปี
+ * ⚠️ RPC กรองปีด้วยข้อความตรงตัว (btrim(fiscal_year) = '2570') — ผู้เรียกที่ต้องการ "ผูกไว้ทุกปี" ให้เรียกแบบไม่ส่งปี แล้วคัดปีเอง
+ */
+export async function fetchCivilStages(municipalityId, fiscalYear = null) {
+  const { data, error } = await supabase.rpc('local_plan_civil_stages', { p_municipality_id: municipalityId, p_fiscal_year: fiscalYear })
+  return { rows: error ? [] : (data ?? []), error }
+}
+
+/**
+ * ทะเบียนโครงการของแผนพัฒนาฉบับที่เมนูแสดง (is_current) ของ อปท. นี้ — ไว้ให้โมดูลก่อสร้างเลือกผูก
+ * อ่านเบาๆ เฉพาะช่องที่ใช้ · ไม่มีแผน/อ่านไม่ได้ (RLS) = projects ว่าง + error ผู้เรียกซ่อนช่องเงียบๆ
+ * ⚠️ กรอง municipality_id เองเสมอ (superadmin อ่านได้ทุก อปท. — ไม่กรองจะเห็นปนกัน)
+ */
+export async function fetchRegistryForLinking(municipalityId) {
+  const { data: plan, error: planError } = await supabase.from('local_dev_plans').select('id')
+    .eq('municipality_id', municipalityId).eq('is_current', true).maybeSingle()
+  if (planError || !plan) return { projects: [], years: [], error: planError ?? null }
+  const projects = await fetchAll(() => supabase.from('local_dev_plan_projects')
+    .select('id, project_code, official_name, status, strategy, department_id')
+    .eq('municipality_id', municipalityId).eq('dev_plan_id', plan.id).order('project_code', { nullsFirst: false }).order('id'))
+  if (projects.error) return { projects: [], years: [], error: projects.error }
+  const ids = new Set(projects.data.map(p => p.id))
+  const years = await fetchAll(() => supabase.from('local_dev_plan_project_years').select('project_id, fiscal_year, amount')
+    .eq('municipality_id', municipalityId).order('project_id').order('fiscal_year'))
+  if (years.error) return { projects: projects.data, years: [], error: null }   // วงเงินอ่านไม่ได้ = ยังเดาคู่ได้ด้วยชื่ออย่างเดียว
+  return { projects: projects.data, years: years.data.filter(y => ids.has(y.project_id)), error: null }
 }

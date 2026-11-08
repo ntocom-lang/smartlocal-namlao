@@ -63,7 +63,7 @@ const text = value => {
 
 const PROJECT_COLS = 'id, project_no, title, project_type, fiscal_year, status, contract_no, contractor_name, contract_amount, '
   + 'budget_amount, paid_amount, start_date, end_date, location_desc, department_id, created_by, created_at, '
-  + 'stage, stage_before_hold, stage_changed_at, work_group, operator_eval_required'   // วงจรโครงการ (migration 20261108100000)
+  + 'stage, stage_before_hold, stage_changed_at, work_group, operator_eval_required, registry_ref'   // วงจรโครงการ (migration 20261108100000) + ผูกทะเบียนโครงการแผนพัฒนา (registry_ref)
 
 /** โครงการของ อปท. นี้ + รหัสโครงการที่ผู้ใช้ถูกระบุชื่อไว้ (ใช้ตัดสินว่าเห็นโครงการข้ามกองได้ไหม) */
 export async function fetchProjects(tenantId, userId) {
@@ -183,6 +183,8 @@ export async function saveProject({ mode, tenantId, userId, projectId, form, ite
       start_date: text(form.start_date),
       end_date: text(form.end_date),
       ...lifecycleProjectColumns(form),   // work_group, operator_eval_required (เฉพาะ editBase)
+      // ผูกทะเบียนโครงการ (local_dev_plan_projects.id) — ฟอร์มไม่ส่งช่องนี้มา = ไม่แตะ · ว่าง = เลิกผูก · FK RESTRICT ที่ฝั่งทะเบียน (20261110100200)
+      ...(form.registry_ref === undefined ? {} : { registry_ref: text(form.registry_ref) }),
     }
     if (mode === 'create') {
       const { data, error } = await supabase.from('civil_projects')
