@@ -2,18 +2,20 @@
 // ผู้จัดการแผนสร้าง/ตั้งฐานนับ 30 วัน/ประกาศ · ประกาศแล้วแช่แข็ง (อ่านอย่างเดียว) แก้ต้องทำฉบับครั้งถัดไป
 // ขยายเวลา (ข้อ 27) เป็นอำนาจผู้บริหารท้องถิ่น — ระบบแค่เก็บเลขที่/วันที่หนังสือและกำหนดใหม่ ไม่ตัดสินให้
 import { useEffect, useMemo, useState } from 'react'
-import { History, Loader2, Plus } from 'lucide-react'
+import { History, Loader2, Plus, Printer, Upload } from 'lucide-react'
 import { bangkokIsoDate, thaiShortDate } from '../../../lib/complaintReportPeriods'
 import {
   createOpPlan, fetchOpItems, friendlyError, saveItemOrder, saveOpPlan, setOpPlanStatus, updateOpItem,
 } from '../../../lib/localPlanApi'
 import { BASIS_LABELS, opPlanDeadline, warningText } from '../../../lib/localPlanDeadlines'
+import { buildOpPlanPrintHtml, openOpPlanPrintWindow } from '../../../lib/localPlanPrint'
 import {
   fiscalYearOfIso, latestOpPlan, nextRevisionNo, reorderItems, sortItems, versionLabel,
 } from '../../../lib/localPlanView'
 import { ListCard, Pills } from '../../patientTransport/StaffShell'
 import { Field } from '../construction/ui'
 import { btnGhost, btnPrimary, inp } from '../construction/uiStyles'
+import OpImportSheet from './OpImportSheet'
 import OpItemSheet from './OpItemSheet'
 import OpPlanTable from './OpPlanTable'
 import PlanHistory from './PlanHistory'
@@ -196,6 +198,8 @@ export default function OpPlanTab({ tenant, profile, plan, isManager, department
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [sheet, setSheet] = useState(null) // { item }
+  const [importOpen, setImportOpen] = useState(false)
+  const [notice, setNotice] = useState('')
   const [showHistory, setShowHistory] = useState(false)
   const [itemsState, setItemsState] = useState({ planId: null, items: [], error: '' })
   const [itemsReload, setItemsReload] = useState(0)
@@ -253,6 +257,14 @@ export default function OpPlanTab({ tenant, profile, plan, isManager, department
     return ''
   }
 
+  // พิมพ์ใบแผน (ทุกคนที่เห็นแท็บ) — เปิดหน้าต่างทันทีที่กดปุ่ม (กัน pop-up blocker บนมือถือ) · ข้อมูล ณ วันนี้ตามเวลาไทย
+  const printPlan = () => {
+    if (!itemsReady || !opPlan) return
+    setError(''); setNotice('')
+    const html = buildOpPlanPrintHtml({ tenant, opPlan, items, departments, asOf: bangkokIsoDate() })
+    if (!openOpPlanPrintWindow(html)) setError('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
+  }
+
   const move = async (item, direction) => {
     const changes = reorderItems(items, item.id, direction)
     if (!changes.length) return
@@ -273,7 +285,7 @@ export default function OpPlanTab({ tenant, profile, plan, isManager, department
         <label className="block">
           <span className="mb-1 block text-xs font-semibold text-gray-500">ปีงบประมาณ</span>
           <select className="min-h-11 rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800" value={fiscalYear}
-            onChange={e => { setFiscalYear(Number(e.target.value)); setChosenId(null); setError('') }}>
+            onChange={e => { setFiscalYear(Number(e.target.value)); setChosenId(null); setError(''); setNotice('') }}>
             {planYears.map(y => <option key={y} value={y}>ปีงบ {y}</option>)}
           </select>
         </label>
@@ -286,6 +298,7 @@ export default function OpPlanTab({ tenant, profile, plan, isManager, department
       </div>
 
       {error && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {notice && <p role="status" className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p>}
 
       {!opPlan && (
         <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-5 py-10 text-center text-gray-800">
@@ -306,7 +319,13 @@ export default function OpPlanTab({ tenant, profile, plan, isManager, department
           {isManager && opPlan.status === 'published' && !isLatest && draftExists && <p className="text-xs text-gray-500">มีฉบับร่างครั้งถัดไปของปีนี้อยู่แล้ว — เลือกฉบับล่าสุดด้านบนเพื่อแก้ต่อ</p>}
 
           <ListCard title={`รายการในแผน · ปีงบ ${opPlan.fiscal_year} · ${versionLabel(opPlan)}`} count={items.length}
-            action={manage && <button type="button" className={btnPrimary} style={{ backgroundColor: 'var(--color-primary)' }} onClick={() => setSheet({ item: null })} disabled={!itemsReady}><Plus size={16} />เพิ่มรายการ</button>}>
+            action={(
+              <>
+                {manage && <button type="button" className={btnPrimary} style={{ backgroundColor: 'var(--color-primary)' }} onClick={() => setSheet({ item: null })} disabled={!itemsReady}><Plus size={16} />เพิ่มรายการ</button>}
+                {manage && <button type="button" className={btnGhost} onClick={() => { setNotice(''); setImportOpen(true) }} disabled={!itemsReady}><Upload size={16} />นำเข้า</button>}
+                <button type="button" className={btnGhost} onClick={printPlan} disabled={!itemsReady}><Printer size={16} />พิมพ์</button>
+              </>
+            )}>
             {itemsState.error && <p role="alert" className="m-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">โหลดรายการไม่สำเร็จ — {itemsState.error}</p>}
             {!itemsReady && !itemsState.error && <div className="flex items-center justify-center gap-2 py-10 text-sm text-gray-500"><Loader2 className="animate-spin" size={16} />กำลังโหลดรายการ…</div>}
             {itemsReady && (
@@ -321,6 +340,14 @@ export default function OpPlanTab({ tenant, profile, plan, isManager, department
               : <button type="button" className={btnGhost} onClick={() => setShowHistory(true)}><History size={15} />ดูประวัติของฉบับนี้</button>}
           </div>
         </>
+      )}
+
+      {importOpen && opPlan && manage && (
+        <OpImportSheet
+          tenant={tenant} opPlan={opPlan} existingItems={items} departments={departments} projects={projects}
+          onClose={() => setImportOpen(false)}
+          onImported={count => { setImportOpen(false); setNotice(`นำเข้าแล้ว ${count} รายการ (ต่อท้ายรายการเดิม)`); reloadAll() }}
+        />
       )}
 
       {sheet && opPlan && (

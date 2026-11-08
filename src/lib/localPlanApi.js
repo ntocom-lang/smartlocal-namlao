@@ -265,6 +265,46 @@ export async function createOpItem(opPlanId, municipalityId, columns) {
   return { item: data, error }
 }
 
+/**
+ * นำเข้ารายการหลายแถวจากพรีวิว (ผู้จัดการเท่านั้น · ฉบับร่างเท่านั้น — RLS/trigger บังคับ)
+ * rows = values ของพรีวิว { seq_no, item_name, amount, department_id, month_from, month_to, note, dev_project_id }
+ * sort_order = startSortOrder + ลำดับในไฟล์ (ผู้เรียกส่ง max ของรายการเดิม + ช่วงห่าง) · source = 'local' เสมอ
+ * insert ทีละ 200 แถว · ชุดไหนล้ม → ลบรายการที่เพิ่ม insert สำเร็จไปแล้วทั้งหมด (ไม่ให้เหลือครึ่งๆ กลางๆ) แล้วคืน error
+ * คืน { count, error } · ลบย้อนไม่สำเร็จด้วย → เพิ่ม leftover = จำนวนรายการที่ยังค้างในฉบับ (ผู้เรียกต้องบอกให้เจ้าหน้าที่ตรวจเอง)
+ */
+export async function importOpItems({ opPlanId, municipalityId, rows, startSortOrder = 0 }) {
+  const payload = (rows ?? []).map((r, i) => ({
+    op_plan_id: opPlanId,
+    municipality_id: municipalityId,
+    source: 'local',
+    department_id: r.department_id ?? null,
+    dev_project_id: r.dev_project_id ?? null,
+    seq_no: r.seq_no ?? null,
+    sort_order: Number(startSortOrder) + i,
+    item_name: r.item_name,
+    amount: r.amount ?? null,
+    month_from: r.month_from ?? null,
+    month_to: r.month_to ?? null,
+    note: r.note ?? null,
+  }))
+  const inserted = []
+  for (let from = 0; from < payload.length; from += 200) {
+    const { data, error } = await supabase.from('local_op_plan_items').insert(payload.slice(from, from + 200)).select('id')
+    if (error) {
+      // ลบทีละ 100 id — id ละ ~39 ตัวอักษรใน URL ส่งทีเดียวหลักพัน id เกินความยาว URL ที่เซิร์ฟเวอร์รับ
+      let leftover = 0
+      for (let at = 0; at < inserted.length; at += 100) {
+        const ids = inserted.slice(at, at + 100)
+        const { error: rollbackError } = await supabase.from('local_op_plan_items').delete().in('id', ids)
+        if (rollbackError) leftover += ids.length
+      }
+      return leftover ? { count: 0, error, leftover } : { count: 0, error }
+    }
+    inserted.push(...(data ?? []).map(r => r.id))
+  }
+  return { count: inserted.length, error: null }
+}
+
 /** แก้รายการ — คนที่แก้ได้แค่เดือน/หมายเหตุ ผู้เรียกต้องส่งเฉพาะ { month_from, month_to, note } */
 export async function updateOpItem(id, columns) {
   const { data, error } = await supabase.from('local_op_plan_items').update(columns).eq('id', id).select().single()
