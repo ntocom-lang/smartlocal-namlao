@@ -185,6 +185,8 @@ export default function InstallmentsTable({ bundle, access, deadlines = [], toda
                 const no = slot.installment_no
                 const report = dl('installment_due_report', no)
                 const inspection = dl('installment_inspection', no)
+                const headReport = dl('inspection_head_report', no)
+                const headReportOpen = headReport && (headReport.state === 'open' || headReport.state === 'due_today')
                 const overdue = report?.state === 'overdue' || inspection?.state === 'overdue'
                 const lateDays = slot.delivered_on && slot.due_on && slot.delivered_on > slot.due_on ? daysBetween(slot.due_on, slot.delivered_on) : 0
                 const open = openNo === no
@@ -224,6 +226,7 @@ export default function InstallmentsTable({ bundle, access, deadlines = [], toda
                           : slot.inspection_result === 'rejected' ? <span className={`${BADGE} bg-red-100 text-red-700`}>ไม่รับ</span>
                             : slot.inspected_on ? <span className={`${BADGE} bg-gray-100 text-gray-600`}>ตรวจ {thaiDay(slot.inspected_on)} (ยังไม่บันทึกผล)</span>
                               : <DueBadge deadline={inspection} />}
+                        {headReportOpen && <div className="mt-0.5 text-[11px] font-semibold text-amber-700">รายงานหัวหน้าหน่วยงานภายใน {thaiDay(headReport.due)}</div>}
                       </td>
                       <td className="px-2">
                         {slot.paid_on ? <span className={`${BADGE} bg-green-100 text-green-700`}>จ่าย {thaiDay(slot.paid_on)}</span>

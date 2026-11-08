@@ -121,7 +121,8 @@ export default function ProjectLifecycleSheet({ bundle, access, latest = null, s
       onSave={save} onClear={clear} />
   ))
   const deadlineRows = stage => list
-    .filter(d => DEADLINE_STAGES[d.key]?.includes(stage) && !MILESTONE_BY_KEY[d.key])
+    // reminder ที่พ้นกำหนดแล้ว (lapsed) ไม่แสดง: ไม่มีช่องบันทึกว่าทำแล้ว ค้างไว้ทุกงวดจะรกโดยไม่มีอะไรให้ทำต่อ
+    .filter(d => DEADLINE_STAGES[d.key]?.includes(stage) && !MILESTONE_BY_KEY[d.key] && d.state !== 'lapsed')
     .map(d => <DeadlineRow key={`${d.key}-${d.installmentNo ?? ''}-${d.due}`} deadline={d} />)
   const otherStages = STAGES.filter(s => s !== focus && (MILESTONES.some(m => m.stage === s) || list.some(d => DEADLINE_STAGES[d.key]?.includes(s) && !MILESTONE_BY_KEY[d.key])))
 

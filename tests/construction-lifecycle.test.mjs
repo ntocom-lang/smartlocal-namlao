@@ -296,6 +296,71 @@ await test('ตรวจรับภายใน 3 วันทำการน�
   assert.equal(dl(done, 'installment_inspection', '2026-11-20').state, 'late_done')
 })
 
+await test('ว 681: กรรมการตรวจรับงวดสุดท้าย 5 วันทำการ · งวดงาน 3 · ไม่รู้จำนวนงวด → 3 + ต้องยืนยัน', () => {
+  const inst = no => ({ installment_no: no, chair_acknowledged_on: '2026-11-05' }) // พฤหัส
+  const b = bundleOf({ contract: { installments_total: 2 }, installments: [inst(1), inst(2)] })
+  const all = L.deadlines(b, '2026-11-09').filter(d => d.key === 'installment_inspection')
+  const [first, last] = [all.find(d => d.installmentNo === 1), all.find(d => d.installmentNo === 2)]
+  assert.equal(first.due, '2026-11-10') // ศ.(1) จ.(2) อ.(3)
+  assert.equal(first.verify, false)
+  assert.equal(last.due, '2026-11-12')  // ... พ.(4) พฤ.(5)
+  assert.match(last.label, /งวดสุดท้าย/)
+  assert.match(last.basis, /ว 681/)
+  assert.equal(last.verify, false)
+  const unknown = dl(bundleOf({ installments: [inst(1)] }), 'installment_inspection', '2026-11-09')
+  assert.equal(unknown.due, '2026-11-10', 'ไม่รู้ว่างวดสุดท้าย → ใช้ 3 วัน (เตือนเร็วไว้ก่อน)')
+  assert.equal(unknown.verify, true)
+  // ราคาต่อหน่วยใช้ 3/5 เหมือนกัน
+  const unit = bundleOf({ project: { contract_amount: 150_000_000 }, contract: { price_kind: 'unit_price', installments_total: 1 }, installments: [inst(1)] })
+  assert.equal(dl(unit, 'installment_inspection', '2026-11-09').due, '2026-11-12')
+})
+
+await test('ว 681: ผู้ควบคุมงาน — เหมารวม 3/3 · ต่อหน่วยตามวงเงิน (รวมค่าขอบ "ไม่เกิน") · ค่าสำรองเมื่อข้อมูลไม่ครบ', () => {
+  const days = (contract, amount, no) => L.supervisorInstallmentDays(bundleOf({ project: { contract_amount: amount }, contract }), no)
+  const unit = { price_kind: 'unit_price', installments_total: 3 }
+  assert.deepEqual(days({ price_kind: 'lump_sum', installments_total: 3 }, 500_000_000, 1), { days: 3, assumed: false })
+  assert.deepEqual(days({ price_kind: 'lump_sum', installments_total: 3 }, 500_000_000, 3), { days: 3, assumed: false })
+  const cases = [
+    [30_000_000, 4, 8], [30_000_001, 8, 12], [60_000_000, 8, 12], [60_000_001, 12, 16],
+    [100_000_000, 12, 16], [100_000_001, 16, 20], [1_000_000_000, 16, 20],
+  ]
+  for (const [amount, inst, fin] of cases) {
+    assert.deepEqual(days(unit, amount, 1), { days: inst, assumed: false }, `รายงวด ${amount}`)
+    assert.deepEqual(days(unit, amount, 3), { days: fin, assumed: false }, `งวดสุดท้าย ${amount}`)
+  }
+  assert.deepEqual(days({ installments_total: 3 }, 50_000_000, 3), { days: 3, assumed: true }, 'ไม่รู้ชนิดราคา → เหมารวม')
+  assert.deepEqual(days({ price_kind: 'unit_price', installments_total: 3 }, null, 3), { days: 8, assumed: true }, 'ต่อหน่วยไม่รู้วงเงิน → ช่วงแรก')
+  assert.deepEqual(days({ price_kind: 'unit_price' }, 50_000_000, 3), { days: 8, assumed: true }, 'ไม่รู้จำนวนงวด → ค่ารายงวด')
+
+  const b = bundleOf({ project: { contract_amount: 2_000_000 }, contract: { price_kind: 'unit_price', installments_total: 2 },
+    installments: [{ installment_no: 1, due_on: '2026-11-10' }, { installment_no: 2, due_on: '2026-11-10' }] }) // อ.
+  const list = L.deadlines(b, '2026-11-10').filter(d => d.key === 'installment_due_report')
+  assert.equal(list.find(d => d.installmentNo === 1).due, '2026-11-16') // พ.(1) พฤ.(2) ศ.(3) จ.(4)
+  assert.equal(list.find(d => d.installmentNo === 2).due, '2026-11-20') // 8 วันทำการ
+  assert.ok(list.every(d => d.verify), 'ว 681 ไม่ระบุเหตุตั้งต้นของผู้ควบคุมงาน → ต้องยืนยันเสมอ')
+})
+
+await test('ว 681: ตรวจรับแล้วเตือนรายงานหัวหน้าหน่วยงาน 2 วันทำการ — เตือนอย่างเดียว พ้นกำหนดไม่ขึ้นว่าเลย', () => {
+  const b = bundleOf({ installments: [{ installment_no: 1, chair_acknowledged_on: '2026-11-10', inspected_on: '2026-11-12', inspection_result: 'rejected' }] }) // พฤ.
+  const d = dl(b, 'inspection_head_report', '2026-11-13')
+  assert.equal(d.due, '2026-11-16') // ศ.(1) จ.(2)
+  assert.equal(d.mode, 'reminder')
+  assert.equal(d.state, 'open')
+  assert.ok(codes(L.projectAlerts(b, '2026-11-13')).includes('inspection_head_report_soon'))
+  assert.equal(dl(b, 'inspection_head_report', '2026-11-16').state, 'due_today')
+  assert.equal(dl(b, 'inspection_head_report', '2026-11-17').state, 'lapsed')
+  assert.ok(!codes(L.projectAlerts(b, '2026-11-17')).some(c => c.startsWith('inspection_head_report')), 'พ้นกำหนดไม่เตือน (ไม่มีช่องบันทึกว่ารายงานแล้ว)')
+  const noResult = bundleOf({ installments: [{ installment_no: 1, inspected_on: '2026-11-12' }] })
+  assert.equal(dl(noResult, 'inspection_head_report', '2026-11-13'), undefined, 'ยังไม่บันทึกผลตรวจรับ → ยังไม่เตือน')
+})
+
+await test('ว 681: เลยกำหนดตรวจรับ/รายงานงวด → คำเตือนบอกทางขอขยายเวลาต่อหัวหน้าหน่วยงาน', () => {
+  const b = bundleOf({ installments: [{ installment_no: 1, chair_acknowledged_on: '2026-11-05' }] })
+  const a = L.projectAlerts(b, '2026-11-11').find(x => x.code === 'installment_inspection_overdue')
+  assert.ok(a)
+  assert.match(a.message, /ขอขยายเวลา.*ว 681/)
+})
+
 await test('กับดักวันเสาร์: กำหนดวันศุกร์ วันเสาร์ต้องขึ้น "เลยกำหนด" แม้ตัวนับวันทำการให้ 0', () => {
   const b = bundleOf({ installments: [{ installment_no: 2, due_on: '2026-11-10' }] }) // อ. + 3 วันทำการ = ศ. 13
   const d = dl(b, 'installment_due_report', '2026-11-14')

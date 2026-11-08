@@ -46,6 +46,7 @@ export const DEADLINE_STAGES = {
   start_report: ['started'],
   installment_due_report: ['construction', 'final_inspection'],
   installment_inspection: ['construction', 'final_inspection'],
+  inspection_head_report: ['construction', 'final_inspection'],
   fine_notice: ['construction', 'final_inspection'],
   change_request: ['construction', 'final_inspection'],
   warranty_final_inspection: ['warranty'],
@@ -86,6 +87,7 @@ export function deadlineStatusText(d) {
     case 'open': return d.daysLeft === null ? '' : `เหลือ ${d.daysLeft}${unit}`
     case 'waiting': return d.daysLeft === null ? 'ยังอยู่ในระยะรอ' : `ยังอยู่ในระยะรอ (อีก ${d.daysLeft}${unit})`
     case 'passed': return 'พ้นระยะรอแล้ว'
+    case 'lapsed': return 'พ้นกำหนดแล้ว (ระบบไม่ได้บันทึกว่ารายงานแล้วหรือยัง)'
     default: return ''
   }
 }
