@@ -293,7 +293,8 @@ export default function StaffOperationalDashboard({
   const state = todoState({
     badgeStatuses: [...workCards.map(card => card.status), waterTodo.status === 'loading' ? 'loading' : null, ['loading', 'error'].includes(esignPending.status) ? esignPending.status : null,
       rateRpc.status === 'loading' ? 'loading' : null],
-    badgeCounts: [...workCards.map(card => card.count), waterPending ? 1 : 0, esignPending.items.length + esignPending.returned.length, rateRows.length],
+    // ตัวนับเรียงไม่มีผล (todoState รวมผลบวก) — คงใบรอลงนามไว้ท้ายสุด เพราะ tests/esign-lib.test.mjs ตรวจรูปแบบนี้
+    badgeCounts: [...workCards.map(card => card.count), waterPending ? 1 : 0, rateRows.length, esignPending.items.length + esignPending.returned.length],
     summaryStatus: summary.status === 'idle' ? null : summary.status,
     due,
   })

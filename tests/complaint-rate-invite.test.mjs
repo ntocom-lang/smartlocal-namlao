@@ -308,7 +308,8 @@ test('code ผลลัพธ์ที่ฐานข้อมูลคืนม
 test('ส่วน "ต้องทำตอนนี้": ผูกเข้า hasTodo / todoState / nothingShownYet · error ไม่บล็อกไฟเขียว', () => {
   assert.match(dashboard, /rateRpc\.status === 'loading' \? 'loading' : null/, 'badgeStatuses ใส่เฉพาะ loading')
   assert.ok(!/rateRpc\.status === 'error'/.test(dashboard) && !/\['loading', 'error'\]\.includes\(rateRpc/.test(dashboard), 'ห้ามใส่ error เข้า badgeStatuses')
-  assert.match(dashboard, /rateRows\.length\]/, 'badgeCounts')
+  // ลำดับในรายการไม่มีผล (todoState รวมผลบวก) — ใบรอลงนามต้องอยู่ท้ายตามที่ tests/esign-lib.test.mjs ตรวจ
+  assert.match(dashboard, /badgeCounts: \[[^\n]*rateRows\.length,/, 'badgeCounts ต้องนับแถวชวนประเมิน')
   assert.match(dashboard, /esignShown \|\| rateShown/, 'hasTodo')
   assert.match(dashboard, /!esignShown && !rateShown/, 'nothingShownYet')
   assert.ok(dashboard.indexOf('<MyPendingSignatures') < dashboard.indexOf('<ComplaintRateInvite'), 'วางต่อจาก MyPendingSignatures')
