@@ -48,6 +48,7 @@ import MonthlyComplaintShareCard from '../components/staff/MonthlyComplaintShare
 import PortalSwitcher from '../components/layout/PortalSwitcher'
 import StaffAccountMenu from '../components/layout/StaffAccountMenu'
 import PortalDrawer from '../components/common/PortalDrawer'
+import CollapsibleNavGroup from '../components/common/CollapsibleNavGroup'
 import useStickyChrome from '../hooks/useStickyChrome'
 
 const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
@@ -271,6 +272,15 @@ const MODULE_GROUPS = [
   { group: 'ตรวจสอบภายใน', items: [] },
 ]
 const MODULES = [...STANDALONE_GROUPS.flatMap(g => g.items), ...MODULE_GROUPS.flatMap(g => g.items)]
+
+// งานค้าง = รายการที่ยังไม่ปิดตามสถานะเดิมของโมดูล ไม่ใช่จำนวนข้อมูลทั้งหมด
+// 1 โครงการนับครั้งเดียว ไม่บวกซ้ำด้วยรายงานรายสัปดาห์ · ตารางขยะ/ประวัติน้ำไม่มีสถานะงานค้าง
+const DEPARTMENT_WORK_SOURCES = [
+  { key: 'local-plan', table: 'local_dev_plans', statuses: ['draft'] },
+  { key: 'local-plan', table: 'local_op_plans', statuses: ['draft'] },
+  { key: 'infra', table: 'infrastructure_works', statuses: ['planned', 'in_progress'] },
+  { key: 'projects', table: 'civil_projects', statuses: ['planned', 'approved', 'in_progress', 'suspended'] },
+]
 
 // เมนูที่ช่างเห็นในหน้าเจ้าหน้าที่ (ช่างคือเจ้าหน้าที่กองช่าง เข้าหน้านี้ได้ ดู RequireAuth ใน App.jsx)
 //
@@ -2524,6 +2534,7 @@ export default function StaffDashboard() {
   const [pendingCount, setPendingCount] = useState(0)
   const [newComplaintCount, setNewComplaintCount] = useState(0)
   const [patientWorkBadge, setPatientWorkBadge] = useState({ tenantId: null, profileId: null, count: 0 })
+  const [departmentWork, setDepartmentWork] = useState({ scopeKey: null, counts: {}, errors: {} })
   // สถานะการโหลดของตัวเลข badge ทั้งสามตัว ('loading' | 'ok' | 'error') ให้หน้าแรกแยกออกว่าเลข 0 คือ
   // "ไม่มีงานค้างจริง" หรือ "ยังไม่รู้" — ตัวเลขเริ่มที่ 0 เสมอ ถ้าไม่มีสถานะนี้หน้าแรกจะขึ้น "ไม่มีงานค้าง" ผิดๆ
   const [workStatus, setWorkStatus] = useState({ inbox: 'loading', complaints: 'loading', [PATIENT_TRANSPORT_MODULE_KEY]: 'loading' })
@@ -2605,13 +2616,82 @@ export default function StaffDashboard() {
     .map(g => ({ ...g, items: g.items.filter(m => scopedKeys.includes(m.key)) }))
     .filter(g => g.items.length > 0)
   const visibleGroups = MODULE_GROUPS
-    .map(g => ({ ...g, items: g.items.filter(m => scopedKeys.includes(m.key)).map(withPlanLabel) }))
+    .map(g => ({ ...g, collapsible: true, items: g.items.filter(m => scopedKeys.includes(m.key)).map(withPlanLabel) }))
     // กองที่ไม่มีเมนูให้ผู้ใช้คนนี้เห็น ไม่ต้องขึ้นหัวข้อ (ทุกบทบาท — เดิมโชว์กองว่างให้ทุกคนยกเว้นช่าง)
     .filter(g => g.items.length > 0)
   // หน้า Dashboard ต้องเห็นทุกงานที่เปิดใช้จริง ไม่ใช่เฉพาะเมนูที่ผูกกับกอง
   // visibleGroups กรองกลุ่มว่างออกแล้ว — เมนูซ้าย PC ลิ้นชักมือถือ และแผงหน้าแรกจึงเห็นชุดเดียวกัน
   const visibleHomeGroups = [...visibleStandaloneGroups, ...visibleGroups]
   const visibleModules = visibleHomeGroups.flatMap(group => group.items)
+
+  // ผูกผลกับ อปท./ผู้ใช้/สิทธิ์/โมดูลครบชุด: สลับบริบทแล้วห้ามใช้เลขจากบริบทเก่า
+  const departmentWorkScopeKey = JSON.stringify([
+    tenant?.id ?? null, profile?.id ?? null, role ?? null, profile?.department_id ?? null,
+    visibleGroups.flatMap(group => group.items.map(item => item.key)).sort().join('|'),
+  ])
+  const departmentWorkCounts = departmentWork.scopeKey === departmentWorkScopeKey ? departmentWork.counts : {}
+  const departmentWorkErrors = departmentWork.scopeKey === departmentWorkScopeKey ? departmentWork.errors : {}
+
+  useEffect(() => {
+    const [municipalityId, profileId, profileRole, departmentId, moduleKeys] = JSON.parse(departmentWorkScopeKey)
+    if (!municipalityId || !profileId) return undefined
+    const sources = DEPARTMENT_WORK_SOURCES.filter(source => moduleKeys.split('|').includes(source.key))
+    if (!sources.length) return undefined
+    let alive = true
+    let inFlight = false
+    let controller
+    let lastStarted = 0
+    const refresh = async (force = false) => {
+      if (!alive || inFlight || document.hidden || (!force && Date.now() - lastStarted < 30_000)) return
+      inFlight = true
+      lastStarted = Date.now()
+      controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 12_000)
+      try {
+        const results = await Promise.allSettled(sources.map(async source => {
+          // HEAD คืนแค่จำนวน ไม่ดึงชื่อโครงการหรือข้อมูลบุคคลมาแสดงในเมนู
+          let query = supabase.from(source.table).select('id', { count: 'exact', head: true })
+            .eq('municipality_id', municipalityId).in('status', source.statuses)
+          // ตรงกับขอบเขตเริ่มต้นของ InfraWorkAdmin (รวมงานเก่าที่ยังไม่ระบุกอง)
+          if (source.key === 'infra' && ['officer', 'staff'].includes(profileRole) && departmentId) {
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(departmentId)) {
+              throw new Error('invalid department scope')
+            }
+            query = query.or(`department_id.is.null,department_id.eq.${departmentId}`)
+          }
+          // civil_projects ใช้ RLS ชุดเดียวกับหน้าโครงการ (กอง/ผู้สร้าง/ผู้มีชื่อในโครงการ)
+          const { count, error } = await query.abortSignal(controller.signal)
+          if (error || !Number.isSafeInteger(count) || count < 0) throw new Error('work count unavailable')
+          return count
+        }))
+        if (!alive) return
+        const counts = {}
+        const errors = {}
+        results.forEach((result, index) => {
+          const key = sources[index].key
+          if (result.status === 'fulfilled') counts[key] = (counts[key] ?? 0) + result.value
+          else errors[key] = true
+        })
+        setDepartmentWork({ scopeKey: departmentWorkScopeKey, counts, errors })
+      } finally {
+        clearTimeout(timeout)
+        inFlight = false
+      }
+    }
+    const onReturn = () => { void refresh() }
+    void refresh(true)
+    // อัปเดตแม้ยังไม่เปิดโมดูล: รอบละ 60 วินาที เฉพาะแท็บที่แสดงอยู่ ไม่เพิ่ม Realtime channel
+    const timer = setInterval(onReturn, 60_000)
+    window.addEventListener('focus', onReturn)
+    document.addEventListener('visibilitychange', onReturn)
+    return () => {
+      alive = false
+      controller?.abort()
+      clearInterval(timer)
+      window.removeEventListener('focus', onReturn)
+      document.removeEventListener('visibilitychange', onReturn)
+    }
+  }, [departmentWorkScopeKey, activeModule]) // ออกจากโมดูลหลังปิดงานแล้ว ให้นับใหม่ทันที
 
   useEffect(() => {
     _customDocTypes = (tenant?.fee_schedule?._custom_types || []).map(t => ({
@@ -2813,7 +2893,7 @@ export default function StaffDashboard() {
   // หน้าแยก (ศูนย์ข้อมูล) navigate · นอกนั้นสลับโมดูล · แล้วปิดลิ้นชักทุกกรณี
   // closeDrawer ต้อง useCallback — effect ในลิ้นชักผูกกับมัน ถ้าเปลี่ยนทุกรอบ render โฟลกัสจะถูกดึงกลับทุกครั้ง
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
-  const drawerBadges = { inbox: pendingCount, complaints: newComplaintCount, [PATIENT_TRANSPORT_MODULE_KEY]: patientWorkCount }
+  const drawerBadges = { ...departmentWorkCounts, inbox: pendingCount, complaints: newComplaintCount, [PATIENT_TRANSPORT_MODULE_KEY]: patientWorkCount }
   function openFromDrawer(item) {
     setDrawerOpen(false)
     if (item.newTab) window.open(item.newTab, '_blank', 'noopener,noreferrer')
@@ -2882,9 +2962,9 @@ export default function StaffDashboard() {
         </div>
       </header>
 
-      <PortalDrawer open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="ระบบเจ้าหน้าที่"
+      <PortalDrawer key={`${tenant?.id}-${profile?.id}`} open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="ระบบเจ้าหน้าที่"
         ariaLabel="เมนูเจ้าหน้าที่" groups={visibleHomeGroups} activeKey={activeModule}
-        badges={drawerBadges} onSelect={openFromDrawer} />
+        badges={drawerBadges} workErrors={departmentWorkErrors} onSelect={openFromDrawer} />
 
         {/* PC header — staff themed · ปักติดบนขณะเลื่อน (sticky ภายใน <main overflow-y-auto> ของ App) ·
             overflow-hidden ย้ายไปอยู่ที่ชั้นพื้นหลังเท่านั้น ไม่งั้นเมนูบัญชีที่หย่อนลงมาใต้หัวจะถูกตัดทิ้ง ·
@@ -2972,18 +3052,20 @@ export default function StaffDashboard() {
               ))}
               <div className="my-2 border-t" style={{ borderColor: 'rgba(255,255,255,0.1)' }} />
               {visibleGroups.map(({ group, items }) => (
-                <div key={group} className="mb-3">
-                  <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-widest text-white/55">{group}</p>
-                  <div className="space-y-0.5">
+                <CollapsibleNavGroup key={`${tenant?.id}-${profile?.id}-${group}`} label={group}
+                  activeKey={items.some(item => item.key === activeModule) ? activeModule : null}
+                  workError={items.some(item => departmentWorkErrors[item.key])}
+                  workCount={items.reduce((total, item) => total + (drawerBadges[item.key] || 0), 0)}>
                     {items.map(({ key, label, Icon, externalUrl, newTab }) => {
                       const isActive = activeModule === key
                       const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
                         : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
                         : key === PATIENT_TRANSPORT_MODULE_KEY && patientWorkCount > 0 ? patientWorkCount
+                        : departmentWorkCounts[key] > 0 ? departmentWorkCounts[key]
                         : null
                       return (
                         <button key={key} onClick={() => newTab ? window.open(newTab, "_blank", "noopener,noreferrer") : externalUrl ? navigate(externalUrl) : setActiveModule(key)}
-                          className={`flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
+                          className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
                           <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} />
                           <span className="flex-1 text-left text-xs">{label}</span>
                           {badge && (
@@ -2994,8 +3076,7 @@ export default function StaffDashboard() {
                         </button>
                       )
                     })}
-                  </div>
-                </div>
+                </CollapsibleNavGroup>
               ))}
             </nav>
           </aside>

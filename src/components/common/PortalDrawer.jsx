@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { LayoutDashboard, X } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ROLE_LABELS } from '../../lib/staffRoster'
+import CollapsibleNavGroup from './CollapsibleNavGroup'
 
 // เมนูซ้ายแบบลิ้นชักเลื่อนออกจากซ้าย — ใช้ร่วม 3 ที่ (เฉพาะมือถือ md:hidden):
 //   - หน้าเจ้าหน้าที่ (StaffDashboard.jsx)
@@ -70,7 +71,7 @@ export function GroupLabel({ children, accent, count }) {
 // (ทรีหมวดหมู่ของหน้าศูนย์ข้อมูล ซึ่งกาง/พับได้และมีปุ่มเพิ่มข้อมูลต่อแถว) ผู้ส่งต้องปิดลิ้นชักเองเมื่อเลือกปลายทาง
 export default function PortalDrawer({
   open, onClose, tenant, portalLabel, ariaLabel, homeItem = DEFAULT_HOME, homeGroupLabel = 'ภาพรวม', extraItems = [],
-  groups, activeKey, badges, onSelect, children,
+  groups, activeKey, badges, workErrors, onSelect, children,
 }) {
   const { role, displayName, avatarUrl } = useAuth()
   const panelRef = useRef(null)
@@ -146,17 +147,25 @@ export default function PortalDrawer({
           <DrawerItem item={homeItem} active={activeKey === homeItem.key} onSelect={onSelect} />
           {/* ทางลัดเพิ่มใต้ "ภาพรวม" (เช่น แอดมิน → แดชบอร์ดเจ้าหน้าที่ ตามเมนูซ้าย PC) — ไม่ใช่กลุ่มเมนูโมดูล */}
           {extraItems.map(item => <DrawerItem key={item.key} item={item} active={activeKey === item.key} onSelect={onSelect} />)}
-          {groups.map(({ group, accent, items }) => (
-            <div key={group}>
-              <GroupLabel accent={accent}>{group}</GroupLabel>
-              <div className="space-y-0.5">
-                {items.map(item => (
-                  <DrawerItem key={item.key} item={item} active={activeKey === item.key}
-                    badge={badges?.[item.key]} onSelect={onSelect} />
-                ))}
+          {groups.map(({ group, accent, items, collapsible }) => {
+            const content = items.map(item => (
+              <DrawerItem key={item.key} item={item} active={activeKey === item.key}
+                badge={badges?.[item.key]} onSelect={onSelect} />
+            ))
+            return collapsible ? (
+              <CollapsibleNavGroup key={group} label={group}
+                activeKey={items.some(item => item.key === activeKey) ? activeKey : null}
+                workError={items.some(item => workErrors?.[item.key])}
+                workCount={items.reduce((total, item) => total + (Number(badges?.[item.key]) || 0), 0)}>
+                {content}
+              </CollapsibleNavGroup>
+            ) : (
+              <div key={group}>
+                <GroupLabel accent={accent}>{group}</GroupLabel>
+                <div className="space-y-0.5">{content}</div>
               </div>
-            </div>
-          ))}
+            )
+          })}
           {children}
         </nav>
 
