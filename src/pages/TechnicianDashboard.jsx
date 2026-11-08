@@ -665,9 +665,16 @@ export default function TechnicianDashboard() {
     setSelected(c)
   }
 
-  // ─── GPS ปักหมุดโครงการ (civil_projects) ────────────────────────────────
-  const GPS_TODAY   = todayStr()
-  const THIS_YEAR_BE = String(new Date().getFullYear() + 543)
+  // ─── GPS ปักหมุดงานหน้างาน (infrastructure_works = เมนู "บันทึกงานซ่อม") ────────
+  // ห้ามเขียน civil_projects: ตารางนั้นเป็นวงจรโครงการตามระเบียบ ส่งแค่ status แล้ว trigger จะตั้งขั้น "ก่อสร้าง"
+  // ข้ามจัดซื้อ/สัญญา และด่านกันลบจะกันแถวนั้นถาวร (เจ้าของระบบเลือกทางนี้ 2026-11-08)
+  const GPS_TODAY = todayStr()
+  // CHECK infrastructure_works_category_check ใช้ drainage/electrical และไม่มีหมวดประปา
+  const GPS_CATEGORY = { drain: 'drainage', light: 'electrical', water_supply: 'other' }
+  const GPS_WORK_TYPES = [
+    { value: 'repair',      label: '🔧  งานซ่อม' },
+    { value: 'new_project', label: '🏗️  งานใหม่' },
+  ]
   const GPS_TYPES = [
     { value: 'road',         label: '🛣️  ถนน/สะพาน' },
     { value: 'drain',        label: '🕳️  ระบายน้ำ' },
@@ -681,7 +688,7 @@ export default function TechnicianDashboard() {
 
   const [showGpsMap, setShowGpsMap]       = useState(false)
   const [showGpsForm, setShowGpsForm]     = useState(false)
-  const [gpsForm, setGpsForm]             = useState({ title: '', project_type: 'road', village: '', start_date: GPS_TODAY })
+  const [gpsForm, setGpsForm]             = useState({ title: '', work_type: 'repair', project_type: 'road', village: '', start_date: GPS_TODAY })
   const [gpsGeo, setGpsGeo]               = useState({ lat: null, lng: null })
   const [gpsSubmitting, setGpsSubmitting] = useState(false)
   const [gpsError, setGpsError]           = useState(null)
@@ -695,8 +702,8 @@ export default function TechnicianDashboard() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
       const { data } = await supabase
-        .from('civil_projects')
-        .select('id, title, project_type, status, latitude, longitude, village, start_date, progress_pct, fiscal_year')
+        .from('infrastructure_works')
+        .select('id, title, latitude, longitude, location_name, work_date')
         .eq('municipality_id', tenant.id)
         .eq('created_by', session.user.id)
         .order('created_at', { ascending: false })
@@ -716,23 +723,27 @@ export default function TechnicianDashboard() {
     setGpsError(null)
     setGpsSubmitting(true)
     const { data: { session } } = await supabase.auth.getSession()
-    const { error: dbErr } = await supabase.from('civil_projects').insert({
+    if (!session) { setGpsSubmitting(false); setGpsError('กรุณาเข้าสู่ระบบใหม่ก่อนบันทึก'); return }
+    // RLS บังคับ department_id ตรงกับกองของช่าง และไม่มี trigger เติมให้ — ไม่ส่งแล้วบัญชีที่มีกองบันทึกไม่ได้
+    const { data: me, error: meErr } = await supabase.from('profiles').select('department_id').eq('id', session.user.id).single()
+    if (meErr) { setGpsSubmitting(false); setGpsError(`อ่านข้อมูลกองไม่สำเร็จ: ${meErr.message}`); return }
+    const { error: dbErr } = await supabase.from('infrastructure_works').insert({
       id:              crypto.randomUUID(),
       municipality_id: tenant.id,
       created_by:      session.user.id,
+      department_id:   me.department_id,
+      work_type:       gpsForm.work_type,
       title:           gpsForm.title.trim(),
-      project_type:    gpsForm.project_type,
-      status:          'in_progress',
-      progress_pct:    50,
-      village:         gpsForm.village?.trim() || null,
-      start_date:      gpsForm.start_date,
-      fiscal_year:     THIS_YEAR_BE,
+      category:        GPS_CATEGORY[gpsForm.project_type] ?? gpsForm.project_type,
+      status:          'completed',   // เหมือนเมนูบันทึกงานซ่อม: เป็นบันทึกงานที่ทำแล้ว และยังไม่มีหน้าจอเปลี่ยนสถานะ
+      location_name:   gpsForm.village?.trim() || null,
+      work_date:       gpsForm.start_date,
       latitude:        gpsGeo.lat,
       longitude:       gpsGeo.lng,
     })
     setGpsSubmitting(false)
     if (dbErr) { setGpsError(`บันทึกไม่สำเร็จ: ${dbErr.message}`); return }
-    setGpsForm({ title: '', project_type: 'road', village: '', start_date: GPS_TODAY })
+    setGpsForm({ title: '', work_type: 'repair', project_type: 'road', village: '', start_date: GPS_TODAY })
     setGpsGeo({ lat: null, lng: null })
     setShowGpsForm(false)
     fetchMyProjects()
@@ -1032,8 +1043,8 @@ export default function TechnicianDashboard() {
                 <MapPin size={13} className="text-violet-600" />
               </div>
               <div>
-                <p className="text-sm font-bold text-gray-700">ปักหมุด GPS โครงการ</p>
-                <p className="text-[11px] text-gray-400">ช่างบันทึก · ธุรการเพิ่มรายละเอียดใน Admin</p>
+                <p className="text-sm font-bold text-gray-700">ปักหมุด GPS งานหน้างาน</p>
+                <p className="text-[11px] text-gray-400">ช่างบันทึก · ธุรการเพิ่มรายละเอียดในเมนูบันทึกงานซ่อม</p>
               </div>
             </div>
             <button onClick={fetchMyProjects} disabled={loadingProjects}
@@ -1046,15 +1057,27 @@ export default function TechnicianDashboard() {
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white"
             style={{ backgroundColor: '#7c3aed' }}>
             {showGpsForm ? <ChevronDown size={14} /> : <Plus size={14} />}
-            {showGpsForm ? 'ซ่อนฟอร์ม' : '📍 ปักหมุด GPS โครงการ'}
+            {showGpsForm ? 'ซ่อนฟอร์ม' : '📍 ปักหมุด GPS งาน'}
           </button>
 
           {showGpsForm && (
             <form onSubmit={submitGps}
               className="bg-white rounded-2xl border border-violet-100 shadow-sm p-4 space-y-3">
               <p className="text-xs text-violet-600 bg-violet-50 rounded-lg px-3 py-2">
-                ปักหมุด GPS ตำแหน่งโครงการหน้างาน · ธุรการเพิ่มรายละเอียดใน Admin ต่อ
+                ปักหมุดเมื่อทำงานเสร็จแล้ว · ธุรการเพิ่มรายละเอียดในเมนูบันทึกงานซ่อมต่อ
               </p>
+              <div className="flex gap-1.5">
+                {GPS_WORK_TYPES.map(t => (
+                  <button key={t.value} type="button"
+                    onClick={() => setGpsForm(p => ({ ...p, work_type: t.value }))}
+                    className="flex-1 text-[13px] font-semibold px-2.5 py-1 rounded-full border transition-all"
+                    style={gpsForm.work_type === t.value
+                      ? { backgroundColor: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }
+                      : { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 {GPS_TYPES.map(t => (
                   <button key={t.value} type="button"
@@ -1069,8 +1092,12 @@ export default function TechnicianDashboard() {
               </div>
               <input type="text" value={gpsForm.title} required
                 onChange={e => setGpsForm(p => ({ ...p, title: e.target.value }))}
-                placeholder="ชื่อโครงการ / งานที่ทำ"
+                placeholder="ชื่องานที่ทำ"
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+              {/* infrastructure_works อ่านได้สาธารณะ และหมุดขึ้นแผนที่ประชาชน (เจ้าของระบบยอมรับ 2026-11-08) */}
+              <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                ⚠️ ชื่องานและหมุดนี้แสดงบนแผนที่สาธารณะ ห้ามใส่ชื่อ เบอร์โทร หรือข้อมูลส่วนตัวของบุคคล
+              </p>
               <div className={`rounded-xl border p-3 ${gpsGeo.lat ? 'bg-green-50 border-green-200' : 'bg-violet-50 border-violet-200'}`}>
                 <div className="flex items-center gap-2 mb-2">
                   <MapPin size={13} className={gpsGeo.lat ? 'text-green-600' : 'text-violet-600'} />
@@ -1100,7 +1127,7 @@ export default function TechnicianDashboard() {
                 <button type="submit" disabled={gpsSubmitting}
                   className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
                   style={{ backgroundColor: '#7c3aed' }}>
-                  {gpsSubmitting ? <><Loader2 size={13} className="animate-spin" /> บันทึก...</> : '📍 ปักหมุดโครงการ'}
+                  {gpsSubmitting ? <><Loader2 size={13} className="animate-spin" /> บันทึก...</> : '📍 ปักหมุดงาน'}
                 </button>
                 <button type="button" onClick={() => setShowGpsForm(false)}
                   className="px-4 py-2.5 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200">
@@ -1114,7 +1141,7 @@ export default function TechnicianDashboard() {
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-50">
                 <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
-                  โครงการที่บันทึกไว้ ({myProjects.length})
+                  งานที่บันทึกไว้ ({myProjects.length})
                 </p>
               </div>
               {myProjects.map((p, i) => (
@@ -1126,8 +1153,8 @@ export default function TechnicianDashboard() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-700 truncate">{p.title}</p>
                     <p className="text-xs text-gray-400 mt-0.5 truncate">
-                      {p.village || '—'}
-                      {p.start_date ? ` · ${new Date(p.start_date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}` : ''}
+                      {p.location_name || '—'}
+                      {p.work_date ? ` · ${new Date(p.work_date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}` : ''}
                     </p>
                   </div>
                   {p.latitude && (

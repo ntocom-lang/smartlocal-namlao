@@ -114,9 +114,15 @@ const PROJECT_TYPE_LABEL = {
   pipe_water: 'ท่อน้ำประปา', waterway: 'รางส่งน้ำ',
   building: 'อาคาร/สิ่งก่อสร้าง', light: 'ไฟฟ้าสาธารณะ', park: 'สวนสาธารณะ', other: 'อื่นๆ',
 }
+// ค่าตาม CHECK infrastructure_works_category_check (หมุดจากเมนูบันทึกงานซ่อม + ปุ่มปักหมุดของช่าง)
+const INFRA_CATEGORY_LABEL = {
+  road: 'ถนน', drainage: 'ระบายน้ำ', electrical: 'ไฟฟ้า', waterway: 'ลำเหมือง',
+  building: 'อาคาร', irrigation: 'ชลประทาน', other: 'อื่นๆ',
+}
 const categoryLabel = e => {
   if (e.source_table === 'complaints') return categoryNameOf(COMPLAINT_CATEGORY_LABEL, e.category)
   if (e.source_table === 'civil_projects') return PROJECT_TYPE_LABEL[e.category] ?? e.category
+  if (e.source_table === 'infrastructure_works') return INFRA_CATEGORY_LABEL[e.category] ?? e.category
   return e.category
 }
 // กุญแจสำหรับกรองระดับ "ประเภทย่อยในกลุ่ม" — ผูกกับกลุ่มด้วย เพราะป้ายชื่อประเภทอาจซ้ำกันข้ามกลุ่มได้
