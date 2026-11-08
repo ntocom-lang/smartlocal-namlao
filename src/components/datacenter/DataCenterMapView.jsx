@@ -122,8 +122,9 @@ const categoryLabel = e => {
 // กุญแจสำหรับกรองระดับ "ประเภทย่อยในกลุ่ม" — ผูกกับกลุ่มด้วย เพราะป้ายชื่อประเภทอาจซ้ำกันข้ามกลุ่มได้
 const categoryKey = (e, resolveLabel = categoryLabel) => `${e.group_name}::${resolveLabel(e)}`
 
-// ตัวเลือกสถานะโครงการสำหรับปุ่ม "ปรับสถานะแบบเร็ว" ในป๊อปอัพ — อ้างอิงจาก STATUS_CFG เดิมใน
-// CivilProjectAdmin.jsx (ต้องตรงกันทุกคำ ไม่งั้นสถานะที่ตั้งจากแผนที่จะอ่านค่าไม่ตรงกับหน้าโครงการหลัก)
+// ป้ายสถานะโครงการ (status เดิม 6 ค่า ที่ระบบตั้งตามขั้นโครงการ) — อ้างอิงจาก STATUS_CFG เดิมใน CivilProjectAdmin.jsx
+// แผนที่อ่านอย่างเดียว: ปุ่ม "ปรับสถานะแบบเร็ว" ถอดออกแล้ว เพราะฐานข้อมูลปิดทางแก้ status ตรง (20261108160000)
+// เปลี่ยนขั้นต้องผ่านปุ่มเปลี่ยนขั้นในหน้าโครงการ (ตรวจสิทธิ์ เหตุผล เลขหนังสือ แล้วลงประวัติ)
 const CIVIL_PROJECT_STATUS_OPTIONS = [
   { value: 'planned',     label: 'วางแผน' },
   { value: 'approved',    label: 'อนุมัติแล้ว' },
@@ -391,10 +392,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const [allRows, setAllRows] = useState([])
   const [complaintCategoryMeta, setComplaintCategoryMeta] = useState({})
   // งานเขียนข้อมูลที่รวมมาจาก "แผนที่" เดิม (ยุบรวมเป็นแผนที่เดียวแล้ว) — อนุมัติ/ปฏิเสธคำขอธุรกิจ
-  // (เฉพาะ admin/superadmin ตรงกับสิทธิ์เดิมของ MapDashboardAdmin) และปรับสถานะโครงการก่อสร้างแบบเร็ว
+  // (เฉพาะ admin/superadmin ตรงกับสิทธิ์เดิมของ MapDashboardAdmin)
   const [approvingBizId, setApprovingBizId] = useState(null)
-  const [savingProjectId, setSavingProjectId] = useState(null)
-  const [quickStatusDraft, setQuickStatusDraft] = useState({}) // { [projectId]: draftStatus }
   const [selectedEntry, setSelectedEntry] = useState(null)
   const [boundaryGeoJson, setBoundaryGeoJson] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -549,16 +548,6 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     setAllRows(prev => prev.map(e => (e.source_table === 'business_registrations' && e.source_id === id)
       ? { ...e, status: approved ? 'approved' : 'rejected' } : e))
     setApprovingBizId(null)
-  }
-
-  async function saveQuickStatus(id, newStatus) {
-    setSavingProjectId(id)
-    const { error } = await supabase.from('civil_projects').update({ status: newStatus }).eq('id', id)
-    if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); setSavingProjectId(null); return }
-    setAllRows(prev => prev.map(e => (e.source_table === 'civil_projects' && e.source_id === id)
-      ? { ...e, status: newStatus } : e))
-    setQuickStatusDraft(prev => { const next = { ...prev }; delete next[id]; return next })
-    setSavingProjectId(null)
   }
 
   const boundaryBbox = useMemo(() => {
@@ -1218,16 +1207,10 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               )}
 
               {selectedEntry.source_table === 'civil_projects' && currentUserRole && currentUserRole !== 'citizen' && (
-                <div className="mt-2 flex items-center gap-1.5">
-                  <select value={quickStatusDraft[selectedEntry.source_id] ?? selectedEntry.status} disabled={savingProjectId === selectedEntry.source_id}
-                    onChange={event => setQuickStatusDraft(prev => ({ ...prev, [selectedEntry.source_id]: event.target.value }))}
-                    className="flex-1 rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 outline-none">
-                    {CIVIL_PROJECT_STATUS_OPTIONS.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}
-                  </select>
-                  <button type="button" disabled={savingProjectId === selectedEntry.source_id || (quickStatusDraft[selectedEntry.source_id] ?? selectedEntry.status) === selectedEntry.status}
-                    onClick={() => saveQuickStatus(selectedEntry.source_id, quickStatusDraft[selectedEntry.source_id] ?? selectedEntry.status)}
-                    className="rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs disabled:opacity-40">บันทึก</button>
-                </div>
+                // แทนดรอปดาวน์เดิม: คนที่เคยแก้สถานะจากแผนที่ต้องรู้ว่าไปทำที่ไหน (ไม่ใช่ปุ่มหายไปเฉยๆ)
+                <p className="mt-2 text-[11px] text-gray-500">
+                  เปลี่ยนขั้นโครงการได้ที่เมนู “โครงการก่อสร้าง” → หน้าโครงการ (ระบบบันทึกเหตุผลและประวัติให้)
+                </p>
               )}
             </div>
           )}
