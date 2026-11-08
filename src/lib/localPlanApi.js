@@ -219,10 +219,13 @@ export async function saveOpPlan(id, columns) {
 /**
  * สร้างแผนการดำเนินงานฉบับร่าง · copyFromId = คัดรายการจากฉบับนั้นมาด้วย (ฉบับแก้ไข)
  * ถ้าคัดรายการล้มเหลว ลบฉบับที่เพิ่งสร้างทิ้ง (ไม่ให้เหลือฉบับเปล่าที่ทำให้เลขครั้งถัดไปข้าม)
+ * คัดแล้วจำต้นทาง: ฉบับ → source_op_plan_id · แต่ละแถว → origin_item_id (ต้นสาย) ให้ผลติดตามที่กองกดไว้ตามมาด้วย
+ * (ฐานข้อมูลแปลง id แถวใดในสายเป็นต้นสายเอง และบังคับว่าต้นทางต้องเป็นฉบับครั้งก่อนของปีเดียวกัน — 20261110100100)
  */
 export async function createOpPlan({ municipalityId, devPlanId, fiscalYear, kind = 'main', revisionNo = 0, copyFromId = null }) {
   const { data: plan, error } = await supabase.from('local_op_plans')
-    .insert({ municipality_id: municipalityId, dev_plan_id: devPlanId, fiscal_year: fiscalYear, kind, revision_no: revisionNo })
+    .insert({ municipality_id: municipalityId, dev_plan_id: devPlanId, fiscal_year: fiscalYear, kind, revision_no: revisionNo,
+      source_op_plan_id: copyFromId || null })
     .select().single()
   if (error) return { opPlan: null, error }
   if (!copyFromId) return { opPlan: plan, error: null }
@@ -237,6 +240,7 @@ export async function createOpPlan({ municipalityId, devPlanId, fiscalYear, kind
       op_plan_id: plan.id, municipality_id: municipalityId, department_id: i.department_id, dev_project_id: i.dev_project_id,
       source: i.source, external_agency: i.external_agency, seq_no: i.seq_no, sort_order: i.sort_order, item_name: i.item_name,
       amount: i.amount, month_from: i.month_from, month_to: i.month_to, note: i.note,
+      origin_item_id: i.origin_item_id ?? i.id,
     }))
     for (let from = 0; from < rows.length; from += 200) {
       const { error: copyError } = await supabase.from('local_op_plan_items').insert(rows.slice(from, from + 200))
