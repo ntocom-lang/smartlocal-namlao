@@ -1488,6 +1488,7 @@ const MERGE_ROW_LABELS = {
   satisfaction_responses_user_id: 'แบบประเมินความพึงพอใจที่ตอบ',
   business_registrations_user_id: 'คำขอจดทะเบียนพาณิชย์',
   tourism_reviews_user_id: 'รีวิวแหล่งท่องเที่ยว',
+  civil_project_people_profile_id: 'ชื่อในโครงการก่อสร้าง (ผู้ควบคุมงาน/กรรมการ)',
 }
 
 // รวมบัญชีซ้ำ: คนเดียวสมัคร 2 ครั้งด้วยคนละช่องทาง (เจอบ่อยกับ LINE เพราะ LINE ไม่ส่งอีเมลมาให้
