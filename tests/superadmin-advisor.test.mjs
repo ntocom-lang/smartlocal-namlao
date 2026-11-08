@@ -9,7 +9,8 @@ import {
 } from '../src/lib/advisorHelpers.js'
 import { currentPortal } from '../src/lib/portalAccess.js'
 
-const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
+// ตัด CRLF → LF: worktree บน Windows checkout เป็น CRLF ส่วน CI (Linux) เป็น LF — ด่านซอร์สต้องได้ผลเท่ากันทั้งสองที่
+const read = async (path) => (await readFile(new URL(`../${path}`, import.meta.url), 'utf8')).replace(/\r\n/g, '\n')
 // ตัดคอมเมนต์ออกก่อนตรวจซอร์ส — คอมเมนต์ในไฟล์เตือนชื่อสิ่งที่ห้ามทำไว้ ไม่ใช่การทำจริง
 const code = (src) => src.split(/\r?\n/).filter(l => !l.trim().startsWith('//')).map(l => l.replace(/\s\/\/\s.*$/, '')).join('\n')
 let passed = 0
