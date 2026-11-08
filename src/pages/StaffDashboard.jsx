@@ -6,12 +6,14 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, Users, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
-  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid, Menu, ArrowLeft, CloudRain, HardHat,
+  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid, Menu, ArrowLeft, CloudRain, HardHat, ClipboardList,
 } from 'lucide-react'
 import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
 import { useTenant } from '../contexts/TenantContext'
 import { PATIENT_TRANSPORT_MODULE_KEY } from '../lib/patientTransport'
+import { fetchCurrentPlanYears } from '../lib/localPlanApi'
+import { menuLabel } from '../lib/localPlanView'
 import { recordUsage, safeLocalStorage } from '../lib/staffHomeFrequent'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
@@ -50,6 +52,7 @@ import useStickyChrome from '../hooks/useStickyChrome'
 
 const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
 const ConstructionProjectsModule = lazy(() => import('../components/staff/construction/ConstructionProjectsModule'))
+const LocalPlanModule = lazy(() => import('../components/staff/localPlan/LocalPlanModule'))
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 const EventsManager = lazy(() => import('../components/admin/EventsManager'))
 const ComplaintsManager = lazy(() => import('../components/admin/ComplaintsManager'))
@@ -247,6 +250,10 @@ const MODULE_GROUPS = [
       // ไม่อยู่ใน MANAGED_MODULE_KEYS (ไม่มีคีย์ enabled_modules ของตัวเอง): โผล่เมื่อ อปท. เปิด 'water-situation' + บทบาทเห็นได้ (hasWaterEventsAccess)
       // วางใต้สำนักปลัดแบบเดียวกับตารางเก็บขยะ — ⚠️ ยังไม่มี อบต. ยืนยันว่ากองไหนดูแลงานป้องกันสาธารณภัย ย้ายได้ที่นี่จุดเดียว
       { key: 'water-events', label: 'เหตุการณ์น้ำ-ฝน', Icon: CloudRain, color: '#0369a1', bg: '#e0f2fe', desc: 'ระบบจดค่าฝนและระดับน้ำช่วงเกิดเหตุการณ์ให้เอง ดูย้อนหลังได้เกิน 7 วัน ไม่ต้องกรอกอะไร' },
+      // แผนพัฒนาท้องถิ่น (ทะเบียนโครงการ + แผนการดำเนินงานรายปี) — ไม่อยู่ใน MANAGED_MODULE_KEYS (ไม่มีคีย์ enabled_modules เจ้าของระบบสั่งเปิดทุก อปท. ทันที)
+      // คุมการเห็นด้วยบทบาท (hasLocalPlanAccess) เหมือน water-events · ไม่อยู่ใน TECHNICIAN_MODULE_KEYS · label ในรายการนี้เป็นค่าสำรองตอนโหลดชื่อไม่ได้
+      // ชื่อจริงที่เห็นอ่านช่วงปีจากแผนที่เมนูแสดง (localPlanLabel — ห้ามฝังปีในโค้ด) · ใครแก้ได้ตัดสินที่ RLS (plan_role / admin) ไม่ใช่ที่นี่
+      { key: 'local-plan', label: 'แผนพัฒนาท้องถิ่น', Icon: ClipboardList, color: '#4f46e5', bg: '#e0e7ff', desc: 'ทะเบียนโครงการในแผนพัฒนา และแผนการดำเนินงานรายปี ระบบนับกำหนดตามระเบียบให้' },
     ],
   },
   { group: 'กองคลัง', items: [] },
@@ -2567,6 +2574,20 @@ export default function StaffDashboard() {
   // กติกา enabled_modules เดียวกับ isModuleEnabled: แถวที่ไม่ใช่ array = ยังไม่เคยตั้งค่า ถือว่าเปิดทุกโมดูล
   const hasWaterEventsAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
     && (!Array.isArray(tenant?.enabled_modules) || tenant.enabled_modules.includes('water-situation'))
+  // แผนพัฒนาท้องถิ่น: อ่านได้ตามบทบาทที่ local_plan_can_read() รับ (ช่างเข้าไม่ได้ผ่านเมนู — ไม่อยู่ใน TECHNICIAN_MODULE_KEYS)
+  const hasLocalPlanAccess = ['superadmin', 'admin', 'officer', 'staff', 'viewer'].includes(role)
+  // ชื่อเมนูอ่านช่วงปีจากแผนที่เมนูแสดง (query เบาๆ เฉพาะ year_from/year_to) — โหลดไม่ได้/ยังไม่มีแผน = "แผนพัฒนาท้องถิ่น" เฉยๆ
+  // เก็บ tenantId คู่กับชื่อ: สลับ อปท. (superadmin) แล้วชื่อของ อปท. เก่าต้องไม่ค้างโชว์
+  const [planLabel, setPlanLabel] = useState({ tenantId: null, label: null })
+  const planLabelTenantId = hasLocalPlanAccess ? tenant?.id ?? null : null
+  useEffect(() => {
+    if (!planLabelTenantId) return undefined
+    let alive = true
+    fetchCurrentPlanYears(planLabelTenantId).then(({ plan }) => { if (alive) setPlanLabel({ tenantId: planLabelTenantId, label: menuLabel(plan) }) })
+    return () => { alive = false }
+  }, [planLabelTenantId])
+  const localPlanLabel = planLabel.tenantId === planLabelTenantId && planLabel.label ? planLabel.label : menuLabel(null)
+  const withPlanLabel = m => (m.key === 'local-plan' ? { ...m, label: localPlanLabel } : m)
   const roleScopedKeys = role === 'technician'
     ? enabledKeys.filter(k => TECHNICIAN_MODULE_KEYS.includes(k))
     : enabledKeys
@@ -2575,6 +2596,7 @@ export default function StaffDashboard() {
     ...(hasAssetAccess ? [] : ['borrowable-assets']),
     ...(hasPerformanceAccess ? [] : ['performance']),
     ...(hasWaterEventsAccess ? [] : ['water-events']),
+    ...(hasLocalPlanAccess ? [] : ['local-plan']),
   ].reduce((keys, hidden) => keys.filter(k => k !== hidden), roleScopedKeys)
   const patientModuleVisible = scopedKeys.includes(PATIENT_TRANSPORT_MODULE_KEY)
   const patientWorkCount = patientModuleVisible && patientWorkBadge.tenantId === tenant?.id && patientWorkBadge.profileId === profile?.id
@@ -2583,7 +2605,7 @@ export default function StaffDashboard() {
     .map(g => ({ ...g, items: g.items.filter(m => scopedKeys.includes(m.key)) }))
     .filter(g => g.items.length > 0)
   const visibleGroups = MODULE_GROUPS
-    .map(g => ({ ...g, items: g.items.filter(m => scopedKeys.includes(m.key)) }))
+    .map(g => ({ ...g, items: g.items.filter(m => scopedKeys.includes(m.key)).map(withPlanLabel) }))
     // กองที่ไม่มีเมนูให้ผู้ใช้คนนี้เห็น ไม่ต้องขึ้นหัวข้อ (ทุกบทบาท — เดิมโชว์กองว่างให้ทุกคนยกเว้นช่าง)
     .filter(g => g.items.length > 0)
   // หน้า Dashboard ต้องเห็นทุกงานที่เปิดใช้จริง ไม่ใช่เฉพาะเมนูที่ผูกกับกอง
@@ -2804,7 +2826,7 @@ export default function StaffDashboard() {
   // กลับไปใช้หัวแบบหน้าแรก ไม่ขึ้นชื่อมั่ว
   const mobileModuleTitle = activeModule === 'home' ? null
     : activeModule === 'menu' ? 'เมนูทั้งหมด'
-    : MODULES.find(m => m.key === activeModule)?.label ?? null
+    : (() => { const meta = MODULES.find(m => m.key === activeModule); return meta ? withPlanLabel(meta).label : null })()
 
   return (
     <div className="min-h-full" style={{ backgroundColor: '#eef2f7' }}>
@@ -2990,7 +3012,8 @@ export default function StaffDashboard() {
                 ข้ามเฉพาะ 'home' ที่แดชบอร์ดมีหัวทักทายของตัวเอง — โมดูลที่เคยมีหัวของตัวเอง
                 (fleet, คำร้อง, รายงาน) ถูกถอดหัวของมันออกแล้ว เหลือไว้เฉพาะข้อมูลที่หัวกลางไม่มี */}
             {activeModule !== 'home' && (() => {
-              const meta = MODULES.find(m => m.key === activeModule)
+              const found = MODULES.find(m => m.key === activeModule)
+              const meta = found ? withPlanLabel(found) : null
               return meta ? <ModuleHeader Icon={meta.Icon} label={meta.label} desc={meta.desc} color={meta.color} /> : null
             })()}
             {activeModule === 'home' && (
@@ -3051,6 +3074,8 @@ export default function StaffDashboard() {
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
             {activeModule === 'waste' && <WasteScheduleManager tenant={tenant} />}
             {/* เข้าหน้านี้ได้ทางลิงก์/เมนูเท่านั้น ที่ไม่ผ่านตัวกรองเมนูต้องเช็คสิทธิ์ซ้ำ (ตัวบังคับจริงคือฟังก์ชันฐานข้อมูล) */}
+            {/* เข้าหน้านี้ได้ทางเมนู/router state — ตรวจสิทธิ์ซ้ำเหมือนเมนูอื่นที่คุมด้วยบทบาท (ตัวบังคับจริงคือ RLS) */}
+            {activeModule === 'local-plan' && visibleModules.some(m => m.key === 'local-plan') && <LocalPlanModule tenant={tenant} profile={profile} />}
             {activeModule === 'water-events' && visibleModules.some(m => m.key === 'water-events') && <WaterEventsPanel tenant={tenant} profile={profile} />}
             {activeModule === PATIENT_TRANSPORT_MODULE_KEY && <PatientTransportStaff onBack={() => setActiveModule('home')} />}
             {activeModule === 'borrowable-assets' && (
