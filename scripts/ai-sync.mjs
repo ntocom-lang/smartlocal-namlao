@@ -6,6 +6,11 @@
  *             + docs/ai/ADAPTERS.md (ส่วนต่างเฉพาะเครื่องมือ)
  *   ปลายทาง : AGENTS.md, .agents/rules/domain.md, docs/ai/web-snippets.md,
  *             ~/.claude/CLAUDE.md, ~/.gemini/GEMINI.md, ~/.codex/AGENTS.md
+ *   ค่าตั้ง Claude : docs/ai/claude/agents/*.md -> ~/.claude/agents/ (คัดลอกทั้งไฟล์)
+ *                    docs/ai/claude/settings.json -> ~/.claude/settings.json (merge เฉพาะคีย์รุ่น/effort
+ *                    คีย์อื่นเช่น permissions/hooks ของเครื่องนั้นคงไว้ทั้งหมด)
+ *                    ⇒ VS Code + Antigravity ใช้ ~/.claude ชุดเดียวกัน รันครั้งเดียวได้ทั้งสอง IDE
+ *                    ⚠️ ลบ agent ออกจากรีโปแล้ว ไฟล์ใน ~/.claude/agents ไม่ถูกลบตาม ต้องลบมือ
  *
  * ทำไมต้องมี: 3 ไฟล์สุดท้ายอยู่นอก git ⇒ เครื่องใหม่จะไม่มีเลย และการ copy ด้วยมือ
  * เคยพังจริง — กฎ "$0 Budget Policy" หายไปจาก 4 ใน 5 ปลายทาง (ตรวจพบ 2026-09-05)
@@ -17,7 +22,7 @@
  * ถ้ากฎไหนหาข้อความต้นทางไม่เจอ (เพราะมีคนแก้ถ้อยคำใน CORE.md) สคริปต์จะหยุดทันที
  * ไม่ปล่อยให้ drift กลับมาเงียบๆ แบบเดิม
  */
-import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -97,6 +102,42 @@ const SAFETY_BODY = need(safety, SAFETY_K, 'SAFETY.md');
 // ⇒ adapter เฉพาะตัวมันต้องออกที่ global ไม่ใช่ AGENTS.md ไม่งั้นไปกวน AI ตัวอื่น
 const ADAPTER_CODEX_K = '[Adapter — Codex]';
 const ADAPTER_CODEX = need(adapters, ADAPTER_CODEX_K, 'ADAPTERS.md');
+
+// กติกาเลือกรุ่น/effort/subagent เป็นของ Claude Code เท่านั้น ⇒ ออกที่ ~/.claude/CLAUDE.md ที่เดียว
+const ADAPTER_CLAUDE_K = '[Adapter — Claude: เลือกรุ่นและ effort]';
+const ADAPTER_CLAUDE = need(adapters, ADAPTER_CLAUDE_K, 'ADAPTERS.md');
+
+/* ─────────────── ค่าตั้ง Claude Code (agents + รุ่น/effort เริ่มต้น) ─────────────── */
+
+const CLAUDE_SRC = 'docs/ai/claude';
+const CLAUDE_HOME = join(HOME, '.claude');
+
+const agentFiles = readdirSync(join(CLAUDE_SRC, 'agents'))
+  .filter((f) => f.endsWith('.md'))
+  .sort();
+if (agentFiles.length === 0) die(`ไม่พบไฟล์ agent ใน ${CLAUDE_SRC}/agents`);
+
+// รับเฉพาะคีย์ที่ตั้งใจ sync — กันมีคนเผลอใส่ permissions/hooks แล้วไปทับของแต่ละเครื่อง
+const SETTINGS_KEYS = ['model', 'effortLevel', 'maxEffortLevel'];
+const settingsFragment = JSON.parse(readFileSync(join(CLAUDE_SRC, 'settings.json'), 'utf8'));
+for (const k of Object.keys(settingsFragment)) {
+  if (!SETTINGS_KEYS.includes(k)) die(`${CLAUDE_SRC}/settings.json มีคีย์ "${k}" ที่ไม่อยู่ใน SETTINGS_KEYS`);
+}
+
+/** merge คีย์รุ่น/effort ลง ~/.claude/settings.json โดยคงคีย์อื่นไว้ — ค่าตรงอยู่แล้วคืนไฟล์เดิมทั้งไบต์ */
+function buildClaudeSettings() {
+  const p = join(CLAUDE_HOME, 'settings.json');
+  if (!existsSync(p)) return `${JSON.stringify(settingsFragment, null, 2)}\n`;
+  const raw = readFileSync(p, 'utf8');
+  let cur;
+  try {
+    cur = JSON.parse(raw.replace(/^﻿/, ''));
+  } catch (e) {
+    die(`${p} อ่านเป็น JSON ไม่ได้ (${e.message}) — ไม่เขียนทับ แก้ไฟล์ให้ถูกก่อน`);
+  }
+  if (Object.entries(settingsFragment).every(([k, v]) => cur[k] === v)) return raw;
+  return `${JSON.stringify({ ...cur, ...settingsFragment }, null, 2)}\n`;
+}
 
 /* ───────────── กฎแปลงถ้อยคำ (data — แก้ตรงนี้ที่เดียว) ───────────── */
 
@@ -283,8 +324,14 @@ const targets = [
   {
     path: join(HOME, '.claude', 'CLAUDE.md'),
     inGit: false,
-    build: () => [...HEAD_GLOBAL, ...bodyGlobal, ''].join('\n'),
+    build: () => [...HEAD_GLOBAL, ...bodyGlobal, '', ADAPTER_CLAUDE_K, ...ADAPTER_CLAUDE, ''].join('\n'),
   },
+  { path: join(CLAUDE_HOME, 'settings.json'), inGit: false, build: buildClaudeSettings },
+  ...agentFiles.map((f) => ({
+    path: join(CLAUDE_HOME, 'agents', f),
+    inGit: false,
+    build: () => readFileSync(join(CLAUDE_SRC, 'agents', f), 'utf8'),
+  })),
   {
     path: join(HOME, '.gemini', 'GEMINI.md'),
     inGit: false,
