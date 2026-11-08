@@ -539,6 +539,14 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
 
   async function deleteProject(id) {
     const proj = (projects ?? []).find(p => p.id === id)
+    // ลบก่อนแล้วค่อยลงบันทึก: ฐานข้อมูลปฏิเสธการลบโครงการที่ลงนามสัญญาแล้ว (บันทึกทางราชการ — migration 20261108100200)
+    // เดิมลงบันทึก "ลบแล้ว" ก่อนลบและไม่ดู error ทำให้ประวัติการใช้งานบันทึกว่าลบทั้งที่ยังไม่ได้ลบ
+    const { data: deleted, error } = await supabase.from('civil_projects').delete().eq('id', id).select('id')
+    if (error || !deleted?.length) {
+      alert(error?.message || 'ลบไม่สำเร็จ — ไม่มีสิทธิ์ลบโครงการนี้')
+      setDeleteConfirm(null)
+      return
+    }
     await logAction({
       action: 'delete', resourceType: 'civil_project',
       resourceId: id,
@@ -546,7 +554,6 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
       municipalityId: tenantId,
       metadata: { type: proj?.project_type, status: proj?.status, budget: proj?.budget },
     })
-    await supabase.from('civil_projects').delete().eq('id', id)
     setDeleteConfirm(null)
     setView('list')
     fetchProjects()
