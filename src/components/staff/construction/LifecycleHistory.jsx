@@ -1,5 +1,6 @@
-// ประวัติโครงการ (civil_project_events — เขียนโดย trigger/RPC เท่านั้น) เรียงใหม่→เก่า แสดง 5 รายการแรก
-// kind: created · stage_change (ผู้ใช้กดเปลี่ยนขั้น) · auto_stage (ระบบเลื่อนเองตอนล็อกรายงานสัปดาห์แรก) · legacy_status (เมนูเดิมแก้ status) · note
+// ประวัติโครงการ (civil_project_events — เขียนโดย trigger/RPC เป็นหลัก) เรียงใหม่→เก่า แสดง 5 รายการแรก
+// kind: created · stage_change (ผู้ใช้กดเปลี่ยนขั้น) · auto_stage (ระบบเลื่อนเองตอนล็อกรายงานสัปดาห์แรก) · legacy_status (เมนูเดิมแก้ status)
+//       · note (บันทึกข้อความ — PR-C2 หน้าจอเขียนเองหลังบันทึกงวด/ขยายเวลา/ตรวจชำรุด/เอกสาร · แสดง reason เป็นเนื้อความ)
 import { useState } from 'react'
 import { STAGE_LABELS } from '../../../lib/constructionLifecycle'
 import { btnGhost } from './uiStyles'
@@ -15,7 +16,7 @@ function describe(e) {
     case 'stage_change':
     case 'auto_stage': return `เปลี่ยนขั้น "${from ?? '—'}" → "${to ?? '—'}"`
     case 'legacy_status': return `เปลี่ยนขั้นผ่านเมนูเดิม "${from ?? '—'}" → "${to ?? '—'}"`
-    case 'note': return 'บันทึกข้อความ'
+    case 'note': return e.reason || 'บันทึกข้อความ'
     default: return `${e.kind}${from || to ? ` (${from ?? '—'} → ${to ?? '—'})` : ''}`
   }
 }
@@ -42,7 +43,7 @@ export default function LifecycleHistory({ events, staffChoices = [] }) {
                 </span>
                 <br />
                 <span className="text-gray-800">{describe(e)}</span>
-                {e.reason && <span className="block text-xs text-gray-600">เหตุผล: {e.reason}</span>}
+                {e.reason && e.kind !== 'note' && <span className="block text-xs text-gray-600">เหตุผล: {e.reason}</span>}
                 {e.ref_no && <span className="block text-xs text-gray-600">เลขที่ {e.ref_no}{e.ref_date ? ` ลว. ${thaiDay(e.ref_date)}` : ''}</span>}
               </li>
             ))}

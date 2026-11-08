@@ -8,6 +8,10 @@ import {
   contractSchedule, deadlines, stageActions, stageOrd, stageSuggestion,
 } from '../../../lib/constructionLifecycle'
 import { clearMilestone, saveMilestone, setProjectStage } from '../../../lib/constructionLifecycleApi'
+import ContractChangesPanel from './ContractChangesPanel'
+import DefectsSection from './DefectsSection'
+import DocumentsSection from './DocumentsSection'
+import InstallmentsTable from './InstallmentsTable'
 import LifecycleHistory from './LifecycleHistory'
 import { DeadlineRow } from './LifecycleBits'
 import MilestoneRow from './MilestoneRow'
@@ -73,6 +77,7 @@ export default function ProjectLifecycleSheet({ bundle, access, latest = null, s
   const project = bundle.project
   const [change, setChange] = useState(null)
   const [showOther, setShowOther] = useState(false)
+  const [addingChange, setAddingChange] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -125,6 +130,10 @@ export default function ProjectLifecycleSheet({ bundle, access, latest = null, s
   const endDays = sched.effectiveEnd ? daysBetween(today, sched.effectiveEnd) : null
   const guarantee = contract.guarantee_type
   const overall = latest?.overall
+  const installments = bundle.installments ?? []
+  const showInstallments = stageOrd(focus) >= stageOrd('contracted') || installments.length > 0 || Boolean(contract.installments_total)
+  const paidRows = installments.filter(i => i.paid_gross !== null && i.paid_gross !== undefined && i.paid_gross !== '')
+  const paidTotal = paidRows.reduce((sum, i) => sum + Number(i.paid_gross), 0)
 
   return (
     <Sheet title={project.title} subtitle={subtitle} onClose={onClose} busy={busy} wide>
@@ -223,12 +232,12 @@ export default function ProjectLifecycleSheet({ bundle, access, latest = null, s
             {overall ? <>สัปดาห์ที่ {latest.week_no} · แผน {formatPct(overall.plan)} <ScheduleBadge label={overall.label} /></> : 'ยังไม่มีรายงานที่ล็อก'}
           </Stat>
           <Stat label={`วงเงินสัญญา${contract.price_kind ? ` (${PRICE_KINDS[contract.price_kind]})` : ''}`} value={moneyTh(project.contract_amount)}>
-            {project.budget_amount ? `วงเงินงบประมาณ ${moneyTh(project.budget_amount)}` : ''}
+            {[project.budget_amount ? `วงเงินงบประมาณ ${moneyTh(project.budget_amount)}` : null, paidRows.length ? `จ่ายแล้ว ${moneyTh(paidTotal)}` : null].filter(Boolean).join(' · ')}
           </Stat>
           <Stat label="สิ้นสุดสัญญา" value={sched.effectiveEnd ? thaiDay(sched.effectiveEnd) : '—'}>
             {sched.effectiveEnd ? [
               endDays >= 0 ? `เหลือ ${endDays} วัน` : `เลยมา ${-endDays} วัน`,
-              sched.effectiveEnd !== sched.end ? 'ขยายเวลาแล้ว' : null,
+              sched.effectiveEnd !== sched.end ? 'ขยายเวลาแล้ว' : 'ไม่มีขยายเวลา',
               sched.computedEnd ? 'คำนวณจากหนังสือแจ้งเริ่มงาน' : null,
             ].filter(Boolean).join(' · ') : ''}
           </Stat>
@@ -237,7 +246,17 @@ export default function ProjectLifecycleSheet({ bundle, access, latest = null, s
           </Stat>
         </div>
 
+        {showInstallments && <InstallmentsTable bundle={bundle} access={access} deadlines={list} today={today} onChanged={afterChange} />}
+        <ContractChangesPanel bundle={bundle} access={access} deadlines={list} adding={addingChange && canWrite} onAddingDone={() => setAddingChange(false)} onChanged={afterChange} />
+        <DefectsSection bundle={bundle} access={access} today={today} onChanged={afterChange} />
+        <DocumentsSection bundle={bundle} access={access} onChanged={afterChange} />
+
         <LifecycleHistory events={bundle.events} staffChoices={staffChoices} />
+        {canWrite && !addingChange && (
+          <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-3">
+            <button type="button" className={btnGhost} onClick={() => setAddingChange(true)}>ขยายเวลา / แก้ไขสัญญา…</button>
+          </div>
+        )}
         {!canWrite && <p className="text-[11px] text-gray-500">คุณดูข้อมูลได้อย่างเดียว — การบันทึกและเปลี่ยนขั้นทำได้เฉพาะผู้ควบคุมงาน หัวหน้ากอง และผู้ดูแลระบบ</p>}
       </div>
     </Sheet>

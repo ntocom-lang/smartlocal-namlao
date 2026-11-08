@@ -23,6 +23,7 @@ export const DRIVE_MODULES = {
   business: 'ทะเบียนพาณิชย์',
   events: 'กิจกรรม',
   documents: 'เอกสารหน่วยงาน',
+  construction: 'โครงการก่อสร้าง',
 }
 
 const THAI_MONTHS = [
