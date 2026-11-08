@@ -56,7 +56,11 @@ export default function DepartmentDialog({ tenant, department = null, department
     const { error: deleteError } = await supabase.from('departments').delete().eq('id', department.id)
     setBusy('')
     if (deleteError) {
-      setError('ลบไม่สำเร็จ: ' + deleteError.message)
+      // รายการในแผนการดำเนินงานที่ประกาศแล้วอ้างกองนี้อยู่ — การลบกองจะตั้ง department_id ของรายการเป็นว่าง ซึ่ง trigger ของแผนที่ประกาศแล้วปฏิเสธ
+      // (ข้อความไทยจากฐานข้อมูลมีคำว่า "ประกาศแล้ว") แปลเป็นคำอธิบายที่บอกทางออกให้แอดมิน
+      setError(String(deleteError.message ?? '').includes('ประกาศแล้ว')
+        ? 'ลบกองนี้ไม่ได้ เพราะเป็นผู้รับผิดชอบรายการในแผนการดำเนินงานที่ประกาศใช้แล้ว ซึ่งต้องคงตามเอกสารที่ประกาศ — ถ้ากองถูกยุบหรือเปลี่ยนชื่อ ให้แก้ชื่อกองแทนการลบ'
+        : 'ลบไม่สำเร็จ: ' + deleteError.message)
       return
     }
     onSaved?.(null)

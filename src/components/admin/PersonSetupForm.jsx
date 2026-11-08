@@ -29,6 +29,14 @@ import SigningDialogShell from './SigningDialogShell'
 // กองที่พิมพ์ในฟอร์มยังไม่ถูกสร้างจนกว่าจะกดบันทึก จึงใช้รหัสชั่วคราว
 const NEW_DEPARTMENT = '__new_department'
 
+// สิทธิ์จัดการเมนูแผนพัฒนาท้องถิ่น (profiles.plan_role) — คนละคอลัมน์กับสิทธิ์พัสดุ/ยานพาหนะ
+// ถือได้เฉพาะ admin/officer/staff (ฐานข้อมูลล้างให้เองเมื่อเปลี่ยนบทบาท/ย้าย อปท.) · ใครไม่มีสิทธิ์ก็อ่านเมนูได้ตามบทบาท
+const PLAN_ROLE_OPTIONS = [
+  { value: '', label: 'ไม่มีสิทธิ์จัดการ — อ่านได้ตามบทบาท' },
+  { value: 'plan_admin', label: 'นักวิเคราะห์ฯ — จัดการแผน (ทะเบียนโครงการ แผนการดำเนินงาน ประกาศใช้)' },
+]
+const PLAN_ROLE_HOLDERS = ['admin', 'officer', 'staff']
+
 const ASSET_ROLE_OPTIONS = [
   { value: '', label: 'ไม่มีสิทธิ์ — ไม่เห็นเมนูพัสดุ/ครุภัณฑ์' },
   { value: 'asset_staff', label: 'เจ้าหน้าที่พัสดุของกอง — เพิ่ม/แก้ของและดำเนินการคำขอ เฉพาะกองที่สังกัด' },
@@ -193,6 +201,7 @@ export default function PersonSetupForm({
   const [roleOverride, setRoleOverride] = useState(null)
   const [roleOpen, setRoleOpen] = useState(false)
   const [assetRole, setAssetRole] = useState(null)
+  const [planRole, setPlanRole] = useState(null)
   const [clearJobTitle, setClearJobTitle] = useState(false)
 
   const [signChoices, setSignChoices] = useState({})
@@ -239,7 +248,7 @@ export default function PersonSetupForm({
   useEffect(() => {
     if (!person?.id) return undefined
     let active = true
-    supabase.from('profiles').select('position_id,asset_role,job_title,position:positions(name,category)').eq('id', person.id).maybeSingle()
+    supabase.from('profiles').select('position_id,asset_role,plan_role,job_title,position:positions(name,category)').eq('id', person.id).maybeSingle()
       .then(({ data }) => { if (active) setExtras({ id: person.id, ...(data ?? {}) }) })
     return () => { active = false }
   }, [person?.id])
@@ -402,7 +411,7 @@ export default function PersonSetupForm({
 
   const snapshot = JSON.stringify({
     person: isAdd ? person?.id : null, fullName, account, positionId, newPositionName, departmentId, addingDepartment, typedDepartment,
-    headOverride, keptHeads, roleOverride, assetRole, clearJobTitle, signChoices, extraKeys, titles,
+    headOverride, keptHeads, roleOverride, assetRole, planRole, clearJobTitle, signChoices, extraKeys, titles,
   })
   const [initialSnapshot] = useState(snapshot)
   const dirty = snapshot !== initialSnapshot
@@ -675,6 +684,8 @@ export default function PersonSetupForm({
     }
     // ส่งสิทธิ์พัสดุเฉพาะตอนแอดมินเปลี่ยน · asset_staff ต้องมีสังกัด ไม่งั้นถือสิทธิ์แต่มองไม่เห็นของสักชิ้น — ฐานข้อมูลปฏิเสธอยู่แล้ว
     if (assetRole !== null) changes.asset_role = (assetRole === 'asset_staff' && !targetDepartmentId) ? null : (assetRole || null)
+    // สิทธิ์แผน: ส่งเฉพาะตอนแอดมินเปลี่ยนเอง · บทบาทที่ถือไม่ได้ส่ง null (ฐานข้อมูลล้างให้อยู่แล้ว ส่งค่าชัดเจนไว้ไม่ให้ค้างเงียบๆ)
+    if (planRole !== null) changes.plan_role = PLAN_ROLE_HOLDERS.includes(changes.role) ? (planRole || null) : null
 
     const result = await saveUserEdits(person, changes)
     if (!result.ok) {
@@ -740,6 +751,7 @@ export default function PersonSetupForm({
       ? [{ value: fromRole, label: ROLE_LABELS[fromRole]?.label ?? fromRole }] : []),
   ]
   const assetRoleValue = assetRole ?? loaded?.asset_role ?? ''
+  const planRoleValue = planRole ?? loaded?.plan_role ?? ''
   const readOnlyReason = !canEdit && user
     ? (user.id === currentUserId
         ? 'นี่คือบัญชีของคุณ ระบบไม่ให้แอดมินแก้ตำแหน่งหรือสิทธิ์ของตัวเอง ถ้าต้องเปลี่ยนให้ Super Admin ทำให้ ส่วนรหัสผ่านและลายเซ็นแก้ได้ที่หน้าโปรไฟล์'
@@ -1127,6 +1139,15 @@ export default function PersonSetupForm({
                         <p className="mt-1 text-xs font-semibold leading-5 text-amber-800">ต้องเลือกกองก่อน เพราะสิทธิ์นี้จำกัดอยู่ที่กองที่สังกัด</p>
                       )}
                       <p className="mt-1 text-xs leading-5 text-slate-500">สิทธิ์ยานพาหนะและพนักงานขับรถ ตั้งที่เมนูยานพาหนะ</p>
+                    </div>
+                  )}
+                  {PLAN_ROLE_HOLDERS.includes(role) && (
+                    <div>
+                      <label htmlFor="person-plan-role" className={labelClass}>สิทธิ์เมนูแผนพัฒนาท้องถิ่น</label>
+                      <select id="person-plan-role" value={planRoleValue} onChange={event => setPlanRole(event.target.value)} className={fieldClass}>
+                        {PLAN_ROLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">แอดมินได้สิทธิ์เต็มอยู่แล้ว · ย้ายไป อปท. อื่นหรือเปลี่ยนเป็นบทบาทอื่น ระบบล้างสิทธิ์นี้ให้เอง</p>
                     </div>
                   )}
                 </div>
