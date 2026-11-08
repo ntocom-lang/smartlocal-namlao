@@ -22,6 +22,7 @@
 //
 // ที่มา (อ่านจากเอกสารทางการแล้ว — รายละเอียด/ลิงก์อยู่ในแผนและความจำ reference_construction_procurement_rules)
 //   พ.ร.บ.จัดซื้อจัดจ้างฯ 2560 · ระเบียบ กค. จัดซื้อจัดจ้างฯ 2560 (+ฉบับที่ 3 พ.ศ. 2569) · หนังสือ กค (กวจ) 0405.2/ว 117 ·
+//   หนังสือ กค (กวจ) 0405.4/ว 681 (ระยะเวลาตรวจรับ: กรรมการ/ผู้ควบคุมงาน แยกงวดสุดท้าย + ราคาต่อหน่วยตามวงเงิน + รายงาน 2 วันทำการ) ·
 //   แบบสัญญาจ้างก่อสร้าง · หลักเกณฑ์ราคากลางงานก่อสร้าง 2569 · ระเบียบ มท. การเงิน อปท. 2566 (ข้อ 59–61, 97)
 //   ข้อที่มี verify: true = ยังไม่ได้ยืนยันวิธีนับ/ตัวบทฉบับปัจจุบัน หน้าจอต้องแสดงคำกำกับ
 
@@ -143,6 +144,7 @@ const B_FIN = 'ระเบียบกระทรวงมหาดไทย�
 const B_ACT = 'พ.ร.บ.การจัดซื้อจัดจ้างและการบริหารพัสดุภาครัฐ พ.ศ. 2560'
 const B_CONTRACT = 'แบบสัญญาจ้างก่อสร้าง'
 const B_W117 = 'หนังสือ กค (กวจ) 0405.2/ว 117 ลว. 12 มี.ค. 2562'
+const B_W681 = 'หนังสือ กค (กวจ) 0405.4/ว 681 ลว. 8 ต.ค. 2568'
 const B_OPEVAL = 'ระเบียบกระทรวงการคลังฯ (ฉบับที่ 3) พ.ศ. 2569 หมวด 7'
 
 const MILESTONE_CATALOG = [
@@ -220,8 +222,18 @@ export const RULES = {
   appealWorkingDays: 7,            // ม.117
   contractCopyMin: 1_000_000,      // ข้อ 164
   contractCopyDays: 30,
-  supervisorReportWorkingDays: 3,  // ข้อ 178(4)
-  inspectionWorkingDays: 3,        // ข้อ 176(5)
+  supervisorReportWorkingDays: 3,  // ข้อ 178(4) รายงาน ณ วันเริ่มงาน (รายงวดใช้ตาราง ว 681 ด้านล่าง)
+  inspectionWorkingDays: 3,        // ข้อ 176(5) + ว 681: กรรมการตรวจรับงวดงาน (ทั้งเหมารวมและต่อหน่วย)
+  finalInspectionWorkingDays: 5,   // ว 681: กรรมการตรวจรับงวดสุดท้าย
+  inspectionReportWorkingDays: 2,  // ว 681: ตรวจรับแล้วกรรมการรายงานหัวหน้าหน่วยงานของรัฐ
+  // ว 681 ผู้ควบคุมงาน (วันทำการ): ราคาเหมารวมทุกราคา 3/3 · ราคาต่อหน่วยตามราคาค่างาน ("ไม่เกิน" = รวมค่าขอบ)
+  supervisorLumpSum: { installment: 3, final: 3 },
+  supervisorUnitPrice: [
+    { max: 30_000_000, installment: 4, final: 8 },
+    { max: 60_000_000, installment: 8, final: 12 },
+    { max: 100_000_000, installment: 12, final: 16 },
+    { max: Infinity, installment: 16, final: 20 },
+  ],
   fineNoticeWorkingDays: 7,        // ข้อ 181
   changeRequestDays: 15,           // ข้อ 182
   fineTerminatePct: 10,            // ข้อ 183 "เกินร้อยละสิบ"
@@ -292,6 +304,39 @@ export function finalInstallment(bundle) {
   const total = numOrNull(bundle?.contract?.installments_total)
   if (total) return rows.find(r => Number(r.installment_no) === total) ?? null
   return rows.at(-1) ?? null
+}
+
+/**
+ * งวดที่ no เป็นงวดสุดท้ายไหม (ว 681 แยกกำหนดงวดสุดท้าย) ตัดสินจาก installments_total เท่านั้น
+ *   ไม่ได้กรอกจำนวนงวด → null (ไม่รู้) ผู้เรียกใช้กำหนดของงวดงานซึ่งสั้นกว่า = เตือนเร็วไว้ก่อน + verify
+ *   (ไม่เดาจากแถวสุดท้าย: ตารางงวดอาจยังบันทึกไม่ครบ งวดกลางจะได้กำหนดยาวเกินจริง)
+ */
+export function isFinalInstallmentNo(bundle, no) {
+  const total = numOrNull(bundle?.contract?.installments_total)
+  if (!total) return null
+  return Number(no) === total
+}
+
+/**
+ * ระยะเวลาของผู้ควบคุมงานต่องวด (วันทำการ) ตาม ว 681
+ *   ราคาเหมารวม 3/3 · ราคาต่อหน่วย 4/8 · 8/12 · 12/16 · 16/20 ตามราคาค่างาน (ไม่เกิน 30/60/100 ล้าน · เกิน 100 ล้าน)
+ *   ไม่รู้ชนิดราคา → เหมารวม · ราคาต่อหน่วยแต่ไม่รู้วงเงิน → ช่วงแรก (สั้นสุด) · ไม่รู้ว่างวดสุดท้าย → ค่ารายงวด
+ *   assumed = ใช้ค่าสำรองข้อใดข้อหนึ่งข้างบน
+ * @returns {{ days: number, assumed: boolean }}
+ */
+export function supervisorInstallmentDays(bundle, no) {
+  const kind = bundle?.contract?.price_kind
+  const isFinal = isFinalInstallmentNo(bundle, no)
+  let assumed = isFinal === null
+  let row = RULES.supervisorLumpSum
+  if (kind === 'unit_price') {
+    const amount = numOrNull(bundle?.project?.contract_amount)
+    if (amount === null) assumed = true
+    row = RULES.supervisorUnitPrice.find(r => amount === null || amount <= r.max)
+  } else if (kind !== 'lump_sum') {
+    assumed = true
+  }
+  return { days: isFinal ? row.final : row.installment, assumed }
 }
 
 const guaranteeIsNone = bundle => bundle?.contract?.guarantee_type === 'none'
@@ -367,20 +412,23 @@ export function warrantyWindow(bundle) {
  * สร้างรายการกำหนดเวลา 1 จุด
  *   kind  'working' = นับวันทำการ · 'calendar' = วันปฏิทิน
  *   mode  'task' = มีคนต้องทำให้ทัน · 'gate' = ต้องรอให้พ้นก่อน (เช่น ระยะอุทธรณ์)
+ *         'reminder' = เตือนอย่างเดียว ระบบไม่มีช่องบันทึกว่าทำแล้ว → พ้นกำหนดเป็น 'lapsed' ไม่ขึ้นว่าเลยกำหนด
+ *   overdueHint ข้อความต่อท้ายคำเตือนตอนเลยกำหนด (เช่น ทางขอขยายเวลา)
  *   party 'office' = เจ้าหน้าที่/กรรมการ · 'contractor' = ผู้รับจ้าง (ระบบแค่บันทึกว่าทันไหม)
- *   state done · late_done (ทำแล้วแต่เลยกำหนด) · open · due_today · overdue · waiting/passed (gate)
+ *   state done · late_done (ทำแล้วแต่เลยกำหนด) · open · due_today · overdue · waiting/passed (gate) · lapsed (reminder)
  */
-function deadline({ key, label, basis, due, kind, done = null, today, mode = 'task', party = 'office', verify = false, installmentNo = null, opensOn = null }) {
+function deadline({ key, label, basis, due, kind, done = null, today, mode = 'task', party = 'office', verify = false, installmentNo = null, opensOn = null, overdueHint = null }) {
   if (!isIsoDate(due)) return null
   let state
   if (mode === 'gate') state = today > due ? 'passed' : 'waiting'
+  else if (mode === 'reminder') state = today > due ? 'lapsed' : today === due ? 'due_today' : 'open'
   else if (done) state = done > due ? 'late_done' : 'done'
   else if (today > due) state = 'overdue'
   else if (today === due) state = 'due_today'
   else state = 'open'
   const active = state === 'open' || state === 'due_today' || state === 'overdue' || state === 'waiting'
   const daysLeft = !active ? null : kind === 'working' ? workingDaysBetween(today, due) : daysBetween(today, due)
-  return { key, label, basis, due, kind, mode, party, verify, installmentNo, opensOn, doneOn: done, state, daysLeft }
+  return { key, label, basis, due, kind, mode, party, verify, installmentNo, opensOn, overdueHint, doneOn: done, state, daysLeft }
 }
 
 /**
@@ -425,16 +473,30 @@ export function deadlines(bundle, today = bangkokIsoDate()) {
       due: addWorkingDays(sched.start, RULES.supervisorReportWorkingDays), kind: 'working', done: doneOn(bundle, 'start_report'), today, verify: sched.computedStart }))
   }
 
-  // รายงวด
+  // รายงวด: ระยะเวลาตาม ว 681 (ทำไม่ทันขอขยายเวลาต่อหัวหน้าหน่วยงานของรัฐ)
+  //   ผู้ควบคุมงาน: ว 681 ไม่ระบุเหตุตั้งต้น ระบบนับจากวันครบกำหนดส่งมอบงวด (ฐานเดียวกับข้อ 178(4)) → verify เสมอ
+  const extendHint = 'ทำไม่ทันให้ขอขยายเวลาต่อหัวหน้าหน่วยงานของรัฐ (ว 681)'
   for (const inst of sortedInstallments(bundle)) {
     const no = Number(inst.installment_no)
+    const isFinal = isFinalInstallmentNo(bundle, no)
+    const finalTag = isFinal ? ' (งวดสุดท้าย)' : ''
     if (iso(inst.due_on)) {
-      push(deadline({ key: 'installment_due_report', label: `ผู้ควบคุมงานรายงาน ณ วันครบกำหนดส่งมอบงวดที่ ${no}`, basis: `${B_PROC} ข้อ 178(4)`,
-        due: addWorkingDays(inst.due_on, RULES.supervisorReportWorkingDays), kind: 'working', done: iso(inst.due_report_on), today, installmentNo: no }))
+      const sup = supervisorInstallmentDays(bundle, no)
+      push(deadline({ key: 'installment_due_report', label: `ผู้ควบคุมงานรายงาน ณ วันครบกำหนดส่งมอบงวดที่ ${no}${finalTag} (${sup.days} วันทำการ)`,
+        basis: `${B_PROC} ข้อ 178(4) · ${B_W681}`, due: addWorkingDays(inst.due_on, sup.days), kind: 'working', done: iso(inst.due_report_on), today,
+        installmentNo: no, verify: true, overdueHint: extendHint }))
     }
     if (iso(inst.chair_acknowledged_on)) {
-      push(deadline({ key: 'installment_inspection', label: `คณะกรรมการตรวจรับงวดที่ ${no}`, basis: `${B_PROC} ข้อ 176(5)`,
-        due: addWorkingDays(inst.chair_acknowledged_on, RULES.inspectionWorkingDays), kind: 'working', done: iso(inst.inspected_on), today, installmentNo: no }))
+      const days = isFinal ? RULES.finalInspectionWorkingDays : RULES.inspectionWorkingDays
+      push(deadline({ key: 'installment_inspection', label: `คณะกรรมการตรวจรับงวดที่ ${no}${finalTag} (${days} วันทำการ)`, basis: `${B_PROC} ข้อ 176(5) · ${B_W681}`,
+        due: addWorkingDays(inst.chair_acknowledged_on, days), kind: 'working', done: iso(inst.inspected_on), today, installmentNo: no,
+        verify: isFinal === null, overdueHint: extendHint }))
+    }
+    // ตรวจรับแล้ว (รับ/ไม่รับ) → กรรมการรายงานหัวหน้าหน่วยงานของรัฐภายใน 2 วันทำการ
+    //   ไม่มีช่องบันทึกวันรายงาน จึงเตือนอย่างเดียว (เจ้าของระบบเลือก 2026-11-08)
+    if (iso(inst.inspected_on) && inst.inspection_result) {
+      push(deadline({ key: 'inspection_head_report', label: `คณะกรรมการรายงานผลตรวจรับงวดที่ ${no} ต่อหัวหน้าหน่วยงานของรัฐ`, basis: `${B_W681} · ${B_PROC} ข้อ 176(6)`,
+        due: addWorkingDays(inst.inspected_on, RULES.inspectionReportWorkingDays), kind: 'working', mode: 'reminder', today, installmentNo: no }))
     }
   }
 
@@ -674,7 +736,7 @@ export function projectAlerts(bundle, today = bangkokIsoDate()) {
     }
     if (d.mode === 'gate') continue
     if (d.state === 'overdue') {
-      out.push(alert('error', `${d.key}_overdue`, `${d.label} — เลยกำหนด ${d.due}`, extra))
+      out.push(alert('error', `${d.key}_overdue`, `${d.label} — เลยกำหนด ${d.due}${d.overdueHint ? ` · ${d.overdueHint}` : ''}`, extra))
     } else if (d.state === 'due_today') {
       out.push(alert('warn', `${d.key}_today`, `${d.label} — ครบกำหนดวันนี้`, extra))
     } else if (d.state === 'open') {

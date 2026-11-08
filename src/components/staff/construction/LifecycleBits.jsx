@@ -60,6 +60,7 @@ export function DeadlineRow({ deadline: d }) {
           {d.opensOn && ` · เริ่มตรวจได้ตั้งแต่ ${thaiDay(d.opensOn)}`}
           {d.party === 'contractor' && ' · หน้าที่ของผู้รับจ้าง (ระบบแค่บันทึกว่าทันหรือไม่)'}
           {d.verify && <span className="ml-1 text-amber-700">({VERIFY_TEXT})</span>}
+          {d.state === 'overdue' && d.overdueHint && <span className="block font-normal">{d.overdueHint}</span>}
         </span>
         {d.basis && <span className="mt-0.5 block text-[11px] text-gray-400">{d.basis}</span>}
       </span>
