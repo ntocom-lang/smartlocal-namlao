@@ -8,6 +8,8 @@
 import { supabase } from './supabase'
 import { logAction } from './auditLog'
 import { freezeSheet } from './constructionReport'
+import { initialStage } from './constructionLifecycle'
+import { lifecycleContractColumns, lifecycleProjectColumns, validateLifecycleForm } from './constructionContractForm'
 
 export const PROJECT_TYPES = [
   { value: 'road', label: 'ถนน' },
@@ -60,7 +62,8 @@ const text = value => {
 }
 
 const PROJECT_COLS = 'id, project_no, title, project_type, fiscal_year, status, contract_no, contractor_name, contract_amount, '
-  + 'budget_amount, paid_amount, start_date, end_date, location_desc, department_id, created_by, created_at'
+  + 'budget_amount, paid_amount, start_date, end_date, location_desc, department_id, created_by, created_at, '
+  + 'stage, stage_before_hold, stage_changed_at, work_group, operator_eval_required'   // วงจรโครงการ (migration 20261108100000)
 
 /** โครงการของ อปท. นี้ + รหัสโครงการที่ผู้ใช้ถูกระบุชื่อไว้ (ใช้ตัดสินว่าเห็นโครงการข้ามกองได้ไหม) */
 export async function fetchProjects(tenantId, userId) {
@@ -160,6 +163,9 @@ async function syncRows(table, existing, next, toColumns) {
  * @returns {{ projectId?: string, error?: object }}
  */
 export async function saveProject({ mode, tenantId, userId, projectId, form, items, people, existing, departmentId, editBase }) {
+  // ตรวจช่องสัญญา/หลักประกัน/ระยะประกันตาม CHECK จริงก่อนแตะฐานข้อมูล — ค่าผิดไม่ถึงฐาน (ไม่เกิดโครงการครึ่งๆ กลางๆ)
+  const invalid = validateLifecycleForm(form, { editBase })
+  if (invalid) return { error: { message: invalid } }
   let id = projectId
   if (editBase) {
     const row = {
@@ -167,7 +173,8 @@ export async function saveProject({ mode, tenantId, userId, projectId, form, ite
       project_no: text(form.project_no),
       fiscal_year: String(form.fiscal_year).trim(),
       project_type: form.project_type,
-      status: form.status,
+      // ไม่ส่ง status: ขั้นของโครงการกำหนดสถานะผ่าน trigger (civil_projects_stage_guard)
+      // stage ส่งได้ทางเดียวคือ INSERT ตอนสร้าง (ขั้นเริ่มต้น) · แก้ไขห้ามส่ง — เปลี่ยนขั้นผ่าน RPC civil_set_project_stage เท่านั้น
       contract_no: text(form.contract_no),
       contractor_name: text(form.contractor_name),
       contract_amount: num(form.contract_amount),
@@ -175,10 +182,11 @@ export async function saveProject({ mode, tenantId, userId, projectId, form, ite
       location_desc: text(form.location_desc),
       start_date: text(form.start_date),
       end_date: text(form.end_date),
+      ...lifecycleProjectColumns(form),   // work_group, operator_eval_required (เฉพาะ editBase)
     }
     if (mode === 'create') {
       const { data, error } = await supabase.from('civil_projects')
-        .insert({ ...row, municipality_id: tenantId, created_by: userId, department_id: departmentId ?? null }).select('id').single()
+        .insert({ ...row, stage: initialStage(form.initial_stage), municipality_id: tenantId, created_by: userId, department_id: departmentId ?? null }).select('id').single()
       if (error) return { error }
       id = data.id
     } else {
@@ -198,6 +206,7 @@ export async function saveProject({ mode, tenantId, userId, projectId, form, ite
     designer_name: text(form.designer_name),
     attach_no: text(form.attach_no),
     attach_date: text(form.attach_date),
+    ...lifecycleContractColumns(form),   // ช่องสัญญา/หลักประกัน/ระยะประกันของวงจรโครงการ — upsert ส่งเฉพาะคอลัมน์ที่ฟอร์มรู้จัก ไม่ทับคอลัมน์อื่น
     spec: specOf(form),
     updated_by: userId,
   }
