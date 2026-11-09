@@ -98,6 +98,11 @@ notify pgrst, 'reload schema';
 `admin_update_user()` มีเทสต์เฝ้าแล้ว (`npm run test:admin-update-user` รันใน CI ทุก push/PR)
 ฟังก์ชันอื่นยังไม่มี ต้องเทียบเอง
 
+**สิทธิ์ก็หายไปกับ DROP เช่นกัน:** `DROP` + `CREATE` (หรือเพิ่ม overload ใหม่) ได้ฟังก์ชันที่ PUBLIC
+และ anon เรียกได้ทันที (ค่าตั้งต้นของ Postgres + default privileges ของ Supabase) — `REVOKE ... FROM anon`
+อย่างเดียวไม่พอ ต้องมี `REVOKE ALL ... FROM public` ด้วยเสมอ
+สิทธิ์ anon ของ `rate_complaint()` มีเทสต์เฝ้าแล้ว (`npm run test:rate-complaint-anon` อยู่ใน workflow เดียวกัน)
+
 ## 6. Cache หลัง deploy — ห้ามใส่ TTL กลับให้ HTML
 
 เคยมีช่วงหน้าขาวราว 5 นาทีทุก deploy: worker ตอบ HTML ด้วย `max-age=300`

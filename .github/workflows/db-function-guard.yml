@@ -4,6 +4,10 @@
 # ของประชาชนแล้ว (20260829130000) แต่ #108 CREATE OR REPLACE ทั้งฟังก์ชันจากเนื้อรุ่นเก่า
 # บั๊กกลับมาเงียบๆ 3 สัปดาห์ จนบัญชีประชาชนหลุดสังกัดจริง 2 บัญชี (docs/ai/NOTES.md ข้อ 5)
 #
+# ด่านที่ 2 (2026-11-10): rate_complaint() ถอน EXECUTE จาก anon แล้ว (#682, 20261114100000)
+# แต่ DROP + CREATE หรือ overload ใหม่จะคืนสิทธิ์ให้ anon เงียบๆ ทาง PUBLIC + default privileges
+# ⇒ ไล่ GRANT/REVOKE/CREATE/DROP ของ migration ทุกไฟล์แล้วดูว่าสิทธิ์สุดท้ายยังปิดอยู่
+#
 # ทำไมต้องแยกไฟล์ ไม่ไปเป็น step ใน deploy.yml:
 # deploy.yml มี paths-ignore: 'supabase/**' ⇒ ถ้าแก้แค่ migration มันจะไม่ trigger เลย
 # ซึ่งเป็นเคสหลักที่ต้องดักพอดี และ deploy.yml จงใจไม่รับ pull_request (ถือ secrets)
@@ -39,11 +43,28 @@ jobs:
           node-version: '24'
 
       - name: ตรวจว่า admin_update_user() ยังคงสังกัด อปท. ของประชาชน
+        id: admin_update_user
         run: node tests/admin-update-user-guard.test.mjs
+
+      # รันต่อแม้ขั้นก่อนหน้าล้ม — เห็นผลทั้ง 2 ด่านในรอบเดียว
+      - name: ตรวจว่า anon ยังเรียก rate_complaint() ไม่ได้
+        id: rate_complaint_anon
+        if: ${{ !cancelled() }}
+        run: node tests/rate-complaint-anon-guard.test.mjs
 
       - name: ชี้ทางแก้เมื่อไม่ผ่าน
         if: failure()
+        env:
+          ADMIN_UPDATE_USER: ${{ steps.admin_update_user.outcome }}
+          RATE_COMPLAINT_ANON: ${{ steps.rate_complaint_anon.outcome }}
         run: |
-          echo "::error::migration ของ admin_update_user() จะทำให้บัญชีประชาชนหลุดสังกัด อปท. ทุกครั้งที่กดบันทึก — ห้าม apply ขึ้นฐานจริง"
-          echo "วิธีแก้: ดูข้อความของขั้นก่อนหน้า (ชื่อไฟล์ + บล็อกที่ต้องคงไว้) แล้วรัน 'npm run test:admin-update-user' บนเครื่องจนผ่าน"
+          if [ "$ADMIN_UPDATE_USER" = "failure" ]; then
+            echo "::error::migration ของ admin_update_user() จะทำให้บัญชีประชาชนหลุดสังกัด อปท. ทุกครั้งที่กดบันทึก — ห้าม apply ขึ้นฐานจริง"
+            echo "วิธีแก้: ดูข้อความของขั้น admin_update_user (ชื่อไฟล์ + บล็อกที่ต้องคงไว้) แล้วรัน 'npm run test:admin-update-user' บนเครื่องจนผ่าน"
+          fi
+          if [ "$RATE_COMPLAINT_ANON" = "failure" ]; then
+            echo "::error::migration ทำให้ผู้ไม่ล็อกอิน (anon) เรียก rate_complaint() ได้อีก หรือทำให้ผู้ล็อกอินเรียกไม่ได้ — ห้าม apply ขึ้นฐานจริง"
+            echo "วิธีแก้: ดูข้อความของขั้น rate_complaint (ชื่อไฟล์ + REVOKE ที่ต้องเติม) แล้วรัน 'npm run test:rate-complaint-anon' บนเครื่องจนผ่าน"
+            echo "DROP + CREATE หรือ overload ใหม่ได้ EXECUTE คืนทั้งทาง PUBLIC และ default privileges ของ Supabase ต้อง REVOKE ทั้งสองทาง"
+          fi
           echo "ที่มา: docs/ai/NOTES.md ข้อ 5 — CREATE OR REPLACE เขียนทับทั้งฟังก์ชัน ต้องตั้งต้นจากเนื้อรุ่นล่าสุดเสมอ"
