@@ -841,13 +841,9 @@ export default function MyComplaints() {
     const row = data?.[0] ?? null
     setSearchResult(row)
     setSearching(false)
-    // ผู้แจ้งที่ไม่ได้ล็อกอินก็ต้องได้ประเมิน — can_rate คำนวณฝั่งเซิร์ฟเวอร์ (ปิดเรื่องแล้ว
-    // และยังไม่เคยมีคะแนนของผู้ไม่ล็อกอินผูกกับเรื่องนี้) คะแนนกลุ่มนี้ถูกเก็บเป็น unverified
-    // ไม่ปนกับตัวเลขที่ใช้อ้างอิงทางราชการ เพราะ ref_no เดาได้และไม่มี rate limit
-    if (row?.can_rate && !satDone(row.id)) {
-      setSatComplaintId(row.id)
-      setShowSat(true)
-    }
+    // ผู้ไม่ล็อกอินให้คะแนนผ่านเลขอ้างอิงไม่ได้แล้ว (20261114100000) — ref_no เดาได้ คนนอกเคย
+    // ไล่ยึดช่องคะแนน unverified ของทุกเรื่องได้ จน สท. บันทึกแทนชาวบ้านไม่ได้
+    // หน้านี้แสดงแค่ข้อความชวนเข้าสู่ระบบด้วยบัญชีที่ยื่นเรื่อง (ดูใต้ผลค้นหา)
   }
 
   function handleRated(id, rating, verified) {
@@ -951,6 +947,12 @@ export default function MyComplaints() {
                 {searchResult.subject && <p className="text-xs text-gray-500 mb-1">{searchResult.subject}</p>}
                 <p className="text-xs text-gray-400 font-mono">{searchResult.ref_no}</p>
               </div>
+            )}
+
+            {searchResult && ['closed', 'completed'].includes(searchResult.status) && (
+              <p className="text-xs text-gray-500 leading-relaxed">
+                ประเมินความพึงพอใจได้หลังเข้าสู่ระบบด้วยบัญชีที่ใช้ยื่นเรื่องนี้
+              </p>
             )}
           </div>
         </div>
