@@ -35,7 +35,7 @@ const JOB_NAME = 'local-plan-monthly-reminder'
 const PAGE = 1000
 const MAX_PAGES = 50
 
-type Tenant = { id: string; slug: string; name: string; telegram_group_id: string | number }
+type Tenant = { id: string; slug: string; name: string; telegram_group_id: string | number; enabled_modules: string[] | null }
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -139,12 +139,12 @@ serve(async (req) => {
 
   const month = previousMonthBangkok(new Date())
   const summary = {
-    municipalities: 0, sent: 0, failed: 0, alreadySent: 0, noPlan: 0, nothingDue: 0, errors: [] as string[],
+    municipalities: 0, sent: 0, failed: 0, alreadySent: 0, noPlan: 0, nothingDue: 0, moduleOff: 0, errors: [] as string[],
   }
   const previews: { slug: string; text: string }[] = []
 
   let query = admin.from('municipalities')
-    .select('id, slug, name, telegram_group_id')
+    .select('id, slug, name, telegram_group_id, enabled_modules')
     .eq('is_active', true)
     .not('telegram_group_id', 'is', null)
   if (onlySlug) query = query.eq('slug', onlySlug)
@@ -156,11 +156,17 @@ serve(async (req) => {
     return json({ ok: false, error: cleanText(tenantError.message, 300) }, 500)
   }
 
-  // อปท. ที่ไม่ได้ผูกกลุ่ม Telegram ไม่ใช่ error — ข้ามเงียบๆ (เมนูแผนพัฒนาเปิดทุก อปท. ไม่มีคีย์ enabled_modules)
+  // อปท. ที่ไม่ได้ผูกกลุ่ม Telegram ไม่ใช่ error — ข้ามเงียบๆ
   const tenants = (tenantRows ?? []) as Tenant[]
   summary.municipalities = tenants.length
 
   for (const tenant of tenants) {
+    // ปิดเมนูแผนพัฒนาไว้ที่หน้าจัดการโมดูล (คีย์ 'local-plan' ตั้งแต่ 2569-11-09) = ไม่แจ้งเตือนของเมนูที่มองไม่เห็น
+    // กติกาเดียวกับ isModuleEnabled: enabled_modules ไม่ใช่ array = ยังไม่เคยตั้งค่า ถือว่าเปิดทุกโมดูล
+    if (Array.isArray(tenant.enabled_modules) && !tenant.enabled_modules.includes('local-plan')) {
+      summary.moduleOff += 1
+      continue
+    }
     let counts
     try {
       counts = await countForTenant(admin, tenant.id, month.fiscalYear, month.fiscalMonth)

@@ -243,9 +243,11 @@ const panel = read('src/components/staff/WaterEventsPanel.jsx')
   assert.match(dash, /tenant\.enabled_modules\.includes\('water-situation'\)/, 'เมนูโผล่เมื่อ อปท. เปิดโมดูลสถานการณ์น้ำ-ฝน')
   assert.match(dash, /\.\.\.\(hasWaterEventsAccess \? \[\] : \['water-events'\]\)/, 'คนที่ไม่มีสิทธิ์ถูกซ่อนเมนู')
   assert.match(dash, /activeModule === 'water-events' && visibleModules\.some\(m => m\.key === 'water-events'\)/, 'เปิดตรงๆ ผ่าน state ต้องเช็คสิทธิ์ซ้ำ')
-  assert.ok(!/'water-events'/.test(read('src/lib/staffModules.js')), 'ไม่เพิ่มคีย์ enabled_modules ใหม่ (ไม่ต้องแตะข้อมูลทุก อปท.)')
+  // 2569-11-09 เจ้าของระบบสั่งให้ปิดเมนูนี้รายหน่วยงานได้ (นำเสนอขาย) — มีคีย์ของตัวเองแล้ว แต่ต้องพ่วง water-situation เสมอ
+  const modules = read('src/lib/staffModules.js')
+  assert.match(modules, /key: 'water-events',[^\n]*requires: \['water-situation'\]/, 'คีย์ water-events ต้องประกาศว่าต้องเปิด water-situation ด้วย')
   assert.match(dash, /key: 'water-events', label: 'เหตุการณ์น้ำ-ฝน'/)
-  console.log('✓ เชื่อมต่อ: ชื่อฟังก์ชัน/พารามิเตอร์ตรง migration · บทบาทฝั่งหน้าเว็บตรงกับฝั่งฐานข้อมูล · ไม่เพิ่มคีย์ enabled_modules')
+  console.log('✓ เชื่อมต่อ: ชื่อฟังก์ชัน/พารามิเตอร์ตรง migration · บทบาทฝั่งหน้าเว็บตรงกับฝั่งฐานข้อมูล · คีย์ water-events พ่วง water-situation')
 }
 
 // ── 12) ไลบรารีเป็นฟังก์ชันล้วน ──

@@ -8,6 +8,7 @@ import { MODULE_GROUPS, MANAGED_MODULE_KEYS } from '../../lib/staffModules'
 // เดิมสองไฟล์ถือลิสต์คนละชุด ทำให้ติ๊กปิดบางโมดูลแล้วเมนูฝั่งเจ้าหน้าที่ไม่หายจริง
 const ALL_MODULES = MODULE_GROUPS
 const ALL_KEYS = MANAGED_MODULE_KEYS
+const LABEL_BY_KEY = Object.fromEntries(MODULE_GROUPS.flatMap(g => g.items.map(m => [m.key, m.label])))
 
 export default function ModuleManager({ tenant }) {
   const { patchTenant } = useTenant()
@@ -109,8 +110,10 @@ export default function ModuleManager({ tenant }) {
         <div key={group} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
           <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-3">{group}</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {items.map(({ key, label, desc }) => {
+            {items.map(({ key, label, desc, requires = [] }) => {
               const active = enabled.includes(key)
+              // เปิดเมนูนี้แล้วแต่โมดูลที่มันพ่วงอยู่ปิด = เมนูจะไม่โผล่ฝั่งเจ้าหน้าที่ — เตือนให้เห็นตอนนำเสนอ ไม่ติ๊กให้เอง
+              const missing = active ? requires.filter(k => !enabled.includes(k)).map(k => LABEL_BY_KEY[k] ?? k) : []
               return (
                 <button
                   key={key}
@@ -125,6 +128,11 @@ export default function ModuleManager({ tenant }) {
                   <div>
                     <p className={`text-xs font-bold ${active ? 'text-purple-700' : 'text-gray-500'}`}>{label}</p>
                     <p className="text-[10px] text-gray-400 leading-snug mt-0.5">{desc}</p>
+                    {missing.length > 0 && (
+                      <p className="text-[10px] text-amber-700 font-semibold leading-snug mt-1">
+                        ต้องเปิด “{missing.join('”, “')}” ด้วย เมนูนี้ถึงจะแสดง
+                      </p>
+                    )}
                   </div>
                 </button>
               )
