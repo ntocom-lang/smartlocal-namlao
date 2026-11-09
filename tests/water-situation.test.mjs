@@ -297,9 +297,64 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
     'ทางที่จบสำเร็จ (รวมกรณีไม่มี อปท. ให้ส่ง) ต้องลงสมุดว่าสำเร็จ')
 
   // อ่านสมุดไม่ได้ต้องไม่ทำให้การตรวจข้อมูลค้างเดิมพังตาม (ตารางยังไม่ถูกสร้างก็ต้องทำงานต่อ)
-  const beatsBlock = dogSrc.split("from('job_heartbeats')")[1]?.split('const staleJobs')[0] ?? ''
+  const beatsBlock = dogSrc.split("from('job_heartbeats')")[1]?.split('const reply = ')[0] ?? ''
   assert.ok(beatsBlock.includes('if (beatsError)') && !beatsBlock.includes('return json('),
     'อ่านสมุดลงเวลาไม่ได้ ห้ามตอบ error ทั้งรอบ')
+  const watchBlock = dogSrc.split('async function watchJob(')[1]?.split('\n  }\n')[0] ?? ''
+  assert.ok(watchBlock.length > 0 && !watchBlock.includes('return json('), 'ตรวจงานหนึ่งพังต้องไม่ตอบ error ทั้งรอบ')
+
+  // งานรายเดือน: ชื่อต้องตรงกับ JOB_NAME และงานต้องลงสมุดเฉพาะรอบเต็ม (ไม่งั้นรอบทดสอบกลบรอบจริงที่พัง)
+  const planSrc = readFileSync(new URL('../supabase/functions/local-plan-monthly-reminder/index.ts', import.meta.url), 'utf8')
+  const planJob = planSrc.match(/const JOB_NAME = '([a-z0-9-]+)'/)?.[1]
+  assert.equal(planJob, 'local-plan-monthly-reminder')
+  assert.ok(dogSrc.includes(`name: '${planJob}'`), 'ชื่องานใน WATCHED_JOBS ต้องตรงกับ JOB_NAME ของ local-plan-monthly-reminder')
+  assert.ok(/if \(fullRun\) await recordHeartbeat/.test(planSrc), 'ฟังก์ชันรายเดือนต้องลงสมุดเฉพาะรอบเต็ม')
+  // ชนิดแจ้งเตือนของงานน้ำต้องคงชื่อเดิม — ตัวตรวจ "กลับมาแล้ว" อ่านประวัติจากชนิดนี้ เปลี่ยนแล้วเหตุที่ค้างอยู่จะไม่มีข้อความปิด
+  assert.match(dogSrc, /name: 'water-alert-notify',\s*\n\s*label: [^\n]+\n\s*alertType: 'water_alert',/)
+  // เส้นตายต้องหลังเวลาที่ cron ยิง (08:45 น. ไทย) — ย้าย cron แล้วลืมแก้ = เตือนผิดหรือเตือนช้า
+  const planCron = readFileSync(new URL('../supabase/migrations/20261111100000_local_plan_monthly_reminder_cron.sql', import.meta.url), 'utf8')
+  assert.ok(planCron.includes("'45 1 1 * *'"), 'cron รายเดือนเปลี่ยนเวลา → ทบทวน dueTime ใน WATCHED_JOBS')
+  assert.ok(dogSrc.includes("schedule: { kind: 'monthly', day: 1, dueTime: '09:30', firstMonth: '2026-12' }"))
+
+  // ── เกณฑ์ของจริง (_shared/jobSchedule.ts) — โซนเวลาเครื่องเป็นต่างประเทศ: คิดเดือนจากเวลาเครื่องเมื่อไรเคสข้ามเดือนพัง
+  const prevTz = process.env.TZ
+  process.env.TZ = 'America/Los_Angeles'
+  const { checkJob } = await import('../supabase/functions/_shared/jobSchedule.ts')
+  const monthly = { kind: 'monthly', day: 1, dueTime: '09:30', firstMonth: '2026-12' }
+  const at = (bkk) => new Date(`${bkk}+07:00`)
+  const ok = (bkk) => at(bkk).toISOString()
+
+  // ก่อนเดือนแรกที่เฝ้า: ยังไม่มีรอบจริง (สมุดยังว่าง) ต้องไม่เตือน — ไม่งั้นเตือนผิดทุกวันจนถึง 1 ธ.ค.
+  assert.deepEqual(checkJob(monthly, null, at('2026-11-09T10:25:00')), { stale: false, cycleStart: null })
+  // 1 ธ.ค. ก่อนเส้นตาย: รอบที่ตรวจคือ พ.ย. ซึ่งอยู่ก่อนเดือนแรก → ไม่เตือน
+  assert.equal(checkJob(monthly, null, at('2026-12-01T09:25:00')).stale, false)
+  // พ้นเส้นตายแล้วไม่มีผลสำเร็จ → เตือน · รอบเริ่ม 00:00 น. วันที่ 1 ตามเวลาไทย
+  const missed = checkJob(monthly, null, at('2026-12-01T10:25:00'))
+  assert.equal(missed.stale, true)
+  assert.equal(missed.cycleStart, '2026-11-30T17:00:00.000Z')
+  // รันสำเร็จตามเวลา 08:45 น.
+  assert.equal(checkJob(monthly, ok('2026-12-01T08:45:30'), at('2026-12-01T10:25:00')).stale, false)
+  // ผลของเดือนก่อนนับแทนเดือนนี้ไม่ได้ (เคสข้ามปี)
+  assert.equal(checkJob(monthly, ok('2026-12-01T08:45:30'), at('2027-01-01T10:25:00')).stale, true, 'ข้ามปีต้องคิดถูก')
+  // กลางเดือน: ยังใช้ผลของวันที่ 1 เดือนนี้ได้
+  assert.equal(checkJob(monthly, ok('2027-01-01T08:45:30'), at('2027-01-31T23:25:00')).stale, false)
+  // 1 ม.ค. ก่อนเส้นตาย: ยังตรวจรอบ ธ.ค. → มีผลของ ธ.ค. = ไม่เตือน
+  assert.equal(checkJob(monthly, ok('2026-12-01T08:45:30'), at('2027-01-01T08:25:00')).stale, false)
+  // ยิงซ้ำด้วยมือภายหลังแล้วสำเร็จ = แก้แล้ว
+  assert.equal(checkJob(monthly, ok('2026-12-03T14:00:00'), at('2026-12-03T14:25:00')).stale, false)
+  // ตัดรอบตามเวลาไทย: 30 พ.ย. 23:59 น. ไทย ไม่ใช่รอบ ธ.ค. · 1 ธ.ค. 00:00 น. ไทย (30 พ.ย. 17:00 UTC) คือรอบ ธ.ค.
+  assert.equal(checkJob(monthly, ok('2026-11-30T23:59:00'), at('2026-12-01T10:25:00')).stale, true, 'ต้องตัดรอบตามเวลาไทย')
+  assert.equal(checkJob(monthly, ok('2026-12-01T00:00:00'), at('2026-12-01T10:25:00')).stale, false)
+  // rolling = เกณฑ์เดิมของ water-alert-notify (125 นาที)
+  const rolling = { kind: 'rolling', maxAgeMinutes: 125 }
+  const tick = new Date('2026-12-01T03:25:00Z')
+  assert.equal(checkJob(rolling, new Date(tick.getTime() - 125 * 60_000).toISOString(), tick).stale, false)
+  assert.equal(checkJob(rolling, new Date(tick.getTime() - 126 * 60_000).toISOString(), tick).stale, true)
+  assert.equal(checkJob(rolling, null, tick).stale, true)
+  assert.throws(() => checkJob({ ...monthly, day: 31 }, null, tick), /1–28/)
+  assert.throws(() => checkJob({ ...monthly, dueTime: '9:30' }, null, tick), /HH:MM/)
+  if (prevTz === undefined) delete process.env.TZ
+  else process.env.TZ = prevTz
 
   const migration = readFileSync(new URL('../supabase/migrations/20260928140100_job_heartbeats_rls.sql', import.meta.url), 'utf8')
   assert.ok(migration.includes('REVOKE ALL ON public.job_heartbeats FROM anon, authenticated, PUBLIC'))

@@ -67,7 +67,8 @@ async function fetchAll<T>(table: string, build: (from: number, to: number, with
 const withCountOpt = (on: boolean) => (on ? { count: 'exact' as const } : undefined)
 
 // ลงสมุดลงเวลา (ต้นแบบ water-alert-notify) — net._http_response เก็บผลแค่ ~6 ชม. สมุดนี้ไว้ไล่ย้อนว่ารอบวันที่ 1 พังเพราะอะไร
-// ยังไม่ได้ใส่ใน WATCHED_JOBS ของ thaiwater-watchdog (รอบเดือนละครั้ง ต้องตั้งเกณฑ์แยก) — เขียนไม่สำเร็จแค่ log
+// thaiwater-watchdog เฝ้าสมุดนี้ (WATCHED_JOBS เกณฑ์รายเดือน: พ้นวันที่ 1 เวลา 09:30 ต้องมี last_ok_at ของเดือนนั้น)
+// ⇒ ห้ามลงว่าสำเร็จถ้ามี อปท. ใดพัง · เขียนสมุดไม่สำเร็จแค่ log
 async function recordHeartbeat(admin: SupabaseClient, outcome: { ok: true } | { ok: false; error: string }) {
   const at = new Date().toISOString()
   const row = outcome.ok
