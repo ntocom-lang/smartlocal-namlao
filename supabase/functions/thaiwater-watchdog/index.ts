@@ -23,13 +23,15 @@
 //
 // ตรวจเพิ่ม (2569-09-28): งานที่ต้องลงสมุด job_heartbeats ทุกรอบ (WATCHED_JOBS) — ข้อมูลที่ยังสด
 // ไม่ได้แปลว่าแจ้งเตือนยังทำงาน water-alert-notify พังเองได้ขณะที่ sync ปกติ (เคยเกือบเงียบมาแล้ว:
-// ข้อมูลเกินเพดาน 1,000 แถวของ PostgREST) · ไม่สำเร็จนานเกิน STALE_MINUTES = พลาด 2 รอบ → แจ้งกลุ่มเดิม
+// ข้อมูลเกินเพดาน 1,000 แถวของ PostgREST) · ไม่สำเร็จตามเกณฑ์ของงานนั้น → แจ้งกลุ่มเดิม
 // พร้อม error ล่าสุดที่งานลงไว้ · อ่านสมุดไม่ได้ (เช่นตารางยังไม่ถูกสร้าง) ให้ข้ามไป
 // ห้ามทำให้การตรวจข้อมูลค้างที่มีอยู่เดิมพังตาม
+// (2569-11-09) เพิ่มงานรายเดือน local-plan-monthly-reminder — เกณฑ์แยกตามจังหวะของงาน ดู _shared/jobSchedule.ts
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sendTelegramMessage, escapeHtml, cleanText } from '../_shared/telegram.ts'
+import { checkJob, type JobSchedule } from '../_shared/jobSchedule.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -58,11 +60,46 @@ const TYPE_LABEL: Record<string, string> = {
 }
 
 // งานที่ต้องลงสมุดลงเวลาทุกรอบ — name ต้องตรงกับ JOB_NAME ในฟังก์ชันนั้น (เทสต์อ่านสองไฟล์มาเทียบ)
-// water-alert-notify รันทุกชั่วโมงนาทีที่ 15 ตัวนี้ตรวจนาทีที่ 25 · เกณฑ์ STALE_MINUTES เดียวกับข้อมูลค้าง
-// พลาด 1 รอบ = อายุ 70 นาที · พลาด 2 รอบ = 130 นาที
-const WATCHED_JOBS = [
-  { name: 'water-alert-notify', label: 'ระบบแจ้งเตือนน้ำ-ฝนใกล้พื้นที่ (water-alert-notify)' },
-] as const
+// แต่ละงานมีเกณฑ์ ข้อความ และชนิดแจ้งเตือนของตัวเอง → งานหนึ่งพังไม่บังข้อความ "กลับมาแล้ว" ของอีกงาน
+// alertType ของ water-alert-notify ต้องคง 'water_alert' ไว้ — ตัวตรวจ "กลับมาแล้ว" อ่านประวัติจากชนิดนี้
+type WatchedJob = {
+  name: string
+  label: string
+  alertType: string
+  schedule: JobSchedule
+  staleTitle: string
+  recoveredTitle: string
+  impact: string
+  fix: string
+}
+const WATCHED_JOBS: WatchedJob[] = [
+  // รันทุกชั่วโมงนาทีที่ 15 ตัวนี้ตรวจนาทีที่ 25 · เกณฑ์ STALE_MINUTES เดียวกับข้อมูลค้าง
+  // พลาด 1 รอบ = อายุ 70 นาที · พลาด 2 รอบ = 130 นาที
+  {
+    name: 'water-alert-notify',
+    label: 'ระบบแจ้งเตือนน้ำ-ฝนใกล้พื้นที่ (water-alert-notify)',
+    alertType: 'water_alert',
+    schedule: { kind: 'rolling', maxAgeMinutes: STALE_MINUTES },
+    staleTitle: 'ระบบแจ้งเตือนสถานการณ์น้ำ-ฝนหยุดทำงาน',
+    recoveredTitle: 'ระบบแจ้งเตือนสถานการณ์น้ำ-ฝนกลับมาทำงานแล้ว',
+    impact: 'ระหว่างนี้กลุ่ม อปท. จะไม่ได้รับแจ้งเตือนฝนหนักมาก ระดับน้ำ หรืออ่างเก็บน้ำ แม้เกิดเหตุจริง',
+    fix: 'ตรวจที่ Supabase → Edge Functions → water-alert-notify → Logs',
+  },
+  // cron '45 1 1 * *' (GMT) = วันที่ 1 เวลา 08:45 น. · ตัวนี้ตรวจนาทีที่ 25 → รอบแรกหลังเส้นตาย 09:30 คือ 10:25 น.
+  // บาง อปท. พัง ฟังก์ชันลง last_error แต่ไม่เลื่อน last_ok_at → เตือนพร้อม error
+  // firstMonth 2026-12: เปิดใช้ พ.ย. 2569 หลังวันที่ 1 จึงยังไม่มีรอบจริงของ พ.ย. ให้ตรวจ
+  // ถ้าย้ายเวลา cron ต้องทบทวน dueTime ด้วย
+  {
+    name: 'local-plan-monthly-reminder',
+    label: 'แจ้งเตือนแผนการดำเนินงานรายเดือน (local-plan-monthly-reminder)',
+    alertType: 'local_plan_reminder',
+    schedule: { kind: 'monthly', day: 1, dueTime: '09:30', firstMonth: '2026-12' },
+    staleTitle: 'แจ้งเตือนแผนการดำเนินงานรอบวันที่ 1 ยังไม่สำเร็จ',
+    recoveredTitle: 'แจ้งเตือนแผนการดำเนินงานรายเดือนกลับมาทำงานแล้ว',
+    impact: 'กองที่ยังไม่ได้รับข้อความจะไม่รู้ว่ามีรายการแผนการดำเนินงานถึงกำหนดแต่ยังไม่บันทึกผล',
+    fix: 'ตรวจที่ Supabase → Edge Functions → local-plan-monthly-reminder → Logs แก้แล้วยิงรอบเต็มซ้ำได้ (อปท. ที่ได้ข้อความเดือนนี้แล้วจะไม่ได้ซ้ำ)',
+  },
+]
 
 type StationType = typeof STATION_TYPES[number]
 type StaleFeed = { type: StationType; lastFetchedAt: string | null; ageMinutes: number | null }
@@ -96,6 +133,13 @@ function bangkokText(iso: string | null): string {
   return `${d.toLocaleString('th-TH', {
     timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   })} น.`
+}
+
+// วันของรอบงานรายเดือน เช่น "1 ธ.ค. 2569"
+function bangkokDay(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return 'ไม่ทราบวัน'
+  return d.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 function ageText(minutes: number | null): string {
@@ -217,9 +261,77 @@ serve(async (req) => {
     return result.ok
   }
 
+  type Beat = { last_ok_at: string | null; last_error_at: string | null; last_error: string | null }
+
+  async function watchJob(job: WatchedJob, beat: Beat | undefined): Promise<Record<string, unknown>> {
+    // โหมดทดสอบบังคับทุกงานด้วยเกณฑ์นาทีที่ส่งมา (เหมือนข้อมูลค้าง) จะได้ทดสอบข้อความได้ทุกวัน
+    const schedule: JobSchedule = isTest ? { kind: 'rolling', maxAgeMinutes: staleMinutes } : job.schedule
+    const lastOkAt: string | null = beat?.last_ok_at ?? null
+    const okAt = lastOkAt ? new Date(lastOkAt).getTime() : NaN
+    const check = checkJob(schedule, lastOkAt, new Date(now))
+    const staleType = `${job.alertType}_stale${typeSuffix}`
+    const recoveredType = `${job.alertType}_recovered${typeSuffix}`
+
+    if (check.stale) {
+      // error ที่เก่ากว่าครั้งที่สำเร็จล่าสุด = เรื่องที่หายไปแล้ว ไม่ใช่สาเหตุของรอบนี้ จึงไม่แนบ
+      const errorAt = beat?.last_error_at ? new Date(beat.last_error_at).getTime() : NaN
+      const freshError = Boolean(beat?.last_error) && Number.isFinite(errorAt) && (!Number.isFinite(okAt) || errorAt > okAt)
+      const ageMinutes = Number.isFinite(okAt) ? Math.round((now - okAt) / 60_000) : null
+      const result = { stale: true, lastOkAt, cycleStart: check.cycleStart }
+
+      // คีย์ผูกกับ "งาน + วันที่ไทย" → พังต่อเนื่องเตือนวันละครั้งจนกว่าจะแก้
+      // (งานน้ำได้คีย์เดิม water_alert_stale:water-alert-notify:<วันที่> — ไม่ส่งซ้ำในวันที่ deploy)
+      const key = `${keyPrefix}${job.alertType}_stale:${job.name}:${bangkokDate()}`
+      if (await claim(staleType, key) === 'skip') return { ...result, sent: false, reason: 'แจ้งไปแล้ว' }
+
+      const status = check.cycleStart
+        ? (lastOkAt
+          ? `• ${escapeHtml(job.label, 80)} รอบ ${bangkokDay(check.cycleStart)} ยังไม่สำเร็จ (สำเร็จล่าสุด ${bangkokText(lastOkAt)})`
+          : `• ${escapeHtml(job.label, 80)} รอบ ${bangkokDay(check.cycleStart)} ยังไม่สำเร็จ และยังไม่เคยลงสมุดว่าทำงานสำเร็จ`)
+        : (lastOkAt
+          ? `• ${escapeHtml(job.label, 80)} ทำงานสำเร็จล่าสุด ${bangkokText(lastOkAt)} (ผ่านมา ${ageText(ageMinutes)})`
+          : `• ${escapeHtml(job.label, 80)} ยังไม่เคยลงสมุดว่าทำงานสำเร็จ`)
+      // ไม่ตัดความยาวแบบข้อความข้อมูลค้าง: ตัดกลาง &amp; แล้ว Telegram ปฏิเสธทั้งข้อความ
+      // ความยาวมีเพดานอยู่แล้ว (label 80 · error 300 ตัวก่อน escape · ข้อความคงที่) ต่ำกว่า 4,096 เสมอ
+      const text = [
+        `🔴 <b>${isTest ? '[ทดสอบ] ' : ''}${escapeHtml(job.staleTitle, 120)}</b>`,
+        status,
+        freshError
+          ? `  error ล่าสุด ${bangkokText(String(beat?.last_error_at))}: ${escapeHtml(String(beat?.last_error), 300)}`
+          : '  ไม่มีบันทึก error — ฟังก์ชันอาจไม่ถูกเรียกเลย (cron หาย · secret ไม่ตรง · deploy ไม่ขึ้น)',
+        '',
+        escapeHtml(job.impact, 300),
+        escapeHtml(job.fix, 300),
+      ].join('\n')
+      return { ...result, sent: await finish(key, text) }
+    }
+
+    // กลับมาแล้ว — แจ้งเฉพาะเมื่อเคยแจ้งว่าหยุด และยังไม่เคยแจ้งว่ากลับมาหลังจากนั้น (แบบเดียวกับข้อมูลค้าง)
+    const { data: lastJobStale } = await admin.from('notification_deliveries')
+      .select('created_at').eq('municipality_id', tenant!.id)
+      .eq('notification_type', staleType).eq('status', 'sent')
+      .order('created_at', { ascending: false }).limit(1)
+    const staleAt: string | undefined = lastJobStale?.[0]?.created_at
+    if (!staleAt) return { stale: false, sent: null }
+    const { data: lastJobRecovered } = await admin.from('notification_deliveries')
+      .select('created_at').eq('municipality_id', tenant!.id)
+      .eq('notification_type', recoveredType).eq('status', 'sent')
+      .order('created_at', { ascending: false }).limit(1)
+    if (lastJobRecovered?.length && lastJobRecovered[0].created_at >= staleAt) return { stale: false, sent: null }
+
+    const recoveryKey = `${keyPrefix}${job.alertType}_recovered:${staleAt}`
+    if (await claim(recoveredType, recoveryKey) === 'skip') return { stale: false, sent: false, reason: 'แจ้งไปแล้ว' }
+    const text = [
+      `✅ <b>${isTest ? '[ทดสอบ] ' : ''}${escapeHtml(job.recoveredTitle, 120)}</b>`,
+      `แจ้งว่าหยุดทำงานเมื่อ ${bangkokText(staleAt)} ตอนนี้ทำงานสำเร็จตามรอบแล้ว`,
+    ].join('\n')
+    return { stale: false, sent: await finish(recoveryKey, text), recovered: true }
+  }
+
   // ── งานที่ต้องลงสมุดลงเวลาทุกรอบ (job_heartbeats) ──
   // ผลรวมไว้ในคำตอบทุกทางผ่าน reply() · อ่านสมุดไม่ได้ = ข้ามไป ไม่ตอบ 500 (การตรวจข้อมูลค้างต้องทำต่อ)
-  let jobs: Record<string, unknown> = { stale: [], sent: null }
+  // ตรวจทีละงาน: แต่ละงานมีคีย์/ชนิดแจ้งเตือนของตัวเอง งานหนึ่งพังอยู่ไม่บังข้อความ "กลับมาแล้ว" ของอีกงาน
+  let jobs: Record<string, unknown> = {}
   const { data: beats, error: beatsError } = await admin
     .from('job_heartbeats')
     .select('job_name, last_ok_at, last_error_at, last_error')
@@ -228,69 +340,13 @@ serve(async (req) => {
     console.error('[thaiwater-watchdog] อ่านสมุดลงเวลาไม่ได้:', beatsError.code, beatsError.message)
     jobs = { error: cleanText(beatsError.message, 300) }
   } else {
-    const staleJobs = WATCHED_JOBS.flatMap((j) => {
-      const beat = (beats ?? []).find((b) => b.job_name === j.name)
-      const lastOkAt: string | null = beat?.last_ok_at ?? null
-      const okAt = lastOkAt ? new Date(lastOkAt).getTime() : NaN
-      if (Number.isFinite(okAt) && now - okAt <= staleMinutes * 60_000) return []
-      // error ที่เก่ากว่าครั้งที่สำเร็จล่าสุด = เรื่องที่หายไปแล้ว ไม่ใช่สาเหตุของรอบนี้ จึงไม่แนบ
-      const errorAt = beat?.last_error_at ? new Date(beat.last_error_at).getTime() : NaN
-      const freshError = Boolean(beat?.last_error) && Number.isFinite(errorAt) && (!Number.isFinite(okAt) || errorAt > okAt)
-      return [{
-        name: j.name,
-        label: j.label,
-        lastOkAt,
-        ageMinutes: Number.isFinite(okAt) ? Math.round((now - okAt) / 60_000) : null,
-        lastError: freshError ? String(beat?.last_error) : null,
-        lastErrorAt: freshError ? String(beat?.last_error_at) : null,
-      }]
-    })
-
-    if (staleJobs.length > 0) {
-      // คีย์ผูกกับ "งานที่หยุด + วันที่ไทย" เหมือนข้อมูลค้าง → พังต่อเนื่องเตือนวันละครั้ง
-      const key = `${keyPrefix}water_alert_stale:${staleJobs.map((j) => j.name).join('+')}:${bangkokDate()}`
-      if (await claim(`water_alert_stale${typeSuffix}`, key) === 'skip') {
-        jobs = { stale: staleJobs, sent: false, reason: 'แจ้งไปแล้ว' }
-      } else {
-        // ไม่ตัดความยาวแบบข้อความข้อมูลค้าง: ตัดกลาง &amp; แล้ว Telegram ปฏิเสธทั้งข้อความ
-        // ความยาวมีเพดานอยู่แล้ว (label 80 · error 300 ตัวก่อน escape · งานเดียว) ต่ำกว่า 4,096 เสมอ
-        const text = [
-          `🔴 <b>${isTest ? '[ทดสอบ] ' : ''}ระบบแจ้งเตือนสถานการณ์น้ำ-ฝนหยุดทำงาน</b>`,
-          ...staleJobs.flatMap((j) => [
-            j.lastOkAt
-              ? `• ${escapeHtml(j.label, 80)} ทำงานสำเร็จล่าสุด ${bangkokText(j.lastOkAt)} (ผ่านมา ${ageText(j.ageMinutes)})`
-              : `• ${escapeHtml(j.label, 80)} ยังไม่เคยลงสมุดว่าทำงานสำเร็จ`,
-            j.lastError
-              ? `  error ล่าสุด ${bangkokText(j.lastErrorAt)}: ${escapeHtml(j.lastError, 300)}`
-              : '  ไม่มีบันทึก error — ฟังก์ชันอาจไม่ถูกเรียกเลย (cron หาย · secret ไม่ตรง · deploy ไม่ขึ้น)',
-          ]),
-          '',
-          'ระหว่างนี้กลุ่ม อปท. จะไม่ได้รับแจ้งเตือนฝนหนักมาก ระดับน้ำ หรืออ่างเก็บน้ำ แม้เกิดเหตุจริง',
-          'ตรวจที่ Supabase → Edge Functions → water-alert-notify → Logs',
-        ].join('\n')
-        jobs = { stale: staleJobs, sent: await finish(key, text) }
-      }
-    } else {
-      // กลับมาแล้ว — แจ้งเฉพาะเมื่อเคยแจ้งว่าหยุด และยังไม่เคยแจ้งว่ากลับมาหลังจากนั้น (แบบเดียวกับข้อมูลค้าง)
-      const { data: lastJobStale } = await admin.from('notification_deliveries')
-        .select('created_at').eq('municipality_id', tenant.id)
-        .eq('notification_type', `water_alert_stale${typeSuffix}`).eq('status', 'sent')
-        .order('created_at', { ascending: false }).limit(1)
-      const staleAt: string | undefined = lastJobStale?.[0]?.created_at
-      if (staleAt) {
-        const { data: lastJobRecovered } = await admin.from('notification_deliveries')
-          .select('created_at').eq('municipality_id', tenant.id)
-          .eq('notification_type', `water_alert_recovered${typeSuffix}`).eq('status', 'sent')
-          .order('created_at', { ascending: false }).limit(1)
-        const alreadyRecovered = Boolean(lastJobRecovered?.length) && lastJobRecovered![0].created_at >= staleAt
-        const recoveryKey = `${keyPrefix}water_alert_recovered:${staleAt}`
-        if (!alreadyRecovered && await claim(`water_alert_recovered${typeSuffix}`, recoveryKey) !== 'skip') {
-          const text = [
-            `✅ <b>${isTest ? '[ทดสอบ] ' : ''}ระบบแจ้งเตือนสถานการณ์น้ำ-ฝนกลับมาทำงานแล้ว</b>`,
-            `แจ้งว่าหยุดทำงานเมื่อ ${bangkokText(staleAt)} ตอนนี้ทำงานสำเร็จตามรอบปกติแล้ว`,
-          ].join('\n')
-          jobs = { stale: [], sent: await finish(recoveryKey, text), recovered: true }
-        }
+    for (const job of WATCHED_JOBS) {
+      // งานหนึ่งตรวจไม่ได้ (เช่นตั้งค่าเกณฑ์ผิด) ห้ามลากการตรวจงานอื่นและข้อมูลค้างพังตาม
+      try {
+        jobs[job.name] = await watchJob(job, (beats ?? []).find((b) => b.job_name === job.name))
+      } catch (err) {
+        console.error(`[thaiwater-watchdog] ตรวจ ${job.name} ไม่ได้:`, err)
+        jobs[job.name] = { error: cleanText(err instanceof Error ? err.message : String(err), 300) }
       }
     }
   }
