@@ -2613,7 +2613,7 @@ export default function StaffDashboard() {
   const patientWorkCount = patientModuleVisible && patientWorkBadge.tenantId === tenant?.id && patientWorkBadge.profileId === profile?.id
     ? patientWorkBadge.count : 0
   const visibleStandaloneGroups = STANDALONE_GROUPS
-    .map(g => ({ ...g, items: g.items.filter(m => scopedKeys.includes(m.key)) }))
+    .map(g => ({ ...g, collapsible: true, items: g.items.filter(m => scopedKeys.includes(m.key)) }))
     .filter(g => g.items.length > 0)
   const visibleGroups = MODULE_GROUPS
     .map(g => ({ ...g, collapsible: true, items: g.items.filter(m => scopedKeys.includes(m.key)).map(withPlanLabel) }))
@@ -2894,6 +2894,10 @@ export default function StaffDashboard() {
   // closeDrawer ต้อง useCallback — effect ในลิ้นชักผูกกับมัน ถ้าเปลี่ยนทุกรอบ render โฟลกัสจะถูกดึงกลับทุกครั้ง
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
   const drawerBadges = { ...departmentWorkCounts, inbox: pendingCount, complaints: newComplaintCount, [PATIENT_TRANSPORT_MODULE_KEY]: patientWorkCount }
+  const navWorkErrors = {
+    ...departmentWorkErrors,
+    ...Object.fromEntries(Object.entries(workStatus).map(([key, status]) => [key, status === 'error'])),
+  }
   function openFromDrawer(item) {
     setDrawerOpen(false)
     if (item.newTab) window.open(item.newTab, '_blank', 'noopener,noreferrer')
@@ -2964,7 +2968,7 @@ export default function StaffDashboard() {
 
       <PortalDrawer key={`${tenant?.id}-${profile?.id}`} open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="ระบบเจ้าหน้าที่"
         ariaLabel="เมนูเจ้าหน้าที่" groups={visibleHomeGroups} activeKey={activeModule}
-        badges={drawerBadges} workErrors={departmentWorkErrors} onSelect={openFromDrawer} />
+        badges={drawerBadges} workErrors={navWorkErrors} onSelect={openFromDrawer} />
 
         {/* PC header — staff themed · ปักติดบนขณะเลื่อน (sticky ภายใน <main overflow-y-auto> ของ App) ·
             overflow-hidden ย้ายไปอยู่ที่ชั้นพื้นหลังเท่านั้น ไม่งั้นเมนูบัญชีที่หย่อนลงมาใต้หัวจะถูกตัดทิ้ง ·
@@ -3024,59 +3028,26 @@ export default function StaffDashboard() {
               </button>
               {/* ศูนย์รวมข้อมูลดิจิทัลย้ายไปอยู่ในกลุ่ม "แผนงานและทรัพยากรกลาง" ของ STANDALONE_GROUPS
                   แล้ว (2026-09-02) — ปุ่ม hardcode ตรงนี้จึงถูกถอดออก ไม่งั้นขึ้นซ้ำ 2 บรรทัด */}
-              {visibleStandaloneGroups.map(({ group, items }) => (
-                <div key={group} className="mb-3">
-                  <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-widest text-white/55">{group}</p>
-                  <div className="space-y-0.5">
-                    {items.map(({ key, label, Icon, externalUrl, newTab }) => {
-                      const isActive = activeModule === key
-                      const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
-                        : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
-                        : key === PATIENT_TRANSPORT_MODULE_KEY && patientWorkCount > 0 ? patientWorkCount
-                        : null
-                      return (
-                        <button key={key} onClick={() => newTab ? window.open(newTab, "_blank", "noopener,noreferrer") : externalUrl ? navigate(externalUrl) : setActiveModule(key)}
-                          className={`flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
-                          <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} />
-                          <span className="flex-1 text-left text-xs">{label}</span>
-                          {badge && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white bg-amber-400">
-                              {badge > 99 ? '99+' : badge}
-                            </span>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              ))}
-              <div className="my-2 border-t" style={{ borderColor: 'rgba(255,255,255,0.1)' }} />
-              {visibleGroups.map(({ group, items }) => (
+              {visibleHomeGroups.map(({ group, items }) => (
                 <CollapsibleNavGroup key={`${tenant?.id}-${profile?.id}-${group}`} label={group}
-                  activeKey={items.some(item => item.key === activeModule) ? activeModule : null}
-                  workError={items.some(item => departmentWorkErrors[item.key])}
-                  workCount={items.reduce((total, item) => total + (drawerBadges[item.key] || 0), 0)}>
-                    {items.map(({ key, label, Icon, externalUrl, newTab }) => {
+                  items={items} badges={drawerBadges} workErrors={navWorkErrors}
+                  renderItem={({ key, label, Icon, externalUrl, newTab }) => {
                       const isActive = activeModule === key
-                      const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
-                        : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
-                        : key === PATIENT_TRANSPORT_MODULE_KEY && patientWorkCount > 0 ? patientWorkCount
-                        : departmentWorkCounts[key] > 0 ? departmentWorkCounts[key]
-                        : null
+                      const badge = drawerBadges[key] > 0 ? drawerBadges[key] : null
                       return (
-                        <button key={key} onClick={() => newTab ? window.open(newTab, "_blank", "noopener,noreferrer") : externalUrl ? navigate(externalUrl) : setActiveModule(key)}
+                        <button type="button" aria-current={isActive ? 'page' : undefined}
+                          onClick={() => newTab ? window.open(newTab, "_blank", "noopener,noreferrer") : externalUrl ? navigate(externalUrl) : setActiveModule(key)}
                           className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
                           <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} />
                           <span className="flex-1 text-left text-xs">{label}</span>
                           {badge && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white bg-amber-400">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-slate-900 bg-amber-400">
                               {badge > 99 ? '99+' : badge}
                             </span>
                           )}
                         </button>
                       )
-                    })}
-                </CollapsibleNavGroup>
+                  }} />
               ))}
             </nav>
           </aside>

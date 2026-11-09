@@ -154,11 +154,11 @@ export default function PortalDrawer({
             ))
             return collapsible ? (
               <CollapsibleNavGroup key={group} label={group}
-                activeKey={items.some(item => item.key === activeKey) ? activeKey : null}
-                workError={items.some(item => workErrors?.[item.key])}
-                workCount={items.reduce((total, item) => total + (Number(badges?.[item.key]) || 0), 0)}>
-                {content}
-              </CollapsibleNavGroup>
+                items={items} badges={badges} workErrors={workErrors}
+                renderItem={item => (
+                  <DrawerItem item={item} active={activeKey === item.key}
+                    badge={badges?.[item.key]} onSelect={onSelect} />
+                )} />
             ) : (
               <div key={group}>
                 <GroupLabel accent={accent}>{group}</GroupLabel>
