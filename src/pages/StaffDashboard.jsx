@@ -207,7 +207,7 @@ const STANDALONE_GROUPS = [
       // 'civil-report' (รายงานโครงการ) ยังถอดอยู่ · 'projects' กลับมาแล้วในกลุ่มกองช่างเป็นโมดูลโครงการก่อสร้าง + รายงานสัปดาห์ (2569-11-06)
       // คอมโพเนนต์เดิม CivilProjectAdmin/CivilProjectReport ยังอยู่ในโฟลเดอร์ admin แต่ไม่มีเมนูหรือ branch เรียกแล้ว
       { key: 'report',        label: 'รายงานคำร้อง',     Icon: TrendingUp,    color: '#f59e0b', bg: '#fef3c7', desc: 'สรุปสถิติคำร้องตามขอบเขตสิทธิ์และพิมพ์รายงาน' },
-      // ไม่อยู่ใน MANAGED_MODULE_KEYS จึงเปิดให้ทุก อปท. เหมือนกันโดยไม่ต้องเขียน enabled_modules
+      // อยู่ใน MANAGED_MODULE_KEYS ตั้งแต่ 2569-11-09 (ปิดรายหน่วยงานได้ที่หน้าจัดการโมดูล)
       // แล้วคุมด้วยบทบาทและโมดูลคำร้องอีกชั้น (hasPerformanceAccess ด้านล่าง)
       { key: 'performance',   label: 'ผลการปฏิบัติงาน',   Icon: ClipboardCheck, color: '#7c3aed', bg: '#ede9fe', desc: 'ผลงานรายคนจากคำร้อง รายเดือน ไตรมาส ปี และรอบการประเมิน' },
       // externalUrl (ไม่ใช่ activeModule) เพราะศูนย์ข้อมูลเป็นหน้าแยกที่ route /data-center/staff
@@ -216,7 +216,7 @@ const STANDALONE_GROUPS = [
       // sidebar เหลือทางเข้าเดียวคือไอคอนเล็กๆ บน header ที่ไม่มีป้ายชื่อ
       { key: 'data-center', label: 'ศูนย์รวมข้อมูลดิจิทัล', Icon: Database, color: '#0284c7', bg: '#e0f2fe', externalUrl: '/data-center/staff' },
       { key: 'fleet',    label: 'ยานพาหนะและเชื้อเพลิง',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe', desc: 'ทะเบียนรถและเครื่องยนต์ การใช้รถ การเบิกเชื้อเพลิง และซ่อมบำรุง' },
-      // ไม่ได้อยู่ใน MANAGED_MODULE_KEYS จึงเปิดให้ทุก อปท. เสมอ แล้วคุมด้วย profiles.asset_role
+      // อยู่ใน MANAGED_MODULE_KEYS ตั้งแต่ 2569-11-09 (ปิดรายหน่วยงานได้) แล้วคุมด้วย profiles.asset_role
       // อีกชั้น (แบบเดียวกับ fleet) — คนที่ไม่ได้รับสิทธิ์จะไม่เห็นเมนูนี้เลย ไม่ใช่เห็นแล้วกดไม่ได้
       // ⚠️ คีย์ยังเป็น 'borrowable-assets' ตามเดิม เปลี่ยนแค่ป้ายชื่อที่เจ้าหน้าที่เห็น —
       // คีย์นี้ผูกกับ activeModule, TECHNICIAN_MODULE_KEYS และค่าใน enabled_modules ของทุก อปท.
@@ -248,10 +248,10 @@ const MODULE_GROUPS = [
       // เมนูนี้ทุกคนใน อปท. เห็นได้ (อ่านอย่างเดียว) — สิทธิ์แก้ตัดสินที่ can_manage_waste_schedule()
       { key: 'waste', label: 'ตารางเก็บขยะ', Icon: Trash2, color: '#15803d', bg: '#dcfce7', desc: 'ตั้งรอบเก็บขยะครั้งเดียว ระบบแจ้งวันเก็บให้ประชาชนเอง' },
       // อ่านอย่างเดียว ไม่มีช่องกรอก — ระบบจดค่าฝน/ระดับน้ำช่วงเกิดเหตุการณ์ให้เอง (water_event_tick) เปิดดูตอนมีคนถาม
-      // ไม่อยู่ใน MANAGED_MODULE_KEYS (ไม่มีคีย์ enabled_modules ของตัวเอง): โผล่เมื่อ อปท. เปิด 'water-situation' + บทบาทเห็นได้ (hasWaterEventsAccess)
+      // มีคีย์ enabled_modules ของตัวเองตั้งแต่ 2569-11-09 · โผล่เมื่อ อปท. เปิดทั้ง 'water-events' และ 'water-situation' + บทบาทเห็นได้ (hasWaterEventsAccess)
       // วางใต้สำนักปลัดแบบเดียวกับตารางเก็บขยะ — ⚠️ ยังไม่มี อบต. ยืนยันว่ากองไหนดูแลงานป้องกันสาธารณภัย ย้ายได้ที่นี่จุดเดียว
       { key: 'water-events', label: 'เหตุการณ์น้ำ-ฝน', Icon: CloudRain, color: '#0369a1', bg: '#e0f2fe', desc: 'ระบบจดค่าฝนและระดับน้ำช่วงเกิดเหตุการณ์ให้เอง ดูย้อนหลังได้เกิน 7 วัน ไม่ต้องกรอกอะไร' },
-      // แผนพัฒนาท้องถิ่น (ทะเบียนโครงการ + แผนการดำเนินงานรายปี) — ไม่อยู่ใน MANAGED_MODULE_KEYS (ไม่มีคีย์ enabled_modules เจ้าของระบบสั่งเปิดทุก อปท. ทันที)
+      // แผนพัฒนาท้องถิ่น (ทะเบียนโครงการ + แผนการดำเนินงานรายปี) — อยู่ใน MANAGED_MODULE_KEYS ตั้งแต่ 2569-11-09 (เดิมเปิดทุก อปท. ไม่มีคีย์)
       // คุมการเห็นด้วยบทบาท (hasLocalPlanAccess) เหมือน water-events · ไม่อยู่ใน TECHNICIAN_MODULE_KEYS · label ในรายการนี้เป็นค่าสำรองตอนโหลดชื่อไม่ได้
       // ชื่อจริงที่เห็นอ่านช่วงปีจากแผนที่เมนูแสดง (localPlanLabel — ห้ามฝังปีในโค้ด) · ใครแก้ได้ตัดสินที่ RLS (plan_role / admin) ไม่ใช่ที่นี่
       { key: 'local-plan', label: 'แผนพัฒนาท้องถิ่น', Icon: ClipboardList, color: '#4f46e5', bg: '#e0e7ff', desc: 'ทะเบียนโครงการในแผนพัฒนา และแผนการดำเนินงานรายปี ระบบนับกำหนดตามระเบียบให้' },
@@ -2582,6 +2582,7 @@ export default function StaffDashboard() {
   // อปท. ที่ปิดโมดูลคำร้องจึงไม่มีอะไรให้ดู · ระหว่างโหลดโปรไฟล์ role ยังว่าง เมนูจึงยังไม่โผล่
   const hasPerformanceAccess = PERFORMANCE_ROLES.includes(role) && enabledKeys.includes('complaints')
   // เหตุการณ์น้ำ-ฝน: ต้องตรงกับ can_view_water_events() ฝั่งฐานข้อมูล (admin/officer/staff/superadmin) และ อปท. ต้องเปิดโมดูลสถานการณ์น้ำ-ฝน
+  // (คีย์ 'water-events' ของเมนูเองถูกกรองผ่าน enabledKeys แล้ว — บรรทัดนี้คุมเงื่อนไขพ่วง: ไม่มีสถานี = ไม่มีค่าให้จด)
   // กติกา enabled_modules เดียวกับ isModuleEnabled: แถวที่ไม่ใช่ array = ยังไม่เคยตั้งค่า ถือว่าเปิดทุกโมดูล
   const hasWaterEventsAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
     && (!Array.isArray(tenant?.enabled_modules) || tenant.enabled_modules.includes('water-situation'))
