@@ -23,6 +23,7 @@ import { compressImage } from '../lib/imageUtils'
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from '../lib/govDocStyle.js'
 import { printableCategoryLabel, categoryNameOf } from '../lib/complaintCategoryLabels.js'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
+import { ratingSource } from '../lib/complaintRatingResponseRate'
 import { workingDaysBetween, workingDaysSince } from '../lib/workingDays'
 import { uploadFile } from '../lib/driveStorage'
 import { driveFolderPath, DRIVE_MODULES } from '../lib/driveFolders'
@@ -34,6 +35,8 @@ import { useNotifications } from '../contexts/NotificationsContext'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 // lazy: หน้ารายงานโครงการเปิดเฉพาะตอนเลือกเมนู ไม่ต้องโหลดมาพร้อมแผงควบคุม
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
+// lazy: รายงานอัตราตอบรายเดือนโหลดเฉพาะตอนกดสลับมุมมอง (ดึงข้อมูลคำร้องทั้งหมดของ อปท.)
+const RatingResponseRateReport = lazy(() => import('../components/admin/RatingResponseRateReport'))
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import DocumentSigningSettings from '../components/admin/DocumentSigningSettings'
 import DocumentTypeAssignments from '../components/admin/DocumentTypeAssignments'
@@ -5416,20 +5419,8 @@ const RATING_LABELS = { 5: 'ยอดเยี่ยม', 4: 'ดี', 3: 'พ�
 const RATING_COLORS = { 5: '#22c55e', 4: '#3b82f6', 3: '#f59e0b', 2: '#f97316', 1: '#ef4444' }
 const RATING_EMOJI  = { 5: '😄', 4: '😊', 3: '😐', 2: '😢', 1: '😡' }
 
-// ที่มาของคะแนนมี 5 แบบ น้ำหนักความน่าเชื่อถือไม่เท่ากัน จึงต้องแยกให้เห็นก่อนเอาไปอ้างอิง
-//   verified    — ผูกกับคำร้อง และผู้ให้คะแนนคือผู้ยื่นคำร้องที่ล็อกอินแล้ว (ตรวจสอบย้อนกลับได้)
-//                 ⚠️ เรื่องที่ สท. ยื่นแทนชาวบ้าน คะแนนชุดนี้คือความเห็นของ สท. ไม่ใช่ของชาวบ้าน
-//   via_link    — ผู้ถือลิงก์ติดตามเรื่อง /t/<โทเคน> (ชาวบ้านที่ผู้ยื่นส่งลิงก์ให้) ไม่ได้ล็อกอิน
-//   proxy       — สท. ถามชาวบ้านแล้วบันทึกแทน (rate_complaint_on_behalf, 20261111100100) คนกดคือ สท.
-//   linked_anon — ผูกกับคำร้อง แต่ให้คะแนนผ่านการค้นด้วยเลขอ้างอิงโดยไม่ล็อกอิน (เลขเรียง เดาได้ เชื่อถือต่ำสุด)
-//   general     — แบบประเมินภาพรวมหน่วยงาน (หน้า /satisfaction) ไม่ผูกคำร้อง ไม่ระบุตัวตนโดยเจตนา
-// ลำดับตรวจ: proxy ก่อน via_link (CHECK ในฐานข้อมูลกันไม่ให้เป็นทั้งคู่อยู่แล้ว)
-function ratingSource(r) {
-  if (r.rated_by_proxy) return 'proxy'
-  if (!r.complaint_id) return 'general'
-  if (r.is_verified) return 'verified'
-  return r.via_link ? 'via_link' : 'linked_anon'
-}
+// ที่มาของคะแนนมี 5 แบบ (verified / via_link / proxy / linked_anon / general) — นิยามอยู่ที่ ratingSource() ใน complaintRatingResponseRate.js
+// (ย้ายไปไว้ที่นั่นเพื่อให้รายงานอัตราตอบรายเดือนใช้ร่วมกันและมีเทสต์ · พฤติกรรมเดิมทุกกรณี)
 
 const SOURCE_TABS = [
   { key: 'all',      label: 'ทั้งหมด' },
@@ -5439,7 +5430,7 @@ const SOURCE_TABS = [
   { key: 'general',  label: 'ประเมินภาพรวม' },
 ]
 
-function SatisfactionAdmin({ tenant }) {
+function SatisfactionSummary({ tenant }) {
   const [ratings, setRatings]   = useState([])
   const [loading, setLoading]   = useState(true)
   const [sourceTab, setSourceTab] = useState('all')
@@ -5625,6 +5616,45 @@ function SatisfactionAdmin({ tenant }) {
         ))}
       </div>
 
+    </div>
+  )
+}
+
+// ตัวสลับมุมมอง: สรุปคะแนน (เดิม) | อัตราตอบรายเดือน (รายงานแนบใบสมัครรางวัล — คำนวณฝั่งหน้าเว็บจากตารางเดิม)
+const SATISFACTION_VIEWS = [
+  { key: 'summary', label: 'สรุปคะแนน' },
+  { key: 'response-rate', label: 'อัตราตอบรายเดือน' },
+]
+
+function SatisfactionAdmin({ tenant }) {
+  const [view, setView] = useState('summary')
+  return (
+    <div className="space-y-5">
+      <div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100">
+        <div className="flex flex-wrap gap-2">
+          {SATISFACTION_VIEWS.map(v => {
+            const active = view === v.key
+            return (
+              <button key={v.key} onClick={() => setView(v.key)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors"
+                style={{
+                  backgroundColor: active ? '#1a3a5c' : '#f8fafc',
+                  color: active ? '#fff' : '#475569',
+                  borderColor: active ? '#1a3a5c' : '#e2e8f0',
+                }}>
+                {v.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      {view === 'summary'
+        ? <SatisfactionSummary tenant={tenant} />
+        : (
+          <Suspense fallback={<div className="flex items-center justify-center py-20"><Loader2 size={28} className="animate-spin text-gray-400" /></div>}>
+            <RatingResponseRateReport tenant={tenant} />
+          </Suspense>
+        )}
     </div>
   )
 }
