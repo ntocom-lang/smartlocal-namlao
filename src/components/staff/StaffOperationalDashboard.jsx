@@ -7,12 +7,14 @@ import {
 import { activeOrgTerms } from '../../lib/orgTerms'
 import { esignPendingFromRpc } from '../../lib/esign'
 import { PATIENT_TRANSPORT_MODULE_KEY } from '../../lib/patientTransport'
+import { parseInviteData, readInviteStamps, recordInviteSent, visibleInviteRows } from '../../lib/complaintRateInvite'
 import { pickShortcuts, readUsage, safeLocalStorage } from '../../lib/staffHomeFrequent'
 import { useHomeRpc } from '../../lib/staffHomeData'
 import { bucketComplaintDue, groupMyEvents, normalizeWorkload, todoState } from '../../lib/staffHomeSummary'
 import { todoCount as waterAnnouncementTodoCount } from '../../lib/waterAnnouncements'
 import { MenuGroup } from '../common/MenuTileGrid'
 import MyPendingSignatures from '../esign/MyPendingSignatures'
+import ComplaintRateInvite from './ComplaintRateInvite'
 
 // ไอคอนหัวกลุ่มของหน้าเมนูแบบไอคอน — ผูกตามชื่อกลุ่มใน STANDALONE_GROUPS/MODULE_GROUPS (StaffDashboard.jsx)
 // ถ้าเปลี่ยนชื่อกลุ่มแล้วลืมมาแก้ที่นี่ แค่ได้ไอคอนกลางๆ (LayoutGrid) ไม่มีอะไรพัง
@@ -267,21 +269,40 @@ export default function StaffOperationalDashboard({
   // ลงนามใบสุดท้ายเสร็จแล้วรายการว่าง ส่วน "ต้องทำตอนนี้" จะหายทั้งก้อน — เก็บไว้จนกว่าจะออกจากหน้านี้ เพื่อให้ข้อความ "ลงนามแล้ว" ยังอยู่
   const [esignTouched, setEsignTouched] = useState(false)
 
+  // เรื่องที่ "ฉัน" ยื่นไว้ ดำเนินการแล้ว ยังไม่มีใครประเมิน — สท. ยื่นแทนชาวบ้านจากบัญชีตัวเอง แต่ล็อกอินแล้วเข้าฝั่งเจ้าหน้าที่
+  // จึงไม่เคยเห็นหน้าต่างชวนประเมินของ /my-complaints · ดึงให้เจ้าหน้าที่ทุกคน (ไม่มีเรื่องที่ยื่นเอง = รายการว่าง ไม่มีแถว)
+  // โหลดพลาด (รวมถึงยังไม่ได้รัน SQL ของ RPC นี้) = ไม่ขึ้นแถวนี้ และไม่บล็อกไฟเขียว "ไม่มีงานค้าง" ของงานอื่น — ต่างจาก esign ที่ต้องเตือน
+  // เพราะนี่เป็นแค่การชวน ไม่ใช่งานที่ใครรออยู่
+  const rateRpc = useHomeRpc({ rpc: 'my_complaints_to_rate', tenantId, profileId, enabled: Boolean(profileId) })
+  const rateData = parseInviteData(rateRpc.status === 'ok' ? rateRpc.data : null)
+  // "ส่งลิงก์แล้ว" อยู่ใน localStorage ของเครื่องนี้ (อ่านทุกครั้งที่เรนเดอร์ ก้อนเล็ก) + ค่าในหน่วยความจำของรอบนี้ กันกรณี storage ถูกปิดแล้วแถวไม่หาย
+  const [sentNow, setSentNow] = useState({})
+  const [ratedNow, setRatedNow] = useState([])
+  const [rateTouched, setRateTouched] = useState(false)
+  // เวลาตอนเปิดหน้า: เกณฑ์ 3 วันไม่ไวต่อเวลาที่หน้าเปิดค้าง · ตราที่เพิ่งจดหลังจากนั้นอยู่ในอนาคตของเวลานี้ = ซ่อน (ตรงตามที่ต้องการ)
+  const [openedAt] = useState(() => Date.now())
+  const rateRows = visibleInviteRows(rateData.items, { ...readInviteStamps(safeLocalStorage(), tenantId, profileId, openedAt), ...sentNow }, openedAt)
+    .filter(row => !ratedNow.includes(row.id))
+  // ทำรายการแล้วแถวสุดท้ายหาย ส่วนนี้ต้องคงอยู่จนกว่าจะออกจากหน้า เพื่อให้ข้อความ "ขอบคุณ/ส่งแล้ว" ยังอยู่ (แบบเดียวกับ esignTouched)
+  const rateShown = rateRows.length > 0 || rateTouched
+
   // ภาระงานของกอง — เฉพาะหัวหน้ากอง (RPC ปฏิเสธบทบาทอื่นอยู่แล้ว ที่นี่แค่ไม่ยิงโดยไม่จำเป็น)
   const isDeptHead = profile?.role === 'officer' && Boolean(profile?.department_id) && Boolean(complaintsItem)
   const dept = useHomeRpc({ rpc: 'staff_dept_workload', tenantId, profileId, enabled: isDeptHead })
 
   const state = todoState({
-    badgeStatuses: [...workCards.map(card => card.status), waterTodo.status === 'loading' ? 'loading' : null, ['loading', 'error'].includes(esignPending.status) ? esignPending.status : null],
-    badgeCounts: [...workCards.map(card => card.count), waterPending ? 1 : 0, esignPending.items.length + esignPending.returned.length],
+    badgeStatuses: [...workCards.map(card => card.status), waterTodo.status === 'loading' ? 'loading' : null, ['loading', 'error'].includes(esignPending.status) ? esignPending.status : null,
+      rateRpc.status === 'loading' ? 'loading' : null],
+    // ตัวนับเรียงไม่มีผล (todoState รวมผลบวก) — คงใบรอลงนามไว้ท้ายสุด เพราะ tests/esign-lib.test.mjs ตรวจรูปแบบนี้
+    badgeCounts: [...workCards.map(card => card.count), waterPending ? 1 : 0, rateRows.length, esignPending.items.length + esignPending.returned.length],
     summaryStatus: summary.status === 'idle' ? null : summary.status,
     due,
   })
   // ใบรอลงนามเปิดส่วนนี้เฉพาะเมื่อมีใบรอหรือดึงพลาด — คนที่ไม่เกี่ยวกับการลงนามไม่ต้องเห็นส่วน "ต้องทำตอนนี้" ว่างๆ เพิ่มขึ้นมา
   const esignShown = esignPending.items.length > 0 || esignPending.returned.length > 0 || esignPending.status === 'error' || esignTouched
-  const hasTodo = workCards.length > 0 || summary.status !== 'idle' || waterPending || esignShown
+  const hasTodo = workCards.length > 0 || summary.status !== 'idle' || waterPending || esignShown || rateShown
   const hasAttention = due.overdue > 0 || due.soon > 0
-  const nothingShownYet = pendingCards.length === 0 && failedCards.length === 0 && !hasAttention && !waterPending && !esignShown
+  const nothingShownYet = pendingCards.length === 0 && failedCards.length === 0 && !hasAttention && !waterPending && !esignShown && !rateShown
 
   // ── ใช้บ่อย ── อ่านตอน mount (ออกจากหน้าแรกแล้วกลับมา component ถูกสร้างใหม่ จึงได้ลำดับล่าสุดเสมอ)
   // ไม่ใช้ useMemo: อ่าน localStorage ก้อนเล็กๆ + เรียงไม่เกิน 40 รายการ ถูกกว่าที่จะคอยดูแล dependency
@@ -335,6 +356,15 @@ export default function StaffOperationalDashboard({
                   )}
                   <MyPendingSignatures variant="home" status={esignPending.status} items={esignPending.items} returned={esignPending.returned} limit={5}
                     moreHint="ที่เหลือดูได้ที่ ยานพาหนะและเชื้อเพลิง › การใช้รถ" onSigned={() => { setEsignTouched(true); esignRpc.reload() }} onRetry={esignRpc.reload} />
+                  {rateShown && (
+                    <ComplaintRateInvite rows={rateRows} canProxy={rateData.canProxy} serverNow={rateData.serverNow}
+                      onSent={id => {
+                        recordInviteSent(safeLocalStorage(), tenantId, profileId, id)
+                        setSentNow(prev => ({ ...prev, [id]: new Date().toISOString() }))
+                        setRateTouched(true)
+                      }}
+                      onRated={id => { setRatedNow(prev => [...prev, id]); setRateTouched(true); rateRpc.reload() }} />
+                  )}
                   {waterPending && (
                     <WorkRow item={{ ...waterItem, label: 'ประกาศน้ำ-ฝนรอคุณยืนยัน' }} count={1} hint="ร่างประกาศรอคุณตัดสิน · ยืนยันได้ภายใน 3 ชั่วโมง" onOpen={() => open(waterItem)} />
                   )}

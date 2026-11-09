@@ -5416,18 +5416,26 @@ const RATING_LABELS = { 5: 'ยอดเยี่ยม', 4: 'ดี', 3: 'พ�
 const RATING_COLORS = { 5: '#22c55e', 4: '#3b82f6', 3: '#f59e0b', 2: '#f97316', 1: '#ef4444' }
 const RATING_EMOJI  = { 5: '😄', 4: '😊', 3: '😐', 2: '😢', 1: '😡' }
 
-// ที่มาของคะแนนมี 3 แบบ น้ำหนักความน่าเชื่อถือไม่เท่ากัน จึงต้องแยกให้เห็นก่อนเอาไปอ้างอิง
+// ที่มาของคะแนนมี 5 แบบ น้ำหนักความน่าเชื่อถือไม่เท่ากัน จึงต้องแยกให้เห็นก่อนเอาไปอ้างอิง
 //   verified    — ผูกกับคำร้อง และผู้ให้คะแนนคือผู้ยื่นคำร้องที่ล็อกอินแล้ว (ตรวจสอบย้อนกลับได้)
-//   linked_anon — ผูกกับคำร้อง แต่ให้คะแนนผ่านการค้นด้วยเลขอ้างอิงโดยไม่ล็อกอิน
+//                 ⚠️ เรื่องที่ สท. ยื่นแทนชาวบ้าน คะแนนชุดนี้คือความเห็นของ สท. ไม่ใช่ของชาวบ้าน
+//   via_link    — ผู้ถือลิงก์ติดตามเรื่อง /t/<โทเคน> (ชาวบ้านที่ผู้ยื่นส่งลิงก์ให้) ไม่ได้ล็อกอิน
+//   proxy       — สท. ถามชาวบ้านแล้วบันทึกแทน (rate_complaint_on_behalf, 20261111100100) คนกดคือ สท.
+//   linked_anon — ผูกกับคำร้อง แต่ให้คะแนนผ่านการค้นด้วยเลขอ้างอิงโดยไม่ล็อกอิน (เลขเรียง เดาได้ เชื่อถือต่ำสุด)
 //   general     — แบบประเมินภาพรวมหน่วยงาน (หน้า /satisfaction) ไม่ผูกคำร้อง ไม่ระบุตัวตนโดยเจตนา
+// ลำดับตรวจ: proxy ก่อน via_link (CHECK ในฐานข้อมูลกันไม่ให้เป็นทั้งคู่อยู่แล้ว)
 function ratingSource(r) {
+  if (r.rated_by_proxy) return 'proxy'
   if (!r.complaint_id) return 'general'
-  return r.is_verified ? 'verified' : 'linked_anon'
+  if (r.is_verified) return 'verified'
+  return r.via_link ? 'via_link' : 'linked_anon'
 }
 
 const SOURCE_TABS = [
   { key: 'all',      label: 'ทั้งหมด' },
-  { key: 'verified', label: 'ยืนยันตัวตนแล้ว' },
+  { key: 'verified', label: 'ผู้ยื่นยืนยันตัวตน' },
+  { key: 'via_link', label: 'ผ่านลิงก์ติดตาม' },
+  { key: 'proxy',    label: 'สท. บันทึกแทน' },
   { key: 'general',  label: 'ประเมินภาพรวม' },
 ]
 
@@ -5448,6 +5456,8 @@ function SatisfactionAdmin({ tenant }) {
 
   const bySource = {
     verified:    ratings.filter(r => ratingSource(r) === 'verified'),
+    via_link:    ratings.filter(r => ratingSource(r) === 'via_link'),
+    proxy:       ratings.filter(r => ratingSource(r) === 'proxy'),
     linked_anon: ratings.filter(r => ratingSource(r) === 'linked_anon'),
     general:     ratings.filter(r => ratingSource(r) === 'general'),
   }
@@ -5514,6 +5524,8 @@ function SatisfactionAdmin({ tenant }) {
 <table><thead><tr><th>ที่มา</th><th style="width:90px;text-align:center">จำนวน</th><th>ระดับความน่าเชื่อถือ</th></tr></thead>
 <tbody>
   <tr><td>ผูกคำร้อง — ผู้ยื่นคำร้องยืนยันตัวตนแล้ว</td><td style="text-align:center">${bySource.verified.length}</td><td>ตรวจสอบย้อนกลับได้ถึงเลขคำร้อง</td></tr>
+  <tr><td>ผูกคำร้อง — ผู้ได้รับลิงก์ติดตามเรื่องให้คะแนน (ไม่ล็อกอิน)</td><td style="text-align:center">${bySource.via_link.length}</td><td>ยืนยันตัวผู้ให้คะแนนไม่ได้ แต่ต้องถือลิงก์ของเรื่องนั้น</td></tr>
+  <tr><td>ผูกคำร้อง — สมาชิกสภาสอบถามแล้วบันทึกแทนผู้แจ้ง</td><td style="text-align:center">${bySource.proxy.length}</td><td>ผู้บันทึกคือสมาชิกสภา ไม่ใช่ผู้ได้รับบริการ</td></tr>
   <tr><td>ผูกคำร้อง — ให้คะแนนด้วยเลขอ้างอิงโดยไม่ล็อกอิน</td><td style="text-align:center">${bySource.linked_anon.length}</td><td>ยืนยันตัวผู้ให้คะแนนไม่ได้</td></tr>
   <tr><td>ประเมินภาพรวมหน่วยงาน (ไม่ผูกคำร้อง)</td><td style="text-align:center">${bySource.general.length}</td><td>ไม่ระบุตัวตนโดยเจตนา</td></tr>
 </tbody></table>
@@ -5562,7 +5574,13 @@ function SatisfactionAdmin({ tenant }) {
         {bySource.linked_anon.length > 0 && (
           <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">
             มีคะแนนที่ผูกคำร้องแต่ให้ผ่านการค้นด้วยเลขอ้างอิงโดยไม่ล็อกอินอีก {bySource.linked_anon.length} รายการ
-            — นับรวมอยู่ใน "ทั้งหมด" แต่ยืนยันตัวผู้ให้คะแนนไม่ได้ ควรใช้ชุด "ยืนยันตัวตนแล้ว" เมื่อต้องอ้างอิงในรายงาน
+            — นับรวมอยู่ใน "ทั้งหมด" แต่ยืนยันตัวผู้ให้คะแนนไม่ได้ ควรใช้ชุด "ผู้ยื่นยืนยันตัวตน" เมื่อต้องอ้างอิงในรายงาน
+          </p>
+        )}
+        {bySource.proxy.length > 0 && (
+          <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
+            "สท. บันทึกแทน" {bySource.proxy.length} รายการ คือคำตอบของชาวบ้านที่สมาชิกสภาสอบถามแล้วกดแทน
+            — นับรวมอยู่ใน "ทั้งหมด" เวลาอ้างอิงต้องแยกจากคะแนนที่ประชาชนให้เอง
           </p>
         )}
       </div>
