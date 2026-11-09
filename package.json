@@ -74,6 +74,7 @@
     "test:waste-request": "node tests/waste-request-print.test.mjs",
     "test:staff-sign": "node tests/staff-sign-block.test.mjs",
     "test:rate-invite": "node tests/complaint-rate-invite.test.mjs",
+    "test:rating-response-rate": "node tests/complaint-rating-response-rate.test.mjs",
     "test:rate-invite:db": "node tests/complaint-rate-invite-db.test.mjs --pglite",
     "test:esign": "node tests/esign-lib.test.mjs && node tests/signature-image.test.mjs && node tests/esign-print.test.mjs",
     "test:esign:print": "node tests/esign-print-layout.test.mjs",
