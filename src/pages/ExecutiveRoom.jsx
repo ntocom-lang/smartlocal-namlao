@@ -1,6 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { Bell, Briefcase, Loader2 } from 'lucide-react'
+import { Bell, Loader2 } from 'lucide-react'
 import { supabase, getSessionResilient, signOutSafely } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
@@ -9,11 +9,18 @@ import { canOpenExecutiveHome } from '../lib/executiveAccess'
 import { isStaffModuleEnabled, staffMenuAccess } from '../lib/staffMenuAccess'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
 import StaffAccountMenu from '../components/layout/StaffAccountMenu'
+import StaffSideNav from '../components/staff/StaffSideNav'
+import StaffBottomNav from '../components/staff/StaffBottomNav'
+import useStaffNavGroups from '../hooks/useStaffNavGroups'
+import useStickyChrome from '../hooks/useStickyChrome'
+import { EXECUTIVE_TAB, staffBottomTabs } from '../lib/staffNavGroups'
 
 const ExecutiveHome = lazy(() => import('../components/staff/executive/ExecutiveHome'))
 
 // "ห้องผู้บริหาร" หน้าเดี่ยว /executive — ของนายก/รองนายก (viewer) และปลัด/รองปลัด (ตำแหน่งหมวด top_admin ทุก role) + admin ที่เปิดดูได้
-// ไม่มีเมนูซ้าย/แถบล่างของระบบเจ้าหน้าที่ (App.jsx ซ่อนหัว/แถบล่างของเว็บประชาชนให้ path นี้) — ทางไปงานอื่นคือชิปสลับมุมมองกับปุ่ม "ระบบเจ้าหน้าที่"
+// เมนูซ้าย (PC) + แถบล่าง (มือถือ) เป็นชุดเดียวกับระบบเจ้าหน้าที่ (StaffSideNav/StaffBottomNav — เจ้าของระบบสั่ง 2569-11-10)
+// กดเมนูอื่นแล้วไป /staff พร้อม state.module (StaffDashboard อ่านตอนเปิดหน้า) · App.jsx ซ่อนหัว/แถบล่างของเว็บประชาชนให้ path นี้
+// ไม่แสดงตัวเลข badge (การ์ดหน้ารวมใช้ตัวเลขจาก RPC เท่านั้น ไม่เพิ่ม query ใหม่ที่หน้านี้)
 // ⚠️ ด่านในหน้านี้ (canOpenExecutiveHome) แค่กันคนที่ไม่มีห้องนี้ไม่ให้เห็นหน้าว่าง — สิทธิ์ข้อมูลตัดสินที่ RPC/RLS ฝั่งฐานข้อมูลเสมอ
 
 const PAGE_BG = '#eef2f7'
@@ -50,10 +57,16 @@ export default function ExecutiveRoom() {
   const { category: positionCategory, ready: positionReady, error: positionError, retry: retryPosition } = useMyPositionCategory(profile)
 
   // เมนูที่บัญชีนี้เห็นในระบบเจ้าหน้าที่ — ฟังก์ชันชุดเดียวกับ StaffDashboard (ลิงก์ในห้องไม่เป็นปุ่มหลอก)
-  const scopedKeys = useMemo(
-    () => (profile ? staffMenuAccess({ role: profile.role, profile, tenant }).scopedKeys : []),
+  const menuAccess = useMemo(
+    () => (profile ? staffMenuAccess({ role: profile.role, profile, tenant }) : { scopedKeys: [], hasLocalPlanAccess: false }),
     [profile, tenant],
   )
+  const { scopedKeys } = menuAccess
+  // เมนูซ้าย/แถบล่าง: ฮุกกลางตัวเดียวกับ StaffDashboard — ชื่อ/ลำดับ/การกรองตรงกันเสมอ
+  const { visibleHomeGroups, visibleModules } = useStaffNavGroups({ scopedKeys, hasLocalPlanAccess: menuAccess.hasLocalPlanAccess, tenantId: tenant?.id })
+  // หัวจอ PC ปักติดบน + เมนูซ้ายปักใต้หัว (ดู src/hooks/useStickyChrome.js) — เหมือนหน้าเจ้าหน้าที่
+  const headerRef = useRef(null)
+  const stickyBox = useStickyChrome(headerRef)
   // isModuleEnabled ของ TenantContext เปลี่ยนตัวทุก render แต่ผลขึ้นกับ tenant อย่างเดียว — ทำตัวคงที่ไว้ ไม่งั้นตารางในห้องคำนวณใหม่ทุกรอบ
   // eslint-disable-next-line react-hooks/exhaustive-deps -- ผลของ tenantIsModuleEnabled ขึ้นกับ tenant ล้วนๆ
   const tenantModuleEnabled = useCallback((key) => tenantIsModuleEnabled(key), [tenant])
@@ -72,6 +85,15 @@ export default function ExecutiveRoom() {
   const retryLoad = failed
     ? () => setProfileState((prev) => ({ ...prev, failed: false, tick: prev.tick + 1 }))
     : retryPosition
+  // เมนูเจ้าหน้าที่ไปงานอื่น: ไป /staff พร้อมโมดูลที่เลือก (StaffDashboard อ่าน location.state.module ตอนเปิดหน้า)
+  // newTab = เอกสารคงที่ (คู่มือ) · externalUrl = หน้าแยกของตัวเอง (ศูนย์ข้อมูล) — ตามตาราง STAFF_MENU_TARGETS ที่ตรึงด้วยเทสต์
+  const goModule = (key) => navigate('/staff', { state: { module: key } })
+  const openNavItem = ({ key, newTab, externalUrl }) => {
+    if (newTab) window.open(newTab, '_blank', 'noopener,noreferrer')
+    else if (externalUrl) navigate(externalUrl)
+    else goModule(key)
+  }
+  let showNav = false
   let body
   if (failed || positionError) {
     body = (
@@ -90,6 +112,7 @@ export default function ExecutiveRoom() {
   } else if (!canOpenExecutiveHome({ role: profile.role, positionCategory })) {
     return <Navigate to="/staff" replace />
   } else {
+    showNav = true
     body = (
       <Suspense fallback={<Centered label="กำลังโหลดห้องผู้บริหาร"><Loader2 size={28} className="animate-spin text-blue-500" aria-hidden="true" /></Centered>}>
         <ExecutiveHome key={tenant?.id} scopedKeys={scopedKeys} navigate={navigate} profile={profile} tenant={tenant}
@@ -100,8 +123,8 @@ export default function ExecutiveRoom() {
 
   return (
     <div className="min-h-full" style={{ backgroundColor: PAGE_BG }}>
-      {/* แถบหัวเล็ก: ธีมเดียวกับหัวหน้าเจ้าหน้าที่/ศูนย์ข้อมูล (ไล่สี primary) — โลโก้ + ชื่อ อปท. + แจ้งเตือน + ชิปสลับมุมมอง (จอกว้าง) / ปุ่มระบบเจ้าหน้าที่ (มือถือ) + เมนูบัญชี */}
-      <header data-exec-header className="relative w-full shrink-0 text-white"
+      {/* แถบหัวเล็ก: ธีมเดียวกับหัวหน้าเจ้าหน้าที่/ศูนย์ข้อมูล (ไล่สี primary) — โลโก้ + ชื่อ อปท. + แจ้งเตือน + ชิปสลับมุมมอง (จอกว้าง) + เมนูบัญชี */}
+      <header ref={headerRef} data-exec-header className="relative z-30 w-full shrink-0 text-white md:sticky md:top-0"
         style={{ background: 'linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
         <div className="relative z-10 flex items-center gap-2 px-4 py-3 md:gap-3 md:px-6">
           <button type="button" onClick={() => navigate('/')} aria-label="กลับหน้าแรก"
@@ -124,20 +147,32 @@ export default function ExecutiveRoom() {
               </span>
             )}
           </button>
-          {/* จอกว้าง: ชิปสลับมุมมองอยู่แถวเดียวกับปุ่มอื่น (แบบหัวหน้าเจ้าหน้าที่) — มีชิป "เจ้าหน้าที่" แล้ว ไม่ต้องมีปุ่มซ้ำ
-              มือถือ: ไม่มีชิป (แถบหัวจะสูง 2 แถว) เหลือปุ่มไอคอนไประบบเจ้าหน้าที่ปุ่มเดียว */}
+          {/* จอกว้าง: ชิปสลับมุมมองอยู่แถวเดียวกับปุ่มอื่น (แบบหัวหน้าเจ้าหน้าที่) · มือถือไม่มีชิป (แถบหัวจะสูง 2 แถว)
+              — ทางไประบบเจ้าหน้าที่บนมือถือคือแถบล่าง (เดิมเป็นปุ่มกระเป๋าเอกสารบนหัว ถอดออกแล้วเพราะซ้ำกับแถบล่าง) */}
           <PortalSwitcher className="hidden md:flex" />
-          <button type="button" onClick={() => navigate('/staff')} data-exec-to-staff aria-label="ระบบเจ้าหน้าที่" title="ระบบเจ้าหน้าที่"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/90 transition-colors hover:border-white/40 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 md:hidden">
-            <Briefcase size={16} aria-hidden="true" />
-          </button>
           <StaffAccountMenu compact onLogout={handleLogout} />
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-5xl px-3 py-4 md:px-6 md:py-6">
-        {body}
+      <div className="md:flex">
+        {showNav && (
+          <StaffSideNav key={`${tenant?.id}-${profile?.id}`} groups={visibleHomeGroups} activeKey={null}
+            executiveActive style={{ top: stickyBox.top ?? undefined, height: stickyBox.height ?? undefined }}
+            onHome={() => navigate('/staff')} onExecutive={() => navigate('/executive')} onSelect={openNavItem} />
+        )}
+        {/* pb-24 บนมือถือ: เว้นที่ให้แถบล่างปักอยู่ไม่ทับท้ายหน้า */}
+        <main className="min-w-0 flex-1 px-3 py-4 pb-24 md:px-6 md:py-6 md:pb-6">
+          <div className="mx-auto w-full max-w-5xl">
+            {body}
+          </div>
+        </main>
       </div>
+
+      {showNav && (
+        <StaffBottomNav tabs={staffBottomTabs(visibleModules, EXECUTIVE_TAB)} activeKey={EXECUTIVE_TAB.key}
+          onSelect={(key) => (key === EXECUTIVE_TAB.key ? navigate('/executive') : goModule(key))}
+          onMenu={() => goModule('menu')} />
+      )}
     </div>
   )
 }

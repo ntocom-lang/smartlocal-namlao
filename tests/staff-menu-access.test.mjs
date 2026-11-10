@@ -14,6 +14,8 @@ import {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dashboardSource = fs.readFileSync(path.join(root, 'src', 'pages', 'StaffDashboard.jsx'), 'utf8')
+// รายการเมนูย้ายไป src/lib/staffNavGroups.js (ใช้ร่วมกับห้องผู้บริหาร) — ลิสต์คีย์/เป้าหมายตรวจกับไฟล์นั้น
+const navGroupsSource = fs.readFileSync(path.join(root, 'src', 'lib', 'staffNavGroups.js'), 'utf8')
 
 let cases = 0
 const test = (label, run) => {
@@ -129,20 +131,20 @@ test('PERFORMANCE_ROLES ยังส่งออกจาก staffPerformanceDat
 
 // ── กันลิสต์ในไฟล์นี้หลุดจากซอร์สจริงของ StaffDashboard ─────────────────────────────────
 function menuDefinitionBlock() {
-  const from = dashboardSource.indexOf('const STANDALONE_GROUPS = [')
-  const to = dashboardSource.indexOf('const MODULES = [')
-  assert.ok(from > 0 && to > from, 'หา STANDALONE_GROUPS/MODULE_GROUPS ใน StaffDashboard.jsx ไม่เจอ — โครงไฟล์เปลี่ยน ต้องแก้เทสต์นี้')
-  return dashboardSource.slice(from, to).split(/\r?\n/).filter((line) => !line.trim().startsWith('//')).join('\n')
+  const from = navGroupsSource.indexOf('export const STANDALONE_GROUPS = [')
+  const to = navGroupsSource.indexOf('export const MODULES = [')
+  assert.ok(from > 0 && to > from, 'หา STANDALONE_GROUPS/MODULE_GROUPS ใน staffNavGroups.js ไม่เจอ — โครงไฟล์เปลี่ยน ต้องแก้เทสต์นี้')
+  return navGroupsSource.slice(from, to).split(/\r?\n/).filter((line) => !line.trim().startsWith('//')).join('\n')
 }
 
-test('STAFF_MENU_MODULE_KEYS ตรงกับเมนูจริงใน StaffDashboard.jsx (ไม่หลุดเมื่อเพิ่ม/ลบเมนู)', () => {
+test('STAFF_MENU_MODULE_KEYS ตรงกับเมนูจริงใน staffNavGroups.js (ไม่หลุดเมื่อเพิ่ม/ลบเมนู)', () => {
   const keys = [...menuDefinitionBlock().matchAll(/\{\s*key:\s*(?:'([^']+)'|(PATIENT_TRANSPORT_MODULE_KEY))/g)]
     .map((m) => m[1] ?? PATIENT_TRANSPORT_MODULE_KEY)
   assert.ok(keys.length >= 15, `อ่านเมนูจากซอร์สได้ ${keys.length} รายการ`)
   assert.deepEqual([...keys].sort(), [...STAFF_MENU_MODULE_KEYS].sort())
 })
 
-test('STAFF_MENU_TARGETS ตรงกับ externalUrl/newTab ของเมนูจริงใน StaffDashboard.jsx ทุกรายการ', () => {
+test('STAFF_MENU_TARGETS ตรงกับ externalUrl/newTab ของเมนูจริงใน staffNavGroups.js ทุกรายการ', () => {
   const found = {}
   for (const m of menuDefinitionBlock().matchAll(/\{\s*key:\s*'([^']+)'[^\n]*?(externalUrl|newTab):\s*'([^']+)'/g)) found[m[1]] = { [m[2]]: m[3] }
   assert.deepEqual(found, JSON.parse(JSON.stringify(STAFF_MENU_TARGETS)))

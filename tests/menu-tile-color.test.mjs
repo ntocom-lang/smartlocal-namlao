@@ -60,7 +60,7 @@ test('style ของกล่องไอคอนมีไล่เฉดแ�
 
 // ── สีจริงในโค้ด ────────────────────────────────────────────────────────────
 // ดึงเฉพาะ `color: '#xxxxxx'` (สีประจำเมนู) ไม่แตะ bg/สีพื้นหลังการ์ดอื่น
-const SOURCES = ['src/pages/StaffDashboard.jsx', 'src/pages/MorePage.jsx', 'src/components/common/MenuTileGrid.jsx']
+const SOURCES = ['src/pages/StaffDashboard.jsx', 'src/lib/staffNavGroups.js', 'src/pages/MorePage.jsx', 'src/components/common/MenuTileGrid.jsx']
 const palette = new Map()
 for (const file of SOURCES) {
   const text = await readFile(new URL(`../${file}`, import.meta.url), 'utf8')

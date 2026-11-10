@@ -25,6 +25,8 @@ const kledkaewMore = await read('src/components/citizen/templates/Kledkaew/More.
 const stats = await read('src/pages/ComplaintStats.jsx')
 const hub = await read('src/pages/ReportsHub.jsx')
 const staffDashboard = await read('src/pages/StaffDashboard.jsx')
+// รายการเมนูเจ้าหน้าที่ย้ายไป staffNavGroups.js (ใช้ร่วมกับห้องผู้บริหาร)
+const staffNavGroups = await read('src/lib/staffNavGroups.js')
 const navData = await read('src/components/citizen/templates/navData.js')
 const BOTTOM_NAV_THEMES = ['CivicFriendly', 'CleanMinimal', 'EcoFriendly', 'Kledkaew', 'ServiceHub', 'SmartModern', 'WaveFluid']
 
@@ -64,7 +66,7 @@ await test('เมนูไม่กลับไปวางรายงาน�
 
 await test('เมนูรายงานฝั่งเจ้าหน้าที่/แอดมินตั้งชื่อตามของข้างใน: "รายงานคำร้อง" ไม่ใช่ "รายงาน" เฉยๆ', async () => {
   const admin = await read('src/pages/AdminDashboard.jsx')
-  for (const [name, source] of [['เจ้าหน้าที่', staffDashboard], ['แอดมิน', admin]]) {
+  for (const [name, source] of [['เจ้าหน้าที่', staffNavGroups], ['แอดมิน', admin]]) {
     const line = source.split('\n').find(text => /key: 'report',\s*label:/.test(text))
     assert.ok(line, `${name}: ไม่เจอเมนู report`)
     assert.equal(/label:\s*'([^']+)'/.exec(line)[1], 'รายงานคำร้อง', name)
