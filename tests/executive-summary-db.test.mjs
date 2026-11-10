@@ -1,4 +1,4 @@
-// ห้องผู้บริหาร เฟส E2 — executive_overview() + exec_summary_*() · รัน migration จริง 3 ไฟล์ใน PGlite ไม่ใช้เน็ต ไม่แตะข้อมูลจริง
+// ห้องผู้บริหาร เฟส E2 — executive_overview() + exec_summary_*() · รัน migration จริง 3 ไฟล์ + ไฟล์แก้ E2.1 อีก 2 ไฟล์ใน PGlite ไม่ใช้เน็ต ไม่แตะข้อมูลจริง
 //   ในเครื่อง: node tests/executive-summary-db.test.mjs --pglite <temp>/node_modules/@electric-sql/pglite/dist/index.js
 //   CI (patient-module-tests.yml): อ่าน path จาก env PATIENT_PGLITE_MODULE (PGlite 0.5.8 ติดตั้งนอก repo) ไม่ต้องส่ง --pglite
 // ตารางจำลองมีเฉพาะคอลัมน์ที่ฟังก์ชันอ่าน + คอลัมน์ข้อมูลส่วนบุคคลปลอม เพื่อตรวจว่า "ไม่หลุดออกมา"
@@ -16,6 +16,12 @@ const files = [
   '20261115100100_exec_summary_service.sql',
   '20261115100200_exec_summary_operations.sql',
 ]
+// E2.1 (code review PR #685) — ลงหลังข้อมูลทดสอบ เพื่อยืนยันก่อนว่ารุ่นเดิมพลาดกับข้อมูลชุดนี้จริง แล้วค่อยตรวจรุ่นใหม่
+const fixFiles = [
+  '20261116100000_exec_review_fixes.sql',
+  '20261116100100_list_events_for_staff_between.sql',
+]
+const migration = (f) => readFile(new URL(`../supabase/migrations/${f}`, import.meta.url), 'utf8')
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const MA = id(1), MB = id(2)
@@ -55,7 +61,8 @@ CREATE TABLE public.satisfaction_ratings (municipality_id uuid, complaint_id uui
 CREATE TABLE public.patient_booking_trips (id uuid PRIMARY KEY, municipality_id uuid, state text, booking_ids uuid[] NOT NULL);
 CREATE TABLE public.patient_bookings (id uuid PRIMARY KEY, municipality_id uuid, service_type text, status text, appointment_at timestamptz, trip_id uuid, patient_name text);
 CREATE TABLE public.fleet_vehicles (id uuid PRIMARY KEY, municipality_id uuid, status text);
-CREATE TABLE public.fleet_maintenance (municipality_id uuid, vehicle_id uuid, service_date date, next_service_date date, created_at timestamptz DEFAULT now());
+CREATE TABLE public.fleet_maintenance (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), municipality_id uuid, vehicle_id uuid,
+  service_date date, maintenance_type text NOT NULL DEFAULT 'routine', next_service_date date, created_at timestamptz DEFAULT now());
 CREATE TABLE public.fleet_incidents (municipality_id uuid, incident_kind text, incident_date date, report_date date);
 CREATE TABLE public.asset_borrow_requests (municipality_id uuid, workflow_status text, created_at timestamptz, return_due_date date);
 CREATE TABLE public.civil_projects (id uuid PRIMARY KEY, municipality_id uuid, stage text, end_date date);
@@ -68,6 +75,20 @@ CREATE TABLE public.water_announcements (municipality_id uuid, status text, draf
 CREATE TABLE public.water_events (id uuid PRIMARY KEY, municipality_id uuid, opened_at timestamptz, closed_at timestamptz);
 CREATE TABLE public.water_announcement_settings (municipality_id uuid PRIMARY KEY, enabled boolean NOT NULL DEFAULT false);
 
+-- ปฏิทินกิจกรรม: จำลองรูปร่างคำตอบของ list_events_for_staff ตัวจริง (to_jsonb ของแถว + คีย์เสริม) กับด่านแบบย่อ (อปท. เดียวกัน/superadmin)
+-- กติกาการมองเห็นจริงตรวจกับตัวจริงใน tests/event-assignments-db.test.mjs (ตัวห่อเรียกตัวจริงเสมอ ไม่มีกติกาของตัวเอง)
+CREATE TABLE public.events (id uuid PRIMARY KEY, municipality_id uuid, title text, description text, event_date date NOT NULL,
+  end_date date, event_time time, attachment_urls text[] NOT NULL DEFAULT '{}');
+CREATE FUNCTION public.list_events_for_staff(p_municipality_id uuid) RETURNS SETOF jsonb LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = pg_catalog, public AS $$
+  SELECT to_jsonb(e) || jsonb_build_object('can_view_detail', true, 'has_attachment', cardinality(e.attachment_urls) > 0,
+           'creator', jsonb_build_object('full_name', 'ผู้สร้างปลอม'), 'assignments', '[]'::jsonb)
+  FROM public.events AS e JOIN public.profiles AS a ON a.id = auth.uid()
+  WHERE e.municipality_id = p_municipality_id AND (a.role = 'superadmin' OR a.municipality_id = p_municipality_id)
+  ORDER BY e.event_date, e.event_time NULLS LAST $$;
+REVOKE ALL ON FUNCTION public.list_events_for_staff(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.list_events_for_staff(uuid) TO authenticated;
+
 -- ตัวช่วยวันที่: T = วันนี้เวลาไทย · ts(d) = 10:00 น. ของวัน T−d · dt(d) = วัน T−d (d ติดลบ = อนาคต)
 CREATE FUNCTION public.t0() RETURNS date LANGUAGE sql STABLE AS $$ SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date $$;
 CREATE FUNCTION public.ts(d int) RETURNS timestamptz LANGUAGE sql STABLE AS $$ SELECT ((public.t0() - d)::timestamp + interval '10 hours') AT TIME ZONE 'Asia/Bangkok' $$;
@@ -75,10 +96,11 @@ CREATE FUNCTION public.dt(d int) RETURNS date LANGUAGE sql STABLE AS $$ SELECT p
 `)
 
 for (const f of files) {
-  await db.exec(await readFile(new URL(`../supabase/migrations/${f}`, import.meta.url), 'utf8'))
+  await db.exec(await migration(f))
 }
 
 const C = n => id(1000 + n)
+const EV = n => id(7000 + n)
 const V = n => id(2000 + n)
 const PR = n => id(3000 + n)
 const TR = n => id(4000 + n)
@@ -103,7 +125,9 @@ INSERT INTO public.departments VALUES
   ('${D1}', '${MA}', 'กองช่าง', 'ช่าง', 'engineering', 1, true), ('${D2}', '${MA}', 'สำนักปลัด', 'ปลัด', 'palad', 2, true),
   ('${D3}', '${MA}', 'กองเก่า', 'เก่า', 'old', 9, false), ('${D4}', '${MA}', 'กองคลัง', 'คลัง', 'finance', 3, true);
 -- ทะเบียนสถานที่ที่แอดมินตั้ง (ไม่มี unique บนชื่อในของจริง — ใส่ชื่อซ้ำไว้ตรวจว่าไม่นับซ้ำ)
-INSERT INTO public.locations (municipality_id, name) VALUES ('${MA}', 'หมู่ 1'), ('${MA}', 'หมู่ 1'), ('${MA}', 'บ้านดอน'), ('${MB}', 'หน้าบ้านนายสมชาย ทดสอบปลอม 0812345678');
+INSERT INTO public.locations (municipality_id, name) VALUES ('${MA}', 'หมู่ 1'), ('${MA}', 'หมู่ 1'), ('${MA}', 'บ้านดอน'), ('${MB}', 'หน้าบ้านนายสมชาย ทดสอบปลอม 0812345678'),
+  -- E2.1: ทะเบียนตั้งชื่อแบบ "หมู่ที่ 9" · ชื่อมีอักขระล่องหนติดมาจากการคัดลอก (ZWSP)
+  ('${MA}', 'หมู่ที่ 9'), ('${MA}', 'บ้านนาเลา'), ('${MA}', 'บ้านห้วย\u200Bหลวง');
 INSERT INTO public.complaint_categories (municipality_id, value, label, is_adhoc, requires_manual_intake) VALUES
   ('${MA}', 'road', 'ถนนชำรุด', false, false), ('${MA}', 'light', 'ไฟฟ้าดับ', false, false),
   ('${MA}', 'odor', 'กลิ่นเหม็น', true, false), ('${MA}', 'corrupt', 'ร้องเรียนเจ้าหน้าที่', false, true);
@@ -160,13 +184,27 @@ INSERT INTO public.patient_bookings VALUES
   ('${B(4)}', '${MA}', 'community', 'completed', ts(3),  '${TR(2)}', 'x'),
   ('${B(5)}', '${MA}', 'patient',   'submitted', ts(-3), '${TR(3)}', 'x');
 
-INSERT INTO public.fleet_vehicles VALUES ('${V(1)}', '${MA}', 'active'), ('${V(2)}', '${MA}', 'active'), ('${V(3)}', '${MA}', 'retired'), ('${V(4)}', '${MA}', 'active');
-INSERT INTO public.fleet_maintenance (municipality_id, vehicle_id, service_date, next_service_date) VALUES
-  ('${MA}', '${V(1)}', dt(200), dt(10)),   -- เลยรอบ ยังไม่มีบันทึกหลังวันรอบ
-  ('${MA}', '${V(2)}', dt(100), dt(20)),   -- เลยรอบ แต่มีบันทึก T−15 แล้ว → ไม่นับ
-  ('${MA}', '${V(2)}', dt(15),  NULL),
-  ('${MA}', '${V(3)}', dt(90),  dt(50)),   -- รถปลดระวาง → ไม่นับ
-  ('${MA}', '${V(4)}', dt(30),  dt(-7));   -- ถึงรอบใน 7 วัน
+INSERT INTO public.fleet_vehicles VALUES ('${V(1)}', '${MA}', 'active'), ('${V(2)}', '${MA}', 'active'), ('${V(3)}', '${MA}', 'retired'), ('${V(4)}', '${MA}', 'active'),
+  ('${V(5)}', '${MA}', 'active'), ('${V(6)}', '${MA}', 'active'), ('${V(7)}', '${MA}', 'active'), ('${V(8)}', '${MA}', 'active'),
+  ('${V(9)}', '${MA}', 'active'), ('${V(10)}', '${MA}', 'active');
+-- รอบนับแยก (รถ, ประเภทงาน) จากบันทึกล่าสุดของประเภทนั้น (E2.1) · คอมเมนต์ "เดิม" = ผลของรุ่น PR #685
+INSERT INTO public.fleet_maintenance (municipality_id, vehicle_id, service_date, next_service_date, maintenance_type) VALUES
+  ('${MA}', '${V(1)}', dt(200), dt(10),   'routine'),     -- เลยรอบ ยังไม่มีบันทึกบำรุงรักษาหลังจากนั้น → เลยกำหนด
+  ('${MA}', '${V(2)}', dt(100), dt(20),   'routine'),     -- บำรุงรักษาแล้ว T−15 (ไม่ตั้งรอบใหม่) → ไม่นับ
+  ('${MA}', '${V(2)}', dt(15),  NULL,     'routine'),
+  ('${MA}', '${V(3)}', dt(90),  dt(50),   'routine'),     -- รถปลดระวาง → ไม่นับ
+  ('${MA}', '${V(4)}', dt(30),  dt(-7),   'routine'),     -- ถึงรอบใน 7 วัน → ใกล้ครบ
+  ('${MA}', '${V(5)}', dt(60),  dt(10),   'routine'),     -- งานซ่อมแซม T−5 ต้องไม่ล้างรอบบำรุงรักษา → เลยกำหนด (เดิม: ถูกล้าง)
+  ('${MA}', '${V(5)}', dt(5),   NULL,     'repair'),
+  ('${MA}', '${V(6)}', dt(20),  dt(25),   'routine'),     -- ตั้งวันรอบก่อนวันซ่อมของตัวเอง (พิมพ์ผิด) → เลยกำหนด (เดิม: ชนแถวตัวเอง)
+  ('${MA}', '${V(7)}', dt(200), dt(3),    'routine'),     -- รอบยางปีหน้าต้องไม่บังรอบบำรุงรักษาที่เลยแล้ว → เลยกำหนด (เดิม: หาย)
+  ('${MA}', '${V(7)}', dt(50),  dt(-300), 'tire'),
+  ('${MA}', '${V(8)}', dt(100), dt(5),    'routine'),     -- บำรุงรักษาก่อนถึงรอบ 3 วัน → ทำรอบแล้ว (เดิม: เตือนเกิน)
+  ('${MA}', '${V(8)}', dt(8),   NULL,     'routine'),
+  ('${MA}', '${V(9)}', dt(90),  dt(2),    'routine'),     -- เลยกำหนด + ประเภทอื่นใกล้ครบ → นับเลยกำหนดคันเดียว ไม่ซ้อนใน due_soon
+  ('${MA}', '${V(9)}', dt(170), dt(-5),   'emission'),
+  ('${MA}', '${V(10)}', dt(40), NULL,     'routine'),     -- ใกล้ครบจากรอบเปลี่ยนถ่ายน้ำมัน → ใกล้ครบ
+  ('${MA}', '${V(10)}', dt(30), dt(-10),  'oil_change');
 INSERT INTO public.fleet_incidents VALUES ('${MA}', 'damage', dt(5), dt(4)), ('${MA}', 'loss', NULL, dt(2)), ('${MA}', 'damage', dt(60), dt(60));
 
 INSERT INTO public.asset_borrow_requests VALUES
@@ -201,6 +239,15 @@ INSERT INTO public.water_announcements VALUES
   ('${MA}', 'draft', now() - interval '1 hour', '${id(6002)}'),    -- เหตุการณ์ปิดแล้ว → ไม่นับ
   ('${MA}', 'published', ts(5), '${id(6001)}'),
   ('${MB}', 'draft', now() - interval '1 hour', '${id(6003)}');
+
+-- ปฏิทิน: ช่วงทดสอบ T .. T+7
+INSERT INTO public.events (id, municipality_id, title, description, event_date, end_date, event_time, attachment_urls) VALUES
+  ('${EV(1)}', '${MA}', 'ประชุมประจำเดือน', 'วาระลับ ${PII.phone}', dt(0), NULL, '09:30', ARRAY['https://example.invalid/secret.pdf']),
+  ('${EV(2)}', '${MA}', 'อบรมสามวัน', NULL, dt(3), dt(-1), NULL, '{}'),     -- เริ่มก่อนช่วง จบในช่วง → นับ
+  ('${EV(3)}', '${MA}', 'งานที่จบแล้ว', NULL, dt(2), NULL, NULL, '{}'),     -- จบก่อนช่วง → ไม่นับ
+  ('${EV(4)}', '${MA}', 'วันสุดท้ายของช่วง', NULL, dt(-7), NULL, '13:00', '{}'),
+  ('${EV(5)}', '${MA}', 'เลยช่วง', NULL, dt(-8), NULL, NULL, '{}'),
+  ('${EV(6)}', '${MB}', 'ของ อปท. อื่น', NULL, dt(0), NULL, NULL, '{}');
 `)
 
 const { rows: [{ t }] } = await db.query("SELECT to_char(public.t0(), 'YYYY-MM-DD') AS t")
@@ -236,6 +283,25 @@ const KEYS = ['complaints', 'doc_requests', 'satisfaction', 'departments', 'pati
   'fleet', 'borrowable_assets', 'projects', 'local_plan', 'water']
 let passed = 0
 const test = async (name, fn) => { await fn(); passed++; console.log(`ok - ${name}`) }
+const label = async (v, m = MA) => {
+  await db.exec('RESET ROLE')
+  return (await db.query('SELECT public.exec_village_label($1, $2) AS l', [m, v])).rows[0].l
+}
+
+// ───────────────────────── รุ่นเดิม (PR #685) → ลงไฟล์แก้ E2.1 ─────────────────────────
+await test('รุ่นเดิมพลาดตามที่ code review ชี้ — ข้อมูลชุดนี้ชนบั๊กจริง (ก่อนลงไฟล์แก้)', async () => {
+  const f = (await overview('viewerA', MA, ['fleet'])).summaries.fleet.data.maintenance
+  // เดิม: V5 ถูกงานซ่อมล้างรอบ · V6 ชนแถวตัวเอง · V7 รอบยางบังรอบบำรุงรักษา (3 คันนี้หาย) · V8 บำรุงรักษาก่อนรอบยังขึ้นเลยกำหนด
+  assert.deepEqual(f, { overdue: 3, oldest_due_on: day(10), due_soon: 2 })
+  assert.equal(await label('หมู่ ที่ 3'), '', 'เดิม: เว้นวรรคก่อน "ที่" ตกเป็นไม่อยู่ในทะเบียน')
+  assert.equal(await label('หมู่ที่ 9'), 'หมู่ที่ 9', 'เดิม: ทะเบียนชื่อ "หมู่ที่ 9" แยกกลุ่มกับ "หมู่ 9"')
+})
+
+const fixSql = await migration(fixFiles[0])
+for (const f of fixFiles) {
+  await db.exec('RESET ROLE')
+  await db.exec(await migration(f))
+}
 
 // ───────────────────────── สิทธิ์ ─────────────────────────
 await test('นายก (viewer) / ปลัด (officer top_admin) / รองปลัด (staff top_admin) / admin / superadmin เรียกได้ ครบ 10 คีย์ ok', async () => {
@@ -423,8 +489,76 @@ await test('รถรับ-ส่ง: ยอดจองตามวันน�
   })
 })
 
-await test('ยานพาหนะ: เลยรอบซ่อมบำรุง (วันที่) + เหตุในช่วง', async () => {
-  assert.deepEqual(S.fleet, { maintenance: { overdue: 1, oldest_due_on: day(10), due_soon: 1 }, incidents: { damage: 1, loss: 1 } })
+await test('ยานพาหนะ: เลยรอบซ่อมบำรุง นับแยกรถ×ประเภทงาน (E2.1) + เหตุในช่วง', async () => {
+  // เลยกำหนด V1 V5 V6 V7 V9 (5 คัน) · เก่าสุด = V6 (T−25) · ใกล้ครบ V4 V10 (V9 เลยกำหนดแล้ว ไม่นับซ้อน) · V2 V8 ทำรอบแล้ว · V3 ปลดระวาง
+  assert.deepEqual(S.fleet, { maintenance: { overdue: 5, oldest_due_on: day(25), due_soon: 2 }, incidents: { damage: 1, loss: 1 } })
+})
+
+await test('E2.1 exec_village_label: เว้นวรรคก่อน "ที่" / สระ–วรรณยุกต์สลับลำดับ / ม ไม่มีจุด / อักขระล่องหน / เลขหมู่มาก่อนทะเบียน', async () => {
+  const UU = '\u0E39', EE = '\u0E35', MAI_EK = '\u0E48'
+  assert.equal(await label('หมู่ ที่ 3'), 'หมู่ 3')
+  assert.equal(await label('หมู่  ที่๓'), 'หมู่ 3')
+  assert.equal(await label(`หม${MAI_EK}${UU} 4`), 'หมู่ 4', 'ไม้เอกพิมพ์ก่อนสระอู')
+  assert.equal(await label(`หม${UU}${MAI_EK}ท${MAI_EK}${EE} 5`), 'หมู่ 5', 'ไม้เอกพิมพ์ก่อนสระอี')
+  assert.equal(await label('ม 6'), 'หมู่ 6')
+  assert.equal(await label('ม6'), 'หมู่ 6')
+  assert.equal(await label('หมู่\u200B 7'), 'หมู่ 7', 'ZWSP')
+  assert.equal(await label('\uFEFFหมู่\u00A08\u200D'), 'หมู่ 8', 'BOM/NBSP/ZWJ')
+  assert.equal(await label('หมู่ที่ 9'), 'หมู่ 9', 'ทะเบียนชื่อ "หมู่ที่ 9" ยังรวมกลุ่มเดียวกับ "หมู่ 9"')
+  assert.equal(await label('บ้านนา\u200Bเลา'), 'บ้านนาเลา', 'ข้อความมีอักขระล่องหน ตรงกับทะเบียนหลังตัด')
+  assert.equal(await label('บ้านห้วย\u200Bหลวง'), 'บ้านห้วยหลวง', 'เลือกจากรายการ (ชื่อทะเบียนมี ZWSP เหมือนกัน) ยังตรง')
+  assert.equal(await label('บ้านห้วยหลวง'), 'บ้านห้วยหลวง', 'พิมพ์เองไม่มี ZWSP ตรงกับทะเบียนที่มี ZWSP')
+  // ยังปิดข้อความอิสระเหมือนเดิม
+  for (const v of ['หมู่ 123', 'ม 0812345678', 'หมู่บ้าน 3', 'มหาชัย 3', 'ที่ 3', 'หมู่ 3 บ้านนายดำ', 'หมู่ 3 0812345678', 'ม.ค. 3']) {
+    assert.equal(await label(v), '', v)
+  }
+  assert.equal(await label('\u200B \u00A0'), null, 'มีแต่อักขระล่องหน = ว่าง')
+})
+
+await test('E2.1 list_events_for_staff_between: เฉพาะช่วง (รวมหลายวันที่คาบเกี่ยว) · 5 ช่อง · ด่านของตัวเดิม · INVOKER', async () => {
+  const between = async (who, muni, from, to) => {
+    await as(who)
+    try {
+      return (await db.query('SELECT v FROM public.list_events_for_staff_between($1, $2::date, $3::date) AS v', [muni, from, to])).rows.map((r) => r.v)
+    } finally {
+      await db.exec('RESET ROLE')
+    }
+  }
+  const rows = await between('viewerA', MA, day(0), day(-7))
+  assert.deepEqual(rows.map((r) => r.id), [EV(2), EV(1), EV(4)], 'เรียงตามวันเริ่ม · EV3 จบก่อนช่วง · EV5 เลยช่วง · EV6 อปท. อื่น')
+  for (const r of rows) assert.deepEqual(Object.keys(r).sort(), ['end_date', 'event_date', 'event_time', 'id', 'title'])
+  assert.deepEqual(rows[0], { id: EV(2), title: 'อบรมสามวัน', event_date: day(3), end_date: day(-1), event_time: null })
+  assert.equal(rows[1].event_time, '09:30:00')
+  const text = JSON.stringify(rows)
+  for (const v of [PII.phone, 'secret.pdf', 'ผู้สร้างปลอม', 'can_view_detail']) assert.ok(!text.includes(v), `หลุด: ${v}`)
+  assert.deepEqual(await between('viewerA', MB, day(0), day(-7)), [], 'อปท. อื่น — ด่านของ list_events_for_staff')
+  assert.deepEqual((await between('superadmin', MB, day(0), day(0))).map((r) => r.id), [EV(6)])
+  await rejects(() => between('viewerA', MA, day(-7), day(0)), '22023', 'from>to')
+  await rejects(() => between('viewerA', MA, day(0), day(-401)), '22023', '>400 วัน')
+  await rejects(() => between('viewerA', MA, null, day(0)), '22023', 'null')
+  await rejects(() => between('anon', MA, day(0), day(-7)), '42501', 'anon')
+  await db.exec('RESET ROLE')
+  const { rows: [p] } = await db.query(`
+    SELECT p.prosecdef, has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_exec,
+           has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_exec, p.proconfig
+    FROM pg_proc p WHERE p.oid = 'public.list_events_for_staff_between(uuid,date,date)'::regprocedure`)
+  assert.deepEqual([p.prosecdef, p.auth_exec, p.anon_exec], [false, true, false])
+  assert.ok((p.proconfig ?? []).some((c) => c === 'search_path=""' || c === 'search_path='), `search_path: ${p.proconfig}`)
+})
+
+await test('E2.1 ด่านหัวไฟล์: รันซ้ำได้ · เนื้อฟังก์ชันบนฐานไม่ตรงรุ่นในรีโป → หยุดก่อนเขียนทับ', async () => {
+  await db.exec('RESET ROLE')
+  await db.exec(fixSql)   // รุ่นใหม่ลงแล้ว รันซ้ำต้องผ่าน (ลายนิ้วมือค่าที่ 2)
+  await db.exec(`CREATE OR REPLACE FUNCTION public.exec_summary_fleet(_municipality_id uuid, _from date, _to date)
+    RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$ SELECT '{"tampered":true}'::jsonb $$`)
+  await assert.rejects(() => db.exec(fixSql), /ไม่ตรงกับรุ่นในรีโป/)
+  const src = (await db.query("SELECT prosrc FROM pg_proc WHERE oid = 'public.exec_summary_fleet(uuid,date,date)'::regprocedure")).rows[0].prosrc
+  assert.match(src, /tampered/, 'ด่านหยุดก่อนเขียนทับ — ของบนฐานยังเป็นของเดิม')
+  // คืนสภาพ: รุ่น PR #685 → ไฟล์แก้ แล้วตัวเลขต้องกลับเป็นรุ่นใหม่
+  await db.exec(await migration(files[2]))
+  await db.exec(fixSql)
+  const again = await overview('viewerA', MA, ['fleet'])
+  assert.deepEqual(again.summaries.fleet.data.maintenance, { overdue: 5, oldest_due_on: day(25), due_soon: 2 })
 })
 
 await test('ใบยืมพัสดุ', async () => {

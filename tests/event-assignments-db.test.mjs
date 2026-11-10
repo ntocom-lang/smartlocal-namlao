@@ -256,6 +256,29 @@ assert.equal(pick(staffRows, E.staffOnly).can_view_detail, true, 'กติก�
 assert.equal(pick(staffRows, E.council).can_view_detail, false, 'กติกาเดิมไม่เปลี่ยน: staff เปิดวาระสภาไม่ได้')
 assert.equal((await listAs(U.bStaff)).length, 0, 'คนต่าง อปท. ไม่ได้รายการของ อปท. นี้เลย')
 
+// ── list_events_for_staff_between (ห้องผู้บริหาร E2.1) — ตัวห่อต้องเห็นชุดเดียวกับตัวจริงทุกบทบาท ────────────
+await asRoot()
+await db.exec(await sqlFile('../supabase/migrations/20261116100100_list_events_for_staff_between.sql'))
+await db.query("UPDATE public.events SET end_date = '2026-10-22' WHERE id = $1", [E.mgmt])   // กิจกรรมหลายวันที่เริ่มก่อนช่วง
+const betweenAs = async (user, from, to, muni = MA) => {
+  await actor(user)
+  return (await db.query('SELECT v FROM public.list_events_for_staff_between($1::uuid, $2::date, $3::date) AS v', [muni, from, to])).rows.map((r) => r.v)
+}
+for (const user of [U.mayor, U.deputy, U.otherStaff, U.head, U.council, U.tech, U.admin, U.citizen, U.bStaff, U.superadmin]) {
+  const expected = (await listAs(user))
+    .filter((r) => r.event_date <= '2026-10-23' && (r.end_date ?? r.event_date) >= '2026-10-21')
+    .map((r) => r.id).sort()
+  const slim = await betweenAs(user, '2026-10-21', '2026-10-23')
+  assert.deepEqual(slim.map((r) => r.id).sort(), expected, `${user}: เห็นชุดเดียวกับ list_events_for_staff ในช่วงนั้น`)
+  for (const r of slim) assert.deepEqual(Object.keys(r).sort(), ['end_date', 'event_date', 'event_time', 'id', 'title'], 'ไม่มีรายละเอียด/ไฟล์แนบ/ผู้รับมอบหมาย')
+}
+assert.deepEqual((await betweenAs(U.mayor, '2026-10-21', '2026-10-23')).map((r) => r.id).sort(),
+  [E.mgmt, E.staffOnly, E.council, E.publicMgmt].sort(), 'รวมกิจกรรม 20–22 ต.ค. ที่คาบเกี่ยวช่วง')
+await rejects(betweenAs(null, '2026-10-21', '2026-10-23'), /permission denied/, 'anon เรียกไม่ได้')
+await rejects(betweenAs(U.mayor, '2026-10-23', '2026-10-21'), /ช่วงวันที่ไม่ถูกต้อง/)
+await asRoot()
+await db.query('UPDATE public.events SET end_date = NULL WHERE id = $1', [E.mgmt])
+
 // ── รายชื่อผู้ที่มอบหมายได้ ─────────────────────────────────────────────────────────────────
 const cands = await candidatesAs(U.otherStaff)
 const byId = Object.fromEntries(cands.map((c) => [c.profile_id, c]))

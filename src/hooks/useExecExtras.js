@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { addDays } from '../lib/complaintReportPeriods'
-import { execToday } from '../lib/executiveData'
+import { EXEC_SCHEDULE_DAYS, execToday } from '../lib/executiveData'
 import { loadPersonalEvents } from '../lib/personalEventsApi'
 import { canUsePersonalEvents } from '../lib/personalEvents'
 
@@ -9,9 +9,11 @@ import { canUsePersonalEvents } from '../lib/personalEvents'
 // สถานะ: idle · loading · ok · error — ส่วนไหนพังขึ้น "โหลดไม่ได้" เฉพาะส่วนนั้น
 
 /**
- * กิจกรรมที่ท่านเห็นในปฏิทิน (RPC list_events_for_staff ตัวเดียวกับหน้าปฏิทินกิจกรรม) + รายการส่วนตัวของท่าน (personal_events)
- * ⚠️ RPC คืนกิจกรรมทุกช่วงเวลาของ อปท. (ไม่มีตัวกรองวัน) และมีรายละเอียด/ไฟล์แนบ/ผู้รับมอบหมายติดมา — ตัดเหลือเฉพาะช่องที่หน้านี้ใช้
- * และทิ้งกิจกรรมที่จบก่อนวันนี้ทันที ก่อนเก็บลง state (ไม่เก็บรายละเอียดหรือไฟล์แนบของใคร)
+ * กิจกรรมที่ท่านเห็นในปฏิทิน + รายการส่วนตัวของท่าน (personal_events) ช่วงวันนี้ถึงอีก EXEC_SCHEDULE_DAYS วัน
+ * กิจกรรมหน่วยงานมาจาก RPC list_events_for_staff_between (E2.1) — ห่อ list_events_for_staff ตัวเดียวกับหน้าปฏิทิน
+ * (ใครเห็นอะไรชุดเดียวกัน) แต่ฐานข้อมูลกรองช่วงวันให้ และคืนแค่ id/title/event_date/end_date/event_time
+ * เดิมดึง list_events_for_staff ทั้งหมด (ทุกปี + รายละเอียด/ไฟล์แนบ/ผู้รับมอบหมาย) แล้วกรองในเบราว์เซอร์ — กิน Egress แผนฟรีตามจำนวนกิจกรรมสะสม
+ * รายการส่วนตัวเป็นของท่านคนเดียว (RLS) จึงยังโหลดทั้งหมดผ่าน loadPersonalEvents ตัวเดียวกับหน้าปฏิทิน แล้วกรองที่นี่
  * รายการส่วนตัวพลาด = แสดงเฉพาะกิจกรรมของหน่วยงาน (เหมือนหน้าปฏิทิน) · ตัวกิจกรรมหน่วยงานพลาด = error
  * @returns {{ status: string, events: object[], reload: () => void }}
  */
@@ -27,12 +29,14 @@ export function useExecSchedule({ tenantId, profileId, role, enabled }) {
     const today = execToday()
     const usePersonal = canUsePersonalEvents(role)
     Promise.all([
-      Promise.resolve().then(() => supabase.rpc('list_events_for_staff', { p_municipality_id: tenantId })),
+      Promise.resolve().then(() => supabase.rpc('list_events_for_staff_between', {
+        p_municipality_id: tenantId, p_from: today, p_to: addDays(today, EXEC_SCHEDULE_DAYS),
+      })),
       usePersonal ? loadPersonalEvents(tenantId, profileId).catch((error) => ({ rows: [], error })) : Promise.resolve({ rows: [], error: null }),
     ]).then(([org, personal]) => {
       if (cancelled) return
       if (org.error) {
-        console.error('[executive] list_events_for_staff:', org.error.message)
+        console.error('[executive] list_events_for_staff_between:', org.error.message)
         setState({ key, status: 'error', events: [] })
         return
       }

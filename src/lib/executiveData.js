@@ -969,7 +969,8 @@ export function planResultMissingCount(rows, { today, fiscalYear }) {
 export const EXEC_SCHEDULE_DAYS = 7
 
 /**
- * กำหนดการวันนี้ถึงอีก 7 วัน จากกิจกรรมที่ list_events_for_staff คืน + รายการส่วนตัวของท่าน (personal_events → toPersonalEvent แล้ว)
+ * กำหนดการวันนี้ถึงอีก 7 วัน จากกิจกรรมที่ list_events_for_staff_between คืน (กรองช่วงที่ฐานแล้ว — ยังกรองซ้ำที่นี่เพราะรายการส่วนตัวมาทั้งหมด)
+ * + รายการส่วนตัวของท่าน (personal_events → toPersonalEvent แล้ว)
  * กิจกรรมหลายวันที่คาบเกี่ยวช่วงนี้นับด้วย · เรียงตามวัน (ที่ตกในช่วง) แล้วตามเวลา (ไม่ระบุเวลาไว้ท้ายวัน)
  * เก็บเฉพาะช่องที่ใช้ — ไม่ส่งรายละเอียด/ไฟล์แนบ/ผู้รับมอบหมายต่อ
  */
