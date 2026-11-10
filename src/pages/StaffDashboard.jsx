@@ -47,14 +47,14 @@ import OdorReportPanel from '../components/staff/OdorReportPanel'
 import MonthlyComplaintShareCard from '../components/staff/MonthlyComplaintShareCard'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
 import { useExecutiveAccess } from '../hooks/useExecutiveAccess'
-
-// ทางเข้า "ห้องผู้บริหาร" (/executive) บนเมนูซ้าย PC และลิ้นชักมือถือ — เจ้าของระบบสั่ง 2569-11-10
-// ไม่ใช่คีย์โมดูล (ไม่อยู่ใน MODULES/enabled_modules) จึงวางเป็นทางลัดใต้ "แดชบอร์ด" และแสดงเฉพาะคนที่เปิดห้องได้
-const EXECUTIVE_MENU_ITEM = Object.freeze({ key: 'executive-room', label: 'ห้องผู้บริหาร', Icon: ChartColumn, externalUrl: '/executive' })
 import StaffAccountMenu from '../components/layout/StaffAccountMenu'
 import PortalDrawer from '../components/common/PortalDrawer'
 import CollapsibleNavGroup from '../components/common/CollapsibleNavGroup'
 import useStickyChrome from '../hooks/useStickyChrome'
+
+// ทางเข้า "ห้องผู้บริหาร" (/executive) บนเมนูซ้าย PC และลิ้นชักมือถือ — เจ้าของระบบสั่ง 2569-11-10
+// ไม่ใช่คีย์โมดูล (ไม่อยู่ใน MODULES/enabled_modules) จึงวางเป็นทางลัดใต้ "แดชบอร์ด" และแสดงเฉพาะคนที่เปิดห้องได้
+const EXECUTIVE_MENU_ITEM = Object.freeze({ key: 'executive-room', label: 'ห้องผู้บริหาร', Icon: ChartColumn, externalUrl: '/executive' })
 
 const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
 const ConstructionProjectsModule = lazy(() => import('../components/staff/construction/ConstructionProjectsModule'))
@@ -2535,8 +2535,8 @@ export default function StaffDashboard() {
   // — ห้องผู้บริหารใช้ตัวเดียวกัน · อ่านเงื่อนไขและเหตุผลของแต่ละชั้นได้ที่ src/lib/staffModules.js และ src/lib/staffMenuAccess.js
   const role = profile?.role
   const { enabledKeys, scopedKeys, hasLocalPlanAccess } = staffMenuAccess({ role, profile, tenant, allModuleKeys })
-  // แคชร่วมกับชิปบนหัวจอ (PortalSwitcher) — ไม่ยิง query เพิ่ม
-  const { canOpen: canOpenExecutive } = useExecutiveAccess()
+  // ส่งโปรไฟล์ที่โหลดแล้วเข้าไป = ใช้ position_id จากนี้ ไม่ query profiles ซ้ำ (แคชตำแหน่งใช้ร่วมกับชิปบนหัวจอ)
+  const { canOpen: canOpenExecutive } = useExecutiveAccess(profile)
   // ชื่อเมนูอ่านช่วงปีจากแผนที่เมนูแสดง (query เบาๆ เฉพาะ year_from/year_to) — โหลดไม่ได้/ยังไม่มีแผน = "แผนพัฒนาท้องถิ่น" เฉยๆ
   // เก็บ tenantId คู่กับชื่อ: สลับ อปท. (superadmin) แล้วชื่อของ อปท. เก่าต้องไม่ค้างโชว์
   const [planLabel, setPlanLabel] = useState({ tenantId: null, label: null })

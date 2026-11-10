@@ -47,7 +47,7 @@ export default function ExecutiveRoom() {
     return () => { cancelled = true }
   }, [navigate, profileState.tick])
 
-  const { category: positionCategory, ready: positionReady } = useMyPositionCategory(profile)
+  const { category: positionCategory, ready: positionReady, error: positionError, retry: retryPosition } = useMyPositionCategory(profile)
 
   // เมนูที่บัญชีนี้เห็นในระบบเจ้าหน้าที่ — ฟังก์ชันชุดเดียวกับ StaffDashboard (ลิงก์ในห้องไม่เป็นปุ่มหลอก)
   const scopedKeys = useMemo(
@@ -68,13 +68,17 @@ export default function ExecutiveRoom() {
   }
 
   // ยังไม่รู้ผล (โปรไฟล์/ตำแหน่ง) = หมุนรอ ห้ามเด้งไป /staff ก่อน — ปลัดที่ role เป็น officer ต้องรอรู้หมวดตำแหน่งก่อนตัดสิน
+  // อ่านตำแหน่งพลาด (เน็ตสะดุด) ใช้หน้าลองใหม่เดียวกับโปรไฟล์พลาด — ห้ามตีความว่า "ไม่ใช่ผู้บริหาร" แล้วเด้งไป /staff
+  const retryLoad = failed
+    ? () => setProfileState((prev) => ({ ...prev, failed: false, tick: prev.tick + 1 }))
+    : retryPosition
   let body
-  if (failed) {
+  if (failed || positionError) {
     body = (
       <Centered label="โหลดข้อมูลบัญชีไม่สำเร็จ">
         <div className="space-y-3">
           <p className="text-sm text-slate-600">โหลดข้อมูลบัญชีไม่สำเร็จ อาจเกิดจากสัญญาณขาดช่วง</p>
-          <button type="button" onClick={() => setProfileState((prev) => ({ ...prev, failed: false, tick: prev.tick + 1 }))}
+          <button type="button" onClick={retryLoad} data-exec-retry
             className="min-h-11 rounded-xl px-5 text-sm font-bold text-white" style={{ backgroundColor: 'var(--color-primary)' }}>
             ลองใหม่
           </button>

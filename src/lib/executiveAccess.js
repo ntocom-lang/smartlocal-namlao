@@ -26,24 +26,43 @@ export function canOpenExecutiveHome({ role, positionCategory } = {}) {
   return isExecutiveHomeDefault({ role, positionCategory }) || EXEC_HOME_ADMIN_ROLES.includes(role)
 }
 
-/** role ที่ต้องอ่านตำแหน่งก่อนรู้ว่าเป็นปลัดหรือไม่ — viewer เป็นผู้บริหารอยู่แล้ว ส่วน role อื่นไม่มีผลกับห้องนี้ */
-export const EXEC_POSITION_LOOKUP_ROLES = Object.freeze(['officer', 'admin'])
+/**
+ * role ที่ต้องอ่านตำแหน่งก่อนรู้ว่าเป็นปลัดหรือไม่ = ทุก role ในกลุ่มเจ้าหน้าที่ ยกเว้น viewer (เป็นผู้บริหารอยู่แล้ว)
+ * ต้องตรงกับ isExecutiveHomeDefault ข้างบน (top_admin ทุก role ใน STAFF_PORTAL_ROLES) ไม่งั้นปลัดที่แอดมินตั้ง role
+ * เป็น staff/council/technician จะ "เป็นผู้บริหารตามกฎ" แต่ไม่มีใครอ่านตำแหน่งให้ = ไม่มีทางเข้าห้อง
+ */
+export const EXEC_POSITION_LOOKUP_ROLES = Object.freeze(STAFF_PORTAL_ROLES.filter((r) => r !== 'viewer'))
 
 // ── หลังล็อกอินพาไปไหน ─────────────────────────────────────────────────────
 
 /**
- * ปลายทางหลังล็อกอินฝั่งเจ้าหน้าที่ — ผู้บริหาร → '/executive' · อื่นๆ/ผิดพลาด/ช้า → '/admin' เหมือนเดิม
+ * คีย์ sessionStorage "เพิ่งกดล็อกอิน Google/LINE จากหน้า /auth ที่จะกลับหน้าแรก" (ค่าเป็นเวลา ms ที่กด)
+ * App.jsx อ่านตอน SIGNED_IN แล้วพาผู้บริหารไป /executive — แยกจาก 'oauth_from' โดยตั้งใจ:
+ * auth-js ยิง SIGNED_IN ซ้ำทุกครั้งที่กลับมาที่แท็บ คีย์ที่ค้าง (กด LINE แล้วยกเลิก) จึงต้องหมดอายุเอง
+ * และต้องไม่ไปเปลี่ยนความหมายของ oauth_from เดิม
+ */
+export const EXEC_OAUTH_CHECK_KEY = 'exec_landing_check'
+export const EXEC_OAUTH_CHECK_TTL_MS = 10 * 60 * 1000
+
+/** true = คีย์ยังไม่หมดอายุ (กดล็อกอิน OAuth ไม่เกิน TTL ที่แล้ว) — ค่าเสีย/อนาคต = false */
+export function isFreshExecOauthCheck(value, now = Date.now()) {
+  const at = Number(value)
+  return Number.isFinite(at) && at > 0 && at <= now && now - at <= EXEC_OAUTH_CHECK_TTL_MS
+}
+
+/**
+ * ปลายทางหลังล็อกอิน — ผู้บริหาร → '/executive' · อื่นๆ/ผิดพลาด/ช้า → fallback (ค่าเริ่มต้น '/admin')
  *
+ * - เรียกเฉพาะตอนที่ผู้ใช้กำลังจะไป "ปลายทางเริ่มต้น" เท่านั้น — ผู้ใช้ที่ถูกเด้งมาจากหน้าเฉพาะ ผู้เรียกต้องพากลับหน้านั้นเอง
  * - อ่าน role + ตำแหน่งของตัวเองหลัง sign-in (session อยู่ในเครื่องแล้ว ไม่ยิงเครือข่ายเพื่อหา uid)
- * - มี `from` ที่ไม่ใช่ปลายทางเริ่มต้น ('/admin') = ผู้ใช้ถูกเด้งมาจากหน้าเฉพาะ → คงพฤติกรรมเดิม ไม่แทรกแซง
- * - ช้าเกิน timeoutMs = ไป '/admin' ไม่รอ (ห้ามให้การล็อกอินค้างเพราะอ่านตำแหน่งช้า)
+ * - ช้าเกิน timeoutMs = fallback ไม่รอ (ห้ามให้การล็อกอินค้างเพราะอ่านตำแหน่งช้า)
+ * - ⚠️ ห้าม await ใน callback ของ onAuthStateChange (เรียก auth.getSession() = รอล็อกเดียวกัน ค้าง)
  * - client ส่งเข้ามาเอง (supabase) เพื่อให้ไฟล์นี้ไม่ import supabase — เทสต์ด้วย node ได้
  *
- * @param {{ client: object, from?: string|null, timeoutMs?: number, fallback?: string }} opts
+ * @param {{ client: object, timeoutMs?: number, fallback?: string }} opts
  * @returns {Promise<string>}
  */
-export async function executiveLandingPath({ client, from = null, timeoutMs = 3000, fallback = '/admin' } = {}) {
-  if (from && from !== fallback) return fallback
+export async function executiveLandingPath({ client, timeoutMs = 3000, fallback = '/admin' } = {}) {
   let timer
   const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs) })
   try {

@@ -16,16 +16,24 @@ import ScrollToTopButton from './components/ScrollToTopButton'
 import InAppBrowserGate from './components/InAppBrowserGate'
 import { supabase, initialAuthParams } from './lib/supabase'
 import { fetchProfile } from './lib/profileFetch'
-import { executiveLandingPath } from './lib/executiveAccess'
-
-// ปลายทาง "เริ่มต้น" หลังล็อกอิน OAuth ที่ผู้บริหารควรถูกพาไปห้องผู้บริหารแทน (ไม่ใช่หน้าที่ผู้ใช้ตั้งใจกลับไป)
-const EXEC_DEFAULT_LANDINGS = Object.freeze(['/', '/admin'])
+import { EXEC_OAUTH_CHECK_KEY, executiveLandingPath, isFreshExecOauthCheck } from './lib/executiveAccess'
 import { Phone, UserRound } from 'lucide-react'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from './lib/thaiName'
 import { recordVisit } from './lib/menuUsage'
 import { scheduleSiteOpen } from './lib/siteOpenCounter'
 import { BASENAME } from './lib/basename'
 import { platformPageFor } from './lib/platform'
+
+// ปลายทาง "เริ่มต้น" หลังล็อกอิน OAuth ที่ผู้บริหารควรถูกพาไปห้องผู้บริหารแทน (ไม่ใช่หน้าที่ผู้ใช้ตั้งใจกลับไป)
+const EXEC_DEFAULT_LANDINGS = Object.freeze(['/', '/admin'])
+
+// path ปัจจุบันในแอป (ตัด basename ของ deployment แบบ path ออก) — ใช้เช็กว่าผู้ใช้ยังอยู่หน้าปลายทางเริ่มต้นไหม
+function currentAppPath() {
+  const path = window.location.pathname
+  const base = BASENAME.replace(/\/+$/, '')
+  const inApp = base && (path === base || path.startsWith(`${base}/`)) ? path.slice(base.length) : path
+  return inApp.replace(/\/+$/, '') || '/'
+}
 
 const HomePage = lazyWithRetry(() => import('./pages/HomePage'))
 const CitizenForm = lazyWithRetry(() => import('./pages/CitizenForm'))
@@ -595,21 +603,35 @@ function AppShell() {
           }
         }
 
+        // พฤติกรรมเดิมของ oauth_from ไม่เปลี่ยน: พาไปทันที ไม่หน่วงใคร
         const returnTo = sessionStorage.getItem('oauth_from')
         if (returnTo) {
           sessionStorage.removeItem('oauth_from')
-          if (EXEC_DEFAULT_LANDINGS.includes(returnTo)) {
-            // ผู้บริหารที่ล็อกอินด้วย Google/LINE ลงห้องผู้บริหารเลย ไม่ต้องกดหาเอง (เจ้าของระบบสั่ง 2569-11-10)
-            // เฉพาะปลายทาง "เริ่มต้น" ('/admin' จาก /admin/login, '/' จาก /auth) — ถูกเด้งมาจากหน้าไหนก็กลับหน้านั้นเหมือนเดิม
-            // ⚠️ ห้าม await ใน callback นี้: executiveLandingPath เรียก auth.getSession() ซึ่งรอล็อกเดียวกับ callback = ค้าง
-            //    จึงเลื่อนไปทำหลัง callback จบ · ช้า/พลาดเกิน 3 วิ = ปลายทางเดิม
-            setTimeout(() => {
-              executiveLandingPath({ client: supabase, fallback: returnTo })
-                .then((target) => navigateRef.current(target, { replace: true }))
-            }, 0)
-          } else {
-            navigateRef.current(returnTo, { replace: true })
-          }
+          navigateRef.current(returnTo, { replace: true })
+        }
+
+        // ผู้บริหารที่ล็อกอิน Google/LINE ลงห้องผู้บริหารเลย ไม่ต้องกดหาเอง (เจ้าของระบบสั่ง 2569-11-10)
+        // เฉพาะปลายทาง "เริ่มต้น": '/admin' (จาก /admin/login) หรือคีย์ EXEC_OAUTH_CHECK_KEY ที่ยังไม่หมดอายุ (จาก /auth → หน้าแรก)
+        // คีย์นี้แยกจาก oauth_from และหมดอายุเอง เพราะ auth-js ยิง SIGNED_IN ซ้ำทุกครั้งที่กลับมาที่แท็บ —
+        // กด LINE แล้วยกเลิก คีย์จะไม่ค้างพาคนไปไหนเองภายหลัง
+        let execCheckAt = null
+        try {
+          execCheckAt = sessionStorage.getItem(EXEC_OAUTH_CHECK_KEY)
+          sessionStorage.removeItem(EXEC_OAUTH_CHECK_KEY)
+        } catch { /* storage ถูกปิด = ไม่พาไปห้อง ใช้หน้าเดิม */ }
+        const landing = returnTo && EXEC_DEFAULT_LANDINGS.includes(returnTo) ? returnTo
+          : !returnTo && isFreshExecOauthCheck(execCheckAt) ? '/'
+          : null
+        if (landing) {
+          // ⚠️ ห้าม await ใน callback นี้: executiveLandingPath เรียก auth.getSession() ซึ่งรอล็อกเดียวกับ callback = ค้าง
+          //    จึงเลื่อนไปทำหลัง callback จบ · ช้า/พลาดเกิน 3 วิ = อยู่หน้าเดิม
+          // พาไปเฉพาะเมื่อปลายทางต่างจากเดิม (= เป็นผู้บริหาร) และผู้ใช้ยังอยู่หน้าปลายทางเริ่มต้น —
+          // ระหว่างรอผลถ้ากดไปหน้าอื่นแล้ว ห้ามดึงกลับ (ประชาชนไม่ถูกพาไปไหนเลย)
+          setTimeout(() => {
+            executiveLandingPath({ client: supabase, fallback: landing }).then((target) => {
+              if (target !== landing && currentAppPath() === landing) navigateRef.current(target, { replace: true })
+            })
+          }, 0)
         }
       }
     })

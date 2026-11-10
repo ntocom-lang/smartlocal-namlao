@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "node scripts/check-behind.mjs",
     "dev": "vite",
-    "prebuild": "node tests/executive-coverage.test.mjs",
+    "prebuild": "node tests/executive-coverage.test.mjs && node tests/staff-menu-access.test.mjs && node tests/executive-route.test.mjs && node tests/executive-data.test.mjs",
     "build": "vite build && node scripts/postbuild.js",
     "lint": "eslint .",
     "lint:blocking": "node scripts/lint-blocking.mjs",

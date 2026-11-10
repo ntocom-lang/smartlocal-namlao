@@ -55,8 +55,9 @@ export default function AdminLogin() {
         return
       }
       // นายก/รองนายก/ปลัด → ห้องผู้บริหาร (/executive) · คนอื่น ผิดพลาด หรืออ่านสิทธิ์ช้าเกิน 3 วินาที → /admin เหมือนเดิม
-      // state.from ที่ไม่ใช่ปลายทางเริ่มต้น (ถูกเด้งมาจากหน้าเฉพาะ) คงพฤติกรรมเดิมไม่แทรกแซง
-      navigate(await executiveLandingPath({ client: supabase, from: location.state?.from }))
+      // ถูกเด้งมาจากหน้าเฉพาะ (state.from ที่ไม่ใช่ '/admin') = พฤติกรรมเดิม ไป /admin ไม่ถามสิทธิ์
+      const bouncedFrom = location.state?.from
+      navigate(bouncedFrom && bouncedFrom !== '/admin' ? '/admin' : await executiveLandingPath({ client: supabase }))
     } catch (err) {
       console.error('[admin-login] เข้าสู่ระบบล้มเหลว:', err?.message ?? err)
       setError('เข้าสู่ระบบไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')

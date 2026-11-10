@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
-import { executiveLandingPath } from '../lib/executiveAccess'
+import { EXEC_OAUTH_CHECK_KEY, executiveLandingPath } from '../lib/executiveAccess'
 import { useTenant } from '../contexts/TenantContext'
 import DeviceLoginPanel from '../components/auth/DeviceLoginPanel'
 import { appUrl } from '../lib/basename'
@@ -85,9 +85,14 @@ export default function AuthPage() {
 
   function storeOauthFrom() {
     try {
-      // เก็บ '/' ด้วย (เดิมลบทิ้ง) — App.jsx ใช้คีย์นี้รู้ว่า "เพิ่งล็อกอิน OAuth จากหน้านี้" แล้วพาผู้บริหารไป /executive
-      // คนอื่นได้ '/' ตามเดิม (navigate replace ไปหน้าที่อยู่แล้ว จอไม่เปลี่ยน)
-      sessionStorage.setItem('oauth_from', from)
+      if (from !== '/') {
+        sessionStorage.setItem('oauth_from', from)
+        sessionStorage.removeItem(EXEC_OAUTH_CHECK_KEY)
+      } else {
+        sessionStorage.removeItem('oauth_from')
+        // กลับหน้าแรก (ปลายทางเริ่มต้น) — App.jsx ใช้คีย์นี้พาผู้บริหารไป /executive หลังล็อกอิน (หมดอายุเองใน 10 นาที)
+        sessionStorage.setItem(EXEC_OAUTH_CHECK_KEY, String(Date.now()))
+      }
     } catch { /* storage ถูกปิด: login ยังไปต่อได้ แต่กลับหน้าแรก */ }
   }
 

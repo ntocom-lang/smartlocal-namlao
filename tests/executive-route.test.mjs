@@ -39,6 +39,10 @@ await test('ทางเข้า: ชิปสลับมุมมอง (acti
 await test('หน้า ExecutiveRoom: รอผลตำแหน่งก่อนตัดสิน ห้ามเด้งก่อนรู้ผล · ไม่มีสิทธิ์ = กลับ /staff · ใช้ฟังก์ชันเมนูชุดเดียวกับ StaffDashboard', () => {
   const room = src('pages/ExecutiveRoom.jsx')
   assert.match(room, /!profile \|\| !positionReady/)
+  // อ่านตำแหน่งพลาด (เน็ตสะดุด) = ปุ่มลองใหม่ ห้ามตีความว่าไม่ใช่ผู้บริหารแล้วเด้ง /staff (รีวิวรอบ 2)
+  assert.match(room, /if \(failed \|\| positionError\) \{/)
+  assert.ok(room.indexOf('failed || positionError') < room.indexOf('<Navigate to="/staff"'), 'ต้องเช็ก error ก่อนตัดสินเด้ง')
+  assert.match(src('hooks/useMyPositionCategory.js'), /ready: !fetched\.error, error: fetched\.error/)
   assert.match(room, /canOpenExecutiveHome\(\{ role: profile\.role, positionCategory \}\)/)
   assert.match(room, /<Navigate to="\/staff" replace \/>/)
   assert.match(room, /staffMenuAccess\(\{ role: profile\.role, profile, tenant \}\)/)
@@ -46,7 +50,7 @@ await test('หน้า ExecutiveRoom: รอผลตำแหน่งก่�
 })
 
 await test('หลังล็อกอินฝั่งเจ้าหน้าที่ (รหัสผ่าน + รหัสจากมือถือ) ถามปลายทางผ่าน executiveLandingPath', () => {
-  assert.match(src('pages/AdminLogin.jsx'), /executiveLandingPath\(\{ client: supabase, from: location\.state\?\.from \}\)/)
+  assert.match(src('pages/AdminLogin.jsx'), /bouncedFrom && bouncedFrom !== '\/admin' \? '\/admin' : await executiveLandingPath\(\{ client: supabase \}\)/)
   assert.match(src('components/auth/DeviceLoginPanel.jsx'), /executiveLandingPath\(\{ client: supabase \}\)/)
 })
 
@@ -61,12 +65,19 @@ await test('ห้องผู้บริหาร: โซนรอลงนา
 await test('ล็อกอิน Google/LINE + รหัสผ่านหน้า /auth: ผู้บริหารลงห้องผู้บริหาร · ไม่ await ใน onAuthStateChange (ค้างล็อก)', () => {
   const app = src('App.jsx')
   assert.match(app, /const EXEC_DEFAULT_LANDINGS = Object\.freeze\(\['\/', '\/admin'\]\)/)
+  // oauth_from พฤติกรรมเดิม: พาไปทันที ไม่หน่วงใคร
+  assert.match(app, /sessionStorage\.removeItem\('oauth_from'\)\s*navigateRef\.current\(returnTo, \{ replace: true \}\)/)
   // ต้องเลื่อนไปทำหลัง callback จบ — await auth.getSession() ใน callback = ค้างล็อกของ supabase-js
-  assert.match(app, /setTimeout\(\(\) => \{\s*executiveLandingPath\(\{ client: supabase, fallback: returnTo \}\)/)
+  assert.match(app, /setTimeout\(\(\) => \{\s*executiveLandingPath\(\{ client: supabase, fallback: landing \}\)/)
   assert.doesNotMatch(app, /await executiveLandingPath/)
+  // พาเฉพาะผู้บริหาร (ปลายทางต่าง) และเฉพาะเมื่อยังอยู่หน้าปลายทางเริ่มต้น — ไม่ดึงคนที่กดไปหน้าอื่นแล้วกลับ
+  assert.match(app, /if \(target !== landing && currentAppPath\(\) === landing\) navigateRef\.current\(target, \{ replace: true \}\)/)
+  // คีย์ของ /auth แยกจาก oauth_from และต้องยังไม่หมดอายุ (SIGNED_IN ยิงซ้ำตอนกลับมาที่แท็บ)
+  assert.match(app, /sessionStorage\.removeItem\(EXEC_OAUTH_CHECK_KEY\)/)
+  assert.match(app, /!returnTo && isFreshExecOauthCheck\(execCheckAt\) \? '\/'/)
   const auth = src('pages/AuthPage.jsx')
-  assert.match(auth, /sessionStorage\.setItem\('oauth_from', from\)/)
-  assert.doesNotMatch(auth, /sessionStorage\.removeItem\('oauth_from'\)/, "ต้องเก็บ '/' ด้วย ไม่งั้น App ไม่รู้ว่าเพิ่งล็อกอิน")
+  assert.match(auth, /if \(from !== '\/'\) \{\s*sessionStorage\.setItem\('oauth_from', from\)/)
+  assert.match(auth, /sessionStorage\.removeItem\('oauth_from'\)\s*\/\/[^\n]*\n\s*sessionStorage\.setItem\(EXEC_OAUTH_CHECK_KEY, String\(Date\.now\(\)\)\)/)
   assert.match(auth, /from === '\/' \? await executiveLandingPath\(\{ client: supabase, fallback: '\/' \}\) : from/)
 })
 

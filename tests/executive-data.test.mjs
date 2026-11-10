@@ -10,7 +10,10 @@ const {
   execRangeText, execToday, fiscalYearStart, issueBreakdownRows, normalizeComplaintStats, projectComplaintRows,
   projectDocRows, rowsTruncated, splitServiceRows, summarizePulse,
 } = await import('../src/lib/executiveData.js')
-const { canOpenExecutiveHome, executiveLandingPath, isExecutiveHomeDefault } = await import('../src/lib/executiveAccess.js')
+const {
+  EXEC_OAUTH_CHECK_TTL_MS, EXEC_POSITION_LOOKUP_ROLES, canOpenExecutiveHome, executiveLandingPath, isExecutiveHomeDefault, isFreshExecOauthCheck,
+} = await import('../src/lib/executiveAccess.js')
+const { STAFF_PORTAL_ROLES } = await import('../src/lib/portalAccess.js')
 const { fiscalYearOf } = await import('../src/lib/fiscalYear.js')
 const { EXECUTIVE_REGISTRY, liveEntries, ownerOfDocType } = await import('../src/lib/executiveRegistry.js')
 
@@ -328,20 +331,42 @@ function fakeClient({ uid = 'u1', profile = null, category = null, profileError 
   return { calls, auth: { getSession: async () => ({ data: { session: uid ? { user: { id: uid } } : null } }) }, from: query }
 }
 
-await test('หลังล็อกอิน: viewer → /executive (ไม่ต้องถามตำแหน่ง) · ปลัด role officer/admin → /executive · คนอื่น → /admin', async () => {
+await test('หลังล็อกอิน: viewer → /executive (ไม่ต้องถามตำแหน่ง) · ปลัดทุก role เจ้าหน้าที่ → /executive · คนอื่น → /admin', async () => {
   const viewer = fakeClient({ profile: { role: 'viewer', position_id: null } })
   assert.equal(await executiveLandingPath({ client: viewer }), '/executive')
   assert.equal(viewer.calls.positions, 0)
-  for (const role of ['officer', 'admin']) {
+  // ปลัดที่แอดมินตั้ง role อะไรก็ได้ในกลุ่มเจ้าหน้าที่ ต้องถูกอ่านตำแหน่ง (รีวิวรอบ 2: เดิมถามเฉพาะ officer/admin)
+  for (const role of ['officer', 'admin', 'staff', 'council', 'technician', 'superadmin']) {
     const c = fakeClient({ profile: { role, position_id: 'p1' }, category: 'top_admin' })
     assert.equal(await executiveLandingPath({ client: c }), '/executive', `ปลัด role ${role}`)
   }
   assert.equal(await executiveLandingPath({ client: fakeClient({ profile: { role: 'admin', position_id: 'p2' }, category: 'dept_head' }) }), '/admin')
   assert.equal(await executiveLandingPath({ client: fakeClient({ profile: { role: 'admin', position_id: null } }) }), '/admin')
-  assert.equal(await executiveLandingPath({ client: fakeClient({ profile: { role: 'staff', position_id: 'p3' }, category: 'top_admin' }) }), '/admin', 'staff ไม่ถามตำแหน่ง')
+  const citizen = fakeClient({ profile: { role: 'citizen', position_id: 'p3' }, category: 'top_admin' })
+  assert.equal(await executiveLandingPath({ client: citizen }), '/admin', 'ประชาชนไม่ถามตำแหน่ง')
+  assert.equal(citizen.calls.positions, 0)
+  assert.equal(await executiveLandingPath({ client: fakeClient({ profile: { role: 'citizen' } }), fallback: '/' }), '/', 'fallback ที่ผู้เรียกกำหนด')
 })
 
-await test('หลังล็อกอิน: ผิดพลาด/ไม่มี session/ช้าเกิน = /admin เหมือนเดิม · มี state.from อื่น = ไม่แทรกแซง', async () => {
+test('ตัวอ่านตำแหน่งครอบทุก role ที่กฎนับเป็นปลัดได้ (กันกฎกับตัวอ่านเพี้ยนกันอีก)', () => {
+  for (const role of STAFF_PORTAL_ROLES) {
+    const byRule = isExecutiveHomeDefault({ role, positionCategory: 'top_admin' })
+    assert.ok(role === 'viewer' || !byRule || EXEC_POSITION_LOOKUP_ROLES.includes(role), `role ${role} นับเป็นปลัดได้แต่ไม่มีใครอ่านตำแหน่ง`)
+  }
+  assert.ok(!EXEC_POSITION_LOOKUP_ROLES.includes('viewer'))
+  assert.ok(!EXEC_POSITION_LOOKUP_ROLES.includes('citizen'))
+})
+
+test('คีย์ "เพิ่งล็อกอิน OAuth จากหน้าแรก" หมดอายุใน 10 นาที · ค่าเสีย/อนาคต = ไม่นับ', () => {
+  const now = 1_800_000_000_000
+  assert.equal(isFreshExecOauthCheck(String(now - 1000), now), true)
+  assert.equal(isFreshExecOauthCheck(String(now - EXEC_OAUTH_CHECK_TTL_MS), now), true)
+  assert.equal(isFreshExecOauthCheck(String(now - EXEC_OAUTH_CHECK_TTL_MS - 1), now), false, 'ค้างเกิน 10 นาที (กด LINE แล้วยกเลิก)')
+  assert.equal(isFreshExecOauthCheck(String(now + 5000), now), false, 'เวลาอนาคต')
+  for (const bad of [null, undefined, '', 'abc', '0', '-5']) assert.equal(isFreshExecOauthCheck(bad, now), false, `ค่า ${bad}`)
+})
+
+await test('หลังล็อกอิน: ผิดพลาด/ไม่มี session/ช้าเกิน = ปลายทางเดิม', async () => {
   assert.equal(await executiveLandingPath({ client: fakeClient({ profile: { role: 'viewer' }, profileError: { message: 'x' } }) }), '/admin')
   assert.equal(await executiveLandingPath({ client: fakeClient({ profile: { role: 'officer', position_id: 'p1' }, category: 'top_admin', positionError: { message: 'x' } }) }), '/admin')
   assert.equal(await executiveLandingPath({ client: fakeClient({ uid: null }) }), '/admin')
@@ -349,9 +374,6 @@ await test('หลังล็อกอิน: ผิดพลาด/ไม่�
   const started = Date.now()
   assert.equal(await executiveLandingPath({ client: fakeClient({ hang: true }), timeoutMs: 50 }), '/admin', 'ค้าง → timeout')
   assert.ok(Date.now() - started < 1000, 'ไม่รอเกิน timeout มาก')
-  const viewer = fakeClient({ profile: { role: 'viewer' } })
-  assert.equal(await executiveLandingPath({ client: viewer, from: '/admin/something' }), '/admin', 'from อื่นคงเดิม')
-  assert.equal(await executiveLandingPath({ client: viewer, from: '/admin' }), '/executive', 'from = ปลายทางเริ่มต้น ไม่นับเป็นหน้าเฉพาะ')
 })
 
 test('ตาราง ②-2: แสดงเฉพาะแถวที่มีเรื่อง แถว 0 แยกไว้ให้กดแสดง (รวมแถวคำร้อง) และคงลำดับเดิม', () => {
