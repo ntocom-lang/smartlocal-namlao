@@ -127,6 +127,9 @@ jobs:
             patient-report-period
             patient-report-infographic
             patient-booking-browser
+            # ห้องผู้บริหาร E2: SQL ของ executive_overview/exec_summary_* บน PGlite ตัวเดียวกัน (ไม่ใช่โมดูลผู้ป่วย
+            # แต่ workflow นี้ติดตั้ง PGlite ไว้แล้ว) — ล้มเมื่อสิทธิ์หลุด (42501) หรือมีชื่อคน/ข้อความอิสระหลุดออกมา
+            executive-summary-db
           )
           failed=()
           for t in "${tests[@]}"; do

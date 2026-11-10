@@ -1,48 +1,30 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, ChevronRight, HeartHandshake, Hourglass, Inbox } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
-import { isPhaseLive } from '../../../lib/executiveRegistry'
 import {
-  EXEC_COMPARE_LABELS, EXEC_DEFAULT_PERIOD, EXEC_ISSUE_BREAKDOWN_CATEGORY, EXEC_PERIODS, EXEC_PERIOD_LABELS, EXEC_ROW_LIMIT, EXEC_TOP_CATEGORIES,
-  buildServiceRows, categoryCounts, compareValues, execPeriodRange, execPreviousRange, execRangeText, issueBreakdownRows,
-  normalizeComplaintStats, normalizeDocStats, rowsTruncated, splitServiceRows, summarizePulse,
+  EXEC_COMPARE_LABELS, EXEC_ISSUE_BREAKDOWN_CATEGORY, EXEC_PERIODS, EXEC_PERIOD_LABELS, EXEC_ROW_LIMIT, EXEC_TOP_CATEGORIES,
+  buildServiceRows, categoryCounts, compareValues, decorateServiceRows, execFormulas, execNf, execRangeText, issueBreakdownRows,
+  normalizeComplaintStats, rowsTruncated, splitServiceRows, summarizePulse,
 } from '../../../lib/executiveData'
 import { useExecRpc } from '../../../hooks/useExecRpc'
-import { DeltaLine, ExecSection, FormulaPanel, InfoButton, LoadingLine, SectionError } from './ExecParts'
+import { DeltaLine, ExecSection, FormulaPanel, InfoButton, LoadingLine, SectionError, SubHead } from './ExecParts'
+import { ChannelBlock, BottleneckBlock, OverdueCard, QualityCards, SatisfactionBlock, TransportBlock, VillageBlock } from './ExecServiceBlocks'
 import { execIcon } from './execIcons'
 
-// โซน ② งานบริการประชาชน — ใหญ่สุดของห้อง · ใช้เฉพาะ RPC ใน EXEC_E1_RPCS (ห้ามอ่านตาราง complaints/document_requests ตรงๆ)
-// ทุกส่วนย่อย (ชีพจร / ตารางแยกประเภท / หมวดปัญหา) เรียกข้อมูลเองแยกกัน — ส่วนไหนพังขึ้น "โหลดไม่ได้" เฉพาะส่วนนั้น
-// ห้ามแสดงตัวเลขของ kpi เฟส E2 (เลยกำหนด / % ทันกำหนด / คะแนนพึงพอใจ) ทั้งช่องว่าง ขีด หรือป้าย "เร็วๆ นี้" — วาดเฉพาะ phase live
+// โซน ② งานบริการประชาชน — ใหญ่สุดของห้อง
+// เฟส E1: ชีพจร/ตารางแยกประเภท/หมวดปัญหา ใช้ RPC สถิติสาธารณะ (EXEC_E1_RPCS) ตัวเลขชุดเดียวกับหน้าสถิติ — ห้ามอ่านตาราง complaints/document_requests ตรงๆ
+// เฟส E2: เลยกำหนด / % ทันกำหนด / คะแนน / คอขวด / หมู่บ้าน / ช่องทาง ฯลฯ มาจาก executive_overview (prop ov จาก ExecutiveHome — เรียกครั้งเดียวทั้งหน้า)
+// ทุกส่วนย่อยเรียกข้อมูล/ประตูเองแยกกัน — ส่วนไหนพังขึ้น "โหลดไม่ได้" เฉพาะส่วนนั้น ส่วนอื่นแสดงตามปกติ
 
 // คำอธิบาย "ปฏิเสธ" ไม่อยู่ในทะเบียน (ทะเบียนไม่มี kpi นี้) — เขียนตามที่ RPC นับจริง: สถานะ rejected
 const REJECTED_FORMULA = {
   who: 'ทุกแถว',
   formula: 'จำนวนเรื่องที่สถานะเป็น rejected (ปฏิเสธ/ไม่รับเรื่อง) ของเรื่องที่ยื่นในช่วงนี้ — คำขอที่ผู้ยื่นถอนเองถูกบันทึกเป็นสถานะเดียวกัน แยกไม่ได้ในข้อมูลสถิติ',
-  source: 'complaint_stats_fy.rejected · doc_requests_public_fy.status',
+  source: 'complaint_stats_fy.rejected · executive_overview.doc_requests.by_type',
 }
 
-// ⓘ ของ "แถวคำขอรายประเภท" ในตาราง — แถวนี้นับฝั่งเครื่องจากรายการรายเรื่อง (doc_requests_public_fy) ไม่ได้ใช้ตัวเลขจาก doc_request_stats_fy
-// จึงห้ามยืมสูตรของชีพจร/ทะเบียน (ที่บอกว่า "ตัวเลขเดียวกับหน้าสถิติสาธารณะ") มาอธิบายแถวนี้ — ถ้อยคำเขียนตามที่โค้ดนับจริง
-// ต่างจากยอดรวมในชีพจรได้เล็กน้อย 2 เหตุ: (1) รายการรายเรื่องถูกจำกัดจำนวนแถวต่อครั้ง (ฐานข้อมูลตั้งเพดาน 1,000 แถว) (2) days_taken ถูกปัดทศนิยม 1 ตำแหน่งรายเรื่องก่อนเฉลี่ย
-// แถวคำร้องยังใช้สูตรของทะเบียนตามเดิม (คำร้องใช้ตัวเลขจาก complaint_stats_fy ตรงๆ)
-const DOC_ROW_SOURCE = 'doc_requests_public_fy (นับฝั่งหน้าจอจากรายการรายเรื่อง)'
-const DOC_ROW_CAVEAT = ' · อาจต่างจากยอดรวมในกล่องภาพรวมได้เล็กน้อย เพราะรายการรายเรื่องถูกจำกัดจำนวนแถวต่อครั้งและวันที่ถูกปัดเป็นทศนิยม 1 ตำแหน่งรายเรื่อง'
-const DOC_ROW_FORMULAS = Object.freeze({
-  new: 'นับคำขอของประเภทนั้นที่ยื่นในช่วงที่เลือก จากรายการรายเรื่อง' + DOC_ROW_CAVEAT,
-  open: 'นับคำขอของประเภทนั้นที่สถานะ pending หรือ processing จากรายการรายเรื่อง' + DOC_ROW_CAVEAT,
-  done: 'นับคำขอของประเภทนั้นที่สถานะ completed จากรายการรายเรื่อง' + DOC_ROW_CAVEAT,
-  avg_days: 'ค่าเฉลี่ยของ days_taken (issued_at − created_at เป็นวันปฏิทิน ปัดทศนิยม 1 ตำแหน่งรายเรื่อง) เฉพาะคำขอของประเภทนั้นที่เสร็จแล้ว จากรายการรายเรื่อง' + DOC_ROW_CAVEAT,
-})
-
-const nf = (n) => Number(n).toLocaleString('th-TH')
-
-/** สูตรของ kpi หนึ่งตัว จากรายการที่ขึ้นจอ — คัดตรงจากทะเบียน ไม่เขียนถ้อยคำเอง */
-function formulasOf(entries, kpiId) {
-  return entries.flatMap((e) => e.kpis
-    .filter((k) => k.id === kpiId && isPhaseLive(k.phase))
-    .map((k) => ({ who: e.label, formula: k.formula, source: k.source })))
-}
+const nf = execNf
+const formulasOf = execFormulas
 
 // ⓘ ของแต่ละส่วนใช้รหัส "ส่วน:kpi" (เช่น pulse:open, table:open) — กล่องสูตรเปิดใต้ส่วนที่กด ไม่เด้งไปอยู่ไกลจากปุ่ม
 const scopedId = (scope, id) => `${scope}:${id}`
@@ -120,18 +102,21 @@ function PulseBlock({ ctx, hasComplaints, hasDocs, entries, formulaId, onToggleF
 // ───────────────────────── ตาราง ②-2 ─────────────────────────
 
 // on = สีเมื่อค่ามากกว่า 0 (ความหมายเดียวกับชีพจรด้านบน) · ค่า 0 เป็นสีจางทุกคอลัมน์
+// เลยกำหนด/% ทันกำหนด (E2): ค่า null = ขีด (การ์ดนั้นโหลดไม่ได้ หรือยังไม่มีเรื่องที่ครบกำหนด) ไม่ใช่ 0
 const COLUMNS = [
   { key: 'total', label: 'ยื่น', formulaId: 'new', on: 'text-sky-700' },
   { key: 'open', label: 'ยังไม่เสร็จ', formulaId: 'open', on: 'text-amber-600' },
   { key: 'done', label: 'เสร็จ', formulaId: 'done', on: 'text-emerald-600' },
   { key: 'rejected', label: 'ปฏิเสธ', formulaId: 'rejected', on: 'text-rose-600' },
 ]
+const E2_COLUMNS = [
+  { key: 'overdue', label: 'เลยกำหนด', formulaId: 'overdue', on: 'text-rose-600', pct: false },
+  { key: 'onTimePct', label: '% ทันกำหนด', formulaId: 'on_time_pct', on: 'text-emerald-700', pct: true },
+]
 const cellTone = (c, value) => (value > 0 ? `font-bold ${c.on}` : 'text-slate-300')
-
-/** หัวของกล่องย่อยในโซนบริการ (แถบสีฟ้าซ้าย) */
-function SubHead({ children }) {
-  return <h3 className="border-l-4 border-sky-500 pl-2 text-sm font-bold text-sky-950">{children}</h3>
-}
+// % ทันกำหนด: 0% เป็นข้อมูลจริง (ทุกเรื่องเกินกำหนด) ไม่ใช่ "ไม่มี" — ขีดเฉพาะ null
+const e2CellText = (c, v) => (v == null ? '—' : c.pct ? `${nf(v)}%` : nf(v))
+const e2CellTone = (c, v) => (v == null ? 'text-slate-300' : c.pct ? 'font-bold text-emerald-700' : cellTone(c, v))
 
 // Icon ส่งเข้ามาจากผู้เรียก (ไม่สร้างคอมโพเนนต์จากชื่อไอคอนระหว่าง render ในตัวมันเอง — ผิดกฎ react-hooks/static-components)
 function RowName({ row, Icon }) {
@@ -144,34 +129,41 @@ function RowName({ row, Icon }) {
   )
 }
 
-const COLUMN_FORMULA_TITLES = { new: 'ยื่น', open: 'ยังไม่เสร็จ', done: 'เสร็จ', rejected: 'ปฏิเสธ', avg_days: 'เวลาเฉลี่ยจนเสร็จ' }
+const COLUMN_FORMULA_TITLES = { new: 'ยื่น', open: 'ยังไม่เสร็จ', done: 'เสร็จ', rejected: 'ปฏิเสธ', avg_days: 'เวลาเฉลี่ยจนเสร็จ', overdue: 'เลยกำหนด', on_time_pct: '% ทันกำหนด' }
 
 const iconOfRow = (row) => (row.kind === 'complaint' && row.owner ? execIcon(row.owner.icon) : null)
 
 const avgText = (row) => (row.avgDays == null ? '—' : `${nf(row.avgDays)} วัน`)
 
-function ServiceTable({ ctx, hasComplaints, hasDocs, entries, tenant, isModuleEnabled, resolveLink, formulaId, onToggleFormula }) {
+function ServiceTable({ ctx, ov, hasComplaints, hasDocs, entries, tenant, isModuleEnabled, resolveLink, formulaId, onToggleFormula }) {
   const { tenantId, profileId, range } = ctx
   const args = { _municipality_id: tenantId, _from: range.from, _to: range.to }
-  const rowArgs = { ...args, _limit: EXEC_ROW_LIMIT }
   const base = { tenantId, profileId }
   const complaintStats = useExecRpc({ ...base, rpc: 'complaint_stats_fy', args, enabled: hasComplaints })
-  const docRows = useExecRpc({ ...base, rpc: 'doc_requests_public_fy', args: rowArgs, enabled: hasDocs })
-  const docStats = useExecRpc({ ...base, rpc: 'doc_request_stats_fy', args, enabled: hasDocs }) // ใช้แค่เทียบยอดรวมเพื่อรู้ว่าแถวรายเรื่องถูกตัดไหม
   const complaintEntry = entries.find((e) => e.key === 'complaints') ?? null
   const [showEmpty, setShowEmpty] = useState(false)
 
+  // แถวคำขอรายประเภทนับในฐานข้อมูลครบทุกแถว (executive_overview.doc_requests.by_type) แทนการนับจากรายการรายเรื่องที่ถูกตัด 1,000 แถวใน E1
+  // รอ ov ตอบก่อน (loading) — ตอบแล้วแต่ใช้ไม่ได้ (error/forbidden/การ์ดพัง) = ไม่มีแถวคำขอ + บอกชัดว่าโหลดไม่ได้ (ไม่แสดง 0 ลวง)
+  const docsPart = ov.model.docRequests
+  const docsSettled = !hasDocs || ov.status === 'ok' || ov.status === 'error' || ov.status === 'forbidden'
+  const docsUsable = hasDocs && ov.status === 'ok' && docsPart.state === 'ok'
+  const docsFailed = hasDocs && docsSettled && !docsUsable
+  const today = ov.today
+
   const allRows = useMemo(() => {
-    if ((hasComplaints && complaintStats.status !== 'ok') || (hasDocs && docRows.status !== 'ok')) return null
-    return buildServiceRows({
+    if (hasComplaints && complaintStats.status !== 'ok') return null
+    if (!docsSettled) return null
+    const rows = buildServiceRows({
       complaintStats: hasComplaints ? complaintStats.data : null,
-      docRows: hasDocs ? docRows.data : null,
+      docByType: docsUsable ? docsPart.data.byType : null,
       tenant, isModuleEnabled, complaintEntry,
     })
-  }, [hasComplaints, hasDocs, complaintStats.status, complaintStats.data, docRows.status, docRows.data, tenant, isModuleEnabled, complaintEntry])
+    // ov ใช้ไม่ได้ = ไม่มี model → เติม overdue/% เป็น null (ขีด) · ใช้ได้ = เติมจริง
+    return decorateServiceRows(rows, { model: ov.status === 'ok' ? ov.model : {}, today })
+  }, [hasComplaints, docsSettled, docsUsable, docsPart, complaintStats.status, complaintStats.data, ov.status, ov.model, today, tenant, isModuleEnabled, complaintEntry])
 
-  const needed = [hasComplaints && complaintStats, hasDocs && docRows].filter(Boolean)
-  if (needed.some((s) => s.status === 'error')) return <SectionError text="โหลดตารางแยกประเภทไม่ได้" onRetry={failedReloads(needed)} />
+  if (hasComplaints && complaintStats.status === 'error') return <SectionError text="โหลดตารางแยกประเภทไม่ได้" onRetry={complaintStats.reload} />
   if (!allRows) return <LoadingLine text="กำลังโหลดตารางแยกประเภท…" />
 
   // แสดงเฉพาะแถวที่มีเรื่อง แถว 0 ซ่อนไว้หลังปุ่ม (เจ้าของระบบสั่ง 2569-11-10)
@@ -184,18 +176,17 @@ function ServiceTable({ ctx, hasComplaints, hasDocs, entries, tenant, isModuleEn
     </button>
   )
 
-  const docCount = hasDocs ? docRows.data.length : 0
-  const knownTotal = docStats.status === 'ok' ? normalizeDocStats(docStats.data).total : null
-  const truncated = hasDocs && rowsTruncated(docCount, { knownTotal })
   const tableId = idInScope(formulaId, 'table')
-  // แถวคำร้อง = สูตรของทะเบียน (ใช้ complaint_stats_fy) · แถวคำขอรายประเภท = สูตรแยกของแถวรายเรื่อง (ดู DOC_ROW_FORMULAS) — ไม่ใช้สูตรของ inbox ในทะเบียน
-  const docRowFormula = hasDocs && DOC_ROW_FORMULAS[tableId]
-    ? [{ who: 'แถวคำขอแต่ละประเภท', formula: DOC_ROW_FORMULAS[tableId], source: DOC_ROW_SOURCE }]
-    : []
+  // แถวคำร้อง = สูตรของ kpi ในทะเบียน (ใช้ complaint_stats_fy) · แถวคำขอรายประเภท = by_type_full (นับในฐานข้อมูล) — ทั้งสองดึงจากทะเบียน
+  // เลยกำหนด/% ทันกำหนด = สูตรของทั้งคำร้องและคำขอ (แสดงทีละรายการพร้อมชื่อ)
+  const docRowFormula = hasDocs && ['new', 'open', 'done', 'avg_days'].includes(tableId) ? formulasOf(entries, 'by_type_full') : []
   const sheetFormulas = tableId === 'rejected'
     ? [REJECTED_FORMULA]
-    : [...formulasOf(complaintEntry ? [complaintEntry] : [], tableId ?? ''), ...docRowFormula]
+    : ['overdue', 'on_time_pct'].includes(tableId)
+      ? formulasOf(entries, tableId)
+      : [...formulasOf(complaintEntry ? [complaintEntry] : [], tableId ?? ''), ...docRowFormula]
   const sheetTitle = COLUMN_FORMULA_TITLES[tableId] ?? ''
+  const showE2 = ov.status === 'ok'
 
   return (
     <div className="space-y-2">
@@ -205,7 +196,7 @@ function ServiceTable({ ctx, hasComplaints, hasDocs, entries, tenant, isModuleEn
         </p>
       )}
       {/* PC: ตารางจริง */}
-      {rows.length > 0 && <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:block">
+      {rows.length > 0 && <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm md:block">
         <table data-exec-table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 text-[11px] text-slate-500">
@@ -217,11 +208,18 @@ function ServiceTable({ ctx, hasComplaints, hasDocs, entries, tenant, isModuleEn
                   </span>
                 </th>
               ))}
-              <th scope="col" className="px-1 py-2 pr-3 text-right font-semibold">
+              <th scope="col" className="px-1 py-2 text-right font-semibold">
                 <span className="inline-flex items-center gap-0.5">เวลาเฉลี่ยจนเสร็จ
                   <InfoButton active={tableId === 'avg_days'} onClick={() => onToggleFormula(scopedId('table', 'avg_days'))} label="เวลาเฉลี่ยจนเสร็จ" />
                 </span>
               </th>
+              {showE2 && E2_COLUMNS.map((c) => (
+                <th key={c.key} scope="col" className="px-1 py-2 text-right font-semibold">
+                  <span className="inline-flex items-center gap-0.5">{c.label}
+                    <InfoButton active={tableId === c.formulaId} onClick={() => onToggleFormula(scopedId('table', c.formulaId))} label={c.label} />
+                  </span>
+                </th>
+              ))}
               <th scope="col" className="w-6" aria-hidden="true" />
             </tr>
           </thead>
@@ -235,7 +233,10 @@ function ServiceTable({ ctx, hasComplaints, hasDocs, entries, tenant, isModuleEn
                   {COLUMNS.map((c) => (
                     <td key={c.key} className={`px-1 py-2 text-right text-base tabular-nums ${cellTone(c, row[c.key])}`}>{nf(row[c.key])}</td>
                   ))}
-                  <td className="px-1 py-2 pr-3 text-right tabular-nums text-slate-700">{avgText(row)}</td>
+                  <td className="px-1 py-2 text-right tabular-nums text-slate-700">{avgText(row)}</td>
+                  {showE2 && E2_COLUMNS.map((c) => (
+                    <td key={c.key} className={`px-1 py-2 text-right text-base tabular-nums ${e2CellTone(c, row[c.key])}`}>{e2CellText(c, row[c.key])}</td>
+                  ))}
                   <td className="pr-2 text-slate-300">
                     {go && (
                       <button type="button" onClick={(e) => { e.stopPropagation(); go() }} aria-label={`เปิดงาน ${row.label}`}
@@ -256,15 +257,16 @@ function ServiceTable({ ctx, hasComplaints, hasDocs, entries, tenant, isModuleEn
           const body = (
             <>
               <span className="flex items-center gap-1.5"><span className="min-w-0 flex-1"><RowName row={row} Icon={iconOfRow(row)} /></span>{go && <ChevronRight size={15} className="shrink-0 text-slate-300" aria-hidden="true" />}</span>
-              <span className="mt-1.5 grid grid-cols-4 gap-1 text-center">
+              {/* ตัวเลขทุกช่องเรียงเป็นบรรทัดเดียวพร้อมป้าย (เดิมกล่อง 4 ช่อง สูงเกือบเท่าตัว — เจ้าของขอให้หน้าไม่ยาว 2569-11-10) */}
+              <span className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
                 {COLUMNS.map((c) => (
-                  <span key={c.key} className="rounded-lg bg-slate-50 px-1 py-1">
-                    <span className="block text-[10px] text-slate-500">{c.label}</span>
-                    <span className={`block text-lg font-black tabular-nums ${row[c.key] > 0 ? c.on : 'text-slate-300'}`}>{nf(row[c.key])}</span>
-                  </span>
+                  <span key={c.key}>{c.label} <span className={`text-sm font-black tabular-nums ${row[c.key] > 0 ? c.on : 'text-slate-400'}`}>{nf(row[c.key])}</span></span>
+                ))}
+                <span>เวลาเฉลี่ยจนเสร็จ <span className="font-semibold text-slate-700">{avgText(row)}</span></span>
+                {showE2 && E2_COLUMNS.map((c) => (
+                  <span key={c.key}>{c.label} <span className={`font-semibold ${e2CellTone(c, row[c.key])}`}>{e2CellText(c, row[c.key])}</span></span>
                 ))}
               </span>
-              <span className="mt-1 block text-[11px] text-slate-500">เวลาเฉลี่ยจนเสร็จ <span className="font-semibold text-slate-700">{avgText(row)}</span></span>
             </>
           )
           return (
@@ -280,11 +282,12 @@ function ServiceTable({ ctx, hasComplaints, hasDocs, entries, tenant, isModuleEn
       </ul>
 
       {emptyToggle && <div className="flex justify-center">{emptyToggle}</div>}
+      {docsFailed && <SectionError text="โหลดแถวคำขอแยกประเภทไม่ได้" onRetry={ov.status === 'forbidden' ? undefined : ov.reload} />}
 
       {/* มือถือไม่มีหัวตารางให้วาง ⓘ — แถวปุ่มสูตรอยู่ใต้การ์ด (PC มีที่หัวคอลัมน์แล้ว) */}
       <div className="flex flex-wrap items-center gap-1 md:hidden">
         <span className="text-[10px] text-slate-400">วิธีคำนวณ:</span>
-        {[...COLUMNS.map((c) => ({ id: c.formulaId, label: c.label })), { id: 'avg_days', label: 'เวลาเฉลี่ย' }].map((c) => (
+        {[...COLUMNS.map((c) => ({ id: c.formulaId, label: c.label })), { id: 'avg_days', label: 'เวลาเฉลี่ย' }, ...(showE2 ? E2_COLUMNS.map((c) => ({ id: c.formulaId, label: c.label })) : [])].map((c) => (
           <button key={c.id} type="button" aria-expanded={tableId === c.id} onClick={() => onToggleFormula(scopedId('table', c.id))}
             className={`inline-flex min-h-8 items-center rounded-full border px-2.5 text-[11px] font-semibold ${tableId === c.id ? 'border-sky-300 bg-sky-50 text-sky-800' : 'border-slate-200 bg-white text-slate-600'}`}>
             ⓘ {c.label}
@@ -292,12 +295,10 @@ function ServiceTable({ ctx, hasComplaints, hasDocs, entries, tenant, isModuleEn
         ))}
       </div>
 
-      {truncated && (
-        <p data-exec-truncated className="text-[10px] text-amber-700">
-          แถวคำขอแยกประเภทนับจาก {nf(docCount)} เรื่องล่าสุด{knownTotal != null ? ` (คำขอทั้งหมดในช่วงนี้ ${nf(knownTotal)} เรื่อง)` : ''} — ตัวเลขรายประเภทอาจต่ำกว่าจริง
-        </p>
-      )}
-      <p className="text-[10px] text-slate-400">กดแถวเพื่อเปิดกล่องงานของเรื่องนั้น · เวลาเฉลี่ยนับเป็นวันปฏิทิน เฉพาะเรื่องที่เสร็จแล้ว</p>
+      <p className="text-[10px] text-slate-400">
+        กดแถวเพื่อเปิดกล่องงานของเรื่องนั้น · เวลาเฉลี่ยนับเป็นวันปฏิทิน เฉพาะเรื่องที่เสร็จแล้ว
+        {showE2 && ' · เลยกำหนดนับเรื่องที่ค้างอยู่ตอนนี้ (ไม่ขึ้นกับช่วงที่เลือก) ต่างจากคอลัมน์อื่นที่นับตามวันที่ยื่นในช่วง'}
+      </p>
       <FormulaPanel title={sheetTitle} items={sheetFormulas} />
     </div>
   )
@@ -409,20 +410,18 @@ function CategoryBlock({ ctx, entry, formulaId, onToggleFormula }) {
  *   tenant: object|null,
  *   profileId?: string,
  *   isModuleEnabled: (key: string) => boolean,
- *   resolveLink: (entry: object|null) => (null | (() => void))   // null = ไม่มีทางเปิดจากบัญชีนี้ (ไม่ทำเป็นปุ่ม)
+ *   resolveLink: (entry: object|null) => (null | (() => void)),   // null = ไม่มีทางเปิดจากบัญชีนี้ (ไม่ทำเป็นปุ่ม)
+ *   ov: object,               // ผล executive_overview ของช่วงที่เลือก (status/model/derived/today/ช่วงก่อนหน้า/reload) — ExecutiveHome เรียกครั้งเดียวทั้งหน้า
+ *   period: string, setPeriod: (p: string) => void,   // ช่วงเวลาถือที่ ExecutiveHome (โซน ⑥ รายกองใช้ช่วงเดียวกัน)
+ *   range: { from: string, to: string }, prev: { from: string, to: string },
  * }} props
  */
-export default function ExecServiceZone({ entries, tenant, profileId, isModuleEnabled, resolveLink }) {
+export default function ExecServiceZone({ entries, tenant, profileId, isModuleEnabled, resolveLink, ov, period, setPeriod, range, prev }) {
   const complaintsEntry = entries.find((e) => e.key === 'complaints') ?? null
   const docEntries = entries.filter((e) => e.isCitizenService && e.key !== 'complaints')
   const hasComplaints = Boolean(complaintsEntry)
   const hasDocs = docEntries.length > 0
-  // เวลาตอนเปิดหน้า: ช่วงวันที่ผูกกับเวลานี้ (ไม่เรียกเวลาตอน render) — หน้าไม่ poll จึงไม่ขยับเองข้ามเที่ยงคืน
-  const [openedAt] = useState(() => new Date())
-  const [period, setPeriod] = useState(EXEC_DEFAULT_PERIOD)
   const [formulaId, setFormulaId] = useState(null)
-  const range = useMemo(() => execPeriodRange(period, openedAt), [period, openedAt])
-  const prev = useMemo(() => execPreviousRange(period, openedAt), [period, openedAt])
   const ctx = { tenantId: tenant?.id, profileId, range, prev, period }
   const toggleFormula = (id) => setFormulaId((cur) => (cur === id ? null : id))
 
@@ -441,19 +440,27 @@ export default function ExecServiceZone({ entries, tenant, profileId, isModuleEn
         <span className="text-[11px] text-slate-400" data-exec-range>{execRangeText(range)}</span>
       </div>
 
+      {/* ②-1 ชีพจร: เลยกำหนด (ใหญ่สุด) → เรื่องใหม่/ยังไม่เสร็จ/เสร็จ → % ทันกำหนด + คะแนนพึงพอใจ */}
+      <OverdueCard ov={ov} entries={entries} />
       <PulseBlock ctx={ctx} hasComplaints={hasComplaints} hasDocs={hasDocs} entries={entries} formulaId={formulaId} onToggleFormula={toggleFormula} />
+      <QualityCards ov={ov} entries={entries} rangeText={execRangeText(range)} compareText={`${EXEC_COMPARE_LABELS[period]} (${execRangeText(prev)})`} />
 
       <div className="space-y-1.5">
         <div className="flex items-center gap-1">
           <SubHead>แยกตามประเภทเรื่อง</SubHead>
           {hasDocs && <InfoButton active={formulaId === scopedId('type', 'by_type')} onClick={() => toggleFormula(scopedId('type', 'by_type'))} label="แยกประเภทคำขอ" />}
         </div>
-        {formulaId === scopedId('type', 'by_type') && <FormulaPanel title="แยกประเภทคำขอ" items={formulasOf(entries, 'by_type')} />}
-        <ServiceTable ctx={ctx} hasComplaints={hasComplaints} hasDocs={hasDocs} entries={entries} tenant={tenant} isModuleEnabled={isModuleEnabled}
+        {formulaId === scopedId('type', 'by_type') && <FormulaPanel title="แยกประเภทคำขอ" items={formulasOf(entries, 'by_type_full')} />}
+        <ServiceTable ctx={ctx} ov={ov} hasComplaints={hasComplaints} hasDocs={hasDocs} entries={entries} tenant={tenant} isModuleEnabled={isModuleEnabled}
           resolveLink={resolveLink} formulaId={formulaId} onToggleFormula={toggleFormula} />
       </div>
 
       {hasComplaints && <CategoryBlock ctx={ctx} entry={complaintsEntry} formulaId={formulaId} onToggleFormula={toggleFormula} />}
+      {hasComplaints && <BottleneckBlock ov={ov} entries={entries} />}
+      {hasComplaints && <VillageBlock ov={ov} entries={entries} />}
+      {hasComplaints && <SatisfactionBlock ov={ov} entries={entries} />}
+      <ChannelBlock ov={ov} entries={entries} />
+      <TransportBlock ov={ov} entries={entries} />
     </ExecSection>
   )
 }

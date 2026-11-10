@@ -101,11 +101,19 @@ test('kpi ที่ไม่มีสูตร (formula) → ล้ม · alert 
   mustFail('alert ไม่มีกฎ', executiveCoverageErrors({ ...fixtures, registry: [...EXECUTIVE_REGISTRY.filter((e) => e.key !== 'complaints'), noRule] }), 'rule')
 })
 
-test('เฟส E2 ขึ้นจอแล้วแต่ยังไม่มีฟังก์ชัน exec_summary_<x> ใน migrations → ล้ม (ไม่มี SQL ใน E1 จึงไม่ถูกตรวจตอนนี้)', () => {
-  const errors = executiveCoverageErrors({ ...fixtures, sqlFunctionExists, current: 'E2' })
-  mustFail('ไม่มีฟังก์ชัน SQL', errors, 'exec_summary_')
-  // ใส่ฟังก์ชันให้ครบแล้วต้องหาย
-  assert.deepEqual(executiveCoverageErrors({ ...fixtures, sqlFunctionExists: () => true, current: 'E2' }), [])
+test('เฟส E2: ทุก summaryKey มีฟังก์ชัน exec_summary_<x> ใน migrations จริง · ขาดตัวใดตัวหนึ่ง → ล้ม · เฟส E1 ไม่ตรวจ', () => {
+  assert.deepEqual(executiveCoverageErrors({ ...fixtures, sqlFunctionExists, current: 'E2' }), [])
+  // จำลองว่าลืมเขียนฟังก์ชันของโครงการ → ต้องล้มและบอกชื่อฟังก์ชันที่ขาด
+  const missingProjects = (name) => name !== 'exec_summary_projects' && sqlFunctionExists(name)
+  mustFail('ไม่มีฟังก์ชัน SQL', executiveCoverageErrors({ ...fixtures, sqlFunctionExists: missingProjects, current: 'E2' }), 'exec_summary_projects')
+  assert.deepEqual(executiveCoverageErrors({ ...fixtures, sqlFunctionExists: () => false, current: 'E1' }), [])
+})
+
+test('summaryKey ทุกตัวในทะเบียนมีฟังก์ชันจริง และไม่มีฟังก์ชัน exec_summary_* ที่ไม่มีใครลงทะเบียน (ตกค้าง)', () => {
+  const keys = new Set(EXECUTIVE_REGISTRY.map((e) => e.summaryKey).filter(Boolean))
+  const inSql = new Set([...migrationsSql.matchAll(/FUNCTION\s+public\.exec_summary_([a-z0-9_]+)\s*\(/gi)].map((m) => m[1]))
+  assert.deepEqual([...keys].filter((k) => !inSql.has(k)), [], 'summaryKey ที่ไม่มีฟังก์ชัน')
+  assert.deepEqual([...inSql].filter((k) => !keys.has(k)), [], 'ฟังก์ชันที่ไม่มีรายการในทะเบียน')
 })
 
 test('ตัวตรวจ sqlFunctionExists จับชื่อฟังก์ชันจริงได้ (ไม่ใช่ตอบ false ตลอด)', () => {

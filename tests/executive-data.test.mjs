@@ -276,13 +276,22 @@ test('ลักษณะย่อยหมวดไฟฟ้า: ว่าง = 
 // ── ทะเบียน × เฟส ────────────────────────────────────────────────────────────
 
 test('liveEntries: เฟส E1 เท่านั้น · โมดูลที่ปิดไม่ขึ้น · แหล่งข้อมูล (src:) ไม่ผูกโมดูล', () => {
-  const all = liveEntries(() => true)
+  const all = liveEntries(() => true, 'E1')
   assert.ok(all.every((e) => e.phase === 'E1'))
   assert.ok(all.some((e) => e.key === 'src:esign'))
   assert.equal(all.some((e) => e.key === 'projects'), false, 'projects เป็น E2')
-  const noComplaints = liveEntries((key) => key !== 'complaints')
+  const noComplaints = liveEntries((key) => key !== 'complaints', 'E1')
   assert.equal(noComplaints.some((e) => e.key === 'complaints'), false)
   assert.ok(noComplaints.some((e) => e.key === 'src:esign'))
+})
+
+test('liveEntries เฟส E2: รายการ E1+E2 ขึ้นจอ · ไม่มีรายการเฟส E3 · โมดูลที่ปิดยังไม่ขึ้น', () => {
+  const all = liveEntries(() => true, 'E2')
+  assert.ok(all.every((e) => e.phase === 'E1' || e.phase === 'E2'))
+  for (const key of ['projects', 'local-plan', 'borrowable-assets', 'performance', 'src:satisfaction']) {
+    assert.ok(all.some((e) => e.key === key), `${key} ต้องขึ้นใน E2`)
+  }
+  assert.equal(liveEntries((key) => key !== 'projects', 'E2').some((e) => e.key === 'projects'), false)
 })
 
 // ── สิทธิ์เปิดห้อง ───────────────────────────────────────────────────────────
@@ -388,6 +397,439 @@ test('ตาราง ②-2: แสดงเฉพาะแถวที่มี
   assert.deepEqual(empty.map((r) => r.id), ['complaints', 'doc:building_permit'])
   assert.deepEqual(splitServiceRows([]), { withData: [], empty: [] })
   assert.deepEqual(splitServiceRows(undefined), { withData: [], empty: [] })
+  // E2: ไม่มีเรื่องยื่นในช่วงนี้ แต่ยังมีเรื่องเลยกำหนดค้าง → ต้องขึ้น (ไม่งั้นยอดบนการ์ดชีพจรไปซ่อนหลังปุ่ม "ไม่มีเรื่อง")
+  const e2 = splitServiceRows([{ id: 'a', total: 0, overdue: 2 }, { id: 'b', total: 0, overdue: 0 }, { id: 'c', total: 0, overdue: null }])
+  assert.deepEqual(e2.withData.map((r) => r.id), ['a'])
+  assert.deepEqual(e2.empty.map((r) => r.id), ['b', 'c'])
+})
+
+// ═════════════════════════ เฟส E2 — executive_overview() ═════════════════════════
+// วันนี้คงที่ 2026-11-10 (อังคาร) — ตารางวันหยุดชั้น static ไม่มีวันหยุดตั้งแต่ 1 พ.ย. ถึง 10 พ.ย. 2569 · ต.ค. 69 มีวันที่ 13 และ 23
+
+const E2 = await import('../src/lib/executiveData.js')
+const {
+  EXEC_ALERT_RULE_KEYS, EXEC_NO_DEPT_KEY, backlogAnalysis, backlogByType, buildAlerts, buildDecisionQueue, buildDeptRows, buildExecModel,
+  compareMetric, decorateServiceRows, deriveExec, execAverage, execDateOnly, execPercent, execSummaryKeys, normalizeComplaintsSummary,
+  normalizeDocRequestsSummary, onTimeSummary, planResultMissingCount, projectStageRows, satisfactionView, sumOnTime, upcomingEvents,
+  thaiDayLabel, waitText, waitingWorkdays,
+} = E2
+const { isPhaseLive } = await import('../src/lib/executiveRegistry.js')
+const NOW = '2026-11-10'
+
+const complaintsRaw = {
+  period: { total: 11, citizen_online: 10, oss_counter: 1, confidential: 1, adhoc: 1 },
+  villages: [{ village: 'หมู่ 1', n: 6 }, { village: 'บ้านดอน', n: 1 }],
+  villages_unlisted: 2,
+  on_time: { completed: 3, on_time: 2, late: 1, no_due: 0, open_past_due: 3, undated: 0, as_of: NOW },
+  backlog: [
+    { s: 'new', due: '2026-11-12', c: '2026-11-09', u: true, n: 2 },
+    { s: 'new', due: '2026-11-02', c: '2026-11-02', u: true, n: 1 },
+    { s: 'received', due: '2026-11-05', c: '2026-10-30', u: false, n: 3 },
+    { s: 'in_progress', due: null, c: '2026-10-12', u: false, n: 1 },
+    { s: 'in_progress', due: '2026-10-01', c: null, u: false, n: 2 },
+  ],
+  parked: { n: 1, by_reason: { budget: 1 } },
+  repeat: { days: 90, min: 3, groups: [{ category: 'road', label: 'ถนนชำรุด', village: 'หมู่ 1', n: 5 }] },
+}
+
+test('ค้างอยู่ตอนนี้: เลยกำหนด (วันปฏิทิน) / เกิน 5 วันทำการ / ยังไม่มีผู้รับผิดชอบ / อายุวันทำการ / ขั้นที่ค้างมากสุด', () => {
+  const a = backlogAnalysis(normalizeComplaintsSummary(complaintsRaw).backlog, NOW)
+  assert.equal(a.total, 9)
+  assert.equal(a.overdue, 6, 'due < วันนี้: 1 + 3 + 2')
+  // 11-02 → 11-10 = 6 วันทำการ (>5 นับ) · 11-05 → 11-10 = 3 (ไม่นับ) · 10-01 ไกลกว่า 5 แน่นอน (นับ 2)
+  assert.equal(a.overdue5wd, 3)
+  assert.equal(a.unassigned, 3)
+  assert.equal(a.ageUnknown, 2, 'แถวไม่มีวันที่แจ้งไม่เข้ากลุ่มอายุ')
+  assert.deepEqual(a.ageBuckets.map((b) => [b.key, b.n]), [['0-3', 2], ['4-7', 4], ['8-15', 0], ['15+', 1]])
+  assert.deepEqual(a.stages, [
+    { s: 'new', n: 3, avgAge: 2.7 },        // (1×2 + 6×1) ÷ 3
+    { s: 'received', n: 3, avgAge: 7 },
+    { s: 'in_progress', n: 3, avgAge: 19 }, // ถ่วงเฉพาะเรื่องที่รู้วันที่แจ้ง
+  ])
+  assert.equal(a.worstStage, 'in_progress', 'ค้างเท่ากัน 3 ขั้น → ขั้นที่อายุเฉลี่ยสูงสุด')
+  assert.equal(a.avgAge, 6.9)
+})
+
+test('ค้างอยู่ตอนนี้: เลยกำหนดเกิน 5 วันทำการต้อง "มากกว่า" 5 (ครบ 5 พอดีไม่นับ) และเลยกำหนดวันนี้ไม่นับเป็นเลยกำหนด', () => {
+  const rows = [
+    { s: 'new', due: '2026-11-03', c: '2026-11-03', u: false, n: 1 }, // 5 วันทำการพอดี
+    { s: 'new', due: '2026-11-10', c: '2026-11-10', u: false, n: 1 }, // ครบวันนี้ ยังไม่เลย
+  ]
+  const a = backlogAnalysis(rows, NOW)
+  assert.equal(a.overdue, 1)
+  assert.equal(a.overdue5wd, 0)
+  assert.equal(a.worstStage, 'new')
+})
+
+test('ค้างอยู่ตอนนี้: ว่าง/ผิดรูป → ศูนย์ ไม่พัง · worstStage null', () => {
+  for (const bad of [null, undefined, [], [{ n: 0 }], [null], 'x']) {
+    const a = backlogAnalysis(bad, NOW)
+    assert.equal(a.total, 0)
+    assert.equal(a.worstStage, null)
+    assert.equal(a.avgAge, null)
+    assert.deepEqual(a.stages, [])
+  }
+})
+
+test('คำขอค้างรายประเภท: นับเลยกำหนดแยกประเภท', () => {
+  const m = backlogByType([
+    { t: 'tax_notice', s: 'pending', due: '2026-11-01', c: '2026-10-25', n: 2 },
+    { t: 'tax_notice', s: 'processing', due: '2026-11-20', c: '2026-11-05', n: 1 },
+    { t: 'building_permit', s: 'pending', due: '2026-11-09', c: '2026-11-02', n: 1 },
+    { s: 'pending', due: null, c: null, n: 9 }, // ไม่มีประเภท = ข้าม
+  ], NOW)
+  assert.deepEqual(m.get('tax_notice'), { open: 3, overdue: 2, overdue5wd: 2 })
+  assert.deepEqual(m.get('building_permit'), { open: 1, overdue: 1, overdue5wd: 0 })
+  assert.equal(m.size, 2)
+})
+
+test('% ทันกำหนด = ทัน ÷ (ทัน + เกิน + ค้างที่เลยกำหนด) · ตัวหาร 0 = null (ไม่ใช่ 0/100)', () => {
+  assert.equal(onTimeSummary(complaintsRaw.on_time).pct, 33.3, '2 ÷ (2+1+3)')
+  assert.equal(onTimeSummary(complaintsRaw.on_time).denominator, 6)
+  assert.equal(onTimeSummary({ completed: 0, on_time: 0, late: 0, open_past_due: 0 }).pct, null)
+  assert.equal(onTimeSummary(null).pct, null)
+  assert.equal(onTimeSummary({ on_time: 5, late: 0, open_past_due: 0 }).pct, 100)
+  // ค้างเลยกำหนดต้องอยู่ในตัวหาร (ไม่งั้นปล่อยเรื่องยากค้างแล้ว % ดีขึ้น)
+  assert.equal(onTimeSummary({ on_time: 1, late: 0, open_past_due: 1 }).pct, 50)
+  // no_due/undated ไม่อยู่ในตัวหาร
+  assert.equal(onTimeSummary({ on_time: 1, late: 1, no_due: 7, undated: 3, open_past_due: 0 }).pct, 50)
+})
+
+test('รวม % ทันกำหนดหลายชุด: รวมที่ตัวตั้ง/ตัวหาร ไม่เฉลี่ยร้อยละ', () => {
+  const a = { on_time: 9, late: 1, open_past_due: 0 }   // 90%
+  const b = { on_time: 0, late: 0, open_past_due: 10 }  // 0%
+  const sum = sumOnTime([a, b])
+  assert.deepEqual(sum, { completed: 0, onTime: 9, late: 1, noDue: 0, openPastDue: 10, undated: 0 })
+  assert.equal(onTimeSummary(sum).pct, 45, '9 ÷ 20 ไม่ใช่ (90+0) ÷ 2 ที่บังเอิญเท่ากัน — ใช้ตัวเลขที่ชั่งน้ำหนักต่างกันเช็ค')
+  const c = sumOnTime([{ on_time: 1, late: 0, open_past_due: 0 }, { on_time: 0, late: 0, open_past_due: 3 }])
+  assert.equal(onTimeSummary(c).pct, 25, 'ไม่ใช่ (100+0)/2 = 50')
+  assert.equal(onTimeSummary(sumOnTime([])).pct, null)
+})
+
+test('คะแนนเฉลี่ย: sum ÷ cnt ปัด 1 ตำแหน่ง · cnt 0 = null ไม่ใช่ 0 · อัตราตอบ = any_rated ÷ closed', () => {
+  assert.equal(execAverage(7, 2), 3.5)
+  assert.equal(execAverage(10, 3), 3.3)
+  assert.equal(execAverage(0, 0), null)
+  assert.equal(execAverage(5, 0), null)
+  assert.equal(execAverage(null, null), null)
+  assert.equal(execPercent(2, 3), 66.7)
+  assert.equal(execPercent(0, 0), null)
+  assert.equal(execPercent(3, 0), null)
+})
+
+const satRaw = {
+  closed: 4, submitters: { citizen: 3 },
+  sources: { verified: { complaints: 1, sum: 5, cnt: 1 }, via_link: { complaints: 1, sum: 2, cnt: 1 }, proxy: { complaints: 1, sum: 4, cnt: 1 } },
+  genuine: { complaints: 2, sum: 7, cnt: 2 }, any_rated: 3,
+  by_dept: [{ dept: 'D1', closed: 2, genuine_sum: 7, genuine_cnt: 2, all_sum: 11, all_cnt: 3 }, { dept: 'D2', closed: 1, genuine_sum: 0, genuine_cnt: 0, all_sum: 0, all_cnt: 0 }],
+  general: { n: 1, sum: 1 }, low: { via_link: 1, general: 1 },
+}
+
+test('มุมมองคะแนน: เสียงจริงคู่ทุกที่มา + แยกที่มา (ที่มาไม่มีคะแนน = ขีด) + คะแนนต่ำ + อัตราตอบ', () => {
+  const v = satisfactionView(E2.normalizeSatisfactionSummary(satRaw))
+  assert.equal(v.genuineAvg, 3.5)
+  assert.equal(v.genuineCnt, 2)
+  assert.equal(v.allAvg, 3.7, '(5+2+4) ÷ 3')
+  assert.equal(v.responseRate, 75, '3 ÷ 4')
+  assert.deepEqual(v.sources.map((s) => [s.key, s.avg, s.cnt]), [['verified', 5, 1], ['via_link', 2, 1], ['proxy', 4, 1], ['linked_anon', null, 0]])
+  assert.equal(v.general.avg, 1)
+  assert.equal(v.lowTotal, 2)
+  assert.deepEqual(v.low.map((x) => x.label), ['ผู้ถือลิงก์ติดตามเรื่อง', 'แบบประเมินภาพรวม'])
+})
+
+test('มุมมองคะแนน: ไม่มีข้อมูล → ขีด (null) ทุกค่า ไม่ใช่ 0', () => {
+  const v = satisfactionView(E2.normalizeSatisfactionSummary(null))
+  assert.equal(v.genuineAvg, null)
+  assert.equal(v.allAvg, null)
+  assert.equal(v.responseRate, null)
+  assert.equal(v.general.avg, null)
+  assert.equal(v.lowTotal, 0)
+})
+
+test('แถวรายกอง: ชื่อจากข้อมูล · ไม่มีรหัสกอง = "ไม่ระบุกอง" ท้ายตาราง · คะแนนเสียงจริงรายกอง (ไม่มีคะแนน = null) · ไม่จัดอันดับ', () => {
+  const dept = E2.normalizeDepartmentsSummary({
+    departments: [
+      { id: 'D1', name: 'กองช่าง', short_name: 'ช่าง', complaints: { open: 2, overdue: 1, parked: 1, done: 3 }, docs: { open: 1, overdue: 0, done: 1 } },
+      { id: 'D2', name: 'สำนักปลัด', short_name: 'ปลัด', complaints: { open: 0, overdue: 0, parked: 0, done: 0 }, docs: { open: 0, overdue: 0, done: 0 } },
+      { id: null, name: null, short_name: null, complaints: { open: 1, overdue: 1, parked: 0, done: 0 }, docs: {} },
+    ],
+  })
+  const rows = buildDeptRows(dept, E2.normalizeSatisfactionSummary(satRaw))
+  assert.deepEqual(rows.map((r) => r.name), ['กองช่าง', 'สำนักปลัด', 'ไม่ระบุกอง'], 'คงลำดับจากฐานข้อมูล')
+  assert.deepEqual([rows[0].openTotal, rows[0].overdueTotal, rows[0].doneTotal], [3, 1, 4])
+  assert.deepEqual(rows[0].rating, { avg: 3.5, cnt: 2, allAvg: 3.7, allCnt: 3 })
+  assert.equal(rows[1].rating.avg, null, 'กองที่มีเรื่องปิดแต่ไม่มีคะแนน = ขีด ไม่ใช่ 0')
+  assert.equal(rows[2].rating, null)
+  assert.equal(rows[2].key, EXEC_NO_DEPT_KEY)
+  assert.deepEqual(buildDeptRows(null, null), [])
+})
+
+test('model: คีย์ที่ไม่ได้ขอ = missing · ok:false = error เฉพาะคีย์นั้น · ok ปรับรูปแล้ว · ผิดรูปไม่พัง', () => {
+  const model = buildExecModel({
+    complaints: { ok: true, data: complaintsRaw },
+    fleet: { ok: false, error: '22012' },
+    water: { ok: true, data: null },
+    projects: { ok: true, data: { by_stage: { construction: '3', budgeted: null }, schedule: { behind: 'x' } } },
+    nope: { ok: false, error: 'unknown_key' },
+  })
+  assert.equal(model.complaints.state, 'ok')
+  assert.equal(model.complaints.data.period.total, 11)
+  assert.equal(model.fleet.state, 'error')
+  assert.equal(model.fleet.data, null)
+  assert.equal(model.docRequests.state, 'missing')
+  assert.equal(model.water.state, 'ok')
+  assert.deepEqual(model.water.data.announcePending, { n: 0, draftedAt: null })
+  assert.deepEqual(model.projects.data.byStage, { construction: 3 })
+  assert.equal(model.projects.data.schedule.behind, 0)
+  assert.deepEqual(Object.keys(buildExecModel(undefined)).sort(), Object.keys(buildExecModel({})).sort())
+  assert.equal(buildExecModel(null).complaints.state, 'missing')
+})
+
+test('normalizeComplaintsSummary: ทุกช่องว่าง/null = 0 ไม่พัง · หมู่บ้านที่ n=0 หรือชื่อว่างถูกตัด', () => {
+  const n = normalizeComplaintsSummary({ villages: [{ village: ' ', n: 3 }, { village: 'หมู่ 2', n: 0 }, { village: 'หมู่ 3', n: 2 }], backlog: [{ s: 'new', n: null }] })
+  assert.deepEqual(n.villages, [{ village: 'หมู่ 3', n: 2 }])
+  assert.equal(n.villagesUnlisted, 0)
+  assert.deepEqual(n.backlog, [])
+  assert.deepEqual(n.repeat, { days: 90, min: 3, groups: [] })
+  assert.deepEqual(normalizeComplaintsSummary(null).period, { total: 0, citizen_online: 0, oss_counter: 0, confidential: 0, adhoc: 0 })
+})
+
+test('execSummaryKeys: ตัดซ้ำ/null · เรียงคงที่ (คีย์แคชต้องเท่ากันทุกรอบ)', () => {
+  const entries = [{ summaryKey: 'water' }, { summaryKey: null }, { summaryKey: 'complaints' }, { summaryKey: 'water' }, {}]
+  assert.deepEqual(execSummaryKeys(entries), ['complaints', 'water'])
+  assert.deepEqual(execSummaryKeys(undefined), [])
+  // inbox ปิด แต่ประปาเปิด (ถือ docTypes) → ต้องขอ doc_requests ด้วย ไม่งั้นตาราง ②-2 ขึ้น "โหลดไม่ได้" ลวง
+  assert.deepEqual(execSummaryKeys([{ summaryKey: null, docTypes: ['water_supply_request'] }, { summaryKey: 'complaints', docTypes: [] }]), ['complaints', 'doc_requests'])
+})
+
+test('execSummaryKeys จากทะเบียนจริง: ทุก summaryKey ที่ขอมี normalizer (EXEC_MODEL_FIELDS ครบ)', () => {
+  const keys = execSummaryKeys(liveEntries(() => true, 'E2'))
+  for (const k of keys) assert.ok(E2.EXEC_MODEL_FIELDS[k], `คีย์ ${k} ไม่มี normalizer`)
+})
+
+test('ตาราง ②-2 รุ่น E2: แถวคำขอจาก by_type (นับในฐานข้อมูล) + เลยกำหนด/% ทันกำหนด รายแถว', () => {
+  const docs = normalizeDocRequestsSummary({
+    by_type: [
+      { t: 'building_permit', total: 3, pending: 0, processing: 1, completed: 1, rejected: 1, avg_days: 2 },
+      { t: 'waste_collection', total: 2, pending: 1, processing: 0, completed: 1, rejected: 0, avg_days: null },
+    ],
+    on_time: { by_type: [
+      { t: 'building_permit', completed: 1, on_time: 1, late: 0, no_due: 0, open_past_due: 0, undated: 0 },
+      { t: 'waste_collection', completed: 1, on_time: 0, late: 1, no_due: 0, open_past_due: 1, undated: 0 },
+    ] },
+    backlog: [{ t: 'waste_collection', s: 'pending', due: '2026-11-08', c: '2026-11-01', n: 1 }, { t: 'building_permit', s: 'processing', due: '2026-11-30', c: '2026-11-05', n: 1 }],
+    entered: { citizen: 2, council: 1, staff: 1, unknown: 1 },
+  })
+  const model = buildExecModel({ complaints: { ok: true, data: complaintsRaw }, doc_requests: { ok: true, data: { by_type: [], on_time: { by_type: [] }, backlog: [] } } })
+  model.docRequests = { state: 'ok', data: docs }
+  const base = buildServiceRows({ complaintStats: { total: 11, open: 3, in_progress: 1, resolved: 3, rejected: 1, avg_days: 4 }, docByType: docs.byType, tenant: tenantBase })
+  const rows = decorateServiceRows(base, { model, today: NOW })
+  const bp = rows.find((r) => r.docType === 'building_permit')
+  const wc = rows.find((r) => r.docType === 'waste_collection')
+  const cr = rows.find((r) => r.kind === 'complaint')
+  assert.deepEqual([bp.total, bp.open, bp.done, bp.rejected, bp.avgDays], [3, 1, 1, 1, 2])
+  assert.deepEqual([wc.total, wc.open, wc.done, wc.avgDays], [2, 1, 1, null], 'ไม่มีเรื่องที่เสร็จ = null ไม่ใช่ 0')
+  assert.deepEqual([bp.overdue, bp.onTimePct], [0, 100])
+  assert.deepEqual([wc.overdue, wc.onTimePct], [1, 0], 'ทัน 0 ÷ (0 + เกิน 1 + ค้างเลย 1) = 0%')
+  assert.deepEqual([cr.overdue, cr.onTimePct], [6, 33.3])
+  // ประเภทที่เปิดอยู่แต่ไม่มีเรื่อง: แสดง 0 · เลยกำหนด 0 · % = null (ขีด)
+  const tax = rows.find((r) => r.docType === 'tax_notice')
+  assert.deepEqual([tax.total, tax.overdue, tax.onTimePct], [0, 0, null])
+  // การ์ดคำขอโหลดไม่ได้ = ขีด ไม่ใช่ 0
+  const failed = decorateServiceRows(base, { model: { ...model, docRequests: { state: 'error', data: null } }, today: NOW })
+  assert.deepEqual([failed.find((r) => r.docType === 'tax_notice').overdue, failed.find((r) => r.docType === 'tax_notice').onTimePct], [null, null])
+})
+
+test('รอตัดสิน ①: รอมากี่วันทำการจากวันที่ที่ข้อมูลให้ · timestamp แปลงเป็นวันที่ไทย · ไม่มีวันที่ = null (ไม่เดา)', () => {
+  assert.equal(waitingWorkdays('2026-11-05', NOW), 3)   // 6,9,10
+  assert.equal(waitingWorkdays('2026-11-10', NOW), 0)
+  assert.equal(waitingWorkdays(null, NOW), null)
+  assert.equal(waitingWorkdays('ไม่ใช่วันที่', NOW), null)
+  // 17:30Z ของ 9 พ.ย. = 00:30 ของวันที่ 10 ไทย
+  assert.equal(execDateOnly('2026-11-09T17:30:00Z'), '2026-11-10')
+  assert.equal(waitingWorkdays('2026-11-09T17:30:00Z', NOW), 0)
+  assert.equal(waitText(0), 'ตั้งแต่วันนี้')
+  assert.equal(waitText(3), 'รอมา 3 วันทำการ')
+  assert.equal(waitText(null), null)
+})
+
+function modelOf(raw) {
+  return buildExecModel(raw)
+}
+
+test('คิวรอตัดสิน ①: แสดงเฉพาะที่มีเรื่อง · เกิน 2 วันทำการขึ้น warn (ครบ 2 ยังไม่ warn) · ร่างแผนไม่มีวันที่ = ไม่แสดงวันรอ', () => {
+  const model = modelOf({
+    borrowable_assets: { ok: true, data: { submitted: 2, oldest_submitted_on: '2026-11-05', settlement: 1 } },
+    projects: { ok: true, data: { change_pending: { n: 1, oldest_on: '2026-11-06' } } },   // 6 → 10 พ.ย. = 2 วันทำการ (9,10)
+    water: { ok: true, data: { announce_pending: { n: 1, drafted_at: '2026-11-09T17:30:00Z' }, open_events: { n: 0 } } },
+    local_plan: { ok: true, data: { op_drafts: { n: 2 }, dev_drafts: 1, current_fy: null } },
+  })
+  const { items, failures } = buildDecisionQueue({ entries: liveEntries(() => true, 'E2'), model, today: NOW })
+  assert.deepEqual(failures, [])
+  const by = Object.fromEntries(items.map((i) => [i.id, i]))
+  assert.equal(by['borrowable-assets:awaiting'].count, 2)
+  assert.equal(by['borrowable-assets:awaiting'].waitDays, 3)
+  assert.equal(by['borrowable-assets:awaiting'].warn, true)
+  assert.equal(by['borrowable-assets:settlement'].waitDays, null)
+  assert.equal(by['projects:change_pending'].waitDays, 2)
+  assert.equal(by['projects:change_pending'].warn, false, 'ครบ 2 วันทำการพอดี ยังไม่ส้ม (เกิน 2 ถึงส้ม)')
+  assert.equal(by['water-situation:announce_pending'].waitDays, 0)
+  assert.equal(by['local-plan:drafts'].count, 3)
+  assert.equal(by['local-plan:drafts'].waitDays, null)
+  assert.ok(items.every((i) => i.kpi.formula.length > 8 && i.entry.link), 'ทุกรายการมีสูตร ⓘ และลิงก์จากทะเบียน')
+})
+
+test('คิวรอตัดสิน ①: ไม่มีเรื่อง = ว่าง · การ์ดโหลดไม่ได้ = failures (ไม่ปล่อยให้ดูเหมือนไม่มีเรื่อง) · โมดูลปิด = ไม่มีทั้งรายการและ failure', () => {
+  const empty = buildDecisionQueue({ entries: liveEntries(() => true, 'E2'), model: modelOf({ borrowable_assets: { ok: true, data: {} } }), today: NOW })
+  assert.deepEqual(empty.items, [])
+  assert.deepEqual(empty.failures, [])
+  const failed = buildDecisionQueue({ entries: liveEntries(() => true, 'E2'), model: modelOf({ projects: { ok: false, error: 'x' } }), today: NOW })
+  assert.deepEqual(failed.failures, ['โครงการก่อสร้าง'])
+  const closed = buildDecisionQueue({ entries: liveEntries((k) => k !== 'projects', 'E2'), model: modelOf({ projects: { ok: false, error: 'x' } }), today: NOW })
+  assert.deepEqual(closed.failures, [])
+})
+
+test('สัญญาณเตือน ③: ขึ้นเฉพาะที่มีเรื่อง · critical ก่อน warn ก่อน info · มี rule จากทะเบียนทุกข้อ', () => {
+  const model = modelOf({
+    complaints: { ok: true, data: complaintsRaw },
+    satisfaction: { ok: true, data: satRaw },
+    doc_requests: { ok: true, data: { backlog: [{ t: 'tax_notice', s: 'pending', due: '2026-10-01', c: '2026-09-20', n: 4 }] } },
+    fleet: { ok: true, data: { maintenance: { overdue: 2, oldest_due_on: '2026-10-20' }, incidents: { damage: 1, loss: 1 } } },
+    borrowable_assets: { ok: true, data: { overdue_return: 1, oldest_return_due: '2026-11-01' } },
+    projects: { ok: true, data: { schedule: { behind: 1, no_report: 2, stale_report: 1 }, contract: { ending_soon: 2, past_end: 1 } } },
+    local_plan: { ok: true, data: { current_fy: { fiscal_year: 2570, published_main: false } } },
+    water: { ok: true, data: { open_events: { n: 1, oldest_opened_at: '2026-11-08T03:00:00Z' } } },
+  })
+  const { items, failures } = buildAlerts({ entries: liveEntries(() => true, 'E2'), model, today: NOW, resultMissing: 4 })
+  assert.deepEqual(failures, [])
+  const by = Object.fromEntries(items.map((i) => [i.id, i]))
+  assert.equal(by['complaints:overdue_5wd'].count, 3)
+  assert.equal(by['complaints:low_rating'].count, 2)
+  assert.equal(by['inbox:overdue_5wd'].count, 4)
+  assert.equal(by['fleet:maintenance_due'].count, 2)
+  assert.equal(by['fleet:incidents'].count, 2)
+  assert.equal(by['borrowable-assets:overdue_return'].count, 1)
+  assert.equal(by['projects:behind'].count, 1)
+  assert.equal(by['projects:contract_ending'].count, 2)
+  assert.equal(by['projects:contract_past'].count, 1)
+  assert.equal(by['projects:report_missing'].count, 3, 'ไม่มีฉบับล็อก 2 + ฉบับเก่าเกิน 14 วัน 1')
+  assert.equal(by['local-plan:result_missing'].count, 4)
+  assert.equal(by['local-plan:no_published_plan'].showCount, false)
+  assert.equal(by['water-situation:event_open'].count, 1)
+  assert.match(by['water-situation:event_open'].detail, /เก่าสุดเปิดเมื่อ/)
+  const sev = items.map((i) => i.severity)
+  assert.deepEqual(sev, [...sev].sort((a, b) => ({ critical: 0, warn: 1, info: 2 }[a] - { critical: 0, warn: 1, info: 2 }[b])))
+  assert.equal(sev[0], 'critical')
+  assert.ok(items.every((i) => i.rule.length > 8), 'ทุกข้อมีกฎจากทะเบียน (ⓘ)')
+})
+
+test('สัญญาณเตือน ③: ไม่มีเรื่อง = ว่างทั้งหมด (โซนไม่ขึ้น) · การ์ดพัง = failures · ไม่มีตัวเลข = ไม่เตือน', () => {
+  const calm = buildAlerts({
+    entries: liveEntries(() => true, 'E2'),
+    model: modelOf({ complaints: { ok: true, data: { backlog: [{ s: 'new', due: '2026-11-20', c: '2026-11-09', n: 3 }] } }, fleet: { ok: true, data: {} }, projects: { ok: true, data: {} } }),
+    today: NOW,
+  })
+  assert.deepEqual(calm.items, [])
+  assert.deepEqual(calm.failures, [])
+  const broken = buildAlerts({ entries: liveEntries(() => true, 'E2'), model: modelOf({ fleet: { ok: false, error: 'x' }, complaints: { ok: true, data: {} } }), today: NOW })
+  assert.deepEqual(broken.items, [])
+  assert.deepEqual(broken.failures, ['ยานพาหนะและเชื้อเพลิง'])
+  // คะแนนต่ำอ่านจาก satisfaction ไม่ใช่ complaints — satisfaction พังต้องขึ้นใน failures ไม่หายเงียบ (code review #685)
+  const satBroken = buildAlerts({ entries: liveEntries(() => true, 'E2'), model: modelOf({ complaints: { ok: true, data: {} }, satisfaction: { ok: false, error: 'x' } }), today: NOW })
+  assert.equal(satBroken.failures.length, 1)
+  assert.equal(satBroken.items.some((a) => a.id === 'complaints:low_rating'), false)
+})
+
+test('สัญญาณเตือน ③: alert เฟส live ทุกข้อในทะเบียนมีกฎคำนวณ (ไม่งั้นเพิ่มใน PR หน้าแล้วเตือนหายเงียบ)', () => {
+  const missing = []
+  for (const e of liveEntries(() => true, 'E2')) {
+    for (const a of e.alerts) {
+      if (isPhaseLive(a.phase, 'E2') && !EXEC_ALERT_RULE_KEYS.includes(`${e.key}:${a.id}`)) missing.push(`${e.key}:${a.id}`)
+    }
+  }
+  assert.deepEqual(missing, [])
+})
+
+test('deriveExec: เลยกำหนดรวมคำร้อง+คำขอ · % ทันกำหนดแยกสองแหล่ง (ไม่มีค่ารวม) · การ์ดเดียวพังยังได้อีกชุด', () => {
+  const both = deriveExec({
+    model: modelOf({
+      complaints: { ok: true, data: complaintsRaw },
+      doc_requests: { ok: true, data: { on_time: { by_type: [{ t: 'a', on_time: 1, late: 0, open_past_due: 0 }, { t: 'b', on_time: 0, late: 1, open_past_due: 0 }] }, backlog: [{ t: 'a', s: 'pending', due: '2026-11-01', c: '2026-10-29', n: 2 }] } },
+    }),
+    today: NOW,
+  })
+  assert.deepEqual([both.overdue.total, both.overdue.complaints, both.overdue.docs, both.overdue.over5wd], [8, 6, 2, 5])
+  assert.equal(both.complaintOnTime.pct, 33.3)
+  assert.equal(both.docOnTime.pct, 50)
+  // คำร้องนับวันทำการ คำขอนับวันปฏิทิน — ห้ามรวมเป็นค่าเดียว (เจ้าของระบบเลือก 2569-11-10)
+  assert.equal('onTime' in both, false, 'deriveExec ต้องไม่คืนค่ารวม % ทันกำหนด')
+  assert.deepEqual([both.complaintOnTime.onTime, both.complaintOnTime.denominator, both.docOnTime.onTime, both.docOnTime.denominator], [2, 6, 1, 2])
+  const only = deriveExec({ model: modelOf({ doc_requests: { ok: false, error: 'x' }, complaints: { ok: true, data: complaintsRaw } }), today: NOW })
+  assert.equal(only.overdue.docs, null)
+  assert.equal(only.overdue.total, 6)
+  assert.equal(deriveExec({ model: modelOf({}), today: NOW }).overdue, null)
+  assert.equal(deriveExec({ model: modelOf({}), today: NOW }).complaintOnTime, null)
+  assert.equal(deriveExec({ model: modelOf({}), today: NOW }).docOnTime, null)
+})
+
+test('โครงการตามขั้น: เรียงตามวงจร · ขั้นที่ไม่รู้จักไม่หายเงียบ · ขั้น 0 ไม่แสดง', () => {
+  assert.deepEqual(projectStageRows({ construction: 2, budgeted: 1, contracted: 1, started: 0, zzz: 4 }).map((r) => [r.stage, r.label, r.n]), [
+    ['budgeted', 'ตั้งงบประมาณ', 1], ['contracted', 'ลงนามสัญญา', 1], ['construction', 'ก่อสร้าง', 2], ['zzz', 'zzz', 4],
+  ])
+  assert.deepEqual(projectStageRows(null), [])
+})
+
+test('แผน: ถึงกำหนดแต่ยังไม่มีผล — เดือนสิ้นสุดผ่านแล้ว + ยังไม่มีผล + ไม่ได้ผูกงานก่อสร้าง · เฉพาะปีงบปัจจุบัน', () => {
+  const row = (month_to, status, source = 'none') => ({ item: { month_to }, resolved: { status, source } })
+  // วันนี้ 10 พ.ย. 2026 = ปีงบ 2570 (เริ่ม 1 ต.ค. 2026): เดือนที่ 1 (ต.ค.) ผ่านแล้ว · เดือนที่ 2 (พ.ย.) ยังไม่จบ
+  assert.equal(fiscalYearOf(new Date(2026, 10, 10)), 2570)
+  const rows = [row(1, 'none'), row(2, 'none'), row(1, 'done'), row(1, 'none', 'civil'), row(1, 'in_progress'), row(null, 'none'), row(12, 'none')]
+  assert.equal(planResultMissingCount(rows, { today: NOW, fiscalYear: 2570 }), 1)
+  assert.equal(planResultMissingCount(rows, { today: NOW, fiscalYear: 2569 }), 0, 'ไม่ใช่ปีงบปัจจุบัน = ไม่นับ')
+  assert.equal(planResultMissingCount([], { today: NOW, fiscalYear: 2570 }), 0)
+  assert.equal(planResultMissingCount(null, { today: NOW, fiscalYear: 2570 }), 0)
+  // วันที่ 30 พ.ย. เดือนที่ 2 (พ.ย.) ยังไม่ "ผ่านไปแล้ว" · 1 ธ.ค. ผ่านแล้ว
+  assert.equal(planResultMissingCount([row(2, 'none')], { today: '2026-11-30', fiscalYear: 2570 }), 0)
+  assert.equal(planResultMissingCount([row(2, 'none')], { today: '2026-12-01', fiscalYear: 2570 }), 1)
+})
+
+test('กำหนดการ 7 วัน: วันนี้..+7 · หลายวันที่คาบเกี่ยวนับ · เรียงวัน/เวลา · ซ้ำ id ตัดทิ้ง · ไม่ส่งรายละเอียดต่อ', () => {
+  const events = [
+    { id: 'a', title: 'ประชุมสภา', event_date: '2026-11-12', event_time: '09:00:00', description: 'ลับ', attachment_urls: ['x'] },
+    { id: 'b', title: 'งานบุญ', event_date: '2026-11-08', end_date: '2026-11-11' },                       // คาบเกี่ยว (เริ่มก่อนวันนี้)
+    { id: 'c', title: 'หลังช่วง', event_date: '2026-11-18' },                                              // วันที่ 8 นับจากวันนี้ = นอกช่วง
+    { id: 'd', title: 'ขอบช่วง', event_date: '2026-11-17', event_time: '08:00' },                          // วันนี้ + 7 = พอดี
+    { id: 'e', title: 'ผ่านไปแล้ว', event_date: '2026-11-09' },
+    { id: 'a', title: 'ซ้ำ', event_date: '2026-11-12' },
+    { id: 'f', title: '  ', event_date: '2026-11-12', event_time: '07:30', is_personal: true },
+    { id: 'g', title: 'ไม่มีวัน' },
+  ]
+  const out = upcomingEvents(events, NOW)
+  assert.deepEqual(out.map((e) => e.id), ['b', 'f', 'a', 'd'])
+  assert.equal(out[0].day, NOW, 'หลายวันที่เริ่มก่อนวันนี้ แสดงที่วันนี้')
+  assert.equal(out[1].title, 'กิจกรรมไม่ระบุชื่อ')
+  assert.equal(out[1].personal, true)
+  assert.equal(out[2].time, '09:00')
+  for (const e of out) assert.deepEqual(Object.keys(e).sort(), ['day', 'end', 'id', 'personal', 'start', 'time', 'title'], 'เก็บเฉพาะช่องที่ใช้')
+  assert.deepEqual(upcomingEvents(null, NOW), [])
+})
+
+test('เทียบค่าที่ไม่ใช่จำนวนนับ: null = เทียบไม่ได้ · ทิศ/ผลต่างปัด 1 ตำแหน่ง', () => {
+  assert.equal(compareMetric(null, 50), null)
+  assert.equal(compareMetric(50, null), null)
+  assert.equal(compareMetric(undefined, undefined), null)
+  assert.deepEqual(compareMetric(45.5, 40), { current: 45.5, previous: 40, diff: 5.5, dir: 'up', pct: null })
+  assert.equal(compareMetric(3.2, 3.9).dir, 'down')
+  assert.equal(compareMetric(3.2, 3.2).dir, 'flat')
+  assert.equal(compareMetric(0, 10).diff, -10, '0% เทียบได้ (ไม่ใช่ null)')
+})
+
+test('ป้ายวันของกำหนดการ: วันนี้/พรุ่งนี้/วันอื่นเป็นภาษาไทยตามเวลาไทย (ไม่ขึ้นกับโซนเวลาเครื่อง)', () => {
+  assert.equal(thaiDayLabel('2026-11-10', NOW), 'วันนี้')
+  assert.equal(thaiDayLabel('2026-11-11', NOW), 'พรุ่งนี้')
+  assert.match(thaiDayLabel('2026-11-13', NOW), /13/)
+  assert.match(thaiDayLabel('2026-11-13', NOW), /พ\.ย\./)
+  assert.equal(thaiDayLabel('xx', NOW), 'xx')
 })
 
 console.log(`\nok — ${cases} cases`)
