@@ -83,10 +83,39 @@ await test('ล็อกอิน Google/LINE + รหัสผ่านหน�
 
 await test('เมนูซ้าย PC + ลิ้นชักมือถือของ /staff มีทางลัด "ห้องผู้บริหาร" เฉพาะคนที่เปิดห้องได้', () => {
   const staff = src('pages/StaffDashboard.jsx')
-  assert.match(staff, /externalUrl: '\/executive'/)
-  assert.match(staff, /\{canOpenExecutive && \(\s*<button type="button" data-staff-exec-link/)
+  assert.match(src('lib/staffNavGroups.js'), /externalUrl: '\/executive'/)
+  assert.match(staff, /onExecutive=\{canOpenExecutive \? \(\) => navigate\(EXECUTIVE_MENU_ITEM\.externalUrl\) : undefined\}/)
+  assert.match(src('components/staff/StaffSideNav.jsx'), /\{onExecutive && \(\s*<button type="button" data-staff-exec-link/)
   assert.match(staff, /const drawerExtraItems = canOpenExecutive \? \[EXECUTIVE_MENU_ITEM\] : \[\]/)
   assert.match(staff, /extraItems=\{drawerExtraItems\}/)
+})
+
+await test('ห้องผู้บริหารมีเมนูซ้าย (PC) + แถบล่าง (มือถือ) ชุดเดียวกับ /staff · กดแล้วไป /staff พร้อม state.module', () => {
+  const room = src('pages/ExecutiveRoom.jsx')
+  const staff = src('pages/StaffDashboard.jsx')
+  // สองหน้าใช้คอมโพเนนต์/ฮุกกลางตัวเดียวกัน — ห้องเขียนเมนูซ้ำ (ไม่งั้นเมนูสองหน้าเพี้ยนกัน)
+  for (const [name, source] of [['ExecutiveRoom', room], ['StaffDashboard', staff]]) {
+    assert.match(source, /<StaffSideNav /, name + ' ใช้ StaffSideNav')
+    assert.match(source, /<StaffBottomNav /, name + ' ใช้ StaffBottomNav')
+    assert.match(source, /useStaffNavGroups\(/, name + ' ใช้ useStaffNavGroups')
+  }
+  assert.match(room, /navigate\('\/staff', \{ state: \{ module: key \} \}\)/)
+  assert.match(room, /onMenu=\{\(\) => goModule\('menu'\)\}/)
+  assert.match(room, /staffBottomTabs\(visibleModules, EXECUTIVE_TAB\)/)
+  // เมนู/แถบล่างโผล่เฉพาะตอนผ่านด่านสิทธิ์แล้ว (ไม่โชว์เมนูระหว่างโหลด/โหลดพลาด)
+  assert.ok(room.indexOf('showNav = true') > room.indexOf('canOpenExecutiveHome({'), 'showNav ต้องตั้งหลังผ่านด่านสิทธิ์')
+  // ไม่ส่ง badge เข้าห้อง (ไม่เพิ่ม query) และไม่มีปุ่มกระเป๋าเอกสารซ้ำกับแถบล่าง
+  assert.doesNotMatch(room, /badges=/)
+  assert.doesNotMatch(room, /data-exec-to-staff|Briefcase/)
+  // StaffDashboard ส่งตัวเปิดโมดูลเหมือนเดิม (ไฟล์ static แท็บใหม่ · หน้าแยก navigate · นอกนั้นสลับโมดูล)
+  assert.match(staff, /onSelect=\{\(\{ key, newTab, externalUrl \}\) => \(newTab \? window\.open/)
+})
+
+await test('แถบล่างกลาง: ช่องแรกต่างกัน (แดชบอร์ด ↔ ห้องผู้บริหาร) ที่เหลือกรองด้วยเมนูที่เห็นจริง', () => {
+  const lib = src('lib/staffNavGroups.js')
+  assert.match(lib, /export function staffBottomTabs\(visibleModules, firstTab = STAFF_HOME_TAB\)/)
+  assert.match(lib, /visibleModules\.some\(\(m\) => m\.key === key\)/)
+  assert.match(src('hooks/useStaffNavGroups.js'), /items: g\.items\.filter\(\(m\) => scopedKeys\.includes\(m\.key\)\)/)
 })
 
 console.log(`\nok — ${cases} cases`)
