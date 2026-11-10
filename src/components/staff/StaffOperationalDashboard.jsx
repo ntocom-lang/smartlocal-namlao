@@ -146,6 +146,29 @@ function EventRow({ event, onOpen }) {
   )
 }
 
+// ส่วน "กิจกรรมที่ได้รับมอบหมาย" (วันนี้/พรุ่งนี้) — แยกเป็นคอมโพเนนต์ export เพื่อให้ห้องผู้บริหาร (โซน ④ กำหนดการ)
+// ใช้ชุดเดียวกัน ไม่เขียนซ้ำ · หน้าเจ้าหน้าที่เรียกแบบไม่ส่ง showHeading จึงแสดงเหมือนเดิมทุกพิกเซล
+// myEvents = ผลของ groupMyEvents() · ผู้เรียกตัดสินเองว่าจะวาดเมื่อมีกิจกรรมหรือไม่
+// showHeading=false: ผู้เรียกมีหัวข้อของตัวเองอยู่แล้ว (ห้องผู้บริหารมีหัวโซน "กำหนดการ") — ใช้ aria-label แทน
+export function AssignedEventsSection({ myEvents, onOpen, showHeading = true }) {
+  return (
+    <section data-home-events {...(showHeading ? { 'aria-labelledby': 'home-events-title' } : { 'aria-label': 'กิจกรรมที่ได้รับมอบหมาย' })}>
+      {showHeading && (
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <CalendarClock size={15} className="text-emerald-600" aria-hidden="true" />
+          <h2 id="home-events-title" className="text-sm font-bold text-slate-800">กิจกรรมที่ได้รับมอบหมาย</h2>
+        </div>
+      )}
+      <div className="space-y-1.5">
+        {myEvents.today.length > 0 && <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">วันนี้</p>}
+        {myEvents.today.map(ev => <EventRow key={ev.id} event={ev} onOpen={onOpen} />)}
+        {myEvents.tomorrow.length > 0 && <p className="pt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">พรุ่งนี้</p>}
+        {myEvents.tomorrow.map(ev => <EventRow key={ev.id} event={ev} onOpen={onOpen} />)}
+      </div>
+    </section>
+  )
+}
+
 // "กองของฉัน" — เฉพาะหัวหน้ากอง (role officer ที่สังกัดกอง) เจ้าของระบบเลือกให้เห็นภาระรายคน (2569-10-12)
 // เป็นภาระที่ "ถืออยู่ตอนนี้" ไม่ใช่การประเมินผล: เรียงตามชื่อ (ไม่เรียงตามภาระ), ไม่มีแถบเทียบ/คะแนน/อันดับ,
 // ไม่มีเลขคำร้องหรือชื่อประชาชน — การประเมินอยู่ที่เมนู "ผลการปฏิบัติงาน" ซึ่งมีถ้อยคำและสิทธิ์ของมันเอง
@@ -410,20 +433,7 @@ export default function StaffOperationalDashboard({
               </section>
             )}
 
-            {eventCount > 0 && (
-              <section data-home-events aria-labelledby="home-events-title">
-                <div className="mb-1.5 flex items-center gap-1.5">
-                  <CalendarClock size={15} className="text-emerald-600" aria-hidden="true" />
-                  <h2 id="home-events-title" className="text-sm font-bold text-slate-800">กิจกรรมที่ได้รับมอบหมาย</h2>
-                </div>
-                <div className="space-y-1.5">
-                  {myEvents.today.length > 0 && <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">วันนี้</p>}
-                  {myEvents.today.map(ev => <EventRow key={ev.id} event={ev} onOpen={() => open(eventsItem)} />)}
-                  {myEvents.tomorrow.length > 0 && <p className="pt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">พรุ่งนี้</p>}
-                  {myEvents.tomorrow.map(ev => <EventRow key={ev.id} event={ev} onOpen={() => open(eventsItem)} />)}
-                </div>
-              </section>
-            )}
+            {eventCount > 0 && <AssignedEventsSection myEvents={myEvents} onOpen={() => open(eventsItem)} />}
 
             {isDeptHead && (
               <section data-home-dept-section aria-label="กองของฉัน">

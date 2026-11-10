@@ -15,6 +15,9 @@ import { PATIENT_TRANSPORT_MODULE_KEY } from '../lib/patientTransport'
 import { fetchCurrentPlanYears } from '../lib/localPlanApi'
 import { menuLabel } from '../lib/localPlanView'
 import { recordUsage, safeLocalStorage } from '../lib/staffHomeFrequent'
+import { canOpenExecutiveHome, readHomeView, resolveHomeView, writeHomeView } from '../lib/executiveAccess'
+import { useMyPositionCategory } from '../hooks/useMyPositionCategory'
+import HomeViewSwitch from '../components/staff/executive/HomeViewSwitch'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import FinishComplaintDialog from '../components/complaints/FinishComplaintDialog'
@@ -71,6 +74,7 @@ const BorrowableAssetsManager = lazy(() => import('../components/staff/Borrowabl
 const WasteScheduleManager = lazy(() => import('../components/staff/WasteScheduleManager'))
 const WaterEventsPanel = lazy(() => import('../components/staff/WaterEventsPanel'))
 const StaffOperationalDashboard = lazy(() => import('../components/staff/StaffOperationalDashboard'))
+const ExecutiveHome = lazy(() => import('../components/staff/executive/ExecutiveHome'))
 const StaffMenuGrid = lazy(() => import('../components/staff/StaffOperationalDashboard').then(m => ({ default: m.StaffMenuGrid })))
 const FleetPage = lazy(() => import('./FleetPage'))
 const BuildingPermitWizard = lazy(() => import('./BuildingPermitWizard'))
@@ -2520,7 +2524,7 @@ function StaffReportWrapper({ tenant }) {
 export default function StaffDashboard() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { tenant } = useTenant()
+  const { tenant, isModuleEnabled: tenantModuleEnabled } = useTenant()
   const { unreadCount } = useNotifications()
   const [activeModule, setActiveModule] = useState(location.state?.module ?? 'home')
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -2624,6 +2628,26 @@ export default function StaffDashboard() {
   // visibleGroups กรองกลุ่มว่างออกแล้ว — เมนูซ้าย PC ลิ้นชักมือถือ และแผงหน้าแรกจึงเห็นชุดเดียวกัน
   const visibleHomeGroups = [...visibleStandaloneGroups, ...visibleGroups]
   const visibleModules = visibleHomeGroups.flatMap(group => group.items)
+
+  // ห้องผู้บริหาร (หน้าแรกของนายก/รองนายก/ปลัด) — ดู src/lib/executiveAccess.js
+  // ปลัด = role officer + ตำแหน่งหมวด top_admin ต้องรอผลอ่านตำแหน่งก่อนตัดสินหน้าแรก ไม่งั้นเห็นหน้าเจ้าหน้าที่แวบหนึ่งแล้วสลับ
+  // หน้าที่ผู้ใช้เลือกผ่านสวิตช์ถูก "จำไว้" ต่อบัญชี (localStorage ห่อ try/catch) · เก็บค่าในหน่วยความจำคู่กัน กรณีเครื่องไม่ให้เขียน storage
+  const { category: positionCategory, ready: positionReady } = useMyPositionCategory(profile)
+  const homeWho = { role, positionCategory }
+  const [homeViewChoice, setHomeViewChoice] = useState({ profileId: null, view: null })
+  const homeViewSaved = homeViewChoice.profileId === profile?.id && homeViewChoice.view
+    ? homeViewChoice.view
+    : readHomeView(safeLocalStorage(), profile?.id)
+  const homeView = resolveHomeView(homeWho, homeViewSaved)
+  const showHomeSwitch = canOpenExecutiveHome(homeWho)
+  const homeResolving = role === 'officer' && !positionReady
+  const changeHomeView = view => {
+    writeHomeView(safeLocalStorage(), profile?.id, view)
+    setHomeViewChoice({ profileId: profile?.id ?? null, view })
+  }
+  // โมดูลเปิดอยู่ไหม "ตามที่เมนูจริงกรอง" — โมดูลที่เป็นเมนูใช้ scopedKeys (รวมสิทธิ์รายบุคคลแล้ว) ส่วนคีย์ตั้งค่าที่ไม่ใช่เมนู
+  // (งานประปา สถานการณ์น้ำ-ฝน) ใช้กติกา enabled_modules เดียวกับ isModuleEnabled ของ TenantContext
+  const isExecModuleEnabled = key => (MODULES.some(m => m.key === key) ? scopedKeys.includes(key) : tenantModuleEnabled(key))
 
   // ผูกผลกับ อปท./ผู้ใช้/สิทธิ์/โมดูลครบชุด: สลับบริบทแล้วห้ามใช้เลขจากบริบทเก่า
   const departmentWorkScopeKey = JSON.stringify([
@@ -3069,7 +3093,26 @@ export default function StaffDashboard() {
               const meta = found ? withPlanLabel(found) : null
               return meta ? <ModuleHeader Icon={meta.Icon} label={meta.label} desc={meta.desc} color={meta.color} /> : null
             })()}
-            {activeModule === 'home' && (
+            {activeModule === 'home' && homeResolving && (
+              <div className="flex min-h-64 items-center justify-center" role="status" aria-label="กำลังโหลดหน้าแรก">
+                <Loader2 size={28} className="animate-spin text-blue-500" />
+              </div>
+            )}
+            {activeModule === 'home' && !homeResolving && showHomeSwitch && (
+              <HomeViewSwitch view={homeView} onChange={changeHomeView} />
+            )}
+            {activeModule === 'home' && !homeResolving && homeView === 'executive' && (
+              <ExecutiveHome
+                key={tenant?.id}
+                visibleGroups={visibleHomeGroups}
+                setActiveModule={setActiveModule}
+                navigate={navigate}
+                profile={profile}
+                tenant={tenant}
+                isModuleEnabled={isExecModuleEnabled}
+              />
+            )}
+            {activeModule === 'home' && !homeResolving && homeView !== 'executive' && (
               <StaffOperationalDashboard
                 key={tenant?.id}
                 visibleGroups={visibleHomeGroups}

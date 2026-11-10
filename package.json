@@ -6,6 +6,7 @@
   "scripts": {
     "predev": "node scripts/check-behind.mjs",
     "dev": "vite",
+    "prebuild": "node tests/executive-coverage.test.mjs",
     "build": "vite build && node scripts/postbuild.js",
     "lint": "eslint .",
     "lint:blocking": "node scripts/lint-blocking.mjs",
@@ -129,6 +130,8 @@
     "test:patient-transport": "node tests/patient-transport-layout.test.mjs",
     "test:regards-alignment": "node tests/regards-alignment.test.mjs",
     "test:staff-inbox": "node tests/staff-inbox-layout.playwright.mjs",
+    "test:exec-coverage": "node tests/executive-coverage.test.mjs",
+    "test:exec-data": "node tests/executive-data.test.mjs",
     "test:staff-home": "node tests/staff-home-frequent.test.mjs && node tests/staff-home-summary.test.mjs && node tests/staff-home-layout.playwright.mjs",
     "test:staff-nav": "node tests/staff-nav-layout.playwright.mjs",
     "test:telegram": "node tests/telegram-notification-message.test.mjs",
