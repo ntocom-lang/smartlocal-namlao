@@ -112,7 +112,14 @@ export const EXEC_PERIOD_KEYS = Object.freeze(['complaints', 'doc_requests', 'sa
  * @property {{ module?: string, path?: string }} link   module = activeModule ของ /staff · path = route
  * @property {ExecKpi[]} kpis
  * @property {ExecAlert[]} alerts
- * @property {Array<{ id: string, label: string, path: string, phase: 'E1'|'E2'|'E3' }>} reports
+ * @property {ExecReport[]} reports
+ *
+ * @typedef {Object} ExecReport  ไทล์ในโซน ⑧ รายงานพร้อมใช้ — 2 แบบ
+ * @property {string} id
+ * @property {string} label
+ * @property {string} [path]      แบบลิงก์: กดแล้วไปหน้าเดิม (route)
+ * @property {boolean} [action]   แบบ action: ไม่มี path — หน้าจอวาดไทล์ที่ทำงานเองตาม id (ACTION_REPORTS ใน ExecutiveHome.jsx) เช่น ใบ A4 ที่สร้างตอนกด
+ * @property {'E1'|'E2'|'E3'} phase
  */
 
 const kpi = (id, label, unit, formula, phase, source) => ({ id, label, unit, formula, phase, ...(source ? { source } : {}) })
@@ -151,6 +158,11 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     ],
     reports: [
       { id: 'monthly', label: 'สรุปเรื่องร้องเรียนรายเดือน', path: '/reports/complaints', phase: 'E1' },
+      // รายการแบบ action (ไม่มี path): กดแล้วสร้างใบ A4 จาก executive_overview ตามช่วงที่เลือกในตัวไทล์เอง
+      // ตัววาดอยู่ที่ ExecutiveHome.jsx (ACTION_REPORTS ผูกด้วย id) · ใบ: src/lib/executiveServiceReportPrint.js
+      // ⚠️ phase 'E2' ทั้งที่เป็นงาน E3-1: ส่งมอบก่อนเปลี่ยน EXEC_CURRENT_PHASE รวม — เปลี่ยนเฟสแล้วจะเปิดการ์ด waiting_2wd ของ E3 ที่ยังไม่มีข้อมูล
+      // ย้ายเป็น 'E3' ได้ตอนเปลี่ยนเฟสรวม (ไม่ต้องแก้อย่างอื่น)
+      { id: 'service_summary', label: 'สรุปผลการให้บริการประชาชน (A4)', action: true, phase: 'E2' },
     ],
   },
   {

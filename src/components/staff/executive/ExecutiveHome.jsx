@@ -16,6 +16,7 @@ import { useExecReviewCount, useExecSchedule } from '../../../hooks/useExecExtra
 import MyPendingSignatures from '../../esign/MyPendingSignatures'
 import { AssignedEventsSection } from '../StaffOperationalDashboard'
 import ExecServiceZone from './ExecServiceZone'
+import ExecServiceReportTile from './ExecServiceReportTile'
 import { AlertZone, ContextZone, DecisionQueue, DeptZone, PlanZone } from './ExecOpsZones'
 import { ExecSection, FormulaPanel, InfoButton, LoadingLine, SectionError, SubHead, Tile } from './ExecParts'
 import { execIcon } from './execIcons'
@@ -192,19 +193,26 @@ function AreaZone({ entries, resolveLink }) {
   )
 }
 
-function ReportZone({ entries, navigate }) {
+// รายงานแบบ action (ทะเบียน: report.action = true ไม่มี path) — ตัววาดผูกด้วย id · เพิ่มรายการ action ใหม่ในทะเบียนแล้วต้องเพิ่มที่นี่ด้วย
+// (ไม่มีตัววาด = ไม่ขึ้นจอ ไม่ใช่ปุ่มหลอก) · ⚠️ test:exec-report ล้มถ้า id ของรายการ action ในทะเบียนไม่อยู่ในแผนที่นี้ (กันหายเงียบ)
+const ACTION_REPORTS = Object.freeze({ service_summary: ExecServiceReportTile })
+
+function ReportZone({ entries, navigate, tenant }) {
   const seen = new Set()
   const reports = entries.flatMap((e) => (e.reports ?? [])
-    .filter((r) => isPhaseLive(r.phase))
+    .filter((r) => isPhaseLive(r.phase) && (r.path || ACTION_REPORTS[r.id]))
     .map((r) => ({ ...r, ownerLabel: e.label })))
-    .filter((r) => { const k = `${r.path}|${r.label}`; if (seen.has(k)) return false; seen.add(k); return true })
+    // กันไทล์ซ้ำ: แบบลิงก์ = path+ป้ายเดียวกันจากหลายรายการขึ้นไทล์เดียว (เหมือนเดิม) · แบบ action = id
+    .filter((r) => { const k = r.path ? `path:${r.path}|${r.label}` : `action:${r.id}`; if (seen.has(k)) return false; seen.add(k); return true })
   if (reports.length === 0) return null
   return (
     <ExecSection id="report" title={zoneTitle('report')} Icon={FileText}>
       <div className="grid gap-2 sm:grid-cols-2">
-        {reports.map((r) => (
-          <Tile key={`${r.path}|${r.id}`} testId={r.id} tone="report" Icon={FileText} label={r.label} sub={r.ownerLabel} onClick={() => navigate(r.path)} />
-        ))}
+        {reports.map((r) => {
+          if (r.path) return <Tile key={`${r.path}|${r.id}`} testId={r.id} tone="report" Icon={FileText} label={r.label} sub={r.ownerLabel} onClick={() => navigate(r.path)} />
+          const ActionTile = ACTION_REPORTS[r.id]
+          return <ActionTile key={r.id} tenant={tenant} sub={r.ownerLabel} entries={entries} />
+        })}
       </div>
     </ExecSection>
   )
@@ -309,7 +317,7 @@ export default function ExecutiveHome({ scopedKeys = [], navigate, profile, tena
     plan: () => <PlanZone key="plan" ov={ov} entries={entries} plan={plan} resolveLink={resolveLink} />,
     dept: () => <DeptZone key="dept" ov={ov} entries={entries} rangeText={rangeText} resolveLink={resolveLink} />,
     area: () => <AreaZone key="area" entries={entries} resolveLink={resolveLink} />,
-    report: () => <ReportZone key="report" entries={entries} navigate={navigate} />,
+    report: () => <ReportZone key="report" entries={entries} navigate={navigate} tenant={tenant} />,
     context: () => <ContextZone key="context" entries={entries} reviews={reviews} rangeText={rangeText} resolveLink={resolveLink} />,
   }
 
