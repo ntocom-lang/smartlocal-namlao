@@ -8,11 +8,9 @@ import { fetchAllRows } from './fetchAllRows'
 import { fetchAssignableStaff } from './staffRoster'
 import { SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE } from './documentSignatories'
 
-/**
- * บทบาทที่เปิดเมนูนี้ได้ — ผู้บริหาร (viewer) อยู่ในสายการประเมิน (แบบประเมินส่วนที่ 6–8)
- * ส่วนสมาชิกสภา (council) ไม่อยู่ในสายบังคับบัญชาหรือแบบประเมิน จึงไม่เห็น
- */
-export const PERFORMANCE_ROLES = ['technician', 'staff', 'officer', 'admin', 'superadmin', 'viewer']
+// บทบาทที่เปิดเมนูนี้ได้ (PERFORMANCE_ROLES) ย้ายไป staffMenuAccess.js เพราะตรรกะกรองเมนูใช้ร่วมกับห้องผู้บริหาร
+// ส่งออกซ้ำชื่อเดิมไว้ ผู้เรียกเดิมไม่ต้องแก้
+export { PERFORMANCE_ROLES } from './staffMenuAccess.js'
 
 /** เลือกดูของคนอื่นได้: หัวหน้ากอง (เฉพาะคนในกอง) แอดมิน และผู้บริหาร */
 export function canViewOthers(role) {

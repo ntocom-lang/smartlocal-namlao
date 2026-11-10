@@ -16,12 +16,24 @@ import ScrollToTopButton from './components/ScrollToTopButton'
 import InAppBrowserGate from './components/InAppBrowserGate'
 import { supabase, initialAuthParams } from './lib/supabase'
 import { fetchProfile } from './lib/profileFetch'
+import { EXEC_OAUTH_CHECK_KEY, executiveLandingPath, isFreshExecOauthCheck } from './lib/executiveAccess'
 import { Phone, UserRound } from 'lucide-react'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from './lib/thaiName'
 import { recordVisit } from './lib/menuUsage'
 import { scheduleSiteOpen } from './lib/siteOpenCounter'
 import { BASENAME } from './lib/basename'
 import { platformPageFor } from './lib/platform'
+
+// ปลายทาง "เริ่มต้น" หลังล็อกอิน OAuth ที่ผู้บริหารควรถูกพาไปห้องผู้บริหารแทน (ไม่ใช่หน้าที่ผู้ใช้ตั้งใจกลับไป)
+const EXEC_DEFAULT_LANDINGS = Object.freeze(['/', '/admin'])
+
+// path ปัจจุบันในแอป (ตัด basename ของ deployment แบบ path ออก) — ใช้เช็กว่าผู้ใช้ยังอยู่หน้าปลายทางเริ่มต้นไหม
+function currentAppPath() {
+  const path = window.location.pathname
+  const base = BASENAME.replace(/\/+$/, '')
+  const inApp = base && (path === base || path.startsWith(`${base}/`)) ? path.slice(base.length) : path
+  return inApp.replace(/\/+$/, '') || '/'
+}
 
 const HomePage = lazyWithRetry(() => import('./pages/HomePage'))
 const CitizenForm = lazyWithRetry(() => import('./pages/CitizenForm'))
@@ -281,6 +293,7 @@ function lazyWithRetry(fn) {
 
 const AdminDashboard = lazyWithRetry(() => import('./pages/AdminDashboard'))
 const StaffDashboard  = lazyWithRetry(() => import('./pages/StaffDashboard'))
+const ExecutiveRoom = lazyWithRetry(() => import('./pages/ExecutiveRoom'))
 const DataCenterDashboard = lazyWithRetry(() => import('./pages/DataCenterDashboard'))
 const DataCenterLanding = lazyWithRetry(() => import('./pages/DataCenterLanding'))
 const DataCenterPublicMap = lazyWithRetry(() => import('./pages/DataCenterPublicMap'))
@@ -411,7 +424,7 @@ function AppShell() {
   const navigateRef = useRef(navigate)
   useEffect(() => { navigateRef.current = navigate }, [navigate])
   const location = useLocation()
-  const isBackOffice = ['/admin', '/staff', '/technician', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
+  const isBackOffice = ['/admin', '/staff', '/executive', '/technician', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
   const isAccountPage = location.pathname === '/profile' || location.pathname === '/profile/notifications'
   // ช่างมีเมนูบนสุด/แถบข้างมาตรฐานอยู่แล้วในทุกธีม (NAV_TECH) แต่ต้องเปิดเฉพาะจอ PC
   // มือถือยังใช้หัวจอ/เมนูล่างของ TechnicianDashboard เองตามเดิม กันซ้อนกับของที่มีอยู่แล้ว
@@ -429,7 +442,7 @@ function AppShell() {
   // ก่อนครบเวลาหน่วง นิยามการนับกับสิ่งที่ตัดออก (รวมหน้าหลังบ้าน) อยู่ที่ src/lib/siteOpenStats.js
   useEffect(() => scheduleSiteOpen(tenantId, location.pathname), [tenantId, location.pathname])
   // ช่างยังใช้เมนูล่างของแอป (NAV_TECH) ได้ ต่างจาก /admin กับ /staff ที่ไม่มีเมนูล่างเลย
-  const hideBottomNav = ['/admin', '/staff', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
+  const hideBottomNav = ['/admin', '/staff', '/executive', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
 
   // รับ user ทั้งก้อน ไม่ใช่แค่ uid + user_metadata เพราะต้องใช้ user.email ตัดสินว่าบัญชีนี้
   // มีตัวระบุตัวตนไว้กู้บัญชีอยู่แล้วหรือยัง (ดูเงื่อนไขเบอร์โทรท้ายฟังก์ชัน)
@@ -590,10 +603,35 @@ function AppShell() {
           }
         }
 
+        // พฤติกรรมเดิมของ oauth_from ไม่เปลี่ยน: พาไปทันที ไม่หน่วงใคร
         const returnTo = sessionStorage.getItem('oauth_from')
         if (returnTo) {
           sessionStorage.removeItem('oauth_from')
           navigateRef.current(returnTo, { replace: true })
+        }
+
+        // ผู้บริหารที่ล็อกอิน Google/LINE ลงห้องผู้บริหารเลย ไม่ต้องกดหาเอง (เจ้าของระบบสั่ง 2569-11-10)
+        // เฉพาะปลายทาง "เริ่มต้น": '/admin' (จาก /admin/login) หรือคีย์ EXEC_OAUTH_CHECK_KEY ที่ยังไม่หมดอายุ (จาก /auth → หน้าแรก)
+        // คีย์นี้แยกจาก oauth_from และหมดอายุเอง เพราะ auth-js ยิง SIGNED_IN ซ้ำทุกครั้งที่กลับมาที่แท็บ —
+        // กด LINE แล้วยกเลิก คีย์จะไม่ค้างพาคนไปไหนเองภายหลัง
+        let execCheckAt = null
+        try {
+          execCheckAt = sessionStorage.getItem(EXEC_OAUTH_CHECK_KEY)
+          sessionStorage.removeItem(EXEC_OAUTH_CHECK_KEY)
+        } catch { /* storage ถูกปิด = ไม่พาไปห้อง ใช้หน้าเดิม */ }
+        const landing = returnTo && EXEC_DEFAULT_LANDINGS.includes(returnTo) ? returnTo
+          : !returnTo && isFreshExecOauthCheck(execCheckAt) ? '/'
+          : null
+        if (landing) {
+          // ⚠️ ห้าม await ใน callback นี้: executiveLandingPath เรียก auth.getSession() ซึ่งรอล็อกเดียวกับ callback = ค้าง
+          //    จึงเลื่อนไปทำหลัง callback จบ · ช้า/พลาดเกิน 3 วิ = อยู่หน้าเดิม
+          // พาไปเฉพาะเมื่อปลายทางต่างจากเดิม (= เป็นผู้บริหาร) และผู้ใช้ยังอยู่หน้าปลายทางเริ่มต้น —
+          // ระหว่างรอผลถ้ากดไปหน้าอื่นแล้ว ห้ามดึงกลับ (ประชาชนไม่ถูกพาไปไหนเลย)
+          setTimeout(() => {
+            executiveLandingPath({ client: supabase, fallback: landing }).then((target) => {
+              if (target !== landing && currentAppPath() === landing) navigateRef.current(target, { replace: true })
+            })
+          }, 0)
         }
       }
     })
@@ -783,6 +821,21 @@ function AppShell() {
                   </div>
                 }>
                   <StaffDashboard />
+                </Suspense>
+              </SuspenseErrorBoundary>
+            </RequireAuth>
+          } />
+          {/* ห้องผู้บริหาร: หน้าเดี่ยว ไม่มีเมนูซ้าย/แถบล่างของระบบเจ้าหน้าที่ · ด่านสิทธิ์ละเอียด (นายก/ปลัด/admin) อยู่ในหน้า — คนที่ไม่มีสิทธิ์ถูกส่งกลับ /staff */}
+          <Route path="/executive" element={
+            <RequireAuth staffOnly>
+              <SuspenseErrorBoundary>
+                <Suspense fallback={
+                  <div className="flex items-center justify-center min-h-full h-full">
+                    <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
+                         style={{ borderTopColor: '#3b82f6' }} />
+                  </div>
+                }>
+                  <ExecutiveRoom />
                 </Suspense>
               </SuspenseErrorBoundary>
             </RequireAuth>

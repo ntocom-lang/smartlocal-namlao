@@ -21,6 +21,7 @@ export function canAccessAdminPortal(role) {
 
 export function currentPortal(pathname) {
   if (pathname.startsWith('/dev-journal')) return 'dev'
+  if (pathname === '/executive' || pathname.startsWith('/executive/')) return 'executive'
   if (pathname.startsWith('/admin') && !pathname.startsWith('/admin/login')) return 'admin'
   if (pathname.startsWith('/staff') || pathname === '/data-center/staff' || pathname.startsWith('/data-center/staff/')) return 'staff'
   return 'citizen'

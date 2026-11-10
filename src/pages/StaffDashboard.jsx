@@ -7,6 +7,7 @@ import {
   Plus, Phone, MapPin, User, Users, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
   Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen, Ambulance, ClipboardCheck, LayoutGrid, Menu, ArrowLeft, CloudRain, HardHat, ClipboardList,
+  ChartColumn,
 } from 'lucide-react'
 import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -39,17 +40,21 @@ import {
   BASE_DOCUMENT_TYPES, removedDocumentTypes, displayDocStatus,
   WATERWORKS_DOCUMENT_TYPES, WATERWORKS_MODULE_KEY,
 } from '../lib/documentTypes'
-import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
 import CctvRequestInfo from '../components/staff/CctvRequestInfo'
 import { CCTV_TYPE, cctvBangkokToday, cctvHandoverDraft, cctvNoteForSave, isCctvHandoverFilled } from '../lib/cctvRequest'
-import { PERFORMANCE_ROLES } from '../lib/staffPerformanceData'
+import { staffMenuAccess } from '../lib/staffMenuAccess'
 import OdorReportPanel from '../components/staff/OdorReportPanel'
 import MonthlyComplaintShareCard from '../components/staff/MonthlyComplaintShareCard'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
+import { useExecutiveAccess } from '../hooks/useExecutiveAccess'
 import StaffAccountMenu from '../components/layout/StaffAccountMenu'
 import PortalDrawer from '../components/common/PortalDrawer'
 import CollapsibleNavGroup from '../components/common/CollapsibleNavGroup'
 import useStickyChrome from '../hooks/useStickyChrome'
+
+// ทางเข้า "ห้องผู้บริหาร" (/executive) บนเมนูซ้าย PC และลิ้นชักมือถือ — เจ้าของระบบสั่ง 2569-11-10
+// ไม่ใช่คีย์โมดูล (ไม่อยู่ใน MODULES/enabled_modules) จึงวางเป็นทางลัดใต้ "แดชบอร์ด" และแสดงเฉพาะคนที่เปิดห้องได้
+const EXECUTIVE_MENU_ITEM = Object.freeze({ key: 'executive-room', label: 'ห้องผู้บริหาร', Icon: ChartColumn, externalUrl: '/executive' })
 
 const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
 const ConstructionProjectsModule = lazy(() => import('../components/staff/construction/ConstructionProjectsModule'))
@@ -282,27 +287,8 @@ const DEPARTMENT_WORK_SOURCES = [
   { key: 'projects', table: 'civil_projects', statuses: ['planned', 'approved', 'in_progress', 'suspended'] },
 ]
 
-// เมนูที่ช่างเห็นในหน้าเจ้าหน้าที่ (ช่างคือเจ้าหน้าที่กองช่าง เข้าหน้านี้ได้ ดู RequireAuth ใน App.jsx)
-//
-// จำเป็นต้องมีลิสต์นี้เพราะหน้านี้กรองเมนูด้วย tenant.enabled_modules อย่างเดียว ไม่ได้กรองตาม role
-// เลย ถ้าเปิดประตูให้ technician โดยไม่มีตัวกรอง ช่างจะเห็นครบทุกโมดูลรวมถึงคำขอเอกสารของประชาชน
-//
-// เลือกจาก "สิ่งที่ RLS ฝั่ง DB เปิดให้ technician อ่านได้จริง" ไม่ใช่เดาจากชื่อเมนู:
-//   - 'inbox' (คำขอเอกสาร) ไม่อยู่ในลิสต์โดยตั้งใจ — policy `read document_requests` มีเงื่อนไข
-//     เฉพาะ superadmin/admin/officer/staff ไม่มี technician เลย โชว์เมนูไปก็กดเจอหน้าว่าง
-//     ซึ่งแยกไม่ออกจาก "ไม่มีข้อมูล" = โกหกผู้ใช้
-//   - 'fleet' ใช้คอลัมน์ profiles.fleet_role แยกต่างหาก ไม่ผูกกับ role หลัก ช่างที่ได้รับสิทธิ์
-//     ยานพาหนะจึงใช้ได้ตามปกติ ส่วนคนที่ไม่ได้ตั้ง fleet_role จะเข้าไปแล้วไม่เห็นข้อมูลเอง
-const TECHNICIAN_MODULE_KEYS = [
-  'complaints',    // คำร้อง — RLS: complaints select by role scope ครอบ technician อยู่แล้ว
-  'infra',         // บันทึกงานซ่อม — งานหลักของกองช่าง
-  'projects',      // โครงการก่อสร้าง/รายงานสัปดาห์ — ผู้ควบคุมงานมักเป็นช่าง · RLS civil_* ให้ช่างเห็นเฉพาะโครงการที่ตนสร้าง/ถูกระบุชื่อ/กองเดียวกัน
-  'events',        // ปฏิทินกิจกรรม
-  'data-center',   // ศูนย์ข้อมูลดิจิทัล
-  'fleet',         // ยานพาหนะและเชื้อเพลิง
-  'manual-staff',  // คู่มือ
-  'performance',   // ผลการปฏิบัติงาน — RPC staff_performance_rows ให้ช่างดูของตัวเองได้
-]
+// เมนูที่ช่างเห็น (TECHNICIAN_MODULE_KEYS) และตรรกะกรองเมนูตามบทบาท/สิทธิ์ ย้ายไป src/lib/staffMenuAccess.js
+// เพื่อให้ห้องผู้บริหาร (/executive) ใช้ชุดเดียวกัน — ดู staffMenuAccess()
 
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
@@ -2545,49 +2531,12 @@ export default function StaffDashboard() {
   const [adhocCategories, setAdhocCategories] = useState(null)
 
   const allModuleKeys = MODULES.map(m => m.key)
-  // คีย์ที่ตั้งเปิด-ปิดรายหน่วยงานได้ มาจากลิสต์กลางที่ ModuleManager (หน้า admin) ใช้ร่วมกัน
-  // คีย์ที่ไม่อยู่ในลิสต์นั้นจะเปิดให้ทุก อปท. เสมอ เพราะไม่มี UI ให้ตั้งค่า
-  // (เดิม hardcode ไว้ที่นี่คนละชุดกับหน้า admin — fleet/posts/positions/infra/manual-staff
-  //  จึงเปิดค้างให้ทุก อปท. และ tourism ที่ติ๊กปิดได้ก็ไม่หายจากเมนูจริง)
-  const managedKeys = MANAGED_MODULE_KEYS
-  const baseEnabledKeys = tenant?.enabled_modules
-    ? [...tenant.enabled_modules, ...allModuleKeys.filter(k => !managedKeys.includes(k))]
-    : allModuleKeys
-  // เดิม 'events' ถูกบังคับเปิดตรงนี้เสมอ ไม่ขึ้นกับ ModuleManager — ผลคือติ๊กปิด "ปฏิทินกิจกรรม"
-  // ในหน้า admin แล้วเมนูไม่หาย (ปุ่มหลอก) ตอนนี้ยกออกให้ไปขึ้นกับ enabled_modules เหมือนโมดูลอื่น
-  //
-  // สิทธิ์พิเศษของ council ยังอยู่ แต่ต้องอยู่ "ใต้" การตั้งค่าระดับ อปท. เสมอ — ถ้าหน่วยงานปิด
-  // ศูนย์ข้อมูลดิจิทัล/รายงานไว้ สมาชิกสภาก็ต้องไม่เห็น ไม่งั้นการปิดโมดูลจะไม่มีความหมายจริง
-  // (เดิม push เข้า alwaysEnabled ทำให้ council ทะลุการตั้งค่าของ อปท. ไปได้)
+  // ตรรกะกรองเมนูตามการตั้งค่า อปท. (enabled_modules) + บทบาท + สิทธิ์รายบุคคล (fleet_role/asset_role) อยู่ที่ staffMenuAccess()
+  // — ห้องผู้บริหารใช้ตัวเดียวกัน · อ่านเงื่อนไขและเหตุผลของแต่ละชั้นได้ที่ src/lib/staffModules.js และ src/lib/staffMenuAccess.js
   const role = profile?.role
-  const councilExtraKeys = role === 'council'
-    ? ['data-center', 'report'].filter(k => baseEnabledKeys.includes(k))
-    : []
-  const enabledKeys = Array.from(new Set([...baseEnabledKeys, ...councilExtraKeys]))
-  // ตัดอีกชั้นสำหรับช่าง — ต้องผ่านทั้ง enabled_modules ของ อปท. และลิสต์ที่ช่างมีสิทธิ์จริง
-  // (ทำเป็นชั้นแยก ไม่ไปยุ่งกับ enabledKeys เดิม เพื่อไม่ให้กระทบ role อื่น)
-  // 'fleet' ไม่ได้ผูกกับ role หลัก แต่ผูกกับ profiles.fleet_role อีกคอลัมน์หนึ่ง เงื่อนไขต้องตรงกับ
-  // hasAccess ใน FleetPage เป๊ะๆ (fleet_role ใดก็ได้ หรือเป็น admin/superadmin ของ อปท.)
-  // ของเดิมกรองด้วย enabled_modules อย่างเดียว เจ้าหน้าที่ที่ไม่ได้ถูกตั้ง fleet_role จึงเห็นเมนู
-  // "ยานพาหนะและเชื้อเพลิง" แล้วกดไปเจอ "ไม่มีสิทธิ์เข้าใช้ระบบ" — เมนูหลอกแบบเดียวกับ defect P1 ของ
-  // Fleet ที่เพิ่งแก้ไป (ปุ่มจองรถโผล่ให้ fleet_viewer) และขัดกับ TEST_ROLE_MATRIX ที่ระบุว่า
-  // demo-staff "ต้องไม่เห็นเมนูยานพาหนะ"
-  const hasFleetAccess = Boolean(profile?.fleet_role) || role === 'admin' || role === 'superadmin'
-  // เมนูพัสดุ/ครุภัณฑ์ใช้ profiles.asset_role คนละคอลัมน์กับ fleet_role ด้วยเหตุผลเดียวกัน:
-  // "เจ้าหน้าที่พัสดุของกอง" ไม่ใช่ระดับในองค์กร แอดมินต้องมอบให้เป็นรายคน
-  // เงื่อนไขต้องตรงกับ asset_is_manager()/asset_can_manage() ฝั่งฐานข้อมูล ไม่งั้นได้เมนูหลอก
-  const hasAssetAccess = Boolean(profile?.asset_role) || role === 'admin' || role === 'superadmin'
-  // ผลการปฏิบัติงานรายคนเป็นเรื่องของสายการประเมิน (เจ้าตัว/หัวหน้ากอง/แอดมิน/ผู้บริหาร) ไม่ใช่สภา
-  // — ต้องตรงกับสิทธิ์ใน RPC staff_performance_rows ไม่งั้นได้เมนูหลอก · ข้อมูลมาจากคำร้องล้วน
-  // อปท. ที่ปิดโมดูลคำร้องจึงไม่มีอะไรให้ดู · ระหว่างโหลดโปรไฟล์ role ยังว่าง เมนูจึงยังไม่โผล่
-  const hasPerformanceAccess = PERFORMANCE_ROLES.includes(role) && enabledKeys.includes('complaints')
-  // เหตุการณ์น้ำ-ฝน: ต้องตรงกับ can_view_water_events() ฝั่งฐานข้อมูล (admin/officer/staff/superadmin) และ อปท. ต้องเปิดโมดูลสถานการณ์น้ำ-ฝน
-  // (คีย์ 'water-events' ของเมนูเองถูกกรองผ่าน enabledKeys แล้ว — บรรทัดนี้คุมเงื่อนไขพ่วง: ไม่มีสถานี = ไม่มีค่าให้จด)
-  // กติกา enabled_modules เดียวกับ isModuleEnabled: แถวที่ไม่ใช่ array = ยังไม่เคยตั้งค่า ถือว่าเปิดทุกโมดูล
-  const hasWaterEventsAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
-    && (!Array.isArray(tenant?.enabled_modules) || tenant.enabled_modules.includes('water-situation'))
-  // แผนพัฒนาท้องถิ่น: อ่านได้ตามบทบาทที่ local_plan_can_read() รับ (ช่างเข้าไม่ได้ผ่านเมนู — ไม่อยู่ใน TECHNICIAN_MODULE_KEYS)
-  const hasLocalPlanAccess = ['superadmin', 'admin', 'officer', 'staff', 'viewer'].includes(role)
+  const { enabledKeys, scopedKeys, hasLocalPlanAccess } = staffMenuAccess({ role, profile, tenant, allModuleKeys })
+  // ส่งโปรไฟล์ที่โหลดแล้วเข้าไป = ใช้ position_id จากนี้ ไม่ query profiles ซ้ำ (แคชตำแหน่งใช้ร่วมกับชิปบนหัวจอ)
+  const { canOpen: canOpenExecutive } = useExecutiveAccess(profile)
   // ชื่อเมนูอ่านช่วงปีจากแผนที่เมนูแสดง (query เบาๆ เฉพาะ year_from/year_to) — โหลดไม่ได้/ยังไม่มีแผน = "แผนพัฒนาท้องถิ่น" เฉยๆ
   // เก็บ tenantId คู่กับชื่อ: สลับ อปท. (superadmin) แล้วชื่อของ อปท. เก่าต้องไม่ค้างโชว์
   const [planLabel, setPlanLabel] = useState({ tenantId: null, label: null })
@@ -2600,16 +2549,6 @@ export default function StaffDashboard() {
   }, [planLabelTenantId])
   const localPlanLabel = planLabel.tenantId === planLabelTenantId && planLabel.label ? planLabel.label : menuLabel(null)
   const withPlanLabel = m => (m.key === 'local-plan' ? { ...m, label: localPlanLabel } : m)
-  const roleScopedKeys = role === 'technician'
-    ? enabledKeys.filter(k => TECHNICIAN_MODULE_KEYS.includes(k))
-    : enabledKeys
-  const scopedKeys = [
-    ...(hasFleetAccess ? [] : ['fleet']),
-    ...(hasAssetAccess ? [] : ['borrowable-assets']),
-    ...(hasPerformanceAccess ? [] : ['performance']),
-    ...(hasWaterEventsAccess ? [] : ['water-events']),
-    ...(hasLocalPlanAccess ? [] : ['local-plan']),
-  ].reduce((keys, hidden) => keys.filter(k => k !== hidden), roleScopedKeys)
   const patientModuleVisible = scopedKeys.includes(PATIENT_TRANSPORT_MODULE_KEY)
   const patientWorkCount = patientModuleVisible && patientWorkBadge.tenantId === tenant?.id && patientWorkBadge.profileId === profile?.id
     ? patientWorkBadge.count : 0
@@ -2899,6 +2838,7 @@ export default function StaffDashboard() {
     ...departmentWorkErrors,
     ...Object.fromEntries(Object.entries(workStatus).map(([key, status]) => [key, status === 'error'])),
   }
+  const drawerExtraItems = canOpenExecutive ? [EXECUTIVE_MENU_ITEM] : []
   function openFromDrawer(item) {
     setDrawerOpen(false)
     if (item.newTab) window.open(item.newTab, '_blank', 'noopener,noreferrer')
@@ -2968,7 +2908,7 @@ export default function StaffDashboard() {
       </header>
 
       <PortalDrawer key={`${tenant?.id}-${profile?.id}`} open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="ระบบเจ้าหน้าที่"
-        ariaLabel="เมนูเจ้าหน้าที่" groups={visibleHomeGroups} activeKey={activeModule}
+        ariaLabel="เมนูเจ้าหน้าที่" groups={visibleHomeGroups} activeKey={activeModule} extraItems={drawerExtraItems}
         badges={drawerBadges} workErrors={navWorkErrors} onSelect={openFromDrawer} />
 
         {/* PC header — staff themed · ปักติดบนขณะเลื่อน (sticky ภายใน <main overflow-y-auto> ของ App) ·
@@ -3027,6 +2967,13 @@ export default function StaffDashboard() {
                 <LayoutDashboard size={16} strokeWidth={activeModule === 'home' ? 2.2 : 1.8} />
                 <span className="flex-1 text-left text-xs">แดชบอร์ด</span>
               </button>
+              {canOpenExecutive && (
+                <button type="button" data-staff-exec-link onClick={() => navigate(EXECUTIVE_MENU_ITEM.externalUrl)}
+                  className="mb-2 flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-white/80 transition-all hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60">
+                  <ChartColumn size={16} strokeWidth={1.8} />
+                  <span className="flex-1 text-left text-xs">{EXECUTIVE_MENU_ITEM.label}</span>
+                </button>
+              )}
               {/* ศูนย์รวมข้อมูลดิจิทัลย้ายไปอยู่ในกลุ่ม "แผนงานและทรัพยากรกลาง" ของ STANDALONE_GROUPS
                   แล้ว (2026-09-02) — ปุ่ม hardcode ตรงนี้จึงถูกถอดออก ไม่งั้นขึ้นซ้ำ 2 บรรทัด */}
               {visibleHomeGroups.map(({ group, items }) => (

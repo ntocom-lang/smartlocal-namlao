@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
+import { EXEC_OAUTH_CHECK_KEY, executiveLandingPath } from '../lib/executiveAccess'
 import { useTenant } from '../contexts/TenantContext'
 import DeviceLoginPanel from '../components/auth/DeviceLoginPanel'
 import { appUrl } from '../lib/basename'
@@ -84,8 +85,14 @@ export default function AuthPage() {
 
   function storeOauthFrom() {
     try {
-      if (from !== '/') sessionStorage.setItem('oauth_from', from)
-      else sessionStorage.removeItem('oauth_from')
+      if (from !== '/') {
+        sessionStorage.setItem('oauth_from', from)
+        sessionStorage.removeItem(EXEC_OAUTH_CHECK_KEY)
+      } else {
+        sessionStorage.removeItem('oauth_from')
+        // กลับหน้าแรก (ปลายทางเริ่มต้น) — App.jsx ใช้คีย์นี้พาผู้บริหารไป /executive หลังล็อกอิน (หมดอายุเองใน 10 นาที)
+        sessionStorage.setItem(EXEC_OAUTH_CHECK_KEY, String(Date.now()))
+      }
     } catch { /* storage ถูกปิด: login ยังไปต่อได้ แต่กลับหน้าแรก */ }
   }
 
@@ -260,7 +267,10 @@ export default function AuthPage() {
           : 'เบอร์โทร/อีเมล หรือรหัสผ่านไม่ถูกต้อง')
         return
       }
-      navigate(from, { replace: true })
+      // กลับหน้าแรก (ปลายทางเริ่มต้น) = ผู้บริหารไปห้องผู้บริหารแทน · ถูกเด้งมาจากหน้าไหนก็กลับหน้านั้นเหมือนเดิม
+      // ช้า/พลาดเกิน 3 วิ = '/' ตามเดิม
+      const target = from === '/' ? await executiveLandingPath({ client: supabase, fallback: '/' }) : from
+      navigate(target, { replace: true })
     } catch (err) {
       console.error('[auth] signInWithPassword ล้มเหลว:', err?.message ?? err)
       setError('เข้าสู่ระบบไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')

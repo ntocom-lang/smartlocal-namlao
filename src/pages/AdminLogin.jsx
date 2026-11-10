@@ -5,6 +5,7 @@ import { isNetworkAuthError } from '../lib/authErrors'
 import { appUrl } from '../lib/basename'
 import { Lock, Mail, Loader2, ShieldCheck, Eye, EyeOff, KeyRound, Smartphone } from 'lucide-react'
 import DeviceLoginPanel from '../components/auth/DeviceLoginPanel'
+import { executiveLandingPath } from '../lib/executiveAccess'
 
 export default function AdminLogin() {
   const navigate = useNavigate()
@@ -53,7 +54,10 @@ export default function AdminLogin() {
           : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง')
         return
       }
-      navigate('/admin')
+      // นายก/รองนายก/ปลัด → ห้องผู้บริหาร (/executive) · คนอื่น ผิดพลาด หรืออ่านสิทธิ์ช้าเกิน 3 วินาที → /admin เหมือนเดิม
+      // ถูกเด้งมาจากหน้าเฉพาะ (state.from ที่ไม่ใช่ '/admin') = พฤติกรรมเดิม ไป /admin ไม่ถามสิทธิ์
+      const bouncedFrom = location.state?.from
+      navigate(bouncedFrom && bouncedFrom !== '/admin' ? '/admin' : await executiveLandingPath({ client: supabase }))
     } catch (err) {
       console.error('[admin-login] เข้าสู่ระบบล้มเหลว:', err?.message ?? err)
       setError('เข้าสู่ระบบไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
