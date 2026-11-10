@@ -58,7 +58,9 @@ export function useExecOverview({ tenantId, profileId, range, keys, enabled }) {
       if (result.error || result.data == null || typeof result.data !== 'object') {
         console.error(`${EXEC_E2_RPC} error:`, result.error?.message ?? 'empty response')
         // รีเฟรชแล้วพลาด แต่เคยได้ผลมาแล้วของ key เดิม = คงผลเดิมไว้ (ไม่ให้การ์ดทั้งหน้าหายเพราะเน็ตสะดุดครั้งเดียว)
-        setState((prev) => (prev.key === key && prev.status === 'ok' ? prev : { key, status: 'error', data: null }))
+        // ดูที่ prev.data ไม่ใช่ prev.status — reload() ตั้งสถานะเป็น 'loading' (เก็บ data เดิมไว้) ก่อนยิงใหม่ทุกครั้ง
+        // ถ้าเช็ก status === 'ok' เงื่อนไขนี้จะไม่มีวันเป็นจริงหลังกด "ลองใหม่" (code review #685)
+        setState((prev) => (prev.key === key && prev.data ? { key, status: 'ok', data: prev.data } : { key, status: 'error', data: null }))
         return
       }
       const data = { today: typeof result.data.today === 'string' ? result.data.today : null, summaries: result.data.summaries ?? {} }

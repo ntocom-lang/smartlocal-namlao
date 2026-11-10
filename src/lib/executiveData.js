@@ -614,9 +614,16 @@ export function buildExecModel(summaries) {
 
 const dataOf = (model, field) => (model?.[field]?.state === 'ok' ? model[field].data : null)
 
-/** summaryKey ที่ต้องขอ — จากรายการที่ขึ้นจอ (ตัดค่าซ้ำ/null/ว่าง) เรียงคงที่ เพื่อให้คีย์แคชเท่ากันทุกรอบ */
+/**
+ * summaryKey ที่ต้องขอ — จากรายการที่ขึ้นจอ (ตัดค่าซ้ำ/null/ว่าง) เรียงคงที่ เพื่อให้คีย์แคชเท่ากันทุกรอบ
+ * รายการใดถือ document_type (docTypes) = ตาราง ②-2 ต้องใช้แถวคำขอจาก doc_requests แม้โมดูลกล่องงาน (inbox) ปิดอยู่
+ * (เช่น ประปา/รถรับ-ส่งผู้ป่วยเปิด แต่ inbox ปิด) — ไม่งั้นตารางขึ้น "โหลดไม่ได้" ลวง หรือค้าง "กำลังโหลด" ตลอด
+ */
 export function execSummaryKeys(entries) {
-  return [...new Set((entries ?? []).map((e) => e?.summaryKey).filter((k) => typeof k === 'string' && k))].sort()
+  const list = entries ?? []
+  const keys = list.map((e) => e?.summaryKey).filter((k) => typeof k === 'string' && k)
+  if (list.some((e) => (e?.docTypes?.length ?? 0) > 0)) keys.push('doc_requests')
+  return [...new Set(keys)].sort()
 }
 
 // ───────────────────────── ค้างอยู่ตอนนี้ / เลยกำหนด / คอขวด ─────────────────────────
@@ -886,6 +893,12 @@ const ALERT_RULES = {
   },
 }
 
+// กฎที่อ่านข้อมูลจากสรุปคีย์อื่น (ไม่ใช่ summaryKey ของรายการเจ้าของ alert) — ต้องเช็กสถานะของคีย์นั้นแทน
+// ไม่งั้นสรุปที่อ่านอยู่พัง (ok:false) แล้ว alert หายเงียบโดยไม่ขึ้นใน failures (code review #685)
+const ALERT_RULE_SOURCES = Object.freeze({
+  'complaints:low_rating': 'satisfaction',
+})
+
 const SEVERITY_RANK = { critical: 0, warn: 1, info: 2 }
 
 /** `${entry.key}:${alert.id}` ที่มีกฎคำนวณแล้ว — เทสต์ตรวจว่าทุก alert เฟส live ในทะเบียนมีกฎ (ไม่งั้นเตือนหายเงียบ) */
@@ -904,9 +917,12 @@ export function buildAlerts({ entries, model, today, resultMissing = 0 }) {
   for (const entry of entries ?? []) {
     const state = stateOfEntry(model, entry)
     for (const alert of entry.alerts) {
-      const rule = ALERT_RULES[`${entry.key}:${alert.id}`]
+      const ruleKey = `${entry.key}:${alert.id}`
+      const rule = ALERT_RULES[ruleKey]
       if (!rule || !isPhaseLive(alert.phase)) continue
-      if (state === 'error') { if (!failures.includes(entry.label)) failures.push(entry.label); continue }
+      const source = ALERT_RULE_SOURCES[ruleKey]
+      const ruleState = source ? model?.[source]?.state : state
+      if (ruleState === 'error') { if (!failures.includes(entry.label)) failures.push(entry.label); continue }
       const v = rule(m, { today, resultMissing })
       if (!v) continue
       items.push({

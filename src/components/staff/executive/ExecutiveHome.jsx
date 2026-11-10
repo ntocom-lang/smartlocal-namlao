@@ -260,9 +260,14 @@ export default function ExecutiveHome({ scopedKeys = [], navigate, profile, tena
   const alerts = useMemo(() => {
     void holidaysVersion
     const built = buildAlerts({ entries, model: cur.model, today, resultMissing })
+    const failures = [...built.failures]
+    // executive_overview ล้มทั้งก้อน (เน็ต/หมดเวลา) → model เป็น missing ทุกคีย์ buildAlerts จึงไม่เห็นว่าพัง
+    // ต้องบอกเอง ไม่งั้นโซน ③ หายเงียบ ผู้บริหารอ่านว่า "ไม่มีสัญญาณเตือน" (code review #685)
+    if (cur.status === 'error') failures.push('ตัวเลขสรุปทั้งหมด')
     // ผลดำเนินการตามแผนโหลดไม่ได้ = ตรวจ "ถึงกำหนดแต่ยังไม่มีผล" ไม่ได้ — บอกชัด ไม่ปล่อยให้ดูเหมือนไม่มีเรื่อง
-    return plan.status === 'error' ? { ...built, failures: [...built.failures, 'ผลดำเนินการตามแผนพัฒนา'] } : built
-  }, [entries, cur.model, today, resultMissing, plan.status, holidaysVersion])
+    if (plan.status === 'error') failures.push('ผลดำเนินการตามแผนพัฒนา')
+    return { ...built, failures }
+  }, [entries, cur.model, cur.status, today, resultMissing, plan.status, holidaysVersion])
   const hasReviewEntry = entries.some((e) => e.key === 'tourism-reviews')
   const reviews = useExecReviewCount({ tenantId, range, enabled: hasReviewEntry })
 

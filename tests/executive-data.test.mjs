@@ -598,6 +598,8 @@ test('execSummaryKeys: ตัดซ้ำ/null · เรียงคงที่
   const entries = [{ summaryKey: 'water' }, { summaryKey: null }, { summaryKey: 'complaints' }, { summaryKey: 'water' }, {}]
   assert.deepEqual(execSummaryKeys(entries), ['complaints', 'water'])
   assert.deepEqual(execSummaryKeys(undefined), [])
+  // inbox ปิด แต่ประปาเปิด (ถือ docTypes) → ต้องขอ doc_requests ด้วย ไม่งั้นตาราง ②-2 ขึ้น "โหลดไม่ได้" ลวง
+  assert.deepEqual(execSummaryKeys([{ summaryKey: null, docTypes: ['water_supply_request'] }, { summaryKey: 'complaints', docTypes: [] }]), ['complaints', 'doc_requests'])
 })
 
 test('execSummaryKeys จากทะเบียนจริง: ทุก summaryKey ที่ขอมี normalizer (EXEC_MODEL_FIELDS ครบ)', () => {
@@ -732,6 +734,10 @@ test('สัญญาณเตือน ③: ไม่มีเรื่อง =
   const broken = buildAlerts({ entries: liveEntries(() => true, 'E2'), model: modelOf({ fleet: { ok: false, error: 'x' }, complaints: { ok: true, data: {} } }), today: NOW })
   assert.deepEqual(broken.items, [])
   assert.deepEqual(broken.failures, ['ยานพาหนะและเชื้อเพลิง'])
+  // คะแนนต่ำอ่านจาก satisfaction ไม่ใช่ complaints — satisfaction พังต้องขึ้นใน failures ไม่หายเงียบ (code review #685)
+  const satBroken = buildAlerts({ entries: liveEntries(() => true, 'E2'), model: modelOf({ complaints: { ok: true, data: {} }, satisfaction: { ok: false, error: 'x' } }), today: NOW })
+  assert.equal(satBroken.failures.length, 1)
+  assert.equal(satBroken.items.some((a) => a.id === 'complaints:low_rating'), false)
 })
 
 test('สัญญาณเตือน ③: alert เฟส live ทุกข้อในทะเบียนมีกฎคำนวณ (ไม่งั้นเพิ่มใน PR หน้าแล้วเตือนหายเงียบ)', () => {
