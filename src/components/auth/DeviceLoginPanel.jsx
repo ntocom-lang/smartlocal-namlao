@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { invokeDeviceLogin } from '../../lib/deviceLogin'
+import { executiveLandingPath } from '../../lib/executiveAccess'
 import { Loader2, RefreshCw, Smartphone } from 'lucide-react'
 
 // แผง "เข้าสู่ระบบด้วยรหัสจากมือถือ" บนจอ PC — สำหรับเจ้าหน้าที่ที่ต้องไปใช้เครื่องคนอื่น
@@ -112,7 +113,9 @@ export default function DeviceLoginPanel() {
           setPhase('error')
           return
         }
-        navigate('/admin')
+        // นายก/รองนายก/ปลัด → /executive · คนอื่น/ผิดพลาด/ช้าเกิน 3 วินาที → /admin เหมือนเดิม
+        // ไม่เช็ก cancelled ตรงนี้: setPhase('signingIn') ด้านบนทำให้ effect นี้ cleanup (cancelled = true) แต่การพาไปหน้าถัดไปต้องเกิดเสมอ
+        navigate(await executiveLandingPath({ client: supabase }))
         return
       }
 

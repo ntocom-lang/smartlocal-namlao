@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { CalendarClock, CheckCircle2, ChevronRight, FileSignature, FileText, LayoutDashboard, MapPinned } from 'lucide-react'
 import { EXEC_ZONES, isPhaseLive, liveEntries } from '../../../lib/executiveRegistry'
 import { esignPendingFromRpc } from '../../../lib/esign'
+import { STAFF_MENU_TARGETS } from '../../../lib/staffMenuAccess'
 import { useHomeRpc } from '../../../lib/staffHomeData'
 import { groupMyEvents } from '../../../lib/staffHomeSummary'
 import MyPendingSignatures from '../../esign/MyPendingSignatures'
@@ -14,6 +15,7 @@ import { execIcon } from './execIcons'
 //
 // ทะเบียน executiveRegistry.js เป็นตัวกำหนดว่าโซนไหนมีอะไร — หน้านี้วาดเฉพาะรายการที่ liveEntries() คืนมา (โมดูลเปิดอยู่ + เฟสถึงแล้ว)
 // โซนที่ยังไม่มีรายการเฟส E1 (③ สัญญาณเตือน ⑤ แผน ⑥ รายกอง ข้อมูลประกอบ) จึงยังไม่ขึ้นจอ — เพิ่มตัววาดใน ZONE_RENDERERS ตอนเฟสถัดไป
+// หน้านี้เป็นหน้าเดี่ยว /executive (ExecutiveRoom.jsx) ไม่ได้ฝังในหน้าแรก /staff — ลิงก์เปิดโมดูลพาไป /staff พร้อม state { module } (ดู resolveLink)
 // ข้อห้ามของหน้านี้: ไม่มีปุ่มอนุมัติ/เปลี่ยนสถานะ · ไม่แสดงชื่อคนจากข้อมูลคำร้อง/คำขอ/ผู้ป่วย · ไม่อ่านตารางคำร้อง/คำขอตรงๆ
 
 const zoneTitle = (zone) => EXEC_ZONES[zone].replace(/^[①-⑳]\s*/, '')
@@ -23,7 +25,8 @@ const ZONE_ROWS = [['decision', 'schedule'], ['service'], ['area', 'report']]
 
 // ───────────────────────── ① รอท่านลงนาม ─────────────────────────
 
-function DecisionZone({ entries, tenantId, profileId }) {
+// canOpenFleet = บัญชีนี้เปิดเมนูยานพาหนะได้จริง — ใช้บอกทางไปดูใบที่เหลือ (ไม่ชี้ทางที่บัญชีนี้เข้าไม่ได้)
+function DecisionZone({ entries, tenantId, profileId, canOpenFleet }) {
   const esignEntry = entries.find((e) => e.key === 'src:esign')
   const kpi = esignEntry?.kpis.find((k) => k.id === 'my_pending' && isPhaseLive(k.phase))
   const rpc = useHomeRpc({ rpc: 'esign_my_pending', args: {}, tenantId, profileId, enabled: Boolean(profileId) })
@@ -58,7 +61,7 @@ function DecisionZone({ entries, tenantId, profileId }) {
       {pending.status === 'loading' && <LoadingLine text="กำลังตรวจรายการรอลงนาม…" />}
       {/* ดึงไม่ได้ต้องไม่ขึ้นว่า "ไม่มีเรื่องรอท่าน" — อาจมีใบรออยู่ · MyPendingSignatures วาดสถานะ error + ปุ่มลองใหม่ให้เอง */}
       <MyPendingSignatures variant="home" status={pending.status} items={pending.items} returned={pending.returned} limit={5}
-        moreHint="ที่เหลือดูได้ที่ ยานพาหนะและเชื้อเพลิง › การใช้รถ"
+        moreHint={canOpenFleet ? 'ที่เหลือดูได้ที่ ยานพาหนะและเชื้อเพลิง › การใช้รถ' : undefined}
         onSigned={() => { setTouched(true); rpc.reload() }} onRetry={rpc.reload} />
     </ExecSection>
   )
@@ -72,9 +75,14 @@ function ScheduleZone({ entries, tenantId, profileId, resolveLink }) {
   const open = eventsEntry ? resolveLink(eventsEntry) : null
   const myEvents = groupMyEvents(summary.status === 'ok' ? summary.data?.my_events : [], summary.data?.today)
   const count = myEvents.today.length + myEvents.tomorrow.length
+  // ⓘ ใช้ kpi 'assigned' ของทะเบียน (กิจกรรมที่มอบหมายให้ท่าน วันนี้-พรุ่งนี้) — 'upcoming' (7 วัน) เป็นเฟส E2 ยังไม่ขึ้นจอ
+  const kpi = eventsEntry?.kpis.find((k) => k.id === 'assigned' && isPhaseLive(k.phase))
+  const [showFormula, setShowFormula] = useState(false)
+  const infoButton = kpi && <InfoButton active={showFormula} onClick={() => setShowFormula((v) => !v)} label={kpi.label} />
 
   return (
-    <ExecSection id="schedule" title="กำหนดการ" Icon={CalendarClock}>
+    <ExecSection id="schedule" title="กำหนดการ" Icon={CalendarClock} aside={infoButton}>
+      {showFormula && kpi && <FormulaPanel title={kpi.label} items={[{ who: eventsEntry.label, formula: kpi.formula, source: kpi.source }]} />}
       {summary.status === 'loading' && <LoadingLine text="กำลังโหลดกำหนดการ…" />}
       {summary.status === 'error' && <SectionError text="โหลดกำหนดการไม่ได้" onRetry={summary.reload} />}
       {summary.status === 'ok' && count > 0 && (
@@ -154,32 +162,38 @@ function ReportZone({ entries, navigate }) {
 
 /**
  * @param {{
- *   visibleGroups: Array,        // เมนูที่บัญชีนี้เห็นจริง (visibleHomeGroups ของ StaffDashboard) — ใช้เปิดโมดูลให้ตรงกับเมนู
- *   setActiveModule: (key: string) => void,
- *   navigate: (path: string) => void,
+ *   scopedKeys: string[],         // คีย์โมดูลที่บัญชีนี้เห็นในเมนูเจ้าหน้าที่จริง (staffVisibleModuleKeys) — ใช้ตัดสินว่าลิงก์ไหนเปิดได้ ไม่ทำปุ่มหลอก
+ *   navigate: (path: string, options?: object) => void,
  *   profile: object|null,
  *   tenant: object|null,
- *   isModuleEnabled: (key: string) => boolean,   // ตัวเดียวกับที่กรองเมนูจริงของหน้าเจ้าหน้าที่
+ *   isModuleEnabled: (key: string) => boolean,         // โมดูลเปิดอยู่ไหมตามกติกาเดียวกับเมนูจริง (ต้องคงที่ข้าม render)
+ *   tenantModuleEnabled: (key: string) => boolean,     // isModuleEnabled ของ TenantContext — ใช้ตัดสินว่า อปท. เปิดโมดูลนั้นไหม (ไม่ดูสิทธิ์รายบุคคล)
  * }} props
  */
-export default function ExecutiveHome({ visibleGroups = [], setActiveModule, navigate, profile, tenant, isModuleEnabled }) {
+export default function ExecutiveHome({ scopedKeys = [], navigate, profile, tenant, isModuleEnabled, tenantModuleEnabled }) {
   const tenantId = tenant?.id
   const profileId = profile?.id
   const [openedAt] = useState(() => new Date())
   const todayTH = openedAt.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-  const entries = liveEntries(isModuleEnabled)
+  // ลงนามออนไลน์ปัจจุบันครอบเฉพาะใบขอใช้รถ (esign_my_pending) — อปท. ที่ไม่ได้เปิดโมดูลยานพาหนะจึงไม่มีอะไรให้ลงนาม ไม่แสดงโซนเลย
+  const hasEsign = tenantModuleEnabled('fleet')
+  const entries = useMemo(
+    () => liveEntries(isModuleEnabled).filter((e) => e.key !== 'src:esign' || hasEsign),
+    [isModuleEnabled, hasEsign],
+  )
+  const canOpenFleet = scopedKeys.includes('fleet')
 
-  const itemByKey = new Map(visibleGroups.flatMap((g) => g.items).map((item) => [item.key, item]))
   // ลิงก์ของรายการ → ฟังก์ชันเปิด · null = บัญชีนี้ไม่มีทางเปิด (โมดูลไม่อยู่ในเมนูที่เห็น) จึงไม่ทำเป็นปุ่มหลอก
+  // โมดูล = พาไป /staff พร้อม state { module } (StaffDashboard อ่าน location.state.module) · เมนูที่เป็นหน้าแยก/แท็บใหม่ใช้ STAFF_MENU_TARGETS
   const resolveLink = (entry) => {
     const link = entry?.link
     if (!link) return null
-    const item = link.module ? itemByKey.get(link.module) : null
-    if (item) {
+    if (link.module && scopedKeys.includes(link.module)) {
+      const target = STAFF_MENU_TARGETS[link.module]
       return () => {
-        if (item.newTab) window.open(item.newTab, '_blank', 'noopener,noreferrer')
-        else if (item.externalUrl) navigate(item.externalUrl)
-        else setActiveModule(item.key)
+        if (target?.newTab) window.open(target.newTab, '_blank', 'noopener,noreferrer')
+        else if (target?.externalUrl) navigate(target.externalUrl)
+        else navigate('/staff', { state: { module: link.module } })
       }
     }
     if (link.path) return () => navigate(link.path)
@@ -187,7 +201,7 @@ export default function ExecutiveHome({ visibleGroups = [], setActiveModule, nav
   }
 
   const renderers = {
-    decision: () => <DecisionZone key="decision" entries={entries} tenantId={tenantId} profileId={profileId} />,
+    decision: () => <DecisionZone key="decision" entries={entries} tenantId={tenantId} profileId={profileId} canOpenFleet={canOpenFleet} />,
     service: () => (
       <ExecServiceZone key="service" entries={inZone(entries, 'service')} tenant={tenant} profileId={profileId}
         isModuleEnabled={isModuleEnabled} resolveLink={resolveLink} />

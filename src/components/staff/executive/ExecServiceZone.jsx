@@ -3,7 +3,7 @@ import { CheckCircle2, ChevronRight, HeartHandshake, Hourglass, Inbox } from 'lu
 import { supabase } from '../../../lib/supabase'
 import { isPhaseLive } from '../../../lib/executiveRegistry'
 import {
-  EXEC_COMPARE_LABELS, EXEC_DEFAULT_PERIOD, EXEC_ISSUE_BREAKDOWN_CATEGORY, EXEC_PERIODS, EXEC_PERIOD_LABELS, EXEC_ROW_LIMIT,
+  EXEC_COMPARE_LABELS, EXEC_DEFAULT_PERIOD, EXEC_ISSUE_BREAKDOWN_CATEGORY, EXEC_PERIODS, EXEC_PERIOD_LABELS, EXEC_ROW_LIMIT, EXEC_TOP_CATEGORIES,
   buildServiceRows, categoryCounts, compareValues, execPeriodRange, execPreviousRange, execRangeText, issueBreakdownRows,
   normalizeComplaintStats, normalizeDocStats, rowsTruncated, splitServiceRows, summarizePulse,
 } from '../../../lib/executiveData'
@@ -21,6 +21,19 @@ const REJECTED_FORMULA = {
   formula: 'จำนวนเรื่องที่สถานะเป็น rejected (ปฏิเสธ/ไม่รับเรื่อง) ของเรื่องที่ยื่นในช่วงนี้ — คำขอที่ผู้ยื่นถอนเองถูกบันทึกเป็นสถานะเดียวกัน แยกไม่ได้ในข้อมูลสถิติ',
   source: 'complaint_stats_fy.rejected · doc_requests_public_fy.status',
 }
+
+// ⓘ ของ "แถวคำขอรายประเภท" ในตาราง — แถวนี้นับฝั่งเครื่องจากรายการรายเรื่อง (doc_requests_public_fy) ไม่ได้ใช้ตัวเลขจาก doc_request_stats_fy
+// จึงห้ามยืมสูตรของชีพจร/ทะเบียน (ที่บอกว่า "ตัวเลขเดียวกับหน้าสถิติสาธารณะ") มาอธิบายแถวนี้ — ถ้อยคำเขียนตามที่โค้ดนับจริง
+// ต่างจากยอดรวมในชีพจรได้เล็กน้อย 2 เหตุ: (1) รายการรายเรื่องถูกจำกัดจำนวนแถวต่อครั้ง (ฐานข้อมูลตั้งเพดาน 1,000 แถว) (2) days_taken ถูกปัดทศนิยม 1 ตำแหน่งรายเรื่องก่อนเฉลี่ย
+// แถวคำร้องยังใช้สูตรของทะเบียนตามเดิม (คำร้องใช้ตัวเลขจาก complaint_stats_fy ตรงๆ)
+const DOC_ROW_SOURCE = 'doc_requests_public_fy (นับฝั่งหน้าจอจากรายการรายเรื่อง)'
+const DOC_ROW_CAVEAT = ' · อาจต่างจากยอดรวมในกล่องภาพรวมได้เล็กน้อย เพราะรายการรายเรื่องถูกจำกัดจำนวนแถวต่อครั้งและวันที่ถูกปัดเป็นทศนิยม 1 ตำแหน่งรายเรื่อง'
+const DOC_ROW_FORMULAS = Object.freeze({
+  new: 'นับคำขอของประเภทนั้นที่ยื่นในช่วงที่เลือก จากรายการรายเรื่อง' + DOC_ROW_CAVEAT,
+  open: 'นับคำขอของประเภทนั้นที่สถานะ pending หรือ processing จากรายการรายเรื่อง' + DOC_ROW_CAVEAT,
+  done: 'นับคำขอของประเภทนั้นที่สถานะ completed จากรายการรายเรื่อง' + DOC_ROW_CAVEAT,
+  avg_days: 'ค่าเฉลี่ยของ days_taken (issued_at − created_at เป็นวันปฏิทิน ปัดทศนิยม 1 ตำแหน่งรายเรื่อง) เฉพาะคำขอของประเภทนั้นที่เสร็จแล้ว จากรายการรายเรื่อง' + DOC_ROW_CAVEAT,
+})
 
 const nf = (n) => Number(n).toLocaleString('th-TH')
 
@@ -175,7 +188,13 @@ function ServiceTable({ ctx, hasComplaints, hasDocs, entries, tenant, isModuleEn
   const knownTotal = docStats.status === 'ok' ? normalizeDocStats(docStats.data).total : null
   const truncated = hasDocs && rowsTruncated(docCount, { knownTotal })
   const tableId = idInScope(formulaId, 'table')
-  const sheetFormulas = tableId === 'rejected' ? [REJECTED_FORMULA] : formulasOf(entries, tableId ?? '')
+  // แถวคำร้อง = สูตรของทะเบียน (ใช้ complaint_stats_fy) · แถวคำขอรายประเภท = สูตรแยกของแถวรายเรื่อง (ดู DOC_ROW_FORMULAS) — ไม่ใช้สูตรของ inbox ในทะเบียน
+  const docRowFormula = hasDocs && DOC_ROW_FORMULAS[tableId]
+    ? [{ who: 'แถวคำขอแต่ละประเภท', formula: DOC_ROW_FORMULAS[tableId], source: DOC_ROW_SOURCE }]
+    : []
+  const sheetFormulas = tableId === 'rejected'
+    ? [REJECTED_FORMULA]
+    : [...formulasOf(complaintEntry ? [complaintEntry] : [], tableId ?? ''), ...docRowFormula]
   const sheetTitle = COLUMN_FORMULA_TITLES[tableId] ?? ''
 
   return (
@@ -286,8 +305,11 @@ function ServiceTable({ ctx, hasComplaints, hasDocs, entries, tenant, isModuleEn
 
 // ───────────────────────── หมวดปัญหา ②-4 ─────────────────────────
 
+// ค่าว่างคงที่ — คืน {} ใหม่ทุกครั้งที่ render ทำให้ useMemo ที่พึ่ง labels คำนวณใหม่ทุกรอบ
+const EMPTY_LABELS = Object.freeze({})
+
 function useCategoryLabels(tenantId) {
-  const [state, setState] = useState({ tenantId: null, labels: {} })
+  const [state, setState] = useState({ tenantId: null, labels: EMPTY_LABELS })
   useEffect(() => {
     if (!tenantId) return undefined
     let cancelled = false
@@ -299,10 +321,10 @@ function useCategoryLabels(tenantId) {
         ;(data ?? []).forEach((c) => { labels[c.value] = c.label })
         setState({ tenantId, labels })
       })
-      .catch(() => { if (!cancelled) setState({ tenantId, labels: {} }) }) // ไม่มีชื่อ อปท. = ใช้ชื่อมาตรฐาน ไม่ใช่ error
+      .catch(() => { if (!cancelled) setState({ tenantId, labels: EMPTY_LABELS }) }) // ไม่มีชื่อ อปท. = ใช้ชื่อมาตรฐาน ไม่ใช่ error
     return () => { cancelled = true }
   }, [tenantId])
-  return state.tenantId === tenantId ? state.labels : {}
+  return state.tenantId === tenantId ? state.labels : EMPTY_LABELS
 }
 
 function CategoryBlock({ ctx, entry, formulaId, onToggleFormula }) {
@@ -373,7 +395,7 @@ function CategoryBlock({ ctx, entry, formulaId, onToggleFormula }) {
           นับจาก {nf(total)} เรื่องล่าสุด{knownTotal != null ? ` (ทั้งหมดในช่วงนี้ ${nf(knownTotal)} เรื่อง)` : ''} — ตัวเลขรายหมวดอาจต่ำกว่าจริง
         </p>
       )}
-      <p className="text-[10px] text-slate-400">แสดง {nf(Math.min(8, list.filter((c) => !c.isRest).length))} หมวดสูงสุด · หมวด "อื่นๆ" รวมหมวดที่เหลือและเรื่องที่ไม่ระบุหมวด</p>
+      <p className="text-[10px] text-slate-400">แสดง {nf(Math.min(EXEC_TOP_CATEGORIES, list.filter((c) => !c.isRest).length))} หมวดสูงสุด · หมวด "อื่นๆ" รวมหมวดที่เหลือและเรื่องที่ไม่ระบุหมวด</p>
       <FormulaPanel title="หมวดปัญหา" items={formulas} />
     </div>
   )

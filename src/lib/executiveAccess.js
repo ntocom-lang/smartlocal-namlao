@@ -1,52 +1,71 @@
-// ใครเห็น/เปิด "ห้องผู้บริหาร" เป็นหน้าแรก — ฟังก์ชันบริสุทธิ์ (JS ล้วน เทสต์ด้วย node ได้)
+// ใครเห็น/เปิด "ห้องผู้บริหาร" (หน้าเดี่ยว /executive) — ฟังก์ชันบริสุทธิ์ (JS ล้วน เทสต์ด้วย node ได้)
 //
-// นายก/รองนายก = role 'viewer' · ปลัด = role 'officer' ที่ตำแหน่งอยู่หมวด 'top_admin' (positions.category)
-// แอดมินเปิดห้องนี้ดูได้ (สวิตช์บนหัวหน้าแรก) แต่หน้าแรกเริ่มต้นของแอดมินยังเป็นหน้าเจ้าหน้าที่เดิม
-// ⚠️ นี่เป็นแค่ "หน้าไหนขึ้นก่อน" ไม่ใช่ด่านสิทธิ์ — สิทธิ์ข้อมูลตัดสินที่ RPC/RLS ฝั่งฐานข้อมูลเสมอ
+// นายก/รองนายก = role 'viewer' · ปลัด/รองปลัด = ตำแหน่งอยู่หมวด 'top_admin' (positions.category) "ไม่ว่า role เป็น officer หรือ admin"
+// (seed ตำแหน่งมาตรฐานตั้งปลัดเป็น role admin — เจ้าของระบบสั่ง 2026-11-10) · admin/superadmin ที่ไม่ใช่ปลัดเปิดดูได้
+// แต่ไม่ถูกพาไปห้องนี้เองหลังล็อกอิน
+// ⚠️ นี่เป็นแค่ "ใครเห็นทางเข้า/ถูกพาไปไหน" ไม่ใช่ด่านสิทธิ์ข้อมูล — สิทธิ์ข้อมูลตัดสินที่ RPC/RLS ฝั่งฐานข้อมูลเสมอ
+
+import { STAFF_PORTAL_ROLES } from './portalAccess.js'
 
 export const EXEC_HOME_ADMIN_ROLES = Object.freeze(['admin', 'superadmin'])
 
-/** true = เปิดหน้าแรกเป็นห้องผู้บริหารเป็นค่าเริ่มต้น */
+/** ตำแหน่งหมวดนี้ = ปลัด/รองปลัด (ค่า positions.category) */
+export const EXEC_POSITION_CATEGORY = 'top_admin'
+
+/**
+ * true = เป็นผู้บริหารของห้องนี้: นายก/รองนายก (viewer) หรือ ปลัด/รองปลัด (ตำแหน่งหมวด top_admin ทุก role ในกลุ่มเจ้าหน้าที่)
+ * ใช้ตัดสินว่า "หลังล็อกอินพาไปห้องผู้บริหาร" และ "มีทางเข้าห้องไหม"
+ */
 export function isExecutiveHomeDefault({ role, positionCategory } = {}) {
-  return role === 'viewer' || (role === 'officer' && positionCategory === 'top_admin')
+  return role === 'viewer'
+    || (positionCategory === EXEC_POSITION_CATEGORY && STAFF_PORTAL_ROLES.includes(role))
 }
 
-/** true = มีสวิตช์ "ห้องผู้บริหาร | งานของฉัน" บนหัวหน้าแรก (ค่าเริ่มต้นของผู้บริหาร + แอดมินที่เปิดดูได้) */
+/** true = เปิดหน้า /executive ได้ (ผู้บริหารตามข้างบน + admin/superadmin ที่เปิดดูได้) */
 export function canOpenExecutiveHome({ role, positionCategory } = {}) {
   return isExecutiveHomeDefault({ role, positionCategory }) || EXEC_HOME_ADMIN_ROLES.includes(role)
 }
 
-export const EXEC_HOME_VIEWS = Object.freeze(['executive', 'mine'])
+/** role ที่ต้องอ่านตำแหน่งก่อนรู้ว่าเป็นปลัดหรือไม่ — viewer เป็นผู้บริหารอยู่แล้ว ส่วน role อื่นไม่มีผลกับห้องนี้ */
+export const EXEC_POSITION_LOOKUP_ROLES = Object.freeze(['officer', 'admin'])
+
+// ── หลังล็อกอินพาไปไหน ─────────────────────────────────────────────────────
 
 /**
- * หน้าที่จะแสดงจริง: ผู้ใช้เลือกไว้ (จำในเครื่อง) ชนะค่าเริ่มต้น แต่เลือกห้องผู้บริหารไม่ได้ถ้าไม่มีสิทธิ์เปิด
- * @param {{ role?: string, positionCategory?: string|null }} who
- * @param {string|null|undefined} saved  ค่าที่จำไว้ ('executive' | 'mine') — ค่าอื่นถือว่าไม่เคยเลือก
- * @returns {'executive'|'mine'}
+ * ปลายทางหลังล็อกอินฝั่งเจ้าหน้าที่ — ผู้บริหาร → '/executive' · อื่นๆ/ผิดพลาด/ช้า → '/admin' เหมือนเดิม
+ *
+ * - อ่าน role + ตำแหน่งของตัวเองหลัง sign-in (session อยู่ในเครื่องแล้ว ไม่ยิงเครือข่ายเพื่อหา uid)
+ * - มี `from` ที่ไม่ใช่ปลายทางเริ่มต้น ('/admin') = ผู้ใช้ถูกเด้งมาจากหน้าเฉพาะ → คงพฤติกรรมเดิม ไม่แทรกแซง
+ * - ช้าเกิน timeoutMs = ไป '/admin' ไม่รอ (ห้ามให้การล็อกอินค้างเพราะอ่านตำแหน่งช้า)
+ * - client ส่งเข้ามาเอง (supabase) เพื่อให้ไฟล์นี้ไม่ import supabase — เทสต์ด้วย node ได้
+ *
+ * @param {{ client: object, from?: string|null, timeoutMs?: number, fallback?: string }} opts
+ * @returns {Promise<string>}
  */
-export function resolveHomeView(who, saved) {
-  if (!canOpenExecutiveHome(who)) return 'mine'
-  if (EXEC_HOME_VIEWS.includes(saved)) return saved
-  return isExecutiveHomeDefault(who) ? 'executive' : 'mine'
-}
-
-// ── จำหน้าที่เลือกไว้ในเครื่อง (ต่อบัญชี) — localStorage อาจใช้ไม่ได้ (โหมดส่วนตัว/บล็อก) ทุกจุดห่อ try/catch
-// ใช้ไม่ได้ = ไม่จำ (ได้ค่าเริ่มต้นของบทบาท) ไม่ใช่หน้าพัง ผู้เรียกส่ง storage เข้ามาเอง (null ได้) เทสต์ด้วย node ได้
-const homeViewKey = (profileId) => `smartlocal:staff-home-view:${profileId}`
-
-export function readHomeView(storage, profileId) {
-  if (!storage || !profileId) return null
+export async function executiveLandingPath({ client, from = null, timeoutMs = 3000, fallback = '/admin' } = {}) {
+  if (from && from !== fallback) return fallback
+  let timer
+  const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs) })
   try {
-    const value = storage.getItem(homeViewKey(profileId))
-    return EXEC_HOME_VIEWS.includes(value) ? value : null
+    const who = await Promise.race([readMyExecutiveAccess(client), timeout])
+    return who && isExecutiveHomeDefault(who) ? '/executive' : fallback
   } catch {
-    return null
+    return fallback
+  } finally {
+    clearTimeout(timer)
   }
 }
 
-export function writeHomeView(storage, profileId, view) {
-  if (!storage || !profileId || !EXEC_HOME_VIEWS.includes(view)) return
-  try {
-    storage.setItem(homeViewKey(profileId), view)
-  } catch { /* เก็บไม่ได้ก็ใช้ได้เฉพาะรอบนี้ */ }
+/** { role, positionCategory } ของผู้ล็อกอินอยู่ — null เมื่ออ่านไม่ได้ */
+async function readMyExecutiveAccess(client) {
+  const { data: sessionData } = await client.auth.getSession()
+  const uid = sessionData?.session?.user?.id
+  if (!uid) return null
+  const { data: profile, error } = await client.from('profiles').select('role, position_id').eq('id', uid).maybeSingle()
+  if (error || !profile) return null
+  if (!EXEC_POSITION_LOOKUP_ROLES.includes(profile.role) || !profile.position_id) {
+    return { role: profile.role, positionCategory: null }
+  }
+  const { data: position, error: positionError } = await client.from('positions').select('category').eq('id', profile.position_id).maybeSingle()
+  return { role: profile.role, positionCategory: positionError ? null : (position?.category ?? null) }
 }

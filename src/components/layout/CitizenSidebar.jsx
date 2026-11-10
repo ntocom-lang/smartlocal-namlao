@@ -51,7 +51,7 @@ const NAV_GROUPS = [
 ]
 
 // /technician ไม่อยู่ในนี้ตั้งใจ — ช่างใช้แถบข้างนี้บนจอ PC ด้วย (ดู App.jsx)
-const HIDDEN_PATHS = ['/admin', '/staff']
+const HIDDEN_PATHS = ['/admin', '/staff', '/executive']
 
 const BG       = '#1a3a5c'
 const BORDER   = '#12293f'

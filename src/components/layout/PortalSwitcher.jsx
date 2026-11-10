@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Home, Briefcase, LayoutDashboard, Terminal } from 'lucide-react'
+import { Home, Briefcase, LayoutDashboard, Terminal, ChartColumn } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
+import { useExecutiveAccess } from '../../hooks/useExecutiveAccess'
 import {
   canAccessAdminPortal,
   canAccessStaffPortal,
@@ -42,6 +43,8 @@ export default function PortalSwitcher({ className = 'hidden md:flex', tone = 'o
   const canStaff = canAccessStaffPortal(role)
   const canAdmin = canAccessAdminPortal(role)
   const canDev = isDevUser(uid)
+  // ห้องผู้บริหาร (/executive): นายก/รองนายก/ปลัด + admin — ไม่รู้ผลตำแหน่งยัง = ยังไม่โชว์ชิป (ไม่โชว์แล้วหาย)
+  const { canOpen: canExecutive } = useExecutiveAccess()
 
   if (!session || (!canStaff && !canAdmin && !canDev)) return null
 
@@ -51,6 +54,7 @@ export default function PortalSwitcher({ className = 'hidden md:flex', tone = 'o
   const items = [
     { key: 'citizen', to: '/',           label: 'เว็บหลัก',     title: 'เว็บหลัก',              Icon: Home },
     canStaff && { key: 'staff', to: '/staff',       label: 'เจ้าหน้าที่', title: 'สำหรับเจ้าหน้าที่',     Icon: Briefcase },
+    canExecutive && { key: 'executive', to: '/executive', label: 'ห้องผู้บริหาร', title: 'ห้องผู้บริหาร', Icon: ChartColumn },
     canAdmin && { key: 'admin', to: '/admin',       label: role === 'viewer' ? 'รายงาน' : 'Admin', title: role === 'viewer' ? 'รายงาน' : 'แผงควบคุม Admin', Icon: LayoutDashboard },
     canDev   && { key: 'dev',   to: '/dev-journal', label: 'ผู้พัฒนา',    title: 'ผู้พัฒนาระบบ',        Icon: Terminal },
   ].filter(Boolean)

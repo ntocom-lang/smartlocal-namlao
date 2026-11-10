@@ -53,6 +53,7 @@ export function isCountableEnvironment({ isDev = false, hostname = '', userAgent
 export const BACKOFFICE_PATHS = [
   '/admin',             // รวม /admin/login
   '/staff',             // รวม /staff/patient-transport (ทางลัดที่ redirect เข้า /staff)
+  '/executive',         // ห้องผู้บริหาร (นายก/ปลัด)
   '/technician',
   '/fleet',
   '/data-center/staff',

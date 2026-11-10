@@ -308,8 +308,8 @@ function NamlaoMorePage() {
     ] },
     { id: 'staff', title: 'ระบบเจ้าหน้าที่', Icon: Briefcase, color: '#0284c7', show: isStaff, items: [staffSystemItem] },
     { id: 'viewer', title: 'ผู้บริหาร', Icon: ShieldCheck, color: '#059669', show: isViewer, items: [
-      // หน้าแรกของนายก/รองนายก (/staff เปิดเป็นห้องผู้บริหารเป็นค่าเริ่มต้นสำหรับ role viewer) — ดู src/lib/executiveAccess.js
-      { key: 'viewer-exec-room', label: 'ห้องผู้บริหาร', desc: 'ภาพรวมงานบริการประชาชน เรื่องรอลงนาม และกำหนดการ', Icon: ChartColumn, color: '#059669', to: '/staff' },
+      // ห้องผู้บริหาร = หน้าเดี่ยว /executive (นายก/รองนายก role viewer) — ดู src/lib/executiveAccess.js
+      { key: 'viewer-exec-room', label: 'ห้องผู้บริหาร', desc: 'ภาพรวมงานบริการประชาชน เรื่องรอลงนาม และกำหนดการ', Icon: ChartColumn, color: '#059669', to: '/executive' },
       { key: 'viewer-report', label: 'รายงานสรุป', desc: 'ดูรายงานและสถิติคำร้องของหน่วยงาน', Icon: ShieldCheck, color: '#059669', to: '/admin' },
     ] },
     { id: 'calendar', title: 'ปฏิทินสำหรับเจ้าหน้าที่', Icon: CalendarDays, color: '#059669', show: isInternal, items: [

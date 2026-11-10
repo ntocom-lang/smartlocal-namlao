@@ -7,6 +7,7 @@
 import { addDays, bangkokIsoDate, thaiDateRange, thaiShortDate } from './complaintReportPeriods.js'
 import { BASE_DOCUMENT_TYPES, allDocumentTypes } from './documentTypes.js'
 import { categoryNameOf } from './complaintCategoryLabels.js'
+import { fiscalYearBounds, fiscalYearOf } from './fiscalYear.js'
 import { ownerOfDocType } from './executiveRegistry.js'
 
 // ───────────────────────── ช่วงเวลา ─────────────────────────
@@ -25,15 +26,14 @@ const clampedDate = (y, m, d) => iso(y, m, Math.min(d, daysInMonth(y, m)))
 /** วันที่ตามปฏิทินไทย (Asia/Bangkok) ของเวลาใดๆ — Intl ไม่พึ่งโซนเวลาของเครื่อง */
 export const execToday = (now = new Date()) => bangkokIsoDate(now)
 
-/** วันเริ่มปีงบ (1 ต.ค.) ที่ครอบคลุมวันที่นี้ */
+/**
+ * วันเริ่มปีงบ (1 ต.ค.) ที่ครอบคลุมวันที่นี้ — ใช้กติกาปีงบกลางของระบบ (src/lib/fiscalYear.js) ไม่เขียนซ้ำ
+ * สร้าง Date จาก "ส่วนประกอบของวันที่ไทยที่ได้มาแล้ว" ด้วยโซนเครื่องเอง (new Date(y, m-1, d)) แล้วให้ fiscalYearOf อ่านด้วยโซนเดียวกัน
+ * ผลจึงไม่ขึ้นกับโซนเวลาของเครื่อง (วันที่ไทยตัดสินไปแล้วที่ execToday)
+ */
 export function fiscalYearStart(isoDate) {
-  const { y, m } = partsOf(isoDate)
-  return iso(m >= 10 ? y : y - 1, 10, 1)
-}
-
-/** ปีงบ พ.ศ. ของวันที่นี้ (ปีปฏิทินที่ปีงบสิ้นสุด + 543) */
-export function fiscalYearBE(isoDate) {
-  return Number(fiscalYearStart(isoDate).slice(0, 4)) + 1 + 543
+  const { y, m, d } = partsOf(isoDate)
+  return fiscalYearBounds(fiscalYearOf(new Date(y, m - 1, d))).from
 }
 
 /**

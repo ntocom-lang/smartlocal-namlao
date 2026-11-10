@@ -239,7 +239,10 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     key: 'events', kind: 'module', label: 'ปฏิทินกิจกรรม', icon: 'CalendarDays', dept: null,
     zones: ['schedule'], isCitizenService: false, docTypes: [], summaryKey: null, phase: 'E1',
     link: { module: 'events' },
-    kpis: [kpi('upcoming', 'กำหนดการ 7 วัน', 'รายการ', 'กิจกรรมกลุ่มผู้บริหาร + รายการส่วนตัวของท่าน วันนี้ถึงอีก 7 วัน', 'E1')],
+    kpis: [
+      kpi('assigned', 'กิจกรรมที่มอบหมายให้ท่าน', 'รายการ', 'กิจกรรมในปฏิทินที่มอบหมายให้ท่าน (event_assignments) วันนี้และพรุ่งนี้ — ชุดเดียวกับหน้าแรกเจ้าหน้าที่', 'E1', 'staff_home_summary.my_events'),
+      kpi('upcoming', 'กำหนดการ 7 วัน', 'รายการ', 'กิจกรรมกลุ่มผู้บริหาร + รายการส่วนตัวของท่าน วันนี้ถึงอีก 7 วัน', 'E2'),
+    ],
     alerts: [], reports: [],
   },
   {

@@ -7,17 +7,24 @@ process.env.TZ = 'America/Los_Angeles'
 
 const {
   EXEC_PERIODS, categoryCounts, compareValues, docTypeLabelOf, buildServiceRows, execPeriodRange, execPreviousRange,
-  execRangeText, execToday, fiscalYearBE, fiscalYearStart, issueBreakdownRows, normalizeComplaintStats, projectComplaintRows,
+  execRangeText, execToday, fiscalYearStart, issueBreakdownRows, normalizeComplaintStats, projectComplaintRows,
   projectDocRows, rowsTruncated, splitServiceRows, summarizePulse,
 } = await import('../src/lib/executiveData.js')
-const { canOpenExecutiveHome, isExecutiveHomeDefault, readHomeView, resolveHomeView, writeHomeView } = await import('../src/lib/executiveAccess.js')
+const { canOpenExecutiveHome, executiveLandingPath, isExecutiveHomeDefault } = await import('../src/lib/executiveAccess.js')
+const { fiscalYearOf } = await import('../src/lib/fiscalYear.js')
 const { EXECUTIVE_REGISTRY, liveEntries, ownerOfDocType } = await import('../src/lib/executiveRegistry.js')
 
 let cases = 0
-const test = (label, run) => {
-  run()
+const done = (label) => {
   cases++
   console.log('PASS ' + label)
+}
+// เคสที่เป็น async ต้อง await ที่ผู้เรียก (await test(...)) — เคสปกติรันตรงๆ
+const test = (label, run) => {
+  const result = run()
+  if (result && typeof result.then === 'function') return result.then(() => done(label))
+  done(label)
+  return undefined
 }
 // ช่วงที่เทียบเป็นเวลาไทย: 12:00 น. ไทย = 05:00Z
 const at = (iso) => new Date(`${iso}T05:00:00Z`)
@@ -74,10 +81,14 @@ test('ปีงบ ช่วงหลังปีใหม่: ปีงบก�
   assert.deepEqual(execPreviousRange('fy', at('2028-02-29')), { from: '2026-10-01', to: '2027-02-28' })
 })
 
-test('ปีงบ พ.ศ.: 30 ก.ย. 2026 = 2569 · 1 ต.ค. 2026 = 2570', () => {
-  assert.equal(fiscalYearBE('2026-09-30'), 2569)
-  assert.equal(fiscalYearBE('2026-10-01'), 2570)
+test('ปีงบ ใช้กติกากลาง fiscalYear.js: วันเริ่มปีงบ 1 ต.ค. · ขอบ 30 ก.ย./1 ต.ค. · ไม่ขึ้นกับโซนเวลาเครื่อง (TZ = Los_Angeles ตั้งไว้ต้นไฟล์)', () => {
+  assert.equal(fiscalYearOf(new Date(2026, 8, 30)), 2569)
+  assert.equal(fiscalYearOf(new Date(2026, 9, 1)), 2570)
   assert.equal(fiscalYearStart('2026-09-30'), '2025-10-01')
+  assert.equal(fiscalYearStart('2026-10-01'), '2026-10-01')
+  assert.equal(fiscalYearStart('2026-12-31'), '2026-10-01')
+  assert.equal(fiscalYearStart('2027-01-01'), '2026-10-01')
+  assert.equal(fiscalYearStart('2027-09-30'), '2026-10-01')
 })
 
 test('ทุกช่วงให้ from <= to และรูปแบบ YYYY-MM-DD · ช่วงที่ไม่รู้จัก = error', () => {
@@ -273,46 +284,74 @@ test('liveEntries: เฟส E1 เท่านั้น · โมดูลท�
 
 // ── สิทธิ์เปิดห้อง ───────────────────────────────────────────────────────────
 
-test('ใครได้ห้องผู้บริหารเป็นหน้าแรก: viewer + ปลัด (officer/top_admin) เท่านั้น', () => {
+test('ผู้บริหารของห้อง: viewer + ปลัด/รองปลัด (ตำแหน่งหมวด top_admin) ไม่ว่า role เป็น officer หรือ admin', () => {
   assert.equal(isExecutiveHomeDefault({ role: 'viewer' }), true)
-  assert.equal(isExecutiveHomeDefault({ role: 'officer', positionCategory: 'top_admin' }), true)
+  assert.equal(isExecutiveHomeDefault({ role: 'officer', positionCategory: 'top_admin' }), true, 'ปลัด role officer')
+  assert.equal(isExecutiveHomeDefault({ role: 'admin', positionCategory: 'top_admin' }), true, 'ปลัด role admin (seed ตำแหน่งมาตรฐาน)')
+  assert.equal(isExecutiveHomeDefault({ role: 'superadmin', positionCategory: 'top_admin' }), true)
   assert.equal(isExecutiveHomeDefault({ role: 'officer', positionCategory: 'dept_head' }), false)
   assert.equal(isExecutiveHomeDefault({ role: 'officer', positionCategory: null }), false)
-  assert.equal(isExecutiveHomeDefault({ role: 'staff', positionCategory: 'top_admin' }), false, 'ตำแหน่ง top_admin แต่ไม่ใช่ officer ไม่ได้')
+  assert.equal(isExecutiveHomeDefault({ role: 'admin', positionCategory: 'dept_head' }), false, 'admin ที่ไม่ใช่ปลัด')
   assert.equal(isExecutiveHomeDefault({ role: 'admin' }), false)
+  assert.equal(isExecutiveHomeDefault({ role: 'citizen', positionCategory: 'top_admin' }), false, 'ไม่ใช่กลุ่มเจ้าหน้าที่')
   assert.equal(isExecutiveHomeDefault(), false)
 })
 
-test('ใครเปิดห้องได้: ค่าเริ่มต้นของผู้บริหาร + admin/superadmin · เจ้าหน้าที่ทั่วไปไม่เห็นสวิตช์', () => {
+test('ใครเปิดห้องได้: ผู้บริหารตามข้างบน + admin/superadmin ทุกคน · เจ้าหน้าที่ทั่วไปไม่เห็นทางเข้า', () => {
   assert.equal(canOpenExecutiveHome({ role: 'admin' }), true)
+  assert.equal(canOpenExecutiveHome({ role: 'admin', positionCategory: 'dept_head' }), true, 'admin ที่ไม่ใช่ปลัดเปิดดูได้')
   assert.equal(canOpenExecutiveHome({ role: 'superadmin' }), true)
   assert.equal(canOpenExecutiveHome({ role: 'viewer' }), true)
   assert.equal(canOpenExecutiveHome({ role: 'officer', positionCategory: 'top_admin' }), true)
+  assert.equal(canOpenExecutiveHome({ role: 'officer', positionCategory: 'dept_head' }), false)
   for (const role of ['officer', 'staff', 'technician', 'council']) assert.equal(canOpenExecutiveHome({ role }), false, role)
+  assert.equal(canOpenExecutiveHome(), false)
 })
 
-test('หน้าที่แสดงจริง: ผู้ใช้เลือกชนะค่าเริ่มต้น · เลือกห้องไม่ได้ถ้าไม่มีสิทธิ์ · ค่าที่จำไว้เพี้ยน = ใช้ค่าเริ่มต้น', () => {
-  assert.equal(resolveHomeView({ role: 'viewer' }, null), 'executive')
-  assert.equal(resolveHomeView({ role: 'viewer' }, 'mine'), 'mine')
-  assert.equal(resolveHomeView({ role: 'admin' }, null), 'mine')
-  assert.equal(resolveHomeView({ role: 'admin' }, 'executive'), 'executive')
-  assert.equal(resolveHomeView({ role: 'staff' }, 'executive'), 'mine')
-  assert.equal(resolveHomeView({ role: 'viewer' }, 'garbage'), 'executive')
+// ── หลังล็อกอินพาไปไหน ───────────────────────────────────────────────────────
+
+// client จำลอง: session + ตาราง profiles/positions (นับจำนวนครั้งที่ถามตำแหน่งด้วย)
+function fakeClient({ uid = 'u1', profile = null, category = null, profileError = null, positionError = null, hang = false } = {}) {
+  const calls = { positions: 0 }
+  const query = (table) => ({
+    select: () => ({
+      eq: () => ({
+        maybeSingle: () => {
+          if (hang) return new Promise(() => {})
+          if (table === 'profiles') return Promise.resolve({ data: profile, error: profileError })
+          calls.positions += 1
+          return Promise.resolve({ data: category == null ? null : { category }, error: positionError })
+        },
+      }),
+    }),
+  })
+  return { calls, auth: { getSession: async () => ({ data: { session: uid ? { user: { id: uid } } : null } }) }, from: query }
+}
+
+await test('หลังล็อกอิน: viewer → /executive (ไม่ต้องถามตำแหน่ง) · ปลัด role officer/admin → /executive · คนอื่น → /admin', async () => {
+  const viewer = fakeClient({ profile: { role: 'viewer', position_id: null } })
+  assert.equal(await executiveLandingPath({ client: viewer }), '/executive')
+  assert.equal(viewer.calls.positions, 0)
+  for (const role of ['officer', 'admin']) {
+    const c = fakeClient({ profile: { role, position_id: 'p1' }, category: 'top_admin' })
+    assert.equal(await executiveLandingPath({ client: c }), '/executive', `ปลัด role ${role}`)
+  }
+  assert.equal(await executiveLandingPath({ client: fakeClient({ profile: { role: 'admin', position_id: 'p2' }, category: 'dept_head' }) }), '/admin')
+  assert.equal(await executiveLandingPath({ client: fakeClient({ profile: { role: 'admin', position_id: null } }) }), '/admin')
+  assert.equal(await executiveLandingPath({ client: fakeClient({ profile: { role: 'staff', position_id: 'p3' }, category: 'top_admin' }) }), '/admin', 'staff ไม่ถามตำแหน่ง')
 })
 
-test('จำหน้าที่เลือก: storage ใช้ไม่ได้/โยน error = ไม่พัง ได้ null', () => {
-  const store = new Map()
-  const ok = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) }
-  writeHomeView(ok, 'p1', 'mine')
-  assert.equal(readHomeView(ok, 'p1'), 'mine')
-  assert.equal(readHomeView(ok, 'p2'), null, 'ต่อบัญชี')
-  writeHomeView(ok, 'p1', 'bogus')
-  assert.equal(readHomeView(ok, 'p1'), 'mine', 'ค่าไม่ถูกต้องไม่ถูกบันทึก')
-  const broken = { getItem() { throw new Error('blocked') }, setItem() { throw new Error('blocked') } }
-  assert.equal(readHomeView(broken, 'p1'), null)
-  assert.doesNotThrow(() => writeHomeView(broken, 'p1', 'mine'))
-  assert.equal(readHomeView(null, 'p1'), null)
-  assert.doesNotThrow(() => writeHomeView(null, 'p1', 'mine'))
+await test('หลังล็อกอิน: ผิดพลาด/ไม่มี session/ช้าเกิน = /admin เหมือนเดิม · มี state.from อื่น = ไม่แทรกแซง', async () => {
+  assert.equal(await executiveLandingPath({ client: fakeClient({ profile: { role: 'viewer' }, profileError: { message: 'x' } }) }), '/admin')
+  assert.equal(await executiveLandingPath({ client: fakeClient({ profile: { role: 'officer', position_id: 'p1' }, category: 'top_admin', positionError: { message: 'x' } }) }), '/admin')
+  assert.equal(await executiveLandingPath({ client: fakeClient({ uid: null }) }), '/admin')
+  assert.equal(await executiveLandingPath({ client: { auth: { getSession: async () => { throw new Error('net') } } } }), '/admin')
+  const started = Date.now()
+  assert.equal(await executiveLandingPath({ client: fakeClient({ hang: true }), timeoutMs: 50 }), '/admin', 'ค้าง → timeout')
+  assert.ok(Date.now() - started < 1000, 'ไม่รอเกิน timeout มาก')
+  const viewer = fakeClient({ profile: { role: 'viewer' } })
+  assert.equal(await executiveLandingPath({ client: viewer, from: '/admin/something' }), '/admin', 'from อื่นคงเดิม')
+  assert.equal(await executiveLandingPath({ client: viewer, from: '/admin' }), '/executive', 'from = ปลายทางเริ่มต้น ไม่นับเป็นหน้าเฉพาะ')
 })
 
 test('ตาราง ②-2: แสดงเฉพาะแถวที่มีเรื่อง แถว 0 แยกไว้ให้กดแสดง (รวมแถวคำร้อง) และคงลำดับเดิม', () => {

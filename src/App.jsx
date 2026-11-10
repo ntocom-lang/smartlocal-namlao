@@ -16,6 +16,10 @@ import ScrollToTopButton from './components/ScrollToTopButton'
 import InAppBrowserGate from './components/InAppBrowserGate'
 import { supabase, initialAuthParams } from './lib/supabase'
 import { fetchProfile } from './lib/profileFetch'
+import { executiveLandingPath } from './lib/executiveAccess'
+
+// ปลายทาง "เริ่มต้น" หลังล็อกอิน OAuth ที่ผู้บริหารควรถูกพาไปห้องผู้บริหารแทน (ไม่ใช่หน้าที่ผู้ใช้ตั้งใจกลับไป)
+const EXEC_DEFAULT_LANDINGS = Object.freeze(['/', '/admin'])
 import { Phone, UserRound } from 'lucide-react'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from './lib/thaiName'
 import { recordVisit } from './lib/menuUsage'
@@ -281,6 +285,7 @@ function lazyWithRetry(fn) {
 
 const AdminDashboard = lazyWithRetry(() => import('./pages/AdminDashboard'))
 const StaffDashboard  = lazyWithRetry(() => import('./pages/StaffDashboard'))
+const ExecutiveRoom = lazyWithRetry(() => import('./pages/ExecutiveRoom'))
 const DataCenterDashboard = lazyWithRetry(() => import('./pages/DataCenterDashboard'))
 const DataCenterLanding = lazyWithRetry(() => import('./pages/DataCenterLanding'))
 const DataCenterPublicMap = lazyWithRetry(() => import('./pages/DataCenterPublicMap'))
@@ -411,7 +416,7 @@ function AppShell() {
   const navigateRef = useRef(navigate)
   useEffect(() => { navigateRef.current = navigate }, [navigate])
   const location = useLocation()
-  const isBackOffice = ['/admin', '/staff', '/technician', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
+  const isBackOffice = ['/admin', '/staff', '/executive', '/technician', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
   const isAccountPage = location.pathname === '/profile' || location.pathname === '/profile/notifications'
   // ช่างมีเมนูบนสุด/แถบข้างมาตรฐานอยู่แล้วในทุกธีม (NAV_TECH) แต่ต้องเปิดเฉพาะจอ PC
   // มือถือยังใช้หัวจอ/เมนูล่างของ TechnicianDashboard เองตามเดิม กันซ้อนกับของที่มีอยู่แล้ว
@@ -429,7 +434,7 @@ function AppShell() {
   // ก่อนครบเวลาหน่วง นิยามการนับกับสิ่งที่ตัดออก (รวมหน้าหลังบ้าน) อยู่ที่ src/lib/siteOpenStats.js
   useEffect(() => scheduleSiteOpen(tenantId, location.pathname), [tenantId, location.pathname])
   // ช่างยังใช้เมนูล่างของแอป (NAV_TECH) ได้ ต่างจาก /admin กับ /staff ที่ไม่มีเมนูล่างเลย
-  const hideBottomNav = ['/admin', '/staff', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
+  const hideBottomNav = ['/admin', '/staff', '/executive', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
 
   // รับ user ทั้งก้อน ไม่ใช่แค่ uid + user_metadata เพราะต้องใช้ user.email ตัดสินว่าบัญชีนี้
   // มีตัวระบุตัวตนไว้กู้บัญชีอยู่แล้วหรือยัง (ดูเงื่อนไขเบอร์โทรท้ายฟังก์ชัน)
@@ -593,7 +598,18 @@ function AppShell() {
         const returnTo = sessionStorage.getItem('oauth_from')
         if (returnTo) {
           sessionStorage.removeItem('oauth_from')
-          navigateRef.current(returnTo, { replace: true })
+          if (EXEC_DEFAULT_LANDINGS.includes(returnTo)) {
+            // ผู้บริหารที่ล็อกอินด้วย Google/LINE ลงห้องผู้บริหารเลย ไม่ต้องกดหาเอง (เจ้าของระบบสั่ง 2569-11-10)
+            // เฉพาะปลายทาง "เริ่มต้น" ('/admin' จาก /admin/login, '/' จาก /auth) — ถูกเด้งมาจากหน้าไหนก็กลับหน้านั้นเหมือนเดิม
+            // ⚠️ ห้าม await ใน callback นี้: executiveLandingPath เรียก auth.getSession() ซึ่งรอล็อกเดียวกับ callback = ค้าง
+            //    จึงเลื่อนไปทำหลัง callback จบ · ช้า/พลาดเกิน 3 วิ = ปลายทางเดิม
+            setTimeout(() => {
+              executiveLandingPath({ client: supabase, fallback: returnTo })
+                .then((target) => navigateRef.current(target, { replace: true }))
+            }, 0)
+          } else {
+            navigateRef.current(returnTo, { replace: true })
+          }
         }
       }
     })
@@ -783,6 +799,21 @@ function AppShell() {
                   </div>
                 }>
                   <StaffDashboard />
+                </Suspense>
+              </SuspenseErrorBoundary>
+            </RequireAuth>
+          } />
+          {/* ห้องผู้บริหาร: หน้าเดี่ยว ไม่มีเมนูซ้าย/แถบล่างของระบบเจ้าหน้าที่ · ด่านสิทธิ์ละเอียด (นายก/ปลัด/admin) อยู่ในหน้า — คนที่ไม่มีสิทธิ์ถูกส่งกลับ /staff */}
+          <Route path="/executive" element={
+            <RequireAuth staffOnly>
+              <SuspenseErrorBoundary>
+                <Suspense fallback={
+                  <div className="flex items-center justify-center min-h-full h-full">
+                    <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
+                         style={{ borderTopColor: '#3b82f6' }} />
+                  </div>
+                }>
+                  <ExecutiveRoom />
                 </Suspense>
               </SuspenseErrorBoundary>
             </RequireAuth>
