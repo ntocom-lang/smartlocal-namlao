@@ -78,7 +78,8 @@ test('กติกา "เปิดรายละเอียดได้" ใ�
   let latest = null
   for (const f of files) {
     const sql = await read(`../supabase/migrations/${f}`)
-    if (/CREATE OR REPLACE FUNCTION public\.list_events_for_staff/.test(sql)) latest = sql
+    // ชื่อตรงตัว — list_events_for_staff_between (E2.1) เป็นตัวห่อ ไม่มีกติกาการมองเห็นของตัวเอง ต้องไม่ถูกนับเป็นรุ่นล่าสุด
+    if (/CREATE OR REPLACE FUNCTION public\.list_events_for_staff\s*\(/.test(sql)) latest = sql
   }
   assert.ok(latest, 'ไม่พบ list_events_for_staff')
   const sql = squash(latest)
