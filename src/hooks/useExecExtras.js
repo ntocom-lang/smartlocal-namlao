@@ -1,0 +1,111 @@
+import { useCallback, useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
+import { addDays } from '../lib/complaintReportPeriods'
+import { execToday } from '../lib/executiveData'
+import { loadPersonalEvents } from '../lib/personalEventsApi'
+import { canUsePersonalEvents } from '../lib/personalEvents'
+
+// ข้อมูลประกอบของห้องผู้บริหารที่ไม่ได้มาจาก executive_overview — โหลดครั้งเดียวตอนเปิดหน้า ไม่ poll ไม่ subscribe
+// สถานะ: idle · loading · ok · error — ส่วนไหนพังขึ้น "โหลดไม่ได้" เฉพาะส่วนนั้น
+
+/**
+ * กิจกรรมที่ท่านเห็นในปฏิทิน (RPC list_events_for_staff ตัวเดียวกับหน้าปฏิทินกิจกรรม) + รายการส่วนตัวของท่าน (personal_events)
+ * ⚠️ RPC คืนกิจกรรมทุกช่วงเวลาของ อปท. (ไม่มีตัวกรองวัน) และมีรายละเอียด/ไฟล์แนบ/ผู้รับมอบหมายติดมา — ตัดเหลือเฉพาะช่องที่หน้านี้ใช้
+ * และทิ้งกิจกรรมที่จบก่อนวันนี้ทันที ก่อนเก็บลง state (ไม่เก็บรายละเอียดหรือไฟล์แนบของใคร)
+ * รายการส่วนตัวพลาด = แสดงเฉพาะกิจกรรมของหน่วยงาน (เหมือนหน้าปฏิทิน) · ตัวกิจกรรมหน่วยงานพลาด = error
+ * @returns {{ status: string, events: object[], reload: () => void }}
+ */
+export function useExecSchedule({ tenantId, profileId, role, enabled }) {
+  const key = tenantId && profileId ? `${tenantId}:${profileId}` : null
+  const active = Boolean(enabled && key)
+  const [reloadTick, setReloadTick] = useState(0)
+  const [state, setState] = useState({ key: null, status: 'idle', events: [] })
+
+  useEffect(() => {
+    if (!active) return undefined
+    let cancelled = false
+    const today = execToday()
+    const usePersonal = canUsePersonalEvents(role)
+    Promise.all([
+      Promise.resolve().then(() => supabase.rpc('list_events_for_staff', { p_municipality_id: tenantId })),
+      usePersonal ? loadPersonalEvents(tenantId, profileId).catch((error) => ({ rows: [], error })) : Promise.resolve({ rows: [], error: null }),
+    ]).then(([org, personal]) => {
+      if (cancelled) return
+      if (org.error) {
+        console.error('[executive] list_events_for_staff:', org.error.message)
+        setState({ key, status: 'error', events: [] })
+        return
+      }
+      if (personal.error) console.error('[executive] personal_events:', personal.error.message)
+      const slim = [...(org.data ?? []), ...(personal.rows ?? [])]
+        .filter((ev) => ev?.event_date && (ev.end_date || ev.event_date) >= today)
+        .map((ev) => ({
+          id: ev.id, title: ev.title, event_date: ev.event_date, end_date: ev.end_date ?? null,
+          event_time: ev.event_time ?? null, is_personal: ev.is_personal === true,
+        }))
+      setState({ key, status: 'ok', events: slim })
+    }).catch((error) => {
+      if (cancelled) return
+      console.error('[executive] schedule:', error?.message ?? error)
+      setState({ key, status: 'error', events: [] })
+    })
+    return () => { cancelled = true }
+  }, [active, key, tenantId, profileId, role, reloadTick])
+
+  const reload = useCallback(() => {
+    setState((prev) => (prev.key === key ? { ...prev, status: 'loading' } : prev))
+    setReloadTick((t) => t + 1)
+  }, [key])
+
+  if (!active) return { status: 'idle', events: [], reload }
+  if (state.key !== key) return { status: 'loading', events: [], reload }
+  return { status: state.status, events: state.events, reload }
+}
+
+/**
+ * จำนวนรีวิวสถานที่ที่เขียนในช่วงที่เลือก (kpi new_reviews) — นับด้วย count head:true ไม่ดึงเนื้อรีวิว (ไม่มีข้อความ/ชื่อผู้รีวิวผ่านมาเลย)
+ * ช่วงนับตามวันปฏิทินไทย: [from 00:00, to+1 00:00) เวลา +07:00
+ * @returns {{ status: string, count: number|null, reload: () => void }}
+ */
+export function useExecReviewCount({ tenantId, range, enabled }) {
+  const from = range?.from
+  const to = range?.to
+  const key = tenantId && from && to ? `${tenantId}:${from}:${to}` : null
+  const active = Boolean(enabled && key)
+  const [reloadTick, setReloadTick] = useState(0)
+  const [state, setState] = useState({ key: null, status: 'idle', count: null })
+
+  useEffect(() => {
+    if (!active) return undefined
+    let cancelled = false
+    Promise.resolve()
+      .then(() => supabase.from('tourism_reviews').select('id', { count: 'exact', head: true })
+        .eq('municipality_id', tenantId)
+        .gte('created_at', `${from}T00:00:00+07:00`)
+        .lt('created_at', `${addDays(to, 1)}T00:00:00+07:00`))
+      .then(({ count, error }) => {
+        if (cancelled) return
+        if (error || typeof count !== 'number') {
+          console.error('[executive] tourism_reviews count:', error?.message ?? 'no count')
+          setState({ key, status: 'error', count: null })
+          return
+        }
+        setState({ key, status: 'ok', count })
+      })
+      .catch((error) => {
+        if (cancelled) return
+        console.error('[executive] tourism_reviews count:', error?.message ?? error)
+        setState({ key, status: 'error', count: null })
+      })
+    return () => { cancelled = true }
+  }, [active, key, tenantId, from, to, reloadTick])
+
+  const reload = useCallback(() => {
+    setState((prev) => (prev.key === key ? { ...prev, status: 'loading' } : prev))
+    setReloadTick((t) => t + 1)
+  }, [key])
+
+  if (!active) return { status: 'idle', count: null, reload }
+  if (state.key !== key) return { status: 'loading', count: null, reload }
+  return { status: state.status, count: state.count, reload }
+}

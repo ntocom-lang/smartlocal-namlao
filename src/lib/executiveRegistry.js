@@ -35,7 +35,7 @@ export const EXEC_ZONES = Object.freeze({
  * E3 = ติดตาม/เร่งรัด + ใบ A4 + สรุปเช้า Telegram
  */
 export const EXEC_PHASES = Object.freeze(['E1', 'E2', 'E3'])
-export const EXEC_CURRENT_PHASE = 'E1'
+export const EXEC_CURRENT_PHASE = 'E2'
 
 export function isPhaseLive(phase, current = EXEC_CURRENT_PHASE) {
   const i = EXEC_PHASES.indexOf(phase)
@@ -61,6 +61,25 @@ export const EXEC_E1_RPCS = Object.freeze([
   'complaint_issue_breakdown_fy',
   'esign_my_pending',
 ])
+
+/**
+ * แหล่งข้อมูลของ E2 — RPC เดียว executive_overview(_municipality_id, _from, _to, _keys)
+ * (supabase/migrations/20261115100000 · 100100 · 100200) SECURITY DEFINER ตรวจสิทธิ์ข้างใน (exec_assert_viewer):
+ * viewer / ตำแหน่ง top_admin ทุก role เจ้าหน้าที่ / admin / superadmin ของ อปท. เดียวกัน — อื่นๆ ได้ 42501 ทั้งก้อน
+ * คืน { today, from, to, summaries: { <summaryKey>: { ok: true, data } | { ok: false, error } } }
+ * - _keys = summaryKey ของรายการที่ขึ้นจอ (โมดูลเปิดอยู่) · ช่วงก่อนหน้า (ลูกศรเทียบ) ส่งเฉพาะ EXEC_PERIOD_KEYS
+ * - คีย์ไหน ok:false = การ์ดนั้นขึ้น "โหลดไม่ได้" การ์ดอื่นแสดงตามปกติ
+ * - วันทำการไม่คิดใน SQL: backlog คืนยอดจัดกลุ่มตาม due/วันที่แจ้ง ให้หน้าเว็บคิดด้วย workingDays.js สูตรเดียว
+ * - ตัวเลขรวมเท่านั้น ไม่มีชื่อคน ข้อความอิสระ หรือ id รายเรื่อง (เทสต์ tests/executive-summary-db.test.mjs ตรวจ)
+ */
+export const EXEC_E2_RPC = 'executive_overview'
+
+/**
+ * summaryKey ที่เรียกซ้ำกับช่วงก่อนหน้าเพื่อทำลูกศรเทียบ — เฉพาะคีย์ที่หน้าจอมีลูกศรใช้จริง
+ * departments/fleet ก็ขึ้นกับช่วงเหมือนกัน แต่ยังไม่มีลูกศร จึงไม่ขอ (ลดงานฐานข้อมูลครึ่งหนึ่งของรอบช่วงก่อนหน้า)
+ * เพิ่มลูกศรให้คีย์ไหนเมื่อไร ค่อยเติมคีย์นั้นที่นี่
+ */
+export const EXEC_PERIOD_KEYS = Object.freeze(['complaints', 'doc_requests', 'satisfaction', 'patient_transport'])
 
 /**
  * @typedef {Object} ExecKpi
@@ -112,13 +131,23 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
       kpi('done', 'เสร็จแล้ว', 'เรื่อง', 'สถานะ done/closed/completed ของเรื่องที่แจ้งในช่วงนี้', 'E1', 'complaint_stats_fy.resolved'),
       kpi('avg_days', 'เวลาเฉลี่ยจนเสร็จ', 'วัน', 'ค่าเฉลี่ยของ (closed_at − created_at) เป็นวันปฏิทิน เฉพาะเรื่องที่เสร็จแล้ว — ตัวเลขเดียวกับหน้าสถิติสาธารณะ', 'E1', 'complaint_stats_fy.avg_days'),
       kpi('by_category', 'หมวดปัญหา', 'เรื่อง', 'นับเรื่องที่แจ้งในช่วงนี้แยกตาม category (ไม่มีชื่อผู้แจ้ง)', 'E1', 'complaints_public_fy'),
-      kpi('overdue', 'เลยกำหนด', 'เรื่อง', 'เรื่องที่ยังไม่เสร็จและเลยวันกำหนดเสร็จ (วันทำการ)', 'E2'),
-      kpi('on_time_pct', '% เสร็จทันกำหนด', '%', 'เรื่องที่เสร็จภายในวันกำหนด ÷ เรื่องที่เสร็จทั้งหมดในช่วงนี้', 'E2'),
-      kpi('satisfaction', 'คะแนนพึงพอใจ', 'คะแนน', 'ค่าเฉลี่ยคะแนน 1–5 แยกที่มา (ประชาชนประเมินเอง / สท. บันทึกแทน) ตามรายงาน #681', 'E2'),
+      // ── E2 (executive_overview → summaries.complaints / satisfaction) ──
+      kpi('overdue', 'เลยกำหนด', 'เรื่อง', 'คำร้องที่ค้างอยู่ตอนนี้ (new/pending/received/in_progress) และ due_date ก่อนวันนี้ — นับทุกเรื่องที่ค้าง ไม่ขึ้นกับช่วงที่เลือก · ไม่รวมขึ้นทะเบียนรอดำเนินการ (parked) และหมวดเฉพาะกิจ', 'E2', 'executive_overview.complaints.backlog'),
+      kpi('on_time_pct', '% เสร็จทันกำหนด', '%', 'ทันกำหนด ÷ (ทันกำหนด + เกินกำหนด + ค้างที่เลยกำหนด ณ สิ้นช่วง) — สูตรเดียวกับเมนูผลการปฏิบัติงาน · ทัน/เกิน = เรื่องที่เสร็จในช่วงนี้ เทียบวันเสร็จกับ due_date · ไม่รวมเรื่องที่ยังไม่รับ หมวดเฉพาะกิจ และหมวดอ่อนไหว (นับค้างที่เลยกำหนดในตัวหาร ไม่งั้นการปล่อยเรื่องยากค้างไว้ทำให้ร้อยละดูดีขึ้น) · ⚠️ นับทั้ง อปท. รวมเรื่องที่ยังไม่มอบหมายผู้รับผิดชอบ ผลรวมของรายงานรายคนจึงอาจน้อยกว่ายอดนี้', 'E2', 'executive_overview.complaints.on_time'),
+      kpi('satisfaction', 'คะแนนพึงพอใจ', 'คะแนน', 'ค่าเฉลี่ยคะแนน 1–5 ของ "เสียงผู้รับบริการตัวจริง" (ผู้ถือลิงก์ติดตามเรื่อง หรือผู้ยื่นที่เป็นประชาชนประเมินเอง) ของคำร้องที่ปิดในช่วงนี้ แสดงคู่กับค่าเฉลี่ยทุกที่มา (รวม สท. บันทึกแทน) — สูตรเดียวกับรายงานอัตราตอบ #681', 'E2', 'executive_overview.satisfaction'),
+      kpi('response_rate', 'อัตราตอบแบบประเมิน', '%', 'คำร้องที่ปิดในช่วงนี้ซึ่งมีคะแนนอย่างน้อย 1 รายการ ÷ คำร้องที่ปิดในช่วงนี้ (สถานะ closed/completed ไม่รวมหมวดเฉพาะกิจ) — สูตรเดียวกับรายงาน #681', 'E2', 'executive_overview.satisfaction'),
+      kpi('not_received', 'ยังไม่รับเรื่อง', 'เรื่อง', 'คำร้องสถานะ new/pending ที่ค้างอยู่ตอนนี้ (ไม่รวมหมวดเฉพาะกิจซึ่งรอเจ้าหน้าที่รับเองตามออกแบบ)', 'E2', 'executive_overview.complaints.backlog'),
+      kpi('unassigned', 'ยังไม่มีผู้รับผิดชอบ', 'เรื่อง', 'คำร้องที่ค้างอยู่ตอนนี้และยังไม่ได้มอบหมายผู้รับผิดชอบ (assigned_to ว่าง)', 'E2', 'executive_overview.complaints.backlog'),
+      kpi('bottleneck', 'ค้างอยู่ขั้นไหน', 'เรื่อง', 'คำร้องที่ค้างอยู่ตอนนี้แยกขั้น ยังไม่รับ / รับแล้ว / กำลังดำเนินการ พร้อมอายุเฉลี่ยเป็นวันทำการนับจากวันที่แจ้ง และกลุ่มอายุ 0–3 / 4–7 / 8–15 / มากกว่า 15 วันทำการ', 'E2', 'executive_overview.complaints.backlog'),
+      kpi('parked', 'ขึ้นทะเบียนรอดำเนินการ', 'เรื่อง', 'คำร้องสถานะ parked ตอนนี้ แยกเหตุผล (แผน/งบประมาณ/อำนาจ/ฤดูกาล/อื่นๆ) — ไม่นับเป็นเลยกำหนด', 'E2', 'executive_overview.complaints.parked'),
+      kpi('by_village', 'แยกหมู่บ้าน', 'เรื่อง', 'นับคำร้องที่แจ้งในช่วงนี้ต่อหมู่บ้าน (ยอดรวมต่อหมู่ ไม่แตกหมวด ไม่มีรายเรื่อง) ไม่รวมหมวดเฉพาะกิจและหมวดอ่อนไหว · แสดงเฉพาะชื่อที่อยู่ในทะเบียนสถานที่ที่แอดมินตั้ง หรือเขียนเป็นเลขหมู่ล้วน (หมู่ 3 / หมู่ที่ ๓ / ม.3) — สถานที่ที่ผู้แจ้งพิมพ์เองนับรวมเป็น "ไม่อยู่ในทะเบียน" เป็นตัวเลขอย่างเดียว (อาจมีชื่อคน/บ้านเลขที่)', 'E2', 'executive_overview.complaints.villages'),
+      kpi('repeat', 'ปัญหาซ้ำซาก', 'กลุ่ม', 'หมวดเดียวกัน + หมู่เดียวกัน ตั้งแต่ 3 เรื่องใน 90 วันล่าสุด (ไม่รวมเรื่องที่ไม่รับ หมวดเฉพาะกิจ หมวดอ่อนไหว และสถานที่ที่ไม่อยู่ในทะเบียน/ไม่ใช่เลขหมู่) — ระบบแค่ชี้ ผู้บริหารตัดสินเอง ระบบไม่สร้างโครงการให้', 'E2', 'executive_overview.complaints.repeat'),
+      kpi('channel', 'ช่องทางแจ้ง', '%', 'สัดส่วนคำร้องที่แจ้งในช่วงนี้ ออนไลน์ (citizen_online) เทียบรับที่เคาน์เตอร์ (oss_counter)', 'E2', 'executive_overview.complaints.period'),
+      kpi('confidential', 'เรื่องอ่อนไหว', 'เรื่อง', 'จำนวนคำร้องหมวดที่ต้องให้เจ้าหน้าที่รับเรื่องเอง (requires_manual_intake เช่น ร้องเรียนเจ้าหน้าที่) ที่แจ้งในช่วงนี้ — แสดงจำนวนเท่านั้น ไม่แตกหมู่บ้าน/หมวด', 'E2', 'executive_overview.complaints.period'),
     ],
     alerts: [
-      alert('overdue_5wd', 'เลยกำหนดเกิน 5 วันทำการ', 'critical', 'ยังไม่เสร็จ และวันนี้เลยวันกำหนดมากกว่า 5 วันทำการ', 'E2'),
-      alert('low_rating', 'คะแนนประเมิน ≤ 2', 'warn', 'มีการประเมินคะแนน 1 หรือ 2 ในช่วงที่เลือก', 'E2'),
+      alert('overdue_5wd', 'เลยกำหนดเกิน 5 วันทำการ', 'critical', 'ค้างอยู่ตอนนี้ และวันนี้เลย due_date มากกว่า 5 วันทำการ (นับด้วยตารางวันหยุดชุดเดียวกับทุกหน้า workingDays.js)', 'E2'),
+      alert('low_rating', 'คะแนนประเมิน ≤ 2', 'warn', 'มีคะแนน 1 หรือ 2 ที่ให้ในช่วงที่เลือก (นับทุกที่มา รวมแบบประเมินภาพรวม) — แสดงจำนวนแยกที่มา ไม่แสดงความเห็น', 'E2'),
     ],
     reports: [
       { id: 'monthly', label: 'สรุปเรื่องร้องเรียนรายเดือน', path: '/reports/complaints', phase: 'E1' },
@@ -139,11 +168,14 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
       kpi('done', 'เสร็จแล้ว', 'เรื่อง', 'สถานะ completed', 'E1', 'doc_request_stats_fy.completed'),
       kpi('avg_days', 'เวลาเฉลี่ยจนเสร็จ', 'วัน', 'ค่าเฉลี่ยของ (issued_at − created_at) เป็นวันปฏิทิน เฉพาะคำขอที่เสร็จแล้ว — ตัวเลขเดียวกับหน้าสถิติสาธารณะ', 'E1', 'doc_request_stats_fy.avg_days'),
       kpi('by_type', 'แยกประเภทคำขอ', 'เรื่อง', 'นับคำขอแยกตาม document_type ทุกประเภทที่เปิดอยู่ รวมประเภทที่ อปท. เพิ่มเอง (ไม่มีชื่อผู้ยื่น)', 'E1', 'doc_requests_public_fy'),
-      kpi('overdue', 'เลยกำหนด', 'เรื่อง', 'คำขอที่ยังไม่เสร็จและเลย due_date ตามระยะเวลาของประเภทนั้น', 'E2'),
-      kpi('on_time_pct', '% เสร็จทันกำหนด', '%', 'คำขอที่เสร็จภายใน due_date ÷ คำขอที่เสร็จทั้งหมด (ระยะเวลาต้องตรงคู่มือประชาชนที่ อปท. ประกาศ)', 'E2'),
+      // ── E2 (executive_overview → summaries.doc_requests) ──
+      kpi('by_type_full', 'แยกประเภทคำขอ (นับในฐานข้อมูล)', 'เรื่อง', 'นับคำขอที่ยื่นในช่วงนี้แยก document_type ในฐานข้อมูลครบทุกแถว (ไม่ถูกตัดที่ 1,000 แถวเหมือนรายการรายเรื่อง) — ยื่น/รอ/กำลังทำ/เสร็จ/ปฏิเสธ + เวลาเฉลี่ย (issued_at − created_at วันปฏิทิน นิยามเดียวกับหน้าสถิติสาธารณะ)', 'E2', 'executive_overview.doc_requests.by_type'),
+      kpi('overdue', 'เลยกำหนด', 'เรื่อง', 'คำขอที่ค้างอยู่ตอนนี้ (pending/processing) และ due_date ก่อนวันนี้ — ⚠️ due_date ของคำขอนับวันปฏิทิน (วันยื่น + จำนวนวันที่ตั้งต่อประเภท) ต่างจากคำร้องที่นับวันทำการ', 'E2', 'executive_overview.doc_requests.backlog'),
+      kpi('on_time_pct', '% เสร็จทันกำหนด', '%', 'คำขอที่ออกผลในช่วงนี้ภายใน due_date ÷ (ทัน + เกิน + ค้างที่เลยกำหนด ณ สิ้นช่วง) แยกประเภท ไม่รวมคำขอที่ปฏิเสธ — ระยะเวลาต่อประเภทต้องตรงคู่มือสำหรับประชาชนที่ อปท. ประกาศ (ต้องยืนยันกับฉบับปัจจุบัน)', 'E2', 'executive_overview.doc_requests.on_time'),
+      kpi('entered', 'ผู้กรอกคำขอ', 'เรื่อง', 'คำขอที่ยื่นในช่วงนี้แยกตาม role ปัจจุบันของบัญชีที่กดยื่น (ฐานข้อมูลประทับเอง แก้ไม่ได้): ประชาชนยื่นเอง / สท. / เจ้าหน้าที่กรอกแทนที่เคาน์เตอร์ / ไม่ทราบผู้กรอก (คำขอก่อน 5 พ.ย. 2569 ที่ยังไม่มีตราประทับ หรือบัญชีผู้กรอกถูกลบแล้ว)', 'E2', 'executive_overview.doc_requests.entered'),
     ],
     alerts: [
-      alert('overdue_5wd', 'คำขอเลยกำหนดเกิน 5 วันทำการ', 'critical', 'ยังไม่เสร็จ และวันนี้เลย due_date มากกว่า 5 วันทำการ', 'E2'),
+      alert('overdue_5wd', 'คำขอเลยกำหนดเกิน 5 วันทำการ', 'critical', 'ค้างอยู่ตอนนี้ และวันนี้เลย due_date มากกว่า 5 วันทำการ (นับด้วย workingDays.js)', 'E2'),
     ],
     reports: [
       { id: 'doc_stats', label: 'สถิติคำขอ (หน้าสาธารณะ)', path: '/doc-stats', phase: 'E1' },
@@ -165,7 +197,8 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     kpis: [
       // ข้อมูลสุขภาพ (ข้อมูลอ่อนไหว) ⇒ ยอดรวมเท่านั้น ห้ามมีชื่อ/โรงพยาบาลปลายทางรายคน
       kpi('requests', 'คำขอ', 'เรื่อง', 'จำนวนคำขอ patient_transport_request ในช่วงที่เลือก (ยอดรวมเท่านั้น)', 'E1', 'doc_requests_public_fy'),
-      kpi('trips', 'เที่ยวรับ-ส่งจริง', 'เที่ยว', 'จำนวนเที่ยวที่ออกรถจริงในช่วงที่เลือก', 'E2'),
+      kpi('trips', 'เที่ยวรับ-ส่งจริง', 'เที่ยว', 'จำนวนเที่ยวรถ (patient_booking_trips) ที่มีใบจองผู้ป่วยซึ่งวันนัดอยู่ในช่วง และออกรถแล้ว (outbound/hospital/returning/completed) — ยอดรวมเท่านั้น', 'E2', 'executive_overview.patient_transport.trips'),
+      kpi('community_trips', 'เที่ยวรับ-ส่งชุมชน', 'เที่ยว', 'นับแบบเดียวกับเที่ยวผู้ป่วย แต่ใบจองประเภทรถรับ-ส่งชุมชน (service_type community)', 'E2', 'executive_overview.patient_transport.trips'),
     ],
     alerts: [], reports: [],
   },
@@ -178,9 +211,10 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     kpis: [
       kpi('esign_pending', 'ใบขอใช้รถรอท่านลงนาม', 'ใบ', 'จำนวนรายการที่ esign_my_pending() คืน — DB ตัดสินว่าถึงคิวท่านแล้ว', 'E1', 'esign_my_pending'),
     ],
+    // ไม่มี "น้ำมันเกินงบ": แท็บงบยานพาหนะยังซ่อนอยู่ (#501) ข้อมูล fleet_budgets ใช้ตัดสินไม่ได้ — เพิ่มเมื่อเปิดแท็บงบ
     alerts: [
-      alert('fuel_over_budget', 'น้ำมันเกินงบ', 'warn', 'ยอดน้ำมันสะสมปีงบเกินวงเงินที่ตั้งไว้', 'E2'),
-      alert('maintenance_due', 'เลยกำหนดซ่อมบำรุง', 'warn', 'เลขไมล์หรือวันที่เลยรอบซ่อมบำรุงที่ตั้งไว้', 'E2'),
+      alert('maintenance_due', 'เลยกำหนดซ่อมบำรุง', 'warn', 'รถที่ใช้งานอยู่ (active) ซึ่งบันทึกซ่อมบำรุงล่าสุดตั้งรอบถัดไป (next_service_date) ไว้ก่อนวันนี้ และยังไม่มีบันทึกซ่อมบำรุงหลังวันรอบนั้น — ใช้วันที่อย่างเดียว ไม่ใช้เลขไมล์ (เลขไมล์พิมพ์ผิดลามได้ #170)', 'E2'),
+      alert('incidents', 'รถเสียหาย/สูญหาย', 'warn', 'มีบันทึกเหตุรถเสียหายหรือสูญหายที่เกิดในช่วงที่เลือก (incident_date หรือวันรับแจ้งถ้าไม่ระบุวันเกิด)', 'E2'),
     ],
     reports: [],
   },
@@ -188,8 +222,11 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     key: 'borrowable-assets', kind: 'module', label: 'พัสดุ/ครุภัณฑ์ (ยืม-คืน)', icon: 'Package', dept: 'กองคลัง',
     zones: ['decision', 'alert'], isCitizenService: false, docTypes: [], summaryKey: 'borrowable_assets', phase: 'E2',
     link: { module: 'borrowable-assets' },
-    kpis: [kpi('awaiting', 'ใบยืมรอพิจารณา', 'ใบ', 'ใบยืมสถานะ submitted', 'E2')],
-    alerts: [alert('overdue_return', 'ยืมเกินกำหนดคืน', 'warn', 'ยังไม่คืน และเลย return_due_date', 'E2')],
+    kpis: [
+      kpi('awaiting', 'ใบยืมรอพิจารณา', 'ใบ', 'ใบยืมสถานะ submitted ตอนนี้ + วันที่ยื่นของใบที่รอนานสุด (นับวันทำการฝั่งหน้าเว็บ)', 'E2', 'executive_overview.borrowable_assets'),
+      kpi('settlement', 'คืนแล้วรอผลชดใช้', 'ใบ', 'ใบยืมสถานะ settlement (คืนของแล้ว รอสรุปการชดใช้ความเสียหาย)', 'E2', 'executive_overview.borrowable_assets'),
+    ],
+    alerts: [alert('overdue_return', 'ยืมเกินกำหนดคืน', 'warn', 'ใบยืมสถานะ issued (ยืมอยู่) และ return_due_date ก่อนวันนี้', 'E2')],
     reports: [],
   },
   {
@@ -197,12 +234,15 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     zones: ['decision', 'alert', 'plan'], isCitizenService: false, docTypes: [], summaryKey: 'projects', phase: 'E2',
     link: { module: 'projects' },
     kpis: [
-      kpi('by_stage', 'โครงการตามขั้น', 'โครงการ', 'นับโครงการแยก stage ของวงจรโครงการ', 'E2'),
-      kpi('change_pending', 'ขอเปลี่ยนแปลง/เลื่อนขั้นรอพิจารณา', 'เรื่อง', 'คำขอเปลี่ยนแปลงที่ยังไม่มีผลพิจารณา', 'E2'),
+      kpi('by_stage', 'โครงการตามขั้น', 'โครงการ', 'โครงการที่ยังไม่จบ (ขั้นไม่ใช่ปิดโครงการ/ยกเลิก/บอกเลิกสัญญา) นับแยกขั้นของวงจรโครงการ', 'E2', 'executive_overview.projects.by_stage'),
+      kpi('change_pending', 'ขอเปลี่ยนแปลงสัญญารอพิจารณา', 'เรื่อง', 'คำขอขยายเวลา / งด-ลดค่าปรับ / แก้ไขสัญญา ที่ยังไม่มีผลพิจารณา (decision ว่าง) + วันที่ยื่นของรายการเก่าสุด — ระบบไม่มีคำขอเลื่อนขั้นแยก (เลื่อนขั้นทำที่เมนูโครงการโดยตรง)', 'E2', 'executive_overview.projects.change_pending'),
+      kpi('suspended', 'ระงับ', 'โครงการ', 'โครงการขั้น suspended ตอนนี้', 'E2', 'executive_overview.projects.suspended'),
     ],
     alerts: [
-      alert('behind', 'ช้ากว่าแผน', 'warn', '% ผลงานจริงต่ำกว่า % ตามแผนของสัปดาห์ล่าสุด', 'E2'),
-      alert('contract_ending', 'ใกล้หมดสัญญา', 'warn', 'เหลือไม่ถึง 15 วันถึงวันสิ้นสุดสัญญา และยังไม่ส่งมอบ', 'E2'),
+      alert('behind', 'ช้ากว่าแผน', 'warn', 'โครงการขั้นทำสัญญา/เริ่มงาน/ก่อสร้าง ที่รายงานรายสัปดาห์ฉบับล็อก (final) ล่าสุดติดป้าย "ช้า" (ผลงานจริงต่ำกว่าแผนตั้งแต่ 0.5%) — อ่านป้ายที่ล็อกไว้ ไม่คำนวณใหม่', 'E2'),
+      alert('contract_ending', 'ใกล้หมดสัญญา', 'warn', 'วันสิ้นสุดสัญญาที่มีผล (รวมต่อสัญญา/ขยายเวลาที่อนุมัติ — สูตรเดียวกับ contractSchedule ในเมนูโครงการ) เหลือ 0–15 วัน และยังอยู่ขั้นทำสัญญา/เริ่มงาน/ก่อสร้าง', 'E2'),
+      alert('contract_past', 'เลยวันสิ้นสุดสัญญา', 'critical', 'วันสิ้นสุดสัญญาที่มีผลผ่านไปแล้ว แต่ยังอยู่ขั้นทำสัญญา/เริ่มงาน/ก่อสร้าง (ยังไม่เข้าขั้นตรวจรับงานงวดสุดท้าย)', 'E2'),
+      alert('report_missing', 'ไม่มีรายงานความก้าวหน้า', 'info', 'โครงการขั้นทำสัญญา/เริ่มงาน/ก่อสร้าง ที่ยังไม่มีรายงานรายสัปดาห์ฉบับล็อก หรือฉบับล่าสุดสิ้นช่วงก่อนวันนี้เกิน 14 วัน', 'E2'),
     ],
     reports: [],
   },
@@ -210,22 +250,32 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     key: 'local-plan', kind: 'module', label: 'แผนพัฒนาท้องถิ่น', icon: 'ClipboardList', dept: 'สำนักปลัด',
     zones: ['decision', 'alert', 'plan'], isCitizenService: false, docTypes: [], summaryKey: 'local_plan', phase: 'E2',
     link: { module: 'local-plan' },
-    kpis: [kpi('progress_by_dept', '% ดำเนินการรายกอง', '%', 'รายการแผนการดำเนินงานที่บันทึกผลแล้ว ÷ ทั้งหมดของกอง', 'E2')],
-    alerts: [alert('result_missing', 'ถึงกำหนดแต่ยังไม่บันทึกผล', 'warn', 'รายการที่เดือนดำเนินการผ่านไปแล้วแต่ยังไม่มีผล', 'E2')],
+    kpis: [
+      // % รายกองไม่คิดใน SQL: viewer/ปลัดอ่านตารางแผนได้ตาม RLS (local_plan_can_read) — ใช้ตัวคำนวณเดียวกับเมนูแผนพัฒนา
+      kpi('progress_by_dept', '% ดำเนินการรายกอง', '%', 'รายการในแผนการดำเนินงานฉบับที่มีผลของปีงบนี้ที่ "แล้วเสร็จ" ÷ ทั้งหมดของกอง (นับรายการ ไม่ถ่วงเงิน) — ผลมาจากขั้นโครงการก่อสร้างที่ผูกไว้ก่อน แล้วจึงผลที่กองบันทึก · คำนวณด้วยตัวเดียวกับเมนูแผนพัฒนา', 'E2', 'localPlanProgress.summarize'),
+      kpi('drafts', 'ร่างแผนรอประกาศ', 'ฉบับ', 'แผนการดำเนินงาน (ฉบับหลัก/เพิ่มเติม/แก้ไข) และแผนพัฒนาท้องถิ่นที่ยังเป็นฉบับร่าง', 'E2', 'executive_overview.local_plan'),
+    ],
+    alerts: [
+      alert('result_missing', 'ถึงกำหนดแต่ยังไม่มีผล', 'warn', 'รายการในแผนการดำเนินงานฉบับที่มีผลของปีงบนี้ที่เดือนสิ้นสุด (month_to) ผ่านไปแล้ว แต่ยังไม่มีผล (กองยังไม่บันทึก และไม่ได้ผูกโครงการก่อสร้าง)', 'E2'),
+      alert('no_published_plan', 'ปีงบนี้ยังไม่ประกาศแผนการดำเนินงาน', 'warn', 'ปีงบประมาณปัจจุบันยังไม่มีแผนการดำเนินงานฉบับหลัก/แก้ไขที่ประกาศแล้ว — ไม่ตัดสินว่าเลยกำหนดตามระเบียบ (วันกำหนดดูที่เมนูแผนพัฒนา)', 'E2'),
+    ],
     reports: [],
   },
   {
+    // ไม่มีเตือน "งานซ่อมค้าง": infrastructure_works เป็นบันทึกงานหน้างานของช่าง (สถานะเริ่มต้น completed ไม่มีวันปิด)
+    // ไม่ใช่คิวงานซ่อม — ตัวเลขค้างจะไม่มีความหมาย (ตรวจ 2026-11-10) · งานซ่อมตามคำร้องนับที่คำร้องแล้ว
     key: 'infra', kind: 'module', label: 'บันทึกงานซ่อม', icon: 'Wrench', dept: 'กองช่าง',
-    zones: ['alert'], isCitizenService: false, docTypes: [], summaryKey: 'infra', phase: 'E2',
+    zones: ['context'], isCitizenService: false, docTypes: [], summaryKey: null, phase: 'E2',
     link: { module: 'infra' },
-    kpis: [], alerts: [alert('stale', 'งานซ่อมค้าง', 'warn', 'งานซ่อมที่ยังไม่ปิดเกิน 15 วันทำการ', 'E2')], reports: [],
+    kpis: [], alerts: [], reports: [],
   },
   {
     key: 'water-situation', kind: 'module', label: 'สถานการณ์น้ำ-ฝน', icon: 'CloudRain', dept: 'สำนักปลัด',
     zones: ['decision', 'alert', 'area'], isCitizenService: false, docTypes: [], summaryKey: 'water', phase: 'E1',
     link: { path: '/water-situation' },
-    kpis: [kpi('announce_pending', 'ประกาศน้ำ-ฝนรอยืนยัน', 'ฉบับ', 'ประกาศที่ระบบร่างแล้วรอผู้มีอำนาจยืนยัน', 'E2')],
-    alerts: [alert('critical_level', 'ระดับน้ำวิกฤต', 'critical', 'สถานีในพื้นที่รายงานระดับวิกฤตตามเกณฑ์ ThaiWater', 'E2')],
+    kpis: [kpi('announce_pending', 'ประกาศน้ำ-ฝนรอยืนยัน', 'ฉบับ', 'ประกาศที่ระบบร่างแล้ว (status draft) รอผู้มีอำนาจยืนยัน — มีได้ครั้งละ 1 ฉบับต่อ อปท.', 'E2', 'executive_overview.water.announce_pending')],
+    // ใช้เกณฑ์เปิดเหตุการณ์ของระบบเอง (ล็อก rule_version ไว้ในเหตุการณ์) ไม่แปลค่าดิบ ThaiWater ซ้ำในหน้านี้
+    alerts: [alert('event_open', 'มีเหตุการณ์น้ำ-ฝนเปิดอยู่', 'warn', 'ระบบเปิดเหตุการณ์น้ำ-ฝนตามเกณฑ์ที่ตั้งไว้และยังไม่ปิด (water_events ที่ closed_at ว่าง) + เวลาเปิดของเหตุการณ์เก่าสุด', 'E2')],
     reports: [{ id: 'infographic', label: 'อินโฟกราฟิกน้ำ-ฝน', path: '/water-situation', phase: 'E1' }],
   },
   {
@@ -241,14 +291,22 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     link: { module: 'events' },
     kpis: [
       kpi('assigned', 'กิจกรรมที่มอบหมายให้ท่าน', 'รายการ', 'กิจกรรมในปฏิทินที่มอบหมายให้ท่าน (event_assignments) วันนี้และพรุ่งนี้ — ชุดเดียวกับหน้าแรกเจ้าหน้าที่', 'E1', 'staff_home_summary.my_events'),
-      kpi('upcoming', 'กำหนดการ 7 วัน', 'รายการ', 'กิจกรรมกลุ่มผู้บริหาร + รายการส่วนตัวของท่าน วันนี้ถึงอีก 7 วัน', 'E2'),
+      kpi('upcoming', 'กำหนดการ 7 วัน', 'รายการ', 'กิจกรรมที่ท่านเห็นในปฏิทิน (list_events_for_staff: นายก/รองนายกเห็นกลุ่มผู้บริหาร) + รายการส่วนตัวของท่าน (personal_events) วันนี้ถึงอีก 7 วัน — ชุดเดียวกับปฏิทินกิจกรรม', 'E2', 'list_events_for_staff + personal_events'),
     ],
     alerts: [], reports: [],
   },
   {
     key: 'performance', kind: 'module', label: 'ผลการปฏิบัติงาน', icon: 'Award', dept: null,
     zones: ['dept'], isCitizenService: false, docTypes: [], summaryKey: 'departments', phase: 'E2',
-    link: { module: 'performance' }, kpis: [], alerts: [], reports: [],
+    link: { module: 'performance' },
+    // 1 แถวต่อกอง ไม่จัดอันดับรายคน (ดูรายคนที่เมนูผลการปฏิบัติงานตามสิทธิ์เดิม)
+    kpis: [
+      kpi('dept_open', 'งานบริการค้างรายกอง', 'เรื่อง', 'คำร้อง (ไม่รวมหมวดเฉพาะกิจ รวมเรื่องที่ยังไม่รับ) + คำขอ ที่ค้างอยู่ตอนนี้ แยกตามกองที่ถือเรื่อง (department_id หรือชื่อกองเดิมของคำร้อง — ชุดเดียวกับเมนูผลการปฏิบัติงาน) · เรื่องที่ไม่ระบุกองแสดงท้ายตาราง · ⚠️ ต่างจาก "กองของฉัน" ในหน้าแรกเจ้าหน้าที่ที่นับเฉพาะเรื่องที่รับแล้ว', 'E2', 'executive_overview.departments'),
+      kpi('dept_overdue', 'เลยกำหนดรายกอง', 'เรื่อง', 'ส่วนของงานค้างที่ due_date ก่อนวันนี้ (คำร้องนับวันทำการตอนตั้งกำหนด คำขอนับวันปฏิทิน)', 'E2', 'executive_overview.departments'),
+      kpi('dept_done', 'เสร็จในช่วงนี้รายกอง', 'เรื่อง', 'คำร้องที่วันเสร็จอยู่ในช่วง (นิยามวันเสร็จเดียวกับเมนูผลการปฏิบัติงาน) + คำขอที่ออกผล (issued_at) ในช่วง', 'E2', 'executive_overview.departments'),
+      kpi('dept_rating', 'คะแนนเฉลี่ยรายกอง', 'คะแนน', 'ค่าเฉลี่ย "เสียงผู้รับบริการตัวจริง" ของคำร้องที่ปิดในช่วงนี้ แยกตามกองของคำร้อง พร้อมจำนวนคะแนน (ไม่มีคะแนน = ขีด ไม่ใช่ 0)', 'E2', 'executive_overview.satisfaction.by_dept'),
+    ],
+    alerts: [], reports: [],
   },
   {
     key: 'report', kind: 'module', label: 'รายงาน', icon: 'BarChart3', dept: null,
@@ -276,7 +334,9 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     key: 'tourism-reviews', kind: 'module', label: 'รีวิวสถานที่', icon: 'Star', dept: null,
     zones: ['context'], isCitizenService: false, docTypes: [], summaryKey: null, phase: 'E2',
     link: { module: 'tourism-reviews' },
-    kpis: [kpi('awaiting_review', 'รีวิวรอตรวจ', 'รายการ', 'รีวิวที่ยังไม่ผ่านการตรวจ', 'E2')], alerts: [], reports: [],
+    // รีวิวไม่มีสถานะ "รอตรวจ" — ขึ้นทันที เจ้าหน้าที่ลบรีวิวไม่เหมาะสมภายหลัง (TourismManager.jsx) จึงนับรีวิวใหม่แทน
+    kpis: [kpi('new_reviews', 'รีวิวใหม่', 'รายการ', 'รีวิวสถานที่ที่เขียนในช่วงที่เลือก (tourism_reviews.created_at) — รีวิวขึ้นทันทีโดยไม่ผ่านการตรวจ เจ้าหน้าที่ลบรีวิวไม่เหมาะสมภายหลังได้', 'E2', 'tourism_reviews')],
+    alerts: [], reports: [],
   },
   {
     key: 'waste', kind: 'module', label: 'ตารางเก็บขยะ', icon: 'Trash2', dept: null,
@@ -290,13 +350,20 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     zones: ['decision'], isCitizenService: false, docTypes: [], summaryKey: null, phase: 'E1',
     link: { module: 'fleet' },
     kpis: [kpi('my_pending', 'เอกสารรอท่านลงนาม', 'ใบ', 'esign_my_pending().count — ปัจจุบันครอบเฉพาะใบขอใช้รถ', 'E1', 'esign_my_pending')],
-    alerts: [alert('waiting_2wd', 'รอลงนามเกิน 2 วันทำการ', 'warn', 'รายการที่ถึงคิวท่านมานานกว่า 2 วันทำการ', 'E2')],
+    // E3: esign_my_pending ยังไม่มีเวลาที่ "ถึงคิวท่าน" (มีแค่ planned_departure/last_return) — ต้องอนุมานจากเวลาลงนามช่องก่อนหน้าใน esign_slots
+    alerts: [alert('waiting_2wd', 'รอลงนามเกิน 2 วันทำการ', 'warn', 'รายการที่ถึงคิวท่านมานานกว่า 2 วันทำการ (นับจากเวลาที่ช่องก่อนหน้าลงนาม)', 'E3')],
     reports: [],
   },
   {
     key: 'src:satisfaction', kind: 'source', label: 'ความพึงพอใจ', icon: 'Smile', dept: null,
     zones: ['service'], isCitizenService: false, docTypes: [], summaryKey: 'satisfaction', phase: 'E2',
-    link: { path: '/satisfaction' }, kpis: [], alerts: [], reports: [],
+    link: { path: '/satisfaction' },
+    // ไม่แสดงความเห็น (ข้อความที่ผู้ประเมินพิมพ์เอง) บนหน้ารวม — RPC ไม่คืนอยู่แล้ว
+    kpis: [
+      kpi('by_source', 'คะแนนแยกที่มา', 'คะแนน', 'จำนวนเรื่องและค่าเฉลี่ยคะแนนของคำร้องที่ปิดในช่วงนี้ แยก: ผู้ยื่นที่ล็อกอินประเมินเอง / ผู้ถือลิงก์ติดตามเรื่อง / สท. บันทึกแทน / ผูกคำร้องแต่ไม่ล็อกอิน — สูตรเดียวกับรายงาน #681', 'E2', 'executive_overview.satisfaction.sources'),
+      kpi('general', 'แบบประเมินภาพรวม', 'คะแนน', 'จำนวนและค่าเฉลี่ยแบบประเมินภาพรวมหน่วยงาน (หน้า /satisfaction ไม่ผูกคำร้อง) ที่ให้ในช่วงนี้', 'E2', 'executive_overview.satisfaction.general'),
+    ],
+    alerts: [], reports: [],
   },
   {
     key: 'src:site-visits', kind: 'source', label: 'สถิติการเข้าชมเว็บไซต์', icon: 'Eye', dept: null,
