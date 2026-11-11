@@ -2869,6 +2869,9 @@ export default function StaffDashboard() {
                 newComplaintCount={newComplaintCount}
                 patientWorkCount={patientWorkCount}
                 workStatus={workStatus}
+                // ป้ายเมนูของโมดูลรายกอง (แผนพัฒนา/โครงสร้างพื้นฐาน/โครงการก่อสร้าง) — ขึ้นหน้าแรกในส่วน "งานที่เปิดอยู่"
+                // ready = ผลชุดนี้เป็นของบริบทปัจจุบัน (อปท./ผู้ใช้/สิทธิ์) ไม่ใช่ค่าว่างตั้งต้น
+                openWork={{ ready: departmentWork.scopeKey === departmentWorkScopeKey, counts: departmentWorkCounts, errors: departmentWorkErrors }}
                 navigate={navigate}
                 onCreateManagementEvent={() => {
                   setAutoCreateEventSignal(signal => signal + 1)
@@ -2885,6 +2888,7 @@ export default function StaffDashboard() {
                 pendingCount={pendingCount}
                 newComplaintCount={newComplaintCount}
                 patientWorkCount={patientWorkCount}
+                openWorkCounts={departmentWorkCounts}
               />
             )}
             {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} currentUserRole={profile?.role} onRequestDeleted={refreshPendingBadge} />}
