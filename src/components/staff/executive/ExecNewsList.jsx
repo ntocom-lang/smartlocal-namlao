@@ -19,6 +19,9 @@ import { LoadingLine, SectionError } from './ExecParts'
 
 const SHOWABLE_CODES = new Set(['42501', '22023', 'P0002'])
 const GENERIC_ERROR = 'โหลดรายการเรื่องที่ดำเนินการแล้วไม่ได้'
+// แสดงเฉพาะเรื่องล่าสุด 5 เรื่อง (เจ้าของระบบสั่ง 2026-11-11 — ยาวเกินไม่มีใครเลื่อนดู) · RPC เรียงเสร็จล่าสุดก่อนแล้ว
+// ปุ่ม "ภาพข่าวรวม" ยังจัดกลุ่มจากทุกเรื่องใน 90 วัน (กลุ่มเรื่องวันเดียวกันต้องไม่ขาดเพราะถูกตัดหน้าจอ)
+const NEWS_SHOW_LIMIT = 5
 
 const isDay = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)
 
@@ -70,6 +73,9 @@ export default function ExecNewsList({ tenant }) {
   const rawItems = data?.items
   const items = useMemo(() => (Array.isArray(rawItems) ? rawItems : []), [rawItems])
   const days = data?.days ?? 90
+  const shown = items.slice(0, NEWS_SHOW_LIMIT)
+  // total = ทุกเรื่องใน 90 วัน (ไม่ติดเพดาน 100 ของ RPC) · ไม่มีค่า = นับจากที่ได้มา
+  const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : items.length
   const batchCandidates = useMemo(() => items.flatMap((item) => {
     const day = isDay(item.closed) ? item.closed.slice(0, 10) : ''
     const label = String(item.cat_label ?? '').trim()
@@ -97,9 +103,9 @@ export default function ExecNewsList({ tenant }) {
           ยังไม่มีเรื่องที่ดำเนินการแล้วและมีรูปใน {execNf(days)} วันที่ผ่านมา
         </p>
       )}
-      {state.status === 'ok' && data?.truncated && (
-        <p data-exec-news-truncated className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-900">
-          แสดง {execNf(data.limit)} จาก {execNf(data.total)} เรื่อง
+      {state.status === 'ok' && total > shown.length && (
+        <p data-exec-news-truncated className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600">
+          แสดง {execNf(shown.length)} เรื่องล่าสุด จาก {execNf(total)} เรื่อง
         </p>
       )}
       {state.status === 'ok' && hasBatch && (
@@ -111,7 +117,7 @@ export default function ExecNewsList({ tenant }) {
       )}
       {state.status === 'ok' && items.length > 0 && (
         <ul className="space-y-1.5">
-          {items.map((item) => <NewsRow key={item.id} item={item} onOpen={(row) => setOpenId(row.id)} />)}
+          {shown.map((item) => <NewsRow key={item.id} item={item} onOpen={(row) => setOpenId(row.id)} />)}
         </ul>
       )}
 
