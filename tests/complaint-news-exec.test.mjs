@@ -70,7 +70,13 @@ await test('ฝั่งห้องผู้บริหาร: ปุ่มพ
 
   const list = await read('src/components/staff/executive/ExecNewsList.jsx')
   assert.match(list, /ยังไม่มีเรื่องที่ดำเนินการแล้วและมีรูปใน/)
-  assert.match(list, /แสดง \{execNf\(data\.limit\)\} จาก \{execNf\(data\.total\)\} เรื่อง/)
+  // แสดงแค่ 5 เรื่องล่าสุด (เจ้าของระบบสั่ง 2026-11-11) · ภาพข่าวรวมยังจัดกลุ่มจากทุกเรื่อง ไม่ใช่เฉพาะ 5 แถวที่เห็น
+  assert.match(list, /const NEWS_SHOW_LIMIT = 5\b/)
+  assert.match(list, /const shown = items\.slice\(0, NEWS_SHOW_LIMIT\)/)
+  assert.match(list, /\{shown\.map\(\(item\) => <NewsRow/)
+  assert.doesNotMatch(list, /\{items\.map\(\(item\) => <NewsRow/, 'รายการต้องวาดจาก shown ไม่ใช่ items ทั้งหมด')
+  assert.match(list, /const batchCandidates = useMemo\(\(\) => items\.flatMap/, 'ภาพข่าวรวมต้องจัดกลุ่มจากทุกเรื่อง')
+  assert.match(list, /แสดง \{execNf\(shown\.length\)\} เรื่องล่าสุด จาก \{execNf\(total\)\} เรื่อง/)
   assert.match(list, /SectionError/)
   assert.match(list, /#c2410c/)
   // PDPA + กติกาห้องผู้บริหาร (ตรวจเฉพาะโค้ด ไม่นับคอมเมนต์)
