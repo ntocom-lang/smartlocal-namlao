@@ -6,7 +6,7 @@ import {
   ChevronRight, ChevronLeft, Filter, Search, Phone, Trash2, Wrench,
   MapPin, X, FileText, Camera, ChevronDown,
   Shield, Printer, Users, RefreshCw, AlertTriangle, Building2, BarChart3, List,
-  Archive, RotateCcw,
+  Archive, RotateCcw, Megaphone,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
@@ -20,6 +20,7 @@ import ReturnToIntakeButton from '../complaints/ReturnToIntakeButton'
 import FinishComplaintDialog from '../complaints/FinishComplaintDialog'
 import ParkComplaintDialog from '../complaints/ParkComplaintDialog'
 import ComplaintTextBlock from '../complaints/ComplaintTextBlock'
+import ComplaintNewsDialog from '../complaints/ComplaintNewsDialog'
 import {
   canFinishWork, canParkWork, canUnparkWork, isComplaintWorker, isFinishedLike, isParked, parkReasonLabel,
   PARKED_LABEL, PARKED_PUBLIC_NOTE, PARKED_STATUS, requiresResolvedPin,
@@ -1632,6 +1633,8 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const [bulkDeleting, setBulkDeleting]           = useState(false)
   // รหัสเรื่องที่กำลังเปิดกล่อง "ขึ้นทะเบียนรอดำเนินการ" จากแถบเลือกหลายรายการ (null = ปิดอยู่)
   const [parkIds, setParkIds]                     = useState(null)
+  // คำร้องที่กำลังเปิดกล่อง "ภาพข่าว" (null = ปิดอยู่) — ปุ่มอยู่คอลัมน์การดำเนินการของเรื่องที่ดำเนินการแล้ว
+  const [newsComplaint, setNewsComplaint]           = useState(null)
   // เตือนเมื่อเปลี่ยนสถานะสำเร็จแต่เขียนประวัติ (complaint_timeline) ไม่ผ่าน RLS
   const [timelineWarning, setTimelineWarning]     = useState(null)
   // ชื่อผู้ใช้ปัจจุบัน ใช้ลง actor_name ของ timeline — ประวัติที่ไม่รู้ว่าใครทำใช้ตรวจสอบไม่ได้
@@ -2581,6 +2584,18 @@ ${summaryHtml}
                           tenant={tenant} categoryMeta={categoryMeta} onFinished={() => fetchComplaints()} allowReceive={isAdmin} />
                       </div>
                     )}
+                    {/* ภาพข่าว: การ์ดมือถือ — เงื่อนไขเดียวกับปุ่มในตาราง (เจ้าหน้าที่ใช้มือถือเป็นหลัก) */}
+                    {normalizeActionStatus(c.status) === 'closed' && c.category !== 'odor'
+                      && (isAdmin || (c.assigned_to && c.assigned_to === currentUserId)) && (
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <button type="button" onClick={() => setNewsComplaint(c)} disabled={(c.work_photos ?? []).length === 0}
+                          title={(c.work_photos ?? []).length > 0 ? 'สร้างภาพข่าวประชาสัมพันธ์ไปแชร์ลง LINE/เพจ' : 'ยังไม่มีรูปหลังดำเนินการ — เพิ่มรูปในรายละเอียดเรื่องก่อน'}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold text-white whitespace-nowrap active:scale-95 disabled:opacity-50"
+                          style={{ backgroundColor: '#c2410c' }}>
+                          <Megaphone size={14} /> ภาพข่าว
+                        </button>
+                      </div>
+                    )}
                   </div>
                   </div>
                 </div>
@@ -2752,6 +2767,20 @@ ${summaryHtml}
                               )}
                             </>
                           )}
+                          {/* ภาพข่าวประชาสัมพันธ์: เรื่องที่ดำเนินการแล้วไม่มีปุ่มสถานะถัดไปอยู่แล้ว ปุ่มนี้จึงใช้ที่เดิม
+                              คอลัมน์ไม่กว้างขึ้น (ตารางกว้างเกินพื้นที่อยู่แล้ว ดู test:staff-inbox) · ไม่มีรูปหลังดำเนินการ = กดไม่ได้ */}
+                          {normalizeActionStatus(c.status) === 'closed' && c.category !== 'odor'
+                            && (isAdmin || (c.assigned_to && c.assigned_to === currentUserId)) && (() => {
+                            const hasPhotos = (c.work_photos ?? []).length > 0
+                            return (
+                              <button type="button" onClick={() => setNewsComplaint(c)} disabled={!hasPhotos}
+                                title={hasPhotos ? 'สร้างภาพข่าวประชาสัมพันธ์ไปแชร์ลง LINE/เพจ' : 'ยังไม่มีรูปหลังดำเนินการ — เพิ่มรูปในรายละเอียดเรื่องก่อน'}
+                                className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg text-[11px] font-semibold text-white whitespace-nowrap transition-all active:scale-95 disabled:opacity-50"
+                                style={{ backgroundColor: '#c2410c' }}>
+                                <Megaphone size={12} /> ภาพข่าว
+                              </button>
+                            )
+                          })()}
                         </div>
                       </td>
                     </tr>
@@ -2881,6 +2910,18 @@ ${summaryHtml}
             setComplaints((prev) => prev.map((row) => row.id === id ? { ...row, ...patch } : row))
             setSelectedComplaint((prev) => prev?.id === id ? { ...prev, ...patch } : prev)
           }}
+        />
+      )}
+
+      {newsComplaint && (
+        <ComplaintNewsDialog
+          key={newsComplaint.id}
+          complaint={newsComplaint}
+          tenant={tenant}
+          departmentName={newsComplaint.department ?? ''}
+          categoryLabel={categoryNameOf(CATEGORY_LABEL, newsComplaint.category)}
+          closedAt={finishedAtOf(newsComplaint)}
+          onClose={() => setNewsComplaint(null)}
         />
       )}
 
