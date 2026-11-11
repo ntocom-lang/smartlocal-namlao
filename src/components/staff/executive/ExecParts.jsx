@@ -19,20 +19,24 @@ const EXEC_TONES = Object.freeze({
   slate: { panel: 'border-slate-200 bg-slate-50', chip: 'bg-slate-600 text-white', title: 'text-slate-900', note: 'text-slate-500' },
 })
 
-/** กล่องของแต่ละโซน (พื้นสีประจำโซน + หัวมีไอคอนสี) — id ใช้ผูก aria-labelledby และเลือกสีจาก EXEC_TONES */
-export function ExecSection({ id, title, Icon, note, aside, children, className = '' }) {
+/**
+ * กล่องของแต่ละโซน (พื้นสีประจำโซน + หัวมีไอคอนสี) — id ใช้ผูก aria-labelledby และเลือกสีจาก EXEC_TONES
+ * compact = หัวเล็ก/ระยะแคบ สำหรับโซนแถวบนสุด (รอตัดสินใจ/กำหนดการ) — เจ้าของระบบขอ 2026-11-11 ให้กินที่น้อยลง
+ * นายกจะได้เห็นเรื่องเลยกำหนด/สัญญาณเตือนที่อยู่ถัดลงไปโดยไม่ต้องเลื่อนไกล
+ */
+export function ExecSection({ id, title, Icon, note, aside, children, className = '', compact = false }) {
   const tone = EXEC_TONES[id] ?? EXEC_TONES.slate
   return (
     <section data-exec-zone={id} aria-labelledby={`exec-${id}-title`}
-      className={`min-w-0 space-y-3 rounded-3xl border p-3 shadow-sm sm:p-4 ${tone.panel} ${className}`}>
-      <div className="flex items-start gap-2.5">
+      className={`min-w-0 rounded-3xl border shadow-sm ${compact ? 'space-y-2 p-2.5 sm:p-3' : 'space-y-3 p-3 sm:p-4'} ${tone.panel} ${className}`}>
+      <div className={`flex items-start ${compact ? 'gap-2' : 'gap-2.5'}`}>
         {Icon && (
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm ${tone.chip}`}>
-            <Icon size={18} aria-hidden="true" />
+          <span className={`flex shrink-0 items-center justify-center shadow-sm ${compact ? 'h-7 w-7 rounded-lg' : 'h-9 w-9 rounded-xl'} ${tone.chip}`}>
+            <Icon size={compact ? 15 : 18} aria-hidden="true" />
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <h2 id={`exec-${id}-title`} className={`text-base font-black leading-tight ${tone.title}`}>{title}</h2>
+          <h2 id={`exec-${id}-title`} className={`font-black leading-tight ${compact ? 'text-sm' : 'text-base'} ${tone.title}`}>{title}</h2>
           {note && <p className={`text-[11px] leading-snug ${tone.note}`}>{note}</p>}
         </div>
         {aside}
