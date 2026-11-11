@@ -133,6 +133,10 @@ jobs:
             # ห้องผู้บริหาร E3-2: exec_overdue_items / exec_follow / exec_nudge / exec_nudge_payload บน PGlite ตัวเดียวกัน
             # ล้มเมื่อสิทธิ์หลุด · เลขที่เรื่องหมวดคุ้มครองผู้ร้องหลุด · กติกาเร่งวันละครั้ง/กดซ้ำ/จองแถวเพี้ยน
             exec-follow-nudge-db
+            # ห้องผู้บริหาร E3-3: exec_digest_for (สวมเป็นผู้รับ) / exec_digest_recipients / exec_digest_ack / exec_low_ratings_pending
+            # บน PGlite ตัวเดียวกัน — ล้มเมื่อสิทธิ์หลุด (บัญชีผู้ใช้เรียกตรงได้) · สวมผู้รับแล้วไม่คืน claims · ชื่อ/ความเห็นหลุดออกมา
+            # · ผู้รับรวม admin/superadmin · แจ้งซ้ำหลัง ack · ปิดหมวด exec_digest แล้วยังได้รับ
+            exec-digest-db
           )
           failed=()
           for t in "${tests[@]}"; do
