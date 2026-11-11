@@ -278,6 +278,44 @@ export function fitPlateText(value, width, maxSize, minSize, bold, measure) {
   return { size: minSize, bold, lines: best ? best.lines : wrapLines(text, width, minSize, bold, measure) }
 }
 
+// ด้านยาวสูงสุดของรูปนายกที่ภาพข่าวใช้จริง (prepareExecutivePhoto ย่อลงเท่านี้ก่อนวาด) — หน้าตั้งค่าอัปโหลดไม่เกินนี้ด้วย
+// เก็บใหญ่กว่านี้ไม่ได้ภาพคมขึ้น แต่ไฟล์ PNG ใหญ่ขึ้นเกือบเท่าตัว และทุกครั้งที่เปิดกล่องภาพข่าวต้องดึงผ่าน drive-file (กิน egress)
+export const NEWS_EXEC_PHOTO_SIDE = 720
+
+const OWN_ALPHA_SHARE = 0.01 // จุดโปร่งใส (alpha < 128) ตั้งแต่ 1% ของรูป = ผู้อัปโหลดเตรียมพื้นโปร่งใสมาเอง
+const OWN_ALPHA_MIN = 16 // จุดจางกว่านี้ (เงาฟุ้งรอบตัวจากโปรแกรมตัดภาพ) ไม่นับเป็นตัวคนตอนครอป
+
+/**
+ * รูปที่มีพื้นโปร่งใสมาเอง (PNG/WebP ที่ตัดพื้นหลังด้วยโปรแกรมอื่นแล้ว) → คืนกรอบส่วนที่มองเห็น {x,y,w,h} ไว้ครอปชิดตัวคน
+ * คืน null = รูปทึบทั้งรูป (JPEG / PNG ไม่มีช่องโปร่งใส) ให้ผู้เรียกใช้ cutoutPlainBackground ต่อตามเดิม
+ * ไม่แก้ data · เกณฑ์ 1% กันรูปทึบที่มีจุดโปร่งใสหลุดมาแค่ไม่กี่จุดถูกนับว่า "ตัดมาแล้ว"
+ * @param {Uint8ClampedArray | Uint8Array} data
+ * @param {number} width
+ * @param {number} height
+ */
+export function transparentPhotoBox(data, width, height) {
+  const n = width * height
+  if (!data || !Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || data.length < n * 4) return null
+  let clear = 0
+  let minX = width
+  let minY = height
+  let maxX = -1
+  let maxY = -1
+  for (let p = 0; p < n; p += 1) {
+    const a = data[p * 4 + 3]
+    if (a < 128) clear += 1
+    if (a < OWN_ALPHA_MIN) continue
+    const x = p % width
+    const y = (p - x) / width
+    if (x < minX) minX = x
+    if (x > maxX) maxX = x
+    if (y < minY) minY = y
+    if (y > maxY) maxY = y
+  }
+  if (clear < n * OWN_ALPHA_SHARE || maxX < 0) return null
+  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 }
+}
+
 // ── ตัดพื้นหลังเรียบของรูปนายก (ฉากขาว/ฉากสีเดียวแบบรูปถ่ายติดบัตร) — กติกาตรงไปตรงมา ไม่ใช้ AI ไม่มีค่าใช้จ่าย ──
 const CUT_EDGE_TOL = 40 // ขอบบน/ซ้าย/ขวาต้องเป็นสีเดียวกันภายในระยะนี้ (RGB แบบยุคลิด)
 const CUT_EDGE_SHARE = 0.8 // ...อย่างน้อย 80% ของจุดบนขอบ ไม่งั้นถือว่าไม่ใช่ฉากเรียบ

@@ -312,12 +312,44 @@ await test('ตัดพื้นหลังรูปนายก: ไม่แ
   assert.equal(News.cutoutPlainBackground(new Uint8ClampedArray(16), 100, 100), null)
 })
 
+await test('รูปนายก PNG พื้นโปร่งใสมาเอง: คืนกรอบส่วนที่มองเห็น ไม่แตะพิกเซล · รูปทึบคืน null', () => {
+  // รูปที่ตัดพื้นหลังมาแล้ว: นอกตัวคนโปร่งใส 100% + จุดเงาฟุ้งจาง (alpha 8)
+  const cut = portrait()
+  for (let p = 0; p < cut.w * cut.h; p += 1) if (cut.data[p * 4 + 2] === 250) cut.data[p * 4 + 3] = 0
+  cut.data[(5 * cut.w + 5) * 4 + 3] = 8 // จุดเงาจางมุมบนซ้าย ห้ามดันกรอบให้กว้าง
+  const before = Uint8ClampedArray.from(cut.data)
+  const box = News.transparentPhotoBox(cut.data, cut.w, cut.h)
+  assert.ok(box, 'PNG โปร่งใสต้องได้กรอบ')
+  assert.deepEqual(cut.data, before, 'ห้ามแก้พิกเซลของรูปที่ผู้ใช้ตัดมาเอง')
+  assert.ok(box.y >= 18 && box.y <= 22, `ยอดหัว ${box.y}`)
+  assert.equal(box.y + box.h, 100)
+  assert.equal(box.x, 16) // ไหล่ซ้าย (ลำตัวเริ่ม 20% ของ 80 px) ไม่ใช่จุดเงาที่ x=5
+  // รูปทึบทั้งรูป (JPEG/PNG ธรรมดา) → null ให้ไปตัดฉากเรียบตามเดิม
+  const solid = portrait()
+  assert.equal(News.transparentPhotoBox(solid.data, solid.w, solid.h), null)
+  // โปร่งใสแค่ไม่กี่จุด (< 1%) ไม่นับว่าตัดมาแล้ว
+  for (let x = 0; x < 40; x += 1) solid.data[x * 4 + 3] = 0
+  assert.equal(News.transparentPhotoBox(solid.data, solid.w, solid.h), null)
+  // โปร่งใสทั้งรูป (ไฟล์ว่าง) → null ไม่มีอะไรให้วาด · ค่าผิดรูป → null
+  assert.equal(News.transparentPhotoBox(new Uint8ClampedArray(20 * 20 * 4), 20, 20), null)
+  assert.equal(News.transparentPhotoBox(null, 10, 10), null)
+  assert.equal(News.transparentPhotoBox(new Uint8ClampedArray(16), 100, 100), null)
+  assert.equal(News.NEWS_EXEC_PHOTO_SIDE, 720)
+})
+
 await test('static: รูปนายกผ่าน prepareExecutivePhoto (ตัดพื้นหลัง/กรอบสำรอง) ก่อนเข้าภาพข่าว · ไม่ส่งรูปออกนอกเครื่อง', async () => {
   const shared = await readFile(new URL('../src/components/complaints/newsDialogData.js', import.meta.url), 'utf8')
   assert.match(shared, /loadImage\(branding\.photo_url\)\s*\.then\(result => \(result\.dataUrl \? prepareExecutivePhoto\(result\.dataUrl\) : null\)\)/)
   const fn = shared.slice(shared.indexOf('export async function prepareExecutivePhoto'), shared.indexOf('export async function loadImage'))
-  assert.match(fn, /cutoutPlainBackground\(pixels\.data, w, h\)/)
+  // PNG ที่โปร่งใสมาเองต้องตรวจก่อนตัดฉาก (cutoutPlainBackground แก้ pixels ในที่ ตรวจทีหลังจะเห็นแต่ผลตัดของเรา)
+  assert.match(fn, /transparentPhotoBox\(pixels\.data, w, h\) \|\| cutoutPlainBackground\(pixels\.data, w, h\)/)
   assert.match(fn, /toDataURL\('image\/png'\)/) // PNG เท่านั้น — JPEG ไม่มีความโปร่งใส
+  // ตัวย่อรูปก่อนวาด (shrinkDataUrl) ห้ามเทพื้นขาวทับ PNG/WebP โปร่งใส — เส้นทางที่รูปนายกผ่านก่อนถึง prepareExecutivePhoto
+  const shrink = shared.slice(shared.indexOf('async function shrinkDataUrl'), shared.indexOf('const EXEC_SIDE'))
+  const keep = shrink.indexOf("return canvas.toDataURL('image/png')")
+  assert.ok(keep > 0 && keep < shrink.indexOf("fillStyle = '#ffffff'"), 'ต้องคืน PNG ก่อนถึงขั้นเทพื้นขาว')
+  assert.match(shrink, /HAS_ALPHA_MIME\.test\(dataUrl\)[\s\S]{0,40}transparentPhotoBox\(/)
+  assert.match(shared, /const EXEC_SIDE = NEWS_EXEC_PHOTO_SIDE/)
   assert.ok(!/fetch\(|supabase|https?:\/\//.test(fn), 'ตัดพื้นหลังต้องทำในเครื่องล้วน')
 })
 

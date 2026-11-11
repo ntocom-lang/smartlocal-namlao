@@ -276,6 +276,21 @@ test('หน้าตั้งค่า: ห้ามส่งไฟล์ดิ
   assert.doesNotMatch(src, /tourism-background-\$\{tenant\.slug\}\.png/, 'นามสกุลไฟล์ต้องตรงเนื้อไฟล์ (.jpg)')
 })
 
+test('หน้าตั้งค่า: รูปนายกภาพข่าว — PNG โปร่งใสเก็บเป็น PNG (ข้ามด่านแปลง JPEG) รูปทึบยังเป็น JPEG', async () => {
+  const src = await read('../src/components/admin/SystemSettingsAdmin.jsx')
+  assert.match(src, /resizeImage\(file, NEWS_EXEC_PHOTO_SIDE, \{ \.\.\.PHOTO_JPEG, keepTransparent: true \}\)/)
+  assert.match(src, /const isPng = blob\.type === 'image\/png'/)
+  // นามสกุลตามเนื้อไฟล์ + ข้าม limitPublicImage เฉพาะ PNG (ไฟล์ >1.5 MB ถูกแปลง JPEG แล้วพื้นโปร่งใสหาย)
+  assert.match(src, /filename: `executive-\$\{tenant\.slug\}\.\$\{isPng \? 'png' : 'jpg'\}`,[\s\S]{0,260}?keepFormat: isPng/)
+  // resizeImage: วาดก่อน → ตรวจโปร่งใส → ทึบค่อยเทพื้นขาวไว้ "ข้างหลัง" (destination-over)
+  const fn = src.slice(src.indexOf('function resizeImage('), src.indexOf('export default function SystemSettingsAdmin'))
+  const branch = fn.slice(fn.indexOf('keepTransparent) {'))
+  assert.ok(branch.indexOf('drawImage(') >= 0 && branch.indexOf('transparentPhotoBox(') > branch.indexOf('drawImage('), 'ต้องวาดก่อนแล้วค่อยตรวจความโปร่งใส')
+  assert.ok(branch.indexOf("outType = 'image/png'") > branch.indexOf('transparentPhotoBox('))
+  assert.match(fn, /globalCompositeOperation = 'destination-over'/)
+  assert.match(fn, /\}, outType, quality\)/)
+})
+
 test('หน้าจัดการข่าว: ย่อด้วย shrinkPhoto + POST_IMAGE_MAX_WIDTH และนามสกุลต้องตรงเนื้อไฟล์', async () => {
   const src = await read('../src/components/staff/PostsManager.jsx')
   assert.match(src, /shrinkPhoto\(file, \{ maxWidth: POST_IMAGE_MAX_WIDTH, quality: POST_IMAGE_QUALITY \}\)/, 'ไม่ได้ย่อด้วย shrinkPhoto ตามค่ารูปข่าว')
