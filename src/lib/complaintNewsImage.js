@@ -7,6 +7,9 @@
 // ⚠️ ไม่ใส่เบอร์โทร: ในฐานข้อมูลไม่มีฟิลด์เบอร์ของกอง ห้ามแต่งข้อมูล
 // ข้อความทุกค่า esc() ก่อนฝังใน SVG · URL ภาพรับเฉพาะ data:image/ ที่ผู้เรียกโหลดมาเอง (ภาพ private ต้องผ่าน fetchImageAsDataUrl)
 //
+// บล็อกผู้บริหาร (ไม่บังคับ) มุมขวาของแถบหัว: รูป + ป้ายชื่อ/ตำแหน่ง — ชื่อ/ตำแหน่ง/รูปมาจาก RPC complaint_news_branding
+// (ผู้ลงนามช่องนายกคนปัจจุบัน) ผู้เรียกโหลดรูปเป็น data:image/ เอง · ไม่ส่ง executive = ภาพเหมือนเดิมทุกพิกเซล
+//
 // ไฟล์นี้ต้องไม่แตะ DOM ตอนโหลดโมดูล — เทสต์รันด้วย node (ตัววัดข้อความส่งเข้ามาจากผู้เรียก)
 
 import { FONT_STACK, IMAGE_WIDTH, wrapLines } from './complaintMonthlyInfographic.js'
@@ -24,6 +27,10 @@ const ORANGE = '#c2410c'
 const INK = '#1f2937'
 const MUTED = '#4b5563'
 const GAP = 16
+// บล็อกผู้บริหารมุมขวาแถบหัว (แบบร่างที่เจ้าของรับรอง): กรอบรูป ~150×180 + ป้ายขาวใต้รูป
+const EXEC_PHOTO_W = 150
+const EXEC_PHOTO_H = 180
+const EXEC_PLATE_W = 280
 const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -59,6 +66,35 @@ export function defaultShowDuration({ closedAt, dueDate } = {}) {
   return dayKey(closed) <= due
 }
 
+/** หมวดที่ห้ามทำภาพข่าวตายตัว (ไม่พึ่งธงในตารางหมวดซึ่งแอดมินแก้ได้) — ชุดเดียวกับ exec_complaint_news_base */
+export const NEWS_BLOCKED_CATEGORIES = Object.freeze(['odor', 'corruption'])
+
+/**
+ * หมวดนี้ทำภาพข่าวได้ไหม — กติกาเดียวกับ exec_complaint_news_base (20261119100100) ปิดตายเมื่อไม่แน่ใจ:
+ * ไม่รู้จักหมวด (ยังโหลดไม่เสร็จ/ไม่มีแถว) = ไม่ได้ · หมวดอ่อนไหว (requires_manual_intake) / เฉพาะกิจ = ไม่ได้
+ * @param {string} category
+ * @param {Record<string, { is_adhoc?: boolean, requires_manual_intake?: boolean }>} categoryMeta
+ */
+export function newsCategoryAllowed(category, categoryMeta) {
+  if (!category || NEWS_BLOCKED_CATEGORIES.includes(category)) return false
+  const meta = categoryMeta?.[category]
+  if (!meta) return false
+  return meta.requires_manual_intake === false && meta.is_adhoc === false
+}
+
+/**
+ * ผลของ RPC complaint_news_branding → เติม photo_url จาก photo_file_id (ฐานข้อมูลเก็บแค่ file id ของ Drive
+ * ไม่เก็บ URL ที่มีโดเมนโปรเจกต์) · id ผิดรูปแบบ = ไม่มีรูป
+ * @param {{ mayor_name?: string|null, mayor_title?: string|null, photo_file_id?: string|null } | null} data
+ * @param {string} supabaseUrl
+ */
+export function withNewsPhotoUrl(data, supabaseUrl) {
+  if (!data || typeof data !== 'object') return null
+  const id = typeof data.photo_file_id === 'string' && /^[A-Za-z0-9_-]{10,200}$/.test(data.photo_file_id) ? data.photo_file_id : null
+  const base = String(supabaseUrl ?? '').replace(/\/+$/, '')
+  return { ...data, photo_url: id && base ? `${base}/functions/v1/drive-file?id=${id}` : null }
+}
+
 /** ระดับหมู่เท่านั้น ("หมู่ 3") — ข้อความอื่นในช่องหมู่บ้านอาจมีรายละเอียดที่ไม่ควรขึ้นเพจ จึงไม่ดึงมา */
 export function villageLevel(village) {
   const text = String(village ?? '').trim()
@@ -76,17 +112,25 @@ export function draftHeadline({ departmentName = '', tenantName = '', categoryLa
   return `${who} ลงพื้นที่ดำเนินการเรื่อง${topic}${place ? ` ${place}` : ''} ตามที่ประชาชนแจ้งผ่านระบบ E-Service`
 }
 
+/** บล็อกผู้บริหาร: ไม่มีทั้งชื่อและตำแหน่ง = ไม่มีบล็อก (null) · ผู้เรียกใส่ชื่อตำแหน่งสำรองมาให้แล้ว */
+function normalizeExecutive(executive) {
+  const name = String(executive?.name ?? '').trim()
+  const title = String(executive?.title ?? '').trim()
+  return name || title ? { name, title } : null
+}
+
 /**
  * @param {{
  *   complaint?: { village?: string, created_at?: string, due_date?: string, closed_at?: string },
  *   tenantName?: string, departmentName?: string, categoryLabel?: string,
  *   finishNote?: string, closedAt?: string, createdAt?: string, dueDate?: string,
  *   showStatus?: boolean, showDuration?: boolean, headline?: string, detail?: string, reportUrl?: string,
+ *   executive?: { name?: string | null, title?: string | null } | null,
  * }} input
  */
 export function buildNewsModel({
   complaint = null, tenantName = '', departmentName = '', categoryLabel = '', finishNote = '',
-  closedAt, createdAt, dueDate, showStatus = true, showDuration, headline, detail, reportUrl = '',
+  closedAt, createdAt, dueDate, showStatus = true, showDuration, headline, detail, reportUrl = '', executive = null,
 } = {}) {
   const closed = closedAt ?? complaint?.closed_at
   const created = createdAt ?? complaint?.created_at
@@ -105,6 +149,7 @@ export function buildNewsModel({
     showDuration: !!wantDuration && durationKnown,
     durationLabel: durationKnown ? (days === 0 ? 'เสร็จในวันที่ยื่น' : `ใช้เวลา ${days} วันทำการ`) : '',
     reportUrl: String(reportUrl ?? '').trim(),
+    executive: normalizeExecutive(executive),
   }
 }
 
@@ -126,10 +171,10 @@ export function photoCells(count) {
 /**
  * @param {ReturnType<typeof buildNewsModel>} model
  * @param {(text: string, size: number, bold: boolean) => number} measure
- * @param {{ logoDataUrl?: string | null, photoDataUrls?: (string | null)[] }} [assets]
+ * @param {{ logoDataUrl?: string | null, photoDataUrls?: (string | null)[], executivePhotoDataUrl?: string | null }} [assets]
  * @returns {{ svg: string, width: number, height: number, photoCount: number }}
  */
-export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [] } = {}) {
+export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], executivePhotoDataUrl = null } = {}) {
   const photos = (photoDataUrls ?? []).filter(imageUrlOk).slice(0, MAX_NEWS_PHOTOS)
   const parts = []
   const text = (x, y, value, { size = 28, bold = false, fill = INK, anchor = 'start' } = {}) => {
@@ -151,7 +196,20 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
   const logoR = 72
   const logoCx = MARGIN + logoR
   const textX = MARGIN + logoR * 2 + 32
-  const textW = IMAGE_WIDTH - MARGIN - textX
+  // บล็อกผู้บริหารมุมขวา (ถ้าเปิด) — ข้อความหัวแคบลงไม่ให้ทับ
+  const exec = model.executive
+  const execPhoto = exec && imageUrlOk(executivePhotoDataUrl) ? executivePhotoDataUrl : null
+  const execPlateLines = exec ? {
+    name: exec.name ? wrapLines(exec.name, EXEC_PLATE_W - 32, 28, true, measure) : [],
+    title: exec.title ? wrapLines(exec.title, EXEC_PLATE_W - 32, 24, false, measure) : [],
+  } : null
+  const execPlateH = execPlateLines
+    ? 16 + execPlateLines.name.length * 36 + execPlateLines.title.length * 32 + 16
+    : 0
+  const execPhotoTop = 40
+  const execPlateTop = execPhoto ? execPhotoTop + EXEC_PHOTO_H + 8 + 12 : execPhotoTop + 4
+  const execBottom = exec ? (execPlateH ? execPlateTop + execPlateH : execPhotoTop + EXEC_PHOTO_H + 8) : 0
+  const textW = IMAGE_WIDTH - MARGIN - textX - (exec ? EXEC_PLATE_W + 28 : 0)
   let titleSize = 68
   while (titleSize > 44 && measure('ข่าวประชาสัมพันธ์', titleSize, true) > textW) titleSize -= 2
   const headerTexts = []
@@ -159,7 +217,9 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
     headerTexts.push(`<text x="${num(x)}" y="${num(y)}" font-size="${size}" font-weight="${bold ? 700 : 400}" fill="#ffffff" fill-opacity="${opacity}">${esc(value)}</text>`)
   }
   let baseline = 58 + 26
-  headerText(textX, baseline, 'ผลการดำเนินงานผ่านระบบ E-Service', { size: 28, opacity: 0.92 })
+  let leadSize = 28
+  while (leadSize > 22 && measure('ผลการดำเนินงานผ่านระบบ E-Service', leadSize, false) > textW) leadSize -= 1
+  headerText(textX, baseline, 'ผลการดำเนินงานผ่านระบบ E-Service', { size: leadSize, opacity: 0.92 })
   baseline += Math.round(titleSize * 1.1)
   headerText(textX, baseline, 'ข่าวประชาสัมพันธ์', { size: titleSize, bold: true })
   baseline += 20
@@ -167,7 +227,7 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
     baseline += 48
     headerText(textX, baseline, line, { size: 34, bold: true })
   }
-  const headerH = Math.max(baseline + 52, logoR * 2 + 116)
+  const headerH = Math.max(baseline + 52, logoR * 2 + 116, exec ? execBottom + 44 : 0)
   const rad = 44
   parts.push(`<path d="M0 0H${IMAGE_WIDTH}V${num(headerH - rad)}A${rad} ${rad} 0 0 1 ${IMAGE_WIDTH - rad} ${num(headerH)}H${rad}A${rad} ${rad} 0 0 1 0 ${num(headerH - rad)}Z" fill="${ORANGE}"/>`)
   const logoCy = headerH / 2 - 4
@@ -178,6 +238,29 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
       + `<image href="${esc(logoDataUrl)}" x="${logoCx - inner}" y="${num(logoCy - inner)}" width="${inner * 2}" height="${inner * 2}" preserveAspectRatio="xMidYMid meet" clip-path="url(#news-logo-clip)"/>`)
   }
   parts.push(headerTexts.join(''))
+  if (exec) {
+    // ป้ายขาวมุมมนชิดขอบขวาของพื้นที่เนื้อหา · รูปอยู่กึ่งกลางป้าย (ไม่มีรูป = ป้ายอย่างเดียว)
+    const plateX = IMAGE_WIDTH - MARGIN - EXEC_PLATE_W
+    const centerX = plateX + EXEC_PLATE_W / 2
+    if (execPhoto) {
+      const px = centerX - EXEC_PHOTO_W / 2
+      parts.push(`<rect x="${num(px - 4)}" y="${execPhotoTop - 4}" width="${EXEC_PHOTO_W + 8}" height="${EXEC_PHOTO_H + 8}" rx="26" fill="#ffffff"/>`
+        + `<defs><clipPath id="news-exec-clip"><rect x="${num(px)}" y="${execPhotoTop}" width="${EXEC_PHOTO_W}" height="${EXEC_PHOTO_H}" rx="22"/></clipPath></defs>`
+        + `<image href="${esc(execPhoto)}" x="${num(px)}" y="${execPhotoTop}" width="${EXEC_PHOTO_W}" height="${EXEC_PHOTO_H}" preserveAspectRatio="xMidYMid slice" clip-path="url(#news-exec-clip)"/>`)
+    }
+    if (execPlateH) {
+      parts.push(`<rect x="${num(plateX)}" y="${num(execPlateTop)}" width="${EXEC_PLATE_W}" height="${num(execPlateH)}" rx="22" fill="#ffffff"/>`)
+      let top = execPlateTop + 16
+      for (const line of execPlateLines.name) {
+        text(centerX, top + 28, line, { size: 28, bold: true, fill: INK, anchor: 'middle' })
+        top += 36
+      }
+      for (const line of execPlateLines.title) {
+        text(centerX, top + 23, line, { size: 24, fill: MUTED, anchor: 'middle' })
+        top += 32
+      }
+    }
+  }
 
   // ── ป้ายเม็ดยา ──
   let y = headerH + 48

@@ -106,7 +106,8 @@ await test('PDPA: ข้อมูลผู้แจ้งไม่โผล่�
     assert.ok(!dump.includes(secret), `ข้อมูลผู้แจ้งหลุด: ${secret}`)
   }
   assert.deepEqual(Object.keys(model).sort(),
-    ['dateText', 'detail', 'durationLabel', 'headline', 'reportUrl', 'showDuration', 'showStatus', 'tenantName'])
+    ['dateText', 'detail', 'durationLabel', 'executive', 'headline', 'reportUrl', 'showDuration', 'showStatus', 'tenantName'])
+  assert.equal(model.executive, null) // ไม่ส่ง executive = ไม่มีบล็อกผู้บริหาร
   assert.ok(model.headline.includes('หมู่ 3')) // หมู่ระดับเดียวที่ใช้ได้
   // ช่องหมู่บ้านที่มีข้อความอื่นปน ไม่ดึงมา
   assert.equal(News.villageLevel('บ้านนายสมชาย เลขที่ 12'), '')
@@ -157,6 +158,73 @@ await test('ความสูงขั้นต่ำ 1350 · ข้อคว�
   assert.ok(draw(base(), { logoDataUrl: PHOTO }).svg.includes('news-logo-clip'))
 })
 
+// ── บล็อกผู้บริหารมุมขวาแถบหัว (รูป + ป้ายชื่อ/ตำแหน่ง) ──
+const MAYOR = { name: 'นายสมศักดิ์ ใจดี', title: 'นายกเทศมนตรีตำบลสาธิต' }
+const headerTexts = svg => [...svg.matchAll(/<text x="([\d.]+)" y="[\d.]+" font-size="(\d+)" font-weight="(\d+)" fill="#ffffff"[^>]*>([^<]*)<\/text>/g)]
+  .map(m => ({ x: Number(m[1]), size: Number(m[2]), bold: m[3] === '700', text: m[4] }))
+const PLATE_LEFT = 1080 - 64 - 280
+
+await test('บล็อกผู้บริหาร: เปิด = มีรูป(cover+clipPath) + ป้ายชื่อ/ตำแหน่ง · ปิด = เหมือนเดิมทุกพิกเซล', () => {
+  const on = draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO })
+  assert.ok(on.svg.includes('news-exec-clip'))
+  assert.match(on.svg, /<image href="data:image\/jpeg[^"]*" x="[\d.]+" y="40" width="150" height="180" preserveAspectRatio="xMidYMid slice" clip-path="url\(#news-exec-clip\)"\/>/)
+  assert.ok(has(on.svg, MAYOR.name) && has(on.svg, MAYOR.title))
+  // ป้ายขาวมุมมนอยู่ใต้รูป (y > 40+180) และไม่ล้นกรอบเนื้อหาด้านขวา
+  const plate = /<rect x="([\d.]+)" y="([\d.]+)" width="280" height="([\d.]+)" rx="22" fill="#ffffff"\/>/.exec(on.svg)
+  assert.ok(plate, 'ไม่พบป้ายชื่อ')
+  assert.ok(Number(plate[2]) > 220)
+  assert.ok(Number(plate[1]) + 280 <= 1080 - 64 + 0.01)
+  // ปิด: ไม่ส่ง executive หรือส่ง null ได้ภาพเดียวกันทุกตัวอักษร และไม่มีร่องรอยของบล็อก
+  const off = draw(base())
+  const offNull = draw(base({ executive: null }), { executivePhotoDataUrl: PHOTO })
+  assert.equal(offNull.svg, off.svg)
+  assert.ok(!off.svg.includes('news-exec-clip') && !has(off.svg, MAYOR.name))
+  // ว่างทั้งชื่อและตำแหน่ง = ไม่มีบล็อก (ผู้เรียกควรใส่ตำแหน่งสำรองมาเอง)
+  assert.equal(base({ executive: { name: ' ', title: '' } }).executive, null)
+})
+
+await test('บล็อกผู้บริหาร: ไม่มีรูปแต่มีชื่อ = ป้ายชื่ออย่างเดียว · URL ที่ไม่ใช่ data:image ถูกทิ้ง', () => {
+  const nameOnly = draw(base({ executive: MAYOR })).svg
+  assert.ok(!nameOnly.includes('news-exec-clip') && has(nameOnly, MAYOR.name) && has(nameOnly, MAYOR.title))
+  for (const bad of ['https://evil.test/x.png', 'javascript:alert(1)', '', null, 'data:text/html;base64,AAAA']) {
+    const svg = draw(base({ executive: MAYOR }), { executivePhotoDataUrl: bad }).svg
+    assert.ok(!svg.includes('news-exec-clip') && !svg.includes('evil.test') && !svg.includes('javascript:'), `รับ URL ที่ไม่ใช่ data:image — ${bad}`)
+  }
+  // มีแต่ตำแหน่ง (ไม่มีชื่อ) ก็ยังได้ป้าย
+  const titleOnly = draw(base({ executive: { name: '', title: 'นายกเทศมนตรีตำบลสาธิต' } })).svg
+  assert.ok(has(titleOnly, 'นายกเทศมนตรีตำบลสาธิต'))
+})
+
+await test('บล็อกผู้บริหาร: ทุกข้อความ esc() · ชื่อ/ตำแหน่งยาวตัดบรรทัดและป้ายสูงขึ้น', () => {
+  const evil = '<script>alert(1)</script> & "x"'
+  const svg = draw(base({ executive: { name: evil, title: evil } }), { executivePhotoDataUrl: 'data:image/png;base64,AAAA"onload="x' }).svg
+  assert.ok(!svg.includes('<script') && svg.includes('&lt;script&gt;') && svg.includes('&amp;'))
+  assert.ok(!svg.includes('"onload'))
+  const longTitle = 'นายกองค์การบริหารส่วนตำบลที่มีชื่อยาวมากเป็นพิเศษเกินหนึ่งบรรทัดแน่นอน'
+  const short = /<rect [^>]*width="280" height="([\d.]+)" rx="22" fill="#ffffff"\/>/.exec(draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO }).svg)
+  const tall = /<rect [^>]*width="280" height="([\d.]+)" rx="22" fill="#ffffff"\/>/.exec(draw(base({ executive: { name: MAYOR.name, title: longTitle } }), { executivePhotoDataUrl: PHOTO }).svg)
+  assert.ok(Number(tall[1]) > Number(short[1]), 'ตำแหน่งยาวต้องตัดบรรทัดทำให้ป้ายสูงขึ้น')
+})
+
+await test('บล็อกผู้บริหาร: ข้อความหัวแคบลงไม่ทับบล็อก · แถบหัวสูงพอครอบทั้งบล็อก', () => {
+  const longName = 'เทศบาลตำบลสาธิตพัฒนาเมืองน่าอยู่ชุมชนเข้มแข็งยั่งยืนมั่นคง'
+  for (const executive of [MAYOR, { name: MAYOR.name, title: 'นายกองค์การบริหารส่วนตำบลที่มีชื่อยาวมากเป็นพิเศษเกินหนึ่งบรรทัดแน่นอน' }]) {
+    const { svg } = draw(base({ tenantName: longName, executive }), { executivePhotoDataUrl: PHOTO })
+    const texts = headerTexts(svg).filter(t => t.x === 240)
+    assert.ok(texts.length >= 3, 'ไม่พบข้อความหัวครบ')
+    for (const t of texts) {
+      assert.ok(t.x + measure(t.text, t.size, t.bold) <= PLATE_LEFT + 0.01, `ข้อความหัวทับบล็อกผู้บริหาร: ${t.text} (${t.x + measure(t.text, t.size, t.bold)} > ${PLATE_LEFT})`)
+    }
+    const headerBottom = Number(/M0 0H1080V([\d.]+)A/.exec(svg)[1]) + 44
+    const plate = /<rect [^>]*width="280" height="([\d.]+)" rx="22" fill="#ffffff"\/>/.exec(svg)
+    const plateY = Number(/<rect x="[\d.]+" y="([\d.]+)" width="280"/.exec(svg)[1])
+    assert.ok(plateY + Number(plate[1]) < headerBottom, 'แถบหัวต้องสูงกว่าก้นป้าย')
+  }
+  // ปิดบล็อก: ข้อความหัวเดิมไม่ถูกย่อ (หัวข้อ 68 · บรรทัดนำ 28)
+  const off = headerTexts(draw(base()).svg)
+  assert.ok(off.some(t => t.size === 68) && off.some(t => t.size === 28))
+})
+
 await test('static: ปุ่ม "ภาพข่าว" ผูกกับสถานะ closed ใน ComplaintsManager', async () => {
   const manager = await readFile(new URL('../src/components/admin/ComplaintsManager.jsx', import.meta.url), 'utf8')
   assert.match(manager, /import ComplaintNewsDialog from '\.\.\/complaints\/ComplaintNewsDialog'/)
@@ -171,6 +239,8 @@ await test('static: ปุ่ม "ภาพข่าว" ผูกกับส�
     assert.match(area, /disabled=\{(!hasPhotos|\(c\.work_photos \?\? \[\]\)\.length === 0)\}/)
     assert.match(area, /ยังไม่มีรูปหลังดำเนินการ — เพิ่มรูปในรายละเอียดเรื่องก่อน/)
     assert.match(area, /#c2410c/)
+    // หมวดต้องผ่าน newsCategoryAllowed (ปิดตายเมื่อไม่แน่ใจ) — อยู่ในเงื่อนไขของปุ่มก่อนถึงเงื่อนไขสิทธิ์
+    assert.match(part.slice(0, 200), /newsCategoryAllowed\(c\.category, categoryMeta\)/)
   }
   assert.match(manager, /<ComplaintNewsDialog[\s\S]{0,400}closedAt=\{finishedAtOf\(newsComplaint\)\}/)
   const dialog = await readFile(new URL('../src/components/complaints/ComplaintNewsDialog.jsx', import.meta.url), 'utf8')

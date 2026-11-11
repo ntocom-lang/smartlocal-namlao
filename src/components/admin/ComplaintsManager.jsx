@@ -21,6 +21,7 @@ import FinishComplaintDialog from '../complaints/FinishComplaintDialog'
 import ParkComplaintDialog from '../complaints/ParkComplaintDialog'
 import ComplaintTextBlock from '../complaints/ComplaintTextBlock'
 import ComplaintNewsDialog from '../complaints/ComplaintNewsDialog'
+import { newsCategoryAllowed } from '../../lib/complaintNewsImage'
 import {
   canFinishWork, canParkWork, canUnparkWork, isComplaintWorker, isFinishedLike, isParked, parkReasonLabel,
   PARKED_LABEL, PARKED_PUBLIC_NOTE, PARKED_STATUS, requiresResolvedPin,
@@ -2584,8 +2585,10 @@ ${summaryHtml}
                           tenant={tenant} categoryMeta={categoryMeta} onFinished={() => fetchComplaints()} allowReceive={isAdmin} />
                       </div>
                     )}
-                    {/* ภาพข่าว: การ์ดมือถือ — เงื่อนไขเดียวกับปุ่มในตาราง (เจ้าหน้าที่ใช้มือถือเป็นหลัก) */}
+                    {/* ภาพข่าว: การ์ดมือถือ — เงื่อนไขเดียวกับปุ่มในตาราง (เจ้าหน้าที่ใช้มือถือเป็นหลัก)
+                        หมวดต้องผ่าน newsCategoryAllowed (ปิดตายเมื่อไม่แน่ใจ: ไม่รู้จักหมวด/อ่อนไหว/เฉพาะกิจ/ทุจริต = ไม่มีปุ่ม) */}
                     {normalizeActionStatus(c.status) === 'closed' && c.category !== 'odor'
+                      && newsCategoryAllowed(c.category, categoryMeta)
                       && (isAdmin || (c.assigned_to && c.assigned_to === currentUserId)) && (
                       <div onClick={(e) => e.stopPropagation()}>
                         <button type="button" onClick={() => setNewsComplaint(c)} disabled={(c.work_photos ?? []).length === 0}
@@ -2767,9 +2770,12 @@ ${summaryHtml}
                               )}
                             </>
                           )}
-                          {/* ภาพข่าวประชาสัมพันธ์: เรื่องที่ดำเนินการแล้วไม่มีปุ่มสถานะถัดไปอยู่แล้ว ปุ่มนี้จึงใช้ที่เดิม
+                          {/* ภาพข่าวประชาสัมพันธ์: หมวดต้องผ่าน newsCategoryAllowed (กติกาเดียวกับ exec_complaint_news_base
+                              ปิดตายเมื่อไม่แน่ใจ: ไม่รู้จักหมวด/อ่อนไหว/เฉพาะกิจ/ทุจริต = ไม่มีปุ่ม) — ห้ามกลายเป็นภาพข่าว
+                              เรื่องที่ดำเนินการแล้วไม่มีปุ่มสถานะถัดไปอยู่แล้ว ปุ่มนี้จึงใช้ที่เดิม
                               คอลัมน์ไม่กว้างขึ้น (ตารางกว้างเกินพื้นที่อยู่แล้ว ดู test:staff-inbox) · ไม่มีรูปหลังดำเนินการ = กดไม่ได้ */}
                           {normalizeActionStatus(c.status) === 'closed' && c.category !== 'odor'
+                            && newsCategoryAllowed(c.category, categoryMeta)
                             && (isAdmin || (c.assigned_to && c.assigned_to === currentUserId)) && (() => {
                             const hasPhotos = (c.work_photos ?? []).length > 0
                             return (

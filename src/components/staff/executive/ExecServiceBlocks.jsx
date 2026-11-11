@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertTriangle, ChevronDown, ChevronUp, Smile } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronUp, Megaphone, Smile } from 'lucide-react'
 import { PARK_REASONS } from '../../../lib/complaintWorkflow'
 import {
   EXEC_COMPLAINT_STAGES, compareMetric, compareValues, execFormulas, execNf,
@@ -8,6 +8,7 @@ import { canNudgeItems } from '../../../lib/execFollowNudgeHelpers'
 import { useMyPositionCategory } from '../../../hooks/useMyPositionCategory'
 import { DeltaLine, FormulaPanel, InfoButton, LoadingLine, SectionError, SplitBar, SubHead, SummaryGate } from './ExecParts'
 import ExecOverdueList from './ExecOverdueList'
+import ExecNewsList from './ExecNewsList'
 import { EXEC_CHART } from './execChart'
 
 // บล็อกย่อยของโซน ② ที่มาจาก executive_overview (เฟส E2) — ตัวเลขทั้งหมดคิดแล้วใน src/lib/executiveData.js (ฟังก์ชันบริสุทธิ์ มีเทสต์)
@@ -69,6 +70,26 @@ function OverdueListToggle({ tenant, profile, today }) {
         {open ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
       </button>
       {open && <ExecOverdueList tenant={tenant} today={today} canNudge={canNudge} />}
+    </div>
+  )
+}
+
+/**
+ * ปุ่ม "ดูเรื่องที่ดำเนินการแล้ว · ทำภาพข่าว" + แผงรายการ — โหลดข้อมูลเมื่อกางเท่านั้น (ไม่ยิง RPC เพิ่มตอนเปิดหน้า)
+ * วางใกล้ตัวเลข "เสร็จแล้ว" ของคำร้อง · แบบเดียวกับ OverdueListToggle · รายการมาจาก RPC exec_complaint_news_items (ไม่มีชื่อผู้ร้อง)
+ */
+export function NewsListToggle({ tenant }) {
+  const [open, setOpen] = useState(false)
+  if (!tenant?.id) return null
+  return (
+    <div className="space-y-2">
+      <button type="button" data-exec-news-open aria-expanded={open} onClick={() => setOpen((v) => !v)}
+        className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-orange-300 bg-white px-3 text-sm font-bold text-orange-800 shadow-sm hover:bg-orange-50 active:scale-[0.99] sm:w-auto">
+        <Megaphone size={15} aria-hidden="true" />
+        {open ? 'ซ่อนรายการเรื่องที่ดำเนินการแล้ว' : 'ดูเรื่องที่ดำเนินการแล้ว · ทำภาพข่าว'}
+        {open ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+      </button>
+      {open && <ExecNewsList tenant={tenant} />}
     </div>
   )
 }
