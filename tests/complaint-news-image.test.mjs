@@ -244,7 +244,11 @@ await test('static: ปุ่ม "ภาพข่าว" ผูกกับส�
   }
   assert.match(manager, /<ComplaintNewsDialog[\s\S]{0,400}closedAt=\{finishedAtOf\(newsComplaint\)\}/)
   const dialog = await readFile(new URL('../src/components/complaints/ComplaintNewsDialog.jsx', import.meta.url), 'utf8')
-  assert.match(dialog, /fetchImageAsDataUrl/)
+  // ตัวโหลดรูป (fetchImageAsDataUrl) ย้ายไปไฟล์ร่วมของกล่องรายเรื่อง/ภาพรวม — กล่องต้องเรียกใช้ loadImage จากไฟล์นั้น
+  const shared = await readFile(new URL('../src/components/complaints/newsDialogData.js', import.meta.url), 'utf8')
+  assert.match(shared, /fetchImageAsDataUrl/)
+  assert.match(dialog, /from '\.\/newsDialogData'/)
+  assert.match(dialog, /loadImage\(ref\)/)
   assert.match(dialog, /\.eq\('status', 'closed'\)/)
   assert.match(dialog, /ตรวจก่อนว่าไม่มีหน้าคน ป้ายทะเบียน หรือเลขที่บ้าน รูปนี้ผู้แจ้งส่งมาเพื่อแจ้งเรื่อง ไม่ได้ส่งมาเพื่อลงเพจ/)
   assert.match(dialog, /ระบบติ๊กให้เองเมื่อเสร็จทันกำหนด · เกินกำหนดจะไม่ติ๊กไว้ก่อน/)

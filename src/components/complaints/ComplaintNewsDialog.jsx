@@ -1,15 +1,13 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { AlertTriangle, Copy, Download, Loader2, Megaphone, Share2, X } from 'lucide-react'
-import { supabase, supabaseUrl } from '../../lib/supabase'
-import { fetchImageAsDataUrl } from '../../lib/driveStorage'
+import { AlertTriangle, Loader2, Megaphone, X } from 'lucide-react'
+import { supabase } from '../../lib/supabase'
 import { appUrl } from '../../lib/basename'
 import { orgHeadTitle } from '../../lib/orgTerms'
-import { copyText } from '../../lib/complaintTrack'
 import {
   MAX_NEWS_PHOTOS, buildNewsModel, buildNewsSvg, createCanvasMeasure, defaultShowDuration, draftHeadline,
-  newsShareText, svgDataUrl, svgToPngFile, withNewsPhotoUrl,
 } from '../../lib/complaintNewsImage'
+import { DialogShell, NewsOutputPanel } from './newsDialogParts'
+import { GENERIC_ERROR, SHOWABLE_CODES, loadImage, useNewsBranding, usePreparedPng } from './newsDialogData'
 
 // กล่องสร้าง "ภาพข่าวประชาสัมพันธ์" ของคำร้องที่ดำเนินการแล้ว (เจ้าของระบบอนุมัติ 2569-11-11)
 // ภาพที่เห็นในกล่อง = ไฟล์ PNG ที่ดาวน์โหลด/แชร์ (สตริง SVG ก้อนเดียวกัน ดู src/lib/complaintNewsImage.js)
@@ -24,56 +22,6 @@ import {
 // (แบบเดียวกับ ComplaintMonthlyInfographic)
 
 const MAX_CANDIDATES = 12
-const KEEP_SIDE = 1400
-
-// ย่อรูปก่อนฝังใน SVG — รูปมือถือหลาย MB ฝังตรงๆ ทำให้ภาพตัวอย่างและการแปลงเป็น PNG ช้า ภาพข่าวใช้ไม่เกินครึ่งความกว้าง 1080 อยู่แล้ว
-// ย่อไม่ได้ (เบราว์เซอร์ถอดรหัสไม่ได้ ฯลฯ) = ใช้ตัวเดิม ไม่ล้ม
-async function shrinkDataUrl(dataUrl) {
-  try {
-    const image = new Image()
-    await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = dataUrl })
-    const scale = Math.min(1, KEEP_SIDE / Math.max(image.naturalWidth, image.naturalHeight))
-    if (scale >= 1 && dataUrl.length < 600000) return dataUrl
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
-    const context = canvas.getContext('2d')
-    if (!context) return dataUrl
-    context.fillStyle = '#ffffff'
-    context.fillRect(0, 0, canvas.width, canvas.height)
-    context.drawImage(image, 0, 0, canvas.width, canvas.height)
-    return canvas.toDataURL('image/jpeg', 0.86)
-  } catch {
-    return dataUrl
-  }
-}
-
-async function loadImage(ref) {
-  const result = await fetchImageAsDataUrl(ref)
-  if (result.error || !result.dataUrl) return { dataUrl: null }
-  return { dataUrl: await shrinkDataUrl(result.dataUrl) }
-}
-
-// ข้อความไทยจากฐานข้อมูลที่แสดงตรงๆ ได้ (42501 ไม่มีสิทธิ์ / 22023 เงื่อนไขไม่ผ่าน / P0002 ไม่พบ) · error อื่นไม่โชว์ข้อความดิบ
-const SHOWABLE_CODES = new Set(['42501', '22023', 'P0002'])
-const GENERIC_ERROR = 'โหลดข้อมูลเรื่องไม่สำเร็จ ลองใหม่อีกครั้ง'
-
-/** กรอบกล่อง (portal + พื้นหลังมืด) ใช้ร่วมกันทั้งตัวจริงและสถานะกำลังโหลด/โหลดไม่ได้ของโหมด exec */
-function DialogShell({ onClose, children }) {
-  // portal แยก DOM แต่ event ของ React ยังไหลตามต้นไม้คอมโพเนนต์ — ปิดเฉพาะคลิกที่พื้นหลังจริง และไม่ให้ไหลต่อขึ้นไป (แบบเดียวกับ FinishComplaintDialog)
-  function handleBackdropClick(e) {
-    e.stopPropagation()
-    if (e.target === e.currentTarget) onClose?.()
-  }
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4" onClick={handleBackdropClick}>
-      <div className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-t-3xl bg-white p-5 shadow-xl sm:rounded-3xl">
-        {children}
-      </div>
-    </div>,
-    document.body,
-  )
-}
 
 /**
  * @param {{
@@ -150,14 +98,8 @@ function NewsDialogBody({ source, complaint: c, tenant, departmentName = '', cat
   // รูปที่เลือก: ใช้ "กลุ่ม:ลำดับ" เป็นคีย์ (รูปผลงานติ๊กไว้ก่อน สูงสุด 4 · รูปผู้แจ้งไม่ติ๊กไว้ก่อน)
   const [picked, setPicked] = useState(() => new Set(workRefs.slice(0, MAX_NEWS_PHOTOS).map((_, i) => `w:${i}`)))
   const [loaded, setLoaded] = useState({})
-  const [logo, setLogo] = useState(null)
-  const [branding, setBranding] = useState(null)
-  const [mayorPhoto, setMayorPhoto] = useState(null)
   const [mayorEdit, setMayorEdit] = useState(null)
-  const [prepared, setPrepared] = useState(null)
-  const [retry, setRetry] = useState(0)
-  const [sharing, setSharing] = useState(false)
-  const [message, setMessage] = useState('')
+  const { logo, branding, mayorPhoto } = useNewsBranding(tenant)
 
   // บันทึกผลตอนปิดงาน = แถว complaint_timeline สถานะ closed ล่าสุดของเรื่องนี้ (finish_complaint เขียนไว้ทุกครั้ง)
   useEffect(() => {
@@ -177,36 +119,15 @@ function NewsDialogBody({ source, complaint: c, tenant, departmentName = '', cat
     return () => { alive = false }
   }, [c.id, isExec])
 
-  // ชื่อ/ตำแหน่ง/รูปนายก (ผู้ลงนามช่องนายกคนปัจจุบัน) — โหลดไม่ได้ = ไม่มีบล็อกนายก ไม่ทำให้กล่องพัง
-  useEffect(() => {
-    if (!tenant?.id) return undefined
-    let alive = true
-    supabase.rpc('complaint_news_branding', { _municipality_id: tenant.id })
-      .then(({ data, error }) => {
-        if (!alive) return
-        if (error) { console.error('complaint_news_branding error:', error.message); return }
-        setBranding(withNewsPhotoUrl(data, supabaseUrl))
-      }, (cause) => { console.error('complaint_news_branding error:', cause?.message) })
-    return () => { alive = false }
-  }, [tenant?.id])
-
-  useEffect(() => {
-    if (!branding?.photo_url) return undefined
-    let alive = true
-    loadImage(branding.photo_url).then(result => { if (alive) setMayorPhoto(result.dataUrl) })
-    return () => { alive = false }
-  }, [branding?.photo_url])
-
-  // โลโก้ + รูปทั้งหมดที่เลือกได้ — โหลดไม่ได้ = ข้าม (โลโก้ไม่ขึ้นก็ไม่ error)
+  // รูปทั้งหมดที่เลือกได้ — โหลดไม่ได้ = ข้าม
   useEffect(() => {
     let alive = true
-    if (tenant?.logo_url) loadImage(tenant.logo_url).then(result => { if (alive) setLogo(result.dataUrl) })
     const refs = [...workRefs.map((ref, i) => [`w:${i}`, ref]), ...reporterRefs.map((ref, i) => [`a:${i}`, ref])]
     for (const [key, ref] of refs) {
       loadImage(ref).then(result => { if (alive) setLoaded(prev => ({ ...prev, [key]: result })) })
     }
     return () => { alive = false }
-  }, [tenant?.logo_url, workRefs, reporterRefs])
+  }, [workRefs, reporterRefs])
 
   const detail = detailEdit ?? (isExec ? execNote : (timelineRow?.note ?? c.technician_note ?? ''))
   const closed = closedAt ?? timelineRow?.created_at ?? c.closed_at
@@ -236,22 +157,8 @@ function NewsDialogBody({ source, complaint: c, tenant, departmentName = '', cat
       return null
     }
   }, [deferredModel, logo, photoDataUrls, mayorOn, mayorPhoto])
-  const imageKey = image ? image.svg : ''
   const fileName = `news-${String(c.ref_no ?? c.id).replace(/[^A-Za-z0-9_-]+/g, '-')}.png`
-
-  useEffect(() => {
-    if (!image) return undefined
-    let active = true
-    svgToPngFile(image.svg, image.width, image.height, fileName)
-      .then(file => { if (active) setPrepared({ key: imageKey, file }) })
-      .catch(() => { if (active) setPrepared({ key: imageKey, error: 'เตรียมไฟล์ภาพไม่สำเร็จ กรุณาลองอีกครั้ง' }) })
-    return () => { active = false }
-  }, [image, imageKey, fileName, retry])
-
-  const file = prepared?.key === imageKey ? prepared.file ?? null : null
-  const error = prepared?.key === imageKey ? prepared.error ?? '' : ''
-  const canShareFile = !!file && typeof navigator !== 'undefined' && typeof navigator.share === 'function' && !!navigator.canShare?.({ files: [file] })
-  const shareText = newsShareText(model)
+  const png = usePreparedPng(image, fileName)
 
   function toggle(key) {
     setPicked(prev => {
@@ -262,37 +169,8 @@ function NewsDialogBody({ source, complaint: c, tenant, departmentName = '', cat
     })
   }
 
-  function download() {
-    if (!file) return
-    const url = URL.createObjectURL(file)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = file.name
-    link.click()
-    setTimeout(() => URL.revokeObjectURL(url), 60000)
-  }
-
-  async function share() {
-    if (!file || sharing) return
-    setMessage('')
-    try {
-      setSharing(true)
-      await navigator.share({ files: [file], title: `ข่าวประชาสัมพันธ์ | ${tenantName}`, text: shareText })
-    } catch (cause) {
-      if (cause?.name !== 'AbortError') setMessage('เปิดเมนูแชร์ไม่สำเร็จ ลองอีกครั้ง หรือกดดาวน์โหลดภาพแล้วแนบในแอป')
-    } finally {
-      setSharing(false)
-    }
-  }
-
-  async function copy() {
-    setMessage((await copyText([model.headline, model.detail].filter(Boolean).join('\n\n'))) ? 'คัดลอกข้อความแล้ว' : 'คัดลอกไม่สำเร็จ ลองเลือกข้อความแล้วคัดลอกเอง')
-  }
-
   const failedCount = Object.values(loaded).filter(item => !item.dataUrl).length
   const stillLoading = workRefs.length + reporterRefs.length - Object.keys(loaded).length
-  const buttonClass = 'flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-3 text-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50'
-
   const photoGroup = (refs, prefix) => (
     <div className="grid grid-cols-4 gap-1.5">
       {refs.map((_, i) => {
@@ -375,29 +253,7 @@ function NewsDialogBody({ source, complaint: c, tenant, departmentName = '', cat
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className={buttonClass} disabled={!file} onClick={download}><Download size={16} aria-hidden="true" />ดาวน์โหลด PNG</button>
-              {canShareFile && (
-                <button type="button" className={buttonClass} disabled={sharing} onClick={share}>
-                  <Share2 size={16} aria-hidden="true" />{sharing ? 'กำลังเปิดเมนูแชร์...' : 'แชร์'}
-                </button>
-              )}
-              <button type="button" className={buttonClass} onClick={copy}><Copy size={16} aria-hidden="true" />คัดลอกข้อความ</button>
-            </div>
-            {!file && !error && <p role="status" className="text-xs text-gray-500">กำลังเตรียมไฟล์ภาพ...</p>}
-            {error && (
-              <p role="alert" className="text-xs text-red-700">{error}{' '}
-                <button type="button" className="font-bold underline" onClick={() => setRetry(value => value + 1)}>ลองใหม่</button>
-              </p>
-            )}
-            {file && !canShareFile && <p className="text-[11px] text-gray-500">เครื่องนี้แชร์ภาพโดยตรงไม่ได้ กดดาวน์โหลดแล้วแนบใน LINE หรือ Facebook</p>}
-            {message && <p role="status" className="rounded-xl bg-sky-50 p-3 text-xs text-sky-900">{message}</p>}
-            {image && (
-              <img src={svgDataUrl(image.svg)} alt={`ตัวอย่างภาพข่าว ${model.headline}`} width={image.width} height={image.height}
-                className="mx-auto block h-auto w-full max-w-sm rounded-xl border border-gray-200" />
-            )}
-          </div>
+          <NewsOutputPanel image={image} model={model} tenantName={tenantName} file={png.file} error={png.error} onRetry={png.retry} />
         </div>
     </DialogShell>
   )
