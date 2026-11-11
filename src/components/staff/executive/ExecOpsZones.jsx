@@ -93,7 +93,7 @@ export function AlertZone({ alerts, ov, resolveLink }) {
   return (
     <ExecSection id="alert" title="สัญญาณเตือน" Icon={BellRing} note="ขึ้นเฉพาะเมื่อมีเรื่อง · กฎตรงไปตรงมา ไม่ใช้ AI">
       {alerts.failures.length > 0 && (
-        <SectionError text={`ตรวจสัญญาณเตือนของ ${alerts.failures.join(', ')} ไม่ได้ — อาจมีเรื่องที่ไม่แสดง`} onRetry={ov.reload} />
+        <SectionError text={`ตรวจสัญญาณเตือนของ ${alerts.failures.join(', ')} ไม่ได้ — อาจมีเรื่องที่ไม่แสดง`} onRetry={alerts.retry ?? ov.reload} />
       )}
       <ul className="space-y-1.5">
         {alerts.items.map((a) => {

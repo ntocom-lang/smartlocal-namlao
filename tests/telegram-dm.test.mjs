@@ -337,17 +337,25 @@ assert.equal(notificationMatchesResource('complaint_assigned_dm', { assigned_to:
 }
 
 // ── คีย์หมวดตรงกัน 3 ที่: edge function · หน้าเว็บ · CHECK ใน migration ──────────────────────────────
+// หมวด execOnly (สรุปเช้า/แจ้งคะแนนต่ำของผู้บริหาร · E3-3) ส่งโดย exec-digest-notify ไม่ใช่ notify-telegram
+// ⇒ DM_CATEGORY (edge ของ notify-telegram) ตรงกับหน้าเว็บ "ที่ไม่ใช่ execOnly" · CHECK/RPC ปัจจุบันต้องรับครบทั้งชุด
 {
   const edge = [...new Set(Object.values(DM_CATEGORY))].sort()
-  const web = [...read('src/lib/telegramLink.js').match(/TELEGRAM_DM_CATEGORIES = Object\.freeze\(\[([\s\S]*?)\]\)/)[1]
-    .matchAll(/key: '(\w+)'/g)].map((m) => m[1]).sort()
-  const migration = read('supabase/migrations/20261030100000_telegram_dm_columns.sql')
-  const check = [...migration.match(/dm_muted <@ ARRAY\[([^\]]+)\]/)[1].matchAll(/'(\w+)'/g)].map((m) => m[1]).sort()
-  const rpc = read('supabase/migrations/20261030100100_telegram_dm_functions.sql')
+  const catalog = read('src/lib/telegramLink.js').match(/TELEGRAM_DM_CATEGORIES = Object\.freeze\(\[([\s\S]*?)\]\)/)[1]
+  const webAll = [...catalog.matchAll(/key: '(\w+)'/g)].map((m) => m[1]).sort()
+  const webExec = [...catalog.matchAll(/key: '(\w+)'[^\n]*execOnly: true/g)].map((m) => m[1]).sort()
+  const webStaff = webAll.filter((k) => !webExec.includes(k))
+  assert.deepEqual(webExec, ['exec_alert', 'exec_digest'], 'หมวดผู้บริหารต้องเป็น exec_digest + exec_alert')
+  const check1 = read('supabase/migrations/20261030100000_telegram_dm_columns.sql')
+  const oldCheck = [...check1.match(/dm_muted <@ ARRAY\[([^\]]+)\]/)[1].matchAll(/'(\w+)'/g)].map((m) => m[1]).sort()
+  const check = [...read('supabase/migrations/20261118100000_exec_digest_dm_categories.sql').replace(/^\s*--.*$/gm, '').match(/CHECK \(dm_muted <@ ARRAY\[([^\]]+)\]/)[1]
+    .matchAll(/'(\w+)'/g)].map((m) => m[1]).sort()
+  const rpc = read('supabase/migrations/20261118100100_exec_digest_functions.sql').replace(/^\s*--.*$/gm, '')
   const rpcKeys = [...rpc.match(/WHERE k IN \(([^)]+)\)/)[1].matchAll(/'(\w+)'/g)].map((m) => m[1]).sort()
-  assert.deepEqual(web, edge, 'TELEGRAM_DM_CATEGORIES ต้องตรงกับ DM_CATEGORY')
-  assert.deepEqual(check, edge, 'CHECK dm_muted ต้องตรงกับ DM_CATEGORY')
-  assert.deepEqual(rpcKeys, edge, 'set_my_telegram_dm_muted ต้องรับคีย์ชุดเดียวกัน')
+  assert.deepEqual(webStaff, edge, 'TELEGRAM_DM_CATEGORIES (ไม่รวม execOnly) ต้องตรงกับ DM_CATEGORY')
+  assert.deepEqual(oldCheck, edge, 'CHECK dm_muted เดิม (20261030100000) ต้องตรงกับ DM_CATEGORY')
+  assert.deepEqual(check, webAll, 'CHECK dm_muted ปัจจุบัน (20261118100000) ต้องรับครบทุกหมวดของหน้าเว็บ')
+  assert.deepEqual(rpcKeys, webAll, 'set_my_telegram_dm_muted (20261118100100) ต้องรับคีย์ชุดเดียวกับหน้าเว็บ')
   assert.deepEqual(EVENT_TASK_LABEL, Object.fromEntries(ASSIGNMENT_TASKS.map((t) => [t.value, t.label])), 'ป้ายหน้าที่ต้องตรงกับ ASSIGNMENT_TASKS')
 }
 

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { CalendarClock, CheckCircle2, ChevronRight, FileSignature, FileText, LayoutDashboard, MapPinned, TriangleAlert } from 'lucide-react'
 import { EXEC_PERIOD_KEYS, EXEC_ZONES, isPhaseLive, liveEntries } from '../../../lib/executiveRegistry'
 import {
-  EXEC_DEFAULT_PERIOD, buildAlerts, buildDecisionQueue, deriveExec, execPeriodRange, execPreviousRange, execRangeText, execSummaryKeys,
+  EXEC_DEFAULT_PERIOD, buildAlerts, esignWaitingFromRpc, buildDecisionQueue, deriveExec, execPeriodRange, execPreviousRange, execRangeText, execSummaryKeys,
   execToday, thaiDayLabel, upcomingEvents,
 } from '../../../lib/executiveData'
 import { esignPendingFromRpc } from '../../../lib/esign'
@@ -12,6 +12,7 @@ import { groupMyEvents } from '../../../lib/staffHomeSummary'
 import { useTenant } from '../../../contexts/TenantContext'
 import { useExecOverview } from '../../../hooks/useExecOverview'
 import { useExecPlanProgress } from '../../../hooks/useExecPlanProgress'
+import { useExecRpc } from '../../../hooks/useExecRpc'
 import { useExecReviewCount, useExecSchedule } from '../../../hooks/useExecExtras'
 import MyPendingSignatures from '../../esign/MyPendingSignatures'
 import { AssignedEventsSection } from '../StaffOperationalDashboard'
@@ -269,18 +270,33 @@ export default function ExecutiveHome({ scopedKeys = [], navigate, profile, tena
   const hasPlanEntry = entries.some((e) => e.key === 'local-plan')
   const plan = useExecPlanProgress({ tenantId, profileId, enabled: hasPlanEntry })
   const resultMissing = plan.status === 'ok' && plan.data?.state === 'ok' ? plan.data.resultMissing : 0
+  // การ์ด "รอลงนามเกิน 2 วันทำการ" (E3): exec_my_esign_waiting ของผู้เปิดหน้า เรียกครั้งเดียวต่อการโหลดหน้า (useExecRpc รวมคำขอซ้ำ + แคช 30 วิ)
+  // ไม่อยู่ใน executive_overview เพราะเป็นของ "ตัวท่านเอง" (คิวลงนามรายคน) — โหลดไม่ได้ขึ้นเป็น failures ของการ์ดนี้เท่านั้น ไม่ล้มทั้งหน้า
+  const hasEsignAlert = entries.some((e) => e.key === 'src:esign' && e.alerts.some((a) => a.id === 'waiting_2wd' && isPhaseLive(a.phase)))
+  const esignRpc = useExecRpc({
+    rpc: 'exec_my_esign_waiting', args: { _municipality_id: tenantId }, tenantId, profileId, enabled: hasEsignAlert,
+  })
+  const esignWaiting = esignRpc.status === 'ok' ? esignWaitingFromRpc(esignRpc.data) : null
+  // status ok แต่รูปข้อมูลผิด = อ่านไม่ได้เหมือนกัน (ไม่เดาเป็น "ไม่มีใบค้าง")
+  const esignFailed = hasEsignAlert && (esignRpc.status === 'error' || (esignRpc.status === 'ok' && !esignWaiting))
+  const esignLabel = entries.find((e) => e.key === 'src:esign')?.label ?? 'ลงนามออนไลน์'
+  const reloadOverview = cur.reload
+  const reloadEsign = esignRpc.reload
   const queue = useMemo(() => { void holidaysVersion; return buildDecisionQueue({ entries, model: cur.model, today }) }, [entries, cur.model, today, holidaysVersion])
   const alerts = useMemo(() => {
     void holidaysVersion
-    const built = buildAlerts({ entries, model: cur.model, today, resultMissing })
+    const built = buildAlerts({ entries, model: cur.model, today, resultMissing, esignWaiting })
     const failures = [...built.failures]
+    if (esignFailed && !failures.includes(esignLabel)) failures.push(esignLabel)
     // executive_overview ล้มทั้งก้อน (เน็ต/หมดเวลา) → model เป็น missing ทุกคีย์ buildAlerts จึงไม่เห็นว่าพัง
     // ต้องบอกเอง ไม่งั้นโซน ③ หายเงียบ ผู้บริหารอ่านว่า "ไม่มีสัญญาณเตือน" (code review #685)
     if (cur.status === 'error') failures.push('ตัวเลขสรุปทั้งหมด')
     // ผลดำเนินการตามแผนโหลดไม่ได้ = ตรวจ "ถึงกำหนดแต่ยังไม่มีผล" ไม่ได้ — บอกชัด ไม่ปล่อยให้ดูเหมือนไม่มีเรื่อง
     if (plan.status === 'error') failures.push('ผลดำเนินการตามแผนพัฒนา')
-    return { ...built, failures }
-  }, [entries, cur.model, cur.status, today, resultMissing, plan.status, holidaysVersion])
+    // ปุ่ม "ลองใหม่" ของโซนนี้ต้องโหลดการ์ดลงนามซ้ำด้วย (ไม่งั้นกดแล้วขึ้นข้อความเดิม)
+    const retry = () => { reloadOverview(); if (esignFailed) reloadEsign() }
+    return { ...built, failures, retry }
+  }, [entries, cur.model, cur.status, reloadOverview, today, resultMissing, plan.status, holidaysVersion, esignWaiting, esignFailed, esignLabel, reloadEsign])
   const hasReviewEntry = entries.some((e) => e.key === 'tourism-reviews')
   const reviews = useExecReviewCount({ tenantId, range, enabled: hasReviewEntry })
 
