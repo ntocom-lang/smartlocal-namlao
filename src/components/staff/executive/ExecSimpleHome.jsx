@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Bell, CalendarDays, CheckCircle2, Clock, Droplets, FileText, Inbox, PenLine, Star, Users } from 'lucide-react'
+import { Bell, CalendarDays, CheckCircle2, Clock, Droplets, FileText, Inbox, Landmark, PenLine, Star, Users } from 'lucide-react'
 import { liveEntries } from '../../../lib/executiveRegistry'
 import { addDays } from '../../../lib/complaintReportPeriods'
 import {
@@ -23,7 +23,7 @@ import useExecSimpleFollows from '../../../hooks/useExecSimpleFollows'
 import { useMyPositionCategory } from '../../../hooks/useMyPositionCategory'
 import ExecSimpleSign, { SignNotice } from './ExecSimpleSign'
 import { FollowItems, MinorItems, OverdueItems, RatingSources } from './ExecSimpleLists'
-import { AlertBlock, Expandable, Flag, LabelNumber, LoadFail, Loading, Mini, OpenBtn, Row, SimpleCard } from './ExecSimpleParts'
+import { AlertBlock, Expandable, Flag, Gauge, KpiStrip, LabelNumber, LoadFail, Loading, Mini, OpenBtn, Row, SimpleCard } from './ExecSimpleParts'
 
 // "ห้องผู้บริหารแบบเรียบ" — หน้าเดียวสำหรับนายก/รองนายก (เจ้าของระบบอนุมัติแผน 2026-11-11) ตอบคำถามเดียว: "วันนี้มีอะไรต้องทำ หรือต้องรู้ไหม"
 // 4 หัวข้อ ตำแหน่งคงที่ทุกวัน: ① เรื่องรอท่าน ② เรื่องที่ควรรู้ ③ งานบริการประชาชนเดือนนี้ ④ กำหนดการวันนี้+พรุ่งนี้ (+ ปุ่ม "แดชบอร์ดสำหรับผู้บริหารแบบครบทั้งหมด")
@@ -43,6 +43,15 @@ const thaiDayShort = (iso) => {
   if (Number.isNaN(d.getTime())) return iso
   const weekday = d.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'long' }).replace(/^วัน/, '')
   return `${weekday} ${d.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })}`
+}
+
+// คำทักทายตามช่วงเวลา (เวลาไทย) — ข้อความล้วน ไม่ใช้ข้อมูลส่วนบุคคล
+const greetingOf = (now) => {
+  const hour = Number(bangkokClock(now).slice(0, 2))
+  if (!Number.isFinite(hour)) return 'สวัสดีครับ'
+  if (hour < 12) return 'สวัสดีตอนเช้า'
+  if (hour < 16) return 'สวัสดีตอนบ่าย'
+  return 'สวัสดีตอนเย็น'
 }
 
 const thaiLongDate = (now) => now.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
@@ -199,6 +208,18 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
   const nRec = numbers.received
   const sat = numbers.satisfaction
 
+  // แถบ KPI ในหัวหน้า: ค่าชุดเดียวกับที่การ์ดใช้อยู่แล้ว (ไม่ดึงเพิ่ม) · อ่านไม่ได้ = null → "—" ไม่ใช่ 0
+  // คำร้องทำเสร็จทันเวลา ใช้ของ "คำร้องอย่างเดียว" ห้ามรวมกับคำขอ (เจ้าของระบบตัดสิน 2569-11-10)
+  const alertTopics = ovOk && alerts.failures.length === 0 ? (split.overdue5 ? 1 : 0) + split.major.length + split.minor.length : null
+  const cOn = numbers.onTime.complaints
+  const complaintPct = cOn.state === 'ok' && cOn.denominator > 0 && cOn.pct != null ? Math.round(cOn.pct) : null
+  const kpis = [
+    esignEntry && { id: 'sign', label: 'รอท่านลงนาม', value: pending.status === 'ok' ? signTotal : null, unit: 'ใบ', target: 's1' },
+    { id: 'know', label: 'เรื่องที่ควรรู้', value: alertTopics, unit: 'เรื่อง', target: 's2' },
+    hasCitizenService && { id: 'ontime', label: 'คำร้องทำเสร็จทันเวลา', value: complaintPct, unit: '%', target: 's3' },
+    hasCitizenService && sat.state !== 'missing' && { id: 'sat', label: 'ความพึงพอใจ', value: sat.state === 'ok' ? sat.avg : null, unit: '/ 5 ★', target: 's3' },
+  ].filter(Boolean)
+
   const timeText = lastAt != null ? bangkokClock(lastAt) : null
   let statusText = 'กำลังโหลดข้อมูล…'
   if (timeText) {
@@ -210,17 +231,27 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
   return (
     <div className="es-root" data-exec-simple>
       <header className="es-head">
-        <div>
-          <h1>{thaiLongDate(now)}</h1>
-          <p>{tenant?.name}</p>
-        </div>
-        <div className="es-live" role="status" aria-label="เวลาและการอัปเดตข้อมูล" data-stale={stale ? 'true' : 'false'} data-paused={paused ? 'true' : 'false'}>
-          <Clock className="es-icon" aria-hidden="true" />
-          <div>
-            <div className="es-clock" data-exec-simple-clock>{bangkokClock(now)} น.</div>
-            <div className="es-st"><span className="es-dot" aria-hidden="true" /><span data-exec-simple-status>{statusText}</span></div>
+        <span className="es-sheen" aria-hidden="true" />
+        <div className="es-hero-top">
+          <div className="es-brand">
+            <span className="es-crest" aria-hidden="true">
+              {tenant?.logo_url ? <img src={tenant.logo_url} alt="" /> : <Landmark className="es-crest-icon" />}
+            </span>
+            <div className="es-brand-text">
+              <p className="es-greet">{greetingOf(now)}</p>
+              <h1>{thaiLongDate(now)}</h1>
+              <p className="es-org">{tenant?.name}</p>
+            </div>
+          </div>
+          <div className="es-live" role="status" aria-label="เวลาและการอัปเดตข้อมูล" data-stale={stale ? 'true' : 'false'} data-paused={paused ? 'true' : 'false'}>
+            <Clock className="es-icon" aria-hidden="true" />
+            <div>
+              <div className="es-clock" data-exec-simple-clock>{bangkokClock(now)} น.</div>
+              <div className="es-st"><span className="es-dot" aria-hidden="true" /><span data-exec-simple-status>{statusText}</span></div>
+            </div>
           </div>
         </div>
+        <KpiStrip items={kpis} />
       </header>
 
       {cur.status === 'forbidden' && (
@@ -228,6 +259,9 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
       )}
 
       <div className="es-grid">
+        {/* จอกว้าง (≥1120px) แบ่ง 3 คอลัมน์จริงด้วย wrapper (ไม่ใช้ grid-areas ที่ทำให้เกิดช่องว่างเมื่อการ์ดสูงไม่เท่ากัน)
+            จอแคบ: wrapper เป็น display:contents + order ตามลำดับ ① ② ③ ④ เหมือนเดิม */}
+        <div className="es-col">
         {/* ① เรื่องรอท่าน */}
         <SimpleCard area="s1" id="s1" Icon={PenLine} title="เรื่องรอท่าน" calm={calm1}>
           <SignNotice notice={notice} />
@@ -269,6 +303,64 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
           {calm1 && <Flag tone="green" data-exec-simple-calm="s1">ไม่มีเรื่องรอท่าน</Flag>}
         </SimpleCard>
 
+        {/* ③ งานบริการประชาชน เดือนนี้ */}
+        {hasCitizenService && (
+          <SimpleCard area="s3" id="s3" Icon={Users} title="งานบริการประชาชน" small={`เดือนนี้ · ${execRangeText(range)}`}>
+            {cur.status === 'loading' && <Loading text="กำลังโหลดตัวเลขเดือนนี้…" />}
+            {cur.status === 'error' && <LoadFail text="โหลดตัวเลขงานบริการประชาชนไม่ได้" onRetry={reloadOverview} />}
+            {cur.status === 'forbidden' && <Flag tone="gray">ไม่มีสิทธิ์ดูตัวเลขงานบริการประชาชน</Flag>}
+            {ovOk && (
+              <>
+                <Row data-exec-simple-received>
+                  <LabelNumber icon={<Mini tone="blue" Icon={Inbox} />} label="รับเรื่องเข้ามา" value={nRec.total} unit="เรื่อง" />
+                  {nRec.state === 'error' && <LoadFail text="โหลดยอดรับเรื่องบางส่วนไม่ได้" onRetry={reloadOverview} />}
+                  {nRec.state === 'ok' && (
+                    <div className="es-sub">{[nRec.complaints != null && `คำร้อง ${execNf(nRec.complaints)}`, nRec.docs != null && `คำขอ ${execNf(nRec.docs)}`].filter(Boolean).join(' · ')}</div>
+                  )}
+                </Row>
+                <Row data-exec-simple-ontime>
+                  <div className="es-line"><span className="es-label"><Mini tone="green" Icon={CheckCircle2} />ทำเสร็จทันเวลา</span></div>
+                  <div className="es-gauges">
+                    {[['complaints', 'คำร้อง'], ['docs', 'คำขอ']].filter(([k]) => numbers.onTime[k].state !== 'missing').map(([k, name]) => {
+                      const o = numbers.onTime[k]
+                      const pctRound = o.pct == null ? null : Math.round(o.pct)
+                      return (
+                        <div key={k} className="es-side" data-exec-simple-ontime-side={k}>
+                          <div className="es-side-name">{name}</div>
+                          {o.state === 'error' && <LoadFail text={`โหลด${name}ที่ทำเสร็จทันเวลาไม่ได้`} onRetry={reloadOverview} />}
+                          {o.state === 'ok' && o.denominator > 0 && (
+                            <>
+                              <Gauge pct={o.pct ?? 0} center={<><b>{pctRound}</b><i>%</i></>}
+                                ariaLabel={`${name} ทำเสร็จทันเวลา ${o.onTime} จาก ${o.denominator} เรื่อง คิดเป็นร้อยละ ${pctRound}`} />
+                              <div className="es-side-sub">{execNf(o.onTime)} จาก {execNf(o.denominator)} เรื่อง</div>
+                            </>
+                          )}
+                          {o.state === 'ok' && !(o.denominator > 0) && <div className="es-sub">— ยังไม่มีเรื่องครบกำหนดในเดือนนี้</div>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </Row>
+                {sat.state !== 'missing' && (
+                  <Row data-exec-simple-satisfaction>
+                    <LabelNumber icon={<Mini tone="gold" Icon={Star} />} label="ประชาชนพอใจ" value={sat.avg} unit="จาก 5" />
+                    {sat.state === 'error' && <LoadFail text="โหลดคะแนนความพึงพอใจไม่ได้" onRetry={reloadOverview} />}
+                    {sat.state === 'ok' && sat.avg != null && (
+                      <>
+                        <div className="es-stars" role="img" aria-label={`${sat.avg} ดาว จาก 5`}>★★★★★<span style={{ width: `${Math.min(100, Math.max(0, (sat.avg / 5) * 100))}%` }}>★★★★★</span></div>
+                        <div className="es-sub">จาก {execNf(sat.count)} คะแนนที่ประชาชนให้</div>
+                      </>
+                    )}
+                    {sat.state === 'ok' && sat.avg == null && <div className="es-sub">— ยังไม่มีคะแนนจากประชาชนในเดือนนี้</div>}
+                  </Row>
+                )}
+              </>
+            )}
+          </SimpleCard>
+        )}
+
+        </div>
+        <div className="es-col">
         {/* ② เรื่องที่ควรรู้ */}
         <SimpleCard area="s2" id="s2" Icon={Bell} title="เรื่องที่ควรรู้" calm={calm2}>
           {cur.status === 'loading' && <Loading text="กำลังตรวจเรื่องที่ควรรู้…" />}
@@ -330,57 +422,8 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
           )}
         </SimpleCard>
 
-        {/* ③ งานบริการประชาชน เดือนนี้ */}
-        {hasCitizenService && (
-          <SimpleCard area="s3" id="s3" Icon={Users} title="งานบริการประชาชน" small={`เดือนนี้ · ${execRangeText(range)}`}>
-            {cur.status === 'loading' && <Loading text="กำลังโหลดตัวเลขเดือนนี้…" />}
-            {cur.status === 'error' && <LoadFail text="โหลดตัวเลขงานบริการประชาชนไม่ได้" onRetry={reloadOverview} />}
-            {cur.status === 'forbidden' && <Flag tone="gray">ไม่มีสิทธิ์ดูตัวเลขงานบริการประชาชน</Flag>}
-            {ovOk && (
-              <>
-                <Row data-exec-simple-received>
-                  <LabelNumber icon={<Mini tone="blue" Icon={Inbox} />} label="รับเรื่องเข้ามา" value={nRec.total} unit="เรื่อง" />
-                  {nRec.state === 'error' && <LoadFail text="โหลดยอดรับเรื่องบางส่วนไม่ได้" onRetry={reloadOverview} />}
-                  {nRec.state === 'ok' && (
-                    <div className="es-sub">{[nRec.complaints != null && `คำร้อง ${execNf(nRec.complaints)}`, nRec.docs != null && `คำขอ ${execNf(nRec.docs)}`].filter(Boolean).join(' · ')}</div>
-                  )}
-                </Row>
-                <Row data-exec-simple-ontime>
-                  <div className="es-line"><span className="es-label"><Mini tone="green" Icon={CheckCircle2} />ทำเสร็จทันเวลา</span></div>
-                  {[['complaints', 'คำร้อง'], ['docs', 'คำขอ']].filter(([k]) => numbers.onTime[k].state !== 'missing').map(([k, name]) => {
-                    const o = numbers.onTime[k]
-                    return (
-                      <div key={k} className="es-side" data-exec-simple-ontime-side={k}>
-                        {o.state === 'error' && <><div className="es-side-name">{name}</div><LoadFail text={`โหลด${name}ที่ทำเสร็จทันเวลาไม่ได้`} onRetry={reloadOverview} /></>}
-                        {o.state === 'ok' && o.denominator > 0 && (
-                          <>
-                            <LabelNumber label={name} value={o.onTime} unit={`จาก ${execNf(o.denominator)} เรื่อง`} />
-                            <div className="es-bar" role="img" aria-label={`${name} ทำเสร็จทันเวลา ${o.onTime} จาก ${o.denominator} เรื่อง`}><span style={{ width: `${Math.min(100, Math.max(0, o.pct ?? 0))}%` }} /></div>
-                          </>
-                        )}
-                        {o.state === 'ok' && !(o.denominator > 0) && <><div className="es-side-name">{name}</div><div className="es-sub">— ยังไม่มีเรื่องครบกำหนดในเดือนนี้</div></>}
-                      </div>
-                    )
-                  })}
-                </Row>
-                {sat.state !== 'missing' && (
-                  <Row data-exec-simple-satisfaction>
-                    <LabelNumber icon={<Mini tone="gold" Icon={Star} />} label="ประชาชนพอใจ" value={sat.avg} unit="จาก 5" />
-                    {sat.state === 'error' && <LoadFail text="โหลดคะแนนความพึงพอใจไม่ได้" onRetry={reloadOverview} />}
-                    {sat.state === 'ok' && sat.avg != null && (
-                      <>
-                        <div className="es-stars" role="img" aria-label={`${sat.avg} ดาว จาก 5`}>★★★★★<span style={{ width: `${Math.min(100, Math.max(0, (sat.avg / 5) * 100))}%` }}>★★★★★</span></div>
-                        <div className="es-sub">จาก {execNf(sat.count)} คะแนนที่ประชาชนให้</div>
-                      </>
-                    )}
-                    {sat.state === 'ok' && sat.avg == null && <div className="es-sub">— ยังไม่มีคะแนนจากประชาชนในเดือนนี้</div>}
-                  </Row>
-                )}
-              </>
-            )}
-          </SimpleCard>
-        )}
-
+        </div>
+        <div className="es-col">
         {/* ④ กำหนดการ วันนี้ + พรุ่งนี้ */}
         <SimpleCard area="s4" id="s4" Icon={CalendarDays} title="กำหนดการ">
           <div className="es-sched">
@@ -405,10 +448,11 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
         </SimpleCard>
 
         {/* ท้ายหน้า: ไปหน้าแบบเต็ม (ตัวเลขละเอียด แยกกอง วิธีคิด) */}
-        <section className="es-card es-foot es-a-dt" aria-label="ดูรายละเอียด">
-          ต้องการตัวเลขละเอียด แยกกอง แยกหมู่บ้าน หรือวิธีคิดตัวเลข
-          <OpenBtn onClick={() => navigate('/executive?view=full')} data-exec-simple-full>แดชบอร์ดสำหรับผู้บริหารแบบครบทั้งหมด</OpenBtn>
+        <section className="es-card es-foot es-a-dt" aria-label="แดชบอร์ดสำหรับผู้บริหารแบบครบทั้งหมด">
+          <p className="es-foot-title">แดชบอร์ดสำหรับผู้บริหารแบบครบทั้งหมด</p>
+          <OpenBtn onClick={() => navigate('/executive?view=full')} data-exec-simple-full>ดูรายละเอียดทั้งหมด</OpenBtn>
         </section>
+        </div>
       </div>
     </div>
   )

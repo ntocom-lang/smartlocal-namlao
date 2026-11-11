@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { execNf } from '../../../lib/executiveData'
 import './ExecSimpleHome.css'
+import './ExecSimplePolish.css'
 
 // ชิ้นส่วนวาดของ "ห้องผู้บริหารแบบเรียบ" — ไม่มีข้อมูล/ฮุกดึงข้อมูลในไฟล์นี้ (แค่หน้าตาตามภาพจำลองที่เจ้าของระบบอนุมัติ)
 // กติกาปุ่ม 3 แบบ ห้ามปน (ผู้สูงอายุไม่ต้องอ่านก็รู้ว่าปุ่มไหน "ส่งของออกไปจริง"):
@@ -11,16 +12,77 @@ import './ExecSimpleHome.css'
 
 const FLAG_SYMBOL = { green: '✓', amber: '!', red: '!', gray: '!' }
 
-/** การ์ดหัวข้อ: แถบสีบนการ์ด + ไอคอนหัวข้อ · calm = ไม่มีเรื่อง (แถบเป็นสีเขียว) */
+/** การ์ดหัวข้อ: แถบสีบนการ์ด + เหรียญไอคอนหัวข้อ · calm = ไม่มีเรื่อง (แถบ/เหรียญเป็นสีเขียว + ตราประทับ "เรียบร้อย") */
 export function SimpleCard({ area, id, Icon, title, small, calm = false, children }) {
   return (
-    <section className={`es-card es-a-${area}`} data-calm={calm ? 'true' : 'false'} aria-labelledby={`es-${id}`} data-exec-simple-card={id}>
+    <section id={`es-card-${id}`} tabIndex={-1} className={`es-card es-a-${area}`} data-calm={calm ? 'true' : 'false'} aria-labelledby={`es-${id}`} data-exec-simple-card={id}>
       <h2 id={`es-${id}`}>
         <span className="es-hicon" aria-hidden="true"><Icon className="es-icon" /></span>
-        <span>{title}{small && <small>{small}</small>}</span>
+        <span className="es-title">{title}{small && <small>{small}</small>}</span>
+        {calm && <span className="es-seal" data-exec-simple-seal>เรียบร้อย ✓</span>}
       </h2>
       {children}
     </section>
+  )
+}
+
+/** เลื่อนไปการ์ดที่ระบุ (กดจากแถบ KPI ในหัวหน้า) — ผู้ตั้งค่าลดการเคลื่อนไหว = กระโดดตรงๆ ไม่เลื่อนนุ่ม */
+function goToCard(id) {
+  const el = document.getElementById(`es-card-${id}`)
+  if (!el) return
+  const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+  try { el.focus({ preventScroll: true }) } catch { /* ไม่ย้ายโฟกัส */ }
+}
+
+/**
+ * แถบ KPI ในหัวหน้า (กระจกฝ้า) — ใช้ค่าชุดเดียวกับที่การ์ดแสดงอยู่แล้ว ไม่ดึงเพิ่ม
+ * @param {{ items: Array<{ id: string, label: string, value: number|string|null, unit?: string, target: string }> }} props
+ *   value null = "—" (อ่านไม่ได้ ไม่ใช่ 0)
+ */
+export function KpiStrip({ items }) {
+  const show = (v) => (typeof v === 'number' ? execNf(v) : v)
+  return (
+    <div className="es-kpis" style={{ '--es-kpi-n': items.length }} data-exec-simple-kpis>
+      {items.map((it) => (
+        <button key={it.id} type="button" className="es-kpi" onClick={() => goToCard(it.target)} data-exec-simple-kpi={it.id}
+          aria-label={`${it.label} ${it.value == null ? 'อ่านค่าไม่ได้' : `${show(it.value)} ${it.unit ?? ''}`} กดเพื่อเลื่อนไปดู`}>
+          <span className="es-kpi-label">{it.label}</span>
+          <span className="es-kpi-val" data-null={it.value == null ? 'true' : 'false'}>
+            {it.value == null ? '—' : show(it.value)}
+            {it.value != null && it.unit && <span className="es-kpi-unit">{it.unit}</span>}
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+const GAUGE_R = 54
+const GAUGE_C = 2 * Math.PI * GAUGE_R
+
+/**
+ * วงแหวนเกจ SVG (เส้นไล่สีเขียว) — ไล่ขึ้นครั้งเดียวตอนแสดงครั้งแรก แล้วนิ่ง (ดู ExecSimplePolish.css)
+ * pct 0–100 · ตัวเลขกลางเป็น HTML ซ้อนบน (คุมขนาดตัวอักษรได้) · ariaLabel บอกค่าเป็นคำ
+ */
+export function Gauge({ pct, center, ariaLabel }) {
+  const gid = `es-g${useId().replace(/[^a-zA-Z0-9]/g, '')}`
+  const clamped = Math.min(100, Math.max(0, Number(pct) || 0))
+  return (
+    <div className="es-gauge" role="img" aria-label={ariaLabel}>
+      <svg viewBox="0 0 128 128" aria-hidden="true">
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#4ade80" />
+            <stop offset="100%" stopColor="#047857" />
+          </linearGradient>
+        </defs>
+        <circle className="es-gauge-track" cx="64" cy="64" r={GAUGE_R} fill="none" strokeWidth="12" />
+        <circle className="es-gauge-arc" cx="64" cy="64" r={GAUGE_R} fill="none" strokeWidth="12" strokeLinecap="round" stroke={`url(#${gid})`}
+          transform="rotate(-90 64 64)" style={{ '--es-c': GAUGE_C.toFixed(2), '--es-off': (GAUGE_C * (1 - clamped / 100)).toFixed(2) }} />
+      </svg>
+      <span className="es-gauge-center">{center}</span>
+    </div>
   )
 }
 
