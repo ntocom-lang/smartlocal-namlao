@@ -33,7 +33,7 @@ import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
 import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef, toReliableImageUrl, fetchImageAsDataUrl } from '../../lib/driveStorage'
 import { complaintFolderPath, complaintFileName } from '../../lib/driveFolders'
 import { fetchAssignableStaff, groupStaffByDepartment, ROLE_LABELS } from '../../lib/staffRoster'
-import { workingDaysLeft } from '../../lib/workingDays'
+import { workingDaysLeft, workingDaysBetween } from '../../lib/workingDays'
 import OssIntakeForm from './OssIntakeForm'
 import OdorFieldsDisplay from '../complaints/OdorFieldsDisplay'
 import OdorComplaintTable, { OdorDetailModal } from '../complaints/OdorComplaintTable'
@@ -140,6 +140,49 @@ function SlaBadge({ dueDate, status, compact = false }) {
     </span>
   )
 }
+/**
+ * วันจบงานที่เชื่อได้ = closed_at ของเรื่องที่ปิดผ่าน finish_complaint (resolved_by มีค่า)
+ * - ปฏิเสธไม่ตั้ง closed_at · ผู้ร้องเปิดเรื่องใหม่ = ระบบล้างค่าเอง
+ * - เรื่องก่อนมีปุ่ม "ดำเนินการแล้ว" (2569-09-15) resolved_by ว่าง และ closed_at คือเวลาที่แอดมิน
+ *   รับงาน ไม่ใช่วันเสร็จ (กติกาเดียวกับ finish_recorded ใน staffPerformance.js) → เว้นว่าง ไม่เดา
+ */
+function finishedAtOf(c) {
+  return (LEGACY_STATUS[c.status] ?? c.status) === 'closed' && c.resolved_by && c.closed_at ? c.closed_at : null
+}
+
+/**
+ * ระยะเวลาที่ใช้ นับวันทำการจากวันที่ยื่นถึงวันจบงาน (ไม่รวมวันยื่น รวมวันจบ — ชุดเดียวกับ SLA
+ * และรายงานผลงาน จึงเทียบกับ "เหลือ N วัน" ได้ตรงกัน) สีบอกว่าทันกำหนดหรือไม่
+ */
+function DurationBadge({ complaint: c }) {
+  const finishedAt = finishedAtOf(c)
+  if (!finishedAt) return null
+  const days = workingDaysBetween(c.created_at, finishedAt)
+  if (days === null || days < 0) return null
+  const finishedDay = dayKeyOf(finishedAt)
+  const dueDay = c.due_date ? String(c.due_date).slice(0, 10) : null
+  const late = dueDay ? finishedDay > dueDay : null
+  const color = late === null ? { bg: '#f3f4f6', text: '#374151' }
+    : late ? { bg: '#fee2e2', text: '#991b1b' }
+    : { bg: '#d1fae5', text: '#065f46' }
+  const label = days === 0 ? 'เสร็จในวันที่ยื่น' : `ใช้ ${days} วันทำการ`
+  const title = `${label}${late === null ? '' : late ? ' · เกินกำหนด' : ' · ทันกำหนด'} (นับจากวันที่ยื่นถึงวันดำเนินการแล้ว ไม่รวมวันหยุดราชการ)`
+  return (
+    <span className="mt-0.5 block">
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
+            style={{ backgroundColor: color.bg, color: color.text }} title={title}>
+        ⏱ {label}
+      </span>
+    </span>
+  )
+}
+
+/** วันตามเวลาเครื่อง (YYYY-MM-DD) — แบบเดียวกับที่ workingDays.js ตัดวันจาก timestamp */
+function dayKeyOf(value) {
+  const d = new Date(value)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 const FILTER_TABS = ['ทั้งหมด', ...STATUS_MAIN.map((k) => STATUS[k].label)]
 const FILTER_KEYS = [null, ...STATUS_MAIN]
 
@@ -2584,7 +2627,9 @@ ${summaryHtml}
                     <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">เลขที่</th>
                     <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ประเภทคำร้อง</th>
                     <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานที่</th>
-                    <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วันที่ยื่น</th>
+                    <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">
+                      วันที่ยื่น<br /><span className="font-normal text-[10px] text-white/70">ดำเนินการแล้ว</span>
+                    </th>
                     <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ผู้แจ้ง</th>
                     <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ผู้รับผิดชอบ</th>
                     <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานะ</th>
@@ -2649,6 +2694,13 @@ ${summaryHtml}
                       </td>
                       <td className="px-2 py-2 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">
                         {new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
+                        {/* บรรทัด 2 = วันจบงาน (ดู finishedAtOf — เรื่องเก่าก่อนมีปุ่มดำเนินการแล้วเว้นว่าง) */}
+                        {finishedAtOf(c) && (
+                          <span className="mt-0.5 block text-[11px] font-medium text-emerald-700"
+                                title={`ดำเนินการแล้ว ${new Date(finishedAtOf(c)).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}`}>
+                            {new Date(finishedAtOf(c)).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
+                          </span>
+                        )}
                       </td>
                       <td className="px-2 py-2 border-r border-gray-200 overflow-hidden">
                         {(() => {
@@ -2679,6 +2731,9 @@ ${summaryHtml}
                             <SlaBadge dueDate={c.due_date} status={c.status} compact />
                           </span>
                         )}
+                        {/* เรื่องที่จบแล้ว SlaBadge ไม่ขึ้น ช่องบรรทัด 2 ว่าง จึงใช้ที่เดียวกันบอกระยะเวลาที่ใช้
+                            แถวไม่สูงขึ้นและไม่ต้องเพิ่มคอลัมน์ (ตารางกว้างเกินพื้นที่อยู่แล้ว ดู test:staff-inbox) */}
+                        <DurationBadge complaint={c} />
                         {/* ไม่ขยายคอลัมน์ — ตารางกว้างเกินพื้นที่อยู่แล้ว (ดู test:staff-inbox) ตัดข้อความแล้วดูเต็มที่ title */}
                         {isAdmin && complaintIntakeReason(c, categoryMeta) && (
                           <span className="mt-0.5 block truncate text-[10px] font-medium text-amber-700" title={complaintIntakeReason(c, categoryMeta).text}>

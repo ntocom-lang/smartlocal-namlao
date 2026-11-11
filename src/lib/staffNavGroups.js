@@ -112,11 +112,17 @@ export const MODULES = [...STANDALONE_GROUPS.flatMap(g => g.items), ...MODULE_GR
 // ใช้ร่วม /staff กับห้องผู้บริหาร: ช่องแรกต่างกัน (แดชบอร์ด ↔ ห้องผู้บริหาร) ที่เหลือ + ปุ่ม "เมนู" เหมือนกัน
 export const STAFF_HOME_TAB = Object.freeze({ key: 'home', label: 'แดชบอร์ด', Icon: LayoutDashboard })
 export const EXECUTIVE_TAB = Object.freeze({ key: 'executive-room', label: 'ห้องผู้บริหาร', Icon: ChartColumn })
+// ลำดับบนแถบยึดลำดับเมนูซ้าย (MODULES) ไม่ใช่ลำดับในรายการนี้ — เจ้าของระบบสั่ง 2569-11-11 ให้เมนูซ้าย
+// การ์ด "ต้องทำตอนนี้" และแถบล่างเรียงเหมือนกัน · ย้ายเมนูเมื่อไรแถบล่างตามเอง
 const SHORTCUT_TABS = [
-  { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', Icon: FileText },
   { key: 'complaints', label: 'คำร้อง',      Icon: MessageSquareWarning },
+  { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', Icon: FileText },
   { key: 'events',     label: 'ปฏิทินกิจกรรม', Icon: CalendarDays },
 ]
+const menuOrder = (key) => MODULES.findIndex((m) => m.key === key)
 export function staffBottomTabs(visibleModules, firstTab = STAFF_HOME_TAB) {
-  return [firstTab, ...SHORTCUT_TABS.filter(({ key }) => visibleModules.some((m) => m.key === key))]
+  const shortcuts = SHORTCUT_TABS
+    .filter(({ key }) => visibleModules.some((m) => m.key === key))
+    .sort((a, b) => menuOrder(a.key) - menuOrder(b.key))
+  return [firstTab, ...shortcuts]
 }

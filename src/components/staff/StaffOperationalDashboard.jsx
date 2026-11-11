@@ -74,10 +74,11 @@ const ROLE_LABELS = {
 }
 
 // การ์ด "ต้องทำตอนนี้" — เฉพาะโมดูลที่มีตัวเลขงานค้างอยู่แล้วใน badge (ไม่มี query เพิ่ม ตัวเลขตรงกับเมนูซ้ายเสมอ)
-// เรียงตามลำดับนี้ตายตัว ไม่เรียงตามยอด: ตำแหน่งที่คงที่ทำให้คนจำที่ได้ ยอดสลับกันไปมาทำให้ต้องอ่านใหม่ทุกครั้ง
+// ลำดับบนจอไม่ได้มาจากรายการนี้ แต่ยึดลำดับเมนูซ้าย (staffNavGroups.js) — ดู workCards ด้านล่าง
+// ไม่เรียงตามยอด: ตำแหน่งที่คงที่ทำให้คนจำที่ได้ ยอดสลับกันไปมาทำให้ต้องอ่านใหม่ทุกครั้ง
 const WORK_CARDS = [
-  { key: 'inbox', hint: () => 'รอรับเรื่อง' },
   { key: 'complaints', hint: ({ isAdmin }) => (isAdmin ? 'รอรับเรื่อง' : 'มอบหมายให้คุณ · ยังไม่เริ่มดำเนินการ') },
+  { key: 'inbox', hint: () => 'รอรับเรื่อง' },
   { key: PATIENT_TRANSPORT_MODULE_KEY, hint: () => 'รอดำเนินการ' },
 ]
 
@@ -261,9 +262,13 @@ export default function StaffOperationalDashboard({
   const open = item => openModuleItem(item, { navigate, setActiveModule })
 
   // ── ต้องทำตอนนี้ ──
+  // เรียงตามตำแหน่งในเมนูซ้าย (visibleItems มาจาก visibleGroups ชุดเดียวกับเมนู) — เจ้าของระบบสั่ง 2569-11-11
+  // ให้สองที่เรียงเหมือนกัน · ผูกกับเมนูแทนการเขียนลำดับซ้ำ ย้ายเมนูเมื่อไรการ์ดตามเอง ไม่ต้องจำแก้สองที่
+  const menuIndex = new Map(visibleItems.map((item, index) => [item.key, index]))
   const workCards = WORK_CARDS
     .map(card => ({ ...card, item: itemByKey.get(card.key), status: workStatus[card.key] ?? 'ok', count: Number(cardBadges[card.key]) || 0 }))
     .filter(card => card.item)
+    .sort((a, b) => menuIndex.get(a.key) - menuIndex.get(b.key))
   const pendingCards = workCards.filter(card => card.status === 'ok' && card.count > 0)
   const failedCards = workCards.filter(card => card.status === 'error')
 
