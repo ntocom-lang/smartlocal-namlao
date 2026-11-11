@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { Bell, Loader2 } from 'lucide-react'
 import { supabase, getSessionResilient, signOutSafely } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -16,12 +16,15 @@ import useStickyChrome from '../hooks/useStickyChrome'
 import { EXECUTIVE_TAB, staffBottomTabs } from '../lib/staffNavGroups'
 
 const ExecutiveHome = lazy(() => import('../components/staff/executive/ExecutiveHome'))
+const ExecSimpleHome = lazy(() => import('../components/staff/executive/ExecSimpleHome'))
 
 // "ห้องผู้บริหาร" หน้าเดี่ยว /executive — ของนายก/รองนายก (viewer) และปลัด/รองปลัด (ตำแหน่งหมวด top_admin ทุก role) + admin ที่เปิดดูได้
 // เมนูซ้าย (PC) + แถบล่าง (มือถือ) เป็นชุดเดียวกับระบบเจ้าหน้าที่ (StaffSideNav/StaffBottomNav — เจ้าของระบบสั่ง 2569-11-10)
 // กดเมนูอื่นแล้วไป /staff พร้อม state.module (StaffDashboard อ่านตอนเปิดหน้า) · App.jsx ซ่อนหัว/แถบล่างของเว็บประชาชนให้ path นี้
 // ไม่แสดงตัวเลข badge (การ์ดหน้ารวมใช้ตัวเลขจาก RPC เท่านั้น ไม่เพิ่ม query ใหม่ที่หน้านี้)
 // ⚠️ ด่านในหน้านี้ (canOpenExecutiveHome) แค่กันคนที่ไม่มีห้องนี้ไม่ให้เห็นหน้าว่าง — สิทธิ์ข้อมูลตัดสินที่ RPC/RLS ฝั่งฐานข้อมูลเสมอ
+// สองหน้าในเส้นทางเดียว (เจ้าของระบบอนุมัติ 2026-11-11): แบบเรียบ (ExecSimpleHome — หน้าเดียวตัวใหญ่สำหรับนายก) กับแบบเต็ม (ExecutiveHome)
+//   ?view=simple → แบบเรียบ · ?view=full → แบบเต็ม · ไม่ระบุ = viewer (นายก/รองนายก/ที่ปรึกษา/เลขาฯ) แบบเรียบ · ปลัด/admin/superadmin แบบเต็ม — สลับได้ทั้งสองทาง
 
 const PAGE_BG = '#eef2f7'
 
@@ -39,6 +42,8 @@ export default function ExecutiveRoom() {
   const { unreadCount } = useNotifications()
   const [profileState, setProfileState] = useState({ profile: null, failed: false, tick: 0 })
   const { profile, failed } = profileState
+  const [searchParams] = useSearchParams()
+  const viewParam = searchParams.get('view')
 
   // โปรไฟล์ตัวเอง (ต้องใช้ role + fleet_role/asset_role/position_id) — วิธีเดียวกับ StaffDashboard
   useEffect(() => {
@@ -94,6 +99,7 @@ export default function ExecutiveRoom() {
     else goModule(key)
   }
   let showNav = false
+  let simpleView = false
   let body
   if (failed || positionError) {
     body = (
@@ -113,9 +119,11 @@ export default function ExecutiveRoom() {
     return <Navigate to="/staff" replace />
   } else {
     showNav = true
+    simpleView = viewParam === 'simple' || (viewParam !== 'full' && profile.role === 'viewer')
+    const Home = simpleView ? ExecSimpleHome : ExecutiveHome
     body = (
       <Suspense fallback={<Centered label="กำลังโหลดห้องผู้บริหาร"><Loader2 size={28} className="animate-spin text-blue-500" aria-hidden="true" /></Centered>}>
-        <ExecutiveHome key={tenant?.id} scopedKeys={scopedKeys} navigate={navigate} profile={profile} tenant={tenant}
+        <Home key={`${simpleView ? 'simple' : 'full'}-${tenant?.id}`} scopedKeys={scopedKeys} navigate={navigate} profile={profile} tenant={tenant}
           isModuleEnabled={isModuleEnabled} tenantModuleEnabled={tenantModuleEnabled} />
       </Suspense>
     )
@@ -162,7 +170,8 @@ export default function ExecutiveRoom() {
         )}
         {/* pb-24 บนมือถือ: เว้นที่ให้แถบล่างปักอยู่ไม่ทับท้ายหน้า */}
         <main className="min-w-0 flex-1 px-3 py-4 pb-24 md:px-6 md:py-6 md:pb-6">
-          <div className="mx-auto w-full max-w-5xl">
+          {/* แบบเรียบใช้เต็มความกว้างพื้นที่หน้า (จอกว้างวาง 3 คอลัมน์) · แบบเต็มคงกว้างสูงสุดเดิม */}
+          <div className={simpleView ? 'w-full' : 'mx-auto w-full max-w-5xl'}>
             {body}
           </div>
         </main>

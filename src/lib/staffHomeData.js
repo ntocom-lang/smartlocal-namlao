@@ -32,6 +32,8 @@ export function clearHomeRpcCache(rpc) {
  * @returns {{ status: 'idle'|'loading'|'ok'|'error', data: any, reload: () => void }}
  *   status 'idle' = ไม่ได้เปิดใช้ (บทบาทนี้ไม่ต้องดึง) · ระหว่างรีเฟรชเบื้องหลังยังคงค่าเดิมไว้ ไม่กระพริบเป็น loading
  *   reload = ทิ้งแคชแล้วดึงใหม่ทันที (ใช้หลังคนทำรายการที่เปลี่ยนตัวเลขของ RPC นี้ เช่น ลงนามเสร็จ) · ค่าเดิมยังโชว์ระหว่างรอ
+ *   stale = true เมื่อรีเฟรชแล้วพลาดแต่คงค่าเดิมไว้ · fetchedAt = เวลา (ms) ที่ได้ผลสำเร็จล่าสุด — ห้องผู้บริหารแบบเรียบใช้บอกผู้ใช้ว่า "ยังอัปเดตไม่ได้"
+ *   (reload ไม่ตั้ง 'loading' อยู่แล้ว จึงใช้เป็น refresh เงียบของหน้านั้นได้เลย — ไม่เพิ่มฟังก์ชันใหม่)
  */
 export function useHomeRpc({ rpc, tenantId, profileId, enabled, args }) {
   // อาร์กิวเมนต์เก็บเป็นสตริง: ผู้เรียกส่งอ็อบเจ็กต์ใหม่ทุกรอบเรนเดอร์ ถ้าใช้เป็น dependency ตรงๆ effect จะวนดึงซ้ำไม่จบ
@@ -41,7 +43,7 @@ export function useHomeRpc({ rpc, tenantId, profileId, enabled, args }) {
   const active = Boolean(enabled && key)
   const [state, setState] = useState(() => {
     const hit = key && cache.get(key)
-    return hit ? { key, status: 'ok', data: hit.data } : { key, status: active ? 'loading' : 'idle', data: null }
+    return hit ? { key, status: 'ok', data: hit.data, at: hit.at, stale: false } : { key, status: active ? 'loading' : 'idle', data: null, at: null, stale: false }
   })
 
   // ฟังก์ชันดึงอยู่ "ในตัว effect" (แบบเดียวกับ badge รถผู้ป่วยใน StaffDashboard) เพื่อให้ผูก cancelled กับรอบนี้ตรงๆ
@@ -66,11 +68,12 @@ export function useHomeRpc({ rpc, tenantId, profileId, enabled, args }) {
       if (result.error || result.data == null) {
         console.error(`${rpc} error:`, result.error?.message ?? 'empty response')
         // มีค่าเดิมอยู่แล้ว (เน็ตสะดุดตอนรีเฟรชเบื้องหลัง) → คงค่าเดิมไว้ ไม่ทิ้งเป็น error; ตัวเลขค้างยังดีกว่าไฟเขียวปลอม
-        setState(prev => (prev.key === key && prev.status === 'ok' ? prev : { key, status: 'error', data: null }))
+        setState(prev => (prev.key === key && prev.status === 'ok' ? { ...prev, stale: true } : { key, status: 'error', data: null, at: null, stale: false }))
         return
       }
-      cache.set(key, { at: Date.now(), data: result.data })
-      setState({ key, status: 'ok', data: result.data })
+      const at = Date.now()
+      cache.set(key, { at, data: result.data })
+      setState({ key, status: 'ok', data: result.data, at, stale: false })
     }
     const hit = cache.get(key)
     if (!hit || Date.now() - hit.at > CACHE_TTL_MS) load()
@@ -92,6 +95,6 @@ export function useHomeRpc({ rpc, tenantId, profileId, enabled, args }) {
   }, [key])
 
   // เปลี่ยน อปท./บัญชี ระหว่างที่ component ยังอยู่ → ห้ามแสดงค่าของบัญชีก่อนหน้า
-  if (state.key !== key) return { status: active ? 'loading' : 'idle', data: null, reload }
-  return { status: active ? state.status : 'idle', data: active ? state.data : null, reload }
+  if (state.key !== key) return { status: active ? 'loading' : 'idle', data: null, reload, stale: false, fetchedAt: null }
+  return { status: active ? state.status : 'idle', data: active ? state.data : null, reload, stale: active ? state.stale : false, fetchedAt: active ? state.at : null }
 }

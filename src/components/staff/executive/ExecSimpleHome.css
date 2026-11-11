@@ -1,0 +1,153 @@
+/* ห้องผู้บริหารแบบเรียบ (หน้าเดียวสำหรับนายก) — สไตล์ตามภาพจำลองที่เจ้าของระบบอนุมัติ 2026-11-11
+   ขอบเขต: ทุกคลาสขึ้นต้น es- และอยู่ใต้ .es-root เท่านั้น (ไม่กระทบหน้าอื่น)
+   ขนาด: เนื้อความ 20px · เล็กสุด 17px · ตัวเลขหลัก 40px · ปุ่มสูง ≥54px · ระยะบรรทัด 1.7 (ภาษาไทยมีสระบน-ล่าง)
+   จัดวางด้วย container query บนความกว้างของ "พื้นที่หน้านี้" (ไม่รวมเมนูซ้าย):
+     ≥1120px = 3 คอลัมน์ · 640–1119px = 2 คอลัมน์ · แคบกว่า = 1 คอลัมน์
+   (ภาพจำลองวัดที่กล่องรวมเมนูซ้าย 210px + ขอบหน้า 32px×2 → 1400 / 900 ในภาพจำลอง ≈ 1120 / 640 ที่พื้นที่หน้าจริง)
+   ไม่มีอะไรกระพริบ/วน ไม่มีเสียง — เปิดทิ้งไว้ทั้งวันไม่รบกวน (ชั้นความหรู + จังหวะตอนเปิดหน้าครั้งเดียวอยู่ใน ExecSimplePolish.css) */
+
+.es-root {
+  --es-ink: #111827; --es-ink-2: #374151; --es-muted: #4b5563; --es-line: #e5e7eb; --es-card: #ffffff;
+  --es-blue: #1d4ed8; --es-red: #b91c1c; --es-red-soft: #fef2f2; --es-red-line: #fecaca;
+  --es-amber: #92400e; --es-amber-soft: #fffbeb; --es-amber-line: #fde68a;
+  --es-green: #166534; --es-green-soft: #f0fdf4; --es-green-line: #bbf7d0;
+  container-type: inline-size;
+  color: var(--es-ink);
+  font-size: 20px;
+  line-height: 1.7;
+  font-family: 'Sarabun', 'Noto Sans Thai', 'Leelawadee UI', sans-serif;
+}
+.es-root button { font-family: inherit; }
+.es-icon { width: 24px; height: 24px; flex: 0 0 auto; }
+
+/* ── หัวหน้า ── */
+.es-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.es-head h1 { margin: 0; font-size: 26px; line-height: 1.45; font-weight: 800; color: var(--es-ink); }
+.es-head p { margin: 2px 0 0; font-size: 18px; color: var(--es-muted); }
+.es-live { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid var(--es-line); border-radius: 16px; padding: 8px 16px; box-shadow: 0 1px 2px rgba(15, 23, 42, .05); }
+.es-live > .es-icon { width: 30px; height: 30px; color: #475569; }
+.es-clock { font-size: 30px; font-weight: 800; line-height: 1.15; }
+.es-st { font-size: 17px; color: var(--es-muted); line-height: 1.4; display: flex; align-items: center; }
+.es-dot { width: 12px; height: 12px; border-radius: 50%; background: #16a34a; box-shadow: 0 0 0 4px #dcfce7; display: inline-block; margin-right: 10px; flex: 0 0 auto; }
+.es-live[data-stale="true"] .es-dot, .es-live[data-paused="true"] .es-dot { background: #6b7280; box-shadow: 0 0 0 4px #e5e7eb; }
+.es-live[data-stale="true"] .es-st { color: #374151; font-weight: 700; }
+
+/* ── โครงตาราง 4 หัวข้อ: ตำแหน่งคงที่ทุกวัน ── */
+.es-col { display: contents; }
+.es-a-s1 { order: 1; } .es-a-s2 { order: 2; } .es-a-s3 { order: 3; } .es-a-s4 { order: 4; } .es-a-dt { order: 5; }
+.es-grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }
+/* ⚠️ grid-area ต้องอยู่ใน container query เท่านั้น — จอแคบ (คอลัมน์เดียว) ไม่มี grid-template-areas ถ้าตั้งไว้นอกนี้การ์ดจะซ้อนทับกัน */
+@container (min-width: 640px) {
+  .es-a-s1 { grid-area: s1; } .es-a-s2 { grid-area: s2; } .es-a-s3 { grid-area: s3; } .es-a-s4 { grid-area: s4; } .es-a-dt { grid-area: dt; }
+  .es-grid { grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); grid-template-areas: "s1 s4" "s2 s4" "s3 dt"; gap: 20px; align-items: start; }
+  .es-a-s1 .es-btn, .es-a-s2 .es-btn { display: inline-flex; width: auto; min-width: 340px; }
+}
+@container (min-width: 1120px) {
+  /* 3 คอลัมน์จริง: ซ้าย = ① + ③ · กลาง = ② · ขวา = ④ + ปุ่มรายละเอียด (แต่ละคอลัมน์สูงตามเนื้อหาตัวเอง ไม่ดันกัน) */
+  .es-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-areas: none; gap: 20px; align-items: start; }
+  .es-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .es-grid .es-card { grid-area: auto; }
+  .es-a-s1 .es-btn, .es-a-s2 .es-btn { display: flex; width: 100%; min-width: 0; }
+}
+
+/* ── การ์ด: แถบสีบนการ์ดตามหัวข้อ (เปิดทิ้งไว้ทั้งวัน: มองสีจากไกลก็รู้สถานะ) ── */
+.es-card { background: var(--es-card); border: 1px solid var(--es-line); border-top: 6px solid var(--es-accent, #cbd5e1); border-radius: 18px; padding: 16px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 6px 18px rgba(15, 23, 42, .06); min-width: 0; }
+@container (min-width: 640px) { .es-card { padding: 20px 22px; } }
+.es-card h2 { margin: 0 0 8px; font-size: 22px; line-height: 1.5; font-weight: 800; display: flex; align-items: center; gap: 12px; color: var(--es-ink); }
+.es-card h2 small { display: block; font-size: 18px; font-weight: 500; color: var(--es-muted); line-height: 1.4; }
+.es-hicon { width: 46px; height: 46px; flex: 0 0 46px; border-radius: 14px; display: grid; place-items: center; background: var(--es-accent-soft); color: var(--es-accent); }
+.es-hicon .es-icon { width: 26px; height: 26px; }
+.es-a-s1 { --es-accent: #1d4ed8; --es-accent-soft: #dbeafe; }
+.es-a-s2 { --es-accent: #c2410c; --es-accent-soft: #ffedd5; }
+.es-a-s3 { --es-accent: #047857; --es-accent-soft: #d1fae5; }
+.es-a-s4 { --es-accent: #6d28d9; --es-accent-soft: #ede9fe; }
+.es-a-dt { --es-accent: #64748b; --es-accent-soft: #f1f5f9; }
+/* ไม่มีเรื่อง = แถบบนการ์ดเป็นสีเขียว */
+.es-card[data-calm="true"] { --es-accent: #15803d; --es-accent-soft: #dcfce7; }
+
+.es-row + .es-row { border-top: 1px solid var(--es-line); margin-top: 12px; padding-top: 12px; }
+/* ชื่อเรื่องซ้าย ตัวเลขขวา บรรทัดเดียวกัน */
+.es-line { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 12px; }
+.es-label { font-size: 20px; font-weight: 600; color: var(--es-ink-2); display: inline-flex; align-items: center; }
+.es-big { font-size: 40px; line-height: 1.2; font-weight: 800; letter-spacing: -0.5px; white-space: nowrap; color: var(--es-ink); }
+.es-big .es-unit { font-size: 20px; font-weight: 600; margin-left: 6px; letter-spacing: 0; }
+.es-big[data-null="true"] { color: #6b7280; }
+.es-sub { font-size: 18px; color: var(--es-muted); margin-top: 2px; }
+.es-mini { display: inline-grid; place-items: center; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 10px; margin-right: 10px; }
+.es-mini .es-icon { width: 21px; height: 21px; }
+.es-mini.blue { background: #dbeafe; color: #1d4ed8; } .es-mini.green { background: #dcfce7; color: #15803d; }
+.es-mini.gold { background: #fef3c7; color: #b45309; } .es-mini.sky { background: #e0f2fe; color: #0369a1; }
+
+/* ── ปุ่ม 3 แบบตามหน้าที่ (ห้ามหน้าตาเหมือนกัน) ──
+   สีทึบน้ำเงิน + ไอคอน = ลงมือทำ (ลงนามใบนี้ / ส่งให้กองเร่ง) · ขาวขอบฟ้า + ลูกศร › = ดู/เปิด/ไปหน้าอื่น · เทา + ▲ = ซ่อน/ปิด */
+.es-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 54px; margin-top: 10px; padding: 10px 16px;
+  border-radius: 14px; font-size: 20px; font-weight: 700; line-height: 1.4; border: 2px solid var(--es-blue); background: var(--es-blue); color: #fff; cursor: pointer; }
+.es-btn:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.es-btn[disabled] { opacity: .55; cursor: not-allowed; }
+.es-btn .es-icon { width: 22px; height: 22px; }
+.es-btn .es-arr { font-size: 24px; line-height: 1; }
+.es-btn .es-chev { font-size: 15px; line-height: 1; }
+.es-btn--open { background: #fff; color: var(--es-blue); border-color: #93c5fd; }
+.es-btn--hide, .es-btn--toggle[aria-expanded="true"] { background: #e2e8f0; color: #334155; border: 2px solid #cbd5e1; }
+.es-btn--toggle { background: #fff; color: var(--es-blue); border: 2px solid #93c5fd; }
+
+/* ── แถบสถานะ: สี + สัญลักษณ์ + คำ (ไม่ใช้สีอย่างเดียว) ── */
+.es-flag { display: flex; gap: 10px; align-items: flex-start; border-radius: 14px; padding: 12px 14px; margin-top: 10px; font-size: 19px; font-weight: 600; line-height: 1.6; }
+.es-flag .es-ic { flex: 0 0 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 19px; color: #fff; margin-top: 1px; }
+.es-flag.red { background: var(--es-red-soft); color: var(--es-red); border: 1px solid var(--es-red-line); } .es-flag.red .es-ic { background: var(--es-red); }
+.es-flag.amber { background: var(--es-amber-soft); color: var(--es-amber); border: 1px solid var(--es-amber-line); } .es-flag.amber .es-ic { background: #b45309; }
+.es-flag.green { background: var(--es-green-soft); color: var(--es-green); border: 1px solid var(--es-green-line); } .es-flag.green .es-ic { background: #15803d; }
+.es-flag.gray { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; } .es-flag.gray .es-ic { background: #6b7280; }
+.es-flag .es-retry { margin-top: 6px; }
+.es-flag > span:last-child { min-width: 0; }
+
+.es-alert { border-radius: 16px; padding: 14px 14px 4px; margin-top: 12px; }
+.es-alert.red { background: var(--es-red-soft); border: 1px solid var(--es-red-line); }
+.es-alert.amber { background: var(--es-amber-soft); border: 1px solid var(--es-amber-line); }
+.es-alert-top { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.es-alert-top .es-ic { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; margin-top: 3px; }
+.es-alert.red .es-ic { background: var(--es-red); } .es-alert.amber .es-ic { background: #b45309; }
+.es-alert-top .es-ic .es-icon { width: 18px; height: 18px; }
+.es-what { font-size: 20px; font-weight: 700; line-height: 1.55; }
+.es-alert.red .es-what { color: var(--es-red); } .es-alert.amber .es-what { color: var(--es-amber); }
+.es-num { font-size: 32px; font-weight: 800; line-height: 1.2; color: var(--es-ink); text-align: right; white-space: nowrap; }
+.es-num small { display: block; font-size: 17px; font-weight: 600; line-height: 1.3; }
+.es-alert .es-btn { margin: 8px 0 10px; }
+.es-alert .es-detail { font-size: 18px; color: var(--es-muted); margin: 0 0 4px 40px; line-height: 1.5; }
+.es-new { display: inline-block; margin-left: 8px; padding: 0 10px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 17px; font-weight: 800; line-height: 1.6; vertical-align: 2px; white-space: nowrap; }
+.es-more { margin-top: 12px; font-size: 18px; color: var(--es-muted); }
+.es-follow { margin-top: 14px; padding-top: 14px; border-top: 1px dashed #cbd5e1; }
+
+/* ── รายการที่กางใต้ข้อนั้น (อยู่หน้าเดิม): เส้นนำซ้าย 4px + ปุ่มซ่อนท้ายรายการ ── */
+.es-list { margin-top: 10px; display: grid; gap: 10px; border-left: 4px solid #cbd5e1; padding-left: 10px; }
+.es-item { background: #fff; border: 1px solid var(--es-line); border-radius: 14px; padding: 12px 14px; min-width: 0; }
+.es-item-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 20px; font-weight: 800; flex-wrap: wrap; }
+.es-item-head .late { color: var(--es-red); white-space: nowrap; font-size: 19px; }
+.es-item-head .wait { color: var(--es-amber); white-space: nowrap; font-size: 19px; }
+.es-item-title { font-size: 20px; font-weight: 700; margin-top: 2px; overflow-wrap: anywhere; }
+.es-item-sub { font-size: 18px; color: var(--es-muted); overflow-wrap: anywhere; }
+.es-item .es-btn { margin-top: 8px; }
+.es-note { font-size: 18px; color: var(--es-muted); margin: 0; }
+
+/* ── ③ ตัวเลขเดือนนี้ ── */
+.es-bar { height: 14px; background: #e5e7eb; border-radius: 999px; overflow: hidden; margin-top: 8px; }
+.es-bar span { display: block; height: 100%; background: #15803d; border-radius: 999px; }
+.es-stars { position: relative; display: inline-block; font-size: 30px; letter-spacing: 3px; line-height: 1; color: #d1d5db; margin-top: 6px; }
+.es-stars span { position: absolute; inset: 0 auto 0 0; overflow: hidden; white-space: nowrap; color: #ca8a04; }
+.es-side { margin-top: 8px; }
+.es-side + .es-side { margin-top: 14px; }
+.es-side-name { font-size: 18px; font-weight: 700; color: var(--es-ink-2); }
+
+/* ── ④ กำหนดการ ── */
+.es-sched h3 { margin: 12px 0 4px; font-size: 20px; font-weight: 800; color: var(--es-ink); }
+.es-sched h3:first-of-type { margin-top: 2px; }
+.es-ev { display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid var(--es-line); font-size: 20px; }
+.es-sched h3 + .es-ev { border-top: 0; }
+.es-ev .t { flex: 0 0 76px; font-weight: 800; background: #ede9fe; color: #5b21b6; border-radius: 10px; text-align: center; padding: 0 6px; align-self: flex-start; }
+.es-ev .t.allday { font-size: 17px; font-weight: 700; color: var(--es-muted); background: #f3f4f6; padding-top: 3px; padding-bottom: 3px; }
+.es-ev > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.es-ev.next { background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 12px; padding: 8px; margin: 4px 0; }
+.es-ev .nx { display: block; font-size: 17px; font-weight: 800; color: #6d28d9; line-height: 1.4; }
+
+.es-foot { font-size: 18px; color: var(--es-muted); }

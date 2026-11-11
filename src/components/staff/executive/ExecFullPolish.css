@@ -1,0 +1,134 @@
+@import './ExecPremiumTokens.css';
+
+/* "แดชบอร์ดสำหรับผู้บริหารแบบครบทั้งหมด" (ExecutiveHome) — ชั้นผิวพรีเมียมชุดเดียวกับหน้าแบบเรียบ (เจ้าของระบบขอ 2026-11-11)
+   ⚠️ เปลี่ยนแค่ "ผิว" (พื้น/หัว/การ์ด/เงา/ขอบ/ไอคอน/ปุ่มเลือกช่วง) — ห้ามเปลี่ยนขนาดตัวอักษร ความหนาแน่น ลำดับโซน เนื้อหา ตรรกะ
+     หน้านี้ข้อมูลแน่นสำหรับผู้บริหารที่อยากดูละเอียด · สีกราฟ (execChart.js) และสีความหมาย (แดง=เลยกำหนด ฯลฯ) ไม่แตะ
+   · เคลื่อนไหวครั้งเดียวตอนเปิดหน้า (หัวไหลลง · แสงวาวกวาด · โซนไล่ขึ้นทีละโซน รวม ≤ ~0.5 วิ) แล้วนิ่ง · ไม่วน/ไม่กระพริบ
+   · prefers-reduced-motion = ไม่เคลื่อนไหวเลย · ทำด้วย CSS + SVG ในหน้า ไม่โหลดฟอนต์/รูปภายนอก
+   ขอบเขต: ทุกกฎอยู่ใต้ [data-exec-home] เท่านั้น (ค่าสี/คีย์เฟรมกลางอยู่ใน ExecPremiumTokens.css) */
+
+[data-exec-home] {
+  position: relative;
+  padding: 14px;
+  border-radius: 28px;
+  border: 1px solid var(--es-gold-line);
+  background: var(--es-stage-bg);
+  box-shadow: var(--es-stage-shadow);
+}
+@media (max-width: 640px) { [data-exec-home] { padding: 6px; border-radius: 20px; } }
+
+/* ───────────────────────── หัวหน้า (กรมท่า + กรอบเส้นทองคู่) ───────────────────────── */
+[data-exec-home] > [data-exec-head] {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+  position: relative; overflow: hidden; isolation: isolate;
+  border-radius: 24px; padding: 14px 22px; color: #fff;
+  background: var(--es-hero-bg);
+  box-shadow: var(--es-hero-shadow);
+}
+[data-exec-head]::before, [data-exec-head]::after { content: ''; position: absolute; pointer-events: none; z-index: 0; }
+[data-exec-head]::before { inset: 7px; border-radius: 18px; border: 1px solid rgba(212, 175, 55, .62); }
+[data-exec-head]::after { inset: 11px; border-radius: 14px; border: 1px solid rgba(243, 227, 163, .20); }
+[data-exec-head] > * { position: relative; z-index: 1; }
+[data-exec-head] .ex-sheen { display: none; }
+.ex-crest {
+  width: 56px; height: 56px; flex: 0 0 56px; margin: 4px; border-radius: 50%; display: grid; place-items: center; overflow: hidden;
+  background: radial-gradient(circle at 35% 30%, #ffffff 0%, #f1ead2 100%); color: var(--es-navy-1);
+  box-shadow: 0 0 0 3px var(--es-gold), 0 0 0 5px rgba(7, 20, 47, .9), 0 0 0 7px rgba(243, 227, 163, .55), 0 0 22px 4px rgba(212, 175, 55, .45), 0 8px 16px rgba(0, 0, 0, .35);
+}
+.ex-crest img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.ex-head-text { min-width: 0; flex: 1 1 260px; }
+[data-exec-head] h1 { margin: 0; font-size: 26px; line-height: 1.3; font-weight: 800; color: #fff; text-shadow: 0 2px 10px rgba(0, 0, 0, .35); }
+[data-exec-head] .ex-head-text p { margin: 0; font-size: 17px; line-height: 1.5; font-weight: 600; color: #e3ebff; }
+/* ปุ่มเม็ดยาขอบทอง "ดูแบบย่อ (แบบนายก)" */
+.ex-pill {
+  flex: 0 0 auto; min-height: 44px; padding: 0 18px; border-radius: 999px; cursor: pointer;
+  font: inherit; font-size: 16px; font-weight: 700; color: #fff; white-space: nowrap;
+  border: 1.5px solid var(--es-gold); background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .06));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 4px 12px rgba(0, 0, 0, .22);
+}
+.ex-pill:focus-visible { outline: 3px solid var(--es-gold-soft); outline-offset: 3px; }
+@media (hover: hover) { .ex-pill:hover { background: linear-gradient(180deg, rgba(255, 255, 255, .24), rgba(255, 255, 255, .10)); } }
+@media (max-width: 640px) {
+  [data-exec-home] > [data-exec-head] { padding: 12px 14px; border-radius: 20px; }
+  [data-exec-head]::before { inset: 5px; border-radius: 15px; } [data-exec-head]::after { inset: 8px; border-radius: 12px; }
+  .ex-crest { width: 48px; height: 48px; flex-basis: 48px; margin: 3px; }
+  [data-exec-head] h1 { font-size: 20px; }
+  .ex-head-text { flex-basis: 180px; }
+}
+
+/* ───────────────────────── โซน (ExecSection) ───────────────────────── */
+[data-exec-home] [data-exec-zone] {
+  --pz-a: #94a3b8; --pz-b: #475569;
+  position: relative; overflow: hidden;
+  border: 1px solid var(--es-gold-line); border-radius: 24px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pz-a) 10%, #ffffff) 0%, #fdfbf5 140px, #fdfbf5 100%);
+  box-shadow: 0 1px 2px rgba(60, 45, 10, .06), 0 6px 14px rgba(60, 45, 10, .06), 0 16px 32px rgba(60, 45, 10, .07), inset 0 1px 0 #fff;
+}
+[data-exec-home] [data-exec-zone]::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: linear-gradient(90deg, var(--pz-a), var(--pz-b)); }
+[data-exec-home] [data-exec-zone="decision"] { --pz-a: #fbbf24; --pz-b: #b45309; }
+[data-exec-home] [data-exec-zone="service"] { --pz-a: #38bdf8; --pz-b: #0369a1; }
+[data-exec-home] [data-exec-zone="schedule"] { --pz-a: #34d399; --pz-b: #047857; }
+[data-exec-home] [data-exec-zone="alert"] { --pz-a: #fb7185; --pz-b: #be123c; }
+[data-exec-home] [data-exec-zone="plan"] { --pz-a: #818cf8; --pz-b: #4338ca; }
+[data-exec-home] [data-exec-zone="dept"] { --pz-a: #22d3ee; --pz-b: #0e7490; }
+[data-exec-home] [data-exec-zone="area"] { --pz-a: #2dd4bf; --pz-b: #0f766e; }
+[data-exec-home] [data-exec-zone="report"] { --pz-a: #a78bfa; --pz-b: #6d28d9; }
+
+/* เหรียญไอคอนหัวโซน (ขนาดเดิม) ไล่สีตาม tone + วงแหวนบาง */
+[data-exec-home] [data-exec-medal] {
+  background-image: linear-gradient(135deg, var(--pz-a), var(--pz-b));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 0 0 2px #fff, 0 0 0 3px rgba(201, 162, 39, .55), 0 4px 8px rgba(15, 23, 42, .18);
+}
+[data-exec-home] [data-exec-medal] svg { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .25)); }
+/* เส้นทองสั้นใต้ชื่อโซน */
+[data-exec-home] [data-exec-zone] h2[id^="exec-"]::after { content: ''; display: block; width: 36px; height: 2px; margin-top: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--es-gold), var(--es-gold-soft)); }
+
+/* ───────────────────────── การ์ดตัวเลข / ไทล์ ───────────────────────── */
+[data-exec-home] .border-l-4.rounded-2xl, [data-exec-home] [data-exec-tile] {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 4px 10px rgba(15, 23, 42, .05);
+  transition: box-shadow .2s ease, translate .2s ease;
+}
+[data-exec-home] .border-l-4.rounded-2xl { font-variant-numeric: tabular-nums; }
+[data-exec-home] .border-l-4.border-rose-500 { background-image: linear-gradient(135deg, #ffffff 45%, #fff1f2 100%); }
+[data-exec-home] .border-l-4.border-amber-500 { background-image: linear-gradient(135deg, #ffffff 45%, #fffbeb 100%); }
+[data-exec-home] .border-l-4.border-orange-500 { background-image: linear-gradient(135deg, #ffffff 45%, #fff7ed 100%); }
+[data-exec-home] .border-l-4.border-emerald-500 { background-image: linear-gradient(135deg, #ffffff 45%, #ecfdf5 100%); }
+[data-exec-home] .border-l-4.border-sky-500 { background-image: linear-gradient(135deg, #ffffff 45%, #f0f9ff 100%); }
+[data-exec-home] .border-l-4.border-violet-500 { background-image: linear-gradient(135deg, #ffffff 45%, #f5f3ff 100%); }
+[data-exec-home] .border-l-4.border-slate-400 { background-image: linear-gradient(135deg, #ffffff 45%, #f8fafc 100%); }
+[data-exec-home] [data-exec-tile] { background-image: linear-gradient(135deg, #ffffff 40%, #f7f4ea 100%); border-color: rgba(201, 162, 39, .28); }
+@media (hover: hover) {
+  [data-exec-home] .border-l-4.rounded-2xl:hover, [data-exec-home] [data-exec-tile]:hover {
+    translate: 0 -2px; box-shadow: 0 2px 4px rgba(15, 23, 42, .06), 0 10px 22px rgba(15, 23, 42, .10);
+  }
+}
+
+/* ───────────────────────── ปุ่มเลือกช่วงเวลา (segmented) ───────────────────────── */
+[data-exec-home] [data-exec-periods] button { border-color: var(--es-gold-line); transition: box-shadow .2s ease; }
+[data-exec-home] [data-exec-periods] button[aria-pressed="true"] {
+  background-color: var(--es-navy-1); background-image: linear-gradient(180deg, var(--es-navy-2) 0%, var(--es-navy-0) 100%);
+  border-color: var(--es-gold); color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 3px 8px rgba(11, 31, 77, .35);
+}
+
+/* ───────────────────────── ปุ่มทึบ (ลงนาม/ส่งต่อ) = ผิวชุดเดียวกับแบบเรียบ ขนาดเดิม ───────────────────────── */
+[data-exec-home] [data-pending-sign-button], [data-exec-home] [data-pending-resubmit] {
+  background-image: var(--es-solid-bg); box-shadow: var(--es-solid-shadow); border: 1px solid #1a3fb0; text-shadow: 0 1px 1px rgba(0, 0, 40, .28);
+}
+
+/* ───────────────────────── จังหวะตอนเปิดหน้า: ครั้งเดียวแล้วนิ่ง (รวม ≤ ~0.5 วิ) ───────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  [data-exec-home] > [data-exec-head] { animation: es-drop .4s cubic-bezier(.2, .7, .2, 1) both; }
+  [data-exec-head] .ex-sheen {
+    display: block; position: absolute; top: 0; bottom: 0; left: 0; width: 30%; z-index: 0; pointer-events: none;
+    background: linear-gradient(100deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, .16) 50%, rgba(255, 255, 255, 0) 100%);
+    animation: es-sheen 1.6s .4s cubic-bezier(.4, 0, .2, 1) both;
+  }
+  [data-exec-home] > div { animation: es-rise .35s cubic-bezier(.2, .7, .2, 1) .12s both; }
+  [data-exec-home] > div:nth-of-type(2) { animation-delay: .16s; } [data-exec-home] > div:nth-of-type(3) { animation-delay: .20s; }
+  [data-exec-home] > div:nth-of-type(4) { animation-delay: .24s; } [data-exec-home] > div:nth-of-type(5) { animation-delay: .28s; }
+  [data-exec-home] > div:nth-of-type(n+6) { animation-delay: .32s; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-exec-home] .border-l-4.rounded-2xl, [data-exec-home] [data-exec-tile], [data-exec-home] [data-exec-periods] button { transition: none; }
+}

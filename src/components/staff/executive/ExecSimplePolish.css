@@ -1,0 +1,226 @@
+@import './ExecPremiumTokens.css';
+/* ห้องผู้บริหารแบบเรียบ — ชั้นความหรูระดับพรีเมียม (เจ้าของระบบขอ 2026-11-11: "ต้องดูมีราคา อลังการ")
+   หลักการ: หรูด้วยแสง เงา ลายเส้น และรายละเอียด ไม่ใช่ด้วยการเคลื่อนไหวตลอดเวลา — หน้านี้เปิดทิ้งไว้ทั้งวันให้ผู้สูงอายุมอง
+   · เคลื่อนไหวครั้งเดียวตอนเปิดหน้า (หัวหน้าไหลลง · การ์ดไล่ขึ้นทีละใบ · เกจไล่ขึ้น · แสงวาวกวาดผ่านหัวหน้า) แล้วนิ่ง
+     ไม่วน ไม่กระพริบ ไม่มีเสียง · อัปเดตข้อมูลทุก 5 นาทีไม่ทำซ้ำ (element ไม่ถูกสร้างใหม่)
+   · prefers-reduced-motion = ไม่เคลื่อนไหวเลย (ปิดทั้งชุด รวมแสงวาว)
+   · ขนาดตัวอักษรไม่ต่ำกว่าเดิม (เนื้อความ 20px เล็กสุด 17px ปุ่ม ≥54px) · คอนทราสต์ตัวอักษร ≥ 4.5:1 ทุกจุด
+     (ขาว/ทองอ่อนบนกรมท่า · เขียวเข้มบนเขียวอ่อน · น้ำเงินเข้มบนขาว) · ทำด้วย CSS + SVG ในหน้า ไม่โหลดฟอนต์/รูปภายนอก
+   ขอบเขต: ทุกคลาสอยู่ใต้ .es-root เท่านั้น */
+
+.es-root {
+  position: relative;
+  padding: 24px;
+  border-radius: 30px;
+  border: 1px solid var(--es-gold-line);
+  /* เวทีพื้นงาช้าง/แชมเปญอ่อน (ค่ากลางใน ExecPremiumTokens.css) */
+  background: var(--es-stage-bg);
+  box-shadow: var(--es-stage-shadow);
+}
+@media (max-width: 640px) { .es-root { padding: 12px; border-radius: 22px; } }
+
+/* ───────────────────────── Hero ───────────────────────── */
+.es-head {
+  display: block; position: relative; overflow: hidden; isolation: isolate;
+  border-radius: 26px; padding: 18px 24px 16px;
+  background: var(--es-hero-bg);
+  color: #fff;
+  box-shadow: var(--es-hero-shadow);
+}
+/* กรอบเส้นทองคู่ด้านใน */
+.es-head::before, .es-head::after { content: ''; position: absolute; pointer-events: none; z-index: 0; border-radius: 18px; }
+.es-head::before { inset: 9px; border: 1px solid rgba(212, 175, 55, .62); }
+.es-head::after { inset: 13px; border: 1px solid rgba(243, 227, 163, .20); border-radius: 15px; }
+.es-head > * { position: relative; z-index: 1; }
+
+/* แสงวาวกวาดผ่านครั้งเดียวตอนเปิดหน้า (ไม่เปิด animation = ซ่อนทั้งอัน) */
+.es-sheen { display: none; }
+
+.es-hero-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
+.es-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
+.es-brand-text { min-width: 0; }
+.es-crest {
+  position: relative; width: 64px; height: 64px; flex: 0 0 64px; border-radius: 50%; display: grid; place-items: center; overflow: hidden;
+  background: radial-gradient(circle at 35% 30%, #ffffff 0%, #f1ead2 100%);
+  font-size: 30px; font-weight: 800; color: var(--es-navy-1);
+  /* วงแหวนทอง + แสงเรือง */
+  box-shadow: 0 0 0 3px var(--es-gold), 0 0 0 6px rgba(7, 20, 47, .9), 0 0 0 8px rgba(243, 227, 163, .55), 0 0 28px 6px rgba(212, 175, 55, .45), 0 10px 20px rgba(0, 0, 0, .35);
+  margin: 6px;
+}
+.es-crest img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.es-head .es-greet { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: 2px; color: var(--es-gold-soft); line-height: 1.4; }
+.es-head h1 { margin: 0; color: #fff; font-size: 28px; line-height: 1.3; font-weight: 800; text-shadow: 0 2px 10px rgba(0, 0, 0, .35); }
+.es-head .es-org { margin: 0; color: #e3ebff; font-size: 19px; font-weight: 600; line-height: 1.4; }
+
+.es-live {
+  gap: 12px; padding: 8px 18px; border-radius: 20px;
+  background: rgba(255, 255, 255, .09); border: 1px solid rgba(243, 227, 163, .38);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 6px 18px rgba(0, 0, 0, .18);
+  backdrop-filter: blur(8px);
+}
+.es-live > .es-icon { width: 32px; height: 32px; color: var(--es-gold-soft); }
+.es-clock { color: #fff; font-size: 42px; line-height: 1.1; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: 1px; text-shadow: 0 2px 10px rgba(0, 0, 0, .3); }
+.es-st { color: #e3ebff; font-size: 17px; }
+.es-live[data-stale="true"] .es-st { color: #fff; }
+.es-dot { box-shadow: 0 0 0 4px rgba(134, 239, 172, .30); }
+.es-live[data-stale="true"] .es-dot, .es-live[data-paused="true"] .es-dot { box-shadow: 0 0 0 4px rgba(229, 231, 235, .30); }
+
+/* ── แถบ KPI ในหัวหน้า (กระจกฝ้า เส้นทองบนช่อง) ── */
+.es-kpis { display: grid; grid-template-columns: repeat(var(--es-kpi-n, 4), minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.es-kpi {
+  display: flex; flex-direction: column; justify-content: space-between; gap: 2px; min-height: 54px; padding: 8px 16px; text-align: left; cursor: pointer;
+  color: #fff; border-radius: 18px; border: 1px solid rgba(255, 255, 255, .20); border-top: 2px solid var(--es-gold);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .14) 0%, rgba(255, 255, 255, .06) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), 0 8px 20px rgba(0, 0, 0, .18);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  font: inherit;
+}
+.es-kpi:focus-visible { outline: 3px solid var(--es-gold-soft); outline-offset: 3px; }
+@media (hover: hover) { .es-kpi:hover { background: linear-gradient(180deg, rgba(255, 255, 255, .20) 0%, rgba(255, 255, 255, .09) 100%); } }
+.es-kpi-label { font-size: 17px; font-weight: 700; line-height: 1.4; color: var(--es-gold-soft); }
+.es-kpi-val { font-size: 36px; line-height: 1.1; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; letter-spacing: -.5px; white-space: nowrap; }
+.es-kpi-val[data-null="true"] { color: #d7def0; }
+.es-kpi-unit { margin-left: 6px; font-size: 20px; font-weight: 700; letter-spacing: 0; color: #fff; }
+
+/* ───────────────────────── การ์ด ───────────────────────── */
+.es-card {
+  position: relative; overflow: hidden;
+  background: linear-gradient(180deg, #ffffff 0%, #fdfbf5 100%);
+  border: 1px solid var(--es-gold-line); border-radius: 24px; padding: 22px 22px 18px;
+  box-shadow: 0 1px 2px rgba(60, 45, 10, .06), 0 6px 14px rgba(60, 45, 10, .06), 0 18px 36px rgba(60, 45, 10, .08), inset 0 1px 0 #fff;
+  --es-grad: linear-gradient(90deg, #60a5fa, #1e3a8a);
+}
+@media (max-width: 640px) { .es-card { padding: 18px 16px 14px; border-radius: 20px; } }
+.es-card::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--es-grad); }
+.es-card:focus { outline: none; }
+.es-card:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.es-a-s1 { --es-grad: linear-gradient(90deg, #60a5fa, #1e3a8a); --es-medal-a: #5b94ff; --es-medal-b: #1e3a8a; }
+.es-a-s2 { --es-grad: linear-gradient(90deg, #fdba74, #c2410c); --es-medal-a: #fb923c; --es-medal-b: #b45309; }
+.es-a-s3 { --es-grad: linear-gradient(90deg, #6ee7b7, #047857); --es-medal-a: #34d399; --es-medal-b: #047857; }
+.es-a-s4 { --es-grad: linear-gradient(90deg, #c4b5fd, #5b21b6); --es-medal-a: #a78bfa; --es-medal-b: #5b21b6; }
+.es-a-dt { --es-grad: linear-gradient(90deg, #cbd5e1, #475569); --es-medal-a: #94a3b8; --es-medal-b: #475569; }
+.es-card[data-calm="true"] {
+  --es-grad: linear-gradient(90deg, #6ee7b7, #047857); --es-medal-a: #34d399; --es-medal-b: #047857;
+  box-shadow: 0 1px 2px rgba(60, 45, 10, .06), 0 6px 14px rgba(4, 120, 87, .08), 0 18px 36px rgba(4, 120, 87, .10), inset 0 1px 0 #fff;
+}
+
+/* หัวการ์ด: เหรียญไอคอนไล่สี + ชื่อ 24px + เส้นแบ่งทองไล่จางเต็มกว้าง */
+.es-card h2 { position: relative; margin: 2px 0 14px; padding-bottom: 14px; font-size: 24px; gap: 14px; }
+.es-card h2::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: linear-gradient(90deg, rgba(201, 162, 39, .85), rgba(201, 162, 39, 0)); }
+.es-title { min-width: 0; line-height: 1.35; }
+.es-hicon {
+  width: 54px; height: 54px; flex: 0 0 54px; border-radius: 50%; color: #fff;
+  background: linear-gradient(135deg, var(--es-medal-a, #5b94ff), var(--es-medal-b, #1e3a8a));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 0 0 3px #fff, 0 0 0 4px rgba(201, 162, 39, .55), 0 8px 14px rgba(15, 23, 42, .20);
+}
+.es-hicon .es-icon { width: 28px; height: 28px; stroke-width: 2.2; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .25)); }
+
+/* ตราประทับ "เรียบร้อย ✓" (การ์ดไม่มีเรื่อง) */
+.es-seal {
+  margin-left: auto; flex: 0 0 auto; white-space: nowrap; font-size: 17px; font-weight: 800; line-height: 1.3; letter-spacing: .5px;
+  padding: 5px 14px; border-radius: 999px; color: #065f46;
+  background: linear-gradient(180deg, #ecfdf5, #d1fae5); border: 2px solid #10b981;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .7), 0 2px 6px rgba(4, 120, 87, .18); transform: rotate(-3deg);
+}
+
+/* ตัวเลข: กว้างเท่ากันทุกหลัก */
+.es-big, .es-num { font-variant-numeric: tabular-nums; }
+.es-row + .es-row { border-top-color: rgba(201, 162, 39, .28); }
+.es-alert { border-radius: 20px; box-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 6px 14px rgba(15, 23, 42, .05); }
+.es-item { border-radius: 16px; border-color: rgba(201, 162, 39, .28); box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
+
+/* ── ปุ่ม: ทึบ = ลงมือทำ (น้ำเงินรอยัลไล่สี + ไฮไลต์ขอบบน + เงาสี) · ขาวขอบฟ้า › = ดู · เทา ▲ = ซ่อน ── */
+.es-btn { transition: box-shadow .2s ease, filter .2s ease; }
+.es-btn:not(.es-btn--open):not(.es-btn--hide):not(.es-btn--toggle) {
+  background: var(--es-solid-bg);
+  border-color: #1a3fb0; color: #fff;
+  box-shadow: var(--es-solid-shadow);
+  text-shadow: 0 1px 1px rgba(0, 0, 40, .28);
+}
+.es-btn--open, .es-btn--toggle:not([aria-expanded="true"]) { box-shadow: 0 1px 2px rgba(15, 23, 42, .08), 0 3px 8px rgba(59, 130, 246, .10); }
+.es-btn--hide, .es-btn--toggle[aria-expanded="true"] { box-shadow: none; }
+@media (hover: hover) { .es-btn:not([disabled]):hover { filter: brightness(1.05); } }
+
+/* ── ③ วงแหวนเกจ + ความพึงพอใจ ── */
+.es-gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 18px 14px; margin-top: 8px; justify-items: center; }
+.es-side { margin-top: 0; text-align: center; width: 100%; }
+.es-side + .es-side { margin-top: 0; }
+.es-side-name { font-size: 20px; font-weight: 800; color: var(--es-ink-2); margin-bottom: 6px; }
+.es-side-sub { margin-top: 6px; font-size: 18px; font-weight: 700; color: var(--es-ink-2); line-height: 1.4; }
+.es-gauge { position: relative; width: 128px; height: 128px; margin: 0 auto; filter: drop-shadow(0 4px 8px rgba(4, 120, 87, .18)); }
+.es-gauge svg { width: 100%; height: 100%; display: block; }
+.es-gauge-track { stroke: #e7e5dc; }
+.es-gauge-arc { stroke-dasharray: var(--es-c); stroke-dashoffset: var(--es-off); }
+.es-gauge-center { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; color: #14532d; }
+.es-gauge-center b { font-size: 38px; line-height: 1; font-weight: 800; letter-spacing: -1px; }
+.es-gauge-center i { font-style: normal; font-size: 18px; font-weight: 800; margin: 8px 0 0 2px; }
+
+.es-stars { margin-top: 8px; font-size: 44px; letter-spacing: 6px; line-height: 1.1; color: #e7e1cf; text-shadow: 0 1px 0 #fff; max-width: 100%; }
+.es-stars span {
+  background: linear-gradient(180deg, #fde68a 0%, #f5b301 45%, #b7791f 100%); -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent; text-shadow: none; filter: drop-shadow(0 1px 1px rgba(146, 64, 14, .35));
+}
+
+/* ── ④ กำหนดการ: เส้นเวลาแนวตั้ง (เส้นม่วง จุดกลมตามเวลา) ── */
+.es-sched h3 { margin: 14px 0 6px; font-size: 21px; color: #4c1d95; }
+.es-sched h3:first-of-type { margin-top: 2px; }
+.es-ev { position: relative; margin-left: 10px; padding: 10px 0 10px 24px; border-top: 0 !important; border-left: 3px solid #c4b5fd; }
+.es-ev::before { content: ''; position: absolute; left: -10px; top: 18px; width: 17px; height: 17px; border-radius: 50%; background: #fff; border: 4px solid #7c3aed; box-shadow: 0 0 0 3px #ede9fe; }
+.es-ev .t { background: linear-gradient(180deg, #f5f3ff, #ede9fe); border: 1px solid #ddd6fe; }
+.es-ev.next {
+  margin: 6px 0 6px 10px; padding: 12px 14px 12px 24px; border-radius: 0 16px 16px 0; border: 1px solid #d8b4fe; border-left: 3px solid #7c3aed;
+  background: linear-gradient(180deg, #faf5ff, #f3e8ff);
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, .18), 0 6px 16px rgba(124, 58, 237, .16);
+}
+.es-ev.next::before { background: #7c3aed; border-color: #fff; box-shadow: 0 0 0 3px #c4b5fd, 0 0 12px 3px rgba(124, 58, 237, .45); top: 20px; left: -10px; }
+.es-ev.next .nx { color: #5b21b6; }
+
+/* ───────────────────────── จอแคบ ───────────────────────── */
+@container (max-width: 639px) {
+  .es-head { padding: 16px 14px 14px; border-radius: 20px; }
+  .es-head::before { inset: 6px; border-radius: 15px; } .es-head::after { inset: 9px; border-radius: 12px; }
+  .es-brand { gap: 14px; }
+  .es-crest { width: 56px; height: 56px; flex-basis: 56px; font-size: 26px; margin: 5px; }
+  .es-head h1 { font-size: 24px; }
+  .es-head .es-org { font-size: 18px; }
+  .es-hero-top { gap: 12px; }
+  .es-live { width: 100%; padding: 6px 14px; }
+  .es-clock { font-size: 36px; }
+  .es-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .es-kpi { padding: 8px 12px; }
+  .es-kpi-val { font-size: 32px; }
+  .es-stars { font-size: 38px; letter-spacing: 4px; }
+}
+
+/* ───────────────────────── จังหวะตอนเปิดหน้า: ครั้งเดียวแล้วนิ่ง ───────────────────────── */
+@keyframes es-gauge { from { stroke-dashoffset: var(--es-c); } to { stroke-dashoffset: var(--es-off); } }
+@keyframes es-reveal { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@media (prefers-reduced-motion: no-preference) {
+  .es-head { animation: es-drop .6s cubic-bezier(.2, .7, .2, 1) both; }
+  .es-sheen {
+    display: block; position: absolute; top: 0; bottom: 0; left: 0; width: 30%; z-index: 0; pointer-events: none;
+    background: linear-gradient(100deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, .16) 50%, rgba(255, 255, 255, 0) 100%);
+    animation: es-sheen 1.8s .7s cubic-bezier(.4, 0, .2, 1) both;
+  }
+  .es-grid .es-card { animation: es-rise .65s cubic-bezier(.2, .7, .2, 1) both; }
+  .es-grid .es-a-s1 { animation-delay: .10s; } .es-grid .es-a-s2 { animation-delay: .18s; }
+  .es-grid .es-a-s3 { animation-delay: .26s; } .es-grid .es-a-s4 { animation-delay: .34s; } .es-grid .es-a-dt { animation-delay: .42s; }
+  .es-gauge-arc { animation: es-gauge 1.3s .6s cubic-bezier(.2, .7, .2, 1) both; }
+  .es-stars span { animation: es-reveal 1.2s .7s cubic-bezier(.2, .7, .2, 1) both; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .es-btn { transition: none; }
+}
+.es-crest-icon { width: 44px; height: 44px; color: var(--es-navy-1); stroke-width: 1.8; }
+@container (max-width: 639px) { .es-crest-icon { width: 36px; height: 36px; } }
+.es-btn .es-chev { font-size: 17px; }
+
+/* ท้ายหน้า: ชื่อหน้าแบบเต็มเป็นหัวเรื่อง ปุ่มใต้เป็น "ดูรายละเอียดทั้งหมด" (เจ้าของระบบสั่ง 2026-11-11) */
+.es-root .es-foot-title { margin: 0; font-size: 21px; font-weight: 800; line-height: 1.5; color: var(--es-ink); }
+
+/* หัวหน้าแบบกระชับ (เจ้าของระบบขอ 2026-11-11 "ย่อส่วนนี้ให้สั้นลง"): จอกว้าง ช่อง KPI เป็นแถวเดียว ป้ายซ้าย-ตัวเลขขวา
+   ช่องแคบกว่านี้ (2–4 ช่องบนจอกลาง/มือถือ) ป้ายยาวจะชนตัวเลข จึงคงป้ายบน-ตัวเลขล่าง */
+@container (min-width: 1120px) {
+  .es-kpi { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+  .es-kpi-label { min-width: 0; }
+}

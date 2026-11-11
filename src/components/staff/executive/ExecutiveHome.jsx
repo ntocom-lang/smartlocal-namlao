@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CalendarClock, CheckCircle2, ChevronRight, FileSignature, FileText, LayoutDashboard, MapPinned, TriangleAlert } from 'lucide-react'
+import { CalendarClock, CheckCircle2, ChevronRight, FileSignature, FileText, Landmark, MapPinned, TriangleAlert } from 'lucide-react'
 import { EXEC_PERIOD_KEYS, EXEC_ZONES, isPhaseLive, liveEntries } from '../../../lib/executiveRegistry'
 import {
   EXEC_DEFAULT_PERIOD, buildAlerts, esignWaitingFromRpc, buildDecisionQueue, deriveExec, execPeriodRange, execPreviousRange, execRangeText, execSummaryKeys,
@@ -22,6 +22,7 @@ import ExecServiceReportTile from './ExecServiceReportTile'
 import { AlertZone, ContextZone, DecisionQueue, DeptZone, PlanZone } from './ExecOpsZones'
 import { ExecSection, FormulaPanel, InfoButton, LoadingLine, SectionError, SubHead, Tile } from './ExecParts'
 import { execIcon } from './execIcons'
+import './ExecFullPolish.css'
 
 // "ห้องผู้บริหาร" — หน้าแรกของนายก/รองนายก/ปลัด
 // เฟส E1: RPC เดิมทั้งหมด (สถิติสาธารณะ + esign_my_pending + staff_home_summary) · เฟส E2: executive_overview() เรียกครั้งเดียวต่อช่วงที่ตัวนี้
@@ -368,12 +369,20 @@ export default function ExecutiveHome({ scopedKeys = [], navigate, profile, tena
   // จนเกิดแถบเลื่อนซ้อน 2 ชั้น (main เลื่อน + ทั้งหน้าเลื่อน) — เจอจริงตอนตรวจ E2 บนจอ 1280px
   return (
     <div data-exec-home className="relative space-y-4">
-      <header className="min-w-0 rounded-3xl bg-gradient-to-br from-sky-800 to-indigo-800 px-4 py-3.5 text-white shadow-sm">
-        <div className="flex items-center gap-2">
-          <LayoutDashboard size={20} className="shrink-0 text-sky-200" aria-hidden="true" />
-          <h1 className="truncate text-xl font-black">ห้องผู้บริหาร</h1>
+      {/* หัวหน้ารุ่นพรีเมียม (กรมท่า + กรอบเส้นทองคู่ — ผิวอยู่ใน ExecFullPolish.css) · ไม่มีแถบ KPI ซ้ำ: หน้านี้มีการ์ดตัวเลขอยู่แล้ว */}
+      <header data-exec-head className="min-w-0">
+        <span className="ex-sheen" aria-hidden="true" />
+        <span className="ex-crest" aria-hidden="true">
+          {tenant?.logo_url ? <img src={tenant.logo_url} alt="" /> : <Landmark size={30} />}
+        </span>
+        <div className="ex-head-text">
+          <h1>แดชบอร์ดสำหรับผู้บริหารแบบครบทั้งหมด</h1>
+          <p>{[tenant?.name, todayTH].filter(Boolean).join(' · ')}</p>
         </div>
-        <p className="mt-0.5 truncate text-xs text-sky-100">{[tenant?.name, todayTH].filter(Boolean).join(' · ')}</p>
+        {/* ทางไปหน้าแบบเรียบ (ตัวใหญ่ หน้าเดียว สำหรับนายก) — หน้านี้ไม่เปลี่ยนอย่างอื่น */}
+        <button type="button" data-exec-open-simple onClick={() => navigate('/executive?view=simple')} className="ex-pill">
+          ดูแบบย่อ (แบบนายก)
+        </button>
       </header>
       {cur.status === 'forbidden' && (
         <p role="alert" data-exec-forbidden className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">

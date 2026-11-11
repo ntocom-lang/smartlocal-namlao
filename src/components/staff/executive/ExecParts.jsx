@@ -31,7 +31,7 @@ export function ExecSection({ id, title, Icon, note, aside, children, className 
       className={`min-w-0 rounded-3xl border shadow-sm ${compact ? 'space-y-2 p-2.5 sm:p-3' : 'space-y-3 p-3 sm:p-4'} ${tone.panel} ${className}`}>
       <div className={`flex items-start ${compact ? 'gap-2' : 'gap-2.5'}`}>
         {Icon && (
-          <span className={`flex shrink-0 items-center justify-center shadow-sm ${compact ? 'h-7 w-7 rounded-lg' : 'h-9 w-9 rounded-xl'} ${tone.chip}`}>
+          <span data-exec-medal className={`flex shrink-0 items-center justify-center shadow-sm ${compact ? 'h-7 w-7 rounded-lg' : 'h-9 w-9 rounded-xl'} ${tone.chip}`}>
             <Icon size={compact ? 15 : 18} aria-hidden="true" />
           </span>
         )}
