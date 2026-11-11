@@ -14,12 +14,24 @@ export function isMissingTelegramLinkTable(error) {
     || (/telegram_user_links/.test(message) && /not find|does not exist/.test(message))
 }
 
-/** หมวดที่ส่งทาง Telegram ส่วนตัว — ตรงกับ DM_CATEGORY ใน notify-telegram และ CHECK ใน migration 20261030100000 */
+/**
+ * หมวดที่ส่งทาง Telegram ส่วนตัว
+ * 3 หมวดแรกตรงกับ DM_CATEGORY ใน notify-telegram (migration 20261030100000)
+ * execOnly = หมวดของผู้บริหาร (E3-3 · CHECK ขยายใน 20261118100000) ส่งโดย Edge Function exec-digest-notify ไม่ใช่ notify-telegram
+ *   หน้าเว็บโชว์สวิตช์เฉพาะผู้บริหาร (นายก/รองนายก = viewer · ปลัด/รองปลัด = ตำแหน่งหมวด top_admin) — ชุดเดียวกับผู้รับใน exec_digest_eligible
+ *   คนอื่นไม่เห็น แต่ค่า dm_muted เดิมของหมวดอื่นต้องไม่หาย (toggleCategory ส่งชุดเต็มที่มีอยู่เสมอ)
+ */
 export const TELEGRAM_DM_CATEGORIES = Object.freeze([
   { key: 'complaint', label: 'คำร้องที่มอบหมายให้ฉัน' },
   { key: 'event', label: 'กิจกรรมที่มอบหมายให้ฉัน' },
   { key: 'esign', label: 'ใบขอใช้รถถึงคิวลงนามหรือถูกส่งคืน' },
+  { key: 'exec_digest', label: 'สรุปเช้าผู้บริหาร (07:30 น. วันทำการ)', execOnly: true },
+  { key: 'exec_alert', label: 'แจ้งทันทีเมื่อคะแนนประเมินคำร้อง ≤ 2', execOnly: true },
 ])
+
+/** หมวดที่แสดงสวิตช์ให้ผู้ใช้คนนี้ — หมวด execOnly เฉพาะผู้บริหาร */
+export const visibleDmCategories = (isExecutive) =>
+  TELEGRAM_DM_CATEGORIES.filter((category) => isExecutive || !category.execOnly)
 
 // ยังไม่ apply migration ส่วนที่ 2 (ไม่มีคอลัมน์ dm_muted) — PostgREST ตอบ 42703
 const isMissingDmColumn = (error) => String(error?.code ?? '') === '42703' || /dm_muted/.test(String(error?.message ?? ''))

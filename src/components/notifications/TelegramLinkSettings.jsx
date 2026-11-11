@@ -5,9 +5,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ExternalLink, Loader2, MessageCircle, ShieldCheck } from 'lucide-react'
 import { QUIET_MODULES, qrLayout } from '../../lib/qrSvg'
+import { useAuth } from '../../contexts/AuthContext'
+import { supabase } from '../../lib/supabase'
+import { useMyPositionCategory } from '../../hooks/useMyPositionCategory'
+import { EXEC_POSITION_CATEGORY } from '../../lib/executiveAccess'
 import {
-  TELEGRAM_DM_CATEGORIES, getMyTelegramLink, isMissingTelegramLinkTable, linkExpired, minutesLeft, requestTelegramLink,
-  setMyTelegramDmMuted, setupTelegramWebhook, telegramBotStatus, unlinkMyTelegram,
+  getMyTelegramLink, isMissingTelegramLinkTable, linkExpired, minutesLeft, requestTelegramLink,
+  setMyTelegramDmMuted, setupTelegramWebhook, telegramBotStatus, unlinkMyTelegram, visibleDmCategories,
 } from '../../lib/telegramLink'
 
 const POLL_MS = 5000
@@ -33,13 +37,13 @@ function LinkQr({ url }) {
 
 // หมวดที่ส่งทาง Telegram ส่วนตัว — เก็บบน server (ฝั่งส่งอ่านได้) คนละชุดกับ "เด้งเตือนรายหมวด" ที่เก็บในเครื่อง
 // รูปสวิตช์ชุดเดียวกับ CategoryMuteSettings
-function DmCategorySwitches({ muted, disabled, onToggle }) {
+function DmCategorySwitches({ muted, disabled, onToggle, isExecutive }) {
   return (
     <div className="border-t border-slate-100 pt-3" data-telegram-dm-categories>
       <p className="text-sm font-semibold text-slate-800">ส่งทาง Telegram</p>
       <p className="text-xs leading-5 text-slate-500">ปิดหมวดไหน แชทนี้จะไม่ได้รับเรื่องหมวดนั้น (ยังเห็นในกระดิ่งของระบบตามปกติ)</p>
       <div className="mt-1">
-        {TELEGRAM_DM_CATEGORIES.map((category) => {
+        {visibleDmCategories(isExecutive).map((category) => {
           const on = !muted.includes(category.key)
           return (
             <button key={category.key} type="button" role="switch" aria-checked={on} disabled={disabled}
@@ -55,6 +59,29 @@ function DmCategorySwitches({ muted, disabled, onToggle }) {
       </div>
     </div>
   )
+}
+
+// ผู้บริหารที่เป็นผู้รับสรุปเช้า = ชุดเดียวกับ exec_digest_eligible (SQL): viewer · หรือตำแหน่งหมวด top_admin ใน role เจ้าหน้าที่
+// ไม่รวม superadmin (ไม่มีสังกัด จึงไม่เป็นผู้รับ) · ยังไม่รู้ผล/อ่านไม่สำเร็จ = false (ซ่อนสวิตช์ ไม่โชว์สวิตช์หลอก)
+// ด่านจริงอยู่ที่ฐานข้อมูล: ผู้ไม่ใช่ผู้บริหารปิด/เปิดหมวดนี้ได้ แต่ไม่มีผลอะไร (ไม่ใช่ผู้รับอยู่แล้ว)
+const EXEC_LOOKUP_ROLES = ['officer', 'staff', 'council', 'technician', 'admin']
+
+function useIsExecutiveRecipient(userId) {
+  const { role } = useAuth()
+  const needsPosition = Boolean(userId) && EXEC_LOOKUP_ROLES.includes(role)
+  const [own, setOwn] = useState({ userId: null, positionId: null })
+  useEffect(() => {
+    if (!needsPosition) return undefined
+    let cancelled = false
+    Promise.resolve(supabase.from('profiles').select('position_id').eq('id', userId).maybeSingle())
+      .then(({ data, error }) => { if (!cancelled) setOwn({ userId, positionId: error ? null : data?.position_id ?? null }) })
+      .catch(() => { if (!cancelled) setOwn({ userId, positionId: null }) })
+    return () => { cancelled = true }
+  }, [needsPosition, userId])
+  const positionId = needsPosition && own.userId === userId ? own.positionId : null
+  const { category } = useMyPositionCategory(needsPosition ? { role, position_id: positionId } : null)
+  if (role === 'viewer') return true
+  return needsPosition && category === EXEC_POSITION_CATEGORY
 }
 
 function BotAdmin() {
@@ -95,6 +122,7 @@ function BotAdmin() {
 }
 
 export default function TelegramLinkSettings({ userId, isSuperadmin }) {
+  const isExecutive = useIsExecutiveRecipient(userId)
   const [state, setState] = useState({ loading: true, hidden: false, link: null, error: '' })
   const [pending, setPending] = useState(null) // { url, expires_at }
   const [busy, setBusy] = useState(false)
@@ -193,7 +221,7 @@ export default function TelegramLinkSettings({ userId, isSuperadmin }) {
                 เชื่อมแล้ว{state.link.tg_display ? ` กับ ${state.link.tg_display}` : ''} · {formatThaiDateTime(state.link.linked_at)}
               </p>
               {Array.isArray(state.link.dm_muted) && (
-                <DmCategorySwitches muted={state.link.dm_muted} disabled={busy} onToggle={toggleCategory} />
+                <DmCategorySwitches muted={state.link.dm_muted} disabled={busy} onToggle={toggleCategory} isExecutive={isExecutive} />
               )}
               <p className="text-xs leading-6 text-slate-500">ถ้าชื่อนี้ไม่ใช่ Telegram ของคุณ ให้กดยกเลิกทันทีแล้วเชื่อมใหม่ · พิมพ์ /stop ในแชทกับบอตก็ยกเลิกได้</p>
               <button type="button" disabled={busy} onClick={unlink} data-telegram-unlink

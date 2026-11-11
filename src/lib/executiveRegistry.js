@@ -32,10 +32,10 @@ export const EXEC_ZONES = Object.freeze({
  * รายการเฟสหลังยังต้องลงทะเบียนตั้งแต่วันนี้ (กันตกหล่น) แต่ยังไม่ขึ้นจอ
  * E1 = RPC เดิมที่ viewer/ปลัดเรียกได้แล้ว (ไม่มี SQL)
  * E2 = executive_overview() + exec_summary_<summaryKey>() (SECURITY DEFINER ตรวจ role ข้างใน)
- * E3 = ติดตาม/เร่งรัด + ใบ A4 + สรุปเช้า Telegram
+ * E3 = ติดตาม/เร่งรัด + ใบ A4 + สรุปเช้า Telegram + การ์ด "รอลงนามเกิน 2 วันทำการ" (exec_my_esign_waiting)
  */
 export const EXEC_PHASES = Object.freeze(['E1', 'E2', 'E3'])
-export const EXEC_CURRENT_PHASE = 'E2'
+export const EXEC_CURRENT_PHASE = 'E3'
 
 export function isPhaseLive(phase, current = EXEC_CURRENT_PHASE) {
   const i = EXEC_PHASES.indexOf(phase)
@@ -160,9 +160,7 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
       { id: 'monthly', label: 'สรุปเรื่องร้องเรียนรายเดือน', path: '/reports/complaints', phase: 'E1' },
       // รายการแบบ action (ไม่มี path): กดแล้วสร้างใบ A4 จาก executive_overview ตามช่วงที่เลือกในตัวไทล์เอง
       // ตัววาดอยู่ที่ ExecutiveHome.jsx (ACTION_REPORTS ผูกด้วย id) · ใบ: src/lib/executiveServiceReportPrint.js
-      // ⚠️ phase 'E2' ทั้งที่เป็นงาน E3-1: ส่งมอบก่อนเปลี่ยน EXEC_CURRENT_PHASE รวม — เปลี่ยนเฟสแล้วจะเปิดการ์ด waiting_2wd ของ E3 ที่ยังไม่มีข้อมูล
-      // ย้ายเป็น 'E3' ได้ตอนเปลี่ยนเฟสรวม (ไม่ต้องแก้อย่างอื่น)
-      { id: 'service_summary', label: 'สรุปผลการให้บริการประชาชน (A4)', action: true, phase: 'E2' },
+      { id: 'service_summary', label: 'สรุปผลการให้บริการประชาชน (A4)', action: true, phase: 'E3' },
     ],
   },
   {
@@ -362,8 +360,8 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     zones: ['decision'], isCitizenService: false, docTypes: [], summaryKey: null, phase: 'E1',
     link: { module: 'fleet' },
     kpis: [kpi('my_pending', 'เอกสารรอท่านลงนาม', 'ใบ', 'esign_my_pending().count — ปัจจุบันครอบเฉพาะใบขอใช้รถ', 'E1', 'esign_my_pending')],
-    // E3: esign_my_pending ยังไม่มีเวลาที่ "ถึงคิวท่าน" (มีแค่ planned_departure/last_return) — ต้องอนุมานจากเวลาลงนามช่องก่อนหน้าใน esign_slots
-    alerts: [alert('waiting_2wd', 'รอลงนามเกิน 2 วันทำการ', 'warn', 'รายการที่ถึงคิวท่านมานานกว่า 2 วันทำการ (นับจากเวลาที่ช่องก่อนหน้าลงนาม)', 'E3')],
+    // E3: ตัวเลขมาจาก exec_my_esign_waiting(อปท.) — esign_my_pending ไม่มีเวลาที่ "ถึงคิวท่าน" ฐานข้อมูลจึงประมาณจากความเคลื่อนไหวล่าสุดของใบ
+    alerts: [alert('waiting_2wd', 'รอลงนามเกิน 2 วันทำการ', 'warn', 'เอกสารที่ถึงคิวท่านลงนามมาเกิน 2 วันทำการ — นับจากความเคลื่อนไหวล่าสุดของใบ (สร้าง/ลงนาม/ถอน/ส่งคืน-ส่งกลับ) ปัจจุบันครอบเฉพาะใบขอใช้รถ', 'E3')],
     reports: [],
   },
   {

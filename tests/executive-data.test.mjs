@@ -409,11 +409,11 @@ test('ตาราง ②-2: แสดงเฉพาะแถวที่มี
 const E2 = await import('../src/lib/executiveData.js')
 const {
   EXEC_ALERT_RULE_KEYS, EXEC_NO_DEPT_KEY, backlogAnalysis, backlogByType, buildAlerts, buildDecisionQueue, buildDeptRows, buildExecModel,
-  compareMetric, decorateServiceRows, deriveExec, execAverage, execDateOnly, execPercent, execSummaryKeys, normalizeComplaintsSummary,
+  compareMetric, decorateServiceRows, deriveExec, esignWaitingFromRpc, execAverage, execDateOnly, execPercent, execSummaryKeys, normalizeComplaintsSummary,
   normalizeDocRequestsSummary, onTimeSummary, planResultMissingCount, projectStageRows, satisfactionView, sumOnTime, upcomingEvents,
   thaiDayLabel, waitText, waitingWorkdays,
 } = E2
-const { isPhaseLive } = await import('../src/lib/executiveRegistry.js')
+const { EXEC_CURRENT_PHASE, isPhaseLive } = await import('../src/lib/executiveRegistry.js')
 const NOW = '2026-11-10'
 
 const complaintsRaw = {
@@ -740,14 +740,56 @@ test('สัญญาณเตือน ③: ไม่มีเรื่อง =
   assert.equal(satBroken.items.some((a) => a.id === 'complaints:low_rating'), false)
 })
 
-test('สัญญาณเตือน ③: alert เฟส live ทุกข้อในทะเบียนมีกฎคำนวณ (ไม่งั้นเพิ่มใน PR หน้าแล้วเตือนหายเงียบ)', () => {
+test('สัญญาณเตือน ③: alert เฟส live ทุกข้อในทะเบียนมีกฎคำนวณ (ไม่งั้นเพิ่มใน PR หน้าแล้วเตือนหายเงียบ) — ตามเฟสปัจจุบัน', () => {
   const missing = []
-  for (const e of liveEntries(() => true, 'E2')) {
+  for (const e of liveEntries(() => true)) {
     for (const a of e.alerts) {
-      if (isPhaseLive(a.phase, 'E2') && !EXEC_ALERT_RULE_KEYS.includes(`${e.key}:${a.id}`)) missing.push(`${e.key}:${a.id}`)
+      if (isPhaseLive(a.phase) && !EXEC_ALERT_RULE_KEYS.includes(`${e.key}:${a.id}`)) missing.push(`${e.key}:${a.id}`)
     }
   }
   assert.deepEqual(missing, [])
+})
+
+test('สัญญาณเตือน ③ (E3) รอลงนามเกิน 2 วันทำการ: ใช้ตัวเลข over_2wd ของ exec_my_esign_waiting · 0/ยังไม่โหลด = ไม่ขึ้น · ไม่มีชื่อคน', () => {
+  const entries = liveEntries(() => true)
+  const run = (esignWaiting) => buildAlerts({ entries, model: modelOf({}), today: NOW, esignWaiting }).items.find((i) => i.id === 'src:esign:waiting_2wd')
+  const hit = run(esignWaitingFromRpc({ count: 3, over_2wd: 2, oldest_at: '2026-11-03T03:00:00Z' }))
+  assert.equal(hit.count, 2)
+  assert.equal(hit.unit, 'ใบ')
+  assert.equal(hit.severity, 'warn')
+  assert.match(hit.detail, /ทั้งหมด 3 ใบ/)
+  assert.match(hit.detail, /ใบเก่าสุดถึงคิวประมาณ/)
+  assert.match(hit.rule, /เกิน 2 วันทำการ.*ความเคลื่อนไหวล่าสุด/)
+  assert.equal(run(esignWaitingFromRpc({ count: 3, over_2wd: 0, oldest_at: null })), undefined, 'ไม่มีใบเกิน = ไม่ขึ้นการ์ด')
+  assert.equal(run(null), undefined, 'ยังไม่โหลด/โหลดไม่ได้ = ไม่ขึ้น (หน้าจอบอกเองผ่าน failures)')
+  assert.equal(run(undefined), undefined)
+  // ไม่มีวันที่เก่าสุด = ไม่มีท่อน "ใบเก่าสุด..." (ไม่เดา)
+  assert.doesNotMatch(run(esignWaitingFromRpc({ count: 1, over_2wd: 1, oldest_at: null })).detail, /เก่าสุด/)
+})
+
+test('esignWaitingFromRpc: รูปผิด/ติดลบ/ไม่ใช่ตัวเลข = null (ไม่เดาเป็น 0) · ไม่ส่งช่องอื่นต่อ', () => {
+  assert.equal(esignWaitingFromRpc(null), null)
+  assert.equal(esignWaitingFromRpc([]), null)
+  assert.equal(esignWaitingFromRpc('x'), null)
+  assert.equal(esignWaitingFromRpc({ count: 'a', over_2wd: 1 }), null)
+  assert.equal(esignWaitingFromRpc({ count: 1 }), null)
+  assert.equal(esignWaitingFromRpc({ count: -1, over_2wd: 0 }), null)
+  assert.deepEqual(esignWaitingFromRpc({ count: 2, over_2wd: 1, oldest_at: '2026-11-03T03:00:00Z', requester_name: 'ลับ' }),
+    { count: 2, over2wd: 1, oldestAt: '2026-11-03T03:00:00Z' })
+  assert.deepEqual(esignWaitingFromRpc({ count: 0, over_2wd: 0, oldest_at: null }), { count: 0, over2wd: 0, oldestAt: null })
+})
+
+test('ห้องผู้บริหารเฟสปัจจุบัน = E3: ทุกรายการ/kpi/alert/รายงานที่ติดเฟส E3 ผูกข้อมูลจริงแล้ว (ไม่มีการ์ดว่างโผล่)', () => {
+  assert.equal(EXEC_CURRENT_PHASE, 'E3')
+  // alert E3 ทุกข้อต้องมีกฎ · kpi/รายงาน E3 ต้องมีตัววาด (เช็กที่เทสต์ซอร์สด้านล่าง) — ที่นี่ไล่ว่าทะเบียนมีอะไรติด E3 บ้าง
+  const e3 = []
+  for (const e of liveEntries(() => true)) {
+    if (e.phase === 'E3') e3.push(`${e.key}`)
+    for (const k of e.kpis) if (k.phase === 'E3') e3.push(`${e.key}:kpi:${k.id}`)
+    for (const a of e.alerts) if (a.phase === 'E3') e3.push(`${e.key}:alert:${a.id}`)
+    for (const r of e.reports) if (r.phase === 'E3') e3.push(`${e.key}:report:${r.id}`)
+  }
+  assert.deepEqual(e3.sort(), ['complaints:report:service_summary', 'src:esign:alert:waiting_2wd'])
 })
 
 test('deriveExec: เลยกำหนดรวมคำร้อง+คำขอ · % ทันกำหนดแยกสองแหล่ง (ไม่มีค่ารวม) · การ์ดเดียวพังยังได้อีกชุด', () => {

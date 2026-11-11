@@ -885,6 +885,17 @@ const ALERT_RULES = {
   'local-plan:no_published_plan': (m) => (m.localPlan?.currentFy && !m.localPlan.currentFy.publishedMain
     ? { count: 1, unit: '', showCount: false, detail: m.localPlan.currentFy.fiscalYear ? `ปีงบ ${m.localPlan.currentFy.fiscalYear}` : null }
     : null),
+  // ตัวเลขมาจาก exec_my_esign_waiting (ของผู้เปิดหน้าเอง) — ไม่อยู่ใน executive_overview จึงส่งเข้ามาทาง ctx.esignWaiting
+  // null/ยังไม่โหลด/โหลดไม่ได้ = ไม่ขึ้นการ์ด (หน้าจอบอกเองว่า "โหลดไม่ได้" ผ่าน failures) · ตัวเลขล้วน ไม่มีชื่อคน/ชื่อเรื่อง (PDPA)
+  'src:esign:waiting_2wd': (m, ctx) => {
+    const w = ctx.esignWaiting
+    if (!w || !(w.over2wd > 0)) return null
+    const since = execDateOnly(w.oldestAt)
+    return {
+      count: w.over2wd, unit: 'ใบ',
+      detail: `จากที่รอท่านลงนามทั้งหมด ${w.count} ใบ${since ? ` · ใบเก่าสุดถึงคิวประมาณ ${fmtDay(since)}` : ''}`,
+    }
+  },
   'water-situation:event_open': (m) => {
     const w = m.water?.openEvents
     if (!w || w.n <= 0) return null
@@ -899,6 +910,18 @@ const ALERT_RULE_SOURCES = Object.freeze({
   'complaints:low_rating': 'satisfaction',
 })
 
+/**
+ * ผลของ exec_my_esign_waiting → { count, over2wd, oldestAt } · รูปไม่ถูกต้อง = null (ไม่เดาเป็น 0 — 0 จริงกับอ่านไม่ได้ต่างกัน)
+ * ตัวเลขล้วน ไม่รับช่องอื่นผ่านมา
+ */
+export function esignWaitingFromRpc(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+  const count = Number(data.count)
+  const over2wd = Number(data.over_2wd)
+  if (!Number.isFinite(count) || !Number.isFinite(over2wd) || count < 0 || over2wd < 0) return null
+  return { count: Math.floor(count), over2wd: Math.floor(over2wd), oldestAt: typeof data.oldest_at === 'string' ? data.oldest_at : null }
+}
+
 const SEVERITY_RANK = { critical: 0, warn: 1, info: 2 }
 
 /** `${entry.key}:${alert.id}` ที่มีกฎคำนวณแล้ว — เทสต์ตรวจว่าทุก alert เฟส live ในทะเบียนมีกฎ (ไม่งั้นเตือนหายเงียบ) */
@@ -906,11 +929,12 @@ export const EXEC_ALERT_RULE_KEYS = Object.freeze(Object.keys(ALERT_RULES))
 
 /**
  * สัญญาณเตือน (โซน ③) — ขึ้นเฉพาะที่มีเรื่อง · เรียง critical → warn → info (คงลำดับทะเบียนในระดับเดียวกัน)
- * @param {{ entries: object[], model: object, today: string, resultMissing?: number }} input
+ * @param {{ entries: object[], model: object, today: string, resultMissing?: number, esignWaiting?: object|null }} input
  *   resultMissing = จำนวนรายการแผนที่ถึงกำหนดแต่ยังไม่มีผล (คิดจาก localPlanProgress ฝั่งหน้าจอ — ไม่ได้มาจาก SQL)
+ *   esignWaiting = ผลของ exec_my_esign_waiting แปลงด้วย esignWaitingFromRpc (null = ยังไม่โหลด/โหลดไม่ได้)
  * @returns {{ items: object[], failures: string[] }} failures = โมดูลที่ตรวจเตือนไม่ได้เพราะการ์ดโหลดไม่ได้
  */
-export function buildAlerts({ entries, model, today, resultMissing = 0 }) {
+export function buildAlerts({ entries, model, today, resultMissing = 0, esignWaiting = null }) {
   const m = dataMap(model)
   const items = []
   const failures = []
@@ -923,7 +947,7 @@ export function buildAlerts({ entries, model, today, resultMissing = 0 }) {
       const source = ALERT_RULE_SOURCES[ruleKey]
       const ruleState = source ? model?.[source]?.state : state
       if (ruleState === 'error') { if (!failures.includes(entry.label)) failures.push(entry.label); continue }
-      const v = rule(m, { today, resultMissing })
+      const v = rule(m, { today, resultMissing, esignWaiting })
       if (!v) continue
       items.push({
         id: `${entry.key}:${alert.id}`, entry, alert, label: alert.label, severity: alert.severity, rule: alert.rule,
