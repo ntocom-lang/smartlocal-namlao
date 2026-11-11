@@ -4,7 +4,10 @@ import { PARK_REASONS } from '../../../lib/complaintWorkflow'
 import {
   EXEC_COMPLAINT_STAGES, compareMetric, compareValues, execFormulas, execNf,
 } from '../../../lib/executiveData'
+import { canNudgeItems } from '../../../lib/execFollowNudgeHelpers'
+import { useMyPositionCategory } from '../../../hooks/useMyPositionCategory'
 import { DeltaLine, FormulaPanel, InfoButton, LoadingLine, SectionError, SplitBar, SubHead, SummaryGate } from './ExecParts'
+import ExecOverdueList from './ExecOverdueList'
 import { EXEC_CHART } from './execChart'
 
 // บล็อกย่อยของโซน ② ที่มาจาก executive_overview (เฟส E2) — ตัวเลขทั้งหมดคิดแล้วใน src/lib/executiveData.js (ฟังก์ชันบริสุทธิ์ มีเทสต์)
@@ -48,8 +51,30 @@ function StatCard({ id, tone, label, value, unit = '', sub, children, open, onTo
 
 // ───────────────────────── ②-1 ชีพจร (ส่วนของ E2) ─────────────────────────
 
+/**
+ * ปุ่ม "ดูรายการเรื่องเลยกำหนด" + แผงรายการ (E3-2) — แผงโหลดข้อมูลเมื่อเปิดเท่านั้น (ไม่ยิง RPC เพิ่มตอนเปิดหน้า)
+ * ปุ่มเร่ง: ตัดสินสิทธิ์จาก role + ตำแหน่ง (useMyPositionCategory) ให้ตรง exec_assert_actor — ยังไม่รู้ตำแหน่ง = ไม่แสดงปุ่มเร่ง
+ * ฝั่งฐานข้อมูลตรวจซ้ำเสมอ (admin ที่ไม่ใช่ปลัดเรียก RPC ตรงก็ได้ 42501)
+ */
+function OverdueListToggle({ tenant, profile, today }) {
+  const [open, setOpen] = useState(false)
+  const { category, ready } = useMyPositionCategory(profile)
+  const canNudge = canNudgeItems({ role: profile?.role, positionCategory: ready ? category : null, tenantSlug: tenant?.slug })
+  if (!tenant?.id) return null
+  return (
+    <div className="space-y-2">
+      <button type="button" data-exec-overdue-open aria-expanded={open} onClick={() => setOpen((v) => !v)}
+        className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-rose-300 bg-white px-3 text-sm font-bold text-rose-800 shadow-sm hover:bg-rose-50 active:scale-[0.99] sm:w-auto">
+        {open ? 'ซ่อนรายการเรื่องเลยกำหนด' : 'ดูรายการเรื่องเลยกำหนด'}
+        {open ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+      </button>
+      {open && <ExecOverdueList tenant={tenant} today={today} canNudge={canNudge} />}
+    </div>
+  )
+}
+
 /** ใหญ่สุดของโซน: เลยกำหนด (คำร้อง + คำขอ) — ค้างอยู่ตอนนี้ ไม่ขึ้นกับช่วงที่เลือก */
-export function OverdueCard({ ov, entries }) {
+export function OverdueCard({ ov, entries, tenant, profile }) {
   const [open, toggle] = useFormulaToggle()
   if (ov.status === 'loading') return <LoadingLine text="กำลังโหลดเรื่องเลยกำหนด…" />
   if (ov.status === 'error') return <SectionError text="โหลดเรื่องเลยกำหนดไม่ได้" onRetry={ov.reload} />
@@ -69,6 +94,7 @@ export function OverdueCard({ ov, entries }) {
       </StatCard>
       {failed && <SectionError text={`ตัวเลข${ov.model.complaints?.state === 'error' ? 'คำร้อง' : 'คำขอ'}โหลดไม่ได้ — ยอดนี้อาจต่ำกว่าจริง`} onRetry={ov.reload} />}
       {open === 'overdue' && <FormulaPanel title="เลยกำหนด" items={execFormulas(entries, 'overdue')} />}
+      <OverdueListToggle tenant={tenant} profile={profile} today={ov.today} />
     </div>
   )
 }

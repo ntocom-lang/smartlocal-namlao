@@ -26,42 +26,45 @@ export function DecisionQueue({ ov, queue, resolveLink }) {
   if (ov.status !== 'ok') return null
   const { items, failures } = queue
   return (
-    <div data-exec-queue className="space-y-2">
+    <div data-exec-queue className="space-y-1.5">
       {failures.length > 0 && (
         <SectionError text={`ตรวจเรื่องรอพิจารณาของ ${failures.join(', ')} ไม่ได้ — อาจมีเรื่องค้างอยู่`} onRetry={ov.reload} />
       )}
       {items.length === 0 && failures.length === 0 && (
-        <p data-exec-queue-clear className="flex min-h-12 items-center gap-2 rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 shadow-sm">
-          <CheckCircle2 size={18} className="shrink-0 text-emerald-600" aria-hidden="true" />ไม่มีเรื่องอื่นรอท่านพิจารณา
+        <p data-exec-queue-clear className="flex min-h-9 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 shadow-sm">
+          <CheckCircle2 size={16} className="shrink-0 text-emerald-600" aria-hidden="true" />ไม่มีเรื่องอื่นรอท่านพิจารณา
         </p>
       )}
       {items.map((it) => {
         const go = resolveLink(it.entry)
         const wait = waitText(it.waitDays)
+        // แถวกะทัดรัด (เจ้าของระบบขอ 2026-11-11): ชื่อเมนู + ป้าย "รอมา…" อยู่บรรทัดเดียวกัน (พับลงเองเมื่อจอแคบ)
         const body = (
           <>
-            <span className={`w-12 shrink-0 text-right text-3xl font-black tabular-nums ${it.warn ? 'text-orange-600' : 'text-amber-600'}`}>{nf(it.count)}</span>
+            <span className={`w-9 shrink-0 text-right text-2xl font-black tabular-nums ${it.warn ? 'text-orange-600' : 'text-amber-600'}`}>{nf(it.count)}</span>
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-bold leading-tight text-slate-800">{it.label}<span className="ml-1 text-[11px] font-normal text-slate-500">({it.unit})</span></span>
-              <span className="block text-[11px] text-slate-500">{it.entry.label}</span>
-              {wait && (
-                <span data-exec-wait={it.warn ? 'warn' : 'ok'} className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${it.warn ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-600'}`}>
-                  {it.sinceDay === null || it.waitDays === 0 ? wait : `${wait} · ตั้งแต่ ${new Date(`${it.sinceDay}T00:00:00+07:00`).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })}`}
-                </span>
-              )}
+              <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-snug text-slate-500">
+                <span>{it.entry.label}</span>
+                {wait && (
+                  <span data-exec-wait={it.warn ? 'warn' : 'ok'} className={`inline-block rounded-full px-1.5 py-px text-[10px] font-bold ${it.warn ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-600'}`}>
+                    {it.sinceDay === null || it.waitDays === 0 ? wait : `${wait} · ตั้งแต่ ${new Date(`${it.sinceDay}T00:00:00+07:00`).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })}`}
+                  </span>
+                )}
+              </span>
             </span>
             {go && <ChevronRight size={16} className="shrink-0 text-slate-300" aria-hidden="true" />}
           </>
         )
         return (
           <div key={it.id} data-exec-decision={it.id} className="space-y-1.5">
-            <div className={`flex items-stretch gap-1 rounded-2xl border bg-white shadow-sm ${it.warn ? 'border-orange-300' : 'border-amber-200'}`}>
+            <div className={`flex items-stretch gap-1 rounded-xl border bg-white shadow-sm ${it.warn ? 'border-orange-300' : 'border-amber-200'}`}>
               {go ? (
-                <button type="button" onClick={go} className="flex min-h-14 min-w-0 flex-1 items-center gap-2.5 rounded-2xl px-3 py-2 text-left active:scale-[0.99]">{body}</button>
+                <button type="button" onClick={go} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 py-1.5 text-left active:scale-[0.99]">{body}</button>
               ) : (
-                <div className="flex min-h-14 min-w-0 flex-1 items-center gap-2.5 px-3 py-2">{body}</div>
+                <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5">{body}</div>
               )}
-              <div className="flex items-start py-1.5 pr-1.5">
+              <div className="flex items-start py-1 pr-1">
                 <InfoButton active={open === it.id} onClick={() => setOpen((cur) => (cur === it.id ? null : it.id))} label={it.label} />
               </div>
             </div>

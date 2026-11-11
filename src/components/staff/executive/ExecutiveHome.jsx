@@ -16,6 +16,7 @@ import { useExecReviewCount, useExecSchedule } from '../../../hooks/useExecExtra
 import MyPendingSignatures from '../../esign/MyPendingSignatures'
 import { AssignedEventsSection } from '../StaffOperationalDashboard'
 import ExecServiceZone from './ExecServiceZone'
+import { OverdueCard } from './ExecServiceBlocks'
 import ExecServiceReportTile from './ExecServiceReportTile'
 import { AlertZone, ContextZone, DecisionQueue, DeptZone, PlanZone } from './ExecOpsZones'
 import { ExecSection, FormulaPanel, InfoButton, LoadingLine, SectionError, SubHead, Tile } from './ExecParts'
@@ -33,6 +34,10 @@ const inZone = (entries, zone) => entries.filter((e) => e.zones.includes(zone))
 // แถวบนจอกว้าง — โซนในแถวเดียวกันวางคู่กัน (lg ขึ้นไป) · แถวที่เหลือโซนเดียวกินเต็มแถว
 // สัญญาณเตือน (③) ขึ้นใต้เรื่องของท่านทันที · ตารางรายกอง/แผนกว้างเกินครึ่งแถว จึงอยู่แถวเต็ม
 const ZONE_ROWS = [['decision', 'schedule'], ['alert'], ['service'], ['plan'], ['dept'], ['area', 'report'], ['context']]
+// การ์ด "เลยกำหนด (ค้างอยู่ตอนนี้)" + รายการ/เร่งรัด (E3-2) — ไม่ใช่โซนในทะเบียน (ข้อมูลเป็นของโซน ② งานบริการ)
+// แต่วางเป็นแถวของตัวเองเหนือ ③ สัญญาณเตือน ให้นายกเห็นก่อน (เจ้าของระบบสั่ง 2026-11-11)
+// วันที่ไม่มีสัญญาณเตือน (โซน ③ ไม่ขึ้น) = อยู่เหนือโซน ② แทน · ไม่มีงานบริการประชาชนเลย = ไม่ขึ้น
+const OVERDUE_BEFORE = ['alert', 'service']
 
 // ───────────────────────── ① รอท่านลงนาม / รอท่านพิจารณา ─────────────────────────
 
@@ -52,20 +57,20 @@ function DecisionZone({ entries, tenantId, profileId, canOpenFleet, ov, queue, r
   const infoButton = kpi && <InfoButton active={showFormula} onClick={() => setShowFormula((v) => !v)} label={kpi.label} />
 
   return (
-    <ExecSection id="decision" title="รอท่านตัดสินใจ/ลงนาม" Icon={FileSignature} note={esignEntry ? 'ลงนามออนไลน์เปิดใช้กับใบขอใช้รถ' : 'ระบบแค่รวมเรื่องให้ · การตัดสินทำที่เมนูเดิมของเรื่องนั้น'} aside={infoButton}>
+    <ExecSection compact id="decision" title="รอท่านตัดสินใจ/ลงนาม" Icon={FileSignature} note={esignEntry ? 'ลงนามออนไลน์เปิดใช้กับใบขอใช้รถ' : 'ระบบแค่รวมเรื่องให้ · การตัดสินทำที่เมนูเดิมของเรื่องนั้น'} aside={infoButton}>
       {esignEntry && (
         <>
-          {/* ไม่มีเรื่อง = กล่องเขียวกล่องเดียว (ไม่ต้องมีเลข 0 ซ้ำอีกกล่อง) · มีเรื่อง = เลขใหญ่สีส้ม + รายการเดิม */}
+          {/* ไม่มีเรื่อง = แถบเขียวเตี้ยแถบเดียว (ไม่ต้องมีเลข 0 ซ้ำอีกกล่อง) · มีเรื่อง = เลขสีส้ม + รายการเดิม */}
           {clear ? (
-            <div data-exec-esign-clear className="flex min-h-14 items-center gap-2.5 rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm font-bold text-emerald-800 shadow-sm">
-              <CheckCircle2 size={22} className="shrink-0 text-emerald-600" aria-hidden="true" />
+            <div data-exec-esign-clear className="flex min-h-9 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-xs font-bold text-emerald-800 shadow-sm">
+              <CheckCircle2 size={16} className="shrink-0 text-emerald-600" aria-hidden="true" />
               <span className="min-w-0 flex-1">ไม่มีเอกสารรอท่านลงนาม</span>
               <span data-exec-esign-count className="sr-only">0 ใบ</span>
             </div>
           ) : (
-            <div className="flex min-h-14 items-center gap-2 rounded-2xl border border-amber-200 bg-white px-3 py-2 shadow-sm">
+            <div className="flex min-h-11 items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-1.5 shadow-sm">
               <span className="min-w-0 flex-1 text-sm font-bold text-slate-700">{kpi?.label ?? 'เอกสารรอท่านลงนาม'}</span>
-              <span data-exec-esign-count className={`text-3xl font-black tabular-nums ${total > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+              <span data-exec-esign-count className={`text-2xl font-black tabular-nums ${total > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
                 {pending.status === 'ok' ? total : '–'}<span className="sr-only"> ใบ</span>
               </span>
             </div>
@@ -107,8 +112,16 @@ function ScheduleZone({ entries, tenantId, profileId, role, resolveLink, today }
   const days = [...new Set(shown.map((e) => e.day))]
 
   return (
-    <ExecSection id="schedule" title="กำหนดการ" Icon={CalendarClock}>
-      <div className="space-y-2">
+    // ปุ่มเปิดปฏิทินอยู่มุมขวาของหัวกล่อง (เดิมเป็นแถบเต็มกว้างท้ายกล่อง) — กินที่น้อยลง (เจ้าของระบบขอ 2026-11-11)
+    <ExecSection compact id="schedule" title="กำหนดการ" Icon={CalendarClock}
+      aside={open && (
+        <button type="button" data-exec-open-calendar onClick={open}
+          className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-lg border border-emerald-200 bg-white px-2.5 text-xs font-bold text-emerald-800 shadow-sm hover:bg-emerald-50 active:scale-95">
+          <CalendarClock size={14} className="text-emerald-600" aria-hidden="true" />เปิดปฏิทิน
+          <ChevronRight size={13} className="text-slate-300" aria-hidden="true" />
+        </button>
+      )}>
+      <div className="space-y-1.5">
         <div className="flex items-center gap-1">
           <SubHead tone="border-emerald-500 text-emerald-950">มอบหมายให้ท่าน (วันนี้-พรุ่งนี้)</SubHead>
           {assignedKpi && <InfoButton active={formulaId === 'assigned'} onClick={() => toggle('assigned')} label={assignedKpi.label} />}
@@ -122,13 +135,13 @@ function ScheduleZone({ entries, tenantId, profileId, role, resolveLink, today }
           </div>
         )}
         {summary.status === 'ok' && count === 0 && (
-          <p data-exec-schedule-empty className="flex min-h-12 items-center rounded-2xl border border-emerald-100 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">
+          <p data-exec-schedule-empty className="flex min-h-9 items-center rounded-xl border border-emerald-100 bg-white px-3 py-1.5 text-xs text-slate-600 shadow-sm">
             ไม่มีกิจกรรมที่มอบหมายให้ท่านวันนี้หรือพรุ่งนี้
           </p>
         )}
       </div>
 
-      <div data-exec-upcoming className="space-y-2">
+      <div data-exec-upcoming className="space-y-1.5">
         <div className="flex items-center gap-1">
           <SubHead tone="border-emerald-500 text-emerald-950">กำหนดการ 7 วันข้างหน้า</SubHead>
           {upcomingKpi && <InfoButton active={formulaId === 'upcoming'} onClick={() => toggle('upcoming')} label={upcomingKpi.label} />}
@@ -137,7 +150,7 @@ function ScheduleZone({ entries, tenantId, profileId, role, resolveLink, today }
         {week.status === 'loading' && <LoadingLine text="กำลังโหลดกำหนดการ 7 วัน…" />}
         {week.status === 'error' && <SectionError text="โหลดกำหนดการ 7 วันไม่ได้" onRetry={week.reload} />}
         {week.status === 'ok' && upcoming.length === 0 && (
-          <p data-exec-upcoming-empty className="flex min-h-12 items-center rounded-2xl border border-emerald-100 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">
+          <p data-exec-upcoming-empty className="flex min-h-9 items-center rounded-xl border border-emerald-100 bg-white px-3 py-1.5 text-xs text-slate-600 shadow-sm">
             ไม่มีกำหนดการใน 7 วันข้างหน้า
           </p>
         )}
@@ -165,14 +178,6 @@ function ScheduleZone({ entries, tenantId, profileId, role, resolveLink, today }
         )}
       </div>
 
-      {open && (
-        <button type="button" onClick={open}
-          className="flex min-h-11 w-full items-center gap-2 rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-left text-sm font-bold text-emerald-800 shadow-sm hover:bg-emerald-50 active:scale-[0.99]">
-          <CalendarClock size={16} className="shrink-0 text-emerald-600" aria-hidden="true" />
-          <span className="min-w-0 flex-1">เปิดปฏิทินกิจกรรม</span>
-          <ChevronRight size={15} className="shrink-0 text-slate-300" aria-hidden="true" />
-        </button>
-      )}
     </ExecSection>
   )
 }
@@ -312,6 +317,11 @@ export default function ExecutiveHome({ scopedKeys = [], navigate, profile, tena
         isModuleEnabled={isModuleEnabled} resolveLink={resolveLink}
         ov={ov} period={period} setPeriod={setPeriod} range={range} prev={prevRange} />
     ),
+    overdue: () => (
+      <div key="overdue" data-exec-overdue-top>
+        <OverdueCard ov={ov} entries={inZone(entries, 'service')} tenant={tenant} profile={profile} />
+      </div>
+    ),
     alert: () => <AlertZone key="alert" alerts={alerts} ov={ov} resolveLink={resolveLink} />,
     schedule: () => <ScheduleZone key="schedule" entries={entries} tenantId={tenantId} profileId={profileId} role={profile?.role} resolveLink={resolveLink} today={today} />,
     plan: () => <PlanZone key="plan" ov={ov} entries={entries} plan={plan} resolveLink={resolveLink} />,
@@ -333,6 +343,10 @@ export default function ExecutiveHome({ scopedKeys = [], navigate, profile, tena
   // จัดแถวบนจอกว้าง (lg) ให้เป็นสัดส่วน · มือถือเรียงลงตามลำดับเดิม · โซนที่ไม่อยู่ใน ZONE_ROWS ต่อท้ายเต็มแถวเอง ไม่หายเงียบ
   const rows = [...ZONE_ROWS.map((row) => row.filter((z) => shown.includes(z))), ...shown.filter((z) => !ZONE_ROWS.flat().includes(z)).map((z) => [z])]
     .filter((row) => row.length > 0)
+  // เงื่อนไขเดียวกับที่ ExecServiceZone ใช้ตัดสินว่ามีงานบริการประชาชนให้แสดง (คำร้อง หรือคำขอ E-Service)
+  const hasCitizenService = inZone(entries, 'service').some((e) => e.key === 'complaints' || e.isCitizenService)
+  const overdueAt = hasCitizenService ? rows.findIndex((row) => row.some((z) => OVERDUE_BEFORE.includes(z))) : -1
+  if (overdueAt >= 0) rows.splice(overdueAt, 0, ['overdue'])
 
   // relative: span sr-only (position:absolute) ของตัวเลขต้องอิงกล่องนี้ ไม่งั้นไปอิง body แล้วดันความสูงเอกสาร
   // จนเกิดแถบเลื่อนซ้อน 2 ชั้น (main เลื่อน + ทั้งหน้าเลื่อน) — เจอจริงตอนตรวจ E2 บนจอ 1280px

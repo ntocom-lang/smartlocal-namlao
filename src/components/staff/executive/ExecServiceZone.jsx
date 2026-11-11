@@ -8,7 +8,7 @@ import {
 } from '../../../lib/executiveData'
 import { useExecRpc } from '../../../hooks/useExecRpc'
 import { DeltaLine, ExecSection, FormulaPanel, InfoButton, LoadingLine, SectionError, SubHead } from './ExecParts'
-import { ChannelBlock, BottleneckBlock, OverdueCard, QualityCards, SatisfactionBlock, TransportBlock, VillageBlock } from './ExecServiceBlocks'
+import { ChannelBlock, BottleneckBlock, QualityCards, SatisfactionBlock, TransportBlock, VillageBlock } from './ExecServiceBlocks'
 import { execIcon } from './execIcons'
 
 // โซน ② งานบริการประชาชน — ใหญ่สุดของห้อง
@@ -440,8 +440,8 @@ export default function ExecServiceZone({ entries, tenant, profileId, isModuleEn
         <span className="text-[11px] text-slate-400" data-exec-range>{execRangeText(range)}</span>
       </div>
 
-      {/* ②-1 ชีพจร: เลยกำหนด (ใหญ่สุด) → เรื่องใหม่/ยังไม่เสร็จ/เสร็จ → % ทันกำหนด + คะแนนพึงพอใจ */}
-      <OverdueCard ov={ov} entries={entries} />
+      {/* ②-1 ชีพจร: เรื่องใหม่/ยังไม่เสร็จ/เสร็จ → % ทันกำหนด + คะแนนพึงพอใจ
+          การ์ด "เลยกำหนด" ย้ายขึ้นไปเป็นแถวของตัวเองเหนือ ③ สัญญาณเตือนใน ExecutiveHome (เจ้าของระบบสั่ง 2026-11-11 ให้นายกเห็นก่อน) */}
       <PulseBlock ctx={ctx} hasComplaints={hasComplaints} hasDocs={hasDocs} entries={entries} formulaId={formulaId} onToggleFormula={toggleFormula} />
       <QualityCards ov={ov} entries={entries} rangeText={execRangeText(range)} compareText={`${EXEC_COMPARE_LABELS[period]} (${execRangeText(prev)})`} />
 
