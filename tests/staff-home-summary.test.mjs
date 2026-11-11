@@ -3,8 +3,9 @@
 //
 // จุดที่ต้องกันที่สุดคือ todoState(): ถ้าตัดสินผิดจะขึ้น "ไม่มีงานค้าง" ทั้งที่ยังมีงานเลยกำหนด (ไฟเขียวปลอม)
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
-  bucketComplaintDue, groupMyEvents, normalizeWorkload, shortTime, todoState,
+  DUE_WORK_KEYS, bucketComplaintDue, dueWorkCount, dueWorkHint, groupMyEvents, normalizeWorkload, shortTime, todoState,
 } from '../src/lib/staffHomeSummary.js'
 
 let cases = 0
@@ -138,6 +139,80 @@ test('todoState: ไม่มีงานเร่งแต่ยังถือ
 test('todoState: บัญชีที่ไม่ได้ใช้สรุป (summaryStatus ว่าง) ตัดสินจาก badge อย่างเดียว', () => {
   assert.equal(todoState({ badgeStatuses: ['ok'], badgeCounts: [0], summaryStatus: null, due: calm }), 'clear')
   assert.equal(todoState({ badgeStatuses: ['loading'], badgeCounts: [0], summaryStatus: null, due: calm }), 'loading')
+})
+
+// ── งานที่ "ถึงกำหนด" ของแผนพัฒนา/โครงการก่อสร้าง (การ์ด "ต้องทำตอนนี้" + ป้ายเมนู) ──────────────────
+
+test('dueWorkCount: เฉพาะสถานะ ok ถึงมีเลข · loading/error = 0 (ไม่ใช้เลขเก่า) · ค่าผิดรูป = 0', () => {
+  assert.deepEqual(DUE_WORK_KEYS, ['local-plan', 'projects'])
+  assert.equal(dueWorkCount('local-plan', { status: 'ok', notStarted: 3, pastEnd: 2 }), 5)
+  assert.equal(dueWorkCount('projects', { status: 'ok', awaitingInspection: 2, overdue: 1, total: 3 }), 3)
+  assert.equal(dueWorkCount('projects', { status: 'ok', awaitingInspection: 2, overdue: 1 }), 3, 'ไม่ส่ง total ก็บวกให้เอง')
+  for (const key of DUE_WORK_KEYS) {
+    for (const status of ['loading', 'error', undefined]) assert.equal(dueWorkCount(key, { status, notStarted: 9, pastEnd: 9, total: 9 }), 0, `${key} ${status}`)
+    assert.equal(dueWorkCount(key, undefined), 0)
+    assert.equal(dueWorkCount(key, { status: 'ok', notStarted: -4, pastEnd: 'x', total: NaN, awaitingInspection: null, overdue: -1 }), 0)
+  }
+  assert.equal(dueWorkCount('infra', { status: 'ok', total: 5 }), 0, 'คีย์อื่นไม่ใช่เลขชุดนี้')
+})
+
+test('dueWorkHint: ตัดส่วนที่เป็น 0 · แผนพัฒนาบอกเดือนที่นับถึง · ไม่ใช้คำว่า "ระเบียบ" (เดือนในแผนเป็นกำหนดที่ อปท. ตั้งเอง)', () => {
+  const plan = { status: 'ok', notStarted: 3, pastEnd: 2, monthLabel: 'ตุลาคม 2569' }
+  assert.equal(dueWorkHint('local-plan', plan),
+    'ถึงเดือนเริ่มตามแผนดำเนินงานแล้วยังไม่บันทึกผล 3 · เลยเดือนสิ้นสุดยังไม่ปิดผล 2 (นับถึงสิ้นตุลาคม 2569)')
+  assert.equal(dueWorkHint('local-plan', { ...plan, pastEnd: 0 }), 'ถึงเดือนเริ่มตามแผนดำเนินงานแล้วยังไม่บันทึกผล 3 (นับถึงสิ้นตุลาคม 2569)')
+  assert.equal(dueWorkHint('local-plan', { ...plan, notStarted: 0 }), 'เลยเดือนสิ้นสุดยังไม่ปิดผล 2 (นับถึงสิ้นตุลาคม 2569)')
+  assert.doesNotMatch(dueWorkHint('local-plan', plan), /ระเบียบ/)
+  assert.equal(dueWorkHint('projects', { status: 'ok', awaitingInspection: 2, overdue: 1 }), 'งวดรอตรวจรับ 2 · เลยกำหนด 1')
+  assert.equal(dueWorkHint('projects', { status: 'ok', awaitingInspection: 0, overdue: 4 }), 'เลยกำหนด 4')
+  assert.equal(dueWorkHint('projects', { status: 'ok', awaitingInspection: 5, overdue: 0 }), 'งวดรอตรวจรับ 5')
+  assert.equal(dueWorkHint('projects', undefined), '')
+})
+
+test('todoState: การ์ดถึงกำหนดยังโหลด = loading · พัง = error · มีเลข = pending (ไฟเขียวไม่ขึ้นก่อนรู้ครบ)', () => {
+  assert.equal(todoState({ badgeStatuses: ['ok', 'loading'], badgeCounts: [0, 0], summaryStatus: null, due: calm }), 'loading')
+  assert.equal(todoState({ badgeStatuses: ['ok', 'error'], badgeCounts: [0, 0], summaryStatus: null, due: calm }), 'error')
+  assert.equal(todoState({ badgeStatuses: ['ok', 'ok'], badgeCounts: [0, dueWorkCount('projects', { status: 'ok', total: 2 })], summaryStatus: null, due: calm }), 'pending')
+  assert.equal(todoState({ badgeStatuses: ['ok', 'ok'], badgeCounts: [0, dueWorkCount('projects', { status: 'ok', total: 0 })], summaryStatus: null, due: calm }), 'clear')
+})
+
+// ซอร์ส: ป้ายเมนูทุกจุด (ซ้าย/ลิ้นชัก/แท็บเมนูมือถือ) ได้เลขชุดเดียวกับการ์ด · ส่วน "งานที่เปิดอยู่" ยังนับ "ยังไม่ปิด" ตามเดิม
+const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
+const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+const dashboardPage = stripComments(read('src/pages/StaffDashboard.jsx'))
+const homeCard = stripComments(read('src/components/staff/StaffOperationalDashboard.jsx'))
+
+test('StaffDashboard: ป้ายเมนูซ้าย/ลิ้นชัก/กริดแท็บเมนูใช้ชุด menuWorkCounts (เลขถึงกำหนดทับเลขยังไม่ปิด) · สถานะผิดพลาดของสองคีย์ทับของเดิม', () => {
+  assert.match(dashboardPage, /const menuWorkCounts = \{ \.\.\.departmentWorkCounts, \.\.\.dueBadgeCounts \}/)
+  assert.match(dashboardPage, /const drawerBadges = \{ \.\.\.menuWorkCounts,/)
+  assert.match(dashboardPage, /openWorkCounts=\{menuWorkCounts\}/)
+  assert.doesNotMatch(dashboardPage, /openWorkCounts=\{departmentWorkCounts\}/)
+  assert.match(dashboardPage, /badges=\{drawerBadges\}/)
+  assert.match(dashboardPage, /const homeWorkStatus = \{ \.\.\.workStatus, \.\.\.dueStatuses \}/)
+  assert.match(dashboardPage, /Object\.entries\(homeWorkStatus\)/)
+  assert.match(dashboardPage, /workStatus=\{homeWorkStatus\}/)
+  assert.match(dashboardPage, /dueWork=\{dueWorkState\}/)
+})
+
+test('StaffDashboard: "งานที่เปิดอยู่" ยังรับ departmentWorkCounts ตามเดิม (นับ ยังไม่ปิด 3 คีย์) · ดึงเลขถึงกำหนดแบบหน่วง ≥5 นาที + ออกจากโมดูลของมันเอง', () => {
+  assert.match(dashboardPage, /counts: departmentWorkCounts, errors: departmentWorkErrors/)
+  assert.match(dashboardPage, /DEPARTMENT_WORK_SOURCES = \[[\s\S]*?key: 'local-plan', table: 'local_dev_plans'[\s\S]*?key: 'projects', table: 'civil_projects'/)
+  assert.match(dashboardPage, /const DUE_WORK_MIN_GAP_MS = 5 \* 60_000/)
+  assert.match(dashboardPage, /Date\.now\(\) - track\.doneAt < DUE_WORK_MIN_GAP_MS/)
+  assert.match(dashboardPage, /DUE_WORK_KEYS\.includes\(track\.module\) && track\.module !== activeModule/)
+  // พลาด = error ทุกคีย์ ไม่ตกเป็น 0 · รอบที่พลาดไม่ตั้งเวลา
+  assert.match(dashboardPage, /value && !value\.error \? \{ status: 'ok', \.\.\.value \} : \{ status: 'error' \}/)
+  assert.match(dashboardPage, /keys\.map\(key => \[key, \{ status: 'error' \}\]\)/)
+  assert.match(dashboardPage, /every\(item => item\.status === 'ok'\)\) track\.doneAt = Date\.now\(\)/)
+})
+
+test('หน้าแรก: การ์ด "ต้องทำตอนนี้" มี local-plan + projects · "งานที่เปิดอยู่" ยังมีครบ 3 คีย์ · ไม่ใช้คำว่า "ตามระเบียบ/ผิดระเบียบ" ในข้อความแผนพัฒนา', () => {
+  assert.match(homeCard, /const WORK_CARDS = \[[\s\S]*?key: 'local-plan', hint: \(\{ due \}\) => dueWorkHint\('local-plan', due\)[\s\S]*?key: 'projects', hint: \(\{ due \}\) => dueWorkHint\('projects', due\)/)
+  assert.match(homeCard, /const OPEN_WORK_CARDS = \[\s*\{ key: 'local-plan'[\s\S]*?\{ key: 'infra'[\s\S]*?\{ key: 'projects'/)
+  assert.match(homeCard, /count: Number\(openWork\.counts\?\.\[card\.key\]\) \|\| 0/)
+  assert.match(homeCard, /const cardBadges = \{ \.\.\.menuBadges\(\{ pendingCount, newComplaintCount, patientWorkCount \}\), \.\.\.dueBadges \}/)
+  const hints = read('src/lib/staffHomeSummary.js')
+  assert.doesNotMatch(hints.slice(hints.indexOf('export function dueWorkHint')), /ตามระเบียบ|ผิดระเบียบ/)
 })
 
 console.log(`\n${cases} cases passed`)

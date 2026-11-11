@@ -93,7 +93,7 @@
     "test:signing-setup": "node tests/signing-setup.playwright.mjs",
     "test:departments-tab": "node tests/admin-departments-tab.test.mjs",
     "test:waste-schedule": "node tests/waste-schedule.test.mjs && node tests/waste-schedule-poster.test.mjs",
-    "test:construction": "node tests/construction-report.test.mjs && node tests/construction-report-print.test.mjs && node tests/construction-report-ui.test.mjs && node tests/construction-lifecycle-ui.test.mjs && node tests/construction-installments.test.mjs && node tests/construction-lifecycle-print.test.mjs",
+    "test:construction": "node tests/construction-report.test.mjs && node tests/construction-report-print.test.mjs && node tests/construction-report-ui.test.mjs && node tests/construction-lifecycle-ui.test.mjs && node tests/construction-installments.test.mjs && node tests/construction-lifecycle-print.test.mjs && node tests/construction-due-work.test.mjs",
     "test:construction:layout": "node tests/construction-report-layout.test.mjs",
     "test:construction:print-layout": "node tests/construction-lifecycle-print-layout.test.mjs",
     "test:construction:lifecycle": "node tests/construction-lifecycle.test.mjs",

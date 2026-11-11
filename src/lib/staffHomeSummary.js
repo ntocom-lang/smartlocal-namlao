@@ -92,3 +92,43 @@ export function todoState({ badgeStatuses, badgeCounts, summaryStatus, due }) {
   if (badgeTotal > 0 || (due?.overdue ?? 0) > 0 || (due?.soon ?? 0) > 0) return 'pending'
   return (due?.open ?? 0) > 0 ? 'holding' : 'clear'
 }
+
+// ── งานที่ "ถึงกำหนด" ของโมดูลรายกอง (แผนพัฒนา / โครงการก่อสร้าง) ────────────────────────────────
+// ตัวเลขชุดเดียวกันขึ้นทั้งการ์ด "ต้องทำตอนนี้" และป้ายเมนู (ซ้าย/ลิ้นชัก/แท็บเมนูมือถือ) — คำนวณที่ staffDueWork.js
+// ต่างจาก "งานที่เปิดอยู่" (DEPARTMENT_WORK_SOURCES ใน StaffDashboard) ซึ่งนับ "ยังไม่ปิด" ทั้งหมดและไม่ใช่งานเร่งด่วน
+export const DUE_WORK_KEYS = ['local-plan', 'projects']
+
+const countOf = v => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.floor(Number(v)) : 0)
+
+/** จำนวนที่ขึ้นเป็นป้าย/ตัวเลขบนการ์ด — ยังไม่โหลด/โหลดพลาด = 0 (ผู้เรียกดูสถานะแยกเพื่อไม่ขึ้นไฟเขียวปลอม) */
+export function dueWorkCount(key, detail) {
+  if (detail?.status !== 'ok') return 0
+  if (key === 'local-plan') return countOf(detail.notStarted) + countOf(detail.pastEnd)
+  if (key === 'projects') return countOf(detail.total) || countOf(detail.awaitingInspection) + countOf(detail.overdue)
+  return 0
+}
+
+/**
+ * ข้อความใต้ชื่อบนการ์ด — ตัดส่วนที่เป็น 0 ออก
+ * ⚠️ แผนพัฒนา: เดือนในแผนการดำเนินงานเป็นกำหนดที่ อปท. ตั้งเอง ไม่ใช่กำหนดตามระเบียบ — ห้ามใช้คำว่า "ตามระเบียบ/ผิดระเบียบ"
+ */
+export function dueWorkHint(key, detail) {
+  if (key === 'local-plan') {
+    const parts = []
+    const notStarted = countOf(detail?.notStarted)
+    const pastEnd = countOf(detail?.pastEnd)
+    if (notStarted > 0) parts.push(`ถึงเดือนเริ่มตามแผนดำเนินงานแล้วยังไม่บันทึกผล ${notStarted}`)
+    if (pastEnd > 0) parts.push(`เลยเดือนสิ้นสุดยังไม่ปิดผล ${pastEnd}`)
+    const asOf = detail?.monthLabel ? ` (นับถึงสิ้น${detail.monthLabel})` : ''
+    return parts.join(' · ') + asOf
+  }
+  if (key === 'projects') {
+    const parts = []
+    const awaiting = countOf(detail?.awaitingInspection)
+    const overdue = countOf(detail?.overdue)
+    if (awaiting > 0) parts.push(`งวดรอตรวจรับ ${awaiting}`)
+    if (overdue > 0) parts.push(`เลยกำหนด ${overdue}`)
+    return parts.join(' · ')
+  }
+  return ''
+}

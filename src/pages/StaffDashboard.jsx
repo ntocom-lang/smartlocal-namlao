@@ -13,6 +13,7 @@ import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/c
 import { useTenant } from '../contexts/TenantContext'
 import { PATIENT_TRANSPORT_MODULE_KEY } from '../lib/patientTransport'
 import { recordUsage, safeLocalStorage } from '../lib/staffHomeFrequent'
+import { DUE_WORK_KEYS, dueWorkCount } from '../lib/staffHomeSummary'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import FinishComplaintDialog from '../components/complaints/FinishComplaintDialog'
@@ -183,12 +184,17 @@ function canDeleteRequests(role) {
 
 // งานค้าง = รายการที่ยังไม่ปิดตามสถานะเดิมของโมดูล ไม่ใช่จำนวนข้อมูลทั้งหมด
 // 1 โครงการนับครั้งเดียว ไม่บวกซ้ำด้วยรายงานรายสัปดาห์ · ตารางขยะ/ประวัติน้ำไม่มีสถานะงานค้าง
+// ⚠️ ใช้กับส่วน "งานที่เปิดอยู่" ของหน้าแรก (+ ป้ายเมนูของ infra) เท่านั้น — ป้ายเมนูของ local-plan / projects ใช้เลข "ถึงกำหนด"
+//    จาก src/lib/staffDueWork.js แทน (state dueWork ด้านล่าง) · ตั้งเป็น "ยังไม่ปิด" ทั้งหมดอีกไม่ได้โดยไม่ทำให้ไฟเขียวหน้าแรกไม่ขึ้นอีกเลย
 const DEPARTMENT_WORK_SOURCES = [
   { key: 'local-plan', table: 'local_dev_plans', statuses: ['draft'] },
   { key: 'local-plan', table: 'local_op_plans', statuses: ['draft'] },
   { key: 'infra', table: 'infrastructure_works', statuses: ['planned', 'in_progress'] },
   { key: 'projects', table: 'civil_projects', statuses: ['planned', 'approved', 'in_progress', 'suspended'] },
 ]
+
+// ห่างอย่างน้อยกี่มิลลิวินาทีต่อรอบที่สำเร็จ ก่อนดึงตัวเลข "ถึงกำหนด" ซ้ำเมื่อกลับมาโฟกัส (ข้อมูลหนักกว่านับ HEAD)
+const DUE_WORK_MIN_GAP_MS = 5 * 60_000
 
 // เมนูที่ช่างเห็น (TECHNICIAN_MODULE_KEYS) และตรรกะกรองเมนูตามบทบาท/สิทธิ์ ย้ายไป src/lib/staffMenuAccess.js
 // เพื่อให้ห้องผู้บริหาร (/executive) ใช้ชุดเดียวกัน — ดู staffMenuAccess()
@@ -2424,6 +2430,11 @@ export default function StaffDashboard() {
   const [newComplaintCount, setNewComplaintCount] = useState(0)
   const [patientWorkBadge, setPatientWorkBadge] = useState({ tenantId: null, profileId: null, count: 0 })
   const [departmentWork, setDepartmentWork] = useState({ scopeKey: null, counts: {}, errors: {} })
+  // งานที่ "ถึงกำหนด" ของแผนพัฒนา/โครงการก่อสร้าง (ป้ายเมนู + การ์ด "ต้องทำตอนนี้") — แยกจาก departmentWork ที่นับ "ยังไม่ปิด"
+  // data[key] = { status: 'ok' | 'error', ...ตัวเลข } · ผูกกับ scopeKey ชุดเดียวกับ departmentWork (สลับ อปท./ผู้ใช้/สิทธิ์ = ใช้เลขเก่าไม่ได้)
+  const [dueWork, setDueWork] = useState({ scopeKey: null, data: {} })
+  // เวลาที่ผลชุดล่าสุดของ scope นี้ลงจอ + โมดูลที่เปิดอยู่รอบก่อน — อยู่ใน ref เพื่อข้ามรอบ effect (ไม่ดึงซ้ำทุกครั้งที่สลับเมนู)
+  const dueFetchRef = useRef({ scopeKey: null, doneAt: 0, module: null })
   // สถานะการโหลดของตัวเลข badge ทั้งสามตัว ('loading' | 'ok' | 'error') ให้หน้าแรกแยกออกว่าเลข 0 คือ
   // "ไม่มีงานค้างจริง" หรือ "ยังไม่รู้" — ตัวเลขเริ่มที่ 0 เสมอ ถ้าไม่มีสถานะนี้หน้าแรกจะขึ้น "ไม่มีงานค้าง" ผิดๆ
   const [workStatus, setWorkStatus] = useState({ inbox: 'loading', complaints: 'loading', [PATIENT_TRANSPORT_MODULE_KEY]: 'loading' })
@@ -2454,6 +2465,15 @@ export default function StaffDashboard() {
   ])
   const departmentWorkCounts = departmentWork.scopeKey === departmentWorkScopeKey ? departmentWork.counts : {}
   const departmentWorkErrors = departmentWork.scopeKey === departmentWorkScopeKey ? departmentWork.errors : {}
+
+  // ── งานที่ "ถึงกำหนด" ของแผนพัฒนา/โครงการก่อสร้าง (การ์ด "ต้องทำตอนนี้" + ป้ายเมนูทุกจุด) ──
+  // เฉพาะคีย์ที่บัญชีนี้เห็นในเมนู · ยังไม่ได้ผลของบริบทนี้ = 'loading' (ไม่ใช่ 0 — หน้าแรกจะได้ไม่ขึ้นไฟเขียวปลอม)
+  // ป้ายเมนูของสองคีย์นี้ใช้เลขชุดนี้แทนเลข "ยังไม่ปิด" ของ departmentWork (ที่ยังใช้ในส่วน "งานที่เปิดอยู่" ของหน้าแรก)
+  const dueWorkKeys = DUE_WORK_KEYS.filter(key => visibleGroups.some(group => group.items.some(item => item.key === key)))
+  const dueWorkData = dueWork.scopeKey === departmentWorkScopeKey ? dueWork.data : {}
+  const dueWorkState = Object.fromEntries(dueWorkKeys.map(key => [key, dueWorkData[key] ?? { status: 'loading' }]))
+  const dueStatuses = Object.fromEntries(dueWorkKeys.map(key => [key, dueWorkState[key].status]))
+  const dueBadgeCounts = Object.fromEntries(dueWorkKeys.map(key => [key, dueWorkCount(key, dueWorkState[key])]))
 
   useEffect(() => {
     const [municipalityId, profileId, profileRole, departmentId, moduleKeys] = JSON.parse(departmentWorkScopeKey)
@@ -2515,6 +2535,62 @@ export default function StaffDashboard() {
       document.removeEventListener('visibilitychange', onReturn)
     }
   }, [departmentWorkScopeKey, activeModule]) // ออกจากโมดูลหลังปิดงานแล้ว ให้นับใหม่ทันที
+
+  // ข้อมูลหนักกว่านับ HEAD (หลายตาราง + ข้อมูลวงจรโครงการ) จึงไม่ poll: ดึงตอนเริ่ม · ทันทีที่ "ออกจากโมดูลของมันเอง"
+  // (ปิดงาน/บันทึกผลแล้วเลขต้องลด) · และเมื่อกลับมาที่แท็บ/โฟกัส โดยห่างจากรอบที่สำเร็จครั้งก่อนอย่างน้อย 5 นาที
+  // รอบที่พลาดไม่ตั้งเวลา — ครั้งหน้าที่กลับมาโฟกัสลองใหม่ได้เลย (ป้ายผิดพลาดไม่ค้างเกินจำเป็น)
+  useEffect(() => {
+    const [municipalityId, profileId, profileRole, departmentId, moduleKeys] = JSON.parse(departmentWorkScopeKey)
+    if (!municipalityId || !profileId) return undefined
+    const keys = DUE_WORK_KEYS.filter(key => moduleKeys.split('|').includes(key))
+    if (!keys.length) return undefined
+    const track = dueFetchRef.current
+    if (track.scopeKey !== departmentWorkScopeKey) { track.scopeKey = departmentWorkScopeKey; track.doneAt = 0; track.module = null }
+    const leftOwnModule = DUE_WORK_KEYS.includes(track.module) && track.module !== activeModule
+    track.module = activeModule
+    let alive = true
+    let inFlight = false
+    let controller
+    const refresh = async (force = false) => {
+      if (!alive || inFlight || document.hidden) return
+      if (!force && Date.now() - track.doneAt < DUE_WORK_MIN_GAP_MS) return
+      inFlight = true
+      controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 20_000)
+      try {
+        // โหลดตอนใช้จริง — ไม่ลากตรรกะโครงการก่อสร้าง/แผนพัฒนาทั้งก้อนเข้าบันเดิลหลักของหน้าเจ้าหน้าที่
+        const { fetchLocalPlanDue, fetchConstructionDue } = await import('../lib/staffDueWork')
+        const results = await Promise.allSettled(keys.map(key => (key === 'local-plan'
+          ? fetchLocalPlanDue({ municipalityId, departmentId, signal: controller.signal })
+          : fetchConstructionDue({ tenantId: municipalityId, profile: { id: profileId, role: profileRole, department_id: departmentId }, signal: controller.signal }))))
+        if (!alive) return
+        const data = {}
+        results.forEach((result, index) => {
+          const value = result.status === 'fulfilled' ? result.value : null
+          // error / ตัวเลขไม่ครบ = 'error' เสมอ ห้ามตกเป็น 0 เงียบ
+          data[keys[index]] = value && !value.error ? { status: 'ok', ...value } : { status: 'error' }
+        })
+        if (Object.values(data).every(item => item.status === 'ok')) track.doneAt = Date.now()
+        setDueWork({ scopeKey: departmentWorkScopeKey, data })
+      } catch {
+        // โหลดไฟล์ staffDueWork ไม่ได้ (เน็ตหลุด/บันเดิลรุ่นเก่าหลัง deploy) = ไม่รู้ตัวเลข ไม่ใช่ 0
+        if (alive) setDueWork({ scopeKey: departmentWorkScopeKey, data: Object.fromEntries(keys.map(key => [key, { status: 'error' }])) })
+      } finally {
+        clearTimeout(timeout)
+        inFlight = false
+      }
+    }
+    const onReturn = () => { void refresh() }
+    void refresh(leftOwnModule)
+    window.addEventListener('focus', onReturn)
+    document.addEventListener('visibilitychange', onReturn)
+    return () => {
+      alive = false
+      controller?.abort()
+      window.removeEventListener('focus', onReturn)
+      document.removeEventListener('visibilitychange', onReturn)
+    }
+  }, [departmentWorkScopeKey, activeModule])
 
   useEffect(() => {
     _customDocTypes = (tenant?.fee_schedule?._custom_types || []).map(t => ({
@@ -2711,10 +2787,15 @@ export default function StaffDashboard() {
   // หน้าแยก (ศูนย์ข้อมูล) navigate · นอกนั้นสลับโมดูล · แล้วปิดลิ้นชักทุกกรณี
   // closeDrawer ต้อง useCallback — effect ในลิ้นชักผูกกับมัน ถ้าเปลี่ยนทุกรอบ render โฟลกัสจะถูกดึงกลับทุกครั้ง
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
-  const drawerBadges = { ...departmentWorkCounts, inbox: pendingCount, complaints: newComplaintCount, [PATIENT_TRANSPORT_MODULE_KEY]: patientWorkCount }
+  // ป้ายของโมดูลรายกอง: โครงสร้างพื้นฐานใช้เลข "ยังไม่ปิด" (departmentWorkCounts) · แผนพัฒนา/โครงการก่อสร้างใช้เลข "ถึงกำหนด"
+  // (dueBadgeCounts ทับ) — เมนูซ้าย ลิ้นชัก กริดแท็บเมนู และการ์ด "ต้องทำตอนนี้" ต้องได้ชุดเดียวกัน จึงสร้างชุดเดียวแล้วส่งต่อ
+  // ยังไม่รู้/โหลดพลาด = ป้ายว่าง (0) ไม่ใช่เลข "ยังไม่ปิด" เก่า · สถานะผิดพลาดของสองคีย์นี้ทับสถานะของ departmentWork (navWorkErrors)
+  const menuWorkCounts = { ...departmentWorkCounts, ...dueBadgeCounts }
+  const homeWorkStatus = { ...workStatus, ...dueStatuses }
+  const drawerBadges = { ...menuWorkCounts, inbox: pendingCount, complaints: newComplaintCount, [PATIENT_TRANSPORT_MODULE_KEY]: patientWorkCount }
   const navWorkErrors = {
     ...departmentWorkErrors,
-    ...Object.fromEntries(Object.entries(workStatus).map(([key, status]) => [key, status === 'error'])),
+    ...Object.fromEntries(Object.entries(homeWorkStatus).map(([key, status]) => [key, status === 'error'])),
   }
   const drawerExtraItems = canOpenExecutive ? [EXECUTIVE_MENU_ITEM] : []
   function openFromDrawer(item) {
@@ -2868,8 +2949,10 @@ export default function StaffDashboard() {
                 pendingCount={pendingCount}
                 newComplaintCount={newComplaintCount}
                 patientWorkCount={patientWorkCount}
-                workStatus={workStatus}
-                // ป้ายเมนูของโมดูลรายกอง (แผนพัฒนา/โครงสร้างพื้นฐาน/โครงการก่อสร้าง) — ขึ้นหน้าแรกในส่วน "งานที่เปิดอยู่"
+                workStatus={homeWorkStatus}
+                // เลข "ถึงกำหนด" ของแผนพัฒนา/โครงการก่อสร้าง — ขึ้นการ์ด "ต้องทำตอนนี้" (ชุดเดียวกับป้ายเมนู)
+                dueWork={dueWorkState}
+                // เลข "ยังไม่ปิด" ของโมดูลรายกอง (แผนพัฒนา/โครงสร้างพื้นฐาน/โครงการก่อสร้าง) — ขึ้นส่วน "งานที่เปิดอยู่" (ไม่ใช่ชุดเดียวกับป้ายเมนูของสองคีย์แรก)
                 // ready = ผลชุดนี้เป็นของบริบทปัจจุบัน (อปท./ผู้ใช้/สิทธิ์) ไม่ใช่ค่าว่างตั้งต้น
                 openWork={{ ready: departmentWork.scopeKey === departmentWorkScopeKey, counts: departmentWorkCounts, errors: departmentWorkErrors }}
                 navigate={navigate}
@@ -2888,7 +2971,7 @@ export default function StaffDashboard() {
                 pendingCount={pendingCount}
                 newComplaintCount={newComplaintCount}
                 patientWorkCount={patientWorkCount}
-                openWorkCounts={departmentWorkCounts}
+                openWorkCounts={menuWorkCounts}
               />
             )}
             {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} currentUserRole={profile?.role} onRequestDeleted={refreshPendingBadge} />}

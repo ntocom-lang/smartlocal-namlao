@@ -322,6 +322,90 @@ export function suggestRegistryMatches(civilProject, registryProjects, years, { 
     .slice(0, limit)
 }
 
+// ── รายการที่ "ถึงกำหนดแต่ยังไม่บันทึกผล" (การ์ดหน้าแรกเจ้าหน้าที่ + ป้ายเมนู) ──────────────────────
+//
+// ⚠️ สำเนาของ supabase/functions/_shared/localPlanMonthlyReminder.ts (previousMonthBangkok / dueKindOf / countDueByDepartment)
+//    ที่ส่งแจ้งเตือน Telegram วันที่ 1 — เจ้าของระบบเลือกกติกาเดียวกัน (2569-11-09) ตัวเลขบนหน้าแรกจึงต้องเท่าข้อความในกลุ่ม
+//    Edge Function ดึงไฟล์นอก supabase/functions ไม่ได้จึงต้องมีสองชุด · tests/local-plan-monthly-reminder.test.mjs
+//    รันทั้งสองฝั่งด้วยข้อมูลชุดเดียวกันแล้วเทียบผล — แก้ฝั่งไหนต้องแก้อีกฝั่งในงานเดียวกัน
+// ⚠️ "ถึงกำหนด" = เดือนเริ่ม/เดือนสิ้นสุดที่ อปท. ตั้งเองในแผนการดำเนินงาน ไม่ใช่กำหนดตามระเบียบ — ห้ามเขียนบนหน้าจอว่า "ผิดระเบียบ/ตามระเบียบ"
+
+// ต้องตรงกับ MONTHS_TH_FULL ใน supabase/functions/_shared/localPlanMonthlyReminder.ts (เทสต์เทียบให้)
+export const MONTHS_TH_FULL = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+]
+
+const pad2 = n => String(n).padStart(2, '0')
+
+/**
+ * เดือนที่ "เพิ่งจบ" ตามเวลาไทย ณ เวลา now + ปีงบ/เดือนที่ของมัน — นับถึงสิ้นเดือนนั้น: รายการที่เดือนเริ่ม ≤ เดือนนั้นถือว่า "ถึงกำหนด"
+ * ไม่อ่านนาฬิกาเครื่อง (ผู้เรียกส่ง now) · ใช้เวลาไทยเสมอ ไม่ว่าเครื่องตั้งโซนเวลาไหน
+ * ⚠️ 1–31 ต.ค.: เดือนที่จบคือ ก.ย. (เดือนที่ 12 ของปีงบที่เพิ่งปิด) ⇒ ยังนับรายการของปีงบเก่าจนถึงสิ้นเดือน ตั้งแต่ 1 พ.ย. จึงย้ายไปปีงบใหม่
+ *    ตรงกับ Telegram โดยตั้งใจ (ตามรายการปีที่เพิ่งปิดก่อนรายงานผล ธ.ค.) — ไม่ใช่บั๊ก
+ * @returns {{ key: string, label: string, fiscalYear: number, fiscalMonth: number }} key = '2569-10' (พ.ศ. ปฏิทิน-เดือน)
+ */
+export function previousMonthBangkok(now) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit' }).formatToParts(now)
+  const ceYearNow = Number(parts.find(p => p.type === 'year')?.value)
+  const monthNow = Number(parts.find(p => p.type === 'month')?.value)
+  const index = ceYearNow * 12 + (monthNow - 1) - 1
+  const ceYear = Math.floor(index / 12)
+  const month = (index % 12) + 1
+  const beYear = ceYear + 543
+  return {
+    key: `${beYear}-${pad2(month)}`,
+    label: `${MONTHS_TH_FULL[month - 1]} ${beYear}`,
+    fiscalYear: month >= 10 ? beYear + 1 : beYear,
+    fiscalMonth: month >= 10 ? month - 9 : month + 3,
+  }
+}
+
+const dueMonthOf = v => {
+  if (v === null || v === undefined || v === '') return null
+  const n = Number(v)
+  return Number.isInteger(n) && n >= 1 && n <= 12 ? n : null
+}
+
+/**
+ * รายการนี้ต้องเตือนไหม ณ สิ้นเดือนที่ fiscalMonth ของปีงบ → 'not_started' | 'past_end' | null
+ *   status = ผลที่กองกดเอง ('none' = ยังไม่กดเลย) · civilLinked = ผูกโครงการก่อสร้างและพบโครงการของปีงบนี้
+ *   - ผูกก่อสร้าง → ไม่เตือน (ระบบดึงผลจากงานก่อสร้างให้ กองกดเองไม่ได้ — canRecordProgress)
+ *   - ไม่ระบุเดือน → ไม่เตือน · 'none' และเดือนเริ่ม ≤ เดือนที่จบ → not_started · 'in_progress' และเดือนสิ้นสุด ≤ เดือนที่จบ → past_end
+ *   - done / not_done → บันทึกครบแล้ว ไม่เตือน
+ */
+export function dueKindOf({ item, status, civilLinked, fiscalMonth }) {
+  if (civilLinked) return null
+  const from = dueMonthOf(item?.month_from)
+  if (from === null) return null
+  const to = dueMonthOf(item?.month_to) ?? from
+  if (status === 'none') return from <= fiscalMonth ? 'not_started' : null
+  if (status === 'in_progress') return to <= fiscalMonth ? 'past_end' : null
+  return null
+}
+
+/**
+ * นับรายการแผนการดำเนินงานที่ถึงกำหนด (ชุดรายการที่มีผล = ฉบับประกาศแล้วของปีงบ ตาม effectiveItemSet)
+ * progressByLineage = { [lineage_id]: สถานะ หรือ แถวผล {status} } · civilRefs = Set/Array ของทะเบียนโครงการที่มีโครงการก่อสร้างของปีงบนั้นผูกอยู่
+ * departmentId = null → นับทุกรายการ (ผู้จัดการแผน) · ไม่ null → เฉพาะรายการที่ item.department_id ตรงกัน
+ * @returns {{ notStarted: number, pastEnd: number }}
+ */
+export function countDueItems({ opPlans, items, fiscalYear, fiscalMonth, progressByLineage = {}, civilRefs = null, departmentId = null } = {}) {
+  let notStarted = 0
+  let pastEnd = 0
+  for (const item of effectiveItemSet(opPlans, items, fiscalYear)) {
+    if (departmentId !== null && item.department_id !== departmentId) continue
+    const lineage = lineageOf(item)
+    const p = lineage ? progressByLineage?.[lineage] : null
+    const status = (typeof p === 'string' ? p : p?.status) || 'none'
+    const civilLinked = Boolean(item.dev_project_id) && hasKey(civilRefs, String(item.dev_project_id))
+    const kind = dueKindOf({ item, status, civilLinked, fiscalMonth })
+    if (kind === 'not_started') notStarted += 1
+    else if (kind === 'past_end') pastEnd += 1
+  }
+  return { notStarted, pastEnd }
+}
+
 // ── กำหนดเวลารายงานประจำปี (ข้อ 29(3)) ────────────────────────────────────────
 
 /** ประกาศผลภายในกี่วันนับแต่วันที่ผู้บริหารเสนอสภา/คณะกรรมการพัฒนา — ข้อ 29(3) ระเบียบฉบับที่ 3 พ.ศ. 2561 */
