@@ -45,6 +45,8 @@ export default function ComplaintNewsBatchDialog({ source = 'staff', candidates,
   const [headlineEdit, setHeadlineEdit] = useState(null)
   const [detailEdit, setDetailEdit] = useState('')
   const [statusOn, setStatusOn] = useState(true)
+  // QR + ลิงก์แจ้งเรื่องในแถบท้าย (ติ๊กไว้ก่อน) · ปิด = แถบท้ายเป็นข้อความขอบคุณ และข้อความที่แชร์ไม่มีลิงก์
+  const [linkOn, setLinkOn] = useState(true)
   const [durationEdit, setDurationEdit] = useState(null)
   const [mayorEdit, setMayorEdit] = useState(null)
   // ข้อมูลรายเรื่องที่โหลดตามหลัง (exec) และรูปที่โหลดแล้ว — คีย์ด้วย id
@@ -150,9 +152,9 @@ export default function ComplaintNewsBatchDialog({ source = 'staff', candidates,
   const infosKey = JSON.stringify(readyInfos)
   const model = useMemo(() => buildBatchNewsModel({
     items: readyInfos, tenantName, departmentName, categoryLabel, showStatus: statusOn, showDuration: durationEdit ?? undefined,
-    headline: headlineEdit ?? undefined, detail: detailEdit, reportUrl, executive,
+    headline: headlineEdit ?? undefined, detail: detailEdit, reportUrl: linkOn ? reportUrl : '', executive,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [infosKey, tenantName, departmentName, categoryLabel, statusOn, durationEdit, headlineEdit, detailEdit, reportUrl, executive])
+  }), [infosKey, tenantName, departmentName, categoryLabel, statusOn, durationEdit, headlineEdit, detailEdit, reportUrl, linkOn, executive])
   const deferredModel = useDeferredValue(model)
 
   const photoDataUrls = shown.map(entry => entry.dataUrl)
@@ -291,6 +293,11 @@ export default function ComplaintNewsBatchDialog({ source = 'staff', candidates,
               แสดง "{model.durationLabel || 'ใช้เวลาไม่เกิน — วันทำการ'}"
             </label>
             <p className="text-[11px] text-gray-500">ป้ายเวลาแสดงได้เมื่อทุกเรื่องในภาพเสร็จทันกำหนด · มีเรื่องเกินกำหนดแม้เรื่องเดียวจะไม่มีป้ายนี้</p>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" className="h-4 w-4 accent-orange-600" checked={linkOn} onChange={e => setLinkOn(e.target.checked)} />
+              แสดง QR และลิงก์แจ้งเรื่อง
+            </label>
+            {!linkOn && <p className="text-[11px] text-gray-500">ไม่แสดง = แถบท้ายเป็น "ขอบคุณทุกการแจ้งปัญหาจากประชาชน · มุ่งสู่เมืองอัจฉริยะ (Smart City)"</p>}
             {hasMayorData && (
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input type="checkbox" className="h-4 w-4 accent-orange-600" checked={mayorOn} onChange={e => setMayorEdit(e.target.checked)} />
