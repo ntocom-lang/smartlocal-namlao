@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase, supabaseUrl } from '../../lib/supabase'
 import { fetchImageAsDataUrl } from '../../lib/driveStorage'
-import { svgToPngFile, withNewsPhotoUrl } from '../../lib/complaintNewsImage'
+import { cutoutPlainBackground, svgToPngFile, withNewsPhotoUrl } from '../../lib/complaintNewsImage'
 
 // ตัวโหลดรูป + hook ที่กล่องภาพข่าวรายเรื่อง (ComplaintNewsDialog) กับกล่องภาพข่าวรวม (ComplaintNewsBatchDialog) ใช้ร่วมกัน
 // แยกจากไฟล์คอมโพเนนต์ (newsDialogParts.jsx) เพราะ fast-refresh ต้องการให้ไฟล์คอมโพเนนต์ export แต่คอมโพเนนต์
@@ -25,6 +25,65 @@ async function shrinkDataUrl(dataUrl) {
     context.fillRect(0, 0, canvas.width, canvas.height)
     context.drawImage(image, 0, 0, canvas.width, canvas.height)
     return canvas.toDataURL('image/jpeg', 0.86)
+  } catch {
+    return dataUrl
+  }
+}
+
+const EXEC_SIDE = 720
+const FRAME_BORDER = 10
+const FRAME_RADIUS = 30
+
+function roundedRectPath(context, x, y, w, h, r) {
+  context.beginPath()
+  context.moveTo(x + r, y)
+  context.arcTo(x + w, y, x + w, y + h, r)
+  context.arcTo(x + w, y + h, x, y + h, r)
+  context.arcTo(x, y + h, x, y, r)
+  context.arcTo(x, y, x + w, y, r)
+  context.closePath()
+}
+
+/**
+ * รูปนายกสำหรับภาพข่าว (เจ้าของสั่ง 2569-11-11 ให้ตัดพื้นหลังขาวออกแบบภาพข่าวต้นฉบับ):
+ *  - ฉากเรียบ (ตรวจด้วย cutoutPlainBackground) → PNG โปร่งใส ครอปชิดตัวคน ไม่มีที่ว่างเหนือหัว
+ *  - ฉากไม่เรียบ/ตัดแล้วเสี่ยงกินเสื้อ → PNG รูปเดิมในกรอบขาวมุมมน ไม่ตัดมั่ว
+ * ทำในเบราว์เซอร์ล้วน ไม่ส่งรูปออกไปบริการภายนอก · พังกลางทาง = ใช้รูปเดิม ภาพข่าวยังออกได้
+ */
+export async function prepareExecutivePhoto(dataUrl) {
+  try {
+    const image = new Image()
+    await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = dataUrl })
+    const scale = Math.min(1, EXEC_SIDE / Math.max(image.naturalWidth, image.naturalHeight))
+    const w = Math.max(1, Math.round(image.naturalWidth * scale))
+    const h = Math.max(1, Math.round(image.naturalHeight * scale))
+    const work = document.createElement('canvas')
+    work.width = w
+    work.height = h
+    const context = work.getContext('2d', { willReadFrequently: true })
+    if (!context) return dataUrl
+    context.drawImage(image, 0, 0, w, h)
+    const pixels = context.getImageData(0, 0, w, h)
+    const box = cutoutPlainBackground(pixels.data, w, h)
+    const out = document.createElement('canvas')
+    const outContext = out.getContext('2d')
+    if (!outContext) return dataUrl
+    if (box) {
+      context.putImageData(pixels, 0, 0)
+      out.width = box.w
+      out.height = box.h
+      outContext.drawImage(work, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h)
+    } else {
+      out.width = w + FRAME_BORDER * 2
+      out.height = h + FRAME_BORDER * 2
+      outContext.fillStyle = '#ffffff'
+      roundedRectPath(outContext, 0, 0, out.width, out.height, FRAME_RADIUS)
+      outContext.fill()
+      roundedRectPath(outContext, FRAME_BORDER, FRAME_BORDER, w, h, FRAME_RADIUS - FRAME_BORDER / 2)
+      outContext.clip()
+      outContext.drawImage(work, FRAME_BORDER, FRAME_BORDER)
+    }
+    return out.toDataURL('image/png')
   } catch {
     return dataUrl
   }
@@ -64,7 +123,9 @@ export function useNewsBranding(tenant) {
   useEffect(() => {
     if (!branding?.photo_url) return undefined
     let alive = true
-    loadImage(branding.photo_url).then(result => { if (alive) setMayorPhoto(result.dataUrl) })
+    loadImage(branding.photo_url)
+      .then(result => (result.dataUrl ? prepareExecutivePhoto(result.dataUrl) : null))
+      .then(dataUrl => { if (alive) setMayorPhoto(dataUrl) })
     return () => { alive = false }
   }, [branding?.photo_url])
 

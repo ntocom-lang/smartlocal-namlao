@@ -172,18 +172,18 @@ await test('ความสูงขั้นต่ำ 1350 · ข้อคว�
 const MAYOR = { name: 'นายสมศักดิ์ ใจดี', title: 'นายกเทศมนตรีตำบลสาธิต' }
 const headerTexts = svg => [...svg.matchAll(/<text x="([\d.]+)" y="[\d.]+" font-size="(\d+)" font-weight="(\d+)" fill="#ffffff"[^>]*>([^<]*)<\/text>/g)]
   .map(m => ({ x: Number(m[1]), size: Number(m[2]), bold: m[3] === '700', text: m[4] }))
-const PLATE_LEFT = 1080 - 64 - 280
+const PLATE_LEFT = 1080 - 64 - 320
 
 await test('บล็อกผู้บริหาร: เปิด = มีรูป(cover+clipPath) + ป้ายชื่อ/ตำแหน่ง · ปิด = เหมือนเดิมทุกพิกเซล', () => {
   const on = draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO })
   assert.ok(on.svg.includes('news-exec-clip'))
-  assert.match(on.svg, /<image href="data:image\/jpeg[^"]*" x="[\d.]+" y="40" width="150" height="180" preserveAspectRatio="xMidYMid slice" clip-path="url\(#news-exec-clip\)"\/>/)
+  assert.match(on.svg, /<image href="data:image\/jpeg[^"]*" x="[\d.]+" y="26" width="300" height="300" preserveAspectRatio="xMidYMax meet" clip-path="url\(#news-exec-clip\)"\/>/)
   assert.ok(has(on.svg, MAYOR.name) && has(on.svg, MAYOR.title))
-  // ป้ายขาวมุมมนอยู่ใต้รูป (y > 40+180) และไม่ล้นกรอบเนื้อหาด้านขวา
-  const plate = /<rect x="([\d.]+)" y="([\d.]+)" width="280" height="([\d.]+)" rx="22" fill="#ffffff"\/>/.exec(on.svg)
+  // ป้ายขาวขอบส้มทับช่วงล่างของรูป (ก้นรูป 26+300 อยู่ในป้าย) และไม่ล้นกรอบเนื้อหาด้านขวา
+  const plate = /<rect x="([\d.]+)" y="([\d.]+)" width="320" height="([\d.]+)" rx="26" fill="#ffffff"/.exec(on.svg)
   assert.ok(plate, 'ไม่พบป้ายชื่อ')
-  assert.ok(Number(plate[2]) > 220)
-  assert.ok(Number(plate[1]) + 280 <= 1080 - 64 + 0.01)
+  assert.ok(Number(plate[2]) > 200 && Number(plate[2]) < 326 && Number(plate[2]) + Number(plate[3]) > 326)
+  assert.ok(Number(plate[1]) + 320 <= 1080 - 64 + 0.01)
   // ปิด: ไม่ส่ง executive หรือส่ง null ได้ภาพเดียวกันทุกตัวอักษร และไม่มีร่องรอยของบล็อก
   const off = draw(base())
   const offNull = draw(base({ executive: null }), { executivePhotoDataUrl: PHOTO })
@@ -211,8 +211,8 @@ await test('บล็อกผู้บริหาร: ทุกข้อคว
   assert.ok(!svg.includes('<script') && svg.includes('&lt;script&gt;') && svg.includes('&amp;'))
   assert.ok(!svg.includes('"onload'))
   const longTitle = 'นายกองค์การบริหารส่วนตำบลที่มีชื่อยาวมากเป็นพิเศษเกินหนึ่งบรรทัดแน่นอน'
-  const short = /<rect [^>]*width="280" height="([\d.]+)" rx="22" fill="#ffffff"\/>/.exec(draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO }).svg)
-  const tall = /<rect [^>]*width="280" height="([\d.]+)" rx="22" fill="#ffffff"\/>/.exec(draw(base({ executive: { name: MAYOR.name, title: longTitle } }), { executivePhotoDataUrl: PHOTO }).svg)
+  const short = /<rect [^>]*width="320" height="([\d.]+)" rx="26" fill="#ffffff"/.exec(draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO }).svg)
+  const tall = /<rect [^>]*width="320" height="([\d.]+)" rx="26" fill="#ffffff"/.exec(draw(base({ executive: { name: MAYOR.name, title: longTitle } }), { executivePhotoDataUrl: PHOTO }).svg)
   assert.ok(Number(tall[1]) > Number(short[1]), 'ตำแหน่งยาวต้องตัดบรรทัดทำให้ป้ายสูงขึ้น')
 })
 
@@ -226,13 +226,99 @@ await test('บล็อกผู้บริหาร: ข้อความห
       assert.ok(t.x + measure(t.text, t.size, t.bold) <= PLATE_LEFT + 0.01, `ข้อความหัวทับบล็อกผู้บริหาร: ${t.text} (${t.x + measure(t.text, t.size, t.bold)} > ${PLATE_LEFT})`)
     }
     const headerBottom = Number(/M0 0H1080V([\d.]+)A/.exec(svg)[1]) + 44
-    const plate = /<rect [^>]*width="280" height="([\d.]+)" rx="22" fill="#ffffff"\/>/.exec(svg)
-    const plateY = Number(/<rect x="[\d.]+" y="([\d.]+)" width="280"/.exec(svg)[1])
+    const plate = /<rect [^>]*width="320" height="([\d.]+)" rx="26" fill="#ffffff"/.exec(svg)
+    const plateY = Number(/<rect x="[\d.]+" y="([\d.]+)" width="320" height="[\d.]+" rx="26" fill="#ffffff"/.exec(svg)[1])
     assert.ok(plateY + Number(plate[1]) < headerBottom, 'แถบหัวต้องสูงกว่าก้นป้าย')
   }
   // ปิดบล็อก: ข้อความหัวเดิมไม่ถูกย่อ (หัวข้อ 68 · บรรทัดนำ 28)
   const off = headerTexts(draw(base()).svg)
   assert.ok(off.some(t => t.size === 68) && off.some(t => t.size === 28))
+})
+
+await test('ป้ายชื่อนายก: ย่อขนาดให้จบบรรทัดเดียวก่อน ไม่ปล่อยคำท้ายตกบรรทัด · ยาวมากตัดที่ช่องว่างแบบสมดุล', () => {
+  // เคสจริง: "นาย ประยูร ท้าวใจแปง" ที่ 28pt ในป้าย 280 → "แปง" ตกไปยืนบรรทัดสองคนเดียว
+  // ตัววัดที่ไม่นับสระบน/ล่าง/วรรณยุกต์ (กินที่แนวนอนเป็นศูนย์ในฟอนต์จริง) — ตัววัดหลักนับทุกอักขระ ชื่อไทยจึงยาวเกินจริง
+  const thaiMeasure = (value, size, bold) => measure(value.replace(/[ัิ-ฺ็-๎]/g, ''), size, bold)
+  const name = 'นาย ประยูร ท้าวใจแปง'
+  const fit = News.fitPlateText(name, 276, 32, 24, true, thaiMeasure)
+  assert.deepEqual(fit.lines, [name])
+  assert.ok(fit.size >= 24 && fit.size < 32 && thaiMeasure(name, fit.size, true) <= 276)
+  // สั้นพอ = ขนาดเต็ม
+  assert.equal(News.fitPlateText('นายก', 276, 32, 24, true, measure).size, 32)
+  // ยาวเกินแม้ขนาดเล็กสุด + มีช่องว่าง = 2 บรรทัด ตัดที่ช่องว่างที่ทำให้สองบรรทัดใกล้กันที่สุด ทุกบรรทัดไม่ล้น
+  const long = News.fitPlateText('นายกองค์การบริหาร ส่วนตำบลคลองเกตุ', 276, 26, 20, false, measure)
+  assert.equal(long.size, 20)
+  assert.deepEqual(long.lines, ['นายกองค์การบริหาร', 'ส่วนตำบลคลองเกตุ'])
+  // ไม่มีช่องว่างที่ตัดแล้วพอดี 2 บรรทัด = ตัดตามคำ (wrapLines) ทุกบรรทัดยังไม่ล้น
+  const veryLong = News.fitPlateText('นายกองค์การบริหาร ส่วนตำบลคลองเกตุ อำเภอโคกสำโรง', 276, 26, 20, false, measure)
+  assert.ok(veryLong.lines.length >= 2)
+  for (const line of veryLong.lines) assert.ok(measure(line, 20, false) <= 276, line)
+  for (const line of long.lines) assert.ok(measure(line, 20, false) <= 276, line)
+  // ป้ายในภาพ: ชื่อ+ตำแหน่งปกติได้ 1 บรรทัดต่อค่า (กึ่งกลางป้าย x = 1080-64-160)
+  const svg = News.buildNewsSvg(base({ executive: { name, title: 'นายกเทศมนตรีตำบลน้ำเลา' } }), thaiMeasure, { executivePhotoDataUrl: PHOTO }).svg
+  const plateTexts = [...svg.matchAll(/<text x="856" [^>]*text-anchor="middle">([^<]*)<\/text>/g)].map(m => m[1])
+  assert.deepEqual(plateTexts, [name, 'นายกเทศมนตรีตำบลน้ำเลา'])
+})
+
+// รูปจำลอง: ฉากสีเดียว + "คน" (หัววงกลม + ลำตัวสี่เหลี่ยมจรดขอบล่าง)
+function portrait({ w = 80, h = 100, bg = [250, 250, 250], shirt = [30, 40, 90], noise = 0 } = {}) {
+  const data = new Uint8ClampedArray(w * h * 4)
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const head = (x - w / 2) ** 2 + (y - h * 0.35) ** 2 <= (w * 0.18) ** 2
+      const body = y >= h * 0.55 && x >= w * 0.2 && x < w * 0.8
+      const color = head ? [200, 150, 120] : body ? shirt : bg
+      const jitter = noise ? ((x * 7 + y * 13) % (noise * 2 + 1)) - noise : 0
+      const p = (y * w + x) * 4
+      data[p] = color[0] + jitter; data[p + 1] = color[1] + jitter; data[p + 2] = color[2] + jitter; data[p + 3] = 255
+    }
+  }
+  return { data, w, h }
+}
+const alphaAt = (img, x, y) => img.data[(y * img.w + x) * 4 + 3]
+
+await test('ตัดพื้นหลังรูปนายก: ฉากเรียบ = พื้นโปร่งใส ตัวคนทึบ + กรอบชิดตัวคน', () => {
+  const img = portrait({ noise: 4 })
+  const box = News.cutoutPlainBackground(img.data, img.w, img.h)
+  assert.ok(box, 'ฉากขาวเรียบต้องตัดได้')
+  assert.equal(alphaAt(img, 2, 2), 0)
+  assert.equal(alphaAt(img, 2, 98), 0) // มุมล่างซ้ายข้างลำตัว
+  assert.equal(alphaAt(img, 40, 35), 255) // หน้า
+  assert.equal(alphaAt(img, 40, 90), 255) // ลำตัว
+  // กรอบเริ่มที่ยอดหัว (ไม่มีที่ว่างเหนือหัว) และจรดขอบล่าง
+  assert.ok(box.y >= 18 && box.y <= 22, `ยอดหัว ${box.y}`)
+  assert.equal(box.y + box.h, 100)
+  // ฉากสีเดียวที่ไม่ใช่ขาว (ฟ้าแบบรูปติดบัตร) + เสื้อขาว ก็ตัดได้
+  const blue = portrait({ bg: [70, 130, 200], shirt: [240, 240, 240] })
+  assert.ok(News.cutoutPlainBackground(blue.data, blue.w, blue.h))
+})
+
+await test('ตัดพื้นหลังรูปนายก: ไม่แน่ใจ = ไม่ตัด (null) และไม่แตะพิกเซล', () => {
+  // เสื้อขาวบนฉากขาว — ลำตัวกลืนเป็นพื้นหลัง ห้ามตัดจนเสื้อหาย
+  const white = portrait({ shirt: [245, 245, 245] })
+  const before = Uint8ClampedArray.from(white.data)
+  assert.equal(News.cutoutPlainBackground(white.data, white.w, white.h), null)
+  assert.deepEqual(white.data, before)
+  // ฉากมีลาย (ถ่ายนอกสถานที่) — ขอบไม่ใช่สีเดียว
+  const busy = portrait()
+  for (let p = 0; p < busy.w * busy.h; p += 1) {
+    const x = p % busy.w
+    const y = (p - x) / busy.w
+    if (busy.data[p * 4 + 2] === 250) { busy.data[p * 4] = (x * 37 + y * 91) % 200; busy.data[p * 4 + 1] = (x * 53 + y * 17) % 220 }
+  }
+  assert.equal(News.cutoutPlainBackground(busy.data, busy.w, busy.h), null)
+  // ค่าผิดรูป
+  assert.equal(News.cutoutPlainBackground(null, 10, 10), null)
+  assert.equal(News.cutoutPlainBackground(new Uint8ClampedArray(16), 100, 100), null)
+})
+
+await test('static: รูปนายกผ่าน prepareExecutivePhoto (ตัดพื้นหลัง/กรอบสำรอง) ก่อนเข้าภาพข่าว · ไม่ส่งรูปออกนอกเครื่อง', async () => {
+  const shared = await readFile(new URL('../src/components/complaints/newsDialogData.js', import.meta.url), 'utf8')
+  assert.match(shared, /loadImage\(branding\.photo_url\)\s*\.then\(result => \(result\.dataUrl \? prepareExecutivePhoto\(result\.dataUrl\) : null\)\)/)
+  const fn = shared.slice(shared.indexOf('export async function prepareExecutivePhoto'), shared.indexOf('export async function loadImage'))
+  assert.match(fn, /cutoutPlainBackground\(pixels\.data, w, h\)/)
+  assert.match(fn, /toDataURL\('image\/png'\)/) // PNG เท่านั้น — JPEG ไม่มีความโปร่งใส
+  assert.ok(!/fetch\(|supabase|https?:\/\//.test(fn), 'ตัดพื้นหลังต้องทำในเครื่องล้วน')
 })
 
 await test('static: ปุ่ม "ภาพข่าว" ผูกกับสถานะ closed ใน ComplaintsManager', async () => {
