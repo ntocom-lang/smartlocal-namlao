@@ -20,6 +20,8 @@ export { FONT_STACK, IMAGE_WIDTH, createCanvasMeasure, svgDataUrl, svgToPngFile 
 
 export const NEWS_MIN_HEIGHT = 1350
 export const MAX_NEWS_PHOTOS = 4
+// ภาพข่าวรวม: เลือกได้ไม่เกินกี่เรื่องต่อภาพ (ฝั่งผู้บริหารเรียก RPC ทีละเรื่อง จึงจำกัดไว้)
+export const MAX_BATCH_ITEMS = 12
 
 const MARGIN = 64
 const CONTENT_W = IMAGE_WIDTH - MARGIN * 2
@@ -27,6 +29,8 @@ const ORANGE = '#c2410c'
 const INK = '#1f2937'
 const MUTED = '#4b5563'
 const GAP = 16
+// แถวป้ายหมู่ใต้รูปของภาพข่าวรวม
+const CAPTION_H = 52
 // บล็อกผู้บริหารมุมขวาแถบหัว (แบบร่างที่เจ้าของรับรอง): กรอบรูป ~150×180 + ป้ายขาวใต้รูป
 const EXEC_PHOTO_W = 150
 const EXEC_PHOTO_H = 180
@@ -53,6 +57,12 @@ export function thaiLongDate(value) {
 }
 
 const dayKey = parts => `${parts.year}-${String(parts.month + 1).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+
+/** "2026-11-10" ตามเวลาไทย — อ่านวันไม่ได้คืนสตริงว่าง */
+export function bangkokDayKey(value) {
+  const parts = bangkokParts(value)
+  return parts ? dayKey(parts) : ''
+}
 
 /**
  * ติ๊ก "ใช้เวลา N วันทำการ" ให้เองเมื่อเสร็จทันกำหนด (ไม่มีกำหนด = ทัน) · เกินกำหนด = ไม่ติ๊กไว้ก่อน
@@ -153,29 +163,124 @@ export function buildNewsModel({
   }
 }
 
+// ───────── ภาพข่าวรวม (หลายเรื่องหมวดเดียวกัน เสร็จวันเดียวกัน → ภาพเดียว) ─────────
+
+/**
+ * จัดกลุ่มเรื่องที่เป็นตัวเลือกภาพข่าวรวม: "วันปิดงาน (เวลาไทย) + หมวดเดียวกัน"
+ * ผู้เรียกคำนวณ day ('YYYY-MM-DD') กับ categoryKey มาให้ — ข้อมูลที่ไม่ครบ (ไม่มี id/วัน/หมวด) ถูกข้าม ไม่เดา
+ * เรียง: กลุ่มที่มี ≥2 เรื่อง (ทำภาพรวมได้จริง) ขึ้นก่อน → วันล่าสุดก่อน → กลุ่มใหญ่ก่อน · ลำดับเรื่องในกลุ่มคงตามที่ส่งมา
+ * @param {{ id: string, day: string, categoryKey: string }[]} items
+ * @returns {{ key: string, day: string, categoryKey: string, items: object[] }[]}
+ */
+export function groupNewsCandidates(items) {
+  const map = new Map()
+  for (const item of Array.isArray(items) ? items : []) {
+    const day = String(item?.day ?? '')
+    const categoryKey = String(item?.categoryKey ?? '')
+    if (!item?.id || !/^\d{4}-\d{2}-\d{2}$/.test(day) || !categoryKey) continue
+    const key = `${day}|${categoryKey}`
+    if (!map.has(key)) map.set(key, { key, day, categoryKey, items: [] })
+    map.get(key).items.push(item)
+  }
+  const rank = group => (group.items.length >= 2 ? 0 : 1)
+  return [...map.values()].sort((a, b) => rank(a) - rank(b) || (a.day < b.day ? 1 : a.day > b.day ? -1 : 0)
+    || b.items.length - a.items.length || (a.key < b.key ? -1 : 1))
+}
+
+/** รายชื่อหมู่ไม่ซ้ำ เรียงตามเลขหมู่ ("หมู่ 3", "หมู่ 5") — ค่าที่ไม่ใช่ระดับหมู่ถูกข้าม */
+export function villageList(villages) {
+  const seen = new Map()
+  for (const village of villages ?? []) {
+    const label = villageLevel(village)
+    if (label) seen.set(label, Number(label.replace(/\D+/g, '')))
+  }
+  return [...seen.entries()].sort((a, b) => a[1] - b[1]).map(([label]) => label)
+}
+
+/** ร่างข้อความข่าวของภาพรวม — เจ้าหน้าที่แก้ได้ในกล่องก่อนสร้างภาพ */
+export function draftBatchHeadline({ departmentName = '', tenantName = '', categoryLabel = '', count = 0, villages = [] } = {}) {
+  const who = [String(departmentName ?? '').trim(), String(tenantName ?? '').trim()].filter(Boolean).join(' ') || 'หน่วยงาน'
+  const topic = String(categoryLabel ?? '').trim()
+  const places = villages.length ? ` (${villages.join(', ')})` : ''
+  return `${who} ลงพื้นที่ดำเนินการเรื่อง${topic} จำนวน ${count} จุด${places} ตามที่ประชาชนแจ้งผ่านระบบ E-Service`
+}
+
+/**
+ * ข้อความ "และอีก N จุด" ใต้ตารางรูป (รูปแสดงได้ไม่เกิน MAX_NEWS_PHOTOS) · หมู่ของจุดที่ไม่มีรูปต่อท้ายในวงเล็บ
+ * ไม่มีจุดเกิน = สตริงว่าง
+ */
+export function batchMoreText(moreCount, hiddenVillages = []) {
+  const n = Number(moreCount)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  const places = hiddenVillages.length ? ` (${hiddenVillages.join(', ')})` : ''
+  return `และอีก ${n} จุด${places}`
+}
+
+/**
+ * model ของภาพรวม — ใช้ buildNewsModel เดิม แล้วทับส่วนระยะเวลาด้วยกติกาของภาพรวม:
+ * ป้ายเวลา "ซ่อน" ยกเว้นทันกำหนดทุกเรื่อง (และรู้ระยะเวลาครบทุกเรื่อง) → "ใช้เวลาไม่เกิน N วันทำการ" (N = ค่าสูงสุดของกลุ่ม)
+ * มีเรื่องเกินกำหนดแม้เรื่องเดียว = ไม่มีป้าย ติ๊กเองก็ไม่ได้ (ภาพที่ลงเพจไม่ควรเอาตัวเลขที่ดูช้าขึ้นไปโดยไม่มีใครตัดสิน)
+ * @param {{ items?: { village?: string, createdAt?: string, closedAt?: string, dueDate?: string }[] } & Parameters<typeof buildNewsModel>[0]} input
+ */
+export function buildBatchNewsModel({ items = [], tenantName = '', departmentName = '', categoryLabel = '', showStatus = true, showDuration, headline, detail, reportUrl = '', executive = null } = {}) {
+  const rows = Array.isArray(items) ? items : []
+  const villages = villageList(rows.map(row => row?.village))
+  const times = rows.map(row => new Date(row?.closedAt).getTime()).filter(Number.isFinite)
+  const closedAt = times.length ? new Date(Math.max(...times)).toISOString() : undefined
+  const stats = rows.map(row => ({
+    days: row?.closedAt && row?.createdAt ? workingDaysBetween(row.createdAt, row.closedAt) : null,
+    onTime: defaultShowDuration({ closedAt: row?.closedAt, dueDate: row?.dueDate }),
+  }))
+  const allOnTime = rows.length > 0 && stats.every(item => item.days !== null && item.days >= 0 && item.onTime)
+  const maxDays = allOnTime ? Math.max(...stats.map(item => item.days)) : 0
+  const model = buildNewsModel({
+    tenantName, departmentName, categoryLabel, closedAt, showStatus, showDuration: false, detail, reportUrl, executive,
+    headline: headline ?? draftBatchHeadline({ departmentName, tenantName, categoryLabel, count: rows.length, villages }),
+  })
+  return {
+    ...model,
+    showDuration: allOnTime && (showDuration ?? true),
+    durationLabel: allOnTime ? (maxDays === 0 ? 'เสร็จในวันที่ยื่นทุกเรื่อง' : `ใช้เวลาไม่เกิน ${maxDays} วันทำการ`) : '',
+    count: rows.length,
+    villages,
+  }
+}
+
 const imageUrlOk = value => typeof value === 'string' && /^data:image\/[a-z0-9.+-]+[;,]/i.test(value)
 
-/** ตารางรูป: 1 รูปเต็มกว้าง · 2 รูปแบ่งครึ่ง · 3–4 รูปตาราง 2×2 — คืนกรอบ [{x,y,w,h}] เทียบมุมซ้ายบนของกริด */
-export function photoCells(count) {
+/**
+ * ตารางรูป: 1 รูปเต็มกว้าง · 2 รูปแบ่งครึ่ง · 3–4 รูปตาราง 2×2 — คืนกรอบ [{x,y,w,h}] เทียบมุมซ้ายบนของกริด
+ * captionH = ความสูงแถวป้ายใต้รูปของแต่ละแถว (0 = ไม่มีป้าย ผลเหมือนเดิมทุกพิกเซล)
+ */
+export function photoCells(count, captionH = 0) {
   const half = (CONTENT_W - GAP) / 2
   if (count <= 0) return { cells: [], height: 0 }
-  if (count === 1) return { cells: [{ x: 0, y: 0, w: CONTENT_W, h: 600 }], height: 600 }
-  if (count === 2) return { cells: [0, 1].map(i => ({ x: i * (half + GAP), y: 0, w: half, h: 520 })), height: 520 }
+  if (count === 1) return { cells: [{ x: 0, y: 0, w: CONTENT_W, h: 600 }], height: 600 + captionH }
+  if (count === 2) return { cells: [0, 1].map(i => ({ x: i * (half + GAP), y: 0, w: half, h: 520 })), height: 520 + captionH }
   const h = 360
-  const cells = Array.from({ length: Math.min(count, 4) }, (_, i) => ({ x: (i % 2) * (half + GAP), y: Math.floor(i / 2) * (h + GAP), w: half, h }))
+  const rowStep = h + GAP + captionH
+  const cells = Array.from({ length: Math.min(count, 4) }, (_, i) => ({ x: (i % 2) * (half + GAP), y: Math.floor(i / 2) * rowStep, w: half, h }))
   // 3 รูป: รูปที่ 3 เต็มกว้างแถวล่าง ไม่ให้มุมขวาล่างว่างเป็นช่องโหว่
-  if (count === 3) cells[2] = { x: 0, y: h + GAP, w: CONTENT_W, h }
-  return { cells, height: h * 2 + GAP }
+  if (count === 3) cells[2] = { x: 0, y: rowStep, w: CONTENT_W, h }
+  return { cells, height: h * 2 + GAP + captionH * 2 }
 }
 
 /**
  * @param {ReturnType<typeof buildNewsModel>} model
  * @param {(text: string, size: number, bold: boolean) => number} measure
- * @param {{ logoDataUrl?: string | null, photoDataUrls?: (string | null)[], executivePhotoDataUrl?: string | null }} [assets]
+ * @param {{ logoDataUrl?: string | null, photoDataUrls?: (string | null)[], executivePhotoDataUrl?: string | null,
+ *   photoCaptions?: string[], moreText?: string }} [assets]
+ *   photoCaptions = ป้ายใต้รูป (ภาพรวม: หมู่) เรียงตรงกับ photoDataUrls · moreText = "และอีก N จุด" ใต้ตารางรูป
  * @returns {{ svg: string, width: number, height: number, photoCount: number }}
  */
-export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], executivePhotoDataUrl = null } = {}) {
-  const photos = (photoDataUrls ?? []).filter(imageUrlOk).slice(0, MAX_NEWS_PHOTOS)
+export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], executivePhotoDataUrl = null, photoCaptions = [], moreText = '' } = {}) {
+  // จับคู่รูปกับป้ายก่อนกรอง — รูปที่ใช้ไม่ได้ถูกตัดทิ้งพร้อมป้ายของมันเอง ป้ายไม่เลื่อนไปติดรูปอื่น
+  const entries = (photoDataUrls ?? [])
+    .map((url, i) => ({ url, caption: String(photoCaptions?.[i] ?? '').trim() }))
+    .filter(entry => imageUrlOk(entry.url))
+    .slice(0, MAX_NEWS_PHOTOS)
+  const photos = entries.map(entry => entry.url)
+  const captionH = entries.some(entry => entry.caption) ? CAPTION_H : 0
   const parts = []
   const text = (x, y, value, { size = 28, bold = false, fill = INK, anchor = 'start' } = {}) => {
     parts.push(`<text x="${num(x)}" y="${num(y)}" font-size="${size}" font-weight="${bold ? 700 : 400}" fill="${fill}" text-anchor="${anchor}">${esc(value)}</text>`)
@@ -292,7 +397,7 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
   // ── รูป (ครอปแบบ cover มุมมน) ──
   if (photos.length) {
     y += 28
-    const grid = photoCells(photos.length)
+    const grid = photoCells(photos.length, captionH)
     const defs = []
     grid.cells.forEach((cell, i) => {
       const cx = MARGIN + cell.x
@@ -300,10 +405,18 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
       defs.push(`<clipPath id="news-photo-${i}"><rect x="${num(cx)}" y="${num(cy)}" width="${num(cell.w)}" height="${num(cell.h)}" rx="22"/></clipPath>`)
       parts.push(`<rect x="${num(cx)}" y="${num(cy)}" width="${num(cell.w)}" height="${num(cell.h)}" rx="22" fill="#e5e7eb"/>`
         + `<image href="${esc(photos[i])}" x="${num(cx)}" y="${num(cy)}" width="${num(cell.w)}" height="${num(cell.h)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#news-photo-${i})"/>`)
+      const caption = entries[i].caption
+      if (caption) {
+        // ป้ายหมู่กึ่งกลางใต้รูป — ยาวเกินความกว้างช่องใช้บรรทัดแรกที่ตัดแล้ว (ไม่ล้นไปทับรูปข้างเคียง)
+        const fitted = measure(caption, 30, true) > cell.w ? (wrapLines(caption, cell.w, 30, true, measure)[0] ?? '') : caption
+        text(cx + cell.w / 2, cy + cell.h + 38, fitted, { size: 30, bold: true, fill: ORANGE, anchor: 'middle' })
+      }
     })
     parts.push(`<defs>${defs.join('')}</defs>`)
     y += grid.height
   }
+  // ภาพรวม: "และอีก N จุด" ใต้ตารางรูป (จุดที่เกิน 4 ช่อง) — ไม่ทับลงบนรูป
+  if (moreText) y = block(MARGIN, y + 48, moreText, CONTENT_W, { size: 32, bold: true, fill: ORANGE, lineHeight: 1.4 })
 
   // ── แถบท้ายสีส้ม ──
   // ไม่มีเบอร์โทรและไม่มีชื่อกองผู้จัดทำ: ฐานไม่มีฟิลด์เบอร์ และเจ้าของระบบสั่งตัดข้อความ "จัดทำโดย" ออก

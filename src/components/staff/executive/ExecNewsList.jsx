@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Megaphone, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Layers, Megaphone, RefreshCw } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import { thaiShortDate } from '../../../lib/complaintReportPeriods'
 import { execNf } from '../../../lib/executiveData'
 import ComplaintNewsDialog from '../../complaints/ComplaintNewsDialog'
+import ComplaintNewsBatchDialog from '../../complaints/ComplaintNewsBatchDialog'
+import { groupNewsCandidates } from '../../../lib/complaintNewsImage'
 import { LoadingLine, SectionError } from './ExecParts'
 
 // แผง "เรื่องที่ดำเนินการแล้ว · ทำภาพข่าว" ของห้องผู้บริหาร — เปิดจากปุ่มพับ/กางแล้วถึงโหลดข้อมูล (lazy)
@@ -11,6 +13,8 @@ import { LoadingLine, SectionError } from './ExecParts'
 //   ไม่อ่านตาราง complaints/complaint_timeline ตรง (RLS ไม่ให้ viewer อ่าน + PDPA)
 //   ไม่มีชื่อผู้ร้อง/รายละเอียดเรื่อง/รูปผู้แจ้ง · ไม่มีปุ่มอนุมัติ · ไม่มีลิงก์เข้าไปแก้เรื่อง (กติกาห้องผู้บริหาร)
 // ฐานข้อมูลคัดแล้วว่าไม่ใช่หมวดอ่อนไหว/เฉพาะกิจ/กลิ่น · ปุ่ม "ภาพข่าว" เปิดกล่องเดียวกับหน้าเจ้าหน้าที่ แบบ source="exec"
+// ปุ่ม "ภาพข่าวรวม": เรื่องหมวดเดียวกัน เสร็จวันเดียวกัน รวมเป็นภาพเดียว (กล่องจัดกลุ่มให้ · รายละเอียดรายเรื่องโหลดผ่าน RPC exec_complaint_news_detail)
+//   รายการไม่มีรหัสหมวด จึงจัดกลุ่มด้วยชื่อหมวด (cat_label) + วันปิดงาน
 // ชื่อคลาส Tailwind เขียนเต็มทุกตัว (ห้ามต่อสตริง)
 
 const SHOWABLE_CODES = new Set(['42501', '22023', 'P0002'])
@@ -45,6 +49,7 @@ export default function ExecNewsList({ tenant }) {
   const tenantId = tenant?.id
   const [state, setState] = useState({ status: 'loading', data: null, message: '' })
   const [openId, setOpenId] = useState(null)
+  const [batchOpen, setBatchOpen] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -62,8 +67,16 @@ export default function ExecNewsList({ tenant }) {
   useEffect(() => { load() }, [load])
 
   const data = state.data
-  const items = Array.isArray(data?.items) ? data.items : []
+  const rawItems = data?.items
+  const items = useMemo(() => (Array.isArray(rawItems) ? rawItems : []), [rawItems])
   const days = data?.days ?? 90
+  const batchCandidates = useMemo(() => items.flatMap((item) => {
+    const day = isDay(item.closed) ? item.closed.slice(0, 10) : ''
+    const label = String(item.cat_label ?? '').trim()
+    if (!day || !label || !(Number(item.photos) > 0)) return []
+    return [{ id: item.id, ref: item.ref, day, categoryKey: label, categoryLabel: label, departmentName: item.dept ?? '', detail: null }]
+  }), [items])
+  const hasBatch = useMemo(() => groupNewsCandidates(batchCandidates).some((group) => group.items.length >= 2), [batchCandidates])
 
   return (
     <div data-exec-news-panel className="space-y-2 rounded-2xl border border-orange-200 bg-white p-2.5 shadow-sm sm:p-3">
@@ -89,12 +102,20 @@ export default function ExecNewsList({ tenant }) {
           แสดง {execNf(data.limit)} จาก {execNf(data.total)} เรื่อง
         </p>
       )}
+      {state.status === 'ok' && hasBatch && (
+        <button type="button" data-exec-news-batch-btn onClick={() => setBatchOpen(true)}
+          className="inline-flex min-h-9 items-center justify-center gap-1 rounded-lg px-3 text-xs font-bold text-white active:scale-95"
+          style={{ backgroundColor: '#c2410c' }}>
+          <Layers size={13} aria-hidden="true" /> ภาพข่าวรวม
+        </button>
+      )}
       {state.status === 'ok' && items.length > 0 && (
         <ul className="space-y-1.5">
           {items.map((item) => <NewsRow key={item.id} item={item} onOpen={(row) => setOpenId(row.id)} />)}
         </ul>
       )}
 
+      {batchOpen && <ComplaintNewsBatchDialog source="exec" candidates={batchCandidates} tenant={tenant} onClose={() => setBatchOpen(false)} />}
       {openId && <ComplaintNewsDialog key={openId} source="exec" complaintId={openId} tenant={tenant} onClose={() => setOpenId(null)} />}
     </div>
   )

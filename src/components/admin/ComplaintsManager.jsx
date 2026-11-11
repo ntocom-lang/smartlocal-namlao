@@ -6,7 +6,7 @@ import {
   ChevronRight, ChevronLeft, Filter, Search, Phone, Trash2, Wrench,
   MapPin, X, FileText, Camera, ChevronDown,
   Shield, Printer, Users, RefreshCw, AlertTriangle, Building2, BarChart3, List,
-  Archive, RotateCcw, Megaphone,
+  Archive, RotateCcw, Megaphone, Layers,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
@@ -21,7 +21,8 @@ import FinishComplaintDialog from '../complaints/FinishComplaintDialog'
 import ParkComplaintDialog from '../complaints/ParkComplaintDialog'
 import ComplaintTextBlock from '../complaints/ComplaintTextBlock'
 import ComplaintNewsDialog from '../complaints/ComplaintNewsDialog'
-import { newsCategoryAllowed } from '../../lib/complaintNewsImage'
+import ComplaintNewsBatchDialog from '../complaints/ComplaintNewsBatchDialog'
+import { bangkokDayKey, groupNewsCandidates, newsCategoryAllowed } from '../../lib/complaintNewsImage'
 import {
   canFinishWork, canParkWork, canUnparkWork, isComplaintWorker, isFinishedLike, isParked, parkReasonLabel,
   PARKED_LABEL, PARKED_PUBLIC_NOTE, PARKED_STATUS, requiresResolvedPin,
@@ -1636,6 +1637,10 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const [parkIds, setParkIds]                     = useState(null)
   // คำร้องที่กำลังเปิดกล่อง "ภาพข่าว" (null = ปิดอยู่) — ปุ่มอยู่คอลัมน์การดำเนินการของเรื่องที่ดำเนินการแล้ว
   const [newsComplaint, setNewsComplaint]           = useState(null)
+  // รายการที่ส่งเข้ากล่อง "ภาพข่าวรวม" (null = ปิดอยู่) — ถ่ายสำเนาตอนกดปุ่ม ไม่ให้ตัวเลือกขยับตามรายการที่รีเฟรชระหว่างเปิดกล่อง
+  const [newsBatch, setNewsBatch]                    = useState(null)
+  // เวลาที่เปิดหน้านี้ ใช้ตัดช่วง 90 วันของภาพข่าวรวม (เรียก Date.now() ตรงๆ ตอนเรนเดอร์ไม่ได้ — impure)
+  const [pageOpenedAt]                               = useState(() => Date.now())
   // เตือนเมื่อเปลี่ยนสถานะสำเร็จแต่เขียนประวัติ (complaint_timeline) ไม่ผ่าน RLS
   const [timelineWarning, setTimelineWarning]     = useState(null)
   // ชื่อผู้ใช้ปัจจุบัน ใช้ลง actor_name ของ timeline — ประวัติที่ไม่รู้ว่าใครทำใช้ตรวจสอบไม่ได้
@@ -2195,6 +2200,24 @@ ${summaryHtml}
   const parkedStubAtEnd     = parkedHidden && parkedStubAt === paginatedFiltered.length && complaintPage >= complaintTotalPages
   const parkedStubBefore    = (i) => parkedHidden && i === parkedStubAt
 
+  // ภาพข่าวรวม: เงื่อนไขชุดเดียวกับปุ่ม "ภาพข่าว" รายเรื่อง (ปิดงานแล้ว + หมวดผ่าน newsCategoryAllowed + มีรูปหลังดำเนินการ
+  // + แอดมิน/ผู้ถือเรื่อง) และปิดงานภายใน 90 วัน (ชุดเดียวกับรายการของห้องผู้บริหาร) — ปุ่มขึ้นเมื่อมีกลุ่มที่รวมได้ ≥ 2 เรื่อง
+  const newsBatchCutoff = pageOpenedAt - 90 * 24 * 3600 * 1000
+  const newsBatchCandidates = nonOdorComplaints.flatMap((c) => {
+    if (normalizeActionStatus(c.status) !== 'closed' || !newsCategoryAllowed(c.category, categoryMeta)) return []
+    if (!(isAdmin || (c.assigned_to && c.assigned_to === currentUserId))) return []
+    if ((c.work_photos ?? []).length === 0) return []
+    const closedAt = finishedAtOf(c)
+    const day = bangkokDayKey(closedAt)
+    if (!closedAt || !day || new Date(closedAt).getTime() < newsBatchCutoff) return []
+    return [{
+      id: c.id, ref: c.ref_no, day, categoryKey: c.category, categoryLabel: categoryNameOf(CATEGORY_LABEL, c.category),
+      departmentName: c.department ?? '',
+      detail: { village: c.village, createdAt: c.created_at, closedAt, dueDate: c.due_date, workPhotos: c.work_photos ?? [] },
+    }]
+  })
+  const newsBatchGroups = groupNewsCandidates(newsBatchCandidates).filter((g) => g.items.length >= 2)
+
   // พับเก็บ: เอาเรื่องกลุ่มนี้ออกจากรายการที่ติ๊กไว้ด้วย ไม่งั้นปุ่มทำหลายรายการ (เช่น ลบ) จะกระทบเรื่องที่มองไม่เห็น
   const toggleParkedGroup = () => {
     if (!parkedCollapsed) {
@@ -2415,6 +2438,20 @@ ${summaryHtml}
           </div>
           )}
         </div>
+
+        {/* ภาพข่าวรวม: หลายเรื่องหมวดเดียวกัน เสร็จวันเดียวกัน → ภาพเดียว (ระบบจัดกลุ่มให้ในกล่อง) */}
+        {!odorTabActive && newsBatchGroups.length > 0 && (
+          <div data-news-batch-bar className="flex flex-wrap items-center justify-between gap-2 px-5 py-2 bg-orange-50/60 border-y border-orange-100">
+            <span className="min-w-0 text-xs text-orange-900">
+              มีเรื่องที่ดำเนินการแล้ว หมวดเดียวกัน เสร็จวันเดียวกัน {newsBatchGroups.length} กลุ่ม — รวมเป็นภาพข่าวภาพเดียวได้
+            </span>
+            <button type="button" onClick={() => setNewsBatch(newsBatchCandidates)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-white whitespace-nowrap transition-all active:scale-95"
+              style={{ backgroundColor: '#c2410c' }}>
+              <Layers size={13} /> ภาพข่าวรวม
+            </button>
+          </div>
+        )}
 
         {/* Bulk selection toolbar */}
         {canBulkDelete && selectedIds.size > 0 && (
@@ -2928,6 +2965,15 @@ ${summaryHtml}
           categoryLabel={categoryNameOf(CATEGORY_LABEL, newsComplaint.category)}
           closedAt={finishedAtOf(newsComplaint)}
           onClose={() => setNewsComplaint(null)}
+        />
+      )}
+
+      {newsBatch && (
+        <ComplaintNewsBatchDialog
+          source="staff"
+          candidates={newsBatch}
+          tenant={tenant}
+          onClose={() => setNewsBatch(null)}
         />
       )}
 
