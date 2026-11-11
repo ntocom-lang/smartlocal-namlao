@@ -46,8 +46,10 @@ function openModuleItem(item, { navigate, setActiveModule }) {
 
 // หน้า "เมนูทั้งหมด" ของเจ้าหน้าที่บนมือถือ (แท็บ "เมนู" ในแถบล่าง) — กริดไอคอนจัดกลุ่มตามโมดูลที่
 // เห็นได้จริง visibleGroups ผ่านตัวกรองสิทธิ์/โมดูลที่เปิดมาจาก StaffDashboard แล้ว (กลุ่มว่างถูกตัดออกแล้ว)
-export function StaffMenuGrid({ visibleGroups, setActiveModule, navigate, pendingCount, newComplaintCount, patientWorkCount }) {
-  const badges = menuBadges({ pendingCount, newComplaintCount, patientWorkCount })
+// openWorkCounts = ป้ายของโมดูลรายกอง (แผนพัฒนา/โครงสร้างพื้นฐาน/โครงการก่อสร้าง) ชุดเดียวกับเมนูซ้ายและลิ้นชัก
+// ใส่เฉพาะกริดนี้ ไม่ใส่ใน menuBadges() เพราะหน้าแรกใช้ menuBadges รวมยอด "ต้องทำตอนนี้" — เลขชุดนี้คือ "ยังไม่ปิด" ไม่ใช่งานเร่งด่วน
+export function StaffMenuGrid({ visibleGroups, setActiveModule, navigate, pendingCount, newComplaintCount, patientWorkCount, openWorkCounts = {} }) {
+  const badges = { ...openWorkCounts, ...menuBadges({ pendingCount, newComplaintCount, patientWorkCount }) }
   const total = visibleGroups.reduce((sum, group) => sum + group.items.length, 0)
   return (
     <div className="space-y-3">
@@ -82,14 +84,26 @@ const WORK_CARDS = [
   { key: PATIENT_TRANSPORT_MODULE_KEY, hint: () => 'รอดำเนินการ' },
 ]
 
+// "งานที่เปิดอยู่" — ตัวเลขชุดเดียวกับป้ายเมนูของโมดูลรายกอง (DEPARTMENT_WORK_SOURCES ใน StaffDashboard นับจุดเดียว)
+// จงใจไม่รวมใน "ต้องทำตอนนี้": เลขนี้คือ "ยังไม่ปิด" ไม่ใช่ "ถึงคิวคุณ" — โครงการที่กำลังก่อสร้างค้างเป็นเดือน
+// ถ้านับรวม ไฟเขียว "ไม่มีงานค้าง" ของกองช่างจะไม่ขึ้นอีกเลย แล้วคนจะเลิกมองการ์ด (เจ้าของระบบเลือกแนวนี้ 2569-11-11)
+// จะย้ายเข้า "ต้องทำตอนนี้" ได้ก็ต่อเมื่อเปลี่ยนวิธีนับเป็นงานที่ถึงกำหนดจริง (งวดรอตรวจรับ / รายการแผนที่ถึงกำหนดยังไม่บันทึกผล)
+// hint ต้องตรงกับสถานะที่ DEPARTMENT_WORK_SOURCES นับ — แก้ฝั่งนั้นแล้วต้องแก้ข้อความตรงนี้ด้วย
+const OPEN_WORK_CARDS = [
+  { key: 'local-plan', hint: 'แผนที่ยังเป็นร่าง ยังไม่ประกาศใช้' },
+  { key: 'infra', hint: 'ยังไม่แล้วเสร็จ' },
+  { key: 'projects', hint: 'ยังไม่แล้วเสร็จ (รวมที่ระงับไว้)' },
+]
+
 // ทางลัดตั้งต้นเมื่อยังไม่มีประวัติการใช้งาน (คนใหม่/เครื่องใหม่) — คัดมาจากชุดเดิมของหน้านี้
 const DEFAULT_SHORTCUTS = ['events', 'report', 'data-center']
 const SHORTCUT_LIMIT = 4
 
-function WorkRow({ item, count, hint, onOpen }) {
+// testAttr แยกแถว "งานที่เปิดอยู่" ออกจาก [data-home-work] ของ "ต้องทำตอนนี้" — เทสต์หน้าแรกนับชุดนั้นอยู่
+function WorkRow({ item, count, hint, onOpen, testAttr = 'data-home-work' }) {
   const { Icon, color, bg, label } = item
   return (
-    <button type="button" data-home-work={item.key} onClick={onOpen}
+    <button type="button" {...{ [testAttr]: item.key }} onClick={onOpen}
       className="flex min-h-14 w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left shadow-sm hover:bg-slate-50 active:scale-[0.99]">
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: bg ?? `${color}18` }}>
         <Icon size={19} style={{ color }} aria-hidden="true" />
@@ -251,7 +265,7 @@ function DeptWorkload({ state, complaintsItem, onOpenComplaints }) {
 //    ตัดสินรวมที่ todoState() ใน src/lib/staffHomeSummary.js จุดเดียว
 export default function StaffOperationalDashboard({
   visibleGroups, setActiveModule, profile, tenantId, pendingCount, newComplaintCount = 0, patientWorkCount = 0,
-  workStatus = {}, navigate, onCreateManagementEvent,
+  workStatus = {}, openWork = { ready: false, counts: {}, errors: {} }, navigate, onCreateManagementEvent,
 }) {
   const cardBadges = menuBadges({ pendingCount, newComplaintCount, patientWorkCount })
   const todayTH = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
@@ -271,6 +285,14 @@ export default function StaffOperationalDashboard({
     .sort((a, b) => menuIndex.get(a.key) - menuIndex.get(b.key))
   const pendingCards = workCards.filter(card => card.status === 'ok' && card.count > 0)
   const failedCards = workCards.filter(card => card.status === 'error')
+
+  // ── งานที่เปิดอยู่ ── ยังโหลดไม่เสร็จ = ไม่ขึ้นอะไร (ไม่ใช่งานเร่งด่วน ไม่ต้องมีสปินเนอร์ และไม่ยุ่งกับไฟเขียวด้านบน)
+  const openWorkCards = openWork.ready
+    ? OPEN_WORK_CARDS
+      .map(card => ({ ...card, item: itemByKey.get(card.key), count: Number(openWork.counts?.[card.key]) || 0, failed: Boolean(openWork.errors?.[card.key]) }))
+      .filter(card => card.item && (card.failed || card.count > 0))
+      .sort((a, b) => menuIndex.get(a.key) - menuIndex.get(b.key))
+    : []
 
   // สรุปกำหนดเสร็จ + กิจกรรมที่มอบหมาย — ดึงเฉพาะเมื่อบัญชีนี้เห็นโมดูลที่เกี่ยวข้องจริง (ปิดโมดูล = ไม่ยิง RPC)
   const complaintsItem = itemByKey.get('complaints')
@@ -349,7 +371,7 @@ export default function StaffOperationalDashboard({
 
   const canCreateEvent = Boolean(eventsItem && onCreateManagementEvent)
   const hasShortcuts = canCreateEvent || shortcutItems.length > 0
-  const hasLeft = hasTodo || eventCount > 0 || isDeptHead
+  const hasLeft = hasTodo || eventCount > 0 || isDeptHead || openWorkCards.length > 0
 
   const totalMenus = visibleItems.length
   const totalBadge = Object.values(cardBadges).reduce((sum, n) => sum + (Number(n) > 0 ? Number(n) : 0), 0)
@@ -443,6 +465,27 @@ export default function StaffOperationalDashboard({
             {isDeptHead && (
               <section data-home-dept-section aria-label="กองของฉัน">
                 <DeptWorkload state={dept} complaintsItem={complaintsItem} onOpenComplaints={() => open(complaintsItem)} />
+              </section>
+            )}
+
+            {openWorkCards.length > 0 && (
+              <section data-home-open-work-section aria-labelledby="home-open-work-title">
+                <div className="mb-1.5">
+                  <h2 id="home-open-work-title" className="text-sm font-bold text-slate-800">งานที่เปิดอยู่</h2>
+                  <p className="text-[10px] text-slate-400">ยังไม่ปิดงาน · ไม่ใช่งานเร่งด่วน · ตัวเลขเดียวกับป้ายบนเมนู</p>
+                </div>
+                <div className="space-y-2">
+                  {openWorkCards.map(card => (card.failed ? (
+                    <button key={card.key} type="button" data-home-open-work-error={card.key} onClick={() => open(card.item)}
+                      className="flex min-h-12 w-full items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs text-amber-900 active:scale-[0.99]">
+                      <TriangleAlert size={16} className="shrink-0" aria-hidden="true" />
+                      <span className="min-w-0 flex-1">โหลดตัวเลข “{card.item.label}” ไม่สำเร็จ — กดเพื่อเปิดดูโดยตรง</span>
+                      <ChevronRight size={15} className="shrink-0 opacity-60" aria-hidden="true" />
+                    </button>
+                  ) : (
+                    <WorkRow key={card.key} testAttr="data-home-open-work" item={card.item} count={card.count} hint={card.hint} onOpen={() => open(card.item)} />
+                  )))}
+                </div>
               </section>
             )}
           </div>
