@@ -138,7 +138,14 @@ await test('ข้อความตายตัวในภาพ · แถบ�
   assert.ok(!/โทร|Tel/.test(plain(withUrl)))
   const noUrl = draw(base()).svg
   assert.ok(!noUrl.includes('crispEdges') && !has(noUrl, 'สแกน'))
-  assert.ok(has(noUrl, 'พบปัญหาในชุมชน แจ้งเราได้ตลอด 24 ชม.'))
+  // ปิด QR/ลิงก์ = ข้อความขอบคุณ + "มุ่งสู่" เมืองอัจฉริยะ — ไม่ชวนแจ้งโดยไม่บอกช่องทาง ไม่มีโดเมนหลุด
+  assert.ok(!has(noUrl, 'พบปัญหาในชุมชน แจ้งเราได้ตลอด 24 ชม.') && !has(noUrl, 'เข้าที่') && !noUrl.includes('/complaint'))
+  assert.ok(has(noUrl, 'ขอบคุณทุกการแจ้งปัญหาจากประชาชน'))
+  assert.ok(has(noUrl, 'ร่วมกันดูแลชุมชน มุ่งสู่เมืองอัจฉริยะ (Smart City)'))
+  assert.ok(!has(withUrl, 'ขอบคุณทุกการแจ้งปัญหา'), 'มีลิงก์แล้วไม่ต้องมีข้อความขอบคุณ')
+  // ห้ามอ้างว่าเป็นเมืองอัจฉริยะแล้ว (ยังไม่ได้รับรอง) — ต้องเป็น "มุ่งสู่" เสมอ
+  assert.ok(!/(?<!มุ่งสู่)เมืองอัจฉริยะ/.test(plain(noUrl)))
+  assert.equal(News.newsShareText(base()).includes('แจ้งเรื่อง/ติดตามเรื่อง'), false)
   assert.match(withUrl, /<rect width="1080" height="\d+" fill="#ffffff"\/>/) // พื้นขาวเต็มภาพ
   assert.ok(withUrl.includes('#c2410c'))
 })
