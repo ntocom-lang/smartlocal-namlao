@@ -106,7 +106,10 @@ await test('PDPA: ข้อมูลผู้แจ้งไม่โผล่�
     assert.ok(!dump.includes(secret), `ข้อมูลผู้แจ้งหลุด: ${secret}`)
   }
   assert.deepEqual(Object.keys(model).sort(),
-    ['dateText', 'detail', 'durationLabel', 'executive', 'headline', 'reportUrl', 'showDuration', 'showStatus', 'tenantName'])
+    ['categoryCode', 'dateText', 'detail', 'durationLabel', 'executive', 'headline', 'reportUrl', 'showDuration', 'showStatus', 'steps', 'tenantName', 'theme'])
+  // ฟิลด์ที่เพิ่ม (สีธีม/รหัสหมวด/ขั้นตอน) ไม่ใช่ข้อมูลผู้แจ้ง: theme = hex 4 สี · steps = ป้ายตายตัว + วันที่ของเรื่อง
+  assert.deepEqual(Object.keys(model.theme).sort(), ['base', 'deep', 'ink', 'soft'])
+  assert.deepEqual(model.steps.map(step => Object.keys(step).sort()), Array.from({ length: 4 }, () => ['date', 'label']))
   assert.equal(model.executive, null) // ไม่ส่ง executive = ไม่มีบล็อกผู้บริหาร
   assert.ok(model.headline.includes('หมู่ 3')) // หมู่ระดับเดียวที่ใช้ได้
   // ช่องหมู่บ้านที่มีข้อความอื่นปน ไม่ดึงมา
@@ -380,6 +383,324 @@ await test('static: ปุ่ม "ภาพข่าว" ผูกกับส�
   assert.match(dialog, /\.eq\('status', 'closed'\)/)
   assert.match(dialog, /ตรวจก่อนว่าไม่มีหน้าคน ป้ายทะเบียน หรือเลขที่บ้าน รูปนี้ผู้แจ้งส่งมาเพื่อแจ้งเรื่อง ไม่ได้ส่งมาเพื่อลงเพจ/)
   assert.match(dialog, /ระบบติ๊กให้เองเมื่อเสร็จทันกำหนด · เกินกำหนดจะไม่ติ๊กไว้ก่อน/)
+})
+
+// ───────── ลูกเล่นแนว "เมืองอัจฉริยะ": สีธีมตามกอง · ลายวงจร · ไอคอนหมวด · แถบขั้นตอน · ป้ายมุมรูป ─────────
+const Colors = await import('../src/lib/departmentColors.js')
+const luminance = hex => {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+const contrast = (a, b) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+await test('สีธีม: ครบ 9 คีย์ของกอง · ขาว/ว่าง/ไม่รู้จัก = ส้มเดิม · base คอนทราสต์กับตัวอักษรขาว ≥ 4.5:1 (คำนวณ WCAG จริง)', () => {
+  const keys = Colors.DEPARTMENT_COLORS.map(color => color.key)
+  assert.equal(keys.length, 9)
+  for (const key of keys.filter(key => key !== 'white')) {
+    const theme = Colors.newsThemeFor(key)
+    assert.deepEqual(Object.keys(theme).sort(), ['base', 'deep', 'ink', 'soft'], key)
+    assert.ok(Object.values(theme).every(value => /^#[0-9a-f]{6}$/.test(value)), key)
+    assert.ok(contrast(theme.base, '#ffffff') >= 4.5, `${key}: base ${theme.base} คอนทราสต์ ${contrast(theme.base, '#ffffff').toFixed(2)}`)
+    assert.ok(contrast(theme.deep, '#ffffff') >= contrast(theme.base, '#ffffff'), `${key}: deep ต้องเข้มกว่า base`)
+    assert.ok(contrast(theme.ink, theme.soft) >= 4.5, `${key}: ตัวอักษรป้ายระยะเวลาอ่านได้`)
+  }
+  assert.deepEqual(Colors.newsThemeFor('orange'), { base: '#c2410c', deep: '#7c2d12', soft: '#ffedd5', ink: '#9a3412' })
+  for (const key of ['white', null, undefined, '', 'pink', 'constructor', '__proto__']) assert.deepEqual(Colors.newsThemeFor(key), Colors.newsThemeFor('orange'), String(key))
+  assert.equal(Colors.newsThemeFor('blue').base, '#1d4ed8')
+  // จับคู่ชื่อกอง: ตรง name หรือ short_name (ตัดช่องว่าง) · ไม่เจอ/ไม่มีชื่อ = null → ส้ม
+  const rows = [{ name: 'กองช่าง', short_name: 'ช่าง', color: 'blue' }, { name: 'กองคลัง', short_name: null, color: null }]
+  assert.equal(Colors.departmentColorKeyByName(rows, ' กองช่าง '), 'blue')
+  assert.equal(Colors.departmentColorKeyByName(rows, 'ช่าง'), 'blue')
+  assert.equal(Colors.departmentColorKeyByName(rows, 'กองคลัง'), null)
+  assert.equal(Colors.departmentColorKeyByName(rows, 'กองอื่น'), null)
+  assert.equal(Colors.departmentColorKeyByName(rows, ''), null)
+  assert.equal(Colors.departmentColorKeyByName(null, 'กองช่าง'), null)
+})
+
+await test('สีธีมถูกใช้ที่แถบหัว/แถบท้าย/ป้ายระยะเวลา/วันที่/ขอบป้ายนายก · ไม่ส่งธีม = ส้มเดิม · ป้ายสถานะคงเขียว', () => {
+  const blue = Colors.newsThemeFor('blue')
+  const svg = draw(base({ theme: blue, executive: { name: 'นายสมมติ ตัวอย่าง', title: 'นายกเทศมนตรี' } })).svg
+  assert.match(svg, new RegExp(`<linearGradient id="news-head-grad"[^>]*><stop offset="0" stop-color="${blue.deep}"/><stop offset="1" stop-color="${blue.base}"/>`))
+  assert.match(svg, new RegExp(`<linearGradient id="news-foot-grad"[^>]*><stop offset="0" stop-color="${blue.deep}"/><stop offset="1" stop-color="${blue.base}"/>`))
+  assert.match(svg, /fill="url\(#news-head-grad\)"/)
+  assert.match(svg, /fill="url\(#news-foot-grad\)"/)
+  assert.ok(svg.includes(`fill="${blue.soft}"`) && svg.includes(`fill="${blue.ink}"`), 'ป้ายระยะเวลาใช้ soft/ink')
+  assert.ok(svg.includes(`fill="${blue.base}"`), 'วันที่/วงกลมขั้นตอนใช้ base')
+  assert.ok(svg.includes(`fill="${blue.deep}" fill-opacity="0.28"`), 'เงาป้ายนายกใช้ deep')
+  assert.ok(svg.includes('fill="#15803d"') && has(svg, 'ดำเนินการแล้ว'), 'ป้ายดำเนินการแล้วคงเขียว')
+  assert.ok(!svg.includes('#c2410c') && !svg.includes('#fdba74'), 'สีส้ม/ส้มอ่อนเดิมต้องไม่หลงเหลือในธีมน้ำเงิน')
+  // ไม่ส่งธีม (หรือส่งค่าผิดรูป) = ส้มชุดเดิม
+  for (const bad of [undefined, null, {}, { base: 'red', deep: '#000000', soft: '#ffffff', ink: '#000000' }]) {
+    const model = base({ theme: bad })
+    assert.deepEqual(model.theme, Colors.newsThemeFor('orange'))
+    assert.ok(draw(model).svg.includes('stop-color="#c2410c"'))
+  }
+  assert.deepEqual(News.buildNewsModel({ tenantName: 'ท' }).theme, Colors.newsThemeFor('orange'))
+})
+
+await test('ลายวงจร: กำหนดตายตัว (ภาพเดิม = SVG เดิม) · clip ด้วยรูปทรงแถบ · วางก่อน QR · ไม่ใช้ filter/Math.random', async () => {
+  const model = base({ reportUrl: 'https://namlao.example.test/complaint' })
+  const first = draw(model, { photoDataUrls: [PHOTO] }).svg
+  assert.equal(draw(model, { photoDataUrls: [PHOTO] }).svg, first)
+  assert.equal((first.match(/data-circuit="1"/g) ?? []).length, 2, 'ลายที่แถบหัวและแถบท้าย')
+  assert.match(first, /<clipPath id="news-head-clip"><path d="M0 0H1080/)
+  assert.match(first, /<clipPath id="news-foot-clip"><path d="M0 /)
+  assert.match(first, /<g clip-path="url\(#news-head-clip\)" data-circuit="1">/)
+  assert.match(first, /<g clip-path="url\(#news-foot-clip\)" data-circuit="1">/)
+  // ตรวจเฉพาะลายวงจรที่แถบหัว/ท้าย (ลายเครือข่ายพื้นหลังการ์ดมีช่วงความทึบของตัวเอง ดูเทสต์ "พื้นหลังตกแต่ง")
+  const circuitOnly = [...first.matchAll(/data-circuit="1">(.*?)<\/g>/gs)].map(match => match[1]).join('')
+  for (const opacity of circuitOnly.match(/stroke-opacity="[\d.]+"/g).filter(value => /0\.\d+/.test(value))) {
+    const value = Number(opacity.match(/[\d.]+/)[0])
+    assert.ok(value >= 0.1 && value <= 0.14, `ความเข้มลายนอกช่วง: ${opacity}`)
+  }
+  // ลายท้ายอยู่ก่อน QR (QR ดำบนพื้นขาวต้องไม่ถูกลายทับ)
+  assert.ok(first.indexOf('data-circuit="1"', first.indexOf('news-foot-clip')) < first.indexOf('shape-rendering="crispEdges"'))
+  // ลายมีจุดเชื่อมและเส้น
+  assert.ok((first.match(/<circle /g) ?? []).length >= 12)
+  assert.ok(!/<filter|filter=/.test(first), 'ห้ามใช้ SVG filter (บางเบราว์เซอร์ไม่วาดตอนแปลงเป็น PNG)')
+  const source = await readFile(new URL('../src/lib/complaintNewsImage.js', import.meta.url), 'utf8')
+  assert.ok(!/Math\.random/.test(source), 'ห้ามใช้ Math.random (ภาพเดิมต้องได้ SVG เดิมทุกครั้ง)')
+  // เส้นทองใต้แถบหัว
+  assert.match(first, /<path d="M-3 [\d.]+A47 47 0 0 0 44 [\d.]+H1036A47 47 0 0 0 1083 [\d.]+" fill="none" stroke="#f5c242" stroke-width="6"/)
+})
+
+await test('ขอบป้ายนายกเป็นทอง (ไม่ใช่ส้มอ่อนเดิม)', () => {
+  const svg = draw(base({ executive: { name: 'นายสมมติ ตัวอย่าง', title: 'นายกเทศมนตรี' } })).svg
+  assert.match(svg, /fill="#ffffff" stroke="#f5c242" stroke-width="4"/)
+})
+
+await test('ไอคอนหมวด: มีรหัสหมวด = วงกลมสีธีม + ไอคอนขาวหน้าวันที่ · ไม่มีรหัส = ไม่วาด · หมวดสร้างเอง = ไอคอนกลาง', () => {
+  const blue = Colors.newsThemeFor('blue')
+  const light = draw(base({ categoryCode: 'light', theme: blue })).svg
+  assert.match(light, new RegExp(`<circle cx="90" cy="[\\d.]+" r="26" fill="${blue.base}" data-category-icon="light"/>`))
+  assert.equal(base({ categoryCode: ' light ' }).categoryCode, 'light')
+  // วันที่ขยับไปทางขวาของวงกลม (64 + 52 + 16 = 132)
+  assert.match(light, /<text x="132" y="[\d.]+" font-size="30" font-weight="700" fill="#1d4ed8"[^>]*>วันที่ 10 พฤศจิกายน 2569<\/text>/)
+  const none = draw(base()).svg
+  assert.ok(!none.includes('data-category-icon'))
+  assert.match(none, /<text x="64" y="[\d.]+" font-size="30" font-weight="700" fill="#c2410c"[^>]*>วันที่ /)
+  assert.equal(base({ categoryCode: '' }).categoryCode, '')
+  assert.equal(base({ categoryCode: null }).categoryCode, '')
+  assert.ok(draw(base({ categoryCode: 'cat_x1y2' })).svg.includes('data-category-icon="cat_x1y2"'))
+  // รหัสหมวดถูก escape (ค่าจากฐานข้อมูล แอดมินตั้งเองได้)
+  assert.ok(!draw(base({ categoryCode: 'a"><script>' })).svg.includes('<script>'))
+})
+
+await test('แถบขั้นตอน 4 จุด: รายเรื่องมีวันที่เฉพาะหัว-ท้าย สองจุดกลางว่าง · ไม่มีวัน = ไม่ใส่ · ภาพรวมไม่มีวันที่', () => {
+  const model = base()
+  assert.deepEqual(model.steps, [
+    { label: 'แจ้งเรื่อง', date: '3 พ.ย. 2569' }, { label: 'รับเรื่อง', date: '' },
+    { label: 'ดำเนินการ', date: '' }, { label: 'เสร็จสิ้น', date: '10 พ.ย. 2569' },
+  ])
+  assert.equal(News.thaiShortDate('2026-12-31T20:00:00Z'), '1 ม.ค. 2570') // 03:00 ของวันที่ 1 ตามเวลาไทย
+  assert.equal(News.thaiShortDate('ไม่ใช่วัน'), '')
+  const svg = draw(model).svg
+  for (const label of ['แจ้งเรื่อง', 'รับเรื่อง', 'ดำเนินการ', 'เสร็จสิ้น']) assert.ok(has(svg, label), label)
+  assert.ok(has(svg, '3 พ.ย. 2569') && has(svg, '10 พ.ย. 2569'))
+  assert.ok(!has(svg, 'ลงพื้นที่</text>'), 'ป้ายขั้นตอนใช้ "ดำเนินการ" ไม่ใช่ "ลงพื้นที่"')
+  assert.equal((svg.match(/r="20" fill="#c2410c"/g) ?? []).length, 4, 'วงกลมขั้นตอน 4 วง')
+  // ไม่มีวันยื่น/วันปิด = ไม่ใส่วันที่จุดนั้น (ไม่เดา) แต่ขั้นตอนยังครบ 4
+  const noDates = News.buildNewsModel({ tenantName: 'ท', headline: 'x' })
+  assert.deepEqual(noDates.steps.map(step => step.date), ['', '', '', ''])
+  assert.equal(noDates.steps.length, 4)
+  assert.deepEqual(News.buildNewsModel({ tenantName: 'ท', createdAt: CREATED }).steps.map(step => step.date), ['3 พ.ย. 2569', '', '', ''])
+  // ภาพรวม: ครบ 4 จุด ไม่มีวันที่ แม้วันปิดงานรู้
+  const batch = News.buildBatchNewsModel({
+    items: [{ village: '3', createdAt: CREATED, closedAt: CLOSED, dueDate: '2026-11-12' }, { village: '5', createdAt: CREATED, closedAt: CLOSED, dueDate: '2026-11-12' }],
+    tenantName: 'ท', departmentName: 'กองช่าง', categoryLabel: 'ไฟฟ้า', categoryCode: 'light',
+  })
+  assert.deepEqual(batch.steps.map(step => step.label), ['แจ้งเรื่อง', 'รับเรื่อง', 'ดำเนินการ', 'เสร็จสิ้น'])
+  assert.deepEqual(batch.steps.map(step => step.date), ['', '', '', ''])
+  assert.equal(batch.categoryCode, 'light')
+  assert.ok(!/\d+ (ม\.ค\.|พ\.ย\.)/.test(plain(draw(batch).svg).replace(/วันที่\d+พฤศจิกายน\d+/, '')), 'ภาพรวมไม่ควรมีวันที่แบบย่อ')
+})
+
+await test('ป้ายมุมรูป: ก่อน/หลังดำเนินการตาม photoKinds · รูปที่ถูกกรองไม่ทำให้ป้ายเลื่อน · ไม่ส่ง kind = ไม่มีป้าย · ไม่ล้นช่อง', () => {
+  const a = `${PHOTO.slice(0, -2)}A=`
+  const b = `${PHOTO.slice(0, -2)}B=`
+  const c = `${PHOTO.slice(0, -2)}C=`
+  const kinds = svg => [...svg.matchAll(/data-photo-kind="(\w+)"/g)].map(match => match[1])
+  // รูปที่ 2 ใช้ไม่ได้ (ไม่ใช่ data:image) ถูกตัดพร้อมป้ายของมัน — ป้ายของรูปที่ 3 ไม่เลื่อนมาติดรูปที่ 2
+  const filtered = draw(base(), { photoDataUrls: [a, 'https://evil.test/x.png', b], photoKinds: ['before', 'before', 'after'] }).svg
+  assert.deepEqual(kinds(filtered), ['before', 'after'])
+  assert.ok(has(filtered, 'ก่อนดำเนินการ') && has(filtered, 'หลังดำเนินการ'))
+  assert.ok(!filtered.includes('evil.test'))
+  const mixed = draw(base(), { photoDataUrls: [a, b, c], photoKinds: ['after', 'before', 'after'] }).svg
+  assert.deepEqual(kinds(mixed), ['after', 'before', 'after'])
+  // ไม่ส่ง photoKinds / ค่าผิด = ไม่มีป้าย
+  assert.deepEqual(kinds(draw(base(), { photoDataUrls: [a, b] }).svg), [])
+  assert.deepEqual(kinds(draw(base(), { photoDataUrls: [a, b], photoKinds: ['x', null] }).svg), [])
+  assert.deepEqual(kinds(draw(base(), { photoDataUrls: [a, b], photoKinds: ['constructor', 'toString'] }).svg), [])
+  assert.ok(!has(draw(base(), { photoDataUrls: [a] }).svg, 'ก่อนดำเนินการ'))
+  // ป้ายเป็นกล่องดำโปร่ง + กล้อง (lucide) + ข้อความขาว 24
+  const one = draw(base(), { photoDataUrls: [a], photoKinds: ['after'] }).svg
+  assert.match(one, /<rect [^>]*rx="12" fill="#000000" fill-opacity="0.55" data-photo-kind="after"\/>/)
+  assert.match(one, /font-size="24" font-weight="700" fill="#ffffff"[^>]*>หลังดำเนินการ<\/text>/)
+  // ช่องแคบ (4 ช่อง กว้าง 468) พอใส่ข้อความ · ตัววัดกว้างผิดปกติ = เหลือแค่ไอคอน ป้ายไม่ล้นขอบช่อง
+  const wide = News.buildNewsSvg(base(), (value, size, bold) => value.length * size * (bold ? 0.62 : 0.55) * (size === 24 ? 6 : 1), { photoDataUrls: [a, b, c, a], photoKinds: ['after', 'after', 'after', 'after'] }).svg
+  const badgeWidths = [...wide.matchAll(/<rect x="[\d.]+" y="[\d.]+" width="(\d+)" height="44" rx="12" fill="#000000"/g)].map(match => Number(match[1]))
+  assert.equal(badgeWidths.length, 4)
+  assert.ok(badgeWidths.every(width => width <= 468 - 28), `ป้ายล้นช่อง: ${badgeWidths}`)
+  assert.ok(!has(wide, 'หลังดำเนินการ'), 'ช่องแคบเกินไป = ไม่ใส่ข้อความ เหลือแต่ไอคอน')
+})
+
+await test('static: กล่องทั้งสองใช้ useDepartmentTheme · ส่ง categoryCode/photoKinds/theme เข้าภาพ · รูปผู้แจ้ง = ก่อน รูปผลงาน = หลัง', async () => {
+  const dialog = await readFile(new URL('../src/components/complaints/ComplaintNewsDialog.jsx', import.meta.url), 'utf8')
+  const batch = await readFile(new URL('../src/components/complaints/ComplaintNewsBatchDialog.jsx', import.meta.url), 'utf8')
+  const shared = await readFile(new URL('../src/components/complaints/newsDialogData.js', import.meta.url), 'utf8')
+  assert.match(shared, /export function useDepartmentTheme\(tenantId, departmentName\)/)
+  assert.match(shared, /supabase\.from\('departments'\)\.select\('name, short_name, color'\)\.eq\('municipality_id', tenantId\)/)
+  assert.match(shared, /newsThemeFor\(departmentColorKeyByName\(rows, departmentName\)\)/)
+  for (const source of [dialog, batch]) {
+    assert.match(source, /useDepartmentTheme\(tenant\?\.id, departmentName\)/)
+    assert.match(source, /theme/)
+  }
+  // staff: รหัสหมวดจาก c.category · รูปคีย์ w: = after, a: = before
+  assert.match(dialog, /categoryCode: c\.category \?\? ''/)
+  assert.match(dialog, /key\.startsWith\('w:'\) \? 'after' : 'before'/)
+  assert.match(dialog, /photoKinds/)
+  // exec: รหัสหมวดมาจาก RPC exec_complaint_news_detail (คืน category อยู่แล้ว — ไม่แก้ SQL)
+  assert.match(dialog, /category: d\.category/)
+  assert.match(batch, /photoKinds: photoDataUrls\.map\(\(\) => 'after'\)/)
+  assert.match(batch, /category: data\.category/)
+  assert.match(batch, /isExec \? \(pickedItems\.map\(item => detailOf\(item\)\?\.category\)\.find\(Boolean\) \?\? ''\) : \(group\?\.categoryKey \?\? ''\)/)
+  const migration = await readFile(new URL('../supabase/migrations/20261119100100_complaint_news_functions.sql', import.meta.url), 'utf8')
+  assert.match(migration, /'category', c\.category,/)
+})
+
+await test('จบ A4 แผ่นเดียว: เพดาน 1527 px · photoCells ย่อช่องรูปตามที่ว่างแต่ไม่ต่ำกว่า 300 · ไม่ส่งเพดาน = ผลเดิม', () => {
+  assert.equal(News.NEWS_MAX_HEIGHT, 1527) // 1080 × 297 / 210 ปัดลง
+  for (const count of [1, 2, 3, 4]) {
+    assert.deepEqual(News.photoCells(count, 52, Infinity), News.photoCells(count, 52))
+    const squeezed = News.photoCells(count, 52, 500)
+    const floor = count <= 2 ? News.NEWS_PHOTO_MIN_H : News.NEWS_GRID_MIN_H // 1–2 รูป ≥300 · 3–4 รูป (2 แถว) ≥200
+    assert.ok(squeezed.cells.every(cell => cell.h >= floor), `${count} รูป ช่องต้องไม่เตี้ยกว่าขั้นต่ำ`)
+  }
+  // ที่ว่างพอดีกลางทาง: 2 รูป ที่ว่าง 400 (ไม่มีป้าย) → ช่องสูง 400 ตารางสูง 400
+  const two = News.photoCells(2, 0, 400)
+  assert.equal(two.cells[0].h, 400)
+  assert.equal(two.height, 400)
+  // 4 รูปมีป้าย 52: ที่ว่าง 800 → (800 − 52×2 − 16)/2 = 340 ต่อช่อง · ตารางสูงตรงที่ว่าง
+  const four = News.photoCells(4, 52, 800)
+  assert.equal(four.cells[0].h, 340)
+  assert.equal(four.height, 800)
+  assert.equal(four.cells[2].y, 340 + 16 + 52)
+  // ที่ว่างเหลือเฟือ = ไม่ขยายเกินขนาดเดิม
+  assert.equal(News.photoCells(2, 0, 5000).cells[0].h, 520)
+})
+
+await test('จบ A4 แผ่นเดียว: 3–4 รูปที่ 2×2 ไม่พอที่ → แถวเดียวเรียงข้างกัน (ไม่ทับ ไม่ล้นความกว้าง ไม่เตี้ยกว่า 200)', () => {
+  for (const count of [3, 4]) {
+    const row = News.photoCells(count, 52, 450) // 2×2 ได้ช่องละ (450−104−16)/2=165 < 200 → แถวเดียว
+    assert.equal(row.cells.length, count)
+    assert.ok(row.cells.every(cell => cell.y === 0 && cell.h >= 200 && cell.h <= 320), JSON.stringify(row.cells))
+    const right = row.cells.at(-1)
+    assert.ok(Math.abs(right.x + right.w - (1080 - 64 * 2)) < 0.01, 'ช่องสุดท้ายชิดขอบขวาของพื้นที่เนื้อหา')
+    for (let i = 1; i < row.cells.length; i += 1) assert.ok(row.cells[i].x >= row.cells[i - 1].x + row.cells[i - 1].w, 'ช่องต้องไม่ทับกัน')
+    assert.ok(row.height <= 450, `แถวเดียวต้องไม่เกินที่ว่าง ${row.height}`)
+  }
+  // ที่ว่างพอสำหรับ 2×2 (ช่อง ≥ 200) = ยังเป็น 2×2 เหมือนเดิม
+  assert.equal(News.photoCells(4, 0, 800).cells[2].y > 0, true)
+  assert.equal(News.photoCells(4).cells[2].y > 0, true)
+})
+
+await test('จบ A4 แผ่นเดียว: นายก+QR+ป้ายก่อน/หลัง ทุกจำนวนรูป 0–4 จบ ≤ 1527 · ทั้งมีรูปนายกและป้ายอย่างเดียว', () => {
+  const model = base({
+    headline: 'กองช่าง เทศบาลตำบลสาธิต ลงพื้นที่ดำเนินการเรื่องไฟฟ้าสาธารณะ หมู่ 3 ตามที่ประชาชนแจ้งผ่านระบบ E-Service',
+    detail: 'เปลี่ยนหลอดไฟและตรวจสอบสายไฟแล้ว ใช้งานได้ปกติ',
+    executive: { name: 'นายสมมติ ตัวอย่างดี', title: 'นายกเทศมนตรีตำบลสาธิต' },
+    reportUrl: 'https://namlao.example.test/complaint',
+  })
+  const run = (count, assets = {}) => {
+    const photos = Array.from({ length: count }, () => PHOTO)
+    return draw(model, { photoDataUrls: photos, photoKinds: photos.map((_, i) => (i === 0 ? 'before' : 'after')), ...assets })
+  }
+  for (const count of [0, 1, 2, 3, 4]) {
+    const out = run(count, { executivePhotoDataUrl: PHOTO })
+    assert.ok(out.fitsA4, `${count} รูป+รูปนายก ต้อง fitsA4 (สูง ${out.height})`)
+    assert.ok(out.height <= News.NEWS_MAX_HEIGHT && out.height >= News.NEWS_MIN_HEIGHT, `${count} รูป สูง ${out.height}`)
+    assert.match(out.svg, new RegExp(`height="${out.height}"`))
+  }
+  for (const count of [0, 1, 2, 3, 4]) {
+    const out = run(count) // ไม่มีรูปนายก = ป้ายชื่ออย่างเดียว หัวเตี้ยกว่า
+    assert.ok(out.fitsA4, `${count} รูป (ป้ายนายกอย่างเดียว) ต้อง fitsA4 (สูง ${out.height})`)
+  }
+  // ภาพรวม: ป้ายหมู่ใต้รูป + "และอีก N จุด" ก็ต้องจบ A4 ทั้งมี/ไม่มีรูปนายก
+  for (const assets of [{}, { executivePhotoDataUrl: PHOTO }]) {
+    const batch = run(4, { photoCaptions: ['หมู่ 1', 'หมู่ 2', 'หมู่ 3', 'หมู่ 4'], moreText: 'และอีก 6 จุด', ...assets })
+    assert.ok(batch.fitsA4, `ภาพรวม สูง ${batch.height}`)
+  }
+})
+
+await test('จบ A4 แผ่นเดียว: แถบขั้นตอน (พร้อมวันที่) อยู่ครบทุกกรณี · บีบด้วยการย่อรูป/กรอบ/ตัวหนังสือ · ข้อความล้นมาก = fitsA4 false ไม่ตัดข้อความ', () => {
+  const exec = { name: 'นายสมมติ ตัวอย่างดี', title: 'นายกเทศมนตรีตำบลสาธิต' }
+  const heading = 'กองช่าง เทศบาลตำบลสาธิต ลงพื้นที่ดำเนินการเรื่องไฟฟ้าสาธารณะ หมู่ 3 ตามที่ประชาชนแจ้งผ่านระบบ E-Service'
+  // ขนาดฟอนต์ของ <text> แรกที่มีข้อความนั้น (หัวข้อข่าวถูกตัดเป็นหลายบรรทัด ใช้คำขึ้นต้นระบุ)
+  const fontSizeOf = (svg, phrase) => {
+    for (const match of svg.matchAll(/<text[^>]*font-size="(\d+)"[^>]*>([^<]*)<\/text>/g)) if (match[2].includes(phrase)) return Number(match[1])
+    return NaN
+  }
+  // ไม่ต้องบีบ (ไม่มีรูป) = ขนาดเต็ม · หัวข้อข่าว 40
+  const short = draw(base({ headline: heading }), {})
+  assert.ok(has(short.svg, 'แจ้งเรื่อง') && has(short.svg, '3 พ.ย. 2569') && has(short.svg, '10 พ.ย. 2569'))
+  assert.equal(fontSizeOf(short.svg, 'กองช่าง'), 40)
+  // ต้องบีบ (นายก + 2 รูป): แถบขั้นตอนยังอยู่ครบพร้อมวันที่ · หัวข้อข่าวย่อลงแต่ไม่ต่ำกว่า 32 · ภาพจบ A4
+  const squeezed = draw(base({ headline: heading, executive: exec, reportUrl: 'https://namlao.example.test/complaint' }), { photoDataUrls: [PHOTO, PHOTO], executivePhotoDataUrl: PHOTO })
+  assert.ok(squeezed.fitsA4)
+  for (const phrase of ['แจ้งเรื่อง', 'รับเรื่อง', 'ดำเนินการ', 'เสร็จสิ้น', '3 พ.ย. 2569', '10 พ.ย. 2569']) assert.ok(has(squeezed.svg, phrase), `ต้องมี ${phrase}`)
+  const headlineSize = fontSizeOf(squeezed.svg, 'กองช่าง')
+  assert.ok(headlineSize >= 32 && headlineSize < 40, `หัวข้อข่าวต้องย่อลงแต่ไม่ต่ำกว่า 32: ${headlineSize}`)
+  // ข้อความข่าวยาวเกินกว่าจะพอดีแม้บีบสุดทาง → ล้น fitsA4 false แต่ข้อความครบ ไม่ถูกตัด และยังมีแถบขั้นตอน
+  const longText = 'ซ่อมแซมไฟฟ้าสาธารณะ '.repeat(40).trim()
+  const over = draw(base({ headline: longText }), { photoDataUrls: [PHOTO, PHOTO] })
+  assert.equal(over.fitsA4, false)
+  assert.ok(has(over.svg, longText.slice(0, 30)))
+  assert.ok(has(over.svg, 'แจ้งเรื่อง'), 'ล้นก็ยังต้องมีแถบขั้นตอน (ไม่ตัดทิ้ง)')
+  // วาดซ้ำหลายรอบภายใน buildNewsSvg แต่ SVG ที่ส่งออกต้องมี id ละชุดเดียว
+  for (const id of ['news-head-grad', 'news-foot-grad', 'news-bg-grad', 'news-dots', 'news-card-clip']) assert.equal((over.svg.match(new RegExp(`id="${id}"`, 'g')) ?? []).length, 1, id)
+})
+
+await test('พื้นหลังตกแต่ง: ไล่สีอ่อนตามสีธีมกอง + การ์ดขาวมีเงา + ลายจุด + ลายเครือข่าย · วาดก่อนแถบหัว/ท้าย · ไม่มี filter · ตายตัว', () => {
+  for (const color of ['blue', 'green', 'orange']) {
+    const theme = { blue: { base: '#1d4ed8', deep: '#1e3a8a', soft: '#dbeafe', ink: '#1e40af' }, green: { base: '#15803d', deep: '#14532d', soft: '#dcfce7', ink: '#166534' }, orange: { base: '#c2410c', deep: '#7c2d12', soft: '#ffedd5', ink: '#9a3412' } }[color]
+    const svg = draw(base({ theme, reportUrl: 'https://namlao.example.test/complaint' }), { photoDataUrls: [PHOTO] }).svg
+    // พื้นหลังเริ่มจากสีอ่อนของธีมนั้น (ผสม soft กับขาว) ไม่ใช่ขาวล้วน
+    const top = svg.match(/<linearGradient id="news-bg-grad"[^>]*><stop offset="0" stop-color="(#[0-9a-f]{6})"/)[1]
+    assert.notEqual(top, '#ffffff')
+    assert.ok(parseInt(top.slice(1, 3), 16) >= 0xc0 && parseInt(top.slice(3, 5), 16) >= 0xc0 && parseInt(top.slice(5, 7), 16) >= 0xb0, `${color} พื้นต้องอ่อน ${top}`)
+    // ลำดับ: พื้นหลัง → การ์ด → ลายเครือข่าย 2 ชุด → แถบหัว (ลายต้องไม่ทับแถบหัว/ท้าย/ข้อความ)
+    assert.ok(svg.indexOf('news-bg-grad') < svg.indexOf('data-card="1"') && svg.indexOf('data-card="1"') < svg.indexOf('news-head-grad"'))
+    assert.equal((svg.match(/data-network="1"/g) ?? []).length, 2)
+    assert.ok(svg.lastIndexOf('data-network="1"') < svg.indexOf('id="news-head-grad"'))
+    assert.match(svg, /data-card-shadow="1"/)
+    assert.ok(!/<filter|filter=/.test(svg))
+    // ความทึบของลายพื้นหลังจางพอไม่รบกวนการอ่าน (≤ 0.2)
+    const network = svg.slice(svg.indexOf('data-network="1"'), svg.lastIndexOf('data-network="1"') + 900)
+    for (const value of network.match(/(?:fill|stroke)-opacity="0\.\d+"/g)) assert.ok(Number(value.match(/0\.\d+/)[0]) <= 0.2, value)
+    assert.equal(draw(base({ theme }), { photoDataUrls: [PHOTO] }).svg, draw(base({ theme }), { photoDataUrls: [PHOTO] }).svg)
+  }
+})
+
+await test('static: ภาพข่าวจบ A4 — ไล่ NEWS_FIT_LEVELS (ย่อตัวหนังสือ/รูปนายก/แถบท้าย/รูปงาน) ไม่ตัดแถบขั้นตอน · แถบท้ายคำนวณก่อนส่วนรูป · หน้าจอเตือนเมื่อล้น', async () => {
+  const src = await readFile(new URL('../src/lib/complaintNewsImage.js', import.meta.url), 'utf8')
+  assert.match(src, /for \(const fit of NEWS_FIT_LEVELS\)/)
+  const levels = src.slice(src.indexOf('const NEWS_FIT_LEVELS'), src.indexOf('function drawNewsSvg'))
+  const rows = [...levels.matchAll(/\{ t: ([\d.]+), exec: ([\d.]+), foot: ([\d.]+), min: (\d+) \}/g)].map(match => match.slice(1).map(Number))
+  assert.ok(rows.length >= 4)
+  assert.deepEqual(rows[0], [1, 1, 1, 300], 'ขั้นแรก = ขนาดเต็ม')
+  for (let i = 1; i < rows.length; i += 1) assert.ok(rows[i].every((value, k) => value <= rows[i - 1][k]), 'แต่ละขั้นต้องเล็กลงหรือเท่าเดิมทุกค่า')
+  const last = rows.at(-1)
+  assert.ok(40 * last[0] >= 32 && 220 * last[2] >= 165 && last[3] >= 220, 'ขั้นต่ำสุด: หัวข้อ ≥32 · QR ≥165 · ช่องรูป ≥220')
+  assert.ok(!/stepsMode|'compact'|'none'/.test(src), 'ห้ามกลับไปซ่อน/ตัดแถบขั้นตอน (เจ้าของสั่ง 2569-11-12)')
+  assert.ok(src.indexOf('const footH = ') < src.indexOf('photoCells(photos.length, captionH, '), 'ต้องรู้ footH ก่อนคำนวณที่ว่างของรูป')
+  assert.match(src, /fitsA4: height <= NEWS_MAX_HEIGHT/)
+  const parts = await readFile(new URL('../src/components/complaints/newsDialogParts.jsx', import.meta.url), 'utf8')
+  assert.match(parts, /image\.fitsA4 === false/)
+  assert.match(parts, /ภาพนี้ยาวเกิน 1 แผ่น A4/)
 })
 
 console.log(`\n${cases} cases passed`)

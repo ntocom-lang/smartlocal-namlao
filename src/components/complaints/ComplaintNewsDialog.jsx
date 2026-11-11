@@ -7,7 +7,7 @@ import {
   MAX_NEWS_PHOTOS, buildNewsModel, buildNewsSvg, createCanvasMeasure, defaultShowDuration, draftHeadline,
 } from '../../lib/complaintNewsImage'
 import { DialogShell, NewsOutputPanel } from './newsDialogParts'
-import { GENERIC_ERROR, SHOWABLE_CODES, loadImage, useNewsBranding, usePreparedPng } from './newsDialogData'
+import { GENERIC_ERROR, SHOWABLE_CODES, loadImage, useDepartmentTheme, useNewsBranding, usePreparedPng } from './newsDialogData'
 
 // กล่องสร้าง "ภาพข่าวประชาสัมพันธ์" ของคำร้องที่ดำเนินการแล้ว (เจ้าของระบบอนุมัติ 2569-11-11)
 // ภาพที่เห็นในกล่อง = ไฟล์ PNG ที่ดาวน์โหลด/แชร์ (สตริง SVG ก้อนเดียวกัน ดู src/lib/complaintNewsImage.js)
@@ -74,7 +74,7 @@ function ExecNewsDialogLoader({ complaintId, tenant, onClose }) {
   const d = state.data
   // ไม่ส่ง attachments (รูปผู้แจ้ง) เข้ากล่องเลย — RPC ก็ไม่คืนมาอยู่แล้ว
   const complaint = {
-    id: d.id, ref_no: d.ref, village: d.village, created_at: d.created_at, closed_at: d.closed_at, due_date: d.due_date,
+    id: d.id, ref_no: d.ref, category: d.category, village: d.village, created_at: d.created_at, closed_at: d.closed_at, due_date: d.due_date,
     work_photos: Array.isArray(d.work_photos) ? d.work_photos : [],
   }
   return (
@@ -102,6 +102,8 @@ function NewsDialogBody({ source, complaint: c, tenant, departmentName = '', cat
   const [loaded, setLoaded] = useState({})
   const [mayorEdit, setMayorEdit] = useState(null)
   const { logo, branding, mayorPhoto } = useNewsBranding(tenant)
+  // สีธีมตามสีกอง (หาไม่เจอ = ส้ม) · staff: departmentName มาจาก complaint.department · exec: d.dept
+  const theme = useDepartmentTheme(tenant?.id, departmentName)
 
   // บันทึกผลตอนปิดงาน = แถว complaint_timeline สถานะ closed ล่าสุดของเรื่องนี้ (finish_complaint เขียนไว้ทุกครั้ง)
   useEffect(() => {
@@ -142,23 +144,26 @@ function NewsDialogBody({ source, complaint: c, tenant, departmentName = '', cat
   const durationOn = durationEdit ?? defaultShowDuration({ closedAt: closed, dueDate: c.due_date })
 
   const model = useMemo(() => buildNewsModel({
-    complaint: c, tenantName, departmentName, categoryLabel, closedAt: closed, createdAt: c.created_at, dueDate: c.due_date,
-    showStatus: statusOn, showDuration: durationOn, headline, detail, reportUrl: linkOn ? reportUrl : '', executive,
-  }), [c, tenantName, departmentName, categoryLabel, closed, statusOn, durationOn, headline, detail, reportUrl, linkOn, executive])
+    complaint: c, tenantName, departmentName, categoryLabel, categoryCode: c.category ?? '', closedAt: closed, createdAt: c.created_at, dueDate: c.due_date,
+    showStatus: statusOn, showDuration: durationOn, headline, detail, reportUrl: linkOn ? reportUrl : '', executive, theme,
+  }), [c, tenantName, departmentName, categoryLabel, closed, statusOn, durationOn, headline, detail, reportUrl, linkOn, executive, theme])
   const deferredModel = useDeferredValue(model)
 
-  const photoDataUrls = useMemo(() => {
+  // รูปที่เลือกเรียงตามลำดับ + ชนิดรูปคู่กัน: w: = รูปผลงานเจ้าหน้าที่ (หลังดำเนินการ) · a: = รูปจากผู้แจ้ง (ก่อนดำเนินการ) — ป้ายมุมรูปต้องตรงความจริง
+  const pickedPhotos = useMemo(() => {
     const keys = [...workRefs.map((_, i) => `w:${i}`), ...reporterRefs.map((_, i) => `a:${i}`)]
-    return keys.filter(key => picked.has(key)).map(key => loaded[key]?.dataUrl ?? null)
+    return keys.filter(key => picked.has(key)).map(key => ({ dataUrl: loaded[key]?.dataUrl ?? null, kind: key.startsWith('w:') ? 'after' : 'before' }))
   }, [picked, loaded, workRefs, reporterRefs])
+  const photoDataUrls = useMemo(() => pickedPhotos.map(photo => photo.dataUrl), [pickedPhotos])
+  const photoKinds = useMemo(() => pickedPhotos.map(photo => photo.kind), [pickedPhotos])
 
   const image = useMemo(() => {
     try {
-      return buildNewsSvg(deferredModel, createCanvasMeasure(), { logoDataUrl: logo, photoDataUrls, executivePhotoDataUrl: mayorOn ? mayorPhoto : null })
+      return buildNewsSvg(deferredModel, createCanvasMeasure(), { logoDataUrl: logo, photoDataUrls, photoKinds, executivePhotoDataUrl: mayorOn ? mayorPhoto : null })
     } catch {
       return null
     }
-  }, [deferredModel, logo, photoDataUrls, mayorOn, mayorPhoto])
+  }, [deferredModel, logo, photoDataUrls, photoKinds, mayorOn, mayorPhoto])
   const fileName = `news-${String(c.ref_no ?? c.id).replace(/[^A-Za-z0-9_-]+/g, '-')}.png`
   const png = usePreparedPng(image, fileName)
 
