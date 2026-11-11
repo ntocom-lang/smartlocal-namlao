@@ -4,7 +4,7 @@ import { thaiShortDate } from '../../../lib/complaintReportPeriods'
 import { EXEC_OVERDUE_WD, execNf } from '../../../lib/executiveData'
 import { loadOverdue, nudgeItem } from '../../../lib/execFollowNudge'
 import {
-  canRetry, followRowKind, itemCategoryLabel, itemKey, itemKindName, itemStatusLabel, nudgeBlocked, nudgeConfirmText,
+  canRetry, followRowKind, itemCategoryLabel, itemKey, itemKindName, itemOwnerText, itemStatusLabel, nudgeBlocked, nudgeConfirmText,
   nudgeDeliveryText, nudgeResultMessage, overdueWorkingDays, sensitiveSummaryLines, truncatedText,
 } from '../../../lib/execFollowNudgeHelpers'
 import { simpleAlertWords } from '../../../lib/execSimpleView'
@@ -14,6 +14,7 @@ import { ActionBtn, Flag, Item, LoadFail, Loading, OpenBtn } from './ExecSimpleP
 //   OverdueItems = เรื่องช้าเกิน 5 วันทำการ + ปุ่มส่งให้กองเร่ง (ตรรกะ/ข้อความยืนยัน/ผลส่งชุดเดียวกับ ExecOverdueList ของหน้าเต็ม)
 //   FollowItems  = เรื่องที่ท่านติดตาม (อ่านอย่างเดียว) · RatingSources = ที่มาของคะแนนต่ำ (ไม่แสดงข้อความความเห็น) · MinorItems = เรื่องเล็ก
 // PDPA: ไม่มีชื่อผู้ร้อง/ผู้ประเมิน/รายละเอียดเรื่อง — เลขที่เรื่อง + หมวด + กอง + จำนวนวัน เท่านั้น · หมวดคุ้มครองผู้ร้องเป็นยอดรวม ไม่มีเลขที่
+//   ยกเว้นชื่อ+ตำแหน่ง "เจ้าหน้าที่ผู้รับผิดชอบ" ของเรื่องเลยกำหนด (เจ้าของระบบสั่ง 2026-11-11 ให้นายกสั่งการถูกคน · ไม่มีในหมวดคุ้มครองผู้ร้อง)
 // ไม่มีปุ่มอนุมัติ — ปุ่มเร่งเป็น "ส่งข้อความ Telegram ถึงหัวหน้ากอง" ที่ฐานข้อมูลตรวจสิทธิ์ซ้ำ (exec_assert_actor) และจดบันทึกทุกครั้ง
 
 const LIST_LIMIT = 10
@@ -84,11 +85,13 @@ export function OverdueItems({ tenant, today, canNudge, tick }) {
         const retry = Boolean(item.nudged_today) && canRetry(nudge, now)
         const sent = nudge ? nudgeDeliveryText(nudge.delivery) : null
         const note = notes[key]
+        const owner = itemOwnerText(item)
         return (
           <Item key={key} data-exec-simple-overdue-row={key}>
             <div className="es-item-head"><span>{item.ref}</span><span className="late">เลยมา {execNf(days)} วันทำการ</span></div>
             <div className="es-item-title">{itemCategoryLabel(item, tenant)}</div>
             <div className="es-item-sub">{itemKindName(item.k)} · {item.dept || 'ไม่ระบุกอง'} · {itemStatusLabel(item.k, item.s)} · กำหนดเสร็จ {dueText(item.due)}</div>
+            {owner && <div className={`es-item-owner${owner.tone === 'warn' ? ' warn' : ''}`} data-exec-simple-owner>{owner.tone === 'warn' ? '⚠ ' : ''}{owner.text}</div>}
             {note && <Flag tone={TONE_OF[note.tone] ?? 'amber'} data-exec-simple-nudge-note>{note.text}</Flag>}
             {canNudge && !note && blocked && sent && (
               <Flag tone={TONE_OF[sent.tone] ?? 'amber'} data-exec-simple-nudge-done>วันนี้ส่งให้กองเร่งแล้ว (เร่งได้วันละครั้ง) · {sent.label}</Flag>

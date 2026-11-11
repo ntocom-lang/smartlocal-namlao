@@ -127,6 +127,8 @@
 .es-item-head .wait { color: var(--es-amber); white-space: nowrap; font-size: 19px; }
 .es-item-title { font-size: 20px; font-weight: 700; margin-top: 2px; overflow-wrap: anywhere; }
 .es-item-sub { font-size: 18px; color: var(--es-muted); overflow-wrap: anywhere; }
+.es-item-owner { font-size: 19px; font-weight: 700; margin-top: 4px; overflow-wrap: anywhere; }
+.es-item-owner.warn { color: var(--es-amber); }
 .es-item .es-btn { margin-top: 8px; }
 .es-note { font-size: 18px; color: var(--es-muted); margin: 0; }
 
