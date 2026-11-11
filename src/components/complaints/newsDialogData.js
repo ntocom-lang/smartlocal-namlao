@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { supabase, supabaseUrl } from '../../lib/supabase'
 import { fetchImageAsDataUrl } from '../../lib/driveStorage'
-import { cutoutPlainBackground, svgToPngFile, withNewsPhotoUrl } from '../../lib/complaintNewsImage'
+import { NEWS_EXEC_PHOTO_SIDE, cutoutPlainBackground, svgToPngFile, transparentPhotoBox, withNewsPhotoUrl } from '../../lib/complaintNewsImage'
 
 // ตัวโหลดรูป + hook ที่กล่องภาพข่าวรายเรื่อง (ComplaintNewsDialog) กับกล่องภาพข่าวรวม (ComplaintNewsBatchDialog) ใช้ร่วมกัน
 // แยกจากไฟล์คอมโพเนนต์ (newsDialogParts.jsx) เพราะ fast-refresh ต้องการให้ไฟล์คอมโพเนนต์ export แต่คอมโพเนนต์
 
 const KEEP_SIDE = 1400
+const HAS_ALPHA_MIME = /^data:image\/(png|webp|gif)[;,]/i
 
 // ย่อรูปก่อนฝังใน SVG — รูปมือถือหลาย MB ฝังตรงๆ ทำให้ภาพตัวอย่างและการแปลงเป็น PNG ช้า ภาพข่าวใช้ไม่เกินครึ่งความกว้าง 1080 อยู่แล้ว
 // ย่อไม่ได้ (เบราว์เซอร์ถอดรหัสไม่ได้ ฯลฯ) = ใช้ตัวเดิม ไม่ล้ม
@@ -21,16 +22,23 @@ async function shrinkDataUrl(dataUrl) {
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
     const context = canvas.getContext('2d')
     if (!context) return dataUrl
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    // PNG/WebP ที่มีพื้นโปร่งใส (รูปนายกที่ตัดพื้นหลังมาแล้ว / โลโก้) ต้องคงเป็น PNG — แปลง JPEG แล้วพื้นกลายเป็นสีขาวทึบ
+    // ตรวจเฉพาะชนิดที่มีช่องโปร่งใสได้ รูปถ่ายคำร้อง (JPEG) ไม่ต้องอ่านพิกเซล
+    if (HAS_ALPHA_MIME.test(dataUrl)
+      && transparentPhotoBox(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height)) {
+      return canvas.toDataURL('image/png')
+    }
+    context.globalCompositeOperation = 'destination-over'
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, canvas.width, canvas.height)
-    context.drawImage(image, 0, 0, canvas.width, canvas.height)
     return canvas.toDataURL('image/jpeg', 0.86)
   } catch {
     return dataUrl
   }
 }
 
-const EXEC_SIDE = 720
+const EXEC_SIDE = NEWS_EXEC_PHOTO_SIDE
 const FRAME_BORDER = 10
 const FRAME_RADIUS = 30
 
@@ -46,6 +54,8 @@ function roundedRectPath(context, x, y, w, h, r) {
 
 /**
  * รูปนายกสำหรับภาพข่าว (เจ้าของสั่ง 2569-11-11 ให้ตัดพื้นหลังขาวออกแบบภาพข่าวต้นฉบับ):
+ *  - PNG/WebP ที่มีพื้นโปร่งใสมาเอง (transparentPhotoBox) → ใช้ตามไฟล์ แค่ครอปชิดส่วนที่มองเห็น ไม่ตัดพื้นหลังซ้ำ
+ *    (ผู้อัปโหลดตัดภาพมาดีกว่ากติกาเทสีของเรา ตัดซ้ำมีแต่เสี่ยงกินผม/ขอบเสื้อ)
  *  - ฉากเรียบ (ตรวจด้วย cutoutPlainBackground) → PNG โปร่งใส ครอปชิดตัวคน ไม่มีที่ว่างเหนือหัว
  *  - ฉากไม่เรียบ/ตัดแล้วเสี่ยงกินเสื้อ → PNG รูปเดิมในกรอบขาวมุมมน ไม่ตัดมั่ว
  * ทำในเบราว์เซอร์ล้วน ไม่ส่งรูปออกไปบริการภายนอก · พังกลางทาง = ใช้รูปเดิม ภาพข่าวยังออกได้
@@ -64,7 +74,8 @@ export async function prepareExecutivePhoto(dataUrl) {
     if (!context) return dataUrl
     context.drawImage(image, 0, 0, w, h)
     const pixels = context.getImageData(0, 0, w, h)
-    const box = cutoutPlainBackground(pixels.data, w, h)
+    // ลำดับสำคัญ: ตรวจความโปร่งใสเดิมก่อน (ไม่แก้ pixels) แล้วค่อยลองตัดฉากเรียบ (แก้ pixels ในที่)
+    const box = transparentPhotoBox(pixels.data, w, h) || cutoutPlainBackground(pixels.data, w, h)
     const out = document.createElement('canvas')
     const outContext = out.getContext('2d')
     if (!outContext) return dataUrl

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, MapPinned, X, Plus, Pencil, Trash2, RefreshCw, AlertTriangle, Megaphone } from 'lucide-react'
 import { supabase, supabaseUrl } from '../../lib/supabase'
-import { withNewsPhotoUrl } from '../../lib/complaintNewsImage'
+import { NEWS_EXEC_PHOTO_SIDE, transparentPhotoBox, withNewsPhotoUrl } from '../../lib/complaintNewsImage'
 import { uploadFile, toReliableImageUrl } from '../../lib/driveStorage'
 import { buildAppIconBlob } from '../../lib/appIcon'
 import { useTenant } from '../../contexts/TenantContext'
@@ -21,7 +21,10 @@ const PHOTO_JPEG = { type: 'image/jpeg', quality: 0.85 }
 // เดิมไม่มี onerror/timeout เลย — ถ้าเบราว์เซอร์ decode ไฟล์เป็น <img> ไม่ได้ (ไฟล์เสีย, HEIC/WebP
 // บางรูปแบบที่ไม่รองรับ, ฯลฯ) Promise จะค้างไม่ resolve/reject ตลอดไป ทำให้ handleXxxUpload ที่ await
 // อยู่หยุดนิ่งเงียบๆ ไม่ error ไม่บันทึก แก้โดยเพิ่ม onerror + timeout กันค้าง แล้ว reject ให้ catch จับได้จริง
-function resizeImage(file, maxPx = 600, { type = 'image/png', quality = 0.92 } = {}) {
+// keepTransparent (ใช้กับ type JPEG): ถ้ารูปมีพื้นโปร่งใสจริง (transparentPhotoBox) ให้ออกเป็น PNG แทน
+// — รูปนายกที่ตัดพื้นหลังมาแล้วต้องไม่ถูกเทพื้นขาว · รูปทึบยังเป็น JPEG ไฟล์เล็กเหมือนเดิม
+// ผู้เรียกต้องดู blob.type เพื่อตั้งนามสกุลไฟล์ให้ตรงเนื้อไฟล์
+function resizeImage(file, maxPx = 600, { type = 'image/png', quality = 0.92, keepTransparent = false } = {}) {
   return new Promise((resolve, reject) => {
     const objectUrl = URL.createObjectURL(file)
     const timer = setTimeout(() => {
@@ -36,17 +39,30 @@ function resizeImage(file, maxPx = 600, { type = 'image/png', quality = 0.92 } =
       canvas.width  = Math.round(img.width  * scale)
       canvas.height = Math.round(img.height * scale)
       const ctx = canvas.getContext('2d')
-      if (type === 'image/jpeg') {
-        // JPEG ไม่มีช่องโปร่งใส — ไม่รองพื้นขาวก่อน ส่วนโปร่งใสของ PNG จะกลายเป็นสีดำ
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(0, 0, canvas.width, canvas.height)
+      let outType = type
+      if (type === 'image/jpeg' && keepTransparent) {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        if (transparentPhotoBox(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height)) {
+          outType = 'image/png'
+        } else {
+          // รูปทึบ: รองพื้นขาว "ข้างหลัง" ภาพที่วาดแล้ว (จุดโปร่งใสหลุดไม่กี่จุดจะไม่กลายเป็นสีดำ)
+          ctx.globalCompositeOperation = 'destination-over'
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+        }
+      } else {
+        if (type === 'image/jpeg') {
+          // JPEG ไม่มีช่องโปร่งใส — ไม่รองพื้นขาวก่อน ส่วนโปร่งใสของ PNG จะกลายเป็นสีดำ
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
       }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
       canvas.toBlob(blob => {
         URL.revokeObjectURL(objectUrl)
         if (blob) resolve(blob)
         else reject(new Error('แปลงไฟล์รูปภาพไม่สำเร็จ — ลองไฟล์อื่น (แนะนำ JPG/PNG)'))
-      }, type, quality)
+      }, outType, quality)
     }
     img.onerror = () => {
       clearTimeout(timer)
@@ -1316,16 +1332,21 @@ function NewsExecutivePhotoCard({ tenant }) {
     setBusy(true)
     setNotice(null)
     try {
-      const blob = await resizeImage(file, 900, PHOTO_JPEG)
+      // PNG/WebP พื้นโปร่งใส (ตัดพื้นหลังมาเองแล้ว) เก็บเป็น PNG ต่อ ภาพข่าวจะใช้ตามไฟล์ไม่ตัดซ้ำ · รูปทึบเป็น JPEG เหมือนเดิม
+      // ด้านยาวเท่าที่ภาพข่าวใช้จริง (NEWS_EXEC_PHOTO_SIDE) — PNG ไม่บีบอัดแบบ JPEG ไฟล์ใหญ่เกินจำเป็นกิน egress ทุกครั้งที่เปิดกล่องภาพข่าว
+      const blob = await resizeImage(file, NEWS_EXEC_PHOTO_SIDE, { ...PHOTO_JPEG, keepTransparent: true })
+      const isPng = blob.type === 'image/png'
       const { url, error: upErr } = await uploadFile('municipality-assets', blob, {
         subject: 'executive-photo',
-        filename: `executive-${tenant.slug}.jpg`,
+        filename: `executive-${tenant.slug}.${isPng ? 'png' : 'jpg'}`,
         municipality: tenant?.slug,
+        // ด่านย่อกลาง (limitPublicImage) แปลงไฟล์ >1.5 MB เป็น JPEG — ต้องข้ามสำหรับ PNG โปร่งใส ขนาดคุมด้วย NEWS_EXEC_PHOTO_SIDE แล้ว
+        keepFormat: isPng,
       })
       if (upErr) throw upErr
       await savePhoto(url) // ห้ามต่อ &v= ท้าย URL — ฐานข้อมูลรับเฉพาะรูปแบบ drive-file?id=… ล้วน
       await load()
-      setNotice({ ok: true, text: 'บันทึกรูปแล้ว' })
+      setNotice({ ok: true, text: isPng ? 'บันทึกรูปแล้ว (พื้นโปร่งใส — ภาพข่าวใช้ตามไฟล์ ไม่ตัดพื้นหลังซ้ำ)' : 'บันทึกรูปแล้ว' })
     } catch (err) {
       setNotice({ ok: false, text: 'อัปโหลดรูปไม่สำเร็จ: ' + err.message })
     } finally {
@@ -1385,7 +1406,7 @@ function NewsExecutivePhotoCard({ tenant }) {
             {!hasMayor && (
               <p className="text-xs text-amber-700 mb-2 leading-relaxed">ตั้งผู้ลงนามช่องนายกที่เมนู "การลงนามเอกสาร" ก่อน</p>
             )}
-            <p className="text-[11px] text-gray-400 mb-3">รองรับ PNG · JPG · WebP · แนะนำรูปแนวตั้ง</p>
+            <p className="text-[11px] text-gray-400 mb-3 leading-relaxed">รองรับ PNG · JPG · WebP · แนะนำรูปแนวตั้ง · PNG พื้นโปร่งใสใช้ตามไฟล์ได้เลย รูปทั่วไประบบตัดฉากเรียบให้เอง</p>
             <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleUpload} />
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" onClick={() => fileRef.current?.click()} disabled={busy || !hasMayor}
