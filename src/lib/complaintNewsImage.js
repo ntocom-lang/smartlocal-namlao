@@ -35,10 +35,15 @@ const MUTED = '#4b5563'
 const GAP = 16
 // แถวป้ายหมู่ใต้รูปของภาพข่าวรวม
 const CAPTION_H = 52
-// บล็อกผู้บริหารมุมขวาแถบหัว (แบบร่างที่เจ้าของรับรอง): กรอบรูป ~150×180 + ป้ายขาวใต้รูป
-const EXEC_PHOTO_W = 150
-const EXEC_PHOTO_H = 180
-const EXEC_PLATE_W = 280
+// บล็อกผู้บริหารมุมขวาแถบหัว (เจ้าของสั่ง 2569-11-11 ให้เด่นแบบภาพข่าวต้นฉบับ อบต.): รูปตัดพื้นหลังตัวใหญ่ไม่มีกรอบขาว
+// ยืนชิดก้นกล่อง แล้วป้ายชื่อขอบส้มทับช่วงล่างของรูป (ซ่อนรอยตัดลำตัว) · ผู้เรียกตัดพื้นหลังมาเอง (prepareExecutivePhoto)
+const EXEC_PHOTO_W = 300
+const EXEC_PHOTO_H = 300
+const EXEC_PHOTO_TOP = 26
+const EXEC_PLATE_OVERLAP = 52
+const EXEC_PLATE_W = 320
+const EXEC_PLATE_PAD_X = 22
+const EXEC_PLATE_PAD_Y = 16
 const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -253,6 +258,106 @@ export function buildBatchNewsModel({ items = [], tenantName = '', departmentNam
 const imageUrlOk = value => typeof value === 'string' && /^data:image\/[a-z0-9.+-]+[;,]/i.test(value)
 
 /**
+ * ข้อความในป้ายชื่อ/ตำแหน่ง: ย่อขนาดจาก maxSize ลงทีละ 1 จนจบบรรทัดเดียว (เคสจริง: "แปง"/"เลา" ตกไปยืนบรรทัดสองคนเดียว)
+ * ถึง minSize แล้วยังไม่พอ = ตัด 2 บรรทัดที่ช่องว่างให้สองบรรทัดยาวใกล้กันที่สุด · ไม่มีช่องว่างที่ใช้ได้ = ตัดตามคำ (wrapLines)
+ */
+export function fitPlateText(value, width, maxSize, minSize, bold, measure) {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim()
+  for (let size = maxSize; size >= minSize; size -= 1) {
+    if (measure(text, size, bold) <= width) return { size, bold, lines: [text] }
+  }
+  const words = text.split(' ')
+  let best = null
+  for (let i = 1; i < words.length; i += 1) {
+    const pair = [words.slice(0, i).join(' '), words.slice(i).join(' ')]
+    const widths = pair.map(line => measure(line, minSize, bold))
+    if (Math.max(...widths) > width) continue
+    const diff = Math.abs(widths[0] - widths[1])
+    if (!best || diff < best.diff) best = { diff, lines: pair }
+  }
+  return { size: minSize, bold, lines: best ? best.lines : wrapLines(text, width, minSize, bold, measure) }
+}
+
+// ── ตัดพื้นหลังเรียบของรูปนายก (ฉากขาว/ฉากสีเดียวแบบรูปถ่ายติดบัตร) — กติกาตรงไปตรงมา ไม่ใช้ AI ไม่มีค่าใช้จ่าย ──
+const CUT_EDGE_TOL = 40 // ขอบบน/ซ้าย/ขวาต้องเป็นสีเดียวกันภายในระยะนี้ (RGB แบบยุคลิด)
+const CUT_EDGE_SHARE = 0.8 // ...อย่างน้อย 80% ของจุดบนขอบ ไม่งั้นถือว่าไม่ใช่ฉากเรียบ
+const CUT_FILL_TOL = 42 // จุดที่ต่อเนื่องจากขอบและห่างสีฉากไม่เกินนี้ = พื้นหลัง
+const CUT_SOFT_LOW = 18 // ขอบตัวคน: ไล่ความทึบจากระยะสีนี้...
+const CUT_SOFT_HIGH = 90 // ...ถึงนี้ ให้ขอบนุ่มไม่เป็นฟันเลื่อย
+
+/**
+ * ตัดพื้นหลังเรียบออก (ทำให้โปร่งใส) แบบเทลงสีจากขอบภาพ — แก้ data (RGBA) ในที่ แล้วคืนกรอบตัวคน {x,y,w,h}
+ * คืน null = ไม่แตะ data และผู้เรียกควรใช้รูปแบบมีกรอบแทน เมื่อ:
+ *  - ขอบบน/ซ้าย/ขวาไม่ใช่สีเดียวกัน (ถ่ายนอกสถานที่ ฉากมีลาย)
+ *  - ตัดออกน้อย/มากผิดปกติ หรือกลางขอบล่าง (ลำตัว) ถูกตัดไปเกินครึ่ง — เช่น เสื้อขาวบนฉากขาวกลืนกัน
+ *    ตัดผิดจนเสื้อหายแย่กว่าไม่ตัด จึงยอมถอยไปใช้กรอบ
+ * @param {Uint8ClampedArray | Uint8Array} data
+ * @param {number} width
+ * @param {number} height
+ */
+export function cutoutPlainBackground(data, width, height) {
+  const n = width * height
+  if (!data || !Number.isInteger(width) || !Number.isInteger(height) || width < 16 || height < 16 || data.length < n * 4) return null
+  const edge = []
+  for (let x = 0; x < width; x += 1) edge.push(x)
+  for (let y = 1; y < height; y += 1) edge.push(y * width, y * width + width - 1)
+  const median = channel => {
+    const values = edge.map(p => data[p * 4 + channel]).sort((a, b) => a - b)
+    return values[values.length >> 1]
+  }
+  const bg = [median(0), median(1), median(2)]
+  const dist = p => Math.hypot(data[p * 4] - bg[0], data[p * 4 + 1] - bg[1], data[p * 4 + 2] - bg[2])
+  if (edge.filter(p => dist(p) <= CUT_EDGE_TOL).length < edge.length * CUT_EDGE_SHARE) return null
+
+  // เทสีจากทุกจุดบนขอบ (รวมขอบล่าง) ที่ใกล้สีฉาก ไปยังจุดข้างเคียง 4 ทิศที่ยังใกล้สีฉาก
+  const isBg = new Uint8Array(n)
+  const queue = new Int32Array(n)
+  let head = 0
+  let tail = 0
+  const seed = p => { if (!isBg[p] && dist(p) <= CUT_FILL_TOL) { isBg[p] = 1; queue[tail++] = p } }
+  for (let x = 0; x < width; x += 1) { seed(x); seed((height - 1) * width + x) }
+  for (let y = 0; y < height; y += 1) { seed(y * width); seed(y * width + width - 1) }
+  while (head < tail) {
+    const p = queue[head++]
+    const x = p % width
+    if (x > 0) seed(p - 1)
+    if (x < width - 1) seed(p + 1)
+    if (p >= width) seed(p - width)
+    if (p < n - width) seed(p + width)
+  }
+  const share = tail / n
+  if (share < 0.05 || share > 0.9) return null
+  const bodyFrom = Math.floor(width * 0.35)
+  const bodyTo = Math.ceil(width * 0.65)
+  let bodyBg = 0
+  for (let x = bodyFrom; x < bodyTo; x += 1) bodyBg += isBg[(height - 1) * width + x]
+  if (bodyBg > (bodyTo - bodyFrom) / 2) return null
+
+  let minX = width
+  let minY = height
+  let maxX = -1
+  let maxY = -1
+  for (let p = 0; p < n; p += 1) {
+    if (isBg[p]) { data[p * 4 + 3] = 0; continue }
+    const x = p % width
+    const y = (p - x) / width
+    const touchesBg = (x > 0 && isBg[p - 1]) || (x < width - 1 && isBg[p + 1]) || (y > 0 && isBg[p - width]) || (y < height - 1 && isBg[p + width])
+    if (touchesBg) {
+      const a = Math.min(1, Math.max(0, (dist(p) - CUT_SOFT_LOW) / (CUT_SOFT_HIGH - CUT_SOFT_LOW)))
+      data[p * 4 + 3] = Math.round(data[p * 4 + 3] * a)
+    }
+    if (data[p * 4 + 3] > 0) {
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    }
+  }
+  if (maxX < 0) return null
+  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 }
+}
+
+/**
  * ตารางรูป: 1 รูปเต็มกว้าง · 2 รูปแบ่งครึ่ง · 3–4 รูปตาราง 2×2 — คืนกรอบ [{x,y,w,h}] เทียบมุมซ้ายบนของกริด
  * captionH = ความสูงแถวป้ายใต้รูปของแต่ละแถว (0 = ไม่มีป้าย ผลเหมือนเดิมทุกพิกเซล)
  */
@@ -308,19 +413,22 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
   // บล็อกผู้บริหารมุมขวา (ถ้าเปิด) — ข้อความหัวแคบลงไม่ให้ทับ
   const exec = model.executive
   const execPhoto = exec && imageUrlOk(executivePhotoDataUrl) ? executivePhotoDataUrl : null
+  const plateInnerW = EXEC_PLATE_W - EXEC_PLATE_PAD_X * 2
   const execPlateLines = exec ? {
-    name: exec.name ? wrapLines(exec.name, EXEC_PLATE_W - 32, 28, true, measure) : [],
-    title: exec.title ? wrapLines(exec.title, EXEC_PLATE_W - 32, 24, false, measure) : [],
+    name: exec.name ? fitPlateText(exec.name, plateInnerW, 32, 24, true, measure) : null,
+    title: exec.title ? fitPlateText(exec.title, plateInnerW, 26, 20, false, measure) : null,
   } : null
+  const plateStep = slot => Math.round(slot.size * 1.32)
   const execPlateH = execPlateLines
-    ? 16 + execPlateLines.name.length * 36 + execPlateLines.title.length * 32 + 16
+    ? EXEC_PLATE_PAD_Y * 2 + [execPlateLines.name, execPlateLines.title].filter(Boolean)
+      .reduce((sum, slot) => sum + slot.lines.length * plateStep(slot), 0)
     : 0
-  const execPhotoTop = 40
-  const execPlateTop = execPhoto ? execPhotoTop + EXEC_PHOTO_H + 8 + 12 : execPhotoTop + 4
-  const execBottom = exec ? (execPlateH ? execPlateTop + execPlateH : execPhotoTop + EXEC_PHOTO_H + 8) : 0
+  const execPlateTop = execPhoto ? EXEC_PHOTO_TOP + EXEC_PHOTO_H - EXEC_PLATE_OVERLAP : 44
+  const execBottom = exec ? execPlateTop + execPlateH : 0
   const textW = IMAGE_WIDTH - MARGIN - textX - (exec ? EXEC_PLATE_W + 28 : 0)
   let titleSize = 68
-  while (titleSize > 44 && measure('ข่าวประชาสัมพันธ์', titleSize, true) > textW) titleSize -= 2
+  // ขั้นต่ำ 40: ป้ายนายกกว้าง 320 ทำให้ช่องข้อความหัวเหลือ ~428px
+  while (titleSize > 40 && measure('ข่าวประชาสัมพันธ์', titleSize, true) > textW) titleSize -= 2
   const headerTexts = []
   const headerText = (x, y, value, { size, bold = false, opacity = 1 }) => {
     headerTexts.push(`<text x="${num(x)}" y="${num(y)}" font-size="${size}" font-weight="${bold ? 700 : 400}" fill="#ffffff" fill-opacity="${opacity}">${esc(value)}</text>`)
@@ -348,25 +456,26 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
   }
   parts.push(headerTexts.join(''))
   if (exec) {
-    // ป้ายขาวมุมมนชิดขอบขวาของพื้นที่เนื้อหา · รูปอยู่กึ่งกลางป้าย (ไม่มีรูป = ป้ายอย่างเดียว)
+    // ป้ายขาวขอบส้มชิดขอบขวาของพื้นที่เนื้อหา · รูปอยู่กึ่งกลางป้าย ยืนชิดก้นกล่องและถูกป้ายทับช่วงล่าง (ไม่มีรูป = ป้ายอย่างเดียว)
+    // ไม่มีพื้น/กรอบขาวหลังรูป — รูปที่ตัดพื้นหลังแล้วต้องลอยบนสีส้มของแถบหัว · ตัดไม่ได้ ผู้เรียกใส่กรอบมาในรูปเอง
     const plateX = IMAGE_WIDTH - MARGIN - EXEC_PLATE_W
     const centerX = plateX + EXEC_PLATE_W / 2
     if (execPhoto) {
       const px = centerX - EXEC_PHOTO_W / 2
-      parts.push(`<rect x="${num(px - 4)}" y="${execPhotoTop - 4}" width="${EXEC_PHOTO_W + 8}" height="${EXEC_PHOTO_H + 8}" rx="26" fill="#ffffff"/>`
-        + `<defs><clipPath id="news-exec-clip"><rect x="${num(px)}" y="${execPhotoTop}" width="${EXEC_PHOTO_W}" height="${EXEC_PHOTO_H}" rx="22"/></clipPath></defs>`
-        + `<image href="${esc(execPhoto)}" x="${num(px)}" y="${execPhotoTop}" width="${EXEC_PHOTO_W}" height="${EXEC_PHOTO_H}" preserveAspectRatio="xMidYMid slice" clip-path="url(#news-exec-clip)"/>`)
+      parts.push(`<defs><clipPath id="news-exec-clip"><rect x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${EXEC_PHOTO_W}" height="${EXEC_PHOTO_H}"/></clipPath></defs>`
+        + `<image href="${esc(execPhoto)}" x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${EXEC_PHOTO_W}" height="${EXEC_PHOTO_H}" preserveAspectRatio="xMidYMax meet" clip-path="url(#news-exec-clip)"/>`)
     }
     if (execPlateH) {
-      parts.push(`<rect x="${num(plateX)}" y="${num(execPlateTop)}" width="${EXEC_PLATE_W}" height="${num(execPlateH)}" rx="22" fill="#ffffff"/>`)
-      let top = execPlateTop + 16
-      for (const line of execPlateLines.name) {
-        text(centerX, top + 28, line, { size: 28, bold: true, fill: INK, anchor: 'middle' })
-        top += 36
-      }
-      for (const line of execPlateLines.title) {
-        text(centerX, top + 23, line, { size: 24, fill: MUTED, anchor: 'middle' })
-        top += 32
+      // เงาจางใต้ป้าย (สี่เหลี่ยมเลื่อนลง) แทน SVG filter ซึ่งบางเบราว์เซอร์ไม่วาดตอนแปลงเป็น PNG
+      parts.push(`<rect x="${num(plateX)}" y="${num(execPlateTop + 6)}" width="${EXEC_PLATE_W}" height="${num(execPlateH)}" rx="26" fill="#7c2d12" fill-opacity="0.28"/>`
+        + `<rect x="${num(plateX)}" y="${num(execPlateTop)}" width="${EXEC_PLATE_W}" height="${num(execPlateH)}" rx="26" fill="#ffffff" stroke="#fdba74" stroke-width="4"/>`)
+      let top = execPlateTop + EXEC_PLATE_PAD_Y
+      for (const [slot, fill] of [[execPlateLines.name, INK], [execPlateLines.title, MUTED]]) {
+        if (!slot) continue
+        for (const line of slot.lines) {
+          text(centerX, top + Math.round(slot.size * 1.02), line, { size: slot.size, bold: slot.bold, fill, anchor: 'middle' })
+          top += plateStep(slot)
+        }
       }
     }
   }
