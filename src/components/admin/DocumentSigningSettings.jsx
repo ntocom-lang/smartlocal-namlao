@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { ArrowRight, FileSignature, UserRoundCheck } from 'lucide-react'
+import { ArrowRight, Car, FileSignature, UserRoundCheck } from 'lucide-react'
 import SignatorySettings from './SignatorySettings'
 import EsignSettings from './EsignSettings'
+import FleetPermitSettings from './FleetPermitSettings'
 
 // เมนู "การลงนามเอกสาร" — รวมสองเมนูเดิม (ผู้ลงนามเอกสาร · ลงนามออนไลน์) ที่เคยแยกกัน (เจ้าของระบบอนุมัติ 2569-10-30)
 // เหตุ: สองเมนูชื่อซ้ำคำ "ลงนาม" และทะเบียนผู้ลงนามดูซ้ำกับหน้าแต่งตั้ง แอดมินไม่รู้ว่าต้องเข้าเมนูไหน
@@ -16,6 +17,10 @@ const SIGNING_TABS = [
   {
     key: 'esign', step: 2, label: 'ลงนามออนไลน์', Icon: FileSignature,
     desc: 'ลงนามในระบบแทนเซ็นปากกา · ไม่บังคับ · ตอนนี้ใช้กับใบขอใช้รถ แบบ ๓',
+  },
+  {
+    key: 'permit', step: 3, label: 'ขั้นตอนขอใช้รถ', Icon: Car,
+    desc: 'เลือกว่าออกรถได้ทันที หรือต้องได้รับอนุญาตก่อน · ใช้กับใบขอใช้รถ แบบ ๓',
   },
 ]
 
@@ -39,7 +44,7 @@ export default function DocumentSigningSettings({ tenant, initialTab = 'signator
             ไปที่จัดการผู้ใช้และการแต่งตั้ง <ArrowRight size={14} />
           </button>
         )}
-        <div role="tablist" aria-label="การลงนามเอกสาร" className="mt-3 grid gap-2 sm:grid-cols-2">
+        <div role="tablist" aria-label="การลงนามเอกสาร" className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {SIGNING_TABS.map(({ key, step, label, desc, Icon }) => {
             const active = tab === key
             return (
@@ -66,9 +71,9 @@ export default function DocumentSigningSettings({ tenant, initialTab = 'signator
       </section>
 
       <div role="tabpanel" id="signing-panel" aria-labelledby={`signing-tab-${tab}`}>
-        {tab === 'signatories'
-          ? <SignatorySettings tenant={tenant} onOpenUsers={onOpenUsers} />
-          : <EsignSettings tenant={tenant} onOpenSignatories={() => setTab('signatories')} />}
+        {tab === 'signatories' && <SignatorySettings tenant={tenant} onOpenUsers={onOpenUsers} />}
+        {tab === 'esign' && <EsignSettings tenant={tenant} onOpenSignatories={() => setTab('signatories')} />}
+        {tab === 'permit' && <FleetPermitSettings tenant={tenant} />}
       </div>
     </div>
   )
