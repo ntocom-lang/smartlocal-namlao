@@ -14,6 +14,11 @@
 //   9. ถือคำร้องอยู่แต่ยังไม่ถึงกำหนด → ขึ้น "ไม่มีงานเร่งด่วน" (ไม่ใช่ "ไม่มีงานค้าง")
 //  10. ทางลัด "ใช้บ่อย" เรียงตามที่เปิดจริง
 //
+// สถานการณ์เพิ่ม (admin — จำลองข้อมูลงานถึงกำหนดด้วย route ดู mockDueWork):
+//  11. มีงวดรอตรวจรับ → แถวโครงการก่อสร้างใน "ต้องทำตอนนี้" ขึ้นเลข 1 + ข้อความ "งวดรอตรวจรับ 1" · ป้ายลิ้นชักมือถือ = 1 · ห้ามขึ้น "ไม่มีงานค้าง"
+//  12. ⚠️ query แผนดำเนินงานพัง → ป้ายผิดพลาดของแผนพัฒนา ห้ามขึ้นเลข/ไม่มีงานค้าง (กันไฟเขียวปลอม)
+//  13. ⚠️ ข้อมูลวงจรโครงการโหลดไม่สำเร็จ → ป้ายผิดพลาดของโครงการก่อสร้าง ไม่นับเป็น 0
+//
 // RPC สรุปหน้าแรก 2 ตัวถูก "จำลองคำตอบ" ด้วย route (ไม่ผูกกับว่า migration apply แล้วหรือยัง และไม่ต้องมีข้อมูลจริง)
 //   SH_LIVE=1 = ไม่จำลอง ใช้ RPC จริง (ใช้หลัง apply migration แล้ว เพื่อดูว่าคำตอบจริงขึ้นหน้าจอถูก)
 // อ่านอย่างเดียว ไม่สร้าง/แก้ข้อมูลในฐานข้อมูล (เขียน localStorage ของ localhost เท่านั้น แล้วล้างทิ้ง)
@@ -83,6 +88,43 @@ async function mockRpc(page, { summary, workload, summaryStatus = 200 } = {}) {
 async function unmockRpc(page) {
   await page.unroute('**/rest/v1/rpc/staff_home_summary*').catch(() => {})
   await page.unroute('**/rest/v1/rpc/staff_dept_workload*').catch(() => {})
+}
+
+// ── จำลองข้อมูล "งานถึงกำหนด" ของแผนพัฒนา/โครงการก่อสร้าง (การ์ด "ต้องทำตอนนี้" + ป้ายเมนู) ──
+// ผลขึ้นกับข้อมูลจริงของสนามซ้อม ถ้าไม่จำลองเลขจะเปลี่ยนไปเรื่อย — จำลองเฉพาะ GET (HEAD ของนับงานค้างปล่อยผ่านไปฐานจริงตามเดิม)
+//   installments = แถวงวดของโครงการทดสอบ (มี 1 โครงการ ขั้นก่อสร้าง ไม่มีกอง/ผู้สร้าง → เห็นได้เฉพาะ admin/superadmin/viewer)
+//   plan: 'zero' = ยังไม่มีแผนดำเนินงานฉบับประกาศ (นับ 0) · 'error' = ตาราง local_op_plans ตอบ 500
+const DUE_ROUTES = [
+  '**/rest/v1/civil_projects*', '**/rest/v1/civil_project_*', '**/rest/v1/local_op_plans*', '**/rest/v1/local_op_item_progress*',
+  '**/rest/v1/rpc/local_plan_is_manager*', '**/rest/v1/rpc/local_plan_civil_stages*',
+]
+const TEST_PROJECT_ID = '00000000-0000-4000-8000-0000000000a1'
+async function mockDueWork(page, { installments = [], plan = 'zero' } = {}) {
+  if (LIVE) return
+  const ok = (route, body) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+  await page.route('**/rest/v1/civil_projects*', route => (route.request().method() === 'HEAD' ? route.fallback() : ok(route, installments.length ? [{
+    id: TEST_PROJECT_ID, project_no: null, title: '[TEST] โครงการทดสอบหน้าแรก', project_type: 'road', fiscal_year: '2570', status: 'in_progress',
+    contract_no: null, contractor_name: null, contract_amount: 500000, budget_amount: 500000, paid_amount: 0, start_date: null, end_date: null,
+    location_desc: null, department_id: null, created_by: null, created_at: new Date().toISOString(), stage: 'construction', stage_before_hold: null,
+    stage_changed_at: null, work_group: null, operator_eval_required: false, registry_ref: null,
+  }] : [])))
+  // ตารางวงจรทุกตาราง (สัญญา/คน/จุดตรวจ/งวด/…): ว่างหมด ยกเว้นงวด
+  await page.route('**/rest/v1/civil_project_*', route => {
+    const table = new URL(route.request().url()).pathname.split('/').pop()
+    return ok(route, table === 'civil_project_installments' ? installments : [])
+  })
+  await page.route('**/rest/v1/rpc/local_plan_is_manager*', route => ok(route, true))
+  await page.route('**/rest/v1/local_op_plans*', route => {
+    if (route.request().method() === 'HEAD') return route.fallback()
+    return plan === 'error'
+      ? route.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"boom"}' })
+      : ok(route, [])
+  })
+  await page.route('**/rest/v1/local_op_item_progress*', route => ok(route, []))
+  await page.route('**/rest/v1/rpc/local_plan_civil_stages*', route => ok(route, []))
+}
+async function unmockDueWork(page) {
+  for (const pattern of DUE_ROUTES) await page.unroute(pattern).catch(() => {})
 }
 
 function resolveBaseUrl() {
@@ -155,7 +197,7 @@ async function snapshotHome(page) {
     const num = el => Number((el?.textContent ?? '').replace(/\D/g, ''))
     return {
       overflowX: document.documentElement.scrollWidth - window.innerWidth,
-      workRows: q('[data-home-work]').map(el => ({ key: el.dataset.homeWork, count: num(el.querySelector('[data-home-work-count]')) })),
+      workRows: q('[data-home-work]').map(el => ({ key: el.dataset.homeWork, count: num(el.querySelector('[data-home-work-count]')), text: el.textContent.trim() })),
       errors: q('[data-home-work-error]').map(el => el.dataset.homeWorkError),
       summaryError: q('[data-home-summary-error]').length,
       attention: q('[data-home-attention]').map(el => ({ key: el.dataset.homeAttention, count: num(el.querySelector('span.text-2xl')) })),
@@ -363,6 +405,8 @@ async function main() {
           await page.route('**/rest/v1/complaints*', zeroCount)
           await page.route('**/rest/v1/document_requests*', zeroCount)
           await mockRpc(page, { summary: HOLDING_SUMMARY() })
+          // แผนพัฒนา/โครงการก่อสร้างเป็นการ์ด "ต้องทำตอนนี้" แล้ว — ต้องบังคับให้เป็น 0 ด้วย ไม่งั้นข้อมูลจริงของสนามซ้อมทำให้เทสต์แกว่ง
+          await mockDueWork(page)
           try {
             await page.setViewportSize({ width: 1280, height: 800 })
             await openHome(page, baseUrl, auth)
@@ -376,6 +420,7 @@ async function main() {
           } finally {
             await page.unroute('**/rest/v1/complaints*').catch(() => {})
             await page.unroute('**/rest/v1/document_requests*').catch(() => {})
+            await unmockDueWork(page)
             await unmockRpc(page)
           }
         })
@@ -404,6 +449,77 @@ async function main() {
             assert.equal(s.tiles[0]?.key, target, `ใบแรกของ "ใช้บ่อย" ควรเป็น ${target} แต่ได้ ${s.tiles.map(t => t.key).join(',')}`)
             return `เปิด ${target} 2 ครั้ง ขึ้นเป็นใบแรก`
           } finally { await unmockRpc(page) }
+        })
+      }
+      // งานถึงกำหนดของแผนพัฒนา/โครงการก่อสร้าง — ใช้ admin (เห็นทุกโครงการของ อปท. ได้โดยไม่ต้องรู้ id กอง/ผู้สร้างของบัญชีทดสอบ)
+      if (name === 'TEST-admin' && !LIVE) {
+        const hasModules = () => page.evaluate(() => ['projects', 'local-plan'].every(k => document.querySelector(`[data-home-all-tools] [data-home-tool="${k}"]`)))
+        for (const vp of VIEWPORTS) {
+          await scenario(`${name} · งวดรอตรวจรับ → การ์ดโครงการขึ้นเลขถูก ป้ายเมนูตรงกัน ${vp.width}px`, async () => {
+            await mockRpc(page)
+            await mockDueWork(page, { installments: [{ id: 'i1', project_id: TEST_PROJECT_ID, installment_no: 1, due_on: null, delivered_on: bangkokDate(-3), inspected_on: null, inspection_result: null }] })
+            try {
+              await page.setViewportSize({ width: vp.width, height: vp.height })
+              await openHome(page, baseUrl, auth)
+              await waitForTodoSettled(page)
+              if (!(await hasModules())) throw new BlockedError('บัญชี admin นี้ไม่เห็นเมนู โครงการก่อสร้าง/แผนพัฒนา — ตรวจโมดูลที่เปิดของสนามซ้อม')
+              const s = await snapshotHome(page)
+              await page.screenshot({ path: path.join(SHOT_DIR, `${name}-due-work-${vp.width}.png`), fullPage: true })
+              const projects = s.workRows.find(r => r.key === 'projects')
+              assert.ok(projects, `ไม่เจอแถวโครงการก่อสร้างใน "ต้องทำตอนนี้" (แถว=${s.workRows.map(r => r.key).join(',')})`)
+              assert.equal(projects.count, 1, `งวดรอตรวจรับ 1 งวด ต้องขึ้นเลข 1 (ได้ ${projects.count})`)
+              assert.match(projects.text, /งวดรอตรวจรับ 1/, 'ข้อความใต้ชื่อต้องบอกว่างวดรอตรวจรับ')
+              assert.doesNotMatch(projects.text, /เลยกำหนด/, 'ไม่มีกำหนดเลย ห้ามขึ้น "เลยกำหนด"')
+              assert.equal(s.clear, 0, 'ขึ้น "ไม่มีงานค้าง" ทั้งที่มีงวดรอตรวจรับ')
+              assert.ok(!s.workRows.some(r => r.key === 'local-plan'), 'แผนพัฒนาจำลองเป็น 0 ห้ามขึ้นแถว')
+              assert.ok(!s.errors.includes('projects') && !s.errors.includes('local-plan'), `ห้ามขึ้นป้ายผิดพลาด (${s.errors.join(',')})`)
+              assert.ok(s.overflowX <= 1, `เลื่อนแนวนอนได้ ${s.overflowX}px`)
+              if (vp.width < 768) {
+                // ลิ้นชักเมนูมือถือ: ป้ายของโครงการก่อสร้างต้องเป็นเลขเดียวกับการ์ด (1) ไม่ใช่เลข "ยังไม่ปิด" ของโครงการทั้งหมด
+                await page.getByRole('button', { name: 'เปิดเมนู' }).click()
+                const badge = page.locator('[data-drawer-item="projects"] [data-drawer-badge]')
+                await badge.waitFor({ state: 'visible', timeout: 10_000 })
+                assert.equal((await badge.textContent()).replace(/\D/g, ''), '1', 'ป้ายเมนูโครงการก่อสร้างในลิ้นชักต้องเท่าการ์ด')
+              }
+              return 'การ์ดโครงการ = 1 "งวดรอตรวจรับ 1" · ไม่ขึ้นไฟเขียว' + (vp.width < 768 ? ' · ป้ายลิ้นชัก = 1' : '')
+            } finally { await unmockDueWork(page); await unmockRpc(page) }
+          })
+        }
+
+        await scenario(`${name} · query แผนดำเนินงานพัง → ป้ายผิดพลาด ไม่ใช่ไฟเขียว`, async () => {
+          await mockRpc(page)
+          await mockDueWork(page, { plan: 'error' })
+          try {
+            await page.setViewportSize({ width: 1280, height: 800 })
+            await openHome(page, baseUrl, auth)
+            await waitForTodoSettled(page)
+            if (!(await hasModules())) throw new BlockedError('บัญชี admin นี้ไม่เห็นเมนู โครงการก่อสร้าง/แผนพัฒนา — ตรวจโมดูลที่เปิดของสนามซ้อม')
+            const s = await snapshotHome(page)
+            await page.screenshot({ path: path.join(SHOT_DIR, `${name}-due-work-error.png`), fullPage: true })
+            assert.ok(s.errors.includes('local-plan'), `ไม่ขึ้นป้ายเตือนของแผนพัฒนา (errors=${JSON.stringify(s.errors)})`)
+            assert.equal(s.clear, 0, 'ขึ้น "ไม่มีงานค้าง" ทั้งที่โหลดตัวเลขแผนพัฒนาไม่สำเร็จ — ไฟเขียวปลอม')
+            assert.ok(!s.workRows.some(r => r.key === 'local-plan'), 'ห้ามขึ้นแถวตัวเลขของแผนพัฒนาเมื่อโหลดไม่สำเร็จ')
+            assert.ok(!s.errors.includes('projects'), 'โครงการก่อสร้างโหลดได้ ห้ามขึ้นป้ายผิดพลาดของมันด้วย')
+            return 'แผนพัฒนาขึ้นป้ายเตือน ไม่ขึ้นเลข ไม่ขึ้น "ไม่มีงานค้าง"'
+          } finally { await unmockDueWork(page); await unmockRpc(page) }
+        })
+
+        await scenario(`${name} · ข้อมูลวงจรโครงการโหลดไม่สำเร็จ → ป้ายผิดพลาด ไม่นับเป็น 0`, async () => {
+          await mockRpc(page)
+          await mockDueWork(page, { installments: [{ id: 'i1', project_id: TEST_PROJECT_ID, installment_no: 1, delivered_on: bangkokDate(-3), inspected_on: null }] })
+          // ทับด้วยตารางงวดพัง (ลงทะเบียนทีหลัง = ชนะ)
+          await page.route('**/rest/v1/civil_project_installments*', route => route.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"boom"}' }))
+          try {
+            await page.setViewportSize({ width: 1280, height: 800 })
+            await openHome(page, baseUrl, auth)
+            await waitForTodoSettled(page)
+            if (!(await hasModules())) throw new BlockedError('บัญชี admin นี้ไม่เห็นเมนู โครงการก่อสร้าง/แผนพัฒนา — ตรวจโมดูลที่เปิดของสนามซ้อม')
+            const s = await snapshotHome(page)
+            assert.ok(s.errors.includes('projects'), `ไม่ขึ้นป้ายเตือนของโครงการก่อสร้าง (errors=${JSON.stringify(s.errors)})`)
+            assert.equal(s.clear, 0, 'ขึ้น "ไม่มีงานค้าง" ทั้งที่โหลดข้อมูลวงจรโครงการไม่สำเร็จ — ไฟเขียวปลอม')
+            assert.ok(!s.workRows.some(r => r.key === 'projects'), 'ห้ามขึ้นแถวตัวเลขของโครงการเมื่อโหลดไม่สำเร็จ')
+            return 'โครงการขึ้นป้ายเตือน ไม่ขึ้นเลข ไม่ขึ้น "ไม่มีงานค้าง"'
+          } finally { await page.unroute('**/rest/v1/civil_project_installments*').catch(() => {}); await unmockDueWork(page); await unmockRpc(page) }
         })
       }
       await clearFrequent(page)

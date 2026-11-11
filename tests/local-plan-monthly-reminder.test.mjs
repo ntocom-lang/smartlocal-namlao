@@ -158,6 +158,82 @@ await test('นับแยกกอง ณ เดือนที่ 1: เร�
   ])
 })
 
+// ── สำเนาฝั่งหน้าแรกเจ้าหน้าที่ (src/lib/localPlanProgress.js) ต้องเท่าฝั่ง Edge Function ทุกกรณี ──────────
+// หน้าแรกเจ้าหน้าที่ใช้กติกาเดียวกับ Telegram (เจ้าของระบบเลือก 2569-11-09) ตัวเลขบนจอจึงต้องเท่าข้อความในกลุ่ม
+
+await test('previousMonthBangkok ฝั่งหน้าแรก = ฝั่ง Edge Function (ข้ามเดือน/ข้ามปีงบ/ข้ามปี/เที่ยงคืนไทย) + ชื่อเดือนตรงกัน', () => {
+  assert.deepEqual(Lib.MONTHS_TH_FULL, R.MONTHS_TH_FULL)
+  const instants = []
+  for (let y = 2025; y <= 2028; y++) {
+    for (let m = 1; m <= 12; m++) {
+      // เที่ยงคืนไทยของวันที่ 1 = 17:00 UTC ของวันสุดท้ายเดือนก่อน — เช็คก่อน/หลัง 1 นาที และกลางเดือน กับสิ้นเดือน
+      const boundary = Date.UTC(y, m - 1, 1) - 7 * 3_600_000
+      for (const delta of [-60_000, 0, 60_000, 15 * 86_400_000, 29 * 86_400_000 + 17 * 3_600_000]) instants.push(new Date(boundary + delta))
+    }
+  }
+  // วันที่ 1 08:45 น. เวลาไทยของทุกเดือน = เวลาที่ cron ยิงจริง
+  for (let m = 0; m < 24; m++) instants.push(new Date(Date.UTC(2026, m, 1, 1, 45)))
+  assert.ok(instants.length > 250)
+  for (const now of instants) assert.deepEqual(Lib.previousMonthBangkok(now), R.previousMonthBangkok(now), now.toISOString())
+  // ค่าที่ต้องเป็น (ไม่ใช่แค่เท่ากัน): ข้ามปีงบ ก.ย.→ต.ค. และข้ามปี ธ.ค.→ม.ค.
+  const at = iso => Lib.previousMonthBangkok(new Date(iso))
+  assert.deepEqual([at('2026-10-31T16:59:00Z').key, at('2026-10-31T16:59:00Z').fiscalYear, at('2026-10-31T16:59:00Z').fiscalMonth], ['2569-09', 2569, 12])
+  assert.deepEqual([at('2026-10-31T17:00:00Z').key, at('2026-10-31T17:00:00Z').fiscalYear, at('2026-10-31T17:00:00Z').fiscalMonth], ['2569-10', 2570, 1])
+  assert.deepEqual([at('2026-12-31T17:00:00Z').key, at('2026-12-31T17:00:00Z').fiscalYear, at('2026-12-31T17:00:00Z').fiscalMonth], ['2569-12', 2570, 3])
+  assert.equal(at('2026-11-11T05:00:00Z').label, 'ตุลาคม 2569')
+})
+
+await test('dueKindOf ฝั่งหน้าแรก = ฝั่ง Edge Function ทุกชุด สถานะ × เดือนเริ่ม × เดือนสิ้นสุด × เดือนที่จบ × ผูกก่อสร้าง', () => {
+  const statuses = ['none', 'in_progress', 'done', 'not_done', 'weird', '', undefined]
+  const months = [null, undefined, '', 0, 1, 2, '2', 3, 6, 12, '12', 13, 1.5, 'x']
+  let checked = 0
+  for (const status of statuses) for (const from of months) for (const to of months) for (let fm = 1; fm <= 12; fm++) for (const civilLinked of [false, true]) {
+    const input = { item: { id: 'x', op_plan_id: 'p', month_from: from, month_to: to }, status, civilLinked, fiscalMonth: fm }
+    assert.equal(Lib.dueKindOf(input), R.dueKindOf(input), JSON.stringify(input))
+    checked++
+  }
+  assert.ok(checked > 10_000)
+  assert.equal(Lib.dueKindOf({ item: { month_from: 1, month_to: 3 }, status: 'none', civilLinked: false, fiscalMonth: 1 }), 'not_started')
+  assert.equal(Lib.dueKindOf({ item: { month_from: 1, month_to: 3 }, status: 'in_progress', civilLinked: false, fiscalMonth: 3 }), 'past_end')
+})
+
+await test('countDueItems (ทั้ง อปท.) = ผลรวม countDueByDepartment ของ Edge Function ทุกเดือนที่ 1–12 · ผลที่กดเองส่งเป็นสถานะหรือแถวก็ได้', () => {
+  const rows = Object.fromEntries(progressRows.map(p => [p.lineage_id, p]))
+  for (let fm = 1; fm <= 12; fm++) {
+    const edge = R.countDueByDepartment({ opPlans: plans, items, fiscalYear: FY, fiscalMonth: fm, progressByLineage, civilRefs, departments })
+    const want = { notStarted: edge.reduce((s, r) => s + r.notStarted, 0), pastEnd: edge.reduce((s, r) => s + r.pastEnd, 0) }
+    for (const progress of [progressByLineage, rows]) {
+      for (const refs of [civilRefs, [...civilRefs]]) {
+        assert.deepEqual(Lib.countDueItems({ opPlans: plans, items, fiscalYear: FY, fiscalMonth: fm, progressByLineage: progress, civilRefs: refs, departmentId: null }), want, `เดือน ${fm}`)
+      }
+    }
+  }
+  // เทสต์ไม่ได้ผ่านเพราะเป็นศูนย์ทั้งคู่: เดือนที่ 6 ต้องมีของจริง
+  const m6 = Lib.countDueItems({ opPlans: plans, items, fiscalYear: FY, fiscalMonth: 6, progressByLineage, civilRefs })
+  assert.deepEqual(m6, { notStarted: 2, pastEnd: 3 })
+})
+
+await test('countDueItems ระบุกอง = แถวของกองนั้นใน countDueByDepartment · กองที่ไม่มีรายการค้าง = 0 · ไม่ส่งกอง (null) นับรวมรายการที่ไม่มี/กองถูกลบด้วย', () => {
+  for (let fm = 1; fm <= 12; fm++) {
+    const edge = R.countDueByDepartment({ opPlans: plans, items, fiscalYear: FY, fiscalMonth: fm, progressByLineage, civilRefs, departments })
+    for (const dept of departments) {
+      const row = edge.find(r => r.departmentId === dept.id) ?? { notStarted: 0, pastEnd: 0 }
+      assert.deepEqual(Lib.countDueItems({ opPlans: plans, items, fiscalYear: FY, fiscalMonth: fm, progressByLineage, civilRefs, departmentId: dept.id }),
+        { notStarted: row.notStarted, pastEnd: row.pastEnd }, `เดือน ${fm} กอง ${dept.id}`)
+    }
+    // รายการที่ไม่มีกอง/กองถูกลบ ("ยังไม่ระบุกอง") มีเฉพาะในยอดรวม ไม่ตกกองใด
+    const total = Lib.countDueItems({ opPlans: plans, items, fiscalYear: FY, fiscalMonth: fm, progressByLineage, civilRefs, departmentId: null })
+    const byKnown = departments.map(d => Lib.countDueItems({ opPlans: plans, items, fiscalYear: FY, fiscalMonth: fm, progressByLineage, civilRefs, departmentId: d.id }))
+    const unassigned = edge.find(r => r.departmentId === null) ?? { notStarted: 0, pastEnd: 0 }
+    assert.equal(total.notStarted, byKnown.reduce((s, c) => s + c.notStarted, 0) + unassigned.notStarted, `เดือน ${fm}`)
+    assert.equal(total.pastEnd, byKnown.reduce((s, c) => s + c.pastEnd, 0) + unassigned.pastEnd, `เดือน ${fm}`)
+  }
+  assert.deepEqual(Lib.countDueItems({ opPlans: plans, items, fiscalYear: FY, fiscalMonth: 6, progressByLineage, civilRefs, departmentId: 'dC' }), { notStarted: 0, pastEnd: 1 })
+  assert.deepEqual(Lib.countDueItems({ opPlans: plans, items, fiscalYear: FY, fiscalMonth: 6, progressByLineage, civilRefs, departmentId: 'ไม่มีกองนี้' }), { notStarted: 0, pastEnd: 0 })
+  // ไม่มีฉบับประกาศของปีงบ → 0 (ไม่ใช่ error)
+  assert.deepEqual(Lib.countDueItems({ opPlans: plans, items, fiscalYear: FY + 1, fiscalMonth: 12, progressByLineage, civilRefs }), { notStarted: 0, pastEnd: 0 })
+})
+
 await test('ไม่มีฉบับประกาศของปีงบ → ชุดรายการว่าง (ฟังก์ชันข้ามเป็น noPlan)', () => {
   assert.deepEqual(R.effectivePlans(plans, FY + 1), [])
   assert.deepEqual(R.countDueByDepartment({ opPlans: plans, items, fiscalYear: FY + 1, fiscalMonth: 1, progressByLineage, civilRefs, departments }), [])

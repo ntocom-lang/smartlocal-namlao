@@ -10,7 +10,7 @@ import { PATIENT_TRANSPORT_MODULE_KEY } from '../../lib/patientTransport'
 import { parseInviteData, readInviteStamps, recordInviteSent, visibleInviteRows } from '../../lib/complaintRateInvite'
 import { pickShortcuts, readUsage, safeLocalStorage } from '../../lib/staffHomeFrequent'
 import { useHomeRpc } from '../../lib/staffHomeData'
-import { bucketComplaintDue, groupMyEvents, normalizeWorkload, todoState } from '../../lib/staffHomeSummary'
+import { DUE_WORK_KEYS, bucketComplaintDue, dueWorkCount, dueWorkHint, groupMyEvents, normalizeWorkload, todoState } from '../../lib/staffHomeSummary'
 import { todoCount as waterAnnouncementTodoCount } from '../../lib/waterAnnouncements'
 import { MenuGroup } from '../common/MenuTileGrid'
 import MyPendingSignatures from '../esign/MyPendingSignatures'
@@ -47,7 +47,8 @@ function openModuleItem(item, { navigate, setActiveModule }) {
 // หน้า "เมนูทั้งหมด" ของเจ้าหน้าที่บนมือถือ (แท็บ "เมนู" ในแถบล่าง) — กริดไอคอนจัดกลุ่มตามโมดูลที่
 // เห็นได้จริง visibleGroups ผ่านตัวกรองสิทธิ์/โมดูลที่เปิดมาจาก StaffDashboard แล้ว (กลุ่มว่างถูกตัดออกแล้ว)
 // openWorkCounts = ป้ายของโมดูลรายกอง (แผนพัฒนา/โครงสร้างพื้นฐาน/โครงการก่อสร้าง) ชุดเดียวกับเมนูซ้ายและลิ้นชัก
-// ใส่เฉพาะกริดนี้ ไม่ใส่ใน menuBadges() เพราะหน้าแรกใช้ menuBadges รวมยอด "ต้องทำตอนนี้" — เลขชุดนี้คือ "ยังไม่ปิด" ไม่ใช่งานเร่งด่วน
+// (StaffDashboard ส่งชุดที่ทับด้วยเลข "ถึงกำหนด" ของแผนพัฒนา/โครงการก่อสร้างแล้ว — ป้ายเมนูทุกจุดต้องตรงกัน)
+// ใส่เฉพาะกริดนี้ ไม่ใส่ใน menuBadges() เพราะ menuBadges เป็นของ 3 งานรอรับเรื่อง — เลข "ถึงกำหนด" ของสองโมดูลนั้นมาจาก prop dueWork ของหน้าแรก
 export function StaffMenuGrid({ visibleGroups, setActiveModule, navigate, pendingCount, newComplaintCount, patientWorkCount, openWorkCounts = {} }) {
   const badges = { ...openWorkCounts, ...menuBadges({ pendingCount, newComplaintCount, patientWorkCount }) }
   const total = visibleGroups.reduce((sum, group) => sum + group.items.length, 0)
@@ -75,19 +76,26 @@ const ROLE_LABELS = {
   get council() { return activeOrgTerms().councilOrg },
 }
 
-// การ์ด "ต้องทำตอนนี้" — เฉพาะโมดูลที่มีตัวเลขงานค้างอยู่แล้วใน badge (ไม่มี query เพิ่ม ตัวเลขตรงกับเมนูซ้ายเสมอ)
+// การ์ด "ต้องทำตอนนี้" — เฉพาะงานที่ "ถึงคิวคน" · สามตัวแรกเป็นเลข badge ที่ StaffDashboard คำนวณอยู่แล้ว (ไม่มี query เพิ่ม)
+// ส่วน local-plan / projects เป็นเลข "ถึงกำหนดจริง" (prop dueWork · คำนวณที่ src/lib/staffDueWork.js) ไม่ใช่ "ยังไม่ปิด":
+//   local-plan = รายการแผนการดำเนินงานที่ถึงกำหนดแต่ยังไม่บันทึกผล (กติกาเดียวกับ Telegram วันที่ 1)
+//   projects   = งวดที่ส่งมอบแล้วรอตรวจรับ + กำหนดตามระเบียบที่เลยแล้ว (ชุดคำเตือนเดียวกับแท็บภาพรวมของโมดูล)
+// เลขเดียวกันขึ้นเป็นป้ายบนเมนูทุกจุด · โครงการที่ยังก่อสร้างไม่ถึงกำหนดไม่นับ ไฟเขียว "ไม่มีงานค้าง" จึงยังขึ้นได้
 // ลำดับบนจอไม่ได้มาจากรายการนี้ แต่ยึดลำดับเมนูซ้าย (staffNavGroups.js) — ดู workCards ด้านล่าง
 // ไม่เรียงตามยอด: ตำแหน่งที่คงที่ทำให้คนจำที่ได้ ยอดสลับกันไปมาทำให้ต้องอ่านใหม่ทุกครั้ง
 const WORK_CARDS = [
   { key: 'complaints', hint: ({ isAdmin }) => (isAdmin ? 'รอรับเรื่อง' : 'มอบหมายให้คุณ · ยังไม่เริ่มดำเนินการ') },
   { key: 'inbox', hint: () => 'รอรับเรื่อง' },
   { key: PATIENT_TRANSPORT_MODULE_KEY, hint: () => 'รอดำเนินการ' },
+  { key: 'local-plan', hint: ({ due }) => dueWorkHint('local-plan', due) },
+  { key: 'projects', hint: ({ due }) => dueWorkHint('projects', due) },
 ]
 
-// "งานที่เปิดอยู่" — ตัวเลขชุดเดียวกับป้ายเมนูของโมดูลรายกอง (DEPARTMENT_WORK_SOURCES ใน StaffDashboard นับจุดเดียว)
-// จงใจไม่รวมใน "ต้องทำตอนนี้": เลขนี้คือ "ยังไม่ปิด" ไม่ใช่ "ถึงคิวคุณ" — โครงการที่กำลังก่อสร้างค้างเป็นเดือน
-// ถ้านับรวม ไฟเขียว "ไม่มีงานค้าง" ของกองช่างจะไม่ขึ้นอีกเลย แล้วคนจะเลิกมองการ์ด (เจ้าของระบบเลือกแนวนี้ 2569-11-11)
-// จะย้ายเข้า "ต้องทำตอนนี้" ได้ก็ต่อเมื่อเปลี่ยนวิธีนับเป็นงานที่ถึงกำหนดจริง (งวดรอตรวจรับ / รายการแผนที่ถึงกำหนดยังไม่บันทึกผล)
+// "งานที่เปิดอยู่" — นับ "ยังไม่ปิด" ทั้งหมดของโมดูลรายกอง (DEPARTMENT_WORK_SOURCES ใน StaffDashboard นับจุดเดียว)
+// แยกจาก "ต้องทำตอนนี้" จงใจ: เลขนี้ไม่ใช่ "ถึงคิวคุณ" — โครงการที่กำลังก่อสร้างค้างเป็นเดือน/แผนที่ยังเป็นร่าง ต้องเห็นแต่ไม่ใช่งานเร่งด่วน
+// ถ้านับรวมที่เดียว ไฟเขียว "ไม่มีงานค้าง" ของกองช่างจะไม่ขึ้นอีกเลย แล้วคนจะเลิกมองการ์ด (เจ้าของระบบเลือกแนวนี้ 2569-11-11)
+// เฟส C (เจ้าของสั่งแล้ว): "ต้องทำตอนนี้" = เลขถึงกำหนดจริง (ด้านบน) · "งานที่เปิดอยู่" = ยังไม่ปิด (ด้านล่าง) · ป้ายเมนูใช้ชุดแรก
+// ⚠️ ตัวเลขในส่วนนี้ของแผนพัฒนา/โครงการก่อสร้างจึง "ไม่" ตรงกับป้ายเมนูอีกแล้ว (โครงสร้างพื้นฐานยังตรง)
 // hint ต้องตรงกับสถานะที่ DEPARTMENT_WORK_SOURCES นับ — แก้ฝั่งนั้นแล้วต้องแก้ข้อความตรงนี้ด้วย
 const OPEN_WORK_CARDS = [
   { key: 'local-plan', hint: 'แผนที่ยังเป็นร่าง ยังไม่ประกาศใช้' },
@@ -265,9 +273,12 @@ function DeptWorkload({ state, complaintsItem, onOpenComplaints }) {
 //    ตัดสินรวมที่ todoState() ใน src/lib/staffHomeSummary.js จุดเดียว
 export default function StaffOperationalDashboard({
   visibleGroups, setActiveModule, profile, tenantId, pendingCount, newComplaintCount = 0, patientWorkCount = 0,
-  workStatus = {}, openWork = { ready: false, counts: {}, errors: {} }, navigate, onCreateManagementEvent,
+  workStatus = {}, openWork = { ready: false, counts: {}, errors: {} }, dueWork = {}, navigate, onCreateManagementEvent,
 }) {
-  const cardBadges = menuBadges({ pendingCount, newComplaintCount, patientWorkCount })
+  // dueWork = { 'local-plan': { status, notStarted, pastEnd, monthLabel }, projects: { status, awaitingInspection, overdue, total } }
+  // ตัวเลขเท่านั้น ไม่มีชื่อโครงการ/ชื่อคน · status 'loading'/'error' นับเป็น 0 แต่สถานะไปทาง workStatus (กันไฟเขียวปลอม)
+  const dueBadges = Object.fromEntries(DUE_WORK_KEYS.map(key => [key, dueWorkCount(key, dueWork?.[key])]))
+  const cardBadges = { ...menuBadges({ pendingCount, newComplaintCount, patientWorkCount }), ...dueBadges }
   const todayTH = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
   const isAdmin = ['admin', 'superadmin'].includes(profile?.role)
   const visibleItems = visibleGroups.flatMap(group => group.items)
@@ -419,7 +430,7 @@ export default function StaffOperationalDashboard({
                     <WorkRow item={{ ...waterItem, label: 'ประกาศน้ำ-ฝนรอคุณยืนยัน' }} count={1} hint="ร่างประกาศรอคุณตัดสิน · ยืนยันได้ภายใน 3 ชั่วโมง" onOpen={() => open(waterItem)} />
                   )}
                   {pendingCards.map(card => (
-                    <WorkRow key={card.key} item={card.item} count={card.count} hint={card.hint({ isAdmin })} onOpen={() => open(card.item)} />
+                    <WorkRow key={card.key} item={card.item} count={card.count} hint={card.hint({ isAdmin, due: dueWork?.[card.key] })} onOpen={() => open(card.item)} />
                   ))}
                   {failedCards.map(card => (
                     <button key={card.key} type="button" data-home-work-error={card.key} onClick={() => open(card.item)}
@@ -472,7 +483,7 @@ export default function StaffOperationalDashboard({
               <section data-home-open-work-section aria-labelledby="home-open-work-title">
                 <div className="mb-1.5">
                   <h2 id="home-open-work-title" className="text-sm font-bold text-slate-800">งานที่เปิดอยู่</h2>
-                  <p className="text-[10px] text-slate-400">ยังไม่ปิดงาน · ไม่ใช่งานเร่งด่วน · ตัวเลขเดียวกับป้ายบนเมนู</p>
+                  <p className="text-[10px] text-slate-400">ยังไม่ปิดงาน · ไม่ใช่งานเร่งด่วน</p>
                 </div>
                 <div className="space-y-2">
                   {openWorkCards.map(card => (card.failed ? (
