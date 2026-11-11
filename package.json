@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "node scripts/check-behind.mjs",
     "dev": "vite",
-    "prebuild": "node tests/executive-coverage.test.mjs && node tests/staff-menu-access.test.mjs && node tests/executive-route.test.mjs && node tests/executive-data.test.mjs && node tests/executive-service-report.test.mjs && node tests/exec-nudge-notify.test.mjs && node tests/exec-follow-nudge-ui.test.mjs && node tests/exec-digest-notify.test.mjs",
+    "prebuild": "node tests/executive-coverage.test.mjs && node tests/staff-menu-access.test.mjs && node tests/executive-route.test.mjs && node tests/executive-data.test.mjs && node tests/executive-service-report.test.mjs && node tests/exec-nudge-notify.test.mjs && node tests/exec-follow-nudge-ui.test.mjs && node tests/exec-digest-notify.test.mjs && node tests/executive-simple-view.test.mjs",
     "build": "vite build && node scripts/postbuild.js",
     "lint": "eslint .",
     "lint:blocking": "node scripts/lint-blocking.mjs",
@@ -135,6 +135,7 @@
     "test:exec-route": "node tests/executive-route.test.mjs",
     "test:exec-nudge": "node tests/exec-nudge-notify.test.mjs && node tests/exec-follow-nudge-ui.test.mjs",
     "test:exec-digest": "node tests/exec-digest-notify.test.mjs",
+    "test:exec-simple": "node tests/executive-simple-view.test.mjs",
     "test:exec-digest:db": "node tests/exec-digest-db.test.mjs --pglite",
     "test:exec-nudge:db": "node tests/exec-follow-nudge-db.test.mjs --pglite",
     "test:exec-report": "node tests/executive-service-report.test.mjs",

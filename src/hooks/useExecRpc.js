@@ -19,8 +19,9 @@ const PROJECTIONS = Object.freeze({
 
 /**
  * @param {{ rpc: string, args: object, tenantId?: string, profileId?: string, enabled: boolean }} opts
- * @returns {{ status: 'idle'|'loading'|'ok'|'error', data: any, reload: () => void }}
+ * @returns {{ status: 'idle'|'loading'|'ok'|'error', data: any, reload: () => void, refresh: () => void, stale: boolean, fetchedAt: number|null }}
  *   idle = ไม่ได้เปิดใช้ · reload = ทิ้งแคชแล้วดึงใหม่ (ปุ่ม "ลองใหม่")
+ *   refresh = ดึงใหม่แบบเงียบ (ไม่ตั้ง 'loading' จอไม่กระพริบ — ห้องผู้บริหารแบบเรียบอัปเดตเองทุก 5 นาที) · พลาด = คงผลเดิม + stale=true
  */
 export function useExecRpc({ rpc, args, tenantId, profileId, enabled }) {
   const argsJson = JSON.stringify(args ?? {})
@@ -29,7 +30,7 @@ export function useExecRpc({ rpc, args, tenantId, profileId, enabled }) {
   const [reloadTick, setReloadTick] = useState(0)
   const [state, setState] = useState(() => {
     const hit = key && cache.get(key)
-    return hit ? { key, status: 'ok', data: hit.data } : { key, status: active ? 'loading' : 'idle', data: null }
+    return hit ? { key, status: 'ok', data: hit.data, at: hit.at, stale: false } : { key, status: active ? 'loading' : 'idle', data: null, at: null, stale: false }
   })
 
   useEffect(() => {
@@ -38,7 +39,7 @@ export function useExecRpc({ rpc, args, tenantId, profileId, enabled }) {
     const hit = cache.get(key)
     if (hit && Date.now() - hit.at <= CACHE_TTL_MS) {
       // แคชยังสด: ค่าเริ่มต้นของ state ถูกตั้งไว้แล้วถ้ามาจาก mount แต่ถ้าเปลี่ยนช่วงเวลา key ใหม่ต้องอ่านจากแคชด้วย
-      Promise.resolve().then(() => { if (!cancelled) setState({ key, status: 'ok', data: hit.data }) })
+      Promise.resolve().then(() => { if (!cancelled) setState({ key, status: 'ok', data: hit.data, at: hit.at, stale: false }) })
       return () => { cancelled = true }
     }
     let request = inflight.get(key)
@@ -52,24 +53,36 @@ export function useExecRpc({ rpc, args, tenantId, profileId, enabled }) {
       if (cancelled) return
       if (result.error || result.data == null) {
         console.error(`${rpc} error:`, result.error?.message ?? 'empty response')
-        setState((prev) => (prev.key === key && prev.status === 'ok' ? prev : { key, status: 'error', data: null }))
+        // เคยได้ผลของ key เดิมแล้ว = คงผลเดิมไว้ (ดูที่ prev.data ไม่ใช่ prev.status — reload() ตั้งสถานะ 'loading' โดยเก็บ data เดิมไว้ก่อนยิงใหม่)
+        // ทำให้ตัวเลขที่เคยโชว์ไม่หายเพราะเน็ตสะดุดครั้งเดียว · stale = true ให้ผู้เรียกบอกว่า "ยังอัปเดตไม่ได้"
+        setState((prev) => (prev.key === key && prev.data != null ? { key, status: 'ok', data: prev.data, at: prev.at, stale: true } : { key, status: 'error', data: null, at: null, stale: false }))
         return
       }
       const project = PROJECTIONS[rpc]
       const data = project ? project(result.data) : result.data
-      cache.set(key, { at: Date.now(), data })
-      setState({ key, status: 'ok', data })
+      const at = Date.now()
+      cache.set(key, { at, data })
+      setState({ key, status: 'ok', data, at, stale: false })
     })
     return () => { cancelled = true }
   }, [active, rpc, key, argsJson, reloadTick])
 
   const reload = useCallback(() => {
     if (key) { cache.delete(key); inflight.delete(key) }
-    setState((prev) => (prev.key === key ? { key, status: 'loading', data: prev.data } : prev))
+    setState((prev) => (prev.key === key ? { ...prev, key, status: 'loading' } : prev))
+    setReloadTick((tick) => tick + 1)
+  }, [key])
+
+  // ดึงใหม่แบบเงียบ: ทิ้งแคชแล้วยิงใหม่ ไม่แตะ status — ผู้เรียกคุมเงื่อนไขเวลา/แท็บที่มองเห็นเอง (useExecAutoRefresh)
+  const refresh = useCallback(() => {
+    if (key) { cache.delete(key); inflight.delete(key) }
     setReloadTick((tick) => tick + 1)
   }, [key])
 
   // เปลี่ยน อปท./บัญชี/ช่วงเวลาระหว่างที่ component ยังอยู่ → ห้ามแสดงค่าของ key ก่อนหน้า
-  if (state.key !== key) return { status: active ? 'loading' : 'idle', data: null, reload }
-  return { status: active ? state.status : 'idle', data: active ? state.data : null, reload }
+  if (state.key !== key) return { status: active ? 'loading' : 'idle', data: null, reload, refresh, stale: false, fetchedAt: null }
+  return {
+    status: active ? state.status : 'idle', data: active ? state.data : null, reload, refresh,
+    stale: active ? state.stale : false, fetchedAt: active ? state.at : null,
+  }
 }

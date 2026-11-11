@@ -13,6 +13,7 @@ import BottomNav from './components/layout/BottomNav'
 import CitizenSidebar from './components/layout/CitizenSidebar'
 import InstallPrompt from './components/InstallPrompt'
 import ScrollToTopButton from './components/ScrollToTopButton'
+import ExecBackBar from './components/staff/executive/ExecBackBar'
 import InAppBrowserGate from './components/InAppBrowserGate'
 import { supabase, initialAuthParams } from './lib/supabase'
 import { fetchProfile } from './lib/profileFetch'
@@ -705,6 +706,8 @@ function AppShell() {
         <div className="flex flex-1 min-h-0 overflow-hidden">
           {((!isBackOffice && !isAccountPage) || isTechnician) && <CitizenSidebar />}
           <main className="flex-1 min-w-0 overflow-y-auto">
+          {/* แถบ "‹ กลับห้องผู้บริหาร" — ขึ้นเฉพาะหน้าปลายทางที่เปิดมาจากห้องผู้บริหารแบบเรียบ (state.fromExec) */}
+          <ExecBackBar />
           <SuspenseErrorBoundary>
           <Suspense fallback={
             <div className="flex items-center justify-center min-h-[50vh]" role="status" aria-label="กำลังโหลดหน้า">

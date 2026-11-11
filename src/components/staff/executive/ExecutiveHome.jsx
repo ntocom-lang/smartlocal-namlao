@@ -372,6 +372,11 @@ export default function ExecutiveHome({ scopedKeys = [], navigate, profile, tena
         <div className="flex items-center gap-2">
           <LayoutDashboard size={20} className="shrink-0 text-sky-200" aria-hidden="true" />
           <h1 className="truncate text-xl font-black">ห้องผู้บริหาร</h1>
+          {/* ทางไปหน้าแบบเรียบ (ตัวใหญ่ หน้าเดียว สำหรับนายก) — หน้านี้ไม่เปลี่ยนอย่างอื่น */}
+          <button type="button" data-exec-open-simple onClick={() => navigate('/executive?view=simple')}
+            className="ml-auto inline-flex min-h-8 shrink-0 items-center rounded-lg border border-white/40 bg-white/10 px-2.5 text-xs font-bold text-white hover:bg-white/20 active:scale-95">
+            ดูแบบย่อ (แบบนายก)
+          </button>
         </div>
         <p className="mt-0.5 truncate text-xs text-sky-100">{[tenant?.name, todayTH].filter(Boolean).join(' · ')}</p>
       </header>

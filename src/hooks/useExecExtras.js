@@ -15,13 +15,14 @@ import { canUsePersonalEvents } from '../lib/personalEvents'
  * เดิมดึง list_events_for_staff ทั้งหมด (ทุกปี + รายละเอียด/ไฟล์แนบ/ผู้รับมอบหมาย) แล้วกรองในเบราว์เซอร์ — กิน Egress แผนฟรีตามจำนวนกิจกรรมสะสม
  * รายการส่วนตัวเป็นของท่านคนเดียว (RLS) จึงยังโหลดทั้งหมดผ่าน loadPersonalEvents ตัวเดียวกับหน้าปฏิทิน แล้วกรองที่นี่
  * รายการส่วนตัวพลาด = แสดงเฉพาะกิจกรรมของหน่วยงาน (เหมือนหน้าปฏิทิน) · ตัวกิจกรรมหน่วยงานพลาด = error
- * @returns {{ status: string, events: object[], reload: () => void }}
+ * refresh() = ดึงใหม่แบบเงียบ (ไม่ตั้ง 'loading') สำหรับห้องผู้บริหารแบบเรียบที่อัปเดตเองทุก 5 นาที · พลาดหลังเคยได้ผล = คงรายการเดิม + stale=true
+ * @returns {{ status: string, events: object[], reload: () => void, refresh: () => void, stale: boolean, fetchedAt: number|null }}
  */
 export function useExecSchedule({ tenantId, profileId, role, enabled }) {
   const key = tenantId && profileId ? `${tenantId}:${profileId}` : null
   const active = Boolean(enabled && key)
   const [reloadTick, setReloadTick] = useState(0)
-  const [state, setState] = useState({ key: null, status: 'idle', events: [] })
+  const [state, setState] = useState({ key: null, status: 'idle', events: [], at: null, stale: false })
 
   useEffect(() => {
     if (!active) return undefined
@@ -37,7 +38,7 @@ export function useExecSchedule({ tenantId, profileId, role, enabled }) {
       if (cancelled) return
       if (org.error) {
         console.error('[executive] list_events_for_staff_between:', org.error.message)
-        setState({ key, status: 'error', events: [] })
+        setState((prev) => (prev.key === key && prev.status === 'ok' ? { ...prev, stale: true } : { key, status: 'error', events: [], at: null, stale: false }))
         return
       }
       if (personal.error) console.error('[executive] personal_events:', personal.error.message)
@@ -47,11 +48,11 @@ export function useExecSchedule({ tenantId, profileId, role, enabled }) {
           id: ev.id, title: ev.title, event_date: ev.event_date, end_date: ev.end_date ?? null,
           event_time: ev.event_time ?? null, is_personal: ev.is_personal === true,
         }))
-      setState({ key, status: 'ok', events: slim })
+      setState({ key, status: 'ok', events: slim, at: Date.now(), stale: false })
     }).catch((error) => {
       if (cancelled) return
       console.error('[executive] schedule:', error?.message ?? error)
-      setState({ key, status: 'error', events: [] })
+      setState((prev) => (prev.key === key && prev.status === 'ok' ? { ...prev, stale: true } : { key, status: 'error', events: [], at: null, stale: false }))
     })
     return () => { cancelled = true }
   }, [active, key, tenantId, profileId, role, reloadTick])
@@ -60,10 +61,12 @@ export function useExecSchedule({ tenantId, profileId, role, enabled }) {
     setState((prev) => (prev.key === key ? { ...prev, status: 'loading' } : prev))
     setReloadTick((t) => t + 1)
   }, [key])
+  // ดึงใหม่แบบเงียบ: ไม่แตะ status (จอไม่กระพริบ) — ผู้เรียกคุมเงื่อนไขเวลา/แท็บที่มองเห็นเอง (useExecAutoRefresh)
+  const refresh = useCallback(() => { setReloadTick((t) => t + 1) }, [])
 
-  if (!active) return { status: 'idle', events: [], reload }
-  if (state.key !== key) return { status: 'loading', events: [], reload }
-  return { status: state.status, events: state.events, reload }
+  if (!active) return { status: 'idle', events: [], reload, refresh, stale: false, fetchedAt: null }
+  if (state.key !== key) return { status: 'loading', events: [], reload, refresh, stale: false, fetchedAt: null }
+  return { status: state.status, events: state.events, reload, refresh, stale: state.stale, fetchedAt: state.at }
 }
 
 /**
