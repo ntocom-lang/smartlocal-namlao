@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase, supabaseUrl } from '../../lib/supabase'
 import { fetchImageAsDataUrl } from '../../lib/driveStorage'
+import { departmentColorKeyByName, newsThemeFor } from '../../lib/departmentColors'
 import { NEWS_EXEC_PHOTO_SIDE, cutoutPlainBackground, svgToPngFile, transparentPhotoBox, withNewsPhotoUrl } from '../../lib/complaintNewsImage'
 
 // ตัวโหลดรูป + hook ที่กล่องภาพข่าวรายเรื่อง (ComplaintNewsDialog) กับกล่องภาพข่าวรวม (ComplaintNewsBatchDialog) ใช้ร่วมกัน
@@ -148,6 +149,30 @@ export function useNewsBranding(tenant) {
   }, [tenant?.logo_url])
 
   return { logo, branding, mayorPhoto }
+}
+
+/**
+ * สีธีมของภาพข่าวตามสีกอง (departments.color ที่มีอยู่แล้ว) — จับคู่จากชื่อกอง (name หรือ short_name)
+ * อ่านตาราง departments ตรงๆ ได้ทุกบทบาทเจ้าหน้าที่รวม viewer/council (RLS fdept_read) · โหลดไม่ได้/ไม่เจอกอง/ยังไม่ตั้งสี = ส้มชุดเดิม ไม่ทำกล่องพัง
+ * @param {string | null | undefined} tenantId
+ * @param {string | null | undefined} departmentName
+ */
+export function useDepartmentTheme(tenantId, departmentName) {
+  const [rows, setRows] = useState(null)
+
+  useEffect(() => {
+    if (!tenantId) return undefined
+    let alive = true
+    supabase.from('departments').select('name, short_name, color').eq('municipality_id', tenantId)
+      .then(({ data, error }) => {
+        if (!alive) return
+        if (error) { console.error('departments color load error:', error.message); return }
+        setRows(Array.isArray(data) ? data : [])
+      }, (cause) => { console.error('departments color load error:', cause?.message) })
+    return () => { alive = false }
+  }, [tenantId])
+
+  return useMemo(() => newsThemeFor(departmentColorKeyByName(rows, departmentName)), [rows, departmentName])
 }
 
 /**

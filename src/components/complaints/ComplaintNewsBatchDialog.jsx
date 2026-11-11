@@ -8,7 +8,7 @@ import {
   groupNewsCandidates, thaiLongDate, villageLevel, villageList,
 } from '../../lib/complaintNewsImage'
 import { DialogShell, NewsOutputPanel } from './newsDialogParts'
-import { loadImage, useNewsBranding, usePreparedPng } from './newsDialogData'
+import { loadImage, useDepartmentTheme, useNewsBranding, usePreparedPng } from './newsDialogData'
 
 // กล่อง "ภาพข่าวรวม" — เรื่องหมวดเดียวกันที่เสร็จวันเดียวกัน รวมเป็นภาพเดียว: 1 รูปต่อเรื่อง + ป้ายหมู่ใต้รูป
 // (เจ้าของระบบตัดสิน 2569-11-11: ไม่มี SQL · ระบบจัดกลุ่ม "วันเดียวกัน+หมวดเดียวกัน" ให้ + ติ๊กเลือกเองได้ ·
@@ -81,7 +81,7 @@ export default function ComplaintNewsBatchDialog({ source = 'staff', candidates,
           setFetched(prev => ({ ...prev, [item.id]: {
             status: 'ok',
             data: {
-              village: data.village, createdAt: data.created_at, closedAt: data.closed_at, dueDate: data.due_date,
+              village: data.village, createdAt: data.created_at, closedAt: data.closed_at, dueDate: data.due_date, category: data.category,
               workPhotos: Array.isArray(data.work_photos) ? data.work_photos : [],
             },
           } }))
@@ -141,6 +141,11 @@ export default function ComplaintNewsBatchDialog({ source = 'staff', candidates,
   const departments = [...new Set(pickedItems.map(item => String(item.departmentName ?? '').trim()).filter(Boolean))]
   const departmentName = departments.length === 1 ? departments[0] : ''
   const categoryLabel = group?.items[0]?.categoryLabel ?? ''
+  // รหัสหมวดไว้เลือกไอคอน: staff ส่ง categoryKey = รหัสหมวด · exec ส่ง categoryKey = ชื่อหมวด (รายการจาก RPC ไม่มีรหัส) จึงใช้รหัสจากรายละเอียดที่โหลดแล้ว
+  // (กลุ่มเดียวกัน = หมวดเดียวกัน) · ยังโหลดไม่เสร็จ/ไม่มีรหัส = ไม่วาดไอคอน
+  const categoryCode = isExec ? (pickedItems.map(item => detailOf(item)?.category).find(Boolean) ?? '') : (group?.categoryKey ?? '')
+  // สีธีมตามสีกอง — ภาพรวมที่เลือกจากหลายกอง (departmentName ว่าง) ได้สีส้ม
+  const theme = useDepartmentTheme(tenant?.id, departmentName)
 
   const hasMayorData = !!(branding?.photo_url || branding?.mayor_name)
   const mayorOn = hasMayorData && (mayorEdit ?? true)
@@ -151,10 +156,10 @@ export default function ComplaintNewsBatchDialog({ source = 'staff', candidates,
   // readyInfos/photoDataUrls/photoCaptions เป็นอาร์เรย์ใหม่ทุกรอบ — คีย์ด้วยเนื้อหาจริงเพื่อไม่ให้ภาพและไฟล์ PNG ถูกสร้างใหม่ทุกครั้งที่เรนเดอร์
   const infosKey = JSON.stringify(readyInfos)
   const model = useMemo(() => buildBatchNewsModel({
-    items: readyInfos, tenantName, departmentName, categoryLabel, showStatus: statusOn, showDuration: durationEdit ?? undefined,
-    headline: headlineEdit ?? undefined, detail: detailEdit, reportUrl: linkOn ? reportUrl : '', executive,
+    items: readyInfos, tenantName, departmentName, categoryLabel, categoryCode, showStatus: statusOn, showDuration: durationEdit ?? undefined,
+    headline: headlineEdit ?? undefined, detail: detailEdit, reportUrl: linkOn ? reportUrl : '', executive, theme,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [infosKey, tenantName, departmentName, categoryLabel, statusOn, durationEdit, headlineEdit, detailEdit, reportUrl, linkOn, executive])
+  }), [infosKey, tenantName, departmentName, categoryLabel, categoryCode, statusOn, durationEdit, headlineEdit, detailEdit, reportUrl, linkOn, executive, theme])
   const deferredModel = useDeferredValue(model)
 
   const photoDataUrls = shown.map(entry => entry.dataUrl)
@@ -164,7 +169,8 @@ export default function ComplaintNewsBatchDialog({ source = 'staff', candidates,
   const image = useMemo(() => {
     try {
       return buildNewsSvg(deferredModel, createCanvasMeasure(), {
-        logoDataUrl: logo, photoDataUrls, photoCaptions, moreText, executivePhotoDataUrl: mayorOn ? mayorPhoto : null,
+        // ภาพรวมใช้เฉพาะรูปหลังดำเนินการ (ไม่มีรูปจากผู้แจ้ง) ทุกช่องจึงเป็น 'after'
+        logoDataUrl: logo, photoDataUrls, photoCaptions, photoKinds: photoDataUrls.map(() => 'after'), moreText, executivePhotoDataUrl: mayorOn ? mayorPhoto : null,
       })
     } catch {
       return null

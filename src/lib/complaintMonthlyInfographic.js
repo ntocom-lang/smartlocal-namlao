@@ -147,7 +147,8 @@ export function donutSlicePath(cx, cy, outer, inner, start, end) {
 
 const ICON_TAGS = new Set(['path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse'])
 
-function iconSvg(node, x, y, size) {
+// export ให้ภาพข่าว (complaintNewsImage.js) ใช้ตัววาดไอคอนชุดเดียวกัน ไม่เขียนซ้ำ
+export function iconSvg(node, x, y, size) {
   const shapes = node
     .filter(([tag]) => ICON_TAGS.has(tag))
     .map(([tag, attrs]) => `<${tag} ${Object.entries(attrs)

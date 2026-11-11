@@ -79,6 +79,12 @@ export function NewsOutputPanel({ image, model, tenantName, file, error, onRetry
       )}
       {file && !canShareFile && <p className="text-[11px] text-gray-500">เครื่องนี้แชร์ภาพโดยตรงไม่ได้ กดดาวน์โหลดแล้วแนบใน LINE หรือ Facebook</p>}
       {message && <p role="status" className="rounded-xl bg-sky-50 p-3 text-xs text-sky-900">{message}</p>}
+      {image && image.fitsA4 === false && (
+        // ภาพข่าวต้องจบ A4 แผ่นเดียว (เจ้าของระบบสั่ง 2569-11-12) — ระบบย่อรูป/ลดของประกอบให้สุดแล้วยังล้น ไม่ตัดข้อความหรือรูปทิ้งเอง ให้คนเลือก
+        <p role="status" className="rounded-xl bg-amber-50 p-3 text-xs text-amber-900">
+          ภาพนี้ยาวเกิน 1 แผ่น A4 — ลองเลือกรูปให้เหลือ 1–2 รูป ปิดรูปนายก หรือย่อข้อความข่าว
+        </p>
+      )}
       {image && (
         <img src={svgDataUrl(image.svg)} alt={`ตัวอย่างภาพข่าว ${model.headline}`} width={image.width} height={image.height}
           className="mx-auto block h-auto w-full max-w-sm rounded-xl border border-gray-200" />

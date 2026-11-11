@@ -12,13 +12,27 @@
 //
 // ไฟล์นี้ต้องไม่แตะ DOM ตอนโหลดโมดูล — เทสต์รันด้วย node (ตัววัดข้อความส่งเข้ามาจากผู้เรียก)
 
-import { FONT_STACK, IMAGE_WIDTH, wrapLines } from './complaintMonthlyInfographic.js'
+import { __iconNode as cameraIcon } from 'lucide-react/dist/esm/icons/camera.mjs'
+import { __iconNode as checkIcon } from 'lucide-react/dist/esm/icons/check.mjs'
+import { iconNodeForCategory } from './complaintCategoryIcons.js'
+import { FONT_STACK, IMAGE_WIDTH, iconSvg, wrapLines } from './complaintMonthlyInfographic.js'
+import { newsThemeFor } from './departmentColors.js'
 import { QUIET_MODULES, qrLayout } from './qrSvg.js'
 import { workingDaysBetween } from './workingDays.js'
 
 export { FONT_STACK, IMAGE_WIDTH, createCanvasMeasure, svgDataUrl, svgToPngFile } from './complaintMonthlyInfographic.js'
 
 export const NEWS_MIN_HEIGHT = 1350
+// เพดานความสูง = A4 แนวตั้งที่ความกว้างภาพ (สัดส่วน 297/210) → 1527 px · เจ้าของระบบสั่ง 2569-11-12 ให้ภาพข่าวจบแผ่นเดียวเมื่อพิมพ์ A4
+// ข้อความข่าวที่ยาวมากอาจยังล้นได้ → ผู้เรียกดู fitsA4 ในผลลัพธ์ของ buildNewsSvg (ไม่ตัดข้อความทิ้งเอง)
+export const NEWS_MAX_HEIGHT = Math.floor(IMAGE_WIDTH * 297 / 210)
+// ช่องรูปเตี้ยสุดตอนบีบให้พอดี A4 — ต่ำกว่านี้รูปงานดูไม่รู้เรื่อง · 1–2 รูป (ช่องกว้าง ~470–950 px) ไม่ต่ำกว่า 300
+// 3–4 รูป (ตาราง 2 แถว) ลดถึง 200 เพราะ 2 แถวที่ 300 ไม่มีทางพอดี A4 แม้ตัดของประกอบหมด
+export const NEWS_PHOTO_MIN_H = 300
+export const NEWS_GRID_MIN_H = 200
+// แถวเดียวของ 3–4 รูป (ใช้เมื่อ 2×2 ไม่พอที่) สูง 200–320 px
+const NEWS_ROW_MIN_H = 200
+const NEWS_ROW_NATURAL_H = 320
 export const MAX_NEWS_PHOTOS = 4
 // ภาพข่าวรวม: เลือกได้ไม่เกินกี่เรื่องต่อภาพ (ฝั่งผู้บริหารเรียก RPC ทีละเรื่อง จึงจำกัดไว้)
 export const MAX_BATCH_ITEMS = 12
@@ -29,14 +43,17 @@ export const NEWS_FOOTER_THANKS = Object.freeze(['ขอบคุณทุกก
 
 const MARGIN = 64
 const CONTENT_W = IMAGE_WIDTH - MARGIN * 2
-const ORANGE = '#c2410c'
+// สีธีมตามกอง (departmentColors.js newsThemeFor) — model.theme ไม่มี/ผิดรูป = ส้มชุดเดิม · ป้าย "ดำเนินการแล้ว" คงเขียว (สถานะ ไม่ใช่สีกอง)
+const STATUS_GREEN = '#15803d'
+// ทองของเส้นใต้แถบหัวและขอบป้ายนายก — คงที่ทุกธีม
+const GOLD = '#f5c242'
 const INK = '#1f2937'
 const MUTED = '#4b5563'
 const GAP = 16
 // แถวป้ายหมู่ใต้รูปของภาพข่าวรวม
 const CAPTION_H = 52
 // บล็อกผู้บริหารมุมขวาแถบหัว (เจ้าของสั่ง 2569-11-11 ให้เด่นแบบภาพข่าวต้นฉบับ อบต.): รูปตัดพื้นหลังตัวใหญ่ไม่มีกรอบขาว
-// ยืนชิดก้นกล่อง แล้วป้ายชื่อขอบส้มทับช่วงล่างของรูป (ซ่อนรอยตัดลำตัว) · ผู้เรียกตัดพื้นหลังมาเอง (prepareExecutivePhoto)
+// ยืนชิดก้นกล่อง แล้วป้ายชื่อขอบทองทับช่วงล่างของรูป (ซ่อนรอยตัดลำตัว) · ผู้เรียกตัดพื้นหลังมาเอง (prepareExecutivePhoto)
 const EXEC_PHOTO_W = 300
 const EXEC_PHOTO_H = 300
 const EXEC_PHOTO_TOP = 26
@@ -45,6 +62,11 @@ const EXEC_PLATE_W = 320
 const EXEC_PLATE_PAD_X = 22
 const EXEC_PLATE_PAD_Y = 16
 const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
+const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+// แถบขั้นตอน 4 จุด: "ดำเนินการ" ไม่ใช่ "ลงพื้นที่" เพราะบางหมวดไม่ได้ลงพื้นที่จริง
+export const NEWS_STEP_LABELS = Object.freeze(['แจ้งเรื่อง', 'รับเรื่อง', 'ดำเนินการ', 'เสร็จสิ้น'])
+// ป้ายมุมรูป: ต้องตรงความจริง — รูปผู้แจ้ง = ก่อน, รูปผลงานของเจ้าหน้าที่ = หลัง
+export const NEWS_PHOTO_KIND_LABELS = Object.freeze({ before: 'ก่อนดำเนินการ', after: 'หลังดำเนินการ' })
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -63,6 +85,12 @@ function bangkokParts(value) {
 export function thaiLongDate(value) {
   const parts = bangkokParts(value)
   return parts ? `${parts.day} ${THAI_MONTHS[parts.month]} ${parts.year + 543}` : ''
+}
+
+/** "3 พ.ย. 2569" ตามเวลาไทย — อ่านวันไม่ได้คืนสตริงว่าง (ไม่เดา) */
+export function thaiShortDate(value) {
+  const parts = bangkokParts(value)
+  return parts ? `${parts.day} ${THAI_MONTHS_SHORT[parts.month]} ${parts.year + 543}` : ''
 }
 
 const dayKey = parts => `${parts.year}-${String(parts.month + 1).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
@@ -138,18 +166,36 @@ function normalizeExecutive(executive) {
   return name || title ? { name, title } : null
 }
 
+const HEX = /^#[0-9a-f]{6}$/i
+
+/** ชุดสีธีมที่ใช้ได้จริง — ไม่ครบ 4 สี/ไม่ใช่ hex 6 หลัก = ส้มชุดเดิม (กันค่าแปลกหลุดเข้า SVG) */
+function normalizeTheme(theme) {
+  const fallback = newsThemeFor(null)
+  if (!theme || typeof theme !== 'object') return fallback
+  return ['base', 'deep', 'soft', 'ink'].every(key => HEX.test(theme[key])) ? { base: theme.base, deep: theme.deep, soft: theme.soft, ink: theme.ink } : fallback
+}
+
+/** รหัสหมวด (ใช้เลือกไอคอน) — ไม่มี/ว่าง = ไม่วาดไอคอน ไม่เดา */
+const normalizeCategoryCode = code => (typeof code === 'string' && code.trim() ? code.trim() : '')
+
+/** 4 จุด: วันที่ขึ้นเฉพาะจุดแรก (วันยื่น) กับจุดสุดท้าย (วันปิดงาน) · สองจุดกลางไม่มีข้อมูลวัน จึงไม่ใส่ ไม่เดา */
+function buildSteps(createdAt, closedAt) {
+  return NEWS_STEP_LABELS.map((label, i) => ({ label, date: i === 0 ? thaiShortDate(createdAt) : i === 3 ? thaiShortDate(closedAt) : '' }))
+}
+
 /**
  * @param {{
  *   complaint?: { village?: string, created_at?: string, due_date?: string, closed_at?: string },
- *   tenantName?: string, departmentName?: string, categoryLabel?: string,
+ *   tenantName?: string, departmentName?: string, categoryLabel?: string, categoryCode?: string,
  *   finishNote?: string, closedAt?: string, createdAt?: string, dueDate?: string,
  *   showStatus?: boolean, showDuration?: boolean, headline?: string, detail?: string, reportUrl?: string,
  *   executive?: { name?: string | null, title?: string | null } | null,
+ *   theme?: { base: string, deep: string, soft: string, ink: string } | null,
  * }} input
  */
 export function buildNewsModel({
-  complaint = null, tenantName = '', departmentName = '', categoryLabel = '', finishNote = '',
-  closedAt, createdAt, dueDate, showStatus = true, showDuration, headline, detail, reportUrl = '', executive = null,
+  complaint = null, tenantName = '', departmentName = '', categoryLabel = '', categoryCode = '', finishNote = '',
+  closedAt, createdAt, dueDate, showStatus = true, showDuration, headline, detail, reportUrl = '', executive = null, theme = null,
 } = {}) {
   const closed = closedAt ?? complaint?.closed_at
   const created = createdAt ?? complaint?.created_at
@@ -169,6 +215,9 @@ export function buildNewsModel({
     durationLabel: durationKnown ? (days === 0 ? 'เสร็จในวันที่ยื่น' : `ใช้เวลา ${days} วันทำการ`) : '',
     reportUrl: String(reportUrl ?? '').trim(),
     executive: normalizeExecutive(executive),
+    theme: normalizeTheme(theme),
+    categoryCode: normalizeCategoryCode(categoryCode),
+    steps: buildSteps(created, closed),
   }
 }
 
@@ -231,7 +280,7 @@ export function batchMoreText(moreCount, hiddenVillages = []) {
  * มีเรื่องเกินกำหนดแม้เรื่องเดียว = ไม่มีป้าย ติ๊กเองก็ไม่ได้ (ภาพที่ลงเพจไม่ควรเอาตัวเลขที่ดูช้าขึ้นไปโดยไม่มีใครตัดสิน)
  * @param {{ items?: { village?: string, createdAt?: string, closedAt?: string, dueDate?: string }[] } & Parameters<typeof buildNewsModel>[0]} input
  */
-export function buildBatchNewsModel({ items = [], tenantName = '', departmentName = '', categoryLabel = '', showStatus = true, showDuration, headline, detail, reportUrl = '', executive = null } = {}) {
+export function buildBatchNewsModel({ items = [], tenantName = '', departmentName = '', categoryLabel = '', categoryCode = '', showStatus = true, showDuration, headline, detail, reportUrl = '', executive = null, theme = null } = {}) {
   const rows = Array.isArray(items) ? items : []
   const villages = villageList(rows.map(row => row?.village))
   const times = rows.map(row => new Date(row?.closedAt).getTime()).filter(Number.isFinite)
@@ -243,11 +292,13 @@ export function buildBatchNewsModel({ items = [], tenantName = '', departmentNam
   const allOnTime = rows.length > 0 && stats.every(item => item.days !== null && item.days >= 0 && item.onTime)
   const maxDays = allOnTime ? Math.max(...stats.map(item => item.days)) : 0
   const model = buildNewsModel({
-    tenantName, departmentName, categoryLabel, closedAt, showStatus, showDuration: false, detail, reportUrl, executive,
+    tenantName, departmentName, categoryLabel, categoryCode, closedAt, showStatus, showDuration: false, detail, reportUrl, executive, theme,
     headline: headline ?? draftBatchHeadline({ departmentName, tenantName, categoryLabel, count: rows.length, villages }),
   })
   return {
     ...model,
+    // ภาพรวมหลายเรื่อง วันยื่น/วันปิดต่างกัน — แสดงครบ 4 จุดแต่ไม่ใส่วันที่ ไม่เลือกวันใดวันหนึ่งแทนทั้งกลุ่ม
+    steps: NEWS_STEP_LABELS.map(label => ({ label, date: '' })),
     showDuration: allOnTime && (showDuration ?? true),
     durationLabel: allOnTime ? (maxDays === 0 ? 'เสร็จในวันที่ยื่นทุกเรื่อง' : `ใช้เวลาไม่เกิน ${maxDays} วันทำการ`) : '',
     count: rows.length,
@@ -399,31 +450,160 @@ export function cutoutPlainBackground(data, width, height) {
  * ตารางรูป: 1 รูปเต็มกว้าง · 2 รูปแบ่งครึ่ง · 3–4 รูปตาราง 2×2 — คืนกรอบ [{x,y,w,h}] เทียบมุมซ้ายบนของกริด
  * captionH = ความสูงแถวป้ายใต้รูปของแต่ละแถว (0 = ไม่มีป้าย ผลเหมือนเดิมทุกพิกเซล)
  */
-export function photoCells(count, captionH = 0) {
+export function photoCells(count, captionH = 0, maxHeight = Infinity, singleMinH = NEWS_PHOTO_MIN_H) {
   const half = (CONTENT_W - GAP) / 2
   if (count <= 0) return { cells: [], height: 0 }
-  if (count === 1) return { cells: [{ x: 0, y: 0, w: CONTENT_W, h: 600 }], height: 600 + captionH }
-  if (count === 2) return { cells: [0, 1].map(i => ({ x: i * (half + GAP), y: 0, w: half, h: 520 })), height: 520 + captionH }
-  const h = 360
+  // maxHeight (ไม่ส่ง = ไม่จำกัด ผลเหมือนเดิมทุกพิกเซล): ย่อความสูงช่องให้ทั้งตารางไม่เกินที่ว่าง แต่ไม่ต่ำกว่า NEWS_PHOTO_MIN_H
+  const rows = count <= 2 ? 1 : 2
+  const natural = count === 1 ? 600 : count === 2 ? 520 : 360
+  const fixed = captionH * rows + (rows - 1) * GAP
+  // 3–4 รูป: ถ้าตาราง 2×2 ต่ำกว่า NEWS_GRID_MIN_H (ที่ว่างไม่พอ) เปลี่ยนเป็นแถวเดียวเรียงข้าง (รูปละ ~226–306 px) — เตี้ยกว่า 2 แถวเกือบครึ่ง
+  // เลือกตามที่ว่างเท่านั้น: ไม่ส่ง maxHeight = 2×2 เหมือนเดิมทุกพิกเซล
+  if (count >= 3 && Math.floor((maxHeight - fixed) / rows) < NEWS_GRID_MIN_H) {
+    const n = Math.min(count, 4)
+    const w = (CONTENT_W - GAP * (n - 1)) / n
+    const rowH = Math.max(NEWS_ROW_MIN_H, Math.min(NEWS_ROW_NATURAL_H, Math.floor(maxHeight - captionH)))
+    return { cells: Array.from({ length: n }, (_, i) => ({ x: i * (w + GAP), y: 0, w, h: rowH })), height: rowH + captionH }
+  }
+  const minH = count <= 2 ? singleMinH : NEWS_GRID_MIN_H
+  const h = Math.max(minH, Math.min(natural, Math.floor((maxHeight - fixed) / rows)))
+  const height = h * rows + fixed
+  if (count === 1) return { cells: [{ x: 0, y: 0, w: CONTENT_W, h }], height }
+  if (count === 2) return { cells: [0, 1].map(i => ({ x: i * (half + GAP), y: 0, w: half, h })), height }
   const rowStep = h + GAP + captionH
   const cells = Array.from({ length: Math.min(count, 4) }, (_, i) => ({ x: (i % 2) * (half + GAP), y: Math.floor(i / 2) * rowStep, w: half, h }))
   // 3 รูป: รูปที่ 3 เต็มกว้างแถวล่าง ไม่ให้มุมขวาล่างว่างเป็นช่องโหว่
   if (count === 3) cells[2] = { x: 0, y: rowStep, w: CONTENT_W, h }
-  return { cells, height: h * 2 + GAP + captionH * 2 }
+  return { cells, height }
 }
+
+/** ผสมสี hex 6 หลักกับสีอีกสี (ratio = สัดส่วนของ b) — ใช้ทำสีพื้นหลังอ่อนจากสีธีมโดยไม่เพิ่มตารางสี */
+function mixHex(a, b, ratio) {
+  const channel = (hex, i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16)
+  return '#' + [0, 1, 2].map(i => Math.round(channel(a, i) * (1 - ratio) + channel(b, i) * ratio).toString(16).padStart(2, '0')).join('')
+}
+
+// ลวดลายเครือข่ายจุด-เส้น (แนวเมืองอัจฉริยะ) กรอบ 300×220 — กำหนดตายตัว ไม่สุ่ม
+const NETWORK_NODES = [[20, 30], [110, 70], [200, 25], [280, 95], [190, 150], [95, 160], [250, 200], [30, 125]]
+const NETWORK_EDGES = [[0, 1], [1, 2], [2, 3], [1, 4], [4, 3], [4, 5], [5, 7], [7, 1], [4, 6], [3, 6]]
+
+function networkSvg(x, y, flip, color) {
+  const transform = flip ? `translate(${num(x + 300)} ${num(y + 220)}) scale(-1 -1)` : `translate(${num(x)} ${num(y)})`
+  const lines = NETWORK_EDGES.map(([a, b]) => `<line x1="${NETWORK_NODES[a][0]}" y1="${NETWORK_NODES[a][1]}" x2="${NETWORK_NODES[b][0]}" y2="${NETWORK_NODES[b][1]}"/>`).join('')
+  const dots = NETWORK_NODES.map(([nx, ny], i) => `<circle cx="${nx}" cy="${ny}" r="${i % 3 === 1 ? 8 : 5}" fill="${color}" fill-opacity="0.2"/>`
+    + (i % 3 === 1 ? `<circle cx="${nx}" cy="${ny}" r="16" fill="none" stroke="${color}" stroke-opacity="0.16" stroke-width="2"/>` : '')).join('')
+  return `<g transform="${transform}" data-network="1"><g stroke="${color}" stroke-opacity="0.14" stroke-width="2.5" stroke-linecap="round">${lines}</g>${dots}</g>`
+}
+
+/**
+ * พื้นหลังทั้งภาพ (วาดก่อนแถบหัว/ท้าย จึงโผล่เฉพาะช่วงเนื้อหาและมุมโค้งของแถบ):
+ *  - ไล่สีอ่อนจากสีธีมกอง → ขาวนวล · การ์ดขาวมุมมนมีเงา (สี่เหลี่ยมเลื่อนลง ไม่ใช้ filter) รองรับเนื้อหา
+ *  - ลายจุดกริดจางในการ์ด + ลายเครือข่ายจุด-เส้นมุมขวาบน/ซ้ายล่าง (ความทึบ ≤ 0.2 ไม่รบกวนการอ่าน)
+ * ไม่มีข้อความ/รูปของผู้ใช้อยู่ในนี้ — ตกแต่งล้วน
+ */
+function pageBackdrop(width, height, headerH, footTop, theme) {
+  const cardX = 24
+  const cardW = width - cardX * 2
+  const cardTop = headerH - 40
+  const cardH = footTop + 40 - cardTop
+  const tintTop = mixHex(theme.soft, '#ffffff', 0.25)
+  const tintBottom = mixHex(theme.soft, '#ffffff', 0.6)
+  const card = `<rect x="${cardX}" y="${num(cardTop)}" width="${cardW}" height="${num(cardH)}" rx="36"`
+  return `<defs><linearGradient id="news-bg-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${tintTop}"/><stop offset="1" stop-color="${tintBottom}"/></linearGradient>`
+    + `<pattern id="news-dots" width="34" height="34" patternUnits="userSpaceOnUse"><circle cx="17" cy="17" r="2.2" fill="${theme.base}" fill-opacity="0.08"/></pattern>`
+    + `<clipPath id="news-card-clip"><rect x="${cardX}" y="${num(cardTop)}" width="${cardW}" height="${num(cardH)}" rx="36"/></clipPath></defs>`
+    + `<rect width="${width}" height="${height}" fill="url(#news-bg-grad)"/>`
+    + `<rect x="${cardX}" y="${num(cardTop + 10)}" width="${cardW}" height="${num(cardH)}" rx="36" fill="${theme.deep}" fill-opacity="0.12" data-card-shadow="1"/>`
+    + `${card} fill="#ffffff" data-card="1"/>`
+    + `<g clip-path="url(#news-card-clip)"><rect x="${cardX}" y="${num(cardTop)}" width="${cardW}" height="${num(cardH)}" fill="url(#news-dots)"/>`
+    + networkSvg(width - cardX - 290, cardTop + 60, false, theme.base)
+    + networkSvg(cardX - 10, footTop + 40 - 230, true, theme.base)
+    + '</g>'
+}
+
+// ลายแผงวงจรบนแถบหัว/แถบท้าย — เส้นตรงหักมุม 90°/45° + จุดเชื่อม กำหนดตายตัว (ไม่มี random: ภาพเดิมต้องได้ SVG เดิมทุกครั้ง)
+// start = [สัดส่วนความกว้าง, สัดส่วนความสูง] · moves: ['h', dx] แนวนอน · ['v', dy] แนวตั้ง · ['d', dx, ทิศ] เฉียง 45° (dy = |dx| × ทิศ, -1 = ขึ้น)
+const CIRCUIT_TRACES = [
+  { start: [0, 0.8], moves: [['h', 70], ['d', 46, -1], ['h', 120], ['d', 30, 1], ['h', 60]] },
+  { start: [0, 0.24], moves: [['h', 50], ['d', 34, 1], ['h', 90]] },
+  { start: [1, 0.86], moves: [['h', -110], ['d', -40, -1], ['h', -150]] },
+  { start: [1, 0.14], moves: [['h', -70], ['v', 44], ['d', -32, 1], ['h', -90]] },
+  { start: [0.36, 1], moves: [['v', -36], ['d', 40, -1], ['h', 200]] },
+  { start: [0.64, 0], moves: [['v', 34], ['d', 34, 1], ['h', 110], ['v', 40]] },
+]
+
+/**
+ * ลายวงจรสีขาวจาง clip ให้อยู่ในรูปทรงแถบ (clipId ชี้ clipPath ที่ผู้เรียกประกาศ) · flip = พลิกแนวตั้งให้แถบท้าย
+ * ไม่ใช้ SVG filter (บางเบราว์เซอร์ไม่วาดตอนแปลงเป็น PNG) · ผู้เรียกวางลายก่อน QR/ข้อความ จึงไม่ทับสิ่งที่ต้องอ่านหรือสแกน
+ */
+function circuitSvg(clipId, width, height, flip, top = 0) {
+  const paths = []
+  const rings = []
+  const dots = []
+  for (const trace of CIRCUIT_TRACES) {
+    let x = trace.start[0] * width
+    let y = trace.start[1] * height
+    const points = [[x, y]]
+    for (const [kind, n, dir] of trace.moves) {
+      if (kind === 'h') x += n
+      else if (kind === 'v') y += n
+      else { x += n; y += Math.abs(n) * dir }
+      points.push([x, y])
+    }
+    const yOf = py => top + (flip ? height - py : py)
+    const at = ([px, py]) => `${num(px)} ${num(yOf(py))}`
+    paths.push(`<path d="M${points.map(at).join('L')}"/>`)
+    rings.push(`<circle cx="${num(points[0][0])}" cy="${num(yOf(points[0][1]))}" r="7"/>`)
+    const end = points[points.length - 1]
+    dots.push(`<circle cx="${num(end[0])}" cy="${num(yOf(end[1]))}" r="5"/>`)
+  }
+  return `<g clip-path="url(#${clipId})" data-circuit="1"><g fill="none" stroke="#ffffff" stroke-opacity="0.13" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">${paths.join('')}${rings.join('')}</g><g fill="#ffffff" fill-opacity="0.13">${dots.join('')}</g></g>`
+}
+
+/** วงกลมสีธีมหน้าบรรทัดวันที่ + ไอคอนหมวด (ขาว) */
+const CATEGORY_BADGE_R = 26
 
 /**
  * @param {ReturnType<typeof buildNewsModel>} model
  * @param {(text: string, size: number, bold: boolean) => number} measure
  * @param {{ logoDataUrl?: string | null, photoDataUrls?: (string | null)[], executivePhotoDataUrl?: string | null,
- *   photoCaptions?: string[], moreText?: string }} [assets]
+ *   photoCaptions?: string[], photoKinds?: ('before' | 'after' | null | undefined)[], moreText?: string }} [assets]
  *   photoCaptions = ป้ายใต้รูป (ภาพรวม: หมู่) เรียงตรงกับ photoDataUrls · moreText = "และอีก N จุด" ใต้ตารางรูป
- * @returns {{ svg: string, width: number, height: number, photoCount: number }}
+ *   photoKinds = ชนิดรูปเรียงตรงกับ photoDataUrls → ป้ายมุมรูป "ก่อน/หลังดำเนินการ" (ไม่ส่ง/ค่าอื่น = ไม่มีป้าย)
+ * @returns {{ svg: string, width: number, height: number, photoCount: number, fitsA4: boolean }}
  */
-export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], executivePhotoDataUrl = null, photoCaptions = [], moreText = '' } = {}) {
+export function buildNewsSvg(model, measure, assets = {}) {
+  // ให้จบ A4 แผ่นเดียว: รูปย่อได้เองถึงขั้นต่ำเสมอ (ใน drawNewsSvg) แล้วถ้ายังล้นค่อยไล่ลดของประกอบทีละขั้น (NEWS_FIT_LEVELS)
+  // ลำดับตั้งใจ: รูปงานคือเนื้อข่าว ต้องรักษาไว้ก่อน → ตัดวันที่ใต้ขั้นตอน → ย่อรูปนายก → ซ่อนแถบขั้นตอน
+  // ข้อความข่าวที่ยาวมากเองอาจยังล้น = fitsA4 false (ไม่ตัดข้อความทิ้ง ให้ผู้เรียกเตือนผู้ใช้)
+  let result = null
+  for (const fit of NEWS_FIT_LEVELS) {
+    result = drawNewsSvg(model, measure, assets, fit)
+    if (result.fitsA4) break
+  }
+  return result
+}
+
+// ทุกขั้นคงแถบขั้นตอน (พร้อมวันที่) ไว้เสมอ — เจ้าของระบบสั่ง 2569-11-12 ให้ย่อรูป/กรอบ/ตัวหนังสือที่ใหญ่เกินแทนการตัดแถบทิ้ง
+// t = ตัวคูณขนาดตัวหนังสือ+ระยะห่างของเนื้อหา · exec = ตัวคูณรูปนายก · foot = ตัวคูณแถบท้าย (QR/ข้อความ) · min = ความสูงช่องรูปต่ำสุด (1–2 รูป)
+// ต่ำสุด: หัวข้อข่าว 40×0.8 = 32 px · QR 220×0.75 = 165 px (ยังสแกนติด) · รูปนายก 165 px
+const NEWS_FIT_LEVELS = Object.freeze([
+  { t: 1, exec: 1, foot: 1, min: 300 },
+  { t: 0.92, exec: 0.85, foot: 1, min: 280 },
+  { t: 0.86, exec: 0.73, foot: 0.85, min: 260 },
+  { t: 0.8, exec: 0.62, foot: 0.8, min: 240 },
+  { t: 0.8, exec: 0.55, foot: 0.75, min: 220 },
+])
+
+function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], executivePhotoDataUrl = null, photoCaptions = [], photoKinds = [], moreText = '' } = {}, fit = NEWS_FIT_LEVELS[0]) {
+  const execPhotoW = Math.round(EXEC_PHOTO_W * fit.exec)
+  const execPhotoH = Math.round(EXEC_PHOTO_H * fit.exec)
+  const sz = base => Math.round(base * fit.t) // ขนาดตัวหนังสือเนื้อหา
+  const gap = base => Math.round(base * fit.t) // ระยะห่างแนวตั้ง
+  const theme = normalizeTheme(model.theme)
   // จับคู่รูปกับป้ายก่อนกรอง — รูปที่ใช้ไม่ได้ถูกตัดทิ้งพร้อมป้ายของมันเอง ป้ายไม่เลื่อนไปติดรูปอื่น
   const entries = (photoDataUrls ?? [])
-    .map((url, i) => ({ url, caption: String(photoCaptions?.[i] ?? '').trim() }))
+    .map((url, i) => ({ url, caption: String(photoCaptions?.[i] ?? '').trim(), kind: Object.hasOwn(NEWS_PHOTO_KIND_LABELS, photoKinds?.[i]) ? photoKinds[i] : null }))
     .filter(entry => imageUrlOk(entry.url))
     .slice(0, MAX_NEWS_PHOTOS)
   const photos = entries.map(entry => entry.url)
@@ -444,7 +624,7 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
     return cursor
   }
 
-  // ── แถบหัวสีส้ม ขอบล่างมน ──
+  // ── แถบหัวสีธีมกอง ขอบล่างมน ──
   const logoR = 72
   const logoCx = MARGIN + logoR
   const textX = MARGIN + logoR * 2 + 32
@@ -461,7 +641,7 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
     ? EXEC_PLATE_PAD_Y * 2 + [execPlateLines.name, execPlateLines.title].filter(Boolean)
       .reduce((sum, slot) => sum + slot.lines.length * plateStep(slot), 0)
     : 0
-  const execPlateTop = execPhoto ? EXEC_PHOTO_TOP + EXEC_PHOTO_H - EXEC_PLATE_OVERLAP : 44
+  const execPlateTop = execPhoto ? EXEC_PHOTO_TOP + execPhotoH - EXEC_PLATE_OVERLAP : 44
   const execBottom = exec ? execPlateTop + execPlateH : 0
   const textW = IMAGE_WIDTH - MARGIN - textX - (exec ? EXEC_PLATE_W + 28 : 0)
   let titleSize = 68
@@ -484,7 +664,14 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
   }
   const headerH = Math.max(baseline + 52, logoR * 2 + 116, exec ? execBottom + 44 : 0)
   const rad = 44
-  parts.push(`<path d="M0 0H${IMAGE_WIDTH}V${num(headerH - rad)}A${rad} ${rad} 0 0 1 ${IMAGE_WIDTH - rad} ${num(headerH)}H${rad}A${rad} ${rad} 0 0 1 0 ${num(headerH - rad)}Z" fill="${ORANGE}"/>`)
+  // พื้นแถบหัว: ไล่สีทแยง deep → base + ลายวงจร (clip ด้วยรูปทรงเดียวกับแถบ) — ข้อความขาวอยู่บนพื้นที่คอนทราสต์ผ่านเกณฑ์ทั้งสองปลาย
+  const headD = `M0 0H${IMAGE_WIDTH}V${num(headerH - rad)}A${rad} ${rad} 0 0 1 ${IMAGE_WIDTH - rad} ${num(headerH)}H${rad}A${rad} ${rad} 0 0 1 0 ${num(headerH - rad)}Z`
+  parts.push(`<defs><linearGradient id="news-head-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${theme.deep}"/><stop offset="1" stop-color="${theme.base}"/></linearGradient>`
+    + `<clipPath id="news-head-clip"><path d="${headD}"/></clipPath></defs>`
+    + `<path d="${headD}" fill="url(#news-head-grad)"/>`
+    + circuitSvg('news-head-clip', IMAGE_WIDTH, headerH, false))
+  // เส้นทองบางใต้แถบ ตามโค้งขอบล่าง (เส้นหนา 6 กึ่งกลางอยู่ต่ำกว่าขอบ 3 = แนบใต้แถบพอดี)
+  parts.push(`<path d="M-3 ${num(headerH - rad)}A${rad + 3} ${rad + 3} 0 0 0 ${rad} ${num(headerH + 3)}H${IMAGE_WIDTH - rad}A${rad + 3} ${rad + 3} 0 0 0 ${IMAGE_WIDTH + 3} ${num(headerH - rad)}" fill="none" stroke="${GOLD}" stroke-width="6" data-gold-line="1"/>`)
   const logoCy = headerH / 2 - 4
   parts.push(`<circle cx="${logoCx}" cy="${num(logoCy)}" r="${logoR}" fill="#ffffff"/>`)
   if (imageUrlOk(logoDataUrl)) {
@@ -494,19 +681,19 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
   }
   parts.push(headerTexts.join(''))
   if (exec) {
-    // ป้ายขาวขอบส้มชิดขอบขวาของพื้นที่เนื้อหา · รูปอยู่กึ่งกลางป้าย ยืนชิดก้นกล่องและถูกป้ายทับช่วงล่าง (ไม่มีรูป = ป้ายอย่างเดียว)
-    // ไม่มีพื้น/กรอบขาวหลังรูป — รูปที่ตัดพื้นหลังแล้วต้องลอยบนสีส้มของแถบหัว · ตัดไม่ได้ ผู้เรียกใส่กรอบมาในรูปเอง
+    // ป้ายขาวขอบทองชิดขอบขวาของพื้นที่เนื้อหา · รูปอยู่กึ่งกลางป้าย ยืนชิดก้นกล่องและถูกป้ายทับช่วงล่าง (ไม่มีรูป = ป้ายอย่างเดียว)
+    // ไม่มีพื้น/กรอบขาวหลังรูป — รูปที่ตัดพื้นหลังแล้วต้องลอยบนสีแถบหัว · ตัดไม่ได้ ผู้เรียกใส่กรอบมาในรูปเอง
     const plateX = IMAGE_WIDTH - MARGIN - EXEC_PLATE_W
     const centerX = plateX + EXEC_PLATE_W / 2
     if (execPhoto) {
-      const px = centerX - EXEC_PHOTO_W / 2
-      parts.push(`<defs><clipPath id="news-exec-clip"><rect x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${EXEC_PHOTO_W}" height="${EXEC_PHOTO_H}"/></clipPath></defs>`
-        + `<image href="${esc(execPhoto)}" x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${EXEC_PHOTO_W}" height="${EXEC_PHOTO_H}" preserveAspectRatio="xMidYMax meet" clip-path="url(#news-exec-clip)"/>`)
+      const px = centerX - execPhotoW / 2
+      parts.push(`<defs><clipPath id="news-exec-clip"><rect x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}"/></clipPath></defs>`
+        + `<image href="${esc(execPhoto)}" x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}" preserveAspectRatio="xMidYMax meet" clip-path="url(#news-exec-clip)"/>`)
     }
     if (execPlateH) {
       // เงาจางใต้ป้าย (สี่เหลี่ยมเลื่อนลง) แทน SVG filter ซึ่งบางเบราว์เซอร์ไม่วาดตอนแปลงเป็น PNG
-      parts.push(`<rect x="${num(plateX)}" y="${num(execPlateTop + 6)}" width="${EXEC_PLATE_W}" height="${num(execPlateH)}" rx="26" fill="#7c2d12" fill-opacity="0.28"/>`
-        + `<rect x="${num(plateX)}" y="${num(execPlateTop)}" width="${EXEC_PLATE_W}" height="${num(execPlateH)}" rx="26" fill="#ffffff" stroke="#fdba74" stroke-width="4"/>`)
+      parts.push(`<rect x="${num(plateX)}" y="${num(execPlateTop + 6)}" width="${EXEC_PLATE_W}" height="${num(execPlateH)}" rx="26" fill="${theme.deep}" fill-opacity="0.28"/>`
+        + `<rect x="${num(plateX)}" y="${num(execPlateTop)}" width="${EXEC_PLATE_W}" height="${num(execPlateH)}" rx="26" fill="#ffffff" stroke="${GOLD}" stroke-width="4"/>`)
       let top = execPlateTop + EXEC_PLATE_PAD_Y
       for (const [slot, fill] of [[execPlateLines.name, INK], [execPlateLines.title, MUTED]]) {
         if (!slot) continue
@@ -519,36 +706,96 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
   }
 
   // ── ป้ายเม็ดยา ──
-  let y = headerH + 48
+  let y = headerH + gap(48)
   const pills = []
-  if (model.showStatus) pills.push({ label: 'ดำเนินการแล้ว', bg: '#15803d', fg: '#ffffff' })
-  if (model.showDuration && model.durationLabel) pills.push({ label: model.durationLabel, bg: '#ffedd5', fg: '#9a3412' })
+  if (model.showStatus) pills.push({ label: 'ดำเนินการแล้ว', bg: STATUS_GREEN, fg: '#ffffff' })
+  if (model.showDuration && model.durationLabel) pills.push({ label: model.durationLabel, bg: theme.soft, fg: theme.ink })
   if (pills.length) {
-    const pillH = 60
+    const pillH = gap(60)
+    const pillSize = sz(30)
     let x = MARGIN
     let rowTop = y
     for (const pill of pills) {
-      const width = Math.ceil(measure(pill.label, 30, true)) + 56
+      const width = Math.ceil(measure(pill.label, pillSize, true)) + gap(56)
       if (x > MARGIN && x + width > MARGIN + CONTENT_W) { x = MARGIN; rowTop += pillH + 14 }
       parts.push(`<rect x="${num(x)}" y="${num(rowTop)}" width="${width}" height="${pillH}" rx="${pillH / 2}" fill="${pill.bg}"/>`)
-      text(x + width / 2, rowTop + 40, pill.label, { size: 30, bold: true, fill: pill.fg, anchor: 'middle' })
+      text(x + width / 2, rowTop + Math.round(pillH * 0.667), pill.label, { size: pillSize, bold: true, fill: pill.fg, anchor: 'middle' })
       x += width + 16
     }
-    y = rowTop + pillH + 40
+    y = rowTop + pillH + gap(40)
+  }
+
+  // ── แถบขั้นตอน 4 จุด (วงกลมสีธีม + เครื่องหมายถูกขาว + เส้นเชื่อม) กว้างเต็มพื้นที่เนื้อหา ──
+  // วันที่ใต้ป้ายมาจาก model.steps เท่านั้น (จุดไหนไม่มีวัน = ไม่ใส่ ไม่เดา)
+  const steps = Array.isArray(model.steps) ? model.steps.slice(0, 4) : []
+  if (steps.length === 4) {
+    const stepR = 20
+    const slotW = CONTENT_W / 4
+    const stepCy = y + stepR
+    const centers = steps.map((_, i) => MARGIN + slotW * (i + 0.5))
+    for (let i = 0; i < 3; i += 1) {
+      parts.push(`<line x1="${num(centers[i] + stepR)}" y1="${num(stepCy)}" x2="${num(centers[i + 1] - stepR)}" y2="${num(stepCy)}" stroke="${theme.base}" stroke-width="5" stroke-linecap="round"/>`)
+    }
+    steps.forEach((step, i) => {
+      // วงเรืองแสงจางรอบจุด (วงซ้อนความทึบต่ำ ไม่ใช้ filter) ให้แถบดูเป็นเส้นทางที่ไปถึงปลายทางแล้ว
+      parts.push(`<circle cx="${num(centers[i])}" cy="${num(stepCy)}" r="${stepR + 9}" fill="${theme.base}" fill-opacity="0.14"/>`)
+      parts.push(`<circle cx="${num(centers[i])}" cy="${num(stepCy)}" r="${stepR}" fill="${theme.base}"/>`)
+      parts.push(iconSvg(checkIcon, centers[i] - 13, stepCy - 13, 26))
+      text(centers[i], stepCy + stepR + 32, step.label, { size: 24, bold: true, fill: INK, anchor: 'middle' })
+      if (step.date) text(centers[i], stepCy + stepR + 32 + 28, step.date, { size: 22, fill: MUTED, anchor: 'middle' })
+    })
+    // ความสูงรวม ~158: วง 40 + ป้าย 32 + วันที่ 28 + ขอบล่าง (ขอบล่างย่อตามขั้นบีบ)
+    y += stepR * 2 + 32 + 28 + 14 + gap(44)
   }
 
   // ── วันที่ · ข้อความข่าว · รายละเอียด ──
+  // ไอคอนหมวดหน้าบรรทัดวันที่ (มีรหัสหมวดเท่านั้น — หมวดสร้างเองได้ไอคอนกลาง ไม่รู้หมวด = ไม่วาด)
   if (model.dateText) {
-    text(MARGIN, y + 8, `วันที่ ${model.dateText}`, { size: 30, bold: true, fill: ORANGE })
-    y += 56
+    const withIcon = !!model.categoryCode
+    let dateX = MARGIN
+    if (withIcon) {
+      const bcx = MARGIN + CATEGORY_BADGE_R
+      const bcy = y - 2
+      parts.push(`<circle cx="${bcx}" cy="${num(bcy)}" r="${CATEGORY_BADGE_R}" fill="${theme.base}" data-category-icon="${esc(model.categoryCode)}"/>`)
+      parts.push(iconSvg(iconNodeForCategory(model.categoryCode), bcx - 15, bcy - 15, 30))
+      dateX = MARGIN + CATEGORY_BADGE_R * 2 + 16
+    }
+    text(dateX, y + 8, `วันที่ ${model.dateText}`, { size: sz(30), bold: true, fill: theme.base })
+    y += gap(56)
   }
-  if (model.headline) y = block(MARGIN, y + 14, model.headline, CONTENT_W, { size: 40, bold: true, fill: INK, lineHeight: 1.45 }) + 6
-  if (model.detail) y = block(MARGIN, y + 20, model.detail, CONTENT_W, { size: 30, fill: MUTED, lineHeight: 1.45 }) + 6
+  if (model.headline) y = block(MARGIN, y + gap(14), model.headline, CONTENT_W, { size: sz(40), bold: true, fill: INK, lineHeight: 1.45 }) + 6
+  if (model.detail) y = block(MARGIN, y + gap(20), model.detail, CONTENT_W, { size: sz(30), fill: MUTED, lineHeight: 1.45 }) + 6
+
+  // ── ขนาดแถบท้าย (คำนวณก่อนส่วนรูป เพราะรูปต้องรู้ว่าเหลือที่ว่างเท่าไรก่อนชนเพดาน A4) ──
+  // ไม่มีเบอร์โทรและไม่มีชื่อกองผู้จัดทำ: ฐานไม่มีฟิลด์เบอร์ และเจ้าของระบบสั่งตัดข้อความ "จัดทำโดย" ออก
+  // ขั้นบีบ (fit.foot) ย่อทั้ง QR/ช่องไฟ/ตัวหนังสือพร้อมกัน — ต่ำสุด QR 165 px ยังสแกนติด
+  const fs = base => Math.round(base * fit.foot)
+  const PAD = fs(36)
+  const qr = model.reportUrl ? qrLayout(model.reportUrl, fs(220)) : null
+  const footTextX = MARGIN + (qr ? qr.side + 36 : 0)
+  const footTextW = IMAGE_WIDTH - MARGIN - footTextX
+  // ปิด QR/ลิงก์ (ไม่มี reportUrl) = ข้อความขอบคุณแทน — ไม่ใช้ "แจ้งเราได้ตลอด 24 ชม." เพราะชวนแจ้งโดยไม่บอกช่องทาง
+  // ประชาชนจะโทรเข้าสำนักงานแทน (เพิ่มงานเจ้าหน้าที่) · "มุ่งสู่" เมืองอัจฉริยะ: ยังไม่ได้รับรองเป็นเมืองอัจฉริยะ ห้ามเขียนว่าเป็นแล้ว
+  const slots = model.reportUrl ? [
+    { size: fs(36), bold: true, lines: wrapLines(NEWS_FOOTER_INVITE, footTextW, fs(36), true, measure), opacity: 1 },
+    { size: fs(28), bold: false, lines: wrapLines(qr ? 'สแกน QR หรือเข้าที่' : 'เข้าที่', footTextW, fs(28), false, measure), opacity: 0.92 },
+    { size: fs(30), bold: true, lines: wrapLines(model.reportUrl.replace(/^https?:\/\//i, ''), footTextW, fs(30), true, measure), opacity: 1 },
+    // บรรทัดเล็กสุดท้าย — ข้อความรวม 4 บรรทัดยังสูงไม่เกิน QR (220px) แถบท้ายจึงไม่สูงขึ้น
+    { size: fs(26), bold: false, lines: wrapLines(NEWS_FOOTER_SMART_CITY, footTextW, fs(26), false, measure), opacity: 0.92 },
+  ] : [
+    { size: fs(36), bold: true, lines: wrapLines(NEWS_FOOTER_THANKS[0], footTextW, fs(36), true, measure), opacity: 1 },
+    { size: fs(30), bold: false, lines: wrapLines(NEWS_FOOTER_THANKS[1], footTextW, fs(30), false, measure), opacity: 0.95 },
+  ]
+  const stepOf = slot => Math.round(slot.size * 1.4)
+  const footTextH = slots.reduce((sum, slot) => sum + slot.lines.length * stepOf(slot), 0)
+  const footH = Math.max(qr ? qr.side : 0, footTextH) + PAD * 2
 
   // ── รูป (ครอปแบบ cover มุมมน) ──
   if (photos.length) {
-    y += 28
-    const grid = photoCells(photos.length, captionH)
+    y += gap(28)
+    // ที่ว่างของตารางรูป = เพดาน A4 − แถบท้าย − ช่องว่างเหนือแถบท้าย − "และอีก N จุด" (ถ้ามี) − ตำแหน่งปัจจุบัน
+    const moreH = moreText ? gap(48) + wrapLines(moreText, CONTENT_W, 32, true, measure).length * Math.round(32 * 1.4) : 0
+    const grid = photoCells(photos.length, captionH, NEWS_MAX_HEIGHT - footH - gap(56) - moreH - y, fit.min)
     const defs = []
     grid.cells.forEach((cell, i) => {
       const cx = MARGIN + cell.x
@@ -556,44 +803,43 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
       defs.push(`<clipPath id="news-photo-${i}"><rect x="${num(cx)}" y="${num(cy)}" width="${num(cell.w)}" height="${num(cell.h)}" rx="22"/></clipPath>`)
       parts.push(`<rect x="${num(cx)}" y="${num(cy)}" width="${num(cell.w)}" height="${num(cell.h)}" rx="22" fill="#e5e7eb"/>`
         + `<image href="${esc(photos[i])}" x="${num(cx)}" y="${num(cy)}" width="${num(cell.w)}" height="${num(cell.h)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#news-photo-${i})"/>`)
+      // ป้ายมุมซ้ายบน "ก่อน/หลังดำเนินการ": กล่องดำโปร่ง + กล้อง + ข้อความขาว · ช่องแคบเกินกว่าจะใส่ข้อความ = เหลือแค่ไอคอนกล้อง ไม่ล้นช่อง
+      const kind = entries[i].kind
+      if (kind) {
+        const label = NEWS_PHOTO_KIND_LABELS[kind]
+        const inset = 14
+        const badgeH = 44
+        const iconSize = 26
+        const fullW = 10 + iconSize + 8 + Math.ceil(measure(label, 24, true)) + 14
+        const showLabel = fullW <= cell.w - inset * 2
+        const badgeW = showLabel ? fullW : 10 + iconSize + 10
+        parts.push(`<rect x="${num(cx + inset)}" y="${num(cy + inset)}" width="${badgeW}" height="${badgeH}" rx="12" fill="#000000" fill-opacity="0.55" data-photo-kind="${kind}"/>`)
+        parts.push(iconSvg(cameraIcon, cx + inset + 10, cy + inset + (badgeH - iconSize) / 2, iconSize))
+        if (showLabel) text(cx + inset + 10 + iconSize + 8, cy + inset + 31, label, { size: 24, bold: true, fill: '#ffffff' })
+      }
       const caption = entries[i].caption
       if (caption) {
         // ป้ายหมู่กึ่งกลางใต้รูป — ยาวเกินความกว้างช่องใช้บรรทัดแรกที่ตัดแล้ว (ไม่ล้นไปทับรูปข้างเคียง)
         const fitted = measure(caption, 30, true) > cell.w ? (wrapLines(caption, cell.w, 30, true, measure)[0] ?? '') : caption
-        text(cx + cell.w / 2, cy + cell.h + 38, fitted, { size: 30, bold: true, fill: ORANGE, anchor: 'middle' })
+        text(cx + cell.w / 2, cy + cell.h + 38, fitted, { size: 30, bold: true, fill: theme.base, anchor: 'middle' })
       }
     })
     parts.push(`<defs>${defs.join('')}</defs>`)
     y += grid.height
   }
   // ภาพรวม: "และอีก N จุด" ใต้ตารางรูป (จุดที่เกิน 4 ช่อง) — ไม่ทับลงบนรูป
-  if (moreText) y = block(MARGIN, y + 48, moreText, CONTENT_W, { size: 32, bold: true, fill: ORANGE, lineHeight: 1.4 })
+  if (moreText) y = block(MARGIN, y + gap(48), moreText, CONTENT_W, { size: 32, bold: true, fill: theme.base, lineHeight: 1.4 })
 
-  // ── แถบท้ายสีส้ม ──
-  // ไม่มีเบอร์โทรและไม่มีชื่อกองผู้จัดทำ: ฐานไม่มีฟิลด์เบอร์ และเจ้าของระบบสั่งตัดข้อความ "จัดทำโดย" ออก
-  const PAD = 36
-  const qr = model.reportUrl ? qrLayout(model.reportUrl, 220) : null
-  const footTextX = MARGIN + (qr ? qr.side + 36 : 0)
-  const footTextW = IMAGE_WIDTH - MARGIN - footTextX
-  // ปิด QR/ลิงก์ (ไม่มี reportUrl) = ข้อความขอบคุณแทน — ไม่ใช้ "แจ้งเราได้ตลอด 24 ชม." เพราะชวนแจ้งโดยไม่บอกช่องทาง
-  // ประชาชนจะโทรเข้าสำนักงานแทน (เพิ่มงานเจ้าหน้าที่) · "มุ่งสู่" เมืองอัจฉริยะ: ยังไม่ได้รับรองเป็นเมืองอัจฉริยะ ห้ามเขียนว่าเป็นแล้ว
-  const slots = model.reportUrl ? [
-    { size: 36, bold: true, lines: wrapLines(NEWS_FOOTER_INVITE, footTextW, 36, true, measure), opacity: 1 },
-    { size: 28, bold: false, lines: wrapLines(qr ? 'สแกน QR หรือเข้าที่' : 'เข้าที่', footTextW, 28, false, measure), opacity: 0.92 },
-    { size: 30, bold: true, lines: wrapLines(model.reportUrl.replace(/^https?:\/\//i, ''), footTextW, 30, true, measure), opacity: 1 },
-    // บรรทัดเล็กสุดท้าย — ข้อความรวม 4 บรรทัดยังสูงไม่เกิน QR (220px) แถบท้ายจึงไม่สูงขึ้น
-    { size: 26, bold: false, lines: wrapLines(NEWS_FOOTER_SMART_CITY, footTextW, 26, false, measure), opacity: 0.92 },
-  ] : [
-    { size: 36, bold: true, lines: wrapLines(NEWS_FOOTER_THANKS[0], footTextW, 36, true, measure), opacity: 1 },
-    { size: 30, bold: false, lines: wrapLines(NEWS_FOOTER_THANKS[1], footTextW, 30, false, measure), opacity: 0.95 },
-  ]
-  const stepOf = slot => Math.round(slot.size * 1.4)
-  const footTextH = slots.reduce((sum, slot) => sum + slot.lines.length * stepOf(slot), 0)
-  const footH = Math.max(qr ? qr.side : 0, footTextH) + PAD * 2
-  const footTop = Math.max(y + 56, NEWS_MIN_HEIGHT - footH)
+  // ── แถบท้าย (สีธีมเดียวกับแถบหัว) — คำนวณขนาดไว้แล้วก่อนส่วนรูป (ดู footH) ──
+  const footTop = Math.max(y + gap(56), NEWS_MIN_HEIGHT - footH)
   const height = Math.ceil(footTop + footH)
   const frad = 44
-  parts.push(`<path d="M0 ${height}V${num(footTop + frad)}A${frad} ${frad} 0 0 1 ${frad} ${num(footTop)}H${IMAGE_WIDTH - frad}A${frad} ${frad} 0 0 1 ${IMAGE_WIDTH} ${num(footTop + frad)}V${height}Z" fill="${ORANGE}"/>`)
+  const footD = `M0 ${height}V${num(footTop + frad)}A${frad} ${frad} 0 0 1 ${frad} ${num(footTop)}H${IMAGE_WIDTH - frad}A${frad} ${frad} 0 0 1 ${IMAGE_WIDTH} ${num(footTop + frad)}V${height}Z`
+  // ลายวงจรถูกวางก่อน QR/ข้อความ — ไม่ทับสิ่งที่ต้องสแกนหรืออ่าน (QR ยังเป็นดำบนพื้นขาว)
+  parts.push(`<defs><linearGradient id="news-foot-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${theme.deep}"/><stop offset="1" stop-color="${theme.base}"/></linearGradient>`
+    + `<clipPath id="news-foot-clip"><path d="${footD}"/></clipPath></defs>`
+    + `<path d="${footD}" fill="url(#news-foot-grad)"/>`
+    + circuitSvg('news-foot-clip', IMAGE_WIDTH, height - footTop, true, footTop))
   if (qr) {
     // QR ดำบนพื้นขาว (รวมขอบสงบ) เสมอ ห้ามให้สีแถบมาเป็นพื้นของ QR
     parts.push(`<g transform="translate(${MARGIN} ${num(footTop + (footH - qr.side) / 2)})"><rect width="${qr.side}" height="${qr.side}" rx="10" fill="#ffffff"/><path transform="translate(${QUIET_MODULES * qr.module} ${QUIET_MODULES * qr.module}) scale(${qr.module})" d="${qr.d}" fill="#000000" shape-rendering="crispEdges"/></g>`)
@@ -607,8 +853,8 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
   }
 
   // พื้นขาวเต็มภาพเป็นองค์ประกอบแรกสุด — PNG ไม่มีพื้นจะโปร่งใสแล้วตัวอักษรเข้มกลายเป็นดำบนดำในแอปโหมดมืด
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${IMAGE_WIDTH}" height="${height}" viewBox="0 0 ${IMAGE_WIDTH} ${height}" font-family="${FONT_STACK}" role="img" aria-label="${esc(`ข่าวประชาสัมพันธ์ ${model.tenantName}`)}"><title>${esc(`ข่าวประชาสัมพันธ์ ${model.tenantName}`)}</title><rect width="${IMAGE_WIDTH}" height="${height}" fill="#ffffff"/>${parts.join('')}</svg>`
-  return { svg, width: IMAGE_WIDTH, height, photoCount: photos.length }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${IMAGE_WIDTH}" height="${height}" viewBox="0 0 ${IMAGE_WIDTH} ${height}" font-family="${FONT_STACK}" role="img" aria-label="${esc(`ข่าวประชาสัมพันธ์ ${model.tenantName}`)}"><title>${esc(`ข่าวประชาสัมพันธ์ ${model.tenantName}`)}</title><rect width="${IMAGE_WIDTH}" height="${height}" fill="#ffffff"/>${pageBackdrop(IMAGE_WIDTH, height, headerH, footTop, theme)}${parts.join('')}</svg>`
+  return { svg, width: IMAGE_WIDTH, height, photoCount: photos.length, fitsA4: height <= NEWS_MAX_HEIGHT }
 }
 
 /** ข้อความสำหรับคัดลอก/แนบตอนแชร์ — ข้อความข่าว + รายละเอียด (+ ลิงก์แจ้งเรื่อง) */
