@@ -106,6 +106,24 @@ export function itemCategoryLabel(item, tenant) {
   return item?.cat_label || item?.cat || 'ไม่ระบุหมวด'
 }
 
+/**
+ * ผู้รับผิดชอบเรื่อง (assigned/owner/owner_pos จาก exec_overdue_items · migration 20261120100000)
+ * ให้นายกรู้ว่าเรื่องค้างอยู่ที่ใคร หรือยังไม่มีใครรับ — สั่งการถูกคน
+ *   มีชื่อ = ok · มอบแล้วแต่ไม่มีชื่อ (บัญชีนอก อปท./ถูกลบ/ลดเป็นประชาชน) = warn · ยังไม่มอบหมาย = warn
+ *   ไม่มีคีย์ assigned (ฐานข้อมูลยังไม่รัน SQL ไฟล์นี้) = null ไม่แสดง — ห้ามเดาว่า "ยังไม่มอบหมาย"
+ * @returns {{ tone: 'ok'|'warn', text: string } | null}
+ */
+export function itemOwnerText(item) {
+  if (typeof item?.assigned !== 'boolean') return null
+  const name = typeof item.owner === 'string' ? item.owner.trim() : ''
+  if (name) {
+    const pos = typeof item.owner_pos === 'string' ? item.owner_pos.trim() : ''
+    return { tone: 'ok', text: `ผู้รับผิดชอบ: ${name}${pos ? ` (${pos})` : ''}` }
+  }
+  if (item.assigned) return { tone: 'warn', text: 'ผู้รับผิดชอบเดิมไม่อยู่ในทะเบียนเจ้าหน้าที่แล้ว — ควรมอบหมายใหม่' }
+  return { tone: 'warn', text: 'ยังไม่มอบหมายผู้รับผิดชอบ' }
+}
+
 /** วันทำการที่เลยกำหนดมาแล้ว — หลักเดียวกับ E2 (workingDaysSince ตัวเดียวกับ backlogAnalysis) · due ว่าง = 0 */
 export function overdueWorkingDays(due, today) {
   if (typeof due !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(due)) return 0

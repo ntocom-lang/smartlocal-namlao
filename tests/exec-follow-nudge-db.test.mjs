@@ -1,5 +1,6 @@
 // ห้องผู้บริหาร E3-2 — เรื่องเลยกำหนด / ติดตาม / เร่งรัด · รัน migration จริงใน PGlite ไม่ใช้เน็ต ไม่แตะข้อมูลจริง
 //   ไฟล์ที่รัน: E2 20261115100000 + 20261115100100 (exec_assert_viewer, exec_complaint_dept) แล้ว E3-2 20261117100000/100100
+//   + 20261120100000 (exec_overdue_items เพิ่มผู้รับผิดชอบ — รันทับของเดิมตามลำดับเดียวกับฐานจริง)
 //   ในเครื่อง: node tests/exec-follow-nudge-db.test.mjs --pglite <temp>/node_modules/@electric-sql/pglite/dist/index.js
 //   CI: อ่าน path จาก env PATIENT_PGLITE_MODULE (PGlite 0.5.8 ติดตั้งนอก repo) ไม่ต้องส่ง --pglite
 // ตารางจำลองมีเฉพาะคอลัมน์ที่ฟังก์ชันอ่าน + คอลัมน์ข้อมูลส่วนบุคคลปลอม เพื่อตรวจว่า "ไม่หลุดออกมา"
@@ -17,6 +18,7 @@ const files = [
   '20261115100100_exec_summary_service.sql',
   '20261117100000_exec_follow_nudge_tables.sql',
   '20261117100100_exec_follow_nudge_functions.sql',
+  '20261120100000_exec_overdue_items_owner.sql',
 ]
 const migration = (f) => readFile(new URL(`../supabase/migrations/${f}`, import.meta.url), 'utf8')
 
@@ -43,7 +45,7 @@ CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(
 GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated, service_role;
 
 CREATE TABLE public.municipalities (id uuid PRIMARY KEY, slug text);
-CREATE TABLE public.positions (id uuid PRIMARY KEY, category text, name text);
+CREATE TABLE public.positions (id uuid PRIMARY KEY, category text, name text, municipality_id uuid);
 CREATE TABLE public.profiles (id uuid PRIMARY KEY, role text, municipality_id uuid, position_id uuid, department_id uuid,
   is_dept_head boolean NOT NULL DEFAULT false, full_name text);
 CREATE TABLE public.departments (id uuid PRIMARY KEY, municipality_id uuid, name text, short_name text, code text, sort_order int, is_active boolean);
@@ -55,7 +57,7 @@ CREATE TABLE public.complaints (id uuid PRIMARY KEY, municipality_id uuid, ref_n
   category text, parked_reason text, rating smallint, user_id uuid, reporter_name text, phone text, department text);
 CREATE TABLE public.complaint_timeline (complaint_id uuid, status text, created_at timestamptz);
 CREATE TABLE public.document_requests (id uuid PRIMARY KEY, municipality_id uuid, document_type text,
-  status text, created_at timestamptz, issued_at timestamptz, due_date date, department_id uuid, created_by_uid uuid, requester_name text);
+  status text, created_at timestamptz, issued_at timestamptz, due_date date, department_id uuid, created_by_uid uuid, requester_name text, assigned_to uuid);
 CREATE TABLE public.satisfaction_ratings (municipality_id uuid, complaint_id uuid, rating smallint, is_verified boolean DEFAULT false,
   via_link boolean DEFAULT false, rated_by_proxy boolean DEFAULT false, created_at timestamptz, comment text);
 CREATE TABLE public.patient_booking_trips (id uuid PRIMARY KEY, municipality_id uuid, state text, booking_ids uuid[] NOT NULL);
@@ -83,7 +85,7 @@ GRANT SELECT, UPDATE ON public.exec_nudges TO service_role;
 await db.exec(`
 INSERT INTO public.municipalities VALUES ('${MA}', 'namlao'), ('${MB}', 'other'), ('${MDEMO}', 'demo');
 INSERT INTO auth.users SELECT unnest(ARRAY['${Object.values(U).join("','")}']::uuid[]);
-INSERT INTO public.positions VALUES ('${P_TOP}', 'top_admin', 'ปลัดเทศบาล'), ('${P_HEAD}', 'dept_head', 'ผู้อำนวยการกองช่าง');
+INSERT INTO public.positions VALUES ('${P_TOP}', 'top_admin', 'ปลัดเทศบาล', '${MA}'), ('${P_HEAD}', 'dept_head', 'ผู้อำนวยการกองช่าง', '${MA}');
 INSERT INTO public.profiles (id, role, municipality_id, position_id, department_id, is_dept_head, full_name) VALUES
   ('${U.viewerA}', 'viewer', '${MA}', NULL, NULL, false, 'นายกปลอม'),
   ('${U.paladA}', 'officer', '${MA}', '${P_TOP}', NULL, false, 'ปลัดปลอม'),
@@ -112,6 +114,11 @@ INSERT INTO public.complaints (id, municipality_id, ref_no, status, created_at, 
 INSERT INTO public.document_requests (id, municipality_id, document_type, status, created_at, due_date, department_id, requester_name) VALUES
   ('${R(1)}', '${MA}', 'water_supply_request', 'processing', ts(12), dt(2), '${D1}', '${PII.name}'),   -- เลยกำหนด ✔ (เลขที่ = 8 ตัวแรกของ id)
   ('${R(2)}', '${MA}', 'tax_notice', 'completed', ts(12), dt(2), '${D1}', '${PII.name}');
+-- ผู้รับผิดชอบ: CR-0001 = ผอ.กองช่าง (มีตำแหน่ง) · CR-0007 = ยังไม่มอบหมาย · R(1) = บัญชี อปท. อื่น (ชื่อห้ามหลุด)
+-- CR-0004 (อ่อนไหว) มอบให้ปลัด — ชื่อผู้สอบเรื่องห้ามหลุด
+UPDATE public.complaints SET assigned_to = '${U.headA}' WHERE id = '${C(1)}';
+UPDATE public.complaints SET assigned_to = '${U.headPaladA}' WHERE id = '${C(4)}';
+UPDATE public.document_requests SET assigned_to = '${U.viewerB}' WHERE id = '${R(1)}';
 `)
 
 async function as(alias) {
@@ -185,6 +192,23 @@ await test('รายการเลยกำหนด: คำร้อง+ค�
 await test('PDPA: ไม่มีชื่อ/เบอร์ผู้ร้อง และไม่มีเลขที่หรือ id ของเรื่องอ่อนไหวในผลลัพธ์', async () => {
   const s = JSON.stringify(await overdue('viewerA'))
   assert.doesNotMatch(s, new RegExp(`${PII.name}|${PII.phone}|CR-0004|${C(4)}`))
+})
+
+await test('ผู้รับผิดชอบ: ชื่อ+ตำแหน่ง · ยังไม่มอบหมาย = assigned false · บัญชี อปท. อื่น = assigned true ไม่มีชื่อ · หมวดอ่อนไหวไม่มีชื่อผู้สอบ', async () => {
+  const r = await overdue('viewerA')
+  const by = Object.fromEntries(r.items.map(i => [i.ref, i]))
+  const pick = i => ({ assigned: i.assigned, owner: i.owner, owner_pos: i.owner_pos })
+  assert.deepEqual(pick(by['CR-0001']), { assigned: true, owner: 'ผอ.กองช่างปลอม', owner_pos: 'ผู้อำนวยการกองช่าง' })
+  assert.deepEqual(pick(by['CR-0007']), { assigned: false, owner: null, owner_pos: null })
+  assert.deepEqual(pick(by[R(1).slice(0, 8).toUpperCase()]), { assigned: true, owner: null, owner_pos: null })
+  const s = JSON.stringify(r)
+  assert.doesNotMatch(s, /นายก B|ปลัดคุมสำนักปลัด/, 'ชื่อข้าม อปท. / ชื่อผู้สอบเรื่องอ่อนไหวต้องไม่หลุด')
+  assert.deepEqual(r.sensitive, [{ dept_id: D2, dept: 'ปลัด', n: 1 }], 'อ่อนไหวยังเป็นยอดรวมเท่าเดิม')
+  // ผู้รับผิดชอบถูกลดเป็นประชาชน (ลาออก) = ไม่มีคนถืองานจริง → assigned true, owner NULL (หน้าเว็บขึ้น "ควรมอบหมายใหม่")
+  await db.exec(`RESET ROLE; UPDATE public.complaints SET assigned_to = '${U.citizenA}' WHERE id = '${C(7)}'`)
+  const r2 = await overdue('viewerA')
+  assert.deepEqual(pick(r2.items.find(i => i.ref === 'CR-0007')), { assigned: true, owner: null, owner_pos: null })
+  await db.exec(`RESET ROLE; UPDATE public.complaints SET assigned_to = NULL WHERE id = '${C(7)}'`)
 })
 
 await test('สิทธิ์ดู: ปลัด/admin ดูได้ · นายก อปท. อื่น/ประชาชน/เจ้าหน้าที่ไม่มีตำแหน่ง = 42501', async () => {
@@ -318,6 +342,20 @@ await test('superadmin เร่งได้เฉพาะสนามซ้อ
   const r = await nudge('superadmin', 'complaint', C(50), MDEMO)
   assert.equal(r.ok, true)
   assert.equal((await payload(r.nudge_id)).nudge.nudged_by_position, 'ผู้ดูแลระบบ (ทดสอบ)')
+})
+
+// ⚠️ ต้องเป็นเทสต์สุดท้าย: ข้อนี้เขียนทับ exec_overdue_items ด้วยรุ่นปลอม
+await test('ด่าน md5: รันไฟล์ผู้รับผิดชอบซ้ำได้ · เนื้อฟังก์ชันบนฐานถูกแก้นอกรีโป = หยุดทั้งไฟล์ ไม่เขียนทับ', async () => {
+  const ownerFile = '20261120100000_exec_overdue_items_owner.sql'
+  await db.exec('RESET ROLE')
+  await db.exec(await migration(ownerFile))
+  await db.exec(`CREATE OR REPLACE FUNCTION public.exec_overdue_items(_municipality_id uuid) RETURNS jsonb LANGUAGE sql STABLE
+    SECURITY DEFINER SET search_path = '' AS $fn$ SELECT '{"hotfix":true}'::jsonb $fn$`)
+  const sql = await migration(ownerFile)
+  await assert.rejects(() => db.exec(sql), /ไม่ตรงรุ่นที่รู้จัก/)
+  await db.exec('ROLLBACK').catch(() => {})
+  const { rows } = await db.query("SELECT prosrc FROM pg_proc WHERE oid = 'public.exec_overdue_items(uuid)'::regprocedure")
+  assert.match(rows[0].prosrc, /hotfix/, 'รุ่นที่แก้นอกรีโปต้องยังอยู่ ไม่ถูกเขียนทับ')
 })
 
 console.log(`\n${passed} cases passed`)

@@ -202,6 +202,28 @@ test('เรื่องที่ติดตาม: แยก gone / hidden / �
   assert.deepEqual(H.normalizeFollows(null), [])
 })
 
+test('ผู้รับผิดชอบ: ชื่อ+ตำแหน่ง · ไม่มีตำแหน่ง = ชื่ออย่างเดียว · มอบแล้วไม่พบชื่อ/ยังไม่มอบหมาย = warn · ฐานยังไม่รัน SQL = ไม่แสดง', () => {
+  assert.deepEqual(H.itemOwnerText({ assigned: true, owner: ' นายสมศักดิ์ ทดสอบ ', owner_pos: 'นายช่างโยธา' }),
+    { tone: 'ok', text: 'ผู้รับผิดชอบ: นายสมศักดิ์ ทดสอบ (นายช่างโยธา)' })
+  assert.deepEqual(H.itemOwnerText({ assigned: true, owner: 'นายสมศักดิ์ ทดสอบ', owner_pos: null }),
+    { tone: 'ok', text: 'ผู้รับผิดชอบ: นายสมศักดิ์ ทดสอบ' })
+  assert.deepEqual(H.itemOwnerText({ assigned: true, owner: null }), { tone: 'warn', text: 'ผู้รับผิดชอบเดิมไม่อยู่ในทะเบียนเจ้าหน้าที่แล้ว — ควรมอบหมายใหม่' })
+  assert.deepEqual(H.itemOwnerText({ assigned: true, owner: '   ' }), { tone: 'warn', text: 'ผู้รับผิดชอบเดิมไม่อยู่ในทะเบียนเจ้าหน้าที่แล้ว — ควรมอบหมายใหม่' })
+  assert.deepEqual(H.itemOwnerText({ assigned: false, owner: null }), { tone: 'warn', text: 'ยังไม่มอบหมายผู้รับผิดชอบ' })
+  // deploy หน้าเว็บก่อนรัน SQL: ไม่มีคีย์ assigned = ห้ามขึ้น "ยังไม่มอบหมาย" ผิดทั้งรายการ
+  assert.equal(H.itemOwnerText({ k: 'complaint', id: 'x' }), null)
+  assert.equal(H.itemOwnerText(null), null)
+  assert.equal(H.itemOwnerText({ assigned: 'true', owner: 'x' }), null)
+})
+
+test('หน้าจอ: แถวเลยกำหนดทั้งหน้าเรียบและหน้าเต็มแสดงผู้รับผิดชอบผ่าน itemOwnerText ตัวเดียวกัน', () => {
+  for (const file of ['src/components/staff/executive/ExecSimpleLists.jsx', 'src/components/staff/executive/ExecOverdueList.jsx']) {
+    const code = stripComments(read(file))
+    assert.match(code, /itemOwnerText\(item\)/, `${file} ต้องเรียก itemOwnerText`)
+    assert.doesNotMatch(code, /full_name|assigned_to/, `${file} ห้ามอ่านคอลัมน์ตรง — ใช้คีย์จาก RPC`)
+  }
+})
+
 test('ป้ายสถานะ/ประเภท: pending ของคำร้อง ≠ คำขอ · สถานะไม่รู้จักแสดงค่าดิบ ไม่ว่าง', () => {
   // ชื่อเดียวกับหน้าเจ้าหน้าที่ (ComplaintsManager) และข้อความ Telegram ที่ ผอ.กองได้รับ
   assert.equal(H.itemStatusLabel('complaint', 'pending'), 'คำร้องใหม่')

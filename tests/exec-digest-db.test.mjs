@@ -19,6 +19,7 @@ const files = [
   '20261115100100_exec_summary_service.sql',
   '20261117100000_exec_follow_nudge_tables.sql',
   '20261117100100_exec_follow_nudge_functions.sql',
+  '20261120100000_exec_overdue_items_owner.sql',
 ]
 const migration = (f) => readFile(new URL(`../supabase/migrations/${f}`, import.meta.url), 'utf8')
 
@@ -45,7 +46,7 @@ CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(
 GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated, service_role;
 
 CREATE TABLE public.municipalities (id uuid PRIMARY KEY, slug text);
-CREATE TABLE public.positions (id uuid PRIMARY KEY, category text, name text);
+CREATE TABLE public.positions (id uuid PRIMARY KEY, category text, name text, municipality_id uuid);
 CREATE TABLE public.profiles (id uuid PRIMARY KEY, role text, municipality_id uuid, position_id uuid, department_id uuid,
   is_dept_head boolean NOT NULL DEFAULT false, full_name text);
 CREATE TABLE public.departments (id uuid PRIMARY KEY, municipality_id uuid, name text, short_name text, code text, sort_order int, is_active boolean);
@@ -57,7 +58,7 @@ CREATE TABLE public.complaints (id uuid PRIMARY KEY, municipality_id uuid, ref_n
   category text, parked_reason text, rating smallint, user_id uuid, reporter_name text, phone text, department text);
 CREATE TABLE public.complaint_timeline (complaint_id uuid, status text, created_at timestamptz);
 CREATE TABLE public.document_requests (id uuid PRIMARY KEY, municipality_id uuid, document_type text,
-  status text, created_at timestamptz, issued_at timestamptz, due_date date, department_id uuid, created_by_uid uuid, requester_name text);
+  status text, created_at timestamptz, issued_at timestamptz, due_date date, department_id uuid, created_by_uid uuid, requester_name text, assigned_to uuid);
 CREATE TABLE public.satisfaction_ratings (municipality_id uuid, complaint_id uuid, rating smallint, is_verified boolean DEFAULT false,
   via_link boolean DEFAULT false, rated_by_proxy boolean DEFAULT false, created_at timestamptz, comment text);
 CREATE TABLE public.patient_booking_trips (id uuid PRIMARY KEY, municipality_id uuid, state text, booking_ids uuid[] NOT NULL);
@@ -85,7 +86,7 @@ GRANT SELECT, UPDATE ON public.exec_nudges TO service_role;
 await db.exec(`
 INSERT INTO public.municipalities VALUES ('${MA}', 'namlao'), ('${MB}', 'other'), ('${MDEMO}', 'demo');
 INSERT INTO auth.users SELECT unnest(ARRAY['${Object.values(U).join("','")}']::uuid[]);
-INSERT INTO public.positions VALUES ('${P_TOP}', 'top_admin', 'ปลัดเทศบาล'), ('${P_HEAD}', 'dept_head', 'ผู้อำนวยการกองช่าง');
+INSERT INTO public.positions VALUES ('${P_TOP}', 'top_admin', 'ปลัดเทศบาล', '${MA}'), ('${P_HEAD}', 'dept_head', 'ผู้อำนวยการกองช่าง', '${MA}');
 INSERT INTO public.profiles (id, role, municipality_id, position_id, department_id, is_dept_head, full_name) VALUES
   ('${U.viewerA}', 'viewer', '${MA}', NULL, NULL, false, 'นายกปลอม'),
   ('${U.paladA}', 'officer', '${MA}', '${P_TOP}', NULL, false, 'ปลัดปลอม'),
@@ -204,6 +205,10 @@ await call('viewerA', `SELECT public.exec_follow('${MA}', 'complaint', '${C(20)}
 await db.exec(`UPDATE public.complaints SET category = 'corrupt', status = 'closed' WHERE id = '${C(20)}'`)
 await db.exec(`UPDATE public.complaints SET status = 'completed' WHERE id = '${C(1)}'; UPDATE public.complaints SET status = 'received' WHERE id = '${C(7)}';`)
 
+// ผู้รับผิดชอบ (20261120100000) อยู่ในหน้าเว็บเท่านั้น — สรุปเช้าเลือกคีย์เอง ชื่อเจ้าหน้าที่ต้องไม่ไหลไป Telegram
+await db.exec(`INSERT INTO public.complaints (id, municipality_id, ref_no, status, created_at, due_date, department_id, category)
+  VALUES ('${C(21)}', '${MA}', 'CR-0021', 'in_progress', ts(40), dt(20), '${D1}', 'road');`)  // เลยมาเกิน 5 วันทำการ = อยู่ใน top
+await db.exec(`UPDATE public.complaints SET assigned_to = '${U.headA}' WHERE municipality_id = '${MA}'; UPDATE public.document_requests SET assigned_to = '${U.headA}' WHERE municipality_id = '${MA}';`)
 const d = await call('service_role', `SELECT public.exec_digest_for('${U.viewerA}', '${MA}') AS r`)
 console.log('digest:', JSON.stringify(d, null, 1))
 const after = await db.query(`SELECT current_setting('request.jwt.claim.sub', true) AS s, current_setting('request.jwt.claims', true) AS c`)
@@ -212,6 +217,8 @@ assert.equal(d.ok, true)
 assert.equal(d.esign.over_2wd, 1)
 assert.equal(d.events.items.length, 1, 'เห็นเฉพาะกิจกรรมของผู้รับ')
 assert.ok(!JSON.stringify(d).includes('สมชาย') && !JSON.stringify(d).includes('0812345678'))
+assert.ok(d.overdue.top.length > 0, 'ต้องมีเรื่องเลยกำหนดในสรุป ไม่งั้นด่านชื่อผู้รับผิดชอบข้างล่างผ่านลวง')
+assert.ok(!/ผอ\.กองช่างปลอม|"owner/.test(JSON.stringify(d)), 'ชื่อ/คีย์ผู้รับผิดชอบต้องไม่อยู่ในสรุปเช้า')
 assert.equal(d.follows.items.length, 2)
 
 const na = await call('service_role', `SELECT public.exec_digest_for('${U.adminA}', '${MA}') AS r`)

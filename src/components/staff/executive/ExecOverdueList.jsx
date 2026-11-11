@@ -6,13 +6,14 @@ import {
   followItem, loadMyFollows, loadOverdue, nudgeItem, unfollowItem,
 } from '../../../lib/execFollowNudge'
 import {
-  canRetry, followRowKind, groupByDept, itemCategoryLabel, itemKey, itemKindName, itemStatusLabel, nudgeBlocked,
+  canRetry, followRowKind, groupByDept, itemCategoryLabel, itemKey, itemKindName, itemOwnerText, itemStatusLabel, nudgeBlocked,
   nudgeConfirmText, nudgeDeliveryText, nudgeResultMessage, overdueWorkingDays, sensitiveSummaryLines, thaiDateTime, truncatedText,
 } from '../../../lib/execFollowNudgeHelpers'
 import { LoadingLine, SectionError, SubHead } from './ExecParts'
 
 // แผง "รายการเรื่องเลยกำหนด" + ⭐ ติดตาม + ส่งให้กองเร่งรัด (ห้องผู้บริหาร E3-2) — เปิดจากการ์ด "เลยกำหนด" แล้วถึงโหลดข้อมูล (lazy)
 // ข้อมูลมาจาก RPC exec_overdue_items / exec_my_follows เท่านั้น: ไม่มีชื่อผู้ร้อง/รายละเอียดเรื่อง (PDPA) · ไม่มีปุ่มอนุมัติ · ไม่มีลิงก์เข้าไปแก้เรื่อง
+// มีชื่อ+ตำแหน่งเจ้าหน้าที่ผู้รับผิดชอบ (itemOwnerText) ให้นายกสั่งการถูกคน — เจ้าของระบบสั่ง 2026-11-11 · หมวดคุ้มครองผู้ร้องไม่มี
 // ปุ่มเร่ง: แสดงเฉพาะผู้ที่ exec_assert_actor ให้ผ่าน (canNudge — ตัดสินที่ผู้เรียก) ฝั่งฐานข้อมูลตรวจซ้ำเสมอ (42501)
 // "ส่งไม่ถึงต้องบอก": ผลการส่งทุกครั้งแสดงบนแถวพร้อมข้อความจากเซิร์ฟเวอร์ว่าไปถึงใครหรือไม่ถึงเพราะอะไร
 // ชื่อคลาส Tailwind เขียนเต็มทุกตัว (ห้ามต่อสตริง)
@@ -33,6 +34,7 @@ function OverdueRow({ item, tenant, today, now, deptName, canNudge, busy, note, 
   const nudgeText = nudge ? nudgeDeliveryText(nudge.delivery) : null
   const blocked = nudgeBlocked(item, now)
   const retry = Boolean(item.nudged_today) && canRetry(nudge, now)
+  const owner = itemOwnerText(item)
   return (
     <li data-exec-overdue-row={itemKey(item)} className="min-w-0 space-y-1.5 rounded-xl border border-slate-200 bg-white p-2.5">
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -45,6 +47,11 @@ function OverdueRow({ item, tenant, today, now, deptName, canNudge, busy, note, 
         {' · '}
         <span data-exec-overdue-days className={hot ? 'font-bold text-rose-700' : 'font-semibold text-amber-700'}>เลย {execNf(late)} วันทำการ</span>
       </p>
+      {owner && (
+        <p data-exec-overdue-owner className={`text-xs font-bold leading-snug ${owner.tone === 'warn' ? 'text-amber-700' : 'text-slate-800'}`}>
+          {owner.tone === 'warn' ? '⚠ ' : ''}{owner.text}
+        </p>
+      )}
       {nudge && (
         <p data-exec-nudge-line className={`text-[11px] leading-snug ${NOTE_TONE[nudgeText.tone]}`}>
           {nudge.by || 'ผู้บริหาร'} เร่งแล้ว {thaiDateTime(nudge.at)} · {nudgeText.label}
