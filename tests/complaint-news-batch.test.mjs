@@ -188,6 +188,8 @@ await test('ภาพรวมปิด QR/ลิงก์: แถบท้า�
   const on = News.buildNewsSvg(batch([row(), row()], { reportUrl: 'https://namlao.example.test/complaint' }), measure, { photoDataUrls: [PHOTO, PHOTO] }).svg
   assert.ok(on.includes('crispEdges') && has(on, 'namlao.example.test/complaint') && has(on, News.NEWS_FOOTER_INVITE))
   assert.ok(!has(on, News.NEWS_FOOTER_THANKS[0]))
+  // มุ่งสู่เมืองอัจฉริยะขึ้นทั้งสองแบบ
+  assert.ok(has(on, News.NEWS_FOOTER_SMART_CITY) && has(off, News.NEWS_FOOTER_SMART_CITY))
 })
 
 await test('static: กล่องทั้งสองมี checkbox "แสดง QR และลิงก์แจ้งเรื่อง" ติ๊กไว้ก่อน · ปิดแล้วส่ง reportUrl ว่าง', async () => {

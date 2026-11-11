@@ -22,9 +22,10 @@ export const NEWS_MIN_HEIGHT = 1350
 export const MAX_NEWS_PHOTOS = 4
 // ภาพข่าวรวม: เลือกได้ไม่เกินกี่เรื่องต่อภาพ (ฝั่งผู้บริหารเรียก RPC ทีละเรื่อง จึงจำกัดไว้)
 export const MAX_BATCH_ITEMS = 12
-// แถบท้าย: มี QR/ลิงก์ = ชวนแจ้งเรื่อง · ปิด QR/ลิงก์ = ขอบคุณ + มุ่งสู่เมืองอัจฉริยะ (เจ้าของระบบสั่ง 2569-11-11)
+// แถบท้าย: มี QR/ลิงก์ = ชวนแจ้งเรื่อง · ปิด QR/ลิงก์ = ขอบคุณ — บรรทัด "มุ่งสู่เมืองอัจฉริยะ" ขึ้นทั้งสองแบบ (เจ้าของระบบสั่ง 2569-11-11)
 export const NEWS_FOOTER_INVITE = 'พบปัญหาในชุมชน แจ้งเราได้ตลอด 24 ชม.'
-export const NEWS_FOOTER_THANKS = Object.freeze(['ขอบคุณทุกการแจ้งปัญหาจากประชาชน', 'ร่วมกันดูแลชุมชน มุ่งสู่เมืองอัจฉริยะ (Smart City)'])
+export const NEWS_FOOTER_SMART_CITY = 'ร่วมกันดูแลชุมชน มุ่งสู่เมืองอัจฉริยะ (Smart City)'
+export const NEWS_FOOTER_THANKS = Object.freeze(['ขอบคุณทุกการแจ้งปัญหาจากประชาชน', NEWS_FOOTER_SMART_CITY])
 
 const MARGIN = 64
 const CONTENT_W = IMAGE_WIDTH - MARGIN * 2
@@ -433,6 +434,8 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
     { size: 36, bold: true, lines: wrapLines(NEWS_FOOTER_INVITE, footTextW, 36, true, measure), opacity: 1 },
     { size: 28, bold: false, lines: wrapLines(qr ? 'สแกน QR หรือเข้าที่' : 'เข้าที่', footTextW, 28, false, measure), opacity: 0.92 },
     { size: 30, bold: true, lines: wrapLines(model.reportUrl.replace(/^https?:\/\//i, ''), footTextW, 30, true, measure), opacity: 1 },
+    // บรรทัดเล็กสุดท้าย — ข้อความรวม 4 บรรทัดยังสูงไม่เกิน QR (220px) แถบท้ายจึงไม่สูงขึ้น
+    { size: 26, bold: false, lines: wrapLines(NEWS_FOOTER_SMART_CITY, footTextW, 26, false, measure), opacity: 0.92 },
   ] : [
     { size: 36, bold: true, lines: wrapLines(NEWS_FOOTER_THANKS[0], footTextW, 36, true, measure), opacity: 1 },
     { size: 30, bold: false, lines: wrapLines(NEWS_FOOTER_THANKS[1], footTextW, 30, false, measure), opacity: 0.95 },
