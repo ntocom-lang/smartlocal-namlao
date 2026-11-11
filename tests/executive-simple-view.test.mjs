@@ -10,6 +10,7 @@ process.env.TZ = 'America/Los_Angeles'
 const V = await import('../src/lib/execSimpleView.js')
 const { EXEC_ALERT_RULE_KEYS, buildExecModel, deriveExec, satisfactionView } = await import('../src/lib/executiveData.js')
 const { liveEntries } = await import('../src/lib/executiveRegistry.js')
+const { canOpenExecutiveHome, isExecutiveHomeDefault } = await import('../src/lib/executiveAccess.js')
 
 const read = (path) => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\s\/\/ .*$/gm, '')
@@ -399,6 +400,35 @@ test('เส้นทาง: ?view=full/simple · viewer เริ่มแบ�
   assert.ok(read('src/components/staff/executive/ExecSimpleHome.jsx').includes("navigate('/executive?view=full')"))
   const app = read('src/App.jsx')
   assert.equal((app.match(/<ExecBackBar \/>/g) ?? []).length, 1, 'แถบกลับต้องวางจุดเดียว')
+})
+
+test('Super Admin เห็นได้ทุกมุมมอง (เจ้าของระบบสั่ง 2026-11-11): เข้าห้องได้ · เปิดมาเจอแบบเต็ม · กดปุ่มไปแบบย่อได้ไม่มีเงื่อนไข role · ฐานข้อมูลรับทุก อปท.', () => {
+  // ชั้นหน้าเว็บ: ฟังก์ชันจริงของด่านเข้าห้อง — superadmin/admin เปิดได้ แต่ไม่ใช่ "ผู้บริหารตามตำแหน่ง" (จึงไม่ถูกพาเข้าแบบเรียบเอง)
+  for (const role of ['superadmin', 'admin']) {
+    assert.equal(canOpenExecutiveHome({ role }), true, `${role} ต้องเปิดห้องได้`)
+    assert.equal(isExecutiveHomeDefault({ role }), false, `${role} ไม่ใช่ผู้บริหารตามตำแหน่ง`)
+  }
+  // ตัวเลือกหน้า = นิพจน์เดียวกับ ExecutiveRoom.jsx (เทสต์ "เส้นทาง" ข้างบนตรึงตัวอักษรของนิพจน์นี้ไว้แล้ว)
+  const pick = (viewParam, role) => (viewParam === 'simple' || (viewParam !== 'full' && role === 'viewer') ? 'simple' : 'full')
+  assert.equal(pick(null, 'superadmin'), 'full', 'เปิดมาครั้งแรกเจอแบบเต็ม')
+  assert.equal(pick('simple', 'superadmin'), 'simple', 'กดดูแบบย่อแล้วได้แบบย่อ')
+  assert.equal(pick('full', 'superadmin'), 'full')
+  assert.equal(pick(null, 'viewer'), 'simple')
+  // ปุ่ม "ดูแบบย่อ (แบบนายก)" ห้ามอยู่ใต้เงื่อนไข role/ตำแหน่ง — ทุกคนที่เห็นแบบเต็มต้องกดไปแบบย่อได้
+  const full = stripComments(read('src/components/staff/executive/ExecutiveHome.jsx'))
+  const head = full.slice(full.indexOf('<header data-exec-head'), full.indexOf('data-exec-open-simple'))
+  assert.ok(head.length > 0, 'หาหัวแบบเต็ม/ปุ่มแบบย่อไม่เจอ')
+  assert.ok(!/role|positionCategory|&&\s*\(|\?\s*\(/.test(head), 'ปุ่มแบบย่อต้องไม่ถูกซ่อนตาม role')
+  // แบบย่อเองไม่กันตาม role (ด่านอยู่ที่ห้อง + RPC)
+  const simple = stripComments(read('src/components/staff/executive/ExecSimpleHome.jsx'))
+  assert.ok(!/role\s*[!=]==?\s*'(superadmin|admin|viewer)'/.test(simple), 'แบบย่อห้ามเช็ค role เอง')
+  // ชั้นฐานข้อมูล: ด่านกลางของ exec_* รับ superadmin ทุก อปท. · "เรื่องที่ท่านติดตาม" (มีเฉพาะแบบย่อ) ผ่านด่านเดียวกัน
+  const gate = read('supabase/migrations/20261115100000_exec_access_overview.sql')
+  assert.ok(/v_role IN \('viewer', 'admin', 'superadmin'\)/.test(gate))
+  assert.ok(/v_role = 'superadmin' OR v_muni IS NOT DISTINCT FROM _municipality_id/.test(gate))
+  const followsFn = read('supabase/migrations/20261117100100_exec_follow_nudge_functions.sql')
+  const body = followsFn.slice(followsFn.indexOf('FUNCTION public.exec_my_follows'))
+  assert.ok(/^[\s\S]{0,400}PERFORM public\.exec_assert_viewer\(_municipality_id\);/.test(body), 'exec_my_follows ต้องเรียกด่านกลางเป็นบรรทัดแรก')
 })
 
 test('ลิงก์ออกจากแบบเรียบส่ง state fromExec ไม่ทับ state เดิม (StaffDashboard อ่าน state.module) · แถบกลับอ่านอย่างเดียว ไม่เปิดแท็บใหม่', () => {
