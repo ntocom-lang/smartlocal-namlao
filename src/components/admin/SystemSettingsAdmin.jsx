@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
-import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, MapPinned, X, Plus, Pencil, Trash2, RefreshCw, AlertTriangle } from 'lucide-react'
-import { supabase } from '../../lib/supabase'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, MapPinned, X, Plus, Pencil, Trash2, RefreshCw, AlertTriangle, Megaphone } from 'lucide-react'
+import { supabase, supabaseUrl } from '../../lib/supabase'
+import { withNewsPhotoUrl } from '../../lib/complaintNewsImage'
 import { uploadFile, toReliableImageUrl } from '../../lib/driveStorage'
 import { buildAppIconBlob } from '../../lib/appIcon'
 import { useTenant } from '../../contexts/TenantContext'
@@ -1273,6 +1274,143 @@ function BrandingTab({
   )
 }
 
+// รูปนายกบนภาพข่าวประชาสัมพันธ์ของคำร้อง (ปุ่ม "ภาพข่าว" ในหน้าคำร้อง + ห้องผู้บริหาร)
+// ชื่อ/ตำแหน่งมาจากทะเบียนผู้ลงนามช่องนายก (เมนู "การลงนามเอกสาร") — ที่นี่เก็บเฉพาะรูป ผ่าน RPC complaint_news_branding / set_complaint_news_executive_photo
+// รูปผูกกับนายกคนปัจจุบัน: เปลี่ยนนายกแล้วรูปเดิมจะไม่ขึ้นจนกว่าจะอัปโหลดใหม่ (ฝั่งฐานข้อมูลเทียบเอง)
+function NewsExecutivePhotoCard({ tenant }) {
+  const tenantId = tenant?.id
+  const [branding, setBranding] = useState(null)
+  const [loadState, setLoadState] = useState('loading') // loading | ok | error
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState(null) // { ok: boolean, text: string }
+  const fileRef = useRef()
+
+  const load = useCallback(async () => {
+    if (!tenantId) return
+    const { data, error } = await supabase.rpc('complaint_news_branding', { _municipality_id: tenantId })
+    if (error) {
+      console.error('complaint_news_branding error:', error.message)
+      setLoadState('error')
+      return
+    }
+    setBranding(withNewsPhotoUrl(data, supabaseUrl))
+    setLoadState('ok')
+  }, [tenantId])
+
+  useEffect(() => { queueMicrotask(load) }, [load])
+
+  const hasMayor = !!(branding?.mayor_name || branding?.mayor_title || branding?.photo_url)
+
+  async function savePhoto(url) {
+    const { error } = await supabase.rpc('set_complaint_news_executive_photo', { _municipality_id: tenant.id, _photo_url: url })
+    if (error) {
+      // ข้อความไทยจากเซิร์ฟเวอร์ (ไม่มีสิทธิ์ / ยังไม่ได้ตั้งผู้ลงนามช่องนายก / ที่อยู่รูปไม่ถูกต้อง) แสดงตรงๆ
+      console.error('set_complaint_news_executive_photo error:', error.code, url)
+      throw new Error(error.message)
+    }
+  }
+
+  async function handleUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setBusy(true)
+    setNotice(null)
+    try {
+      const blob = await resizeImage(file, 900, PHOTO_JPEG)
+      const { url, error: upErr } = await uploadFile('municipality-assets', blob, {
+        subject: 'executive-photo',
+        filename: `executive-${tenant.slug}.jpg`,
+        municipality: tenant?.slug,
+      })
+      if (upErr) throw upErr
+      await savePhoto(url) // ห้ามต่อ &v= ท้าย URL — ฐานข้อมูลรับเฉพาะรูปแบบ drive-file?id=… ล้วน
+      await load()
+      setNotice({ ok: true, text: 'บันทึกรูปแล้ว' })
+    } catch (err) {
+      setNotice({ ok: false, text: 'อัปโหลดรูปไม่สำเร็จ: ' + err.message })
+    } finally {
+      setBusy(false)
+      e.target.value = ''
+    }
+  }
+
+  async function handleRemove() {
+    if (!window.confirm('ลบรูปนายกออกจากภาพข่าว?')) return
+    setBusy(true)
+    setNotice(null)
+    try {
+      await savePhoto(null)
+      await load()
+      setNotice({ ok: true, text: 'ลบรูปแล้ว' })
+    } catch (err) {
+      setNotice({ ok: false, text: 'ลบรูปไม่สำเร็จ: ' + err.message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6" data-news-executive-photo>
+      <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+        <Megaphone size={15} /> รูปนายกบนภาพข่าวประชาสัมพันธ์
+      </h2>
+      <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+        ขึ้นมุมขวาบนของภาพข่าวที่สร้างจากเรื่องร้องเรียนที่ดำเนินการแล้ว · รูปผูกกับนายกคนปัจจุบัน เปลี่ยนนายกแล้วรูปเดิมจะไม่ขึ้นจนกว่าจะอัปโหลดใหม่
+      </p>
+      {loadState === 'loading' && <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" /> กำลังโหลด...</p>}
+      {loadState === 'error' && (
+        <p className="text-xs text-red-600">โหลดข้อมูลไม่สำเร็จ{' '}
+          <button type="button" className="font-bold underline" onClick={() => { setLoadState('loading'); load() }}>ลองใหม่</button>
+        </p>
+      )}
+      {loadState === 'ok' && (
+        <div className="flex items-center gap-5">
+          <div className="shrink-0">
+            <div className="w-24 h-28 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
+              {branding?.photo_url
+                ? <img src={branding.photo_url} alt="รูปนายกตัวอย่าง" className="w-full h-full object-cover" />
+                : <div className="flex flex-col items-center gap-1 text-gray-300">
+                    <ImageIcon size={24} />
+                    <span className="text-[10px]">ยังไม่มีรูป</span>
+                  </div>
+              }
+            </div>
+          </div>
+          <div className="flex-1">
+            <p className="text-xs text-gray-500 mb-1 leading-relaxed">
+              {hasMayor
+                ? <>นายกปัจจุบัน: <span className="font-bold text-gray-700">{branding?.mayor_name || '—'}</span>{branding?.mayor_title ? <span className="text-gray-400"> · {branding.mayor_title}</span> : null}</>
+                : 'ยังไม่ได้ตั้งผู้ลงนามช่องนายก'}
+            </p>
+            {!hasMayor && (
+              <p className="text-xs text-amber-700 mb-2 leading-relaxed">ตั้งผู้ลงนามช่องนายกที่เมนู "การลงนามเอกสาร" ก่อน</p>
+            )}
+            <p className="text-[11px] text-gray-400 mb-3">รองรับ PNG · JPG · WebP · แนะนำรูปแนวตั้ง</p>
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleUpload} />
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => fileRef.current?.click()} disabled={busy || !hasMayor}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                {busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                {busy ? 'กำลังบันทึก...' : (branding?.photo_url ? 'เปลี่ยนรูป' : 'อัปโหลดรูป')}
+              </button>
+              {branding?.photo_url && (
+                <button type="button" onClick={handleRemove} disabled={busy}
+                  className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-bold text-red-600 border border-red-200 bg-white disabled:opacity-50 active:scale-95 transition-all">
+                  <Trash2 size={14} /> ลบรูป
+                </button>
+              )}
+            </div>
+            {notice && (
+              <p role={notice.ok ? 'status' : 'alert'} className={`mt-2 text-xs ${notice.ok ? 'text-emerald-600' : 'text-red-600'}`}>{notice.text}</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function QrCodeTab({
   tenant, savedSection,
   logoPreview, logoUploading, logoRef, handleLogoUpload,
@@ -1320,6 +1458,9 @@ function QrCodeTab({
           </div>
         </div>
       </div>
+
+      {/* ── รูปนายกบนภาพข่าวประชาสัมพันธ์ ── */}
+      <NewsExecutivePhotoCard tenant={tenant} />
 
       {/* ── QR Code ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
