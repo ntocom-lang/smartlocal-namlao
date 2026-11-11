@@ -26,7 +26,7 @@ import { FollowItems, MinorItems, OverdueItems, RatingSources } from './ExecSimp
 import { AlertBlock, Expandable, Flag, LabelNumber, LoadFail, Loading, Mini, OpenBtn, Row, SimpleCard } from './ExecSimpleParts'
 
 // "ห้องผู้บริหารแบบเรียบ" — หน้าเดียวสำหรับนายก/รองนายก (เจ้าของระบบอนุมัติแผน 2026-11-11) ตอบคำถามเดียว: "วันนี้มีอะไรต้องทำ หรือต้องรู้ไหม"
-// 4 หัวข้อ ตำแหน่งคงที่ทุกวัน: ① เรื่องรอท่าน ② เรื่องที่ควรรู้ ③ งานบริการประชาชนเดือนนี้ ④ กำหนดการวันนี้+พรุ่งนี้ (+ ปุ่ม "ดูรายละเอียดทั้งหมด")
+// 4 หัวข้อ ตำแหน่งคงที่ทุกวัน: ① เรื่องรอท่าน ② เรื่องที่ควรรู้ ③ งานบริการประชาชนเดือนนี้ ④ กำหนดการวันนี้+พรุ่งนี้ (+ ปุ่ม "แดชบอร์ดสำหรับผู้บริหารแบบครบทั้งหมด")
 // ไม่มีอะไรผิดปกติ = บรรทัดเขียว "ไม่มี…" ในที่เดิม (หัวข้อไม่หาย)
 // ข้อมูลทุกอย่างมาจากฮุก/ฟังก์ชันชุดเดียวกับหน้าแบบเต็ม (ExecutiveHome) — ไม่มี RPC/SQL ใหม่ ตัวเลขสองหน้าต้องตรงกันเสมอ
 //   executive_overview ช่วง "เดือนนี้" ช่วงเดียว (ไม่ขอช่วงก่อนหน้า/ไม่ขอคีย์รายกอง-รถผู้ป่วย) · exec_my_esign_waiting · esign_my_pending · staff_home_summary · list_events_for_staff_between · exec_my_follows
@@ -407,7 +407,7 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
         {/* ท้ายหน้า: ไปหน้าแบบเต็ม (ตัวเลขละเอียด แยกกอง วิธีคิด) */}
         <section className="es-card es-foot es-a-dt" aria-label="ดูรายละเอียด">
           ต้องการตัวเลขละเอียด แยกกอง แยกหมู่บ้าน หรือวิธีคิดตัวเลข
-          <OpenBtn onClick={() => navigate('/executive?view=full')} data-exec-simple-full>ดูรายละเอียดทั้งหมด</OpenBtn>
+          <OpenBtn onClick={() => navigate('/executive?view=full')} data-exec-simple-full>แดชบอร์ดสำหรับผู้บริหารแบบครบทั้งหมด</OpenBtn>
         </section>
       </div>
     </div>

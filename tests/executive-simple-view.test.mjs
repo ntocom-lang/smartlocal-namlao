@@ -389,7 +389,7 @@ test('รีเฟรชเงียบ: refresh ของทุกฮุกไ�
   assert.ok(!/prev\.status === 'ok' \? prev/.test(rpc))
 })
 
-test('เส้นทาง: ?view=full/simple · viewer เริ่มแบบเรียบ · แบบเต็มมีลิงก์ "ดูแบบย่อ (แบบนายก)" · ปุ่มรายละเอียดทั้งหมดไป ?view=full · แถบกลับอยู่ที่ App.jsx จุดเดียว', () => {
+test('เส้นทาง: ?view=full/simple · viewer เริ่มแบบเรียบ · แบบเต็มมีลิงก์ "ดูแบบย่อ (แบบนายก)" · ปุ่ม "แดชบอร์ดสำหรับผู้บริหารแบบครบทั้งหมด" ไป ?view=full · แถบกลับอยู่ที่ App.jsx จุดเดียว', () => {
   const room = stripComments(read('src/pages/ExecutiveRoom.jsx'))
   assert.ok(/viewParam === 'simple' \|\| \(viewParam !== 'full' && profile\.role === 'viewer'\)/.test(room))
   assert.ok(room.includes("lazy(() => import('../components/staff/executive/ExecSimpleHome'))"))

@@ -371,7 +371,7 @@ export default function ExecutiveHome({ scopedKeys = [], navigate, profile, tena
       <header className="min-w-0 rounded-3xl bg-gradient-to-br from-sky-800 to-indigo-800 px-4 py-3.5 text-white shadow-sm">
         <div className="flex items-center gap-2">
           <LayoutDashboard size={20} className="shrink-0 text-sky-200" aria-hidden="true" />
-          <h1 className="truncate text-xl font-black">ห้องผู้บริหาร</h1>
+          <h1 className="min-w-0 text-xl font-black leading-snug">แดชบอร์ดสำหรับผู้บริหารแบบครบทั้งหมด</h1>
           {/* ทางไปหน้าแบบเรียบ (ตัวใหญ่ หน้าเดียว สำหรับนายก) — หน้านี้ไม่เปลี่ยนอย่างอื่น */}
           <button type="button" data-exec-open-simple onClick={() => navigate('/executive?view=simple')}
             className="ml-auto inline-flex min-h-8 shrink-0 items-center rounded-lg border border-white/40 bg-white/10 px-2.5 text-xs font-bold text-white hover:bg-white/20 active:scale-95">
