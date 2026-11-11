@@ -180,6 +180,25 @@ await test('PDPA: ข้อมูลผู้แจ้งปลอมที่�
   }
 })
 
+await test('ภาพรวมปิด QR/ลิงก์: แถบท้ายเป็นข้อความขอบคุณ + มุ่งสู่เมืองอัจฉริยะ · เปิด = QR + โดเมน', () => {
+  const off = News.buildNewsSvg(batch([row(), row()]), measure, { photoDataUrls: [PHOTO, PHOTO] }).svg
+  assert.ok(!off.includes('crispEdges'))
+  assert.ok(has(off, News.NEWS_FOOTER_THANKS[0]) && has(off, News.NEWS_FOOTER_THANKS[1]))
+  assert.ok(!has(off, News.NEWS_FOOTER_INVITE))
+  const on = News.buildNewsSvg(batch([row(), row()], { reportUrl: 'https://namlao.example.test/complaint' }), measure, { photoDataUrls: [PHOTO, PHOTO] }).svg
+  assert.ok(on.includes('crispEdges') && has(on, 'namlao.example.test/complaint') && has(on, News.NEWS_FOOTER_INVITE))
+  assert.ok(!has(on, News.NEWS_FOOTER_THANKS[0]))
+})
+
+await test('static: กล่องทั้งสองมี checkbox "แสดง QR และลิงก์แจ้งเรื่อง" ติ๊กไว้ก่อน · ปิดแล้วส่ง reportUrl ว่าง', async () => {
+  for (const path of ['src/components/complaints/ComplaintNewsDialog.jsx', 'src/components/complaints/ComplaintNewsBatchDialog.jsx']) {
+    const source = await read(path)
+    assert.match(source, /const \[linkOn, setLinkOn\] = useState\(true\)/, path)
+    assert.match(source, /reportUrl: linkOn \? reportUrl : ''/, path)
+    assert.match(source, /แสดง QR และลิงก์แจ้งเรื่อง/, path)
+  }
+})
+
 await test('ขีดจำกัด: เลือกได้ไม่เกิน 12 เรื่อง · รูปไม่เกิน 4 ช่อง', () => {
   assert.equal(News.MAX_BATCH_ITEMS, 12)
   assert.equal(News.MAX_NEWS_PHOTOS, 4)

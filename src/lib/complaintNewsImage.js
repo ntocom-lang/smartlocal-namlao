@@ -22,6 +22,9 @@ export const NEWS_MIN_HEIGHT = 1350
 export const MAX_NEWS_PHOTOS = 4
 // ภาพข่าวรวม: เลือกได้ไม่เกินกี่เรื่องต่อภาพ (ฝั่งผู้บริหารเรียก RPC ทีละเรื่อง จึงจำกัดไว้)
 export const MAX_BATCH_ITEMS = 12
+// แถบท้าย: มี QR/ลิงก์ = ชวนแจ้งเรื่อง · ปิด QR/ลิงก์ = ขอบคุณ + มุ่งสู่เมืองอัจฉริยะ (เจ้าของระบบสั่ง 2569-11-11)
+export const NEWS_FOOTER_INVITE = 'พบปัญหาในชุมชน แจ้งเราได้ตลอด 24 ชม.'
+export const NEWS_FOOTER_THANKS = Object.freeze(['ขอบคุณทุกการแจ้งปัญหาจากประชาชน', 'ร่วมกันดูแลชุมชน มุ่งสู่เมืองอัจฉริยะ (Smart City)'])
 
 const MARGIN = 64
 const CONTENT_W = IMAGE_WIDTH - MARGIN * 2
@@ -424,13 +427,16 @@ export function buildNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls
   const qr = model.reportUrl ? qrLayout(model.reportUrl, 220) : null
   const footTextX = MARGIN + (qr ? qr.side + 36 : 0)
   const footTextW = IMAGE_WIDTH - MARGIN - footTextX
-  const slots = [
-    { size: 36, bold: true, lines: wrapLines('พบปัญหาในชุมชน แจ้งเราได้ตลอด 24 ชม.', footTextW, 36, true, measure), opacity: 1 },
+  // ปิด QR/ลิงก์ (ไม่มี reportUrl) = ข้อความขอบคุณแทน — ไม่ใช้ "แจ้งเราได้ตลอด 24 ชม." เพราะชวนแจ้งโดยไม่บอกช่องทาง
+  // ประชาชนจะโทรเข้าสำนักงานแทน (เพิ่มงานเจ้าหน้าที่) · "มุ่งสู่" เมืองอัจฉริยะ: ยังไม่ได้รับรองเป็นเมืองอัจฉริยะ ห้ามเขียนว่าเป็นแล้ว
+  const slots = model.reportUrl ? [
+    { size: 36, bold: true, lines: wrapLines(NEWS_FOOTER_INVITE, footTextW, 36, true, measure), opacity: 1 },
+    { size: 28, bold: false, lines: wrapLines(qr ? 'สแกน QR หรือเข้าที่' : 'เข้าที่', footTextW, 28, false, measure), opacity: 0.92 },
+    { size: 30, bold: true, lines: wrapLines(model.reportUrl.replace(/^https?:\/\//i, ''), footTextW, 30, true, measure), opacity: 1 },
+  ] : [
+    { size: 36, bold: true, lines: wrapLines(NEWS_FOOTER_THANKS[0], footTextW, 36, true, measure), opacity: 1 },
+    { size: 30, bold: false, lines: wrapLines(NEWS_FOOTER_THANKS[1], footTextW, 30, false, measure), opacity: 0.95 },
   ]
-  if (model.reportUrl) {
-    slots.push({ size: 28, bold: false, lines: wrapLines(qr ? 'สแกน QR หรือเข้าที่' : 'เข้าที่', footTextW, 28, false, measure), opacity: 0.92 })
-    slots.push({ size: 30, bold: true, lines: wrapLines(model.reportUrl.replace(/^https?:\/\//i, ''), footTextW, 30, true, measure), opacity: 1 })
-  }
   const stepOf = slot => Math.round(slot.size * 1.4)
   const footTextH = slots.reduce((sum, slot) => sum + slot.lines.length * stepOf(slot), 0)
   const footH = Math.max(qr ? qr.side : 0, footTextH) + PAD * 2
