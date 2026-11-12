@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { assetIdentifier, assetOptionLabel } from '../../lib/fleetAssets'
 import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
-import { buildFleetSk1Html, buildFleetTripRequestHtml, resolveDeptHead, resolveOrderAuthority, tripRequesterIsMayor } from '../../lib/fleetTripPrint'
+import { buildFleetSk1Html, buildFleetTripRequestHtml, isMayorPosition, resolveDeptHead, resolveOrderAuthority, tripRequesterIsMayor } from '../../lib/fleetTripPrint'
 import { FLEET_TRIP_KM_CONFIRM, checkTripOdometer, isImplausibleTripDistance } from '../../lib/fleetOdometer'
 import {
   CUSTOM_ROLE, SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, defaultVehicleAuthority,
@@ -21,9 +21,9 @@ import { useHomeRpc } from '../../lib/staffHomeData'
 import { getTripEsignStamps, getTripEsignStatus } from '../../lib/esignApi'
 import {
   PERMIT_TRIP_EXCEPTIONS, permitAuthorizedLines, permitBadge, permitBlocksDepart, permitDepartHint, permitInfoIds, permitInfoMap,
-  permitPrintAuthority, permitWaitingLines,
+  permitPrintAuthority, permitWaitingLines, PERMIT_POSITION_CAR_REF, POSITION_CAR_REASON_MAX, permitNeedsRequestFix, positionCarNotice, positionCarReasonError,
 } from '../../lib/fleetPermit'
-import { getFleetTripPermitInfo, getFleetTripPermitInfoBatches } from '../../lib/fleetPermitApi'
+import { checkFleetPositionCar, getFleetTripPermitInfo, getFleetTripPermitInfoBatches } from '../../lib/fleetPermitApi'
 import { esignPrintData, printSignatureBox } from '../../lib/esignPrint'
 import { prepareStampsForPrint } from '../../lib/signatureCanvas'
 import { addMobileCloseButton } from '../../lib/printWindowClose'
@@ -286,6 +286,8 @@ const EMPTY_RESERVE = {
   purpose: '', passengers: 1, requester_position: '',
   // '' = ใช้ค่าปริยายตอนพิมพ์แบบ 3 (หัวหน้ากองตามกองของทริป / นายก) ตรงกับ NULL ใน DB
   dept_head_department_id: '', order_authority_role: '', order_authority_label: '',
+  // ข้อ ๑๒ ว.๕ — ใช้เฉพาะเมื่อผู้ขอมีรถประจำตำแหน่ง (อปท. โหมดบังคับอนุญาต) นอกนั้นไม่ส่งไป DB
+  position_car_reason: '',
 }
 const EMPTY_DIRECT = {
   vehicle_id: '', driver_id: '', department_id: '', requested_by: '',
@@ -717,6 +719,33 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (item) setPermitMap(current => new Map(current).set(tripId, item))
   }
 
+  // ข้อ ๑๒ ว.๕ — ผู้ขอในฟอร์มขอใช้รถมีรถประจำตำแหน่งไหม (ถามใหม่เมื่อเปลี่ยนผู้ขอ/รถ)
+  // ได้ position_car เฉพาะ อปท. โหมดบังคับอนุญาต · โหมด queue / ฐานที่ยังไม่มีฟังก์ชัน / ถามไม่ได้ = null = ฟอร์มเหมือนเดิมทุกอย่าง
+  // ด่านจริงอยู่ที่ DB (fleet_trip_permit_state ⇒ reason_required/mayor_required บล็อกออกรถ) หน้าจอแค่บอกล่วงหน้า
+  const [positionCar, setPositionCar] = useState(null)
+  const positionCarRequester = modal === 'reserve' ? (form.requested_by || '') : ''
+  const positionCarVehicle = modal === 'reserve' ? (form.vehicle_id || '') : ''
+  useEffect(() => {
+    if (!tenant?.id || !positionCarRequester) {
+      queueMicrotask(() => setPositionCar(null))
+      return undefined
+    }
+    let alive = true
+    checkFleetPositionCar({ municipalityId: tenant.id, requestedBy: positionCarRequester, vehicleId: positionCarVehicle })
+      .then(result => {
+        if (alive) setPositionCar(result?.ok && result.permit_mode === 'regulation' ? (result.position_car ?? null) : null)
+      })
+    return () => { alive = false }
+  }, [tenant?.id, positionCarRequester, positionCarVehicle])
+  // ผู้ขอเป็นนายกเอง = ทาง สก.๑ (ว.๖) ไม่ล็อกผู้มีอำนาจ แต่ยังต้องกรอกเหตุผล (เจ้าของระบบเลือก 2026-11-12)
+  const positionCarMayorRequest = Boolean(positionCar) && isMayorPosition(form.requester_position)
+  const lockMayorAuthority = Boolean(positionCar) && !positionCarMayorRequest
+  useEffect(() => {
+    if (lockMayorAuthority && form.order_authority_role !== 'mayor') {
+      queueMicrotask(() => setForm(f => ({ ...f, order_authority_role: 'mayor', order_authority_label: '' })))
+    }
+  }, [lockMayorAuthority, form.order_authority_role])
+
   // ใบขอใช้รถที่ถึงคิว "ฉัน" ลงนามออนไลน์ — แถบบนสุดของหน้านี้ (แคชชุดเดียวกับการ์ดบนหน้าแรก)
   // อปท. ที่ไม่ได้เปิดโหมดออนไลน์ได้ count 0 แถบจึงไม่ขึ้น
   const esignRpc = useHomeRpc({ rpc: 'esign_my_pending', args: {}, tenantId: tenant?.id, profileId: user?.id, enabled: Boolean(tenant?.id && user?.id) })
@@ -879,6 +908,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       dept_head_department_id: t.dept_head_department_id || '',
       order_authority_role: t.order_authority_role || '',
       order_authority_label: t.order_authority_label || '',
+      position_car_reason: t.position_car_reason || '',
     })
     setConflict(null)
     setShowOverride(false)
@@ -1037,6 +1067,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       return alert('ท้องที่หรือจังหวัดยาวเกินกำหนด')
     if ((parseDateTime(form.planned_return)?.getTime() ?? 0) <= (parseDateTime(form.planned_departure)?.getTime() ?? 0))
       return alert('เวลากลับต้องหลังเวลาออก')
+    const positionCarError = positionCar ? positionCarReasonError(form.position_car_reason) : ''
+    if (positionCarError) return alert(positionCarError)
     const isEdit = !!selTrip
     const excludeId = isEdit ? selTrip.id : null
     // ล็อกปุ่มตั้งแต่ตอนเช็คคิว — ไม่งั้นกดส่งซ้ำระหว่างรอ RPC แล้วได้คำขอซ้ำสองใบ
@@ -1084,6 +1116,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       order_authority_label: form.order_authority_role === CUSTOM_ROLE
         ? (form.order_authority_label || null)
         : null,
+      // ส่งเฉพาะเมื่อผู้ขอมีรถประจำตำแหน่ง — ใบทั่วไป/โหมด queue ไม่แตะคอลัมน์นี้เลย (แก้ไขใบเดิมก็ไม่ล้างค่าที่มีอยู่)
+      ...(positionCar ? { position_car_reason: String(form.position_car_reason ?? '').trim() } : {}),
     }
     // คำขอใหม่ส่งเป็น pending เสมอ แล้ว DB ตัดสินคิวให้ (fleet_trips_guard_overlap):
     // รถว่าง → approved อัตโนมัติ · คิวชน → waitlisted — ต้องอ่านสถานะที่ DB ตัดสินกลับมา
@@ -1153,6 +1187,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       return alert('กรุณาระบุท้องที่และจังหวัด')
     if (form.destination_locality.trim().length > 200 || form.destination_province.trim().length > 100)
       return alert('ท้องที่หรือจังหวัดยาวเกินกำหนด')
+    const positionCarError = positionCar ? positionCarReasonError(form.position_car_reason) : ''
+    if (positionCarError) return alert(positionCarError)
     setSaving(true)
 
     // ทั้ง "ยกเลิกคิวเดิม" และ "สร้างคิวใหม่" ทำใน RPC เดียว = transaction เดียว
@@ -1191,14 +1227,17 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       order_authority_label: form.order_authority_role === CUSTOM_ROLE
         ? (form.order_authority_label || null)
         : null,
+      // ข้อ ๑๒ ว.๕ — RPC แทรกคิวไม่มีช่องเหตุผล จึงเขียนตามหลังพร้อมผู้ลงนาม (ไม่ได้ = ใบขึ้น "ต้องระบุเหตุผล" ออกรถไม่ได้จนกว่าจะแก้คำขอ)
+      ...(positionCar ? { position_car_reason: String(form.position_car_reason ?? '').trim() } : {}),
     }
-    if (newTripId && (signatoryChoice.dept_head_department_id || signatoryChoice.order_authority_role)) {
+    if (newTripId && (signatoryChoice.dept_head_department_id || signatoryChoice.order_authority_role || positionCar)) {
       const { error: signatoryError } = await supabase.from('fleet_trips')
         .update(signatoryChoice).eq('id', newTripId)
       if (signatoryError) {
-        alert('จองรถแทนคิวเดิมสำเร็จแล้ว แต่บันทึกผู้ลงนามบนแบบ 3 ไม่สำเร็จ'
+        alert('จองรถแทนคิวเดิมสำเร็จแล้ว แต่บันทึกผู้ลงนามบนแบบ 3' + (positionCar ? '/เหตุผลความจำเป็น' : '') + ' ไม่สำเร็จ'
           + ' — ใบที่พิมพ์จะใช้หัวหน้ากองตามกองที่รับผิดชอบและนายกเป็นผู้สั่งใช้รถ'
-          + ' หากต้องการคนอื่น กรุณากดแก้ไขคำขอแล้วเลือกผู้ลงนามอีกครั้ง')
+          + ' หากต้องการคนอื่น กรุณากดแก้ไขคำขอแล้วเลือกผู้ลงนามอีกครั้ง'
+          + (positionCar ? ' และกรอกเหตุผลความจำเป็นอีกครั้ง (ยังไม่กรอก = ออกรถไม่ได้)' : ''))
       }
     }
 
@@ -1881,15 +1920,23 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       <div>
         <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้มีอำนาจสั่งใช้รถ</label>
         {/* ค่าใน <option> ต้องพก label มาด้วย เพราะบทบาท custom มีได้หลายแถว role
-            อย่างเดียวชี้ไม่ถูกว่าแถวไหน */}
-        <ResponsiveSelect
-          value={authorityValue(form)}
-          onChange={pickAuthority}
-          placeholder="— ไม่ระบุ (เว้นให้เซ็นสด) —"
-          modalTitle="ผู้มีอำนาจสั่งใช้รถ"
-          searchPlaceholder="ค้นหาชื่อ หรือบทบาท..."
-          options={authorityItems}
-        />
+            อย่างเดียวชี้ไม่ถูกว่าแถวไหน
+            ผู้ขอมีรถประจำตำแหน่ง (ข้อ ๑๒ ว.๕) = นายกเท่านั้น ล็อกไว้ไม่ให้เลือกคนอื่น (DB ตอบ mayor_required ถ้าไม่ใช่นายก) */}
+        {modal === 'reserve' && lockMayorAuthority ? (
+          <p className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700">
+            {authorityItems.find(item => item.value.startsWith('mayor:'))?.label || 'นายก'}
+            <span className="block text-[10px] text-gray-500">ผู้ขอมีรถประจำตำแหน่ง ต้องให้นายกอนุญาต ({PERMIT_POSITION_CAR_REF})</span>
+          </p>
+        ) : (
+          <ResponsiveSelect
+            value={authorityValue(form)}
+            onChange={pickAuthority}
+            placeholder="— ไม่ระบุ (เว้นให้เซ็นสด) —"
+            modalTitle="ผู้มีอำนาจสั่งใช้รถ"
+            searchPlaceholder="ค้นหาชื่อ หรือบทบาท..."
+            options={authorityItems}
+          />
+        )}
       </div>
       {deptHeadOptions.length === 0 && authorityOptions.length === 0 && (
         <p className="text-[10px] leading-relaxed text-amber-700">
@@ -2029,7 +2076,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const timing = tripTimingFlag(t, nowMs)
     // โหมดตามระเบียบ: ป้ายการอนุญาต + ปิดปุ่มออกรถจนกว่าจะได้รับอนุญาต · ใบ queue ไม่มีอะไรเปลี่ยน
     const permit = permitOf(t)
-    const permitTag = permitBadge(permit)
+    const permitTag = permitBadge(permit, t.status)
     const departBlocked = canDepart && permitBlocksDepart(permit)
     return (
       <div key={t.id}
@@ -2151,7 +2198,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const dist = t.distance_km ?? null
     const timing = tripTimingFlag(t, nowMs)
     const permit = permitOf(t)
-    const permitTag = permitBadge(permit)
+    const permitTag = permitBadge(permit, t.status)
     const departBlocked = canDepart && permitBlocksDepart(permit)
     return (
       <tr key={t.id} style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
@@ -2440,7 +2487,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         const canPrintSk1 = tripRequesterIsMayor(t) && ['approved', 'in_progress', 'completed'].includes(t.status)
         // โหมดตามระเบียบ: ส่วน "การอนุญาตใช้รถ" — โผล่เฉพาะใบ regulation (ใบ queue ไม่มีอะไรเปลี่ยน)
         const permit = permitOf(t)
-        const permitTag = permitBadge(permit)
+        const permitTag = permitBadge(permit, t.status)
         const permitLines = permit?.state === 'authorized' ? permitAuthorizedLines(permit) : permitWaitingLines(permit)
         return (
           // z-[55] ไม่ใช่ z-50: บนมือถือแถบเมนูล่าง (BottomNav, fixed bottom-0 z-50 วาดทีหลัง) ทับท้ายหน้าต่างนี้และรับการแตะแทน
@@ -2477,6 +2524,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                   <div><p className="text-gray-400">ในท้องที่</p><p className="font-semibold text-gray-700">{t.destination_locality || '—'}</p></div>
                   <div><p className="text-gray-400">จังหวัด</p><p className="font-semibold text-gray-700">{t.destination_province || '—'}</p></div>
                   <div className="col-span-2"><p className="text-gray-400">วัตถุประสงค์</p><p className="font-semibold text-gray-700">{t.purpose || '—'}</p></div>
+                  {t.position_car_reason && (
+                    <div className="col-span-2"><p className="text-gray-400">เหตุผลความจำเป็น — ผู้มีรถประจำตำแหน่ง ({PERMIT_POSITION_CAR_REF})</p><p className="font-semibold text-gray-700 whitespace-pre-line">{t.position_car_reason}</p></div>
+                  )}
                   {t.planned_departure && <>
                     <div><p className="text-gray-400">วันเวลาออก (ตามคำขอ)</p><p className="font-semibold text-gray-700">{fmtDT(t.planned_departure)}</p></div>
                     <div><p className="text-gray-400">กลับโดยประมาณ</p><p className="font-semibold text-gray-700">{fmtDT(t.planned_return)}</p></div>
@@ -2525,9 +2575,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                     <p className="text-[10px] leading-4 text-gray-400">
                       หน่วยงานนี้บังคับให้ได้รับอนุญาตก่อนออกรถ — คิวรถยังกันให้อัตโนมัติเหมือนเดิม แต่บันทึกออกรถได้หลังได้รับอนุญาตเท่านั้น
                     </p>
-                    {(permit.can_record || permit.can_void) && (
+                    {((permit.can_record && !permitNeedsRequestFix(permit)) || permit.can_void) && (
                       <div className="flex flex-wrap gap-2 pt-0.5">
-                        {permit.can_record && (
+                        {/* ใบที่ยังไม่ครบ ว.๕ (ต้องแก้คำขอก่อน) DB ไม่รับบันทึก — ซ่อนปุ่ม ไม่ให้กดแล้วเจอข้อความปฏิเสธ */}
+                        {permit.can_record && !permitNeedsRequestFix(permit) && (
                           <button type="button" onClick={() => setPermitDialog({ mode: 'record', tripId: t.id, permitId: null })}
                             className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">
                             บันทึกการอนุญาต (ใบกระดาษ)
@@ -2751,6 +2802,23 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <input value={form.purpose} onChange={set('purpose')}
               placeholder="เช่น ประชุมราชการ" className={inp} />
           </div>
+          {/* ข้อ ๑๒ ว.๕ — ขึ้นเฉพาะ อปท. โหมดบังคับอนุญาต และผู้ขอมีรถประจำตำแหน่ง (นอกนั้นฟอร์มเหมือนเดิม) */}
+          {positionCar && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+              <p className="text-[11px] font-semibold leading-relaxed text-amber-800">
+                ⚠️ {positionCarNotice(positionCar, { self: form.requested_by === user?.id, requesterIsMayor: positionCarMayorRequest })}
+              </p>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">เหตุผลความจำเป็นในการใช้ยานพาหนะส่วนกลาง *</label>
+                <textarea value={form.position_car_reason ?? ''} onChange={set('position_car_reason')}
+                  rows={2} maxLength={POSITION_CAR_REASON_MAX}
+                  placeholder="เช่น รถประจำตำแหน่งเข้าศูนย์ซ่อมตามนัด" className={inp} />
+                <p className="mt-1 text-[10px] text-gray-500">
+                  ผู้อนุญาตเห็นเหตุผลนี้ก่อนลงนาม · ระบุเหตุผลทางราชการเท่านั้น ห้ามใส่ข้อมูลสุขภาพหรือข้อมูลส่วนตัว (เก็บในประวัติแก้ไขที่ลบไม่ได้) · มีการลงนามหรือบันทึกการอนุญาตแล้วจะแก้ไม่ได้
+                </p>
+              </div>
+            </div>
+          )}
           {signatoryFields}
         </Modal>
       )}

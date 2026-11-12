@@ -6,6 +6,7 @@ import FleetVehicleDetail from './FleetVehicleDetail'
 import FleetEmptyState from './FleetEmptyState'
 import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
+import { PERMIT_TRIP_EXCEPTIONS } from '../../lib/fleetPermit'
 import { custodianChoicesForDepartment, custodianSuggestions } from '../../lib/fleetCustodianRegisterPrint'
 import { canCopyInsuranceDate, copyInsuranceDate } from '../../lib/fleetVehicleSummary'
 import { vehicleDeleteConfirmed, vehicleDeleteErrorText, vehicleDeletePlan } from '../../lib/fleetVehicleDelete'
@@ -42,6 +43,7 @@ const EMPTY = {
   insurance_expiry:'', act_expiry:'', registration_expiry:'', inspection_expiry:'',
   regulation_category:'central', engine_cc:'', purchase_price:'', acquired_date:'', disposed_date:'',
   custodian_department_id:'', custodian_name:'', custodian_position:'',
+  holder_position_id:'',
 }
 
 // ค่าพิเศษของ <select> ชื่อผู้รับผิดชอบ = "อื่นๆ (พิมพ์ชื่อเอง)" ต้องไม่ชนกับชื่อคนจริง
@@ -53,6 +55,13 @@ const REGULATION_CATEGORY_OPTIONS = [
   { value: 'central',  label: 'ยานพาหนะส่วนกลาง (แบบ 2)' },
   { value: 'position', label: 'รถยนต์ประจำตำแหน่ง (แบบ 1)' },
 ]
+
+// error จาก trigger บน fleet_vehicles (FLEET_HOLDER_POSITION_TENANT) → ข้อความไทย · อื่นๆ แสดงตามเดิม
+const vehicleSaveError = error => {
+  const message = String(error?.message ?? '')
+  const code = Object.keys(PERMIT_TRIP_EXCEPTIONS).find(key => message.includes(key))
+  return code ? PERMIT_TRIP_EXCEPTIONS[code] : message
+}
 
 // เอกสารรถ 4 ฉบับ ลำดับเดียวกับตารางรถ/ภาพรวม/แจ้งเตือน — key คือคอลัมน์ใน fleet_vehicles
 const DOCUMENT_EXPIRY_FIELDS = [
@@ -217,6 +226,8 @@ const auditSnapshot = v => v ? {
   // ทะเบียนคุมยานพาหนะส่วนกลาง — ผู้รับผิดชอบตามคำสั่ง อปท. เปลี่ยนแล้วต้องเห็นว่าใครแก้
   custodian_department_id: v.custodian_department_id, custodian_name: v.custodian_name,
   custodian_position: v.custodian_position,
+  // ผู้ถือรถประจำตำแหน่ง — ใช้ตัดสินข้อ 12 วรรคห้า (ผู้มีรถประจำตำแหน่งขอใช้รถส่วนกลาง) แก้แล้วต้องเห็นว่าใครแก้
+  holder_position_id: v.holder_position_id ?? null,
 } : null
 
 export default function FleetVehicles({ tenant, depts, isAdmin, isSuperAdmin = false }) {
@@ -252,6 +263,27 @@ export default function FleetVehicles({ tenant, depts, isAdmin, isSuperAdmin = f
     supabase.from('profiles').select('id,full_name,role,department_id,job_title,position:positions(name)')
       .eq('municipality_id', tenant.id).not('department_id', 'is', null).neq('role', 'citizen').order('full_name')
       .then(({ data, error }) => { if (active) setStaff(error ? [] : (data ?? [])) })
+    return () => { active = false }
+  }, [tenant?.id, isAdmin])
+
+  // ตำแหน่งของ อปท. (ช่อง "ตำแหน่งผู้ถือรถ" ของรถประจำตำแหน่ง) + จำนวนคนที่ถือแต่ละตำแหน่ง
+  // ตำแหน่งที่ยังไม่มีใครถือ = ระบบมองไม่เห็นผู้ถือรถ → เตือนในฟอร์ม · อ่านไม่ได้ = ไม่เตือน (ไม่เดา)
+  const [positions,      setPositions]      = useState([])
+  const [holderCounts,   setHolderCounts]   = useState(null)
+  useEffect(() => {
+    if (!tenant?.id || !isAdmin) return
+    let active = true
+    Promise.all([
+      supabase.from('positions').select('id,name,sort_order').eq('municipality_id', tenant.id).order('sort_order').order('name'),
+      supabase.from('profiles').select('position_id').eq('municipality_id', tenant.id).not('position_id', 'is', null),
+    ]).then(([pos, people]) => {
+      if (!active) return
+      setPositions(pos.error ? [] : (pos.data ?? []))
+      if (people.error) { setHolderCounts(null); return }
+      const counts = new Map()
+      for (const row of people.data ?? []) counts.set(row.position_id, (counts.get(row.position_id) ?? 0) + 1)
+      setHolderCounts(counts)
+    })
     return () => { active = false }
   }, [tenant?.id, isAdmin])
 
@@ -322,6 +354,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin, isSuperAdmin = f
       purchase_price: v.purchase_price ?? '', acquired_date: v.acquired_date ?? '', disposed_date: v.disposed_date ?? '',
       custodian_department_id: v.custodian_department_id ?? '',
       custodian_name: v.custodian_name ?? '', custodian_position: v.custodian_position ?? '',
+      holder_position_id: v.holder_position_id ?? '',
     })
     setModal(v)
   }
@@ -432,6 +465,9 @@ export default function FleetVehicles({ tenant, depts, isAdmin, isSuperAdmin = f
       custodian_department_id: form.custodian_department_id || null,
       custodian_name: form.custodian_name.trim() || null,
       custodian_position: form.custodian_position.trim() || null,
+      // ผู้ถือได้เฉพาะรถประจำตำแหน่ง (CHECK ใน DB) — เปลี่ยนเป็นส่วนกลาง/ไม่ใช่ยานพาหนะ = ล้างทิ้งเสมอ
+      holder_position_id: isVehicleAsset(form) && form.regulation_category === 'position'
+        ? (form.holder_position_id || null) : null,
       tank_capacity:    form.tank_capacity    || null,
       odometer_initial: Number(form.odometer_initial) || 0,
       department_id:    form.department_id    || null,
@@ -454,7 +490,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin, isSuperAdmin = f
           municipalityId: tenant.id, metadata: { after: auditSnapshot(data) },
         })
         setModal(null)
-      } else alert(error.message)
+      } else alert(vehicleSaveError(error))
     } else {
       const { data, error } = await supabase.from('fleet_vehicles').update(payload)
         .eq('id', modal.id).select('*, departments(name,short_name)').single()
@@ -474,7 +510,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin, isSuperAdmin = f
           metadata: { before: auditSnapshot(before), after: auditSnapshot(data) },
         })
         setModal(null)
-      } else alert(error.message)
+      } else alert(vehicleSaveError(error))
     }
     setSaving(false)
   }
@@ -879,6 +915,29 @@ export default function FleetVehicles({ tenant, depts, isAdmin, isSuperAdmin = f
                       {REGULATION_CATEGORY_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
                     </select>
                   </div>
+                  {/* ข้อ 12 วรรคห้า: ผู้มีรถประจำตำแหน่งขอใช้รถส่วนกลางต้องระบุเหตุผล + นายกอนุญาต
+                      ผูกกับ "ตำแหน่ง" ไม่ใช่ตัวคน — เปลี่ยนตัวคนแล้วระบบตามเอง (เจ้าของระบบเลือก 2026-11-12) */}
+                  {form.regulation_category === 'position' && (
+                    <div className="col-span-2">
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่งผู้ถือรถประจำตำแหน่ง</label>
+                      <select value={form.holder_position_id} onChange={set('holder_position_id')} className={sel}>
+                        <option value="">— ยังไม่ระบุ —</option>
+                        {positions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                        {form.holder_position_id && !positions.some(item => item.id === form.holder_position_id) && (
+                          <option value={form.holder_position_id}>(ตำแหน่งเดิมที่ไม่พบในรายการ)</option>
+                        )}
+                      </select>
+                      <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
+                        ผู้ที่โปรไฟล์อยู่ตำแหน่งนี้ ขอใช้รถส่วนกลางในโหมดบังคับอนุญาต ต้องระบุเหตุผลความจำเป็นและให้นายกอนุญาต (ข้อ ๑๒ วรรคห้า)
+                      </p>
+                      {form.holder_position_id && holderCounts && !holderCounts.get(form.holder_position_id) && (
+                        <p className="mt-1 flex items-start gap-1 text-[11px] font-semibold text-amber-700 leading-relaxed">
+                          <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                          ยังไม่มีบัญชีผู้ใช้ที่ตั้งตำแหน่งนี้ในโปรไฟล์ — ระบบจะไม่รู้ว่าใครถือรถคันนี้ ให้ผู้ดูแลระบบตั้งตำแหน่งในบัญชีของผู้ถือรถด้วย
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div>
                     <label className="text-xs font-semibold text-gray-600 mb-1 block">รุ่นปี</label>
                     <input type="number" inputMode="numeric" value={form.manufacture_year} onChange={set('manufacture_year')}

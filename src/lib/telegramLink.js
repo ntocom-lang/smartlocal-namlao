@@ -24,7 +24,7 @@ export function isMissingTelegramLinkTable(error) {
 export const TELEGRAM_DM_CATEGORIES = Object.freeze([
   { key: 'complaint', label: 'คำร้องที่มอบหมายให้ฉัน' },
   { key: 'event', label: 'กิจกรรมที่มอบหมายให้ฉัน' },
-  { key: 'esign', label: 'ใบขอใช้รถถึงคิวลงนามหรือถูกส่งคืน' },
+  { key: 'esign', label: 'ใบขอใช้รถ: ถึงคิวลงนาม ถูกส่งคืน หรือได้รับอนุญาตออกรถแล้ว' },
   { key: 'exec_digest', label: 'สรุปเช้าผู้บริหาร (07:30 น. วันทำการ)', execOnly: true },
   { key: 'exec_alert', label: 'แจ้งทันทีเมื่อคะแนนประเมินคำร้อง ≤ 2', execOnly: true },
 ])

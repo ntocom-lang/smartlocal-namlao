@@ -26,6 +26,8 @@ const adminDeleteSql = await read('../supabase/migrations/20261025120000_esign_t
 const fallbackFunctionsSql = await read('../supabase/migrations/20261031100100_esign_fallback_functions.sql')
 // ส่งคืนผู้ขอ: แก้ esign_trip_status / esign_my_pending ทั้งตัว + เพิ่มฟังก์ชันส่งคืน — นิยามหลังสุดชนะ
 const returnFunctionsSql = await read('../supabase/migrations/20261101120100_esign_trip_return_functions.sql')
+// esign_my_pending รุ่นล่าสุดอยู่ใน P3 ขั้นตอนขอใช้รถ (เพิ่ม position_car_reason / position_car_required ข้อ ๑๒ ว.๕)
+const myPendingSql = await read('../supabase/migrations/20261123100100_fleet_position_car_functions.sql')
 const functionsSql = functionsOldSql + '\n' + gateRelaxSql + '\n' + imageFunctionsSql + '\n' + tripPanelSql + '\n' + adminDeleteSql + '\n' + fallbackFunctionsSql + '\n' + returnFunctionsSql
 const apiSource = await read('../src/lib/esignApi.js')
 const esignLibSource = await read('../src/lib/esign.js')
@@ -349,14 +351,20 @@ await test('S3b รายการใบรอลงนาม: ดึงพล�
   assert.equal(row.title, 'สมหมาย ขอใช้รถไป อำเภอเมือง')
   assert.equal(row.actionLabel, 'อนุมัติ (ลงนาม)', 'ช่องผู้มีอำนาจคืออนุมัติ')
   assert.equal(row.slotLabel, 'ผู้มีอำนาจสั่งใช้ยานพาหนะ')
-  assert.deepEqual(row.summary, { requesterName: 'สมหมาย', vehicleName: 'กระบะ กข 1234', destination: 'อำเภอเมือง', purpose: 'ประชุม', plannedDeparture: '2026-10-25T01:00:00Z' })
+  assert.deepEqual(row.summary, {
+    requesterName: 'สมหมาย', vehicleName: 'กระบะ กข 1234', destination: 'อำเภอเมือง', purpose: 'ประชุม', plannedDeparture: '2026-10-25T01:00:00Z',
+    positionCarReason: null, positionCarRequired: false,
+  })
+  const holderRow = esignPendingRow({ ...item, position_car_reason: 'รถประจำตำแหน่งเข้าซ่อม', position_car_required: true })
+  assert.equal(holderRow.summary.positionCarReason, 'รถประจำตำแหน่งเข้าซ่อม')
+  assert.equal(holderRow.summary.positionCarRequired, true)
   const bare = esignPendingRow({ trip_id: 't2', slot: 'dept_head', decision: 'sign' })
   assert.equal(bare.title, 'ผู้ขอ ขอใช้รถ')
   assert.equal(bare.actionLabel, 'ลงนาม')
   assert.equal(bare.slotLabel, ESIGN_FLEET_SLOTS.find(slot => slot.key === 'dept_head').label, 'ไม่มี slot_label ใช้ชื่อช่องในหน้าจอ')
 
   // ชื่อฟิลด์ที่ esignPendingRow/esignPendingKey อ่านต้องมีใน jsonb ของ esign_my_pending จริง (หน้าจอทดสอบด้วยข้อมูลจำลอง)
-  const body = /FUNCTION public\.esign_my_pending\(\)[\s\S]*?\n\$\$;/.exec(returnFunctionsSql)?.[0]
+  const body = /FUNCTION public\.esign_my_pending\(\)[\s\S]*?\n\$\$;/.exec(myPendingSql.replace(/\r\n/g, '\n'))?.[0]
   assert.ok(body, 'ไม่พบ esign_my_pending ใน migration')
   const returned = new Set([...body.matchAll(/'([a-z_]+)',\s/g)].map(match => match[1]))
   const lib = esignLibSource.replace(/\r\n/g, '\n')

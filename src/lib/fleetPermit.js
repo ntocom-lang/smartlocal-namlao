@@ -1,5 +1,6 @@
-// โหมดขั้นตอนขอใช้รถราย อปท. (P1) — ตัวช่วยฝั่งหน้าจอ คำนวณล้วน ไม่ import supabase (ทดสอบใน Node ได้)
+// โหมดขั้นตอนขอใช้รถราย อปท. (P1 + P3) — ตัวช่วยฝั่งหน้าจอ คำนวณล้วน ไม่ import supabase (ทดสอบใน Node ได้)
 // ฐานข้อมูล: supabase/migrations/20261121100000_fleet_permit_tables.sql, ..100100_fleet_permit_functions.sql
+//           P3 (ข้อ ๑๒ ว.๕ ผู้มีรถประจำตำแหน่ง): 20261123100000_fleet_position_car_columns.sql, ..100100_fleet_position_car_functions.sql
 // สองโหมด (อปท. เลือกที่เมนู "การลงนามเอกสาร" แท็บ "ขั้นตอนขอใช้รถ"):
 //   queue      = แบบเดิม (ค่าเริ่มต้น) คิวรถอนุมัติอัตโนมัติ ออกรถได้ทันที — หน้าจอไม่เปลี่ยนอะไรเลย
 //   regulation = บังคับให้ได้รับอนุญาตก่อนออกรถ ตามข้อ ๑๒ ของระเบียบ มท. ว่าด้วยการใช้และรักษายานพาหนะของ อปท. พ.ศ. ๒๕๖๙
@@ -16,6 +17,9 @@ export const PERMIT_OPEN_STATUSES = ['pending', 'waitlisted', 'approved', 'in_pr
 export const PERMIT_PAPER_MAX_BACKDATE_DAYS = 60
 export const PERMIT_REASON_MIN = 3
 export const PERMIT_REASON_MAX = 500
+// เหตุผลความจำเป็นของผู้มีรถประจำตำแหน่ง (fleet_trips.position_car_reason CHECK 5–500 หลังตัดช่องว่าง) — tests เทียบกับ SQL
+export const POSITION_CAR_REASON_MIN = 5
+export const POSITION_CAR_REASON_MAX = 500
 
 export const PERMIT_MODE_OPTIONS = [
   {
@@ -39,12 +43,16 @@ export const PERMIT_STATE_LABEL = {
   authorized: 'อนุญาตแล้ว',
   returned: 'ถูกส่งคืนผู้ขอ',
   modified: 'แก้คำขอหลังอนุญาต',
+  reason_required: 'ต้องระบุเหตุผล (รถประจำตำแหน่ง)',
+  mayor_required: 'ต้องให้นายกอนุญาต',
 }
 export const PERMIT_STATE_CLR = {
   waiting: '#d97706',
   authorized: '#059669',
   returned: '#dc2626',
   modified: '#dc2626',
+  reason_required: '#dc2626',
+  mayor_required: '#dc2626',
 }
 export const PERMIT_VIA_LABEL = { esign: 'ลงนามออนไลน์', paper: 'ใบกระดาษ' }
 export const PERMIT_BASIS_LABEL = {
@@ -60,6 +68,7 @@ export const PERMIT_FALLBACK_REASON = {
   no_department: 'คำขอนี้ไม่ได้ระบุกอง จึงส่งให้ผู้มีอำนาจอนุญาต',
   requester_is_executive: 'ผู้ขอเป็นผู้บริหารท้องถิ่น จึงส่งให้ผู้มีอำนาจอนุญาตตามแบบ ๓',
   delegation_not_in_effect: 'วันที่ลงนามอยู่ก่อนวันที่คำสั่งมอบหมาย ผอ.สำนัก/กองจึงยังไม่มีอำนาจอนุมัติแทน ต้องให้ผู้มีอำนาจตามแบบ ๓ อนุญาต',
+  position_car_holder: 'ผู้ขอมีรถประจำตำแหน่ง จึงต้องให้นายก (ผู้บริหารท้องถิ่น) อนุญาตตามข้อ ๑๒ วรรคห้า ไม่ใช้การมอบให้ ผอ.สำนัก/กอง',
 }
 export const permitFallbackText = reason => (reason ? (PERMIT_FALLBACK_REASON[reason] ?? '') : '')
 
@@ -83,6 +92,8 @@ export const PERMIT_MESSAGES = {
   not_found: 'ไม่พบบันทึกการอนุญาตนี้ อาจถูกยกเลิกหรือคำขอถูกลบไปแล้ว',
   already_voided: 'บันทึกนี้ถูกยกเลิกไปแล้ว',
   bad_reason: `เหตุผลต้องยาว ${PERMIT_REASON_MIN}–${PERMIT_REASON_MAX} ตัวอักษร`,
+  reason_required: 'ผู้ขอมีรถประจำตำแหน่ง — ต้องกรอกเหตุผลความจำเป็นในคำขอก่อน (แก้คำขอแล้วกรอกช่อง “เหตุผลความจำเป็น”) จึงจะบันทึกการอนุญาตได้',
+  mayor_required: 'ผู้ขอมีรถประจำตำแหน่ง — ผู้มีอำนาจสั่งใช้ในคำขอต้องเป็นนายก (แก้คำขอแล้วเลือกผู้มีอำนาจเป็นนายก) จึงจะบันทึกการอนุญาตได้',
   rate_limited: 'ทำรายการถี่เกินไป กรุณารอสักครู่แล้วลองใหม่',
   error: 'ทำรายการไม่สำเร็จ กรุณาลองใหม่',
 }
@@ -93,6 +104,9 @@ export const PERMIT_TRIP_EXCEPTIONS = {
   FLEET_PERMIT_REQUIRED: 'บันทึกออกรถไม่ได้ — คำขอนี้ยังไม่ได้รับอนุญาตจากผู้มีอำนาจ (หน่วยงานนี้ใช้ขั้นตอนบังคับอนุญาตก่อนออกรถ) '
     + 'ให้ผู้มีอำนาจลงนามออนไลน์ หรือให้ผู้ดูแลระบบยานพาหนะบันทึกการอนุญาตจากใบกระดาษ แล้วรีเฟรชหน้าก่อนลองอีกครั้ง',
   FLEET_PERMIT_APPEND_ONLY: 'บันทึกการอนุญาตแก้ไขหรือลบไม่ได้ ให้ยกเลิกบันทึกพร้อมเหตุผลแทน',
+  FLEET_POSITION_REASON_LOCKED: 'แก้เหตุผลความจำเป็นไม่ได้ — คำขอนี้มีการลงนามหรือบันทึกการอนุญาตแล้ว (ผู้อนุญาตเห็นเหตุผลเดิม) '
+    + 'ให้ถอนลายเซ็นหรือยกเลิกบันทึกการอนุญาตก่อน แล้วขออนุญาตใหม่',
+  FLEET_HOLDER_POSITION_TENANT: 'ตำแหน่งผู้ถือรถประจำตำแหน่งต้องเป็นตำแหน่งของหน่วยงานเดียวกับรถ กรุณาเลือกใหม่',
 }
 
 // ผลจาก RPC → ข้อความ · delegation_not_applicable แนบเหตุจาก fallback_reason ให้ด้วย (ผู้บันทึกจะรู้ว่าต้องแก้อะไร)
@@ -113,8 +127,12 @@ export function permitBlocksDepart(info) {
 }
 
 // ป้ายข้างสถานะคิว — โหมด queue/ไม่มีข้อมูล = null (ไม่แสดงอะไร)
-export function permitBadge(info) {
+// tripStatus: ใบที่ออกรถไปแล้ว (in_progress) ไม่ขึ้นป้าย ว.๕ ย้อนหลัง — ผูกผู้ถือรถทีหลังทำให้ DB คำนวณใบที่ออกไปแล้ว
+// เป็น reason_required/mayor_required ได้ (ตั้งใจให้คำนวณสด) แต่การอนุญาตตอนออกรถผ่านด่านไปแล้ว ป้ายจะทำให้เข้าใจผิด
+const POSITION_CAR_STATES = new Set(['reason_required', 'mayor_required'])
+export function permitBadge(info, tripStatus) {
   if (!info || info.permit_mode !== 'regulation') return null
+  if (tripStatus === 'in_progress' && POSITION_CAR_STATES.has(info.state)) return null
   const label = PERMIT_STATE_LABEL[info.state]
   return label ? { label, color: PERMIT_STATE_CLR[info.state] } : null
 }
@@ -164,6 +182,8 @@ export function permitDepartHint(info) {
   if (!permitBlocksDepart(info)) return ''
   if (info.state === 'returned') return 'ถูกส่งคืนผู้ขอ — ต้องลงนามใหม่และได้รับอนุญาตก่อนออกรถ'
   if (info.state === 'modified') return 'คำขอถูกแก้หลังได้รับอนุญาต — ต้องขออนุญาตใหม่ก่อนออกรถ'
+  if (info.state === 'reason_required') return 'ผู้ขอมีรถประจำตำแหน่ง — ต้องกรอกเหตุผลความจำเป็นก่อน'
+  if (info.state === 'mayor_required') return 'ผู้ขอมีรถประจำตำแหน่ง — ผู้มีอำนาจสั่งใช้ต้องเป็นนายก'
   const approver = info.approver
   const name = String(approver?.name ?? '').trim()
   const who = approver?.registry_id && name ? name : (String(approver?.title ?? '').trim() || 'ผู้มีอำนาจ')
@@ -182,6 +202,13 @@ export function permitWaitingLines(info) {
     const who = String(info.signer_name ?? '').trim()
     lines.push(`มีบันทึกการอนุญาตจากใบกระดาษ${who ? ` (${who})` : ''} แต่คำขอถูกแก้ไขหลังบันทึก การอนุญาตเดิมจึงใช้ไม่ได้ — ให้ผู้มีอำนาจลงนามใบที่แก้แล้ว แล้วบันทึกใหม่`)
   }
+  const car = positionCarText(info.position_car)
+  if (info.state === 'reason_required') {
+    lines.push(`ผู้ขอมีรถประจำตำแหน่ง${car ? ` ${car}` : ''} — ใช้ยานพาหนะส่วนกลางได้เฉพาะจำเป็นเฉพาะคราว ต้องกรอกเหตุผลความจำเป็นในคำขอก่อน (${PERMIT_POSITION_CAR_REF})`)
+  }
+  if (info.state === 'mayor_required') {
+    lines.push(`ผู้ขอมีรถประจำตำแหน่ง${car ? ` ${car}` : ''} — ต้องขออนุญาตจากนายก (ผู้บริหารท้องถิ่น) ให้แก้คำขอเลือกผู้มีอำนาจสั่งใช้เป็นนายก (${PERMIT_POSITION_CAR_REF})`)
+  }
   const approver = info.approver
   if (approver) {
     const text = permitApproverText(approver)
@@ -196,6 +223,45 @@ export function permitWaitingLines(info) {
     if (why) lines.push(why)
   }
   return lines
+}
+
+// ── P3 ข้อ ๑๒ ว.๕ ผู้มีรถประจำตำแหน่ง ─────────────────────────────────────────────────────────────
+export const PERMIT_POSITION_CAR_REF = 'ข้อ ๑๒ วรรคห้า'
+
+// position_car จาก DB = { vehicle_id, license_plate, name, position_name } → "ทะเบียน กข 1 (ตำแหน่ง ปลัด อบต.)"
+export function positionCarText(car) {
+  if (!car || typeof car !== 'object') return ''
+  const plate = String(car.license_plate ?? '').trim()
+  const position = String(car.position_name ?? '').trim()
+  if (!plate && !position) return ''
+  return `${plate ? `ทะเบียน ${plate}` : ''}${position ? `${plate ? ' ' : ''}(ตำแหน่ง ${position})` : ''}`
+}
+
+// แถบเตือนในฟอร์มขอใช้รถ — ใช้เฉพาะ อปท. โหมด regulation ที่ fleet_position_car_check ตอบ position_car มา
+// requesterIsMayor: ผู้ขอเป็นนายก = ทาง สก.๑ (ว.๖) ไม่ต้องล็อกผู้มีอำนาจ แต่ยังต้องกรอกเหตุผล
+export function positionCarNotice(car, { self = true, requesterIsMayor = false } = {}) {
+  const text = positionCarText(car)
+  if (!text) return ''
+  const who = self ? 'ท่านมีรถประจำตำแหน่ง' : 'ผู้ขอมีรถประจำตำแหน่ง'
+  const need = requesterIsMayor
+    ? 'ต้องระบุเหตุผลความจำเป็น'
+    : 'ต้องระบุเหตุผลความจำเป็น และนายก (ผู้บริหารท้องถิ่น) เป็นผู้อนุญาต'
+  return `${who} ${text} — ใช้ยานพาหนะส่วนกลางได้เฉพาะจำเป็นเฉพาะคราว ${need} (${PERMIT_POSITION_CAR_REF})`
+}
+
+// ใบที่ต้องแก้คำขอก่อน (กรอกเหตุผล / เปลี่ยนผู้มีอำนาจเป็นนายก) — บันทึกใบกระดาษไม่ได้จนกว่าจะแก้
+export function permitNeedsRequestFix(info) {
+  return Boolean(info) && POSITION_CAR_STATES.has(info.state)
+}
+
+// ตรวจเหตุผลในฟอร์ม → '' = ผ่าน · ตรงกับ CHECK ใน DB (ตัดช่องว่างหัวท้ายก่อนนับ)
+export function positionCarReasonError(value) {
+  const length = String(value ?? '').trim().length
+  if (length === 0) return 'กรุณากรอกเหตุผลความจำเป็นในการใช้ยานพาหนะส่วนกลาง (ผู้มีรถประจำตำแหน่ง)'
+  if (length < POSITION_CAR_REASON_MIN || length > POSITION_CAR_REASON_MAX) {
+    return `เหตุผลความจำเป็นต้องยาว ${POSITION_CAR_REASON_MIN}–${POSITION_CAR_REASON_MAX} ตัวอักษร`
+  }
+  return ''
 }
 
 // ข้อความตอนได้รับอนุญาตแล้ว — ช่องทาง ใคร เมื่อไร ใครบันทึก (ใบกระดาษ) และคำสั่งมอบหมาย (ถ้าอนุญาตในฐานะผู้ได้รับมอบ)

@@ -10,11 +10,19 @@ import {
   PERMIT_STATE_LABEL, PERMIT_TRIP_EXCEPTIONS, chunkIds, permitApproverText, permitAuthorizedLines, permitBadge, permitBasisOptions,
   permitActingTitle, permitBlocksDepart, permitDepartHint, permitFallbackText, permitInfoIds, permitInfoMap, permitMessage, permitPrintAuthority,
   permitSignedOnRange, permitWaitingLines,
+  PERMIT_POSITION_CAR_REF, POSITION_CAR_REASON_MAX, POSITION_CAR_REASON_MIN, positionCarNotice, positionCarReasonError, positionCarText,
 } from '../src/lib/fleetPermit.js'
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8')
 const tablesSql = await read('../supabase/migrations/20261121100000_fleet_permit_tables.sql')
-const functionsSql = await read('../supabase/migrations/20261121100100_fleet_permit_functions.sql')
+// P3 เขียนทับ approver/state/record_paper_permit และเพิ่มรหัส/เหตุสำรองใหม่ — อ่านต่อกันให้ครอบทั้งสองชุด
+const p1FunctionsSql = await read('../supabase/migrations/20261121100100_fleet_permit_functions.sql')
+const p3ColumnsSql = await read('../supabase/migrations/20261123100000_fleet_position_car_columns.sql')
+const p3FunctionsSql = await read('../supabase/migrations/20261123100100_fleet_position_car_functions.sql')
+// ส่วน 9 ของ P3 เป็นฟังก์ชันชุดลงนามออนไลน์ (esign_my_pending — รหัสของมันแปลที่ esign.js) ตัดออกก่อนไล่รหัสของขั้นตอนขอใช้รถ
+const p3EsignStart = p3FunctionsSql.indexOf('-- ── 9)')
+assert.ok(p3EsignStart > 0, 'ไม่พบหัวส่วน 9 (esign_my_pending) ใน migration P3')
+const functionsSql = [p1FunctionsSql, p3FunctionsSql.slice(0, p3EsignStart)].join('\n')
 const apiSource = await read('../src/lib/fleetPermitApi.js')
 
 let cases = 0
@@ -49,7 +57,7 @@ await test('ทุกเหตุสำรอง (fallback_reason) ที่ DB 
 })
 
 await test('ทุก error ที่ trigger โยน (FLEET_PERMIT_…) มีข้อความไทย', () => {
-  const raised = new Set([...functionsSql.matchAll(/RAISE EXCEPTION\s+'(FLEET_PERMIT_[A-Z_]+):/g)].map(match => match[1]))
+  const raised = new Set([...functionsSql.matchAll(/RAISE EXCEPTION\s+'(FLEET_(?:PERMIT|POSITION|HOLDER)_[A-Z_]+):/g)].map(match => match[1]))
   assert.ok(raised.has('FLEET_PERMIT_REQUIRED') && raised.has('FLEET_PERMIT_APPEND_ONLY'), [...raised].join(','))
   for (const code of raised) {
     assert.ok(PERMIT_TRIP_EXCEPTIONS[code]?.length > 20, `${code} ไม่มีข้อความ`)
@@ -82,7 +90,10 @@ await test('permitBlocksDepart: ปิดเฉพาะ regulation ที่ย
 })
 
 await test('ป้ายสถานะ: ตรงตามเจ้าของสั่ง (รออนุญาต / อนุญาตแล้ว / ถูกส่งคืนผู้ขอ) · queue ไม่มีป้าย', () => {
-  assert.deepEqual(PERMIT_STATE_LABEL, { waiting: 'รออนุญาต', authorized: 'อนุญาตแล้ว', returned: 'ถูกส่งคืนผู้ขอ', modified: 'แก้คำขอหลังอนุญาต' })
+  assert.deepEqual(PERMIT_STATE_LABEL, {
+    waiting: 'รออนุญาต', authorized: 'อนุญาตแล้ว', returned: 'ถูกส่งคืนผู้ขอ', modified: 'แก้คำขอหลังอนุญาต',
+    reason_required: 'ต้องระบุเหตุผล (รถประจำตำแหน่ง)', mayor_required: 'ต้องให้นายกอนุญาต',
+  })
   // modified (แก้เนื้อหาคำขอหลังบันทึกใบกระดาษ) = ยังออกรถไม่ได้ และบอกเหตุชัด
   assert.equal(permitBlocksDepart(regulation({ state: 'modified' })), true)
   assert.match(permitDepartHint(regulation({ state: 'modified' })), /ขออนุญาตใหม่/)
@@ -209,7 +220,8 @@ await test('wrapper เรียก RPC ครบทุก argument ตามช
   const calls = [...apiSource.matchAll(/callPermit\('(\w+)',\s*\{([^}]*)\}/g)]
   const called = calls.map(call => call[1]).sort()
   assert.deepEqual(called, [
-    'fleet_permit_settings_get', 'fleet_permit_settings_set', 'fleet_record_paper_permit', 'fleet_trip_permit_info', 'fleet_void_paper_permit',
+    'fleet_permit_settings_get', 'fleet_permit_settings_set', 'fleet_position_car_check', 'fleet_record_paper_permit', 'fleet_trip_permit_info',
+    'fleet_void_paper_permit',
   ])
   for (const call of calls) {
     const sent = [...call[2].matchAll(/(p_\w+)\s*:/g)].map(match => match[1]).sort()
@@ -231,6 +243,43 @@ await test('ตัวเลขที่หน้าจอยึดจาก DB �
   assert.match(tablesSql, /permit_mode IN \('queue', 'regulation'\)/)
   // API ส่งวันที่ว่างเป็น null ไม่ใช่ '' (date cast error)
   assert.match(apiSource, /const orNull = value => \(String\(value \?\? ''\)\.trim\(\) \|\| null\)/)
+  // P3: ความยาวเหตุผล ว.๕ ตรงกับ CHECK ของคอลัมน์
+  assert.match(p3ColumnsSql, new RegExp(`char_length\\(btrim\\(position_car_reason\\)\\) BETWEEN ${POSITION_CAR_REASON_MIN} AND ${POSITION_CAR_REASON_MAX}`))
+})
+
+await test('P3 ว.๕: ป้าย/ข้อความ reason_required · mayor_required บล็อกออกรถและบอกสิ่งที่ต้องแก้', () => {
+  const car = { vehicle_id: 'v1', license_plate: 'กข 1', name: 'รถปลัด', position_name: 'ปลัด อบต.' }
+  for (const state of ['reason_required', 'mayor_required']) {
+    const info = regulation({ state, position_car: car })
+    assert.equal(permitBlocksDepart(info), true, state)
+    assert.equal(permitBadge(info).label, PERMIT_STATE_LABEL[state])
+    assert.match(permitDepartHint(info), /รถประจำตำแหน่ง/)
+    assert.ok(permitWaitingLines(info).some(line => line.includes('ทะเบียน กข 1') && line.includes(PERMIT_POSITION_CAR_REF)), state)
+  }
+  assert.match(permitDepartHint(regulation({ state: 'mayor_required' })), /นายก/)
+  // fallback position_car_holder: ไม่มีตัวเลือก "ผอ.ที่ได้รับมอบ" (DB คืน kind='authority')
+  const holder = regulation({ approver: { kind: 'authority', role: 'mayor', name: 'นายสมชาย ใจดี', title: 'นายก', registry_id: 'r1', fallback_reason: 'position_car_holder' } })
+  assert.deepEqual(permitBasisOptions(holder).map(option => option.key), ['authority'])
+  assert.ok(permitWaitingLines(holder).includes(PERMIT_FALLBACK_REASON.position_car_holder))
+  assert.match(permitMessage({ ok: false, code: 'reason_required' }), /เหตุผลความจำเป็น/)
+  assert.match(permitMessage({ ok: false, code: 'mayor_required' }), /นายก/)
+})
+
+await test('P3 ว.๕: ข้อความในฟอร์ม + ตรวจเหตุผลตรงกับ DB', () => {
+  const car = { license_plate: 'กข 1', position_name: 'ปลัด อบต.' }
+  assert.equal(positionCarText(car), 'ทะเบียน กข 1 (ตำแหน่ง ปลัด อบต.)')
+  assert.equal(positionCarText(null), '')
+  assert.equal(positionCarNotice(null), '')
+  assert.match(positionCarNotice(car), /^ท่านมีรถประจำตำแหน่ง ทะเบียน กข 1/)
+  assert.match(positionCarNotice(car, { self: false }), /^ผู้ขอมีรถประจำตำแหน่ง/)
+  assert.match(positionCarNotice(car), /นายก/)
+  assert.doesNotMatch(positionCarNotice(car, { requesterIsMayor: true }), /เป็นผู้อนุญาต/)
+  assert.notEqual(positionCarReasonError(''), '')
+  assert.notEqual(positionCarReasonError('    '), '')
+  assert.notEqual(positionCarReasonError('สั้น'), '')
+  assert.equal(positionCarReasonError('  รถเข้าซ่อมตามนัด  '), '')
+  assert.notEqual(positionCarReasonError('ก'.repeat(POSITION_CAR_REASON_MAX + 1)), '')
+  assert.equal(positionCarReasonError('ก'.repeat(POSITION_CAR_REASON_MAX)), '')
 })
 
 await test('ข้อความหน้าจอ/คู่มือไม่รับรองว่า "ถูกต้องตามระเบียบ/กฎหมาย" · โหมดบังคับอ้างข้อ ๑๒ ของระเบียบ มท. ๒๕๖๙ ตามที่เจ้าของกำหนด', async () => {

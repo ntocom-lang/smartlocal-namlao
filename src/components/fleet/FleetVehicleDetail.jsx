@@ -115,6 +115,17 @@ export default function FleetVehicleDetail({
   const { from, to, labelBE, today } = useMemo(() => ({ ...fiscalYearRange(), today: bangkokToday() }), [])
   const vehicleLike = isVehicleAsset(vehicle)
 
+  // ตำแหน่งผู้ถือรถประจำตำแหน่ง (ข้อ 12 วรรคห้า) — ถามเฉพาะรถที่ผูกไว้ (ฐานที่ยังไม่มีคอลัมน์ = undefined ไม่ยิงคำขอ)
+  const [holderName, setHolderName] = useState('')
+  useEffect(() => {
+    const holderId = vehicle?.regulation_category === 'position' ? vehicle?.holder_position_id : null
+    if (!holderId) { queueMicrotask(() => setHolderName('')); return }
+    let active = true
+    supabase.from('positions').select('name').eq('id', holderId).maybeSingle()
+      .then(({ data }) => { if (active) setHolderName(data?.name ?? '') })
+    return () => { active = false }
+  }, [vehicle?.regulation_category, vehicle?.holder_position_id])
+
   useEffect(() => {
     if (!tenant?.id || !vehicle?.id) return
     // setState เรียกผ่าน queueMicrotask กันเข้าเงื่อนไข effect เรียก setState ตรงๆ ในตัว effect
@@ -427,6 +438,9 @@ export default function FleetVehicleDetail({
                   </div>
                   <dl>
                     {vehicleLike && <InfoRow label="ประเภทตามระเบียบ" value={REGULATION_LABEL[vehicle.regulation_category] ?? REGULATION_LABEL.central} />}
+                    {vehicleLike && vehicle.regulation_category === 'position' && (
+                      <InfoRow label="ตำแหน่งผู้ถือรถ" value={vehicle.holder_position_id ? (holderName || '…') : 'ยังไม่ระบุ'} />
+                    )}
                     <InfoRow label="ยี่ห้อ / รุ่น" value={brandModel} />
                     {vehicleLike && <InfoRow label="รุ่นปี" value={vehicle.manufacture_year} />}
                     {vehicleLike && vehicle.fuel_type !== 'electric' && <InfoRow label="ขนาดเครื่องยนต์" value={vehicle.engine_cc ? `${fmt(vehicle.engine_cc)} ซีซี` : ''} />}
