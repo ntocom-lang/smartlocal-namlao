@@ -10,6 +10,7 @@ import {
   PERMIT_STATE_LABEL, PERMIT_TRIP_EXCEPTIONS, chunkIds, permitApproverText, permitAuthorizedLines, permitBadge, permitBasisOptions,
   permitActingTitle, permitBlocksDepart, permitDepartHint, permitFallbackText, permitInfoIds, permitInfoMap, permitMessage, permitPrintAuthority,
   permitSignedOnRange, permitWaitingLines,
+  PERMIT_SK1_NOT_REGISTERED_TEXT, SK1_PRINT_STATUSES, sk1ApplicableFromStatus, sk1PrintAllowed, sk1PrintNeedsCheck,
   PERMIT_POSITION_CAR_REF, POSITION_CAR_REASON_MAX, POSITION_CAR_REASON_MIN, positionCarNotice, positionCarReasonError, positionCarText,
 } from '../src/lib/fleetPermit.js'
 
@@ -406,6 +407,42 @@ await test('P4 mayor_required จากการอนุญาตเดิม�
   assert.equal(permitMessage({ ok: false, code: 'reason_required', non_mayor_permit: true }), PERMIT_MESSAGES.reason_required)
   assert.match(permitDepartHint(regulation({ state: 'mayor_required', non_mayor_permit: true })), /ถอน\/ยกเลิก/)
   assert.match(permitDepartHint(regulation({ state: 'mayor_required' })), /ผู้มีอำนาจสั่งใช้ต้องเป็นนายก/)
+})
+
+await test('ปุ่ม สก. ๑: ใบ queue เกณฑ์ข้อความเดิม · ใบ regulation ต้องฐานตอบ applicable = true', () => {
+  const mayor = { requester_position: 'นายกเทศมนตรีตำบลน้ำเลา', status: 'approved' }
+  const notMayor = { requester_position: 'ปลัดเทศบาล', status: 'approved' }
+  assert.deepEqual(SK1_PRINT_STATUSES, ['approved', 'in_progress', 'completed'])
+  // queue: ไม่สนผลจากฐาน (ไม่ถามด้วย)
+  assert.equal(sk1PrintAllowed({ trip: { ...mayor, permit_mode: 'queue' } }), true)
+  assert.equal(sk1PrintAllowed({ trip: mayor, sk1Applicable: false }), true, 'ไม่มี permit_mode = queue เดิม')
+  assert.equal(sk1PrintAllowed({ trip: { ...notMayor, permit_mode: 'queue' } }), false)
+  assert.equal(sk1PrintAllowed({ trip: { ...mayor, permit_mode: 'queue', status: 'pending' } }), false)
+  assert.equal(sk1PrintNeedsCheck({ ...mayor, permit_mode: 'queue' }), false, 'queue ต้องไม่ยิง RPC')
+  assert.equal(sk1PrintNeedsCheck(mayor), false)
+  // regulation: ล้มแบบปิดเมื่อไม่ใช่ true
+  const reg = { ...mayor, permit_mode: 'regulation' }
+  assert.equal(sk1PrintAllowed({ trip: reg, sk1Applicable: true }), true)
+  assert.equal(sk1PrintAllowed({ trip: reg, sk1Applicable: false }), false)
+  assert.equal(sk1PrintAllowed({ trip: reg, sk1Applicable: null }), false)
+  assert.equal(sk1PrintAllowed({ trip: reg }), false)
+  assert.equal(sk1PrintAllowed({ trip: { ...reg, status: 'pending' }, sk1Applicable: true }), false)
+  assert.equal(sk1PrintAllowed({ trip: { ...reg, requester_position: 'ปลัดเทศบาล' }, sk1Applicable: true }), false)
+  // ต้องถามฐานเฉพาะ regulation + ตำแหน่งนายก + สถานะถึงขั้นใช้รถ
+  assert.equal(sk1PrintNeedsCheck(reg), true)
+  assert.equal(sk1PrintNeedsCheck({ ...reg, status: 'pending' }), false)
+  assert.equal(sk1PrintNeedsCheck({ ...reg, requester_position: 'ปลัดเทศบาล' }), false)
+  assert.match(PERMIT_SK1_NOT_REGISTERED_TEXT, /ทะเบียนผู้ลงนาม/)
+})
+
+await test('sk1ApplicableFromStatus: อ่านช่อง sk1 จากผล esign_trip_status — ไม่มีข้อมูล = null ไม่ใช่ false', () => {
+  assert.equal(sk1ApplicableFromStatus(null), null)
+  assert.equal(sk1ApplicableFromStatus(undefined), null)
+  assert.equal(sk1ApplicableFromStatus({ found: false }), null)
+  assert.equal(sk1ApplicableFromStatus({ found: true }), null)
+  assert.equal(sk1ApplicableFromStatus({ found: true, slots: [{ slot: 'requester', applicable: true }] }), null)
+  assert.equal(sk1ApplicableFromStatus({ found: true, slots: [{ slot: 'requester', applicable: true }, { slot: 'sk1', applicable: true }] }), true)
+  assert.equal(sk1ApplicableFromStatus({ found: true, slots: [{ slot: 'sk1', applicable: false }] }), false)
 })
 
 console.log(`\nผ่านทั้งหมด ${cases} กรณี`)

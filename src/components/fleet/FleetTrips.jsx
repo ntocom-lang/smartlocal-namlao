@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { assetIdentifier, assetOptionLabel } from '../../lib/fleetAssets'
 import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
-import { buildFleetSk1Html, buildFleetTripRequestHtml, isMayorPosition, resolveDeptHead, resolveOrderAuthority, tripRequesterIsMayor } from '../../lib/fleetTripPrint'
+import { buildFleetSk1Html, buildFleetTripRequestHtml, isMayorPosition, resolveDeptHead, resolveOrderAuthority } from '../../lib/fleetTripPrint'
 import { FLEET_TRIP_KM_CONFIRM, checkTripOdometer, isImplausibleTripDistance } from '../../lib/fleetOdometer'
 import {
   CUSTOM_ROLE, SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, defaultVehicleAuthority,
@@ -21,7 +21,7 @@ import { useHomeRpc } from '../../lib/staffHomeData'
 import { getTripEsignStamps, getTripEsignStatus } from '../../lib/esignApi'
 import {
   PERMIT_TRIP_EXCEPTIONS, permitAuthorizedLines, permitBadge, permitBlocksDepart, permitDepartHint, permitInfoIds, permitInfoMap,
-  permitPrintAuthority, permitWaitingLines, PERMIT_POSITION_CAR_REF, POSITION_CAR_REASON_MAX, permitNeedsRequestFix, positionCarNotice, positionCarReasonError,
+  permitPrintAuthority, permitWaitingLines, PERMIT_POSITION_CAR_REF, PERMIT_SK1_NOT_REGISTERED_TEXT, sk1ApplicableFromStatus, sk1PrintAllowed, sk1PrintNeedsCheck, POSITION_CAR_REASON_MAX, permitNeedsRequestFix, positionCarNotice, positionCarReasonError,
 } from '../../lib/fleetPermit'
 import { checkFleetPositionCar, getFleetTripPermitInfo, getFleetTripPermitInfoBatches } from '../../lib/fleetPermitApi'
 import { esignPrintData, printSignatureBox } from '../../lib/esignPrint'
@@ -719,6 +719,21 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (item) setPermitMap(current => new Map(current).set(tripId, item))
   }
 
+  // ปุ่มพิมพ์แบบ สก. ๑ ของใบโหมดบังคับอนุญาต: ถามฐานว่าช่อง sk1 ใช้กับใบนี้ไหม (esign_trip_status → sk1.applicable)
+  // เกณฑ์เดียวกับ fleet_trip_sk1_applies (migration 20261124100000) — ผู้ขอต้องเป็นนายกในทะเบียนผู้ลงนาม ไม่ใช่แค่พิมพ์ตำแหน่งเอง
+  // ใบ queue / ใบที่ไม่เข้าเงื่อนไขเบื้องต้น = ไม่ยิงเลย (sk1PrintNeedsCheck เป็น false) ⇒ ใบ queue ทำงานเหมือนเดิมทุกไบต์
+  // ถามไม่ได้ = null = ไม่ขึ้นปุ่ม (ล้มแบบปิด; ด่านซ้ำตอนกดพิมพ์อยู่ใน printSk1)
+  const [sk1Check, setSk1Check] = useState(null) // null | { tripId, applicable: true|false|null }
+  const sk1CheckTripId = modal === 'detail' && selTrip && sk1PrintNeedsCheck(selTrip) ? selTrip.id : null
+  useEffect(() => {
+    if (!sk1CheckTripId) return undefined
+    let alive = true
+    getTripEsignStatus(sk1CheckTripId)
+      .then(status => { if (alive) setSk1Check({ tripId: sk1CheckTripId, applicable: sk1ApplicableFromStatus(status) }) })
+      .catch(() => { if (alive) setSk1Check({ tripId: sk1CheckTripId, applicable: null }) })
+    return () => { alive = false }
+  }, [sk1CheckTripId])
+
   // ข้อ ๑๒ ว.๕ — ผู้ขอในฟอร์มขอใช้รถมีรถประจำตำแหน่งไหม (ถามใหม่เมื่อเปลี่ยนผู้ขอ/รถ)
   // ได้ position_car เฉพาะ อปท. โหมดบังคับอนุญาต · โหมด queue / ฐานที่ยังไม่มีฟังก์ชัน / ถามไม่ได้ = null = ฟอร์มเหมือนเดิมทุกอย่าง
   // ด่านจริงอยู่ที่ DB (fleet_trip_permit_state ⇒ reason_required/mayor_required บล็อกออกรถ) หน้าจอแค่บอกล่วงหน้า
@@ -980,9 +995,19 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   // แบบ สก. ๑ — นายกขอใช้รถ ใบนี้ให้นายกรับรองการใช้ของตัวเอง พิมพ์คู่กับแบบ 3 (ไม่ได้แทน)
   // ข้อมูลทั้งใบมาจากคำขอใบเดียวกัน ไม่มีช่องกรอกเพิ่ม
   function printSk1(t) {
-    openPrintWindow(t.esign_slots
+    const build = () => (t.esign_slots
       ? loadEsignForPrint(t).then(esign => buildFleetSk1Html({ trip: t, tenant, esign }))
       : buildFleetSk1Html({ trip: t, tenant }))
+    // ใบโหมดบังคับอนุญาต: ตรวจซ้ำตอนกดกับฐาน (เกณฑ์เดียวกับปุ่ม) กันกรณีทะเบียนเปลี่ยนหลังเปิดหน้านี้ — ถามไม่ได้/ไม่เข้าเงื่อนไข = ไม่พิมพ์
+    // ส่ง promise เข้า openPrintWindow โดยไม่ await ก่อน เพื่อให้ window.open เกิดทันทีตอนกด (กัน pop-up ถูกบล็อก) · ใบ queue = โค้ดเดิม
+    if (t.permit_mode === 'regulation') {
+      openPrintWindow(getTripEsignStatus(t.id).then(status => {
+        if (sk1ApplicableFromStatus(status) !== true) throw new Error(PERMIT_SK1_NOT_REGISTERED_TEXT)
+        return build()
+      }))
+      return
+    }
+    openPrintWindow(build())
   }
 
   // source = สตริง HTML หรือ promise ของมัน (ทริปโหมดออนไลน์) · เปิดหน้าต่างก่อนเสมอ — window.open หลัง await โดนบล็อกเป็น pop-up
@@ -2491,7 +2516,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         // แบบ 5 (ข้อ 18) เกิดได้เฉพาะตอนรถออกไปแล้ว · ข้อมูลคู่กรณี/พยาน = ผู้ดูแลยานพาหนะเท่านั้น (RLS ซ้ำอีกชั้น)
         const canReportIncident = isAdmin && ['in_progress', 'completed'].includes(t.status)
         // แบบ สก. ๑ เฉพาะคำขอของนายกที่ได้รถแล้ว — ถูกปฏิเสธ/ยกเลิก/ยังรอ = ไม่มีการใช้รถให้รับรอง
-        const canPrintSk1 = tripRequesterIsMayor(t) && ['approved', 'in_progress', 'completed'].includes(t.status)
+        // ใบ queue = เกณฑ์ข้อความเดิม · ใบ regulation = ต้องเป็นนายกในทะเบียนผู้ลงนามตามที่ฐานตอบ (sk1PrintAllowed) ไม่ใช่พิมพ์ตำแหน่งเอง
+        const sk1Applicable = sk1Check?.tripId === t.id ? sk1Check.applicable : null
+        const canPrintSk1 = sk1PrintAllowed({ trip: t, sk1Applicable })
+        const sk1NotRegistered = sk1PrintNeedsCheck(t) && sk1Applicable === false
         // โหมดตามระเบียบ: ส่วน "การอนุญาตใช้รถ" — โผล่เฉพาะใบ regulation (ใบ queue ไม่มีอะไรเปลี่ยน)
         const permit = permitOf(t)
         const permitTag = permitBadge(permit, t.status)
@@ -2607,6 +2635,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                   className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50">
                   <Printer size={15} /> พิมพ์ใบขอใช้รถ (แบบ 3)
                 </button>
+                {sk1NotRegistered && (
+                  <p className="text-[11px] font-semibold leading-4 text-amber-700 sm:col-span-2" data-sk1-not-registered>{PERMIT_SK1_NOT_REGISTERED_TEXT}</p>
+                )}
                 {canPrintSk1 && (
                   <button onClick={() => printSk1(t)}
                     title="นายกเป็นผู้ขอใช้รถ — พิมพ์ให้นายกลงนามรับรองการใช้รถ คู่กับแบบ 3"
