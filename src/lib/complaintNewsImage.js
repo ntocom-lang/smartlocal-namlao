@@ -520,7 +520,7 @@ function bokehSvg(clipId, top, width, height, flip) {
 function execAuraSvg(defs, cx, px, w, h, headerH, scale) {
   const top = EXEC_PHOTO_TOP
   const cy = top + h * 0.36 // ราวศีรษะ (รูปยืนชิดก้นกล่อง หน้าอยู่ราวหนึ่งในสามบน)
-  const haloR = w * 0.6
+  const haloR = w * 0.42 // เจ้าของสั่งให้วงแสงเล็กลง 2569-11-12 (เดิม 0.6) — ฟุ้งแค่รอบศีรษะ-ไหล่
   defs.push(`<radialGradient id="news-exec-halo" gradientUnits="userSpaceOnUse" cx="${num(cx)}" cy="${num(cy)}" r="${num(haloR)}"><stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/><stop offset="0.45" stop-color="#ffffff" stop-opacity="0.45"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>`
     + `<mask id="news-exec-mask" mask-type="alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="${IMAGE_WIDTH}" height="${num(headerH)}"><use href="#news-exec-img"/></mask>`
     + `<g id="news-exec-sil"><rect x="${num(px - 24)}" y="${top - 24}" width="${num(w + 48)}" height="${num(h + 48)}" fill="currentColor" mask="url(#news-exec-mask)"/></g>`)
