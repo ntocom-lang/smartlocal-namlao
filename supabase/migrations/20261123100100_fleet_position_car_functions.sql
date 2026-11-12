@@ -13,6 +13,8 @@
 --       คำนวณเป็น reason_required ⇒ ออกรถไม่ได้ / บันทึกใบกระดาษไม่ได้ จนกว่าจะกรอก
 --   (4) ไม่มอบ ผอ.กอง และผู้มีอำนาจต้องเป็นนายก: ใบที่เลือกผู้มีอำนาจคนอื่น = mayor_required
 --       ผู้ขอเป็นนายกเอง = ทาง สก.๑ (ข้อ ๑๒ ว.๖) เหมือนเดิม แต่ต้องกรอกเหตุผลด้วย (เจ้าของระบบเลือก 2026-11-12)
+--       "เป็นนายก" = ตำแหน่งขึ้นต้นนายก **และ** เป็นบัญชีของแถวนายกในทะเบียนผู้ลงนาม (ส่วน 1b) — ใช้ตัดสิน ว.๕ และ สก.๑
+--       ส่วนการมอบ ผอ.กอง (ว.๔) ยังข้ามใบของนายกด้วยเกณฑ์ตำแหน่งเดิมของ P2 (ส่วน 2) ไม่ให้ ผอ. อนุญาตใบของนายก
 --   (5) ไม่แก้ esign_fleet_trip_payload (แก้แล้ว hash ของลายเซ็นเก่าทุกใบไม่ตรง) — เหตุผลล็อกด้วย trigger แยกแทน
 --   (6) เขียนทับ approver (รุ่น P2) + state/record (รุ่น P1) ทั้งตัว (NOTES ข้อ 5) ด่านหัวไฟล์เทียบ md5 กับรุ่นตั้งต้นก่อน ไม่ตรง = หยุด
 --   (7) esign_my_pending (รายการ "รอลงนามของฉัน"/ห้องผู้บริหาร) เพิ่มคีย์ position_car_reason ให้ผู้อนุญาตเห็นเหตุผล
@@ -114,6 +116,29 @@ AS $$
 $$;
 REVOKE ALL ON FUNCTION public.fleet_trip_position_car(public.fleet_trips) FROM PUBLIC, anon, authenticated;
 
+-- ── 1b) ผู้ขอเป็นนายก "ตัวจริง" ────────────────────────────────────────────────────────────────
+-- fleet_permit_requester_is_mayor (P1) ดูแค่ข้อความตำแหน่งที่ผู้ขอพิมพ์เอง (requester_position แก้ได้ระหว่าง pending)
+-- ⇒ ใครพิมพ์ "นายก…" ก็ข้าม ว.๕ และอนุญาตใบตัวเองผ่าน สก.๑ ได้ (migration-reviewer รอบ 4 ข้อ 1)
+-- ต้องเป็นบัญชีเดียวกับแถวนายกในทะเบียนผู้ลงนามกลาง ณ วันนี้ด้วย — นายกที่ลงทะเบียนเป็นชื่อพิมพ์เอง (ไม่ผูกบัญชี)
+-- จึงใช้ทาง สก.๑ ออนไลน์ไม่ได้ (ช่องผู้มีอำนาจออนไลน์ก็ไม่ได้ — signatory_not_linked) ⇒ เซ็นใบกระดาษแล้วผู้ดูแลรถบันทึกการอนุญาต
+-- (ใบ ว.๕ ต้องตั้งผู้มีอำนาจในใบเป็นนายกด้วย ไม่งั้นติด mayor_required)
+-- หรือแอดมินผูกบัญชีนายกในทะเบียน (เจ้าของระบบเลือกแก้ใน P3 2026-11-12)
+-- หน้าลงนาม (esign_sign_fleet_trip) ยังให้ผู้พิมพ์ตำแหน่งปลอมลง สก.๑ ได้ แต่ลายเซ็นนั้นไม่นับ = ใบค้าง waiting ไม่ใช่ authorized
+CREATE OR REPLACE FUNCTION public.fleet_permit_requester_is_registered_mayor(p_trip public.fleet_trips)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+  SELECT public.fleet_permit_requester_is_mayor(p_trip)
+     AND COALESCE(
+           (public.fleet_permit_registry(p_trip.municipality_id, 'mayor', NULL, NULL, public.fleet_permit_today())).profile_id
+             = COALESCE(p_trip.requested_by, p_trip.created_by),
+           false)
+$$;
+REVOKE ALL ON FUNCTION public.fleet_permit_requester_is_registered_mayor(public.fleet_trips) FROM PUBLIC, anon, authenticated;
+
 -- ── 2) เขียนทับ P2: ผู้อนุญาตที่ควรเป็นของใบ (ตั้งต้นจาก 20261122100000_fleet_permit_delegated_esign.sql) ─────────────────────────────────────────────────────
 -- เพิ่มจาก P2: ผู้มีรถประจำตำแหน่ง (ไม่ใช่นายกเอง) ⇒ ไม่ใช้การมอบ ผอ.กอง และผู้มีอำนาจ = นายกเสมอ
 --   fallback_reason = 'position_car_holder'
@@ -134,7 +159,7 @@ DECLARE
   v_role      text := COALESCE(p_trip.order_authority_role, 'mayor');
   v_label     text;
   v_signer    jsonb;
-  v_is_mayor  boolean := public.fleet_permit_requester_is_mayor(p_trip);
+  v_is_mayor  boolean := public.fleet_permit_requester_is_registered_mayor(p_trip);
   v_pc        jsonb := public.fleet_trip_position_car(p_trip);
 BEGIN
   SELECT * INTO v_set FROM public.fleet_permit_settings s WHERE s.municipality_id = p_trip.municipality_id;
@@ -142,11 +167,13 @@ BEGIN
   IF FOUND AND v_set.delegate_dept_heads THEN
     -- กองที่ผู้ขอสังกัดจริง (แอดมินเป็นผู้ตั้ง) — ไม่รับกองที่ผู้ขอเลือกเองในใบ
     SELECT pr.department_id INTO v_dept FROM public.profiles pr WHERE pr.id = v_requester;
-    IF v_is_mayor THEN
-      v_fallback := 'requester_is_executive';
-    ELSIF v_pc IS NOT NULL THEN
+    IF v_pc IS NOT NULL AND NOT v_is_mayor THEN
       -- ข้อ ๑๒ ว.๕ ต้องขออนุมัติจากผู้บริหารท้องถิ่น — การมอบตาม ว.๔ ใช้กับใบนี้ไม่ได้
       v_fallback := 'position_car_holder';
+    ELSIF public.fleet_permit_requester_is_mayor(p_trip) THEN
+      -- เกณฑ์เดียวกับ P2 (ตำแหน่งขึ้นต้นนายก) — ไม่ใช้เกณฑ์ทะเบียนตรงนี้ ไม่งั้นนายกที่ยังไม่ผูกทะเบียน
+      -- แต่โปรไฟล์มีกอง จะได้ ผอ.กองนั้นอนุญาตแทนนายก (ถอยจาก P2) · ฝั่ง ว.๕ ยังใช้เกณฑ์ทะเบียน (เข้มไว้ก่อน)
+      v_fallback := 'requester_is_executive';
     ELSIF v_set.delegation_date IS NOT NULL AND v_at < v_set.delegation_date THEN
       -- ลงนามก่อนวันที่คำสั่งมอบหมาย = ตอนนั้น ผอ. ยังไม่มีอำนาจอนุมัติแทน
       v_fallback := 'delegation_not_in_effect';
@@ -221,11 +248,35 @@ DECLARE
   v_extra jsonb;
   v_held  jsonb := '{}'::jsonb;
   v_need_mayor boolean := false;
+  v_req_mayor  boolean;
+  v_sk1_id     uuid;
 BEGIN
   IF p_trip.permit_mode IS DISTINCT FROM 'regulation' THEN
     RETURN jsonb_build_object('state', 'not_required');
   END IF;
 
+  -- สก.๑ ที่นับได้: ผู้ขอลงเอง และ ณ วันที่ลงนาม ผู้ขอคือนายกในทะเบียน (เกณฑ์เดียวกับใบกระดาษที่ใช้ทะเบียน ณ p_signed_on)
+  -- ทะเบียนเปลี่ยนนายกทีหลัง (รองนายกปฏิบัติหน้าที่แทน/ครบวาระ) ⇒ สก.๑ ที่ลงไว้ยังนับ (reviewer รอบ 5 ข้อ A)
+  -- ทะเบียนเทียบเป็นรายวัน ⇒ ต้องตัดแถวที่ถูกปิด "ก่อนเวลาลงนาม" ในวันเดียวกันด้วย (ลบนายก 09:00 แล้วลง สก.๑ 14:00
+  -- ต้องไม่นับในวันถัดไป — reviewer รอบ 6 ข้อ 1) · กติกาเดียวกับ pickSignatory({at}) ใน documentSignatories.js
+  -- เปลี่ยนคนในวันเดียวกันหลังลงนาม ⇒ registry เลือกแถวใหม่ (effective_from DESC) ⇒ สก.๑ ไม่นับ ต้องให้คนใหม่อนุญาต (ล้มแบบปิด)
+  SELECT s.id INTO v_sk1_id
+  FROM public.esign_signatures s
+  CROSS JOIN LATERAL public.fleet_permit_registry(
+    p_trip.municipality_id, 'mayor', NULL, NULL, (timezone('Asia/Bangkok', s.signed_at))::date
+  ) AS reg
+  WHERE s.doc_type = 'fleet_trip_request' AND s.doc_id = p_trip.id AND s.slot = 'sk1'
+    AND s.signer_id = COALESCE(p_trip.requested_by, p_trip.created_by)
+    AND NOT EXISTS (SELECT 1 FROM public.esign_revocations r WHERE r.signature_id = s.id)
+    AND reg.profile_id = s.signer_id
+    AND (reg.is_active OR reg.updated_at > s.signed_at)
+  ORDER BY s.signed_at DESC
+  LIMIT 1;
+  IF NOT public.fleet_permit_requester_is_mayor(p_trip) THEN
+    v_sk1_id := NULL;
+  END IF;
+  -- คำนวณครั้งเดียว ใช้ทั้งด่าน ว.๕ และการนับ สก.๑ ด้านล่าง (แก้จุดเดียวไม่พอ — reviewer รอบ 4 ข้อ 1)
+  v_req_mayor := public.fleet_permit_requester_is_registered_mayor(p_trip) OR v_sk1_id IS NOT NULL;
   v_pc := public.fleet_trip_position_car(p_trip);
   v_extra := jsonb_build_object('position_car', v_pc);
   IF v_pc IS NOT NULL THEN
@@ -244,7 +295,7 @@ BEGIN
     IF NULLIF(btrim(COALESCE(p_trip.position_car_reason, '')), '') IS NULL THEN
       RETURN jsonb_build_object('state', 'reason_required') || v_held || v_extra;
     END IF;
-    v_need_mayor := NOT public.fleet_permit_requester_is_mayor(p_trip);
+    v_need_mayor := NOT v_req_mayor;
     IF v_need_mayor AND COALESCE(p_trip.order_authority_role, 'mayor') <> 'mayor' THEN
       RETURN jsonb_build_object('state', 'mayor_required') || v_held || v_extra;
     END IF;
@@ -276,7 +327,7 @@ BEGIN
   WHERE s.doc_type = 'fleet_trip_request' AND s.doc_id = p_trip.id
     AND (
       (s.slot = 'authority' AND s.decision = 'approve')
-      OR (s.slot = 'sk1' AND public.fleet_permit_requester_is_mayor(p_trip))
+      OR (s.slot = 'sk1' AND s.id = v_sk1_id)
     )
     AND NOT EXISTS (SELECT 1 FROM public.esign_revocations r WHERE r.signature_id = s.id)
   ORDER BY s.signed_at DESC
@@ -423,7 +474,7 @@ GRANT EXECUTE ON FUNCTION public.fleet_record_paper_permit(uuid, text, date) TO 
 
 -- ── 5) trigger: เหตุผล ว.๕ ────────────────────────────────────────────────────────────────────
 -- ช่องว่าง/เว้นวรรคล้วน = NULL (ให้ CHECK 5–500 ตัวอักษรตัดสินเฉพาะข้อความจริง)
--- ล็อกหลังมีลายเซ็นที่ยังไม่ถูกถอน หรือมีบันทึกใบกระดาษที่ยังไม่ถูกยกเลิก: ผู้อนุญาตเห็นเหตุผลชุดไหน ต้องคงชุดนั้น
+-- ล็อกหลังมีลายเซ็นช่องอื่นที่ไม่ใช่ผู้ขอ (ผอ./ผู้มีอำนาจ/สก.๑) ที่ยังไม่ถูกถอน หรือมีบันทึกใบกระดาษที่ยังไม่ถูกยกเลิก: ผู้อนุญาตเห็นเหตุผลชุดไหน ต้องคงชุดนั้น
 -- (เหตุผลไม่อยู่ใน payload ของลายเซ็น/ใบกระดาษ จึงต้องล็อกที่นี่ — ดูกติกา (5) หัวไฟล์)
 -- แก้หลังล็อก = ถอนลายเซ็น / ยกเลิกบันทึกใบกระดาษก่อน แล้วขออนุญาตใหม่
 CREATE OR REPLACE FUNCTION public.fleet_trip_position_reason_guard()
@@ -432,17 +483,26 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
+DECLARE
+  v_old text;
 BEGIN
   NEW.position_car_reason := NULLIF(btrim(COALESCE(NEW.position_car_reason, '')), '');
   IF TG_OP = 'INSERT' THEN
     RETURN NEW;
   END IF;
-  IF NEW.position_car_reason IS NOT DISTINCT FROM OLD.position_car_reason THEN
+  -- เทียบ OLD รูปเดียวกับ NEW: ค่าเก่าที่ไม่ได้ trim (เขียนก่อน trigger นี้มี) ต้องไม่ถูกนับว่า "เปลี่ยน" ทุก UPDATE
+  -- ไม่งั้นใบที่ล็อกแล้วเปลี่ยนสถานะ/ออกรถ/รับรถคืนไม่ได้เลย (reviewer รอบ 8 ข้อ A)
+  v_old := NULLIF(btrim(COALESCE(OLD.position_car_reason, '')), '');
+  IF NEW.position_car_reason IS NOT DISTINCT FROM v_old THEN
     RETURN NEW;
   END IF;
   IF EXISTS (
        SELECT 1 FROM public.esign_signatures s
        WHERE s.doc_type = 'fleet_trip_request' AND s.doc_id = OLD.id
+         -- ลายเซ็นช่องผู้ขอยอมให้ "กรอกครั้งแรก" (ว่าง → มีค่า) ได้อย่างเดียว (ใบจาก fleet_override_booking ลงนามก่อนกรอกได้)
+         -- กรอกแล้วแก้ซ้ำต้องถอนลายเซ็นผู้ขอก่อน: ลำดับลงนามบังคับผู้ขอก่อน ผอ./นายก ⇒ ลายเซ็นผู้ขอคือตัวล็อกชุดเหตุผล
+         -- ที่ผู้อนุญาตเปิดดู ปลดออกแล้วผู้ขอเปลี่ยนเหตุผลระหว่างนายกเปิดหน้าลงนามได้ (reviewer รอบ 7 ข้อ 1)
+         AND (s.slot <> 'requester' OR v_old IS NOT NULL)
          AND NOT EXISTS (SELECT 1 FROM public.esign_revocations r WHERE r.signature_id = s.id)
      )
      OR EXISTS (
