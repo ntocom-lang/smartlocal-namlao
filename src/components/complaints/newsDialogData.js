@@ -3,7 +3,7 @@ import { supabase, supabaseUrl } from '../../lib/supabase'
 import { fetchImageAsDataUrl } from '../../lib/driveStorage'
 import { loadNewsFont } from '../../lib/newsFont'
 import { departmentColorKeyByName, newsThemeFor } from '../../lib/departmentColors'
-import { NEWS_EXEC_PHOTO_SIDE, cutoutPlainBackground, svgToPngFile, transparentPhotoBox, withNewsPhotoUrl } from '../../lib/complaintNewsImage'
+import { NEWS_EXEC_PHOTO_SIDE, cutoutPlainBackground, execRimPlan, svgToPngFile, transparentPhotoBox, withNewsPhotoUrl } from '../../lib/complaintNewsImage'
 
 // ตัวโหลดรูป + hook ที่กล่องภาพข่าวรายเรื่อง (ComplaintNewsDialog) กับกล่องภาพข่าวรวม (ComplaintNewsBatchDialog) ใช้ร่วมกัน
 // แยกจากไฟล์คอมโพเนนต์ (newsDialogParts.jsx) เพราะ fast-refresh ต้องการให้ไฟล์คอมโพเนนต์ export แต่คอมโพเนนต์
@@ -55,6 +55,45 @@ function roundedRectPath(context, x, y, w, h, r) {
 }
 
 /**
+ * ขอบเรืองขาวตามรูปทรงคน (เจ้าของสั่ง 2569-11-12 #711) วาดลงในรูปเลย — เดิมทำด้วย SVG mask + <use> ซึ่ง iPhone Safari วาดไม่ตรง Chrome
+ * canvas 2D (drawImage + source-in + globalAlpha) วาดเหมือนกันทุกเบราว์เซอร์ ไม่ใช้ ctx.filter (Safari รุ่นเก่าไม่รองรับ)
+ * ทำ: ลอกเงาตัวคนเลื่อนไปรอบตัว (dirs ทิศ) → ระบายขาวทับเฉพาะส่วนที่มีตัว (source-in) → วางขอบนอกจาง + ขอบในเข้ม → วางรูปจริงทับ
+ * เว้นที่บน/ซ้าย/ขวาให้ขอบเรือง ไม่เว้นล่าง (รูปยืนชิดก้นกล่อง) · รูปที่ตัดพื้นไม่ได้และมีกรอบ = ได้กรอบเรืองมุมมนแทน (เหมือน #711)
+ * พัง = คืน null ผู้เรียกใช้รูปไม่มีขอบเรือง ภาพข่าวยังออกได้
+ */
+function withWhiteRim(source) {
+  const plan = execRimPlan(source.width, source.height)
+  if (!plan) return null
+  const { pad, dirs, rings } = plan
+  const rim = document.createElement('canvas')
+  rim.width = source.width + pad * 2
+  rim.height = source.height + pad
+  const rimContext = rim.getContext('2d')
+  const layer = document.createElement('canvas')
+  layer.width = rim.width
+  layer.height = rim.height
+  const layerContext = layer.getContext('2d')
+  if (!rimContext || !layerContext) return null
+  for (const { radius, alpha } of rings) {
+    layerContext.globalCompositeOperation = 'source-over'
+    layerContext.clearRect(0, 0, layer.width, layer.height)
+    for (let i = 0; i < dirs; i += 1) {
+      const angle = (i / dirs) * Math.PI * 2
+      layerContext.drawImage(source, pad + Math.cos(angle) * radius, pad + Math.sin(angle) * radius)
+    }
+    layerContext.globalCompositeOperation = 'source-in'
+    layerContext.fillStyle = '#ffffff'
+    layerContext.fillRect(0, 0, layer.width, layer.height)
+    // ความทึบใส่ตอนวางทั้งชั้น (ไม่ใช่รายสำเนา) — สำเนาที่ซ้อนกันไม่ทึบสะสม ขอบจึงเนียนเท่ากันทุกด้าน
+    rimContext.globalAlpha = alpha
+    rimContext.drawImage(layer, 0, 0)
+  }
+  rimContext.globalAlpha = 1
+  rimContext.drawImage(source, pad, pad)
+  return rim
+}
+
+/**
  * รูปนายกสำหรับภาพข่าว (เจ้าของสั่ง 2569-11-11 ให้ตัดพื้นหลังขาวออกแบบภาพข่าวต้นฉบับ):
  *  - PNG/WebP ที่มีพื้นโปร่งใสมาเอง (transparentPhotoBox) → ใช้ตามไฟล์ แค่ครอปชิดส่วนที่มองเห็น ไม่ตัดพื้นหลังซ้ำ
  *    (ผู้อัปโหลดตัดภาพมาดีกว่ากติกาเทสีของเรา ตัดซ้ำมีแต่เสี่ยงกินผม/ขอบเสื้อ)
@@ -96,7 +135,7 @@ export async function prepareExecutivePhoto(dataUrl) {
       outContext.clip()
       outContext.drawImage(work, FRAME_BORDER, FRAME_BORDER)
     }
-    return out.toDataURL('image/png')
+    return (withWhiteRim(out) || out).toDataURL('image/png')
   } catch {
     return dataUrl
   }
