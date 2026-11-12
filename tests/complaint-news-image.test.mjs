@@ -183,7 +183,8 @@ await test('ความสูงขั้นต่ำ 1350 · ข้อคว�
 // ── บล็อกผู้บริหารมุมขวาแถบหัว (รูป + ป้ายชื่อ/ตำแหน่ง) ──
 const MAYOR = { name: 'นายสมศักดิ์ ใจดี', title: 'นายกเทศมนตรีตำบลสาธิต' }
 // ข้อความหัว: ขาว (หัวข้อ) · ทอง (ชื่อ อปท.) · สีเข้มของธีมบนป้ายทอง (บรรทัดนำ) — อ่านทุกสี แล้วให้เทสต์กรองตามตำแหน่ง x เอง
-const headerTexts = svg => [...svg.matchAll(/<text x="([\d.]+)" y="[\d.]+" font-size="(\d+)" font-weight="(\d+)" fill="(#[0-9a-f]{6})"[^>]*>([^<]*)<\/text>/g)]
+// ชื่อ อปท. เติมด้วยไล่สีทอง (url(#news-tenant-gold)) และมีข้อความเงา (dx/dy) ซ้อนใต้ — นับรวมด้วย
+const headerTexts = svg => [...svg.matchAll(/<text x="([\d.]+)" y="[\d.]+" font-size="(\d+)" font-weight="(\d+)"(?: dx="[\d.]+" dy="[\d.]+")? fill="(#[0-9a-f]{6}|url\(#[\w-]+\))"[^>]*>([^<]*)<\/text>/g)]
   .map(m => ({ x: Number(m[1]), size: Number(m[2]), bold: m[3] === '700', fill: m[4], text: m[5] }))
 const headerBottomOf = svg => Number(/<rect width="1080" height="([\d.]+)" fill="url\(#news-head-grad\)" data-header="1"\/>/.exec(svg)[1])
 const PLATE_LEFT = 1080 - 64 - 320
@@ -191,15 +192,15 @@ const PLATE_LEFT = 1080 - 64 - 320
 await test('บล็อกผู้บริหาร: เปิด = มีรูป(cover+clipPath) + ป้ายชื่อ/ตำแหน่ง · ปิด = เหมือนเดิมทุกพิกเซล', () => {
   const on = draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO })
   assert.ok(on.svg.includes('news-exec-clip'))
-  // 2569-11-12 เจ้าของสั่งรูปใหญ่ขึ้น 300 → 370 · รูปประกาศครั้งเดียวใน defs แล้ว <use> (ใช้ซ้ำใน mask ขอบเรือง)
-  assert.match(on.svg, /<image id="news-exec-img" href="data:image\/jpeg[^"]*" x="[\d.]+" y="26" width="370" height="370" preserveAspectRatio="xMidYMax meet" clip-path="url\(#news-exec-clip\)"\/>/)
+  // 2569-11-12 เจ้าของสั่งรูปใหญ่ขึ้น 300 → 370 แล้วลดเป็น 340 · วาด <image> ตรงๆ ไม่ผ่าน <use> (iPhone Safari วาด <use>/mask ไม่ตรง Chrome)
+  assert.match(on.svg, /<image href="data:image\/jpeg[^"]*" x="[\d.]+" y="26" width="340" height="340" preserveAspectRatio="xMidYMax meet" clip-path="url\(#news-exec-clip\)" data-exec-photo="1"\/>/)
   assert.equal(on.svg.split(PHOTO).length - 1, 1, 'ข้อมูลรูปนายกต้องอยู่ใน SVG ครั้งเดียว')
-  assert.match(on.svg, /<use href="#news-exec-img" data-exec-photo="1"\/>/)
+  assert.ok(!/<use |<mask/.test(on.svg), 'ห้ามมี <use>/<mask> (Safari)')
   assert.ok(has(on.svg, MAYOR.name) && has(on.svg, MAYOR.title))
-  // ป้ายขาวขอบส้มทับช่วงล่างของรูป (ก้นรูป 26+370 อยู่ในป้าย) และไม่ล้นกรอบเนื้อหาด้านขวา
+  // ป้ายขาวขอบส้มทับช่วงล่างของรูป (ก้นรูป 26+340 อยู่ในป้าย) และไม่ล้นกรอบเนื้อหาด้านขวา
   const plate = /<rect x="([\d.]+)" y="([\d.]+)" width="320" height="([\d.]+)" rx="26" fill="#ffffff"/.exec(on.svg)
   assert.ok(plate, 'ไม่พบป้ายชื่อ')
-  assert.ok(Number(plate[2]) > 200 && Number(plate[2]) < 396 && Number(plate[2]) + Number(plate[3]) > 396)
+  assert.ok(Number(plate[2]) > 200 && Number(plate[2]) < 366 && Number(plate[2]) + Number(plate[3]) > 366)
   assert.ok(Number(plate[1]) + 320 <= 1080 - 64 + 0.01)
   // ปิด: ไม่ส่ง executive หรือส่ง null ได้ภาพเดียวกันทุกตัวอักษร และไม่มีร่องรอยของบล็อก
   const off = draw(base())
@@ -250,11 +251,16 @@ await test('บล็อกผู้บริหาร: ข้อความห
     const plateY = Number(/<rect x="[\d.]+" y="([\d.]+)" width="320" height="[\d.]+" rx="26" fill="#ffffff"/.exec(svg)[1])
     assert.ok(plateY + Number(plate[1]) < headerBottom, 'แถบหัวต้องสูงกว่าก้นป้าย')
   }
-  // ปิดบล็อก: ข้อความหัวไม่ถูกย่อ (หัวข้อ 68 ขาว · บรรทัดนำบนป้ายทอง 26 ตัวหนา · ชื่อ อปท. สีทอง)
-  const off = headerTexts(draw(base()).svg)
+  // ปิดบล็อก: ข้อความหัวไม่ถูกย่อ (หัวข้อ 68 ขาว · บรรทัดนำบนป้ายทอง 26 ตัวหนา · ชื่อ อปท. ทองไล่เงาตัวใหญ่)
+  const offSvg = draw(base()).svg
+  const off = headerTexts(offSvg)
   assert.ok(off.some(t => t.size === 68 && t.fill === '#ffffff' && t.text === 'ข่าวประชาสัมพันธ์'))
   assert.ok(off.some(t => t.size === 26 && t.bold && t.text === 'ผลการดำเนินงานผ่านระบบ E-Service'))
-  assert.ok(off.some(t => t.fill === '#fde68a' && t.text === 'เทศบาลตำบลสาธิต'), 'ชื่อ อปท. ต้องเป็นสีทอง (หัวข้อสองสี)')
+  // ชื่อ อปท. เด่นแบบแบนเนอร์ (เจ้าของสั่ง 2569-11-12): 54 ทองไล่เงา + เงาเข้มวาดก่อน
+  const tenant = /<text x="[\d.]+" y="[\d.]+" font-size="(\d+)" font-weight="700" fill="url\(#news-tenant-gold\)" stroke="#8a5a00" stroke-width="1.2" data-tenant-name="1">เทศบาลตำบลสาธิต<\/text>/.exec(offSvg)
+  assert.ok(tenant && Number(tenant[1]) === 54, 'ชื่อ อปท. ต้องตัวใหญ่ 54 สีทองไล่เงา')
+  assert.ok(offSvg.indexOf('fill="#000a3a" fill-opacity="0.6">เทศบาลตำบลสาธิต<') < offSvg.indexOf('data-tenant-name="1"'), 'เงาต้องวาดก่อนตัวจริง')
+  assert.ok(!offSvg.includes('data-outline'))
 })
 
 await test('ป้ายชื่อนายก: ย่อขนาดให้จบบรรทัดเดียวก่อน ไม่ปล่อยคำท้ายตกบรรทัด · ยาวมากตัดที่ช่องว่างแบบสมดุล', () => {
@@ -440,11 +446,11 @@ await test('สีธีม: ครบ 9 คีย์ของกอง · ข�
   assert.equal(Colors.departmentColorKeyByName(null, 'กองช่าง'), null)
 })
 
-await test('สีธีมถูกใช้ที่แถบหัว/แถบท้าย/ป้ายระยะเวลา/วันที่/ขอบป้ายนายก · ไม่ส่งธีม = ส้มเดิม · ป้ายสถานะคงเขียว', () => {
+await test('สีธีมกองถูกใช้ในเนื้อหา (ป้ายระยะเวลา/วันที่/ขั้นตอน/เงาป้ายนายก) · กรอบหัว-ท้ายไม่ตามกอง · ไม่ส่งธีม = ส้มเดิม · ป้ายสถานะคงเขียว', () => {
   const blue = Colors.newsThemeFor('blue')
   const svg = draw(base({ theme: blue, executive: { name: 'นายสมมติ ตัวอย่าง', title: 'นายกเทศมนตรี' } })).svg
-  assert.match(svg, new RegExp(`<linearGradient id="news-head-grad"[^>]*><stop offset="0" stop-color="${blue.deep}"/><stop offset="1" stop-color="${blue.base}"/>`))
-  assert.match(svg, new RegExp(`<linearGradient id="news-foot-grad"[^>]*><stop offset="0" stop-color="${blue.deep}"/><stop offset="1" stop-color="${blue.base}"/>`))
+  // กรอบหัว+ท้ายเป็นน้ำเงินเข้มแบบแบนเนอร์ตั้งแต่ 2569-11-12 (เจ้าของสั่งให้หัว/ท้ายสีเดียวกัน)
+  assert.match(svg, /<linearGradient id="news-foot-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#010a4a"\/>/)
   assert.match(svg, /fill="url\(#news-head-grad\)"/)
   assert.match(svg, /fill="url\(#news-foot-grad\)"/)
   assert.ok(svg.includes(`fill="${blue.soft}"`) && svg.includes(`fill="${blue.ink}"`), 'ป้ายวันที่ใช้ soft/ink')
@@ -470,8 +476,8 @@ await test('แถบหัว/ท้ายแบบอินโฟกราฟ�
   assert.equal(draw(model, { photoDataUrls: [PHOTO] }).svg, first, 'ภาพเดิมต้องได้ SVG เดิมทุกครั้ง')
   // แถบทองบนสุด + ใต้แถบหัว + เหนือแถบท้าย (หนา 10 สีทอง)
   for (const where of ['top', 'header', 'footer']) assert.match(first, new RegExp(`height="10" fill="#f5c242" data-gold-band="${where}"`), `แถบทอง ${where}`)
-  // วงกลมจาง 2 ชุด (หัว/ท้าย) clip ด้วยกรอบแถบ ความทึบ ≤ 0.1
-  assert.match(first, /<g clip-path="url\(#news-head-clip\)" data-bokeh="1">/)
+  // วงกลมจางเหลือแค่แถบท้าย (แถบหัวเป็นวิวสำนักงานแล้ว) clip ด้วยกรอบแถบ ความทึบ ≤ 0.1
+  assert.ok(!/<g clip-path="url\(#news-head-clip\)" data-bokeh="1">/.test(first))
   assert.match(first, /<g clip-path="url\(#news-foot-clip\)" data-bokeh="1">/)
   for (const group of first.matchAll(/data-bokeh="1">(.*?)<\/g>/gs)) {
     const opacities = [...group[1].matchAll(/fill-opacity="([\d.]+)"/g)].map(match => Number(match[1]))
@@ -742,7 +748,7 @@ await test('static: ภาพข่าวจบ A4 — ไล่ NEWS_FIT_LEVELS
   assert.deepEqual(rows[0], [1, 1, 1, 300], 'ขั้นแรก = ขนาดเต็ม')
   for (let i = 1; i < rows.length; i += 1) assert.ok(rows[i].every((value, k) => value <= rows[i - 1][k]), 'แต่ละขั้นต้องเล็กลงหรือเท่าเดิมทุกค่า')
   const last = rows.at(-1)
-  assert.ok(40 * last[0] >= 32 && 200 * last[2] >= 160 && last[3] >= 220 && 370 * last[1] >= 135, 'ขั้นต่ำสุด: หัวข้อ ≥32 · QR ≥160 · ช่องรูป ≥220 · รูปนายก ≥135 (ฐาน 370 px ตั้งแต่ 2569-11-12)')
+  assert.ok(40 * last[0] >= 32 && 200 * last[2] >= 160 && last[3] >= 220 && 340 * last[1] >= 135, 'ขั้นต่ำสุด: หัวข้อ ≥32 · QR ≥160 · ช่องรูป ≥220 · รูปนายก ≥135 (ฐาน 340 px ตั้งแต่ 2569-11-12)')
   assert.match(src, /qrLayout\(model\.reportUrl, fs\(200\)\)/)
   assert.ok(!/stepsMode|'compact'|'none'/.test(src), 'ห้ามกลับไปซ่อน/ตัดแถบขั้นตอน (เจ้าของสั่ง 2569-11-12)')
   assert.ok(src.indexOf('const footH = ') < src.indexOf('photoCells(photos.length, captionH, '), 'ต้องรู้ footH ก่อนคำนวณที่ว่างของรูป')
@@ -802,17 +808,16 @@ await test('ไฟล์ฟอนต์ + สัญญาอนุญาต OFL 
   }
 })
 
-await test('ออร่ารูปนายก: วงแสงขาวรอบศีรษะ + ขอบเรืองขาวตามรูปทรง (mask alpha) · ไม่มีรัศมีแสง/ทอง · ใต้ข้อความหัว · อยู่ในแถบหัว · ไม่มี filter/สุ่ม', async () => {
+await test('ออร่ารูปนายก: วงแสงขาวรอบศีรษะ · ขอบเรืองอยู่ในไฟล์รูป (ไม่มี mask/<use>) · ไม่มีรัศมีแสง/ทอง · ใต้ข้อความหัว · อยู่ในแถบหัว · ไม่มี filter/สุ่ม', async () => {
   const { svg } = draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO })
   // เจ้าของปรับ 2569-11-12: ตัดรัศมีแสงออก · วงแสง/ขอบเรืองเป็นสีขาวทั้งหมด
   assert.match(svg, /<g clip-path="url\(#news-head-clip\)" data-exec-aura="1"><circle [^>]*fill="url\(#news-exec-halo\)"\/>/)
   assert.ok(!svg.includes('news-exec-ray'), 'ห้ามมีรัศมีแสง')
   const halo = /<radialGradient id="news-exec-halo"[^>]*>(.*?)<\/radialGradient>/.exec(svg)[1]
   assert.deepEqual([...halo.matchAll(/stop-color="([^"]+)"/g)].map(match => match[1]), ['#ffffff', '#ffffff', '#ffffff'])
-  // ขอบเรืองขาว 2 ชั้น (นอกจาง + ในเข้ม) ชั้นละ 12 ทิศ ความทึบที่กลุ่ม
-  assert.match(svg, /<g color="#ffffff" opacity="0\.55">(<use href="#news-exec-sil" [^>]*\/>){12}<\/g><g color="#ffffff" opacity="0\.95">(<use href="#news-exec-sil" [^>]*\/>){12}<\/g><\/g>/)
-  assert.match(svg, /<mask id="news-exec-mask" mask-type="alpha" [^>]*><use href="#news-exec-img"\/><\/mask>/)
-  assert.match(svg, /<g id="news-exec-sil"><rect [^>]*fill="currentColor" mask="url\(#news-exec-mask\)"\/><\/g>/)
+  // ขอบเรืองขาวไม่อยู่ใน SVG แล้ว (prepareExecutivePhoto วาดลงรูปด้วย canvas) — กลุ่มออร่ามีแค่วงแสง
+  assert.match(svg, /data-exec-aura="1"><circle [^>]*\/><\/g>/)
+  assert.ok(!/<mask|<use |mask-type|news-exec-sil/.test(svg), 'ห้ามใช้ mask/<use> — iPhone Safari วาดไม่ตรง Chrome')
   // ลำดับวาด: ออร่า → ข้อความหัว → รูปจริง → ป้ายชื่อ
   const at = needle => svg.indexOf(needle)
   assert.ok(at('data-exec-aura') < at('>ข่าวประชาสัมพันธ์<'))
@@ -824,6 +829,116 @@ await test('ออร่ารูปนายก: วงแสงขาวรอ
   }
   const src = await readFile(new URL('../src/lib/complaintNewsImage.js', import.meta.url), 'utf8')
   assert.ok(!src.includes('Math.random'))
+})
+
+await test('โลโก้อยู่กึ่งกลางกลุ่มข้อความหัว ไม่ตกลงตามแถบหัวที่สูงเพราะรูปนายก · ไม่ชนแถบทองบน', () => {
+  for (const [model, assets] of [[base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO }], [base(), {}]]) {
+    const { svg } = draw(model, assets)
+    const cy = Number(/<circle cx="[\d.]+" cy="([\d.]+)" r="72" fill="#ffffff"/.exec(svg)[1])
+    const pillTop = Number(/<rect x="[\d.]+" y="([\d.]+)" [^>]*data-lead-pill="1"\/>/.exec(svg)[1])
+    const tenantY = Number(new RegExp(`<text x="[\\d.]+" y="([\\d.]+)"[^>]*data-tenant-name="1">${model.tenantName}<`).exec(svg)[1])
+    assert.ok(Math.abs(cy - (pillTop + tenantY + 10) / 2) <= 1 || cy === 10 + 72 + 16, `โลโก้ cy=${cy} ไม่ตรงกลางข้อความ ${pillTop}–${tenantY}`)
+    assert.ok(cy - 72 >= 10 + 16, 'โลโก้ชนแถบทองบน')
+  }
+})
+
+await test('กรอบภาพข่าว (แถบหัว+แถบท้าย) น้ำเงินเข้มแบบแบนเนอร์สีเดียวกัน ไม่ตามกอง · แสงหลังนายกอยู่ใน clip ใต้ข้อความ · Smart City Local เฉพาะเมื่อมีที่ว่าง · ไม่มี filter/mask/<use>', () => {
+  const on = draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO }).svg
+  const off = draw(base()).svg
+  for (const svg of [on, off, draw(base({ theme: Colors.newsThemeFor('green') })).svg]) {
+    const head = /<linearGradient id="news-head-grad"[^>]*>(.*?)<\/linearGradient>/.exec(svg)[1]
+    const foot = /<linearGradient id="news-foot-grad"[^>]*>(.*?)<\/linearGradient>/.exec(svg)[1]
+    assert.equal(head, foot, 'หัวกับท้ายต้องสีเดียวกัน (เจ้าของสั่ง 2569-11-12)')
+    assert.ok(head.includes('stop-color="#010a4a"'))
+    assert.match(svg, /<g clip-path="url\(#news-head-clip\)" data-banner-glow="1">/)
+    assert.ok(svg.indexOf('data-banner-glow') < svg.indexOf('>ข่าวประชาสัมพันธ์<'), 'แสงต้องอยู่ใต้ข้อความ')
+    assert.ok(!/<filter|filter=|<mask|<use /.test(svg))
+  }
+  // มีรูปนายก = แถบหัวสูง มีที่ว่างใต้ข้อความ → มีคำ Smart City Local · ไม่มีนายก = แถบหัวเตี้ย ไม่ยัดคำลงไป
+  assert.match(on, /data-smart-city-mark="1"/)
+  for (const word of ['>Smart<', '>City<', '>Local<', '>องค์กรปกครองส่วนท้องถิ่น<']) assert.ok(on.includes(word), word)
+  assert.ok(!off.includes('data-smart-city-mark'))
+  // คำต้องอยู่ซ้ายของรูปนายก ไม่ทับป้ายชื่อ และอยู่ในแถบหัว
+  const mark = /<g transform="translate\(([\d.]+) ([\d.]+)\) scale\(([\d.]+)\)" data-smart-city-mark="1">/.exec(on)
+  const [mx, my, ms] = mark.slice(1).map(Number)
+  assert.ok(mx + 560 * ms <= 1080 - 64 - 320 - 24 + 0.5, 'คำล้นเข้าเขตรูปนายก')
+  assert.ok(my + 262 * ms <= headerBottomOf(on) - 16 + 0.5, 'คำล้นแถบหัว')
+  assert.equal(draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO }).svg, on, 'ตายตัว ไม่สุ่ม')
+})
+
+await test('มีรูปอาคารสำนักงาน = วางอาคารจริงใต้โลโก้ ชิดก้นแถบหัว ใต้ข้อความ · คำ Smart City Local เลื่อนไปขวา · แถบหัวเตี้ยไม่วาด · URL ไม่ใช่ data:image ถูกทิ้ง', () => {
+  const OFFICE = 'data:image/png;base64,T0ZGSUNF'
+  const on = draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO, officePhotoDataUrl: OFFICE }).svg
+  assert.ok(on.includes('<linearGradient id="news-head-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#010a4a"/>'))
+  assert.ok(on.includes('data-banner-glow="1"'))
+  const photo = /<image href="([^"]+)" x="0" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)" preserveAspectRatio="xMidYMax meet" clip-path="url\(#news-head-clip\)" data-office-photo="1"\/>/.exec(on)
+  assert.ok(photo && photo[1] === OFFICE, 'ไม่พบรูปอาคาร')
+  assert.equal(Number(photo[2]) + Number(photo[4]), headerBottomOf(on), 'รูปอาคารยืนชิดก้นแถบหัว')
+  const texts = headerTexts(on)
+  assert.ok(texts.some(t => t.fill === '#ffffff' && t.text === 'ข่าวประชาสัมพันธ์'))
+  assert.ok(on.includes('data-tenant-name="1">เทศบาลตำบลสาธิต<'))
+  assert.ok(on.indexOf('data-office-photo') < on.indexOf('>ข่าวประชาสัมพันธ์<'), 'รูปอาคารอยู่ใต้ข้อความ')
+  // คำ Smart City Local ขยับไปขวาของรูปอาคาร ไม่ทับกัน
+  const markX = Number(/<g transform="translate\(([\d.]+) [\d.]+\) scale\([\d.]+\)" data-smart-city-mark="1">/.exec(on)[1])
+  assert.ok(markX >= Number(photo[3]) - 0.5, `คำทับรูปอาคาร ${markX} < ${photo[3]}`)
+  // แถบหัวเตี้ย (ไม่มีนายก) = ที่ไม่พอ ไม่วาดรูปอาคาร แต่ยังเป็นพื้นแบบแบนเนอร์
+  const short = draw(base(), { officePhotoDataUrl: OFFICE }).svg
+  assert.ok(!short.includes('data-office-photo') && short.includes('data-banner-glow'))
+  for (const bad of ['https://evil.test/x.png', 'javascript:alert(1)']) {
+    const svg = draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO, officePhotoDataUrl: bad }).svg
+    assert.ok(!svg.includes('data-office-photo') && svg.includes('data-banner-glow') && !svg.includes('evil.test'), bad)
+  }
+})
+
+await test('คำขวัญมุมล่างขวา "เทคโนโลยีทันสมัย / บริการเพื่อประชาชน" ขึ้นทุกใบ · ไม่มี QR = แผ่นข้างสูงเต็มแถบท้าย ข้อความแถบท้ายไม่ทับ · มี QR + ลิงก์ = แถวมุมล่างใต้ข้อความ ลิงก์ยังบรรทัดเดียว', () => {
+  const footTexts = svg => {
+    const footTop = Number(/<rect y="([\d.]+)" width="1080" height="10" fill="#f5c242" data-gold-band="footer"\/>/.exec(svg)[1])
+    return [...svg.matchAll(/<text x="([\d.]+)" y="([\d.]+)" font-size="(\d+)" font-weight="(\d+)"[^>]*>([^<]*)<\/text>/g)]
+      .map(m => ({ x: Number(m[1]), y: Number(m[2]), size: Number(m[3]), bold: m[4] === '700', text: m[5] }))
+      .filter(t => t.y > footTop)
+  }
+  const sloganOf = svg => {
+    const group = /<g data-slogan="1">(.*?)<\/g>/.exec(svg)?.[1] ?? ''
+    const edge = /<path d="M([\d.]+) ([\d.]+)C[^"]*?([\d.]+) ([\d.]+)L1080/.exec(group)
+    return { group, left: edge ? Math.min(Number(edge[1]), Number(edge[3])) : NaN, top: edge ? Number(edge[2]) : NaN }
+  }
+  // ไม่มี QR: แผ่นข้างสูงเต็มแถบท้าย ข้อความแถบท้ายจบก่อนขอบแผ่น
+  const plain = draw(base()).svg
+  const side = sloganOf(plain)
+  for (const word of News.NEWS_SLOGAN) assert.ok(side.group.includes(`>${word}</text>`), word)
+  assert.ok(side.group.includes('stroke="#e53935"'), 'เส้นปาดแดงใต้ข้อความ')
+  assert.ok(side.left > 600 && side.left < 1080)
+  for (const t of footTexts(plain)) assert.ok(t.x + measure(t.text, t.size, t.bold) <= side.left, `ข้อความแถบท้ายทับคำขวัญ: ${t.text}`)
+  // มี QR + ลิงก์ยาว: ที่ข้างไม่พอ → แถวมุมล่างขวา ข้อความทั้งหมดอยู่เหนือแผ่น · ลิงก์บรรทัดเดียว
+  const url = 'https://namlao.example.test/complaint'
+  const withQr = draw(base({ reportUrl: url })).svg
+  const row = sloganOf(withQr)
+  for (const word of News.NEWS_SLOGAN) assert.ok(row.group.includes(`>${word}</text>`), word)
+  const qrFootTop = Number(/<rect y="([\d.]+)" width="1080" height="10" fill="#f5c242" data-gold-band="footer"\/>/.exec(withQr)[1])
+  assert.ok(row.left > 600 && row.top > qrFootTop + 100, 'แบบแถวต้องอยู่มุมล่างขวา (ต่ำกว่าขอบบนแถบท้ายชัดเจน)')
+  assert.ok(withQr.includes('>namlao.example.test/complaint</text>'), 'ลิงก์ต้องอยู่บรรทัดเดียว')
+  for (const t of footTexts(withQr)) {
+    if (t.x + measure(t.text, t.size, t.bold) > row.left) assert.ok(t.y + t.size * 0.3 <= row.top, `ข้อความแถบท้ายทับแผ่นคำขวัญ: ${t.text}`)
+  }
+  assert.ok(!/<filter|filter=|<mask|<use /.test(plain + withQr))
+})
+
+await test('execRimPlan: ขอบเรืองในรูปได้รัศมีเท่าเดิมในหน่วยภาพข่าว (9 / 4 ที่รูปเต็ม 340) · เว้นที่พอ · ค่าผิด = null', async () => {
+  for (const [w, h] of [[720, 720], [540, 720], [720, 400], [200, 300]]) {
+    const plan = News.execRimPlan(w, h)
+    // มาตราส่วนจริงที่รูป (รวมที่เว้น) ถูกย่อลงกล่อง 340×340 แบบ meet — ไม่เว้นด้านล่าง
+    const scale = Math.min(340 / (w + plan.pad * 2), 340 / (h + plan.pad))
+    assert.deepEqual(plan.rings.map(ring => Math.round(ring.radius * scale * 100) / 100), [9, 4], `${w}x${h}`)
+    assert.deepEqual(plan.rings.map(ring => ring.alpha), [0.55, 0.95])
+    assert.ok(plan.pad >= plan.rings[0].radius + 1, `ที่เว้นต้องพอให้ขอบนอก ${w}x${h}`)
+    assert.equal(plan.dirs, 24)
+  }
+  for (const bad of [[0, 10], [10, NaN], [-1, 5]]) assert.equal(News.execRimPlan(...bad), null)
+  // ตัววาดใช้ canvas 2D ล้วน: ไม่ใช้ ctx.filter (Safari รุ่นเก่าไม่รองรับ) และรูปนายกผ่านตัววาดขอบเรืองก่อนส่งออก
+  const src = await readFile(new URL('../src/components/complaints/newsDialogData.js', import.meta.url), 'utf8')
+  assert.match(src, /return \(withWhiteRim\(out\) \|\| out\)\.toDataURL\('image\/png'\)/)
+  assert.match(src, /globalCompositeOperation = 'source-in'/)
+  assert.ok(!/\.filter\s*=/.test(src), 'ห้ามใช้ ctx.filter')
 })
 
 console.log(`\n${cases} cases passed`)

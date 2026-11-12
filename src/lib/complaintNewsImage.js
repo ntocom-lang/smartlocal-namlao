@@ -58,15 +58,20 @@ const CAPTION_H = 52
 // ยืนชิดก้นกล่อง แล้วป้ายชื่อขอบทองทับช่วงล่างของรูป (ซ่อนรอยตัดลำตัว) · ผู้เรียกตัดพื้นหลังมาเอง (prepareExecutivePhoto)
 // 2569-11-12 เจ้าของสั่งให้รูปใหญ่ขึ้น + แสงออร่าให้เด่น นูน สง่า: 300 → 370 (กว้างกว่าป้าย 25 px ต่อข้าง ยังไม่ชนข้อความหัวที่เว้นไว้ 28 px)
 // ป้ายทับช่วงล่างมากขึ้น (52 → 60) ให้แถบหัวสูงขึ้นน้อยที่สุด
-const EXEC_PHOTO_W = 370
-const EXEC_PHOTO_H = 370
+// 2569-11-12 (รอบหลัง) เจ้าของสั่งลดลงอีกหน่อย 370 → 340 (กว้างกว่าป้าย 10 px ต่อข้าง)
+const EXEC_PHOTO_W = 340
+const EXEC_PHOTO_H = 340
 const EXEC_PHOTO_TOP = 26
 const EXEC_PLATE_OVERLAP = 60
-// ออร่า: วงแสงสีขาวรอบศีรษะ + ขอบเรืองสีขาวตามรูปทรงคน 2 ชั้น — ใช้ mask ตามความโปร่งใสของรูป ไม่ใช้ SVG filter
-const EXEC_RIM_DIRS = 12
+// ออร่า: วงแสงสีขาวรอบศีรษะ (SVG radialGradient) + ขอบเรืองสีขาวตามรูปทรงคน 2 ชั้น
+// ขอบเรืองวาดลงในไฟล์ PNG ของรูปเอง (prepareExecutivePhoto → execRimPlan) ไม่ใช้ SVG mask/filter/<use>
+// เพราะ iPhone Safari วาด mask + <use> ใน SVG ที่เปิดผ่าน <img> ไม่เหมือน Chrome (#711) — canvas 2D วาดเหมือนกันทุกเบราว์เซอร์
+// รัศมีเป็นหน่วยของภาพข่าว (รูปขนาดเต็ม EXEC_PHOTO_W) · ย่อรูปตามขั้น NEWS_FIT_LEVELS แล้วขอบเรืองย่อตามสัดส่วนเอง
+const EXEC_RIM_RINGS = [{ radius: 9, alpha: 0.55 }, { radius: 4, alpha: 0.95 }]
+const EXEC_RIM_DIRS = 24
 const EXEC_PLATE_W = 320
 const EXEC_PLATE_PAD_X = 22
-const EXEC_PLATE_PAD_Y = 16
+const EXEC_PLATE_PAD_Y = 11 // 16 → 11 (ย่อป้ายตามที่เจ้าของสั่ง 2569-11-12)
 const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
 const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
 // แถบขั้นตอน 4 จุด: "ดำเนินการ" ไม่ใช่ "ลงพื้นที่" เพราะบางหมวดไม่ได้ลงพื้นที่จริง
@@ -339,6 +344,24 @@ export function fitPlateText(value, width, maxSize, minSize, bold, measure) {
 // เก็บใหญ่กว่านี้ไม่ได้ภาพคมขึ้น แต่ไฟล์ PNG ใหญ่ขึ้นเกือบเท่าตัว และทุกครั้งที่เปิดกล่องภาพข่าวต้องดึงผ่าน drive-file (กิน egress)
 export const NEWS_EXEC_PHOTO_SIDE = 720
 
+/**
+ * แผนวาดขอบเรืองขาวลงในรูปนายก (ผู้เรียกวาดด้วย canvas 2D ใน prepareExecutivePhoto) สำหรับรูปขนาด width×height px
+ * คืน { pad, dirs, rings: [{ radius, alpha }] } — pad = ที่เว้นเพิ่มด้านบน/ซ้าย/ขวา (ไม่เว้นด้านล่าง รูปยืนชิดก้นกล่องเหมือนเดิม)
+ * radius เป็น px ของรูป คำนวณกลับจากรัศมีหน่วยภาพข่าว (EXEC_RIM_RINGS) ตามมาตราส่วนที่รูปจะถูกย่อลงกล่อง EXEC_PHOTO_W × EXEC_PHOTO_H (meet)
+ * วนหาซ้ำเพราะ pad ทำให้รูปทั้งใบใหญ่ขึ้น → มาตราส่วนเล็กลง → รัศมี px ต้องโตขึ้นอีกนิด
+ */
+export function execRimPlan(width, height) {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return null
+  const outer = Math.max(...EXEC_RIM_RINGS.map(ring => ring.radius))
+  let pad = 0
+  let scale = 1
+  for (let i = 0; i < 4; i += 1) {
+    scale = Math.min(EXEC_PHOTO_W / (width + pad * 2), EXEC_PHOTO_H / (height + pad))
+    pad = Math.ceil(outer / scale) + 2
+  }
+  return { pad, dirs: EXEC_RIM_DIRS, rings: EXEC_RIM_RINGS.map(ring => ({ radius: ring.radius / scale, alpha: ring.alpha })) }
+}
+
 const OWN_ALPHA_SHARE = 0.01 // จุดโปร่งใส (alpha < 128) ตั้งแต่ 1% ของรูป = ผู้อัปโหลดเตรียมพื้นโปร่งใสมาเอง
 const OWN_ALPHA_MIN = 16 // จุดจางกว่านี้ (เงาฟุ้งรอบตัวจากโปรแกรมตัดภาพ) ไม่นับเป็นตัวคนตอนครอป
 
@@ -513,29 +536,119 @@ function bokehSvg(clipId, top, width, height, flip) {
 
 /**
  * ออร่ารอบรูปผู้บริหาร (เจ้าของสั่ง 2569-11-12 "เด่นๆ นูนๆ สง่าๆ") — ตายตัว ไม่สุ่ม ไม่ใช้ SVG filter · อยู่ใน clip ของแถบหัว ไม่ล้นลงเนื้อหา
- * 1) วงแสงสีขาวรอบศีรษะ (ขาวนวลตรงกลาง จางออกที่ขอบ) 2) ขอบเรืองสีขาวตามรูปทรงคน: mask จากความโปร่งใสของรูป (mask-type alpha)
- *    เลื่อนสำเนาไป 12 ทิศ 2 ชั้น (นอกจาง + ในเข้ม) ทำให้ตัวคนลอยเด่นจากพื้น (รูปที่ตัดพื้นไม่ได้และมีกรอบ = ได้กรอบเรืองสี่เหลี่ยมแทน)
+ * 1) วงแสงสีขาวรอบศีรษะ (ขาวนวลตรงกลาง จางออกที่ขอบ) — radialGradient ธรรมดา Safari วาดได้
+ * 2) ขอบเรืองสีขาวตามรูปทรงคน — ไม่ได้วาดที่นี่ อยู่ในไฟล์รูปแล้ว (execRimPlan) เพราะ Safari วาด mask/<use> ไม่ตรง Chrome
  * เจ้าของปรับ 2569-11-12: ตัดรัศมีแสง (แฉก) ออก · วงแสงและขอบเรืองเป็นสีขาวทั้งหมด ไม่ใช้ทอง
  */
-function execAuraSvg(defs, cx, px, w, h, headerH, scale) {
+function execAuraSvg(defs, cx, w, h) {
   const top = EXEC_PHOTO_TOP
   const cy = top + h * 0.36 // ราวศีรษะ (รูปยืนชิดก้นกล่อง หน้าอยู่ราวหนึ่งในสามบน)
   const haloR = w * 0.42 // เจ้าของสั่งให้วงแสงเล็กลง 2569-11-12 (เดิม 0.6) — ฟุ้งแค่รอบศีรษะ-ไหล่
-  defs.push(`<radialGradient id="news-exec-halo" gradientUnits="userSpaceOnUse" cx="${num(cx)}" cy="${num(cy)}" r="${num(haloR)}"><stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/><stop offset="0.45" stop-color="#ffffff" stop-opacity="0.45"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>`
-    + `<mask id="news-exec-mask" mask-type="alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="${IMAGE_WIDTH}" height="${num(headerH)}"><use href="#news-exec-img"/></mask>`
-    + `<g id="news-exec-sil"><rect x="${num(px - 24)}" y="${top - 24}" width="${num(w + 48)}" height="${num(h + 48)}" fill="currentColor" mask="url(#news-exec-mask)"/></g>`)
-  const ring = (radius, color, opacity) => {
-    const uses = Array.from({ length: EXEC_RIM_DIRS }, (_, i) => {
-      const a = (i / EXEC_RIM_DIRS) * Math.PI * 2
-      return `<use href="#news-exec-sil" x="${num(Math.cos(a) * radius)}" y="${num(Math.sin(a) * radius)}"/>`
-    }).join('')
-    // ความทึบที่กลุ่ม (ไม่ใช่รายสำเนา) — สำเนาที่ซ้อนกันไม่ทึบสะสม ขอบจึงเนียนเท่ากันทุกด้าน
-    return `<g color="${color}" opacity="${opacity}">${uses}</g>`
-  }
+  defs.push(`<radialGradient id="news-exec-halo" gradientUnits="userSpaceOnUse" cx="${num(cx)}" cy="${num(cy)}" r="${num(haloR)}"><stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/><stop offset="0.45" stop-color="#ffffff" stop-opacity="0.45"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>`)
   return `<g clip-path="url(#news-head-clip)" data-exec-aura="1">`
     + `<circle cx="${num(cx)}" cy="${num(cy)}" r="${num(haloR)}" fill="url(#news-exec-halo)"/>`
-    + ring(Math.max(4, Math.round(9 * scale)), '#ffffff', 0.55)
-    + ring(Math.max(2, Math.round(4 * scale)), '#ffffff', 0.95)
+    + '</g>'
+}
+
+// ตึกเมืองเรืองแสงจางมุมขวาของแถบหัว [x, กว้าง, สูง] — ตายตัว ไม่สุ่ม
+const BANNER_TOWERS = [[852, 40, 128], [896, 56, 168], [956, 34, 104], [994, 62, 140], [1040, 36, 96]]
+// สีกรอบภาพข่าว (แถบหัว + แถบท้าย) = น้ำเงินเข้มแบบแบนเนอร์หน้าแรกของ อปท. — เจ้าของสั่ง 2569-11-12 ให้หัว/ท้ายสีเดียวกัน
+// สีกองไม่อยู่ที่กรอบแล้ว ใช้แค่ในเนื้อหา (การ์ดใช้เวลา แถบขั้นตอน ป้ายวันที่ ไอคอนหมวด) ให้รู้ว่าเป็นงานของกองไหน
+const FRAME_STOPS = '<stop offset="0" stop-color="#010a4a"/><stop offset="0.6" stop-color="#03207f"/><stop offset="1" stop-color="#0a37b0"/>'
+
+// ── แถบหัวแบบแบนเนอร์ของ อปท. (พื้นน้ำเงินเข้ม) — แสงฟ้าหลังรูปนายก + วงสัญญาณ + ตึกเมืองเรืองแสงจาง ตายตัว ไม่ใช้ filter ──
+function bannerGlowSvg(defs, headerH, glowCx) {
+  const cy = headerH * 0.45
+  defs.push(`<radialGradient id="news-banner-glow" gradientUnits="userSpaceOnUse" cx="${num(glowCx)}" cy="${num(cy)}" r="${num(headerH * 0.75)}"><stop offset="0" stop-color="#3d8bff" stop-opacity="0.75"/><stop offset="0.5" stop-color="#1d5bff" stop-opacity="0.3"/><stop offset="1" stop-color="#1d5bff" stop-opacity="0"/></radialGradient>`)
+  const rings = [0.28, 0.42, 0.56, 0.7].map((f, i) => `<circle cx="${num(glowCx)}" cy="${num(cy)}" r="${num(headerH * f)}" fill="none" stroke="#7fb6ff" stroke-opacity="${0.32 - i * 0.06}" stroke-width="2"/>`).join('')
+  const towers = BANNER_TOWERS.map(([x, w, h]) => {
+    const top = headerH - h * 1.4
+    const lights = Array.from({ length: Math.floor(h * 1.4 / 22) }, (_, i) => `<rect x="${x + 6}" y="${num(top + 8 + i * 22)}" width="${w - 12}" height="3" fill="#9fd0ff" fill-opacity="0.35"/>`).join('')
+    return `<rect x="${x}" y="${num(top)}" width="${w}" height="${num(h * 1.4)}" fill="#1e4fc4" fill-opacity="0.35"/>${lights}`
+  }).join('')
+  return `<g clip-path="url(#news-head-clip)" data-banner-glow="1"><rect width="${IMAGE_WIDTH}" height="${num(headerH)}" fill="url(#news-banner-glow)"/>${rings}${towers}</g>`
+}
+
+// ── คำขวัญมุมล่างขวา "เทคโนโลยีทันสมัย / บริการเพื่อประชาชน" (เจ้าของสั่ง 2569-11-12 ตามภาพอ้างอิง) ──
+// แผ่นเหลืองไล่สีขอบซ้ายโค้ง + เส้นโค้งขาว · ตัวหนาเอียงน้ำเงินเข้ม 2 บรรทัด + เส้นปาดแดงใต้ข้อความ · ไม่ใช้ filter/mask/<use>
+export const NEWS_SLOGAN = ['เทคโนโลยีทันสมัย', 'บริการเพื่อประชาชน']
+const SLOGAN_W = 360
+const SLOGAN_MIN_W = 250
+const SLOGAN_ROW_W = 400 // แบบแถวมุมล่างขวา (มี QR + ลิงก์ยาว)
+const SLOGAN_ROW_H = 92
+const SLOGAN_CURVE = 56 // ความกว้างช่วงโค้งของขอบซ้าย (ข้อความเริ่มหลังช่วงนี้)
+
+function sloganSvg(x, top, w, h, measure) {
+  const bottom = top + h
+  const textLeft = x + SLOGAN_CURVE
+  const textW = w - SLOGAN_CURVE - 30
+  let size = 38
+  while (size > 20 && (Math.max(...NEWS_SLOGAN.map(line => measure(line, size, true))) > textW || size * 2.6 > h - 20)) size -= 1
+  const step = Math.round(size * 1.18)
+  const blockH = step + size + 14 // 2 บรรทัด + เส้นปาดแดง
+  const first = top + (h - blockH) / 2 + size * 0.95
+  const lines = NEWS_SLOGAN.map((line, i) => `<text transform="translate(${num(textLeft)} ${num(first + i * step)}) skewX(-9)" font-size="${size}" font-weight="700" fill="#0b2f8f">${esc(line)}</text>`).join('')
+  const lineW = Math.max(...NEWS_SLOGAN.map(line => measure(line, size, true)))
+  const swooshY = first + step + size * 0.32
+  const swoosh = `<path d="M${num(textLeft + lineW * 0.08)} ${num(swooshY + 6)}Q${num(textLeft + lineW * 0.55)} ${num(swooshY - 4)} ${num(textLeft + lineW * 0.98)} ${num(swooshY - 9)}" fill="none" stroke="#e53935" stroke-width="${num(Math.max(3, size * 0.12))}" stroke-linecap="round"/>`
+  const edge = `M${num(x + SLOGAN_CURVE)} ${num(top)}C${num(x + 6)} ${num(top + h * 0.35)} ${num(x + 34)} ${num(top + h * 0.7)} ${num(x)} ${num(bottom)}`
+  return `<g data-slogan="1"><linearGradient id="news-slogan-gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff176"/><stop offset="1" stop-color="#ffc107"/></linearGradient>`
+    + `<path d="${edge}L${IMAGE_WIDTH} ${num(bottom)}L${IMAGE_WIDTH} ${num(top)}Z" fill="url(#news-slogan-gold)"/>`
+    + `<path d="${edge}" fill="none" stroke="#ffffff" stroke-width="5"/>`
+    + lines + swoosh + '</g>'
+}
+
+// ── คำ "Smart City Local" แบบโปสเตอร์อ้างอิง (เจ้าของสั่ง 2569-11-12) ──
+// ตัวหนาเอียง ขอบขาว + เงา · Smart/Local ไล่น้ำเงิน City ไล่ส้ม · สัญญาณ wifi + หมุดแผนที่ + เส้นโค้งเขียว + ริบบิ้นข้อความไทย
+// วาดด้วยรูปทรง/ข้อความ/ไล่สีล้วน (ไม่ใช้ filter/mask/<use> — Safari) · ออกแบบในกรอบ SC_W × SC_H แล้วย่อลงที่ว่างจริง
+const SC_W = 560
+const SC_H = 262
+const SC_MIN_SCALE = 0.5 // ที่ว่างเล็กกว่านี้ = ไม่วาด (ตัวเล็กจนอ่านไม่ออก ดูรก)
+const SC_RIBBON = 'องค์กรปกครองส่วนท้องถิ่น'
+
+function smartCityMarkSvg(defs, x, y, w, h, measure) {
+  // ปัดลง 2 ตำแหน่งก่อนใช้ — num() ใน transform ปัดเป็นทศนิยม 2 ตำแหน่ง ปัดขึ้นแล้วคำล้นที่ว่างได้ ~1 px
+  const scale = Math.floor(Math.min(w / SC_W, h / SC_H, 1.1) * 100) / 100
+  if (!(scale >= SC_MIN_SCALE)) return ''
+  defs.push('<linearGradient id="news-sc-blue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b8cff"/><stop offset="1" stop-color="#1238a8"/></linearGradient>'
+    + '<linearGradient id="news-sc-orange" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd23f"/><stop offset="0.55" stop-color="#ff8a00"/><stop offset="1" stop-color="#f05a00"/></linearGradient>'
+    + '<linearGradient id="news-sc-green" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7ed957" stop-opacity="0"/><stop offset="0.35" stop-color="#5cc93b"/><stop offset="1" stop-color="#1f9d55"/></linearGradient>'
+    + '<linearGradient id="news-sc-ribbon" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1e5bd8"/><stop offset="1" stop-color="#0b2f8f"/></linearGradient>')
+  // คำเอียง 3 ชั้น: เงาน้ำเงินเข้ม → ขอบขาวหนา → ไล่สี (เอียงรอบเส้นฐานของคำเอง)
+  const word = (tx, ty, value, size, fill) => {
+    const t = `transform="translate(${num(tx)} ${num(ty)}) skewX(-11)" font-size="${size}" font-weight="700"`
+    return `<text ${t} dx="3" dy="6" fill="#0a2470" fill-opacity="0.45">${value}</text>`
+      + `<text ${t} fill="#ffffff" stroke="#ffffff" stroke-width="13" stroke-linejoin="round">${value}</text>`
+      + `<text ${t} fill="url(#${fill})" stroke="#0b2f8f" stroke-width="1.5">${value}</text>`
+  }
+  const smartW = measure('Smart', 100, true)
+  const cityW = measure('City', 88, true)
+  const smartX = 40
+  const cityX = 70
+  const localX = cityX + cityW + 22
+  // สัญญาณ wifi เหนือช่วงท้ายคำ Smart (จุด + โค้ง 3 วง เปิดขึ้นบน)
+  const wx = smartX + smartW * 0.62
+  const wy = 52
+  const arc = r => `<path d="M${num(wx - r * 0.74)} ${num(wy - r * 0.67)}A${r} ${r} 0 0 1 ${num(wx + r * 0.74)} ${num(wy - r * 0.67)}" fill="none" stroke="url(#news-sc-blue)" stroke-width="9" stroke-linecap="round"/>`
+  const wifi = `<g data-sc-wifi="1">${[16, 31, 46].map(arc).join('')}<circle cx="${num(wx)}" cy="${wy}" r="7" fill="#1e5bd8"/></g>`
+  // หมุดแผนที่สีแดงชิดขวาบน
+  const pinX = Math.min(SC_W - 30, smartX + smartW + 42) // ชิดท้ายคำ Smart แบบภาพอ้างอิง
+  const pin = `<g transform="translate(${num(pinX)} 40)" data-sc-pin="1"><ellipse cx="0" cy="60" rx="14" ry="4" fill="#0a2470" fill-opacity="0.3"/>`
+    + '<path d="M0 60C-6 46-24 34-24 18A24 24 0 0 1 24 18C24 34 6 46 0 60Z" fill="#e53935" stroke="#ffffff" stroke-width="3"/>'
+    + '<circle cx="0" cy="18" r="8.5" fill="#ffffff"/></g>'
+  // เส้นโค้งเขียวกวาดใต้บรรทัดสอง (แบบภาพอ้างอิง)
+  const swoosh = '<path d="M6 214C170 250 410 232 556 128C462 226 228 262 6 232Z" fill="url(#news-sc-green)"/>'
+  const ribbonW = Math.min(SC_W - 70, Math.ceil(measure(SC_RIBBON, 30, true)) + 70)
+  const ribbonX = SC_W - ribbonW - 6
+  const ribbon = `<rect x="${ribbonX}" y="${SC_H - 50}" width="${ribbonW}" height="46" rx="23" fill="url(#news-sc-ribbon)" stroke="#ffffff" stroke-width="3"/>`
+    + `<text x="${num(ribbonX + ribbonW / 2)}" y="${SC_H - 17}" font-size="30" font-weight="700" fill="#ffffff" text-anchor="middle">${esc(SC_RIBBON)}</text>`
+  const ox = x + (w - SC_W * scale) / 2
+  const oy = y + (h - SC_H * scale) / 2
+  return `<g transform="translate(${num(ox)} ${num(oy)}) scale(${num(scale)})" data-smart-city-mark="1">`
+    + wifi + pin + swoosh + ribbon // ริบบิ้นก่อนคำ — หางตัว y ของ City ทับริบบิ้นแบบภาพอ้างอิง ไม่ถูกริบบิ้นบัง
+    + word(smartX, 130, 'Smart', 100, 'news-sc-blue')
+    + word(cityX, 206, 'City', 88, 'news-sc-orange')
+    + word(localX, 206, 'Local', 88, 'news-sc-blue')
     + '</g>'
 }
 
@@ -599,10 +712,10 @@ const NEWS_FIT_LEVELS = Object.freeze([
   { t: 0.8, exec: 0.85, foot: 0.85, min: 240 },
   { t: 0.8, exec: 0.72, foot: 0.8, min: 220 },
   { t: 0.8, exec: 0.6, foot: 0.8, min: 220 },
-  { t: 0.8, exec: 0.38, foot: 0.8, min: 220 }, // ทางสุดท้าย: ภาพรวม 4 รูป + ป้ายหมู่ + "และอีก N จุด" + รูปนายก (รูปนายกเหลือ 141 px เท่าเดิมก่อนขยาย ยังเห็นหน้า)
+  { t: 0.8, exec: 0.41, foot: 0.8, min: 220 }, // ทางสุดท้าย: ภาพรวม 4 รูป + ป้ายหมู่ + "และอีก N จุด" + รูปนายก (รูปนายกเหลือ 139 px ยังเห็นหน้า · ฐาน 340 ตั้งแต่ 2569-11-12 จึงปรับ 0.38→0.41 ไม่สูงกว่าเดิม)
 ])
 
-function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], executivePhotoDataUrl = null, photoCaptions = [], photoKinds = [], moreText = '', font = null } = {}, fit = NEWS_FIT_LEVELS[0]) {
+function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], executivePhotoDataUrl = null, officePhotoDataUrl = null, photoCaptions = [], photoKinds = [], moreText = '', font = null } = {}, fit = NEWS_FIT_LEVELS[0]) {
   const execPhotoW = Math.round(EXEC_PHOTO_W * fit.exec)
   const execPhotoH = Math.round(EXEC_PHOTO_H * fit.exec)
   const sz = base => Math.round(base * fit.t) // ขนาดตัวหนังสือเนื้อหา
@@ -644,10 +757,12 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
   const execPhoto = exec && imageUrlOk(executivePhotoDataUrl) ? executivePhotoDataUrl : null
   const plateInnerW = EXEC_PLATE_W - EXEC_PLATE_PAD_X * 2
   const execPlateLines = exec ? {
-    name: exec.name ? fitPlateText(exec.name, plateInnerW, 32, 24, true, measure) : null,
-    title: exec.title ? fitPlateText(exec.title, plateInnerW, 26, 20, false, measure) : null,
+    // เจ้าของสั่ง 2569-11-12 ให้ย่อชื่อ/ตำแหน่งลง ป้ายกินที่ยาวลงมามาก: ชื่อ 32→26 (ต่ำสุด 24→20) ตำแหน่ง 26→21 (20→16) ระยะบรรทัด 1.32→1.24
+    // ขนาดต่ำสุดเล็กลงด้วย ชื่อ/ตำแหน่งยาวจึงอยู่บรรทัดเดียวได้บ่อยขึ้น ไม่ตกเป็น 2 บรรทัดจนป้ายสูง
+    name: exec.name ? fitPlateText(exec.name, plateInnerW, 26, 20, true, measure) : null,
+    title: exec.title ? fitPlateText(exec.title, plateInnerW, 21, 16, false, measure) : null,
   } : null
-  const plateStep = slot => Math.round(slot.size * 1.32)
+  const plateStep = slot => Math.round(slot.size * 1.24)
   const execPlateH = execPlateLines
     ? EXEC_PLATE_PAD_Y * 2 + [execPlateLines.name, execPlateLines.title].filter(Boolean)
       .reduce((sum, slot) => sum + slot.lines.length * plateStep(slot), 0)
@@ -670,24 +785,37 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
   const leadH = leadSize + 22
   const leadW = Math.ceil(measure(lead, leadSize, true)) + 40
   let baseline = leadTop + leadH + Math.round(titleSize * 1.05)
+  // แถบหัวแบบแบนเนอร์หน้าแรกของ อปท. (เจ้าของส่งแบนเนอร์น้ำเลา 2569-11-12): พื้นน้ำเงินเข้ม หัวข้อขาว ชื่อ อปท. ทอง
+  // มีรูปอาคารสำนักงาน = วางอาคารจริงใต้โลโก้ · ไม่มี = พื้นแบนเนอร์อย่างเดียว
+  const office = imageUrlOk(officePhotoDataUrl) ? officePhotoDataUrl : null
   headerText(textX, baseline, 'ข่าวประชาสัมพันธ์', { size: titleSize, bold: true })
   baseline += 6
-  // ชื่อ อปท. สีทอง — หัวข้อสองสีแบบภาพอ้างอิง
-  for (const line of wrapLines(model.tenantName, textW, 34, true, measure)) {
-    baseline += 46
-    headerText(textX, baseline, line, { size: 34, bold: true, fill: GOLD_TEXT })
+  // ชื่อ อปท. เด่นแบบแบนเนอร์ (เจ้าของสั่ง 2569-11-12): ตัวใหญ่ 54 ย่อจนพอดีบรรทัด (ต่ำสุด 34 แล้วค่อยตัดบรรทัด)
+  // สีทองไล่เงา + เงาน้ำเงินดำเลื่อนลง + เส้นขอบน้ำตาลทองบาง — ข้อความซ้อน ไม่ใช้ filter (Safari)
+  let tenantSize = 54
+  while (tenantSize > 34 && measure(model.tenantName, tenantSize, true) > textW) tenantSize -= 2
+  defs.push('<linearGradient id="news-tenant-gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6c2"/><stop offset="0.45" stop-color="#ffd54a"/><stop offset="1" stop-color="#f59e0b"/></linearGradient>')
+  for (const line of wrapLines(model.tenantName, textW, tenantSize, true, measure)) {
+    baseline += Math.round(tenantSize * 1.3)
+    const attrs = `x="${num(textX)}" y="${num(baseline)}" font-size="${tenantSize}" font-weight="700"`
+    headerTexts.push(`<text ${attrs} dx="2" dy="4" fill="#000a3a" fill-opacity="0.6">${esc(line)}</text>`
+      + `<text ${attrs} fill="url(#news-tenant-gold)" stroke="#8a5a00" stroke-width="1.2" data-tenant-name="1">${esc(line)}</text>`)
   }
   const headerH = Math.max(baseline + 40, GOLD_BAND + logoR * 2 + 80, exec ? execBottom + 36 : 0)
-  defs.push(`<linearGradient id="news-head-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${theme.deep}"/><stop offset="1" stop-color="${theme.base}"/></linearGradient>`
+  // แถบหัว = วิวสำนักงานบนฉากฟ้าสว่างแบบโปสเตอร์อ้างอิง (เจ้าของเลือก 2569-11-12 แทนพื้นไล่สีกอง) · สีกองยังอยู่ที่ชื่อ อปท./แถบท้าย/ป้าย
+  defs.push(`<linearGradient id="news-head-grad" x1="0" y1="0" x2="1" y2="1">${FRAME_STOPS}</linearGradient>`
     + `<clipPath id="news-head-clip"><rect width="${IMAGE_WIDTH}" height="${num(headerH)}"/></clipPath>`)
   parts.push(`<rect width="${IMAGE_WIDTH}" height="${num(headerH)}" fill="url(#news-head-grad)" data-header="1"/>`
-    + bokehSvg('news-head-clip', 0, IMAGE_WIDTH, headerH, false)
+    + bannerGlowSvg(defs, headerH, exec ? IMAGE_WIDTH - MARGIN - EXEC_PLATE_W / 2 : IMAGE_WIDTH - MARGIN - 160)
     + `<rect width="${IMAGE_WIDTH}" height="${GOLD_BAND}" fill="${GOLD}" data-gold-band="top"/>`
     + `<rect y="${num(headerH)}" width="${IMAGE_WIDTH}" height="${GOLD_BAND}" fill="${GOLD}" data-gold-band="header"/>`)
   parts.push(`<rect x="${num(textX)}" y="${num(leadTop)}" width="${leadW}" height="${leadH}" rx="${num(leadH / 2)}" fill="${GOLD}" data-lead-pill="1"/>`)
   headerText(textX + 20, leadTop + Math.round(leadH * 0.7), lead, { size: leadSize, bold: true, fill: theme.deep })
   // โลโก้ในวงขาวขอบทอง (แบบไอคอนวงกลมในภาพอ้างอิง)
-  const logoCy = (GOLD_BAND + headerH) / 2
+  // เจ้าของสั่ง 2569-11-12: กึ่งกลางโลโก้ตรงกับกึ่งกลางกลุ่มข้อความหัว (ป้ายทอง → ชื่อ อปท.) ไม่ใช่กึ่งกลางแถบหัว
+  // แถบหัวสูงตามรูปนายก โลโก้เดิมจึงตกต่ำกว่าตัวหนังสือ · ไม่ให้ชิดแถบทองบนเกิน 16 px
+  const textMid = (leadTop + baseline + 10) / 2 // +10 = หางสระล่างของบรรทัดสุดท้าย
+  const logoCy = Math.max(GOLD_BAND + logoR + 16, textMid)
   parts.push(`<circle cx="${logoCx}" cy="${num(logoCy + 4)}" r="${logoR}" fill="${SHADOW}" fill-opacity="0.22"/>`
     + `<circle cx="${logoCx}" cy="${num(logoCy)}" r="${logoR}" fill="#ffffff" stroke="${GOLD}" stroke-width="6"/>`)
   if (imageUrlOk(logoDataUrl)) {
@@ -695,9 +823,27 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
     defs.push(`<clipPath id="news-logo-clip"><circle cx="${logoCx}" cy="${num(logoCy)}" r="${inner}"/></clipPath>`)
     parts.push(`<image href="${esc(logoDataUrl)}" x="${logoCx - inner}" y="${num(logoCy - inner)}" width="${inner * 2}" height="${inner * 2}" preserveAspectRatio="xMidYMid meet" clip-path="url(#news-logo-clip)"/>`)
   }
+  // รูปอาคารสำนักงานจริงใต้โลโก้ ยืนชิดก้นแถบหัว (ตัดพื้นหลัง/ขอบจางมาแล้ว) — ที่ว่างไม่พอ (แถบหัวเตี้ย) = ไม่วาด
+  let markLeft = MARGIN
+  if (office) {
+    const top = logoCy + logoR + 6
+    const boxW = textX + 40
+    if (headerH - top >= 120) {
+      parts.push(`<image href="${esc(office)}" x="0" y="${num(top)}" width="${num(boxW)}" height="${num(headerH - top)}" preserveAspectRatio="xMidYMax meet" clip-path="url(#news-head-clip)" data-office-photo="1"/>`)
+      markLeft = boxW
+    }
+  }
   // ช่องว่างไว้ให้ออร่ารูปผู้บริหาร — วางใต้ข้อความหัว แสงจางจึงไม่ทับตัวหนังสือ
   const auraSlot = parts.push('') - 1
   parts.push(headerTexts.join(''))
+  // คำ "Smart City Local" เติมที่ว่างใต้โลโก้/ข้อความหัว (เจ้าของสั่ง 2569-11-12 ตามภาพอ้างอิง) — มีที่ว่างพอเท่านั้น
+  // ที่ว่างเกิดจากแถบหัวสูงตามรูปนายก จึงไม่ทำให้ภาพยาวขึ้น ไม่กระทบเพดาน A4
+  {
+    const top = Math.max(baseline + 18, logoCy + logoR + 14)
+    const right = exec ? IMAGE_WIDTH - MARGIN - EXEC_PLATE_W - 24 : IMAGE_WIDTH - MARGIN
+    const mark = smartCityMarkSvg(defs, markLeft, top, right - markLeft, headerH - 16 - top, measure)
+    if (mark) parts.push(mark)
+  }
   if (exec) {
     // ป้ายขาวขอบทองชิดขอบขวาของพื้นที่เนื้อหา · รูปอยู่กึ่งกลางป้าย ยืนชิดก้นกล่องและถูกป้ายทับช่วงล่าง (ไม่มีรูป = ป้ายอย่างเดียว)
     // ไม่มีพื้น/กรอบขาวหลังรูป — รูปที่ตัดพื้นหลังแล้วต้องลอยบนสีแถบหัว · ตัดไม่ได้ ผู้เรียกใส่กรอบมาในรูปเอง
@@ -705,11 +851,10 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
     const centerX = plateX + EXEC_PLATE_W / 2
     if (execPhoto) {
       const px = centerX - execPhotoW / 2
-      // รูปประกาศครั้งเดียวใน defs แล้วใช้ซ้ำ (mask ขอบเรือง + ตัวรูปจริง) — สตริง SVG ไม่บวมเป็นสองเท่าของขนาดรูป
-      defs.push(`<clipPath id="news-exec-clip"><rect x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}"/></clipPath>`
-        + `<image id="news-exec-img" href="${esc(execPhoto)}" x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}" preserveAspectRatio="xMidYMax meet" clip-path="url(#news-exec-clip)"/>`)
-      parts[auraSlot] = execAuraSvg(defs, centerX, px, execPhotoW, execPhotoH, headerH, fit.exec)
-      parts.push('<use href="#news-exec-img" data-exec-photo="1"/>')
+      // วาด <image> ตรงๆ ไม่ผ่าน <use>/mask — ขอบเรืองขาวอยู่ในไฟล์รูปแล้ว (prepareExecutivePhoto) Safari จึงวาดเหมือน Chrome
+      defs.push(`<clipPath id="news-exec-clip"><rect x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}"/></clipPath>`)
+      parts[auraSlot] = execAuraSvg(defs, centerX, execPhotoW, execPhotoH)
+      parts.push(`<image href="${esc(execPhoto)}" x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}" preserveAspectRatio="xMidYMax meet" clip-path="url(#news-exec-clip)" data-exec-photo="1"/>`)
     }
     if (execPlateH) {
       // เงาจางใต้ป้าย (สี่เหลี่ยมเลื่อนลง) แทน SVG filter ซึ่งบางเบราว์เซอร์ไม่วาดตอนแปลงเป็น PNG
@@ -854,7 +999,15 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
   const qrCardW = qr ? qr.side + qrPad * 2 : 0
   const qrCardH = qr ? qr.side + qrPad * 2 + Math.round(qrLabelSize * 1.5) : 0
   const footTextX = MARGIN + (qr ? qrCardW + 36 : 0)
-  const footTextW = IMAGE_WIDTH - MARGIN - footTextX
+  // คำขวัญมุมล่างขวา (เจ้าของสั่ง 2569-11-12 ตามภาพอ้างอิง) บนแผ่นเหลืองขอบโค้ง — กันที่ฝั่งขวาไว้ ข้อความแถบท้ายแคบลง
+  // ลิงก์แจ้งเรื่องต้องอยู่บรรทัดเดียว (ตัดกลาง URL แล้วพิมพ์ตามไม่ได้) — ที่ข้างขวาไม่พอ (มี QR + ลิงก์ยาว)
+  // = วางแผ่นเหลืองเป็นแถวมุมล่างขวาใต้ข้อความแทน (แถบท้ายสูงขึ้นเท่าแถวนั้น) · คำขวัญขึ้นทุกใบ
+  const urlNeedW = model.reportUrl ? Math.ceil(measure(model.reportUrl.replace(/^https?:\/\//i, ''), fs(30), true)) : 0
+  const sloganRoom = IMAGE_WIDTH - footTextX - urlNeedW - 24
+  const sloganSide = Math.min(fs(SLOGAN_W), sloganRoom) >= fs(SLOGAN_MIN_W)
+  const sloganW = sloganSide ? Math.min(fs(SLOGAN_W), sloganRoom) : fs(SLOGAN_ROW_W)
+  const sloganRowH = sloganSide ? 0 : fs(SLOGAN_ROW_H)
+  const footTextW = IMAGE_WIDTH - MARGIN - footTextX - (sloganSide ? sloganW - MARGIN + 24 : 0)
   // ปิด QR/ลิงก์ (ไม่มี reportUrl) = ข้อความขอบคุณแทน — ไม่ใช้ "แจ้งเราได้ตลอด 24 ชม." เพราะชวนแจ้งโดยไม่บอกช่องทาง
   // ประชาชนจะโทรเข้าสำนักงานแทน (เพิ่มงานเจ้าหน้าที่) · "มุ่งสู่" เมืองอัจฉริยะ: ยังไม่ได้รับรองเป็นเมืองอัจฉริยะ ห้ามเขียนว่าเป็นแล้ว
   // บรรทัดแรกสีทอง (หัวข้อสองสีแบบภาพอ้างอิง)
@@ -870,7 +1023,7 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
   ]
   const stepOf = slot => Math.round(slot.size * 1.4)
   const footTextH = slots.reduce((sum, slot) => sum + slot.lines.length * stepOf(slot), 0)
-  const footH = GOLD_BAND + Math.max(qrCardH, footTextH) + PAD * 2
+  const footH = GOLD_BAND + Math.max(qrCardH, footTextH + (sloganRowH ? sloganRowH + fs(10) : 0)) + PAD * 2
 
   // ── รูป: การ์ดขาวขอบหนาเงานุ่ม + รูปครอปแบบ cover มุมมน + แท็กสีก่อน/หลังดำเนินการ ──
   if (photos.length) {
@@ -918,7 +1071,7 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
   const footTop = Math.max(y + gap(48), NEWS_MIN_HEIGHT - footH)
   const height = Math.ceil(footTop + footH)
   const bodyTop = footTop + GOLD_BAND
-  defs.push(`<linearGradient id="news-foot-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${theme.deep}"/><stop offset="1" stop-color="${theme.base}"/></linearGradient>`
+  defs.push(`<linearGradient id="news-foot-grad" x1="0" y1="0" x2="1" y2="1">${FRAME_STOPS}</linearGradient>`
     + `<clipPath id="news-foot-clip"><rect y="${num(bodyTop)}" width="${IMAGE_WIDTH}" height="${num(height - bodyTop)}"/></clipPath>`)
   // วงกลมจางถูกวางก่อน QR/ข้อความ — ไม่ทับสิ่งที่ต้องสแกนหรืออ่าน (QR ยังเป็นดำบนพื้นขาว)
   parts.push(`<rect y="${num(footTop)}" width="${IMAGE_WIDTH}" height="${GOLD_BAND}" fill="${GOLD}" data-gold-band="footer"/>`
@@ -932,7 +1085,12 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
     parts.push(`<g transform="translate(${MARGIN + qrPad} ${num(cardY + qrPad)})"><rect width="${qr.side}" height="${qr.side}" fill="#ffffff"/><path transform="translate(${QUIET_MODULES * qr.module} ${QUIET_MODULES * qr.module}) scale(${qr.module})" d="${qr.d}" fill="#000000" shape-rendering="crispEdges"/></g>`)
     text(MARGIN + qrCardW / 2, cardY + qrPad + qr.side + Math.round(qrLabelSize * 1.1), qrLabel, { size: qrLabelSize, bold: true, fill: theme.deep, anchor: 'middle' })
   }
-  let lineTop = bodyTop + (contentH - footTextH) / 2
+  // แบบข้าง: แผ่นสูงเต็มแถบท้าย · แบบแถว: แผ่นมุมล่างขวาชิดขอบล่าง ข้อความเลื่อนขึ้นไปอยู่เหนือแผ่น
+  const sloganTop = sloganRowH ? height - PAD - sloganRowH : bodyTop
+  parts.push(sloganSvg(IMAGE_WIDTH - sloganW, sloganTop, sloganW, height - sloganTop, measure))
+  let lineTop = sloganRowH
+    ? bodyTop + (contentH - footTextH - sloganRowH - fs(10)) / 2
+    : bodyTop + (contentH - footTextH) / 2
   for (const slot of slots) {
     for (const line of slot.lines) {
       parts.push(`<text x="${num(footTextX)}" y="${num(lineTop + Math.round(slot.size * 1.05))}" font-size="${slot.size}" font-weight="${slot.bold ? 700 : 400}" fill="${slot.fill ?? '#ffffff'}" fill-opacity="${slot.opacity}">${esc(line)}</text>`)
