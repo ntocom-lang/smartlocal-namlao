@@ -8,8 +8,9 @@
  *             ~/.claude/CLAUDE.md, ~/.gemini/GEMINI.md, ~/.codex/AGENTS.md
  *   ค่าตั้ง Claude : docs/ai/claude/agents/*.md -> ~/.claude/agents/ (คัดลอกทั้งไฟล์)
  *                    docs/ai/claude/settings.json -> ~/.claude/settings.json (merge เฉพาะคีย์รุ่น/effort
- *                    คีย์อื่นเช่น permissions/hooks ของเครื่องนั้นคงไว้ทั้งหมด)
- *                    ⇒ VS Code + Antigravity ใช้ ~/.claude ชุดเดียวกัน รันครั้งเดียวได้ทั้งสอง IDE
+ *                    รวม modelSettings ทีละรุ่น คีย์อื่นเช่น permissions/hooks ของเครื่องนั้นคงไว้ทั้งหมด)
+ *                    ⇒ extension Claude Code ใน VS Code + Antigravity ใช้ ~/.claude ชุดเดียวกัน
+ *                    ส่วน agent ของ Antigravity เองอ่าน ~/.gemini/GEMINI.md (+ [Adapter — Antigravity])
  *                    ⚠️ ลบ agent ออกจากรีโปแล้ว ไฟล์ใน ~/.claude/agents ไม่ถูกลบตาม ต้องลบมือ
  *
  * ทำไมต้องมี: 3 ไฟล์สุดท้ายอยู่นอก git ⇒ เครื่องใหม่จะไม่มีเลย และการ copy ด้วยมือ
@@ -107,6 +108,11 @@ const ADAPTER_CODEX = need(adapters, ADAPTER_CODEX_K, 'ADAPTERS.md');
 const ADAPTER_CLAUDE_K = '[Adapter — Claude: เลือกรุ่นและ effort]';
 const ADAPTER_CLAUDE = need(adapters, ADAPTER_CLAUDE_K, 'ADAPTERS.md');
 
+// agent ของ Antigravity สลับรุ่นตัวเองไม่ได้ (เลือกจาก dropdown) ⇒ กติกา "แนะนำรุ่น" ออกที่ ~/.gemini/GEMINI.md
+// (extension Claude Code ใน Antigravity อ่าน ~/.claude/CLAUDE.md ไม่ใช่ไฟล์นี้ — ได้ adapter Claude ไปแล้ว)
+const ADAPTER_ANTIGRAVITY_K = '[Adapter — Antigravity: แนะนำรุ่นของ agent]';
+const ADAPTER_ANTIGRAVITY = need(adapters, ADAPTER_ANTIGRAVITY_K, 'ADAPTERS.md');
+
 /* ─────────────── ค่าตั้ง Claude Code (agents + รุ่น/effort เริ่มต้น) ─────────────── */
 
 const CLAUDE_SRC = 'docs/ai/claude';
@@ -118,13 +124,39 @@ const agentFiles = readdirSync(join(CLAUDE_SRC, 'agents'))
 if (agentFiles.length === 0) die(`ไม่พบไฟล์ agent ใน ${CLAUDE_SRC}/agents`);
 
 // รับเฉพาะคีย์ที่ตั้งใจ sync — กันมีคนเผลอใส่ permissions/hooks แล้วไปทับของแต่ละเครื่อง
-const SETTINGS_KEYS = ['model', 'effortLevel', 'maxEffortLevel'];
+// modelSettings จำเป็นเพราะ effortLevel ชั้นบนสุด "ไม่มีผลกับ Opus 5.5" (เอกสาร Claude Code model-config)
+// effort ของรุ่นนั้นอ่านจาก modelSettings["claude-opus-5-5"].effortLevel เท่านั้น (ตรวจพบ 2026-11-12:
+// PC ได้ high เพราะเคยกด /effort ไว้ ส่วนเครื่องที่ตั้งจาก ai:sync อย่างเดียวจะไม่ได้)
+const SETTINGS_KEYS = ['model', 'effortLevel', 'maxEffortLevel', 'modelSettings'];
+const MODEL_SETTINGS_KEYS = ['effortLevel'];
+// max เก็บถาวรใน settings ไม่ได้ (Claude Code ใช้ได้ทีละ session) ⇒ ใส่ไว้ก็ไม่มีผล กันไว้ไม่ให้เข้าใจผิด
+const PERSISTABLE_EFFORT = ['low', 'medium', 'high', 'xhigh'];
 const settingsFragment = JSON.parse(readFileSync(join(CLAUDE_SRC, 'settings.json'), 'utf8'));
 for (const k of Object.keys(settingsFragment)) {
   if (!SETTINGS_KEYS.includes(k)) die(`${CLAUDE_SRC}/settings.json มีคีย์ "${k}" ที่ไม่อยู่ใน SETTINGS_KEYS`);
 }
+const checkEffort = (v, where) => {
+  if (v !== undefined && !PERSISTABLE_EFFORT.includes(v)) {
+    die(`${CLAUDE_SRC}/settings.json ${where} = "${v}" — ตั้งถาวรได้แค่ ${PERSISTABLE_EFFORT.join('/')}`);
+  }
+};
+checkEffort(settingsFragment.effortLevel, 'effortLevel');
+for (const [model, conf] of Object.entries(settingsFragment.modelSettings ?? {})) {
+  if (typeof conf !== 'object' || conf === null || Array.isArray(conf)) {
+    die(`${CLAUDE_SRC}/settings.json modelSettings["${model}"] ต้องเป็น object`);
+  }
+  for (const k of Object.keys(conf)) {
+    if (!MODEL_SETTINGS_KEYS.includes(k)) {
+      die(`${CLAUDE_SRC}/settings.json modelSettings["${model}"] มีคีย์ "${k}" ที่ไม่อยู่ใน MODEL_SETTINGS_KEYS`);
+    }
+  }
+  checkEffort(conf.effortLevel, `modelSettings["${model}"].effortLevel`);
+}
 
-/** merge คีย์รุ่น/effort ลง ~/.claude/settings.json โดยคงคีย์อื่นไว้ — ค่าตรงอยู่แล้วคืนไฟล์เดิมทั้งไบต์ */
+/**
+ * merge คีย์รุ่น/effort ลง ~/.claude/settings.json โดยคงคีย์อื่นไว้ — ค่าตรงอยู่แล้วคืนไฟล์เดิมทั้งไบต์
+ * modelSettings merge ทีละรุ่น ทีละคีย์ ⇒ รุ่นอื่นที่เครื่องนั้นตั้งด้วย /effort ไว้ยังอยู่ครบ
+ */
 function buildClaudeSettings() {
   const p = join(CLAUDE_HOME, 'settings.json');
   if (!existsSync(p)) return `${JSON.stringify(settingsFragment, null, 2)}\n`;
@@ -135,8 +167,20 @@ function buildClaudeSettings() {
   } catch (e) {
     die(`${p} อ่านเป็น JSON ไม่ได้ (${e.message}) — ไม่เขียนทับ แก้ไฟล์ให้ถูกก่อน`);
   }
-  if (Object.entries(settingsFragment).every(([k, v]) => cur[k] === v)) return raw;
-  return `${JSON.stringify({ ...cur, ...settingsFragment }, null, 2)}\n`;
+  const { modelSettings: fragModels = {}, ...fragFlat } = settingsFragment;
+  const curModels = cur.modelSettings && typeof cur.modelSettings === 'object' ? cur.modelSettings : {};
+  const flatSame = Object.entries(fragFlat).every(([k, v]) => cur[k] === v);
+  const modelsSame = Object.entries(fragModels).every(([m, conf]) =>
+    Object.entries(conf).every(([k, v]) => curModels[m]?.[k] === v),
+  );
+  if (flatSame && modelsSame) return raw;
+  const merged = { ...cur, ...fragFlat };
+  if (Object.keys(fragModels).length > 0) {
+    const models = { ...curModels };
+    for (const [m, conf] of Object.entries(fragModels)) models[m] = { ...(curModels[m] ?? {}), ...conf };
+    merged.modelSettings = models;
+  }
+  return `${JSON.stringify(merged, null, 2)}\n`;
 }
 
 /* ───────────── กฎแปลงถ้อยคำ (data — แก้ตรงนี้ที่เดียว) ───────────── */
@@ -335,7 +379,7 @@ const targets = [
   {
     path: join(HOME, '.gemini', 'GEMINI.md'),
     inGit: false,
-    build: () => [...HEAD_GLOBAL, ...bodyGlobal, ''].join('\n'),
+    build: () => [...HEAD_GLOBAL, ...bodyGlobal, '', ADAPTER_ANTIGRAVITY_K, ...ADAPTER_ANTIGRAVITY, ''].join('\n'),
   },
   {
     path: join(HOME, '.codex', 'AGENTS.md'),

@@ -1,5 +1,13 @@
 {
   "model": "opus",
   "effortLevel": "high",
-  "maxEffortLevel": "max"
+  "maxEffortLevel": "max",
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "effortLevel": "high"
+    },
+    "claude-sonnet-5-5": {
+      "effortLevel": "high"
+    }
+  }
 }

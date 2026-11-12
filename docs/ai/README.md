@@ -5,7 +5,9 @@
 - `docs/ai/DOMAIN.md` = **ความเชี่ยวชาญเฉพาะโปรเจกต์นี้** (Smart City ภาครัฐไทย) — มีเฉพาะโปรเจกต์นี้เท่านั้น
   โปรเจกต์อื่นที่ไม่ใช่สายงานนี้ ให้สร้าง `docs/ai/DOMAIN.md` ของตัวเองแยกต่างหาก ไม่ต้องแก้ CORE.md
 - `docs/ai/SAFETY.md` = กติกาสำหรับ agent ที่แก้ไฟล์ในเครื่องได้ (IDE/CLI) — ไม่ sync ไปฝั่งเว็บ
-- `docs/ai/ADAPTERS.md` = ส่วนต่างเฉพาะเครื่องมือที่ไม่มีไฟล์ adapter ของตัวเองในรีโป (ตอนนี้มี Codex ตัวเดียว)
+- `docs/ai/ADAPTERS.md` = ส่วนต่างเฉพาะเครื่องมือที่ต้องออกที่ไฟล์ global (ตอนนี้มี Claude: เลือกรุ่นและ effort,
+  Antigravity: แนะนำรุ่นของ agent, Codex)
+- `docs/ai/claude/` = ค่าตั้ง Claude Code (`settings.json` รุ่น/effort เริ่มต้น + `agents/*.md` subagent) — ไม่ใช่ข้อความ instruction
 
 **ปลายทางทั้งหมดถูก generate โดย `scripts/ai-sync.mjs` — ห้ามแก้ไฟล์เหล่านี้ตรงๆ:**
 
@@ -13,8 +15,10 @@
 |---|---|---|
 | `AGENTS.md` (root) | CORE + DOMAIN + SAFETY + มาตรฐานการพิมพ์ | Claude Code (ผ่าน `CLAUDE.md`) และเครื่องมือที่อ่าน AGENTS.md |
 | `.agents/rules/domain.md` | DOMAIN ทั้งไฟล์ (รวมมาตรฐานการพิมพ์) | Antigravity — Workspace Rules |
-| `~/.claude/CLAUDE.md` | CORE ล้วน **ไม่มี DOMAIN** | Claude Code ทุกโปรเจกต์ (global) |
-| `~/.gemini/GEMINI.md` | CORE ล้วน **ไม่มี DOMAIN** | Antigravity — Global Rules ทุก backend (Claude/GPT/Gemini/Grok) |
+| `~/.claude/CLAUDE.md` | CORE ล้วน **ไม่มี DOMAIN** + `[Adapter — Claude: เลือกรุ่นและ effort]` | Claude Code ทุกโปรเจกต์ (global) ทั้ง extension ใน VS Code และใน Antigravity |
+| `~/.claude/settings.json` | merge เฉพาะ `model` / `effortLevel` / `maxEffortLevel` / `modelSettings` (ทีละรุ่น) จาก `docs/ai/claude/settings.json` คีย์อื่นของเครื่องคงไว้ | Claude Code |
+| `~/.claude/agents/*.md` | คัดลอกจาก `docs/ai/claude/agents/` | Claude Code (subagent ที่ตั้งรุ่น/effort ในตัว) |
+| `~/.gemini/GEMINI.md` | CORE ล้วน **ไม่มี DOMAIN** + `[Adapter — Antigravity: แนะนำรุ่นของ agent]` | Antigravity — Global Rules ทุก backend (Claude/GPT/Gemini/Grok) |
 | `~/.codex/AGENTS.md` | CORE ล้วน **ไม่มี DOMAIN** + `[Adapter — Codex]` | Codex (CLI / cloud / IDE extension) ทุกโปรเจกต์ (global) |
 | `docs/ai/web-snippets.md` | CORE + DOMAIN เฉพาะหัวข้อใน `WEB_DOMAIN_KEYS` (ตอนนี้ `[ระบบอัจฉริยะ ...]`) + Adapter รายเว็บ · สคริปต์กันบล็อกยาวเกิน 11,500 ตัวอักษร | ต้นทางสำหรับ paste เข้า Gemini Gem / ChatGPT Project / Claude Project (paste เองทุกครั้งที่เปลี่ยน) |
 
@@ -57,6 +61,12 @@ npm run ai:check    # ตรวจอย่างเดียว ไม่เข
 
 ## บันทึกเหตุการณ์
 
+- **2026-11-12** `docs/ai/claude/settings.json` เพิ่ม `modelSettings` (Opus 5.5 / Sonnet 5.5 = high)
+  เพราะ `effortLevel` ชั้นบนสุดไม่มีผลกับ Opus 5.5 — PC ได้ high เพราะเคยกด `/effort` ไว้ เครื่องที่ตั้งจาก ai:sync อย่างเดียวไม่ได้
+  สคริปต์ merge ทีละรุ่นและหยุดถ้าใส่ `max` (ตั้งถาวรไม่ได้) · เพิ่ม `[Adapter — Antigravity: แนะนำรุ่นของ agent]`
+  ลง `~/.gemini/GEMINI.md` เพราะ agent ของ Antigravity สลับรุ่นเองไม่ได้ ทำได้แค่แนะนำบรรทัดแรก
+  (ตรวจแล้ว: แชตหลักของ Claude Code สลับรุ่นตัวเองอัตโนมัติไม่ได้เช่นกัน ไม่มี hook ที่เปลี่ยนรุ่น/effort
+  และไม่ใช้ skill สลับรุ่นรายเทิร์น เพราะ cache ผูกกับรุ่น สลับแต่ละครั้งต้องจ่ายขาเข้าเต็มราคาใหม่)
 - **2026-07-29** แยกโครงสร้าง 2 ชั้น (CORE + DOMAIN)
 - **2026-09-06** เพิ่มปลายทาง `~/.codex/AGENTS.md` + ต้นฉบับ `docs/ai/ADAPTERS.md`
   และเพิ่มข้อยกเว้น push ของ agent ฝั่งคลาวด์ใน `docs/ai/SAFETY.md`
