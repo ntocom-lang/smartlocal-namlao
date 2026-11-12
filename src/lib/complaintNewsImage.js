@@ -14,6 +14,8 @@
 
 import { __iconNode as cameraIcon } from 'lucide-react/dist/esm/icons/camera.mjs'
 import { __iconNode as checkIcon } from 'lucide-react/dist/esm/icons/check.mjs'
+import { __iconNode as clipboardCheckIcon } from 'lucide-react/dist/esm/icons/clipboard-check.mjs'
+import { __iconNode as clockIcon } from 'lucide-react/dist/esm/icons/clock.mjs'
 import { iconNodeForCategory } from './complaintCategoryIcons.js'
 import { FONT_STACK, IMAGE_WIDTH, iconSvg, wrapLines } from './complaintMonthlyInfographic.js'
 import { newsThemeFor } from './departmentColors.js'
@@ -483,85 +485,44 @@ function mixHex(a, b, ratio) {
   return '#' + [0, 1, 2].map(i => Math.round(channel(a, i) * (1 - ratio) + channel(b, i) * ratio).toString(16).padStart(2, '0')).join('')
 }
 
-// ลวดลายเครือข่ายจุด-เส้น (แนวเมืองอัจฉริยะ) กรอบ 300×220 — กำหนดตายตัว ไม่สุ่ม
-const NETWORK_NODES = [[20, 30], [110, 70], [200, 25], [280, 95], [190, 150], [95, 160], [250, 200], [30, 125]]
-const NETWORK_EDGES = [[0, 1], [1, 2], [2, 3], [1, 4], [4, 3], [4, 5], [5, 7], [7, 1], [4, 6], [3, 6]]
+// ── ชุดตกแต่งแบบอินโฟกราฟิกอ้างอิง (เจ้าของระบบอนุมัติ 2569-11-12) — วาดด้วยรูปทรง+ไล่สีล้วน ไม่ใช้ SVG filter ไม่สุ่ม ──
+// ทองตัวอักษรบนแถบหัวสีเข้ม: สว่างกว่า GOLD เพื่อให้ยังอ่านออกบนธีมทอง/น้ำตาล (ตัวหนา ≥ 34 px = ตัวอักษรใหญ่ เกณฑ์ 3:1)
+const GOLD_TEXT = '#fde68a'
+// แถบทองบางบนสุด / ใต้แถบหัว / เหนือแถบท้าย
+const GOLD_BAND = 10
+// สีเงาของการ์ด (น้ำเงินเทาเข้ม ความทึบต่ำ) — กลางๆ ใช้ได้กับทุกธีมกอง
+const SHADOW = '#0f172a'
+const STATUS_GREEN_LIGHT = '#22c55e'
+const STATUS_GREEN_DEEP = '#166534'
+const BEFORE_AMBER = '#d97706'
 
-function networkSvg(x, y, flip, color) {
-  const transform = flip ? `translate(${num(x + 300)} ${num(y + 220)}) scale(-1 -1)` : `translate(${num(x)} ${num(y)})`
-  const lines = NETWORK_EDGES.map(([a, b]) => `<line x1="${NETWORK_NODES[a][0]}" y1="${NETWORK_NODES[a][1]}" x2="${NETWORK_NODES[b][0]}" y2="${NETWORK_NODES[b][1]}"/>`).join('')
-  const dots = NETWORK_NODES.map(([nx, ny], i) => `<circle cx="${nx}" cy="${ny}" r="${i % 3 === 1 ? 8 : 5}" fill="${color}" fill-opacity="0.2"/>`
-    + (i % 3 === 1 ? `<circle cx="${nx}" cy="${ny}" r="16" fill="none" stroke="${color}" stroke-opacity="0.16" stroke-width="2"/>` : '')).join('')
-  return `<g transform="${transform}" data-network="1"><g stroke="${color}" stroke-opacity="0.14" stroke-width="2.5" stroke-linecap="round">${lines}</g>${dots}</g>`
+/** วงกลมจางขนาดใหญ่ (bokeh) แบบภาพอ้างอิง — [x, y, รัศมี] เป็นสัดส่วนความกว้าง/สูงของแถบ + ความทึบ · clip ด้วยรูปทรงแถบ */
+const BOKEH = [[0.86, -0.3, 0.27, 0.09], [1.02, 0.95, 0.19, 0.07], [0.06, 1.2, 0.15, 0.06]]
+
+function bokehSvg(clipId, top, width, height, flip) {
+  const circles = BOKEH.map(([fx, fy, fr, opacity]) => {
+    const cy = top + (flip ? 1 - fy : fy) * height
+    return `<circle cx="${num(fx * width)}" cy="${num(cy)}" r="${num(fr * width)}" fill="#ffffff" fill-opacity="${opacity}"/>`
+  }).join('')
+  return `<g clip-path="url(#${clipId})" data-bokeh="1">${circles}</g>`
 }
 
-/**
- * พื้นหลังทั้งภาพ (วาดก่อนแถบหัว/ท้าย จึงโผล่เฉพาะช่วงเนื้อหาและมุมโค้งของแถบ):
- *  - ไล่สีอ่อนจากสีธีมกอง → ขาวนวล · การ์ดขาวมุมมนมีเงา (สี่เหลี่ยมเลื่อนลง ไม่ใช้ filter) รองรับเนื้อหา
- *  - ลายจุดกริดจางในการ์ด + ลายเครือข่ายจุด-เส้นมุมขวาบน/ซ้ายล่าง (ความทึบ ≤ 0.2 ไม่รบกวนการอ่าน)
- * ไม่มีข้อความ/รูปของผู้ใช้อยู่ในนี้ — ตกแต่งล้วน
- */
-function pageBackdrop(width, height, headerH, footTop, theme) {
-  const cardX = 24
-  const cardW = width - cardX * 2
-  const cardTop = headerH - 40
-  const cardH = footTop + 40 - cardTop
-  const tintTop = mixHex(theme.soft, '#ffffff', 0.25)
-  const tintBottom = mixHex(theme.soft, '#ffffff', 0.6)
-  const card = `<rect x="${cardX}" y="${num(cardTop)}" width="${cardW}" height="${num(cardH)}" rx="36"`
-  return `<defs><linearGradient id="news-bg-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${tintTop}"/><stop offset="1" stop-color="${tintBottom}"/></linearGradient>`
-    + `<pattern id="news-dots" width="34" height="34" patternUnits="userSpaceOnUse"><circle cx="17" cy="17" r="2.2" fill="${theme.base}" fill-opacity="0.08"/></pattern>`
-    + `<clipPath id="news-card-clip"><rect x="${cardX}" y="${num(cardTop)}" width="${cardW}" height="${num(cardH)}" rx="36"/></clipPath></defs>`
-    + `<rect width="${width}" height="${height}" fill="url(#news-bg-grad)"/>`
-    + `<rect x="${cardX}" y="${num(cardTop + 10)}" width="${cardW}" height="${num(cardH)}" rx="36" fill="${theme.deep}" fill-opacity="0.12" data-card-shadow="1"/>`
-    + `${card} fill="#ffffff" data-card="1"/>`
-    + `<g clip-path="url(#news-card-clip)"><rect x="${cardX}" y="${num(cardTop)}" width="${cardW}" height="${num(cardH)}" fill="url(#news-dots)"/>`
-    + networkSvg(width - cardX - 290, cardTop + 60, false, theme.base)
-    + networkSvg(cardX - 10, footTop + 40 - 230, true, theme.base)
-    + '</g>'
+/** การ์ดมุมมน + เงานุ่ม 2 ชั้น (สี่เหลี่ยมเลื่อนลง แทน SVG filter) */
+function softCard(x, y, w, h, r, fill = '#ffffff', extra = '') {
+  return `<rect x="${num(x)}" y="${num(y + 9)}" width="${num(w)}" height="${num(h)}" rx="${r}" fill="${SHADOW}" fill-opacity="0.05"/>`
+    + `<rect x="${num(x)}" y="${num(y + 3)}" width="${num(w)}" height="${num(h)}" rx="${r}" fill="${SHADOW}" fill-opacity="0.08"/>`
+    + `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="${r}" fill="${fill}"${extra}/>`
 }
 
-// ลายแผงวงจรบนแถบหัว/แถบท้าย — เส้นตรงหักมุม 90°/45° + จุดเชื่อม กำหนดตายตัว (ไม่มี random: ภาพเดิมต้องได้ SVG เดิมทุกครั้ง)
-// start = [สัดส่วนความกว้าง, สัดส่วนความสูง] · moves: ['h', dx] แนวนอน · ['v', dy] แนวตั้ง · ['d', dx, ทิศ] เฉียง 45° (dy = |dx| × ทิศ, -1 = ขึ้น)
-const CIRCUIT_TRACES = [
-  { start: [0, 0.8], moves: [['h', 70], ['d', 46, -1], ['h', 120], ['d', 30, 1], ['h', 60]] },
-  { start: [0, 0.24], moves: [['h', 50], ['d', 34, 1], ['h', 90]] },
-  { start: [1, 0.86], moves: [['h', -110], ['d', -40, -1], ['h', -150]] },
-  { start: [1, 0.14], moves: [['h', -70], ['v', 44], ['d', -32, 1], ['h', -90]] },
-  { start: [0.36, 1], moves: [['v', -36], ['d', 40, -1], ['h', 200]] },
-  { start: [0.64, 0], moves: [['v', 34], ['d', 34, 1], ['h', 110], ['v', 40]] },
-]
+/** ไอคอน lucide สีใดก็ได้ — iconSvg วาดเส้นขาวเสมอ จึงเปลี่ยนสีเส้นที่กลุ่มนอกสุด */
+const iconIn = (node, x, y, size, color) => iconSvg(node, x, y, size).replace('stroke="#ffffff"', `stroke="${color}"`)
 
-/**
- * ลายวงจรสีขาวจาง clip ให้อยู่ในรูปทรงแถบ (clipId ชี้ clipPath ที่ผู้เรียกประกาศ) · flip = พลิกแนวตั้งให้แถบท้าย
- * ไม่ใช้ SVG filter (บางเบราว์เซอร์ไม่วาดตอนแปลงเป็น PNG) · ผู้เรียกวางลายก่อน QR/ข้อความ จึงไม่ทับสิ่งที่ต้องอ่านหรือสแกน
- */
-function circuitSvg(clipId, width, height, flip, top = 0) {
-  const paths = []
-  const rings = []
-  const dots = []
-  for (const trace of CIRCUIT_TRACES) {
-    let x = trace.start[0] * width
-    let y = trace.start[1] * height
-    const points = [[x, y]]
-    for (const [kind, n, dir] of trace.moves) {
-      if (kind === 'h') x += n
-      else if (kind === 'v') y += n
-      else { x += n; y += Math.abs(n) * dir }
-      points.push([x, y])
-    }
-    const yOf = py => top + (flip ? height - py : py)
-    const at = ([px, py]) => `${num(px)} ${num(yOf(py))}`
-    paths.push(`<path d="M${points.map(at).join('L')}"/>`)
-    rings.push(`<circle cx="${num(points[0][0])}" cy="${num(yOf(points[0][1]))}" r="7"/>`)
-    const end = points[points.length - 1]
-    dots.push(`<circle cx="${num(end[0])}" cy="${num(yOf(end[1]))}" r="5"/>`)
-  }
-  return `<g clip-path="url(#${clipId})" data-circuit="1"><g fill="none" stroke="#ffffff" stroke-opacity="0.13" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">${paths.join('')}${rings.join('')}</g><g fill="#ffffff" fill-opacity="0.13">${dots.join('')}</g></g>`
+/** พื้นหลังทั้งภาพ: ไล่สีเทาอมสีกองอ่อน → ขาว แบบพื้นภาพอ้างอิง (สะอาด ไม่มีลาย ให้การ์ดขาวเงานุ่มเป็นตัวสร้างมิติ) */
+function pageBackdrop(width, height, theme) {
+  const top = mixHex(theme.soft, '#f1f5f9', 0.55)
+  return `<defs><linearGradient id="news-bg-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="#ffffff"/></linearGradient></defs>`
+    + `<rect width="${width}" height="${height}" fill="url(#news-bg-grad)" data-backdrop="1"/>`
 }
-
-/** วงกลมสีธีมหน้าบรรทัดวันที่ + ไอคอนหมวด (ขาว) */
-const CATEGORY_BADGE_R = 26
 
 /**
  * @param {ReturnType<typeof buildNewsModel>} model
@@ -573,9 +534,8 @@ const CATEGORY_BADGE_R = 26
  * @returns {{ svg: string, width: number, height: number, photoCount: number, fitsA4: boolean }}
  */
 export function buildNewsSvg(model, measure, assets = {}) {
-  // ให้จบ A4 แผ่นเดียว: รูปย่อได้เองถึงขั้นต่ำเสมอ (ใน drawNewsSvg) แล้วถ้ายังล้นค่อยไล่ลดของประกอบทีละขั้น (NEWS_FIT_LEVELS)
-  // ลำดับตั้งใจ: รูปงานคือเนื้อข่าว ต้องรักษาไว้ก่อน → ตัดวันที่ใต้ขั้นตอน → ย่อรูปนายก → ซ่อนแถบขั้นตอน
-  // ข้อความข่าวที่ยาวมากเองอาจยังล้น = fitsA4 false (ไม่ตัดข้อความทิ้ง ให้ผู้เรียกเตือนผู้ใช้)
+  // ให้จบ A4 แผ่นเดียว: รูปย่อได้เองถึงขั้นต่ำเสมอ (ใน drawNewsSvg) แล้วถ้ายังล้นค่อยไล่ย่อตัวหนังสือ/รูปนายก/แถบท้ายทีละขั้น (NEWS_FIT_LEVELS)
+  // ไม่ตัดแถบขั้นตอนทิ้ง (เจ้าของระบบสั่ง 2569-11-12) · ข้อความข่าวที่ยาวมากเองอาจยังล้น = fitsA4 false (ไม่ตัดข้อความทิ้ง ให้ผู้เรียกเตือนผู้ใช้)
   let result = null
   for (const fit of NEWS_FIT_LEVELS) {
     result = drawNewsSvg(model, measure, assets, fit)
@@ -586,13 +546,14 @@ export function buildNewsSvg(model, measure, assets = {}) {
 
 // ทุกขั้นคงแถบขั้นตอน (พร้อมวันที่) ไว้เสมอ — เจ้าของระบบสั่ง 2569-11-12 ให้ย่อรูป/กรอบ/ตัวหนังสือที่ใหญ่เกินแทนการตัดแถบทิ้ง
 // t = ตัวคูณขนาดตัวหนังสือ+ระยะห่างของเนื้อหา · exec = ตัวคูณรูปนายก · foot = ตัวคูณแถบท้าย (QR/ข้อความ) · min = ความสูงช่องรูปต่ำสุด (1–2 รูป)
-// ต่ำสุด: หัวข้อข่าว 40×0.8 = 32 px · QR 220×0.75 = 165 px (ยังสแกนติด) · รูปนายก 165 px
+// ต่ำสุด: หัวข้อข่าว 40×0.8 = 32 px · QR 200×0.8 = 160 px (ยังสแกนติด) · รูปนายก 165 px
 const NEWS_FIT_LEVELS = Object.freeze([
   { t: 1, exec: 1, foot: 1, min: 300 },
   { t: 0.92, exec: 0.85, foot: 1, min: 280 },
-  { t: 0.86, exec: 0.73, foot: 0.85, min: 260 },
-  { t: 0.8, exec: 0.62, foot: 0.8, min: 240 },
-  { t: 0.8, exec: 0.55, foot: 0.75, min: 220 },
+  { t: 0.86, exec: 0.73, foot: 0.9, min: 260 },
+  { t: 0.8, exec: 0.62, foot: 0.85, min: 240 },
+  { t: 0.8, exec: 0.55, foot: 0.8, min: 220 },
+  { t: 0.8, exec: 0.45, foot: 0.8, min: 220 }, // ทางสุดท้าย: ภาพรวม 4 รูป + ป้ายหมู่ + "และอีก N จุด" + รูปนายก (รูปนายกเหลือ 135 px ยังเห็นหน้า)
 ])
 
 function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], executivePhotoDataUrl = null, photoCaptions = [], photoKinds = [], moreText = '' } = {}, fit = NEWS_FIT_LEVELS[0]) {
@@ -609,8 +570,9 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
   const photos = entries.map(entry => entry.url)
   const captionH = entries.some(entry => entry.caption) ? CAPTION_H : 0
   const parts = []
-  const text = (x, y, value, { size = 28, bold = false, fill = INK, anchor = 'start' } = {}) => {
-    parts.push(`<text x="${num(x)}" y="${num(y)}" font-size="${size}" font-weight="${bold ? 700 : 400}" fill="${fill}" text-anchor="${anchor}">${esc(value)}</text>`)
+  const defs = []
+  const text = (x, y, value, { size = 28, bold = false, fill = INK, anchor = 'start', opacity = null } = {}) => {
+    parts.push(`<text x="${num(x)}" y="${num(y)}" font-size="${size}" font-weight="${bold ? 700 : 400}" fill="${fill}"${opacity === null ? '' : ` fill-opacity="${opacity}"`} text-anchor="${anchor}">${esc(value)}</text>`)
   }
   // หลายบรรทัด: คืน baseline ถัดจากบรรทัดสุดท้าย
   const block = (x, y, value, maxWidth, options = {}) => {
@@ -624,7 +586,7 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
     return cursor
   }
 
-  // ── แถบหัวสีธีมกอง ขอบล่างมน ──
+  // ── แถบหัว: แถบทองบนสุด + พื้นไล่สีเข้ม + วงกลมจาง + แถบทองใต้หัว (ขอบล่างตรงแบบภาพอ้างอิง) ──
   const logoR = 72
   const logoCx = MARGIN + logoR
   const textX = MARGIN + logoR * 2 + 32
@@ -648,36 +610,41 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
   // ขั้นต่ำ 40: ป้ายนายกกว้าง 320 ทำให้ช่องข้อความหัวเหลือ ~428px
   while (titleSize > 40 && measure('ข่าวประชาสัมพันธ์', titleSize, true) > textW) titleSize -= 2
   const headerTexts = []
-  const headerText = (x, y, value, { size, bold = false, opacity = 1 }) => {
-    headerTexts.push(`<text x="${num(x)}" y="${num(y)}" font-size="${size}" font-weight="${bold ? 700 : 400}" fill="#ffffff" fill-opacity="${opacity}">${esc(value)}</text>`)
+  const headerText = (x, y, value, { size, bold = false, fill = '#ffffff' }) => {
+    headerTexts.push(`<text x="${num(x)}" y="${num(y)}" font-size="${size}" font-weight="${bold ? 700 : 400}" fill="${fill}">${esc(value)}</text>`)
   }
-  let baseline = 58 + 26
-  let leadSize = 28
-  while (leadSize > 22 && measure('ผลการดำเนินงานผ่านระบบ E-Service', leadSize, false) > textW) leadSize -= 1
-  headerText(textX, baseline, 'ผลการดำเนินงานผ่านระบบ E-Service', { size: leadSize, opacity: 0.92 })
-  baseline += Math.round(titleSize * 1.1)
+  // ป้ายเม็ดยาสีทอง "ผลการดำเนินงานผ่านระบบ E-Service" (ตัวหนาสีเข้มของธีม บนทอง)
+  const lead = 'ผลการดำเนินงานผ่านระบบ E-Service'
+  let leadSize = 26
+  while (leadSize > 20 && measure(lead, leadSize, true) + 40 > textW) leadSize -= 1
+  const leadTop = GOLD_BAND + 30
+  const leadH = leadSize + 22
+  const leadW = Math.ceil(measure(lead, leadSize, true)) + 40
+  let baseline = leadTop + leadH + Math.round(titleSize * 1.05)
   headerText(textX, baseline, 'ข่าวประชาสัมพันธ์', { size: titleSize, bold: true })
-  baseline += 20
+  baseline += 6
+  // ชื่อ อปท. สีทอง — หัวข้อสองสีแบบภาพอ้างอิง
   for (const line of wrapLines(model.tenantName, textW, 34, true, measure)) {
-    baseline += 48
-    headerText(textX, baseline, line, { size: 34, bold: true })
+    baseline += 46
+    headerText(textX, baseline, line, { size: 34, bold: true, fill: GOLD_TEXT })
   }
-  const headerH = Math.max(baseline + 52, logoR * 2 + 116, exec ? execBottom + 44 : 0)
-  const rad = 44
-  // พื้นแถบหัว: ไล่สีทแยง deep → base + ลายวงจร (clip ด้วยรูปทรงเดียวกับแถบ) — ข้อความขาวอยู่บนพื้นที่คอนทราสต์ผ่านเกณฑ์ทั้งสองปลาย
-  const headD = `M0 0H${IMAGE_WIDTH}V${num(headerH - rad)}A${rad} ${rad} 0 0 1 ${IMAGE_WIDTH - rad} ${num(headerH)}H${rad}A${rad} ${rad} 0 0 1 0 ${num(headerH - rad)}Z`
-  parts.push(`<defs><linearGradient id="news-head-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${theme.deep}"/><stop offset="1" stop-color="${theme.base}"/></linearGradient>`
-    + `<clipPath id="news-head-clip"><path d="${headD}"/></clipPath></defs>`
-    + `<path d="${headD}" fill="url(#news-head-grad)"/>`
-    + circuitSvg('news-head-clip', IMAGE_WIDTH, headerH, false))
-  // เส้นทองบางใต้แถบ ตามโค้งขอบล่าง (เส้นหนา 6 กึ่งกลางอยู่ต่ำกว่าขอบ 3 = แนบใต้แถบพอดี)
-  parts.push(`<path d="M-3 ${num(headerH - rad)}A${rad + 3} ${rad + 3} 0 0 0 ${rad} ${num(headerH + 3)}H${IMAGE_WIDTH - rad}A${rad + 3} ${rad + 3} 0 0 0 ${IMAGE_WIDTH + 3} ${num(headerH - rad)}" fill="none" stroke="${GOLD}" stroke-width="6" data-gold-line="1"/>`)
-  const logoCy = headerH / 2 - 4
-  parts.push(`<circle cx="${logoCx}" cy="${num(logoCy)}" r="${logoR}" fill="#ffffff"/>`)
+  const headerH = Math.max(baseline + 40, GOLD_BAND + logoR * 2 + 80, exec ? execBottom + 36 : 0)
+  defs.push(`<linearGradient id="news-head-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${theme.deep}"/><stop offset="1" stop-color="${theme.base}"/></linearGradient>`
+    + `<clipPath id="news-head-clip"><rect width="${IMAGE_WIDTH}" height="${num(headerH)}"/></clipPath>`)
+  parts.push(`<rect width="${IMAGE_WIDTH}" height="${num(headerH)}" fill="url(#news-head-grad)" data-header="1"/>`
+    + bokehSvg('news-head-clip', 0, IMAGE_WIDTH, headerH, false)
+    + `<rect width="${IMAGE_WIDTH}" height="${GOLD_BAND}" fill="${GOLD}" data-gold-band="top"/>`
+    + `<rect y="${num(headerH)}" width="${IMAGE_WIDTH}" height="${GOLD_BAND}" fill="${GOLD}" data-gold-band="header"/>`)
+  parts.push(`<rect x="${num(textX)}" y="${num(leadTop)}" width="${leadW}" height="${leadH}" rx="${num(leadH / 2)}" fill="${GOLD}" data-lead-pill="1"/>`)
+  headerText(textX + 20, leadTop + Math.round(leadH * 0.7), lead, { size: leadSize, bold: true, fill: theme.deep })
+  // โลโก้ในวงขาวขอบทอง (แบบไอคอนวงกลมในภาพอ้างอิง)
+  const logoCy = (GOLD_BAND + headerH) / 2
+  parts.push(`<circle cx="${logoCx}" cy="${num(logoCy + 4)}" r="${logoR}" fill="${SHADOW}" fill-opacity="0.22"/>`
+    + `<circle cx="${logoCx}" cy="${num(logoCy)}" r="${logoR}" fill="#ffffff" stroke="${GOLD}" stroke-width="6"/>`)
   if (imageUrlOk(logoDataUrl)) {
-    const inner = logoR - 8
-    parts.push(`<defs><clipPath id="news-logo-clip"><circle cx="${logoCx}" cy="${num(logoCy)}" r="${inner}"/></clipPath></defs>`
-      + `<image href="${esc(logoDataUrl)}" x="${logoCx - inner}" y="${num(logoCy - inner)}" width="${inner * 2}" height="${inner * 2}" preserveAspectRatio="xMidYMid meet" clip-path="url(#news-logo-clip)"/>`)
+    const inner = logoR - 10
+    defs.push(`<clipPath id="news-logo-clip"><circle cx="${logoCx}" cy="${num(logoCy)}" r="${inner}"/></clipPath>`)
+    parts.push(`<image href="${esc(logoDataUrl)}" x="${logoCx - inner}" y="${num(logoCy - inner)}" width="${inner * 2}" height="${inner * 2}" preserveAspectRatio="xMidYMid meet" clip-path="url(#news-logo-clip)"/>`)
   }
   parts.push(headerTexts.join(''))
   if (exec) {
@@ -687,8 +654,8 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
     const centerX = plateX + EXEC_PLATE_W / 2
     if (execPhoto) {
       const px = centerX - execPhotoW / 2
-      parts.push(`<defs><clipPath id="news-exec-clip"><rect x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}"/></clipPath></defs>`
-        + `<image href="${esc(execPhoto)}" x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}" preserveAspectRatio="xMidYMax meet" clip-path="url(#news-exec-clip)"/>`)
+      defs.push(`<clipPath id="news-exec-clip"><rect x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}"/></clipPath>`)
+      parts.push(`<image href="${esc(execPhoto)}" x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}" preserveAspectRatio="xMidYMax meet" clip-path="url(#news-exec-clip)"/>`)
     }
     if (execPlateH) {
       // เงาจางใต้ป้าย (สี่เหลี่ยมเลื่อนลง) แทน SVG filter ซึ่งบางเบราว์เซอร์ไม่วาดตอนแปลงเป็น PNG
@@ -705,155 +672,222 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
     }
   }
 
-  // ── ป้ายเม็ดยา ──
-  let y = headerH + gap(48)
-  const pills = []
-  if (model.showStatus) pills.push({ label: 'ดำเนินการแล้ว', bg: STATUS_GREEN, fg: '#ffffff' })
-  if (model.showDuration && model.durationLabel) pills.push({ label: model.durationLabel, bg: theme.soft, fg: theme.ink })
-  if (pills.length) {
-    const pillH = gap(60)
-    const pillSize = sz(30)
-    let x = MARGIN
-    let rowTop = y
-    for (const pill of pills) {
-      const width = Math.ceil(measure(pill.label, pillSize, true)) + gap(56)
-      if (x > MARGIN && x + width > MARGIN + CONTENT_W) { x = MARGIN; rowTop += pillH + 14 }
-      parts.push(`<rect x="${num(x)}" y="${num(rowTop)}" width="${width}" height="${pillH}" rx="${pillH / 2}" fill="${pill.bg}"/>`)
-      text(x + width / 2, rowTop + Math.round(pillH * 0.667), pill.label, { size: pillSize, bold: true, fill: pill.fg, anchor: 'middle' })
-      x += width + 16
-    }
-    y = rowTop + pillH + gap(40)
+  // ── การ์ดตัวเลข 2 ใบ (แทนป้ายเม็ดยาเดิม): ไล่สี + วงขาวมีไอคอน + ข้อความเล็ก/ตัวเลขใหญ่ ──
+  let y = headerH + GOLD_BAND + gap(36)
+  const cards = []
+  if (model.showStatus) cards.push({ kind: 'status', label: 'สถานะเรื่อง', value: 'ดำเนินการแล้ว', from: STATUS_GREEN_LIGHT, to: STATUS_GREEN_DEEP, icon: checkIcon, iconColor: STATUS_GREEN })
+  if (model.showDuration && model.durationLabel) {
+    // "ใช้เวลา 5 วันทำการ" → ข้อความเล็ก "ใช้เวลา" + ตัวเลขใหญ่ "5 วันทำการ" · แบบอื่น ("เสร็จในวันที่ยื่น") แสดงทั้งข้อความ
+    const split = /^ใช้เวลา\s+(.+)$/.exec(model.durationLabel)
+    cards.push({ kind: 'duration', label: split ? 'ใช้เวลา' : 'ระยะเวลา', value: split ? split[1] : model.durationLabel, from: mixHex(theme.base, '#ffffff', 0.2), to: theme.deep, icon: clockIcon, iconColor: theme.base })
+  }
+  if (cards.length) {
+    const cardH = gap(108)
+    const cardW = (CONTENT_W - 24) / 2
+    cards.forEach((card, i) => {
+      const x = MARGIN + i * (cardW + 24)
+      defs.push(`<linearGradient id="news-stat-${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${card.from}"/><stop offset="1" stop-color="${card.to}"/></linearGradient>`)
+      parts.push(softCard(x, y, cardW, cardH, 26, `url(#news-stat-${i})`, ` data-stat="${card.kind}"`))
+      const r = Math.round(cardH * 0.3)
+      const cx = x + 24 + r
+      const cy = y + cardH / 2
+      parts.push(`<circle cx="${num(cx)}" cy="${num(cy)}" r="${r}" fill="#ffffff"/>`)
+      parts.push(iconIn(card.icon, cx - r * 0.62, cy - r * 0.62, r * 1.24, card.iconColor))
+      const tx = cx + r + 18
+      const tw = x + cardW - 18 - tx
+      text(tx, y + cardH * 0.4, card.label, { size: sz(24), fill: '#ffffff', opacity: 0.92 })
+      let valueSize = sz(40)
+      while (valueSize > sz(26) && measure(card.value, valueSize, true) > tw) valueSize -= 1
+      text(tx, y + cardH * 0.8, card.value, { size: valueSize, bold: true, fill: '#ffffff' })
+    })
+    y += cardH + gap(30)
   }
 
-  // ── แถบขั้นตอน 4 จุด (วงกลมสีธีม + เครื่องหมายถูกขาว + เส้นเชื่อม) กว้างเต็มพื้นที่เนื้อหา ──
+  // ── แถบขั้นตอน 4 จุด (คงแบบเดิมตามที่เจ้าของเลือก) + มิติ: ลูกบอลไล่สี + จุดสว่าง + เงาใต้วง + เส้นไล่สีมีเงา ในการ์ดขาว ──
   // วันที่ใต้ป้ายมาจาก model.steps เท่านั้น (จุดไหนไม่มีวัน = ไม่ใส่ ไม่เดา)
   const steps = Array.isArray(model.steps) ? model.steps.slice(0, 4) : []
   if (steps.length === 4) {
     const stepR = 20
+    const padY = gap(20)
+    const boxH = padY * 2 + stepR * 2 + 32 + 28 + 8
+    parts.push(softCard(MARGIN, y, CONTENT_W, boxH, 24, '#ffffff', ' data-steps-card="1"'))
     const slotW = CONTENT_W / 4
-    const stepCy = y + stepR
+    const stepCy = y + padY + stepR
     const centers = steps.map((_, i) => MARGIN + slotW * (i + 0.5))
+    defs.push(`<radialGradient id="news-step-ball" cx="0.35" cy="0.3" r="0.75"><stop offset="0" stop-color="${mixHex(theme.base, '#ffffff', 0.5)}"/><stop offset="0.55" stop-color="${theme.base}"/><stop offset="1" stop-color="${theme.deep}"/></radialGradient>`
+      + `<linearGradient id="news-step-line" gradientUnits="userSpaceOnUse" x1="${num(centers[0])}" y1="${num(stepCy)}" x2="${num(centers[3])}" y2="${num(stepCy)}"><stop offset="0" stop-color="${mixHex(theme.base, '#ffffff', 0.3)}"/><stop offset="1" stop-color="${theme.deep}"/></linearGradient>`)
     for (let i = 0; i < 3; i += 1) {
-      parts.push(`<line x1="${num(centers[i] + stepR)}" y1="${num(stepCy)}" x2="${num(centers[i + 1] - stepR)}" y2="${num(stepCy)}" stroke="${theme.base}" stroke-width="5" stroke-linecap="round"/>`)
+      const x1 = num(centers[i] + stepR)
+      const x2 = num(centers[i + 1] - stepR)
+      parts.push(`<line x1="${x1}" y1="${num(stepCy + 3)}" x2="${x2}" y2="${num(stepCy + 3)}" stroke="${SHADOW}" stroke-opacity="0.12" stroke-width="8" stroke-linecap="round"/>`
+        + `<line x1="${x1}" y1="${num(stepCy)}" x2="${x2}" y2="${num(stepCy)}" stroke="url(#news-step-line)" stroke-width="6" stroke-linecap="round" data-step-line="1"/>`)
     }
     steps.forEach((step, i) => {
-      // วงเรืองแสงจางรอบจุด (วงซ้อนความทึบต่ำ ไม่ใช้ filter) ให้แถบดูเป็นเส้นทางที่ไปถึงปลายทางแล้ว
-      parts.push(`<circle cx="${num(centers[i])}" cy="${num(stepCy)}" r="${stepR + 9}" fill="${theme.base}" fill-opacity="0.14"/>`)
-      parts.push(`<circle cx="${num(centers[i])}" cy="${num(stepCy)}" r="${stepR}" fill="${theme.base}"/>`)
-      parts.push(iconSvg(checkIcon, centers[i] - 13, stepCy - 13, 26))
-      text(centers[i], stepCy + stepR + 32, step.label, { size: 24, bold: true, fill: INK, anchor: 'middle' })
-      if (step.date) text(centers[i], stepCy + stepR + 32 + 28, step.date, { size: 22, fill: MUTED, anchor: 'middle' })
+      const cx = centers[i]
+      parts.push(`<ellipse cx="${num(cx)}" cy="${num(stepCy + stepR + 5)}" rx="${num(stepR * 0.85)}" ry="4.5" fill="${SHADOW}" fill-opacity="0.2" data-step-shadow="1"/>`)
+      // วงเรืองแสงจางรอบจุด (วงซ้อนความทึบต่ำ ไม่ใช้ filter)
+      parts.push(`<circle cx="${num(cx)}" cy="${num(stepCy)}" r="${stepR + 9}" fill="${theme.base}" fill-opacity="0.14"/>`)
+      parts.push(`<circle cx="${num(cx)}" cy="${num(stepCy)}" r="${stepR}" fill="url(#news-step-ball)" data-step-ball="1"/>`)
+      // จุดสว่างมุมซ้ายบน = แสงตกกระทบ ให้ดูเป็นทรงกลม
+      parts.push(`<ellipse cx="${num(cx - 6)}" cy="${num(stepCy - 9)}" rx="7" ry="4" fill="#ffffff" fill-opacity="0.38"/>`)
+      parts.push(iconSvg(checkIcon, cx - 13, stepCy - 13, 26))
+      text(cx, stepCy + stepR + 32, step.label, { size: 24, bold: true, fill: INK, anchor: 'middle' })
+      if (step.date) text(cx, stepCy + stepR + 32 + 28, step.date, { size: 22, fill: MUTED, anchor: 'middle' })
     })
-    // ความสูงรวม ~158: วง 40 + ป้าย 32 + วันที่ 28 + ขอบล่าง (ขอบล่างย่อตามขั้นบีบ)
-    y += stepR * 2 + 32 + 28 + 14 + gap(44)
+    y += boxH + gap(28)
   }
 
-  // ── วันที่ · ข้อความข่าว · รายละเอียด ──
-  // ไอคอนหมวดหน้าบรรทัดวันที่ (มีรหัสหมวดเท่านั้น — หมวดสร้างเองได้ไอคอนกลาง ไม่รู้หมวด = ไม่วาด)
+  // ── ป้ายวันที่ (แท็กสีอ่อนของธีม + ไอคอนหมวด) · หัวข้อข่าวมีแถบทองแนวตั้งนำหน้า · รายละเอียดในกล่อง callout สีเหลืองอ่อน ──
+  // ไอคอนหมวด: มีรหัสหมวดเท่านั้น — หมวดสร้างเองได้ไอคอนกลาง ไม่รู้หมวด = ไม่วาด
   if (model.dateText) {
     const withIcon = !!model.categoryCode
-    let dateX = MARGIN
+    const tagH = gap(52)
+    const dateSize = sz(28)
+    const label = `วันที่ ${model.dateText}`
+    const iconR = withIcon ? Math.round(tagH / 2) - 5 : 0
+    const textStart = withIcon ? 5 + iconR * 2 + 12 : 22
+    const tagW = textStart + Math.ceil(measure(label, dateSize, true)) + 22
+    parts.push(`<rect x="${MARGIN}" y="${num(y)}" width="${tagW}" height="${tagH}" rx="${num(tagH / 2)}" fill="${theme.soft}" data-date-tag="1"/>`)
     if (withIcon) {
-      const bcx = MARGIN + CATEGORY_BADGE_R
-      const bcy = y - 2
-      parts.push(`<circle cx="${bcx}" cy="${num(bcy)}" r="${CATEGORY_BADGE_R}" fill="${theme.base}" data-category-icon="${esc(model.categoryCode)}"/>`)
-      parts.push(iconSvg(iconNodeForCategory(model.categoryCode), bcx - 15, bcy - 15, 30))
-      dateX = MARGIN + CATEGORY_BADGE_R * 2 + 16
+      const bcx = MARGIN + 5 + iconR
+      const bcy = y + tagH / 2
+      parts.push(`<circle cx="${num(bcx)}" cy="${num(bcy)}" r="${iconR}" fill="${theme.base}" data-category-icon="${esc(model.categoryCode)}"/>`)
+      parts.push(iconSvg(iconNodeForCategory(model.categoryCode), bcx - iconR * 0.62, bcy - iconR * 0.62, iconR * 1.24))
     }
-    text(dateX, y + 8, `วันที่ ${model.dateText}`, { size: sz(30), bold: true, fill: theme.base })
-    y += gap(56)
+    text(MARGIN + textStart, y + Math.round(tagH * 0.68), label, { size: dateSize, bold: true, fill: theme.ink })
+    y += tagH + gap(22)
   }
-  if (model.headline) y = block(MARGIN, y + gap(14), model.headline, CONTENT_W, { size: sz(40), bold: true, fill: INK, lineHeight: 1.45 }) + 6
-  if (model.detail) y = block(MARGIN, y + gap(20), model.detail, CONTENT_W, { size: sz(30), fill: MUTED, lineHeight: 1.45 }) + 6
+  if (model.headline) {
+    const size = sz(40)
+    const step = Math.round(size * 1.45)
+    const first = y + size
+    const after = block(MARGIN + 26, first, model.headline, CONTENT_W - 26, { size, bold: true, fill: INK, lineHeight: 1.45 })
+    const last = after - step
+    parts.push(`<rect x="${MARGIN}" y="${num(first - size * 0.82)}" width="8" height="${num(last - first + size * 1.02)}" rx="4" fill="${GOLD}" data-headline-bar="1"/>`)
+    y = last + gap(20)
+  }
+  if (model.detail) {
+    const size = sz(28)
+    const step = Math.round(size * 1.45)
+    const pad = gap(18)
+    const iconR = 22
+    const textX0 = MARGIN + pad + iconR * 2 + 16
+    const lines = wrapLines(model.detail, MARGIN + CONTENT_W - pad - textX0, size, false, measure)
+    const boxTop = y + gap(10)
+    const boxH = Math.max(pad * 2 + iconR * 2, pad * 2 + (lines.length - 1) * step + Math.round(size * 1.15))
+    parts.push(softCard(MARGIN, boxTop, CONTENT_W, boxH, 20, '#fefce8', ` stroke="#fde68a" stroke-width="2" data-callout="1"`))
+    const icy = boxTop + pad + iconR
+    parts.push(`<circle cx="${num(MARGIN + pad + iconR)}" cy="${num(icy)}" r="${iconR}" fill="${GOLD}"/>`)
+    parts.push(iconIn(clipboardCheckIcon, MARGIN + pad + iconR - 13, icy - 13, 26, theme.deep))
+    let baseline = boxTop + pad + Math.round(size * 0.95)
+    for (const line of lines) {
+      text(textX0, baseline, line, { size, fill: '#374151' })
+      baseline += step
+    }
+    y = boxTop + boxH
+  }
 
   // ── ขนาดแถบท้าย (คำนวณก่อนส่วนรูป เพราะรูปต้องรู้ว่าเหลือที่ว่างเท่าไรก่อนชนเพดาน A4) ──
   // ไม่มีเบอร์โทรและไม่มีชื่อกองผู้จัดทำ: ฐานไม่มีฟิลด์เบอร์ และเจ้าของระบบสั่งตัดข้อความ "จัดทำโดย" ออก
-  // ขั้นบีบ (fit.foot) ย่อทั้ง QR/ช่องไฟ/ตัวหนังสือพร้อมกัน — ต่ำสุด QR 165 px ยังสแกนติด
+  // ขั้นบีบ (fit.foot) ย่อทั้ง QR/ช่องไฟ/ตัวหนังสือพร้อมกัน — ต่ำสุด QR 160 px ยังสแกนติด
   const fs = base => Math.round(base * fit.foot)
-  const PAD = fs(36)
-  const qr = model.reportUrl ? qrLayout(model.reportUrl, fs(220)) : null
-  const footTextX = MARGIN + (qr ? qr.side + 36 : 0)
+  const PAD = fs(30)
+  const qr = model.reportUrl ? qrLayout(model.reportUrl, fs(200)) : null
+  // QR ในการ์ดขาวมุมมน + คำใต้ QR (แบบภาพอ้างอิง)
+  const qrPad = fs(12)
+  const qrLabel = 'แจ้งเรื่องออนไลน์'
+  const qrLabelSize = fs(22)
+  const qrCardW = qr ? qr.side + qrPad * 2 : 0
+  const qrCardH = qr ? qr.side + qrPad * 2 + Math.round(qrLabelSize * 1.5) : 0
+  const footTextX = MARGIN + (qr ? qrCardW + 36 : 0)
   const footTextW = IMAGE_WIDTH - MARGIN - footTextX
   // ปิด QR/ลิงก์ (ไม่มี reportUrl) = ข้อความขอบคุณแทน — ไม่ใช้ "แจ้งเราได้ตลอด 24 ชม." เพราะชวนแจ้งโดยไม่บอกช่องทาง
   // ประชาชนจะโทรเข้าสำนักงานแทน (เพิ่มงานเจ้าหน้าที่) · "มุ่งสู่" เมืองอัจฉริยะ: ยังไม่ได้รับรองเป็นเมืองอัจฉริยะ ห้ามเขียนว่าเป็นแล้ว
+  // บรรทัดแรกสีทอง (หัวข้อสองสีแบบภาพอ้างอิง)
   const slots = model.reportUrl ? [
-    { size: fs(36), bold: true, lines: wrapLines(NEWS_FOOTER_INVITE, footTextW, fs(36), true, measure), opacity: 1 },
+    { size: fs(36), bold: true, lines: wrapLines(NEWS_FOOTER_INVITE, footTextW, fs(36), true, measure), opacity: 1, fill: GOLD_TEXT },
     { size: fs(28), bold: false, lines: wrapLines(qr ? 'สแกน QR หรือเข้าที่' : 'เข้าที่', footTextW, fs(28), false, measure), opacity: 0.92 },
     { size: fs(30), bold: true, lines: wrapLines(model.reportUrl.replace(/^https?:\/\//i, ''), footTextW, fs(30), true, measure), opacity: 1 },
-    // บรรทัดเล็กสุดท้าย — ข้อความรวม 4 บรรทัดยังสูงไม่เกิน QR (220px) แถบท้ายจึงไม่สูงขึ้น
+    // บรรทัดเล็กสุดท้าย — ข้อความรวม 4 บรรทัดยังสูงไม่เกินการ์ด QR แถบท้ายจึงไม่สูงขึ้น
     { size: fs(26), bold: false, lines: wrapLines(NEWS_FOOTER_SMART_CITY, footTextW, fs(26), false, measure), opacity: 0.92 },
   ] : [
-    { size: fs(36), bold: true, lines: wrapLines(NEWS_FOOTER_THANKS[0], footTextW, fs(36), true, measure), opacity: 1 },
+    { size: fs(36), bold: true, lines: wrapLines(NEWS_FOOTER_THANKS[0], footTextW, fs(36), true, measure), opacity: 1, fill: GOLD_TEXT },
     { size: fs(30), bold: false, lines: wrapLines(NEWS_FOOTER_THANKS[1], footTextW, fs(30), false, measure), opacity: 0.95 },
   ]
   const stepOf = slot => Math.round(slot.size * 1.4)
   const footTextH = slots.reduce((sum, slot) => sum + slot.lines.length * stepOf(slot), 0)
-  const footH = Math.max(qr ? qr.side : 0, footTextH) + PAD * 2
+  const footH = GOLD_BAND + Math.max(qrCardH, footTextH) + PAD * 2
 
-  // ── รูป (ครอปแบบ cover มุมมน) ──
+  // ── รูป: การ์ดขาวขอบหนาเงานุ่ม + รูปครอปแบบ cover มุมมน + แท็กสีก่อน/หลังดำเนินการ ──
   if (photos.length) {
-    y += gap(28)
+    y += gap(36)
     // ที่ว่างของตารางรูป = เพดาน A4 − แถบท้าย − ช่องว่างเหนือแถบท้าย − "และอีก N จุด" (ถ้ามี) − ตำแหน่งปัจจุบัน
     const moreH = moreText ? gap(48) + wrapLines(moreText, CONTENT_W, 32, true, measure).length * Math.round(32 * 1.4) : 0
-    const grid = photoCells(photos.length, captionH, NEWS_MAX_HEIGHT - footH - gap(56) - moreH - y, fit.min)
-    const defs = []
+    const grid = photoCells(photos.length, captionH, NEWS_MAX_HEIGHT - footH - gap(48) - moreH - y, fit.min)
+    const frame = 8
     grid.cells.forEach((cell, i) => {
       const cx = MARGIN + cell.x
       const cy = y + cell.y
-      defs.push(`<clipPath id="news-photo-${i}"><rect x="${num(cx)}" y="${num(cy)}" width="${num(cell.w)}" height="${num(cell.h)}" rx="22"/></clipPath>`)
-      parts.push(`<rect x="${num(cx)}" y="${num(cy)}" width="${num(cell.w)}" height="${num(cell.h)}" rx="22" fill="#e5e7eb"/>`
+      parts.push(softCard(cx - frame, cy - frame, cell.w + frame * 2, cell.h + frame * 2, 24, '#ffffff', ' data-photo-card="1"'))
+      defs.push(`<clipPath id="news-photo-${i}"><rect x="${num(cx)}" y="${num(cy)}" width="${num(cell.w)}" height="${num(cell.h)}" rx="18"/></clipPath>`)
+      parts.push(`<rect x="${num(cx)}" y="${num(cy)}" width="${num(cell.w)}" height="${num(cell.h)}" rx="18" fill="#e5e7eb"/>`
         + `<image href="${esc(photos[i])}" x="${num(cx)}" y="${num(cy)}" width="${num(cell.w)}" height="${num(cell.h)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#news-photo-${i})"/>`)
-      // ป้ายมุมซ้ายบน "ก่อน/หลังดำเนินการ": กล่องดำโปร่ง + กล้อง + ข้อความขาว · ช่องแคบเกินกว่าจะใส่ข้อความ = เหลือแค่ไอคอนกล้อง ไม่ล้นช่อง
+      // แท็กมุมซ้ายบน: ก่อน = ส้มอำพัน · หลัง = เขียวสถานะ + กล้อง + ข้อความขาว · ช่องแคบเกินกว่าจะใส่ข้อความ = เหลือแค่ไอคอนกล้อง ไม่ล้นช่อง
       const kind = entries[i].kind
       if (kind) {
         const label = NEWS_PHOTO_KIND_LABELS[kind]
         const inset = 14
         const badgeH = 44
         const iconSize = 26
-        const fullW = 10 + iconSize + 8 + Math.ceil(measure(label, 24, true)) + 14
+        const fullW = 14 + iconSize + 8 + Math.ceil(measure(label, 24, true)) + 18
         const showLabel = fullW <= cell.w - inset * 2
-        const badgeW = showLabel ? fullW : 10 + iconSize + 10
-        parts.push(`<rect x="${num(cx + inset)}" y="${num(cy + inset)}" width="${badgeW}" height="${badgeH}" rx="12" fill="#000000" fill-opacity="0.55" data-photo-kind="${kind}"/>`)
-        parts.push(iconSvg(cameraIcon, cx + inset + 10, cy + inset + (badgeH - iconSize) / 2, iconSize))
-        if (showLabel) text(cx + inset + 10 + iconSize + 8, cy + inset + 31, label, { size: 24, bold: true, fill: '#ffffff' })
+        const badgeW = showLabel ? fullW : 14 + iconSize + 14
+        const bg = kind === 'before' ? BEFORE_AMBER : STATUS_GREEN
+        parts.push(`<rect x="${num(cx + inset)}" y="${num(cy + inset + 3)}" width="${badgeW}" height="${badgeH}" rx="${badgeH / 2}" fill="${SHADOW}" fill-opacity="0.25"/>`
+          + `<rect x="${num(cx + inset)}" y="${num(cy + inset)}" width="${badgeW}" height="${badgeH}" rx="${badgeH / 2}" fill="${bg}" data-photo-kind="${kind}"/>`)
+        parts.push(iconSvg(cameraIcon, cx + inset + 14, cy + inset + (badgeH - iconSize) / 2, iconSize))
+        if (showLabel) text(cx + inset + 14 + iconSize + 8, cy + inset + 31, label, { size: 24, bold: true, fill: '#ffffff' })
       }
       const caption = entries[i].caption
       if (caption) {
         // ป้ายหมู่กึ่งกลางใต้รูป — ยาวเกินความกว้างช่องใช้บรรทัดแรกที่ตัดแล้ว (ไม่ล้นไปทับรูปข้างเคียง)
         const fitted = measure(caption, 30, true) > cell.w ? (wrapLines(caption, cell.w, 30, true, measure)[0] ?? '') : caption
-        text(cx + cell.w / 2, cy + cell.h + 38, fitted, { size: 30, bold: true, fill: theme.base, anchor: 'middle' })
+        text(cx + cell.w / 2, cy + cell.h + 42, fitted, { size: 30, bold: true, fill: theme.base, anchor: 'middle' })
       }
     })
-    parts.push(`<defs>${defs.join('')}</defs>`)
     y += grid.height
   }
   // ภาพรวม: "และอีก N จุด" ใต้ตารางรูป (จุดที่เกิน 4 ช่อง) — ไม่ทับลงบนรูป
   if (moreText) y = block(MARGIN, y + gap(48), moreText, CONTENT_W, { size: 32, bold: true, fill: theme.base, lineHeight: 1.4 })
 
-  // ── แถบท้าย (สีธีมเดียวกับแถบหัว) — คำนวณขนาดไว้แล้วก่อนส่วนรูป (ดู footH) ──
-  const footTop = Math.max(y + gap(56), NEWS_MIN_HEIGHT - footH)
+  // ── แถบท้าย: แถบทองด้านบน + พื้นไล่สีเดียวกับแถบหัว + วงกลมจาง + QR ในการ์ดขาว ──
+  const footTop = Math.max(y + gap(48), NEWS_MIN_HEIGHT - footH)
   const height = Math.ceil(footTop + footH)
-  const frad = 44
-  const footD = `M0 ${height}V${num(footTop + frad)}A${frad} ${frad} 0 0 1 ${frad} ${num(footTop)}H${IMAGE_WIDTH - frad}A${frad} ${frad} 0 0 1 ${IMAGE_WIDTH} ${num(footTop + frad)}V${height}Z`
-  // ลายวงจรถูกวางก่อน QR/ข้อความ — ไม่ทับสิ่งที่ต้องสแกนหรืออ่าน (QR ยังเป็นดำบนพื้นขาว)
-  parts.push(`<defs><linearGradient id="news-foot-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${theme.deep}"/><stop offset="1" stop-color="${theme.base}"/></linearGradient>`
-    + `<clipPath id="news-foot-clip"><path d="${footD}"/></clipPath></defs>`
-    + `<path d="${footD}" fill="url(#news-foot-grad)"/>`
-    + circuitSvg('news-foot-clip', IMAGE_WIDTH, height - footTop, true, footTop))
+  const bodyTop = footTop + GOLD_BAND
+  defs.push(`<linearGradient id="news-foot-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${theme.deep}"/><stop offset="1" stop-color="${theme.base}"/></linearGradient>`
+    + `<clipPath id="news-foot-clip"><rect y="${num(bodyTop)}" width="${IMAGE_WIDTH}" height="${num(height - bodyTop)}"/></clipPath>`)
+  // วงกลมจางถูกวางก่อน QR/ข้อความ — ไม่ทับสิ่งที่ต้องสแกนหรืออ่าน (QR ยังเป็นดำบนพื้นขาว)
+  parts.push(`<rect y="${num(footTop)}" width="${IMAGE_WIDTH}" height="${GOLD_BAND}" fill="${GOLD}" data-gold-band="footer"/>`
+    + `<rect y="${num(bodyTop)}" width="${IMAGE_WIDTH}" height="${num(height - bodyTop)}" fill="url(#news-foot-grad)" data-footer="1"/>`
+    + bokehSvg('news-foot-clip', bodyTop, IMAGE_WIDTH, height - bodyTop, true))
+  const contentH = footH - GOLD_BAND
   if (qr) {
     // QR ดำบนพื้นขาว (รวมขอบสงบ) เสมอ ห้ามให้สีแถบมาเป็นพื้นของ QR
-    parts.push(`<g transform="translate(${MARGIN} ${num(footTop + (footH - qr.side) / 2)})"><rect width="${qr.side}" height="${qr.side}" rx="10" fill="#ffffff"/><path transform="translate(${QUIET_MODULES * qr.module} ${QUIET_MODULES * qr.module}) scale(${qr.module})" d="${qr.d}" fill="#000000" shape-rendering="crispEdges"/></g>`)
+    const cardY = bodyTop + (contentH - qrCardH) / 2
+    parts.push(softCard(MARGIN, cardY, qrCardW, qrCardH, 20, '#ffffff', ' data-qr-card="1"'))
+    parts.push(`<g transform="translate(${MARGIN + qrPad} ${num(cardY + qrPad)})"><rect width="${qr.side}" height="${qr.side}" fill="#ffffff"/><path transform="translate(${QUIET_MODULES * qr.module} ${QUIET_MODULES * qr.module}) scale(${qr.module})" d="${qr.d}" fill="#000000" shape-rendering="crispEdges"/></g>`)
+    text(MARGIN + qrCardW / 2, cardY + qrPad + qr.side + Math.round(qrLabelSize * 1.1), qrLabel, { size: qrLabelSize, bold: true, fill: theme.deep, anchor: 'middle' })
   }
-  let lineTop = footTop + (footH - footTextH) / 2
+  let lineTop = bodyTop + (contentH - footTextH) / 2
   for (const slot of slots) {
     for (const line of slot.lines) {
-      parts.push(`<text x="${num(footTextX)}" y="${num(lineTop + Math.round(slot.size * 1.05))}" font-size="${slot.size}" font-weight="${slot.bold ? 700 : 400}" fill="#ffffff" fill-opacity="${slot.opacity}">${esc(line)}</text>`)
+      parts.push(`<text x="${num(footTextX)}" y="${num(lineTop + Math.round(slot.size * 1.05))}" font-size="${slot.size}" font-weight="${slot.bold ? 700 : 400}" fill="${slot.fill ?? '#ffffff'}" fill-opacity="${slot.opacity}">${esc(line)}</text>`)
       lineTop += stepOf(slot)
     }
   }
 
   // พื้นขาวเต็มภาพเป็นองค์ประกอบแรกสุด — PNG ไม่มีพื้นจะโปร่งใสแล้วตัวอักษรเข้มกลายเป็นดำบนดำในแอปโหมดมืด
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${IMAGE_WIDTH}" height="${height}" viewBox="0 0 ${IMAGE_WIDTH} ${height}" font-family="${FONT_STACK}" role="img" aria-label="${esc(`ข่าวประชาสัมพันธ์ ${model.tenantName}`)}"><title>${esc(`ข่าวประชาสัมพันธ์ ${model.tenantName}`)}</title><rect width="${IMAGE_WIDTH}" height="${height}" fill="#ffffff"/>${pageBackdrop(IMAGE_WIDTH, height, headerH, footTop, theme)}${parts.join('')}</svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${IMAGE_WIDTH}" height="${height}" viewBox="0 0 ${IMAGE_WIDTH} ${height}" font-family="${FONT_STACK}" role="img" aria-label="${esc(`ข่าวประชาสัมพันธ์ ${model.tenantName}`)}"><title>${esc(`ข่าวประชาสัมพันธ์ ${model.tenantName}`)}</title><rect width="${IMAGE_WIDTH}" height="${height}" fill="#ffffff"/>${pageBackdrop(IMAGE_WIDTH, height, theme)}<defs>${defs.join('')}</defs>${parts.join('')}</svg>`
   return { svg, width: IMAGE_WIDTH, height, photoCount: photos.length, fitsA4: height <= NEWS_MAX_HEIGHT }
 }
 
