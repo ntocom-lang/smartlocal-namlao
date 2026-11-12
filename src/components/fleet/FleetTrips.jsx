@@ -13,11 +13,17 @@ import {
 } from '../../lib/documentSignatories'
 import FleetEmptyState from './FleetEmptyState'
 import FleetIncidentModal from './FleetIncidentModal'
+import FleetPermitDialog from './FleetPermitDialog'
 import TripEsignPanel, { DepartEsignNotice } from '../esign/TripEsignPanel'
 import MyPendingSignatures from '../esign/MyPendingSignatures'
 import { ESIGN_TRIP_EXCEPTIONS, esignPendingFromRpc } from '../../lib/esign'
 import { useHomeRpc } from '../../lib/staffHomeData'
 import { getTripEsignStamps, getTripEsignStatus } from '../../lib/esignApi'
+import {
+  PERMIT_TRIP_EXCEPTIONS, permitAuthorizedLines, permitBadge, permitBlocksDepart, permitDepartHint, permitInfoIds, permitInfoMap,
+  permitWaitingLines,
+} from '../../lib/fleetPermit'
+import { getFleetTripPermitInfo, getFleetTripPermitInfoBatches } from '../../lib/fleetPermitApi'
 import { esignPrintData, printSignatureBox } from '../../lib/esignPrint'
 import { prepareStampsForPrint } from '../../lib/signatureCanvas'
 import { addMobileCloseButton } from '../../lib/printWindowClose'
@@ -149,6 +155,8 @@ const TRIP_ERROR_TH = {
   FLEET_ODOMETER_FIX_INVALID_RANGE: 'เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก และต้องไม่ติดลบ',
   FLEET_ODOMETER_FIX_REASON_TOO_LONG: 'เหตุผลที่แก้เลขไมล์ยาวเกิน 300 ตัวอักษร',
   ...ESIGN_TRIP_EXCEPTIONS,
+  // โหมดขั้นตอนตามระเบียบ (trg_fleet_trips_permit_guard) — บันทึกออกรถก่อนได้รับอนุญาต
+  ...PERMIT_TRIP_EXCEPTIONS,
   FLEET_ODOMETER_FIX_NEGATIVE: 'ปรับตามแล้วเลขไมล์ของทริปถัดไปจะติดลบ — ตรวจเลขที่กรอกอีกครั้ง',
 }
 // UPDATE ที่ถูก RLS ปฏิเสธจะ "ไม่ตรงแถวใดเลย" ไม่ใช่ error — PostgREST คืน 204 และ error เป็น null
@@ -685,6 +693,29 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     return () => window.removeEventListener('keydown', onKey)
   }, [modal, saving])
   const loadTrips = () => setRefreshKey(k => k + 1)
+
+  // สถานะ "การอนุญาตใช้รถ" (โหมดขั้นตอนตามระเบียบ) — ถามเฉพาะใบ permit_mode='regulation' ที่ยังไม่จบ
+  // อปท. โหมด queue (ค่าเริ่มต้น) ไม่มีใบ regulation เลย → ไม่ยิง RPC เพิ่มสักครั้ง และหน้าจอไม่เปลี่ยน
+  // ดึงไม่ได้/ยังโหลด = ไม่มีข้อมูล = ไม่บล็อกฝั่งหน้าจอ (ด่านจริงคือ trigger ใน DB — ข้อความ error แปลไทยใน tripErrorMessage)
+  const [permitMap, setPermitMap] = useState(() => new Map())
+  const [permitDialog, setPermitDialog] = useState(null) // null | { mode: 'record'|'void', tripId, permitId }
+  const permitKey = useMemo(() => permitInfoIds(trips).join(','), [trips])
+  useEffect(() => {
+    if (!permitKey) return undefined
+    let alive = true
+    getFleetTripPermitInfoBatches(permitKey.split(',')).then(results => {
+      if (alive) setPermitMap(permitInfoMap(results))
+    })
+    return () => { alive = false }
+    // trips เป็น dependency โดยตั้งใจ: ทุกครั้งที่รายการโหลดใหม่ (realtime / หลังลงนามออนไลน์) ถามสถานะอนุญาตใหม่ด้วย
+  }, [permitKey, trips])
+  const permitOf = t => (permitKey ? permitMap.get(t.id) ?? null : null)
+  // หลังบันทึก/ยกเลิกการอนุญาต: ถามใบนั้นใบเดียวตรงๆ (ไม่ผ่านตัวร่วมคำถามที่กำลังบิน — อาจเป็นคำตอบก่อนบันทึก)
+  async function refreshPermit(tripId) {
+    const result = await getFleetTripPermitInfo([tripId])
+    const item = result?.ok ? result.items?.find(entry => entry.trip_id === tripId) : null
+    if (item) setPermitMap(current => new Map(current).set(tripId, item))
+  }
 
   // ใบขอใช้รถที่ถึงคิว "ฉัน" ลงนามออนไลน์ — แถบบนสุดของหน้านี้ (แคชชุดเดียวกับการ์ดบนหน้าแรก)
   // อปท. ที่ไม่ได้เปิดโหมดออนไลน์ได้ count 0 แถบจึงไม่ขึ้น
@@ -1457,6 +1488,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   }
 
   async function openDepart(t) {
+    // ปุ่มปิดอยู่แล้วเมื่อยังไม่ได้รับอนุญาต — กันซ้ำเผื่อกล่องถูกเปิดจากหน้าเก่าที่ค้าง (DB ปฏิเสธซ้ำอีกชั้น)
+    if (permitBlocksDepart(permitOf(t))) return alert(`บันทึกออกรถยังไม่ได้ — ${permitDepartHint(permitOf(t))}`)
     departTripRef.current = t.id
     setSelTrip(t)
     setLastOdometer(null)
@@ -1981,6 +2014,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const canCancel  = REQUESTER_CANCELLABLE.includes(t.status) && isRequester(t) && !isAdmin
     const dist = t.distance_km ?? null
     const timing = tripTimingFlag(t, nowMs)
+    // โหมดตามระเบียบ: ป้ายการอนุญาต + ปิดปุ่มออกรถจนกว่าจะได้รับอนุญาต · ใบ queue ไม่มีอะไรเปลี่ยน
+    const permit = permitOf(t)
+    const permitTag = permitBadge(permit)
+    const departBlocked = canDepart && permitBlocksDepart(permit)
     return (
       <div key={t.id}
         onClick={e => { if (e.target.closest('button')) return; openDetail(t) }}
@@ -1998,6 +2035,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               <span className="text-[9px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full"
                     title="รถว่าง ระบบอนุมัติคิวให้เอง — ยังต้องให้ผู้มีอำนาจลงนามแบบ 3 ก่อนออกรถ">
                 โดยระบบ
+              </span>
+            )}
+            {permitTag && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" data-permit-badge={permit.state}
+                    style={{ backgroundColor: permitTag.color + '18', color: permitTag.color }}>
+                {permitTag.label}
               </span>
             )}
             {timing && (
@@ -2062,7 +2105,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               </button>
             )}
             {canDepart && (
-              <button onClick={() => openDepart(t)} className="flex-1 py-1.5 rounded-lg text-[11px] font-bold text-white"
+              <button onClick={() => openDepart(t)} disabled={departBlocked}
+                className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold text-white ${departBlocked ? 'cursor-not-allowed opacity-40' : ''}`}
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 🚀 ออกเดินทาง
               </button>
@@ -2073,6 +2117,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               </button>
             )}
           </div>
+        )}
+        {departBlocked && (
+          <p className="text-[10px] font-semibold leading-4 text-amber-700" data-permit-hint>{permitDepartHint(permit)}</p>
         )}
       </div>
     )
@@ -2090,6 +2137,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const dateStr = fmtDate(t.started_at || t.planned_departure || t.trip_date)
     const dist = t.distance_km ?? null
     const timing = tripTimingFlag(t, nowMs)
+    const permit = permitOf(t)
+    const permitTag = permitBadge(permit)
+    const departBlocked = canDepart && permitBlocksDepart(permit)
     return (
       <tr key={t.id} style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
           onClick={e => { if (e.target.closest('button')) return; openDetail(t) }}
@@ -2141,6 +2191,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               โดยระบบ
             </div>
           )}
+          {permitTag && (
+            <div className="mt-0.5 text-[9px] font-bold whitespace-nowrap" data-permit-badge={permit.state} style={{ color: permitTag.color }}>
+              {permitTag.label}
+            </div>
+          )}
           {timing && (
             <div className="mt-0.5 text-[9px] font-bold whitespace-nowrap" style={{ color: timing.color }}>
               {timing.label}
@@ -2168,7 +2223,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               </button>
             )}
             {canDepart && (
-              <button onClick={() => openDepart(t)} className="px-2 py-1 rounded-lg text-white text-[12px] font-bold whitespace-nowrap"
+              <button onClick={() => openDepart(t)} disabled={departBlocked}
+                className={`px-2 py-1 rounded-lg text-white text-[12px] font-bold whitespace-nowrap ${departBlocked ? 'cursor-not-allowed opacity-40' : ''}`}
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 🚀 ออก
               </button>
@@ -2183,6 +2239,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                 className="px-2 py-1 rounded-lg border border-red-300 text-red-400 hover:bg-red-400 hover:text-white text-[12px] font-bold transition-colors">
                 ลบ
               </button>
+            )}
+            {departBlocked && (
+              <p className="w-full text-center text-[10px] font-semibold leading-4 text-amber-700" data-permit-hint>{permitDepartHint(permit)}</p>
             )}
           </div>
         </td>
@@ -2366,6 +2425,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         const canReportIncident = isAdmin && ['in_progress', 'completed'].includes(t.status)
         // แบบ สก. ๑ เฉพาะคำขอของนายกที่ได้รถแล้ว — ถูกปฏิเสธ/ยกเลิก/ยังรอ = ไม่มีการใช้รถให้รับรอง
         const canPrintSk1 = tripRequesterIsMayor(t) && ['approved', 'in_progress', 'completed'].includes(t.status)
+        // โหมดตามระเบียบ: ส่วน "การอนุญาตใช้รถ" — โผล่เฉพาะใบ regulation (ใบ queue ไม่มีอะไรเปลี่ยน)
+        const permit = permitOf(t)
+        const permitTag = permitBadge(permit)
+        const permitLines = permit?.state === 'authorized' ? permitAuthorizedLines(permit) : permitWaitingLines(permit)
         return (
           // z-[55] ไม่ใช่ z-50: บนมือถือแถบเมนูล่าง (BottomNav, fixed bottom-0 z-50 วาดทีหลัง) ทับท้ายหน้าต่างนี้และรับการแตะแทน
           // ปุ่มพิมพ์ แบบ 3 / สก. ๑ ที่อยู่ล่างสุดจึงกดไม่โดน (วัดจริงบนจอ 390×844: ปุ่มอยู่ y 762–808 แถบเมนูเริ่ม ~780 — Playwright
@@ -2436,6 +2499,37 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                     esign_fallback (เฟส 2): ผู้ลงนามไม่พร้อมจนทั้งใบเป็นเซ็นสด — แผงบอกเหตุผล ไม่ให้คนงงว่าทำไมไม่ได้ลงนามออนไลน์
                     (SELECT เป็น * ฐานที่ยังไม่มีคอลัมน์นี้ได้ undefined ไม่ error) */}
                 {(t.esign_slots || t.esign_fallback) && <TripEsignPanel trip={t} onChanged={loadTrips} />}
+                {permitTag && (
+                  <section className="space-y-2 rounded-xl border border-gray-200 bg-white p-3" data-permit-section={permit.state}>
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-xs font-black text-gray-800">การอนุญาตใช้รถ</h3>
+                      <span className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold"
+                            style={{ backgroundColor: permitTag.color + '18', color: permitTag.color }}>{permitTag.label}</span>
+                    </div>
+                    {permitLines.map((line, index) => (
+                      <p key={index} className="text-xs leading-5 text-gray-600">{line}</p>
+                    ))}
+                    <p className="text-[10px] leading-4 text-gray-400">
+                      หน่วยงานนี้บังคับให้ได้รับอนุญาตก่อนออกรถ — คิวรถยังกันให้อัตโนมัติเหมือนเดิม แต่บันทึกออกรถได้หลังได้รับอนุญาตเท่านั้น
+                    </p>
+                    {(permit.can_record || permit.can_void) && (
+                      <div className="flex flex-wrap gap-2 pt-0.5">
+                        {permit.can_record && (
+                          <button type="button" onClick={() => setPermitDialog({ mode: 'record', tripId: t.id, permitId: null })}
+                            className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">
+                            บันทึกการอนุญาต (ใบกระดาษ)
+                          </button>
+                        )}
+                        {permit.can_void && permit.permit_id && (
+                          <button type="button" onClick={() => setPermitDialog({ mode: 'void', tripId: t.id, permitId: permit.permit_id })}
+                            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100">
+                            ยกเลิกบันทึกนี้
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </section>
+                )}
               </div>
               <div className={`grid grid-cols-1 gap-2 px-5 pb-5 pt-3 border-t border-gray-100 ${canEdit || canFixOdometer || canReportIncident || canPrintSk1 ? 'sm:grid-cols-2' : ''}`}>
                 <button onClick={() => printTripRequest(t)}
@@ -2475,6 +2569,20 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           </div>
         )
       })()}
+      {permitDialog && (
+        <FleetPermitDialog
+          mode={permitDialog.mode}
+          tripId={permitDialog.tripId}
+          permitId={permitDialog.permitId}
+          info={permitMap.get(permitDialog.tripId) ?? null}
+          onClose={() => setPermitDialog(null)}
+          onDone={() => {
+            const tripId = permitDialog.tripId
+            setPermitDialog(null)
+            refreshPermit(tripId)
+          }}
+        />
+      )}
       {incidentTrip && (
         <FleetIncidentModal
           tenant={tenant}
