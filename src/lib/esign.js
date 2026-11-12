@@ -84,6 +84,11 @@ export const ESIGN_MESSAGES = {
   not_your_slot: 'ช่องนี้ไม่ใช่ของคุณ ลงนามแทนผู้อื่นไม่ได้',
   already_signed: 'ช่องนี้มีผู้ลงนามแล้ว',
   wait_previous: 'ต้องให้ผู้ลงนามก่อนหน้าลงนามก่อน',
+  // ข้อ ๑๒ ว.๕ ผู้มีรถประจำตำแหน่ง (P4) — ผู้ลงนามต้องเห็นเหตุผลชุดเดียวกับที่อยู่ในคำขอ
+  // ต้องรีเฟรชทั้งหน้า: ปิดแล้วเปิดกล่องใหม่ยังได้เหตุผลชุดเก่าจากแคชรายการ (migration-reviewer P4 รอบ 2)
+  reason_changed: 'เหตุผลความจำเป็นในคำขอถูกแก้ระหว่างที่เปิดหน้านี้ — ปิดหน้าต่างแล้วรีเฟรชหน้า (กด F5 หรือดึงหน้าจอลง) เพื่ออ่านเหตุผลล่าสุดก่อนลงนาม',
+  reason_required: 'ผู้ขอมีรถประจำตำแหน่ง แต่ยังไม่ได้กรอกเหตุผลความจำเป็น — ให้ผู้ขอแก้คำขอกรอกเหตุผลก่อน จึงจะลงนามได้',
+  reload_required: 'ข้อมูลในหน้านี้ไม่ใช่ล่าสุด (ผู้ขอเพิ่งกรอกเหตุผลความจำเป็น หรือหน้าเว็บเป็นรุ่นเก่า) — ปิดหน้าต่างแล้วรีเฟรชหน้า (กด F5 หรือดึงหน้าจอลง) เพื่ออ่านเหตุผลก่อนลงนาม',
   bad_decision: 'ค่าการตัดสินใจไม่ถูกต้อง',
   // ส่งคืนผู้ขอ
   returned_open: 'คำขอนี้ถูกส่งคืนผู้ขออยู่ ต้องรอผู้ขอส่งกลับก่อนจึงลงนามได้',
@@ -120,6 +125,20 @@ export function esignMessage(result) {
 // ข้อความเมื่อทำรายการไม่สำเร็จ — รหัสผ่านผิดต้องเตือนเรื่องล็อกเสมอ
 // ฟังก์ชันลงนามบอก remaining แต่ set_esign_pin (เปลี่ยนรหัส) ไม่บอก ทั้งที่นับเข้าตัวล็อกชุดเดียวกัน (ผิดสะสมครบ 5 ครั้ง ล็อก 15 นาที)
 // จึงต้องเตือนเองเมื่อไม่มีตัวเลข ไม่งั้นผู้ใช้โดนล็อกโดยไม่รู้ตัว (เจอตอนทดสอบกับฐานข้อมูลจริง ไม่ใช่ฐานข้อมูลจำลอง)
+// SHA-256 (hex) ของเหตุผลความจำเป็นที่ผู้ลงนามเห็นในกล่องลงนาม — DB เทียบกับ position_car_reason ตอนลงนาม (P4)
+// ใช้ข้อความดิบตามที่ DB ส่งมา (ห้าม trim/แปลงเอง ไม่งั้น hash ไม่ตรง) · ว่าง/null = ข้อความว่าง
+// เบราว์เซอร์ที่ไม่มี crypto.subtle (เปิดผ่าน http ที่ไม่ใช่ localhost) = null ⇒ DB ตอบ reload_required เฉพาะใบ ว.๕
+export async function esignReasonHash(text) {
+  try {
+    const subtle = globalThis.crypto?.subtle
+    if (!subtle) return null
+    const digest = await subtle.digest('SHA-256', new TextEncoder().encode(String(text ?? '')))
+    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+  } catch {
+    return null
+  }
+}
+
 export function esignFailureText(result) {
   const base = esignMessage(result)
   if (result?.code !== 'bad_pin') return base

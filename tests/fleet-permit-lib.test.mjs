@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
-  PERMIT_BASIS_LABEL, PERMIT_FALLBACK_REASON, PERMIT_INFO_MAX_IDS, PERMIT_MESSAGES, PERMIT_MODE_OPTIONS, PERMIT_PAPER_MAX_BACKDATE_DAYS,
+  PERMIT_BASIS_LABEL, PERMIT_FALLBACK_REASON, PERMIT_INFO_MAX_IDS, PERMIT_MESSAGES, PERMIT_MODE_OPTIONS, PERMIT_NON_MAYOR_PERMIT_TEXT, PERMIT_PAPER_MAX_BACKDATE_DAYS,
   PERMIT_STATE_LABEL, PERMIT_TRIP_EXCEPTIONS, chunkIds, permitApproverText, permitAuthorizedLines, permitBadge, permitBasisOptions,
   permitActingTitle, permitBlocksDepart, permitDepartHint, permitFallbackText, permitInfoIds, permitInfoMap, permitMessage, permitPrintAuthority,
   permitSignedOnRange, permitWaitingLines,
@@ -395,6 +395,17 @@ await test('กล่องลงนาม SignTripDialog: ลงช่อง �
     assert.match(caller, /onSigned=\{/, `${file} ไม่ได้ส่ง onSigned ให้กล่องลงนาม`)
   }
   assert.ok(!/ถูกต้องตามระเบียบ|ถูกต้องตามกฎหมาย|ชอบด้วยกฎหมาย|ชอบด้วยระเบียบ|ผ่านตามระเบียบ/.test(dialog), 'ข้อความกล่องลงนามรับรองความถูกต้องทางระเบียบไม่ได้')
+})
+
+await test('P4 mayor_required จากการอนุญาตเดิมที่ไม่ใช่นายก: ข้อความบอกให้ถอน/ยกเลิก ไม่ใช่ให้แก้ผู้มีอำนาจ', () => {
+  assert.equal(permitMessage({ ok: false, code: 'mayor_required' }), PERMIT_MESSAGES.mayor_required)
+  assert.equal(permitMessage({ ok: false, code: 'mayor_required', non_mayor_permit: false }), PERMIT_MESSAGES.mayor_required)
+  assert.equal(permitMessage({ ok: false, code: 'mayor_required', non_mayor_permit: true }), PERMIT_NON_MAYOR_PERMIT_TEXT)
+  assert.match(PERMIT_NON_MAYOR_PERMIT_TEXT, /ยกเลิกบันทึกใบกระดาษ/)
+  assert.doesNotMatch(PERMIT_NON_MAYOR_PERMIT_TEXT, /แก้คำขอ/)
+  assert.equal(permitMessage({ ok: false, code: 'reason_required', non_mayor_permit: true }), PERMIT_MESSAGES.reason_required)
+  assert.match(permitDepartHint(regulation({ state: 'mayor_required', non_mayor_permit: true })), /ถอน\/ยกเลิก/)
+  assert.match(permitDepartHint(regulation({ state: 'mayor_required' })), /ผู้มีอำนาจสั่งใช้ต้องเป็นนายก/)
 })
 
 console.log(`\nผ่านทั้งหมด ${cases} กรณี`)

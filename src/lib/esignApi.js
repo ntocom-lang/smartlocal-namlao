@@ -89,7 +89,10 @@ export const getTripEsignStamps = tripId => callEsign('esign_trip_stamps', { p_t
 // imageId = ภาพจากคลังของฉัน · ไม่แนบภาพ = null · decision: ช่องผู้มีอำนาจส่ง 'approve' ช่องอื่นส่ง null (DB กำหนดเอง)
 // ไม่ส่ง p_png_base64 (ภาพที่วาดตอนลงนามโดยไม่เข้าคลัง) — หน้าจอให้บันทึกเข้าคลังก่อนเสมอ ผู้ใช้เลือกใช้ซ้ำได้ ไม่ต้องเซ็นใหม่ทุกใบ
 // ลงสำเร็จ → แจ้งคนถัดไปในสายทาง Telegram ส่วนตัว (ฟังก์ชันหาเองว่าใครถึงคิว ไม่รอผล)
-export const signFleetTrip = async ({ tripId, slot, pin, decision = null, imageId = null }) => {
+// reasonHash = esignReasonHash(เหตุผลที่แสดงในกล่องลงนาม) — DB เทียบกับเหตุผลในคำขอตอนนี้ ไม่ตรง = reason_changed (P4)
+// ส่งคีย์ p_reason_hash เฉพาะเมื่อมี hash (ใบที่มีเหตุผล ว.๕) — ใบอื่นเรียก 6 พารามิเตอร์แบบเดิมทุกไบต์
+// ⇒ ฐานที่ยังไม่รัน 20261124100000 ใบทั่วไปลงนามได้ตามปกติ (PostgREST ไม่เจอฟังก์ชันเฉพาะตอนส่งคีย์นี้) · ลำดับที่ถูกยังเป็น SQL ก่อน merge
+export const signFleetTrip = async ({ tripId, slot, pin, decision = null, imageId = null, reasonHash = null }) => {
   const result = await callEsign('esign_sign_fleet_trip_stamped', {
     p_trip_id: tripId,
     p_slot: slot,
@@ -97,6 +100,7 @@ export const signFleetTrip = async ({ tripId, slot, pin, decision = null, imageI
     p_decision: decision,
     p_image_id: imageId,
     p_png_base64: null,
+    ...(reasonHash ? { p_reason_hash: reasonHash } : {}),
   })
   if (result?.ok) {
     notifyTelegram('esign_turn_dm', tripId)

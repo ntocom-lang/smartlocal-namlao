@@ -71,7 +71,8 @@ export default function FleetPermitDialog({ mode = 'record', tripId, info, permi
       onDone?.(result)
       return
     }
-    setError(permitMessage(result))
+    // RPC บันทึกตอบแค่ mayor_required — แนบ non_mayor_permit จากสถานะของใบ ให้ข้อความบอกทางแก้ที่ถูก (ถอน/ยกเลิกของเดิม)
+    setError(permitMessage(result?.code === 'mayor_required' ? { ...result, non_mayor_permit: info?.non_mayor_permit === true } : result))
   }
 
   return createPortal(

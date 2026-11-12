@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises'
 import {
   ESIGN_DECISION_LABEL, ESIGN_DUTY_TEXT, ESIGN_FALLBACK_REASON, ESIGN_FLEET_SLOTS, ESIGN_MESSAGES, ESIGN_READINESS, ESIGN_TRIP_EXCEPTIONS, esignAnnouncementDraft, esignAnyOnline, esignBlockers,
   esignDepartReturn, esignFailureText, esignFallbackText, esignGateItems, esignMessage, esignModesFromStatus, esignPendingFromRpc, esignPendingKey, esignPendingRow,
-  esignReadinessMap, esignReturnHint, esignReturnedRow, esignReturnedText, esignRevokeTargets,
+  esignReadinessMap, esignReasonHash, esignReturnHint, esignReturnedRow, esignReturnedText, esignRevokeTargets,
 } from '../src/lib/esign.js'
 import { isVerifyBusy, isVerifyCode, verifySlotRows, verifySummary } from '../src/lib/esignVerify.js'
 
@@ -28,7 +28,9 @@ const fallbackFunctionsSql = await read('../supabase/migrations/20261031100100_e
 const returnFunctionsSql = await read('../supabase/migrations/20261101120100_esign_trip_return_functions.sql')
 // esign_my_pending รุ่นล่าสุดอยู่ใน P3 ขั้นตอนขอใช้รถ (เพิ่ม position_car_reason / position_car_required ข้อ ๑๒ ว.๕)
 const myPendingSql = await read('../supabase/migrations/20261123100100_fleet_position_car_functions.sql')
-const functionsSql = functionsOldSql + '\n' + gateRelaxSql + '\n' + imageFunctionsSql + '\n' + tripPanelSql + '\n' + adminDeleteSql + '\n' + fallbackFunctionsSql + '\n' + returnFunctionsSql
+// P4 ขั้นตอนขอใช้รถ: ยก esign_sign_fleet_trip / _stamped / status / turns มาเต็มตัว + รหัสใหม่ reason_changed / reload_required / reason_required
+const sk1RegistrySql = await read('../supabase/migrations/20261124100000_fleet_permit_sk1_registry.sql')
+const functionsSql = functionsOldSql + '\n' + gateRelaxSql + '\n' + imageFunctionsSql + '\n' + tripPanelSql + '\n' + adminDeleteSql + '\n' + fallbackFunctionsSql + '\n' + returnFunctionsSql + '\n' + sk1RegistrySql
 const apiSource = await read('../src/lib/esignApi.js')
 const esignLibSource = await read('../src/lib/esign.js')
 
@@ -546,6 +548,19 @@ await test('แอดมินลบทริปที่มีลายเซ�
   const handler = fleet.slice(fleet.indexOf('async function handleDelete'), fleet.indexOf('/* ── Derived ── */'))
   assert.ok(handler.includes('t.esign_slots') && handler.includes('esignWarning') && handler.includes('ไม่พบ'), 'ลบทริปโหมดออนไลน์ต้องเตือนผลก่อนยืนยัน')
   assert.ok(/confirm\(`[^\n]*\$\{esignWarning\}/.test(handler), 'คำเตือนต้องอยู่ในกล่องยืนยัน')
+})
+
+await test('P4 esignReasonHash: SHA-256 hex ตรงกับ DB (encode(sha256(convert_to(text, UTF8)), hex)) · null = ข้อความว่าง · ไม่ trim เอง', async () => {
+  const { createHash } = await import('node:crypto')
+  const sha = text => createHash('sha256').update(text, 'utf8').digest('hex')
+  const reason = 'รถประจำตำแหน่งเข้าศูนย์ซ่อมตามนัด ต้องไปประชุมที่จังหวัด'
+  assert.equal(await esignReasonHash(reason), sha(reason))
+  assert.equal(await esignReasonHash(null), sha(''))
+  assert.equal(await esignReasonHash(undefined), sha(''))
+  assert.equal(await esignReasonHash(' ก '), sha(' ก '))
+  // ส่งคีย์เฉพาะเมื่อมี hash — ใบทั่วไปต้องเรียก 6 พารามิเตอร์แบบเดิม (ฐานที่ยังไม่รัน P4 ไม่พัง)
+  assert.match(apiSource, /\.\.\.\(reasonHash \? \{ p_reason_hash: reasonHash \} : \{\}\)/)
+  assert.doesNotMatch(apiSource, /^\s*p_reason_hash: reasonHash,/m)
 })
 
 console.log(`\nผ่านทั้งหมด ${cases} กรณี`)

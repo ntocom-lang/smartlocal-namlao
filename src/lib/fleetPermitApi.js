@@ -67,9 +67,10 @@ export const voidFleetPaperPermit = ({ permitId, reason }) =>
   callPermit('fleet_void_paper_permit', { p_permit_id: permitId, p_reason: String(reason ?? '').trim() })
 
 // P3 ข้อ ๑๒ ว.๕ — ผู้ขอคนนี้มีรถประจำตำแหน่งไหม (ถามตอนเปิดฟอร์ม/เปลี่ยนผู้ขอหรือรถ)
-// → { ok, permit_mode, position_car: { vehicle_id, license_plate, name, position_name } | null }
+// → { ok, permit_mode, position_car: { vehicle_id, license_plate, name, position_name } | null, requester_registered_mayor }
 // requestedBy ว่าง = ตัวผู้เรียก · vehicleId ว่าง = ยังไม่เลือกรถ (DB ส่ง null ได้)
-// ฐานข้อมูล: supabase/migrations/20261123100100_fleet_position_car_functions.sql
+// requester_registered_mayor (P4) = ผู้ขอเป็นนายกในทะเบียนผู้ลงนาม ณ วันนี้ (ไม่ดูข้อความตำแหน่ง — ฟอร์มเทียบเอง)
+// ฐานข้อมูล: supabase/migrations/20261123100100_fleet_position_car_functions.sql + 20261124100000_fleet_permit_sk1_registry.sql
 export const checkFleetPositionCar = ({ municipalityId, requestedBy, vehicleId }) =>
   callPermit('fleet_position_car_check', {
     p_municipality_id: municipalityId,

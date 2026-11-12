@@ -98,6 +98,11 @@ export const PERMIT_MESSAGES = {
   error: 'ทำรายการไม่สำเร็จ กรุณาลองใหม่',
 }
 
+// mayor_required ที่มาจาก "การอนุญาตเดิมไม่ได้มาจากนายก" (state.non_mayor_permit — เช่นเปลี่ยนรถทีหลัง) ทางแก้คือถอน/ยกเลิก
+// ไม่ใช่แก้ผู้มีอำนาจในคำขอ (ผู้มีอำนาจเป็นนายกอยู่แล้ว) — ข้อความ mayor_required ปกติจึงบอกผิดทาง
+export const PERMIT_NON_MAYOR_PERMIT_TEXT = 'ผู้ขอมีรถประจำตำแหน่ง — มีการอนุญาตเดิมที่ไม่ได้มาจากนายกค้างอยู่ จึงบันทึกเพิ่มไม่ได้ '
+  + 'ให้ยกเลิกบันทึกใบกระดาษเดิม หรือถอนลายเซ็นช่องผู้มีอำนาจเดิมก่อน แล้วจึงบันทึกการอนุญาตของนายก'
+
 // ข้อความ error ที่ trigger บน fleet_trips โยน (RAISE EXCEPTION 'FLEET_PERMIT_…: …') — FleetTrips รวมเข้า tripErrorMessage
 // ⚠️ FLEET_PERMIT_REQUIRED ขึ้นเมื่อกดบันทึกออกรถก่อนได้รับอนุญาต (ปุ่มปิดไว้อยู่แล้ว ข้อความนี้เผื่อหน้าค้าง/เครื่องที่ข้อมูลเก่า)
 export const PERMIT_TRIP_EXCEPTIONS = {
@@ -110,9 +115,11 @@ export const PERMIT_TRIP_EXCEPTIONS = {
 }
 
 // ผลจาก RPC → ข้อความ · delegation_not_applicable แนบเหตุจาก fallback_reason ให้ด้วย (ผู้บันทึกจะรู้ว่าต้องแก้อะไร)
+// mayor_required + non_mayor_permit (หน้าจอแนบจากสถานะของใบ — RPC บันทึกไม่ได้ส่งมา) = ข้อความให้ถอน/ยกเลิกของเดิม
 export function permitMessage(result) {
   if (!result) return PERMIT_MESSAGES.error
   const code = typeof result === 'string' ? result : result.code
+  if (code === 'mayor_required' && typeof result === 'object' && result.non_mayor_permit === true) return PERMIT_NON_MAYOR_PERMIT_TEXT
   const base = PERMIT_MESSAGES[code] ?? result.message ?? PERMIT_MESSAGES.error
   const why = typeof result === 'object' ? permitFallbackText(result.fallback_reason) : ''
   return why ? `${base} (${why})` : base
@@ -183,7 +190,11 @@ export function permitDepartHint(info) {
   if (info.state === 'returned') return 'ถูกส่งคืนผู้ขอ — ต้องลงนามใหม่และได้รับอนุญาตก่อนออกรถ'
   if (info.state === 'modified') return 'คำขอถูกแก้หลังได้รับอนุญาต — ต้องขออนุญาตใหม่ก่อนออกรถ'
   if (info.state === 'reason_required') return 'ผู้ขอมีรถประจำตำแหน่ง — ต้องกรอกเหตุผลความจำเป็นก่อน'
-  if (info.state === 'mayor_required') return 'ผู้ขอมีรถประจำตำแหน่ง — ผู้มีอำนาจสั่งใช้ต้องเป็นนายก'
+  if (info.state === 'mayor_required') {
+    return info.non_mayor_permit
+      ? 'ผู้ขอมีรถประจำตำแหน่ง — การอนุญาตเดิมไม่ได้มาจากนายก ต้องถอน/ยกเลิกแล้วให้นายกอนุญาต'
+      : 'ผู้ขอมีรถประจำตำแหน่ง — ผู้มีอำนาจสั่งใช้ต้องเป็นนายก'
+  }
   const approver = info.approver
   const name = String(approver?.name ?? '').trim()
   const who = approver?.registry_id && name ? name : (String(approver?.title ?? '').trim() || 'ผู้มีอำนาจ')

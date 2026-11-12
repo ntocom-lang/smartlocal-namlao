@@ -723,22 +723,29 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   // ได้ position_car เฉพาะ อปท. โหมดบังคับอนุญาต · โหมด queue / ฐานที่ยังไม่มีฟังก์ชัน / ถามไม่ได้ = null = ฟอร์มเหมือนเดิมทุกอย่าง
   // ด่านจริงอยู่ที่ DB (fleet_trip_permit_state ⇒ reason_required/mayor_required บล็อกออกรถ) หน้าจอแค่บอกล่วงหน้า
   const [positionCar, setPositionCar] = useState(null)
+  // ผู้ขอเป็นนายกในทะเบียนผู้ลงนาม ณ วันนี้ (P4: DB ตอบจากทะเบียน ไม่ใช่ข้อความตำแหน่ง) — ฐานรุ่นก่อน P4 ไม่มีคีย์นี้ = false
+  const [requesterRegisteredMayor, setRequesterRegisteredMayor] = useState(false)
   const positionCarRequester = modal === 'reserve' ? (form.requested_by || '') : ''
   const positionCarVehicle = modal === 'reserve' ? (form.vehicle_id || '') : ''
   useEffect(() => {
     if (!tenant?.id || !positionCarRequester) {
-      queueMicrotask(() => setPositionCar(null))
+      queueMicrotask(() => { setPositionCar(null); setRequesterRegisteredMayor(false) })
       return undefined
     }
     let alive = true
     checkFleetPositionCar({ municipalityId: tenant.id, requestedBy: positionCarRequester, vehicleId: positionCarVehicle })
       .then(result => {
-        if (alive) setPositionCar(result?.ok && result.permit_mode === 'regulation' ? (result.position_car ?? null) : null)
+        if (!alive) return
+        const regulation = result?.ok && result.permit_mode === 'regulation'
+        setPositionCar(regulation ? (result.position_car ?? null) : null)
+        setRequesterRegisteredMayor(regulation && result.requester_registered_mayor === true)
       })
     return () => { alive = false }
   }, [tenant?.id, positionCarRequester, positionCarVehicle])
   // ผู้ขอเป็นนายกเอง = ทาง สก.๑ (ว.๖) ไม่ล็อกผู้มีอำนาจ แต่ยังต้องกรอกเหตุผล (เจ้าของระบบเลือก 2026-11-12)
-  const positionCarMayorRequest = Boolean(positionCar) && isMayorPosition(form.requester_position)
+  // "นายก" = ตำแหน่งขึ้นต้นนายก AND เป็นนายกในทะเบียน — เกณฑ์เดียวกับ fleet_permit_requester_is_registered_mayor ในฐาน (P4)
+  // พิมพ์ตำแหน่ง "นายก…" เองแต่ไม่อยู่ในทะเบียน = ล็อกผู้มีอำนาจเป็นนายก (ไม่งั้นฐานตอบ mayor_required ทีหลัง)
+  const positionCarMayorRequest = Boolean(positionCar) && requesterRegisteredMayor && isMayorPosition(form.requester_position)
   const lockMayorAuthority = Boolean(positionCar) && !positionCarMayorRequest
   useEffect(() => {
     if (lockMayorAuthority && form.order_authority_role !== 'mayor') {

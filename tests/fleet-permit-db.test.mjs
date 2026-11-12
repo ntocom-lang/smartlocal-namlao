@@ -10,6 +10,7 @@
 //  (4) มอบ ผอ.กอง (ข้อ ๑๒ ว.๔): ผอ.ของกองเป็นผู้อนุญาต · ผอ.ขอเอง / ไม่มีผู้ลงนามกอง / ผู้ขอเป็นนายก → กลับไปที่ผู้มีอำนาจ
 //  (5) สิทธิ์: ตั้งค่า = แอดมิน อปท. · บันทึก/ยกเลิก = ผู้ดูแลรถ อปท. นั้น · ข้าม อปท. ไม่ได้ · บันทึกแก้/ลบไม่ได้
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 
@@ -48,6 +49,9 @@ const permitP2Sql = await readMigration('20261122100000_fleet_permit_delegated_e
 const WITH_P3 = WITH_P2 && !process.argv.includes('--no-p3')
 const positionCarColumnsSql = await readMigration('20261123100000_fleet_position_car_columns.sql')
 const positionCarFunctionsSql = await readMigration('20261123100100_fleet_position_car_functions.sql')
+// P4 (หน้าลงนามใช้เกณฑ์นายกตามทะเบียน + hash เหตุผล) รันต่อท้าย P3 · --no-p4 = P1–P3 (red-check: กรณี P4 ต้องล้ม)
+const WITH_P4 = WITH_P3 && !process.argv.includes('--no-p4')
+const sk1RegistrySql = await readMigration('20261124100000_fleet_permit_sk1_registry.sql')
 
 const extractFunction = (source, startPattern) => {
   const found = startPattern.exec(source)
@@ -136,6 +140,10 @@ if (WITH_P3) {
   // รันซ้ำได้: ด่าน md5 รับรุ่นที่ไฟล์นี้ลงไปแล้ว (h_after) — แก้เนื้อฟังก์ชันแล้วลืมคำนวณใหม่ = ล้มตรงนี้
   await db.exec(positionCarColumnsSql)
   await db.exec(positionCarFunctionsSql)
+}
+if (WITH_P4) {
+  await db.exec(sk1RegistrySql)
+  await db.exec(sk1RegistrySql) // รันซ้ำได้ (DROP IF EXISTS + ด่าน md5 รับ h_after)
 }
 
 const users = {
@@ -1253,6 +1261,226 @@ if (WITH_P3) {
     assert.equal((await db.query(`SELECT has_function_privilege('anon', 'public.esign_my_pending()', 'execute') AS ok`)).rows[0].ok, false)
     assert.equal((await db.query(`SELECT has_function_privilege('authenticated', 'public.esign_my_pending()', 'execute') AS ok`)).rows[0].ok, true)
   })
+
+  if (WITH_P4) {
+    // ══ P4 — หน้าลงนามใช้เกณฑ์นายกตามทะเบียน + hash เหตุผล ว.๕ (20261124100000) ═══════════════════════
+    // ต่อจากสภาพท้าย P3: regulation ไม่มอบ ผอ. · requester = ผู้ถือรถปลัด (VP) · mayor = นายกในทะเบียน ถือรถนายก (VM)
+    const MAYOR_POS = 'นายกองค์การบริหารส่วนตำบลทดสอบเอ'
+    const sha = text => createHash('sha256').update(text ?? '', 'utf8').digest('hex')
+    const signP4 = async (alias, tripId, slot, hash) => {
+      await as(alias)
+      return rpc('public.esign_sign_fleet_trip($1, $2, $3, NULL, $4)', [tripId, slot, '246810', hash])
+    }
+    const stamped = async (alias, tripId, hash, { legacy = false } = {}) => {
+      await as(alias)
+      // legacy = หน้าเว็บรุ่นก่อน P4 ที่ค้างในเครื่อง ส่ง 6 พารามิเตอร์ตามชื่อ (PostgREST เรียกแบบนี้)
+      return rpc(`public.esign_sign_fleet_trip_stamped(p_trip_id => $1, p_slot => 'authority', p_pin => '246810',
+        p_decision => 'approve', p_image_id => NULL, p_png_base64 => NULL${legacy ? '' : ', p_reason_hash => $2'})`,
+      legacy ? [tripId] : [tripId, hash])
+    }
+    const slotsOf = async (alias, tripId) => {
+      await as(alias)
+      const s = await rpc('public.esign_trip_status($1)', [tripId])
+      return Object.fromEntries(s.slots.map(x => [x.slot, x]))
+    }
+    const turnsOf = async tripId => rpc('public.esign_trip_turns($1)', [tripId])
+    const mayNeedMe = async (tripId, alias) => (await db.query(
+      'SELECT public.esign_trip_may_need_me(t, $2, false) AS r FROM public.fleet_trips t WHERE t.id = $1', [tripId, users[alias].id])).rows[0].r
+    const failedCount = async alias =>
+      (await db.query('SELECT failed_count FROM public.esign_signers WHERE user_id = $1', [users[alias].id])).rows[0].failed_count
+    // ช่องผู้มีอำนาจ + สก.๑ ออนไลน์ ผู้ขอ/ผอ. เซ็นสด ⇒ ไม่ต้องไล่ลำดับช่องก่อนหน้า
+    await db.query(`UPDATE public.esign_doc_type_settings
+      SET slot_modes = '{"requester":"wet","dept_head":"wet","authority":"online","sk1":"online"}'::jsonb
+      WHERE municipality_id = $1 AND doc_type = 'fleet_trip_request'`, [A])
+
+    await test('P4 ฟังก์ชันลงนามรุ่นเก่าถูกถอน · สิทธิ์เท่าเดิม · fleet_trip_sk1_applies ไม่เปิดให้ client', async () => {
+      const reg = async sig => (await db.query('SELECT to_regprocedure($1)::text AS r', [sig])).rows[0].r
+      assert.equal(await reg('public.esign_sign_fleet_trip(uuid,text,text,text)'), null)
+      assert.equal(await reg('public.esign_sign_fleet_trip_stamped(uuid,text,text,text,uuid,text)'), null)
+      const priv = async (role, sig) => (await db.query(`SELECT has_function_privilege($1, $2, 'execute') AS ok`, [role, sig])).rows[0].ok
+      for (const sig of ['public.esign_sign_fleet_trip(uuid,text,text,text,text)',
+        'public.esign_sign_fleet_trip_stamped(uuid,text,text,text,uuid,text,text)', 'public.esign_trip_status(uuid)',
+        'public.fleet_position_car_check(uuid,uuid,uuid)']) {
+        assert.equal(await priv('authenticated', sig), true, sig)
+        assert.equal(await priv('anon', sig), false, sig)
+      }
+      for (const sig of ['public.fleet_trip_sk1_applies(public.fleet_trips)', 'public.esign_trip_turns(uuid)',
+        'public.esign_trip_may_need_me(public.fleet_trips,uuid,boolean)']) {
+        assert.equal(await priv('authenticated', sig), false, sig)
+        assert.equal(await priv('anon', sig), false, sig)
+      }
+      assert.equal(await priv('service_role', 'public.esign_trip_turns(uuid)'), true)
+      // หน้าตรวจ QR สาธารณะ: ผู้ไม่ล็อกอินเรียกได้เหมือนเดิม
+      assert.equal(await priv('anon', 'public.esign_verify(text)'), true)
+      assert.equal(await priv('authenticated', 'public.esign_verify(text)'), true)
+    })
+
+    await test('P4 เนื้อฟังก์ชันต่างจากรุ่นตั้งต้นเฉพาะจุดที่ตั้งใจ (ตัดส่วนที่เพิ่มออกแล้วต้องเท่ากันทุกตัวอักษร)', async () => {
+      const squash = text => text.replace(/\s+/g, ' ').trim()
+      const body = (src, name) => {
+        const found = new RegExp(`CREATE (?:OR REPLACE )?FUNCTION public\\.${name}\\(`).exec(src)
+        assert.ok(found, name)
+        const rest = src.slice(found.index)
+        const from = rest.indexOf('AS $$') + 5
+        return rest.slice(from, rest.indexOf('$$', from))
+      }
+      const oldReturn = await readMigration('20261101120100_esign_trip_return_functions.sql')
+      const oldImage = await readMigration('20261023100100_esign_image_functions.sql')
+      const back = text => text.split('public.fleet_trip_sk1_applies(v_trip)').join('public.esign_is_mayor_position(v_requester_pos)')
+      for (const name of ['esign_trip_status', 'esign_trip_turns']) {
+        assert.equal(squash(back(body(sk1RegistrySql, name))), squash(body(oldReturn, name)), name)
+      }
+      assert.equal(squash(body(sk1RegistrySql, 'esign_trip_may_need_me').replace('public.fleet_trip_sk1_applies(p_trip)',
+        "public.esign_is_mayor_position(public.esign_expected_signer(p_trip, 'requester') ->> 'position')")),
+      squash(body(oldReturn, 'esign_trip_may_need_me')))
+      const sign = back(body(sk1RegistrySql, 'esign_sign_fleet_trip'))
+        .replace(/\n {2}v_reason {4}text;/, '')
+        .replace(/\n {2}-- เหตุผลความจำเป็น ว\.๕ \(P4\)[\s\S]*?'reason_changed'\);\n {4}END IF;\n {2}END IF;\n/, '\n')
+      assert.equal(squash(sign), squash(body(oldReturn, 'esign_sign_fleet_trip')))
+      const oldEsign = await readMigration('20261022100200_esign_functions.sql')
+      assert.equal(squash(back(body(sk1RegistrySql, 'esign_verify'))), squash(body(oldEsign, 'esign_verify')))
+      assert.equal(squash(body(sk1RegistrySql, 'esign_sign_fleet_trip_stamped').replace(', p_decision, p_reason_hash);', ', p_decision);')),
+        squash(body(oldImage, 'esign_sign_fleet_trip_stamped')))
+      const check = body(sk1RegistrySql, 'fleet_position_car_check')
+        .replace(/,\n {4}'requester_registered_mayor'[\s\S]*?false\)\n {2}\);/, '\n  );')
+      assert.equal(squash(check), squash(body(positionCarFunctionsSql, 'fleet_position_car_check')))
+    })
+
+    await test('P4 queue: ผู้พิมพ์ตำแหน่งนายกเองยังเห็น/ลงช่อง สก.๑ ได้ตามเดิม (อปท. แบบคิวไม่เปลี่ยน)', async () => {
+      await setMode('queue')
+      try {
+        await as('head')
+        const t = await makeTrip({ requester: 'head', position: MAYOR_POS })
+        assert.equal(t.permit_mode, 'queue')
+        const s = await slotsOf('head', t.id)
+        assert.equal(s.sk1.applicable, true)
+        assert.equal(s.sk1.can_sign, true)
+        assert.ok((await turnsOf(t.id)).some(x => x.slot === 'sk1'))
+        assert.equal(await mayNeedMe(t.id, 'head'), true)
+        // ใบ queue ไม่ดู p_reason_hash เลย (ส่งค่าผิดมาก็ไม่มีผล — reviewer P4 ข้อ 3)
+        const r = await signP4('head', t.id, 'sk1', sha('ค่าที่ไม่ตรงอะไรเลย'))
+        assert.equal(r.ok, true, JSON.stringify(r))
+        assert.equal(r.complete, false, 'ช่องผู้มีอำนาจยังไม่ลง')
+        const v = await rpc('public.esign_verify($1)', [(await trip(t.id)).esign_verify_code])
+        assert.equal(v.required, 2, 'หน้า QR ใบ queue ยังนับช่อง สก.๑ ตามเกณฑ์ข้อความเดิม')
+      } finally {
+        await setMode('regulation')
+      }
+    })
+
+    await test('P4 regulation: พิมพ์ตำแหน่งนายกเอง (ไม่อยู่ในทะเบียน) ไม่มีช่อง สก.๑ · ลงไม่ได้ · ไม่ถูกนับ/ไม่แจ้งเตือน', async () => {
+      await as('head')
+      const t = await makeTrip({ requester: 'head', position: MAYOR_POS })
+      assert.equal(t.permit_mode, 'regulation')
+      const s = await slotsOf('head', t.id)
+      assert.equal(s.sk1.applicable, false)
+      assert.equal(s.sk1.can_sign, false)
+      assert.equal((await signP4('head', t.id, 'sk1', sha(''))).code, 'not_applicable')
+      assert.ok(!(await turnsOf(t.id)).some(x => x.slot === 'sk1'))
+      assert.equal(await mayNeedMe(t.id, 'head'), false)
+      // ไม่ใช่ใบ ว.๕ (head ไม่มีรถประจำตำแหน่ง): ไม่ดู hash เลย (ส่งค่าผิดมาก็ลงได้ เหมือนไม่ส่ง)
+      const r = await signP4('mayor', t.id, 'authority', sha('อื่น'))
+      assert.equal(r.ok, true, JSON.stringify(r))
+      assert.equal(r.complete, true, 'ช่อง สก.๑ ที่ไม่เข้าเงื่อนไขต้องไม่ถูกนับเป็นช่องที่ต้องลง')
+      assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
+      // หน้า QR สาธารณะใช้เกณฑ์เดียวกับในแอป (reviewer P4 ข้อ 2) — ไม่ค้าง partial เพราะช่อง สก.๑ ที่ไม่เข้าเงื่อนไข
+      await as('')
+      const v = await rpc('public.esign_verify($1)', [(await trip(t.id)).esign_verify_code])
+      assert.equal(v.required, 1)
+      assert.equal(v.state, 'complete', JSON.stringify(v))
+      // ลายเซ็น สก.๑ ของคนพิมพ์ตำแหน่งเองที่ลงไว้ก่อน P4: ยังแสดงในช่อง (ไม่หาย) แต่ไม่ทำให้อนุญาต (state ตัดสินเอง)
+      await as('head')
+      const t2 = await makeTrip({ requester: 'head', position: MAYOR_POS })
+      await addSignature(t2.id, 'sk1', 'sign', 'head')
+      const s2 = await slotsOf('head', t2.id)
+      assert.equal(s2.sk1.applicable, true)
+      assert.equal(s2.sk1.signed, true)
+      assert.equal((await info(t2.id, 'fleetAdmin')).state, 'waiting')
+      assert.equal((await signP4('head', t2.id, 'sk1', null)).already, true)
+    })
+
+    await test('P4 ใบ ว.๕ ช่อง ผอ.: เหตุผลว่าง = reason_required (ไม่ล็อกเหตุผลว่าง) · ช่องผู้ขอไม่ตรวจเหตุผล/hash', async () => {
+      await db.query(`UPDATE public.esign_doc_type_settings
+        SET slot_modes = '{"requester":"online","dept_head":"online","authority":"online","sk1":"online"}'::jsonb
+        WHERE municipality_id = $1 AND doc_type = 'fleet_trip_request'`, [A])
+      try {
+        await as('requester')
+        const t = await makeTrip()
+        assert.equal(t.esign_slots.dept_head, 'online')
+        // ผู้ขอลงก่อนกรอกเหตุผลได้ และไม่ต้องส่ง hash (ผู้ขอเป็นผู้เขียนเหตุผลเอง)
+        const req = await signP4('requester', t.id, 'requester', null)
+        assert.equal(req.ok, true, JSON.stringify(req))
+        assert.equal((await signP4('head', t.id, 'dept_head', sha(''))).code, 'reason_required')
+        await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON])
+        assert.equal((await signP4('head', t.id, 'dept_head', '')).code, 'reload_required', 'สตริงว่าง = ไม่ได้ส่ง')
+        assert.equal((await signP4('head', t.id, 'dept_head', '   ')).code, 'reload_required')
+        assert.equal((await signP4('head', t.id, 'dept_head', sha(REASON))).ok, true)
+        // ลายเซ็น ผอ. ล็อกเหตุผลชุดที่ ผอ. เห็นแล้ว
+        await expectError(db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON + ' แก้']),
+          /FLEET_POSITION_REASON_LOCKED/)
+      } finally {
+        await db.query(`UPDATE public.esign_doc_type_settings
+          SET slot_modes = '{"requester":"wet","dept_head":"wet","authority":"online","sk1":"online"}'::jsonb
+          WHERE municipality_id = $1 AND doc_type = 'fleet_trip_request'`, [A])
+      }
+    })
+
+    await test('P4 นายกในทะเบียน (ใบ ว.๕): ช่อง สก.๑ ขึ้น · ต้องมีเหตุผล + hash ตรงกับที่เห็น · ไม่ผ่านไม่กินโควตารหัส', async () => {
+      await as('mayor')
+      const t = await makeTrip({ requester: 'mayor', position: MAYOR_POS })
+      let s = await slotsOf('mayor', t.id)
+      assert.equal(s.sk1.applicable, true)
+      assert.equal(s.sk1.can_sign, true)
+      assert.equal(await mayNeedMe(t.id, 'mayor'), true)
+      const before = await failedCount('mayor')
+      // ลงตอนเหตุผลว่าง = เหตุผลถูกล็อกเป็นค่าว่าง ใบค้าง ⇒ ไม่ให้ลง
+      assert.equal((await signP4('mayor', t.id, 'sk1', sha(''))).code, 'reason_required')
+      await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON])
+      // เปิดหน้าลงนามค้างตอนเหตุผลยังว่าง: หน้าเว็บไม่ส่ง hash (ไม่มีเหตุผลแสดง) → reload_required
+      assert.equal((await signP4('mayor', t.id, 'sk1', null)).code, 'reload_required')
+      assert.equal((await signP4('mayor', t.id, 'sk1', sha(''))).code, 'reason_changed')
+      assert.equal((await signP4('mayor', t.id, 'sk1', sha(REASON + ' ฉบับเก่า'))).code, 'reason_changed')
+      assert.equal(await failedCount('mayor'), before, 'ด่านเหตุผลต้องอยู่ก่อนตรวจรหัส')
+      const r = await signP4('mayor', t.id, 'sk1', sha(REASON).toUpperCase())
+      assert.equal(r.ok, true, JSON.stringify(r))
+      assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
+      // ทะเบียนเปลี่ยนทีหลัง: ลายเซ็น สก.๑ ที่ลงไว้ยังแสดงในช่อง (ไม่หายไปจากใบ)
+      const { rows: [orig] } = await db.query(
+        `SELECT id FROM public.document_signatories WHERE municipality_id = $1 AND signatory_role = 'mayor' AND is_active`, [A])
+      await db.query(`UPDATE public.document_signatories SET is_active = false WHERE id = $1`, [orig.id])
+      try {
+        s = await slotsOf('mayor', t.id)
+        assert.equal(s.sk1.applicable, true)
+        assert.equal(s.sk1.signed, true)
+      } finally {
+        await db.query(`UPDATE public.document_signatories SET is_active = true WHERE id = $1`, [orig.id])
+      }
+    })
+
+    await test('P4 ผู้มีรถประจำตำแหน่งขอ: นายกลงช่องผู้มีอำนาจผ่านตัวห่อ _stamped · hash ส่งต่อ · หน้าเว็บรุ่นเก่า = reload_required', async () => {
+      await as('requester')
+      const t = await makeTrip()
+      await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON])
+      assert.equal((await stamped('mayor', t.id, null, { legacy: true })).code, 'reload_required')
+      assert.equal((await stamped('mayor', t.id, sha('เหตุผลอื่น'))).code, 'reason_changed')
+      const r = await stamped('mayor', t.id, sha(REASON))
+      assert.equal(r.ok, true, JSON.stringify(r))
+      assert.equal(r.stamped, false)
+      assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
+    })
+
+    await test('P4 fleet_position_car_check: requester_registered_mayor ตามทะเบียน ไม่ใช่ข้อความตำแหน่ง', async () => {
+      await as('fleetAdmin')
+      const check = async who => rpc('public.fleet_position_car_check($1, $2, $3)', [A, users[who].id, V1])
+      assert.equal((await check('mayor')).requester_registered_mayor, true)
+      assert.equal((await check('head')).requester_registered_mayor, false)
+      assert.equal((await check('requester')).requester_registered_mayor, false)
+      await as('outsider')
+      const denied = await check('mayor')
+      assert.equal(denied.ok, false)
+      assert.equal(denied.requester_registered_mayor, undefined)
+    })
+  }
 }
 
 console.log(`\nfleet-permit-db: ผ่าน ${cases} กรณี`)
