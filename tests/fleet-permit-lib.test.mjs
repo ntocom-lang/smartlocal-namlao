@@ -257,6 +257,10 @@ await test('P3 ว.๕: ป้าย/ข้อความ reason_required · ma
     assert.ok(permitWaitingLines(info).some(line => line.includes('ทะเบียน กข 1') && line.includes(PERMIT_POSITION_CAR_REF)), state)
   }
   assert.match(permitDepartHint(regulation({ state: 'mayor_required' })), /นายก/)
+  // การอนุญาตเดิมไม่ได้มาจากนายก (สลับรถหลัง ผอ.ที่ได้รับมอบอนุญาต) — บอกให้ถอน/ยกเลิกก่อน ไม่ใช่ให้แก้ผู้มีอำนาจ
+  const nonMayor = permitWaitingLines(regulation({ state: 'mayor_required', non_mayor_permit: true, position_car: car }))
+  assert.ok(nonMayor.some(line => line.includes('ไม่ได้มาจากนายก') && line.includes('ถอนลายเซ็น')), nonMayor.join('\n'))
+  assert.ok(!nonMayor.some(line => line.includes('เลือกผู้มีอำนาจสั่งใช้เป็นนายก')))
   // fallback position_car_holder: ไม่มีตัวเลือก "ผอ.ที่ได้รับมอบ" (DB คืน kind='authority')
   const holder = regulation({ approver: { kind: 'authority', role: 'mayor', name: 'นายสมชาย ใจดี', title: 'นายก', registry_id: 'r1', fallback_reason: 'position_car_holder' } })
   assert.deepEqual(permitBasisOptions(holder).map(option => option.key), ['authority'])

@@ -201,6 +201,7 @@ REVOKE ALL ON FUNCTION public.fleet_trip_permit_approver(public.fleet_trips, dat
 -- เพิ่มจาก P1 (เฉพาะใบ regulation):
 --   reason_required = ผู้มีรถประจำตำแหน่งยังไม่กรอกเหตุผลความจำเป็น (ว.๕)
 --   mayor_required  = ผู้มีรถประจำตำแหน่ง (ไม่ใช่นายกเอง) แต่ช่องผู้มีอำนาจของใบไม่ใช่นายก
+--                     หรือมีลายเซ็นช่องอนุญาต/ใบกระดาษจากคนที่ไม่ใช่นายก (non_mayor_permit = true ⇒ ต้องถอน/ยกเลิกก่อน)
 --   ทุกผลลัพธ์มีคีย์ position_car (NULL = ไม่ใช่ผู้มีรถประจำตำแหน่ง) · esign มี signature_id ไว้ทำคีย์แจ้งเตือน
 --   สองสถานะใหม่มาก่อนลายเซ็น/ใบกระดาษ: ลายเซ็นที่มีอยู่แล้วไม่นับจนกว่าจะครบเงื่อนไข ว.๕
 --   แต่ถ้ามีบันทึกใบกระดาษที่ยังมีผลอยู่ ต้องแนบ via/permit_id ไปด้วย ไม่งั้น info.can_void เป็นเท็จ ปุ่มยกเลิกบันทึกหาย
@@ -219,6 +220,7 @@ DECLARE
   v_pc    jsonb;
   v_extra jsonb;
   v_held  jsonb := '{}'::jsonb;
+  v_need_mayor boolean := false;
 BEGIN
   IF p_trip.permit_mode IS DISTINCT FROM 'regulation' THEN
     RETURN jsonb_build_object('state', 'not_required');
@@ -242,9 +244,29 @@ BEGIN
     IF NULLIF(btrim(COALESCE(p_trip.position_car_reason, '')), '') IS NULL THEN
       RETURN jsonb_build_object('state', 'reason_required') || v_held || v_extra;
     END IF;
-    IF NOT public.fleet_permit_requester_is_mayor(p_trip)
-       AND COALESCE(p_trip.order_authority_role, 'mayor') <> 'mayor' THEN
+    v_need_mayor := NOT public.fleet_permit_requester_is_mayor(p_trip);
+    IF v_need_mayor AND COALESCE(p_trip.order_authority_role, 'mayor') <> 'mayor' THEN
       RETURN jsonb_build_object('state', 'mayor_required') || v_held || v_extra;
+    END IF;
+    -- การอนุญาตที่มีอยู่ต้องมาจากนายกจริง: vehicle_id ไม่อยู่ใน payload ลายเซ็น ⇒ สลับรถส่วนกลาง → รถประจำตำแหน่ง
+    -- (ใบไม่เข้า ว.๕ ⇒ ผอ.ที่ได้รับมอบลงนาม/บันทึกใบกระดาษได้) แล้วสลับกลับ ลายเซ็น ผอ. ยังอยู่ ⇒ ต้องไม่นับ
+    -- ลายเซ็นช่อง authority ทุกแถวมี registry_signatory_id (esign_expected_signer ต้องคืน registry_id ถึงลงได้)
+    -- ทางออก: ถอนลายเซ็น (ผู้ขอ/ผู้ดูแลรถ) หรือยกเลิกบันทึกใบกระดาษ (v_held มี permit_id ⇒ can_void) แล้วให้นายกอนุญาต
+    IF v_need_mayor AND (
+         EXISTS (
+           SELECT 1 FROM public.esign_signatures s
+           WHERE s.doc_type = 'fleet_trip_request' AND s.doc_id = p_trip.id
+             AND s.slot = 'authority' AND s.decision = 'approve'
+             AND NOT EXISTS (SELECT 1 FROM public.esign_revocations r WHERE r.signature_id = s.id)
+             AND NOT EXISTS (
+               SELECT 1 FROM public.document_signatories ds
+               WHERE ds.id = s.registry_signatory_id
+                 AND ds.signatory_role = 'mayor' AND ds.department_id IS NULL
+             )
+         )
+         OR (v_paper.id IS NOT NULL AND v_paper.basis IS DISTINCT FROM 'authority')
+       ) THEN
+      RETURN jsonb_build_object('state', 'mayor_required', 'non_mayor_permit', true) || v_held || v_extra;
     END IF;
   END IF;
 

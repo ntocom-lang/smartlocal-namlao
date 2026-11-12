@@ -191,9 +191,13 @@ const addRegistry = (role, alias, { dept = null, manual = null, muni = A, title 
             VALUES ($1,$2,$3,$4,$5,$6)`, [muni, role, dept, alias ? users[alias].id : null, manual, title])
 const addSignature = async (tripId, slot, decision, alias) => {
   const { rows } = await db.query(
+    // registry_signatory_id = แถวทะเบียนล่าสุดของผู้ลงนาม เหมือนที่ esign_sign_fleet_trip บันทึกจาก esign_expected_signer
+    // (P3 ใช้ตัดสินว่าลายเซ็นช่องอนุญาตมาจากนายกจริงไหม)
     `INSERT INTO public.esign_signatures (municipality_id, doc_type, doc_id, slot, signer_id, signer_name, signed_as, decision,
-       content_hash, content_snapshot, template_version)
-     VALUES ($1, 'fleet_trip_request', $2, $3, $4, $5, '', $6, $7, '{}'::jsonb, 'fleet-form3-v1') RETURNING id`,
+       content_hash, content_snapshot, template_version, registry_signatory_id)
+     VALUES ($1, 'fleet_trip_request', $2, $3, $4, $5, '', $6, $7, '{}'::jsonb, 'fleet-form3-v1',
+       (SELECT ds.id FROM public.document_signatories ds WHERE ds.municipality_id = $1 AND ds.profile_id = $4
+        ORDER BY ds.created_at DESC LIMIT 1)) RETURNING id`,
     [A, tripId, slot, users[alias].id, users[alias].name, decision, 'a'.repeat(64)])
   return rows[0].id
 }
@@ -904,6 +908,54 @@ if (WITH_P3) {
     const plain = await makeTrip()
     assert.equal((await info(plain.id, 'fleetAdmin')).approver.kind, 'delegated_dept_head')
     await db.query(`UPDATE public.profiles SET position_id = $1 WHERE id = $2`, [POS_CLERK, users.requester.id])
+    await setMode('regulation')
+  })
+
+  // reviewer รอบ 3 ข้อ 1: vehicle_id ไม่อยู่ใน payload ลายเซ็น ⇒ ขอรถประจำตำแหน่งของตัวเอง (ไม่เข้า ว.๕) ให้ ผอ.ที่ได้รับมอบอนุญาต
+  // แล้วสลับกลับเป็นรถส่วนกลาง ⇒ การอนุญาตของ ผอ. ต้องไม่นับ (ทั้งลายเซ็นออนไลน์และใบกระดาษ)
+  await test('P3 สลับรถหลัง ผอ.ที่ได้รับมอบอนุญาต: ลายเซ็น ผอ. ไม่นับ (mayor_required) · ออกรถไม่ได้ · ถอนแล้วนายกลง = ออกรถได้', async () => {
+    assert.equal((await setMode('regulation', { delegate: true, ref: 'คำสั่ง อบต. ที่ 45/2569', date: '2026-10-01' })).ok, true)
+    await as('requester')
+    const t = await makeTrip()
+    await db.query(`UPDATE public.fleet_trips SET vehicle_id = $2, position_car_reason = $3 WHERE id = $1`, [t.id, VP, REASON])
+    assert.equal((await info(t.id, 'fleetAdmin')).approver.kind, 'delegated_dept_head', 'ขอรถประจำตำแหน่งตัวเอง = ไม่ใช่กรณี ว.๕')
+    const headSig = await addSignature(t.id, 'authority', 'approve', 'head')
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
+    await db.query(`UPDATE public.fleet_trips SET vehicle_id = $2 WHERE id = $1`, [t.id, V1])
+    const i = await info(t.id, 'fleetAdmin')
+    assert.equal(i.state, 'mayor_required')
+    assert.equal(i.non_mayor_permit, true)
+    await as('requester')
+    await expectError(depart(t.id), /FLEET_PERMIT_REQUIRED/)
+    await db.query(`INSERT INTO public.esign_revocations (signature_id, municipality_id, reason) VALUES ($1, $2, 'ต้องให้นายกอนุญาต')`, [headSig, A])
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'waiting')
+    await addSignature(t.id, 'authority', 'approve', 'mayor')
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
+    await as('requester')
+    await depart(t.id)
+    await setMode('regulation')
+  })
+
+  await test('P3 สลับรถหลังบันทึกใบกระดาษแบบ ผอ.ที่ได้รับมอบ: ไม่นับ · ปุ่มยกเลิกบันทึกยังอยู่ · ยกเลิกแล้วบันทึกแบบนายกได้', async () => {
+    assert.equal((await setMode('regulation', { delegate: true, ref: 'คำสั่ง อบต. ที่ 45/2569', date: '2026-10-01' })).ok, true)
+    await as('requester')
+    const t = await makeTrip()
+    await db.query(`UPDATE public.fleet_trips SET vehicle_id = $2, position_car_reason = $3 WHERE id = $1`, [t.id, VP, REASON])
+    await as('fleetAdmin')
+    const rec = await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'delegated_dept_head', today])
+    assert.equal(rec.ok, true, JSON.stringify(rec))
+    await db.query(`UPDATE public.fleet_trips SET vehicle_id = $2 WHERE id = $1`, [t.id, V1])
+    const i = await info(t.id, 'fleetAdmin')
+    assert.equal(i.state, 'mayor_required')
+    assert.equal(i.non_mayor_permit, true)
+    assert.equal(i.permit_id, rec.permit_id)
+    assert.equal(i.can_void, true)
+    await as('requester')
+    await expectError(depart(t.id), /FLEET_PERMIT_REQUIRED/)
+    await as('fleetAdmin')
+    assert.equal((await rpc('public.fleet_void_paper_permit($1, $2)', [rec.permit_id, 'ต้องให้นายกอนุญาต'])).ok, true)
+    assert.equal((await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'authority', today])).ok, true)
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
     await setMode('regulation')
   })
 
