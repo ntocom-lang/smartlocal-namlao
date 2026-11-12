@@ -8,7 +8,8 @@ import { readFile } from 'node:fs/promises'
 import {
   PERMIT_BASIS_LABEL, PERMIT_FALLBACK_REASON, PERMIT_INFO_MAX_IDS, PERMIT_MESSAGES, PERMIT_MODE_OPTIONS, PERMIT_PAPER_MAX_BACKDATE_DAYS,
   PERMIT_STATE_LABEL, PERMIT_TRIP_EXCEPTIONS, chunkIds, permitApproverText, permitAuthorizedLines, permitBadge, permitBasisOptions,
-  permitBlocksDepart, permitDepartHint, permitFallbackText, permitInfoIds, permitInfoMap, permitMessage, permitSignedOnRange, permitWaitingLines,
+  permitActingTitle, permitBlocksDepart, permitDepartHint, permitFallbackText, permitInfoIds, permitInfoMap, permitMessage, permitPrintAuthority,
+  permitSignedOnRange, permitWaitingLines,
 } from '../src/lib/fleetPermit.js'
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8')
@@ -267,6 +268,80 @@ await test('หน้าจอต่อสายครบ: FleetTrips ใช้ 
   assert.match(dialog, /createPortal\(/, 'dialog ที่เปิดจากกล่อง fixed ต้อง portal ไป body')
   assert.match(dialog, /stopPropagation\(\)/, 'Esc ต้องไม่ลอยไปปิดกล่องรายละเอียด')
   assert.match(dialog, /useId\(\)/)
+})
+
+// ── P2: ผอ.กองที่ได้รับมอบลงนามช่องอนุญาต (ข้อ ๑๒ ว.๔) ────────────────────────────────────────────────
+const DELEGATED_APPROVER = {
+  kind: 'delegated_dept_head', registry_id: 'r2', name: 'นางสาวสุดา ตั้งใจ', title: 'ผู้อำนวยการกองช่าง',
+  acting_title: 'ผู้อำนวยการกองช่าง ปฏิบัติราชการแทนนายกเทศมนตรีตำบลสาธิต', delegation_ref: 'คำสั่ง ทต. ที่ 12/2569', delegation_date: '2026-11-03', fallback_reason: null,
+}
+
+await test('permitActingTitle ประกอบฐานะเหมือน fleet_permit_acting_title ใน DB (ไม่มีเว้นวรรคหลังคำว่าแทน · ว่าง = คำกลางเดียวกับ DB)', async () => {
+  assert.equal(permitActingTitle('ผู้อำนวยการกองช่าง', 'นายกเทศมนตรีตำบลสาธิต'), 'ผู้อำนวยการกองช่าง ปฏิบัติราชการแทนนายกเทศมนตรีตำบลสาธิต')
+  assert.equal(permitActingTitle('', ''), 'ผู้อำนวยการสำนัก/กอง ปฏิบัติราชการแทนผู้บริหารท้องถิ่น')
+  assert.equal(permitActingTitle('  ผอ.กองคลัง  ', '  นายก อบต.  '), 'ผอ.กองคลัง ปฏิบัติราชการแทนนายก อบต.')
+  // คำกลางและรูปแบบต้องตรงกับฝั่ง DB ตัวอักษรต่อตัวอักษร ไม่งั้นใบเซ็นสดกับใบลงนามออนไลน์ (signed_as) พิมพ์คนละข้อความ
+  const sql = await read('../supabase/migrations/20261122100000_fleet_permit_delegated_esign.sql')
+  assert.match(sql, /'ผู้อำนวยการสำนัก\/กอง'\)\s*\n\s*\|\| ' ปฏิบัติราชการแทน'/)
+  assert.match(sql, /'ผู้บริหารท้องถิ่น'/)
+})
+
+await test('permitApproverText: ผู้ได้รับมอบแสดงฐานะเต็ม acting_title · ไม่มี acting_title = ตำแหน่งเปล่าเหมือนเดิม', () => {
+  assert.equal(permitApproverText(DELEGATED_APPROVER), 'นางสาวสุดา ตั้งใจ (ผู้อำนวยการกองช่าง ปฏิบัติราชการแทนนายกเทศมนตรีตำบลสาธิต)')
+  assert.equal(permitApproverText({ ...DELEGATED_APPROVER, acting_title: undefined }), 'นางสาวสุดา ตั้งใจ (ผู้อำนวยการกองช่าง)')
+  assert.equal(permitApproverText({ kind: 'authority', name: 'นายสมชาย ใจดี', title: 'นายกเทศมนตรี', registry_id: 'r1' }), 'นายสมชาย ใจดี (นายกเทศมนตรี)')
+  assert.ok(permitBasisOptions(regulation({ approver: DELEGATED_APPROVER })).some(option => option.key === 'delegated_dept_head' && option.who.includes('ปฏิบัติราชการแทน')))
+})
+
+await test('permitPrintAuthority: เฉพาะใบที่ ผอ.ได้รับมอบ → { name, title ฐานะปฏิบัติราชการแทน } · นอกนั้น null (ใบเดิมทุกไบต์)', () => {
+  const mayorTitle = 'นายกเทศมนตรีตำบลสาธิต'
+  const expected = { name: 'นางสาวสุดา ตั้งใจ', title: 'ผู้อำนวยการกองช่าง ปฏิบัติราชการแทนนายกเทศมนตรีตำบลสาธิต' }
+  // ยังรออนุญาต: ใช้ acting_title จาก DB
+  assert.deepEqual(permitPrintAuthority({ info: regulation({ approver: DELEGATED_APPROVER }), mayorTitle }), expected)
+  // DB เก่าที่ไม่ส่ง acting_title: ประกอบเองจาก title + ตำแหน่งนายก
+  assert.deepEqual(permitPrintAuthority({ info: regulation({ approver: { ...DELEGATED_APPROVER, acting_title: undefined } }), mayorTitle }), expected)
+  // ถูกส่งคืน/แก้หลังอนุญาต = ยังไม่ได้รับอนุญาต ยังเป็นใบของ ผอ.
+  assert.deepEqual(permitPrintAuthority({ info: regulation({ state: 'returned', approver: DELEGATED_APPROVER }), mayorTitle }), expected)
+  assert.deepEqual(permitPrintAuthority({ info: regulation({ state: 'modified', approver: DELEGATED_APPROVER }), mayorTitle }), expected)
+  // อนุญาตแล้วด้วยใบกระดาษในฐานะผู้ได้รับมอบ: ชื่อ/ตำแหน่งจากบันทึก + ตำแหน่งนายกจากทะเบียน
+  const paper = { permit_mode: 'regulation', state: 'authorized', via: 'paper', basis: 'delegated_dept_head', signer_name: 'นางสาวสุดา ตั้งใจ', signer_title: 'ผู้อำนวยการกองช่าง', approver: DELEGATED_APPROVER }
+  assert.deepEqual(permitPrintAuthority({ info: paper, mayorTitle }), expected)
+  assert.equal(permitPrintAuthority({ info: paper, mayorTitle: '' }).title, 'ผู้อำนวยการกองช่าง ปฏิบัติราชการแทนผู้บริหารท้องถิ่น')
+  assert.equal(permitPrintAuthority({ info: { ...paper, signer_name: ' ' }, mayorTitle }), null, 'ไม่มีชื่อผู้ลงนามในบันทึก = ไม่เดา')
+  // อนุญาตแล้วด้วยฐาน authority (ผู้มีอำนาจตามแบบ ๓) ทั้งที่ approver ของใบยังเป็น ผอ.ได้ · ลงนามออนไลน์ = ใช้ signedAs ในใบ → ไม่แตะ orderAuthority
+  assert.equal(permitPrintAuthority({ info: { ...paper, basis: 'authority' }, mayorTitle }), null)
+  assert.equal(permitPrintAuthority({ info: { ...paper, via: 'esign', basis: undefined }, mayorTitle }), null)
+  // ใบเดิม: queue / ไม่มีข้อมูล / ผู้อนุญาตเป็นนายก / ไม่มีชื่อ ผอ.ในทะเบียน
+  assert.equal(permitPrintAuthority({ info: { permit_mode: 'queue', state: 'not_required' }, mayorTitle }), null)
+  assert.equal(permitPrintAuthority({ info: null, mayorTitle }), null)
+  assert.equal(permitPrintAuthority(), null)
+  assert.equal(permitPrintAuthority({ info: regulation(), mayorTitle }), null)
+  assert.equal(permitPrintAuthority({ info: regulation({ approver: { ...DELEGATED_APPROVER, registry_id: null, name: null } }), mayorTitle }), null)
+})
+
+await test('กล่องลงนาม SignTripDialog: ลงช่อง ผอ.แล้วถาม esign_trip_status → ขั้นที่ 2 ลงช่องผู้มีอำนาจด้วยรหัสเดิม · กดยืนยันเอง · onSigned ครั้งเดียวตอนจบ', async () => {
+  const dialog = await read('../src/components/esign/SignTripDialog.jsx')
+  assert.match(dialog, /getTripEsignStatus/)
+  assert.match(dialog, /slot === 'dept_head'/, 'ถามขั้นที่ 2 เฉพาะหลังลงช่อง ผอ.สำนัก/กอง')
+  assert.match(dialog, /next\?\.can_sign === true/, 'ต้องเป็นช่องผู้มีอำนาจที่ DB บอกว่าลงได้ (can_sign) เท่านั้น')
+  assert.match(dialog, /slot: 'authority', pin, decision: 'approve'/, 'ขั้นที่ 2 ลงช่อง authority ด้วย decision approve')
+  // ห้ามลงช่อง authority อัตโนมัติ: signFleetTrip ช่อง authority เรียกจาก handleSignAuthority (ปุ่มกด) เท่านั้น
+  assert.equal([...dialog.matchAll(/signFleetTrip\(/g)].length, 2, 'signFleetTrip ต้องมี 2 จุด: ช่องแรกกับปุ่มขั้นที่ 2')
+  const stage1 = dialog.slice(dialog.indexOf('async function handleSign()'), dialog.indexOf('async function handleSignAuthority()'))
+  assert.ok(!/slot: 'authority'/.test(stage1), 'ช่องแรกห้ามลงช่อง authority ต่อเองโดยไม่ผ่านปุ่มยืนยัน')
+  assert.match(dialog, /data-sign-stage2-submit/)
+  assert.match(dialog, /data-sign-stage2-later/)
+  // รหัสล้างทุกทางออก: ลงเสร็จ / ปิด (ไว้ทีหลัง) / error
+  const stage2 = dialog.slice(dialog.indexOf('async function handleSignAuthority()'))
+  assert.ok(/setPin\(''\)\s*\n\s*setError\(esignFailureText\(result\)\)/.test(stage2), 'error ขั้นที่ 2 ต้องล้างรหัส')
+  assert.ok(/setPin\(''\)\s*\n\s*onSigned\(\{ \.\.\.result/.test(stage2), 'ลงเสร็จต้องล้างรหัสก่อนแจ้งผู้เรียก')
+  assert.match(dialog, /function handleClose\(\) \{\s*\n\s*if \(stage2\) \{\s*\n\s*setPin\(''\)\s*\n\s*onSigned\(stage2\.first\)/, 'ปิดกล่องในขั้นที่ 2 = ล้างรหัส + แจ้งผลช่องแรก ให้รายการรีเฟรช')
+  // ผู้เรียกทั้งสามปิดกล่องเองใน onSigned — ถ้า onSigned ถูกเรียกก่อนขั้นที่ 2 กล่องจะปิดก่อน
+  for (const file of ['../src/components/esign/TripEsignPanel.jsx', '../src/components/esign/MyPendingSignatures.jsx', '../src/components/staff/executive/ExecSimpleSign.jsx']) {
+    const caller = await read(file)
+    assert.match(caller, /onSigned=\{/, `${file} ไม่ได้ส่ง onSigned ให้กล่องลงนาม`)
+  }
+  assert.ok(!/ถูกต้องตามระเบียบ|ถูกต้องตามกฎหมาย|ชอบด้วยกฎหมาย|ชอบด้วยระเบียบ|ผ่านตามระเบียบ/.test(dialog), 'ข้อความกล่องลงนามรับรองความถูกต้องทางระเบียบไม่ได้')
 })
 
 console.log(`\nผ่านทั้งหมด ${cases} กรณี`)

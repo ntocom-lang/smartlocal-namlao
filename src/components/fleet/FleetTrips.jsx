@@ -21,7 +21,7 @@ import { useHomeRpc } from '../../lib/staffHomeData'
 import { getTripEsignStamps, getTripEsignStatus } from '../../lib/esignApi'
 import {
   PERMIT_TRIP_EXCEPTIONS, permitAuthorizedLines, permitBadge, permitBlocksDepart, permitDepartHint, permitInfoIds, permitInfoMap,
-  permitWaitingLines,
+  permitPrintAuthority, permitWaitingLines,
 } from '../../lib/fleetPermit'
 import { getFleetTripPermitInfo, getFleetTripPermitInfoBatches } from '../../lib/fleetPermitApi'
 import { esignPrintData, printSignatureBox } from '../../lib/esignPrint'
@@ -905,13 +905,26 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       ? pickSignatory(signatories, { role: 'department_head', departmentId: deptHeadDeptId, at })
       : null
     const authorityRow = pickSignatory(signatories, { role: authorityRole, customLabel: authorityLabel, at })
-    const build = esign => buildFleetTripRequestHtml({
+    // ใบโหมดบังคับอนุญาตที่ ผอ.กองได้รับมอบ (ข้อ ๑๒ ว.๔): ช่องผู้อนุญาตบนใบที่ยังเซ็นสด/ยังไม่ลงนามออนไลน์ = ผอ. ฐานะ "… ปฏิบัติราชการแทน…" ไม่ใช่นายก
+    // ใบ queue / ไม่มีข้อมูล / ผู้อนุญาตเป็นนายก → permitPrintAuthority คืน null = ผู้มีอำนาจตามเดิม (ใบเดิมทุกไบต์)
+    const mayorTitle = resolveOrderAuthority(pickSignatory(signatories, { role: 'mayor', at }), tenant, 'mayor').title
+    const knownPermit = permitOf(t)
+    const build = (esign, permitInfo = knownPermit) => buildFleetTripRequestHtml({
       trip: t,
       tenant,
-      orderAuthority: resolveOrderAuthority(authorityRow, tenant, authorityRole),
+      orderAuthority: permitPrintAuthority({ info: permitInfo, mayorTitle }) ?? resolveOrderAuthority(authorityRow, tenant, authorityRole),
       deptHead: resolveDeptHead(deptHeadRow),
       esign,
     })
+    // permitMap เก็บเฉพาะใบที่ยังไม่จบ — ใบ regulation ที่จบแล้ว (เช่น อนุญาตด้วยใบกระดาษในฐานะผู้ได้รับมอบ) ต้องถามสถานะตอนพิมพ์ · ถามไม่ได้ = ใบผู้มีอำนาจตามเดิม
+    if (t.permit_mode === 'regulation' && !knownPermit) {
+      const loadPermit = async () => {
+        const result = await getFleetTripPermitInfo([t.id]).catch(() => null)
+        return result?.ok ? (result.items?.find(entry => entry.trip_id === t.id) ?? null) : null
+      }
+      openPrintWindow(Promise.all([t.esign_slots ? loadEsignForPrint(t) : null, loadPermit()]).then(([esign, permitInfo]) => build(esign, permitInfo)))
+      return
+    }
     // ทริปโหมดลงนามออนไลน์ต้องดึงลายเซ็นก่อนจึงสร้างใบได้ — ส่ง promise เข้าไป หน้าต่างพิมพ์เปิดทันทีตอนกด (กัน pop-up ถูกบล็อก)
     openPrintWindow(t.esign_slots ? loadEsignForPrint(t).then(build) : build(null))
   }

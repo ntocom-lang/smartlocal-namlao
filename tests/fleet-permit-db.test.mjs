@@ -39,6 +39,10 @@ const ESIGN_CHAIN = [
 ]
 const permitTablesSql = await readMigration('20261121100000_fleet_permit_tables.sql')
 const permitFunctionsSql = await readMigration('20261121100100_fleet_permit_functions.sql')
+// P2 (ผอ.ที่ได้รับมอบลงนามอนุญาตออนไลน์) โหลดต่อท้าย ⇒ ทุกกรณีของ P1 รันบนฟังก์ชันฉบับ P2 ด้วย
+// --no-p2 = รันเฉพาะ P1 (red-check: กรณี P2 ต้องล้ม)
+const WITH_P2 = !process.argv.includes('--no-p2')
+const permitP2Sql = await readMigration('20261122100000_fleet_permit_delegated_esign.sql')
 
 const extractFunction = (source, startPattern) => {
   const found = startPattern.exec(source)
@@ -116,13 +120,18 @@ for (const fn of fleetFns) await db.exec(fn)
 for (const name of ESIGN_CHAIN) await db.exec(await readMigration(name))
 await db.exec(permitTablesSql)
 await db.exec(permitFunctionsSql)
+if (WITH_P2) {
+  await db.exec(permitP2Sql)
+  await db.exec(permitP2Sql) // รันซ้ำได้ (ด่าน md5 ยอมรับฉบับที่ไฟล์นี้ลงไปแล้ว)
+}
 
 const users = {
   adminA: { id: U(1), role: 'admin', muni: A, name: 'แอดมิน เอ' },
   adminB: { id: U(2), role: 'admin', muni: B, name: 'แอดมิน บี' },
   superadmin: { id: U(3), role: 'superadmin', muni: null, name: 'ซูเปอร์แอดมิน' },
-  requester: { id: U(4), role: 'staff', muni: A, name: 'สมหญิง ผู้ขอ', fleetRole: 'fleet_staff', job: 'นักวิชาการศึกษา' },
-  head: { id: U(5), role: 'staff', muni: A, name: 'สมชาย หัวหน้ากอง', fleetRole: 'fleet_staff', job: 'ผู้อำนวยการกองช่าง' },
+  // dept = กองในโปรไฟล์ (P2: ผู้อนุมัติที่ได้รับมอบ = ผอ.ของกองผู้ขอตามโปรไฟล์ ไม่ใช่กองที่เลือกในใบ)
+  requester: { id: U(4), role: 'staff', muni: A, name: 'สมหญิง ผู้ขอ', fleetRole: 'fleet_staff', job: 'นักวิชาการศึกษา', dept: D1 },
+  head: { id: U(5), role: 'staff', muni: A, name: 'สมชาย หัวหน้ากอง', fleetRole: 'fleet_staff', job: 'ผู้อำนวยการกองช่าง', dept: D1 },
   mayor: { id: U(6), role: 'viewer', muni: A, name: 'สมศักดิ์ นายก', job: 'นายกองค์การบริหารส่วนตำบลทดสอบเอ' },
   fleetAdmin: { id: U(8), role: 'staff', muni: A, name: 'สมบัติ ผู้ดูแลรถ', fleetRole: 'fleet_admin' },
   outsider: { id: U(9), role: 'staff', muni: A, name: 'สมปอง ไม่มีสิทธิ์รถ' },
@@ -130,8 +139,8 @@ const users = {
 }
 for (const u of Object.values(users)) {
   await db.query('INSERT INTO auth.users VALUES ($1)', [u.id])
-  await db.query('INSERT INTO public.profiles (id, full_name, role, municipality_id, fleet_role, job_title) VALUES ($1,$2,$3,$4,$5,$6)',
-    [u.id, u.name, u.role, u.muni, u.fleetRole ?? null, u.job ?? null])
+  await db.query('INSERT INTO public.profiles (id, full_name, role, municipality_id, fleet_role, job_title, department_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+    [u.id, u.name, u.role, u.muni, u.fleetRole ?? null, u.job ?? null, u.dept ?? null])
 }
 const as = async alias => {
   const u = users[alias]
@@ -497,10 +506,13 @@ await test('มอบ ผอ.กอง: ผอ.ขอเอง / กองไม
   await as('fleetAdmin')
   assert.equal((await rpc('public.fleet_record_paper_permit($1, $2, $3)', [self.id, 'delegated_dept_head', today])).code, 'delegation_not_applicable')
 
-  await as('requester')
-  const noHead = await makeTrip({ dept: D2 })
+  // ผู้ขอสังกัดกองคลัง (ยังไม่มี ผอ. ในทะเบียน) — P2 ยึดกองในโปรไฟล์ P1 ยึดกองของใบ ทั้งคู่ได้ no_dept_head
+  await db.query('UPDATE public.profiles SET department_id = $2 WHERE id = $1', [users.outsider.id, D2])
+  await as('outsider')
+  const noHead = await makeTrip({ requester: 'outsider', position: 'เจ้าพนักงานการเงิน', dept: D2 })
   i = await info(noHead.id, 'fleetAdmin')
   assert.equal(i.approver.fallback_reason, 'no_dept_head')
+  await db.query('UPDATE public.profiles SET department_id = NULL WHERE id = $1', [users.outsider.id])
 
   await as('mayor')
   const exec = await makeTrip({ requester: 'mayor', position: 'นายกองค์การบริหารส่วนตำบลทดสอบเอ' })
@@ -556,5 +568,228 @@ await test('superadmin (municipality_id ว่าง) ใช้ได้ทุ�
   assert.equal((await info(t.id, 'superadmin')).state, 'waiting')
   assert.equal((await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'authority', today])).ok, true)
 })
+
+// ── (P2) ผอ.กองที่ได้รับมอบลงนามอนุญาตออนไลน์ (ข้อ ๑๒ ว.๔) ──────────────────────────────────────────
+// เจ้าของตัดสิน 2026-11-12: ผอ. ลงทั้งช่อง ผอ. และช่องอนุญาต (2 ลายเซ็น) · ฐานะ "… ปฏิบัติราชการแทน…" ไม่มีเลขคำสั่ง
+if (WITH_P2) {
+  const MAYOR_TITLE = 'นายกองค์การบริหารส่วนตำบลทดสอบเอ'
+  const ACTING = `ผู้อำนวยการกองช่าง ปฏิบัติราชการแทน${MAYOR_TITLE}`
+  users.head2 = { id: U(12), role: 'staff', muni: A, name: 'สมใจ ผอ.กองคลัง', fleetRole: 'fleet_staff', job: 'ผู้อำนวยการกองคลัง', dept: D2 }
+  users.staff2 = { id: U(13), role: 'staff', muni: A, name: 'สมพร กองคลัง', fleetRole: 'fleet_staff', job: 'นักวิชาการเงินและบัญชี', dept: D2 }
+  for (const alias of ['head2', 'staff2']) {
+    const u = users[alias]
+    await db.query('INSERT INTO auth.users VALUES ($1)', [u.id])
+    await db.query('INSERT INTO public.profiles (id, full_name, role, municipality_id, fleet_role, job_title, department_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [u.id, u.name, u.role, A, u.fleetRole, u.job, u.dept])
+  }
+  const sign = async (alias, tripId, slot) => {
+    await as(alias)
+    return rpc('public.esign_sign_fleet_trip($1, $2, $3, NULL)', [tripId, slot, '246810'])
+  }
+  const status = async (alias, tripId) => {
+    await as(alias)
+    const s = await rpc('public.esign_trip_status($1)', [tripId])
+    return Object.fromEntries(s.slots.map(x => [x.slot, x]))
+  }
+
+  // เปิดลงนามออนไลน์ 3 ช่อง (ตั้งตรงในตาราง — ประตูเปิดสวิตช์มีเทสต์ของตัวเองใน esign-db) + ตั้งรหัสให้ผู้ลงนาม
+  await db.query(`INSERT INTO public.esign_doc_type_settings (municipality_id, doc_type, slot_modes)
+    VALUES ($1, 'fleet_trip_request', '{"requester":"online","dept_head":"online","authority":"online","sk1":"wet"}'::jsonb)
+    ON CONFLICT (municipality_id, doc_type) DO UPDATE SET slot_modes = EXCLUDED.slot_modes`, [A])
+  for (const alias of ['requester', 'head', 'mayor', 'staff2']) {
+    await as(alias)
+    assert.deepEqual(await rpc(`public.set_esign_pin('246810', NULL, true)`), { ok: true }, alias)
+  }
+  await addRegistry('department_head', 'head2', { dept: D2 }) // head2 ยังไม่ตั้งรหัสลงนาม
+  await db.query(`UPDATE public.document_signatories SET title_override = $1 WHERE signatory_role = 'mayor' AND is_active`, [MAYOR_TITLE])
+  assert.equal((await setMode('regulation', { delegate: true, ref: 'คำสั่ง อบต. ที่ 45/2569', date: '2026-10-01' })).ok, true)
+
+  await test('P2 มอบ ผอ.: ช่องอนุญาตคาดหวัง ผอ. · ผอ. ลงสองช่องต่อกัน · ฐานะปฏิบัติราชการแทน · นายกลงไม่ได้ · ออกรถได้', async () => {
+    await as('requester')
+    const t = await makeTrip()
+    assert.equal(t.permit_mode, 'regulation')
+    assert.deepEqual(t.esign_slots, { requester: 'online', dept_head: 'online', authority: 'online', sk1: 'wet' })
+    assert.equal(t.esign_fallback, null)
+    let s = await status('head', t.id)
+    assert.equal(s.authority.expected_name, users.head.name)
+    assert.equal(s.dept_head.expected_name, users.head.name)
+    assert.equal(s.authority.waiting_for_previous, true)
+    assert.equal((await sign('mayor', t.id, 'authority')).code, 'not_your_slot')
+    assert.equal((await sign('requester', t.id, 'requester')).ok, true)
+    assert.equal((await sign('head', t.id, 'dept_head')).ok, true)
+    s = await status('head', t.id)
+    assert.equal(s.authority.can_sign, true, 'ลงช่อง ผอ. แล้ว ช่องอนุญาตต้องถึงคิว ผอ. คนเดิมทันที')
+    await expectError(depart(t.id), /FLEET_PERMIT_REQUIRED/)
+    const r = await sign('head', t.id, 'authority')
+    assert.equal(r.ok, true)
+    assert.equal(r.complete, true)
+    const { rows } = await db.query(`SELECT slot, signer_id, signed_as, decision FROM public.esign_signatures WHERE doc_id = $1`, [t.id])
+    assert.deepEqual(rows.find(x => x.slot === 'authority'), { slot: 'authority', signer_id: users.head.id, signed_as: ACTING, decision: 'approve' })
+    assert.equal(rows.find(x => x.slot === 'dept_head').signed_as, 'ผู้อำนวยการกองช่าง', 'ช่อง ผอ. ยังเป็นฐานะเดิม')
+    const i = await info(t.id, 'fleetAdmin')
+    assert.equal(i.state, 'authorized')
+    assert.equal(i.via, 'esign')
+    assert.equal(i.signer_title, ACTING)
+    await as('requester')
+    await depart(t.id)
+  })
+
+  await test('P2 info: approver ของใบที่มอบมี acting_title · ใบที่กลับไปหานายกไม่มี', async () => {
+    await as('requester')
+    const t = await makeTrip()
+    const i = await info(t.id, 'fleetAdmin')
+    assert.equal(i.approver.kind, 'delegated_dept_head')
+    assert.equal(i.approver.acting_title, ACTING)
+    await as('head')
+    const self = await makeTrip({ requester: 'head', position: 'ผู้อำนวยการกองช่าง' })
+    const j = await info(self.id, 'fleetAdmin')
+    assert.equal(j.approver.kind, 'authority')
+    assert.equal(j.approver.acting_title, undefined)
+  })
+
+  await test('P2 ผอ.ขอเอง: ช่องอนุญาตกลับไปที่นายก (ไม่ใช้ฐานะปฏิบัติราชการแทน)', async () => {
+    await as('head')
+    const t = await makeTrip({ requester: 'head', position: 'ผู้อำนวยการกองช่าง' })
+    const s = await status('mayor', t.id)
+    assert.equal(s.authority.expected_name, users.mayor.name)
+    assert.equal((await sign('head', t.id, 'requester')).ok, true)
+    assert.equal((await sign('head', t.id, 'dept_head')).ok, true)
+    assert.equal((await sign('head', t.id, 'authority')).code, 'not_your_slot')
+    assert.equal((await sign('mayor', t.id, 'authority')).ok, true)
+    const { rows } = await db.query(`SELECT signed_as FROM public.esign_signatures WHERE doc_id = $1 AND slot = 'authority'`, [t.id])
+    assert.equal(rows[0].signed_as, MAYOR_TITLE)
+  })
+
+  await test('P2 ตรึงช่องตอนยื่น ตรวจความพร้อมของ ผอ. ที่ได้รับมอบ (ไม่ใช่นายก) — trigger ตั้งโหมดก่อน esign guard', async () => {
+    // ผู้ขอสังกัดกองคลัง: ผอ. (head2) ยังไม่ตั้งรหัส นายกตั้งแล้ว ⇒ ช่องอนุญาตต้องตกเป็นเซ็นสด เหตุผล pin_not_set
+    await as('staff2')
+    const t = await makeTrip({ requester: 'staff2', position: 'นักวิชาการเงินและบัญชี', dept: D2 })
+    assert.equal(t.permit_mode, 'regulation')
+    assert.deepEqual(t.esign_fallback, { dept_head: 'pin_not_set', authority: 'pin_not_set' })
+    assert.equal(t.esign_slots.authority, 'wet')
+    // client ส่งโหมดมาเองไม่มีผล (ค่าของ อปท. ชนะ)
+    const forged = await makeTrip({ requester: 'staff2', position: 'นักวิชาการเงินและบัญชี', dept: D2, permit: 'queue' })
+    assert.equal(forged.permit_mode, 'regulation')
+    assert.deepEqual(forged.esign_fallback, { dept_head: 'pin_not_set', authority: 'pin_not_set' })
+  })
+
+
+  await test('P2 ผู้อนุมัติ = ผอ.ของกองผู้ขอตามโปรไฟล์: เลือก ผอ.กองอื่นในช่อง ผอ. / แก้กองของใบ ไม่ทำให้ ผอ.กองอื่นอนุมัติได้', async () => {
+    // (ก) เจ้าหน้าที่กองช่างเลือก ผอ.กองคลังในช่อง ผอ. และใส่กองของใบเป็นกองคลัง
+    await as('requester')
+    const t = await makeTrip({ dept: D2 })
+    await db.query('UPDATE public.fleet_trips SET dept_head_department_id = $2 WHERE id = $1', [t.id, D2])
+    const i = await info(t.id, 'fleetAdmin')
+    assert.equal(i.approver.kind, 'delegated_dept_head')
+    assert.equal(i.approver.name, users.head.name, 'ผู้อนุมัติต้องเป็น ผอ.กองช่าง (กองของผู้ขอ) ไม่ใช่ ผอ.กองคลัง')
+    assert.equal(i.approver.department_id, D1)
+    const s = await status('head', t.id)
+    assert.equal(s.authority.expected_name, users.head.name)
+    assert.equal(s.dept_head.expected_name, users.head2.name, 'ช่อง ผอ. (เสนอความเห็น) ยังเป็นกองที่เลือก')
+    assert.equal((await sign('head2', t.id, 'authority')).code, 'not_your_slot')
+  })
+
+  await test('P2 ผอ.ขอเองแต่เลือกกองอื่น ยังเป็น self_request → นายก (ปิดทาง ผอ. สองกองอนุมัติให้กัน)', async () => {
+    await as('head')
+    const t = await makeTrip({ requester: 'head', position: 'ผู้อำนวยการกองช่าง', dept: D2 })
+    await db.query('UPDATE public.fleet_trips SET dept_head_department_id = $2 WHERE id = $1', [t.id, D2])
+    const i = await info(t.id, 'fleetAdmin')
+    assert.equal(i.approver.kind, 'authority')
+    assert.equal(i.approver.fallback_reason, 'self_request')
+    assert.equal((await status('mayor', t.id)).authority.expected_name, users.mayor.name)
+  })
+
+  await test('P2 ผอ. กรอกใบแทนลูกน้อง (created_by = ผอ.) = self_request → นายก', async () => {
+    await as('head')
+    const { rows } = await db.query(
+      `INSERT INTO public.fleet_trips (municipality_id, status, requested_by, created_by, requester_position, department_id, vehicle_id,
+         planned_departure, planned_return, document_date)
+       VALUES ($1, 'approved', $2, $3, 'นักวิชาการศึกษา', $4, $5, '2026-11-03 09:00+07', '2026-11-03 16:00+07', '2026-10-30') RETURNING *`,
+      [A, users.requester.id, users.head.id, D1, V1])
+    const i = await info(rows[0].id, 'fleetAdmin')
+    assert.equal(i.approver.kind, 'authority')
+    assert.equal(i.approver.fallback_reason, 'self_request')
+  })
+
+  await test('P2 ผู้ขอไม่มีกองในโปรไฟล์ → no_department → นายก', async () => {
+    await as('fleetAdmin')
+    const t = await makeTrip({ requester: 'fleetAdmin', position: 'เจ้าพนักงานธุรการ' })
+    const i = await info(t.id, 'fleetAdmin')
+    assert.equal(i.approver.kind, 'authority')
+    assert.equal(i.approver.fallback_reason, 'no_department')
+  })
+
+  await test('P2 ฐานะสำรอง: แถวนายกไม่มีตำแหน่ง → สร้างจากชื่อ อปท. (อบต./เทศบาล)', async () => {
+    const r = await db.query(`UPDATE public.document_signatories SET title_override = NULL WHERE signatory_role = 'mayor' AND is_active RETURNING id`)
+    await db.query('UPDATE public.profiles SET job_title = NULL WHERE id = $1', [users.mayor.id])
+    try {
+      // ชื่อเต็มแบบฐานจริง (ตรวจ 2026-11-12 ทุก อปท. ใช้ชื่อเต็ม ไม่ใช่ตัวย่อ อบต.)
+      await db.query(`UPDATE public.municipalities SET name = 'องค์การบริหารส่วนตำบลทดสอบเอ' WHERE id = $1`, [A])
+      const t1 = (await db.query(`SELECT public.fleet_permit_acting_title($1, 'ผู้อำนวยการกองช่าง') AS t`, [A])).rows[0].t
+      assert.equal(t1, 'ผู้อำนวยการกองช่าง ปฏิบัติราชการแทนนายกองค์การบริหารส่วนตำบลทดสอบเอ')
+      await db.query(`UPDATE public.municipalities SET name = 'เทศบาลตำบลทดสอบเอ' WHERE id = $1`, [A])
+      const t2 = (await db.query(`SELECT public.fleet_permit_acting_title($1, '') AS t`, [A])).rows[0].t
+      assert.equal(t2, 'ผู้อำนวยการสำนัก/กอง ปฏิบัติราชการแทนนายกเทศมนตรีตำบลทดสอบเอ')
+    } finally {
+      await db.query(`UPDATE public.municipalities SET name = 'อบต.ทดสอบเอ' WHERE id = $1`, [A])
+      await db.query('UPDATE public.profiles SET job_title = $2 WHERE id = $1', [users.mayor.id, users.mayor.job])
+      await db.query('UPDATE public.document_signatories SET title_override = $2 WHERE id = $1', [r.rows[0].id, MAYOR_TITLE])
+    }
+  })
+
+  await test('P2 trigger ตั้งโหมดตอนสร้างได้ค่าเดียวกับ guard ของ P1 (completed → queue)', async () => {
+    await as('requester')
+    const done = await makeTrip({ status: 'completed' })
+    assert.equal(done.permit_mode, 'queue')
+    assert.equal(done.esign_slots, null)
+  })
+
+  await test('P2 ใบโหมด queue: เปิดการมอบไว้ก็ยังเป็นนายก (น้ำเลาไม่เปลี่ยน)', async () => {
+    assert.equal((await setMode('queue', { delegate: true, ref: 'คำสั่ง อบต. ที่ 45/2569', date: '2026-10-01' })).ok, true)
+    await as('requester')
+    const t = await makeTrip({ permit: 'regulation' })
+    assert.equal(t.permit_mode, 'queue')
+    const s = await status('mayor', t.id)
+    assert.equal(s.authority.expected_name, users.mayor.name)
+    assert.equal((await sign('requester', t.id, 'requester')).ok, true)
+    assert.equal((await sign('head', t.id, 'dept_head')).ok, true)
+    assert.equal((await sign('head', t.id, 'authority')).code, 'not_your_slot')
+    assert.equal((await sign('mayor', t.id, 'authority')).ok, true)
+    const { rows } = await db.query(`SELECT signed_as FROM public.esign_signatures WHERE doc_id = $1 AND slot = 'authority'`, [t.id])
+    assert.equal(rows[0].signed_as, MAYOR_TITLE)
+    assert.equal((await setMode('regulation', { delegate: true, ref: 'คำสั่ง อบต. ที่ 45/2569', date: '2026-10-01' })).ok, true)
+  })
+
+  await test('P2 ปิดการมอบทีหลัง: ใบที่ยังไม่ลงช่องอนุญาตกลับไปรอนายก · ลายเซ็น ผอ. ที่ลงไปแล้วยังมีผล', async () => {
+    await as('requester')
+    const pending = await makeTrip()
+    const done = await makeTrip()
+    for (const id of [pending.id, done.id]) {
+      assert.equal((await sign('requester', id, 'requester')).ok, true)
+      assert.equal((await sign('head', id, 'dept_head')).ok, true)
+    }
+    assert.equal((await sign('head', done.id, 'authority')).ok, true)
+    assert.equal((await setMode('regulation', { delegate: false })).ok, true)
+    const s = await status('mayor', pending.id)
+    assert.equal(s.authority.expected_name, users.mayor.name)
+    assert.equal(s.authority.can_sign, true)
+    assert.equal((await sign('head', pending.id, 'authority')).code, 'not_your_slot')
+    assert.equal((await info(done.id, 'fleetAdmin')).state, 'authorized')
+    await as('requester')
+    await depart(done.id)
+  })
+
+  await test('P2 สิทธิ์: ฟังก์ชันใหม่/ที่แก้ไม่เปิดให้ API · trigger ใหม่อยู่ก่อน esign guard', async () => {
+    const { rows } = await db.query(`SELECT
+      has_function_privilege('authenticated', 'public.fleet_permit_acting_title(uuid,text)', 'execute') AS a,
+      has_function_privilege('anon', 'public.fleet_permit_acting_title(uuid,text)', 'execute') AS b,
+      has_function_privilege('authenticated', 'public.esign_expected_signer(public.fleet_trips,text)', 'execute') AS c,
+      has_function_privilege('authenticated', 'public.fleet_trip_permit_approver(public.fleet_trips,date)', 'execute') AS d`)
+    assert.deepEqual(rows[0], { a: false, b: false, c: false, d: false })
+    const names = (await db.query(`SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.fleet_trips'::regclass AND NOT tgisinternal ORDER BY tgname`)).rows.map(r => r.tgname)
+    const early = names.indexOf('trg_fleet_trips_early_permit_mode')
+    assert.ok(early >= 0 && early < names.indexOf('trg_fleet_trips_esign_guard'), names.join(','))
+  })
+}
 
 console.log(`\nfleet-permit-db: ผ่าน ${cases} กรณี`)
