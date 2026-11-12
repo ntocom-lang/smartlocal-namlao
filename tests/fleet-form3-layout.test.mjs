@@ -15,6 +15,9 @@ import assert from 'node:assert/strict'
 import process from 'node:process'
 import { chromium } from 'playwright'
 import { buildFleetTripRequestHtml, resolveDeptHead, resolveOrderAuthority } from '../src/lib/fleetTripPrint.js'
+import { esignPrintData } from '../src/lib/esignPrint.js'
+import { permitActingTitle, permitPrintAuthority } from '../src/lib/fleetPermit.js'
+import { VERIFY_CODE, fullStatus, signature, slotStatus, stampsFor } from './lib/esignPrintFixtures.mjs'
 
 const tenant = { name: 'เทศบาลตำบลสาธิต', province: 'แพร่' }
 
@@ -307,6 +310,95 @@ const veryLong = await measureDeptRole('ผู้อำนวยการกอ�
 assert.equal(veryLong.actingBoxes, 1, `"รักษาราชการแทน" ถูกตัดกลางคำเป็น ${veryLong.actingBoxes} ท่อน (${JSON.stringify(veryLong.lines)})`)
 assert.ok(!veryLong.lines.some(line => line.startsWith('แทน')), `มีบรรทัดขึ้นต้นด้วย "แทน" โดดๆ: ${JSON.stringify(veryLong.lines)}`)
 assert.ok(veryLong.right <= veryLong.sheetRight + 1, 'ตำแหน่งยาวสุดล้นขอบขวาพื้นที่พิมพ์')
+
+// ── 6. ผอ.กองที่ได้รับมอบ (ข้อ ๑๒ ว.๔) เป็นผู้อนุญาต: ฐานะ "… ปฏิบัติราชการแทน…" ต้องอยู่ในพื้นที่พิมพ์ จบ 1 หน้า และอยู่กึ่งกลางแกนเส้น ──
+// ตัดบรรทัดตามกติกากลาง govSplitActingTitle (หลังคำว่า "ปฏิบัติราชการแทน" — บรรทัดแรก "ตำแหน่ง ผอ. + ปฏิบัติราชการแทน" บรรทัดสอง "ตำแหน่งนายก")
+// ทั้งแบบเซ็นสด (orderAuthority จาก permitPrintAuthority) และแบบลงนามออนไลน์ (signedAs จากลายเซ็น) · วัดที่ 605px = พื้นที่พิมพ์จริง ด้วย Range เท่านั้น
+const DELEGATED_MAYOR = 'นายกองค์การบริหารส่วนตำบลหนองม่วงไข่'
+const DELEGATED_TITLE = 'ผู้อำนวยการกองสาธารณสุขและสิ่งแวดล้อม'
+const DELEGATED_ACTING = permitActingTitle(DELEGATED_TITLE, DELEGATED_MAYOR)
+const DELEGATED_NAME = 'นายสมศักดิ์ ผู้อำนวยการกองทดสอบ'
+
+async function measureDelegated(build) {
+  await printPage.setContent(build(), { waitUntil: 'domcontentloaded' })
+  await printPage.evaluate(() => document.fonts.ready)
+  await printPage.emulateMedia({ media: 'print' })
+  return printPage.evaluate(() => {
+    const block = document.querySelector('.decision .signature')
+    const line = block.querySelector('.signature-line').getBoundingClientRect()
+    // กล่องของตัวอักษรจริงด้วย Range — กล่องของ element อยู่กลางแกนเสมอแม้ตัวอักษรล้น
+    const extentOf = el => {
+      const rects = []
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.textContent.trim()) continue
+        const range = document.createRange()
+        range.selectNodeContents(node)
+        rects.push(...[...range.getClientRects()].filter(rect => rect.width >= 0.5))
+      }
+      return { left: Math.min(...rects.map(rect => rect.left)), right: Math.max(...rects.map(rect => rect.right)) }
+    }
+    const titleEl = block.querySelector('.signature-title')
+    const nameEl = block.querySelector('.signature-name')
+    const title = extentOf(titleEl)
+    const name = extentOf(nameEl)
+    const sheet = document.querySelector('.sheet').getBoundingClientRect()
+    return {
+      lineCenter: line.left + line.width / 2,
+      titleCenter: (title.left + title.right) / 2,
+      nameCenter: (name.left + name.right) / 2,
+      titleLeft: title.left, titleRight: title.right, sheetLeft: sheet.left, sheetRight: sheet.right, sheetHeight: sheet.height,
+      titleLines: [...titleEl.querySelectorAll('.signature-title-text')].flatMap(el => el.innerHTML.split(/<br\s*\/?>/)).map(text => text.replace(/<[^>]+>/g, '').trim()),
+      nameText: nameEl.textContent.replace(/\s+/g, ' ').trim(),
+    }
+  })
+}
+function assertDelegatedLayout(label, m) {
+  assert.deepEqual(m.titleLines, [`${DELEGATED_TITLE} ปฏิบัติราชการแทน`, DELEGATED_MAYOR], `${label}: ฐานะต้องตัด 2 บรรทัดหลัง "ปฏิบัติราชการแทน" ได้ ${JSON.stringify(m.titleLines)}`)
+  assert.ok(m.titleLeft >= m.sheetLeft - 1 && m.titleRight <= m.sheetRight + 1, `${label}: ฐานะล้นพื้นที่พิมพ์ (${m.titleLeft.toFixed(0)}–${m.titleRight.toFixed(0)} / ${m.sheetLeft.toFixed(0)}–${m.sheetRight.toFixed(0)})`)
+  assert.ok(Math.abs(m.titleCenter - m.lineCenter) <= 3.78, `${label}: ฐานะไม่อยู่กึ่งกลางแกนเส้น เยื้อง ${(Math.abs(m.titleCenter - m.lineCenter) / 3.78).toFixed(1)}mm`)
+  assert.ok(Math.abs(m.nameCenter - m.lineCenter) <= 3.78, `${label}: ชื่อใต้เส้นไม่อยู่กึ่งกลางแกนเส้น เยื้อง ${(Math.abs(m.nameCenter - m.lineCenter) / 3.78).toFixed(1)}mm`)
+  assert.ok(m.sheetHeight <= 1043, `${label}: ใบเกิน 1 หน้าพื้นที่พิมพ์ ${Math.round(m.sheetHeight)}px > 1043px`)
+}
+
+// 6.1 เซ็นสด: ผู้อนุญาตจาก permitPrintAuthority (approver เป็นผู้ได้รับมอบ) — ฐานะจาก acting_title ของ DB
+const waitingInfo = {
+  permit_mode: 'regulation', state: 'waiting',
+  approver: { kind: 'delegated_dept_head', registry_id: 'r1', name: DELEGATED_NAME, title: DELEGATED_TITLE, acting_title: DELEGATED_ACTING },
+}
+const waitingAuthority = permitPrintAuthority({ info: waitingInfo, mayorTitle: DELEGATED_MAYOR })
+assert.deepEqual(waitingAuthority, { name: DELEGATED_NAME, title: DELEGATED_ACTING })
+const wetDelegated = await measureDelegated(() => buildFleetTripRequestHtml({ trip, tenant, orderAuthority: waitingAuthority, deptHead: resolveDeptHead(null) }))
+assert.equal(wetDelegated.nameText, `(${DELEGATED_NAME})`)
+assertDelegatedLayout('ผู้อนุญาต ผอ. เซ็นสด', wetDelegated)
+
+// 6.1.1 ใบกระดาษที่บันทึกแล้ว (ประกอบฐานะจาก signer_title + ตำแหน่งนายกในทะเบียน) ได้ผลเดียวกัน
+const paperAuthority = permitPrintAuthority({
+  info: { permit_mode: 'regulation', state: 'authorized', via: 'paper', basis: 'delegated_dept_head', signer_name: DELEGATED_NAME, signer_title: DELEGATED_TITLE },
+  mayorTitle: DELEGATED_MAYOR,
+})
+assert.deepEqual(paperAuthority, { name: DELEGATED_NAME, title: DELEGATED_ACTING })
+assertDelegatedLayout('ผู้อนุญาต ผอ. ใบกระดาษ', await measureDelegated(() => buildFleetTripRequestHtml({ trip, tenant, orderAuthority: paperAuthority, deptHead: resolveDeptHead(null) })))
+
+// 6.2 ลงนามออนไลน์ครบ: ช่อง ผอ.กอง + ช่องผู้มีอำนาจเป็นคนเดียวกัน ฐานะช่องอนุญาตมาจาก signedAs ของลายเซ็น (ไม่พึ่ง orderAuthority)
+const delegatedStatus = fullStatus({
+  slots: [
+    slotStatus('requester', { signed: true, signature: signature('นางสาวผู้ขอ ทดสอบ') }),
+    slotStatus('dept_head', { signed: true, signature: signature(DELEGATED_NAME, { signed_as: DELEGATED_TITLE, signed_at: '2026-10-23T05:30:00Z' }) }),
+    slotStatus('authority', { signed: true, signature: signature(DELEGATED_NAME, { decision: 'approve', signed_as: DELEGATED_ACTING, signed_at: '2026-10-23T05:31:00Z' }) }),
+    slotStatus('sk1', { mode: 'wet', applicable: false }),
+  ],
+})
+const delegatedEsign = esignPrintData({ status: delegatedStatus, stamps: stampsFor(['requester', 'dept_head', 'authority']), verifyCode: VERIFY_CODE, origin: 'https://demo.example.go.th' })
+const onlineDelegated = await measureDelegated(() => buildFleetTripRequestHtml({
+  trip: { ...trip, approved_by: null, approver: null, esign_slots: { requester: 'online', dept_head: 'online', authority: 'online', sk1: 'wet' }, esign_verify_code: VERIFY_CODE },
+  tenant,
+  orderAuthority: resolveOrderAuthority({ manual_name: 'นายสมนึก ธนเดชากุล', title_override: 'นายกเทศมนตรีตำบลสาธิต' }, tenant, 'mayor'),
+  deptHead: resolveDeptHead({ manual_name: DELEGATED_NAME, title_override: DELEGATED_TITLE }),
+  esign: delegatedEsign,
+}))
+assert.equal(onlineDelegated.nameText, `(${DELEGATED_NAME})`, 'ใบออนไลน์ต้องพิมพ์ชื่อ ผอ. จากลายเซ็น ไม่ใช่ชื่อนายกในทะเบียน')
+assertDelegatedLayout('ผู้อนุญาต ผอ. ลงนามออนไลน์', onlineDelegated)
 
 await browser.close()
 console.log(`fleet form 3 layout assertions passed `

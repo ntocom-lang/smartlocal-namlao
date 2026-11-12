@@ -123,11 +123,40 @@ export function permitBadge(info) {
 export function permitApproverText(approver) {
   if (!approver || typeof approver !== 'object') return ''
   const name = String(approver.name ?? '').trim()
-  const title = String(approver.title ?? '').trim()
+  // ผู้ได้รับมอบ (ข้อ ๑๒ ว.๔): DB ตอบฐานะเต็ม "<ตำแหน่ง ผอ.> ปฏิบัติราชการแทน<ตำแหน่งนายก>" มาใน acting_title — แสดงฐานะนี้แทนตำแหน่งเปล่า
+  const title = String(approver.acting_title ?? '').trim() || String(approver.title ?? '').trim()
   if (!approver.registry_id || !name) {
     return `${title || 'ผู้มีอำนาจสั่งใช้ยานพาหนะ'} (ยังไม่ได้ตั้งผู้ลงนามในทะเบียน)`
   }
   return title ? `${name} (${title})` : name
+}
+
+// ฐานะ "ปฏิบัติราชการแทน" บนใบพิมพ์ — ประกอบแบบเดียวกับ fleet_permit_acting_title ใน DB (ไม่มีเว้นวรรคหลังคำว่าแทน)
+// เจ้าของระบบสั่ง 2569-11-12: ไม่พิมพ์เลขที่คำสั่งมอบหมายบนใบ · ไม่รู้ตำแหน่งนายก = คำกลาง "ผู้บริหารท้องถิ่น" เหมือนฝั่ง DB
+export function permitActingTitle(deptHeadTitle, mayorTitle) {
+  const own = String(deptHeadTitle ?? '').trim() || 'ผู้อำนวยการสำนัก/กอง'
+  const head = String(mayorTitle ?? '').trim() || 'ผู้บริหารท้องถิ่น'
+  return `${own} ปฏิบัติราชการแทน${head}`
+}
+
+// ผู้อนุญาตที่ใบพิมพ์แบบ 3 (เซ็นสด/ยังไม่ลงนามออนไลน์ช่องอนุญาต) ต้องพิมพ์แทนนายก — คืน { name, title } หรือ null = ใช้ผู้มีอำนาจตามเดิม
+//   ใบที่ได้รับอนุญาตแล้ว: เฉพาะใบกระดาษที่บันทึกว่า ผอ.ลงนามในฐานะผู้ได้รับมอบ (basis=delegated_dept_head) ใช้ชื่อ/ตำแหน่งจากบันทึกนั้น
+//     (ลงนามออนไลน์แล้วใช้ signedAs จากลายเซ็นในใบอยู่แล้ว · อนุญาตด้วยฐาน authority = ผู้มีอำนาจตามเดิม ทั้งที่ approver ยังเป็น ผอ.ได้)
+//   ใบที่ยังไม่ได้รับอนุญาต: approver เป็น delegated_dept_head = ผอ. (ใช้ acting_title จาก DB ไม่มี = ประกอบเอง)
+//   โหมด queue / ไม่มีข้อมูล / ผู้อนุญาตเป็นนายก = null (ใบเดิมทุกไบต์)
+export function permitPrintAuthority({ info, mayorTitle = '' } = {}) {
+  if (!info || typeof info !== 'object' || info.permit_mode !== 'regulation') return null
+  if (info.state === 'authorized') {
+    if (info.via !== 'paper' || info.basis !== 'delegated_dept_head') return null
+    const name = String(info.signer_name ?? '').trim()
+    if (!name) return null
+    return { name, title: permitActingTitle(info.signer_title, mayorTitle) }
+  }
+  const approver = info.approver
+  if (approver?.kind !== 'delegated_dept_head') return null
+  const name = String(approver.name ?? '').trim()
+  if (!approver.registry_id || !name) return null
+  return { name, title: String(approver.acting_title ?? '').trim() || permitActingTitle(approver.title, mayorTitle) }
 }
 
 // ข้อความสั้นใต้ปุ่มออกรถ — "รออนุญาตจาก …"

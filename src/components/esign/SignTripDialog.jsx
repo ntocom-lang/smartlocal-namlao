@@ -5,7 +5,7 @@ import AddSignatureDialog from '../profile/AddSignatureDialog'
 import { Chip, Notice, ReturnNote } from './EsignBits'
 import PinForm from './PinForm'
 import { ESIGN_DECISION_LABEL, esignFailureText, esignMessage } from '../../lib/esign'
-import { getMySignatures, getMySignerOverview, returnFleetTrip, signFleetTrip } from '../../lib/esignApi'
+import { getMySignatures, getMySignerOverview, getTripEsignStatus, returnFleetTrip, signFleetTrip } from '../../lib/esignApi'
 import { PIN_INPUT_CLASS, SIGNATURE_CHECKER, isPin, signatureDataUrl } from '../../lib/esignUi'
 import { SIGNATURE_MAX_IMAGES } from '../../lib/signatureImage'
 import { thaiDateTimeText } from '../../lib/thaiDate'
@@ -14,6 +14,10 @@ import { thaiDateTimeText } from '../../lib/thaiDate'
 // ไม่ผูกกับตัวทริปใน FleetTrips: รับแค่ { tripId, slot, summary } เพื่อให้แถบ "รอลงนามของฉัน" (ชุด S3b) เปิดกล่องเดียวกันได้โดยไม่ต้องเปิดทริปก่อน
 // ค่าเริ่มต้น: แนบภาพที่ตั้งเป็น "ค่าเริ่มต้น" ให้เอง (ปิดหรือเลือกแบบอื่นได้ทุกครั้ง) — ผู้ลงนามกรอกแค่รหัส
 // ยังไม่ได้ตั้งรหัส = ตั้งในกล่องนี้ได้เลย ไม่ต้องไปหน้าโปรไฟล์ก่อน
+// ขั้นที่ 2 (ผอ.กองที่ได้รับมอบ ข้อ ๑๒ ว.๔ หรือคนเดียวถือทั้งสองช่อง): ลงช่อง ผอ.สำนัก/กอง สำเร็จแล้วถามสถานะจาก DB (esign_trip_status)
+//   ถ้าช่องผู้มีอำนาจ can_sign = true (คนเดิมถือช่องนั้นด้วย) กล่องไม่ปิด แต่เปลี่ยนเป็นขั้นที่ 2 ให้ลงช่องผู้มีอำนาจต่อด้วยรหัส/ภาพชุดเดิม
+//   ต้องกดยืนยันครั้งที่สองเองเสมอ ห้ามลงช่องผู้มีอำนาจอัตโนมัติ · รหัสถูกเก็บใน state เฉพาะช่วงสองขั้นนี้ ปิดกล่อง/ลงเสร็จ/error = ล้างทิ้ง
+//   onSigned เรียกครั้งเดียวตอนจบ (ลงครบสองช่อง หรือ "ไว้ทีหลัง"/ปิดกล่อง = ผลของช่องแรก) — ผู้เรียกทั้งสามที่ปิดกล่องเองใน onSigned จึงไม่ปิดก่อนขั้นที่ 2
 // canReturn มาจาก DB (can_return) · ปุ่มส่งคืนอยู่ในกล่องนี้ เพราะนายก/ปลัดที่ไม่มีสิทธิ์ยานพาหนะเต็มเปิดทริปไม่ได้ เข้าได้ทางนี้ทางเดียว
 export default function SignTripDialog({ tripId, slot, slotLabel, summary, canReturn = false, lastReturn = null, onClose, onSigned, onReturned }) {
   const decision = slot === 'authority' ? 'approve' : 'sign'
@@ -32,6 +36,7 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, canRe
   const [error, setError] = useState('')
   const [notice, setNotice] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [stage2, setStage2] = useState(null) // null | { first: ผลลงช่องแรก, label: ชื่อช่องผู้มีอำนาจ }
   const dialogRef = useRef(null)
   const initialized = useRef(false)
   const showAddRef = useRef(false)
@@ -41,7 +46,16 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, canRe
 
   useEffect(() => { showAddRef.current = showAdd }, [showAdd])
   useEffect(() => { busyRef.current = busy }, [busy])
-  useEffect(() => { onCloseRef.current = onClose }, [onClose])
+  // ปิดกล่อง (X / ยกเลิก / Esc): ขั้นที่ 2 = ลงช่องแรกสำเร็จไปแล้ว → แจ้งผู้เรียกด้วยผลช่องแรกเพื่อให้รายการรีเฟรช ไม่ใช่ปิดเงียบ
+  function handleClose() {
+    if (stage2) {
+      setPin('')
+      onSigned(stage2.first)
+      return
+    }
+    onClose()
+  }
+  useEffect(() => { onCloseRef.current = handleClose })
 
   useEffect(() => {
     const opener = document.activeElement
@@ -105,15 +119,47 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, canRe
     setBusy(true)
     setError('')
     const result = await signFleetTrip({ tripId, slot, pin, decision: decision === 'approve' ? 'approve' : null, imageId: attach ? imageId : null })
-    setBusy(false)
     if (!result?.ok) {
+      setBusy(false)
       setPin('')
       setError(esignFailureText(result))
       // สถานะรหัส (ล็อก/ระงับ/ยังไม่ตั้ง) เปลี่ยนไปแล้ว — โหลดใหม่ให้กล่องแสดงตรงกับของจริง
       if (['pin_locked', 'suspended', 'pin_not_set', 'bad_pin'].includes(result?.code)) reload()
       return
     }
+    // ช่อง ผอ.สำนัก/กอง ลงแล้ว: คนเดิมถือช่องผู้มีอำนาจด้วยไหม — ถามไม่ได้/ไม่ใช่ = จบแบบเดิม
+    if (slot === 'dept_head') {
+      let next
+      try {
+        const status = await getTripEsignStatus(tripId)
+        next = status?.ok === false ? null : (status?.slots ?? []).find(item => item.slot === 'authority') ?? null
+      } catch { next = null }
+      if (next?.can_sign === true) {
+        setStage2({ first: result, label: next.label || 'ผู้มีอำนาจสั่งใช้ยานพาหนะ' })
+        setBusy(false)
+        return
+      }
+    }
+    setBusy(false)
+    setPin('')
     onSigned(result)
+  }
+
+  // ขั้นที่ 2: ลงช่องผู้มีอำนาจต่อ ใช้รหัส/ภาพชุดเดิม — error (bad_pin ฯลฯ) = ล้างรหัสแล้วให้กรอกใหม่ในขั้นเดิม
+  async function handleSignAuthority() {
+    if (!stage2 || !ready) return
+    setBusy(true)
+    setError('')
+    const result = await signFleetTrip({ tripId, slot: 'authority', pin, decision: 'approve', imageId: attach ? imageId : null })
+    setBusy(false)
+    if (!result?.ok) {
+      setPin('')
+      setError(esignFailureText(result))
+      if (['pin_locked', 'suspended', 'pin_not_set', 'bad_pin'].includes(result?.code)) reload()
+      return
+    }
+    setPin('')
+    onSigned({ ...result, stamped: Boolean(stage2.first?.stamped || result.stamped) })
   }
 
   const reasonOk = reason.trim().length >= 3
@@ -146,8 +192,8 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, canRe
       <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="sign-trip-title" data-sign-dialog
         className="flex max-h-[100dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl outline-none sm:rounded-2xl">
         <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
-          <h2 id="sign-trip-title" className="min-w-0 text-base font-bold text-gray-800">{returning ? 'ส่งคืนผู้ขอ' : ESIGN_DECISION_LABEL[decision]}: {slotLabel}</h2>
-          <button type="button" onClick={onClose} disabled={busy} aria-label="ปิด" data-sign-close
+          <h2 id="sign-trip-title" className="min-w-0 text-base font-bold text-gray-800">{returning ? 'ส่งคืนผู้ขอ' : stage2 ? ESIGN_DECISION_LABEL.approve : ESIGN_DECISION_LABEL[decision]}: {stage2 ? stage2.label : slotLabel}</h2>
+          <button type="button" onClick={handleClose} disabled={busy} aria-label="ปิด" data-sign-close
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50">
             <X size={18} />
           </button>
@@ -169,7 +215,36 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, canRe
             </p>
           )}
 
-          {returning ? (
+          {stage2 ? (
+            <section className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3.5" aria-labelledby="sign-stage2-title" data-sign-stage2>
+              <h3 id="sign-stage2-title" className="flex items-center gap-1.5 text-sm font-bold text-emerald-900">
+                <ShieldCheck size={15} aria-hidden="true" /> ลงนามช่อง ผอ.สำนัก/กอง แล้ว — ยังเหลือช่องผู้มีอำนาจ
+              </h3>
+              <p className="text-xs leading-5 text-emerald-900" data-sign-stage2-note>
+                ท่านเป็นผู้ลงนามช่องผู้มีอำนาจของคำขอนี้ด้วย (กรณีได้รับมอบตามข้อ ๑๒ วรรคสี่ ใบพิมพ์จะระบุฐานะท่านว่า &ldquo;ปฏิบัติราชการแทน&rdquo; ผู้บริหารท้องถิ่น)
+                {' '}— ลงนามอนุมัติในช่องผู้มีอำนาจต่อได้เลยโดยไม่ต้องใส่รหัสซ้ำ
+              </p>
+              <p className="text-xs leading-5 text-gray-600">
+                เป็นการลงลายมือชื่อแยกอีกครั้งหนึ่ง ต้องกดยืนยันเอง — ถ้ายังไม่พร้อม กด “ไว้ทีหลัง” แล้วกลับมาลงนามช่องนี้ได้จากรายการรอลงนามของท่าน
+              </p>
+              {!isPin(pin) && (
+                <div className="space-y-2" data-sign-stage2-pin>
+                  <h4 id="sign-pin2-title" className="text-sm font-bold text-gray-800">รหัสลงนาม 6 หลัก</h4>
+                  <input id="esign-sign-pin2" name="esign-sign-pin2" type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} autoComplete="off"
+                    aria-labelledby="sign-pin2-title" data-sign-pin disabled={!canEnterPin} value={pin}
+                    onChange={event => setPin(event.target.value.replace(/\D/g, ''))}
+                    onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); handleSignAuthority() } }}
+                    className={PIN_INPUT_CLASS} />
+                </div>
+              )}
+              {(locked || suspended) && (
+                <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800" data-sign-blocked>
+                  {suspended ? 'การลงนามของคุณถูกระงับอยู่ — ลงนามช่องผู้มีอำนาจต่อไม่ได้' : `ใส่รหัสผิดหลายครั้ง ระบบล็อกการลงนามถึง ${thaiDateTimeText(overview.locked_until)}`}
+                </p>
+              )}
+              {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-xs leading-5 text-red-700" data-sign-error>{error}</p>}
+            </section>
+          ) : returning ? (
             <section className="space-y-2.5 rounded-xl border border-red-200 bg-red-50 p-3.5" aria-labelledby="sign-return-title" data-sign-return-form>
               <h3 id="sign-return-title" className="text-sm font-bold text-red-900">ไม่ลงนาม ส่งคืนผู้ขอ</h3>
               <p className="text-xs leading-5 text-red-800" data-sign-return-impact>
@@ -262,7 +337,7 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, canRe
             </>
           )}
 
-          {canReturn && !returning && (
+          {canReturn && !returning && !stage2 && (
             <button type="button" disabled={busy} data-sign-return-open
               onClick={() => { setError(''); setPin(''); setReturning(true) }}
               className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-red-200 px-4 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">
@@ -280,9 +355,18 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, canRe
               {busy ? <Loader2 size={15} className="animate-spin" /> : <Undo2 size={15} />} ยืนยันส่งคืนผู้ขอ
             </button>
           </div>
+        ) : stage2 ? (
+          <div className="flex gap-2 border-t border-gray-100 px-5 py-4">
+            <button type="button" onClick={handleClose} disabled={busy} data-sign-stage2-later
+              className="min-h-11 rounded-xl border border-gray-200 px-5 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">ไว้ทีหลัง</button>
+            <button type="button" onClick={handleSignAuthority} disabled={!ready} data-sign-stage2-submit
+              className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-5 text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: 'var(--color-primary)' }}>
+              {busy ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />} อนุมัติ (ลงนาม)
+            </button>
+          </div>
         ) : (
           <div className="flex gap-2 border-t border-gray-100 px-5 py-4">
-            <button type="button" onClick={onClose} disabled={busy}
+            <button type="button" onClick={handleClose} disabled={busy}
               className="min-h-11 rounded-xl border border-gray-200 px-5 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">ยกเลิก</button>
             <button type="button" onClick={handleSign} disabled={!ready} data-sign-submit
               className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-5 text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: 'var(--color-primary)' }}>
