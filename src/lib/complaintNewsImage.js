@@ -362,6 +362,108 @@ export function execRimPlan(width, height) {
   return { pad, dirs: EXEC_RIM_DIRS, rings: EXEC_RIM_RINGS.map(ring => ({ radius: ring.radius / scale, alpha: ring.alpha })) }
 }
 
+/**
+ * ความกว้างขอบจางของรูปอาคารสำนักงานที่เป็นรูปถ่ายทึบ (prepareOfficePhoto ทำขอบซ้าย/ขวา/บนให้จางกลืนพื้นแถบหัว ล่างคมเพราะชิดก้นแถบ)
+ * คืน { side, top } เป็น px ของรูป: side ≈ 12% ของความกว้าง (4–160px) · top ≈ 18% ของความสูง (4–140px)
+ * เพดานกันรูปใหญ่จางกินตัวอาคาร ขั้นต่ำกันรูปเล็กขอบแข็ง · ไม่เกินครึ่งของด้านนั้น (ซ้าย+ขวาไม่ซ้อนกันจนรูปหาย) · ค่าผิด = null
+ * @param {number} width
+ * @param {number} height
+ */
+export function officeFadePlan(width, height) {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return null
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+  return {
+    side: Math.round(Math.min(clamp(width * 0.12, 4, 160), width / 2)),
+    top: Math.round(Math.min(clamp(height * 0.18, 4, 140), height / 2)),
+  }
+}
+
+// ── รูปอาคารแม่แบบ (src/assets/news/office-template.jpg 302×342 px) ──
+// อปท. ที่ยังไม่อัปโหลดรูปอาคารเอง ใช้แม่แบบนี้แล้ววาดชื่อ อปท. นั้นทับบนผนังจั่วกับป้ายหน้าอาคาร (เจ้าของสั่ง 2569-11-12)
+// ชื่อ/ตราบนรูปแม่แบบถูกลบเป็นพื้นเรียบไว้แล้ว · พิกัดทั้งหมดเป็น px ของรูปแม่แบบ (วาดใน <g> ที่ scale แล้ว)
+export const OFFICE_TEMPLATE = Object.freeze({
+  width: 302,
+  height: 342,
+  // ผนังจั่วสีน้ำเงิน ตัวหนังสือขาว: บรรทัด 1 มุมขวาบนติดเส้นจั่วลาดจึงแคบกว่า
+  wallWord: { text: 'สำนักงาน', x: 135, y: 140, size: 17, minSize: 9, maxWidth: 70, fill: '#ffffff', shadow: '#0a1a3a' },
+  wallName: { x: 132, y: 164, size: 17, minSize: 9, maxWidth: 112, fill: '#ffffff', shadow: '#0a1a3a' },
+  // ป้ายหน้าอาคาร (พื้นกรมท่าเข้ม): ตรา + ชื่อ + บรรทัดที่อยู่
+  seal: { cx: 177, cy: 283, r: 10 },
+  signName: { x: 176, y: 311, size: 16, minSize: 8, maxWidth: 108, fill: '#ffd23f' },
+  signAddress: { x: 176, y: 327, size: 10, minSize: 6, maxWidth: 100, fill: '#f3dc8a' },
+})
+
+/**
+ * บรรทัด "อำเภอ… จังหวัด…" บนป้าย — ตัดคำนำหน้าที่ติดมาในข้อมูลออกก่อนเติมเอง (กันเป็น "อำเภออำเภอ")
+ * อำเภอ: ตัด "อำเภอ"/"อ." · ขึ้นต้น "เขต" คงไว้ (กรุงเทพฯ) · จังหวัด: ตัด "จังหวัด"/"จ." · ว่างทั้งคู่ = '' (ไม่วาดบรรทัด)
+ * @param {string|null|undefined} district
+ * @param {string|null|undefined} province
+ */
+export function officeAddressLine(district, province) {
+  const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim()
+  let d = clean(district)
+  let p = clean(province)
+  if (!d.startsWith('เขต')) d = d.replace(/^(อำเภอ|อ\.)\s*/, '')
+  p = p.replace(/^(จังหวัด|จ\.)\s*/, '')
+  const parts = []
+  if (d) parts.push(d.startsWith('เขต') ? d : `อำเภอ${d}`)
+  if (p) parts.push(`จังหวัด${p}`)
+  return parts.join(' ')
+}
+
+// ลดขนาดทีละ 0.5 จนพอดีความกว้าง · ถึงขนาดต่ำสุดแล้วยังเกิน = ให้บีบด้วย textLength (บรรทัดเดียวเสมอ)
+function fitOfficeText(text, spec, bold, measure) {
+  let size = spec.size
+  while (size > spec.minSize && measure(text, size, bold) > spec.maxWidth) size -= 0.5
+  return { size, squeeze: measure(text, size, bold) > spec.maxWidth }
+}
+
+/**
+ * รายการข้อความที่วาดทับรูปแม่แบบ (แยกเป็นฟังก์ชันล้วนให้เทสต์วัดความกว้างได้)
+ * คืน [{ key, text, x, y, size, bold, fill, shadow, maxWidth, squeeze }]
+ * @param {string} tenantName
+ * @param {{ district?: string, province?: string }} place
+ * @param {(text: string, size: number, bold: boolean) => number} measure
+ */
+export function officeTemplateLabels(tenantName, place, measure) {
+  const T = OFFICE_TEMPLATE
+  const name = String(tenantName ?? '').trim()
+  const items = []
+  const add = (key, text, spec, bold) => {
+    if (!text) return
+    const fit = fitOfficeText(text, spec, bold, measure)
+    items.push({ key, text, x: spec.x, y: spec.y, size: fit.size, bold, fill: spec.fill, shadow: spec.shadow ?? null, maxWidth: spec.maxWidth, squeeze: fit.squeeze })
+  }
+  add('wall-word', T.wallWord.text, T.wallWord, true)
+  add('wall-name', name, T.wallName, true)
+  add('sign-name', name, T.signName, true)
+  add('sign-address', officeAddressLine(place?.district, place?.province), T.signAddress, false)
+  return items
+}
+
+function officeTemplateSvg(defs, tenantName, place, logoDataUrl, measure, { x, y, w, h }) {
+  const T = OFFICE_TEMPLATE
+  // รูปวาง xMidYMax meet ในกล่อง → คำนวณกรอบที่รูปถูกวาดจริงแล้ววางข้อความในพิกัดรูปแม่แบบ
+  const s = Math.min(w / T.width, h / T.height)
+  const ox = x + (w - T.width * s) / 2
+  const oy = y + h - T.height * s
+  const attrs = (item, dx = 0) => `x="${num(item.x + dx)}" y="${num(item.y + dx)}" font-size="${num(item.size)}" font-weight="${item.bold ? 700 : 400}" text-anchor="middle"${item.squeeze ? ` textLength="${item.maxWidth}" lengthAdjust="spacingAndGlyphs"` : ''}`
+  let inner = ''
+  for (const item of officeTemplateLabels(tenantName, place, measure)) {
+    // ผนังจั่ว: เงาเข้มบาง 1px เป็นข้อความซ้อน (ไม่ใช้ filter) · ป้าย: ไม่มีเงา
+    if (item.shadow) inner += `<text ${attrs(item, 1)} fill="${item.shadow}" fill-opacity="0.5">${esc(item.text)}</text>`
+    inner += `<text ${attrs(item)} fill="${item.fill}">${esc(item.text)}</text>`
+  }
+  if (imageUrlOk(logoDataUrl)) {
+    const { cx, cy, r } = T.seal
+    defs.push(`<clipPath id="news-office-seal-clip"><circle cx="${cx}" cy="${cy}" r="${r}"/></clipPath>`)
+    inner += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#ffffff"/>`
+      + `<image href="${esc(logoDataUrl)}" x="${cx - r}" y="${cy - r}" width="${r * 2}" height="${r * 2}" preserveAspectRatio="xMidYMid meet" clip-path="url(#news-office-seal-clip)"/>`
+      + `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ffd23f" stroke-width="1"/>`
+  }
+  return `<g transform="translate(${num(ox)} ${num(oy)}) scale(${num(s)})" clip-path="url(#news-head-clip)" data-office-label="1">${inner}</g>`
+}
+
 const OWN_ALPHA_SHARE = 0.01 // จุดโปร่งใส (alpha < 128) ตั้งแต่ 1% ของรูป = ผู้อัปโหลดเตรียมพื้นโปร่งใสมาเอง
 const OWN_ALPHA_MIN = 16 // จุดจางกว่านี้ (เงาฟุ้งรอบตัวจากโปรแกรมตัดภาพ) ไม่นับเป็นตัวคนตอนครอป
 
@@ -683,11 +785,14 @@ function newsFontOk(font) {
  * @param {ReturnType<typeof buildNewsModel>} model
  * @param {(text: string, size: number, bold: boolean) => number} measure
  * @param {{ logoDataUrl?: string | null, photoDataUrls?: (string | null)[], executivePhotoDataUrl?: string | null,
+ *   officePhotoDataUrl?: string | null, officeTemplate?: { district?: string, province?: string } | null,
  *   photoCaptions?: string[], photoKinds?: ('before' | 'after' | null | undefined)[], moreText?: string,
  *   font?: { family: string, css: string } | null }} [assets]
  *   font = ฟอนต์ฝังจาก loadNewsFont() (newsFont.js) — measure ต้องวัดด้วย newsFontStack(font.family) ชุดเดียวกัน · ไม่ส่ง = ฟอนต์ระบบ
  *   photoCaptions = ป้ายใต้รูป (ภาพรวม: หมู่) เรียงตรงกับ photoDataUrls · moreText = "และอีก N จุด" ใต้ตารางรูป
  *   photoKinds = ชนิดรูปเรียงตรงกับ photoDataUrls → ป้ายมุมรูป "ก่อน/หลังดำเนินการ" (ไม่ส่ง/ค่าอื่น = ไม่มีป้าย)
+ *   officePhotoDataUrl = รูปอาคารสำนักงาน · officeTemplate ({ district, province }) ไม่ null = รูปนั้นคือแม่แบบ → วาดชื่อ อปท. ทับผนัง/ป้าย
+ *   (null = รูปที่ อปท. อัปโหลดเอง ใช้ตามไฟล์ ไม่วาดทับ)
  * @returns {{ svg: string, width: number, height: number, photoCount: number, fitsA4: boolean }}
  */
 export function buildNewsSvg(model, measure, assets = {}) {
@@ -715,7 +820,7 @@ const NEWS_FIT_LEVELS = Object.freeze([
   { t: 0.8, exec: 0.41, foot: 0.8, min: 220 }, // ทางสุดท้าย: ภาพรวม 4 รูป + ป้ายหมู่ + "และอีก N จุด" + รูปนายก (รูปนายกเหลือ 139 px ยังเห็นหน้า · ฐาน 340 ตั้งแต่ 2569-11-12 จึงปรับ 0.38→0.41 ไม่สูงกว่าเดิม)
 ])
 
-function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], executivePhotoDataUrl = null, officePhotoDataUrl = null, photoCaptions = [], photoKinds = [], moreText = '', font = null } = {}, fit = NEWS_FIT_LEVELS[0]) {
+function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], executivePhotoDataUrl = null, officePhotoDataUrl = null, officeTemplate = null, photoCaptions = [], photoKinds = [], moreText = '', font = null } = {}, fit = NEWS_FIT_LEVELS[0]) {
   const execPhotoW = Math.round(EXEC_PHOTO_W * fit.exec)
   const execPhotoH = Math.round(EXEC_PHOTO_H * fit.exec)
   const sz = base => Math.round(base * fit.t) // ขนาดตัวหนังสือเนื้อหา
@@ -830,6 +935,8 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
     const boxW = textX + 40
     if (headerH - top >= 120) {
       parts.push(`<image href="${esc(office)}" x="0" y="${num(top)}" width="${num(boxW)}" height="${num(headerH - top)}" preserveAspectRatio="xMidYMax meet" clip-path="url(#news-head-clip)" data-office-photo="1"/>`)
+      // รูปแม่แบบ (อปท. ยังไม่อัปโหลดรูปเอง) = วาดชื่อ อปท. ทับผนัง/ป้าย · รูปที่อัปโหลดเอง = ใช้ตามไฟล์ ไม่วาดทับ
+      if (officeTemplate) parts.push(officeTemplateSvg(defs, model.tenantName, officeTemplate, logoDataUrl, measure, { x: 0, y: top, w: boxW, h: headerH - top }))
       markLeft = boxW
     }
   }

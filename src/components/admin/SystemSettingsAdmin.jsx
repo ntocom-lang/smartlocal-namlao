@@ -106,11 +106,33 @@ export default function SystemSettingsAdmin({ onOpenDepartments = null }) {
   const [smartCityPreview, setSmartCityPreview] = useState(() => tenant?.smart_city_image_url || null)
   const [tourismBgUploading, setTourismBgUploading] = useState(false)
   const [tourismBgPreview, setTourismBgPreview] = useState(() => toReliableImageUrl(tenant?.tourism_background_url) || null)
+  const [officePhotoUploading, setOfficePhotoUploading] = useState(false)
+  const [officePhotoPreview, setOfficePhotoPreview] = useState(null)
   const logoRef = useRef()
   const qrRef = useRef()
   const headerRef = useRef()
   const smartCityRef = useRef()
   const tourismBgRef = useRef()
+  const officePhotoRef = useRef()
+
+  // รูปอาคารสำนักงาน: ไม่อยู่ใน select ของ TenantContext โดยตั้งใจ (deploy หน้าเว็บก่อนรัน SQL แล้วทุกเว็บจะ 42501) จึงอ่านเองที่นี่
+  // คอลัมน์ยังไม่มี/อ่านไม่ได้ = ไม่มี preview ไม่ alert ไม่ทำหน้าพัง
+  useEffect(() => {
+    let cancelled = false
+    if (!tenant?.id) return undefined
+
+    supabase
+      .from('municipalities')
+      .select('office_photo_url')
+      .eq('id', tenant.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) { console.error('office_photo_url load error:', error.message); return }
+        if (!cancelled) setOfficePhotoPreview(toReliableImageUrl(data?.office_photo_url) || null)
+      }, (cause) => { console.error('office_photo_url load error:', cause?.message) })
+
+    return () => { cancelled = true }
+  }, [tenant?.id])
 
   useEffect(() => {
     let cancelled = false
@@ -595,6 +617,79 @@ export default function SystemSettingsAdmin({ onOpenDepartments = null }) {
     patchTenant({ tourism_background_url: null })
   }
 
+  async function handleOfficePhotoUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const supportedType = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
+      || (!file.type && /\.(jpe?g|png|webp)$/i.test(file.name))
+    if (!supportedType) {
+      alert('รองรับเฉพาะไฟล์ JPG, PNG และ WebP')
+      e.target.value = ''
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('ไฟล์มีขนาดเกิน 5 MB กรุณาลดขนาดรูปก่อนอัปโหลด')
+      e.target.value = ''
+      return
+    }
+
+    const previousPreview = officePhotoPreview
+    const blobUrl = URL.createObjectURL(file)
+    setOfficePhotoPreview(blobUrl)
+    setOfficePhotoUploading(true)
+    let publicUrl = null
+    try {
+      // PNG/WebP พื้นโปร่งใส (ตัดพื้นมาเองแล้ว) เก็บเป็น PNG ภาพข่าวจะใช้ตามไฟล์ · รูปถ่ายทึบเป็น JPEG ไฟล์เล็ก
+      const blob = await resizeImage(file, 1600, { ...PHOTO_JPEG, keepTransparent: true })
+      const isPng = blob.type === 'image/png'
+      const { url, error: upErr } = await uploadFile('municipality-assets', blob, {
+        subject: 'office-photo',
+        filename: `office-photo-${tenant.slug}.${isPng ? 'png' : 'jpg'}`,
+        municipality: tenant?.slug,
+        // ด่านย่อกลาง (limitPublicImage) แปลงไฟล์ >1.5 MB เป็น JPEG — ต้องข้ามสำหรับ PNG โปร่งใส ไม่งั้นพื้นโปร่งใสกลายเป็นขาวทึบ
+        keepFormat: isPng,
+      })
+      if (upErr) throw upErr
+      if (!url) throw new Error('ระบบอัปโหลดไม่ส่ง URL ของรูปภาพกลับมา')
+      publicUrl = `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`
+      const { data: updatedRows, error: dbErr } = await supabase
+        .from('municipalities')
+        .update({ office_photo_url: publicUrl })
+        .eq('id', tenant.id)
+        .select('id')
+      if (dbErr) throw dbErr
+      if (!updatedRows?.length) throw new Error('RLS block — ไม่มีสิทธิ์ update municipalities')
+
+      setOfficePhotoPreview(toReliableImageUrl(publicUrl))
+      setSavedSection('officePhoto')
+      setTimeout(() => setSavedSection(null), 2500)
+    } catch (err) {
+      if (publicUrl) {
+        setOfficePhotoPreview(toReliableImageUrl(publicUrl))
+        alert('อัปโหลดไฟล์สำเร็จ แต่บันทึกลงฐานข้อมูลไม่ได้: ' + err.message)
+      } else {
+        setOfficePhotoPreview(previousPreview)
+        alert('อัปโหลดรูปอาคารสำนักงานไม่สำเร็จ: ' + err.message)
+      }
+    } finally {
+      URL.revokeObjectURL(blobUrl)
+      setOfficePhotoUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  async function removeOfficePhoto() {
+    if (!confirm('ลบรูปอาคารสำนักงานออก? (ภาพข่าวจะกลับไปใช้พื้นแถบหัวอย่างเดียว)')) return
+    const { data: updatedRows, error } = await supabase
+      .from('municipalities')
+      .update({ office_photo_url: null })
+      .eq('id', tenant.id)
+      .select('id')
+    if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
+    if (!updatedRows?.length) { alert('ลบไม่สำเร็จ: ไม่มีสิทธิ์แก้ไขข้อมูลเทศบาล'); return }
+    setOfficePhotoPreview(null)
+  }
+
   async function saveQrLabel(e) {
     e.preventDefault()
     setQrLabelSaving(true)
@@ -628,6 +723,7 @@ export default function SystemSettingsAdmin({ onOpenDepartments = null }) {
     headerImageMode, headerModeSaving, setHeaderMode,
     smartCityPreview, smartCityUploading, smartCityRef, handleSmartCityUpload, removeSmartCityImage,
     tourismBgPreview, tourismBgUploading, tourismBgRef, handleTourismBgUpload, removeTourismBgImage,
+    officePhotoPreview, officePhotoUploading, officePhotoRef, handleOfficePhotoUpload, removeOfficePhoto,
     qrPreview, qrUploading, qrRef, handleQrUpload, qrLabel, setQrLabel, qrLabelSaving, saveQrLabel,
   }
   const ActiveComponent = SETTINGS_TABS.find(t => t.key === activeTab)?.Component ?? GeneralInfoTab
@@ -1121,6 +1217,7 @@ function BrandingTab({
   headerImageMode, headerModeSaving, setHeaderMode,
   smartCityPreview, smartCityUploading, smartCityRef, handleSmartCityUpload, removeSmartCityImage,
   tourismBgPreview, tourismBgUploading, tourismBgRef, handleTourismBgUpload, removeTourismBgImage,
+  officePhotoPreview, officePhotoUploading, officePhotoRef, handleOfficePhotoUpload, removeOfficePhoto,
 }) {
   return (
     <div className="space-y-6">
@@ -1278,6 +1375,53 @@ function BrandingTab({
               <button onClick={removeTourismBgImage}
                 className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 transition-colors">
                 ลบภาพออก (กลับไปใช้ภาพเริ่มต้น)
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── รูปอาคารสำนักงาน (ภาพข่าวประชาสัมพันธ์) ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <Building2 size={15} /> รูปอาคารสำนักงาน (ใช้ในภาพข่าวประชาสัมพันธ์)
+        </h2>
+        <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+          ภาพข่าวของคำร้องจะวางรูปอาคารไว้ใต้โลโก้ในแถบหัว · แนะนำรูปแนวนอนอาคารสำนักงานเต็มหลัง
+        </p>
+        <div className="flex flex-col sm:flex-row items-start gap-5">
+          <div className="shrink-0">
+            <div className="w-48 h-32 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
+              {officePhotoPreview
+                ? <img src={officePhotoPreview} alt="รูปอาคารสำนักงาน" className="w-full h-full object-contain" />
+                : <div className="flex flex-col items-center gap-1 text-gray-300">
+                    <Building2 size={24} />
+                    <span className="text-[10px]">ยังไม่ตั้งรูป</span>
+                  </div>
+              }
+            </div>
+            {savedSection === 'officePhoto' && (
+              <p className="flex items-center gap-1 text-xs text-emerald-600 mt-2 justify-center">
+                <CheckCircle2 size={12} /> บันทึกสำเร็จ
+              </p>
+            )}
+          </div>
+          <div className="flex-1 space-y-2">
+            <p className="text-xs text-gray-500 leading-relaxed">รองรับ JPG · PNG · WebP<br /><span className="text-gray-400">ขนาดไฟล์ไม่เกิน 5 MB</span></p>
+            <p className="text-xs text-gray-400 leading-relaxed">
+              รูปอาคารอย่างเดียว ไม่มีบุคคลหรือทะเบียนรถในภาพ (PDPA — ภาพข่าวเผยแพร่สาธารณะ) · PNG พื้นโปร่งใสสวยที่สุด · รูปถ่ายธรรมดาระบบจะทำขอบจางให้เอง · ไม่ตั้ง = ภาพข่าวใช้พื้นแถบหัวอย่างเดียว
+            </p>
+            <input ref={officePhotoRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleOfficePhotoUpload} />
+            <button onClick={() => officePhotoRef.current?.click()} disabled={officePhotoUploading}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all whitespace-nowrap"
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              {officePhotoUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+              {officePhotoUploading ? 'กำลังอัปโหลด...' : 'อัปโหลดรูปอาคาร'}
+            </button>
+            {officePhotoPreview && (
+              <button onClick={removeOfficePhoto}
+                className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 transition-colors">
+                ลบรูปออก (ภาพข่าวใช้พื้นแถบหัวอย่างเดียว)
               </button>
             )}
           </div>

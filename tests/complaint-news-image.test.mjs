@@ -941,4 +941,95 @@ await test('execRimPlan: ขอบเรืองในรูปได้รั�
   assert.ok(!/\.filter\s*=/.test(src), 'ห้ามใช้ ctx.filter')
 })
 
+await test('officeFadePlan: ขอบจางรูปอาคารตามสัดส่วนรูป มีขั้นต่ำ/เพดาน ไม่เกินครึ่งด้าน · ค่าผิด = null · ตัววาดใช้ canvas 2D ล้วนและต่อสายกับกล่องภาพข่าวครบ', async () => {
+  assert.deepEqual(News.officeFadePlan(1000, 500), { side: 120, top: 90 })
+  // รูปเล็ก: ขั้นต่ำ 4px (ไม่ขอบแข็ง) แต่ไม่เกินครึ่งด้าน
+  assert.deepEqual(News.officeFadePlan(20, 10), { side: 4, top: 4 })
+  assert.deepEqual(News.officeFadePlan(6, 6), { side: 3, top: 3 })
+  // รูปใหญ่: เพดาน 160 / 140 px ไม่จางกินตัวอาคาร
+  assert.deepEqual(News.officeFadePlan(1200, 1200), { side: 144, top: 140 })
+  assert.deepEqual(News.officeFadePlan(5000, 5000), { side: 160, top: 140 })
+  for (const [w, h] of [[1, 1], [50, 800], [800, 50], [1200, 675], [640, 480]]) {
+    const plan = News.officeFadePlan(w, h)
+    assert.ok(plan.side >= 1 && plan.side * 2 <= w + 1 && plan.top * 2 <= h + 1, `${w}x${h}`)
+  }
+  for (const bad of [[0, 10], [10, NaN], [-1, 5]]) assert.equal(News.officeFadePlan(...bad), null)
+  // มีรูปอาคาร (data URL PNG เล็ก) แล้วภาพยังไม่เกิน A4 · ไม่ส่ง = ไม่มี <image ของอาคาร
+  const OFFICE = 'data:image/png;base64,T0ZGSUNF'
+  const withOffice = draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO, officePhotoDataUrl: OFFICE })
+  assert.ok(withOffice.height <= News.NEWS_MAX_HEIGHT && News.NEWS_MAX_HEIGHT === 1527, String(withOffice.height))
+  assert.ok(withOffice.svg.includes('data-office-photo="1"'))
+  assert.ok(!draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO }).svg.includes('data-office-photo'))
+  const src = await readFile(new URL('../src/components/complaints/newsDialogData.js', import.meta.url), 'utf8')
+  const fn = src.slice(src.indexOf('export async function prepareOfficePhoto'), src.indexOf('export async function loadImage'))
+  assert.match(fn, /globalCompositeOperation = 'destination-in'/)
+  assert.ok(!/\.filter\s*=|<mask|<filter/.test(fn), 'ห้ามใช้ ctx.filter / SVG mask / filter (Safari)')
+  assert.match(src, /select\('office_photo_url'\)/)
+  assert.match(src, /return \{ logo, branding, mayorPhoto, officePhoto: office\.url, officeIsTemplate: office\.isTemplate \}/)
+  for (const name of ['ComplaintNewsDialog', 'ComplaintNewsBatchDialog']) {
+    const dialog = await readFile(new URL(`../src/components/complaints/${name}.jsx`, import.meta.url), 'utf8')
+    assert.match(dialog, /officePhotoDataUrl: officePhoto/, name)
+    assert.match(dialog, /mayorPhoto, officePhoto, officeIsTemplate, officeDistrict, officeProvince\]\)/, `${name}: officePhoto/officeIsTemplate/district/province ต้องอยู่ใน dependency`)
+    assert.match(dialog, /officeTemplate: officeIsTemplate \? \{ district: officeDistrict, province: officeProvince \} : null/, name)
+  }
+})
+
+await test('รูปอาคารแม่แบบ: วาดชื่อ อปท. ทับผนัง/ป้าย · อัปโหลดเอง = ไม่วาดทับ · ตัดคำนำหน้าซ้ำ · ชื่อยาวไม่ล้นกรอบ', async () => {
+  const OFFICE = 'data:image/png;base64,T0ZGSUNF'
+  const LOGO = 'data:image/png;base64,TE9HTw=='
+  const label = svg => svg.match(/<g [^>]*data-office-label="1">([\s\S]*?)<\/g>/)?.[1] ?? ''
+  const nameCount = (group, name) => group.split(`>${name}</text>`).length - 1
+  const template = { district: 'อำเภอร้องกวาง', province: 'แพร่' }
+  const { svg, height } = draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO, officePhotoDataUrl: OFFICE, officeTemplate: template, logoDataUrl: LOGO })
+  const group = label(svg)
+  assert.ok(group, 'ต้องมีกลุ่ม data-office-label')
+  assert.ok(nameCount(group, 'เทศบาลตำบลสาธิต') >= 2, 'ชื่อ อปท. ทั้งผนังและป้าย')
+  assert.ok(group.includes('>อำเภอร้องกวาง จังหวัดแพร่</text>'), group)
+  assert.ok(!group.includes('อำเภออำเภอ') && !group.includes('จังหวัดจังหวัด'))
+  assert.ok(!svg.includes('น้ำเลา'))
+  assert.ok(group.includes('news-office-seal-clip') && svg.includes('<clipPath id="news-office-seal-clip">'), 'ตรา อปท. ในป้าย')
+  assert.ok(!/<filter|<mask/.test(group), 'ห้าม filter/mask')
+  assert.ok(height <= News.NEWS_MAX_HEIGHT)
+  // อัปโหลดเอง (officeTemplate null) = ใช้รูปตามไฟล์ ไม่วาดอะไรทับ
+  assert.ok(!draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO, officePhotoDataUrl: OFFICE, officeTemplate: null }).svg.includes('data-office-label'))
+  assert.ok(draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO, officePhotoDataUrl: OFFICE }).svg.includes('data-office-photo="1"'))
+  // ไม่มีโลโก้ = ไม่วาดตรา
+  assert.ok(!label(draw(base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO, officePhotoDataUrl: OFFICE, officeTemplate: template }).svg).includes('<circle'))
+  // คำนำหน้า: อ./จ./เขต · มีตัวเดียว = วาดตัวเดียว · ว่างทั้งคู่ = ไม่วาดบรรทัด
+  assert.equal(News.officeAddressLine('อ.เมืองแพร่', 'จ.แพร่'), 'อำเภอเมืองแพร่ จังหวัดแพร่')
+  assert.equal(News.officeAddressLine('เขตบางรัก', 'กรุงเทพมหานคร'), 'เขตบางรัก จังหวัดกรุงเทพมหานคร')
+  assert.equal(News.officeAddressLine('เมืองแพร่', ''), 'อำเภอเมืองแพร่')
+  assert.equal(News.officeAddressLine(null, 'จังหวัดแพร่'), 'จังหวัดแพร่')
+  assert.equal(News.officeAddressLine('', undefined), '')
+  assert.ok(!News.officeTemplateLabels('เทศบาลตำบลสาธิต', {}, measure).some(item => item.key === 'sign-address'))
+  // ชื่อยาวมาก: ทุกข้อความกว้างไม่เกินความกว้างสูงสุด (ลดขนาดจนพอดี หรือบีบด้วย textLength) · บรรทัดเดียว · ภาพไม่เกิน A4
+  const LONG = 'องค์การบริหารส่วนตำบลแม่ยางฮ่อพัฒนาเมืองอัจฉริยะ'
+  const labels = News.officeTemplateLabels(LONG, { district: 'ร้องกวาง', province: 'แพร่' }, measure)
+  assert.equal(labels.length, 4)
+  for (const item of labels) {
+    const width = item.squeeze ? item.maxWidth : measure(item.text, item.size, item.bold)
+    assert.ok(width <= item.maxWidth + 1e-9, `${item.key}: ${width} > ${item.maxWidth}`)
+    assert.ok(item.size >= 6 && item.size <= 17, item.key)
+  }
+  const longDraw = draw(base({ tenantName: LONG, executive: MAYOR }), { executivePhotoDataUrl: PHOTO, officePhotoDataUrl: OFFICE, officeTemplate: template })
+  assert.ok(longDraw.height <= 1527, String(longDraw.height))
+  assert.ok(/textLength="112" lengthAdjust="spacingAndGlyphs"/.test(label(longDraw.svg)), 'ชื่อยาวสุดต้องบีบด้วย textLength')
+  // ชื่อสั้น: ไม่ลดขนาด ไม่บีบ
+  assert.ok(News.officeTemplateLabels('ทต.สาธิต', template, measure).every(item => !item.squeeze))
+  // ชื่อแปลกมี < & " ถูก escape
+  assert.ok(!label(draw(base({ tenantName: 'A<b>&"x' }), { officePhotoDataUrl: OFFICE, officeTemplate: template }).svg).includes('<b>'))
+  // ต่อสายหน้าจอ: แม่แบบมาจาก ?url (ไม่เข้าบันเดิลหลัก) และไฟล์ 302×342 อยู่ในโครงการ
+  const data = await readFile(new URL('../src/components/complaints/newsDialogData.js', import.meta.url), 'utf8')
+  assert.match(data, /from '\.\.\/\.\.\/assets\/news\/office-template\.jpg\?url'/)
+  const jpg = await readFile(new URL('../src/assets/news/office-template.jpg', import.meta.url))
+  let offset = 2
+  let size = null
+  while (offset < jpg.length) {
+    const marker = jpg[offset + 1]
+    if (marker >= 0xc0 && marker <= 0xc3) { size = [jpg.readUInt16BE(offset + 7), jpg.readUInt16BE(offset + 5)]; break }
+    offset += 2 + jpg.readUInt16BE(offset + 2)
+  }
+  assert.deepEqual(size, [News.OFFICE_TEMPLATE.width, News.OFFICE_TEMPLATE.height])
+})
+
 console.log(`\n${cases} cases passed`)
