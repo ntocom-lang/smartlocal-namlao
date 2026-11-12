@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase, supabaseUrl } from '../../lib/supabase'
 import { fetchImageAsDataUrl } from '../../lib/driveStorage'
 import { loadNewsFont } from '../../lib/newsFont'
+import officeTemplateUrl from '../../assets/news/office-template.jpg?url'
 import { departmentColorKeyByName, newsThemeFor } from '../../lib/departmentColors'
-import { NEWS_EXEC_PHOTO_SIDE, cutoutPlainBackground, execRimPlan, svgToPngFile, transparentPhotoBox, withNewsPhotoUrl } from '../../lib/complaintNewsImage'
+import { NEWS_EXEC_PHOTO_SIDE, cutoutPlainBackground, execRimPlan, officeFadePlan, svgToPngFile, transparentPhotoBox, withNewsPhotoUrl } from '../../lib/complaintNewsImage'
 
 // ตัวโหลดรูป + hook ที่กล่องภาพข่าวรายเรื่อง (ComplaintNewsDialog) กับกล่องภาพข่าวรวม (ComplaintNewsBatchDialog) ใช้ร่วมกัน
 // แยกจากไฟล์คอมโพเนนต์ (newsDialogParts.jsx) เพราะ fast-refresh ต้องการให้ไฟล์คอมโพเนนต์ export แต่คอมโพเนนต์
@@ -141,6 +142,66 @@ export async function prepareExecutivePhoto(dataUrl) {
   }
 }
 
+// ด้านยาวสูงสุดของรูปอาคารที่ใช้ในภาพข่าว — แถบหัวกว้าง 1080 วางอาคารไม่เกินครึ่งแถบ 1200 พอคมแล้ว
+const OFFICE_SIDE = 1200
+
+/**
+ * รูปอาคารสำนักงานสำหรับแถบหัวภาพข่าว (ผู้อัปโหลด = แอดมิน อปท. ที่ตั้งค่าระบบ แท็บแบรนด์):
+ *  - มีพื้นโปร่งใสมาเอง (PNG/WebP ตัดพื้นมาแล้ว) → ใช้ตามไฟล์ แค่ครอปชิดส่วนที่มองเห็น ไม่ทำขอบจางซ้ำ
+ *  - รูปถ่ายทึบ → ทำขอบซ้าย/ขวา/บนจางให้กลืนพื้นแถบหัว ล่างคมเพราะรูปชิดก้นแถบ (ความกว้างจาก officeFadePlan)
+ *    ใช้ canvas 2D destination-in + linearGradient สองรอบ — ไม่ใช้ ctx.filter / SVG mask (Safari วาดไม่ตรง Chrome)
+ * ทำในเบราว์เซอร์ล้วน · พังกลางทาง = ใช้รูปเดิม ภาพข่าวยังออกได้
+ * @param {string} dataUrl
+ */
+export async function prepareOfficePhoto(dataUrl) {
+  try {
+    const image = new Image()
+    await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = dataUrl })
+    const scale = Math.min(1, OFFICE_SIDE / Math.max(image.naturalWidth, image.naturalHeight))
+    const w = Math.max(1, Math.round(image.naturalWidth * scale))
+    const h = Math.max(1, Math.round(image.naturalHeight * scale))
+    const work = document.createElement('canvas')
+    work.width = w
+    work.height = h
+    const context = work.getContext('2d', { willReadFrequently: true })
+    if (!context) return dataUrl
+    context.drawImage(image, 0, 0, w, h)
+    const box = transparentPhotoBox(context.getImageData(0, 0, w, h).data, w, h)
+    const out = document.createElement('canvas')
+    const outContext = out.getContext('2d')
+    if (!outContext) return dataUrl
+    if (box) {
+      out.width = box.w
+      out.height = box.h
+      outContext.drawImage(work, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h)
+      return out.toDataURL('image/png')
+    }
+    const plan = officeFadePlan(w, h)
+    if (!plan) return dataUrl
+    out.width = w
+    out.height = h
+    outContext.drawImage(work, 0, 0)
+    // destination-in: เก็บเฉพาะส่วนที่ "ตัวไล่สี" ทึบ — รอบแรกจางซ้าย/ขวา รอบสองจางบน (ล่างทึบเต็ม)
+    outContext.globalCompositeOperation = 'destination-in'
+    const horizontal = outContext.createLinearGradient(0, 0, w, 0)
+    horizontal.addColorStop(0, 'rgba(0,0,0,0)')
+    horizontal.addColorStop(plan.side / w, 'rgba(0,0,0,1)')
+    horizontal.addColorStop(1 - plan.side / w, 'rgba(0,0,0,1)')
+    horizontal.addColorStop(1, 'rgba(0,0,0,0)')
+    outContext.fillStyle = horizontal
+    outContext.fillRect(0, 0, w, h)
+    const vertical = outContext.createLinearGradient(0, 0, 0, h)
+    vertical.addColorStop(0, 'rgba(0,0,0,0)')
+    vertical.addColorStop(plan.top / h, 'rgba(0,0,0,1)')
+    vertical.addColorStop(1, 'rgba(0,0,0,1)')
+    outContext.fillStyle = vertical
+    outContext.fillRect(0, 0, w, h)
+    return out.toDataURL('image/png')
+  } catch {
+    return dataUrl
+  }
+}
+
 export async function loadImage(ref) {
   const result = await fetchImageAsDataUrl(ref)
   if (result.error || !result.dataUrl) return { dataUrl: null }
@@ -151,6 +212,19 @@ export async function loadImage(ref) {
 export const SHOWABLE_CODES = new Set(['42501', '22023', 'P0002'])
 export const GENERIC_ERROR = 'โหลดข้อมูลเรื่องไม่สำเร็จ ลองใหม่อีกครั้ง'
 
+// รูปอาคารแม่แบบ (ไฟล์อยู่ใน lazy chunk ของภาพข่าว ผ่าน ?url — same-origin) · โหลด+ทำขอบจางครั้งเดียวแล้วแคชไว้ใช้ทุกกล่อง
+// ขนาดรูปคงเดิม 302×342 (ทึบ ไม่มีพื้นโปร่งใส จึงไม่โดนครอป) พิกัดชื่อใน OFFICE_TEMPLATE จึงยังตรง · โหลดไม่ได้ = null (ไม่แคชความล้มเหลว)
+let officeTemplatePending = null
+function loadOfficeTemplate() {
+  if (!officeTemplatePending) {
+    officeTemplatePending = fetchImageAsDataUrl(officeTemplateUrl)
+      .then(result => (result.dataUrl ? prepareOfficePhoto(result.dataUrl) : null))
+      .then(url => { if (!url) officeTemplatePending = null; return url })
+      .catch(() => { officeTemplatePending = null; return null })
+  }
+  return officeTemplatePending
+}
+
 /**
  * โลโก้ อปท. + ชื่อ/ตำแหน่ง/รูปนายก (ผู้ลงนามช่องนายกคนปัจจุบัน ผ่าน RPC complaint_news_branding)
  * โหลดไม่ได้ = ไม่มีโลโก้/ไม่มีบล็อกนายก ไม่ทำให้กล่องพัง
@@ -159,6 +233,7 @@ export function useNewsBranding(tenant) {
   const [logo, setLogo] = useState(null)
   const [branding, setBranding] = useState(null)
   const [mayorPhoto, setMayorPhoto] = useState(null)
+  const [office, setOffice] = useState({ url: null, isTemplate: false })
 
   useEffect(() => {
     if (!tenant?.id) return undefined
@@ -188,7 +263,33 @@ export function useNewsBranding(tenant) {
     return () => { alive = false }
   }, [tenant?.logo_url])
 
-  return { logo, branding, mayorPhoto }
+  // รูปอาคารสำนักงาน (municipalities.office_photo_url) อ่านเอง ไม่ผ่าน TenantContext — ไม่อยู่ใน select ของ context โดยตั้งใจ
+  // (deploy หน้าเว็บก่อนรัน SQL แล้วทุกเว็บจะ 42501) · คอลัมน์ยังไม่มี/อ่านไม่ได้/ไม่ได้ตั้ง/โหลดรูปของเขาไม่ได้ = ใช้รูปแม่แบบ
+  // (ภาพข่าววาดชื่อ อปท. ทับ) · ตัดสินหลัง query เสร็จเท่านั้น แม่แบบจึงไม่โผล่แวบก่อนรูปจริง
+  useEffect(() => {
+    if (!tenant?.id) return undefined
+    let alive = true
+    const resolve = async () => {
+      let url = null
+      try {
+        const { data, error } = await supabase.from('municipalities').select('office_photo_url').eq('id', tenant.id).maybeSingle()
+        if (error) console.error('office_photo_url load error:', error.message)
+        else if (data?.office_photo_url) {
+          const result = await loadImage(data.office_photo_url)
+          url = result.dataUrl ? await prepareOfficePhoto(result.dataUrl) : null
+        }
+      } catch (cause) {
+        console.error('office_photo_url load error:', cause?.message)
+      }
+      if (url) return { url, isTemplate: false }
+      const template = await loadOfficeTemplate()
+      return { url: template, isTemplate: !!template }
+    }
+    resolve().then(next => { if (alive) setOffice(next) })
+    return () => { alive = false }
+  }, [tenant?.id])
+
+  return { logo, branding, mayorPhoto, officePhoto: office.url, officeIsTemplate: office.isTemplate }
 }
 
 /**

@@ -101,7 +101,10 @@ function NewsDialogBody({ source, complaint: c, tenant, departmentName = '', cat
   const [picked, setPicked] = useState(() => new Set(workRefs.slice(0, MAX_NEWS_PHOTOS).map((_, i) => `w:${i}`)))
   const [loaded, setLoaded] = useState({})
   const [mayorEdit, setMayorEdit] = useState(null)
-  const { logo, branding, mayorPhoto } = useNewsBranding(tenant)
+  const { logo, branding, mayorPhoto, officePhoto, officeIsTemplate } = useNewsBranding(tenant)
+  // ที่อยู่บนป้ายรูปแม่แบบ — แยกเป็นค่าเดี่ยวไว้ใส่ dependency ของ useMemo
+  const officeDistrict = tenant?.district ?? null
+  const officeProvince = tenant?.province ?? null
   // สีธีมตามสีกอง (หาไม่เจอ = ส้ม) · staff: departmentName มาจาก complaint.department · exec: d.dept
   const theme = useDepartmentTheme(tenant?.id, departmentName)
 
@@ -163,11 +166,13 @@ function NewsDialogBody({ source, complaint: c, tenant, departmentName = '', cat
     const { font } = newsFont
     try {
       return buildNewsSvg(deferredModel, createCanvasMeasure(font ? newsFontStack(font.family) : undefined), {
-        font, logoDataUrl: logo, photoDataUrls, photoKinds, executivePhotoDataUrl: mayorOn ? mayorPhoto : null })
+        font, logoDataUrl: logo, photoDataUrls, photoKinds, executivePhotoDataUrl: mayorOn ? mayorPhoto : null, officePhotoDataUrl: officePhoto,
+        // รูปแม่แบบ = วาดชื่อ อปท./อำเภอ/จังหวัดทับ · รูปที่ อปท. อัปโหลดเอง = ไม่วาดทับ
+        officeTemplate: officeIsTemplate ? { district: officeDistrict, province: officeProvince } : null })
     } catch {
       return null
     }
-  }, [newsFont, deferredModel, logo, photoDataUrls, photoKinds, mayorOn, mayorPhoto])
+  }, [newsFont, deferredModel, logo, photoDataUrls, photoKinds, mayorOn, mayorPhoto, officePhoto, officeIsTemplate, officeDistrict, officeProvince])
   const fileName = `news-${String(c.ref_no ?? c.id).replace(/[^A-Za-z0-9_-]+/g, '-')}.png`
   const png = usePreparedPng(image, fileName)
 

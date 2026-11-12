@@ -36,7 +36,10 @@ export default function ComplaintNewsBatchDialog({ source = 'staff', candidates,
   const tenantName = tenant?.name ?? ''
   const reportUrl = useMemo(() => appUrl('/complaint'), [])
   const groups = useMemo(() => groupNewsCandidates(candidates), [candidates])
-  const { logo, branding, mayorPhoto } = useNewsBranding(tenant)
+  const { logo, branding, mayorPhoto, officePhoto, officeIsTemplate } = useNewsBranding(tenant)
+  // ที่อยู่บนป้ายรูปแม่แบบ — แยกเป็นค่าเดี่ยวไว้ใส่ dependency ของ useMemo
+  const officeDistrict = tenant?.district ?? null
+  const officeProvince = tenant?.province ?? null
 
   const firstGroup = groups[0] ?? null
   const [groupKey, setGroupKey] = useState(() => firstGroup?.key ?? null)
@@ -174,13 +177,15 @@ export default function ComplaintNewsBatchDialog({ source = 'staff', candidates,
       return buildNewsSvg(deferredModel, createCanvasMeasure(font ? newsFontStack(font.family) : undefined), {
         font,
         // ภาพรวมใช้เฉพาะรูปหลังดำเนินการ (ไม่มีรูปจากผู้แจ้ง) ทุกช่องจึงเป็น 'after'
-        logoDataUrl: logo, photoDataUrls, photoCaptions, photoKinds: photoDataUrls.map(() => 'after'), moreText, executivePhotoDataUrl: mayorOn ? mayorPhoto : null,
+        logoDataUrl: logo, photoDataUrls, photoCaptions, photoKinds: photoDataUrls.map(() => 'after'), moreText, executivePhotoDataUrl: mayorOn ? mayorPhoto : null, officePhotoDataUrl: officePhoto,
+        // รูปแม่แบบ = วาดชื่อ อปท./อำเภอ/จังหวัดทับ · รูปที่ อปท. อัปโหลดเอง = ไม่วาดทับ
+        officeTemplate: officeIsTemplate ? { district: officeDistrict, province: officeProvince } : null,
       })
     } catch {
       return null
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newsFont, deferredModel, logo, photosKey, captionsKey, moreText, mayorOn, mayorPhoto])
+  }, [newsFont, deferredModel, logo, photosKey, captionsKey, moreText, mayorOn, mayorPhoto, officePhoto, officeIsTemplate, officeDistrict, officeProvince])
   const png = usePreparedPng(image, `news-batch-${group?.day ?? 'x'}-${pickedItems.length}.png`)
 
   function toggleItem(target, itemGroup) {
