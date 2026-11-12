@@ -131,7 +131,13 @@ await test('ภาพรวม: ป้ายหมู่ใต้รูปคร
   for (const phrase of ['หมู่ 3', 'หมู่ 5', 'หมู่ 7', 'หมู่ 9', 'และอีก 1 จุด (หมู่ 11)']) assert.ok(has(withCaps.svg, phrase), phrase)
   assert.equal(withCaps.photoCount, 4)
   const without = News.buildNewsSvg(model, measure, { photoDataUrls: photos })
-  assert.ok(withCaps.height > without.height, 'ป้ายใต้รูปต้องเพิ่มความสูง')
+  // ป้ายใต้รูปต้องมีที่ของตัวเอง: ภาพไม่เตี้ยลง และบรรทัดป้ายอยู่ใต้ขอบล่างรูป (ไม่ทับรูป)
+  // ภาพข่าวมีเพดาน A4 (1527) จึงอาจสูงเท่ากันได้ — ระบบย่อรูปลงแทนการต่อความสูงภาพ
+  assert.ok(withCaps.height >= without.height, 'ป้ายใต้รูปต้องไม่ทำให้ภาพเตี้ยลง')
+  assert.ok(withCaps.fitsA4 && without.fitsA4)
+  const cell = /<clipPath id="news-photo-0"><rect x="[\d.]+" y="([\d.]+)" width="[\d.]+" height="([\d.]+)"/.exec(withCaps.svg)
+  const captionY = Number(/<text x="[\d.]+" y="([\d.]+)"[^>]*text-anchor="middle">หมู่ 3<\/text>/.exec(withCaps.svg)[1])
+  assert.ok(captionY > Number(cell[1]) + Number(cell[2]) + 20, `ป้ายต้องอยู่ใต้รูป: ${captionY} vs ${Number(cell[1]) + Number(cell[2])}`)
   // ส่ง captions ว่าง/moreText ว่าง = ไม่ต่างจากไม่ส่ง
   const emptyOpts = News.buildNewsSvg(model, measure, { photoDataUrls: photos, photoCaptions: ['', '', '', ''], moreText: '' })
   assert.equal(emptyOpts.svg, without.svg)
