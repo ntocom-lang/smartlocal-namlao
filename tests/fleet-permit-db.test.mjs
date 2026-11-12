@@ -133,6 +133,9 @@ if (WITH_P2) {
 if (WITH_P3) {
   await db.exec(positionCarColumnsSql)
   await db.exec(positionCarFunctionsSql)
+  // รันซ้ำได้: ด่าน md5 รับรุ่นที่ไฟล์นี้ลงไปแล้ว (h_after) — แก้เนื้อฟังก์ชันแล้วลืมคำนวณใหม่ = ล้มตรงนี้
+  await db.exec(positionCarColumnsSql)
+  await db.exec(positionCarFunctionsSql)
 }
 
 const users = {

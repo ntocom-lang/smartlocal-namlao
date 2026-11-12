@@ -52,15 +52,17 @@ BEGIN
 
   -- ฟังก์ชันที่จะเขียนทับต้องเป็นรุ่นที่ไฟล์นี้ตั้งต้น ตรงตัว — เทียบเนื้อหลังยุบช่องว่าง (CRLF/LF ให้ผลเท่ากัน)
   --   approver ← P2 20261122100000 (รันบนฐานจริงแล้ว 2026-11-12) · state/record ← P1 20261121100100 (#705) · esign_my_pending ← 20261101120100_esign_trip_return_functions.sql
+  --   รับรุ่นที่ไฟล์นี้ลงไปแล้วด้วย (h_after) ⇒ รันซ้ำได้ ไม่หยุดด้วยข้อความชวนไล่สาเหตุผิดทาง (แบบเดียวกับ P2)
+  --   ⚠️ แก้เนื้อฟังก์ชันส่วน 2/3/4/9 ของไฟล์นี้เมื่อไร ต้องคำนวณ h_after ใหม่ (เทสต์ DB รันไฟล์นี้ 2 รอบ จะล้มเตือนเอง)
   SELECT string_agg(e.sig, ', ') INTO v_drift
   FROM (VALUES
-    ('public.fleet_trip_permit_approver(public.fleet_trips,date)', '39b6fd97fb82862424ce75e11a0dfc32'),
-    ('public.fleet_trip_permit_state(public.fleet_trips)', '7591cf1077d33317943d4b4a3d10e755'),
-    ('public.fleet_record_paper_permit(uuid,text,date)', 'a9fe21a5c5e15cb01e95d7cf7593a98b'),
-    ('public.esign_my_pending()', 'e2710133845c2045a4278f7b1b38b7d4')
-  ) AS e(sig, h)
+    ('public.fleet_trip_permit_approver(public.fleet_trips,date)', '39b6fd97fb82862424ce75e11a0dfc32', '24f0b0033779bedbcc7df1a6100b04d0'),
+    ('public.fleet_trip_permit_state(public.fleet_trips)', '7591cf1077d33317943d4b4a3d10e755', '20496a88581b377c16b9e939577561b5'),
+    ('public.fleet_record_paper_permit(uuid,text,date)', 'a9fe21a5c5e15cb01e95d7cf7593a98b', 'b080a01bfd7bacddb1330714e75d1e8c'),
+    ('public.esign_my_pending()', 'e2710133845c2045a4278f7b1b38b7d4', '97f326547e601ebcd73a7081ac86392f')
+  ) AS e(sig, h_before, h_after)
   LEFT JOIN pg_proc p ON p.oid = to_regprocedure(e.sig)
-  WHERE p.oid IS NULL OR md5(regexp_replace(p.prosrc, '\s+', ' ', 'g')) <> e.h;
+  WHERE p.oid IS NULL OR md5(regexp_replace(p.prosrc, '\s+', ' ', 'g')) NOT IN (e.h_before, e.h_after);
   IF v_drift IS NOT NULL THEN
     RAISE EXCEPTION 'ฟังก์ชันบนฐานไม่ใช่รุ่นที่ไฟล์นี้ตั้งต้น: % — หยุดหาสาเหตุก่อน ห้ามเขียนทับ (NOTES ข้อ 5)', v_drift;
   END IF;
