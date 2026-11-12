@@ -27,11 +27,14 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   'fleet_vehicle_repair_finished',
   'fleet_maintenance_created',
   'fleet_incident_reported',
+  // โหมดบังคับอนุญาต (ข้อ ๑๒) — "ได้รับอนุญาตแล้ว ออกรถได้" Edge ตรวจสถานะจริงก่อนส่ง (ใบ queue ถูกข้าม)
+  'fleet_trip_authorized',
   // Telegram ส่วนตัวของผู้รับมอบหมาย — ผู้รับหาจากฐานข้อมูลฝั่ง Edge Function (ข้อ 3b ส่วนที่ 2)
   'complaint_assigned_dm',
   'event_assigned_dm',
   'esign_turn_dm',
   'esign_returned_dm',
+  'fleet_trip_authorized_dm',
 ])
 
 /**

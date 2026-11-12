@@ -241,6 +241,9 @@ export function esignPendingRow(item) {
       destination: item.destination,
       purpose: item.purpose,
       plannedDeparture: item.planned_departure,
+      // ข้อ ๑๒ ว.๕ ผู้มีรถประจำตำแหน่ง — ผู้อนุญาตต้องเห็นเหตุผลก่อนลงนาม (ฐานที่ยังไม่มีคีย์นี้ = null ไม่แสดง)
+      positionCarReason: item.position_car_reason || null,
+      positionCarRequired: item.position_car_required === true,
     },
   }
 }

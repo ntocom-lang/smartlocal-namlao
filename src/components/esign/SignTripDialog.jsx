@@ -182,6 +182,8 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, canRe
     ['รถ', summary?.vehicleName],
     ['ปลายทาง', summary?.destination],
     ['วัตถุประสงค์', summary?.purpose],
+    // ข้อ ๑๒ ว.๕ — มีเฉพาะคำขอของผู้มีรถประจำตำแหน่ง
+    ['เหตุผลความจำเป็น (ผู้มีรถประจำตำแหน่ง)', summary?.positionCarReason],
     ['วันเดินทาง', summary?.plannedDeparture ? thaiDateTimeText(summary.plannedDeparture) : null],
   ].filter(([, value]) => value)
 
@@ -209,6 +211,13 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, canRe
             ))}
           </dl>
           <ReturnNote item={lastReturn} />
+          {/* ข้อ ๑๒ ว.๕ — ผู้ขอมีรถประจำตำแหน่งแต่ยังไม่กรอกเหตุผล: ลงนามตอนนี้ระบบไม่นับเป็นการอนุญาต และเหตุผลจะถูกล็อก */}
+          {!returning && summary?.positionCarRequired && !summary?.positionCarReason && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800" data-sign-position-car>
+              ⚠️ ผู้ขอมีรถประจำตำแหน่ง แต่ยังไม่ได้กรอกเหตุผลความจำเป็น — ลงนามตอนนี้ระบบจะไม่นับเป็นการอนุญาต
+              ควรส่งคืนให้ผู้ขอกรอกเหตุผลก่อน
+            </p>
+          )}
           {!returning && (
             <p className="text-xs leading-5 text-gray-500">
               ลงนามด้วยบัญชีและรหัสของคุณเท่านั้น ห้ามลงนามแทนผู้อื่น · ลายเซ็นผูกกับเนื้อหาข้างต้น ถ้าคำขอถูกแก้ภายหลังต้องถอนลายเซ็นแล้วลงนามใหม่

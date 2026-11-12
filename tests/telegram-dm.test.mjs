@@ -321,6 +321,42 @@ for (const type of ['esign_turn_dm', 'esign_returned_dm']) {
   const muted = LINKS.map((link) => (link.user_id === TECH ? { ...link, dm_muted: ['esign'] } : link))
   assert.equal((await body(await sendDirectMessages(fakeDb({ links: muted, profiles: PROFILES, returned: { return_id: RETURN_ID, label: 'x', user_id: TECH } }), 'esign_returned_dm', 'esign', trip, CLERK))).reason, 'not_linked')
 }
+// ── ได้รับอนุญาตแล้ว ออกรถได้ (โหมดบังคับอนุญาต): ผู้ขอ + ผู้ขับ · คีย์ผูกกับการอนุญาตครั้งนั้น · ไม่มีเหตุผล ว.๕ ──────────
+{
+  reset()
+  const KEY1 = uid(320)
+  const authTrip = {
+    ...trip, requested_by: TECH, created_by: ADMIN, driver_id: CLERK,
+    position_car_reason: 'เหตุผลลับที่ห้ามหลุด',
+    authorized_notice: { key: KEY1, via: 'paper', signer_name: 'นายสมศักดิ์ <b>', signer_title: 'นายก' },
+  }
+  const db = fakeDb({ links: LINKS, profiles: PROFILES })
+  const res = await body(await sendDirectMessages(db, 'fleet_trip_authorized_dm', 'esign', authTrip, ADMIN))
+  assert.equal(res.sent, 2, 'ผู้ขอและผู้ขับได้รับ')
+  assert.match(sent[0].text, /ได้รับอนุญาตแล้ว ออกรถได้/)
+  assert.match(sent[0].text, /ช่องทาง: ใบกระดาษ/)
+  assert.match(sent[0].text, /นายสมศักดิ์ &lt;b&gt;/, 'ชื่อผู้อนุญาตต้อง escape')
+  for (const item of sent) assert.ok(!item.text.includes('เหตุผลลับ'), 'ห้ามส่งเหตุผล ว.๕ ทาง Telegram')
+  assert.deepEqual(db.state.deliveries.map((d) => d.idempotency_key).sort(), [
+    `fleet_trip_authorized_dm:${trip.id}:${KEY1}:${CLERK}`,
+    `fleet_trip_authorized_dm:${trip.id}:${KEY1}:${TECH}`,
+  ].sort())
+  assert.equal((await body(await sendDirectMessages(db, 'fleet_trip_authorized_dm', 'esign', authTrip, ADMIN))).duplicate, 2, 'การอนุญาตครั้งเดิมไม่แจ้งซ้ำ')
+  // ยกเลิกแล้วอนุญาตใหม่ = key ใหม่ ส่งได้อีก
+  const again = { ...authTrip, authorized_notice: { ...authTrip.authorized_notice, key: uid(321) } }
+  assert.equal((await body(await sendDirectMessages(db, 'fleet_trip_authorized_dm', 'esign', again, ADMIN))).sent, 2)
+  // ผู้ขอเป็นคนขับเอง = ได้ครั้งเดียว · คนกด (ผู้บันทึก) ไม่แจ้งตัวเอง
+  reset()
+  const self = { ...authTrip, driver_id: TECH }
+  assert.equal((await body(await sendDirectMessages(fakeDb({ links: LINKS, profiles: PROFILES }), 'fleet_trip_authorized_dm', 'esign', self, ADMIN))).sent, 1)
+  assert.equal((await body(await sendDirectMessages(fakeDb({ links: LINKS, profiles: PROFILES }), 'fleet_trip_authorized_dm', 'esign', self, TECH))).reason, 'no_recipient')
+}
+for (const type of ['fleet_trip_authorized', 'fleet_trip_authorized_dm']) {
+  for (const status of ['pending', 'waitlisted', 'approved']) assert.equal(notificationMatchesResource(type, { status }), true, `${type} ${status}`)
+  for (const status of ['in_progress', 'completed', 'rejected', 'cancelled']) assert.equal(notificationMatchesResource(type, { status }), false, `${type} ${status}`)
+}
+assert.equal(DM_CATEGORY.fleet_trip_authorized_dm, 'esign', 'ใช้หมวดใบขอใช้รถเดิม ไม่เพิ่มหมวดใหม่ (หมวดอยู่ใน CHECK ของ DB)')
+
 assert.equal(notificationMatchesResource('complaint_assigned_dm', { assigned_to: null }), false)
 assert.equal(notificationMatchesResource('complaint_assigned_dm', { assigned_to: TECH }), true)
 
@@ -364,7 +400,11 @@ assert.equal(notificationMatchesResource('complaint_assigned_dm', { assigned_to:
   const complaints = read('src/components/admin/ComplaintsManager.jsx')
   assert.match(complaints, /if \(!error\) \{\n\s+\/\/[^\n]*\n\s+if \(technicianId\) notifyTelegram\('complaint_assigned_dm', complaintId\)/)
   assert.match(read('src/lib/eventAssignmentApi.js'), /if \(!result\.error && people\.length\) notifyTelegram\('event_assigned_dm', eventId\)/)
-  assert.match(read('src/lib/esignApi.js'), /if \(result\?\.ok\) notifyTelegram\('esign_turn_dm', tripId\)/)
+  const esignApi = read('src/lib/esignApi.js')
+  assert.match(esignApi, /if \(result\?\.ok\) \{\s*notifyTelegram\('esign_turn_dm', tripId\)/)
+  // "ออกรถได้แล้ว" ยิงเฉพาะช่องที่ทำให้อนุญาตได้ (ผู้มีอำนาจ / สก.๑) — edge ตรวจสถานะจริงอีกชั้น
+  assert.match(esignApi, /if \(slot === 'authority' \|\| slot === 'sk1'\) \{\s*notifyTelegram\('fleet_trip_authorized', tripId\)\s*notifyTelegram\('fleet_trip_authorized_dm', tripId\)/)
+  assert.match(read('src/lib/fleetPermitApi.js'), /if \(result\?\.ok\) \{\s*notifyTelegram\('fleet_trip_authorized', tripId\)\s*notifyTelegram\('fleet_trip_authorized_dm', tripId\)/)
   assert.match(read('src/components/fleet/FleetTrips.jsx'), /if \(!isEdit && saved\?\.esign_slots\) notifyTelegram\('esign_turn_dm', saved\.id\)/)
 }
 

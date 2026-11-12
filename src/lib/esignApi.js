@@ -98,7 +98,14 @@ export const signFleetTrip = async ({ tripId, slot, pin, decision = null, imageI
     p_image_id: imageId,
     p_png_base64: null,
   })
-  if (result?.ok) notifyTelegram('esign_turn_dm', tripId)
+  if (result?.ok) {
+    notifyTelegram('esign_turn_dm', tripId)
+    // ช่องผู้มีอำนาจ / สก.๑ = อาจทำให้ใบโหมดบังคับอนุญาต "ออกรถได้แล้ว" — Edge ตรวจสถานะจริงเอง (ใบ queue/ยังไม่ครบถูกข้าม)
+    if (slot === 'authority' || slot === 'sk1') {
+      notifyTelegram('fleet_trip_authorized', tripId)
+      notifyTelegram('fleet_trip_authorized_dm', tripId)
+    }
+  }
   return result
 }
 

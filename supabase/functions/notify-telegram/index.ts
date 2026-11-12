@@ -48,6 +48,10 @@ const notificationSpecs = {
   event_assigned_dm: { table: 'events', resourceType: 'event', access: 'staff' },
   esign_turn_dm: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
   esign_returned_dm: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
+  // โหมดบังคับอนุญาต (ระเบียบ มท. ยานพาหนะ อปท. 2569 ข้อ 12) — "ได้รับอนุญาตแล้ว ออกรถได้"
+  // กลุ่ม + ส่วนตัวถึงผู้ขอ/ผู้ขับ (เจ้าของระบบเลือก 2026-11-12) · ตรวจสถานะจริงด้วย fleet_trip_authorized_notice ก่อนส่งเสมอ
+  fleet_trip_authorized: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
+  fleet_trip_authorized_dm: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
 } as const
 
 type NotificationType = keyof typeof notificationSpecs
@@ -60,6 +64,8 @@ const DM_CATEGORY: Partial<Record<NotificationType, DmCategory>> = {
   event_assigned_dm: 'event',
   esign_turn_dm: 'esign',
   esign_returned_dm: 'esign',
+  // ไม่เพิ่มหมวดใหม่ (หมวดอยู่ใน CHECK ของ telegram_user_links) — ใช้หมวดใบขอใช้รถเดิม ป้ายใน telegramLink.js บอกแล้ว
+  fleet_trip_authorized_dm: 'esign',
 }
 
 type DeliveryRow = {
@@ -838,6 +844,66 @@ function buildFleetFuelCreatedMessage(record: Record<string, unknown>) {
   ])
 }
 
+// ── "ได้รับอนุญาตแล้ว ออกรถได้" (โหมดบังคับอนุญาต) ─────────────────────────────────────────────
+// สถานะการอนุญาตคำนวณใน DB (fleet_trip_permit_state) — edge ถามผ่าน RPC service_role เท่านั้น ไม่เชื่อ client
+// ไม่ใส่เหตุผลความจำเป็นของผู้มีรถประจำตำแหน่ง (ข้อความพิมพ์เอง อาจมีข้อมูลส่วนบุคคล) ผู้เกี่ยวข้องเปิดดูในระบบ
+const AUTHORIZED_TRIP_STATUSES = new Set(['pending', 'waitlisted', 'approved'])
+
+type AuthorizedNotice = {
+  via?: string
+  signer_name?: string
+  signer_title?: string
+  key?: string
+}
+
+function authorizedNoticeKey(trip: Record<string, unknown>) {
+  const notice = trip.authorized_notice as AuthorizedNotice | undefined
+  return cleanText(notice?.key, 40)
+}
+
+// → notice เมื่อพร้อมแจ้ง · null = ไม่ต้องแจ้ง (ใบ queue / ยังไม่ได้รับอนุญาต / ออกรถแล้ว / ฐานยังไม่มีฟังก์ชัน)
+async function loadAuthorizedNotice(admin: ReturnType<typeof createClient>, tripId: unknown) {
+  const { data, error } = await admin.rpc('fleet_trip_authorized_notice', { p_trip_id: tripId })
+  if (error) {
+    console.error('fleet_trip_authorized_notice failed:', error.message)
+    return null
+  }
+  const notice = data as Record<string, unknown> | null
+  if (!notice || notice.found !== true || notice.permit_mode !== 'regulation' || notice.state !== 'authorized') return null
+  if (!AUTHORIZED_TRIP_STATUSES.has(String(notice.status)) || !isUuid(notice.key)) return null
+  return notice as AuthorizedNotice
+}
+
+function authorizedByLines(trip: Record<string, unknown>) {
+  const notice = trip.authorized_notice as AuthorizedNotice | undefined
+  const name = cleanText(notice?.signer_name, 100)
+  const title = cleanText(notice?.signer_title, 120)
+  const via = notice?.via === 'paper' ? 'ใบกระดาษ' : notice?.via === 'esign' ? 'ลงนามออนไลน์' : ''
+  return [
+    name ? `ผู้อนุญาต: ${escapeHtml(name, 100)}${title ? ` (${escapeHtml(title, 120)})` : ''}` : '',
+    via ? `ช่องทาง: ${via}` : '',
+  ]
+}
+
+function buildFleetTripAuthorizedMessage(trip: Record<string, unknown>) {
+  return framedMessage(trip, '🟢', 'ได้รับอนุญาตแล้ว ออกรถได้', [
+    ...tripSummaryLines(trip),
+    ...authorizedByLines(trip),
+    tripRef(trip),
+  ])
+}
+
+// ส่วนตัวถึงผู้ขอ/ผู้ขับ: แนวเดียวกับ buildEsignTurnDm (ไม่ใส่ปลายทางที่เป็นช่องพิมพ์อิสระ)
+function buildFleetTripAuthorizedDm(trip: Record<string, unknown>) {
+  const departure = formatThaiDateTime(trip.planned_departure)
+  return framedMessage(trip, '🟢', 'ใบขอใช้รถได้รับอนุญาตแล้ว ออกรถได้', [
+    `รถ: ${vehicleLabel(trip.vehicle as { name?: string; license_plate?: string } | null)}`,
+    departure ? `ออก: ${escapeHtml(departure, 60)}` : '',
+    ...authorizedByLines(trip),
+    tripRef(trip),
+  ])
+}
+
 // ชนิดที่สร้างข้อความจากแถวเดียวโดยไม่ต้องอ่านข้อมูลอื่นเพิ่ม
 const FLEET_MESSAGE_BUILDERS: Partial<Record<NotificationType, (resource: Record<string, unknown>) => string>> = {
   fleet_trip_created: buildFleetTripCreatedMessage,
@@ -850,6 +916,7 @@ const FLEET_MESSAGE_BUILDERS: Partial<Record<NotificationType, (resource: Record
   fleet_vehicle_repair_finished: buildFleetVehicleRepairMessage,
   fleet_maintenance_created: buildFleetMaintenanceCreatedMessage,
   fleet_incident_reported: buildFleetIncidentReportedMessage,
+  fleet_trip_authorized: buildFleetTripAuthorizedMessage,
 }
 
 function isRecent(createdAt: unknown, minutes = 15) {
@@ -908,6 +975,8 @@ function idempotencyKey(type: NotificationType, resource: Record<string, unknown
   if (type === 'fleet_vehicle_repair_started' || type === 'fleet_vehicle_repair_finished') {
     return `${base}:${cleanText(resource.updated_at, 40)}`
   }
+  // ผูกกับลายเซ็น/บันทึกใบกระดาษที่ทำให้อนุญาต — ยกเลิกแล้วอนุญาตใหม่ = แจ้งรอบใหม่ได้
+  if (type === 'fleet_trip_authorized') return `${base}:${authorizedNoticeKey(resource)}`
   return base
 }
 
@@ -939,6 +1008,10 @@ function notificationMatchesResource(type: NotificationType, resource: Record<st
   // สถานะชุดเดียวกับ esign_trip_turns() — ใบที่ถูกปฏิเสธ/ยกเลิกไม่มีคิวลงนาม · รถกลับแล้วยังตามลงนามได้
   if (type === 'esign_turn_dm' || type === 'esign_returned_dm') {
     return ['pending', 'waitlisted', 'approved', 'in_progress', 'completed'].includes(String(resource.status))
+  }
+  // ด่านแรกจากแถว (ออกรถแล้ว/ยกเลิก = ไม่ต้องบอกว่าออกได้) · ด่านจริงคือ loadAuthorizedNotice ในตัวจัดการหลัก
+  if (type === 'fleet_trip_authorized' || type === 'fleet_trip_authorized_dm') {
+    return AUTHORIZED_TRIP_STATUSES.has(String(resource.status))
   }
   return true
 }
@@ -1117,6 +1190,12 @@ async function dmRecipients(
         message: buildEventAssignedDm(resource, row.task),
       }))
   }
+  // ผู้ขอ (requested_by ถ้าว่างใช้ created_by) + ผู้ขับ — ไม่ซ้ำ · คีย์ผูกกับการอนุญาตครั้งนั้น (ยกเลิกแล้วอนุญาตใหม่ = ส่งได้อีก)
+  if (type === 'fleet_trip_authorized_dm') {
+    const key = authorizedNoticeKey(resource)
+    const ids = [...new Set([resource.requested_by ?? resource.created_by, resource.driver_id].filter(isUuid).map(String))]
+    return ids.map((userId) => ({ userId, key: `${type}:${resource.id}:${key}:${userId}`, message: buildFleetTripAuthorizedDm(resource) }))
+  }
   if (type === 'esign_returned_dm') {
     const { data, error } = await admin.rpc('esign_trip_return_dm', { p_trip_id: resource.id })
     if (error) throw error
@@ -1254,7 +1333,7 @@ serve(async (req) => {
           // ⚠️ waitlist_reasons มาจาก migration 20260913150000 — ห้าม deploy ไฟล์นี้ก่อน apply
           // ไม่งั้น select คอลัมน์ที่ยังไม่มี ทำให้แจ้งเตือนทุกชนิดของทริป (รวมจองแทนที่) พังทั้งหมด
           // profiles ก็มีหลาย FK (driver/requested_by/approved_by/created_by) ต้องระบุชื่อ FK ทุกเส้น
-          ? 'id,municipality_id,status,approval_method,destination,reject_reason,planned_departure,planned_return,started_at,returned_at,odometer_start,odometer_end,distance_km,waitlist_reasons,vehicle:fleet_vehicles(name,license_plate,meter_unit),driver:profiles!fleet_trips_driver_id_fkey(full_name),requester:profiles!fleet_trips_requested_by_fkey(full_name),approver:profiles!fleet_trips_approved_by_fkey(full_name),department:departments!fleet_trips_department_id_fkey(name,color)'
+          ? 'id,municipality_id,status,approval_method,requested_by,created_by,driver_id,destination,reject_reason,planned_departure,planned_return,started_at,returned_at,odometer_start,odometer_end,distance_km,waitlist_reasons,vehicle:fleet_vehicles(name,license_plate,meter_unit),driver:profiles!fleet_trips_driver_id_fkey(full_name),requester:profiles!fleet_trips_requested_by_fkey(full_name),approver:profiles!fleet_trips_approved_by_fkey(full_name),department:departments!fleet_trips_department_id_fkey(name,color)'
           : spec.table === 'fleet_fuel_records'
             ? 'id,municipality_id,created_at,filled_at,liters,price_per_liter,total_cost,odometer,full_tank,fuel_type,fuel_other_name,fuel_station,receipt_no,vehicle:fleet_vehicles(name,license_plate,meter_unit,department:departments(name,color)),driver:profiles!fleet_fuel_records_driver_id_fkey(full_name)'
             : spec.table === 'fleet_vehicles'
@@ -1283,6 +1362,12 @@ serve(async (req) => {
 
     const municipalityId = resource.municipality_id
     if (!isUuid(municipalityId)) return json({ ok: false, error: 'resource municipality is invalid' }, 422)
+
+    if (notificationType === 'fleet_trip_authorized' || notificationType === 'fleet_trip_authorized_dm') {
+      const notice = await loadAuthorizedNotice(admin, resource.id)
+      if (!notice) return json({ ok: true, skipped: true, reason: 'not_authorized' })
+      ;(resource as Record<string, unknown>).authorized_notice = notice
+    }
 
     const dmCategory = DM_CATEGORY[notificationType]
     if (dmCategory) return await sendDirectMessages(admin, notificationType, dmCategory, resource, userId)

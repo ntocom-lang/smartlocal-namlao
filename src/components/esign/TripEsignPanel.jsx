@@ -148,6 +148,7 @@ export default function TripEsignPanel({ trip, onChanged }) {
     destination: trip.destination,
     purpose: trip.purpose,
     plannedDeparture: trip.planned_departure,
+    positionCarReason: trip.position_car_reason || null,
   }
 
   const revokeNames = revoke

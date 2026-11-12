@@ -43,6 +43,11 @@ const permitFunctionsSql = await readMigration('20261121100100_fleet_permit_func
 // --no-p2 = รันเฉพาะ P1 (red-check: กรณี P2 ต้องล้ม)
 const WITH_P2 = !process.argv.includes('--no-p2')
 const permitP2Sql = await readMigration('20261122100000_fleet_permit_delegated_esign.sql')
+// P3 (ข้อ ๑๒ ว.๕) รันต่อท้าย P2 — approver ของ P3 ตั้งต้นจากรุ่น P2 ⇒ --no-p2 ข้าม P3 ด้วย (ด่าน md5 ของ P3 ต้องการรุ่น P2)
+// --no-p3 = P1+P2 (red-check: กรณี P3 ต้องล้ม) · กรณี P1/P2 ทั้งหมดจึงเป็นตัวตรวจว่า P3 ไม่ทำให้ของเดิมถอยหลัง
+const WITH_P3 = WITH_P2 && !process.argv.includes('--no-p3')
+const positionCarColumnsSql = await readMigration('20261123100000_fleet_position_car_columns.sql')
+const positionCarFunctionsSql = await readMigration('20261123100100_fleet_position_car_functions.sql')
 
 const extractFunction = (source, startPattern) => {
   const found = startPattern.exec(source)
@@ -76,9 +81,10 @@ CREATE SCHEMA auth;
 CREATE TABLE auth.users (id uuid PRIMARY KEY);
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULLIF(current_setting('test.uid', true), '')::uuid $$;
 CREATE TABLE public.municipalities (id uuid PRIMARY KEY, name text);
-CREATE TABLE public.positions (id uuid PRIMARY KEY, name text);
+CREATE TABLE public.positions (id uuid PRIMARY KEY, name text, municipality_id uuid);
 CREATE TABLE public.departments (id uuid PRIMARY KEY, municipality_id uuid, name text);
-CREATE TABLE public.fleet_vehicles (id uuid PRIMARY KEY, name text, municipality_id uuid, department_id uuid, is_pool boolean DEFAULT true);
+CREATE TABLE public.fleet_vehicles (id uuid PRIMARY KEY, name text, municipality_id uuid, department_id uuid, is_pool boolean DEFAULT true,
+  license_plate text NOT NULL DEFAULT 'กข 1234', status text NOT NULL DEFAULT 'active', regulation_category text NOT NULL DEFAULT 'central', disposed_date date);
 CREATE TABLE public.profiles (
   id uuid PRIMARY KEY, full_name text, role text, municipality_id uuid, fleet_role text, job_title text, position_id uuid, department_id uuid
 );
@@ -123,6 +129,13 @@ await db.exec(permitFunctionsSql)
 if (WITH_P2) {
   await db.exec(permitP2Sql)
   await db.exec(permitP2Sql) // รันซ้ำได้ (ด่าน md5 ยอมรับฉบับที่ไฟล์นี้ลงไปแล้ว)
+}
+if (WITH_P3) {
+  await db.exec(positionCarColumnsSql)
+  await db.exec(positionCarFunctionsSql)
+  // รันซ้ำได้: ด่าน md5 รับรุ่นที่ไฟล์นี้ลงไปแล้ว (h_after) — แก้เนื้อฟังก์ชันแล้วลืมคำนวณใหม่ = ล้มตรงนี้
+  await db.exec(positionCarColumnsSql)
+  await db.exec(positionCarFunctionsSql)
 }
 
 const users = {
@@ -181,9 +194,13 @@ const addRegistry = (role, alias, { dept = null, manual = null, muni = A, title 
             VALUES ($1,$2,$3,$4,$5,$6)`, [muni, role, dept, alias ? users[alias].id : null, manual, title])
 const addSignature = async (tripId, slot, decision, alias) => {
   const { rows } = await db.query(
+    // registry_signatory_id = แถวทะเบียนล่าสุดของผู้ลงนาม เหมือนที่ esign_sign_fleet_trip บันทึกจาก esign_expected_signer
+    // (P3 ใช้ตัดสินว่าลายเซ็นช่องอนุญาตมาจากนายกจริงไหม)
     `INSERT INTO public.esign_signatures (municipality_id, doc_type, doc_id, slot, signer_id, signer_name, signed_as, decision,
-       content_hash, content_snapshot, template_version)
-     VALUES ($1, 'fleet_trip_request', $2, $3, $4, $5, '', $6, $7, '{}'::jsonb, 'fleet-form3-v1') RETURNING id`,
+       content_hash, content_snapshot, template_version, registry_signatory_id)
+     VALUES ($1, 'fleet_trip_request', $2, $3, $4, $5, '', $6, $7, '{}'::jsonb, 'fleet-form3-v1',
+       (SELECT ds.id FROM public.document_signatories ds WHERE ds.municipality_id = $1 AND ds.profile_id = $4
+        ORDER BY ds.created_at DESC LIMIT 1)) RETURNING id`,
     [A, tripId, slot, users[alias].id, users[alias].name, decision, 'a'.repeat(64)])
   return rows[0].id
 }
@@ -789,6 +806,452 @@ if (WITH_P2) {
     const names = (await db.query(`SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.fleet_trips'::regclass AND NOT tgisinternal ORDER BY tgname`)).rows.map(r => r.tgname)
     const early = names.indexOf('trg_fleet_trips_early_permit_mode')
     assert.ok(early >= 0 && early < names.indexOf('trg_fleet_trips_esign_guard'), names.join(','))
+  })
+}
+
+if (WITH_P3) {
+  // ══ P3 — ข้อ ๑๒ ว.๕ ผู้มีรถประจำตำแหน่งขอใช้ยานพาหนะส่วนกลาง (20261123100000/100100) ══════════════════
+  const POS_CLERK = '00000000-0000-4000-8000-0000000000f1'
+  const POS_MAYOR = '00000000-0000-4000-8000-0000000000f2'
+  const POS_B = '00000000-0000-4000-8000-0000000000f3'
+  const VP = '00000000-0000-4000-8000-0000000000e2'   // รถประจำตำแหน่งปลัด อปท. เอ
+  const VM = '00000000-0000-4000-8000-0000000000e3'   // รถประจำตำแหน่งนายก อปท. เอ
+  await db.query(`INSERT INTO public.positions (id, name, municipality_id) VALUES ($1,'ปลัด อบต.',$4), ($2,'นายก อบต.',$4), ($3,'ปลัด อบต. บี',$5)`,
+    [POS_CLERK, POS_MAYOR, POS_B, A, B])
+  // requester = ผู้ถือรถประจำตำแหน่ง (ปลัด) · mayor = นายกที่มีรถประจำตำแหน่ง
+  await db.query(`UPDATE public.profiles SET position_id = $1 WHERE id = $2`, [POS_CLERK, users.requester.id])
+  await db.query(`UPDATE public.profiles SET position_id = $1 WHERE id = $2`, [POS_MAYOR, users.mayor.id])
+  await setMode('regulation')
+  const REASON = 'รถประจำตำแหน่งเข้าศูนย์ซ่อมตามนัด ต้องไปประชุมที่จังหวัด'
+  const reasonOf = async id => (await trip(id)).position_car_reason
+
+  await test('P3 ผูกผู้ถือรถ: ตำแหน่ง อปท. อื่นไม่ได้ · รถส่วนกลางผูกไม่ได้ · ก่อนผูก = ไม่ใช่ผู้มีรถประจำตำแหน่ง', async () => {
+    await db.query(`INSERT INTO public.fleet_vehicles (id, name, municipality_id, regulation_category, license_plate) VALUES ($1,'รถปลัด',$2,'position','กข 1')`, [VP, A])
+    await as('requester')
+    const before = await makeTrip()
+    assert.equal((await info(before.id, 'fleetAdmin')).position_car, null)
+    await expectError(db.query(`UPDATE public.fleet_vehicles SET holder_position_id = $1 WHERE id = $2`, [POS_B, VP]), /FLEET_HOLDER_POSITION_TENANT/)
+    await expectError(db.query(`UPDATE public.fleet_vehicles SET holder_position_id = $1 WHERE id = $2`, [POS_CLERK, V1]), /fleet_vehicles_holder_only_position_car/)
+    await db.query(`UPDATE public.fleet_vehicles SET holder_position_id = $1 WHERE id = $2`, [POS_CLERK, VP])
+    // ผูกทีหลัง = ใบที่ยังไม่ออกรถถูกตรวจตามกติกาใหม่ทันที (เลือกเข้มไว้ก่อน)
+    const i = await info(before.id, 'fleetAdmin')
+    assert.equal(i.state, 'reason_required')
+    assert.deepEqual(i.position_car, { vehicle_id: VP, license_plate: 'กข 1', name: 'รถปลัด', position_name: 'ปลัด อบต.' })
+  })
+
+  await test('P3 queue: ผู้ถือรถประจำตำแหน่งในโหมด queue ไม่เปลี่ยนอะไร (not_required ออกรถได้ทันที)', async () => {
+    await setMode('queue')
+    await as('requester')
+    const t = await makeTrip()
+    assert.equal(t.permit_mode, 'queue')
+    const i = await info(t.id, 'fleetAdmin')
+    assert.equal(i.state, 'not_required')
+    assert.equal(i.position_car, undefined)
+    await depart(t.id)
+    await setMode('regulation')
+  })
+
+  await test('P3 ยังไม่กรอกเหตุผล: reason_required · ออกรถไม่ได้ · ลายเซ็นนายกยังไม่นับ · บันทึกใบกระดาษไม่ได้', async () => {
+    await as('requester')
+    const t = await makeTrip()
+    await addSignature(t.id, 'authority', 'approve', 'mayor')
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'reason_required')
+    await expectError(depart(t.id), /FLEET_PERMIT_REQUIRED/)
+    const t2 = await makeTrip()
+    await as('fleetAdmin')
+    assert.equal((await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t2.id, 'authority', today])).code, 'reason_required')
+  })
+
+  await test('P3 เหตุผล: เว้นวรรคล้วน = ว่าง · สั้นกว่า 5 ตัวอักษรไม่รับ · ตัดช่องว่างหัวท้าย', async () => {
+    await as('requester')
+    const t = await makeTrip()
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = '   ' WHERE id = $1`, [t.id])
+    assert.equal(await reasonOf(t.id), null)
+    await expectError(db.query(`UPDATE public.fleet_trips SET position_car_reason = 'สั้น' WHERE id = $1`, [t.id]), /fleet_trips_position_car_reason_len/)
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, `  ${REASON}  `])
+    assert.equal(await reasonOf(t.id), REASON)
+  })
+
+  await test('P3 ผู้มีอำนาจไม่ใช่นายก: mayor_required · บันทึกไม่ได้ · เปลี่ยนเป็นนายกแล้วบันทึกได้ ออกรถได้', async () => {
+    await as('requester')
+    const t = await makeTrip()
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2, order_authority_role = 'clerk' WHERE id = $1`, [t.id, REASON])
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'mayor_required')
+    await as('fleetAdmin')
+    assert.equal((await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'authority', today])).code, 'mayor_required')
+    await db.query(`UPDATE public.fleet_trips SET order_authority_role = 'mayor' WHERE id = $1`, [t.id])
+    const i = await info(t.id, 'fleetAdmin')
+    assert.equal(i.state, 'waiting')
+    assert.equal(i.approver.role, 'mayor')
+    assert.equal(i.approver.fallback_reason, 'position_car_holder')
+    assert.equal((await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'authority', today])).ok, true)
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
+    await depart(t.id)
+  })
+
+  await test('P3 มอบ ผอ.กอง: ผู้มีรถประจำตำแหน่งไม่ใช้การมอบ (position_car_holder) · ผู้อนุญาต = นายก · ลายเซ็นนายก = ออกรถได้', async () => {
+    assert.equal((await setMode('regulation', { delegate: true, ref: 'คำสั่ง อบต. ที่ 45/2569', date: '2026-10-01' })).ok, true)
+    await as('requester')
+    const t = await makeTrip()
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON])
+    const i = await info(t.id, 'fleetAdmin')
+    assert.equal(i.approver.kind, 'authority')
+    assert.equal(i.approver.role, 'mayor')
+    assert.equal(i.approver.fallback_reason, 'position_car_holder')
+    await as('fleetAdmin')
+    const r = await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'delegated_dept_head', today])
+    assert.equal(r.code, 'delegation_not_applicable')
+    assert.equal(r.fallback_reason, 'position_car_holder')
+    await addSignature(t.id, 'authority', 'approve', 'mayor')
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
+    await depart(t.id)
+    // ผู้ขอทั่วไป (ไม่มีรถประจำตำแหน่ง) ยังใช้การมอบได้ตามเดิม
+    await db.query(`UPDATE public.profiles SET position_id = NULL WHERE id = $1`, [users.requester.id])
+    await as('requester')
+    const plain = await makeTrip()
+    assert.equal((await info(plain.id, 'fleetAdmin')).approver.kind, 'delegated_dept_head')
+    await db.query(`UPDATE public.profiles SET position_id = $1 WHERE id = $2`, [POS_CLERK, users.requester.id])
+    await setMode('regulation')
+  })
+
+  // reviewer รอบ 4 ข้อ 2: นายกที่ยังไม่ผูกทะเบียน (ตำแหน่งขึ้นต้นนายก) แต่โปรไฟล์มีกอง + เปิดการมอบ
+  // ต้องยังข้ามการมอบเหมือน P2 — ไม่ให้ ผอ.กองนั้นอนุญาตใบของนายก "ปฏิบัติราชการแทนนายก"
+  await test('P3 มอบ ผอ.กอง: ผู้ขอตำแหน่งนายกที่ไม่อยู่ในทะเบียน + มีกอง = requester_is_executive (ไม่ถอยจาก P2)', async () => {
+    assert.equal((await setMode('regulation', { delegate: true, ref: 'คำสั่ง อบต. ที่ 45/2569', date: '2026-10-01' })).ok, true)
+    await db.query(`UPDATE public.profiles SET position_id = NULL WHERE id = $1`, [users.requester.id])
+    await as('requester')
+    const t = await makeTrip({ position: 'นายกองค์การบริหารส่วนตำบลทดสอบเอ' })
+    const i = await info(t.id, 'fleetAdmin')
+    assert.equal(i.position_car, null)
+    assert.equal(i.approver.kind, 'authority')
+    assert.equal(i.approver.fallback_reason, 'requester_is_executive')
+    assert.equal(i.approver.name, users.mayor.name)
+    await as('fleetAdmin')
+    assert.equal((await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'delegated_dept_head', today])).code, 'delegation_not_applicable')
+    await db.query(`UPDATE public.profiles SET position_id = $1 WHERE id = $2`, [POS_CLERK, users.requester.id])
+    await setMode('regulation')
+  })
+
+  // reviewer รอบ 3 ข้อ 1: vehicle_id ไม่อยู่ใน payload ลายเซ็น ⇒ ขอรถประจำตำแหน่งของตัวเอง (ไม่เข้า ว.๕) ให้ ผอ.ที่ได้รับมอบอนุญาต
+  // แล้วสลับกลับเป็นรถส่วนกลาง ⇒ การอนุญาตของ ผอ. ต้องไม่นับ (ทั้งลายเซ็นออนไลน์และใบกระดาษ)
+  await test('P3 สลับรถหลัง ผอ.ที่ได้รับมอบอนุญาต: ลายเซ็น ผอ. ไม่นับ (mayor_required) · ออกรถไม่ได้ · ถอนแล้วนายกลง = ออกรถได้', async () => {
+    assert.equal((await setMode('regulation', { delegate: true, ref: 'คำสั่ง อบต. ที่ 45/2569', date: '2026-10-01' })).ok, true)
+    await as('requester')
+    const t = await makeTrip()
+    await db.query(`UPDATE public.fleet_trips SET vehicle_id = $2, position_car_reason = $3 WHERE id = $1`, [t.id, VP, REASON])
+    assert.equal((await info(t.id, 'fleetAdmin')).approver.kind, 'delegated_dept_head', 'ขอรถประจำตำแหน่งตัวเอง = ไม่ใช่กรณี ว.๕')
+    const headSig = await addSignature(t.id, 'authority', 'approve', 'head')
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
+    await db.query(`UPDATE public.fleet_trips SET vehicle_id = $2 WHERE id = $1`, [t.id, V1])
+    const i = await info(t.id, 'fleetAdmin')
+    assert.equal(i.state, 'mayor_required')
+    assert.equal(i.non_mayor_permit, true)
+    await as('requester')
+    await expectError(depart(t.id), /FLEET_PERMIT_REQUIRED/)
+    await db.query(`INSERT INTO public.esign_revocations (signature_id, municipality_id, reason) VALUES ($1, $2, 'ต้องให้นายกอนุญาต')`, [headSig, A])
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'waiting')
+    await addSignature(t.id, 'authority', 'approve', 'mayor')
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
+    await as('requester')
+    await depart(t.id)
+    await setMode('regulation')
+  })
+
+  await test('P3 สลับรถหลังบันทึกใบกระดาษแบบ ผอ.ที่ได้รับมอบ: ไม่นับ · ปุ่มยกเลิกบันทึกยังอยู่ · ยกเลิกแล้วบันทึกแบบนายกได้', async () => {
+    assert.equal((await setMode('regulation', { delegate: true, ref: 'คำสั่ง อบต. ที่ 45/2569', date: '2026-10-01' })).ok, true)
+    await as('requester')
+    const t = await makeTrip()
+    await db.query(`UPDATE public.fleet_trips SET vehicle_id = $2, position_car_reason = $3 WHERE id = $1`, [t.id, VP, REASON])
+    await as('fleetAdmin')
+    const rec = await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'delegated_dept_head', today])
+    assert.equal(rec.ok, true, JSON.stringify(rec))
+    await db.query(`UPDATE public.fleet_trips SET vehicle_id = $2 WHERE id = $1`, [t.id, V1])
+    const i = await info(t.id, 'fleetAdmin')
+    assert.equal(i.state, 'mayor_required')
+    assert.equal(i.non_mayor_permit, true)
+    assert.equal(i.permit_id, rec.permit_id)
+    assert.equal(i.can_void, true)
+    await as('requester')
+    await expectError(depart(t.id), /FLEET_PERMIT_REQUIRED/)
+    await as('fleetAdmin')
+    assert.equal((await rpc('public.fleet_void_paper_permit($1, $2)', [rec.permit_id, 'ต้องให้นายกอนุญาต'])).ok, true)
+    assert.equal((await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'authority', today])).ok, true)
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
+    await setMode('regulation')
+  })
+
+  await test('P3 ล็อกเหตุผล: ลายเซ็นผู้ขอให้กรอกครั้งแรกได้อย่างเดียว · ลายเซ็น ผอ./บันทึกใบกระดาษล็อก · ถอน/ยกเลิกแล้วแก้ได้', async () => {
+    await as('requester')
+    const t = await makeTrip()
+    // ผู้ขอลงนามก่อนกรอกเหตุผลได้ (ใบจาก fleet_override_booking) — กรอกครั้งแรก (ว่าง → มีค่า) ได้ (reviewer รอบ 4 ข้อ 5)
+    const reqSig = await addSignature(t.id, 'requester', 'sign', 'requester')
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON + ' ก'])
+    // กรอกแล้วแก้ซ้ำไม่ได้ ต้องถอนลายเซ็นผู้ขอก่อน (reviewer รอบ 7 ข้อ 1: ผู้อนุญาตต้องเห็นชุดเดียวกับที่ล็อก)
+    await expectError(db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON]), /FLEET_POSITION_REASON_LOCKED/)
+    await expectError(db.query(`UPDATE public.fleet_trips SET position_car_reason = NULL WHERE id = $1`, [t.id]), /FLEET_POSITION_REASON_LOCKED/)
+    await db.query(`INSERT INTO public.esign_revocations (signature_id, municipality_id, reason) VALUES ($1, $2, 'แก้เหตุผล')`, [reqSig, A])
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON])
+    // ช่วงต่อไปตรวจตัวล็อกฝั่งผู้อนุญาต (ไม่ลงช่องผู้ขอซ้ำ ไม่งั้นลายเซ็นผู้ขอล็อกเองจนแยกผลไม่ได้)
+    const sig = await addSignature(t.id, 'dept_head', 'sign', 'head')
+    await expectError(db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON + ' แก้']), /FLEET_POSITION_REASON_LOCKED/)
+    await db.query(`UPDATE public.fleet_trips SET notes = 'แก้ช่องอื่นได้' WHERE id = $1`, [t.id])
+    await db.query(`INSERT INTO public.esign_revocations (signature_id, municipality_id, reason) VALUES ($1, $2, 'แก้เหตุผล')`, [sig, A])
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON + ' แก้'])
+    await as('fleetAdmin')
+    const { permit_id: pid } = await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'authority', today])
+    await expectError(db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON]), /FLEET_POSITION_REASON_LOCKED/)
+    assert.equal((await rpc('public.fleet_void_paper_permit($1, $2)', [pid, 'บันทึกก่อนแก้เหตุผล'])).ok, true)
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON])
+    assert.equal(await reasonOf(t.id), REASON)
+    // reviewer รอบ 8 ข้อ A: ค่าเก่าที่ไม่ได้ trim (เขียนก่อน trigger มี) + ใบล็อกแล้ว ⇒ UPDATE ช่องอื่นต้องไม่ล้ม
+    await db.query(`ALTER TABLE public.fleet_trips DISABLE TRIGGER trg_fleet_trips_position_reason_guard`)
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON + '  '])
+    await db.query(`ALTER TABLE public.fleet_trips ENABLE TRIGGER trg_fleet_trips_position_reason_guard`)
+    await addSignature(t.id, 'dept_head', 'sign', 'head')
+    await db.query(`UPDATE public.fleet_trips SET notes = 'ใบล็อกแล้วแก้ช่องอื่นได้' WHERE id = $1`, [t.id])
+    assert.equal(await reasonOf(t.id), REASON) // trim ให้เท่ากันตอน UPDATE (ไม่ถือว่าเปลี่ยน)
+    await expectError(db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON + ' แก้']), /FLEET_POSITION_REASON_LOCKED/)
+  })
+
+  await test('P3 ไม่ใช่กรณี ว.๕: ขอรถประจำตำแหน่งคันอื่น · รถของตนจำหน่าย/ปลดระวางแล้ว · ผู้ไม่มีตำแหน่งผูกรถ', async () => {
+    await as('requester')
+    const own = await makeTrip()
+    await db.query(`UPDATE public.fleet_trips SET vehicle_id = $2 WHERE id = $1`, [own.id, VP])
+    assert.equal((await info(own.id, 'fleetAdmin')).position_car, null)
+    await db.query(`UPDATE public.fleet_vehicles SET disposed_date = '2026-01-01' WHERE id = $1`, [VP])
+    await as('requester')
+    const t = await makeTrip()
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'waiting')
+    await db.query(`UPDATE public.fleet_vehicles SET disposed_date = NULL, status = 'retired' WHERE id = $1`, [VP])
+    assert.equal((await info(t.id, 'fleetAdmin')).position_car, null)
+    await db.query(`UPDATE public.fleet_vehicles SET status = 'under_repair' WHERE id = $1`, [VP])
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'reason_required', 'รถเข้าซ่อมยังนับว่ามีรถประจำตำแหน่ง')
+    await db.query(`UPDATE public.fleet_vehicles SET status = 'active' WHERE id = $1`, [VP])
+    await as('head')
+    const other = await makeTrip({ requester: 'head', position: 'ผู้อำนวยการกองช่าง' })
+    assert.equal((await info(other.id, 'fleetAdmin')).position_car, null)
+  })
+
+  await test('P3 นายกมีรถประจำตำแหน่ง: ต้องกรอกเหตุผล · แล้ว สก.๑ = อนุญาต (ไม่ติด mayor_required)', async () => {
+    await db.query(`INSERT INTO public.fleet_vehicles (id, name, municipality_id, regulation_category, license_plate, holder_position_id)
+                    VALUES ($1,'รถนายก',$2,'position','กข 2',$3)`, [VM, A, POS_MAYOR])
+    await as('mayor')
+    const t = await makeTrip({ requester: 'mayor', position: 'นายกองค์การบริหารส่วนตำบลทดสอบเอ' })
+    await db.query(`UPDATE public.fleet_trips SET order_authority_role = 'clerk' WHERE id = $1`, [t.id])
+    await addSignature(t.id, 'sk1', 'sign', 'mayor')
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'reason_required')
+    // ลายเซ็น สก.๑ ล็อกเหตุผลแล้ว → ต้องถอนก่อนกรอก (ผู้อนุญาตต้องเห็นเหตุผล)
+    await expectError(db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON]), /FLEET_POSITION_REASON_LOCKED/)
+    await as('mayor')
+    const t2 = await makeTrip({ requester: 'mayor', position: 'นายกองค์การบริหารส่วนตำบลทดสอบเอ' })
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2, order_authority_role = 'clerk' WHERE id = $1`, [t2.id, REASON])
+    await addSignature(t2.id, 'sk1', 'sign', 'mayor')
+    assert.equal((await info(t2.id, 'fleetAdmin')).state, 'authorized')
+  })
+
+  // reviewer รอบ 4 ข้อ 1: "เป็นนายก" ตัดสินจากข้อความตำแหน่งที่ผู้ขอพิมพ์เอง ⇒ ต้องเป็นบัญชีของแถวนายกในทะเบียนด้วย
+  await test('P3 พิมพ์ตำแหน่ง "นายก…" เอง (ไม่ใช่นายกในทะเบียน): ไม่ข้าม ว.๕ · สก.๑ ของตัวเองไม่นับ · ออกรถไม่ได้', async () => {
+    const FAKE = 'นายกองค์การบริหารส่วนตำบลทดสอบเอ'
+    // ผู้ถือรถประจำตำแหน่ง (ปลัด) พิมพ์ตำแหน่งเป็นนายก
+    await as('requester')
+    const t = await makeTrip({ position: FAKE })
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON])
+    const before = await info(t.id, 'fleetAdmin')
+    assert.equal(before.state, 'waiting')
+    assert.equal(before.position_car.vehicle_id, VP)
+    assert.equal(before.approver.fallback_reason, 'position_car_holder')
+    assert.equal(before.approver.name, users.mayor.name)
+    await addSignature(t.id, 'sk1', 'sign', 'requester')
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'waiting')
+    await expectError(depart(t.id), /FLEET_PERMIT_REQUIRED/)
+    // ผู้ขอที่ไม่มีรถประจำตำแหน่งพิมพ์ตำแหน่งเป็นนายก: สก.๑ ของตัวเองก็ไม่นับ (ใบ regulation ทุกใบ)
+    await as('head')
+    const t2 = await makeTrip({ requester: 'head', position: FAKE })
+    assert.equal((await info(t2.id, 'fleetAdmin')).position_car, null)
+    await addSignature(t2.id, 'sk1', 'sign', 'head')
+    assert.equal((await info(t2.id, 'fleetAdmin')).state, 'waiting')
+    await expectError(depart(t2.id), /FLEET_PERMIT_REQUIRED/)
+    // นายกในทะเบียนอนุญาตช่องผู้มีอำนาจ = ออกรถได้ตามปกติ
+    await addSignature(t2.id, 'authority', 'approve', 'mayor')
+    assert.equal((await info(t2.id, 'fleetAdmin')).state, 'authorized')
+    await depart(t2.id)
+  })
+
+  // reviewer รอบ 5 ข้อ A: สก.๑ นับตามทะเบียน ณ วันที่ลงนาม (เหมือนใบกระดาษ) ไม่ใช่ ณ วันนี้
+  await test('P3 สก.๑ ของนายก: ทะเบียนเปลี่ยนนายกทีหลังยังนับ · ผู้ลงไม่ใช่ผู้ขอไม่นับ', async () => {
+    const MAYOR_POS = 'นายกองค์การบริหารส่วนตำบลทดสอบเอ'
+    const { rows: [orig] } = await db.query(
+      `SELECT id, effective_from FROM public.document_signatories WHERE municipality_id = $1 AND signatory_role = 'mayor' AND is_active`, [A])
+    await as('mayor')
+    const t = await makeTrip({ requester: 'mayor', position: MAYOR_POS })
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON])
+    // ลงนามเมื่อวาน (นายกคนเดิมมีผลตั้งแต่ต้นปี) แล้ววันนี้แอดมินตั้งคนอื่นเป็นนายกในทะเบียน
+    // ลายเซ็นแก้ไม่ได้ (trigger) ⇒ INSERT พร้อม signed_at ย้อนหลังตรงๆ
+    await db.query(`UPDATE public.document_signatories SET effective_from = '2026-01-01' WHERE id = $1`, [orig.id])
+    await db.query(
+      `INSERT INTO public.esign_signatures (municipality_id, doc_type, doc_id, slot, signer_id, signer_name, signed_as, decision,
+         content_hash, content_snapshot, template_version, registry_signatory_id, signed_at)
+       VALUES ($1, 'fleet_trip_request', $2, 'sk1', $3, $4, '', 'sign', $5, '{}'::jsonb, 'fleet-form3-v1', $6, now() - interval '1 day')`,
+      [A, t.id, users.mayor.id, users.mayor.name, 'a'.repeat(64), orig.id])
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
+    await db.query(`UPDATE public.document_signatories SET is_active = false, updated_at = now() WHERE id = $1`, [orig.id])
+    const { rows: [repl] } = await db.query(
+      `INSERT INTO public.document_signatories (municipality_id, signatory_role, profile_id) VALUES ($1, 'mayor', $2) RETURNING id`, [A, users.head.id])
+    try {
+      assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
+      // ใบใหม่ของนายกคนเดิมหลังเปลี่ยนทะเบียน: สก.๑ ไม่นับแล้ว (ไม่ใช่นายกในทะเบียน ณ วันที่ลงนาม)
+      const t2 = await makeTrip({ requester: 'mayor', position: MAYOR_POS })
+      await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t2.id, REASON])
+      await addSignature(t2.id, 'sk1', 'sign', 'mayor')
+      assert.notEqual((await info(t2.id, 'fleetAdmin')).state, 'authorized')
+    } finally {
+      await db.query(`DELETE FROM public.document_signatories WHERE id = $1`, [repl.id])
+      await db.query(`UPDATE public.document_signatories SET is_active = true, effective_from = $2 WHERE id = $1`, [orig.id, orig.effective_from])
+    }
+    // reviewer รอบ 6 ข้อ 1: ลบช่องนายกเมื่อวาน 09:00 (ไม่มีแถวแทน) แล้วนายกคนเดิมลง สก.๑ เมื่อวาน 14:00 = ไม่นับ
+    // (ทะเบียนเทียบรายวัน registry(เมื่อวาน) ยังคืนแถวที่ถูกปิดไปแล้ว ⇒ ต้องเทียบเวลาที่ปิดกับเวลาลงนาม)
+    await db.query(`UPDATE public.document_signatories SET effective_from = '2026-01-01' WHERE id = $1`, [orig.id])
+    await db.query(`UPDATE public.document_signatories SET is_active = false,
+                      updated_at = ((timezone('Asia/Bangkok', now()))::date - 1 + time '09:00') AT TIME ZONE 'Asia/Bangkok' WHERE id = $1`, [orig.id])
+    try {
+      const { rows: [chk] } = await db.query(
+        `SELECT (timezone('Asia/Bangkok', updated_at))::time::text AS t FROM public.document_signatories WHERE id = $1`, [orig.id])
+      assert.equal(chk.t, '09:00:00') // ไม่มี trigger ทับ updated_at — ไม่งั้นเคสนี้ทดสอบไม่ได้จริง
+      const t4 = await makeTrip({ requester: 'mayor', position: MAYOR_POS })
+      await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t4.id, REASON])
+      await db.query(
+        `INSERT INTO public.esign_signatures (municipality_id, doc_type, doc_id, slot, signer_id, signer_name, signed_as, decision,
+           content_hash, content_snapshot, template_version, registry_signatory_id, signed_at)
+         VALUES ($1, 'fleet_trip_request', $2, 'sk1', $3, $4, '', 'sign', $5, '{}'::jsonb, 'fleet-form3-v1', $6,
+           ((timezone('Asia/Bangkok', now()))::date - 1 + time '14:00') AT TIME ZONE 'Asia/Bangkok')`,
+        [A, t4.id, users.mayor.id, users.mayor.name, 'a'.repeat(64), orig.id])
+      assert.notEqual((await info(t4.id, 'fleetAdmin')).state, 'authorized')
+      await expectError(depart(t4.id), /FLEET_PERMIT_REQUIRED/)
+    } finally {
+      await db.query(`UPDATE public.document_signatories SET is_active = true, effective_from = $2 WHERE id = $1`, [orig.id, orig.effective_from])
+    }
+    // ผู้ลง สก.๑ ไม่ใช่ผู้ขอ (ผู้ขอเป็นนายก แต่คนอื่นลงช่อง สก.๑) = ไม่นับ
+    const t3 = await makeTrip({ requester: 'mayor', position: MAYOR_POS })
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t3.id, REASON])
+    await addSignature(t3.id, 'sk1', 'sign', 'head')
+    assert.equal((await info(t3.id, 'fleetAdmin')).state, 'waiting')
+  })
+
+  await test('P3 RPC ฟอร์ม fleet_position_car_check: ผู้ใช้โมดูลรถได้รถของผู้ขอ · ไม่มีสิทธิ์/ต่าง อปท. ไม่ได้ · anon เรียกไม่ได้', async () => {
+    await as('requester')
+    const own = await rpc('public.fleet_position_car_check($1, NULL, $2)', [A, V1])
+    assert.equal(own.ok, true)
+    assert.equal(own.permit_mode, 'regulation')
+    assert.equal(own.position_car.license_plate, 'กข 1')
+    assert.equal((await rpc('public.fleet_position_car_check($1, NULL, $2)', [A, VP])).position_car, null)
+    await as('fleetAdmin')
+    assert.equal((await rpc('public.fleet_position_car_check($1, $2, $3)', [A, users.requester.id, V1])).position_car.vehicle_id, VP)
+    assert.equal((await rpc('public.fleet_position_car_check($1, $2, $3)', [A, users.head.id, V1])).position_car, null)
+    await as('outsider')
+    assert.equal((await rpc('public.fleet_position_car_check($1, NULL, $2)', [A, V1])).code, 'forbidden')
+    await as('fleetAdminB')
+    assert.equal((await rpc('public.fleet_position_car_check($1, $2, $3)', [A, users.requester.id, V1])).code, 'forbidden')
+    assert.equal((await db.query(`SELECT has_function_privilege('anon', 'public.fleet_position_car_check(uuid,uuid,uuid)', 'execute') AS ok`)).rows[0].ok, false)
+  })
+
+  await test('P3 RPC แจ้งเตือน fleet_trip_authorized_notice: service_role เท่านั้น · key = ลายเซ็น/บันทึกที่อนุญาต · ยกเลิกแล้วอนุญาตใหม่ได้ key ใหม่', async () => {
+    for (const role of ['anon', 'authenticated']) {
+      assert.equal((await db.query(`SELECT has_function_privilege($1, 'public.fleet_trip_authorized_notice(uuid)', 'execute') AS ok`, [role])).rows[0].ok, false, role)
+    }
+    assert.equal((await db.query(`SELECT has_function_privilege('service_role', 'public.fleet_trip_authorized_notice(uuid)', 'execute') AS ok`)).rows[0].ok, true)
+    await as('requester')
+    const t = await makeTrip()
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON])
+    const waiting = await rpc('public.fleet_trip_authorized_notice($1)', [t.id])
+    assert.equal(waiting.state, 'waiting')
+    assert.equal(waiting.key, null)
+    // ใบที่ยังไม่ครบ ว.๕ แต่มีใบกระดาษค้าง (มี permit_id) ต้องไม่มี key — ไม่งั้น Telegram บอก "ออกรถได้" ผิด
+    const noReason = await makeTrip()
+    await as('fleetAdmin')
+    await db.query(`UPDATE public.profiles SET position_id = NULL WHERE id = $1`, [users.requester.id])
+    const { permit_id: held } = await rpc('public.fleet_record_paper_permit($1, $2, $3)', [noReason.id, 'authority', today])
+    await db.query(`UPDATE public.profiles SET position_id = $1 WHERE id = $2`, [POS_CLERK, users.requester.id])
+    const heldNotice = await rpc('public.fleet_trip_authorized_notice($1)', [noReason.id])
+    assert.equal(heldNotice.state, 'reason_required')
+    assert.equal(heldNotice.permit_id, held)
+    assert.equal(heldNotice.key, null)
+    await as('requester')
+    await as('fleetAdmin')
+    const { permit_id: p1 } = await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'authority', today])
+    const n1 = await rpc('public.fleet_trip_authorized_notice($1)', [t.id])
+    assert.equal(n1.state, 'authorized')
+    assert.equal(n1.status, 'approved')
+    assert.equal(n1.key, p1)
+    await rpc('public.fleet_void_paper_permit($1, $2)', [p1, 'ทดสอบบันทึกใหม่'])
+    const { permit_id: p2 } = await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'authority', today])
+    assert.equal((await rpc('public.fleet_trip_authorized_notice($1)', [t.id])).key, p2)
+    assert.notEqual(p2, p1)
+    await as('head')
+    const sigTrip = await makeTrip({ requester: 'head', position: 'ผู้อำนวยการกองช่าง' })
+    const sig = await addSignature(sigTrip.id, 'authority', 'approve', 'mayor')
+    assert.equal((await rpc('public.fleet_trip_authorized_notice($1)', [sigTrip.id])).key, sig)
+    const legacy = (await db.query(`SELECT id FROM public.fleet_trips WHERE destination = 'LEGACY-approved'`)).rows[0].id
+    assert.equal((await rpc('public.fleet_trip_authorized_notice($1)', [legacy])).state, 'not_required')
+    assert.equal((await rpc('public.fleet_trip_authorized_notice($1)', ['00000000-0000-4000-8000-000000000999'])).found, false)
+  })
+
+  await test('P3 ผูกผู้ถือรถหลังบันทึกใบกระดาษ: ใบไม่ติดตาย — info มี via/permit_id · can_void · ยกเลิกแล้วกรอกเหตุผลได้', async () => {
+    await db.query(`UPDATE public.profiles SET position_id = NULL WHERE id = $1`, [users.requester.id])
+    await as('requester')
+    const t = await makeTrip()
+    await as('fleetAdmin')
+    const { permit_id: pid } = await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'authority', today])
+    assert.equal((await info(t.id, 'fleetAdmin')).state, 'authorized')
+    await db.query(`UPDATE public.profiles SET position_id = $1 WHERE id = $2`, [POS_CLERK, users.requester.id])
+    const stuck = await info(t.id, 'fleetAdmin')
+    assert.equal(stuck.state, 'reason_required')
+    assert.equal(stuck.via, 'paper')
+    assert.equal(stuck.permit_id, pid)
+    assert.equal(stuck.can_void, true)
+    await expectError(db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON]), /FLEET_POSITION_REASON_LOCKED/)
+    await as('fleetAdmin')
+    assert.equal((await rpc('public.fleet_void_paper_permit($1, $2)', [pid, 'ผู้ขอมีรถประจำตำแหน่ง ต้องกรอกเหตุผลก่อน'])).ok, true)
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON])
+    const ready = await info(t.id, 'fleetAdmin')
+    assert.equal(ready.state, 'waiting')
+    assert.equal(ready.via, undefined)
+    // ใบที่อนุญาตทางลายเซ็นแล้ว via ต้องยังเป็น esign (position_car ไม่ทับ)
+    await addSignature(t.id, 'authority', 'approve', 'mayor')
+    const signed = await info(t.id, 'fleetAdmin')
+    assert.equal(signed.state, 'authorized')
+    assert.equal(signed.via, 'esign')
+    assert.equal(signed.position_car.vehicle_id, VP)
+  })
+
+  await test('P3 บันทึกใบกระดาษ: audit มี position_car (ทะเบียน/ตำแหน่ง) ไม่มีข้อความเหตุผล', async () => {
+    await as('requester')
+    const t = await makeTrip()
+    await db.query(`UPDATE public.fleet_trips SET position_car_reason = $2 WHERE id = $1`, [t.id, REASON])
+    await as('fleetAdmin')
+    const { permit_id: pid } = await rpc('public.fleet_record_paper_permit($1, $2, $3)', [t.id, 'authority', today])
+    const { rows } = await db.query(`SELECT metadata FROM public.audit_logs WHERE action = 'fleet_permit_recorded' AND metadata->>'permit_id' = $1`, [pid])
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].metadata.position_car.license_plate, 'กข 1')
+    assert.ok(!JSON.stringify(rows[0].metadata).includes(REASON), 'ห้ามคัดลอกเหตุผลลง audit metadata')
+  })
+
+  await test('P3 esign_my_pending: ต่างจากรุ่น 20261101120100 เฉพาะจุดที่ตั้งใจ · เรียกได้ · สิทธิ์เดิม', async () => {
+    const src = (await db.query(`SELECT prosrc FROM pg_proc WHERE oid = 'public.esign_my_pending()'::regprocedure`)).rows[0].prosrc
+    assert.match(src, /'position_car_reason', v_trip\.position_car_reason/)
+    assert.match(src, /'position_car_required', \(/)
+    // ตัดส่วนที่ P3 เพิ่มออก แล้วเนื้อที่เหลือต้องเท่ากับรุ่นเดิมทุกตัวอักษร (หลังยุบช่องว่าง) — กันยกมาจากรุ่นเก่า/ทำของเดิมหาย
+    const oldFile = await readMigration('20261101120100_esign_trip_return_functions.sql')
+    const oldBody = extractFunction(oldFile, /CREATE OR REPLACE FUNCTION public\.esign_my_pending\(\)/)
+    const newBody = extractFunction(positionCarFunctionsSql, /CREATE OR REPLACE FUNCTION public\.esign_my_pending\(\)/)
+    const squash = text => text.replace(/\s+/g, ' ').trim()
+    const stripped = squash(newBody
+      .replace(', t.position_car_reason, t.permit_mode,', ',')
+      .replace(/,\s*-- P3 ข้อ ๑๒ ว\.๕[\s\S]*?'position_car_required', \([\s\S]*?IS NOT NULL\s*\)/, ''))
+    assert.equal(stripped, squash(oldBody))
+    await as('mayor')
+    assert.equal((await rpc('public.esign_my_pending()')).ok, true)
+    assert.equal((await db.query(`SELECT has_function_privilege('anon', 'public.esign_my_pending()', 'execute') AS ok`)).rows[0].ok, false)
+    assert.equal((await db.query(`SELECT has_function_privilege('authenticated', 'public.esign_my_pending()', 'execute') AS ok`)).rows[0].ok, true)
   })
 }
 

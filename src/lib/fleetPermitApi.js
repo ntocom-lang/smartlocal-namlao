@@ -2,6 +2,7 @@
 // ฐานข้อมูล: supabase/migrations/20261121100100_fleet_permit_functions.sql
 import { supabase } from './supabase'
 import { PERMIT_INFO_MAX_IDS, chunkIds } from './fleetPermit'
+import { notifyTelegram } from './notifyTelegram'
 
 // เรียกฟังก์ชัน DB ทุกตัวผ่านที่นี่: ส่งครบทุก argument เสมอ (PostgREST เลือกฟังก์ชันจากชุดชื่อ argument ที่ส่งไป
 // ถ้าละตัวที่มี DEFAULT จะเสี่ยง PGRST202) · ฟังก์ชันตอบเป็น jsonb {ok, code?}
@@ -52,8 +53,26 @@ export function getFleetTripPermitInfoBatches(tripIds) {
 
 // basis: 'authority' | 'delegated_dept_head' · signedOn: YYYY-MM-DD (วันที่ผู้มีอำนาจลงนามบนใบกระดาษ)
 // ชื่อ/ฐานะผู้อนุญาตไม่ส่งไปจากหน้าจอ — DB ดึงจากทะเบียนผู้ลงนาม
-export const recordFleetPaperPermit = ({ tripId, basis, signedOn }) =>
-  callPermit('fleet_record_paper_permit', { p_trip_id: tripId, p_basis: basis, p_signed_on: signedOn })
+// สำเร็จ → แจ้ง "ได้รับอนุญาตแล้ว ออกรถได้" (กลุ่ม + ส่วนตัวถึงผู้ขอ/ผู้ขับ) ไม่รอผล — Edge ตรวจสถานะจริงก่อนส่ง
+export const recordFleetPaperPermit = async ({ tripId, basis, signedOn }) => {
+  const result = await callPermit('fleet_record_paper_permit', { p_trip_id: tripId, p_basis: basis, p_signed_on: signedOn })
+  if (result?.ok) {
+    notifyTelegram('fleet_trip_authorized', tripId)
+    notifyTelegram('fleet_trip_authorized_dm', tripId)
+  }
+  return result
+}
 
 export const voidFleetPaperPermit = ({ permitId, reason }) =>
   callPermit('fleet_void_paper_permit', { p_permit_id: permitId, p_reason: String(reason ?? '').trim() })
+
+// P3 ข้อ ๑๒ ว.๕ — ผู้ขอคนนี้มีรถประจำตำแหน่งไหม (ถามตอนเปิดฟอร์ม/เปลี่ยนผู้ขอหรือรถ)
+// → { ok, permit_mode, position_car: { vehicle_id, license_plate, name, position_name } | null }
+// requestedBy ว่าง = ตัวผู้เรียก · vehicleId ว่าง = ยังไม่เลือกรถ (DB ส่ง null ได้)
+// ฐานข้อมูล: supabase/migrations/20261123100100_fleet_position_car_functions.sql
+export const checkFleetPositionCar = ({ municipalityId, requestedBy, vehicleId }) =>
+  callPermit('fleet_position_car_check', {
+    p_municipality_id: municipalityId,
+    p_requested_by: requestedBy || null,
+    p_vehicle_id: vehicleId || null,
+  })
