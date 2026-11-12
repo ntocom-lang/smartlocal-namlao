@@ -82,8 +82,11 @@ assert.ok(blank.includes('นายกเทศมนตรีตำบลน้
 
 // ── หน้าจอ: ปุ่มเฉพาะคำขอของนายกที่ได้รถแล้ว และยังมีปุ่มแบบ 3 อยู่ (พิมพ์คู่ ไม่ได้แทน) ───────
 const page = readFileSync('src/components/fleet/FleetTrips.jsx', 'utf8')
-assert.ok(/const canPrintSk1 = tripRequesterIsMayor\(t\) && \['approved', 'in_progress', 'completed'\]\.includes\(t\.status\)/.test(page),
-  'ปุ่มแบบ สก. ๑ ต้องขึ้นเฉพาะนายก + คำขอที่ได้รถแล้ว')
+assert.ok(/const canPrintSk1 = sk1PrintAllowed\(\{ trip: t, sk1Applicable \}\)/.test(page),
+  'ปุ่มแบบ สก. ๑ ต้องตัดสินผ่าน sk1PrintAllowed (queue = นายก + คำขอที่ได้รถแล้วเหมือนเดิม · regulation = ตามฐาน)')
+const printSk1Src = page.slice(page.indexOf('function printSk1(t)'), page.indexOf('function openPrintWindow('))
+assert.ok(/t\.permit_mode === 'regulation'/.test(printSk1Src) && printSk1Src.includes('sk1ApplicableFromStatus(status) !== true'),
+  'printSk1 ของใบ regulation ต้องตรวจซ้ำกับฐานตอนกดพิมพ์ (ล้มแบบปิด)')
 assert.ok(page.includes('{canPrintSk1 && (') && page.includes('printSk1(t)'), 'ต้องมีปุ่มพิมพ์แบบ สก. ๑')
 assert.ok(page.includes('onClick={() => printTripRequest(t)}'), 'ปุ่มแบบ 3 ต้องยังอยู่ — เจ้าของระบบเลือกพิมพ์คู่')
 

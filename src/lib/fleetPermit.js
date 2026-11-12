@@ -7,6 +7,7 @@
 // ⚠️ ข้อความบนหน้าจอ/คู่มือห้ามรับรองผลทางระเบียบหรือกฎหมายของหน่วยงาน — ระบบแค่บังคับลำดับ "ได้รับอนุญาตก่อนออกรถ"
 //    ผู้ตัดสินคือคน ระบบบันทึกผลไว้ให้ตรวจย้อน · tests/fleet-permit-lib.test.mjs ตรวจวลีต้องห้ามในไฟล์หน้าจอด้วย
 import { thaiDateFromDateInput, thaiDateTimeText } from './thaiDate.js'
+import { tripRequesterIsMayor } from './fleetTripPrint.js'
 
 export const PERMIT_REGULATION_REF = 'ข้อ ๑๒ ของระเบียบ มท. ว่าด้วยการใช้และรักษายานพาหนะของ อปท. พ.ศ. ๒๕๖๙'
 
@@ -102,6 +103,36 @@ export const PERMIT_MESSAGES = {
 // ไม่ใช่แก้ผู้มีอำนาจในคำขอ (ผู้มีอำนาจเป็นนายกอยู่แล้ว) — ข้อความ mayor_required ปกติจึงบอกผิดทาง
 export const PERMIT_NON_MAYOR_PERMIT_TEXT = 'ผู้ขอมีรถประจำตำแหน่ง — มีการอนุญาตเดิมที่ไม่ได้มาจากนายกค้างอยู่ จึงบันทึกเพิ่มไม่ได้ '
   + 'ให้ยกเลิกบันทึกใบกระดาษเดิม หรือถอนลายเซ็นช่องผู้มีอำนาจเดิมก่อน แล้วจึงบันทึกการอนุญาตของนายก'
+
+// ── ปุ่ม "พิมพ์แบบ สก. ๑" ───────────────────────────────────────────────────────────────
+// ใบ regulation ใช้เกณฑ์เดียวกับฐาน = sk1.applicable ที่ esign_trip_status คืน (มาจาก fleet_trip_sk1_applies, migration 20261124100000)
+// ⇒ ผู้ขอต้องเป็นนายกในทะเบียนผู้ลงนาม (หรือลงนาม สก.๑ ออนไลน์ไว้แล้ว) พิมพ์ตำแหน่ง "นายก…" เองอย่างเดียวไม่พอ
+// ใบ queue = เกณฑ์ข้อความเดิมทุกไบต์ และไม่ยิง RPC เพิ่ม (sk1PrintNeedsCheck = false)
+// ⚠️ ข้อจำกัดที่เจ้าของระบบยอมรับ: ฐานเทียบทะเบียน "ณ วันนี้" ⇒ นายกพ้นตำแหน่งแล้ว ใบเซ็นสด (ไม่มีลายเซ็น สก.๑ ออนไลน์)
+//    พิมพ์ สก.๑ ซ้ำจากระบบไม่ได้ (ล้มแบบปิด)
+export const SK1_PRINT_STATUSES = ['approved', 'in_progress', 'completed']
+export const PERMIT_SK1_NOT_REGISTERED_TEXT = 'ไม่เข้าเงื่อนไขแบบ สก. ๑ — ผู้ขอไม่ใช่นายกในทะเบียนผู้ลงนาม'
+
+const sk1StatusOk = trip => SK1_PRINT_STATUSES.includes(trip?.status)
+
+// ต้องถามฐานไหม — เฉพาะใบ regulation ที่ข้อความตำแหน่งเป็นนายกและสถานะถึงขั้นมีการใช้รถ (นอกนั้นตอบได้เลยโดยไม่ยิง RPC)
+export function sk1PrintNeedsCheck(trip) {
+  return trip?.permit_mode === 'regulation' && tripRequesterIsMayor(trip) && sk1StatusOk(trip)
+}
+
+// sk1Applicable: true/false จากฐาน · null/undefined = ยังไม่ได้ถาม/ถามไม่ได้ ⇒ ใบ regulation ล้มแบบปิด
+export function sk1PrintAllowed({ trip, sk1Applicable = null } = {}) {
+  if (!tripRequesterIsMayor(trip) || !sk1StatusOk(trip)) return false
+  if (trip?.permit_mode !== 'regulation') return true
+  return sk1Applicable === true
+}
+
+// ผล esign_trip_status → ช่อง sk1 ใช้ได้ไหม · ไม่มีข้อมูล/ไม่พบคำขอ/ไม่มีช่อง sk1 = null (ไม่ใช่ false — ตอบไม่ได้ ไม่ใช่ตอบว่าไม่เข้า)
+export function sk1ApplicableFromStatus(status) {
+  if (!status || status.found === false || !Array.isArray(status.slots)) return null
+  const slot = status.slots.find(entry => entry?.slot === 'sk1')
+  return slot ? slot.applicable === true : null
+}
 
 // ข้อความ error ที่ trigger บน fleet_trips โยน (RAISE EXCEPTION 'FLEET_PERMIT_…: …') — FleetTrips รวมเข้า tripErrorMessage
 // ⚠️ FLEET_PERMIT_REQUIRED ขึ้นเมื่อกดบันทึกออกรถก่อนได้รับอนุญาต (ปุ่มปิดไว้อยู่แล้ว ข้อความนี้เผื่อหน้าค้าง/เครื่องที่ข้อมูลเก่า)
