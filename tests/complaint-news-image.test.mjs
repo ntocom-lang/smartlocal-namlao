@@ -556,8 +556,16 @@ await test('ป้ายมุมรูป: ก่อน/หลังดำเ�
   assert.deepEqual(kinds(filtered), ['before', 'after'])
   assert.ok(has(filtered, 'ก่อนดำเนินการ') && has(filtered, 'หลังดำเนินการ'))
   assert.ok(!filtered.includes('evil.test'))
+  // ก่อนดำเนินการขึ้นก่อนเสมอ (เจ้าของระบบสั่ง 2569-11-12) — หน้าต่างภาพข่าวส่งรูปผลงาน (หลัง) มาก่อนรูปผู้แจ้ง (ก่อน)
+  // รูปตามไปกับป้ายของตัวเอง · ในกลุ่มเดียวกันคงลำดับที่ผู้ใช้เลือก
+  const photoOrder = svg => [...svg.matchAll(/href="(data:image\/jpeg;base64,[^"]+)"/g)].map(match => match[1])
   const mixed = draw(base(), { photoDataUrls: [a, b, c], photoKinds: ['after', 'before', 'after'] }).svg
-  assert.deepEqual(kinds(mixed), ['after', 'before', 'after'])
+  assert.deepEqual(kinds(mixed), ['before', 'after', 'after'])
+  assert.deepEqual(photoOrder(mixed), [b, a, c])
+  const dialogLike = draw(base(), { photoDataUrls: [a, b, c, PHOTO], photoKinds: ['after', 'after', 'before', 'before'] }).svg
+  assert.deepEqual(kinds(dialogLike), ['before', 'before', 'after', 'after'])
+  assert.deepEqual(photoOrder(dialogLike), [c, PHOTO, a, b])
+  assert.deepEqual(photoOrder(draw(base(), { photoDataUrls: [a, b, c] }).svg), [a, b, c], 'ไม่มีป้าย = ลำดับเดิม')
   // ไม่ส่ง photoKinds / ค่าผิด = ไม่มีป้าย
   assert.deepEqual(kinds(draw(base(), { photoDataUrls: [a, b] }).svg), [])
   assert.deepEqual(kinds(draw(base(), { photoDataUrls: [a, b], photoKinds: ['x', null] }).svg), [])

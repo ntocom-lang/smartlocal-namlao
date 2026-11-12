@@ -579,6 +579,9 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
     .map((url, i) => ({ url, caption: String(photoCaptions?.[i] ?? '').trim(), kind: Object.hasOwn(NEWS_PHOTO_KIND_LABELS, photoKinds?.[i]) ? photoKinds[i] : null }))
     .filter(entry => imageUrlOk(entry.url))
     .slice(0, MAX_NEWS_PHOTOS)
+    // รูปก่อนดำเนินการขึ้นก่อนเสมอ แล้วค่อยหลังดำเนินการ (เจ้าของระบบสั่ง 2569-11-12) — ผู้เรียกส่งรูปผลงานมาก่อนรูปผู้แจ้ง
+    // sort ของ JS คงลำดับเดิมในกลุ่มเดียวกัน (stable) · รูปไม่มีป้ายอยู่กลุ่มเดียวกับ "หลัง" ลำดับเดิมไม่เปลี่ยน
+    .sort((x, y) => (x.kind === 'before' ? 0 : 1) - (y.kind === 'before' ? 0 : 1))
   const photos = entries.map(entry => entry.url)
   const captionH = entries.some(entry => entry.caption) ? CAPTION_H : 0
   const parts = []
