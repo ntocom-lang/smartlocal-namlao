@@ -56,10 +56,14 @@ const GAP = 16
 const CAPTION_H = 52
 // บล็อกผู้บริหารมุมขวาแถบหัว (เจ้าของสั่ง 2569-11-11 ให้เด่นแบบภาพข่าวต้นฉบับ อบต.): รูปตัดพื้นหลังตัวใหญ่ไม่มีกรอบขาว
 // ยืนชิดก้นกล่อง แล้วป้ายชื่อขอบทองทับช่วงล่างของรูป (ซ่อนรอยตัดลำตัว) · ผู้เรียกตัดพื้นหลังมาเอง (prepareExecutivePhoto)
-const EXEC_PHOTO_W = 300
-const EXEC_PHOTO_H = 300
+// 2569-11-12 เจ้าของสั่งให้รูปใหญ่ขึ้น + แสงออร่าให้เด่น นูน สง่า: 300 → 370 (กว้างกว่าป้าย 25 px ต่อข้าง ยังไม่ชนข้อความหัวที่เว้นไว้ 28 px)
+// ป้ายทับช่วงล่างมากขึ้น (52 → 60) ให้แถบหัวสูงขึ้นน้อยที่สุด
+const EXEC_PHOTO_W = 370
+const EXEC_PHOTO_H = 370
 const EXEC_PHOTO_TOP = 26
-const EXEC_PLATE_OVERLAP = 52
+const EXEC_PLATE_OVERLAP = 60
+// ออร่า: วงแสงสีขาวรอบศีรษะ + ขอบเรืองสีขาวตามรูปทรงคน 2 ชั้น — ใช้ mask ตามความโปร่งใสของรูป ไม่ใช้ SVG filter
+const EXEC_RIM_DIRS = 12
 const EXEC_PLATE_W = 320
 const EXEC_PLATE_PAD_X = 22
 const EXEC_PLATE_PAD_Y = 16
@@ -507,6 +511,34 @@ function bokehSvg(clipId, top, width, height, flip) {
   return `<g clip-path="url(#${clipId})" data-bokeh="1">${circles}</g>`
 }
 
+/**
+ * ออร่ารอบรูปผู้บริหาร (เจ้าของสั่ง 2569-11-12 "เด่นๆ นูนๆ สง่าๆ") — ตายตัว ไม่สุ่ม ไม่ใช้ SVG filter · อยู่ใน clip ของแถบหัว ไม่ล้นลงเนื้อหา
+ * 1) วงแสงสีขาวรอบศีรษะ (ขาวนวลตรงกลาง จางออกที่ขอบ) 2) ขอบเรืองสีขาวตามรูปทรงคน: mask จากความโปร่งใสของรูป (mask-type alpha)
+ *    เลื่อนสำเนาไป 12 ทิศ 2 ชั้น (นอกจาง + ในเข้ม) ทำให้ตัวคนลอยเด่นจากพื้น (รูปที่ตัดพื้นไม่ได้และมีกรอบ = ได้กรอบเรืองสี่เหลี่ยมแทน)
+ * เจ้าของปรับ 2569-11-12: ตัดรัศมีแสง (แฉก) ออก · วงแสงและขอบเรืองเป็นสีขาวทั้งหมด ไม่ใช้ทอง
+ */
+function execAuraSvg(defs, cx, px, w, h, headerH, scale) {
+  const top = EXEC_PHOTO_TOP
+  const cy = top + h * 0.36 // ราวศีรษะ (รูปยืนชิดก้นกล่อง หน้าอยู่ราวหนึ่งในสามบน)
+  const haloR = w * 0.42 // เจ้าของสั่งให้วงแสงเล็กลง 2569-11-12 (เดิม 0.6) — ฟุ้งแค่รอบศีรษะ-ไหล่
+  defs.push(`<radialGradient id="news-exec-halo" gradientUnits="userSpaceOnUse" cx="${num(cx)}" cy="${num(cy)}" r="${num(haloR)}"><stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/><stop offset="0.45" stop-color="#ffffff" stop-opacity="0.45"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>`
+    + `<mask id="news-exec-mask" mask-type="alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="${IMAGE_WIDTH}" height="${num(headerH)}"><use href="#news-exec-img"/></mask>`
+    + `<g id="news-exec-sil"><rect x="${num(px - 24)}" y="${top - 24}" width="${num(w + 48)}" height="${num(h + 48)}" fill="currentColor" mask="url(#news-exec-mask)"/></g>`)
+  const ring = (radius, color, opacity) => {
+    const uses = Array.from({ length: EXEC_RIM_DIRS }, (_, i) => {
+      const a = (i / EXEC_RIM_DIRS) * Math.PI * 2
+      return `<use href="#news-exec-sil" x="${num(Math.cos(a) * radius)}" y="${num(Math.sin(a) * radius)}"/>`
+    }).join('')
+    // ความทึบที่กลุ่ม (ไม่ใช่รายสำเนา) — สำเนาที่ซ้อนกันไม่ทึบสะสม ขอบจึงเนียนเท่ากันทุกด้าน
+    return `<g color="${color}" opacity="${opacity}">${uses}</g>`
+  }
+  return `<g clip-path="url(#news-head-clip)" data-exec-aura="1">`
+    + `<circle cx="${num(cx)}" cy="${num(cy)}" r="${num(haloR)}" fill="url(#news-exec-halo)"/>`
+    + ring(Math.max(4, Math.round(9 * scale)), '#ffffff', 0.55)
+    + ring(Math.max(2, Math.round(4 * scale)), '#ffffff', 0.95)
+    + '</g>'
+}
+
 /** การ์ดมุมมน + เงานุ่ม 2 ชั้น (สี่เหลี่ยมเลื่อนลง แทน SVG filter) */
 function softCard(x, y, w, h, r, fill = '#ffffff', extra = '') {
   return `<rect x="${num(x)}" y="${num(y + 9)}" width="${num(w)}" height="${num(h)}" rx="${r}" fill="${SHADOW}" fill-opacity="0.05"/>`
@@ -556,16 +588,18 @@ export function buildNewsSvg(model, measure, assets = {}) {
   return result
 }
 
+// 2569-11-12 เจ้าของสั่งรูปนายกใหญ่ขึ้น: ไล่ย่อตัวหนังสือ/รูปงานก่อน รูปนายกลดช้าลง (0.95 → 0.6) และลดเหลือ 0.38 (141 px เท่าขั้นสุดท้ายเดิม) เฉพาะขั้นสุดท้าย
 // ทุกขั้นคงแถบขั้นตอน (พร้อมวันที่) ไว้เสมอ — เจ้าของระบบสั่ง 2569-11-12 ให้ย่อรูป/กรอบ/ตัวหนังสือที่ใหญ่เกินแทนการตัดแถบทิ้ง
 // t = ตัวคูณขนาดตัวหนังสือ+ระยะห่างของเนื้อหา · exec = ตัวคูณรูปนายก · foot = ตัวคูณแถบท้าย (QR/ข้อความ) · min = ความสูงช่องรูปต่ำสุด (1–2 รูป)
 // ต่ำสุด: หัวข้อข่าว 40×0.8 = 32 px · QR 200×0.8 = 160 px (ยังสแกนติด) · รูปนายก 165 px
 const NEWS_FIT_LEVELS = Object.freeze([
   { t: 1, exec: 1, foot: 1, min: 300 },
-  { t: 0.92, exec: 0.85, foot: 1, min: 280 },
-  { t: 0.86, exec: 0.73, foot: 0.9, min: 260 },
-  { t: 0.8, exec: 0.62, foot: 0.85, min: 240 },
-  { t: 0.8, exec: 0.55, foot: 0.8, min: 220 },
-  { t: 0.8, exec: 0.45, foot: 0.8, min: 220 }, // ทางสุดท้าย: ภาพรวม 4 รูป + ป้ายหมู่ + "และอีก N จุด" + รูปนายก (รูปนายกเหลือ 135 px ยังเห็นหน้า)
+  { t: 0.92, exec: 0.95, foot: 1, min: 280 },
+  { t: 0.86, exec: 0.9, foot: 0.9, min: 260 },
+  { t: 0.8, exec: 0.85, foot: 0.85, min: 240 },
+  { t: 0.8, exec: 0.72, foot: 0.8, min: 220 },
+  { t: 0.8, exec: 0.6, foot: 0.8, min: 220 },
+  { t: 0.8, exec: 0.38, foot: 0.8, min: 220 }, // ทางสุดท้าย: ภาพรวม 4 รูป + ป้ายหมู่ + "และอีก N จุด" + รูปนายก (รูปนายกเหลือ 141 px เท่าเดิมก่อนขยาย ยังเห็นหน้า)
 ])
 
 function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], executivePhotoDataUrl = null, photoCaptions = [], photoKinds = [], moreText = '', font = null } = {}, fit = NEWS_FIT_LEVELS[0]) {
@@ -661,6 +695,8 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
     defs.push(`<clipPath id="news-logo-clip"><circle cx="${logoCx}" cy="${num(logoCy)}" r="${inner}"/></clipPath>`)
     parts.push(`<image href="${esc(logoDataUrl)}" x="${logoCx - inner}" y="${num(logoCy - inner)}" width="${inner * 2}" height="${inner * 2}" preserveAspectRatio="xMidYMid meet" clip-path="url(#news-logo-clip)"/>`)
   }
+  // ช่องว่างไว้ให้ออร่ารูปผู้บริหาร — วางใต้ข้อความหัว แสงจางจึงไม่ทับตัวหนังสือ
+  const auraSlot = parts.push('') - 1
   parts.push(headerTexts.join(''))
   if (exec) {
     // ป้ายขาวขอบทองชิดขอบขวาของพื้นที่เนื้อหา · รูปอยู่กึ่งกลางป้าย ยืนชิดก้นกล่องและถูกป้ายทับช่วงล่าง (ไม่มีรูป = ป้ายอย่างเดียว)
@@ -669,8 +705,11 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
     const centerX = plateX + EXEC_PLATE_W / 2
     if (execPhoto) {
       const px = centerX - execPhotoW / 2
-      defs.push(`<clipPath id="news-exec-clip"><rect x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}"/></clipPath>`)
-      parts.push(`<image href="${esc(execPhoto)}" x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}" preserveAspectRatio="xMidYMax meet" clip-path="url(#news-exec-clip)"/>`)
+      // รูปประกาศครั้งเดียวใน defs แล้วใช้ซ้ำ (mask ขอบเรือง + ตัวรูปจริง) — สตริง SVG ไม่บวมเป็นสองเท่าของขนาดรูป
+      defs.push(`<clipPath id="news-exec-clip"><rect x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}"/></clipPath>`
+        + `<image id="news-exec-img" href="${esc(execPhoto)}" x="${num(px)}" y="${EXEC_PHOTO_TOP}" width="${execPhotoW}" height="${execPhotoH}" preserveAspectRatio="xMidYMax meet" clip-path="url(#news-exec-clip)"/>`)
+      parts[auraSlot] = execAuraSvg(defs, centerX, px, execPhotoW, execPhotoH, headerH, fit.exec)
+      parts.push('<use href="#news-exec-img" data-exec-photo="1"/>')
     }
     if (execPlateH) {
       // เงาจางใต้ป้าย (สี่เหลี่ยมเลื่อนลง) แทน SVG filter ซึ่งบางเบราว์เซอร์ไม่วาดตอนแปลงเป็น PNG
