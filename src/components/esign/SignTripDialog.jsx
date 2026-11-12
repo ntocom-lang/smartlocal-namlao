@@ -4,7 +4,7 @@ import { Loader2, PenLine, Plus, ShieldCheck, Undo2, X } from 'lucide-react'
 import AddSignatureDialog from '../profile/AddSignatureDialog'
 import { Chip, Notice, ReturnNote } from './EsignBits'
 import PinForm from './PinForm'
-import { ESIGN_DECISION_LABEL, esignFailureText, esignMessage } from '../../lib/esign'
+import { ESIGN_DECISION_LABEL, esignFailureText, esignMessage, esignReasonHash } from '../../lib/esign'
 import { getMySignatures, getMySignerOverview, getTripEsignStatus, returnFleetTrip, signFleetTrip } from '../../lib/esignApi'
 import { PIN_INPUT_CLASS, SIGNATURE_CHECKER, isPin, signatureDataUrl } from '../../lib/esignUi'
 import { SIGNATURE_MAX_IMAGES } from '../../lib/signatureImage'
@@ -118,7 +118,10 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, canRe
     if (!ready) return
     setBusy(true)
     setError('')
-    const result = await signFleetTrip({ tripId, slot, pin, decision: decision === 'approve' ? 'approve' : null, imageId: attach ? imageId : null })
+    // hash ของเหตุผลที่แสดงอยู่ในกล่องนี้ (แถว "เหตุผลความจำเป็น") — ผู้ขอแก้ระหว่างเปิดค้าง DB จะปฏิเสธ (reason_changed)
+    // ไม่มีเหตุผลแสดง = ไม่ส่ง (ใบทั่วไป) · ใบ ว.๕ ที่เปิดตอนเหตุผลยังว่างแล้วผู้ขอกรอกทีหลัง DB ตอบ reload_required
+    const reasonHash = summary?.positionCarReason ? await esignReasonHash(summary.positionCarReason) : null
+    const result = await signFleetTrip({ tripId, slot, pin, decision: decision === 'approve' ? 'approve' : null, imageId: attach ? imageId : null, reasonHash })
     if (!result?.ok) {
       setBusy(false)
       setPin('')
@@ -150,7 +153,8 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, canRe
     if (!stage2 || !ready) return
     setBusy(true)
     setError('')
-    const result = await signFleetTrip({ tripId, slot: 'authority', pin, decision: 'approve', imageId: attach ? imageId : null })
+    const reasonHash = summary?.positionCarReason ? await esignReasonHash(summary.positionCarReason) : null
+    const result = await signFleetTrip({ tripId, slot: 'authority', pin, decision: 'approve', imageId: attach ? imageId : null, reasonHash })
     setBusy(false)
     if (!result?.ok) {
       setPin('')
@@ -211,11 +215,11 @@ export default function SignTripDialog({ tripId, slot, slotLabel, summary, canRe
             ))}
           </dl>
           <ReturnNote item={lastReturn} />
-          {/* ข้อ ๑๒ ว.๕ — ผู้ขอมีรถประจำตำแหน่งแต่ยังไม่กรอกเหตุผล: ลงนามตอนนี้ระบบไม่นับเป็นการอนุญาต และเหตุผลจะถูกล็อก */}
+          {/* ข้อ ๑๒ ว.๕ — ผู้ขอมีรถประจำตำแหน่งแต่ยังไม่กรอกเหตุผล: DB ปฏิเสธการลงนาม (reason_required — P4) จนกว่าผู้ขอจะกรอก */}
           {!returning && summary?.positionCarRequired && !summary?.positionCarReason && (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800" data-sign-position-car>
-              ⚠️ ผู้ขอมีรถประจำตำแหน่ง แต่ยังไม่ได้กรอกเหตุผลความจำเป็น — ลงนามตอนนี้ระบบจะไม่นับเป็นการอนุญาต
-              ควรส่งคืนให้ผู้ขอกรอกเหตุผลก่อน
+              ⚠️ ผู้ขอมีรถประจำตำแหน่ง แต่ยังไม่ได้กรอกเหตุผลความจำเป็น — ยังลงนามไม่ได้จนกว่าผู้ขอจะกรอกเหตุผล
+              ส่งคืนให้ผู้ขอกรอกเหตุผลได้
             </p>
           )}
           {!returning && (
