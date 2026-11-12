@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, supabaseUrl } from '../../lib/supabase'
 import { fetchImageAsDataUrl } from '../../lib/driveStorage'
+import { loadNewsFont } from '../../lib/newsFont'
 import { departmentColorKeyByName, newsThemeFor } from '../../lib/departmentColors'
 import { NEWS_EXEC_PHOTO_SIDE, cutoutPlainBackground, svgToPngFile, transparentPhotoBox, withNewsPhotoUrl } from '../../lib/complaintNewsImage'
 
@@ -179,6 +180,21 @@ export function useDepartmentTheme(tenantId, departmentName) {
  * เตรียมไฟล์ PNG ไว้ล่วงหน้า ไม่ใช่ตอนกดปุ่ม: navigator.share() ต้องถูกเรียกในจังหวะที่ผู้ใช้เพิ่งกด
  * (แบบเดียวกับ ComplaintMonthlyInfographic) · คืน file เฉพาะเมื่อไฟล์ตรงกับภาพล่าสุดแล้ว
  */
+/**
+ * ฟอนต์ Kanit ของภาพข่าว — รอโหลดก่อนค่อยวาดภาพ (ready) ไม่งั้นภาพแรกวาดด้วยฟอนต์ระบบแล้วสลับทีหลัง + เตรียม PNG ซ้ำสองรอบ
+ * โหลดไม่สำเร็จ: ready=true, font=null → ภาพใช้ฟอนต์ระบบเดิม (ยังดาวน์โหลด/แชร์ได้)
+ * @returns {{ ready: boolean, font: { family: string, css: string } | null }}
+ */
+export function useNewsFont() {
+  const [state, setState] = useState({ ready: false, font: null })
+  useEffect(() => {
+    let active = true
+    loadNewsFont().then(font => { if (active) setState({ ready: true, font }) })
+    return () => { active = false }
+  }, [])
+  return state
+}
+
 export function usePreparedPng(image, fileName) {
   const [prepared, setPrepared] = useState(null)
   const [retry, setRetry] = useState(0)

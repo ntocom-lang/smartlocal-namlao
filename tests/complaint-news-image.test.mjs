@@ -741,4 +741,54 @@ await test('static: ภาพข่าวจบ A4 — ไล่ NEWS_FIT_LEVELS
   assert.match(parts, /ภาพนี้ยาวเกิน 1 แผ่น A4/)
 })
 
+// ฟอนต์ Kanit (เจ้าของระบบเลือก 2569-11-12) — ฝังใน <style> ของ SVG เพราะ SVG ผ่าน <img> โหลดไฟล์ภายนอกไม่ได้
+const FAMILY = 'SmartLocal News Kanit'
+const face = (weight, b64 = 'd09GMgABAAA=') => `@font-face{font-family:'${FAMILY}';font-weight:${weight};src:url(data:font/woff2;base64,${b64}) format('woff2');unicode-range:U+0E01-0E5B, U+25CC;}`
+const FONT = { family: FAMILY, css: face(400) + face(700) }
+
+await test('ฟอนต์ฝัง: <style> @font-face + font-family นำด้วย Kanit แล้วตามด้วยฟอนต์ระบบสำรอง', () => {
+  const { svg } = draw(base(), { font: FONT })
+  assert.match(svg, /<style>@font-face\{font-family:'SmartLocal News Kanit';font-weight:400;/)
+  assert.ok(svg.includes(`font-family="${News.newsFontStack(FAMILY)}"`))
+  assert.ok(News.newsFontStack(FAMILY).startsWith(`'${FAMILY}', `) && News.newsFontStack(FAMILY).includes(News.FONT_STACK))
+  assert.equal((svg.match(/<style>/g) ?? []).length, 1)
+})
+
+await test('ไม่ส่งฟอนต์ = ภาพเดิมทุกตัวอักษร (ไม่มี <style>, ฟอนต์ระบบ)', () => {
+  const plainSvg = draw(base()).svg
+  assert.ok(!plainSvg.includes('<style>'))
+  assert.ok(plainSvg.includes(`font-family="${News.FONT_STACK}"`))
+  assert.equal(draw(base(), { font: null }).svg, plainSvg)
+})
+
+await test('ฟอนต์ที่ไม่ใช่ data:font/woff2 รูปแบบที่ newsFont.js สร้าง ถูกทิ้ง (กันแทรกแท็กผ่าน <style>)', () => {
+  const plainSvg = draw(base()).svg
+  const bad = [
+    { family: FAMILY, css: face(400) + '</style><script>alert(1)</script>' },
+    { family: FAMILY, css: face(400).replace('data:font/woff2;base64,', 'https://evil.example/f.woff2#') },
+    { family: "x'><script>", css: face(400) },
+    { family: FAMILY, css: '' },
+    { family: FAMILY },
+    'Kanit',
+  ]
+  for (const font of bad) assert.equal(draw(base(), { font }).svg, plainSvg)
+})
+
+await test('ไฟล์ฟอนต์ + สัญญาอนุญาต OFL อยู่ในโปรเจกต์ และหน้าต่างภาพข่าวทั้งสองวัดข้อความด้วยชุดฟอนต์เดียวกับที่ฝัง', async () => {
+  const dir = new URL('../src/assets/fonts/news-kanit/', import.meta.url)
+  for (const name of ['kanit-thai-400', 'kanit-thai-700', 'kanit-latin-400', 'kanit-latin-700']) {
+    const bytes = await readFile(new URL(`${name}.woff2`, dir))
+    assert.equal(bytes.subarray(0, 4).toString('latin1'), 'wOF2', name)
+  }
+  assert.match(await readFile(new URL('OFL.txt', dir), 'utf8'), /SIL Open Font License, Version 1\.1/)
+  const loader = await readFile(new URL('../src/lib/newsFont.js', import.meta.url), 'utf8')
+  assert.match(loader, /document\.fonts\.add/)
+  for (const file of ['ComplaintNewsDialog.jsx', 'ComplaintNewsBatchDialog.jsx']) {
+    const src = await readFile(new URL(`../src/components/complaints/${file}`, import.meta.url), 'utf8')
+    assert.match(src, /if \(!newsFont\.ready\) return null/, file)
+    assert.match(src, /createCanvasMeasure\(font \? newsFontStack\(font\.family\) : undefined\)/, file)
+    assert.match(src, /\n\s+font,/, file)
+  }
+})
+
 console.log(`\n${cases} cases passed`)
