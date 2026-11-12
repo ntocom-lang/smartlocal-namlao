@@ -4,10 +4,10 @@ import { supabase } from '../../lib/supabase'
 import { appUrl } from '../../lib/basename'
 import { orgHeadTitle } from '../../lib/orgTerms'
 import {
-  MAX_NEWS_PHOTOS, buildNewsModel, buildNewsSvg, createCanvasMeasure, defaultShowDuration, draftHeadline,
+  MAX_NEWS_PHOTOS, buildNewsModel, buildNewsSvg, createCanvasMeasure, newsFontStack, defaultShowDuration, draftHeadline,
 } from '../../lib/complaintNewsImage'
 import { DialogShell, NewsOutputPanel } from './newsDialogParts'
-import { GENERIC_ERROR, SHOWABLE_CODES, loadImage, useDepartmentTheme, useNewsBranding, usePreparedPng } from './newsDialogData'
+import { GENERIC_ERROR, SHOWABLE_CODES, loadImage, useDepartmentTheme, useNewsBranding, useNewsFont, usePreparedPng } from './newsDialogData'
 
 // กล่องสร้าง "ภาพข่าวประชาสัมพันธ์" ของคำร้องที่ดำเนินการแล้ว (เจ้าของระบบอนุมัติ 2569-11-11)
 // ภาพที่เห็นในกล่อง = ไฟล์ PNG ที่ดาวน์โหลด/แชร์ (สตริง SVG ก้อนเดียวกัน ดู src/lib/complaintNewsImage.js)
@@ -157,13 +157,17 @@ function NewsDialogBody({ source, complaint: c, tenant, departmentName = '', cat
   const photoDataUrls = useMemo(() => pickedPhotos.map(photo => photo.dataUrl), [pickedPhotos])
   const photoKinds = useMemo(() => pickedPhotos.map(photo => photo.kind), [pickedPhotos])
 
+  const newsFont = useNewsFont()
   const image = useMemo(() => {
+    if (!newsFont.ready) return null
+    const { font } = newsFont
     try {
-      return buildNewsSvg(deferredModel, createCanvasMeasure(), { logoDataUrl: logo, photoDataUrls, photoKinds, executivePhotoDataUrl: mayorOn ? mayorPhoto : null })
+      return buildNewsSvg(deferredModel, createCanvasMeasure(font ? newsFontStack(font.family) : undefined), {
+        font, logoDataUrl: logo, photoDataUrls, photoKinds, executivePhotoDataUrl: mayorOn ? mayorPhoto : null })
     } catch {
       return null
     }
-  }, [deferredModel, logo, photoDataUrls, photoKinds, mayorOn, mayorPhoto])
+  }, [newsFont, deferredModel, logo, photoDataUrls, photoKinds, mayorOn, mayorPhoto])
   const fileName = `news-${String(c.ref_no ?? c.id).replace(/[^A-Za-z0-9_-]+/g, '-')}.png`
   const png = usePreparedPng(image, fileName)
 

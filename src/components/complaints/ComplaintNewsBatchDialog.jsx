@@ -4,11 +4,11 @@ import { supabase } from '../../lib/supabase'
 import { appUrl } from '../../lib/basename'
 import { orgHeadTitle } from '../../lib/orgTerms'
 import {
-  MAX_BATCH_ITEMS, MAX_NEWS_PHOTOS, batchMoreText, buildBatchNewsModel, buildNewsSvg, createCanvasMeasure,
+  MAX_BATCH_ITEMS, MAX_NEWS_PHOTOS, batchMoreText, buildBatchNewsModel, buildNewsSvg, createCanvasMeasure, newsFontStack,
   groupNewsCandidates, thaiLongDate, villageLevel, villageList,
 } from '../../lib/complaintNewsImage'
 import { DialogShell, NewsOutputPanel } from './newsDialogParts'
-import { loadImage, useDepartmentTheme, useNewsBranding, usePreparedPng } from './newsDialogData'
+import { loadImage, useDepartmentTheme, useNewsBranding, useNewsFont, usePreparedPng } from './newsDialogData'
 
 // กล่อง "ภาพข่าวรวม" — เรื่องหมวดเดียวกันที่เสร็จวันเดียวกัน รวมเป็นภาพเดียว: 1 รูปต่อเรื่อง + ป้ายหมู่ใต้รูป
 // (เจ้าของระบบตัดสิน 2569-11-11: ไม่มี SQL · ระบบจัดกลุ่ม "วันเดียวกัน+หมวดเดียวกัน" ให้ + ติ๊กเลือกเองได้ ·
@@ -166,9 +166,13 @@ export default function ComplaintNewsBatchDialog({ source = 'staff', candidates,
   const photoCaptions = shown.map(entry => villageLevel(detailOf(entry.item)?.village))
   const photosKey = photoDataUrls.join('|')
   const captionsKey = photoCaptions.join('|')
+  const newsFont = useNewsFont()
   const image = useMemo(() => {
+    if (!newsFont.ready) return null
+    const { font } = newsFont
     try {
-      return buildNewsSvg(deferredModel, createCanvasMeasure(), {
+      return buildNewsSvg(deferredModel, createCanvasMeasure(font ? newsFontStack(font.family) : undefined), {
+        font,
         // ภาพรวมใช้เฉพาะรูปหลังดำเนินการ (ไม่มีรูปจากผู้แจ้ง) ทุกช่องจึงเป็น 'after'
         logoDataUrl: logo, photoDataUrls, photoCaptions, photoKinds: photoDataUrls.map(() => 'after'), moreText, executivePhotoDataUrl: mayorOn ? mayorPhoto : null,
       })
@@ -176,7 +180,7 @@ export default function ComplaintNewsBatchDialog({ source = 'staff', candidates,
       return null
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deferredModel, logo, photosKey, captionsKey, moreText, mayorOn, mayorPhoto])
+  }, [newsFont, deferredModel, logo, photosKey, captionsKey, moreText, mayorOn, mayorPhoto])
   const png = usePreparedPng(image, `news-batch-${group?.day ?? 'x'}-${pickedItems.length}.png`)
 
   function toggleItem(target, itemGroup) {

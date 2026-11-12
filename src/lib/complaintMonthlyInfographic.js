@@ -409,12 +409,15 @@ export function buildInfographicSvg(model, measure) {
   return { svg, width: IMAGE_WIDTH, height }
 }
 
-/** ตัววัดข้อความด้วย canvas ชุดฟอนต์เดียวกับภาพ — ใช้ในเบราว์เซอร์เท่านั้น */
-export function createCanvasMeasure() {
+/**
+ * ตัววัดข้อความด้วย canvas ชุดฟอนต์เดียวกับภาพ — ใช้ในเบราว์เซอร์เท่านั้น
+ * @param {string} [fontStack] ต้องตรงกับ font-family ของ SVG ที่จะวาด (ภาพข่าวส่งชุดที่มี Kanit นำหน้า — newsFont.js)
+ */
+export function createCanvasMeasure(fontStack = FONT_STACK) {
   const context = document.createElement('canvas').getContext('2d')
   if (!context) throw new Error('Canvas unavailable')
   return (value, size, bold) => {
-    context.font = `${bold ? 700 : 400} ${size}px ${FONT_STACK}`
+    context.font = `${bold ? 700 : 400} ${size}px ${fontStack}`
     return context.measureText(value).width
   }
 }

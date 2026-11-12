@@ -524,11 +524,23 @@ function pageBackdrop(width, height, theme) {
     + `<rect width="${width}" height="${height}" fill="url(#news-bg-grad)" data-backdrop="1"/>`
 }
 
+// ชุดฟอนต์เมื่อมีฟอนต์ฝัง — ใช้ทั้ง font-family ของ SVG และตัววัดข้อความ (createCanvasMeasure) ให้เป็นค่าเดียวกันเสมอ
+export const newsFontStack = family => `'${family}', ${FONT_STACK}`
+
+// รับเฉพาะ @font-face ที่เป็น data:font/woff2 ซึ่ง newsFont.js สร้างเอง — กันสตริงแปลกปลอมหลุดเข้า <style> (ปิด </style> แล้วแทรกแท็ก)
+function newsFontOk(font) {
+  if (!font || typeof font.family !== 'string' || typeof font.css !== 'string') return false
+  if (!/^[A-Za-z0-9 ]+$/.test(font.family)) return false
+  return /^(@font-face\{font-family:'[A-Za-z0-9 ]+';font-weight:\d{3};src:url\(data:font\/woff2;base64,[A-Za-z0-9+/=]+\) format\('woff2'\);unicode-range:[U+0-9A-Fa-f, -]+;\})+$/.test(font.css)
+}
+
 /**
  * @param {ReturnType<typeof buildNewsModel>} model
  * @param {(text: string, size: number, bold: boolean) => number} measure
  * @param {{ logoDataUrl?: string | null, photoDataUrls?: (string | null)[], executivePhotoDataUrl?: string | null,
- *   photoCaptions?: string[], photoKinds?: ('before' | 'after' | null | undefined)[], moreText?: string }} [assets]
+ *   photoCaptions?: string[], photoKinds?: ('before' | 'after' | null | undefined)[], moreText?: string,
+ *   font?: { family: string, css: string } | null }} [assets]
+ *   font = ฟอนต์ฝังจาก loadNewsFont() (newsFont.js) — measure ต้องวัดด้วย newsFontStack(font.family) ชุดเดียวกัน · ไม่ส่ง = ฟอนต์ระบบ
  *   photoCaptions = ป้ายใต้รูป (ภาพรวม: หมู่) เรียงตรงกับ photoDataUrls · moreText = "และอีก N จุด" ใต้ตารางรูป
  *   photoKinds = ชนิดรูปเรียงตรงกับ photoDataUrls → ป้ายมุมรูป "ก่อน/หลังดำเนินการ" (ไม่ส่ง/ค่าอื่น = ไม่มีป้าย)
  * @returns {{ svg: string, width: number, height: number, photoCount: number, fitsA4: boolean }}
@@ -556,7 +568,7 @@ const NEWS_FIT_LEVELS = Object.freeze([
   { t: 0.8, exec: 0.45, foot: 0.8, min: 220 }, // ทางสุดท้าย: ภาพรวม 4 รูป + ป้ายหมู่ + "และอีก N จุด" + รูปนายก (รูปนายกเหลือ 135 px ยังเห็นหน้า)
 ])
 
-function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], executivePhotoDataUrl = null, photoCaptions = [], photoKinds = [], moreText = '' } = {}, fit = NEWS_FIT_LEVELS[0]) {
+function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], executivePhotoDataUrl = null, photoCaptions = [], photoKinds = [], moreText = '', font = null } = {}, fit = NEWS_FIT_LEVELS[0]) {
   const execPhotoW = Math.round(EXEC_PHOTO_W * fit.exec)
   const execPhotoH = Math.round(EXEC_PHOTO_H * fit.exec)
   const sz = base => Math.round(base * fit.t) // ขนาดตัวหนังสือเนื้อหา
@@ -887,7 +899,11 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
   }
 
   // พื้นขาวเต็มภาพเป็นองค์ประกอบแรกสุด — PNG ไม่มีพื้นจะโปร่งใสแล้วตัวอักษรเข้มกลายเป็นดำบนดำในแอปโหมดมืด
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${IMAGE_WIDTH}" height="${height}" viewBox="0 0 ${IMAGE_WIDTH} ${height}" font-family="${FONT_STACK}" role="img" aria-label="${esc(`ข่าวประชาสัมพันธ์ ${model.tenantName}`)}"><title>${esc(`ข่าวประชาสัมพันธ์ ${model.tenantName}`)}</title><rect width="${IMAGE_WIDTH}" height="${height}" fill="#ffffff"/>${pageBackdrop(IMAGE_WIDTH, height, theme)}<defs>${defs.join('')}</defs>${parts.join('')}</svg>`
+  // ฟอนต์ฝัง (Kanit — newsFont.js) อยู่ใน <style> ของ SVG เอง เพราะ SVG ที่เปิดผ่าน <img> โหลดไฟล์ภายนอกไม่ได้
+  const embedded = newsFontOk(font)
+  const fontAttr = embedded ? newsFontStack(font.family) : FONT_STACK
+  const style = embedded ? `<style>${font.css}</style>` : ''
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${IMAGE_WIDTH}" height="${height}" viewBox="0 0 ${IMAGE_WIDTH} ${height}" font-family="${fontAttr}" role="img" aria-label="${esc(`ข่าวประชาสัมพันธ์ ${model.tenantName}`)}"><title>${esc(`ข่าวประชาสัมพันธ์ ${model.tenantName}`)}</title>${style}<rect width="${IMAGE_WIDTH}" height="${height}" fill="#ffffff"/>${pageBackdrop(IMAGE_WIDTH, height, theme)}<defs>${defs.join('')}</defs>${parts.join('')}</svg>`
   return { svg, width: IMAGE_WIDTH, height, photoCount: photos.length, fitsA4: height <= NEWS_MAX_HEIGHT }
 }
 
