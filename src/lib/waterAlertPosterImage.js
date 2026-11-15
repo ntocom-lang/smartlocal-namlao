@@ -398,6 +398,117 @@ function drawPin(ctx, x, y, size) {
 
 /* ── ชิ้นส่วนแผงขาว (แผงเกณฑ์ + แผงฝน) แบบพรีเมียม — Canvas 2D ล้วน ไม่ใช้ filter (Safari) ── */
 // ผสมสีเข้าหาขาว (t > 0) หรือดำ (t < 0)
+// ── คำ "Smart City Local" บรรทัดเดียว ไม่มีพื้นหลัง (เจ้าของสั่ง 2569-11-15: เอาพื้นหลังออก เหลือตัวหนังสือ + ไอคอน) ──
+// ยกแบบจาก smartCityMarkSvg ของภาพข่าว (#713) ให้หน้าตาตรงกัน: คำเอียง ขอบขาวหนา + เงา · Smart/Local ไล่น้ำเงิน City ไล่ส้ม
+// · สัญญาณ wifi + หมุดแดง + เส้นโค้งเขียว · วาดด้วย Canvas 2D ล้วน (ไม่ใช้ SVG/filter — Safari) จึงคมทุกขนาด ไม่ใช้ไฟล์ภาพ
+// · ไม่มีริบบิ้นข้อความไทยแบบภาพข่าว: ที่ว่างสูงแค่ ~48px ตัวไทยจะเล็กจนอ่านไม่ออก
+const MARK_S = 40 // ขนาดตัวอักษรในหน่วยออกแบบ
+const MARK_H = 48
+const MARK_BASE = 36 // เส้นฐานของคำในหน่วยออกแบบ
+const MARK_MIN_SCALE = 0.6 // ที่ว่างเล็กกว่านี้ = ไม่วาด (ตัวเล็กจนดูรก)
+const MARK_SKEW = -Math.tan((11 * Math.PI) / 180) // เอียง 11° เท่าภาพข่าว
+const MARK_WIFI_W = 36
+const MARK_PIN_W = 26
+const MARK_WORDS = [['Smart', 'blue'], ['City', 'orange'], ['Local', 'blue']]
+
+function drawSmartCityMark(ctx, right, top, maxW, maxH, display) {
+  const widths = MARK_WORDS.map(([t]) => textWidth(ctx, t, 700, MARK_S, display))
+  const space = MARK_S * 0.22
+  const textW = widths.reduce((sum, v) => sum + v, 0) + space * (MARK_WORDS.length - 1)
+  const textX = MARK_WIFI_W + 6
+  const pinX = textX + textW + 10 + MARK_PIN_W / 2
+  const totalW = pinX + MARK_PIN_W / 2 + 4
+  const scale = Math.min(maxW / totalW, maxH / MARK_H, 1.15)
+  if (!(scale >= MARK_MIN_SCALE)) return null
+  const w = totalW * scale
+  const h = MARK_H * scale
+  const x = right - w
+  const y = top + (maxH - h) / 2
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.scale(scale, scale)
+
+  // เส้นโค้งเขียวกวาดใต้คำ ปลายเชิดขึ้นไปทางหมุด
+  const sx0 = textX - 4
+  const sx1 = pinX - 4
+  ctx.fillStyle = linear(ctx, sx0, 0, sx1, 0, [[0, 'rgba(126,217,87,0)'], [0.35, '#5cc93b'], [1, '#1f9d55']])
+  ctx.beginPath()
+  ctx.moveTo(sx0, MARK_BASE + 5)
+  ctx.quadraticCurveTo((sx0 + sx1) / 2, MARK_BASE + 12, sx1, MARK_BASE - 6)
+  ctx.quadraticCurveTo((sx0 + sx1) / 2 + 20, MARK_BASE + 8, sx0, MARK_BASE + 9)
+  ctx.closePath()
+  ctx.fill()
+
+  // สัญญาณ wifi (จุด + โค้ง 3 วง เปิดขึ้นบน) ขอบขาวรองใต้ให้เด่นบนพื้นมืด
+  const wx = MARK_WIFI_W / 2
+  const wy = MARK_BASE - 3
+  const wifiBlue = linear(ctx, 0, wy - 20, 0, wy, [[0, '#3b8cff'], [1, '#1238a8']])
+  ctx.lineCap = 'round'
+  for (const [stroke, lw] of [['#ffffff', 8], [wifiBlue, 4.4]]) {
+    ctx.strokeStyle = stroke
+    ctx.lineWidth = lw
+    for (const r of [7, 13.5, 20]) { ctx.beginPath(); ctx.arc(wx, wy, r, -Math.PI * 0.78, -Math.PI * 0.22); ctx.stroke() }
+  }
+  ctx.fillStyle = '#ffffff'
+  ctx.beginPath(); ctx.arc(wx, wy, 5.2, 0, Math.PI * 2); ctx.fill()
+  ctx.fillStyle = '#1e5bd8'
+  ctx.beginPath(); ctx.arc(wx, wy, 3.4, 0, Math.PI * 2); ctx.fill()
+
+  // คำเอียง 3 ชั้น: เงา → ขอบขาวหนา → ไล่สี + ขอบน้ำเงินเข้มบาง (เอียงรอบเส้นฐานของคำเอง)
+  const capTop = -MARK_S * 0.78
+  const fills = {
+    blue: linear(ctx, 0, capTop, 0, 0, [[0, '#3b8cff'], [1, '#1238a8']]),
+    orange: linear(ctx, 0, capTop, 0, 0, [[0, '#ffd23f'], [0.55, '#ff8a00'], [1, '#f05a00']]),
+  }
+  ctx.font = `700 ${MARK_S}px ${display}`
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+  ctx.lineJoin = 'round'
+  const eachWord = paint => {
+    let cx = textX
+    MARK_WORDS.forEach(([word, color], i) => {
+      ctx.save()
+      ctx.translate(cx, MARK_BASE)
+      ctx.transform(1, 0, MARK_SKEW, 1, 0, 0)
+      paint(word, color)
+      ctx.restore()
+      cx += widths[i] + space
+    })
+  }
+  eachWord(word => { ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillText(word, 2, 4) })
+  eachWord(word => { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 7; ctx.strokeText(word, 0, 0) })
+  eachWord((word, color) => {
+    ctx.fillStyle = fills[color]
+    ctx.fillText(word, 0, 0)
+    ctx.strokeStyle = '#0b2f8f'
+    ctx.lineWidth = 1
+    ctx.strokeText(word, 0, 0)
+  })
+
+  // หมุดแผนที่สีแดงท้ายคำ
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'
+  ctx.beginPath(); ctx.ellipse(pinX, MARK_BASE + 3, 7, 2, 0, 0, Math.PI * 2); ctx.fill()
+  ctx.save()
+  ctx.translate(pinX, 4)
+  ctx.beginPath()
+  ctx.moveTo(0, 33)
+  ctx.bezierCurveTo(-3.3, 25.3, -13, 18.7, -13, 10)
+  ctx.arc(0, 10, 13, Math.PI, 0)
+  ctx.bezierCurveTo(13, 18.7, 3.3, 25.3, 0, 33)
+  ctx.closePath()
+  ctx.fillStyle = '#e53935'
+  ctx.fill()
+  ctx.strokeStyle = '#ffffff'
+  ctx.lineWidth = 2.2
+  ctx.stroke()
+  ctx.fillStyle = '#ffffff'
+  ctx.beginPath(); ctx.arc(0, 10, 4.6, 0, Math.PI * 2); ctx.fill()
+  ctx.restore()
+
+  ctx.restore()
+  return { x, y, w, h, scale }
+}
+
 function shade(hex, t) {
   const n = parseInt(String(hex).replace('#', ''), 16)
   const target = t > 0 ? 255 : 0
@@ -1025,8 +1136,19 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
     const BY = 34
     const BH = 80
     const nameFit = fitOne(ctx, model.tenantName, display, 700, 400, 27, 17, issues, 'ชื่อหน่วยงาน')
-    const subText = 'ระบบข้อมูลน้ำ–ฝน'
-    const textW = Math.max(nameFit.width, textWidth(ctx, subText, 500, 16, body))
+    // บรรทัดรอง = ชื่อระบบ (ครีม) + แคปซูลสีฟ้า "มุ่งสู่เมืองอัจฉริยะ (Smart City)" (เจ้าของสั่ง 2569-11-15 ให้สะดุดตา)
+    // สีฟ้าเทคโนโลยีต่างจากโทนแดง-ทองของภาพ จึงเด้งออกมา · ความกว้างรวมไม่เกิน 440 ไม่ให้ป้ายยื่นไปทับป้าย "แจ้งเตือน" (ซ้ายสุด ~x 490)
+    const ROW2_MAX = 440
+    const PILL_H = 21
+    const PILL_PAD_L = 8
+    const PILL_ICON = 18
+    const PILL_GAP = 5
+    const PILL_PAD_R = 11
+    const sysFit = fitOne(ctx, model.badge.system, body, 500, 150, 15, 12, issues, 'ชื่อระบบในป้าย')
+    const tagMax = ROW2_MAX - sysFit.width - 10 - (PILL_PAD_L + PILL_ICON + PILL_GAP + PILL_PAD_R)
+    const tagFit = fitOne(ctx, model.badge.tag, body, 700, tagMax, 15, 11, issues, 'คำขวัญ Smart City ในป้าย')
+    const pillW = PILL_PAD_L + PILL_ICON + PILL_GAP + tagFit.width + PILL_PAD_R
+    const textW = Math.max(nameFit.width, sysFit.width + 10 + pillW)
     const R_MED = 38
     const lead = logo ? 24 + R_MED + 14 : 22
     const w = lead + textW + 24
@@ -1091,7 +1213,33 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
     // เส้นทองคั่น (จางไปทางขวา) + บรรทัดรอง
     ctx.fillStyle = linear(ctx, tx, 0, tx + textW, 0, [[0, 'rgba(255,213,74,0.95)'], [1, 'rgba(255,213,74,0)']])
     ctx.fillRect(tx, BY + 47, textW, 1.5)
-    drawText(ctx, subText, tx, BY + 63, { font: `500 16px ${body}`, color: '#f3e6c4' })
+    drawText(ctx, sysFit.text, tx, BY + 62, { font: `500 ${sysFit.size}px ${body}`, color: '#f3e6c4' })
+    // แคปซูล Smart City: ฟ้าเข้มไล่เฉด + แสงเรืองฟ้า + เงาแก้วครึ่งบน + ขอบขาว + ไอคอนโหนดเชื่อมกัน (Canvas 2D ล้วน)
+    {
+      const px = tx + sysFit.width + 10
+      const py = BY + 51
+      ctx.save()
+      ctx.shadowColor = 'rgba(0,220,255,0.85)'; ctx.shadowBlur = 14
+      ctx.fillStyle = linear(ctx, px, 0, px + pillW, 0, [[0, '#0891b2'], [1, '#1d4ed8']])
+      rrPath(ctx, px, py, pillW, PILL_H, PILL_H / 2); ctx.fill()
+      ctx.restore()
+      ctx.save()
+      rrPath(ctx, px, py, pillW, PILL_H, PILL_H / 2); ctx.clip()
+      ctx.fillStyle = linear(ctx, 0, py, 0, py + PILL_H * 0.55, [[0, 'rgba(255,255,255,0.38)'], [1, 'rgba(255,255,255,0)']])
+      ctx.fillRect(px, py, pillW, PILL_H * 0.55)
+      ctx.restore()
+      ctx.strokeStyle = 'rgba(190,245,255,0.9)'; ctx.lineWidth = 1
+      rrPath(ctx, px + 0.5, py + 0.5, pillW - 1, PILL_H - 1, (PILL_H - 1) / 2); ctx.stroke()
+      // ไอคอนโหนดเชื่อมกัน (เครือข่ายเมืองอัจฉริยะ): 3 จุดต่อกันด้วยเส้นบาง
+      const ix = px + PILL_PAD_L
+      const iy = py + PILL_H / 2
+      const nodes = [[ix + 3, iy + 4], [ix + 9, iy - 4], [ix + 15, iy + 3]]
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1.3
+      ctx.beginPath(); ctx.moveTo(nodes[0][0], nodes[0][1]); ctx.lineTo(nodes[1][0], nodes[1][1]); ctx.lineTo(nodes[2][0], nodes[2][1]); ctx.stroke()
+      ctx.fillStyle = '#fff'
+      nodes.forEach(([nx, ny]) => { ctx.beginPath(); ctx.arc(nx, ny, 2.4, 0, Math.PI * 2); ctx.fill() })
+      drawText(ctx, tagFit.text, px + PILL_PAD_L + PILL_ICON + PILL_GAP, py + PILL_H / 2 + 1, { font: `700 ${tagFit.size}px ${body}`, color: '#fff', shadow: { color: 'rgba(0,30,80,0.55)', blur: 3 } })
+    }
 
     // ประกายดาว 4 แฉกบนกรอบทอง
     const sparkle = (sx, sy, s) => {
@@ -1115,6 +1263,7 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
   /* ── บล็อกใต้หัวภาพ: สร้าง (วัดความสูง) แล้วเรียงลง ── */
   const stack = []
   let nearbyShown
+  let smartMark = null
 
   // ริบบอนวันที่
   {
@@ -1127,6 +1276,11 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
         ctx.fillStyle = '#ffd400'
         poly(ctx, [[MARGIN, y], [MARGIN + w, y], [MARGIN + w * 0.96, y + h], [MARGIN, y + h]]); ctx.fill()
         drawText(ctx, fit.text, MARGIN + 22, y + h / 2 + 2, { font: `700 ${fit.size}px ${display}`, color: '#1a0306' })
+        // คำ "Smart City Local" ในที่ว่างขวาของริบบอน (เจ้าของเลือกตำแหน่งนี้ 2569-11-15) — ชิดขอบขวา เว้นจากริบบอน ≥ 24px
+        // ที่ว่างไม่พอ (ริบบอนยาวผิดปกติ) = ไม่วาด ดีกว่าย่อจนอ่านไม่ออก
+        const ribbonRight = MARGIN + w
+        const mark = drawSmartCityMark(ctx, MARGIN + CONTENT_W, y - 2, MARGIN + CONTENT_W - ribbonRight - 24, h + 4, display)
+        smartMark = mark ? { ...mark, ribbonRight } : null
       },
     })
   }
@@ -1605,7 +1759,7 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
   })
 
   ctx.restore()
-  return { issues, blocks, footTop, contentBottom, fits, gap, analysisShown, analysisTotal, tight, nearbyShown }
+  return { issues, blocks, footTop, contentBottom, fits, gap, analysisShown, analysisTotal, tight, nearbyShown, smartMark }
 }
 
 /**

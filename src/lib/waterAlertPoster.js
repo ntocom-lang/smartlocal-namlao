@@ -19,6 +19,9 @@ export const POSTER_HEIGHT = 1350
 
 // สีหัวช่องของ "ค่าประกอบ" (ไหลเข้า/ระบายออก/ฝนชั่วโมงล่าสุด) — เทาเข้ม ไม่ใช่สีระดับเตือน
 export const NEUTRAL_HEAD = '#3d3236'
+// บรรทัดรองของป้ายหน่วยงาน: ชื่อระบบ + คำขวัญ Smart City (วาดเป็นแคปซูลสีฟ้าแยกต่างหาก ให้เด่นกว่าตัวหนังสือครีมเดิม)
+export const POSTER_BADGE_SYSTEM = 'ระบบข้อมูลน้ำ–ฝน'
+export const POSTER_BADGE_TAG = 'มุ่งสู่เมืองอัจฉริยะ (Smart City)'
 export const DAM_SCALE_MAX = 120
 export const RAIN_SCALE_MAX = 150
 
@@ -623,6 +626,9 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
       }
     })(),
     phones: buildPosterPhones(tenant, contacts),
+    // บรรทัดรองของป้ายหน่วยงานมุมขวาบน — "มุ่งสู่" เมืองอัจฉริยะ (เจ้าของระบบสั่ง 2569-11-15 ข้อความเดียวกับภาพข่าว #713)
+    // ⚠️ ยังไม่ได้รับรองเป็นเมืองอัจฉริยะ ห้ามเขียนว่า "เป็น"
+    badge: { system: POSTER_BADGE_SYSTEM, tag: POSTER_BADGE_TAG },
     footer: {
       location: locationText,
       tags: ['#สถานการณ์น้ำ', locality ? `#${locality}` : ''].filter(Boolean).join(' '),
