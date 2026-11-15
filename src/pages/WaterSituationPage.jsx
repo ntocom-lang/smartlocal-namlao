@@ -276,6 +276,8 @@ export default function WaterSituationPage() {
               <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} fromCache={fromCache} onRetry={refresh} />
               <AlertBanner rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings}
                 homeAmphoe={tenant?.district} now={checkedAt} tenantName={tenant?.name} tenant={tenant} showShare={!announcement} />
+              {/* ไม่มีแถบแจ้งเตือน = ปุ่มภาพรายงานสถานการณ์ (ปกติ/น้ำน้อย/เฝ้าระวัง/ข้อมูลไม่ครบ) · มีประกาศ อปท. ที่ยืนยันแล้ว = ไม่ขึ้น (เกณฑ์เดียวกับแถบ) */}
+              {!announcement && <StatusShareRow rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings} tenant={tenant} now={checkedAt} />}
               <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
             </>
           )}
@@ -462,6 +464,16 @@ function HeroStats({ rain, dams, levels, now }) {
   )
 }
 
+// ปุ่มแชร์ภาพสถานะตอนไม่มีแถบแจ้งเตือน — มีแถบเมื่อไร ปุ่มอยู่ในแถบแทน (ไม่ขึ้นสองปุ่ม)
+function StatusShareRow({ rain, ews, levels, dams, warnings, tenant, now }) {
+  if (buildAlerts({ rain, ews, levels, dams, warnings, now }).any) return null
+  return (
+    <div className="flex justify-end">
+      <WaterAlertShareButton rain={rain} ews={ews} levels={levels} dams={dams} warnings={warnings} tenant={tenant} now={now} allStates />
+    </div>
+  )
+}
+
 function AlertBanner({ rain, ews, levels, dams, warnings, homeAmphoe, now, tenantName, tenant, showShare = true }) {
   const alerts = buildAlerts({ rain, ews, levels, dams, warnings, now })
   if (!alerts.any) return null
@@ -586,7 +598,7 @@ function AlertBanner({ rain, ews, levels, dams, warnings, homeAmphoe, now, tenan
             <Link to="/emergency" className="inline-flex min-h-[44px] items-center text-gray-800 underline">สายด่วนฉุกเฉิน</Link>
           </div>
           {/* มีประกาศ อปท. ที่ผู้มีสิทธิ์ยืนยันแล้ว = ไม่ขึ้นปุ่ม: ภาพจากข้อมูลดิบห้ามแข่งกับประกาศ (เกณฑ์เดียวกับแถบหน้าแรก) */}
-          {showShare && <WaterAlertShareButton rain={rain} ews={ews} levels={levels} dams={dams} warnings={warnings} tenant={tenant} now={now} />}
+          {showShare && <WaterAlertShareButton rain={rain} ews={ews} levels={levels} dams={dams} warnings={warnings} tenant={tenant} now={now} allStates />}
         </div>
       </div>
     </div>
