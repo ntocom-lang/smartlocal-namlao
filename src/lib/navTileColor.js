@@ -55,6 +55,19 @@ export const NAV_ACTIVE_CAPSULE = Object.freeze({
   boxShadow: '0 6px 16px -6px rgba(14, 111, 138, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.18)',
 })
 
+// แคปซูลของเมนูแอดมิน (โทนคราม แยกจากฝั่งเจ้าหน้าที่ให้รู้ตัวว่าอยู่ในโหมดตั้งค่า · PR2 2569-11-16)
+// ขาวบน #4338ca = 7.9:1 · บน #3730a3 = 9.6:1
+export const ADMIN_ACTIVE_CAPSULE = Object.freeze({
+  backgroundColor: '#4338ca',
+  backgroundImage: 'linear-gradient(90deg, #4338ca 0%, #3730a3 100%)',
+  boxShadow: '0 6px 16px -6px rgba(67, 56, 202, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.16)',
+})
+// พื้นเมนูซ้าย/ลิ้นชักของแอดมิน (หินชนวนอมคราม · สีคงที่ทุก อปท. ไม่ตามสีธีมเว็บ)
+export const ADMIN_NAV_BG = Object.freeze({
+  backgroundColor: '#1a1f2c',
+  backgroundImage: 'linear-gradient(180deg, #1e2433 0%, #151a26 100%)',
+})
+
 // ป้ายตัวเลขเรื่องค้าง: ปกติอำพัน · ตั้งแต่ 10 เรื่องเป็นแดง (เจ้าของระบบเลือก 2569-11-16) ไม่กะพริบ
 export const NAV_BADGE_HOT_AT = 10
 export const isHotBadge = (count) => Number(count) >= NAV_BADGE_HOT_AT

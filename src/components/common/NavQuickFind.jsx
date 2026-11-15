@@ -12,8 +12,9 @@ import { NavGroupIcon, NavSubList, NavSubRow } from './CollapsibleNavGroup'
 // refreshKey เปลี่ยน = ล้างคำค้นด้วย (เปิด/ปิดลิ้นชักใหม่ต้องเริ่มสะอาด)
 export default function NavQuickFind({
   groups, activeKey, userId, renderItem, onSelect, pinned, children,
-  variant = 'pc', shortcut = false, refreshKey, wrapperClassName = '', wrapperStyle,
+  variant = 'pc', shortcut = false, refreshKey, wrapperClassName = '', wrapperStyle, favorites = true,
 }) {
+  // favorites={false} = ไม่มีหมวด "ใช้บ่อย" (แอดมิน: เมนูน้อย + คีย์บางตัวซ้ำกับฝั่งเจ้าหน้าที่ สถิติจะปนกัน)
   const inputRef = useRef(null)
   const resultsRef = useRef(null)
   const [query, setQuery] = useState('')
@@ -26,10 +27,11 @@ export default function NavQuickFind({
   const keysSig = allItems.map(i => i.key).join('|')
   // ⚠️ ตั้งใจไม่ผูกกับ allItems โดยตรง: ผูกกับ keysSig (รายการเมนูเปลี่ยนจริงเท่านั้น) + refreshKey (จังหวะที่ให้จัดอันดับใหม่)
   const favoriteItems = useMemo(() => {
+    if (!favorites) return []
     const byKey = new Map(allItems.map(i => [i.key, i]))
     return topNavKeys(userId, [...byKey.keys()]).map(k => byKey.get(k))
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ดูหมายเหตุด้านบน
-  }, [userId, keysSig, refreshKey])
+  }, [favorites, userId, keysSig, refreshKey])
   const results = useMemo(() => (searching ? searchNavItems(groups, query) : []), [groups, query, searching])
 
   // กด "/" ที่ไหนก็ได้บนหน้า = โฟกัสช่องค้นหา (เฉพาะ PC ที่ช่องมองเห็นอยู่ · ไม่แย่งตอนกำลังพิมพ์ในช่องอื่น/มี modifier)
