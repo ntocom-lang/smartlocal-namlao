@@ -203,6 +203,12 @@ test('เรื่องที่ติดตาม: แยก gone / hidden / �
 })
 
 test('ผู้รับผิดชอบ: ชื่อ+ตำแหน่ง · ไม่มีตำแหน่ง = ชื่ออย่างเดียว · มอบแล้วไม่พบชื่อ/ยังไม่มอบหมาย = warn · ฐานยังไม่รัน SQL = ไม่แสดง', () => {
+  // หมู่บ้าน/สถานที่ (20261128100000) — คำขอไม่มี · ฐานเก่าไม่มีคีย์ = ไม่แสดง (ห้ามเดา)
+  assert.deepEqual(H.itemPlaceText({ k: 'complaint', place: ' หมู่ 3 ', place_unlisted: false }), { tone: 'ok', text: 'สถานที่: หมู่ 3' })
+  assert.deepEqual(H.itemPlaceText({ k: 'complaint', place: null, place_unlisted: true }), { tone: 'muted', text: 'สถานที่: ผู้แจ้งระบุเอง (ไม่อยู่ในทะเบียนหมู่บ้าน)' })
+  assert.deepEqual(H.itemPlaceText({ k: 'complaint', place: null, place_unlisted: false }), { tone: 'muted', text: 'สถานที่: ไม่ได้ระบุหมู่บ้าน' })
+  assert.equal(H.itemPlaceText({ k: 'complaint', place: 'หมู่ 3' }), null, 'ฐานยังไม่รัน SQL = ไม่แสดง')
+  assert.equal(H.itemPlaceText({ k: 'document_request', place: null, place_unlisted: false }), null)
   assert.deepEqual(H.itemOwnerText({ assigned: true, owner: ' นายสมศักดิ์ ทดสอบ ', owner_pos: 'นายช่างโยธา' }),
     { tone: 'ok', text: 'ผู้รับผิดชอบ: นายสมศักดิ์ ทดสอบ (นายช่างโยธา)' })
   assert.deepEqual(H.itemOwnerText({ assigned: true, owner: 'นายสมศักดิ์ ทดสอบ', owner_pos: null }),

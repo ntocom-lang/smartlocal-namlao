@@ -20,6 +20,7 @@ const files = [
   '20261117100000_exec_follow_nudge_tables.sql',
   '20261117100100_exec_follow_nudge_functions.sql',
   '20261120100000_exec_overdue_items_owner.sql',
+  '20261128100000_exec_overdue_items_place.sql',
 ]
 const migration = (f) => readFile(new URL(`../supabase/migrations/${f}`, import.meta.url), 'utf8')
 
@@ -208,6 +209,8 @@ await db.exec(`UPDATE public.complaints SET status = 'completed' WHERE id = '${C
 // ผู้รับผิดชอบ (20261120100000) อยู่ในหน้าเว็บเท่านั้น — สรุปเช้าเลือกคีย์เอง ชื่อเจ้าหน้าที่ต้องไม่ไหลไป Telegram
 await db.exec(`INSERT INTO public.complaints (id, municipality_id, ref_no, status, created_at, due_date, department_id, category)
   VALUES ('${C(21)}', '${MA}', 'CR-0021', 'in_progress', ts(40), dt(20), '${D1}', 'road');`)  // เลยมาเกิน 5 วันทำการ = อยู่ใน top
+// หมู่บ้าน (20261128100000) ก็อยู่ในหน้าเว็บเท่านั้น — ใส่ให้แถวที่ติด top แล้วตรวจว่าไม่ไหลไป Telegram
+await db.exec(`UPDATE public.complaints SET village = 'หมู่ 3' WHERE id = '${C(21)}';`)
 await db.exec(`UPDATE public.complaints SET assigned_to = '${U.headA}' WHERE municipality_id = '${MA}'; UPDATE public.document_requests SET assigned_to = '${U.headA}' WHERE municipality_id = '${MA}';`)
 const d = await call('service_role', `SELECT public.exec_digest_for('${U.viewerA}', '${MA}') AS r`)
 console.log('digest:', JSON.stringify(d, null, 1))
@@ -219,6 +222,7 @@ assert.equal(d.events.items.length, 1, 'เห็นเฉพาะกิจก�
 assert.ok(!JSON.stringify(d).includes('สมชาย') && !JSON.stringify(d).includes('0812345678'))
 assert.ok(d.overdue.top.length > 0, 'ต้องมีเรื่องเลยกำหนดในสรุป ไม่งั้นด่านชื่อผู้รับผิดชอบข้างล่างผ่านลวง')
 assert.ok(!/ผอ\.กองช่างปลอม|"owner/.test(JSON.stringify(d)), 'ชื่อ/คีย์ผู้รับผิดชอบต้องไม่อยู่ในสรุปเช้า')
+assert.ok(!JSON.stringify(d).includes('"place') && !JSON.stringify(d).includes('หมู่ 3'), 'หมู่บ้านของเรื่องเลยกำหนด (20261128100000) ต้องไม่อยู่ในสรุปเช้า — เลือกคีย์ทีละตัว')
 assert.equal(d.follows.items.length, 2)
 
 const na = await call('service_role', `SELECT public.exec_digest_for('${U.adminA}', '${MA}') AS r`)

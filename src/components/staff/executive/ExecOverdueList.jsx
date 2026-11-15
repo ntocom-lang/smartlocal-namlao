@@ -6,7 +6,7 @@ import {
   followItem, loadMyFollows, loadOverdue, nudgeItem, unfollowItem,
 } from '../../../lib/execFollowNudge'
 import {
-  canRetry, followRowKind, groupByDept, itemCategoryLabel, itemKey, itemKindName, itemOwnerText, itemStatusLabel, nudgeBlocked,
+  canRetry, followRowKind, groupByDept, itemCategoryLabel, itemKey, itemKindName, itemOwnerText, itemPlaceText, itemStatusLabel, nudgeBlocked,
   nudgeConfirmText, nudgeDeliveryText, nudgeResultMessage, overdueWorkingDays, sensitiveSummaryLines, thaiDateTime, truncatedText,
 } from '../../../lib/execFollowNudgeHelpers'
 import { LoadingLine, SectionError, SubHead } from './ExecParts'
@@ -35,6 +35,7 @@ function OverdueRow({ item, tenant, today, now, deptName, canNudge, busy, note, 
   const blocked = nudgeBlocked(item, now)
   const retry = Boolean(item.nudged_today) && canRetry(nudge, now)
   const owner = itemOwnerText(item)
+  const place = itemPlaceText(item)
   return (
     <li data-exec-overdue-row={itemKey(item)} className="min-w-0 space-y-1.5 rounded-xl border border-slate-200 bg-white p-2.5">
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -42,6 +43,9 @@ function OverdueRow({ item, tenant, today, now, deptName, canNudge, busy, note, 
         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">{itemKindName(item.k)}</span>
         <span className="min-w-0 break-words text-xs font-semibold text-slate-700">{itemCategoryLabel(item, tenant)}</span>
       </div>
+      {place && (
+        <p data-exec-overdue-place className={`text-xs font-bold leading-snug ${place.tone === 'muted' ? 'text-slate-500' : 'text-slate-800'}`}>{place.text}</p>
+      )}
       <p className="text-[11px] leading-snug text-slate-600">
         {itemStatusLabel(item.k, item.s)} · กำหนดเสร็จ {item.due ? thaiShortDate(item.due.slice(0, 10)) : '—'}
         {' · '}

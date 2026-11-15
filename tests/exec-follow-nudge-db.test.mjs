@@ -19,7 +19,10 @@ const files = [
   '20261117100000_exec_follow_nudge_tables.sql',
   '20261117100100_exec_follow_nudge_functions.sql',
   '20261120100000_exec_overdue_items_owner.sql',
+  '20261128100000_exec_overdue_items_place.sql',
 ]
+// หมายเหตุ: ไฟล์ชุดนี้ใช้ exec_village_label รุ่น E2 (20261115100100) — ฐานจริงเป็นรุ่น E2.1 (20261116100000, ต้องมีตาราง fleet จึงไม่ลงที่นี่)
+// ด่าน md5 ของไฟล์ 20261128100000 รับทั้งสองรุ่น · กติกาของ E2.1 ตรวจแยกใน tests/executive-summary-db.test.mjs
 const migration = (f) => readFile(new URL(`../supabase/migrations/${f}`, import.meta.url), 'utf8')
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -119,6 +122,10 @@ INSERT INTO public.document_requests (id, municipality_id, document_type, status
 UPDATE public.complaints SET assigned_to = '${U.headA}' WHERE id = '${C(1)}';
 UPDATE public.complaints SET assigned_to = '${U.headPaladA}' WHERE id = '${C(4)}';
 UPDATE public.document_requests SET assigned_to = '${U.viewerB}' WHERE id = '${R(1)}';
+-- หมู่บ้าน (20261128100000): CR-0001 = เลขหมู่ล้วน (แสดง) · CR-0007 = ผู้แจ้งพิมพ์เอง มีชื่อ/เบอร์ (ห้ามหลุด) · CR-0004 อ่อนไหว (ห้ามหลุด)
+UPDATE public.complaints SET village = 'หมู่ 1' WHERE id = '${C(1)}';
+UPDATE public.complaints SET village = 'หน้าบ้าน${PII.name} ${PII.phone}' WHERE id = '${C(7)}';
+UPDATE public.complaints SET village = 'หมู่ 2' WHERE id = '${C(4)}';
 `)
 
 async function as(alias) {
@@ -210,6 +217,26 @@ await test('ผู้รับผิดชอบ: ชื่อ+ตำแหน�
   assert.deepEqual(pick(r2.items.find(i => i.ref === 'CR-0007')), { assigned: true, owner: null, owner_pos: null })
   await db.exec(`RESET ROLE; UPDATE public.complaints SET assigned_to = NULL WHERE id = '${C(7)}'`)
 })
+
+await test('หมู่บ้านของเรื่องเลยกำหนด (20261128100000): ชื่อในทะเบียน/เลขหมู่เท่านั้น · พิมพ์เอง = place_unlisted ไม่คืนข้อความ · คำขอไม่มีหมู่ · อ่อนไหวไม่หลุด', async () => {
+  // ไม่ระบุหมู่ (NULL) / ช่องว่างล้วน = ไม่ได้ระบุ ไม่ใช่ "ผู้แจ้งระบุเอง" — ใส่ชั่วคราวแล้วลบท้ายเทสต์
+  await db.exec(`RESET ROLE; INSERT INTO public.complaints (id, municipality_id, ref_no, status, created_at, due_date, department_id, category, village) VALUES
+    ('${C(9)}', '${MA}', 'CR-0009', 'received', ts(8), dt(2), '${D1}', 'road', NULL),
+    ('${C(10)}', '${MA}', 'CR-0010', 'received', ts(8), dt(2), '${D1}', 'road', '   ')`)
+  const r = await call('viewerA', 'SELECT public.exec_overdue_items($1) AS r', [MA])
+  await db.exec(`RESET ROLE; DELETE FROM public.complaints WHERE id IN ('${C(9)}', '${C(10)}')`)
+  const by = Object.fromEntries(r.items.map(i => [i.ref, i]))
+  const pick = i => ({ place: i.place, place_unlisted: i.place_unlisted })
+  assert.deepEqual(pick(by['CR-0009']), { place: null, place_unlisted: false })
+  assert.deepEqual(pick(by['CR-0010']), { place: null, place_unlisted: false })
+  assert.deepEqual(pick(by['CR-0001']), { place: 'หมู่ 1', place_unlisted: false })
+  assert.deepEqual(pick(by['CR-0007']), { place: null, place_unlisted: true })
+  assert.deepEqual(pick(by[R(1).slice(0, 8).toUpperCase()]), { place: null, place_unlisted: false })
+  const text = JSON.stringify(r)
+  assert.ok(!text.includes(PII.name) && !text.includes(PII.phone), 'ข้อความที่ผู้แจ้งพิมพ์เองห้ามหลุด')
+  assert.ok(!text.includes('หมู่ 2'), 'หมู่บ้านของเรื่องอ่อนไหวห้ามหลุด')
+})
+
 
 await test('สิทธิ์ดู: ปลัด/admin ดูได้ · นายก อปท. อื่น/ประชาชน/เจ้าหน้าที่ไม่มีตำแหน่ง = 42501', async () => {
   assert.equal((await overdue('paladA')).total, 3)
@@ -345,8 +372,8 @@ await test('superadmin เร่งได้เฉพาะสนามซ้อ
 })
 
 // ⚠️ ต้องเป็นเทสต์สุดท้าย: ข้อนี้เขียนทับ exec_overdue_items ด้วยรุ่นปลอม
-await test('ด่าน md5: รันไฟล์ผู้รับผิดชอบซ้ำได้ · เนื้อฟังก์ชันบนฐานถูกแก้นอกรีโป = หยุดทั้งไฟล์ ไม่เขียนทับ', async () => {
-  const ownerFile = '20261120100000_exec_overdue_items_owner.sql'
+await test('ด่าน md5: รันไฟล์ล่าสุดของ exec_overdue_items ซ้ำได้ · เนื้อฟังก์ชันบนฐานถูกแก้นอกรีโป = หยุดทั้งไฟล์ ไม่เขียนทับ', async () => {
+  const ownerFile = files.at(-1)
   await db.exec('RESET ROLE')
   await db.exec(await migration(ownerFile))
   await db.exec(`CREATE OR REPLACE FUNCTION public.exec_overdue_items(_municipality_id uuid) RETURNS jsonb LANGUAGE sql STABLE
