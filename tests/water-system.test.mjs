@@ -356,8 +356,8 @@ const FORBIDDEN_WORDS = ['รับรอง', 'อพยพ', 'มาตรา'
   assert.equal(page.split('system={waterSystem}').length - 1, 2, 'ส่ง system ให้ทั้งส่วนอ่างและส่วนระดับน้ำ เพื่อติดป้ายความสัมพันธ์')
   assert.ok(page.includes("relationOf(system, 'dam', s.station_code)") && page.includes("relationOf(system, 'waterlevel', s.station_code)"))
   assert.ok(page.includes('id={`water-dam-${s.station_code}`}'), 'การ์ดอ่างต้องมีจุดยึดให้ลิงก์จากส่วนระบบน้ำ')
-  // ภาพแชร์ (snapshot) ต้องไม่เปลี่ยน — ไม่ส่ง system
-  assert.ok(/<DamSection stations=\{dams\} homeAmphoe=\{tenant\.district\} now=\{now\} snapshot \/>/.test(page), 'การ์ดสำหรับภาพแชร์ต้องคงเดิม')
+  // ชุดภาพแชร์เดิมท้ายหน้า (snapshot) เลิกใช้แล้ว 2569-11-15 — ภาพแชร์ใช้ปุ่มภาพสถานการณ์ปุ่มเดียว (WaterAlertShareButton)
+  assert.ok(!page.includes('snapshot'), 'ไม่มีการ์ดแบบ snapshot ในหน้าแล้ว')
   // ตัวกรอง Y.38 ของน้ำเลายังอยู่ (ไม่แตะ)
   assert.ok(page.includes("s.station_code === 'Y.38'"))
   // หน้าไม่ดึงข้อมูลเพิ่ม (ค่าสดมาจาก stations ที่หน้าโหลดอยู่แล้ว) · สรุปจำนวนมาจากตัวช่วย (ไม่เขียน "อ่าง 0 แห่ง") · ทุกชนิดโหนดมีไอคอน

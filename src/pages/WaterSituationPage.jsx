@@ -8,7 +8,6 @@ import {
   MapPin, RefreshCw, Route, Waves,
 } from 'lucide-react'
 import './WaterSituationPage.css'
-import WaterSituationShare from './WaterSituationShare'
 import ReservoirGauge from '../components/water/ReservoirGauge'
 import SmallReservoirSection from '../components/water/SmallReservoirSection'
 import { diagramTenant } from '../lib/waterDiagram/model'
@@ -17,6 +16,8 @@ import WaterAnnouncementCard from '../components/water/WaterAnnouncementCard'
 import WaterAlertShareButton from '../components/water/WaterAlertShareButton'
 import WaterHelpRow from '../components/water/WaterHelpRow'
 import TmdForecastCard from '../components/water/TmdForecastCard'
+import { useTmdForecast } from '../components/water/useTmdForecast'
+import WaterVerdictCard from '../components/water/WaterVerdictCard'
 import { useWaterAnnouncement } from '../components/water/useWaterAnnouncement'
 import { relationOf, resolveSystem, systemById } from '../lib/waterSystem/model'
 import { supabase } from '../lib/supabase'
@@ -89,6 +90,8 @@ export default function WaterSituationPage() {
   const tenantId = tenant?.id
   // ประกาศของ อปท. ที่ผู้มีสิทธิ์ยืนยันแล้ว (ฤดูแล้ง/ฤดูฝน เฟส 2) — ขึ้นบนสุดของหน้า · ไม่มีประกาศ = null ไม่มีอะไรเปลี่ยน
   const { view: announcement } = useWaterAnnouncement({ tenantId })
+  // พยากรณ์กรมอุตุฯ โหลดที่หน้าครั้งเดียว ใช้ร่วมกันทั้งป้ายสรุป (บรรทัดพยากรณ์) และการ์ด 7 วัน
+  const forecast = useTmdForecast(tenantId)
   const hydroProfile = HYDRO_TENANTS[tenant?.slug]
   const [hydroState, setHydroState] = useState(null)
   const hydroCode = hydroProfile?.station
@@ -277,8 +280,10 @@ export default function WaterSituationPage() {
               <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} fromCache={fromCache} onRetry={refresh} />
               <AlertBanner rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings}
                 homeAmphoe={tenant?.district} now={checkedAt} tenantName={tenant?.name} tenant={tenant} showShare={!announcement} />
-              {/* ไม่มีแถบแจ้งเตือน = ปุ่มภาพรายงานสถานการณ์ (ปกติ/น้ำน้อย/เฝ้าระวัง/ข้อมูลไม่ครบ) · มีประกาศ อปท. ที่ยืนยันแล้ว = ไม่ขึ้น (เกณฑ์เดียวกับแถบ) */}
-              {!announcement && <StatusShareRow rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings} tenant={tenant} now={checkedAt} />}
+              {/* ป้ายสรุป ปกติ/เฝ้าระวัง/น้ำน้อย/ข้อมูลไม่ครบ (selectStatus ตัวเดียวกับภาพแชร์ + ปุ่มแชร์ภาพปุ่มเดียวของหน้า) + พยากรณ์ฝนหนักล่วงหน้า 1 บรรทัด
+                  มีแถบแจ้งเตือน/ประกาศ อปท. ที่ยืนยันแล้ว = ไม่ขึ้นคำสรุป (เหลือบรรทัดพยากรณ์ถ้ามี) — ดู WaterVerdictCard */}
+              <WaterVerdictCard rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings} tenant={tenant} now={checkedAt}
+                forecast={forecast} announced={Boolean(announcement)} />
               <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
             </>
           )}
@@ -286,7 +291,7 @@ export default function WaterSituationPage() {
           <HydroHourlyPanel key={tenant?.slug} profile={hydroProfile} report={hydroReports[0]} failed={hydro?.failed} now={checkedAt} />
           {/* พยากรณ์อากาศในพื้นที่ของกรมอุตุนิยมวิทยา — โหลดเอง ขนานกับ RPC สถานการณ์ (ไม่บล็อก) · ไม่มีข้อมูล = ไม่ขึ้นการ์ด
               อยู่นอกเงื่อนไข stations.length เพราะ อปท. ที่ไม่มีสถานีก็ได้พยากรณ์จากพิกัดสำนักงาน · key ตาม อปท. ไม่ให้ค้างของ อปท. เดิม */}
-          <TmdForecastCard key={tenantId} tenantId={tenantId} tenantName={tenant?.name} logoUrl={tenant?.logo_url} now={checkedAt} />
+          <TmdForecastCard key={tenantId} forecast={forecast} tenantName={tenant?.name} logoUrl={tenant?.logo_url} now={checkedAt} />
           {!loading && data !== null && stations.length > 0 && (
             <>
               <nav className="water-section-nav" aria-label="หมวดข้อมูลน้ำ–ฝน">
@@ -314,7 +319,6 @@ export default function WaterSituationPage() {
 
             </>
           )}
-          {(scopedData || hydroReports.length > 0) && <WaterSituationShare tenant={tenant} data={{ ...(scopedData || { stations: [] }), hydroReports }} now={checkedAt} refreshFailed={loadError} renderCards={WaterShareCards} />}
         </div>
         {tabsOn && (
           <div id="water-panel-route" role="tabpanel" aria-labelledby="water-tab-route" hidden={activeTab !== 'route'} className="space-y-4">
@@ -468,16 +472,6 @@ function HeroStats({ rain, dams, levels, now }) {
   )
 }
 
-// ปุ่มแชร์ภาพสถานะตอนไม่มีแถบแจ้งเตือน — มีแถบเมื่อไร ปุ่มอยู่ในแถบแทน (ไม่ขึ้นสองปุ่ม)
-function StatusShareRow({ rain, ews, levels, dams, warnings, tenant, now }) {
-  if (buildAlerts({ rain, ews, levels, dams, warnings, now }).any) return null
-  return (
-    <div className="flex justify-end">
-      <WaterAlertShareButton rain={rain} ews={ews} levels={levels} dams={dams} warnings={warnings} tenant={tenant} now={now} allStates />
-    </div>
-  )
-}
-
 function AlertBanner({ rain, ews, levels, dams, warnings, homeAmphoe, now, tenantName, tenant, showShare = true }) {
   const alerts = buildAlerts({ rain, ews, levels, dams, warnings, now })
   if (!alerts.any) return null
@@ -609,25 +603,11 @@ function AlertBanner({ rain, ews, levels, dams, warnings, homeAmphoe, now, tenan
   )
 }
 
-function WaterShareCards({ tenant, data, now }) {
-  const { stations } = shareWaterSituation(data, tenant)
-  const rain = stations.filter(s => s.station_type === 'rain')
-  const ews = new Map(stations.filter(s => s.station_type === 'ews').map(s => [s.station_code, s]))
-  const dams = stations.filter(s => s.station_type === 'dam')
-  const levels = stations.filter(s => s.station_type === 'waterlevel')
-  return <div className="space-y-3">
-    {rain.length > 0 && <RainSection stations={rain} ewsByCode={ews} homeAmphoe={tenant.district} now={now} snapshot />}
-    {dams.length > 0 && <DamSection stations={dams} homeAmphoe={tenant.district} now={now} snapshot />}
-    {levels.map(s => <WaterLevelCard key={s.station_code} station={s} homeAmphoe={tenant.district} now={now} />)}
-    {!rain.length && !dams.length && !levels.length && <p className="rounded-xl bg-white p-4 text-sm text-slate-600">ไม่มีสถานีในตำบลหรือที่ยืนยันระยะไม่เกิน 5 กม. จากสำนักงาน</p>}
-  </div>
-}
-
-function RainSection({ stations, ewsByCode, homeAmphoe, now, snapshot = false }) {
+function RainSection({ stations, ewsByCode, homeAmphoe, now }) {
   // สเกลร่วมของทั้งลิสต์ — คิดครั้งเดียวที่นี่ ไม่ให้แต่ละแถวคิดสเกลของตัวเอง (จะเทียบกันไม่ได้)
   const barMax = rainBarMax(stations)
   return (
-    <section id={snapshot ? undefined : 'water-rain'} className="water-rain-panel rounded-2xl border border-gray-100 bg-white shadow-sm">
+    <section id="water-rain" className="water-rain-panel rounded-2xl border border-gray-100 bg-white shadow-sm">
       <div className="water-section-heading flex items-start gap-2.5 border-b border-gray-50 px-4 py-3">
         <CloudRain size={19} className="mt-0.5 shrink-0 text-sky-600" />
         <div>
@@ -641,7 +621,7 @@ function RainSection({ stations, ewsByCode, homeAmphoe, now, snapshot = false })
             now={now} barMax={barMax} />
         ))}
       </ul>
-      {snapshot ? <p className="px-4 pb-3 text-[12px] text-gray-500">สเกล 0–{barMax} มม. · เส้นแนวตั้ง: ฝนหนักมาก {RAIN_VERY_HEAVY_MM} มม.</p> : <div className="space-y-1 border-t border-gray-50 px-4 py-3 text-[12px] leading-relaxed text-gray-400">
+      <div className="space-y-1 border-t border-gray-50 px-4 py-3 text-[12px] leading-relaxed text-gray-400">
         <p>
           แท่งเทียบใช้สเกลเดียวกันทุกสถานี <span className="whitespace-nowrap">(0–{barMax} มม.)</span> ·{' '}
           <span className="whitespace-nowrap">เส้นแนวตั้งคือเกณฑ์ฝนหนักมาก {RAIN_VERY_HEAVY_MM} มม.</span>
@@ -656,7 +636,7 @@ function RainSection({ stations, ewsByCode, homeAmphoe, now, snapshot = false })
             วิกฤติ) ขึ้นเฉพาะเมื่อสถานีอยู่ในระดับเตือน
           </p>
         )}
-      </div>}
+      </div>
     </section>
   )
 }
@@ -908,9 +888,9 @@ function ChannelCrossSection({ fill, percent, bankLabel, color, stationName }) {
   )
 }
 
-function DamSection({ stations, homeAmphoe, now, snapshot = false, system = null }) {
+function DamSection({ stations, homeAmphoe, now, system = null }) {
   return (
-    <section id={snapshot ? undefined : 'water-dams'} className="water-dam-panel space-y-3">
+    <section id="water-dams" className="water-dam-panel space-y-3">
       <div className="water-section-heading flex items-start gap-2.5 px-1">
         <Dam size={19} className="mt-0.5 shrink-0 text-blue-700" />
         <div>

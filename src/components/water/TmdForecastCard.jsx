@@ -3,16 +3,12 @@ import {
   AlertTriangle, ArrowRight, ArrowUp, ChevronDown, Cloud, CloudDrizzle, CloudLightning, CloudRain, CloudRainWind, CloudSun, Cloudy,
   ExternalLink, MapPin, Snowflake, Sun, Thermometer, ThermometerSnowflake, ThermometerSun,
 } from 'lucide-react'
-import { supabase } from '../../lib/supabase'
-import { useVisibleRefresh } from '../../hooks/useVisibleRefresh'
 import {
   SMART_CITY_COLORS, SMART_CITY_LOCAL_WORDS, SMART_CITY_TAG, TMD_SOURCE_DOC_URL, TMD_SOURCE_NAME, TMD_SOURCE_TEXT,
-  conditionInfo, dailyRainLevel, dayHeading, daysRangeText, fetchTmdForecast, fetchedAtText, forecastFreshness, gridText,
+  conditionInfo, dailyRainLevel, dayHeading, daysRangeText, fetchedAtText, forecastFreshness, gridText,
   hourText, hourlyRainSummary, rainLegend, rainText, tempRound, upcomingDays, upcomingHours, windDirection, windKmh,
 } from '../../lib/tmdForecast'
 
-// พยากรณ์เปลี่ยนทุก 3 ชม. (tmd-sync) — ถามซ้ำถี่กว่านี้ไม่ได้ของใหม่
-const REFRESH_MS = 15 * 60 * 1000
 // ฝนรายชั่วโมงขั้นต่ำของสเกลแท่ง (มม./ชม.) — ไม่ให้ฝนปรอยๆ 0.3 มม. ดูสูงเท่าฝนหนัก
 const HOURLY_SCALE_FLOOR_MM = 5
 
@@ -32,33 +28,13 @@ const COND_TONE = {
  *
  * อ่านจากฐานข้อมูลเราเท่านั้น (RPC get_public_tmd_forecast) ไม่ยิงไปกรมจากเบราว์เซอร์ · ไม่ฝัง iframe/สคริปต์ภายนอก
  * ไม่มีข้อมูล/โหลดไม่สำเร็จ/อปท. ยังไม่ได้ดึง = ไม่แสดงการ์ดเลย (ส่วนเสริม ไม่ทำให้หน้าพัง ไม่ขึ้น error)
- * โหลดรอบแรกขนานกับ RPC สถานการณ์ของหน้า ไม่บล็อกส่วนอื่น
+ * ข้อมูลโหลดที่หน้า (useTmdForecast) ครั้งเดียว ใช้ร่วมกับป้ายสรุปใต้หัวหน้า — ขนานกับ RPC สถานการณ์ ไม่บล็อกส่วนอื่น
  *
  * ที่มาแสดงเสมอ (เจ้าของระบบสั่ง 2569-11-15): ชื่อกรม + ลิงก์เอกสาร + เวลาที่ดึง + จุดกริด — ชื่อกรมเป็นข้อความที่มาเท่านั้น
  * ห้ามใช้โลโก้กรมอุตุฯ/Digital Platform ของกรมในการ์ด (เลียนแบบตราหน่วยงานอื่น) · ตราในแถบหัวเป็นของ อปท. เอง
  * ป้ายระดับฝนใช้เกณฑ์ 24 ชม. ของกรม (RAIN_LEVELS) กับรายวันเท่านั้น · ไม่มี "โอกาสเกิดฝน %" เพราะเราไม่มีข้อมูลนี้ (ห้ามเดา)
  */
-export default function TmdForecastCard({ tenantId, tenantName, logoUrl, now }) {
-  const [state, setState] = useState({ tenantId: null, forecast: null })
-
-  const load = useCallback(() => {
-    if (!tenantId) return
-    fetchTmdForecast(supabase, tenantId).then(({ forecast, error }) => {
-      // โหลดพลาดรอบนี้แต่เคยได้ของ อปท. เดิมแล้ว = คงของเดิมไว้ (ป้ายเหลืองเตือนความเก่าเอง) · ไม่มีข้อมูลจริง = เคลียร์
-      setState(prev => (error && prev.tenantId === tenantId ? prev : { tenantId, forecast }))
-    })
-  }, [tenantId])
-
-  // รอบแรกครั้งเดียวต่อ อปท. (StrictMode เรียก effect ซ้ำตอน dev)
-  const loadedFor = useRef(null)
-  useEffect(() => {
-    if (!tenantId || loadedFor.current === tenantId) return
-    loadedFor.current = tenantId
-    load()
-  }, [tenantId, load])
-  useVisibleRefresh(load, { intervalMs: REFRESH_MS, enabled: Boolean(tenantId) })
-
-  const forecast = state.tenantId === tenantId ? state.forecast : null
+export default function TmdForecastCard({ forecast, tenantName, logoUrl, now }) {
   if (!forecast) return null
   return <TmdForecastView forecast={forecast} tenantName={tenantName} logoUrl={logoUrl} now={now} />
 }
@@ -71,7 +47,7 @@ export function TmdForecastView({ forecast, tenantName, logoUrl, now }) {
   const { stale, fetchedAt } = forecastFreshness(forecast, now)
 
   return (
-    <section data-tmd-forecast aria-label="คาดหมายสภาวะอากาศ 7 วันข้างหน้า" className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+    <section id="water-forecast" data-tmd-forecast aria-label="คาดหมายสภาวะอากาศ 7 วันข้างหน้า" className="scroll-mt-4 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
       <Header days={days} tenantName={tenantName} logoUrl={logoUrl} />
 
       {stale && (

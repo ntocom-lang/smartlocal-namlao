@@ -292,6 +292,29 @@ export function forecastFreshness(forecast, now, hours = TMD_STALE_HOURS) {
   return { stale: toMillis(now) - oldest > hours * HOUR_MS, fetchedAt: new Date(oldest).toISOString() }
 }
 
+// ช่วงที่ป้ายสรุปบนหน้าเว็บมองพยากรณ์ล่วงหน้า = วันนี้ + 2 วัน — ช่วงเดียวกับแจ้ง Telegram ของ tmd-sync (ALERT_DAYS_AHEAD = 2)
+// ไกลกว่านี้แบบจำลองคลาดเคลื่อนมาก (เคสจริง 2569-11-15: NWP 36.3 มม. ขณะที่รายจังหวัดให้โอกาสฝน 10%)
+export const TMD_OUTLOOK_DAYS = 3
+
+/**
+ * วันแรกที่พยากรณ์ฝนรายวันถึงเกณฑ์ฝนหนัก (> 35 มม./24 ชม. = RAIN_LEVELS heavy/veryHeavy) ในช่วงวันนี้ + 2 วัน (เวลาไทย)
+ * คืน { time, mm, level, when } หรือ null · ชุดรายวันเก่าเกินเกณฑ์ = null (ไม่พูดถึงพยากรณ์ที่ไม่เป็นปัจจุบัน)
+ * ⚠️ ผลนี้ใช้เป็น "ข้อมูลล่วงหน้า" อย่างเดียว ห้ามนำไปดันสถานะของหน้า/ภาพเป็นเฝ้าระวัง — สถานะคิดจากค่าที่วัดได้จริงเท่านั้น
+ */
+export function nextHeavyRainDay(forecast, now, days = TMD_OUTLOOK_DAYS) {
+  if (!forecast || forecastFreshness({ dailyFetchedAt: forecast.dailyFetchedAt }, now).stale) return null
+  const last = bangkokDay(toMillis(now) + (days - 1) * 24 * HOUR_MS)
+  for (const d of upcomingDays(forecast.daily, now)) {
+    if (bangkokDay(new Date(d.time).getTime()) > last) break
+    const level = dailyRainLevel(d.rain)
+    if (level?.key === 'heavy' || level?.key === 'veryHeavy') {
+      const h = dayHeading(d.time, now)
+      return { time: d.time, mm: d.rain, level, when: h.title === 'วันนี้' || h.title === 'พรุ่งนี้' ? `${h.title} (${h.date})` : `${h.title} ${h.date}` }
+    }
+  }
+  return null
+}
+
 /** "17 พ.ย. 14:03 น." หรือ "14:03 น." ถ้าวันนี้ — ยึดเวลาไทย */
 export function fetchedAtText(iso, now) {
   if (!iso) return ''

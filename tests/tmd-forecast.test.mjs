@@ -402,11 +402,14 @@ const HOUR = 3_600_000
 {
   const page = read('../src/pages/WaterSituationPage.jsx')
   assert.ok(page.includes("import TmdForecastCard from '../components/water/TmdForecastCard'"))
-  assert.ok(/<TmdForecastCard key=\{tenantId\} tenantId=\{tenantId\}/.test(page), 'ต้องวางการ์ดในหน้า และ key ตาม อปท.')
+  assert.ok(/<TmdForecastCard key=\{tenantId\} forecast=\{forecast\}/.test(page), 'ต้องวางการ์ดในหน้า และ key ตาม อปท.')
+  assert.ok(/const forecast = useTmdForecast\(tenantId\)/.test(page), 'หน้าโหลดพยากรณ์เองครั้งเดียว (ใช้ร่วมกับป้ายสรุป)')
   assert.ok(page.indexOf('<TmdForecastCard') > page.indexOf('<HydroHourlyPanel') && page.indexOf('<TmdForecastCard') < page.indexOf('<RainSection'), 'การ์ดอยู่ในแท็บสถานการณ์ ก่อนส่วนฝน')
   const card = read('../src/components/water/TmdForecastCard.jsx')
   assert.ok(/if \(!forecast\) return null/.test(card), 'ไม่มีข้อมูล = ไม่แสดงการ์ด')
-  assert.ok(/error && prev\.tenantId === tenantId \? prev/.test(card), 'โหลดพลาดแต่เคยได้ของ อปท. เดิม = คงของเดิม')
+  const hook = read('../src/components/water/useTmdForecast.js')
+  assert.ok(/error && prev\.tenantId === tenantId \? prev/.test(hook), 'โหลดพลาดแต่เคยได้ของ อปท. เดิม = คงของเดิม')
+  assert.ok(/return state\.tenantId === tenantId \? state\.forecast : null/.test(hook), 'สลับ อปท. แล้วไม่ค้างพยากรณ์ของเดิม')
   ok('วางการ์ดในแท็บสถานการณ์ก่อนส่วนฝน · ไม่มีข้อมูล = ไม่แสดง · โหลดพลาด = คงของเดิม')
 }
 
