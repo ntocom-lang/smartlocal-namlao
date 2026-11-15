@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { DAM_LEVELS, RAIN_LEVELS } from '../src/lib/waterSituation.js'
 import {
-  NEUTRAL_HEAD, buildPosterModel, buildPosterPhones, orgCallName, pickRainRows, posterDateLong, posterTime, readableTextOn, selectPosterTopic,
+  NEARBY_DAM_KM, NEUTRAL_HEAD, buildPosterModel, pickNearbyDam, buildPosterPhones, orgCallName, pickRainRows, posterDateLong, posterTime, readableTextOn, selectPosterTopic,
 } from '../src/lib/waterAlertPoster.js'
 import { buildAlerts } from '../src/lib/waterSituation.js'
 
@@ -277,6 +277,30 @@ assert.equal(readableTextOn('ไม่ใช่สี'), '#ffffff')
   const m = buildPosterModel(input({ dams: [noisy] }))
   const text = JSON.stringify(m)
   assert.equal(/นายทดสอบ|0812345678|ข้อความภายใน/.test(text), false)
+}
+
+// อ่างใกล้เคียง: ≤ 5 กม. · ไม่ซ้ำอ่างหัวภาพ · ค่าเก่าไม่เอา · ใกล้สุดอ่างเดียว · ไม่ทำให้เกิดภาพเตือนเอง
+{
+  assert.equal(NEARBY_DAM_KM, 5)
+  const main = dam()
+  const thang = dam({ station_code: '310', station_name: 'อ่างเก็บน้ำแม่ถาง', distance_km: 4.3, is_primary: false, tambon_name: 'บ้านเวียง', storage_percent: 50.6 })
+  const far = dam({ station_code: '311', station_name: 'อ่างเก็บน้ำไกล', distance_km: 5.1, is_primary: false, storage_percent: 70 })
+  const closer = dam({ station_code: '312', station_name: 'อ่างเก็บน้ำใกล้กว่า', distance_km: 1.2, is_primary: false, storage_percent: 40 })
+  const old = dam({ station_code: '313', station_name: 'อ่างเก็บน้ำค่าเก่า', distance_km: 0.5, is_primary: false, storage_percent: 40, recorded_at: '2026-11-01T17:00:00Z' })
+  assert.equal(pickNearbyDam([main, thang], NOW, main)?.station_code, '310', 'ไม่เอาอ่างหัวภาพ')
+  assert.equal(pickNearbyDam([main, far], NOW, main), null, 'เกิน 5 กม. ไม่เอา')
+  assert.equal(pickNearbyDam([main, thang, closer], NOW, main)?.station_code, '312', 'ใกล้สุดก่อน')
+  assert.equal(pickNearbyDam([main, old, thang], NOW, main)?.station_code, '310', 'ค่าเก่าไม่เอา')
+  const m = buildPosterModel({ dams: [main, thang], tenant, now: NOW })
+  assert.deepEqual(
+    { name: m.nearbyDam.name, pctText: m.nearbyDam.pctText, heading: m.nearbyDam.heading },
+    { name: 'อ่างแม่ถาง', pctText: '50.6', heading: 'อ่างใกล้เคียง' },
+  )
+  assert.match(m.nearbyDam.sub, /บ้านเวียง/)
+  assert.match(m.nearbyDam.sub, /4\.3/)
+  assert.equal(buildPosterModel({ dams: [main], tenant, now: NOW }).nearbyDam, null)
+  // อ่างข้างเคียงเพียงลำพัง (ไม่เกินเกณฑ์) ไม่ทำให้มีภาพ
+  assert.equal(buildPosterModel({ dams: [{ ...thang }], tenant, now: NOW }), null)
 }
 
 console.log('PASS: topic selection (dam>100 over heavy rain, 80-100 no poster, stale ignored, none = null), rain rows (in-tambon first, cause kept, no summing), tile head colors by threshold / neutral for supporting values, phones (none = hidden, no fallback), other-hazard note, wording by org type, footer disclaimers, PDPA')

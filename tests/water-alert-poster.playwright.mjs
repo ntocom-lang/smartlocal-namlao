@@ -72,11 +72,13 @@ try {
     const rain = (code, name, mm, extra = {}) => ({
       ...base, station_type: 'rain', station_code: code, station_name: name, distance_km: 2.6, recorded_at: ago(0.5), rain_24h_mm: mm, rain_1h_mm: null, ...extra,
     })
+    // อ่างตำบลข้างเคียง ห่าง 4.3 กม. — การ์ด "อ่างใกล้เคียง" มุมขวาของกรอบข้อควรทำ
+    const maeThang = dam({ station_code: '310', station_name: 'อ่างเก็บน้ำแม่ถาง', distance_km: 4.3, is_primary: false, tambon_name: 'บ้านเวียง', river_name: 'แม่ถาง', storage_percent: 50.6, dam_storage_mcm: 15.5, dam_capacity_mcm: 30.62 })
     const contacts = [{ label: 'มูลนิธิเพชรเกษมแพร่', number: '054-068-199' }, { label: 'กู้ชีพ / EMS', number: '1669' }, { label: 'ตำรวจ', number: '191' }]
     const scenes = {
-      dam: { dams: [dam()], rain: [rain('R1', 'บ้านบุญแจ่ม', 3.5, { is_primary: true }), rain('R2', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 0, { is_primary: true, distance_km: 2.9, recorded_at: ago(1) })], contacts },
+      dam: { dams: [dam(), maeThang], rain: [rain('R1', 'บ้านบุญแจ่ม', 3.5, { is_primary: true }), rain('R2', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 0, { is_primary: true, distance_km: 2.9, recorded_at: ago(1) })], contacts },
       rain: {
-        dams: [dam({ storage_percent: 86.4, dam_released_mcm: 0.21 })],
+        dams: [dam({ storage_percent: 86.4, dam_released_mcm: 0.21 }), maeThang],
         rain: [rain('R1', 'บ้านบุญแจ่ม', 96.5, { is_primary: true, rain_1h_mm: 12 }), rain('R2', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 58, { is_primary: true, distance_km: 2.9, recorded_at: ago(1) })],
         warnings: [{ message: 'เฝ้าระวังฝนตกหนักและน้ำป่าไหลหลาก', issued_at: ago(2) }], contacts,
       },
@@ -95,7 +97,7 @@ try {
       //    (เคยล้น ~29px จน #719 ต้องถอด ews ออกจากฉากนี้ — แก้เลย์เอาต์แล้วจึงใส่กลับ)
       rainStress: {
         ews: [{ ...base, station_type: 'ews', station_code: 'E1', station_name: 'สถานีเตือนภัยน้ำหลากดินถล่มบ้านห้วยขึม', distance_km: 5, recorded_at: ago(1), situation_level: 3, situation_text: 'วิกฤติ', situation_color: '#dc2626' }],
-        dams: [dam({ station_name: 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', storage_percent: 97.4 })],
+        dams: [dam({ station_name: 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', storage_percent: 97.4 }), maeThang],
         rain: [
           rain('R1', 'บ้านบุญแจ่ม', 148.2, { is_primary: true, rain_1h_mm: 0 }),
           rain('R2', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 120.5, { is_primary: true, distance_km: 2.9 }),
@@ -161,6 +163,11 @@ try {
   assert.equal(result.dam.layout.blocks.some(b => b.name === 'call'), true)
   assert.equal(result.stress.layout.blocks.some(b => b.name === 'otherNote'), true, 'มี overbank/ews ต้องมีแถบ "เรื่องอื่นที่ต้องระวังกว่า"')
   assert.equal(result.dam.layout.blocks.some(b => b.name === 'otherNote'), false)
+  // อ่างใกล้เคียง: ภาพปกติต้องมีการ์ด · ภาพเค้นสุดทาง (ข้อความข้อควรทำยาว) มีหรือไม่มีก็ได้ แต่ห้ามทำให้ล้น (ตรวจ issues/fits ข้างบนแล้ว)
+  assert.equal(result.dam.layout.nearbyShown, true, 'ภาพอ่างต้องมีการ์ดอ่างใกล้เคียง (แม่ถาง 4.3 กม.)')
+  assert.equal(result.rain.layout.nearbyShown, true, 'ภาพฝนต้องมีการ์ดอ่างใกล้เคียง')
+  assert.equal(result.stress.layout.nearbyShown, false, 'ไม่มีอ่างใน 5 กม. = ไม่มีการ์ด')
+  console.log('nearby dam shown:', Object.fromEntries(Object.entries(result).map(([k, r]) => [k, r.layout.nearbyShown])))
   assert.deepEqual(pageErrors, [], `เกิด error ในหน้าทดสอบ: ${pageErrors.join(' | ')}`)
 
   console.log('PASS: PNG 1080x1350 (dam 105.1 / rain 96.5 / stress), toBlob ok with logo from URL, logo 404 still renders, no text overflow, no phone strip without numbers, no SVG/ctx.filter in drawing code')
