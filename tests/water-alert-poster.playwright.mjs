@@ -222,6 +222,15 @@ try {
   assert.equal(result.dam.layout.nearbyShown, true, 'ภาพอ่างต้องมีการ์ดอ่างใกล้เคียง (แม่ถาง 4.3 กม.)')
   assert.equal(result.rain.layout.nearbyShown, true, 'ภาพฝนต้องมีการ์ดอ่างใกล้เคียง')
   assert.equal(result.stress.layout.nearbyShown, false, 'ไม่มีอ่างใน 5 กม. = ไม่มีการ์ด')
+  // คำ Smart City Local ขวาริบบอนวันที่ (เจ้าของสั่ง 2569-11-15): ทุกฉากต้องวาดได้ ไม่ชนริบบอน ไม่ล้นขอบขวา ไม่ย่อจนอ่านไม่ออก
+  for (const [key, r] of Object.entries(result)) {
+    const m = r.layout.smartMark
+    assert.ok(m, `${key}: ต้องมีคำ Smart City Local`)
+    assert.ok(m.x >= m.ribbonRight + 24 - 0.5, `${key}: คำ Smart City Local ชนริบบอน (${m.x} < ${m.ribbonRight} + 24)`)
+    assert.ok(m.x + m.w <= 1080 - 44 + 0.5, `${key}: คำ Smart City Local ล้นขอบขวา`)
+    assert.ok(m.scale >= 0.85, `${key}: คำ Smart City Local ถูกย่อเหลือ ${m.scale}`)
+  }
+  console.log('smart city mark:', Object.fromEntries(Object.entries(result).map(([k, r]) => [k, r.layout.smartMark && `${Math.round(r.layout.smartMark.w)}x${Math.round(r.layout.smartMark.h)} s${r.layout.smartMark.scale.toFixed(2)}`])))
   console.log('nearby dam shown:', Object.fromEntries(Object.entries(result).map(([k, r]) => [k, r.layout.nearbyShown])))
   assert.deepEqual(pageErrors, [], `เกิด error ในหน้าทดสอบ: ${pageErrors.join(' | ')}`)
 

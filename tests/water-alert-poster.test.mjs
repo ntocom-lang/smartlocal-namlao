@@ -406,6 +406,17 @@ const flat = runs => runs.map(r => r.t).join('')
   assert.doesNotMatch(withDam.footer.lines[0], /ค่าอ่าง/)
 }
 
+// ── ป้ายหน่วยงาน: คำขวัญ Smart City (เจ้าของสั่ง 2569-11-15) ──
+{
+  const models = [buildPosterModel(input({ dams: [dam()] })), buildPosterModel(input({ ews: [E3()] })), buildPosterModel(input({ levels: [level(-0.2)] }))]
+  for (const m of models) {
+    assert.match(m.badge.tag, /^มุ่งสู่เมืองอัจฉริยะ \(Smart City\)$/)
+    assert.equal(m.badge.system, 'ระบบข้อมูลน้ำ–ฝน')
+    // ยังไม่ได้รับรองเป็นเมืองอัจฉริยะ ห้ามเขียนว่า "เป็น"
+    assert.doesNotMatch(`${m.badge.system} ${m.badge.tag}`, /เป็นเมืองอัจฉริยะ|เมืองอัจฉริยะต้นแบบ/)
+  }
+}
+
 // ── ข้อความ ──
 {
   const m = buildPosterModel(input({ dams: [dam({ river_name: 'แม่คำปอง' })], contacts: [{ label: 'กู้ชีพ', number: '1669' }] }))
