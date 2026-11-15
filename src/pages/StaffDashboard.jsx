@@ -2868,7 +2868,7 @@ export default function StaffDashboard() {
 
       <PortalDrawer key={`${tenant?.id}-${profile?.id}`} open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="ระบบเจ้าหน้าที่"
         ariaLabel="เมนูเจ้าหน้าที่" groups={visibleHomeGroups} activeKey={activeModule} extraItems={drawerExtraItems}
-        badges={drawerBadges} workErrors={navWorkErrors} onSelect={openFromDrawer} />
+        badges={drawerBadges} workErrors={navWorkErrors} onSelect={openFromDrawer} quickFind />
 
         {/* PC header — staff themed · ปักติดบนขณะเลื่อน (sticky ภายใน <main overflow-y-auto> ของ App) ·
             overflow-hidden ย้ายไปอยู่ที่ชั้นพื้นหลังเท่านั้น ไม่งั้นเมนูบัญชีที่หย่อนลงมาใต้หัวจะถูกตัดทิ้ง ·
