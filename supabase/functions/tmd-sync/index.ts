@@ -26,6 +26,10 @@
 //   - ข้อความบอกเสมอว่าเป็นผลพยากรณ์จากแบบจำลองของกรมอุตุนิยมวิทยา อาจคลาดเคลื่อน
 //     ไม่ใช่ประกาศเตือนภัยของกรมหรือของ อปท. — ไม่สั่งการ ไม่ประกาศแทนผู้บริหาร (ดุลพินิจทางปกครอง)
 //   - ส่งไม่สำเร็จ = แถว failed รอบหน้าส่งใหม่ (แบบเดียวกับ water-alert-notify)
+//   - งดส่ง 22:00–05:59 น. ตามเวลาไทย (เจ้าของระบบเลือก 2569-11-15) — รอบ cron 22:20 / 01:20 / 04:20 น.
+//     ยังดึงและเก็บพยากรณ์ตามปกติ แค่ไม่ claim/ไม่ส่ง เรื่องที่เข้าเกณฑ์จึงไปออกรอบ 07:20 น. แทน
+//     (เตือนล่วงหน้า 2 วัน ช้าไม่กี่ชั่วโมงไม่เสียผล) · ข้อยกเว้นเดียวที่หาย: ฝนหนักของ "วันนี้" ที่โผล่ครั้งแรก
+//     รอบ 22:20 น. — เช้าวันรุ่งขึ้นวันนั้นผ่านไปแล้ว ไม่ส่งย้อน · โหมดทดสอบไม่ติดช่วงงดส่ง
 //
 // body {"test": true} = ดึงตามปกติ แต่แจ้งเตือนเฉพาะ demo ติด [ทดสอบ] และคีย์กันซ้ำแยกจากของจริง
 // ลงสมุด job_heartbeats ('tmd-sync') ทุกรอบ
@@ -52,6 +56,12 @@ const DAILY_DURATION = 7
 const HEAVY_RAIN_MM = 35.1
 const VERY_HEAVY_RAIN_MM = 90.1
 const ALERT_DAYS_AHEAD = 2 // วันนี้ + 2 วัน = 3 วัน
+// ช่วงงดส่ง Telegram ตามเวลาไทย: ตั้งแต่ QUIET_FROM_HOUR:00 ถึงก่อน QUIET_UNTIL_HOUR:00 (ข้ามเที่ยงคืน)
+const QUIET_FROM_HOUR = 22
+const QUIET_UNTIL_HOUR = 6
+function inQuietHours(hour: number): boolean {
+  return hour >= QUIET_FROM_HOUR || hour < QUIET_UNTIL_HOUR
+}
 
 const FETCH_TIMEOUT_MS = 15_000
 const MODULE_KEY = 'water-situation'
@@ -336,7 +346,8 @@ serve(async (req) => {
 
   // ── แจ้งเตือนพยากรณ์ฝนหนัก ──
   const sent: { slug: string; days: number; ok: boolean }[] = []
-  if (BOT_TOKEN) {
+  const quiet = !isTest && inQuietHours(now.hour)
+  if (BOT_TOKEN && !quiet) {
     const lastDay = addDays(now.date, ALERT_DAYS_AHEAD)
     const recipients = ((rows ?? []) as Tenant[])
       .filter(t => t.telegram_group_id !== null && moduleOn(t) && dailyByTenant.has(t.id))
@@ -399,5 +410,5 @@ serve(async (req) => {
   // ทุกพิกัดล้ม = รอบนี้พัง (ตัวเฝ้าระวังเห็น last_error) · ล้มบางพิกัดยังนับว่าทำงาน แต่ส่งรายละเอียดกลับ
   if (!okGroups) return await fail(errors.join(' | ') || 'ดึงไม่สำเร็จทุกพิกัด', 502)
   if (!isTest) await recordHeartbeat(admin, { ok: true })
-  return json({ ok: true, test: isTest, points: groups.size, okPoints: okGroups, errors, skipped, sent })
+  return json({ ok: true, test: isTest, points: groups.size, okPoints: okGroups, errors, skipped, sent, quiet })
 })
