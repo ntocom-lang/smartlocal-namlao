@@ -192,6 +192,28 @@ const HOUR = 3_600_000
   ok('เกณฑ์ฝนหนัก 35.1 / ฝนหนักมาก 90.1 ใน tmd-sync ตรงกับ RAIN_LEVELS และ RAIN_VERY_HEAVY_MM')
 }
 
+// ── ช่วงงดส่ง Telegram 22:00–05:59 น. (เจ้าของระบบเลือก 2569-11-15) ──
+// cron 20 */3 * * * (UTC) = 01:20 04:20 07:20 … 22:20 น. ตามเวลาไทย ⇒ ต้องงด 22:20 / 01:20 / 04:20 ส่งได้ 07:20 ถึง 19:20
+{
+  const src = read('../supabase/functions/tmd-sync/index.ts')
+  const from = Number(src.match(/const QUIET_FROM_HOUR = (\d+)/)?.[1])
+  const until = Number(src.match(/const QUIET_UNTIL_HOUR = (\d+)/)?.[1])
+  assert.ok(Number.isFinite(from) && Number.isFinite(until), 'อ่านช่วงงดส่งจาก tmd-sync ไม่ได้ — regex ตกยุค')
+  assert.equal(from, 22)
+  assert.equal(until, 6)
+  const fn = src.match(/function inQuietHours\(hour: number\): boolean \{\s*return ([^\r\n]+)\r?\n/)?.[1]
+  assert.ok(fn, 'ไม่พบ inQuietHours ใน tmd-sync')
+  const inQuietHours = new Function('hour', 'QUIET_FROM_HOUR', 'QUIET_UNTIL_HOUR', `return ${fn}`)
+  const cronHoursTh = [1, 4, 7, 10, 13, 16, 19, 22]
+  const quietRuns = cronHoursTh.filter(h => inQuietHours(h, from, until))
+  assert.deepEqual(quietRuns, [1, 4, 22], 'รอบที่งดส่งต้องเป็น 22:20 / 01:20 / 04:20 น.')
+  for (const h of [5, 23, 0]) assert.equal(inQuietHours(h, from, until), true, `${h} น. ต้องอยู่ในช่วงงดส่ง`)
+  for (const h of [6, 12, 21]) assert.equal(inQuietHours(h, from, until), false, `${h} น. ต้องส่งได้`)
+  assert.ok(/const quiet = !isTest && inQuietHours\(now\.hour\)/.test(src), 'ช่วงงดส่งต้องใช้เวลาไทย (now.hour) และโหมดทดสอบไม่ติด')
+  assert.ok(/if \(BOT_TOKEN && !quiet\)/.test(src), 'ช่วงงดส่งต้องกันทั้งบล็อกแจ้งเตือน (ไม่ claim คีย์ ไม่งั้นรอบเช้าไม่ส่ง)')
+  ok('งดส่ง Telegram 22:00–05:59 น. — รอบ cron ที่ส่งได้คือ 07:20 ถึง 19:20 น. · โหมดทดสอบไม่ติด')
+}
+
 // ── การ์ด: ที่มา · ไม่ฝังภายนอก · ไม่ยิงกรมจากเบราว์เซอร์ ──
 {
   const card = read('../src/components/water/TmdForecastCard.jsx')
