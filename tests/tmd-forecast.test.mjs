@@ -312,15 +312,21 @@ const HOUR = 3_600_000
   const card = read('../src/components/water/TmdForecastCard.jsx')
   const code = stripComments(card)
   for (const row of ['cond', 'tmax', 'tmin', 'wind', 'rain']) assert.ok(card.includes(`data-tmd-row="${row}"`), `ต้องมีแถว ${row}`)
-  for (const text of ['สภาพอากาศ', 'อุณหภูมิสูงสุด', 'อุณหภูมิต่ำสุด', 'ทิศทาง/ความเร็วลม', 'ฝน']) assert.ok(card.includes(text), `ต้องมีหัวแถว ${text}`)
-  assert.ok(card.includes('data-tmd-legend') && card.includes('rainLegend()') && card.includes('WIND_LEVELS'), 'ต้องมีแถบคำอธิบายระดับฝน+ลม')
+  for (const text of ['สภาพอากาศ', 'อุณหภูมิสูงสุด', 'อุณหภูมิต่ำสุด', 'ลมกระโชก', 'แรงสุดของวัน', 'ฝน']) assert.ok(card.includes(text), `ต้องมีหัวแถว ${text}`)
+  assert.ok(card.includes('data-tmd-legend') && card.includes('rainLegend()') && card.includes('data-tmd-wind-note'), 'ต้องมีแถบคำอธิบายระดับฝน + คำอธิบายลมกระโชก')
+  // ลมรายวันของ NWP = ลมแรงสุด (กระโชก) — ห้ามจัดระดับ/ลงสีด้วย WIND_LEVELS (เกณฑ์ลมปกติ) ไม่งั้นขึ้น "ลมแรง" แดงทุกวัน
+  // (เจ้าของระบบเลือก 2569-11-15 · เปิดระดับกลับได้เมื่อใช้ลมรายจังหวัดของกรม ซึ่งเป็นลมปกติ)
+  const windCell = card.slice(card.indexOf('function WindCell'), card.indexOf('function RainCell'))
+  assert.ok(!/windLevel\(|WIND_LEVELS|level\.chip|level\.label/.test(stripComments(windCell)), 'แถวลมกระโชกห้ามใช้ระดับ/สีของลมปกติ')
+  assert.ok(!/WIND_LEVELS/.test(code), 'การ์ดห้ามแสดงแถบระดับลมปกติขณะใช้ค่าลมกระโชก')
+  assert.ok(windCell.includes('data-wind-gust') && windCell.includes('bg-slate-100'), 'ป้ายลมกระโชกเป็นสีกลาง')
   // แถวฝนแสดง "คำ" จาก RAIN_LEVELS (level.label) ไม่ใช่ % — เราไม่มีข้อมูลโอกาสเกิดฝน ห้ามเดา
   const rainCell = card.slice(card.indexOf('function RainCell'), card.indexOf('function Legend'))
   assert.ok(rainCell.includes('{level.label}') && rainCell.includes('{rainText(day.rain)} มม.'), 'แถวฝน = คำระดับฝน + ตัวเลข มม. ตัวเล็ก')
   assert.ok(!/โอกาสเกิดฝน|โอกาสฝน/.test(code), 'ห้ามมี "โอกาสเกิดฝน"')
   assert.ok(!/>\s*\{[^}]+\}\s*%/.test(code) && !/%\s*ของพื้นที่/.test(code), 'ห้ามแสดงตัวเลขเปอร์เซ็นต์ (ไม่มีข้อมูลโอกาสเกิดฝน)')
   // ฝั่งป้ายวัน/ลม/ฝน ใช้ฟังก์ชันของ lib
-  for (const fn of ['dayHeading(', 'windKmh(', 'windLevel(', 'windDirection(', 'dailyRainLevel(', 'tempRound(']) assert.ok(code.includes(fn), `การ์ดต้องใช้ ${fn}`)
+  for (const fn of ['dayHeading(', 'windKmh(', 'windDirection(', 'dailyRainLevel(', 'tempRound(']) assert.ok(code.includes(fn), `การ์ดต้องใช้ ${fn}`)
   assert.ok(/transform: `rotate\(\$\{dir\.toDeg\}deg\)`/.test(code), 'ลูกศรลมหมุนตาม toDeg (พัดมาจาก + 180)')
 
   // แบรนด์ (เจ้าของสั่ง 2569-11-15)
