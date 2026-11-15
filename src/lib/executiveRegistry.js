@@ -108,6 +108,8 @@ export const EXEC_PERIOD_KEYS = Object.freeze(['complaints', 'doc_requests', 'sa
  * @property {string[]} docTypes     document_type ที่รายการนี้เป็นเจ้าของ (ลิงก์ไปกล่องงานของรายการนี้)
  * @property {boolean} [acceptsCustomTypes]  true = ประเภทที่ อปท. เพิ่มเอง (_custom_types) ตกที่รายการนี้
  * @property {string|null} summaryKey  ชื่อท้าย exec_summary_<summaryKey>() ของ E2 (null = ไม่มีสรุปฝั่ง DB)
+ * @property {string[]} [extraSummaryKeys]  สรุปเสริมของรายการเดียวกัน — ขอพร้อม summaryKey เมื่อรายการนี้ขึ้นจอ (ปิดโมดูล = ไม่ขอ)
+ *   ใช้กับ alert ที่อ่านสรุปอื่น (ALERT_RULE_SOURCES ใน executiveData.js) เช่น complaints → complaint_spike
  * @property {'E1'|'E2'|'E3'} phase  เฟสที่รายการนี้เริ่มขึ้นจอ
  * @property {{ module?: string, path?: string }} link   module = activeModule ของ /staff · path = route
  * @property {ExecKpi[]} kpis
@@ -131,6 +133,8 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
   {
     key: 'complaints', kind: 'module', label: 'คำร้อง/ร้องทุกข์', icon: 'MessageSquareWarning', dept: null,
     zones: ['service', 'report'], isCitizenService: true, docTypes: [], summaryKey: 'complaints', phase: 'E1',
+    // สัญญาณ "เรื่องพุ่งผิดปกติ" มาจาก exec_summary_complaint_spike() (20261127100000) — ขอเฉพาะเมื่อโมดูลคำร้องเปิด
+    extraSummaryKeys: ['complaint_spike'],
     link: { module: 'complaints' },
     kpis: [
       kpi('new', 'เรื่องใหม่', 'เรื่อง', 'จำนวนคำร้องที่สร้างในช่วงที่เลือก (ตามวันที่แจ้ง เวลาไทย)', 'E1', 'complaint_stats_fy.total'),
@@ -154,6 +158,7 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     ],
     alerts: [
       alert('overdue_5wd', 'เลยกำหนดเกิน 5 วันทำการ', 'critical', 'ค้างอยู่ตอนนี้ และวันนี้เลย due_date มากกว่า 5 วันทำการ (นับด้วยตารางวันหยุดชุดเดียวกับทุกหน้า workingDays.js)', 'E2'),
+      alert('spike', 'เรื่องร้องเรียนพุ่งผิดปกติ', 'warn', 'ต่อหมวดคำร้อง: 7 วันล่าสุด (นับวันนี้) มีตั้งแต่ 5 เรื่อง และมากกว่าหรือเท่ากับ 2 เท่าของค่าเฉลี่ยต่อสัปดาห์ของ 28 วันก่อนหน้า — ไม่ขึ้นกับช่วงที่เลือก · ไม่นับเรื่องที่ไม่รับ หมวดเฉพาะกิจ หมวดอ่อนไหว และหมวดที่ถูกลบจากทะเบียน · ไม่ตัดสินถ้า อปท. ยังไม่มีคำร้องเก่ากว่า 35 วัน หรือ 28 วันก่อนหน้ามีคำร้องที่นับได้รวมทุกหมวดไม่ถึง 4 เรื่อง · หมู่บ้านที่แจ้งมากสุดแสดงเฉพาะชื่อในทะเบียน/เลขหมู่ ที่มีตั้งแต่ 2 เรื่องและไม่เสมอกับอันดับสอง · ระบบแค่ชี้ ยอดพุ่งอาจมาจากเหตุอื่น เช่น เพิ่งประชาสัมพันธ์ช่องทางแจ้งเรื่อง', 'E3'),
       alert('low_rating', 'คะแนนประเมิน ≤ 2', 'warn', 'มีคะแนน 1 หรือ 2 ที่ให้ในช่วงที่เลือก (นับทุกที่มา รวมแบบประเมินภาพรวม) — แสดงจำนวนแยกที่มา ไม่แสดงความเห็น', 'E2'),
     ],
     reports: [
@@ -465,6 +470,15 @@ export function executiveCoverageErrors({
     if (sqlFunctionExists && e.summaryKey && isPhaseLive('E2', current)) {
       const fn = `exec_summary_${e.summaryKey}`
       if (!sqlFunctionExists(fn)) errors.push(`${where} summaryKey "${e.summaryKey}" แต่ไม่พบฟังก์ชัน public.${fn}() ใน migrations`)
+    }
+    if (e.extraSummaryKeys != null && (!Array.isArray(e.extraSummaryKeys) || e.extraSummaryKeys.some((k) => typeof k !== 'string' || !k))) {
+      errors.push(`${where} extraSummaryKeys ต้องเป็น array ของชื่อคีย์`)
+    }
+    if (e.extraSummaryKeys?.length && !e.summaryKey) errors.push(`${where} มี extraSummaryKeys แต่ไม่มี summaryKey`)
+    if (sqlFunctionExists && isPhaseLive('E2', current) && Array.isArray(e.extraSummaryKeys)) {
+      for (const k of e.extraSummaryKeys) {
+        if (!sqlFunctionExists(`exec_summary_${k}`)) errors.push(`${where} extraSummaryKeys "${k}" แต่ไม่พบฟังก์ชัน public.exec_summary_${k}() ใน migrations`)
+      }
     }
   }
 

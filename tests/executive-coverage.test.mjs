@@ -110,7 +110,7 @@ test('เฟส E2: ทุก summaryKey มีฟังก์ชัน exec_sum
 })
 
 test('summaryKey ทุกตัวในทะเบียนมีฟังก์ชันจริง และไม่มีฟังก์ชัน exec_summary_* ที่ไม่มีใครลงทะเบียน (ตกค้าง)', () => {
-  const keys = new Set(EXECUTIVE_REGISTRY.map((e) => e.summaryKey).filter(Boolean))
+  const keys = new Set(EXECUTIVE_REGISTRY.flatMap((e) => [e.summaryKey, ...(e.extraSummaryKeys ?? [])]).filter(Boolean))
   const inSql = new Set([...migrationsSql.matchAll(/FUNCTION\s+public\.exec_summary_([a-z0-9_]+)\s*\(/gi)].map((m) => m[1]))
   assert.deepEqual([...keys].filter((k) => !inSql.has(k)), [], 'summaryKey ที่ไม่มีฟังก์ชัน')
   assert.deepEqual([...inSql].filter((k) => !keys.has(k)), [], 'ฟังก์ชันที่ไม่มีรายการในทะเบียน')

@@ -576,6 +576,32 @@ export function normalizeWaterSummary(data) {
   }
 }
 
+/**
+ * exec_summary_complaint_spike → { insufficientHistory, groups } (เรื่องพุ่งผิดปกติ)
+ * groups: { category, label, recent (7 วันล่าสุด), base (28 วันก่อนหน้า), weekly (ค่าเฉลี่ยต่อสัปดาห์ของฐาน), village, villageN }
+ * กรองซ้ำฝั่งหน้าเว็บด้วยกฎเดียวกับ SQL (recent ≥ min และ recent × 2 ≥ base) — ฐานส่งค่าแปลกมาก็ไม่เตือนลวง
+ */
+export function normalizeComplaintSpikeSummary(data) {
+  const d = asObj(data)
+  const min = execCount(d.min) || 5
+  return {
+    recentDays: execCount(d.recent_days) || 7,
+    baseDays: execCount(d.base_days) || 28,
+    min,
+    insufficientHistory: d.insufficient_history === true,
+    groups: asList(d.groups).map((g) => {
+      const recent = execCount(g?.recent)
+      const base = execCount(g?.base)
+      const village = String(g?.village ?? '').trim()
+      return {
+        category: g?.category ?? null, label: String(g?.label ?? g?.category ?? '').trim(),
+        recent, base, weekly: Math.round((base / 4) * 10) / 10,
+        village: village || null, villageN: village ? execCount(g?.village_n) : 0,
+      }
+    }).filter((g) => g.label && g.recent >= min && g.recent * 2 >= g.base),
+  }
+}
+
 const NORMALIZERS = Object.freeze({
   complaints: normalizeComplaintsSummary,
   doc_requests: normalizeDocRequestsSummary,
@@ -587,13 +613,14 @@ const NORMALIZERS = Object.freeze({
   projects: normalizeProjectsSummary,
   local_plan: normalizeLocalPlanSummary,
   water: normalizeWaterSummary,
+  complaint_spike: normalizeComplaintSpikeSummary,
 })
 
 /** summaryKey (ฝั่ง SQL) → ชื่อช่องใน model ฝั่งหน้าจอ */
 export const EXEC_MODEL_FIELDS = Object.freeze({
   complaints: 'complaints', doc_requests: 'docRequests', satisfaction: 'satisfaction', departments: 'departments',
   patient_transport: 'patientTransport', fleet: 'fleet', borrowable_assets: 'borrowable', projects: 'projects',
-  local_plan: 'localPlan', water: 'water',
+  local_plan: 'localPlan', water: 'water', complaint_spike: 'complaintSpike',
 })
 
 /**
@@ -618,10 +645,12 @@ const dataOf = (model, field) => (model?.[field]?.state === 'ok' ? model[field].
  * summaryKey ที่ต้องขอ — จากรายการที่ขึ้นจอ (ตัดค่าซ้ำ/null/ว่าง) เรียงคงที่ เพื่อให้คีย์แคชเท่ากันทุกรอบ
  * รายการใดถือ document_type (docTypes) = ตาราง ②-2 ต้องใช้แถวคำขอจาก doc_requests แม้โมดูลกล่องงาน (inbox) ปิดอยู่
  * (เช่น ประปา/รถรับ-ส่งผู้ป่วยเปิด แต่ inbox ปิด) — ไม่งั้นตารางขึ้น "โหลดไม่ได้" ลวง หรือค้าง "กำลังโหลด" ตลอด
+ * extraSummaryKeys ของรายการ (เช่น complaints → complaint_spike) ขอพร้อมกันเฉพาะรายการที่ขึ้นจอ
  */
 export function execSummaryKeys(entries) {
   const list = entries ?? []
-  const keys = list.map((e) => e?.summaryKey).filter((k) => typeof k === 'string' && k)
+  const keys = list.flatMap((e) => [e?.summaryKey, ...(Array.isArray(e?.extraSummaryKeys) ? e.extraSummaryKeys : [])])
+    .filter((k) => typeof k === 'string' && k)
   if (list.some((e) => (e?.docTypes?.length ?? 0) > 0)) keys.push('doc_requests')
   return [...new Set(keys)].sort()
 }
@@ -860,6 +889,14 @@ const ALERT_RULES = {
     const v = m.satisfaction && satisfactionView(m.satisfaction)
     return v && v.lowTotal > 0 ? { count: v.lowTotal, unit: 'คะแนน', detail: v.low.map((x) => `${x.label} ${x.n}`).join(' · ') } : null
   },
+  // เรื่องพุ่งผิดปกติ (exec_summary_complaint_spike) — count = จำนวนหมวดที่พุ่ง · detail = 2 หมวดแรก (ชื่อหมวด + หมู่บ้านในทะเบียนเท่านั้น)
+  'complaints:spike': (m) => {
+    const s = m.complaintSpike
+    if (!s || s.insufficientHistory || s.groups.length === 0) return null
+    const one = (g) => `${g.label} ${g.recent} เรื่องใน ${s.recentDays} วัน (ปกติราว ${g.weekly} เรื่อง/สัปดาห์)${g.village && g.villageN >= 2 ? ` มากสุดที่${g.village} ${g.villageN} เรื่อง` : ''}`
+    const head = s.groups.slice(0, 2).map(one).join(' · ')
+    return { count: s.groups.length, unit: 'หมวด', detail: s.groups.length > 2 ? `${head} · และอีก ${s.groups.length - 2} หมวด` : head }
+  },
   'inbox:overdue_5wd': (m, ctx) => {
     const a = m.docRequests && backlogAnalysis(m.docRequests.backlog, ctx.today)
     return a && a.overdue5wd > 0 ? { count: a.overdue5wd, unit: 'เรื่อง', detail: `เลยกำหนดทั้งหมด ${a.overdue} เรื่อง` } : null
@@ -908,6 +945,7 @@ const ALERT_RULES = {
 // ไม่งั้นสรุปที่อ่านอยู่พัง (ok:false) แล้ว alert หายเงียบโดยไม่ขึ้นใน failures (code review #685)
 const ALERT_RULE_SOURCES = Object.freeze({
   'complaints:low_rating': 'satisfaction',
+  'complaints:spike': 'complaintSpike',
 })
 
 /**
