@@ -6,9 +6,9 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useVisibleRefresh } from '../../hooks/useVisibleRefresh'
 import {
-  SMART_CITY_COLORS, SMART_CITY_LOCAL_WORDS, SMART_CITY_TAG, TMD_SOURCE_DOC_URL, TMD_SOURCE_NAME, TMD_SOURCE_TEXT, WIND_LEVELS,
+  SMART_CITY_COLORS, SMART_CITY_LOCAL_WORDS, SMART_CITY_TAG, TMD_SOURCE_DOC_URL, TMD_SOURCE_NAME, TMD_SOURCE_TEXT,
   conditionInfo, dailyRainLevel, dayHeading, daysRangeText, fetchTmdForecast, fetchedAtText, forecastFreshness, gridText,
-  hourText, hourlyRainSummary, rainLegend, rainText, tempRound, upcomingDays, upcomingHours, windDirection, windKmh, windLevel,
+  hourText, hourlyRainSummary, rainLegend, rainText, tempRound, upcomingDays, upcomingHours, windDirection, windKmh,
 } from '../../lib/tmdForecast'
 
 // พยากรณ์เปลี่ยนทุก 3 ชม. (tmd-sync) — ถามซ้ำถี่กว่านี้ไม่ได้ของใหม่
@@ -194,7 +194,7 @@ function DayTable({ days, now }) {
             </tr>
             <tr data-tmd-row="wind">
               <th scope="row" className={`${label} border-b border-white bg-slate-100 text-slate-900`}>
-                ทิศทาง/ความเร็วลม
+                ลมกระโชก
                 <span className="mt-0.5 block text-[12px] font-medium text-slate-600">แรงสุดของวัน</span>
               </th>
               {days.map(day => <WindCell key={day.time} day={day} className={cell} />)}
@@ -239,12 +239,14 @@ function TempCell({ value, kind, className }) {
   )
 }
 
+// ⚠️ ws10m รายวันของ NWP = ลม "แรงสุด" ของวัน (ลมกระโชก) ไม่ใช่ลมปกติ — วันธรรมดาขึ้น 30–40 กม./ชม.
+// ห้ามจัดระดับด้วย WIND_LEVELS (เกณฑ์ลมปกติจากภาพของกรม) ไม่งั้นขึ้น "ลมแรง" สีแดงทุกวัน ชาวบ้านตกใจเกินเหตุ
+// (เจ้าของระบบเลือก 2569-11-15: ป้ายสีกลาง ไม่มีคำระดับ จนกว่าจะได้ลมรายจังหวัดของกรมที่ต้องใช้ uid/ukey)
 function WindCell({ day, className }) {
   const kmh = windKmh(day.windMs)
-  const level = windLevel(kmh)
   const dir = windDirection(day.windDir)
   const aria = kmh === null ? 'ไม่มีข้อมูลลม'
-    : `${level.label} ${kmh} กิโลเมตรต่อชั่วโมง${dir ? ` พัดมาจากทิศ${dir.from}` : ''}`
+    : `ลมกระโชกแรงสุด ${kmh} กิโลเมตรต่อชั่วโมง${dir ? ` พัดมาจากทิศ${dir.from}` : ''}`
   return (
     <td data-tmd-cell="wind" className={className} aria-label={aria}>
       {kmh === null ? <span className="text-lg font-bold text-gray-500">–</span> : (
@@ -252,10 +254,9 @@ function WindCell({ day, className }) {
           {/* ลูกศรชี้ไปทางที่ลมพัดไป (พัดมาจาก + 180°) · ถ้าไม่มีทิศ = ไม่วาดลูกศร ไม่เดาเป็นเหนือ */}
           {dir && <ArrowUp size={26} strokeWidth={2.6} className="text-slate-700" style={{ transform: `rotate(${dir.toDeg}deg)` }} data-wind-to={dir.toDeg} aria-hidden="true" />}
           {dir && <span className="text-[12px] font-medium leading-tight text-gray-700">จาก{dir.from}</span>}
-          <span className={`rounded-lg px-1.5 py-0.5 text-sm font-bold leading-tight ${level.chip}`}>
+          <span data-wind-gust className="rounded-lg bg-slate-100 px-1.5 py-0.5 text-sm font-bold leading-tight text-slate-800">
             {kmh} <span className="text-[12px] font-semibold">กม./ชม.</span>
           </span>
-          <span className="text-[12px] font-semibold leading-tight text-gray-700">{level.label}</span>
         </div>
       )}
     </td>
@@ -281,7 +282,7 @@ function RainCell({ day, className }) {
   )
 }
 
-// แถบคำอธิบาย: ระดับฝน (ช่วง มม. จาก RAIN_LEVELS) + ระดับลม (km/h)
+// แถบคำอธิบาย: ระดับฝน (ช่วง มม. จาก RAIN_LEVELS) + คำอธิบายลมกระโชก (ไม่จัดระดับ — ดู WindCell)
 function Legend() {
   return (
     <div data-tmd-legend className="grid gap-3 border-t border-gray-100 bg-gray-50 px-4 py-3 md:grid-cols-2">
@@ -296,16 +297,11 @@ function Legend() {
           ))}
         </ul>
       </div>
-      <div>
-        <p className="text-xs font-bold text-gray-700">ระดับลม (กิโลเมตร/ชั่วโมง)</p>
-        <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1.5">
-          {WIND_LEVELS.map(level => (
-            <li key={level.key} className="flex items-center gap-1.5">
-              <span className={`rounded-full px-2 py-0.5 text-[12px] font-bold ${level.chip}`}>{level.label}</span>
-              <span className="text-[12px] text-gray-600">{level.range}</span>
-            </li>
-          ))}
-        </ul>
+      <div data-tmd-wind-note>
+        <p className="text-xs font-bold text-gray-700">ลมกระโชกแรงสุด</p>
+        <p className="mt-1.5 text-[12px] leading-relaxed text-gray-600">
+          ความเร็วลมแรงสุดช่วงสั้นๆ ของวันจากแบบจำลอง (กิโลเมตร/ชั่วโมง) ไม่ใช่ลมที่พัดตลอดวัน — ลมปกติมักเบากว่านี้มาก
+        </p>
       </div>
     </div>
   )
