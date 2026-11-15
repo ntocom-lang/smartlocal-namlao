@@ -6,6 +6,7 @@ import { useAuth } from '../../../../contexts/AuthContext'
 import { supabase } from '../../../../lib/supabase'
 // ประเภทที่ อปท. กดลบทิ้งในหน้าตั้งค่าแอดมิน ต้องหายจากหน้าแรกด้วย ไม่ใช่แค่ในฟอร์มยื่นคำขอ
 import { selectableDocumentTypes } from '../../../../lib/documentTypes'
+import { CONTACT_BOOKS } from '../../../../lib/contactBooks'
 import PostsHighlight, { PostDetailModal } from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
@@ -168,6 +169,21 @@ function EServiceBlock({ docTypes }) {
                 {emoji}
               </div>
               <p className="text-white/95 text-sm font-semibold text-center leading-tight w-full drop-shadow-sm line-clamp-2">{label}</p>
+            </Link>
+          ))}
+        </div>
+
+        {/* สมุดเบอร์โทร 2 เล่ม (สายด่วนฉุกเฉิน / เบอร์โทรสำคัญ) — แยกเป็นแถวของตัวเอง ไม่ใส่ในกริดไอคอนข้างบน
+            เพราะ (1) กริดมือถือจอแคบ < 420px โชว์ได้ 3 ช่อง ช่องที่ 4 ถูกซ่อน ถ้าเบอร์โทรไปตกช่องนั้น
+            คนส่วนใหญ่จะไม่เห็นเลย (2) ไม่ดันประเภทคำขอเอกสารของ อปท. ที่เปิดไว้หลุดจากหน้าแรก
+            ชื่อ/เส้นทาง/ไอคอนดึงจาก CONTACT_BOOKS ชุดเดียวกับหน้า /emergency และ /directory
+            ไม่ต้องกรองตามโมดูล — สองหน้านี้ไม่ได้ผูกกับโมดูลใด เปิดได้ทุก อปท. */}
+        <div className="grid grid-cols-2 gap-2 mt-3">
+          {CONTACT_BOOKS.map(({ key, label, path, emoji }) => (
+            <Link key={key} to={path}
+              className="flex items-center justify-center gap-2 rounded-xl px-3 py-2 bg-white/20 border border-white/30 backdrop-blur-sm hover:bg-white/30 active:scale-95 transition">
+              <span aria-hidden="true" className="w-7 h-7 shrink-0 rounded-full bg-white flex items-center justify-center text-[15px] shadow-sm">{emoji}</span>
+              <span className="text-white text-[13px] lg:text-sm font-semibold leading-tight drop-shadow-sm">{label}</span>
             </Link>
           ))}
         </div>
