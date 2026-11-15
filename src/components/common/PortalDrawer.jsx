@@ -1,9 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { LayoutDashboard, X } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ROLE_LABELS } from '../../lib/staffRoster'
 import CollapsibleNavGroup from './CollapsibleNavGroup'
+import NavQuickFind from './NavQuickFind'
+import { recordNavUse } from '../../lib/navUsage'
 
 // เมนูซ้ายแบบลิ้นชักเลื่อนออกจากซ้าย — ใช้ร่วม 3 ที่ (เฉพาะมือถือ md:hidden):
 //   - หน้าเจ้าหน้าที่ (StaffDashboard.jsx)
@@ -35,15 +37,21 @@ const DEFAULT_HOME = { key: 'home', label: 'แดชบอร์ด', Icon: Lay
 
 const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-function DrawerItem({ item, active, badge, onSelect }) {
+// variant 'sub' = เมนูย่อยใต้หัวกลุ่มที่พับได้ (ตัวบาง/จางกว่า ไอคอน 15px · active = พื้นจาง + ตัวหนา แถบอำพันวาดโดย NavSubRow)
+// ค่าเริ่มต้น = แถวเต็มแบบเดิม (ภาพรวม/ทางลัด/กลุ่มที่ไม่พับของหน้าแอดมิน/ศูนย์ข้อมูล ต้องเหมือนเดิมทุกอย่าง)
+function DrawerItem({ item, active, badge, onSelect, variant }) {
   const count = Number(badge) > 0 ? Number(badge) : 0
   const Icon = item.Icon
+  const sub = variant === 'sub'
+  const cls = sub
+    ? `flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-white/70 ${active ? 'bg-white/15 font-semibold text-white' : 'font-normal text-white/75 active:bg-white/10'}`
+    : `flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-white/70 ${active ? 'text-white' : 'text-white/80 active:bg-white/10'}`
   return (
     <button type="button" data-drawer-item={item.key} aria-current={active ? 'page' : undefined}
       onClick={() => onSelect(item)}
-      className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-white/70 ${active ? 'text-white' : 'text-white/80 active:bg-white/10'}`}
-      style={active ? ACTIVE_STYLE : undefined}>
-      <Icon size={19} strokeWidth={active ? 2.2 : 1.7} aria-hidden="true" className="shrink-0" />
+      className={cls}
+      style={!sub && active ? ACTIVE_STYLE : undefined}>
+      <Icon size={sub ? 15 : 19} strokeWidth={sub ? 1.6 : active ? 2.2 : 1.7} aria-hidden="true" className="shrink-0" />
       <span data-drawer-label className="min-w-0 flex-1 leading-snug">{item.label}</span>
       {count > 0 && (
         <span data-drawer-badge className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white">
@@ -71,9 +79,13 @@ export function GroupLabel({ children, accent, count }) {
 // (ทรีหมวดหมู่ของหน้าศูนย์ข้อมูล ซึ่งกาง/พับได้และมีปุ่มเพิ่มข้อมูลต่อแถว) ผู้ส่งต้องปิดลิ้นชักเองเมื่อเลือกปลายทาง
 export default function PortalDrawer({
   open, onClose, tenant, portalLabel, ariaLabel, homeItem = DEFAULT_HOME, homeGroupLabel = 'ภาพรวม', extraItems = [],
-  groups, activeKey, badges, workErrors, onSelect, children,
+  groups, activeKey, badges, workErrors, onSelect, children, quickFind = false,
 }) {
-  const { role, displayName, avatarUrl } = useAuth()
+  const { role, displayName, avatarUrl, session } = useAuth()
+  // quickFind (opt-in · เปิดเฉพาะหน้าเจ้าหน้าที่) = ช่องค้นหาเมนู + หมวด "ใช้บ่อย" บนสุดของลิ้นชัก
+  // ทุกทางที่กดเมนูโมดูลผ่าน pick → นับการใช้ต่อผู้ใช้ (ภาพรวม/ทางลัดผู้บริหารไม่ถูกนับ)
+  const userId = session?.user?.id ?? null
+  const pick = useCallback((item) => { if (quickFind) recordNavUse(userId, item.key); onSelect(item) }, [quickFind, userId, onSelect])
   const panelRef = useRef(null)
   const closeRef = useRef(null)
   const returnFocusTo = useRef(null)
@@ -113,6 +125,34 @@ export default function PortalDrawer({
     if (dx < -60 && Math.abs(dy) < 40) onClose()
   }
 
+  // "ภาพรวม" + ทางลัดเพิ่มใต้ภาพรวม (เช่น แอดมิน → แดชบอร์ดเจ้าหน้าที่ ตามเมนูซ้าย PC) — ไม่ใช่กลุ่มเมนูโมดูล
+  const homeBlock = (
+    <>
+      <GroupLabel>{homeGroupLabel}</GroupLabel>
+      <DrawerItem item={homeItem} active={activeKey === homeItem.key} onSelect={onSelect} />
+      {extraItems.map(item => <DrawerItem key={item.key} item={item} active={activeKey === item.key} onSelect={onSelect} />)}
+    </>
+  )
+  const groupBlocks = groups.map(({ group, accent, Icon, items, collapsible }, index) => {
+    const content = items.map(item => (
+      <DrawerItem key={item.key} item={item} active={activeKey === item.key}
+        badge={badges?.[item.key]} onSelect={onSelect} />
+    ))
+    return collapsible ? (
+      <CollapsibleNavGroup key={group} label={group} Icon={Icon} accent={accent}
+        items={items} badges={badges} workErrors={workErrors} activeKey={activeKey} divider={index > 0}
+        renderItem={item => (
+          <DrawerItem item={item} variant="sub" active={activeKey === item.key}
+            badge={badges?.[item.key]} onSelect={pick} />
+        )} />
+    ) : (
+      <div key={group}>
+        <GroupLabel accent={accent}>{group}</GroupLabel>
+        <div className="space-y-0.5">{content}</div>
+      </div>
+    )
+  })
+
   const roleLabel = ROLE_LABELS[role]?.label ?? (role === 'superadmin' ? 'Super Admin' : 'ผู้ใช้งาน')
 
   return (
@@ -143,29 +183,18 @@ export default function PortalDrawer({
         </div>
 
         <nav aria-label="เมนูโมดูล" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 [scrollbar-color:rgba(255,255,255,0.35)_transparent] [scrollbar-width:thin]">
-          <GroupLabel>{homeGroupLabel}</GroupLabel>
-          <DrawerItem item={homeItem} active={activeKey === homeItem.key} onSelect={onSelect} />
-          {/* ทางลัดเพิ่มใต้ "ภาพรวม" (เช่น แอดมิน → แดชบอร์ดเจ้าหน้าที่ ตามเมนูซ้าย PC) — ไม่ใช่กลุ่มเมนูโมดูล */}
-          {extraItems.map(item => <DrawerItem key={item.key} item={item} active={activeKey === item.key} onSelect={onSelect} />)}
-          {groups.map(({ group, accent, items, collapsible }) => {
-            const content = items.map(item => (
-              <DrawerItem key={item.key} item={item} active={activeKey === item.key}
-                badge={badges?.[item.key]} onSelect={onSelect} />
-            ))
-            return collapsible ? (
-              <CollapsibleNavGroup key={group} label={group}
-                items={items} badges={badges} workErrors={workErrors}
-                renderItem={item => (
-                  <DrawerItem item={item} active={activeKey === item.key}
-                    badge={badges?.[item.key]} onSelect={onSelect} />
-                )} />
-            ) : (
-              <div key={group}>
-                <GroupLabel accent={accent}>{group}</GroupLabel>
-                <div className="space-y-0.5">{content}</div>
-              </div>
-            )
-          })}
+          {quickFind ? (
+            <NavQuickFind groups={groups} activeKey={activeKey} userId={userId} onSelect={pick} variant="drawer" refreshKey={open} wrapperClassName="pb-1 pt-1"
+              renderItem={item => <DrawerItem item={item} variant="sub" active={activeKey === item.key} badge={badges?.[item.key]} onSelect={pick} />}
+              pinned={homeBlock}>
+              {groupBlocks}
+            </NavQuickFind>
+          ) : (
+            <>
+              {homeBlock}
+              {groupBlocks}
+            </>
+          )}
           {children}
         </nav>
 

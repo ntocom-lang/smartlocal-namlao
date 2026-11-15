@@ -5,6 +5,7 @@
 import {
   FileText, MessageSquareWarning, CalendarDays, Images, Luggage, Star, Car, Trash2, Database, BookOpen,
   PackageOpen, Ambulance, ClipboardCheck, CloudRain, HardHat, ClipboardList, Hammer, TrendingUp, ChartColumn, LayoutDashboard,
+  HeartHandshake, Megaphone, Layers, Building2, Banknote, GraduationCap, ShieldCheck,
 } from 'lucide-react'
 import { PATIENT_TRANSPORT_MODULE_KEY } from './patientTransport'
 
@@ -12,11 +13,12 @@ import { PATIENT_TRANSPORT_MODULE_KEY } from './patientTransport'
 // ไม่ใช่คีย์โมดูล (ไม่อยู่ใน MODULES/enabled_modules) จึงวางเป็นทางลัดใต้ "แดชบอร์ด" และแสดงเฉพาะคนที่เปิดห้องได้
 export const EXECUTIVE_MENU_ITEM = Object.freeze({ key: 'executive-room', label: 'ห้องผู้บริหาร', Icon: ChartColumn, externalUrl: '/executive' })
 
+// Icon ระดับกลุ่ม = ไอคอนหัวกลุ่มในเมนูซ้าย PC/ลิ้นชักมือถือ (ชุดเดียวกับหน้าเมนูแบบไอคอนใน StaffOperationalDashboard)
 // เมนูที่ข้ามกอง (ใช้ร่วมกันทุกกอง ไม่ผูกกับกองใดกองหนึ่ง) — จัดเป็นกลุ่มย่อยตามลักษณะงาน
 // เพื่อให้หาเจอง่าย แทนที่จะเป็นลิสต์ยาวไม่มีหัวข้อ
 export const STANDALONE_GROUPS = [
   {
-    group: 'งานบริการประชาชน',
+    group: 'งานบริการประชาชน', Icon: HeartHandshake,
     items: [
       { key: 'complaints', label: 'คำร้อง',     Icon: MessageSquareWarning, color: '#ef4444', bg: '#fee2e2', desc: 'รับเรื่อง ตรวจสอบ มอบหมาย และติดตามผล' },
       { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', Icon: FileText,       color: '#8b5cf6', bg: '#ede9fe', desc: 'รับคำขอเอกสารจากประชาชน ออกเลข และติดตามสถานะ' },
@@ -27,7 +29,7 @@ export const STANDALONE_GROUPS = [
     ],
   },
   {
-    group: 'ประชาสัมพันธ์และท่องเที่ยว',
+    group: 'ประชาสัมพันธ์และท่องเที่ยว', Icon: Megaphone,
     items: [
       { key: 'events',          label: 'ปฏิทินกิจกรรม',       Icon: CalendarDays, color: '#10b981', bg: '#d1fae5', desc: 'กำหนดการและปฏิทินกิจกรรมของหน่วยงาน' },
       { key: 'posts',           label: 'ข่าวสาร/ภาพกิจกรรม',  Icon: Images,       color: '#059669', bg: '#d1fae5', desc: 'ประกาศ ข่าวประชาสัมพันธ์ และอัลบั้มภาพ' },
@@ -36,7 +38,7 @@ export const STANDALONE_GROUPS = [
     ],
   },
   {
-    group: 'แผนงานและทรัพยากรกลาง',
+    group: 'แผนงานและทรัพยากรกลาง', Icon: Layers,
     items: [
       // 'civil-report' (รายงานโครงการ) ยังถอดอยู่ · 'projects' กลับมาแล้วในกลุ่มกองช่างเป็นโมดูลโครงการก่อสร้าง + รายงานสัปดาห์ (2569-11-06)
       // คอมโพเนนต์เดิม CivilProjectAdmin/CivilProjectReport ยังอยู่ในโฟลเดอร์ admin แต่ไม่มีเมนูหรือ branch เรียกแล้ว
@@ -61,7 +63,7 @@ export const STANDALONE_GROUPS = [
   // กลุ่ม 'บุคลากร' (เมนู 'positions' ทำเนียบตำแหน่ง) ถอดออก 2026-08-31 — ซ้ำกับหน้า
   // "จัดการผู้ใช้และการแต่งตั้ง" ฝั่งแอดมิน ส่วนการแก้แบบตำแหน่งย้ายไป SuperAdminPanel → แบบตำแหน่ง
   {
-    group: 'คู่มือ',
+    group: 'คู่มือ', Icon: BookOpen,
     items: [
       // newTab: เปิดเอกสารคงที่ (static HTML) แท็บใหม่ — ต่างจาก externalUrl ที่ navigate() ในแท็บเดิม
       // (ใช้กับ route ภายในแอปเท่านั้น เพราะไฟล์ static ไม่มี route จับใน App.jsx)
@@ -75,7 +77,7 @@ export const STANDALONE_GROUPS = [
 // แต่กลายเป็นบรรทัดว่างที่กดไม่ได้ 3 กอง (2569-10-14 เจ้าของให้ซ่อน) · คงนิยามกองไว้ เมนูใหม่ของกองนั้นจะโผล่เองเมื่อเพิ่มเข้า items
 export const MODULE_GROUPS = [
   {
-    group: 'สำนักปลัด',
+    group: 'สำนักปลัด', Icon: Building2,
     items: [
       // วางใต้สำนักปลัดเพราะยังไม่มี อปท. ไหนมีกองสาธารณสุขใน departments (ตรวจ 2569-09-07)
       // ถ้าวันหนึ่งเพิ่มกองสาธารณสุขแล้วมีกลุ่มเมนูของกองนั้น ให้ย้ายมาไว้ที่นั่น
@@ -91,9 +93,9 @@ export const MODULE_GROUPS = [
       { key: 'local-plan', label: 'แผนพัฒนาท้องถิ่น', Icon: ClipboardList, color: '#4f46e5', bg: '#e0e7ff', desc: 'ทะเบียนโครงการในแผนพัฒนา และแผนการดำเนินงานรายปี ระบบนับกำหนดตามระเบียบให้' },
     ],
   },
-  { group: 'กองคลัง', items: [] },
+  { group: 'กองคลัง', Icon: Banknote, items: [] },
   {
-    group: 'กองช่าง',
+    group: 'กองช่าง', Icon: Hammer,
     items: [
       { key: 'infra', label: 'บันทึกงานซ่อม', Icon: Hammer, color: '#0891b2', bg: '#e0f2fe', desc: 'ช่างปักหมุดหน้างาน · ธุรการบันทึกรายละเอียด' },
       // คีย์ 'projects' เดิม (เคยเป็น "แผนงาน/โครงการ" ที่ถอดออกรอออกแบบใหม่) — ออกแบบใหม่เป็นโครงการก่อสร้าง + รายงานผลประจำสัปดาห์
@@ -102,8 +104,8 @@ export const MODULE_GROUPS = [
       { key: 'projects', label: 'โครงการก่อสร้าง', Icon: HardHat, color: '#b45309', bg: '#fef3c7', desc: 'ตั้งโครงการครั้งเดียว รายงานผลรายสัปดาห์ ระบบคำนวณและพิมพ์ให้' },
     ],
   },
-  { group: 'กองการศึกษา', items: [] },
-  { group: 'ตรวจสอบภายใน', items: [] },
+  { group: 'กองการศึกษา', Icon: GraduationCap, items: [] },
+  { group: 'ตรวจสอบภายใน', Icon: ShieldCheck, items: [] },
 ]
 export const MODULES = [...STANDALONE_GROUPS.flatMap(g => g.items), ...MODULE_GROUPS.flatMap(g => g.items)]
 
