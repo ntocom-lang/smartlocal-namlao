@@ -603,9 +603,10 @@ async function loadLogo(url) {
  * วาดภาพทั้งใบ (sync) — คืน layout สำหรับเทสต์: issues (ข้อความที่ย่อสุดแล้วยังล้น) · fits (เนื้อหาไม่ล้นแถบล่าง) · blocks
  * @param {CanvasRenderingContext2D} ctx
  * @param {object} model ผลของ buildPosterModel
- * @param {{ fonts: { display: string, body: string }, logo?: CanvasImageSource | null }} resources
+ * @param {{ fonts: { display: string, body: string }, logo?: CanvasImageSource | null, tight?: boolean }} resources
+ *   tight = บีบ "ระยะเว้น" ในแผงตัวเลข/สเกล/ฝน (ไม่แตะขนาดฟอนต์) — เรียกซ้ำเองเมื่อเนื้อหาล้นแถบล่าง
  */
-export function drawWaterAlertPoster(ctx, model, { fonts, logo = null }) {
+export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = false }) {
   const { display, body } = fonts
   const issues = []
   const blocks = []
@@ -769,7 +770,7 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null }) {
     const gap = 14
     const tw = (CONTENT_W - gap * (n - 1)) / n
     const headH = 52
-    const bodyH = 88
+    const bodyH = tight ? 80 : 88
     const fits = model.tiles.map(tile => {
       const parts = tile.label.split('\n')
       let size = 19
@@ -802,7 +803,7 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null }) {
           ctx.strokeStyle = '#ff3b3b'; ctx.lineWidth = 2
           rrPath(ctx, x + 1, y + 1, tw - 2, headH + bodyH - 2, 17); ctx.stroke()
           drawText(ctx, f.value.text, x + tw / 2, y + headH + 36, { font: `700 ${f.value.size}px ${display}`, color: tile.neutral ? NEUTRAL_HEAD : '#c4000f', align: 'center' })
-          drawText(ctx, f.unit.text, x + tw / 2, y + headH + 72, { font: `600 ${f.unit.size}px ${body}`, color: INK, align: 'center' })
+          drawText(ctx, f.unit.text, x + tw / 2, y + headH + (tight ? 68 : 72), { font: `600 ${f.unit.size}px ${body}`, color: INK, align: 'center' })
         })
       },
     })
@@ -811,7 +812,7 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null }) {
   // แถบสเกลเกณฑ์ + หมุดค่าปัจจุบัน
   {
     const sc = model.scale
-    const h = 118
+    const h = tight ? 108 : 118
     const L = MARGIN + 18
     const R = MARGIN + CONTENT_W - 18
     const heading = fitOne(ctx, sc.heading, display, 700, CONTENT_W - 36, 21, 15, issues, 'หัวข้อสเกล')
@@ -859,14 +860,14 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null }) {
     const rain = model.rain
     const inner = CONTENT_W - 36
     const L = MARGIN + 18
-    const ROW = 52
+    const ROW = tight ? 46 : 52
     const heading = fitOne(ctx, rain.heading, display, 700, inner - (rain.chip ? 190 : 0), 21, 14, issues, 'หัวข้อฝน')
     const warnRuns = rain.warning.none
       ? [{ t: `${rain.warning.label}: ` }, { t: rain.warning.text, em: true }]
       : [{ t: `${rain.warning.label}: `, em: true }, { t: `${rain.warning.text}${rain.warning.more > 0 ? ` (และอีก ${rain.warning.more} ข้อความ)` : ''}` }]
     const warn = richLines(ctx, warnRuns, body, inner, 17, 13, 2, issues, 'ข้อความ สสน.')
     const warnLineH = Math.round(warn.size * 1.35)
-    const rowsH = rain.rows.length ? rain.rows.length * ROW + 22 : 30
+    const rowsH = rain.rows.length ? rain.rows.length * ROW + (tight ? 20 : 22) : 30
     const h = 12 + 30 + rowsH + 6 + warn.lines.length * warnLineH + 12
     const X0 = L + 470
     const X1 = L + 830
@@ -925,7 +926,7 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null }) {
               ctx.strokeStyle = '#16a34a'; ctx.lineWidth = 1.5; ctx.stroke()
               drawText(ctx, 'ในตำบล', px0 + 33, ry + 16, { font: `700 13px ${body}`, color: '#0d7a3e', align: 'center' })
             }
-            drawText(ctx, f.sub.text, L, ry + 38, { font: `500 ${f.sub.size}px ${body}`, color: DIM })
+            drawText(ctx, f.sub.text, L, ry + (tight ? 36 : 38), { font: `500 ${f.sub.size}px ${body}`, color: DIM })
             ctx.fillStyle = '#e8eef7'
             rrPath(ctx, X0, ry + 16, X1 - X0, 20, 10); ctx.fill()
             if (row.mm !== null && row.mm >= 0.1) {
@@ -1035,6 +1036,12 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null }) {
   const top0 = heroBottom + 6
   // ล้นแม้ช่องว่างแคบสุด (4px) → ตัดประโยควิเคราะห์ท้ายสุดทีละประโยค (ย่อหน้าเปิดเดิมยังอยู่ครบ)
   const minBottom = () => top0 + stack.reduce((s, b) => s + b.h, 0) + 4 * (stack.length - 1)
+  // ล้นแม้ช่องว่างแคบสุด → วาดใหม่ทั้งภาพแบบ tight ก่อน (บีบระยะเว้น ~34px ฟอนต์เท่าเดิม เบอร์โทรอยู่ครบ)
+  // ยังล้นอีกค่อยตัดประโยควิเคราะห์ท้ายสุด (ข้อมูลเตือนสำคัญกว่าระยะเว้น จึงบีบระยะก่อนตัดประโยค)
+  if (!tight && minBottom() > footTop - 4) {
+    ctx.restore()
+    return drawWaterAlertPoster(ctx, model, { fonts: { display, body }, logo, tight: true })
+  }
   while (minBottom() > footTop - 4 && stack[introIndex].shown > 0) stack[introIndex] = introBlock(stack[introIndex].shown - 1)
   issues.push(...stack[introIndex].local)
   if (stack[introIndex].truncated) issues.push('คำอธิบาย: ยาวเกิน 3 บรรทัดแม้ไม่มีประโยควิเคราะห์')
@@ -1066,7 +1073,7 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null }) {
   })
 
   ctx.restore()
-  return { issues, blocks, footTop, contentBottom, fits, gap, analysisShown, analysisTotal }
+  return { issues, blocks, footTop, contentBottom, fits, gap, analysisShown, analysisTotal, tight }
 }
 
 /**
