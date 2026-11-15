@@ -316,6 +316,19 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
   assert.ok(planCron.includes("'45 1 1 * *'"), 'cron รายเดือนเปลี่ยนเวลา → ทบทวน dueTime ใน WATCHED_JOBS')
   assert.ok(dogSrc.includes("schedule: { kind: 'monthly', day: 1, dueTime: '09:30', firstMonth: '2026-12' }"))
 
+  // พยากรณ์กรมอุตุฯ: ชื่องานตรง JOB_NAME · ลงสมุดทั้งทางสำเร็จและพัง (ไม่นับโหมดทดสอบ) · เกณฑ์ค้างต้องยาวกว่า 2 รอบ cron
+  const tmdSrc = readFileSync(new URL('../supabase/functions/tmd-sync/index.ts', import.meta.url), 'utf8')
+  const tmdJob = tmdSrc.match(/const JOB_NAME = '([a-z0-9-]+)'/)?.[1]
+  assert.equal(tmdJob, 'tmd-sync')
+  const tmdEntry = dogSrc.match(/name: 'tmd-sync',\s*\n\s*label: [^\n]+\n\s*alertType: 'tmd_sync',\s*\n\s*schedule: \{ kind: 'rolling', maxAgeMinutes: (\d+) \}/)
+  assert.ok(tmdEntry, 'ต้องมี tmd-sync ใน WATCHED_JOBS แบบ rolling')
+  const tmdCron = readFileSync(new URL('../supabase/migrations/20261126100200_tmd_forecast_cron.sql', import.meta.url), 'utf8')
+  assert.ok(tmdCron.includes("'20 */3 * * *'"), 'cron พยากรณ์เปลี่ยนรอบ → ทบทวน maxAgeMinutes ของ tmd-sync ใน WATCHED_JOBS')
+  assert.ok(Number(tmdEntry[1]) > 2 * 180, 'เกณฑ์ค้างของ tmd-sync ต้องเกิน 2 รอบ cron (360 นาที) ไม่งั้นเตือนผิดเมื่อกรมล่มรอบเดียว')
+  assert.ok((tmdSrc.match(/if \(!isTest\) await recordHeartbeat\(admin, \{ ok: true \}\)/g) ?? []).length >= 2,
+    'tmd-sync: ทางที่จบสำเร็จต้องลงสมุด (ยกเว้นโหมดทดสอบ)')
+  assert.ok(/if \(!isTest\) await recordHeartbeat\(admin, \{ ok: false, error \}\)/.test(tmdSrc), 'tmd-sync: ทางที่พังต้องลงสมุดผ่าน fail()')
+
   // ── เกณฑ์ของจริง (_shared/jobSchedule.ts) — โซนเวลาเครื่องเป็นต่างประเทศ: คิดเดือนจากเวลาเครื่องเมื่อไรเคสข้ามเดือนพัง
   const prevTz = process.env.TZ
   process.env.TZ = 'America/Los_Angeles'

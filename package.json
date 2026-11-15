@@ -107,6 +107,7 @@
     "test:water-alert-poster": "node tests/water-alert-poster.test.mjs && node tests/water-alert-poster.playwright.mjs",
     "test:water-status-poster": "node tests/water-status-poster.test.mjs && node tests/water-status-poster.playwright.mjs",
     "test:water-cache": "node tests/water-cache.test.mjs",
+    "test:tmd-forecast": "node tests/tmd-forecast.test.mjs",
     "test:water-cache-browser": "node tests/water-cache.playwright.mjs",
     "test:water-text-size": "node tests/water-text-size.playwright.mjs",
     "test:water-diagram": "node tests/water-diagram.test.mjs && node tests/water-diagram.playwright.mjs",

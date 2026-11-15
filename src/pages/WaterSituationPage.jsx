@@ -16,6 +16,7 @@ import RelationPill from '../components/water/RelationPill'
 import WaterAnnouncementCard from '../components/water/WaterAnnouncementCard'
 import WaterAlertShareButton from '../components/water/WaterAlertShareButton'
 import WaterHelpRow from '../components/water/WaterHelpRow'
+import TmdForecastCard from '../components/water/TmdForecastCard'
 import { useWaterAnnouncement } from '../components/water/useWaterAnnouncement'
 import { relationOf, resolveSystem, systemById } from '../lib/waterSystem/model'
 import { supabase } from '../lib/supabase'
@@ -283,6 +284,9 @@ export default function WaterSituationPage() {
           )}
           {/* กราฟรายชั่วโมงของสถานีในตำบล (เฉพาะ อปท. ที่มีสถานี) — อยู่ใต้ภาพรวม · ตำแหน่งตายตัวในแผง (ไม่ย้ายตามสถานะโหลด) กราฟจะไม่ถูกสร้างใหม่ */}
           <HydroHourlyPanel key={tenant?.slug} profile={hydroProfile} report={hydroReports[0]} failed={hydro?.failed} now={checkedAt} />
+          {/* พยากรณ์อากาศในพื้นที่ของกรมอุตุนิยมวิทยา — โหลดเอง ขนานกับ RPC สถานการณ์ (ไม่บล็อก) · ไม่มีข้อมูล = ไม่ขึ้นการ์ด
+              อยู่นอกเงื่อนไข stations.length เพราะ อปท. ที่ไม่มีสถานีก็ได้พยากรณ์จากพิกัดสำนักงาน · key ตาม อปท. ไม่ให้ค้างของ อปท. เดิม */}
+          <TmdForecastCard key={tenantId} tenantId={tenantId} tenantName={tenant?.name} logoUrl={tenant?.logo_url} now={checkedAt} />
           {!loading && data !== null && stations.length > 0 && (
             <>
               <nav className="water-section-nav" aria-label="หมวดข้อมูลน้ำ–ฝน">
