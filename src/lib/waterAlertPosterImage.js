@@ -1149,22 +1149,6 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
   while (intro.truncated && intro.shown > 0) intro = introBlock(intro.shown - 1)
   const introIndex = stack.push(intro) - 1
 
-  // บรรทัดแดง "มีเรื่องอื่นที่ต้องระวังกว่า"
-  if (model.otherNote) {
-    const rich = richLines(ctx, [{ t: model.otherNote }], body, CONTENT_W - 40, 19, 15, 2, issues, 'เรื่องอื่นที่ต้องระวัง')
-    const lineH = Math.round(rich.size * 1.3)
-    const h = 14 + rich.lines.length * lineH
-    stack.push({
-      name: 'otherNote', h,
-      paint(y) {
-        ctx.fillStyle = '#b0000c'
-        rrPath(ctx, MARGIN, y, CONTENT_W, h, 14); ctx.fill()
-        ctx.strokeStyle = '#ff6b6b'; ctx.lineWidth = 2; ctx.stroke()
-        drawRich(ctx, rich.lines, MARGIN + 20, y + 7, lineH, rich.size, body, { color: '#fff', emColor: '#fff', weight: 700 })
-      },
-    })
-  }
-
   // ช่องตัวเลข
   {
     const n = model.tiles.length

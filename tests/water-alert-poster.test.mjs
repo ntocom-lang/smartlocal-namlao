@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { DAM_LEVELS, RAIN_LEVELS } from '../src/lib/waterSituation.js'
 import {
-  NEARBY_DAM_KM, NEUTRAL_HEAD, buildPosterModel, pickNearbyDam, buildPosterPhones, orgCallName, pickRainRows, posterDateLong, posterOtherNote, posterTime,
+  NEARBY_DAM_KM, NEUTRAL_HEAD, buildPosterModel, pickNearbyDam, buildPosterPhones, orgCallName, pickRainRows, posterDateLong, posterTime,
   posterTopicCandidates, readableTextOn, selectPosterTopic,
 } from '../src/lib/waterAlertPoster.js'
 import { buildAlerts } from '../src/lib/waterSituation.js'
@@ -257,7 +257,6 @@ const flat = runs => runs.map(r => r.t).join('')
   assert.match(m.shareText, /ไม่ใช่ประกาศของเทศบาลตำบลน้ำเลา/)
   assert.match(m.altText, /ไม่ใช่ประกาศของเทศบาลตำบลน้ำเลา/)
   assert.match(m.shareText, /^แจ้งเตือนสถานการณ์น้ำ–ฝน เทศบาลตำบลน้ำเลา: สถานีเตือนภัยน้ำหลาก-ดินถล่ม ระดับวิกฤติ สถานีเตือนภัยบ้านห้วยขึม/)
-  assert.equal(m.otherNote, null)
   assert.deepEqual({ kind: m.illustration.kind, rainy: m.illustration.rainy, pct: m.illustration.pct, ewsLevel: m.illustration.ewsLevel }, { kind: 'ews', rainy: true, pct: 62.4, ewsLevel: 3 })
 
   // ย่อหน้า: ความหมายตามกรม + หมู่บ้านที่ดูแล + ฝนของสถานีเดียวกัน (ข้อเท็จจริงคู่กัน ไม่อ้างเป็นสาเหตุ)
@@ -358,7 +357,6 @@ const flat = runs => runs.map(r => r.t).join('')
   assert.match(m.footer.lines[1], /ไม่ใช่ประกาศของเทศบาลตำบลน้ำเลา/)
   assert.match(m.shareText, /ไม่ใช่ประกาศของเทศบาลตำบลน้ำเลา/)
   assert.match(m.altText, /น้ำสูงกว่าตลิ่ง 0\.35 ม\. แม่น้ำยม สถานีบ้านน้ำปุ๊/)
-  assert.equal(m.otherNote, null)
 
   // เสมอตลิ่ง (diff 0) → "น้ำเสมอตลิ่ง" ไม่ใช่ "สูงกว่าตลิ่ง 0.00 ม."
   const at = buildPosterModel(input({ levels: [level(0, { prev_waterlevel_msl: null, river_name: null })] }))
@@ -406,30 +404,6 @@ const flat = runs => runs.map(r => r.t).join('')
   const withDam = buildPosterModel(input({ levels: [level(-0.2)], dams: [dam({ storage_percent: 60 })] }))
   assert.deepEqual(withDam.tiles.map(x => x.key), ['bank', 'level', 'trend'])
   assert.doesNotMatch(withDam.footer.lines[0], /ค่าอ่าง/)
-}
-
-// ── เรื่องอื่นที่ต้องระวังกว่า: ตามลำดับจริง ระบุเฉพาะเรื่อง "สูงกว่าหัวภาพ" ──
-{
-  const alerts = buildAlerts({ ews: [E2(), E3()], levels: [level(-0.2)], dams: [dam()], rain: [rain('R1', 'ก', 100)], now: NOW })
-  const c = posterTopicCandidates(alerts)
-  // หัวภาพเป็นตัวแรกเสมอ → ไม่มีเรื่องที่สูงกว่า = null (ทุกชุดข้อมูล)
-  assert.equal(posterOtherNote(c, c[0]), null)
-  for (const extra of [{ ews: [E2()], levels: [level(-0.2)] }, { ews: [E2()] }, { dams: [dam()], rain: [rain('R1', 'ก', 100)] }, { levels: [level(0)], dams: [dam()] }]) {
-    assert.equal(buildPosterModel(input(extra)).otherNote, null)
-  }
-  // ฟังก์ชันตรวจตามลำดับจริง ไม่ hardcode: ถ้าหัวภาพเป็นอ่าง ต้องไล่เรื่องที่อยู่สูงกว่าตามลำดับ EWS3 · ตลิ่ง · EWS2
-  const note = posterOtherNote(c, c[3])
-  assert.match(note, /^มีเรื่องอื่นที่ต้องระวังกว่า: สถานีเตือนภัยน้ำหลาก-ดินถล่ม สถานีเตือนภัยบ้านห้วยขึม · วิกฤติ · ระดับน้ำเสมอหรือสูงกว่าตลิ่ง สถานีบ้านน้ำปุ๊ สูงกว่าตลิ่ง 0\.20 ม\. · สถานีเตือนภัยน้ำหลาก-ดินถล่ม สถานีเตือนภัยบ้านน้ำรัด · เตรียมพร้อม$/)
-  // หัวภาพเป็นฝน (ท้ายสุด) → เรื่องที่สูงกว่าครบทุกชั้น รวมอ่าง
-  assert.match(posterOtherNote(c, c[4]), / · อ่างเกินความจุเก็บกัก อ่างเก็บน้ำแม่คำปอง 105\.1%$/)
-  // หัวภาพเป็นล้นตลิ่ง → เฉพาะ EWS3 ที่สูงกว่า (EWS2 ต่ำกว่า ไม่ขึ้น)
-  const bank = posterOtherNote(c, c[1])
-  assert.match(bank, /วิกฤติ$/)
-  assert.doesNotMatch(bank, /เตรียมพร้อม|ตลิ่ง/)
-  // เสมอตลิ่ง: ใช้ถ้อยคำเดียวกับแถบหน้าแรก
-  const flushAlerts = buildAlerts({ levels: [level(0)], dams: [dam()], now: NOW })
-  const fc = posterTopicCandidates(flushAlerts)
-  assert.match(posterOtherNote(fc, fc[1]), /ระดับน้ำเสมอตลิ่ง/)
 }
 
 // ── ข้อความ ──
