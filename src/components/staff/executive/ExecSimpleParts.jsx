@@ -1,4 +1,5 @@
 import { useId, useRef, useState } from 'react'
+import { Info } from 'lucide-react'
 import { execNf } from '../../../lib/executiveData'
 import './ExecSimpleHome.css'
 import './ExecSimplePolish.css'
@@ -167,10 +168,28 @@ export function Loading({ text = 'กำลังโหลด…' }) {
 }
 
 /**
- * ข้อเตือนในการ์ด ② — tone red | amber · count null = "—"
- * children = ปุ่ม/รายการที่กางใต้ข้อนั้น
+ * ปุ่ม "วิธีคิด" — กดเปิด/ปิดสูตร/กฎที่ใช้ตัดสินแถวนั้น (ภาษาคน คำนวณซ้ำได้ — ให้ สตง./ป.ป.ช. ตรวจย้อน) · ไม่กดก็ไม่รกหน้า
+ * ปุ่มสูง ≥ 44px ตัวอักษร 18px (ไม่เล็กกว่าเนื้อความรอง) · ใช้ไอคอน ⓘ ชุดเดียวกับหน้าแบบเต็ม
  */
-export function AlertBlock({ tone = 'amber', Icon, what, count, unit, showCount = true, newLabel, detail, children, ...rest }) {
+export function RuleNote({ text }) {
+  const [open, setOpen] = useState(false)
+  const panelId = useId()
+  if (!text) return null
+  return (
+    <div className="es-rule" data-exec-simple-rule-wrap>
+      <button type="button" className="es-rule-btn" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((v) => !v)} data-exec-simple-rule-btn>
+        <Info className="es-icon" aria-hidden="true" />วิธีคิด<span className="es-chev" aria-hidden="true">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && <p id={panelId} className="es-rule-text" role="note" data-exec-simple-rule>{text}</p>}
+    </div>
+  )
+}
+
+/**
+ * ข้อเตือนในการ์ด ② — tone red | amber · count null = "—"
+ * children = ปุ่ม/รายการที่กางใต้ข้อนั้น · hint = ข้อความแนะนำ (ไม่ใช่คำสั่ง) · rule = กฎที่ใช้ตัดสิน (ปุ่ม "วิธีคิด")
+ */
+export function AlertBlock({ tone = 'amber', Icon, what, count, unit, showCount = true, newLabel, detail, hint, rule, children, ...rest }) {
   return (
     <div className={`es-alert ${tone}`} {...rest}>
       <div className="es-alert-top">
@@ -187,8 +206,40 @@ export function AlertBlock({ tone = 'amber', Icon, what, count, unit, showCount 
         ) : <span />}
       </div>
       {detail && <p className="es-detail">{detail}</p>}
+      {hint && <p className="es-detail es-hint" data-exec-simple-hint>{hint}</p>}
       {children}
+      <RuleNote text={rule} />
     </div>
+  )
+}
+
+const BRIEF_SYMBOL = { blue: 'i', amber: '!', red: '!', green: '✓' }
+
+/**
+ * กล่อง "สรุปวันนี้" ใต้แถบ KPI ในหัวหน้า — ไม่เกิน 3 บรรทัด จากกฎตายตัว (ไม่ใช้ AI) · lines = ผล buildBriefing
+ * แต่ละบรรทัดเป็นปุ่ม: กดแล้วเลื่อนไปการ์ดที่เกี่ยวข้อง (วิธีเดียวกับแถบ KPI) · สถานะใช้ สี + สัญลักษณ์ + คำ
+ */
+export function BriefingBox({ lines, rule }) {
+  if (!Array.isArray(lines) || lines.length === 0) return null
+  return (
+    <section className="es-brief" aria-label="สรุปวันนี้" data-exec-simple-briefing>
+      <div className="es-brief-head">
+        <h2>สรุปวันนี้</h2>
+        <RuleNote text={rule} />
+      </div>
+      <ul className="es-brief-list">
+        {lines.map((line) => (
+          <li key={line.id}>
+            <button type="button" className="es-brief-line" data-tone={line.tone} onClick={() => goToCard(line.target)} data-exec-simple-briefing-line={line.id}
+              aria-label={`${line.text} กดเพื่อเลื่อนไปดู`}>
+              <span className="es-brief-ic" aria-hidden="true">{BRIEF_SYMBOL[line.tone] ?? 'i'}</span>
+              <span className="es-brief-text">{line.text}</span>
+              <span className="es-arr" aria-hidden="true">›</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
