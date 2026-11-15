@@ -193,6 +193,49 @@ assert.equal(readableTextOn('ไม่ใช่สี'), '#ffffff')
   assert.equal(flat(r.todo[0]), 'ระวังน้ำป่าไหลหลาก ดินโคลนถล่ม บริเวณเชิงเขาและริมลำห้วย')
   assert.equal(flat(r.todo[1]), 'งดเข้าป่า งดข้ามลำห้วยขณะฝนตกหนัก')
   assert.equal(flat(r.todo[2]), 'พบน้ำท่วมฉับพลันหรือเหตุฉุกเฉิน แจ้งเทศบาลทันที')
+  // ── ประโยควิเคราะห์สถานการณ์ (กฎ ไม่ใช่ AI) ──
+  // อ่าง: ไหลเข้า = ระบายออก → ทรงตัว · ปริมาตรเกิน = 7.10 − 6.76 (ค่าเดียวกับช่องตัวเลข)
+  assert.deepEqual(m.analysis, ['trend-flat'])
+  assert.equal(flat(m.intro), 'อ่างเก็บน้ำแม่คำปอง (อยู่ในตำบล ต.น้ำเลา ห่าง 3.6 กม.) มีปริมาณน้ำเกินความจุที่ระดับเก็บกัก 0.34 ล้าน ลบ.ม. น้ำไหลลงอ่างเท่ากับที่ระบายออก ปริมาณน้ำจึงทรงตัวอยู่เหนือระดับเก็บกัก')
+  const up = buildPosterModel(input({ dams: [dam({ dam_inflow_mcm: 0.5, dam_released_mcm: 0.18 })] }))
+  assert.deepEqual(up.analysis, ['trend-up'])
+  assert.match(flat(up.intro), /น้ำไหลลงอ่างมากกว่าที่ระบายออกวันละ 0\.32 ล้าน ลบ\.ม\. น้ำในอ่างมีแนวโน้มเพิ่มขึ้น$/)
+  const down = buildPosterModel(input({ dams: [dam({ dam_inflow_mcm: 0.1, dam_released_mcm: 0.25 })] }))
+  assert.match(flat(down.intro), /น้ำระบายออกมากกว่าที่ไหลลงอ่างวันละ 0\.15 ล้าน ลบ\.ม\. น้ำในอ่างมีแนวโน้มลดลง$/)
+  // ต่างกันแค่เศษปัดทศนิยม (0.161 vs 0.158 → 0.16 = 0.16) = ทรงตัว ตามตัวเลขที่คนเห็นในภาพ
+  assert.deepEqual(buildPosterModel(input({ dams: [dam({ dam_inflow_mcm: 0.161, dam_released_mcm: 0.158 })] })).analysis, ['trend-flat'])
+  // ขาดค่าไหลเข้า/ระบาย/ปริมาตร = ไม่มีประโยคนั้น (ไม่เดา) → คงท้ายเดิม "รายละเอียดดังนี้"
+  const bare = buildPosterModel(input({ dams: [dam({ dam_inflow_mcm: null, dam_storage_mcm: null })] }))
+  assert.deepEqual(bare.analysis, [])
+  assert.match(flat(bare.intro), /เกินความจุที่ระดับเก็บกัก รายละเอียดดังนี้$/)
+  // อ่าง + ฝนหนักในแถวฝน → "ประกอบกับฝน…ในพื้นที่" (ไม่อ้างว่าฝนตกลงอ่าง) · ฝนปานกลาง (≤35) ไม่ขึ้น
+  const wet = buildPosterModel(input({ dams: [dam()], rain: [rain('R1', 'บ้านบุญแจ่ม', 96.5, { is_primary: true })] }))
+  assert.deepEqual(wet.analysis, ['trend-flat', 'rain-too'])
+  assert.match(flat(wet.intro), /ประกอบกับฝนหนักมากในพื้นที่ \(บ้านบุญแจ่ม 96\.5 มม\.\)$/)
+  assert.deepEqual(buildPosterModel(input({ dams: [dam()], rain: [rain('R1', 'ก', 35)] })).analysis, ['trend-flat'])
+  // ฝน: ชั่วโมงล่าสุด > 0 = ยังตก · 0 = หยุดแล้ว (ข้อควรทำข้อ 2 เปลี่ยนตาม) · ไม่มีค่า = ไม่สรุป
+  const still = buildPosterModel(input({ rain: [rain('R1', 'ก', 100, { rain_1h_mm: 12 })] }))
+  assert.deepEqual(still.analysis, ['still-raining'])
+  assert.match(flat(still.intro), /ของกรมอุตุนิยมวิทยา ชั่วโมงล่าสุดยังวัดฝนได้ 12(\.0)? มม\. ฝนยังตกอยู่$/)
+  assert.equal(flat(still.todo[1]), 'งดเข้าป่า งดข้ามลำห้วยขณะฝนตกหนัก')
+  const stopped = buildPosterModel(input({ rain: [rain('R1', 'ก', 100, { rain_1h_mm: 0 })] }))
+  assert.deepEqual(stopped.analysis, ['stopped'])
+  assert.equal(flat(stopped.todo[1]), 'งดเข้าป่า งดข้ามลำห้วย แม้ฝนหยุดแล้ว')
+  assert.match(flat(r.intro), /ของกรมอุตุนิยมวิทยา รายละเอียดดังนี้$/) // ไม่มีค่าชั่วโมง ไม่มีสถานีอื่น = ไม่มีประโยค
+  // วงกว้าง (ฝนหนักมาก ≥ 2 สถานี) / เฉพาะจุด (สถานีอื่นที่ค่าสด ≤ 35) / สถานีอื่นก็ฝนหนัก (35.1–90)
+  assert.deepEqual(buildPosterModel(input({ rain: [rain('R1', 'ก', 100), rain('R2', 'ข', 92)] })).analysis, ['widespread'])
+  assert.deepEqual(buildPosterModel(input({ rain: [rain('R1', 'ก', 100), rain('R2', 'ข', 20)] })).analysis, ['local'])
+  const near = buildPosterModel(input({ rain: [rain('R1', 'ก', 100), rain('R2', 'บ้านข', 60)] }))
+  assert.deepEqual(near.analysis, ['nearby-heavy'])
+  assert.match(flat(near.intro), /สถานีบ้านข ก็มีฝนหนัก 60(\.0)? มม\.$/)
+  // สถานีอื่นค่าเก่า = ไม่ใช้เทียบ (ไม่สรุปว่าเฉพาะจุดจากค่าเก่า)
+  assert.deepEqual(buildPosterModel(input({ rain: [rain('R1', 'ก', 100), rain('R2', 'ข', 0, { recorded_at: '2026-11-14T00:00:00Z' })] })).analysis, [])
+  // อ่างประกอบ 80–100% → ใกล้เต็มความจุ · ≤ 80 ไม่ขึ้น
+  assert.deepEqual(buildPosterModel(input({ dams: [dam({ storage_percent: 92.3 })], rain: [rain('R1', 'ก', 100)] })).analysis, ['dam-high'])
+  assert.deepEqual(buildPosterModel(input({ dams: [dam({ storage_percent: 80 })], rain: [rain('R1', 'ก', 100)] })).analysis, [])
+  // ห้ามมีคำสั่งอพยพ/พยากรณ์/อุปมาในประโยควิเคราะห์ทุกแบบ
+  for (const mm of [still, stopped, near, wet, up, down]) assert.doesNotMatch(flat(mm.intro), /อพยพ|คาดว่า|ภายใน|สระว่ายน้ำ/)
+
   // อบต. ใช้คำเรียกตรงประเภท
   assert.equal(orgCallName({ name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว', org_type: 'อบต.' }), 'อบต.')
   assert.equal(orgCallName({ name: 'เทศบาลตำบลน้ำเลา' }), 'เทศบาล')
