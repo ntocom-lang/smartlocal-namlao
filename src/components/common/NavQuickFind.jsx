@@ -81,18 +81,19 @@ export default function NavQuickFind({
     <>
       <div data-nav-quickfind className={wrapperClassName} style={wrapperStyle}>
         <div className="relative">
-          <Search size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60" />
+          {/* z-10: ช่องค้นหามี backdrop-blur (สร้างชั้นซ้อนใหม่) จะทับไอคอนที่อยู่ก่อนใน DOM ถ้าไม่ยกขึ้น */}
+          <Search size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-white/75" />
           <input ref={inputRef} type="text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onInputKeyDown}
             data-nav-search aria-label="ค้นหาเมนู" placeholder="ค้นหาเมนู..." autoComplete="off" spellCheck={false}
             enterKeyHint="search"
-            className={`w-full rounded-lg border border-white/15 bg-white/10 pl-9 pr-9 text-white placeholder:text-white/60 focus:border-white/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 ${isPc ? 'h-9 text-xs' : 'h-11 text-base'}`} />
+            className={`w-full rounded-[10px] border border-white/20 bg-white/[0.09] pl-9 pr-9 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-md placeholder:text-white/70 focus:border-white/45 focus:bg-white/[0.13] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 ${isPc ? 'h-9 text-xs' : 'h-11 text-base'}`} />
           {query ? (
             <button type="button" aria-label="ล้างคำค้น" onClick={() => { setQuery(''); inputRef.current?.focus() }}
               className={`absolute right-0.5 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-md text-white/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${isPc ? 'h-8 w-8' : 'h-10 w-10'}`}>
               <X size={14} aria-hidden="true" />
             </button>
           ) : isPc && (
-            <kbd aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-white/20 px-1.5 text-[10px] leading-4 text-white/60">/</kbd>
+            <kbd aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 z-10 -translate-y-1/2 rounded border border-white/20 px-1.5 text-[10px] leading-4 text-white/60">/</kbd>
           )}
         </div>
       </div>
@@ -115,9 +116,10 @@ export default function NavQuickFind({
       ) : (
         <>
           {favoriteItems.length > 0 && (
-            <div data-nav-favorites className="mt-3 border-b border-white/10 pb-3">
+            <div data-nav-favorites className="relative mt-3 pb-3">
+              <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-amber-500/80 via-amber-500/30 to-transparent" />
               <div className="mb-1 flex min-h-11 items-center gap-2 px-3 py-1.5 text-[13px] font-bold leading-snug text-white md:min-h-9">
-                <NavGroupIcon Icon={Star} />
+                <NavGroupIcon Icon={Star} accent="#d97706" />
                 <span className="min-w-0 flex-1">ใช้บ่อย</span>
               </div>
               <NavSubList>
