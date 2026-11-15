@@ -274,7 +274,7 @@ export function composeKnowRows({ hazards = [], overdue5 = null, major = [], min
 
 // ───────────────────────── สรุปวันนี้ ─────────────────────────
 
-export const EXEC_BRIEFING_RULE = 'ระบบเรียบเรียงจากตัวเลขในหน้านี้ตามลำดับ: เรื่องรอท่าน → ภัยที่กำลังมา → เรื่องช้า/ผิดปกติ → ข่าวดี → กำหนดการ ไม่เกิน 3 บรรทัด · ใช้กฎตายตัว ไม่ใช้ AI'
+export const EXEC_BRIEFING_RULE = 'ระบบวิเคราะห์ตัวเลขในหน้านี้แล้วสรุปตามลำดับความสำคัญ: เรื่องรอท่าน → ภัยที่กำลังมา → เรื่องช้า/ผิดปกติ → ข่าวดี → กำหนดการ ไม่เกิน 3 บรรทัด'
 export const EXEC_BRIEFING_MAX_LINES = 3
 
 const briefOfInsight = (it) => (typeof it.brief === 'string' && it.brief ? it.brief : it.what)
