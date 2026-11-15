@@ -28,7 +28,7 @@ const bkk = (day, hhmm) => new Date(`${day}T${hhmm}:00+07:00`)
 // ── รายการสำคัญ ──────────────────────────────────────────────────────────────
 
 test('EXEC_SIMPLE_MAJOR_ALERTS ทุกตัวต้องมีกฎจริงใน EXEC_ALERT_RULE_KEYS (ไม่งั้นแก้ชื่อกฎแล้วเรื่องหายเงียบ)', () => {
-  assert.equal(V.EXEC_SIMPLE_MAJOR_ALERTS.length, 7)
+  assert.equal(V.EXEC_SIMPLE_MAJOR_ALERTS.length, 8)
   for (const key of V.EXEC_SIMPLE_MAJOR_ALERTS) assert.ok(EXEC_ALERT_RULE_KEYS.includes(key), `ไม่มีกฎ ${key}`)
   for (const key of V.EXEC_SIMPLE_OVERDUE_IDS) assert.ok(V.EXEC_SIMPLE_MAJOR_ALERTS.includes(key))
   assert.ok(EXEC_ALERT_RULE_KEYS.includes(V.EXEC_SIMPLE_ESIGN_ALERT_ID))

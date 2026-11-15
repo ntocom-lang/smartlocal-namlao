@@ -789,7 +789,7 @@ test('ห้องผู้บริหารเฟสปัจจุบัน =
     for (const a of e.alerts) if (a.phase === 'E3') e3.push(`${e.key}:alert:${a.id}`)
     for (const r of e.reports) if (r.phase === 'E3') e3.push(`${e.key}:report:${r.id}`)
   }
-  assert.deepEqual(e3.sort(), ['complaints:report:service_summary', 'src:esign:alert:waiting_2wd'])
+  assert.deepEqual(e3.sort(), ['complaints:alert:spike', 'complaints:report:service_summary', 'src:esign:alert:waiting_2wd'])
 })
 
 test('deriveExec: เลยกำหนดรวมคำร้อง+คำขอ · % ทันกำหนดแยกสองแหล่ง (ไม่มีค่ารวม) · การ์ดเดียวพังยังได้อีกชุด', () => {
@@ -872,6 +872,39 @@ test('ป้ายวันของกำหนดการ: วันนี้
   assert.match(thaiDayLabel('2026-11-13', NOW), /13/)
   assert.match(thaiDayLabel('2026-11-13', NOW), /พ\.ย\./)
   assert.equal(thaiDayLabel('xx', NOW), 'xx')
+})
+
+test('เรื่องพุ่งผิดปกติ: ขอคีย์ complaint_spike เฉพาะเมื่อโมดูลคำร้องขึ้นจอ · กฎกรองซ้ำฝั่งเว็บ · ไม่มีประวัติ = ไม่เตือน · การ์ดพัง = failures', () => {
+  const all = liveEntries(() => true)
+  assert.ok(execSummaryKeys(all).includes('complaint_spike'))
+  assert.ok(!execSummaryKeys(liveEntries((k) => k !== 'complaints')).includes('complaint_spike'), 'ปิดโมดูลคำร้อง = ไม่ขอ')
+
+  const raw = {
+    recent_days: 7, base_days: 28, min: 5, ratio: 2, insufficient_history: false,
+    groups: [
+      { category: 'water', label: 'น้ำประปาไม่ไหล', recent: 9, base: 6, village: 'หมู่ 5', village_n: 6 },
+      { category: 'tree', label: 'ต้นไม้ล้ม', recent: 5, base: 10, village: null, village_n: null },
+      { category: 'road', label: 'ถนน', recent: 5, base: 11, village: 'หมู่ 1', village_n: 3 },   // 10 < 11 → ผิดกฎ กรองทิ้ง
+      { category: 'x', label: 'น้อย', recent: 4, base: 0 },                                         // ไม่ถึง 5 → กรองทิ้ง
+      { category: 'y', label: 'อีกหมวด', recent: 6, base: 2, village: 'บ้านดอน', village_n: 1 },
+    ],
+  }
+  const n = buildExecModel({ complaint_spike: { ok: true, data: raw } }).complaintSpike
+  assert.equal(n.state, 'ok')
+  assert.deepEqual(n.data.groups.map((g) => [g.category, g.weekly]), [['water', 1.5], ['tree', 2.5], ['y', 0.5]])
+
+  const one = buildAlerts({ entries: all, model: buildExecModel({ complaint_spike: { ok: true, data: raw } }), today: NOW })
+    .items.find((it) => it.id === 'complaints:spike')
+  assert.equal(one.count, 3)
+  assert.equal(one.unit, 'หมวด')
+  assert.equal(one.detail, 'น้ำประปาไม่ไหล 9 เรื่องใน 7 วัน (ปกติราว 1.5 เรื่อง/สัปดาห์) มากสุดที่หมู่ 5 6 เรื่อง · ต้นไม้ล้ม 5 เรื่องใน 7 วัน (ปกติราว 2.5 เรื่อง/สัปดาห์) · และอีก 1 หมวด')
+
+  const fresh = buildAlerts({ entries: all, model: buildExecModel({ complaint_spike: { ok: true, data: { ...raw, insufficient_history: true } } }), today: NOW })
+  assert.ok(!fresh.items.some((it) => it.id === 'complaints:spike'), 'อปท. เพิ่งเริ่มใช้ระบบ = ไม่ตัดสิน')
+
+  const broken = buildAlerts({ entries: all, model: buildExecModel({ complaints: { ok: true, data: {} }, complaint_spike: { ok: false, error: 'x' } }), today: NOW })
+  assert.ok(broken.failures.includes('คำร้อง/ร้องทุกข์'), 'สรุปเรื่องพุ่งพัง = บอกว่าตรวจไม่ได้ ไม่หายเงียบ')
+  assert.ok(!broken.items.some((it) => it.id === 'complaints:spike'))
 })
 
 console.log(`\nok — ${cases} cases`)

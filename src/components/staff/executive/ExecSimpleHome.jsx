@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Bell, CalendarDays, CheckCircle2, ClipboardList, Clock, CloudRain, Droplets, FileText, Inbox, Landmark, PenLine, Repeat, Star, Users, Wind } from 'lucide-react'
+import { Bell, CalendarDays, CheckCircle2, ClipboardList, Clock, CloudRain, Droplets, FileText, HardHat, Inbox, Landmark, PenLine, Repeat, Star, TrendingUp, Users, Wind } from 'lucide-react'
 import { liveEntries } from '../../../lib/executiveRegistry'
 import { addDays } from '../../../lib/complaintReportPeriods'
 import {
@@ -8,7 +8,7 @@ import {
 import { esignPendingFromRpc } from '../../../lib/esign'
 import { canNudgeItems, itemStatusLabel } from '../../../lib/execFollowNudgeHelpers'
 import {
-  EXEC_SIMPLE_SKIP_SUMMARY_KEYS, bangkokClock, isRefreshWindow, markNewAlerts, mergeSimpleSchedule, nextEventInfo, readSessionJson,
+  EXEC_SIMPLE_DETAIL_ALERTS, EXEC_SIMPLE_SKIP_SUMMARY_KEYS, bangkokClock, isRefreshWindow, markNewAlerts, mergeSimpleSchedule, nextEventInfo, readSessionJson,
   saveSimpleScroll, simpleAlertWords, simpleOverdueWhat, simpleServiceNumbers, splitSimpleAlerts, takeSimpleScroll, writeSessionJson,
 } from '../../../lib/execSimpleView'
 import {
@@ -46,6 +46,11 @@ const NOW_TICK_MS = 30_000
 
 // ไอคอนของข้อมูลเชิงรุกแต่ละแถว (ชนิดอื่น = ClipboardList: กำหนดตามระเบียบของแผนพัฒนา)
 const INSIGHT_ICONS = { 'hazard:heavy_rain': CloudRain, 'hazard:pm25': Wind, 'pattern:repeat': Repeat }
+// ไอคอนของแถวเด่นจากทะเบียน (ไม่มีในตาราง = เอกสาร)
+const ALERT_ICONS = {
+  'complaints:low_rating': Star, 'complaints:spike': TrendingUp, 'water-situation:event_open': Droplets,
+  'projects:contract_past': HardHat, 'projects:behind': HardHat, 'local-plan:no_published_plan': ClipboardList,
+}
 
 // "พฤหัสบดี 12 พ.ย." ของวันที่ไทย (YYYY-MM-DD) — ตัดคำว่า "วัน" หน้าชื่อวันออกให้สั้น
 const thaiDayShort = (iso) => {
@@ -460,9 +465,12 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
                 const w = simpleAlertWords(it)
                 const go = resolveLink(it.entry)
                 const isRating = it.id === 'complaints:low_rating'
+                // แถวที่รายละเอียดคือหัวใจของเรื่อง (เช่น เรื่องพุ่ง = หมวดไหน หมู่ไหน) แสดง detail + วิธีคิดเสมอ แม้มีตัวเลข
+                const withDetail = EXEC_SIMPLE_DETAIL_ALERTS.includes(it.id)
                 return (
-                  <AlertBlock key={it.id} tone="amber" Icon={isRating ? Star : Droplets} what={w.what} count={it.count} unit={w.unit}
-                    showCount={it.showCount} detail={it.showCount ? null : it.detail} newLabel={newLabel([it.id])} data-exec-simple-alert={it.id}>
+                  <AlertBlock key={it.id} tone="amber" Icon={ALERT_ICONS[it.id] ?? FileText} what={w.what} count={it.count} unit={w.unit}
+                    showCount={it.showCount} detail={it.showCount && !withDetail ? null : it.detail} rule={withDetail ? it.rule : undefined}
+                    newLabel={newLabel([it.id])} data-exec-simple-alert={it.id}>
                     {isRating && lowView ? (
                       <Expandable id="rating" closedText="ดูว่ามาจากไหน" openText="ซ่อน">
                         {() => <RatingSources low={lowView.low} onOpenSatisfaction={satisfactionLink} />}

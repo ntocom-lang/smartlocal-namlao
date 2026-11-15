@@ -15,12 +15,16 @@ import { addDays, bangkokIsoDate } from './complaintReportPeriods.js'
 export const EXEC_SIMPLE_MAJOR_ALERTS = Object.freeze([
   'complaints:overdue_5wd',
   'inbox:overdue_5wd',
+  'complaints:spike',
   'complaints:low_rating',
   'water-situation:event_open',
   'projects:contract_past',
   'projects:behind',
   'local-plan:no_published_plan',
 ])
+
+/** แถวเด่นที่ต้องโชว์รายละเอียด + วิธีคิดแม้มีตัวเลข (ตัวเลขอย่างเดียวไม่บอกว่าเรื่องอะไร เช่น เรื่องพุ่ง = หมวดไหน หมู่ไหน) */
+export const EXEC_SIMPLE_DETAIL_ALERTS = Object.freeze(['complaints:spike'])
 
 /** สองข้อนี้รวมเป็นแถวเดียว "ช้ากว่ากำหนดเกิน 5 วันทำการ" (คำร้อง + คำขอ) */
 export const EXEC_SIMPLE_OVERDUE_IDS = Object.freeze(['complaints:overdue_5wd', 'inbox:overdue_5wd'])
@@ -56,6 +60,7 @@ export function splitSimpleAlerts(items) {
  * what = ข้อความหัวแถว · unit = หน่วยใต้ตัวเลข · go = ปุ่มไปหน้าเดิม · ไม่มีในตาราง = ใช้ป้ายจากทะเบียน (เรื่องเล็ก)
  */
 export const EXEC_SIMPLE_ALERT_WORDS = Object.freeze({
+  'complaints:spike': { what: 'เรื่องร้องเรียนพุ่งผิดปกติใน 7 วันล่าสุด', unit: 'หมวด', go: 'ดูคำร้อง' },
   'complaints:low_rating': { what: 'ประชาชนให้คะแนนพอใจน้อย (1–2 ดาว) เดือนนี้', unit: 'ครั้ง', go: 'ดูว่ามาจากไหน' },
   'water-situation:event_open': { what: 'มีเหตุการณ์น้ำ–ฝน ที่ยังเฝ้าระวังอยู่', unit: 'เหตุการณ์', go: 'ดูสถานการณ์น้ำ' },
   'projects:contract_past': { what: 'โครงการก่อสร้างเลยวันสิ้นสุดสัญญาแล้ว', unit: 'โครงการ', go: 'ดูโครงการก่อสร้าง' },

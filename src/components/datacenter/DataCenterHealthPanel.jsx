@@ -338,7 +338,7 @@ export default function DataCenterHealthPanel({
       <section className={`rounded-2xl border p-4 ${insetCls(isLight)}`}>
         <button type="button" onClick={() => setShowRules((v) => !v)} aria-expanded={showRules}
           className="w-full flex items-center justify-between gap-2 text-left">
-          <span className="flex items-center gap-2 text-xs font-extrabold"><Info size={14} className={accentCls(isLight)} /> ระบบตรวจอย่างไร (กฎ 6 ข้อ ไม่ใช้ AI)</span>
+          <span className="flex items-center gap-2 text-xs font-extrabold"><Info size={14} className={accentCls(isLight)} /> ระบบตรวจอย่างไร (กฎ 6 ข้อ)</span>
           <ChevronDown size={14} className={`transition-transform ${showRules ? 'rotate-180' : ''}`} />
         </button>
         {showRules && (
