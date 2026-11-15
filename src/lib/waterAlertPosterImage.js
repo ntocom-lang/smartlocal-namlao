@@ -831,6 +831,7 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
 
   /* ── บล็อกใต้หัวภาพ: สร้าง (วัดความสูง) แล้วเรียงลง ── */
   const stack = []
+  let nearbyShown
 
   // ริบบอนวันที่
   {
@@ -1126,14 +1127,40 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
     const iconW = 92
     const textX = MARGIN + 18 + iconW + 14
     const textW = MARGIN + CONTENT_W - 18 - textX
-    let size = 19
-    let items
-    for (;;) {
-      items = model.todo.map(runs => richLines(ctx, runs.map(r => ({ t: r.t, em: r.b })), body, textW - 22, size, size, 2, issues, 'ข้อควรทำ'))
-      const lines = items.reduce((s, it) => s + it.lines.length, 0)
-      if (lines <= 5 || size <= 15) break
-      size -= 1
+    const layoutTodo = (maxW, sink) => {
+      let size = 19
+      let items
+      for (;;) {
+        items = model.todo.map(runs => richLines(ctx, runs.map(r => ({ t: r.t, em: r.b })), body, maxW, size, size, 2, sink, 'ข้อควรทำ'))
+        const lines = items.reduce((s, it) => s + it.lines.length, 0)
+        if (lines <= 5 || size <= 15) break
+        size -= 1
+      }
+      return { size, items, lines: items.map(it => it.lines.length).join(',') }
     }
+    let { size, items } = layoutTodo(textW - 22, issues)
+    // อ่างใกล้เคียง: การ์ดเล็กมุมขวาของกรอบ — วางได้เฉพาะเมื่อข้อความข้อควรทำ "ไม่ต้องตัดบรรทัดเพิ่ม/ไม่ต้องย่อฟอนต์"
+    // ข้อควรทำสำคัญกว่าเสมอ ที่ไม่พอ = ไม่มีการ์ด (ไม่บีบคำเตือนเพื่อให้ข้อมูลประกอบลงได้)
+    const NEAR_W = 244
+    let near = null
+    if (model.nearbyDam) {
+      const base = layoutTodo(textW - 22, [])
+      const trialIssues = []
+      const trial = layoutTodo(textW - 22 - NEAR_W - 16, trialIssues)
+      if (!trialIssues.length && trial.size === base.size && trial.lines === base.lines) {
+        ;({ size, items } = trial)
+        const nd = model.nearbyDam
+        const textMax = NEAR_W - 76 - 14
+        near = {
+          nd,
+          pct: fitOne(ctx, nd.pctText, display, 700, 36, 15, 11, issues, '% อ่างใกล้เคียง'),
+          heading: fitOne(ctx, nd.heading, body, 700, textMax - 30, 13, 11, issues, 'หัวอ่างใกล้เคียง'),
+          name: fitOne(ctx, nd.name, display, 700, textMax, 19, 14, issues, 'ชื่ออ่างใกล้เคียง'),
+          sub: fitOne(ctx, nd.sub, body, 500, textMax, 13, 11, issues, 'ที่ตั้งอ่างใกล้เคียง'),
+        }
+      }
+    }
+    nearbyShown = Boolean(near)
     const lineH = Math.round(size * 1.38)
     const total = items.reduce((s, it) => s + it.lines.length, 0) * lineH + (items.length - 1) * 3
     const h = Math.max(96, 20 + total)
@@ -1153,6 +1180,57 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
           drawRich(ctx, item.lines, textX + 22, cy, lineH, size, body, { color: '#1a0306', emColor: '#b0000c', weight: 600, emWeight: 700 })
           cy += item.lines.length * lineH + 3
         })
+        if (near) {
+          // การ์ดเหรียญทองย่อส่วน: ภาษาเดียวกับป้ายหน่วยงาน (น้ำเงินเข้ม + ขอบทอง) แต่เล็ก/อยู่ท้ายภาพ
+          // ข้อมูลประกอบ ⇒ ไม่มีแสงฟุ้ง/ประกาย ตัวเลขเล็กกว่าช่องตัวเลขของเรามาก (15 vs 44px)
+          const cw = NEAR_W
+          const ch = h - 20
+          const cx = MARGIN + CONTENT_W - 12 - cw
+          const top = y + 10
+          const nd = near.nd
+          ctx.save()
+          ctx.shadowColor = 'rgba(80,40,0,0.35)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4
+          ctx.fillStyle = linear(ctx, cx, top, cx + cw, top + ch, [[0, '#fff1b8'], [0.35, '#d9a21b'], [0.6, '#ffe27a'], [1, '#b57a0c']])
+          rrPath(ctx, cx, top, cw, ch, 16); ctx.fill()
+          ctx.restore()
+          ctx.save()
+          rrPath(ctx, cx + 2, top + 2, cw - 4, ch - 4, 14); ctx.clip()
+          ctx.fillStyle = linear(ctx, 0, top, 0, top + ch, [[0, '#14408f'], [0.55, '#0b2a6b'], [1, '#06173d']])
+          ctx.fillRect(cx, top, cw, ch)
+          ctx.fillStyle = linear(ctx, 0, top, 0, top + ch * 0.5, [[0, 'rgba(255,255,255,0.16)'], [1, 'rgba(255,255,255,0)']])
+          ctx.fillRect(cx, top, cw, ch * 0.5)
+          ctx.restore()
+          // วงแหวน % : รางจาง + เส้นไล่สีตามเกณฑ์อ่าง (สว่างขึ้นให้เห็นบนพื้นน้ำเงิน) + ตัวเลขกลางวง
+          const rx = cx + 14 + 26
+          const ry = top + ch / 2
+          const tone = shade(nd.color, 0.3)
+          glow(ctx, rx, ry, 34, 34, [[0, rgba(nd.color, 0.35)], [1, rgba(nd.color, 0)]])
+          ctx.fillStyle = 'rgba(0,10,40,0.45)'
+          ctx.beginPath(); ctx.arc(rx, ry, 22, 0, Math.PI * 2); ctx.fill()
+          ctx.lineWidth = 6
+          ctx.strokeStyle = 'rgba(255,255,255,0.14)'
+          ctx.beginPath(); ctx.arc(rx, ry, 23, 0, Math.PI * 2); ctx.stroke()
+          const frac = Math.min(Math.max(nd.pct, 0), 100) / 100
+          if (frac > 0) {
+            ctx.strokeStyle = linear(ctx, rx - 23, ry - 23, rx + 23, ry + 23, [[0, shade(nd.color, 0.5)], [1, tone]])
+            ctx.lineCap = 'round'
+            ctx.beginPath(); ctx.arc(rx, ry, 23, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2); ctx.stroke()
+            ctx.lineCap = 'butt'
+          }
+          drawText(ctx, near.pct.text, rx, ry - 3, { font: `700 ${near.pct.size}px ${display}`, color: '#fff', align: 'center' })
+          drawText(ctx, '%', rx, ry + 12, { font: `700 10px ${display}`, color: '#ffe9a0', align: 'center' })
+          // หัวการ์ดทอง + เส้นทองจางไปทางขวา · ชื่ออ่างขาว · ที่ตั้งฟ้าอ่อน
+          const tx2 = cx + 76
+          const right = cx + cw - 14
+          drawText(ctx, near.heading.text, tx2, ry - 22, { font: `700 ${near.heading.size}px ${body}`, color: '#ffd54a' })
+          const lx = tx2 + near.heading.width + 8
+          if (right - lx > 12) {
+            ctx.fillStyle = linear(ctx, lx, 0, right, 0, [[0, 'rgba(255,213,74,0.9)'], [1, 'rgba(255,213,74,0)']])
+            ctx.fillRect(lx, ry - 22, right - lx, 1.5)
+          }
+          drawText(ctx, near.name.text, tx2, ry + 1, { font: `700 ${near.name.size}px ${display}`, color: '#fff' })
+          drawText(ctx, near.sub.text, tx2, ry + 22, { font: `500 ${near.sub.size}px ${body}`, color: '#c9d6f0' })
+        }
       },
     })
   }
@@ -1254,7 +1332,7 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
   })
 
   ctx.restore()
-  return { issues, blocks, footTop, contentBottom, fits, gap, analysisShown, analysisTotal, tight }
+  return { issues, blocks, footTop, contentBottom, fits, gap, analysisShown, analysisTotal, tight, nearbyShown }
 }
 
 /**

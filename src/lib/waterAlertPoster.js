@@ -121,6 +121,19 @@ export function pickContextDam(dams, now) {
     .sort((a, b) => Number(b.is_primary === true) - Number(a.is_primary === true) || byDistance(a, b))[0] ?? null
 }
 
+// อ่างใกล้เคียง (มุมล่างขวาของกรอบข้อควรทำ) — เจ้าของระบบสั่ง 2026-11-15: ชาวบ้านบางพื้นที่ใช้น้ำจากอ่างตำบลข้างเคียง
+// เป็นข้อมูลประกอบ ต้องเด่นน้อยกว่าอ่าง/ฝนของเรา · ไม่ทำให้เกิดภาพเตือนเพิ่ม
+export const NEARBY_DAM_KM = 5
+// กติกา: ห่าง ≤ NEARBY_DAM_KM · ไม่ใช่อ่างที่อยู่บนหัวภาพ/ช่องตัวเลขแล้ว · ค่ายังสด (DAM_STALE_HOURS) · ใกล้สุดอ่างเดียว
+export function pickNearbyDam(dams, now, exclude = null) {
+  const skip = exclude?.station_code ?? null
+  return (Array.isArray(dams) ? dams : [])
+    .filter(s => s && s !== exclude && (skip === null || s.station_code !== skip))
+    .filter(s => { const d = toNum(s.distance_km); return d !== null && d <= NEARBY_DAM_KM })
+    .filter(s => isFreshAt(s.recorded_at, now, DAM_STALE_HOURS) && toNum(s.storage_percent) !== null)
+    .sort(byDistance)[0] ?? null
+}
+
 const damColor = pct => damLevel(pct)?.color ?? NEUTRAL_HEAD
 const rainColor = mm => rainLevel(mm)?.bar ?? NEUTRAL_HEAD
 const num1 = v => v.toLocaleString('th-TH', { maximumFractionDigits: 1 })
@@ -404,6 +417,20 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
       warning: districtWarning,
     },
     todo,
+    nearbyDam: (() => {
+      const near = pickNearbyDam(dams, now, dam)
+      if (!near) return null
+      const pct = toNum(near.storage_percent)
+      return {
+        code: near.station_code ?? null,
+        name: shortDamName(clean(near.station_name, 80)),
+        pct,
+        pctText: num1(pct),
+        color: damColor(pct),
+        heading: near.is_primary === true ? 'อ่างในตำบล' : 'อ่างใกล้เคียง',
+        sub: [stationPlace(near, homeAmphoe), distanceText(near.distance_km)].filter(Boolean).join(' · '),
+      }
+    })(),
     phones: buildPosterPhones(tenant, contacts),
     footer: {
       location: locationText,
