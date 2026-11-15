@@ -10,7 +10,7 @@
 
 import {
   DAM_LEVELS, DAM_STALE_HOURS, DAM_TREND_FLAT_MCM, LEVEL_TIERS, RAIN_LEVELS, STATION_STALE_HOURS, TREND_FLAT_M,
-  bankText, buildAlerts, damLevel, distanceText, formatMm, isStale, measuredAtText, rainLevel, stationPlace, toNum, waterTrend,
+  buildAlerts, damLevel, distanceText, formatMm, isStale, measuredAtText, rainLevel, stationPlace, toNum, waterTrend,
 } from './waterSituation.js'
 import { orgNameParts } from './orgTerms.js'
 
@@ -114,22 +114,6 @@ export function posterTopicCandidates(alerts) {
  */
 export function selectPosterTopic(alerts) {
   return posterTopicCandidates(alerts)[0] ?? null
-}
-
-/**
- * บรรทัดแดง "มีเรื่องอื่นที่ต้องระวังกว่า" — ระบุเฉพาะเรื่องที่อยู่ "สูงกว่าหัวภาพ" ตามลำดับจริงของ posterTopicCandidates
- * (ไม่ hardcode ว่าอะไรแรงกว่าอะไร) · เมื่อหัวภาพเป็นตัวแรกของลำดับเสมอ ผลจึงเป็น null — คงไว้เผื่อลำดับ/เกณฑ์เปลี่ยนในอนาคต
- */
-export function posterOtherNote(candidates, topic) {
-  const at = candidates.indexOf(topic)
-  const higher = at > 0 ? candidates.slice(0, at) : []
-  const parts = higher.map(c => {
-    if (c.kind === 'ews') return `สถานีเตือนภัยน้ำหลาก-ดินถล่ม ${clean(c.station.station_name, 60)} · ${clean(c.alert.text, 40)}`
-    if (c.kind === 'overbank') return `ระดับน้ำเสมอหรือสูงกว่าตลิ่ง สถานี${clean(c.station.station_name, 60)} ${bankText(c.station.bank_diff_m) ?? ''}`.trim()
-    if (c.kind === 'dam') return `อ่างเกินความจุเก็บกัก ${clean(c.station.station_name, 60)} ${num1(toNum(c.station.storage_percent) ?? 0)}%`
-    return `ฝนหนักมาก ${clean(c.station.station_name, 60)} ${formatMm(c.station.rain_24h_mm)} มม.`
-  })
-  return parts.length ? `มีเรื่องอื่นที่ต้องระวังกว่า: ${parts.join(' · ')}` : null
 }
 
 const isFreshAt = (iso, now, hours) => Boolean(iso) && !isStale(iso, now, hours)
@@ -566,9 +550,6 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
     ? { none: false, label: `ข้อความเตือนจาก สสน.${district ? ` ใน อ.${district}` : ''}`, text: clean(official[0].message, 300), more: official.length - 1 }
     : { none: true, label: `ประกาศเตือนของ สสน.${district ? ` สำหรับ อ.${district}` : ''}`, text: 'ไม่มีในขณะนี้', more: 0 }
 
-  // เรื่องที่อยู่สูงกว่าหัวภาพตามลำดับจริง (posterTopicCandidates) — หัวภาพเป็นตัวแรกของลำดับเสมอ จึงเป็น null ในทางปฏิบัติ
-  const otherNote = posterOtherNote(candidates, topic)
-
   // ข้อควรทำของภาพอ่าง/ฝน (ภาพสถานีเตือนภัย/น้ำเสมอตลิ่งกำหนดไว้ในบล็อกของตัวเองข้างบน)
   if (kind === 'dam' || kind === 'rain') todo = kind === 'dam'
     ? [
@@ -614,7 +595,6 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
     // ให้ตัววาดตัดประโยควิเคราะห์ท้ายสุดทิ้งทีละประโยคเมื่อเนื้อหาล้นภาพ (เรียงสำคัญมากไปน้อยแล้ว) — introFor(n) = ใช้ n ประโยคแรก
     introFor: n => withAnalysis(introBase, analysis.sentences.slice(0, Math.max(0, n))),
     analysis: analysis.sentences.map(s => s.key),
-    otherNote,
     tiles,
     scale,
     rain: {

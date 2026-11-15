@@ -123,7 +123,7 @@ try {
         warnings: [{ message: 'เฝ้าระวังฝนตกหนักและน้ำป่าไหลหลาก', issued_at: ago(2) }], contacts,
       },
       // เค้นสุดทาง: ชื่อยาวมาก + ไม่มีตรา + ไม่มีเบอร์สำนักงาน/สายด่วน + ข้อความ สสน. ยาว
-      // (เดิมมี levels/ews ในฉากนี้เพื่อให้ขึ้นแถบ "เรื่องอื่นที่ต้องระวังกว่า" — ลำดับหัวภาพใหม่ให้ EWS/ล้นตลิ่งเป็นหัวภาพเอง ฉากนี้จึงเหลือภาพอ่างล้วน)
+      // (ไม่ใส่ levels/ews ในฉากนี้: ลำดับหัวภาพให้ EWS/ล้นตลิ่งเป็นหัวภาพเอง ฉากนี้จึงเป็นภาพอ่างล้วน)
       stress: {
         tenant: { ...tenant, name: 'องค์การบริหารส่วนตำบลทุ่งแค้วใหญ่มากมายเกินจริง', org_type: 'อบต.', phone: null, logo_url: '/missing-logo.png' },
         dams: [dam({ station_name: 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนาตอนบนและตอนล่างพื้นที่ลุ่มน้ำแม่คำปอง', storage_percent: 118.7, river_name: null })],
@@ -132,7 +132,7 @@ try {
         contacts: [],
       },
       // ประโยควิเคราะห์ฝนครบ 3 ประโยค (ฝนหยุดแล้ว + วงกว้าง + อ่างประกอบน้ำมาก) + ข้อความ สสน. ยาว + เบอร์ 3 เบอร์ ต้องไม่ล้นแถบล่าง
-      // (เดิมมี ews ในฉากนี้ให้มีแถบ "เรื่องอื่นที่ต้องระวังกว่า" — ลำดับหัวภาพใหม่ให้ EWS เป็นหัวภาพเอง ฉากนี้จึงเหลือภาพฝนล้วน)
+      // (ไม่ใส่ ews ในฉากนี้: ลำดับหัวภาพให้ EWS เป็นหัวภาพเอง ฉากนี้จึงเป็นภาพฝนล้วน)
       rainStress: {
         dams: [dam({ station_name: 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', storage_percent: 97.4 }), maeThang],
         rain: [
@@ -190,14 +190,13 @@ try {
   // หัวภาพใหม่: สถานีเตือนภัย (ระดับ 3/2) และน้ำเสมอ/สูงกว่าตลิ่ง
   assert.deepEqual(['ewsCritical', 'ewsPrepare', 'ewsStress'].map(k => result[k].kind), ['ews', 'ews', 'ews'])
   assert.deepEqual(['overbank', 'overbankAtBank', 'overbankStress'].map(k => result[k].kind), ['overbank', 'overbank', 'overbank'])
-  // ภาพปกติของหัวภาพใหม่: ประโยคในย่อหน้าขึ้นครบ + มีแถบเบอร์ + ไม่มี "เรื่องอื่นที่ต้องระวังกว่า" (หัวภาพเป็นเรื่องแรงสุดเสมอ)
+  // ภาพปกติของหัวภาพใหม่: ประโยคในย่อหน้าขึ้นครบ + มีแถบเบอร์
   for (const key of ['ewsCritical', 'overbank']) {
     const { analysisShown, analysisTotal } = result[key].layout
     assert.ok(analysisTotal > 0, `${key}: ควรมีประโยควิเคราะห์`)
     assert.equal(analysisShown, analysisTotal, `${key}: ประโยควิเคราะห์ถูกตัด ${analysisShown}/${analysisTotal}`)
   }
   for (const key of ['ewsCritical', 'ewsPrepare', 'overbank', 'overbankAtBank', 'ewsStress', 'overbankStress']) {
-    assert.equal(result[key].layout.blocks.some(b => b.name === 'otherNote'), false, `${key}: หัวภาพเป็นเรื่องแรงสุด ต้องไม่มีแถบเรื่องอื่น`)
     assert.equal(result[key].layout.blocks.some(b => b.name === 'call'), true, `${key}: ต้องมีแถบเบอร์`)
   }
   // ฉากเค้น: เบอร์ 3 เบอร์อยู่ครบ + ภาพยังไม่ล้นแม้ข้อความยาวสุด (issues/fits ตรวจในลูปข้างบนแล้ว)
@@ -219,8 +218,6 @@ try {
   assert.equal(result.stress.phones, 0)
   assert.equal(result.stress.layout.blocks.some(b => b.name === 'call'), false, 'ไม่มีเบอร์ต้องไม่มีแถบโทรโข่ง')
   assert.equal(result.dam.layout.blocks.some(b => b.name === 'call'), true)
-  assert.equal(result.stress.layout.blocks.some(b => b.name === 'otherNote'), false)
-  assert.equal(result.dam.layout.blocks.some(b => b.name === 'otherNote'), false)
   // อ่างใกล้เคียง: ภาพปกติต้องมีการ์ด · ภาพเค้นสุดทาง (ข้อความข้อควรทำยาว) มีหรือไม่มีก็ได้ แต่ห้ามทำให้ล้น (ตรวจ issues/fits ข้างบนแล้ว)
   assert.equal(result.dam.layout.nearbyShown, true, 'ภาพอ่างต้องมีการ์ดอ่างใกล้เคียง (แม่ถาง 4.3 กม.)')
   assert.equal(result.rain.layout.nearbyShown, true, 'ภาพฝนต้องมีการ์ดอ่างใกล้เคียง')
