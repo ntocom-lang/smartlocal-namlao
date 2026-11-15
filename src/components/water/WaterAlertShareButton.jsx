@@ -2,15 +2,22 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Download, Loader2, Share2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { buildPosterModel } from '../../lib/waterAlertPoster'
+import { buildPosterModel, buildStatusPosterModel } from '../../lib/waterAlertPoster'
 
-// ปุ่ม "แชร์ภาพแจ้งเตือน" ข้างแถบแจ้งเตือนน้ำ-ฝน (หน้าแรก + หน้า /water-situation)
-// ภาพ 1080×1350 PNG วาดจากข้อมูลชุดเดียวกับแถบ (buildAlerts) — ไม่มีเรื่องเข้าเกณฑ์หัวภาพ (สถานีเตือนภัยระดับเตรียมพร้อมขึ้นไป / น้ำเสมอหรือสูงกว่าตลิ่ง / อ่าง >100% / ฝนหนักมาก) = ไม่มีปุ่ม
+// ปุ่ม "แชร์ภาพ" สถานการณ์น้ำ-ฝน บนหน้า /water-situation
+// ภาพ 1080×1350 PNG วาดจากข้อมูลชุดเดียวกับแถบ (buildAlerts) — มีเรื่องเข้าเกณฑ์หัวภาพ (สถานีเตือนภัยระดับเตรียมพร้อมขึ้นไป /
+// น้ำเสมอหรือสูงกว่าตลิ่ง / อ่าง >100% / ฝนหนักมาก) = ภาพแจ้งเตือน · ไม่มี + allStates = ภาพรายงานสถานการณ์
+// (เฝ้าระวัง/น้ำน้อย/ข้อมูลไม่ครบ/ปกติ — buildStatusPosterModel, เจ้าของระบบอนุมัติ 2026-11-15) · ไม่มี + ไม่ส่ง allStates = ไม่มีปุ่ม
 // ไม่ยิง RPC ตอนโหลดหน้า: สายด่วนของ อปท. อ่านเฉพาะตอนกดเปิดหน้าต่างภาพ (ไม่เพิ่มภาระหน้าแรก)
 //
 // เตรียมไฟล์ PNG ไว้ล่วงหน้า (ตอนเปิดหน้าต่าง) ไม่ใช่ตอนกดแชร์: navigator.share() ต้องถูกเรียกทันทีที่ผู้ใช้เพิ่งกด
 // ถ้ารอเครือข่าย/วาดภาพก่อนแล้วค่อยเรียก เบราว์เซอร์จะปฏิเสธ (แบบเดียวกับ ComplaintNewsDialog)
 // แชร์ไฟล์ไม่ได้ (เดสก์ท็อป/เบราว์เซอร์เก่า) = ปุ่มดาวน์โหลดแทน
+
+// ภาพแจ้งเตือนมาก่อนเสมอ — ภาพสถานะใช้เมื่อไม่มีเรื่องเข้าเกณฑ์แจ้งเตือนเท่านั้น
+function pickModel(input, allStates) {
+  return buildPosterModel(input) ?? (allStates ? buildStatusPosterModel(input) : null)
+}
 
 function canShareFiles(files) {
   try { return files.length > 0 && typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare({ files }) }
@@ -20,11 +27,13 @@ function canShareFiles(files) {
 const buttonBase = 'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold disabled:opacity-50'
 
 /**
- * @param {{ rain: object[], ews: object[], levels: object[], dams: object[], warnings?: object[], tenant: object, now: number, className?: string }} props
+ * @param {{ rain: object[], ews: object[], levels: object[], dams: object[], warnings?: object[], tenant: object, now: number,
+ *   allStates?: boolean, className?: string }} props
  */
-export default function WaterAlertShareButton({ rain, ews, levels, dams, warnings, tenant, now, className = '' }) {
+export default function WaterAlertShareButton({ rain, ews, levels, dams, warnings, tenant, now, allStates = false, className = '' }) {
   const input = { rain, ews, levels, dams, warnings, tenant, now }
-  const model = buildPosterModel(input)
+  const model = pickModel(input, allStates)
+  const isAlert = model?.kind !== 'status'
   // ถ่ายข้อมูลไว้ตอนกดเปิด (snapshot) — ภาพไม่วาดซ้ำทุกครั้งที่แถบรีเฟรช และตัวเลขในภาพตรงกับที่ผู้ใช้เห็นตอนกด
   const [snapshot, setSnapshot] = useState(null)
   if (!model) return null
@@ -32,15 +41,15 @@ export default function WaterAlertShareButton({ rain, ews, levels, dams, warning
   return (
     <>
       <button type="button" onClick={() => setSnapshot(input)}
-        className={`${buttonBase} border-2 border-amber-500 bg-white text-amber-900 hover:bg-amber-50 ${className}`}>
-        <Share2 size={18} aria-hidden="true" /> แชร์ภาพแจ้งเตือน
+        className={`${buttonBase} border-2 bg-white ${isAlert ? 'border-amber-500 text-amber-900 hover:bg-amber-50' : 'border-sky-500 text-sky-900 hover:bg-sky-50'} ${className}`}>
+        <Share2 size={18} aria-hidden="true" /> {isAlert ? 'แชร์ภาพแจ้งเตือน' : 'แชร์ภาพสถานการณ์น้ำ–ฝน'}
       </button>
-      {snapshot && <PosterDialog snapshot={snapshot} onClose={() => setSnapshot(null)} />}
+      {snapshot && <PosterDialog snapshot={snapshot} allStates={allStates} onClose={() => setSnapshot(null)} />}
     </>
   )
 }
 
-function PosterDialog({ snapshot, onClose }) {
+function PosterDialog({ snapshot, allStates, onClose }) {
   const [state, setState] = useState({ status: 'loading', url: null, file: null, model: null })
   const [message, setMessage] = useState('')
   const [sharing, setSharing] = useState(false)
@@ -60,7 +69,7 @@ function PosterDialog({ snapshot, onClose }) {
             contacts = Array.isArray(data) ? data : []
           } catch { contacts = [] }
         }
-        const model = buildPosterModel({ ...current, contacts })
+        const model = pickModel({ ...current, contacts }, allStates)
         if (!model) throw new Error('no-topic')
         const { renderWaterAlertPoster } = await import('../../lib/waterAlertPosterImage')
         const { blob, file } = await renderWaterAlertPoster(model, { logoUrl: current.tenant?.logo_url ?? null })
@@ -71,7 +80,7 @@ function PosterDialog({ snapshot, onClose }) {
       }
     })()
     return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
-  }, [snapshot, retry])
+  }, [snapshot, retry, allStates])
 
   useEffect(() => {
     const onKey = event => { if (event.key === 'Escape') onClose() }
@@ -81,10 +90,11 @@ function PosterDialog({ snapshot, onClose }) {
 
   const { status, url, file, model } = state
   const canShare = status === 'ready' && canShareFiles([file])
+  const isStatus = model?.kind === 'status'
 
   async function share() {
     setSharing(true); setMessage('')
-    try { await navigator.share({ files: [file], title: 'แจ้งเตือนสถานการณ์น้ำ–ฝน', text: model.shareText }) }
+    try { await navigator.share({ files: [file], title: isStatus ? 'สถานการณ์น้ำ–ฝน' : 'แจ้งเตือนสถานการณ์น้ำ–ฝน', text: model.shareText }) }
     catch (error) { if (error?.name !== 'AbortError') setMessage('แชร์ภาพไม่ได้ กรุณาดาวน์โหลดภาพแล้วแนบในกลุ่ม LINE หรือ Facebook') }
     finally { setSharing(false) }
   }
@@ -92,10 +102,10 @@ function PosterDialog({ snapshot, onClose }) {
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
       onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget) onClose() }}>
-      <div role="dialog" aria-modal="true" aria-label="ภาพแจ้งเตือนสถานการณ์น้ำ–ฝนสำหรับแชร์"
+      <div role="dialog" aria-modal="true" aria-label={isStatus ? 'ภาพสถานการณ์น้ำ–ฝนสำหรับแชร์' : 'ภาพแจ้งเตือนสถานการณ์น้ำ–ฝนสำหรับแชร์'}
         className="max-h-[94vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-4 shadow-xl sm:rounded-3xl">
         <div className="flex items-start justify-between gap-3">
-          <p className="text-base font-bold text-gray-800">ภาพแจ้งเตือนสำหรับแชร์</p>
+          <p className="text-base font-bold text-gray-800">{isStatus ? 'ภาพสถานการณ์น้ำ–ฝนสำหรับแชร์' : 'ภาพแจ้งเตือนสำหรับแชร์'}</p>
           <button type="button" onClick={onClose} aria-label="ปิด" className="-mr-2 -mt-2 flex h-11 w-11 items-center justify-center rounded-full hover:bg-gray-100">
             <X size={20} className="text-gray-500" />
           </button>
