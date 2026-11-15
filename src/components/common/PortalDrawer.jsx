@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { LayoutDashboard, X } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ROLE_LABELS } from '../../lib/staffRoster'
-import CollapsibleNavGroup from './CollapsibleNavGroup'
+import CollapsibleNavGroup, { NavBadge, NavIconTile } from './CollapsibleNavGroup'
 import NavQuickFind from './NavQuickFind'
 import { recordNavUse } from '../../lib/navUsage'
 
@@ -39,19 +39,32 @@ const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1
 
 // variant 'sub' = เมนูย่อยใต้หัวกลุ่มที่พับได้ (ตัวบาง/จางกว่า ไอคอน 15px · active = พื้นจาง + ตัวหนา แถบอำพันวาดโดย NavSubRow)
 // ค่าเริ่มต้น = แถวเต็มแบบเดิม (ภาพรวม/ทางลัด/กลุ่มที่ไม่พับของหน้าแอดมิน/ศูนย์ข้อมูล ต้องเหมือนเดิมทุกอย่าง)
-function DrawerItem({ item, active, badge, onSelect, variant }) {
+// tile = แถวเต็มแต่ไอคอนเป็นกระเบื้อง (แดชบอร์ด/ห้องผู้บริหารในลิ้นชักเจ้าหน้าที่ ให้ตรงกับเมนูซ้าย PC) · ไม่มี color = เทาหินชนวน
+function DrawerItem({ item, active, badge, onSelect, variant, tile = false }) {
   const count = Number(badge) > 0 ? Number(badge) : 0
   const Icon = item.Icon
   const sub = variant === 'sub'
+  // sub (เมนูเจ้าหน้าที่แบบพรีเมียม 2569-11-16) = กระเบื้องสีตามเมนู + แคปซูลไล่เฉดสีธีม อปท. ตอน active + ป้ายตัวเลข NavBadge
+  // (อำพัน < 10 · แดง ≥ 10 ชุดเดียวกับเมนู PC) · แถวเต็มแบบเดิมของแอดมิน/ศูนย์ข้อมูลยังไม่เปลี่ยน
   const cls = sub
-    ? `flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-white/70 ${active ? 'bg-white/15 font-semibold text-white' : 'font-normal text-white/75 active:bg-white/10'}`
+    ? `flex min-h-11 w-full items-center gap-2.5 rounded-xl px-2 py-1.5 text-left text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-white/70 ${active ? 'font-semibold text-white' : 'font-normal text-white/80 active:bg-white/10'}`
     : `flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-white/70 ${active ? 'text-white' : 'text-white/80 active:bg-white/10'}`
+  if (sub) return (
+    <button type="button" data-drawer-item={item.key} aria-current={active ? 'page' : undefined}
+      onClick={() => onSelect(item)} className={cls} style={active ? ACTIVE_STYLE : undefined}>
+      <NavIconTile Icon={Icon} color={item.color} size={26} active={active} />
+      <span data-drawer-label className="min-w-0 flex-1 leading-snug">{item.label}</span>
+      <NavBadge count={count} data-drawer-badge="" />
+    </button>
+  )
   return (
     <button type="button" data-drawer-item={item.key} aria-current={active ? 'page' : undefined}
       onClick={() => onSelect(item)}
       className={cls}
-      style={!sub && active ? ACTIVE_STYLE : undefined}>
-      <Icon size={sub ? 15 : 19} strokeWidth={sub ? 1.6 : active ? 2.2 : 1.7} aria-hidden="true" className="shrink-0" />
+      style={active ? ACTIVE_STYLE : undefined}>
+      {tile
+        ? <NavIconTile Icon={Icon} color={item.color} size={28} active={active} />
+        : <Icon size={19} strokeWidth={active ? 2.2 : 1.7} aria-hidden="true" className="shrink-0" />}
       <span data-drawer-label className="min-w-0 flex-1 leading-snug">{item.label}</span>
       {count > 0 && (
         <span data-drawer-badge className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white">
@@ -129,8 +142,8 @@ export default function PortalDrawer({
   const homeBlock = (
     <>
       <GroupLabel>{homeGroupLabel}</GroupLabel>
-      <DrawerItem item={homeItem} active={activeKey === homeItem.key} onSelect={onSelect} />
-      {extraItems.map(item => <DrawerItem key={item.key} item={item} active={activeKey === item.key} onSelect={onSelect} />)}
+      <DrawerItem item={homeItem} active={activeKey === homeItem.key} onSelect={onSelect} tile={quickFind} />
+      {extraItems.map(item => <DrawerItem key={item.key} item={item} active={activeKey === item.key} onSelect={onSelect} tile={quickFind} />)}
     </>
   )
   const groupBlocks = groups.map(({ group, accent, Icon, items, collapsible }, index) => {

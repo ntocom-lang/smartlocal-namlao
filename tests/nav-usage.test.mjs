@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import {
   NAV_COLLAPSED_KEY, navUsageStorageKey, readCollapsedGroups, recordNavUse, searchNavItems, setGroupCollapsed, topNavKeys,
 } from '../src/lib/navUsage.js'
+import { contrastWithWhite, isHotBadge, tileColor, tileGradient } from '../src/lib/navTileColor.js'
 
 let cases = 0
 const test = async (label, run) => { await run(); cases++; console.log('PASS ' + label) }
@@ -173,6 +174,30 @@ await test('ทุกกลุ่มใน staffNavGroups มี Icon ระด�
   const lines = src('lib/staffNavGroups.js').split(/\r?\n/).filter(l => /^\s*(\{\s*)?group: '/.test(l))
   assert.ok(lines.length >= 9, 'ควรเจออย่างน้อย 9 กลุ่ม')
   for (const l of lines) assert.match(l, /Icon: [A-Z]\w+,/, `กลุ่มนี้ไม่มี Icon: ${l.trim()}`)
+})
+
+// ── แบบพรีเมียม (2569-11-16): กระเบื้องสีตามเมนูต้องให้ไอคอนขาวอ่านออก ≥ 3:1 ทุกสี ─────────
+await test('tileColor: ทุกสีเมนู/กลุ่มใน staffNavGroups เข้มจนไอคอนขาว ≥ 3:1 · สีที่ผ่านอยู่แล้วไม่ถูกเปลี่ยน', () => {
+  const colors = [...src('lib/staffNavGroups.js').matchAll(/(?:color|accent): '(#[0-9a-fA-F]{6})'/g)].map(m => m[1])
+  assert.ok(colors.length >= 20, 'ควรเจอสีเมนู/กลุ่มอย่างน้อย 20 สี')
+  for (const c of [...colors, '#f59e0b', '#fde68a', '#ffffff', '#10b981']) {
+    assert.ok(contrastWithWhite(tileColor(c)) >= 3, `${c} → ${tileColor(c)} ยังไม่ถึง 3:1`)
+  }
+  assert.equal(tileColor('#1d4ed8'), '#1d4ed8', 'สีที่ผ่านแล้วต้องคงเดิม')
+  assert.equal(tileColor('ไม่ใช่สี'), '#475569')
+  assert.equal(tileColor(undefined), '#475569')
+  assert.match(tileGradient('#f59e0b'), /^linear-gradient\(135deg, #[0-9a-f]{6} 0%, #[0-9a-f]{6} 100%\)$/)
+})
+
+await test('ป้ายตัวเลข: แดงตั้งแต่ 10 เรื่อง (เจ้าของระบบเลือก) · ทุกกลุ่มมี accent · กระเบื้องผ่าน tileGradient', () => {
+  assert.equal(isHotBadge(9), false)
+  assert.equal(isHotBadge(10), true)
+  assert.equal(isHotBadge('12'), true)
+  const lines = src('lib/staffNavGroups.js').split(/\r?\n/).filter(l => /^\s*(\{\s*)?group: '/.test(l))
+  for (const l of lines) assert.match(l, /accent: '#[0-9a-fA-F]{6}'/, `กลุ่มนี้ไม่มี accent: ${l.trim()}`)
+  assert.match(src('components/common/CollapsibleNavGroup.jsx'), /tileGradient\(color\)/, 'ห้ามใส่สีพื้นกระเบื้องตรงๆ')
+  assert.match(src('components/staff/StaffSideNav.jsx'), /<NavBadge count=/)
+  assert.match(src('components/common/PortalDrawer.jsx'), /<NavBadge count=\{count\} data-drawer-badge/)
 })
 
 console.log(`\nผ่านทั้งหมด ${cases} เคส`)
