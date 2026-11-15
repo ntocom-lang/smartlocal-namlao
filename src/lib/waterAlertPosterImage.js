@@ -364,6 +364,60 @@ function drawPin(ctx, x, y, size) {
 
 /* ───────── ภาพประกอบอ่าง/ฝน 392×232 ───────── */
 
+/* ── ชิ้นส่วนแผงขาว (แผงเกณฑ์ + แผงฝน) แบบพรีเมียม — Canvas 2D ล้วน ไม่ใช้ filter (Safari) ── */
+// ผสมสีเข้าหาขาว (t > 0) หรือดำ (t < 0)
+function shade(hex, t) {
+  const n = parseInt(String(hex).replace('#', ''), 16)
+  const target = t > 0 ? 255 : 0
+  const k = Math.abs(t)
+  const mix = c => Math.round(c + (target - c) * k)
+  return `rgb(${mix((n >> 16) & 255)},${mix((n >> 8) & 255)},${mix(n & 255)})`
+}
+
+// สีตัวอักษรบนพื้นขาวที่ยังบอกระดับได้ — เหลือง/ฟ้าอ่อนตามเกณฑ์อ่านไม่ออกบนขาว จึงหรี่ลงก่อน
+const inkOf = hex => shade(hex, -0.38)
+
+const ACCENT_W = 16
+
+// พื้นแผงไล่ขาว → เทาฟ้าอ่อน + ขอบแดงจาง (ขอบเดิม)
+function panelCard(ctx, y, h) {
+  ctx.fillStyle = linear(ctx, 0, y, 0, y + h, [[0, '#ffffff'], [1, '#eef3fa']])
+  rrPath(ctx, MARGIN, y, CONTENT_W, h, 18); ctx.fill()
+  ctx.strokeStyle = 'rgba(255,59,59,0.55)'; ctx.lineWidth = 2
+  rrPath(ctx, MARGIN + 1, y + 1, CONTENT_W - 2, h - 2, 17); ctx.stroke()
+}
+
+// หัวแผง: แถบแดงแนวตั้งหน้าหัวข้อ
+function panelHeading(ctx, fit, x, cy, display) {
+  ctx.fillStyle = linear(ctx, 0, cy - 12, 0, cy + 12, [[0, '#ff4d4d'], [1, '#c4000f']])
+  rrPath(ctx, x, cy - 12, 6, 24, 3); ctx.fill()
+  drawText(ctx, fit.text, x + ACCENT_W, cy, { font: `700 ${fit.size}px ${display}`, color: NAVY })
+}
+
+// แถบสีแบบเม็ดยา: ไล่สีบนสว่าง-ล่างเข้ม + แสงเงาครึ่งบน
+function glossyBar(ctx, x, y, w, h, r, hex) {
+  if (w <= 0) return
+  ctx.save()
+  rrPath(ctx, x, y, w, h, r); ctx.clip()
+  ctx.fillStyle = linear(ctx, 0, y, 0, y + h, [[0, shade(hex, 0.22)], [0.55, hex], [1, shade(hex, -0.2)]])
+  ctx.fillRect(x, y, w, h)
+  ctx.fillStyle = linear(ctx, 0, y, 0, y + h / 2, [[0, 'rgba(255,255,255,0.5)'], [1, 'rgba(255,255,255,0.08)']])
+  rrPath(ctx, x + 3, y + 2, Math.max(0, w - 6), h * 0.42, Math.min(r, h * 0.21)); ctx.fill()
+  ctx.restore()
+}
+
+// วงกลมจางสีระดับ + หยดฝน
+function drawRainDrop(ctx, cx, cy, hex) {
+  ctx.fillStyle = rgba(hex, 0.18)
+  ctx.beginPath(); ctx.arc(cx, cy, 13, 0, Math.PI * 2); ctx.fill()
+  ctx.fillStyle = linear(ctx, 0, cy - 9, 0, cy + 9, [[0, shade(hex, 0.1)], [1, shade(hex, -0.25)]])
+  ctx.beginPath()
+  ctx.arc(cx, cy + 3, 6, -0.25, Math.PI + 0.25)
+  ctx.lineTo(cx, cy - 9)
+  ctx.closePath(); ctx.fill()
+}
+
+
 const ILLUS_W = 392
 const ILLUS_H = 232
 
@@ -810,12 +864,13 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
   }
 
   // แถบสเกลเกณฑ์ + หมุดค่าปัจจุบัน
+  // แบบพรีเมียม: ช่องที่ค่าอยู่สีเต็ม ช่องอื่นจาง · ป้ายค่ามีหางชี้ลงหมุดวงกลม · ตัวเลขเกณฑ์เป็นป้ายเล็กใต้แถบที่รอยต่อ
   {
     const sc = model.scale
     const h = tight ? 108 : 118
     const L = MARGIN + 18
     const R = MARGIN + CONTENT_W - 18
-    const heading = fitOne(ctx, sc.heading, display, 700, CONTENT_W - 36, 21, 15, issues, 'หัวข้อสเกล')
+    const heading = fitOne(ctx, sc.heading, display, 700, CONTENT_W - 36 - ACCENT_W, 21, 15, issues, 'หัวข้อสเกล')
     const x = sc.kind === 'equal'
       ? v => {
         const n = sc.zones.length
@@ -827,41 +882,74 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
       }
       : v => L + Math.min(Math.max(v, 0), sc.max) / sc.max * (R - L)
     const mark = fitOne(ctx, sc.markLabel, display, 700, 420, 17, 12, issues, 'ป้ายหมุด')
+    const activeIndex = Math.max(0, sc.zones.findIndex((z, i) => sc.value <= z.to || i === sc.zones.length - 1))
+    // ป้ายเกณฑ์อยู่แถวเดียวกับป้ายตัวเลขที่รอยต่อ → เว้นที่ให้ป้ายตัวเลขซ้าย-ขวาช่องละ ~23px
+    const labels = sc.zones.map((z, i) => {
+      const x0 = x(z.from) + (i ? 2 : 0)
+      const x1 = x(z.to)
+      return fitOne(ctx, z.label, body, i === activeIndex ? 700 : 600, Math.max(30, x1 - x0 - 46), 14, 11, issues, `ป้ายเกณฑ์ ${z.label}`)
+    })
     stack.push({
       name: 'scale', h,
       paint(y) {
-        ctx.fillStyle = '#fff'
-        rrPath(ctx, MARGIN, y, CONTENT_W, h, 18); ctx.fill()
-        ctx.strokeStyle = 'rgba(255,59,59,0.55)'; ctx.lineWidth = 2
-        rrPath(ctx, MARGIN + 1, y + 1, CONTENT_W - 2, h - 2, 17); ctx.stroke()
-        drawText(ctx, heading.text, L, y + 24, { font: `700 ${heading.size}px ${display}`, color: NAVY })
-        const y0 = y + 40 + 26
-        const bh = 16
+        panelCard(ctx, y, h)
+        panelHeading(ctx, heading, L, y + (tight ? 21 : 24), display)
+        const y0 = y + (tight ? 64 : 70)
+        const bh = 20
         sc.zones.forEach((z, i) => {
           const x0 = x(z.from) + (i ? 2 : 0)
           const x1 = x(z.to)
-          ctx.fillStyle = z.color
-          rrPath(ctx, x0, y0, x1 - x0, bh, 4); ctx.fill()
-          const lab = fitOne(ctx, z.label, body, 600, Math.max(30, x1 - x0 - 6), 14, 10, issues, `ป้ายเกณฑ์ ${z.label}`)
-          drawText(ctx, lab.text, (x0 + x1) / 2, y0 + bh + 14, { font: `600 ${lab.size}px ${body}`, color: DIM, align: 'center' })
+          const active = i === activeIndex
+          ctx.save()
+          ctx.globalAlpha = active ? 1 : 0.4
+          glossyBar(ctx, x0, y0, x1 - x0, bh, 6, z.color)
+          ctx.restore()
+          drawText(ctx, labels[i].text, (x0 + x1) / 2, y0 + bh + 13, { font: `${active ? 700 : 600} ${labels[i].size}px ${body}`, color: active ? inkOf(z.color) : DIM, align: 'center' })
         })
-        sc.zones.slice(1).forEach(z => drawText(ctx, String(z.from), x(z.from), y0 - 9, { font: `600 14px ${display}`, color: DIM, align: 'center' }))
+        sc.zones.slice(1).forEach(z => {
+          const t = String(z.from)
+          const tw = textWidth(ctx, t, 600, 13, display) + 12
+          const cx = x(z.from)
+          ctx.fillStyle = '#e6ecf5'
+          rrPath(ctx, cx - tw / 2, y0 + bh + 4, tw, 18, 9); ctx.fill()
+          drawText(ctx, t, cx, y0 + bh + 13.5, { font: `600 13px ${display}`, color: INK, align: 'center' })
+        })
+        // หมุด: วงกลมขาวขอบแดงบนแถบ + ป้ายแดงมีหางชี้ลง
         const m = x(sc.value)
-        ctx.fillStyle = INK
-        rrPath(ctx, m - 3, y0 - 8, 6, bh + 16, 3); ctx.fill()
-        const toLeft = m - 10 - mark.width >= L
-        drawText(ctx, mark.text, toLeft ? m - 10 : m + 10, y0 - 25, { font: `700 ${mark.size}px ${display}`, color: RED, align: toLeft ? 'right' : 'left' })
+        const cy = y0 + bh / 2
+        ctx.save()
+        ctx.shadowColor = 'rgba(120,0,10,0.35)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2
+        ctx.fillStyle = '#fff'
+        ctx.beginPath(); ctx.arc(m, cy, 13, 0, Math.PI * 2); ctx.fill()
+        ctx.restore()
+        ctx.strokeStyle = RED; ctx.lineWidth = 4
+        ctx.beginPath(); ctx.arc(m, cy, 11, 0, Math.PI * 2); ctx.stroke()
+        ctx.fillStyle = RED
+        ctx.beginPath(); ctx.arc(m, cy, 4, 0, Math.PI * 2); ctx.fill()
+        const bubH = tight ? 22 : 24
+        const bubW = mark.width + 28
+        const bubBottom = y0 - 10
+        const bx = Math.min(Math.max(m - bubW / 2, L), R - bubW)
+        ctx.save()
+        ctx.shadowColor = 'rgba(160,0,12,0.35)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3
+        ctx.fillStyle = linear(ctx, bx, 0, bx + bubW, 0, [[0, '#c4000f'], [1, RED]])
+        rrPath(ctx, bx, bubBottom - bubH, bubW, bubH, bubH / 2); ctx.fill()
+        ctx.restore()
+        ctx.fillStyle = RED
+        poly(ctx, [[m - 6, bubBottom - 1], [m + 6, bubBottom - 1], [m, bubBottom + 6]]); ctx.fill()
+        drawText(ctx, mark.text, bx + bubW / 2, bubBottom - bubH / 2 + 1, { font: `700 ${mark.size}px ${display}`, color: '#fff', align: 'center' })
       },
     })
   }
 
   // แผงฝนรายสถานี + ข้อความ สสน. ระดับอำเภอ
+  // แบบพรีเมียม: แต่ละแถวมีรางแบ่ง 4 ช่องสีจางของตัวเอง (ไม่ระบายพื้นทั้งคอลัมน์) · แถบเงา + จุดปลาย · ค่าในป้ายสีตามระดับ
   {
     const rain = model.rain
     const inner = CONTENT_W - 36
     const L = MARGIN + 18
     const ROW = tight ? 46 : 52
-    const heading = fitOne(ctx, rain.heading, display, 700, inner - (rain.chip ? 190 : 0), 21, 14, issues, 'หัวข้อฝน')
+    const heading = fitOne(ctx, rain.heading, display, 700, inner - ACCENT_W - (rain.chip ? 190 : 0), 21, 14, issues, 'หัวข้อฝน')
     const warnRuns = rain.warning.none
       ? [{ t: `${rain.warning.label}: ` }, { t: rain.warning.text, em: true }]
       : [{ t: `${rain.warning.label}: `, em: true }, { t: `${rain.warning.text}${rain.warning.more > 0 ? ` (และอีก ${rain.warning.more} ข้อความ)` : ''}` }]
@@ -869,8 +957,10 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
     const warnLineH = Math.round(warn.size * 1.35)
     const rowsH = rain.rows.length ? rain.rows.length * ROW + (tight ? 20 : 22) : 30
     const h = 12 + 30 + rowsH + 6 + warn.lines.length * warnLineH + 12
-    const X0 = L + 470
-    const X1 = L + 830
+    const ICON = 34
+    const X0 = L + 460
+    const X1 = L + 780
+    const TRACK_H = 20
     // สเกลฝนแบบช่องกว้างเท่ากัน — เกณฑ์/สีจาก RAIN_LEVELS (กรมอุตุฯ) ชุดเดียวกับแถบเกณฑ์ด้านบน ไม่ตั้งสีเอง
     const RL_BOUNDS = [0, 10, 35, 90, RAIN_SCALE_MAX]
     const RL = RAIN_LEVELS.slice(1).map((l, i) => [RL_BOUNDS[i], RL_BOUNDS[i + 1], l.bar, l.label.replace(/^ฝน/, '')])
@@ -881,22 +971,21 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
       }
       return X0
     }
+    const textW = X0 - 16 - (L + ICON)
+    const valueMaxW = L + inner - (X1 + 16) - 22
     const rowFits = rain.rows.map(row => {
       const pillW = row.inTambon ? 76 : 0
-      const name = fitOne(ctx, row.name, body, 700, 450 - pillW, 19, 13, issues, `ชื่อสถานี ${row.name}`)
-      const sub = fitOne(ctx, row.sub, body, 500, 450, 15, 11, issues, `รายละเอียดสถานี ${row.name}`)
-      const value = fitOne(ctx, `${row.mmText} มม.`, display, 700, L + inner - (X1 + 14), 24, 14, issues, 'ค่าฝน')
+      const name = fitOne(ctx, row.name, body, 700, textW - pillW, 19, 13, issues, `ชื่อสถานี ${row.name}`)
+      const sub = fitOne(ctx, row.sub, body, 500, textW, 15, 11, issues, `รายละเอียดสถานี ${row.name}`)
+      const value = fitOne(ctx, `${row.mmText} มม.`, display, 700, valueMaxW, 22, 14, issues, 'ค่าฝน')
       return { name, sub, value, pillW }
     })
     const chip = rain.chip ? fitOne(ctx, rain.chip.label, body, 700, 170, 17, 12, issues, 'ป้ายระดับฝน') : null
     stack.push({
       name: 'rain', h,
       paint(y) {
-        ctx.fillStyle = '#fff'
-        rrPath(ctx, MARGIN, y, CONTENT_W, h, 18); ctx.fill()
-        ctx.strokeStyle = 'rgba(255,59,59,0.55)'; ctx.lineWidth = 2
-        rrPath(ctx, MARGIN + 1, y + 1, CONTENT_W - 2, h - 2, 17); ctx.stroke()
-        drawText(ctx, heading.text, L, y + 12 + 15, { font: `700 ${heading.size}px ${display}`, color: NAVY })
+        panelCard(ctx, y, h)
+        panelHeading(ctx, heading, L, y + 12 + 15, display)
         if (chip) {
           const cw = chip.width + 28
           ctx.fillStyle = rain.chip.color
@@ -908,32 +997,60 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
           drawText(ctx, rain.empty ?? '', L, top + 15, { font: `600 17px ${body}`, color: DIM })
         } else {
           const B = rain.rows.length * ROW
+          // คำอธิบายช่องใต้ราง: จุดสี + ชื่อระดับ
           RL.forEach(z => {
-            ctx.globalAlpha = 0.12
+            const cx = (px(z[0]) + px(z[1])) / 2
+            const lw = textWidth(ctx, z[3], 600, 14, body)
             ctx.fillStyle = z[2]
-            ctx.fillRect(px(z[0]), top, px(z[1]) - px(z[0]), B)
-            ctx.globalAlpha = 1
-            drawText(ctx, z[3], (px(z[0]) + px(z[1])) / 2, top + B + 11, { font: `600 14px ${body}`, color: DIM, align: 'center' })
+            ctx.beginPath(); ctx.arc(cx - lw / 2 - 4, top + B + 11, 4.5, 0, Math.PI * 2); ctx.fill()
+            drawText(ctx, z[3], cx + 5, top + B + 11, { font: `600 14px ${body}`, color: DIM, align: 'center' })
           })
           rain.rows.forEach((row, i) => {
             const f = rowFits[i]
             const ry = top + i * ROW
-            drawText(ctx, f.name.text, L, ry + 14, { font: `700 ${f.name.size}px ${body}`, color: INK })
+            const tone = row.color ?? RAIN_LEVELS[0].bar
+            if (i > 0) {
+              ctx.fillStyle = 'rgba(15,35,80,0.09)'
+              ctx.fillRect(L, ry - 3, inner, 1.5)
+            }
+            drawRainDrop(ctx, L + 14, ry + (tight ? 22 : 24), tone)
+            const tx = L + ICON
+            drawText(ctx, f.name.text, tx, ry + 14, { font: `700 ${f.name.size}px ${body}`, color: INK })
             if (row.inTambon) {
-              const px0 = L + f.name.width + 10
+              const px0 = tx + f.name.width + 10
               ctx.fillStyle = '#dcfce7'
               rrPath(ctx, px0, ry + 3, 66, 24, 12); ctx.fill()
               ctx.strokeStyle = '#16a34a'; ctx.lineWidth = 1.5; ctx.stroke()
               drawText(ctx, 'ในตำบล', px0 + 33, ry + 16, { font: `700 13px ${body}`, color: '#0d7a3e', align: 'center' })
             }
-            drawText(ctx, f.sub.text, L, ry + (tight ? 36 : 38), { font: `500 ${f.sub.size}px ${body}`, color: DIM })
-            ctx.fillStyle = '#e8eef7'
-            rrPath(ctx, X0, ry + 16, X1 - X0, 20, 10); ctx.fill()
+            drawText(ctx, f.sub.text, tx, ry + (tight ? 36 : 38), { font: `500 ${f.sub.size}px ${body}`, color: DIM })
+            // ราง 4 ช่องสีจาง
+            const ty = ry + 16
+            ctx.save()
+            rrPath(ctx, X0, ty, X1 - X0, TRACK_H, TRACK_H / 2); ctx.clip()
+            ctx.fillStyle = '#eef2f8'
+            ctx.fillRect(X0, ty, X1 - X0, TRACK_H)
+            RL.forEach((z, zi) => {
+              ctx.fillStyle = rgba(z[2], 0.18)
+              ctx.fillRect(px(z[0]) + (zi ? 1 : 0), ty, px(z[1]) - px(z[0]) - (zi ? 1 : 0), TRACK_H)
+            })
+            ctx.restore()
             if (row.mm !== null && row.mm >= 0.1) {
-              ctx.fillStyle = row.color
-              rrPath(ctx, X0, ry + 16, Math.max(px(row.mm) - X0, 14), 20, 10); ctx.fill()
+              const end = Math.max(px(row.mm), X0 + TRACK_H)
+              glossyBar(ctx, X0, ty, end - X0, TRACK_H, TRACK_H / 2, tone)
+              ctx.fillStyle = '#fff'
+              ctx.beginPath(); ctx.arc(end - TRACK_H / 2, ty + TRACK_H / 2, 5, 0, Math.PI * 2); ctx.fill()
+            } else {
+              ctx.fillStyle = '#9aa7bd'
+              ctx.beginPath(); ctx.arc(X0 + TRACK_H / 2, ty + TRACK_H / 2, 5, 0, Math.PI * 2); ctx.fill()
             }
-            drawText(ctx, f.value.text, L + inner, ry + 27, { font: `700 ${f.value.size}px ${display}`, color: INK, align: 'right' })
+            // ค่า มม. ในป้ายสีตามระดับ
+            const vw = f.value.width + 22
+            const vx = L + inner - vw
+            ctx.fillStyle = rgba(tone, 0.14)
+            rrPath(ctx, vx, ty - 6, vw, TRACK_H + 12, (TRACK_H + 12) / 2); ctx.fill()
+            ctx.strokeStyle = rgba(tone, 0.85); ctx.lineWidth = 2; ctx.stroke()
+            drawText(ctx, f.value.text, vx + vw / 2, ty + TRACK_H / 2 + 1, { font: `700 ${f.value.size}px ${display}`, color: inkOf(tone), align: 'center' })
           })
         }
         drawRich(ctx, warn.lines, L, top + rowsH + 6, warnLineH, warn.size, body, { color: DIM, emColor: RED, weight: 600, emWeight: 700 })
