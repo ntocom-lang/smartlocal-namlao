@@ -104,6 +104,7 @@
     "test:local-plan": "node tests/local-plan-lib.test.mjs && node tests/local-plan-import.test.mjs && node tests/local-plan-view.test.mjs && node tests/local-plan-html-table.test.mjs && node tests/local-plan-progress.test.mjs && node tests/local-plan-monthly-reminder.test.mjs",
     "test:local-plan:print": "node tests/local-plan-print.test.mjs && node tests/local-plan-eval-print.test.mjs",
     "test:water-situation": "node tests/water-situation.test.mjs",
+    "test:water-alert-poster": "node tests/water-alert-poster.test.mjs && node tests/water-alert-poster.playwright.mjs",
     "test:water-cache": "node tests/water-cache.test.mjs",
     "test:water-cache-browser": "node tests/water-cache.playwright.mjs",
     "test:water-text-size": "node tests/water-text-size.playwright.mjs",

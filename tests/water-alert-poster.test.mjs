@@ -1,0 +1,239 @@
+// ภาพแชร์แจ้งเตือนน้ำ-ฝน — ส่วนตัดสินใจ/ประกอบข้อมูล (src/lib/waterAlertPoster.js) ทดสอบใน node ไม่มี DOM
+// ส่วนวาดจริงอยู่ที่ tests/water-alert-poster.playwright.mjs (Chrome)
+import assert from 'node:assert/strict'
+import { DAM_LEVELS, RAIN_LEVELS } from '../src/lib/waterSituation.js'
+import {
+  NEUTRAL_HEAD, buildPosterModel, buildPosterPhones, orgCallName, pickRainRows, posterDateLong, posterTime, readableTextOn, selectPosterTopic,
+} from '../src/lib/waterAlertPoster.js'
+import { buildAlerts } from '../src/lib/waterSituation.js'
+
+// 15 พ.ย. 2569 10:00 น. (เวลาไทย) — ค่าฝนวัด 09:30 น. · ค่าอ่างรายวัน (เที่ยงคืนไทยของวันนี้)
+const NOW = Date.parse('2026-11-15T03:00:00Z')
+const FRESH_RAIN = '2026-11-15T02:30:00Z'
+const DAM_AT = '2026-11-14T17:00:00Z'
+const tenant = { name: 'เทศบาลตำบลน้ำเลา', org_type: 'เทศบาลตำบล', district: 'ร้องกวาง', province: 'แพร่', phone: '054-522-092' }
+
+const base = { amphoe_name: 'ร้องกวาง', province_name: 'แพร่', tambon_name: 'น้ำเลา', river_name: null, is_primary: false }
+const dam = (extra = {}) => ({
+  ...base, station_type: 'dam', station_code: '305', station_name: 'อ่างเก็บน้ำแม่คำปอง', distance_km: 3.6, is_primary: true,
+  recorded_at: DAM_AT, storage_percent: 105.1, dam_storage_mcm: 7.1, dam_capacity_mcm: 6.76, dam_inflow_mcm: 0.16, dam_released_mcm: 0.16, ...extra,
+})
+const rain = (code, name, mm, extra = {}) => ({
+  ...base, station_type: 'rain', station_code: code, station_name: name, distance_km: 2.6, recorded_at: FRESH_RAIN, rain_24h_mm: mm, rain_1h_mm: null, ...extra,
+})
+const input = extra => ({ rain: [], ews: [], levels: [], dams: [], warnings: [], tenant, now: NOW, ...extra })
+
+// ── หัวภาพ ──
+{
+  // อ่าง >100% ชนะฝนหนักมาก
+  const m = buildPosterModel(input({ dams: [dam()], rain: [rain('R1', 'บ้านบุญแจ่ม', 96.5, { is_primary: true })] }))
+  assert.equal(m.kind, 'dam')
+  assert.equal(m.headline.level, 'เกินความจุเก็บกัก')
+  assert.equal(m.headline.name, 'อ่างเก็บน้ำแม่คำปอง')
+  assert.equal(m.illustration.rainy, false)
+  assert.equal(m.illustration.pct, 105.1)
+  // ฝนหนักมากอย่างเดียว (อ่างไม่ล้น) → หัวภาพเป็นฝน
+  const r = buildPosterModel(input({ dams: [dam({ storage_percent: 86.4 })], rain: [rain('R1', 'บ้านบุญแจ่ม', 96.5, { is_primary: true, rain_1h_mm: 12 })] }))
+  assert.equal(r.kind, 'rain')
+  assert.equal(r.headline.level, 'ฝนหนักมาก 96.5 มม.')
+  assert.equal(r.headline.name, 'ฝนตกหนักมาก ต.น้ำเลา')
+  assert.equal(r.illustration.rainy, true)
+}
+{
+  // อ่าง 80–100% ไม่ขึ้นหัวภาพ · ไม่มีฝนหนักมาก = ไม่มีภาพ
+  assert.equal(buildPosterModel(input({ dams: [dam({ storage_percent: 99.9 })] })), null)
+  assert.equal(buildPosterModel(input({ dams: [dam({ storage_percent: 86 })], rain: [rain('R1', 'ก', 90.0)] })), null) // 90.0 ยังเป็น "ฝนหนัก"
+  assert.equal(buildPosterModel(input({})), null)
+  // ค่าเก่าเกินเกณฑ์ของ buildAlerts ไม่นับ: ฝน > 3 ชม. · อ่าง > 48 ชม. (isStale ใช้ ">" — เก่าพอดี 3 ชม. ยังนับว่าสด จึงทดสอบที่ 4 ชม.)
+  assert.equal(buildPosterModel(input({ rain: [rain('R1', 'ก', 120, { recorded_at: '2026-11-14T23:00:00Z' })] })), null)
+  assert.equal(buildPosterModel(input({ dams: [dam({ recorded_at: '2026-11-12T17:00:00Z' })] })), null)
+  // ไม่มี recorded_at = ไม่นับ
+  assert.equal(buildPosterModel(input({ dams: [dam({ recorded_at: null })] })), null)
+  // selectPosterTopic ตรงกับ buildAlerts (อ่างมาก่อน)
+  const alerts = buildAlerts({ dams: [dam()], rain: [rain('R1', 'ก', 100)], now: NOW })
+  assert.equal(selectPosterTopic(alerts).kind, 'dam')
+  assert.equal(selectPosterTopic({ damOver: [], heavyRain: [] }), null)
+}
+
+// ── เลือกฝน 2 แถว ──
+{
+  const stations = [
+    rain('A', 'ก', 5, { is_primary: true, distance_km: 2 }),
+    rain('B', 'ข', 0, { is_primary: true, distance_km: 3 }),
+    rain('C', 'ค', 70, { distance_km: 1 }),
+    rain('D', 'ง', 40, { distance_km: 4 }),
+  ]
+  // ในตำบลก่อน (แม้ฝนน้อยกว่า) · ไม่บวกรวม
+  assert.deepEqual(pickRainRows(stations, NOW).map(s => s.station_code), ['A', 'B'])
+  // ในตำบลแค่ 1 → เติมด้วยฝนมากสุด
+  assert.deepEqual(pickRainRows(stations.slice(0, 1).concat(stations.slice(2)), NOW).map(s => s.station_code), ['A', 'C'])
+  // ไม่มีในตำบลเลย → ฝนมากสุด 2 อันดับ
+  assert.deepEqual(pickRainRows(stations.slice(2), NOW).map(s => s.station_code), ['C', 'D'])
+  // ค่าเก่าไม่ถูกจัดอันดับว่าฝนมาก
+  const stale = [rain('S', 'เก่า', 200, { recorded_at: '2026-11-14T00:00:00Z' }), rain('F', 'สด', 10)]
+  assert.deepEqual(pickRainRows(stale, NOW).map(s => s.station_code), ['F', 'S'])
+  // ต้นเหตุหัวภาพ (นอกตำบล) ต้องอยู่ในแถวแม้มีสถานีในตำบลครบ 2
+  const cause = rain('X', 'ต้นเหตุ', 110, { distance_km: 4 })
+  const picked = pickRainRows([stations[0], stations[1], cause], NOW, cause).map(s => s.station_code)
+  assert.deepEqual(picked, ['A', 'X'])
+  const m = buildPosterModel(input({ rain: [stations[0], stations[1], cause] }))
+  assert.equal(m.kind, 'rain')
+  assert.deepEqual(m.rain.rows.map(r => r.name), ['ก', 'ต้นเหตุ'])
+  assert.equal(m.rain.rows[0].inTambon, true)
+  assert.equal(m.rain.rows[1].inTambon, false)
+  assert.equal(m.rain.rows[0].sub, 'ต.น้ำเลา · ห่าง 2 กม. · วัดเมื่อ 09:30 น.')
+}
+
+// ── สีหัวช่องตามเกณฑ์ / ค่าประกอบเทา ──
+{
+  const m = buildPosterModel(input({ dams: [dam()] }))
+  const by = key => m.tiles.find(t => t.key === key)
+  const over = DAM_LEVELS.find(l => l.key === 'over').color
+  assert.equal(by('pct').color, over)
+  assert.equal(by('volume').color, over)
+  assert.equal(by('inflow').color, NEUTRAL_HEAD)
+  assert.equal(by('outflow').color, NEUTRAL_HEAD)
+  assert.equal(by('inflow').neutral, true)
+  assert.equal(by('pct').value, '105.1')
+  assert.equal(by('volume').value, '7.10')
+  assert.equal(by('volume').unit, 'จาก 6.76 ล้าน ลบ.ม.')
+  assert.equal(m.scale.kind, 'proportional')
+  assert.deepEqual(m.scale.zones.map(z => z.color), DAM_LEVELS.map(l => l.color))
+  assert.equal(m.scale.zones.at(-1).to, 120)
+
+  // สีไม่ผูกกับลำดับช่อง: เปลี่ยนค่า % ที่ช่อง pct ต้องเปลี่ยนสีตามเกณฑ์ (ที่ rain-topic ช่องอ่างใช้ 60% = น้ำปานกลาง สีน้ำเงิน)
+  const r = buildPosterModel(input({ dams: [dam({ storage_percent: 60 })], rain: [rain('R1', 'บ้านบุญแจ่ม', 96.5, { is_primary: true, rain_1h_mm: 12 })] }))
+  const rb = key => r.tiles.find(t => t.key === key)
+  assert.equal(rb('rain24').color, RAIN_LEVELS.find(l => l.key === 'veryHeavy').bar)
+  assert.equal(rb('rain1h').color, NEUTRAL_HEAD)
+  assert.equal(rb('rain1h').value, '12')
+  assert.equal(rb('pct').color, DAM_LEVELS.find(l => l.key === 'moderate').color)
+  assert.equal(rb('outflow').color, NEUTRAL_HEAD)
+  assert.equal(r.scale.kind, 'equal')
+  assert.deepEqual(r.scale.zones.map(z => z.color), RAIN_LEVELS.slice(1).map(l => l.bar))
+  assert.deepEqual(r.scale.zones.map(z => [z.from, z.to]), [[0, 10], [10, 35], [35, 90], [90, 150]])
+  assert.equal(r.illustration.pct, 60)
+
+  // ฝนหนักมากแต่ไม่มีอ่าง → ช่องอ่างหาย (ไม่แต่งค่า) · ช่องฝนชั่วโมงล่าสุดไม่มีค่า = "–" ไม่ใช่ 0
+  const noDam = buildPosterModel(input({ rain: [rain('R1', 'บ้านบุญแจ่ม', 96.5, { is_primary: true })] }))
+  assert.deepEqual(noDam.tiles.map(t => t.key), ['rain24', 'rain1h'])
+  assert.equal(noDam.tiles[1].value, '–')
+  assert.equal(noDam.tiles[1].unit, 'ไม่มีข้อมูล')
+  assert.equal(noDam.illustration.pct, null)
+
+  // อ่างเก่าเกินเกณฑ์ไม่ถูกหยิบมาเป็นค่าประกอบ
+  const staleDam = buildPosterModel(input({ dams: [dam({ recorded_at: '2026-11-10T17:00:00Z', storage_percent: 70 })], rain: [rain('R1', 'ก', 96.5)] }))
+  assert.deepEqual(staleDam.tiles.map(t => t.key), ['rain24', 'rain1h'])
+
+  // ไม่มีค่าไหลเข้า/ระบาย = "–" + "ไม่มีข้อมูล"
+  const noFlow = buildPosterModel(input({ dams: [dam({ dam_inflow_mcm: null, dam_released_mcm: null })] }))
+  assert.equal(noFlow.tiles.find(t => t.key === 'inflow').value, '–')
+  assert.equal(noFlow.tiles.find(t => t.key === 'outflow').unit, 'ไม่มีข้อมูล')
+}
+assert.equal(readableTextOn('#FFC000'), '#1a0306')
+assert.equal(readableTextOn('#C70000'), '#ffffff')
+assert.equal(readableTextOn('#7dd3fc'), '#1a0306')
+assert.equal(readableTextOn('ไม่ใช่สี'), '#ffffff')
+
+// ── เบอร์โทร: ไม่มี = ช่องหาย · ห้ามเบอร์สำรอง ──
+{
+  assert.deepEqual(buildPosterPhones({ name: 'ทต.ก' }, []), [])
+  assert.deepEqual(buildPosterPhones(null, null), [])
+  assert.deepEqual(buildPosterPhones({ name: 'ทต.ก', phone: '  ' }, []), [])
+  assert.deepEqual(buildPosterPhones({ name: 'ทต.ก', phone: '054-522-092' }, []), [{ label: 'ทต.ก', number: '054-522-092' }])
+  const contacts = [
+    { label: 'มูลนิธิ', number: '054-068-199' }, { label: 'กู้ชีพ', number: '1669' }, { label: 'ตำรวจ', number: '191' }, { label: 'ซ้ำ', number: '054-522-092' },
+  ]
+  // เอา 2 อันดับแรกของสายด่วน (ตำรวจ 191 ไม่ถูกหยิบ)
+  assert.deepEqual(buildPosterPhones({ name: 'ทต.ก', phone: '054-522-092' }, contacts).map(p => p.number), ['054-522-092', '054-068-199', '1669'])
+  // ไม่มีเบอร์สำนักงาน → มีแต่สายด่วนที่ส่งมา
+  assert.deepEqual(buildPosterPhones({ name: 'ทต.ก' }, contacts.slice(0, 1)).map(p => p.number), ['054-068-199'])
+  // เบอร์ซ้ำ (ตามตัวเลข) ขึ้นครั้งเดียว · ค่าที่ไม่ใช่เบอร์ถูกข้าม · ตัวอักษรแปลกถูกตัด
+  assert.deepEqual(buildPosterPhones({ name: 'ก', phone: '054-522-092' }, [{ label: 'ข', number: '0545 22092' }, { label: 'ค', number: 'ไม่มี' }]).length, 1)
+  assert.equal(buildPosterPhones({ name: 'ก' }, [{ label: 'ข', number: '<b>191</b>' }])[0].number, '191')
+  // ไม่มีสายด่วนเลยในสมุด → ภาพไม่มีเบอร์ใดนอกจากของสำนักงาน และไม่เติม 191/1669
+  const m = buildPosterModel(input({ dams: [dam()], contacts: [] }))
+  assert.deepEqual(m.phones, [{ label: 'เทศบาลตำบลน้ำเลา', number: '054-522-092' }])
+  const none = buildPosterModel(input({ dams: [dam()], tenant: { ...tenant, phone: null }, contacts: [] }))
+  assert.deepEqual(none.phones, [])
+  assert.equal(/1669|191/.test(JSON.stringify(none)), false)
+}
+
+// ── เรื่องอื่นที่ต้องระวังกว่า ──
+{
+  const level = (diff, extra = {}) => ({ ...base, station_type: 'waterlevel', station_code: 'W1', station_name: 'แม่น้ำยม', distance_km: 6, recorded_at: FRESH_RAIN, bank_diff_m: diff, ...extra })
+  const ews = lv => ({ ...base, station_type: 'ews', station_code: 'E1', station_name: 'สถานีเตือนภัยก', distance_km: 5, recorded_at: FRESH_RAIN, situation_level: lv, situation_text: 'เตรียมพร้อม', situation_color: '#f59e0b' })
+  const plain = buildPosterModel(input({ dams: [dam()], levels: [level(1.4)], ews: [ews(1)] }))
+  assert.equal(plain.otherNote, null) // ต่ำกว่าตลิ่ง 1.4 ม. และ ews ระดับ 1 ไม่ใช่เรื่องที่แรงกว่า
+  const over = buildPosterModel(input({ dams: [dam()], levels: [level(-0.2)] }))
+  assert.match(over.otherNote, /^มีเรื่องอื่นที่ต้องระวังกว่า: ระดับน้ำเสมอหรือสูงกว่าตลิ่ง สถานีแม่น้ำยม สูงกว่าตลิ่ง 0\.20 ม\.$/)
+  const flush = buildPosterModel(input({ dams: [dam()], levels: [level(0)] }))
+  assert.match(flush.otherNote, /ระดับน้ำเสมอตลิ่ง/)
+  const e = buildPosterModel(input({ rain: [rain('R1', 'ก', 100)], ews: [ews(2)] }))
+  assert.match(e.otherNote, /สถานีเตือนภัยน้ำหลาก-ดินถล่ม สถานีเตือนภัยก · เตรียมพร้อม/)
+  const both = buildPosterModel(input({ dams: [dam()], levels: [level(-0.1)], ews: [ews(3)] }))
+  assert.match(both.otherNote, /สถานีแม่น้ำยม.* · สถานีเตือนภัยน้ำหลาก/)
+  // ค่าระดับน้ำเก่าเกิน 3 ชม. ไม่นับ
+  assert.equal(buildPosterModel(input({ dams: [dam()], levels: [level(-0.2, { recorded_at: '2026-11-14T00:00:00Z' })] })).otherNote, null)
+}
+
+// ── ข้อความ ──
+{
+  const m = buildPosterModel(input({ dams: [dam({ river_name: 'แม่คำปอง' })], contacts: [{ label: 'กู้ชีพ', number: '1669' }] }))
+  const flat = runs => runs.map(r => r.t).join('')
+  assert.equal(flat(m.todo[0]), 'งดลงเล่นน้ำ จับปลา ใกล้ทางระบายน้ำล้นและลำน้ำท้ายอ่าง')
+  assert.equal(flat(m.todo[1]), 'บ้านริมลำน้ำแม่คำปอง ยกของขึ้นที่สูง ติดตามระดับน้ำใกล้ชิด')
+  assert.equal(flat(m.todo[2]), 'พบน้ำล้นตลิ่งหรือเหตุฉุกเฉิน แจ้งเทศบาลทันที')
+  assert.equal(m.todo[2].at(-1).b, true)
+  // ไม่มีชื่อลำน้ำ → ไม่แต่งชื่อ · ชื่อที่ขึ้นต้นด้วยคำเรียกแหล่งน้ำอยู่แล้วไม่ซ้ำ
+  assert.equal(flat(buildPosterModel(input({ dams: [dam()] })).todo[1]), 'บ้านริมลำน้ำท้ายอ่าง ยกของขึ้นที่สูง ติดตามระดับน้ำใกล้ชิด')
+  assert.match(flat(buildPosterModel(input({ dams: [dam({ river_name: 'แม่น้ำยม' })] })).todo[1]), /^บ้านริมแม่น้ำยม /)
+  // ฝน: ข้อความคงที่ตามต้นแบบ
+  const r = buildPosterModel(input({ rain: [rain('R1', 'ก', 100)] }))
+  assert.equal(flat(r.todo[0]), 'ระวังน้ำป่าไหลหลาก ดินโคลนถล่ม บริเวณเชิงเขาและริมลำห้วย')
+  assert.equal(flat(r.todo[1]), 'งดเข้าป่า งดข้ามลำห้วยขณะฝนตกหนัก')
+  assert.equal(flat(r.todo[2]), 'พบน้ำท่วมฉับพลันหรือเหตุฉุกเฉิน แจ้งเทศบาลทันที')
+  // อบต. ใช้คำเรียกตรงประเภท
+  assert.equal(orgCallName({ name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว', org_type: 'อบต.' }), 'อบต.')
+  assert.equal(orgCallName({ name: 'เทศบาลตำบลน้ำเลา' }), 'เทศบาล')
+  assert.equal(orgCallName({ name: 'ทต.ทดสอบ', org_type: 'เทศบาลตำบล' }), 'เทศบาล')
+  assert.equal(orgCallName({ name: 'หน่วยงานทดสอบ' }), 'หน่วยงานทดสอบ')
+  const tk = buildPosterModel(input({ rain: [rain('R1', 'ก', 100)], tenant: { name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว', org_type: 'อบต.', district: 'หนองม่วงไข่', province: 'แพร่' } }))
+  assert.equal(flat(tk.todo[2]), 'พบน้ำท่วมฉับพลันหรือเหตุฉุกเฉิน แจ้ง อบต. ทันที')
+  assert.equal(tk.footer.tags, '#สถานการณ์น้ำ #ทุ่งแค้ว')
+  // ท้ายภาพ: ไม่ใช่ประกาศของ อปท. + ที่มา + ไม่มีข้อมูล ≠ ปกติ + วันที่ต้นทาง
+  const foot = m.footer.lines.join(' ')
+  assert.match(foot, /ข้อมูลจาก ThaiWater \(สสน\.\) · ไม่ใช่ประกาศของเทศบาลตำบลน้ำเลา/)
+  assert.match(foot, /ไม่มีข้อมูล ไม่ได้หมายความว่าสถานการณ์ปกติ/)
+  assert.match(foot, /ค่าอ่าง 15 พ\.ย\. 69/)
+  assert.equal(m.footer.location, 'เทศบาลตำบลน้ำเลา อ.ร้องกวาง จ.แพร่')
+  assert.equal(m.footer.tags, '#สถานการณ์น้ำ #น้ำเลา')
+  assert.equal(m.ribbon, 'ข้อมูลอ่าง ณ วันที่ 15 พฤศจิกายน 2569')
+  assert.equal(r.ribbon, 'ข้อมูลฝน ณ วันที่ 15 พฤศจิกายน 2569 · 09:30 น.')
+  assert.equal(posterDateLong('2026-11-14T17:00:00Z'), '15 พฤศจิกายน 2569')
+  assert.equal(posterTime('2026-11-15T02:30:00Z'), '09:30')
+  assert.equal(posterDateLong('ไม่ใช่วันที่'), '')
+  assert.equal(m.fileName, 'water-alert-20261115.png')
+  assert.match(m.altText, /ไม่ใช่ประกาศของเทศบาลตำบลน้ำเลา/)
+  // ข้อความ สสน. ระดับอำเภอ: ไม่มี = "ไม่มีในขณะนี้" · มี = ตามต้นฉบับ
+  assert.equal(m.rain.warning.none, true)
+  assert.equal(m.rain.warning.label, 'ประกาศเตือนของ สสน. สำหรับ อ.ร้องกวาง')
+  const w = buildPosterModel(input({ dams: [dam()], warnings: [{ message: 'เฝ้าระวังฝนตกหนักและน้ำป่าไหลหลาก', issued_at: '2026-11-15T01:00:00Z' }] }))
+  assert.equal(w.rain.warning.none, false)
+  assert.equal(w.rain.warning.text, 'เฝ้าระวังฝนตกหนักและน้ำป่าไหลหลาก')
+  // ข้อความเก่าเกิน 24 ชม. ไม่ขึ้น
+  const oldW = buildPosterModel(input({ dams: [dam()], warnings: [{ message: 'เก่า', issued_at: '2026-11-13T01:00:00Z' }] }))
+  assert.equal(oldW.rain.warning.none, true)
+  // ไม่มีสถานีฝนเลย → บอกว่าไม่มีข้อมูล ไม่ใช่ว่าฝนไม่ตก
+  assert.match(m.rain.empty, /ไม่ได้หมายความว่าฝนไม่ตก/)
+}
+
+// ── PDPA: ฟิลด์นอกรายการไม่หลุดเข้าภาพ ──
+{
+  const noisy = dam({ reporter_name: 'นายทดสอบ ใจดี', citizen_phone: '0812345678', note: 'ข้อความภายใน' })
+  const m = buildPosterModel(input({ dams: [noisy] }))
+  const text = JSON.stringify(m)
+  assert.equal(/นายทดสอบ|0812345678|ข้อความภายใน/.test(text), false)
+}
+
+console.log('PASS: topic selection (dam>100 over heavy rain, 80-100 no poster, stale ignored, none = null), rain rows (in-tambon first, cause kept, no summing), tile head colors by threshold / neutral for supporting values, phones (none = hidden, no fallback), other-hazard note, wording by org type, footer disclaimers, PDPA')
