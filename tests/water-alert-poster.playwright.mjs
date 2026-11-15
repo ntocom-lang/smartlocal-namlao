@@ -89,10 +89,11 @@ try {
     const scenes = {
       // ── ภาพสถานีเตือนภัย / น้ำเสมอ-สูงกว่าตลิ่ง ──
       ewsCritical: {
-        ews: [ewsRow(3, 'วิกฤติ')], dams: [dam({ storage_percent: 62.4, dam_released_mcm: 0.21 }), maeThang],
+        // ค่าที่ทำให้เตือน (20261126100100): ฉากวิกฤติ = ฝน · ฉากเตรียมพร้อม = ระดับน้ำ · ฉากเค้น = ฝน (ข้อความยาวสุด)
+        ews: [ewsRow(3, 'วิกฤติ', { ews_warning_type: 'rain', ews_rain_12h_mm: 154 })], dams: [dam({ storage_percent: 62.4, dam_released_mcm: 0.21 }), maeThang],
         rain: [rain('E1', 'สถานีวัดฝนห้วยขึม', 96.5, { is_primary: true, rain_1h_mm: 12 }), rain('R2', 'บ้านบุญแจ่ม', 58, { is_primary: true, distance_km: 2.9 })], contacts,
       },
-      ewsPrepare: { ews: [ewsRow(2, 'เตรียมพร้อม', { note: null })], contacts },
+      ewsPrepare: { ews: [ewsRow(2, 'เตรียมพร้อม', { note: null, ews_warning_type: 'wl', ews_waterlevel_m: 2.71 })], contacts },
       overbank: {
         levels: [levelRow(-0.35)], dams: [maeThang],
         rain: [rain('R1', 'บ้านบุญแจ่ม', 60, { is_primary: true }), rain('R2', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 38, { is_primary: true, distance_km: 2.9 })], contacts,
@@ -101,7 +102,7 @@ try {
       // เค้นสุดทาง: ชื่อสถานี/หมู่บ้าน/ชื่อ อปท. ยาวมาก + ข้อความ สสน. 2 บรรทัด + เบอร์ 3 เบอร์ + อ่างประกอบ + อ่างใกล้เคียง + ฝนของสถานี
       ewsStress: {
         tenant: { ...tenant, name: 'เทศบาลตำบลน้ำเลาทุ่งแค้วใหญ่มากมายเกินจริง' },
-        ews: [ewsRow(3, 'วิกฤติ', { station_name: 'สถานีเตือนภัยน้ำหลากดินถล่มบ้านห้วยขึมโยธินอุทกพัฒนาตอนบนและตอนล่างหมู่ที่สิบสอง', note: `หมู่บ้านที่สถานีดูแล: ${villages}` })],
+        ews: [ewsRow(3, 'วิกฤติ', { station_name: 'สถานีเตือนภัยน้ำหลากดินถล่มบ้านห้วยขึมโยธินอุทกพัฒนาตอนบนและตอนล่างหมู่ที่สิบสอง', note: `หมู่บ้านที่สถานีดูแล: ${villages}`, ews_warning_type: 'rain', ews_rain_12h_mm: 148.5 })],
         dams: [dam({ station_name: 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', storage_percent: 97.4 }), maeThang],
         rain: [
           rain('E1', 'สถานีวัดฝนบ้านบุญแจ่มหมู่ที่สิบสองตำบลน้ำเลา', 148.2, { is_primary: true, rain_1h_mm: 0 }),

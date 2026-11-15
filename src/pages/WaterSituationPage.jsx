@@ -24,7 +24,7 @@ import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import {
   DAM_LEVELS, DAM_STALE_HOURS, LEVEL_TIERS, LEVEL_WATCH_M, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS, SYNC_STALE_HOURS,
   bankText, barPercent, levelRank,
-  channelFill, damLevel, damSameInfo, damSameText, damTicks, damTrend, buildAlerts, dataDayText, distanceText, ewsAlert, flowCompare,
+  channelFill, damLevel, damSameInfo, damSameText, damTicks, damTrend, buildAlerts, dataDayText, distanceText, ewsAlert, ewsTrigger, flowCompare,
   formatMcm, formatMm, isStale, mapUrl, measuredAtText, rainBarMax, rainLevel, safeColor, stationPlace,
   summaryStats, toNum, waterTrend, localWaterSituation, shareWaterSituation, coverSubject,
 } from '../lib/waterSituation'
@@ -529,18 +529,22 @@ function AlertBanner({ rain, ews, levels, dams, warnings, homeAmphoe, now, tenan
             <div>
               <p className="text-xs font-bold text-gray-700">สถานีเตือนภัยน้ำหลาก-ดินถล่ม (กรมทรัพยากรน้ำ)</p>
               <ul className="mt-1 space-y-1.5">
-                {alerts.ews.map(({ station: s, alert }) => (
+                {alerts.ews.map(({ station: s, alert }) => {
+                  const trigger = ewsTrigger(s)
+                  return (
                   <li key={s.station_code} className="flex items-start gap-1.5 text-sm text-gray-800">
                     <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: alert.color }} />
                     <span>
                       <span className="font-semibold">{s.station_name}</span> · {alert.text}
+                      {trigger && <> · {trigger.text}</>}
                       <span className="block text-xs text-gray-600">
                         {[stationPlace(s, homeAmphoe), distanceText(s.distance_km), `รายงานเมื่อ ${measuredAtText(s.recorded_at, now)}`]
                           .filter(Boolean).join(' · ')}
                       </span>
                     </span>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             </div>
           )}
@@ -651,6 +655,7 @@ function RainRow({ station: s, ews, homeAmphoe, now, barMax }) {
   const rain1h = toNum(s.rain_1h_mm)
   const meta = [stationPlace(s, homeAmphoe), distanceText(s.distance_km)].filter(Boolean).join(' · ')
   const warning = ewsAlert(ews, now)
+  const trigger = warning ? ewsTrigger(ews) : null
 
   return (
     <li className="flex items-start gap-3 px-4 py-3">
@@ -670,6 +675,7 @@ function RainRow({ station: s, ews, homeAmphoe, now, barMax }) {
             style={{ borderColor: warning.color }}>
             <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: warning.color }} />
             น้ำหลาก-ดินถล่ม: {warning.text} ·{' '}
+            {trigger && `${trigger.short} · `}
             {warning.stale ? `ไม่มีรายงานใหม่ตั้งแต่ ${measuredAtText(ews.recorded_at, now)}` : measuredAtText(ews.recorded_at, now)}
           </p>
         )}

@@ -214,6 +214,46 @@ const flat = runs => runs.map(r => r.t).join('')
   assert.deepEqual(all.map(c => `${c.kind}${c.alert ? c.alert.level : ''}`), ['ews3', 'overbank', 'ews2', 'dam', 'rain'])
 }
 
+// ── ภาพสถานีเตือนภัย: ค่าที่ทำให้เตือน (ews_warning_type / ews_rain_12h_mm / ews_waterlevel_m) ──
+{
+  const stationRain = (mm, extra = {}) => rain('E1', 'สถานีวัดฝนห้วยขึม', mm, { is_primary: true, rain_1h_mm: 12, ...extra })
+  const withDam = { dams: [dam({ storage_percent: 62.4 })], rain: [stationRain(96.5)] }
+  const plain = buildPosterModel(input({ ews: [E3()], ...withDam }))
+
+  // (ก) เตือนจากฝน: intro บอกเหตุ + ช่อง ews-trigger แทน rain1h (จำนวนช่องเท่าเดิม)
+  const r = buildPosterModel(input({ ews: [E3({ ews_warning_type: 'rain', ews_rain_12h_mm: '117.0' })], ...withDam }))
+  assert.match(flat(r.intro), /รายงานสถานะ ระดับวิกฤติ จากปริมาณน้ำฝน \(ฝนสะสม 12 ชม\. 117 มม\.\) ตามเกณฑ์ของกรมทรัพยากรน้ำ/)
+  assert.equal(r.intro.find(x => x.em).t, 'ระดับวิกฤติ')
+  assert.equal(r.tiles.length, plain.tiles.length)
+  assert.deepEqual(r.tiles.map(t => t.key), ['ews-level', 'rain24', 'ews-trigger', 'pct'])
+  const tr = r.tiles.find(t => t.key === 'ews-trigger')
+  assert.deepEqual({ icon: tr.icon, color: tr.color, neutral: tr.neutral, label: tr.label, value: tr.value, unit: tr.unit },
+    { icon: 'rain', color: '#bf212f', neutral: false, label: 'ฝนสะสม 12 ชม.\nที่ทำให้เตือน', value: '117', unit: 'มม.' })
+  // ไม่แตะส่วนอื่น: headline/ribbon/scale/todo เหมือนภาพที่ไม่มีช่องใหม่
+  assert.deepEqual({ h: r.headline, rb: r.ribbon, sc: r.scale, td: r.todo }, { h: plain.headline, rb: plain.ribbon, sc: plain.scale, td: plain.todo })
+
+  // (ข) ไม่มีช่องใหม่ (แถวเก่า) / ชนิดมีแต่ไม่มีตัวเลข / ระดับน้ำติดลบ / ชนิดแปลก: ช่องตัวเลขเหมือนเดิม
+  assert.deepEqual(plain.tiles.map(t => t.key), ['ews-level', 'rain24', 'rain1h', 'pct'])
+  assert.doesNotMatch(flat(plain.intro), /จากปริมาณน้ำฝน|จากระดับน้ำ/)
+  const noValue = buildPosterModel(input({ ews: [E3({ ews_warning_type: 'rain', ews_rain_12h_mm: null })], ...withDam }))
+  assert.deepEqual(noValue.tiles.map(t => t.key), ['ews-level', 'rain24', 'rain1h', 'pct'])
+  assert.match(flat(noValue.intro), /ระดับวิกฤติ จากปริมาณน้ำฝน ตามเกณฑ์ของกรมทรัพยากรน้ำ/)
+  assert.doesNotMatch(flat(noValue.intro), /ฝนสะสม 12 ชม\./)
+  const neg = buildPosterModel(input({ ews: [E3({ ews_warning_type: 'wl', ews_waterlevel_m: -1 })], ...withDam }))
+  assert.deepEqual(neg.tiles.map(t => t.key), ['ews-level', 'rain24', 'rain1h', 'pct'])
+  const weird = buildPosterModel(input({ ews: [E3({ ews_warning_type: 'flood', ews_rain_12h_mm: 50 })], ...withDam }))
+  assert.deepEqual(weird.tiles.map(t => t.key), ['ews-level', 'rain24', 'rain1h', 'pct'])
+  assert.equal(flat(weird.intro), flat(plain.intro))
+
+  // (ค) เตือนจากระดับน้ำ (ระดับ 2): ทศนิยม 2 ตำแหน่ง · ไอคอน alert (ภาพไม่มีไอคอนระดับน้ำ) · ไม่เทียบตลิ่ง
+  const w = buildPosterModel(input({ ews: [E2({ ews_warning_type: 'wl', ews_waterlevel_m: 2.708 })], ...withDam }))
+  assert.match(flat(w.intro), /รายงานสถานะ ระดับเตรียมพร้อม จากระดับน้ำ \(ระดับน้ำ 2\.71 ม\.\) ตามเกณฑ์ของกรมทรัพยากรน้ำ/)
+  const tw = w.tiles.find(t => t.key === 'ews-trigger')
+  assert.deepEqual({ icon: tw.icon, color: tw.color, label: tw.label, value: tw.value, unit: tw.unit },
+    { icon: 'alert', color: '#f5b400', label: 'ระดับน้ำ\nที่ทำให้เตือน', value: '2.71', unit: 'ม.' })
+  assert.doesNotMatch(flat(w.intro), /ตลิ่ง/)
+}
+
 // ── ภาพสถานีเตือนภัย (ews) ──
 {
   const stationRain = (mm, extra = {}) => rain('E1', 'สถานีวัดฝนห้วยขึม', mm, { is_primary: true, rain_1h_mm: 12, ...extra })

@@ -48,6 +48,15 @@ const EWS_LEVELS: Record<number, { text: string; color: string }> = {
   3: { text: 'วิกฤติ', color: '#bf212f' },
 }
 
+// ชนิดเตือน + ค่าที่ทำให้เตือน (ตรวจทั้งชุด 2,275 สถานี + popup ใน stations.js 2569-11-15)
+// · warning_type 'rain'|'wl' มีค่าแม้สถานะ 0/9 (= ชนิดของการเตือนครั้งล่าสุด ไม่ใช่เหตุปัจจุบัน)
+//   หน้าเว็บกรมแสดงป้ายนี้เฉพาะสถานะ 1–3 ⇒ เก็บเฉพาะ 1–3 · ค่าอื่นนอกจาก 'rain'/'wl' ทิ้ง
+// · สถานีที่เตือน แถวถูกแช่ ณ เวลาออกเตือน (date == report_date ทุกสถานี) rain12h/wl จึงเป็นค่าตอนเตือน
+// · สถานีชนิด wl เตือนด้วยฝนได้ ⇒ ห้ามเดาชนิดเตือนจาก stn_type
+// · wl ของสถานีชนิด RF เป็น "0.00" ที่ไม่มีความหมาย ⇒ เก็บระดับน้ำเฉพาะสถานีชนิด wl ("RF " มีช่องว่างท้าย)
+// · เกณฑ์ไม่อยู่ในข้อมูลและต่างกันรายสถานี (alert_min/alert_max หน้าเว็บกรมคอมเมนต์ทิ้ง) ⇒ ไม่เก็บ
+const EWS_WARNING_TYPES = new Set(['rain', 'wl'])
+
 // งบเวลารวมต้องจบก่อน pg_net ตัดสาย (timeout_milliseconds 60000 ใน cron)
 // 15 วิ × 3 ครั้ง + พัก 1+2 วิ = 48 วิ ต่อ endpoint (ทุก endpoint ยิงขนานกัน)
 const FETCH_TIMEOUT_MS = 15_000
@@ -370,6 +379,9 @@ serve(async (req) => {
         continue
       }
       const label = EWS_LEVELS[status]
+      const warningType = String(e?.warning_type ?? '').trim()
+      const rain12h = num(e?.rain12h)
+      const wl = String(e?.stn_type ?? '').trim().toLowerCase() === 'wl' ? num(e?.wl) : null
       rows.push({
         station_config_id: station.id,
         recorded_at: recordedAt,
@@ -377,6 +389,9 @@ serve(async (req) => {
         situation_level: status,
         situation_text: label?.text ?? null,
         situation_color: label?.color ?? null,
+        ews_warning_type: label && EWS_WARNING_TYPES.has(warningType) ? warningType : null,
+        ews_rain_12h_mm: rain12h !== null && rain12h >= 0 ? rain12h : null,
+        ews_waterlevel_m: wl,
       })
       continue
     }

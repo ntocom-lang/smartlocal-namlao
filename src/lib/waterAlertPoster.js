@@ -10,7 +10,7 @@
 
 import {
   DAM_LEVELS, DAM_STALE_HOURS, DAM_TREND_FLAT_MCM, LEVEL_TIERS, RAIN_LEVELS, STATION_STALE_HOURS, TREND_FLAT_M,
-  buildAlerts, damLevel, distanceText, formatMm, isStale, measuredAtText, rainLevel, stationPlace, toNum, waterTrend,
+  buildAlerts, damLevel, distanceText, ewsTrigger, formatMm, isStale, measuredAtText, rainLevel, stationPlace, toNum, waterTrend,
 } from './waterSituation.js'
 import { orgNameParts } from './orgTerms.js'
 
@@ -276,8 +276,8 @@ function sinceText(prevAt, currentAt) {
 export function buildSituationAnalysis({ kind, top, dam, damPct, rows, heavyRain = [], rain = [], now }) {
   const sentences = []
   if (kind === 'ews') {
-    // หมู่บ้านที่สถานีดูแล (จาก note ของแถว) มาก่อน แล้วฝนของสถานีเดียวกัน — ขึ้นเป็นข้อเท็จจริงคู่กัน ไม่อ้างว่าฝนเป็นเหตุที่ทำให้เตือน
-    // (แถว ews ไม่มีค่าที่ทำให้เตือน และไม่รู้ว่าเตือนด้วยฝนหรือระดับน้ำ)
+    // หมู่บ้านที่สถานีดูแล (จาก note ของแถว) มาก่อน แล้วฝนของสถานีเดียวกัน — ขึ้นเป็นข้อเท็จจริงคู่กัน ไม่อ้างว่าฝน 24 ชม. เป็นเหตุที่ทำให้เตือน
+    // (เหตุที่เตือนเขียนได้เฉพาะเมื่อแถวมี ews_warning_type จากต้นทาง — ดู ewsTrigger — ไม่เดาจากชนิดสถานี)
     const villages = ewsVillages(top.note)
     if (villages) sentences.push({ key: 'villages', runs: [{ t: 'หมู่บ้านที่สถานีดูแล: ' }, { t: villages }] })
     const mm = ewsStationRain(top, rain, now).mm
@@ -404,17 +404,29 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
     const meaning = lv === 3
       ? ' ตามเกณฑ์ของกรมทรัพยากรน้ำ ระดับนี้หมายถึงให้เคลื่อนย้ายไปยังพื้นที่ปลอดภัยที่ได้แจ้งไว้'
       : ' ตามเกณฑ์ของกรมทรัพยากรน้ำ ระดับนี้หมายถึงให้ระมัดระวัง ติดตามสถานการณ์ รอประกาศจากผู้รู้หรือหอกระจายข่าว'
-    // ⚠️ แถว ews ไม่มีค่าที่ทำให้เตือน และไม่รู้ว่าเตือนด้วยฝนหรือระดับน้ำ — ห้ามเขียนว่าเตือนเพราะอะไร
+    // เขียนว่า "เตือนจากอะไร" ได้เฉพาะเมื่อแถวมี ews_warning_type (ต้นทางบอกเอง) — ไม่เดาจากชนิดสถานี · ไม่มี = ข้อความเดิม
+    // ตัวเลขคือค่า ณ ตอนที่ทำให้เตือน ไม่แสดงเกณฑ์เตือน (ไม่มีในข้อมูล ต่างกันรายสถานี)
+    const trigger = ewsTrigger(top)
     introBase = [
       { t: `สถานีเตือนภัยล่วงหน้าของกรมทรัพยากรน้ำ ${name}${bits ? ` (${bits})` : ''} รายงานสถานะ ` },
       { t: `ระดับ${alertText}`, em: true },
+      ...(trigger ? [{ t: ` จาก${trigger.label}` }] : []),
+      ...(trigger?.valueText ? [{ t: ` (${trigger.valueText})` }] : []),
       { t: meaning },
     ]
+    // มีค่าที่ทำให้เตือน = แทนช่อง "ฝนชั่วโมงล่าสุด" (จำนวนช่องเท่าเดิม เลย์เอาต์ไม่เปลี่ยน) · ไอคอนระดับน้ำไม่มีในภาพ ใช้ 'alert'
+    const triggerTile = trigger?.value != null
+      ? {
+        key: 'ews-trigger', icon: trigger.type === 'rain' ? 'rain' : 'alert', color: TIER_COLORS[lv - 1], neutral: false,
+        label: trigger.type === 'rain' ? 'ฝนสะสม 12 ชม.\nที่ทำให้เตือน' : 'ระดับน้ำ\nที่ทำให้เตือน',
+        value: trigger.type === 'rain' ? formatMm(trigger.value) : trigger.value.toFixed(2), unit: trigger.unit,
+      }
+      : null
     tiles = [
       { key: 'ews-level', icon: 'alert', color: TIER_COLORS[lv - 1], neutral: false, label: 'ระดับเตือนภัย\nกรมทรัพยากรน้ำ', value: alertText, unit: `ระดับ ${lv} จาก 3` },
       { key: 'rain24', icon: 'rain', color: ewsRain.mm === null ? NEUTRAL_HEAD : rainColor(ewsRain.mm), neutral: ewsRain.mm === null, label: 'ฝนสะสม 24 ชม.\nที่สถานีนี้',
         value: ewsRain.mm === null ? '–' : formatMm(ewsRain.mm), unit: ewsRain.mm === null ? 'ไม่มีข้อมูล' : `มม. ${rainLevel(ewsRain.mm)?.label ?? ''}`.trim() },
-      { key: 'rain1h', icon: 'rain', color: NEUTRAL_HEAD, neutral: true, label: 'ฝนชั่วโมง\nล่าสุด',
+      triggerTile ?? { key: 'rain1h', icon: 'rain', color: NEUTRAL_HEAD, neutral: true, label: 'ฝนชั่วโมง\nล่าสุด',
         value: ewsRain.mm1h === null ? '–' : formatMm(ewsRain.mm1h), unit: ewsRain.mm1h === null ? 'ไม่มีข้อมูล' : 'มม.' },
     ]
     if (dam) {

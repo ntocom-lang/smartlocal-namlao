@@ -222,6 +222,30 @@ export function ewsAlert(station, now) {
   }
 }
 
+// "ค่าที่ทำให้เตือน" ของสถานีเตือนภัย — ช่อง ews_* มาจาก RPC (Edge Function กรองให้มีค่าเฉพาะตอนระดับ 1–3)
+//   ews_warning_type 'rain' = เตือนจากฝนสะสม 12 ชม. · 'wl' = เตือนจากระดับน้ำของสถานี (ม. ไม่ใช่ ม.รทก. เทียบตลิ่งไม่ได้)
+//   ตัวเลขคือค่า ณ ตอนที่ทำให้เตือน (ต้นทางแช่ไว้) ไม่ใช่ค่าปัจจุบัน · ไม่มีเกณฑ์เตือนในข้อมูล (ต่างกันรายสถานี) จึงไม่แสดง
+//   คืน null เมื่อไม่ใช่ระดับ 1–3 หรือไม่มีชนิด (แถวเก่า/RPC รุ่นเก่า) — ห้ามเดาชนิดจากชนิดสถานี
+//   value = null เมื่อไม่มีตัวเลข/ติดลบ → ยังบอกได้ว่าเตือนจากอะไร แต่ไม่ขึ้นตัวเลข
+export function ewsTrigger(station) {
+  const level = toNum(station?.situation_level)
+  if (level === null || !Number.isInteger(level) || level < 1 || level > 3) return null
+  const type = station.ews_warning_type
+  if (type !== 'rain' && type !== 'wl') return null
+  const raw = toNum(type === 'rain' ? station.ews_rain_12h_mm : station.ews_waterlevel_m)
+  const value = raw === null || raw < 0 ? null : raw
+  const label = type === 'rain' ? 'ปริมาณน้ำฝน' : 'ระดับน้ำ'
+  const unit = type === 'rain' ? 'มม.' : 'ม.'
+  const valueText = value === null ? null
+    : type === 'rain' ? `ฝนสะสม 12 ชม. ${formatMm(value)} มม.` : `ระดับน้ำ ${value.toFixed(2)} ม.`
+  const short = value === null ? (type === 'rain' ? 'จากฝน' : 'จากระดับน้ำ')
+    : type === 'rain' ? `ฝน 12 ชม. ${formatMm(value)} มม.` : `ระดับน้ำ ${value.toFixed(2)} ม.`
+  return {
+    type, label, value, unit, valueText, short,
+    text: valueText ? `เตือนจาก${label} (${valueText})` : `เตือนจาก${label}`,
+  }
+}
+
 // ชั้นเกณฑ์ของอ่าง (index ใน DAM_LEVELS ยิ่งมากยิ่งน้ำเยอะ) — ใช้เทียบว่าถึงชั้นที่ต้องเตือนหรือยัง
 export function damRank(percent) {
   const level = damLevel(percent)

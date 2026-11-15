@@ -7,7 +7,7 @@ import {
   DAM_ALERT_RANK, DAM_LEVELS, DAM_PUBLIC_ALERT_RANK, DAM_SAME_MIN_REPORTS, DAM_STALE_HOURS, EWS_FRESH_HOURS, LEVEL_TIERS,
   LEVEL_WATCH_M, RAIN_LEVELS, RAIN_VERY_HEAVY_MM, STATION_STALE_HOURS,
   alertSummary, bankText, barPercent, buildAlerts, channelFill, damLevel, damRank, damSameInfo, damSameText, damTicks, damTrend,
-  dataDayText, distanceText, ewsAlert, flowCompare, formatMcm, formatMm, isStale, levelRank, mapUrl, measuredAtText, rainBarMax,
+  dataDayText, distanceText, ewsAlert, ewsTrigger, flowCompare, formatMcm, formatMm, isStale, levelRank, mapUrl, measuredAtText, rainBarMax,
   rainLevel, safeColor, stationPlace, summaryStats, waterTrend, COVER_SUBJECT_NEUTRAL, coverSubject,
 } from '../src/lib/waterSituation.js'
 
@@ -42,6 +42,17 @@ import {
   assert.ok(keysOf(prev).size >= 30, 'อ่านรายชื่อช่องของรุ่นเดิมไม่ได้ — regex ตกยุค')
   for (const key of keysOf(prev)) assert.ok(next.has(key), `ช่อง ${key} หายไปจาก RPC รุ่นใหม่`)
   for (const key of ['dam_same_count', 'dam_same_since', 'dam_same_capped']) assert.ok(next.has(key), `RPC รุ่นใหม่ต้องมี ${key}`)
+
+  // RPC รุ่นค่าที่ทำให้เตือนของ ews (20261126100100) — ยกจาก 20260928150000 ทั้งก้อน + 3 ช่อง
+  const ewsMig = readFileSync(new URL('../supabase/migrations/20261126100100_water_situation_rpc_ews_trigger.sql', import.meta.url), 'utf8')
+  assert.ok(ewsMig.includes("IS DISTINCT FROM '0cdd4a3b247e92fbea22b675fa3f1265'"), 'ต้องมีด่านตรวจว่า RPC บน production ยังเป็นรุ่น 20260928150000')
+  assert.ok(ewsMig.includes('ต้อง apply 20261126100000_water_readings_ews_trigger_columns.sql ก่อนไฟล์นี้'), 'ต้องมีด่านตรวจว่ามีคอลัมน์ ews_* แล้ว')
+  assert.ok(ewsMig.includes('GRANT EXECUTE ON FUNCTION public.get_public_water_situation(uuid) TO anon, authenticated'))
+  assert.ok(ewsMig.includes('SECURITY DEFINER') && ewsMig.includes('SET search_path = pg_catalog, public'))
+  const ewsKeys = keysOf(ewsMig)
+  for (const key of next) assert.ok(ewsKeys.has(key), `ช่อง ${key} หายไปจาก RPC รุ่น ews`)
+  for (const key of ['ews_warning_type', 'ews_rain_12h_mm', 'ews_waterlevel_m']) assert.ok(ewsKeys.has(key), `RPC รุ่น ews ต้องมี ${key}`)
+  assert.equal(ewsKeys.size, next.size + 3, 'RPC รุ่น ews ต้องเพิ่มแค่ 3 ช่อง')
 }
 
 // ── เกณฑ์ระดับน้ำในแม่น้ำของกรมชลประทาน (มาตรฐานข้อมูลน้ำ ระยะที่ 3 ของ สสน. ตาราง 5.9) ──
@@ -682,6 +693,42 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
   assert.equal(page.split('WATER_GRID[sectionCount] ?? WATER_GRID[1]').length - 1, 2, 'ทั้งกริดและกล่องขวาต้องเลือกแถวตามจำนวนส่วน')
   assert.ok(!/<div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0 xl:grid-cols-3">/.test(page), 'ห้ามกลับไปใช้กริด 3 คอลัมน์ตายตัว')
   console.log('✓ กริดส่วนข้อมูลบนจอกว้าง: 3 คอลัมน์เฉพาะเมื่อมี 3 ส่วน · 2 ส่วน = 2 คอลัมน์เท่ากัน · 1 ส่วนอยู่กลางหน้า · มือถือคอลัมน์เดียว')
+}
+
+// ── ค่าที่ทำให้เตือนของสถานีเตือนภัย (ews_warning_type / ews_rain_12h_mm / ews_waterlevel_m) ──
+{
+  const e = (extra = {}) => ({ situation_level: 2, ews_warning_type: null, ews_rain_12h_mm: null, ews_waterlevel_m: null, ...extra })
+  assert.deepEqual(ewsTrigger(e({ ews_warning_type: 'rain', ews_rain_12h_mm: 117 })), {
+    type: 'rain', label: 'ปริมาณน้ำฝน', value: 117, unit: 'มม.', valueText: 'ฝนสะสม 12 ชม. 117 มม.',
+    short: 'ฝน 12 ชม. 117 มม.', text: 'เตือนจากปริมาณน้ำฝน (ฝนสะสม 12 ชม. 117 มม.)',
+  })
+  assert.deepEqual(ewsTrigger(e({ situation_level: 3, ews_warning_type: 'wl', ews_waterlevel_m: 2.708 })), {
+    type: 'wl', label: 'ระดับน้ำ', value: 2.708, unit: 'ม.', valueText: 'ระดับน้ำ 2.71 ม.',
+    short: 'ระดับน้ำ 2.71 ม.', text: 'เตือนจากระดับน้ำ (ระดับน้ำ 2.71 ม.)',
+  })
+  // มีชนิดแต่ไม่มีตัวเลข → บอกได้แค่ว่าเตือนจากอะไร
+  const noVal = ewsTrigger(e({ ews_warning_type: 'rain' }))
+  assert.equal(noVal.value, null)
+  assert.equal(noVal.valueText, null)
+  assert.equal(noVal.text, 'เตือนจากปริมาณน้ำฝน')
+  assert.equal(noVal.short, 'จากฝน')
+  assert.equal(ewsTrigger(e({ ews_warning_type: 'wl' })).short, 'จากระดับน้ำ')
+  assert.equal(ewsTrigger(e({ ews_warning_type: 'wl', ews_waterlevel_m: -3 })).value, null, 'ค่าติดลบไม่แสดง')
+  // ระดับ 0 / 9 / ไม่ใช่จำนวนเต็ม แม้มีชนิด → null · ชนิดแปลก/ไม่มี → null · แถวเก่าไม่มีช่อง → null
+  for (const lv of [0, 9, 4, 1.5, null, -999]) {
+    assert.equal(ewsTrigger(e({ situation_level: lv, ews_warning_type: 'rain', ews_rain_12h_mm: 50 })), null, `ระดับ ${lv}`)
+  }
+  assert.equal(ewsTrigger(e({ ews_warning_type: 'flood', ews_rain_12h_mm: 50 })), null)
+  assert.equal(ewsTrigger(e({ ews_warning_type: 'RAIN', ews_rain_12h_mm: 50 })), null)
+  assert.equal(ewsTrigger({ situation_level: 2 }), null)
+  assert.equal(ewsTrigger(null), null)
+  // ค่าเป็นสตริง (numeric จาก PostgREST)
+  assert.equal(ewsTrigger(e({ ews_warning_type: 'rain', ews_rain_12h_mm: '117.0' })).valueText, 'ฝนสะสม 12 ชม. 117 มม.')
+  assert.equal(ewsTrigger(e({ situation_level: '3', ews_warning_type: 'wl', ews_waterlevel_m: '2.7' })).valueText, 'ระดับน้ำ 2.70 ม.')
+  // wl ไม่ดึงช่องฝน และ rain ไม่ดึงช่องระดับน้ำ
+  assert.equal(ewsTrigger(e({ ews_warning_type: 'wl', ews_rain_12h_mm: 99 })).value, null)
+  assert.equal(ewsTrigger(e({ ews_warning_type: 'rain', ews_waterlevel_m: 9 })).value, null)
+  console.log('✓ ewsTrigger: rain/wl มีค่า · ไม่มีค่า · ระดับนอก 1–3 · ชนิดแปลก · ค่าเป็นสตริง')
 }
 
 console.log('✅ water-situation: ผ่านทุกข้อ')
