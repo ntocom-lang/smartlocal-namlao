@@ -1,4 +1,5 @@
 // วาด "ภาพแชร์แจ้งเตือนน้ำ-ฝน" 1080×1350 ลง canvas → PNG (ข้อมูลมาจาก buildPosterModel ใน waterAlertPoster.js)
+// หัวภาพ 4 แบบ (model.kind): dam · rain · ews (สถานีเตือนภัยน้ำหลาก-ดินถล่ม) · overbank (น้ำเสมอ/สูงกว่าตลิ่ง) — ภาพประกอบแยกตาม model.illustration.kind
 // เบราว์เซอร์เท่านั้น (ใช้ document/canvas/FontFace) — ส่วนตัดสินใจ/ประกอบข้อมูลอยู่ในไฟล์ที่ทดสอบด้วย node ได้
 //
 // ⚠️ Canvas 2D ล้วน: ห้ามวาด SVG ที่มี feTurbulence/feDisplacementMap/filter ลง canvas และห้ามใช้ ctx.filter
@@ -12,7 +13,7 @@
 import { fetchImageAsDataUrl } from './driveStorage.js'
 import { FONT_STACK, wrapLines } from './complaintMonthlyInfographic.js'
 import { NEWS_FONT_FAMILY, loadNewsFont } from './newsFont.js'
-import { NEUTRAL_HEAD, POSTER_HEIGHT, POSTER_WIDTH, RAIN_SCALE_MAX, readableTextOn } from './waterAlertPoster.js'
+import { NEUTRAL_HEAD, POSTER_HEIGHT, POSTER_WIDTH, RAIN_SCALE_MAX, TIER_COLORS, readableTextOn } from './waterAlertPoster.js'
 import { RAIN_LEVELS, damLevel } from './waterSituation.js'
 
 const W = POSTER_WIDTH
@@ -277,6 +278,37 @@ function drawIcon(ctx, kind, x, y, size, ink) {
     ctx.beginPath()
     ctx.moveTo(13, 27); ctx.lineTo(11, 33); ctx.moveTo(21, 27); ctx.lineTo(19, 33); ctx.moveTo(29, 27); ctx.lineTo(27, 33)
     ctx.stroke()
+  } else if (kind === 'alert') {
+    // สามเหลี่ยมเตือน (เส้นขอบ) + เครื่องหมายตกใจ
+    ctx.lineWidth = 3.5
+    poly(ctx, [[20, 5], [37, 34], [3, 34]]); ctx.stroke()
+    rrPath(ctx, 18, 14, 4, 12, 2); ctx.fill()
+    ctx.beginPath(); ctx.arc(20, 30, 2.3, 0, Math.PI * 2); ctx.fill()
+  } else if (kind === 'bank') {
+    // ผิวน้ำเป็นคลื่นเหนือเส้นประแนวตลิ่ง
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.moveTo(3, 15); ctx.quadraticCurveTo(10, 8, 17, 15); ctx.quadraticCurveTo(24, 22, 31, 15); ctx.lineTo(37, 15)
+    ctx.stroke()
+    ctx.lineWidth = 2.5
+    ctx.setLineDash([5, 4])
+    ctx.beginPath(); ctx.moveTo(3, 27); ctx.lineTo(37, 27); ctx.stroke()
+    ctx.setLineDash([])
+    ctx.beginPath(); ctx.moveTo(8, 33); ctx.lineTo(32, 33); ctx.stroke()
+  } else if (kind === 'level') {
+    // ไม้วัดระดับน้ำ: เสาตั้งมีขีดสเกล
+    rrPath(ctx, 14, 4, 12, 32, 3); ctx.stroke()
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ;[10, 16, 22, 28].forEach((yy, i) => { ctx.moveTo(14, yy); ctx.lineTo(i % 2 ? 21 : 24, yy) })
+    ctx.stroke()
+  } else if (kind === 'trend') {
+    // ลูกศรขึ้น/ลงคู่ (ไม่บอกทิศ — ทิศอยู่ในตัวหนังสือของช่อง)
+    ctx.lineWidth = 3.5
+    ctx.beginPath()
+    ctx.moveTo(12, 34); ctx.lineTo(12, 8); ctx.moveTo(6, 14); ctx.lineTo(12, 7); ctx.lineTo(18, 14)
+    ctx.moveTo(28, 6); ctx.lineTo(28, 32); ctx.moveTo(22, 26); ctx.lineTo(28, 33); ctx.lineTo(34, 26)
+    ctx.stroke()
   }
   ctx.restore()
 }
@@ -421,67 +453,8 @@ function drawRainDrop(ctx, cx, cy, hex) {
 const ILLUS_W = 392
 const ILLUS_H = 232
 
-function drawIllustration(ctx, ox, oy, { pct, rainy }, display, body) {
-  const rnd = makeRng(rainy ? 11 : 7)
-  const hasDam = pct !== null && pct !== undefined && Number.isFinite(pct)
-  const over = hasDam && pct > 100
-  ctx.save()
-  ctx.translate(ox, oy)
-  rrPath(ctx, 0, 0, ILLUS_W, ILLUS_H, 20)
-  ctx.clip()
-
-  // ท้องฟ้า: แดงมืดไล่ถึงแสงส้มที่ขอบฟ้า (พายุฝน = เทาน้ำเงิน)
-  ctx.fillStyle = linear(ctx, 0, 0, 0, ILLUS_H, rainy
-    ? [[0, '#0d121c'], [0.55, '#2b3447'], [1, '#56627a']]
-    : [[0, '#160204'], [0.45, '#5c0c0a'], [0.8, '#c2380f'], [1, '#ff8a3a']])
-  ctx.fillRect(0, 0, ILLUS_W, ILLUS_H)
-  glow(ctx, 243, 84, 196, 76, rainy
-    ? [[0, 'rgba(159,178,214,0.35)'], [1, 'rgba(159,178,214,0)']]
-    : [[0, 'rgba(255,179,92,0.85)'], [0.4, 'rgba(255,106,31,0.35)'], [1, 'rgba(255,106,31,0)']])
-
-  // เมฆ: กลุ่มก้อนฟุ้ง (radial gradient) สุ่ม seed คงที่ จางลงเมื่อลงใกล้ขอบฟ้า
-  const cloud = rainy ? '26,31,43' : '40,6,8'
-  for (let i = 0; i < 46; i++) {
-    const cy = 2 + rnd() * 100
-    const a = (rainy ? 0.5 : 0.46) * Math.max(0, 1 - cy / 125)
-    glow(ctx, rnd() * ILLUS_W, cy, 34 + rnd() * 70, 9 + rnd() * 17, [[0, `rgba(${cloud},${a.toFixed(3)})`], [1, `rgba(${cloud},0)`]])
-  }
-  if (rainy) {
-    ctx.save()
-    ctx.shadowColor = 'rgba(47,139,255,0.9)'; ctx.shadowBlur = 10
-    ctx.fillStyle = 'rgba(234,241,255,0.92)'
-    poly(ctx, [[282, 8], [270, 40], [281, 40], [266, 74], [292, 34], [280, 34]])
-    ctx.fill()
-    ctx.restore()
-  }
-
-  // ภูเขา 3 ชั้น + หมอกบังระยะไกล
-  ctx.globalAlpha = 0.9
-  ctx.fillStyle = linear(ctx, 0, 62, 0, 150, [[0, rainy ? '#4a5468' : '#5a2a2c'], [1, rainy ? '#6c7790' : '#a2493a']])
-  poly(ctx, [[0, 112], [34, 86], [62, 98], [104, 62], [140, 88], [176, 70], [214, 92], [250, 66], [292, 90], [330, 74], [392, 98], [392, 150], [0, 150]])
-  ctx.fill()
-  ctx.globalAlpha = 1
-  ctx.fillStyle = linear(ctx, 0, 90, 0, 142, [[0, rgba(rainy ? '#8a97b0' : '#d9774a', 0)], [0.5, rgba(rainy ? '#8a97b0' : '#d9774a', 0.3)], [1, rgba(rainy ? '#8a97b0' : '#d9774a', 0)]])
-  ctx.fillRect(0, 90, ILLUS_W, 52)
-  ctx.fillStyle = linear(ctx, 0, 96, 0, 160, [[0, rainy ? '#26332e' : '#2b2a22'], [1, rainy ? '#3e5148' : '#4d3a2a']])
-  poly(ctx, [[0, 128], [46, 104], [88, 118], [132, 96], [176, 116], [220, 104], [262, 122], [310, 100], [352, 114], [392, 106], [392, 160], [0, 160]])
-  ctx.fill()
-  ctx.fillStyle = linear(ctx, 0, 118, 0, 170, [[0, '#13261a'], [1, '#0a160e']])
-  ctx.beginPath()
-  ctx.moveTo(0, 170)
-  ctx.lineTo(0, 140)
-  for (let x = 0; x <= ILLUS_W; x += 5) {
-    const b = 136 - 8 * Math.sin(x / 40) - 4 * Math.sin(x / 13)
-    ctx.lineTo(x, b - 3 - rnd() * 7)
-    ctx.lineTo(x + 2.5, b + 1)
-  }
-  ctx.lineTo(ILLUS_W, 170)
-  ctx.closePath(); ctx.fill()
-
-  // ผืนน้ำในอ่าง + เขื่อน (ภาพประกอบ ไม่ใช่ค่าวัด — ตัวเลข % อยู่ในป้ายและช่องตัวเลข)
-  const dx = 226
-  const y100 = 150
-  const ys = hasDam ? Math.min(222, Math.max(118, y100 - (pct - 100) * (over ? 4 : 3))) : 160
+// ผืนน้ำในอ่าง + เขื่อน + ลำน้ำท้ายอ่าง + น้ำล้นทางระบาย (ภาพอ่าง/ฝน) — ย้ายมาจากตัววาดภาพประกอบตรงตัว (rnd ใช้ลำดับเดิม ภาพไม่เปลี่ยน)
+function drawReservoirAndDam(ctx, rnd, { rainy, hasDam, over, display, dx, y100, ys }) {
   ctx.fillStyle = linear(ctx, 0, ys, 0, ILLUS_H, [[0, rainy ? '#3d6b8e' : '#2e6fa0'], [0.35, '#14466e'], [1, '#061a2c']])
   ctx.fillRect(0, ys, dx + 2, ILLUS_H - ys)
   ctx.save()
@@ -573,6 +546,316 @@ function drawIllustration(ctx, ox, oy, { pct, rainy }, display, body) {
       ctx.beginPath(); ctx.arc(dx + 52 + rnd() * 48, 214 + rnd() * 16, 1 + rnd() * 2.6, 0, Math.PI * 2); ctx.fill()
     }
   }
+}
+
+
+// ฉากสถานีเตือนภัยน้ำหลาก-ดินถล่ม (แทนอ่าง/เขื่อนของฉากเดิม): เนินดิน + ลำห้วยน้ำขุ่น + เสาสัญญาณมีไฟ 3 ดวง เขียว/เหลือง/แดง
+// ดวงของระดับปัจจุบันสว่างพร้อมแสงฟุ้ง ดวงอื่นมืด — เป็นภาพประกอบ ไม่ใช่ภาพจริงของสถานีนั้น (ระดับจริงอยู่ในป้ายและช่องตัวเลข)
+function drawEwsGround(ctx, rnd, { ewsLevel, levelText }, display) {
+  // เนินดินหน้าภูเขา
+  ctx.fillStyle = linear(ctx, 0, 150, 0, ILLUS_H, [[0, '#1b3022'], [1, '#0a140e']])
+  ctx.beginPath()
+  ctx.moveTo(0, ILLUS_H); ctx.lineTo(0, 180)
+  ctx.bezierCurveTo(90, 160, 170, 188, 250, 176)
+  ctx.bezierCurveTo(310, 168, 350, 184, ILLUS_W, 180)
+  ctx.lineTo(ILLUS_W, ILLUS_H); ctx.closePath(); ctx.fill()
+
+  // ลำห้วยน้ำขุ่นไหลลงมาจากเนิน
+  ctx.fillStyle = linear(ctx, 0, 176, 0, ILLUS_H, [[0, '#9a7d52'], [1, '#5a4630']])
+  ctx.beginPath()
+  ctx.moveTo(236, 178); ctx.bezierCurveTo(252, 198, 232, 214, 266, ILLUS_H)
+  ctx.lineTo(318, ILLUS_H); ctx.bezierCurveTo(288, 214, 294, 196, 262, 176)
+  ctx.closePath(); ctx.fill()
+  ctx.lineWidth = 1.1
+  for (let i = 0; i < 12; i++) {
+    const yy = 186 + rnd() * 44
+    const xx = 246 + (yy - 186) * 0.5 + rnd() * 26
+    ctx.strokeStyle = `rgba(255,236,200,${(0.18 + rnd() * 0.3).toFixed(2)})`
+    ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx + 8 + rnd() * 14, yy + 2); ctx.stroke()
+  }
+
+  const px = 96
+  // เงาใต้เสา
+  glow(ctx, px, 214, 34, 7, [[0, 'rgba(0,0,0,0.5)'], [1, 'rgba(0,0,0,0)']])
+  // เสาโลหะเรียวขึ้นไปหาแผงไฟ
+  ctx.fillStyle = linear(ctx, px - 4, 0, px + 4, 0, [[0, '#e3e9f2'], [0.5, '#9aa5b6'], [1, '#5f6b7d']])
+  poly(ctx, [[px - 4.5, 214], [px - 2.5, 106], [px + 2.5, 106], [px + 4.5, 214]]); ctx.fill()
+  ctx.fillStyle = '#4a5466'
+  rrPath(ctx, px - 11, 208, 22, 7, 2); ctx.fill()
+  // แผงโซลาร์เซลล์ + ลำโพงหอกระจายข่าว 2 ข้าง
+  ctx.fillStyle = '#17315e'
+  poly(ctx, [[px + 6, 152], [px + 42, 140], [px + 46, 153], [px + 10, 166]]); ctx.fill()
+  ctx.strokeStyle = 'rgba(157,190,240,0.55)'; ctx.lineWidth = 0.8
+  ctx.beginPath()
+  ctx.moveTo(px + 18, 148); ctx.lineTo(px + 22, 162); ctx.moveTo(px + 30, 144); ctx.lineTo(px + 34, 158)
+  ctx.moveTo(px + 8, 159); ctx.lineTo(px + 44, 146.5)
+  ctx.stroke()
+  ctx.fillStyle = '#aab3c0'
+  poly(ctx, [[px - 3, 118], [px - 19, 110], [px - 19, 130], [px - 3, 124]]); ctx.fill()
+  poly(ctx, [[px + 3, 118], [px + 19, 110], [px + 19, 130], [px + 3, 124]]); ctx.fill()
+
+  // แผงไฟ 3 ดวง เรียงซ้าย→ขวา เขียว/เหลือง/แดง (ลำดับเดียวกับแถบเกณฑ์ด้านล่างภาพ)
+  ctx.strokeStyle = '#9aa5b6'; ctx.lineWidth = 1.5
+  ctx.beginPath(); ctx.moveTo(px, 76); ctx.lineTo(px, 62); ctx.stroke()
+  ctx.fillStyle = '#e3e9f2'
+  ctx.beginPath(); ctx.arc(px, 60, 2.6, 0, Math.PI * 2); ctx.fill()
+  ctx.fillStyle = '#161d2b'
+  rrPath(ctx, px - 52, 76, 104, 36, 11); ctx.fill()
+  ctx.strokeStyle = '#9aa5b6'; ctx.lineWidth = 1.5; ctx.stroke()
+  TIER_COLORS.forEach((color, i) => {
+    const cx = px + (i - 1) * 32
+    const cy = 94
+    if (i === ewsLevel - 1) {
+      glow(ctx, cx, cy, 44, 44, [[0, rgba(color, 0.8)], [0.5, rgba(color, 0.3)], [1, rgba(color, 0)]])
+      ctx.fillStyle = shade(color, 0.12)
+      ctx.beginPath(); ctx.arc(cx, cy, 12.5, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = 'rgba(255,255,255,0.65)'
+      ctx.beginPath(); ctx.arc(cx - 3.5, cy - 4, 4, 0, Math.PI * 2); ctx.fill()
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1.6
+      ctx.beginPath(); ctx.arc(cx, cy, 12.5, 0, Math.PI * 2); ctx.stroke()
+    } else {
+      ctx.fillStyle = shade(color, -0.74)
+      ctx.beginPath(); ctx.arc(cx, cy, 12, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'
+      ctx.beginPath(); ctx.arc(cx - 3.5, cy - 4, 3.2, 0, Math.PI * 2); ctx.fill()
+    }
+  })
+
+  // ป้ายระดับข้างแผงไฟ (สีตามระดับ)
+  const tagFont = `700 15px ${display}`
+  const text = `ระดับ${levelText}`
+  const tagW = Math.min(176, textWidth(ctx, text, 700, 15, display) + 30)
+  const tagColor = TIER_COLORS[ewsLevel - 1] ?? NEUTRAL_HEAD
+  ctx.save()
+  ctx.shadowColor = rgba(tagColor, 0.8); ctx.shadowBlur = 9
+  ctx.fillStyle = tagColor
+  rrPath(ctx, 160, 80, tagW, 26, 13); ctx.fill()
+  ctx.restore()
+  drawText(ctx, ellipsize(ctx, text, 700, 15, display, tagW - 20), 160 + tagW / 2, 93.5, { font: tagFont, color: readableTextOn(tagColor), align: 'center' })
+}
+
+// ภาพตัดขวางลำน้ำเทียบตลิ่ง: ผิวน้ำเสมอเส้นประแนวตลิ่ง หรือสูงกว่า (ล้นขึ้นพื้นที่ริมตลิ่ง น้ำถึงฐานบ้าน) · ภาพประกอบตามค่าเทียบตลิ่งเท่านั้น
+// ไม่รู้ความลึกลำน้ำจริง จึงไม่วาดสเกลความลึก — ความสูงเหนือตลิ่งจำกัดที่ 1 ม. (22px) เพื่อให้ภาพไม่ล้นกรอบและบ้านไม่จมมิด ค่าจริงอยู่ในป้าย
+function drawOverbankIllustration(ctx, ox, oy, { bankDiff, rainy, bankText }, display) {
+  const rnd = makeRng(rainy ? 13 : 5)
+  const BANK_Y = 150
+  const BED_Y = 206
+  const over = Math.min(Math.max(-bankDiff, 0), 1)
+  const waterY = BANK_Y - over * 22
+  const profile = [[0, BANK_Y], [96, BANK_Y], [146, BED_Y], [246, BED_Y], [296, BANK_Y], [ILLUS_W, BANK_Y]]
+  ctx.save()
+  ctx.translate(ox, oy)
+  rrPath(ctx, 0, 0, ILLUS_W, ILLUS_H, 20)
+  ctx.clip()
+
+  // ท้องฟ้า + เมฆ (โทนเดียวกับฉากอ่าง/ฝน)
+  ctx.fillStyle = linear(ctx, 0, 0, 0, ILLUS_H, rainy
+    ? [[0, '#0d121c'], [0.55, '#2b3447'], [1, '#56627a']]
+    : [[0, '#160204'], [0.45, '#5c0c0a'], [0.8, '#c2380f'], [1, '#ff8a3a']])
+  ctx.fillRect(0, 0, ILLUS_W, ILLUS_H)
+  glow(ctx, 196, 84, 196, 76, rainy
+    ? [[0, 'rgba(159,178,214,0.35)'], [1, 'rgba(159,178,214,0)']]
+    : [[0, 'rgba(255,179,92,0.85)'], [0.4, 'rgba(255,106,31,0.35)'], [1, 'rgba(255,106,31,0)']])
+  const cloud = rainy ? '26,31,43' : '40,6,8'
+  for (let i = 0; i < 40; i++) {
+    const cy = 2 + rnd() * 100
+    const a = (rainy ? 0.5 : 0.46) * Math.max(0, 1 - cy / 125)
+    glow(ctx, rnd() * ILLUS_W, cy, 34 + rnd() * 70, 9 + rnd() * 17, [[0, `rgba(${cloud},${a.toFixed(3)})`], [1, `rgba(${cloud},0)`]])
+  }
+  // ภูเขาไกล
+  ctx.globalAlpha = 0.9
+  ctx.fillStyle = linear(ctx, 0, 70, 0, 150, [[0, rainy ? '#4a5468' : '#5a2a2c'], [1, rainy ? '#6c7790' : '#a2493a']])
+  poly(ctx, [[0, 118], [40, 92], [84, 108], [132, 72], [176, 100], [226, 80], [272, 104], [318, 84], [356, 100], [ILLUS_W, 92], [ILLUS_W, 160], [0, 160]])
+  ctx.fill()
+  ctx.globalAlpha = 1
+
+  // พื้นดิน: ที่ราบริมตลิ่ง 2 ฝั่ง + ลาดตลิ่ง + ท้องลำน้ำ · ขอบบนเป็นหญ้า
+  ctx.fillStyle = linear(ctx, 0, BANK_Y, 0, ILLUS_H, [[0, '#5b4a33'], [1, '#241a12']])
+  poly(ctx, [...profile, [ILLUS_W, ILLUS_H], [0, ILLUS_H]]); ctx.fill()
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round'
+  ctx.strokeStyle = '#2d6a3a'; ctx.lineWidth = 7
+  ctx.beginPath(); profile.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke()
+  ctx.strokeStyle = '#58a257'; ctx.lineWidth = 2
+  ctx.beginPath(); profile.forEach(([x, y], i) => (i ? ctx.lineTo(x, y - 2) : ctx.moveTo(x, y - 2))); ctx.stroke()
+
+  // ต้นไม้ + บ้านริมตลิ่ง 2 หลัง (ไฟเปิด) — วาดก่อนน้ำ ผิวน้ำที่สูงกว่าตลิ่งจะทับฐานบ้าน
+  ;[[64, 1], [78, 0.8], [372, 0.9]].forEach(([tx, ts]) => {
+    ctx.fillStyle = '#10261a'
+    poly(ctx, [[tx, BANK_Y - 30 * ts], [tx + 10 * ts, BANK_Y - 4], [tx - 10 * ts, BANK_Y - 4]]); ctx.fill()
+    poly(ctx, [[tx, BANK_Y - 40 * ts], [tx + 8 * ts, BANK_Y - 18 * ts], [tx - 8 * ts, BANK_Y - 18 * ts]]); ctx.fill()
+  })
+  ;[[24, 1], [326, 0.92]].forEach(([hx, hs]) => {
+    const hw = 32 * hs
+    const hh = 28 * hs
+    const hy = BANK_Y - hh
+    glow(ctx, hx + hw / 2, hy + hh / 2, 26, 20, [[0, 'rgba(255,184,77,0.3)'], [1, 'rgba(255,184,77,0)']])
+    ctx.fillStyle = '#3a2a24'; ctx.fillRect(hx, hy, hw, hh)
+    ctx.fillStyle = '#7a1c14'
+    poly(ctx, [[hx - 4, hy], [hx + hw / 2, hy - 15 * hs], [hx + hw + 4, hy]]); ctx.fill()
+    ctx.fillStyle = '#ffd36b'
+    ctx.fillRect(hx + 6 * hs, hy + 7 * hs, 7 * hs, 7 * hs); ctx.fillRect(hx + 19 * hs, hy + 7 * hs, 7 * hs, 7 * hs)
+  })
+
+  // น้ำ: เติมเฉพาะช่องเหนือพื้นดิน (ลำน้ำ + พื้นที่ริมตลิ่งที่น้ำล้น) · พื้นดินไม่ถูกทับ
+  ctx.save()
+  ctx.beginPath()
+  ctx.moveTo(0, 0); ctx.lineTo(ILLUS_W, 0)
+  ;[...profile].reverse().forEach(([x, y]) => ctx.lineTo(x, y))
+  ctx.closePath(); ctx.clip()
+  ctx.globalAlpha = 0.92
+  ctx.fillStyle = linear(ctx, 0, waterY, 0, ILLUS_H, [[0, rainy ? '#4f86ad' : '#3a82b8'], [0.45, '#1b5a88'], [1, '#0a2c48']])
+  ctx.fillRect(0, waterY, ILLUS_W, ILLUS_H - waterY)
+  ctx.globalAlpha = 1
+  glow(ctx, 196, waterY + 4, 120, 22, [[0, rgba(rainy ? '#c9d8f0' : '#ffb066', 0.5)], [1, rgba(rainy ? '#c9d8f0' : '#ff7a2a', 0)]])
+  // คลื่นที่ผิวน้ำ: ล้นตลิ่ง = คลื่นสูงขึ้น 3 ชั้น · เสมอตลิ่ง = ระลอกเบา
+  ctx.lineCap = 'round'
+  for (let k = 0; k < 3; k++) {
+    const amp = over > 0 ? 2.6 : 1.1
+    const yy = waterY + 1.5 + k * 7
+    ctx.strokeStyle = `rgba(255,255,255,${(0.7 - k * 0.2).toFixed(2)})`
+    ctx.lineWidth = 1.8 - k * 0.4
+    ctx.beginPath()
+    for (let x = 0; x <= ILLUS_W; x += 4) {
+      const y = yy + Math.sin((x + k * 23) / 9) * amp
+      if (x) ctx.lineTo(x, y); else ctx.moveTo(x, y)
+    }
+    ctx.stroke()
+  }
+  ctx.lineWidth = 1
+  for (let i = 0; i < 26; i++) {
+    const yy = waterY + 14 + rnd() * (ILLUS_H - waterY - 14)
+    const xx = 100 + rnd() * 190
+    ctx.strokeStyle = `rgba(255,255,255,${(0.05 + rnd() * 0.1).toFixed(3)})`
+    ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx + 10 + rnd() * 34, yy); ctx.stroke()
+  }
+  ctx.restore()
+
+  // เส้นประแนวตลิ่ง + ป้าย "ตลิ่ง" ใต้เส้น
+  ctx.save()
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 1.8; ctx.setLineDash([7, 5])
+  ctx.beginPath(); ctx.moveTo(0, BANK_Y); ctx.lineTo(ILLUS_W, BANK_Y); ctx.stroke()
+  ctx.restore()
+  ctx.fillStyle = 'rgba(4,14,30,0.72)'
+  rrPath(ctx, 150, BANK_Y + 8, 56, 20, 10); ctx.fill()
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1; ctx.stroke()
+  drawText(ctx, 'ตลิ่ง', 178, BANK_Y + 18.5, { font: `700 13px ${display}`, color: '#fff', align: 'center' })
+
+  // ไม้วัดความสูงเหนือตลิ่ง (เฉพาะน้ำสูงกว่าตลิ่งจริง) + ป้ายค่าเทียบตลิ่งสีแดงเตือน
+  if (over > 0.05) {
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(240, BANK_Y); ctx.lineTo(240, waterY)
+    ctx.moveTo(234, BANK_Y); ctx.lineTo(246, BANK_Y); ctx.moveTo(234, waterY); ctx.lineTo(246, waterY)
+    ctx.stroke()
+  }
+  const label = bankText ?? ''
+  const tagW = Math.max(96, textWidth(ctx, label, 700, 18, display) + 28)
+  const tagY = waterY - 44
+  ctx.save()
+  ctx.shadowColor = rgba(TIER_COLORS[2], 0.9); ctx.shadowBlur = 10
+  ctx.fillStyle = TIER_COLORS[2]
+  rrPath(ctx, 196 - tagW / 2, tagY, tagW, 30, 15); ctx.fill()
+  poly(ctx, [[190, tagY + 29], [202, tagY + 29], [196, tagY + 38]]); ctx.fill()
+  ctx.restore()
+  drawText(ctx, label, 196, tagY + 16, { font: `700 18px ${display}`, color: '#fff', align: 'center' })
+
+  if (rainy) {
+    ctx.lineCap = 'round'
+    for (let r = 0; r < 120; r++) {
+      const rx = rnd() * ILLUS_W * 1.1
+      const ry = rnd() * ILLUS_H
+      ctx.strokeStyle = `rgba(219,231,255,${(0.25 + rnd() * 0.45).toFixed(2)})`
+      ctx.lineWidth = 0.8 + rnd() * 0.9
+      ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx - 6, ry + 16); ctx.stroke()
+    }
+  }
+
+  // ขอบมืด (vignette)
+  ctx.save()
+  ctx.translate(ILLUS_W / 2, ILLUS_H / 2)
+  ctx.scale(ILLUS_W, ILLUS_H)
+  const vig = ctx.createRadialGradient(0, 0, 0, 0, 0, 0.75)
+  vig.addColorStop(0.55, 'rgba(0,0,0,0)'); vig.addColorStop(1, 'rgba(0,0,0,0.55)')
+  ctx.fillStyle = vig
+  ctx.fillRect(-0.5, -0.5, 1, 1)
+  ctx.restore()
+
+  ctx.restore()
+  // กรอบขาว
+  ctx.save()
+  ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 8
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 4
+  rrPath(ctx, ox + 2, oy + 2, ILLUS_W - 4, ILLUS_H - 4, 20); ctx.stroke()
+  ctx.restore()
+}
+
+// ill.kind: 'dam' | 'rain' (ฉากอ่าง/ฝนเดิม) · 'ews' (ฉากฝนเดิมแต่แทนอ่างด้วยพื้นดิน + เสาสัญญาณเตือนภัย) · 'overbank' (ภาพตัดขวางลำน้ำ)
+function drawIllustration(ctx, ox, oy, ill, display, body) {
+  if (ill.kind === 'overbank') { drawOverbankIllustration(ctx, ox, oy, ill, display, body); return }
+  const { pct, rainy } = ill
+  const isEws = ill.kind === 'ews'
+  const rnd = makeRng(rainy ? 11 : 7)
+  // ภาพสถานีเตือนภัยไม่วาดอ่าง/ป้าย % ในฉาก (ค่าอ่างอยู่ในช่องตัวเลข) จึงถือว่าไม่มีอ่าง
+  const hasDam = !isEws && pct !== null && pct !== undefined && Number.isFinite(pct)
+  const over = hasDam && pct > 100
+  ctx.save()
+  ctx.translate(ox, oy)
+  rrPath(ctx, 0, 0, ILLUS_W, ILLUS_H, 20)
+  ctx.clip()
+
+  // ท้องฟ้า: แดงมืดไล่ถึงแสงส้มที่ขอบฟ้า (พายุฝน = เทาน้ำเงิน)
+  ctx.fillStyle = linear(ctx, 0, 0, 0, ILLUS_H, rainy
+    ? [[0, '#0d121c'], [0.55, '#2b3447'], [1, '#56627a']]
+    : [[0, '#160204'], [0.45, '#5c0c0a'], [0.8, '#c2380f'], [1, '#ff8a3a']])
+  ctx.fillRect(0, 0, ILLUS_W, ILLUS_H)
+  glow(ctx, 243, 84, 196, 76, rainy
+    ? [[0, 'rgba(159,178,214,0.35)'], [1, 'rgba(159,178,214,0)']]
+    : [[0, 'rgba(255,179,92,0.85)'], [0.4, 'rgba(255,106,31,0.35)'], [1, 'rgba(255,106,31,0)']])
+
+  // เมฆ: กลุ่มก้อนฟุ้ง (radial gradient) สุ่ม seed คงที่ จางลงเมื่อลงใกล้ขอบฟ้า
+  const cloud = rainy ? '26,31,43' : '40,6,8'
+  for (let i = 0; i < 46; i++) {
+    const cy = 2 + rnd() * 100
+    const a = (rainy ? 0.5 : 0.46) * Math.max(0, 1 - cy / 125)
+    glow(ctx, rnd() * ILLUS_W, cy, 34 + rnd() * 70, 9 + rnd() * 17, [[0, `rgba(${cloud},${a.toFixed(3)})`], [1, `rgba(${cloud},0)`]])
+  }
+  if (rainy) {
+    ctx.save()
+    ctx.shadowColor = 'rgba(47,139,255,0.9)'; ctx.shadowBlur = 10
+    ctx.fillStyle = 'rgba(234,241,255,0.92)'
+    poly(ctx, [[282, 8], [270, 40], [281, 40], [266, 74], [292, 34], [280, 34]])
+    ctx.fill()
+    ctx.restore()
+  }
+
+  // ภูเขา 3 ชั้น + หมอกบังระยะไกล
+  ctx.globalAlpha = 0.9
+  ctx.fillStyle = linear(ctx, 0, 62, 0, 150, [[0, rainy ? '#4a5468' : '#5a2a2c'], [1, rainy ? '#6c7790' : '#a2493a']])
+  poly(ctx, [[0, 112], [34, 86], [62, 98], [104, 62], [140, 88], [176, 70], [214, 92], [250, 66], [292, 90], [330, 74], [392, 98], [392, 150], [0, 150]])
+  ctx.fill()
+  ctx.globalAlpha = 1
+  ctx.fillStyle = linear(ctx, 0, 90, 0, 142, [[0, rgba(rainy ? '#8a97b0' : '#d9774a', 0)], [0.5, rgba(rainy ? '#8a97b0' : '#d9774a', 0.3)], [1, rgba(rainy ? '#8a97b0' : '#d9774a', 0)]])
+  ctx.fillRect(0, 90, ILLUS_W, 52)
+  ctx.fillStyle = linear(ctx, 0, 96, 0, 160, [[0, rainy ? '#26332e' : '#2b2a22'], [1, rainy ? '#3e5148' : '#4d3a2a']])
+  poly(ctx, [[0, 128], [46, 104], [88, 118], [132, 96], [176, 116], [220, 104], [262, 122], [310, 100], [352, 114], [392, 106], [392, 160], [0, 160]])
+  ctx.fill()
+  ctx.fillStyle = linear(ctx, 0, 118, 0, 170, [[0, '#13261a'], [1, '#0a160e']])
+  ctx.beginPath()
+  ctx.moveTo(0, 170)
+  ctx.lineTo(0, 140)
+  for (let x = 0; x <= ILLUS_W; x += 5) {
+    const b = 136 - 8 * Math.sin(x / 40) - 4 * Math.sin(x / 13)
+    ctx.lineTo(x, b - 3 - rnd() * 7)
+    ctx.lineTo(x + 2.5, b + 1)
+  }
+  ctx.lineTo(ILLUS_W, 170)
+  ctx.closePath(); ctx.fill()
+
+  const dx = 226
+  const y100 = 150
+  const ys = hasDam ? Math.min(222, Math.max(118, y100 - (pct - 100) * (over ? 4 : 3))) : 160
+  if (isEws) drawEwsGround(ctx, rnd, ill, display)
+  else drawReservoirAndDam(ctx, rnd, { rainy, hasDam, over, display, dx, y100, ys })
 
   // บ้านท้ายน้ำ ไฟเปิด
   ;[[322, 172, 1], [354, 164, 0.92]].forEach(([x, y, s]) => {
@@ -931,7 +1214,9 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
   // แบบพรีเมียม: ช่องที่ค่าอยู่สีเต็ม ช่องอื่นจาง · ป้ายค่ามีหางชี้ลงหมุดวงกลม · ตัวเลขเกณฑ์เป็นป้ายเล็กใต้แถบที่รอยต่อ
   {
     const sc = model.scale
-    const h = tight ? 108 : 118
+    // ticks:false (แถบระดับ 1–3 ของสถานีเตือนภัย) ไม่มีป้ายตัวเลขใต้รอยต่อ จึงลดความสูงแผง 5px + ขยับป้ายเกณฑ์ขึ้น 4px (แถบอื่นเท่าเดิม)
+    const noTicks = model.scale.ticks === false
+    const h = (tight ? 108 : 118) - (noTicks ? 5 : 0)
     const L = MARGIN + 18
     const R = MARGIN + CONTENT_W - 18
     const heading = fitOne(ctx, sc.heading, display, 700, CONTENT_W - 36 - ACCENT_W, 21, 15, issues, 'หัวข้อสเกล')
@@ -944,9 +1229,12 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
         }
         return L
       }
-      : v => L + Math.min(Math.max(v, 0), sc.max) / sc.max * (R - L)
+      // sc.min = ขอบซ้ายของแกน (ไม่ใส่ = 0 ภาพอ่างเดิมไม่เปลี่ยน) · แถบระดับน้ำเทียบตลิ่งเริ่มที่ −2 ม.
+      : v => { const lo = sc.min ?? 0; return L + (Math.min(Math.max(v, lo), sc.max) - lo) / (sc.max - lo) * (R - L) }
     const mark = fitOne(ctx, sc.markLabel, display, 700, 420, 17, 12, issues, 'ป้ายหมุด')
-    const activeIndex = Math.max(0, sc.zones.findIndex((z, i) => sc.value <= z.to || i === sc.zones.length - 1))
+    // activeIndex กำหนดเองได้ เมื่อค่าที่ขอบช่องพอดีต้องนับเป็นช่องบน (เสมอตลิ่ง = แจ้งเตือนภัย ไม่ใช่เฝ้าระวัง)
+    const activeIndex = Number.isInteger(sc.activeIndex) ? sc.activeIndex
+      : Math.max(0, sc.zones.findIndex((z, i) => sc.value <= z.to || i === sc.zones.length - 1))
     // ป้ายเกณฑ์อยู่แถวเดียวกับป้ายตัวเลขที่รอยต่อ → เว้นที่ให้ป้ายตัวเลขซ้าย-ขวาช่องละ ~23px
     const labels = sc.zones.map((z, i) => {
       const x0 = x(z.from) + (i ? 2 : 0)
@@ -968,10 +1256,11 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
           ctx.globalAlpha = active ? 1 : 0.4
           glossyBar(ctx, x0, y0, x1 - x0, bh, 6, z.color)
           ctx.restore()
-          drawText(ctx, labels[i].text, (x0 + x1) / 2, y0 + bh + 13, { font: `${active ? 700 : 600} ${labels[i].size}px ${body}`, color: active ? inkOf(z.color) : DIM, align: 'center' })
+          drawText(ctx, labels[i].text, (x0 + x1) / 2, y0 + bh + (noTicks ? 9 : 13), { font: `${active ? 700 : 600} ${labels[i].size}px ${body}`, color: active ? inkOf(z.color) : DIM, align: 'center' })
         })
-        sc.zones.slice(1).forEach(z => {
-          const t = String(z.from)
+        // ป้ายตัวเลขที่รอยต่อ: ticks:false = ไม่แสดง (แถบระดับ 1–3 ของสถานีเตือนภัย) · z.tickLabel = ข้อความกำหนดเอง (เช่น "ตลิ่ง")
+        if (sc.ticks !== false) sc.zones.slice(1).forEach(z => {
+          const t = z.tickLabel ?? String(z.from)
           const tw = textWidth(ctx, t, 600, 13, display) + 12
           const cx = x(z.from)
           ctx.fillStyle = '#e6ecf5'

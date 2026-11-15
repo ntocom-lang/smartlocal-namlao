@@ -282,9 +282,11 @@ export function buildAlerts({ rain = [], ews = [], warnings = [], levels = [], d
 }
 
 // ย่อผลของ buildAlerts ให้เหลือบรรทัดเดียวสำหรับแถบบนหน้าแรก (WaterAlertBanner)
-// ลำดับความสำคัญ: สถานีเตือนภัยน้ำหลาก-ดินถล่ม → ฝนหนักมาก → ข้อความบรรยายของ สสน.
-// เรียงแบบนี้เพราะสองอันแรกเป็นค่าตรวจวัดที่ถึงเกณฑ์แล้ว ส่วนข้อความ สสน. ครอบคลุมทั้งอำเภอ
-// ไม่เจาะจงจุด · ภายในแต่ละหมวด buildAlerts เรียงตัวที่แรงที่สุดไว้หน้าสุดให้แล้ว
+// ลำดับความสำคัญ: สถานีเตือนภัยระดับวิกฤติ → น้ำเสมอ/สูงกว่าตลิ่ง → สถานีเตือนภัยระดับเตรียมพร้อม → ฝนหนักมาก → ข้อความ สสน. → อ่าง
+// เหตุผลของลำดับ (ตามนิยามของกรมทรัพยากรน้ำ): "เตรียมพร้อม" = เก็บข้าวของเตรียมอพยพ (ยังเป็นการเตรียมตัว)
+//   ส่วน "น้ำเสมอ/ล้นตลิ่ง" = เหตุการณ์เกิดขึ้นแล้ว · "วิกฤติ" = ให้เคลื่อนย้ายไปพื้นที่ปลอดภัย จึงมาก่อนทั้งหมด
+// ฝนหนักมาก/ข้อความ สสน./อ่าง เรียงตามเดิม (ต่างจากลำดับของภาพแชร์ ซึ่งเอาอ่างมาก่อนฝน โดยตั้งใจ — ห้ามแก้ให้เหมือนกัน)
+// ภายในแต่ละหมวด buildAlerts เรียงตัวที่แรงที่สุดไว้หน้าสุดให้แล้ว
 export function alertSummary(alerts, { homeAmphoe, now } = {}) {
   if (!alerts?.any) return null
   const ews = alerts.ews ?? []
@@ -294,16 +296,7 @@ export function alertSummary(alerts, { homeAmphoe, now } = {}) {
   const damOver = alerts.damOver ?? []
   const total = ews.length + rain.length + warnings.length + overbank.length + damOver.length
 
-  // น้ำเสมอ/สูงกว่าตลิ่งมาก่อนฝน: ฝนหนักเป็นเหตุ น้ำถึงตลิ่งเป็นผลที่เกิดขึ้นแล้ว
-  if (overbank.length > 0 && ews.length === 0) {
-    const station = overbank[0]
-    return {
-      total, label: 'ระดับน้ำเสมอหรือสูงกว่าตลิ่ง',
-      text: `สถานี${station.station_name} ${bankText(station.bank_diff_m)}`,
-      meta: alertMetaLine(station, homeAmphoe, station.recorded_at, now, 'วัดเมื่อ'),
-    }
-  }
-  if (ews.length > 0) {
+  const ewsSummary = () => {
     const { station, alert } = ews[0]
     return {
       total, label: 'สถานีเตือนภัยน้ำหลาก-ดินถล่ม',
@@ -311,6 +304,17 @@ export function alertSummary(alerts, { homeAmphoe, now } = {}) {
       meta: alertMetaLine(station, homeAmphoe, station.recorded_at, now, 'รายงานเมื่อ'),
     }
   }
+  // ews เรียงระดับมากก่อนแล้ว (buildAlerts) — ตัวแรกเป็นระดับ 3 = วิกฤติ
+  if (ews.length > 0 && ews[0].alert.level === 3) return ewsSummary()
+  if (overbank.length > 0) {
+    const station = overbank[0]
+    return {
+      total, label: 'ระดับน้ำเสมอหรือสูงกว่าตลิ่ง',
+      text: `สถานี${station.station_name} ${bankText(station.bank_diff_m)}`,
+      meta: alertMetaLine(station, homeAmphoe, station.recorded_at, now, 'วัดเมื่อ'),
+    }
+  }
+  if (ews.length > 0) return ewsSummary()
   if (rain.length > 0) {
     const station = rain[0]
     return {

@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict'
 import { DAM_LEVELS, RAIN_LEVELS } from '../src/lib/waterSituation.js'
 import {
-  NEARBY_DAM_KM, NEUTRAL_HEAD, buildPosterModel, pickNearbyDam, buildPosterPhones, orgCallName, pickRainRows, posterDateLong, posterTime, readableTextOn, selectPosterTopic,
+  NEARBY_DAM_KM, NEUTRAL_HEAD, buildPosterModel, pickNearbyDam, buildPosterPhones, orgCallName, pickRainRows, posterDateLong, posterOtherNote, posterTime,
+  posterTopicCandidates, readableTextOn, selectPosterTopic,
 } from '../src/lib/waterAlertPoster.js'
 import { buildAlerts } from '../src/lib/waterSituation.js'
 
@@ -159,22 +160,276 @@ assert.equal(readableTextOn('ไม่ใช่สี'), '#ffffff')
   assert.equal(/1669|191/.test(JSON.stringify(none)), false)
 }
 
-// ── เรื่องอื่นที่ต้องระวังกว่า ──
+// ── ลำดับหัวภาพ: EWS3 > น้ำเสมอ/สูงกว่าตลิ่ง > EWS2 > อ่าง >100% > ฝนหนักมาก ──
+const level = (diff, extra = {}) => ({
+  ...base, station_type: 'waterlevel', station_code: 'W1', station_name: 'บ้านน้ำปุ๊', river_name: 'แม่น้ำยม', distance_km: 6, recorded_at: FRESH_RAIN, bank_diff_m: diff,
+  waterlevel_msl: 123.45, prev_waterlevel_msl: 123.1, prev_recorded_at: '2026-11-15T01:30:00Z', ...extra,
+})
+const ews = (lv, text, extra = {}) => ({
+  ...base, station_type: 'ews', station_code: 'E1', station_name: 'สถานีเตือนภัยบ้านห้วยขึม', distance_km: 5, is_primary: true, recorded_at: FRESH_RAIN,
+  note: 'หมู่บ้านที่สถานีดูแล: บ้านห้วยทรายขาว, บ้านน้ำเลาใต้', situation_level: lv, situation_text: text, situation_color: '#f59e0b', ...extra,
+})
+const E3 = (extra = {}) => ews(3, 'วิกฤติ', extra)
+const E2 = (extra = {}) => ews(2, 'เตรียมพร้อม', { station_code: 'E2', station_name: 'สถานีเตือนภัยบ้านน้ำรัด', ...extra })
+const flat = runs => runs.map(r => r.t).join('')
+
 {
-  const level = (diff, extra = {}) => ({ ...base, station_type: 'waterlevel', station_code: 'W1', station_name: 'แม่น้ำยม', distance_km: 6, recorded_at: FRESH_RAIN, bank_diff_m: diff, ...extra })
-  const ews = lv => ({ ...base, station_type: 'ews', station_code: 'E1', station_name: 'สถานีเตือนภัยก', distance_km: 5, recorded_at: FRESH_RAIN, situation_level: lv, situation_text: 'เตรียมพร้อม', situation_color: '#f59e0b' })
-  const plain = buildPosterModel(input({ dams: [dam()], levels: [level(1.4)], ews: [ews(1)] }))
-  assert.equal(plain.otherNote, null) // ต่ำกว่าตลิ่ง 1.4 ม. และ ews ระดับ 1 ไม่ใช่เรื่องที่แรงกว่า
-  const over = buildPosterModel(input({ dams: [dam()], levels: [level(-0.2)] }))
-  assert.match(over.otherNote, /^มีเรื่องอื่นที่ต้องระวังกว่า: ระดับน้ำเสมอหรือสูงกว่าตลิ่ง สถานีแม่น้ำยม สูงกว่าตลิ่ง 0\.20 ม\.$/)
-  const flush = buildPosterModel(input({ dams: [dam()], levels: [level(0)] }))
-  assert.match(flush.otherNote, /ระดับน้ำเสมอตลิ่ง/)
-  const e = buildPosterModel(input({ rain: [rain('R1', 'ก', 100)], ews: [ews(2)] }))
-  assert.match(e.otherNote, /สถานีเตือนภัยน้ำหลาก-ดินถล่ม สถานีเตือนภัยก · เตรียมพร้อม/)
-  const both = buildPosterModel(input({ dams: [dam()], levels: [level(-0.1)], ews: [ews(3)] }))
-  assert.match(both.otherNote, /สถานีแม่น้ำยม.* · สถานีเตือนภัยน้ำหลาก/)
-  // ค่าระดับน้ำเก่าเกิน 3 ชม. ไม่นับ
-  assert.equal(buildPosterModel(input({ dams: [dam()], levels: [level(-0.2, { recorded_at: '2026-11-14T00:00:00Z' })] })).otherNote, null)
+  const everything = { ews: [E2(), E3()], levels: [level(-0.2)], dams: [dam()], rain: [rain('R1', 'บ้านบุญแจ่ม', 96.5, { is_primary: true })] }
+  // ทุกชั้นอยู่ครบ → EWS3 (แม้ใน rows เรียง ews ระดับ 2 ก่อน) · เก็บ alert ของ EWS ไว้ด้วย
+  const m3 = buildPosterModel(input(everything))
+  assert.equal(m3.kind, 'ews')
+  assert.equal(m3.illustration.ewsLevel, 3)
+  const topic = selectPosterTopic(buildAlerts({ ...everything, now: NOW }))
+  assert.equal(topic.kind, 'ews')
+  assert.equal(topic.station.station_code, 'E1')
+  assert.equal(topic.alert.level, 3)
+  assert.equal(topic.alert.text, 'วิกฤติ')
+  // ไม่มี EWS3 → น้ำเสมอ/สูงกว่าตลิ่งชนะ EWS2 อ่าง ฝน
+  const topicOf = extra => buildPosterModel(input(extra))?.kind ?? null
+  assert.equal(topicOf({ ...everything, ews: [E2()] }), 'overbank')
+  // ไม่มีล้นตลิ่ง → EWS2 ชนะอ่างกับฝน
+  const m2 = buildPosterModel(input({ ...everything, ews: [E2()], levels: [] }))
+  assert.equal(m2.kind, 'ews')
+  assert.equal(m2.illustration.ewsLevel, 2)
+  assert.equal(m2.headline.name, 'สถานีเตือนภัยบ้านน้ำรัด')
+  // ไม่มี EWS → อ่างชนะฝน → ฝน
+  assert.equal(topicOf({ ...everything, ews: [], levels: [] }), 'dam')
+  assert.equal(topicOf({ ...everything, ews: [], levels: [], dams: [] }), 'rain')
+  // ระดับ 1 หรือค่าเก่าเกิน 12 ชม. ไม่เป็นหัวภาพ (buildAlerts กรอง) — ตกไปที่เรื่องถัดไป/ไม่มีภาพ
+  assert.equal(topicOf({ ews: [ews(1, 'เฝ้าระวัง')] }), null)
+  assert.equal(topicOf({ ews: [ews(1, 'เฝ้าระวัง')], dams: [dam()] }), 'dam')
+  assert.equal(topicOf({ ews: [E3({ recorded_at: '2026-11-14T13:00:00Z' })] }), null, 'สถานะเก่าเกิน 12 ชม.')
+  assert.equal(topicOf({ ews: [E3({ recorded_at: '2026-11-14T13:00:00Z' })], dams: [dam()] }), 'dam')
+  // ล้นตลิ่ง: ต่ำกว่าตลิ่ง/ไม่มีค่า/ค่าเก่า ไม่เป็นหัวภาพ
+  assert.equal(topicOf({ levels: [level(null)] }), null)
+  assert.equal(topicOf({ levels: [level('')] }), null)
+  assert.equal(topicOf({ levels: [level(0.2)] }), null)
+  assert.equal(topicOf({ levels: [level(-0.2, { recorded_at: '2026-11-14T00:00:00Z' })] }), null)
+  assert.equal(topicOf({ levels: [level(0)] }), 'overbank')
+  // selectPosterTopic: ไม่มีอะไรเลย = null
+  assert.equal(selectPosterTopic({ ews: [], overbank: [], damOver: [], heavyRain: [] }), null)
+  assert.equal(selectPosterTopic(null), null)
+  // ลำดับรายการทั้งหมด
+  const all = posterTopicCandidates(buildAlerts({ ...everything, now: NOW }))
+  assert.deepEqual(all.map(c => `${c.kind}${c.alert ? c.alert.level : ''}`), ['ews3', 'overbank', 'ews2', 'dam', 'rain'])
+}
+
+// ── ภาพสถานีเตือนภัย (ews) ──
+{
+  const stationRain = (mm, extra = {}) => rain('E1', 'สถานีวัดฝนห้วยขึม', mm, { is_primary: true, rain_1h_mm: 12, ...extra })
+  const m = buildPosterModel(input({ ews: [E3()], dams: [dam({ storage_percent: 62.4 })], rain: [stationRain(96.5), rain('R9', 'บ้านอื่น', 150)] }))
+  assert.equal(m.kind, 'ews')
+  assert.equal(m.headline.sub, 'สถานีเตือนภัยน้ำหลาก-ดินถล่ม')
+  assert.equal(m.headline.level, 'ระดับวิกฤติ')
+  assert.equal(m.headline.name, 'สถานีเตือนภัยบ้านห้วยขึม')
+  assert.equal(m.ribbon, 'สถานะ ณ วันที่ 15 พฤศจิกายน 2569 · 09:30 น.')
+  // ช่องตัวเลข: ระดับ (สีระดับ) · ฝนของสถานีรหัสเดียวกัน (ไม่ใช่สถานีอื่นที่ฝนมากกว่า) · ฝนชั่วโมงล่าสุด (เทา) · อ่าง
+  assert.deepEqual(m.tiles.map(t => t.key), ['ews-level', 'rain24', 'rain1h', 'pct'])
+  const t = key => m.tiles.find(x => x.key === key)
+  assert.equal(t('ews-level').value, 'วิกฤติ')
+  assert.equal(t('ews-level').unit, 'ระดับ 3 จาก 3')
+  assert.equal(t('ews-level').color, '#bf212f')
+  assert.equal(t('ews-level').neutral, false)
+  assert.equal(t('rain24').value, '96.5')
+  assert.equal(t('rain24').color, RAIN_LEVELS.find(l => l.key === 'veryHeavy').bar)
+  assert.equal(t('rain1h').value, '12')
+  assert.equal(t('rain1h').color, NEUTRAL_HEAD)
+  assert.equal(t('rain1h').neutral, true)
+  assert.equal(t('pct').color, DAM_LEVELS.find(l => l.key === 'moderate').color)
+  // แถบเกณฑ์ 3 ช่องเท่ากัน หมุดกลางช่อง ไม่มีตัวเลขรอยต่อ
+  assert.equal(m.scale.kind, 'equal')
+  assert.equal(m.scale.heading, 'ระดับของสถานีเตือนภัย (กรมทรัพยากรน้ำ)')
+  assert.deepEqual(m.scale.zones.map(z => [z.label, z.from, z.to, z.color]), [['เฝ้าระวัง', 0, 1, '#27b376'], ['เตรียมพร้อม', 1, 2, '#f5b400'], ['วิกฤติ', 2, 3, '#bf212f']])
+  assert.equal(m.scale.value, 2.5)
+  assert.equal(m.scale.ticks, false)
+  assert.equal(m.scale.markLabel, 'สถานีเตือนภัยบ้านห้วยขึม วิกฤติ')
+  // ข้อควรทำระดับวิกฤติ ตามเกณฑ์ของกรมทรัพยากรน้ำ
+  assert.equal(flat(m.todo[0]), 'กรมทรัพยากรน้ำกำหนดว่าระดับวิกฤติ ให้เคลื่อนย้ายไปพื้นที่ปลอดภัยที่ได้แจ้งไว้')
+  assert.equal(m.todo[0][1].b, true)
+  assert.equal(flat(m.todo[1]), 'ฟังประกาศผู้นำชุมชน หอกระจายข่าว หลีกเลี่ยงแนวน้ำไหลเชี่ยวและแนวดินไหล')
+  assert.equal(flat(m.todo[2]), 'พบเหตุฉุกเฉิน แจ้งเทศบาลทันที')
+  assert.equal(m.todo[2].at(-1).b, true)
+  // ท้ายภาพ: ที่มา ews.dwr.go.th · ไม่ใช่ประกาศของ อปท. · วันที่-เวลาของสถานะ
+  assert.match(m.footer.lines[0], /ews\.dwr\.go\.th/)
+  assert.match(m.footer.lines[0], /สถานะ 15 พ\.ย\. 69 09:30 น\./)
+  assert.match(m.footer.lines[0], /ค่าอ่าง 15 พ\.ย\. 69/)
+  assert.match(m.footer.lines[1], /^ข้อมูลจากกรมทรัพยากรน้ำและ ThaiWater \(สสน\.\) · ไม่ใช่ประกาศของเทศบาลตำบลน้ำเลา/)
+  assert.match(m.shareText, /ไม่ใช่ประกาศของเทศบาลตำบลน้ำเลา/)
+  assert.match(m.altText, /ไม่ใช่ประกาศของเทศบาลตำบลน้ำเลา/)
+  assert.match(m.shareText, /^แจ้งเตือนสถานการณ์น้ำ–ฝน เทศบาลตำบลน้ำเลา: สถานีเตือนภัยน้ำหลาก-ดินถล่ม ระดับวิกฤติ สถานีเตือนภัยบ้านห้วยขึม/)
+  assert.equal(m.otherNote, null)
+  assert.deepEqual({ kind: m.illustration.kind, rainy: m.illustration.rainy, pct: m.illustration.pct, ewsLevel: m.illustration.ewsLevel }, { kind: 'ews', rainy: true, pct: 62.4, ewsLevel: 3 })
+
+  // ย่อหน้า: ความหมายตามกรม + หมู่บ้านที่ดูแล + ฝนของสถานีเดียวกัน (ข้อเท็จจริงคู่กัน ไม่อ้างเป็นสาเหตุ)
+  const intro = flat(m.intro)
+  assert.match(intro, /^สถานีเตือนภัยล่วงหน้าของกรมทรัพยากรน้ำ สถานีเตือนภัยบ้านห้วยขึม \(ในตำบล ต\.น้ำเลา ห่าง 5 กม\.\) รายงานสถานะ ระดับวิกฤติ ตามเกณฑ์ของกรมทรัพยากรน้ำ ระดับนี้หมายถึงให้เคลื่อนย้ายไปยังพื้นที่ปลอดภัยที่ได้แจ้งไว้/)
+  assert.equal(m.intro.find(r => r.em).t, 'ระดับวิกฤติ')
+  assert.deepEqual(m.analysis, ['villages', 'rain-at-station'])
+  assert.match(intro, /หมู่บ้านที่สถานีดูแล: บ้านห้วยทรายขาว, บ้านน้ำเลาใต้/)
+  assert.match(intro, /วัดฝนสะสม 24 ชม\. ได้ 96\.5 มม\. ฝนหนักมาก$/)
+  // ⚠️ ไม่มีค่าที่ทำให้เตือน และไม่รู้ว่าเตือนด้วยอะไร → ห้ามมีคำอ้างสาเหตุ/ค่าเกณฑ์
+  for (const text of [intro, m.shareText, m.altText, m.footer.lines.join(' ')]) assert.doesNotMatch(text, /เนื่องจาก|เพราะ|สาเหตุ|เตือนด้วย|ระดับน้ำเกิน|ฝนสะสมเกิน/)
+  // ตัดประโยคท้ายทิ้งได้ทีละประโยค (introFor) · ความหมายของระดับไม่ถูกตัด
+  assert.doesNotMatch(flat(m.introFor(1)), /วัดฝนสะสม/)
+  assert.match(flat(m.introFor(1)), /หมู่บ้านที่สถานีดูแล/)
+  assert.doesNotMatch(flat(m.introFor(0)), /หมู่บ้านที่สถานีดูแล/)
+  assert.match(flat(m.introFor(0)), /ให้เคลื่อนย้ายไปยังพื้นที่ปลอดภัยที่ได้แจ้งไว้ รายละเอียดดังนี้$/)
+
+  // ระดับ 2 (เตรียมพร้อม): ไม่มีอ่าง ไม่มีฝนที่สถานี → ช่องฝน "–" · 3 ช่อง · สีเหลืองทอง
+  const p = buildPosterModel(input({ ews: [E2({ note: null })] }))
+  assert.equal(p.headline.level, 'ระดับเตรียมพร้อม')
+  assert.deepEqual(p.tiles.map(x => x.key), ['ews-level', 'rain24', 'rain1h'])
+  assert.equal(p.tiles[0].color, '#f5b400')
+  assert.equal(p.tiles[0].unit, 'ระดับ 2 จาก 3')
+  assert.equal(p.tiles[1].value, '–')
+  assert.equal(p.tiles[1].unit, 'ไม่มีข้อมูล')
+  assert.equal(p.tiles[1].color, NEUTRAL_HEAD)
+  assert.equal(p.tiles[2].value, '–')
+  assert.equal(p.scale.value, 1.5)
+  assert.equal(p.scale.activeIndex, 1)
+  assert.match(flat(p.intro), /ระดับนี้หมายถึงให้ระมัดระวัง ติดตามสถานการณ์ รอประกาศจากผู้รู้หรือหอกระจายข่าว/)
+  assert.equal(flat(p.todo[0]), 'เก็บข้าวของ เตรียมพร้อมอพยพ ติดตามสถานการณ์ใกล้ชิด')
+  assert.equal(p.todo[0][0].b, true)
+  assert.equal(flat(p.todo[1]), 'รอฟังประกาศผู้นำชุมชน หอกระจายข่าว สังเกตเสียงต้นไม้หัก หินตก น้ำขุ่น')
+  assert.equal(flat(p.todo[2]), 'พบเหตุฉุกเฉิน แจ้งเทศบาลทันที')
+  assert.doesNotMatch(flat(p.intro), /เคลื่อนย้าย/)
+  assert.match(p.footer.lines[0], /ews\.dwr\.go\.th/)
+  assert.match(p.footer.lines[1], /ไม่ใช่ประกาศของเทศบาลตำบลน้ำเลา/)
+  assert.equal(p.illustration.pct, null)
+
+  // ฝนที่หา: ต้อง station_code เดียวกันเท่านั้น · สถานีเดียวกันแต่ค่าเก่า = "–" · ไม่มีฝนเลย = "–" (ไม่ใช่ 0)
+  const otherCode = buildPosterModel(input({ ews: [E2()], rain: [rain('R1', 'ก', 80)] }))
+  assert.equal(otherCode.tiles.find(x => x.key === 'rain24').value, '–')
+  const staleRain = buildPosterModel(input({ ews: [E2({ station_code: 'E1' })], rain: [rain('E1', 'ก', 80, { recorded_at: '2026-11-14T23:00:00Z' })] }))
+  assert.equal(staleRain.tiles.find(x => x.key === 'rain24').value, '–')
+  assert.equal(staleRain.tiles.find(x => x.key === 'rain1h').value, '–')
+  const sameCode = buildPosterModel(input({ ews: [E2({ station_code: 'E1' })], rain: [rain('E1', 'ก', 12.5, { rain_1h_mm: 0 })] }))
+  assert.equal(sameCode.tiles.find(x => x.key === 'rain24').value, '12.5')
+  assert.equal(sameCode.tiles.find(x => x.key === 'rain1h').value, '0', 'ฝนชั่วโมงล่าสุด 0 = 0 ไม่ใช่ "–"')
+
+  // note ที่ไม่ใช่รูปแบบ "หมู่บ้านที่สถานีดูแล: …" ไม่เข้าภาพ (PDPA/ข้อความภายใน) · ไม่มี note = ไม่มีประโยคหมู่บ้าน
+  const odd = buildPosterModel(input({ ews: [E3({ note: 'โทรหานายทดสอบ 0812345678' })] }))
+  assert.deepEqual(odd.analysis, [])
+  assert.equal(/นายทดสอบ|0812345678/.test(JSON.stringify(odd)), false)
+  assert.match(flat(odd.intro), /ที่ได้แจ้งไว้ รายละเอียดดังนี้$|ที่ได้แจ้งไว้$/)
+  // รายชื่อหมู่บ้านยาวมาก = ตัดที่ตัวคั่นแล้วต่อ "ฯลฯ" (ไม่ตัดกลางชื่อ)
+  const longList = Array.from({ length: 20 }, (_, i) => `บ้านทดสอบหมู่ที่${i + 1}`).join(', ')
+  const longModel = buildPosterModel(input({ ews: [E3({ note: `หมู่บ้านที่สถานีดูแล: ${longList}` })] }))
+  assert.match(flat(longModel.intro), /บ้านทดสอบหมู่ที่\d+ ฯลฯ$/)
+  // อบต. ใช้คำเรียกตรงประเภทในข้อความข้อควรทำ
+  const tk = buildPosterModel(input({ ews: [E3()], tenant: { name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว', org_type: 'อบต.', district: 'หนองม่วงไข่', province: 'แพร่' } }))
+  assert.equal(flat(tk.todo[2]), 'พบเหตุฉุกเฉิน แจ้ง อบต. ทันที')
+}
+
+// ── ภาพน้ำเสมอ/สูงกว่าตลิ่ง (overbank) ──
+{
+  const wetRain = rain('R1', 'บ้านบุญแจ่ม', 60, { is_primary: true })
+  const m = buildPosterModel(input({ levels: [level(-0.35)], rain: [wetRain] }))
+  assert.equal(m.kind, 'overbank')
+  assert.equal(m.headline.sub, 'สถานการณ์น้ำในลำน้ำ')
+  assert.equal(m.headline.level, 'น้ำสูงกว่าตลิ่ง 0.35 ม.')
+  assert.equal(m.headline.name, 'แม่น้ำยม สถานีบ้านน้ำปุ๊')
+  assert.equal(m.ribbon, 'วัดเมื่อ 15 พฤศจิกายน 2569 · 09:30 น.')
+  const t = key => m.tiles.find(x => x.key === key)
+  assert.deepEqual(m.tiles.map(x => x.key), ['bank', 'level', 'trend', 'rain24'])
+  assert.deepEqual([t('bank').value, t('bank').unit, t('bank').color, t('bank').neutral], ['+0.35', 'ม. สูงกว่าตลิ่ง', '#bf212f', false])
+  assert.deepEqual([t('level').value, t('level').unit, t('level').neutral], ['123.45', 'ม.รทก.', true])
+  assert.deepEqual([t('trend').value, t('trend').unit, t('trend').neutral], ['ขึ้น', '0.35 ม.', true])
+  assert.equal(t('rain24').value, '60')
+  assert.equal(t('rain24').color, RAIN_LEVELS.find(l => l.key === 'heavy').bar)
+  // แถบ "ม. เทียบตลิ่ง": แกน −2..+1 · ค่า = −bank_diff · ช่องที่ค่าอยู่นับเสมอตลิ่งเป็นแจ้งเตือนภัย
+  assert.equal(m.scale.kind, 'proportional')
+  assert.equal(m.scale.heading, 'ระดับน้ำเทียบตลิ่ง (เกณฑ์กรมชลประทาน)')
+  assert.deepEqual([m.scale.min, m.scale.max, m.scale.value, m.scale.activeIndex], [-2, 1, 0.35, 2])
+  assert.deepEqual(m.scale.zones.map(z => [z.label, z.from, z.to, z.tickLabel ?? null]), [['ปกติ', -2, -1, null], ['เฝ้าระวัง', -1, 0, '−1 ม.'], ['แจ้งเตือนภัย', 0, 1, 'ตลิ่ง']])
+  assert.equal(m.scale.markLabel, 'บ้านน้ำปุ๊ +0.35 ม.')
+  // ย่อหน้า + ประโยคจากกฎ (แนวโน้มจากค่าก่อนหน้า · ฝนหนักในแถวฝน) ไม่พยากรณ์
+  const intro = flat(m.intro)
+  assert.match(intro, /^สถานีวัดระดับน้ำบ้านน้ำปุ๊ \(แม่น้ำยม · ต\.น้ำเลา ห่าง 6 กม\.\) ระดับน้ำสูงกว่าตลิ่ง 0\.35 ม\. อยู่ในเกณฑ์แจ้งเตือนภัยของกรมชลประทาน/)
+  assert.equal(m.intro.find(r => r.em).t, 'แจ้งเตือนภัย')
+  assert.deepEqual(m.analysis, ['trend', 'rain-too'])
+  assert.match(intro, /ระดับน้ำเพิ่มขึ้น 0\.35 ม\. เทียบกับ 08:30 น\. ประกอบกับฝนหนักในพื้นที่ \(บ้านบุญแจ่ม 60 มม\.\)$/)
+  assert.doesNotMatch(intro, /คาดว่า|จะ(ล้น|ท่วม)|อพยพ/)
+  assert.deepEqual({ kind: m.illustration.kind, bankDiff: m.illustration.bankDiff, rainy: m.illustration.rainy }, { kind: 'overbank', bankDiff: -0.35, rainy: true })
+  assert.equal(flat(m.todo[0]), 'ยกของขึ้นที่สูง ปิดเครื่องใช้ไฟฟ้า เตาแก๊ส ยกเบรกเกอร์')
+  assert.equal(flat(m.todo[1]), 'เตรียมของจำเป็น น้ำดื่ม อาหารแห้ง ยา โทรศัพท์ · ติดตามระดับน้ำ แม่น้ำยม ใกล้ชิด')
+  assert.equal(flat(m.todo[2]), 'พบน้ำท่วมบ้านหรือเหตุฉุกเฉิน แจ้งเทศบาลทันที')
+  assert.match(m.footer.lines[0], /^แหล่งข้อมูล: คลังข้อมูลน้ำแห่งชาติ \(ThaiWater\) สสน\. · เกณฑ์ระดับน้ำ กรมชลประทาน \(มาตรฐานข้อมูลน้ำ สสน\.\) · เกณฑ์ฝน กรมอุตุนิยมวิทยา · ค่าระดับน้ำ 15 พ\.ย\. 69 09:30 น\. · ค่าฝน/)
+  assert.match(m.footer.lines[1], /ไม่ใช่ประกาศของเทศบาลตำบลน้ำเลา/)
+  assert.match(m.shareText, /ไม่ใช่ประกาศของเทศบาลตำบลน้ำเลา/)
+  assert.match(m.altText, /น้ำสูงกว่าตลิ่ง 0\.35 ม\. แม่น้ำยม สถานีบ้านน้ำปุ๊/)
+  assert.equal(m.otherNote, null)
+
+  // เสมอตลิ่ง (diff 0) → "น้ำเสมอตลิ่ง" ไม่ใช่ "สูงกว่าตลิ่ง 0.00 ม."
+  const at = buildPosterModel(input({ levels: [level(0, { prev_waterlevel_msl: null, river_name: null })] }))
+  assert.equal(at.kind, 'overbank')
+  assert.equal(at.headline.level, 'น้ำเสมอตลิ่ง')
+  assert.equal(at.headline.name, 'บ้านน้ำปุ๊')
+  assert.equal(at.tiles[0].value, '0.00')
+  assert.equal(at.tiles[0].unit, 'ม. เสมอตลิ่ง')
+  assert.equal(at.scale.markLabel, 'บ้านน้ำปุ๊ เสมอตลิ่ง')
+  assert.equal(at.scale.value, 0)
+  assert.equal(at.scale.activeIndex, 2, 'ค่า 0 พอดีต้องนับเป็นแจ้งเตือนภัย ไม่ใช่เฝ้าระวัง')
+  assert.equal(at.illustration.bankText, 'เสมอตลิ่ง')
+  assert.match(flat(at.intro), /ระดับน้ำเสมอตลิ่ง อยู่ในเกณฑ์แจ้งเตือนภัย/)
+  for (const text of [flat(at.intro), at.headline.level, at.shareText, at.altText, at.scale.markLabel]) assert.doesNotMatch(text, /สูงกว่าตลิ่ง|0\.00 ม\./)
+  assert.equal(flat(at.todo[1]), 'เตรียมของจำเป็น น้ำดื่ม อาหารแห้ง ยา โทรศัพท์ · ติดตามระดับน้ำใกล้ชิด', 'ไม่มีชื่อลำน้ำ = ไม่แต่งชื่อ')
+  assert.deepEqual(at.tiles.map(x => x.key), ['bank', 'level', 'trend'], 'ไม่มีฝน = ไม่มีช่องฝน')
+  assert.equal(at.illustration.rainy, false)
+  // ค่าเล็กกว่า 0.005 ม. ปัดเป็นเสมอตลิ่งเหมือน bankText
+  assert.equal(buildPosterModel(input({ levels: [level(-0.004)] })).headline.level, 'น้ำเสมอตลิ่ง')
+
+  // แนวโน้ม: ขึ้น/ลง/ทรงตัว/ไม่มีค่าเดิม (ต่างน้อยกว่า 0.02 ม. = ทรงตัว) — กฎล้วน ไม่พยากรณ์
+  const trendOf = extra => buildPosterModel(input({ levels: [level(-0.2, extra)] }))
+  const down = trendOf({ waterlevel_msl: 123.0, prev_waterlevel_msl: 123.3 })
+  assert.deepEqual([down.tiles[2].value, down.tiles[2].unit], ['ลง', '0.30 ม.'])
+  assert.match(flat(down.intro), /ระดับน้ำลดลง 0\.30 ม\. เทียบกับ 08:30 น\.$/)
+  const same = trendOf({ waterlevel_msl: 123.31, prev_waterlevel_msl: 123.3 })
+  assert.deepEqual([same.tiles[2].value, same.tiles[2].unit], ['ทรงตัว', 'ต่างไม่ถึง 0.02 ม.'])
+  assert.match(flat(same.intro), /ระดับน้ำทรงตัว เทียบกับ 08:30 น\.$/)
+  const none = trendOf({ prev_waterlevel_msl: null })
+  assert.deepEqual([none.tiles[2].value, none.tiles[2].unit], ['–', 'ไม่มีข้อมูลก่อนหน้า'])
+  assert.deepEqual(none.analysis, [])
+  assert.match(flat(none.intro), /ของกรมชลประทาน รายละเอียดดังนี้$/)
+  // ค่าก่อนหน้าคนละวัน → ใส่วันที่ · ไม่มีเวลาของค่าก่อนหน้า → "เทียบกับค่าก่อนหน้า"
+  assert.match(flat(trendOf({ prev_recorded_at: '2026-11-14T14:00:00Z' }).intro), /เทียบกับ 14 พ\.ย\. 69 21:00 น\.$/)
+  assert.match(flat(trendOf({ prev_recorded_at: null }).intro), /เพิ่มขึ้น 0\.35 ม\. เทียบกับค่าก่อนหน้า$/)
+  // ไม่มีค่าระดับน้ำ (waterlevel_msl) → ช่อง "–" ไม่เดา
+  const noLevel = trendOf({ waterlevel_msl: null })
+  assert.deepEqual([noLevel.tiles[1].value, noLevel.tiles[1].unit], ['–', 'ไม่มีข้อมูล'])
+  // ฝนปานกลาง (≤35) ไม่ทำให้เกิดประโยค "ประกอบกับฝนหนัก" แต่ช่องฝนยังแสดง
+  const mild = buildPosterModel(input({ levels: [level(-0.2)], rain: [rain('R1', 'ก', 20, { is_primary: true })] }))
+  assert.deepEqual(mild.analysis, ['trend'])
+  assert.equal(mild.tiles.find(x => x.key === 'rain24').value, '20')
+  assert.equal(mild.illustration.rainy, false)
+  // หัวภาพเป็นน้ำเสมอตลิ่ง ไม่ใส่อ่างในช่อง/ภาพ แต่ยังเป็นภาพได้แม้มีอ่างค่าสด
+  const withDam = buildPosterModel(input({ levels: [level(-0.2)], dams: [dam({ storage_percent: 60 })] }))
+  assert.deepEqual(withDam.tiles.map(x => x.key), ['bank', 'level', 'trend'])
+  assert.doesNotMatch(withDam.footer.lines[0], /ค่าอ่าง/)
+}
+
+// ── เรื่องอื่นที่ต้องระวังกว่า: ตามลำดับจริง ระบุเฉพาะเรื่อง "สูงกว่าหัวภาพ" ──
+{
+  const alerts = buildAlerts({ ews: [E2(), E3()], levels: [level(-0.2)], dams: [dam()], rain: [rain('R1', 'ก', 100)], now: NOW })
+  const c = posterTopicCandidates(alerts)
+  // หัวภาพเป็นตัวแรกเสมอ → ไม่มีเรื่องที่สูงกว่า = null (ทุกชุดข้อมูล)
+  assert.equal(posterOtherNote(c, c[0]), null)
+  for (const extra of [{ ews: [E2()], levels: [level(-0.2)] }, { ews: [E2()] }, { dams: [dam()], rain: [rain('R1', 'ก', 100)] }, { levels: [level(0)], dams: [dam()] }]) {
+    assert.equal(buildPosterModel(input(extra)).otherNote, null)
+  }
+  // ฟังก์ชันตรวจตามลำดับจริง ไม่ hardcode: ถ้าหัวภาพเป็นอ่าง ต้องไล่เรื่องที่อยู่สูงกว่าตามลำดับ EWS3 · ตลิ่ง · EWS2
+  const note = posterOtherNote(c, c[3])
+  assert.match(note, /^มีเรื่องอื่นที่ต้องระวังกว่า: สถานีเตือนภัยน้ำหลาก-ดินถล่ม สถานีเตือนภัยบ้านห้วยขึม · วิกฤติ · ระดับน้ำเสมอหรือสูงกว่าตลิ่ง สถานีบ้านน้ำปุ๊ สูงกว่าตลิ่ง 0\.20 ม\. · สถานีเตือนภัยน้ำหลาก-ดินถล่ม สถานีเตือนภัยบ้านน้ำรัด · เตรียมพร้อม$/)
+  // หัวภาพเป็นฝน (ท้ายสุด) → เรื่องที่สูงกว่าครบทุกชั้น รวมอ่าง
+  assert.match(posterOtherNote(c, c[4]), / · อ่างเกินความจุเก็บกัก อ่างเก็บน้ำแม่คำปอง 105\.1%$/)
+  // หัวภาพเป็นล้นตลิ่ง → เฉพาะ EWS3 ที่สูงกว่า (EWS2 ต่ำกว่า ไม่ขึ้น)
+  const bank = posterOtherNote(c, c[1])
+  assert.match(bank, /วิกฤติ$/)
+  assert.doesNotMatch(bank, /เตรียมพร้อม|ตลิ่ง/)
+  // เสมอตลิ่ง: ใช้ถ้อยคำเดียวกับแถบหน้าแรก
+  const flushAlerts = buildAlerts({ levels: [level(0)], dams: [dam()], now: NOW })
+  const fc = posterTopicCandidates(flushAlerts)
+  assert.match(posterOtherNote(fc, fc[1]), /ระดับน้ำเสมอตลิ่ง/)
 }
 
 // ── ข้อความ ──
@@ -303,4 +558,4 @@ assert.equal(readableTextOn('ไม่ใช่สี'), '#ffffff')
   assert.equal(buildPosterModel({ dams: [{ ...thang }], tenant, now: NOW }), null)
 }
 
-console.log('PASS: topic selection (dam>100 over heavy rain, 80-100 no poster, stale ignored, none = null), rain rows (in-tambon first, cause kept, no summing), tile head colors by threshold / neutral for supporting values, phones (none = hidden, no fallback), other-hazard note, wording by org type, footer disclaimers, PDPA')
+console.log('PASS: topic selection (EWS3 > overbank > EWS2 > dam>100 > heavy rain, 80-100 no poster, stale ignored, none = null), ews + overbank models (wording from rules only, no cause claims, at-bank wording, trends), rain rows (in-tambon first, cause kept, no summing), tile head colors by threshold / neutral for supporting values, phones (none = hidden, no fallback), other-hazard note, wording by org type, footer disclaimers, PDPA')

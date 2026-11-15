@@ -618,6 +618,27 @@ assert.equal(damTrend(5.99, null), null, 'ยังไม่มีข้อม�
     dams: [dam('D9', 104)], now,
   }), { now })
   assert.equal(rainOverDam.label, 'ฝนหนักมาก', 'อ่างน้ำมากไม่แย่งหัวเรื่องจากฝนหนักมาก')
+
+  // สถานีเตือนภัย (กรมทรัพยากรน้ำ): เตรียมพร้อม (2) = ยังเป็นการเตรียมตัว → น้ำเสมอ/ล้นตลิ่งที่เกิดแล้วมาก่อน
+  //   วิกฤติ (3) = ให้เคลื่อนย้าย → มาก่อนน้ำล้นตลิ่ง
+  const ews = (code, lv, text) => ({
+    station_code: code, station_name: code, situation_level: lv, situation_text: text, recorded_at: ago(1),
+    tambon_name: 'น้ำเลา', amphoe_name: 'ร้องกวาง', distance_km: 3,
+  })
+  const prepareAndBank = alertSummary(buildAlerts({ ews: [ews('E2', 2, 'เตรียมพร้อม')], levels: [level('L7', -0.2)], now }), { now })
+  assert.equal(prepareAndBank.label, 'ระดับน้ำเสมอหรือสูงกว่าตลิ่ง', 'เตรียมพร้อมไม่แย่งหัวเรื่องจากน้ำล้นตลิ่ง')
+  assert.equal(prepareAndBank.total, 2)
+  const criticalAndBank = alertSummary(buildAlerts({ ews: [ews('E3', 3, 'วิกฤติ')], levels: [level('L7', -0.2)], now }), { now })
+  assert.equal(criticalAndBank.label, 'สถานีเตือนภัยน้ำหลาก-ดินถล่ม', 'วิกฤติมาก่อนน้ำล้นตลิ่ง')
+  assert.equal(criticalAndBank.text, 'E3 · วิกฤติ')
+  // เตรียมพร้อมเพียงลำพัง ยังขึ้นก่อนฝน (ลำดับ ews → ฝน เดิม) · มีทั้งสองระดับ (buildAlerts เรียงระดับมากก่อน) วิกฤติชนะน้ำล้นตลิ่ง
+  const prepareOverRain = alertSummary(buildAlerts({
+    ews: [ews('E2', 2, 'เตรียมพร้อม')],
+    rain: [{ station_code: 'R3', station_name: 'บ้านผาราง', rain_24h_mm: 96, recorded_at: ago(1), distance_km: 6.5 }], now,
+  }), { now })
+  assert.equal(prepareOverRain.label, 'สถานีเตือนภัยน้ำหลาก-ดินถล่ม')
+  const mixedEws = alertSummary(buildAlerts({ ews: [ews('E2', 2, 'เตรียมพร้อม'), ews('E3', 3, 'วิกฤติ')], levels: [level('L7', -0.2)], now }), { now })
+  assert.equal(mixedEws.text, 'E3 · วิกฤติ')
 }
 
 // ── ประโยคใต้หัวเรื่อง ต้องตรงกับสถานีที่แสดงจริง (เจ้าของระบบสั่ง 2569-10-18 หลังน้ำเลาไม่มีสถานีระดับน้ำแล้ว) ──
