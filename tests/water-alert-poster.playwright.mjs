@@ -2,7 +2,7 @@
 //
 // ตรวจ: ไฟล์ PNG ออกมา 1080×1350 และ canvas.toBlob สำเร็จ (= ไม่ tainted แม้ตราโหลดจาก URL) · ตราโหลดไม่ได้ = ยังวาดภาพได้
 //   · ข้อความไม่ล้นกรอบ (layout.issues ว่าง) · เนื้อหาไม่ล้นแถบล่าง · ไม่มีเบอร์ = แถบเบอร์หาย · ไม่ใช้ SVG/ctx.filter ในโค้ดวาด
-//   · ถ่ายภาพตัวอย่างแบบอ่าง (105.1%) และแบบฝน (96.5 มม.) ไว้ที่ tmp-shots/ (ไม่ git add)
+//   · ถ่ายภาพตัวอย่างแบบอ่าง (105.1%) · ฝน (96.5 มม.) · สถานีเตือนภัย (ระดับวิกฤติ/เตรียมพร้อม) · น้ำล้น/เสมอตลิ่ง ไว้ที่ tmp-shots/ (ไม่ git add)
 //
 // ไม่แตะฐานข้อมูล/เครือข่ายของระบบ: เปิด vite ชั่วคราวในกระบวนการนี้ (พอร์ตสุ่ม) แล้วปิดเมื่อจบ · ค่าสถานีเป็น fixture ทั้งหมด
 // ใช้หน้าเปล่าที่ route ในเบราว์เซอร์ (ไม่โหลดแอป) แล้ว import โมดูลวาดภาพตรงๆ · ตราใช้ /logo.png ของรีโป (same-origin)
@@ -75,28 +75,65 @@ try {
     // อ่างตำบลข้างเคียง ห่าง 4.3 กม. — การ์ด "อ่างใกล้เคียง" มุมขวาของกรอบข้อควรทำ
     const maeThang = dam({ station_code: '310', station_name: 'อ่างเก็บน้ำแม่ถาง', distance_km: 4.3, is_primary: false, tambon_name: 'บ้านเวียง', river_name: 'แม่ถาง', storage_percent: 50.6, dam_storage_mcm: 15.5, dam_capacity_mcm: 30.62 })
     const contacts = [{ label: 'มูลนิธิเพชรเกษมแพร่', number: '054-068-199' }, { label: 'กู้ชีพ / EMS', number: '1669' }, { label: 'ตำรวจ', number: '191' }]
+    // สถานีเตือนภัยน้ำหลาก-ดินถล่ม (รหัสสถานี E1 ตรงกับสถานีวัดฝนที่ใช้หาค่าฝนของสถานี) · สถานีระดับน้ำ + ค่าก่อนหน้า 3 ชม.
+    const ewsRow = (lv, text, extra = {}) => ({
+      ...base, station_type: 'ews', station_code: 'E1', station_name: 'สถานีเตือนภัยบ้านห้วยขึม', distance_km: 5, is_primary: true, recorded_at: ago(1),
+      note: 'หมู่บ้านที่สถานีดูแล: บ้านห้วยทรายขาว, บ้านน้ำเลาใต้', situation_level: lv, situation_text: text, situation_color: '#dc2626', ...extra,
+    })
+    const levelRow = (diff, extra = {}) => ({
+      ...base, station_type: 'waterlevel', station_code: 'W1', station_name: 'บ้านน้ำปุ๊', river_name: 'แม่น้ำยม', distance_km: 6, recorded_at: ago(0.5),
+      bank_diff_m: diff, waterlevel_msl: 123.45, prev_waterlevel_msl: 123.1, prev_recorded_at: ago(3), ...extra,
+    })
+    const longWarn = [{ message: 'ประกาศ สสน. ระบุว่าเฝ้าระวังฝนตกหนักถึงหนักมากและน้ำป่าไหลหลากบริเวณเชิงเขาและริมลำน้ำสาขาในพื้นที่ตำบลและตำบลข้างเคียงต่อเนื่องตลอดคืนนี้ถึงเช้า', issued_at: ago(2) }]
+    const villages = Array.from({ length: 9 }, (_, i) => `บ้านห้วยทรายขาวหมู่ที่ ${i + 1}`).join(', ')
     const scenes = {
+      // ── ภาพสถานีเตือนภัย / น้ำเสมอ-สูงกว่าตลิ่ง ──
+      ewsCritical: {
+        ews: [ewsRow(3, 'วิกฤติ')], dams: [dam({ storage_percent: 62.4, dam_released_mcm: 0.21 }), maeThang],
+        rain: [rain('E1', 'สถานีวัดฝนห้วยขึม', 96.5, { is_primary: true, rain_1h_mm: 12 }), rain('R2', 'บ้านบุญแจ่ม', 58, { is_primary: true, distance_km: 2.9 })], contacts,
+      },
+      ewsPrepare: { ews: [ewsRow(2, 'เตรียมพร้อม', { note: null })], contacts },
+      overbank: {
+        levels: [levelRow(-0.35)], dams: [maeThang],
+        rain: [rain('R1', 'บ้านบุญแจ่ม', 60, { is_primary: true }), rain('R2', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 38, { is_primary: true, distance_km: 2.9 })], contacts,
+      },
+      overbankAtBank: { levels: [levelRow(0, { prev_waterlevel_msl: null })], contacts },
+      // เค้นสุดทาง: ชื่อสถานี/หมู่บ้าน/ชื่อ อปท. ยาวมาก + ข้อความ สสน. 2 บรรทัด + เบอร์ 3 เบอร์ + อ่างประกอบ + อ่างใกล้เคียง + ฝนของสถานี
+      ewsStress: {
+        tenant: { ...tenant, name: 'เทศบาลตำบลน้ำเลาทุ่งแค้วใหญ่มากมายเกินจริง' },
+        ews: [ewsRow(3, 'วิกฤติ', { station_name: 'สถานีเตือนภัยน้ำหลากดินถล่มบ้านห้วยขึมโยธินอุทกพัฒนาตอนบนและตอนล่างหมู่ที่สิบสอง', note: `หมู่บ้านที่สถานีดูแล: ${villages}` })],
+        dams: [dam({ station_name: 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', storage_percent: 97.4 }), maeThang],
+        rain: [
+          rain('E1', 'สถานีวัดฝนบ้านบุญแจ่มหมู่ที่สิบสองตำบลน้ำเลา', 148.2, { is_primary: true, rain_1h_mm: 0 }),
+          rain('R2', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 120.5, { is_primary: true, distance_km: 2.9 }),
+        ],
+        warnings: longWarn, contacts,
+      },
+      overbankStress: {
+        tenant: { ...tenant, name: 'เทศบาลตำบลน้ำเลาทุ่งแค้วใหญ่มากมายเกินจริง' },
+        levels: [levelRow(-1.45, { station_name: 'แม่น้ำยมที่สถานีวัดระดับน้ำบ้านน้ำปุ๊ตอนล่างใกล้สะพานข้ามแม่น้ำ', river_name: 'แม่น้ำยมสายหลักช่วงตอนล่างของจังหวัด' })],
+        dams: [maeThang],
+        rain: [rain('R1', 'สถานีวัดฝนบ้านบุญแจ่มหมู่ที่สิบสองตำบลน้ำเลา', 148.2, { is_primary: true }), rain('R2', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 120.5, { is_primary: true, distance_km: 2.9 })],
+        warnings: longWarn, contacts,
+      },
       dam: { dams: [dam(), maeThang], rain: [rain('R1', 'บ้านบุญแจ่ม', 3.5, { is_primary: true }), rain('R2', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 0, { is_primary: true, distance_km: 2.9, recorded_at: ago(1) })], contacts },
       rain: {
         dams: [dam({ storage_percent: 86.4, dam_released_mcm: 0.21 }), maeThang],
         rain: [rain('R1', 'บ้านบุญแจ่ม', 96.5, { is_primary: true, rain_1h_mm: 12 }), rain('R2', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 58, { is_primary: true, distance_km: 2.9, recorded_at: ago(1) })],
         warnings: [{ message: 'เฝ้าระวังฝนตกหนักและน้ำป่าไหลหลาก', issued_at: ago(2) }], contacts,
       },
-      // เค้นสุดทาง: ชื่อยาวมาก + มีเรื่องอื่นที่แรงกว่า + ไม่มีตรา + ไม่มีเบอร์สำนักงาน/สายด่วน + ข้อความ สสน. ยาว
+      // เค้นสุดทาง: ชื่อยาวมาก + ไม่มีตรา + ไม่มีเบอร์สำนักงาน/สายด่วน + ข้อความ สสน. ยาว
+      // (เดิมมี levels/ews ในฉากนี้เพื่อให้ขึ้นแถบ "เรื่องอื่นที่ต้องระวังกว่า" — ลำดับหัวภาพใหม่ให้ EWS/ล้นตลิ่งเป็นหัวภาพเอง ฉากนี้จึงเหลือภาพอ่างล้วน)
       stress: {
         tenant: { ...tenant, name: 'องค์การบริหารส่วนตำบลทุ่งแค้วใหญ่มากมายเกินจริง', org_type: 'อบต.', phone: null, logo_url: '/missing-logo.png' },
         dams: [dam({ station_name: 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนาตอนบนและตอนล่างพื้นที่ลุ่มน้ำแม่คำปอง', storage_percent: 118.7, river_name: null })],
         rain: [rain('R1', 'สถานีวัดฝนบ้านบุญแจ่มหมู่ที่สิบสองตำบลน้ำเลา', 101.2, { is_primary: true })],
-        levels: [{ ...base, station_type: 'waterlevel', station_code: 'W1', station_name: 'แม่น้ำยมที่สถานีวัดระดับน้ำบ้านน้ำปุ๊', distance_km: 6, recorded_at: ago(0.5), bank_diff_m: -0.35 }],
-        ews: [{ ...base, station_type: 'ews', station_code: 'E1', station_name: 'สถานีเตือนภัยน้ำหลากดินถล่มบ้านห้วยขึม', distance_km: 5, recorded_at: ago(1), situation_level: 3, situation_text: 'วิกฤติ', situation_color: '#dc2626' }],
         warnings: [{ message: 'ประกาศ สสน. ระบุว่าเฝ้าระวังฝนตกหนักถึงหนักมากและน้ำป่าไหลหลากบริเวณเชิงเขาและริมลำน้ำสาขาในพื้นที่ตำบลและตำบลข้างเคียงต่อเนื่องตลอดคืนนี้ถึงเช้า', issued_at: ago(2) }],
         contacts: [],
       },
-      // ประโยควิเคราะห์ฝนครบ 3 ประโยค (ฝนหยุดแล้ว + วงกว้าง + อ่างประกอบน้ำมาก) + ข้อความ สสน. ยาว
-      // มี ews: ภาพฝน + แถบ "เรื่องอื่นที่ต้องระวังกว่า" + ข้อความ สสน. 2 บรรทัด + เบอร์ ต้องไม่ล้นแถบล่าง
-      //    (เคยล้น ~29px จน #719 ต้องถอด ews ออกจากฉากนี้ — แก้เลย์เอาต์แล้วจึงใส่กลับ)
+      // ประโยควิเคราะห์ฝนครบ 3 ประโยค (ฝนหยุดแล้ว + วงกว้าง + อ่างประกอบน้ำมาก) + ข้อความ สสน. ยาว + เบอร์ 3 เบอร์ ต้องไม่ล้นแถบล่าง
+      // (เดิมมี ews ในฉากนี้ให้มีแถบ "เรื่องอื่นที่ต้องระวังกว่า" — ลำดับหัวภาพใหม่ให้ EWS เป็นหัวภาพเอง ฉากนี้จึงเหลือภาพฝนล้วน)
       rainStress: {
-        ews: [{ ...base, station_type: 'ews', station_code: 'E1', station_name: 'สถานีเตือนภัยน้ำหลากดินถล่มบ้านห้วยขึม', distance_km: 5, recorded_at: ago(1), situation_level: 3, situation_text: 'วิกฤติ', situation_color: '#dc2626' }],
         dams: [dam({ station_name: 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', storage_percent: 97.4 }), maeThang],
         rain: [
           rain('R1', 'บ้านบุญแจ่ม', 148.2, { is_primary: true, rain_1h_mm: 0 }),
@@ -130,12 +167,15 @@ try {
     return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) }
   }
 
-  const names = { dam: 'dam-105.1', rain: 'rain-96.5', stress: 'stress', rainStress: 'rain-stress' }
+  const names = {
+    dam: 'water-alert-dam-105.1', rain: 'water-alert-rain-96.5', stress: 'water-alert-stress', rainStress: 'water-alert-rain-stress',
+    ewsCritical: 'ews-critical', ewsPrepare: 'ews-prepare', overbank: 'overbank', overbankAtBank: 'overbank-atbank', ewsStress: 'ews-stress', overbankStress: 'overbank-stress',
+  }
   for (const key of Object.keys(names)) {
     const r = result[key]
     assert.ok(r && !r.error && r.model !== null, `${key}: วาดภาพไม่สำเร็จ ${r?.error ?? ''}`)
     // เขียนภาพก่อนตรวจเลย์เอาต์ — ล้มแล้วยังเปิดดูได้ว่าล้นตรงไหน
-    await writeFile(path.join(SHOT_DIR, `water-alert-${names[key]}.png`), Buffer.from(r.png, 'base64'))
+    await writeFile(path.join(SHOT_DIR, `${names[key]}.png`), Buffer.from(r.png, 'base64'))
     assert.equal(r.type, 'image/png', `${key}: ชนิดไฟล์`)
     assert.ok(r.size > 50_000, `${key}: ไฟล์เล็กผิดปกติ ${r.size} B`)
     assert.deepEqual(pngSize(r.png), { width: 1080, height: 1350 }, `${key}: ขนาดภาพ`)
@@ -146,6 +186,24 @@ try {
   assert.equal(result.dam.kind, 'dam')
   assert.equal(result.rain.kind, 'rain')
   assert.equal(result.rainStress.kind, 'rain')
+  assert.equal(result.stress.kind, 'dam')
+  // หัวภาพใหม่: สถานีเตือนภัย (ระดับ 3/2) และน้ำเสมอ/สูงกว่าตลิ่ง
+  assert.deepEqual(['ewsCritical', 'ewsPrepare', 'ewsStress'].map(k => result[k].kind), ['ews', 'ews', 'ews'])
+  assert.deepEqual(['overbank', 'overbankAtBank', 'overbankStress'].map(k => result[k].kind), ['overbank', 'overbank', 'overbank'])
+  // ภาพปกติของหัวภาพใหม่: ประโยคในย่อหน้าขึ้นครบ + มีแถบเบอร์ + ไม่มี "เรื่องอื่นที่ต้องระวังกว่า" (หัวภาพเป็นเรื่องแรงสุดเสมอ)
+  for (const key of ['ewsCritical', 'overbank']) {
+    const { analysisShown, analysisTotal } = result[key].layout
+    assert.ok(analysisTotal > 0, `${key}: ควรมีประโยควิเคราะห์`)
+    assert.equal(analysisShown, analysisTotal, `${key}: ประโยควิเคราะห์ถูกตัด ${analysisShown}/${analysisTotal}`)
+  }
+  for (const key of ['ewsCritical', 'ewsPrepare', 'overbank', 'overbankAtBank', 'ewsStress', 'overbankStress']) {
+    assert.equal(result[key].layout.blocks.some(b => b.name === 'otherNote'), false, `${key}: หัวภาพเป็นเรื่องแรงสุด ต้องไม่มีแถบเรื่องอื่น`)
+    assert.equal(result[key].layout.blocks.some(b => b.name === 'call'), true, `${key}: ต้องมีแถบเบอร์`)
+  }
+  // ฉากเค้น: เบอร์ 3 เบอร์อยู่ครบ + ภาพยังไม่ล้นแม้ข้อความยาวสุด (issues/fits ตรวจในลูปข้างบนแล้ว)
+  assert.equal(result.ewsStress.phones, 3)
+  assert.equal(result.overbankStress.phones, 3)
+  console.log('stress analysis shown:', { ewsStress: `${result.ewsStress.layout.analysisShown}/${result.ewsStress.layout.analysisTotal}`, overbankStress: `${result.overbankStress.layout.analysisShown}/${result.overbankStress.layout.analysisTotal}`, tight: [result.ewsStress.layout.tight, result.overbankStress.layout.tight] })
   // ประโยควิเคราะห์: ภาพปกติขึ้นครบ · ภาพเค้นสุดทางตัดประโยคท้ายทิ้งทีละประโยคจนพอดี (ไม่ตัดกลางประโยค)
   for (const key of ['dam', 'rain']) {
     const { analysisShown, analysisTotal } = result[key].layout
@@ -161,7 +219,7 @@ try {
   assert.equal(result.stress.phones, 0)
   assert.equal(result.stress.layout.blocks.some(b => b.name === 'call'), false, 'ไม่มีเบอร์ต้องไม่มีแถบโทรโข่ง')
   assert.equal(result.dam.layout.blocks.some(b => b.name === 'call'), true)
-  assert.equal(result.stress.layout.blocks.some(b => b.name === 'otherNote'), true, 'มี overbank/ews ต้องมีแถบ "เรื่องอื่นที่ต้องระวังกว่า"')
+  assert.equal(result.stress.layout.blocks.some(b => b.name === 'otherNote'), false)
   assert.equal(result.dam.layout.blocks.some(b => b.name === 'otherNote'), false)
   // อ่างใกล้เคียง: ภาพปกติต้องมีการ์ด · ภาพเค้นสุดทาง (ข้อความข้อควรทำยาว) มีหรือไม่มีก็ได้ แต่ห้ามทำให้ล้น (ตรวจ issues/fits ข้างบนแล้ว)
   assert.equal(result.dam.layout.nearbyShown, true, 'ภาพอ่างต้องมีการ์ดอ่างใกล้เคียง (แม่ถาง 4.3 กม.)')
@@ -170,7 +228,7 @@ try {
   console.log('nearby dam shown:', Object.fromEntries(Object.entries(result).map(([k, r]) => [k, r.layout.nearbyShown])))
   assert.deepEqual(pageErrors, [], `เกิด error ในหน้าทดสอบ: ${pageErrors.join(' | ')}`)
 
-  console.log('PASS: PNG 1080x1350 (dam 105.1 / rain 96.5 / stress), toBlob ok with logo from URL, logo 404 still renders, no text overflow, no phone strip without numbers, no SVG/ctx.filter in drawing code')
+  console.log('PASS: PNG 1080x1350 (dam 105.1 / rain 96.5 / ews critical+prepare / overbank over+at-bank / stress), toBlob ok with logo from URL, logo 404 still renders, no text overflow, no phone strip without numbers, no SVG/ctx.filter in drawing code')
   console.log(`ภาพตัวอย่าง: ${SHOT_DIR}`)
 } catch (error) {
   failed = true

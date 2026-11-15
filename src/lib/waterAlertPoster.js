@@ -1,5 +1,6 @@
 // ภาพแชร์แจ้งเตือนน้ำ-ฝน 1 ภาพ (1080×1350 PNG สำหรับแชร์ FB/LINE) — ส่วน "ตัดสินใจ + ประกอบข้อมูล" ล้วน ไม่มี DOM
 // ทดสอบใน node (tests/water-alert-poster.test.mjs) · ส่วนวาดลง canvas อยู่ที่ waterAlertPosterImage.js
+// หัวภาพ 4 แบบ เรียงตามความสำคัญ: สถานีเตือนภัยระดับวิกฤติ → น้ำเสมอ/สูงกว่าตลิ่ง → สถานีเตือนภัยระดับเตรียมพร้อม → อ่าง >100% → ฝนหนักมาก (ดู posterTopicCandidates)
 //
 // ⚠️ ไฟล์นี้ไม่ตัดสินสถานการณ์เอง: เกณฑ์ทุกอย่างมาจาก buildAlerts() ของ waterSituation.js (ชุดเดียวกับแถบบนหน้าแรก
 //    หน้า /water-situation และ Telegram) — ห้ามเขียนเกณฑ์ "เก่าเกินไป" ซ้ำคนละค่าที่นี่ (ค่าเก่าถูก buildAlerts กรองให้แล้ว)
@@ -8,8 +9,8 @@
 //    ไม่มีเบอร์ = ช่องนั้นหาย (ไม่มีเบอร์สำรอง/เบอร์กลาง) · PDPA: มีแต่ชื่อสถานี ตัวเลข เวลา — ไม่มีข้อมูลบุคคล
 
 import {
-  DAM_LEVELS, DAM_STALE_HOURS, DAM_TREND_FLAT_MCM, RAIN_LEVELS, STATION_STALE_HOURS,
-  bankText, buildAlerts, damLevel, distanceText, formatMm, isStale, measuredAtText, rainLevel, stationPlace, toNum,
+  DAM_LEVELS, DAM_STALE_HOURS, DAM_TREND_FLAT_MCM, LEVEL_TIERS, RAIN_LEVELS, STATION_STALE_HOURS, TREND_FLAT_M,
+  bankText, buildAlerts, damLevel, distanceText, formatMm, isStale, measuredAtText, rainLevel, stationPlace, toNum, waterTrend,
 } from './waterSituation.js'
 import { orgNameParts } from './orgTerms.js'
 
@@ -20,6 +21,14 @@ export const POSTER_HEIGHT = 1350
 export const NEUTRAL_HEAD = '#3d3236'
 export const DAM_SCALE_MAX = 120
 export const RAIN_SCALE_MAX = 150
+
+// สีชั้นเตือนภัยของแถบเกณฑ์ที่ไม่ใช่ฝน/อ่าง (เขียว → เหลืองทอง → แดง) — ใช้ชุดเดียวกันทั้งสถานีเตือนภัย (กรมทรัพยากรน้ำ
+// เฝ้าระวัง/เตรียมพร้อม/วิกฤติ) และระดับน้ำเทียบตลิ่ง (กรมชลประทาน ปกติ/เฝ้าระวัง/แจ้งเตือนภัย) · "เหลือง" ของกรมใช้เหลืองทอง
+// ให้อ่านออกบนพื้นขาว
+export const TIER_COLORS = ['#27b376', '#f5b400', '#bf212f']
+// แถบเกณฑ์ระดับน้ำเทียบตลิ่ง: แกน = ม. เทียบตลิ่ง (ติดลบ = ต่ำกว่าตลิ่ง) ช่วง −2 ถึง +1
+export const BANK_SCALE_MIN = -2
+export const BANK_SCALE_MAX = 1
 
 const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
 const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
@@ -76,15 +85,51 @@ export function orgCallName(tenant) {
 const callOut = org => (/\.$/.test(org) ? `แจ้ง ${org} ทันที` : `แจ้ง${org}ทันที`)
 
 /**
- * เลือกเรื่องของหัวภาพจากผล buildAlerts — อ่างเกินความจุเก็บกัก (damOver) มาก่อน แล้วฝนหนักมาก (heavyRain)
- * ไม่มีทั้งคู่ = null (ไม่มีภาพ ไม่มีปุ่ม) · อ่าง 80–100% ไม่ขึ้นหัวภาพ (buildAlerts ไม่ใส่ใน damOver)
+ * เรื่องที่เป็นหัวภาพได้ เรียงจากสำคัญมากไปน้อยตามผล buildAlerts:
+ *   สถานีเตือนภัย ระดับ 3 (วิกฤติ) → น้ำเสมอ/สูงกว่าตลิ่ง → สถานีเตือนภัย ระดับ 2 (เตรียมพร้อม) → อ่างเกินความจุเก็บกัก → ฝนหนักมาก
+ * เหตุผล (ตามนิยามของกรมทรัพยากรน้ำ): วิกฤติ = ให้เคลื่อนย้ายไปพื้นที่ปลอดภัย · น้ำเสมอ/ล้นตลิ่ง = เกิดขึ้นแล้ว ·
+ *   เตรียมพร้อม = เก็บข้าวของเตรียมอพยพ (ยังเป็นการเตรียมตัว) · อ่าง/ฝนเป็นปริมาณน้ำต้นเหตุที่ยังไม่ถึงคน
+ * ⚠️ ลำดับนี้ "ต่างจากแถบหน้าแรก" (alertSummary) โดยตั้งใจ: แถบเอาฝนมาก่อนอ่าง ภาพเอาอ่างมาก่อนฝน (เจ้าของระบบอนุมัติ)
+ * ews ใน alerts เป็น [{ station, alert }] เรียงระดับมากก่อนแล้ว และมีแต่ระดับ ≥ 2 ที่ค่ายังสด (buildAlerts กรองให้)
+ */
+export function posterTopicCandidates(alerts) {
+  const ews = Array.isArray(alerts?.ews) ? alerts.ews : []
+  const ewsAt = level => ews.find(x => x?.alert?.level === level)
+  const out = []
+  const push = (kind, station, alert) => { if (station) out.push(alert ? { kind, station, alert } : { kind, station }) }
+  const e3 = ewsAt(3)
+  push('ews', e3?.station, e3?.alert)
+  push('overbank', alerts?.overbank?.[0])
+  const e2 = ewsAt(2)
+  push('ews', e2?.station, e2?.alert)
+  push('dam', alerts?.damOver?.[0])
+  push('rain', alerts?.heavyRain?.[0])
+  return out
+}
+
+/**
+ * เลือกเรื่องของหัวภาพ = ตัวแรกของ posterTopicCandidates · ไม่มีเลย = null (ไม่มีภาพ ไม่มีปุ่ม)
+ * อ่าง 80–100% ไม่ขึ้นหัวภาพ (buildAlerts ไม่ใส่ใน damOver) · สถานีเตือนภัยระดับ 1/ค่าเก่า ไม่ขึ้น (buildAlerts กรองแล้ว)
+ * คืน { kind: 'ews', station, alert } | { kind: 'overbank'|'dam'|'rain', station }
  */
 export function selectPosterTopic(alerts) {
-  const dam = alerts?.damOver?.[0]
-  if (dam) return { kind: 'dam', station: dam }
-  const rain = alerts?.heavyRain?.[0]
-  if (rain) return { kind: 'rain', station: rain }
-  return null
+  return posterTopicCandidates(alerts)[0] ?? null
+}
+
+/**
+ * บรรทัดแดง "มีเรื่องอื่นที่ต้องระวังกว่า" — ระบุเฉพาะเรื่องที่อยู่ "สูงกว่าหัวภาพ" ตามลำดับจริงของ posterTopicCandidates
+ * (ไม่ hardcode ว่าอะไรแรงกว่าอะไร) · เมื่อหัวภาพเป็นตัวแรกของลำดับเสมอ ผลจึงเป็น null — คงไว้เผื่อลำดับ/เกณฑ์เปลี่ยนในอนาคต
+ */
+export function posterOtherNote(candidates, topic) {
+  const at = candidates.indexOf(topic)
+  const higher = at > 0 ? candidates.slice(0, at) : []
+  const parts = higher.map(c => {
+    if (c.kind === 'ews') return `สถานีเตือนภัยน้ำหลาก-ดินถล่ม ${clean(c.station.station_name, 60)} · ${clean(c.alert.text, 40)}`
+    if (c.kind === 'overbank') return `ระดับน้ำเสมอหรือสูงกว่าตลิ่ง สถานี${clean(c.station.station_name, 60)} ${bankText(c.station.bank_diff_m) ?? ''}`.trim()
+    if (c.kind === 'dam') return `อ่างเกินความจุเก็บกัก ${clean(c.station.station_name, 60)} ${num1(toNum(c.station.storage_percent) ?? 0)}%`
+    return `ฝนหนักมาก ${clean(c.station.station_name, 60)} ${formatMm(c.station.rain_24h_mm)} มม.`
+  })
+  return parts.length ? `มีเรื่องอื่นที่ต้องระวังกว่า: ${parts.join(' · ')}` : null
 }
 
 const isFreshAt = (iso, now, hours) => Boolean(iso) && !isStale(iso, now, hours)
@@ -148,6 +193,9 @@ function riverPhrase(riverName) {
   return /^(ลำน้ำ|แม่น้ำ|น้ำ|ห้วย|คลอง|ลำ)/.test(river) ? river : `ลำน้ำ${river}`
 }
 
+// ตัดชื่อยาวให้สั้นลงด้วย "…" (ใช้ในป้ายหมุดบนแถบเกณฑ์ ที่ต้องเหลือที่ให้ค่าท้ายป้ายเสมอ)
+const cut = (text, max) => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text)
+
 const stripPrefix = (value, re) => String(value ?? '').trim().replace(re, '').trim()
 
 // ตัดอักขระควบคุม/ช่องว่างซ้ำ + จำกัดความยาว — ข้อความจากต้นทางเข้าภาพ (ไม่ใช่ HTML จึงไม่มีช่องโหว่ฝังสคริปต์ แต่กันบรรทัดบวม)
@@ -198,6 +246,39 @@ function rainRow(station, now, homeAmphoe) {
 const round2 = v => Math.round(v * 100) / 100
 const isRaining = mm => mm !== null && mm >= RAIN_LEVELS[0].below
 
+// หมู่บ้านที่สถานีเตือนภัยดูแล — ใช้เฉพาะ note ที่ขึ้นต้นด้วยข้อความมาตรฐานของ thaiwater-sync ("หมู่บ้านที่สถานีดูแล: …")
+// note รูปแบบอื่นไม่เอาเข้าภาพ (ไม่รู้ว่าเป็นข้อความอะไร) · ยาวเกิน 120 ตัวอักษร ตัดที่ตัวคั่นรายชื่อล่าสุดแล้วต่อ "ฯลฯ"
+const VILLAGE_NOTE_PREFIX = /^หมู่บ้านที่สถานีดูแล\s*[:：]\s*/
+function ewsVillages(note) {
+  const text = clean(note, 400)
+  if (!VILLAGE_NOTE_PREFIX.test(text)) return ''
+  const list = text.replace(VILLAGE_NOTE_PREFIX, '').trim()
+  if (list.length <= 120) return list
+  const cut = list.slice(0, 120)
+  const at = cut.lastIndexOf(',')
+  return `${(at > 0 ? cut.slice(0, at) : cut).trim()} ฯลฯ`
+}
+
+// สถานีวัดฝนที่ station_code เดียวกับสถานีเตือนภัย — ไม่มี/ค่าเก่า = ค่าเป็น null (ไม่เดา ไม่ใช้สถานีอื่นแทน)
+function ewsStationRain(station, rain, now) {
+  const code = station?.station_code
+  const none = { station: null, mm: null, mm1h: null }
+  if (code === null || code === undefined || code === '') return none
+  const found = (Array.isArray(rain) ? rain : []).find(s => s && (s.station_type === 'rain' || s.station_type === undefined) && String(s.station_code) === String(code))
+  if (!found) return none
+  const mm = freshRainMm(found, now)
+  return { station: found, mm, mm1h: mm === null ? null : toNum(found.rain_1h_mm) }
+}
+
+// "09:30 น." ถ้าอยู่วันเดียวกับค่าปัจจุบัน · "14 พ.ย. 69 21:00 น." ถ้าคนละวัน (ตามเวลาไทย)
+function sinceText(prevAt, currentAt) {
+  const p = bangkokParts(prevAt)
+  const c = bangkokParts(currentAt)
+  if (!p) return 'ค่าก่อนหน้า'
+  const sameDay = c && c.y === p.y && c.m === p.m && c.d === p.d
+  return `${sameDay ? '' : `${posterDateShort(prevAt)} `}${posterTime(prevAt)} น.`
+}
+
 /**
  * ประโยควิเคราะห์สถานการณ์ที่ต่อท้ายย่อหน้าเปิด — กฎตรงไปตรงมา ไม่ใช่ AI (เจ้าของระบบเลือก 2026-11-15)
  * กติกา: ทุกประโยคคิดจากตัวเลขที่ "อยู่ในภาพเดียวกัน" (ช่องตัวเลข/แถวฝน) คนอ่านคำนวณซ้ำได้เอง
@@ -207,6 +288,33 @@ const isRaining = mm => mm !== null && mm >= RAIN_LEVELS[0].below
  */
 export function buildSituationAnalysis({ kind, top, dam, damPct, rows, heavyRain = [], rain = [], now }) {
   const sentences = []
+  if (kind === 'ews') {
+    // หมู่บ้านที่สถานีดูแล (จาก note ของแถว) มาก่อน แล้วฝนของสถานีเดียวกัน — ขึ้นเป็นข้อเท็จจริงคู่กัน ไม่อ้างว่าฝนเป็นเหตุที่ทำให้เตือน
+    // (แถว ews ไม่มีค่าที่ทำให้เตือน และไม่รู้ว่าเตือนด้วยฝนหรือระดับน้ำ)
+    const villages = ewsVillages(top.note)
+    if (villages) sentences.push({ key: 'villages', runs: [{ t: 'หมู่บ้านที่สถานีดูแล: ' }, { t: villages }] })
+    const mm = ewsStationRain(top, rain, now).mm
+    if (mm !== null && mm > RAIN_LEVELS[2].upTo) {
+      sentences.push({ key: 'rain-at-station', runs: [{ t: `สถานีวัดฝนที่สถานีเดียวกันวัดฝนสะสม 24 ชม. ได้ ${formatMm(mm)} มม. ` }, { t: rainLevel(mm)?.label ?? 'ฝนหนัก', em: true }] })
+    }
+    return { excess: null, sentences }
+  }
+  if (kind === 'overbank') {
+    // แนวโน้มระดับน้ำจากค่าก่อนหน้าที่ต้นทางส่งมา (ไม่พยากรณ์) — ขาดค่าใดค่าหนึ่ง = ไม่มีประโยค
+    const trend = waterTrend(top.waterlevel_msl, top.prev_waterlevel_msl)
+    if (trend) {
+      const since = top.prev_recorded_at ? ` เทียบกับ ${sinceText(top.prev_recorded_at, top.recorded_at)}` : ' เทียบกับค่าก่อนหน้า'
+      sentences.push({
+        key: 'trend',
+        runs: trend.dir === 'flat'
+          ? [{ t: 'ระดับน้ำ' }, { t: 'ทรงตัว', em: true }, { t: since }]
+          : [{ t: 'ระดับน้ำ' }, { t: `${trend.dir === 'up' ? 'เพิ่มขึ้น' : 'ลดลง'} ${Math.abs(trend.diff).toFixed(2)} ม.`, em: true }, { t: since }],
+      })
+    }
+    const wet = rows.filter(r => r.mm !== null && r.mm > RAIN_LEVELS[2].upTo).sort((a, b) => b.mm - a.mm)[0]
+    if (wet) sentences.push({ key: 'rain-too', runs: [{ t: 'ประกอบกับ' }, { t: `${wet.levelLabel}ในพื้นที่`, em: true }, { t: ` (${wet.name} ${wet.mmText} มม.)` }] })
+    return { excess: null, sentences }
+  }
   if (kind === 'dam') {
     // ใช้ค่าปัดทศนิยม 2 ตำแหน่งแบบเดียวกับช่องตัวเลข — ลบกันในภาพแล้วได้เลขเดียวกัน
     const storage = toNum(dam.dam_storage_mcm)
@@ -272,7 +380,8 @@ function withAnalysis(runs, sentences) {
  */
 export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], warnings = [], tenant = null, now, contacts = [] }) {
   const alerts = buildAlerts({ rain, ews, levels, dams, warnings, now })
-  const topic = selectPosterTopic(alerts)
+  const candidates = posterTopicCandidates(alerts)
+  const topic = candidates[0] ?? null
   if (!topic) return null
 
   const homeAmphoe = tenant?.district
@@ -283,15 +392,117 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
   const topRainRows = pickRainRows(rain, now, kind === 'rain' ? top : null)
   const rows = topRainRows.map(s => rainRow(s, now, homeAmphoe))
 
-  // อ่างที่ใช้ในช่องตัวเลข/ภาพประกอบ: หัวภาพเป็นอ่าง = อ่างนั้น · หัวภาพเป็นฝน = อ่างที่ค่ายังสด (ถ้ามี)
-  const dam = kind === 'dam' ? top : pickContextDam(dams, now)
+  // อ่างที่ใช้ในช่องตัวเลข/ภาพประกอบ: หัวภาพเป็นอ่าง = อ่างนั้น · หัวภาพเป็นฝน/สถานีเตือนภัย = อ่างที่ค่ายังสด (ถ้ามี)
+  // หัวภาพเป็นน้ำเสมอตลิ่ง = ไม่ใส่อ่างในภาพ (4 ช่องของภาพนั้นกำหนดไว้แล้ว: ตลิ่ง/ระดับน้ำ/แนวโน้ม/ฝน)
+  const dam = kind === 'dam' ? top : kind === 'overbank' ? null : pickContextDam(dams, now)
   const damPct = dam ? toNum(dam.storage_percent) : null
   const damName = dam ? clean(dam.station_name, 80) : ''
   const place = s => [stationPlace(s, homeAmphoe), distanceText(s.distance_km)].filter(Boolean).join(' ')
   const analysis = buildSituationAnalysis({ kind, top, dam, damPct, rows, heavyRain: alerts.heavyRain, rain, now })
 
-  let headline, ribbon, introBase, tiles, scale
-  if (kind === 'dam') {
+  // ฝนของสถานีวัดฝนรหัสเดียวกับสถานีเตือนภัย (เฉพาะหัวภาพ ews)
+  const ewsRain = kind === 'ews' ? ewsStationRain(top, rain, now) : null
+
+  // sourceLead/sourceLine = ข้อความแหล่งข้อมูลบรรทัดแรก/ขึ้นต้นบรรทัดสองของท้ายภาพ (ขึ้นกับชนิดหัวภาพ) · todo/illustration ของ dam/rain กำหนดท้ายบล็อก
+  let headline, ribbon, introBase, tiles, scale, todo, sourceLead, sourceLine, illustration
+  if (kind === 'ews') {
+    const alert = topic.alert
+    const alertText = clean(alert.text, 40)
+    const name = clean(top.station_name, 80)
+    const lv = alert.level
+    headline = { sub: 'สถานีเตือนภัยน้ำหลาก-ดินถล่ม', level: `ระดับ${alertText}`, name }
+    ribbon = `สถานะ ณ วันที่ ${posterDateLong(top.recorded_at)} · ${posterTime(top.recorded_at)} น.`
+    const bits = [top.is_primary === true ? 'ในตำบล' : '', place(top)].filter(Boolean).join(' ')
+    // ความหมายของระดับตามเกณฑ์ของกรมทรัพยากรน้ำ (ไม่แต่งเอง) · ข้อความหมู่บ้านที่ดูแลอยู่ในประโยควิเคราะห์ (ตัดทิ้งได้เมื่อภาพแน่น)
+    const meaning = lv === 3
+      ? ' ตามเกณฑ์ของกรมทรัพยากรน้ำ ระดับนี้หมายถึงให้เคลื่อนย้ายไปยังพื้นที่ปลอดภัยที่ได้แจ้งไว้'
+      : ' ตามเกณฑ์ของกรมทรัพยากรน้ำ ระดับนี้หมายถึงให้ระมัดระวัง ติดตามสถานการณ์ รอประกาศจากผู้รู้หรือหอกระจายข่าว'
+    // ⚠️ แถว ews ไม่มีค่าที่ทำให้เตือน และไม่รู้ว่าเตือนด้วยฝนหรือระดับน้ำ — ห้ามเขียนว่าเตือนเพราะอะไร
+    introBase = [
+      { t: `สถานีเตือนภัยล่วงหน้าของกรมทรัพยากรน้ำ ${name}${bits ? ` (${bits})` : ''} รายงานสถานะ ` },
+      { t: `ระดับ${alertText}`, em: true },
+      { t: meaning },
+    ]
+    tiles = [
+      { key: 'ews-level', icon: 'alert', color: TIER_COLORS[lv - 1], neutral: false, label: 'ระดับเตือนภัย\nกรมทรัพยากรน้ำ', value: alertText, unit: `ระดับ ${lv} จาก 3` },
+      { key: 'rain24', icon: 'rain', color: ewsRain.mm === null ? NEUTRAL_HEAD : rainColor(ewsRain.mm), neutral: ewsRain.mm === null, label: 'ฝนสะสม 24 ชม.\nที่สถานีนี้',
+        value: ewsRain.mm === null ? '–' : formatMm(ewsRain.mm), unit: ewsRain.mm === null ? 'ไม่มีข้อมูล' : `มม. ${rainLevel(ewsRain.mm)?.label ?? ''}`.trim() },
+      { key: 'rain1h', icon: 'rain', color: NEUTRAL_HEAD, neutral: true, label: 'ฝนชั่วโมง\nล่าสุด',
+        value: ewsRain.mm1h === null ? '–' : formatMm(ewsRain.mm1h), unit: ewsRain.mm1h === null ? 'ไม่มีข้อมูล' : 'มม.' },
+    ]
+    if (dam) {
+      tiles.push({ key: 'pct', icon: 'pct', color: damColor(damPct), neutral: false, label: `${shortDamName(damName)}\n% ความจุ`, value: num1(damPct), unit: '%' })
+    }
+    // แถบเกณฑ์ 3 ช่องเท่ากัน หมุดอยู่กลางช่องของระดับปัจจุบัน — ไม่ขึ้นตัวเลข 1/2 ที่รอยต่อ (ระดับไม่ใช่ปริมาณที่วัดได้)
+    scale = {
+      kind: 'equal', heading: 'ระดับของสถานีเตือนภัย (กรมทรัพยากรน้ำ)', max: 3, value: lv - 0.5, activeIndex: lv - 1, ticks: false,
+      zones: ['เฝ้าระวัง', 'เตรียมพร้อม', 'วิกฤติ'].map((label, i) => ({ label, from: i, to: i + 1, color: TIER_COLORS[i] })),
+      markLabel: `${cut(clean(top.station_name, 80), 24)} ${alertText}`,
+    }
+    todo = lv === 3
+      ? [
+        [{ t: 'กรมทรัพยากรน้ำกำหนดว่าระดับวิกฤติ ' }, { t: 'ให้เคลื่อนย้ายไปพื้นที่ปลอดภัย', b: true }, { t: 'ที่ได้แจ้งไว้' }],
+        [{ t: 'ฟังประกาศผู้นำชุมชน หอกระจายข่าว', b: true }, { t: ' หลีกเลี่ยงแนวน้ำไหลเชี่ยวและแนวดินไหล' }],
+        [{ t: 'พบเหตุฉุกเฉิน ' }, { t: callOut(org), b: true }],
+      ]
+      : [
+        [{ t: 'เก็บข้าวของ เตรียมพร้อมอพยพ', b: true }, { t: ' ติดตามสถานการณ์ใกล้ชิด' }],
+        [{ t: 'รอฟังประกาศผู้นำชุมชน หอกระจายข่าว', b: true }, { t: ' สังเกตเสียงต้นไม้หัก หินตก น้ำขุ่น' }],
+        [{ t: 'พบเหตุฉุกเฉิน ' }, { t: callOut(org), b: true }],
+      ]
+    sourceLead = 'แหล่งข้อมูล: สถานะสถานีเตือนภัย ระบบเตือนภัยล่วงหน้า กรมทรัพยากรน้ำ (ews.dwr.go.th) · ค่าฝน คลังข้อมูลน้ำแห่งชาติ (ThaiWater) สสน. · เกณฑ์ฝน กรมอุตุนิยมวิทยา'
+    sourceLine = 'ข้อมูลจากกรมทรัพยากรน้ำและ ThaiWater (สสน.)'
+    illustration = { kind: 'ews', rainy: true, pct: damPct, ewsLevel: lv, levelText: alertText }
+  } else if (kind === 'overbank') {
+    const diff = toNum(top.bank_diff_m)
+    const atBank = Math.abs(diff) < 0.005
+    const over = Math.abs(diff).toFixed(2)
+    const river = clean(top.river_name, 60)
+    const stationName = clean(top.station_name, 80)
+    headline = {
+      sub: 'สถานการณ์น้ำในลำน้ำ', level: atBank ? 'น้ำเสมอตลิ่ง' : `น้ำสูงกว่าตลิ่ง ${over} ม.`,
+      name: river ? `${river} ${/^สถานี/.test(stationName) ? '' : 'สถานี'}${stationName}` : stationName,
+    }
+    ribbon = `วัดเมื่อ ${posterDateLong(top.recorded_at)} · ${posterTime(top.recorded_at)} น.`
+    const bits = [river, [top.is_primary === true ? 'ในตำบล' : '', place(top)].filter(Boolean).join(' ')].filter(Boolean).join(' · ')
+    introBase = [
+      { t: `สถานีวัดระดับน้ำ${stationName.replace(/^สถานี/, '')}${bits ? ` (${bits})` : ''} ${atBank ? 'ระดับน้ำเสมอตลิ่ง' : `ระดับน้ำสูงกว่าตลิ่ง ${over} ม.`} อยู่ในเกณฑ์` },
+      { t: 'แจ้งเตือนภัย', em: true },
+      { t: 'ของกรมชลประทาน' },
+    ]
+    const level = toNum(top.waterlevel_msl)
+    const trend = waterTrend(top.waterlevel_msl, top.prev_waterlevel_msl)
+    const bestRain = rows.filter(r => r.mm !== null).sort((a, b) => b.mm - a.mm)[0] ?? null
+    tiles = [
+      { key: 'bank', icon: 'bank', color: TIER_COLORS[2], neutral: false, label: 'เทียบกับตลิ่ง', value: atBank ? '0.00' : `+${over}`, unit: atBank ? 'ม. เสมอตลิ่ง' : 'ม. สูงกว่าตลิ่ง' },
+      { key: 'level', icon: 'level', color: NEUTRAL_HEAD, neutral: true, label: 'ระดับน้ำ', value: level === null ? '–' : level.toFixed(2), unit: level === null ? 'ไม่มีข้อมูล' : 'ม.รทก.' },
+      { key: 'trend', icon: 'trend', color: NEUTRAL_HEAD, neutral: true, label: 'แนวโน้ม',
+        value: !trend ? '–' : trend.dir === 'up' ? 'ขึ้น' : trend.dir === 'down' ? 'ลง' : 'ทรงตัว',
+        unit: !trend ? 'ไม่มีข้อมูลก่อนหน้า' : trend.dir === 'flat' ? `ต่างไม่ถึง ${TREND_FLAT_M} ม.` : `${Math.abs(trend.diff).toFixed(2)} ม.` },
+    ]
+    if (bestRain) {
+      tiles.push({ key: 'rain24', icon: 'rain', color: rainColor(bestRain.mm), neutral: false, label: 'ฝนสะสม 24 ชม.\nสูงสุด', value: formatMm(bestRain.mm), unit: `มม. ${bestRain.name}` })
+    }
+    // แกน = ม. เทียบตลิ่ง (ติดลบ = ต่ำกว่าตลิ่ง) · ช่องที่ค่าอยู่กำหนดตรงๆ ตามขั้นของกรมชลประทาน (เสมอตลิ่งพอดีคือขั้นแจ้งเตือนภัย ไม่ใช่เฝ้าระวัง)
+    scale = {
+      kind: 'proportional', heading: 'ระดับน้ำเทียบตลิ่ง (เกณฑ์กรมชลประทาน)', min: BANK_SCALE_MIN, max: BANK_SCALE_MAX, value: 0 - diff, activeIndex: 2,
+      zones: [
+        { label: LEVEL_TIERS[0].label, from: BANK_SCALE_MIN, to: -1, color: TIER_COLORS[0] },
+        { label: LEVEL_TIERS[1].label, from: -1, to: 0, color: TIER_COLORS[1], tickLabel: '−1 ม.' },
+        { label: LEVEL_TIERS[2].label, from: 0, to: BANK_SCALE_MAX, color: TIER_COLORS[2], tickLabel: 'ตลิ่ง' },
+      ],
+      markLabel: `${cut(stationName, 24)} ${atBank ? 'เสมอตลิ่ง' : `+${over} ม.`}`,
+    }
+    todo = [
+      [{ t: 'ยกของขึ้นที่สูง', b: true }, { t: ' ปิดเครื่องใช้ไฟฟ้า เตาแก๊ส ' }, { t: 'ยกเบรกเกอร์', b: true }],
+      // ชื่อลำน้ำยาว (> 14 ตัวอักษร) ข้ามไป — ข้อนี้ต้องจบ 1 บรรทัด ไม่งั้นแถบล่างล้น (ชื่อเต็มอยู่ที่หัวภาพแล้ว)
+      [{ t: 'เตรียมของจำเป็น', b: true }, { t: ` น้ำดื่ม อาหารแห้ง ยา โทรศัพท์ · ติดตามระดับน้ำ${river && riverPhrase(river).length <= 14 ? ` ${riverPhrase(river)} ` : ''}ใกล้ชิด` }],
+      [{ t: 'พบน้ำท่วมบ้านหรือเหตุฉุกเฉิน ' }, { t: callOut(org), b: true }],
+    ]
+    sourceLead = 'แหล่งข้อมูล: คลังข้อมูลน้ำแห่งชาติ (ThaiWater) สสน. · เกณฑ์ระดับน้ำ กรมชลประทาน (มาตรฐานข้อมูลน้ำ สสน.) · เกณฑ์ฝน กรมอุตุนิยมวิทยา'
+    sourceLine = 'ข้อมูลจาก ThaiWater (สสน.)'
+    illustration = { kind: 'overbank', bankDiff: diff, rainy: analysis.sentences.some(sn => sn.key === 'rain-too'), bankText: atBank ? 'เสมอตลิ่ง' : `+${over} ม.` }
+  } else if (kind === 'dam') {
     const level = damLevel(damPct)
     headline = { sub: 'สถานการณ์น้ำ', level: level?.label ?? 'อ่างเก็บน้ำ', name: damName }
     ribbon = `ข้อมูลอ่าง ณ วันที่ ${posterDateLong(dam.recorded_at)}`
@@ -355,19 +566,11 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
     ? { none: false, label: `ข้อความเตือนจาก สสน.${district ? ` ใน อ.${district}` : ''}`, text: clean(official[0].message, 300), more: official.length - 1 }
     : { none: true, label: `ประกาศเตือนของ สสน.${district ? ` สำหรับ อ.${district}` : ''}`, text: 'ไม่มีในขณะนี้', more: 0 }
 
-  // เรื่องที่แรงกว่าหัวภาพ (น้ำเสมอ/สูงกว่าตลิ่ง · สถานีเตือนภัยระดับเตรียมพร้อมขึ้นไป) — ห้ามให้ภาพ "อ่างล้น" ดูเหมือนเรื่องเดียวที่ต้องระวัง
-  const others = []
-  if (alerts.overbank.length) {
-    const s = alerts.overbank[0]
-    others.push(`ระดับน้ำเสมอหรือสูงกว่าตลิ่ง สถานี${clean(s.station_name, 60)} ${bankText(s.bank_diff_m) ?? ''}`.trim())
-  }
-  if (alerts.ews.length) {
-    const { station, alert } = alerts.ews[0]
-    others.push(`สถานีเตือนภัยน้ำหลาก-ดินถล่ม ${clean(station.station_name, 60)} · ${clean(alert.text, 40)}`)
-  }
-  const otherNote = others.length ? `มีเรื่องอื่นที่ต้องระวังกว่า: ${others.join(' · ')}` : null
+  // เรื่องที่อยู่สูงกว่าหัวภาพตามลำดับจริง (posterTopicCandidates) — หัวภาพเป็นตัวแรกของลำดับเสมอ จึงเป็น null ในทางปฏิบัติ
+  const otherNote = posterOtherNote(candidates, topic)
 
-  const todo = kind === 'dam'
+  // ข้อควรทำของภาพอ่าง/ฝน (ภาพสถานีเตือนภัย/น้ำเสมอตลิ่งกำหนดไว้ในบล็อกของตัวเองข้างบน)
+  if (kind === 'dam' || kind === 'rain') todo = kind === 'dam'
     ? [
       [{ t: 'งดลงเล่นน้ำ จับปลา', b: true }, { t: ' ใกล้ทางระบายน้ำล้นและลำน้ำท้ายอ่าง' }],
       [{ t: `บ้านริม${riverPhrase(dam.river_name)} ` }, { t: 'ยกของขึ้นที่สูง', b: true }, { t: ' ติดตามระดับน้ำใกล้ชิด' }],
@@ -382,9 +585,11 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
       [{ t: 'พบน้ำท่วมฉับพลันหรือเหตุฉุกเฉิน ' }, { t: callOut(org), b: true }],
     ]
 
-  // วันที่ต้นทางของค่าที่ใช้จริงในภาพ (อ่างรายวัน = วันที่ · ฝน = วันที่ + เวลา)
+  // วันที่ต้นทางของค่าที่ใช้จริงในภาพ (อ่างรายวัน = วันที่ · ฝน/สถานะ/ระดับน้ำ = วันที่ + เวลา)
   const rainShown = rows.find(r => r.mm !== null) ? topRainRows.find(s => freshRainMm(s, now) !== null) : null
   const srcParts = []
+  if (kind === 'ews') srcParts.push(`สถานะ ${posterDateShort(top.recorded_at)} ${posterTime(top.recorded_at)} น.`)
+  if (kind === 'overbank') srcParts.push(`ค่าระดับน้ำ ${posterDateShort(top.recorded_at)} ${posterTime(top.recorded_at)} น.`)
   if (dam) srcParts.push(`ค่าอ่าง ${posterDateShort(dam.recorded_at)}`)
   const rainAt = kind === 'rain' ? top.recorded_at : rainShown?.recorded_at
   if (rainAt) srcParts.push(`ค่าฝน ${posterDateShort(rainAt)} ${posterTime(rainAt)} น.`)
@@ -392,6 +597,12 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
   const province = stripPrefix(tenant?.province, /^(จังหวัด|จ\.)/)
   const locationText = [tenantName, district ? `อ.${district}` : '', province ? `จ.${province}` : ''].filter(Boolean).join(' ')
   const locality = orgNameParts(tenant ?? tenantName).locality
+
+  // ข้อความแหล่งข้อมูล (บรรทัดแรก/ขึ้นต้นบรรทัดสอง) ของภาพอ่าง/ฝน · ข้อความสำหรับแชร์/alt = หัวเรื่อง + ชื่อ (ภาพสถานีเตือนภัยใส่ชนิดสถานีนำหน้า)
+  sourceLead ??= 'แหล่งข้อมูล: คลังข้อมูลน้ำแห่งชาติ (ThaiWater) สสน. · เกณฑ์อ่าง สสน. และกรมชลประทาน · เกณฑ์ฝน กรมอุตุนิยมวิทยา'
+  sourceLine ??= 'ข้อมูลจาก ThaiWater (สสน.)'
+  const topicText = `${kind === 'ews' ? `${headline.sub} ` : ''}${headline.level} ${headline.name}`
+  const sourceShort = sourceLine.replace(/\(สสน\.\)/, 'สสน.')
 
   return {
     kind,
@@ -436,13 +647,13 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
       location: locationText,
       tags: ['#สถานการณ์น้ำ', locality ? `#${locality}` : ''].filter(Boolean).join(' '),
       lines: [
-        `แหล่งข้อมูล: คลังข้อมูลน้ำแห่งชาติ (ThaiWater) สสน. · เกณฑ์อ่าง สสน. และกรมชลประทาน · เกณฑ์ฝน กรมอุตุนิยมวิทยา${srcParts.length ? ` · ${srcParts.join(' · ')}` : ''}`,
-        `ข้อมูลจาก ThaiWater (สสน.) · ไม่ใช่ประกาศของ${tenantName} · ไม่มีข้อมูล ไม่ได้หมายความว่าสถานการณ์ปกติ · ดูค่าล่าสุดที่หน้า "สถานการณ์น้ำ–ฝน" ของ${tenantName}`,
+        `${sourceLead}${srcParts.length ? ` · ${srcParts.join(' · ')}` : ''}`,
+        `${sourceLine} · ไม่ใช่ประกาศของ${tenantName} · ไม่มีข้อมูล ไม่ได้หมายความว่าสถานการณ์ปกติ · ดูค่าล่าสุดที่หน้า "สถานการณ์น้ำ–ฝน" ของ${tenantName}`,
       ],
     },
-    illustration: { rainy: kind === 'rain', pct: damPct },
-    shareText: `แจ้งเตือนสถานการณ์น้ำ–ฝน ${tenantName}: ${headline.level} ${headline.name} (ข้อมูลจาก ThaiWater สสน. ไม่ใช่ประกาศของ${tenantName})`,
-    altText: `ภาพแจ้งเตือนสถานการณ์น้ำ–ฝน ${tenantName}: ${headline.level} ${headline.name} ข้อมูลจาก ThaiWater (สสน.) ไม่ใช่ประกาศของ${tenantName}`,
+    illustration: illustration ?? { kind, rainy: kind === 'rain', pct: damPct },
+    shareText: `แจ้งเตือนสถานการณ์น้ำ–ฝน ${tenantName}: ${topicText} (${sourceShort} ไม่ใช่ประกาศของ${tenantName})`,
+    altText: `ภาพแจ้งเตือนสถานการณ์น้ำ–ฝน ${tenantName}: ${topicText} ${sourceLine} ไม่ใช่ประกาศของ${tenantName}`,
     fileName: `water-alert-${(() => { const p = bangkokParts(now instanceof Date ? now : Number(now)); return p ? `${p.y}${String(p.m + 1).padStart(2, '0')}${String(p.d).padStart(2, '0')}` : 'latest' })()}.png`,
   }
 }
