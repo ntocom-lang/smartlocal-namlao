@@ -90,6 +90,19 @@ try {
         warnings: [{ message: 'ประกาศ สสน. ระบุว่าเฝ้าระวังฝนตกหนักถึงหนักมากและน้ำป่าไหลหลากบริเวณเชิงเขาและริมลำน้ำสาขาในพื้นที่ตำบลและตำบลข้างเคียงต่อเนื่องตลอดคืนนี้ถึงเช้า', issued_at: ago(2) }],
         contacts: [],
       },
+      // ประโยควิเคราะห์ฝนครบ 3 ประโยค (ฝนหยุดแล้ว + วงกว้าง + อ่างประกอบน้ำมาก) + ข้อความ สสน. ยาว
+      // ⚠️ ไม่ใส่ ews/overbank: ภาพฝน + แถบ "เรื่องอื่นที่ต้องระวังกว่า" + ข้อความ สสน. 2 บรรทัด + เบอร์ ล้นแถบล่าง ~29px
+      //    ตั้งแต่โค้ดเดิม (#719 ก่อนมีประโยควิเคราะห์) — แยกเป็นงานแก้เลย์เอาต์ต่างหาก
+      rainStress: {
+        dams: [dam({ station_name: 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', storage_percent: 97.4 })],
+        rain: [
+          rain('R1', 'บ้านบุญแจ่ม', 148.2, { is_primary: true, rain_1h_mm: 0 }),
+          rain('R2', 'อ่างเก็บน้ำห้วยขึมโยธินอุทกพัฒนา', 120.5, { is_primary: true, distance_km: 2.9 }),
+          rain('R3', 'บ้านแม่ยางตาล', 95.0, { distance_km: 7.4 }),
+        ],
+        warnings: [{ message: 'ประกาศ สสน. ระบุว่าเฝ้าระวังฝนตกหนักถึงหนักมากและน้ำป่าไหลหลากบริเวณเชิงเขาและริมลำน้ำสาขาในพื้นที่ตำบลและตำบลข้างเคียงต่อเนื่องตลอดคืนนี้ถึงเช้า', issued_at: ago(2) }],
+        contacts,
+      },
     }
     const out = {}
     for (const [key, scene] of Object.entries(scenes)) {
@@ -114,20 +127,31 @@ try {
     return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) }
   }
 
-  const names = { dam: 'dam-105.1', rain: 'rain-96.5', stress: 'stress' }
-  for (const key of ['dam', 'rain', 'stress']) {
+  const names = { dam: 'dam-105.1', rain: 'rain-96.5', stress: 'stress', rainStress: 'rain-stress' }
+  for (const key of Object.keys(names)) {
     const r = result[key]
     assert.ok(r && !r.error && r.model !== null, `${key}: วาดภาพไม่สำเร็จ ${r?.error ?? ''}`)
+    // เขียนภาพก่อนตรวจเลย์เอาต์ — ล้มแล้วยังเปิดดูได้ว่าล้นตรงไหน
+    await writeFile(path.join(SHOT_DIR, `water-alert-${names[key]}.png`), Buffer.from(r.png, 'base64'))
     assert.equal(r.type, 'image/png', `${key}: ชนิดไฟล์`)
     assert.ok(r.size > 50_000, `${key}: ไฟล์เล็กผิดปกติ ${r.size} B`)
     assert.deepEqual(pngSize(r.png), { width: 1080, height: 1350 }, `${key}: ขนาดภาพ`)
     assert.deepEqual(r.layout.issues, [], `${key}: ข้อความล้นกรอบ/เนื้อหาล้น ${JSON.stringify(r.layout.issues)}`)
     assert.equal(r.layout.fits, true, `${key}: เนื้อหาล้นแถบล่าง`)
     assert.equal(r.layout.kanitLoaded, true, `${key}: ฟอนต์ Kanit ไม่โหลด`)
-    await writeFile(path.join(SHOT_DIR, `water-alert-${names[key]}.png`), Buffer.from(r.png, 'base64'))
   }
   assert.equal(result.dam.kind, 'dam')
   assert.equal(result.rain.kind, 'rain')
+  assert.equal(result.rainStress.kind, 'rain')
+  // ประโยควิเคราะห์: ภาพปกติขึ้นครบ · ภาพเค้นสุดทางตัดประโยคท้ายทิ้งทีละประโยคจนพอดี (ไม่ตัดกลางประโยค)
+  for (const key of ['dam', 'rain']) {
+    const { analysisShown, analysisTotal } = result[key].layout
+    assert.ok(analysisTotal > 0, `${key}: ควรมีประโยควิเคราะห์`)
+    assert.equal(analysisShown, analysisTotal, `${key}: ประโยควิเคราะห์ถูกตัด ${analysisShown}/${analysisTotal}`)
+  }
+  assert.equal(result.rainStress.layout.analysisTotal, 3)
+  assert.ok(result.rainStress.layout.analysisShown >= 1, 'ภาพเค้นสุดทางยังต้องเหลือประโยควิเคราะห์อย่างน้อย 1')
+  console.log('analysis shown:', Object.fromEntries(Object.entries(result).map(([k, r]) => [k, `${r.layout.analysisShown}/${r.layout.analysisTotal}`])))
   assert.equal(result.dam.layout.logoLoaded, true, 'ตราจาก URL ต้องโหลดและวาดได้')
   assert.equal(result.stress.layout.logoLoaded, false, 'ตรา 404 = วาดต่อได้โดยไม่มีตรา')
   // ไม่มีเบอร์ = แถบเบอร์หาย

@@ -729,15 +729,23 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null }) {
     })
   }
 
-  // ย่อหน้าอธิบาย
-  {
-    const rich = richLines(ctx, model.intro, body, CONTENT_W, 23, 18, 2, issues, 'คำอธิบาย')
+  // ย่อหน้าอธิบาย + ประโยควิเคราะห์สถานการณ์ (buildSituationAnalysis) ไม่เกิน 3 บรรทัด
+  // ยาวเกิน 3 บรรทัด หรือทั้งภาพล้นแถบล่าง (ตรวจตอนเรียงบล็อกข้างล่าง) → ตัดประโยควิเคราะห์ท้ายสุดทิ้งทีละประโยค
+  // ห้ามตัดกลางประโยคด้วย "…" — ประโยคเตือนที่ขาดครึ่งอ่านผิดความหมายได้
+  const analysisTotal = model.analysis?.length ?? 0
+  const introBlock = n => {
+    const local = []
+    const runs = model.introFor ? model.introFor(n) : model.intro
+    const rich = richLines(ctx, runs, body, CONTENT_W, 23, 18, 3, local, 'คำอธิบาย')
     const lineH = Math.round(rich.size * 1.4)
-    stack.push({
-      name: 'intro', h: rich.lines.length * lineH,
+    return {
+      name: 'intro', h: rich.lines.length * lineH, shown: n, truncated: rich.truncated, local,
       paint(y) { drawRich(ctx, rich.lines, MARGIN, y, lineH, rich.size, body, { color: '#fff', emColor: '#ffd400', weight: 700 }) },
-    })
+    }
   }
+  let intro = introBlock(analysisTotal)
+  while (intro.truncated && intro.shown > 0) intro = introBlock(intro.shown - 1)
+  const introIndex = stack.push(intro) - 1
 
   // บรรทัดแดง "มีเรื่องอื่นที่ต้องระวังกว่า"
   if (model.otherNote) {
@@ -1024,8 +1032,14 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null }) {
   const footTop = H - footH
 
   // เรียงบล็อก: ช่องว่างระหว่างบล็อกปรับตามที่เหลือ (4–18px) ไม่ให้ล้นแถบล่างหรือทิ้งช่องโหว่
-  const sumH = stack.reduce((s, b) => s + b.h, 0)
   const top0 = heroBottom + 6
+  // ล้นแม้ช่องว่างแคบสุด (4px) → ตัดประโยควิเคราะห์ท้ายสุดทีละประโยค (ย่อหน้าเปิดเดิมยังอยู่ครบ)
+  const minBottom = () => top0 + stack.reduce((s, b) => s + b.h, 0) + 4 * (stack.length - 1)
+  while (minBottom() > footTop - 4 && stack[introIndex].shown > 0) stack[introIndex] = introBlock(stack[introIndex].shown - 1)
+  issues.push(...stack[introIndex].local)
+  if (stack[introIndex].truncated) issues.push('คำอธิบาย: ยาวเกิน 3 บรรทัดแม้ไม่มีประโยควิเคราะห์')
+  const analysisShown = stack[introIndex].shown
+  const sumH = stack.reduce((s, b) => s + b.h, 0)
   const gapRaw = Math.floor((footTop - top0 - sumH - 8) / stack.length)
   const gap = Math.max(4, Math.min(18, gapRaw))
   let y = top0
@@ -1052,7 +1066,7 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null }) {
   })
 
   ctx.restore()
-  return { issues, blocks, footTop, contentBottom, fits, gap }
+  return { issues, blocks, footTop, contentBottom, fits, gap, analysisShown, analysisTotal }
 }
 
 /**

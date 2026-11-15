@@ -8,7 +8,7 @@
 //    ไม่มีเบอร์ = ช่องนั้นหาย (ไม่มีเบอร์สำรอง/เบอร์กลาง) · PDPA: มีแต่ชื่อสถานี ตัวเลข เวลา — ไม่มีข้อมูลบุคคล
 
 import {
-  DAM_LEVELS, DAM_STALE_HOURS, RAIN_LEVELS, STATION_STALE_HOURS,
+  DAM_LEVELS, DAM_STALE_HOURS, DAM_TREND_FLAT_MCM, RAIN_LEVELS, STATION_STALE_HOURS,
   bankText, buildAlerts, damLevel, distanceText, formatMm, isStale, measuredAtText, rainLevel, stationPlace, toNum,
 } from './waterSituation.js'
 import { orgNameParts } from './orgTerms.js'
@@ -182,6 +182,75 @@ function rainRow(station, now, homeAmphoe) {
   }
 }
 
+const round2 = v => Math.round(v * 100) / 100
+const isRaining = mm => mm !== null && mm >= RAIN_LEVELS[0].below
+
+/**
+ * ประโยควิเคราะห์สถานการณ์ที่ต่อท้ายย่อหน้าเปิด — กฎตรงไปตรงมา ไม่ใช่ AI (เจ้าของระบบเลือก 2026-11-15)
+ * กติกา: ทุกประโยคคิดจากตัวเลขที่ "อยู่ในภาพเดียวกัน" (ช่องตัวเลข/แถวฝน) คนอ่านคำนวณซ้ำได้เอง
+ *   · ไม่พยากรณ์ล่วงหน้า (ไม่มี "จะล้นใน N ชม.") · ไม่สั่งอพยพ (อำนาจของ อปท. ไม่ใช่ภาพอัตโนมัติ)
+ *   · ค่าที่ใช้ขาด = ประโยคนั้นไม่ขึ้น (ไม่เดา) · ไม่มีอุปมา เช่น "เท่าสระว่ายน้ำ" (เจ้าของระบบ: ไม่เป็นทางการ)
+ * คืน { excess, sentences: [{ key, runs }] } — excess = ปริมาตรเกินระดับเก็บกัก (ล้าน ลบ.ม.) ที่ต่อท้ายคำว่า "เกินความจุ…"
+ */
+export function buildSituationAnalysis({ kind, top, dam, damPct, rows, heavyRain = [], rain = [], now }) {
+  const sentences = []
+  if (kind === 'dam') {
+    // ใช้ค่าปัดทศนิยม 2 ตำแหน่งแบบเดียวกับช่องตัวเลข — ลบกันในภาพแล้วได้เลขเดียวกัน
+    const storage = toNum(dam.dam_storage_mcm)
+    const cap = toNum(dam.dam_capacity_mcm)
+    const ex = storage !== null && cap !== null ? round2(round2(storage) - round2(cap)) : null
+    const inflow = toNum(dam.dam_inflow_mcm)
+    const outflow = toNum(dam.dam_released_mcm)
+    if (inflow !== null && outflow !== null) {
+      const diff = round2(round2(inflow) - round2(outflow))
+      if (Math.abs(diff) < DAM_TREND_FLAT_MCM) {
+        sentences.push({ key: 'trend-flat', runs: [{ t: 'น้ำไหลลงอ่างเท่ากับที่ระบายออก ปริมาณน้ำจึง' }, { t: 'ทรงตัว', em: true }, { t: 'อยู่เหนือระดับเก็บกัก' }] })
+      } else if (diff > 0) {
+        sentences.push({ key: 'trend-up', runs: [{ t: `น้ำไหลลงอ่างมากกว่าที่ระบายออกวันละ ${diff.toFixed(2)} ล้าน ลบ.ม. น้ำในอ่าง` }, { t: 'มีแนวโน้มเพิ่มขึ้น', em: true }] })
+      } else {
+        sentences.push({ key: 'trend-down', runs: [{ t: `น้ำระบายออกมากกว่าที่ไหลลงอ่างวันละ ${(-diff).toFixed(2)} ล้าน ลบ.ม. น้ำในอ่าง` }, { t: 'มีแนวโน้มลดลง', em: true }] })
+      }
+    }
+    // ฝนหนักขึ้นไปในแถวฝนของภาพ — บอกว่ามีพร้อมกัน ไม่อ้างว่าฝนตกลงอ่าง (สถานีอาจไม่อยู่ในลุ่มน้ำของอ่าง)
+    const wet = rows.filter(r => r.mm !== null && r.mm > RAIN_LEVELS[2].upTo).sort((a, b) => b.mm - a.mm)[0]
+    if (wet) sentences.push({ key: 'rain-too', runs: [{ t: 'ประกอบกับ' }, { t: `${wet.levelLabel}ในพื้นที่`, em: true }, { t: ` (${wet.name} ${wet.mmText} มม.)` }] })
+    return { excess: ex !== null && ex >= DAM_TREND_FLAT_MCM ? ex : null, sentences }
+  }
+
+  // หัวภาพเป็นฝน — top ผ่าน buildAlerts แล้ว (ค่ายังสด) ฝนชั่วโมงล่าสุดจึงเป็นของเวลาเดียวกัน
+  const rain1h = toNum(top.rain_1h_mm)
+  if (rain1h !== null) {
+    sentences.push(isRaining(rain1h)
+      ? { key: 'still-raining', runs: [{ t: `ชั่วโมงล่าสุดยังวัดฝนได้ ${formatMm(rain1h)} มม. ` }, { t: 'ฝนยังตกอยู่', em: true }] }
+      : { key: 'stopped', runs: [{ t: 'ชั่วโมงล่าสุดฝนหยุดแล้ว แต่' }, { t: 'น้ำป่าอาจยังไหลตามมา', em: true }] })
+  }
+  if (heavyRain.length >= 2) {
+    sentences.push({ key: 'widespread', runs: [{ t: `ฝนหนักมาก ${heavyRain.length} สถานี ` }, { t: 'เป็นวงกว้าง', em: true }] })
+  } else {
+    // เฉพาะจุด = สถานีอื่นที่ค่ายังสดมีอย่างน้อย 1 และไม่มีตัวไหนถึง "ฝนหนัก" · ไม่มีสถานีอื่นให้เทียบ = ไม่สรุป
+    const others = (Array.isArray(rain) ? rain : []).filter(s => s && s !== top && s.station_code !== top.station_code)
+      .map(s => ({ s, mm: freshRainMm(s, now) })).filter(o => o.mm !== null)
+    const wettest = others.sort((a, b) => b.mm - a.mm)[0]
+    if (wettest && wettest.mm <= RAIN_LEVELS[2].upTo) {
+      sentences.push({ key: 'local', runs: [{ t: 'สถานีอื่นใกล้พื้นที่ฝนไม่ถึงเกณฑ์ฝนหนัก เป็น' }, { t: 'ฝนหนักเฉพาะจุด', em: true }] })
+    } else if (wettest) {
+      const nearName = clean(wettest.s.station_name, 40)
+      sentences.push({ key: 'nearby-heavy', runs: [{ t: `${/^สถานี/.test(nearName) ? '' : 'สถานี'}${nearName} ` }, { t: `ก็มี${rainLevel(wettest.mm)?.label ?? 'ฝนหนัก'}`, em: true }, { t: ` ${formatMm(wettest.mm)} มม.` }] })
+    }
+  }
+  // อ่างประกอบที่น้ำมาก (80–100%) — >100% จะเป็นหัวภาพอ่างไปแล้ว
+  if (dam && damPct !== null && damPct > DAM_LEVELS[2].upTo) {
+    sentences.push({ key: 'dam-high', runs: [{ t: `${shortDamName(clean(dam.station_name, 60))}มีน้ำแล้ว ${num1(damPct)}% ` }, { t: 'ใกล้เต็มความจุ', em: true }] })
+  }
+  return { excess: null, sentences }
+}
+
+// ต่อประโยควิเคราะห์เป็นย่อหน้าเดียว (คั่นด้วยช่องว่าง) · ไม่มีประโยค = คงท้ายเดิม "รายละเอียดดังนี้"
+function withAnalysis(runs, sentences) {
+  if (!sentences.length) return [...runs, { t: ' รายละเอียดดังนี้' }]
+  return [...runs, ...sentences.flatMap(s => [{ t: ' ' }, ...s.runs])]
+}
+
 /**
  * ประกอบข้อมูลทั้งภาพ — คืน null เมื่อไม่มีเรื่องเข้าเกณฑ์หัวภาพ (ไม่มีภาพ/ไม่มีปุ่ม)
  * รับรูปแบบเดียวกับที่ WaterAlertBanner / AlertBanner แยกจากแถวสถานีอยู่แล้ว (ไม่ยิง RPC เพิ่ม)
@@ -206,17 +275,18 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
   const damPct = dam ? toNum(dam.storage_percent) : null
   const damName = dam ? clean(dam.station_name, 80) : ''
   const place = s => [stationPlace(s, homeAmphoe), distanceText(s.distance_km)].filter(Boolean).join(' ')
+  const analysis = buildSituationAnalysis({ kind, top, dam, damPct, rows, heavyRain: alerts.heavyRain, rain, now })
 
-  let headline, ribbon, intro, tiles, scale
+  let headline, ribbon, introBase, tiles, scale
   if (kind === 'dam') {
     const level = damLevel(damPct)
     headline = { sub: 'สถานการณ์น้ำ', level: level?.label ?? 'อ่างเก็บน้ำ', name: damName }
     ribbon = `ข้อมูลอ่าง ณ วันที่ ${posterDateLong(dam.recorded_at)}`
     const bits = [dam.is_primary === true ? 'อยู่ในตำบล' : '', place(dam)].filter(Boolean).join(' ')
-    intro = [
+    introBase = [
       { t: `${damName}${bits ? ` (${bits})` : ''} มีปริมาณน้ำ` },
       { t: 'เกินความจุที่ระดับเก็บกัก', em: true },
-      { t: ' รายละเอียดดังนี้' },
+      ...(analysis.excess !== null ? [{ t: ` ${analysis.excess.toFixed(2)} ล้าน ลบ.ม.` }] : []),
     ]
     const cap = toNum(dam.dam_capacity_mcm)
     const storage = toNum(dam.dam_storage_mcm)
@@ -240,10 +310,10 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
     headline = { sub: 'สถานการณ์ฝน', level: `ฝนหนักมาก ${formatMm(mm)} มม.`, name: `ฝนตกหนักมาก ${where || clean(top.station_name, 40)}` }
     ribbon = `ข้อมูลฝน ณ วันที่ ${posterDateLong(top.recorded_at)} · ${posterTime(top.recorded_at)} น.`
     const bits = [top.is_primary === true ? 'ในตำบล' : '', place(top)].filter(Boolean).join(' ')
-    intro = [
+    introBase = [
       { t: `สถานีวัดฝน${clean(top.station_name, 80)}${bits ? ` (${bits})` : ''} วัดฝนสะสม 24 ชม. ได้ ${formatMm(mm)} มม. อยู่ในเกณฑ์` },
       { t: 'ฝนตกหนักมาก', em: true },
-      { t: 'ของกรมอุตุนิยมวิทยา รายละเอียดดังนี้' },
+      { t: 'ของกรมอุตุนิยมวิทยา' },
     ]
     const rain1h = toNum(top.rain_1h_mm)
     tiles = [
@@ -292,7 +362,10 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
     ]
     : [
       [{ t: 'ระวัง' }, { t: 'น้ำป่าไหลหลาก ดินโคลนถล่ม', b: true }, { t: ' บริเวณเชิงเขาและริมลำห้วย' }],
-      [{ t: 'งดเข้าป่า งดข้ามลำห้วย', b: true }, { t: 'ขณะฝนตกหนัก' }],
+      // ฝนหยุดแล้ว (ชั่วโมงล่าสุด 0 มม.) — "ขณะฝนตกหนัก" ไม่ตรงสถานการณ์ แต่น้ำป่ายังมาได้ จึงยังห้ามข้ามลำห้วย
+      analysis.sentences.some(s => s.key === 'stopped')
+        ? [{ t: 'งดเข้าป่า งดข้ามลำห้วย', b: true }, { t: ' แม้ฝนหยุดแล้ว' }]
+        : [{ t: 'งดเข้าป่า งดข้ามลำห้วย', b: true }, { t: 'ขณะฝนตกหนัก' }],
       [{ t: 'พบน้ำท่วมฉับพลันหรือเหตุฉุกเฉิน ' }, { t: callOut(org), b: true }],
     ]
 
@@ -313,7 +386,10 @@ export function buildPosterModel({ rain = [], ews = [], levels = [], dams = [], 
     orgCall: org,
     headline,
     ribbon,
-    intro,
+    intro: withAnalysis(introBase, analysis.sentences),
+    // ให้ตัววาดตัดประโยควิเคราะห์ท้ายสุดทิ้งทีละประโยคเมื่อเนื้อหาล้นภาพ (เรียงสำคัญมากไปน้อยแล้ว) — introFor(n) = ใช้ n ประโยคแรก
+    introFor: n => withAnalysis(introBase, analysis.sentences.slice(0, Math.max(0, n))),
+    analysis: analysis.sentences.map(s => s.key),
     otherNote,
     tiles,
     scale,
