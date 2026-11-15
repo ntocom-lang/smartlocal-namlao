@@ -669,6 +669,34 @@ const STATUS_TEXT = {
 
 const MISSING_TEXT = { rain: 'ฝน', 'rain-tambon': 'ฝนในตำบล', dam: 'อ่างเก็บน้ำ', level: 'ระดับน้ำในตำบล' }
 
+/**
+ * คำสรุปสถานการณ์บนหน้าเว็บ (ป้ายใต้หัวหน้า /water-situation) — ใช้ผลของ selectStatus ตัวเดียวกับภาพสถานะ
+ * หน้าเว็บกับภาพที่แชร์จึงพูดตรงกันเสมอ (เจ้าของระบบอนุมัติ 2569-11-15)
+ * - state = 'alert' → null: แถบแจ้งเตือนบนหน้าทำหน้าที่นี้อยู่แล้ว
+ * - detail = ประโยคเดียวจากค่าที่ใช้ตัดสินจริง (สถานี + ตัวเลข + เกณฑ์) ให้คนอ่านตรวจย้อนได้
+ * - ห้ามคำว่าแล้งเชิงประกาศภัย (เหตุผลเดียวกับภาพสถานะ) — เทสต์ตรวจ
+ */
+export function statusVerdict(st, now) {
+  if (!st || !STATUS_TEXT[st.state]) return null
+  const name = clean(st.station?.station_name, 60)
+  const critical = st.state === 'low' && st.reason === 'critical'
+  let detail
+  if (st.state === 'watch' && st.reason === 'rain') {
+    detail = `ฝนหนัก ${formatMm(freshRainMm(st.station, now))} มม. ใน 24 ชม. ที่สถานี${name} (เกณฑ์ฝนหนัก 35.1–90 มม.)`
+  } else if (st.state === 'watch' && st.reason === 'level') {
+    detail = `ระดับน้ำต่ำกว่าตลิ่ง ${toNum(st.station.bank_diff_m).toFixed(2)} ม. ที่สถานี${name} (เฝ้าระวังเมื่อต่ำกว่าตลิ่งไม่เกิน ${LEVEL_WATCH_M} ม.)`
+  } else if (st.state === 'watch') {
+    detail = 'มีข้อความเตือนจากสถาบันสารสนเทศทรัพยากรน้ำ (สสน.) ในพื้นที่อำเภอ'
+  } else if (st.state === 'low') {
+    detail = `${shortDamName(name)} มีน้ำ ${num1(toNum(st.station.storage_percent))}% ของความจุ (น้ำน้อย ≤${LOW_WATER_PCT}% · วิกฤติ ≤${LOW_WATER_CRITICAL_PCT}% ตามเกณฑ์กรมชลประทาน)`
+  } else if (st.state === 'nodata') {
+    detail = `ยังสรุปไม่ได้ เพราะไม่มีค่าล่าสุดของ${(st.missing ?? []).map(k => MISSING_TEXT[k] ?? k).join(' · ')}`
+  } else {
+    detail = 'ฝน ระดับน้ำ และอ่างเก็บน้ำที่วัดได้ล่าสุด ยังไม่ถึงเกณฑ์เฝ้าระวัง'
+  }
+  return { state: st.state, label: critical ? 'น้ำน้อยวิกฤติ' : STATUS_TEXT[st.state].banner, critical, detail }
+}
+
 const asRain = rain => (Array.isArray(rain) ? rain : []).filter(s => s && (s.station_type === 'rain' || s.station_type === undefined))
 const freshLevel = (s, now) => isFreshAt(s?.recorded_at, now, STATION_STALE_HOURS) && toNum(s.bank_diff_m) !== null
 const nowValue = now => (now instanceof Date ? now : Number(now))
