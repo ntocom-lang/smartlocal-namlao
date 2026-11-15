@@ -4,7 +4,7 @@ import { thaiShortDate } from '../../../lib/complaintReportPeriods'
 import { EXEC_OVERDUE_WD, execNf } from '../../../lib/executiveData'
 import { loadOverdue, nudgeItem } from '../../../lib/execFollowNudge'
 import {
-  canRetry, followRowKind, itemCategoryLabel, itemKey, itemKindName, itemOwnerText, itemStatusLabel, nudgeBlocked, nudgeConfirmText,
+  canRetry, followRowKind, itemCategoryLabel, itemKey, itemKindName, itemOwnerText, itemPlaceText, itemStatusLabel, nudgeBlocked, nudgeConfirmText,
   nudgeDeliveryText, nudgeResultMessage, overdueWorkingDays, sensitiveSummaryLines, truncatedText,
 } from '../../../lib/execFollowNudgeHelpers'
 import { simpleAlertWords } from '../../../lib/execSimpleView'
@@ -86,10 +86,12 @@ export function OverdueItems({ tenant, today, canNudge, tick }) {
         const sent = nudge ? nudgeDeliveryText(nudge.delivery) : null
         const note = notes[key]
         const owner = itemOwnerText(item)
+        const place = itemPlaceText(item)
         return (
           <Item key={key} data-exec-simple-overdue-row={key}>
             <div className="es-item-head"><span>{item.ref}</span><span className="late">เลยมา {execNf(days)} วันทำการ</span></div>
             <div className="es-item-title">{itemCategoryLabel(item, tenant)}</div>
+            {place && <div className={`es-item-place${place.tone === 'muted' ? ' muted' : ''}`} data-exec-simple-place>{place.text}</div>}
             <div className="es-item-sub">{itemKindName(item.k)} · {item.dept || 'ไม่ระบุกอง'} · {itemStatusLabel(item.k, item.s)} · กำหนดเสร็จ {dueText(item.due)}</div>
             {owner && <div className={`es-item-owner${owner.tone === 'warn' ? ' warn' : ''}`} data-exec-simple-owner>{owner.tone === 'warn' ? '⚠ ' : ''}{owner.text}</div>}
             {note && <Flag tone={TONE_OF[note.tone] ?? 'amber'} data-exec-simple-nudge-note>{note.text}</Flag>}

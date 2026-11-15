@@ -124,6 +124,20 @@ export function itemOwnerText(item) {
   return { tone: 'warn', text: 'ยังไม่มอบหมายผู้รับผิดชอบ' }
 }
 
+/**
+ * หมู่บ้าน/สถานที่ของคำร้อง (place/place_unlisted จาก exec_overdue_items · migration 20261128100000)
+ * ให้นายกรู้ว่าเรื่องอยู่หมู่บ้านไหน — ฐานคืนเฉพาะชื่อในทะเบียนหมู่บ้าน/เลขหมู่ ไม่คืนข้อความที่ผู้แจ้งพิมพ์เอง (PDPA)
+ *   คำขอ = null (ไม่มีช่องหมู่บ้าน) · ไม่มีคีย์ place_unlisted (ฐานยังไม่รัน SQL) = null ไม่แสดง ห้ามเดา
+ * @returns {{ tone: 'ok'|'muted', text: string } | null}
+ */
+export function itemPlaceText(item) {
+  if (item?.k !== 'complaint' || typeof item?.place_unlisted !== 'boolean') return null
+  const place = typeof item.place === 'string' ? item.place.trim() : ''
+  if (place) return { tone: 'ok', text: `สถานที่: ${place}` }
+  if (item.place_unlisted) return { tone: 'muted', text: 'สถานที่: ผู้แจ้งระบุเอง (ไม่อยู่ในทะเบียนหมู่บ้าน)' }
+  return { tone: 'muted', text: 'สถานที่: ไม่ได้ระบุหมู่บ้าน' }
+}
+
 /** วันทำการที่เลยกำหนดมาแล้ว — หลักเดียวกับ E2 (workingDaysSince ตัวเดียวกับ backlogAnalysis) · due ว่าง = 0 */
 export function overdueWorkingDays(due, today) {
   if (typeof due !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(due)) return 0
