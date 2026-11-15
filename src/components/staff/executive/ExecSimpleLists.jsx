@@ -8,7 +8,8 @@ import {
   nudgeDeliveryText, nudgeResultMessage, overdueWorkingDays, sensitiveSummaryLines, truncatedText,
 } from '../../../lib/execFollowNudgeHelpers'
 import { simpleAlertWords } from '../../../lib/execSimpleView'
-import { ActionBtn, Flag, Item, LoadFail, Loading, OpenBtn } from './ExecSimpleParts'
+import { ActionBtn, Flag, Item, LoadFail, Loading, OpenBtn, RuleNote } from './ExecSimpleParts'
+import { execKnowLabel } from '../../../lib/execSimpleInsights'
 
 // รายการที่กางใต้ข้อใน ② ของห้องผู้บริหารแบบเรียบ (อยู่หน้าเดิม ไม่ออกจากหน้า)
 //   OverdueItems = เรื่องช้าเกิน 5 วันทำการ + ปุ่มส่งให้กองเร่ง (ตรรกะ/ข้อความยืนยัน/ผลส่งชุดเดียวกับ ExecOverdueList ของหน้าเต็ม)
@@ -148,16 +149,22 @@ export function RatingSources({ low, onOpenSatisfaction }) {
   )
 }
 
-/** เรื่องเล็ก (นอกรายการสำคัญ / เกิน 3 แถวเด่น) — ชื่อ + จำนวน + ปุ่มไปหน้าเดิม ถ้าบัญชีนี้เปิดได้ */
+/**
+ * เรื่องเล็ก (นอกรายการสำคัญ / เกินแถวเด่น) — ชื่อ + จำนวน + ปุ่มไปหน้าเดิม ถ้าบัญชีนี้เปิดได้
+ * รับได้ทั้งสัญญาณเตือนจากทะเบียน (มี entry) และข้อมูลเชิงรุก (execSimpleInsights.js: มี words/target/rule ในตัว)
+ */
 export function MinorItems({ items, resolveLink }) {
   return items.map((it) => {
     const w = simpleAlertWords(it)
-    const go = resolveLink(it.entry)
+    const go = resolveLink(it.entry ?? (it.target ? { link: it.target } : null))
+    const sub = [execKnowLabel(it), it.detail].filter(Boolean).join(' · ')
     return (
       <Item key={it.id} data-exec-simple-minor={it.id}>
         <div className="es-item-head"><span>{w.what}</span>{it.showCount && <span className="wait">{execNf(it.count)} {w.unit}</span>}</div>
-        <div className="es-item-sub">{it.entry?.label}{it.detail ? ` · ${it.detail}` : ''}</div>
+        {sub && <div className="es-item-sub">{sub}</div>}
         {go && <OpenBtn onClick={go}>{w.go}</OpenBtn>}
+        {/* เฉพาะข้อมูลเชิงรุก (มี kind) — สัญญาณเตือนจากทะเบียนมีสูตรของตัวเองในหน้าแบบเต็ม ไม่เปลี่ยนพฤติกรรมเดิม */}
+        {it.kind && <RuleNote text={it.rule} />}
       </Item>
     )
   })

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Bell, CalendarDays, CheckCircle2, Clock, Droplets, FileText, Inbox, Landmark, PenLine, Star, Users } from 'lucide-react'
+import { Bell, CalendarDays, CheckCircle2, ClipboardList, Clock, CloudRain, Droplets, FileText, HardHat, Inbox, Landmark, PenLine, Repeat, Star, TrendingUp, Users, Wind } from 'lucide-react'
 import { liveEntries } from '../../../lib/executiveRegistry'
 import { addDays } from '../../../lib/complaintReportPeriods'
 import {
@@ -8,14 +8,19 @@ import {
 import { esignPendingFromRpc } from '../../../lib/esign'
 import { canNudgeItems, itemStatusLabel } from '../../../lib/execFollowNudgeHelpers'
 import {
-  EXEC_SIMPLE_SKIP_SUMMARY_KEYS, bangkokClock, isRefreshWindow, markNewAlerts, mergeSimpleSchedule, nextEventInfo, readSessionJson,
+  EXEC_SIMPLE_DETAIL_ALERTS, EXEC_SIMPLE_SKIP_SUMMARY_KEYS, bangkokClock, isRefreshWindow, markNewAlerts, mergeSimpleSchedule, nextEventInfo, readSessionJson,
   saveSimpleScroll, simpleAlertWords, simpleOverdueWhat, simpleServiceNumbers, splitSimpleAlerts, takeSimpleScroll, writeSessionJson,
 } from '../../../lib/execSimpleView'
+import {
+  EXEC_BRIEFING_RULE, buildBriefing, composeKnowRows, execKnowLabel, heavyRainInsight, planDeadlineInsights, pm25Insight, repeatInsight,
+} from '../../../lib/execSimpleInsights'
 import { STAFF_MENU_TARGETS } from '../../../lib/staffMenuAccess'
 import { useHomeRpc } from '../../../lib/staffHomeData'
 import { groupMyEvents } from '../../../lib/staffHomeSummary'
 import { useTenant } from '../../../contexts/TenantContext'
 import useExecAutoRefresh from '../../../hooks/useExecAutoRefresh'
+import useExecHazards from '../../../hooks/useExecHazards'
+import useExecPlanDeadlines from '../../../hooks/useExecPlanDeadlines'
 import { useExecOverview } from '../../../hooks/useExecOverview'
 import { useExecRpc } from '../../../hooks/useExecRpc'
 import { useExecSchedule } from '../../../hooks/useExecExtras'
@@ -23,7 +28,7 @@ import useExecSimpleFollows from '../../../hooks/useExecSimpleFollows'
 import { useMyPositionCategory } from '../../../hooks/useMyPositionCategory'
 import ExecSimpleSign, { SignNotice } from './ExecSimpleSign'
 import { FollowItems, MinorItems, OverdueItems, RatingSources } from './ExecSimpleLists'
-import { AlertBlock, Expandable, Flag, Gauge, KpiStrip, LabelNumber, LoadFail, Loading, Mini, OpenBtn, Row, SimpleCard } from './ExecSimpleParts'
+import { AlertBlock, BriefingBox, Expandable, Flag, Gauge, KpiStrip, LabelNumber, LoadFail, Loading, Mini, OpenBtn, Row, SimpleCard } from './ExecSimpleParts'
 
 // "ห้องผู้บริหารแบบเรียบ" — หน้าเดียวสำหรับนายก/รองนายก (เจ้าของระบบอนุมัติแผน 2026-11-11) ตอบคำถามเดียว: "วันนี้มีอะไรต้องทำ หรือต้องรู้ไหม"
 // 4 หัวข้อ ตำแหน่งคงที่ทุกวัน: ① เรื่องรอท่าน ② เรื่องที่ควรรู้ ③ งานบริการประชาชนเดือนนี้ ④ กำหนดการวันนี้+พรุ่งนี้ (+ ปุ่ม "แดชบอร์ดสำหรับผู้บริหารแบบครบทั้งหมด")
@@ -33,9 +38,19 @@ import { AlertBlock, Expandable, Flag, Gauge, KpiStrip, LabelNumber, LoadFail, L
 // อัปเดตเองทุก 5 นาที (useExecAutoRefresh: เฉพาะแท็บที่มองเห็น + 06:00–20:00 น. เวลาไทย) แบบเงียบ จอไม่กระพริบ · ดึงพลาด = คงตัวเลขเดิม + ป้ายเทา "ยังอัปเดตไม่ได้"
 // ข้อห้าม: ไม่มีปุ่มอนุมัติของตัวเอง (ลงนามในหน้าต่างเดิม) · ไม่แสดงชื่อผู้ร้อง/ผู้ประเมิน/ข้อความอิสระ (PDPA)
 //   · ไม่อ่านตารางคำร้อง/คำขอตรงๆ · ตัวเลขอ่านไม่ได้ = "—" / "โหลดไม่ได้ + ลองใหม่" ห้ามเป็น 0 หรือ "ไม่มีเรื่อง" ลวงๆ
+// ข้อมูลเชิงรุก (execSimpleInsights.js — กฎตายตัว ไม่ใช้ AI ทุกแถวมีปุ่ม "วิธีคิด"): สรุปวันนี้ ≤ 3 บรรทัดใต้แถบ KPI · ภัยที่กำลังมา (ฝนหนัก/ฝุ่น) ขึ้นบนสุดของ ②
+//   · ปัญหาซ้ำซากรายหมู่บ้าน · นับถอยหลังกำหนดตามระเบียบของแผนพัฒนา — ไม่มี SQL ใหม่ (พยากรณ์/ฝุ่น/แผน ดึงตามรอบ 5 นาทีเดิมแต่ throttle ต่อแหล่ง)
 // ⚠️ ไม่ได้ต่อ useExecPlanProgress (ผลดำเนินการตามแผนรายการ) — สัญญาณเตือน local-plan:result_missing จึงไม่ขึ้นในแบบเรียบ (อยู่ครบในหน้ารายละเอียด) เพื่อไม่เพิ่มการดึงข้อมูลหนักทุก 5 นาที
 
 const NOW_TICK_MS = 30_000
+
+// ไอคอนของข้อมูลเชิงรุกแต่ละแถว (ชนิดอื่น = ClipboardList: กำหนดตามระเบียบของแผนพัฒนา)
+const INSIGHT_ICONS = { 'hazard:heavy_rain': CloudRain, 'hazard:pm25': Wind, 'pattern:repeat': Repeat }
+// ไอคอนของแถวเด่นจากทะเบียน (ไม่มีในตาราง = เอกสาร)
+const ALERT_ICONS = {
+  'complaints:low_rating': Star, 'complaints:spike': TrendingUp, 'water-situation:event_open': Droplets,
+  'projects:contract_past': HardHat, 'projects:behind': HardHat, 'local-plan:no_published_plan': ClipboardList,
+}
 
 // "พฤหัสบดี 12 พ.ย." ของวันที่ไทย (YYYY-MM-DD) — ตัดคำว่า "วัน" หน้าชื่อวันออกให้สั้น
 const thaiDayShort = (iso) => {
@@ -109,18 +124,6 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
   const split = useMemo(() => splitSimpleAlerts(alerts.items), [alerts.items])
   const numbers = useMemo(() => simpleServiceNumbers(cur.model, derived), [cur.model, derived])
 
-  // ป้าย "ใหม่ HH:MM" (1 ชั่วโมง): เทียบกับรอบก่อนที่จำไว้ใน sessionStorage — เวลาที่ติดป้ายคือเวลาที่ได้ข้อมูลรอบนั้น
-  const newKey = tenantId && profileId ? `exec-simple-new:${tenantId}:${profileId}` : null
-  const marked = useMemo(() => {
-    if (!newKey || cur.status !== 'ok' || cur.fetchedAt == null) return null
-    return markNewAlerts(readSessionJson(newKey), alerts.items, new Date(cur.fetchedAt))
-  }, [newKey, cur.status, cur.fetchedAt, alerts.items])
-  useEffect(() => { if (marked && newKey) writeSessionJson(newKey, marked.snapshot) }, [marked, newKey])
-  const newLabel = (ids) => {
-    const times = ids.map((id) => marked?.snapshot.marks[id]).filter((t) => Number.isFinite(t))
-    return times.length > 0 ? bangkokClock(Math.max(...times)) : null
-  }
-
   // กำหนดการวันนี้ + พรุ่งนี้: ปฏิทิน/รายการส่วนตัว (7 วัน) + กิจกรรมที่มอบหมายให้ท่าน
   const eventsEntry = entries.find((e) => e.key === 'events') ?? null
   const summary = useHomeRpc({ rpc: 'staff_home_summary', tenantId, profileId, enabled: Boolean(eventsEntry && profileId) })
@@ -136,6 +139,51 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
   const follows = useExecSimpleFollows({ tenantId, enabled: hasCitizenService, tick })
   const changedFollows = follows.rows.filter((r) => r.changed && r.hidden !== true && r.gone !== true)
 
+  // ภัยที่กำลังมา (พยากรณ์ฝนหนัก + ฝุ่น PM2.5) · กำหนดตามระเบียบของแผนพัฒนา — ดึงตาม tick ของรอบอัปเดตเอง (นอก 06–20 น./แท็บซ่อน = ไม่ดึง) throttle ต่อแหล่งในฮุก
+  const hazardsEnabled = entries.some((e) => e.key === 'src:tmd-forecast' || e.key === 'src:air')
+  const hazardData = useExecHazards({ tenant, enabled: hazardsEnabled, tick })
+  const planEnabled = entries.some((e) => e.key === 'local-plan')
+  const planDl = useExecPlanDeadlines({ tenantId, today, enabled: planEnabled, tick })
+  // ข้อมูลเชิงรุกชุดแรกพร้อมหรือยัง (ดึงจบรอบแรก สำเร็จหรือพลาดก็นับ) — ก่อนนั้นไม่ติดป้าย "ใหม่" / ไม่ขึ้นบรรทัดเขียว (กันกระพริบ/ป้ายลวง)
+  const insightsReady = (!hazardsEnabled || hazardData.settled) && (!planEnabled || planDl.status === 'ok' || planDl.status === 'error')
+
+  // ข้อมูลเชิงรุก 3 ชนิด + จัดลำดับหัวข้อ ② (ภัยที่กำลังมาขึ้นบนสุดเสมอ ไม่นับโควตา · แถวเด่นไม่เกิน 3 ที่เหลือลง "เรื่องเล็ก" ไม่ซ่อนเงียบ)
+  const rainInsight = useMemo(() => heavyRainInsight(hazardData.forecast, now), [hazardData.forecast, now])
+  const dustInsight = useMemo(() => pm25Insight(hazardData.air, tenant, now), [hazardData.air, tenant, now])
+  const hazardList = useMemo(() => [rainInsight, dustInsight].filter(Boolean), [rainInsight, dustInsight])
+  // หมู่บ้านซ้ำซาก: ใช้ผลที่ฐานคำนวณมาแล้วใน executive_overview.complaints.repeat · โหลดไม่ได้ = ไม่ขึ้น (ไม่อ้างว่า "ไม่มี")
+  const repeatRow = useMemo(
+    () => (cur.status === 'ok' && cur.model?.complaints?.state === 'ok' ? repeatInsight(cur.model.complaints.data) : null),
+    [cur.status, cur.model],
+  )
+  const planDeadlines = useMemo(() => {
+    void holidaysVersion // opPlanDeadline อ่านตารางวันหยุด (วันครบกำหนดตรงวันหยุด) — วันหยุดโหลดทีหลัง
+    if (planDl.status !== 'ok') return []
+    return planDeadlineInsights({ devPlan: planDl.devPlan, opPlan: planDl.opPlan, evaluation: planDl.evaluation, today })
+  }, [planDl.status, planDl.devPlan, planDl.opPlan, planDl.evaluation, today, holidaysVersion])
+  const know = useMemo(
+    () => composeKnowRows({ hazards: hazardList, overdue5: split.overdue5, major: split.major, minor: split.minor, deadlines: planDeadlines, repeat: repeatRow }),
+    [hazardList, split, planDeadlines, repeatRow],
+  )
+
+  // ป้าย "ใหม่" ของข้อมูลเชิงรุกนับ "การปรากฏ" (ภัย/กำหนด = 1 · ปัญหาซ้ำซาก = จำนวนจุด เพิ่มขึ้น = ใหม่) ไม่ใช่ตัวเลขที่ขยับทุกวัน (มม./มคก./วันที่เหลือ)
+  const markItems = useMemo(
+    () => [...alerts.items, ...hazardList.map((it) => ({ id: it.id, count: 1 })), ...planDeadlines.map((it) => ({ id: it.id, count: 1 })), ...(repeatRow ? [{ id: repeatRow.id, count: repeatRow.count }] : [])],
+    [alerts.items, hazardList, planDeadlines, repeatRow],
+  )
+  // ป้าย "ใหม่ HH:MM" (1 ชั่วโมง): เทียบกับรอบก่อนที่จำไว้ใน sessionStorage — เวลาที่ติดป้ายคือเวลาที่ได้ข้อมูลรอบนั้น
+  const newKey = tenantId && profileId ? `exec-simple-new:${tenantId}:${profileId}` : null
+  const marked = useMemo(() => {
+    if (!newKey || cur.status !== 'ok' || cur.fetchedAt == null || !insightsReady) return null
+    return markNewAlerts(readSessionJson(newKey), markItems, new Date(cur.fetchedAt))
+  }, [newKey, cur.status, cur.fetchedAt, markItems, insightsReady])
+  useEffect(() => { if (marked && newKey) writeSessionJson(newKey, marked.snapshot) }, [marked, newKey])
+  const newLabel = (ids) => {
+    const times = ids.map((id) => marked?.snapshot.marks[id]).filter((t) => Number.isFinite(t))
+    return times.length > 0 ? bangkokClock(Math.max(...times)) : null
+  }
+
+
   // อัปเดตเอง: ทุกฮุกที่หน้านี้ใช้ ดึงใหม่แบบเงียบ (ไม่ตั้ง 'loading') · tick ปลุกรายการที่กางอยู่ (ช้าเกิน 5 วัน / ติดตาม) ให้โหลดใหม่ด้วย
   const { refresh: refreshOverview, reload: reloadOverview } = cur
   const { refresh: refreshEsignRpc, reload: reloadEsignRpc } = esignRpc
@@ -148,7 +196,7 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
   }, [refreshOverview, refreshEsignRpc, reloadPending, reloadSummary, refreshWeek])
   useExecAutoRefresh({ refresh: refreshAll })
 
-  const stale = cur.stale || esignRpc.stale || pendingRpc.stale || summary.stale || week.stale || follows.stale
+  const stale = cur.stale || esignRpc.stale || pendingRpc.stale || summary.stale || week.stale || follows.stale || planDl.stale
   const lastAt = oldest([cur.fetchedAt, hasEsignAlert ? esignRpc.fetchedAt : null, esignEntry ? pendingRpc.fetchedAt : null,
     eventsEntry ? summary.fetchedAt : null, eventsEntry ? week.fetchedAt : null, hasCitizenService ? follows.fetchedAt : null])
   const paused = !isRefreshWindow(now)
@@ -200,8 +248,8 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
 
   // ───────── ② เรื่องที่ควรรู้ ─────────
   const lowView = derived.satisfaction
-  const hasAny2 = Boolean(split.overdue5) || split.major.length > 0 || split.minor.length > 0
-  const calm2 = ovOk && alerts.failures.length === 0 && !hasAny2
+  // "ไม่มีเรื่องผิดปกติ" ต้องคิดรวมข้อมูลเชิงรุกด้วย และต้องรอให้ข้อมูลชุดแรกครบ · ตรวจกำหนดตามระเบียบไม่ได้ = ไม่ขึ้นบรรทัดเขียว (มี LoadFail บอกแทน)
+  const calm2 = ovOk && alerts.failures.length === 0 && know.total === 0 && insightsReady && planDl.status !== 'error'
   const overdueNew = newLabel(['complaints:overdue_5wd', 'inbox:overdue_5wd'])
 
   // ───────── ③ ตัวเลขเดือนนี้ ─────────
@@ -210,7 +258,7 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
 
   // แถบ KPI ในหัวหน้า: ค่าชุดเดียวกับที่การ์ดใช้อยู่แล้ว (ไม่ดึงเพิ่ม) · อ่านไม่ได้ = null → "—" ไม่ใช่ 0
   // คำร้องทำเสร็จทันเวลา ใช้ของ "คำร้องอย่างเดียว" ห้ามรวมกับคำขอ (เจ้าของระบบตัดสิน 2569-11-10)
-  const alertTopics = ovOk && alerts.failures.length === 0 ? (split.overdue5 ? 1 : 0) + split.major.length + split.minor.length : null
+  const alertTopics = ovOk && alerts.failures.length === 0 ? know.total : null
   const cOn = numbers.onTime.complaints
   const complaintPct = cOn.state === 'ok' && cOn.denominator > 0 && cOn.pct != null ? Math.round(cOn.pct) : null
   const kpis = [
@@ -220,12 +268,42 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
     hasCitizenService && sat.state !== 'missing' && { id: 'sat', label: 'ความพึงพอใจ', value: sat.state === 'ok' ? sat.avg : null, unit: '/ 5 ★', target: 's3' },
   ].filter(Boolean)
 
+  // ── สรุปวันนี้ (≤ 3 บรรทัด) — เรียบเรียงจากตัวเลขที่หน้านี้มีอยู่แล้ว ไม่ดึงเพิ่ม · ข้อมูลหลักยังโหลด/พัง/ตรวจไม่ครบ = ไม่ขึ้นกล่อง (ห้ามสรุปว่าเรียบร้อยจากข้อมูลไม่ครบ) ──
+  const signStatus = esignEntry ? (pending.status === 'ok' ? 'ok' : (pending.status === 'error' ? 'error' : 'loading')) : 'none'
+  const decisionCount = queue.items.reduce((t, it) => t + (Number.isFinite(Number(it.count)) ? Number(it.count) : 0), 0)
+  const waterOpen = alerts.items.find((it) => it.id === 'water-situation:event_open')
+  const scheduleKnown = Boolean(eventsEntry) && (week.status === 'ok' || summary.status === 'ok')
+  const nextTime = next ? (schedule.all.find((e) => e.id === next.id)?.time ?? null) : null
+  const briefingReady = ovOk && alerts.failures.length === 0 && queue.failures.length === 0 && !esignFailed && insightsReady && planDl.status !== 'error'
+  const briefing = buildBriefing({
+    ready: briefingReady,
+    sign: { status: signStatus, total: signTotal, over2wd },
+    decisions: decisionCount,
+    hazards: know.hazards,
+    waterEventOpen: waterOpen ? { count: waterOpen.count } : null,
+    overdue5: know.overdue5,
+    featured: know.featured,
+    service: { complaintPct, satAvg: sat.state === 'ok' ? sat.avg : null },
+    schedule: { todayCount: scheduleKnown ? schedule.today.length : 0, nextTime },
+  })
+
   const timeText = lastAt != null ? bangkokClock(lastAt) : null
   let statusText = 'กำลังโหลดข้อมูล…'
   if (timeText) {
     if (stale) statusText = `ยังอัปเดตไม่ได้ · ล่าสุด ${timeText} น.`
     else if (paused) statusText = `หยุดอัปเดตเองนอกเวลา 06:00–20:00 น. · ล่าสุด ${timeText} น.`
     else statusText = `อัปเดตเองทุก 5 นาที · ล่าสุด ${timeText} น.`
+  }
+
+  // แถวข้อมูลเชิงรุก (ภัย/กำหนดตามระเบียบ/ปัญหาซ้ำซาก): ไอคอนตามชนิด + ปุ่มไปหน้าเดิม + ปุ่ม "วิธีคิด" (กฎที่ใช้ตัดสิน) — ไม่มีปุ่มอนุมัติ/ปุ่มสั่งงาน
+  const renderInsight = (it) => {
+    const go = resolveLink({ link: it.target })
+    return (
+      <AlertBlock key={it.id} tone={it.tone} Icon={INSIGHT_ICONS[it.id] ?? ClipboardList} what={it.what} count={it.count} unit={it.unit}
+        showCount={it.showCount} detail={it.detail} hint={it.hint} rule={it.rule} newLabel={newLabel([it.id])} data-exec-simple-insight={it.id}>
+        {go && <OpenBtn onClick={go}>{it.words.go}</OpenBtn>}
+      </AlertBlock>
+    )
   }
 
   return (
@@ -252,6 +330,7 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
           </div>
         </div>
         <KpiStrip items={kpis} />
+        <BriefingBox lines={briefing} rule={EXEC_BRIEFING_RULE} />
       </header>
 
       {cur.status === 'forbidden' && (
@@ -371,21 +450,27 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
               {alerts.failures.length > 0 && (
                 <LoadFail text={`ตรวจสัญญาณเตือนของ ${alerts.failures.join(', ')} ไม่ได้ — อาจมีเรื่องที่ไม่แสดง`} onRetry={reloadOverview} />
               )}
-              {split.overdue5 && (
-                <AlertBlock tone="red" Icon={FileText} what={simpleOverdueWhat(split.overdue5)} count={split.overdue5.count} unit="เรื่อง"
+              {/* ภัยที่กำลังมา (ฝนหนัก/ฝุ่น) ขึ้นบนสุดเสมอ ไม่นับโควตาแถวเด่น */}
+              {know.hazards.map(renderInsight)}
+              {know.overdue5 && (
+                <AlertBlock tone="red" Icon={FileText} what={simpleOverdueWhat(know.overdue5)} count={know.overdue5.count} unit="เรื่อง"
                   newLabel={overdueNew} data-exec-simple-alert="overdue5">
                   <Expandable id="overdue" closedText="ดูรายการ และส่งให้กองเร่ง" openText="ซ่อนรายการ">
                     {() => <OverdueItems tenant={tenant} today={today} canNudge={canNudge} tick={tick} />}
                   </Expandable>
                 </AlertBlock>
               )}
-              {split.major.map((it) => {
+              {know.featured.map((it) => {
+                if (it.kind) return renderInsight(it)
                 const w = simpleAlertWords(it)
                 const go = resolveLink(it.entry)
                 const isRating = it.id === 'complaints:low_rating'
+                // แถวที่รายละเอียดคือหัวใจของเรื่อง (เช่น เรื่องพุ่ง = หมวดไหน หมู่ไหน) แสดง detail + วิธีคิดเสมอ แม้มีตัวเลข
+                const withDetail = EXEC_SIMPLE_DETAIL_ALERTS.includes(it.id)
                 return (
-                  <AlertBlock key={it.id} tone="amber" Icon={isRating ? Star : Droplets} what={w.what} count={it.count} unit={w.unit}
-                    showCount={it.showCount} detail={it.showCount ? null : it.detail} newLabel={newLabel([it.id])} data-exec-simple-alert={it.id}>
+                  <AlertBlock key={it.id} tone="amber" Icon={ALERT_ICONS[it.id] ?? FileText} what={w.what} count={it.count} unit={w.unit}
+                    showCount={it.showCount} detail={it.showCount && !withDetail ? null : it.detail} rule={withDetail ? it.rule : undefined}
+                    newLabel={newLabel([it.id])} data-exec-simple-alert={it.id}>
                     {isRating && lowView ? (
                       <Expandable id="rating" closedText="ดูว่ามาจากไหน" openText="ซ่อน">
                         {() => <RatingSources low={lowView.low} onOpenSatisfaction={satisfactionLink} />}
@@ -394,14 +479,16 @@ export default function ExecSimpleHome({ scopedKeys = [], navigate, profile, ten
                   </AlertBlock>
                 )
               })}
-              {split.minor.length > 0 && (
+              {know.minor.length > 0 && (
                 <div className="es-more" data-exec-simple-minor-summary>
-                  มีเรื่องเล็กอีก {split.minor.length} เรื่อง ({[...new Set(split.minor.map((m) => m.entry?.label).filter(Boolean))].join(' / ')})
-                  <Expandable id="minor" closedText={`ดูเรื่องเล็กอีก ${split.minor.length} เรื่อง`} openText="ซ่อนเรื่องเล็ก">
-                    {() => <MinorItems items={split.minor} resolveLink={resolveLink} />}
+                  มีเรื่องเล็กอีก {know.minor.length} เรื่อง ({[...new Set(know.minor.map(execKnowLabel).filter(Boolean))].join(' / ')})
+                  <Expandable id="minor" closedText={`ดูเรื่องเล็กอีก ${know.minor.length} เรื่อง`} openText="ซ่อนเรื่องเล็ก">
+                    {() => <MinorItems items={know.minor} resolveLink={resolveLink} />}
                   </Expandable>
                 </div>
               )}
+              {/* ตรวจกำหนดตามระเบียบของแผนพัฒนาไม่ได้ = บอกตรงๆ (ไม่ซ่อนเงียบ / ไม่ขึ้นว่าไม่มีเรื่อง) */}
+              {planDl.status === 'error' && <LoadFail text="ตรวจกำหนดตามระเบียบของแผนพัฒนาไม่ได้ — อาจมีกำหนดที่ใกล้ครบ" onRetry={planDl.reload} />}
               {calm2 && <Flag tone="green" data-exec-simple-calm="s2">ไม่มีเรื่องผิดปกติ</Flag>}
             </>
           )}

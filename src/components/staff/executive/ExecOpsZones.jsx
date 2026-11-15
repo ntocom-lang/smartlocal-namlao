@@ -91,7 +91,7 @@ const SEVERITY = {
 export function AlertZone({ alerts, ov, resolveLink }) {
   const [open, setOpen] = useState(null)
   return (
-    <ExecSection id="alert" title="สัญญาณเตือน" Icon={BellRing} note="ขึ้นเฉพาะเมื่อมีเรื่อง · กฎตรงไปตรงมา ไม่ใช้ AI">
+    <ExecSection id="alert" title="สัญญาณเตือน" Icon={BellRing} note="ขึ้นเฉพาะเมื่อมีเรื่อง · กดดูวิธีคิดได้ทุกข้อ">
       {alerts.failures.length > 0 && (
         <SectionError text={`ตรวจสัญญาณเตือนของ ${alerts.failures.join(', ')} ไม่ได้ — อาจมีเรื่องที่ไม่แสดง`} onRetry={alerts.retry ?? ov.reload} />
       )}
