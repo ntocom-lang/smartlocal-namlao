@@ -275,7 +275,7 @@ export default function WaterSituationPage() {
             <>
               <SyncStatus syncedAt={data.synced_at} now={checkedAt} refreshFailed={loadError} fromCache={fromCache} onRetry={refresh} />
               <AlertBanner rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings}
-                homeAmphoe={tenant?.district} now={checkedAt} tenantName={tenant?.name} tenant={tenant} />
+                homeAmphoe={tenant?.district} now={checkedAt} tenantName={tenant?.name} tenant={tenant} showShare={!announcement} />
               <HeroStats rain={rain} dams={dams} levels={levels} now={checkedAt} />
             </>
           )}
@@ -315,7 +315,7 @@ export default function WaterSituationPage() {
             {/* แถบแจ้งเตือนสถานการณ์ต้องเห็นบนแท็บนี้ด้วย — ตัวที่อยู่ในแท็บสถานการณ์ถูกซ่อนอยู่ */}
             {activeTab === 'route' && (
               <AlertBanner rain={rain} ews={ews} levels={levels} dams={dams} warnings={visibleData.warnings}
-                homeAmphoe={tenant?.district} now={checkedAt} tenantName={tenant?.name} tenant={tenant} />
+                homeAmphoe={tenant?.district} now={checkedAt} tenantName={tenant?.name} tenant={tenant} showShare={!announcement} />
             )}
             {/* ผังน้ำตำบล (ภาพประกอบทิศทางน้ำตามผัง ไม่ใช่ค่าวัด) — ใช้สถานีระดับ อปท. ไม่ผูกกับโหมดแชร์ ?scope= · เมาท์ไว้ตลอด (แค่ซ่อน) สลับแท็บแล้วไม่ต้องโหลดใหม่ */}
             <Suspense fallback={null}>
@@ -462,7 +462,7 @@ function HeroStats({ rain, dams, levels, now }) {
   )
 }
 
-function AlertBanner({ rain, ews, levels, dams, warnings, homeAmphoe, now, tenantName, tenant }) {
+function AlertBanner({ rain, ews, levels, dams, warnings, homeAmphoe, now, tenantName, tenant, showShare = true }) {
   const alerts = buildAlerts({ rain, ews, levels, dams, warnings, now })
   if (!alerts.any) return null
 
@@ -585,7 +585,8 @@ function AlertBanner({ rain, ews, levels, dams, warnings, homeAmphoe, now, tenan
             )}
             <Link to="/emergency" className="inline-flex min-h-[44px] items-center text-gray-800 underline">สายด่วนฉุกเฉิน</Link>
           </div>
-          <WaterAlertShareButton rain={rain} ews={ews} levels={levels} dams={dams} warnings={warnings} tenant={tenant} now={now} />
+          {/* มีประกาศ อปท. ที่ผู้มีสิทธิ์ยืนยันแล้ว = ไม่ขึ้นปุ่ม: ภาพจากข้อมูลดิบห้ามแข่งกับประกาศ (เกณฑ์เดียวกับแถบหน้าแรก) */}
+          {showShare && <WaterAlertShareButton rain={rain} ews={ews} levels={levels} dams={dams} warnings={warnings} tenant={tenant} now={now} />}
         </div>
       </div>
     </div>
