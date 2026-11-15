@@ -65,7 +65,7 @@ export const EXEC_SIMPLE_ALERT_WORDS = Object.freeze({
 
 /** ข้อความของแถว ② จากสัญญาณเตือน 1 ข้อ (ตารางข้างบน หรือป้ายจากทะเบียนถ้าไม่อยู่ในตาราง) */
 export function simpleAlertWords(item) {
-  const w = EXEC_SIMPLE_ALERT_WORDS[item?.id]
+  const w = item?.words ?? EXEC_SIMPLE_ALERT_WORDS[item?.id] // item.words = ข้อมูลเชิงรุก (execSimpleInsights.js) ที่มีถ้อยคำมาในตัว
   return w ?? { what: item?.label ?? '', unit: item?.unit ?? '', go: `ดู${item?.entry?.label ?? 'รายละเอียด'}` }
 }
 

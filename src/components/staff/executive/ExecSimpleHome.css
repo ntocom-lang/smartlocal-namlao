@@ -153,3 +153,16 @@
 .es-ev .nx { display: block; font-size: 17px; font-weight: 800; color: #6d28d9; line-height: 1.4; }
 
 .es-foot { font-size: 18px; color: var(--es-muted); }
+
+/* ── ข้อมูลเชิงรุก (ภัยที่กำลังมา / ปัญหาซ้ำซาก / กำหนดตามระเบียบ): ข้อความแนะนำ + ปุ่ม "วิธีคิด" ──
+   ปุ่มสูง ≥ 44px ตัวอักษร 18px (ไม่เล็กกว่าเนื้อความรอง) · แผงวิธีคิดพื้นขาวตัวเข้ม คอนทราสต์ ≥ 4.5:1 */
+.es-alert .es-hint { font-weight: 600; color: var(--es-ink-2); }
+.es-rule { margin: 2px 0 10px; }
+.es-rule-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 6px 14px; border-radius: 12px; border: 2px dashed #93c5fd;
+  background: transparent; color: var(--es-blue); font-size: 18px; font-weight: 700; line-height: 1.4; cursor: pointer; }
+.es-rule-btn .es-icon { width: 20px; height: 20px; }
+.es-rule-btn .es-chev { font-size: 14px; line-height: 1; }
+.es-rule-btn:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.es-rule-text { margin: 6px 0 0; padding: 10px 14px; background: #fff; border: 1px solid #bfdbfe; border-radius: 12px; font-size: 18px; line-height: 1.6;
+  color: var(--es-ink-2); overflow-wrap: anywhere; }
+.es-item .es-rule { margin: 6px 0 0; }
