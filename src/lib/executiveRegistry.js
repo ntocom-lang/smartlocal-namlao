@@ -386,6 +386,13 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     link: { path: '/' }, kpis: [], alerts: [], reports: [],
   },
   {
+    // พยากรณ์ NWP กรมอุตุนิยมวิทยา (tmd_forecasts · get_public_tmd_forecast) — ลงทะเบียนตาม AGENTS.md "แหล่งข้อมูลใหม่"
+    // ยังไม่มีตัวเลขบนหน้ารวม (แบบเดียวกับ src:air) · ถ้าจะขึ้นการ์ด เช่น "พยากรณ์ฝนหนักใน 3 วัน" ต้องมี rule + RPC แยก
+    key: 'src:tmd-forecast', kind: 'source', label: 'พยากรณ์อากาศ (กรมอุตุนิยมวิทยา)', icon: 'CloudSun', dept: null,
+    zones: ['area', 'alert'], isCitizenService: false, docTypes: [], summaryKey: null, phase: 'E2',
+    link: { path: '/water-situation' }, kpis: [], alerts: [], reports: [],
+  },
+  {
     key: 'src:holidays', kind: 'source', label: 'วันหยุดราชการ', icon: 'CalendarOff', dept: null,
     zones: ['context'], isCitizenService: false, docTypes: [], summaryKey: null, phase: 'E1',
     link: { module: 'events' }, kpis: [], alerts: [], reports: [],
