@@ -735,32 +735,95 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
   bigLines.forEach((line, i) => drawText(ctx, line, MARGIN + 24, bigY + 12 + i * bigLineH + bigLineH / 2 + 2, { font: `700 ${bigSize}px ${display}`, color: '#c4000f' }))
   const bigBottom = bigY + bigH + 5
 
-  // ป้ายขาวมีตรา + ชื่อ อปท. มุมขวาบน
+  // ป้ายหน่วยงานแบบเหรียญตราทอง มุมขวาบน (เจ้าของอนุมัติ 2026-11-15)
+  // ภาษาเดียวกับชื่อ อปท. ในภาพข่าว (#713): พื้นน้ำเงินเข้ม + ชื่อทองไล่เฉด #fff6c2→#ffd54a→#f59e0b ขอบน้ำตาลทอง
+  // อยู่ในช่วง y 34–114 เสมอ (ภาพอ่างเริ่ม y 120) · ซ้ายสุดไม่เกินท้ายป้าย "แจ้งเตือน" (~x 490)
   {
-    const nameFit = fitOne(ctx, model.tenantName, display, 700, 400, 23, 15, issues, 'ชื่อหน่วยงาน')
+    const BY = 34
+    const BH = 80
+    const nameFit = fitOne(ctx, model.tenantName, display, 700, 400, 27, 17, issues, 'ชื่อหน่วยงาน')
     const subText = 'ระบบข้อมูลน้ำ–ฝน'
     const textW = Math.max(nameFit.width, textWidth(ctx, subText, 500, 16, body))
-    const logoSize = 64
-    const w = 8 + (logo ? logoSize + 12 : 8) + textW + 16
+    const R_MED = 38
+    const lead = logo ? 24 + R_MED + 14 : 22
+    const w = lead + textW + 24
     const x = W - MARGIN - w
+    const cyMid = BY + BH / 2
+
+    // แสงฟุ้งทองหลังป้าย (แทน blur/filter ที่ Safari ไม่รองรับ)
+    glow(ctx, x + w / 2, cyMid, w * 0.62, 70, [[0, 'rgba(255,200,60,0.28)'], [1, 'rgba(255,200,60,0)']])
+    // กรอบทองไล่เฉด + เงาตกใต้ป้าย
     ctx.save()
-    ctx.shadowColor = 'rgba(11,42,107,0.25)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 6
-    ctx.fillStyle = 'rgba(255,255,255,0.92)'
-    rrPath(ctx, x, 34, w, 80, 18); ctx.fill()
+    ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 6
+    ctx.fillStyle = linear(ctx, x, BY, x + w, BY + BH, [[0, '#fff1b8'], [0.3, '#d9a21b'], [0.55, '#ffe27a'], [0.8, '#c48a12'], [1, '#ffe9a0']])
+    rrPath(ctx, x, BY, w, BH, 20); ctx.fill()
     ctx.restore()
-    let tx = x + 8
+    // พื้นน้ำเงินเข้ม + แสงเคลือบครึ่งบน + แถบเงาเฉียง
+    ctx.save()
+    rrPath(ctx, x + 3, BY + 3, w - 6, BH - 6, 17); ctx.clip()
+    ctx.fillStyle = linear(ctx, 0, BY, 0, BY + BH, [[0, '#14408f'], [0.5, '#0b2a6b'], [1, '#06173d']])
+    ctx.fillRect(x, BY, w, BH)
+    ctx.fillStyle = linear(ctx, 0, BY, 0, BY + BH * 0.5, [[0, 'rgba(255,255,255,0.16)'], [1, 'rgba(255,255,255,0)']])
+    ctx.fillRect(x, BY, w, BH * 0.5)
+    ctx.fillStyle = 'rgba(255,255,255,0.07)'
+    poly(ctx, [[x + w * 0.58, BY], [x + w * 0.7, BY], [x + w * 0.6, BY + BH], [x + w * 0.48, BY + BH]]); ctx.fill()
+    ctx.restore()
+    // เส้นทองบางด้านใน
+    ctx.strokeStyle = 'rgba(255,214,90,0.45)'; ctx.lineWidth = 1
+    rrPath(ctx, x + 7.5, BY + 7.5, w - 15, BH - 15, 13); ctx.stroke()
+
+    // เหรียญตรา: วงแหวนทอง 2 ชั้น ยื่นล้นขอบซ้ายแบบตราประทับ
     if (logo) {
+      const mx = x + 24
       ctx.save()
-      ctx.beginPath(); ctx.arc(x + 8 + logoSize / 2, 34 + 40, logoSize / 2, 0, Math.PI * 2); ctx.clip()
+      ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4
+      ctx.fillStyle = linear(ctx, mx - R_MED, cyMid - R_MED, mx + R_MED, cyMid + R_MED, [[0, '#fff3c4'], [0.45, '#d9a21b'], [0.7, '#ffe27a'], [1, '#a86f08']])
+      ctx.beginPath(); ctx.arc(mx, cyMid, R_MED, 0, Math.PI * 2); ctx.fill()
+      ctx.restore()
+      ctx.fillStyle = '#0b2a6b'
+      ctx.beginPath(); ctx.arc(mx, cyMid, R_MED - 4, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = linear(ctx, mx, cyMid - R_MED, mx, cyMid + R_MED, [[0, '#ffe9a0'], [1, '#c48a12']])
+      ctx.beginPath(); ctx.arc(mx, cyMid, R_MED - 6, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = '#fff'
+      ctx.beginPath(); ctx.arc(mx, cyMid, R_MED - 8, 0, Math.PI * 2); ctx.fill()
+      const r = R_MED - 9
+      ctx.save()
+      ctx.beginPath(); ctx.arc(mx, cyMid, r, 0, Math.PI * 2); ctx.clip()
       const iw = logo.naturalWidth || logo.width
       const ih = logo.naturalHeight || logo.height
-      const scale = Math.max(logoSize / iw, logoSize / ih)
-      ctx.drawImage(logo, x + 8 + (logoSize - iw * scale) / 2, 34 + 8 + (logoSize - ih * scale) / 2, iw * scale, ih * scale)
+      const scale = Math.max((r * 2) / iw, (r * 2) / ih)
+      ctx.drawImage(logo, mx - (iw * scale) / 2, cyMid - (ih * scale) / 2, iw * scale, ih * scale)
       ctx.restore()
-      tx = x + 8 + logoSize + 12
     }
-    drawText(ctx, nameFit.text, tx, 34 + 29, { font: `700 ${nameFit.size}px ${display}`, color: NAVY })
-    drawText(ctx, subText, tx, 34 + 56, { font: `500 16px ${body}`, color: DIM })
+
+    // ชื่อหน่วยงานตัวทอง: เงาดำเลื่อนลง → ทองไล่เฉด → ขอบน้ำตาลทองบาง (ซ้อนข้อความ ไม่ใช้ filter)
+    const tx = x + lead
+    const nameY = BY + 28
+    const nameFont = `700 ${nameFit.size}px ${display}`
+    drawText(ctx, nameFit.text, tx, nameY + 2, { font: nameFont, color: 'rgba(0,8,30,0.7)' })
+    const half = nameFit.size * 0.6
+    drawText(ctx, nameFit.text, tx, nameY, { font: nameFont, color: linear(ctx, 0, nameY - half, 0, nameY + half, [[0, '#fff6c2'], [0.45, '#ffd54a'], [1, '#f59e0b']]) })
+    ctx.strokeStyle = 'rgba(138,90,0,0.85)'; ctx.lineWidth = 0.8
+    ctx.strokeText(nameFit.text, tx, nameY)
+    // เส้นทองคั่น (จางไปทางขวา) + บรรทัดรอง
+    ctx.fillStyle = linear(ctx, tx, 0, tx + textW, 0, [[0, 'rgba(255,213,74,0.95)'], [1, 'rgba(255,213,74,0)']])
+    ctx.fillRect(tx, BY + 47, textW, 1.5)
+    drawText(ctx, subText, tx, BY + 63, { font: `500 16px ${body}`, color: '#f3e6c4' })
+
+    // ประกายดาว 4 แฉกบนกรอบทอง
+    const sparkle = (sx, sy, s) => {
+      glow(ctx, sx, sy, s * 1.6, s * 1.6, [[0, 'rgba(255,255,255,0.7)'], [1, 'rgba(255,255,255,0)']])
+      ctx.fillStyle = '#fff'
+      ctx.beginPath()
+      ctx.moveTo(sx, sy - s)
+      ctx.quadraticCurveTo(sx, sy, sx + s, sy)
+      ctx.quadraticCurveTo(sx, sy, sx, sy + s)
+      ctx.quadraticCurveTo(sx, sy, sx - s, sy)
+      ctx.quadraticCurveTo(sx, sy, sx, sy - s)
+      ctx.fill()
+    }
+    sparkle(x + w - 16, BY + 2, 10)
+    sparkle(x + w * 0.45, BY + BH - 1, 6)
   }
 
   drawIllustration(ctx, W - MARGIN - ILLUS_W, 120, model.illustration, display, body)
@@ -1120,8 +1183,9 @@ export function drawWaterAlertPoster(ctx, model, { fonts, logo = null, tight = f
           ctx.fillStyle = '#fff'
           rrPath(ctx, cx, y + 38, chipW, 54, 12); ctx.fill()
           ctx.strokeStyle = '#ff3b3b'; ctx.lineWidth = 2; ctx.stroke()
-          drawText(ctx, chip.label.text, cx + 12, y + 38 + 13, { font: `600 ${chip.label.size}px ${body}`, color: DIM })
-          drawText(ctx, chip.number.text, cx + 12, y + 38 + 36, { font: `700 ${chip.number.size}px ${display}`, color: '#c4000f' })
+          // ป้าย + เบอร์อยู่กึ่งกลางกรอบ (เจ้าของสั่ง 2026-11-15) — ความกว้างที่ fitOne ไว้ (chipW - 24) ยังเว้นขอบซ้าย-ขวา 12px เท่าเดิม
+          drawText(ctx, chip.label.text, cx + chipW / 2, y + 38 + 13, { font: `600 ${chip.label.size}px ${body}`, color: DIM, align: 'center' })
+          drawText(ctx, chip.number.text, cx + chipW / 2, y + 38 + 36, { font: `700 ${chip.number.size}px ${display}`, color: '#c4000f', align: 'center' })
         })
         // สติกเกอร์เอียง
         ctx.save()
