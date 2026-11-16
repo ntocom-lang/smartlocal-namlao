@@ -208,7 +208,8 @@ const drawerState = () => document.getElementById('portal-drawer') && (() => {
     navOverflow: (() => { const n = panel.querySelector('nav'); return n.scrollWidth - n.clientWidth })(),
     items: [...panel.querySelectorAll('[data-drawer-item]')].map(i => ({
       key: i.getAttribute('data-drawer-item'),
-      label: i.querySelector('[data-drawer-label]').textContent.trim(),
+      // ลิ้นชักเจ้าหน้าที่แสดงชื่อสั้น (navLabel 2569-11-16) ชื่อเต็มอยู่ใน title → เทียบกับหน้าเมนูไอคอนด้วยชื่อเต็ม
+      label: (i.querySelector('[data-drawer-label]').getAttribute('title') || i.querySelector('[data-drawer-label]').textContent).trim(),
       height: i.getBoundingClientRect().height,
       current: i.getAttribute('aria-current'),
       badge: i.querySelector('[data-drawer-badge]')?.firstChild?.textContent.trim() ?? null,

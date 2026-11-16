@@ -14,16 +14,22 @@ import { PATIENT_TRANSPORT_MODULE_KEY } from './patientTransport'
 // color = กระเบื้องทองบนเมนูซ้าย/ลิ้นชัก (แยกจากเมนูงานประจำวัน · แบบพรีเมียม 2569-11-16)
 export const EXECUTIVE_MENU_ITEM = Object.freeze({ key: 'executive-room', label: 'ห้องผู้บริหาร', Icon: ChartColumn, color: '#b7791f', externalUrl: '/executive' })
 
+// navLabel = "ชื่อในเมนูซ้าย" แบบสั้น (เจ้าของระบบสั่ง 2569-11-16: ชื่อเมนูบรรทัดเดียว) — ใส่เฉพาะกลุ่ม/เมนูที่ชื่อยาวจนหลุดบรรทัดเดียวในเมนูซ้าย PC/ลิ้นชักมือถือ
+//   วัดด้วย Sarabun จริง: พื้นที่ชื่อเหลือ ≈ 98–104px (หัวกลุ่มมีป้ายตัวเลข+ลูกศร · เมนูย่อยมีป้าย) ลดตัวอักษรอย่างเดียวไม่พอ
+//   ⚠️ ห้ามเปลี่ยน group/label เดิม: group = คีย์จำสถานะพับ + data-department-nav · label ใช้ที่หัวหน้าโมดูล/หน้าเมนูไอคอน/ทะเบียนผู้บริหาร/โหมดย่อ (tooltip ชื่อเต็ม)
+//   ชื่อสั้นของ 'ประชาสัมพันธ์' / 'ระบบกลาง' / 'ข่าว/กิจกรรม' เจ้าของระบบเลือกเอง 2569-11-16
+//   local-plan มี navLabel ชื่อเดิมเพราะ withPlanLabel ต่อท้ายปีแผน (พ.ศ.xxxx-xxxx) เข้า label ตอนรัน → ในเมนูไม่โชว์ปี (ชี้เมาส์เห็นเต็ม)
+//   ที่แสดงในเมนูซ้ายให้อ่านผ่าน navText()/groupNavText() ใน navUsage.js เท่านั้น · เทสต์ nav-usage ล้มถ้าเพิ่มชื่อยาวโดยไม่ใส่ navLabel
 // Icon ระดับกลุ่ม = ไอคอนหัวกลุ่มในเมนูซ้าย PC/ลิ้นชักมือถือ (ชุดเดียวกับหน้าเมนูแบบไอคอนใน StaffOperationalDashboard)
 // accent ระดับกลุ่ม = สีกระเบื้องหัวกลุ่ม + เส้นไล่เฉดเหนือหัวกลุ่ม (ระบบเข้มสีให้ไอคอนขาวอ่านออกเองที่ src/lib/navTileColor.js)
 // เมนูที่ข้ามกอง (ใช้ร่วมกันทุกกอง ไม่ผูกกับกองใดกองหนึ่ง) — จัดเป็นกลุ่มย่อยตามลักษณะงาน
 // เพื่อให้หาเจอง่าย แทนที่จะเป็นลิสต์ยาวไม่มีหัวข้อ
 export const STANDALONE_GROUPS = [
   {
-    group: 'งานบริการประชาชน', Icon: HeartHandshake, accent: '#e11d48',
+    group: 'งานบริการประชาชน', navLabel: 'บริการประชาชน', Icon: HeartHandshake, accent: '#e11d48',
     items: [
       { key: 'complaints', label: 'คำร้อง',     Icon: MessageSquareWarning, color: '#ef4444', bg: '#fee2e2', desc: 'รับเรื่อง ตรวจสอบ มอบหมาย และติดตามผล' },
-      { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', Icon: FileText,       color: '#8b5cf6', bg: '#ede9fe', desc: 'รับคำขอเอกสารจากประชาชน ออกเลข และติดตามสถานะ' },
+      { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', navLabel: 'คำขอบริการ', Icon: FileText, color: '#8b5cf6', bg: '#ede9fe', desc: 'รับคำขอเอกสารจากประชาชน ออกเลข และติดตามสถานะ' },
       // โมดูลในโครงหน้าเจ้าหน้าที่ (เมนูบน/ซ้ายครบเหมือนโมดูลอื่น) · route /staff/patient-transport
       // ยังใช้ได้ แต่เป็นทางลัดที่พามาเปิดโมดูลนี้ในโครงเดิม ไม่ใช่หน้าลอยแยก
       // คีย์อยู่ใน MANAGED_MODULE_KEYS จึงโผล่เฉพาะ อปท. ที่เปิดโมดูลนี้ — เดิมเป็นปุ่มฝังบนหัวหน้าจอ
@@ -31,16 +37,16 @@ export const STANDALONE_GROUPS = [
     ],
   },
   {
-    group: 'ประชาสัมพันธ์และท่องเที่ยว', Icon: Megaphone, accent: '#059669',
+    group: 'ประชาสัมพันธ์และท่องเที่ยว', navLabel: 'ประชาสัมพันธ์', Icon: Megaphone, accent: '#059669',
     items: [
       { key: 'events',          label: 'ปฏิทินกิจกรรม',       Icon: CalendarDays, color: '#10b981', bg: '#d1fae5', desc: 'กำหนดการและปฏิทินกิจกรรมของหน่วยงาน' },
-      { key: 'posts',           label: 'ข่าวสาร/ภาพกิจกรรม',  Icon: Images,       color: '#059669', bg: '#d1fae5', desc: 'ประกาศ ข่าวประชาสัมพันธ์ และอัลบั้มภาพ' },
-      { key: 'tourism',         label: 'เที่ยว กิน พัก ช้อป บริการ', Icon: Luggage,      color: '#d97706', bg: '#fef3c7', desc: 'ที่เที่ยว ร้านอาหาร ที่พัก OTOP และร้านบริการในพื้นที่' },
+      { key: 'posts',           label: 'ข่าวสาร/ภาพกิจกรรม', navLabel: 'ข่าว/กิจกรรม', Icon: Images,       color: '#059669', bg: '#d1fae5', desc: 'ประกาศ ข่าวประชาสัมพันธ์ และอัลบั้มภาพ' },
+      { key: 'tourism',         label: 'เที่ยว กิน พัก ช้อป บริการ', navLabel: 'เที่ยว กิน พัก ช้อป', Icon: Luggage, color: '#d97706', bg: '#fef3c7', desc: 'ที่เที่ยว ร้านอาหาร ที่พัก OTOP และร้านบริการในพื้นที่' },
       { key: 'tourism-reviews', label: 'รีวิวสถานที่',        Icon: Star,         color: '#f59e0b', bg: '#fef3c7', desc: 'ตรวจสอบและลบรีวิวที่ไม่เหมาะสม' },
     ],
   },
   {
-    group: 'แผนงานและทรัพยากรกลาง', Icon: Layers, accent: '#4f46e5',
+    group: 'แผนงานและทรัพยากรกลาง', navLabel: 'ระบบกลาง', Icon: Layers, accent: '#4f46e5',
     items: [
       // 'civil-report' (รายงานโครงการ) ยังถอดอยู่ · 'projects' กลับมาแล้วในกลุ่มกองช่างเป็นโมดูลโครงการก่อสร้าง + รายงานสัปดาห์ (2569-11-06)
       // คอมโพเนนต์เดิม CivilProjectAdmin/CivilProjectReport ยังอยู่ในโฟลเดอร์ admin แต่ไม่มีเมนูหรือ branch เรียกแล้ว
@@ -52,8 +58,8 @@ export const STANDALONE_GROUPS = [
       // เดิมคีย์นี้ไม่มีในลิสต์เลย ถูก hardcode เป็นปุ่มใน sidebar อย่างเดียว ผลคือหน้าแดชบอร์ด
       // (ที่ไล่เมนูจาก visibleGroups) หามันไม่เจอ — "เมนูใช้งานด่วน" เหลือ 2 ปุ่ม และบนมือถือที่ไม่มี
       // sidebar เหลือทางเข้าเดียวคือไอคอนเล็กๆ บน header ที่ไม่มีป้ายชื่อ
-      { key: 'data-center', label: 'ศูนย์รวมข้อมูลดิจิทัล', Icon: Database, color: '#0284c7', bg: '#e0f2fe', externalUrl: '/data-center/staff' },
-      { key: 'fleet',    label: 'ยานพาหนะและเชื้อเพลิง',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe', desc: 'ทะเบียนรถและเครื่องยนต์ การใช้รถ การเบิกเชื้อเพลิง และซ่อมบำรุง' },
+      { key: 'data-center', label: 'ศูนย์รวมข้อมูลดิจิทัล', navLabel: 'ศูนย์ข้อมูลดิจิทัล', Icon: Database, color: '#0284c7', bg: '#e0f2fe', externalUrl: '/data-center/staff' },
+      { key: 'fleet',    label: 'ยานพาหนะและเชื้อเพลิง', navLabel: 'ยานพาหนะ', Icon: Car, color: '#0369a1', bg: '#e0f2fe', desc: 'ทะเบียนรถและเครื่องยนต์ การใช้รถ การเบิกเชื้อเพลิง และซ่อมบำรุง' },
       // อยู่ใน MANAGED_MODULE_KEYS ตั้งแต่ 2569-11-09 (ปิดรายหน่วยงานได้) แล้วคุมด้วย profiles.asset_role
       // อีกชั้น (แบบเดียวกับ fleet) — คนที่ไม่ได้รับสิทธิ์จะไม่เห็นเมนูนี้เลย ไม่ใช่เห็นแล้วกดไม่ได้
       // ⚠️ คีย์ยังเป็น 'borrowable-assets' ตามเดิม เปลี่ยนแค่ป้ายชื่อที่เจ้าหน้าที่เห็น —
@@ -92,7 +98,7 @@ export const MODULE_GROUPS = [
       // แผนพัฒนาท้องถิ่น (ทะเบียนโครงการ + แผนการดำเนินงานรายปี) — อยู่ใน MANAGED_MODULE_KEYS ตั้งแต่ 2569-11-09 (เดิมเปิดทุก อปท. ไม่มีคีย์)
       // คุมการเห็นด้วยบทบาท (hasLocalPlanAccess) เหมือน water-events · ไม่อยู่ใน TECHNICIAN_MODULE_KEYS · label ในรายการนี้เป็นค่าสำรองตอนโหลดชื่อไม่ได้
       // ชื่อจริงที่เห็นอ่านช่วงปีจากแผนที่เมนูแสดง (localPlanLabel — ห้ามฝังปีในโค้ด) · ใครแก้ได้ตัดสินที่ RLS (plan_role / admin) ไม่ใช่ที่นี่
-      { key: 'local-plan', label: 'แผนพัฒนาท้องถิ่น', Icon: ClipboardList, color: '#4f46e5', bg: '#e0e7ff', desc: 'ทะเบียนโครงการในแผนพัฒนา และแผนการดำเนินงานรายปี ระบบนับกำหนดตามระเบียบให้' },
+      { key: 'local-plan', label: 'แผนพัฒนาท้องถิ่น', navLabel: 'แผนพัฒนาท้องถิ่น', Icon: ClipboardList, color: '#4f46e5', bg: '#e0e7ff', desc: 'ทะเบียนโครงการในแผนพัฒนา และแผนการดำเนินงานรายปี ระบบนับกำหนดตามระเบียบให้' },
     ],
   },
   { group: 'กองคลัง', Icon: Banknote, accent: '#a16207', items: [] },

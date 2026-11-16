@@ -55,15 +55,22 @@ export function topNavKeys(userId, availableKeys, { limit = 4, minUses = 3, stor
 // คืน [{ item, group }] ตามลำดับเมนู · คีย์ซ้ำข้ามกลุ่มนับครั้งเดียว
 const norm = (v) => String(v ?? '').normalize('NFC').toLowerCase()
 
+// ชื่อที่แสดงในเมนูซ้าย (เจ้าของระบบสั่ง 2569-11-16: ชื่อเมนูบรรทัดเดียว) — ชื่อยาวมีฟิลด์ navLabel แบบสั้น (staffNavGroups.js)
+// ทุกที่ที่วาดชื่อในเมนูซ้าย/ลิ้นชักเจ้าหน้าที่ต้องเรียกสองตัวนี้ ห้ามเขียน `?? label` เอง · title/aria/โหมดย่อ/หัวหน้าโมดูลใช้ label/group เต็ม
+export const navText = (item) => item?.navLabel ?? item?.label
+export const groupNavText = (g) => g?.navLabel ?? g?.group
+
 export function searchNavItems(groups, query) {
   const tokens = norm(query).trim().split(/\s+/).filter(Boolean)
   if (!tokens.length) return []
   const seen = new Set()
   const out = []
-  for (const { group, items } of groups ?? []) {
+  for (const g of groups ?? []) {
+    const { group, items } = g
     for (const item of items ?? []) {
       if (!item || seen.has(item.key)) continue
-      const hay = norm(`${item.label} ${group} ${item.desc ?? ''}`)
+      // ค้นเจอทั้งชื่อเต็มและชื่อสั้น (พิมพ์ "เชื้อเพลิง" ต้องเจอยานพาหนะ แม้เมนูแสดงแค่ "ยานพาหนะ")
+      const hay = norm(`${item.label} ${item.navLabel ?? ''} ${group} ${groupNavText(g) ?? ''} ${item.desc ?? ''}`)
       if (tokens.every((t) => hay.includes(t))) { seen.add(item.key); out.push({ item, group }) }
     }
   }
@@ -85,6 +92,32 @@ export function setGroupCollapsed(label, collapsed, storage = defaultStorage()) 
   try { storage?.setItem(NAV_COLLAPSED_KEY, JSON.stringify([...set])) } catch { /* จำไม่ได้ก็แค่ไม่จำ */ }
   // แจ้งตัวอื่นในหน้าเดียวกัน (เมนูซ้าย PC กับลิ้นชักมือถือเป็นคนละอินสแตนซ์)
   try { if (typeof window !== 'undefined') window.dispatchEvent(new Event(NAV_COLLAPSED_EVENT)) } catch { /* ไม่มี window */ }
+}
+
+// ── ย่อเมนูซ้ายเหลือแต่ไอคอน (เจ้าของระบบอนุมัติ 2569-11-16) ──────────────────────────────
+// จำต่อเครื่อง (ไม่ต่อผู้ใช้ ไม่ขึ้นฐานข้อมูล) · ค่าเริ่มต้น false = เมนูเต็ม · ข้อมูลเสีย/storage ใช้ไม่ได้ = เมนูเต็ม
+export const NAV_RAIL_KEY = 'smartlocal:nav-rail'
+export const NAV_RAIL_EVENT = 'smartlocal:nav-rail-change'
+
+export function readNavRail(storage = defaultStorage()) {
+  try { return storage?.getItem(NAV_RAIL_KEY) === '1' } catch { return false }
+}
+
+export function setNavRail(on, storage = defaultStorage()) {
+  try { storage?.setItem(NAV_RAIL_KEY, on ? '1' : '0') } catch { /* จำไม่ได้ก็แค่ไม่จำ */ }
+  // แจ้งตัวอื่นในหน้าเดียวกัน (เมนูซ้ายอาจถูกวาดมากกว่าหนึ่งที่)
+  try { if (typeof window !== 'undefined') window.dispatchEvent(new Event(NAV_RAIL_EVENT)) } catch { /* ไม่มี window */ }
+}
+
+// ยอดรวมป้ายตัวเลขของเมนูย่อยทั้งกลุ่ม — ใช้ร่วมหัวกลุ่มโหมดเต็ม (CollapsibleNavGroup) กับโหมดย่อ (StaffNavRail) ห้ามเขียนซ้ำ
+// นับเฉพาะค่าที่เป็นตัวเลขจำกัดและ > 0 (ไม่ใช่ตัวเลข/ติดลบ/ศูนย์ = ไม่นับ)
+export function groupBadgeTotal(items, badges) {
+  let total = 0
+  for (const item of items ?? []) {
+    const n = Number(badges?.[item?.key])
+    if (Number.isFinite(n) && n > 0) total += n
+  }
+  return total
 }
 
 // พับ/กางหลายกลุ่มพร้อมกัน (ปุ่ม "ปิดทั้งหมด/เปิดทั้งหมด") — อ่านเซ็ตครั้งเดียว เขียนครั้งเดียว ยิงอีเวนต์ครั้งเดียว

@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { ROLE_LABELS } from '../../lib/staffRoster'
 import CollapsibleNavGroup, { NavBadge, NavIconTile } from './CollapsibleNavGroup'
 import NavQuickFind from './NavQuickFind'
-import { recordNavUse } from '../../lib/navUsage'
+import { groupNavText, navText, recordNavUse } from '../../lib/navUsage'
 import { ADMIN_ACTIVE_CAPSULE, ADMIN_NAV_BG, DEV_ACTIVE_CAPSULE, DEV_NAV_BG } from '../../lib/navTileColor'
 
 // เมนูซ้ายแบบลิ้นชักเลื่อนออกจากซ้าย — ใช้ร่วม 4 ที่ (เฉพาะมือถือ md:hidden):
@@ -53,7 +53,9 @@ const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1
 // variant 'sub' = เมนูย่อยใต้หัวกลุ่มที่พับได้ (ตัวบาง/จางกว่า ไอคอน 15px · active = พื้นจาง + ตัวหนา แถบอำพันวาดโดย NavSubRow)
 // ค่าเริ่มต้น = แถวเต็มแบบเดิม (ภาพรวม/ทางลัด/กลุ่มที่ไม่พับของหน้าแอดมิน/ศูนย์ข้อมูล ต้องเหมือนเดิมทุกอย่าง)
 // tile = แถวเต็มแต่ไอคอนเป็นกระเบื้อง (แดชบอร์ด/ห้องผู้บริหารในลิ้นชักเจ้าหน้าที่ ให้ตรงกับเมนูซ้าย PC) · ไม่มี color = เทาหินชนวน
-function DrawerItem({ item, active, badge, onSelect, variant, tile = false, activeStyle = ACTIVE_STYLE }) {
+// oneLine (ลิ้นชักเจ้าหน้าที่ · เจ้าของระบบสั่ง 2569-11-16: ชื่อเมนูบรรทัดเดียว) = แสดงชื่อสั้น (navText) ชื่อเดียวกับเมนูซ้าย PC · ตัดด้วย … + title = ชื่อเต็ม
+// แอดมิน/ผู้พัฒนา/ศูนย์ข้อมูลไม่ส่ง = ชื่อเต็ม ขึ้นบรรทัดใหม่ได้แบบเดิม
+function DrawerItem({ item, active, badge, onSelect, variant, tile = false, activeStyle = ACTIVE_STYLE, oneLine = false }) {
   const count = Number(badge) > 0 ? Number(badge) : 0
   const Icon = item.Icon
   const sub = variant === 'sub'
@@ -66,7 +68,9 @@ function DrawerItem({ item, active, badge, onSelect, variant, tile = false, acti
     <button type="button" data-drawer-item={item.key} aria-current={active ? 'page' : undefined}
       onClick={() => onSelect(item)} className={cls} style={active ? activeStyle : undefined}>
       <NavIconTile Icon={Icon} color={item.color} size={26} active={active} />
-      <span data-drawer-label className="min-w-0 flex-1 leading-snug">{item.label}</span>
+      {oneLine
+        ? <span data-drawer-label title={item.label} className="min-w-0 flex-1 truncate py-0.5 leading-snug">{navText(item)}</span>
+        : <span data-drawer-label className="min-w-0 flex-1 leading-snug">{item.label}</span>}
       <NavBadge count={count} data-drawer-badge="" />
     </button>
   )
@@ -112,6 +116,8 @@ export default function PortalDrawer({
   const { panel: panelStyle, active: activeStyle } = TONES[tone] ?? TONES.theme
   // กระเบื้องสีที่แถวเต็ม: ลิ้นชักเจ้าหน้าที่ (quickFind) + ลิ้นชักแอดมิน · ศูนย์ข้อมูลยังเป็นไอคอนเปล่าแบบเดิม
   const tiles = quickFind || tone === 'admin' || tone === 'dev'
+  // ชื่อเมนูบรรทัดเดียว (เจ้าของระบบสั่ง 2569-11-16) เฉพาะลิ้นชักเจ้าหน้าที่ = quickFind + favorites (แอดมินส่ง favorites={false}) — เกณฑ์เดียวกับ pick ด้านบน
+  const oneLine = quickFind && favorites
   const panelRef = useRef(null)
   const closeRef = useRef(null)
   const returnFocusTo = useRef(null)
@@ -159,16 +165,17 @@ export default function PortalDrawer({
       {extraItems.map(item => <DrawerItem key={item.key} item={item} active={activeKey === item.key} onSelect={onSelect} tile={tiles} activeStyle={activeStyle} />)}
     </>
   )
-  const groupBlocks = groups.map(({ group, accent, Icon, items, collapsible }, index) => {
+  const groupBlocks = groups.map((groupObj, index) => {
+    const { group, accent, Icon, items, collapsible } = groupObj
     const content = items.map(item => (
       <DrawerItem key={item.key} item={item} active={activeKey === item.key}
         badge={badges?.[item.key]} onSelect={onSelect} tile={tiles} activeStyle={activeStyle} />
     ))
     return collapsible ? (
-      <CollapsibleNavGroup key={group} label={group} Icon={Icon} accent={accent}
+      <CollapsibleNavGroup key={group} label={group} displayLabel={oneLine ? groupNavText(groupObj) : group} singleLine={oneLine} Icon={Icon} accent={accent}
         items={items} badges={badges} workErrors={workErrors} activeKey={activeKey} divider={index > 0}
         renderItem={item => (
-          <DrawerItem item={item} variant="sub" active={activeKey === item.key}
+          <DrawerItem item={item} variant="sub" active={activeKey === item.key} oneLine={oneLine}
             badge={badges?.[item.key]} onSelect={pick} activeStyle={activeStyle} />
         )} />
     ) : (
@@ -214,7 +221,7 @@ export default function PortalDrawer({
           {quickFind ? (
             <NavQuickFind groups={groups} activeKey={activeKey} userId={userId} onSelect={pick} variant="drawer" refreshKey={open} wrapperClassName="pb-1 pt-1"
               favorites={favorites} collapseLabels={groups.filter(g => g.collapsible).map(g => g.group)}
-              renderItem={item => <DrawerItem item={item} variant="sub" active={activeKey === item.key} badge={badges?.[item.key]} onSelect={pick} activeStyle={activeStyle} />}
+              renderItem={item => <DrawerItem item={item} variant="sub" oneLine={oneLine} active={activeKey === item.key} badge={badges?.[item.key]} onSelect={pick} activeStyle={activeStyle} />}
               pinned={homeBlock}>
               {groupBlocks}
             </NavQuickFind>
