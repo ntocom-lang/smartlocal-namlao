@@ -24,9 +24,9 @@ export default function StaffSideNav({
   const pick = useCallback((item) => { recordNavUse(userId, item.key); onSelect(item) }, [userId, onSelect])
 
   // แบบพรีเมียม (2569-11-16): แถวที่เปิดอยู่ = แคปซูลไล่เฉด NAV_ACTIVE_CAPSULE · ไอคอนอยู่ในกระเบื้องสีของเมนู
-  const rowCls = (active) => `flex min-h-9 w-full items-center gap-3 rounded-[10px] px-2.5 py-1.5 text-sm font-semibold transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70 ${active ? 'text-white' : 'text-white/85 hover:bg-white/10 hover:text-white'}`
+  const rowCls = (active) => `flex min-h-9 w-full items-center gap-3 rounded-[10px] px-2.5 py-1.5 text-sm font-semibold transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70 ${active ? 'text-white' : 'text-white/85 hover:bg-white/[0.06] hover:text-white'}`
   // เมนูย่อย: ตัวบาง/จางกว่าหัวกลุ่ม (white/75 บน #1a3a5c ผ่าน WCAG AA) · active = แคปซูล + ตัวหนา (แถบอำพันที่เส้นนำวาดโดย NavSubRow)
-  const subCls = (active) => `flex min-h-9 w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-[13px] transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70 ${active ? 'font-semibold text-white' : 'font-normal text-white/75 hover:bg-white/10 hover:text-white'}`
+  const subCls = (active) => `flex min-h-9 w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-[13px] transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70 ${active ? 'font-semibold text-white' : 'font-normal text-white/75 hover:bg-white/[0.06] hover:text-white'}`
   const renderItem = (item) => {
     const { key, label, Icon, color } = item
     const isActive = activeKey === key
@@ -47,7 +47,7 @@ export default function StaffSideNav({
       <nav className="flex-1 px-3 pb-4 overflow-y-auto [scrollbar-color:rgba(255,255,255,0.3)_transparent] [scrollbar-width:thin]">
         {/* ช่องค้นหาปักบน: กระจกฝ้า — เมนูที่เลื่อนผ่านใต้ช่องจะเบลอ ไม่ซ้อนตัวหนังสือกันจนอ่านไม่ออก */}
         <NavQuickFind groups={groups} activeKey={activeKey} userId={userId} renderItem={renderItem} onSelect={pick}
-          variant="pc" shortcut wrapperClassName="sticky top-0 z-10 -mx-3 px-3 pb-2 pt-4 backdrop-blur-md"
+          collapseLabels={groups.map(g => g.group)} variant="pc" shortcut wrapperClassName="sticky top-0 z-10 -mx-3 px-3 pb-2 pt-4 backdrop-blur-md"
           wrapperStyle={{ backgroundColor: 'rgba(28, 62, 97, 0.82)' }}
           pinned={(
             <div className="mt-1 space-y-1">

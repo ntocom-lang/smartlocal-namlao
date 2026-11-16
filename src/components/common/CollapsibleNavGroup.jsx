@@ -1,28 +1,32 @@
 import { useEffect, useId, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { NAV_COLLAPSED_EVENT, readCollapsedGroups, setGroupCollapsed } from '../../lib/navUsage'
-import { isHotBadge, tileColor, tileGradient } from '../../lib/navTileColor'
+import { isHotBadge, softTileStyle, BADGE_BASE, BADGE_TONES } from '../../lib/navTileColor'
 
 // เมนูซ้ายแบบ 3 ระดับ (เจ้าของระบบสั่ง 2569-11-15) ใช้ร่วมเมนูซ้าย PC/ลิ้นชักมือถือ โดยไม่เปลี่ยนการกรองสิทธิ์ของผู้เรียก
 //   1) แดชบอร์ด/ห้องผู้บริหาร = แถวเต็มตัวหนา (อยู่ที่ผู้เรียก)
 //   2) หัวกลุ่ม (ไฟล์นี้) = เส้นคั่นบน + ไอคอนในกล่องมน + ตัวหนาสีขาวเต็ม + ลูกศรท้ายแถว
 //   3) เมนูย่อย = ย่อหน้าตามเส้นนำแนวตั้ง ตัวบาง/จางกว่า (หน้าตาแถวอยู่ที่ renderItem ของผู้เรียก) · แถว active มีแถบสีอำพันที่เส้นนำ
 // ค่าเริ่มต้น "กางทั้งหมด" (เดิม #674/#677 ซ่อนเมนูที่ไม่มีเรื่องจนดูเหมือนไม่มีเมนู) · กดหัวกลุ่ม = พับ/กาง จำต่อกลุ่มในเครื่อง
-// ตอน "พับ" ยังคงพฤติกรรมเดิมของ #677: เมนูที่มีเรื่องค้าง/ตรวจงานไม่ได้ (และเมนูที่กำลังเปิดอยู่) ยังมองเห็น
-// ห้ามบวกยอดรวมที่หัวกลุ่ม (ข้อตัดสิน #677) — มีแค่จุดสีอำพันบอกว่ากลุ่มที่พับมีเรื่องค้าง
+// ยอดรวมที่หัวกลุ่ม + พับแล้วซ่อนเมนูย่อยทั้งหมด (เจ้าของระบบสั่ง 2569-11-16 · ยกเลิกข้อตัดสิน #677 ที่ห้ามรวมยอด
+//   และให้เมนูที่มีเรื่องค้างโผล่ตอนพับ) — หัวกลุ่มแสดงผลรวมป้ายตัวเลขของเมนูย่อยทุกตัวเสมอ ทั้งตอนกางและตอนพับ
+//   ⚠️ รวมได้เพราะแต่ละเมนูนับจากคนละตาราง (คำร้อง/คำขอ/รถผู้ป่วย ฯลฯ) — เมนูใหม่ที่นับเรื่องชุดเดียวกับเมนูอื่นในกลุ่มเดียวกัน
+//   จะทำยอดหัวกลุ่มนับซ้ำ ต้องแยกกลุ่มหรือไม่ใส่ป้ายตัวเลข
+//   ตอนพับ เมนูที่กำลังเปิดอยู่ก็ซ่อนด้วย → หัวกลุ่มมีพื้นจาง + แถบอำพันแทน ให้รู้ว่าหน้าที่เปิดอยู่ในกลุ่มนี้
+//   ตรวจงานไม่ได้ = ข้อความ "ตรวจงานไม่ได้" ที่หัวกลุ่ม (คงเดิม) จึงไม่หายไปกับการพับ
 
-// แบบพรีเมียม (เจ้าของระบบอนุมัติ 2569-11-16): กระเบื้องไอคอนสีตามเมนู/กลุ่ม + ไฮไลต์ขอบบน + เงาบาง
-// สีผ่าน tileGradient() ซึ่งเข้มสีให้เองจนไอคอนขาว ≥ 3:1 — ห้ามใส่สีพื้นกระเบื้องตรงๆ ข้ามตัวนี้
-const TILE_SHADOW = 'inset 0 1px 0 rgba(255,255,255,0.28), 0 2px 6px -2px rgba(0,0,0,0.45)'
+// แบบพรีเมียม (เจ้าของระบบอนุมัติ 2569-11-16) → เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา
+// (เดิมกระเบื้องพื้นสีทึบ+ไอคอนขาว+ไฮไลต์ขอบบน+เงา "สว่างไป บางคนแสบตา") ตอนนี้ = พื้นโปร่ง 18% ของสีเมนู + ขอบ 1px + ไอคอนสีอ่อน
+// สีผ่าน softTileStyle() ที่ navTileColor.js — ห้ามใส่สีพื้นกระเบื้องตรงๆ ข้ามตัวนี้ (เทสต์วัด contrast ของไอคอนบนพื้นโปร่งทุกสีเมนู)
 
 // กระเบื้องไอคอนหนึ่งช่อง · color ไม่มี = เทาหินชนวน · size = ความกว้าง/สูง px (ไอคอนข้างใน 60%)
 // active = วงขาวบางรอบกระเบื้อง (เมนูที่เปิดอยู่เห็นชัดแม้ไม่ดูสีพื้นแถว)
 export function NavIconTile({ Icon, color, size = 22, active = false, ...rest }) {
   return (
-    <span aria-hidden="true" data-nav-tile className="flex shrink-0 items-center justify-center rounded-[7px] text-white"
+    <span aria-hidden="true" data-nav-tile className="flex shrink-0 items-center justify-center rounded-[7px] border border-solid"
       style={{
-        width: size, height: size, backgroundColor: tileColor(color), backgroundImage: tileGradient(color),
-        boxShadow: active ? `${TILE_SHADOW}, 0 0 0 1.5px rgba(255,255,255,0.6)` : TILE_SHADOW,
+        width: size, height: size, ...softTileStyle(color),
+        boxShadow: active ? '0 0 0 1.5px rgba(255,255,255,0.22)' : undefined,
       }} {...rest}>
       {Icon && <Icon size={Math.round(size * 0.6)} strokeWidth={2} />}
     </span>
@@ -39,15 +43,20 @@ export function NavGroupIcon({ Icon, accent }) {
   )
 }
 
-// ป้ายตัวเลขเรื่องค้าง (ใช้ร่วมเมนู PC กับลิ้นชักมือถือ) · < 10 อำพันตัวเข้ม · ≥ 10 แดงตัวขาว (ทั้งคู่ผ่าน AA 4.5:1)
+// ป้ายตัวเลขเรื่องค้าง (ใช้ร่วมเมนู PC กับลิ้นชักมือถือ) · < 10 อำพัน ตัว #fcd34d · ≥ 10 แดง ตัว #fca5a5
+// เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา — เดิมไล่เฉดทึบ+เงาดำ (อำพันตัวเข้ม/แดงตัวขาว) ตอนนี้สีอ่อนบนพื้นเข้ม + วงใน 1px · ตัวหนาเท่าเดิม
+// ⚠️ พื้นป้ายต้องมีชั้นทึบ BADGE_BASE รองใต้สีโปร่ง: ถ้าโปร่งล้วน ป้ายที่อยู่บนแถว active (แคปซูลสว่างกว่าแผง) เหลือ 3.0:1
+//   และแดงบนแผงประชาชนเหลือ 3.8:1 · ชั้นทึบทำให้ค่าคงที่ทุกพื้น — อำพัน 8.0:1 · แดง 6.4:1 (วัดในเทสต์ nav-usage)
 // ไม่กะพริบ/ไม่เด้ง — เมนูเปิดค้างทั้งวัน ของขยับจะรบกวนสายตา
 export function NavBadge({ count, ...rest }) {
   const n = Number(count)
   if (!(n > 0)) return null
   const hot = isHotBadge(n)
+  const tone = BADGE_TONES[hot ? 'hot' : 'normal']
   return (
     <span data-nav-badge={hot ? 'hot' : 'normal'} {...rest}
-      className={`flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-bold leading-none tabular-nums shadow-[0_0_0_2px_rgba(0,0,0,0.18)] ${hot ? 'bg-gradient-to-b from-red-600 to-red-700 text-white' : 'bg-gradient-to-b from-amber-300 to-amber-400 text-slate-900'}`}>
+      style={{ backgroundColor: BADGE_BASE, backgroundImage: `linear-gradient(${tone.tint}, ${tone.tint})`, color: tone.text, boxShadow: `inset 0 0 0 1px ${tone.ring}` }}
+      className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-bold leading-none tabular-nums">
       {n > 99 ? '99+' : n}
       <span className="sr-only"> รายการรอ</span>
     </span>
@@ -88,40 +97,37 @@ export default function CollapsibleNavGroup({ label, Icon, accent, items, badges
     isActive: activeKey != null && activeKey === item.key,
   }))
   const workError = rows.some(row => row.hasError)
-  // รายการที่พับแล้วซ่อนได้ = ไม่มีเรื่องค้าง/ไม่ใช่ที่ตรวจงานไม่ได้/ไม่ใช่หน้าที่เปิดอยู่
-  const hideable = rows.filter(row => !row.hasWork && !row.hasError && !row.isActive)
-  // aria-controls รับหลาย ID ได้ จึงคงลำดับเมนูเดิมโดยไม่ทำสำเนาปุ่มซ้ำ
-  const controlledIds = hideable.map(row => row.id).join(' ')
-  const pendingWhileCollapsed = collapsed && hideable.length > 0 && rows.some(row => row.hasWork || row.hasError)
+  // ยอดรวมของเมนูย่อยทุกตัว (ป้ายตัวเลขเดียวกับเมนูย่อย: < 10 อำพัน · ≥ 10 แดง)
+  const groupTotal = rows.reduce((sum, row) => sum + (row.hasWork ? Number(badges?.[row.item.key]) : 0), 0)
+  const activeInside = collapsed && rows.some(row => row.isActive)
+  // aria-controls รับหลาย ID ได้ — พับแล้วซ่อนทุกแถว
+  const controlledIds = rows.map(row => row.id).join(' ')
 
   const toggle = () => { setCollapsed(!collapsed); setGroupCollapsed(label, !collapsed) }
 
   return (
     <div data-nav-group={label} data-department-nav={label} className={divider ? 'relative mt-3 pt-3' : 'mt-3'}>
-      {/* เส้นคั่นไล่เฉดสีกลุ่ม → จางหาย (แทนเส้นเทาเรียบเดิม) · ไม่มี accent = เส้นขาวจาง */}
+      {/* เส้นคั่นไล่เฉดสีกลุ่ม → จางหาย (แทนเส้นเทาเรียบเดิม) · ไม่มี accent = เส้นขาวจาง
+          เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา — ต้นเส้นจาก accent ทึบ → 8c (≈55%) กลางเส้น 66 → 33 */}
       {divider && (
         <span aria-hidden="true" data-nav-group-rule className="absolute inset-x-0 top-0 h-px"
-          style={{ backgroundImage: accent ? `linear-gradient(90deg, ${accent} 0%, ${accent}66 45%, transparent 100%)` : 'linear-gradient(90deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04))' }} />
+          style={{ backgroundImage: accent ? `linear-gradient(90deg, ${accent}8c 0%, ${accent}33 45%, transparent 100%)` : 'linear-gradient(90deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04))' }} />
       )}
       <button type="button" aria-expanded={!collapsed} aria-controls={controlledIds || undefined}
         title={collapsed ? 'กางเมนูย่อยของกลุ่มนี้' : 'พับเมนูย่อยของกลุ่มนี้'}
-        onClick={toggle}
-        className="mb-1 flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-[13px] font-bold leading-snug text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 md:min-h-9">
+        onClick={toggle} data-nav-group-active={activeInside ? '' : undefined}
+        className={`relative mb-1 flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-[13px] font-bold leading-snug text-white/85 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 md:min-h-9 ${activeInside ? 'bg-white/[0.06]' : ''}`}>
+        {activeInside && <span aria-hidden="true" className="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-full bg-amber-300" />}
         <NavGroupIcon Icon={Icon} accent={accent} />
-        <span className="min-w-0 flex-1 break-words">{label}</span>
-        {pendingWhileCollapsed && (
-          <span data-nav-group-dot className="shrink-0">
-            <span aria-hidden="true" className="block h-2 w-2 rounded-full bg-amber-400" />
-            <span className="sr-only">มีเรื่องค้างในกลุ่มนี้</span>
-          </span>
-        )}
+        <span className="min-w-0 flex-1 break-words">{label}{activeInside && <span className="sr-only"> (หน้าที่เปิดอยู่อยู่ในกลุ่มนี้)</span>}</span>
+        <NavBadge count={groupTotal} data-nav-group-total="" />
         {workError && <span role="status" className="shrink-0 text-[10px] font-normal text-amber-300">ตรวจงานไม่ได้</span>}
         <ChevronDown size={16} aria-hidden="true" className={`shrink-0 text-white/70 transition-transform ${collapsed ? '-rotate-90' : ''}`} />
       </button>
       <NavSubList>
-        {rows.map(({ item, id, hasWork, hasError, isActive }) => (
+        {rows.map(({ item, id, isActive }) => (
           <NavSubRow key={item.key} id={id} data-nav-item={item.key} active={isActive}
-            hidden={collapsed && !hasWork && !hasError && !isActive}>
+            hidden={collapsed}>
             {renderItem(item)}
           </NavSubRow>
         ))}

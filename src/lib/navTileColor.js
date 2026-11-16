@@ -43,24 +43,64 @@ export function tileColor(hex, minRatio = 3) {
 }
 
 // พื้นกระเบื้องแบบไล่เฉด (มุมซ้ายบนสว่าง → ขวาล่างเข้มลง 22%) — ปลายเข้มกว่าต้น contrast จึงไม่ต่ำกว่าจุดเริ่ม
+// (เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา — กระเบื้องในเมนูซ้ายเลิกใช้ตัวนี้แล้ว ใช้ softTileStyle() แทน · คงไว้เผื่อที่อื่นเรียก)
 export function tileGradient(hex) {
   const c = tileColor(hex)
   return `linear-gradient(135deg, ${c} 0%, ${darken(c, 0.78)} 100%)`
 }
 
-// แคปซูลไล่เฉดของเมนูที่เปิดอยู่ (เมนูซ้าย PC เจ้าหน้าที่) — ขาวบน #1d4ed8 = 6.7:1 · บน #0e6f8a = 5.7:1 (ผ่าน AA ตลอดเส้น)
+// ===== กระเบื้องโทนนุ่ม (เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา — เดิมพื้นสีทึบ+ไอคอนขาว "สว่างไป บางคนแสบตา") =====
+// พื้นโปร่ง 18% ของสีเดิม + ขอบ 1px 32% + ไอคอนเป็นสีอ่อนของสีเดิม · ใช้สีเดิมของเมนูตรงๆ (ไม่เข้มให้ผ่านขาวแบบ tileColor)
+// hex ไม่ถูกต้อง = เทาหินชนวน FALLBACK
+export function hexToRgba(hex, alpha) {
+  const [r, g, b] = toRgb(hex) ?? toRgb(FALLBACK)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+// ผสมสีเดิมกับขาวทีละขั้น (ขั้นละ 8%) จน relative luminance ≥ 0.5 — ไอคอนสีอ่อนที่ยังเห็นเป็นโทนเดียวกับสีเมนู
+// สีที่สว่างพออยู่แล้วไม่ถูกเปลี่ยน
+const tintCache = new Map()
+export function tileTint(hex) {
+  const key = String(hex)
+  if (tintCache.has(key)) return tintCache.get(key)
+  const base = toRgb(hex) ?? toRgb(FALLBACK)
+  let c = toHex(base)
+  for (let t = 0.08; t <= 1.0001 && luminance(c) < 0.5; t += 0.08) c = toHex(base.map(v => v + (255 - v) * t))
+  tintCache.set(key, c)
+  return c
+}
+
+export function softTileStyle(hex) {
+  return { backgroundColor: hexToRgba(hex, 0.18), borderColor: hexToRgba(hex, 0.32), color: tileTint(hex) }
+}
+
+// ผสมสีโปร่งแสงบนพื้น → สีทึบที่ตาเห็นจริง (ใช้วัด contrast ในเทสต์ · ผลเป็น hex)
+export function composite(fgHex, alpha, bgHex) {
+  const fg = toRgb(fgHex) ?? toRgb(FALLBACK)
+  const bg = toRgb(bgHex) ?? toRgb(FALLBACK)
+  return toHex(fg.map((v, i) => v * alpha + bg[i] * (1 - alpha)))
+}
+
+// contrast ratio ของสองสีใดๆ (WCAG 2.x) — ลำดับสว่าง/เข้มไม่สำคัญ
+export function contrastRatio(a, b) {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+// แถบเมนูที่เปิดอยู่ (เมนูซ้าย PC เจ้าหน้าที่) — เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา (เดิมแคปซูลน้ำเงินทึบ + เงาฟ้า)
+// ฟ้าโปร่ง→เขียวน้ำทะเลจาง + เส้นขอบใน 1px · ตัวขาวยังอ่านออก (วัดจริงใน tests/nav-usage.test.mjs)
 export const NAV_ACTIVE_CAPSULE = Object.freeze({
-  backgroundColor: '#1d4ed8',
-  backgroundImage: 'linear-gradient(90deg, #1d4ed8 0%, #0e6f8a 100%)',
-  boxShadow: '0 6px 16px -6px rgba(14, 111, 138, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.18)',
+  backgroundColor: 'rgba(96, 165, 250, 0.09)',
+  backgroundImage: 'linear-gradient(90deg, rgba(96, 165, 250, 0.12) 0%, rgba(45, 212, 191, 0.04) 100%)',
+  boxShadow: 'inset 0 0 0 1px rgba(147, 197, 253, 0.12)',
 })
 
-// แคปซูลของเมนูแอดมิน (โทนคราม แยกจากฝั่งเจ้าหน้าที่ให้รู้ตัวว่าอยู่ในโหมดตั้งค่า · PR2 2569-11-16)
-// ขาวบน #4338ca = 7.9:1 · บน #3730a3 = 9.6:1
+// แถบของเมนูแอดมิน (โทนคราม แยกจากฝั่งเจ้าหน้าที่ให้รู้ตัวว่าอยู่ในโหมดตั้งค่า · PR2 2569-11-16)
+// เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา — ครามโปร่ง + เส้นขอบใน 1px (เดิมครามทึบ + เงา)
 export const ADMIN_ACTIVE_CAPSULE = Object.freeze({
-  backgroundColor: '#4338ca',
-  backgroundImage: 'linear-gradient(90deg, #4338ca 0%, #3730a3 100%)',
-  boxShadow: '0 6px 16px -6px rgba(67, 56, 202, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.16)',
+  backgroundColor: 'rgba(129, 140, 248, 0.08)',
+  backgroundImage: 'linear-gradient(90deg, rgba(129, 140, 248, 0.12) 0%, rgba(99, 102, 241, 0.05) 100%)',
+  boxShadow: 'inset 0 0 0 1px rgba(165, 180, 252, 0.15)',
 })
 // พื้นเมนูซ้าย/ลิ้นชักของแอดมิน (หินชนวนอมคราม · สีคงที่ทุก อปท. ไม่ตามสีธีมเว็บ)
 export const ADMIN_NAV_BG = Object.freeze({
@@ -69,6 +109,12 @@ export const ADMIN_NAV_BG = Object.freeze({
 })
 
 // ป้ายตัวเลขเรื่องค้าง: ปกติอำพัน · ตั้งแต่ 10 เรื่องเป็นแดง (เจ้าของระบบเลือก 2569-11-16) ไม่กะพริบ
+// ป้ายตัวเลข (NavBadge) โทนนุ่ม 2569-11-16: สีอ่อนบนชั้นทึบ BADGE_BASE + สีโปร่งทับ — ชั้นทึบทำให้ contrast คงที่ไม่ว่าป้ายอยู่บนแผงหรือแถว active
+export const BADGE_BASE = '#111c33'
+export const BADGE_TONES = Object.freeze({
+  normal: Object.freeze({ text: '#fcd34d', tint: 'rgba(251,191,36,0.18)', ring: 'rgba(251,191,36,0.38)', tintHex: '#fbbf24', alpha: 0.18 }),
+  hot: Object.freeze({ text: '#fca5a5', tint: 'rgba(248,113,113,0.22)', ring: 'rgba(248,113,113,0.45)', tintHex: '#f87171', alpha: 0.22 }),
+})
 export const NAV_BADGE_HOT_AT = 10
 export const isHotBadge = (count) => Number(count) >= NAV_BADGE_HOT_AT
 
@@ -78,11 +124,12 @@ export const DEV_NAV_BG = Object.freeze({
   backgroundColor: '#121c33',
   backgroundImage: 'linear-gradient(180deg, #1b2a4a 0%, #0b1220 100%)',
 })
-// กรอบเรืองฟ้า→ม่วงของเมนูที่เปิดอยู่ — ขาวบน #0c3a5e = 11.8:1 · บน #2e1065 = 15.2:1 (ผ่าน AA ตลอดเส้น)
+// แถบฟ้า→ม่วงโปร่งของเมนูที่เปิดอยู่ — เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา (เดิมกรอบเรืองด้านนอก+พื้นทึบ) เอาแสงเรืองออกแล้ว
+// ตัวขาวยังอ่านออก (วัดจริงใน tests/nav-usage.test.mjs)
 export const DEV_ACTIVE_CAPSULE = Object.freeze({
-  backgroundColor: '#0c3a5e',
-  backgroundImage: 'linear-gradient(90deg, #0c3a5e 0%, #2e1065 100%)',
-  boxShadow: 'inset 0 0 0 1px rgba(125, 211, 252, 0.6), 0 0 16px -4px rgba(167, 139, 250, 0.75)',
+  backgroundColor: 'rgba(56, 189, 248, 0.06)',
+  backgroundImage: 'linear-gradient(90deg, rgba(56, 189, 248, 0.09) 0%, rgba(167, 139, 250, 0.09) 100%)',
+  boxShadow: 'inset 0 0 0 1px rgba(125, 211, 252, 0.18)',
 })
 // สีกระเบื้องที่ล็อกไว้ (ม่วง/คราม/ฟ้า) — ชุดสีสุ่มด้านล่างต้องไม่ซ้ำโทนเหล่านี้ ไม่งั้นแยกที่ปรึกษา AI/จัดการโมดูล/ทั้งหมดไม่ออก
 export const DEV_ADVISOR_COLOR = '#7c3aed' // ที่ปรึกษา AI (ม่วง)

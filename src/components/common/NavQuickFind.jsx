@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, Star, X } from 'lucide-react'
-import { searchNavItems, topNavKeys } from '../../lib/navUsage'
+import { ChevronsDownUp, ChevronsUpDown, Search, Star, X } from 'lucide-react'
+import { NAV_COLLAPSED_EVENT, readCollapsedGroups, searchNavItems, setGroupsCollapsed, topNavKeys } from '../../lib/navUsage'
 import { NavGroupIcon, NavSubList, NavSubRow } from './CollapsibleNavGroup'
 
 // ค้นหาเมนู + หมวด "ใช้บ่อย" ของเมนูซ้ายเจ้าหน้าที่ — ใช้ร่วม StaffSideNav (PC) กับ PortalDrawer (มือถือ) ตรรกะอยู่ที่นี่ที่เดียว
-// ลำดับที่วาด: ช่องค้นหา → pinned (แดชบอร์ด/ห้องผู้บริหาร) → [มีคำค้น: ผลลัพธ์รายการเดียว | ไม่มี: "ใช้บ่อย" + children (กลุ่มเมนู)]
+// ลำดับที่วาด: [ช่องค้นหา + ปุ่ม "ปิดทั้งหมด/เปิดทั้งหมด" (เมื่อมี collapseLabels)] → pinned (แดชบอร์ด/ห้องผู้บริหาร) → [มีคำค้น: ผลลัพธ์รายการเดียว | ไม่มี: "ใช้บ่อย" + children (กลุ่มเมนู)]
+// ปุ่ม "ปิดทั้งหมด/เปิดทั้งหมด" = พับ/กางทุกกลุ่มใน collapseLabels ในครั้งเดียว (ใช้ setGroupsCollapsed ตัวเดียวกับสถานะต่อกลุ่ม)
+//   ปิดทั้งหมดแล้วเหลือแต่หัวกลุ่ม + ยอดงานค้างรวมของกลุ่ม (เจ้าของระบบสั่ง 2569-11-16 · ดู CollapsibleNavGroup)
+//   อยู่แถวเดียวกับช่องค้นหาในแถบที่ปักบน (sticky) จึงเห็นตลอด · collapseLabels ว่าง (แอดมิน) = ไม่มีปุ่ม
 // groups = รายการที่ผู้เรียกกรองสิทธิ์/โมดูลมาแล้ว — ที่นี่ไม่สร้างเมนูเอง (ไม่มีเมนูหลอก)
 // renderItem(item) = ปุ่มเมนูหนึ่งแถว (หน้าตาแบบเมนูย่อยของผู้เรียก) · ผู้เรียกบันทึกการใช้ (recordNavUse) ใน handler กดเมนูเอง
 //   ผลค้นหา/ใช้บ่อยเรียก renderItem ตัวเดียวกับกลุ่มเมนู จึงบันทึกครบทุกทางโดยไม่ต้องเขียนซ้ำ
@@ -12,7 +15,7 @@ import { NavGroupIcon, NavSubList, NavSubRow } from './CollapsibleNavGroup'
 // refreshKey เปลี่ยน = ล้างคำค้นด้วย (เปิด/ปิดลิ้นชักใหม่ต้องเริ่มสะอาด)
 export default function NavQuickFind({
   groups, activeKey, userId, renderItem, onSelect, pinned, children,
-  variant = 'pc', shortcut = false, refreshKey, wrapperClassName = '', wrapperStyle, favorites = true,
+  variant = 'pc', shortcut = false, refreshKey, wrapperClassName = '', wrapperStyle, favorites = true, collapseLabels = [],
 }) {
   // favorites={false} = ไม่มีหมวด "ใช้บ่อย" (แอดมิน: เมนูน้อย + คีย์บางตัวซ้ำกับฝั่งเจ้าหน้าที่ สถิติจะปนกัน)
   const inputRef = useRef(null)
@@ -20,6 +23,17 @@ export default function NavQuickFind({
   const [query, setQuery] = useState('')
   const [prevRefreshKey, setPrevRefreshKey] = useState(refreshKey)
   if (prevRefreshKey !== refreshKey) { setPrevRefreshKey(refreshKey); setQuery('') }
+
+  // สถานะพับกลุ่ม: อ่านจาก localStorage แล้วฟังอีเวนต์เดียวกับ CollapsibleNavGroup (เมนู PC กับลิ้นชักมือถือเป็นคนละอินสแตนซ์)
+  const [collapsedSet, setCollapsedSet] = useState(() => readCollapsedGroups())
+  useEffect(() => {
+    const sync = () => setCollapsedSet(readCollapsedGroups())
+    window.addEventListener(NAV_COLLAPSED_EVENT, sync)
+    window.addEventListener('storage', sync)
+    return () => { window.removeEventListener(NAV_COLLAPSED_EVENT, sync); window.removeEventListener('storage', sync) }
+  }, [])
+  const labels = collapseLabels ?? []
+  const allClosed = labels.length > 0 && labels.every(l => collapsedSet.has(l))
 
   const isPc = variant === 'pc'
   const searching = query.trim().length > 0
@@ -82,21 +96,37 @@ export default function NavQuickFind({
   return (
     <>
       <div data-nav-quickfind className={wrapperClassName} style={wrapperStyle}>
-        <div className="relative">
+        <div className="flex items-center gap-1.5">
+        <div className="relative min-w-0 flex-1">
           {/* z-10: ช่องค้นหามี backdrop-blur (สร้างชั้นซ้อนใหม่) จะทับไอคอนที่อยู่ก่อนใน DOM ถ้าไม่ยกขึ้น */}
           <Search size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-white/75" />
           <input ref={inputRef} type="text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onInputKeyDown}
             data-nav-search aria-label="ค้นหาเมนู" placeholder="ค้นหาเมนู..." autoComplete="off" spellCheck={false}
-            enterKeyHint="search"
-            className={`w-full rounded-[10px] border border-white/20 bg-white/[0.09] pl-9 pr-9 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-md placeholder:text-white/70 focus:border-white/45 focus:bg-white/[0.13] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 ${isPc ? 'h-9 text-xs' : 'h-11 text-base'}`} />
+            enterKeyHint="search" title={isPc ? 'ค้นหาเมนู (กด / ได้ทุกที่)' : undefined}
+            className={`w-full rounded-[10px] border border-white/20 bg-white/[0.09] pl-9 ${query ? 'pr-9' : 'pr-2.5'} text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-md placeholder:text-white/70 focus:border-white/45 focus:bg-white/[0.13] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 ${isPc ? 'h-9 text-xs' : 'h-11 text-base'}`} />
           {query ? (
             <button type="button" aria-label="ล้างคำค้น" onClick={() => { setQuery(''); inputRef.current?.focus() }}
               className={`absolute right-0.5 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-md text-white/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${isPc ? 'h-8 w-8' : 'h-10 w-10'}`}>
               <X size={14} aria-hidden="true" />
             </button>
-          ) : isPc && (
-            <kbd aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 z-10 -translate-y-1/2 rounded border border-white/20 px-1.5 text-[10px] leading-4 text-white/60">/</kbd>
-          )}
+          ) : null}
+          {/* เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา — เอาป้าย "/" ออกจากช่อง (แย่งที่ทำให้ placeholder ถูกตัด)
+              ทางลัดกด "/" ยังทำงานเหมือนเดิม บอกผ่าน title ของช่องแทน */}
+        </div>
+        {labels.length > 0 && (
+          // เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา — ไอคอน+คำอยู่บรรทัดเดียว (เดิมซ้อนแนวตั้งในปุ่มเตี้ย ไอคอนทับตัวหนังสือ/ตัวหนังสือชนขอบ)
+          //   ปุ่มโปร่งบาง ไม่ไล่เฉด/เงา · ไอคอน lucide ธรรมดาสีอ่อน: ปิดทั้งหมด = ฟ้า (#7dd3fc) · เปิดทั้งหมด = อำพัน (#fcd34d บอกว่าตอนนี้เมนูถูกปิดอยู่)
+          // ตอนค้นหา = disabled แต่ไม่ซ่อน (ซ่อนแล้วช่องค้นหากว้าง/แคบกระตุกตอนพิมพ์) · ห้ามใส่ backdrop-blur บนปุ่ม
+          <button type="button" disabled={searching} data-nav-toggle-all={allClosed ? 'open' : 'close'}
+            title={allClosed ? 'เปิดเมนูย่อยทั้งหมด' : 'ปิดเมนูย่อยทั้งหมด (ยอดงานค้างแสดงที่เมนูหลัก)'}
+            onClick={() => setGroupsCollapsed(labels, !allClosed)}
+            className={`flex shrink-0 flex-row items-center justify-center gap-1 rounded-[10px] border border-white/15 bg-white/[0.06] px-2.5 transition-colors hover:bg-white/[0.10] active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 motion-reduce:transition-none ${searching ? 'opacity-40' : ''} ${isPc ? 'h-9' : 'h-11'}`}>
+            {allClosed
+              ? <ChevronsUpDown size={14} aria-hidden="true" color="#fcd34d" />
+              : <ChevronsDownUp size={14} aria-hidden="true" color="#7dd3fc" />}
+            <span className="text-[11px] font-semibold leading-none whitespace-nowrap text-white/85">{allClosed ? 'เปิดทั้งหมด' : 'ปิดทั้งหมด'}</span>
+          </button>
+        )}
         </div>
       </div>
 
