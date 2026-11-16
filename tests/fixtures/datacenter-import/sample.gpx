@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="ทดสอบ" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="18.10" lon="100.50"><name>จุดแวะพัก</name><desc>ศาลาทดสอบ</desc><cmt>หมายเหตุสมมติ</cmt><type>ศาลา</type></wpt>
+  <wpt lat="40.0" lon="100.5"><name>นอกประเทศ</name></wpt>
+  <trk><name>เส้นวิ่งทดสอบ</name><trkseg>
+    <trkpt lat="18.10" lon="100.50"/><trkpt lat="18.11" lon="100.51"/>
+  </trkseg><trkseg>
+    <trkpt lat="18.20" lon="100.50"/><trkpt lat="18.21" lon="100.51"/>
+  </trkseg></trk>
+  <rte><name>เส้นทางวางแผน</name><rtept lat="18.30" lon="100.50"/><rtept lat="18.31" lon="100.52"/></rte>
+</gpx>
