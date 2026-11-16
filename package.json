@@ -52,6 +52,7 @@
     "test:odor:intake": "node tests/odor-intake.test.mjs",
     "test:datacenter:picker": "node tests/datacenter-picker.test.mjs",
     "test:datacenter:import": "node tests/datacenter-import.test.mjs",
+    "test:datacenter-gis:db": "node tests/datacenter-gis-batch-db.test.mjs --pglite",
     "test:adhoc-zones": "node tests/adhoc-zones.test.mjs",
     "test:adhoc-affected": "node tests/adhoc-affected.test.mjs",
     "test:odor": "node tests/odor-workflow.playwright.mjs",

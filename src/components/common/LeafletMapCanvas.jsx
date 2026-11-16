@@ -43,6 +43,9 @@ export default function LeafletMapCanvas({
   mapTypeId = 'hybrid', // 'hybrid' | 'roadmap' | 'satellite'
   markers = [],
   polylines = [],
+  // พื้นที่ระบายสี (polygon) {id, path:[{lat,lng}], color, weight?, fillOpacity? (ค่าเริ่ม 0.25), opacity?, entry} — กดแล้วเรียก onFeatureClick เหมือน polylines
+  // ไม่ส่ง = ไม่วาดอะไรเพิ่ม ผู้เรียกเดิมไม่กระทบ
+  polygons = [],
   circles = [],
   flyTo = null,
   boundaryGeoJson = null,
@@ -76,12 +79,13 @@ export default function LeafletMapCanvas({
   const baseLayersRef = useRef({})
   const markerLayersRef = useRef([])
   const polylineLayersRef = useRef([])
+  const polygonLayersRef = useRef([])
   const circleLayersRef = useRef([])
   const geojsonLayerRef = useRef(null)
   const callbacksRef = useRef({ onMapClick, onMapRightClick, onFeatureClick, onFeatureRightClick, onPolylineRightClick, onMarkerDragEnd, onMapReady })
   const lastFitSignatureRef = useRef('')
   const fitPaddingRef = useRef(fitPadding)
-  const fitInputRef = useRef({ markers, polylines })
+  const fitInputRef = useRef({ markers, polylines, polygons })
   const fitAnimateRef = useRef(fitAnimate)
   const fitTouchedRef = useRef(false) // ผู้ใช้แตะแผนที่เองแล้วหลัง fit ครั้งล่าสุด → ห้าม fit ทับตอนกรอบเปลี่ยนขนาด
   const fallbackLayersRef = useRef([])
@@ -127,7 +131,7 @@ export default function LeafletMapCanvas({
   useEffect(() => {
     fitPaddingRef.current = fitPadding
     fitAnimateRef.current = fitAnimate
-    fitInputRef.current = { markers, polylines }
+    fitInputRef.current = { markers, polylines, polygons }
   })
 
   // 1. Initialize Map and Tile Layers
@@ -401,6 +405,39 @@ export default function LeafletMapCanvas({
     })
   }, [polylines])
 
+  // 5a. Render Polygons — พื้นที่ระบายสี (ศูนย์รวมข้อมูลดิจิทัล: นำเข้า GIS / วาดพื้นที่)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    polygonLayersRef.current.forEach(l => map.removeLayer(l))
+    polygonLayersRef.current = []
+
+    polygons.filter(poly => Array.isArray(poly.path) && poly.path.filter(isPoint).length >= 3).forEach(polyData => {
+      const latlngs = polyData.path.filter(isPoint).map(pt => [Number(pt.lat), Number(pt.lng)])
+      const color = safeColor(polyData.color || '#2563eb')
+
+      const polygon = L.polygon(latlngs, {
+        color,
+        weight: polyData.weight || 2,
+        opacity: polyData.opacity ?? 0.9,
+        fillColor: color,
+        fillOpacity: polyData.fillOpacity ?? 0.25,
+      })
+
+      polygon.on('click', () => callbacksRef.current.onFeatureClick?.(polyData))
+      polygon.on('contextmenu', e => {
+        L.DomEvent.preventDefault(e)
+        const point = { lat: e.latlng.lat, lng: e.latlng.lng }
+        const screen = e.originalEvent ? { clientX: e.originalEvent.clientX, clientY: e.originalEvent.clientY } : null
+        callbacksRef.current.onMapRightClick?.(point, screen)
+      })
+
+      polygon.addTo(map)
+      polygonLayersRef.current.push(polygon)
+    })
+  }, [polygons])
+
   // 5b. Render Circles — วงรัศมี (เช่น 1/2 กม. รอบฟาร์มที่ถูกร้องเรียน)
   // interactive:false โดยตั้งใจ: วงใหญ่คลุมหมุดและพื้นแผนที่ไว้ทั้งก้อน ถ้ารับการกดเอง จะกลืนการกดหมุดข้างใต้
   // และทำให้ onMapClick (กดที่ว่างเพื่อปิดการ์ด) ไม่ทำงานทั้งที่กดในวง
@@ -461,10 +498,11 @@ export default function LeafletMapCanvas({
   const runFit = useCallback(force => {
     const map = mapRef.current
     if (!map) return
-    const { markers: fitMarkers, polylines: fitPolylines } = fitInputRef.current
+    const { markers: fitMarkers, polylines: fitPolylines, polygons: fitPolygons = [] } = fitInputRef.current
     const points = [
       ...fitMarkers.map(m => m.position),
       ...fitPolylines.flatMap(l => l.path || []),
+      ...fitPolygons.flatMap(l => l.path || []),
     ].filter(isPoint)
 
     const signature = points.map(p => `${Number(p.lat).toFixed(5)},${Number(p.lng).toFixed(5)}`).join('|')
@@ -481,7 +519,7 @@ export default function LeafletMapCanvas({
   useEffect(() => {
     if (!fitBounds) return
     runFit(false)
-  }, [markers, polylines, fitBounds, runFit])
+  }, [markers, polylines, polygons, fitBounds, runFit])
 
   // 6b. fit ใหม่เมื่อผู้เรียกบอกว่ารูปทรงหน้าเปลี่ยน (refitSignal) — ยกเว้นผู้ใช้แตะแผนที่เองไปแล้ว ห้ามดึงกล้องกลับ
   // เคสจริง: หน้าแผนที่ประชาชน fit ตอนข้อมูลมาถึง แต่แถบสถิติหัวหน้าโหลดทีหลังดันแผนที่ลง ~60px หมุดเลยเลื่อนไปชิดแผงล่าง

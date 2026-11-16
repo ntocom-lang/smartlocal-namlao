@@ -5,7 +5,9 @@
 // "dce public read active" เปิดให้ anon อ่านและหน้าแผนที่สาธารณะแสดงอยู่แล้ว ⇒ ไม่เพิ่มข้อมูลที่เปิดเผย
 // ไม่ส่งออก: created_by / verified_by / department_id (รหัสภายใน) และไม่แตะตารางอื่นเลย (คำร้อง/ข้อมูลบุคคลห้ามเข้าไฟล์นี้)
 
-const OPEN_COLUMNS = 'id, name, group_name, category, description, latitude, longitude, route_points, route_color, photo_urls, external_url, created_at, updated_at, verified_at'
+import { entryShape } from './dataCenterShape.js'
+
+const OPEN_COLUMNS = 'id, name, group_name, category, description, latitude, longitude, route_points, route_color, shape, photo_urls, external_url, created_at, updated_at, verified_at'
 
 const PAGE_SIZE = 1000          // เท่ากับ max_rows ของ PostgREST — ดึงทีละหน้าเพราะเกินแล้วถูกตัดเงียบๆ (NOTES.md ข้อ 14)
 const HARD_CAP_ROWS = 20000     // เพดานกันลูปไม่รู้จบถ้าฐานตอบผิดปกติ
@@ -50,7 +52,7 @@ export const OPEN_DATA_FIELDS = [
   { keys: ['description'], label: 'รายละเอียด (ข้อความที่เจ้าหน้าที่พิมพ์เอง)' },
   { keys: ['photo_urls'], label: 'ลิงก์รูปภาพ' },
   { keys: ['external_url'], label: 'ลิงก์ภายนอก (เฉพาะ http/https)' },
-  { keys: ['route_color'], label: 'สีเส้นทาง (เฉพาะเส้นทาง)' },
+  { keys: ['route_color'], label: 'สีเส้นทาง/พื้นที่ (เฉพาะเส้นทางและพื้นที่)' },
   { keys: ['created_at', 'updated_at', 'last_verified_at'], label: 'วันที่บันทึก / แก้ไขล่าสุด / ตรวจทานล่าสุด' },
 ]
 
@@ -80,6 +82,15 @@ function routeCoordinates(routePoints) {
   return coords.length >= 2 ? coords : null
 }
 
+// วงปิดของ polygon ตามมาตรฐาน GeoJSON (RFC 7946): จุดแรก = จุดสุดท้าย และต้องมี ≥4 ตำแหน่ง (3 จุดจริง + จุดปิด)
+function polygonRing(coords) {
+  if (!coords || coords.length < 3) return null
+  const first = coords[0]
+  const last = coords[coords.length - 1]
+  const ring = first[0] === last[0] && first[1] === last[1] ? coords : [...coords, first]
+  return ring.length >= 4 ? ring : null
+}
+
 export function isRouteRow(row) {
   return Array.isArray(row.route_points) && row.route_points.length >= 2
 }
@@ -91,7 +102,10 @@ export function entriesToGeoJSON(rows, { publisher = '', slug = '', now = new Da
     const line = routeCoordinates(row.route_points)
     const ll = validLatLng(row.latitude, row.longitude)
     let geometry = null
-    if (line) geometry = { type: 'LineString', coordinates: line }
+    // พื้นที่ (polygon) ส่งออกเป็น Polygon · จุดเสียจนเหลือ <3 จุดถอยเป็นเส้นทางเหมือนเดิม ไม่ทิ้งรายการ
+    const ring = line && entryShape(row) === 'polygon' ? polygonRing(line) : null
+    if (ring) geometry = { type: 'Polygon', coordinates: [ring] }
+    else if (line) geometry = { type: 'LineString', coordinates: line }
     else if (ll) geometry = { type: 'Point', coordinates: [ll.lng, ll.lat] }
     if (!geometry) { skipped += 1; continue }
     features.push({
@@ -106,7 +120,7 @@ export function entriesToGeoJSON(rows, { publisher = '', slug = '', now = new Da
         description: row.description ?? '',
         external_url: safeHttpUrl(row.external_url) ?? '',
         photo_urls: Array.isArray(row.photo_urls) ? row.photo_urls.filter((u) => safeHttpUrl(u)) : [],
-        route_color: line ? (row.route_color ?? null) : null,
+        route_color: line ? (row.route_color ?? null) : null, // เส้นทางและพื้นที่ใช้ช่องเดียวกัน
         created_at: row.created_at ?? null,
         updated_at: row.updated_at ?? null,
         last_verified_at: row.verified_at ?? null,
@@ -164,13 +178,14 @@ export function entriesToCsvRows(rows, { dateStyle = 'iso' } = {}) {
     ['ชื่อ', 'กลุ่มหลัก', 'ประเภทย่อย', 'สถานะ', 'ชนิดพิกัด', 'ละติจูด', 'ลองจิจูด', 'จำนวนจุดของเส้นทาง', 'รายละเอียด', 'ลิงก์ภายนอก', 'จำนวนรูป', 'บันทึกเมื่อ', 'แก้ไขล่าสุด', 'ตรวจทานล่าสุด', 'รหัสรายการ'],
     ...rows.map((e) => {
       const route = isRouteRow(e)
+      const area = route && entryShape(e) === 'polygon'
       const ll = validLatLng(e.latitude, e.longitude)
       return [
         e.name ?? '',
         e.group_name ?? '',
         e.category ?? '',
         e.status === 'archived' ? 'ไม่ใช้งาน' : 'ใช้งาน',
-        route ? 'เส้นทาง' : 'จุด',
+        area ? 'พื้นที่' : route ? 'เส้นทาง' : 'จุด',
         ll ? ll.lat : '',
         ll ? ll.lng : '',
         route ? e.route_points.length : '',

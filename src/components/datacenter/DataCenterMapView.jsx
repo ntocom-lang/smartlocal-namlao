@@ -5,6 +5,7 @@ import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation, Target, Tag, Tags, Users, Search, LocateFixed } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import LeafletMapCanvas from '../common/LeafletMapCanvas'
+import { entryShape } from '../../lib/dataCenterShape'
 import MapTypeToggle from '../common/MapTypeToggle'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, isIconImage } from '../../lib/dataCenterGroupIcon'
 import CategoryIcon from './CategoryIcon'
@@ -1029,12 +1030,22 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                 zIndex: 900,
                 affected: m,
               }))]}
-              polylines={visible.filter(e => e.route_points?.length >= 2).map(e => ({
+              polylines={visible.filter(e => e.route_points?.length >= 2 && entryShape(e) !== 'polygon').map(e => ({
                 id: `${e.source_table}-${e.source_id}`,
                 path: e.route_points,
                 color: e.route_color || groupMeta(e.group_name, groupIconOverrides).color,
                 weight: e.category === 'ถนนสายหลัก' ? 5 : 3,
                 opacity: 0.88,
+                entry: e,
+              }))}
+              /* พื้นที่ระบายสี (shape='polygon') — สีใช้สูตรเดียวกับเส้นทาง · RPC เดิมก่อนรัน SQL ไม่มี shape ⇒ ไม่มี polygon ก็ไม่วาดอะไรเพิ่ม */
+              polygons={visible.filter(e => e.route_points?.length >= 2 && entryShape(e) === 'polygon').map(e => ({
+                id: `${e.source_table}-${e.source_id}`,
+                path: e.route_points,
+                color: e.route_color || groupMeta(e.group_name, groupIconOverrides).color,
+                weight: 2,
+                fillOpacity: 0.25,
+                opacity: 0.9,
                 entry: e,
               }))}
               onFeatureClick={feature => {
