@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { NAV_COLLAPSED_EVENT, readCollapsedGroups, setGroupCollapsed } from '../../lib/navUsage'
+import { NAV_COLLAPSED_EVENT, groupBadgeTotal, readCollapsedGroups, setGroupCollapsed } from '../../lib/navUsage'
 import { isHotBadge, softTileStyle, BADGE_BASE, BADGE_TONES } from '../../lib/navTileColor'
 
 // เมนูซ้ายแบบ 3 ระดับ (เจ้าของระบบสั่ง 2569-11-15) ใช้ร่วมเมนูซ้าย PC/ลิ้นชักมือถือ โดยไม่เปลี่ยนการกรองสิทธิ์ของผู้เรียก
@@ -48,7 +48,8 @@ export function NavGroupIcon({ Icon, accent }) {
 // ⚠️ พื้นป้ายต้องมีชั้นทึบ BADGE_BASE รองใต้สีโปร่ง: ถ้าโปร่งล้วน ป้ายที่อยู่บนแถว active (แคปซูลสว่างกว่าแผง) เหลือ 3.0:1
 //   และแดงบนแผงประชาชนเหลือ 3.8:1 · ชั้นทึบทำให้ค่าคงที่ทุกพื้น — อำพัน 8.0:1 · แดง 6.4:1 (วัดในเทสต์ nav-usage)
 // ไม่กะพริบ/ไม่เด้ง — เมนูเปิดค้างทั้งวัน ของขยับจะรบกวนสายตา
-export function NavBadge({ count, ...rest }) {
+// compact = ป้ายเล็กสำหรับมุมกระเบื้องในเมนูซ้ายโหมดย่อ (StaffNavRail · เจ้าของระบบอนุมัติ 2569-11-16) สี/ชั้นทึบชุดเดิม
+export function NavBadge({ count, compact = false, ...rest }) {
   const n = Number(count)
   if (!(n > 0)) return null
   const hot = isHotBadge(n)
@@ -56,7 +57,7 @@ export function NavBadge({ count, ...rest }) {
   return (
     <span data-nav-badge={hot ? 'hot' : 'normal'} {...rest}
       style={{ backgroundColor: BADGE_BASE, backgroundImage: `linear-gradient(${tone.tint}, ${tone.tint})`, color: tone.text, boxShadow: `inset 0 0 0 1px ${tone.ring}` }}
-      className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-bold leading-none tabular-nums">
+      className={`flex shrink-0 items-center justify-center rounded-full font-bold leading-none tabular-nums ${compact ? 'h-4 min-w-4 px-1 text-[9px]' : 'h-5 min-w-5 px-1.5 text-[10px]'}`}>
       {n > 99 ? '99+' : n}
       <span className="sr-only"> รายการรอ</span>
     </span>
@@ -78,7 +79,10 @@ export function NavSubRow({ active, children, ...rest }) {
   )
 }
 
-export default function CollapsibleNavGroup({ label, Icon, accent, items, badges, workErrors, activeKey, divider = false, renderItem }) {
+// label = ชื่อเต็ม = คีย์จำสถานะพับ + data-department-nav (ห้ามเปลี่ยน) · displayLabel = ชื่อสั้นที่วาดบนหัวกลุ่ม (ไม่ส่ง = label)
+// singleLine (เมนูเจ้าหน้าที่ · เจ้าของระบบสั่ง 2569-11-16: ชื่อเมนูบรรทัดเดียว) = ชื่อไม่ขึ้นบรรทัดใหม่ ตัดด้วย … แทน + title = ชื่อเต็มเสมอ
+//   กันเครื่องที่ฟอนต์ตกไปใช้ฟอนต์อื่นกว้างกว่า Sarabun · ค่าเริ่มต้น false = ขึ้นบรรทัดใหม่แบบเดิม (แอดมิน/ผู้พัฒนา/ประชาชนไม่เปลี่ยน)
+export default function CollapsibleNavGroup({ label, displayLabel, singleLine = false, Icon, accent, items, badges, workErrors, activeKey, divider = false, renderItem }) {
   const groupId = useId()
   const [collapsed, setCollapsed] = useState(() => readCollapsedGroups().has(label))
 
@@ -92,13 +96,12 @@ export default function CollapsibleNavGroup({ label, Icon, accent, items, badges
 
   const rows = items.map((item, index) => ({
     item, id: `${groupId}-${index}`,
-    hasWork: Number(badges?.[item.key]) > 0,
     hasError: Boolean(workErrors?.[item.key]),
     isActive: activeKey != null && activeKey === item.key,
   }))
   const workError = rows.some(row => row.hasError)
-  // ยอดรวมของเมนูย่อยทุกตัว (ป้ายตัวเลขเดียวกับเมนูย่อย: < 10 อำพัน · ≥ 10 แดง)
-  const groupTotal = rows.reduce((sum, row) => sum + (row.hasWork ? Number(badges?.[row.item.key]) : 0), 0)
+  // ยอดรวมของเมนูย่อยทุกตัว (ป้ายตัวเลขเดียวกับเมนูย่อย: < 10 อำพัน · ≥ 10 แดง) — ตัวเดียวกับหัวกลุ่มโหมดย่อ (groupBadgeTotal)
+  const groupTotal = groupBadgeTotal(items, badges)
   const activeInside = collapsed && rows.some(row => row.isActive)
   // aria-controls รับหลาย ID ได้ — พับแล้วซ่อนทุกแถว
   const controlledIds = rows.map(row => row.id).join(' ')
@@ -119,7 +122,7 @@ export default function CollapsibleNavGroup({ label, Icon, accent, items, badges
         className={`relative mb-1 flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-[13px] font-bold leading-snug text-white/85 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 md:min-h-9 ${activeInside ? 'bg-white/[0.06]' : ''}`}>
         {activeInside && <span aria-hidden="true" className="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-full bg-amber-300" />}
         <NavGroupIcon Icon={Icon} accent={accent} />
-        <span className="min-w-0 flex-1 break-words">{label}{activeInside && <span className="sr-only"> (หน้าที่เปิดอยู่อยู่ในกลุ่มนี้)</span>}</span>
+        <span title={singleLine ? label : undefined} className={singleLine ? 'min-w-0 flex-1 truncate py-0.5' : 'min-w-0 flex-1 break-words'}>{displayLabel ?? label}{activeInside && <span className="sr-only"> (หน้าที่เปิดอยู่อยู่ในกลุ่มนี้)</span>}</span>
         <NavBadge count={groupTotal} data-nav-group-total="" />
         {workError && <span role="status" className="shrink-0 text-[10px] font-normal text-amber-300">ตรวจงานไม่ได้</span>}
         <ChevronDown size={16} aria-hidden="true" className={`shrink-0 text-white/70 transition-transform ${collapsed ? '-rotate-90' : ''}`} />

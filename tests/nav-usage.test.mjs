@@ -5,7 +5,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  NAV_COLLAPSED_EVENT, NAV_COLLAPSED_KEY, navUsageStorageKey, readCollapsedGroups, recordNavUse, searchNavItems, setGroupCollapsed, setGroupsCollapsed, topNavKeys,
+  NAV_COLLAPSED_EVENT, NAV_COLLAPSED_KEY, NAV_RAIL_EVENT, NAV_RAIL_KEY, groupBadgeTotal, groupNavText, navText, navUsageStorageKey, readCollapsedGroups, readNavRail, recordNavUse,
+  searchNavItems, setGroupCollapsed, setGroupsCollapsed, setNavRail, topNavKeys,
 } from '../src/lib/navUsage.js'
 import {
   ADMIN_ACTIVE_CAPSULE, BADGE_BASE, BADGE_TONES, DEV_ACTIVE_CAPSULE, NAV_ACTIVE_CAPSULE, composite, contrastRatio, contrastWithWhite, hexToRgba, isHotBadge,
@@ -389,6 +390,237 @@ await test('หัวกลุ่ม: ยอดรวมป้ายตัวเ
   assert.doesNotMatch(group, /data-nav-group-dot/, 'จุดอำพันเดิมซ้ำกับยอดรวม ต้องเอาออก')
   assert.match(group, /activeInside/, 'หน้าที่เปิดอยู่ถูกซ่อนตอนพับ → หัวกลุ่มต้องบอกแทน')
   assert.match(group, /ตรวจงานไม่ได้/, 'ข้อความตรวจงานไม่ได้ต้องอยู่ที่หัวกลุ่ม ไม่หายตอนพับ')
+})
+
+// ── ย่อเมนูซ้ายเหลือแต่ไอคอน (เจ้าของระบบอนุมัติ 2569-11-16) ─────────────────────────────────
+await test('ย่อเมนู: ค่าเริ่มต้น false · เขียน/อ่านกลับ · ข้อมูลเสีย/storage พังไม่โยน (= เมนูเต็ม)', () => {
+  const s = memoryStorage()
+  assert.equal(NAV_RAIL_KEY, 'smartlocal:nav-rail')
+  assert.equal(readNavRail(s), false)
+  setNavRail(true, s)
+  assert.equal(s.getItem(NAV_RAIL_KEY), '1')
+  assert.equal(readNavRail(s), true)
+  setNavRail(false, s)
+  assert.equal(s.getItem(NAV_RAIL_KEY), '0')
+  assert.equal(readNavRail(s), false)
+  s.setItem(NAV_RAIL_KEY, '{ไม่ใช่ค่าที่รู้จัก')
+  assert.equal(readNavRail(s), false)
+  assert.equal(readNavRail(brokenStorage), false)
+  assert.equal(readNavRail(null), false)
+  setNavRail(true, brokenStorage) // ต้องไม่โยน
+  setNavRail(true, null)
+})
+
+await test('ย่อเมนู: ยิงอีเวนต์ทุกครั้งที่ตั้งค่า (แม้ storage พัง เพื่อให้ตัวอื่นในหน้าอ่านใหม่)', () => {
+  const prev = globalThis.window
+  let fired = 0
+  globalThis.window = { dispatchEvent: (e) => { if (e.type === NAV_RAIL_EVENT) fired++; return true } }
+  try {
+    setNavRail(true, memoryStorage())
+    assert.equal(fired, 1)
+    setNavRail(false, brokenStorage)
+    assert.equal(fired, 2)
+  } finally {
+    if (prev === undefined) delete globalThis.window
+    else globalThis.window = prev
+  }
+})
+
+await test('groupBadgeTotal: ผลรวมถูก · ไม่นับค่าที่ไม่ใช่ตัวเลข/ติดลบ/ศูนย์ · รับ items/badges ว่างได้', () => {
+  const items = [{ key: 'a' }, { key: 'b' }, { key: 'c' }, { key: 'd' }, { key: 'e' }, { key: 'f' }]
+  assert.equal(groupBadgeTotal(items, { a: 3, b: '4', c: 0, d: -5, e: 'ไม่ใช่ตัวเลข', f: null }), 7)
+  assert.equal(groupBadgeTotal(items, { a: Infinity, b: NaN, z: 99 }), 0, 'ไม่จำกัด/NaN/คีย์นอกกลุ่มไม่นับ')
+  assert.equal(groupBadgeTotal(items, undefined), 0)
+  assert.equal(groupBadgeTotal(undefined, { a: 1 }), 0)
+  assert.equal(groupBadgeTotal([], { a: 1 }), 0)
+  assert.equal(groupBadgeTotal([null, { key: 'a' }], { a: 2 }), 2)
+})
+
+await test('ย่อเมนู (ซอร์ส): ปุ่มย่อเมนู/ขยายเมนู · aside w-16 ตอนย่อ w-60 ตอนเต็ม · เฉพาะ StaffSideNav (ลิ้นชัก/แอดมิน/ประชาชน/ผู้พัฒนาไม่แตะ)', () => {
+  const side = src('components/staff/StaffSideNav.jsx')
+  assert.match(side, /ย่อเมนู/)
+  assert.match(side, /ขยายเมนู/)
+  assert.match(side, /\$\{rail \? 'w-16' : 'w-60'\}/)
+  assert.match(side, /data-nav-rail=\{rail \? '' : undefined\}/)
+  assert.match(side, /data-staff-aside/)
+  assert.match(side, /aria-expanded=\{!rail\}/)
+  assert.match(side, /aria-controls=\{navId\}/)
+  assert.match(side, /ChevronsLeft/)
+  assert.match(side, /ChevronsRight/)
+  assert.match(side, /shrink-0 border-t border-white\/10/, 'ปุ่มอยู่ footer ปักล่าง')
+  assert.match(side, /motion-reduce:transition-none/)
+  assert.match(side, /<StaffNavRail /)
+  assert.match(side, /if \(e\.key !== '\/'/, 'ทางลัด "/" ตอนโหมดย่อ')
+  assert.match(side, /\(INPUT\|TEXTAREA\|SELECT\)/, 'ไม่แย่งตอนพิมพ์ในช่อง')
+  assert.doesNotMatch(side, /aria-pressed/)
+  // ที่อื่นต้องไม่รู้จักโหมดย่อ
+  for (const f of ['components/common/PortalDrawer.jsx', 'components/admin/AdminSideNav.jsx']) {
+    const code = src(f)
+    assert.doesNotMatch(code, /StaffNavRail/, `${f} ต้องไม่ import StaffNavRail`)
+    assert.doesNotMatch(code, /readNavRail|setNavRail|NAV_RAIL/, `${f} ต้องไม่ยุ่งกับสถานะโหมดย่อ`)
+  }
+})
+
+await test('ย่อเมนู (ซอร์ส): StaffNavRail ใช้ NavBadge compact · NavIconTile · NAV_ACTIVE_CAPSULE · title+aria-label · กดเมนูผ่าน pick เดียวกัน', () => {
+  const rail = src('components/staff/StaffNavRail.jsx')
+  assert.match(rail, /<NavBadge count=\{badge\} compact \/>/)
+  assert.match(rail, /<NavIconTile /)
+  assert.match(rail, /<NavGroupIcon /)
+  assert.match(rail, /NAV_ACTIVE_CAPSULE/)
+  assert.match(rail, /title=\{label\} aria-label=\{label\}/)
+  assert.match(rail, /aria-current=\{active \? 'page' : undefined\}/)
+  assert.match(rail, /ค้าง \$\{n\} เรื่อง/)
+  assert.match(rail, /ตรวจงานไม่ได้/)
+  assert.match(rail, /setGroupCollapsed\(group, !collapsed\)/, 'ใช้สถานะพับกลุ่มชุดเดียวกับโหมดเต็ม')
+  assert.match(rail, /NAV_COLLAPSED_EVENT/)
+  assert.match(rail, /onClick=\{\(\) => onPick\(item\)\}/)
+  assert.match(rail, /data-staff-exec-link/)
+  assert.doesNotMatch(rail, /NavQuickFind|topNavKeys|searchNavItems/, 'ไม่มี ใช้บ่อย/ช่องค้นหา ในโหมดย่อ')
+  const side = src('components/staff/StaffSideNav.jsx')
+  assert.match(side, /onPick=\{pick\}/, 'กดเมนูย่อยผ่าน pick (นับใช้บ่อย) ตัวเดียวกับโหมดเต็ม')
+  // ป้ายตัวเลข compact ใช้ชั้นทึบชุดเดิม ไม่มีป้ายเขียนใหม่ในโหมดย่อ
+  const group = src('components/common/CollapsibleNavGroup.jsx')
+  assert.match(group, /compact \? 'h-4 min-w-4 px-1 text-\[9px\]'/)
+  assert.doesNotMatch(rail, /BADGE_BASE|BADGE_TONES/)
+})
+
+await test('ย่อเมนู (ซอร์ส): ยอดรวมกลุ่มใช้ groupBadgeTotal ตัวเดียวกันทั้งโหมดเต็ม (CollapsibleNavGroup) และโหมดย่อ (StaffNavRail) ไม่เขียนซ้ำ', () => {
+  const group = src('components/common/CollapsibleNavGroup.jsx')
+  const rail = src('components/staff/StaffNavRail.jsx')
+  assert.match(group, /groupBadgeTotal\(items, badges\)/)
+  assert.match(rail, /groupBadgeTotal\(items, badges\)/)
+  assert.doesNotMatch(group, /\.reduce\(/, 'ตรรกะรวมยอดต้องอยู่ที่ groupBadgeTotal ที่เดียว')
+  assert.doesNotMatch(rail, /\.reduce\(/)
+})
+
+// ── ชื่อเมนูซ้ายเจ้าหน้าที่ต้องจบบรรทัดเดียว (เจ้าของระบบสั่ง 2569-11-16) ─────────────────────────────
+// วัดด้วย Sarabun จริง (canvas): พื้นที่ชื่อเหลือ ≈ 98–104px · ลดตัวอักษรอย่างเดียวไม่พอ → ใช้ "ชื่อในเมนู" แบบสั้น (navLabel)
+// staffNavGroups.js import ไม่มีนามสกุล + lucide-react → node เปล่ารันไม่ได้ จึงอ่านจากซอร์สเหมือนเคสด้านบน (เฉพาะส่วนก่อน MODULES = ไม่รวมแถบล่างมือถือ)
+const navSrc = src('lib/staffNavGroups.js')
+const menuSrc = navSrc.slice(0, navSrc.indexOf('export const MODULES ='))
+const NAV_GROUPS = []
+for (const line of menuSrc.split(/\r?\n/)) {
+  const g = line.match(/^\s*(?:\{\s*)?group: '([^']+)'(?:, navLabel: '([^']+)')?/)
+  if (g) { NAV_GROUPS.push({ group: g[1], navLabel: g[2], items: [] }); continue }
+  const it = line.match(/\{ key: ([^,]+),\s+label: '([^']+)'(?:, navLabel: '([^']+)')?/)
+  if (it && NAV_GROUPS.length) NAV_GROUPS[NAV_GROUPS.length - 1].items.push({ key: it[1].replace(/'/g, ''), label: it[2], navLabel: it[3] })
+}
+const NAV_ITEMS = NAV_GROUPS.flatMap(g => g.items)
+const itemByLabel = (label) => NAV_ITEMS.find(i => i.label === label)
+
+// ความยาวชื่อ = นับ code point ไม่รวมสระบน/ล่าง/วรรณยุกต์ (ั ิ-ฺ ็-๎) เพราะไม่กินความกว้างแนวนอน
+const navLen = (s) => [...String(s)].filter(c => !/[ัิ-ฺ็-๎]/.test(c)).length
+// เกณฑ์ตั้งจากชื่อปัจจุบัน: เมนูย่อยที่กว้างสุดที่วัดแล้วพอดีคือ 'เที่ยว กิน พัก ช้อป' (14 ตัว ≈ 95px จากพื้นที่ ≈ 98px)
+// หัวกลุ่มแคบกว่า (ป้ายตัวเลข+ลูกศร) กว้างสุดที่พอดีคือ 'ระบบกลาง' (13 ตัว ≈ 102px จาก ≈ 104px)
+// ชื่อยาวเดิมทุกตัวต้องเกินเกณฑ์ (15–20 ตัว) · เกณฑ์เป็นตัวแทนหยาบ — ของจริงถูกกันที่ truncate อีกชั้น
+const NAV_ITEM_MAX = 14
+const NAV_GROUP_MAX = 13
+
+await test('navLabel: อ่านซอร์สได้ครบ (กันเทสต์ผ่านลวงเพราะ parse ไม่เจอ)', () => {
+  assert.ok(NAV_GROUPS.length >= 9, `กลุ่ม ${NAV_GROUPS.length}`)
+  assert.ok(NAV_ITEMS.length >= 18, `เมนู ${NAV_ITEMS.length}`)
+})
+
+await test('navLabel: ชื่อสั้นตรงค่าที่เจ้าของสั่ง · label/group เดิมไม่เปลี่ยน (เป็นคีย์/ชื่อเต็มของที่อื่น)', () => {
+  const groupCases = [['งานบริการประชาชน', 'บริการประชาชน'], ['ประชาสัมพันธ์และท่องเที่ยว', 'ประชาสัมพันธ์'], ['แผนงานและทรัพยากรกลาง', 'ระบบกลาง']]
+  for (const [group, nav] of groupCases) {
+    const g = NAV_GROUPS.find(x => x.group === group)
+    assert.ok(g, `ต้องยังมีกลุ่ม ${group} (ชื่อเต็มห้ามเปลี่ยน)`)
+    assert.equal(g.navLabel, nav)
+  }
+  const itemCases = [['คำขอบริการ/เอกสาร', 'คำขอบริการ'], ['ข่าวสาร/ภาพกิจกรรม', 'ข่าว/กิจกรรม'], ['เที่ยว กิน พัก ช้อป บริการ', 'เที่ยว กิน พัก ช้อป'],
+    ['ศูนย์รวมข้อมูลดิจิทัล', 'ศูนย์ข้อมูลดิจิทัล'], ['ยานพาหนะและเชื้อเพลิง', 'ยานพาหนะ']]
+  for (const [label, nav] of itemCases) {
+    const it = itemByLabel(label)
+    assert.ok(it, `ต้องยังมีเมนู ${label} (ชื่อเต็มห้ามเปลี่ยน)`)
+    assert.equal(it.navLabel, nav)
+  }
+  // คีย์ไม่เปลี่ยน (ผูกกับ activeModule / enabled_modules)
+  assert.equal(itemByLabel('ยานพาหนะและเชื้อเพลิง').key, 'fleet')
+  assert.equal(itemByLabel('ศูนย์รวมข้อมูลดิจิทัล').key, 'data-center')
+  assert.equal(itemByLabel('คำขอบริการ/เอกสาร').key, 'inbox')
+  // เมนู/กลุ่มที่ไม่ยาวไม่ต้องมี navLabel (มีเฉพาะตัวที่เจ้าของระบุ 3 กลุ่ม + 5 เมนู)
+  assert.equal(NAV_GROUPS.filter(g => g.navLabel).length, 3)
+  assert.equal(NAV_ITEMS.filter(i => i.navLabel).length, 6)
+})
+
+await test('navText/groupNavText: ใช้ navLabel ก่อน · ไม่มี = ชื่อเต็ม · ค่าผิดรูปไม่พัง', () => {
+  assert.equal(navText({ label: 'ยานพาหนะและเชื้อเพลิง', navLabel: 'ยานพาหนะ' }), 'ยานพาหนะ')
+  assert.equal(navText({ label: 'คำร้อง' }), 'คำร้อง')
+  assert.equal(groupNavText({ group: 'งานบริการประชาชน', navLabel: 'บริการประชาชน' }), 'บริการประชาชน')
+  assert.equal(groupNavText({ group: 'กองช่าง' }), 'กองช่าง')
+  assert.equal(navText(null), undefined)
+  assert.equal(groupNavText(undefined), undefined)
+  // withPlanLabel (useStaffNavGroups) สร้าง label ใหม่เป็น { ...m, label } → navLabel (ถ้ามี) ไม่หาย
+  assert.match(src('hooks/useStaffNavGroups.js'), /\{ \.\.\.m, label: localPlanLabel \}/)
+  assert.match(src('hooks/useStaffNavGroups.js'), /\{ \.\.\.g, collapsible: true,/)
+})
+
+await test('ค้นหา: เจอทั้งชื่อเต็มและชื่อสั้น ("เชื้อเพลิง"→ยานพาหนะ · "ยานพาหนะ"→ยานพาหนะ · "ศูนย์รวม"→ศูนย์ข้อมูล · ชื่อกลุ่มเต็ม/สั้น)', () => {
+  const k = (q) => searchNavItems(NAV_GROUPS, q).map(r => r.item.key)
+  assert.ok(k('เชื้อเพลิง').includes('fleet'), 'ชื่อเต็ม: เชื้อเพลิง')
+  assert.ok(k('ยานพาหนะ').includes('fleet'), 'ชื่อสั้น/เต็มต้นคำ: ยานพาหนะ')
+  assert.ok(k('ศูนย์รวม').includes('data-center'), 'ชื่อเต็ม: ศูนย์รวม')
+  assert.ok(k('ศูนย์ข้อมูล').includes('data-center'), 'ชื่อสั้น: ศูนย์ข้อมูล')
+  assert.ok(k('ช้อป บริการ').includes('tourism'), 'ชื่อเต็มท้ายคำของเที่ยว กิน พัก ช้อป')
+  assert.ok(k('ข่าวสาร').includes('posts') && k('ข่าว/กิจ').includes('posts'), 'ข่าวสาร/ภาพกิจกรรม ทั้งสองชื่อ (ชื่อสั้น ข่าว/กิจกรรม)')
+  assert.ok(k('ประชาสัมพันธ์').includes('posts'), 'ชื่อกลุ่มเต็ม')
+  assert.ok(k('ประชาสัมพันธ์').includes('tourism'), 'ชื่อกลุ่มสั้น')
+  assert.ok(k('ระบบกลาง').includes('fleet'), 'ชื่อกลุ่มสั้น ระบบกลาง')
+  assert.ok(k('แผนงานและทรัพยากรกลาง').includes('fleet'), 'ชื่อกลุ่มเต็ม')
+  assert.deepEqual(k('ไม่มีเมนูนี้แน่นอน'), [])
+})
+
+await test('กันชื่อยาวหลุดบรรทัดเดียว: ชื่อที่แสดงในเมนู (navLabel ?? ชื่อเต็ม) ต้องไม่เกินเกณฑ์ — เกินให้ใส่ navLabel ใน staffNavGroups.js', () => {
+  for (const g of NAV_GROUPS) {
+    const shown = groupNavText(g)
+    assert.ok(navLen(shown) <= NAV_GROUP_MAX, `หัวกลุ่ม "${shown}" ยาว ${navLen(shown)} ตัว (เกิน ${NAV_GROUP_MAX}) → ใส่ navLabel แบบสั้นใน staffNavGroups.js (เจ้าของระบบสั่ง 2569-11-16: ชื่อเมนูบรรทัดเดียว)`)
+  }
+  for (const it of NAV_ITEMS) {
+    const shown = navText(it)
+    assert.ok(navLen(shown) <= NAV_ITEM_MAX, `เมนู "${shown}" ยาว ${navLen(shown)} ตัว (เกิน ${NAV_ITEM_MAX}) → ใส่ navLabel แบบสั้นใน staffNavGroups.js (เจ้าของระบบสั่ง 2569-11-16: ชื่อเมนูบรรทัดเดียว)`)
+  }
+  // เกณฑ์ต้องแยกได้จริง: ชื่อยาวเดิม (ก่อนมี navLabel) ต้องไม่ผ่าน ไม่งั้นเทสต์นี้ไม่ได้กันอะไร
+  for (const old of ['ประชาสัมพันธ์และท่องเที่ยว', 'แผนงานและทรัพยากรกลาง', 'งานบริการประชาชน']) assert.ok(navLen(old) > NAV_GROUP_MAX, old)
+  for (const old of ['คำขอบริการ/เอกสาร', 'ข่าวสาร/ภาพกิจกรรม', 'เที่ยว กิน พัก ช้อป บริการ', 'ยานพาหนะและเชื้อเพลิง']) assert.ok(navLen(old) > NAV_ITEM_MAX, old)
+  // ตัวสั้นที่วัดแล้วพอดีต้องผ่าน (กันเกณฑ์เข้มเกินจนบังคับย่อชื่อที่ไม่จำเป็น)
+  assert.ok(navLen('เที่ยว กิน พัก ช้อป') <= NAV_ITEM_MAX)
+  assert.ok(navLen('ระบบกลาง') <= NAV_GROUP_MAX)
+})
+
+await test('ชื่อเมนูบรรทัดเดียว (ซอร์ส): StaffSideNav/PortalDrawer/CollapsibleNavGroup ใช้ navText/groupNavText + truncate + title ชื่อเต็ม · ไม่เหลือ break-words ในเมนูเจ้าหน้าที่', () => {
+  const side = src('components/staff/StaffSideNav.jsx')
+  assert.match(side, /navText\(item\)/)
+  assert.match(side, /groupNavText\(g\)/)
+  assert.match(side, /title=\{item\.label\}/, 'ชี้แล้วเห็นชื่อเต็ม')
+  assert.match(side, /min-w-0 flex-1 truncate/)
+  assert.match(side, /label=\{g\.group\}/, 'label = ชื่อเต็ม = คีย์จำสถานะพับ ห้ามเปลี่ยนเป็นชื่อสั้น')
+  assert.match(side, /displayLabel=\{groupNavText\(g\)\} singleLine/)
+  assert.doesNotMatch(side, /break-words/, 'แถวเมนูย่อยเจ้าหน้าที่ต้องไม่ขึ้นบรรทัดใหม่')
+  const group = src('components/common/CollapsibleNavGroup.jsx')
+  assert.match(group, /displayLabel \?\? label/)
+  assert.match(group, /title=\{singleLine \? label : undefined\}/, 'หัวกลุ่ม title = ชื่อเต็ม')
+  assert.match(group, /singleLine \? 'min-w-0 flex-1 truncate py-0\.5'/)
+  assert.match(group, /: 'min-w-0 flex-1 break-words'/, 'แอดมิน/ผู้พัฒนา/ประชาชนไม่ส่ง singleLine = ขึ้นบรรทัดใหม่แบบเดิม ห้ามลบ')
+  const drawer = src('components/common/PortalDrawer.jsx')
+  assert.match(drawer, /navText\(item\)/)
+  assert.match(drawer, /groupNavText\(groupObj\)/)
+  assert.match(drawer, /title=\{item\.label\}/)
+  assert.match(drawer, /min-w-0 flex-1 truncate/)
+  assert.match(drawer, /const oneLine = quickFind && favorites/, 'เฉพาะลิ้นชักเจ้าหน้าที่ (แอดมินส่ง favorites={false})')
+  assert.match(drawer, /<span data-drawer-label className="min-w-0 flex-1 leading-snug">\{item\.label\}<\/span>/, 'แถวแอดมิน/ผู้พัฒนา/ศูนย์ข้อมูลยังเป็นชื่อเต็มแบบเดิม')
+  // ที่อื่นต้องไม่รู้จัก navLabel
+  for (const f of ['components/admin/AdminSideNav.jsx', 'components/dev/DevNavButton.jsx', 'components/layout/CitizenSidebar.jsx']) {
+    const code = src(f)
+    assert.doesNotMatch(code, /navText|groupNavText|singleLine|displayLabel/, `${f} ต้องไม่เปลี่ยน`)
+  }
+})
+
+await test('โหมดย่อ (ซอร์ส): title/aria-label ใช้ชื่อเต็ม (label/group) ไม่ใช้ชื่อสั้น', () => {
+  const rail = src('components/staff/StaffNavRail.jsx')
+  assert.doesNotMatch(rail, /import[^\n]*(navText|groupNavText)/, 'ไม่ import ตัวช่วยชื่อสั้น')
+  assert.match(rail, /label=\{withWork\(item\.label, count\)\}/)
+  assert.match(rail, /withWork\(group, total\)/)
 })
 
 console.log(`\nผ่านทั้งหมด ${cases} เคส`)
