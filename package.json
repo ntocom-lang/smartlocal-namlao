@@ -150,6 +150,7 @@
     "test:exec-spike:db": "node tests/exec-complaint-spike-db.test.mjs --pglite",
     "test:staff-menu": "node tests/staff-menu-access.test.mjs",
     "test:nav-usage": "node tests/nav-usage.test.mjs",
+    "test:citizen-nav": "node tests/citizen-nav.test.mjs",
     "test:staff-home": "node tests/staff-home-frequent.test.mjs && node tests/staff-home-summary.test.mjs && node tests/staff-home-layout.playwright.mjs",
     "test:staff-nav": "node tests/staff-nav-layout.playwright.mjs",
     "test:telegram": "node tests/telegram-notification-message.test.mjs",
