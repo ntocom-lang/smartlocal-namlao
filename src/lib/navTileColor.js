@@ -71,3 +71,32 @@ export const ADMIN_NAV_BG = Object.freeze({
 // ป้ายตัวเลขเรื่องค้าง: ปกติอำพัน · ตั้งแต่ 10 เรื่องเป็นแดง (เจ้าของระบบเลือก 2569-11-16) ไม่กะพริบ
 export const NAV_BADGE_HOT_AT = 10
 export const isHotBadge = (count) => Number(count) >= NAV_BADGE_HOT_AT
+
+// ===== เมนูซ้ายผู้พัฒนา (PR4 2569-11-16) — โทนเทอร์มินัล สีคงที่ทุก อปท. ไม่ตามสีธีมเว็บ =====
+// พื้นเมนูซ้าย/ลิ้นชัก (กรมท่าเข้ม→เกือบดำ) — ขาวบน #1b2a4a = 14.2:1 · บน #0b1220 = 18.7:1 · ขาว 80% บน #1b2a4a ≈ 9:1
+export const DEV_NAV_BG = Object.freeze({
+  backgroundColor: '#121c33',
+  backgroundImage: 'linear-gradient(180deg, #1b2a4a 0%, #0b1220 100%)',
+})
+// กรอบเรืองฟ้า→ม่วงของเมนูที่เปิดอยู่ — ขาวบน #0c3a5e = 11.8:1 · บน #2e1065 = 15.2:1 (ผ่าน AA ตลอดเส้น)
+export const DEV_ACTIVE_CAPSULE = Object.freeze({
+  backgroundColor: '#0c3a5e',
+  backgroundImage: 'linear-gradient(90deg, #0c3a5e 0%, #2e1065 100%)',
+  boxShadow: 'inset 0 0 0 1px rgba(125, 211, 252, 0.6), 0 0 16px -4px rgba(167, 139, 250, 0.75)',
+})
+// สีกระเบื้องที่ล็อกไว้ (ม่วง/คราม/ฟ้า) — ชุดสีสุ่มด้านล่างต้องไม่ซ้ำโทนเหล่านี้ ไม่งั้นแยกที่ปรึกษา AI/จัดการโมดูล/ทั้งหมดไม่ออก
+export const DEV_ADVISOR_COLOR = '#7c3aed' // ที่ปรึกษา AI (ม่วง)
+export const DEV_MANAGER_COLOR = '#4f46e5' // จัดการโมดูล (คราม)
+export const DEV_ALL_COLOR = '#0284c7'     // รายการ "ทั้งหมด" (ฟ้า)
+export const DEV_TILE_PALETTE = Object.freeze([
+  '#14b8a6', '#22c55e', '#f59e0b', '#f43f5e', '#ec4899',
+  '#84cc16', '#f97316', '#06b6d4', '#eab308', '#10b981',
+])
+// สีประจำ "ส่วนของระบบ" จากชื่อ (ผู้พัฒนาเพิ่มส่วนใหม่ได้เอง จึงกำหนดสีรายตัวล่วงหน้าไม่ได้) — hash ข้อความแบบคงที่
+// ชื่อเดิมได้สีเดิมทุกครั้ง/ทุกเครื่อง · ข้อเสีย: เปลี่ยนชื่อส่วนแล้วสีเปลี่ยนตาม และสองชื่ออาจชนสีกันได้ (palette มี 10 สี)
+export function colorFromName(name, palette = DEV_TILE_PALETTE) {
+  if (typeof name !== 'string' || !name || !palette.length) return palette[0]
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return palette[h % palette.length]
+}

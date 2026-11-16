@@ -6,13 +6,14 @@ import { ROLE_LABELS } from '../../lib/staffRoster'
 import CollapsibleNavGroup, { NavBadge, NavIconTile } from './CollapsibleNavGroup'
 import NavQuickFind from './NavQuickFind'
 import { recordNavUse } from '../../lib/navUsage'
-import { ADMIN_ACTIVE_CAPSULE, ADMIN_NAV_BG } from '../../lib/navTileColor'
+import { ADMIN_ACTIVE_CAPSULE, ADMIN_NAV_BG, DEV_ACTIVE_CAPSULE, DEV_NAV_BG } from '../../lib/navTileColor'
 
-// เมนูซ้ายแบบลิ้นชักเลื่อนออกจากซ้าย — ใช้ร่วม 3 ที่ (เฉพาะมือถือ md:hidden):
+// เมนูซ้ายแบบลิ้นชักเลื่อนออกจากซ้าย — ใช้ร่วม 4 ที่ (เฉพาะมือถือ md:hidden):
 //   - หน้าเจ้าหน้าที่ (StaffDashboard.jsx)
 //   - แผงควบคุมแอดมิน (AdminDashboard.jsx)
 //   - ศูนย์รวมข้อมูลดิจิทัล (DataCenterDashboard.jsx)
-// บน PC ทั้งสามหน้ามีเมนูซ้ายถาวรอยู่แล้ว (aside) ไฟล์นี้ไม่แตะมัน
+//   - หน้าผู้พัฒนา (DevJournal.jsx + DevAdvisor.jsx · tone="dev" โทนเทอร์มินัล · PR4 2569-11-16)
+// บน PC ทั้งสี่หน้ามีเมนูซ้ายถาวรอยู่แล้ว (aside) ไฟล์นี้ไม่แตะมัน
 //
 // เนื้อหาใช้กลุ่มเมนูชุดเดียวกับเมนูซ้าย PC ของหน้านั้น (ผู้เรียกกรองสิทธิ์/โมดูลที่เปิดมาให้แล้ว) จึงไม่มีเมนูหลอก
 // หรือเมนูที่ขาดไป · ตัวเลขแดงมาจากชุดเดียวกับแถบล่าง/กริด (badges ส่งมาจากผู้เรียก)
@@ -36,9 +37,11 @@ const ACTIVE_STYLE = {
 }
 // tone="admin" (PR2 เมนูพรีเมียม 2569-11-16): ลิ้นชักแอดมินโทนหินชนวน+คราม คงที่ทุก อปท. ให้ตรงกับเมนูซ้าย PC
 // (AdminSideNav) — รู้ตัวว่าอยู่ในโหมดตั้งค่า ไม่ใช่ฝั่งเจ้าหน้าที่ · ค่าเริ่มต้น "theme" = สีธีม อปท. แบบเดิม
+// tone="dev" (PR4): หน้าผู้พัฒนา กรมท่าเข้ม + กรอบเรืองฟ้า→ม่วง คงที่ทุก อปท. ให้ตรงกับเมนูซ้าย PC (DevNavButton)
 const TONES = {
   theme: { panel: PANEL_STYLE, active: ACTIVE_STYLE },
   admin: { panel: ADMIN_NAV_BG, active: ADMIN_ACTIVE_CAPSULE },
+  dev: { panel: DEV_NAV_BG, active: DEV_ACTIVE_CAPSULE },
 }
 const DEFAULT_HOME = { key: 'home', label: 'แดชบอร์ด', Icon: LayoutDashboard }
 
@@ -109,7 +112,7 @@ export default function PortalDrawer({
   const pick = useCallback((item) => { if (quickFind && favorites) recordNavUse(userId, item.key); onSelect(item) }, [quickFind, favorites, userId, onSelect])
   const { panel: panelStyle, active: activeStyle } = TONES[tone] ?? TONES.theme
   // กระเบื้องสีที่แถวเต็ม: ลิ้นชักเจ้าหน้าที่ (quickFind) + ลิ้นชักแอดมิน · ศูนย์ข้อมูลยังเป็นไอคอนเปล่าแบบเดิม
-  const tiles = quickFind || tone === 'admin'
+  const tiles = quickFind || tone === 'admin' || tone === 'dev'
   const panelRef = useRef(null)
   const closeRef = useRef(null)
   const returnFocusTo = useRef(null)
