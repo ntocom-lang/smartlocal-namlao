@@ -210,8 +210,14 @@ export default function DataCenterHealthPanel({
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className={`rounded-2xl border p-5 space-y-3 ${panelCls(isLight)}`}>
             <h3 className="text-sm font-extrabold tracking-wide">ความครบถ้วนของข้อมูล</h3>
+            {/* lines/areas มาจาก SQL เฟส 3 (20261201100000) — ฐานที่ยังไม่รันไม่มีคีย์ ก็ไม่แสดงบรรทัดนี้ */}
+            {t.lines != null && (
+              <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                จุดพิกัด {t.points ?? 0} · เส้นทาง {t.lines} · พื้นที่ {t.areas ?? 0}
+              </p>
+            )}
             <Bar label="มีรายละเอียด" value={(t.active ?? 0) - (t.no_description ?? 0)} whole={t.active ?? 0} tone="info" isLight={isLight} />
-            <Bar label="จุดพิกัดที่มีรูป" value={t.points_with_photo ?? 0} whole={t.points ?? 0} tone="info" isLight={isLight} hint="เส้นทางถนนไม่ต้องมีรูป จึงไม่นับ" />
+            <Bar label="จุดพิกัดที่มีรูป" value={t.points_with_photo ?? 0} whole={t.points ?? 0} tone="info" isLight={isLight} hint="เส้นทางและพื้นที่ไม่ต้องมีรูป จึงไม่นับ" />
             <Bar label="มีกองเจ้าของ" value={(t.active ?? 0) - (t.no_owner ?? 0)} whole={t.active ?? 0} tone="info" isLight={isLight} />
           </div>
           <div className={`rounded-2xl border p-5 space-y-3 ${panelCls(isLight)}`}>
