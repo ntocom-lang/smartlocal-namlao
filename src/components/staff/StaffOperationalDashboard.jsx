@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   ChevronRight, Plus, LayoutGrid, HeartHandshake, Megaphone, Layers, BookOpen,
   Building2, Banknote, Hammer, GraduationCap, ShieldCheck, CheckCircle2, Loader2, TriangleAlert, Zap,
-  CircleAlert, Clock, CalendarClock, Users, ListChecks, FolderOpen, ClipboardList,
+  CircleAlert, Clock, CalendarClock, Users, ListChecks, FolderOpen, ClipboardList, BarChart3,
 } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import useExecPlanDeadlines from '../../hooks/useExecPlanDeadlines'
@@ -24,6 +24,7 @@ import MyPendingSignatures from '../esign/MyPendingSignatures'
 import ComplaintRateInvite from './ComplaintRateInvite'
 import StaffAreaSituation from './StaffAreaSituation'
 import StaffHomeHero from './StaffHomeHero'
+import StaffMonthOverview from './StaffMonthOverview'
 
 // ไอคอนหัวกลุ่มของหน้าเมนูแบบไอคอน — ผูกตามชื่อกลุ่มใน STANDALONE_GROUPS/MODULE_GROUPS (StaffDashboard.jsx)
 // ถ้าเปลี่ยนชื่อกลุ่มแล้วลืมมาแก้ที่นี่ แค่ได้ไอคอนกลางๆ (LayoutGrid) ไม่มีอะไรพัง
@@ -456,6 +457,11 @@ export default function StaffOperationalDashboard({
   const isDeptHead = profile?.role === 'officer' && Boolean(profile?.department_id) && Boolean(complaintsItem)
   const dept = useHomeRpc({ rpc: 'staff_dept_workload', tenantId, profileId, enabled: isDeptHead })
 
+  // ภาพรวมเดือนนี้ — หัวหน้ากอง (ที่สังกัดกอง) เห็นของกอง · แอดมิน/Super Admin เห็นทั้งหน่วยงาน · บทบาทอื่นไม่ยิง (RPC ตอบ 42501)
+  // ขึ้นเมื่อมีเมนูคำร้องเท่านั้น (โมดูลที่ปิดไม่ยิง RPC) · แคช 30 วิจาก useHomeRpc ไม่ poll
+  const monthEnabled = Boolean(complaintsItem) && (isAdmin || (profile?.role === 'officer' && Boolean(profile?.department_id)))
+  const month = useHomeRpc({ rpc: 'staff_month_overview', tenantId, profileId, enabled: monthEnabled })
+
   // ── สถานการณ์ในพื้นที่ + กำหนดตามระเบียบ (แหล่งเดียวกับห้องผู้บริหาร · ไม่มี RPC/ตารางใหม่ · ไม่ poll) ──
   // ภัยที่กำลังมา: ฮุกนี้แคชระดับโมดูล (กลับมาหน้าแรกซ้ำไม่ยิง RPC พยากรณ์ใหม่) — ห้ามสลับไปใช้ useExecHazards (throttle ต่อ instance)
   const { tenant, holidaysVersion } = useTenant()
@@ -502,7 +508,7 @@ export default function StaffOperationalDashboard({
 
   const canCreateEvent = Boolean(eventsItem && onCreateManagementEvent)
   const hasShortcuts = canCreateEvent || shortcutItems.length > 0
-  const hasLeft = hasTodo || eventCount > 0 || isDeptHead || openWorkCards.length > 0
+  const hasLeft = hasTodo || eventCount > 0 || isDeptHead || openWorkCards.length > 0 || monthEnabled
 
   const totalMenus = visibleItems.length
   const totalBadge = Object.values(cardBadges).reduce((sum, n) => sum + (Number(n) > 0 ? Number(n) : 0), 0)
@@ -624,6 +630,11 @@ export default function StaffOperationalDashboard({
             )}
 
             {eventCount > 0 && <AssignedEventsSection myEvents={myEvents} onOpen={() => open(eventsItem)} />}
+
+            {monthEnabled && (
+              <StaffMonthOverview state={month} onOpen={() => open(complaintsItem)}
+                renderHeading={({ id, title, desc }) => <CardHeading id={id} Icon={BarChart3} tone="indigo" title={title} desc={desc} />} />
+            )}
 
             {isDeptHead && (
               <section data-home-dept-section aria-label="กองของฉัน">
