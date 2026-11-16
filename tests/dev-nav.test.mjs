@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  contrastWithWhite, luminance, tileColor, colorFromName,
+  contrastWithWhite, luminance, tileTint, composite, contrastRatio, colorFromName,
   DEV_ADVISOR_COLOR, DEV_MANAGER_COLOR, DEV_ALL_COLOR, DEV_TILE_PALETTE, DEV_NAV_BG, DEV_ACTIVE_CAPSULE,
 } from '../src/lib/navTileColor.js'
 
@@ -27,11 +27,23 @@ const white80On = (bg) => {
 let cases = 0
 const test = (label, run) => { run(); cases++; console.log('PASS ' + label) }
 
-test('ตัวขาวบนแคปซูล active (ทั้งต้นและปลายไล่เฉด) ≥ 4.5:1', () => {
-  assert.equal(DEV_ACTIVE_CAPSULE.backgroundColor, '#0c3a5e')
-  for (const bg of ['#0c3a5e', '#2e1065']) assert.ok(contrastWithWhite(bg) >= 4.5, `${bg} = ${contrastWithWhite(bg).toFixed(2)}`)
-  assert.match(DEV_ACTIVE_CAPSULE.backgroundImage, /#0c3a5e/)
-  assert.match(DEV_ACTIVE_CAPSULE.backgroundImage, /#2e1065/)
+// เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา — แคปซูลผู้พัฒนาเดิมพื้นทึบ #0c3a5e→#2e1065 + แสงเรืองด้านนอก ตอนนี้ฟ้า→ม่วงโปร่ง + เส้นขอบใน 1px
+// ซ้อน backgroundColor (โปร่ง) แล้วทับด้วยจุดหยุดของ gradient บนพื้นแผงส่วนที่สว่างสุด (#1b2a4a) → ตัวขาวต้องยัง ≥ 4.5:1 ทุกจุดหยุด
+const DEV_PANEL_LIGHT = '#1b2a4a'
+const rgbHex = (r, g, b) => '#' + [r, g, b].map(v => Number(v).toString(16).padStart(2, '0')).join('')
+const rgbaList = (s) => [...s.matchAll(/rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/g)].map(m => ({ hex: rgbHex(m[1], m[2], m[3]), a: Number(m[4]) }))
+
+test('ตัวขาวบนแคปซูล active โทนนุ่ม (ทุกจุดหยุดของไล่เฉด บนพื้นแผงสว่างสุด) ≥ 4.5:1 · ไม่มีแสงเรืองด้านนอก', () => {
+  const [base] = rgbaList(DEV_ACTIVE_CAPSULE.backgroundColor)
+  const under = composite(base.hex, base.a, DEV_PANEL_LIGHT)
+  const stops = rgbaList(DEV_ACTIVE_CAPSULE.backgroundImage)
+  assert.equal(stops.length, 2)
+  assert.deepEqual(stops.map(s => s.hex), ['#38bdf8', '#a78bfa'], 'ฟ้า → ม่วง')
+  for (const s of stops) {
+    const c = contrastRatio('#ffffff', composite(s.hex, s.a, under))
+    assert.ok(c >= 4.5, `${s.hex} = ${c.toFixed(2)}`)
+  }
+  assert.equal(DEV_ACTIVE_CAPSULE.boxShadow, 'inset 0 0 0 1px rgba(125, 211, 252, 0.18)', 'เหลือแค่เส้นขอบใน ไม่มี glow ด้านนอก')
 })
 
 test('ตัวขาวบนพื้นเมนู (ทั้งสองปลาย) ≥ 4.5:1 และตัวขาว 80% (ไม่ active) บนปลายสว่าง ≥ 4.5:1', () => {
@@ -71,9 +83,11 @@ test('colorFromName: ว่าง/null/ไม่ใช่สตริง ไม�
   for (const v of ['', null, undefined, 42, {}]) assert.equal(colorFromName(v), DEV_TILE_PALETTE[0])
 })
 
-test('ทุกสีใน palette + 3 สีล็อก → tileColor() แล้วไอคอนขาว ≥ 3:1', () => {
+// เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา — กระเบื้องเป็นพื้นโปร่ง 18% + ไอคอนสีอ่อน (tileTint) แทนพื้นทึบ+ไอคอนขาว
+test('ทุกสีใน palette + 3 สีล็อก → ไอคอน tileTint บนพื้นโปร่ง 18% บนพื้นแผงสว่างสุด ≥ 3:1', () => {
   for (const c of [...DEV_TILE_PALETTE, DEV_ADVISOR_COLOR, DEV_MANAGER_COLOR, DEV_ALL_COLOR, '#475569']) {
-    assert.ok(contrastWithWhite(tileColor(c)) >= 3, `${c} → ${tileColor(c)}`)
+    const v = contrastRatio(tileTint(c), composite(c, 0.18, DEV_PANEL_LIGHT))
+    assert.ok(v >= 3, `${c} → ${tileTint(c)} = ${v.toFixed(2)}`)
   }
 })
 

@@ -143,7 +143,9 @@ export default function CitizenSidebar({ showOnAccount = false, accountActive, a
             <div className="space-y-0.5">
               {group.items.map(({ id, label, href, Icon, color, exact, badge, newTab, state }) => {
                 const active = accountPage ? id === accountActive : isActive(href, exact)
-                const rowCls = `flex w-full items-center gap-2.5 rounded-xl px-2 py-1.5 text-[15px] leading-snug transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 ${accountPage ? 'min-h-11' : 'min-h-10'} ${active ? 'bg-white font-semibold text-[#123a6b] shadow-[0_4px_14px_-6px_rgba(0,0,0,0.5)]' : 'font-medium text-white/85 hover:bg-white/10 hover:text-white'}`
+                // เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา — แถว active เดิมพื้นขาวตัวน้ำเงิน (เจ้าของเลือกไว้ตอน #741)
+                // เปลี่ยนเป็นพื้นขาวโปร่ง 14% + ตัวขาว + ขอบใน ให้เหมือนเมนูอื่นทุกเมนู (พื้นขาวจ้า = สิ่งที่ "แสบตา")
+                const rowCls = `flex w-full items-center gap-2.5 rounded-xl px-2 py-1.5 text-[15px] leading-snug transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 ${accountPage ? 'min-h-11' : 'min-h-10'} ${active ? 'bg-white/[0.14] font-semibold text-white ring-1 ring-inset ring-white/25' :'font-medium text-white/85 hover:bg-white/10 hover:text-white'}`
                 const content = (
                   <>
                     <NavIconTile Icon={Icon} color={color} size={28} />

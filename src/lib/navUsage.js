@@ -86,3 +86,16 @@ export function setGroupCollapsed(label, collapsed, storage = defaultStorage()) 
   // แจ้งตัวอื่นในหน้าเดียวกัน (เมนูซ้าย PC กับลิ้นชักมือถือเป็นคนละอินสแตนซ์)
   try { if (typeof window !== 'undefined') window.dispatchEvent(new Event(NAV_COLLAPSED_EVENT)) } catch { /* ไม่มี window */ }
 }
+
+// พับ/กางหลายกลุ่มพร้อมกัน (ปุ่ม "ปิดทั้งหมด/เปิดทั้งหมด") — อ่านเซ็ตครั้งเดียว เขียนครั้งเดียว ยิงอีเวนต์ครั้งเดียว
+// ไม่แตะกลุ่มที่ไม่อยู่ใน labels (เช่น กลุ่มที่ถูกกรองสิทธิ์ออกจากเมนูของผู้ใช้นี้)
+export function setGroupsCollapsed(labels, collapsed, storage = defaultStorage()) {
+  const set = readCollapsedGroups(storage)
+  for (const label of Array.isArray(labels) ? labels : []) {
+    if (typeof label !== 'string') continue
+    if (collapsed) set.add(label)
+    else set.delete(label)
+  }
+  try { storage?.setItem(NAV_COLLAPSED_KEY, JSON.stringify([...set])) } catch { /* จำไม่ได้ก็แค่ไม่จำ */ }
+  try { if (typeof window !== 'undefined') window.dispatchEvent(new Event(NAV_COLLAPSED_EVENT)) } catch { /* ไม่มี window */ }
+}

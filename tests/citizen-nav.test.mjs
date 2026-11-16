@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { contrastWithWhite, luminance, tileColor } from '../src/lib/navTileColor.js'
+import { composite, contrastRatio, contrastWithWhite, luminance, tileTint } from '../src/lib/navTileColor.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const src = fs.readFileSync(path.join(root, 'src/components/layout/CitizenSidebar.jsx'), 'utf8')
@@ -14,13 +14,15 @@ const ratio = (a, b) => { const [x, y] = [luminance(a), luminance(b)].sort((p, q
 let cases = 0
 const test = (label, run) => { run(); cases++; console.log('PASS ' + label) }
 
-test('ทุกเมนูมีสีประจำ และสีกล่องเข้มจนไอคอนขาว ≥ 3:1', () => {
+// เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา — กระเบื้องพื้นโปร่ง 18% + ไอคอนสีอ่อน (tileTint) · วัดบนพื้นแผงส่วนที่สว่างสุด #1e4f8f
+test('ทุกเมนูมีสีประจำ และไอคอนสีอ่อน (tileTint) บนพื้นโปร่ง 18% บนพื้นแผงสว่างสุด ≥ 3:1', () => {
   const items = src.split(/\r?\n/).filter(l => /label:/.test(l) && /href:/.test(l) && /Icon:/.test(l))
   assert.ok(items.length >= 20, `ควรเจอเมนูอย่างน้อย 20 รายการ เจอ ${items.length}`)
   for (const l of items) {
     const m = /color: '(#[0-9a-fA-F]{6})'/.exec(l)
     assert.ok(m, `เมนูนี้ไม่มีสี: ${l.trim()}`)
-    assert.ok(contrastWithWhite(tileColor(m[1])) >= 3, `${m[1]} → ${tileColor(m[1])}`)
+    const v = contrastRatio(tileTint(m[1]), composite(m[1], 0.18, '#1e4f8f'))
+    assert.ok(v >= 3, `${m[1]} → ${tileTint(m[1])} = ${v.toFixed(2)}`)
   }
 })
 
@@ -32,7 +34,13 @@ test('อ่านง่าย: ตัวเมนู 15px · หัวกลุ
   // ตรวจกับปลายเข้มและปลายสว่างของพื้นไล่สี
   for (const bg of ['#1e4f8f', '#163d70']) assert.ok(ratio(label, bg) >= 4.5, `หัวกลุ่ม ${label} บน ${bg} = ${ratio(label, bg).toFixed(2)}`)
   for (const bg of ['#1e4f8f', '#163d70']) assert.ok(contrastWithWhite(bg) >= 4.5, `ตัวขาวบน ${bg}`)
-  assert.ok(ratio('#123a6b', '#ffffff') >= 4.5, 'เมนูที่เปิดอยู่: ตัวน้ำเงินบนพื้นขาว')
+  // เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา — แถว active เดิมพื้นขาวตัวน้ำเงิน #123a6b → พื้นขาวโปร่ง 14% ตัวขาว (ทั้งปลายสว่างและปลายเข้มของพื้นแผง)
+  for (const bg of ['#1e4f8f', '#163d70']) {
+    const c = contrastRatio('#ffffff', composite('#ffffff', 0.14, bg))
+    assert.ok(c >= 4.5, `เมนูที่เปิดอยู่: ตัวขาวบนพื้นขาวโปร่ง 14% บน ${bg} = ${c.toFixed(2)}`)
+  }
+  assert.match(src, /bg-white\/\[0\.14\] font-semibold text-white ring-1 ring-inset ring-white\/25/, 'แถว active ต้องเป็นพื้นโปร่ง ไม่ใช่พื้นขาว')
+  assert.doesNotMatch(src, /bg-white font-semibold|text-\[#123a6b\]/, 'พื้นขาวตัวน้ำเงินเดิมต้องหายไป')
   assert.ok(ratio('#2a1800', '#fbbf24') >= 4.5 && ratio('#2a1800', '#fde68a') >= 4.5, 'ปุ่มเข้าสู่ระบบ')
   assert.doesNotMatch(src, /'truncate'/, 'ชื่อเมนูต้องขึ้นบรรทัดใหม่ ไม่ตัดเป็น …')
 })

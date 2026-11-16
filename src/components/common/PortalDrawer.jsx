@@ -30,10 +30,13 @@ const PANEL_STYLE = {
   backgroundColor: 'var(--color-primary-dark)',
   backgroundImage: 'linear-gradient(180deg, var(--color-primary-dark) 0%, color-mix(in srgb, var(--color-primary-dark) 45%, #020617) 100%)',
 }
+// เจ้าของระบบสั่ง 2569-11-16: โทนนุ่มสบายตา — เดิมแคปซูลสีธีมทึบ+เงา · ตอนนี้ไล่เฉดสีธีม อปท. แบบโปร่ง (38% → 14%) + เส้นขอบใน 1px
+// backgroundColor = ขาวโปร่งสำรอง เผื่อเบราว์เซอร์เก่าที่ไม่รู้จัก color-mix() (จะทิ้ง backgroundImage ทั้งบรรทัด
+// แถวที่เปิดอยู่ก็ยังมีพื้นจางให้เห็น ไม่หายเป็นพื้นเปล่า) · ตัวขาวบนพื้นนี้ไม่วัดตัวเลข เพราะสีธีมต่างกันทุก อปท.
 const ACTIVE_STYLE = {
-  backgroundColor: 'var(--color-primary)',
-  backgroundImage: 'linear-gradient(90deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 55%, #6366f1) 100%)',
-  boxShadow: '0 8px 18px -8px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.22)',
+  backgroundColor: 'rgba(255, 255, 255, 0.14)',
+  backgroundImage: 'linear-gradient(90deg, color-mix(in srgb, var(--color-primary) 38%, transparent) 0%, color-mix(in srgb, var(--color-primary) 14%, transparent) 100%)',
+  boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.16)',
 }
 // tone="admin" (PR2 เมนูพรีเมียม 2569-11-16): ลิ้นชักแอดมินโทนหินชนวน+คราม คงที่ทุก อปท. ให้ตรงกับเมนูซ้าย PC
 // (AdminSideNav) — รู้ตัวว่าอยู่ในโหมดตั้งค่า ไม่ใช่ฝั่งเจ้าหน้าที่ · ค่าเริ่มต้น "theme" = สีธีม อปท. แบบเดิม
@@ -76,12 +79,8 @@ function DrawerItem({ item, active, badge, onSelect, variant, tile = false, acti
         ? <NavIconTile Icon={Icon} color={item.color} size={28} active={active} />
         : <Icon size={19} strokeWidth={active ? 2.2 : 1.7} aria-hidden="true" className="shrink-0" />}
       <span data-drawer-label className="min-w-0 flex-1 leading-snug">{item.label}</span>
-      {count > 0 && (
-        <span data-drawer-badge className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white">
-          {count > 99 ? '99+' : count}
-          <span className="sr-only"> รายการรอ</span>
-        </span>
-      )}
+      {/* โทนนุ่มสบายตา (เจ้าของระบบสั่ง 2569-11-16): แถวเต็ม (แอดมิน/ศูนย์ข้อมูล) ใช้ป้ายชุดเดียวกับเมนูย่อย แทนแดงทึบเดิม */}
+      <NavBadge count={count} data-drawer-badge="" />
     </button>
   )
 }
@@ -214,7 +213,7 @@ export default function PortalDrawer({
           {notice}
           {quickFind ? (
             <NavQuickFind groups={groups} activeKey={activeKey} userId={userId} onSelect={pick} variant="drawer" refreshKey={open} wrapperClassName="pb-1 pt-1"
-              favorites={favorites}
+              favorites={favorites} collapseLabels={groups.filter(g => g.collapsible).map(g => g.group)}
               renderItem={item => <DrawerItem item={item} variant="sub" active={activeKey === item.key} badge={badges?.[item.key]} onSelect={pick} activeStyle={activeStyle} />}
               pinned={homeBlock}>
               {groupBlocks}
