@@ -9,6 +9,7 @@ import MapTypeToggle from '../common/MapTypeToggle'
 import { resolveEntryEmoji, resolveGroupEmoji, isIconImage } from '../../lib/dataCenterGroupIcon'
 import { safeHttpUrl } from '../../lib/dataCenterExport'
 import { formatAgo } from '../../lib/dataCenterHealth'
+import { entryShape } from '../../lib/dataCenterShape'
 
 function withAlpha(hex, alpha) {
   if (!hex || !hex.startsWith('#')) return `rgba(100, 116, 139, ${alpha})`
@@ -73,6 +74,7 @@ export default function DataCenterDetailModal({
 
   const isRoute = Array.isArray(entry.route_points) && entry.route_points.length >= 2
   const routePoints = isRoute ? entry.route_points : []
+  const isArea = isRoute && entryShape(entry) === 'polygon' // พื้นที่ระบายสี — ป้ายเป็น "พื้นที่" ไม่ใช่ "เส้นทาง"
   const routeColor = entry.route_color || '#3b82f6'
 
   const mapCenter = { lat, lng }
@@ -87,11 +89,20 @@ export default function DataCenterDetailModal({
     scale: 11,
   }] : []
 
-  const polylines = isRoute ? [{
+  const polylines = isRoute && !isArea ? [{
     id: entry.id,
     path: routePoints,
     color: routeColor,
     weight: 5,
+    opacity: 0.9,
+  }] : []
+
+  const polygons = isArea ? [{
+    id: entry.id,
+    path: routePoints,
+    color: routeColor,
+    weight: 2,
+    fillOpacity: 0.25,
     opacity: 0.9,
   }] : []
 
@@ -241,7 +252,7 @@ export default function DataCenterDetailModal({
               </div>
               <p className={`font-mono font-bold text-xs sm:text-[13px] truncate ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>
                 {isRoute
-                  ? `เส้นทาง ${routePoints.length} จุด`
+                  ? `${isArea ? 'พื้นที่' : 'เส้นทาง'} ${routePoints.length} จุด`
                   : hasCoords ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : '—'}
               </p>
             </div>
@@ -335,7 +346,7 @@ export default function DataCenterDetailModal({
                 <span>ตำแหน่งบนแผนที่ GIS</span>
                 {isRoute && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-mono bg-blue-500/10 border-blue-500/30 text-blue-400">
-                    <Route size={10} /> เส้นทาง {routePoints.length} จุด
+                    <Route size={10} /> {isArea ? 'พื้นที่' : 'เส้นทาง'} {routePoints.length} จุด
                   </span>
                 )}
               </div>
@@ -382,6 +393,7 @@ export default function DataCenterDetailModal({
                     mapTypeId={mapTypeId}
                     markers={markers}
                     polylines={polylines}
+                    polygons={polygons}
                     fitBounds={isRoute}
                     className="w-full h-full"
                   />

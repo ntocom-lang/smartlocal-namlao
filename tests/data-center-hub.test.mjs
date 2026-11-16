@@ -16,6 +16,7 @@ import {
   fetchOpenEntries, entriesToGeoJSON, entriesToCsv, entriesToCsvRows, csvCell, toCsv, safeHttpUrl, datedFilename, isRouteRow,
   OPEN_DATA_FIELDS, OPEN_DATA_EXCLUDED,
 } from '../src/lib/dataCenterExport.js'
+import { entryShape } from '../src/lib/dataCenterShape.js'
 
 const read = async (rel) => (await readFile(new URL(rel, import.meta.url), 'utf8')).replace(/\r\n/g, '\n')
 const COLUMNS_SQL = await read('../supabase/migrations/20261003200000_data_center_verified_columns.sql')
@@ -354,4 +355,64 @@ test('fetchOpenEntries: ดึงเฉพาะคอลัมน์ที่�
   assert.ok(dataCall.cols.includes('verified_at'))
   assert.equal(dataCall.filters.status, 'active')
   assert.equal(dataCall.filters.municipality_id, 'M1')
+})
+
+// ───────────────────────── รูปทรง: จุด / เส้นทาง / พื้นที่ (polygon) ─────────────────────────
+
+const SQ = [{ lat: 18.1, lng: 100.1 }, { lat: 18.1, lng: 100.2 }, { lat: 18.2, lng: 100.2 }, { lat: 18.1, lng: 100.1 }]
+
+test('entryShape: ใช้ shape ถ้ามี · polygon ต้อง ≥3 จุด ไม่งั้นถอยเป็นเส้น/จุด', () => {
+  assert.equal(entryShape({ shape: 'polygon', route_points: SQ }), 'polygon')
+  assert.equal(entryShape({ shape: 'polygon', route_points: SQ.slice(0, 2) }), 'line', 'polygon 2 จุดวาดพื้นที่ไม่ได้ → เส้น')
+  assert.equal(entryShape({ shape: 'polygon', route_points: SQ.slice(0, 1) }), 'point')
+  assert.equal(entryShape({ shape: 'polygon', route_points: null }), 'point')
+  assert.equal(entryShape({ shape: 'line', route_points: SQ.slice(0, 2) }), 'line')
+  assert.equal(entryShape({ shape: 'line', route_points: null }), 'point', 'บอกว่าเป็นเส้นแต่ไม่มีจุด → หมุด')
+  assert.equal(entryShape({ shape: 'point', route_points: null }), 'point')
+})
+
+test('entryShape: ไม่มี shape (แถวเดิม/ก่อนรัน SQL) อนุมานแบบเดียวกับ SQL · ค่าแปลก/ชนิดผิดไม่พัง', () => {
+  assert.equal(entryShape({ route_points: SQ.slice(0, 2) }), 'line')
+  assert.equal(entryShape({ route_points: SQ }), 'line', 'ไม่มี shape = แถวเดิม ต่อให้ 4 จุดก็เป็นเส้น')
+  assert.equal(entryShape({ shape: null, route_points: SQ.slice(0, 2) }), 'line')
+  assert.equal(entryShape({ route_points: SQ.slice(0, 1) }), 'point')
+  assert.equal(entryShape({ route_points: [] }), 'point')
+  assert.equal(entryShape({ route_points: null }), 'point')
+  assert.equal(entryShape({ route_points: 'abc' }), 'point', 'route_points ไม่ใช่ array')
+  assert.equal(entryShape({ route_points: { length: 5 } }), 'point', 'object ที่มี length ไม่ใช่ array')
+  assert.equal(entryShape({ shape: 'ห้อง', route_points: SQ.slice(0, 2) }), 'line', 'shape แปลก → อนุมานจากจุด')
+  assert.equal(entryShape({}), 'point')
+  assert.equal(entryShape(null), 'point')
+  assert.equal(entryShape(undefined), 'point')
+})
+
+test('GeoJSON: polygon ส่งออกเป็น Polygon ปิดวง [ลองจิจูด, ละติจูด] · เส้นเดิม/แถวไม่มี shape ยังเป็น LineString', () => {
+  const open = [{ lat: 18.1, lng: 100.1 }, { lat: 18.1, lng: 100.2 }, { lat: 18.2, lng: 100.2 }] // ยังไม่ปิดวง
+  const area = { ...ROW, id: 'p1', shape: 'polygon', route_color: '#16a34a', route_points: open }
+  const closed = { ...ROW, id: 'p2', shape: 'polygon', route_points: SQ }
+  const legacy = { ...ROW, id: 'l1', route_points: open } // ไม่มี shape → เส้นทาง
+  const broken = { ...ROW, id: 'p3', shape: 'polygon', route_points: [{ lat: 18.1, lng: 100.1 }, { lat: 18.2, lng: 100.2 }, { lat: 'x', lng: 1 }] } // เหลือ 2 จุดจริง
+  const g = entriesToGeoJSON([area, closed, legacy, broken])
+  assert.deepEqual(g.features[0].geometry, {
+    type: 'Polygon',
+    coordinates: [[[100.1, 18.1], [100.2, 18.1], [100.2, 18.2], [100.1, 18.1]]],
+  })
+  assert.equal(g.features[0].properties.route_color, '#16a34a')
+  assert.deepEqual(g.features[1].geometry.coordinates[0].length, 4, 'วงที่ปิดแล้วไม่ถูกต่อจุดซ้ำ')
+  assert.equal(g.features[1].geometry.type, 'Polygon')
+  assert.equal(g.features[2].geometry.type, 'LineString')
+  assert.equal(g.features[3].geometry.type, 'LineString', 'จุดเสียจนเหลือ <3 → ถอยเป็นเส้น ไม่ทิ้งรายการ')
+  const ring = g.features[0].geometry.coordinates[0]
+  assert.deepEqual(ring[0], ring[ring.length - 1], 'วงต้องปิด (RFC 7946)')
+})
+
+test('CSV: ชนิดพิกัดของ polygon = พื้นที่ · ส่งออกข้อมูลเปิดดึงคอลัมน์ shape แต่ไม่ดึง import_batch_id', async () => {
+  const [head, p, a] = entriesToCsvRows([ROW, { ...ROW, id: 'p1', shape: 'polygon', route_points: SQ }])
+  assert.equal(a[head.indexOf('ชนิดพิกัด')], 'พื้นที่')
+  assert.equal(a[head.indexOf('จำนวนจุดของเส้นทาง')], 4)
+  assert.equal(p[head.indexOf('ชนิดพิกัด')], 'จุด')
+  const src = await read('../src/lib/dataCenterExport.js')
+  const cols = src.match(/const OPEN_COLUMNS = '([^']+)'/)[1].split(',').map((c) => c.trim())
+  assert.ok(cols.includes('shape'))
+  assert.ok(!cols.includes('import_batch_id'), 'เลขชุดนำเข้าเป็นรหัสภายใน ห้ามเข้าไฟล์ข้อมูลเปิด')
 })

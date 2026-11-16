@@ -13,6 +13,7 @@ import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, saveGrou
 import { entriesToCsv, datedFilename, downloadTextFile } from '../../lib/dataCenterExport'
 import { ISSUES, MUST_FIX_ISSUES } from '../../lib/dataCenterHealth'
 import { normalizeName } from '../../lib/dataCenterPicker'
+import { entryShape } from '../../lib/dataCenterShape'
 
 const TABLE_PAGE_SIZES = [10, 20, 50, 100]
 // การ์ดกลุ่มหน้าภาพรวมโชว์กี่ใบก่อนต้องกด "ดูทั้งหมด" — เรียงตามจำนวนรายการ จึงเป็นกลุ่มที่ใช้มากสุดเสมอ
@@ -181,7 +182,7 @@ export default function DataCenterOverview({
     setListLoading(true)
     setListError(null)
     let query = supabase.from('data_center_entries')
-      .select('id, name, group_name, category, status, latitude, longitude, description, photo_urls, external_url, route_points, route_color, department_id, created_by, created_at, updated_at, verified_at', { count: 'exact' })
+      .select('id, name, group_name, category, status, latitude, longitude, description, photo_urls, external_url, route_points, route_color, shape, department_id, created_by, created_at, updated_at, verified_at', { count: 'exact' })
       .eq('municipality_id', tenantId)
     if (tableFilterGroup !== 'all') query = query.eq('group_name', tableFilterGroup)
     if (tableFilterCategory !== 'all') query = query.eq('category', tableFilterCategory)
@@ -249,7 +250,7 @@ export default function DataCenterOverview({
     if (!tenantId || exporting) return
     setExporting(true)
     let query = supabase.from('data_center_entries')
-      .select('id, name, group_name, category, status, description, external_url, photo_urls, latitude, longitude, route_points, created_at, updated_at, verified_at')
+      .select('id, name, group_name, category, status, description, external_url, photo_urls, latitude, longitude, route_points, shape, created_at, updated_at, verified_at')
       .eq('municipality_id', tenantId)
     if (tableFilterGroup !== 'all') query = query.eq('group_name', tableFilterGroup)
     if (tableFilterCategory !== 'all') query = query.eq('category', tableFilterCategory)
@@ -934,7 +935,7 @@ export default function DataCenterOverview({
                         <td className={isLight ? 'px-3.5 py-3 text-slate-600' : 'px-3.5 py-3 text-slate-400'}>{entry.category}</td>
                         <td className={`px-3.5 py-3 font-mono text-[11px] ${isLight ? 'text-sky-800' : 'text-cyan-400/80'}`}>
                           {entry.route_points?.length
-                            ? `เส้นทาง ${entry.route_points.length} จุด`
+                            ? `${entryShape(entry) === 'polygon' ? 'พื้นที่' : 'เส้นทาง'} ${entry.route_points.length} จุด`
                             : entry.latitude != null ? `${Number(entry.latitude).toFixed(5)}, ${Number(entry.longitude).toFixed(5)}` : '—'}
                         </td>
                         <td className="px-3.5 py-3 text-center" onClick={e => e.stopPropagation()}>

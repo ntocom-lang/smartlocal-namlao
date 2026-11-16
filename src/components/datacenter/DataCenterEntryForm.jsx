@@ -6,6 +6,7 @@ import { uploadFile } from '../../lib/driveStorage'
 import { driveFolderPath, DRIVE_MODULES } from '../../lib/driveFolders'
 import { MAX_QUICK_CHIPS, mergeOptions, normalizeName, pickVisible } from '../../lib/dataCenterPicker'
 import OptionPickerSheet from './OptionPickerSheet'
+import { entryShape } from '../../lib/dataCenterShape'
 
 const ROUTE_COLORS = [
   { hex: '#3b82f6', label: 'น้ำเงิน' }, { hex: '#22c55e', label: 'เขียว' },
@@ -191,6 +192,11 @@ export default function DataCenterEntryForm({ tenant, profile, summary = null, i
       longitude: isRoute ? routeMid.lng : Number(form.longitude),
       route_points: isRoute ? routePoints : null,
       route_color: isRoute ? routeColor : null,
+      // ฟอร์มนี้วาดได้แค่เส้นทาง — แก้รายการ "พื้นที่" (polygon) ที่นำเข้ามาแล้วต้องคงเป็นพื้นที่ ไม่กลายเป็นเส้นเงียบๆ
+      // (ถ้าแก้จนเหลือ <3 จุด วาดพื้นที่ไม่ได้ ถอยเป็นเส้นทาง)
+      shape: isRoute
+        ? (editingEntry && entryShape(editingEntry) === 'polygon' && routePoints.length >= 3 ? 'polygon' : 'line')
+        : 'point',
     }
 
     if (isEditing) {

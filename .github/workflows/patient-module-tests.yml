@@ -155,6 +155,10 @@ jobs:
             nav-usage
             citizen-nav
             dev-nav
+            # ศูนย์รวมข้อมูลดิจิทัล นำเข้า GIS เฟส 2: data_center_unified_pins (+shape) / data_center_import_batches /
+            # data_center_cancel_import_batch บน PGlite ตัวเดียวกัน — ล้มเมื่อด่าน md5 หัวไฟล์ไม่ตรงไฟล์จริง · anon เรียกได้
+            # · เห็น/ยกเลิกชุดข้าม อปท. · ลบชุดบางส่วน · staff ยกเลิกได้ (เจ้าของอนุมัติเพิ่มเข้า CI 2569-11-16)
+            datacenter-gis-batch-db
           )
           failed=()
           for t in "${tests[@]}"; do

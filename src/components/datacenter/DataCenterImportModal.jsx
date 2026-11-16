@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import {
   Upload, FileText, CheckCircle2, AlertCircle, Loader2, X, MapPin, Route, Trash2, Layers, Filter,
-  ChevronRight, ChevronDown, Hexagon, ShieldAlert, Copy,
+  ChevronRight, ChevronDown, Hexagon, ShieldAlert, Copy, History, Undo2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
@@ -9,6 +9,7 @@ import { uploadFile } from '../../lib/driveStorage'
 import { driveFolderPath, DRIVE_MODULES } from '../../lib/driveFolders'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { mergeOptions, tidyName } from '../../lib/dataCenterPicker'
+import { fetchAssignableStaff } from '../../lib/staffRoster'
 import {
   parseGisFile, groupByFolder, folderKeyOf, suggestMapping, buildCatalog, resolvePair, markDuplicates,
   looksPersonalColumn, buildDescription, DEFAULT_ROUTE_COLOR, MAX_IMPORT_ITEMS, MAX_PHOTOS_PER_IMPORT,
@@ -53,11 +54,173 @@ function ShapeBadge({ item }) {
   )
 }
 
+// ── ชุดที่นำเข้า / ยกเลิกทั้งชุด (เฟส 2) ─────────────────────────────────────────
+// ยกเลิกได้เฉพาะ 3 role นี้ (ฐานข้อมูลตรวจซ้ำอีกชั้น: หัวหน้ากองยกเลิกได้เฉพาะชุดที่ทุกแถวเป็นของกองตัวเอง)
+// staff/technician เห็นรายการชุดได้แต่ไม่มีปุ่มยกเลิก
+const CANCEL_ROLES = ['superadmin', 'admin', 'officer']
+const BATCH_LIST_ROLES = [...CANCEL_ROLES, 'staff', 'technician']
+
+// RPC ยังไม่มีในฐาน (ก่อนรัน SQL เฟส 2) — PostgREST ตอบ PGRST202 / Postgres ตอบ 42883 → ซ่อนส่วนนี้เงียบๆ ไม่ขึ้น error แดง
+function isMissingRpc(err) {
+  if (!err) return false
+  return err.code === 'PGRST202' || err.code === '42883' || /could not find the function/i.test(err.message || '')
+}
+
+function formatBatchTime(iso) {
+  const d = new Date(iso)
+  if (!iso || Number.isNaN(d.getTime())) return '—'
+  const day = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+  const time = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+  return `${day} เวลา ${time} น.`
+}
+
+function confirmCancelBatch(count) {
+  return window.confirm(
+    `ยกเลิกการนำเข้าชุดนี้? จะลบ ${count} รายการที่นำเข้าในชุดนี้ออกจากศูนย์ข้อมูลดิจิทัลทั้งชุด\n\n`
+    + 'ย้อนกลับไม่ได้ (รูปที่อัปโหลดไปแล้วไม่ถูกลบ)',
+  )
+}
+
+// คืน { count } เมื่อสำเร็จ หรือ { error } เป็นข้อความพร้อมแสดง — เซิร์ฟเวอร์ลบทั้งชุดหรือไม่ลบเลย (error.message เป็นภาษาไทยจากเซิร์ฟเวอร์)
+async function cancelImportBatch(batchId) {
+  const { data, error } = await supabase.rpc('data_center_cancel_import_batch', { _batch_id: batchId })
+  if (error) {
+    console.error('data_center_cancel_import_batch:', error.message)
+    return { error: isMissingRpc(error) ? 'ฐานข้อมูลยังไม่รองรับการยกเลิกทั้งชุด' : (error.message || 'ยกเลิกไม่สำเร็จ') }
+  }
+  return { count: Number(data) || 0 }
+}
+
+// รายการชุดที่นำเข้าล่าสุด (พับไว้ก่อน) — ไม่ขึ้นเลยถ้า RPC ยังไม่มี หรือยังไม่เคยนำเข้า
+function ImportBatchesPanel({ tenant, canCancel, onChanged }) {
+  const [rows, setRows] = useState(null) // null = ยังโหลดไม่เสร็จ
+  const [unavailable, setUnavailable] = useState(false)
+  const [loadError, setLoadError] = useState(null)
+  const [open, setOpen] = useState(false)
+  const [names, setNames] = useState(null) // Map uuid → ชื่อ (โหลดตอนกางครั้งแรก)
+  const [busyId, setBusyId] = useState(null)
+  const [msg, setMsg] = useState(null) // { ok, text }
+
+  const tenantId = tenant?.id
+  const [reloadKey, setReloadKey] = useState(0) // เพิ่มค่า = โหลดรายการชุดใหม่ (หลังยกเลิก)
+
+  useEffect(() => {
+    if (!tenantId) return undefined
+    let active = true
+    supabase.rpc('data_center_import_batches', { _municipality_id: tenantId })
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          if (isMissingRpc(error)) { setUnavailable(true); return }
+          console.error('data_center_import_batches:', error.message)
+          setLoadError(error.message || 'โหลดรายการไม่สำเร็จ')
+          return
+        }
+        setLoadError(null)
+        setRows(data ?? [])
+      })
+    return () => { active = false }
+  }, [tenantId, reloadKey])
+
+  // ชื่อผู้นำเข้า: ใช้ทะเบียนเจ้าหน้าที่เดิม (fetchAssignableStaff) ไม่ query profiles เพิ่ม — ผู้ที่ไม่อยู่ในทะเบียน (เช่น Super Admin) แสดง "เจ้าหน้าที่"
+  useEffect(() => {
+    if (!open || names || !tenantId) return undefined
+    let active = true
+    fetchAssignableStaff(tenantId)
+      .then(people => { if (active) setNames(new Map(people.map(p => [p.id, p.full_name]))) })
+      .catch(() => { if (active) setNames(new Map()) })
+    return () => { active = false }
+  }, [open, names, tenantId])
+
+  if (unavailable) return null
+  if (rows === null && !loadError) return null
+  if (rows !== null && rows.length === 0 && !loadError && !msg) return null
+
+  async function handleCancel(b) {
+    if (busyId) return
+    if (!confirmCancelBatch(b.item_count)) return
+    setBusyId(b.batch_id)
+    setMsg(null)
+    const r = await cancelImportBatch(b.batch_id)
+    setBusyId(null)
+    if (r.error) { setMsg({ ok: false, text: r.error }); return }
+    setMsg({ ok: true, text: `ยกเลิกการนำเข้าแล้ว ลบ ${r.count} รายการ` })
+    onChanged?.()
+    setReloadKey(k => k + 1)
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-2xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full px-3.5 py-2.5 bg-gray-50 flex items-center justify-between gap-2 text-xs font-bold text-gray-700 hover:bg-gray-100 transition-colors"
+      >
+        <span className="flex items-center gap-1.5"><History size={14} className="text-blue-500" /> ชุดที่นำเข้าล่าสุด{rows ? ` (${rows.length})` : ''}</span>
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+      </button>
+
+      {open && (
+        <div className="border-t border-gray-200 divide-y divide-gray-100">
+          {loadError && (
+            <p className="px-3.5 py-2 text-xs text-red-600 flex items-start gap-1.5">
+              <AlertCircle size={13} className="shrink-0 mt-0.5" /> {loadError}
+            </p>
+          )}
+          {msg && (
+            <p className={`px-3.5 py-2 text-xs flex items-start gap-1.5 ${msg.ok ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-red-50'}`}>
+              {msg.ok ? <CheckCircle2 size={13} className="shrink-0 mt-0.5" /> : <AlertCircle size={13} className="shrink-0 mt-0.5" />}
+              <span className="break-words">{msg.text}</span>
+            </p>
+          )}
+          {!canCancel && (rows?.length ?? 0) > 0 && (
+            <p className="px-3.5 py-2 text-[11px] text-gray-500">ต้องการยกเลิกชุดที่นำเข้า ให้หัวหน้ากองหรือผู้ดูแลระบบยกเลิกให้</p>
+          )}
+          {(rows ?? []).map(b => {
+            const who = (b.created_by && names?.get(b.created_by)) || 'เจ้าหน้าที่'
+            const sample = Array.isArray(b.sample_names) ? b.sample_names.filter(Boolean) : []
+            const counts = countsText({ point: b.point_count, line: b.line_count, polygon: b.polygon_count })
+            return (
+              <div key={b.batch_id} className="px-3.5 py-2.5 flex items-start justify-between gap-3 text-xs">
+                <div className="min-w-0 space-y-0.5">
+                  <p className="font-semibold text-gray-800">
+                    {formatBatchTime(b.imported_at)} · {who}
+                  </p>
+                  <p className="text-gray-600">
+                    {b.item_count} รายการ{counts && ` (${counts})`}
+                  </p>
+                  {sample.length > 0 && (
+                    <p className="text-[11px] text-gray-400 truncate">เช่น {sample.join(' · ')}</p>
+                  )}
+                </div>
+                {canCancel && (
+                  <button
+                    type="button"
+                    onClick={() => handleCancel(b)}
+                    disabled={busyId !== null}
+                    className="shrink-0 px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 text-[11px] font-bold hover:bg-red-50 disabled:opacity-50 flex items-center gap-1 transition-colors"
+                  >
+                    {busyId === b.batch_id ? <Loader2 size={12} className="animate-spin" /> : <Undo2 size={12} />}
+                    ยกเลิกชุดนี้
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main Import Modal Component ───────────────────────────────────────────────
 
 export default function DataCenterImportModal({ tenant, profile, summary, onClose, onImportComplete }) {
   const fileInputRef = useRef(null)
   const existingRef = useRef(null) // รายการเดิมของ tenant (ดึงครั้งเดียวต่อการเปิดโมดัล)
+  // เลขชุดนำเข้า (import_batch_id) — สร้างตอนกดนำเข้า ถ้ายังไม่มี · ล้มกลางทางแล้วกดซ้ำ = ใช้เลขเดิม (ทำต่อชุดเดิม ไม่แตกเป็นสองชุด)
+  // สำเร็จครบแล้วย้ายไป lastBatchId (ไว้ให้ปุ่มยกเลิกทั้งชุด) แล้วล้าง ref · เปลี่ยนไฟล์/เริ่มใหม่ = ล้าง
+  const batchIdRef = useRef(null)
 
   const [file, setFile] = useState(null)
   const [parsing, setParsing] = useState(false)
@@ -81,6 +244,13 @@ export default function DataCenterImportModal({ tenant, profile, summary, onClos
   const [importPhotos, setImportPhotos] = useState(false) // ค่าเริ่มต้นไม่ติ๊ก: รูปขึ้นแผนที่สาธารณะ ต้องให้คนตัดสินใจเอง
   const [photoProgress, setPhotoProgress] = useState(null) // { done, total } ตอนอัปโหลดรูป
   const [photoResult, setPhotoResult] = useState(null) // { ok, fail } หลังอัปโหลดรูปจบ
+  const [lastBatchId, setLastBatchId] = useState(null) // ชุดที่เพิ่งนำเข้าสำเร็จ — ไว้ยกเลิกทั้งชุดจากหน้าผลสำเร็จ
+  const [cancelBusy, setCancelBusy] = useState(false)
+  const [cancelResult, setCancelResult] = useState(null) // { ok, text } ผลการยกเลิกจากหน้าผลสำเร็จ
+  const [listChanged, setListChanged] = useState(false) // ยกเลิกชุดจากรายการแล้ว → ตอนปิดโมดัลต้องรีเฟรชแผนที่/รายการ
+
+  const canCancelBatch = CANCEL_ROLES.includes(profile?.role)
+  const canListBatches = BATCH_LIST_ROLES.includes(profile?.role)
 
   const items = useMemo(() => result?.items ?? [], [result])
   const catalog = useMemo(() => buildCatalog(summary, SEED_GROUPS), [summary])
@@ -129,6 +299,7 @@ export default function DataCenterImportModal({ tenant, profile, summary, onClos
     setKeptColumns([]); setPdpaConfirmed(false); setParseError(null); setDupNotice(null)
     setImportError(null); setInsertedSoFar(0); setProgress(0)
     setImportPhotos(false); setPhotoProgress(null); setPhotoResult(null)
+    batchIdRef.current = null; setLastBatchId(null); setCancelResult(null)
   }, [])
 
   // กำลังนำเข้า (รวมอัปโหลดรูป) แล้วปิดแท็บ = ค้างครึ่งทาง: รายการลงฐานแล้วแต่รูปไม่ครบ จึงเตือนก่อนปิด
@@ -170,6 +341,9 @@ export default function DataCenterImportModal({ tenant, profile, summary, onClos
     setResult(null)
     setImportError(null)
     setInsertedSoFar(0)
+    batchIdRef.current = null // ไฟล์ใหม่ = ชุดใหม่
+    setLastBatchId(null)
+    setCancelResult(null)
 
     try {
       const parsed = await parseGisFile(selectedFile)
@@ -271,12 +445,18 @@ export default function DataCenterImportModal({ tenant, profile, summary, onClos
             longitude: it.longitude,
             route_points: it.route_points,
             route_color: it.route_points ? (it.route_color || DEFAULT_ROUTE_COLOR) : null,
+            shape: it.shape, // 'point' | 'line' | 'polygon' — พื้นที่ต้องลงเป็น polygon ไม่กลายเป็นเส้น
             status: 'active',
             created_by: profile?.id ?? null,
             department_id: profile?.department_id ?? null,
           },
         }
       })
+
+    // ล้มกลางทางแล้วกดซ้ำ ใช้เลขเดิม — รายการที่ลงไปแล้วกับที่ลงต่อรอบหลังอยู่ชุดเดียวกัน ยกเลิกทั้งชุดได้ครบ
+    if (!batchIdRef.current) batchIdRef.current = crypto.randomUUID()
+    const batchId = batchIdRef.current
+    for (const t of toInsert) t.row.import_batch_id = batchId
 
     setImporting(true)
     setProgress(0)
@@ -316,6 +496,8 @@ export default function DataCenterImportModal({ tenant, profile, summary, onClos
         tally.set(k, { group: t.group, category: t.category, count: (tally.get(k)?.count ?? 0) + 1 })
       }
       setInsertedSoFar(prev => prev + inserted)
+      setLastBatchId(batchId)
+      batchIdRef.current = null
       setSuccessRows(Array.from(tally.values()).sort((a, b) => b.count - a.count))
     } catch (err) {
       console.error('Error batch inserting data center entries:', err)
@@ -397,9 +579,22 @@ export default function DataCenterImportModal({ tenant, profile, summary, onClos
     return { ok, fail }
   }
 
+  // ยกเลิกชุดที่เพิ่งนำเข้าจากหน้าผลสำเร็จ — ลบทั้งชุดหรือไม่ลบเลย (เซิร์ฟเวอร์ตรวจสิทธิ์ซ้ำ) แล้วให้ปุ่ม "เสร็จ" รีเฟรชหน้าตามเดิม
+  async function handleCancelLastBatch() {
+    if (!lastBatchId || cancelBusy) return
+    if (!confirmCancelBatch(insertedSoFar)) return
+    setCancelBusy(true)
+    setCancelResult(null)
+    const r = await cancelImportBatch(lastBatchId)
+    setCancelBusy(false)
+    if (r.error) { setCancelResult({ ok: false, text: r.error }); return }
+    setCancelResult({ ok: true, text: `ยกเลิกการนำเข้าชุดนี้แล้ว ลบ ${r.count} รายการ` })
+    setLastBatchId(null)
+  }
+
   // ปิดทั้งที่มีบางรายการลงฐานไปแล้ว ต้องให้หน้ารายการรีเฟรช (ใช้ onImportComplete) ไม่งั้นรายการที่เพิ่มไม่โผล่
   function handleClose() {
-    if (insertedSoFar > 0) onImportComplete?.()
+    if (insertedSoFar > 0 || listChanged) onImportComplete?.()
     else onClose?.()
   }
 
@@ -489,12 +684,16 @@ export default function DataCenterImportModal({ tenant, profile, summary, onClos
                     </div>
                   </li>
                   <li>โฟลเดอร์ชั้นเดียว = ประเภทย่อย (ถ้าประเภทนี้มีในระบบอยู่แล้ว ระบบเติมกลุ่มให้) · ไม่มีโฟลเดอร์ = ใช้ค่าเริ่มต้นที่กำหนดในขั้นถัดไป</li>
-                  <li>ระบบอ่านจุด (Point) เส้น (LineString / gx:Track) และพื้นที่ (Polygon) พร้อมสีของเส้น — พื้นที่แสดงบนแผนที่เป็นเส้นขอบเขต</li>
+                  <li>ระบบอ่านจุด (Point) เส้น (LineString / gx:Track) และพื้นที่ (Polygon) พร้อมสีของเส้น — พื้นที่แสดงบนแผนที่เป็นพื้นที่ระบายสี</li>
                   <li>ข้ามภาพซ้อน (GroundOverlay), โมเดล 3 มิติ และ NetworkLink โดยบอกจำนวนที่ข้ามให้ทราบ · รับเฉพาะพิกัดในประเทศไทย</li>
                   <li><strong>CSV</strong>: หัวตารางต้องมี <code>name</code> (ชื่อ), <code>lat</code> (ละติจูด), <code>lng</code> (ลองจิจูด) · ใช้คอลัมน์ <code>group</code> (กลุ่ม) และ <code>category</code> (ประเภท) จัดหมวดได้</li>
                   <li><strong>Shapefile</strong>: บีบ .shp + .dbf + .prj เป็นไฟล์ .zip ไฟล์เดียว (ต้องมี .prj เพื่อแปลงเป็นพิกัด GPS)</li>
                 </ul>
               </div>
+
+              {canListBatches && (
+                <ImportBatchesPanel tenant={tenant} canCancel={canCancelBatch} onChanged={() => setListChanged(true)} />
+              )}
             </div>
           )}
 
@@ -515,6 +714,23 @@ export default function DataCenterImportModal({ tenant, profile, summary, onClos
                     {photoResult.fail > 0 && (
                       <span className="block text-xs mt-0.5">รูปที่ไม่สำเร็จ เพิ่มเองได้ที่ปุ่มแก้ไขรายการ</span>
                     )}
+                  </p>
+                )}
+                {canCancelBatch && lastBatchId && !cancelResult?.ok && (
+                  <button
+                    type="button"
+                    onClick={handleCancelLastBatch}
+                    disabled={cancelBusy}
+                    className="mt-1 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-bold hover:bg-red-50 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+                  >
+                    {cancelBusy ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
+                    ยกเลิกการนำเข้าชุดนี้
+                  </button>
+                )}
+                {cancelResult && (
+                  <p className={`text-xs max-w-sm flex items-start gap-1.5 ${cancelResult.ok ? 'text-emerald-700' : 'text-red-600'}`}>
+                    {cancelResult.ok ? <CheckCircle2 size={13} className="shrink-0 mt-0.5" /> : <AlertCircle size={13} className="shrink-0 mt-0.5" />}
+                    <span className="break-words">{cancelResult.text}</span>
                   </p>
                 )}
               </div>
