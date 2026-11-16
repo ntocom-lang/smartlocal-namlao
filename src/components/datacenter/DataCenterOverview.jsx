@@ -363,6 +363,7 @@ export default function DataCenterOverview({
         <DataCenterImportModal
           tenant={tenant}
           profile={profile}
+          summary={summary}
           onClose={() => setShowImportModal(false)}
           onImportComplete={() => {
             setShowImportModal(false)

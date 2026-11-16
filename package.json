@@ -51,6 +51,7 @@
     "test:odor:analytics": "node tests/odor-analytics.test.mjs",
     "test:odor:intake": "node tests/odor-intake.test.mjs",
     "test:datacenter:picker": "node tests/datacenter-picker.test.mjs",
+    "test:datacenter:import": "node tests/datacenter-import.test.mjs",
     "test:adhoc-zones": "node tests/adhoc-zones.test.mjs",
     "test:adhoc-affected": "node tests/adhoc-affected.test.mjs",
     "test:odor": "node tests/odor-workflow.playwright.mjs",
@@ -218,6 +219,7 @@
     "react-dom": "^19.2.5",
     "react-router-dom": "^7.15.0",
     "recharts": "^3.8.1",
+    "shpjs": "6.2.0",
     "tailwindcss": "^4.3.0"
   },
   "devDependencies": {
@@ -225,6 +227,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "@xmldom/xmldom": "0.9.12",
     "eslint": "^10.2.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",

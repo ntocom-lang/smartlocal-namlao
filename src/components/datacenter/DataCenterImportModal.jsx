@@ -1,419 +1,464 @@
-import { useState, useRef } from 'react'
-import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, X, MapPin, Route, Trash2, Layers, Filter } from 'lucide-react'
-import JSZip from 'jszip'
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react'
+import {
+  Upload, FileText, CheckCircle2, AlertCircle, Loader2, X, MapPin, Route, Trash2, Layers, Filter,
+  ChevronRight, ChevronDown, Hexagon, ShieldAlert, Copy,
+} from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { compressImage } from '../../lib/imageUtils'
+import { uploadFile } from '../../lib/driveStorage'
+import { driveFolderPath, DRIVE_MODULES } from '../../lib/driveFolders'
+import { fetchAllRows } from '../../lib/fetchAllRows'
+import { mergeOptions, tidyName } from '../../lib/dataCenterPicker'
+import {
+  parseGisFile, groupByFolder, folderKeyOf, suggestMapping, buildCatalog, resolvePair, markDuplicates,
+  looksPersonalColumn, buildDescription, DEFAULT_ROUTE_COLOR, MAX_IMPORT_ITEMS, MAX_PHOTOS_PER_IMPORT,
+} from '../../lib/gisImport'
 
+// ตัวอย่างตั้งต้น — ใช้เป็นคำแนะนำในช่องพิมพ์เท่านั้น (ข้อมูลจริงในระบบมาก่อนเสมอ)
 const SEED_GROUPS = [
   'สาธารณสุข', 'สถานที่สำคัญ', 'สถานประกอบการ', 'การจัดการขยะ',
   'สถานศึกษา', 'โครงสร้างพื้นฐาน', 'สถานที่หลบภัย', 'พื้นที่สีเขียว'
 ]
 
-// ── Parser Helpers ────────────────────────────────────────────────────────────
+const ACCEPT = '.kml,.kmz,.geojson,.json,.gpx,.csv,.txt,.zip,.shp'
+const BATCH_SIZE = 50
+const PHOTO_ROW_CONCURRENCY = 3 // อัปโหลดพร้อมกันกี่ "แถว" (ไม่ใช่กี่รูป) — รูปในแถวเดียวกันทำทีละรูป กัน edge function ถูกยิงถี่เกิน
+const MAX_ROWS_SHOWN = 200 // แสดงรายการข้างในโฟลเดอร์ไม่เกินนี้ต่อโฟลเดอร์ (ไฟล์หลายพันจุดทำ DOM หนักบนมือถือ)
 
-function stripHTML(html) {
-  if (!html) return ''
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  return doc.body.textContent || ''
+const inputCls = 'w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium text-gray-800 focus:ring-2 focus:ring-blue-200 focus:outline-none'
+
+function countsText(c) {
+  return [c.point && `${c.point} จุด`, c.line && `${c.line} เส้น`, c.polygon && `${c.polygon} พื้นที่`].filter(Boolean).join(' · ')
 }
 
-function parseCoordinatesString(coordsStr) {
-  if (!coordsStr) return []
-  return coordsStr.trim().split(/\s+/).map(pairStr => {
-    const parts = pairStr.split(',').map(p => parseFloat(p.trim()))
-    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-      // KML coordinates are: longitude, latitude, [altitude]
-      return { lng: parts[0], lat: parts[1] }
-    }
-    return null
-  }).filter(Boolean)
-}
-
-function parseKMLDocument(xmlText) {
-  const parser = new DOMParser()
-  const xmlDoc = parser.parseFromString(xmlText, 'text/xml')
-
-  const parserError = xmlDoc.querySelector('parsererror')
-  if (parserError) {
-    throw new Error('โครงสร้างไฟล์ KML ไม่ถูกต้อง หรือไม่ใช่ XML ที่สมบูรณ์')
+function ShapeBadge({ item }) {
+  if (item.shape === 'line') {
+    return (
+      <span className="shrink-0 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+        <Route size={10} /> เส้น ({item.route_points.length} จุด)
+      </span>
+    )
   }
-
-  const items = []
-  const placemarks = xmlDoc.getElementsByTagName('Placemark')
-
-  for (let i = 0; i < placemarks.length; i++) {
-    const pm = placemarks[i]
-
-    // Name & Description
-    const nameNode = pm.getElementsByTagName('name')[0]
-    const name = nameNode ? nameNode.textContent.trim() : `สถานที่ #${i + 1}`
-
-    const descNode = pm.getElementsByTagName('description')[0]
-    const rawDesc = descNode ? descNode.textContent.trim() : ''
-    const description = stripHTML(rawDesc)
-
-    // Check Folder parent for group/category hint
-    let folderHint = ''
-    let parentNode = pm.parentNode
-    while (parentNode && parentNode.nodeName !== 'Document' && parentNode.nodeName !== '#document') {
-      if (parentNode.nodeName === 'Folder') {
-        const folderName = parentNode.getElementsByTagName('name')[0]?.textContent?.trim()
-        if (folderName) {
-          folderHint = folderName
-          break
-        }
-      }
-      parentNode = parentNode.parentNode
-    }
-
-    // Geometry check
-    let latitude = null
-    let longitude = null
-    let routePoints = null
-
-    // 1. Point
-    const pointNode = pm.getElementsByTagName('Point')[0]
-    if (pointNode) {
-      const coordsNode = pointNode.getElementsByTagName('coordinates')[0]
-      const pts = parseCoordinatesString(coordsNode ? coordsNode.textContent : '')
-      if (pts.length > 0) {
-        latitude = pts[0].lat
-        longitude = pts[0].lng
-      }
-    }
-
-    // 2. LineString / Polyline
-    const lineNode = pm.getElementsByTagName('LineString')[0]
-    if (lineNode) {
-      const coordsNode = lineNode.getElementsByTagName('coordinates')[0]
-      const pts = parseCoordinatesString(coordsNode ? coordsNode.textContent : '')
-      if (pts.length >= 2) {
-        routePoints = pts
-        const midIdx = Math.floor(pts.length / 2)
-        latitude = pts[midIdx].lat
-        longitude = pts[midIdx].lng
-      }
-    }
-
-    // 3. Polygon
-    const polyNode = pm.getElementsByTagName('Polygon')[0]
-    if (!lineNode && polyNode) {
-      const coordsNode = polyNode.getElementsByTagName('coordinates')[0]
-      const pts = parseCoordinatesString(coordsNode ? coordsNode.textContent : '')
-      if (pts.length >= 2) {
-        routePoints = pts
-        const midIdx = Math.floor(pts.length / 2)
-        latitude = pts[midIdx].lat
-        longitude = pts[midIdx].lng
-      }
-    }
-
-    if (latitude !== null && longitude !== null) {
-      items.push({
-        id: `kml_${i}_${Date.now()}`,
-        name,
-        description,
-        latitude,
-        longitude,
-        route_points: routePoints,
-        group_name: folderHint || '',
-        category: '',
-        selected: true,
-      })
-    }
+  if (item.shape === 'polygon') {
+    return (
+      <span className="shrink-0 text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+        <Hexagon size={10} /> พื้นที่
+      </span>
+    )
   }
-
-  return items
-}
-
-function parseGeoJSONDocument(jsonText) {
-  const geojson = JSON.parse(jsonText)
-  const features = geojson.type === 'FeatureCollection' ? (geojson.features || []) : [geojson]
-  const items = []
-
-  features.forEach((feat, i) => {
-    if (!feat || !feat.geometry) return
-    const props = feat.properties || {}
-    const name = props.name || props.title || props.Name || props.TITLE || `ตำแหน่ง GIS #${i + 1}`
-    const description = props.description || props.desc || props.Remark || ''
-    const groupHint = props.group_name || props.group || props.Group || ''
-    const categoryHint = props.category || props.type || props.Category || ''
-
-    let latitude = null
-    let longitude = null
-    let routePoints = null
-
-    const { type, coordinates } = feat.geometry
-
-    if (type === 'Point' && Array.isArray(coordinates) && coordinates.length >= 2) {
-      longitude = coordinates[0]
-      latitude = coordinates[1]
-    } else if (type === 'LineString' && Array.isArray(coordinates) && coordinates.length >= 2) {
-      routePoints = coordinates.map(c => ({ lng: c[0], lat: c[1] }))
-      const mid = Math.floor(routePoints.length / 2)
-      longitude = routePoints[mid].lng
-      latitude = routePoints[mid].lat
-    } else if (type === 'Polygon' && Array.isArray(coordinates) && coordinates[0]?.length >= 2) {
-      routePoints = coordinates[0].map(c => ({ lng: c[0], lat: c[1] }))
-      const mid = Math.floor(routePoints.length / 2)
-      longitude = routePoints[mid].lng
-      latitude = routePoints[mid].lat
-    }
-
-    if (latitude !== null && longitude !== null && !isNaN(latitude) && !isNaN(longitude)) {
-      items.push({
-        id: `geojson_${i}_${Date.now()}`,
-        name,
-        description,
-        latitude,
-        longitude,
-        route_points: routePoints,
-        group_name: groupHint,
-        category: categoryHint,
-        selected: true,
-      })
-    }
-  })
-
-  return items
-}
-
-function parseCSVDocument(csvText) {
-  const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== '')
-  if (lines.length < 2) throw new Error('ไฟล์ CSV ไม่มีข้อมูลเพียงพอ (ต้องมีบรรทัดหัวตาราง)')
-
-  const parseRow = row => {
-    const result = []
-    let inside = false
-    let current = ''
-    for (let i = 0; i < row.length; i++) {
-      const char = row[i]
-      if (char === '"' || char === "'") {
-        inside = !inside
-      } else if (char === ',' && !inside) {
-        result.push(current.trim().replace(/^["']|["']$/g, ''))
-        current = ''
-      } else {
-        current += char
-      }
-    }
-    result.push(current.trim().replace(/^["']|["']$/g, ''))
-    return result
-  }
-
-  const headers = parseRow(lines[0]).map(h => h.toLowerCase())
-
-  const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('ชื่อ') || h.includes('title'))
-  const latIdx  = headers.findIndex(h => h.includes('lat') || h.includes('ละติจูด'))
-  const lngIdx  = headers.findIndex(h => h.includes('lng') || h.includes('lon') || h.includes('ลองจิจูด'))
-  const groupIdx = headers.findIndex(h => h.includes('group') || h.includes('กลุ่ม'))
-  const catIdx = headers.findIndex(h => h.includes('cat') || h.includes('ประเภท'))
-  const descIdx = headers.findIndex(h => h.includes('desc') || h.includes('รายละเอียด') || h.includes('หมายเหตุ'))
-
-  if (latIdx === -1 || lngIdx === -1) {
-    throw new Error('ไม่พบคอลัมน์ Latitude หรือ Longitude ในไฟล์ CSV (ต้องระบุ lat, lng หรือ ละติจูด, ลองจิจูด)')
-  }
-
-  const items = []
-  for (let i = 1; i < lines.length; i++) {
-    const cols = parseRow(lines[i])
-    if (cols.length <= Math.max(latIdx, lngIdx)) continue
-
-    const lat = parseFloat(cols[latIdx])
-    const lng = parseFloat(cols[lngIdx])
-    if (isNaN(lat) || isNaN(lng)) continue
-
-    const name = nameIdx !== -1 && cols[nameIdx] ? cols[nameIdx] : `สถานที่ #${i}`
-    const description = descIdx !== -1 ? cols[descIdx] || '' : ''
-    const group_name = groupIdx !== -1 ? cols[groupIdx] || '' : ''
-    const category = catIdx !== -1 ? cols[catIdx] || '' : ''
-
-    items.push({
-      id: `csv_${i}_${Date.now()}`,
-      name,
-      description,
-      latitude: lat,
-      longitude: lng,
-      route_points: null,
-      group_name,
-      category,
-      selected: true,
-    })
-  }
-
-  return items
+  return (
+    <span className="shrink-0 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+      <MapPin size={10} /> จุด
+    </span>
+  )
 }
 
 // ── Main Import Modal Component ───────────────────────────────────────────────
 
-export default function DataCenterImportModal({ tenant, profile, onClose, onImportComplete }) {
+export default function DataCenterImportModal({ tenant, profile, summary, onClose, onImportComplete }) {
   const fileInputRef = useRef(null)
+  const existingRef = useRef(null) // รายการเดิมของ tenant (ดึงครั้งเดียวต่อการเปิดโมดัล)
 
   const [file, setFile] = useState(null)
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState(null)
+  const [dragOver, setDragOver] = useState(false)
+  const [dupNotice, setDupNotice] = useState(null)
 
-  const [parsedItems, setParsedItems] = useState([])
-  const [defaultGroup, setDefaultGroup] = useState('โครงสร้างพื้นฐาน')
-  const [defaultCategory, setDefaultCategory] = useState('พิกัดนำเข้า')
+  const [result, setResult] = useState(null) // { items (พร้อม duplicate), skipped, columns, warnings }
+  const [selected, setSelected] = useState({}) // key รายการ → ติ๊กนำเข้า
+  const [overrides, setOverrides] = useState({}) // key โฟลเดอร์ → { group?, category? } ที่เจ้าหน้าที่แก้เอง
+  const [expanded, setExpanded] = useState({})
+  const [defaults, setDefaults] = useState({ group: 'โครงสร้างพื้นฐาน', category: 'พิกัดนำเข้า' })
+  const [keptColumns, setKeptColumns] = useState([])
+  const [pdpaConfirmed, setPdpaConfirmed] = useState(false)
 
   const [importing, setImporting] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [importSuccessCount, setImportSuccessCount] = useState(null)
+  const [insertedSoFar, setInsertedSoFar] = useState(0)
+  const [importError, setImportError] = useState(null)
+  const [successRows, setSuccessRows] = useState(null) // [{ group, category, count }]
+  const [importPhotos, setImportPhotos] = useState(false) // ค่าเริ่มต้นไม่ติ๊ก: รูปขึ้นแผนที่สาธารณะ ต้องให้คนตัดสินใจเอง
+  const [photoProgress, setPhotoProgress] = useState(null) // { done, total } ตอนอัปโหลดรูป
+  const [photoResult, setPhotoResult] = useState(null) // { ok, fail } หลังอัปโหลดรูปจบ
 
-  async function handleFileSelected(e) {
-    const selectedFile = e.target.files?.[0]
+  const items = useMemo(() => result?.items ?? [], [result])
+  const catalog = useMemo(() => buildCatalog(summary, SEED_GROUPS), [summary])
+  const folders = useMemo(() => groupByFolder(items), [items])
+  const suggestions = useMemo(
+    () => suggestMapping(folders, summary, SEED_GROUPS, defaults),
+    [folders, summary, defaults],
+  )
+
+  // ค่าที่ใช้จริงของแต่ละโฟลเดอร์ = ที่เจ้าหน้าที่แก้ ถ้าไม่แก้ใช้ที่ระบบเสนอ (เปลี่ยนค่าเริ่มต้น แถวที่ไม่ได้แก้ตามไปด้วย)
+  const rows = useMemo(() => folders.map(f => {
+    const ov = overrides[f.key] ?? {}
+    const sug = suggestions[f.key]
+    const groupText = ov.group ?? sug?.group ?? ''
+    const categoryText = ov.category ?? sug?.category ?? ''
+    return { folder: f, groupText, categoryText, resolved: resolvePair(catalog, groupText, categoryText) }
+  }), [folders, overrides, suggestions, catalog])
+  const resolvedByKey = useMemo(() => Object.fromEntries(rows.map(r => [r.folder.key, r.resolved])), [rows])
+
+  const stats = useMemo(() => {
+    const s = { point: 0, line: 0, polygon: 0, duplicate: 0 }
+    for (const it of items) { s[it.shape] += 1; if (it.duplicate) s.duplicate += 1 }
+    return s
+  }, [items])
+
+  const selectedItems = useMemo(() => items.filter(i => selected[i.key]), [items, selected])
+  const selectedCount = selectedItems.length
+
+  // รูปของรายการที่ "ติ๊กไว้" เท่านั้น — เพดานคิดจากสิ่งที่จะอัปโหลดจริงในรอบนี้
+  const photoTotal = result?.photos?.total ?? 0
+  const selectedPhotoCount = useMemo(
+    () => selectedItems.reduce((n, i) => n + (i.photoRefs?.length ?? 0), 0),
+    [selectedItems],
+  )
+  const overPhotoLimit = importPhotos && selectedPhotoCount > MAX_PHOTOS_PER_IMPORT
+
+  // โฟลเดอร์ที่มีรายการถูกเลือกแต่ยังไม่มีกลุ่ม/ประเภท → ปิดปุ่มนำเข้า (ฐานข้อมูลไม่รับค่าว่าง)
+  const missingFolders = useMemo(() => rows.filter(r =>
+    r.folder.itemKeys.some(k => selected[k]) && (!r.resolved.group || !r.resolved.category),
+  ), [rows, selected])
+
+  const hasColumns = (result?.columns?.length ?? 0) > 0
+
+  const reset = useCallback(() => {
+    setFile(null); setResult(null); setSelected({}); setOverrides({}); setExpanded({})
+    setKeptColumns([]); setPdpaConfirmed(false); setParseError(null); setDupNotice(null)
+    setImportError(null); setInsertedSoFar(0); setProgress(0)
+    setImportPhotos(false); setPhotoProgress(null); setPhotoResult(null)
+  }, [])
+
+  // กำลังนำเข้า (รวมอัปโหลดรูป) แล้วปิดแท็บ = ค้างครึ่งทาง: รายการลงฐานแล้วแต่รูปไม่ครบ จึงเตือนก่อนปิด
+  useEffect(() => {
+    if (!importing) return undefined
+    const warn = e => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [importing])
+
+  async function loadExisting() {
+    if (existingRef.current) return existingRef.current
+    if (!tenant?.id) return { rows: null, warning: 'ไม่พบข้อมูลหน่วยงาน จึงข้ามการตรวจรายการซ้ำ' }
+    try {
+      // อ่านอย่างเดียว — ต้อง .order('id') ให้ไล่หลายหน้าแล้วไม่ตกหล่น/ซ้ำ (ดู fetchAllRows)
+      const { data, error, truncated } = await fetchAllRows(() => supabase
+        .from('data_center_entries')
+        .select('id,name,latitude,longitude')
+        .eq('municipality_id', tenant.id)
+        .order('id'))
+      if (error) throw error
+      const out = {
+        rows: data ?? [],
+        warning: truncated ? 'รายการเดิมในระบบมากเกินกว่าจะตรวจได้ครบ การตรวจรายการซ้ำอาจไม่ครบ' : null,
+      }
+      existingRef.current = out
+      return out
+    } catch (err) {
+      console.error('Error loading existing data center entries:', err)
+      return { rows: null, warning: 'โหลดรายการเดิมเพื่อตรวจรายการซ้ำไม่สำเร็จ — ข้ามการตรวจซ้ำ กรุณาตรวจสอบชื่อที่ซ้ำกับของเดิมด้วยตนเอง' }
+    }
+  }
+
+  async function processFile(selectedFile) {
     if (!selectedFile) return
-
     setFile(selectedFile)
     setParsing(true)
     setParseError(null)
-    setParsedItems([])
+    setResult(null)
+    setImportError(null)
+    setInsertedSoFar(0)
 
     try {
-      const fileName = selectedFile.name.toLowerCase()
-      let items = []
-
-      if (fileName.endsWith('.kml')) {
-        const text = await selectedFile.text()
-        items = parseKMLDocument(text)
-      } else if (fileName.endsWith('.kmz')) {
-        const zip = await JSZip.loadAsync(selectedFile)
-        const kmlFile = Object.values(zip.files).find(f => f.name.toLowerCase().endsWith('.kml'))
-        if (!kmlFile) throw new Error('ไม่พบไฟล์ doc.kml ภายในไฟล์ KMZ นี้')
-        const xmlText = await kmlFile.async('string')
-        items = parseKMLDocument(xmlText)
-      } else if (fileName.endsWith('.geojson') || fileName.endsWith('.json')) {
-        const text = await selectedFile.text()
-        items = parseGeoJSONDocument(text)
-      } else if (fileName.endsWith('.csv') || fileName.endsWith('.txt')) {
-        const text = await selectedFile.text()
-        items = parseCSVDocument(text)
-      } else {
-        throw new Error('รูปแบบไฟล์ไม่รองรับ (รองรับเฉพาะ .kml, .kmz, .geojson, .json, .csv)')
+      const parsed = await parseGisFile(selectedFile)
+      if (parsed.items.length === 0) {
+        const sk = parsed.skipped
+        const why = [
+          sk.outsideThailand && `พิกัดอยู่นอกประเทศไทย ${sk.outsideThailand}`,
+          sk.invalidCoord && `พิกัดไม่ถูกต้อง ${sk.invalidCoord}`,
+          sk.overlay && `ภาพซ้อน ${sk.overlay}`,
+          sk.model && `โมเดล 3 มิติ ${sk.model}`,
+          sk.networkLink && `NetworkLink ${sk.networkLink}`,
+          sk.empty && `ไม่มีพิกัด ${sk.empty}`,
+        ].filter(Boolean).join(', ')
+        throw new Error(`ไม่พบพิกัดที่นำเข้าได้ในไฟล์นี้${why ? ` (ข้าม: ${why})` : ''}${parsed.warnings.length ? ` — ${parsed.warnings.join(' ')}` : ''}`)
       }
 
-      if (items.length === 0) {
-        throw new Error('ไม่พบพิกัดสถานที่ในไฟล์ดังกล่าว')
-      }
-
-      setParsedItems(items)
+      const existing = await loadExisting()
+      const withDup = existing.rows ? markDuplicates(parsed.items, existing.rows) : parsed.items.map(i => ({ ...i, duplicate: false }))
+      setDupNotice(existing.warning)
+      setResult({ ...parsed, items: withDup })
+      // รายการซ้ำไม่ติ๊กไว้ก่อน — กันนำเข้าซ้ำโดยไม่รู้ตัว (เจ้าหน้าที่ติ๊กเองได้ถ้าตั้งใจ)
+      setSelected(Object.fromEntries(withDup.map(i => [i.key, !i.duplicate])))
+      setOverrides({})
+      setExpanded({})
+      // คอลัมน์ที่ชื่อบ่งว่าเป็นข้อมูลส่วนบุคคลไม่เก็บไว้ก่อน (PDPA) — ข้อมูลที่นำเข้าขึ้นแผนที่สาธารณะทันที
+      setKeptColumns(parsed.columns.filter(c => !looksPersonalColumn(c)))
+      setPdpaConfirmed(false)
+      setImportPhotos(false)
+      setPhotoProgress(null)
+      setPhotoResult(null)
     } catch (err) {
       console.error('Error parsing file:', err)
       setParseError(err.message || 'ไม่สามารถอ่านข้อมูลในไฟล์ได้')
     } finally {
       setParsing(false)
-      e.target.value = ''
     }
   }
 
-  function toggleSelectItem(id) {
-    setParsedItems(prev => prev.map(item => item.id === id ? { ...item, selected: !item.selected } : item))
+  function handleFileSelected(e) {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    processFile(f)
   }
 
-  function toggleSelectAll(selectAll) {
-    setParsedItems(prev => prev.map(item => ({ ...item, selected: selectAll })))
+  function handleDrop(e) {
+    e.preventDefault()
+    setDragOver(false)
+    if (parsing) return
+    processFile(e.dataTransfer?.files?.[0])
+  }
+
+  function toggleItem(key) {
+    setSelected(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  // ติ๊กทั้งโฟลเดอร์ = เลือกทุกรายการที่ไม่ซ้ำ / เอาออกทั้งหมด
+  function toggleFolder(folder, on) {
+    setSelected(prev => {
+      const next = { ...prev }
+      for (const k of folder.itemKeys) {
+        const it = items.find(i => i.key === k)
+        next[k] = on ? !it?.duplicate : false
+      }
+      return next
+    })
+  }
+
+  function setOverride(folderKey, patch) {
+    setOverrides(prev => ({ ...prev, [folderKey]: { ...prev[folderKey], ...patch } }))
+  }
+
+  function toggleColumn(col) {
+    setKeptColumns(prev => (prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]))
   }
 
   async function executeBatchImport() {
-    const selectedItems = parsedItems.filter(item => item.selected)
-    if (selectedItems.length === 0 || !tenant?.id) return
+    if (selectedCount === 0 || selectedCount > MAX_IMPORT_ITEMS || overPhotoLimit || !tenant?.id || !pdpaConfirmed || missingFolders.length > 0) return
+
+    const toInsert = items
+      .filter(i => selected[i.key])
+      .map(it => {
+        const r = resolvedByKey[folderKeyOf(it)]
+        return {
+          key: it.key,
+          photoRefs: importPhotos ? (it.photoRefs ?? []) : [],
+          group: r.group,
+          category: r.category,
+          row: {
+            // สร้าง id เองฝั่งหน้าเว็บ เพื่อจับคู่ "แถวที่ลงฐาน" กับ "รูปของแถวนั้น" ได้แน่นอน
+            // ไม่พึ่งลำดับผล RETURNING (insert หลายแถวไม่รับประกันว่าลำดับผลตรงกับลำดับที่ส่ง)
+            id: crypto.randomUUID(),
+            municipality_id: tenant.id,
+            // ค่าที่จับคู่ของเดิมได้เป็น "ค่าดิบจากฐาน" แล้ว (resolvePair) — ห้าม tidyName ทับ ไม่งั้นกลายเป็นหมวดใหม่เงียบๆ
+            group_name: r.groupIsNew ? tidyName(r.group) : r.group,
+            category: r.categoryIsNew ? tidyName(r.category) : r.category,
+            name: tidyName(it.name),
+            description: buildDescription(it.description, it.attributes, keptColumns) || null,
+            latitude: it.latitude,
+            longitude: it.longitude,
+            route_points: it.route_points,
+            route_color: it.route_points ? (it.route_color || DEFAULT_ROUTE_COLOR) : null,
+            status: 'active',
+            created_by: profile?.id ?? null,
+            department_id: profile?.department_id ?? null,
+          },
+        }
+      })
 
     setImporting(true)
     setProgress(0)
-    setImportSuccessCount(null)
+    setImportError(null)
+    setPhotoProgress(null)
+    setPhotoResult(null)
 
-    const BATCH_SIZE = 50
-    let insertedTotal = 0
-
+    let inserted = 0
+    const doneKeys = []
+    const insertedRows = [] // แถวที่ลงฐานสำเร็จแล้ว (ไว้ใช้ในเฟสรูป)
     try {
-      for (let i = 0; i < selectedItems.length; i += BATCH_SIZE) {
-        const batch = selectedItems.slice(i, i + BATCH_SIZE).map(item => ({
-          municipality_id: tenant.id,
-          group_name: (item.group_name || defaultGroup).trim(),
-          category: (item.category || defaultCategory).trim(),
-          name: item.name.trim(),
-          description: item.description ? item.description.trim() : null,
-          latitude: item.latitude,
-          longitude: item.longitude,
-          route_points: item.route_points,
-          route_color: item.route_points ? '#3b82f6' : null,
-          status: 'active',
-          created_by: profile?.id ?? null,
-          department_id: profile?.department_id ?? null,
-        }))
-
-        const { error } = await supabase.from('data_center_entries').insert(batch)
+      for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
+        const batch = toInsert.slice(i, i + BATCH_SIZE)
+        const { error } = await supabase.from('data_center_entries').insert(batch.map(b => b.row))
         if (error) throw error
-
-        insertedTotal += batch.length
-        setProgress(Math.round((insertedTotal / selectedItems.length) * 100))
+        inserted += batch.length
+        doneKeys.push(...batch.map(b => b.key))
+        insertedRows.push(...batch)
+        setProgress(Math.round((inserted / toInsert.length) * 100))
       }
 
-      setImportSuccessCount(insertedTotal)
-      setTimeout(() => {
-        onImportComplete?.()
-      }, 1500)
+      // เฟสสอง: อัปโหลดรูป "หลัง" insert ครบทุกแถว — ถ้า insert ล้มกลางทางจะไม่เริ่มเฟสนี้ (กันรูปลอยไม่มีเจ้าของ)
+      // ห่อ try แยก: ความผิดพลาดของรูปห้ามไปถูกรายงานเป็น "insert ล้ม" (รายการลงฐานครบแล้วจริง)
+      const withPhotos = insertedRows.filter(b => b.photoRefs.length > 0)
+      if (withPhotos.length > 0 && result?.readPhoto) {
+        try {
+          setPhotoResult(await uploadPhotosForRows(withPhotos))
+        } catch (photoErr) {
+          console.error('Error uploading imported photos:', photoErr)
+          setPhotoResult({ ok: 0, fail: withPhotos.reduce((n, b) => n + b.photoRefs.length, 0) })
+        }
+      }
+
+      const tally = new Map()
+      for (const t of toInsert) {
+        const k = `${t.group}\u0000${t.category}`
+        tally.set(k, { group: t.group, category: t.category, count: (tally.get(k)?.count ?? 0) + 1 })
+      }
+      setInsertedSoFar(prev => prev + inserted)
+      setSuccessRows(Array.from(tally.values()).sort((a, b) => b.count - a.count))
     } catch (err) {
       console.error('Error batch inserting data center entries:', err)
-      alert('เกิดข้อผิดพลาดขณะนำเข้าข้อมูล: ' + err.message)
+      // บันทึกไปแล้วบางชุด: เอาออกจากรายการที่ติ๊ก กดนำเข้าอีกครั้งจะทำต่อเฉพาะที่เหลือ ไม่ซ้ำของที่ลงแล้ว
+      // แถวที่ลงไปแล้วในรอบนี้จะไม่ได้รูป (ไม่เริ่มเฟสรูป) — นับจำนวนไว้บอกตรงๆ ในกล่องแจ้งผล
+      const photosPending = insertedRows.reduce((n, b) => n + b.photoRefs.length, 0)
+      if (doneKeys.length > 0) {
+        setSelected(prev => {
+          const next = { ...prev }
+          for (const k of doneKeys) next[k] = false
+          return next
+        })
+        setInsertedSoFar(prev => prev + inserted)
+      }
+      setImportError({
+        inserted,
+        total: toInsert.length,
+        message: err?.message || 'ไม่ทราบสาเหตุ',
+        photosPending,
+      })
     } finally {
       setImporting(false)
+      setPhotoProgress(null)
     }
   }
 
-  const selectedCount = parsedItems.filter(i => i.selected).length
+  // อัปโหลดรูปของแต่ละแถวที่ลงฐานแล้ว — ทำพร้อมกัน PHOTO_ROW_CONCURRENCY แถว
+  // รูปที่ล้มนับแล้วทำต่อ ไม่ล้มทั้งงาน (รายการลงฐานไปแล้ว ขาดแค่รูป เพิ่มเองได้ที่ปุ่มแก้ไขรายการ)
+  // โฟลเดอร์ Drive ใช้ชื่อหมวด/ชื่อสถานที่ "ตัวที่ลงฐานจริง" ให้ตรงกับที่ฟอร์มเพิ่มข้อมูลเดิมจัดไว้
+  async function uploadPhotosForRows(rowsWithPhotos) {
+    const total = rowsWithPhotos.reduce((n, b) => n + b.photoRefs.length, 0)
+    let done = 0
+    let ok = 0
+    let fail = 0
+    setPhotoProgress({ done: 0, total })
+
+    const tick = () => { done += 1; setPhotoProgress({ done, total }) }
+
+    async function uploadRow(b) {
+      const urls = []
+      for (const ref of b.photoRefs) {
+        try {
+          const raw = await result.readPhoto(ref)
+          const file = await compressImage(raw, 1600)
+          const ext = file.name?.split('.').pop() || 'jpg'
+          const { url, error } = await uploadFile('complaint-attachments', file, {
+            subject: `data-center/${b.row.id}`,
+            folder: driveFolderPath(DRIVE_MODULES.dataCenter, b.row.category, b.row.name),
+            filename: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`,
+            municipality: tenant?.slug,
+          })
+          if (!error && url) urls.push(url)
+          else fail += 1
+        } catch (err) {
+          console.error('Error uploading imported photo:', err)
+          fail += 1
+        }
+        tick()
+      }
+      if (urls.length === 0) return
+      const { error } = await supabase.from('data_center_entries').update({ photo_urls: urls }).eq('id', b.row.id)
+      if (error) {
+        console.error('Error saving photo_urls:', error)
+        fail += urls.length
+      } else {
+        ok += urls.length
+      }
+    }
+
+    let next = 0
+    const worker = async () => {
+      while (next < rowsWithPhotos.length) {
+        const mine = rowsWithPhotos[next]
+        next += 1
+        await uploadRow(mine)
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(PHOTO_ROW_CONCURRENCY, rowsWithPhotos.length) }, worker))
+    return { ok, fail }
+  }
+
+  // ปิดทั้งที่มีบางรายการลงฐานไปแล้ว ต้องให้หน้ารายการรีเฟรช (ใช้ onImportComplete) ไม่งั้นรายการที่เพิ่มไม่โผล่
+  function handleClose() {
+    if (insertedSoFar > 0) onImportComplete?.()
+    else onClose?.()
+  }
+
+  const showTable = !!result && successRows === null
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
-        
+      <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 w-full max-w-4xl overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
+
         {/* Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-slate-900 text-white shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-400">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-400 shrink-0">
               <Upload size={18} />
             </div>
-            <div>
+            <div className="min-w-0">
               <h2 className="font-bold text-base leading-tight">นำเข้าพิกัด GIS / Google Earth</h2>
-              <p className="text-xs text-slate-400">รองรับไฟล์ .KML, .KMZ, .GeoJSON, .CSV</p>
+              <p className="text-xs text-slate-400 truncate">รองรับ KML, KMZ, GeoJSON, GPX, CSV และ Shapefile (.zip)</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-colors">
+          <button onClick={handleClose} disabled={importing} className="p-1.5 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-colors">
             <X size={20} />
           </button>
         </div>
 
         {/* Body Area */}
-        <div className="p-5 overflow-y-auto space-y-4 flex-1">
-          
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+
           {/* Step 1: File Drop Zone */}
-          {parsedItems.length === 0 && !importSuccessCount && (
+          {!result && successRows === null && (
             <div className="space-y-4">
               <div
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-blue-200 hover:border-blue-500 bg-blue-50/40 hover:bg-blue-50 rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center group"
+                onClick={() => !parsing && fileInputRef.current?.click()}
+                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center group ${dragOver ? 'border-blue-500 bg-blue-100/60' : 'border-blue-200 hover:border-blue-500 bg-blue-50/40 hover:bg-blue-50'}`}
               >
                 <input
                   type="file"
                   ref={fileInputRef}
                   onChange={handleFileSelected}
-                  accept=".kml,.kmz,.geojson,.json,.csv,.txt"
+                  accept={ACCEPT}
                   className="hidden"
                 />
                 {parsing ? (
                   <div className="flex flex-col items-center py-4">
                     <Loader2 size={36} className="animate-spin text-blue-600 mb-3" />
-                    <p className="font-bold text-gray-700 text-sm">กำลังถอดรหัสไฟล์พิกัด GIS...</p>
-                    <p className="text-xs text-gray-400 mt-1">{file?.name}</p>
+                    <p className="font-bold text-gray-700 text-sm">กำลังอ่านไฟล์พิกัดและตรวจรายการซ้ำ...</p>
+                    <p className="text-xs text-gray-400 mt-1 break-all">{file?.name}</p>
                   </div>
                 ) : (
                   <>
                     <div className="w-14 h-14 rounded-2xl bg-white border border-blue-100 shadow-sm flex items-center justify-center text-blue-600 mb-3 group-hover:scale-110 transition-transform">
                       <FileText size={28} />
                     </div>
-                    <p className="font-bold text-gray-800 text-base">คลิกที่นี่เพื่อเลือกไฟล์จากคอมพิวเตอร์</p>
-                    <p className="text-xs text-gray-500 mt-1 max-w-sm">
-                      ลากหรือเลือกไฟล์ <span className="font-semibold text-blue-600">.KML / .KMZ (Google Earth)</span>, <span className="font-semibold text-emerald-600">.GeoJSON</span> หรือ <span className="font-semibold text-orange-600">.CSV</span>
+                    <p className="font-bold text-gray-800 text-base">ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์</p>
+                    <p className="text-xs text-gray-500 mt-1 max-w-md">
+                      <span className="font-semibold text-blue-600">.KML / .KMZ (Google Earth)</span>, <span className="font-semibold text-emerald-600">.GeoJSON</span>, <span className="font-semibold text-teal-600">.GPX</span>, <span className="font-semibold text-orange-600">.CSV</span> หรือ <span className="font-semibold text-purple-600">Shapefile (.zip ที่มี .shp .dbf .prj)</span>
                     </p>
                   </>
                 )}
@@ -435,138 +480,386 @@ export default function DataCenterImportModal({ tenant, profile, onClose, onImpo
                   <Layers size={15} className="text-blue-500" /> ข้อแนะนำโครงสร้างไฟล์
                 </p>
                 <ul className="list-disc pl-4 space-y-1 text-slate-600 leading-relaxed">
-                  <li><strong>Google Earth (KML/KMZ)</strong>: ระบบจะอ่านชื่อสถานที่ (Placemark Name), รายละเอียด, พิกัดจุด (Point) และเส้นทาง (Polyline) โดยอัตโนมัติ</li>
-                  <li><strong>GeoJSON (.geojson)</strong>: รองรับ FeatureCollection แบบ Point และ LineString</li>
-                  <li><strong>CSV File (.csv)</strong>: ต้องมีหัวตารางระบุ <code>name</code> (ชื่อ), <code>lat</code> (ละติจูด), <code>lng</code> (ลองจิจูด)</li>
+                  <li>
+                    <strong>จัดโฟลเดอร์ใน Google Earth 2 ชั้น ระบบจัดหมวดให้เอง</strong>: โฟลเดอร์ชั้นบนสุด = กลุ่มหลัก, โฟลเดอร์ในสุด = ประเภทย่อย
+                    <div className="mt-1 font-mono text-[11px] bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 leading-relaxed">
+                      📁 สาธารณสุข<br />
+                      &nbsp;&nbsp;└ 📁 รพ.สต.<br />
+                      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└ 📍 จุด
+                    </div>
+                  </li>
+                  <li>โฟลเดอร์ชั้นเดียว = ประเภทย่อย (ถ้าประเภทนี้มีในระบบอยู่แล้ว ระบบเติมกลุ่มให้) · ไม่มีโฟลเดอร์ = ใช้ค่าเริ่มต้นที่กำหนดในขั้นถัดไป</li>
+                  <li>ระบบอ่านจุด (Point) เส้น (LineString / gx:Track) และพื้นที่ (Polygon) พร้อมสีของเส้น — พื้นที่แสดงบนแผนที่เป็นเส้นขอบเขต</li>
+                  <li>ข้ามภาพซ้อน (GroundOverlay), โมเดล 3 มิติ และ NetworkLink โดยบอกจำนวนที่ข้ามให้ทราบ · รับเฉพาะพิกัดในประเทศไทย</li>
+                  <li><strong>CSV</strong>: หัวตารางต้องมี <code>name</code> (ชื่อ), <code>lat</code> (ละติจูด), <code>lng</code> (ลองจิจูด) · ใช้คอลัมน์ <code>group</code> (กลุ่ม) และ <code>category</code> (ประเภท) จัดหมวดได้</li>
+                  <li><strong>Shapefile</strong>: บีบ .shp + .dbf + .prj เป็นไฟล์ .zip ไฟล์เดียว (ต้องมี .prj เพื่อแปลงเป็นพิกัด GPS)</li>
                 </ul>
               </div>
             </div>
           )}
 
           {/* Success screen */}
-          {importSuccessCount !== null && (
-            <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center animate-bounce">
-                <CheckCircle2 size={36} />
+          {successRows !== null && (
+            <div className="space-y-4">
+              <div className="pt-4 flex flex-col items-center justify-center text-center space-y-2">
+                <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                  <CheckCircle2 size={36} />
+                </div>
+                <h3 className="text-xl font-bold text-gray-800">นำเข้าข้อมูลสำเร็จ</h3>
+                <p className="text-sm text-gray-600 max-w-sm">
+                  บันทึกเข้าศูนย์ข้อมูลดิจิทัลเรียบร้อย <span className="font-bold text-emerald-600 text-base">{insertedSoFar}</span> รายการ
+                </p>
+                {photoResult && (
+                  <p className={`text-sm max-w-sm ${photoResult.fail > 0 ? 'text-amber-700' : 'text-gray-600'}`}>
+                    อัปโหลดรูปสำเร็จ {photoResult.ok} รูป · ไม่สำเร็จ {photoResult.fail} รูป
+                    {photoResult.fail > 0 && (
+                      <span className="block text-xs mt-0.5">รูปที่ไม่สำเร็จ เพิ่มเองได้ที่ปุ่มแก้ไขรายการ</span>
+                    )}
+                  </p>
+                )}
               </div>
-              <h3 className="text-xl font-bold text-gray-800">นำเข้าข้อมูลสำเร็จ!</h3>
-              <p className="text-sm text-gray-600 max-w-sm">
-                บันทึกพิกัดสถานที่เข้าสู่ระบบศูนย์ข้อมูลดิจิทัลเรียบร้อยจำนวน <span className="font-bold text-emerald-600 text-base">{importSuccessCount}</span> รายการ
-              </p>
+              <div className="border border-gray-200 rounded-2xl overflow-hidden">
+                <div className="px-3.5 py-2 bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-700">สรุปตามกลุ่ม › ประเภท (รอบนี้)</div>
+                <div className="divide-y divide-gray-100 max-h-[40vh] overflow-y-auto">
+                  {successRows.map(r => (
+                    <div key={`${r.group}|${r.category}`} className="px-3.5 py-2 flex items-center justify-between gap-3 text-xs">
+                      <span className="min-w-0 truncate text-gray-800">{r.group} › {r.category}</span>
+                      <span className="shrink-0 font-bold text-emerald-700">{r.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
-          {/* Step 2: Preview & Configuration */}
-          {parsedItems.length > 0 && importSuccessCount === null && (
+          {/* Step 2: ตรวจตารางจับคู่ */}
+          {showTable && (
             <div className="space-y-4">
-              
-              {/* Top Configuration */}
-              <div className="bg-blue-50/70 border border-blue-100 rounded-2xl p-3.5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
-                    <Filter size={14} className="text-blue-600" /> กำหนดกลุ่ม/หมวดหมู่เริ่มต้น (กรณีในไฟล์ไม่ได้ระบุ)
-                  </span>
-                  <span className="text-[11px] font-semibold text-blue-700 bg-white px-2.5 py-1 rounded-full border border-blue-200">
-                    พบทั้งหมด {parsedItems.length} รายการ
-                  </span>
-                </div>
 
+              {/* a) แถบสรุป */}
+              <div className="bg-blue-50/70 border border-blue-100 rounded-2xl p-3.5 space-y-1.5 text-xs">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="font-bold text-blue-900">พบ {stats.point} จุด / {stats.line} เส้น / {stats.polygon} พื้นที่</span>
+                  <span className="text-[11px] text-blue-700 break-all">{file?.name}</span>
+                </div>
+                {(Object.values(result.skipped).some(Boolean)) && (
+                  <p className="text-gray-600">
+                    ข้าม: ภาพซ้อน {result.skipped.overlay}, โมเดล {result.skipped.model}, NetworkLink {result.skipped.networkLink},
+                    พิกัดผิด {result.skipped.invalidCoord}, นอกประเทศไทย {result.skipped.outsideThailand}
+                    {result.skipped.empty > 0 && `, ไม่มีพิกัด ${result.skipped.empty}`}
+                  </p>
+                )}
+                {(result.photos.total + result.photos.remote + result.photos.missing + result.photos.overLimit) > 0 && (
+                  <p className="text-gray-600">
+                    รูปที่แนบในไฟล์: อ่านได้ {result.photos.total} รูป
+                    {result.photos.remote > 0 && ` · รูปภายนอก ${result.photos.remote} รูป (ข้าม)`}
+                    {result.photos.missing > 0 && ` · หาไม่เจอในไฟล์ ${result.photos.missing} รูป (ข้าม)`}
+                    {result.photos.overLimit > 0 && ` · เกิน 5 รูปต่อจุด ${result.photos.overLimit} รูป (ข้าม)`}
+                  </p>
+                )}
+                <p className="text-gray-600 flex items-center gap-1.5">
+                  <Copy size={12} className="shrink-0" />
+                  ซ้ำกับของเดิม {stats.duplicate} รายการ{stats.duplicate > 0 && ' (ไม่ติ๊กนำเข้าไว้ให้ก่อน)'}
+                </p>
+                {dupNotice && (
+                  <p className="text-amber-700 flex items-start gap-1.5"><AlertCircle size={12} className="shrink-0 mt-0.5" />{dupNotice}</p>
+                )}
+                {result.warnings.map(w => (
+                  <p key={w} className="text-amber-700 flex items-start gap-1.5"><AlertCircle size={12} className="shrink-0 mt-0.5" />{w}</p>
+                ))}
+              </div>
+
+              {/* b) ค่าเริ่มต้นของไฟล์ */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2.5">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Filter size={14} className="text-blue-600" /> ค่าเริ่มต้นของไฟล์ (ใช้เฉพาะรายการที่ไม่มีโฟลเดอร์/ข้อมูลหมวดในไฟล์)
+                </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[11px] font-semibold text-gray-600 mb-1 block">กลุ่มหลัก *</label>
+                    <label className="text-[11px] font-semibold text-gray-600 mb-1 block">กลุ่มหลัก</label>
                     <input
                       type="text"
-                      list="import-seed-groups"
-                      value={defaultGroup}
-                      onChange={e => setDefaultGroup(e.target.value)}
+                      list="import-default-groups"
+                      value={defaults.group}
+                      onChange={e => setDefaults(d => ({ ...d, group: e.target.value }))}
                       placeholder="เช่น โครงสร้างพื้นฐาน, สาธารณสุข"
-                      className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium text-gray-800 focus:ring-2 focus:ring-blue-200 focus:outline-none"
+                      className={inputCls}
                     />
-                    <datalist id="import-seed-groups">
-                      {SEED_GROUPS.map(g => <option key={g} value={g} />)}
+                    <datalist id="import-default-groups">
+                      {catalog.groupOptions.map(g => <option key={g.value} value={g.value} />)}
                     </datalist>
                   </div>
                   <div>
-                    <label className="text-[11px] font-semibold text-gray-600 mb-1 block">ประเภทย่อย *</label>
+                    <label className="text-[11px] font-semibold text-gray-600 mb-1 block">ประเภทย่อย</label>
                     <input
                       type="text"
-                      value={defaultCategory}
-                      onChange={e => setDefaultCategory(e.target.value)}
+                      value={defaults.category}
+                      onChange={e => setDefaults(d => ({ ...d, category: e.target.value }))}
                       placeholder="เช่น เสาไฟส่องสว่าง, จุดทิ้งขยะ"
-                      className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium text-gray-800 focus:ring-2 focus:ring-blue-200 focus:outline-none"
+                      className={inputCls}
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Items List Preview */}
+              {/* c) ตารางจับคู่รายโฟลเดอร์ */}
               <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white">
-                <div className="px-3.5 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedCount === parsedItems.length}
-                      onChange={e => toggleSelectAll(e.target.checked)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
-                    />
-                    <span className="font-bold text-gray-700">เลือกทั้งหมด ({selectedCount}/{parsedItems.length})</span>
-                  </div>
+                <div className="px-3.5 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between text-xs gap-2">
+                  <span className="font-bold text-gray-700">
+                    ตรวจการจับคู่หมวด ({folders.length} โฟลเดอร์ · เลือกนำเข้า {selectedCount}/{items.length} รายการ)
+                  </span>
                   <button
-                    onClick={() => { setParsedItems([]); setFile(null); }}
-                    className="text-gray-400 hover:text-red-600 font-medium transition-colors flex items-center gap-1"
+                    onClick={reset}
+                    disabled={importing}
+                    className="shrink-0 text-gray-400 hover:text-red-600 font-medium transition-colors flex items-center gap-1"
                   >
                     <Trash2 size={13} /> เปลี่ยนไฟล์
                   </button>
                 </div>
 
-                <div className="divide-y divide-gray-100 max-h-[300px] overflow-y-auto">
-                  {parsedItems.map(item => (
-                    <div key={item.id} className={`p-3 flex items-start gap-3 hover:bg-slate-50 transition-colors ${!item.selected ? 'opacity-40 bg-gray-50' : ''}`}>
+                <div className="hidden sm:grid grid-cols-12 gap-3 px-3.5 py-2 text-[11px] font-bold text-gray-500 border-b border-gray-100 bg-white">
+                  <div className="col-span-4">โฟลเดอร์ในไฟล์</div>
+                  <div className="col-span-3">กลุ่มหลัก</div>
+                  <div className="col-span-3">ประเภทย่อย</div>
+                  <div className="col-span-2">สถานะหมวด</div>
+                </div>
+
+                <div className="divide-y divide-gray-100 max-h-[46vh] overflow-y-auto">
+                  {rows.map((r, idx) => {
+                    const f = r.folder
+                    const chosen = f.itemKeys.filter(k => selected[k]).length
+                    const allOn = chosen === f.itemKeys.length
+                    const open = !!expanded[f.key]
+                    const groupEntry = catalog.groups.find(g => g.value === r.resolved.group)
+                    const catOptions = groupEntry
+                      ? groupEntry.categories
+                      : mergeOptions(...catalog.groups.map(g => g.categories))
+                    const listId = `import-cat-${idx}`
+                    const shownKeys = open ? f.itemKeys.slice(0, MAX_ROWS_SHOWN) : []
+                    return (
+                      <div key={f.key} className={chosen === 0 ? 'bg-gray-50/70' : ''}>
+                        <div className="p-3 sm:px-3.5 grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-3 sm:items-center">
+                          <div className="sm:col-span-4 flex items-start gap-2 min-w-0">
+                            <input
+                              type="checkbox"
+                              ref={el => { if (el) el.indeterminate = chosen > 0 && !allOn }}
+                              checked={allOn}
+                              onChange={e => toggleFolder(f, e.target.checked)}
+                              aria-label={`นำเข้าทั้งโฟลเดอร์ ${f.key}`}
+                              className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer shrink-0"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setExpanded(prev => ({ ...prev, [f.key]: !prev[f.key] }))}
+                              className="min-w-0 text-left flex-1"
+                            >
+                              <span className="flex items-center gap-1 text-xs font-bold text-gray-900">
+                                {open ? <ChevronDown size={14} className="shrink-0 text-gray-400" /> : <ChevronRight size={14} className="shrink-0 text-gray-400" />}
+                                <span className="break-words min-w-0">{f.key}</span>
+                              </span>
+                              <span className="block text-[11px] text-gray-500 pl-5">
+                                {countsText(f.counts)} · เลือก {chosen}/{f.itemKeys.length}
+                              </span>
+                            </button>
+                          </div>
+
+                          <div className="sm:col-span-3">
+                            <label className="sm:hidden text-[11px] font-semibold text-gray-500 mb-0.5 block">กลุ่มหลัก</label>
+                            <input
+                              type="text"
+                              list="import-row-groups"
+                              value={r.groupText}
+                              onChange={e => setOverride(f.key, { group: e.target.value })}
+                              placeholder="กลุ่มหลัก"
+                              className={`${inputCls} ${!r.resolved.group && chosen > 0 ? 'border-red-300 bg-red-50' : ''}`}
+                            />
+                          </div>
+                          <div className="sm:col-span-3">
+                            <label className="sm:hidden text-[11px] font-semibold text-gray-500 mb-0.5 block">ประเภทย่อย</label>
+                            <input
+                              type="text"
+                              list={listId}
+                              value={r.categoryText}
+                              onChange={e => setOverride(f.key, { category: e.target.value })}
+                              placeholder="ประเภทย่อย"
+                              className={`${inputCls} ${!r.resolved.category && chosen > 0 ? 'border-red-300 bg-red-50' : ''}`}
+                            />
+                            <datalist id={listId}>
+                              {catOptions.map(c => <option key={c.value} value={c.value} />)}
+                            </datalist>
+                          </div>
+                          <div className="sm:col-span-2 flex flex-wrap gap-1">
+                            {r.resolved.groupIsNew && r.resolved.group && (
+                              <span className="text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-md">กลุ่มใหม่</span>
+                            )}
+                            {r.resolved.categoryIsNew && r.resolved.category && (
+                              <span className="text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-md">
+                                {r.resolved.groupIsNew ? 'หมวดใหม่' : 'ประเภทใหม่'}
+                              </span>
+                            )}
+                            {r.resolved.group && r.resolved.category && !r.resolved.isNew && (
+                              <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md">ตรงของเดิม</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {open && (
+                          <div className="bg-slate-50/60 border-t border-gray-100 divide-y divide-gray-100">
+                            {shownKeys.map(k => {
+                              const it = items.find(x => x.key === k)
+                              return (
+                                <label key={k} className={`pl-9 pr-3.5 py-2 flex items-start gap-2.5 cursor-pointer hover:bg-white ${!selected[k] ? 'opacity-50' : ''}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={!!selected[k]}
+                                    onChange={() => toggleItem(k)}
+                                    className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer shrink-0"
+                                  />
+                                  <span className="min-w-0 flex-1">
+                                    <span className="flex flex-wrap items-center gap-1.5">
+                                      <span className="font-semibold text-xs text-gray-900 break-words">{it.name}</span>
+                                      <ShapeBadge item={it} />
+                                      {it.photoRefs?.length > 0 && (
+                                        <span className="shrink-0 text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200 px-1.5 py-0.5 rounded-md">📷 {it.photoRefs.length}</span>
+                                      )}
+                                      {it.duplicate && (
+                                        <span className="shrink-0 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-md">มีอยู่แล้ว</span>
+                                      )}
+                                    </span>
+                                    <span className="block text-[10px] text-gray-400 mt-0.5">
+                                      {it.latitude.toFixed(6)}, {it.longitude.toFixed(6)}
+                                    </span>
+                                  </span>
+                                </label>
+                              )
+                            })}
+                            {f.itemKeys.length > MAX_ROWS_SHOWN && (
+                              <p className="pl-9 pr-3.5 py-2 text-[11px] text-gray-500">
+                                แสดง {MAX_ROWS_SHOWN} จาก {f.itemKeys.length} รายการ — ติ๊กที่โฟลเดอร์เพื่อเลือก/ไม่เลือกทั้งหมด
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+                <datalist id="import-row-groups">
+                  {catalog.groupOptions.map(g => <option key={g.value} value={g.value} />)}
+                </datalist>
+              </div>
+
+              {/* d) PDPA */}
+              <div className="border border-amber-300 bg-amber-50 rounded-2xl p-3.5 space-y-3 text-xs">
+                <p className="font-bold text-amber-900 flex items-start gap-1.5">
+                  <ShieldAlert size={15} className="shrink-0 mt-0.5" />
+                  ข้อมูลที่นำเข้าจะแสดงบนแผนที่สาธารณะทันที ห้ามนำเข้าชื่อ-เบอร์โทร-เลขบัตรของประชาชน
+                </p>
+
+                {hasColumns && (
+                  <div className="space-y-1.5">
+                    <p className="font-semibold text-amber-900">คอลัมน์ข้อมูลในไฟล์ — ติ๊กเฉพาะที่ต้องการเก็บลงรายละเอียดของรายการ</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                      {result.columns.map(col => {
+                        const personal = looksPersonalColumn(col)
+                        return (
+                          <label key={col} className="flex items-center gap-2 cursor-pointer min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={keptColumns.includes(col)}
+                              onChange={() => toggleColumn(col)}
+                              className="rounded border-amber-400 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer shrink-0"
+                            />
+                            <span className="min-w-0 break-words text-gray-800">{col}</span>
+                            {personal && (
+                              <span className="shrink-0 text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-md">อาจเป็นข้อมูลส่วนบุคคล</span>
+                            )}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {photoTotal > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="flex items-start gap-2 cursor-pointer text-amber-900 font-semibold">
                       <input
                         type="checkbox"
-                        checked={item.selected}
-                        onChange={() => toggleSelectItem(item.id)}
-                        className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer shrink-0"
+                        checked={importPhotos}
+                        onChange={e => setImportPhotos(e.target.checked)}
+                        disabled={importing}
+                        className="mt-0.5 rounded border-amber-400 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer shrink-0"
                       />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-bold text-xs text-gray-900 truncate">{item.name}</p>
-                          {item.route_points ? (
-                            <span className="shrink-0 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
-                              <Route size={10} /> เส้นทาง ({item.route_points.length} จุด)
-                            </span>
-                          ) : (
-                            <span className="shrink-0 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
-                              <MapPin size={10} /> จุดพิกัด
-                            </span>
-                          )}
-                        </div>
+                      <span>นำเข้ารูปที่แนบในไฟล์ด้วย ({photoTotal} รูป{importPhotos ? ` · รอบนี้ติ๊กไว้ ${selectedPhotoCount} รูป` : ''})</span>
+                    </label>
+                    <p className="pl-6 text-amber-800 flex items-start gap-1.5">
+                      <ShieldAlert size={13} className="shrink-0 mt-0.5" />
+                      รูปจะขึ้นแผนที่สาธารณะ ตรวจก่อนว่าไม่มีหน้าคน ทะเบียนรถ หรือเอกสารส่วนตัว
+                    </p>
+                    {(result.photos.remote + result.photos.missing + result.photos.overLimit) > 0 && (
+                      <p className="pl-6 text-amber-800">
+                        ข้ามแล้ว: รูปภายนอก {result.photos.remote} · หาไม่เจอในไฟล์ {result.photos.missing} · เกิน 5 รูปต่อจุด {result.photos.overLimit}
+                      </p>
+                    )}
+                    {overPhotoLimit && (
+                      <p className="pl-6 text-red-600 font-semibold flex items-start gap-1.5">
+                        <AlertCircle size={13} className="shrink-0 mt-0.5" />
+                        รูปที่เลือกมี {selectedPhotoCount} รูป เกินครั้งละ {MAX_PHOTOS_PER_IMPORT} รูป — เอาติ๊กบางโฟลเดอร์ออกแล้วนำเข้าเป็นรอบ
+                      </p>
+                    )}
+                  </div>
+                )}
 
-                        {item.description && (
-                          <p className="text-[11px] text-gray-500 truncate mt-0.5">{item.description}</p>
-                        )}
-
-                        <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-400">
-                          <span>Lat: {item.latitude.toFixed(6)}, Lng: {item.longitude.toFixed(6)}</span>
-                          {item.group_name && <span className="bg-gray-100 text-gray-600 px-1.5 py-0.2 rounded">กลุ่ม: {item.group_name}</span>}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <label className="flex items-start gap-2 cursor-pointer text-amber-900 font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={pdpaConfirmed}
+                    onChange={e => setPdpaConfirmed(e.target.checked)}
+                    className="mt-0.5 rounded border-amber-400 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer shrink-0"
+                  />
+                  <span>ข้าพเจ้าตรวจแล้วว่าข้อมูลที่จะนำเข้าไม่มีข้อมูลส่วนบุคคลของประชาชน</span>
+                </label>
               </div>
+
+              {importError && (
+                <div className="flex items-start gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">
+                      {importError.inserted > 0
+                        ? `นำเข้าสำเร็จไปแล้ว ${importError.inserted} จาก ${importError.total} รายการ แล้วหยุดกลางทาง`
+                        : 'นำเข้าไม่สำเร็จ ยังไม่มีรายการใดถูกบันทึก'}
+                    </p>
+                    <p className="mt-0.5 break-words">สาเหตุ: {importError.message}</p>
+                    {importError.inserted > 0 && (
+                      <p className="mt-0.5">รายการที่บันทึกแล้วถูกเอาออกจากรายการที่ติ๊ก — กดนำเข้าอีกครั้งจะทำต่อเฉพาะรายการที่เหลือ ไม่บันทึกซ้ำ</p>
+                    )}
+                    {importError.photosPending > 0 && (
+                      <p className="mt-0.5 font-semibold">รายการที่บันทึกไปแล้วยังไม่ได้รับรูป ({importError.photosPending} รูป) เพราะการนำเข้าหยุดก่อนถึงขั้นอัปโหลดรูป — เพิ่มรูปเองได้ที่ปุ่มแก้ไขรายการ</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {missingFolders.length > 0 && (
+                <p className="text-[11px] text-red-600 flex items-start gap-1.5">
+                  <AlertCircle size={12} className="shrink-0 mt-0.5" />
+                  ยังไม่มีกลุ่ม/ประเภทในโฟลเดอร์: {missingFolders.map(r => r.folder.key).join(', ')} — กรอกให้ครบหรือเอาติ๊กออก
+                </p>
+              )}
 
               {/* Progress bar during upload */}
               {importing && (
                 <div className="space-y-1.5 bg-blue-50 p-3 rounded-xl border border-blue-200">
                   <div className="flex justify-between text-xs font-bold text-blue-900">
-                    <span>กำลังบันทึกข้อมูลเข้าสู่ฐานข้อมูล...</span>
-                    <span>{progress}%</span>
+                    <span>{photoProgress ? `กำลังอัปโหลดรูป ${photoProgress.done}/${photoProgress.total} (อย่าปิดหน้านี้)` : 'กำลังบันทึกข้อมูลเข้าสู่ฐานข้อมูล...'}</span>
+                    <span>{photoProgress ? `${Math.round((photoProgress.done / Math.max(photoProgress.total, 1)) * 100)}%` : `${progress}%`}</span>
                   </div>
                   <div className="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
                     <div
                       className="bg-blue-600 h-full transition-all duration-300 rounded-full"
-                      style={{ width: `${progress}%` }}
+                      style={{ width: `${photoProgress ? Math.round((photoProgress.done / Math.max(photoProgress.total, 1)) * 100) : progress}%` }}
                     />
                   </div>
                 </div>
@@ -578,30 +871,48 @@ export default function DataCenterImportModal({ tenant, profile, onClose, onImpo
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between shrink-0">
-          <button
-            onClick={onClose}
-            disabled={importing}
-            className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-100 transition-colors"
-          >
-            ยกเลิก
-          </button>
+        <div className="px-4 sm:px-5 py-3.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between gap-2 shrink-0">
+          {successRows === null ? (
+            <button
+              onClick={handleClose}
+              disabled={importing}
+              className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-100 transition-colors"
+            >
+              ยกเลิก
+            </button>
+          ) : <span />}
 
-          {parsedItems.length > 0 && importSuccessCount === null && (
+          {showTable && (
             <button
               onClick={executeBatchImport}
-              disabled={importing || selectedCount === 0 || !defaultGroup.trim() || !defaultCategory.trim()}
-              className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white text-xs font-bold shadow-md shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-2"
+              disabled={importing || selectedCount === 0 || selectedCount > MAX_IMPORT_ITEMS || overPhotoLimit || !pdpaConfirmed || missingFolders.length > 0}
+              title={selectedCount > MAX_IMPORT_ITEMS
+                ? `นำเข้าได้ครั้งละไม่เกิน ${MAX_IMPORT_ITEMS.toLocaleString('th-TH')} รายการ — เอาติ๊กบางโฟลเดอร์ออกแล้วนำเข้าเป็นรอบ`
+                : overPhotoLimit ? `นำเข้ารูปได้ครั้งละไม่เกิน ${MAX_PHOTOS_PER_IMPORT} รูป — เอาติ๊กบางโฟลเดอร์ออกแล้วนำเข้าเป็นรอบ` : undefined}
+              className="px-4 sm:px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white text-xs font-bold shadow-md shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-2"
             >
               {importing ? (
                 <>
-                  <Loader2 size={14} className="animate-spin" /> กำลังนำเข้า ({progress}%)
+                  <Loader2 size={14} className="animate-spin" /> {photoProgress ? `กำลังอัปโหลดรูป ${photoProgress.done}/${photoProgress.total}` : `กำลังนำเข้า (${progress}%)`}
                 </>
               ) : (
                 <>
-                  <Upload size={14} /> นำเข้า {selectedCount} รายการที่เลือก
+                  <Upload size={14} /> {selectedCount > MAX_IMPORT_ITEMS
+                    ? `เกิน ${MAX_IMPORT_ITEMS.toLocaleString('th-TH')} รายการ — แบ่งนำเข้าเป็นรอบ`
+                    : overPhotoLimit
+                      ? `รูปเกิน ${MAX_PHOTOS_PER_IMPORT} รูป — แบ่งนำเข้าเป็นรอบ`
+                      : `นำเข้า ${selectedCount} รายการที่เลือก`}
                 </>
               )}
+            </button>
+          )}
+
+          {successRows !== null && (
+            <button
+              onClick={() => onImportComplete?.()}
+              className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-500/20 active:scale-95 transition-all"
+            >
+              เสร็จ
             </button>
           )}
         </div>

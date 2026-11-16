@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+<Document>
+  <name>ไฟล์ทดสอบสมมติ</name>
+  <Style id="lineRed"><LineStyle><color>ff0000ff</color><width>3</width></LineStyle></Style>
+  <Style id="polyGreen"><LineStyle><color>ff00ff00</color></LineStyle><PolyStyle><color>7f00ff00</color></PolyStyle></Style>
+  <StyleMap id="mapBlue">
+    <Pair><key>normal</key><styleUrl>#lineBlueNormal</styleUrl></Pair>
+    <Pair><key>highlight</key><styleUrl>#lineRed</styleUrl></Pair>
+  </StyleMap>
+  <Style id="lineBlueNormal"><LineStyle><color>ffff0000</color></LineStyle></Style>
+
+  <Folder>
+    <name>สาธารณสุข</name>
+    <Folder>
+      <name>รพ.สต.</name>
+      <Placemark>
+        <name>รพ.สต.บ้านตัวอย่าง</name>
+        <description><![CDATA[<b>สถานที่</b><br/>เปิด 08.00-16.00<p>โทรสาร: -</p><table><tr><td>ชื่อ</td><td>ค่า</td></tr></table><img src="x.png"/>&amp; ครบ]]></description>
+        <ExtendedData>
+          <Data name="เจ้าของ"><value>นายสมมติ ใจดี</value></Data>
+          <Data name="จำนวนเตียง"><value>10</value></Data>
+        </ExtendedData>
+        <Point><coordinates>100.5,18.1,0</coordinates></Point>
+      </Placemark>
+      <Placemark>
+        <name>Untitled Placemark</name>
+        <Point><coordinates>100.51,18.11,0</coordinates></Point>
+      </Placemark>
+      <Placemark>
+        <name></name>
+        <Point><coordinates>100.52,18.12,0</coordinates></Point>
+      </Placemark>
+    </Folder>
+  </Folder>
+
+  <Folder>
+    <name>เส้นทาง</name>
+    <Placemark>
+      <name>ถนนสายทดสอบ</name>
+      <styleUrl>#mapBlue</styleUrl>
+      <LineString><coordinates>100.50,18.10,0 100.51,18.10,0 100.52,18.11,0</coordinates></LineString>
+    </Placemark>
+    <Placemark>
+      <name>ลำเหมืองทดสอบ</name>
+      <Style><LineStyle><color>ff0000ff</color></LineStyle></Style>
+      <LineString><coordinates>100.50,18.20 100.51,18.21</coordinates></LineString>
+    </Placemark>
+    <Placemark>
+      <name>เส้นทางจาก GPS</name>
+      <gx:Track>
+        <when>2026-01-01T00:00:00Z</when><when>2026-01-01T00:01:00Z</when>
+        <gx:coord>100.60 18.30 0</gx:coord>
+        <gx:coord>100.61 18.31 0</gx:coord>
+      </gx:Track>
+    </Placemark>
+  </Folder>
+
+  <Folder>
+    <name>พื้นที่</name>
+    <Placemark>
+      <name>แปลงทดสอบ</name>
+      <styleUrl>#polyGreen</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        100.00,18.00,0 100.02,18.00,0 100.02,18.02,0 100.00,18.02,0
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+    <Placemark>
+      <name>จุดรวมหลายส่วน</name>
+      <MultiGeometry>
+        <Point><coordinates>100.30,18.40</coordinates></Point>
+        <Point><coordinates>100.31,18.41</coordinates></Point>
+      </MultiGeometry>
+    </Placemark>
+    <Placemark>
+      <name>Untitled Polygon</name>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        100.40,18.50 100.41,18.50 100.41,18.51 100.40,18.51 100.40,18.50
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+  </Folder>
+
+  <Folder>
+    <name>ข้ามให้ได้</name>
+    <GroundOverlay><name>ภาพซ้อน</name><Icon><href>x.png</href></Icon></GroundOverlay>
+    <NetworkLink><name>ลิงก์สด</name><Link><href>http://example.invalid/a.kml</href></Link></NetworkLink>
+    <Placemark>
+      <name>โมเดล 3 มิติ</name>
+      <Model><Location><longitude>100.5</longitude><latitude>18.1</latitude></Location></Model>
+    </Placemark>
+    <Placemark><name>ไม่มีรูปทรง</name></Placemark>
+    <Placemark>
+      <name>จุดนอกประเทศ</name>
+      <Point><coordinates>139.69,35.68,0</coordinates></Point>
+    </Placemark>
+    <Placemark>
+      <name>จุดพิกัดเพี้ยน</name>
+      <Point><coordinates>500000,1900000,0</coordinates></Point>
+    </Placemark>
+  </Folder>
+
+  <Placemark>
+    <name>จุดนอกโฟลเดอร์</name>
+    <Point><coordinates>100.70,18.60,0</coordinates></Point>
+  </Placemark>
+</Document>
+</kml>
