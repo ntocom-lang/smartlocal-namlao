@@ -55,10 +55,21 @@ function ShapeBadge({ item }) {
 }
 
 // ── ชุดที่นำเข้า / ยกเลิกทั้งชุด (เฟส 2) ─────────────────────────────────────────
-// ยกเลิกได้เฉพาะ 3 role นี้ (ฐานข้อมูลตรวจซ้ำอีกชั้น: หัวหน้ากองยกเลิกได้เฉพาะชุดที่ทุกแถวเป็นของกองตัวเอง)
-// staff/technician เห็นรายการชุดได้แต่ไม่มีปุ่มยกเลิก
+// ยกเลิกได้ทุกชุด: 3 role นี้ (ฐานข้อมูลตรวจซ้ำอีกชั้น: หัวหน้ากองยกเลิกได้เฉพาะชุดที่ทุกแถวเป็นของกองตัวเอง)
+// staff/technician (เฟส 3): เฉพาะชุดที่ตัวเองนำเข้าไม่เกิน 7 วัน — นโยบาย DELETE ตรวจซ้ำทุกแถว
+//   (เจ้าของแถว + ไม่เกิน 7 วัน + ไม่มีผู้อื่นกดยืนยัน) ปุ่มที่นี่เดาจากผู้นำเข้า/เวลาเท่านั้น เซิร์ฟเวอร์ปฏิเสธพร้อมข้อความเหตุเอง
 const CANCEL_ROLES = ['superadmin', 'admin', 'officer']
-const BATCH_LIST_ROLES = [...CANCEL_ROLES, 'staff', 'technician']
+const OWN_CANCEL_ROLES = ['staff', 'technician']
+const OWN_CANCEL_DAYS = 7 // ต้องตรงกับ interval '7 days' ใน 20261201100000
+const BATCH_LIST_ROLES = [...CANCEL_ROLES, ...OWN_CANCEL_ROLES]
+
+// ปุ่มยกเลิกของชุด b (แถวจาก data_center_import_batches) — null profile = ไม่มีปุ่ม
+function canCancelBatchFor(profile, b) {
+  if (CANCEL_ROLES.includes(profile?.role)) return true
+  if (!OWN_CANCEL_ROLES.includes(profile?.role) || !profile?.id || b?.created_by !== profile.id) return false
+  const at = Date.parse(b.imported_at)
+  return Number.isFinite(at) && Date.now() - at < OWN_CANCEL_DAYS * 86400000
+}
 
 // RPC ยังไม่มีในฐาน (ก่อนรัน SQL เฟส 2) — PostgREST ตอบ PGRST202 / Postgres ตอบ 42883 → ซ่อนส่วนนี้เงียบๆ ไม่ขึ้น error แดง
 function isMissingRpc(err) {
@@ -92,7 +103,8 @@ async function cancelImportBatch(batchId) {
 }
 
 // รายการชุดที่นำเข้าล่าสุด (พับไว้ก่อน) — ไม่ขึ้นเลยถ้า RPC ยังไม่มี หรือยังไม่เคยนำเข้า
-function ImportBatchesPanel({ tenant, canCancel, onChanged }) {
+function ImportBatchesPanel({ tenant, profile, onChanged }) {
+  const canCancelAll = CANCEL_ROLES.includes(profile?.role)
   const [rows, setRows] = useState(null) // null = ยังโหลดไม่เสร็จ
   const [unavailable, setUnavailable] = useState(false)
   const [loadError, setLoadError] = useState(null)
@@ -173,8 +185,10 @@ function ImportBatchesPanel({ tenant, canCancel, onChanged }) {
               <span className="break-words">{msg.text}</span>
             </p>
           )}
-          {!canCancel && (rows?.length ?? 0) > 0 && (
-            <p className="px-3.5 py-2 text-[11px] text-gray-500">ต้องการยกเลิกชุดที่นำเข้า ให้หัวหน้ากองหรือผู้ดูแลระบบยกเลิกให้</p>
+          {!canCancelAll && (rows?.length ?? 0) > 0 && (
+            <p className="px-3.5 py-2 text-[11px] text-gray-500">
+              ยกเลิกเองได้เฉพาะชุดที่คุณนำเข้าภายใน {OWN_CANCEL_DAYS} วัน และยังไม่มีผู้อื่นกดยืนยันข้อมูล ชุดอื่นให้หัวหน้ากองหรือผู้ดูแลระบบยกเลิกให้
+            </p>
           )}
           {(rows ?? []).map(b => {
             const who = (b.created_by && names?.get(b.created_by)) || 'เจ้าหน้าที่'
@@ -193,7 +207,7 @@ function ImportBatchesPanel({ tenant, canCancel, onChanged }) {
                     <p className="text-[11px] text-gray-400 truncate">เช่น {sample.join(' · ')}</p>
                   )}
                 </div>
-                {canCancel && (
+                {canCancelBatchFor(profile, b) && (
                   <button
                     type="button"
                     onClick={() => handleCancel(b)}
@@ -249,7 +263,8 @@ export default function DataCenterImportModal({ tenant, profile, summary, onClos
   const [cancelResult, setCancelResult] = useState(null) // { ok, text } ผลการยกเลิกจากหน้าผลสำเร็จ
   const [listChanged, setListChanged] = useState(false) // ยกเลิกชุดจากรายการแล้ว → ตอนปิดโมดัลต้องรีเฟรชแผนที่/รายการ
 
-  const canCancelBatch = CANCEL_ROLES.includes(profile?.role)
+  // ชุดที่เพิ่งนำเข้าในโมดัลนี้ = ของผู้ใช้คนนี้และเพิ่งสร้าง ⇒ staff/technician ยกเลิกได้เสมอ (เซิร์ฟเวอร์ตรวจซ้ำ)
+  const canCancelBatch = CANCEL_ROLES.includes(profile?.role) || OWN_CANCEL_ROLES.includes(profile?.role)
   const canListBatches = BATCH_LIST_ROLES.includes(profile?.role)
 
   const items = useMemo(() => result?.items ?? [], [result])
@@ -692,7 +707,7 @@ export default function DataCenterImportModal({ tenant, profile, summary, onClos
               </div>
 
               {canListBatches && (
-                <ImportBatchesPanel tenant={tenant} canCancel={canCancelBatch} onChanged={() => setListChanged(true)} />
+                <ImportBatchesPanel tenant={tenant} profile={profile} onChanged={() => setListChanged(true)} />
               )}
             </div>
           )}

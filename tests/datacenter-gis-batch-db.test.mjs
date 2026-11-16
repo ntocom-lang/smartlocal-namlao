@@ -414,4 +414,255 @@ await test('ยกเลิก: แอดมินลบชุดปนกอง
 })
 
 await db.close()
+
+// ═══ เฟส 3 (20261201100000): staff/technician ยกเลิกชุดของตัวเอง + นับพื้นที่แยกจากเส้นทาง ═══════════
+// ฐานตั้งต้น = เฟส 2 ครบ + ฟังก์ชันนับยอด 3 ตัวรุ่นที่ production รันอยู่ (ตัดจากไฟล์ต้นทางจริง ให้ด่าน md5 ได้ตรวจของจริง)
+const phase3Migration = await sqlFile('../supabase/migrations/20261201100000_data_center_staff_cancel_and_area_counts.sql')
+const healthFile = await sqlFile('../supabase/migrations/20261003200100_data_center_health_and_catalog.sql')
+const prevSummary = sliceFunction(await sqlFile('../supabase/migrations/20260829100000_data_center_summary_rpc.sql'),
+  'CREATE OR REPLACE FUNCTION public.data_center_summary')
+const prevHealth = sliceFunction(healthFile, 'CREATE OR REPLACE FUNCTION public.data_center_health')
+const prevStats = sliceFunction(healthFile, 'CREATE OR REPLACE FUNCTION public.data_center_public_stats')
+
+async function phase2Db({ withColumns = true } = {}) {
+  const p = await freshDb({ withColumns })
+  // คอลัมน์ที่ production มีแต่ schema จำลองด้านบนไม่ได้ใส่ (ฟังก์ชันนับยอดอ้างถึง)
+  await p.exec(`
+    ALTER TABLE public.departments ADD COLUMN name text;
+    GRANT SELECT ON public.departments TO anon, authenticated;
+    ALTER TABLE public.data_center_entries
+      ADD COLUMN updated_at timestamptz NOT NULL DEFAULT now(),
+      ADD COLUMN verified_at timestamptz, ADD COLUMN verified_by uuid;`)
+  if (withColumns) await p.exec(rpcMigration)
+  await p.exec(prevSummary)
+  await p.exec(prevHealth)
+  await p.exec(prevStats)
+  await p.exec(`REVOKE ALL ON FUNCTION public.data_center_summary(uuid), public.data_center_health(uuid, int) FROM PUBLIC, anon;
+    GRANT EXECUTE ON FUNCTION public.data_center_summary(uuid), public.data_center_health(uuid, int) TO authenticated;
+    GRANT EXECUTE ON FUNCTION public.data_center_public_stats(uuid) TO anon, authenticated;`)
+  return p
+}
+const deletePolicy = async (p) => (await p.query(
+  `SELECT pg_get_expr(polqual, polrelid) AS q FROM pg_policy WHERE polname = 'dce admin delete own municipality'`)).rows[0].q
+
+await test('เฟส 3 ด่าน: นโยบาย DELETE บนฐานถูกแก้ไปเป็นแบบอื่น → หยุดทั้งก้อน ไม่แตะนโยบาย/ฟังก์ชัน', async () => {
+  const p = await phase2Db()
+  await p.exec(`DROP POLICY "dce admin delete own municipality" ON public.data_center_entries;
+    CREATE POLICY "dce admin delete own municipality" ON public.data_center_entries FOR DELETE TO authenticated
+      USING (public.get_my_role() IN ('superadmin', 'admin'));`)
+  const before = await deletePolicy(p)
+  await assert.rejects(() => p.exec(phase3Migration), /นโยบาย DELETE บนฐานไม่ตรงกับ 20260802071000/)
+  await p.exec('ROLLBACK')
+  assert.equal(await deletePolicy(p), before)
+  const { rows } = await p.query(`SELECT prosrc NOT LIKE '%areas%' AS untouched FROM pg_proc WHERE oid = 'public.data_center_summary(uuid)'::regprocedure`)
+  assert.equal(rows[0].untouched, true)
+  await p.close()
+})
+await test('เฟส 3 ด่าน: ฟังก์ชันนับยอดบนฐานไม่ตรงรุ่นในรีโป → หยุดทั้งก้อน', async () => {
+  const p = await phase2Db()
+  await p.exec(prevStats.replace("'groups',", "'groups_x',"))
+  await assert.rejects(() => p.exec(phase3Migration), /data_center_public_stats\(uuid\) บนฐานไม่ตรงกับรุ่นในรีโป/)
+  await p.exec('ROLLBACK')
+  assert.ok(!/staff/.test(await deletePolicy(p)), 'นโยบายต้องยังเป็นของเดิม')
+  await p.close()
+})
+await test('เฟส 3 ด่าน: ยังไม่ได้รันเฟส 2 (ไม่มี import_batch_id) → หยุด', async () => {
+  const p = await phase2Db({ withColumns: false })
+  await assert.rejects(() => p.exec(phase3Migration), /ต้องรัน 20261130100000/)
+  await p.exec('ROLLBACK')
+  await p.close()
+})
+
+const d3 = await phase2Db()
+await d3.exec(phase3Migration)
+await test('เฟส 3: รันซ้ำได้ (md5 ฟังก์ชัน 4 ตัว + นโยบายรุ่นใหม่อยู่ในรายการที่ด่านรับ)', async () => {
+  await d3.exec(phase3Migration)
+})
+await test('เฟส 3 สิทธิ์: ทุกตัว INVOKER · anon เรียกได้แค่ public_stats · grant เดิมไม่หาย', async () => {
+  const { rows } = await d3.query(`SELECT
+      bool_or(prosecdef) AS any_definer,
+      has_function_privilege('anon', 'public.data_center_summary(uuid)', 'EXECUTE') AS summary_anon,
+      has_function_privilege('anon', 'public.data_center_health(uuid,int)', 'EXECUTE') AS health_anon,
+      has_function_privilege('anon', 'public.data_center_cancel_import_batch(uuid)', 'EXECUTE') AS cancel_anon,
+      has_function_privilege('anon', 'public.data_center_public_stats(uuid)', 'EXECUTE') AS stats_anon,
+      has_function_privilege('authenticated', 'public.data_center_summary(uuid)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.data_center_health(uuid,int)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.data_center_cancel_import_batch(uuid)', 'EXECUTE') AS auth_all
+    FROM pg_proc WHERE proname IN ('data_center_summary', 'data_center_health', 'data_center_public_stats', 'data_center_cancel_import_batch')`)
+  assert.deepEqual(rows[0], { any_definer: false, summary_anon: false, health_anon: false, cancel_anon: false, stats_anon: true, auth_all: true })
+})
+
+// ── ข้อมูลเฟส 3 ── (วันที่อิง now() — เงื่อนไข 7 วันของนโยบายใช้ now() เช่นกัน)
+await d3.query(`INSERT INTO public.departments (id, municipality_id, name) VALUES ($1, $4, 'กองช่าง'), ($2, $4, 'สำนักปลัด'), ($3, $5, 'กองช่าง อื่น')`, [WORKS, OFFICE, WORKS2, T1, T2])
+await d3.query(`INSERT INTO public.profiles VALUES
+  ($1, 'admin', $11, NULL), ($2, 'admin', $12, NULL), ($3, 'superadmin', NULL, NULL),
+  ($4, 'officer', $11, $13), ($5, 'officer', $11, $14), ($6, 'staff', $11, $13), ($7, 'technician', $11, $13),
+  ($8, 'viewer', $11, NULL), ($9, 'citizen', $11, NULL), ($10, 'staff', $12, $15)`,
+[U.admin, U.adminOther, U.superadmin, U.headWorks, U.headOffice, U.staff, U.tech, U.viewer, U.citizen, U.staffOther,
+  T1, T2, WORKS, OFFICE, WORKS2])
+const S = { fresh: id(60), old: id(61), verifiedByHead: id(62), verifiedBySelf: id(63), mixedOwner: id(64), tech: id(65), head: id(66), otherMuni: id(67) }
+let seq3 = 300
+const entry3 = async ({ muni = T1, name, shape = null, route = null, batch = null, by = U.staff, dept = WORKS, daysAgo = 0, verifiedBy = null, photo = false }) => {
+  const eid = id(seq3++)
+  await d3.query(
+    `INSERT INTO public.data_center_entries (id, municipality_id, group_name, category, name, latitude, longitude,
+       route_points, shape, import_batch_id, created_by, department_id, created_at, verified_by, verified_at, photo_urls)
+     VALUES ($1, $2, 'กลุ่ม', 'ประเภท', $3, 18.005, 100.005, $4::jsonb, $5, $6, $7, $8,
+       now() - make_interval(days => $9::int), $10::uuid, CASE WHEN $10::uuid IS NULL THEN NULL ELSE now() END,
+       CASE WHEN $11::boolean THEN ARRAY['x.jpg'] ELSE '{}'::text[] END)`,
+    [eid, muni, name, route, shape, batch, by, dept, daysAgo, verifiedBy, photo])
+  return eid
+}
+const manualOwn = await entry3({ name: 'กรอกเอง' })                                  // ไม่มีเลขชุด
+await entry3({ name: 'ถนนเดิม', route: line })                                       // shape NULL = เส้น
+await entry3({ name: 'เส้นวงเดิม', route: ring })                                    // ปิดวงแต่ shape NULL = เส้น ไม่ใช่พื้นที่
+await entry3({ name: 'สด-จุด', shape: 'point', batch: S.fresh, photo: true })
+await entry3({ name: 'สด-เส้น', shape: 'line', route: line, batch: S.fresh })
+await entry3({ name: 'สด-พื้นที่', shape: 'polygon', route: ring, batch: S.fresh })
+await entry3({ name: 'สด-พื้นที่ 2', shape: 'polygon', route: ring, batch: S.fresh })
+await entry3({ name: 'เก่า 1', shape: 'point', batch: S.old, daysAgo: 8 })
+await entry3({ name: 'เก่า 2', shape: 'point', batch: S.old, daysAgo: 8 })
+await entry3({ name: 'หัวหน้ายืนยัน 1', shape: 'point', batch: S.verifiedByHead })
+await entry3({ name: 'หัวหน้ายืนยัน 2', shape: 'point', batch: S.verifiedByHead, verifiedBy: U.headWorks })
+await entry3({ name: 'ยืนยันเอง', shape: 'point', batch: S.verifiedBySelf, verifiedBy: U.staff })
+await entry3({ name: 'ปนเจ้าของ-ฉัน', shape: 'point', batch: S.mixedOwner })
+await entry3({ name: 'ปนเจ้าของ-ช่าง', shape: 'point', batch: S.mixedOwner, by: U.tech })
+await entry3({ name: 'ช่างนำเข้า', shape: 'line', route: line, batch: S.tech, by: U.tech })
+await entry3({ name: 'หัวหน้านำเข้า', shape: 'point', batch: S.head, by: U.headWorks })
+await entry3({ muni: T2, name: 'อื่น', shape: 'point', batch: S.otherMuni, by: U.staffOther, dept: WORKS2 })
+// อปท. T1: จุด 10 (กรอกเอง, สด-จุด, เก่า×2, หัวหน้ายืนยัน×2, ยืนยันเอง, ปน×2, หัวหน้านำเข้า) · เส้น 4 · พื้นที่ 2 = 16
+
+const as3 = async (alias) => {
+  await d3.exec('RESET ROLE')
+  await d3.query("SELECT set_config('request.jwt.claim.sub', $1, false)", [alias && alias !== 'anon' ? U[alias] : ''])
+  await d3.exec(`SET ROLE ${alias && alias !== 'anon' ? 'authenticated' : 'anon'}`)
+}
+const count3 = async (batch) => {
+  await d3.exec('RESET ROLE')
+  return (await d3.query('SELECT count(*)::int AS n FROM public.data_center_entries WHERE import_batch_id = $1', [batch])).rows[0].n
+}
+const cancel3 = (batch) => d3.query('SELECT public.data_center_cancel_import_batch($1) AS n', [batch])
+const STAFF_BLOCKED = /ยกเลิกเองไม่ได้ ยังไม่ลบอะไร/
+
+// ── นับพื้นที่แยกจากเส้นทาง (ก่อนลบอะไร) ──
+await test('summary: points/routes/areas แยกกัน รวมกันเท่า total · เส้นปิดวงที่ไม่มี shape ยังเป็นเส้นทาง', async () => {
+  await as3('staff')
+  const { rows } = await d3.query('SELECT public.data_center_summary($1) AS s', [T1])
+  const t = rows[0].s.totals
+  assert.deepEqual({ points: t.points, routes: t.routes, areas: t.areas, total: t.total }, { points: 10, routes: 4, areas: 2, total: 16 })
+  const g = rows[0].s.groups[0]
+  assert.equal(g.areas, 2)
+  assert.equal(g.categories[0].areas, 2)
+})
+await test('health: totals.lines/areas + items[].shape · กฎเดิมไม่เปลี่ยน (พื้นที่ไม่ติด no_photo)', async () => {
+  await as3('admin')
+  const { rows } = await d3.query('SELECT public.data_center_health($1, 365) AS h', [T1])
+  const h = rows[0].h
+  assert.deepEqual([h.totals.active, h.totals.points, h.totals.lines, h.totals.areas, h.totals.points_with_photo], [16, 10, 4, 2, 1])
+  const shapeOf = Object.fromEntries(h.items.map(i => [i.name, i.shape]))
+  assert.equal(shapeOf['สด-พื้นที่'], 'polygon')
+  assert.equal(shapeOf['เส้นวงเดิม'], 'line')
+  assert.equal(shapeOf['กรอกเอง'], 'point')
+  const area = h.items.find(i => i.name === 'สด-พื้นที่')
+  assert.ok(!area.issues.includes('no_photo') && area.is_route === true)
+})
+await test('public_stats (anon): routes ไม่รวมพื้นที่ · areas แยก', async () => {
+  await as3('anon')
+  const { rows } = await d3.query('SELECT public.data_center_public_stats($1) AS s', [T1])
+  assert.deepEqual([rows[0].s.total, rows[0].s.routes, rows[0].s.areas], [16, 4, 2])
+})
+
+// ── staff/technician ยกเลิกชุดของตัวเอง ──
+await test('staff: ชุดของคนอื่น (หัวหน้ากองนำเข้า) → ยกเลิกเองไม่ได้ ไม่ลบอะไร', async () => {
+  await as3('staff')
+  await assert.rejects(() => cancel3(S.head), STAFF_BLOCKED)
+  assert.equal(await count3(S.head), 1)
+})
+await test('staff: ชุดตัวเองแต่เกิน 7 วัน → ไม่ได้', async () => {
+  await as3('staff')
+  await assert.rejects(() => cancel3(S.old), STAFF_BLOCKED)
+  assert.equal(await count3(S.old), 2)
+})
+await test('staff: หัวหน้ากดยืนยันไป 1 แถว → ไม่ลบทั้งชุด (แถวที่ยังไม่ยืนยันก็ไม่ลบ)', async () => {
+  await as3('staff')
+  await assert.rejects(() => cancel3(S.verifiedByHead), STAFF_BLOCKED)
+  assert.equal(await count3(S.verifiedByHead), 2)
+})
+await test('staff: ชุดที่มีแถวของ technician ปนอยู่ → ไม่ลบเลย', async () => {
+  await as3('staff')
+  await assert.rejects(() => cancel3(S.mixedOwner), STAFF_BLOCKED)
+  assert.equal(await count3(S.mixedOwner), 2)
+})
+await test('staff: ชุด อปท. อื่น → ไม่พบชุด', async () => {
+  await as3('staff')
+  await assert.rejects(() => cancel3(S.otherMuni), /ไม่พบชุดการนำเข้านี้/)
+  assert.equal(await count3(S.otherMuni), 1)
+})
+await test('staff: ลบตรงผ่านตาราง — แถวกรอกเอง (ไม่มีเลขชุด) ลบไม่ได้ · แถวคนอื่นลบไม่ได้', async () => {
+  await as3('staff')
+  assert.equal((await d3.query('DELETE FROM public.data_center_entries WHERE id = $1', [manualOwn])).affectedRows, 0)
+  assert.equal((await d3.query('DELETE FROM public.data_center_entries WHERE import_batch_id = $1', [S.head])).affectedRows, 0)
+  assert.equal(await count3(S.head), 1)
+})
+await test('viewer/citizen: ยังถูกปฏิเสธที่ด่าน role', async () => {
+  await as3('viewer')
+  await assert.rejects(() => cancel3(S.fresh), /ไม่มีสิทธิ์ยกเลิกการนำเข้าไฟล์/)
+  await as3('citizen')
+  await assert.rejects(() => cancel3(S.fresh), /ไม่มีสิทธิ์ยกเลิกการนำเข้าไฟล์/)
+  assert.equal(await count3(S.fresh), 4)
+})
+await test('staff: ชุดตัวเอง ≤ 7 วัน ไม่มีใครยืนยัน → ลบครบ คืน 4', async () => {
+  await as3('staff')
+  assert.equal((await cancel3(S.fresh)).rows[0].n, 4)
+  assert.equal(await count3(S.fresh), 0)
+})
+await test('staff: ยืนยันด้วยตัวเอง ไม่นับเป็น "ผู้อื่นยืนยัน" → ลบได้', async () => {
+  await as3('staff')
+  assert.equal((await cancel3(S.verifiedBySelf)).rows[0].n, 1)
+})
+await test('technician: ชุดของตัวเอง → ลบได้', async () => {
+  await as3('tech')
+  assert.equal((await cancel3(S.tech)).rows[0].n, 1)
+})
+await test('ผู้มีสิทธิ์เดิมไม่เปลี่ยน: หัวหน้ากองช่างลบชุดเก่า/ชุดที่หัวหน้ายืนยัน/ชุดปนของกองตัวเองได้', async () => {
+  await as3('headWorks')
+  assert.equal((await cancel3(S.old)).rows[0].n, 2)
+  assert.equal((await cancel3(S.verifiedByHead)).rows[0].n, 2)
+  assert.equal((await cancel3(S.mixedOwner)).rows[0].n, 2)
+  await as3('headOffice')
+  await assert.rejects(() => cancel3(S.head), /สิทธิ์ลบได้ 0 จาก 1 รายการ/)
+})
+
+// ── ไฟล์ย้อนกลับ ──
+const md5Sql = `SELECT
+  (SELECT md5(regexp_replace(regexp_replace(prosrc, chr(45)||chr(45)||'[^'||chr(10)||']*', '', 'g'), '[ '||chr(9)||chr(13)||chr(10)||']+', '', 'g'))
+     FROM pg_proc WHERE oid = 'public.data_center_summary(uuid)'::regprocedure) AS summary,
+  (SELECT md5(regexp_replace(regexp_replace(prosrc, chr(45)||chr(45)||'[^'||chr(10)||']*', '', 'g'), '[ '||chr(9)||chr(13)||chr(10)||']+', '', 'g'))
+     FROM pg_proc WHERE oid = 'public.data_center_health(uuid,integer)'::regprocedure) AS health,
+  (SELECT md5(regexp_replace(regexp_replace(prosrc, chr(45)||chr(45)||'[^'||chr(10)||']*', '', 'g'), '[ '||chr(9)||chr(13)||chr(10)||']+', '', 'g'))
+     FROM pg_proc WHERE oid = 'public.data_center_public_stats(uuid)'::regprocedure) AS stats,
+  (SELECT md5(regexp_replace(regexp_replace(prosrc, chr(45)||chr(45)||'[^'||chr(10)||']*', '', 'g'), '[ '||chr(9)||chr(13)||chr(10)||']+', '', 'g'))
+     FROM pg_proc WHERE oid = 'public.data_center_cancel_import_batch(uuid)'::regprocedure) AS cancel,
+  (SELECT md5(regexp_replace(lower(pg_get_expr(polqual, polrelid)), '[ ()'||chr(9)||chr(10)||chr(13)||']+|::text|public[.]', '', 'g'))
+     FROM pg_policy WHERE polname = 'dce admin delete own municipality') AS policy`
+await test('ไฟล์ย้อนกลับ: คืนรุ่นเดิมครบ 4 ฟังก์ชัน + นโยบาย · staff กลับไปยกเลิกไม่ได้ · grant ไม่หาย · รันเฟส 3 ซ้ำได้', async () => {
+  await d3.exec('RESET ROLE')
+  await d3.exec(await sqlFile('../supabase/rollback/20261201100000_rollback_data_center_staff_cancel_and_area_counts.sql'))
+  assert.deepEqual((await d3.query(md5Sql)).rows[0], {
+    summary: '2aff342c58d8e640827e983fafc5e48d', health: '4edda5b282e5ceab38e1aef76d110c29',
+    stats: '94d955c2bdb749bc667790ec08f7735b', cancel: 'a326ea9880abfb238126095553b47131', policy: 'e265a7362b2d53d41fcd5b3d00be3257',
+  })
+  const { rows } = await d3.query(`SELECT has_function_privilege('anon', 'public.data_center_public_stats(uuid)', 'EXECUTE') AS stats_anon,
+      has_function_privilege('anon', 'public.data_center_summary(uuid)', 'EXECUTE') AS summary_anon,
+      has_function_privilege('authenticated', 'public.data_center_cancel_import_batch(uuid)', 'EXECUTE') AS cancel_auth`)
+  assert.deepEqual(rows[0], { stats_anon: true, summary_anon: false, cancel_auth: true })
+  await entry3({ name: 'หลังย้อน', shape: 'point', batch: id(68) })
+  await as3('staff')
+  await assert.rejects(() => cancel3(id(68)), /เฉพาะผู้ดูแลระบบ หรือหัวหน้ากอง/)
+  await d3.exec('RESET ROLE')
+  await d3.exec(phase3Migration)
+  assert.equal((await d3.query(md5Sql)).rows[0].policy, '06943aa45d47ada4f623fff9edceba8b')
+})
+
+await d3.close()
 console.log(`\n${cases} cases passed`)

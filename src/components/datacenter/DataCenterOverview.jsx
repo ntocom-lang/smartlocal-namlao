@@ -310,8 +310,10 @@ export default function DataCenterOverview({
     : []
   const healthMustCount = healthMustItems.reduce((n, x) => n + x.n, 0)
 
-  // GIS Types — latitude/longitude เป็น NOT NULL ทุกแถว "จุดพิกัด" จึงหมายถึงแถวที่ไม่ใช่เส้นทาง
+  // GIS Types — latitude/longitude เป็น NOT NULL ทุกแถว "จุดพิกัด" จึงหมายถึงแถวที่ไม่ใช่เส้นทาง/พื้นที่
+  // areas มาจาก SQL เฟส 3 (20261201100000) — ฐานที่ยังไม่รันไม่มีคีย์นี้ ได้ 0 และพื้นที่ยังนับรวมอยู่ใน routes ตามเดิม
   const polylineCount = sumBy('routes')
+  const areaCount = sumBy('areas')
   const pointCount = sumBy('points')
 
   const groupStatsList = scopedGroups.map(g => ({
@@ -588,9 +590,9 @@ export default function DataCenterOverview({
               <Globe size={13} />
             </div>
           </div>
-          <p className={`text-lg font-black mt-1 font-mono tracking-tight ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>{pointCount + polylineCount}</p>
+          <p className={`text-lg font-black mt-1 font-mono tracking-tight ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>{pointCount + polylineCount + areaCount}</p>
           <p className={`text-[10px] mt-0.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
-            หมุดพิกัด {pointCount} | เส้นทาง {polylineCount}
+            หมุดพิกัด {pointCount} | เส้นทาง {polylineCount}{areaCount > 0 && ` | พื้นที่ ${areaCount}`}
           </p>
         </div>
       </div>
