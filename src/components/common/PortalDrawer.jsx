@@ -6,6 +6,7 @@ import { ROLE_LABELS } from '../../lib/staffRoster'
 import CollapsibleNavGroup, { NavBadge, NavIconTile } from './CollapsibleNavGroup'
 import NavQuickFind from './NavQuickFind'
 import { recordNavUse } from '../../lib/navUsage'
+import { ADMIN_ACTIVE_CAPSULE, ADMIN_NAV_BG } from '../../lib/navTileColor'
 
 // เมนูซ้ายแบบลิ้นชักเลื่อนออกจากซ้าย — ใช้ร่วม 3 ที่ (เฉพาะมือถือ md:hidden):
 //   - หน้าเจ้าหน้าที่ (StaffDashboard.jsx)
@@ -33,6 +34,12 @@ const ACTIVE_STYLE = {
   backgroundImage: 'linear-gradient(90deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 55%, #6366f1) 100%)',
   boxShadow: '0 8px 18px -8px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.22)',
 }
+// tone="admin" (PR2 เมนูพรีเมียม 2569-11-16): ลิ้นชักแอดมินโทนหินชนวน+คราม คงที่ทุก อปท. ให้ตรงกับเมนูซ้าย PC
+// (AdminSideNav) — รู้ตัวว่าอยู่ในโหมดตั้งค่า ไม่ใช่ฝั่งเจ้าหน้าที่ · ค่าเริ่มต้น "theme" = สีธีม อปท. แบบเดิม
+const TONES = {
+  theme: { panel: PANEL_STYLE, active: ACTIVE_STYLE },
+  admin: { panel: ADMIN_NAV_BG, active: ADMIN_ACTIVE_CAPSULE },
+}
 const DEFAULT_HOME = { key: 'home', label: 'แดชบอร์ด', Icon: LayoutDashboard }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -40,7 +47,7 @@ const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1
 // variant 'sub' = เมนูย่อยใต้หัวกลุ่มที่พับได้ (ตัวบาง/จางกว่า ไอคอน 15px · active = พื้นจาง + ตัวหนา แถบอำพันวาดโดย NavSubRow)
 // ค่าเริ่มต้น = แถวเต็มแบบเดิม (ภาพรวม/ทางลัด/กลุ่มที่ไม่พับของหน้าแอดมิน/ศูนย์ข้อมูล ต้องเหมือนเดิมทุกอย่าง)
 // tile = แถวเต็มแต่ไอคอนเป็นกระเบื้อง (แดชบอร์ด/ห้องผู้บริหารในลิ้นชักเจ้าหน้าที่ ให้ตรงกับเมนูซ้าย PC) · ไม่มี color = เทาหินชนวน
-function DrawerItem({ item, active, badge, onSelect, variant, tile = false }) {
+function DrawerItem({ item, active, badge, onSelect, variant, tile = false, activeStyle = ACTIVE_STYLE }) {
   const count = Number(badge) > 0 ? Number(badge) : 0
   const Icon = item.Icon
   const sub = variant === 'sub'
@@ -51,7 +58,7 @@ function DrawerItem({ item, active, badge, onSelect, variant, tile = false }) {
     : `flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-white/70 ${active ? 'text-white' : 'text-white/80 active:bg-white/10'}`
   if (sub) return (
     <button type="button" data-drawer-item={item.key} aria-current={active ? 'page' : undefined}
-      onClick={() => onSelect(item)} className={cls} style={active ? ACTIVE_STYLE : undefined}>
+      onClick={() => onSelect(item)} className={cls} style={active ? activeStyle : undefined}>
       <NavIconTile Icon={Icon} color={item.color} size={26} active={active} />
       <span data-drawer-label className="min-w-0 flex-1 leading-snug">{item.label}</span>
       <NavBadge count={count} data-drawer-badge="" />
@@ -61,7 +68,7 @@ function DrawerItem({ item, active, badge, onSelect, variant, tile = false }) {
     <button type="button" data-drawer-item={item.key} aria-current={active ? 'page' : undefined}
       onClick={() => onSelect(item)}
       className={cls}
-      style={active ? ACTIVE_STYLE : undefined}>
+      style={active ? activeStyle : undefined}>
       {tile
         ? <NavIconTile Icon={Icon} color={item.color} size={28} active={active} />
         : <Icon size={19} strokeWidth={active ? 2.2 : 1.7} aria-hidden="true" className="shrink-0" />}
@@ -92,13 +99,17 @@ export function GroupLabel({ children, accent, count }) {
 // (ทรีหมวดหมู่ของหน้าศูนย์ข้อมูล ซึ่งกาง/พับได้และมีปุ่มเพิ่มข้อมูลต่อแถว) ผู้ส่งต้องปิดลิ้นชักเองเมื่อเลือกปลายทาง
 export default function PortalDrawer({
   open, onClose, tenant, portalLabel, ariaLabel, homeItem = DEFAULT_HOME, homeGroupLabel = 'ภาพรวม', extraItems = [],
-  groups, activeKey, badges, workErrors, onSelect, children, quickFind = false,
+  groups, activeKey, badges, workErrors, onSelect, children, quickFind = false, favorites = true, tone = 'theme', notice,
 }) {
   const { role, displayName, avatarUrl, session } = useAuth()
   // quickFind (opt-in · เปิดเฉพาะหน้าเจ้าหน้าที่) = ช่องค้นหาเมนู + หมวด "ใช้บ่อย" บนสุดของลิ้นชัก
   // ทุกทางที่กดเมนูโมดูลผ่าน pick → นับการใช้ต่อผู้ใช้ (ภาพรวม/ทางลัดผู้บริหารไม่ถูกนับ)
   const userId = session?.user?.id ?? null
-  const pick = useCallback((item) => { if (quickFind) recordNavUse(userId, item.key); onSelect(item) }, [quickFind, userId, onSelect])
+  // favorites={false} (แอดมิน) = ไม่มี "ใช้บ่อย" จึงไม่ต้องนับการกด
+  const pick = useCallback((item) => { if (quickFind && favorites) recordNavUse(userId, item.key); onSelect(item) }, [quickFind, favorites, userId, onSelect])
+  const { panel: panelStyle, active: activeStyle } = TONES[tone] ?? TONES.theme
+  // กระเบื้องสีที่แถวเต็ม: ลิ้นชักเจ้าหน้าที่ (quickFind) + ลิ้นชักแอดมิน · ศูนย์ข้อมูลยังเป็นไอคอนเปล่าแบบเดิม
+  const tiles = quickFind || tone === 'admin'
   const panelRef = useRef(null)
   const closeRef = useRef(null)
   const returnFocusTo = useRef(null)
@@ -142,21 +153,21 @@ export default function PortalDrawer({
   const homeBlock = (
     <>
       <GroupLabel>{homeGroupLabel}</GroupLabel>
-      <DrawerItem item={homeItem} active={activeKey === homeItem.key} onSelect={onSelect} tile={quickFind} />
-      {extraItems.map(item => <DrawerItem key={item.key} item={item} active={activeKey === item.key} onSelect={onSelect} tile={quickFind} />)}
+      <DrawerItem item={homeItem} active={activeKey === homeItem.key} onSelect={onSelect} tile={tiles} activeStyle={activeStyle} />
+      {extraItems.map(item => <DrawerItem key={item.key} item={item} active={activeKey === item.key} onSelect={onSelect} tile={tiles} activeStyle={activeStyle} />)}
     </>
   )
   const groupBlocks = groups.map(({ group, accent, Icon, items, collapsible }, index) => {
     const content = items.map(item => (
       <DrawerItem key={item.key} item={item} active={activeKey === item.key}
-        badge={badges?.[item.key]} onSelect={onSelect} />
+        badge={badges?.[item.key]} onSelect={onSelect} tile={tiles} activeStyle={activeStyle} />
     ))
     return collapsible ? (
       <CollapsibleNavGroup key={group} label={group} Icon={Icon} accent={accent}
         items={items} badges={badges} workErrors={workErrors} activeKey={activeKey} divider={index > 0}
         renderItem={item => (
           <DrawerItem item={item} variant="sub" active={activeKey === item.key}
-            badge={badges?.[item.key]} onSelect={pick} />
+            badge={badges?.[item.key]} onSelect={pick} activeStyle={activeStyle} />
         )} />
     ) : (
       <div key={group}>
@@ -180,7 +191,7 @@ export default function PortalDrawer({
       <aside id="portal-drawer" ref={panelRef} role="dialog" aria-modal="true" aria-label={ariaLabel}
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}
         className={`fixed inset-y-0 left-0 z-[60] flex w-[min(86vw,320px)] flex-col text-white shadow-2xl motion-reduce:[transition:none] ${open ? 'visible translate-x-0 [transition:transform_200ms,visibility_0s]' : 'invisible -translate-x-full [transition:transform_200ms,visibility_0s_linear_200ms]'}`}
-        style={PANEL_STYLE}>
+        style={panelStyle}>
         <div className="flex items-center gap-3 px-4 pb-3 pt-4">
           {tenant?.logo_url
             ? <img src={tenant.logo_url} alt="" className="h-11 w-11 shrink-0 rounded-full border border-white/25 bg-white/10 object-contain p-0.5" />
@@ -196,9 +207,12 @@ export default function PortalDrawer({
         </div>
 
         <nav aria-label="เมนูโมดูล" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 [scrollbar-color:rgba(255,255,255,0.35)_transparent] [scrollbar-width:thin]">
+          {/* notice = ป้ายบอกโหมดบนสุด (แอดมิน: "โหมดตั้งค่าระบบ" ชุดเดียวกับเมนูซ้าย PC) */}
+          {notice}
           {quickFind ? (
             <NavQuickFind groups={groups} activeKey={activeKey} userId={userId} onSelect={pick} variant="drawer" refreshKey={open} wrapperClassName="pb-1 pt-1"
-              renderItem={item => <DrawerItem item={item} variant="sub" active={activeKey === item.key} badge={badges?.[item.key]} onSelect={pick} />}
+              favorites={favorites}
+              renderItem={item => <DrawerItem item={item} variant="sub" active={activeKey === item.key} badge={badges?.[item.key]} onSelect={pick} activeStyle={activeStyle} />}
               pinned={homeBlock}>
               {groupBlocks}
             </NavQuickFind>

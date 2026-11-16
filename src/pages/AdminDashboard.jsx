@@ -66,6 +66,7 @@ import { DEV_USER_ID } from '../lib/portalAccess'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
 import UserProfileBadge from '../components/layout/UserProfileBadge'
 import PortalDrawer from '../components/common/PortalDrawer'
+import AdminSideNav, { AdminZoneNotice } from '../components/admin/AdminSideNav'
 import FleetSetup from '../components/fleet/FleetSetup'
 import { adminAppointUser, adminUpdateUser } from '../lib/adminUpdateUser'
 import { listAvatarPaths, removeOrphanAvatars } from '../lib/accountDeletion'
@@ -5788,13 +5789,17 @@ export default function AdminDashboard() {
 
   // กดเมนูในลิ้นชักมือถือ = ทำเหมือนเมนูซ้ายบน PC: คู่มือ (ไฟล์ static) เปิดแท็บใหม่ · หน้าแยก (ศูนย์ข้อมูล/
   // ผู้พัฒนา) navigate · นอกนั้นสลับหน้าในแผงควบคุม · แล้วปิดลิ้นชักทุกกรณี
-  function openFromDrawer(item) {
-    setDrawerOpen(false)
+  // openMenuItem ใช้ร่วมเมนูซ้าย PC (AdminSideNav) กับลิ้นชัก — กดแล้วไปที่เดียวกันทุกทาง
+  function openMenuItem(item) {
     if (item.isExternal) window.open(item.href, '_blank', 'noopener,noreferrer')
     else if (item.isDevLink || item.navTo) {
       if (item.newTab) window.open(item.navTo, '_blank', 'noopener,noreferrer')
       else navigate(item.navTo ?? '/dev-journal')
     } else setActivePage(item.key)
+  }
+  function openFromDrawer(item) {
+    setDrawerOpen(false)
+    openMenuItem(item)
   }
 
   return (
@@ -5864,85 +5869,16 @@ export default function AdminDashboard() {
       <PortalDrawer open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="แผงควบคุม Admin"
         ariaLabel="เมนูผู้ดูแลระบบ" homeItem={{ key: 'dashboard', label: 'หน้าหลัก', Icon: LayoutGrid }}
         extraItems={(currentUserRole === 'admin' || currentUserRole === 'superadmin')
-          ? [{ key: 'to-staff', label: 'แดชบอร์ดสำหรับเจ้าหน้าที่', Icon: Users, navTo: '/staff' }] : []}
-        groups={adminMenuGroups} activeKey={menuKey} onSelect={openFromDrawer} />
+          ? [{ key: 'to-staff', label: 'แดชบอร์ดสำหรับเจ้าหน้าที่', Icon: Users, color: '#1a3a5c', navTo: '/staff' }] : []}
+        groups={adminMenuGroups} activeKey={menuKey} onSelect={openFromDrawer}
+        quickFind favorites={false} tone="admin" notice={<AdminZoneNotice className="mt-1" />} />
 
       {/* Desktop sidebar + content */}
       <div className="md:flex">
-        <aside className="hidden md:flex flex-col w-64 shrink-0 shadow-xl"
-          style={{ background: 'linear-gradient(180deg, #173a5e 0%, #102a45 100%)' }}>
-          <nav className="flex-1 px-3 py-3 overflow-y-auto">
-            <button onClick={() => setActivePage('dashboard')}
-              className="relative w-full flex min-h-10 items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all mb-1 overflow-hidden"
-              style={activePage === 'dashboard'
-                ? { backgroundColor: 'rgba(255,255,255,0.16)', color: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }
-                : { color: 'rgba(255,255,255,0.72)' }}>
-              {activePage === 'dashboard' && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-cyan-300" />}
-              <LayoutGrid size={16} />
-              <span className="flex-1 text-left">หน้าหลัก</span>
-            </button>
-            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
-              <button onClick={() => navigate('/staff')}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors mb-4 hover:bg-white/10"
-                style={{ color: 'rgba(255,255,255,0.62)' }}>
-                <Users size={16} />
-                <span className="flex-1 text-left">แดชบอร์ดสำหรับเจ้าหน้าที่</span>
-                <ExternalLink size={11} className="opacity-40" />
-              </button>
-            )}
-            {adminMenuGroups.map(({ group, accent, items }) => (
-                <section key={group} className="mb-4">
-                  <div className="flex items-center gap-2 px-3 pt-1 pb-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />
-                    <p className="text-[10px] font-bold uppercase tracking-[0.12em]"
-                      style={{ color: 'rgba(255,255,255,0.42)' }}>{group}</p>
-                  </div>
-                  <div className="space-y-0.5">
-                    {items.map(({ key, label, Icon, color, isExternal, href, isDevLink, navTo, newTab }) => {
-                      const isActive = menuKey === key
-                      if (isExternal) return (
-                        <a key={key} href={href} target="_blank" rel="noopener noreferrer"
-                          className="w-full flex min-h-9 items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors hover:bg-white/10"
-                          style={{ color: 'rgba(255,255,255,0.62)' }}>
-                          <Icon size={15} style={{ color }} />
-                          <span className="flex-1 text-left">{label}</span>
-                          <ExternalLink size={11} className="opacity-40" />
-                        </a>
-                      )
-                      if (isDevLink || navTo) return (
-                        <button key={key} onClick={() => newTab ? window.open(navTo, '_blank') : navigate(navTo ?? '/dev-journal')}
-                          className="w-full flex min-h-9 items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors hover:bg-white/10"
-                          style={{ color: 'rgba(255,255,255,0.62)' }}>
-                          <Icon size={15} className="text-slate-300" />
-                          <span className="flex-1 text-left">{label}</span>
-                          <ChevronRight size={12} className="opacity-35" />
-                        </button>
-                      )
-                      return (
-                        <button key={key} onClick={() => setActivePage(key)}
-                          className="relative w-full flex min-h-9 items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all overflow-hidden hover:bg-white/10"
-                          style={isActive
-                            ? { backgroundColor: 'rgba(255,255,255,0.16)', color: '#fff', boxShadow: '0 6px 18px rgba(0,0,0,0.1)' }
-                            : { color: 'rgba(255,255,255,0.7)' }}>
-                          {isActive && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full" style={{ backgroundColor: accent }} />}
-                          <Icon size={15} style={isActive ? { color } : undefined} />
-                          <span className="flex-1 text-left">{label}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </section>
-              ))}
-          </nav>
-          <div className="px-2 py-3 shrink-0 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-            <button onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-white/10"
-              style={{ color: 'rgba(255,255,255,0.55)' }}>
-              <LogOut size={16} />
-              ออกจากระบบ
-            </button>
-          </div>
-        </aside>
+        <AdminSideNav groups={adminMenuGroups} activeKey={menuKey} homeActive={activePage === 'dashboard'}
+          showStaffLink={currentUserRole === 'admin' || currentUserRole === 'superadmin'}
+          onHome={() => setActivePage('dashboard')} onStaff={() => navigate('/staff')}
+          onOpen={openMenuItem} onLogout={handleLogout} />
 
       {/* ─── Content ─── */}
       <div className="flex-1 min-w-0 px-4 py-4 pb-24 md:py-6 md:pb-8 md:px-6 space-y-4 md:space-y-6 max-w-5xl mx-auto">

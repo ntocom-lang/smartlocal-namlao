@@ -200,4 +200,32 @@ await test('ป้ายตัวเลข: แดงตั้งแต่ 10 �
   assert.match(src('components/common/PortalDrawer.jsx'), /<NavBadge count=\{count\} data-drawer-badge/)
 })
 
+// ── PR2 เมนูแอดมิน (2569-11-16): โทนแยกจากเจ้าหน้าที่ + ป้ายโหมดตั้งค่า + ไม่มี "ใช้บ่อย" ─────────
+await test('เมนูแอดมิน: แยกไฟล์ AdminSideNav · w-64 คงเดิม · ป้ายโหมดตั้งค่า · ค้นหาไม่มีใช้บ่อย · ลิ้นชักโทนเดียวกัน', () => {
+  const side = src('components/admin/AdminSideNav.jsx')
+  const page = src('pages/AdminDashboard.jsx')
+  const drawer = src('components/common/PortalDrawer.jsx')
+  assert.match(side, /w-64/)
+  assert.match(side, /โหมดตั้งค่าระบบ/)
+  assert.match(side, /<NavQuickFind [^>]*favorites=\{false\}/)
+  assert.match(side, /<NavIconTile /)
+  assert.match(side, /ADMIN_ACTIVE_CAPSULE/)
+  assert.match(page, /<AdminSideNav /)
+  assert.doesNotMatch(page, /<aside className="hidden md:flex flex-col w-64/, 'เมนูซ้ายเดิมต้องย้ายออกจาก AdminDashboard แล้ว')
+  assert.match(page, /quickFind favorites=\{false\} tone="admin" notice=\{<AdminZoneNotice/)
+  assert.match(drawer, /admin: \{ panel: ADMIN_NAV_BG, active: ADMIN_ACTIVE_CAPSULE \}/)
+  assert.match(drawer, /if \(quickFind && favorites\) recordNavUse/, 'ปิดใช้บ่อยแล้วต้องไม่นับการกด')
+  assert.match(src('components/common/NavQuickFind.jsx'), /if \(!favorites\) return \[\]/)
+})
+
+await test('สีแอดมิน: ขาวบนแคปซูลครามผ่าน AA (≥ 4.5:1) ทั้งต้นและปลาย · สีเมนูแอดมินทุกสีเข้มจนไอคอนขาว ≥ 3:1', () => {
+  assert.ok(contrastWithWhite('#4338ca') >= 4.5)
+  assert.ok(contrastWithWhite('#3730a3') >= 4.5)
+  const page = src('pages/AdminDashboard.jsx')
+  const start = page.indexOf('function getAdminMenuGroups')
+  const colors = [...page.slice(start, start + 8000).matchAll(/color: '(#[0-9a-fA-F]{6})'/g)].map(m => m[1])
+  assert.ok(colors.length >= 10, 'ควรเจอสีเมนูแอดมินอย่างน้อย 10 สี')
+  for (const c of colors) assert.ok(contrastWithWhite(tileColor(c)) >= 3, `${c} → ${tileColor(c)}`)
+})
+
 console.log(`\nผ่านทั้งหมด ${cases} เคส`)
