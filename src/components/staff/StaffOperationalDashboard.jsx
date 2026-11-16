@@ -1,13 +1,20 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   ChevronRight, Plus, LayoutGrid, HeartHandshake, Megaphone, Layers, BookOpen,
   Building2, Banknote, Hammer, GraduationCap, ShieldCheck, CheckCircle2, Loader2, TriangleAlert, Zap,
-  CircleAlert, Clock, CalendarClock, Users,
+  CircleAlert, Clock, CalendarClock, Users, ListChecks, FolderOpen, ClipboardList,
 } from 'lucide-react'
+import { useTenant } from '../../contexts/TenantContext'
+import useExecPlanDeadlines from '../../hooks/useExecPlanDeadlines'
+import useStaffHomeHazards from '../../hooks/useStaffHomeHazards'
 import { activeOrgTerms } from '../../lib/orgTerms'
 import { esignPendingFromRpc } from '../../lib/esign'
+import { planDeadlineInsights } from '../../lib/execSimpleInsights'
+import { fiscalQuarterOf, fiscalYearOf } from '../../lib/fiscalYear'
 import { PATIENT_TRANSPORT_MODULE_KEY } from '../../lib/patientTransport'
 import { parseInviteData, readInviteStamps, recordInviteSent, visibleInviteRows } from '../../lib/complaintRateInvite'
+import { buildAreaSituation } from '../../lib/staffAreaSituation'
+import { buildStaffBriefing } from '../../lib/staffHomeBriefing'
 import { pickShortcuts, readUsage, safeLocalStorage } from '../../lib/staffHomeFrequent'
 import { useHomeRpc } from '../../lib/staffHomeData'
 import { DUE_WORK_KEYS, bucketComplaintDue, dueWorkCount, dueWorkHint, groupMyEvents, normalizeWorkload, todoState } from '../../lib/staffHomeSummary'
@@ -15,6 +22,8 @@ import { todoCount as waterAnnouncementTodoCount } from '../../lib/waterAnnounce
 import { MenuGroup } from '../common/MenuTileGrid'
 import MyPendingSignatures from '../esign/MyPendingSignatures'
 import ComplaintRateInvite from './ComplaintRateInvite'
+import StaffAreaSituation from './StaffAreaSituation'
+import StaffHomeHero from './StaffHomeHero'
 
 // ไอคอนหัวกลุ่มของหน้าเมนูแบบไอคอน — ผูกตามชื่อกลุ่มใน STANDALONE_GROUPS/MODULE_GROUPS (StaffDashboard.jsx)
 // ถ้าเปลี่ยนชื่อกลุ่มแล้วลืมมาแก้ที่นี่ แค่ได้ไอคอนกลางๆ (LayoutGrid) ไม่มีอะไรพัง
@@ -107,6 +116,105 @@ const OPEN_WORK_CARDS = [
 const DEFAULT_SHORTCUTS = ['events', 'report', 'data-center']
 const SHORTCUT_LIMIT = 4
 
+// หัวการ์ดภาษาเดียวกันทุกส่วนของหน้าแรก: ไอคอนในกล่องสี 28px + ชื่อ + คำอธิบาย 11px (เดิมคำอธิบายเป็น 10px)
+const HEADING_TONES = {
+  sky: 'bg-sky-100 text-sky-700',
+  emerald: 'bg-emerald-100 text-emerald-700',
+  indigo: 'bg-indigo-100 text-indigo-700',
+  amber: 'bg-amber-100 text-amber-700',
+}
+function CardHeading({ id, Icon, tone = 'sky', title, desc }) {
+  return (
+    <div className="mb-1.5 flex items-start gap-2">
+      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${HEADING_TONES[tone] ?? HEADING_TONES.sky}`}>
+        <Icon size={15} aria-hidden="true" />
+      </span>
+      <div className="min-w-0">
+        <h2 id={id} className="text-sm font-bold text-slate-800">{title}</h2>
+        {desc && <p className="text-[11px] text-slate-500">{desc}</p>}
+      </div>
+    </div>
+  )
+}
+
+// แถบตัวเลข "ของฉัน" 4 ช่อง — ค่าที่ยังไม่รู้ (กำลังโหลด/แหล่งนั้นพัง) ขึ้น "—" ไม่ใช่ 0 (ศูนย์ปลอมแปลว่า "ไม่มี" ทั้งที่แค่ยังไม่รู้)
+// สีไม่ใช่สัญญาณเดียว: ทุกช่องมีไอคอนประจำและชื่อกำกับ · ปุ่มสูง ≥ 56px · ตัวเลขใช้ tabular-nums
+const KPI_COLORS = {
+  red: { value: 'text-red-600', box: 'bg-red-50 text-red-600' },
+  amber: { value: 'text-amber-600', box: 'bg-amber-50 text-amber-600' },
+  navy: { value: 'text-[#1a3a5c]', box: 'bg-slate-100 text-[#1a3a5c]' },
+  gray: { value: 'text-slate-500', box: 'bg-slate-100 text-slate-500' },
+}
+const KPI_GRID = { 1: 'sm:grid-cols-1', 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'sm:grid-cols-4' }
+function kpiColor(key, value) {
+  if (value === null) return KPI_COLORS.gray
+  if (value <= 0) return KPI_COLORS.gray
+  if (key === 'overdue') return KPI_COLORS.red
+  if (key === 'soon') return KPI_COLORS.amber
+  return KPI_COLORS.navy
+}
+function KpiStrip({ items }) {
+  if (items.length === 0) return null
+  return (
+    <div data-home-kpi aria-label="ตัวเลขของฉัน" className={`grid grid-cols-2 gap-2 ${KPI_GRID[items.length] ?? KPI_GRID[4]}`}>
+      {items.map(({ key, label, Icon, value, onClick }) => {
+        const color = kpiColor(key, value)
+        return (
+          <button key={key} type="button" data-home-kpi-item={key} onClick={onClick}
+            className="flex min-h-14 min-w-0 items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left shadow-sm hover:bg-slate-50 active:scale-[0.99]">
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${color.box}`}><Icon size={18} aria-hidden="true" /></span>
+            <span className="min-w-0 flex-1">
+              <span className={`block text-2xl font-black leading-tight tabular-nums ${color.value}`}>
+                {value === null ? '—' : value > 999 ? '999+' : value}
+                {value === null && <span className="sr-only"> ยังโหลดไม่ได้</span>}
+              </span>
+              <span className="block truncate text-xs font-semibold text-slate-600">{label}</span>
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// การ์ด "กำหนดตามระเบียบ" ของแผนพัฒนาท้องถิ่น — ใช้สูตรเดียวกับห้องผู้บริหาร (planDeadlineInsights) · เตือนเท่านั้น ไม่ใช่งานที่ต้องกดยืนยัน
+// ว่าง/โหลดไม่ได้ = ไม่แสดงการ์ด (ไม่ขึ้นบรรทัดเขียว เพราะ "ไม่เตือน" ไม่ได้แปลว่า "ทำครบแล้ว") · ปุ่ม "วิธีคิด" อยู่นอกปุ่มแถว (ห้ามซ้อนปุ่มในปุ่ม)
+const DEADLINE_TONES = {
+  red: { box: 'border-red-200 bg-red-50 text-red-900', Icon: CircleAlert, iconClass: 'text-red-600' },
+  amber: { box: 'border-amber-200 bg-amber-50 text-amber-900', Icon: Clock, iconClass: 'text-amber-600' },
+}
+function PlanDeadlinesCard({ rows, onOpen }) {
+  return (
+    <section data-home-deadlines aria-labelledby="home-deadlines-title">
+      <CardHeading id="home-deadlines-title" Icon={ClipboardList} tone="indigo" title="กำหนดตามระเบียบ" desc="แผนพัฒนาท้องถิ่น · ระบบนับวันให้ · เตือนเท่านั้น" />
+      <div className="space-y-2">
+        {rows.map(row => {
+          const t = DEADLINE_TONES[row.tone] ?? DEADLINE_TONES.amber
+          const extra = row.detail || row.hint
+          return (
+            <div key={row.id} data-home-deadline={row.id} className={`rounded-2xl border px-3 py-2 shadow-sm ${t.box}`}>
+              <button type="button" onClick={onOpen} className="flex min-h-11 w-full items-start gap-2 text-left active:scale-[0.99]">
+                <t.Icon size={18} className={`mt-0.5 shrink-0 ${t.iconClass}`} aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words text-sm font-semibold">{row.what}</span>
+                  {extra && <span className="block break-words text-[11px] opacity-80">{extra}</span>}
+                </span>
+                <ChevronRight size={15} className="mt-0.5 shrink-0 opacity-50" aria-hidden="true" />
+              </button>
+              {row.rule && (
+                <details className="mt-1">
+                  <summary className="inline-flex min-h-11 cursor-pointer list-none items-center text-xs font-semibold underline-offset-2 hover:underline [&::-webkit-details-marker]:hidden">วิธีคิด</summary>
+                  <p className="pb-1 text-[11px] leading-relaxed opacity-90">{row.rule}</p>
+                </details>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 // testAttr แยกแถว "งานที่เปิดอยู่" ออกจาก [data-home-work] ของ "ต้องทำตอนนี้" — เทสต์หน้าแรกนับชุดนั้นอยู่
 function WorkRow({ item, count, hint, onOpen, testAttr = 'data-home-work' }) {
   const { Icon, color, bg, label } = item
@@ -177,10 +285,7 @@ export function AssignedEventsSection({ myEvents, onOpen, showHeading = true }) 
   return (
     <section data-home-events {...(showHeading ? { 'aria-labelledby': 'home-events-title' } : { 'aria-label': 'กิจกรรมที่ได้รับมอบหมาย' })}>
       {showHeading && (
-        <div className="mb-1.5 flex items-center gap-1.5">
-          <CalendarClock size={15} className="text-emerald-600" aria-hidden="true" />
-          <h2 id="home-events-title" className="text-sm font-bold text-slate-800">กิจกรรมที่ได้รับมอบหมาย</h2>
-        </div>
+        <CardHeading id="home-events-title" Icon={CalendarClock} tone="emerald" title="กิจกรรมที่ได้รับมอบหมาย" desc="วันนี้และพรุ่งนี้ ที่ได้รับมอบหมายให้คุณไปแทน" />
       )}
       <div className="space-y-1.5">
         {myEvents.today.length > 0 && <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">วันนี้</p>}
@@ -214,10 +319,10 @@ function DeptWorkload({ state, complaintsItem, onOpenComplaints }) {
   return (
     <div data-home-dept className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex items-start gap-2">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-700"><Users size={16} aria-hidden="true" /></span>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700"><Users size={15} aria-hidden="true" /></span>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-bold text-slate-800">กองของฉัน{w.departmentName ? ` · ${w.departmentName}` : ''}</h3>
-          <p className="text-[10px] text-slate-400">คำร้องที่แต่ละคนถืออยู่ตอนนี้ — ไม่ใช่การประเมินผล</p>
+          <p className="text-[11px] text-slate-500">คำร้องที่แต่ละคนถืออยู่ตอนนี้ — ไม่ใช่การประเมินผล</p>
         </div>
       </div>
       {w.unassigned > 0 && complaintsItem && (
@@ -351,6 +456,21 @@ export default function StaffOperationalDashboard({
   const isDeptHead = profile?.role === 'officer' && Boolean(profile?.department_id) && Boolean(complaintsItem)
   const dept = useHomeRpc({ rpc: 'staff_dept_workload', tenantId, profileId, enabled: isDeptHead })
 
+  // ── สถานการณ์ในพื้นที่ + กำหนดตามระเบียบ (แหล่งเดียวกับห้องผู้บริหาร · ไม่มี RPC/ตารางใหม่ · ไม่ poll) ──
+  // ภัยที่กำลังมา: ฮุกนี้แคชระดับโมดูล (กลับมาหน้าแรกซ้ำไม่ยิง RPC พยากรณ์ใหม่) — ห้ามสลับไปใช้ useExecHazards (throttle ต่อ instance)
+  const { tenant, holidaysVersion } = useTenant()
+  const hazards = useStaffHomeHazards({ tenantId, enabled: Boolean(tenantId) })
+  // กำหนดตามระเบียบของแผนพัฒนา — เฉพาะคนที่เห็นเมนูแผนพัฒนา · วันนี้ใช้ของ RPC (เวลาไทย) ถ้ามี ไม่งั้นคำนวณเวลาไทยเอง
+  const planItem = itemByKey.get('local-plan')
+  const rpcToday = typeof summary.data?.today === 'string' ? summary.data.today.slice(0, 10) : null
+  const planToday = rpcToday && /^\d{4}-\d{2}-\d{2}$/.test(rpcToday) ? rpcToday : new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
+  const planDl = useExecPlanDeadlines({ tenantId, today: planToday, enabled: Boolean(planItem), tick: 0 })
+  const planRows = useMemo(() => {
+    void holidaysVersion // opPlanDeadline อ่านตารางวันหยุด (วันครบกำหนดตรงวันหยุด) — วันหยุดโหลดทีหลังต้องคำนวณใหม่
+    if (planDl.status !== 'ok') return [] // โหลดไม่ได้/ยังไม่เสร็จ = ไม่แสดงการ์ด (ไม่ใช่งานเร่งด่วน)
+    return planDeadlineInsights({ devPlan: planDl.devPlan, opPlan: planDl.opPlan, evaluation: planDl.evaluation, today: planToday })
+  }, [planDl.status, planDl.devPlan, planDl.opPlan, planDl.evaluation, planToday, holidaysVersion])
+
   const state = todoState({
     badgeStatuses: [...workCards.map(card => card.status), waterTodo.status === 'loading' ? 'loading' : null, ['loading', 'error'].includes(esignPending.status) ? esignPending.status : null,
       rateRpc.status === 'loading' ? 'loading' : null],
@@ -387,25 +507,57 @@ export default function StaffOperationalDashboard({
   const totalMenus = visibleItems.length
   const totalBadge = Object.values(cardBadges).reduce((sum, n) => sum + (Number(n) > 0 ? Number(n) : 0), 0)
 
+  // ── แถบหัว + แถบตัวเลข "ของฉัน" + คอลัมน์ขวา ──
+  // งานรอฉัน = ผลรวมชุดเดียวกับ badgeCounts ที่ส่งเข้า todoState ด้านบน (ต้องแก้คู่กันถ้าเพิ่มแหล่งงานรอ) · นับเฉพาะค่าบวกเหมือน todoState
+  const waitingTotal = [...workCards.map(card => card.count), waterPending ? 1 : 0, rateRows.length, esignPending.items.length + esignPending.returned.length]
+    .reduce((sum, n) => sum + (Number(n) > 0 ? Number(n) : 0), 0)
+  // รู้ค่า "งานรอฉัน" เมื่อทุกแหล่งโหลดจบและไม่มีแหล่งที่พัง (แหล่งพัง = ค่า 0 ที่เห็นไม่ใช่ศูนย์จริง)
+  const waitingKnown = state !== 'loading' && failedCards.length === 0 && esignPending.status !== 'error'
+  const summaryKnown = summary.status === 'ok'
+  const scrollToTodo = () => {
+    const el = document.querySelector('[data-home-todo]')
+    if (!el) return
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+  }
+  // ช่องที่โมดูลไม่เปิดไม่แสดง (ไม่มีคำร้อง → ซ่อนเลยกำหนด/ใกล้ครบ · ไม่มีปฏิทิน → ซ่อนกิจกรรม) · ไม่มีส่วน "ต้องทำตอนนี้" ให้เลื่อนไป → ซ่อนงานรอฉัน
+  const kpiItems = [
+    hasTodo && { key: 'waiting', label: 'งานรอฉัน', Icon: ListChecks, value: waitingKnown ? waitingTotal : null, onClick: scrollToTodo },
+    complaintsItem && { key: 'overdue', label: 'เลยกำหนด', Icon: CircleAlert, value: summaryKnown ? due.overdue : null, onClick: () => open(complaintsItem) },
+    complaintsItem && { key: 'soon', label: 'ใกล้ครบกำหนด', Icon: Clock, value: summaryKnown ? due.soon : null, onClick: () => open(complaintsItem) },
+    eventsItem && { key: 'events', label: 'กิจกรรมวันนี้', Icon: CalendarClock, value: summaryKnown ? myEvents.today.length : null, onClick: () => open(eventsItem) },
+  ].filter(Boolean)
+
+  const now = new Date()
+  const area = buildAreaSituation(hazards, tenant, now)
+  // ลิงก์ไปหน้าสถานการณ์น้ำ–ฝน: เมนูฝั่งเจ้าหน้าที่ไม่มีคีย์ 'water-situation' (หน้านั้นเป็น route ฝั่งประชาชน /water-situation)
+  // ใช้เมนู 'water-events' เป็นตัวกั้น — มันโผล่เมื่อ อปท. เปิดโมดูล water-situation + บทบาทเห็นได้ (staffNavGroups.js)
+  const canOpenWater = Boolean(itemByKey.get('water-events') && navigate)
+  const hasArea = !hazards.settled || Boolean(area.rainRow || area.dustRow) || canOpenWater
+  const hasDeadlines = Boolean(planItem) && planRows.length > 0
+  const hasRight = hasShortcuts || hasArea || hasDeadlines
+
+  const briefing = buildStaffBriefing({
+    ready: state !== 'loading', state, waiting: waitingTotal, overdue: due.overdue, soon: due.soon,
+    eventsToday: myEvents.today.length, hazards: area.hazards,
+  })
+
   return (
     <div className="space-y-3">
-      <header className="min-w-0">
-        <div className="flex items-center gap-2">
-          <h1 className="truncate text-lg font-black text-slate-900">แดชบอร์ดสำหรับเจ้าหน้าที่</h1>
-          {profile?.role && <span className="hidden text-[10px] font-bold text-slate-400 sm:inline">{ROLE_LABELS[profile.role] ?? profile.role}</span>}
-        </div>
-        <p className="truncate text-[11px] text-slate-400">{todayTH}</p>
-      </header>
+      <StaffHomeHero
+        roleLabel={profile?.role ? (ROLE_LABELS[profile.role] ?? profile.role) : null}
+        fullName={profile?.full_name} dateText={todayTH}
+        fiscalText={`ไตรมาส ${fiscalQuarterOf(now)} ปีงบประมาณ ${fiscalYearOf(now)}`}
+        briefing={briefing} />
 
-      <div className={hasLeft && hasShortcuts ? 'space-y-3 xl:grid xl:grid-cols-3 xl:items-start xl:gap-3 xl:space-y-0' : 'space-y-3'}>
+      <KpiStrip items={kpiItems} />
+
+      <div className={hasLeft && hasRight ? 'space-y-3 xl:grid xl:grid-cols-3 xl:items-start xl:gap-3 xl:space-y-0' : 'space-y-3'}>
         {hasLeft && (
-          <div className={`space-y-3 ${hasShortcuts ? 'xl:col-span-2' : ''}`}>
+          <div className={`space-y-3 ${hasRight ? 'xl:col-span-2' : ''}`}>
             {hasTodo && (
-              <section data-home-todo aria-labelledby="home-todo-title">
-                <div className="mb-1.5">
-                  <h2 id="home-todo-title" className="text-sm font-bold text-slate-800">ต้องทำตอนนี้</h2>
-                  <p className="text-[10px] text-slate-400">เฉพาะงานที่รอคุณอยู่ · ตัวเลขเดียวกับป้ายบนเมนู</p>
-                </div>
+              <section data-home-todo aria-labelledby="home-todo-title" className="scroll-mt-4">
+                <CardHeading id="home-todo-title" Icon={ListChecks} tone="sky" title="ต้องทำตอนนี้" desc="เฉพาะงานที่รอคุณอยู่ · ตัวเลขเดียวกับป้ายบนเมนู" />
                 <div className="space-y-2">
                   {due.overdue > 0 && (
                     <AttentionRow tone="red" Icon={CircleAlert} testId="overdue" count={due.overdue} onOpen={() => open(complaintsItem)}
@@ -481,10 +633,7 @@ export default function StaffOperationalDashboard({
 
             {openWorkCards.length > 0 && (
               <section data-home-open-work-section aria-labelledby="home-open-work-title">
-                <div className="mb-1.5">
-                  <h2 id="home-open-work-title" className="text-sm font-bold text-slate-800">งานที่เปิดอยู่</h2>
-                  <p className="text-[10px] text-slate-400">ยังไม่ปิดงาน · ไม่ใช่งานเร่งด่วน</p>
-                </div>
+                <CardHeading id="home-open-work-title" Icon={FolderOpen} tone="amber" title="งานที่เปิดอยู่" desc="ยังไม่ปิดงาน · ไม่ใช่งานเร่งด่วน" />
                 <div className="space-y-2">
                   {openWorkCards.map(card => (card.failed ? (
                     <button key={card.key} type="button" data-home-open-work-error={card.key} onClick={() => open(card.item)}
@@ -502,25 +651,31 @@ export default function StaffOperationalDashboard({
           </div>
         )}
 
-        {hasShortcuts && (
-          <section data-home-shortcuts className="space-y-2" aria-label="ทางลัด">
-            {canCreateEvent && (
-              <button type="button" data-home-create-event onClick={onCreateManagementEvent}
-                className="flex min-h-14 w-full items-center gap-2.5 rounded-2xl border border-violet-200 bg-white px-3 py-2 text-left shadow-sm hover:bg-violet-50/60 active:scale-[0.99]">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: eventsItem.bg ?? `${eventsItem.color}18` }}>
-                  <Plus size={20} style={{ color: eventsItem.color }} aria-hidden="true" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold text-slate-800">เพิ่มกิจกรรมในปฏิทิน</span>
-                  <span className="block text-[11px] text-slate-500">ส่งกำหนดการให้ผู้บริหารทราบ</span>
-                </span>
-                <ChevronRight size={16} className="shrink-0 text-slate-300" aria-hidden="true" />
-              </button>
+        {hasRight && (
+          <div className="min-w-0 space-y-3">
+            {hasArea && <StaffAreaSituation model={area} settled={hazards.settled} onOpenWater={canOpenWater ? () => navigate('/water-situation') : undefined} />}
+            {hasDeadlines && <PlanDeadlinesCard rows={planRows} onOpen={() => open(planItem)} />}
+            {hasShortcuts && (
+              <section data-home-shortcuts className="space-y-2" aria-label="ทางลัด">
+                {canCreateEvent && (
+                  <button type="button" data-home-create-event onClick={onCreateManagementEvent}
+                    className="flex min-h-14 w-full items-center gap-2.5 rounded-2xl border border-violet-200 bg-white px-3 py-2 text-left shadow-sm hover:bg-violet-50/60 active:scale-[0.99]">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: eventsItem.bg ?? `${eventsItem.color}18` }}>
+                      <Plus size={20} style={{ color: eventsItem.color }} aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-bold text-slate-800">เพิ่มกิจกรรมในปฏิทิน</span>
+                      <span className="block text-[11px] text-slate-500">ส่งกำหนดการให้ผู้บริหารทราบ</span>
+                    </span>
+                    <ChevronRight size={16} className="shrink-0 text-slate-300" aria-hidden="true" />
+                  </button>
+                )}
+                {shortcutItems.length > 0 && (
+                  <MenuGroup title="ใช้บ่อย" Icon={Zap} color="#f59e0b" items={shortcutItems} layout="quick" />
+                )}
+              </section>
             )}
-            {shortcutItems.length > 0 && (
-              <MenuGroup title="ใช้บ่อย" Icon={Zap} color="#f59e0b" items={shortcutItems} layout="quick" />
-            )}
-          </section>
+          </div>
         )}
       </div>
 
