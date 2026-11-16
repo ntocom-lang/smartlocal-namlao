@@ -146,6 +146,12 @@ jobs:
             complaint-news-image
             complaint-news-exec
             complaint-news-batch
+            # เมนูซ้ายพรีเมียม 4 ส่วน (#737 #739 #741 + ผู้พัฒนา): node ล้วน อ่านซอร์ส + คำนวณ contrast จริง ไม่ต่อเน็ต/ฐานข้อมูล
+            # ล้มเมื่อเมนูใหม่ไม่มีสี/สีกล่องเข้มไม่พอให้ไอคอนขาวอ่านออก · ตัวขาวบนแคปซูลไม่ผ่าน AA · ตัวเมนูเล็กลงจนอ่านยาก
+            # (เดิมรันเฉพาะในเครื่องผ่าน npm run test:nav-usage / test:citizen-nav — เจ้าของอนุมัติเพิ่มเข้า CI 2569-11-16)
+            nav-usage
+            citizen-nav
+            dev-nav
           )
           failed=()
           for t in "${tests[@]}"; do

@@ -101,7 +101,8 @@ try {
     await page.getByRole('heading', { name: 'ศูนย์ควบคุมงานพัฒนาระบบ' }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}: page overflow`)
     const switcher = page.locator('nav[aria-label="สลับมุมมองระบบ"]:visible')
-    assert.equal(await switcher.locator('a').count(), 4)
+    // 5 = ประชาชน/เจ้าหน้าที่/แอดมิน/ผู้พัฒนา + ห้องผู้บริหาร (#684 เพิ่มชิปนี้ เทสต์ค้างค่า 4 เดิมมาตั้งแต่นั้น)
+    assert.equal(await switcher.locator('a').count(), 5)
     assert.equal(await switcher.locator('[aria-current="page"]').innerText(), 'ผู้พัฒนา')
     for (const link of await switcher.locator('a').all()) {
       const box = await link.boundingBox()
@@ -123,7 +124,8 @@ try {
       const drawer = page.getByRole('dialog', { name: 'เมนูผู้พัฒนาระบบ' })
       await drawer.waitFor({ state: 'visible' })
       assert.equal(await drawer.getByRole('button', { name: /\[TEST\] หัวข้อที่/ }).count(), 0)
-      assert.equal(await drawer.locator('nav button').count(), 5, 'drawer: home + manager + three modules only')
+      // 6 = กลับหน้าแอดมิน + ที่ปรึกษา AI (#668) + จัดการโมดูล + ทั้งหมด/โครงสร้าง/ข้อมูลระบบ — หัวข้อไม่งอกเข้าเมนู
+      assert.equal(await drawer.locator('nav button').count(), 6, 'drawer: home + advisor + manager + three modules only')
       if (width === 320) await page.screenshot({ animations: 'disabled', path: path.join(output, '320-menu.png') })
       await drawer.getByRole('button', { name: /^ข้อมูลระบบ/ }).click()
       await drawer.waitFor({ state: 'hidden' })
@@ -139,7 +141,8 @@ try {
       await page.getByRole('heading', { name: 'ศูนย์ควบคุมงานพัฒนาระบบ' }).waitFor()
     } else {
       const nav = page.locator('[data-dev-aside] nav')
-      assert.equal(await nav.locator('button').count(), 4, 'sidebar does not grow with topic count')
+      // 5 = ที่ปรึกษา AI + จัดการโมดูล + ทั้งหมด/โครงสร้าง/ข้อมูลระบบ (ปุ่มกลับหน้าแอดมินอยู่นอก nav)
+      assert.equal(await nav.locator('button').count(), 5, 'sidebar does not grow with topic count')
       assert.equal(await nav.evaluate(el => el.scrollHeight > el.clientHeight + 1), false, `${width}: unnecessary sidebar scroll`)
       const positions = await page.evaluate(async () => {
         const scroller = document.querySelector('[data-scroll]')
@@ -160,7 +163,7 @@ try {
       await catalog.getByRole('button', { name: '[TEST] หัวข้อที่ 28 ชื่อยาวสำหรับตรวจเมนูซ้ายและมือถือ', exact: true }).click()
       await page.getByRole('heading', { name: '[TEST] บันทึกตัวอย่าง 28' }).waitFor()
       assert.equal(await module.getAttribute('aria-current'), 'page', 'module stays selected while viewing a topic')
-      assert.equal(await nav.locator('button').count(), 4)
+      assert.equal(await nav.locator('button').count(), 5)
       await nav.getByRole('button', { name: /^โครงสร้าง/ }).click()
       assert.equal(await page.getByRole('region', { name: 'สารบัญหัวข้อ' }).getByRole('button').count(), 1, 'switching modules clears the previous topic')
       await page.locator('[data-dev-aside]').getByRole('button', { name: /^ทั้งหมด/ }).click()
@@ -192,10 +195,10 @@ try {
       const nav = el.querySelector('nav')
       const footer = el.lastElementChild.getBoundingClientRect()
       const box = el.getBoundingClientRect()
-      return { bottom: box.bottom, footerBottom: footer.bottom, scroll: nav.scrollHeight > nav.clientHeight + 1 }
+      return { bottom: box.bottom, footerBottom: footer.bottom, scroll: nav.scrollHeight > nav.clientHeight + 1, sh: nav.scrollHeight, ch: nav.clientHeight }
     })
     assert(geometry.bottom <= height + 1 && geometry.footerBottom <= height + 1, 'short viewport: footer outside screen')
-    assert.equal(geometry.scroll, false, `${width}x${height}: topic count must not require sidebar scrolling`)
+    assert.equal(geometry.scroll, false, `${width}x${height}: topic count must not require sidebar scrolling (${geometry.sh}px vs ${geometry.ch}px)`)
     await page.locator('[data-dev-aside]').getByRole('button', { name: /^ข้อมูลระบบ/ }).click()
     assert.equal(await page.getByRole('region', { name: 'สารบัญหัวข้อ' }).getByRole('button').count(), 29)
     await page.screenshot({ animations: 'disabled', path: path.join(output, `${width}x${height}.png`) })

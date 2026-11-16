@@ -15,6 +15,8 @@ import PortalDrawer, { GroupLabel } from '../components/common/PortalDrawer'
 import { useNotifications } from '../contexts/NotificationsContext'
 import useStickyChrome from '../hooks/useStickyChrome'
 import { DEV_USER_ID } from '../lib/portalAccess'
+import DevNavButton from '../components/dev/DevNavButton'
+import { DEV_NAV_BG, DEV_ADVISOR_COLOR, DEV_ALL_COLOR, DEV_MANAGER_COLOR, colorFromName } from '../lib/navTileColor'
 
 // บันทึกครอบคลุมทุกหน่วยงาน แต่ใช้หัวเว็บ/เมนูธีมเดียวกับพอร์ทัลที่กำลังเปิดอยู่
 const CATEGORIES = [
@@ -293,29 +295,23 @@ function DevJournalWorkspace() {
     return (
       <>
         <GroupLabel>งานพัฒนาระบบ</GroupLabel>
-        <button type="button" onClick={() => { navigate('/dev-journal/advisor'); onSelected() }}
-          className="mb-1 flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs font-semibold text-white/80 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60">
-          <Sparkles size={16} className="shrink-0" /> ที่ปรึกษา AI
-        </button>
-        <button type="button" onClick={() => { setShowModuleManager(true); onSelected() }}
-          aria-current={showModuleManager ? 'page' : undefined}
-          className={`mb-2 flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${showModuleManager ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
-          <ShieldCheck size={16} className="shrink-0" /> จัดการโมดูล
-        </button>
+        <div className="mb-1 space-y-0.5">
+          <DevNavButton Icon={Sparkles} label="ที่ปรึกษา AI" color={DEV_ADVISOR_COLOR}
+            onClick={() => { navigate('/dev-journal/advisor'); onSelected() }} />
+          <DevNavButton Icon={ShieldCheck} label="จัดการโมดูล" color={DEV_MANAGER_COLOR} active={showModuleManager}
+            onClick={() => { setShowModuleManager(true); onSelected() }} />
+        </div>
         <GroupLabel count={entries.length}>ส่วนของระบบ</GroupLabel>
-        {MODULE_ITEMS.map(({ key, label, Icon, count }) => {
-          const isActive = !showModuleManager && activeModule === key
-          return (
-            <button key={key} type="button" onClick={() => { selectModule(key); onSelected() }}
-              aria-current={isActive ? 'page' : undefined}
-              className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
-              <Icon size={16} className="shrink-0" />
-              <span className="min-w-0 flex-1 text-left break-words">{label}</span>
-              <span className="shrink-0 rounded-full bg-white/15 px-1.5 py-0.5 text-[10px]">{count}</span>
-            </button>
-          )
-        })}
-        <p className="px-3 pt-3 text-[11px] leading-relaxed text-white/60">เลือกหัวข้อจากสารบัญในหน้าเนื้อหา</p>
+        <div className="space-y-0.5">
+          {MODULE_ITEMS.map(({ key, label, Icon, count }) => (
+            <DevNavButton key={key} Icon={Icon} label={label} count={count}
+              color={key === 'all' ? DEV_ALL_COLOR : colorFromName(label)}
+              active={!showModuleManager && activeModule === key}
+              onClick={() => { selectModule(key); onSelected() }} />
+          ))}
+        </div>
+        {/* จอเตี้ย (< 700px เช่น 768×600) ซ่อนคำแนะนำนี้ — ปุ่มทั้งหมดต้องอยู่ในจอโดยไม่ต้องเลื่อนเมนู (เคยล้น 19px) */}
+        <p className="px-3 pt-3 text-[11px] leading-relaxed text-white/60 [@media(max-height:699px)]:hidden">เลือกหัวข้อจากสารบัญในหน้าเนื้อหา</p>
       </>
     )
   }
@@ -345,7 +341,7 @@ function DevJournalWorkspace() {
         <PortalSwitcher className="mt-3 flex flex-wrap [&_a]:min-h-11" />
       </header>
 
-      <PortalDrawer open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="ผู้พัฒนาระบบ"
+      <PortalDrawer open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="ผู้พัฒนาระบบ" tone="dev"
         ariaLabel="เมนูผู้พัฒนาระบบ" homeItem={{ key: 'back-to-admin', label: 'กลับหน้าแอดมิน', Icon: ArrowLeft }}
         groups={[]} activeKey={null} onSelect={() => { closeDrawer(); navigate('/admin') }}>
         {renderModuleNavigation(closeDrawer)}
@@ -384,15 +380,12 @@ function DevJournalWorkspace() {
 
       <div className="md:flex">
         <aside data-dev-aside className="sticky hidden w-60 shrink-0 self-start flex-col shadow-lg md:flex"
-          style={{ backgroundColor: '#1a3a5c', top: stickyBox.top ?? undefined, height: stickyBox.height ?? undefined }}>
+          style={{ ...DEV_NAV_BG, top: stickyBox.top ?? undefined, height: stickyBox.height ?? undefined }}>
           <nav aria-label="เมนูผู้พัฒนาระบบ" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 [scrollbar-color:rgba(255,255,255,0.35)_transparent] [scrollbar-width:thin]">
             {renderModuleNavigation()}
           </nav>
           <div className="border-t border-white/10 px-3 py-3">
-            <button type="button" onClick={() => navigate('/admin')}
-              className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white">
-              <ArrowLeft size={16} /> กลับหน้าแอดมิน
-            </button>
+            <DevNavButton Icon={ArrowLeft} label="กลับหน้าแอดมิน" color="#475569" onClick={() => navigate('/admin')} />
           </div>
         </aside>
 

@@ -10,6 +10,8 @@ import PortalDrawer, { GroupLabel } from '../components/common/PortalDrawer'
 import { useNotifications } from '../contexts/NotificationsContext'
 import useStickyChrome from '../hooks/useStickyChrome'
 import { DEV_USER_ID } from '../lib/portalAccess'
+import DevNavButton from '../components/dev/DevNavButton'
+import { DEV_NAV_BG, DEV_ADVISOR_COLOR, DEV_ALL_COLOR } from '../lib/navTileColor'
 
 // ที่ปรึกษา AI เฉพาะ Super Admin — ย้ายมาอยู่ใต้ศูนย์ควบคุมงานพัฒนาระบบ (เจ้าของระบบอนุมัติ 2569-11-08, รอบ 2)
 // ด่านที่ 1: session user id ต้องเป็น DEV_USER_ID (แบบเดียวกับ DevJournal) ไม่ใช่ = กลับหน้าล็อกอิน
@@ -57,14 +59,11 @@ function DevAdvisorWorkspace({ role }) {
     return (
       <>
         <GroupLabel>งานพัฒนาระบบ</GroupLabel>
-        <button type="button" onClick={() => { navigate('/dev-journal'); onSelected() }}
-          className="mb-2 flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs font-semibold text-white/80 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60">
-          <ArrowLeft size={16} className="shrink-0" /> กลับศูนย์ควบคุมงานพัฒนาระบบ
-        </button>
-        <button type="button" aria-current="page"
-          className="flex min-h-11 w-full items-center gap-3 rounded-lg bg-white/20 px-3 py-2 text-left text-xs font-semibold text-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60">
-          <Sparkles size={16} className="shrink-0" /> ที่ปรึกษา AI
-        </button>
+        <div className="space-y-0.5">
+          <DevNavButton Icon={ArrowLeft} label="กลับศูนย์ควบคุมงานพัฒนาระบบ" color={DEV_ALL_COLOR}
+            onClick={() => { navigate('/dev-journal'); onSelected() }} />
+          <DevNavButton Icon={Sparkles} label="ที่ปรึกษา AI" color={DEV_ADVISOR_COLOR} active />
+        </div>
       </>
     )
   }
@@ -94,7 +93,7 @@ function DevAdvisorWorkspace({ role }) {
         <PortalSwitcher className="mt-3 flex flex-wrap [&_a]:min-h-11" />
       </header>
 
-      <PortalDrawer open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="ผู้พัฒนาระบบ"
+      <PortalDrawer open={drawerOpen} onClose={closeDrawer} tenant={tenant} portalLabel="ผู้พัฒนาระบบ" tone="dev"
         ariaLabel="เมนูผู้พัฒนาระบบ" homeItem={{ key: 'back-to-admin', label: 'กลับหน้าแอดมิน', Icon: ArrowLeft }}
         groups={[]} activeKey={null} onSelect={() => { closeDrawer(); navigate('/admin') }}>
         {renderNavigation(closeDrawer)}
@@ -133,15 +132,12 @@ function DevAdvisorWorkspace({ role }) {
 
       <div className="md:flex">
         <aside data-dev-aside className="sticky hidden w-60 shrink-0 self-start flex-col shadow-lg md:flex"
-          style={{ backgroundColor: '#1a3a5c', top: stickyBox.top ?? undefined, height: stickyBox.height ?? undefined }}>
+          style={{ ...DEV_NAV_BG, top: stickyBox.top ?? undefined, height: stickyBox.height ?? undefined }}>
           <nav aria-label="เมนูผู้พัฒนาระบบ" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 [scrollbar-color:rgba(255,255,255,0.35)_transparent] [scrollbar-width:thin]">
             {renderNavigation()}
           </nav>
           <div className="border-t border-white/10 px-3 py-3">
-            <button type="button" onClick={() => navigate('/admin')}
-              className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white">
-              <ArrowLeft size={16} /> กลับหน้าแอดมิน
-            </button>
+            <DevNavButton Icon={ArrowLeft} label="กลับหน้าแอดมิน" color="#475569" onClick={() => navigate('/admin')} />
           </div>
         </aside>
 
