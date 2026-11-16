@@ -352,7 +352,7 @@ export default function ConstructionProjectsModule({ tenant, profile }) {
       {lifeRow && lifecycle && (
         <ProjectLifecycleSheet
           key={lifeRow.project.id}
-          bundle={lifeRow.bundle} access={access(lifeRow.project)} latest={latest[lifeRow.project.id] ?? null} staffChoices={aux.staff}
+          bundle={lifeRow.bundle} access={access(lifeRow.project)} latest={latest[lifeRow.project.id] ?? null} staffChoices={aux.staff} tenant={tenant}
           onClose={() => setLifecycleId(null)} onChanged={loadList}
           onOpenSettings={() => { const project = lifeRow.project; setLifecycleId(null); openProjectSheet('edit', project) }}
         />
