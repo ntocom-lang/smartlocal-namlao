@@ -24,6 +24,7 @@ import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOrigi
 import { printableCategoryLabel, categoryNameOf } from '../lib/complaintCategoryLabels.js'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { ratingSource } from '../lib/complaintRatingResponseRate'
+import EserviceRatingSummary from '../components/admin/EserviceRatingSummary'
 import { workingDaysBetween, workingDaysSince } from '../lib/workingDays'
 import { uploadFile } from '../lib/driveStorage'
 import { driveFolderPath, DRIVE_MODULES } from '../lib/driveFolders'
@@ -5428,6 +5429,7 @@ const SOURCE_TABS = [
   { key: 'verified', label: 'ผู้ยื่นยืนยันตัวตน' },
   { key: 'via_link', label: 'ผ่านลิงก์ติดตาม' },
   { key: 'proxy',    label: 'สท. บันทึกแทน' },
+  { key: 'eservice', label: 'คำขอ E-Service' },
   { key: 'general',  label: 'ประเมินภาพรวม' },
 ]
 
@@ -5451,6 +5453,7 @@ function SatisfactionSummary({ tenant }) {
     via_link:    ratings.filter(r => ratingSource(r) === 'via_link'),
     proxy:       ratings.filter(r => ratingSource(r) === 'proxy'),
     linked_anon: ratings.filter(r => ratingSource(r) === 'linked_anon'),
+    eservice:    ratings.filter(r => ratingSource(r) === 'eservice'),
     general:     ratings.filter(r => ratingSource(r) === 'general'),
   }
   const filtered = sourceTab === 'all' ? ratings : bySource[sourceTab]
@@ -5519,6 +5522,7 @@ function SatisfactionSummary({ tenant }) {
   <tr><td>ผูกคำร้อง — ผู้ได้รับลิงก์ติดตามเรื่องให้คะแนน (ไม่ล็อกอิน)</td><td style="text-align:center">${bySource.via_link.length}</td><td>ยืนยันตัวผู้ให้คะแนนไม่ได้ แต่ต้องถือลิงก์ของเรื่องนั้น</td></tr>
   <tr><td>ผูกคำร้อง — สมาชิกสภาสอบถามแล้วบันทึกแทนผู้แจ้ง</td><td style="text-align:center">${bySource.proxy.length}</td><td>ผู้บันทึกคือสมาชิกสภา ไม่ใช่ผู้ได้รับบริการ</td></tr>
   <tr><td>ผูกคำร้อง — ให้คะแนนด้วยเลขอ้างอิงโดยไม่ล็อกอิน</td><td style="text-align:center">${bySource.linked_anon.length}</td><td>ยืนยันตัวผู้ให้คะแนนไม่ได้</td></tr>
+  <tr><td>ผูกคำขอ E-Service — ผู้ยื่นคำขอ (ประชาชนที่ล็อกอิน) ประเมินเอง</td><td style="text-align:center">${bySource.eservice.length}</td><td>ตรวจสอบย้อนกลับได้ถึงเลขคำขอ</td></tr>
   <tr><td>ประเมินภาพรวมหน่วยงาน (ไม่ผูกคำร้อง)</td><td style="text-align:center">${bySource.general.length}</td><td>ไม่ระบุตัวตนโดยเจตนา</td></tr>
 </tbody></table>
 <div class="footer">ออกจากระบบบริการออนไลน์ SmartLocal &nbsp;|&nbsp; ${tenant?.name ?? ''}</div>
@@ -5576,6 +5580,9 @@ function SatisfactionSummary({ tenant }) {
           </p>
         )}
       </div>
+
+      {/* คำขอ E-Service: อัตราตอบ/รายประเภทมาจากฐานข้อมูล (สูตรเดียวกับห้องผู้บริหาร) — การ์ดและกราฟด้านล่างยังเป็นคะแนนรายแถวของแท็บนี้ */}
+      {sourceTab === 'eservice' && <EserviceRatingSummary tenant={tenant} />}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

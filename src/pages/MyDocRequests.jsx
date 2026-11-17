@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Clock, CheckCircle2, XCircle,
   RefreshCw, Loader2, ChevronRight, X, Search, Download,
-  Share2, Copy, Check, Plus, Printer,
+  Share2, Copy, Check, Plus, Printer, Star,
 } from 'lucide-react'
 import { supabase, getSessionResilient } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -17,6 +17,9 @@ import { thaiDate, thaiDateFromDateInput, thaiDateTimeText } from '../lib/thaiDa
 import { resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../lib/driveStorage'
 import { PATIENT_TRANSPORT_TYPE, TRIP_TYPES, WORKFLOW_STATUS, optionLabel } from '../lib/patientTransport'
 import { buildPatientTransportFormHtml } from '../lib/patientTransportPrint'
+import SatisfactionModal from '../components/SatisfactionModal'
+import { RATING_OPTIONS } from '../lib/complaintRateInvite'
+import { findDocToPrompt, parseDocRatingData, ratingMapOf } from '../lib/docRequestRating'
 
 const BASE_DOC_TYPES = {
   residence_cert:   'ใบรับรองการอยู่อาศัย',
@@ -84,11 +87,45 @@ function StatusBadge({ status, documentType }) {
 // ของงานประปา รู้หลังช่างออกไปสำรวจหน้างาน)
 const FEE_INQUIRY_TYPES = ['tax_notice', 'waste_collection', 'water_supply_request', 'water_meter_change']
 
-function DocCard({ req, onClick }) {
-  const docLabel = docTypeLabel(req.document_type)
+// จำว่าใบไหนปิดหน้าต่างชวนประเมิน/ประเมินแล้วในเครื่องนี้ — localStorage เข้าถึงไม่ได้ในโหมดส่วนตัวของบางเบราว์เซอร์
+// (throw ตั้งแต่ getItem) ห้ามให้ทั้งหน้าพังเพราะแค่จำไม่ได้ · ฝั่งฐานข้อมูลกันประเมินซ้ำอยู่แล้ว
+function satDocDone(id) {
+  try { return localStorage.getItem(`sat_doc_done_${id}`) === '1' } catch { return false }
+}
+function markSatDocDone(id) {
+  try { localStorage.setItem(`sat_doc_done_${id}`, '1') } catch { /* ไม่จำก็ไม่เป็นไร */ }
+}
+
+// ส่วนประเมินความพึงพอใจของใบที่ปิดแล้ว — info = { rating, can_rate } จาก my_document_request_ratings
+// ประเมินแล้ว → หน้า+ป้าย · ประเมินได้ → ปุ่ม · ไม่ใช่ทั้งสอง (เคาน์เตอร์/ถอนเอง/ไม่มีข้อมูล) → ไม่แสดงอะไร
+function RatingSection({ info, onRate, compact = false }) {
+  if (!info) return null
+  const opt = info.rating ? RATING_OPTIONS.find(o => o.value === info.rating) : null
+  if (opt) {
+    return (
+      <p className={`text-xs font-semibold ${compact ? '' : 'rounded-xl px-3 py-2'}`}
+        style={compact ? { color: opt.color } : { color: opt.color, backgroundColor: opt.bg }}>
+        ประเมินแล้ว: <span aria-hidden="true">{opt.emoji}</span> {opt.label}
+      </p>
+    )
+  }
+  if (!info.can_rate || !onRate) return null
   return (
+    <button type="button" onClick={onRate}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 font-semibold text-amber-800 hover:bg-amber-100 active:scale-95 transition-all ${compact ? 'min-h-9 px-3 text-xs' : 'w-full min-h-11 px-4 text-sm'}`}>
+      <Star size={compact ? 13 : 15} /> ประเมินบริการนี้
+    </button>
+  )
+}
+
+function DocCard({ req, onClick, ratingInfo, onRate }) {
+  const docLabel = docTypeLabel(req.document_type)
+  const showRating = ratingInfo && (ratingInfo.rating || ratingInfo.can_rate)
+  return (
+    // ปุ่มประเมินอยู่นอกปุ่มการ์ด (button ซ้อน button ผิด HTML) — เปลือกนอกถือสไตล์การ์ด
+    <div className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all">
     <button onClick={onClick}
-      className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-4 text-left hover:shadow-md active:scale-[0.99] transition-all flex items-center gap-3">
+      className="w-full p-4 text-left active:scale-[0.99] transition-all flex items-center gap-3">
       <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
         <FileText size={18} className="text-blue-500" />
       </div>
@@ -108,6 +145,12 @@ function DocCard({ req, onClick }) {
       </div>
       <ChevronRight size={16} className="text-gray-300 shrink-0" />
     </button>
+    {showRating && (
+      <div className="px-4 pb-3 -mt-1 pl-[4.25rem]">
+        <RatingSection info={ratingInfo} onRate={onRate} compact />
+      </div>
+    )}
+    </div>
   )
 }
 
@@ -359,7 +402,7 @@ function PatientTransportProgress({ req, tenant, onChanged }) {
   )
 }
 
-function DocDetailSheet({ req, onClose, tenant, onChanged }) {
+function DocDetailSheet({ req, onClose, tenant, onChanged, ratingInfo, onRate }) {
   const docLabel = docTypeLabel(req.document_type)
   const [pdfBusy, setPdfBusy]         = useState(false)
 
@@ -599,6 +642,11 @@ function DocDetailSheet({ req, onClose, tenant, onChanged }) {
             </div>
           </div>
 
+          {/* ประเมินความพึงพอใจรายเรื่อง — ไม่ใช่ทั้ง "ประเมินแล้ว" และ "ประเมินได้" = ไม่แสดงอะไร */}
+          {ratingInfo && (ratingInfo.rating || ratingInfo.can_rate) && (
+            <RatingSection info={ratingInfo} onRate={onRate} />
+          )}
+
           {/* Details */}
           <div className="bg-gray-50 rounded-2xl p-4 space-y-2.5">
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">รายละเอียดคำขอ</p>
@@ -809,6 +857,11 @@ export default function MyDocRequests() {
   const [searching, setSearching]   = useState(false)
   const [searchResult, setSearchResult] = useState(null)
   const [searched, setSearched]     = useState(false)
+  // ผลประเมินรายเรื่อง { items, serverNow } — null = ยังโหลดไม่ได้/ฟังก์ชันยังไม่ขึ้นฐาน → ไม่โชว์ส่วนประเมินเลย (ห้ามขึ้น error)
+  const [ratingData, setRatingData] = useState(null)
+  const [satDocId, setSatDocId]     = useState(null)
+  const promptedRef = useRef(false) // เด้งชวนเองครั้งเดียวต่อการเปิดหน้า
+  const ratingMap = useMemo(() => ratingMapOf(ratingData?.items), [ratingData])
 
   useEffect(() => {
     _customDocLabels = (tenant?.fee_schedule?._custom_types || []).reduce((acc, t) => {
@@ -838,6 +891,41 @@ export default function MyDocRequests() {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [session, tenant?.id])
+
+  // ประเมินรายเรื่อง: โหลดหลังรายการ · ล้มเหลวทุกทาง (เช่น ฟังก์ชันยังไม่ขึ้นฐานจริง) = เงียบ ไม่ทำให้หน้าพัง
+  useEffect(() => {
+    if (!session || !tenant?.id) return
+    let cancelled = false
+    Promise.resolve(supabase.rpc('my_document_request_ratings', { p_muni: tenant.id }))
+      .then(({ data, error }) => {
+        if (cancelled || error || !Array.isArray(data?.items)) return
+        const parsed = parseDocRatingData(data)
+        setRatingData(parsed)
+        // เด้งหน้าต่างชวนเองครั้งเดียวต่อการเปิดหน้า — เฉพาะใบที่ปิดใน 30 วัน (นับจาก server_now) และยังไม่เคยปิดหน้าต่างของใบนั้น
+        // ตัดสินใน callback ของ RPC (ไม่ใช่ effect แยกที่ setState ตรงๆ) · SatisfactionModal หน่วงเปิดเอง 800ms อยู่แล้ว
+        if (promptedRef.current) return
+        promptedRef.current = true
+        const doneIds = new Set(parsed.items.filter(i => satDocDone(i.id)).map(i => i.id))
+        const target = findDocToPrompt(parsed.items, parsed.serverNow, doneIds)
+        if (target) setSatDocId(target.id)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [session, tenant?.id])
+
+  function openRating(id) { setSatDocId(id) }
+  // ปิดหน้าต่าง (ข้าม/ประเมินแล้ว) = ไม่เด้งซ้ำใบนี้อีกในเครื่องนี้ · ปุ่ม "ประเมินบริการนี้" ยังกดได้เสมอถ้ายังไม่ได้ให้คะแนน
+  function closeRating() {
+    if (satDocId) markSatDocDone(satDocId)
+    setSatDocId(null)
+  }
+  function handleRated(id, rating) {
+    markSatDocDone(id)
+    setRatingData(prev => prev && {
+      ...prev,
+      items: prev.items.map(i => (i.id === id ? { ...i, rating, can_rate: false } : i)),
+    })
+  }
 
   async function handleSearch() {
     const ref = searchRef.trim().toLowerCase()
@@ -920,7 +1008,8 @@ export default function MyDocRequests() {
                 <div className="md:hidden space-y-2.5">
                   <p className="text-xs text-gray-400 font-semibold px-1">{requests.length} คำขอ</p>
                   {requests.map(req => (
-                    <DocCard key={req.id} req={req} onClick={() => setSelected(req)} />
+                    <DocCard key={req.id} req={req} onClick={() => setSelected(req)}
+                      ratingInfo={ratingMap.get(req.id)} onRate={() => openRating(req.id)} />
                   ))}
                 </div>
 
@@ -1007,6 +1096,8 @@ export default function MyDocRequests() {
         <DocDetailSheet
           req={selected}
           tenant={tenant}
+          ratingInfo={session ? ratingMap.get(selected.id) : undefined}
+          onRate={() => openRating(selected.id)}
           onClose={() => setSelected(null)}
           // ผู้ยื่นยกเลิกคำขอเองจากในแผ่นรายละเอียด — อัปเดตสถานะในรายการตรงนี้เลย ไม่ต้องยิง query ใหม่
           onChanged={status => {
@@ -1015,6 +1106,14 @@ export default function MyDocRequests() {
             setSearchResult(patch)
             setSelected(patch)
           }}
+        />
+      )}
+
+      {satDocId && (
+        <SatisfactionModal
+          documentRequestId={satDocId}
+          onRated={handleRated}
+          onClose={closeRating}
         />
       )}
     </div>

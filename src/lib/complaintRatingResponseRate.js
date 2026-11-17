@@ -21,18 +21,24 @@ export const SUBMITTER_GROUPS = ['council', 'citizen', 'anonymous', 'staff', 'un
 
 export const SOURCE_KEYS = ['verified', 'via_link', 'proxy', 'linked_anon']
 
-// ที่มาของคะแนนมี 5 แบบ น้ำหนักความน่าเชื่อถือไม่เท่ากัน (ย้ายมาจาก AdminDashboard.jsx — พฤติกรรมเดิมทุกกรณี)
+// ที่มาของคะแนนมี 6 แบบ น้ำหนักความน่าเชื่อถือไม่เท่ากัน (ย้ายมาจาก AdminDashboard.jsx — พฤติกรรมเดิมทุกกรณี)
 //   verified    — ผูกกับคำร้อง และผู้ให้คะแนนคือผู้ยื่นคำร้องที่ล็อกอินแล้ว (ตรวจสอบย้อนกลับได้)
 //                 ⚠️ เรื่องที่ สท. ยื่นแทนชาวบ้าน คะแนนชุดนี้คือความเห็นของ สท. ไม่ใช่ของชาวบ้าน
 //   via_link    — ผู้ถือลิงก์ติดตามเรื่อง /t/<โทเคน> (ชาวบ้านที่ผู้ยื่นส่งลิงก์ให้) ไม่ได้ล็อกอิน
 //   proxy       — สท. ถามชาวบ้านแล้วบันทึกแทน (rate_complaint_on_behalf, 20261111100100) คนกดคือ สท.
 //   linked_anon — ผูกกับคำร้อง แต่ให้คะแนนผ่านการค้นด้วยเลขอ้างอิงโดยไม่ล็อกอิน (เลขเรียง เดาได้ เชื่อถือต่ำสุด)
 //   general     — แบบประเมินภาพรวมหน่วยงาน (หน้า /satisfaction) ไม่ผูกคำร้อง ไม่ระบุตัวตนโดยเจตนา
-// ลำดับตรวจ: proxy ก่อน via_link (CHECK ในฐานข้อมูลกันไม่ให้เป็นทั้งคู่อยู่แล้ว)
+//   eservice    — ผู้ยื่นคำขอ E-Service ประเมินรายเรื่อง (document_request_id ไม่ว่าง, rate_document_request) ไม่ใช่คำร้อง
+//                 ⚠️ ต้องแยกออกก่อน general เสมอ — ไม่งั้นคะแนนคำขอ (complaint_id ว่างเหมือนกัน) จะไหลเข้ายอดภาพรวมหน่วยงาน
+// ลำดับตรวจ: proxy → eservice → general → verified (แถวที่คำร้อง/คำขอต้นทางถูกลบ) → ที่เหลือ
+//   proxy ก่อน via_link (CHECK ในฐานข้อมูลกันไม่ให้เป็นทั้งคู่อยู่แล้ว)
+//   แถวที่ complaint_id ว่าง + is_verified = true + ไม่มี document_request_id = คะแนนที่เคยผูกคำร้อง/คำขอ แล้วต้นทางถูกลบ (FK set null)
+//   ไม่ใช่แบบประเมินภาพรวม (แบบภาพรวมบังคับ is_verified = false ที่ policy INSERT) → จัดเป็น 'verified' ไม่ปนยอด general
 export function ratingSource(r) {
   if (r.rated_by_proxy) return 'proxy'
-  if (!r.complaint_id) return 'general'
-  if (r.is_verified) return 'verified'
+  if (r.document_request_id) return 'eservice'
+  if (!r.complaint_id && !r.is_verified) return 'general'
+  if (r.is_verified) return 'verified'   // รวมแถวที่ต้นทางถูกลบ (complaint_id ว่าง + verified)
   return r.via_link ? 'via_link' : 'linked_anon'
 }
 
@@ -161,6 +167,9 @@ export function buildMonthlyResponseRate({ complaints = [], ratings = [], adhocV
   for (const r of ratings) {
     if (!r) continue
     const source = ratingSource(r)
+    // คะแนนคำขอ E-Service ไม่เกี่ยวกับอัตราตอบของคำร้อง (ตัวหารคือคำร้องที่ปิดแล้ว) — ห้ามปนเข้า bound หรือ general
+    // ตัวเลขของคำขอดูที่แท็บ "คำขอ E-Service" / ห้องผู้บริหาร (exec_satisfaction_eservice)
+    if (source === 'eservice') continue
     if (source === 'general') {
       const ms = toMs(r.created_at)
       if (ms !== null) generalRows.push({ month: monthIndex(thaiYearMonth(ms)), rating: Number(r.rating) })
