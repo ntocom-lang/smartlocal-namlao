@@ -9,15 +9,21 @@ import { monthPeriod, summarizeMonth } from '../../src/lib/complaintMonthlySumma
 
 const roots = []
 
-function Harness({ sample, staff }) {
+// areaCounts/issueBreakdown = จำลองผลจาก complaint_area_ranking_fy / complaint_issue_breakdown_fy (ไม่ส่ง = ไม่มีการ์ดนั้น)
+function Harness({ sample, staff, logoDataUrl = null, areaCounts = null, issueBreakdown = null }) {
   const [hidden, setHidden] = useState([])
   const args = {
     stats: sample.stats,
-    rows: Object.entries(sample.categories).flatMap(([category, n]) => Array.from({ length: n }, () => ({ category }))),
+    // มีสถานะทุกแถว — ปิดหมวดแล้วผลการดำเนินงานนับใหม่จากรายเรื่อง (ไฟฟ้า 13 เรื่องเสร็จหมด เพื่อให้ % เปลี่ยนให้เห็น)
+    rows: Object.entries(sample.categories).flatMap(([category, n]) => Array.from({ length: n }, (_, i) => ({
+      category, status: category === 'light' || i > 0 ? 'done' : 'in_progress',
+    }))),
     labelOf: code => sample.labels[code] ?? code,
     tenantName: 'เทศบาลตำบลสาธิต',
     period: monthPeriod(2569, 9),
     now: new Date('2026-10-18T05:00:00Z'),
+    issueBreakdown,
+    areaCounts,
   }
   const full = summarizeMonth(args)
   const exported = hidden.length ? summarizeMonth({ ...args, hiddenCategories: hidden }) : full
@@ -27,6 +33,7 @@ function Harness({ sample, staff }) {
     categoryOptions: staff ? full.allCategories : null,
     hiddenCategories: hidden,
     onToggleCategory: code => setHidden(list => (list.includes(code) ? list.filter(c => c !== code) : [...list, code])),
+    logoDataUrl,
   })
 }
 
