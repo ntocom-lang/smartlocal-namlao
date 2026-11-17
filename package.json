@@ -14,6 +14,7 @@
     "ai:check": "node scripts/ai-sync.mjs --check",
     "doctor": "node scripts/doctor.mjs",
     "handoff": "node scripts/handoff.mjs",
+    "worktree:sweep": "node scripts/worktree-sweep.mjs",
     "resume": "node scripts/resume.mjs",
     "memory:link": "node scripts/link-memory.mjs",
     "codex:link": "node scripts/link-codex-memory.mjs",
