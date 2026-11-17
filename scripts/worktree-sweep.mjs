@@ -27,7 +27,7 @@
  */
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readdirSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, rmdirSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 const args = process.argv.slice(2);
@@ -206,6 +206,7 @@ for (const r of removable) {
   const { path, branch } = r.t;
   try {
     git(['worktree', 'remove', path]); // ไม่ใส่ --force: มีไฟล์โผล่ใหม่ระหว่างรัน git ปฏิเสธเอง
+    removeShell(path);
     // -D ต้องใช้เพราะ squash merge ทำให้ git มองว่าสาขายังไม่ merge — เราตรวจกับ PR แล้ว (commit ปลายตรงเป๊ะ)
     git(['branch', '-D', branch]);
     if (!KEEP_REMOTE) {
@@ -224,9 +225,24 @@ try {
 } catch { /* ไม่ร้ายแรง */ }
 
 console.log(`\nเสร็จ: ลบ ${done}/${removable.length}${failed.length ? ` · ไม่สำเร็จ ${failed.length} (ดูข้างบน)` : ''}`);
-try {
-  // เศษโฟลเดอร์ว่างที่ git ลบไม่หมด (Windows บางครั้งค้าง) — แจ้งเฉยๆ ไม่ลบเอง
-  const leftovers = removable.filter((r) => { try { return readdirSync(r.t.path).length >= 0; } catch { return false; } });
-  if (leftovers.length) console.log(`⚠️ โฟลเดอร์ที่ยังค้างหลังลบ ${leftovers.length} ตัว (ลบมือได้): ${leftovers.slice(0, 5).map((r) => r.t.path).join(', ')}`);
-} catch { /* ignore */ }
+const leftovers = removable.filter((r) => existsSync(r.t.path));
+if (leftovers.length) console.log(`⚠️ โฟลเดอร์ที่ยังค้างหลังลบ ${leftovers.length} ตัว (มีของอื่นนอกจากลิงก์ node_modules — ดูเองก่อนลบ): ${leftovers.slice(0, 5).map((r) => r.t.path).join(', ')}`);
 process.exit(failed.length ? 1 : 0);
+
+/**
+ * git worktree remove ทิ้งเปลือกโฟลเดอร์ไว้เมื่อในนั้นมี node_modules เป็น junction ชี้ไปทรีหลัก
+ * (พบจริง 2569-11-18: 127 จาก 150 ตัว) — ลบเฉพาะ "ตัวลิงก์" แล้วลบโฟลเดอร์แบบไม่ recursive
+ * ⚠️ ห้ามใช้ rmSync({ recursive }) / rm -rf ตรงนี้: ตามลิงก์เข้าไปลบ node_modules ของทรีหลักได้
+ * โฟลเดอร์ที่ยังมีของอื่นจะลบไม่สำเร็จ (ENOTEMPTY) และถูกรายงานเป็น leftovers แทน
+ */
+function removeShell(dir) {
+  if (!existsSync(dir)) return;
+  try {
+    const entries = readdirSync(dir);
+    if (entries.length === 1 && entries[0] === 'node_modules') {
+      const nm = join(dir, 'node_modules');
+      if (lstatSync(nm).isSymbolicLink()) unlinkSync(nm); // Node บน Windows เห็น junction เป็น symlink
+    }
+    rmdirSync(dir); // ไม่ recursive — ไม่ว่าง = error ไม่ลบอะไร
+  } catch { /* ปล่อยให้ไปโผล่ใน leftovers */ }
+}
