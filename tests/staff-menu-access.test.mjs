@@ -40,6 +40,8 @@ function legacy({ role, profile, tenant, allModuleKeys }) {
   const hasWaterEventsAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
     && (!Array.isArray(tenant?.enabled_modules) || tenant.enabled_modules.includes('water-situation'))
   const hasLocalPlanAccess = ['superadmin', 'admin', 'officer', 'staff', 'viewer'].includes(role)
+  // ทะเบียนใบอนุญาต (2569-12-03): เห็นเมนู = admin/officer/staff/superadmin (สิทธิ์ใช้จริงที่ licence_is_manager ฝั่งฐาน)
+  const hasLicenceAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
   const technicianKeys = ['complaints', 'infra', 'projects', 'events', 'data-center', 'fleet', 'manual-staff', 'performance']
   const roleScopedKeys = role === 'technician'
     ? enabledKeys.filter(k => technicianKeys.includes(k))
@@ -50,6 +52,7 @@ function legacy({ role, profile, tenant, allModuleKeys }) {
     ...(hasPerformanceAccess ? [] : ['performance']),
     ...(hasWaterEventsAccess ? [] : ['water-events']),
     ...(hasLocalPlanAccess ? [] : ['local-plan']),
+    ...(hasLicenceAccess ? [] : ['licence-registry']),
   ].reduce((keys, hidden) => keys.filter(k => k !== hidden), roleScopedKeys)
   return { enabledKeys, scopedKeys, hasLocalPlanAccess }
 }

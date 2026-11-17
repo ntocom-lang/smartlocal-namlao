@@ -56,6 +56,7 @@ import useStickyChrome from '../hooks/useStickyChrome'
 const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
 const ConstructionProjectsModule = lazy(() => import('../components/staff/construction/ConstructionProjectsModule'))
 const LocalPlanModule = lazy(() => import('../components/staff/localPlan/LocalPlanModule'))
+const LicenceModule = lazy(() => import('../components/staff/licence/LicenceModule'))
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 const EventsManager = lazy(() => import('../components/admin/EventsManager'))
 const ComplaintsManager = lazy(() => import('../components/admin/ComplaintsManager'))
@@ -3005,6 +3006,7 @@ export default function StaffDashboard() {
             {/* เข้าหน้านี้ได้ทางลิงก์/เมนูเท่านั้น ที่ไม่ผ่านตัวกรองเมนูต้องเช็คสิทธิ์ซ้ำ (ตัวบังคับจริงคือฟังก์ชันฐานข้อมูล) */}
             {/* เข้าหน้านี้ได้ทางเมนู/router state — ตรวจสิทธิ์ซ้ำเหมือนเมนูอื่นที่คุมด้วยบทบาท (ตัวบังคับจริงคือ RLS) */}
             {activeModule === 'local-plan' && visibleModules.some(m => m.key === 'local-plan') && <LocalPlanModule tenant={tenant} profile={profile} />}
+            {activeModule === 'licence-registry' && visibleModules.some(m => m.key === 'licence-registry') && <LicenceModule tenant={tenant} profile={profile} />}
             {activeModule === 'water-events' && visibleModules.some(m => m.key === 'water-events') && <WaterEventsPanel tenant={tenant} profile={profile} />}
             {activeModule === PATIENT_TRANSPORT_MODULE_KEY && <PatientTransportStaff onBack={() => setActiveModule('home')} />}
             {activeModule === 'borrowable-assets' && (

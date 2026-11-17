@@ -285,6 +285,14 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     kpis: [], alerts: [], reports: [],
   },
   {
+    // ทะเบียนใบอนุญาต (ขั้น 1B / E3 PR1) — ยังไม่มีตัวเลขบนห้องผู้บริหาร: ไม่มี summaryKey/RPC (ไม่มี SQL ในงานนี้)
+    // ข้อมูลมีชื่อผู้ประกอบการ (PDPA) และ viewer อ่านตารางตรงๆ ไม่ได้ (RLS: ผู้จัดการทะเบียนเท่านั้น) จึงขึ้นเป็นลิงก์เข้าเมนูอย่างเดียว
+    // ตัวเลข "ใบใกล้หมดอายุ/ค้างชำระ" ต้องมาจาก exec_summary_licence() ที่ตรวจสิทธิ์แล้ว (migration-reviewer ทุกครั้ง) = งานเฟสถัดไป
+    key: 'licence-registry', kind: 'module', label: 'ทะเบียนใบอนุญาต', icon: 'FileCheck2', dept: 'สำนักปลัด',
+    zones: ['context'], isCitizenService: false, docTypes: [], summaryKey: null, phase: 'E2',
+    link: { module: 'licence-registry' }, kpis: [], alerts: [], reports: [],
+  },
+  {
     key: 'water-situation', kind: 'module', label: 'สถานการณ์น้ำ-ฝน', icon: 'CloudRain', dept: 'สำนักปลัด',
     zones: ['decision', 'alert', 'area'], isCitizenService: false, docTypes: [], summaryKey: 'water', phase: 'E1',
     link: { path: '/water-situation' },
