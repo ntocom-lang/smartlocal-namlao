@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
+import { formatApptDate, isDateOnly, offDayWarning, preferredDateRange } from '../../lib/complaintAppointment'
 import { X, MapPin, Loader2, ImagePlus, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
@@ -13,7 +14,20 @@ import TrackLinkCard from '../complaints/TrackLinkCard'
 const MAX_PHOTOS = 3
 
 export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
-  const [form, setForm] = useState({ category: '', reporter_name: '', phone: '', village: '', detail: '' })
+  const [form, setForm] = useState({ category: '', reporter_name: '', phone: '', village: '', detail: '', preferred_date: '' })
+  // หมวดที่ อปท. เปิดนัดหมาย (งาน 1.1) — ผู้แจ้งที่เคาน์เตอร์บอกวันที่สะดวกได้เหมือนฟอร์มออนไลน์
+  // คิวรีพลาด (เช่นยังไม่รัน SQL) = ไม่มีช่องนี้ ฟอร์มที่เหลือใช้ได้ตามเดิม
+  const [appointmentCategories, setAppointmentCategories] = useState(() => new Set())
+  useEffect(() => {
+    if (!tenant?.id) return
+    let cancelled = false
+    supabase.from('complaint_categories').select('value').eq('municipality_id', tenant.id).eq('requires_appointment', true)
+      .then(({ data, error: queryError }) => {
+        if (cancelled || queryError) return
+        setAppointmentCategories(new Set((data ?? []).map((row) => row.value).filter((value) => value !== 'odor')))
+      })
+    return () => { cancelled = true }
+  }, [tenant?.id])
   const [photos, setPhotos] = useState([])
   const [geo, setGeo] = useState({ lat: null, lng: null })
   const [showMap, setShowMap] = useState(false)
@@ -40,6 +54,14 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
     // ไม่จำกัดความยาวขั้นต่ำแล้ว (เจ้าของระบบสั่ง 2569-09-17) — ยังบังคับว่าต้องกรอก
     if (!form.detail.trim()) { setError('กรุณากรอกรายละเอียด'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
+    const wantsPreferred = appointmentCategories.has(form.category) && Boolean(form.preferred_date)
+    if (wantsPreferred) {
+      const { min, max } = preferredDateRange()
+      if (!isDateOnly(form.preferred_date) || form.preferred_date < min || form.preferred_date > max) {
+        setError(`วันที่สะดวกต้องอยู่ระหว่าง ${formatApptDate(min)} ถึง ${formatApptDate(max)} หรือเว้นว่างไว้`)
+        return
+      }
+    }
 
     setError(null)
     setSubmitting(true)
@@ -59,7 +81,8 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
         p_user_id: null,
         p_channel: 'oss_counter',
         p_issue_type: null,
-        p_extra_data: null,
+        // วันที่สะดวกของผู้แจ้ง (ไม่ใช่วันนัด) — เจ้าหน้าที่ยืนยันวันนัดในรายละเอียดคำร้องภายหลัง
+        p_extra_data: wantsPreferred ? { preferred_date: form.preferred_date } : null,
       }).single()
 
       if (dbError) { setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
@@ -218,6 +241,22 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
                   maxLength={250}
                   className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
               </div>
+              {appointmentCategories.has(form.category) && (() => {
+                const range = preferredDateRange()
+                const offDay = form.preferred_date ? offDayWarning(form.preferred_date) : ''
+                return (
+                  <div data-preferred-date>
+                    <label htmlFor="oss-preferred-date" className="text-xs font-semibold text-gray-500 mb-1 block">
+                      วันที่ผู้แจ้งสะดวกให้เข้าดำเนินการ <span className="font-normal text-gray-400">(ไม่บังคับ)</span>
+                    </label>
+                    <input id="oss-preferred-date" type="date" value={form.preferred_date} onChange={set('preferred_date')}
+                      min={range.min} max={range.max}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
+                    {offDay && <p role="status" className="mt-1 text-xs text-amber-700">{offDay}</p>}
+                    <p className="mt-1 text-xs text-gray-400">ยืนยันวันนัดจริงได้ในรายละเอียดคำร้องหลังบันทึก</p>
+                  </div>
+                )
+              })()}
               <div>
                 <label className="text-xs font-semibold text-gray-500 mb-1 block">รายละเอียด *</label>
                 {/* ถอด minLength ออกแล้ว (ไม่จำกัดความยาวขั้นต่ำ 2569-09-17) */}

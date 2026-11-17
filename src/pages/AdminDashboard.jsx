@@ -78,6 +78,10 @@ import { fetchActiveSignatories } from '../lib/signatoryApi'
 import { logAction } from '../lib/auditLog'
 import { CategoryIcon } from '../lib/categoryIcon'
 import { isOfficialsOnlyCategory, SUBMIT_AUDIENCE_OFFICIALS, SUBMIT_AUDIENCE_PUBLIC } from '../lib/serviceAudience'
+import {
+  FEE_ADMIN_HINT, FEE_LIMITS, TRACK_PHOTO_BOTH_WARNING, TRACK_PHOTO_LOCKED_NOTE, TRACK_PHOTO_MODES, DEFAULT_TRACK_PHOTO_MODE,
+  blankFeeRow, feeRowsToDraft, feeSaveErrorMessage, trackPhotosLocked, validateFeeReference, validateFeeRows,
+} from '../lib/complaintAppointment'
 
 // ─── หน้า "ประเภทคำร้อง" แบ่งเป็นแท็บ ─────────────────────────────────────────
 // เดิมวาง 3 ส่วนซ้อนกันลงมาจนต้องเลื่อนจอหลายหน้ากว่าจะถึงส่วนล่างสุด แยกเป็นแท็บ 2026-08-31
@@ -3594,7 +3598,235 @@ function ParkingChip({ cat, onToggle, className = '', short = false }) {
   )
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onToggleSubmitAudience, onToggleManualIntake, onToggleResolvedPin, onToggleParking, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = DEFAULT_SLA_WORKING_DAYS, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
+// ปุ่มเปิดกล่อง "นัดหมาย · รูปหน้าติดตามเรื่อง · อัตราค่าบริการ" รายหมวด — งาน 1.1 (E1)
+// ตารางตั้งค่าหมวดกว้างเต็มแล้ว (12 คอลัมน์) จึงรวม 3 ค่านี้ไว้ในกล่องเดียวแทนการเพิ่มคอลัมน์ · ป้ายบนปุ่มบอกค่าที่ตั้งไว้
+function extrasSummary(cat) {
+  const parts = []
+  if (cat.requires_appointment) parts.push('📅 นัดหมาย')
+  const feeCount = Array.isArray(cat.fee_rates) ? cat.fee_rates.length : 0
+  if (feeCount > 0) parts.push(`💰 อัตรา ${feeCount}`)
+  const photoMode = cat.track_photos ?? DEFAULT_TRACK_PHOTO_MODE
+  if (photoMode === 'both') parts.push('🖼️ รูปก่อน-หลัง')
+  else if (photoMode === 'none') parts.push('🖼️ ไม่แสดงรูป')
+  return parts
+}
+
+function ExtrasButton({ cat, onOpen, className = '' }) {
+  const parts = extrasSummary(cat)
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen?.(cat.id)}
+      title="ตั้งค่านัดหมายวันเข้าดำเนินการ · รูปในหน้าติดตามเรื่อง (/t/) · อัตราค่าบริการ (แสดงอย่างเดียว)"
+      className={`px-2 py-1 rounded-full font-bold transition-colors ${parts.length ? 'bg-teal-100 text-teal-800 hover:bg-teal-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'} ${className}`}
+    >
+      ⚙️ {parts.length ? parts.join(' · ') : 'นัดหมาย/รูป/อัตรา'}
+    </button>
+  )
+}
+
+// กล่องตั้งค่า: (1) สวิตช์นัดหมาย (2) รูปในหน้า /t/ (3) ตารางอัตราค่าบริการ
+// สวิตช์/ตัวเลือกบันทึกทันทีที่เปลี่ยน ส่วนตารางอัตรามีปุ่ม "บันทึกอัตรา" — บันทึก fee_rates + fee_reference ทีเดียว
+// ฟังก์ชันที่รับมาคืนข้อความผิดพลาดภาษาไทย (หรือ null เมื่อสำเร็จ) ให้กล่องแสดงเอง เพราะแถบ error ของหน้าอยู่ใต้กล่องนี้
+function CategoryExtrasModal({ cat, onClose, onToggleAppointment, onChangeTrackPhotos, onSaveFees }) {
+  const photoLocked = trackPhotosLocked(cat)
+  const photoMode = photoLocked ? 'none' : (cat.track_photos ?? DEFAULT_TRACK_PHOTO_MODE)
+  const appointmentLocked = !!cat.is_adhoc
+  const [feeRows, setFeeRows] = useState(() => feeRowsToDraft(cat.fee_rates))
+  const [feeReference, setFeeReference] = useState(() => cat.fee_reference ?? '')
+  const [feeOpen, setFeeOpen] = useState(() => Array.isArray(cat.fee_rates) && cat.fee_rates.length > 0)
+  const [feeMessage, setFeeMessage] = useState(null) // { tone: 'ok' | 'error', text }
+  const [busy, setBusy] = useState('')
+  const [message, setMessage] = useState('')
+
+  async function run(key, work) {
+    setBusy(key)
+    setMessage('')
+    try {
+      const failure = await work()
+      if (failure) setMessage(failure)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  function editFeeRow(index, field, value) {
+    setFeeMessage(null)
+    setFeeRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)))
+  }
+
+  async function saveFees() {
+    setFeeMessage(null)
+    const checkedRows = validateFeeRows(feeRows)
+    if (!checkedRows.ok) { setFeeMessage({ tone: 'error', text: checkedRows.error }); return }
+    const checkedRef = validateFeeReference(feeReference)
+    if (!checkedRef.ok) { setFeeMessage({ tone: 'error', text: checkedRef.error }); return }
+    setBusy('fees')
+    try {
+      const failure = await onSaveFees(cat, checkedRows.rows, checkedRef.value)
+      if (failure) { setFeeMessage({ tone: 'error', text: failure }); return }
+      setFeeRows(feeRowsToDraft(checkedRows.rows))
+      setFeeReference(checkedRef.value ?? '')
+      setFeeMessage({ tone: 'ok', text: checkedRows.rows.length ? `บันทึกอัตรา ${checkedRows.rows.length} รายการแล้ว` : 'ล้างตารางอัตราแล้ว (หน้าประชาชนจะไม่แสดงอัตรา)' })
+    } finally {
+      setBusy('')
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[88vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-gray-800">นัดหมาย · รูปหน้าติดตามเรื่อง · อัตราค่าบริการ</p>
+            <p className="text-xs text-gray-400 truncate">{cat.label}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="ปิด" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+          {message && (
+            <div role="alert" className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700">⚠️ {message}</div>
+          )}
+
+          {/* 1) นัดหมาย */}
+          <section className="space-y-2" aria-labelledby="extras-appointment-title">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 id="extras-appointment-title" className="text-sm font-bold text-gray-800">นัดหมายวันเข้าดำเนินการ</h3>
+                <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                  เปิดแล้ว ฟอร์มของประชาชนมีช่อง “วันที่สะดวก” (ไม่บังคับ) และเจ้าหน้าที่ยืนยันวันนัดได้ในรายละเอียดคำร้อง
+                  ผู้แจ้งเห็นวันนัดที่ลิงก์ติดตามเรื่อง
+                </p>
+              </div>
+              <div className={busy === 'appointment' ? 'opacity-50 pointer-events-none' : ''}>
+                <CategoryActiveSwitch
+                  compact
+                  active={cat.requires_appointment === true}
+                  onToggle={() => { if (!appointmentLocked) run('appointment', () => onToggleAppointment(cat)) }}
+                />
+              </div>
+            </div>
+            {appointmentLocked && (
+              <p className="text-xs text-lime-800 bg-lime-50 border border-lime-200 rounded-lg px-2.5 py-1.5">หมวดเฉพาะกิจไม่ใช้การนัดหมาย (ระบบไม่รับการนัดของหมวดนี้)</p>
+            )}
+          </section>
+
+          {/* 2) รูปในหน้า /t/ */}
+          <section className="space-y-2" aria-labelledby="extras-photos-title">
+            <h3 id="extras-photos-title" className="text-sm font-bold text-gray-800">รูปในหน้าติดตามเรื่อง (/t/)</h3>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              หน้าติดตามเรื่องเปิดได้โดยไม่ล็อกอิน ทุกคนที่มีลิงก์เห็นรูปที่เลือกไว้ — รูปโหลดเมื่อผู้ดูแตะปุ่มเท่านั้น
+            </p>
+            <div role="radiogroup" aria-labelledby="extras-photos-title" className="space-y-1.5">
+              {TRACK_PHOTO_MODES.map((mode) => (
+                <label key={mode.value}
+                  className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${photoMode === mode.value ? 'border-teal-400 bg-teal-50 text-teal-900 font-semibold' : 'border-gray-200 text-gray-700'} ${photoLocked ? 'opacity-60' : 'cursor-pointer'}`}>
+                  <input type="radio" name={`track-photos-${cat.id}`} value={mode.value}
+                    checked={photoMode === mode.value}
+                    disabled={photoLocked || busy === 'photos'}
+                    onChange={() => run('photos', () => onChangeTrackPhotos(cat, mode.value))} />
+                  {mode.label}
+                  {mode.value === DEFAULT_TRACK_PHOTO_MODE && !photoLocked && <span className="text-[11px] font-normal text-gray-400">(ค่าเริ่มต้น)</span>}
+                </label>
+              ))}
+            </div>
+            {photoLocked && (
+              <p className="text-xs text-lime-800 bg-lime-50 border border-lime-200 rounded-lg px-2.5 py-1.5">{TRACK_PHOTO_LOCKED_NOTE}</p>
+            )}
+            {!photoLocked && photoMode === 'both' && (
+              <p role="alert" className="text-xs text-amber-900 bg-amber-50 border border-amber-300 rounded-lg px-2.5 py-1.5 leading-relaxed">
+                ⚠️ {TRACK_PHOTO_BOTH_WARNING}
+              </p>
+            )}
+          </section>
+
+          {/* 3) อัตราค่าบริการ — แสดงอย่างเดียว ไม่รับเงิน */}
+          <section className="space-y-2" aria-labelledby="extras-fee-title">
+            <button type="button" onClick={() => setFeeOpen((open) => !open)} aria-expanded={feeOpen}
+              className="w-full flex items-center justify-between gap-2 text-left">
+              <span>
+                <span id="extras-fee-title" className="block text-sm font-bold text-gray-800">อัตราค่าบริการ (แสดงอย่างเดียว ไม่รับเงิน)</span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  {feeRows.length > 0 ? `ตั้งไว้ ${feeRows.length} รายการ` : 'ยังไม่ได้ตั้ง — ประชาชนไม่เห็นตารางอัตรา'}
+                </span>
+              </span>
+              {feeOpen ? <ChevronUp size={16} className="text-gray-400 shrink-0" /> : <ChevronDown size={16} className="text-gray-400 shrink-0" />}
+            </button>
+
+            {feeOpen && (
+              <div className="space-y-3">
+                <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 leading-relaxed">{FEE_ADMIN_HINT}</p>
+                {feeRows.map((row, index) => (
+                  <div key={index} className="rounded-xl border border-gray-200 bg-gray-50 p-2.5 space-y-2">
+                    <input type="text" value={row.item} maxLength={FEE_LIMITS.item}
+                      onChange={(e) => editFeeRow(index, 'item', e.target.value)}
+                      placeholder="รายการ เช่น ดูดสิ่งปฏิกูลในเขต"
+                      aria-label={`รายการ แถวที่ ${index + 1}`}
+                      className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-900 focus:outline-none focus:border-amber-400" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input type="text" value={row.unit} maxLength={FEE_LIMITS.unit}
+                        onChange={(e) => editFeeRow(index, 'unit', e.target.value)}
+                        placeholder="หน่วย เช่น ลบ.ม."
+                        aria-label={`หน่วย แถวที่ ${index + 1}`}
+                        className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-900 focus:outline-none focus:border-amber-400" />
+                      <input type="text" inputMode="decimal" value={row.rate}
+                        onChange={(e) => editFeeRow(index, 'rate', e.target.value)}
+                        placeholder="อัตรา (บาท)"
+                        aria-label={`อัตรา (บาท) แถวที่ ${index + 1}`}
+                        className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-900 focus:outline-none focus:border-amber-400" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input type="text" value={row.note} maxLength={FEE_LIMITS.note}
+                        onChange={(e) => editFeeRow(index, 'note', e.target.value)}
+                        placeholder="หมายเหตุ (ไม่บังคับ)"
+                        aria-label={`หมายเหตุ แถวที่ ${index + 1}`}
+                        className="flex-1 min-w-0 text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-900 focus:outline-none focus:border-amber-400" />
+                      <button type="button" onClick={() => { setFeeMessage(null); setFeeRows((prev) => prev.filter((_, i) => i !== index)) }}
+                        title="ลบแถวนี้" aria-label={`ลบแถวที่ ${index + 1}`}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <button type="button" disabled={feeRows.length >= FEE_LIMITS.rows}
+                  onClick={() => { setFeeMessage(null); setFeeRows((prev) => [...prev, blankFeeRow()]) }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-40">
+                  <Plus size={13} /> เพิ่มแถว ({feeRows.length}/{FEE_LIMITS.rows})
+                </button>
+                <div>
+                  <label htmlFor={`fee-ref-${cat.id}`} className="block text-xs font-semibold text-gray-600 mb-1">อ้างอิงข้อบัญญัติ/ประกาศ</label>
+                  <input id={`fee-ref-${cat.id}`} type="text" value={feeReference} maxLength={FEE_LIMITS.reference}
+                    onChange={(e) => { setFeeMessage(null); setFeeReference(e.target.value) }}
+                    placeholder="เช่น ข้อบัญญัติ... เรื่อง ... พ.ศ. ..."
+                    className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-900 focus:outline-none focus:border-amber-400" />
+                </div>
+                {feeMessage && (
+                  <p role={feeMessage.tone === 'error' ? 'alert' : 'status'}
+                    className={`text-xs rounded-lg px-2.5 py-1.5 ${feeMessage.tone === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-green-50 border border-green-200 text-green-800'}`}>
+                    {feeMessage.tone === 'error' ? '⚠️ ' : '✓ '}{feeMessage.text}
+                  </p>
+                )}
+                <button type="button" onClick={saveFees} disabled={busy === 'fees'}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--color-primary)' }}>
+                  {busy === 'fees' ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                  บันทึกอัตรา
+                </button>
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onToggleSubmitAudience, onToggleManualIntake, onToggleResolvedPin, onToggleParking, onOpenExtras, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = DEFAULT_SLA_WORKING_DAYS, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -3688,6 +3920,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
         <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="whitespace-nowrap text-[12px]" />
         <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="whitespace-nowrap text-[12px]" />
         <ParkingChip cat={cat} onToggle={onToggleParking} className="whitespace-nowrap text-[12px]" />
+        <ExtrasButton cat={cat} onOpen={onOpenExtras} className="whitespace-nowrap text-[12px]" />
       </div>
 
       {/* assignment row */}
@@ -3735,7 +3968,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
   )
 }
 
-function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [], techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onToggleSubmitAudience, onToggleManualIntake, onToggleResolvedPin, onToggleParking, onDeleteCat, onEditEmoji, iconStyle }) {
+function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [], techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onToggleSubmitAudience, onToggleManualIntake, onToggleResolvedPin, onToggleParking, onOpenExtras, onDeleteCat, onEditEmoji, iconStyle }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const editingLabel = !!draft?.editingLabel
   const hasDraft = !!draft && !editingLabel
@@ -3788,6 +4021,10 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
               >
                 {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
               </button>
+              {/* นัดหมาย/รูป/อัตรา: ตารางไม่มีที่เพิ่มคอลัมน์ จึงวางปุ่มใต้ชื่อ (ปุ่มเปิดกล่องตั้งค่ารายหมวด) */}
+              <div className="mt-1">
+                <ExtrasButton cat={cat} onOpen={onOpenExtras} className="max-w-full truncate text-[10px] leading-tight !px-1.5 !py-0.5" />
+              </div>
             </div>
           </div>
         )}
@@ -3915,6 +4152,9 @@ function CategoryManager({ tenant }) {
   const [rowDrafts, setRowDrafts] = useState({}) // { catValue: { label?, technician_id?, sla_days?, editingLabel? } }
   const [savingAll, setSavingAll] = useState(false)
   const [iconPickerCat, setIconPickerCat] = useState(null)
+  // id ของหมวดที่เปิดกล่อง "นัดหมาย · รูป /t/ · อัตราค่าบริการ" (null = ปิด) — เก็บเป็น id แล้วหาแถวสดจาก cats ทุกครั้ง
+  // กล่องจึงเห็นค่าที่เพิ่งบันทึก ไม่ค้างสำเนาเก่า
+  const [extrasCatId, setExtrasCatId] = useState(null)
   // แยกแท็ป "ปกติ" กับ "เฉพาะกิจ" (เช่นหมวดกลิ่นเหม็นรบกวนที่ส่งตรงผู้รับผิดชอบ ไม่ผ่านแอดมิน) — ใช้คอลัมน์
   // complaint_categories.is_adhoc แยกกลุ่มให้แอดมินตั้งหมวดใหม่เป็นเฉพาะกิจได้เองในอนาคตโดยไม่ต้องแก้โค้ด
   const [categoryTab, setCategoryTab] = useState('normal') // 'normal' | 'adhoc'
@@ -4374,6 +4614,63 @@ function CategoryManager({ tenant }) {
     setError(null)
   }
 
+  // เขียนคอลัมน์ตั้งค่ารายหมวด 1 ชุด — RLS ปัดตกเงียบได้ (PostgREST คืน 204 ไม่มี error) จึงต้องนับแถวที่เขียนจริง
+  // เหมือน toggleParking · คืน { row } เมื่อสำเร็จ หรือ { error } เมื่อพลาด (error ยังเป็นออบเจ็กต์เดิมเพื่อให้ผู้เรียกอ่าน .code ได้)
+  async function writeCategoryColumns(id, patch, noPermissionText) {
+    const columns = ['id', ...Object.keys(patch)].join(', ')
+    const { data, error: err } = await supabase.from('complaint_categories')
+      .update(patch).eq('id', id).select(columns)
+    if (err) return { error: err }
+    if (!data || data.length === 0) return { error: new Error(noPermissionText) }
+    setCats((prev) => prev.map((c) => c.id === id ? { ...c, ...data[0] } : c))
+    return { row: data[0] }
+  }
+
+  // เปิด/ปิด "นัดหมายวันเข้าดำเนินการ" รายหมวด — มีผลกับฟอร์มประชาชนที่เปิดครั้งถัดไป (ช่อง "วันที่สะดวก") และกล่องนัดหมายของเจ้าหน้าที่
+  async function toggleAppointment(cat) {
+    if (cat.is_adhoc) return 'หมวดเฉพาะกิจไม่ใช้การนัดหมาย'
+    const next = cat.requires_appointment !== true
+    const result = await writeCategoryColumns(cat.id, { requires_appointment: next }, 'ไม่มีสิทธิ์เปลี่ยนการนัดหมาย (ต้องเป็นผู้ดูแลระบบของ อปท. นี้)')
+    if (result.error) return `บันทึกไม่สำเร็จ: ${result.error.message}`
+    if (result.row.requires_appointment !== next) return 'ฐานข้อมูลไม่ได้เปลี่ยนการนัดหมายของหมวดนี้ กรุณาลองใหม่'
+    return null
+  }
+
+  // เลือกรูปที่หน้า /t/ แสดง — "ก่อนและหลัง" เปิดรูปที่ผู้แจ้งส่งมาให้ทุกคนที่มีลิงก์เห็น (PDPA) จึงยืนยันก่อนเสมอ
+  async function changeTrackPhotos(cat, mode) {
+    if (trackPhotosLocked(cat)) return 'หมวดอ่อนไหว/เฉพาะกิจ ไม่แสดงรูปเสมอ'
+    if (mode === 'both' && !window.confirm(`แสดงรูปก่อนและหลังดำเนินการของ "${cat.label}" ในหน้าติดตามเรื่อง?\n\n⚠️ ${TRACK_PHOTO_BOTH_WARNING}\n\nยืนยันหรือไม่`)) return null
+    const result = await writeCategoryColumns(cat.id, { track_photos: mode }, 'ไม่มีสิทธิ์เปลี่ยนการแสดงรูป (ต้องเป็นผู้ดูแลระบบของ อปท. นี้)')
+    if (result.error) return `บันทึกไม่สำเร็จ: ${result.error.message}`
+    if (result.row.track_photos !== mode) return 'ฐานข้อมูลไม่ได้เปลี่ยนการแสดงรูปของหมวดนี้ กรุณาลองใหม่'
+    // เปลี่ยนว่าใครเห็นรูปได้ = กระทบข้อมูลประชาชน ต้องย้อนตรวจได้ว่าใครเปิด/ปิดเมื่อไร
+    logAction({
+      action: 'update_track_photos',
+      resourceType: 'complaint_category',
+      resourceId: cat.id,
+      resourceLabel: cat.label,
+      municipalityId: tenant.id,
+      metadata: { value: cat.value ?? null, from: cat.track_photos ?? DEFAULT_TRACK_PHOTO_MODE, to: mode },
+    })
+    return null
+  }
+
+  // บันทึกตารางอัตรา + อ้างอิง ทีเดียว (กล่องตรวจรูปแบบตามกติกาเดียวกับ SQL มาแล้ว — ที่นี่เหลือด่านสิทธิ์/ฐานข้อมูล)
+  // rate ที่ส่งต้องเป็น number ไม่ใช่สตริง (CHECK ฝั่งฐานข้อมูลตรวจ jsonb_typeof)
+  async function saveFeeRates(cat, rows, reference) {
+    const result = await writeCategoryColumns(cat.id, { fee_rates: rows, fee_reference: reference }, 'ไม่มีสิทธิ์แก้อัตราค่าบริการ (ต้องเป็นผู้ดูแลระบบของ อปท. นี้)')
+    if (result.error) return feeSaveErrorMessage(result.error)
+    logAction({
+      action: 'update_fee_rates',
+      resourceType: 'complaint_category',
+      resourceId: cat.id,
+      resourceLabel: cat.label,
+      municipalityId: tenant.id,
+      metadata: { value: cat.value ?? null, rows: rows.length, has_reference: Boolean(reference) },
+    })
+    return null
+  }
+
   async function moveCat(idx, dir) {
     const swapIdx = idx + dir
     if (swapIdx < 0 || swapIdx >= cats.length) return
@@ -4426,6 +4723,16 @@ function CategoryManager({ tenant }) {
           onSelect={updateCatEmoji}
           onClose={() => setIconPickerCat(null)}
           iconStyle={iconStyle}
+        />
+      )}
+      {extrasCatId && cats.find((c) => c.id === extrasCatId) && (
+        <CategoryExtrasModal
+          key={extrasCatId}
+          cat={cats.find((c) => c.id === extrasCatId)}
+          onClose={() => setExtrasCatId(null)}
+          onToggleAppointment={toggleAppointment}
+          onChangeTrackPhotos={changeTrackPhotos}
+          onSaveFees={saveFeeRates}
         />
       )}
       {/* ชื่อหน้าอยู่ที่ ModuleHeader ตัวกลางของแผงควบคุมแล้ว */}
@@ -4642,6 +4949,7 @@ function CategoryManager({ tenant }) {
                     onToggleManualIntake={toggleManualIntake}
                     onToggleResolvedPin={toggleResolvedPin}
                     onToggleParking={toggleParking}
+                    onOpenExtras={setExtrasCatId}
                     onEditEmoji={setIconPickerCat}
                     iconStyle={iconStyle}
                     departments={departments}
@@ -4714,6 +5022,7 @@ function CategoryManager({ tenant }) {
                         onToggleManualIntake={toggleManualIntake}
                         onToggleResolvedPin={toggleResolvedPin}
                         onToggleParking={toggleParking}
+                        onOpenExtras={setExtrasCatId}
                         onDeleteCat={deleteCat}
                         onEditEmoji={setIconPickerCat}
                         iconStyle={iconStyle}

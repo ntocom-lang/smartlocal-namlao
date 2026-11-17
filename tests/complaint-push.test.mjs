@@ -18,7 +18,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replac
 const Push = await import('../supabase/functions/_shared/complaintPush.ts')
 
 // ── ชนิดที่รองรับ ─────────────────────────────────────────────────────────────
-assert.deepEqual([...Push.COMPLAINT_PUSH_KINDS], ['complaint_finished', 'complaint_created', 'complaint_note', 'complaint_photo'])
+assert.deepEqual([...Push.COMPLAINT_PUSH_KINDS], ['complaint_finished', 'complaint_created', 'complaint_note', 'complaint_photo', 'complaint_appointment'])
 for (const kind of Push.COMPLAINT_PUSH_KINDS) assert.equal(Push.isComplaintPushKind(kind), true, kind)
 for (const bad of [undefined, null, '', 'broadcast', 'COMPLAINT_CREATED', 1]) assert.equal(Push.isComplaintPushKind(bad), false, String(bad))
 
@@ -97,6 +97,11 @@ for (const kind of Push.COMPLAINT_PUSH_KINDS) {
 assert.equal(Push.complaintPushMessage('complaint_created', { label: 'ทุจริต', confidential: true, complaintNumber: 'NL-69-0043' }).body, 'เลขที่ NL-69-0043')
 assert.equal(Push.complaintPushMessage('complaint_note', { label: 'ทุจริต', confidential: true }).body, 'มีบันทึกใหม่ในคำร้องของคุณ')
 assert.equal(Push.complaintPushMessage('complaint_photo', { label: 'ทุจริต', confidential: true }).body, 'เจ้าหน้าที่เพิ่มรูปความคืบหน้าในคำร้องของคุณ')
+assert.deepEqual(
+  Push.complaintPushMessage('complaint_appointment', { label: '🚽 ดูดสิ่งปฏิกูล' }),
+  { title: 'มีการนัดหมายเข้าดำเนินการ', body: 'เจ้าหน้าที่แจ้งวันนัดในคำร้องดูดสิ่งปฏิกูล แตะเพื่อดูวันและช่วงเวลา', url: '/my-complaints' },
+)
+assert.equal(Push.complaintPushMessage('complaint_appointment', { label: 'ทุจริต', confidential: true }).body, 'เจ้าหน้าที่แจ้งวันนัดในคำร้องของคุณ แตะเพื่อดูวันและช่วงเวลา')
 // ไฟล์ตรรกะไม่อ่านรายละเอียด/ชื่อ/เบอร์ของคำร้องเลย
 assert.doesNotMatch(stripComments(read('supabase/functions/_shared/complaintPush.ts')), /\b(detail|phone|reporter_name|location|address)\b/)
 
@@ -159,6 +164,7 @@ const callers = allCallers.filter((c) => c.file !== 'src/lib/pushDevices.js')
 const callerFiles = callers.map((c) => c.file).sort()
 assert.deepEqual(callerFiles, [
   'src/components/admin/ComplaintsManager.jsx',
+  'src/components/admin/ComplaintsManager.jsx', // complaint_note + complaint_appointment (งาน 1.1)
   'src/lib/complaintFinish.js',
   'src/pages/CitizenForm.jsx',
   'src/pages/TechnicianDashboard.jsx',
