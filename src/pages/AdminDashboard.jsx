@@ -3421,6 +3421,7 @@ const DEFAULT_SEED = [
   // complaintCategoryModules.js) ปิดงานประปาแล้วหมวดนี้หายจากหน้าประชาชนเอง
   { value: 'water_repair',     label: 'ซ่อมน้ำประปา',             emoji: '💧', color: '#DBEAFE', textColor: '#2563EB' },
   { value: 'borrow_equipment', label: 'ยืมพัสดุ',                 emoji: '📦', color: '#E0E7FF', textColor: '#4338CA' },
+  // corruption ต้องให้แอดมินรับเรื่องเองเสมอ — ดู SEED_MANUAL_INTAKE ด้านล่าง
   { value: 'corruption',       label: 'แจ้งการทุจริต',            emoji: '⚖️', color: '#FEE2E2', textColor: '#DC2626' },
   { value: 'grievance',        label: 'แจ้งเรื่องร้องทุกข์ร้องเรียน', emoji: '📣', color: '#FEF3C7', textColor: '#D97706' },
   { value: 'odor',             label: 'กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)', emoji: '💨', color: '#ECFCCB', textColor: '#4D7C0F' },
@@ -3430,6 +3431,12 @@ const DEFAULT_SEED = [
   { value: 'inquiry',          label: 'สอบถาม/ติดต่อเจ้าหน้าที่',    emoji: '💬', color: '#F1F5F9', textColor: '#334155',
     requires_resolved_location: false, is_adhoc: false, requires_manual_intake: false },
 ]
+
+// หมวดที่ seed ตั้ง requires_manual_intake = true ให้ (ค่าเดียวกับ 20260915100000_complaint_auto_receive_columns.sql)
+// เรื่องทุจริตไปผู้รับผิดชอบคนเดียวของสำนักปลัด ถ้าระบบรับเอง เรื่องถึงมือคนนั้นทันทีโดยไม่มีใครกรอง
+// ซึ่งอาจเป็นผู้ถูกร้องเอง (ผลประโยชน์ทับซ้อน) — คอลัมน์ DEFAULT false ไม่ส่งค่าไป = ได้ false เงียบๆ
+// ต้องส่งค่าให้ทุกแถว: supabase-js upsert แบบหลายแถวเติมคีย์ที่ขาดเป็น NULL แต่คอลัมน์นี้ NOT NULL
+const SEED_MANUAL_INTAKE = new Set(['corruption'])
 
 const EMOJI_HINTS = [
   { keywords: ['ไฟ', 'แสงสว่าง', 'ไฟฟ้า'],                   emoji: '💡' },
@@ -4413,9 +4420,11 @@ function CategoryManager({ tenant }) {
     // ทุกแถวต้องมีคีย์ชุดเดียวกัน: supabase-js ส่ง upsert หลายแถวด้วย columns = ยูเนียนของคีย์ และเติมคอลัมน์ที่แถวไหนไม่มีเป็น NULL
     // (defaultToNull เริ่มต้น true) — ถ้าเฉพาะแถว inquiry มี requires_resolved_location แถวอื่นจะถูกส่ง NULL เข้าคอลัมน์ NOT NULL แล้วโหลดค่าเริ่มต้นล้มทั้งชุด
     // จึงใส่ค่าเท่ากับค่าตั้งต้นของคอลัมน์ (ตรงกับที่แถวเหล่านี้เคยได้อยู่แล้วตอนไม่ส่งคีย์) ให้ทุกแถว
+    // requires_manual_intake มาจาก SEED_MANUAL_INTAKE (#753: หมวดแจ้งการทุจริตต้องให้แอดมินรับเรื่อง) ต้องทับท้ายสุดเสมอ
     const rows = DEFAULT_SEED.map((d, i) => ({
-      is_adhoc: false, requires_manual_intake: false, requires_resolved_location: true,
+      is_adhoc: false, requires_resolved_location: true,
       ...d, text_color: d.textColor, municipality_id: tenant.id, sort_order: i, department_id: departmentFor(d.value),
+      requires_manual_intake: SEED_MANUAL_INTAKE.has(d.value),
     }))
       .map(({ textColor, ...rest }) => rest)
     if (rows.some((row) => !row.department_id)) {

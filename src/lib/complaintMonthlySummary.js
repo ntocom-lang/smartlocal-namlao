@@ -28,6 +28,8 @@ export const MONTH_OPTION_COUNT = 24
 // ชื่อแถวของเรื่องที่ไม่มีลักษณะปัญหา — เรื่องก่อน 2026-08-24, เรื่องที่รับที่เคาน์เตอร์ และค่าที่ฟังก์ชันฐานข้อมูล
 // ไม่ยอมส่งออก (นอกรายการอนุญาต) ทั้งหมดมาเป็นแถวนี้ ไม่ซ่อนและไม่เดาเป็นลักษณะอื่น
 export const UNSPECIFIED_ISSUE_LABEL = 'ไม่ระบุลักษณะ'
+// อันดับ "พื้นที่"/"ประเภท" ในภาพสรุป (เจ้าของสั่ง 2569-11-17 ตามภาพอ้างอิง TOP 10) — ไม่เกิน 5 อันดับ
+export const MAX_RANK_ROWS = 5
 
 const MONTH_PARAM = /^(\d{4})-(0[1-9]|1[0-2])$/
 const pad2 = n => String(n).padStart(2, '0')
@@ -137,6 +139,77 @@ export function thaiLongDate(now = new Date()) {
   }).format(now)
 }
 
+// หมายเหตุเมื่อตัดบางหมวดออก — ไม่บอกชื่อหมวดและจำนวน (ไม่งั้นเท่ากับเปิดเผยสิ่งที่ตั้งใจไม่เผยแพร่)
+export const EXCLUDED_NOTE = 'ตัวเลขชุดนี้ไม่รวมเรื่องบางหมวดที่ไม่ได้เผยแพร่ ยอดรวมและร้อยละคิดจากเรื่องที่แสดงเท่านั้น'
+
+// กลุ่มสถานะชุดเดียวกับ complaint_stats_fy (20261025100200_complaint_stats_parked.sql) — แก้ที่หนึ่งต้องแก้อีกที่
+const STATUS_GROUPS = {
+  open: ['new', 'pending', 'received'],
+  in_progress: ['in_progress'],
+  resolved: ['done', 'closed', 'completed'],
+  rejected: ['rejected'],
+  parked: ['parked'],
+}
+
+/**
+ * ยอดสถานะจากรายเรื่อง (complaints_public_fy) — ใช้เมื่อตัดบางหมวดออก ซึ่ง RPC ยอดรวมแยกให้ไม่ได้
+ * avg_days = ค่าเฉลี่ย days_taken ของเรื่องที่เสร็จ (ปัดทศนิยม 1) · days_taken ปัดมาแล้วรายเรื่อง จึงอาจต่างจาก RPC ได้ ±0.1
+ * @param {Array<{ status?: string, days_taken?: number | string | null }>} rows
+ */
+export function statsFromRows(rows) {
+  const result = { total: rows.length, open: 0, in_progress: 0, resolved: 0, rejected: 0, parked: 0, avg_days: null }
+  let daysSum = 0
+  let daysCount = 0
+  for (const row of rows) {
+    const group = Object.keys(STATUS_GROUPS).find(key => STATUS_GROUPS[key].includes(row.status))
+    if (group) result[group]++
+    if (group === 'resolved' && row.days_taken != null && Number.isFinite(Number(row.days_taken))) {
+      daysSum += Number(row.days_taken)
+      daysCount++
+    }
+  }
+  if (daysCount) result.avg_days = Math.round((daysSum / daysCount) * 10) / 10
+  return result
+}
+
+/**
+ * อันดับประเภทเรื่อง 1–5: หมวดทั่วไป = ชื่อหมวด · หมวดที่มีรายการย่อยครบ (ไฟฟ้า) = แยกเป็นรายลักษณะ โดยมีชื่อหมวดกำกับ (group)
+ * ลักษณะ "อื่นๆ"/"ไม่ระบุลักษณะ" ใช้ชื่อหมวดเป็นชื่อหลัก (คำว่า "อื่นๆ" เดี่ยวๆ ไม่บอกอะไร) · เท่ากัน = เรียงตามชื่อ
+ * @param {Array<{ code: string, label: string, count: number }>} categories หมวดที่แสดง (ตัดหมวดที่ปิดแล้ว ไม่พับ)
+ * @param {{ category: string, rows: Array<{ issue_label: string | null, total: number | string }> } | null} issueBreakdown
+ */
+function typeRankingOf(categories, issueBreakdown) {
+  const items = []
+  for (const category of categories) {
+    const subItems = issueBreakdown && category.code === issueBreakdown.category ? issueSubItems(category, issueBreakdown.rows) : null
+    if (!subItems) {
+      items.push({ label: category.label, group: null, code: category.code, count: category.count })
+      continue
+    }
+    for (const item of subItems) {
+      const vague = item.label === 'อื่นๆ' || item.label === UNSPECIFIED_ISSUE_LABEL
+      items.push(vague
+        ? { label: category.label, group: item.label, code: category.code, count: item.count }
+        : { label: item.label, group: category.label, code: category.code, count: item.count })
+    }
+  }
+  return items
+    .filter(item => item.count > 0)
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'th'))
+    .slice(0, MAX_RANK_ROWS)
+}
+
+/** อันดับพื้นที่ 1–5 จากยอดรายหมู่ — แถวไม่ระบุหมู่ (area NULL/ว่าง) ไม่ถูกจัดอันดับ · ไม่มีข้อมูล = null */
+function areaRankingOf(areaCounts) {
+  if (!Array.isArray(areaCounts)) return null
+  const items = areaCounts
+    .map(row => ({ label: typeof row.area === 'string' ? row.area.trim() : '', count: Number(row.total) || 0 }))
+    .filter(item => item.label && item.count > 0)
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'th', { numeric: true }))
+    .slice(0, MAX_RANK_ROWS)
+  return items.length ? items : null
+}
+
 function joinThai(items) {
   if (items.length <= 1) return items.join('')
   return `${items.slice(0, -1).join(' ')} และ ${items[items.length - 1]}`
@@ -174,24 +247,24 @@ function issueSubItems(category, breakdownRows) {
  * @param {{ publishedAt: string | Date, revision: number } | null} [args.lock]
  *   ชุดตัวเลขนี้ถูกล็อกไว้ (เฟส 2) — "ณ วันที่" เป็นวันที่ล็อก ไม่ใช่วันที่เปิดดู และหมายเหตุบอกว่าล็อกเมื่อไร
  * @param {Iterable<string> | null} [args.hiddenCategories]
- *   รหัสหมวดที่เจ้าหน้าที่เลือก "ไม่แสดงชื่อ" ในภาพ/ใบที่ส่งออก (เจ้าของระบบสั่ง 2569-10-29) — ยอดของหมวดเหล่านี้ไม่หาย
- *   ถูกรวมเข้า "หมวดที่เหลือ" ให้วงกลมยังบวกกันได้เท่ายอดรวม และมีหมายเหตุบอกผู้อ่านเสมอ (ไม่ซ่อนตัวเลขเงียบๆ)
+ *   รหัสหมวดที่เจ้าหน้าที่เลือก "ไม่แสดง" ในภาพ/ใบที่ส่งออก (เจ้าของระบบสั่ง 2569-10-29 · เปลี่ยนเป็น "ตัดออกทั้งหมวด" 2569-11-17)
+ *   เรื่องในหมวดเหล่านี้ไม่ถูกนับเลย: ยอดรวม วงกลม และผลการดำเนินงานคิดใหม่จาก rows (ต้องมี status ทุกแถว)
+ *   ท้ายภาพ/ใบมีหมายเหตุว่า "ไม่รวมบางหมวด" โดยไม่บอกชื่อหมวดและจำนวน (เจ้าของเลือก 2569-11-17 กันข้อครหาแต่งตัวเลข)
+ *   ใช้ได้เฉพาะตัวเลขสด (categoryCounts = null) — ชุดที่ล็อกไม่มีสถานะรายหมวด จึงหักผลการดำเนินงานออกไม่ได้
+ *   ซ่อนครบทุกหมวด = ไม่ตัดอะไร (ภาพ "ไม่มีเรื่องร้องเรียน" จะเป็นข้อความเท็จ) — หน้าจอกันไม่ให้ปิดหมวดสุดท้ายอยู่แล้ว
+ * @param {Array<{ area: string | null, total: number | string }> | null} [args.areaCounts]
+ *   ยอดรายหมู่จาก complaint_area_ranking_fy (ชื่อผ่านตัวกรองฝั่งฐานข้อมูลแล้ว ไม่มีหมวดอ่อนไหว และตัดหมวดที่ปิดแล้วเมื่อผู้เรียกเป็นเจ้าหน้าที่)
+ *   ไม่ส่ง/ฟังก์ชันยังไม่มีบนฐานข้อมูล = ไม่มีอันดับพื้นที่ (ภาพไม่มีการ์ดนี้ ไม่ล้ม)
  */
 export function summarizeMonth({
   stats, rows, labelOf, tenantName, period, issueBreakdown = null, now = new Date(), categoryCounts = null, lock = null,
-  hiddenCategories = null,
+  hiddenCategories = null, areaCounts = null,
 }) {
-  const total = Number(stats?.total) || 0
-  const resolved = Number(stats?.resolved) || 0
-  const ongoing = (Number(stats?.open) || 0) + (Number(stats?.in_progress) || 0)
-  const rejected = Number(stats?.rejected) || 0
-  // เรื่องที่ อปท. รับไว้แล้วแต่ยังไม่พร้อมดำเนินการ — complaint_stats_fy ใส่คีย์นี้เฉพาะเมื่อ > 0
-  // แยกจาก "อยู่ระหว่างดำเนินการ" (ไม่นับเป็นงานค้าง) และจาก "ไม่รับเรื่อง/ยกเลิก" (ไม่ได้ปฏิเสธ) ตัวเลขทุกช่องบวกกันได้เท่ายอดรวม
-  const parked = Number(stats?.parked) || 0
+  const fullTotal = Number(stats?.total) || 0
 
   // นับหมวดได้ก็ต่อเมื่อดึงรายการมาครบทุกเรื่อง — ถ้าถูกตัดที่ LIMIT สัดส่วนจะเพี้ยนเงียบๆ จึงไม่แสดงเลย
   // ชุดที่ล็อกไว้นับมาที่ฐานข้อมูลครบทุกเรื่องแล้ว (GROUP BY ไม่มีเพดาน) จึงไม่ติดเงื่อนไขนี้
-  const categoriesComplete = categoryCounts !== null || total === 0 || (rows?.length ?? 0) >= total
+  const categoriesComplete = categoryCounts !== null || fullTotal === 0 || (rows?.length ?? 0) >= fullTotal
   const counts = new Map()
   if (categoryCounts !== null) {
     for (const entry of categoryCounts) counts.set(entry.category, (counts.get(entry.category) ?? 0) + (Number(entry.total) || 0))
@@ -201,12 +274,23 @@ export function summarizeMonth({
   const sorted = [...counts.entries()]
     .map(([code, count]) => ({ code, label: labelOf(code), count }))
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'th'))
-  // หมวดที่เลือกไม่แสดงชื่อไปอยู่ใน "หมวดที่เหลือ" เสมอ — แถวนั้นกินที่ 1 แถว หมวดที่แสดงได้จึงเหลือ MAX - 1
   const hidden = new Set(hiddenCategories ?? [])
-  const visible = sorted.filter(c => !hidden.has(c.code))
   const hiddenRows = sorted.filter(c => hidden.has(c.code))
-  const shown = visible.length + (hiddenRows.length ? 1 : 0) > MAX_CATEGORY_ROWS ? visible.slice(0, MAX_CATEGORY_ROWS - 1) : visible
-  const folded = [...visible.slice(shown.length), ...hiddenRows]
+  const excluding = categoryCounts === null && categoriesComplete && hiddenRows.length > 0 && hiddenRows.length < sorted.length
+  const visible = excluding ? sorted.filter(c => !hidden.has(c.code)) : sorted
+
+  // ตัดหมวดออก = นับยอด/สถานะใหม่จากรายเรื่องที่เหลือ (กลุ่มสถานะชุดเดียวกับ complaint_stats_fy) · ไม่ตัด = ตัวเลขจาก RPC ตามเดิม
+  const base = excluding ? statsFromRows((rows ?? []).filter(row => !hidden.has(row.category))) : stats
+  const total = Number(base?.total) || 0
+  const resolved = Number(base?.resolved) || 0
+  const ongoing = (Number(base?.open) || 0) + (Number(base?.in_progress) || 0)
+  const rejected = Number(base?.rejected) || 0
+  // เรื่องที่ อปท. รับไว้แล้วแต่ยังไม่พร้อมดำเนินการ — complaint_stats_fy ใส่คีย์นี้เฉพาะเมื่อ > 0
+  // แยกจาก "อยู่ระหว่างดำเนินการ" (ไม่นับเป็นงานค้าง) และจาก "ไม่รับเรื่อง/ยกเลิก" (ไม่ได้ปฏิเสธ) ตัวเลขทุกช่องบวกกันได้เท่ายอดรวม
+  const parked = Number(base?.parked) || 0
+
+  const shown = visible.length > MAX_CATEGORY_ROWS ? visible.slice(0, MAX_CATEGORY_ROWS - 1) : visible
+  const folded = visible.slice(shown.length)
   const categories = shown.map(c => {
     const category = { ...c, percent: percentOf(c.count, total) }
     const subItems = issueBreakdown && c.code === issueBreakdown.category ? issueSubItems(c, issueBreakdown.rows) : null
@@ -230,14 +314,13 @@ export function summarizeMonth({
   if (total === 0) {
     sentences.push(`ใน${words.title} ไม่มีเรื่องร้องเรียน/ร้องทุกข์ที่รับผ่านระบบ e-Service ของ${tenantName}`)
   } else {
-    sentences.push(`ใน${words.title} ${tenantName}รับเรื่องร้องเรียน/ร้องทุกข์ผ่านระบบ e-Service ทั้งหมด ${formatCount(total)} เรื่อง`)
+    // ตัดบางหมวดออก = ห้ามใช้คำว่า "ทั้งหมด" (ยอดนี้ไม่ใช่ยอดทั้งหมดจริง)
+    sentences.push(`ใน${words.title} ${tenantName}รับเรื่องร้องเรียน/ร้องทุกข์ผ่านระบบ e-Service ${excluding ? 'จำนวน' : 'ทั้งหมด'} ${formatCount(total)} เรื่อง`)
     const top = categories.filter(c => c.code !== null).slice(0, 3)
-    // "ทุกเรื่องอยู่ในหมวด X" จริงเฉพาะเมื่อมีหมวดเดียวจริงๆ — ถ้าหมวดอื่นถูกซ่อนไว้ ประโยคนี้จะกลายเป็นข้อความเท็จ
-    if (categoriesComplete && top.length === 1 && sorted.length === 1) {
+    if (categoriesComplete && top.length === 1 && visible.length === 1) {
       sentences.push(`ทุกเรื่องอยู่ในหมวด${top[0].label}`)
     } else if (categoriesComplete && top.length > 0) {
-      // มีหมวดที่ไม่แสดงชื่อ = หมวดที่ซ่อนอาจมีเรื่องมากกว่า ต้องบอกว่า "สูงสุด" นับเฉพาะหมวดที่แสดงชื่อ
-      sentences.push(`หมวดที่มีจำนวนเรื่องสูงสุดตามลำดับ${hiddenRows.length ? ' (เฉพาะหมวดที่แสดงชื่อ)' : ''} ได้แก่ ${joinThai(top.map(c => `${c.label} ${formatCount(c.count)} เรื่อง (ร้อยละ ${formatPercent(c.percent)})`))}`)
+      sentences.push(`หมวดที่มีจำนวนเรื่องสูงสุดตามลำดับ ได้แก่ ${joinThai(top.map(c => `${c.label} ${formatCount(c.count)} เรื่อง (ร้อยละ ${formatPercent(c.percent)})`))}`)
     }
     const status = [`ดำเนินการแล้วเสร็จ ${formatCount(resolved)} เรื่อง (ร้อยละ ${formatPercent(resolvedPercent)})`, `อยู่ระหว่างดำเนินการ ${formatCount(ongoing)} เรื่อง`]
     if (parked) status.push(`ขึ้นทะเบียนรอดำเนินการ ${formatCount(parked)} เรื่อง`)
@@ -254,9 +337,7 @@ export function summarizeMonth({
     notes.push(`ร้อยละที่แล้วเสร็จนับจากสถานะ ณ วันที่ ${asOf} ของเรื่องที่รับใน${words.thisOne} ตัวเลขอาจเปลี่ยนเมื่อมีเรื่องแล้วเสร็จภายหลัง`)
   }
   if (current) notes.push(`${words.current}ยังไม่สิ้นสุด ตัวเลขเป็นยอดสะสมจนถึงวันที่ข้างต้น`)
-  if (categoriesComplete && hiddenRows.length) {
-    notes.push(`มี ${formatCount(hiddenRows.length)} หมวดที่ไม่แสดงชื่อ จำนวนเรื่องรวมอยู่ใน "หมวดที่เหลือ" ยอดรวมทั้งหมดไม่เปลี่ยน`)
-  }
+  if (excluding) notes.push(EXCLUDED_NOTE)
   if (!categoriesComplete) notes.push(`ไม่แสดงสัดส่วนตามหมวด เพราะจำนวนเรื่องเกินที่ดึงมาคำนวณได้ในครั้งเดียว (${formatCount(rows?.length ?? 0)} จาก ${formatCount(total)} เรื่อง)`)
 
   return {
@@ -270,12 +351,14 @@ export function summarizeMonth({
     rejectedPercent: percentOf(rejected, total),
     parked,
     parkedPercent: percentOf(parked, total),
-    avgDays: stats?.avg_days ?? null,
+    avgDays: base?.avg_days ?? null,
     categories,
     categoriesComplete,
-    // ทุกหมวดเรียงมาก→น้อย ไม่พับ ไม่ซ่อน — ให้หน้าจอทำรายการปุ่ม "แสดง/ไม่แสดงชื่อ" ได้ครบทุกหมวด
+    // ทุกหมวดเรียงมาก→น้อย ไม่พับ ไม่ตัด — ให้หน้าจอทำรายการปุ่ม "แสดง/ไม่แสดง" ได้ครบทุกหมวด
     allCategories: sorted,
-    hiddenCount: hiddenRows.length,
+    hiddenCount: excluding ? hiddenRows.length : 0,
+    // true = ตัวเลขชุดนี้ไม่รวมบางหมวด — ภาพ/ใบ A4 เลี่ยงคำว่า "รวมทั้งสิ้น"/"ทั้งหมด"
+    excludesHidden: excluding,
     narrative: sentences.join(' '),
     sentences,
     notes,
@@ -286,5 +369,8 @@ export function summarizeMonth({
     periodNoun: words.noun,
     periodThisOne: words.thisOne,
     locked: lockValid ? { asOf, revision: Number(lock.revision) || 1 } : null,
+    // อันดับประเภท: หมวดที่แสดง แตกหมวดที่มีลักษณะปัญหา (ไฟฟ้า) เป็นรายลักษณะ — ไม่ซ้ำกับวงกลมที่เป็นระดับหมวด (เจ้าของเลือก 2569-11-17)
+    typeRanking: categoriesComplete && total > 0 ? typeRankingOf(visible, issueBreakdown) : null,
+    areaRanking: areaRankingOf(areaCounts),
   }
 }

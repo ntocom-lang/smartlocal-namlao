@@ -27,6 +27,8 @@ import {
 import { buildComplaintMonthlyHtml } from '../lib/complaintMonthlyPrint.js'
 import { appUrl } from '../lib/basename'
 import ComplaintMonthlyInfographic from '../components/reports/ComplaintMonthlyInfographic'
+import { prepareLogoDataUrl } from '../lib/complaintMonthlyInfographic'
+import { fetchImageAsDataUrl } from '../lib/driveStorage'
 import MonthlyLockPanel from '../components/reports/MonthlyLockPanel'
 
 // ดึงมาใช้คำนวณกราฟสรุปทั้งหมด (สถานะ/หมวดหมู่/แนวโน้มรายเดือน) — คำร้องเรียนสะสมของ อปท.
@@ -343,9 +345,9 @@ export default function ComplaintStats() {
   // ฉบับบนหน้าเว็บ — ทุกหมวดแสดงชื่อเสมอ (หน้านี้เป็นหน้าสาธารณะ/หลักฐาน ITA อยู่แล้ว ซ่อนที่นี่ไม่ได้ปิดอะไรจริง)
   const monthlySummary = useMemo(() => (summaryArgs ? summarizeMonth(summaryArgs) : null), [summaryArgs])
 
-  // หมวดที่เจ้าหน้าที่เลือก "ไม่แสดงชื่อ" ในของที่ส่งออกจากหน้า (ภาพ PNG / ข้อความแชร์ / ใบ A4) — เจ้าของระบบสั่ง 2569-10-29
+  // หมวดที่เจ้าหน้าที่เลือก "ไม่แสดง" ในของที่ส่งออกจากหน้า (ภาพ PNG / ข้อความแชร์ / ใบ A4) — เจ้าของระบบสั่ง 2569-10-29
   // จำไว้ในเครื่องแยกตาม อปท. (ตั้งครั้งเดียว ไม่ต้องเลือกใหม่ทุกรอบ) · ประชาชนไม่เห็นปุ่มและได้ภาพเต็มเสมอ
-  // ยอดของหมวดที่ซ่อนไม่หาย ถูกรวมเข้า "หมวดที่เหลือ" พร้อมหมายเหตุในภาพ (ดู summarizeMonth hiddenCategories)
+  // 2569-11-17 เจ้าของสั่งเปลี่ยน: เรื่องในหมวดที่ปิดไม่ถูกนับเลย ยอดรวม/ผลการดำเนินงานคิดใหม่ (ดู summarizeMonth hiddenCategories)
   const canHideCategories = canLockMonth(role)
   const [hiddenByTenant, setHiddenByTenant] = useState({})
   const hiddenCategories = useMemo(
@@ -357,10 +359,69 @@ export default function ComplaintStats() {
     setHiddenByTenant(prev => ({ ...prev, [tenantId]: next }))
     writeHiddenCategories(tenantId, next)
   }
-  const exportSummary = useMemo(
-    () => (summaryArgs && hiddenCategories.length ? summarizeMonth({ ...summaryArgs, hiddenCategories }) : monthlySummary),
-    [summaryArgs, hiddenCategories, monthlySummary],
+  // ตัดหมวดต้องนับสถานะใหม่จากรายเรื่อง — ทำได้เมื่อดึงรายเรื่องมาครบทุกเรื่องของช่วงนี้ (ไม่ติดเพดาน AGGREGATE_LIMIT)
+  const liveRowsComplete = (rows?.length ?? 0) >= (Number(liveStats?.total) || 0)
+  // เฉพาะหมวดที่มีเรื่องจริงในช่วงนี้ — หมวดที่จำไว้จากเดือนก่อนแต่เดือนนี้ไม่มีเรื่อง ไม่ทำให้ภาพหลุดจากชุดที่ล็อก
+  const activeHidden = useMemo(
+    () => (monthlySummary ? hiddenCategories.filter(code => monthlySummary.allCategories.some(c => c.code === code)) : []),
+    [monthlySummary, hiddenCategories],
   )
+  // ชุดที่ล็อกเก็บแค่ยอดรายหมวด ไม่มีสถานะรายหมวด → ปิดหมวดในเดือนที่ล็อกแล้วใช้ตัวเลขสดแทน (เจ้าของเลือก 2569-11-17)
+  // หน้าเว็บ/ข้อความสรุปบนจอยังเป็นชุดที่ล็อกเหมือนเดิม และการ์ดภาพขึ้นข้อความบอกเจ้าหน้าที่
+  const excludingLive = activeHidden.length > 0 && liveRowsComplete
+
+  // อันดับพื้นที่ (หมู่) ในภาพ — complaint_area_ranking_fy คืนเฉพาะ "หมู่ N"/ชื่อในทะเบียน ไม่มีหมวดอ่อนไหว (ตรวจที่ฐานข้อมูล)
+  // ส่งหมวดที่ปิดไปด้วย ฐานข้อมูลตัดให้เฉพาะเจ้าหน้าที่ของ อปท. นี้ · ฟังก์ชันยังไม่มี/ผิดพลาด = null → ภาพไม่มีการ์ดพื้นที่ ไม่ล้ม
+  // เป็นยอดสดเสมอ (ชุดที่ล็อกไม่ได้เก็บรายหมู่) — เดือนที่จบแล้ววันที่รับเรื่องไม่เปลี่ยน ยอดรายหมู่จึงแทบไม่ขยับ
+  const areaKey = summaryPeriod && activeRange && tenantId
+    ? `${tenantId}|${activeRange.from}|${activeRange.to}|${excludingLive ? activeHidden.join(',') : ''}`
+    : null
+  const [area, setArea] = useState({ key: null, rows: null })
+  useEffect(() => {
+    if (!areaKey) return undefined
+    let alive = true
+    const [muni, from, to, exclude] = areaKey.split('|')
+    supabase.rpc('complaint_area_ranking_fy', {
+      _municipality_id: muni, _from: from, _to: to, _exclude_categories: exclude ? exclude.split(',') : null,
+    }).then(
+      ({ data, error }) => { if (alive) setArea({ key: areaKey, rows: !error && Array.isArray(data) ? data : null }) },
+      () => { if (alive) setArea({ key: areaKey, rows: null }) },
+    )
+    return () => { alive = false }
+  }, [areaKey])
+  const areaCounts = area.key === areaKey ? area.rows : null
+
+  // ภาพ/ใบ A4: ปิดหมวด = ตัวเลขสดตัดหมวดออก · ไม่ปิด = ชุดเดียวกับหน้าเว็บ — ทั้งสองแบบเติมอันดับพื้นที่
+  const exportSummary = useMemo(() => {
+    if (!summaryArgs) return null
+    if (excludingLive) {
+      return summarizeMonth({
+        ...summaryArgs,
+        stats: liveStats,
+        categoryCounts: null,
+        lock: null,
+        issueBreakdown: issueRows ? { category: ISSUE_BREAKDOWN_CATEGORY, rows: issueRows } : null,
+        hiddenCategories: activeHidden,
+        areaCounts,
+      })
+    }
+    return areaCounts ? summarizeMonth({ ...summaryArgs, areaCounts }) : monthlySummary
+  }, [summaryArgs, excludingLive, liveStats, issueRows, activeHidden, areaCounts, monthlySummary])
+  const liveWhileLocked = !!lockedSnapshot && excludingLive
+  // โลโก้ อปท. บนหัวภาพสรุป (เจ้าของสั่ง 2569-11-17) — SVG ที่โหลดเป็น <img> ดึงรูปภายนอกไม่ได้ จึงโหลดเป็น data URL แล้วแปลง PNG
+  // โหลดเมื่อมีภาพสรุปเท่านั้น (โหมด "ทุกปีงบประมาณ" ไม่มีภาพ) · โหลดไม่ได้ = ภาพไม่มีโลโก้ ไม่ทำให้หน้าพัง
+  const logoUrl = monthlySummary ? (tenant?.logo_url ?? null) : null
+  const [logo, setLogo] = useState({ url: null, dataUrl: null })
+  useEffect(() => {
+    if (!logoUrl) return undefined
+    let alive = true
+    fetchImageAsDataUrl(logoUrl)
+      .then(result => (result.dataUrl ? prepareLogoDataUrl(result.dataUrl) : null))
+      .catch(() => null)
+      .then(dataUrl => { if (alive) setLogo({ url: logoUrl, dataUrl }) })
+    return () => { alive = false }
+  }, [logoUrl])
+  const logoDataUrl = logo.url === logoUrl ? logo.dataUrl : null
 
   // ป้ายช่วงเวลาของหัวรายงาน/ข้อความไม่มีข้อมูล — โหมดรายเดือนใช้เดือนที่เลือกแทนปีงบ
   const periodMain = selectedMonth ? `เดือน${selectedMonth.label}` : selectedPeriod ? selectedPeriod.label : fiscalPeriod.main
@@ -624,9 +685,11 @@ export default function ComplaintStats() {
           <ComplaintMonthlyInfographic
             summary={exportSummary}
             tenantName={tenant?.name ?? 'หน่วยงาน'}
-            categoryOptions={canHideCategories ? monthlySummary.allCategories : null}
+            categoryOptions={canHideCategories && liveRowsComplete ? monthlySummary.allCategories : null}
             hiddenCategories={hiddenCategories}
             onToggleCategory={toggleHiddenCategory}
+            liveWhileLocked={liveWhileLocked}
+            logoDataUrl={logoDataUrl}
           />
         )}
 
