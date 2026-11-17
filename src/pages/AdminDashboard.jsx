@@ -3438,6 +3438,14 @@ const DEFAULT_SEED = [
 // ต้องส่งค่าให้ทุกแถว: supabase-js upsert แบบหลายแถวเติมคีย์ที่ขาดเป็น NULL แต่คอลัมน์นี้ NOT NULL
 const SEED_MANUAL_INTAKE = new Set(['corruption'])
 
+// หมวดที่ล็อกให้แอดมินรับเรื่องเสมอ — DB บังคับซ้ำด้วย trigger trg_lock_corruption_category
+// (20261207100000_lock_corruption_manual_intake.sql) หน้านี้แค่ไม่ให้กดสวิตช์ที่ไม่มีผล
+// ล็อก 2 ทาง: ปิด "แอดมินรับเรื่อง" และย้ายไป "เฉพาะกิจ" — ทั้งคู่ทำให้เรื่องถึงผู้รับผิดชอบคนเดียวโดยไม่ผ่านแอดมิน
+// หมวดที่เป็นเฉพาะกิจอยู่ก่อนแล้วยังกดย้ายกลับเป็นปกติได้ (ทิศที่ปลอดภัยกว่า)
+const LOCKED_INTAKE_CATEGORIES = new Set(['corruption'])
+const isIntakeLocked = (cat) => LOCKED_INTAKE_CATEGORIES.has(cat?.value)
+const INTAKE_LOCK_TITLE = 'หมวดแจ้งการทุจริตล็อกไว้ให้แอดมินรับเรื่องเสมอ — ผู้รับผิดชอบหมวดอาจเป็นผู้ถูกร้องเอง (ผลประโยชน์ทับซ้อน)'
+
 const EMOJI_HINTS = [
   { keywords: ['ไฟ', 'แสงสว่าง', 'ไฟฟ้า'],                   emoji: '💡' },
   { keywords: ['ถนน', 'ทางเท้า', 'ซ่อม', 'ลาดยาง'],          emoji: '🛣️' },
@@ -3552,6 +3560,13 @@ function SubmitAudienceChip({ cat, onToggle, className = '', short = false }) {
 // หมวดเฉพาะกิจไม่ใช้ขั้นตอนรับเรื่องเลย จึงไม่แสดง
 function ManualIntakeChip({ cat, onToggle, className = '', short = false }) {
   if (cat.is_adhoc) return null
+  if (isIntakeLocked(cat)) {
+    return (
+      <span title={INTAKE_LOCK_TITLE} className={`px-2 py-1 rounded-full font-bold bg-rose-100 text-rose-700 cursor-not-allowed ${className}`}>
+        {short ? '🔒 แอดมิน' : '🔒 แอดมินรับเรื่อง'}
+      </span>
+    )
+  }
   const manual = !!cat.requires_manual_intake
   return (
     <button
@@ -3680,13 +3695,19 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
           active={cat.is_active !== false}
           onToggle={() => onToggleActive?.(cat.id, cat.is_active !== false)}
         />
-        <button
-          onClick={() => onToggleAdhoc?.(cat.id, !!cat.is_adhoc)}
-          title="สลับปกติ/เฉพาะกิจ"
-          className={`px-2 py-1 rounded-full text-[12px] font-bold shrink-0 transition-colors ${cat.is_adhoc ? 'bg-lime-100 text-lime-700 hover:bg-gray-200 hover:text-gray-500' : 'bg-gray-200 text-gray-500 hover:bg-lime-100 hover:text-lime-700'}`}
-        >
-          {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
-        </button>
+        {isIntakeLocked(cat) && !cat.is_adhoc ? (
+          <span title={INTAKE_LOCK_TITLE} className="px-2 py-1 rounded-full text-[12px] font-bold shrink-0 bg-gray-200 text-gray-500 cursor-not-allowed">
+            🔒 ปกติ
+          </span>
+        ) : (
+          <button
+            onClick={() => onToggleAdhoc?.(cat.id, !!cat.is_adhoc)}
+            title="สลับปกติ/เฉพาะกิจ"
+            className={`px-2 py-1 rounded-full text-[12px] font-bold shrink-0 transition-colors ${cat.is_adhoc ? 'bg-lime-100 text-lime-700 hover:bg-gray-200 hover:text-gray-500' : 'bg-gray-200 text-gray-500 hover:bg-lime-100 hover:text-lime-700'}`}
+          >
+            {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
+          </button>
+        )}
         <button onClick={() => onDelete(cat.id)}
           className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0">
           <Trash2 size={14} />
@@ -3793,13 +3814,19 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
             <div className="min-w-0">
               <span className="block break-words font-medium leading-snug text-gray-800">{cat.label}</span>
               {/* ปกติ/เฉพาะกิจ มีแท็บแยกให้อยู่แล้ว ป้ายนี้จึงเป็นแค่ปุ่มย้ายแท็บ ย่อไว้ใต้ชื่อ ไม่กินคอลัมน์ */}
-              <button
-                onClick={() => onToggleAdhoc(cat.id, !!cat.is_adhoc)}
-                title={cat.is_adhoc ? 'ประเภทงานเฉพาะกิจ — กดเพื่อย้ายไปประเภทงานปกติ' : 'ประเภทงานปกติ — กดเพื่อย้ายไปประเภทงานเฉพาะกิจ'}
-                className={`mt-0.5 rounded-full px-1.5 py-px text-[10px] font-bold whitespace-nowrap transition-colors ${cat.is_adhoc ? 'bg-lime-100 text-lime-700 hover:bg-gray-200 hover:text-gray-500' : 'bg-gray-100 text-gray-400 hover:bg-lime-100 hover:text-lime-700'}`}
-              >
-                {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
-              </button>
+              {isIntakeLocked(cat) && !cat.is_adhoc ? (
+                <span title={INTAKE_LOCK_TITLE} className="mt-0.5 inline-block rounded-full px-1.5 py-px text-[10px] font-bold whitespace-nowrap bg-gray-100 text-gray-400 cursor-not-allowed">
+                  🔒 ปกติ
+                </span>
+              ) : (
+                <button
+                  onClick={() => onToggleAdhoc(cat.id, !!cat.is_adhoc)}
+                  title={cat.is_adhoc ? 'ประเภทงานเฉพาะกิจ — กดเพื่อย้ายไปประเภทงานปกติ' : 'ประเภทงานปกติ — กดเพื่อย้ายไปประเภทงานเฉพาะกิจ'}
+                  className={`mt-0.5 rounded-full px-1.5 py-px text-[10px] font-bold whitespace-nowrap transition-colors ${cat.is_adhoc ? 'bg-lime-100 text-lime-700 hover:bg-gray-200 hover:text-gray-500' : 'bg-gray-100 text-gray-400 hover:bg-lime-100 hover:text-lime-700'}`}
+                >
+                  {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -4224,6 +4251,7 @@ function CategoryManager({ tenant }) {
   // ให้คนกลุ่มใหญ่ขึ้นย้อนหลัง จึงต้องยืนยันพร้อมบอกผลที่ตามมาให้ครบก่อนเสมอ
   async function toggleAdhoc(id, current) {
     const cat = cats.find((c) => c.id === id)
+    if (!current && isIntakeLocked(cat)) { setError(INTAKE_LOCK_TITLE); return }
     const label = cat?.label ?? ''
     const message = current
       ? `เปลี่ยน "${label}" จากเฉพาะกิจกลับเป็นหมวดปกติ?\n\n`
@@ -4304,6 +4332,7 @@ function CategoryManager({ tenant }) {
   // ทิศที่อันตรายคือปิดธงของหมวดแจ้งทุจริต/ร้องเรียนเจ้าหน้าที่ เรื่องจะถึงมือผู้รับผิดชอบคนเดียวทันที
   async function toggleManualIntake(id, current) {
     const cat = cats.find((c) => c.id === id)
+    if (current && isIntakeLocked(cat)) { setError(INTAKE_LOCK_TITLE); return }
     const label = cat?.label ?? ''
     const message = current
       ? `ให้ระบบรับเรื่อง "${label}" เอง?\n\n`
