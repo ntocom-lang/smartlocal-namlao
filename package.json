@@ -151,6 +151,7 @@
     "test:exec-summary:db": "node tests/executive-summary-db.test.mjs --pglite",
     "test:exec-spike:db": "node tests/exec-complaint-spike-db.test.mjs --pglite",
     "test:staff-month:db": "node tests/staff-month-overview-db.test.mjs --pglite",
+    "test:corruption-lock:db": "node tests/corruption-category-lock-db.test.mjs --pglite",
     "test:doc-rating": "node tests/doc-request-rating.test.mjs",
     "test:doc-rating:db": "node tests/doc-request-rating-db.test.mjs --pglite",
     "test:staff-menu": "node tests/staff-menu-access.test.mjs",

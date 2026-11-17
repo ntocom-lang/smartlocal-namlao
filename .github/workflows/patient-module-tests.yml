@@ -163,6 +163,10 @@ jobs:
             # ล้มเมื่อรหัสหมวด inquiry ใน SQL/DEFAULT_SEED/โค้ดไม่ตรงกัน · การ์ดบน /contact ขึ้นทั้งที่หมวดไม่มีแถว/ปิด
             # · หมวดอื่นถูกเปลี่ยนถ้อยคำ · ปุ่มโหลดค่าเริ่มต้นส่ง NULL เข้าคอลัมน์ NOT NULL
             inquiry-category
+            # ล็อกหมวดแจ้งการทุจริต (trigger trg_lock_corruption_category) บน PGlite ตัวเดียวกัน — ล้มเมื่อ trigger หายหรือถูกแก้จนหมวด corruption
+            # ตั้งเป็น "ไม่ต้องแอดมินรับเรื่อง" ได้ · เป็นเฉพาะกิจได้ · เปลี่ยนรหัสหมวดเข้า/ออกได้ · seed/upsert ของบันเดิลเก่าส่ง false แล้วไม่ถูกบังคับเป็น true
+            # (เจ้าของอนุมัติเพิ่มเข้า CI 2569-11-18)
+            corruption-category-lock-db
           )
           failed=()
           for t in "${tests[@]}"; do
