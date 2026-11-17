@@ -1,10 +1,30 @@
-import { ArrowLeft, MapPin, Phone, Globe, Mail, Printer, Network, Navigation, ExternalLink, MapPinned, ChevronRight, Building2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowLeft, MapPin, Phone, Globe, Mail, Printer, Network, Navigation, ExternalLink, MapPinned, ChevronRight, Building2, MessageSquareText } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useTenant } from '../contexts/TenantContext'
+import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
+import { canSubmitCategory } from '../lib/serviceAudience'
+import { INQUIRY_CARD, INQUIRY_CATEGORY, inquiryFormPath, shouldShowInquiryCard } from '../lib/inquiry'
 
 export default function ContactPage() {
   const navigate = useNavigate()
   const { tenant } = useTenant()
+  const { role } = useAuth()
+  // แถวหมวด "สอบถาม/ติดต่อเจ้าหน้าที่" ของ อปท. นี้ — การ์ดส่งคำถามขึ้นเมื่อมีแถวจริง + เปิดใช้ + ผู้ใช้คนนี้ยื่นได้เท่านั้น
+  // ⚠️ ไม่ใช้ useComplaintCategoryOpen: hook นั้นคืน true ระหว่างโหลด/ไม่มีแถว (ออกแบบให้ปุ่มลัดของหมวดที่มีทุก อปท.
+  // ไม่กะพริบ) ถ้าใช้ที่นี่ อปท. ที่ยังไม่มีหมวดนี้จะเห็นการ์ดที่กดแล้วส่งไม่ได้ — ที่นี่ซ่อนไว้ก่อนจนรู้ผลจริง
+  const [inquiryRow, setInquiryRow] = useState(null)
+  useEffect(() => {
+    if (!tenant?.id) return undefined
+    let cancelled = false
+    // supabase builder มีแค่ .then() — ใช้ onRejected ตัวที่สองแทน .catch()
+    supabase.from('complaint_categories').select('value, is_active, submit_audience')
+      .eq('municipality_id', tenant.id).eq('value', INQUIRY_CATEGORY).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setInquiryRow(data ?? null) }, () => {})
+    return () => { cancelled = true }
+  }, [tenant?.id])
+  const showInquiryCard = shouldShowInquiryCard(inquiryRow, canSubmitCategory, role)
   // fallback เป็นพิกัด namlao เฉพาะตอน tenant ยังไม่ตั้งพิกัดใน DB — เดิม hardcode พิกัด namlao ตรงๆ
   // ทำให้ทุก tenant กดปุ่ม "นำทาง"/แผนที่แล้วพาไปที่ office namlao หมด ไม่ว่าจะเป็นเทศบาลไหนก็ตาม
   const lat = tenant?.latitude ?? 18.259207
@@ -119,6 +139,31 @@ export default function ContactPage() {
             </a>
           </div>
         </section>
+
+        {/* ─── ส่งคำถามถึงเจ้าหน้าที่ ─── ใช้ระบบคำร้องเดิม (หมวด inquiry) ซ่อนทั้ง section ถ้า อปท. ยังไม่เปิดหมวดนี้ */}
+        {showInquiryCard && (
+          <section data-inquiry-card>
+            <div className="flex items-center gap-2 mb-4 pl-1 border-l-4" style={{ borderColor: 'var(--color-primary, #2563eb)' }}>
+              <h2 className="text-[17px] font-bold text-gray-800 ml-1">{INQUIRY_CARD.heading}</h2>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+              <div className="p-4 flex items-start gap-4">
+                <div className="mt-0.5" style={{ color: 'var(--color-primary)' }}>
+                  <MessageSquareText size={22} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[14px] text-gray-600 leading-relaxed">{INQUIRY_CARD.body}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => navigate(inquiryFormPath())}
+                className="w-full flex items-center justify-center gap-2 py-3 text-white text-[14px] font-semibold transition-colors hover:opacity-90"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                <MessageSquareText size={16} /> {INQUIRY_CARD.button}
+              </button>
+            </div>
+          </section>
+        )}
 
         {/* ─── หมายเลขภายใน ─── แต่ละเทศบาลกรอกเอง (โครงสร้างกองไม่เท่ากัน) ซ่อนทั้ง section ถ้ายังไม่กรอก
             แทนที่จะโชว์ 5 กองของ namlao ค้างแบบเดิม — ดูตั้งค่าที่ SystemSettingsAdmin.jsx */}

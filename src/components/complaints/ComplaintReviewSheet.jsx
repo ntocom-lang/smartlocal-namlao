@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AlertCircle, ArrowLeft, Check, Loader2, MapPin, Pencil, Sparkles } from 'lucide-react'
 import { polishComplaintText } from '../../lib/complaintTextPolish'
+import { INQUIRY_FORM } from '../../lib/inquiry'
 
 // กล่องทวนคำร้องก่อนส่ง — แทนกล่องยินยอม PDPA เดิมที่มีแต่ข้อความยินยอม
 // เจ้าของระบบกำหนด 2569-09-17: ผู้ร้องต้องเห็นสิ่งที่จะส่งทั้งหมดก่อน กลับไปแก้ได้
@@ -9,6 +10,8 @@ import { polishComplaintText } from '../../lib/complaintTextPolish'
 // onAddPin: ส่งมาเฉพาะตอนผู้ร้องยังไม่ได้ปักหมุด → ขึ้นกล่องเตือนเบาๆ + ปุ่มกลับไปปักหมุด (2569-10-21)
 // ⚠️ ไม่บังคับ และต้องกดส่งต่อได้เสมอ: ฟอร์มประชาชนให้ปักหมุดเป็นตัวเลือกโดยตั้งใจ (ยกเว้นหมวดกลิ่น) คนที่ไม่มี GPS
 // หรือเรื่องที่ไม่ผูกกับจุดใดจุดหนึ่งจะถอดใจ/เลิกแจ้ง ถ้าบังคับ — ใบคำร้องที่พิมพ์ออกมาจะบอกตรงๆ ว่า "ไม่ได้ปักหมุด" อยู่แล้ว
+//
+// inquiry: หมวด "สอบถาม/ติดต่อเจ้าหน้าที่" (ข้อ 1.3) — เปลี่ยนเฉพาะถ้อยคำ "คำร้อง" เป็น "คำถาม" (ค่าเริ่มต้น false = ข้อความเดิมทุกตัวอักษร)
 //
 // ตัวหนังสือในกล่องนี้ตั้งใจให้ใหญ่กว่าปกติ ผู้ใช้จำนวนมากเป็นผู้สูงอายุที่อ่านตัวเล็กไม่ออก
 // แล้วจะกดยืนยันผ่านโดยไม่อ่าน ซึ่งทำให้ขั้นตอนทวนนี้ไม่มีความหมาย
@@ -23,6 +26,7 @@ export default function ComplaintReviewSheet({
   onBack,
   onConfirm,
   onAddPin,
+  inquiry = false,
 }) {
   const { polished, changes } = useMemo(() => polishComplaintText(detail), [detail])
   const hasSuggestion = changes.length > 0 && polished.trim() && polished.trim() !== String(detail ?? '').trim()
@@ -65,7 +69,7 @@ export default function ComplaintReviewSheet({
           )}
         </dl>
 
-        {onAddPin && (
+        {onAddPin && !inquiry && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 space-y-2" data-testid="pin-hint">
             <p className="flex items-start gap-2 text-sm text-amber-900 leading-relaxed">
               <MapPin size={16} className="mt-0.5 shrink-0 text-amber-600" />
@@ -83,7 +87,7 @@ export default function ComplaintReviewSheet({
 
         {/* ข้อความคำร้อง */}
         <div className="space-y-2">
-          <p className="text-sm font-semibold text-gray-700">ข้อความคำร้องที่จะส่ง</p>
+          <p className="text-sm font-semibold text-gray-700">{inquiry ? INQUIRY_FORM.summaryHeading : 'ข้อความคำร้องที่จะส่ง'}</p>
 
           {editing ? (
             <>
@@ -137,13 +141,13 @@ export default function ComplaintReviewSheet({
 
           {!finalText?.trim() && (
             <p className="flex items-center gap-1.5 text-sm font-medium text-red-600">
-              <AlertCircle size={14} /> ข้อความคำร้องต้องไม่ว่าง
+              <AlertCircle size={14} /> {inquiry ? INQUIRY_FORM.emptyDetail : 'ข้อความคำร้องต้องไม่ว่าง'}
             </p>
           )}
         </div>
 
         <p className="text-sm text-gray-600 leading-relaxed">
-          ข้าพเจ้ารับรองว่าข้อมูลถูกต้องและเป็นความจริง และยินยอมให้{orgName}เก็บข้อมูลส่วนบุคคลเพื่อดำเนินการตามคำร้อง ตาม{' '}
+          ข้าพเจ้ารับรองว่าข้อมูลถูกต้องและเป็นความจริง และยินยอมให้{orgName}เก็บข้อมูลส่วนบุคคลเพื่อ{inquiry ? INQUIRY_FORM.consent : 'ดำเนินการตามคำร้อง'} ตาม{' '}
           <a href="#" className="underline" style={{ color: 'var(--color-primary)' }}
             onClick={(e) => { e.preventDefault(); onPdpaClick?.() }}>นโยบายความเป็นส่วนตัว (PDPA)</a>
         </p>
