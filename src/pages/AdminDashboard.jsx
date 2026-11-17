@@ -3426,6 +3426,10 @@ const DEFAULT_SEED = [
   { value: 'grievance',        label: 'แจ้งเรื่องร้องทุกข์ร้องเรียน', emoji: '📣', color: '#FEF3C7', textColor: '#D97706' },
   { value: 'odor',             label: 'กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)', emoji: '💨', color: '#ECFCCB', textColor: '#4D7C0F' },
   { value: 'other',            label: 'อื่นๆ',                    emoji: '📝', color: '#E0E7FF', textColor: '#4338CA' },
+  // หมวดมาตรฐาน "สอบถาม/ติดต่อเจ้าหน้าที่" (ข้อ 1.3) — รหัสต้องเป็น inquiry เท่านั้น (src/lib/inquiry.js · 20261205100000_inquiry_standard_category.sql)
+  // ⚠️ requires_resolved_location:false จำเป็น: คอลัมน์ค่าตั้งต้นเป็น true ถ้าขาดไป หมวดนี้จะปิดเรื่องไม่ได้ถ้าไม่ปักหมุด (คำถามไม่มีหน้างาน)
+  { value: 'inquiry',          label: 'สอบถาม/ติดต่อเจ้าหน้าที่',    emoji: '💬', color: '#F1F5F9', textColor: '#334155',
+    requires_resolved_location: false, is_adhoc: false, requires_manual_intake: false },
 ]
 
 // หมวดที่ seed ตั้ง requires_manual_intake = true ให้ (ค่าเดียวกับ 20260915100000_complaint_auto_receive_columns.sql)
@@ -4413,7 +4417,15 @@ function CategoryManager({ tenant }) {
           : department.code === routeCode
       ))?.id ?? departments.find((department) => department.code === 'general')?.id ?? null
     }
-    const rows = DEFAULT_SEED.map((d, i) => ({ ...d, text_color: d.textColor, municipality_id: tenant.id, sort_order: i, department_id: departmentFor(d.value), requires_manual_intake: SEED_MANUAL_INTAKE.has(d.value) }))
+    // ทุกแถวต้องมีคีย์ชุดเดียวกัน: supabase-js ส่ง upsert หลายแถวด้วย columns = ยูเนียนของคีย์ และเติมคอลัมน์ที่แถวไหนไม่มีเป็น NULL
+    // (defaultToNull เริ่มต้น true) — ถ้าเฉพาะแถว inquiry มี requires_resolved_location แถวอื่นจะถูกส่ง NULL เข้าคอลัมน์ NOT NULL แล้วโหลดค่าเริ่มต้นล้มทั้งชุด
+    // จึงใส่ค่าเท่ากับค่าตั้งต้นของคอลัมน์ (ตรงกับที่แถวเหล่านี้เคยได้อยู่แล้วตอนไม่ส่งคีย์) ให้ทุกแถว
+    // requires_manual_intake มาจาก SEED_MANUAL_INTAKE (#753: หมวดแจ้งการทุจริตต้องให้แอดมินรับเรื่อง) ต้องทับท้ายสุดเสมอ
+    const rows = DEFAULT_SEED.map((d, i) => ({
+      is_adhoc: false, requires_resolved_location: true,
+      ...d, text_color: d.textColor, municipality_id: tenant.id, sort_order: i, department_id: departmentFor(d.value),
+      requires_manual_intake: SEED_MANUAL_INTAKE.has(d.value),
+    }))
       .map(({ textColor, ...rest }) => rest)
     if (rows.some((row) => !row.department_id)) {
       setError('ยังไม่มีกอง/ส่วนราชการที่ใช้เป็นค่าเริ่มต้น กรุณาตั้งโครงสร้างหน่วยงานก่อนโหลดประเภทคำร้อง')

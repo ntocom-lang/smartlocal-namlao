@@ -8,6 +8,7 @@ import {
   TRACK_BUSY_MESSAGE, TRACK_RATE_ERRORS, TRACK_REOPEN_ERRORS,
   buildTrackSteps, formatTrackDateTime, isTrackBusy, isTrackFinished, isTrackToken,
 } from '../lib/complaintTrack'
+import { INQUIRY_ANSWER_HEADING, isInquiryCategory, relabelInquirySteps } from '../lib/inquiry'
 
 // หน้าที่ผู้แจ้งเปิดจากลิงก์ที่ สท./เจ้าหน้าที่ส่งให้ (/t/<โทเคน>) — ไม่ต้องล็อกอิน
 // ข้อมูลทั้งหมดมาจาก get_complaint_by_track_token() ซึ่งไม่ส่งชื่อ เบอร์ พิกัด หรือรายละเอียดที่ผู้แจ้งพิมพ์มาให้ตั้งแต่ฝั่งฐานข้อมูล
@@ -222,7 +223,8 @@ export default function TrackComplaint() {
     await load({ quiet: true })
   }
 
-  const steps = data ? buildTrackSteps(data) : []
+  // หมวดสอบถาม (ข้อ 1.3): ขั้นสุดท้ายเป็น "ตอบแล้ว" ไม่ใช่ "ดำเนินการแล้ว" (หมวดอื่นได้ขั้นเดิมตัวเดิม)
+  const steps = data ? relabelInquirySteps(buildTrackSteps(data), data.category) : []
   const finished = data ? isTrackFinished(data.status) : false
   const rejected = data?.status === 'rejected'
   const parked = data?.status === 'parked'
@@ -304,7 +306,8 @@ export default function TrackComplaint() {
 
             {finished && data.result_note && (
               <section className={card} aria-labelledby="track-note-title">
-                <h2 id="track-note-title" className={`${sectionLabel} mb-2`}>บันทึกจากเจ้าหน้าที่</h2>
+                {/* หมวดสอบถาม (ข้อ 1.3): ข้อความนี้คือคำตอบถึงผู้สอบถาม */}
+                <h2 id="track-note-title" className={`${sectionLabel} mb-2`}>{isInquiryCategory(data.category) ? INQUIRY_ANSWER_HEADING : 'บันทึกจากเจ้าหน้าที่'}</h2>
                 <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words bg-green-50 border border-green-100 rounded-xl px-3 py-2">{data.result_note}</p>
               </section>
             )}

@@ -13,6 +13,7 @@ import ComplaintTextBlock from '../components/complaints/ComplaintTextBlock'
 import ReopenComplaintBox from '../components/complaints/ReopenComplaintBox'
 import TrackLinkCard from '../components/complaints/TrackLinkCard'
 import { isParked, PARKED_LABEL, PARKED_PUBLIC_NOTE } from '../lib/complaintWorkflow'
+import { INQUIRY_ANSWER_HEADING, INQUIRY_DONE_DESC, INQUIRY_DONE_LABEL, isInquiryCategory } from '../lib/inquiry'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
@@ -102,10 +103,12 @@ function StatusBadge({ complaint }) {
   const status = complaint?.status
   if (isAdhocComplaint(complaint) && (STATUS_COMPAT[status] ?? status) === 'new') return null
   const s = STATUS[status] ?? STATUS.new
+  // หมวดสอบถาม (ข้อ 1.3): สถานะปิดเรื่อง = "ตอบแล้ว" ไม่ใช่ "ดำเนินการแล้ว" (สถานะอื่นใช้ถ้อยคำเดิม)
+  const label = isInquiryCategory(complaint?.category) && (STATUS_COMPAT[status] ?? status) === 'closed' ? INQUIRY_DONE_LABEL : s.label
   return (
     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
           style={{ backgroundColor: s.bg, color: s.text }}>
-      {s.label}
+      {label}
     </span>
   )
 }
@@ -178,7 +181,7 @@ function findUnrated(list) {
   ) ?? null
 }
 
-function StatusStepper({ status }) {
+function StatusStepper({ status, category = null }) {
   const normalized = STATUS_COMPAT[status] ?? status
   if (isParked(normalized)) {
     return (
@@ -215,7 +218,10 @@ function StatusStepper({ status }) {
         const done = i <= currentIdx
         const isCurrent = i === currentIdx
         const isLast = i === STATUS_FLOW.length - 1
-        const info = STATUS_FLOW_LABEL[step]
+        // หมวดสอบถาม (ข้อ 1.3): ขั้นสุดท้ายเป็น "ตอบแล้ว"
+        const info = step === 'closed' && isInquiryCategory(category)
+          ? { label: INQUIRY_DONE_LABEL, desc: INQUIRY_DONE_DESC }
+          : STATUS_FLOW_LABEL[step]
 
         return (
           <div key={step} className="flex gap-4">
@@ -434,7 +440,7 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
             )}
             {/* หมวดเฉพาะกิจไม่ไล่ status เลย stepper จะค้างที่ "คำร้องใหม่" ตลอดกาล และขัดกับ
                 ป้าย "ระบบรับเรื่องแล้ว" ด้านบน — ป้ายนั้นคือความคืบหน้าทั้งหมดที่สายงานนี้มีจริง */}
-            {!isAdhocComplaint(c) && <StatusStepper status={c.status} />}
+            {!isAdhocComplaint(c) && <StatusStepper status={c.status} category={c.category} />}
           </div>
 
           {/* ประเมินความพึงพอใจ — ทางเข้าสำรองเมื่อป็อปอัพหลังปิดเรื่องไม่ได้เด้ง
@@ -454,7 +460,7 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
                 </div>
               ) : (
                 <>
-                  <p className="text-sm font-bold text-green-800">คำร้องนี้ดำเนินการแล้ว</p>
+                  <p className="text-sm font-bold text-green-800">{isInquiryCategory(c.category) ? 'เจ้าหน้าที่ตอบคำถามนี้แล้ว' : 'คำร้องนี้ดำเนินการแล้ว'}</p>
                   <p className="text-xs text-green-600 mt-0.5 mb-3">
                     ขอเวลาสักครู่ให้คะแนนความพึงพอใจการให้บริการ
                   </p>
@@ -655,7 +661,7 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
           {c.technician_note && (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                <AlignLeft size={11} /> บันทึกจากเจ้าหน้าที่
+                <AlignLeft size={11} /> {isInquiryCategory(c.category) ? INQUIRY_ANSWER_HEADING : 'บันทึกจากเจ้าหน้าที่'}
               </p>
               <div className="bg-green-50 rounded-2xl px-4 py-3 border border-green-100">
                 <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{c.technician_note}</p>

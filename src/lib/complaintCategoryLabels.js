@@ -27,6 +27,8 @@ export const STANDARD_CATEGORY_LABEL = {
   borrow_equipment: 'ยืมพัสดุ', grievance: 'ร้องทุกข์/ร้องเรียน',
   disease: 'ควบคุมโรคติดต่อ', odor: 'กลิ่นเหม็นรบกวน',
   water_repair: 'ซ่อมน้ำประปา', other: 'อื่นๆ',
+  // หมวดมาตรฐานสอบถาม/ติดต่อเจ้าหน้าที่ (ข้อ 1.3) — ป้ายต้องตรง INQUIRY_LABEL ใน src/lib/inquiry.js (tests/inquiry-category.test.mjs เทียบให้)
+  inquiry: 'สอบถาม/ติดต่อเจ้าหน้าที่',
 }
 
 export const UNKNOWN_CATEGORY_LABEL = 'เรื่องที่แจ้ง'

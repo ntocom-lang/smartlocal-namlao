@@ -20,6 +20,7 @@ import { __iconNode as droplet } from 'lucide-react/dist/esm/icons/droplet.mjs'
 import { __iconNode as droplets } from 'lucide-react/dist/esm/icons/droplets.mjs'
 import { __iconNode as ellipsis } from 'lucide-react/dist/esm/icons/ellipsis.mjs'
 import { __iconNode as lightbulb } from 'lucide-react/dist/esm/icons/lightbulb.mjs'
+import { __iconNode as messageSquareText } from 'lucide-react/dist/esm/icons/message-square-text.mjs'
 import { __iconNode as messageSquareWarning } from 'lucide-react/dist/esm/icons/message-square-warning.mjs'
 import { __iconNode as packageIcon } from 'lucide-react/dist/esm/icons/package.mjs'
 import { __iconNode as pawPrint } from 'lucide-react/dist/esm/icons/paw-print.mjs'
@@ -60,6 +61,7 @@ const BY_CODE = {
   animals: pawPrint,
   borrow_equipment: packageIcon,
   grievance: messageSquareWarning,
+  inquiry: messageSquareText,
   disease: activity,
   other: circleHelp,
 }

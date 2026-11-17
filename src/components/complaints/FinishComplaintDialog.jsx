@@ -4,12 +4,20 @@ import { Camera, CheckCircle2, Loader2, MapPin, X } from 'lucide-react'
 import MapPicker from '../MapPicker'
 import { finishComplaint } from '../../lib/complaintFinish'
 import { initialResolvedPin, isSamePin, toPin } from '../../lib/complaintWorkflow'
+import { INQUIRY_STAFF, isInquiryCategory } from '../../lib/inquiry'
 
 // กล่อง "ดำเนินการแล้ว" ใช้ร่วมทุกหน้า (แอดมิน / เจ้าหน้าที่ / ช่าง) — ขั้นสุดท้ายของคำร้อง
 // เจ้าของระบบกำหนด 2569-09-15: ต้องปักหมุดจุดที่ดำเนินการ (ยกเว้นหมวดที่ตั้งไว้) รูปไม่บังคับ
 // 2569-09-29: ผู้ร้องปักหมุดมาแล้วใช้หมุดนั้นเลย ผู้รับผิดชอบย้ายเฉพาะเมื่อผิดที่ (initialResolvedPin)
 // DB ตรวจซ้ำทุกข้อที่ finish_complaint() / guard_complaint_final_close_role() — ปุ่มที่นี่แค่กันกดเสียเที่ยว
+//
+// หมวด "สอบถาม/ติดต่อเจ้าหน้าที่" (inquiry, ข้อ 1.3): ช่องบันทึกผลคือ "คำตอบถึงผู้สอบถาม" — ผู้สอบถามอ่านได้ที่หน้าติดตาม /t/
+// (technician_note เดิม ไม่เพิ่มช่อง/ขั้นตอน) และซ่อนส่วนปักหมุดเมื่อหมวดไม่บังคับหมุด (คำถามไม่มีหน้างาน)
+// หมวดอื่นแสดงเหมือนเดิมทุกตัวอักษร
 export default function FinishComplaintDialog({ complaint, requiresPin = true, categoryLabel = '', tenantSlug, onDone, onCancel }) {
+  const inquiry = isInquiryCategory(complaint?.category)
+  // ซ่อนหมุดเฉพาะเมื่อฐานข้อมูลไม่บังคับ — ถ้าแถวหมวดถูกตั้งบังคับหมุดไว้ (เช่นโหลดค่าเริ่มต้นเก่า) ต้องยังปักได้ ไม่งั้นปิดเรื่องไม่ได้
+  const showPin = !(inquiry && !requiresPin)
   const reporterPin = toPin(complaint?.latitude, complaint?.longitude)
   const [pin, setPin] = useState(() => initialResolvedPin(complaint, requiresPin))
   const usingReporterPin = isSamePin(pin, reporterPin)
@@ -49,9 +57,9 @@ export default function FinishComplaintDialog({ complaint, requiresPin = true, c
       <div className="w-full max-w-md max-h-[92vh] overflow-y-auto bg-white rounded-t-3xl sm:rounded-3xl p-5 space-y-4 shadow-xl">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-base font-bold text-gray-800">บันทึก "ดำเนินการแล้ว"</p>
+            <p className="text-base font-bold text-gray-800">{inquiry ? INQUIRY_STAFF.dialogTitle : 'บันทึก "ดำเนินการแล้ว"'}</p>
             <p className="text-xs text-gray-500 mt-0.5">
-              ผู้ร้องจะได้รับแจ้งผล และแจ้งกลับได้ภายใน 7 วันถ้ายังไม่เรียบร้อย
+              {inquiry ? INQUIRY_STAFF.dialogHint : 'ผู้ร้องจะได้รับแจ้งผล และแจ้งกลับได้ภายใน 7 วันถ้ายังไม่เรียบร้อย'}
             </p>
           </div>
           <button type="button" onClick={onCancel} disabled={saving} className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-40">
@@ -60,7 +68,7 @@ export default function FinishComplaintDialog({ complaint, requiresPin = true, c
         </div>
 
         {/* หมุดจุดที่ดำเนินการ */}
-        <div className="space-y-2">
+        {showPin && <div className="space-y-2">
           <p className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
             <MapPin size={12} /> จุดที่ดำเนินการ {!requiresPin
               ? <span className="text-gray-400">(ไม่บังคับสำหรับหมวดนี้)</span>
@@ -96,7 +104,7 @@ export default function FinishComplaintDialog({ complaint, requiresPin = true, c
               <MapPin size={14} /> ปักหมุดจุดที่ดำเนินการ
             </button>
           )}
-        </div>
+        </div>}
 
         {/* รูปผลงาน */}
         <div className="space-y-2">
@@ -123,10 +131,11 @@ export default function FinishComplaintDialog({ complaint, requiresPin = true, c
 
         {/* บันทึกผล */}
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-gray-600">บันทึกผลการดำเนินงาน (ไม่บังคับ)</p>
+          <p className="text-xs font-semibold text-gray-600">{inquiry ? INQUIRY_STAFF.answerLabel : 'บันทึกผลการดำเนินงาน (ไม่บังคับ)'}</p>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} maxLength={2000}
-            placeholder="เช่น เปลี่ยนหลอดไฟ LED 18W จำนวน 2 ดวง"
+            placeholder={inquiry ? INQUIRY_STAFF.answerPlaceholder : 'เช่น เปลี่ยนหลอดไฟ LED 18W จำนวน 2 ดวง'}
             className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-green-200" />
+          {inquiry && <p className="text-[11px] text-gray-500">{INQUIRY_STAFF.answerHint}</p>}
         </div>
 
         {error && <p className="text-xs font-medium text-red-600">{error}</p>}
@@ -134,7 +143,7 @@ export default function FinishComplaintDialog({ complaint, requiresPin = true, c
         <div className="flex gap-2">
           <button type="button" onClick={submit} disabled={saving || blocked}
             className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50">
-            {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} ยืนยันดำเนินการแล้ว
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} {inquiry ? INQUIRY_STAFF.confirm : 'ยืนยันดำเนินการแล้ว'}
           </button>
           <button type="button" onClick={onCancel} disabled={saving}
             className="px-4 py-2.5 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 disabled:opacity-50">

@@ -24,6 +24,7 @@ import { uploadFile } from '../lib/driveStorage'
 import { complaintFolderPath, complaintFileName } from '../lib/driveFolders'
 import { ODOR_TIME_RANGES } from '../lib/odorTimeRanges'
 import { ODOR_INTENSITY_LEVELS, WIND_DIRECTIONS, HEALTH_EFFECT_OPTIONS } from '../lib/odorOptions'
+import { INQUIRY_FORM, INQUIRY_FORM_TYPE, INQUIRY_LABEL, INQUIRY_LOGIN_GATE, INQUIRY_PDPA, inquiryFormPath, isInquiryCategory } from '../lib/inquiry'
 
 const MAX_PHOTOS = 3
 
@@ -104,6 +105,10 @@ const REPAIR_CATEGORIES = new Set([
 ])
 
 function getFormActionCopy(formType, category, categoryLabel = '') {
+  // สอบถาม/ติดต่อเจ้าหน้าที่ (ข้อ 1.3) — ตัดสินจากรหัสหมวด ไม่ใช่ชนิดฟอร์ม เพราะเปิดจาก ?category=inquiry ได้ด้วย
+  if (isInquiryCategory(category)) {
+    return { title: INQUIRY_FORM.title, submit: INQUIRY_FORM.submit }
+  }
   if (formType === 'infrastructure') {
     return { title: 'ร้องเรียน/ร้องทุกข์', submit: 'ส่งเรื่องร้องเรียน/ร้องทุกข์' }
   }
@@ -139,7 +144,7 @@ function getFormActionCopy(formType, category, categoryLabel = '') {
 
 const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 
-function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, complaintId, photoFiles, primaryColor, categoryLabel }) {
+function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, complaintId, photoFiles, primaryColor, categoryLabel, inquiry = false }) {
   const { tenant } = useTenant()
   const [items, setItems] = useState(() =>
     (photoFiles ?? []).map(f => ({ file: f, status: 'pending' }))
@@ -247,7 +252,7 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
       <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-5">
         <CheckCircle2 size={44} className="text-green-500" />
       </div>
-      <h2 className="text-xl font-bold text-gray-800 mb-2">ส่งคำร้องสำเร็จ!</h2>
+      <h2 className="text-xl font-bold text-gray-800 mb-2">{inquiry ? INQUIRY_FORM.successTitle : 'ส่งคำร้องสำเร็จ!'}</h2>
       {complaintNumber && (
         <div className="mb-4 px-6 py-3 bg-gray-50 rounded-2xl border border-gray-100">
           <p className="text-xs text-gray-400 mb-0.5">เลขที่อ้างอิง — บันทึกไว้เพื่อติดตาม</p>
@@ -304,7 +309,9 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
       )}
 
       <p className="text-gray-500 text-sm leading-relaxed mb-8 max-w-xs">
-        เจ้าหน้าที่จะดำเนินการตรวจสอบและติดต่อกลับหาท่านโดยเร็วที่สุด
+        {inquiry
+          ? INQUIRY_FORM.successBody
+          : 'เจ้าหน้าที่จะดำเนินการตรวจสอบและติดต่อกลับหาท่านโดยเร็วที่สุด'}
       </p>
       {/* ออกจากหน้านี้ทั้งที่รูปยังไม่ถูกแนบ = รูปหายถาวร (ไฟล์อยู่ในเครื่องผู้ใช้ ไม่มีทางกู้จากฝั่งเรา)
           จึงเตือนหนึ่งครั้งก่อน ไม่ได้ห้าม — ผู้ใช้ที่ตั้งใจออกกดซ้ำได้ทันที */}
@@ -318,7 +325,7 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
           <button onClick={() => { if (photosPending && !leaveWarned) { setLeaveWarned(true); return } onMyComplaints() }} disabled={busy}
             className="w-full py-3.5 rounded-2xl font-semibold text-white shadow-lg active:scale-95 transition-all disabled:opacity-50"
             style={{ backgroundColor: 'var(--color-primary)' }}>
-            {busy ? <Loader2 size={18} className="animate-spin mx-auto" /> : 'ติดตามสถานะคำร้อง'}
+            {busy ? <Loader2 size={18} className="animate-spin mx-auto" /> : (inquiry ? INQUIRY_FORM.trackButton : 'ติดตามสถานะคำร้อง')}
           </button>
         )}
         <button onClick={() => { if (photosPending && !leaveWarned) { setLeaveWarned(true); return } onBack() }} disabled={busy}
@@ -372,6 +379,17 @@ const FORM_TYPE_CONFIG = {
       { value: 'other',       label: '📝  อื่นๆ' },
     ],
     placeholder: 'อธิบายสถานการณ์ เช่น พบขยะทิ้งเกลื่อนข้างทาง มีกลิ่นเหม็น...',
+  },
+  // สอบถาม/ติดต่อเจ้าหน้าที่ (ข้อ 1.3) — หมวดเดียว ใช้ระบบคำร้องเดิม ไม่มีสถานที่/พิกัด/รูป
+  // ⚠️ รหัสต้องตรงกับ INQUIRY_FORM_TYPE / INQUIRY_CATEGORY ใน src/lib/inquiry.js (เทสต์เทียบให้)
+  inquiry: {
+    label: INQUIRY_LABEL,
+    icon: '💬',
+    color: '#475569',
+    categories: [
+      { value: 'inquiry', label: `💬  ${INQUIRY_LABEL}` },
+    ],
+    placeholder: INQUIRY_FORM.placeholder,
   },
 }
 
@@ -577,6 +595,8 @@ export default function CitizenForm() {
   // consent modal และ handleSubmit จริง) เหมือนแพทเทิร์นเดิมของ issue_type
   // ⚠️ ต้องเรียกทั้ง 2 จุดที่ validate ก่อนส่ง (ปุ่มกดก่อนเปิดหน้าทวน และ handleSubmit) เหมือน validateDetail
   function validateVillage(form) {
+    // คำถามไม่มีหน้างาน — ไม่บังคับสถานที่ (ช่องถูกซ่อนไว้ด้วย)
+    if (isInquiryCategory(form.category)) return null
     if (!form.village.trim()) {
       return locations.length === 0 || villageOther
         ? 'กรุณากรอกสถานที่'
@@ -620,6 +640,7 @@ export default function CitizenForm() {
   // ไม่ใช่ค่าในช่องกรอก (ผู้ร้องอาจเลือกฉบับที่ระบบเรียบเรียงหรือแก้เองในหน้าทวน)
   async function handleSubmit(e, choice = null) {
     e?.preventDefault()
+    if (isInquiryCategory(form.category) && !isLoggedIn) { setError('กรุณาเข้าสู่ระบบก่อนส่งคำถาม'); return }
     if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
     const catErr = validateCategoryEnabled(form)
     if (catErr) { setError(catErr); return }
@@ -667,7 +688,9 @@ export default function CitizenForm() {
             p_id:              complaintId,
             p_municipality_id: tenant.id,
             p_category:        form.category,
-            p_form_type:       formType !== 'legacy' ? formType : 'legacy',
+            // complaints.form_type มี CHECK แค่ 'infrastructure','water_support','environment','legacy' (042_add_form_type_to_complaints.sql)
+            // ?form=inquiry คุมหน้าตาฟอร์มฝั่งเว็บอย่างเดียว ถ้าส่งเข้า rpc ทุกคำถามจะล้มด้วย 23514 → หมวด inquiry ส่ง 'legacy'
+            p_form_type:       isInquiryCategory(form.category) || formType === INQUIRY_FORM_TYPE ? 'legacy' : (formType !== 'legacy' ? formType : 'legacy'),
             p_village:         form.village || null,
             p_detail:          finalDetail,
             p_phone:           form.phone.trim(),
@@ -733,8 +756,29 @@ export default function CitizenForm() {
   const allCatsDisplay = [...(ftConfig?.categories ?? []), ...dbCategories]
   // ต้องคำนวณก่อนแยกไปหน้า SuccessScreen เพราะใช้ตั้งชื่อโฟลเดอร์หมวดบน Drive ด้วย
   const catLabel = allCatsDisplay.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
+  const isInquiry = isInquiryCategory(form.category)
 
-  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} complaintId={savedComplaintId} photoFiles={savedPhotoFiles} primaryColor={primaryColor} categoryLabel={catLabel} />
+  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} complaintId={savedComplaintId} photoFiles={savedPhotoFiles} primaryColor={primaryColor} categoryLabel={catLabel} inquiry={isInquiry} />
+
+  // คำถามถึงเจ้าหน้าที่ต้องเข้าสู่ระบบก่อน (เจ้าของเลือก 2569-11-17) — ผู้ไม่ล็อกอินอ่านคำตอบในระบบไม่ได้
+  // authSession: undefined = กำลังโหลด · null = ไม่ล็อกอินแน่นอน (AuthContext) จึงแยกหน้าเฉพาะ null ไม่ให้แวบตอนโหลด
+  if (isInquiry && authSession === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-5" style={{ backgroundColor: '#eef2f7' }}>
+        <div className="max-w-sm w-full bg-white rounded-2xl border border-gray-200 shadow-sm p-6 text-center space-y-4" data-inquiry-login-gate>
+          <h1 className="text-lg font-bold text-gray-800">{INQUIRY_LOGIN_GATE.title}</h1>
+          <p className="text-sm text-gray-600 leading-relaxed">{INQUIRY_LOGIN_GATE.body}</p>
+          <button type="button" onClick={() => navigate('/auth', { state: { from: inquiryFormPath() } })}
+            className="w-full py-3 rounded-xl text-white text-sm font-semibold" style={{ backgroundColor: primaryColor }}>
+            {INQUIRY_LOGIN_GATE.button}
+          </button>
+          <button type="button" onClick={() => navigate(-1)} className="w-full py-2 text-sm text-gray-500">
+            {INQUIRY_LOGIN_GATE.back}
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   // pills ของ ftConfig ต้องเคารพหมวดที่เทศบาลนี้ปิดไว้ เหมือน dropdown หลักที่อ่านจาก DB อยู่แล้ว
   // และหมวดเฉพาะผู้มีตำแหน่งที่ role นี้ยื่นไม่ได้
@@ -787,20 +831,33 @@ export default function CitizenForm() {
               </button>
             </div>
             <div className="text-sm text-gray-600 leading-relaxed space-y-3">
-              <p><strong>{tenant?.name ?? 'หน่วยงาน'}</strong> มีความจำเป็นต้องเก็บรวบรวมข้อมูลส่วนบุคคลของท่านเพื่อดำเนินการตามคำร้องที่ยื่นมา</p>
+              {/* หมวดสอบถาม (ข้อ 1.3): ใช้ถ้อยคำ "คำถาม" และไม่อ้างพิกัด/ไฟล์แนบที่ฟอร์มนี้ไม่เก็บ — หมวดอื่นคงข้อความเดิมทุกตัวอักษร */}
+              <p><strong>{tenant?.name ?? 'หน่วยงาน'}</strong> {isInquiry ? INQUIRY_PDPA.intro : 'มีความจำเป็นต้องเก็บรวบรวมข้อมูลส่วนบุคคลของท่านเพื่อดำเนินการตามคำร้องที่ยื่นมา'}</p>
               <p><strong>ข้อมูลที่เก็บรวบรวม</strong></p>
-              <ul className="list-disc list-inside space-y-1 pl-1">
-                <li>ชื่อ-นามสกุล และเบอร์โทรศัพท์ติดต่อ</li>
-                <li>รายละเอียดคำร้องและประเภทปัญหา</li>
-                <li>ตำแหน่งที่ตั้ง (หากให้ความยินยอม)</li>
-                <li>ไฟล์ภาพหรือเอกสารที่แนบมา (หากมี)</li>
-              </ul>
+              {isInquiry ? (
+                <ul className="list-disc list-inside space-y-1 pl-1">
+                  {INQUIRY_PDPA.collected.map((text) => <li key={text}>{text}</li>)}
+                </ul>
+              ) : (
+                <ul className="list-disc list-inside space-y-1 pl-1">
+                  <li>ชื่อ-นามสกุล และเบอร์โทรศัพท์ติดต่อ</li>
+                  <li>รายละเอียดคำร้องและประเภทปัญหา</li>
+                  <li>ตำแหน่งที่ตั้ง (หากให้ความยินยอม)</li>
+                  <li>ไฟล์ภาพหรือเอกสารที่แนบมา (หากมี)</li>
+                </ul>
+              )}
               <p><strong>วัตถุประสงค์</strong></p>
-              <ul className="list-disc list-inside space-y-1 pl-1">
-                <li>ตรวจสอบและแก้ไขปัญหาตามคำร้อง</li>
-                <li>ติดต่อกลับเพื่อสอบถามข้อเท็จจริงเพิ่มเติมและแจ้งผลการดำเนินการ</li>
-                <li>จัดทำสถิติและวิเคราะห์เชิงพื้นที่เพื่อวางแผนแก้ปัญหา (ใช้เฉพาะพิกัด ช่วงเวลา และคำตอบแบบตัวเลือก โดยไม่ระบุตัวบุคคล)</li>
-              </ul>
+              {isInquiry ? (
+                <ul className="list-disc list-inside space-y-1 pl-1">
+                  {INQUIRY_PDPA.purposes.map((text) => <li key={text}>{text}</li>)}
+                </ul>
+              ) : (
+                <ul className="list-disc list-inside space-y-1 pl-1">
+                  <li>ตรวจสอบและแก้ไขปัญหาตามคำร้อง</li>
+                  <li>ติดต่อกลับเพื่อสอบถามข้อเท็จจริงเพิ่มเติมและแจ้งผลการดำเนินการ</li>
+                  <li>จัดทำสถิติและวิเคราะห์เชิงพื้นที่เพื่อวางแผนแก้ปัญหา (ใช้เฉพาะพิกัด ช่วงเวลา และคำตอบแบบตัวเลือก โดยไม่ระบุตัวบุคคล)</li>
+                </ul>
+              )}
               <p><strong>ระยะเวลาเก็บรักษา</strong> ข้อมูลติดต่อ (ชื่อ-นามสกุล เบอร์โทรศัพท์) เก็บไว้ 5 ปีนับจากวันปิดเรื่อง</p>
               <p>ข้อมูลจะถูกใช้ตามวัตถุประสงค์ข้างต้นเท่านั้น และจะไม่ถูกเปิดเผยให้บุคคลภายนอก เว้นแต่เป็นการปฏิบัติตามกฎหมาย</p>
               {/* เปิดแท็บใหม่ — คำร้องที่กรอกค้างไว้จะได้ไม่หาย */}
@@ -908,7 +965,7 @@ export default function CitizenForm() {
       {/* Form */}
       <form onSubmit={handleSubmit} className="px-3 pt-3 pb-24 space-y-2">
 
-        {!isLoggedIn && (
+        {!isLoggedIn && !isInquiry && (
           <div className="bg-blue-50 border border-blue-100 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5">
             <User size={14} className="text-blue-400 shrink-0" />
             <p className="text-xs text-blue-600 leading-relaxed">
@@ -1047,9 +1104,11 @@ export default function CitizenForm() {
             ⚠️ minLength ของเบราว์เซอร์บล็อกตั้งแต่ก่อนโค้ดเราได้ทำงาน ถ้าใส่กลับมาต้องแก้ทั้ง
             validateDetail() และฐานข้อมูลให้ตรงกันทั้งสามที่ */}
         <textarea value={form.detail} onChange={set('detail')} rows={2} required maxLength={5000}
-          placeholder={ftConfig?.placeholder ?? 'รายละเอียด'}
+          placeholder={isInquiry ? INQUIRY_FORM.placeholder : (ftConfig?.placeholder ?? 'รายละเอียด')}
           className="w-full px-4 py-3.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 resize-none focus:outline-none focus:border-blue-400" />
 
+        {/* หมวดสอบถาม (ข้อ 1.3) ไม่มีหน้างาน → ซ่อนช่องสถานที่ แผนที่ และรูป ทั้งสามช่อง (validateVillage คืน null ให้หมวดนี้) */}
+        {!isInquiry && (<>
         {/* Village — บังคับกรอก/เลือก (เจ้าของระบบกำหนด 2569-09-17) เจ้าหน้าที่ต้องรู้ว่าไปที่ไหน
             อปท. ที่ยังไม่ได้ตั้งทะเบียนสถานที่ (locations ว่าง) ใช้ช่องพิมพ์เองเหมือนเดิม */}
         {locations.length === 0 || villageOther ? (
@@ -1086,6 +1145,7 @@ export default function CitizenForm() {
             <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           </div>
         )}
+        </>)}
 
         {/* Phone */}
         <div className="relative">
@@ -1109,6 +1169,7 @@ export default function CitizenForm() {
           </label>
         )}
 
+        {!isInquiry && (<>
         {/* Map pin */}
         <button type="button" onClick={() => setShowMap(true)}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full font-semibold text-white text-sm transition-all active:scale-95 shadow-sm"
@@ -1159,6 +1220,7 @@ export default function CitizenForm() {
             </div>
           )}
         </div>
+        </>)}
 
         {/* Error */}
         {error && (
@@ -1199,7 +1261,11 @@ export default function CitizenForm() {
           ข้อความยินยอม PDPA อยู่ในกล่องเดียวกันเหมือนเดิม ไม่เพิ่มจำนวนครั้งที่ต้องกด */}
       {showConsent && (
         <ComplaintReviewSheet
-          summary={[
+          summary={isInquiry ? [
+            { label: 'ประเภท', value: catLabel },
+            { label: 'ผู้ถาม', value: reporterFullName },
+            { label: 'เบอร์โทร', value: form.phone },
+          ] : [
             { label: 'ประเภท', value: catLabel },
             { label: 'ลักษณะปัญหา', value: form.issue_type },
             { label: 'สถานที่', value: form.village },
@@ -1207,6 +1273,7 @@ export default function CitizenForm() {
             { label: 'ผู้แจ้ง', value: reporterFullName },
             { label: 'เบอร์โทร', value: form.phone },
           ]}
+          inquiry={isInquiry}
           detail={form.detail.trim()}
           photoCount={photos.length}
           orgName={tenant?.name ?? 'หน่วยงาน'}
