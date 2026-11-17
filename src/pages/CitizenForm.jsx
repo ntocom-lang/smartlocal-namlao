@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
+import { POLE_NO_CATEGORY, POLE_NO_MAX_LENGTH, cleanPoleNo } from '../lib/poleNo'
 import ComplaintReviewSheet from '../components/complaints/ComplaintReviewSheet'
 import TrackLinkCard from '../components/complaints/TrackLinkCard'
 import { useTenant } from '../contexts/TenantContext'
@@ -415,6 +416,8 @@ export default function CitizenForm() {
     name_title: '', name_first: '', name_last: '',
     // ฟิลด์เสริมเฉพาะหมวด odor — ดู buildExtraData()/validateOdorFields() ด้านล่าง
     odor_intensity: '', wind_direction: '', health_effect: '', odor_time_range: '',
+    // เลขเสาไฟ (หมวด light) — ไม่บังคับ ดู src/lib/poleNo.js
+    pole_no: '',
   })
   const [profilePhone, setProfilePhone] = useState('') // เบอร์เดิมจากโปรไฟล์ ไว้เทียบว่าผู้ใช้แก้เบอร์หรือไม่
   const [syncPhoneToProfile, setSyncPhoneToProfile] = useState(false)
@@ -582,6 +585,10 @@ export default function CitizenForm() {
   }
 
   function buildExtraData(form) {
+    if (form.category === POLE_NO_CATEGORY) {
+      const poleNo = cleanPoleNo(form.pole_no)
+      return poleNo ? { pole_no: poleNo } : null
+    }
     if (form.category !== 'odor') return null
     return {
       odor_intensity: form.odor_intensity ? Number(form.odor_intensity) : null,
@@ -1170,6 +1177,15 @@ export default function CitizenForm() {
         )}
 
         {!isInquiry && (<>
+        {/* เลขเสาไฟ — เฉพาะหมวดไฟฟ้าสาธารณะ ไม่บังคับ (ช่วยช่างหาเสาได้เร็ว) */}
+        {form.category === POLE_NO_CATEGORY && (
+          <div data-pole-no>
+            <input type="text" name="pole_no" value={form.pole_no} onChange={set('pole_no')}
+              maxLength={POLE_NO_MAX_LENGTH}
+              placeholder="เลขเสาไฟ (ถ้ามี) เช่น ศก-12 — ดูจากป้ายที่ติดบนเสา"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400" />
+          </div>
+        )}
         {/* Map pin */}
         <button type="button" onClick={() => setShowMap(true)}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full font-semibold text-white text-sm transition-all active:scale-95 shadow-sm"

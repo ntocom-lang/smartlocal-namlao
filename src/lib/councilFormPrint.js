@@ -7,6 +7,7 @@ import { STAFF_SIGN_ROW1_GAP_MM as COUNCIL_SIGN_GAP_MM } from './govStaffSignBlo
 import { printableCategoryLabel } from './complaintCategoryLabels.js'
 import { QUIET_MODULES, qrLayout } from './qrSvg.js'
 import { complaintPhotoSheetCss, complaintPhotoSheetHtml } from './complaintPhotoSheet.js'
+import { getPoleNo } from './poleNo.js'
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -340,6 +341,7 @@ ${govSignBlockCss()}
 
 <div class="points indent" style="margin-top:10px;">
   ${c.issue_type ? `<div>ลักษณะปัญหา &nbsp;${esc(c.issue_type)}</div>` : ''}
+  ${getPoleNo(c) ? `<div>เลขเสาไฟ &nbsp;${esc(getPoleNo(c))}</div>` : ''}
   ${c.category === 'odor' && c.extra_data ? `
   <div>ระดับความรุนแรง &nbsp;${esc(c.extra_data.odor_intensity ?? '-')} / 5</div>
   <div>ทิศทางลม &nbsp;${esc(c.extra_data.wind_direction ?? '-')}</div>

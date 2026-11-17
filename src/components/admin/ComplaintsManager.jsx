@@ -42,6 +42,7 @@ import OdorFieldsDisplay from '../complaints/OdorFieldsDisplay'
 import OdorComplaintTable, { OdorDetailModal } from '../complaints/OdorComplaintTable'
 import OdorReportSummary from '../complaints/OdorReportSummary'
 import { buildOdorSummary } from '../../lib/odorAnalytics'
+import { getPoleNo } from '../../lib/poleNo'
 import { odorIncidentRangeOf, odorTimeRangeLabel } from '../../lib/odorTimeRanges'
 
 // มุมมองของแท็ปเฉพาะกิจ (odor): บทวิเคราะห์ กับ รายการดิบ — ดีฟอลต์เปิดที่รายงาน เพราะสิ่งที่แอดมิน
@@ -1315,6 +1316,15 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ลักษณะปัญหา</p>
               <span className="inline-block text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5">
                 {c.issue_type}
+              </span>
+            </div>
+          )}
+
+          {getPoleNo(c) && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">เลขเสาไฟ</p>
+              <span className="inline-block text-sm font-semibold text-gray-800 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5">
+                {getPoleNo(c)}
               </span>
             </div>
           )}
