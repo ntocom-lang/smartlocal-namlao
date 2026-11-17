@@ -75,6 +75,7 @@ const TourismPage = lazyWithRetry(() => import('./pages/TourismPage'))
 const TourismDetailPage = lazyWithRetry(() => import('./pages/TourismDetailPage'))
 const ContactPage = lazyWithRetry(() => import('./pages/ContactPage'))
 const CitizenDocRequest = lazyWithRetry(() => import('./pages/CitizenDocRequest'))
+const QueueBooking = lazyWithRetry(() => import('./pages/QueueBooking'))
 const MyDocRequests = lazyWithRetry(() => import('./pages/MyDocRequests'))
 const LpaDocStats = lazyWithRetry(() => import('./pages/LpaDocStats'))
 const ComplaintStats = lazyWithRetry(() => import('./pages/ComplaintStats'))
@@ -794,6 +795,8 @@ function AppShell() {
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/doc-request" element={<CitizenDocRequest />} />
           <Route path="/patient-transport" element={<PatientTransportBooking />} />
+          {/* จองคิวรับบริการ (โมดูล queue-booking · ค่าเริ่มต้นปิด) — หน้านี้เช็คโมดูลและบังคับล็อกอินเอง */}
+          <Route path="/queue-booking" element={<QueueBooking />} />
           {/* ทางลัด/ลิงก์เก่าของหน้าเจ้าหน้าที่ — เปิดโมดูลในโครงหน้าเจ้าหน้าที่ (เมนูบน/ซ้ายครบ)
               ไม่ใช่หน้าลอยแยก · สิทธิ์ยังคุมที่ /staff ซึ่งเป็น RequireAuth staffOnly */}
           <Route path="/staff/patient-transport" element={<Navigate to="/staff" state={{ module: PATIENT_TRANSPORT_MODULE_KEY }} replace />} />
