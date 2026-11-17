@@ -71,6 +71,7 @@ const EventsManager = lazyWithRetry(() => import('./components/admin/EventsManag
 const EmergencyPage = lazyWithRetry(() => import('./pages/EmergencyPage'))
 const DirectoryPage = lazyWithRetry(() => import('./pages/DirectoryPage'))
 const WasteSchedulePage = lazyWithRetry(() => import('./pages/WasteSchedulePage'))
+const ServiceSearchPage = lazyWithRetry(() => import('./pages/ServiceSearchPage'))
 const TourismPage = lazyWithRetry(() => import('./pages/TourismPage'))
 const TourismDetailPage = lazyWithRetry(() => import('./pages/TourismDetailPage'))
 const ContactPage = lazyWithRetry(() => import('./pages/ContactPage'))
@@ -722,7 +723,8 @@ function AppShell() {
           <Routes>
           <Route path="/" element={<HomeOrTechRedirect />} />
           {/* แชทบอทน้ำเลาใจดีปิดใช้งานแล้ว โค้ดหน้ายังอยู่ที่ pages/ChatbotPage.jsx */}
-          <Route path="/search" element={<Navigate to="/" replace />} />
+          {/* หน้าค้นหาบริการ + คำถามที่พบบ่อย + แบบฟอร์มดาวน์โหลด (โมดูล service-help คุมผ่าน MODULE_ROUTES) — เดิม redirect ไปหน้าแรก */}
+          <Route path="/search" element={<ServiceSearchPage />} />
           <Route path="/chatbot" element={<Navigate to="/" replace />} />
           <Route path="/complaint" element={<ComplaintCategory />} />
           <Route path="/complaint-legacy" element={<OneDataLanding />} />

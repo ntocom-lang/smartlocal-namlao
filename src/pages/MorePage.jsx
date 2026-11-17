@@ -5,7 +5,7 @@ import {
   Bell, FileSearch, ClipboardList, ShieldCheck,
   Phone, Globe, Share2, MessageCircle,
   ChevronRight, Star, Copy, Download, Check, Monitor, X,
-  UploadIcon, PlusSquare, BookOpen, Store, FileText, Briefcase,
+  UploadIcon, PlusSquare, BookOpen, Store, FileText, Briefcase, Search,
   CalendarDays, Luggage, AlertTriangle, Cloud, CloudRain, Wind, RefreshCw, Database, Trash2, LayoutGrid, ChartColumn, ArrowLeftRight,
 } from 'lucide-react'
 import qrCodeImage from '../assets/qr-code.png'
@@ -264,6 +264,7 @@ function NamlaoMorePage() {
     { path: '/notifications', icon: Bell, color: '#9333ea', label: 'แจ้งเตือน' },
     { path: '/waste', icon: Trash2, color: '#059669', label: 'ตารางวันเก็บขยะ' },
     { path: '/water-situation', icon: CloudRain, color: '#0284c7', label: 'สถานการณ์น้ำ-ฝน' },
+    { path: '/search', icon: Search, color: '#0891b2', label: 'ค้นหาบริการ/แบบฟอร์ม' },
   ]
   const DEFAULT_QUICK_PATHS = ['/complaint', '/emergency', '/doc-request', '/my-complaints']
   // อ่าน localStorage แบบ lazy initializer ของ useState (sync, ครั้งเดียวตอน mount) แทน useEffect+setState
@@ -319,6 +320,7 @@ function NamlaoMorePage() {
       { key: 'emergency', label: 'สายด่วนฉุกเฉิน', desc: 'รวมเบอร์โทรฉุกเฉินในพื้นที่', Icon: AlertTriangle, color: '#dc2626', to: '/emergency' },
       { key: 'complaint', label: 'ร้องเรียน/ร้องทุกข์', desc: 'แจ้งซ่อม / ขอน้ำ / แจ้งเหตุสิ่งแวดล้อม', Icon: ClipboardList, color: '#ea580c', to: '/complaint' },
       { key: 'doc-request', label: 'สอบถามยอดชำระเรื่องนั้นๆ', desc: 'สอบถามค่าธรรมเนียม / ภาษี / ค่าธรรมเนียมขยะ / ขออนุญาตก่อสร้างบ้าน', Icon: FileText, color: '#2563eb', to: '/doc-request' },
+      { key: 'service-search', label: 'ค้นหาบริการ/แบบฟอร์ม', desc: 'พิมพ์ปัญหาที่พบ ระบบพาไปบริการที่ถูกต้อง พร้อมคำถามที่พบบ่อยและแบบฟอร์มดาวน์โหลด', Icon: Search, color: '#0891b2', to: '/search' },
       { key: 'events', label: 'ปฏิทินกิจกรรม', desc: 'กิจกรรมและงานประเพณีของท้องถิ่น', Icon: CalendarDays, color: '#16a34a', to: '/events' },
       { key: 'tourism', label: 'เที่ยว กิน พัก ช้อป บริการ', desc: 'ที่เที่ยว ร้านอาหาร ที่พัก OTOP ของฝาก และช่าง/บริการในพื้นที่', Icon: Luggage, color: '#ea580c', to: '/tourism' },
       { key: 'business-register', label: 'ลงทะเบียนร้านค้า / ท่องเที่ยว', desc: 'เที่ยว กิน พัก ช้อป บริการ — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ', Icon: Store, color: '#ea580c', to: '/business-register' },

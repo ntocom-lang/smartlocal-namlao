@@ -5,7 +5,7 @@
 import {
   FileText, MessageSquareWarning, CalendarDays, Images, Luggage, Star, Car, Trash2, Database, BookOpen,
   PackageOpen, Ambulance, ClipboardCheck, CloudRain, HardHat, ClipboardList, Hammer, TrendingUp, ChartColumn, LayoutDashboard,
-  HeartHandshake, Megaphone, Layers, Building2, Banknote, GraduationCap, ShieldCheck, CalendarClock,
+  HeartHandshake, Megaphone, Layers, Building2, Banknote, GraduationCap, ShieldCheck, FileCheck2, FileDown, CalendarClock,
 } from 'lucide-react'
 import { PATIENT_TRANSPORT_MODULE_KEY } from './patientTransport'
 
@@ -43,6 +43,9 @@ export const STANDALONE_GROUPS = [
     items: [
       { key: 'events',          label: 'ปฏิทินกิจกรรม',       Icon: CalendarDays, color: '#10b981', bg: '#d1fae5', desc: 'กำหนดการและปฏิทินกิจกรรมของหน่วยงาน' },
       { key: 'posts',           label: 'ข่าวสาร/ภาพกิจกรรม', navLabel: 'ข่าว/กิจกรรม', Icon: Images,       color: '#059669', bg: '#d1fae5', desc: 'ประกาศ ข่าวประชาสัมพันธ์ และอัลบั้มภาพ' },
+      // แบบฟอร์มดาวน์โหลด + คำถามที่พบบ่อยของหน้าค้นหาบริการ (/search) — จัดการรายกองแบบเดียวกับข่าวสาร (2569-11-17)
+      // ไม่อยู่ใน TECHNICIAN_MODULE_KEYS · สิทธิ์เขียนจริงตัดสินที่ RLS (admin/officer กอง/staff ของตัวเอง)
+      { key: 'service-help',    label: 'แบบฟอร์ม/คำถาม', Icon: FileDown, color: '#0891b2', bg: '#cffafe', desc: 'คลังแบบฟอร์มดาวน์โหลด และคำถามที่พบบ่อยในหน้าค้นหาบริการของประชาชน' },
       { key: 'tourism',         label: 'เที่ยว กิน พัก ช้อป บริการ', navLabel: 'เที่ยว กิน พัก ช้อป', Icon: Luggage, color: '#d97706', bg: '#fef3c7', desc: 'ที่เที่ยว ร้านอาหาร ที่พัก OTOP และร้านบริการในพื้นที่' },
       { key: 'tourism-reviews', label: 'รีวิวสถานที่',        Icon: Star,         color: '#f59e0b', bg: '#fef3c7', desc: 'ตรวจสอบและลบรีวิวที่ไม่เหมาะสม' },
     ],
@@ -101,6 +104,9 @@ export const MODULE_GROUPS = [
       // คุมการเห็นด้วยบทบาท (hasLocalPlanAccess) เหมือน water-events · ไม่อยู่ใน TECHNICIAN_MODULE_KEYS · label ในรายการนี้เป็นค่าสำรองตอนโหลดชื่อไม่ได้
       // ชื่อจริงที่เห็นอ่านช่วงปีจากแผนที่เมนูแสดง (localPlanLabel — ห้ามฝังปีในโค้ด) · ใครแก้ได้ตัดสินที่ RLS (plan_role / admin) ไม่ใช่ที่นี่
       { key: 'local-plan', label: 'แผนพัฒนาท้องถิ่น', navLabel: 'แผนพัฒนาท้องถิ่น', Icon: ClipboardList, color: '#4f46e5', bg: '#e0e7ff', desc: 'ทะเบียนโครงการในแผนพัฒนา และแผนการดำเนินงานรายปี ระบบนับกำหนดตามระเบียบให้' },
+      // ทะเบียนใบอนุญาต (ขั้น 1B / E3) — ค่าเริ่มต้นปิด (คีย์ใน MANAGED_MODULE_KEYS ตั้งแต่ 2569-12-03 ไม่ได้เติมให้ทุกแถว) เห็นเมนู = admin/officer/staff/superadmin
+      // วางใต้สำนักปลัดแบบเดียวกับตารางเก็บขยะ (ยังไม่มี อปท. ไหนมีกองสาธารณสุขใน departments) · ใครใช้ได้จริงตัดสินที่ licence_is_manager() ฝั่งฐาน ไม่ใช่ที่นี่
+      { key: 'licence-registry', label: 'ทะเบียนใบอนุญาต', Icon: FileCheck2, color: '#0f766e', bg: '#ccfbf1', desc: 'ทะเบียนใบอนุญาต บันทึกรับค่าธรรมเนียมต่ออายุ และเตือนใบใกล้หมดอายุ' },
     ],
   },
   { group: 'กองคลัง', Icon: Banknote, accent: '#a16207', items: [] },

@@ -20,10 +20,10 @@ export const PERFORMANCE_ROLES = ['technician', 'staff', 'officer', 'admin', 'su
  */
 export const STAFF_MENU_MODULE_KEYS = Object.freeze([
   'complaints', 'inbox', PATIENT_TRANSPORT_MODULE_KEY, 'queue-booking',
-  'events', 'posts', 'tourism', 'tourism-reviews',
+  'events', 'posts', 'service-help', 'tourism', 'tourism-reviews',
   'report', 'performance', 'data-center', 'fleet', 'borrowable-assets',
   'manual-staff',
-  'waste', 'water-events', 'local-plan',
+  'waste', 'water-events', 'local-plan', 'licence-registry',
   'infra', 'projects',
 ])
 
@@ -97,6 +97,11 @@ export function staffMenuAccess({ role, profile, tenant, allModuleKeys = STAFF_M
     && (!Array.isArray(tenant?.enabled_modules) || tenant.enabled_modules.includes('water-situation'))
   // แผนพัฒนาท้องถิ่น: อ่านได้ตามบทบาทที่ local_plan_can_read() รับ (ช่างเข้าไม่ได้ผ่านเมนู)
   const hasLocalPlanAccess = ['superadmin', 'admin', 'officer', 'staff', 'viewer'].includes(role)
+  // ทะเบียนใบอนุญาต: เห็นเมนู = admin/officer/staff/superadmin · สิทธิ์ใช้จริงตัดสินที่ licence_is_manager() (กองที่ถือเรื่อง) — คนที่เห็นเมนูแต่ไม่ใช่ผู้จัดการเจอข้อความอธิบาย
+  const hasLicenceAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
+
+  // แบบฟอร์ม/คำถามที่พบบ่อย: เฉพาะบทบาทที่เขียนได้ตาม RLS ของ service_forms/service_faqs (ผู้บริหาร/สภาไม่มีสิทธิ์แก้ จึงไม่แสดงเมนูให้เปล่าๆ)
+  const hasServiceHelpAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
 
   const roleScopedKeys = role === 'technician'
     ? enabledKeys.filter((k) => TECHNICIAN_MODULE_KEYS.includes(k))
@@ -107,6 +112,8 @@ export function staffMenuAccess({ role, profile, tenant, allModuleKeys = STAFF_M
     ...(hasPerformanceAccess ? [] : ['performance']),
     ...(hasWaterEventsAccess ? [] : ['water-events']),
     ...(hasLocalPlanAccess ? [] : ['local-plan']),
+    ...(hasLicenceAccess ? [] : ['licence-registry']),
+    ...(hasServiceHelpAccess ? [] : ['service-help']),
   ].reduce((keys, hidden) => keys.filter((k) => k !== hidden), roleScopedKeys)
 
   return { enabledKeys, scopedKeys, hasLocalPlanAccess }

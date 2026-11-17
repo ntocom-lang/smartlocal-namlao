@@ -40,6 +40,8 @@ function legacy({ role, profile, tenant, allModuleKeys }) {
   const hasWaterEventsAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
     && (!Array.isArray(tenant?.enabled_modules) || tenant.enabled_modules.includes('water-situation'))
   const hasLocalPlanAccess = ['superadmin', 'admin', 'officer', 'staff', 'viewer'].includes(role)
+  // ทะเบียนใบอนุญาต (2569-12-03): เห็นเมนู = admin/officer/staff/superadmin (สิทธิ์ใช้จริงที่ licence_is_manager ฝั่งฐาน)
+  const hasLicenceAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
   const technicianKeys = ['complaints', 'infra', 'projects', 'events', 'data-center', 'fleet', 'manual-staff', 'performance']
   const roleScopedKeys = role === 'technician'
     ? enabledKeys.filter(k => technicianKeys.includes(k))
@@ -50,6 +52,9 @@ function legacy({ role, profile, tenant, allModuleKeys }) {
     ...(hasPerformanceAccess ? [] : ['performance']),
     ...(hasWaterEventsAccess ? [] : ['water-events']),
     ...(hasLocalPlanAccess ? [] : ['local-plan']),
+    ...(hasLicenceAccess ? [] : ['licence-registry']),
+    // เพิ่ม 2569-11-17: แบบฟอร์ม/คำถามที่พบบ่อย เห็นเฉพาะบทบาทที่เขียนได้ (ส่วนเพิ่มเดียวของตรรกะเดิม)
+    ...(['superadmin', 'admin', 'officer', 'staff'].includes(role) ? [] : ['service-help']),
   ].reduce((keys, hidden) => keys.filter(k => k !== hidden), roleScopedKeys)
   return { enabledKeys, scopedKeys, hasLocalPlanAccess }
 }
@@ -112,6 +117,19 @@ test('กติกาหลักที่ต้องไม่เปลี่�
   const noComplaints = { enabled_modules: MANAGED_MODULE_KEYS.filter((k) => k !== 'complaints') }
   assert.equal(staffVisibleModuleKeys({ role: 'admin', profile: {}, tenant: noComplaints }).includes('performance'), false)
   assert.equal(staffVisibleModuleKeys({ role: 'council', profile: {}, tenant: all }).includes('performance'), false)
+})
+
+test('service-help: เห็นเฉพาะ admin/superadmin/officer/staff · ช่าง/ผู้บริหาร/สภา/ประชาชนไม่เห็น · อปท. ปิดแล้วหาย', () => {
+  const all = { enabled_modules: [...MANAGED_MODULE_KEYS] }
+  for (const role of ['superadmin', 'admin', 'officer', 'staff']) {
+    assert.equal(staffVisibleModuleKeys({ role, profile: {}, tenant: all }).includes('service-help'), true, role)
+  }
+  for (const role of ['technician', 'viewer', 'council', 'citizen', null, undefined]) {
+    assert.equal(staffVisibleModuleKeys({ role, profile: {}, tenant: all }).includes('service-help'), false, String(role))
+  }
+  const off = { enabled_modules: MANAGED_MODULE_KEYS.filter((k) => k !== 'service-help') }
+  assert.equal(staffVisibleModuleKeys({ role: 'admin', profile: {}, tenant: off }).includes('service-help'), false)
+  assert.equal(TECHNICIAN_MODULE_KEYS.includes('service-help'), false)
 })
 
 test('isStaffModuleEnabled: โมดูลที่เป็นเมนูใช้ scopedKeys · คีย์ที่ไม่ใช่เมนู (งานประปา/น้ำ-ฝน) ใช้กติกา tenant', () => {

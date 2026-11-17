@@ -56,6 +56,7 @@ import useStickyChrome from '../hooks/useStickyChrome'
 const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
 const ConstructionProjectsModule = lazy(() => import('../components/staff/construction/ConstructionProjectsModule'))
 const LocalPlanModule = lazy(() => import('../components/staff/localPlan/LocalPlanModule'))
+const LicenceModule = lazy(() => import('../components/staff/licence/LicenceModule'))
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 const EventsManager = lazy(() => import('../components/admin/EventsManager'))
 const ComplaintsManager = lazy(() => import('../components/admin/ComplaintsManager'))
@@ -69,6 +70,7 @@ import ModuleHeader from '../components/common/ModuleHeader'
 const TourismManager = lazy(() => import('../components/admin/TourismManager'))
 const TourismReviewsAdmin = lazy(() => import('../components/admin/TourismManager').then(module => ({ default: module.TourismReviewsAdmin })))
 const PostsManager = lazy(() => import('../components/staff/PostsManager'))
+const ServiceHelpManager = lazy(() => import('../components/staff/ServiceHelpManager'))
 const BorrowableAssetsManager = lazy(() => import('../components/staff/BorrowableAssetsManager'))
 const WasteScheduleManager = lazy(() => import('../components/staff/WasteScheduleManager'))
 const WaterEventsPanel = lazy(() => import('../components/staff/WaterEventsPanel'))
@@ -2999,6 +3001,8 @@ export default function StaffDashboard() {
             )}
             {activeModule === 'civil-report'      && <CivilProjectReport tenant={tenant} />}
             {activeModule === 'posts'            && <PostsManager currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
+            {/* เข้าหน้านี้ได้ทางเมนู/router state — ตรวจสิทธิ์ซ้ำ (เฉพาะ admin/officer/staff ตาม staffMenuAccess · ตัวบังคับจริงคือ RLS) */}
+            {activeModule === 'service-help' && visibleModules.some(m => m.key === 'service-help') && <ServiceHelpManager currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'tourism'          && <TourismManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} currentUserId={profile?.id ?? null} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
@@ -3006,6 +3010,7 @@ export default function StaffDashboard() {
             {/* เข้าหน้านี้ได้ทางลิงก์/เมนูเท่านั้น ที่ไม่ผ่านตัวกรองเมนูต้องเช็คสิทธิ์ซ้ำ (ตัวบังคับจริงคือฟังก์ชันฐานข้อมูล) */}
             {/* เข้าหน้านี้ได้ทางเมนู/router state — ตรวจสิทธิ์ซ้ำเหมือนเมนูอื่นที่คุมด้วยบทบาท (ตัวบังคับจริงคือ RLS) */}
             {activeModule === 'local-plan' && visibleModules.some(m => m.key === 'local-plan') && <LocalPlanModule tenant={tenant} profile={profile} />}
+            {activeModule === 'licence-registry' && visibleModules.some(m => m.key === 'licence-registry') && <LicenceModule tenant={tenant} profile={profile} />}
             {activeModule === 'water-events' && visibleModules.some(m => m.key === 'water-events') && <WaterEventsPanel tenant={tenant} profile={profile} />}
             {activeModule === PATIENT_TRANSPORT_MODULE_KEY && <PatientTransportStaff onBack={() => setActiveModule('home')} />}
             {activeModule === 'queue-booking' && visibleModules.some(m => m.key === 'queue-booking') && <QueueBookingStaff tenant={tenant} currentUserRole={role} />}

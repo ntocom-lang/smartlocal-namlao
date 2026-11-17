@@ -3,7 +3,7 @@ import {
   Home, ClipboardList, FileText, CalendarDays, Newspaper,
   MapPin, FileSearch, FolderOpen, Bell,
   Phone, AlertCircle, BookUser, LogIn, LogOut, LayoutGrid, Database, Trash2, CloudRain, ChartColumn,
-  UserRound, FileSignature, ShieldCheck, Briefcase, CalendarClock,
+  UserRound, FileSignature, ShieldCheck, Briefcase, Search, CalendarClock,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTenant } from '../../contexts/TenantContext'
@@ -14,13 +14,18 @@ import { canAccessStaffPortal } from '../../lib/portalAccess'
 import PortalDrawer from '../common/PortalDrawer'
 import { NavBadge, NavIconTile } from '../common/CollapsibleNavGroup'
 
-const NAV_GROUPS = [
+// export ไว้ให้หน้าค้นหาบริการ (ServiceSearchPage.jsx) ค้นเมนูของประชาชนจากรายการเดียวกัน ไม่เขียนรายการซ้ำ
+// (ย้ายไปไฟล์ lib ไม่ได้: tests/citizen-nav + tests/site-open-counter อ่านรายการเมนูจากซอร์สไฟล์นี้โดยตรง)
+// eslint-disable-next-line react-refresh/only-export-components
+export const NAV_GROUPS = [
   {
     label: 'บริการหลัก',
     items: [
       { label: 'หน้าแรก',          href: '/',            Icon: Home,          exact: true, color: '#2563eb' },
       { label: 'ร้องเรียน/ร้องทุกข์', href: '/complaint', Icon: ClipboardList, color: '#ef4444' },
       { label: 'งานบริการประชาชน', href: '/doc-request', Icon: FileText, color: '#8b5cf6' },
+      // ค้นหาบริการ + คำถามที่พบบ่อย + แบบฟอร์มดาวน์โหลด (โมดูล service-help ผ่าน moduleForPath) — ชื่อต้องตรง PAGE_CATALOG ใน siteOpenStats.js
+      { label: 'ค้นหาบริการ/แบบฟอร์ม', href: '/search', Icon: Search, color: '#0891b2' },
       // จองคิวรับบริการ (E2) — moduleForPath กรองให้: โผล่เฉพาะ อปท. ที่เปิดโมดูล queue-booking
       { label: 'จองคิวรับบริการ', href: '/queue-booking', Icon: CalendarClock, color: '#7c3aed' },
       { label: 'ตารางวันเก็บขยะ', href: '/waste',       Icon: Trash2, color: '#15803d' },
