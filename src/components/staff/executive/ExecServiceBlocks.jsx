@@ -375,9 +375,14 @@ export function SatisfactionBlock({ ov, entries }) {
           const v = ov.derived?.satisfaction
           if (!v) return null
           const rows = v.sources.filter((s) => s.cnt > 0)
-          const none = rows.length === 0 && v.general.n === 0
+          const es = v.eservice
+          const none = rows.length === 0 && v.general.n === 0 && !(es?.finished > 0)
           return (
             <>
+              {/* ส่วนคำขอ E-Service ล้มฝั่งฐาน — บอกตรงๆ ไม่ให้อ่านเป็น "ไม่มีคะแนน" (ผลตรวจ L3) */}
+              {v.eserviceFailed && (
+                <p data-exec-eservice-failed className="rounded-2xl border border-amber-200 bg-white px-3 py-2 text-xs text-amber-800">โหลดคะแนนคำขอ E-Service ไม่ได้ในรอบนี้ — ตัวเลขคำร้องด้านล่างไม่กระทบ</p>
+              )}
               {none ? (
                 <p className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">ยังไม่มีคะแนนในช่วงนี้</p>
               ) : (
@@ -397,10 +402,29 @@ export function SatisfactionBlock({ ov, entries }) {
                     <span className="font-black tabular-nums text-slate-900">{v.general.avg == null ? '—' : v.general.avg}</span>
                     <span className="w-16 shrink-0 text-right text-[10px] text-slate-500">{execNf(v.general.n)} ครั้ง</span>
                   </li>
+                  {/* คำขอ E-Service (ข้อ 1.2) — ตัวเลขล้วน ไม่มีชื่อ/ความเห็น · ไม่อนุมัติแยกจากเสร็จสิ้น */}
+                  {es?.finished > 0 && (
+                    <li data-exec-source="eservice" className="space-y-0.5 border-t border-dashed border-slate-200 pt-1.5 text-xs">
+                      <div className="flex items-baseline gap-2">
+                        <span className="min-w-0 flex-1 text-slate-700">คำขอ E-Service<span className="text-slate-400"> · ตอบ {execNf(es.ratedCnt)} จาก {execNf(es.rateable)} ใบ{es.responseRate == null ? '' : ` (${es.responseRate}%)`}</span>
+                          <InfoButton active={open === 'eservice'} onClick={() => toggle('eservice')} label="คะแนนคำขอ E-Service" />
+                        </span>
+                        <span className="font-black tabular-nums text-slate-900">{es.completedAvg == null ? '—' : es.completedAvg}</span>
+                        <span className="w-16 shrink-0 text-right text-[10px] text-slate-500">เสร็จ {execNf(es.completedCnt)}</span>
+                      </div>
+                      {es.rejectedCnt > 0 && (
+                        <p className="text-[10px] text-slate-500">ใบไม่อนุมัติ เฉลี่ย {es.rejectedAvg} จาก {execNf(es.rejectedCnt)} คะแนน (แยกจากใบที่เสร็จ)</p>
+                      )}
+                      {es.notRateable.length > 0 && (
+                        <p className="text-[10px] text-slate-500">ประเมินไม่ได้: {es.notRateable.map((x) => `${x.label} ${execNf(x.n)}`).join(' · ')}</p>
+                      )}
+                    </li>
+                  )}
                 </ul>
               )}
               {open === 'by_source' && <FormulaPanel title="คะแนนแยกที่มา" items={execFormulas(entries, 'by_source')} />}
               {open === 'general' && <FormulaPanel title="แบบประเมินภาพรวม" items={execFormulas(entries, 'general')} />}
+              {open === 'eservice' && <FormulaPanel title="คะแนนคำขอ E-Service" items={execFormulas(entries, ['eservice_rating', 'eservice_response_rate'])} />}
 
               <div className="space-y-1">
                 <div className="flex items-center gap-1">

@@ -476,6 +476,55 @@ export const EXEC_RATING_SOURCES = Object.freeze([
   { key: 'linked_anon', label: 'ผูกคำร้องแต่ไม่ล็อกอิน' },
 ])
 const GENERAL_RATING_LABEL = 'แบบประเมินภาพรวม'
+export const ESERVICE_RATING_LABEL = 'คำขอ E-Service'
+
+/** ผู้ยื่นคำขอที่ "ประเมินไม่ได้" (exec_satisfaction_eservice.submitters ที่ไม่ใช่ citizen) — นับแยกตามที่เจ้าของระบบเลือก 2569-11-17 */
+export const ESERVICE_NOT_RATEABLE = Object.freeze([
+  { key: 'counter', label: 'กรอกแทนที่เคาน์เตอร์' },
+  { key: 'staff', label: 'บัญชีเจ้าหน้าที่/สท. ยื่นเอง' },
+  { key: 'anonymous', label: 'ไม่มีบัญชีผู้ยื่น' },
+  { key: 'unknown', label: 'หาบทบาทผู้ยื่นไม่ได้' },
+])
+
+const sumCnt = (o) => { const v = asObj(o); return { cnt: execCount(v.cnt), sum: execCount(v.sum) } }
+
+/** คีย์ eservice ของ exec_summary_satisfaction (20261204100100) — ฐานเก่าที่ยังไม่มีคีย์นี้ = ศูนย์ทั้งหมด */
+export function normalizeEserviceRating(data) {
+  const e = asObj(data)
+  const submitters = asObj(e.submitters)
+  const rated = asObj(e.rated)
+  return {
+    available: data != null && typeof data === 'object',
+    finished: execCount(e.finished), completed: execCount(e.completed), rejected: execCount(e.rejected),
+    rateable: execCount(e.rateable), low: execCount(e.low), undated: execCount(e.undated),
+    submitters: Object.fromEntries(['citizen', ...ESERVICE_NOT_RATEABLE.map((x) => x.key)].map((k) => [k, execCount(submitters[k])])),
+    rated: { completed: sumCnt(rated.completed), rejected: sumCnt(rated.rejected) },
+    byType: asList(e.by_type).map((r) => ({
+      t: typeof r?.t === 'string' ? r.t : null, finished: execCount(r?.finished), rateable: execCount(r?.rateable),
+      cnt: execCount(r?.cnt), sum: execCount(r?.sum),
+    })),
+  }
+}
+
+/**
+ * มุมมองคะแนนคำขอ E-Service — อัตราตอบ = ประเมินแล้ว ÷ ใบที่ประชาชนยื่นเองออนไลน์ (rateable) · ตัวหาร 0 = null
+ * เสร็จสิ้น/ไม่อนุมัติแยกกัน (ไม่อนุมัติมักได้คะแนนต่ำโดยธรรมชาติ รวมกันแล้วอ่านผิด)
+ */
+export function eserviceRatingView(raw) {
+  const e = raw?.byType ? raw : normalizeEserviceRating(raw)
+  const ratedCnt = e.rated.completed.cnt + e.rated.rejected.cnt
+  return {
+    available: e.available,
+    finished: e.finished, completed: e.completed, rejected: e.rejected, rateable: e.rateable,
+    ratedCnt, responseRate: execPercent(ratedCnt, e.rateable),
+    avg: execAverage(e.rated.completed.sum + e.rated.rejected.sum, ratedCnt),
+    completedAvg: execAverage(e.rated.completed.sum, e.rated.completed.cnt), completedCnt: e.rated.completed.cnt,
+    rejectedAvg: execAverage(e.rated.rejected.sum, e.rated.rejected.cnt), rejectedCnt: e.rated.rejected.cnt,
+    notRateable: ESERVICE_NOT_RATEABLE.map((x) => ({ ...x, n: e.submitters[x.key] })).filter((x) => x.n > 0),
+    byType: e.byType.map((r) => ({ ...r, avg: execAverage(r.sum, r.cnt), responseRate: execPercent(r.cnt, r.rateable) })),
+    low: e.low, undated: e.undated,
+  }
+}
 
 const ratingTally = (o) => {
   const v = asObj(o)
@@ -493,6 +542,9 @@ export function normalizeSatisfactionSummary(data) {
     genuine: ratingTally(d.genuine),
     general: { n: execCount(general.n), sum: execCount(general.sum) },
     low: Object.fromEntries(Object.entries(asObj(d.low)).map(([k, n]) => [k, execCount(n)]).filter(([, n]) => n > 0)),
+    eservice: normalizeEserviceRating(d.eservice ?? null),
+    // มีคีย์แต่เป็น null = ฐานคำนวณส่วนนี้ล้ม (20261204100200 กันไม่ให้ลากการ์ดคำร้องล้มตาม) · ไม่มีคีย์ = ฐานรุ่นเก่า
+    eserviceFailed: Object.hasOwn(d, 'eservice') && d.eservice == null,
     byDept: asList(d.by_dept).map((r) => ({
       dept: r?.dept ?? null, closed: execCount(r?.closed),
       genuineSum: execCount(r?.genuine_sum), genuineCnt: execCount(r?.genuine_cnt),
@@ -764,7 +816,10 @@ export function sumOnTime(list) {
 export function satisfactionView(sat) {
   const s = sat ?? normalizeSatisfactionSummary(null)
   const all = EXEC_RATING_SOURCES.reduce((t, src) => ({ sum: t.sum + s.sources[src.key].sum, cnt: t.cnt + s.sources[src.key].cnt }), { sum: 0, cnt: 0 })
-  const lowLabels = { ...Object.fromEntries(EXEC_RATING_SOURCES.map((x) => [x.key, x.label])), general: GENERAL_RATING_LABEL }
+  const lowLabels = {
+    ...Object.fromEntries(EXEC_RATING_SOURCES.map((x) => [x.key, x.label])),
+    general: GENERAL_RATING_LABEL, eservice: ESERVICE_RATING_LABEL,
+  }
   const low = Object.entries(s.low).map(([key, n]) => ({ key, label: lowLabels[key] ?? key, n }))
   return {
     closed: s.closed, anyRated: s.anyRated,
@@ -773,6 +828,8 @@ export function satisfactionView(sat) {
     allAvg: execAverage(all.sum, all.cnt), allCnt: all.cnt,
     sources: EXEC_RATING_SOURCES.map((x) => ({ ...x, complaints: s.sources[x.key].complaints, cnt: s.sources[x.key].cnt, avg: execAverage(s.sources[x.key].sum, s.sources[x.key].cnt) })),
     general: { n: s.general.n, avg: execAverage(s.general.sum, s.general.n) },
+    eservice: eserviceRatingView(s.eservice ?? normalizeEserviceRating(null)),
+    eserviceFailed: s.eserviceFailed === true,
     low, lowTotal: low.reduce((t, x) => t + x.n, 0),
   }
 }

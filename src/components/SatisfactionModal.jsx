@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { X, CheckCircle2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { docRateErrorMessage, isDocRateSuccess } from '../lib/docRequestRating'
 
 const RATINGS = [
   { value: 5, emoji: '😄', label: 'ยอดเยี่ยม', color: '#22c55e', bg: '#f0fdf4', border: '#86efac' },
@@ -20,7 +21,9 @@ const RPC_ERROR = {
   invalid_rating: 'คะแนนไม่ถูกต้อง',
 }
 
-export default function SatisfactionModal({ onClose, complaintId = null, onRated = null, delayMs = 800 }) {
+// documentRequestId: ประเมินคำขอ E-Service รายเรื่อง (rate_document_request) — onRated(documentRequestId, rating) ถูกเรียกเมื่อสำเร็จ
+// (รวมเคย already_rated = สำเร็จ) · ถ้าใส่ complaintId ด้วย ถือเป็นคำร้อง (พฤติกรรมเดิม)
+export default function SatisfactionModal({ onClose, complaintId = null, documentRequestId = null, onRated = null, delayMs = 800 }) {
   const { tenant } = useTenant()
   const [visible, setVisible] = useState(false)
   const [selected, setSelected] = useState(null)
@@ -59,6 +62,20 @@ export default function SatisfactionModal({ onClose, complaintId = null, onRated
           }
         }
         onRated?.(complaintId, selected, data?.verified === true)
+      } else if (documentRequestId) {
+        // คำขอ E-Service: ผ่าน RPC เท่านั้น (policy INSERT ตรงปิดทางไว้) · ข้อความ error ตาม code ภาษาไทย ไม่โชว์ code ดิบ
+        const { data, error: err } = await supabase.rpc('rate_document_request', {
+          p_request_id: documentRequestId,
+          p_rating: selected,
+          p_comment: comment.trim() || null,
+        })
+        if (err) throw err
+        // ให้คะแนนไปแล้ว = งานสำเร็จอยู่แล้ว ไม่บังคับกดซ้ำ (เหมือนเคสคำร้อง)
+        if (!isDocRateSuccess(data)) {
+          setError(docRateErrorMessage(data?.code))
+          return
+        }
+        onRated?.(documentRequestId, selected)
       } else {
         // ประเมินภาพรวมหน่วยงาน (เมนู "ประเมินความพึงพอใจ") ไม่ผูกคำร้อง
         const { error: err } = await supabase.from('satisfaction_ratings').insert({
@@ -128,6 +145,14 @@ export default function SatisfactionModal({ onClose, complaintId = null, onRated
                 <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2}
                   placeholder="ความคิดเห็นเพิ่มเติม (ไม่บังคับ)"
                   className="w-full mt-1 border border-gray-200 rounded-2xl px-4 py-2.5 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-200" />
+              )}
+              {/* PDPA (เจ้าของระบบเลือก 2569-11-17 ข้อ M2-ก): ความเห็นของคำขออ่านได้โดยเจ้าหน้าที่ของ อปท. (สิทธิ์เดียวกับคำร้อง)
+                  คำขอบางประเภทเกี่ยวกับสุขภาพ/ความช่วยเหลือ — บอกผู้ประเมินก่อนพิมพ์ ไม่ใช่หลังส่ง */}
+              {selected && documentRequestId && !complaintId && (
+                <p className="text-[11px] leading-relaxed text-gray-500 px-1">
+                  ความคิดเห็นนี้เจ้าหน้าที่ของ{tenant?.name ? ` ${tenant.name}` : 'หน่วยงาน'} จะอ่านเพื่อปรับปรุงบริการ
+                  กรุณาไม่ใส่ข้อมูลสุขภาพ เลขบัตรประชาชน หรือข้อมูลส่วนตัวที่ไม่จำเป็น
+                </p>
               )}
 
               {error && (
