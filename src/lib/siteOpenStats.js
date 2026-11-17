@@ -152,6 +152,8 @@ export const PAGE_CATALOG = [
   { key: 'complaint-legacy',   path: '/complaint-legacy',    label: 'ร้องเรียน (หน้าแบบเดิม)',               kind: 'service' },
   { key: 'request',            path: '/request',             label: 'แบบฟอร์มคำร้อง',                       kind: 'service' },
   { key: 'doc-request',        path: '/doc-request',         label: 'งานบริการประชาชน',                      kind: 'service' },
+  // ชื่อเมนูในแถบข้างต้องตรงกับที่นี่ตัวอักษรต่อตัวอักษร (เทสต์ตรวจกับ CitizenSidebar.jsx) — เดิม /search เป็นทางผ่าน redirect ไม่นับ
+  { key: 'search',             path: '/search',              label: 'ค้นหาบริการ/แบบฟอร์ม',                  kind: 'info' },
   { key: 'patient-transport',  path: '/patient-transport',   label: 'จองรถรับ-ส่งผู้ป่วย',                   kind: 'service' },
   { key: 'business-register',  path: '/business-register',   label: 'ลงทะเบียนร้านค้า',                      kind: 'service' },
   { key: 'satisfaction',       path: '/satisfaction',        label: 'ประเมินความพึงพอใจ',                   kind: 'service' },
@@ -186,13 +188,13 @@ export const OTHER_PAGE = { key: 'other', label: 'หน้าอื่นๆ / 
 // (2569-10-28 "ใครเข้ามาใช้บริการเมนูไหนมากที่สุด กี่ครั้ง") นับจากการเปิดหน้านั้นไม่ว่าเข้าทางไหน
 // (เมนูข้าง ปุ่มหน้าแรก แถบล่างมือถือ หรือลิงก์) แยกไม่ได้ว่ากดมาจากปุ่มไหน และไม่รู้ว่าใครเป็นคนกด
 export const MENU_PAGE_KEYS = [
-  'home', 'complaint', 'doc-request', 'waste', 'water-situation', 'events', 'news', 'tourism', 'data-center',
+  'home', 'complaint', 'doc-request', 'search', 'waste', 'water-situation', 'events', 'news', 'tourism', 'data-center',
   'my-complaints', 'my-docs', 'notifications',
   'reports', 'contact', 'emergency', 'directory', 'more',
 ]
 
 // route ที่ไม่เคยถูกนับเป็นหน้าของตัวเอง: เป็นแค่ทางผ่านที่ redirect ต่อ (นับที่ปลายทาง) หรือหน้า 404
-export const UNCOUNTED_ROUTES = ['/search', '/chatbot', '/market', '/map', '*']
+export const UNCOUNTED_ROUTES = ['/chatbot', '/market', '/map', '*']
 
 const PAGE_BY_KEY = new Map([...PAGE_CATALOG, OTHER_PAGE].map(p => [p.key, p]))
 

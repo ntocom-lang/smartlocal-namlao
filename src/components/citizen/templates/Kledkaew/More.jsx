@@ -6,7 +6,7 @@ import {
   Phone, AlertTriangle, Cloud, BookUser,
   Store, FileText, CalendarDays, Luggage, Info,
   UserCircle, LogOut, Globe, UserCog, Settings, RefreshCw,
-  Database, BookOpen, Monitor, Check, UploadIcon, Wrench, Trash2, CloudRain, ChartColumn, ShieldCheck, ArrowLeftRight, Download,
+  Database, BookOpen, Monitor, Check, UploadIcon, Wrench, Trash2, CloudRain, ChartColumn, ShieldCheck, ArrowLeftRight, Download, Search,
 } from 'lucide-react'
 import { MenuGroup } from '../../../common/MenuTileGrid'
 import { useAuth } from '../../../../contexts/AuthContext'
@@ -82,6 +82,7 @@ export default function KledkaewMore() {
       icon: ClipboardList, color: '#ea580c',
       items: [
         { label: 'บริการเอกสารออนไลน์', icon: FileText, href: '/doc-request', color: '#2563eb' },
+        { label: 'ค้นหาบริการ/แบบฟอร์ม', icon: Search, href: '/search', color: '#0891b2' },
         { label: 'เอกสารของฉัน', icon: FileSearch, href: '/my-docs', color: '#0284c7' },
         { label: 'ร้องเรียน/ร้องทุกข์', icon: ClipboardList, href: '/complaint', color: '#ea580c' },
         { label: 'คำร้องของฉัน', icon: FileSearch, href: '/my-complaints', color: '#0284c7' },

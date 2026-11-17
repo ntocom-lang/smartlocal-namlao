@@ -5,7 +5,7 @@
 import {
   FileText, MessageSquareWarning, CalendarDays, Images, Luggage, Star, Car, Trash2, Database, BookOpen,
   PackageOpen, Ambulance, ClipboardCheck, CloudRain, HardHat, ClipboardList, Hammer, TrendingUp, ChartColumn, LayoutDashboard,
-  HeartHandshake, Megaphone, Layers, Building2, Banknote, GraduationCap, ShieldCheck,
+  HeartHandshake, Megaphone, Layers, Building2, Banknote, GraduationCap, ShieldCheck, FileDown,
 } from 'lucide-react'
 import { PATIENT_TRANSPORT_MODULE_KEY } from './patientTransport'
 
@@ -41,6 +41,9 @@ export const STANDALONE_GROUPS = [
     items: [
       { key: 'events',          label: 'ปฏิทินกิจกรรม',       Icon: CalendarDays, color: '#10b981', bg: '#d1fae5', desc: 'กำหนดการและปฏิทินกิจกรรมของหน่วยงาน' },
       { key: 'posts',           label: 'ข่าวสาร/ภาพกิจกรรม', navLabel: 'ข่าว/กิจกรรม', Icon: Images,       color: '#059669', bg: '#d1fae5', desc: 'ประกาศ ข่าวประชาสัมพันธ์ และอัลบั้มภาพ' },
+      // แบบฟอร์มดาวน์โหลด + คำถามที่พบบ่อยของหน้าค้นหาบริการ (/search) — จัดการรายกองแบบเดียวกับข่าวสาร (2569-11-17)
+      // ไม่อยู่ใน TECHNICIAN_MODULE_KEYS · สิทธิ์เขียนจริงตัดสินที่ RLS (admin/officer กอง/staff ของตัวเอง)
+      { key: 'service-help',    label: 'แบบฟอร์ม/คำถาม', Icon: FileDown, color: '#0891b2', bg: '#cffafe', desc: 'คลังแบบฟอร์มดาวน์โหลด และคำถามที่พบบ่อยในหน้าค้นหาบริการของประชาชน' },
       { key: 'tourism',         label: 'เที่ยว กิน พัก ช้อป บริการ', navLabel: 'เที่ยว กิน พัก ช้อป', Icon: Luggage, color: '#d97706', bg: '#fef3c7', desc: 'ที่เที่ยว ร้านอาหาร ที่พัก OTOP และร้านบริการในพื้นที่' },
       { key: 'tourism-reviews', label: 'รีวิวสถานที่',        Icon: Star,         color: '#f59e0b', bg: '#fef3c7', desc: 'ตรวจสอบและลบรีวิวที่ไม่เหมาะสม' },
     ],

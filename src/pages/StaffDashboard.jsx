@@ -69,6 +69,7 @@ import ModuleHeader from '../components/common/ModuleHeader'
 const TourismManager = lazy(() => import('../components/admin/TourismManager'))
 const TourismReviewsAdmin = lazy(() => import('../components/admin/TourismManager').then(module => ({ default: module.TourismReviewsAdmin })))
 const PostsManager = lazy(() => import('../components/staff/PostsManager'))
+const ServiceHelpManager = lazy(() => import('../components/staff/ServiceHelpManager'))
 const BorrowableAssetsManager = lazy(() => import('../components/staff/BorrowableAssetsManager'))
 const WasteScheduleManager = lazy(() => import('../components/staff/WasteScheduleManager'))
 const WaterEventsPanel = lazy(() => import('../components/staff/WaterEventsPanel'))
@@ -2998,6 +2999,8 @@ export default function StaffDashboard() {
             )}
             {activeModule === 'civil-report'      && <CivilProjectReport tenant={tenant} />}
             {activeModule === 'posts'            && <PostsManager currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
+            {/* เข้าหน้านี้ได้ทางเมนู/router state — ตรวจสิทธิ์ซ้ำ (เฉพาะ admin/officer/staff ตาม staffMenuAccess · ตัวบังคับจริงคือ RLS) */}
+            {activeModule === 'service-help' && visibleModules.some(m => m.key === 'service-help') && <ServiceHelpManager currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'tourism'          && <TourismManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} currentUserId={profile?.id ?? null} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}

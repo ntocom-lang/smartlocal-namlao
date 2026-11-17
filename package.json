@@ -157,6 +157,8 @@
     "test:staff-menu": "node tests/staff-menu-access.test.mjs",
     "test:nav-usage": "node tests/nav-usage.test.mjs",
     "test:citizen-nav": "node tests/citizen-nav.test.mjs",
+    "test:service-search": "node tests/service-search.test.mjs",
+    "test:service-help:db": "node tests/service-help-db.test.mjs --pglite",
     "test:dev-nav": "node tests/dev-nav.test.mjs",
     "test:staff-home": "node tests/staff-home-frequent.test.mjs && node tests/staff-home-summary.test.mjs && node tests/staff-home-briefing.test.mjs && node tests/staff-month-overview.test.mjs && node tests/staff-home-layout.playwright.mjs",
     "test:staff-nav": "node tests/staff-nav-layout.playwright.mjs",
