@@ -117,11 +117,57 @@ await test('แท็กในชื่อ อปท. และชื่อห�
   assert.ok(svg.includes('&lt;script&gt;'))
 })
 
+// ── โลโก้ อปท. บนหัวภาพ (เจ้าของสั่ง 2569-11-17) ──
+const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+await test('โลโก้: รับเฉพาะ data URL ชนิด PNG/JPEG/WebP base64 · SVG/ลิงก์ภายนอก/สตริงแปลกปลอมไม่ถูกฝัง', () => {
+  assert.ok(Info.logoDataUrlOk(PNG_1PX))
+  assert.ok(Info.logoDataUrlOk('data:image/jpeg;base64,/9j/4AAQ'))
+  for (const bad of [null, '', 'https://x.test/logo.png', 'data:image/svg+xml;base64,PHN2Zz4=',
+    'data:image/png;base64,AAA"/><script>x</script>', 'javascript:alert(1)']) {
+    assert.ok(!Info.logoDataUrlOk(bad), `ไม่ควรรับ ${bad}`)
+    const { svg } = Info.buildInfographicSvg(Info.buildInfographicModel(summarize(), { tenantName: 'ท', logoDataUrl: bad }), measure)
+    assert.ok(!svg.includes('data-tenant-logo'), 'โลโก้ผิดรูปต้องไม่ถูกวาด')
+  }
+})
+
+await test('โลโก้: มี = วงกลมขาวขอบทองครอปรูปเป็นวงกลมในแถบหัว · ไม่มี = หัวภาพแบบเดิม', () => {
+  const { svg } = Info.buildInfographicSvg(Info.buildInfographicModel(summarize(), { tenantName: 'ท', logoDataUrl: PNG_1PX }), measure)
+  assert.ok(svg.includes('data-tenant-logo="1"'))
+  assert.ok(svg.includes(`<image href="${PNG_1PX}"`) && svg.includes('clip-path="url(#info-logo-clip)"'))
+  const plainHead = Info.buildInfographicSvg(Info.buildInfographicModel(summarize(), { tenantName: 'ท' }), measure).svg
+  assert.ok(!plainHead.includes('<image'))
+})
+
+await test('แถบท้าย: หมายเหตุน้อย = ตัว 24 · หมายเหตุเยอะ = ย่อตัวอักษรก่อน (ไม่ต่ำกว่า 18) ยังไม่พอค่อยให้แถบสูงขึ้น ไม่ตัดข้อความ', () => {
+  const noteSizes = svg => {
+    const band = svg.slice(svg.indexOf('data-footer-band'))
+    return [...band.matchAll(/<text [^>]*font-size="(\d+)" font-weight="400" fill="#dcfce7"[^>]*>([^<]*)<\/text>/g)].map(m => ({ size: Number(m[1]), text: m[2] }))
+  }
+  const bandHeightOf = svg => Number(/<rect y="[\d.]+" width="1080" height="([\d.]+)" fill="#14532d" data-footer-band="1"\/>/.exec(svg)[1])
+  const few = Info.buildInfographicModel(summarize(), { tenantName: 'ท' })
+  few.notes = ['หมายเหตุสั้น']
+  const small = Info.buildInfographicSvg(few, measure).svg
+  assert.deepEqual([...new Set(noteSizes(small).map(n => n.size))], [24])
+  assert.equal(bandHeightOf(small), 200)
+  const many = Info.buildInfographicModel(summarize(), { tenantName: 'ท' })
+  many.notes = Array.from({ length: 8 }, (_, i) => `หมายเหตุข้อที่ ${i + 1} ข้อความยาวพอสมควรเพื่อให้ตัดบรรทัดในแถบท้ายของภาพสรุปเรื่องร้องเรียน`)
+  const big = Info.buildInfographicSvg(many, measure).svg
+  const sizes = noteSizes(big)
+  assert.deepEqual([...new Set(sizes.map(n => n.size))], [18], 'ข้อความเยอะต้องย่อลงถึงขั้นต่ำ')
+  assert.ok(bandHeightOf(big) > 200, 'ย่อสุดแล้วยังไม่พอ แถบต้องสูงขึ้น')
+  for (let i = 1; i <= 8; i++) assert.ok(sizes.some(n => n.text.includes(`ข้อที่ ${i}`)), `หมายเหตุข้อ ${i} หาย`)
+  assert.ok(sizes.some(n => n.text.startsWith('ข้อมูล ณ วันที่')))
+})
+
 await test('เดือนที่ไม่มีเรื่อง: วงแหวนว่าง + ข้อความบอกตรงๆ ไม่มีชิ้นวงกลม', () => {
   const { svg } = render(summarize({ stats: { total: 0 }, rows: [] }))
   assert.ok(has(svg, 'ไม่มีเรื่องร้องเรียนที่รับผ่านระบบในเดือนนี้'))
   // (คลื่นของแถบหัวภาพก็เป็น <path d="M…"> จึงเช็คจากลายเซ็นของชิ้นวงกลม/ไอคอนแทน)
-  assert.ok(!svg.includes('fill-rule="evenodd"') && !svg.includes('stroke-linecap="round"'), 'ไม่มีไอคอน/ชิ้นวงกลมของหมวด')
+  // ตรวจเฉพาะการ์ดสัดส่วนหมวด (ก่อนการ์ดผลการดำเนินงาน) — ไอคอนในการ์ดผลการดำเนินงานและ wifi ของคำ Smart City Local
+  // ใช้ stroke-linecap เหมือนไอคอนหมวด
+  const body = svg.slice(svg.indexOf('data-card="categories"'), svg.indexOf('data-kpi="resolved"'))
+  assert.ok(body.length > 0, 'ต้องมีการ์ดสัดส่วนหมวดตามด้วยการ์ดผลการดำเนินงาน')
+  assert.ok(!body.includes('fill-rule="evenodd"') && !body.includes('stroke-linecap="round"'), 'ไม่มีไอคอน/ชิ้นวงกลมของหมวด')
   assert.ok(svg.includes('0%'))
 })
 
@@ -266,7 +312,8 @@ await test('ไม่มีข้อมูลส่วนบุคคลแม�
 const textsOf = svg => [...svg.matchAll(/<text x="([\d.-]+)" y="([\d.-]+)" font-size="(\d+)" font-weight="\d+" fill="(#[0-9a-f]+)" text-anchor="(\w+)">([^<]*)<\/text>/g)]
   .map(([, x, y, size, fill, anchor, value]) => ({ x: Number(x), y: Number(y), size: Number(size), fill, anchor, value }))
 const headerHeightOf = svg => Number(svg.match(/<rect width="1080" height="([\d.]+)" fill="#14532d"\/>/)?.[1])
-const rulesOf = svg => [...svg.matchAll(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="2" fill="#ffffff" fill-opacity="0.85"\/>/g)]
+// เส้นประดับสองข้างชื่อ อปท. — เส้นทองไล่จาง + เพชรทอง (2569-11-17 แทนเส้นขาวเดิม)
+const rulesOf = svg => [...svg.matchAll(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="3" fill="url\(#info-rule-[lr]\)" data-tenant-rule="[lr]"\/>/g)]
   .map(([, x, y, width]) => ({ x: Number(x), y: Number(y), width: Number(width) }))
 // ตัววัดจำลองแบบแคบ (พอให้ชื่อเรื่อง+เดือนปกติลดขนาดลงมาแต่ยังเป็นบรรทัดเดียว) กับแบบกว้าง (บังคับให้ต้องแยก 2 บรรทัด)
 const narrow = (value, size, bold) => value.length * size * (bold ? 0.45 : 0.4)
@@ -319,7 +366,7 @@ await test('หัวภาพ: ชื่อ อปท. ยาวหลายบ
   const longName = 'องค์การบริหารส่วนตำบลที่มีชื่อยาวมากพอสมควรสำหรับทดสอบการขึ้นบรรทัดใหม่ของข้อความ'
   const short = renderMeasured(summarize(), narrow)
   const long = renderMeasured(summarize(), narrow, longName)
-  const tenantTexts = textsOf(long.svg).filter(t => t.size === 32 && t.fill === '#ffffff')
+  const tenantTexts = textsOf(long.svg).filter(t => t.size === Info.TENANT_SIZE && t.fill === '#ffffff')
   assert.ok(tenantTexts.length >= 2, 'ชื่อยาวต้องขึ้นหลายบรรทัด')
   assert.ok(tenantTexts.every(t => t.anchor === 'middle' && t.x === 540))
   assert.equal(tenantTexts.map(t => t.value).join('').replace(/\s/g, ''), longName.replace(/\s/g, ''), 'ตัดบรรทัดแล้วห้ามอักษรหาย')
@@ -331,7 +378,15 @@ await test('หัวภาพ: คลื่น 2 ชั้นซ้ายบน
   const { svg } = renderMeasured(summarize(), narrow)
   assert.equal(Info.HEADER_BG, '#14532d')
   const height = headerHeightOf(svg)
-  assert.ok(height >= 170 && height <= 200, `แถบสูง ${height}px`)
+  // +แคปซูล "มุ่งสู่เมืองอัจฉริยะ (Smart City)" ใต้ชื่อ อปท. (เจ้าของสั่ง 2569-11-17) — เดิม 170–200
+  assert.ok(height >= 240 && height <= 280, `แถบสูง ${height}px`)
+  assert.ok(svg.includes('data-smart-city-tag="1"') && has(svg, 'มุ่งสู่เมืองอัจฉริยะ (Smart City)'), 'ต้องมีแคปซูลคำขวัญในแถบหัว')
+  assert.ok(svg.indexOf('มุ่งสู่เมืองอัจฉริยะ') < svg.indexOf('data-footer-band'), 'คำขวัญต้องอยู่แถบหัว ไม่ใช่แถบท้าย')
+  // เจ้าของสั่ง 2569-11-17: คำขวัญห้ามเด่นกว่าชื่อ อปท. — ตัวเล็กกว่าชัดเจน และไม่ใช่แคปซูลทองทึบ
+  const tag = textsOf(svg).find(t => t.value.startsWith('มุ่งสู่เมืองอัจฉริยะ'))
+  const tenant = textsOf(svg).find(t => t.value === 'เทศบาลตำบลสาธิต')
+  assert.ok(tag && tenant && tag.size <= tenant.size - 12, `คำขวัญ ${tag?.size}px ต้องเล็กกว่าชื่อ อปท. ${tenant?.size}px ชัดเจน`)
+  assert.ok(!svg.includes('info-cap-gold'), 'ไม่ใช้แคปซูลทองทึบแล้ว')
   assert.ok(svg.includes(`<clipPath id="header-clip"><rect width="1080" height="${height}"/></clipPath>`))
   const decor = svg.match(/<g clip-path="url\(#header-clip\)" aria-hidden="true">(.*?)<g fill="#ffffff" fill-opacity="0.5">(.*?)<\/g><\/g>/s)
   assert.ok(decor, 'หากลุ่มคลื่น/จุดไม่เจอ')
@@ -430,14 +485,37 @@ try {
   for (const name of Object.keys(CASES)) {
     await test(`Chrome (${name}): ข้อความไม่ล้นขอบภาพและไม่ทับกัน`, async () => {
       const { svg, width, height } = await build(name)
-      const boxes = await page.evaluate(({ svg: markup }) => {
+      // คำ "Smart City Local" เป็นกลุ่มที่ย่อ/เอียง และตั้งใจซ้อนข้อความ 3 ชั้น (เงา/ขอบ/สี) — ไม่นับรายชิ้น วัดทั้งกลุ่มแทน
+      const { boxes, mark, band } = await page.evaluate(({ svg: markup }) => {
         document.body.innerHTML = markup
-        return [...document.querySelectorAll('svg text')].map(el => {
-          const b = el.getBBox()
-          return { text: el.textContent, x: b.x, y: b.y, w: b.width, h: b.height }
-        })
+        const origin = document.querySelector('svg').getBoundingClientRect()
+        const rectOf = el => {
+          const r = el.getBoundingClientRect()
+          return { x: r.left - origin.left, y: r.top - origin.top, w: r.width, h: r.height }
+        }
+        const markEl = document.querySelector('[data-smart-city-mark]')
+        const bandEl = document.querySelector('[data-footer-band]')
+        return {
+          boxes: [...document.querySelectorAll('svg text')].filter(el => !el.closest('[data-smart-city-mark]')).map(el => {
+            const b = el.getBBox()
+            return { text: el.textContent, x: b.x, y: b.y, w: b.width, h: b.height }
+          }),
+          mark: markEl ? rectOf(markEl) : null,
+          band: bandEl ? rectOf(bandEl) : null,
+        }
       }, { svg })
       assert.ok(boxes.length > 8, 'ต้องมีข้อความหลายชิ้น')
+      assert.ok(mark && band, 'ต้องมีแถบท้ายและคำ Smart City Local')
+      assert.ok(band.y + band.h <= height + 0.5 && band.y + band.h >= height - 0.5, 'แถบท้ายต้องชิดก้นภาพ')
+      assert.ok(mark.x + mark.w <= width - 24 && mark.y >= band.y && mark.y + mark.h <= band.y + band.h, `คำ Smart City Local ล้นแถบ: ${JSON.stringify(mark)}`)
+      for (const b of boxes.filter(box => box.y >= band.y)) {
+        assert.ok(b.x + b.w + 16 <= mark.x, `หมายเหตุทับคำ Smart City Local: "${b.text}"`)
+        assert.ok(b.y + b.h <= band.y + band.h, `หมายเหตุล้นแถบท้าย: "${b.text}"`)
+      }
+      // หมายเหตุ/แหล่งข้อมูล/วันที่ข้อมูล ย้ายเข้าแถบท้ายทั้งหมด (เจ้าของสั่ง 2569-11-17)
+      for (const b of boxes.filter(box => /^(แหล่งข้อมูล|ข้อมูล ณ วันที่|ร้อยละที่แล้วเสร็จ)/.test(box.text))) {
+        assert.ok(b.y >= band.y, `"${b.text}" ต้องอยู่ในแถบท้าย`)
+      }
       for (const b of boxes) {
         assert.ok(b.x >= 62, `ล้นขอบซ้าย: "${b.text}" x=${b.x}`)
         assert.ok(b.x + b.w <= width - 62, `ล้นขอบขวา: "${b.text}" ขวา=${b.x + b.w}`)
@@ -470,6 +548,31 @@ try {
       assert.ok(Math.abs(title.y - month.y) < 1.5, `${name}: ไม่อยู่บรรทัดเดียวกัน (${title.y} vs ${month.y})`)
       assert.ok(title.x >= 129 && month.x + month.w <= 951, `${name}: บรรทัดกว้างเกินพื้นที่ ${Math.round(title.x)}–${Math.round(month.x + month.w)}`)
       assert.ok(month.x >= title.x + title.w, `${name}: เดือนทับชื่อเรื่อง`)
+    }
+  })
+
+  await test('Chrome (มีโลโก้): ชื่อเรื่อง+เดือนบรรทัดเดียว อยู่ขวาของวงโลโก้และไม่เกิน 950px (ไม่ทับลายจุด) แม้เดือนชื่อยาวสุด', async () => {
+    for (const month of [4, 2, 11]) {
+      const result = await page.evaluate(({ month: m }) => {
+        const { Info, Sum } = InfoBundle
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 40
+        const context = canvas.getContext('2d'); context.fillStyle = '#b45309'; context.fillRect(0, 0, 40, 40)
+        const summary = Sum.summarizeMonth({
+          stats: { total: 3, resolved: 3 }, rows: [{ category: 'light' }, { category: 'light' }, { category: 'road' }],
+          labelOf: c => c, tenantName: 'เทศบาลตำบลสาธิต', period: Sum.monthPeriod(2569, m), now: new Date('2026-10-18T05:00:00Z'),
+        })
+        const model = Info.buildInfographicModel(summary, { tenantName: 'เทศบาลตำบลสาธิต', logoDataUrl: canvas.toDataURL('image/png') })
+        document.body.innerHTML = Info.buildInfographicSvg(model, Info.createCanvasMeasure()).svg
+        const box = el => { const b = el.getBBox(); return { text: el.textContent, x: b.x, y: b.y, w: b.width, h: b.height } }
+        const logo = document.querySelector('[data-tenant-logo] circle:nth-of-type(2)').getBBox()
+        return { texts: [...document.querySelectorAll('svg text')].slice(0, 3).map(box), logoRight: logo.x + logo.width }
+      }, { month })
+      const [title, period, tenant] = result.texts
+      assert.equal(title.text, 'สรุปเรื่องร้องเรียน')
+      assert.ok(Math.abs(title.y - period.y) < 1.5, `เดือน ${month}: ไม่อยู่บรรทัดเดียวกัน`)
+      assert.ok(title.x >= result.logoRight + 20, `เดือน ${month}: ชื่อเรื่องชิด/ทับวงโลโก้ (${Math.round(title.x)} < ${Math.round(result.logoRight)})`)
+      assert.ok(period.x + period.w <= 951, `เดือน ${month}: เกินเขตลายจุด ${Math.round(period.x + period.w)}`)
+      assert.ok(tenant.x >= result.logoRight + 20, `เดือน ${month}: ชื่อ อปท. ทับวงโลโก้`)
     }
   })
 
@@ -549,7 +652,11 @@ try {
     assert.equal(result.topLeft[3], 255, 'มุมบนซ้ายต้องทึบ')
     assert.notDeepEqual(result.topLeft.slice(0, 3), bg, 'มุมบนซ้ายต้องเป็นคลื่น ไม่ใช่สีพื้น')
     assert.equal(result.topRight[3], 255)
-    assert.deepEqual(result.bottomRight, [255, 255, 255, 255], 'มุมล่างขวาต้องเป็นขาวทึบ ไม่ใช่โปร่งใส')
+    // มุมล่างขวาคือแถบท้ายสีเขียว (คำขวัญ + Smart City Local · 2569-11-17) — ต้องทึบ ไม่ใช่โปร่งใส
+    assert.deepEqual(result.bottomRight, [...bg, 255], 'มุมล่างขวาต้องเป็นแถบท้ายสีเขียวทึบ')
+    // พื้นนอกการ์ดไล่เขียวอ่อนมาก (ชุดพรีเมียม 2569-11-17) — ต้องทึบและสว่างพอให้ตัวอักษรเข้มอ่านได้ ไม่ใช่โปร่งใส
+    assert.equal(result.body[3], 255, 'พื้นเนื้อหาต้องทึบ ไม่ใช่โปร่งใส')
+    assert.ok(result.body.slice(0, 3).every(channel => channel >= 225), `พื้นเนื้อหาต้องสว่าง ${result.body}`)
   })
 
   await test('Chrome: โค้ดที่ฝังมากับชื่อ อปท./ชื่อหมวดไม่ทำงาน ทั้งแบบอินไลน์และแบบ <img>', async () => {
@@ -571,14 +678,16 @@ try {
     assert.equal(outcome.injected, 0)
   })
 
-  await test('ความสูงตัวอย่างปกติ (5 หมวด) ใกล้ 4:5 ไม่เกิน 1400 — ฟีด Facebook/Instagram ไม่ครอป', async () => {
+  // เพดานเดิม 1400/1750 → +แถบท้าย Smart City (200) +แคปซูลคำขวัญในหัว (~70) +การ์ดอันดับประเภท (~330 ทุกภาพ)
+  // เจ้าของสั่งเพิ่มทั้งหมด 2569-11-17 · เพดานนี้กันการ์ด/กล่องบวมเกินที่ตั้งใจ ไม่ใช่สัดส่วนฟีด
+  await test('ความสูงตัวอย่างปกติ (5 หมวด + อันดับประเภท) ไม่เกิน 2000', async () => {
     const { height } = await build('april')
-    assert.ok(height >= 1350 && height <= 1400, `สูง ${height}px`)
+    assert.ok(height >= 1350 && height <= 2000, `สูง ${height}px`)
   })
 
-  await test('ภาพที่มี QR สูงขึ้นแต่ไม่เกิน 1750 (ตัวอย่างปกติ) — กล่องนี้ห้ามบวมเกินที่ตั้งใจ', async () => {
+  await test('ภาพที่มี QR (ผู้เรียกส่ง reportUrl เอง — หน้าเว็บไม่ส่งแล้ว) สูงขึ้นแต่ไม่เกิน 2350', async () => {
     const { height } = await build('reported')
-    assert.ok(height > 1400 && height <= 1750, `สูง ${height}px`)
+    assert.ok(height > 2000 && height <= 2350, `สูง ${height}px`)
   })
 
   // ตรวจตลอดสายจาก SVG ถึงไฟล์ PNG ที่ดาวน์โหลดจริง: สุ่มสีพิกเซลกลางโมดูลทุกจุดเทียบกับเมทริกซ์ของไลบรารี

@@ -55,7 +55,8 @@ function pageCss() {
 
 function statusTable(summary) {
   const rows = [
-    ['รับเรื่องทั้งหมด', summary.total, summary.total ? 100 : 0],
+    // ตัดบางหมวดออก (excludesHidden) = ยอดนี้ไม่ใช่ "ทั้งหมด" — หมายเหตุท้ายใบบอกเหตุผลอยู่แล้ว
+    [summary.excludesHidden ? 'รับเรื่อง (เฉพาะหมวดที่เผยแพร่)' : 'รับเรื่องทั้งหมด', summary.total, summary.total ? 100 : 0],
     ['ดำเนินการแล้วเสร็จ', summary.resolved, summary.resolvedPercent],
     ['อยู่ระหว่างดำเนินการ (รวมที่รอรับเรื่อง)', summary.ongoing, summary.ongoingPercent],
     ['ไม่รับเรื่อง/ยกเลิก', summary.rejected, summary.rejectedPercent],

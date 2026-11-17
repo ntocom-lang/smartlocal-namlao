@@ -290,69 +290,146 @@ await test('ใบ A4: ลิงก์ที่มีแท็กถูกหน
   assert.ok(!tooLong.includes('<svg') && tooLong.includes('เข้าที่ x.test/') && !tooLong.includes('สแกน QR'))
 })
 
-// ── ไม่แสดงชื่อหมวดในภาพ/ใบที่ส่งออก (เจ้าของระบบสั่ง 2569-10-29) ──
+// ── ไม่แสดงหมวดในภาพ/ใบที่ส่งออก (2569-10-29) → ตัดเรื่องในหมวดออกทั้งหมด ยอด/ผลการดำเนินงานคิดใหม่ (เจ้าของสั่ง 2569-11-17) ──
 const sumOf = categories => categories.reduce((total, c) => total + c.count, 0)
 const textOf = s => [...s.sentences, ...s.notes, ...s.categories.map(c => c.label)].join(' ')
+// รายเรื่องมีสถานะ: ไฟฟ้า 13 (เสร็จ 13 ใช้ 2 วัน) · อื่นๆ 11 (เสร็จ 10 ใช้ 1 วัน + รอ 1) · ประปา 7 (เสร็จ 6 + ระหว่าง 1) · ขยะ 7 เสร็จ · ถนน 1 เสร็จ
+const statusRows = [
+  ...Array.from({ length: 13 }, () => ({ category: 'light', status: 'done', days_taken: 2 })),
+  ...Array.from({ length: 10 }, () => ({ category: 'other', status: 'closed', days_taken: 1 })),
+  { category: 'other', status: 'new', days_taken: null },
+  ...Array.from({ length: 6 }, () => ({ category: 'water', status: 'completed', days_taken: 1 })),
+  { category: 'water', status: 'in_progress', days_taken: null },
+  ...Array.from({ length: 7 }, () => ({ category: 'trash', status: 'done', days_taken: 1 })),
+  { category: 'road', status: 'done', days_taken: 1 },
+]
 
-await test('ไม่แสดงชื่อหมวด: ไม่ส่ง/ส่งรหัสที่ไม่มีในช่วงนี้ = เหมือนเดิมทุกอย่าง · allCategories มีครบทุกหมวด', () => {
+await test('statsFromRows: กลุ่มสถานะชุดเดียวกับ complaint_stats_fy · ค่าเฉลี่ยวันเฉพาะเรื่องที่เสร็จ', () => {
+  assert.deepEqual(Sum.statsFromRows([
+    { status: 'new' }, { status: 'pending' }, { status: 'received' }, { status: 'in_progress' },
+    { status: 'done', days_taken: 1 }, { status: 'closed', days_taken: '2' }, { status: 'completed', days_taken: null },
+    { status: 'rejected' }, { status: 'parked' },
+  ]), { total: 9, open: 3, in_progress: 1, resolved: 3, rejected: 1, parked: 1, avg_days: 1.5 })
+  assert.equal(Sum.statsFromRows([]).avg_days, null)
+})
+
+await test('ไม่แสดงหมวด: ไม่ส่ง/ส่งรหัสที่ไม่มีในช่วงนี้ = เหมือนเดิมทุกอย่าง · allCategories มีครบทุกหมวด', () => {
   const base = summarize()
   assert.equal(base.hiddenCount, 0)
+  assert.equal(base.excludesHidden, false)
   assert.deepEqual(base.allCategories.map(c => c.code), ['light', 'other', 'trash', 'water', 'road'])
   const unknown = summarize({ hiddenCategories: ['corruption'] })
-  assert.deepEqual([unknown.sentences, unknown.notes, unknown.categories], [base.sentences, base.notes, base.categories])
+  assert.deepEqual([unknown.sentences, unknown.notes, unknown.categories, unknown.total], [base.sentences, base.notes, base.categories, base.total])
 })
 
-await test('ไม่แสดงชื่อหมวด: ยอดรวมเข้า "หมวดที่เหลือ" (วงกลมยังบวกได้เท่ายอดรวม) · ชื่อหายจากทุกข้อความ · มีหมายเหตุบอกผู้อ่าน', () => {
-  const s = summarize({ hiddenCategories: ['light'] })
+await test('ไม่แสดงหมวด: ตัดไฟฟ้า 13 เรื่องออกทั้งหมด → ยอด 26 · ผลการดำเนินงานคิดใหม่ · ไม่มี "หมวดที่เหลือ" · หมายเหตุไม่บอกชื่อ', () => {
+  const s = summarize({ rows: statusRows, hiddenCategories: ['light'] })
+  assert.equal(s.excludesHidden, true)
   assert.equal(s.hiddenCount, 1)
-  assert.equal(sumOf(s.categories), 39, 'ผลรวมทุกแถวต้องเท่ายอดรวม')
-  assert.deepEqual(s.categories.at(-1), { code: null, label: 'หมวดที่เหลือ (1 หมวด)', count: 13, percent: 33.3 })
-  assert.ok(!textOf(s).includes('ไฟฟ้าสาธารณะ'), 'ชื่อหมวดที่ซ่อนหลุด')
-  assert.ok(s.sentences.some(x => x.startsWith('หมวดที่มีจำนวนเรื่องสูงสุดตามลำดับ (เฉพาะหมวดที่แสดงชื่อ) ได้แก่ อื่นๆ 11 เรื่อง')))
-  assert.ok(s.notes.includes('มี 1 หมวดที่ไม่แสดงชื่อ จำนวนเรื่องรวมอยู่ใน "หมวดที่เหลือ" ยอดรวมทั้งหมดไม่เปลี่ยน'))
-  assert.equal(s.total, 39)
+  assert.equal(s.total, 26)
+  assert.equal(sumOf(s.categories), 26, 'วงกลมต้องบวกได้เท่ายอดที่แสดง')
+  assert.ok(!s.categories.some(c => c.code === null), 'ห้ามมีแถว "หมวดที่เหลือ" จากหมวดที่ปิด')
+  assert.deepEqual([s.resolved, s.ongoing, s.rejected], [24, 2, 0])
+  assert.equal(s.resolvedPercent, 92.3)
+  assert.equal(s.avgDays, 1, 'ค่าเฉลี่ยวันต้องไม่รวมไฟฟ้า (2 วัน)')
+  assert.ok(!textOf(s).includes('ไฟฟ้าสาธารณะ'), 'ชื่อหมวดที่ปิดหลุด')
+  assert.ok(s.sentences[0].includes('ผ่านระบบ e-Service จำนวน 26 เรื่อง') && !s.sentences[0].includes('ทั้งหมด'))
+  assert.ok(s.sentences.some(x => x.startsWith('หมวดที่มีจำนวนเรื่องสูงสุดตามลำดับ ได้แก่ อื่นๆ 11 เรื่อง (ร้อยละ 42.3)')))
+  assert.ok(s.sentences.some(x => x.startsWith('ดำเนินการแล้วเสร็จ 24 เรื่อง (ร้อยละ 92.3)')))
+  assert.ok(s.notes.includes(Sum.EXCLUDED_NOTE))
+  assert.ok(!/\d+ หมวด/.test(Sum.EXCLUDED_NOTE), 'หมายเหตุต้องไม่บอกจำนวนหมวด')
   assert.deepEqual(s.allCategories.map(c => c.code), ['light', 'other', 'trash', 'water', 'road'], 'รายการปุ่มยังครบเพื่อกดกลับมาแสดงได้')
   const html = buildComplaintMonthlyHtml({ tenant: { name: 'เทศบาลตำบลสาธิต' }, summary: s })
-  assert.ok(!html.includes('ไฟฟ้าสาธารณะ') && html.includes('หมวดที่เหลือ (1 หมวด)'))
+  assert.ok(!html.includes('ไฟฟ้าสาธารณะ') && !html.includes('รับเรื่องทั้งหมด') && html.includes('รับเรื่อง (เฉพาะหมวดที่เผยแพร่)'))
+  assert.ok(html.includes('ไม่รวมเรื่องบางหมวดที่ไม่ได้เผยแพร่'))
 })
 
-await test('ไม่แสดงชื่อหมวด: เหลือหมวดเดียวที่แสดงชื่อ → ห้ามพูดว่า "ทุกเรื่องอยู่ในหมวด…" (เป็นข้อความเท็จ) · ซ่อนทุกหมวด → ไม่มีประโยคหมวด', () => {
-  const one = summarize({ hiddenCategories: ['light', 'other', 'trash', 'water'] })
-  assert.ok(!one.sentences.some(x => x.includes('ทุกเรื่องอยู่ในหมวด')))
-  assert.ok(one.sentences.some(x => x.includes('(เฉพาะหมวดที่แสดงชื่อ) ได้แก่ ถนน/ทางสาธารณะ 1 เรื่อง')))
-  const all = summarize({ hiddenCategories: ['light', 'other', 'trash', 'water', 'road'] })
-  assert.deepEqual(all.categories, [{ code: null, label: 'หมวดที่เหลือ (5 หมวด)', count: 39, percent: 100 }])
-  assert.ok(!all.sentences.some(x => x.includes('หมวด')))
-  const single = summarizeMonth({
-    stats: { total: 6, resolved: 6 }, rows: rowsOf({ light: 6 }), labelOf, tenantName: 'เทศบาลตำบลสาธิต', period: APRIL, now: NOW,
-  })
-  assert.ok(single.sentences.includes('ทุกเรื่องอยู่ในหมวดไฟฟ้าสาธารณะ'), 'หมวดเดียวจริงยังพูดแบบเดิม')
+await test('ไม่แสดงหมวด: เหลือหมวดเดียว → "ทุกเรื่องอยู่ในหมวด…" ของเรื่องที่แสดง · ปิดครบทุกหมวด = ไม่ตัด (ภาพว่างจะเป็นข้อความเท็จ)', () => {
+  const one = summarize({ rows: statusRows, hiddenCategories: ['light', 'other', 'trash', 'water'] })
+  assert.equal(one.total, 1)
+  assert.ok(one.sentences.includes('ทุกเรื่องอยู่ในหมวดถนน/ทางสาธารณะ'))
+  const all = summarize({ rows: statusRows, hiddenCategories: ['light', 'other', 'trash', 'water', 'road'] })
+  assert.equal(all.excludesHidden, false)
+  assert.equal(all.total, 39)
 })
 
-await test(`ไม่แสดงชื่อหมวด + หมวดเกิน ${MAX_CATEGORY_ROWS}: รวมทั้งหมดไม่เกิน ${MAX_CATEGORY_ROWS} แถว · หมวดที่ซ่อนไม่ถูกนับเป็นหมวดที่แสดง`, () => {
+await test(`ไม่แสดงหมวด + หมวดเกิน ${MAX_CATEGORY_ROWS}: พับเฉพาะหมวดที่แสดง · หมวดที่ปิดไม่อยู่ในแถวใด`, () => {
   const spec = Object.fromEntries([200, 150, 130, 120, 100, 90, 80, 70, 50, 35, 20].map((n, i) => [`c${i}`, n]))
+  const rows = Object.entries(spec).flatMap(([category, n]) => Array.from({ length: n }, () => ({ category, status: 'done' })))
   const s = summarizeMonth({
-    stats: { total: 1045, resolved: 1045 }, rows: rowsOf(spec), labelOf: code => `หมวด ${code}`,
+    stats: { total: 1045, resolved: 1045 }, rows, labelOf: code => `หมวด ${code}`,
     tenantName: 'เทศบาลตำบลสาธิต', period: APRIL, now: NOW, hiddenCategories: ['c0'],
   })
+  assert.equal(s.total, 845)
   assert.equal(s.categories.length, MAX_CATEGORY_ROWS)
-  assert.equal(sumOf(s.categories), 1045)
+  assert.equal(sumOf(s.categories), 845)
   assert.ok(!s.categories.some(c => c.code === 'c0'))
-  assert.equal(s.categories.at(-1).label, `หมวดที่เหลือ (${11 - (MAX_CATEGORY_ROWS - 1)} หมวด)`)
+  assert.equal(s.categories.at(-1).label, `หมวดที่เหลือ (${10 - (MAX_CATEGORY_ROWS - 1)} หมวด)`)
 })
 
-await test('ไม่แสดงชื่อหมวด: หมวดไฟฟ้าที่ซ่อนไม่มีรายการย่อยหลุดออกมา · ใช้กับชุดที่ล็อกได้ (นับจาก categoryCounts)', () => {
+await test('ไม่แสดงหมวด: รายการย่อยของไฟฟ้าที่ปิดไม่หลุด · ชุดที่ล็อก (categoryCounts) ตัดไม่ได้ = คงเดิม (หน้าเว็บส่งตัวเลขสดมาแทน)', () => {
   const breakdown = { category: 'light', rows: [{ issue_label: 'ไฟดับทั้งดวง', total: 13 }] }
-  const s = summarize({ hiddenCategories: ['light'], issueBreakdown: breakdown })
-  assert.ok(!s.categories.some(c => c.subItems), 'รายการย่อยของหมวดที่ซ่อนต้องไม่อยู่ในภาพ')
+  const s = summarize({ rows: statusRows, hiddenCategories: ['light'], issueBreakdown: breakdown })
+  assert.ok(!s.categories.some(c => c.subItems))
   assert.ok(!textOf(s).includes('ไฟดับ'))
   const locked = summarize({
     rows: [], hiddenCategories: ['other'],
     categoryCounts: [{ category: 'light', total: '13' }, { category: 'other', total: '11' }, { category: 'water', total: '15' }],
     lock: { publishedAt: '2026-05-02T01:30:00Z', revision: 1 },
   })
-  assert.equal(sumOf(locked.categories), 39)
-  assert.equal(locked.categories.at(-1).label, 'หมวดที่เหลือ (1 หมวด)')
+  assert.equal(locked.excludesHidden, false)
+  assert.equal(locked.total, 39)
+})
+
+// ── อันดับพื้นที่ / ประเภท (เจ้าของสั่ง 2569-11-17 ตามภาพอ้างอิง TOP 10) ──
+await test('อันดับประเภท: หมวดทั่วไปใช้ชื่อหมวด · ไฟฟ้าแตกเป็นรายลักษณะมีชื่อหมวดกำกับ · ไม่เกิน 5 · ไม่มีหมวดที่ปิด', () => {
+  const breakdown = { category: 'light', rows: [
+    { issue_label: 'ไฟดับทั้งดวง', total: 8 }, { issue_label: 'อื่นๆ', total: 3 }, { issue_label: null, total: 2 },
+  ] }
+  const s = summarize({ issueBreakdown: breakdown })
+  assert.deepEqual(s.typeRanking.map(t => [t.label, t.group, t.count]), [
+    ['อื่นๆ', null, 11], ['ไฟดับทั้งดวง', 'ไฟฟ้าสาธารณะ', 8], ['ขยะ/ความสะอาด', null, 7], ['น้ำประปา', null, 7],
+    ['ไฟฟ้าสาธารณะ', 'อื่นๆ', 3],
+  ])
+  // ลักษณะ "อื่นๆ"/"ไม่ระบุลักษณะ" ใช้ชื่อหมวดเป็นชื่อหลัก ไม่ใช่คำว่า "อื่นๆ" เดี่ยวๆ
+  assert.ok(!s.typeRanking.some(t => t.label === 'อื่นๆ' && t.group === 'ไฟฟ้าสาธารณะ'))
+  assert.equal(Sum.MAX_RANK_ROWS, 5)
+  // ยอดรายลักษณะไม่ตรงยอดหมวด (อ่านคนละจังหวะ) = ไม่แตก ใช้ชื่อหมวดทั้งก้อน
+  const mismatch = summarize({ issueBreakdown: { category: 'light', rows: [{ issue_label: 'ไฟดับทั้งดวง', total: 4 }] } })
+  assert.deepEqual(mismatch.typeRanking[0], { label: 'ไฟฟ้าสาธารณะ', group: null, code: 'light', count: 13 })
+  const hidden = summarize({ rows: statusRows, hiddenCategories: ['other'], issueBreakdown: breakdown })
+  assert.ok(!hidden.typeRanking.some(t => t.code === 'other'), 'หมวดที่ปิดต้องไม่อยู่ในอันดับประเภท')
+  assert.equal(summarize({ stats: { total: 0 }, rows: [] }).typeRanking, null)
+})
+
+await test('อันดับพื้นที่: เรียงมาก→น้อย ไม่เกิน 5 · แถวไม่ระบุหมู่ (NULL/ว่าง) ไม่ถูกจัดอันดับ · ไม่ส่ง/ไม่มีข้อมูล = null', () => {
+  const s = summarize({ areaCounts: [
+    { area: 'หมู่ 2', total: '3' }, { area: null, total: 9 }, { area: 'หมู่ 10', total: 5 }, { area: '  ', total: 4 },
+    { area: 'บ้านใหม่', total: 5 }, { area: 'หมู่ 1', total: 1 }, { area: 'หมู่ 3', total: 2 }, { area: 'หมู่ 4', total: 2 },
+  ] })
+  assert.deepEqual(s.areaRanking.map(a => [a.label, a.count]), [['บ้านใหม่', 5], ['หมู่ 10', 5], ['หมู่ 2', 3], ['หมู่ 3', 2], ['หมู่ 4', 2]])
+  assert.equal(summarize().areaRanking, null)
+  assert.equal(summarize({ areaCounts: [{ area: null, total: 4 }] }).areaRanking, null)
+})
+
+await test('SQL อันดับพื้นที่: ชื่อผ่าน exec_village_label เท่านั้น · ไม่นับหมวดอ่อนไหว · ตัดหมวดได้เฉพาะเจ้าหน้าที่ · anon เรียกได้', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const sql = await readFile(new URL('../supabase/migrations/20261206100000_complaint_area_ranking_fy.sql', import.meta.url), 'utf8')
+  assert.ok(sql.includes("NULLIF(public.exec_village_label(_municipality_id, r.village), '') AS area"))
+  // หมวดทุจริตปิดตายตามรหัส ไม่พึ่งธง requires_manual_intake อย่างเดียว (migration-reviewer รอบ 1)
+  assert.ok(sql.includes("AND c.category <> 'corruption'"))
+  // คนทั่วไปได้อันดับเฉพาะช่วงเดือนเต็ม (กันจับคู่เรื่องเดี่ยวรายวันกับ complaints_public_fy และการลบสองช่วง)
+  assert.ok(sql.includes('IF NOT v_is_staff AND (EXTRACT(day FROM _from) <> 1 OR EXTRACT(day FROM _to + 1) <> 1) THEN'))
+  // role/สังกัด NULL ต้องได้ false ไม่ใช่ NULL (NULL ทำให้ด่านเดือนเต็มถูกข้าม)
+  assert.ok(/v_is_staff := COALESCE\(v_role = 'superadmin'[\s\S]*?, false\);/.test(sql))
+  assert.ok(sql.includes('NOT COALESCE(c.category = ANY (v_exclude), false)'), 'NULL ในรายการตัดหมวดต้องไม่ทำให้ทุกแถวหลุด')
+  // c.village ดิบอยู่ได้แค่ใน CTE raw (นับ/จัดกลุ่ม) — คอลัมน์ที่คืนต้องเป็น g.area ที่ผ่าน exec_village_label เท่านั้น
+  assert.ok(sql.includes('SELECT g.area, sum(g.n)::bigint AS total'), 'ผลลัพธ์ต้องมาจาก g.area')
+  assert.ok(!/SELECT[^;]*\bc\.village\s+AS\s+area/.test(sql), 'ห้ามคืน c.village ดิบเป็น area')
+  assert.ok(sql.includes('NOT COALESCE(cat.requires_manual_intake, false)'))
+  assert.ok(/v_role IN \('admin', 'officer', 'staff'\)/.test(sql) && sql.includes("v_role = 'superadmin'"))
+  assert.ok(sql.includes("SET search_path = ''") && sql.includes('SECURITY DEFINER'))
+  assert.ok(sql.includes('GRANT EXECUTE ON FUNCTION public.complaint_area_ranking_fy(uuid, date, date, text[]) TO anon, authenticated;'))
 })
 
 // channel: 'chrome' ใช้ Chrome ที่ลงในเครื่องอยู่แล้ว ไม่ต้อง playwright install เพิ่ม

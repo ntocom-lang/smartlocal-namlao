@@ -11,20 +11,25 @@ import { appUrl } from '../../lib/basename'
 // เตรียมไฟล์ PNG ไว้ล่วงหน้าตั้งแต่ภาพขึ้นจอ ไม่ใช่ตอนกดปุ่ม: navigator.share() ต้องถูกเรียกในจังหวะที่ผู้ใช้เพิ่งกด
 // ถ้าต้องรอวาดภาพก่อน เบราว์เซอร์มือถือจะปฏิเสธการแชร์ (แบบเดียวกับ ReportInfographic ของรถรับ-ส่งผู้ป่วย)
 //
-// categoryOptions (เฉพาะเจ้าหน้าที่) = ทุกหมวดของช่วงนี้ ใช้ทำปุ่ม "แสดง/ไม่แสดงชื่อ" — summary ที่ส่งเข้ามาคำนวณตามที่เลือกไว้แล้ว
+// categoryOptions (เฉพาะเจ้าหน้าที่) = ทุกหมวดของช่วงนี้ ใช้ทำปุ่ม "แสดง/ไม่แสดง" — summary ที่ส่งเข้ามาตัดหมวดที่ปิดออกแล้ว
 // ไม่ส่ง (ประชาชน) = ไม่มีปุ่ม ภาพเต็มเหมือนเดิม
+// ภาพไม่มีกล่อง QR แล้ว (เจ้าของสั่ง 2569-11-17 ให้ใช้ที่ตรงนั้นแสดงอันดับพื้นที่/ประเภท) — ลิงก์แจ้งเรื่องยังต่อท้ายข้อความตอนแชร์
+// ใบ A4 ยังมี QR (ComplaintStats ส่ง reportUrl ให้ใบเอง)
+// logoDataUrl = โลโก้ อปท. ที่หน้าเว็บโหลด+แปลงเป็น PNG แล้ว (prepareLogoDataUrl) — ไม่มี = หัวภาพไม่มีวงโลโก้
+// liveWhileLocked = เดือนที่ล็อกตัวเลขแล้วแต่ปิดบางหมวด → ภาพใช้ตัวเลขปัจจุบัน (ชุดที่ล็อกไม่มีสถานะรายหมวด) ต้องบอกเจ้าหน้าที่
 export default function ComplaintMonthlyInfographic({
   summary, tenantName, categoryOptions = null, hiddenCategories = [], onToggleCategory,
+  liveWhileLocked = false, logoDataUrl = null,
 }) {
-  // หน้าแจ้งเรื่องของ อปท. นี้ (ผ่าน appUrl เพื่อให้ถูกทุกโหมด deploy) — ใส่เป็น QR ท้ายภาพ และต่อท้ายข้อความตอนแชร์
+  // หน้าแจ้งเรื่องของ อปท. นี้ (ผ่าน appUrl เพื่อให้ถูกทุกโหมด deploy) — ต่อท้ายข้อความตอนแชร์ (ภาพไม่มี QR แล้ว)
   const reportUrl = useMemo(() => appUrl('/complaint'), [])
   const image = useMemo(() => {
     try {
-      return buildInfographicSvg(buildInfographicModel(summary, { tenantName, reportUrl }), createCanvasMeasure())
+      return buildInfographicSvg(buildInfographicModel(summary, { tenantName, logoDataUrl }), createCanvasMeasure())
     } catch {
       return null
     }
-  }, [summary, tenantName, reportUrl])
+  }, [summary, tenantName, logoDataUrl])
   const imageKey = image ? image.svg : ''
   // ชื่อไฟล์รายเดือนคงเดิม (complaints-2569-09.png) · ช่วงอื่นใส่ชนิดกำกับ ไม่งั้นไตรมาส "2569-4" ปนกับเดือน "2569-04"
   const fileName = summary.period.kind
@@ -107,20 +112,23 @@ export default function ComplaintMonthlyInfographic({
         </p>
       )}
       {message && <p role="status" className="mt-2 rounded-xl bg-sky-50 p-3 text-xs text-sky-900">{message}</p>}
-      {/* เลือกหมวดที่ไม่สมควรเผยแพร่ชื่อ (เช่น แจ้งการทุจริต) — ค่าตั้งต้นแสดงทุกหมวด จึงไม่เพิ่มงานถ้าไม่ต้องซ่อนอะไร
-          ซ่อนแล้วยอดไม่หาย รวมเข้า "หมวดที่เหลือ" และภาพมีหมายเหตุบอกเสมอ · ไม่มีผลกับกราฟบนหน้าเว็บ */}
+      {/* เลือกหมวดที่ไม่สมควรเผยแพร่ (เช่น แจ้งการทุจริต) — ค่าตั้งต้นแสดงทุกหมวด จึงไม่เพิ่มงานถ้าไม่ต้องปิดอะไร
+          ปิดแล้วเรื่องในหมวดนั้นไม่ถูกนับในภาพ/ใบ A4 เลย ยอดรวมและร้อยละคิดใหม่ (เจ้าของสั่ง 2569-11-17)
+          ภาพมีหมายเหตุ "ไม่รวมบางหมวด" ไม่บอกชื่อ · ไม่มีผลกับกราฟบนหน้าเว็บ · ปิดหมวดสุดท้ายที่เหลือไม่ได้ (ภาพจะว่าง) */}
       {categoryOptions?.length > 0 && summary.categoriesComplete && (
         <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-          <p className="text-xs font-bold text-gray-700">ชื่อหมวดในภาพและใบ A4 <span className="font-normal text-gray-500">(เห็นเฉพาะเจ้าหน้าที่ · เครื่องนี้จำไว้)</span></p>
-          <p className="mt-0.5 text-xs text-gray-500">กดเพื่อไม่แสดงชื่อหมวดที่ไม่สมควรเผยแพร่ จำนวนเรื่องจะรวมอยู่ใน "หมวดที่เหลือ" ยอดรวมไม่เปลี่ยน</p>
+          <p className="text-xs font-bold text-gray-700">หมวดในภาพและใบ A4 <span className="font-normal text-gray-500">(เห็นเฉพาะเจ้าหน้าที่ · เครื่องนี้จำไว้)</span></p>
+          <p className="mt-0.5 text-xs text-gray-500">กดเพื่อไม่แสดงหมวดที่ไม่สมควรเผยแพร่ เรื่องในหมวดนั้นจะไม่ถูกนับ ยอดรวมและผลการดำเนินงานคิดใหม่ (ท้ายภาพมีหมายเหตุว่าไม่รวมบางหมวด โดยไม่บอกชื่อ)</p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {categoryOptions.map(category => {
               const shown = !hiddenCategories.includes(category.code)
+              const lastShown = shown && categoryOptions.every(other => other.code === category.code || hiddenCategories.includes(other.code))
               return (
-                <button key={category.code} type="button" aria-pressed={shown}
-                  aria-label={`${category.label} ${category.count} เรื่อง — ${shown ? 'แสดงชื่อในภาพ กดเพื่อไม่แสดง' : 'ไม่แสดงชื่อในภาพ กดเพื่อแสดง'}`}
+                <button key={category.code} type="button" aria-pressed={shown} disabled={lastShown}
+                  title={lastShown ? 'ต้องเหลืออย่างน้อย 1 หมวด' : undefined}
+                  aria-label={`${category.label} ${category.count} เรื่อง — ${shown ? (lastShown ? 'แสดงในภาพ (หมวดสุดท้าย ปิดไม่ได้)' : 'แสดงในภาพ กดเพื่อไม่แสดง') : 'ไม่แสดงในภาพ กดเพื่อแสดง'}`}
                   onClick={() => onToggleCategory?.(category.code)}
-                  className={`flex min-h-11 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition-colors ${shown
+                  className={`flex min-h-11 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${shown
                     ? 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
                     : 'border-dashed border-gray-300 bg-gray-100 text-gray-500 line-through'}`}>
                   {shown ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}
@@ -129,6 +137,11 @@ export default function ComplaintMonthlyInfographic({
               )
             })}
           </div>
+          {liveWhileLocked && (
+            <p role="status" className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
+              เดือนนี้ล็อกตัวเลขไว้แล้ว แต่ชุดที่ล็อกไม่ได้แยกผลการดำเนินงานรายหมวด ภาพและใบ A4 ที่ไม่แสดงบางหมวดจึงใช้ตัวเลขปัจจุบัน ณ วันนี้แทน
+            </p>
+          )}
         </div>
       )}
       <img
