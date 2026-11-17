@@ -72,9 +72,11 @@ await test('ปุ่มโหลดค่าเริ่มต้น: ทุก
   const admin = await read('src/pages/AdminDashboard.jsx')
   assert.match(
     admin,
-    /is_adhoc: false, requires_manual_intake: false, requires_resolved_location: true,\n\s+\.\.\.d, text_color: d\.textColor/,
+    /is_adhoc: false, requires_resolved_location: true,\r?\n\s+\.\.\.d, text_color: d\.textColor/,
     'ค่าตั้งต้นต้องมาก่อน ...d เพื่อให้แถว inquiry ทับด้วยของตัวเองได้',
   )
+  // requires_manual_intake มาจาก SEED_MANUAL_INTAKE (#753) ทับท้ายสุดทุกแถว — ต้องไม่หลุดจากการ normalize
+  assert.match(admin, /requires_manual_intake: SEED_MANUAL_INTAKE\.has\(d\.value\),\r?\n\s+\}\)\)/)
   // ค่าตั้งต้นต้องเท่ากับ DEFAULT ของคอลัมน์จริงใน migration
   assert.match(await read('supabase/migrations/20260827090000_add_complaint_category_is_adhoc.sql'), /is_adhoc boolean not null default false/)
   assert.match(await read('supabase/migrations/20260915100000_complaint_auto_receive_columns.sql'), /requires_manual_intake boolean NOT NULL DEFAULT false/)
