@@ -8,7 +8,7 @@
 // ที่ประชาชนพิมพ์ 100 ตัวแรก — พอ #599 เปิดปุ่มให้ทุกคนสมัครรับ รายละเอียดคำร้องจะไปขึ้นจอล็อกของ
 // ประชาชนคนอื่น และใครก็ยิงข้อความเองถึงทุกเครื่องได้ จึงถอดโหมดข้อความอิสระทิ้งทั้งหมด
 
-export const COMPLAINT_PUSH_KINDS = ['complaint_finished', 'complaint_created', 'complaint_note', 'complaint_photo'] as const
+export const COMPLAINT_PUSH_KINDS = ['complaint_finished', 'complaint_created', 'complaint_note', 'complaint_photo', 'complaint_appointment'] as const
 export type ComplaintPushKind = typeof COMPLAINT_PUSH_KINDS[number]
 
 export const isComplaintPushKind = (kind: unknown): kind is ComplaintPushKind =>
@@ -74,6 +74,9 @@ export function complaintPushMessage(
       return { title: 'เจ้าหน้าที่บันทึกข้อความถึงคุณ', body: `มีบันทึกใหม่ใน${ofComplaint}`, url: '/my-complaints' }
     case 'complaint_photo':
       return { title: 'มีรูปหลักฐานการทำงานใหม่', body: `เจ้าหน้าที่เพิ่มรูปความคืบหน้าใน${ofComplaint}`, url: '/my-complaints' }
+    // งาน 1.1 (E1): เจ้าหน้าที่ยืนยัน/เลื่อน/ยกเลิกวันนัด — ไม่ใส่วันที่บนจอล็อก (แตะไปดูในหน้าเรื่องของฉัน)
+    case 'complaint_appointment':
+      return { title: 'มีการนัดหมายเข้าดำเนินการ', body: `เจ้าหน้าที่แจ้งวันนัดใน${ofComplaint} แตะเพื่อดูวันและช่วงเวลา`, url: '/my-complaints' }
   }
 }
 

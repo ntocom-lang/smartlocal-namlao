@@ -13,6 +13,7 @@ import ComplaintTextBlock from '../components/complaints/ComplaintTextBlock'
 import ReopenComplaintBox from '../components/complaints/ReopenComplaintBox'
 import TrackLinkCard from '../components/complaints/TrackLinkCard'
 import { isParked, PARKED_LABEL, PARKED_PUBLIC_NOTE } from '../lib/complaintWorkflow'
+import { appointmentText, formatApptDateShort, isAppointmentAfterDue } from '../lib/complaintAppointment'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
@@ -131,6 +132,41 @@ function AckBadge({ complaint, withTime = false }) {
       {ODOR_INTAKE_LABEL}
       {withTime && ` · ${at.toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}`}
     </span>
+  )
+}
+
+// วันนัดเข้าดำเนินการที่เจ้าหน้าที่ยืนยัน (งาน 1.1 / E1) — เฉพาะเรื่องที่ยังไม่จบ
+// ไม่ใช่การรับประกันเวลา: เจ้าหน้าที่อาจเลื่อน (ถ้าเลื่อนจะแจ้งผ่านแจ้งเตือนและหน้านี้) · นัดหลังกำหนดเสร็จบอกเป็นกลางๆ
+const APPOINTMENT_OPEN_STATUSES = ['pending', 'new', 'received', 'in_progress']
+
+function appointmentOf(c) {
+  if (!c?.appointment_date || !APPOINTMENT_OPEN_STATUSES.includes(c.status)) return null
+  const date = String(c.appointment_date).slice(0, 10)
+  const text = appointmentText({ date, slot: c.appointment_slot })
+  if (!text) return null
+  return { date, text, note: c.appointment_note || '', afterDue: isAppointmentAfterDue(date, c.due_date) }
+}
+
+function AppointmentChip({ complaint }) {
+  const appt = appointmentOf(complaint)
+  if (!appt) return null
+  return (
+    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap bg-teal-100 text-teal-800" title={`นัดเข้าดำเนินการ ${appt.text}`}>
+      📅 นัด {formatApptDateShort(appt.date)}
+    </span>
+  )
+}
+
+function AppointmentCard({ complaint }) {
+  const appt = appointmentOf(complaint)
+  if (!appt) return null
+  return (
+    <div data-my-appointment className="rounded-2xl border border-teal-100 bg-teal-50 p-4 space-y-1">
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">นัดเข้าดำเนินการ</p>
+      <p className="text-sm font-bold text-teal-900">📅 {appt.text}</p>
+      {appt.note && <p className="text-xs text-gray-700 whitespace-pre-wrap wrap-break-word">{appt.note}</p>}
+      {appt.afterDue && <p className="text-xs text-gray-500">นัดหลังวันกำหนดเสร็จ</p>}
+    </div>
   )
 }
 
@@ -436,6 +472,8 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
                 ป้าย "ระบบรับเรื่องแล้ว" ด้านบน — ป้ายนั้นคือความคืบหน้าทั้งหมดที่สายงานนี้มีจริง */}
             {!isAdhocComplaint(c) && <StatusStepper status={c.status} />}
           </div>
+
+          {!isAdhocComplaint(c) && <AppointmentCard complaint={c} />}
 
           {/* ประเมินความพึงพอใจ — ทางเข้าสำรองเมื่อป็อปอัพหลังปิดเรื่องไม่ได้เด้ง
               (ผู้แจ้งไม่ได้เปิดแอปค้างไว้ตอนเจ้าหน้าที่ปิดเรื่อง ซึ่งเป็นเคสส่วนใหญ่) */}
@@ -1052,6 +1090,7 @@ export default function MyComplaints() {
                       <StatusBadge complaint={c} />
                       <AckBadge complaint={c} />
                       {!isAdhocComplaint(c) && <SlaBadge dueDate={c.due_date} status={c.status} />}
+                      {!isAdhocComplaint(c) && <AppointmentChip complaint={c} />}
                       {c.ref_no && (
                         <span className="text-[11px] text-gray-400 font-mono">{c.ref_no}</span>
                       )}

@@ -223,6 +223,7 @@ async function handleSelfTest(supabase: Supabase, req: Request, endpoint: unknow
 //   complaint_finished เจ้าหน้าที่เพิ่งปิดงาน → ผู้ร้อง
 //   complaint_note     เจ้าหน้าที่บันทึกข้อความถึงผู้ร้อง → ผู้ร้อง
 //   complaint_photo    ช่างเพิ่มรูปความคืบหน้า → ผู้ร้อง
+//   complaint_appointment  เจ้าหน้าที่ยืนยัน/เลื่อน/ยกเลิกวันนัด (set_complaint_appointment) → ผู้ร้อง (งาน 1.1)
 // โหมดข้อความอิสระเดิม (municipality_id/user_id + title/body/url) ถอดแล้ว 2569-10-28 — เหตุผลอยู่หัว _shared/complaintPush.ts
 // · list_complaints_for_staff ตัด user_id ทิ้งสำหรับ officer/staff ตาม PDPA หน้าเว็บจึงไม่รู้ว่าใครคือผู้ร้อง
 //   ให้ server หาเจ้าของคำร้องเองแทน (เดิมบันทึกข้อความ/รูปจากบัญชี officer ไม่เคยแจ้งผู้ร้องเลย)

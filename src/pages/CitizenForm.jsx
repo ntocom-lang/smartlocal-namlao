@@ -24,6 +24,10 @@ import { uploadFile } from '../lib/driveStorage'
 import { complaintFolderPath, complaintFileName } from '../lib/driveFolders'
 import { ODOR_TIME_RANGES } from '../lib/odorTimeRanges'
 import { ODOR_INTENSITY_LEVELS, WIND_DIRECTIONS, HEALTH_EFFECT_OPTIONS } from '../lib/odorOptions'
+import FeeRatesCard from '../components/complaints/FeeRatesCard'
+import {
+  formatApptDate, isDateOnly, normalizeFeeRates, offDayWarning, preferredDateRange,
+} from '../lib/complaintAppointment'
 
 const MAX_PHOTOS = 3
 
@@ -397,6 +401,8 @@ export default function CitizenForm() {
     name_title: '', name_first: '', name_last: '',
     // ฟิลด์เสริมเฉพาะหมวด odor — ดู buildExtraData()/validateOdorFields() ด้านล่าง
     odor_intensity: '', wind_direction: '', health_effect: '', odor_time_range: '',
+    // วันที่สะดวกให้เจ้าหน้าที่เข้าดำเนินการ (YYYY-MM-DD) — เฉพาะหมวดที่เปิดนัดหมาย ไม่บังคับ ดู buildExtraData()
+    preferred_date: '',
   })
   const [profilePhone, setProfilePhone] = useState('') // เบอร์เดิมจากโปรไฟล์ ไว้เทียบว่าผู้ใช้แก้เบอร์หรือไม่
   const [syncPhoneToProfile, setSyncPhoneToProfile] = useState(false)
@@ -496,16 +502,31 @@ export default function CitizenForm() {
     // เพราะ pills ของ FORM_TYPE_CONFIG เป็น list ที่ hardcode ไว้ในโค้ด ไม่ได้มาจากตารางนี้ ต้องรู้ว่า
     // เทศบาลนี้ปิดหมวดไหนไว้ถึงจะซ่อน pill ให้ตรงกันได้ — ไม่งั้นแอดมินปิดหมวดใน DB แล้วประชาชน
     // ยังกดเลือกได้อยู่ผ่านลิงก์ ?form=... (เคสจริง: หมวดเฉพาะกิจ odor ที่ใช้แค่บางเทศบาล)
-    supabase.from('complaint_categories').select('value, label, emoji, color, is_active, submit_audience').eq('municipality_id', tenant.id).order('sort_order')
-      .then(({ data }) => {
+    // งาน 1.1 (E1): requires_appointment / fee_rates / fee_reference เป็นคอลัมน์ใหม่ — ถ้าฐานข้อมูลยังไม่มี (deploy เว็บก่อนรัน SQL)
+    // คิวรีนี้จะ error ทั้งก้อนแล้วรายการหมวดหายทั้งหน้า จึงถอยไปใช้คอลัมน์ชุดเดิมแทน (ไม่มีนัดหมาย/อัตราจนกว่า SQL จะรัน)
+    const loadCategoryRows = async () => {
+      const full = await supabase.from('complaint_categories')
+        .select('value, label, emoji, color, is_active, submit_audience, requires_appointment, fee_rates, fee_reference')
+        .eq('municipality_id', tenant.id).order('sort_order')
+      if (!full.error) return full.data
+      const base = await supabase.from('complaint_categories')
+        .select('value, label, emoji, color, is_active, submit_audience').eq('municipality_id', tenant.id).order('sort_order')
+      return base.data
+    }
+    loadCategoryRows()
+      .then((data) => {
         if (!data) return
         const active = data.filter((c) => c.is_active)
         if (active.length > 0)
           setCategories(active.map((c) => ({
             value: c.value, label: c.label, emoji: c.emoji, color: c.color, submit_audience: c.submit_audience,
+            requires_appointment: c.requires_appointment === true,
+            fee_rates: normalizeFeeRates(c.fee_rates),
+            fee_reference: typeof c.fee_reference === 'string' ? c.fee_reference : '',
           })))
         setDisabledCategoryValues(new Set(data.filter((c) => !c.is_active).map((c) => c.value)))
       })
+      .catch(() => {})
   }, [tenant?.id])
 
 
@@ -564,13 +585,36 @@ export default function CitizenForm() {
   }
 
   function buildExtraData(form) {
-    if (form.category !== 'odor') return null
-    return {
-      odor_intensity: form.odor_intensity ? Number(form.odor_intensity) : null,
-      odor_time_range: form.odor_time_range || null,
-      wind_direction: form.wind_direction || null,
-      health_effect:  form.health_effect || null,
+    // odor มี whitelist คีย์ของตัวเอง (ฐานข้อมูลตรวจรูปร่างเข้ม) — ห้ามแทรก preferred_date ในหมวดนี้
+    if (form.category === 'odor') {
+      return {
+        odor_intensity: form.odor_intensity ? Number(form.odor_intensity) : null,
+        odor_time_range: form.odor_time_range || null,
+        wind_direction: form.wind_direction || null,
+        health_effect:  form.health_effect || null,
+      }
     }
+    // งาน 1.1: วันที่สะดวก เก็บใน extra_data.preferred_date (object ชั้นเดียว ค่า scalar) เฉพาะเมื่อกรอกและหมวดเปิดนัดหมาย
+    // ⚠️ ไม่ใช่วันนัดจริง — เจ้าหน้าที่ยืนยันวันนัดผ่าน set_complaint_appointment
+    if (appointmentEnabledFor(form.category) && isDateOnly(form.preferred_date)) {
+      return { preferred_date: form.preferred_date }
+    }
+    return null
+  }
+
+  function appointmentEnabledFor(categoryValue) {
+    return categoryValue !== 'odor' && dbCategories.find((c) => c.value === categoryValue)?.requires_appointment === true
+  }
+
+  // ช่องวันที่สะดวก (ไม่บังคับ): ถ้ากรอกต้องอยู่ในช่วงพรุ่งนี้ → +90 วัน (เวลาไทย) — ช่อง date ของเบราว์เซอร์กันไว้แล้ว
+  // แต่ผู้ใช้พิมพ์ทับ/เบราว์เซอร์เก่าข้ามได้ จึงตรวจซ้ำก่อนส่ง · ⚠️ ต้องเรียกทั้ง 2 จุดเหมือน validateVillage
+  function validatePreferredDate(form) {
+    if (!appointmentEnabledFor(form.category) || !form.preferred_date) return null
+    const { min, max } = preferredDateRange()
+    if (!isDateOnly(form.preferred_date) || form.preferred_date < min || form.preferred_date > max) {
+      return `วันที่สะดวกต้องอยู่ระหว่าง ${formatApptDate(min)} ถึง ${formatApptDate(max)} หรือเว้นว่างไว้`
+    }
+    return null
   }
 
   // คืนข้อความ error ตัวแรกที่พบ หรือ null ถ้าผ่าน — ใช้ทั้ง 2 จุดที่ validate ก่อนส่ง (ปุ่มกดก่อนเปิด
@@ -632,6 +676,8 @@ export default function CitizenForm() {
     if (detailErr) { setError(detailErr); return }
     const villageErr = validateVillage(form)
     if (villageErr) { setError(villageErr); return }
+    const preferredErr = validatePreferredDate(form)
+    if (preferredErr) { setError(preferredErr); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
 
@@ -968,6 +1014,12 @@ export default function CitizenForm() {
           </div>
         )}
 
+        {/* งาน 1.1: อัตราค่าบริการของหมวด (ถ้า อปท. ตั้งไว้) — แสดงอย่างเดียว ไม่มีช่องคำนวณ ไม่รับชำระเงิน
+            odor ไม่ใช้ (หมวดเฉพาะกิจ ไม่มีค่าบริการ) */}
+        {form.category !== 'odor' && catDbData?.fee_rates?.length > 0 && (
+          <FeeRatesCard key={form.category} rates={catDbData.fee_rates} reference={catDbData.fee_reference} />
+        )}
+
         {/* ฟิลด์เสริมเฉพาะหมวด odor — GPS ใช้ปุ่ม "ปักหมุดจากแผนที่" เดิมด้านล่างของฟอร์ม ไม่ซ้ำที่นี่ */}
         {form.category === 'odor' && (
           <div className="space-y-2">
@@ -1087,6 +1139,25 @@ export default function CitizenForm() {
           </div>
         )}
 
+        {/* งาน 1.1: วันที่สะดวกให้เจ้าหน้าที่เข้าดำเนินการ — เฉพาะหมวดที่ อปท. เปิดนัดหมาย · ไม่บังคับ
+            ไม่ใช่การจองวัน: เจ้าหน้าที่ยืนยันวันนัดอีกครั้ง (วันหยุด/เสาร์-อาทิตย์เตือนอ่อนๆ ไม่บล็อก) */}
+        {appointmentEnabledFor(form.category) && (() => {
+          const range = preferredDateRange()
+          const offDay = form.preferred_date ? offDayWarning(form.preferred_date) : ''
+          return (
+            <div data-preferred-date className="rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 space-y-1.5">
+              <label htmlFor="preferred-date" className="block text-xs font-semibold text-gray-600">
+                วันที่สะดวกให้เจ้าหน้าที่เข้าดำเนินการ <span className="font-normal text-gray-400">(ไม่บังคับ)</span>
+              </label>
+              <input id="preferred-date" type="date" value={form.preferred_date} onChange={set('preferred_date')}
+                min={range.min} max={range.max}
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base focus:outline-none focus:border-blue-400" />
+              {offDay && <p role="status" className="text-xs text-amber-700 leading-relaxed">{offDay}</p>}
+              <p className="text-xs text-gray-500 leading-relaxed">เจ้าหน้าที่จะยืนยันวันนัดอีกครั้ง ดูได้ที่ลิงก์ติดตามเรื่อง</p>
+            </div>
+          )
+        })()}
+
         {/* Phone */}
         <div className="relative">
           <input type="tel" value={form.phone} onChange={set('phone')}
@@ -1182,6 +1253,8 @@ export default function CitizenForm() {
     if (detailErr) { setError(detailErr); return }
           const villageErr = validateVillage(form)
           if (villageErr) { setError(villageErr); return }
+          const preferredErr = validatePreferredDate(form)
+          if (preferredErr) { setError(preferredErr); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           setShowConsent(true)
         }} disabled={submitting || categoryDisabled || categoryOfficialsOnly}
@@ -1204,6 +1277,7 @@ export default function CitizenForm() {
             { label: 'ลักษณะปัญหา', value: form.issue_type },
             { label: 'สถานที่', value: form.village },
             { label: 'พิกัด', value: geo.lat != null ? `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}` : 'ไม่ได้ปักหมุด' },
+            { label: 'วันที่สะดวก', value: appointmentEnabledFor(form.category) ? formatApptDate(form.preferred_date) : '' },
             { label: 'ผู้แจ้ง', value: reporterFullName },
             { label: 'เบอร์โทร', value: form.phone },
           ]}

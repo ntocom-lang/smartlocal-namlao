@@ -37,6 +37,11 @@ import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRe
 import { complaintFolderPath, complaintFileName } from '../../lib/driveFolders'
 import { fetchAssignableStaff, groupStaffByDepartment, ROLE_LABELS } from '../../lib/staffRoster'
 import { workingDaysLeft, workingDaysBetween } from '../../lib/workingDays'
+import {
+  APPOINTMENT_NOTE_MAX, APPOINTMENT_SLOTS, APPOINTMENT_TIMELINE_COLORS, APPOINTMENT_TIMELINE_LABELS, DEFAULT_APPOINTMENT_SLOT,
+  appointmentText, formatApptDate, formatApptDateShort, isAppointmentAfterDue, isDateOnly, offDayWarning, readPreferredDate,
+  staffAppointmentRange,
+} from '../../lib/complaintAppointment'
 import OssIntakeForm from './OssIntakeForm'
 import OdorFieldsDisplay from '../complaints/OdorFieldsDisplay'
 import OdorComplaintTable, { OdorDetailModal } from '../complaints/OdorComplaintTable'
@@ -143,6 +148,23 @@ function SlaBadge({ dueDate, status, compact = false }) {
     </span>
   )
 }
+// ป้ายวันนัดเล็กๆ ในรายการ "📅 5 ธ.ค." — เฉพาะเรื่องที่ยังไม่จบ (เรื่องที่จบแล้ววันนัดไม่มีความหมาย)
+// อยู่ในช่องสถานะ/กำหนดเดิม ไม่เพิ่มคอลัมน์ (ตารางกว้างเกินพื้นที่อยู่แล้ว ดู test:staff-inbox) · นัดหลังกำหนด = โทนเตือน
+function AppointmentBadge({ complaint: c }) {
+  if (!c.appointment_date || !APPOINTMENT_OPEN_STATUSES.includes(c.status)) return null
+  const label = formatApptDateShort(String(c.appointment_date).slice(0, 10))
+  if (!label) return null
+  const late = isAppointmentAfterDue(c.appointment_date, c.due_date)
+  const full = appointmentText({ date: String(c.appointment_date).slice(0, 10), slot: c.appointment_slot })
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
+          style={late ? { backgroundColor: '#fef3c7', color: '#92400e' } : { backgroundColor: '#ccfbf1', color: '#115e59' }}
+          title={`นัดเข้าดำเนินการ ${full}${late ? ' · นัดหลังกำหนด' : ''}`}>
+      📅 {label}{late ? ' · หลังกำหนด' : ''}
+    </span>
+  )
+}
+
 /**
  * วันจบงานที่เชื่อได้ = closed_at ของเรื่องที่ปิดผ่าน finish_complaint (resolved_by มีค่า)
  * - ปฏิเสธไม่ตั้ง closed_at · ผู้ร้องเปิดเรื่องใหม่ = ระบบล้างค่าเอง
@@ -699,7 +721,204 @@ function ReporterCard({ c }) {
   )
 }
 
-export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate, categoryMeta, onReturned, onFinished, onTextSaved, onParkChanged, departmentScoped = false }) {
+// ─── นัดหมาย (งาน 1.1 / E1) ───────────────────────────────────────────────────────────
+// กล่อง "นัดหมาย" ในรายละเอียดคำร้อง: เห็นวันที่ผู้แจ้งสะดวก + วันนัดปัจจุบัน · ผู้ทำงานกับเรื่องนี้ยืนยัน/เลื่อน/ยกเลิกนัดได้
+// กติกาจริงอยู่ที่ set_complaint_appointment() (ตรวจสิทธิ์ วันหยุด วันย้อนหลัง และเขียนไทม์ไลน์เอง) — ที่นี่ซ่อนปุ่มให้ตรงเท่านั้น
+// ⚠️ นัดไม่เลื่อน due_date: นัดหลังกำหนดขึ้นป้าย "นัดหลังกำหนด" ให้เห็นแทน (เจ้าของระบบเลือก)
+// เก็บค่านัดไว้ในกล่องเองด้วย (ไม่รอ parent ส่ง prop ใหม่) เพราะ ComplaintDetailModal ถูกใช้จากหลายหน้า
+// 'new' = รอรับเรื่องแบบเดียวกับ 'pending' — ตรงกับสถานะที่ set_complaint_appointment รับ
+const APPOINTMENT_OPEN_STATUSES = ['new', 'pending', 'received', 'in_progress']
+
+function AppointmentBox({ complaint: c, canWork, tenant, onChanged, onSaved }) {
+  const open = APPOINTMENT_OPEN_STATUSES.includes(c.status)
+  const preferred = readPreferredDate(c.extra_data)
+  const [appt, setAppt] = useState(() => ({ date: c.appointment_date ?? '', slot: c.appointment_slot ?? '', note: c.appointment_note ?? '' }))
+  const [form, setForm] = useState(() => ({
+    date: c.appointment_date || preferred || '',
+    slot: c.appointment_slot || DEFAULT_APPOINTMENT_SLOT,
+    note: c.appointment_note ?? '',
+  }))
+  const [requires, setRequires] = useState(false)
+  const [busy, setBusy] = useState('') // '' | 'save' | 'clear'
+  const [message, setMessage] = useState(null) // { tone: 'ok' | 'warn' | 'error', text }
+  const [load, setLoad] = useState(null) // { date, count } — จำนวนเรื่องที่นัดวันนั้นไว้แล้ว (เท่าที่ผู้ใช้เห็น)
+
+  // หมวดเปิดนัดหมายหรือไม่ — ถามเองรายเรื่องเพราะกล่องนี้ถูกเรียกจากหลายหน้าที่ไม่ได้ส่ง categoryMeta เดียวกันมา
+  // คิวรีพลาด (เช่นยังไม่รัน SQL) = ถือว่าไม่เปิด กล่องจะขึ้นก็ต่อเมื่อเรื่องมีวันนัดหรือวันที่สะดวกอยู่แล้ว
+  useEffect(() => {
+    if (!open || !tenant?.id || !c.category) return
+    let cancelled = false
+    supabase.from('complaint_categories').select('requires_appointment')
+      .eq('municipality_id', tenant.id).eq('value', c.category).limit(1)
+      .then(({ data, error }) => {
+        if (cancelled || error) return
+        setRequires(data?.[0]?.requires_appointment === true)
+      })
+    return () => { cancelled = true }
+  }, [open, tenant?.id, c.category])
+
+  // คำใบ้ "วันนั้นมีนัดแล้ว N เรื่อง" — นับเท่าที่ RLS ให้ผู้ใช้คนนี้เห็น (ไม่รวมเรื่องนี้) เป็นข้อมูลช่วยตัดสินใจ ไม่ใช่ตัวบล็อก
+  const hintDate = isDateOnly(form.date) ? form.date : ''
+  useEffect(() => {
+    if (!open || !canWork || !hintDate || !tenant?.id) return
+    let cancelled = false
+    supabase.from('complaints').select('id', { count: 'exact', head: true })
+      .eq('municipality_id', tenant.id).eq('appointment_date', hintDate).neq('id', c.id)
+      .then(({ count, error }) => {
+        if (cancelled || error) return
+        setLoad({ date: hintDate, count: count ?? 0 })
+      })
+    return () => { cancelled = true }
+  }, [open, canWork, hintDate, tenant?.id, c.id])
+
+  if (!open || !(requires || appt.date || preferred)) return null
+
+  const afterDue = isAppointmentAfterDue(appt.date, c.due_date)
+  const range = staffAppointmentRange()
+  const countText = load && load.date === hintDate && load.count > 0 ? `วันนั้นมีนัดแล้ว ${load.count} เรื่อง (เท่าที่คุณเห็น)` : ''
+  const offDay = form.date ? offDayWarning(form.date) : ''
+
+  function applySaved(next) {
+    setAppt(next)
+    onChanged?.(c.id, {
+      appointment_date: next.date || null,
+      appointment_slot: next.slot || null,
+      appointment_note: next.note || null,
+      appointment_set_at: new Date().toISOString(),
+    })
+    onSaved?.()
+  }
+
+  async function submit(allowOffDay = false) {
+    if (!isDateOnly(form.date)) { setMessage({ tone: 'error', text: 'กรุณาเลือกวันที่นัด' }); return }
+    if (form.date < range.min || form.date > range.max) {
+      setMessage({ tone: 'error', text: `เลือกวันที่ระหว่าง ${formatApptDate(range.min)} ถึง ${formatApptDate(range.max)}` })
+      return
+    }
+    if (form.note.length > APPOINTMENT_NOTE_MAX) { setMessage({ tone: 'error', text: `ข้อความถึงผู้แจ้งยาวได้ไม่เกิน ${APPOINTMENT_NOTE_MAX} ตัวอักษร` }); return }
+    setBusy('save')
+    setMessage(null)
+    const note = form.note.trim()
+    const { data, error } = await supabase.rpc('set_complaint_appointment', {
+      p_complaint_id: c.id, p_date: form.date, p_slot: form.slot, p_note: note || null, p_allow_off_day: allowOffDay,
+    })
+    if (error) { setBusy(''); setMessage({ tone: 'error', text: error.message || 'ยืนยันวันนัดไม่สำเร็จ กรุณาลองใหม่' }); return }
+    if (data?.ok === false && data.code === 'off_day') {
+      // วันหยุดไม่ถูกบันทึกจนกว่าจะยืนยัน — เสาร์-อาทิตย์/วันหยุดที่ อปท. ประกาศ (ตัดสินที่ฐานข้อมูล กติกาเดียวกับนับวันทำการ)
+      if (!window.confirm('วันที่เลือกเป็นวันหยุด ยืนยันนัดวันนี้?')) { setBusy(''); return }
+      await submit(true)
+      return
+    }
+    setBusy('')
+    if (!data?.ok) { setMessage({ tone: 'error', text: 'ยืนยันวันนัดไม่สำเร็จ กรุณาลองใหม่' }); return }
+    if (!data.changed) { setMessage({ tone: 'ok', text: 'วันนัดเดิมอยู่แล้ว ไม่มีอะไรเปลี่ยน' }); return }
+    applySaved({ date: form.date, slot: form.slot, note })
+    setMessage({
+      tone: data.after_due ? 'warn' : 'ok',
+      text: (data.rescheduled ? 'เลื่อนวันนัดแล้ว' : 'ยืนยันวันนัดแล้ว') + (data.after_due ? ' — นัดหลังวันกำหนดเสร็จ' : ''),
+    })
+    notifyAppointmentPush(c.id)
+  }
+
+  async function clearAppointment() {
+    // null = กดยกเลิกกล่องถาม (ไม่ยกเลิกนัด) · สตริงว่าง = ยกเลิกโดยไม่ใส่เหตุผล
+    const reason = window.prompt('ยกเลิกวันนัดนี้? ใส่เหตุผล (ไม่บังคับ) แล้วกดตกลง', '')
+    if (reason === null) return
+    setBusy('clear')
+    setMessage(null)
+    const { data, error } = await supabase.rpc('set_complaint_appointment', {
+      p_complaint_id: c.id, p_date: null, p_slot: null, p_note: reason.trim().slice(0, APPOINTMENT_NOTE_MAX) || null, p_allow_off_day: false,
+    })
+    setBusy('')
+    if (error) { setMessage({ tone: 'error', text: error.message || 'ยกเลิกนัดไม่สำเร็จ กรุณาลองใหม่' }); return }
+    if (!data?.ok) { setMessage({ tone: 'error', text: 'ยกเลิกนัดไม่สำเร็จ กรุณาลองใหม่' }); return }
+    if (data.changed) applySaved({ date: '', slot: '', note: '' })
+    setForm((prev) => ({ ...prev, date: preferred || '', note: '' }))
+    setMessage({ tone: 'ok', text: data.changed ? 'ยกเลิกวันนัดแล้ว' : 'เรื่องนี้ยังไม่มีวันนัด' })
+  }
+
+  const messageTone = { ok: 'bg-green-50 border-green-200 text-green-800', warn: 'bg-amber-50 border-amber-200 text-amber-900', error: 'bg-red-50 border-red-200 text-red-700' }
+
+  return (
+    <div className="space-y-2" data-appointment-box>
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">นัดหมาย</p>
+      <div className="bg-teal-50 rounded-2xl p-4 border border-teal-100 space-y-3">
+        {preferred && (
+          <p className="text-xs text-gray-600">วันที่ผู้แจ้งสะดวก: <span className="font-semibold text-gray-800">{formatApptDate(preferred)}</span></p>
+        )}
+        {appt.date ? (
+          <div className="space-y-1">
+            <p className="text-sm font-bold text-teal-900">📅 นัดเข้าดำเนินการ {appointmentText({ date: appt.date, slot: appt.slot })}</p>
+            {appt.note && <p className="text-xs text-gray-700 whitespace-pre-wrap wrap-break-word">{appt.note}</p>}
+            {afterDue && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900"
+                title={`วันกำหนดเสร็จ ${formatApptDate(String(c.due_date).slice(0, 10))} — การนัดไม่เลื่อนวันกำหนด`}>
+                ⚠️ นัดหลังกำหนด
+              </span>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500">ยังไม่มีวันนัด</p>
+        )}
+
+        {canWork && (
+          <div className="space-y-2 pt-1 border-t border-teal-100">
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <div>
+                <label htmlFor="appt-date" className="block text-[11px] font-semibold text-gray-500 mb-1">วันที่นัด</label>
+                <input id="appt-date" type="date" value={form.date} min={range.min} max={range.max}
+                  onChange={(e) => { setMessage(null); setForm((prev) => ({ ...prev, date: e.target.value })) }}
+                  className="w-full text-xs border border-teal-200 rounded-xl px-2 py-1.5 bg-white text-gray-900 focus:outline-none focus:border-teal-400" />
+              </div>
+              <div>
+                <label htmlFor="appt-slot" className="block text-[11px] font-semibold text-gray-500 mb-1">ช่วงเวลา</label>
+                <select id="appt-slot" value={form.slot}
+                  onChange={(e) => { setMessage(null); setForm((prev) => ({ ...prev, slot: e.target.value })) }}
+                  className="w-full text-xs border border-teal-200 rounded-xl px-2 py-1.5 bg-white text-gray-900 focus:outline-none focus:border-teal-400">
+                  {APPOINTMENT_SLOTS.map((slot) => <option key={slot.value} value={slot.value}>{slot.label}</option>)}
+                </select>
+              </div>
+            </div>
+            {offDay && <p role="status" className="text-[11px] text-amber-700">{offDay}</p>}
+            {countText && <p role="status" className="text-[11px] text-teal-800">{countText}</p>}
+            <div>
+              <label htmlFor="appt-note" className="block text-[11px] font-semibold text-gray-500 mb-1">ข้อความถึงผู้แจ้ง <span className="font-normal text-gray-400">(ไม่บังคับ)</span></label>
+              <textarea id="appt-note" rows={2} maxLength={APPOINTMENT_NOTE_MAX} value={form.note}
+                onChange={(e) => { setMessage(null); setForm((prev) => ({ ...prev, note: e.target.value })) }}
+                placeholder="เช่น เจ้าหน้าที่จะโทรก่อนเข้า"
+                className="w-full text-xs border border-teal-200 rounded-xl px-2.5 py-1.5 bg-white text-gray-900 resize-none focus:outline-none focus:border-teal-400" />
+              {/* ข้อความนี้ขึ้นในหน้า /t/ ซึ่งใครมีลิงก์ก็เปิดได้โดยไม่ล็อกอิน (migration-reviewer 2026-11-17) */}
+              <p className="text-[11px] text-gray-500">ทุกคนที่มีลิงก์ติดตามเรื่องจะเห็นข้อความนี้ ห้ามใส่ชื่อหรือเบอร์โทรของผู้อื่น</p>
+              <p className="text-right text-[11px] text-gray-400">{form.note.length}/{APPOINTMENT_NOTE_MAX}</p>
+            </div>
+            {message && (
+              <p role={message.tone === 'error' ? 'alert' : 'status'} className={`text-xs rounded-xl border px-3 py-2 ${messageTone[message.tone]}`}>{message.text}</p>
+            )}
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => submit(false)} disabled={busy !== ''}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50"
+                style={{ backgroundColor: '#0f766e' }}>
+                {busy === 'save' && <Loader2 size={13} className="animate-spin" />}
+                ยืนยันวันนัด
+              </button>
+              {appt.date && (
+                <button type="button" onClick={clearAppointment} disabled={busy !== ''}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-50">
+                  {busy === 'clear' ? <Loader2 size={13} className="animate-spin" /> : 'ยกเลิกนัด'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {!canWork && message && (
+          <p role="status" className={`text-xs rounded-xl border px-3 py-2 ${messageTone[message.tone]}`}>{message.text}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate, categoryMeta, onReturned, onFinished, onTextSaved, onParkChanged, onAppointmentChanged, departmentScoped = false }) {
   const { tenant, terminology } = useTenant()
   const isAdminRole = ['admin', 'superadmin'].includes(currentUserRole)
   const isTechAssigned = currentUserRole === 'technician' && c.assigned_to === currentUserId
@@ -732,6 +951,8 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
   // ประวัติการดำเนินการจาก complaint_timeline — ตารางนี้ถูกเขียนมาตลอดแต่ไม่เคยมีหน้าไหนอ่าน
   // หมายเหตุที่เจ้าหน้าที่พิมพ์ตอนเปลี่ยนสถานะจึงหายเข้ากลีบเมฆ ทั้งที่เป็นบันทึกการปฏิบัติงาน
   const [timelineRows, setTimelineRows] = useState([])
+  // เพิ่มทีละ 1 หลังยืนยัน/ยกเลิกวันนัด (RPC เขียนแถวลงไทม์ไลน์เอง) ให้โหลดประวัติใหม่
+  const [timelineVersion, setTimelineVersion] = useState(0)
   const [showPinEdit, setShowPinEdit] = useState(false)
   const [savingPin, setSavingPin] = useState(false)
   const [pinError, setPinError] = useState('')
@@ -813,7 +1034,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
         setTimelineRows(data ?? [])
       })
     return () => { cancelled = true }
-  }, [c.id])
+  }, [c.id, timelineVersion])
 
   async function handleDelete() {
     if (!window.confirm(`ลบคำร้องนี้ออกจากระบบ?\n\nการลบไม่สามารถย้อนกลับได้`)) return
@@ -1057,6 +1278,9 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
             <StatusStepper status={c.status} note={c.technician_note} complaint={c} />
           </div>
 
+          <AppointmentBox complaint={c} canWork={canWork} tenant={tenant}
+            onChanged={onAppointmentChanged} onSaved={() => setTimelineVersion((v) => v + 1)} />
+
           {timelineRows.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
@@ -1066,10 +1290,10 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
                 {timelineRows.map((row) => (
                   <li key={row.id} className="flex gap-2.5 px-3 py-2 rounded-xl bg-gray-50 border border-gray-100">
                     <span className="w-1.5 shrink-0 rounded-full mt-0.5"
-                      style={{ backgroundColor: STATUS[normalizeActionStatus(row.status)]?.color ?? '#94a3b8' }} />
+                      style={{ backgroundColor: APPOINTMENT_TIMELINE_COLORS[row.status] ?? STATUS[normalizeActionStatus(row.status)]?.color ?? '#94a3b8' }} />
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-gray-700">
-                        {STATUS[normalizeActionStatus(row.status)]?.label ?? row.status}
+                        {APPOINTMENT_TIMELINE_LABELS[row.status] ?? STATUS[normalizeActionStatus(row.status)]?.label ?? row.status}
                         <span className="ml-2 font-normal text-gray-400">
                           {new Date(row.created_at).toLocaleString('th-TH', {
                             day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit',
@@ -1589,6 +1813,14 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
+// แจ้งผู้แจ้งว่ามีวันนัด (ถ้ามีเครื่องสมัครรับ) — ส่งแค่เลขคำร้อง server หาผู้รับและประกอบข้อความเอง (ไม่ใส่วันที่บนจอล็อก)
+// ไม่รอผล ไม่ให้ปุ่มค้าง · ตั้งใจวางไว้ที่ระดับไฟล์ ใกล้จุดเรียก send-push เดิม
+function notifyAppointmentPush(complaintId) {
+  supabase.functions.invoke('send-push', {
+    body: { complaint_id: complaintId, kind: 'complaint_appointment' },
+  }).catch(() => {})
+}
+
 export default function ComplaintsManager({ tenant, currentUserRole, openComplaintId }) {
   const { session } = useAuth()
   const tenantId = tenant?.id
@@ -2592,6 +2824,7 @@ ${summaryHtml}
                       <span className="text-[10px] text-gray-400 font-mono">{c.ref_no}</span>
                     )}
                     <SlaBadge dueDate={c.due_date} status={c.status} />
+                    <AppointmentBadge complaint={c} />
                   </div>
                   {isAdmin && complaintIntakeReason(c, categoryMeta) && (
                     <p className="text-[11px] font-medium text-amber-700 truncate" title={complaintIntakeReason(c, categoryMeta).text}>
@@ -2789,6 +3022,9 @@ ${summaryHtml}
                         {/* เรื่องที่จบแล้ว SlaBadge ไม่ขึ้น ช่องบรรทัด 2 ว่าง จึงใช้ที่เดียวกันบอกระยะเวลาที่ใช้
                             แถวไม่สูงขึ้นและไม่ต้องเพิ่มคอลัมน์ (ตารางกว้างเกินพื้นที่อยู่แล้ว ดู test:staff-inbox) */}
                         <DurationBadge complaint={c} />
+                        {c.appointment_date && APPOINTMENT_OPEN_STATUSES.includes(c.status) && (
+                          <span className="mt-0.5 block"><AppointmentBadge complaint={c} /></span>
+                        )}
                         {/* ไม่ขยายคอลัมน์ — ตารางกว้างเกินพื้นที่อยู่แล้ว (ดู test:staff-inbox) ตัดข้อความแล้วดูเต็มที่ title */}
                         {isAdmin && complaintIntakeReason(c, categoryMeta) && (
                           <span className="mt-0.5 block truncate text-[10px] font-medium text-amber-700" title={complaintIntakeReason(c, categoryMeta).text}>
@@ -2949,6 +3185,10 @@ ${summaryHtml}
           onReturned={() => fetchComplaints()}
           onFinished={() => fetchComplaints()}
           onParkChanged={() => fetchComplaints()}
+          onAppointmentChanged={(id, patch) => {
+            setComplaints((prev) => prev.map((row) => row.id === id ? { ...row, ...patch } : row))
+            setSelectedComplaint((prev) => prev?.id === id ? { ...prev, ...patch } : prev)
+          }}
           onTextSaved={(id, patch) => {
             setComplaints((prev) => prev.map((row) => row.id === id ? { ...row, ...patch } : row))
             setSelectedComplaint((prev) => prev?.id === id ? { ...prev, ...patch } : prev)

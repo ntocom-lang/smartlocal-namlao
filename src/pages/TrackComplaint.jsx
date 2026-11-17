@@ -8,6 +8,8 @@ import {
   TRACK_BUSY_MESSAGE, TRACK_RATE_ERRORS, TRACK_REOPEN_ERRORS,
   buildTrackSteps, formatTrackDateTime, isTrackBusy, isTrackFinished, isTrackToken,
 } from '../lib/complaintTrack'
+import FeeRatesCard from '../components/complaints/FeeRatesCard'
+import { appointmentText, normalizeTrackPhotos, readPreferredDate, formatApptDate, trackPhotoUrl } from '../lib/complaintAppointment'
 
 // หน้าที่ผู้แจ้งเปิดจากลิงก์ที่ สท./เจ้าหน้าที่ส่งให้ (/t/<โทเคน>) — ไม่ต้องล็อกอิน
 // ข้อมูลทั้งหมดมาจาก get_complaint_by_track_token() ซึ่งไม่ส่งชื่อ เบอร์ พิกัด หรือรายละเอียดที่ผู้แจ้งพิมพ์มาให้ตั้งแต่ฝั่งฐานข้อมูล
@@ -145,6 +147,57 @@ function ReopenCard({ daysLeft, busy, error, onSubmit }) {
           ยกเลิก
         </button>
       </div>
+    </section>
+  )
+}
+
+// รูปก่อน–หลังของเรื่อง (งาน 1.1) — ฐานข้อมูลส่งมาเฉพาะรหัสไฟล์ตามกติกาของหมวด (get_complaint_by_track_token)
+// ⚠️ ห้ามโหลดรูปเองตอนเปิดหน้า: โควตา Cached Egress ของ Supabase เคยเกินจนระบบล่มทั้งโปรเจกต์ (2026-10-04, NOTES.md ข้อ 15)
+//    ลิงก์นี้ถูกแชร์ต่อทาง LINE ได้ ทุกคนที่เปิดจึงต้องแตะปุ่มก่อนถึงจะดึงรูป · แตะแล้ว <img loading="lazy"> ทีละรูป
+// ⚠️ ไม่ผ่าน /_img/ ของ Worker (edgeImage.js ข้อ 3: รูปแนบคำร้องของประชาชนห้ามเข้าแคช edge) — ยิง drive-file ตรง
+function PhotosCard({ photos }) {
+  const [shown, setShown] = useState(false)
+  const [failed, setFailed] = useState(() => new Set())
+  const groups = [
+    { key: 'before', title: 'ก่อนดำเนินการ (จากผู้แจ้ง)', ids: photos.before },
+    { key: 'after', title: 'หลังดำเนินการ', ids: photos.after },
+  ].filter((group) => group.ids.length > 0)
+  const total = groups.reduce((sum, group) => sum + group.ids.length, 0)
+  if (total === 0) return null
+  return (
+    <section className={card} aria-labelledby="track-photos-title">
+      <h2 id="track-photos-title" className={`${sectionLabel} mb-2`}>รูปประกอบเรื่อง</h2>
+      {!shown ? (
+        <button type="button" onClick={() => setShown(true)}
+          className="w-full min-h-[48px] rounded-xl border-2 border-gray-200 bg-gray-50 px-4 text-sm font-bold text-gray-700 active:scale-[0.99]">
+          แตะเพื่อดูรูป ({total} รูป)
+        </button>
+      ) : (
+        <div className="space-y-4">
+          {groups.map((group) => (
+            <div key={group.key}>
+              <p className="text-sm font-semibold text-gray-700 mb-1.5">{group.title}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {group.ids.map((id, index) => {
+                  const src = trackPhotoUrl(import.meta.env.VITE_SUPABASE_URL, id)
+                  const broken = !src || failed.has(id)
+                  return (
+                    <div key={id} className="aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-100 grid place-items-center">
+                      {broken ? (
+                        <span className="text-xs text-gray-400 px-2 text-center">โหลดรูปไม่ได้</span>
+                      ) : (
+                        <img src={src} alt={`${group.title} รูปที่ ${index + 1}`} loading="lazy" decoding="async" referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                          onError={() => setFailed((prev) => new Set(prev).add(id))} />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
@@ -297,6 +350,39 @@ export default function TrackComplaint() {
                 </p>
               )}
             </section>
+
+            {/* วันนัดเข้าดำเนินการ — เฉพาะเรื่องที่ยังไม่จบ (ฐานข้อมูลไม่ส่งวันนัดของเรื่องที่จบแล้ว) · ไม่ใช่การรับประกันเวลา เจ้าหน้าที่อาจเลื่อน */}
+            {data.appointment && !finished && (
+              <section className={`${card} space-y-1`} aria-labelledby="track-appt-title" data-track-appointment>
+                <h2 id="track-appt-title" className={sectionLabel}>นัดเข้าดำเนินการ</h2>
+                <p className="text-base font-bold text-gray-800">{appointmentText(data.appointment)}</p>
+                {data.appointment.note && (
+                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words bg-teal-50 border border-teal-100 rounded-xl px-3 py-2">{data.appointment.note}</p>
+                )}
+                {data.appointment.after_due && (
+                  <p className="text-xs text-gray-500">นัดหลังวันกำหนดเสร็จ</p>
+                )}
+                {/* past = วันนัดผ่านไปแล้วแต่เรื่องยังไม่ปิด (ฐานข้อมูลคำนวณตามเวลาไทย) — บอกตรงๆ ไม่ให้ผู้แจ้งรอเก้อ */}
+                {data.appointment.past && (
+                  <p className="text-xs text-amber-700">วันนัดผ่านมาแล้ว เจ้าหน้าที่ยังไม่ได้บันทึกผล หากยังไม่มีผู้เข้ามาดำเนินการ โปรดติดต่อสำนักงาน</p>
+                )}
+              </section>
+            )}
+            {!data.appointment && data.requires_appointment && !finished && !rejected && !parked && !data.is_adhoc && (
+              <section className={`${card} space-y-1`} aria-labelledby="track-appt-wait-title" data-track-appointment-pending>
+                <h2 id="track-appt-wait-title" className={sectionLabel}>นัดเข้าดำเนินการ</h2>
+                <p className="text-sm font-semibold text-gray-700">รอเจ้าหน้าที่ยืนยันวันนัด</p>
+                {readPreferredDate({ preferred_date: data.preferred_date }) && (
+                  <p className="text-xs text-gray-500">วันที่ท่านสะดวก: {formatApptDate(data.preferred_date)}</p>
+                )}
+              </section>
+            )}
+
+            {data.fee && (
+              <FeeRatesCard rates={data.fee.rates} reference={data.fee.reference} />
+            )}
+
+            <PhotosCard photos={normalizeTrackPhotos(data.photos)} />
 
             {justReopened && !finished && (
               <Notice tone="amber">ส่งเรื่องกลับให้เจ้าหน้าที่แล้ว จะดำเนินการต่อและอัปเดตสถานะที่หน้านี้</Notice>
