@@ -1,0 +1,27 @@
+// หมวดคำร้องสำรอง — ใช้เมื่อ อปท. ยังไม่ตั้ง complaint_categories ของตัวเอง (ตรงกับที่หน้า /complaint แสดง)
+// ใช้ร่วมกันระหว่างหน้าเลือกหมวด (ComplaintCategory.jsx) กับหน้าค้นหาบริการ (ServiceSearchPage.jsx) ไม่ให้รายการเพี้ยนจากกัน
+export const DEFAULT_COMPLAINT_CATEGORIES = [
+  { value: 'light',            label: 'ไฟฟ้าสาธารณะ' },
+  { value: 'drain',            label: 'ท่อระบายน้ำ' },
+  { value: 'manhole',          label: 'ฝาท่อระบายน้ำ' },
+  { value: 'trash',            label: 'ขยะ / ความสะอาด' },
+  { value: 'waste_water',      label: 'น้ำเสีย' },
+  { value: 'suction',          label: 'ดูดสิ่งปฏิกูล' },
+  { value: 'canal',            label: 'ลอกคลอง' },
+  { value: 'road',             label: 'ถนน / ทางเท้า' },
+  { value: 'noise',            label: 'แจ้งเหตุรำคาญ' },
+  { value: 'flood',            label: 'น้ำท่วม / ระบายน้ำ' },
+  { value: 'building',         label: 'ตรวจสอบอาคาร' },
+  { value: 'mosquito',         label: 'พ่นยุง' },
+  { value: 'disease',          label: 'ควบคุมโรคติดต่อ' },
+  { value: 'pollution',        label: 'กลิ่น / ควัน / มลพิษ' },
+  { value: 'odor',             label: 'กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)' },
+  { value: 'grievance',        label: 'แจ้งเรื่องร้องทุกข์ร้องเรียน' },
+  { value: 'corruption',       label: 'แจ้งการทุจริต' },
+  { value: 'tax',              label: 'ภาษีและค่าธรรมเนียม' },
+  { value: 'tree',             label: 'ตัดต้นไม้' },
+  { value: 'water_supply',     label: 'สนับสนุนน้ำอุปโภค' },
+  { value: 'animals',          label: 'สุนัขจรจัด' },
+  { value: 'phone_complaint',  label: 'ร้องเรียนเสียง' },
+  { value: 'other',            label: 'อื่นๆ' },
+]

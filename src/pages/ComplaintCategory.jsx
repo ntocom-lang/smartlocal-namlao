@@ -12,6 +12,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { CategoryIcon } from '../lib/categoryIcon'
 import { moduleHiddenCategoryValues, withoutModuleHiddenCategories } from '../lib/complaintCategoryModules'
 import { withoutOfficialsOnlyCategories } from '../lib/serviceAudience'
+import { DEFAULT_COMPLAINT_CATEGORIES } from '../lib/complaintCategoryDefaults'
 
 
 const FALLBACK_ICON = {
@@ -43,32 +44,6 @@ const FALLBACK_COLOR = {
   pollution: '#6b7280', disease: '#ec4899', odor: '#84cc16', other: '#9ca3af',
 }
 
-const DEFAULT_CATEGORIES = [
-  { value: 'light',            label: 'ไฟฟ้าสาธารณะ' },
-  { value: 'drain',            label: 'ท่อระบายน้ำ' },
-  { value: 'manhole',          label: 'ฝาท่อระบายน้ำ' },
-  { value: 'trash',            label: 'ขยะ / ความสะอาด' },
-  { value: 'waste_water',      label: 'น้ำเสีย' },
-  { value: 'suction',          label: 'ดูดสิ่งปฏิกูล' },
-  { value: 'canal',            label: 'ลอกคลอง' },
-  { value: 'road',             label: 'ถนน / ทางเท้า' },
-  { value: 'noise',            label: 'แจ้งเหตุรำคาญ' },
-  { value: 'flood',            label: 'น้ำท่วม / ระบายน้ำ' },
-  { value: 'building',         label: 'ตรวจสอบอาคาร' },
-  { value: 'mosquito',         label: 'พ่นยุง' },
-  { value: 'disease',          label: 'ควบคุมโรคติดต่อ' },
-  { value: 'pollution',        label: 'กลิ่น / ควัน / มลพิษ' },
-  { value: 'odor',             label: 'กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)' },
-  { value: 'grievance',        label: 'แจ้งเรื่องร้องทุกข์ร้องเรียน' },
-  { value: 'corruption',       label: 'แจ้งการทุจริต' },
-  { value: 'tax',              label: 'ภาษีและค่าธรรมเนียม' },
-  { value: 'tree',             label: 'ตัดต้นไม้' },
-  { value: 'water_supply',     label: 'สนับสนุนน้ำอุปโภค' },
-  { value: 'animals',          label: 'สุนัขจรจัด' },
-  { value: 'phone_complaint',  label: 'ร้องเรียนเสียง' },
-  { value: 'other',            label: 'อื่นๆ' },
-]
-
 export default function ComplaintCategory() {
   const { tenant, isModuleEnabled } = useTenant()
   const { role } = useAuth()
@@ -85,9 +60,9 @@ export default function ComplaintCategory() {
       .eq('is_active', true)
       .order('sort_order')
       .then(({ data }) => {
-        setCategories(data && data.length > 0 ? data : DEFAULT_CATEGORIES)
+        setCategories(data && data.length > 0 ? data : DEFAULT_COMPLAINT_CATEGORIES)
       })
-      .catch(() => setCategories(DEFAULT_CATEGORIES))
+      .catch(() => setCategories(DEFAULT_COMPLAINT_CATEGORIES))
       .finally(() => setLoading(false))
   }, [tenant?.id])
 

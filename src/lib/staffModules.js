@@ -40,6 +40,9 @@ export const MODULE_GROUPS = [
       // check:uniform จะเตือนว่า อปท. อื่นขาดคีย์นี้ ซึ่งถูกต้องตามตั้งใจ · การ์ดฝั่งประชาชนยังต้องมีกองทุน
       // ในทะเบียนด้วย ติ๊กคีย์อย่างเดียวไม่พอ ไม่งั้นประชาชนยื่นคำขอแล้วไม่มีหน่วยงานปลายทางรับเรื่อง
       { key: 'patient-transport', label: 'รถรับ-ส่งผู้ป่วย', desc: 'รับเรื่อง จัดคิวรถ และออกหนังสือนำส่งกองทุนเจ้าของรถ — ต้องเพิ่มกองทุนในทะเบียนหน่วยงานรับเรื่องต่อก่อนเปิด' },
+      // เพิ่ม 2569-11-17 — หน้าค้นหาบริการ + คำถามที่พบบ่อย + คลังแบบฟอร์มดาวน์โหลด (/search)
+      // คีย์ถูกเติมให้ทุกแถวใน DB ที่ supabase/migrations/20261203100200_service_help_module_key.sql (ต้อง apply ก่อน deploy)
+      { key: 'service-help', label: 'ค้นหาบริการ/คำถาม/แบบฟอร์ม', desc: 'หน้าค้นหาบริการ คำถามที่พบบ่อย และคลังแบบฟอร์มดาวน์โหลดสำหรับประชาชน' },
     ],
   },
   {
@@ -117,7 +120,8 @@ export const MANAGED_MODULE_KEYS = MODULE_GROUPS.flatMap(g => g.items.map(m => m
 // path ที่มีพารามิเตอร์ให้ใส่แบบมี prefix เช่น '/tourism' ครอบ '/tourism/:id' ด้วย (เทียบแบบ startsWith)
 //
 // หน้าที่ "ไม่" อยู่ในตารางนี้คือหน้าพื้นฐานที่ทุก อปท. ต้องมีเสมอไม่ว่าซื้อโมดูลไหน
-// (หน้าแรก, เข้าสู่ระบบ, โปรไฟล์, ติดต่อเรา, เหตุฉุกเฉิน, ค้นหา, เมนูอื่นๆ)
+// (หน้าแรก, เข้าสู่ระบบ, โปรไฟล์, ติดต่อเรา, เหตุฉุกเฉิน, เมนูอื่นๆ)
+// ('/search' เคยเป็นหน้าพื้นฐานที่ redirect ไปหน้าแรก — 2569-11-17 เป็นหน้าค้นหาบริการของโมดูล 'service-help')
 export const MODULE_ROUTES = {
   complaints: ['/complaint', '/complaint-legacy', '/my-complaints', '/reports/complaints', '/satisfaction'],
   inbox: ['/doc-request', '/my-docs', '/request'],
@@ -132,6 +136,7 @@ export const MODULE_ROUTES = {
   // /doc-request ยังอยู่ใต้ inbox — ชนิดคำขอ patient_transport_request ถูกซ่อนด้วย
   // DOCUMENT_TYPE_MODULES ใน documentTypes.js แทน (ปิดทั้ง /doc-request ไม่ได้ เพราะมีคำขออื่นอยู่)
   'patient-transport': ['/patient-transport', '/staff/patient-transport'],
+  'service-help': ['/search'],
 }
 
 // path → คีย์โมดูลที่คุมมัน (null = หน้าพื้นฐาน ไม่ผูกกับโมดูลไหน เปิดเสมอ)
