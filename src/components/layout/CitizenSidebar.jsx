@@ -3,7 +3,7 @@ import {
   Home, ClipboardList, FileText, CalendarDays, Newspaper,
   MapPin, FileSearch, FolderOpen, Bell,
   Phone, AlertCircle, BookUser, LogIn, LogOut, LayoutGrid, Database, Trash2, CloudRain, ChartColumn,
-  UserRound, FileSignature, ShieldCheck, Briefcase, Search,
+  UserRound, FileSignature, ShieldCheck, Briefcase, Search, CalendarClock,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTenant } from '../../contexts/TenantContext'
@@ -26,6 +26,8 @@ export const NAV_GROUPS = [
       { label: 'งานบริการประชาชน', href: '/doc-request', Icon: FileText, color: '#8b5cf6' },
       // ค้นหาบริการ + คำถามที่พบบ่อย + แบบฟอร์มดาวน์โหลด (โมดูล service-help ผ่าน moduleForPath) — ชื่อต้องตรง PAGE_CATALOG ใน siteOpenStats.js
       { label: 'ค้นหาบริการ/แบบฟอร์ม', href: '/search', Icon: Search, color: '#0891b2' },
+      // จองคิวรับบริการ (E2) — moduleForPath กรองให้: โผล่เฉพาะ อปท. ที่เปิดโมดูล queue-booking
+      { label: 'จองคิวรับบริการ', href: '/queue-booking', Icon: CalendarClock, color: '#7c3aed' },
       { label: 'ตารางวันเก็บขยะ', href: '/waste',       Icon: Trash2, color: '#15803d' },
       { label: 'สถานการณ์น้ำ-ฝน', href: '/water-situation', Icon: CloudRain, color: '#0284c7' },
       { label: 'ปฏิทินกิจกรรม',   href: '/events',      Icon: CalendarDays, color: '#10b981' },

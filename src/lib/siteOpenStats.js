@@ -155,6 +155,7 @@ export const PAGE_CATALOG = [
   // ชื่อเมนูในแถบข้างต้องตรงกับที่นี่ตัวอักษรต่อตัวอักษร (เทสต์ตรวจกับ CitizenSidebar.jsx) — เดิม /search เป็นทางผ่าน redirect ไม่นับ
   { key: 'search',             path: '/search',              label: 'ค้นหาบริการ/แบบฟอร์ม',                  kind: 'info' },
   { key: 'patient-transport',  path: '/patient-transport',   label: 'จองรถรับ-ส่งผู้ป่วย',                   kind: 'service' },
+  { key: 'queue-booking',      path: '/queue-booking',       label: 'จองคิวรับบริการ',                       kind: 'service' },
   { key: 'business-register',  path: '/business-register',   label: 'ลงทะเบียนร้านค้า',                      kind: 'service' },
   { key: 'satisfaction',       path: '/satisfaction',        label: 'ประเมินความพึงพอใจ',                   kind: 'service' },
   { key: 'surveys',            path: '/surveys',             label: 'แบบสำรวจความเห็น (รายการ)',             kind: 'service' },

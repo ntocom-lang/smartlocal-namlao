@@ -86,6 +86,7 @@ const AssetBorrowRequestWizard = lazy(() => import('./AssetBorrowRequestWizard')
 const AssetBorrowRequestPanel = lazy(() => import('../components/staff/AssetBorrowRequestPanel'))
 const PatientTransportPanel = lazy(() => import('../components/staff/PatientTransportPanel'))
 const PatientTransportStaff = lazy(() => import('./PatientTransportStaff'))
+const QueueBookingStaff = lazy(() => import('../components/staff/QueueBookingStaff'))
 const StaffPerformanceModule = lazy(() => import('../components/staff/StaffPerformanceModule'))
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -3012,6 +3013,7 @@ export default function StaffDashboard() {
             {activeModule === 'licence-registry' && visibleModules.some(m => m.key === 'licence-registry') && <LicenceModule tenant={tenant} profile={profile} />}
             {activeModule === 'water-events' && visibleModules.some(m => m.key === 'water-events') && <WaterEventsPanel tenant={tenant} profile={profile} />}
             {activeModule === PATIENT_TRANSPORT_MODULE_KEY && <PatientTransportStaff onBack={() => setActiveModule('home')} />}
+            {activeModule === 'queue-booking' && visibleModules.some(m => m.key === 'queue-booking') && <QueueBookingStaff tenant={tenant} currentUserRole={role} />}
             {activeModule === 'borrowable-assets' && (
               <BorrowableAssetsManager tenant={tenant}
                 assetRole={role === 'admin' || role === 'superadmin' ? 'asset_admin' : profile?.asset_role}

@@ -94,6 +94,8 @@
     "test:advisor": "node tests/superadmin-advisor.test.mjs && node tests/superadmin-advisor-core.test.mjs && node tests/superadmin-advisor-routing.test.mjs",
     "test:advisor:db": "node tests/superadmin-advisor-db.test.mjs --pglite",
     "test:advisor:slots-db": "node tests/advisor-slots-db.test.mjs --pglite",
+    "test:queue-booking": "node tests/queue-booking.test.mjs",
+    "test:queue-booking:db": "node tests/queue-booking-db.test.mjs --pglite",
     "test:signing-setup": "node tests/signing-setup.playwright.mjs",
     "test:departments-tab": "node tests/admin-departments-tab.test.mjs",
     "test:waste-schedule": "node tests/waste-schedule.test.mjs && node tests/waste-schedule-poster.test.mjs",

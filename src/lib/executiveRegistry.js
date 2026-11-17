@@ -217,6 +217,13 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     ],
     alerts: [], reports: [],
   },
+  {
+    // ยังไม่มี RPC สรุป (summaryKey null) — ไม่ใส่ kpi จนกว่าจะมีแหล่งข้อมูลที่ตรวจสิทธิ์แล้ว · ค่าเริ่มต้นปิด เปิดรายหน่วยงาน
+    key: 'queue-booking', kind: 'module', label: 'จองคิวรับบริการ', icon: 'CalendarClock', dept: null,
+    zones: ['service'], isCitizenService: true, docTypes: [], summaryKey: null, phase: 'E1',
+    link: { module: 'queue-booking' },
+    kpis: [], alerts: [], reports: [],
+  },
 
   // ───────────── ① รอตัดสินใจ + ③ เตือน + ⑤ แผน ─────────────
   {

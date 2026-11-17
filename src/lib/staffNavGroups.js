@@ -5,7 +5,7 @@
 import {
   FileText, MessageSquareWarning, CalendarDays, Images, Luggage, Star, Car, Trash2, Database, BookOpen,
   PackageOpen, Ambulance, ClipboardCheck, CloudRain, HardHat, ClipboardList, Hammer, TrendingUp, ChartColumn, LayoutDashboard,
-  HeartHandshake, Megaphone, Layers, Building2, Banknote, GraduationCap, ShieldCheck, FileCheck2, FileDown,
+  HeartHandshake, Megaphone, Layers, Building2, Banknote, GraduationCap, ShieldCheck, FileCheck2, FileDown, CalendarClock,
 } from 'lucide-react'
 import { PATIENT_TRANSPORT_MODULE_KEY } from './patientTransport'
 
@@ -34,6 +34,8 @@ export const STANDALONE_GROUPS = [
       // ยังใช้ได้ แต่เป็นทางลัดที่พามาเปิดโมดูลนี้ในโครงเดิม ไม่ใช่หน้าลอยแยก
       // คีย์อยู่ใน MANAGED_MODULE_KEYS จึงโผล่เฉพาะ อปท. ที่เปิดโมดูลนี้ — เดิมเป็นปุ่มฝังบนหัวหน้าจอ
       { key: PATIENT_TRANSPORT_MODULE_KEY, label: 'รถรับ-ส่งผู้ป่วย', Icon: Ambulance, color: '#0284c7', bg: '#e0f2fe', desc: 'รับเรื่อง จัดคิวรถ และออกหนังสือนำส่งกองทุน' },
+      // จองคิวรับบริการ (E2) — ค่าเริ่มต้นปิด เปิดที่หน้าจัดการโมดูล · เจ้าหน้าที่กองที่ถือเรื่องเห็นคิว · แท็บตั้งค่าบริการเฉพาะแอดมิน
+      { key: 'queue-booking', label: 'จองคิวรับบริการ', Icon: CalendarClock, color: '#7c3aed', bg: '#ede9fe', desc: 'ประชาชนจองวัน-เวลามารับบริการ เจ้าหน้าที่ดูคิวรายวันและบันทึกมาแล้ว/ไม่มา' },
     ],
   },
   {

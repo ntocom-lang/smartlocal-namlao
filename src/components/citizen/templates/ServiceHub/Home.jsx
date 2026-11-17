@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { useAuth } from '../../../../contexts/AuthContext'
-import { Wifi, Users, MapPinned, Compass, Phone, BookUser, ChevronRight, Ambulance, CalendarDays, Droplets, CloudRain } from 'lucide-react'
+import { Wifi, Users, MapPinned, Compass, Phone, BookUser, ChevronRight, Ambulance, CalendarDays, CalendarClock, Droplets, CloudRain } from 'lucide-react'
 import { supabase } from '../../../../lib/supabase'
 import { PATIENT_TRANSPORT_MODULE_KEY } from '../../../../lib/patientTransport'
+import { QUEUE_BOOKING_MODULE_KEY } from '../../../../lib/queueBooking'
 import { selectableDocumentTypes } from '../../../../lib/documentTypes'
 import BannerSlider from '../../../../components/home/BannerSlider'
 import WaterAlertBanner from '../../WaterAlertBanner'
@@ -53,6 +54,7 @@ function FeaturedServices() {
   const { tenant, isModuleEnabled } = useTenant()
   const [bookingTenantId, setBookingTenantId] = useState(null)
   const transportEnabled = !isModuleEnabled || isModuleEnabled(PATIENT_TRANSPORT_MODULE_KEY)
+  const queueEnabled = !isModuleEnabled || isModuleEnabled(QUEUE_BOOKING_MODULE_KEY)
   const wasteEnabled = !isModuleEnabled || isModuleEnabled('waste')
   const waterSituationEnabled = !isModuleEnabled || isModuleEnabled('water-situation')
 
@@ -77,6 +79,14 @@ function FeaturedServices() {
     description: 'จองรถไปโรงพยาบาล',
     icon: Ambulance,
     background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 55%, #075985 100%)',
+  })
+  // จองคิวรับบริการ (E2) — ค่าเริ่มต้นปิด โผล่เมื่อ อปท. เปิดโมดูล queue-booking · หน้าปลายทางบังคับล็อกอินเอง
+  if (queueEnabled && tenant?.id) services.push({
+    href: '/queue-booking',
+    label: 'จองคิวรับบริการ',
+    description: 'จองวัน-เวลามาติดต่อหน่วยงาน',
+    icon: CalendarClock,
+    background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%)',
   })
   if (wasteEnabled) services.push({
     href: '/waste',

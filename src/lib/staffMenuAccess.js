@@ -19,7 +19,7 @@ export const PERFORMANCE_ROLES = ['technician', 'staff', 'officer', 'admin', 'su
  * ⚠️ ต้องตรงกับ StaffDashboard.jsx — tests/staff-menu-access.test.mjs ไล่เทียบจากซอร์สให้ ล้มถ้าเพิ่ม/ลบเมนูแล้วลืมแก้ที่นี่
  */
 export const STAFF_MENU_MODULE_KEYS = Object.freeze([
-  'complaints', 'inbox', PATIENT_TRANSPORT_MODULE_KEY,
+  'complaints', 'inbox', PATIENT_TRANSPORT_MODULE_KEY, 'queue-booking',
   'events', 'posts', 'service-help', 'tourism', 'tourism-reviews',
   'report', 'performance', 'data-center', 'fleet', 'borrowable-assets',
   'manual-staff',
