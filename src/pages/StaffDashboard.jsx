@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react'
+import { Fragment, lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { categoryNameOf } from '../lib/complaintCategoryLabels.js'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
@@ -230,6 +230,42 @@ const OPEN_REQUEST_STATUSES = ['pending', 'processing']
 function isOverdue(req) {
   if (!req?.due_date || !OPEN_REQUEST_STATUSES.includes(req.status)) return false
   return String(req.due_date).slice(0, 10) < todayISOInBangkok()
+}
+
+// ─── จัดกลุ่ม "ยังไม่เสร็จ / เสร็จสิ้นแล้ว" ในกล่องงานคำขอ (แบบเดียวกับหน้าคำร้อง ComplaintsManager) ─────
+// เจ้าหน้าที่เปิดหน้านี้เพื่อหางานที่ต้องทำต่อ เรื่องที่จบแล้วจึงลงไปอยู่ท้ายรายการเสมอ ไม่ปนกับงานค้าง
+// ปฏิเสธ (รวมประชาชนถอนเอง ซึ่งบันทึกเป็น 'rejected') นับเป็น "เสร็จสิ้นแล้ว" เพราะไม่มีงานให้ทำต่อ —
+// ป้ายสถานะในแถวยังบอกความต่างอยู่ · สถานะที่ไม่รู้จักนับเป็น "ยังไม่เสร็จ" (ซ่อนงานค้างอันตรายกว่า)
+const SETTLED_REQUEST_STATUSES = ['completed', 'rejected', 'cancelled']
+function requestGroupKey(req) {
+  return SETTLED_REQUEST_STATUSES.includes(req?.status) ? 'settled' : 'open'
+}
+// ยังไม่เสร็จ: วันครบกำหนดก่อน (เกินกำหนดอยู่บนสุด) ไม่มีวันครบกำหนดไปท้ายกลุ่มแล้วเรียงเก่าก่อน
+// เสร็จสิ้นแล้ว: ใหม่สุดก่อน ใช้ดูย้อนหลังว่าเพิ่งปิดเรื่องอะไรไป · due_date เป็น 'YYYY-MM-DD' เทียบสตริงได้ตรง
+function compareRequestRows(a, b) {
+  const ga = requestGroupKey(a)
+  const gb = requestGroupKey(b)
+  if (ga !== gb) return ga === 'open' ? -1 : 1
+  if (ga === 'settled') return new Date(b.created_at) - new Date(a.created_at)
+  const da = a.due_date ? String(a.due_date).slice(0, 10) : ''
+  const db = b.due_date ? String(b.due_date).slice(0, 10) : ''
+  if (da && db && da !== db) return da < db ? -1 : 1
+  if (da && !db) return -1
+  if (!da && db) return 1
+  return new Date(a.created_at) - new Date(b.created_at)
+}
+const REQUEST_GROUP = {
+  open:    { label: 'ยังไม่เสร็จ',   dot: '#f59e0b', bg: '#fff7ed', text: '#92400e' },
+  settled: { label: 'เสร็จสิ้นแล้ว', dot: '#10b981', bg: '#ecfdf5', text: '#065f46' },
+}
+function RequestGroupLabel({ groupKey, count }) {
+  const g = REQUEST_GROUP[groupKey]
+  return (
+    <span className="inline-flex items-center gap-2 text-xs font-bold" style={{ color: g.text }}>
+      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: g.dot }} />
+      {g.label} ({count})
+    </span>
+  )
 }
 
 // ─── Shared components ────────────────────────────────────────────────────────
@@ -1272,13 +1308,22 @@ export function InboxModule({ tenant, staffId, currentUserRole, onRequestDeleted
     all:        requests.length,
   }
   const byTab    = activeTab === 'all' ? requests : requests.filter(r => r.status === activeTab)
-  const filtered = search.trim()
+  // สำเนาก่อนเรียง ([...] ไม่ใช้ toSorted — มือถือ/เบราว์เซอร์เก่าของเจ้าหน้าที่บางเครื่องยังไม่มี)
+  const filtered = [...(search.trim()
     ? byTab.filter(r => {
         const q = search.toLowerCase()
         const docLabel = (getAllDocTypes().find(d => d.value === r.document_type)?.label ?? '').toLowerCase()
         return r.requester_name?.toLowerCase().includes(q) || docLabel.includes(q)
       })
     : byTab
+  )].sort(compareRequestRows)
+  // นับจากรายการที่กรองแล้ว หัวกลุ่มจึงบอกยอดจริงของแท็บ/คำค้นนั้น
+  const groupCounts = {
+    open:    filtered.filter(r => requestGroupKey(r) === 'open').length,
+    settled: filtered.filter(r => requestGroupKey(r) === 'settled').length,
+  }
+  // หัวกลุ่มขึ้นก่อนแถวแรกของแต่ละกลุ่ม (รายการเรียงกลุ่มไว้แล้ว)
+  const isGroupStart = idx => idx === 0 || requestGroupKey(filtered[idx]) !== requestGroupKey(filtered[idx - 1])
 
   return (
     <div className="space-y-4">
@@ -1406,7 +1451,15 @@ export function InboxModule({ tenant, staffId, currentUserRole, onRequestDeleted
                 {filtered.map((req, idx) => {
                   const docType = getAllDocTypes().find(d => d.value === req.document_type)
                   return (
-                    <tr key={req.id}
+                    <Fragment key={req.id}>
+                    {isGroupStart(idx) && (
+                      <tr style={{ backgroundColor: REQUEST_GROUP[requestGroupKey(req)].bg }}>
+                        <td colSpan={7} className="px-3 py-1.5">
+                          <RequestGroupLabel groupKey={requestGroupKey(req)} count={groupCounts[requestGroupKey(req)]} />
+                        </td>
+                      </tr>
+                    )}
+                    <tr
                       className="cursor-pointer transition-colors"
                       style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
                       onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
@@ -1475,6 +1528,7 @@ export function InboxModule({ tenant, staffId, currentUserRole, onRequestDeleted
                         </div>
                       </td>
                     </tr>
+                    </Fragment>
                   )
                 })}
               </tbody>
@@ -1483,8 +1537,16 @@ export function InboxModule({ tenant, staffId, currentUserRole, onRequestDeleted
 
           {/* Mobile — cards */}
           <div className="md:hidden space-y-2">
-            {filtered.map(req => (
-              <TaskCard key={req.id} req={req} onClick={() => setSelected(req)} />
+            {filtered.map((req, idx) => (
+              <Fragment key={req.id}>
+                {isGroupStart(idx) && (
+                  <div className={'rounded-xl px-3 py-2' + (idx > 0 ? ' mt-4' : '')}
+                    style={{ backgroundColor: REQUEST_GROUP[requestGroupKey(req)].bg }}>
+                    <RequestGroupLabel groupKey={requestGroupKey(req)} count={groupCounts[requestGroupKey(req)]} />
+                  </div>
+                )}
+                <TaskCard req={req} onClick={() => setSelected(req)} />
+              </Fragment>
             ))}
           </div>
         </>
