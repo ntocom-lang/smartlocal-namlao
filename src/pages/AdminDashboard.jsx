@@ -22,6 +22,7 @@ import { fileToIconDataUrl, isIconImage, ICON_UPLOAD_ACCEPT, ICON_IMAGE_MAX_PX }
 import { compressImage } from '../lib/imageUtils'
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from '../lib/govDocStyle.js'
 import { printableCategoryLabel, categoryNameOf } from '../lib/complaintCategoryLabels.js'
+import { rerouteConfirmText } from '../lib/complaintCategoryChange.js'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { ratingSource } from '../lib/complaintRatingResponseRate'
 import EserviceRatingSummary from '../components/admin/EserviceRatingSummary'
@@ -4054,6 +4055,8 @@ function CategoryManager({ tenant }) {
       await Promise.all(ops)
       setRowDrafts((prev) => { const n = { ...prev }; delete n[cat.value]; return n })
       setError(null)
+      // ถามหลังผู้รับผิดชอบประจำประเภท (ถ้าแก้พร้อมกัน) บันทึกเสร็จแล้ว — RPC ใช้คนนั้นเป็นผู้รับผิดชอบของเรื่องที่ย้าย
+      if (departmentChanged && d.department_id) await offerRerouteOpenComplaints(cat)
     } catch (saveError) {
       setError('บันทึกประเภทคำร้องไม่สำเร็จ: ' + saveError.message)
     } finally {
@@ -4148,6 +4151,32 @@ function CategoryManager({ tenant }) {
     }
     setError(null)
     setCats((prev) => prev.map((item) => item.id === cat.id ? { ...item, department_id: departmentId || null } : item))
+    if (departmentId) await offerRerouteOpenComplaints(cat)
+  }
+
+  // แก้กองของประเภทแล้ว เดิมมีผลเฉพาะคำร้องใหม่ เรื่องที่ค้างอยู่ยังติดกองเดิม → ใบพิมพ์ขึ้นชื่อกองเดิม
+  // + ช่องลงนามหัวหน้ากองเดิม (เคส ES-69-0034 น้ำเลา 2569-11-18) ถามแอดมินครั้งเดียวแล้วให้ระบบย้ายให้
+  // นับก่อนด้วย p_apply=false ไม่มีเรื่องค้าง = ไม่ถาม · เรื่องที่เสร็จแล้วไม่แตะ (DB กันอีกชั้น)
+  async function offerRerouteOpenComplaints(cat) {
+    const { data: preview, error: previewError } = await supabase.rpc('reroute_category_open_complaints', {
+      p_municipality_id: tenant.id, p_category: cat.value, p_apply: false,
+    })
+    if (previewError) {
+      setError('บันทึกกองแล้ว แต่ตรวจคำร้องค้างของประเภทนี้ไม่ได้: ' + previewError.message)
+      return
+    }
+    const question = rerouteConfirmText(preview, cat.label)
+    if (!question || !window.confirm(question)) return
+    setSavingAssign(cat.value)
+    const { data: moved, error: moveError } = await supabase.rpc('reroute_category_open_complaints', {
+      p_municipality_id: tenant.id, p_category: cat.value, p_apply: true,
+    })
+    setSavingAssign(null)
+    if (moveError) {
+      setError('ย้ายคำร้องค้างไม่สำเร็จ (ไม่มีเรื่องไหนถูกย้าย): ' + moveError.message)
+      return
+    }
+    window.alert(`ย้ายคำร้องที่ยังไม่เสร็จ ${moved?.moved ?? 0} เรื่องไป${moved?.department ?? 'กองใหม่'}แล้ว\nเรื่องที่ไม่มีผู้รับผิดชอบในกองใหม่ กลับเข้าคิว "รอรับเรื่อง" ให้มอบหมายใหม่`)
   }
 
   async function handleTechChange(catValue, techId) {

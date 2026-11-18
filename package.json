@@ -186,6 +186,8 @@
     "test:telegram-dm-db": "node tests/telegram-dm-db.test.mjs",
     "test:complaint-parked": "node tests/complaint-parked.test.mjs",
     "test:complaint-parked-db": "node tests/complaint-parked-db.test.mjs",
+    "test:complaint-category-change": "node tests/complaint-category-change.test.mjs",
+    "test:complaint-category-change:db": "node tests/complaint-change-category-db.test.mjs --pglite",
     "test:complaint-track": "node tests/complaint-track.test.mjs",
     "test:inquiry": "node tests/inquiry-category.test.mjs",
     "test:complaint-track-browser": "node tests/complaint-track-browser.playwright.mjs",

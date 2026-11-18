@@ -2334,6 +2334,8 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
             departmentScoped={seesWholeDepartment}
             onFinished={() => loadAssignedComplaints()}
             onParkChanged={() => loadAssignedComplaints()}
+            // แก้ประเภทแล้วเรื่องอาจย้ายออกจากกองนี้ — โหลดใหม่ทั้งรายการ ไม่แก้แถวเอง
+            onCategoryChanged={() => loadAssignedComplaints()}
             onTextSaved={(id, patch) => setComplaints((prev) => prev.map((row) => row.id === id ? { ...row, ...patch } : row))}
           />
         </Suspense>
