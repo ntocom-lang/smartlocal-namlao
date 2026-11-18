@@ -326,8 +326,12 @@ await test('Bill Payment: Ref1+ยอดตรง = จับคู่เอง 
   const unmatched = (await listTxns('financeA', 'unmatched')).rows
   const wrongAmount = unmatched.find(r => r.ref1 === d2.ref1)
   assert.match(wrongAmount.hint, /ยอดเงินไม่เท่ายอดค้าง \(500\.00 บาท\)/)
-  assert.match(unmatched.find(r => r.ref1 === UNKNOWN_REF).hint, /ไม่พบ Ref1/)
-  assert.match(unmatched.find(r => r.ref1_foreign).hint, /ไม่ใช่รูปแบบของระบบนี้/)
+  // ผลตรวจรอบ 2 L-4: Ref1 รูปแบบถูกแต่ไม่มียอดใน อปท. นี้ (เช่นเบอร์โทรที่บังเอิญผ่าน Luhn) ก็ไม่เก็บ
+  const unknown = unmatched.find(r => Number(r.amount) === 1000)
+  assert.deepEqual([unknown.ref1, unknown.ref1_foreign], [null, true])
+  assert.match(unknown.hint, /ไม่ใช่ Ref1 ของยอดในระบบนี้/)
+  assert.ok(!JSON.stringify(await rows('SELECT * FROM public.payment_bank_txns')).includes(UNKNOWN_REF))
+  assert.equal(unmatched.filter(r => r.ref1_foreign).length, 2)
   const m1 = matched.find(r => r.due.ref1 === d1.ref1)
   const t1 = await txn(m1.id)
   assert.equal(t1.txn_date.toISOString().slice(0, 10), today)
@@ -599,6 +603,50 @@ await test('M-1: บันทึกเลขใบเสร็จก่อนน
   assert.equal(ev.suggested_due_id, dw.id)
   const m = await match('financeA', ev.id, dw.id)
   assert.deepEqual([m.mode, m.status], ['evidence', 'receipted'])
+})
+
+await test('รอบ 2 H-1: Ref1 ใบแจ้งเก่าสแกนซ้ำ / จ่ายเงินสดแล้วจ่ายซ้ำทางแอป → ไม่ถูกซ่อนเป็นหลักฐาน ค้างให้คนเห็น', async () => {
+  // (ก) ยอดรับทาง Bill Payment เมื่อนานแล้ว (นอกช่วง grace) แล้วมีคนสแกน QR ใบแจ้งเดิมจ่ายอีก
+  const LO = await newLicence(hazard.id, { business: 'ร้านใบแจ้งเก่า', no: 'H-12', expires: await day(37), fee: 670 })
+  await sync('staffDG')
+  const [dold] = await dueOf(LO.id)
+  const paidOld = (await receipt('staffDG', dold.id, 'e-LAAS 030/2569', { amount: 670, channel: 'bill_payment' }))[0].r
+  await db.query('UPDATE public.licence_fee_payments SET paid_on = $2 WHERE id = $1', [paidOld.payment_id, await day(-30)])
+  const r1 = await importRows('staffDG', 'bill_payment', [{ txn_at: `${today} 14:00`, amount: 670, ref1: dold.ref1, bank_ref: 'BP-OLD1' }], 'bp-old.csv')
+  assert.deepEqual([r1.auto_matched, r1.auto_evidence, r1.unmatched], [0, 0, 1])
+  const old = (await listTxns('staffDG')).rows.find(x => x.bank_ref === 'BP-OLD1')
+  assert.match(old.hint, /อาจสแกนใบแจ้งเก่าหรือจ่ายซ้ำ/)
+  assert.ok(!old.candidates.some(c => c.id === dold.id), 'ไม่เสนอผูกเป็นหลักฐานของรายการเก่า')
+  // (ข) รับเงินสดที่เคาน์เตอร์ แล้วญาติจ่ายซ้ำผ่านแอปวันเดียวกัน
+  const LC = await newLicence(hazard.id, { business: 'ร้านจ่ายสองทาง', no: 'H-13', expires: await day(38), fee: 680 })
+  await sync('staffDG')
+  const [dc] = await dueOf(LC.id)
+  await receipt('staffDG', dc.id, 'e-LAAS 031/2570', { amount: 680, channel: 'counter' })
+  const r2 = await importRows('staffDG', 'bill_payment', [{ txn_at: `${today} 15:00`, amount: 680, ref1: dc.ref1, bank_ref: 'BP-DUP1' }], 'bp-dup.csv')
+  assert.deepEqual([r2.auto_evidence, r2.unmatched], [0, 1])
+  const dup = (await listTxns('staffDG')).rows.find(x => x.bank_ref === 'BP-DUP1')
+  assert.match(dup.hint, /อาจสแกนใบแจ้งเก่าหรือจ่ายซ้ำ/)
+  assert.deepEqual(dup.candidates, [])
+  await rejects(match('staffDG', dup.id, dc.id), { code: '22023' })
+  // ยอดในห้องผู้บริหารยังนับเป็นเงินที่ยังระบุไม่ได้ (ไม่ถูกซ่อน)
+  assert.ok((await txn(dup.id)).status === 'unmatched')
+})
+
+await test('รอบ 2 M-1: เปิดยอดที่ปิดแล้วกลับ (reopen) — กองคลังทำไม่ได้ · กองที่ถือเรื่องทำได้', async () => {
+  const LR = await newLicence(hazard.id, { business: 'ร้านกองคลังห้ามเปิด', no: 'H-14', expires: await day(20), fee: 690 })
+  await sync('staffDG')
+  const [dr] = await dueOf(LR.id)
+  await db.query('UPDATE public.licences SET expires_on = $2 WHERE id = $1', [LR.id, await day(-9)])
+  await db.query('UPDATE public.payment_dues SET due_on = $2, period_from = $3 WHERE id = $1', [dr.id, await day(-9), await day(-8)])
+  await sync('staffDG')
+  assert.equal((await dueOf(LR.id))[0].status, 'lapsed')
+  await importRows('staffDG', 'account', [{ txn_at: `${await day(-9)} 10:00`, amount: 690 }], 'reopen-finance.csv')
+  const t = (await listTxns('financeA')).rows.find(x => Number(x.amount) === 690)
+  assert.deepEqual(t.candidates.map(c => c.mode), ['reopen'])
+  await rejects(match('financeA', t.id, dr.id), { code: '42501', message: /เฉพาะกองที่ถือเรื่อง/ })
+  assert.equal((await dueOf(LR.id))[0].status, 'lapsed')
+  const r = await match('staffDG', t.id, dr.id)
+  assert.equal(r.mode, 'reopen')
 })
 
 await test('M-2: ยอดที่จับคู่ไว้แต่ใบถูกเพิกถอน → รายการบอกเหตุผลให้ยกเลิกคู่ (ไม่ค้างเงียบ)', async () => {

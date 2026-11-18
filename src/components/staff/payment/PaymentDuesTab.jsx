@@ -58,7 +58,8 @@ function RowActions({ row, txn, waiting, isManager, onReceipt, onPrint, onCancel
       <button type="button" className={waiting ? small : `${small} !border-transparent !bg-emerald-600 !text-white hover:!bg-emerald-700`} onClick={() => onReceipt(row, txn ?? null)}>
         <Receipt size={14} />{waiting ? 'บันทึกเลขใบเสร็จ (เฉพาะเงินที่รับทันวันหมดอายุ)' : 'บันทึกเลขใบเสร็จ'}
       </button>
-      <button type="button" className={small} onClick={() => onPrint([row])}><Printer size={14} />พิมพ์ใบแจ้งชำระ</button>
+      {/* พ้นวันหมดอายุแล้ว = ห้ามพิมพ์ใบแจ้งชำระ (ประชาชนจ่ายตอนนี้ต่ออายุไม่ได้ ต้องคืนเงิน — ผลตรวจรอบ 2 M-3) */}
+      {!waiting && <button type="button" className={small} onClick={() => onPrint([row])}><Printer size={14} />พิมพ์ใบแจ้งชำระ</button>}
       {isManager && <button type="button" className={small} onClick={() => onCancel(row)}><Ban size={14} />ยกเลิกยอด</button>}
     </div>
   )
@@ -77,11 +78,13 @@ export default function PaymentDuesTab({ tab, dues, today, isManager, matchedByD
   const tabRows = useMemo(() => filterByTab(dues, tab), [dues, tab])
   const { rows: shown, ref1Typo } = useMemo(() => searchDues(tabRows, search), [tabRows, search])
   // รายการที่เลือกไว้นับเฉพาะแถวที่ยังอยู่ในแท็บ (หลังบันทึก/ปรับยอด แถวที่หายไปไม่ถูกนับและไม่ถูกพิมพ์)
-  const selectedRows = useMemo(() => tabRows.filter(r => selected.has(r.id)), [tabRows, selected])
+  // ยอดที่พ้นวันหมดอายุ (รอไฟล์ธนาคาร) เลือกพิมพ์ใบแจ้งชำระไม่ได้ (ผลตรวจรอบ 2 M-3)
+  const printable = r => !awaitingBankFile(r, today)
+  const selectedRows = useMemo(() => tabRows.filter(r => selected.has(r.id) && !awaitingBankFile(r, today)), [tabRows, selected, today])
 
   const paged = paginate(shown.map(r => ({ size: 1, r })), perPage, page)
   const canSelect = tab === 'open'
-  const shownIds = shown.map(r => r.id)
+  const shownIds = shown.filter(printable).map(r => r.id)
   const allShownSelected = shownIds.length > 0 && shownIds.every(id => selected.has(id))
   const toggle = id => setSelected(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
   const toggleAll = () => setSelected(prev => {
@@ -122,7 +125,7 @@ export default function PaymentDuesTab({ tab, dues, today, isManager, matchedByD
               <tbody className="divide-y divide-gray-100">
                 {paged.units.map(({ r }) => (
                   <tr key={r.id} className="align-top hover:bg-gray-50">
-                    {canSelect && <td className="px-3 py-3"><input type="checkbox" className="size-4" aria-label={`เลือก ${r.business_name}`} checked={selected.has(r.id)} onChange={() => toggle(r.id)} /></td>}
+                    {canSelect && <td className="px-3 py-3"><input type="checkbox" className="size-4" aria-label={`เลือก ${r.business_name}`} disabled={!printable(r)} checked={printable(r) && selected.has(r.id)} onChange={() => toggle(r.id)} /></td>}
                     <td className="px-3 py-3">
                       <p className="break-words font-semibold text-gray-900">{r.business_name}</p>
                       <p className="break-words text-xs text-gray-500">{r.holder_name}</p>
@@ -142,7 +145,7 @@ export default function PaymentDuesTab({ tab, dues, today, isManager, matchedByD
             {paged.units.map(({ r }) => (
               <li key={r.id} className="space-y-2 px-4 py-3">
                 <div className="flex items-start gap-2">
-                  {canSelect && <input type="checkbox" className="mt-1 size-5 shrink-0" aria-label={`เลือก ${r.business_name}`} checked={selected.has(r.id)} onChange={() => toggle(r.id)} />}
+                  {canSelect && <input type="checkbox" className="mt-1 size-5 shrink-0" aria-label={`เลือก ${r.business_name}`} disabled={!printable(r)} checked={printable(r) && selected.has(r.id)} onChange={() => toggle(r.id)} />}
                   <div className="min-w-0">
                     <p className="break-words font-semibold text-gray-900">{r.business_name}</p>
                     <p className="break-words text-xs text-gray-500">{r.holder_name}</p>

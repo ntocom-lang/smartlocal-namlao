@@ -121,6 +121,8 @@ export function amountDue(due, paidOn) {
  */
 export function buildDueQr(settings, due, today) {
   if (!settings || !due) return null
+  // พ้นวันหมดอายุแล้ว (ระบบรอไฟล์ธนาคาร) = จ่ายตอนนี้ต่ออายุไม่ได้ ต้องคืนเงิน → ไม่ออก QR (ผลตรวจรอบ 2 M-3)
+  if (awaitingBankFile(due, today)) return null
   const channel = qrChannelFor(settings, due.source)
   if (!channel) return null
   const { total, surcharge } = amountDue(due, today)

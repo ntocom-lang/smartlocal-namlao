@@ -122,7 +122,23 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.payment_try_timestamptz(text) FROM PUBLIC, anon, authenticated;
 
+-- ช่วงวันที่ใช้ร่วมกันทั้งไฟล์ (ผลตรวจรอบ 2 L-5 — เปลี่ยนที่นี่ที่เดียว แล้วแก้ข้อความหน้าจอ/สูตรในทะเบียนผู้บริหารให้ตรง)
+--   ระบบรอไฟล์ธนาคารกี่วันหลังวันหมดอายุก่อนปิดยอดต่ออายุ (เจ้าของยืนยัน 7 วัน 2026-11-19)
+--   และเงินเข้าห่างจากวันที่บันทึกรับเงินได้ไม่เกินกี่วัน ถึงจะผูกเป็นหลักฐานของรายการนั้นได้ (โหมด evidence)
+CREATE OR REPLACE FUNCTION public.payment_bank_grace_days()
+RETURNS integer
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog
+AS $$ SELECT 7 $$;
+REVOKE ALL ON FUNCTION public.payment_bank_grace_days() FROM PUBLIC, anon, authenticated;
+
 -- โหมดการจับคู่ของ "เงินเข้า (วันที่/ยอด)" กับยอดหนึ่ง — NULL = จับคู่ไม่ได้ (ดูหัวไฟล์)
+--   ขอบล่างของวันเงินเข้า = ด่านเดียวกับ licence_record_fee (ผลตรวจรอบ 2 L-3) — เงินเก่าที่ยอดบังเอิญเท่ากันไม่ถูกเสนอ
+--     ต่ออายุ: ไม่ก่อนวันเริ่มรอบปัจจุบันของใบ และไม่ก่อนช่วงที่ข้อบัญญัติให้ชำระ (renewal_window_days ถ้าตั้งไว้)
+--     รายปี: ไม่ก่อนวันครบกำหนด − 12 เดือน
+--   evidence (ผลตรวจรอบ 2 H-1): เฉพาะรายการรับเงินที่ไม่ใช่เงินสดที่เคาน์เตอร์ และวันเงินเข้าห่างวันรับเงินไม่เกิน grace วัน
+--     — ใบแจ้งปีก่อนที่ถูกสแกนซ้ำ / จ่ายซ้ำหลังจ่ายเงินสด ต้องค้างเป็น "ยังระบุไม่ได้" ให้คนเห็น ไม่ถูกซ่อนเป็นหลักฐาน
 CREATE OR REPLACE FUNCTION public.payment_bank_match_mode(p_due_id uuid, p_txn_date date, p_amount numeric)
 RETURNS text
 LANGUAGE sql
@@ -133,15 +149,25 @@ AS $$
   SELECT CASE
            WHEN EXISTS (SELECT 1 FROM public.payment_bank_txns AS o WHERE o.due_id = d.id AND o.status IN ('matched', 'receipted'))
              THEN NULL
-           WHEN d.status = 'open' AND d.amount = p_amount AND (d.kind <> 'renewal' OR p_txn_date <= d.due_on)
+           WHEN d.status IN ('open', 'lapsed') AND d.amount = p_amount AND d.kind = 'renewal'
+                AND (p_txn_date > d.due_on
+                     OR p_txn_date < (d.period_from - make_interval(months => t.validity_months))::date
+                     OR (t.renewal_window_days IS NOT NULL AND p_txn_date < d.due_on - t.renewal_window_days))
+             THEN NULL
+           WHEN d.status = 'open' AND d.amount = p_amount AND d.kind = 'annual'
+                AND p_txn_date < (d.period_from - interval '12 months')::date
+             THEN NULL
+           WHEN d.status = 'open' AND d.amount = p_amount
              THEN 'open'
-           WHEN d.status = 'lapsed' AND d.kind = 'renewal' AND d.amount = p_amount AND p_txn_date <= d.due_on
+           WHEN d.status = 'lapsed' AND d.kind = 'renewal' AND d.amount = p_amount
                 AND l.status IN ('active', 'suspended') AND t.renewal_by_fee AND l.expires_on + 1 = d.period_from
                 AND NOT EXISTS (SELECT 1 FROM public.payment_dues AS o
                                  WHERE o.licence_id = d.licence_id AND o.kind = d.kind AND o.period_from = d.period_from
                                    AND o.status IN ('open', 'paid'))
              THEN 'reopen'
            WHEN d.status = 'paid' AND f.voided_at IS NULL AND f.amount = p_amount
+                AND coalesce(d.paid_channel, 'other') <> 'counter'
+                AND p_txn_date BETWEEN f.paid_on - public.payment_bank_grace_days() AND f.paid_on + public.payment_bank_grace_days()
              THEN 'evidence'
          END
     FROM public.payment_dues AS d
@@ -166,8 +192,16 @@ BEGIN
   SELECT * INTO v_txn FROM public.payment_bank_txns WHERE id = p_txn_id;
   SELECT * INTO v_due FROM public.payment_dues WHERE id = p_due_id;
   IF p_mode = 'reopen' THEN
-    UPDATE public.payment_dues SET status = 'open', closed_at = NULL, closed_by = NULL, close_reason = NULL, updated_at = now()
-     WHERE id = p_due_id AND status = 'lapsed';
+    BEGIN
+      UPDATE public.payment_dues SET status = 'open', closed_at = NULL, closed_by = NULL, close_reason = NULL, updated_at = now()
+       WHERE id = p_due_id AND status = 'lapsed';
+    EXCEPTION WHEN unique_violation THEN
+      -- ระบบสร้างยอดของรอบเดียวกันไว้แล้วระหว่างนั้น (ผลตรวจรอบ 2 L-2)
+      RAISE EXCEPTION 'มียอดของรอบเดียวกันนี้อยู่แล้ว — จับคู่เงินเข้ากับยอดนั้นแทน' USING ERRCODE = '22023';
+    END;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'ยอดนี้ไม่ได้อยู่ในสถานะปิดแล้ว (lapsed) — โหลดรายการใหม่แล้วลองอีกครั้ง' USING ERRCODE = '22023';
+    END IF;
     PERFORM public.payment_log(v_due.municipality_id, 'due', p_due_id, 'reopen',
       jsonb_build_object('txn_id', p_txn_id, 'txn_date', v_txn.txn_date, 'amount', v_txn.amount, 'previous_reason', v_due.close_reason),
       'เงินเข้าตามไฟล์ธนาคารวันที่ ' || v_txn.txn_date || ' ไม่เกินวันหมดอายุ (' || v_due.due_on || ') — เจ้าหน้าที่ยืนยันคู่');
@@ -182,6 +216,10 @@ BEGIN
        SET status = 'matched', due_id = p_due_id, match_method = p_method,
            matched_by = CASE WHEN p_method = 'confirmed' THEN auth.uid() END, matched_at = now(), updated_at = now()
      WHERE id = p_txn_id AND status = 'unmatched';
+  END IF;
+  -- ผู้เรียกต้องล็อกแล้ว — ไม่พบ = สถานะเปลี่ยนไปแล้ว ห้ามลงประวัติการจับคู่ที่ไม่ได้เกิดจริง (ผลตรวจรอบ 2 L-1)
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'รายการเงินเข้านี้ไม่ได้อยู่ในสถานะ "ยังระบุไม่ได้" แล้ว' USING ERRCODE = '22023';
   END IF;
   PERFORM public.payment_log(v_txn.municipality_id, 'bank_txn', p_txn_id, 'match',
     jsonb_build_object('due_id', p_due_id, 'ref1', v_due.ref1, 'amount', v_txn.amount, 'txn_date', v_txn.txn_date,
@@ -249,7 +287,7 @@ GRANT EXECUTE ON FUNCTION public.payment_save_bank_mapping(uuid, text, jsonb) TO
 --            ⚠️ ต้องเป็น "วันที่ทำรายการ" ไม่ใช่ "วันลงบัญชี" (T+1 ทำให้เงินที่จ่ายวันหมดอายุดูเหมือนจ่ายหลังหมดอายุ)
 --   amount   ตัวเลขบาท ทศนิยมไม่เกิน 2 ตำแหน่ง > 0
 --   ref1     ตัวเลขล้วน (ช่องว่าง/ขีดตัดให้) — มีตัวอักษร = แถวผิด (คอลัมน์จับคู่ผิด ไม่ตัดทิ้งให้ดูถูก · ผลตรวจ M-3)
---   ref2     ใช้ในคีย์กันซ้ำเท่านั้น ไม่เก็บ
+--   ref2     รับได้แต่ไม่ใช้และไม่เก็บ (ไม่อยู่ในคีย์กันซ้ำด้วย — ผลตรวจรอบ 2 M-4)
 --   bank_ref ตัวอักษรละติน/ตัวเลข/สัญลักษณ์คั่น ≤64 — อย่างอื่น = แถวผิด (กันชื่อคนหลุดจากคอลัมน์ที่จับคู่ผิด)
 -- แถวผิดแถวเดียว = ไม่รับทั้งไฟล์ พร้อมเลขแถว (ให้คนแก้การจับคู่คอลัมน์ ไม่ใช่ระบบข้ามเงียบๆ)
 -- กันนำเข้าซ้ำ: line_key = md5(ชนิด|เวลา|ยอด|Ref1|Ref2|เลขอ้างอิงธนาคาร) + ":" + ลำดับที่ของแถวที่เหมือนกันทุกช่องในไฟล์นั้น
@@ -304,7 +342,7 @@ BEGIN
   -- ── ตารางพักแถว: ลบของเดิมที่อาจมีคนสร้างไว้ก่อน (เช่นแนบ trigger) แล้วสร้างใหม่เสมอ (ผลตรวจ L-1) ──
   DROP TABLE IF EXISTS pg_temp.payment_bank_stage;
   CREATE TEMP TABLE payment_bank_stage (
-    n integer, txn_at timestamptz, amount numeric(12, 2), ref1_raw text, ref2 text, bank_ref text, k text, err text
+    n integer, txn_at timestamptz, amount numeric(12, 2), ref1_raw text, ref1 text, ref2 text, bank_ref text, k text, err text
   ) ON COMMIT DROP;
 
   INSERT INTO pg_temp.payment_bank_stage (n, txn_at, amount, ref1_raw, ref2, bank_ref, err)
@@ -319,7 +357,6 @@ BEGIN
            WHEN public.payment_try_timestamptz(x.ts) IS NULL THEN 'วันเวลาไม่ถูกต้อง (ต้องเป็น ค.ศ. ปี-เดือน-วัน และเป็นวันที่มีจริง)'
            WHEN x.amt IS NULL OR x.amt !~ '^[0-9]{1,8}(\.[0-9]{1,2})?$' THEN 'ยอดเงินไม่ถูกรูปแบบ'
            WHEN regexp_replace(x.r1, '[\s-]', '', 'g') !~ '^[0-9]{0,20}$' THEN 'Ref1 ต้องเป็นตัวเลขไม่เกิน 20 หลัก (คอลัมน์จับคู่ผิดหรือเปล่า?)'
-           WHEN length(regexp_replace(x.r2, '[\s-]', '', 'g')) > 20 THEN 'Ref2 ยาวเกิน 20 ตัว'
            WHEN btrim(x.br) <> '' AND btrim(x.br) !~ '^[A-Za-z0-9/_.:-]{1,64}$'
              THEN 'เลขอ้างอิงธนาคารต้องเป็นตัวอักษรอังกฤษ/ตัวเลขไม่เกิน 64 ตัว (คอลัมน์จับคู่ผิดหรือเปล่า?)'
          END
@@ -348,14 +385,26 @@ BEGIN
     RAISE EXCEPTION 'แถวที่ % : วันที่ต้องไม่เป็นวันในอนาคต และไม่เก่ากว่า 400 วัน (ปีเป็น พ.ศ. หรือเปล่า?)', v_bad.n USING ERRCODE = '22023';
   END IF;
 
-  -- คีย์กันซ้ำ (ลำดับที่ของแถวที่เหมือนกันทุกช่อง เรียงตามลำดับในไฟล์) — ใช้ค่าดิบทั้ง Ref1/Ref2 แม้ไม่เก็บ
+  -- Ref1 ที่เก็บ = รูปแบบระบบ และมียอดที่ใช้ Ref1 นั้นใน อปท. นี้จริง (ผลตรวจรอบ 2 L-4 — เลขของบริการอื่นที่บังเอิญผ่าน Luhn
+  -- เช่นเบอร์โทร ไม่ถูกเก็บ) · อย่างอื่นเป็น NULL + ref1_foreign
+  UPDATE pg_temp.payment_bank_stage AS s
+     SET ref1 = n1.v
+    FROM (SELECT n, public.payment_ref1_normalize(ref1_raw) AS v FROM pg_temp.payment_bank_stage) AS n1
+   WHERE n1.n = s.n AND n1.v IS NOT NULL
+     AND EXISTS (SELECT 1 FROM public.payment_dues AS d WHERE d.municipality_id = p_municipality_id AND d.ref1 = n1.v);
+
+  -- คีย์กันซ้ำ (ลำดับที่ของแถวที่เหมือนกันทุกช่อง เรียงตามลำดับในไฟล์)
+  --   แฮชจาก "ช่องที่เก็บจริง" เท่านั้น — Ref1 ที่ไม่เก็บแทนด้วยธง 'F' · Ref2 ไม่อยู่ในแฮช (ผลตรวจรอบ 2 M-4: md5 ไม่มี salt ของเลข 13 หลัก
+  --   ไล่ย้อนได้ในไม่กี่นาที ⇒ ใส่เลขที่ตัดสินว่า "ไม่เก็บ" ลงแฮช = เก็บโดยอ้อม)
+  --   ผลข้างเคียงที่รับได้: รายการที่ต่างกันแค่ Ref2 / Ref1 ต่างระบบ ในเวลาเดียวกัน ยอดเท่ากัน ไม่มีเลขอ้างอิงธนาคาร
+  --   = แยกด้วยลำดับที่ในไฟล์ (:1 :2) ได้ แต่ไฟล์ช่วงทับกันที่มีแค่บางแถวอาจนับเป็นซ้ำ — ใช้คอลัมน์เลขอ้างอิงธนาคารแก้ได้
   UPDATE pg_temp.payment_bank_stage AS s
      SET k = z.h || ':' || z.occ
     FROM (
       SELECT n, h, row_number() OVER (PARTITION BY h ORDER BY n) AS occ
         FROM (SELECT n, md5(concat_ws('|', p_file_kind,
                      to_char(txn_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US'), amount::text,
-                     coalesce(ref1_raw, ''), coalesce(ref2, ''), coalesce(bank_ref, ''))) AS h
+                     coalesce(ref1, CASE WHEN ref1_raw IS NOT NULL THEN 'F' END, ''), coalesce(bank_ref, ''))) AS h
                 FROM pg_temp.payment_bank_stage) AS y
     ) AS z
    WHERE z.n = s.n;
@@ -368,8 +417,8 @@ BEGIN
     INSERT INTO public.payment_bank_txns (municipality_id, import_id, file_kind, txn_at, txn_date, amount, ref1, ref1_foreign,
                                           bank_ref, line_key)
     SELECT p_municipality_id, v_import, p_file_kind, s.txn_at, (s.txn_at AT TIME ZONE 'Asia/Bangkok')::date, s.amount,
-           public.payment_ref1_normalize(s.ref1_raw),
-           s.ref1_raw IS NOT NULL AND public.payment_ref1_normalize(s.ref1_raw) IS NULL,
+           s.ref1,
+           s.ref1_raw IS NOT NULL AND s.ref1 IS NULL,
            s.bank_ref, s.k
       FROM pg_temp.payment_bank_stage AS s
      ORDER BY s.n
@@ -394,7 +443,9 @@ BEGIN
       IF v_mode = 'open' THEN
         PERFORM public.payment_bank_apply_match(v_txn.id, v_due_id, 'open', 'auto_ref1', 'ระบบจับคู่: Ref1 และยอดเงินตรงกับยอดค้าง');
         v_auto := v_auto + 1;
-      ELSIF v_mode = 'evidence' THEN
+      ELSIF v_mode = 'evidence'
+            AND (SELECT d.paid_channel FROM public.payment_dues AS d WHERE d.id = v_due_id) = 'bill_payment' THEN
+        -- ผูกเองเฉพาะยอดที่บันทึกรับทางช่อง Bill Payment ไว้แล้ว (ผลตรวจรอบ 2 H-1) — ช่องอื่น/ไม่ระบุ ให้คนกดยืนยัน
         PERFORM public.payment_bank_apply_match(v_txn.id, v_due_id, 'evidence', 'auto_ref1',
           'ระบบผูกหลักฐาน: Ref1 และยอดเงินตรงกับรายการรับเงินที่บันทึกเลขใบเสร็จไว้แล้ว (ไม่ใช่เงินซ้ำ)');
         v_evidence := v_evidence + 1;
@@ -444,6 +495,9 @@ BEGIN
   IF auth.uid() IS NULL OR p_municipality_id IS NULL OR NOT public.payment_can_handle(p_municipality_id) THEN
     RAISE EXCEPTION 'ไม่มีสิทธิ์ดูรายการเงินเข้าของ อปท. นี้' USING ERRCODE = '42501';
   END IF;
+  IF NOT public.payment_module_on(p_municipality_id) THEN
+    RAISE EXCEPTION 'เมนูรับชำระเงินยังไม่เปิดสำหรับ อปท. นี้' USING ERRCODE = '42501';
+  END IF;
   IF v_status NOT IN ('unmatched', 'matched', 'receipted', 'not_ours', 'all') THEN
     RAISE EXCEPTION 'สถานะไม่ถูกต้อง' USING ERRCODE = '22023';
   END IF;
@@ -465,14 +519,14 @@ BEGIN
                'suggested_due_id', CASE WHEN c.n = 1 THEN c.only_id END,
                'hint', CASE
                  WHEN t.status <> 'unmatched' THEN NULL
-                 WHEN t.ref1_foreign THEN 'Ref1 ในไฟล์ไม่ใช่รูปแบบของระบบนี้ (อาจเป็นรายได้ประเภทอื่นที่ใช้รหัสผู้รับชำระเดียวกัน)'
+                 WHEN t.ref1_foreign THEN 'Ref1 ในไฟล์ไม่ใช่ Ref1 ของยอดในระบบนี้ (อาจเป็นรายได้ประเภทอื่นที่ใช้รหัสผู้รับชำระเดียวกัน)'
                  WHEN t.ref1 IS NULL THEN NULL
                  WHEN hd.id IS NULL THEN 'ไม่พบ Ref1 นี้ในยอดของระบบ'
                  WHEN hd.mode = 'reopen' THEN 'เงินเข้าก่อนวันหมดอายุ แต่ระบบปิดยอดไปแล้วเพราะไฟล์มาช้า — กดยืนยันคู่เพื่อเปิดยอดกลับ'
                  WHEN hd.mode = 'evidence' THEN 'ยอดนี้บันทึกเลขใบเสร็จแล้ว แต่ยังไม่ผูกหลักฐานเงินเข้า — กดยืนยันคู่ (ไม่ใช่เงินซ้ำ)'
                  WHEN hd.mode = 'open' THEN 'จับคู่ได้ — กดยืนยันคู่'
                  WHEN hd.has_txn THEN 'Ref1 นี้มีเงินเข้าผูกไว้แล้ว — อาจจ่ายซ้ำ (คืนเงินตามระเบียบ)'
-                 WHEN hd.status = 'paid' THEN 'ยอดของ Ref1 นี้ชำระแล้วด้วยยอดต่างจากเงินเข้า — ตรวจกับกองที่ถือเรื่อง'
+                 WHEN hd.status = 'paid' THEN 'Ref1 ของยอดที่ชำระแล้ว — อาจสแกนใบแจ้งเก่าหรือจ่ายซ้ำ: ดูยอดรอบปัจจุบันของใบเดียวกันในคู่ที่เสนอ หรือคืนเงินตามระเบียบ'
                  WHEN hd.status IN ('lapsed', 'cancelled') AND hd.kind = 'renewal' AND t.txn_date > hd.due_on
                    THEN 'เงินเข้าหลังวันหมดอายุของใบ — ต่ออายุโดยชำระค่าธรรมเนียมไม่ได้แล้ว (คืนเงินตามระเบียบ)'
                  WHEN hd.status IN ('lapsed', 'cancelled') THEN 'ยอดของ Ref1 นี้ปิดไปแล้ว — ตรวจกับกองที่ถือเรื่อง'
@@ -495,7 +549,11 @@ BEGIN
                   WHERE b.municipality_id = t.municipality_id AND b.file_kind = 'bill_payment'
                     AND b.txn_date = t.txn_date AND b.amount = t.amount AND b.status <> 'not_ours')
              ) AS row_data
-        FROM public.payment_bank_txns AS t
+        -- ตัดหน้าก่อน แล้วค่อยคำนวณคู่ที่เสนอ/hint เฉพาะแถวที่จะคืน (ผลตรวจรอบ 2 M-2: LATERAL เดิมคิดกับทุกแถวก่อนตัด LIMIT)
+        FROM (SELECT tt.* FROM public.payment_bank_txns AS tt
+               WHERE tt.municipality_id = p_municipality_id AND (v_status = 'all' OR tt.status = v_status)
+               ORDER BY tt.txn_at DESC, tt.id
+               LIMIT v_limit) AS t
         JOIN public.payment_bank_imports AS i ON i.id = t.import_id
         LEFT JOIN public.payment_dues AS d ON d.id = t.due_id
         LEFT JOIN public.licences AS l ON l.id = d.licence_id
@@ -503,7 +561,7 @@ BEGIN
         LEFT JOIN public.licence_fee_payments AS f ON f.id = coalesce(t.payment_id, d.payment_id)
         -- ยอดที่ Ref1 ในไฟล์ชี้ (สำหรับ hint)
         LEFT JOIN LATERAL (
-          SELECT hd0.id, hd0.status, hd0.kind, hd0.amount, hd0.due_on,
+          SELECT hd0.id, hd0.licence_id, hd0.status, hd0.kind, hd0.amount, hd0.due_on,
                  public.payment_bank_match_mode(hd0.id, t.txn_date, t.amount) AS mode,
                  EXISTS (SELECT 1 FROM public.payment_bank_txns AS o WHERE o.due_id = hd0.id AND o.status IN ('matched', 'receipted')) AS has_txn
             FROM public.payment_dues AS hd0
@@ -519,14 +577,19 @@ BEGIN
                      jsonb_build_object('id', cd.id, 'ref1', cd.ref1, 'kind', cd.kind, 'due_on', cd.due_on, 'amount', cd.amount,
                                         'status', cd.status, 'mode', cd.mode, 'licence_no', cl.licence_no,
                                         'business_name', cl.business_name, 'receipt_no', cf.receipt_no) AS cand,
-                     row_number() OVER (ORDER BY (cd.ref1 = t.ref1) DESC NULLS LAST, abs(cd.due_on - t.txn_date), cd.ref1) AS ord
+                     -- Ref1 ตรง → ใบเดียวกับ Ref1 ในไฟล์ (เช่น สแกนใบแจ้งปีก่อน = ยอดรอบปัจจุบันของใบนั้นขึ้นก่อน) → วันใกล้
+                     row_number() OVER (ORDER BY (cd.ref1 = t.ref1) DESC NULLS LAST, (cd.licence_id = hd.licence_id) DESC NULLS LAST,
+                                                 abs(cd.due_on - t.txn_date), cd.ref1) AS ord
                 FROM (
                   SELECT dd.*, public.payment_bank_match_mode(dd.id, t.txn_date, t.amount) AS mode
                     FROM public.payment_dues AS dd
                     LEFT JOIN public.licence_fee_payments AS ff ON ff.id = dd.payment_id
                    WHERE t.status = 'unmatched' AND dd.municipality_id = t.municipality_id
-                     AND ((dd.status IN ('open', 'lapsed') AND dd.amount = t.amount)
-                          OR (dd.status = 'paid' AND ff.amount = t.amount AND abs(ff.paid_on - t.txn_date) <= 7)
+                     -- กรองล่วงหน้าด้วยดัชนี (municipality_id, amount) — ยอด lapsed สะสมไม่หยุด จึงดูเฉพาะต่ออายุที่เงินเข้าไม่เกินวันหมดอายุ
+                     AND ((dd.status = 'open' AND dd.amount = t.amount)
+                          OR (dd.status = 'lapsed' AND dd.amount = t.amount AND dd.kind = 'renewal' AND t.txn_date <= dd.due_on)
+                          OR (dd.status = 'paid' AND ff.amount = t.amount
+                              AND abs(ff.paid_on - t.txn_date) <= public.payment_bank_grace_days())
                           OR (dd.ref1 = t.ref1))
                 ) AS cd
                 JOIN public.licences AS cl ON cl.id = cd.licence_id
@@ -591,9 +654,17 @@ BEGIN
     ELSIF v_due.kind = 'renewal' AND v_txn.txn_date > v_due.due_on THEN
       RAISE EXCEPTION 'เงินเข้า (%) หลังวันหมดอายุของใบ (%) — ต่ออายุโดยชำระค่าธรรมเนียมไม่ได้แล้ว ต้องยื่นคำขอใหม่ (พ.ร.ฎ. 2564)',
         v_txn.txn_date, v_due.due_on USING ERRCODE = '22023';
+    ELSIF v_due.status IN ('open', 'lapsed') AND v_due.amount = v_txn.amount THEN
+      RAISE EXCEPTION 'เงินเข้า (%) ก่อนช่วงที่ชำระรอบนี้ได้ — อาจเป็นเงินของรอบก่อน ตรวจกับกองที่ถือเรื่อง', v_txn.txn_date
+        USING ERRCODE = '22023';
     ELSE
       RAISE EXCEPTION 'ยอดนี้ไม่อยู่ในสถานะที่จับคู่ได้ (%)', v_due.status USING ERRCODE = '22023';
     END IF;
+  END IF;
+  -- เปิดยอดที่ปิดแล้วกลับ = คืนสิทธิ์ต่ออายุโดยชำระค่าธรรมเนียม (ผลทางปกครอง) → เฉพาะกองที่ถือเรื่อง/แอดมิน
+  -- กองคลังทำไม่ได้ เหมือนยกเลิกยอดใน PR1 (payment_cancel_due ใช้ licence_is_manager) — ผลตรวจรอบ 2 M-1
+  IF v_mode = 'reopen' AND NOT public.licence_is_manager(v_txn.municipality_id) THEN
+    RAISE EXCEPTION 'เปิดยอดที่ปิดแล้วกลับได้เฉพาะกองที่ถือเรื่องใบอนุญาต — ส่งเรื่องให้กองที่ถือเรื่องกดยืนยัน' USING ERRCODE = '42501';
   END IF;
   v_status := public.payment_bank_apply_match(p_txn_id, p_due_id, v_mode, 'confirmed', 'เจ้าหน้าที่ยืนยันคู่');
   RETURN jsonb_build_object('txn_id', p_txn_id, 'due_id', p_due_id, 'mode', v_mode, 'status', v_status,
@@ -711,7 +782,7 @@ BEGIN
     RETURN NULL;
   END IF;
   IF OLD.status = 'open' AND NEW.status = 'lapsed' AND OLD.kind = 'renewal'
-     AND public.licence_today() <= OLD.due_on + 7
+     AND public.licence_today() <= OLD.due_on + public.payment_bank_grace_days()
      AND EXISTS (SELECT 1 FROM public.licences AS l JOIN public.licence_types AS t ON t.id = l.licence_type_id
                   WHERE l.id = OLD.licence_id AND l.status IN ('active', 'suspended') AND t.renewal_by_fee
                     AND l.expires_on + 1 = OLD.period_from) THEN
@@ -1044,7 +1115,7 @@ BEGIN
   FOREACH f IN ARRAY ARRAY[
     'public.payment_alert_claim(integer)', 'public.payment_alert_finish(bigint, text, text, text)',
     'public.exec_summary_payment(uuid, date, date)', 'public.payment_mask_account(text)',
-    'public.payment_ref1_normalize(text)', 'public.payment_try_timestamptz(text)',
+    'public.payment_ref1_normalize(text)', 'public.payment_try_timestamptz(text)', 'public.payment_bank_grace_days()',
     'public.payment_bank_match_mode(uuid, date, numeric)', 'public.payment_bank_apply_match(uuid, uuid, text, text, text)',
     'public.payment_dues_guard_matched()', 'public.payment_dues_bank_status()', 'public.payment_dues_release_bank()',
     'public.payment_events_alert_enqueue()'] LOOP

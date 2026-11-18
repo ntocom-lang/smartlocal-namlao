@@ -106,6 +106,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS payment_bank_txns_line_unique ON public.paymen
 CREATE UNIQUE INDEX IF NOT EXISTS payment_bank_txns_one_per_due ON public.payment_bank_txns (due_id) WHERE status IN ('matched', 'receipted');
 CREATE INDEX IF NOT EXISTS payment_bank_txns_muni_status_idx ON public.payment_bank_txns (municipality_id, status, txn_date);
 CREATE INDEX IF NOT EXISTS payment_bank_txns_import_idx ON public.payment_bank_txns (import_id);
+-- ป้าย "อาจซ้ำกับ Bill Payment" เทียบวัน+ยอดของรายการ Bill Payment (ผลตรวจรอบ 2 M-2)
+CREATE INDEX IF NOT EXISTS payment_bank_txns_bill_day_amount_idx
+  ON public.payment_bank_txns (municipality_id, txn_date, amount) WHERE file_kind = 'bill_payment';
+-- คู่ที่เสนอ: ยอดรอชำระ/ปิดแล้วที่จำนวนเงินเท่ากัน (ผลตรวจรอบ 2 M-2)
+CREATE INDEX IF NOT EXISTS payment_dues_muni_amount_idx
+  ON public.payment_dues (municipality_id, amount) WHERE status IN ('open', 'lapsed');
 -- FK ON DELETE SET NULL ใช้ดัชนีบางส่วนข้างบนไม่ได้ (ผลตรวจ L-4)
 CREATE INDEX IF NOT EXISTS payment_bank_txns_due_idx ON public.payment_bank_txns (due_id) WHERE due_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS payment_bank_txns_payment_idx ON public.payment_bank_txns (payment_id) WHERE payment_id IS NOT NULL;
