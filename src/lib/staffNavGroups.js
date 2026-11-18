@@ -5,7 +5,7 @@
 import {
   FileText, MessageSquareWarning, CalendarDays, Images, Luggage, Star, Car, Trash2, Database, BookOpen,
   PackageOpen, Ambulance, ClipboardCheck, CloudRain, HardHat, ClipboardList, Hammer, TrendingUp, ChartColumn, LayoutDashboard,
-  HeartHandshake, Megaphone, Layers, Building2, Banknote, GraduationCap, ShieldCheck, FileCheck2, FileDown, CalendarClock,
+  HeartHandshake, Megaphone, Layers, Building2, Banknote, GraduationCap, ShieldCheck, FileCheck2, FileDown, CalendarClock, Receipt,
 } from 'lucide-react'
 import { PATIENT_TRANSPORT_MODULE_KEY } from './patientTransport'
 
@@ -109,7 +109,14 @@ export const MODULE_GROUPS = [
       { key: 'licence-registry', label: 'ทะเบียนใบอนุญาต', Icon: FileCheck2, color: '#0f766e', bg: '#ccfbf1', desc: 'ทะเบียนใบอนุญาต บันทึกรับค่าธรรมเนียมต่ออายุ และเตือนใบใกล้หมดอายุ' },
     ],
   },
-  { group: 'กองคลัง', Icon: Banknote, accent: '#a16207', items: [] },
+  {
+    group: 'กองคลัง', Icon: Banknote, accent: '#a16207',
+    items: [
+      // รับชำระเงิน (ขั้น 1C / E4 PR1) — ค่าเริ่มต้นปิด (คีย์ใน MANAGED_MODULE_KEYS ไม่ได้เติมให้ทุกแถว) เห็นเมนู = admin/officer/staff/superadmin
+      // ใครใช้ได้จริงตัดสินที่ payment_can_handle() ฝั่งฐาน (กองที่ถือเรื่องใบอนุญาต + กองคลังที่แอดมินเปิดตัวเลือก) ไม่ใช่ที่นี่
+      { key: 'payment-dues', label: 'รับชำระเงิน', Icon: Receipt, color: '#a16207', bg: '#fef3c7', desc: 'ยอดค้างค่าธรรมเนียมใบอนุญาต ใบแจ้งชำระพร้อม QR และบันทึกเลขใบเสร็จ' },
+    ],
+  },
   {
     group: 'กองช่าง', Icon: Hammer, accent: '#c2410c',
     items: [

@@ -42,6 +42,8 @@ function legacy({ role, profile, tenant, allModuleKeys }) {
   const hasLocalPlanAccess = ['superadmin', 'admin', 'officer', 'staff', 'viewer'].includes(role)
   // ทะเบียนใบอนุญาต (2569-12-03): เห็นเมนู = admin/officer/staff/superadmin (สิทธิ์ใช้จริงที่ licence_is_manager ฝั่งฐาน)
   const hasLicenceAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
+  // รับชำระเงิน (2569-12-11 ขั้น 1C / E4): เห็นเมนู = admin/officer/staff/superadmin (สิทธิ์ใช้จริงที่ payment_can_handle ฝั่งฐาน)
+  const hasPaymentAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
   const technicianKeys = ['complaints', 'infra', 'projects', 'events', 'data-center', 'fleet', 'manual-staff', 'performance']
   const roleScopedKeys = role === 'technician'
     ? enabledKeys.filter(k => technicianKeys.includes(k))
@@ -53,6 +55,7 @@ function legacy({ role, profile, tenant, allModuleKeys }) {
     ...(hasWaterEventsAccess ? [] : ['water-events']),
     ...(hasLocalPlanAccess ? [] : ['local-plan']),
     ...(hasLicenceAccess ? [] : ['licence-registry']),
+    ...(hasPaymentAccess ? [] : ['payment-dues']),
     // เพิ่ม 2569-11-17: แบบฟอร์ม/คำถามที่พบบ่อย เห็นเฉพาะบทบาทที่เขียนได้ (ส่วนเพิ่มเดียวของตรรกะเดิม)
     ...(['superadmin', 'admin', 'officer', 'staff'].includes(role) ? [] : ['service-help']),
   ].reduce((keys, hidden) => keys.filter(k => k !== hidden), roleScopedKeys)
