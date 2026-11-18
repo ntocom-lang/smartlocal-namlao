@@ -649,6 +649,62 @@ await test('รอบ 2 M-1: เปิดยอดที่ปิดแล้ว
   assert.equal(r.mode, 'reopen')
 })
 
+await test('รอบ 3 H-1: รายปีจ่ายช้าตาม QR (ยอด + ค่าปรับ 20%) → Bill Payment จับคู่เอง · บันทึกใบเสร็จแล้ว receipted ไม่มีคำเตือน · สูตรค่าปรับตรงกับหน้าเว็บ', async () => {
+  const { suggestSurcharge } = await import('../src/lib/licenceRegistry.js')
+  for (const fee of [300, 333.33, 1500, 12.25, 0.05, 999999.99, 7.77, 1234.56]) {
+    const db1 = (await rows('SELECT public.payment_late_surcharge($1::numeric)::text AS s', [fee]))[0].s
+    assert.equal(Number(db1), suggestSurcharge(fee), `ค่าปรับของ ${fee} ต้องตรงกันสองฝั่ง`)
+  }
+  const NL = await newLicence(foodNotice.id, { business: 'ร้านจ่ายรายปีช้า', no: 'N-2', due: await day(10), fee: 300 })
+  await sync('staffDG')
+  const [dl] = await dueOf(NL.id)
+  await db.query('UPDATE public.licences SET next_fee_due_on = $2 WHERE id = $1', [NL.id, await day(-5)])
+  await db.query('UPDATE public.payment_dues SET due_on = $2, period_from = $2 WHERE id = $1', [dl.id, await day(-5)])
+  const r = await importRows('staffDG', 'bill_payment', [{ txn_at: `${today} 09:00`, amount: 360, ref1: dl.ref1, bank_ref: 'BP-LATE1' }], 'bp-late.csv')
+  assert.equal(r.auto_matched, 1)
+  const t = (await rows('SELECT * FROM public.payment_bank_txns WHERE bank_ref = $1', ['BP-LATE1']))[0]
+  assert.deepEqual([t.status, t.due_id], ['matched', dl.id])
+  await receipt('staffDG', dl.id, 'e-LAAS 040/2570', { amount: 300, surcharge: 60, channel: 'bill_payment' })
+  assert.equal((await txn(t.id)).status, 'receipted')
+  const ev = await txnEvents(t.id)
+  assert.equal(ev.at(-1).action, 'receipted')
+  assert.equal(ev.at(-1).reason, null, 'ยอดรับรวมค่าปรับเท่าเงินเข้า = ไม่เตือน')
+  // พร้อมเพย์จ่ายช้าก็มีคู่เสนอ (ยอดรวมค่าปรับ)
+  const NP = await newLicence(foodNotice.id, { business: 'ร้านพร้อมเพย์ช้า', no: 'N-3', due: await day(10), fee: 410 })
+  await sync('staffDG')
+  const [dp] = await dueOf(NP.id)
+  await db.query('UPDATE public.licences SET next_fee_due_on = $2 WHERE id = $1', [NP.id, await day(-3)])
+  await db.query('UPDATE public.payment_dues SET due_on = $2, period_from = $2 WHERE id = $1', [dp.id, await day(-3)])
+  await importRows('staffDG', 'account', [{ txn_at: `${today} 09:30`, amount: 492 }], 'pp-late.csv')
+  const pl = (await listTxns('staffDG')).rows.find(x => Number(x.amount) === 492)
+  assert.deepEqual(pl.candidates.map(c => [c.id, c.mode, Number(c.surcharge_in_txn)]), [[dp.id, 'open', 82]])
+  const m = await match('staffDG', pl.id, dp.id)
+  assert.deepEqual([Number(m.fee_amount), Number(m.surcharge)], [410, 82])
+})
+
+await test('รอบ 3 M-1/M-2: บันทึกรับจากเมนูทะเบียน (ไม่ทราบช่องทาง) → ไม่เสนอเป็นคู่เดียว + เตือนเงินซ้ำ · ต่ออายุที่เงินเข้าหลังหมดอายุผูกเป็นหลักฐานไม่ได้', async () => {
+  const LU = await newLicence(hazard.id, { business: 'ร้านรับที่ทะเบียน', no: 'H-15', expires: await day(39), fee: 705 })
+  await sync('staffDG')
+  const [du] = await dueOf(LU.id)
+  await asUser('staffDG', 'SELECT public.licence_record_fee($1,$2,$3,$4,$5,$6,$7)', [LU.id, 'renewal', today, 705, 'e-LAAS 050/2570', 0, true])
+  assert.equal((await dueOf(LU.id))[0].paid_channel, null)
+  await importRows('staffDG', 'account', [{ txn_at: `${today} 16:00`, amount: 705 }], 'acct-705.csv')
+  const u = (await listTxns('staffDG')).rows.find(x => Number(x.amount) === 705)
+  assert.deepEqual(u.candidates.map(c => c.mode), ['evidence_unknown'])
+  assert.equal(u.suggested_due_id, null, 'ไม่ทราบช่องทาง = ไม่เสนอเป็นคู่เดียว')
+  assert.equal(u.candidates[0].paid_on, today)
+  // ต่ออายุ: บันทึกรับย้อนเป็นวันหมดอายุ แต่เงินเข้าจริงหลังวันหมดอายุ → ไม่ผูกเป็นหลักฐาน
+  const LX = await newLicence(hazard.id, { business: 'ร้านบันทึกวันย้อน', no: 'H-16', expires: await day(20), fee: 715 })
+  await sync('staffDG')
+  const [dx] = await dueOf(LX.id)
+  await receipt('staffDG', dx.id, 'e-LAAS 051/2570', { amount: 715, channel: 'promptpay' })
+  await db.query('UPDATE public.payment_dues SET due_on = $2 WHERE id = $1', [dx.id, await day(-2)])
+  await importRows('staffDG', 'account', [{ txn_at: `${today} 16:10`, amount: 715 }], 'acct-715.csv')
+  const x = (await listTxns('staffDG')).rows.find(r => Number(r.amount) === 715)
+  assert.deepEqual(x.candidates, [])
+  await rejects(match('staffDG', x.id, dx.id), { code: '22023' })
+})
+
 await test('M-2: ยอดที่จับคู่ไว้แต่ใบถูกเพิกถอน → รายการบอกเหตุผลให้ยกเลิกคู่ (ไม่ค้างเงียบ)', async () => {
   const t = (await listTxns('staffDG', 'matched')).rows.find(x => x.due?.id === d3.id)
   assert.equal(t.blocked_reason, null)

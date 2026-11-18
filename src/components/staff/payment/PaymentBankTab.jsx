@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, Info, Loader2, RefreshCw, Receipt, Undo2, 
 import { ListCard, Pager, Pills, Sheet } from '../../patientTransport/StaffShell'
 import { paginate } from '../../../lib/patientBooking'
 import {
-  BANK_FILTERS, BANK_METHOD_LABEL, MATCH_MODE_TEXT, dailyBankSummary, formatRef1, kindLabel, searchBankTxns, sumBankAmount,
+  BANK_FILTERS, BANK_METHOD_LABEL, MATCH_MODE_TEXT, channelLabel, dailyBankSummary, formatRef1, kindLabel, searchBankTxns, sumBankAmount,
 } from '../../../lib/paymentDues'
 import {
   friendlyError, listBankTxns, markBankTxnNotOurs, matchBankTxn, resetBankTxn,
@@ -122,7 +122,7 @@ function Candidate({ txn, c, suggested, busyId, onConfirm }) {
     <li className={`space-y-1 rounded-lg border px-2 py-1.5 ${suggested ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white'}`}>
       <div className="flex flex-wrap items-center gap-1.5">
         {suggested && <span className="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">ระบบเสนอ</span>}
-        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${c.mode === 'evidence' ? 'bg-emerald-100 text-emerald-900' : c.mode === 'reopen' ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-700'}`}>{mode.badge}</span>
+        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${c.mode === 'evidence' ? 'bg-emerald-100 text-emerald-900' : c.mode === 'reopen' || c.mode === 'evidence_unknown' ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-700'}`}>{mode.badge}</span>
       </div>
       <p className="break-words text-sm font-semibold text-gray-900">{c.business_name}</p>
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-gray-700">
@@ -131,7 +131,11 @@ function Candidate({ txn, c, suggested, busyId, onConfirm }) {
         <dt className="text-gray-500">ครบกำหนด</dt><dd>{fmtDate(c.due_on)}</dd>
         <dt className="text-gray-500">ยอด</dt><dd>{fmtMoney(c.amount)} บาท</dd>
         <dt className="text-gray-500">Ref1</dt><dd className="font-mono">{formatRef1(c.ref1)}</dd>
-        {c.mode === 'evidence' && <><dt className="text-gray-500">ใบเสร็จ</dt><dd>{c.receipt_no ?? '—'}</dd></>}
+        {Number(c.surcharge_in_txn) > 0 && <><dt className="text-gray-500">ค่าปรับในเงินเข้า</dt><dd>{fmtMoney(c.surcharge_in_txn)} บาท (ชำระรายปีช้า 20%)</dd></>}
+        {(c.mode === 'evidence' || c.mode === 'evidence_unknown') && <>
+          <dt className="text-gray-500">ใบเสร็จ</dt><dd>{c.receipt_no ?? '—'}</dd>
+          <dt className="text-gray-500">บันทึกรับ</dt><dd>{fmtDate(c.paid_on)} · {c.paid_channel ? channelLabel(c.paid_channel) : 'ไม่ทราบช่องทาง'}</dd>
+        </>}
       </dl>
       <p className="text-gray-600">{mode.detail}</p>
       <button type="button" className={`${small} ${suggested ? '!border-transparent !bg-blue-600 !text-white hover:!bg-blue-700' : ''}`} disabled={Boolean(busyId)} onClick={() => onConfirm(txn, c)}>

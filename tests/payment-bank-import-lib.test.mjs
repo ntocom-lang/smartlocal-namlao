@@ -320,7 +320,7 @@ test('รอไฟล์ธนาคาร: ยอดต่ออายุที
 })
 
 test('ข้อความตาม mode ของคู่ที่เสนอ: open ผูกรอเลขใบเสร็จ · reopen เปิดยอดกลับ · evidence ผูกเป็นหลักฐาน (ไม่ใช่เงินซ้ำ ไม่ต้องกรอกเลขใบเสร็จ)', () => {
-  assert.deepEqual(Object.keys(MATCH_MODE_TEXT).sort(), ['evidence', 'open', 'reopen'])
+  assert.deepEqual(Object.keys(MATCH_MODE_TEXT).sort(), ['evidence', 'evidence_unknown', 'open', 'reopen'])
   assert.match(MATCH_MODE_TEXT.open.badge, /รอเลขใบเสร็จ/)
   assert.match(MATCH_MODE_TEXT.reopen.badge, /เปิดยอด/)
   assert.match(MATCH_MODE_TEXT.reopen.detail, /หมดอายุ/)
