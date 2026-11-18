@@ -654,6 +654,31 @@ export function normalizeComplaintSpikeSummary(data) {
   }
 }
 
+/** บาท (ทศนิยม 2 ตำแหน่ง) · ติดลบ/ไม่ใช่ตัวเลข = 0 — ห้ามปล่อยค่าผิดรูปเป็น NaN บนการ์ด */
+const execBaht = (value) => {
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0
+}
+const bahtText = (n) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+/**
+ * exec_summary_payment → ตัวเลขรวมรับชำระเงิน (ไม่มีชื่อร้าน/ผู้ประกอบการ/Ref1/ชื่อผู้โอน — ฐานไม่ส่งมาและที่นี่ไม่รับช่องอื่น)
+ * open/overdue/paid/notOurs = { n, amount } · lapsed = จำนวน · bankUnmatched = { n, amount, oldestOn } · awaitingReceipt = { n, amount, oldestOn, late }
+ * accountChangedOn = วันที่ไทยที่เปลี่ยนบัญชี (ภายใน 30 วัน) หรือ null
+ */
+export function normalizePaymentSummary(data) {
+  const d = asObj(data)
+  const tally = (o) => ({ n: execCount(asObj(o).n), amount: execBaht(asObj(o).amount) })
+  return {
+    configured: d.configured === true,
+    open: tally(d.open), overdue: tally(d.overdue), paid: tally(d.paid), lapsed: execCount(d.lapsed),
+    bankUnmatched: { ...tally(d.bank_unmatched), oldestOn: asDay(asObj(d.bank_unmatched).oldest) },
+    notOurs: tally(d.not_ours),
+    awaitingReceipt: { ...tally(d.awaiting_receipt), oldestOn: asDay(asObj(d.awaiting_receipt).oldest), late: execCount(asObj(d.awaiting_receipt).late) },
+    accountChangedOn: execDateOnly(d.account_changed_at),
+  }
+}
+
 const NORMALIZERS = Object.freeze({
   complaints: normalizeComplaintsSummary,
   doc_requests: normalizeDocRequestsSummary,
@@ -665,6 +690,7 @@ const NORMALIZERS = Object.freeze({
   projects: normalizeProjectsSummary,
   local_plan: normalizeLocalPlanSummary,
   water: normalizeWaterSummary,
+  payment: normalizePaymentSummary,
   complaint_spike: normalizeComplaintSpikeSummary,
 })
 
@@ -672,7 +698,7 @@ const NORMALIZERS = Object.freeze({
 export const EXEC_MODEL_FIELDS = Object.freeze({
   complaints: 'complaints', doc_requests: 'docRequests', satisfaction: 'satisfaction', departments: 'departments',
   patient_transport: 'patientTransport', fleet: 'fleet', borrowable_assets: 'borrowable', projects: 'projects',
-  local_plan: 'localPlan', water: 'water', complaint_spike: 'complaintSpike',
+  local_plan: 'localPlan', water: 'water', payment: 'payment', complaint_spike: 'complaintSpike',
 })
 
 /**
@@ -989,6 +1015,17 @@ const ALERT_RULES = {
       count: w.over2wd, unit: 'ใบ',
       detail: `จากที่รอท่านลงนามทั้งหมด ${w.count} ใบ${since ? ` · ใบเก่าสุดถึงคิวประมาณ ${fmtDay(since)}` : ''}`,
     }
+  },
+  // บัญชีรับเงินเปลี่ยนภายใน 30 วัน (exec_summary_payment.account_changed_at) — ตัวเลขล้วน ไม่มีเลขบัญชี/ชื่อบัญชี
+  'payment-dues:account_changed': (m) => (m.payment?.accountChangedOn
+    ? { count: 1, unit: '', showCount: false, detail: `เปลี่ยนเมื่อ ${fmtDay(m.payment.accountChangedOn)} — ตรวจให้ตรงกับบัญชีของ อปท.` }
+    : null),
+  // เงินเข้าที่จับคู่แล้วแต่ยังไม่ลงเลขใบเสร็จ และเงินเข้าก่อนวันนี้ — count = รายการที่เงินเข้าก่อนวันนี้ (late) · detail บอกยอดรอเลขใบเสร็จทั้งหมด
+  'payment-dues:receipt_late': (m) => {
+    const a = m.payment?.awaitingReceipt
+    if (!a || a.late <= 0) return null
+    const oldest = fmtDay(a.oldestOn)
+    return { count: a.late, unit: 'รายการ', detail: `จากที่รอเลขใบเสร็จทั้งหมด ${a.n} รายการ (${bahtText(a.amount)} บาท)${oldest ? ` · เก่าสุดเงินเข้าเมื่อ ${oldest}` : ''}` }
   },
   'water-situation:event_open': (m) => {
     const w = m.water?.openEvents

@@ -1,21 +1,35 @@
 import { useMemo, useState } from 'react'
-import { Ban, Printer, Receipt } from 'lucide-react'
+import { Ban, Clock, Landmark, Printer, Receipt } from 'lucide-react'
 import { ListCard, Pager } from '../../patientTransport/StaffShell'
 import { paginate } from '../../../lib/patientBooking'
-import { CLOSED_LABEL, channelLabel, dueState, filterByTab, formatRef1, kindLabel, searchDues } from '../../../lib/paymentDues'
+import { CLOSED_LABEL, awaitingBankFile, channelLabel, dueState, filterByTab, formatRef1, kindLabel, searchDues } from '../../../lib/paymentDues'
 import { btnGhost, btnPrimary } from '../construction/uiStyles'
 import { fmtDate, fmtMoney } from '../licence/format'
 
 const small = `${btnGhost} min-h-9 px-2.5 text-xs`
 
 // สถานะ/ผลของแถวตามแท็บ — รอชำระ: นับถอยหลัง (เลยกำหนดเป็นสีแดง) · ชำระแล้ว: เลขใบเสร็จ+ช่องทาง · ปิดแล้ว: เหตุผลที่ระบบ/เจ้าหน้าที่บันทึก
-function DueStatus({ row, today, tab }) {
+// txn = เงินเข้าจากไฟล์ธนาคารที่จับคู่กับยอดนี้แล้ว (รอเลขใบเสร็จ) — ยอดยังรอชำระ จึงบอกให้เห็นว่าเงินเข้าแล้ว ไม่ต้องตามเก็บซ้ำ
+function DueStatus({ row, today, tab, txn }) {
   if (tab === 'open') {
     const state = dueState(row, today)
+    const waiting = !txn && awaitingBankFile(row, today)
     return (
       <>
         <span className="block text-gray-700">{fmtDate(row.due_on)}</span>
-        <span className={`block text-xs ${state.overdue ? 'font-bold text-red-700' : 'text-gray-500'}`}>{state.overdue ? `เลยกำหนด · ${state.text}` : state.text}</span>
+        <span className={`block text-xs ${state.overdue && !txn && !waiting ? 'font-bold text-red-700' : 'text-gray-500'}`}>{state.overdue ? `เลยกำหนด · ${state.text}` : state.text}</span>
+        {waiting && (
+          <span className="mt-1 inline-flex items-start gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
+            <Clock size={13} className="mt-0.5 shrink-0" />
+            <span>พ้นวันหมดอายุ — รอไฟล์ธนาคาร<span className="block font-normal">รับเงินที่เคาน์เตอร์ไม่ได้แล้ว · ระบบรอไฟล์ 7 วันหลังหมดอายุก่อนปิดยอด</span></span>
+          </span>
+        )}
+        {txn && (
+          <span className="mt-1 inline-flex items-start gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-900">
+            <Landmark size={13} className="mt-0.5 shrink-0" />
+            <span>เงินเข้าแล้ว รอเลขใบเสร็จ<span className="block font-normal text-emerald-800">{fmtDate(txn.txn_date)} · {fmtMoney(txn.amount)} บาท</span></span>
+          </span>
+        )}
       </>
     )
   }
@@ -36,10 +50,14 @@ function DueStatus({ row, today, tab }) {
   )
 }
 
-function RowActions({ row, isManager, onReceipt, onPrint, onCancel }) {
+function RowActions({ row, txn, waiting, isManager, onReceipt, onPrint, onCancel }) {
   return (
     <div className="flex flex-wrap gap-1.5">
-      <button type="button" className={`${small} !border-transparent !bg-emerald-600 !text-white hover:!bg-emerald-700`} onClick={() => onReceipt(row)}><Receipt size={14} />บันทึกเลขใบเสร็จ</button>
+      {/* มีเงินเข้าจับคู่แล้ว = เปิดแผ่นพร้อมวันที่รับ/ช่องทางจากไฟล์ธนาคาร เหลือกรอกเลขใบเสร็จ
+          พ้นวันหมดอายุ (รอไฟล์ธนาคาร) = ไม่เน้นปุ่ม — บันทึกได้เฉพาะเงินที่รับทันวันหมดอายุ ส่วนใหญ่ให้ใช้แท็บเงินเข้าจากธนาคาร */}
+      <button type="button" className={waiting ? small : `${small} !border-transparent !bg-emerald-600 !text-white hover:!bg-emerald-700`} onClick={() => onReceipt(row, txn ?? null)}>
+        <Receipt size={14} />{waiting ? 'บันทึกเลขใบเสร็จ (เฉพาะเงินที่รับทันวันหมดอายุ)' : 'บันทึกเลขใบเสร็จ'}
+      </button>
       <button type="button" className={small} onClick={() => onPrint([row])}><Printer size={14} />พิมพ์ใบแจ้งชำระ</button>
       {isManager && <button type="button" className={small} onClick={() => onCancel(row)}><Ban size={14} />ยกเลิกยอด</button>}
     </div>
@@ -50,7 +68,7 @@ function RowActions({ row, isManager, onReceipt, onPrint, onCancel }) {
  * แท็บรายการยอด (รอชำระ / ชำระแล้ว / ปิดแล้ว) — ค้นหาชื่อร้าน เลขใบ Ref1 · เลือกหลายแถวแล้วพิมพ์ใบแจ้งชำระ (เฉพาะรอชำระ)
  * ปุ่มยกเลิกยอดเฉพาะผู้จัดการทะเบียน (กองคลังไม่มี) · คอลัมน์ดำเนินการปักขวา
  */
-export default function PaymentDuesTab({ tab, dues, today, isManager, onReceipt, onPrint, onCancel, emptyText, title }) {
+export default function PaymentDuesTab({ tab, dues, today, isManager, matchedByDue, onReceipt, onPrint, onCancel, emptyText, title }) {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState(() => new Set())
   const [page, setPage] = useState(1)
@@ -73,6 +91,7 @@ export default function PaymentDuesTab({ tab, dues, today, isManager, onReceipt,
   })
   const printSelected = () => onPrint(selectedRows)
   const act = { isManager, onReceipt, onPrint, onCancel }
+  const txnOf = row => matchedByDue?.get(row.id) ?? null
 
   return (
     <ListCard title={title} count={shown.length} search={search} onSearch={value => { setSearch(value); setPage(1) }} searchLabel="ค้นหาชื่อร้าน เลขใบ หรือ Ref1"
@@ -110,10 +129,10 @@ export default function PaymentDuesTab({ tab, dues, today, isManager, onReceipt,
                     </td>
                     <td className="px-3 py-3 text-gray-700">{r.licence_no ?? '—'}<span className="block text-xs text-gray-500">{r.type_name ?? '—'}</span></td>
                     <td className="whitespace-nowrap px-3 py-3 text-gray-700">{kindLabel(r.kind)}</td>
-                    <td className="px-3 py-3"><DueStatus row={r} today={today} tab={tab} /></td>
+                    <td className="px-3 py-3"><DueStatus row={r} today={today} tab={tab} txn={txnOf(r)} /></td>
                     <td className="whitespace-nowrap px-3 py-3 text-right font-semibold text-gray-900">{fmtMoney(r.amount)}</td>
                     <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-gray-700">{formatRef1(r.ref1)}</td>
-                    {tab === 'open' && <td className="sticky right-0 bg-white px-3 py-3 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.18)]"><RowActions row={r} {...act} /></td>}
+                    {tab === 'open' && <td className="sticky right-0 bg-white px-3 py-3 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.18)]"><RowActions row={r} txn={txnOf(r)} waiting={!txnOf(r) && awaitingBankFile(r, today)} {...act} /></td>}
                   </tr>
                 ))}
               </tbody>
@@ -130,9 +149,9 @@ export default function PaymentDuesTab({ tab, dues, today, isManager, onReceipt,
                   </div>
                 </div>
                 <p className="break-words text-xs text-gray-600">{r.type_name ?? '—'}{r.licence_no ? ` · เลขที่ ${r.licence_no}` : ''} · {kindLabel(r.kind)}</p>
-                <div className="text-xs"><DueStatus row={r} today={today} tab={tab} /></div>
+                <div className="text-xs"><DueStatus row={r} today={today} tab={tab} txn={txnOf(r)} /></div>
                 <p className="text-sm font-semibold text-gray-900">{fmtMoney(r.amount)} บาท <span className="ml-1 font-mono text-xs font-normal text-gray-600">Ref1 {formatRef1(r.ref1)}</span></p>
-                {tab === 'open' && <RowActions row={r} {...act} />}
+                {tab === 'open' && <RowActions row={r} txn={txnOf(r)} waiting={!txnOf(r) && awaitingBankFile(r, today)} {...act} />}
               </li>
             ))}
           </ul>

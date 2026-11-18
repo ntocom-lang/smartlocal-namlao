@@ -907,4 +907,72 @@ test('เรื่องพุ่งผิดปกติ: ขอคีย์ co
   assert.ok(!broken.items.some((it) => it.id === 'complaints:spike'))
 })
 
+// ── รับชำระเงิน (E4 PR2): exec_summary_payment → การ์ดเตือนห้องผู้บริหาร ──────────────────────────────
+
+test('รับชำระเงิน: ทะเบียนมี summaryKey payment + kpi 4 ตัว + alert 2 ตัว ทุกตัวมีสูตร/กฎภาษาคน · ไม่มีปุ่มอนุมัติ · เรียกสรุปเมื่อโมดูลเปิดเท่านั้น', () => {
+  const entry = EXECUTIVE_REGISTRY.find((e) => e.key === 'payment-dues')
+  assert.equal(entry.summaryKey, 'payment')
+  assert.deepEqual(entry.kpis.map((k) => k.id), ['open', 'paid', 'overdue', 'bank_unmatched', 'not_ours'])
+  assert.deepEqual(entry.alerts.map((a) => a.id), ['account_changed', 'receipt_late'])
+  assert.ok(entry.kpis.every((k) => k.formula.length > 30 && k.source.startsWith('executive_overview.payment')))
+  assert.ok(entry.alerts.every((a) => a.rule.length > 30))
+  // ไม่มีชื่อ/Ref1/ชื่อผู้โอนบนการ์ด: สูตรต้องบอกว่าตัวเลขล้วน
+  assert.match(entry.kpis.find((k) => k.id === 'bank_unmatched').formula, /ไม่มีชื่อผู้โอน/)
+  assert.match(entry.kpis.find((k) => k.id === 'not_ours').formula, /ดุลพินิจของเจ้าหน้าที่/, 'ให้ผู้ตรวจเห็นว่าเป็นดุลพินิจของคน ต้องมีเหตุผลทุกรายการ')
+  assert.deepEqual(E2.execSummaryKeys([entry]), ['payment'])
+  assert.deepEqual(E2.execSummaryKeys(liveEntries((key) => key !== 'payment-dues', 'E2')).includes('payment'), false)
+})
+
+test('normalizePaymentSummary: ช่องว่าง/ผิดรูป = 0/null ไม่พัง · ไม่รับช่องอื่น (ชื่อ/Ref1) ผ่านมา', () => {
+  const full = E2.normalizePaymentSummary({
+    configured: true, open: { n: 3, amount: '4500.50' }, overdue: { n: 1, amount: 1000 }, paid: { n: 2, amount: 2500 }, lapsed: 1,
+    bank_unmatched: { n: 2, amount: 800, oldest: '2026-11-03' }, not_ours: { n: 1, amount: 120.5 },
+    awaiting_receipt: { n: 4, amount: 6000, oldest: '2026-11-05', late: 3 },
+    account_changed_at: '2026-11-16T03:00:00Z', business_name: 'ร้านลับ', ref1: '123456789012',
+  })
+  assert.deepEqual(full, {
+    configured: true, open: { n: 3, amount: 4500.5 }, overdue: { n: 1, amount: 1000 }, paid: { n: 2, amount: 2500 }, lapsed: 1,
+    bankUnmatched: { n: 2, amount: 800, oldestOn: '2026-11-03' }, notOurs: { n: 1, amount: 120.5 },
+    awaitingReceipt: { n: 4, amount: 6000, oldestOn: '2026-11-05', late: 3 },
+    accountChangedOn: '2026-11-16',
+  })
+  const empty = E2.normalizePaymentSummary(null)
+  assert.equal(empty.configured, false)
+  assert.deepEqual(empty.open, { n: 0, amount: 0 })
+  assert.deepEqual(empty.notOurs, { n: 0, amount: 0 }, 'ฐานรุ่นเก่าไม่ส่ง not_ours = 0 ไม่พัง')
+  assert.deepEqual(empty.awaitingReceipt, { n: 0, amount: 0, oldestOn: null, late: 0 })
+  assert.equal(empty.accountChangedOn, null)
+  const bad = E2.normalizePaymentSummary({ open: { n: 'x', amount: -5 }, bank_unmatched: { n: 1, amount: 'NaN', oldest: 'เมื่อวาน' }, account_changed_at: 'ไม่ใช่เวลา' })
+  assert.deepEqual(bad.open, { n: 0, amount: 0 })
+  assert.deepEqual(bad.bankUnmatched, { n: 1, amount: 0, oldestOn: null })
+  assert.equal(bad.accountChangedOn, null)
+  const model = buildExecModel({ payment: { ok: true, data: { open: { n: 2, amount: 10 } } } })
+  assert.equal(model.payment.state, 'ok')
+  assert.equal(model.payment.data.open.n, 2)
+  assert.equal(buildExecModel({}).payment.state, 'missing')
+  assert.equal(buildExecModel({ payment: { ok: false, error: 'x' } }).payment.state, 'error')
+})
+
+test('สัญญาณเตือนรับชำระเงิน: บัญชีเปลี่ยนใน 30 วัน (ไม่แสดงตัวเลข) · เงินเข้าแล้วยังไม่ลงเลขใบเสร็จ (นับเฉพาะที่เข้าก่อนวันนี้) · ไม่มีเรื่อง = ไม่ขึ้น · การ์ดพัง = failures', () => {
+  const entries = liveEntries(() => true, 'E2')
+  const run = (data) => buildAlerts({ entries, model: modelOf({ payment: data }), today: NOW })
+  const hit = run({ ok: true, data: {
+    awaiting_receipt: { n: 4, amount: 6000, oldest: '2026-11-05', late: 3 }, account_changed_at: '2026-11-08T03:00:00Z',
+  } })
+  const by = Object.fromEntries(hit.items.map((i) => [i.id, i]))
+  assert.equal(by['payment-dues:receipt_late'].count, 3)
+  assert.equal(by['payment-dues:receipt_late'].unit, 'รายการ')
+  assert.ok(by["payment-dues:receipt_late"].detail.includes("ทั้งหมด 4 รายการ (6,000.00 บาท)"), by["payment-dues:receipt_late"].detail)
+  assert.match(by['payment-dues:receipt_late'].detail, /เก่าสุดเงินเข้าเมื่อ/)
+  assert.equal(by['payment-dues:account_changed'].showCount, false)
+  assert.match(by['payment-dues:account_changed'].detail, /เปลี่ยนเมื่อ/)
+  assert.ok(hit.items.every((i) => !('name' in i) && !/[0-9]{9,}/.test(String(i.detail ?? ''))), 'ไม่มีชื่อ/เลขยาว (Ref1/บัญชี) บนการ์ด')
+  assert.equal(by['payment-dues:receipt_late'].severity, 'warn')
+  const quiet = run({ ok: true, data: { awaiting_receipt: { n: 2, amount: 100, oldest: '2026-11-10', late: 0 }, account_changed_at: null } })
+  assert.equal(quiet.items.some((i) => i.id.startsWith('payment-dues:')), false)
+  const broken = run({ ok: false, error: 'x' })
+  assert.ok(broken.failures.includes('รับชำระเงิน'))
+  assert.ok(EXEC_ALERT_RULE_KEYS.includes('payment-dues:account_changed') && EXEC_ALERT_RULE_KEYS.includes('payment-dues:receipt_late'))
+})
+
 console.log(`\nok — ${cases} cases`)
