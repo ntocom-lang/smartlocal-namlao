@@ -27,6 +27,8 @@ import { buildWasteCollectionRequestHtml, collectionPointText } from '../lib/was
 import { buildWasteCollectionCancelHtml, cancelReasonText } from '../lib/wasteCollectionCancelPrint'
 import { buildWaterServiceFormHtml, WATER_FORM_TYPES } from '../lib/waterSupplyRequestPrint'
 import { buildPublicAssistanceRequestHtml } from '../lib/publicAssistancePrint'
+import { buildCustomRequestHtml } from '../lib/customRequestPrint'
+import { customFormRows, customTypeLabel } from '../lib/customFormFields'
 import {
   SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE,
   pickSignatory, signatoryMoment, signatoryName, signatoryTitle,
@@ -455,6 +457,12 @@ function TaskDetailSheet({
             {req.purpose && (
               <InfoRow icon={<AlignLeft size={14} />} label="วัตถุประสงค์"  value={req.purpose} />
             )}
+            {/* คำตอบช่องกรอกของประเภทที่ อปท. ตั้งเอง (ตัวสร้างแบบฟอร์มออนไลน์) — อ่านจาก snapshot ในแถวคำขอ
+                ชื่อช่องเป็นของวันที่ยื่น แก้นิยามทีหลังก็ไม่เปลี่ยน · whitespace-pre-line เพราะข้อความยาวมีขึ้นบรรทัดใหม่ */}
+            {customFormRows(req.permit_form_data, req.document_type).map((row, index) => (
+              <InfoRow key={`custom-${index}`} icon={<AlignLeft size={14} />} label={row.label}
+                value={<span className="whitespace-pre-line break-words">{row.value}</span>} />
+            ))}
             {req.document_type === 'waste_collection_request' && req.permit_form_data?.applicant?.age && (
               <InfoRow icon={<User size={14} />} label="อายุ" value={`${req.permit_form_data.applicant.age} ปี`} />
             )}
@@ -707,6 +715,32 @@ function TaskDetailSheet({
         </div>
 
         {/* Footer actions */}
+        {customFormRows(req.permit_form_data, req.document_type).length > 0 && (
+          <div className="px-4 pb-2 pt-3 border-t border-gray-100 shrink-0">
+            <button onClick={async () => {
+              const { signatories, departmentName } = await loadPrintSignatories(req)
+              const html = buildCustomRequestHtml({
+                req,
+                tenant,
+                // ประเภทที่ถูกลบไปแล้วใช้ "บริการเพิ่มเติม" แทนรหัสดิบ (customTypeLabel)
+                typeLabel: customTypeLabel(tenant, req.document_type),
+                // วันที่บนใบ = วันที่ยื่น ไม่ใช่วันที่เจ้าหน้าที่กดพิมพ์ — ใบที่พิมพ์ซ้ำอีกหกเดือนต้องยังเป็นวันเดิม
+                thDate: thaiDate(req.created_at),
+                referenceNo: req.id?.slice(0, 8)?.toUpperCase() ?? '',
+                signatories, departmentName,
+              })
+              const w = window.open('', '_blank', 'width=860,height=1100')
+              if (!w) return
+              w.document.write(html)
+              w.document.close()
+              setTimeout(() => { w.focus(); w.print() }, 400)
+            }}
+              className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
+              style={{ backgroundColor: '#4f46e5' }}>
+              <Printer size={16} /> พิมพ์ใบคำขอ
+            </button>
+          </div>
+        )}
         {req.document_type === 'building_permit' && req.permit_form_data && (
           <div className="px-4 pb-2 pt-3 border-t border-gray-100 shrink-0">
             <button onClick={() => {

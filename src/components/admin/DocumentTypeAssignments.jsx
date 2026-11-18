@@ -8,6 +8,8 @@ import { PATIENT_TRANSPORT_TYPE } from '../../lib/patientTransport'
 import { CCTV_RETENTION_KEY, CCTV_RETENTION_MAX, CCTV_RETENTION_MIN, CCTV_TYPE, cctvRetentionDays } from '../../lib/cctvRequest'
 import { logAction } from '../../lib/auditLog'
 import ReferralPartnersCard from './ReferralPartnersCard'
+import CustomFormFieldsEditor from './CustomFormFieldsEditor'
+import { sanitizeFieldDefs } from '../../lib/customFormFields'
 
 // หน้าตั้ง "ประเภทคำขอเอกสาร/บริการ + ผังงาน" — มีประเภทอะไรบ้าง กองไหนรับ ใครถือ
 // และต้องเสร็จภายในกี่วัน รวมอยู่ในตารางเดียว
@@ -64,6 +66,8 @@ export default function DocumentTypeAssignments({ tenant }) {
   // remount แล้วอ่านค่าใหม่เอง ส่วน patchTenant ตอนบันทึกไม่เปลี่ยน id จึงไม่ remount
   const [customTypes, setCustomTypes] = useState(() => tenant?.fee_schedule?._custom_types || [])
   const [customDirty, setCustomDirty] = useState(false)
+  // ประเภทที่เพิ่มเองที่กำลังเปิดโมดัล "ช่องกรอก" (ตัวสร้างแบบฟอร์มออนไลน์) — เก็บ value ของประเภท
+  const [editingFieldsFor, setEditingFieldsFor] = useState(null)
   // กล้องเก็บภาพย้อนหลังกี่วัน (fee_schedule._cctv_retention_days) — ใช้ขึ้นป้ายเร่งคำขอภาพกล้องวงจรปิด
   // ว่าง = ไม่ได้ตั้ง ระบบไม่โชว์ตัวเลขและไม่ขึ้นป้ายเร่ง (ไม่เดาให้) ตั้งผ่านการ์ดเดียวกับสวิตช์เปิด/ปิดบริการ
   const [cctvDays, setCctvDays] = useState(() => {
@@ -153,6 +157,22 @@ export default function DocumentTypeAssignments({ tenant }) {
     setNewLabel('')
     setNewEmoji('📋')
     setShowAddForm(false)
+  }
+
+  // เก็บช่องกรอกลง entry ของประเภทที่เพิ่มเอง (ใน state เท่านั้น) — เขียนลง fee_schedule._custom_types
+  // ตอนกดบันทึกด้วย handleSave เดิม ไม่มีทางเขียนใหม่ · ไม่มีช่อง = ลบคีย์ fields ออกจาก entry
+  function saveCustomFields(value, fields) {
+    const clean = sanitizeFieldDefs(fields)
+    setCustomTypes(prev => prev.map(t => {
+      if (t.value !== value) return t
+      const next = { ...t }
+      delete next.fields
+      if (clean.length > 0) next.fields = clean
+      return next
+    }))
+    setCustomDirty(true)
+    setSaved(false)
+    setEditingFieldsFor(null)
   }
 
   // ลบประเภทที่เพิ่มเองออกถาวร (มีเฉพาะตัวที่ อปท. เพิ่มเอง ประเภทมาตรฐานปิดได้อย่างเดียว
@@ -400,6 +420,13 @@ export default function DocumentTypeAssignments({ tenant }) {
                         <p className={'text-sm ' + (enabled ? 'text-gray-700' : 'text-gray-400')}>{label}</p>
                         <div className="flex items-center gap-2 mt-0.5">
                           {custom && <span className="text-[10px] text-blue-400">ประเภทที่เพิ่มเอง</span>}
+                          {/* ตัวสร้างแบบฟอร์มออนไลน์ — เฉพาะประเภทที่เพิ่มเอง (ประเภทมาตรฐานมีฟอร์มของตัวเองในโค้ด) */}
+                          {custom && (
+                            <button type="button" onClick={() => setEditingFieldsFor(value)}
+                              className="text-[10px] font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded px-1.5 py-px hover:bg-blue-100">
+                              ช่องกรอก ({customTypes.find(t => t.value === value)?.fields?.length ?? 0})
+                            </button>
+                          )}
                           {!enabled && (
                             <span className="text-[10px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 rounded px-1.5 py-px">
                               ปิดอยู่ — ประชาชนยื่นใหม่ไม่ได้
@@ -602,6 +629,18 @@ export default function DocumentTypeAssignments({ tenant }) {
           </p>
         )}
       </div>
+
+      {editingFieldsFor && (() => {
+        const entry = customTypes.find(t => t.value === editingFieldsFor)
+        if (!entry) return null
+        return (
+          <CustomFormFieldsEditor
+            typeLabel={entry.label}
+            fields={sanitizeFieldDefs(entry.fields)}
+            onCancel={() => setEditingFieldsFor(null)}
+            onConfirm={fields => saveCustomFields(editingFieldsFor, fields)} />
+        )
+      })()}
 
       {/* ทะเบียนเจ้าของรถยังใช้เลือกหน่วยงานในระบบจองรถใหม่ แต่การเปิดบริการประชาชน
           ตั้งค่าที่หน้าทำงานรถรับส่งผู้ป่วย ไม่ขึ้นกับสวิตช์ประเภทคำขอเอกสารเดิม */}
