@@ -17,6 +17,8 @@ import { logAction } from '../../lib/auditLog'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../../lib/complaintPrivacy'
 import { canReturnComplaint, complaintIntakeReason } from '../../lib/complaintIntake'
 import ReturnToIntakeButton from '../complaints/ReturnToIntakeButton'
+import ChangeCategoryButton from '../complaints/ChangeCategoryButton'
+import { canChangeComplaintCategory } from '../../lib/complaintCategoryChange'
 import FinishComplaintDialog from '../complaints/FinishComplaintDialog'
 import ParkComplaintDialog from '../complaints/ParkComplaintDialog'
 import ComplaintTextBlock from '../complaints/ComplaintTextBlock'
@@ -700,7 +702,7 @@ function ReporterCard({ c }) {
   )
 }
 
-export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate, categoryMeta, onReturned, onFinished, onTextSaved, onParkChanged, departmentScoped = false }) {
+export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate, categoryMeta, onReturned, onFinished, onTextSaved, onParkChanged, onCategoryChanged, departmentScoped = false }) {
   const { tenant, terminology } = useTenant()
   const isAdminRole = ['admin', 'superadmin'].includes(currentUserRole)
   const isTechAssigned = currentUserRole === 'technician' && c.assigned_to === currentUserId
@@ -720,6 +722,9 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
   // departmentScoped = หน้าเจ้าหน้าที่ของหัวหน้ากองที่กรองมาเฉพาะเรื่องของกองตัวเองแล้ว
   const canPark = canParkWork(c, currentUserId, currentUserRole, categoryMeta, { departmentScoped })
   const canUnpark = canUnparkWork(c, currentUserId, currentUserRole, { departmentScoped })
+  // แก้ประเภทคำร้อง (กองตามประเภทใหม่): แอดมินกับหัวหน้ากองที่ถือเรื่อง — change_complaint_category ตรวจซ้ำที่ DB
+  // ทางแก้ของเรื่องที่อยู่ผิดกอง (เคส ES-69-0034 ใบพิมพ์ติดชื่อกองเดิม) แทนการให้คนเขียน SQL แก้
+  const canChangeCategory = canChangeComplaintCategory(c, currentUserId, currentUserRole, categoryMeta, { departmentScoped })
   // จัดกลุ่มตามกอง ใช้ render dropdown มอบหมายเป็น <optgroup> — คนหลักสิบ/ร้อยคนจะได้ไม่ต้องไล่หาในลิสต์แบนราบ
   const technicianGroups = groupStaffByDepartment(technicians ?? [])
   const [assigning, setAssigning] = useState(false)
@@ -1390,6 +1395,17 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
         {canReturn && (
           <div className="px-5 pt-3 border-t border-gray-100 shrink-0 bg-gray-50">
             <ReturnToIntakeButton complaintId={c.id} onReturned={(id) => { onReturned?.(id); onClose() }} />
+          </div>
+        )}
+
+        {canChangeCategory && (
+          <div className="px-5 pt-3 border-t border-gray-100 shrink-0 bg-gray-50">
+            <ChangeCategoryButton
+              complaint={c}
+              municipalityId={tenant?.id}
+              role={currentUserRole}
+              onChanged={(id, message) => { onCategoryChanged?.(id, message); onClose() }}
+            />
           </div>
         )}
 
@@ -2959,6 +2975,7 @@ ${summaryHtml}
           onReturned={() => fetchComplaints()}
           onFinished={() => fetchComplaints()}
           onParkChanged={() => fetchComplaints()}
+          onCategoryChanged={() => fetchComplaints()}
           onTextSaved={(id, patch) => {
             setComplaints((prev) => prev.map((row) => row.id === id ? { ...row, ...patch } : row))
             setSelectedComplaint((prev) => prev?.id === id ? { ...prev, ...patch } : prev)
