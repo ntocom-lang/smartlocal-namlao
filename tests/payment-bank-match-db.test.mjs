@@ -705,6 +705,32 @@ await test('รอบ 3 M-1/M-2: บันทึกรับจากเมน�
   await rejects(match('staffDG', x.id, dx.id), { code: '22023' })
 })
 
+await test('รอบ 4 M-1/L-4: ใบเสร็จรวมค่าปรับแต่เงินเข้าแค่ค่าธรรมเนียม → ระบบไม่ผูกเอง ไม่เสนอคู่เดียว · คนกดยืนยันได้ (receipted) · ช่องทางดิจิทัลไม่ตรงก็ให้คนตัดสิน', async () => {
+  const NM = await newLicence(foodNotice.id, { business: 'ร้านค่าปรับไม่ตรง', no: 'N-4', due: await day(10), fee: 300 })
+  await sync('staffDG')
+  const [dm] = await dueOf(NM.id)
+  await db.query('UPDATE public.licences SET next_fee_due_on = $2 WHERE id = $1', [NM.id, await day(-4)])
+  await db.query('UPDATE public.payment_dues SET due_on = $2, period_from = $2 WHERE id = $1', [dm.id, await day(-4)])
+  await receipt('financeA', dm.id, 'e-LAAS 060/2570', { amount: 300, surcharge: 60, channel: 'bill_payment' })
+  const r = await importRows('staffDG', 'bill_payment', [{ txn_at: `${today} 08:20`, amount: 300, ref1: dm.ref1, bank_ref: 'BP-PEN1' }], 'bp-pen.csv')
+  assert.deepEqual([r.auto_evidence, r.auto_matched, r.unmatched], [0, 0, 1])
+  const row = (await listTxns('staffDG')).rows.find(x => x.bank_ref === 'BP-PEN1')
+  assert.equal(row.suggested_due_id, null)
+  assert.deepEqual(row.candidates.map(c => [c.id, c.mode]), [[dm.id, 'evidence_unknown']])
+  assert.match(row.hint, /ยอดรับรวมค่าปรับ 360\.00 บาท ไม่เท่าเงินเข้า 300\.00 บาท/)
+  const m = await match('staffDG', row.id, dm.id)
+  assert.deepEqual([m.mode, m.status], ['evidence_unknown', 'receipted'])
+  // ช่องทางดิจิทัลไม่ตรงชนิดไฟล์ (บันทึกเป็นพร้อมเพย์ แต่เงินมาในรายงาน Bill Payment) → คนตัดสิน ไม่ค้างตาย
+  const LQ = await newLicence(hazard.id, { business: 'ร้านเลือกช่องทางผิด', no: 'H-17', expires: await day(41), fee: 725 })
+  await sync('staffDG')
+  const [dq] = await dueOf(LQ.id)
+  await receipt('staffDG', dq.id, 'e-LAAS 061/2570', { amount: 725, channel: 'promptpay' })
+  const r2 = await importRows('staffDG', 'bill_payment', [{ txn_at: `${today} 08:30`, amount: 725, ref1: dq.ref1, bank_ref: 'BP-MIX1' }], 'bp-mix.csv')
+  assert.equal(r2.auto_evidence, 0)
+  const mix = (await listTxns('staffDG')).rows.find(x => x.bank_ref === 'BP-MIX1')
+  assert.deepEqual(mix.candidates.map(c => c.mode), ['evidence_unknown'])
+})
+
 await test('M-2: ยอดที่จับคู่ไว้แต่ใบถูกเพิกถอน → รายการบอกเหตุผลให้ยกเลิกคู่ (ไม่ค้างเงียบ)', async () => {
   const t = (await listTxns('staffDG', 'matched')).rows.find(x => x.due?.id === d3.id)
   assert.equal(t.blocked_reason, null)

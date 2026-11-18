@@ -155,6 +155,7 @@ REVOKE ALL ON FUNCTION public.payment_late_surcharge(numeric) FROM PUBLIC, anon,
 --     ช่องทางที่บันทึกตรงกับชนิดไฟล์ (Bill Payment↔bill_payment · ไฟล์บัญชี↔promptpay) = 'evidence'
 --     ไม่ทราบช่องทาง (NULL/other — บันทึกจากเมนูทะเบียนเป็นแบบนี้ทั้งหมด) = 'evidence_unknown': คนกดได้ แต่ระบบไม่เสนอเป็นคู่เดียว
 --     และเตือนว่าถ้ารับเงินสดไว้ นี่คือเงินซ้ำ · ช่องทางขัดกัน (เช่น เงินสด) = NULL
+DROP FUNCTION IF EXISTS public.payment_bank_match_mode(uuid, date, numeric);   -- รุ่นร่าง 3 อาร์กิวเมนต์ (รอบ 4 L-5)
 CREATE OR REPLACE FUNCTION public.payment_bank_match_mode(p_due_id uuid, p_txn_date date, p_amount numeric, p_file_kind text)
 RETURNS text
 LANGUAGE sql
@@ -186,9 +187,14 @@ AS $$
                 AND (d.kind <> 'renewal' OR p_txn_date <= d.due_on)
                 AND p_txn_date BETWEEN f.paid_on - public.payment_bank_grace_days() AND f.paid_on + public.payment_bank_grace_days()
              THEN CASE
-                    WHEN (p_file_kind = 'bill_payment' AND d.paid_channel = 'bill_payment')
-                      OR (p_file_kind = 'account' AND d.paid_channel = 'promptpay') THEN 'evidence'
-                    WHEN d.paid_channel IS NULL OR d.paid_channel = 'other' THEN 'evidence_unknown'
+                    -- เงินสดที่เคาน์เตอร์ = เงินเข้านี้เป็นอีกก้อน (ผูกเป็นหลักฐานไม่ได้)
+                    WHEN d.paid_channel = 'counter' THEN NULL
+                    -- ผูกเองได้เฉพาะ: ช่องทางตรงชนิดไฟล์ และยอดรับรวมค่าปรับเท่าเงินเข้าพอดี (รอบ 4 M-1 — ไม่งั้นส่วนต่างหายเงียบ)
+                    WHEN ((p_file_kind = 'bill_payment' AND d.paid_channel = 'bill_payment')
+                          OR (p_file_kind = 'account' AND d.paid_channel = 'promptpay'))
+                         AND f.amount + f.surcharge = p_amount THEN 'evidence'
+                    -- ไม่ทราบช่องทาง / ช่องทางดิจิทัลไม่ตรงชนิดไฟล์ (รอบ 4 L-2) / ยอดรวมค่าปรับไม่เท่าเงินเข้า = คนตัดสิน ไม่เสนอเป็นคู่เดียว
+                    ELSE 'evidence_unknown'
                   END
          END
     FROM public.payment_dues AS d
@@ -550,8 +556,10 @@ BEGIN
                  WHEN hd.id IS NULL THEN 'ไม่พบ Ref1 นี้ในยอดของระบบ'
                  WHEN hd.mode = 'reopen' THEN 'เงินเข้าก่อนวันหมดอายุ แต่ระบบปิดยอดไปแล้วเพราะไฟล์มาช้า — กดยืนยันคู่เพื่อเปิดยอดกลับ'
                  WHEN hd.mode = 'evidence' THEN 'ยอดนี้บันทึกเลขใบเสร็จแล้ว แต่ยังไม่ผูกหลักฐานเงินเข้า — กดยืนยันคู่ (ไม่ใช่เงินซ้ำ)'
+                 WHEN hd.mode = 'evidence_unknown' AND hd.paid_total IS DISTINCT FROM t.amount
+                   THEN 'ยอดรับรวมค่าปรับ ' || hd.paid_total || ' บาท ไม่เท่าเงินเข้า ' || t.amount || ' บาท — ถ้ารับค่าปรับเป็นเงินสดแยก กดยืนยันคู่ · ถ้าไม่ใช่ ตรวจกับกองที่ถือเรื่อง'
                  WHEN hd.mode = 'evidence_unknown'
-                   THEN 'ยอดนี้บันทึกเลขใบเสร็จแล้วแต่ไม่ทราบช่องทางที่รับ — ถ้ารับเป็นเงินสดไว้ เงินก้อนนี้คือเงินซ้ำ (คืนเงินตามระเบียบ) · ถ้าเป็นเงินก้อนเดียวกัน กดยืนยันคู่'
+                   THEN 'ยอดนี้บันทึกเลขใบเสร็จแล้วแต่ช่องทางที่บันทึกไม่ตรงกับไฟล์นี้หรือไม่ทราบ — ถ้ารับเป็นเงินสดไว้ เงินก้อนนี้คือเงินซ้ำ (คืนเงินตามระเบียบ) · ถ้าเป็นเงินก้อนเดียวกัน กดยืนยันคู่'
                  WHEN hd.mode = 'open' THEN 'จับคู่ได้ — กดยืนยันคู่'
                  WHEN hd.has_txn THEN 'Ref1 นี้มีเงินเข้าผูกไว้แล้ว — อาจจ่ายซ้ำ (คืนเงินตามระเบียบ)'
                  WHEN hd.status = 'paid' THEN 'Ref1 ของยอดที่ชำระแล้ว — อาจสแกนใบแจ้งเก่าหรือจ่ายซ้ำ: ดูยอดรอบปัจจุบันของใบเดียวกันในคู่ที่เสนอ หรือคืนเงินตามระเบียบ'
@@ -596,6 +604,7 @@ BEGIN
         -- ยอดที่ Ref1 ในไฟล์ชี้ (สำหรับ hint)
         LEFT JOIN LATERAL (
           SELECT hd0.id, hd0.licence_id, hd0.status, hd0.kind, hd0.amount, hd0.due_on,
+                 (SELECT fp.amount + fp.surcharge FROM public.licence_fee_payments AS fp WHERE fp.id = hd0.payment_id) AS paid_total,
                  public.payment_bank_match_mode(hd0.id, t.txn_date, t.amount, t.file_kind) AS mode,
                  EXISTS (SELECT 1 FROM public.payment_bank_txns AS o WHERE o.due_id = hd0.id AND o.status IN ('matched', 'receipted')) AS has_txn
             FROM public.payment_dues AS hd0
@@ -688,8 +697,21 @@ BEGIN
     -- บอกเหตุผลที่ตรงที่สุด (ลำดับเดียวกับกฎ)
     IF EXISTS (SELECT 1 FROM public.payment_bank_txns WHERE due_id = p_due_id AND status IN ('matched', 'receipted')) THEN
       RAISE EXCEPTION 'ยอดนี้จับคู่กับเงินเข้ารายการอื่นแล้ว' USING ERRCODE = '22023';
+    ELSIF v_due.status = 'paid' AND v_due.paid_channel = 'counter' THEN
+      RAISE EXCEPTION 'ยอดนี้บันทึกรับเป็นเงินสดที่เคาน์เตอร์ — เงินเข้านี้น่าจะเป็นเงินซ้ำ (คืนเงินตามระเบียบ) · ถ้าเลือกช่องทางผิด ให้ยกเลิกรายการรับเงินที่ทะเบียนแล้วบันทึกใหม่'
+        USING ERRCODE = '22023';
+    ELSIF v_due.status = 'paid' AND v_due.kind = 'renewal' AND v_txn.txn_date > v_due.due_on THEN
+      RAISE EXCEPTION 'เงินเข้า (%) หลังวันหมดอายุของใบ (%) — ผูกเป็นหลักฐานของการต่ออายุไม่ได้ ตรวจวันที่รับเงินที่บันทึกไว้', v_txn.txn_date, v_due.due_on
+        USING ERRCODE = '22023';
+    ELSIF v_due.status = 'paid' AND EXISTS (SELECT 1 FROM public.licence_fee_payments AS fp WHERE fp.id = v_due.payment_id
+                                             AND abs(fp.paid_on - v_txn.txn_date) > public.payment_bank_grace_days()) THEN
+      RAISE EXCEPTION 'วันเงินเข้า (%) ห่างจากวันที่บันทึกรับเงินเกิน % วัน — อาจเป็นเงินซ้ำหรือใบแจ้งเก่า', v_txn.txn_date, public.payment_bank_grace_days()
+        USING ERRCODE = '22023';
     ELSIF v_due.status = 'paid' THEN
       RAISE EXCEPTION 'ยอดนี้บันทึกรับเงินด้วยยอดที่ไม่เท่าเงินเข้า (%) — ผูกเป็นหลักฐานไม่ได้', v_txn.amount USING ERRCODE = '22023';
+    ELSIF v_due.status = 'lapsed' AND v_due.amount = v_txn.amount AND v_txn.txn_date <= v_due.due_on THEN
+      RAISE EXCEPTION 'ยอดนี้ปิดไปแล้วและเปิดกลับไม่ได้ (ใบเปลี่ยนสถานะ/วันหมดอายุ หรือมียอดรอบเดียวกันอยู่แล้ว) — ตรวจกับกองที่ถือเรื่อง'
+        USING ERRCODE = '22023';
     ELSIF v_due.kind = 'renewal' AND v_due.status IN ('open', 'lapsed') AND v_txn.txn_date > v_due.due_on THEN
       RAISE EXCEPTION 'เงินเข้า (%) หลังวันหมดอายุของใบ (%) — ต่ออายุโดยชำระค่าธรรมเนียมไม่ได้แล้ว ต้องยื่นคำขอใหม่ (พ.ร.ฎ. 2564)',
         v_txn.txn_date, v_due.due_on USING ERRCODE = '22023';

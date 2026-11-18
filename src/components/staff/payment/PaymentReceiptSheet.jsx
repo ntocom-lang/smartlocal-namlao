@@ -58,6 +58,13 @@ export default function PaymentReceiptSheet({ due, settings, type, today, prefil
             เงินเข้าจากไฟล์ธนาคารวันที่ <b>{fmtDate(prefill.paidOn)}</b> ยอด <b>{fmtMoney(prefill.amount)}</b> บาท — ระบบเติมวันที่และช่องทางให้แล้ว เหลือกรอกเลขที่ใบเสร็จ (e-LAAS)
           </p>
         )}
+        {/* เงินเข้ารวมค่าปรับมาแล้วกี่บาท — เจ้าหน้าที่รู้ว่าต้องเก็บค่าปรับเพิ่มไหม (ผลตรวจ migration รอบ 4 L-3) */}
+        {prefill && late && (() => {
+          const inTxn = Math.round(((Number(prefill.amount) || 0) - (Number(amount) || 0)) * 100) / 100
+          return inTxn > 0
+            ? <p className="rounded-xl bg-blue-50 px-3 py-2 text-xs text-blue-900">เงินเข้ารวมค่าปรับชำระช้ามาแล้ว <b>{fmtMoney(inTxn)}</b> บาท — ช่องค่าปรับควรเป็นยอดนี้</p>
+            : <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">เงินเข้าเป็นค่าธรรมเนียมอย่างเดียว ไม่รวมค่าปรับ — ถ้าจะเก็บค่าปรับต้องเก็บแยก (ใส่ 0 ถ้าไม่เก็บ)</p>
+        })()}
         <p className="rounded-xl bg-gray-50 px-3 py-2 text-xs leading-relaxed text-gray-700">
           เจ้าหน้าที่ยืนยันว่ารับเงินแล้วพร้อมเลขที่ใบเสร็จ (ออกโดย อปท. ผ่าน e-LAAS) — ระบบปิดยอดนี้และขยายวันของใบตามกฎให้เอง ระบบไม่ออกใบเสร็จและไม่ลดหรือยกเว้นยอด
         </p>
