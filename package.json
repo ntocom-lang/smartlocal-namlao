@@ -78,6 +78,7 @@
     "test:fleet:form3": "node tests/fleet-form3-signatories.test.mjs && node tests/fleet-form3-layout.test.mjs",
     "test:waste-request": "node tests/waste-request-print.test.mjs",
     "test:staff-sign": "node tests/staff-sign-block.test.mjs",
+    "test:custom-form": "node tests/custom-form-fields.test.mjs",
     "test:rate-invite": "node tests/complaint-rate-invite.test.mjs",
     "test:rating-response-rate": "node tests/complaint-rating-response-rate.test.mjs",
     "test:rate-invite:db": "node tests/complaint-rate-invite-db.test.mjs --pglite",
