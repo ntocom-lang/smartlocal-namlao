@@ -156,6 +156,7 @@ export const PAGE_CATALOG = [
   { key: 'search',             path: '/search',              label: 'ค้นหาบริการ/แบบฟอร์ม',                  kind: 'info' },
   { key: 'patient-transport',  path: '/patient-transport',   label: 'จองรถรับ-ส่งผู้ป่วย',                   kind: 'service' },
   { key: 'queue-booking',      path: '/queue-booking',       label: 'จองคิวรับบริการ',                       kind: 'service' },
+  { key: 'my-shop',            path: '/my-shop',             label: 'ร้านของฉัน (ตลาดชาวบ้าน)',               kind: 'service' },
   { key: 'business-register',  path: '/business-register',   label: 'ลงทะเบียนร้านค้า',                      kind: 'service' },
   { key: 'satisfaction',       path: '/satisfaction',        label: 'ประเมินความพึงพอใจ',                   kind: 'service' },
   { key: 'surveys',            path: '/surveys',             label: 'แบบสำรวจความเห็น (รายการ)',             kind: 'service' },

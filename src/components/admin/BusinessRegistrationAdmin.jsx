@@ -7,6 +7,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import ServiceUrlHint from '../common/ServiceUrlHint'
 import { serviceUrlBlocked } from '../../lib/tourismPlaces'
+import { linkShopOwner } from '../../lib/localMarketApi'
 
 const TABS = [
   { key: 'pending',  label: 'รอดำเนินการ', color: '#f59e0b', bg: '#fef3c7' },
@@ -490,7 +491,8 @@ export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myD
       line_id:      selected.line_id?.trim() || null,
     }
 
-    const { error: insertErr } = await supabase.from('tourism_places').insert({
+    // select('id') เพื่อเอารหัสร้านใหม่ไปผูกเจ้าของร้านต่อ (ตลาดชาวบ้าน)
+    const { data: newPlace, error: insertErr } = await supabase.from('tourism_places').insert({
       municipality_id: tenant.id,
       name:        form.name.trim(),
       category:    form.category,
@@ -504,7 +506,7 @@ export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myD
       display_order: 999,
       ...onlineFields,
       ...carryOver,
-    })
+    }).select('id').single()
     if (insertErr) {
       setActing(false)
       alert('เกิดข้อผิดพลาด: ' + insertErr.message)
@@ -518,9 +520,19 @@ export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myD
       approved_at: new Date().toISOString(),
     }).eq('id', selected.id)
 
+    // ผูกบัญชีผู้ยื่นเป็นเจ้าของร้าน (ตลาดชาวบ้าน) ทุกครั้ง ไม่ขึ้นกับว่า อปท. เปิดโมดูลหรือยัง — วันไหนเปิด เจ้าของร้านจัดการสินค้าได้ทันที
+    // ผูกล้มต้องไม่ล้มการอนุมัติ (ร้านขึ้นเว็บไปแล้ว) แค่แจ้งเจ้าหน้าที่ให้ไปผูกเองที่หน้าจัดการสถานที่ · คำขอไม่มีบัญชีผู้ยื่น (user_id ว่าง) ข้าม
+    let linkWarning = ''
+    if (selected.user_id && newPlace?.id) {
+      const linked = await linkShopOwner(newPlace.id, selected.id)
+      if (linked.error) linkWarning = `อนุมัติแล้ว แต่ผูกเจ้าของร้านไม่สำเร็จ ผูกเองได้ที่หน้าจัดการสถานที่
+(${linked.error})`
+    }
+
     setRegs(prev => prev.map(r => r.id === selected.id ? { ...r, status: 'approved' } : r))
     setActing(false)
     setSelected(null)
+    if (linkWarning) window.alert(linkWarning)
   }
 
   async function handleReject() {
