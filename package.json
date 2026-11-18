@@ -105,6 +105,8 @@
     "test:construction:lifecycle": "node tests/construction-lifecycle.test.mjs",
     "test:local-plan:db": "node tests/local-plan-db.test.mjs",
     "test:licence:db": "node tests/licence-registry-db.test.mjs",
+    "test:payment": "node tests/payment-dues-lib.test.mjs",
+    "test:payment:db": "node tests/payment-dues-db.test.mjs",
     "test:licence": "node tests/licence-registry-lib.test.mjs && node tests/licence-expiry-notify.test.mjs",
     "test:local-plan:progress-db": "node tests/local-plan-progress-db.test.mjs",
     "test:local-plan:bank-db": "node tests/local-plan-bank-db.test.mjs",

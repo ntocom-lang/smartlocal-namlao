@@ -49,3 +49,35 @@ export function generatePromptPayPayload(target, amount = 0) {
   const payload = parts.join('')
   return payload + crc16(payload)
 }
+
+/**
+ * สร้าง QR Bill Payment (EMVCo tag 30 — ชำระข้ามธนาคารด้วยรหัสผู้รับชำระ + Ref1) สำหรับใบแจ้งชำระของ อปท.
+ *   sub 00 = 'A000000677010112' · 01 = Biller ID 15 หลัก · 02 = Ref1 · 03 = Ref2 (ถ้ามี) · 010212 = dynamic · 54 = ยอด 2 ตำแหน่ง
+ * ⚠️ รูปแบบตามเอกสารธนาคาร/ไลบรารีอ้างอิง ต้องลองสแกนกับธนาคารของ อปท. ก่อนเปิดใช้จริง
+ *    (ธนาคารบางแห่งกำหนดความยาว/ชนิดของ Ref ต่างกัน และต้องทำสัญญาผู้รับชำระกับธนาคารก่อน)
+ * คืน null เมื่อข้อมูลไม่ครบ/ผิดรูป ไม่เดารหัส: ไม่มี QR ดีกว่า QR ที่ชำระผิดบัญชี
+ * @param {{ billerId: string, ref1: string, ref2?: string, amount: number }} args
+ */
+export function generateBillPaymentPayload({ billerId, ref1, ref2 = '', amount } = {}) {
+  const biller = String(billerId ?? '')
+  const r1 = String(ref1 ?? '')
+  const r2 = String(ref2 ?? '')
+  const baht = Number(amount)
+  if (!/^\d{15}$/.test(biller)) return null
+  if (!/^[0-9A-Z]{1,20}$/.test(r1)) return null
+  if (r2 && !/^[0-9A-Z]{1,20}$/.test(r2)) return null
+  if (!Number.isFinite(baht) || baht <= 0 || baht > 9999999999.99) return null
+
+  const merchantAcct = tlv('00', 'A000000677010112') + tlv('01', biller) + tlv('02', r1) + (r2 ? tlv('03', r2) : '')
+  const parts = [
+    tlv('00', '01'),
+    tlv('01', '12'),
+    tlv('30', merchantAcct),
+    tlv('53', '764'),
+    tlv('54', baht.toFixed(2)),
+    tlv('58', 'TH'),
+    '6304',
+  ]
+  const payload = parts.join('')
+  return payload + crc16(payload)
+}

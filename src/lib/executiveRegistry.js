@@ -300,6 +300,14 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     link: { module: 'licence-registry' }, kpis: [], alerts: [], reports: [],
   },
   {
+    // รับชำระเงิน (ขั้น 1C / E4 PR1) — ลิงก์เข้าเมนูอย่างเดียว ยังไม่มีตัวเลขบนห้องผู้บริหาร: ไม่มี summaryKey/RPC
+    // ข้อมูลมีชื่อผู้ประกอบการ (PDPA) และ viewer อ่านตารางตรงๆ ไม่ได้ (RLS: ผู้ดูแลยอดเท่านั้น)
+    // ตัวเลขยอดค้างบนห้องผู้บริหารต้องมาจาก RPC ที่ตรวจสิทธิ์แล้ว (exec_summary_payment() ผ่าน migration-reviewer ทุกครั้ง) = งานถัดไป
+    key: 'payment-dues', kind: 'module', label: 'รับชำระเงิน', icon: 'Receipt', dept: 'กองคลัง',
+    zones: ['context'], isCitizenService: false, docTypes: [], summaryKey: null, phase: 'E2',
+    link: { module: 'payment-dues' }, kpis: [], alerts: [], reports: [],
+  },
+  {
     key: 'water-situation', kind: 'module', label: 'สถานการณ์น้ำ-ฝน', icon: 'CloudRain', dept: 'สำนักปลัด',
     zones: ['decision', 'alert', 'area'], isCitizenService: false, docTypes: [], summaryKey: 'water', phase: 'E1',
     link: { path: '/water-situation' },
