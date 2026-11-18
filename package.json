@@ -212,7 +212,8 @@
     "test:image-budget": "node --test tests/image-budget.test.mjs",
     "check:image-budget": "node scripts/check-image-budget.mjs",
     "twa:publish": "node scripts/twa-publish.mjs",
-    "test:app-download": "node tests/app-download.test.mjs"
+    "test:app-download": "node tests/app-download.test.mjs",
+    "test:signatory-acting": "node tests/signatory-acting-title.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

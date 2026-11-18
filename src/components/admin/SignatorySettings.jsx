@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ArrowRight, CheckCircle2, Loader2, PenLine, Plus, Save, Sparkles, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import {
-  appointmentSuggestion, buildSignatorySlots, CUSTOM_ROLE, earliestEffectiveFrom, effectiveDateForForm, groupPeopleByDepartment,
+  actingTitleOptions, appointmentSuggestion, buildSignatorySlots, slotHolder, CUSTOM_ROLE, earliestEffectiveFrom, effectiveDateForForm, groupPeopleByDepartment,
   SIGNATORY_BACKDATE_LIMIT_DAYS, SIGNING_EFFECT_TEXT, signatoryChangeFor, signatoryName, signatorySlotKey, signatorySuggestionState, signatoryTitle,
   SUGGESTABLE_KINDS, todayBangkok,
 } from '../../lib/documentSignatories'
@@ -95,6 +95,32 @@ function SignatoryEditDialog({ slot, people, departments, assignment, suggestion
   const identityReady = sourceMode === 'manual' ? Boolean(manualName.trim() && titleOverride.trim()) : Boolean(profileId)
   const suggested = signatorySuggestionState(assignment, suggestion)
   const suggestionPicked = Boolean(suggested.person) && sourceMode === 'profile' && profileId === suggested.person.id
+  // ปุ่มถ้อยคำ "รักษาราชการแทน/ปฏิบัติราชการแทน" — ขึ้นเฉพาะเมื่อคนที่เลือกไม่ใช่ผู้ดำรงตำแหน่งตัวจริง
+  // กดแล้วเติมลงช่อง ยังแก้เองได้ ไม่บันทึกจนกว่าจะกดบันทึก (เจ้าของระบบสั่ง 2569-11-18)
+  const titleInputRef = useRef(null)
+  const holder = useMemo(() => slotHolder({ suggestion, assignment }), [suggestion, assignment])
+  const actingPerson = sourceMode === 'profile'
+    ? (selected ? { id: selected.id, name: selected.full_name, title: selected.job_title?.trim() || selected.position?.name?.trim() || '' } : null)
+    : { id: null, name: manualName, title: '' }
+  const actingOptions = actingTitleOptions({ holder, person: actingPerson })
+  // ปุ่ม "ตามการแต่งตั้ง" = ล้างช่อง ใช้ตอนเปลี่ยนคืน · โหมดพิมพ์ชื่อเองบังคับกรอกตำแหน่ง จึงไม่มีปุ่มนี้
+  const showResetTitle = sourceMode === 'profile' && Boolean(titleOverride.trim())
+
+  function pickTitle(text, complete, ownTitle = true) {
+    // ไม่รู้ตำแหน่งผู้ลงนาม (พิมพ์ชื่อเอง) = เว้นวรรคหน้าไว้ · ไม่รู้ตำแหน่งที่ถูกแทน = เว้นวรรคท้ายไว้ (ตอนบันทึก trim ออก)
+    const value = `${ownTitle ? '' : ' '}${text}${complete ? '' : ' '}`
+    setTitleOverride(value)
+    setError('')
+    if (complete && ownTitle) return
+    // วางเคอร์เซอร์ตรงที่ต้องพิมพ์ต่อ — ตำแหน่งของผู้ลงนามต้องอยู่หน้าคำว่า "แทน" ใบพิมพ์จึงแบ่ง 2 บรรทัด
+    const caret = ownTitle ? value.length : 0
+    requestAnimationFrame(() => {
+      const input = titleInputRef.current
+      if (!input) return
+      input.focus()
+      input.setSelectionRange(caret, caret)
+    })
+  }
 
   // title_override ใช้ร่วมสองโหมดแต่มีความหมายต่างกัน: โหมด manual คือตำแหน่งบังคับของคนนอกระบบ
   // ส่วนโหมด profile คือการ "ทับ" ตำแหน่งจริงในโปรไฟล์ ถ้าไม่ล้างตอนสลับโหมด ตำแหน่งที่พิมพ์ไว้
@@ -284,9 +310,48 @@ function SignatoryEditDialog({ slot, people, departments, assignment, suggestion
           <label htmlFor="signatory-title" className="mb-1 block text-sm font-bold text-gray-800">
             ตำแหน่งที่พิมพ์ใต้ชื่อ{sourceMode === 'manual' ? ' *' : ''}
           </label>
-          <input id="signatory-title" value={titleOverride} onChange={(event) => setTitleOverride(event.target.value)}
+          <input id="signatory-title" ref={titleInputRef} value={titleOverride} onChange={(event) => setTitleOverride(event.target.value)}
             placeholder={sourceMode === 'manual' ? 'เช่น ผู้อำนวยการกองช่าง' : selected ? personTitle(selected) : 'ตำแหน่งจากการแต่งตั้ง'}
             maxLength={250} aria-label={`ชื่อตำแหน่งที่พิมพ์ ${slot.label}`} className={FIELD_CLASS} />
+          {(actingOptions.length > 0 || showResetTitle) && (
+            <div className="mt-2 space-y-1.5" data-signatory-title-options>
+              <p className="text-xs font-semibold text-gray-600">เลือกถ้อยคำ (กดแล้วแก้ต่อในช่องได้)</p>
+              <div className="flex flex-col gap-1.5">
+                {sourceMode === 'profile' && (
+                  <button type="button" onClick={() => pickTitle('', true)} aria-pressed={!titleOverride.trim()}
+                    data-signatory-title-option="appointed"
+                    className={`min-h-11 rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-colors ${!titleOverride.trim() ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}>
+                    ตามการแต่งตั้ง{selected ? ` (${personTitle(selected)})` : ''}
+                  </button>
+                )}
+                {actingOptions.map((option) => {
+                  const active = titleOverride.trim() === option.text
+                  return (
+                    <button key={option.phrase} type="button" onClick={() => pickTitle(option.text, option.complete, option.ownTitle)}
+                      aria-pressed={active} data-signatory-title-option={option.phrase}
+                      className={`min-h-11 rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-colors ${active ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}>
+                      {option.text}{option.complete ? '' : ' …'}
+                    </button>
+                  )
+                })}
+              </div>
+              {actingOptions.some((option) => !option.complete) && (
+                <p className="text-xs font-medium leading-5 text-amber-800">
+                  ระบบไม่รู้ตำแหน่งของผู้ที่ถูกแทน (ยังไม่ได้ตั้งผู้ดำรงตำแหน่งช่องนี้) — กดแล้วพิมพ์ตำแหน่งต่อท้ายให้ครบ
+                </p>
+              )}
+              {actingOptions.some((option) => !option.ownTitle) && (
+                <p className="text-xs font-medium leading-5 text-amber-800">
+                  พิมพ์ตำแหน่งของผู้ลงนามไว้หน้าคำว่า “แทน” ด้วย ใบพิมพ์จึงแบ่งเป็น 2 บรรทัดตามแบบ
+                </p>
+              )}
+              {actingOptions.length > 0 && (
+                <p className="text-xs leading-5 text-gray-500">
+                  “รักษาราชการแทน” กับ “ปฏิบัติราชการแทน” ใช้คนละกรณี เลือกให้ตรงกับถ้อยคำในคำสั่งจริง
+                </p>
+              )}
+            </div>
+          )}
           <p className={HELP_CLASS}>
             {sourceMode === 'profile' && 'เว้นว่างได้ ระบบใช้ตำแหน่งจากการแต่งตั้ง · '}
             ถ้ารักษาราชการแทนหรือปฏิบัติราชการแทน ให้พิมพ์ที่ช่องนี้ตามคำสั่งจริง

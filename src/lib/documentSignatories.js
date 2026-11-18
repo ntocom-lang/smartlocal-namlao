@@ -450,3 +450,49 @@ export function signatoryTitle(row) {
     || row?.profile?.position?.name?.trim()
     || ''
 }
+
+// ── ถ้อยคำตำแหน่งกรณีผู้อื่นลงนามแทน (เจ้าของระบบสั่ง 2569-11-18) ─────────────────────────────
+// นายก/หัวหน้ากองไปราชการ 1-2 วัน แอดมินเปลี่ยนผู้ลงนามแล้วเปลี่ยนคืน — ปุ่มเติมถ้อยคำให้ ไม่ต้องพิมพ์ยาวทุกครั้ง
+// ระบบไม่เลือกถ้อยคำให้: "รักษาราชการแทน" กับ "ปฏิบัติราชการแทน" เป็นคนละกรณีตามกฎหมาย แอดมินต้องเลือกให้ตรงคำสั่งจริง
+export const ACTING_TITLE_PHRASES = Object.freeze(['รักษาราชการแทน', 'ปฏิบัติราชการแทน'])
+
+const printTitleOfPerson = person => person?.job_title?.trim() || appointedPositionName(person)
+
+// ผู้ดำรงตำแหน่งตัวจริงของช่อง — การแต่งตั้ง (เจอคนเดียว) ก่อน ไม่งั้นคนที่ตั้งไว้ในทะเบียนที่ไม่ใช่ผู้แทน
+// suggestion = ผลของ appointmentSuggestion · assignment = แถวทะเบียนปัจจุบันของช่อง (มี profile ติดมา)
+export function slotHolder({ suggestion, assignment } = {}) {
+  if (suggestion?.status === 'one' && suggestion.person) {
+    const person = suggestion.person
+    return { id: person.id ?? null, name: person.full_name?.trim() ?? '', title: printTitleOfPerson(person) }
+  }
+  if (assignment && !isActingSignatory(assignment)) {
+    return { id: assignment.profile_id ?? null, name: signatoryName(assignment), title: signatoryTitle(assignment) }
+  }
+  return null
+}
+
+// ตัวเลือกถ้อยคำ "<ตำแหน่งผู้แทน> รักษาราชการแทน<ตำแหน่งที่ถูกแทน>"
+//   person = { id, name, title } ของคนที่กำลังจะตั้ง (โหมดพิมพ์ชื่อเอง id = null, title = '')
+//   คนเดียวกับผู้ดำรงตำแหน่ง = ไม่มีตัวเลือก (กรณีปกติ/ตอนเปลี่ยนคืน ไม่ต้องรกจอ)
+//   complete = false เมื่อระบบไม่รู้ตำแหน่งที่ถูกแทน ข้อความจบที่คำว่า "แทน" ให้แอดมินพิมพ์ต่อ
+//   ownTitle = false เมื่อไม่รู้ตำแหน่งของผู้แทน (โหมดพิมพ์ชื่อเอง) — ใบพิมพ์แบ่ง 2 บรรทัดได้ต่อเมื่อมีตำแหน่งนำหน้าคำว่า "แทน"
+//   เว้นวรรครอบถ้อยคำตามรูปแบบที่ govSplitActingTitle ตัดบรรทัด ("ผู้อำนวยการกองช่าง รักษาราชการแทน ปลัดเทศบาล…")
+//   ไม่เดาตำแหน่งจากชื่อกอง — ห้ามเติม "หัวหน้า"/"ผู้อำนวยการ" หน้าชื่อกองเอง (บาง อปท. ไม่มีตำแหน่งนั้น)
+export function actingTitleOptions({ holder, person } = {}) {
+  // person = null คือยังไม่ได้เลือกบุคลากร · โหมดพิมพ์ชื่อเองส่ง person มาเสมอ ปุ่มจึงขึ้นตั้งแต่ยังไม่พิมพ์ชื่อ
+  if (!person) return []
+  const name = person.name?.trim() ?? ''
+  if (holder && name) {
+    const sameAccount = Boolean(holder.id && person.id) && holder.id === person.id
+    const sameName = !(holder.id && person.id) && Boolean(holder.name) && compactName(holder.name) === compactName(name)
+    if (sameAccount || sameName) return []
+  }
+  const own = person.title?.trim() ?? ''
+  const target = holder?.title?.trim() ?? ''
+  return ACTING_TITLE_PHRASES.map(phrase => ({
+    phrase,
+    text: [own, phrase, target].filter(Boolean).join(' '),
+    complete: Boolean(target),
+    ownTitle: Boolean(own),
+  }))
+}
