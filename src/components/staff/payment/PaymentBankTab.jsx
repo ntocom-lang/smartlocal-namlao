@@ -134,7 +134,7 @@ function Candidate({ txn, c, suggested, busyId, onConfirm }) {
         {Number(c.surcharge_in_txn) > 0 && <><dt className="text-gray-500">ค่าปรับในเงินเข้า</dt><dd>{fmtMoney(c.surcharge_in_txn)} บาท (ชำระรายปีช้า 20%)</dd></>}
         {(c.mode === 'evidence' || c.mode === 'evidence_unknown') && <>
           <dt className="text-gray-500">ใบเสร็จ</dt><dd>{c.receipt_no ?? '—'}</dd>
-          <dt className="text-gray-500">บันทึกรับ</dt><dd>{fmtDate(c.paid_on)} · {c.paid_channel ? channelLabel(c.paid_channel) : 'ไม่ทราบช่องทาง'}</dd>
+          <dt className="text-gray-500">บันทึกรับ</dt><dd>{fmtDate(c.paid_on)} · {c.paid_channel ? channelLabel(c.paid_channel) : 'ไม่ทราบช่องทาง'}{Number(c.paid_surcharge) > 0 ? ` · รวมค่าปรับ ${fmtMoney(c.paid_surcharge)} บาท` : ''}</dd>
         </>}
       </dl>
       <p className="text-gray-600">{mode.detail}</p>

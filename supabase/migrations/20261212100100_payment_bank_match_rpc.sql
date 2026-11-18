@@ -557,7 +557,7 @@ BEGIN
                  WHEN hd.mode = 'reopen' THEN 'เงินเข้าก่อนวันหมดอายุ แต่ระบบปิดยอดไปแล้วเพราะไฟล์มาช้า — กดยืนยันคู่เพื่อเปิดยอดกลับ'
                  WHEN hd.mode = 'evidence' THEN 'ยอดนี้บันทึกเลขใบเสร็จแล้ว แต่ยังไม่ผูกหลักฐานเงินเข้า — กดยืนยันคู่ (ไม่ใช่เงินซ้ำ)'
                  WHEN hd.mode = 'evidence_unknown' AND hd.paid_total IS DISTINCT FROM t.amount
-                   THEN 'ยอดรับรวมค่าปรับ ' || hd.paid_total || ' บาท ไม่เท่าเงินเข้า ' || t.amount || ' บาท — ถ้ารับค่าปรับเป็นเงินสดแยก กดยืนยันคู่ · ถ้าไม่ใช่ ตรวจกับกองที่ถือเรื่อง'
+                   THEN 'ยอดรับรวมค่าปรับ ' || hd.paid_total || ' บาท ไม่เท่าเงินเข้า ' || t.amount || ' บาท — ถ้ารับค่าปรับเป็นเงินสดแยก กดยืนยันคู่ · ถ้ารับค่าธรรมเนียมเป็นเงินสดไว้แล้ว เงินก้อนนี้คือเงินซ้ำ (คืนเงินตามระเบียบ)'
                  WHEN hd.mode = 'evidence_unknown'
                    THEN 'ยอดนี้บันทึกเลขใบเสร็จแล้วแต่ช่องทางที่บันทึกไม่ตรงกับไฟล์นี้หรือไม่ทราบ — ถ้ารับเป็นเงินสดไว้ เงินก้อนนี้คือเงินซ้ำ (คืนเงินตามระเบียบ) · ถ้าเป็นเงินก้อนเดียวกัน กดยืนยันคู่'
                  WHEN hd.mode = 'open' THEN 'จับคู่ได้ — กดยืนยันคู่'
@@ -621,7 +621,7 @@ BEGIN
                      jsonb_build_object('id', cd.id, 'ref1', cd.ref1, 'kind', cd.kind, 'due_on', cd.due_on, 'amount', cd.amount,
                                         'status', cd.status, 'mode', cd.mode, 'licence_no', cl.licence_no,
                                         'business_name', cl.business_name, 'receipt_no', cf.receipt_no,
-                                        'paid_on', cf.paid_on, 'paid_channel', cd.paid_channel,
+                                        'paid_on', cf.paid_on, 'paid_channel', cd.paid_channel, 'paid_surcharge', cf.surcharge,
                                         'surcharge_in_txn', CASE WHEN cd.status IN ('open', 'lapsed') AND t.amount <> cd.amount
                                                                  THEN t.amount - cd.amount ELSE 0 END) AS cand,
                      -- Ref1 ตรง → ใบเดียวกับ Ref1 ในไฟล์ (เช่น สแกนใบแจ้งปีก่อน = ยอดรอบปัจจุบันของใบนั้นขึ้นก่อน) → วันใกล้
