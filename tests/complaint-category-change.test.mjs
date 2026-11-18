@@ -20,8 +20,11 @@ assert.equal(canChangeComplaintCategory(base, me, 'officer', meta, { departmentS
 assert.equal(canChangeComplaintCategory({ ...base, assigned_to: me }, me, 'officer', meta), true)
 assert.equal(canChangeComplaintCategory({ ...base, assigned_to: me }, me, 'staff', meta), false, 'staff ใช้ปุ่มส่งคืนแอดมิน')
 assert.equal(canChangeComplaintCategory({ ...base, assigned_to: me }, me, 'technician', meta), false)
+// เรื่องที่จบแล้ว: แอดมินแก้ได้ (เคส ES-69-0034 ทุ่งแค้ว) หัวหน้ากองแก้ไม่ได้
 for (const status of CHANGE_CATEGORY_LOCKED_STATUSES) {
-  assert.equal(canChangeComplaintCategory({ ...base, status }, me, 'admin', meta), false, `สถานะ ${status} ต้องล็อก`)
+  assert.equal(canChangeComplaintCategory({ ...base, status }, me, 'admin', meta), true, `สถานะ ${status}: แอดมินต้องแก้ได้`)
+  assert.equal(canChangeComplaintCategory({ ...base, status }, me, 'superadmin', meta), true)
+  assert.equal(canChangeComplaintCategory({ ...base, status, assigned_to: me }, me, 'officer', meta, { departmentScoped: true }), false, `สถานะ ${status}: หัวหน้ากองต้องแก้ไม่ได้`)
 }
 for (const status of ['pending', 'new', 'received', 'in_progress', 'parked']) {
   assert.equal(canChangeComplaintCategory({ ...base, status }, me, 'admin', meta), true, `สถานะ ${status} ต้องแก้ได้`)
@@ -50,11 +53,20 @@ assert.equal(adminChoices.find((c) => c.value === 'tree').departmentName, 'ส�
 assert.equal(adminChoices.find((c) => c.value === 'tree').label, 'ต้นไม้', 'แถวซ้ำที่ปิดใช้ต้องไม่ทับแถวที่เปิดอยู่')
 const officerChoices = categoryChangeChoices(cats, depts, 'water_supply', 'officer')
 assert.equal(officerChoices.some((c) => c.value === 'corruption'), false)
+// ประเภทเดิมแต่กองค้าง → ขึ้นเป็นตัวเลือกแรก (เคส ES-69-0034) · กองตรงแล้ว = ไม่ขึ้น
+const stale = categoryChangeChoices(cats, depts, 'tree', 'admin', 'd-eng')
+assert.equal(stale[0].value, 'tree')
+assert.equal(stale[0].resync, true)
+assert.equal(stale[0].departmentName, 'สำนักปลัด', 'ต้องใช้แถวที่เปิดใช้ (แบบเดียวกับ trigger) ไม่ใช่แถวซ้ำที่ปิด')
+assert.match(stale[0].label, /ประเภทเดิม/)
+assert.equal(categoryChangeChoices(cats, depts, 'tree', 'admin', 'd-clerk').some((c) => c.value === 'tree'), false)
+assert.equal(categoryChangeChoices(cats, depts, 'tree', 'admin', null).some((c) => c.value === 'tree'), false, 'ไม่รู้กองของเรื่อง = ไม่เสนอ')
 console.log('PASS ตัวเลือกประเภท: ตัดประเภทเดิม/ปิดใช้/ไม่มีกอง/เฉพาะกิจ · หัวหน้ากองไม่เห็นแจ้งการทุจริต')
 
 // ── ข้อความ ──
 assert.equal(describeCategoryChange({ department: 'สำนักปลัด', department_changed: true, assigned_to: 'x' }), 'แก้ประเภทแล้ว · ย้ายไปสำนักปลัด')
 assert.match(describeCategoryChange({ department: 'สำนักปลัด', department_changed: true, assigned_to: null }), /รอแอดมินรับเรื่อง/)
+assert.doesNotMatch(describeCategoryChange({ department: 'สำนักปลัด', department_changed: true, assigned_to: null, status: 'closed' }), /รอแอดมิน/)
 assert.equal(rerouteConfirmText({ count: 0, department: 'สำนักปลัด' }, 'น้ำ'), '')
 assert.equal(rerouteConfirmText(null, 'น้ำ'), '')
 const q = rerouteConfirmText({ count: 3, department: 'สำนักปลัด' }, 'สนับสนุนน้ำอุปโภค')

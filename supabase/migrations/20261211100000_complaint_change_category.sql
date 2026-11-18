@@ -18,12 +18,19 @@
 --                                      (complaint_worker_can_act) · ต้องมีเหตุผล 5–500 ตัวอักษร
 --                                      staff/technician ใช้ปุ่ม "ส่งคืนแอดมิน" เดิม (การเปลี่ยนกองเป็นการตัดสินของหัวหน้า)
 --                                      เรื่องแจ้งการทุจริต (corruption) เข้า/ออกได้เฉพาะแอดมิน — ล็อกเดียวกับ #756
+--                                      เรื่องที่จบแล้ว = แอดมินเท่านั้น (ตรวจใน complaint_reroute_apply)
 --   reroute_category_open_complaints : admin / superadmin เท่านั้น (เป็นคนแก้กองของประเภท) ·
 --                                      p_apply=false นับอย่างเดียว ให้หน้าเว็บถามก่อน · true ย้ายจริง
 --
 -- กติกาที่ใช้ร่วมกัน (complaint_reroute_apply — ฟังก์ชันภายใน ไม่เปิดให้เรียกจาก API)
---   - เรื่องที่จบแล้ว (closed/completed/done/rejected) ไม่แตะ — เอกสารที่ออกไปแล้วต้องคงเดิม
---     (และ UPDATE จะเลื่อน updated_at ซึ่ง prepare_complaint_print ใช้เลือกผู้ลงนามของเรื่องที่ไม่มี closed_at)
+--   - เรื่องที่จบแล้ว (closed/completed/done/rejected) แก้ได้เฉพาะแอดมินทีละเรื่อง (เจ้าของระบบสั่ง 2569-11-18
+--     หลังเคสจริง ES-69-0034 ทุ่งแค้ว เป็นเรื่องที่ปิดแล้วแต่ใบพิมพ์ติดกองช่าง ใช้งานไม่ได้) · ผู้รับผิดชอบ/สถานะคงเดิม
+--     (งานเสร็จแล้ว คนที่ทำคือคนเดิม) · ต้องมี closed_at — ไม่งั้น UPDATE เลื่อน updated_at ซึ่ง prepare_complaint_print
+--     ใช้เลือกผู้ลงนามของเรื่องที่ไม่มี closed_at → ชื่อผู้ลงนามเลื่อนเป็นคนปัจจุบัน · ใบที่พิมพ์ไปแล้วยังอยู่ใน
+--     complaint_print_snapshots · ย้ายทั้งชุด (reroute_category_open_complaints) ยังไม่แตะเรื่องที่จบแล้ว
+--     · ไม่ลง complaint_timeline (ข่าวผลงานดึงแถว closed ล่าสุดไปเผยแพร่) — บันทึกใน audit_logs อย่างเดียว
+--     · สถิติรายกอง/รายประเภทของเดือนที่ปิดเรื่องเปลี่ยนตาม ยกเว้นเดือนที่ล็อก (complaint_monthly_snapshots)
+--   - แก้เป็น "ประเภทเดิม" ได้เมื่อกองของเรื่องไม่ตรงกองปัจจุบันของประเภท (ประเภทถูกแต่กองค้าง — เคส ES-69-0034)
 --   - ผู้รับผิดชอบเดิมอยู่กองใหม่ = คงไว้ · ไม่ใช่ = ใช้ผู้รับผิดชอบเริ่มต้นของประเภท (category_assignments)
 --     เฉพาะเมื่อคนนั้นอยู่กองของประเภท (ไม่งั้นเรื่องวนกลับไปหาคนกองเดิม) · ประเภทที่ requires_manual_intake
 --     = ไม่ตั้งใคร ให้แอดมินรับเรื่อง
@@ -32,7 +39,7 @@
 --   - เรื่องแจ้งการทุจริต: timeline เขียนข้อความกลางๆ ไม่มีชื่อหมวด/เหตุผล (viewer/council อ่าน timeline ได้)
 --   - ย้ายทั้งชุด: เรื่องที่ถูกปิด/ย้ายระหว่างนับกับย้ายจะถูกข้าม (skipped) ไม่ทำให้ทั้งชุดล้ม
 --   - กำหนดเสร็จ (due_date) คงเดิม — ประชาชนรอมาแล้วตั้งแต่วันยื่น การย้ายภายในไม่ควรเริ่มนับใหม่ (ความเห็นเชิงวิชาชีพ)
---   - ลง complaint_timeline + audit_logs ทุกเรื่อง (ใคร/เมื่อไร/จากอะไรเป็นอะไร/เหตุผล)
+--   - ลง audit_logs ทุกเรื่อง (ใคร/เมื่อไร/จากอะไรเป็นอะไร/เหตุผล) + complaint_timeline เฉพาะเรื่องที่ยังไม่จบ
 -- ⚠️ ไม่มีการอนุมัติเงิน/พัสดุ และไม่ตัดสินสิทธิของประชาชน — เป็นการจัดเส้นทางงานภายใน
 --
 -- ไม่มี DDL · ไม่ CREATE OR REPLACE ฟังก์ชันเดิมตัวใด (ฟังก์ชันใหม่ 3 ตัว)
@@ -80,14 +87,21 @@ DECLARE
   v_extra        jsonb;
   v_chk_dept     uuid;
   v_note         text;
+  v_finished     boolean := false;
 BEGIN
   SELECT * INTO v_c FROM public.complaints WHERE id = p_complaint_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'ไม่พบคำร้อง' USING ERRCODE = 'P0002';
   END IF;
   IF v_c.status IN ('closed', 'completed', 'done', 'rejected') THEN
-    RAISE EXCEPTION 'เรื่องที่ดำเนินการเสร็จหรือปฏิเสธแล้วแก้ประเภทไม่ได้ (เอกสารที่ออกไปแล้วต้องคงเดิม)'
-      USING ERRCODE = '22023';
+    IF coalesce(public.get_my_role(), '') NOT IN ('admin', 'superadmin') THEN
+      RAISE EXCEPTION 'เรื่องที่ดำเนินการเสร็จหรือปฏิเสธแล้ว แก้ประเภทได้เฉพาะแอดมิน' USING ERRCODE = '42501';
+    END IF;
+    IF v_c.closed_at IS NULL THEN
+      RAISE EXCEPTION 'เรื่องนี้ไม่มีเวลาปิดเรื่องในระบบ ถ้าแก้ ชื่อผู้ลงนามในใบพิมพ์จะเลื่อนเป็นคนปัจจุบัน — แจ้งผู้ดูแลระบบ'
+        USING ERRCODE = '22023';
+    END IF;
+    v_finished := true;
   END IF;
 
   -- เลือกแถวประเภทด้วยลำดับเดียวกับ guard_complaint_routing_scope() — ให้ผลตรงกับที่ trigger จะเลือก
@@ -153,6 +167,13 @@ BEGIN
     v_status := 'received';
   END IF;
 
+  -- เรื่องที่จบแล้ว: แก้แค่ประเภท/กองให้ใบพิมพ์ถูก · ผู้ที่ทำงานจริงและสถานะคงเดิม
+  IF v_finished THEN
+    v_assignee := v_c.assigned_to;
+    v_status := v_c.status;
+    v_extra := v_c.extra_data;
+  END IF;
+
   -- ธงเดียวกับ RPC ชุดรับ/ปิดงาน: ผ่านด่าน staff (enforce_staff_document_only_update) ได้เพราะตรวจสิทธิ์มาแล้ว
   PERFORM set_config('app.complaint_workflow', '1', true);
   UPDATE public.complaints
@@ -182,12 +203,17 @@ BEGIN
       ELSE 'แก้ประเภทจาก "' || v_old_label || '" เป็น "' || v_cat.label || '"'
     END
     || CASE WHEN v_old_dept IS DISTINCT FROM v_new_dept THEN ' · ย้ายจาก' || v_old_dept || 'ไป' || v_new_dept ELSE '' END
-    || CASE WHEN v_assignee IS NULL THEN ' · รอแอดมินรับเรื่อง/มอบหมายผู้รับผิดชอบ' ELSE '' END
+    || CASE WHEN v_assignee IS NULL AND NOT v_finished THEN ' · รอแอดมินรับเรื่อง/มอบหมายผู้รับผิดชอบ' ELSE '' END
     || CASE WHEN nullif(btrim(coalesce(p_reason, '')), '') IS NOT NULL THEN ' — ' || btrim(p_reason) ELSE '' END;
   END IF;
 
-  INSERT INTO public.complaint_timeline (complaint_id, status, note, actor_name)
-  VALUES (v_c.id, v_status, v_note, coalesce(p_actor, 'เจ้าหน้าที่'));
+  -- เรื่องที่จบแล้วไม่ลง timeline: ข่าวผลงาน (ComplaintNewsDialog / exec_complaint_news_detail) ดึงแถว closed ล่าสุด
+  -- มาเป็นข้อความผลการดำเนินงาน และลิงก์ติดตามของประชาชนจะเห็น "ดำเนินการแล้ว" ซ้ำ — เหตุผลภายในจะหลุดสู่สาธารณะ
+  -- ที่มา/ที่ไป/เหตุผลอยู่ใน audit_logs ครบแล้ว
+  IF NOT v_finished THEN
+    INSERT INTO public.complaint_timeline (complaint_id, status, note, actor_name)
+    VALUES (v_c.id, v_status, v_note, coalesce(p_actor, 'เจ้าหน้าที่'));
+  END IF;
 
   INSERT INTO public.audit_logs (
     municipality_id, actor_id, actor_name, actor_role, action,
@@ -236,6 +262,7 @@ DECLARE
   v_cat    text := btrim(coalesce(p_category, ''));
   v_c      public.complaints%ROWTYPE;
   v_active boolean;
+  v_cat_dept uuid;
   v_actor  text;
 BEGIN
   IF auth.uid() IS NULL THEN
@@ -260,19 +287,32 @@ BEGIN
   IF public.complaint_category_is_adhoc(v_c.municipality_id, v_c.category) THEN
     RAISE EXCEPTION 'คำร้องประเภทเฉพาะกิจแก้ประเภทไม่ได้' USING ERRCODE = '22023';
   END IF;
-  IF v_cat = v_c.category THEN
-    RAISE EXCEPTION 'เป็นประเภทนี้อยู่แล้ว' USING ERRCODE = '22023';
-  END IF;
   IF 'corruption' IN (v_c.category, v_cat) AND v_role NOT IN ('admin', 'superadmin') THEN
     RAISE EXCEPTION 'เรื่องแจ้งการทุจริตต้องให้แอดมินเป็นผู้แก้ประเภท' USING ERRCODE = '42501';
   END IF;
 
-  -- ประเภทปลายทางต้องเปิดใช้อยู่ (ปิดไปแล้ว = แอดมินเลิกใช้ ไม่ควรมีเรื่องใหม่ไหลเข้า)
-  SELECT bool_or(is_active) INTO v_active
-  FROM public.complaint_categories
-  WHERE municipality_id = v_c.municipality_id AND value = v_cat;
-  IF NOT coalesce(v_active, false) THEN
-    RAISE EXCEPTION 'ไม่พบประเภทนี้ หรือประเภทนี้ปิดใช้งานอยู่' USING ERRCODE = '22023';
+  IF v_cat = v_c.category THEN
+    -- ประเภทเดิม = ย้ายตามกองปัจจุบันของประเภท (ประเภทถูกแต่กองค้างกองเดิม) · กองตรงอยู่แล้ว = ไม่มีอะไรให้แก้
+    -- ลำดับเลือกแถวเดียวกับ guard_complaint_routing_scope()
+    SELECT department_id INTO v_cat_dept
+    FROM public.complaint_categories
+    WHERE municipality_id = v_c.municipality_id AND value = v_cat
+    ORDER BY is_active DESC, sort_order, id
+    LIMIT 1;
+    IF v_cat_dept IS NULL THEN
+      RAISE EXCEPTION 'ประเภทนี้ยังไม่ได้ตั้งกองรับผิดชอบ ให้แอดมินตั้งในหน้าประเภทคำร้องก่อน' USING ERRCODE = '22023';
+    END IF;
+    IF v_cat_dept IS NOT DISTINCT FROM v_c.department_id THEN
+      RAISE EXCEPTION 'เป็นประเภทนี้และอยู่กองของประเภทนี้อยู่แล้ว' USING ERRCODE = '22023';
+    END IF;
+  ELSE
+    -- ประเภทปลายทางต้องเปิดใช้อยู่ (ปิดไปแล้ว = แอดมินเลิกใช้ ไม่ควรมีเรื่องใหม่ไหลเข้า)
+    SELECT bool_or(is_active) INTO v_active
+    FROM public.complaint_categories
+    WHERE municipality_id = v_c.municipality_id AND value = v_cat;
+    IF NOT coalesce(v_active, false) THEN
+      RAISE EXCEPTION 'ไม่พบประเภทนี้ หรือประเภทนี้ปิดใช้งานอยู่' USING ERRCODE = '22023';
+    END IF;
   END IF;
 
   SELECT coalesce(nullif(btrim(full_name), ''), 'เจ้าหน้าที่') INTO v_actor
@@ -374,7 +414,7 @@ REVOKE ALL ON FUNCTION public.reroute_category_open_complaints(uuid, text, boole
 GRANT EXECUTE ON FUNCTION public.reroute_category_open_complaints(uuid, text, boolean) TO authenticated;
 
 COMMENT ON FUNCTION public.change_complaint_category(uuid, text, text) IS
-  'แก้ประเภทคำร้องที่ยังไม่เสร็จ (กองตามประเภทใหม่ผ่าน trigger) — แอดมิน/หัวหน้ากองที่เป็นผู้ทำงานของเรื่อง ต้องมีเหตุผล ลง complaint_timeline + audit_logs';
+  'แก้ประเภทคำร้อง (กองตามประเภทผ่าน trigger) — แอดมิน/หัวหน้ากองที่เป็นผู้ทำงานของเรื่อง · เรื่องที่จบแล้วเฉพาะแอดมิน (ต้องมี closed_at) · ประเภทเดิมได้เมื่อกองค้าง · ต้องมีเหตุผล ลง audit_logs ทุกครั้ง + complaint_timeline เฉพาะเรื่องที่ยังไม่จบ';
 COMMENT ON FUNCTION public.reroute_category_open_complaints(uuid, text, boolean) IS
   'ย้ายคำร้องที่ยังไม่เสร็จของประเภทไปกองปัจจุบันของประเภท — แอดมินเท่านั้น p_apply=false นับอย่างเดียว';
 COMMENT ON FUNCTION public.complaint_reroute_apply(uuid, text, text, text) IS

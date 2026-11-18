@@ -3,7 +3,7 @@ import { ArrowLeftRight, Loader2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { RETURN_REASON_MAX, validateReturnReason } from '../../lib/complaintIntake'
-import { categoryChangeChoices, describeCategoryChange } from '../../lib/complaintCategoryChange'
+import { categoryChangeChoices, describeCategoryChange, isFinishedForCategoryChange } from '../../lib/complaintCategoryChange'
 
 // ปุ่ม "แก้ประเภทคำร้อง" ของแอดมิน/หัวหน้ากองที่ถือเรื่อง — กองของคำร้องเปลี่ยนตามประเภทใหม่เอง
 // (ใบพิมพ์ + ช่องลงนามหัวหน้ากองตามไปด้วย) ใช้เมื่อประชาชนเลือกประเภทผิด หรือเรื่องถูกส่งผิดกอง
@@ -41,9 +41,10 @@ export default function ChangeCategoryButton({ complaint, municipalityId, role, 
   }, [open, muniId])
 
   const choices = useMemo(
-    () => categoryChangeChoices(categories, departments, complaint?.category, role),
-    [categories, departments, complaint?.category, role],
+    () => categoryChangeChoices(categories, departments, complaint?.category, role, complaint?.department_id ?? null),
+    [categories, departments, complaint?.category, complaint?.department_id, role],
   )
+  const finished = isFinishedForCategoryChange(complaint)
   const picked = choices.find((item) => item.value === target)
 
   function close() {
@@ -101,8 +102,14 @@ export default function ChangeCategoryButton({ complaint, municipalityId, role, 
       {picked && (
         <p className="text-[11px] text-indigo-700">
           จะย้ายไป <span className="font-semibold">{picked.departmentName}</span> · ใบพิมพ์และช่องลงนามหัวหน้ากองเปลี่ยนตาม ·
-          ถ้าผู้รับผิดชอบเดิมไม่ได้อยู่กองนี้ ระบบตั้งผู้รับผิดชอบประจำประเภทให้ (ไม่มี = กลับคิวแอดมิน)
+          {finished
+            ? ' เรื่องนี้ปิดแล้ว: สถานะและผู้รับผิดชอบคงเดิม ผู้ลงนามปลัด/นายกยังเป็นคน ณ วันปิดเรื่อง ·'
+              + ' สถิติรายกอง/รายประเภทของเดือนที่ปิดเรื่องจะเปลี่ยนตาม (ยกเว้นเดือนที่ล็อกตัวเลขแล้ว) · ใบที่พิมพ์ไปแล้วไม่เปลี่ยน'
+            : ' ถ้าผู้รับผิดชอบเดิมไม่ได้อยู่กองนี้ ระบบตั้งผู้รับผิดชอบประจำประเภทให้ (ไม่มี = กลับคิวแอดมิน)'}
         </p>
+      )}
+      {!loading && choices.length === 0 && (
+        <p className="text-[11px] text-gray-500">ไม่มีประเภทอื่นที่ย้ายได้ และกองของเรื่องตรงกับประเภทอยู่แล้ว</p>
       )}
       <textarea
         rows={2}
@@ -113,7 +120,11 @@ export default function ChangeCategoryButton({ complaint, municipalityId, role, 
         className="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
       />
       {/* timeline อ่านได้ทั้งเจ้าหน้าที่ทุกระดับใน อปท. และผู้ยื่นเรื่อง — บอกก่อนพิมพ์ ไม่ใส่ชื่อบุคคล */}
-      <p className="text-[11px] text-gray-500">เหตุผลนี้จะแสดงในประวัติของคำร้อง เจ้าหน้าที่และผู้ยื่นเรื่องเห็นได้ — ไม่ต้องใส่ชื่อบุคคล</p>
+      <p className="text-[11px] text-gray-500">
+        {finished
+          ? 'เหตุผลนี้บันทึกในบันทึกการใช้งานของแอดมิน ไม่แสดงในประวัติของคำร้อง'
+          : 'เหตุผลนี้จะแสดงในประวัติของคำร้อง เจ้าหน้าที่และผู้ยื่นเรื่องเห็นได้ — ไม่ต้องใส่ชื่อบุคคล'}
+      </p>
       {error && <p className="text-xs font-medium text-red-600">{error}</p>}
       <div className="flex gap-2">
         <button type="button" onClick={submit} disabled={saving || loading}

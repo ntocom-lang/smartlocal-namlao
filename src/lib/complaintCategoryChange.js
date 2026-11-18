@@ -9,8 +9,15 @@
 import { isComplaintWorker } from './complaintWorkflow.js'
 
 export const CHANGE_CATEGORY_ROLES = ['admin', 'superadmin', 'officer']
-// ต้องตรงกับเงื่อนไขใน complaint_reroute_apply() — เรื่องที่จบแล้วเอกสารออกไปแล้ว ห้ามเปลี่ยนกองย้อนหลัง
+// ต้องตรงกับเงื่อนไขใน complaint_reroute_apply() — เรื่องที่จบแล้วแก้ได้เฉพาะแอดมิน (เจ้าของระบบสั่ง 2569-11-18
+// หลังเคส ES-69-0034 ทุ่งแค้ว) ผู้รับผิดชอบ/สถานะคงเดิม และต้องมี closed_at (DB ตรวจ)
 export const CHANGE_CATEGORY_LOCKED_STATUSES = ['closed', 'completed', 'done', 'rejected']
+const FINISHED_EDITOR_ROLES = ['admin', 'superadmin']
+
+/** เรื่องนี้จบแล้วหรือยัง (ใช้บอกผู้ใช้ว่าสถานะ/ผู้รับผิดชอบจะคงเดิม) */
+export function isFinishedForCategoryChange(complaint) {
+  return CHANGE_CATEGORY_LOCKED_STATUSES.includes(complaint?.status)
+}
 // หมวดที่ล็อกให้แอดมินรับเรื่องเสมอ (#756) — หัวหน้ากองย้ายเข้า/ออกไม่ได้
 export const ADMIN_ONLY_CATEGORY = 'corruption'
 
@@ -24,24 +31,39 @@ export const ADMIN_ONLY_CATEGORY = 'corruption'
  */
 export function canChangeComplaintCategory(complaint, userId, role, categoryMeta = {}, opts = {}) {
   if (!complaint || !CHANGE_CATEGORY_ROLES.includes(role)) return false
-  if (CHANGE_CATEGORY_LOCKED_STATUSES.includes(complaint.status)) return false
+  if (isFinishedForCategoryChange(complaint) && !FINISHED_EDITOR_ROLES.includes(role)) return false
   if (categoryMeta?.[complaint.category]?.is_adhoc) return false
   if (role === 'officer' && complaint.category === ADMIN_ONLY_CATEGORY) return false
   return isComplaintWorker(complaint, userId, role, opts)
 }
 
 /**
- * ตัวเลือกประเภทปลายทาง — เฉพาะที่เปิดใช้ ไม่ใช่เฉพาะกิจ มีกองรับผิดชอบ และไม่ใช่ประเภทเดิม
- * @param {Array<{value: string, label?: string, department_id?: string|null, is_active?: boolean, is_adhoc?: boolean}>} categories
+ * ตัวเลือกประเภทปลายทาง — เฉพาะที่เปิดใช้ ไม่ใช่เฉพาะกิจ มีกองรับผิดชอบ
+ * ประเภทเดิมขึ้นเป็นตัวเลือกแรกเฉพาะเมื่อกองของเรื่องไม่ตรงกองปัจจุบันของประเภท (ประเภทถูกแต่กองค้าง)
+ * @param {Array<{value: string, label?: string, department_id?: string|null, is_active?: boolean, is_adhoc?: boolean, sort_order?: number}>} categories
  * @param {Array<{id: string, name?: string}>} departments
  * @param {string} currentCategory
  * @param {string} role
- * @returns {Array<{value: string, label: string, departmentName: string}>}
+ * @param {string|null} [currentDepartmentId] กองปัจจุบันของคำร้อง
+ * @returns {Array<{value: string, label: string, departmentName: string, resync?: boolean}>}
  */
-export function categoryChangeChoices(categories = [], departments = [], currentCategory = '', role = '') {
+export function categoryChangeChoices(categories = [], departments = [], currentCategory = '', role = '', currentDepartmentId = null) {
   const deptName = new Map(departments.map((d) => [d.id, String(d.name ?? '').trim()]))
   const seen = new Set()
   const out = []
+  // แถวของประเภทเดิมที่ trigger จะเลือก (is_active DESC, sort_order) — ตรงกับ guard_complaint_routing_scope()
+  const currentRow = categories
+    .filter((cat) => cat?.value === currentCategory)
+    .sort((a, b) => Number(!!b.is_active) - Number(!!a.is_active) || (a.sort_order ?? 0) - (b.sort_order ?? 0))[0]
+  const resync = currentRow?.department_id && currentDepartmentId && currentRow.department_id !== currentDepartmentId
+    && !(role === 'officer' && currentCategory === ADMIN_ONLY_CATEGORY)
+    ? [{
+        value: currentCategory,
+        label: `${String(currentRow.label ?? currentCategory).trim() || currentCategory} (ประเภทเดิม · ย้ายไปกองปัจจุบันของประเภท)`,
+        departmentName: deptName.get(currentRow.department_id) || 'ไม่ทราบชื่อกอง',
+        resync: true,
+      }]
+    : []
   for (const cat of categories) {
     if (!cat?.value || seen.has(cat.value)) continue
     if (!cat.is_active || cat.is_adhoc || !cat.department_id) continue
@@ -54,7 +76,7 @@ export function categoryChangeChoices(categories = [], departments = [], current
       departmentName: deptName.get(cat.department_id) || 'ไม่ทราบชื่อกอง',
     })
   }
-  return out.sort((a, b) => a.label.localeCompare(b.label, 'th'))
+  return [...resync, ...out.sort((a, b) => a.label.localeCompare(b.label, 'th'))]
 }
 
 /**
@@ -65,7 +87,7 @@ export function describeCategoryChange(result) {
   if (!result) return 'แก้ประเภทแล้ว'
   const parts = ['แก้ประเภทแล้ว']
   if (result.department_changed && result.department) parts.push(`ย้ายไป${result.department}`)
-  if (!result.assigned_to) parts.push('รอแอดมินรับเรื่อง/มอบหมายผู้รับผิดชอบ')
+  if (!result.assigned_to && !CHANGE_CATEGORY_LOCKED_STATUSES.includes(result.status)) parts.push('รอแอดมินรับเรื่อง/มอบหมายผู้รับผิดชอบ')
   return parts.join(' · ')
 }
 

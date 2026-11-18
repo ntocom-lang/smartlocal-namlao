@@ -276,21 +276,76 @@ const rejects = async (fn, re) => { await assert.rejects(fn, re) }
   await rejects(() => change(U.admin, cid, 'tree', 'สั้น'), /5-500/)
   await rejects(() => change(U.admin, cid, 'water_supply'), /อยู่แล้ว/)
   await rejects(() => change(U.admin, cid, 'nodept'), /ยังไม่ได้ตั้งกอง/)
+  // ประเภทเดิมที่ยังไม่ได้ตั้งกอง → บอกตรงๆ ไม่ใช่ "อยู่กองนี้อยู่แล้ว"
+  const nodeptComplaint = await newComplaint({ category: 'nodept', assigned: null, status: 'pending' })
+  await rejects(() => change(U.admin, nodeptComplaint, 'nodept'), /ยังไม่ได้ตั้งกองรับผิดชอบ/)
   await rejects(() => change(U.admin, cid, 'odor'), /เฉพาะกิจ/)
   await rejects(() => change(U.admin, cid, 'no_such'), /ไม่พบประเภท/)
   await rejects(() => change(U.officerEng, cid, 'corruption'), /แจ้งการทุจริต/)
 
-  const done = await newComplaint({ status: 'closed', closedAt: '2026-11-10T03:00:00Z' })
-  await rejects(() => change(U.admin, done, 'tree'), /เสร็จหรือปฏิเสธแล้ว/)
+  // เรื่องที่จบแล้ว: หัวหน้ากองแก้ไม่ได้ · ไม่มี closed_at แก้ไม่ได้ (ผู้ลงนามจะเลื่อนตาม updated_at)
+  const doneByEng = await newComplaint({ status: 'closed', closedAt: '2026-11-10T03:00:00Z' })
+  await rejects(() => change(U.officerEng, doneByEng, 'tree'), /เฉพาะแอดมิน/)
   const rejected = await newComplaint({ status: 'rejected' })
-  await rejects(() => change(U.admin, rejected, 'tree'), /เสร็จหรือปฏิเสธแล้ว/)
+  await rejects(() => change(U.admin, rejected, 'tree'), /ไม่มีเวลาปิดเรื่อง/)
   const adhoc = await newComplaint({ category: 'odor', assigned: null })
   await rejects(() => change(U.admin, adhoc, 'tree'), /เฉพาะกิจ/)
 
   const r = await row(cid)
   assert.equal(r.category, 'water_supply', 'เคสที่ถูกปฏิเสธต้องไม่แตะข้อมูล')
   assert.equal(r.department_id, D_ENG)
-  console.log('PASS ด่านสิทธิ์ครบ: staff/ช่าง/กองอื่น/หน่วยงานอื่น/ไม่ล็อกอินถูกกัน · เรื่องจบ/เฉพาะกิจ/ทุจริตถูกกัน')
+  assert.equal((await row(doneByEng)).department_id, D_ENG)
+  console.log('PASS ด่านสิทธิ์ครบ: staff/ช่าง/กองอื่น/หน่วยงานอื่น/ไม่ล็อกอินถูกกัน · เรื่องจบ(หัวหน้ากอง/ไม่มี closed_at)/เฉพาะกิจ/ทุจริตถูกกัน')
+}
+{
+  // เคสจริง ES-69-0034 (ทุ่งแค้ว): เรื่องปิดแล้ว ประเภทถูก แต่กองค้างกองเดิมเพราะแอดมินแก้กองของประเภททีหลัง
+  const closed = await newComplaint({ status: 'closed', closedAt: '2026-11-17T08:00:00Z' })
+  const before = await row(closed)
+  await internal()
+  await db.query(`UPDATE public.complaint_categories SET department_id = $1 WHERE municipality_id = $2 AND value = 'water_supply'`, [D_CLERK, T1])
+  assert.equal((await reroute(U.admin, T1, 'water_supply', false)).count >= 0, true)
+  // ย้ายทั้งชุดไม่แตะเรื่องที่จบแล้ว
+  await reroute(U.admin, T1, 'water_supply', true)
+  assert.equal((await row(closed)).department_id, D_ENG, 'ย้ายทั้งชุดต้องไม่แตะเรื่องที่ปิดแล้ว')
+
+  // แอดมินแก้เป็น "ประเภทเดิม" → ย้ายตามกองปัจจุบันของประเภท · ผู้รับผิดชอบ/สถานะ/closed_at คงเดิม
+  const res = await change(U.admin, closed, 'water_supply', 'ใบพิมพ์ติดชื่อกองช่าง ใช้งานไม่ได้')
+  assert.equal(res.department, 'สำนักปลัด')
+  const after = await row(closed)
+  assert.equal(after.department_id, D_CLERK)
+  assert.equal(after.department, 'สำนักปลัด')
+  assert.equal(after.status, 'closed')
+  assert.equal(after.assigned_to, before.assigned_to, 'คนที่ทำงานจริงต้องคงเดิม')
+  assert.equal(after.closed_at.toISOString(), before.closed_at.toISOString(), 'closed_at ต้องคงเดิม (ผู้ลงนาม ณ วันปิดเรื่อง)')
+  await internal()
+  // ไม่ลง timeline: ข่าวผลงานดึงแถว closed ล่าสุดไปเผยแพร่ → เหตุผลภายในจะหลุด · audit มีครบ
+  const tl = (await db.query('SELECT 1 FROM public.complaint_timeline WHERE complaint_id = $1', [closed])).rows
+  assert.equal(tl.length, 0, 'เรื่องที่ปิดแล้วต้องไม่มีแถว timeline ใหม่')
+  const au = (await db.query('SELECT action, metadata FROM public.audit_logs WHERE resource_id = $1', [closed])).rows
+  assert.equal(au.length, 1)
+  assert.equal(au[0].action, 'reroute_department')
+  assert.equal(au[0].metadata.reason, 'ใบพิมพ์ติดชื่อกองช่าง ใช้งานไม่ได้')
+  assert.equal(au[0].metadata.to_status, 'closed')
+  // แก้ซ้ำ = กองตรงแล้ว ไม่มีอะไรให้แก้
+  await rejects(() => change(U.admin, closed, 'water_supply', 'ลองแก้ซ้ำอีกครั้ง'), /อยู่กองของประเภทนี้อยู่แล้ว/)
+  // แอดมินแก้เรื่องที่ปิดแล้วไปประเภทอื่นก็ได้
+  const done2 = await newComplaint({ status: 'completed', closedAt: '2026-11-12T03:00:00Z' })
+  assert.equal((await change(U.admin, done2, 'tree')).status, 'completed')
+  await internal()
+  await db.query(`UPDATE public.complaint_categories SET department_id = $1 WHERE municipality_id = $2 AND value = 'water_supply'`, [D_ENG, T1])
+  console.log('PASS เรื่องปิดแล้ว (เคส ES-69-0034): แอดมินย้ายตามกองของประเภทได้ · สถานะ/ผู้รับผิดชอบ/closed_at คงเดิม · ย้ายทั้งชุดไม่แตะ')
+}
+{
+  // เรื่องที่ยังเปิด ประเภทเดิมแต่กองค้าง → หัวหน้ากองที่ถือเรื่องก็ย้ายได้
+  const open = await newComplaint({ category: 'road', status: 'received', assigned: U.techEng2 })
+  await internal()
+  await db.query(`UPDATE public.complaint_categories SET department_id = $1 WHERE municipality_id = $2 AND value = 'road'`, [D_CLERK, T1])
+  const res = await change(U.officerEng, open, 'road', 'ประเภทถูกแต่กองค้าง')
+  assert.equal(res.department, 'สำนักปลัด')
+  assert.equal((await row(open)).status, 'pending', 'ช่างกองช่างไม่ใช่คนของกองใหม่ → กลับคิวแอดมิน')
+  await internal()
+  await db.query(`UPDATE public.complaint_categories SET department_id = $1 WHERE municipality_id = $2 AND value = 'road'`, [D_ENG, T1])
+  console.log('PASS ประเภทเดิมแต่กองค้าง (เรื่องเปิด) ย้ายได้')
 }
 {
   // แอดมินย้ายเข้าประเภทแจ้งการทุจริตได้ → ไม่ตั้งผู้รับผิดชอบ ให้แอดมินรับเรื่องเสมอ
