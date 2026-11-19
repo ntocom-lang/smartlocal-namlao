@@ -157,7 +157,9 @@ export default function Home() {
                         background: 'linear-gradient(to bottom, color-mix(in srgb, var(--color-primary) 8%, white), color-mix(in srgb, var(--color-primary) 16%, white))',
                         borderColor: 'color-mix(in srgb, var(--color-primary) 22%, white)',
                       }}>
-                      <CategoryIcon emoji={emoji} size={44} style={tenant?.category_icon_style} />
+                      {/* โหมด 'glyph': การ์ดนี้เป็นพื้นไล่เฉดโทนสี primary อ่อนๆ (ไม่ใช่สีรายหมวด) ไอคอนทึบสี primary อ่านชัดอยู่แล้ว
+                          จึงคงการ์ดไว้เป็นพื้นที่กด แค่ขยายไอคอนให้เด่นขึ้น */}
+                      <CategoryIcon emoji={emoji} size={tenant?.category_icon_style === 'glyph' ? 52 : 44} style={tenant?.category_icon_style} />
                     </div>
                     <span className="text-[13px] font-bold text-gray-700 mt-2 text-center leading-tight line-clamp-2">{cat.label}</span>
                   </Link>

@@ -67,7 +67,8 @@ export default function AdhocBand() {
                     backdropFilter: 'blur(4px)',
                     boxShadow: `0 3px 10px ${color}30, inset 0 1px 0 rgba(255,255,255,0.5)`,
                   }}>
-                  <CategoryIcon emoji={emoji} size={30} style={tenant?.category_icon_style} />
+                  {/* color="white": แถบเฉพาะกิจพื้นไล่เฉดเขียวเข้ม→เขียวอ่อน ตัวหนังสือบนแถบก็ขาว — ไอคอนทึบสี primary จะกลืนพื้น (ใช้เฉพาะโหมด glyph) */}
+                  <CategoryIcon emoji={emoji} size={30} style={tenant?.category_icon_style} color="white" />
                 </div>
                 <p className={`text-white text-[11px] font-semibold text-center w-full leading-tight drop-shadow-sm ${labelClamp}`}>{cat.label}</p>
               </button>
@@ -92,7 +93,7 @@ export default function AdhocBand() {
                     backdropFilter: 'blur(4px)',
                     boxShadow: `0 2px 8px ${color}25, inset 0 1px 0 rgba(255,255,255,0.5)`,
                   }}>
-                  <CategoryIcon emoji={emoji} size={24} style={tenant?.category_icon_style} />
+                  <CategoryIcon emoji={emoji} size={24} style={tenant?.category_icon_style} color="white" />
                 </div>
                 <p className="text-white text-[12px] font-semibold text-center leading-tight drop-shadow-sm">{cat.label}</p>
               </button>

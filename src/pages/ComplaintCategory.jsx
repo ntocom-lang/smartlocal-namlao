@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { CategoryIcon } from '../lib/categoryIcon'
+import { isPlainGlyph } from '../lib/categoryGlyphNames'
 import { moduleHiddenCategoryValues, withoutModuleHiddenCategories } from '../lib/complaintCategoryModules'
 import { withoutOfficialsOnlyCategories } from '../lib/serviceAudience'
 import { DEFAULT_COMPLAINT_CATEGORIES } from '../lib/complaintCategoryDefaults'
@@ -131,6 +132,11 @@ export default function ComplaintCategory() {
             const resolvedEmoji = dbEmoji || EMOJI_OVERRIDE[cat.value] || ''
             const IconComponent = FALLBACK_ICON[cat.value] || HelpCircle
             const iconBg = FALLBACK_COLOR[cat.value] || '#475569'
+            // โหมด 'glyph' (ไอคอนทึบสีเดียวตามสี อปท.): หมวดที่มีไอคอนทึบ หรือไม่มี emoji เลยแล้วใช้ไอคอน lucide สำรอง
+            // → ไม่มีกล่องสีรอง วาดไอคอนใหญ่สี primary ในกล่องโปร่ง · หมวดที่แปลงเป็นไอคอนทึบไม่ได้ (ภาพ OpenMoji สี
+            // หรือรูป URL ที่แอดมินตั้งเอง) ยังต้องมีกล่องสีรองรับเหมือนเดิม ไม่งั้นภาพสีลอยบนพื้นขาวไม่เข้าชุด
+            const glyphOn = tenant?.category_icon_style === 'glyph'
+            const plainGlyph = glyphOn && (resolvedEmoji ? isPlainGlyph('glyph', resolvedEmoji) : true)
 
             return (
               <button key={cat.value} onClick={() => handleSelect(cat.value)}
@@ -140,10 +146,14 @@ export default function ComplaintCategory() {
                     : 'bg-white border-gray-200 hover:border-blue-200'
                 }`}>
 
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110"
-                  style={{ backgroundColor: iconBg }}>
+                <div className={`flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110 ${
+                  plainGlyph ? 'w-16 h-16' : 'w-14 h-14 rounded-2xl'
+                }`}
+                  style={plainGlyph ? undefined : { backgroundColor: iconBg }}>
                   {resolvedEmoji ? (
-                    <CategoryIcon emoji={resolvedEmoji} size={36} style={tenant?.category_icon_style} />
+                    <CategoryIcon emoji={resolvedEmoji} size={plainGlyph ? 52 : 36} style={tenant?.category_icon_style} />
+                  ) : plainGlyph ? (
+                    <IconComponent size={52} color="var(--color-primary)" strokeWidth={2} />
                   ) : (
                     <IconComponent size={32} color="white" strokeWidth={2} />
                   )}

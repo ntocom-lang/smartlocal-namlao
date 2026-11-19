@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { CategoryIcon } from '../../lib/categoryIcon'
+import { isPlainGlyph } from '../../lib/categoryGlyphNames'
 import { moduleHiddenCategoryValues, withoutModuleHiddenCategories } from '../../lib/complaintCategoryModules'
 import { withoutOfficialsOnlyCategories } from '../../lib/serviceAudience'
 import AdhocBand from './AdhocBand'
@@ -151,19 +152,23 @@ function ComplaintBand({ variant = 'warm' }) {
           {topCats.slice(0, clean ? 6 : 4).map(cat => {
             const emoji = cat.emoji || (clean ? FALLBACK_EMOJI[cat.value] : LEGACY_FALLBACK_EMOJI[cat.value]) || '📋'
             const color = cat.color || (clean ? 'var(--color-primary, #2563eb)' : '#ffffff')
+            // โหมด 'glyph': clean (พื้นขาว) ตัดกล่องสีรองออก วาดไอคอนทึบสี primary ใหญ่ขึ้น · ธีมส้ม (!clean) พื้นไล่เฉดส้ม→เหลืองอ่อน
+            // ไอคอนสี primary อ่านไม่ออก จึงคงกล่องโปร่งแสงเดิมไว้ แล้วใช้น้ำตาลเข้มเดียวกับสีตัวหนังสือบนแถบนั้น (amber-900)
+            const bare = clean && isPlainGlyph(tenant?.category_icon_style, emoji)
+            const glyphColor = clean ? undefined : '#78350f'
             return (
               <button key={cat.value}
                 onClick={() => navigate(`/request?category=${cat.value}`)}
                 className="flex flex-col items-center gap-1.5 active:scale-95 transition-transform">
-                <div className={`${clean ? 'w-20 h-20' : 'w-13 h-13'} flex items-center justify-center shadow-md`}
-                  style={{
+                <div className={`${clean ? 'w-20 h-20' : 'w-13 h-13'} flex items-center justify-center ${bare ? '' : 'shadow-md'}`}
+                  style={bare ? undefined : {
                     backgroundColor: color + '22',
                     borderRadius: 'var(--radius-btn, 1rem)',
                     border: `1.5px solid ${color}55`,
                     backdropFilter: 'blur(4px)',
                     boxShadow: clean ? `0 2px 6px ${color}20` : `0 3px 10px ${color}30, inset 0 1px 0 rgba(255,255,255,0.5)`,
                   }}>
-                  <CategoryIcon emoji={emoji} size={clean ? 44 : 32} style={tenant?.category_icon_style} />
+                  <CategoryIcon emoji={emoji} size={bare ? 56 : (clean ? 44 : 32)} style={tenant?.category_icon_style} color={glyphColor} />
                 </div>
                 <p className={`${titleColor} text-[11px] font-semibold text-center w-full leading-tight ${clean ? '' : 'drop-shadow-sm'} line-clamp-2`}>{cat.label}</p>
               </button>
@@ -176,19 +181,22 @@ function ComplaintBand({ variant = 'warm' }) {
           {topCats.slice(0, 8).map(cat => {
             const emoji = cat.emoji || (clean ? FALLBACK_EMOJI[cat.value] : LEGACY_FALLBACK_EMOJI[cat.value]) || '📋'
             const color = cat.color || (clean ? 'var(--color-primary, #2563eb)' : '#ffffff')
+            // เหมือนบล็อกมือถือด้านบน: glyph + clean = ไม่มีกล่อง · glyph + ธีมส้ม = คงกล่อง ไอคอนน้ำตาลเข้ม
+            const bare = clean && isPlainGlyph(tenant?.category_icon_style, emoji)
+            const glyphColor = clean ? undefined : '#78350f'
             return (
               <button key={cat.value}
                 onClick={() => navigate(`/request?category=${cat.value}`)}
                 className={`flex flex-col items-center gap-1.5 p-1.5 rounded-xl active:scale-95 transition-all ${clean ? 'hover:bg-gray-50' : 'hover:bg-white/15'}`}>
                 <div className="w-11 h-11 flex items-center justify-center"
-                  style={{
+                  style={bare ? undefined : {
                     backgroundColor: color + '22',
                     borderRadius: 'var(--radius-btn, 1rem)',
                     border: `1.5px solid ${color}55`,
                     backdropFilter: 'blur(4px)',
                     boxShadow: clean ? `0 2px 6px ${color}20` : `0 2px 8px ${color}25, inset 0 1px 0 rgba(255,255,255,0.5)`,
                   }}>
-                  <CategoryIcon emoji={emoji} size={24} style={tenant?.category_icon_style} />
+                  <CategoryIcon emoji={emoji} size={bare ? 40 : 24} style={tenant?.category_icon_style} color={glyphColor} />
                 </div>
                 <p className={`${titleColor} text-[12px] font-semibold text-center leading-tight`}>{cat.label}</p>
               </button>

@@ -79,7 +79,8 @@ import {
 } from '../lib/documentSignatories'
 import { fetchActiveSignatories } from '../lib/signatoryApi'
 import { logAction } from '../lib/auditLog'
-import { CategoryIcon } from '../lib/categoryIcon'
+import { CategoryIcon, hasGlyphIcon } from '../lib/categoryIcon'
+import { isPlainGlyph } from '../lib/categoryGlyphNames'
 import { isOfficialsOnlyCategory, SUBMIT_AUDIENCE_OFFICIALS, SUBMIT_AUDIENCE_PUBLIC } from '../lib/serviceAudience'
 
 // ─── หน้า "ประเภทคำร้อง" แบ่งเป็นแท็บ ─────────────────────────────────────────
@@ -3690,8 +3691,8 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
           onClick={() => onEditEmoji?.(cat)}
           title="เปลี่ยนไอคอน"
           className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 hover:ring-2 hover:ring-blue-400 transition-all active:scale-90"
-          style={{ backgroundColor: cat.color }}
-        ><CategoryIcon emoji={cat.emoji} size={18} style={iconStyle} /></button>
+          style={{ backgroundColor: isPlainGlyph(iconStyle, cat.emoji) ? 'transparent' : cat.color }}
+        ><CategoryIcon emoji={cat.emoji} size={isPlainGlyph(iconStyle, cat.emoji) ? 24 : 18} style={iconStyle} /></button>
 
         {/* label — inline edit */}
         {isEditing ? (
@@ -3982,7 +3983,8 @@ function CategoryManager({ tenant }) {
   const [categoryTab, setCategoryTab] = useState('normal') // 'normal' | 'adhoc'
 
   // รูปแบบไอคอนหมวดหมู่ ระดับ อปท. — 'native' emoji ตัวอักษรธรรมดา, 'color' OpenMoji สี (ค่าเริ่มต้น),
-  // 'outline' OpenMoji เส้นขาวดำ (dataset เดียวกับสี คนละโฟลเดอร์ CDN) มีผลกับทุกจุดที่ใช้ CategoryIcon
+  // 'outline' OpenMoji เส้นขาวดำ (dataset เดียวกับสี คนละโฟลเดอร์ CDN), 'glyph' ไอคอนทึบสีเดียวตามสีประจำหน่วยงาน
+  // (Phosphor fill) มีผลกับทุกจุดที่ใช้ CategoryIcon
   async function setCategoryIconStyle(nextStyle) {
     if (nextStyle === iconStyle) return
     setIconStyleSaving(true)
@@ -4545,22 +4547,38 @@ function CategoryManager({ tenant }) {
       {/* รูปแบบไอคอน — มีผลกับไอคอนหมวดหมู่ทุกจุดที่แสดงผล (ฟอร์มยื่นคำร้อง, หน้าเลือกหมวดหมู่, ที่นี่) */}
       <div>
         <p className="text-xs font-semibold text-gray-500 mb-1.5">รูปแบบไอคอน</p>
-        <div className="inline-flex rounded-xl border border-gray-200 p-1 bg-gray-50">
+        <div className="inline-flex flex-wrap rounded-xl border border-gray-200 p-1 bg-gray-50">
           {[
             { key: 'native',  label: 'Emoji ธรรมดา' },
             { key: 'color',   label: 'สีสัน' },
             { key: 'outline', label: 'เส้นขอบ' },
+            { key: 'glyph',   label: 'ไอคอนทึบสีเดียว (สีประจำหน่วยงาน)', sample: '💡' },
           ].map(opt => (
             <button key={opt.key} type="button" disabled={iconStyleSaving}
               onClick={() => setCategoryIconStyle(opt.key)}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 inline-flex items-center gap-1.5"
               style={iconStyle === opt.key
                 ? { backgroundColor: 'var(--color-primary)', color: '#fff' }
                 : { color: '#6b7280' }}>
+              {/* ตัวอย่างไอคอนทึบในตัวเลือก — เลือกอยู่ (พื้นสี primary) ใช้สีขาว ไม่เลือกใช้สี primary */}
+              {opt.sample && <CategoryIcon emoji={opt.sample} size={16} style="glyph" color={iconStyle === opt.key ? 'white' : 'var(--color-primary)'} />}
               {opt.label}
             </button>
           ))}
         </div>
+        {/* โหมดไอคอนทึบ: หมวดที่ emoji ยังไม่มีไอคอนทึบคู่กัน จะแสดงเป็นภาพสี (OpenMoji) ในกล่องสีแทน ไม่ให้ไอคอนหาย
+            บอกแอดมินว่าหมวดไหนบ้าง ให้เปลี่ยนอีโมจิของหมวดนั้นเป็นตัวที่มีในชุดทึบ (กดไอคอนหน้าชื่อหมวดเพื่อเปลี่ยน) */}
+        {iconStyle === 'glyph' && (() => {
+          const unmatched = cats.filter(c => c.is_active !== false && c.emoji && !/^(https?:|data:)/.test(c.emoji) && !hasGlyphIcon(c.emoji))
+          if (unmatched.length === 0) return null
+          return (
+            <div className="mt-2 max-w-xl rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 leading-relaxed">
+              <p className="font-bold">หมวดเหล่านี้ยังไม่มีไอคอนทึบ จึงแสดงเป็นภาพสีแทน ({unmatched.length} หมวด)</p>
+              <p className="mt-0.5">{unmatched.map(c => `${c.emoji} ${c.label}`).join(' · ')}</p>
+              <p className="mt-0.5">เปลี่ยนอีโมจิของหมวดนั้นเพื่อให้เข้าชุด — กดไอคอนหน้าชื่อหมวดในรายการด้านล่าง</p>
+            </div>
+          )
+        })()}
       </div>
 
       {error && (

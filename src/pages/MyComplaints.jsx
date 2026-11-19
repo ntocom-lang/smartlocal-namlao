@@ -393,7 +393,8 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
 
           <div className="flex items-start gap-3">
             <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
-              <CategoryIcon emoji={categoryEmoji} size={28} style={tenant?.category_icon_style} />
+              {/* color="white": หัวกล่องรายละเอียดเป็นพื้นไล่เฉด primary เข้ม ไอคอนทึบสี primary (โหมด glyph) จะกลืนพื้น */}
+              <CategoryIcon emoji={categoryEmoji} size={28} style={tenant?.category_icon_style} color="white" />
             </div>
             <div className="flex-1 min-w-0 pr-10">
               <p className="text-white/70 text-xs font-medium">ประเภทคำร้อง</p>
