@@ -203,6 +203,9 @@ test('ยอดใน QR = ยอด (+ ค่าปรับเสนอถ้�
   assert.equal(pp.payload, generatePromptPayPayload('0994000012345', 250))
   assert.equal(buildDueQr(s, due({ amount: 0 }), '2026-12-11'), null, 'ยอด 0 = ไม่มี QR')
   assert.equal(buildDueQr(null, due(), '2026-12-11'), null)
+  // ต่ออายุที่พ้นวันหมดอายุแล้ว (ระบบรอไฟล์ธนาคาร) ห้ามออก QR — จ่ายตอนนี้ต่ออายุไม่ได้ ต้องคืนเงิน (ผลตรวจรอบ 2 M-3)
+  assert.equal(buildDueQr(s, due({ kind: 'renewal', status: 'open', amount: 1000, due_on: '2026-12-10' }), '2026-12-11'), null)
+  assert.ok(buildDueQr(s, due({ kind: 'renewal', status: 'open', amount: 1000, due_on: '2026-12-11' }), '2026-12-11'), 'วันหมดอายุพอดียังจ่ายได้')
 })
 
 // ── สถานะ/ค้นหา/ผลปรับยอด ────────────────────────────────────────────────────────────

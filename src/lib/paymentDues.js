@@ -86,6 +86,23 @@ export function dueState(due, today) {
   return { days, overdue: days !== null && days < 0, text: remainingText(days) }
 }
 
+const isIsoDay = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ''))
+
+/**
+ * ยอดต่ออายุที่พ้นวันหมดอายุแล้วแต่ยังเป็น "รอชำระ" = ระบบรอไฟล์ธนาคาร 7 วันหลังวันหมดอายุก่อนปิดเป็นหมดสิทธิ์ (เงินที่จ่ายวันสุดท้าย/ก่อนวันหยุด ไฟล์มาช้า)
+ * ช่วงนี้รับเงินที่เคาน์เตอร์ไม่ได้แล้ว (ฐานตรวจวันรับเงินไม่เกินวันหมดอายุ) · บันทึกเลขใบเสร็จได้เฉพาะเงินที่รับทันวันหมดอายุ
+ */
+export const awaitingBankFile = (due, today) => Boolean(due) && due.status === 'open' && due.kind === 'renewal' && isIsoDay(due.due_on) && isIsoDay(today) && due.due_on < today
+
+/** ข้อความอธิบายว่ากดยืนยันคู่แล้วจะเกิดอะไร ตาม mode ของคู่ที่ฐานเสนอ (open / reopen / evidence) */
+export const MATCH_MODE_TEXT = Object.freeze({
+  open: { badge: 'ผูกคู่ รอเลขใบเสร็จ', detail: 'ผูกเงินเข้ากับยอดนี้ — ยอดยังรอชำระจนกว่าจะกรอกเลขใบเสร็จ (e-LAAS)' },
+  reopen: { badge: 'เปิดยอดที่ปิดไปแล้วกลับ', detail: 'ระบบปิดยอดนี้ไปแล้วเพราะพ้นวันหมดอายุ แต่เงินเข้าก่อนหรือในวันหมดอายุ — กดยืนยันแล้วระบบเปิดยอดกลับและผูกคู่ รอเลขใบเสร็จ' },
+  evidence: { badge: 'ผูกเป็นหลักฐาน (ไม่ใช่เงินซ้ำ)', detail: 'ยอดนี้บันทึกเลขใบเสร็จไปแล้ว — ผูกเงินเข้ารายการนี้เป็นหลักฐานของรายการรับเงินเดิม ไม่ต้องกรอกเลขใบเสร็จอีก' },
+  // บันทึกรับจากเมนูทะเบียนไม่มีช่องทาง — อาจเป็นเงินสดที่เคาน์เตอร์ แล้วเงินก้อนนี้คือเงินซ้ำ (ผลตรวจ migration รอบ 3 M-1)
+  evidence_unknown: { badge: 'ไม่ทราบช่องทางที่รับ — ตรวจก่อน', detail: 'ยอดนี้บันทึกเลขใบเสร็จไปแล้วแต่ไม่ทราบว่ารับทางไหน — ถ้ารับเป็นเงินสดไว้ เงินก้อนนี้คือเงินซ้ำ (คืนเงินตามระเบียบ) อย่ากดยืนยัน · ถ้าเป็นเงินก้อนเดียวกันจึงกดยืนยันเพื่อผูกเป็นหลักฐาน' },
+})
+
 // ── ค่าปรับที่เสนอ + ยอด QR ──────────────────────────────────────────────────────────
 
 /** ค่าปรับที่เสนอ (ร้อยละ 20) เฉพาะยอดรายปีที่ชำระหลังวันครบกำหนด — เจ้าหน้าที่ยืนยันหรือแก้ได้ ระบบไม่ตัดสิน */
@@ -106,6 +123,8 @@ export function amountDue(due, paidOn) {
  */
 export function buildDueQr(settings, due, today) {
   if (!settings || !due) return null
+  // พ้นวันหมดอายุแล้ว (ระบบรอไฟล์ธนาคาร) = จ่ายตอนนี้ต่ออายุไม่ได้ ต้องคืนเงิน → ไม่ออก QR (ผลตรวจรอบ 2 M-3)
+  if (awaitingBankFile(due, today)) return null
   const channel = qrChannelFor(settings, due.source)
   if (!channel) return null
   const { total, surcharge } = amountDue(due, today)
@@ -191,13 +210,109 @@ const bangkokDateOf = value => {
   return Number.isNaN(d.getTime()) ? null : todayBangkok(d)
 }
 
-/** บัญชีรับเงินถูกเปลี่ยนภายใน 30 วัน → { date (ISO), days } · ไม่เข้าเงื่อนไข = null */
-export function accountChangeBanner(settings, today) {
+/** คิวแจ้งที่ถือว่าเป็นของการเปลี่ยนบัญชีครั้งล่าสุด = สร้างไม่เก่ากว่าเวลาเปลี่ยนเกินนี้ (ฐานลงคิวในธุรกรรมเดียวกับที่ประทับ account_changed_at) */
+const ALERT_MATCH_TOLERANCE_MS = 5 * 60 * 1000
+/** ส่งไม่สำเร็จ 6 ครั้งแล้วระบบหยุดลอง (ตรงกับ payment_alert_claim ของฐาน) */
+const ALERT_MAX_ATTEMPTS = 6
+
+/**
+ * สถานะการแจ้งผู้บริหารเมื่อบัญชีรับเงินเปลี่ยน (แถวล่าสุดของ payment_account_alerts) → { tone: 'ok'|'warn', text }
+ * ไม่มีแถวของการเปลี่ยนครั้งนี้ (เปลี่ยนก่อนเปิดระบบแจ้งเตือน/คิวอ่านไม่ได้) = บอกตรงๆ ว่าไม่มีบันทึก ไม่อ้างว่าแจ้งแล้ว
+ * ข้อความไม่มี chat id (ฐานเก็บแค่ "กลุ่ม ✓ · ส่วนตัว 2/3")
+ */
+export function accountAlertNotice(alert, settings) {
+  const changedAt = settings?.account_changed_at ? new Date(settings.account_changed_at).getTime() : NaN
+  const createdAt = alert?.created_at ? new Date(alert.created_at).getTime() : NaN
+  if (!alert || (Number.isFinite(changedAt) && Number.isFinite(createdAt) && createdAt < changedAt - ALERT_MATCH_TOLERANCE_MS)) {
+    return { tone: 'warn', text: 'ไม่พบบันทึกการแจ้งผู้บริหารของการเปลี่ยนครั้งนี้ — แจ้งผู้บริหารเอง (ถ้าเปลี่ยนก่อนเปิดระบบแจ้งเตือนจะไม่มีบันทึก)' }
+  }
+  const note = alert.delivery_note ? ` (${alert.delivery_note})` : ''
+  switch (alert.status) {
+    case 'sent': return { tone: 'ok', text: `แจ้งผู้บริหารทาง Telegram แล้ว${note}` }
+    case 'pending':
+    case 'sending': return { tone: 'warn', text: 'รอระบบส่งแจ้งผู้บริหาร (ระบบตรวจคิวทุก 5 นาที)' }
+    case 'failed': return {
+      tone: 'warn',
+      text: Number(alert.attempts) >= ALERT_MAX_ATTEMPTS
+        ? `ส่งแจ้งผู้บริหารไม่สำเร็จ ระบบหยุดลองแล้ว — แจ้งผู้บริหารเอง และตรวจการผูก Telegram${note}`
+        : `ส่งแจ้งผู้บริหารไม่สำเร็จ — ระบบจะลองใหม่เอง${note}`,
+    }
+    case 'skipped': return { tone: 'warn', text: 'ยังไม่ได้แจ้งผู้บริหาร: ไม่มีปลายทาง — ผูกกลุ่ม Telegram ของ อปท. หรือให้ผู้บริหารผูก Telegram ส่วนตัว แล้วแจ้งผู้บริหารเองครั้งนี้' }
+    default: return { tone: 'warn', text: 'ไม่ทราบสถานะการแจ้งผู้บริหาร — แจ้งผู้บริหารเอง' }
+  }
+}
+
+/**
+ * บัญชีรับเงินถูกเปลี่ยนภายใน 30 วัน → { date (ISO), days } · ไม่เข้าเงื่อนไข = null
+ * ส่ง alert (แถวล่าสุดของ payment_account_alerts หรือ null เมื่อโหลดแล้วไม่มี) มาด้วย = เพิ่ม notice สถานะการแจ้งผู้บริหาร · ไม่ส่ง (undefined) = ไม่มีช่อง notice
+ */
+export function accountChangeBanner(settings, today, alert) {
   if (!settings?.account_changed_at) return null
   const date = bangkokDateOf(settings.account_changed_at)
   if (!date) return null
   const days = daysBetween(date, today)
-  return days !== null && days >= 0 && days <= ACCOUNT_BANNER_DAYS ? { date, days } : null
+  if (!(days !== null && days >= 0 && days <= ACCOUNT_BANNER_DAYS)) return null
+  return alert === undefined ? { date, days } : { date, days, notice: accountAlertNotice(alert, settings) }
+}
+
+// ── เงินเข้าจากธนาคาร (ขั้น 1C / E4 PR2) ───────────────────────────────────────────────
+
+/** ตัวกรองแท็บ "เงินเข้าจากธนาคาร" → สถานะของฐาน (ค่าตรงกับ CHECK ของ payment_bank_txns) */
+export const BANK_FILTERS = Object.freeze([
+  { id: 'unmatched', label: 'ยังระบุไม่ได้', hint: 'เงินเข้าที่ยังไม่รู้ว่าเป็นของยอดไหน — ระเบียบให้ออกใบเสร็จเมื่อตรวจได้ว่าเป็นรายการใด' },
+  { id: 'matched', label: 'จับคู่แล้ว รอเลขใบเสร็จ', hint: 'ผูกกับยอดแล้ว ยอดยังรอชำระจนกว่าจะกรอกเลขใบเสร็จ (e-LAAS)' },
+  { id: 'receipted', label: 'ปิดยอดแล้ว', hint: 'กรอกเลขใบเสร็จแล้ว ยอดปิดเรียบร้อย' },
+  { id: 'not_ours', label: 'ไม่ใช่เงินของระบบนี้', hint: 'ระบุแล้วว่าเป็นเงินของรายการอื่น (เช่น รายได้อื่น) พร้อมเหตุผล' },
+])
+export const BANK_STATUS_LABEL = Object.freeze(Object.fromEntries(BANK_FILTERS.map(f => [f.id, f.label])))
+export const BANK_METHOD_LABEL = Object.freeze({ auto_ref1: 'ระบบจับคู่เอง (Ref1 และยอดตรง)', confirmed: 'เจ้าหน้าที่ยืนยัน' })
+
+/** ช่องทางที่ใช้เติมในใบเสร็จ: ไฟล์ Bill Payment → bill_payment · ไฟล์เงินเข้าบัญชี → promptpay (พร้อมเพย์/โอน) */
+export const bankTxnChannel = txn => (txn?.file_kind === 'bill_payment' ? 'bill_payment' : 'promptpay')
+
+/** แถวเงินเข้า → ค่าเติมให้แผ่นบันทึกเลขใบเสร็จ { paidOn, amount, channel } (เหลือแค่เลขใบเสร็จ) */
+export const receiptPrefillOf = txn => (txn ? { paidOn: txn.txn_date, amount: txn.amount, channel: bankTxnChannel(txn), txnId: txn.id } : null)
+
+/** แมปยอดค้าง (due.id) → แถวเงินเข้าที่จับคู่แล้วรอเลขใบเสร็จ (status matched) · ใช้ขึ้นป้าย "เงินเข้าแล้ว รอเลขใบเสร็จ" ที่แท็บรอชำระ */
+export function matchedTxnByDue(txns) {
+  const map = new Map()
+  for (const txn of txns ?? []) if (txn?.status === 'matched' && txn.due?.id) map.set(txn.due.id, txn)
+  return map
+}
+
+/** ยอดรวมเงินเข้า (บาท · ปัดสตางค์) ของรายการที่ส่งมา */
+export const sumBankAmount = rows => Math.round((rows ?? []).reduce((t, r) => t + (Number(r?.amount) || 0), 0) * 100) / 100
+
+/**
+ * สรุปรายวันของรายการเงินเข้า (แทนรายงานกระทบยอดประจำวัน ข้อ 13 — ใบพิมพ์ทำทีหลัง)
+ * → [{ date, total: { n, amount }, matched: { n, amount }, unmatched: { n, amount } }] ใหม่สุดก่อน · ไม่นับ not_ours (ไม่ใช่เงินของระบบนี้)
+ * matched = จับคู่แล้ว (รอเลขใบเสร็จ + ปิดยอดแล้ว) · unmatched = ยังระบุไม่ได้
+ */
+export function dailyBankSummary(rows, limit = 14) {
+  const byDate = new Map()
+  for (const r of rows ?? []) {
+    if (!r || r.status === 'not_ours' || !r.txn_date) continue
+    const day = byDate.get(r.txn_date) ?? { date: r.txn_date, total: { n: 0, amount: 0 }, matched: { n: 0, amount: 0 }, unmatched: { n: 0, amount: 0 } }
+    const amount = Number(r.amount) || 0
+    const part = r.status === 'unmatched' ? day.unmatched : day.matched
+    day.total.n += 1; day.total.amount += amount
+    part.n += 1; part.amount += amount
+    byDate.set(r.txn_date, day)
+  }
+  const round = v => Math.round(v * 100) / 100
+  return [...byDate.values()].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, limit)
+    .map(d => ({ date: d.date, total: { n: d.total.n, amount: round(d.total.amount) }, matched: { n: d.matched.n, amount: round(d.matched.amount) }, unmatched: { n: d.unmatched.n, amount: round(d.unmatched.amount) } }))
+}
+
+/** ค้นเงินเข้า: Ref1 Ref2 เลขอ้างอิงธนาคาร ยอด ชื่อร้าน/เลขใบที่ผูกอยู่หรือที่ระบบเสนอ (ไม่มีชื่อผู้โอน — ระบบไม่เก็บ) */
+export function searchBankTxns(rows, query) {
+  const raw = String(query ?? '').trim()
+  if (!raw) return rows
+  const q = text(raw)
+  const digits = raw.replace(/[\s,-]/g, '')
+  return rows.filter(r => [r.ref1, r.ref2, r.bank_ref, r.due?.ref1, r.due?.licence_no, r.due?.business_name, r.due?.receipt_no].some(v => text(v).includes(q))
+    || (digits !== '' && String(Number(r.amount ?? NaN)).includes(digits))
+    || (r.candidates ?? []).some(c => text(c.business_name).includes(q) || text(c.licence_no).includes(q) || String(c.ref1 ?? '').includes(digits || raw)))
 }
 
 // ── ฟอร์มตั้งค่า ──────────────────────────────────────────────────────────────────────
