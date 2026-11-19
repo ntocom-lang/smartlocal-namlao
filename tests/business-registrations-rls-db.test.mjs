@@ -1,6 +1,6 @@
 // ปิดช่องเดิม business_registrations + ซ่อน tourism_places.created_by จาก anon — รัน migration จริงใน PGlite ไม่ใช้เน็ต
 //   node tests/business-registrations-rls-db.test.mjs --pglite <temp>/node_modules/@electric-sql/pglite/dist/index.js
-//   ไฟล์ที่รัน: 20261215100000 (policy INSERT/อ่าน) → ร่างที่พักไว้ docs/database/parked-tourism-places-anon-column-grant.sql
+//   ไฟล์ที่รัน: 20261218100000 (policy INSERT/อ่าน) → ร่างที่พักไว้ docs/database/parked-tourism-places-anon-column-grant.sql
 //   โครงตาราง/policy ตั้งต้น = ของฐานจริงที่อ่านมา 2026-11-19 (pg_policies + relacl) ไม่ใช่ของ 043 ตามไฟล์
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
@@ -12,7 +12,7 @@ assert.ok(modulePath, 'Supply --pglite <local module path> หรือตั้
 const { PGlite } = await import(pathToFileURL(modulePath).href)
 
 const readMigration = name => readFile(new URL('../supabase/migrations/' + name, import.meta.url), 'utf8')
-const insertSql = await readMigration('20261215100000_business_registrations_insert_read.sql')
+const insertSql = await readMigration('20261218100000_business_registrations_insert_read.sql')
 // ร่างที่พักไว้ (ยังไม่ใช่ migration) — ทดสอบไว้ให้พร้อมใช้วันที่ทำงานกวาด uuid ทั้งระบบ
 const grantSql = await readFile(new URL('../docs/database/parked-tourism-places-anon-column-grant.sql', import.meta.url), 'utf8')
 
