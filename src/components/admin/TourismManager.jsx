@@ -9,6 +9,7 @@ import { driveFolderPath, DRIVE_MODULES } from '../../lib/driveFolders'
 import BusinessRegistrationAdmin from './BusinessRegistrationAdmin'
 import TourismPlacePreview from './TourismPlacePreview'
 import MapPicker from '../MapPicker'
+import LocalMarketStaffPanel from './LocalMarketStaffPanel'
 import OpeningHoursEditor from './OpeningHoursEditor'
 import { parseCoords, hoursToRows, rowsToHours, rowsAreValid, serviceUrlBlocked } from '../../lib/tourismPlaces'
 
@@ -849,6 +850,11 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
                   </button>
                 )}
               </div>
+
+              {/* ตลาดชาวบ้าน (โมดูล local-market · ปิดอยู่ = คอมโพเนนต์ไม่แสดงอะไร) — ผูกเจ้าของร้าน + ซ่อน/ลบสินค้า ทำงานทันที ไม่ผูกกับปุ่มบันทึก */}
+              {!isAdd && sheetPlace && canManagePlace(sheetPlace) && (
+                <LocalMarketStaffPanel key={sheetPlace.id} tenant={tenant} place={sheetPlace} />
+              )}
             </div>
           </div>
         </div>

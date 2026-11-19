@@ -97,6 +97,8 @@
     "test:advisor:slots-db": "node tests/advisor-slots-db.test.mjs --pglite",
     "test:queue-booking": "node tests/queue-booking.test.mjs",
     "test:queue-booking:db": "node tests/queue-booking-db.test.mjs --pglite",
+    "test:local-market": "node tests/local-market.test.mjs",
+    "test:local-market:db": "node tests/local-market-db.test.mjs --pglite",
     "test:signing-setup": "node tests/signing-setup.playwright.mjs",
     "test:departments-tab": "node tests/admin-departments-tab.test.mjs",
     "test:waste-schedule": "node tests/waste-schedule.test.mjs && node tests/waste-schedule-poster.test.mjs",

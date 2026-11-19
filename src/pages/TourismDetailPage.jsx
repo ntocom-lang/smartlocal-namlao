@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, ExternalLink, Share2, Phone, X, Zap, ShoppingCart, CalendarCheck, MessageCircle, Globe, Bike, Star, Loader2, Clock, Navigation } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, ExternalLink, Share2, Phone, X, Zap, ShoppingCart, CalendarCheck, MessageCircle, Globe, Bike, Star, Loader2, Clock, Navigation, Heart } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { useAuth } from '../contexts/AuthContext'
 import { edgeImageUrl } from '../lib/edgeImage'
+import { LOCAL_MARKET_MODULE_KEY, MARKET_DISCLAIMER, formatPriceWithUnit } from '../lib/localMarket'
+import { addFavorite, fetchMyFavoriteIds, fetchPublicProducts, removeFavorite } from '../lib/localMarketApi'
 import {
   getOpenState, weeklyHours, directionsUrl, DAY_KEYS,
   resolveServiceUrl, serviceChannelLabel,
@@ -350,11 +353,51 @@ function ReviewsSection({ placeId }) {
   )
 }
 
+// สินค้าของร้าน (ตลาดชาวบ้าน) — การ์ดชื่อ/ราคา/หน่วย/มีของ-หมด/รูป · รูปใช้ edgeImageUrl + lazy (หน้านี้วาด placeContent 2 ชุด
+// มือถือ/จอใหญ่ ชุดที่ซ่อนอยู่ไม่โหลดรูปเพราะ lazy) · ใต้รายการบอกชัดว่าหน่วยงานไม่ใช่ผู้ขาย
+function MarketProducts({ products }) {
+  if (!products || products.length === 0) return null
+  return (
+    <div data-testid="market-products">
+      <h2 className="text-sm font-semibold text-gray-500 mb-2">สินค้าของร้าน</h2>
+      <ul className="grid grid-cols-2 gap-2.5">
+        {products.map(p => (
+          <li key={p.id} className={`rounded-2xl border border-gray-100 bg-white overflow-hidden ${p.is_available ? '' : 'opacity-70'}`}>
+            <div className="aspect-square bg-gray-100">
+              {p.image_url
+                ? <img src={edgeImageUrl(p.image_url)} alt={p.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                : <div className="w-full h-full flex items-center justify-center text-3xl">🛍️</div>}
+            </div>
+            <div className="p-2.5 space-y-0.5">
+              <p className="text-sm font-bold text-gray-800 leading-snug break-words">{p.name}</p>
+              <p className="text-sm font-semibold" style={{ color: '#b45309' }}>{formatPriceWithUnit(p.price, p.unit)}</p>
+              {p.description && <p className="text-xs text-gray-500 leading-snug line-clamp-2 break-words">{p.description}</p>}
+              <span className={`inline-block mt-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${p.is_available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                {p.is_available ? 'มีของ' : 'หมด'}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-gray-400 mt-2 leading-relaxed">{MARKET_DISCLAIMER}</p>
+    </div>
+  )
+}
+
 export default function TourismDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { tenant, isModuleEnabled } = useTenant()
+  const { session } = useAuth()
   const [place, setPlace] = useState(null)
   const [loading, setLoading] = useState(true)
+  // ตลาดชาวบ้าน — ปิดโมดูลอยู่ = ไม่ยิงคำขอและไม่แสดงอะไรเพิ่ม (หน้านี้เหมือนเดิมทุกอย่าง)
+  const marketOn = !isModuleEnabled || isModuleEnabled(LOCAL_MARKET_MODULE_KEY)
+  const [productsOf, setProductsOf] = useState({ id: null, rows: [] }) // ผูกกับ id ร้าน กันสินค้าร้านก่อนหน้าค้างตอนเปลี่ยนหน้า
+  const [favorite, setFavorite] = useState({ id: null, on: false })
+  const [favBusy, setFavBusy] = useState(false)
+  const [favError, setFavError] = useState('')
+  const uid = session?.user?.id
 
   useEffect(() => {
     supabase.from('tourism_places').select('*').eq('id', id).maybeSingle()
@@ -362,6 +405,32 @@ export default function TourismDetailPage() {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => {
+    if (!marketOn || !id) return undefined
+    let alive = true
+    fetchPublicProducts(id).then(res => { if (alive) setProductsOf({ id, rows: res.data ?? [] }) })
+    return () => { alive = false }
+  }, [marketOn, id])
+
+  // รายการโปรด: ล็อกอินแล้วเท่านั้นที่ดึงว่าร้านนี้ถูกบันทึกไว้ไหม (เห็นเฉพาะของตัวเอง — RLS)
+  useEffect(() => {
+    if (!marketOn || !uid || !tenant?.id || !id) return undefined
+    let alive = true
+    fetchMyFavoriteIds(tenant.id).then(res => { if (alive && !res.error) setFavorite({ id, on: res.data.includes(id) }) })
+    return () => { alive = false }
+  }, [marketOn, uid, tenant?.id, id])
+
+  async function handleToggleFavorite() {
+    if (!uid) { navigate('/auth', { state: { from: `/tourism/${id}` } }); return }
+    if (favBusy) return
+    const next = !(favorite.id === id && favorite.on)
+    setFavBusy(true); setFavError('')
+    const res = next ? await addFavorite(id) : await removeFavorite(id)
+    setFavBusy(false)
+    if (res.error) { setFavError(res.error); return }
+    setFavorite({ id, on: next })
+  }
 
   async function handleShare() {
     if (navigator.share) {
@@ -410,6 +479,8 @@ export default function TourismDetailPage() {
   const hours     = weeklyHours(place.opening_hours)
   const todayKey  = DAY_KEYS[new Date().getDay()]
   const navUrl    = directionsUrl(place)
+  const isFavorite = favorite.id === id && favorite.on
+  const products   = marketOn && productsOf.id === id ? productsOf.rows : []
 
   const placeContent = (
     <div className="space-y-4">
@@ -448,6 +519,18 @@ export default function TourismDetailPage() {
         </div>
       </div>
 
+      {/* ♡ บันทึกรายการโปรด (ตลาดชาวบ้าน · โมดูลเปิดเท่านั้น) — ไม่ล็อกอินกดแล้วพาไปหน้าเข้าสู่ระบบ */}
+      {marketOn && (
+        <div>
+          <button type="button" onClick={handleToggleFavorite} disabled={favBusy} aria-pressed={isFavorite}
+            className={`inline-flex min-h-[44px] items-center gap-2 rounded-2xl border px-4 text-sm font-semibold transition-colors disabled:opacity-60 ${isFavorite ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-gray-200 bg-white text-gray-600'}`}>
+            {favBusy ? <Loader2 size={16} className="animate-spin" /> : <Heart size={16} fill={isFavorite ? 'currentColor' : 'none'} />}
+            {isFavorite ? 'บันทึกเป็นรายการโปรดแล้ว' : 'บันทึกเป็นรายการโปรด'}
+          </button>
+          {favError && <p role="alert" className="text-xs text-red-600 mt-1.5">{favError}</p>}
+        </div>
+      )}
+
       {/* Online CTA — prominent */}
       {isOnline && svcLink && (
         <a href={svcLink.href}
@@ -466,6 +549,8 @@ export default function TourismDetailPage() {
           <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-line">{place.description}</p>
         </div>
       )}
+
+      <MarketProducts products={products} />
 
       {(place.phone || place.address) && (
         <div className="bg-gray-50 rounded-2xl divide-y divide-gray-100">

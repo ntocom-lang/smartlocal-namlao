@@ -324,6 +324,8 @@ function NamlaoMorePage() {
       { key: 'events', label: 'ปฏิทินกิจกรรม', desc: 'กิจกรรมและงานประเพณีของท้องถิ่น', Icon: CalendarDays, color: '#16a34a', to: '/events' },
       { key: 'tourism', label: 'เที่ยว กิน พัก ช้อป บริการ', desc: 'ที่เที่ยว ร้านอาหาร ที่พัก OTOP ของฝาก และช่าง/บริการในพื้นที่', Icon: Luggage, color: '#ea580c', to: '/tourism' },
       { key: 'business-register', label: 'ลงทะเบียนร้านค้า / ท่องเที่ยว', desc: 'เที่ยว กิน พัก ช้อป บริการ — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ', Icon: Store, color: '#ea580c', to: '/business-register' },
+      // ร้านของฉัน (ตลาดชาวบ้าน) — เมนูที่ผูกโมดูลถูกกรองด้วย moduleOn(item.to) อัตโนมัติ ปิดโมดูลแล้วไม่โผล่
+      { key: 'my-shop', label: 'ร้านของฉัน', desc: 'เจ้าของร้านลงสินค้าและจัดการสินค้าของร้านเอง', Icon: Store, color: '#d97706', to: '/my-shop' },
       { key: 'data-center', label: 'ศูนย์ข้อมูลดิจิทัล', desc: 'แผนที่รวมพิกัด/สถานที่สำคัญทุกชนิดในเขตเทศบาล', Icon: Database, color: '#4f46e5', to: '/data-center' },
     ] },
     { id: 'services', title: 'บริการอื่นๆ', Icon: LayoutGrid, color: '#0284c7', items: [
