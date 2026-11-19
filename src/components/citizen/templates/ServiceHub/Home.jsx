@@ -273,11 +273,16 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
           // ถูกตัดที่จอ 360/390px และ "คู่มือสำหรับประชาชน" ที่ 360px ให้ขึ้นได้ 3 บรรทัด การ์ดสูง
           // เพิ่มจาก 67 เป็น 80px แต่ยังแถวเดียว ไม่เปลี่ยนชื่อบริการเดิมเพื่อให้สั้นลง
           const lineClamp = 'line-clamp-3'
+          // โหมด 'glyph' (ไอคอนทึบสีเดียวตามสี อปท.): ทุกช่องใช้ไอคอนทึบสี primary ขนาดใหญ่ขึ้น (การ์ดพื้นขาว อ่านชัด)
+          // ช่องประปาที่เดิมใช้ lucide Droplets (เส้น) ก็เปลี่ยนเป็นหยดน้ำทึบของชุดเดียวกันเพื่อให้เข้าชุด
+          // โหมดอื่นคงเดิมทุกอย่าง (ประปายังเป็น Droplets สีฟ้า)
+          const glyph = tenant?.category_icon_style === 'glyph'
+          const iconSize = glyph ? (isPair ? 34 : 28) : (isPair ? 26 : 22)
           const cardContent = (
             <>
-              {value === 'waterworks'
-                ? <Droplets size={isPair ? 26 : 22} className="text-sky-600" aria-hidden="true" />
-                : <CategoryIcon emoji={emoji} size={isPair ? 26 : 22} style={tenant?.category_icon_style} />}
+              {value === 'waterworks' && !glyph
+                ? <Droplets size={iconSize} className="text-sky-600" aria-hidden="true" />
+                : <CategoryIcon emoji={emoji} size={iconSize} style={tenant?.category_icon_style} />}
               <p className={`${isPair ? 'text-[11px] sm:text-xs' : 'text-[10px] sm:text-[11px]'} font-bold text-gray-700 text-center leading-tight ${lineClamp} transition-colors group-hover:text-blue-700`}>{label}</p>
             </>
           )
