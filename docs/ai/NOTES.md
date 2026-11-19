@@ -78,13 +78,15 @@ notify pgrst, 'reload schema';
 (⚠️ role ที่ `supabase db query --read-only` ใช้ เห็น `information_schema` ว่าง — ใช้
 `has_table_privilege` / `has_column_privilege` / `pg_class.relacl` แทน)
 
-**ตารางที่จะตามมา: `tourism_places`** — ร่างซ่อน `created_by` จาก `anon` ด้วย column grant
-**พักไว้** (`docs/database/parked-tourism-places-anon-column-grant.sql` เจ้าของตัดสิน 2026-11-19
-รอทำพร้อมงานกวาด uuid ผู้ใช้ที่ anon อ่านได้ ~36 คอลัมน์ใน ~25 ตาราง) ตอนนี้ anon ยังได้ทั้งตาราง
-- หน้าที่ผู้ไม่ล็อกอินเปิดได้ **ห้ามกลับไปใช้ `select('*')`** ให้ใช้ `TOURISM_PLACE_PUBLIC_COLUMNS`
-  จาก `src/lib/tourismPlaceColumns.js` วันที่รันร่างนั้น `*` จะได้ 42501 หน้าท่องเที่ยว/หน้าแรก/หน้าร้านว่างทุก อปท.
-- งานกวาดรอบนั้นใช้กับดักเดียวกับ `municipalities`: `ADD COLUMN` ทีหลังต้อง GRANT ให้ anon เอง
-  (`npm run test:bizreg-rls:db` เทียบรายชื่อในโค้ดกับ GRANT ในร่างให้)
+**อีก 11 ตารางใช้ column grant ของ `anon` แล้ว** (`20261219100000_anon_hide_user_uuid_columns.sql`, 2026-11-19)
+ซ่อน uuid ผู้ใช้ (`created_by` / `updated_by` / `verified_by` / `user_id`) ของ data_center_entries, events,
+infrastructure_works, org_projects, org_project_updates, posts, public_holidays, service_faqs, service_forms,
+tourism_places, tourism_reviews — ผู้ล็อกอินยังได้ทั้งตาราง
+- หน้าที่ผู้ไม่ล็อกอินเปิดได้ **ห้ามใช้ `select('*')`** กับ 11 ตารางนี้ ให้ใช้ `anonColumns('<ตาราง>')`
+  จาก `src/lib/anonColumns.js` (`*` ได้ 401/42501 ทั้งคำสั่ง หน้าว่างทุก อปท. — เกิดจริง 2026-11-19 ตอนรัน SQL ก่อน deploy:
+  กิจกรรมหน้าแรก/หน้า /events/รีวิวร้านว่าง) · `npm run test:anon-columns` สแกน `select('*')` ให้
+- `ADD COLUMN` ทีหลังต้อง GRANT ให้ anon เอง + เพิ่มชื่อใน `anonColumns.js` (กับดักเดียวกับ `municipalities`)
+- ⚠️ SQL Editor ขึ้น error ได้ทั้งที่คำสั่งก่อนหน้าสำเร็จไปแล้ว — หลังรันทุกครั้งต้องตรวจสถานะจริง ห้ามเชื่อข้อความ error
 
 ## 5. `CREATE OR REPLACE` เขียนทับทั้งฟังก์ชัน ไม่ใช่ patch
 
