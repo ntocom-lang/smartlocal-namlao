@@ -75,6 +75,16 @@ notify pgrst, 'reload schema';
 ```
 ถ้าคอลัมน์นั้นเป็นความลับให้ข้าม GRANT แต่ต้องไม่ใส่ชื่อคอลัมน์นั้นใน select ของ `TenantContext`
 ตรวจได้ด้วย `information_schema.column_privileges` เทียบกับ `pg_attribute`
+(⚠️ role ที่ `supabase db query --read-only` ใช้ เห็น `information_schema` ว่าง — ใช้
+`has_table_privilege` / `has_column_privilege` / `pg_class.relacl` แทน)
+
+**ตารางที่จะตามมา: `tourism_places`** — ร่างซ่อน `created_by` จาก `anon` ด้วย column grant
+**พักไว้** (`docs/database/parked-tourism-places-anon-column-grant.sql` เจ้าของตัดสิน 2026-11-19
+รอทำพร้อมงานกวาด uuid ผู้ใช้ที่ anon อ่านได้ ~36 คอลัมน์ใน ~25 ตาราง) ตอนนี้ anon ยังได้ทั้งตาราง
+- หน้าที่ผู้ไม่ล็อกอินเปิดได้ **ห้ามกลับไปใช้ `select('*')`** ให้ใช้ `TOURISM_PLACE_PUBLIC_COLUMNS`
+  จาก `src/lib/tourismPlaceColumns.js` วันที่รันร่างนั้น `*` จะได้ 42501 หน้าท่องเที่ยว/หน้าแรก/หน้าร้านว่างทุก อปท.
+- งานกวาดรอบนั้นใช้กับดักเดียวกับ `municipalities`: `ADD COLUMN` ทีหลังต้อง GRANT ให้ anon เอง
+  (`npm run test:bizreg-rls:db` เทียบรายชื่อในโค้ดกับ GRANT ในร่างให้)
 
 ## 5. `CREATE OR REPLACE` เขียนทับทั้งฟังก์ชัน ไม่ใช่ patch
 

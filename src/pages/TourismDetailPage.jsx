@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, ExternalLink, Share2, Phone, X, Zap, ShoppingCart, CalendarCheck, MessageCircle, Globe, Bike, Star, Loader2, Clock, Navigation, Heart } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { TOURISM_PLACE_PUBLIC_COLUMNS } from '../lib/tourismPlaceColumns'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { edgeImageUrl } from '../lib/edgeImage'
@@ -400,7 +401,8 @@ export default function TourismDetailPage() {
   const uid = session?.user?.id
 
   useEffect(() => {
-    supabase.from('tourism_places').select('*').eq('id', id).maybeSingle()
+    // ห้าม '*' — เตรียมซ่อน created_by จาก anon (docs/database/parked-tourism-places-anon-column-grant.sql)
+    supabase.from('tourism_places').select(TOURISM_PLACE_PUBLIC_COLUMNS).eq('id', id).maybeSingle()
       .then(({ data }) => setPlace(data))
       .catch(() => {})
       .finally(() => setLoading(false))

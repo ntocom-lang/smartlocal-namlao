@@ -99,6 +99,7 @@
     "test:queue-booking:db": "node tests/queue-booking-db.test.mjs --pglite",
     "test:local-market": "node tests/local-market.test.mjs",
     "test:local-market:db": "node tests/local-market-db.test.mjs --pglite",
+    "test:bizreg-rls:db": "node tests/business-registrations-rls-db.test.mjs --pglite",
     "test:signing-setup": "node tests/signing-setup.playwright.mjs",
     "test:departments-tab": "node tests/admin-departments-tab.test.mjs",
     "test:waste-schedule": "node tests/waste-schedule.test.mjs && node tests/waste-schedule-poster.test.mjs",

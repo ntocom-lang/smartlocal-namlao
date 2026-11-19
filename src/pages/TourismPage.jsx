@@ -6,6 +6,7 @@ import {
   Clock, Sparkles, Heart,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { TOURISM_PLACE_PUBLIC_COLUMNS } from '../lib/tourismPlaceColumns'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { edgeImageUrl } from '../lib/edgeImage'
@@ -252,7 +253,7 @@ export default function TourismPage() {
     // ไม่ได้ในทางปฏิบัติ (ผูกกับ hostname) การเรียก setState ตรงๆ ในบอดี้ effect ผิดกฎ lint ของโปรเจกต์
     supabase
       .from('tourism_places')
-      .select('*')
+      .select(TOURISM_PLACE_PUBLIC_COLUMNS) // ห้าม '*' — เตรียมซ่อน created_by จาก anon (docs/database/parked-tourism-places-anon-column-grant.sql)
       .eq('municipality_id', tenant.id)
       .eq('is_active', true)
       .order('display_order')
