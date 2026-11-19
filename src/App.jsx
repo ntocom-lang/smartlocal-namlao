@@ -67,6 +67,7 @@ const WeatherPage = lazyWithRetry(() => import('./pages/WeatherPage'))
 const WaterSituationPage = lazyWithRetry(() => import('./pages/WaterSituationPage'))
 const Pm25Page = lazyWithRetry(() => import('./pages/Pm25Page'))
 const EventsPage = lazyWithRetry(() => import('./pages/EventsPage'))
+const EventDetailPage = lazyWithRetry(() => import('./pages/EventDetailPage'))
 const EventsManager = lazyWithRetry(() => import('./components/admin/EventsManager'))
 const EmergencyPage = lazyWithRetry(() => import('./pages/EmergencyPage'))
 const DirectoryPage = lazyWithRetry(() => import('./pages/DirectoryPage'))
@@ -795,6 +796,8 @@ function AppShell() {
               เดิมบุคลากรภายในถูกพาไปหน้าจัดการแทน ซึ่งเห็นปฏิทินกับรายการได้ทีละอย่าง
               งานจัดการยังอยู่ที่ /events/manage และเมนูปฏิทินในหน้าเจ้าหน้าที่ สิทธิ์เปิดอ่านดู EventsPage.jsx */}
           <Route path="/events" element={<EventsPage />} />
+          {/* ลิงก์แชร์กิจกรรม + ให้ดาว/ความเห็น — ไม่ต้องล็อกอินก็เปิดดูได้ แสดงเฉพาะกิจกรรมสาธารณะ (/events/manage เป็นเส้นทางตรงตัว ไม่ชน) */}
+          <Route path="/events/:id" element={<EventDetailPage />} />
           <Route path="/emergency" element={<EmergencyPage />} />
           <Route path="/directory" element={<DirectoryPage />} />
           {/* ไม่ต้องล็อกอิน — QR บนใบติดบอร์ดหมู่บ้านพามาที่นี่ตรงๆ */}

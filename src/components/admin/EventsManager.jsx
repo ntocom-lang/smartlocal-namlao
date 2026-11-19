@@ -22,6 +22,7 @@ import {
   validatePersonalForm, personalQuota, maxPersonalDate, eventsForCalendarYear,
 } from '../../lib/personalEvents'
 import { canEditEvent, audienceHint, lockedDetailNote, EDIT_RULE_NOTE, EDIT_BLOCKED_NOTE } from '../../lib/eventExplain'
+import { REVIEW_HIDE_REASON_MAX, fetchEventReviewsForStaff, setEventReviewHidden } from '../../lib/eventReviewsApi'
 
 // ปิด AI ทั้งระบบตามคำสั่งเจ้าของระบบ 2569-09-15 กันโควตา Gemini ฟรีหมด
 // Edge Function gemini-extract-event ถูกแทนด้วยตัวที่ตอบ 410 แล้ว ปุ่มจึงใช้ไม่ได้ ซ่อนไว้ไม่ให้กดแล้วเจอ error
@@ -558,6 +559,80 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
           <CalendarDayObservances date={dayKey(selectedDay)} />
         </div>
       )}
+    </div>
+  )
+}
+
+// ความเห็นประชาชนของกิจกรรมสาธารณะ (ให้ดาว + ความเห็น จากหน้า /events/:id) — เจ้าหน้าที่ซ่อน/เลิกซ่อนได้
+// ไม่เพิ่มงานประจำ: ไม่มีขั้นอนุมัติ (ความเห็นขึ้นทันที) ซ่อนเฉพาะรายการที่ไม่เหมาะสม และไม่มีปุ่มลบ
+// ฐานข้อมูลบังคับเหตุผลตอนซ่อน (ผู้เขียนเห็นเหตุผลนี้) และลงสมุดบันทึกทุกครั้ง — RLS คืนแถวเฉพาะกิจกรรมที่ผู้ใช้ดูแลได้
+// ว่าง/โหลดไม่สำเร็จ (เช่น ฐานข้อมูลยังไม่มีตาราง) = ไม่แสดงส่วนนี้เลย
+function EventReviewsModeration({ eventId }) {
+  const [rows, setRows] = useState(null) // null = กำลังโหลด
+  const [reloadKey, setReloadKey] = useState(0)
+  const [hidingId, setHidingId] = useState(null) // แถวที่กำลังกรอกเหตุผลซ่อน
+  const [reason, setReason] = useState('')
+  const [busyId, setBusyId] = useState(null)
+  const [actionError, setActionError] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    fetchEventReviewsForStaff(eventId).then(res => { if (alive) setRows(res.error ? [] : res.data) })
+    return () => { alive = false }
+  }, [eventId, reloadKey])
+
+  if (!rows || rows.length === 0) return null
+
+  async function apply(id, hidden) {
+    if (busyId) return
+    setBusyId(id); setActionError('')
+    const res = await setEventReviewHidden(id, hidden, reason)
+    setBusyId(null)
+    if (res.error) { setActionError(res.error); return }
+    setHidingId(null); setReason('')
+    setReloadKey(k => k + 1)
+  }
+
+  return (
+    <div data-testid="event-reviews-moderation" className="mt-4 pt-3 border-t border-gray-100">
+      <p className="text-xs font-bold text-gray-500 mb-2">ความเห็นประชาชน ({rows.length})</p>
+      {actionError && <p role="alert" className="text-xs text-red-600 mb-2">{actionError}</p>}
+      <ul className="space-y-2 max-h-64 overflow-y-auto">
+        {rows.map(r => (
+          <li key={r.id} className={`rounded-xl border px-3 py-2 text-sm ${r.is_hidden ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-100'}`}>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-gray-700 break-words min-w-0">
+                {r.reviewer_name} · <span className="text-amber-600">★ {r.rating}</span>
+                <span className="text-gray-400 font-normal"> · {new Date(r.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'Asia/Bangkok' })}</span>
+              </p>
+              {hidingId !== r.id && (
+                <button type="button" disabled={busyId === r.id}
+                  onClick={() => { setActionError(''); if (r.is_hidden) apply(r.id, false); else { setHidingId(r.id); setReason('') } }}
+                  className="shrink-0 text-xs font-semibold text-blue-600 underline min-h-[32px] disabled:opacity-50">
+                  {busyId === r.id ? 'กำลังบันทึก…' : r.is_hidden ? 'เลิกซ่อน' : 'ซ่อน'}
+                </button>
+              )}
+            </div>
+            {r.comment && <p className="text-gray-600 leading-relaxed whitespace-pre-wrap break-words mt-0.5">{r.comment}</p>}
+            {r.is_hidden && <p className="text-xs text-red-600 mt-1">ซ่อนอยู่: {r.hidden_reason || 'ไม่ระบุเหตุผล'}</p>}
+            {hidingId === r.id && (
+              <div className="mt-2 space-y-2">
+                <input type="text" value={reason} onChange={e => setReason(e.target.value)} maxLength={REVIEW_HIDE_REASON_MAX}
+                  aria-label="เหตุผลที่ซ่อน" placeholder="เหตุผลที่ซ่อน (ผู้เขียนจะเห็นเหตุผลนี้)"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200" />
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => { setHidingId(null); setReason('') }} disabled={busyId === r.id}
+                    className="flex-1 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-100">ยกเลิก</button>
+                  <button type="button" onClick={() => apply(r.id, true)} disabled={busyId === r.id || !reason.trim()}
+                    className="flex-1 py-2 rounded-lg bg-red-600 text-white text-xs font-bold disabled:opacity-50">
+                    {busyId === r.id ? 'กำลังบันทึก…' : 'ยืนยันซ่อน'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
@@ -1379,6 +1454,11 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                     </div>
                   )}
                 </div>
+
+                {/* ความเห็นประชาชน — เฉพาะกิจกรรมสาธารณะที่ผู้ใช้ดูแลได้ (กติกาเดียวกับปุ่มแก้ไข = ขอบเขตของ RPC ซ่อน/เลิกซ่อน) */}
+                {(ev.audiences ?? []).includes('public') && canManage && canEditEvent(ev, currentUserRole, currentUserId, currentUserScope) && (
+                  <EventReviewsModeration eventId={ev.id} />
+                )}
 
                 {/* Actions — "มอบหมายผู้ไปแทน" ขึ้นให้ผู้บริหารด้วย แม้แก้ไขกิจกรรมไม่ได้ (เช่น ธุรการเป็นคนลง)
                     กติกาเดียวกับด่านใน RPC set_event_assignments */}
