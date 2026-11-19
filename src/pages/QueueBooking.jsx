@@ -9,6 +9,7 @@ import {
   QUEUE_BOOKING_MODULE_KEY, bangkokToday, bookableDates, bookingStatus, canCancelBooking,
   hhmm, openingText, slotRange, thaiLongDay, thaiShortDay,
 } from '../lib/queueBooking'
+import { holidayName } from '../lib/workingDays'
 
 const SERVICE_COLS = 'id, name, description, location, open_weekdays, start_time, end_time, slot_minutes, per_slot_quota, book_ahead_days'
 const BOOKING_COLS = 'id, service_id, booking_date, slot_time, queue_no, status, note, queue_services(name, location, slot_minutes)'
@@ -31,7 +32,7 @@ function StatusPill({ status }) {
  */
 export default function QueueBooking() {
   const navigate = useNavigate()
-  const { tenant, isModuleEnabled } = useTenant()
+  const { tenant, isModuleEnabled, holidaysVersion } = useTenant()
   const { session } = useAuth()
   const uid = session?.user?.id
   const tenantId = tenant?.id
@@ -104,7 +105,10 @@ export default function QueueBooking() {
   const upcoming = useMemo(() => bookings.filter(b => canCancelBooking(b, today))
     .sort((a, b) => String(a.booking_date).localeCompare(String(b.booking_date)) || String(a.slot_time).localeCompare(String(b.slot_time))), [bookings, today])
   const history = useMemo(() => bookings.filter(b => !upcoming.includes(b)), [bookings, upcoming])
-  const dates = useMemo(() => (service ? bookableDates(service, today) : []), [service, today])
+  // ตัดวันหยุดราชการ (ฐานข้อมูลปิดจองวันเดียวกันอยู่แล้ว — ตรงนี้กันประชาชนกดแล้วเจอข้อความปฏิเสธ)
+  // holidaysVersion: วันหยุดจากตารางโหลดเสร็จหลังหน้าเปิด → คำนวณใหม่
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const dates = useMemo(() => (service ? bookableDates(service, today, holidayName) : []), [service, today, holidaysVersion])
 
   function startBooking() {
     setError(''); setNotice(''); setService(null); setDate(''); setSlotTime(''); setNote('')
@@ -369,6 +373,12 @@ export default function QueueBooking() {
         </div>
         <p className="mt-0.5 text-xs text-gray-600">{thaiLongDay(b.booking_date)} · {slotRange(b.slot_time, b.queue_services?.slot_minutes)} น.</p>
         {b.queue_services?.location && <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500"><MapPin size={12} />{b.queue_services.location}</p>}
+        {/* คิวที่จองไว้ก่อนแอดมินเพิ่มวันหยุด — ระบบไม่ยกเลิกแทน ให้ผู้จองเห็นแล้วตัดสินเอง */}
+        {canCancelBooking(b, today) && holidayName(b.booking_date) && (
+          <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
+            วันนัดตรงวันหยุดราชการ ({holidayName(b.booking_date)}) กรุณาติดต่อหน่วยงาน หรือยกเลิกแล้วจองวันใหม่
+          </p>
+        )}
       </div>
       {canCancelBooking(b, today) && (
         <button disabled={busy} onClick={() => cancelBooking(b)}
