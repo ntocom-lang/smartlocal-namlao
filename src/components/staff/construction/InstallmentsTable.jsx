@@ -6,7 +6,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertOctagon, CheckCircle2, ChevronDown, Loader2, Plus, Printer } from 'lucide-react'
 import { daysBetween } from '../../../lib/constructionReport'
 import { fineEstimate } from '../../../lib/constructionLifecycle'
-import { buildInstallmentCertificateHtml } from '../../../lib/constructionLifecyclePrint'
+import { buildInstallmentCertificateHtml, buildSupervisorReportHtml } from '../../../lib/constructionLifecyclePrint'
 import { deleteInstallment, recordHistory, saveInstallment } from '../../../lib/constructionLifecycleApi'
 import {
   INSTALLMENT_GROUPS, INSTALLMENT_LOCKED_COLUMNS, INSTALLMENT_MANAGER_COLUMNS, historyNote, installmentDraft, installmentSlots,
@@ -127,6 +127,10 @@ export default function InstallmentsTable({ bundle, access, deadlines = [], toda
   const printCertificate = slot => print(({ tenant }) => buildInstallmentCertificateHtml({
     tenant, project, contract: bundle.contract, installment: slot, people: bundle.people,
   }))
+  // บันทึกรายงานผลการควบคุมงานของผู้ควบคุมงานส่ง กก.ตรวจรับ (ตาม ว 681)
+  const printSupervisorReport = slot => print(({ tenant, departmentName, emblemUrl }) => buildSupervisorReportHtml({
+    tenant, project, contract: bundle.contract, installment: slot, people: bundle.people, departmentName, emblemUrl,
+  }))
 
   const slots = useMemo(() => {
     const base = installmentSlots(bundle)
@@ -209,6 +213,15 @@ export default function InstallmentsTable({ bundle, access, deadlines = [], toda
                         {slot.due_report_on
                           ? <span className="inline-flex items-center gap-1 text-gray-700"><CheckCircle2 size={14} className="text-emerald-600" aria-label="รายงานแล้ว" role="img" />{thaiDay(slot.due_report_on)}</span>
                           : <DueBadge deadline={report} />}
+                        {slot.saved && (
+                          <div>
+                            <button type="button" className={`${PRINT_BUTTON_CLASS} mt-1`} disabled={!printable}
+                              aria-label={`พิมพ์รายงานผู้ควบคุมงานงวดที่ ${no}`}
+                              onClick={e => { e.stopPropagation(); printSupervisorReport(slot) }}>
+                              <Printer size={13} aria-hidden="true" />รายงาน ผคง.
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td className="px-2 text-gray-700">
                         {slot.delivered_on ? thaiDay(slot.delivered_on) : <span className="text-gray-400">{slot.saved && slot.due_on ? 'ยังไม่ส่ง' : '—'}</span>}

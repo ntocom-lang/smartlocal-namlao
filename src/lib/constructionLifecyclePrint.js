@@ -28,6 +28,7 @@ import { addMobileCloseButton } from './printWindowClose.js'
 import {
   SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryMoment, signatoryName, signatoryTitle,
 } from './documentSignatories.js'
+import { thaiBahtText } from './thaiBahtText.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -266,6 +267,54 @@ ${committeeBlock(people)}
   <p class="fill-line"><span class="fl" style="margin-left:0"></span></p>`
   return documentHtml({
     title: `ใบรับรองผลการปฏิบัติงาน งวดที่ ${text(no)} ${text(project?.title)}`, bodyHtml: body, tenant, printedAt,
+  })
+}
+
+export function buildSupervisorReportHtml({
+  tenant, project, contract = null, installment = {}, people = [], departmentName = '', emblemUrl = '', printedAt = new Date(),
+} = {}) {
+  const no = installment?.installment_no
+  const supervisors = (people ?? []).filter(p => p.grp === 'supervisor')
+  const total = Number(contract?.installments_total)
+  const isFinal = Number.isFinite(total) && total > 0 && Number(no) === total
+  const pct = isNum(installment?.work_pct) ? `ร้อยละ ${esc(Number(installment.work_pct))}` : ''
+  const subject = `รายงานผลการควบคุมงานจ้างก่อสร้าง งวดที่ ${text(no)}${isFinal ? ' (งวดสุดท้าย)' : ''}`
+
+  const body = `${memoHead({ tenant, departmentName, subject, emblemUrl })}
+  <p class="field kv"><b>เรียน</b>&nbsp;&nbsp;ประธานคณะกรรมการตรวจรับพัสดุ</p>
+  <p class="para">ตามที่ ${esc(orgName(tenant))} ได้ทำสัญญาจ้างกับ <b>${orBlank(project?.contractor_name, '60mm')}</b> ดำเนินการก่อสร้างโครงการ <b>${orBlank(project?.title, '70mm')}</b> ตามสัญญาจ้างเลขที่ <b>${orBlank(project?.contract_no, '28mm')}</b> ลงวันที่ ${dateOrBlank(contract?.contract_date)} วงเงินค่าจ้าง <b>${moneyOrBlank(project?.contract_amount, '30mm')} บาท</b> และได้มีคำสั่งแต่งตั้งข้าพเจ้าเป็นผู้ควบคุมงานก่อสร้างโครงการดังกล่าว นั้น</p>
+  <p class="para">บัดนี้ ผู้รับจ้างได้มีหนังสือส่งมอบงานจ้าง ${installment?.delivery_ref_no ? `เลขที่ ${esc(installment.delivery_ref_no)}` : `เลขที่ ${blank('30mm')}`} ลงวันที่ ${dateOrBlank(installment?.delivered_on)} แจ้งส่งมอบงานจ้าง<b>งวดที่ ${esc(no)}</b> ${isFinal ? '(งวดสุดท้าย)' : ''} ${pct ? `(${pct})` : ''} คิดเป็นเงิน <b>${moneyOrBlank(installment?.amount, '28mm')} บาท</b> (${esc(thaiBahtText(installment?.amount || 0))})</p>
+  <p class="para">ข้าพเจ้าในฐานะผู้ควบคุมงาน ได้ร่วมกันตรวจสอบผลการปฏิบัติงานก่อสร้างของผู้รับจ้างตามแบบรูปรายการละเอียดและข้อกำหนดในสัญญาจ้างแล้ว ปรากฏผลการตรวจสอบดังนี้:</p>
+  <div style="margin-left: 10mm; margin-top: 1mm;">
+    <p>๑. ผู้รับจ้างได้ดำเนินงานก่อสร้าง: ${installment?.description ? esc(installment.description) : 'ตามแบบรูปรายการละเอียดและแผนการทำงานประจำงวด'}</p>
+    <p>๒. ผลการปฏิบัติงาน: <b>ถูกต้อง ครบถ้วน ตามแบบรูปรายการละเอียดและข้อกำหนดในสัญญาจ้างทุกประการ</b></p>
+    <p>๓. วัสดุและอุปกรณ์ที่ใช้ในการก่อสร้างมีคุณภาพและมาตรฐานตรงตามสัญญาจ้าง</p>
+  </div>
+  <p class="para">จึงเรียนมายังคณะกรรมการตรวจรับพัสดุ เพื่อโปรดนัดหมายและดำเนินการตรวจรับพัสดุตามระเบียบกระทรวงการคลังว่าด้วยการจัดซื้อจัดจ้างและการบริหารพัสดุภาครัฐ พ.ศ. ๒๕๖๐ ต่อไป</p>
+  <div class="close-group" style="margin-top: 6mm;">
+    <div style="display: flex; justify-content: flex-end;">
+      <div style="min-width: 65mm; text-align: center; line-height: 1.4;">
+        <div style="height: 14mm;"></div>
+        <div>(ลงชื่อ)................................................................หัวหน้าผู้ควบคุมงาน</div>
+        <div>(${supervisors[0]?.name ? `นาย/นาง/น.ส. ${esc(supervisors[0].name)}` : '................................................................'})</div>
+        <div>${supervisors[0]?.position_title ? esc(supervisors[0].position_title) : 'ตำแหน่ง ................................................................'}</div>
+      </div>
+    </div>
+    ${supervisors.length > 1 ? `
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 4mm; margin-top: 4mm;">
+      ${supervisors.slice(1).map(s => `
+        <div style="text-align: center; line-height: 1.4;">
+          <div style="height: 12mm;"></div>
+          <div>(ลงชื่อ)................................................................ผู้ควบคุมงาน</div>
+          <div>(${s?.name ? `นาย/นาง/น.ส. ${esc(s.name)}` : '................................................................'})</div>
+          <div>${s?.position_title ? esc(s.position_title) : 'ตำแหน่ง ................................................................'}</div>
+        </div>
+      `).join('')}
+    </div>` : ''}
+  </div>`
+
+  return documentHtml({
+    title: `บันทึกรายงานผู้ควบคุมงาน งวดที่ ${text(no)} ${text(project?.title)}`, bodyHtml: body, tenant, printedAt,
   })
 }
 
