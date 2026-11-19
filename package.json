@@ -15,6 +15,8 @@
     "doctor": "node scripts/doctor.mjs",
     "handoff": "node scripts/handoff.mjs",
     "worktree:sweep": "node scripts/worktree-sweep.mjs",
+    "work:active": "node scripts/active-work.mjs",
+    "work:claim": "node scripts/active-work.mjs claim",
     "resume": "node scripts/resume.mjs",
     "memory:link": "node scripts/link-memory.mjs",
     "codex:link": "node scripts/link-codex-memory.mjs",

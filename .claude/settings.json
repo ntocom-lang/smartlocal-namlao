@@ -76,6 +76,18 @@
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/scripts/active-work.mjs\" --hook",
+            "timeout": 30,
+            "statusMessage": "ตรวจว่ามี session อื่นกำลังทำงานอะไรอยู่ (กันหยิบงานซ้ำ)"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write|NotebookEdit|Bash|PowerShell",
