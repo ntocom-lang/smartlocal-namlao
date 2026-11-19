@@ -12,7 +12,7 @@ import {
   RefreshCw, Clock, Loader2, Check,
   CheckCircle2, ChevronRight,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
-  X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat, ArrowLeftRight, BookUser, ShieldQuestion,
+  X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat, ArrowLeftRight, BookUser, ShieldQuestion, FileSpreadsheet,
   TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, FileText, UserPlus, FileSignature, Menu, Building2
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
@@ -46,6 +46,7 @@ import StructureManager from '../components/admin/StructureManager'
 import PersonSetupForm from '../components/admin/PersonSetupForm'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
 import ResetPasswordModal from '../components/admin/ResetPasswordModal'
+import ContactImportSheet from '../components/admin/ContactImportSheet'
 // โหลดแบบ lazy — EventsManager เป็น chunk 60KB ที่ของเดิม import แบบ static ทำให้ถูกดาวน์โหลด
 // ทุกครั้งที่เปิดแผงควบคุม Admin ทั้งที่เมนูปฏิทินกิจกรรมถูกถอดออกไปแล้ว จึงเข้าไม่ถึงเลย
 const EventsManagerComponent = lazy(() => import('../components/admin/EventsManager'))
@@ -2315,6 +2316,7 @@ function EmergencyManager({ tenant, initialBook = DEFAULT_CONTACT_BOOK }) {
   const [allContacts, setAllContacts] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [form, setForm] = useState({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe', category: 'other', note: '', consent: false })
   const [editingId, setEditingId] = useState(null)
   const [editingForm, setEditingForm] = useState({ label: '', number: '', emoji: '📞', category: 'other', note: '', consent: false })
@@ -2563,7 +2565,14 @@ function EmergencyManager({ tenant, initialBook = DEFAULT_CONTACT_BOOK }) {
 
       {/* Add form */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-        <p className="font-semibold text-gray-700 text-sm">เพิ่ม{BOOK.itemNoun}ใหม่</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-semibold text-gray-700 text-sm">เพิ่ม{BOOK.itemNoun}ใหม่</p>
+          {/* มีไฟล์ Excel อยู่แล้ว — นำเข้าทีเดียวแทนพิมพ์ทีละเบอร์ (มีพรีวิวก่อนบันทึก) */}
+          <button type="button" onClick={() => setImportOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50">
+            <FileSpreadsheet size={14} /> นำเข้าจาก Excel
+          </button>
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           <div className="flex items-center gap-2">
             <EmojiEditPicker value={form.emoji}
@@ -2613,6 +2622,19 @@ function EmergencyManager({ tenant, initialBook = DEFAULT_CONTACT_BOOK }) {
           </label>
         )}
       </div>
+
+      {importOpen && (
+        <ContactImportSheet
+          tenantId={tenant.id}
+          book={book}
+          bookInfo={BOOK}
+          existing={contacts}
+          startOrder={nextDisplayOrder()}
+          guessEmoji={guessEmoji}
+          onClose={() => setImportOpen(false)}
+          onImported={(rows) => setContacts((prev) => [...prev, ...rows])}
+        />
+      )}
 
       {/* เดาจากหมวดว่ารายการนี้ควรอยู่อีกสมุด — เตือนอย่างเดียว ไม่ย้ายให้เอง
           แอดมินอาจตั้งใจใส่ไว้สมุดนี้ เช่น เบอร์ อปพร. ของ อบต. ที่รับแจ้งเหตุตลอด 24 ชม. */}
