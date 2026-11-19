@@ -1,16 +1,18 @@
-// ชุดเอกสารราคากลางงานก่อสร้าง (กองช่าง) — A4 แนวตั้ง
-// ประกอบด้วย 3 แผ่น:
-// 1. บันทึกข้อความรายงานผลการกำหนดราคากลาง
-// 2. แบบ บก.01 (ตารางแสดงวงเงินงบประมาณที่ได้รับจัดสรรและราคากลางในงานจ้างก่อสร้าง)
-// 3. แบบ ปร.6 สรุปราคากลางงานก่อสร้าง
-// มาตรฐานการพิมพ์: THSarabunPSK 14pt ตาม src/lib/govDocStyle.js
+// ชุดเอกสารราคากลางกองช่าง 3 แผ่นจบ (A4 แนวตั้ง 14pt ตาม src/lib/govDocStyle.js)
+// แผ่นที่ 1: บันทึกข้อความรายงานผลการกำหนดราคากลาง (เสนอเห็นชอบ)
+// แผ่นที่ 2: ตารางแสดงวงเงินงบประมาณที่ได้รับจัดสรรและราคากลางในงานจ้างก่อสร้าง (บก.01 ป.ป.ช.)
+// แผ่นที่ 3: แบบสรุปราคากลางงานก่อสร้างทาง สะพาน และท่อเหลี่ยม (แบบ ปร.๖ กรมบัญชีกลาง)
+// ช่องลงนามใช้มาตรฐานกลาง src/lib/govSignBlock.js ตามกติกา AGENTS.md
 
 import {
   GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss,
 } from './govDocStyle.js'
+import {
+  GOV_SIGN_LINE_W, govNameBlank, govSignBlockCss, govSignRow, govSplitActingTitle,
+} from './govSignBlock.js'
 import { thaiDateFromDateInput } from './thaiDate.js'
 import { thaiBahtText } from './thaiBahtText.js'
-import { addMobileCloseButton } from './printWindowClose.js'
+import { openLifecyclePrint } from './constructionLifecyclePrint.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -31,47 +33,47 @@ function pageCss() {
   .sheet { max-width: 160mm; margin: 8mm auto; }
   @media print { .sheet { max-width: none; margin: 0; } }
   p { margin: 0; }
-  .pg { min-height: 250mm; }
-  .pg + .pg { break-before: page; page-break-before: always; margin-top: 10mm; }
-  @media print { .pg + .pg { margin-top: 0; } }
+  .pg { page-break-after: always; break-after: page; }
+  .pg-last { page-break-after: auto; break-after: auto; }
 
   /* หัวบันทึกข้อความ */
-  .memo-head { display: flex; align-items: flex-end; position: relative; margin-bottom: 3mm; border-bottom: 2px solid #000; padding-bottom: 2mm; }
-  .memo-garuda { width: 22mm; height: 22mm; object-fit: contain; }
+  .memo-head { display: flex; align-items: flex-end; position: relative; margin-bottom: 1mm; border-bottom: 2px solid #000; padding-bottom: 0.5mm; }
+  .memo-garuda { width: 20mm; height: 20mm; object-fit: contain; }
   .memo-title { position: absolute; left: 0; right: 0; text-align: center; font-size: 26pt; font-weight: 700; line-height: 1; pointer-events: none; }
-  .memo-meta { margin-bottom: 3mm; line-height: 1.4; }
+  .memo-meta { margin-bottom: 1mm; line-height: 1.2; }
   .memo-meta-row { display: flex; justify-content: space-between; }
-  .memo-body { text-align: justify; text-justify: inter-cluster; line-height: 1.45; }
-  .memo-p { text-indent: 2.5cm; margin-bottom: 2.5mm; }
+  .memo-body { text-align: justify; text-justify: inter-cluster; line-height: 1.2; }
+  .memo-p { text-indent: 1.8cm; margin-bottom: 1mm; }
 
-  /* ตาราง บก.01 และ ปร.6 */
-  .doc-title { text-align: center; font-size: 16pt; font-weight: 700; margin-bottom: 3mm; line-height: 1.3; }
-  .doc-subtitle { text-align: center; font-size: 14pt; font-weight: 700; margin-bottom: 4mm; }
-  .bordered-table { width: 100%; border-collapse: collapse; margin-top: 3mm; margin-bottom: 3mm; }
-  .bordered-table th, .bordered-table td { border: 1px solid #000; padding: 1.5mm 2.5mm; vertical-align: top; }
-  .bordered-table th { background-color: #f5f5f5; font-weight: 700; text-align: center; }
+  /* ตารางแบบ บก.01 และ ปร.6 */
+  .doc-title { text-align: center; font-size: 16pt; font-weight: 700; margin-bottom: 2.5mm; }
+  .doc-subtitle { text-align: center; font-size: 13pt; margin-bottom: 2.5mm; }
+  .bordered-table { width: 100%; border-collapse: collapse; margin-top: 2.5mm; }
+  .bordered-table th, .bordered-table td { border: 1px solid #000; padding: 2mm 2.5mm; vertical-align: top; line-height: 1.35; }
+  .bordered-table th { background-color: #f3f4f6; text-align: center; font-weight: 700; }
 
-  /* กล่องลงนาม */
-  .sign-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-top: 6mm; }
-  .sign-col { text-align: center; line-height: 1.4; }
-  .sign-space { height: 14mm; }
-  .mayor-box { margin-top: 6mm; border: 1px solid #000; padding: 3mm; border-radius: 1mm; }
-  .origin { margin-top: 5mm; font-size: 10pt; color: #666; text-align: right; }
+  /* ช่องลงนาม */
+  .mayor-box { border: 1px solid #000; padding: 1.5mm 2mm; border-radius: 1mm; line-height: 1.2; margin-top: 2mm; }
+  .origin { margin-top: 3mm; font-size: 9pt; color: #666; text-align: right; }
+  ${govSignBlockCss()}
   `
 }
 
 /**
- * แผ่นที่ 1: บันทึกข้อความรายงานผลราคากลาง
+ * แผ่นที่ 1: บันทึกรายงานผลการกำหนดราคากลาง (เสนอเห็นชอบ)
  */
-function pageOneMemo({ tenant, project, data, emblemUrl }) {
+function pageOneMemo({ tenant, project, data, signatories = null, emblemUrl = '' }) {
   const committee = data.committee || []
   const president = committee.find(c => c.duty?.includes('ประธาน')) || committee[0]
   const members = committee.filter(c => c !== president)
 
+  const mayorName = signatories?.mayor?.name || ''
+  const mayorTitle = signatories?.mayor?.title || `นายก${esc(tenant?.name || '')}`
+
   return `
 <section class="pg">
   <div class="memo-head">
-    ${emblemUrl ? `<img src="${esc(emblemUrl)}" alt="ตราครุฑ" class="memo-garuda" />` : '<div style="width:22mm;height:22mm;"></div>'}
+    ${emblemUrl ? `<img src="${esc(emblemUrl)}" alt="ตราครุฑ" class="memo-garuda" />` : '<div style="width:20mm;height:20mm;"></div>'}
     <div class="memo-title">บันทึกข้อความ</div>
   </div>
   <div class="memo-meta">
@@ -83,10 +85,12 @@ function pageOneMemo({ tenant, project, data, emblemUrl }) {
       <div><b>ที่:</b> ${esc(data.docNo || '–')}</div>
       <div><b>วันที่:</b> ${esc(thaiDate(data.docDate))}</div>
     </div>
-    <div><b>เรื่อง:</b> รายงานผลการกำหนดราคากลางงานก่อสร้าง โครงการ${esc(project.title)}</div>
+    <div><b>เรื่อง:</b> รายงานผลการคำนวณราคากลางงานก่อสร้าง</div>
   </div>
+
   <div class="memo-body">
     <p><b>เรียน</b> นายก${esc(tenant?.name || '')}</p>
+    
     <p class="memo-p">
       ตามที่ กองช่าง ได้รับอนุมัติให้ดำเนินการจัดทำแบบรูปรายการและประมาณการราคา โครงการ<b>${esc(project.title)}</b>
       ประจำปีงบประมาณ พ.ศ. ${esc(project.fiscal_year || '–')} โดยได้รับจัดสรรงบประมาณเป็นเงินทั้งสิ้น
@@ -96,7 +100,7 @@ function pageOneMemo({ tenant, project, data, emblemUrl }) {
     <p class="memo-p">
       บัดนี้ คณะกรรมการกำหนดราคากลางได้ร่วมกันตรวจสอบแบบรูปรายการงานก่อสร้าง และได้คำนวณราคากลางตามหลักเกณฑ์การคำนวณราคากลางงานก่อสร้างของทางราชการเรียบร้อยแล้ว ปรากฏผลการคำนวณราคากลางดังนี้:
     </p>
-    <div style="margin-left: 2.5cm; margin-bottom: 2.5mm;">
+    <div style="margin-left: 1.2cm; margin-bottom: 1mm;">
       <div>๑. ค่างานต้นทุน เป็นเงิน <b>${money(data.costAmount)}</b> บาท</div>
       <div>๒. ค่า Factor F เท่ากับ <b>${esc(data.factorF || '–')}</b></div>
       <div>๓. รวมค่าก่อสร้างคำนวณได้ เป็นเงิน <b>${money(data.calcAmount)}</b> บาท</div>
@@ -108,44 +112,58 @@ function pageOneMemo({ tenant, project, data, emblemUrl }) {
     <p class="memo-p">
       จึงเรียนมาเพื่อโปรดพิจารณา:
     </p>
-    <div style="margin-left: 2.5cm; margin-bottom: 3mm;">
+    <div style="margin-left: 1.2cm; margin-bottom: 1mm;">
       <div>๑. ให้ความเห็นชอบราคากลางงานก่อสร้างโครงการดังกล่าว</div>
       <div>๒. อนุมัติให้ส่งเรื่องให้เจ้าหน้าที่พัสดุดำเนินการตามระเบียบกระทรวงการคลังว่าด้วยการจัดซื้อจัดจ้างและการบริหารพัสดุภาครัฐ พ.ศ. ๒๕๖๐ ต่อไป</div>
     </div>
 
-    <div class="sign-grid">
-      <div></div>
-      <div class="sign-col">
-        <div class="sign-space"></div>
-        <div>(ลงชื่อ).......................................................ประธานกรรมการ</div>
-        <div>(${esc(president?.name ? `นาย/นาง/น.ส. ${president.name}` : '.......................................................')})</div>
-        <div>${esc(president?.position_title || 'ตำแหน่ง .......................................................')}</div>
+    <div class="committee-signs" style="display: flex; flex-direction: column; gap: 2mm; margin-top: 2mm;">
+      <div style="display: flex; justify-content: flex-end;">
+        ${govSignRow({
+    width: GOV_SIGN_LINE_W,
+    label: 'ลงชื่อ',
+    role: 'ประธานกรรมการ',
+    below: [
+      president?.name ? `(${esc(president.name)})` : govNameBlank(GOV_SIGN_LINE_W),
+      ...govSplitActingTitle(president?.position_title || 'ตำแหน่ง .......................................................').map(esc),
+    ],
+  })}
       </div>
-    </div>
 
-    ${members.length > 0 ? `
-    <div class="sign-grid" style="margin-top: 3mm;">
-      ${members.slice(0, 2).map(m => `
-        <div class="sign-col">
-          <div class="sign-space"></div>
-          <div>(ลงชื่อ).......................................................กรรมการ</div>
-          <div>(${esc(m?.name ? `นาย/นาง/น.ส. ${m.name}` : '.......................................................')})</div>
-          <div>${esc(m?.position_title || 'ตำแหน่ง .......................................................')}</div>
-        </div>
-      `).join('')}
-    </div>` : ''}
+      ${members.length > 0 ? `
+      <div class="committee-grid" style="display: grid; grid-template-columns: repeat(${Math.min(members.length, 2)}, 1fr); gap: 2mm;">
+        ${members.slice(0, 2).map(m => `
+          <div style="display: flex; justify-content: center;">
+            ${govSignRow({
+    width: GOV_SIGN_LINE_W,
+    label: 'ลงชื่อ',
+    role: 'กรรมการ',
+    below: [
+      m?.name ? `(${esc(m.name)})` : govNameBlank(GOV_SIGN_LINE_W),
+      ...govSplitActingTitle(m?.position_title || 'ตำแหน่ง .......................................................').map(esc),
+    ],
+  })}
+          </div>
+        `).join('')}
+      </div>` : ''}
+    </div>
 
     <div class="mayor-box">
       <div><b>คำสั่ง / ความเห็นของนายก${esc(tenant?.name || '')}:</b></div>
-      <div style="margin-top: 1.5mm; display: flex; gap: 8mm;">
+      <div style="margin-top: 1mm; display: flex; gap: 8mm;">
         <div>[ &nbsp; ] เห็นชอบราคากลางและอนุมัติให้ดำเนินการต่อไป</div>
         <div>[ &nbsp; ] อื่นๆ ............................................................</div>
       </div>
-      <div style="margin-top: 3mm; text-align: right; padding-right: 15mm;">
-        <div>(ลงชื่อ)................................................................</div>
-        <div style="margin-top: 1mm;">(................................................................)</div>
-        <div>นายก${esc(tenant?.name || '')}</div>
-        <div>วันที่ ....../....../............</div>
+      <div style="margin-top: 1.5mm; display: flex; justify-content: flex-end;">
+        ${govSignRow({
+    width: GOV_SIGN_LINE_W,
+    label: 'ลงชื่อ',
+    below: [
+      mayorName ? `(${esc(mayorName)})` : govNameBlank(GOV_SIGN_LINE_W),
+      ...govSplitActingTitle(mayorTitle).map(esc),
+      'วันที่ ....../....../............',
+    ],
+  })}
       </div>
     </div>
   </div>
@@ -154,7 +172,7 @@ function pageOneMemo({ tenant, project, data, emblemUrl }) {
 }
 
 /**
- * แผ่นที่ 2: ตารางแสดงวงเงินงบประมาณและราคากลาง (บก.01)
+ * แผ่นที่ 2: ตารางแสดงวงเงินงบประมาณและราคากลาง (บก.01 ป.ป.ช.)
  */
 function pageTwoBg01({ tenant, project, data }) {
   const committee = data.committee || []
@@ -167,7 +185,7 @@ function pageTwoBg01({ tenant, project, data }) {
 
   <table class="bordered-table">
     <tr>
-      <td style="width: 32mm; font-weight: 700;">๑. ชื่อโครงการ</td>
+      <td style="width: 35mm; font-weight: 700;">๑. ชื่อโครงการ</td>
       <td>
         <b>${esc(project.title)}</b><br>
         / หน่วยงานเจ้าของโครงการ: กองช่าง ${esc(tenant?.name || '')}
@@ -213,15 +231,15 @@ function pageTwoBg01({ tenant, project, data }) {
         ${committee.length > 0 ? committee.map((c, i) => `
           <div>๗.${i + 1} ${esc(c.name || '–')} ตำแหน่ง ${esc(c.position_title || '–')} (${esc(c.duty || 'กรรมการ')})</div>
         `).join('') : `
-          <div>๗.๑ ................................................................ (ประธานกรรมการ)</div>
-          <div>๗.๒ ................................................................ (กรรมการ)</div>
-          <div>๗.๓ ................................................................ (กรรมการ)</div>
+          <div>๗.๑ ${govNameBlank('45mm')} (ประธานกรรมการ)</div>
+          <div>๗.๒ ${govNameBlank('45mm')} (กรรมการ)</div>
+          <div>๗.๓ ${govNameBlank('45mm')} (กรรมการ)</div>
         `}
       </td>
     </tr>
   </table>
 
-  <div style="margin-top: 8mm; text-align: center; font-size: 12pt; color: #555;">
+  <div style="margin-top: 6mm; text-align: center; font-size: 11pt; color: #555;">
     * แบบ บก.๐๑ สำหรับประกาศเปิดเผยราคากลางและการคำนวณราคากลางงานก่อสร้างตามแนวทางของ ป.ป.ช. และกรมบัญชีกลาง *
   </div>
 </section>
@@ -229,16 +247,16 @@ function pageTwoBg01({ tenant, project, data }) {
 }
 
 /**
- * แผ่นที่ 3: แบบสรุปราคากลางงานก่อสร้าง (ปร.6 สรุป)
+ * แผ่นที่ 3: แบบสรุปราคากลางงานก่อสร้างทาง สะพาน และท่อเหลี่ยม (แบบ ปร.๖ กรมบัญชีกลาง)
  */
-function pageThreePr6({ tenant, project, data }) {
+function pageThreePr6({ tenant, project, data, origin = '' }) {
   const committee = data.committee || []
   const president = committee.find(c => c.duty?.includes('ประธาน')) || committee[0]
   const members = committee.filter(c => c !== president)
 
   return `
-<section class="pg">
-  <div class="doc-title">แบบสรุปราคากลางงานก่อสร้าง (แบบ ปร.๖)</div>
+<section class="pg pg-last">
+  <div class="doc-title">แบบสรุปราคากลางงานก่อสร้างทาง สะพาน และท่อเหลี่ยม (แบบ ปร.๖)</div>
   <div class="doc-subtitle">ส่วนราชการ: กองช่าง ${esc(tenant?.name || '')}</div>
 
   <table style="width: 100%; margin-bottom: 2mm; font-size: 13pt;">
@@ -288,31 +306,41 @@ function pageThreePr6({ tenant, project, data }) {
     </tbody>
   </table>
 
-  <div style="margin-top: 4mm;">
+  <div style="margin-top: 3.5mm;">
     <p>คณะกรรมการกำหนดราคากลางได้ตรวจสอบและเห็นชอบร่วมกันให้กำหนดราคากลางตามจำนวนเงินดังกล่าว</p>
   </div>
 
-  <div class="sign-grid" style="margin-top: 6mm;">
-    <div></div>
-    <div class="sign-col">
-      <div class="sign-space"></div>
-      <div>(ลงชื่อ).......................................................ประธานกรรมการ</div>
-      <div>(${esc(president?.name ? `นาย/นาง/น.ส. ${president.name}` : '.......................................................')})</div>
-      <div>${esc(president?.position_title || 'ตำแหน่ง .......................................................')}</div>
+  <div class="committee-signs" style="display: flex; flex-direction: column; gap: 2.5mm; margin-top: 5mm;">
+    <div style="display: flex; justify-content: flex-end;">
+      ${govSignRow({
+    width: GOV_SIGN_LINE_W,
+    label: 'ลงชื่อ',
+    role: 'ประธานกรรมการ',
+    below: [
+      president?.name ? `(${esc(president.name)})` : govNameBlank(GOV_SIGN_LINE_W),
+      ...govSplitActingTitle(president?.position_title || 'ตำแหน่ง .......................................................').map(esc),
+    ],
+  })}
     </div>
-  </div>
 
-  ${members.length > 0 ? `
-  <div class="sign-grid" style="margin-top: 4mm;">
-    ${members.map(m => `
-      <div class="sign-col">
-        <div class="sign-space"></div>
-        <div>(ลงชื่อ).......................................................กรรมการ</div>
-        <div>(${esc(m?.name ? `นาย/นาง/น.ส. ${m.name}` : '.......................................................')})</div>
-        <div>${esc(m?.position_title || 'ตำแหน่ง .......................................................')}</div>
-      </div>
-    `).join('')}
-  </div>` : ''}
+    ${members.length > 0 ? `
+    <div class="committee-grid" style="display: grid; grid-template-columns: repeat(${Math.min(members.length, 2)}, 1fr); gap: 2.5mm;">
+      ${members.map(m => `
+        <div style="display: flex; justify-content: center;">
+          ${govSignRow({
+    width: GOV_SIGN_LINE_W,
+    label: 'ลงชื่อ',
+    role: 'กรรมการ',
+    below: [
+      m?.name ? `(${esc(m.name)})` : govNameBlank(GOV_SIGN_LINE_W),
+      ...govSplitActingTitle(m?.position_title || 'ตำแหน่ง .......................................................').map(esc),
+    ],
+  })}
+        </div>
+      `).join('')}
+    </div>` : ''}
+  </div>
+  ${origin ? `<div class="origin">${esc(origin)}</div>` : ''}
 </section>
 `
 }
@@ -320,7 +348,7 @@ function pageThreePr6({ tenant, project, data }) {
 /**
  * สร้าง HTML สำหรับชุดเอกสารราคากลาง (3 แผ่น)
  */
-export function buildCivilMedianHtml({ tenant, project, data, emblemUrl = '', printedAt = new Date() }) {
+export function buildCivilMedianHtml({ tenant, project, data, signatories = null, emblemUrl = '', printedAt = new Date() }) {
   const origin = `พิมพ์เมื่อ ${thaiDateFromDateInput(`${printedAt.getFullYear()}-${String(printedAt.getMonth() + 1).padStart(2, '0')}-${String(printedAt.getDate()).padStart(2, '0')}`)} · ${govEServiceOriginText(tenant)}`
   return `<!DOCTYPE html>
 <html lang="th"><head>
@@ -330,37 +358,22 @@ ${GOV_FONT_LINK}
 <style>${pageCss()}</style>
 </head><body>
 <div class="sheet">
-  ${pageOneMemo({ tenant, project, data, emblemUrl })}
+  ${pageOneMemo({ tenant, project, data, signatories, emblemUrl })}
   ${pageTwoBg01({ tenant, project, data })}
-  ${pageThreePr6({ tenant, project, data })}
-  <div class="origin">${esc(origin)}</div>
+  ${pageThreePr6({ tenant, project, data, origin })}
 </div>
 </body></html>`
 }
 
 /**
- * เปิดหน้าต่างและสั่งพิมพ์ชุดเอกสารราคากลาง
+ * เปิดหน้าต่างและสั่งพิมพ์ชุดเอกสารราคากลาง — โหลดผู้ลงนามกลางจาก document_signatories
  */
 export function printCivilMedianDoc({ tenant, project, data }) {
-  const win = window.open('', '_blank', 'width=900,height=1000')
-  if (!win) {
-    alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
-    return
-  }
-  const html = buildCivilMedianHtml({
-    tenant, project, data,
-    emblemUrl: `${window.location.origin}/images/garuda.svg`,
-  })
-  win.document.open()
-  win.document.write(addMobileCloseButton(html))
-  win.document.close()
-  setTimeout(async () => {
-    try {
-      if (win.document.fonts?.ready) {
-        await Promise.race([win.document.fonts.ready, new Promise(res => setTimeout(res, 1200))])
-      }
-    } catch { /* โหลดฟอนต์ไม่ทันพิมพ์ด้วยฟอนต์ระบบ */ }
-    win.focus()
-    win.print()
-  }, 200)
+  return openLifecyclePrint(({ signatories, emblemUrl }) => buildCivilMedianHtml({
+    tenant,
+    project,
+    data,
+    signatories,
+    emblemUrl,
+  }), { municipalityId: tenant?.id, departmentId: project?.department_id })
 }
