@@ -381,6 +381,13 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     link: { module: 'tourism' }, kpis: [], alerts: [], reports: [],
   },
   {
+    // ตลาดชาวบ้าน: ไม่มีขั้นอนุมัติ (เจ้าของร้านลงสินค้าเอง เจ้าหน้าที่ซ่อนภายหลัง) และไม่มี RPC สรุป ⇒ ไม่ใส่ kpi จนกว่าจะมีแหล่งข้อมูลที่ตรวจสิทธิ์แล้ว
+    // งานของเจ้าหน้าที่อยู่ในเมนู 'tourism' (หน้าแก้ไขสถานที่) จึงลิงก์ไปที่นั่น
+    key: 'local-market', kind: 'module', label: 'ตลาดชาวบ้าน', icon: 'Package', dept: null,
+    zones: ['context'], isCitizenService: false, docTypes: [], summaryKey: null, phase: 'E2',
+    link: { module: 'tourism' }, kpis: [], alerts: [], reports: [],
+  },
+  {
     key: 'tourism-reviews', kind: 'module', label: 'รีวิวสถานที่', icon: 'Star', dept: null,
     zones: ['context'], isCitizenService: false, docTypes: [], summaryKey: null, phase: 'E2',
     link: { module: 'tourism-reviews' },

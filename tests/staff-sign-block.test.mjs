@@ -22,6 +22,8 @@ import { buildWaterServiceFormHtml } from '../src/lib/waterSupplyRequestPrint.js
 import { buildWasteCollectionRequestHtml } from '../src/lib/wasteCollectionRequestPrint.js'
 import { buildWasteCollectionCancelHtml } from '../src/lib/wasteCollectionCancelPrint.js'
 import { buildPublicAssistanceRequestHtml } from '../src/lib/publicAssistancePrint.js'
+import { buildCustomRequestHtml } from '../src/lib/customRequestPrint.js'
+import { CUSTOM_TEXTAREA_MAX, buildCustomFormData, sanitizeFieldDefs } from '../src/lib/customFormFields.js'
 import { buildBookingRequestFormHtml } from '../src/lib/patientTransportPrint.js'
 import { govSplitActingTitle } from '../src/lib/govSignBlock.js'
 import { staffSignRow1GapMm } from '../src/lib/govStaffSignBlock.js'
@@ -97,6 +99,42 @@ const PATIENT_BOOKING = {
   created_at: '2026-09-10T09:15:00+07:00', consent_at: '2026-09-10T09:15:00+07:00',
 }
 
+// ตัวสร้างแบบฟอร์มออนไลน์ (ประเภทที่ อปท. เพิ่มเอง) — 2 เคสหนัก ตารางคำตอบจุเต็มแผ่นแล้วช่องลงนามต้องยังจบ 1 แผ่น
+// ความจุจริงวัดแล้วราว 13 บรรทัดรวมทุกช่อง (ดูเหตุผลที่ CUSTOM_TEXTAREA_MAX ใน src/lib/customFormFields.js)
+//   เคส A: 12 ช่อง ช่องละ 1 บรรทัด · เคส B: ข้อความยาวเต็มเพดานหนึ่งช่อง + ช่องสั้น 3 ช่อง
+const CUSTOM_TENANT = { ...TENANT, fee_schedule: { _custom_types: [{ value: 'custom_1', label: 'ขอใช้สถานที่' }] } }
+const SHORT_ANSWER = 'ทดสอบข้อความหนึ่งบรรทัดเต็มช่อง'
+const CUSTOM_FIELDS_12 = sanitizeFieldDefs([
+  ...Array.from({ length: 8 }, (_, i) => ({ label: `หัวข้อที่ ${i + 1} ของแบบฟอร์ม`, type: 'text', required: true })),
+  { label: 'จำนวนผู้เข้าร่วม', type: 'number', required: true },
+  { label: 'วันที่ใช้งาน', type: 'date', required: true },
+  { label: 'ประเภทสถานที่', type: 'choice', required: true, options: ['ในอาคาร', 'นอกอาคาร'] },
+  { label: 'ยอมรับเงื่อนไข', type: 'checkbox', required: true },
+])
+const CUSTOM_ANSWERS_12 = Object.fromEntries(CUSTOM_FIELDS_12.map(field => [field.id,
+  field.type === 'number' ? '120.5' : field.type === 'date' ? '2026-12-05'
+    : field.type === 'choice' ? 'นอกอาคาร' : field.type === 'checkbox' ? true : SHORT_ANSWER]))
+const CUSTOM_FIELDS_LONG = sanitizeFieldDefs([
+  { label: 'รายละเอียดกิจกรรม', type: 'textarea', required: true },
+  { label: 'ชื่อกิจกรรม', type: 'text', required: true },
+  { label: 'วันที่ใช้งาน', type: 'date', required: true },
+  { label: 'จำนวนผู้เข้าร่วม', type: 'number', required: true },
+])
+const CUSTOM_ANSWERS_LONG = {
+  [CUSTOM_FIELDS_LONG[0].id]: 'ทดสอบข้อความยาวมากสำหรับตรวจความสูงของใบพิมพ์ '.repeat(10).slice(0, CUSTOM_TEXTAREA_MAX),
+  [CUSTOM_FIELDS_LONG[1].id]: SHORT_ANSWER,
+  [CUSTOM_FIELDS_LONG[2].id]: '2026-12-05',
+  [CUSTOM_FIELDS_LONG[3].id]: '120',
+}
+const customReq = (fields, answers) => ({
+  id: 'a1b2c3d4-0000-4000-8000-000000000002', document_type: 'custom_1',
+  requester_name: APPLICANT.title + APPLICANT.first + ' ' + APPLICANT.last,
+  requester_id_card: APPLICANT.nat_id, requester_phone: APPLICANT.phone,
+  requester_address: '199/128 หมู่ที่ 12 ตำบลทุ่งแค้ว อำเภอหนองม่วงไข่ จังหวัดแพร่',
+  purpose: 'เพื่อขอใช้สถานที่จัดงานบุญประจำปีของหมู่บ้านและกิจกรรมสาธารณประโยชน์',
+  permit_form_data: buildCustomFormData(fields, answers), user_id: 'u-1',
+})
+
 // departmentName ตั้งคนละกองโดยตั้งใจ เพื่อให้เห็นว่าชื่อตำแหน่งสำรองมาจากกองที่ถือเรื่องจริง
 const FORMS = [
   {
@@ -143,6 +181,20 @@ const FORMS = [
     build: extra => buildWasteCollectionCancelHtml({
       form: WASTE_FORM, tenant: TENANT, thDate: '14 กันยายน 2569', referenceNo: 'A1B2C3D4',
       signedAt: '2026-09-14T20:37:00', ...extra,
+    }),
+  },
+  {
+    label: 'คำขอประเภทที่ อปท. เพิ่มเอง (12 ช่อง ช่องละ 1 บรรทัด)', departmentName: 'สำนักปลัด', headFallback: 'หัวหน้าสำนักปลัด',
+    build: extra => buildCustomRequestHtml({
+      req: customReq(CUSTOM_FIELDS_12, CUSTOM_ANSWERS_12), tenant: CUSTOM_TENANT,
+      thDate: '14 กันยายน 2569', referenceNo: 'A1B2C3D4', ...extra,
+    }),
+  },
+  {
+    label: 'คำขอประเภทที่ อปท. เพิ่มเอง (ข้อความยาวเต็มเพดาน)', departmentName: 'สำนักปลัด', headFallback: 'หัวหน้าสำนักปลัด',
+    build: extra => buildCustomRequestHtml({
+      req: customReq(CUSTOM_FIELDS_LONG, CUSTOM_ANSWERS_LONG), tenant: CUSTOM_TENANT,
+      thDate: '14 กันยายน 2569', referenceNo: 'A1B2C3D4', ...extra,
     }),
   },
   {

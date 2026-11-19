@@ -19,6 +19,8 @@ import {
 import { isOfficialRole } from '../lib/serviceAudience'
 import { PATIENT_TRANSPORT_TYPE, PATIENT_TRANSPORT_MODULE_KEY } from '../lib/patientTransport'
 import { CCTV_TYPE } from '../lib/cctvRequest'
+import { buildCustomFormData, sanitizeFieldDefs, validateCustomAnswers } from '../lib/customFormFields'
+import CustomFormFieldsInput from '../components/citizen/CustomFormFieldsInput'
 
 // ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
 // เลยไม่ต้องให้ประชาชนพิมพ์ตำบล/อำเภอ/จังหวัดเอง ให้กรอกแค่บ้านเลขที่ แล้วต่อท้ายด้วย
@@ -216,6 +218,8 @@ export default function CitizenDocRequest() {
       color:  '#6366f1',
       bg:     '#eef2ff',
       border: '#c7d2fe',
+      // ช่องกรอกที่ อปท. ตั้งไว้ (ตัวสร้างแบบฟอร์มออนไลน์) — ว่าง = ใช้ฟอร์มกลางเดิมทุกประการ
+      fields: sanitizeFieldDefs(t.fields),
     }))
     const base = withoutRemovedTypes(BASE_DOC_TYPES, tenant)
       // ปิดโมดูลรถรับ-ส่งผู้ป่วย = ชนิดคำขอนี้หายจากตัวเลือก และลิงก์เก่าเปิดฟอร์มไม่ได้
@@ -245,6 +249,9 @@ export default function CitizenDocRequest() {
     && !isOfficialRole(role)
     && officialsOnlyDocumentTypes(tenant).includes(typeParam)
   const [form, setForm]           = useState({ name_title: '', name_first: '', name_last: '', requester_id_card: '', requester_phone: '', requester_address: '', purpose: '' })
+  // คำตอบของช่องกรอกที่ อปท. ตั้งเอง (เฉพาะประเภทที่เพิ่มเอง) · errors = ข้อความใต้ช่องหลังกดยื่นแล้วไม่ผ่าน
+  const [customAnswers, setCustomAnswers] = useState({})
+  const [customErrors, setCustomErrors]   = useState({})
   const [saving, setSaving]       = useState(false)
   const [done, setDone]           = useState(null)
   const [copied, setCopied]       = useState(false)
@@ -323,12 +330,26 @@ export default function CitizenDocRequest() {
   const isAssetBorrowRequest = selected?.value === 'asset_borrow_request'
   const isPatientTransportRequest = selected?.value === PATIENT_TRANSPORT_TYPE
   const isCctvRequest = selected?.value === CCTV_TYPE
+  // อ่านจากรายการปัจจุบัน (allDocTypes) ไม่ใช่วัตถุ selected ที่อาจค้างจากตอนกดเลือก — แอดมินแก้ช่องแล้ว tenant เปลี่ยน
+  const customFields = allDocTypes.find(d => d.value === selected?.value)?.fields ?? []
   const addressSuffix = tenantAddressSuffix(tenant)
   const fullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
 
   function handleFormNext() {
     if (!form.name_first.trim() || !form.name_last.trim() || !form.requester_phone.trim()) return
     if (isFeeInquiry && !isSingleTopicInquiry && !form.purpose.trim()) return
+    if (customFields.length > 0) {
+      const result = validateCustomAnswers(customFields, customAnswers)
+      setCustomErrors(result.errors)
+      if (!result.ok) {
+        // พาไปช่องแรกที่ผิด — มือถือฟอร์มยาว ข้อความใต้ช่องอยู่นอกจอได้ ผู้ใช้จะนึกว่ากดแล้วไม่เกิดอะไร
+        const firstId = customFields.find(f => result.errors[f.id])?.id
+        const target = (firstId && document.getElementById(firstId)) || document.querySelector('[data-testid="custom-form-fields"] [role="alert"]')
+        target?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+        target?.focus?.()
+        return
+      }
+    }
     handleSubmit()
   }
 
@@ -355,6 +376,8 @@ export default function CitizenDocRequest() {
       fee_amount:        feeAmount || null,
       payment_status:    'not_required', // ป้องกันการทุจริต — ไม่เก็บเงินผ่านแอป ไปชำระที่เทศบาลเสมอ
       payment_slip_url:  null,
+      // ประเภทที่ไม่มีช่องกรอกไม่ส่งคีย์นี้เลย (พฤติกรรมเดิม) · มี = เก็บ snapshot ชื่อช่อง + คำตอบ ดู lib/customFormFields.js
+      ...(customFields.length > 0 ? { permit_form_data: buildCustomFormData(customFields, customAnswers) } : {}),
     })
     setSaving(false)
     if (error) { alert('ส่งคำขอไม่สำเร็จ: ' + error.message); return }
@@ -730,6 +753,18 @@ export default function CitizenDocRequest() {
                 )}
               </div>
             )}
+
+            <CustomFormFieldsInput fields={customFields} answers={customAnswers} errors={customErrors}
+              onChange={(id, value) => {
+                setCustomAnswers(prev => ({ ...prev, [id]: value }))
+                // ผู้ใช้แก้ช่องแล้ว ล้างข้อความผิดของช่องนั้นทันที ไม่ค้างแดงจนกดยื่นอีกรอบ
+                setCustomErrors(prev => {
+                  if (!prev[id]) return prev
+                  const next = { ...prev }
+                  delete next[id]
+                  return next
+                })
+              }} />
           </div>
 
           {/* Submit */}

@@ -20,6 +20,7 @@ import { buildPatientTransportFormHtml } from '../lib/patientTransportPrint'
 import SatisfactionModal from '../components/SatisfactionModal'
 import { RATING_OPTIONS } from '../lib/complaintRateInvite'
 import { findDocToPrompt, parseDocRatingData, ratingMapOf } from '../lib/docRequestRating'
+import { customFormRows } from '../lib/customFormFields'
 
 const BASE_DOC_TYPES = {
   residence_cert:   'ใบรับรองการอยู่อาศัย',
@@ -719,10 +720,13 @@ function DocDetailSheet({ req, onClose, tenant, onChanged, ratingInfo, onRate })
                 label: 'การเดินทาง', value: optionLabel(TRIP_TYPES, req.permit_form_data.trip_type),
               },
               { label: 'วันที่ยื่น', value: dateTH(req.created_at) },
-            ].filter(Boolean).map(({ label, value }) => (
-              <div key={label} className="flex gap-2 text-xs">
+              // คำตอบช่องกรอกของประเภทที่ อปท. ตั้งเอง (ตัวสร้างแบบฟอร์มออนไลน์) — ผู้ยื่นเห็นสิ่งที่ตัวเองกรอก
+              ...customFormRows(req.permit_form_data, req.document_type).map(row => ({ ...row, multiline: true })),
+            ].filter(Boolean).map(({ label, value, multiline }, index) => (
+              // key ต้องมีลำดับ: ชื่อช่องที่ อปท. ตั้งซ้ำกันได้ (หรือซ้ำกับ "วันที่ยื่น")
+              <div key={`${label}-${index}`} className="flex gap-2 text-xs">
                 <span className="text-gray-400 w-24 shrink-0">{label}</span>
-                <span className="text-gray-700 leading-relaxed">{value}</span>
+                <span className={'text-gray-700 leading-relaxed' + (multiline ? ' whitespace-pre-line break-words' : '')}>{value}</span>
               </div>
             ))}
           </div>

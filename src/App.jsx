@@ -77,6 +77,7 @@ const TourismDetailPage = lazyWithRetry(() => import('./pages/TourismDetailPage'
 const ContactPage = lazyWithRetry(() => import('./pages/ContactPage'))
 const CitizenDocRequest = lazyWithRetry(() => import('./pages/CitizenDocRequest'))
 const QueueBooking = lazyWithRetry(() => import('./pages/QueueBooking'))
+const MyShopPage = lazyWithRetry(() => import('./pages/MyShopPage'))
 const MyDocRequests = lazyWithRetry(() => import('./pages/MyDocRequests'))
 const LpaDocStats = lazyWithRetry(() => import('./pages/LpaDocStats'))
 const ComplaintStats = lazyWithRetry(() => import('./pages/ComplaintStats'))
@@ -731,6 +732,12 @@ function AppShell() {
           <Route path="/business-register" element={
             <RequireAuth>
               <BusinessRegisterPage />
+            </RequireAuth>
+          } />
+          {/* ร้านของฉัน (ตลาดชาวบ้าน · โมดูล local-market คุมผ่าน MODULE_ROUTES/ModuleGuard) — เจ้าของร้านลงสินค้าเอง ต้องล็อกอิน */}
+          <Route path="/my-shop" element={
+            <RequireAuth>
+              <MyShopPage />
             </RequireAuth>
           } />
           {/* /market ถูกยุบรวมเข้า /tourism (2026-09-04) — ข้อมูลชุดเดียวกันเคยแสดง 2 หน้าจาก 2 ตาราง

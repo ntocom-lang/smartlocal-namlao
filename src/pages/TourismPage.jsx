@@ -3,11 +3,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Phone, MapPin, Plus, ShoppingCart, Search, X, SlidersHorizontal,
   CalendarCheck, MessageCircle, Globe, Bike, Zap, Loader2, Star, Navigation,
-  Clock, Sparkles,
+  Clock, Sparkles, Heart,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { useAuth } from '../contexts/AuthContext'
 import { edgeImageUrl } from '../lib/edgeImage'
+import { LOCAL_MARKET_MODULE_KEY, formatPriceWithUnit, normalizeSearchTerm } from '../lib/localMarket'
+import { fetchMyFavoriteIds, searchProducts } from '../lib/localMarketApi'
 import {
   TOURISM_CATS, catOf, getOpenState, parseCoords, haversineKm,
   formatDistance, directionsUrl, matchesQuery, resolveServiceUrl, serviceChannelLabel,
@@ -190,7 +193,11 @@ function FilterChip({ active, onClick, children, activeBg = 'var(--color-primary
 export default function TourismPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { tenant } = useTenant()
+  const { tenant, isModuleEnabled } = useTenant()
+  const { session } = useAuth()
+  const uid = session?.user?.id
+  // ตลาดชาวบ้าน — ปิดโมดูลอยู่ = หน้านี้เหมือนเดิมทุกอย่าง (ไม่ยิงคำขอเพิ่ม ไม่มีปุ่มเพิ่ม)
+  const marketOn = !isModuleEnabled || isModuleEnabled(LOCAL_MARKET_MODULE_KEY)
 
   const [places, setPlaces]   = useState([])
   const [loading, setLoading] = useState(true)
@@ -202,6 +209,31 @@ export default function TourismPage() {
   const [onlineOnly, setOnlineOnly] = useState(searchParams.get('online') === '1')
   const [deliveryOnly, setDeliveryOnly] = useState(false)
   const [sort, setSort] = useState('recommended')
+  const [favOnly, setFavOnly] = useState(false)
+  const [favIds, setFavIds] = useState(null) // null = ยังไม่โหลด/ไม่ได้ล็อกอิน
+
+  // ค้นหาชื่อสินค้า: หน่วงพิมพ์ 300 ms · ขั้นต่ำ 2 ตัวอักษร · ผลเป็นรายการข้อความล้วน ไม่โหลดรูป (ประหยัด egress)
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [productHits, setProductHits] = useState({ term: '', rows: [] })
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+  const searchTerm = marketOn ? normalizeSearchTerm(debouncedQuery) : ''
+  useEffect(() => {
+    if (!searchTerm || !tenant?.id) return undefined
+    let alive = true
+    searchProducts(tenant.id, searchTerm).then(res => { if (alive) setProductHits({ term: searchTerm, rows: res.data ?? [] }) })
+    return () => { alive = false }
+  }, [searchTerm, tenant?.id])
+
+  // รายการโปรดของฉัน (ล็อกอินแล้วเท่านั้น · เห็นเฉพาะของตัวเอง)
+  useEffect(() => {
+    if (!marketOn || !uid || !tenant?.id) return undefined
+    let alive = true
+    fetchMyFavoriteIds(tenant.id).then(res => { if (alive && !res.error) setFavIds(new Set(res.data)) })
+    return () => { alive = false }
+  }, [marketOn, uid, tenant?.id])
 
   const [myPos, setMyPos] = useState(null)
   const [geoState, setGeoState] = useState('idle') // idle | asking | denied | ok
@@ -296,6 +328,7 @@ export default function TourismPage() {
       if (activeCat && p.category !== activeCat) return false
       if (onlineOnly && p.service_type !== 'online' && p.service_type !== 'online_only') return false
       if (deliveryOnly && !p.has_delivery) return false
+      if (favOnly && !(favIds?.has(p.id))) return false
       if (openNow && getOpenState(p.opening_hours, now).state === 'closed') return false
       if (openNow && getOpenState(p.opening_hours, now).state === 'unknown') return false
       return matchesQuery(p, query)
@@ -321,13 +354,21 @@ export default function TourismPage() {
       Number(b.is_featured ?? false) - Number(a.is_featured ?? false)
       || (a.display_order ?? 999) - (b.display_order ?? 999)
       || byName(a, b))
-  }, [places, activeCat, onlineOnly, deliveryOnly, openNow, query, sort, ratings, distances, myPos, now])
+  }, [places, activeCat, onlineOnly, deliveryOnly, favOnly, favIds, openNow, query, sort, ratings, distances, myPos, now])
 
-  const hasFilter = Boolean(query || activeCat || openNow || onlineOnly || deliveryOnly)
+  // สินค้าที่ตรงคำค้น → จับคู่ชื่อร้านจากรายการที่โหลดไว้แล้ว (ร้านที่ปิด/ไม่อยู่ในรายการไม่แสดง)
+  const hits = useMemo(() => {
+    if (!searchTerm || productHits.term !== searchTerm) return []
+    const nameById = Object.fromEntries(places.map(p => [p.id, p.name]))
+    return productHits.rows.filter(r => nameById[r.place_id]).map(r => ({ ...r, shopName: nameById[r.place_id] }))
+  }, [searchTerm, productHits, places])
+  const searchingProducts = Boolean(searchTerm) && productHits.term !== searchTerm
+
+  const hasFilter = Boolean(query || activeCat || openNow || onlineOnly || deliveryOnly || favOnly)
 
   function clearFilters() {
     setQuery(''); setActiveCat(null); setOpenNow(false)
-    setOnlineOnly(false); setDeliveryOnly(false); setSort('recommended')
+    setOnlineOnly(false); setDeliveryOnly(false); setFavOnly(false); setSort('recommended')
     setSearchParams({}, { replace: true })
   }
 
@@ -423,6 +464,11 @@ export default function TourismPage() {
           <FilterChip active={deliveryOnly} onClick={() => setDeliveryOnly(v => !v)} activeBg="#f97316">
             <Bike size={11} /> ส่งถึงบ้าน
           </FilterChip>
+          {marketOn && uid && (
+            <FilterChip active={favOnly} onClick={() => setFavOnly(v => !v)} activeBg="#e11d48">
+              <Heart size={11} fill={favOnly ? 'currentColor' : 'none'} /> รายการโปรด
+            </FilterChip>
+          )}
           <FilterChip active={sort === 'near'} onClick={askLocation} activeBg="#0ea5e9">
             {geoState === 'asking' ? <Loader2 size={11} className="animate-spin" /> : <Navigation size={11} />}
             ใกล้ฉัน
@@ -467,7 +513,28 @@ export default function TourismPage() {
               )}
             </div>
 
-            {visible.length === 0 ? (
+            {hits.length > 0 && (
+              <div className="mb-4 rounded-2xl border border-amber-100 bg-amber-50/60 p-3" data-testid="market-search-hits">
+                <p className="text-xs font-bold text-amber-800 mb-1.5">สินค้าที่ตรงกับ &quot;{searchTerm}&quot;</p>
+                <ul className="divide-y divide-amber-100">
+                  {hits.map(h => (
+                    <li key={h.id}>
+                      <button type="button" onClick={() => navigate(`/tourism/${h.place_id}`)}
+                        className="w-full text-left py-2.5 min-h-[44px] text-sm text-gray-800 break-words">
+                        <span className="font-semibold">{h.name}</span>
+                        <span className="text-gray-500"> · {formatPriceWithUnit(h.price, h.unit)} — </span>
+                        <span className="text-amber-800 font-medium">{h.shopName}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {searchingProducts && hits.length === 0 && (
+              <p className="mb-3 text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> กำลังค้นหาสินค้า...</p>
+            )}
+
+            {visible.length === 0 ? (hits.length > 0 ? null : (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <p className="text-4xl mb-3">🔍</p>
                 <p className="text-sm font-semibold text-gray-500">
@@ -476,7 +543,9 @@ export default function TourismPage() {
                 <p className="text-xs text-gray-400 mt-1 max-w-xs">
                   {places.length === 0
                     ? 'ถ้าคุณมีร้านหรือที่พักในพื้นที่ ลงทะเบียนได้ฟรี เจ้าหน้าที่จะตรวจแล้วเผยแพร่ให้'
-                    : 'ลองลดตัวกรอง หรือพิมพ์คำสั้นลง เช่น ชื่อร้านคำเดียว'}
+                    : favOnly
+                      ? 'ยังไม่มีรายการโปรดที่ตรงกับตัวกรอง — กด ♡ ในหน้ารายละเอียดร้านเพื่อบันทึกไว้ที่นี่'
+                      : 'ลองลดตัวกรอง หรือพิมพ์คำสั้นลง เช่น ชื่อร้านคำเดียว'}
                 </p>
                 {hasFilter && (
                   <button onClick={clearFilters}
@@ -485,7 +554,7 @@ export default function TourismPage() {
                   </button>
                 )}
               </div>
-            ) : (
+            )) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
                 {visible.map(place => (
                   <PlaceCard key={place.id} place={place} now={now}
