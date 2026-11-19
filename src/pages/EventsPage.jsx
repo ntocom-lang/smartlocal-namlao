@@ -6,6 +6,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import EventDetailModal from '../components/EventDetailModal'
 import { toDateStr } from '../lib/thaiDate'
+import { anonColumns } from '../lib/anonColumns'
 import { AUDIENCE_COLOR, AUDIENCE_LABEL } from '../lib/orgTerms'
 import { CalendarDayMarkers, CalendarDayObservances, CalendarObservanceLegend } from '../components/CalendarObservances'
 import { AssignmentLine, AssignedBadge } from '../components/events/EventAssignment'
@@ -354,10 +355,16 @@ export default function EventsPage() {
     const fromStr = toDateStr(threeMonthsAgo)
 
     // ประชาชน/ผู้ไม่ล็อกอิน — RLS คืนเฉพาะกิจกรรมสาธารณะให้เอง
+    // ไม่มี session = ห้าม '*' และห้าม embed creator (join ผ่าน created_by) — คอลัมน์นั้นซ่อนจาก anon (src/lib/anonColumns.js)
+    //   anon อ่าน profiles ไม่ได้อยู่แล้ว creator เป็น null ทุกวันนี้ จึงไม่มีอะไรหายจากหน้าจอ
+    // มี session (ประชาชนล็อกอิน) = authenticated ยังอ่านได้ทุกคอลัมน์ จึงขอ created_by + ชื่อผู้สร้างเหมือนเดิม
+    const publicSelect = userId
+      ? `${anonColumns('events')}, created_by, creator:profiles!events_created_by_fkey(full_name)`
+      : anonColumns('events')
     const loadPublic = async () => {
       let query = supabase
         .from('events')
-        .select('*, creator:profiles!events_created_by_fkey(full_name)')
+        .select(publicSelect)
         .eq('municipality_id', tenant.id)
         .gte('event_date', fromStr)
         .order('event_date', { ascending: true })

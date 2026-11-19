@@ -27,7 +27,7 @@ function TourismSection() {
     if (!tenant?.id) return
     supabase
       .from('tourism_places')
-      .select(TOURISM_PLACE_PUBLIC_COLUMNS) // ห้าม '*' — เตรียมซ่อน created_by จาก anon (docs/database/parked-tourism-places-anon-column-grant.sql)
+      .select(TOURISM_PLACE_PUBLIC_COLUMNS) // ห้าม '*' — created_by ซ่อนจาก anon (src/lib/anonColumns.js)
       .eq('municipality_id', tenant.id)
       .eq('is_active', true)
       .order('display_order')

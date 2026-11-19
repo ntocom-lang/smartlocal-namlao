@@ -1,11 +1,13 @@
-// ปิดช่องเดิม business_registrations + ซ่อน tourism_places.created_by จาก anon — รัน migration จริงใน PGlite ไม่ใช้เน็ต
+// ปิดช่องเดิม business_registrations + ซ่อน uuid ผู้ใช้จาก anon 11 ตาราง — รัน migration จริงใน PGlite ไม่ใช้เน็ต
 //   node tests/business-registrations-rls-db.test.mjs --pglite <temp>/node_modules/@electric-sql/pglite/dist/index.js
-//   ไฟล์ที่รัน: 20261218100000 (policy INSERT/อ่าน) → ร่างที่พักไว้ docs/database/parked-tourism-places-anon-column-grant.sql
+//   ไฟล์ที่รัน: 20261218100000 (policy INSERT/อ่าน) → 20261219100000 (ถอน SELECT ทั้งตาราง + ให้รายคอลัมน์ 11 ตาราง)
+//   ตารางอื่นนอกจาก tourism_places สร้างจากรายชื่อใน src/lib/anonColumns.js (ชนิด text — migration แตะแค่สิทธิ์ ไม่สนชนิด)
 //   โครงตาราง/policy ตั้งต้น = ของฐานจริงที่อ่านมา 2026-11-19 (pg_policies + relacl) ไม่ใช่ของ 043 ตามไฟล์
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { TOURISM_PLACE_PUBLIC_COLUMN_LIST, TOURISM_PLACE_PUBLIC_COLUMNS } from '../src/lib/tourismPlaceColumns.js'
+import { ANON_COLUMN_LIST, ANON_HIDDEN_COLUMNS, anonColumns } from '../src/lib/anonColumns.js'
 
 const modulePath = process.argv.includes('--pglite') ? process.argv[process.argv.indexOf('--pglite') + 1] : process.env.PATIENT_PGLITE_MODULE
 assert.ok(modulePath, 'Supply --pglite <local module path> หรือตั้ง PATIENT_PGLITE_MODULE')
@@ -13,8 +15,7 @@ const { PGlite } = await import(pathToFileURL(modulePath).href)
 
 const readMigration = name => readFile(new URL('../supabase/migrations/' + name, import.meta.url), 'utf8')
 const insertSql = await readMigration('20261218100000_business_registrations_insert_read.sql')
-// ร่างที่พักไว้ (ยังไม่ใช่ migration) — ทดสอบไว้ให้พร้อมใช้วันที่ทำงานกวาด uuid ทั้งระบบ
-const grantSql = await readFile(new URL('../docs/database/parked-tourism-places-anon-column-grant.sql', import.meta.url), 'utf8')
+const grantSql = await readMigration('20261219100000_anon_hide_user_uuid_columns.sql')
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const A = id(1), B = id(2), DA = id(11), DB = id(12)
@@ -100,6 +101,12 @@ CREATE POLICY "department manage tourism_places" ON public.tourism_places FOR AL
 INSERT INTO public.municipalities VALUES ('${A}', 'a'), ('${B}', 'b');
 INSERT INTO public.departments VALUES ('${DA}', '${A}'), ('${DB}', '${B}');
 `)
+// อีก 10 ตารางของงานกวาด uuid — คอลัมน์ตาม anonColumns.js · สิทธิ์ตั้งต้นเหมือนฐานจริง (anon/authenticated SELECT ทั้งตาราง)
+for (const tbl of Object.keys(ANON_COLUMN_LIST).filter(t => t !== 'tourism_places')) {
+  const cols = [...ANON_COLUMN_LIST[tbl], ...ANON_HIDDEN_COLUMNS[tbl]].map(c => `"${c}" text`).join(', ')
+  await db.exec(`CREATE TABLE public."${tbl}" (${cols}); GRANT SELECT ON public."${tbl}" TO anon, authenticated;`)
+  await db.query(`INSERT INTO public."${tbl}" ("id", "${ANON_HIDDEN_COLUMNS[tbl][0]}") VALUES ($1, $2)`, [tbl, U.staff])
+}
 for (const [alias, [role, muni, dept]] of Object.entries(P)) {
   await db.query('INSERT INTO auth.users VALUES ($1)', [U[alias]])
   await db.query('INSERT INTO public.profiles VALUES ($1,$2,$3,$4)', [U[alias], role, muni, dept])
@@ -224,14 +231,37 @@ await test('ผู้ล็อกอินยัง select * ได้ (หน�
   await actor('staff')
   assert.equal((await rows("UPDATE public.tourism_places SET description = 'x' WHERE id = $1 RETURNING id", [SA])).length, 1)
 })
-await test('ชุดคอลัมน์ในโค้ด = GRANT ใน migration = คอลัมน์ทั้งตารางลบ created_by', async () => {
-  const grant = grantSql.match(/GRANT SELECT \(([^)]+)\)\s+ON public\.tourism_places TO anon/)
-  assert.ok(grant, 'หา GRANT SELECT (...) ใน migration ไม่เจอ')
-  const granted = grant[1].split(',').map(s => s.trim()).sort()
+await test('ชุดคอลัมน์ในโค้ด = สิทธิ์ anon หลังรัน = คอลัมน์ทั้งตารางลบ created_by', async () => {
+  const granted = (await rows(`SELECT attname FROM pg_attribute WHERE attrelid = 'public.tourism_places'::regclass AND attnum > 0
+    AND NOT attisdropped AND has_column_privilege('anon', attrelid, attname, 'SELECT')`)).map(x => x.attname).sort()
   assert.deepEqual([...TOURISM_PLACE_PUBLIC_COLUMN_LIST].sort(), granted)
   const all = (await rows(`SELECT attname FROM pg_attribute WHERE attrelid = 'public.tourism_places'::regclass AND attnum > 0 AND NOT attisdropped`))
     .map(x => x.attname).filter(c => c !== 'created_by').sort()
   assert.deepEqual(granted, all)
+})
+
+// ── (4) อีก 10 ตารางของงานกวาด uuid ────────────────────────────────────────────────────────
+await test('ทุกตาราง: anon select * / คอลัมน์ที่ซ่อนล้ม 42501 · ชุดคอลัมน์ของหน้าเว็บอ่านได้ · ผู้ล็อกอินยัง select * ได้', async () => {
+  for (const tbl of Object.keys(ANON_COLUMN_LIST)) {
+    await actor('anon')
+    await rejects(rows(`SELECT * FROM public."${tbl}"`), DENIED)
+    for (const c of ANON_HIDDEN_COLUMNS[tbl]) await rejects(rows(`SELECT "${c}" FROM public."${tbl}"`), DENIED)
+    assert.ok((await rows(`SELECT ${anonColumns(tbl)} FROM public."${tbl}"`)).length >= 1, tbl)
+    assert.ok((await rows(`SELECT count(*)::int AS n FROM public."${tbl}"`))[0].n >= 1, tbl + ' count(*)')
+    await actor('citizen')
+    const all = await rows(`SELECT * FROM public."${tbl}"`)
+    assert.ok(all.length >= 1 && ANON_HIDDEN_COLUMNS[tbl].every(c => c in all[0]), tbl + ' authenticated')
+  }
+})
+await test('ไฟล์ 2 ไม่แตะสิทธิ์ใดเลยถ้าตารางใดตารางหนึ่งไม่ผ่านด่านก่อนรัน (ด่านตรวจครบก่อนถอน)', async () => {
+  await db.exec('GRANT SELECT ON public.events, public.tourism_reviews TO anon')
+  await db.exec('ALTER TABLE public.tourism_reviews ADD COLUMN extra_note text')
+  await rejects(db.exec(grantSql), { message: /extra_note/ })
+  await db.exec('ROLLBACK')
+  assert.equal((await rows("SELECT has_table_privilege('anon', 'public.events', 'SELECT') AS ok"))[0].ok, true)
+  await db.exec('ALTER TABLE public.tourism_reviews DROP COLUMN extra_note')
+  await db.exec(grantSql)
+  assert.equal((await rows("SELECT has_table_privilege('anon', 'public.events', 'SELECT') AS ok"))[0].ok, false)
 })
 await test('ไฟล์ 2 หยุดเองเมื่อ tourism_places มีคอลัมน์ใหม่ที่ไม่รู้จัก', async () => {
   await db.exec('ALTER TABLE public.tourism_places ADD COLUMN secret_note text')

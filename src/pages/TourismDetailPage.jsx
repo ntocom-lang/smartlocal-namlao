@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, ExternalLink, Share2, Phone, X, Zap, ShoppingCart, CalendarCheck, MessageCircle, Globe, Bike, Star, Loader2, Clock, Navigation, Heart } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { TOURISM_PLACE_PUBLIC_COLUMNS } from '../lib/tourismPlaceColumns'
+import { anonColumns } from '../lib/anonColumns'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { edgeImageUrl } from '../lib/edgeImage'
@@ -234,13 +235,21 @@ function ReviewsSection({ placeId }) {
       .then(({ data }) => setProfileName(data?.full_name ?? null))
   }, [session?.user?.id])
 
+  // ห้าม '*' — user_id ของผู้รีวิวซ่อนจาก anon (src/lib/anonColumns.js) ขอเฉพาะตอนล็อกอิน (ใช้หา "รีวิวของฉัน")
+  // session เริ่มเป็น undefined แล้วค่อย resolve เป็น null/ค่า — รอให้รู้ก่อนค่อยดึง ไม่งั้นยิงสองรอบ
+  // รอบแรกไม่ล้างรีวิวเดิมทิ้ง (ไม่ setReviews([]) ระหว่างโหลด) กันรายการกะพริบหาย
+  const sessionReady = session !== undefined
+  const sessionUserId = session?.user?.id ?? null
   useEffect(() => {
-    if (!placeId) return
-    supabase.from('tourism_reviews').select('*')
+    if (!placeId || !sessionReady) return undefined
+    let alive = true
+    const cols = sessionUserId ? `${anonColumns('tourism_reviews')}, user_id` : anonColumns('tourism_reviews')
+    supabase.from('tourism_reviews').select(cols)
       .eq('place_id', placeId)
       .order('created_at', { ascending: false })
-      .then(({ data }) => setReviews(data ?? []))
-  }, [placeId])
+      .then(({ data }) => { if (alive) setReviews(data ?? []) })
+    return () => { alive = false }
+  }, [placeId, sessionReady, sessionUserId])
 
   useEffect(() => {
     if (!session || reviews.length === 0) return
@@ -249,6 +258,8 @@ function ReviewsSection({ placeId }) {
     if (mine && !editing) { setRating(mine.rating); setComment(mine.comment ?? '') }
   }, [session, reviews])
 
+  // รีวิวของคนอื่น — ไม่ล็อกอินไม่มี user_id (ซ่อนจาก anon) ต้องแสดงทุกใบ ห้ามเทียบ undefined !== undefined
+  const otherReviews = reviews.filter(r => !sessionUserId || r.user_id !== sessionUserId)
   const avg = reviews.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length) : 0
 
   async function handleSubmit() {
@@ -332,9 +343,9 @@ function ReviewsSection({ placeId }) {
       )}
 
       {/* Reviews list */}
-      {reviews.filter(r => r.user_id !== session?.user?.id).length > 0 && (
+      {otherReviews.length > 0 && (
         <div className="space-y-2.5">
-          {reviews.filter(r => r.user_id !== session?.user?.id).slice(0, 6).map(r => (
+          {otherReviews.slice(0, 6).map(r => (
             <div key={r.id} className="bg-white rounded-xl border border-gray-100 px-3.5 py-3 space-y-1">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500">
@@ -401,7 +412,7 @@ export default function TourismDetailPage() {
   const uid = session?.user?.id
 
   useEffect(() => {
-    // ห้าม '*' — เตรียมซ่อน created_by จาก anon (docs/database/parked-tourism-places-anon-column-grant.sql)
+    // ห้าม '*' — created_by ซ่อนจาก anon (src/lib/anonColumns.js)
     supabase.from('tourism_places').select(TOURISM_PLACE_PUBLIC_COLUMNS).eq('id', id).maybeSingle()
       .then(({ data }) => setPlace(data))
       .catch(() => {})

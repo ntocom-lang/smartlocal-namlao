@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import EventDetailModal from '../EventDetailModal'
 import { todayStr } from '../../lib/thaiDate'
+import { anonColumns } from '../../lib/anonColumns'
 
 const CATEGORY_COLOR = {
   'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
@@ -50,7 +51,7 @@ function EventsSection() {
     const today = todayStr()
     const baseQuery = supabase
       .from('events')
-      .select('*')
+      .select(anonColumns('events')) // ห้าม '*' — หน้าแรกผู้ไม่ล็อกอินเปิดได้ ซ่อน created_by จาก anon (src/lib/anonColumns.js)
       .eq('municipality_id', tenant.id)
       .gte('event_date', today)
       .order('event_date', { ascending: true })
