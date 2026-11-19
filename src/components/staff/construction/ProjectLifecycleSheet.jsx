@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Check, Loader2, Settings2 } from 'lucide-react'
+import { Check, Loader2, Printer, Settings2 } from 'lucide-react'
 import { Sheet } from '../../patientTransport/StaffShell'
 import { bangkokIsoDate } from '../../../lib/complaintReportPeriods'
 import { daysBetween, formatPct } from '../../../lib/constructionReport'
@@ -14,7 +14,9 @@ import DocumentsSection from './DocumentsSection'
 import InstallmentsTable from './InstallmentsTable'
 import LifecycleHistory from './LifecycleHistory'
 import { DeadlineRow } from './LifecycleBits'
+import MedianPriceModal from './MedianPriceModal'
 import MilestoneRow from './MilestoneRow'
+import ProjectApprovalModal from './ProjectApprovalModal'
 import StageChangePanel, { CloseChecklist } from './StageChangePanel'
 import { ScheduleBadge } from './ui'
 import { btnGhost, btnPrimary } from './uiStyles'
@@ -73,11 +75,13 @@ function Stat({ label, value, children }) {
   )
 }
 
-export default function ProjectLifecycleSheet({ bundle, access, latest = null, staffChoices = [], today = bangkokIsoDate(), onClose, onChanged, onOpenSettings }) {
+export default function ProjectLifecycleSheet({ bundle, access, latest = null, staffChoices = [], tenant = null, today = bangkokIsoDate(), onClose, onChanged, onOpenSettings }) {
   const project = bundle.project
   const [change, setChange] = useState(null)
   const [showOther, setShowOther] = useState(false)
   const [addingChange, setAddingChange] = useState(false)
+  const [medianModalOpen, setMedianModalOpen] = useState(false)
+  const [approvalModalOpen, setApprovalModalOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -210,7 +214,31 @@ export default function ProjectLifecycleSheet({ bundle, access, latest = null, s
             <b className="text-sm text-gray-900">ต้องทำตามระเบียบ — ขั้น{STAGE_LABELS[focus]}{project.stage === 'suspended' ? ' (ระงับอยู่)' : ''}</b>
             <span className="text-xs text-gray-500">ระบบนับวันครบกำหนดให้ · {canWrite ? 'กดบรรทัดเพื่อบันทึกวันที่/เลขที่' : 'แสดงอย่างเดียว'}</span>
           </div>
+          {focus === 'budgeted' && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-teal-50/70 px-4 py-2.5">
+              <span className="text-xs font-semibold text-teal-900">เอกสารกองช่าง: บันทึกขออนุมัติโครงการและแบบรูปรายการ (ขั้นต้นเรื่อง)</span>
+              <button
+                type="button"
+                onClick={() => setApprovalModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-teal-800 transition-colors"
+              >
+                <Printer size={14} />พิมพ์บันทึกขออนุมัติโครงการ
+              </button>
+            </div>
+          )}
           {focus === 'budgeted' && <p className="border-b border-gray-100 px-4 py-2 text-xs text-gray-500">แหล่งงบประมาณ: บันทึกเพียง 1 รายการที่เป็นแหล่งงบของโครงการนี้</p>}
+          {focus === 'designing' && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-amber-50/70 px-4 py-2.5">
+              <span className="text-xs font-semibold text-amber-900">เอกสารกองช่าง: สรุปราคากลาง บก.01 และ ปร.6 พร้อมพิมพ์ A4</span>
+              <button
+                type="button"
+                onClick={() => setMedianModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-amber-700 transition-colors"
+              >
+                <Printer size={14} />ออกชุดเอกสารราคากลาง (บก.01 / ปร.6)
+              </button>
+            </div>
+          )}
           <ul className="divide-y divide-gray-100">
             {milestoneRows(focus)}
             {deadlineRows(focus)}
@@ -256,10 +284,34 @@ export default function ProjectLifecycleSheet({ bundle, access, latest = null, s
         {canWrite && !addingChange && (
           <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-3">
             <button type="button" className={btnGhost} onClick={() => setAddingChange(true)}>ขยายเวลา / แก้ไขสัญญา…</button>
+            <button type="button" className={btnGhost} onClick={() => setApprovalModalOpen(true)}>
+              <Printer size={15} />บันทึกขออนุมัติโครงการ…
+            </button>
+            <button type="button" className={btnGhost} onClick={() => setMedianModalOpen(true)}>
+              <Printer size={15} />ชุดเอกสารราคากลาง (บก.01 / ปร.6)…
+            </button>
           </div>
         )}
         {!canWrite && <p className="text-[11px] text-gray-500">คุณดูข้อมูลได้อย่างเดียว — การบันทึกและเปลี่ยนขั้นทำได้เฉพาะผู้ควบคุมงาน หัวหน้ากอง และผู้ดูแลระบบ</p>}
       </div>
+
+      {approvalModalOpen && (
+        <ProjectApprovalModal
+          project={project}
+          bundle={bundle}
+          tenant={tenant}
+          onClose={() => setApprovalModalOpen(false)}
+        />
+      )}
+
+      {medianModalOpen && (
+        <MedianPriceModal
+          project={project}
+          bundle={bundle}
+          tenant={tenant}
+          onClose={() => setMedianModalOpen(false)}
+        />
+      )}
     </Sheet>
   )
 }
