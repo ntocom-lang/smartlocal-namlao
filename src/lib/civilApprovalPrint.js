@@ -1,12 +1,16 @@
 // ใบ "บันทึกข้อความขออนุมัติจัดทำแบบรูปรายการและแต่งตั้งคณะกรรมการกำหนดราคากลาง" (ขั้นต้นเรื่อง กองช่าง)
 // A4 แนวตั้ง พิมพ์ตามมาตรฐานราชการ: THSarabunPSK 14pt ตาม src/lib/govDocStyle.js
+// ช่องลงนามใช้มาตรฐานกลาง src/lib/govSignBlock.js ตามกติกา AGENTS.md
 
 import {
   GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss,
 } from './govDocStyle.js'
+import {
+  GOV_SIGN_LINE_W, govNameBlank, govSignBlockCss, govSignRow, govSplitActingTitle,
+} from './govSignBlock.js'
 import { thaiDateFromDateInput } from './thaiDate.js'
 import { thaiBahtText } from './thaiBahtText.js'
-import { addMobileCloseButton } from './printWindowClose.js'
+import { openLifecyclePrint } from './constructionLifecyclePrint.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -27,35 +31,42 @@ function pageCss() {
   .sheet { max-width: 160mm; margin: 8mm auto; }
   @media print { .sheet { max-width: none; margin: 0; } }
   p { margin: 0; }
-  .pg { min-height: 250mm; }
+  .pg { min-height: auto; }
 
   /* หัวบันทึกข้อความ */
-  .memo-head { display: flex; align-items: flex-end; position: relative; margin-bottom: 3mm; border-bottom: 2px solid #000; padding-bottom: 2mm; }
-  .memo-garuda { width: 22mm; height: 22mm; object-fit: contain; }
+  .memo-head { display: flex; align-items: flex-end; position: relative; margin-bottom: 1mm; border-bottom: 2px solid #000; padding-bottom: 0.5mm; }
+  .memo-garuda { width: 20mm; height: 20mm; object-fit: contain; }
   .memo-title { position: absolute; left: 0; right: 0; text-align: center; font-size: 26pt; font-weight: 700; line-height: 1; pointer-events: none; }
-  .memo-meta { margin-bottom: 3mm; line-height: 1.4; }
+  .memo-meta { margin-bottom: 1mm; line-height: 1.2; }
   .memo-meta-row { display: flex; justify-content: space-between; }
-  .memo-body { text-align: justify; text-justify: inter-cluster; line-height: 1.45; }
-  .memo-p { text-indent: 2.5cm; margin-bottom: 2.5mm; }
+  .memo-body { text-align: justify; text-justify: inter-cluster; line-height: 1.2; }
+  .memo-p { text-indent: 1.8cm; margin-bottom: 1mm; }
 
   /* กล่องลงนาม 3 ลำดับ: ช่างเสนอ -> ปลัดเห็นควร -> นายกอนุมัติ */
-  .sign-section { margin-top: 5mm; }
-  .sign-col { text-align: center; line-height: 1.4; }
-  .sign-space { height: 12mm; }
-  .review-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-top: 5mm; border-top: 1px dashed #777; pt: 3mm; }
-  .review-box { border: 1px solid #000; padding: 2.5mm; border-radius: 1mm; font-size: 12pt; line-height: 1.35; }
-  .origin { margin-top: 5mm; font-size: 10pt; color: #666; text-align: right; }
+  .review-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3.5mm; margin-top: 1.5mm; border-top: 1px dashed #777; padding-top: 1.5mm; }
+  .review-box { border: 1px solid #000; padding: 1mm 2mm; border-radius: 1mm; line-height: 1.2; }
+  .origin { margin-top: 1mm; font-size: 9pt; color: #666; text-align: right; }
+  ${govSignBlockCss()}
   `
 }
 
 /**
  * สร้าง HTML สำหรับบันทึกขออนุมัติโครงการและแบบรูปรายการ
  */
-export function buildCivilApprovalHtml({ tenant, project, data, emblemUrl = '', printedAt = new Date() }) {
+export function buildCivilApprovalHtml({ tenant, project, data, signatories = null, emblemUrl = '', printedAt = new Date() }) {
   const committee = data.committee || []
   const president = committee.find(c => c.duty?.includes('ประธาน')) || committee[0]
   const members = committee.filter(c => c !== president)
   const origin = `พิมพ์เมื่อ ${thaiDateFromDateInput(`${printedAt.getFullYear()}-${String(printedAt.getMonth() + 1).padStart(2, '0')}-${String(printedAt.getDate()).padStart(2, '0')}`)} · ${govEServiceOriginText(tenant)}`
+
+  const proposerName = data.proposerName || signatories?.department_head?.name || ''
+  const proposerTitle = data.proposerPosition || signatories?.department_head?.title || 'ผู้อำนวยการกองช่าง / เจ้าหน้าที่ผู้รับผิดชอบ'
+
+  const clerkName = signatories?.clerk?.name || ''
+  const clerkTitle = signatories?.clerk?.title || `ปลัด${esc(tenant?.name || '')}`
+
+  const mayorName = signatories?.mayor?.name || ''
+  const mayorTitle = signatories?.mayor?.title || `นายก${esc(tenant?.name || '')}`
 
   return `<!DOCTYPE html>
 <html lang="th"><head>
@@ -67,7 +78,7 @@ ${GOV_FONT_LINK}
 <div class="sheet">
   <section class="pg">
     <div class="memo-head">
-      ${emblemUrl ? `<img src="${esc(emblemUrl)}" alt="ตราครุฑ" class="memo-garuda" />` : '<div style="width:22mm;height:22mm;"></div>'}
+      ${emblemUrl ? `<img src="${esc(emblemUrl)}" alt="ตราครุฑ" class="memo-garuda" />` : '<div style="width:20mm;height:20mm;"></div>'}
       <div class="memo-title">บันทึกข้อความ</div>
     </div>
     <div class="memo-meta">
@@ -96,13 +107,13 @@ ${GOV_FONT_LINK}
       <p class="memo-p">
         <b>๓. การดำเนินการ:</b> เพื่อให้การดำเนินงานเป็นไปด้วยความเรียบร้อย ถูกต้องตามระเบียบกระทรวงการคลังว่าด้วยการจัดซื้อจัดจ้างและการบริหารพัสดุภาครัฐ พ.ศ. ๒๕๖๐ และหลักเกณฑ์การคำนวณราคากลางงานก่อสร้างของทางราชการ กองช่างจึงขอเสนอแนวทางดำเนินการดังนี้:
       </p>
-      <div style="margin-left: 2.5cm; margin-bottom: 2mm;">
+      <div style="margin-left: 1.2cm; margin-bottom: 1mm;">
         <div>๓.๑ มอบหมายเจ้าหน้าที่กองช่างดำเนินการสำรวจ ออกแบบ และจัดทำแบบรูปรายการละเอียดและประมาณการราคา (แบบ ปร.๔, ปร.๕, ปร.๖)</div>
         <div>๓.๒ ขอความเห็นชอบแต่งตั้งคณะกรรมการกำหนดราคากลางงานก่อสร้าง จำนวน ๓ ท่าน ดังนี้:</div>
-        <div style="margin-left: 0.8cm; margin-top: 1mm;">
-          <div>๑) ${esc(president?.name ? `นาย/นาง/น.ส. ${president.name}` : '.......................................................')} ตำแหน่ง ${esc(president?.position_title || '.......................................................')} (ประธานกรรมการ)</div>
+        <div style="margin-left: 0.6cm; margin-top: 0.5mm;">
+          <div>๑) ${esc(president?.name ? president.name : '.......................................................')} ตำแหน่ง ${esc(president?.position_title || '.......................................................')} (ประธานกรรมการ)</div>
           ${members.map((m, i) => `
-            <div>${i + 2}) ${esc(m?.name ? `นาย/นาง/น.ส. ${m.name}` : '.......................................................')} ตำแหน่ง ${esc(m?.position_title || '.......................................................')} (กรรมการ)</div>
+            <div>${i + 2}) ${esc(m?.name ? m.name : '.......................................................')} ตำแหน่ง ${esc(m?.position_title || '.......................................................')} (กรรมการ)</div>
           `).join('')}
         </div>
       </div>
@@ -110,37 +121,49 @@ ${GOV_FONT_LINK}
       <p class="memo-p">
         จึงเรียนมาเพื่อโปรดพิจารณา:
       </p>
-      <div style="margin-left: 2.5cm; margin-bottom: 3mm;">
+      <div style="margin-left: 1.2cm; margin-bottom: 1mm;">
         <div>๑. อนุมัติให้จัดทำแบบรูปรายการละเอียดและประมาณการราคาโครงการดังกล่าว</div>
         <div>๒. เห็นชอบให้แต่งตั้งคณะกรรมการกำหนดราคากลางตามรายนามข้างต้น เพื่อดำเนินการต่อไป</div>
       </div>
 
-      <div style="display: flex; justify-content: flex-end; margin-top: 4mm;">
-        <div class="sign-col" style="min-width: 65mm;">
-          <div class="sign-space"></div>
-          <div>(ลงชื่อ)................................................................</div>
-          <div>(${esc(data.proposerName ? `นาย/นาง/น.ส. ${data.proposerName}` : '................................................................')})</div>
-          <div>${esc(data.proposerPosition || 'ผู้อำนวยการกองช่าง / เจ้าหน้าที่ผู้รับผิดชอบ')}</div>
-        </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 1.5mm;">
+        ${govSignRow({
+    width: GOV_SIGN_LINE_W,
+    label: 'ลงชื่อ',
+    below: [
+      proposerName ? `(${esc(proposerName)})` : govNameBlank(GOV_SIGN_LINE_W),
+      ...govSplitActingTitle(proposerTitle).map(esc),
+    ],
+  })}
       </div>
 
-      <div class="review-grid" style="margin-top: 4mm;">
+      <div class="review-grid">
         <div class="review-box">
           <div><b>ความเห็นของปลัด${esc(tenant?.name || '')}:</b></div>
-          <div style="margin-top: 1.5mm;">[ &nbsp; ] เห็นควรอนุมัติ &nbsp; [ &nbsp; ] อื่นๆ .............................</div>
-          <div style="margin-top: 4mm; text-align: center;">
-            <div>(ลงชื่อ)........................................................</div>
-            <div style="margin-top: 1mm;">(........................................................)</div>
-            <div>ปลัด${esc(tenant?.name || '')}</div>
+          <div style="margin-top: 1mm;">[ &nbsp; ] เห็นควรอนุมัติ &nbsp; [ &nbsp; ] อื่นๆ .............................</div>
+          <div style="margin-top: 1.5mm; display: flex; justify-content: center;">
+            ${govSignRow({
+    width: GOV_SIGN_LINE_W,
+    label: 'ลงชื่อ',
+    below: [
+      clerkName ? `(${esc(clerkName)})` : govNameBlank(GOV_SIGN_LINE_W),
+      ...govSplitActingTitle(clerkTitle).map(esc),
+    ],
+  })}
           </div>
         </div>
         <div class="review-box">
           <div><b>คำสั่งนายก${esc(tenant?.name || '')}:</b></div>
-          <div style="margin-top: 1.5mm;">[ &nbsp; ] อนุมัติ &nbsp; [ &nbsp; ] ไม่อนุมัติ</div>
-          <div style="margin-top: 4mm; text-align: center;">
-            <div>(ลงชื่อ)........................................................</div>
-            <div style="margin-top: 1mm;">(........................................................)</div>
-            <div>นายก${esc(tenant?.name || '')}</div>
+          <div style="margin-top: 1mm;">[ &nbsp; ] อนุมัติ &nbsp; [ &nbsp; ] ไม่อนุมัติ</div>
+          <div style="margin-top: 1.5mm; display: flex; justify-content: center;">
+            ${govSignRow({
+    width: GOV_SIGN_LINE_W,
+    label: 'ลงชื่อ',
+    below: [
+      mayorName ? `(${esc(mayorName)})` : govNameBlank(GOV_SIGN_LINE_W),
+      ...govSplitActingTitle(mayorTitle).map(esc),
+    ],
+  })}
           </div>
         </div>
       </div>
@@ -152,28 +175,14 @@ ${GOV_FONT_LINK}
 }
 
 /**
- * สั่งพิมพ์บันทึกขออนุมัติโครงการ
+ * สั่งพิมพ์บันทึกขออนุมัติโครงการ — โหลดผู้ลงนามกลางจาก document_signatories
  */
 export function printCivilApprovalDoc({ tenant, project, data }) {
-  const win = window.open('', '_blank', 'width=900,height=1000')
-  if (!win) {
-    alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
-    return
-  }
-  const html = buildCivilApprovalHtml({
-    tenant, project, data,
-    emblemUrl: `${window.location.origin}/images/garuda.svg`,
-  })
-  win.document.open()
-  win.document.write(addMobileCloseButton(html))
-  win.document.close()
-  setTimeout(async () => {
-    try {
-      if (win.document.fonts?.ready) {
-        await Promise.race([win.document.fonts.ready, new Promise(res => setTimeout(res, 1200))])
-      }
-    } catch { /* โหลดฟอนต์ไม่ทันพิมพ์ด้วยฟอนต์ระบบ */ }
-    win.focus()
-    win.print()
-  }, 200)
+  return openLifecyclePrint(({ signatories, emblemUrl }) => buildCivilApprovalHtml({
+    tenant,
+    project,
+    data,
+    signatories,
+    emblemUrl,
+  }), { municipalityId: tenant?.id, departmentId: project?.department_id })
 }
