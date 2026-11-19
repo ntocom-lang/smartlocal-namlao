@@ -1,6 +1,6 @@
 // จองคิวรับบริการ (ขั้น 1D · E2) — รัน migration จริงใน PGlite ไม่ใช้เน็ต ไม่แตะข้อมูลจริง
 //   node tests/queue-booking-db.test.mjs --pglite <temp>/node_modules/@electric-sql/pglite/dist/index.js
-//   ไฟล์ที่รัน: 20261210100000 (ตาราง) → 20261210100100 (RLS/RPC)
+//   ไฟล์ที่รัน: 20261210100000 (ตาราง) → 20261210100100 (RLS/RPC) → 20261215100000 (ปิดจองวันหยุดราชการ)
 //   ⚠️ PGlite มี connection เดียว ทดสอบการแย่งจองพร้อมกันจริงไม่ได้ — ด่านนั้นคือ SELECT … FOR UPDATE ในฟังก์ชัน
 //   วันที่ในเทสต์ใช้ "พรุ่งนี้เป็นต้นไป" เสมอ กันล้มตามเวลาของวัน (บทเรียน #538/#629)
 import assert from 'node:assert/strict'
@@ -15,6 +15,7 @@ const { PGlite } = await import(pathToFileURL(modulePath).href)
 const readMigration = name => readFile(new URL('../supabase/migrations/' + name, import.meta.url), 'utf8')
 const tablesSql = await readMigration('20261210100000_queue_booking_tables.sql')
 const rlsSql = await readMigration('20261210100100_queue_booking_rls_rpc.sql')
+const holidaySql = await readMigration('20261215100000_queue_booking_holidays.sql')
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const A = id(1), B = id(2), OFF = id(3)
@@ -64,6 +65,9 @@ CREATE FUNCTION public.department_belongs_to_municipality(p_department_id uuid, 
   AS $$ SELECT p_department_id IS NULL OR EXISTS (SELECT 1 FROM public.departments d WHERE d.id = p_department_id AND d.municipality_id = p_municipality_id) $$;
 GRANT EXECUTE ON FUNCTION public.get_my_role(), public.get_my_municipality_id(), public.get_my_department_id(),
   public.is_my_department(uuid, uuid), public.department_belongs_to_municipality(uuid, uuid) TO authenticated;
+-- โครงเดียวกับ 20260831100000_public_holidays.sql (เฉพาะคอลัมน์ที่ฟังก์ชันใช้)
+CREATE TABLE public.public_holidays (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), municipality_id uuid REFERENCES public.municipalities(id),
+  holiday_date date NOT NULL, name text NOT NULL, is_working_day boolean NOT NULL DEFAULT false);
 INSERT INTO public.municipalities VALUES ('${A}', 'demo', ARRAY['complaints']), ('${B}', 'other', NULL), ('${OFF}', 'off', ARRAY['complaints']);
 INSERT INTO public.departments VALUES ('${D1}', '${A}'), ('${D2}', '${A}'), ('${DB}', '${B}');
 `)
@@ -100,10 +104,16 @@ await test('migration ไฟล์ 2 ปฏิเสธถ้ายังไม�
   await rejects(db.exec(rlsSql), { message: /20261210100000/ })
   await db.exec('ROLLBACK') // ไฟล์เปิด BEGIN เอง — ด่านโยน error แล้วธุรกรรมค้าง
 })
+await test('ไฟล์วันหยุดปฏิเสธถ้ายังไม่รันไฟล์จองคิว', async () => {
+  await rejects(db.exec(holidaySql), { message: /20261210100100/ })
+  await db.exec('ROLLBACK')
+})
 await db.exec(tablesSql)
 await db.exec(rlsSql)
-await test('รันทั้ง 2 ไฟล์ผ่าน + ด่านตรวจท้ายไฟล์ผ่าน + รันซ้ำได้', async () => {
+await db.exec(holidaySql) // เทสต์ทุกข้อด้านล่างรันกับฟังก์ชันฉบับวันหยุด (ของเดิมต้องไม่พัง)
+await test('รันทั้ง 3 ไฟล์ผ่าน + ด่านตรวจท้ายไฟล์ผ่าน + รันซ้ำได้', async () => {
   await db.exec(rlsSql)
+  await db.exec(holidaySql)
 })
 await test('เปิดโมดูลให้ demo เท่านั้น (แถว NULL = เปิดทุกโมดูลอยู่แล้ว ไม่แตะ · off ไม่ถูกเปิด)', async () => {
   const r = await rows('SELECT slug, enabled_modules FROM public.municipalities ORDER BY slug')
@@ -329,6 +339,47 @@ await test('superadmin ลบบริการได้ (ลบคิวตา�
   assert.equal((await db.query('DELETE FROM public.queue_services WHERE id = $1', [SVC_NODEPT])).affectedRows, 1)
   await asRoot()
   assert.equal((await rows('SELECT 1 FROM public.queue_bookings WHERE service_id = $1', [SVC_NODEPT])).length, 0)
+})
+
+// ── วันหยุดราชการ (20261215100000) ───────────────────────────────────────────────────────
+// ใช้บริการใหม่ที่เปิดทุกวัน + วันที่ห่างจากเทสต์ด้านบน (วันที่ 6–8) กันชนกับคิวเดิม
+let SVC_H
+const hol1 = shift(6), hol2 = shift(7)
+await test('วันหยุดทั่วประเทศ: ช่องว่างปิดทั้งวัน + จองไม่ได้ (ทั้ง A และ B) · วันถัดไปจองได้ตามปกติ', async () => {
+  await asRoot()
+  SVC_H = (await rows(`INSERT INTO public.queue_services (municipality_id, department_id, name, open_weekdays, per_slot_quota, book_ahead_days)
+    VALUES ($1, $2, 'วันหยุด', '{1,2,3,4,5,6,7}', 5, 14) RETURNING id`, [A, D1]))[0].id
+  await db.query(`INSERT INTO public.public_holidays (municipality_id, holiday_date, name) VALUES (NULL, $1, 'วันหยุดทดสอบ')`, [hol1])
+  await actor('citizen3')
+  assert.ok((await rows('SELECT * FROM public.queue_slot_availability($1, $2::date)', [SVC_H, hol1])).every(x => !x.bookable))
+  await rejects(book(SVC_H, hol1, '09:00'), { code: 'P0001', message: /วันหยุดราชการ/ })
+  assert.equal((await book(SVC_H, shift(8), '09:00')).queue_no, 1)
+  await actor('citizenB')
+  assert.ok((await rows('SELECT * FROM public.queue_slot_availability($1, $2::date)', [SVC_B, hol1])).every(x => !x.bookable))
+  await rejects(book(SVC_B, hol1, '09:00'), { message: /วันหยุดราชการ/ })
+})
+await test('A ยกเลิกวันหยุด (is_working_day) → A จองได้ · B ยังปิด (แถวของ อปท. ไม่ลาม)', async () => {
+  await asRoot()
+  await db.query(`INSERT INTO public.public_holidays (municipality_id, holiday_date, name, is_working_day) VALUES ($1, $2, 'มาทำงาน', true)`, [A, hol1])
+  await actor('citizen3')
+  assert.ok((await rows('SELECT * FROM public.queue_slot_availability($1, $2::date)', [SVC_H, hol1])).every(x => x.bookable))
+  assert.equal((await book(SVC_H, hol1, '09:00')).queue_no, 1)
+  await actor('citizenB')
+  await rejects(book(SVC_B, hol1, '09:00'), { message: /วันหยุดราชการ/ })
+})
+await test('วันหยุดเฉพาะ A → A ปิด · B จองได้', async () => {
+  await asRoot()
+  await db.query(`INSERT INTO public.public_holidays (municipality_id, holiday_date, name) VALUES ($1, $2, 'ประเพณีท้องถิ่น')`, [A, hol2])
+  await actor('citizen3')
+  await rejects(book(SVC_H, hol2, '09:00'), { message: /วันหยุดราชการ/ })
+  await actor('citizenB')
+  assert.equal((await book(SVC_B, hol2, '09:00')).queue_no, 1)
+})
+await test('queue_is_holiday เรียกตรงไม่ได้ (ทั้ง authenticated และ anon)', async () => {
+  for (const who of ['citizen3', 'anon']) {
+    await actor(who)
+    await rejects(db.query('SELECT public.queue_is_holiday($1::date, $2)', [hol1, A]), DENIED)
+  }
 })
 
 console.log(`\nqueue-booking-db: ผ่าน ${cases} กรณี`)

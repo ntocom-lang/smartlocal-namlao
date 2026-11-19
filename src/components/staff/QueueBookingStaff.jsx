@@ -271,7 +271,7 @@ function QueueTab({ services, today, hasAnyService, isAdmin }) {
                   return (
                     <tr key={b.id} className={b.status === 'cancelled' ? 'opacity-50' : ''}>
                       <td className="px-3 py-2.5 text-base font-black text-gray-800">{b.queue_no}</td>
-                      <td className="whitespace-nowrap px-3 py-2.5">{slotRange(b.slot_time, svc?.slot_minutes)}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-gray-800">{slotRange(b.slot_time, svc?.slot_minutes)}</td>
                       <td className="px-3 py-2.5 font-semibold text-gray-800">
                         {b.citizen_name}
                         {services.length > 1 && svc && <span className="block text-xs font-normal text-gray-500">{svc.name}</span>}

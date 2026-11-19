@@ -66,6 +66,14 @@ test('วันที่จองได้: วันนี้นับด้ว
   assert.deepEqual(bookableDates(svc({ book_ahead_days: 0 }), '2026-12-27'), [])
 })
 
+test('วันที่จองได้: ตัดวันหยุดราชการเมื่อส่ง isHoliday (ฐานข้อมูลปิดจองวันเดียวกัน 20261215100000)', () => {
+  const off = new Set(['2026-12-31', '2027-01-01'])
+  assert.deepEqual(bookableDates(svc({ book_ahead_days: 7 }), '2026-12-28', d => off.has(d)),
+    ['2026-12-28', '2026-12-29', '2026-12-30', '2027-01-04'])
+  // ไม่ส่ง = ไม่ตัด (พฤติกรรมเดิม)
+  assert.equal(bookableDates(svc({ book_ahead_days: 7 }), '2026-12-28').length, 6)
+})
+
 test('วันที่จองได้: ข้อมูลผิดรูป/ไม่ตั้งวันเปิด = ไม่มีวัน (ไม่พัง) · เพดาน 180 วัน', () => {
   assert.deepEqual(bookableDates(svc({ open_weekdays: [] }), '2026-12-28'), [])
   assert.deepEqual(bookableDates(null, '2026-12-28'), [])

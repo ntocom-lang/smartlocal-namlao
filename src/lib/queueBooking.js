@@ -72,10 +72,12 @@ export function thaiLongDay(str) {
 
 /**
  * วันที่จองได้ของบริการหนึ่ง: วันนี้ .. วันนี้ + book_ahead_days ที่ ISO weekday อยู่ใน open_weekdays
- * (ตรงกับเงื่อนไขของ queue_slot_availability/book_queue_slot) · ไม่ตัดวันหยุดราชการ — เจ้าหน้าที่ตั้งวันเปิดเองได้
+ * (ตรงกับเงื่อนไขของ queue_slot_availability/book_queue_slot)
+ * isHoliday: ตัดวันหยุดราชการ — หน้าเว็บส่ง holidayName จาก workingDays.js (ชุดเดียวกับตาราง public_holidays
+ *   ที่ฐานข้อมูลใช้ปิดจองตั้งแต่ 20261215100000) · ไม่ส่ง = ไม่ตัด
  * @returns {string[]} 'YYYY-MM-DD' เรียงจากวันใกล้สุด
  */
-export function bookableDates(service, today = bangkokToday()) {
+export function bookableDates(service, today = bangkokToday(), isHoliday = null) {
   const start = dayNumber(today)
   const weekdays = Array.isArray(service?.open_weekdays) ? service.open_weekdays.map(Number) : []
   const ahead = Math.max(0, Math.min(180, Number(service?.book_ahead_days) || 0))
@@ -83,7 +85,10 @@ export function bookableDates(service, today = bangkokToday()) {
   const out = []
   for (let i = 0; i <= ahead; i += 1) {
     const dow = new Date((start + i) * MS_PER_DAY).getUTCDay() || 7
-    if (weekdays.includes(dow)) out.push(dateOfNumber(start + i))
+    if (!weekdays.includes(dow)) continue
+    const date = dateOfNumber(start + i)
+    if (typeof isHoliday === 'function' && isHoliday(date)) continue
+    out.push(date)
   }
   return out
 }
