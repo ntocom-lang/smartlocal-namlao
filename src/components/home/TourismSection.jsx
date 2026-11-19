@@ -3,6 +3,7 @@ import { withModule } from '../../lib/withModule'
 import { useNavigate } from 'react-router-dom'
 import { Luggage, Utensils, BedDouble, ShoppingBag, Wrench, ChevronRight, MapPin, Compass } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { TOURISM_PLACE_PUBLIC_COLUMNS } from '../../lib/tourismPlaceColumns'
 import { toReliableImageUrl } from '../../lib/driveStorage'
 import { edgeImageUrl, originalImageUrl } from '../../lib/edgeImage'
 import { useTenant } from '../../contexts/TenantContext'
@@ -26,7 +27,7 @@ function TourismSection() {
     if (!tenant?.id) return
     supabase
       .from('tourism_places')
-      .select('*')
+      .select(TOURISM_PLACE_PUBLIC_COLUMNS) // ห้าม '*' — เตรียมซ่อน created_by จาก anon (docs/database/parked-tourism-places-anon-column-grant.sql)
       .eq('municipality_id', tenant.id)
       .eq('is_active', true)
       .order('display_order')
