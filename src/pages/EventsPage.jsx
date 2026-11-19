@@ -6,6 +6,8 @@ import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import EventDetailModal from '../components/EventDetailModal'
 import { toDateStr } from '../lib/thaiDate'
+import { countdownBadgeClass, eventCountdown } from '../lib/eventCountdown'
+import { fetchEventReviewSummary } from '../lib/eventReviewsApi'
 import { anonColumns } from '../lib/anonColumns'
 import { AUDIENCE_COLOR, AUDIENCE_LABEL } from '../lib/orgTerms'
 import { CalendarDayMarkers, CalendarDayObservances, CalendarObservanceLegend } from '../components/CalendarObservances'
@@ -330,6 +332,8 @@ export default function EventsPage() {
   const [activeTab, setActiveTab] = useState('upcoming') // 'upcoming' | 'past'
   // กอง + สถานะหัวหน้ากองของผู้ใช้ ใช้ตัดสินปุ่ม "แก้ไข" (หัวหน้ากองแก้กิจกรรมของกองตนได้)
   const [editScope, setEditScope] = useState(null)
+  // สรุปดาวรายกิจกรรม { [event_id]: { count, avg } } — โหลดไม่สำเร็จ (เช่น ฐานข้อมูลยังไม่มี RPC) = ไม่ขึ้นดาว หน้ายังใช้ได้ปกติ
+  const [reviewSummary, setReviewSummary] = useState({})
 
   // บทบาทมาจาก AuthContext ซึ่งลดเหลือ citizen ให้แล้วเมื่อบัญชีเป็นของ อปท. อื่น
   // (เดิมหน้านี้อ่าน profiles.role เองตรงๆ จึงไม่ผ่านด่านข้าม อปท. นั้น)
@@ -339,8 +343,12 @@ export default function EventsPage() {
   // ล็อกอินอยู่ต้องรอรู้บทบาทก่อนค่อยดึง ไม่งั้นได้ชุดของประชาชนมาแสดงก่อนแล้วค่อยสลับเป็นชุดของเจ้าหน้าที่
   const authReady  = session === null || (!!session && !profileLoading && (role !== null || profileError))
 
+  // ประชาชน/ผู้ไม่ล็อกอิน กดกิจกรรมสาธารณะ → หน้า /events/:id (นับถอยหลัง แชร์ ให้ดาว/ความเห็น)
+  // บุคลากรภายในยังเปิดกล่องรายละเอียดเดิม เพราะมีปุ่มแก้ไข/มอบหมายผู้ไปแทนอยู่ในนั้น
   function handleSelectEvent(ev) {
-    if (canViewEventDetail(ev, role)) setSelected(ev)
+    if (!canViewEventDetail(ev, role)) return
+    if (!isInternal && (ev.audiences ?? []).includes('public')) { navigate(`/events/${ev.id}`); return }
+    setSelected(ev)
   }
 
   useEffect(() => {
@@ -419,6 +427,18 @@ export default function EventsPage() {
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [tenant?.id, authReady, isInternal, userId, role])
+
+  // ดาวสรุปของกิจกรรมสาธารณะที่โหลดมา — เรียกครั้งเดียวต่อชุดกิจกรรม (ตัดที่ 500 รายการใน fetchEventReviewSummary)
+  // คีย์เป็นสตริง id ไม่ใช่ array กันยิงซ้ำเมื่อมอบหมายผู้ไปแทนแล้ว events ถูกสร้างใหม่ทั้งที่ชุด id เท่าเดิม
+  const publicEventIdsKey = events
+    .filter(ev => (ev.audiences ?? []).includes('public') && !isPersonalEvent(ev))
+    .map(ev => ev.id).join(',')
+  useEffect(() => {
+    if (!publicEventIdsKey) return undefined
+    let alive = true
+    fetchEventReviewSummary(publicEventIdsKey.split(',')).then(res => { if (alive && !res.error) setReviewSummary(res.data) })
+    return () => { alive = false }
+  }, [publicEventIdsKey])
 
   // จุดปฏิทิน (วันที่ + กลุ่มเป้าหมายเท่านั้น ไม่มีชื่อ/สถานที่/รายละเอียด) — ดึงผ่าน RPC
   // ที่เปิดให้ทุกคนเรียกได้โดยไม่ต้องมีสิทธิ์ตาม audience เพื่อให้เห็นว่า "มีกิจกรรมวันไหนบ้าง"
@@ -546,7 +566,8 @@ export default function EventsPage() {
               const color       = CATEGORY_COLOR[ev.category] ?? '#6b7280'
               const d           = new Date(ev.event_date + 'T00:00:00')
               const isPast      = d < today
-              const diffDays    = Math.round((d - today) / (1000 * 60 * 60 * 24))
+              const countdown   = eventCountdown(ev) // นับวันตามเวลาไทย (src/lib/eventCountdown.js)
+              const stars       = reviewSummary[ev.id]
               const hasEndDate  = ev.end_date && ev.end_date !== ev.event_date
               const dEnd        = hasEndDate ? new Date(ev.end_date + 'T00:00:00') : null
               const sameMonth   = dEnd && d.getMonth() === dEnd.getMonth()
@@ -601,20 +622,21 @@ export default function EventsPage() {
                         )
                       })}
                       {ev.repeat_yearly && <YearlyBadge />}
-                      {isPast ? (
+                      {isPast && countdown.kind !== 'ongoing' ? (
                         <span className="text-[11px] text-gray-400 font-medium">ผ่านไปแล้ว</span>
-                      ) : (
-                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                          diffDays === 0 ? 'bg-red-50 text-red-600 dark:bg-red-500/20 dark:text-red-400' :
-                          diffDays <= 3 ? 'bg-orange-50 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400' :
-                          'bg-blue-50 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400'
-                        }`}>
-                          {diffDays === 0 ? 'วันนี้' : diffDays === 1 ? 'พรุ่งนี้' : `อีก ${diffDays} วัน`}
+                      ) : countdown.kind !== 'unknown' && (
+                        <span data-testid="event-countdown" className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${countdownBadgeClass(countdown)}`}>
+                          {countdown.label}
                         </span>
                       )}
                       {isAssignedTo(ev, userId) && <AssignedBadge />}
                     </div>
                     <p className="text-sm font-bold text-gray-800 dark:text-slate-200 leading-tight">{ev.title}</p>
+                    {stars && stars.count > 0 && (
+                      <p className="text-xs font-semibold text-amber-600 mt-0.5">
+                        {stars.avg !== null ? `★ ${stars.avg.toFixed(1)} (${stars.count} คน)` : `ให้ดาวแล้ว ${stars.count} คน`}
+                      </p>
+                    )}
                     {!ev.is_all_day && ev.event_time && (
                       <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
                         <Clock size={11} />
