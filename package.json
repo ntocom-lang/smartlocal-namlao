@@ -214,6 +214,7 @@
     "test:service-audience": "node tests/service-audience.test.mjs",
     "test:admin-update-user": "node tests/admin-update-user-guard.test.mjs",
     "test:rate-complaint-anon": "node tests/rate-complaint-anon-guard.test.mjs",
+    "test:migration-unique": "node tests/migration-version-unique.test.mjs",
     "test:personnel-structure": "node tests/personnel-structure.test.mjs",
     "test:guard": "node tests/guard-master-tree.test.mjs",
     "test:app-icon": "node tests/app-icon.test.mjs",
