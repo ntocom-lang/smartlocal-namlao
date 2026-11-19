@@ -52,12 +52,24 @@ jobs:
         if: ${{ !cancelled() }}
         run: node tests/rate-complaint-anon-guard.test.mjs
 
+      # ด่านที่ 3 (2026-11-19): เลข migration ซ้ำ = version ชนกันใน schema_migrations (เคสจริง #772)
+      - name: ตรวจว่าเลข migration ไม่ซ้ำกัน
+        id: migration_unique
+        if: ${{ !cancelled() }}
+        run: node tests/migration-version-unique.test.mjs
+
       - name: ชี้ทางแก้เมื่อไม่ผ่าน
         if: failure()
         env:
           ADMIN_UPDATE_USER: ${{ steps.admin_update_user.outcome }}
           RATE_COMPLAINT_ANON: ${{ steps.rate_complaint_anon.outcome }}
+          MIGRATION_UNIQUE: ${{ steps.migration_unique.outcome }}
         run: |
+          if [ "$MIGRATION_UNIQUE" = "failure" ]; then
+            echo "::error::มีไฟล์ใน supabase/migrations ใช้เลขนำหน้าซ้ำกัน — Supabase CLI บันทึก version ซ้ำไม่ได้"
+            echo "วิธีแก้: ดูข้อความของขั้นเลข migration (ไฟล์ที่ชน + เลขว่างที่เสนอ) เปลี่ยนเลขไฟล์ที่ยังไม่รันบนฐานจริง แล้วรัน 'npm run test:migration-unique' จนผ่าน"
+            echo "ถ้าเพิ่ง merge PR อื่นที่ใช้เลขเดียวกัน: ให้ merge master เข้าสาขาก่อน แล้วค่อยเปลี่ยนเลขของสาขาตัวเอง"
+          fi
           if [ "$ADMIN_UPDATE_USER" = "failure" ]; then
             echo "::error::migration ของ admin_update_user() จะทำให้บัญชีประชาชนหลุดสังกัด อปท. ทุกครั้งที่กดบันทึก — ห้าม apply ขึ้นฐานจริง"
             echo "วิธีแก้: ดูข้อความของขั้น admin_update_user (ชื่อไฟล์ + บล็อกที่ต้องคงไว้) แล้วรัน 'npm run test:admin-update-user' บนเครื่องจนผ่าน"
