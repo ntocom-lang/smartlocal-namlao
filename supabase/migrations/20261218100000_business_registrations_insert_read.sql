@@ -1,4 +1,4 @@
--- 20261215100000_business_registrations_insert_read.sql
+-- 20261218100000_business_registrations_insert_read.sql
 -- ปิดช่องเดิมของคำขอลงทะเบียนธุรกิจ (043) ก่อนเปิดตลาดชาวบ้านให้ อปท. จริง — รันได้ทุกเมื่อ ไม่ขึ้นกับหน้าเว็บ
 --
 -- (1) policy INSERT เดิม = WITH CHECK (auth.uid() = user_id) อย่างเดียว ⇒ ประชาชนยิง REST ใส่ status='approved'
