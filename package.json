@@ -203,6 +203,8 @@
     "test:community-survey": "node tests/community-survey.test.mjs",
     "test:community-survey-browser": "node tests/community-survey-browser.playwright.mjs",
     "test:cctv-request": "node tests/cctv-request.test.mjs",
+    "test:building-permit": "node tests/building-permit-stage.test.mjs",
+    "test:building-permit-db": "node tests/building-permit-status-db.test.mjs",
     "test:complaint-polish": "node tests/complaint-text-polish.test.mjs",
     "test:complaint-list-print": "node tests/complaint-list-print.test.mjs",
     "test:complaint-monthly": "node tests/complaint-monthly-summary.test.mjs && node tests/complaint-monthly-infographic.test.mjs && node tests/report-entry-points.test.mjs && node --test tests/complaint-report-period.test.mjs && node tests/complaint-monthly-reminder.test.mjs && node tests/complaint-monthly-lock.test.mjs && node tests/complaint-report-periods.test.mjs && node tests/complaint-image-hide-categories.test.mjs && node tests/complaint-news-image.test.mjs && node tests/complaint-news-exec.test.mjs && node tests/complaint-news-batch.test.mjs",

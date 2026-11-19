@@ -21,6 +21,8 @@ import SatisfactionModal from '../components/SatisfactionModal'
 import { RATING_OPTIONS } from '../lib/complaintRateInvite'
 import { findDocToPrompt, parseDocRatingData, ratingMapOf } from '../lib/docRequestRating'
 import { customFormRows } from '../lib/customFormFields'
+import { stageLabel } from '../lib/buildingPermitStage'
+import { PermitStepper, PermitNumberAndExpiry } from '../components/BuildingPermitProgress'
 
 const BASE_DOC_TYPES = {
   residence_cert:   'ใบรับรองการอยู่อาศัย',
@@ -83,6 +85,14 @@ function StatusBadge({ status, documentType }) {
   )
 }
 
+// ขั้นย่อยของคำขออนุญาตก่อสร้าง (อ่านอย่างเดียว) — คำขอที่ปฏิเสธ/ยกเลิกไม่แสดง (ป้ายสถานะบอกอยู่แล้ว)
+// ยังไม่มีขั้นย่อย (permit_stage = null) และเรื่องยังไม่จบ = แสดงแค่ "รับคำขอแล้ว" · เรื่องที่จบไปก่อนมีฟีเจอร์นี้ไม่แสดง
+function showsPermitProgress(req) {
+  if (req.document_type !== 'building_permit') return false
+  if (req.status === 'rejected' || req.status === 'cancelled') return false
+  return !!req.permit_stage || req.status === 'pending' || req.status === 'processing'
+}
+
 // ⚠️ ต้องตรงกับ FEE_INQUIRY_TYPES ใน StaffDashboard.jsx เสมอ — ถ้าฝั่งเจ้าหน้าที่แจ้งยอดได้
 // แต่ฝั่งนี้ไม่รู้จักประเภทนั้น ประชาชนจะไม่เห็นยอดที่เจ้าหน้าที่แจ้งเลย (ค่าประกันมาตร/ค่าติดตั้ง
 // ของงานประปา รู้หลังช่างออกไปสำรวจหน้างาน)
@@ -137,6 +147,9 @@ function DocCard({ req, onClick, ratingInfo, onRate }) {
           <span className="text-xs text-gray-400 font-mono">{req.id.slice(0,8).toUpperCase()}</span>
         </div>
         {req.purpose && <p className="text-xs text-gray-400 mt-0.5 truncate">{req.purpose}</p>}
+        {showsPermitProgress(req) && (
+          <p className="text-[11px] font-semibold text-violet-600 mt-0.5">ขั้นตอน: {stageLabel(req.permit_stage)}</p>
+        )}
         <p className="text-[11px] text-gray-300 mt-0.5">{dateTH(req.created_at)}</p>
         {req.document_url && req.status === 'completed' && (
           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 mt-1">
@@ -642,6 +655,15 @@ function DocDetailSheet({ req, onClose, tenant, onChanged, ratingInfo, onRate })
               )}
             </div>
           </div>
+
+          {/* ความคืบหน้าใบอนุญาตก่อสร้าง (อ่านอย่างเดียว) — เลขที่/วันหมดอายุเจ้าหน้าที่กรอกตามใบจริง */}
+          {showsPermitProgress(req) && (
+            <div data-permit-progress className="rounded-2xl border border-violet-100 bg-violet-50/40 p-4 space-y-3">
+              <p className="text-xs font-bold text-violet-500 uppercase tracking-wide">ความคืบหน้าใบอนุญาตก่อสร้าง</p>
+              <PermitStepper stage={req.permit_stage ?? null} />
+              <PermitNumberAndExpiry req={req} />
+            </div>
+          )}
 
           {/* ประเมินความพึงพอใจรายเรื่อง — ไม่ใช่ทั้ง "ประเมินแล้ว" และ "ประเมินได้" = ไม่แสดงอะไร */}
           {ratingInfo && (ratingInfo.rating || ratingInfo.can_rate) && (

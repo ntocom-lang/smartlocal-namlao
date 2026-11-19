@@ -21,6 +21,8 @@ const ACTION_INFO = {
   purge_contact_pii: { label: 'ลบข้อมูลติดต่อครบกำหนด', bg: '#e0e7ff', color: '#3730a3', Icon: Trash2 },
   // เปิด/ปิดช่องทางยื่นออนไลน์ของประชาชนรายประเภท (ทุกคน / เฉพาะผู้มีตำแหน่ง) — ดู src/lib/serviceAudience.js
   update_submit_audience: { label: 'เปลี่ยนผู้ที่แจ้ง/ยื่นได้', bg: '#ede9fe', color: '#5b21b6', Icon: Shield },
+  // ขั้นย่อย/เลขที่/วันหมดอายุใบอนุญาตก่อสร้าง — set_building_permit_stage() (20261217100100) metadata มีค่าก่อน/หลัง
+  building_permit_stage: { label: 'แก้ขั้นใบอนุญาตก่อสร้าง', bg: '#ede9fe', color: '#5b21b6', Icon: RefreshCw },
 }
 
 const RESOURCE_LABEL = {

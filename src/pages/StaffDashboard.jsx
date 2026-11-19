@@ -87,6 +87,7 @@ const WaterSupplyRequestWizard = lazy(() => import('./WaterSupplyRequestWizard')
 const PublicAssistanceWizard = lazy(() => import('./PublicAssistanceWizard'))
 const AssetBorrowRequestWizard = lazy(() => import('./AssetBorrowRequestWizard'))
 const AssetBorrowRequestPanel = lazy(() => import('../components/staff/AssetBorrowRequestPanel'))
+const BuildingPermitStagePanel = lazy(() => import('../components/staff/BuildingPermitStagePanel'))
 const PatientTransportPanel = lazy(() => import('../components/staff/PatientTransportPanel'))
 const PatientTransportStaff = lazy(() => import('./PatientTransportStaff'))
 const QueueBookingStaff = lazy(() => import('../components/staff/QueueBookingStaff'))
@@ -400,6 +401,7 @@ async function loadPrintSignatories(req) {
 function TaskDetailSheet({
   req, onClose, onUpdate, acting, tenant, onInquiryUpdate, currentUserRole, onDelete,
   canAssign = false, assignees = [], assigning = false, assigneeName = null, onAssign,
+  staffId = null, onPermitChanged,
 }) {
   const isCctv = req.document_type === CCTV_TYPE
   // คำขอภาพกล้องที่กำลังดำเนินการ: ระบบร่างบันทึกส่งมอบ (เติมวันที่ให้) เจ้าหน้าที่เติมแค่ชื่อผู้รับ — ปุ่ม "เสร็จสิ้น"
@@ -433,6 +435,10 @@ function TaskDetailSheet({
   const docType     = getAllDocTypes().find(d => d.value === req.document_type)
   const isActive    = req.status === 'pending' || req.status === 'processing'
   const isFeeInquiry = FEE_INQUIRY_TYPES.includes(req.document_type)
+  // ขั้นย่อยใบอนุญาตก่อสร้าง: เกณฑ์เดียวกับที่ RPC set_building_permit_stage ตรวจ (หัวหน้า/ผู้ดูแลทั้งกอง หรือเจ้าของเรื่อง)
+  // คำขอที่ถูกปฏิเสธ/ยกเลิกแก้ไม่ได้ · คนอื่นเห็นแบบอ่านอย่างเดียว · ถ้าเกณฑ์ตรงนี้พลาด RPC ยังปฏิเสธพร้อมข้อความไทย
+  const permitClosedOut = req.status === 'rejected' || req.status === 'cancelled'
+  const canEditPermitStage = !permitClosedOut && (canAssign || (!!staffId && req.assigned_to === staffId))
 
   async function handleSetFee() {
     const amount = parseInt(feeInput)
@@ -706,6 +712,16 @@ function TaskDetailSheet({
               <p className="text-[11px] font-bold text-red-400 uppercase tracking-wide mb-1">เหตุผลการปฏิเสธ</p>
               <p className="text-sm text-red-700 leading-relaxed">{req.reject_reason}</p>
             </div>
+          )}
+
+          {/* ความคืบหน้าใบอนุญาตก่อสร้าง — ขั้นย่อยแจ้งประชาชน ไม่ใช่การตัดสินอนุญาต · คำขอที่ปฏิเสธ/ยกเลิกและไม่เคยมีขั้นไม่แสดง */}
+          {req.document_type === 'building_permit' && !(permitClosedOut && !req.permit_stage) && (
+            <Suspense fallback={
+              <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-gray-400" /></div>
+            }>
+              <BuildingPermitStagePanel req={req} canEdit={canEditPermitStage}
+                onChanged={patch => onPermitChanged?.(req.id, patch)} />
+            </Suspense>
           )}
 
           {/* Reject confirm block */}
@@ -1258,6 +1274,13 @@ export function InboxModule({ tenant, staffId, currentUserRole, onRequestDeleted
     setSelected(prev => prev && prev.id === id ? { ...prev, assigned_to: assigneeId || null } : prev)
   }
 
+  // ขั้นย่อยใบอนุญาตก่อสร้างเปลี่ยนแล้ว (ผ่าน RPC ในแผงแล้ว) — อัปเดตทั้งรายการและแผ่นรายละเอียดที่เปิดอยู่
+  // (selected เป็นสำเนาของแถว ไม่ได้ตามรายการอัตโนมัติ เหมือน handleAssign)
+  function handlePermitStageChanged(id, patch) {
+    setRequests(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
+    setSelected(prev => prev && prev.id === id ? { ...prev, ...patch } : prev)
+  }
+
   // ลบถาวร — admin ของ อปท. (เฉพาะคำขอของ อปท. ตัวเอง) และ superadmin เท่านั้น
   // บังคับจริงด้วย RLS policy ในฐานข้อมูล ไม่ใช่แค่ซ่อนปุ่มฝั่ง UI (ดู migration
   // 20260908180000_admin_delete_own_document_requests.sql) ใช้เมื่อคำขอผิดพลาด/สแปม/ทดสอบ
@@ -1558,7 +1581,8 @@ export function InboxModule({ tenant, staffId, currentUserRole, onRequestDeleted
           onInquiryUpdate={() => { setSelected(null); setRefreshKey(k => k + 1) }}
           currentUserRole={currentUserRole} onDelete={handleDelete}
           canAssign={canAssign} assignees={assignees} assigning={assigning}
-          assigneeName={assigneeNameOf(selected.assigned_to)} onAssign={handleAssign} />
+          assigneeName={assigneeNameOf(selected.assigned_to)} onAssign={handleAssign}
+          staffId={staffId} onPermitChanged={handlePermitStageChanged} />
       )}
       {showAdd && (
         <NewRequestSheet tenant={tenant} staffId={staffId}
