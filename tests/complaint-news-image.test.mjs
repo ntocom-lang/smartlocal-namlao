@@ -831,6 +831,22 @@ await test('ออร่ารูปนายก: วงแสงขาวรอ
   assert.ok(!src.includes('Math.random'))
 })
 
+await test('ชื่อ อบต. ยาวอยู่บรรทัดเดียวแม้เปิดรูปนายก (ทุ่งแค้วท้วง 2569-11-20) · ยาวเกินจริงค่อยตัดบรรทัด', () => {
+  // วัดแบบไม่นับสระบน/ล่าง/วรรณยุกต์ (กว้าง 0 ในฟอนต์จริง) ใกล้ canvas กว่าตัววัดหยาบด้านบน
+  const thaiMeasure = (value, size, bold) => value.replace(/[ัิ-ฺ็-๎]/g, '').length * size * (bold ? 0.62 : 0.55)
+  const tenantLines = svg => [...svg.matchAll(/font-size="(\d+)" font-weight="700" fill="url\(#news-tenant-gold\)"[^>]*data-tenant-name="1">([^<]*)</g)]
+  const name = 'องค์การบริหารส่วนตำบลทุ่งแค้ว'
+  const { svg } = News.buildNewsSvg(base({ tenantName: name, executive: MAYOR }), thaiMeasure, { executivePhotoDataUrl: PHOTO })
+  const lines = tenantLines(svg)
+  assert.equal(lines.length, 1, 'ชื่อ อปท. ต้องอยู่บรรทัดเดียว')
+  assert.equal(lines[0][2], name)
+  assert.ok(Number(lines[0][1]) >= 24)
+  // ชื่อยาวผิดปกติ (เกินที่ 24 รับไหว) ยังตัดบรรทัดได้ ไม่ล้นไปทับป้ายนายก
+  const huge = 'องค์การบริหารส่วนตำบล' + 'ก'.repeat(30)
+  const long = tenantLines(News.buildNewsSvg(base({ tenantName: huge, executive: MAYOR }), thaiMeasure, { executivePhotoDataUrl: PHOTO }).svg)
+  assert.ok(long.length >= 2 && long.every(m => Number(m[1]) === 24))
+})
+
 await test('โลโก้อยู่กึ่งกลางกลุ่มข้อความหัว ไม่ตกลงตามแถบหัวที่สูงเพราะรูปนายก · ไม่ชนแถบทองบน', () => {
   for (const [model, assets] of [[base({ executive: MAYOR }), { executivePhotoDataUrl: PHOTO }], [base(), {}]]) {
     const { svg } = draw(model, assets)
