@@ -14,7 +14,9 @@ const read = path => readFile(new URL(path, import.meta.url), 'utf8')
 const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
 const tablesSql = await read('../supabase/migrations/20261222100000_waste_fee_tables.sql')
 const rpcSql = await read('../supabase/migrations/20261222100100_waste_fee_rls_rpc.sql')
-const allSql = `${tablesSql}\n${rpcSql}`
+const settingsSql = await read('../supabase/migrations/20261222100200_waste_fee_settings_table.sql')
+const confirmSql = await read('../supabase/migrations/20261222100300_waste_fee_sorting_confirmers.sql')
+const allSql = `${tablesSql}\n${rpcSql}\n${settingsSql}\n${confirmSql}`
 const apiSource = await read('../src/lib/wasteFeeApi.js')
 
 let cases = 0
@@ -338,10 +340,10 @@ await test('RPC ที่หน้าจอเรียก: มีในฐา�
   const api = stripComments(apiSource)
   const rpcs = [...api.matchAll(/supabase\.rpc\('([a-z_]+)'(?:, \{([\s\S]*?)\})?\)/g)]
   const names = rpcs.map(m => m[1]).sort()
-  assert.deepEqual(names, ['wfee_account_month', 'wfee_is_manager', 'wfee_set_sorting'])
+  assert.deepEqual(names, ['wfee_account_month', 'wfee_can_confirm_sorting', 'wfee_is_admin', 'wfee_is_manager', 'wfee_set_sorting'])
   for (const [, name, argText] of rpcs) {
     // จับเฉพาะ CREATE FUNCTION — หัวไฟล์มีคำว่า DROP FUNCTION public.<ชื่อ>(…) ในวิธีย้อนกลับ
-    const def = rpcSql.match(new RegExp(`CREATE FUNCTION public\\.${name}\\(([\\s\\S]*?)\\)\\s*RETURNS`))
+    const def = allSql.match(new RegExp(`CREATE FUNCTION public\\.${name}\\(([\\s\\S]*?)\\)\\s*RETURNS`))
     assert.ok(def, `ไม่พบ ${name} ใน migration`)
     const dbArgs = [...def[1].matchAll(/\b(p_[a-z_]+)\b/g)].map(m => m[1])
     const sent = [...(argText ?? '').matchAll(/\b(p_[a-z_]+):/g)].map(m => m[1])
@@ -482,6 +484,28 @@ await test('เห็นเมนู: admin/officer/staff/superadmin เท่�
   const updates = [...stripComments(rpcSql).replace(/--.*$/gm, '').matchAll(/UPDATE\s+public\.municipalities[\s\S]*?;/gi)].map(m => m[0])
   assert.ok(updates.length >= 1)
   for (const u of updates) assert.match(u, /slug\s*=\s*'demo'/, `UPDATE enabled_modules ต้องจำกัดที่ demo: ${u.slice(0, 80)}`)
+})
+
+await test('ผู้ยืนยันคัดแยก: ค่าเริ่มต้น admin + officer ตรงกับฐาน · ตรวจฟอร์มตรง CHECK · ประวัติแสดงหมู่เป็น "มีการแก้ไข" และรายการคัดแยกเป็นภาษาคน', () => {
+  assert.deepEqual([...W.DEFAULT_CONFIRMER_ROLES], ['admin', 'officer'])
+  assert.match(settingsSql, /DEFAULT ARRAY\['admin', 'officer'\]::text\[\]/)
+  assert.match(confirmSql, /ARRAY\['admin', 'officer'\]::text\[\]\)\)/) // ค่าเริ่มต้นใน wfee_can_confirm_sorting ชุดเดียวกัน
+  assert.deepEqual([...W.CONFIRMER_ROLES], ['admin', 'officer', 'staff'])
+  assert.match(settingsSql, /ARRAY\['admin', 'officer', 'staff'\]::text\[\]/)
+  assert.deepEqual(W.confirmerRolesOf(null), ['admin', 'officer'])
+  assert.deepEqual(W.confirmerRolesOf({ sorting_confirmer_roles: [] }), ['admin', 'officer'])
+  assert.deepEqual(W.confirmerRolesOf({ sorting_confirmer_roles: ['staff'] }), ['staff'])
+  assert.equal(W.validateConfirmerSettings({ roles: [], delegationRef: '' }), 'ต้องเลือกผู้ยืนยันอย่างน้อย 1 กลุ่ม')
+  assert.match(W.validateConfirmerSettings({ roles: ['viewer'] }), /ไม่ถูกต้อง/)
+  assert.match(W.validateConfirmerSettings({ roles: ['admin'], delegationRef: 'x'.repeat(301) }), /300/)
+  assert.equal(W.validateConfirmerSettings({ roles: ['officer', 'officer'], delegationRef: 'คำสั่งที่ 1/2569' }), '')
+  // หมู่ไม่เก็บค่าในประวัติ (ฐานมาสก์ village ตั้งแต่ไฟล์ 4)
+  assert.match(confirmSql, /v_masked\s+text\[\] := ARRAY\['payer_phone', 'address', 'house_no', 'village'\]/)
+  assert.deepEqual(W.describeEventChanges('update', { village: 'changed' }), ['หมู่: มีการแก้ไข (ไม่บันทึกค่าลงประวัติ)'])
+  assert.deepEqual(W.describeEventChanges('sorting', { op: 'stop', delegation_ref: 'คำสั่งที่ 1/2569' }),
+    ['รายการ: บันทึกกำหนดเลิกลดแล้ว', 'อ้างอิงคำสั่งมอบหมาย: คำสั่งที่ 1/2569'])
+  assert.deepEqual(W.describeEventChanges('update', { sorting_confirmer_roles: [['admin', 'officer'], ['staff']] }),
+    [`ผู้ยืนยันการคัดแยกได้: ${W.CONFIRMER_ROLE_LABEL.admin}, ${W.CONFIRMER_ROLE_LABEL.officer} → ${W.CONFIRMER_ROLE_LABEL.staff}`])
 })
 
 console.log(`\n${cases} cases passed`)

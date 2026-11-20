@@ -580,10 +580,34 @@ const FIELD_LABEL = Object.freeze({
   effective_from: 'วันเริ่มมีผล', ordinance_ref: 'อ้างข้อบัญญัติ', basis: 'วิธีคิดอัตรา', base_collect: 'ค่าเก็บขนเหมา', base_dispose: 'ค่ากำจัดเหมา',
   unit_collect: 'ค่าเก็บขนต่อหน่วยเกิน', unit_dispose: 'ค่ากำจัดต่อหน่วยเกิน', big_unit_collect: 'ค่าเก็บขนต่อหน่วยเกิน 30', big_unit_dispose: 'ค่ากำจัดต่อหน่วยเกิน 30',
   place_type_rates: 'อัตราตามประเภทสถานที่', sorting_discount: 'มีหมวดลดคัดแยก', is_example: 'แถวตัวอย่าง',
+  // การยืนยันคัดแยก (action sorting) + ค่าตั้งผู้ยืนยัน (entity settings)
+  op: 'รายการ', starts_on: 'เริ่มลดเดือน', ends_on: 'เดือนแรกที่ไม่ลด', delegation_ref: 'อ้างอิงคำสั่งมอบหมาย',
+  sorting_confirmer_roles: 'ผู้ยืนยันการคัดแยกได้', sorting_delegation_ref: 'คำสั่งมอบหมายผู้รับรองการคัดแยก',
 })
+
+// ── ผู้ยืนยันการคัดแยก (waste_fee_settings) ───────────────────────────────────────────
+// ค่าเริ่มต้นเมื่อ อปท. ยังไม่ตั้ง = admin + officer ของกองที่ถือเรื่อง (ตรงกับ wfee_can_confirm_sorting) · superadmin ยืนยันได้เสมอ
+// ⚠️ อำนาจผู้รับรองการคัดแยกต้องยืนยันกับกฎกระทรวง/ข้อบัญญัติก่อน PR2 ออกยอดจริง
+export const CONFIRMER_ROLES = Object.freeze(['admin', 'officer', 'staff'])
+export const DEFAULT_CONFIRMER_ROLES = Object.freeze(['admin', 'officer'])
+export const CONFIRMER_ROLE_LABEL = Object.freeze({
+  admin: 'ผู้ดูแลระบบของ อปท.',
+  officer: 'เจ้าหน้าที่ระดับหัวหน้า/ผู้ปฏิบัติ (officer) ของกองที่ถือเรื่อง',
+  staff: 'เจ้าหน้าที่ทั่วไป (staff) ของกองที่ถือเรื่อง',
+})
+export const confirmerRolesOf = (settings) =>
+  (Array.isArray(settings?.sorting_confirmer_roles) && settings.sorting_confirmer_roles.length ? settings.sorting_confirmer_roles : DEFAULT_CONFIRMER_ROLES)
+/** ตรวจฟอร์มค่าตั้ง (ตรงกับ CHECK ของ waste_fee_settings) — คืนข้อความผิด หรือ '' ถ้าผ่าน */
+export function validateConfirmerSettings({ roles, delegationRef }) {
+  const list = [...new Set(roles ?? [])]
+  if (list.length === 0) return 'ต้องเลือกผู้ยืนยันอย่างน้อย 1 กลุ่ม'
+  if (list.some(r => !CONFIRMER_ROLES.includes(r))) return 'กลุ่มผู้ยืนยันไม่ถูกต้อง'
+  if (String(delegationRef ?? '').trim().length > 300) return 'อ้างอิงคำสั่งมอบหมายยาวเกิน 300 ตัวอักษร'
+  return ''
+}
 // ช่องที่ไม่แสดงในประวัติ (รหัสผู้ใช้/เวลาที่ระบบประทับ — ผู้ยืนยันดูจากตัวประวัติเอง)
 const HIDDEN_FIELDS = new Set(['import_batch'])
-export const EVENT_DATE_FIELDS = new Set(['service_from', 'closed_from', 'effective_from'])
+export const EVENT_DATE_FIELDS = new Set(['service_from', 'closed_from', 'effective_from', 'starts_on', 'ends_on'])
 
 /**
  * แปลง changes ของ waste_fee_events เป็นบรรทัดอ่านง่าย — update/sorting = [เดิม, ใหม่] · insert = ค่าที่บันทึก
@@ -598,6 +622,8 @@ export function describeEventChanges(action, changes, formatValue = (_k, v) => v
     if (k === 'sorting_discount' || k === 'is_example') return v ? 'ใช่' : 'ไม่ใช่'
     if (k === 'basis') return v === 'units' ? 'ตามปริมาณขยะ (หน่วยละ 120 กก.)' : 'เหมาตามประเภทสถานที่'
     if (k === 'place_type_rates' && v && typeof v === 'object') return Object.entries(v).map(([p, n]) => `${placeTypeLabel(p)} ${n}`).join(', ')
+    if (k === 'op') return SORTING_OP_TEXT[v] ?? String(v)
+    if (k === 'sorting_confirmer_roles' && Array.isArray(v)) return v.map(r => CONFIRMER_ROLE_LABEL[r] ?? r).join(', ')
     const f = formatValue(k, v)
     return f === null || f === undefined || f === '' ? '—' : String(f)
   }

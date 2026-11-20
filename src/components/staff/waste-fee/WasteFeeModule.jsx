@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Coins, Loader2, Users } from 'lucide-react'
-import { fetchAccounts, fetchIsManager, fetchRates, fetchSortingPeriods, friendlyError } from '../../../lib/wasteFeeApi'
+import { AlertTriangle, Coins, Loader2, Settings, Users } from 'lucide-react'
+import {
+  fetchAccounts, fetchCanConfirmSorting, fetchIsAdmin, fetchIsManager, fetchRates, fetchSettings, fetchSortingPeriods, friendlyError,
+} from '../../../lib/wasteFeeApi'
 import { currentMonthStart, hasSortingIn } from '../../../lib/wasteFee'
 import { TabBar } from '../../patientTransport/StaffShell'
 import WasteFeeDetailSheet from './WasteFeeDetailSheet'
@@ -9,6 +11,7 @@ import WasteFeeImportSheet from './WasteFeeImportSheet'
 import WasteFeeRateSheet from './WasteFeeRateSheet'
 import WasteFeeRatesTab from './WasteFeeRatesTab'
 import WasteFeeRegisterTab from './WasteFeeRegisterTab'
+import WasteFeeSettingsTab from './WasteFeeSettingsTab'
 
 /**
  * เมนู "ทะเบียนค่าธรรมเนียมขยะ" (ฝั่งเจ้าหน้าที่) — ทะเบียนบัญชี | อัตราค่าธรรมเนียม
@@ -34,11 +37,17 @@ export default function WasteFeeModule({ tenant, profile }) {
       if (!alive) return
       if (manager.error) { setError(friendlyError(manager.error)); setState({ tenantId, isManager: false }); return }
       if (!manager.value) { setError(''); setState({ tenantId, isManager: false }); return }
-      const [rates, accounts, periods] = await Promise.all([fetchRates(tenantId), fetchAccounts(tenantId), fetchSortingPeriods(tenantId)])
+      const [rates, accounts, periods, settings, canConfirm, isAdmin] = await Promise.all([
+        fetchRates(tenantId), fetchAccounts(tenantId), fetchSortingPeriods(tenantId),
+        fetchSettings(tenantId), fetchCanConfirmSorting(tenantId), fetchIsAdmin(tenantId),
+      ])
       if (!alive) return
-      const failure = rates.error ?? accounts.error ?? periods.error
+      const failure = rates.error ?? accounts.error ?? periods.error ?? settings.error ?? canConfirm.error ?? isAdmin.error
       setError(failure ? friendlyError(failure) : '')
-      setState({ tenantId, isManager: true, rates: rates.rates, accounts: accounts.accounts, periods: periods.periods })
+      setState({
+        tenantId, isManager: true, rates: rates.rates, accounts: accounts.accounts, periods: periods.periods,
+        settings: settings.settings, canConfirm: canConfirm.value, isAdmin: isAdmin.value,
+      })
     })()
     return () => { alive = false }
   }, [tenantId, userId, reloadKey])
@@ -70,6 +79,7 @@ export default function WasteFeeModule({ tenant, profile }) {
   const tabs = [
     { id: 'registry', label: 'ทะเบียนบัญชี', Icon: Users },
     { id: 'rates', label: 'อัตราค่าธรรมเนียม', Icon: Coins },
+    { id: 'settings', label: 'ตั้งค่า', Icon: Settings },
   ]
   const activeTab = tabs.some(t => t.id === tab) ? tab : 'registry'
   const closeSheet = () => setSheet(null)
@@ -90,11 +100,14 @@ export default function WasteFeeModule({ tenant, profile }) {
       {activeTab === 'rates' && (
         <WasteFeeRatesTab rates={state.rates} onAdd={() => setSheet({ kind: 'rate', rate: null })} onEdit={rate => setSheet({ kind: 'rate', rate })} />
       )}
+      {activeTab === 'settings' && (
+        <WasteFeeSettingsTab key={state.settings?.updated_at ?? 'default'} tenantId={tenantId} settings={state.settings} isAdmin={state.isAdmin} onSaved={reload} />
+      )}
 
       {sheet?.kind === 'form' && <WasteFeeFormSheet tenantId={tenantId} account={sheet.account} onClose={closeSheet} onSaved={saved} />}
       {sheet?.kind === 'detail' && (
         <WasteFeeDetailSheet tenantId={tenantId} account={freshAccount(sheet.account)} periods={periodsByAccount.get(sheet.account.id) ?? []} rates={state.rates}
-          month={month} onClose={closeSheet} onChanged={reload} />
+          canConfirm={state.canConfirm} settings={state.settings} month={month} onClose={closeSheet} onChanged={reload} />
       )}
       {sheet?.kind === 'rate' && <WasteFeeRateSheet tenantId={tenantId} rate={sheet.rate} onClose={closeSheet} onSaved={saved} />}
       {sheet?.kind === 'import' && <WasteFeeImportSheet tenantId={tenantId} accounts={state.accounts} onClose={closeSheet} onChanged={reload} />}
