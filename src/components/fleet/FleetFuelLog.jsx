@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Plus, X, AlertTriangle, FileText, Paperclip, Pencil, Fuel, Printer } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { addMobileCloseButton } from '../../lib/printWindowClose'
 import { useAuth } from '../../contexts/AuthContext'
 import FleetEmptyState from './FleetEmptyState'
 import { logAction } from '../../lib/auditLog'
@@ -212,7 +213,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
     const win = window.open('', '_blank', 'width=900,height=760')
     if (!win) return alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
     win.document.open()
-    win.document.write(buildFleetFuelRecordHtml({ record: r, tenant }))
+    win.document.write(addMobileCloseButton(buildFleetFuelRecordHtml({ record: r, tenant })))
     win.document.close()
     const printWhenReady = async () => {
       try {

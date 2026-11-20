@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { KeyRound, Loader2, Copy, Check, AlertTriangle, Printer, Eye, EyeOff, Sparkles, PenLine } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { addMobileCloseButton } from '../../lib/printWindowClose'
 import { useTenant } from '../../contexts/TenantContext'
 import { loginIdentifier } from '../../lib/authProviders'
 import { buildAccountCardHtml } from '../../lib/accountCardPrint'
@@ -79,7 +80,7 @@ export default function ResetPasswordModal({ user, onClose }) {
       return
     }
     const login = loginIdentifier(user.email)
-    w.document.write(buildAccountCardHtml({
+    w.document.write(addMobileCloseButton(buildAccountCardHtml({
       fullName: user.full_name,
       loginValue: login.value,
       loginKind: login.kind,
@@ -89,7 +90,7 @@ export default function ResetPasswordModal({ user, onClose }) {
       // (host/{slug}/...) จะได้ที่อยู่ที่ตัด slug ทิ้ง ประชาชนพิมพ์ตามแล้วเข้าผิด อปท.
       // ตัด https:// กับ / ท้ายออกให้สั้นพอที่ผู้สูงอายุจะพิมพ์ตามจากกระดาษได้
       appOrigin: appUrl('/').replace(/^https?:\/\//, '').replace(/\/$/, ''),
-    }))
+    })))
     w.document.close()
     setTimeout(() => w.print(), 400)
   }

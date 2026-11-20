@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, ChevronRight, Loader2, CheckCircle2, Printer, Download, Copy, Check } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { addMobileCloseButton } from '../lib/printWindowClose'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { NAME_TITLES, splitThaiFullName } from '../lib/thaiName'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
@@ -160,7 +161,7 @@ export default function BuildingPermitWizard({ tenant, session, onBack, staffId,
     const html = buildBuildingPermitHtml({ form: done.form, tenant, thDate: thaiDate(new Date().toISOString()) })
     const w = window.open('', '_blank', 'width=860,height=1100')
     if (!w) return
-    w.document.write(html)
+    w.document.write(addMobileCloseButton(html))
     w.document.close()
     setTimeout(() => { w.focus(); w.print() }, 400)
   }

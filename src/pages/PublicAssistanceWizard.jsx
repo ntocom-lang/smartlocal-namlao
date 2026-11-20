@@ -4,6 +4,7 @@ import {
   ArrowLeft, Check, CheckCircle2, Copy, Download, HandHeart, Loader2, Plus, Printer, Trash2,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { addMobileCloseButton } from '../lib/printWindowClose'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { NAME_TITLES, splitThaiFullName } from '../lib/thaiName'
 import { generateDraftPdfBlob } from '../lib/generateDraftPdf'
@@ -261,7 +262,7 @@ export default function PublicAssistanceWizard({ tenant, session, onBack, staffI
   function handlePrint() {
     const printWindow = window.open('', '_blank', 'width=860,height=1100')
     if (!printWindow) return
-    printWindow.document.write(buildPrintHtml())
+    printWindow.document.write(addMobileCloseButton(buildPrintHtml()))
     printWindow.document.close()
     setTimeout(() => { printWindow.focus(); printWindow.print() }, 400)
   }

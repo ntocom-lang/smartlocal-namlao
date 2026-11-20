@@ -54,6 +54,7 @@ const ODOR_VIEWS = [
   { key: 'list',   label: 'รายการคำร้อง', icon: List },
 ]
 import { GOV_FONT_LINK, govDocFontIdentityCss, govEServiceOriginText, govPageCss } from '../../lib/govDocStyle.js'
+import { addMobileCloseButton } from '../../lib/printWindowClose'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 // ชื่อหน่วยงานมาจากฐานข้อมูลที่แอดมินแก้ได้ และรายงานถูกเขียนลงหน้าต่างพิมพ์ด้วย
@@ -901,7 +902,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
       signatories: printContextResult.data?.signatories ?? {},
       photoSheet,
     })
-    w.document.write(html)
+    w.document.write(addMobileCloseButton(html))
     w.document.close()
     if (photoSheet) await printWhenImagesReady(w)
     else setTimeout(() => w.print(), 500)
@@ -1981,7 +1982,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
       statusLabels: Object.fromEntries(Object.entries(STATUS).map(([key, s]) => [key, s.label])),
     })
     const w = window.open('', '_blank', 'width=1100,height=700')
-    w.document.write(html)
+    w.document.write(addMobileCloseButton(html))
     w.document.close()
     setTimeout(() => w.print(), 500)
   }
@@ -2123,7 +2124,7 @@ ${summaryHtml}
 <div class="footer">${escapeHtml(govEServiceOriginText(tenant))}</div>
 </body></html>`
     const w = window.open('', '_blank', 'width=1100,height=700')
-    w.document.write(html)
+    w.document.write(addMobileCloseButton(html))
     w.document.close()
     setTimeout(() => w.print(), 500)
   }

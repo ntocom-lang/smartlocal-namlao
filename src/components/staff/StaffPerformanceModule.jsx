@@ -16,6 +16,7 @@ import {
 } from '../../lib/staffPerformanceData'
 import { groupStaffByDepartment } from '../../lib/staffRoster'
 import { printableCategoryLabel, categoryNameOf } from '../../lib/complaintCategoryLabels'
+import { addMobileCloseButton } from '../../lib/printWindowClose'
 
 // เมนู "ผลการปฏิบัติงาน" — ผลงานรายคนจากคำร้อง ใช้ดูและพิมพ์ตอนประเมินผลการปฏิบัติงาน
 // ระบบรวบรวมเองจากที่เจ้าหน้าที่กดอยู่แล้วทุกวัน ไม่มีช่องกรอก ไม่ให้คะแนน ไม่จัดอันดับคน
@@ -38,7 +39,7 @@ function openPrintWindow(html) {
     return
   }
   win.document.open()
-  win.document.write(html)
+  win.document.write(addMobileCloseButton(html))
   win.document.close()
   setTimeout(async () => {
     try {

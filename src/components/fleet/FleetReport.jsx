@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { FileX2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { addMobileCloseButton } from '../../lib/printWindowClose'
 import { assetIdentifier, assetOptionLabel, FUEL_LABEL, meterUnitShort } from '../../lib/fleetAssets'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { buildFleetForm4Html } from '../../lib/fleetForm4Print'
@@ -271,7 +272,7 @@ export default function FleetReport({ tenant }) {
       return null
     }
     win.document.open()
-    win.document.write(html)
+    win.document.write(addMobileCloseButton(html))
     win.document.close()
     const printWhenReady = async () => {
       try {
@@ -624,7 +625,7 @@ export default function FleetReport({ tenant }) {
     ).join('')
 
     const win = window.open('', '_blank')
-    win.document.write(`<!DOCTYPE html><html><head>
+    win.document.write(addMobileCloseButton(`<!DOCTYPE html><html><head>
       <meta charset="UTF-8"><title>${reportTitle}</title>
       <style>
         body{font-family:Sarabun,Arial,sans-serif;font-size:11px;color:#222;padding:20px;margin:0}
@@ -664,7 +665,7 @@ export default function FleetReport({ tenant }) {
         ${maintRows}
         <tr class="total"><td colspan="5" align="right">รวม</td><td align="right">${fmtB(totalMaintCost)}</td><td></td></tr>
       </table>
-    </body></html>`)
+    </body></html>`))
     win.document.close()
     setTimeout(() => { win.focus(); win.print() }, 600)
   }

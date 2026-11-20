@@ -6,6 +6,7 @@ import {
   Share2, Copy, Check, Plus, Printer, Star,
 } from 'lucide-react'
 import { supabase, getSessionResilient } from '../lib/supabase'
+import { addMobileCloseButton } from '../lib/printWindowClose'
 import { useTenant } from '../contexts/TenantContext'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildWasteCollectionRequestHtml } from '../lib/wasteCollectionRequestPrint'
@@ -424,7 +425,7 @@ function DocDetailSheet({ req, onClose, tenant, onChanged, ratingInfo, onRate })
     const html = buildBuildingPermitHtml({ form: req.permit_form_data, tenant, thDate: thaiDate(req.created_at) })
     const w = window.open('', '_blank', 'width=860,height=1100')
     if (!w) return
-    w.document.write(html)
+    w.document.write(addMobileCloseButton(html))
     w.document.close()
     setTimeout(() => { w.focus(); w.print() }, 400)
   }
@@ -459,7 +460,7 @@ function DocDetailSheet({ req, onClose, tenant, onChanged, ratingInfo, onRate })
   function handlePrintWasteRequest() {
     const w = window.open('', '_blank', 'width=860,height=1100')
     if (!w) return
-    w.document.write(wasteRequestHtml())
+    w.document.write(addMobileCloseButton(wasteRequestHtml()))
     w.document.close()
     setTimeout(() => { w.focus(); w.print() }, 400)
   }
@@ -493,7 +494,7 @@ function DocDetailSheet({ req, onClose, tenant, onChanged, ratingInfo, onRate })
   function handlePrintWasteCancel() {
     const w = window.open('', '_blank', 'width=860,height=1100')
     if (!w) return
-    w.document.write(wasteCancelHtml())
+    w.document.write(addMobileCloseButton(wasteCancelHtml()))
     w.document.close()
     setTimeout(() => { w.focus(); w.print() }, 400)
   }
@@ -543,7 +544,7 @@ function DocDetailSheet({ req, onClose, tenant, onChanged, ratingInfo, onRate })
   function handlePrintPublicAssistance() {
     const w = window.open('', '_blank', 'width=860,height=1100')
     if (!w) return
-    w.document.write(publicAssistanceHtml())
+    w.document.write(addMobileCloseButton(publicAssistanceHtml()))
     w.document.close()
     setTimeout(() => { w.focus(); w.print() }, 400)
   }
@@ -566,7 +567,7 @@ function DocDetailSheet({ req, onClose, tenant, onChanged, ratingInfo, onRate })
   function handlePrintWaterSupply() {
     const w = window.open('', '_blank', 'width=860,height=1100')
     if (!w) return
-    w.document.write(waterSupplyHtml())
+    w.document.write(addMobileCloseButton(waterSupplyHtml()))
     w.document.close()
     setTimeout(() => { w.focus(); w.print() }, 400)
   }
