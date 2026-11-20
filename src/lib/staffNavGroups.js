@@ -5,7 +5,7 @@
 import {
   FileText, MessageSquareWarning, CalendarDays, Images, Luggage, Star, Car, Trash2, Database, BookOpen,
   PackageOpen, Ambulance, ClipboardCheck, CloudRain, HardHat, ClipboardList, Hammer, TrendingUp, ChartColumn, LayoutDashboard,
-  HeartHandshake, Megaphone, Layers, Building2, Banknote, GraduationCap, ShieldCheck, FileCheck2, FileDown, CalendarClock, Receipt,
+  HeartHandshake, Megaphone, Layers, Building2, Banknote, GraduationCap, ShieldCheck, FileCheck2, FileDown, CalendarClock, Receipt, Recycle,
 } from 'lucide-react'
 import { PATIENT_TRANSPORT_MODULE_KEY } from './patientTransport'
 
@@ -107,6 +107,10 @@ export const MODULE_GROUPS = [
       // ทะเบียนใบอนุญาต (ขั้น 1B / E3) — ค่าเริ่มต้นปิด (คีย์ใน MANAGED_MODULE_KEYS ตั้งแต่ 2569-12-03 ไม่ได้เติมให้ทุกแถว) เห็นเมนู = admin/officer/staff/superadmin
       // วางใต้สำนักปลัดแบบเดียวกับตารางเก็บขยะ (ยังไม่มี อปท. ไหนมีกองสาธารณสุขใน departments) · ใครใช้ได้จริงตัดสินที่ licence_is_manager() ฝั่งฐาน ไม่ใช่ที่นี่
       { key: 'licence-registry', label: 'ทะเบียนใบอนุญาต', Icon: FileCheck2, color: '#0f766e', bg: '#ccfbf1', desc: 'ทะเบียนใบอนุญาต บันทึกรับค่าธรรมเนียมต่ออายุ และเตือนใบใกล้หมดอายุ' },
+      // ทะเบียนค่าธรรมเนียมขยะ (ขั้น 1B PR1) — ค่าเริ่มต้นปิด (คีย์ใน MANAGED_MODULE_KEYS ไม่ได้เติมให้ทุกแถว) เห็นเมนู = admin/officer/staff/superadmin
+      // วางใต้สำนักปลัดแบบเดียวกับตารางเก็บขยะ/ทะเบียนใบอนุญาต · ใครใช้ได้จริงตัดสินที่ wfee_is_manager() ฝั่งฐาน ไม่ใช่ที่นี่ · เมนูแยกจาก 'ตารางเก็บขยะ' (waste) ซึ่งเป็นรอบเก็บ ไม่ใช่เงิน
+      // ชื่อสั้นตั้งแต่แรก (ไม่ใช้ navLabel — สงวนไว้เฉพาะเมนูที่เจ้าของระบบระบุ ตามเทสต์ nav-usage)
+      { key: 'waste-fee', label: 'ค่าธรรมเนียมขยะ', Icon: Recycle, color: '#047857', bg: '#d1fae5', desc: 'ทะเบียนผู้ชำระค่าธรรมเนียมขยะรายเดือน และอัตราตามข้อบัญญัติ ระบบคำนวณยอดที่ควรเก็บให้' },
     ],
   },
   {

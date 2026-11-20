@@ -300,6 +300,14 @@ export const EXECUTIVE_REGISTRY = Object.freeze([
     link: { module: 'licence-registry' }, kpis: [], alerts: [], reports: [],
   },
   {
+    // ทะเบียนค่าธรรมเนียมขยะ (ขั้น 1B PR1) — ยังไม่มีตัวเลขบนห้องผู้บริหาร: PR1 ยังไม่มียอดเงิน/ยอดค้าง และไม่มี SQL สรุปรวม (summaryKey = null)
+    // ข้อมูลมีชื่อผู้ชำระ/บ้านเลขที่ (PDPA) และ viewer อ่านตารางตรงๆ ไม่ได้ (RLS: ผู้จัดการทะเบียนเท่านั้น) จึงขึ้นเป็นลิงก์เข้าเมนูอย่างเดียว
+    // ตัวเลข "ยอดค้าง/ลูกหนี้" ต้องมาจาก exec_summary_waste_fee() ที่ตรวจสิทธิ์แล้ว (migration-reviewer ทุกครั้ง) = PR ถัดไป (kpis/alerts ว่างไว้ตามนั้น)
+    key: 'waste-fee', kind: 'module', label: 'ทะเบียนค่าธรรมเนียมขยะ', icon: 'Trash2', dept: 'สำนักปลัด',
+    zones: ['context'], isCitizenService: false, docTypes: [], summaryKey: null, phase: 'E2',
+    link: { module: 'waste-fee' }, kpis: [], alerts: [], reports: [],
+  },
+  {
     // รับชำระเงิน (ขั้น 1C / E4 PR1 + PR2) — ตัวเลขรวมจาก exec_summary_payment() (20261212100100 ผ่าน migration-reviewer) ผ่าน executive_overview คีย์ 'payment'
     // ข้อมูลมีชื่อผู้ประกอบการ (PDPA) และ viewer อ่านตารางตรงๆ ไม่ได้ (RLS: ผู้ดูแลยอดเท่านั้น) ⇒ ตัวเลขล้วน ไม่มีชื่อร้าน/ผู้ประกอบการ/Ref1/ชื่อผู้โอน (ระบบไม่เก็บชื่อผู้โอน)
     // ขึ้นการ์ด "สัญญาณเตือน" (alerts) + ลิงก์เข้าเมนูในโซนข้อมูลประกอบ · kpi 5 ตัวเป็นสูตรที่ฐานคำนวณและตรวจย้อนได้ (ⓘ) — ยังไม่มีการ์ดตัวเลขบนหน้า (ไม่มีปุ่มอนุมัติ)
