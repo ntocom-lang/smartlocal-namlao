@@ -23,7 +23,7 @@ export const STAFF_MENU_MODULE_KEYS = Object.freeze([
   'events', 'posts', 'service-help', 'tourism', 'tourism-reviews',
   'report', 'performance', 'data-center', 'fleet', 'borrowable-assets',
   'manual-staff',
-  'waste', 'water-events', 'local-plan', 'licence-registry', 'payment-dues',
+  'waste', 'water-events', 'local-plan', 'licence-registry', 'payment-dues', 'waste-fee',
   'infra', 'projects',
 ])
 
@@ -101,6 +101,8 @@ export function staffMenuAccess({ role, profile, tenant, allModuleKeys = STAFF_M
   const hasLicenceAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
   // รับชำระเงิน (ขั้น 1C / E4): เห็นเมนู = admin/officer/staff/superadmin เหมือนทะเบียนใบอนุญาต · สิทธิ์ใช้จริงตัดสินที่ payment_can_handle() (กองที่ถือเรื่อง + กองคลังที่แอดมินเปิดตัวเลือก)
   const hasPaymentAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
+  // ทะเบียนค่าธรรมเนียมขยะ (ขั้น 1B): เห็นเมนู = admin/officer/staff/superadmin เหมือนทะเบียนใบอนุญาต · สิทธิ์ใช้จริงตัดสินที่ wfee_is_manager() (กองเจ้าของงานขยะ) ฝั่งฐาน — ข้อมูลมีชื่อ/บ้านเลขที่ (PDPA)
+  const hasWasteFeeAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
 
   // แบบฟอร์ม/คำถามที่พบบ่อย: เฉพาะบทบาทที่เขียนได้ตาม RLS ของ service_forms/service_faqs (ผู้บริหาร/สภาไม่มีสิทธิ์แก้ จึงไม่แสดงเมนูให้เปล่าๆ)
   const hasServiceHelpAccess = ['superadmin', 'admin', 'officer', 'staff'].includes(role)
@@ -116,6 +118,7 @@ export function staffMenuAccess({ role, profile, tenant, allModuleKeys = STAFF_M
     ...(hasLocalPlanAccess ? [] : ['local-plan']),
     ...(hasLicenceAccess ? [] : ['licence-registry']),
     ...(hasPaymentAccess ? [] : ['payment-dues']),
+    ...(hasWasteFeeAccess ? [] : ['waste-fee']),
     ...(hasServiceHelpAccess ? [] : ['service-help']),
   ].reduce((keys, hidden) => keys.filter((k) => k !== hidden), roleScopedKeys)
 

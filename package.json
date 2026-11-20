@@ -114,6 +114,8 @@
     "test:construction:lifecycle": "node tests/construction-lifecycle.test.mjs",
     "test:local-plan:db": "node tests/local-plan-db.test.mjs",
     "test:licence:db": "node tests/licence-registry-db.test.mjs",
+    "test:waste-fee": "node tests/waste-fee-lib.test.mjs",
+    "test:waste-fee:db": "node tests/waste-fee-db.test.mjs --pglite",
     "test:payment": "node tests/payment-dues-lib.test.mjs",
     "test:payment:db": "node tests/payment-dues-db.test.mjs",
     "test:payment:bank": "node tests/payment-bank-import-lib.test.mjs",

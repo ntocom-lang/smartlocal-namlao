@@ -56,6 +56,8 @@ function legacy({ role, profile, tenant, allModuleKeys }) {
     ...(hasLocalPlanAccess ? [] : ['local-plan']),
     ...(hasLicenceAccess ? [] : ['licence-registry']),
     ...(hasPaymentAccess ? [] : ['payment-dues']),
+    // เพิ่ม 2569-11-20 (ขั้น 1B ทะเบียนค่าธรรมเนียมขยะ): เห็นเมนู = admin/officer/staff/superadmin (สิทธิ์ใช้จริงที่ wfee_is_manager ฝั่งฐาน)
+    ...(['superadmin', 'admin', 'officer', 'staff'].includes(role) ? [] : ['waste-fee']),
     // เพิ่ม 2569-11-17: แบบฟอร์ม/คำถามที่พบบ่อย เห็นเฉพาะบทบาทที่เขียนได้ (ส่วนเพิ่มเดียวของตรรกะเดิม)
     ...(['superadmin', 'admin', 'officer', 'staff'].includes(role) ? [] : ['service-help']),
   ].reduce((keys, hidden) => keys.filter(k => k !== hidden), roleScopedKeys)

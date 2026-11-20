@@ -59,6 +59,7 @@ const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
 const ConstructionProjectsModule = lazy(() => import('../components/staff/construction/ConstructionProjectsModule'))
 const LocalPlanModule = lazy(() => import('../components/staff/localPlan/LocalPlanModule'))
 const LicenceModule = lazy(() => import('../components/staff/licence/LicenceModule'))
+const WasteFeeModule = lazy(() => import('../components/staff/waste-fee/WasteFeeModule'))
 const PaymentModule = lazy(() => import('../components/staff/payment/PaymentModule'))
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 const EventsManager = lazy(() => import('../components/admin/EventsManager'))
@@ -3135,6 +3136,7 @@ export default function StaffDashboard() {
             {activeModule === 'local-plan' && visibleModules.some(m => m.key === 'local-plan') && <LocalPlanModule tenant={tenant} profile={profile} />}
             {activeModule === 'licence-registry' && visibleModules.some(m => m.key === 'licence-registry') && <LicenceModule tenant={tenant} profile={profile} />}
             {activeModule === 'payment-dues' && visibleModules.some(m => m.key === 'payment-dues') && <PaymentModule tenant={tenant} profile={profile} />}
+            {activeModule === 'waste-fee' && visibleModules.some(m => m.key === 'waste-fee') && <WasteFeeModule tenant={tenant} profile={profile} />}
             {activeModule === 'water-events' && visibleModules.some(m => m.key === 'water-events') && <WaterEventsPanel tenant={tenant} profile={profile} />}
             {activeModule === PATIENT_TRANSPORT_MODULE_KEY && <PatientTransportStaff onBack={() => setActiveModule('home')} />}
             {activeModule === 'queue-booking' && visibleModules.some(m => m.key === 'queue-booking') && <QueueBookingStaff tenant={tenant} currentUserRole={role} />}
