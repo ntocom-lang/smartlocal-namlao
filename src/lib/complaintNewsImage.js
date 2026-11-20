@@ -842,10 +842,12 @@ function drawNewsSvg(model, measure, { logoDataUrl = null, photoDataUrls = [], e
   const office = imageUrlOk(officePhotoDataUrl) ? officePhotoDataUrl : null
   headerText(textX, baseline, 'ข่าวประชาสัมพันธ์', { size: titleSize, bold: true })
   baseline += 6
-  // ชื่อ อปท. เด่นแบบแบนเนอร์ (เจ้าของสั่ง 2569-11-12): ตัวใหญ่ 54 ย่อจนพอดีบรรทัด (ต่ำสุด 34 แล้วค่อยตัดบรรทัด)
+  // ชื่อ อปท. เด่นแบบแบนเนอร์ (เจ้าของสั่ง 2569-11-12): ตัวใหญ่ 54 ย่อจนพอดีบรรทัด
+  // ต่ำสุด 24 แล้วค่อยตัดบรรทัด (เดิม 34): ทุ่งแค้วท้วง 2569-11-20 ว่า "องค์การบริหารส่วนตำบลทุ่งแค้ว" ตก "แค้ว" ลงบรรทัดสอง
+  // วัดจริงด้วย Kanit 700 ช่องหัวตอนเปิดรูปนายก ~428px: ทุ่งแค้วพอดีที่ 32 · ชื่อ อบต. ยาว ~35 ตัวอักษรพอดีที่ 26
   // สีทองไล่เงา + เงาน้ำเงินดำเลื่อนลง + เส้นขอบน้ำตาลทองบาง — ข้อความซ้อน ไม่ใช้ filter (Safari)
   let tenantSize = 54
-  while (tenantSize > 34 && measure(model.tenantName, tenantSize, true) > textW) tenantSize -= 2
+  while (tenantSize > 24 && measure(model.tenantName, tenantSize, true) > textW) tenantSize -= 2
   defs.push('<linearGradient id="news-tenant-gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6c2"/><stop offset="0.45" stop-color="#ffd54a"/><stop offset="1" stop-color="#f59e0b"/></linearGradient>')
   for (const line of wrapLines(model.tenantName, textW, tenantSize, true, measure)) {
     baseline += Math.round(tenantSize * 1.3)
