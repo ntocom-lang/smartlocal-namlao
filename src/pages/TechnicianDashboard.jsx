@@ -7,6 +7,7 @@ import {
   Plus, ChevronDown, Image, ClipboardCheck,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { addMobileCloseButton } from '../lib/printWindowClose'
 import { fetchComplaintPrivateDetail } from '../lib/complaintPrivacy'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -219,7 +220,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
 
     // photos = รูปหลังดำเนินการที่เพิ่งอัปโหลดในหน้านี้ (รวมกับของเดิมโดยตัดซ้ำ) · รูปที่โหลดไม่ได้พิมพ์เป็นกรอบแจ้ง ไม่ถูกตัดทิ้ง
     const photoSheet = withPhotos ? await loadPrintPhotos(printComplaint, fetchImageAsDataUrl, photos) : null
-    popup.document.write(buildCouncilComplaintHtml({
+    popup.document.write(addMobileCloseButton(buildCouncilComplaintHtml({
       c: printComplaint,
       tenant,
       terminology,
@@ -229,7 +230,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
       phone,
       signatories: printContextResult.data?.signatories ?? {},
       photoSheet,
-    }))
+    })))
     popup.document.close()
     if (photoSheet) {
       await printWhenImagesReady(popup)

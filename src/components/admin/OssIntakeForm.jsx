@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { categoryNameOf } from '../../lib/complaintCategoryLabels.js'
 import { X, MapPin, Loader2, ImagePlus, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { addMobileCloseButton } from '../../lib/printWindowClose'
 import { compressImage } from '../../lib/imageUtils'
 import MapPicker from '../MapPicker'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
@@ -146,7 +147,7 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
       phone: form.phone,
       signatories: printContextResult.data?.signatories ?? {},
     })
-    w.document.write(html)
+    w.document.write(addMobileCloseButton(html))
     w.document.close()
     setTimeout(() => w.print(), 400)
   }

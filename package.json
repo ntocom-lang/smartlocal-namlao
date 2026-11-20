@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "node scripts/check-behind.mjs",
     "dev": "vite",
-    "prebuild": "node tests/executive-coverage.test.mjs && node tests/staff-menu-access.test.mjs && node tests/executive-route.test.mjs && node tests/executive-data.test.mjs && node tests/executive-service-report.test.mjs && node tests/exec-nudge-notify.test.mjs && node tests/exec-follow-nudge-ui.test.mjs && node tests/exec-digest-notify.test.mjs && node tests/executive-simple-view.test.mjs && node tests/executive-simple-insights.test.mjs && node tests/anon-columns.test.mjs && node tests/category-glyph.test.mjs",
+    "prebuild": "node tests/executive-coverage.test.mjs && node tests/staff-menu-access.test.mjs && node tests/executive-route.test.mjs && node tests/executive-data.test.mjs && node tests/executive-service-report.test.mjs && node tests/exec-nudge-notify.test.mjs && node tests/exec-follow-nudge-ui.test.mjs && node tests/exec-digest-notify.test.mjs && node tests/executive-simple-view.test.mjs && node tests/executive-simple-insights.test.mjs && node tests/anon-columns.test.mjs && node tests/category-glyph.test.mjs && node tests/print-window-close.test.mjs",
     "build": "vite build && node scripts/postbuild.js",
     "lint": "eslint .",
     "lint:blocking": "node scripts/lint-blocking.mjs",
@@ -46,6 +46,7 @@
     "test:fleet:form5": "node tests/fleet-form5-print.test.mjs",
     "test:fleet:vehicle-summary": "node tests/fleet-vehicle-summary.test.mjs",
     "test:fleet:sk1": "node tests/fleet-sk1-print.test.mjs",
+    "test:print-close": "node tests/print-window-close.test.mjs",
     "test:waste-cancel": "node tests/waste-cancel-print.test.mjs && node tests/waste-cancel-layout.test.mjs",
     "test:doc-status": "node tests/document-status.test.mjs",
     "test:counter-entry": "node tests/counter-entry.test.mjs && node tests/document-request-creator-stamp.test.mjs",

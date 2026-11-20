@@ -3,6 +3,7 @@ import {
   AlertTriangle, CalendarClock, Check, CheckCircle2, Loader2, PackageOpen, Printer, XCircle,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { addMobileCloseButton } from '../../lib/printWindowClose'
 import { thaiDateFromDateInput } from '../../lib/thaiDate'
 import { buildAssetBorrowHtml } from '../../lib/assetBorrowPrint'
 import {
@@ -241,7 +242,7 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
     })
     const win = window.open('', '_blank', 'width=860,height=1100')
     if (!win) return
-    win.document.write(html)
+    win.document.write(addMobileCloseButton(html))
     win.document.close()
     setTimeout(() => { win.focus(); win.print() }, 400)
   }

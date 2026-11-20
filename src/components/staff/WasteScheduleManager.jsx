@@ -4,6 +4,7 @@ import {
   Printer, Trash2, X,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { addMobileCloseButton } from '../../lib/printWindowClose'
 import { useTenant } from '../../contexts/TenantContext'
 import { appUrl } from '../../lib/basename'
 import { todayStr } from '../../lib/thaiDate'
@@ -323,7 +324,7 @@ export default function WasteScheduleManager({ tenant }) {
     }
     const html = buildWasteSchedulePosterHtml({ tenant, schedules: activeSchedules, pageUrl, qrDataUrl, today })
     win.document.open()
-    win.document.write(html)
+    win.document.write(addMobileCloseButton(html))
     win.document.close()
     setTimeout(() => { win.focus(); win.print() }, 600)
   }

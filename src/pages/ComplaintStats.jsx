@@ -9,6 +9,7 @@ import {
   Tooltip, LabelList, AreaChart, Area, PieChart, Pie, Cell,
 } from 'recharts'
 import { supabase } from '../lib/supabase'
+import { addMobileCloseButton } from '../lib/printWindowClose'
 import { categoryNameOf } from '../lib/complaintCategoryLabels.js'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -97,7 +98,7 @@ function openPrintWindow(html) {
     return
   }
   win.document.open()
-  win.document.write(html)
+  win.document.write(addMobileCloseButton(html))
   win.document.close()
   setTimeout(async () => {
     try {

@@ -9,6 +9,7 @@ import {
   Banknote, Bell, Trash2, Database, Menu, ArrowLeft,
 } from 'lucide-react'
 import { supabase, signOutSafely, getSessionResilient } from '../lib/supabase'
+import { addMobileCloseButton } from '../lib/printWindowClose'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
 import { useTenant } from '../contexts/TenantContext'
 import { PATIENT_TRANSPORT_MODULE_KEY } from '../lib/patientTransport'
@@ -784,7 +785,7 @@ function TaskDetailSheet({
               })
               const w = window.open('', '_blank', 'width=860,height=1100')
               if (!w) return
-              w.document.write(html)
+              w.document.write(addMobileCloseButton(html))
               w.document.close()
               setTimeout(() => { w.focus(); w.print() }, 400)
             }}
@@ -800,7 +801,7 @@ function TaskDetailSheet({
               const html = buildBuildingPermitHtml({ form: req.permit_form_data, tenant, thDate: thaiDate(req.created_at) })
               const w = window.open('', '_blank', 'width=860,height=1100')
               if (!w) return
-              w.document.write(html)
+              w.document.write(addMobileCloseButton(html))
               w.document.close()
               setTimeout(() => { w.focus(); w.print() }, 400)
             }}
@@ -826,7 +827,7 @@ function TaskDetailSheet({
               })
               const w = window.open('', '_blank', 'width=860,height=1100')
               if (!w) return
-              w.document.write(html)
+              w.document.write(addMobileCloseButton(html))
               w.document.close()
               setTimeout(() => { w.focus(); w.print() }, 400)
             }}
@@ -852,7 +853,7 @@ function TaskDetailSheet({
               })
               const w = window.open('', '_blank', 'width=860,height=1100')
               if (!w) return
-              w.document.write(html)
+              w.document.write(addMobileCloseButton(html))
               w.document.close()
               setTimeout(() => { w.focus(); w.print() }, 400)
             }}
@@ -881,7 +882,7 @@ function TaskDetailSheet({
               })
               const w = window.open('', '_blank', 'width=860,height=1100')
               if (!w) return
-              w.document.write(html)
+              w.document.write(addMobileCloseButton(html))
               w.document.close()
               setTimeout(() => { w.focus(); w.print() }, 400)
             }}
@@ -909,7 +910,7 @@ function TaskDetailSheet({
               })
               const w = window.open('', '_blank', 'width=860,height=1100')
               if (!w) return
-              w.document.write(html)
+              w.document.write(addMobileCloseButton(html))
               w.document.close()
               setTimeout(() => { w.focus(); w.print() }, 400)
             }}
@@ -933,7 +934,7 @@ function TaskDetailSheet({
               const html = buildDocHTML({ req, tenant, docDate: new Date().toISOString().slice(0, 10) })
               const w = window.open('', '_blank', 'width=860,height=1100')
               if (!w) return
-              w.document.write(html)
+              w.document.write(addMobileCloseButton(html))
               w.document.close()
               setTimeout(() => { w.focus(); w.print() }, 400)
             }}

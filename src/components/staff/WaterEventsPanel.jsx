@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronRight, Info, Loader2, Printer, RefreshCw } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { addMobileCloseButton } from '../../lib/printWindowClose'
 import { loadPersonCard, loadSignatoryRegistry } from '../../lib/staffPerformanceData'
 import { buildWaterEventHtml, pickAcknowledger } from '../../lib/waterEventPrint'
 import {
@@ -29,7 +30,7 @@ function openPrintWindow(html) {
     return
   }
   win.document.open()
-  win.document.write(html)
+  win.document.write(addMobileCloseButton(html))
   win.document.close()
   setTimeout(async () => {
     try {

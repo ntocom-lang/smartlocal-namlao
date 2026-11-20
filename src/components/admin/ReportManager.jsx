@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 import { Wrench, TrendingUp, AlertTriangle, Printer, X, Clock, CheckCircle2, Download } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { addMobileCloseButton } from '../../lib/printWindowClose'
 import { workingDaysBetween, workingDaysSince } from '../../lib/workingDays'
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from '../../lib/govDocStyle.js'
 import { printableCategoryLabel, categoryNameOf } from '../../lib/complaintCategoryLabels.js'
@@ -116,7 +117,7 @@ function handlePrint({ view, viewLabel, total, completed, rejected, parked = 0, 
   <div class="eservice-origin">${govEServiceOriginText(tenant)}</div>
 </body></html>`
   const w = window.open('', '_blank', 'width=900,height=700')
-  w.document.write(html)
+  w.document.write(addMobileCloseButton(html))
   w.document.close()
   w.focus()
   setTimeout(() => w.print(), 500)

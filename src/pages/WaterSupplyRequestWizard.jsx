@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Check, CheckCircle2, Copy, Download, Droplets, Loader2, MapPin, Printer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { addMobileCloseButton } from '../lib/printWindowClose'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { NAME_TITLES, splitThaiFullName } from '../lib/thaiName'
 import { generateDraftPdfBlob } from '../lib/generateDraftPdf'
@@ -324,7 +325,7 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
   function handlePrint() {
     const printWindow = window.open('', '_blank', 'width=860,height=1100')
     if (!printWindow) return
-    printWindow.document.write(buildPrintHtml())
+    printWindow.document.write(addMobileCloseButton(buildPrintHtml()))
     printWindow.document.close()
     setTimeout(() => { printWindow.focus(); printWindow.print() }, 400)
   }

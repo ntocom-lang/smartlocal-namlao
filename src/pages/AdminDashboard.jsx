@@ -16,6 +16,7 @@ import {
   TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, FileText, UserPlus, FileSignature, Menu, Building2
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
+import { addMobileCloseButton } from '../lib/printWindowClose'
 // ไอคอนที่เป็นได้ทั้งอิโมจิและรูปแนบ — ของกลางชุดเดียวกับศูนย์ข้อมูลดิจิทัล ไม่ทำซ้ำอีกชุด
 import IconOrImage from '../components/datacenter/CategoryIcon'
 import { fileToIconDataUrl, isIconImage, ICON_UPLOAD_ACCEPT, ICON_IMAGE_MAX_PX } from '../lib/dataCenterGroupIcon'
@@ -4955,7 +4956,7 @@ function handlePrint({ view, month, year, viewLabel, total, completed, rejected,
 </body></html>`
 
   const w = window.open('', '_blank', 'width=900,height=700')
-  w.document.write(html)
+  w.document.write(addMobileCloseButton(html))
   w.document.close()
   w.focus()
   setTimeout(() => w.print(), 500)
@@ -5646,7 +5647,7 @@ function SatisfactionSummary({ tenant }) {
 </body></html>`
 
     const w = window.open('', '_blank', 'width=900,height=700')
-    w.document.write(html)
+    w.document.write(addMobileCloseButton(html))
     w.document.close()
     setTimeout(() => w.print(), 500)
   }
