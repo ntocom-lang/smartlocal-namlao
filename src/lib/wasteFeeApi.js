@@ -1,5 +1,6 @@
 // ชั้นเรียกฐานข้อมูลของเมนู "ทะเบียนค่าธรรมเนียมขยะ" (หน้าจอไม่เรียก supabase ตรงๆ)
 // ฐานข้อมูล: supabase/migrations/20261222100000_waste_fee_tables.sql + 20261222100100_waste_fee_rls_rpc.sql
+//           + 20261222100200_waste_fee_settings_table.sql + 20261222100300_waste_fee_sorting_confirmers.sql (ผู้ยืนยันคัดแยก)
 //
 // ⚠️ ทุก query กรอง municipality_id เองเสมอ (RLS กันข้าม อปท. อยู่แล้ว แต่ superadmin อ่านได้ทุก อปท.)
 // ⚠️ PostgREST ตัดผลลัพธ์ที่ 1,000 แถว: ทะเบียนบัญชีอาจเกิน จึงอ่านผ่าน fetchAll() ที่ไล่ทีละหน้า
@@ -48,6 +49,40 @@ export function friendlyError(error) {
 export async function fetchIsManager(municipalityId) {
   const { data, error } = await supabase.rpc('wfee_is_manager', { p_municipality_id: municipalityId })
   return error ? { value: false, error } : { value: data === true, error: null }
+}
+
+/** ยืนยัน/เลิกการคัดแยกได้ไหม (ค่าตั้งราย อปท. — ตัวบังคับจริงอยู่ใน wfee_set_sorting) */
+export async function fetchCanConfirmSorting(municipalityId) {
+  const { data, error } = await supabase.rpc('wfee_can_confirm_sorting', { p_municipality_id: municipalityId })
+  return error ? { value: false, error } : { value: data === true, error: null }
+}
+
+/** admin/superadmin ของ อปท. นี้ = ตั้งค่าผู้ยืนยันได้ */
+export async function fetchIsAdmin(municipalityId) {
+  const { data, error } = await supabase.rpc('wfee_is_admin', { p_municipality_id: municipalityId })
+  return error ? { value: false, error } : { value: data === true, error: null }
+}
+
+// ── ค่าตั้ง (ผู้ยืนยันการคัดแยก) — ไม่มีแถว = ค่าเริ่มต้น admin + officer · ไฟล์ 20261222100200/100300 ─────
+
+const SETTINGS_COLS = 'municipality_id, sorting_confirmer_roles, sorting_delegation_ref, updated_by, updated_at'
+
+export async function fetchSettings(municipalityId) {
+  const { data, error } = await supabase.from('waste_fee_settings').select(SETTINGS_COLS)
+    .eq('municipality_id', municipalityId).maybeSingle()
+  return { settings: data ?? null, error }
+}
+
+/** admin/superadmin เท่านั้น (RLS) · ไม่มีปุ่มลบ — กลับค่าเริ่มต้น = เลือก admin + officer */
+export async function saveSettings(municipalityId, { roles, delegationRef }) {
+  const payload = {
+    municipality_id: municipalityId,
+    sorting_confirmer_roles: [...new Set(roles)],
+    sorting_delegation_ref: String(delegationRef ?? '').trim() || null,
+  }
+  const { data, error } = await supabase.from('waste_fee_settings').upsert(payload, { onConflict: 'municipality_id' })
+    .select(SETTINGS_COLS).maybeSingle()
+  return { settings: data ?? null, error }
 }
 
 // ── อัตรา ───────────────────────────────────────────────────────────────────────────

@@ -17,6 +17,8 @@ const { PGlite } = await import(pathToFileURL(modulePath).href)
 const readMigration = name => readFile(new URL('../supabase/migrations/' + name, import.meta.url), 'utf8')
 const tablesSql = await readMigration('20261222100000_waste_fee_tables.sql')
 const rlsSql = await readMigration('20261222100100_waste_fee_rls_rpc.sql')
+const settingsSql = await readMigration('20261222100200_waste_fee_settings_table.sql')
+const confirmSql = await readMigration('20261222100300_waste_fee_sorting_confirmers.sql')
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const MA = id(1)
@@ -28,12 +30,12 @@ const DH = id(13) // กองสาธารณสุข เอ (ยังไ�
 const DB1 = id(14) // สำนักปลัด บี
 const U = {
   superadmin: id(101), adminA: id(102), adminB: id(103), staffDG: id(104), officerD1: id(105), techDG: id(106),
-  viewerA: id(107), citizenA: id(108), staffB: id(109), councilA: id(110),
+  viewerA: id(107), citizenA: id(108), staffB: id(109), councilA: id(110), officerDG: id(111),
 }
 const ROLE = { superadmin: 'superadmin', adminA: 'admin', adminB: 'admin', staffDG: 'staff', officerD1: 'officer', techDG: 'technician',
-  viewerA: 'viewer', citizenA: 'citizen', staffB: 'staff', councilA: 'council' }
+  viewerA: 'viewer', citizenA: 'citizen', staffB: 'staff', councilA: 'council', officerDG: 'officer' }
 const MUNI = { superadmin: null, adminB: MB, staffB: MB }
-const DEPT = { staffDG: DG, officerD1: D1, techDG: DG, staffB: DB1 }
+const DEPT = { staffDG: DG, officerDG: DG, officerD1: D1, techDG: DG, staffB: DB1 }
 
 const db = new PGlite()
 await db.exec(`
@@ -119,6 +121,18 @@ await test('รันซ้ำ: ไฟล์ 1 ล้มที่ด่าน (�
   await rejects(db.exec(rlsSql), { code: '42723' })
   await db.exec('ROLLBACK').catch(() => {})
   assert.equal((await rows("SELECT count(*)::int AS n FROM public.waste_fee_rates WHERE municipality_id = $1", [MD]))[0].n, 1)
+})
+
+await test('ไฟล์ 3–4: รันไฟล์ 4 ก่อนไฟล์ 3 → พังพร้อมชื่อไฟล์ · ด่าน md5 ผ่านกับนิยามของไฟล์ 2 (= ค่าบนฐานจริง) · รันซ้ำล้มที่ด่าน', async () => {
+  await rejects(db.exec(confirmSql), { message: /20261222100200/ })
+  await db.exec('ROLLBACK').catch(() => {})
+  await db.exec(settingsSql)
+  await db.exec(confirmSql)
+  await rejects(db.exec(settingsSql), { message: /มีตาราง waste_fee_settings อยู่แล้ว/ })
+  await db.exec('ROLLBACK').catch(() => {})
+  // รันซ้ำ: นิยามถูกแก้ไปแล้ว ⇒ ด่าน md5 ล้ม ไม่ทับ
+  await rejects(db.exec(confirmSql), { message: /มีคนแก้ไปก่อน/ })
+  await db.exec('ROLLBACK').catch(() => {})
 })
 
 const cur = (await rows('SELECT public.wfee_month_start(public.wfee_today())::text AS d'))[0].d
@@ -299,25 +313,25 @@ await test('คัดแยก: ต้องเป็นผู้จัดกา
   await rejects(sorting('officerD1', a.id, true, cur), DENIED)
   await rejects(sorting('staffB', a.id, true, cur), DENIED)
   await rejects(sorting('anon', a.id, true, cur), DENIED)
-  await rejects(sorting('staffDG', a.id, true, cur, ' ab '), { code: '22023' })
-  await rejects(sorting('staffDG', a.id, true, await month(-1)), { message: /ไม่ย้อนหลัง/ })
-  await rejects(sorting('staffDG', a.id, true, await month(13)), { code: '22023' })
-  await rejects(sorting('staffDG', a.id, null, cur), { code: '22023' })
-  await rejects(sorting('staffDG', a.id, false, await month(1)), { message: /ไม่ได้รับการลดอยู่/ })
+  await rejects(sorting('officerDG', a.id, true, cur, ' ab '), { code: '22023' })
+  await rejects(sorting('officerDG', a.id, true, await month(-1)), { message: /ไม่ย้อนหลัง/ })
+  await rejects(sorting('officerDG', a.id, true, await month(13)), { code: '22023' })
+  await rejects(sorting('officerDG', a.id, null, cur), { code: '22023' })
+  await rejects(sorting('officerDG', a.id, false, await month(1)), { message: /ไม่ได้รับการลดอยู่/ })
   await asUser('staffDG', "UPDATE public.waste_fee_accounts SET status = 'closed', closed_from = $2, closed_reason = 'ย้ายออก' WHERE id = $1", [a.id, await month(1)])
-  await rejects(sorting('staffDG', a.id, true, cur), { message: /เลิกเก็บแล้ว/ })
+  await rejects(sorting('officerDG', a.id, true, cur), { message: /เลิกเก็บแล้ว/ })
 })
 
 await test('คัดแยก: เปิดเดือนนี้ → ลดเดือนนี้ · เปิดซ้ำขณะลดอยู่ = ปฏิเสธ · เลิกเดือนนี้ไม่ได้ · เลิกเดือนหน้า = เดือนนี้ยังลด เดือนหน้าเต็ม · ช่วงเดิมไม่หาย', async () => {
   const a = await newAccount()
   assert.equal(await discountIn(a.id, cur), 0)
-  const r = await sorting('staffDG', a.id, true, cur.slice(0, 8) + '28')
+  const r = await sorting('officerDG', a.id, true, cur.slice(0, 8) + '28')
   assert.deepEqual([r.op, r.starts_on, r.ends_on, r.rate_has_discount], ['start', cur, null, true])
   assert.equal(await discountIn(a.id, cur), 10)
   assert.equal(await discountIn(a.id, await month(-1)), 0) // ไม่ย้อนหลัง
-  await rejects(sorting('staffDG', a.id, true, await month(1)), { message: /ได้รับการลดอยู่แล้ว/ })
-  await rejects(sorting('staffDG', a.id, false, cur), { message: /เดือนถัดไป/ })
-  const stop = await sorting('staffDG', a.id, false, await month(2), 'ตรวจซ้ำแล้วไม่แยกขยะ')
+  await rejects(sorting('officerDG', a.id, true, await month(1)), { message: /ได้รับการลดอยู่แล้ว/ })
+  await rejects(sorting('officerDG', a.id, false, cur), { message: /เดือนถัดไป/ })
+  const stop = await sorting('officerDG', a.id, false, await month(2), 'ตรวจซ้ำแล้วไม่แยกขยะ')
   assert.deepEqual([stop.op, stop.ends_on, stop.rate_has_discount], ['stop', await month(2), null])
   assert.equal(await discountIn(a.id, await month(1)), 10)
   assert.equal(await discountIn(a.id, await month(2)), 0)
@@ -326,11 +340,11 @@ await test('คัดแยก: เปิดเดือนนี้ → ลด�
 
 await test('คัดแยก (ผลตรวจ C1): มีกำหนดเลิกล่วงหน้า แล้วเปิดใหม่เลยวันเลิก = ปฏิเสธ (ไม่ให้เดือนช่องว่างได้ลด) · เปิดไม่เกินวันเลิก = ยกเลิกกำหนดเลิก', async () => {
   const a = await newAccount()
-  await sorting('staffDG', a.id, true, cur)
-  await sorting('staffDG', a.id, false, await month(2))
-  await rejects(sorting('staffDG', a.id, true, await month(4)), { message: /กำหนดเลิก/ })
+  await sorting('officerDG', a.id, true, cur)
+  await sorting('officerDG', a.id, false, await month(2))
+  await rejects(sorting('officerDG', a.id, true, await month(4)), { message: /กำหนดเลิก/ })
   assert.deepEqual(await periods(a.id), [{ s: cur, e: await month(2) }])
-  const r = await sorting('staffDG', a.id, true, await month(2), 'ตรวจใหม่ ยังแยกอยู่')
+  const r = await sorting('officerDG', a.id, true, await month(2), 'ตรวจใหม่ ยังแยกอยู่')
   assert.deepEqual([r.op, r.starts_on, r.ends_on], ['cancel_stop', cur, null])
   assert.deepEqual(await periods(a.id), [{ s: cur, e: null }])
   assert.equal(await discountIn(a.id, await month(3)), 10)
@@ -338,17 +352,17 @@ await test('คัดแยก (ผลตรวจ C1): มีกำหนดเ
 
 await test('คัดแยก: ตั้งล่วงหน้า → เลื่อนวันเริ่มได้ · เลิกก่อนเริ่ม = ลบช่วงที่ไม่เคยมีผล · หลังช่วงเดิมจบ เปิดช่วงใหม่ได้โดยช่วงเก่ายังอยู่', async () => {
   const a = await newAccount()
-  let r = await sorting('staffDG', a.id, true, await month(3))
+  let r = await sorting('officerDG', a.id, true, await month(3))
   assert.equal(r.op, 'start')
-  r = await sorting('staffDG', a.id, true, await month(2))
+  r = await sorting('officerDG', a.id, true, await month(2))
   assert.deepEqual([r.op, r.starts_on], ['reschedule', await month(2)])
-  r = await sorting('staffDG', a.id, false, await month(2))
+  r = await sorting('officerDG', a.id, false, await month(2))
   assert.equal(r.op, 'drop_unstarted')
   assert.deepEqual(await periods(a.id), [])
   // ช่วงเก่าที่จบไปแล้ว (จำลองด้วย root ตามที่ระบบจะเห็นในอนาคต) + เปิดช่วงใหม่
   await rows(`INSERT INTO public.waste_fee_sorting_periods (municipality_id, account_id, starts_on, ends_on, note, ended_at)
     VALUES ($1,$2,$3,$4,'ช่วงเก่า', now())`, [MA, a.id, await month(-3), await month(-1)])
-  r = await sorting('staffDG', a.id, true, cur)
+  r = await sorting('officerDG', a.id, true, cur)
   assert.equal(r.op, 'start')
   assert.deepEqual(await periods(a.id), [{ s: await month(-3), e: await month(-1) }, { s: cur, e: null }])
   assert.equal(await discountIn(a.id, await month(-2)), 10)
@@ -358,7 +372,7 @@ await test('คัดแยก: ตั้งล่วงหน้า → เล�
 await test('คัดแยก: รุ่นอัตราไม่มีหมวดลด → rate_has_discount=false และยอดไม่ลด (ระบบบันทึกการยืนยันไว้)', async () => {
   await rows('UPDATE public.waste_fee_rates SET sorting_discount = false WHERE id = $1', [rateNow.id])
   const a = await newAccount()
-  const r = await sorting('staffDG', a.id, true, cur)
+  const r = await sorting('officerDG', a.id, true, cur)
   assert.equal(r.rate_has_discount, false)
   assert.equal(await discountIn(a.id, cur), 0)
   await rows('UPDATE public.waste_fee_rates SET sorting_discount = true WHERE id = $1', [rateNow.id])
@@ -374,24 +388,64 @@ await test('ตารางช่วงลด: ผู้จัดการอ่
   await rejects(asUser('superadmin', 'DELETE FROM public.waste_fee_sorting_periods'), DENIED)
 })
 
+// ── ผู้ยืนยันการคัดแยก (ไฟล์ 3–4) ──
+const canConfirm = async who => (await asUser(who, 'SELECT public.wfee_can_confirm_sorting($1) AS ok', [MA]))[0].ok
+await test('ผู้ยืนยันคัดแยก ค่าเริ่มต้น: admin + officer ของกองเจ้าของงาน + superadmin · staff/officer กองอื่น/อปท. อื่น ยืนยันไม่ได้ (แต่ staff ยังดูทะเบียนได้)', async () => {
+  const want = { adminA: true, superadmin: true, officerDG: true, staffDG: false, officerD1: false, techDG: false, viewerA: false, adminB: false, staffB: false }
+  for (const [who, ok] of Object.entries(want)) assert.equal(await canConfirm(who), ok, who)
+  const a = await newAccount()
+  await rejects(sorting('staffDG', a.id, true, cur), { code: '42501', message: /ไม่มีสิทธิ์ยืนยันการคัดแยก/ })
+  assert.equal((await sorting('adminA', a.id, true, cur)).op, 'start')
+  assert.equal((await asUser('staffDG', 'SELECT count(*)::int AS n FROM public.waste_fee_sorting_periods WHERE account_id = $1', [a.id]))[0].n, 1)
+})
+
+await test('ค่าตั้งผู้ยืนยัน: admin ตั้งได้ · staff/officer ตั้งไม่ได้ · ตัดค่าซ้ำ+เรียงให้ · บทบาทนอกรายการ/ว่าง = ผิด · ลบไม่ได้ · ลงประวัติ · คำสั่งมอบหมายเข้าในประวัติการยืนยัน', async () => {
+  await rejects(asUser('officerDG', "INSERT INTO public.waste_fee_settings (municipality_id, sorting_confirmer_roles) VALUES ($1, ARRAY['staff'])", [MA]))
+  await rejects(asUser('adminA', "INSERT INTO public.waste_fee_settings (municipality_id, sorting_confirmer_roles) VALUES ($1, ARRAY['viewer'])", [MA]), { code: '23514' })
+  await rejects(asUser('adminA', "INSERT INTO public.waste_fee_settings (municipality_id, sorting_confirmer_roles) VALUES ($1, '{}')", [MA]), { code: '23514' })
+  await rejects(asUser('adminB', "INSERT INTO public.waste_fee_settings (municipality_id, sorting_confirmer_roles) VALUES ($1, ARRAY['staff'])", [MA]))
+  await asUser('adminA', `INSERT INTO public.waste_fee_settings (municipality_id, sorting_confirmer_roles, sorting_delegation_ref)
+    VALUES ($1, ARRAY['staff', 'officer', 'staff'], '  คำสั่ง ทต. ที่ 99/2569  ')`, [MA])
+  const s = (await rows('SELECT sorting_confirmer_roles AS r, sorting_delegation_ref AS ref, updated_by FROM public.waste_fee_settings WHERE municipality_id = $1', [MA]))[0]
+  assert.deepEqual([s.r, s.ref, s.updated_by], [['officer', 'staff'], 'คำสั่ง ทต. ที่ 99/2569', U.adminA])
+  assert.equal((await asUser('staffDG', 'SELECT count(*)::int AS n FROM public.waste_fee_settings'))[0].n, 1) // ผู้จัดการอ่านได้
+  assert.equal(await canConfirm('staffDG'), true)
+  assert.equal(await canConfirm('adminA'), false) // admin ถูกถอดออกจากรายการ
+  assert.equal(await canConfirm('superadmin'), true)
+  const a = await newAccount()
+  await sorting('staffDG', a.id, true, cur, 'ตรวจหน้างาน 3 ถัง')
+  const ev = (await rows("SELECT changes FROM public.waste_fee_events WHERE entity_id = $1 AND action = 'sorting'", [a.id]))[0].changes
+  assert.equal(ev.delegation_ref, 'คำสั่ง ทต. ที่ 99/2569')
+  const log = await rows("SELECT action, entity_id FROM public.waste_fee_events WHERE entity = 'settings' ORDER BY id")
+  assert.deepEqual(log.map(r => [r.action, r.entity_id]), [['insert', MA]])
+  await asUser('adminA', "UPDATE public.waste_fee_settings SET sorting_confirmer_roles = ARRAY['officer', 'admin'] WHERE municipality_id = $1", [MA])
+  assert.deepEqual((await rows("SELECT changes FROM public.waste_fee_events WHERE entity = 'settings' AND action = 'update'"))[0].changes.sorting_confirmer_roles,
+    [['officer', 'staff'], ['admin', 'officer']])
+  await rejects(asUser('adminA', 'DELETE FROM public.waste_fee_settings WHERE municipality_id = $1', [MA]), DENIED)
+  await rejects(asUser('staffDG', "UPDATE public.waste_fee_settings SET sorting_delegation_ref = 'x' WHERE municipality_id = $1 RETURNING 1", [MA])
+    .then(r => { if (r.length === 0) throw Object.assign(new Error('no rows'), { code: '42501' }) }), DENIED)
+  // คืนค่าเริ่มต้นให้เคสถัดไป
+  await rows('DELETE FROM public.waste_fee_settings WHERE municipality_id = $1', [MA])
+})
+
 // ── 9) ประวัติ ──
-await test('ประวัติ: เพิ่ม/แก้/ลบ ลงเอง · เบอร์/ที่อยู่/บ้านเลขที่ = changed ไม่เก็บค่า · คัดแยกลง action sorting + เหตุผล · เขียนประวัติตรงไม่ได้', async () => {
+await test('ประวัติ: เพิ่ม/แก้/ลบ ลงเอง · เบอร์/ที่อยู่/บ้านเลขที่/หมู่ = changed ไม่เก็บค่า (เก็บแค่ชื่อ) · คัดแยกลง action sorting + เหตุผล · เขียนประวัติตรงไม่ได้', async () => {
   const a = await newAccount({ phone: '0899999999', house: '99' })
   const ins = (await rows("SELECT changes FROM public.waste_fee_events WHERE entity_id = $1 AND action = 'insert'", [a.id]))[0].changes
   assert.equal(ins.payer_name, 'ผู้ชำระทดสอบ')
-  for (const k of ['payer_phone', 'house_no', 'address']) assert.equal(k in ins, false, k)
-  await asUser('staffDG', "UPDATE public.waste_fee_accounts SET payer_phone = '0811111111', house_no = '100', address = 'ใหม่', monthly_units = 2 WHERE id = $1", [a.id])
+  for (const k of ['payer_phone', 'house_no', 'address', 'village']) assert.equal(k in ins, false, k)
+  await asUser('staffDG', "UPDATE public.waste_fee_accounts SET payer_phone = '0811111111', house_no = '100', address = 'ใหม่', village = 'หมู่ 7', monthly_units = 2 WHERE id = $1", [a.id])
   const upd = (await rows("SELECT changes, actor FROM public.waste_fee_events WHERE entity_id = $1 AND action = 'update'", [a.id]))[0]
-  assert.deepEqual([upd.changes.payer_phone, upd.changes.house_no, upd.changes.address], ['changed', 'changed', 'changed'])
+  assert.deepEqual([upd.changes.payer_phone, upd.changes.house_no, upd.changes.address, upd.changes.village], ['changed', 'changed', 'changed', 'changed'])
   assert.deepEqual(upd.changes.monthly_units, [1.0, 2.0])
   assert.equal(upd.actor, U.staffDG)
   assert.ok(!JSON.stringify(await rows('SELECT changes FROM public.waste_fee_events WHERE entity_id = $1', [a.id])).includes('0811111111'))
-  await sorting('staffDG', a.id, true, cur, 'ถ่ายภาพถังแยกไว้แล้ว')
+  await sorting('officerDG', a.id, true, cur, 'ถ่ายภาพถังแยกไว้แล้ว')
   const s = (await rows("SELECT changes, reason FROM public.waste_fee_events WHERE entity_id = $1 AND action = 'sorting'", [a.id]))[0]
   assert.deepEqual([s.changes.op, s.reason], ['start', 'ถ่ายภาพถังแยกไว้แล้ว'])
   await asUser('staffDG', 'DELETE FROM public.waste_fee_accounts WHERE id = $1', [a.id])
   const del = (await rows("SELECT changes FROM public.waste_fee_events WHERE entity_id = $1 AND action = 'delete'", [a.id]))[0].changes
-  assert.equal('payer_phone' in del || 'house_no' in del, false)
+  assert.equal('payer_phone' in del || 'house_no' in del || 'village' in del, false)
   assert.deepEqual(await periods(a.id), []) // ช่วงลดของบัญชีที่ลบหายตาม (ประวัติยังอยู่)
   await rejects(asUser('staffDG', "INSERT INTO public.waste_fee_events (municipality_id, entity, entity_id, action) VALUES ($1,'account',$2,'update')", [MA, a.id]), DENIED)
   await rejects(asUser('adminA', 'DELETE FROM public.waste_fee_events'), DENIED)
@@ -400,7 +454,7 @@ await test('ประวัติ: เพิ่ม/แก้/ลบ ลงเอ
 
 // ── 10) TRUNCATE / anon / ลบ อปท. ──
 await test('TRUNCATE ไม่ได้ทุกตาราง · anon เรียก RPC ไม่ได้ · ลบ อปท. ทั้งแถวได้ (ประวัติไม่ขวาง cascade)', async () => {
-  for (const t of ['waste_fee_rates', 'waste_fee_accounts', 'waste_fee_sorting_periods', 'waste_fee_events']) {
+  for (const t of ['waste_fee_rates', 'waste_fee_accounts', 'waste_fee_sorting_periods', 'waste_fee_events', 'waste_fee_settings']) {
     await rejects(asUser('superadmin', `TRUNCATE public.${t}`), DENIED)
   }
   await rejects(asUser('anon', 'SELECT public.wfee_account_month($1,$2)', [acc.id, cur]), DENIED)

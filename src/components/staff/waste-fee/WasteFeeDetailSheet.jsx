@@ -3,7 +3,7 @@ import { Leaf, Loader2 } from 'lucide-react'
 import { Sheet } from '../../patientTransport/StaffShell'
 import { closeAccount, fetchAccountMonth, fetchEvents, friendlyError, reopenAccount, setSorting } from '../../../lib/wasteFeeApi'
 import {
-  COMPUTE_ERROR_TEXT, EVENT_ACTION_LABEL, EVENT_DATE_FIELDS, NOT_BILLABLE_TEXT, SORTING_NO_DISCOUNT_TEXT, SORTING_OP_TEXT, UNIT_KG, accountPhase,
+  COMPUTE_ERROR_TEXT, CONFIRMER_ROLE_LABEL, EVENT_ACTION_LABEL, confirmerRolesOf, EVENT_DATE_FIELDS, NOT_BILLABLE_TEXT, SORTING_NO_DISCOUNT_TEXT, SORTING_OP_TEXT, UNIT_KG, accountPhase,
   accountStatusLabel, describeEventChanges, fmtUnits, livePeriod, monthStart, pickRateForMonth, placeTypeLabel, validateClose, validateSorting,
 } from '../../../lib/wasteFee'
 import { addMonths } from '../../../lib/licenceRegistry'
@@ -44,7 +44,8 @@ const fmtValue = (key, value) => (EVENT_DATE_FIELDS.has(key) ? fmtDate(String(va
  *   เปิดลด = เริ่มตั้งแต่เดือนนี้เป็นต้นไป (ไม่ย้อนหลัง) · เลิกลด = เดือนแรกที่ไม่ลดต้องเป็นเดือนหน้าเป็นต้นไป (เดือนนี้ยังได้ลด ไม่ตัดย้อน) · ลงประวัติผู้ยืนยัน — ระบบไม่ตัดสินแทน
  * periods = ช่วงที่ได้ลดของบัญชีนี้จาก waste_fee_sorting_periods (อ่านอย่างเดียว)
  */
-export default function WasteFeeDetailSheet({ tenantId, account, periods, rates, month, onClose, onChanged }) {
+// canConfirm = ผู้ใช้นี้ยืนยัน/เลิกการคัดแยกได้ตามค่าตั้งของ อปท. (wfee_can_confirm_sorting) — ไม่ได้ = เห็นสถานะแต่ไม่มีปุ่ม
+export default function WasteFeeDetailSheet({ tenantId, account, periods, rates, month, canConfirm, settings, onClose, onChanged }) {
   const nextMonth = addMonths(month, 1)
   const [data, setData] = useState(null) // { thisMonth, nextMonth, events }
   const [error, setError] = useState('')
@@ -146,7 +147,12 @@ export default function WasteFeeDetailSheet({ tenantId, account, periods, rates,
           </p>
         ) : <p className="text-xs text-gray-600">บัญชีนี้ยังไม่ได้รับการลดค่ากำจัด</p>}
         {noDiscountRate && <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">รุ่นอัตราที่ใช้อยู่ตอนนี้ไม่มีหมวดลดค่ากำจัดเมื่อคัดแยก — การยืนยันจะถูกบันทึกไว้ แต่ยังไม่ลดยอดจนกว่ารุ่นอัตราจะมีหมวดนี้</p>}
-        {isActive && panel === null && (
+        {isActive && !canConfirm && (
+          <p className="text-[11px] text-gray-500">
+            ผู้ยืนยันการคัดแยกของ อปท. นี้: {confirmerRolesOf(settings).map(r => CONFIRMER_ROLE_LABEL[r] ?? r).join(' · ')} (ตั้งที่แท็บ "ตั้งค่า")
+          </p>
+        )}
+        {isActive && canConfirm && panel === null && (
           <div className="flex flex-wrap gap-2">
             {!ongoing && (
               <button type="button" className={`${btnGhost} min-h-9 px-3 text-xs`} disabled={busy} onClick={() => { setError(''); setNotice(''); setNote(''); setSFrom(month); setPanel('sorting-on') }}>
@@ -166,6 +172,7 @@ export default function WasteFeeDetailSheet({ tenantId, account, periods, rates,
             <Field label="ได้รับการลดตั้งแต่เดือน" required hint={`เลือกได้ตั้งแต่เดือนนี้ (${fmtMonth(month)}) เป็นต้นไป — ไม่ย้อนหลัง · ล่วงหน้าได้ไม่เกิน 12 เดือน`}>
               <input type="month" className={`${inp} sm:max-w-xs`} min={toMonthInput(month)} value={toMonthInput(sFrom)} onChange={e => setSFrom(monthStart(e.target.value) ?? '')} />
             </Field>
+            {settings?.sorting_delegation_ref && <p className="text-[11px] text-gray-600">ยืนยันตามคำสั่งมอบหมาย: {settings.sorting_delegation_ref} (บันทึกคู่กับการยืนยันนี้)</p>}
             <Field label="เหตุผล/หลักฐานการคัดแยก" required hint="เช่น ตรวจหน้างานเมื่อไร โดยใคร พบว่าคัดแยกครบตามประเภทที่ อปท. กำหนด — บันทึกในประวัติถาวร ห้ามใส่เลขบัตรประชาชน">
               <textarea className={inp} rows={2} maxLength={1000} value={note} onChange={e => setNote(e.target.value)} />
             </Field>
